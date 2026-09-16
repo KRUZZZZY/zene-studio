@@ -58,25 +58,21 @@ Usage: QT_QPA_PLATFORM=offscreen python3 control-detect-commands.py <zene>
 Exit code 0 only when every assertion held.
 """
 
-import math
 import os
-import struct
 import sys
-import wave
 
 import control_socket_harness as H
 
+import control_detect_fixtures as F
+from control_detect_fixtures import (CLICK_BPM, CLICK_FIRST_BEAT_S, SAMPLE_RATE,  # noqa: F401
+                                     click_track, major_fixture, steady_tone, write_wave)
+
 REQUEST_IDS = iter(range(1, 1000))
 
-SAMPLE_RATE = 44100
-CLICK_BPM = 128.0
-CLICK_FIRST_BEAT_S = 0.5
-CLICK_SECONDS = 10.0
 BPM_TOLERANCE = 0.5
 ONSET_TOLERANCE_S = 0.03
 TEMPO_METHOD = "spectral-flux-autocorrelation"
 KEY_METHOD = "chroma-tonic-weighted-template-correlation"
-TONE_HZ = 220.0
 
 
 class Session:
@@ -115,73 +111,11 @@ class Recorder:
 
 
 # ---------------------------------------------------------------------------
-# the fixtures: written with the standard library, NOT by the engine's decoder
+# the fixtures: synthesised with the standard library, NOT by the engine's decoder.
+# Moved to tests/control_detect_fixtures.py on 2026-09-15 (030/ratchet-decision,
+# REPO-58) so this driver has the lines to split its own worst function; the fixtures
+# are unchanged there, and the split's equivalence check compares their samples.
 # ---------------------------------------------------------------------------
-def write_wave(path, samples):
-    """A canonical 16-bit mono RIFF/WAVE. The engine's own libsndfile path is
-    what reads it back, so the header this writes is validated by every check
-    that follows (a wrong header would make decode fail loudly)."""
-    with wave.open(path, "wb") as handle:
-        handle.setnchannels(1)
-        handle.setsampwidth(2)
-        handle.setframerate(SAMPLE_RATE)
-        handle.writeframes(b"".join(
-            struct.pack("<h", max(-32767, min(32767, int(value * 32767.0)))) for value in samples))
-
-
-def click_track():
-    """A click track at CLICK_BPM whose first click is at CLICK_FIRST_BEAT_S."""
-    total = int(CLICK_SECONDS * SAMPLE_RATE)
-    samples = [0.0] * total
-    burst = SAMPLE_RATE // 40  # 25 ms
-    beat = CLICK_FIRST_BEAT_S
-    while beat < CLICK_SECONDS:
-        start = int(beat * SAMPLE_RATE)
-        for i in range(burst):
-            if start + i >= total:
-                break
-            envelope = math.exp(-8.0 * i / burst)
-            samples[start + i] += 0.8 * envelope * math.sin(2.0 * math.pi * 1000.0 * i / SAMPLE_RATE)
-        beat += 60.0 / CLICK_BPM
-    return samples
-
-
-def major_fixture():
-    """An A major scale (A B C# D E F# G# A) over an A bass: the answer is
-    'A, major' by construction. The bass is what makes the TONIC measurable -
-    see the note on the tonic weighting in docs/IMPORT-DETECTION.md."""
-    total = int(8.0 * SAMPLE_RATE)
-    samples = [0.0] * total
-    scale = [220.00, 246.94, 277.18, 293.66, 329.63, 369.99, 415.30, 440.00]
-
-    def add_tone(hz, start_s, length_s, amplitude):
-        start = int(start_s * SAMPLE_RATE)
-        length = int(length_s * SAMPLE_RATE)
-        fade = int(0.02 * SAMPLE_RATE)
-        for i in range(length):
-            if start + i >= total:
-                break
-            envelope = 1.0
-            if i < fade:
-                envelope = i / fade
-            elif i + fade >= length:
-                envelope = (length - i) / fade
-            samples[start + i] += amplitude * envelope * math.sin(
-                2.0 * math.pi * hz * i / SAMPLE_RATE)
-
-    for repeat in range(2):
-        for note, hz in enumerate(scale):
-            add_tone(hz, repeat * 3.0 + note * 0.35, 0.32, 0.35)
-    add_tone(110.0, 0.0, 8.0, 0.45)
-    return samples
-
-
-def steady_tone():
-    """A tone with no transients at all: the refusal fixture."""
-    return [0.4 * math.sin(2.0 * math.pi * TONE_HZ * i / SAMPLE_RATE)
-            for i in range(int(6.0 * SAMPLE_RATE))]
-
-
 # ---------------------------------------------------------------------------
 # helpers
 # ---------------------------------------------------------------------------
@@ -200,23 +134,16 @@ def describe(entry):
                entry.get("margin") or 0.0))
 
 
-def run_checks(session, instance, recorder):
-    workspace = instance.workspace
-    click_path = os.path.join(workspace, "click128.wav")
-    major_path = os.path.join(workspace, "a-major.wav")
-    tone_path = os.path.join(workspace, "steady-tone.wav")
-    missing_path = os.path.join(workspace, "not-here.wav")
-    project_path = os.path.join(workspace, "detect-project.mmp")
-
-    write_wave(click_path, click_track())
-    write_wave(major_path, major_fixture())
-    write_wave(tone_path, steady_tone())
-
-    # 1. a fresh session -----------------------------------------------------
+def _fresh_state(session):
+    """The live detection state, unpacked: (state, methods, bounds, vocabulary)."""
     state = session.result("detect.get_state")
-    methods = state.get("method") or {}
-    bounds = state.get("bounds") or {}
-    vocabulary = state.get("scale_vocabulary") or {}
+    return (state, state.get("method") or {}, state.get("bounds") or {},
+            state.get("scale_vocabulary") or {})
+
+
+def _check_fresh_session(session, recorder):
+    # 1. a fresh session -----------------------------------------------------
+    state, methods, bounds, vocabulary = _fresh_state(session)
     recorder.check(
         "a fresh session holds no key and an empty tempo map",
         key_of(state).get("present") is False
@@ -229,6 +156,10 @@ def run_checks(session, instance, recorder):
         and "unverified" in (methods.get("accuracy_note") or ""),
         "tempo=%r key=%r note=%r" % (methods.get("tempo"), methods.get("key"),
                                      (methods.get("accuracy_note") or "")[:80]))
+    _check_fresh_vocabulary(bounds, vocabulary, recorder)
+
+
+def _check_fresh_vocabulary(bounds, vocabulary, recorder):
     recorder.check(
         "the bounds and the pre-existing scale vocabulary are published",
         bounds.get("min_bpm") == 40.0 and bounds.get("max_bpm") == 240.0
@@ -237,21 +168,28 @@ def run_checks(session, instance, recorder):
         "bounds=%r vocabulary_count=%r names=%r" % (bounds, vocabulary.get("count"),
                                                     (vocabulary.get("names") or [])[:6]))
 
+
+def _check_tempo(session, recorder, click_path):
     # 2. the tempo ----------------------------------------------------------
     analysis = session.result("detect.analyze", {"path": click_path})
     tempo = analysis.get("tempo") or {}
     detected = tempo.get("bpm") or 0.0
     onset = tempo.get("first_onset_seconds") or 0.0
+    confidence = tempo.get("confidence") or 0.0
     recorder.check(
         "a 128 BPM click track is detected within %.1f BPM" % BPM_TOLERANCE,
         tempo.get("found") is True and abs(detected - CLICK_BPM) <= BPM_TOLERANCE,
         "detected %.3f BPM (confidence %.3f, %r transients)"
-        % (detected, tempo.get("confidence") or 0.0, tempo.get("onsets")))
+        % (detected, confidence, tempo.get("onsets")))
     recorder.check(
         "the first transient lands within %.0f ms of %.3f s"
         % (ONSET_TOLERANCE_S * 1000.0, CLICK_FIRST_BEAT_S),
         abs(onset - CLICK_FIRST_BEAT_S) <= ONSET_TOLERANCE_S,
         "first_onset_seconds=%.3f frame=%r" % (onset, tempo.get("first_onset_frame")))
+    _check_tempo_provenance(analysis, recorder, click_path)
+
+
+def _check_tempo_provenance(analysis, recorder, click_path):
     recorder.check(
         "the analysis names its method and reports the file it read",
         (analysis.get("method") or {}).get("tempo") == TEMPO_METHOD
@@ -261,7 +199,11 @@ def run_checks(session, instance, recorder):
                                                     analysis.get("sample_rate"),
                                                     analysis.get("analysed_seconds") or 0.0))
 
+
+def _check_key(session, recorder, major_path):
     # 3. the key, in the pre-existing vocabulary -----------------------------
+    # Returns the vocabulary's names: section 5 asserts the applied key against
+    # the same reading section 3 checked, so it is passed on rather than re-read.
     analysis = session.result("detect.analyze", {"path": major_path})
     key = analysis.get("key") or {}
     names = (session.result("detect.get_state").get("scale_vocabulary") or {}).get("names") or []
@@ -274,7 +216,10 @@ def run_checks(session, instance, recorder):
         "the key half names its own method",
         (analysis.get("method") or {}).get("key") == KEY_METHOD,
         "key method=%r" % (analysis.get("method") or {}).get("key"))
+    return names
 
+
+def _check_refusals(session, recorder, click_path, missing_path, tone_path):
     # 4. refusals write nothing ---------------------------------------------
     refusals = []
     for name, args in (
@@ -298,6 +243,8 @@ def run_checks(session, instance, recorder):
         tempo_map_of(state).get("event_count") == 0 and key_of(state).get("present") is False,
         "tempo_map=%r key=%r" % (tempo_map_of(state), key_of(state)))
 
+
+def _check_key_half_alone(session, recorder, major_path, names):
     # 5. the KEY half alone, and its own inverse ---------------------------
     applied = session.result("detect.apply", {"path": major_path, "tempo": False})
     key_state = applied.get("key_state") or {}
@@ -319,22 +266,28 @@ def run_checks(session, instance, recorder):
         key_of(state).get("present") is False,
         "key=%r" % (key_of(state),))
 
+
+def _check_apply_both_halves(session, recorder, click_path):
     # 6. apply BOTH halves, ONE undoable step ------------------------------
     applied = session.result("detect.apply", {"path": click_path})
     tempo_result = applied.get("tempo") or {}
+    detected = tempo_result.get("detected_bpm") or 0.0
     recorder.check(
         "detect.apply writes the detected tempo into the tempo map",
         tempo_result.get("applied") is True and tempo_result.get("event_tick") == 0
         and tempo_result.get("bpm") == int(round(CLICK_BPM)) and tempo_result.get("active") is True,
         "bpm=%r detected_bpm=%.3f rounded=%r events=%r"
-        % (tempo_result.get("bpm"), tempo_result.get("detected_bpm") or 0.0,
+        % (tempo_result.get("bpm"), detected,
            tempo_result.get("rounded"), tempo_result.get("events")))
     recorder.check(
         "the rounded figure is the map's integer and the exact one is reported beside it",
-        abs((tempo_result.get("detected_bpm") or 0.0) - CLICK_BPM) <= BPM_TOLERANCE
-        and tempo_result.get("bpm") == int(round(tempo_result.get("detected_bpm") or 0.0)),
-        "detected=%.3f written=%r" % (tempo_result.get("detected_bpm") or 0.0,
-                                     tempo_result.get("bpm")))
+        abs(detected - CLICK_BPM) <= BPM_TOLERANCE
+        and tempo_result.get("bpm") == int(round(detected)),
+        "detected=%.3f written=%r" % (detected, tempo_result.get("bpm")))
+    _check_apply_key_half(applied, recorder, click_path)
+
+
+def _check_apply_key_half(applied, recorder, click_path):
     key_state = applied.get("key_state") or {}
     # A CLICK TRACK HAS NO KEY, and this is the honest assertion about one: the
     # key half is written because it was asked for, it agrees with what
@@ -349,6 +302,8 @@ def run_checks(session, instance, recorder):
         and (key_state.get("margin") or 1.0) < 0.05,
         "key_state=%s" % (key_state,))
 
+
+def _check_tempo_map_verb(session, recorder):
     # 7. the tempo map's OWN verb reads it back ----------------------------
     map_state = session.result("transport.tempo_map_get")
     events = map_state.get("events") or []
@@ -360,6 +315,8 @@ def run_checks(session, instance, recorder):
         "active=%r events=%r tempo_at_position=%r" % (map_state.get("active"), events,
                                                      map_state.get("tempo_at_position")))
 
+
+def _check_one_undo_takes_both(session, recorder):
     # 8. ONE undo takes BOTH halves off ------------------------------------
     session.result("control.undo")
     state = session.result("detect.get_state")
@@ -370,6 +327,8 @@ def run_checks(session, instance, recorder):
         and tempo_map_of(state).get("active") is False,
         "key=%r tempo_map=%r" % (key_of(state), tempo_map_of(state)))
 
+
+def _check_project_file(session, recorder, click_path, major_path, project_path):
     # 9. the project's own fields reach the project FILE -------------------
     #    The tempo from the click track, the key from the scale fixture: two
     #    half-writes composed, so each assertion is about material that carries
@@ -396,6 +355,37 @@ def run_checks(session, instance, recorder):
         "tempo-map element present=%s bpm=%d"
         % ("<tempo-map" in text, int(round(CLICK_BPM))))
     return project_path
+
+
+def run_checks(session, instance, recorder):
+    """The detect.* group's nine checks, one named stage each.
+
+    Split 2026-09-15 (030/ratchet-decision, REPO-58) from one 196-line function that the
+    whole-tree complexity ratchet measured at CCN 75 — the worst fork-authored function in
+    the tree. Each stage below is the section it was, verbatim: the checks, their order and
+    their messages are unchanged, and `names` is passed from stage 3 to stage 5 so no
+    reading is duplicated.
+    """
+    workspace = instance.workspace
+    click_path = os.path.join(workspace, "click128.wav")
+    major_path = os.path.join(workspace, "a-major.wav")
+    tone_path = os.path.join(workspace, "steady-tone.wav")
+    missing_path = os.path.join(workspace, "not-here.wav")
+    project_path = os.path.join(workspace, "detect-project.mmp")
+
+    write_wave(click_path, click_track())
+    write_wave(major_path, major_fixture())
+    write_wave(tone_path, steady_tone())
+
+    _check_fresh_session(session, recorder)
+    _check_tempo(session, recorder, click_path)
+    names = _check_key(session, recorder, major_path)
+    _check_refusals(session, recorder, click_path, missing_path, tone_path)
+    _check_key_half_alone(session, recorder, major_path, names)
+    _check_apply_both_halves(session, recorder, click_path)
+    _check_tempo_map_verb(session, recorder)
+    _check_one_undo_takes_both(session, recorder)
+    return _check_project_file(session, recorder, click_path, major_path, project_path)
 
 
 def _inflate(data):

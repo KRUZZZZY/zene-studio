@@ -20,12 +20,12 @@
 # Regenerate with (the whole command - no remote state, no arguments):
 #   { git ls-files '*.c' '*.cc' '*.cpp' '*.cxx' '*.h' '*.hpp' \
 #       | grep -vE '^(src/3rdparty/|tests/reference/|plugins/NeuralAmp/(rtneural|nam|tests)/|plugins/RnnoiseDenoiser/rnnoise/)' ; \
-#     git ls-files tests/control-detect-commands.py ; } | LC_ALL=C sort -u
+#     git ls-files tests/control-detect-commands.py tests/control_detect_fixtures.py ; } | LC_ALL=C sort -u
 # Verify it - this must print REPRODUCES and nothing else:
 #   diff <(grep -vE '^[[:space:]]*(#|$)' tests/all-sources.txt) \
 #        <({ git ls-files '*.c' '*.cc' '*.cpp' '*.cxx' '*.h' '*.hpp' \
 #              | grep -vE '^(src/3rdparty/|tests/reference/|plugins/NeuralAmp/(rtneural|nam|tests)/|plugins/RnnoiseDenoiser/rnnoise/)' ; \
-#            git ls-files tests/control-detect-commands.py ; } | LC_ALL=C sort -u) && echo REPRODUCES
+#            git ls-files tests/control-detect-commands.py tests/control_detect_fixtures.py ; } | LC_ALL=C sort -u) && echo REPRODUCES
 #   Running it by hand is how the list was checked; it is NOT the check any more. Since
 #   2026-09-15 tests/all-sources-reproduce.sh IS this diff, `bash tests/fork-sources-gate.sh`
 #   (Gate 9) runs it on every run, and tests/all-sources-reproduce.sh --self-test proves the
@@ -1529,6 +1529,7 @@ src/wasm/WasmWorker.h
 src/wasm/WasmWorkerPool.cpp
 src/wasm/WasmWorkerPool.h
 tests/control-detect-commands.py
+tests/control_detect_fixtures.py
 tests/data/clap-test-plugin/clap-test-broken.c
 tests/data/clap-test-plugin/clap-test-gain.c
 tests/data/gigproof/make_gig.cpp
