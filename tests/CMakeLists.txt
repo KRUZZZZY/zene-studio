@@ -1763,6 +1763,29 @@ if(TARGET lmms_vst3_sdk)
 				vst3instrument
 				vst3-test-instrument)
 		endif()
+
+		# The SOCKET-DRIVEN half of the same feature (feature row 78, board task
+		# #668). Vst3InstrumentIntegrationTest above loads the module through the
+		# engine; this is what makes it reachable from the control surface - the
+		# device catalogue test points the product's VST3 search directory at this
+		# fixture's own bundle, so plugin.list enumerates a real VST3 class and
+		# plugin.load loads it onto an instrument track through the registry. The
+		# acceptance contract (CHARTER 3.1) is what the case exists for: a feature
+		# that cannot be driven through the socket is not in the release. Without
+		# this option the define is absent and the case skips.
+		if(TARGET vst3instrument AND TARGET ControlDeviceCatalogueTest)
+			# The bundle's own directory: the directory the product's VST3 scan
+			# walks (ConfigManager::setVSTDir() takes exactly this).
+			get_filename_component(LMMS_VST3_TEST_FIXTURE_DIR
+				"${LMMS_VST3_TEST_BUNDLE_DIR}" DIRECTORY)
+			target_compile_definitions(ControlDeviceCatalogueTest PRIVATE
+				VST3_TEST_INSTRUMENT_DIR="${LMMS_VST3_TEST_FIXTURE_DIR}"
+			)
+			add_dependencies(ControlDeviceCatalogueTest
+				vst3instrument
+				vst3-test-instrument
+			)
+		endif()
 endif()
 endif()
 # ---------------------------------------------------------------------------

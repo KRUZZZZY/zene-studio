@@ -159,6 +159,13 @@ bool controlDeviceModule(const ControlDeviceEntry& entry, QString* pluginName,
 		return false;
 #endif
 	}
+	if (entry.format == QLatin1String("vst3"))
+	{
+		// The VST3 half lives in its own translation unit (ControlDeviceVst3.cpp)
+		// so that this file - and ControlDeviceCatalogue.cpp - do not grow for
+		// a format they do not own.
+		return controlVst3DeviceModule(entry, pluginName, key, useKey, error);
+	}
 	return true; // a built-in module is addressed by its plugin name alone
 }
 

@@ -52,13 +52,22 @@ struct ControlDeviceEntry
 	QString name;        //!< plugin name ("amplifier"), LADSPA label ("amp_mono")
 	                     //!< or, for LV2, the plugin URI
 	QString displayName; //!< human name ("Amplifier")
-	QString format;      //!< "builtin" | "ladspa" | "lv2"
+	QString format;      //!< "builtin" | "ladspa" | "lv2" | "vst3"
 	QString kind;        //!< "effect" | "instrument" | "tool" | "other"
 	QString file;        //!< LADSPA file stem, empty for other formats
 	QString label;       //!< LADSPA label, empty for other formats
 	QString uri;         //!< LV2 plugin URI, empty for other formats
+	QString className;   //!< VST3 class name, empty for other formats
 	bool loadable;       //!< plugin.load accepts this entry
 };
+
+//! Appends this build's VST3 classes to \a out, through the VST3 hosts' own
+//! discovery path (the SubPluginFeatures::listSubPluginKeys() dispatch the
+//! plug-in browser uses) - not a second scanner. A no-op when the build has no
+//! VST3 host (WANT_VST3=OFF), so the catalogue is simply built-in + LADSPA +
+//! LV2 there. Called by controlDeviceCatalogue() after the LV2 block, which is
+//! what keeps the dev-<n> ids of the formats that were already there.
+LMMS_EXPORT void controlVst3DeviceEntries(QList<ControlDeviceEntry>* out);
 
 //! Appends this build's LV2 devices to \a out, through the LV2 host module's
 //! own discovery path (the SubPluginFeatures::listSubPluginKeys() dispatch the
@@ -147,6 +156,14 @@ LMMS_EXPORT Effect* controlInstantiateDevice(const ControlDeviceEntry& entry, Ef
 //!        whose plugin name alone selects it).
 //! False and *error set when this build does not ship the host the entry needs.
 LMMS_EXPORT bool controlDeviceModule(const ControlDeviceEntry& entry, QString* pluginName,
+	Plugin::Descriptor::SubPluginFeatures::Key* key, bool* useKey, ControlResult* error);
+
+//! The same for a VST3 entry: the host module ("vst3effect" / "vst3instrument")
+//! and the (file, class) key its own SubPluginFeatures resolves - the key shape
+//! plugins/Vst3Effect/Vst3SubPluginFeatures.h builds and a saved project stores.
+//! False and *error set when this build has no VST3 host, when the entry names
+//! no class, or when the bundle it named is gone.
+LMMS_EXPORT bool controlVst3DeviceModule(const ControlDeviceEntry& entry, QString* pluginName,
 	Plugin::Descriptor::SubPluginFeatures::Key* key, bool* useKey, ControlResult* error);
 
 //! True when the module is present and exposes lmms_plugin_main - the check

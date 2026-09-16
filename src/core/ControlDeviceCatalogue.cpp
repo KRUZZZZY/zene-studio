@@ -131,9 +131,11 @@ QList<ControlDeviceEntry> controlDeviceCatalogue()
 	appendBuiltinDevices(Plugin::Type::Effect, QStringLiteral("effect"), &out);
 	appendBuiltinDevices(Plugin::Type::Instrument, QStringLiteral("instrument"), &out);
 	appendLadspaDevices(&out);
-	// The hosted formats are appended in a fixed order (LADSPA, then LV2) so a
-	// build that gains a host keeps the dev-<n> ids of the ones already there.
+	// The hosted formats are appended in a fixed order (LADSPA, then LV2, then
+	// VST3) so a build that gains a host keeps the dev-<n> ids of the ones
+	// already there.
 	controlLv2DeviceEntries(&out);
+	controlVst3DeviceEntries(&out);
 	return out;
 }
 
@@ -176,6 +178,13 @@ QJsonObject controlDeviceJson(const ControlDeviceEntry& entry, int index)
 	if (entry.format == QLatin1String("lv2"))
 	{
 		out.insert(QStringLiteral("uri"), entry.uri);
+	}
+	if (entry.format == QLatin1String("vst3"))
+	{
+		// The bundle and the class inside it: what plugin.load resolves and
+		// what a saved project stores in the plug-in key.
+		out.insert(QStringLiteral("file"), entry.file);
+		out.insert(QStringLiteral("class"), entry.className);
 	}
 	return out;
 }

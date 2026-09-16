@@ -1,0 +1,207 @@
+==============================================================================
+ctest -R '^Vst3Instrument'  (from build/tests)
+==============================================================================
+1/3 Test #152: Vst3InstrumentFixtureProbe .......   Passed    0.00 sec
+2/3 Test #153: Vst3InstrumentTest ...............   Passed    0.01 sec
+3/3 Test #154: Vst3InstrumentIntegrationTest ....   Passed    2.38 sec
+100% tests passed, 0 tests failed out of 3
+
+==============================================================================
+Vst3InstrumentFixtureProbe, run directly
+==============================================================================
+== VST3 instrument fixture probe ==
+bundle: /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/lmms/zene-030/wvst3/build/tests/data/vst3-test-instrument/vst3-test-instrument.vst3
+
+-- module load (VST3::Hosting::Module::create) --
+  [PASS] the .vst3 bundle loads through the SDK's own module loader
+
+-- class infos reported by the module factory --
+  name="Zene VST3 Test Instrument"
+    category="Audio Module Class" subCategories="Instrument|Synth" vendor="Zene Studio test fixture"
+  [PASS] declares a kVstAudioEffectClass whose subcategory is an Instrument
+  [PASS] declares no Fx-categorised class (it is an instrument, not an effect)
+
+-- instantiation (SDK PlugProvider) --
+  [PASS] PlugProvider::initialize()
+  [PASS] IComponent and IAudioProcessor are available
+  [PASS] an IEditController is available
+  component is single-component (processor == controller): yes
+
+-- bus layout reported by the module --
+  kAudio input: 0 bus(es)
+  kAudio output: 1 bus(es)
+    [0] name="Audio Output" channels=2 busType=kMain active=yes
+  kEvent input: 1 bus(es)
+    [0] name="Event Input" channels=1 busType=kMain active=yes
+  kEvent output: 0 bus(es)
+  [PASS] NO audio input bus - the instrument shape, not the effect shape
+  [PASS] exactly one audio output bus
+  [PASS] at least one kEvent input bus - the MIDI path
+  [PASS] setupProcessing(kSample32, 44.1 kHz, 512)
+  [PASS] setActive(true)
+  [PASS] setProcessing(true)
+
+-- MIDI in -> audio out (ProcessData::inputEvents) --
+  [PASS] process() returns kResultOk
+  [PASS] a block with no events renders exact silence (no note is latent)
+  [PASS] process() with a note-on at 0 and a note-off at 256
+  [PASS] the block is NON-SILENT before the note-off - MIDI really drives audio
+  [PASS] the block is EXACTLY silent from the note-off sampleOffset onwards
+    level=0.500000  sample[0]=0.500000  sample[255]=0.500000  sample[256]=0.000000  sample[511]=0.000000
+  [PASS] the next block is silent again (the note did not leak forward)
+  [PASS] process() with a note-on at sampleOffset 128
+  [PASS] a note-on at sampleOffset 128 sounds from sample 128, not from sample 0
+
+RESULT: PASS (0 failed check(s))
+
+
+==============================================================================
+Vst3InstrumentTest, run directly (totals + the allocation probe line)
+==============================================================================
+PASS   : lmms::vst3::Vst3InstrumentTest::initTestCase()
+PASS   : lmms::vst3::Vst3InstrumentTest::testTheFixtureIsAnInstrumentWithAnEventBus()
+PASS   : lmms::vst3::Vst3InstrumentTest::testNoEventsIsExactlySilent()
+PASS   : lmms::vst3::Vst3InstrumentTest::testSampleAccurateNoteOff()
+PASS   : lmms::vst3::Vst3InstrumentTest::testNoteOnOffsetIsHonoured()
+PASS   : lmms::vst3::Vst3InstrumentTest::testDistinctInputGivesDistinctOutput()
+PASS   : lmms::vst3::Vst3InstrumentTest::testNoEventLeaksBetweenBlocks()
+PASS   : lmms::vst3::Vst3InstrumentTest::testTheQueueIsBoundedAndCountsWhatItDrops()
+PASS   : lmms::vst3::Vst3InstrumentTest::testStateRoundTripsIntoAFreshInstance()
+QINFO  : lmms::vst3::Vst3InstrumentTest::testProcessAllocatesNothing() allocation probe: 8 MIDI-carrying blocks, 0 allocations on the process thread
+PASS   : lmms::vst3::Vst3InstrumentTest::testProcessAllocatesNothing()
+PASS   : lmms::vst3::Vst3InstrumentTest::cleanupTestCase()
+Totals: 11 passed, 0 failed, 0 skipped, 0 blacklisted, 1ms
+
+==============================================================================
+Vst3InstrumentIntegrationTest, run directly
+==============================================================================
+PASS   : lmms::Vst3InstrumentIntegrationTest::initTestCase()
+QINFO  : lmms::Vst3InstrumentIntegrationTest::testTheInstalledInstrumentLoadsAndIsMidiBased() instrument: Zene VST3 Test Instrument, 1 parameter(s), first is "Level"
+PASS   : lmms::Vst3InstrumentIntegrationTest::testTheInstalledInstrumentLoadsAndIsMidiBased()
+QINFO  : lmms::Vst3InstrumentIntegrationTest::testAMidiClipDrivesAudioWithSampleAccuracy() instrument: midiBased=1 singleStreamed=1 portsModel=0x5e4c1eb38e20 parameters=1
+QINFO  : lmms::Vst3InstrumentIntegrationTest::testAMidiClipDrivesAudioWithSampleAccuracy() clip -> track -> instrument: RMS=0.500000, sample[127]=0.000000, sample[128]=0.500000
+PASS   : lmms::Vst3InstrumentIntegrationTest::testAMidiClipDrivesAudioWithSampleAccuracy()
+PASS   : lmms::Vst3InstrumentIntegrationTest::testDistinctInputGivesDistinctOutput()
+PASS   : lmms::Vst3InstrumentIntegrationTest::testTheLevelParameterReachesTheInstrument()
+QINFO  : lmms::Vst3InstrumentIntegrationTest::testStateSurvivesTheProjectFile() project round trip: saved 0.750000, reloaded 0.750000 (identical render)
+PASS   : lmms::Vst3InstrumentIntegrationTest::testStateSurvivesTheProjectFile()
+PASS   : lmms::Vst3InstrumentIntegrationTest::testAGuiLessInstrumentExposesItsParameters()
+PASS   : lmms::Vst3InstrumentIntegrationTest::testTheViewsEntryPointIsSafeOutsideAnInstrumentTrackWindow()
+PASS   : lmms::Vst3InstrumentIntegrationTest::cleanupTestCase()
+Totals: 9 passed, 0 failed, 0 skipped, 0 blacklisted, 2213ms
+
+==============================================================================
+ControlDeviceCatalogueTest, run directly (the socket half)
+==============================================================================
+PASS   : ControlDeviceCatalogueTest::initTestCase()
+QINFO  : ControlDeviceCatalogueTest::builtinBlockIsNotRenumberedByHostedFormats() plugin-scan: 1 file(s), 0 quarantined, 0 served from cache, 0 known-bad skipped, 1 scanned, 1 plugin(s)
+PASS   : ControlDeviceCatalogueTest::builtinBlockIsNotRenumberedByHostedFormats()
+PASS   : ControlDeviceCatalogueTest::formatsAreFromTheClosedSet()
+SKIP   : ControlDeviceCatalogueTest::lv2EntriesCarryTheirUri() this build has no lv2effect module, so it has no LV2 catalogue half
+PASS   : ControlDeviceCatalogueTest::catalogueOrderIsDeterministic()
+PASS   : ControlDeviceCatalogueTest::deviceLookupIsTyped()
+PASS   : ControlDeviceCatalogueTest::pluginListAcceptsTheLv2FormatFilter()
+QINFO  : ControlDeviceCatalogueTest::vst3ClassesListAndLoadThroughTheSurface() plugin.list format=vst3: dev-1 -> plugin.load on trk-3 -> /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/lmms/zene-030/wvst3/build/tests/data/vst3-test-instrument/vst3-test-instrument.vst3, 1 parameter(s)
+PASS   : ControlDeviceCatalogueTest::vst3ClassesListAndLoadThroughTheSurface()
+PASS   : ControlDeviceCatalogueTest::cleanupTestCase()
+Totals: 8 passed, 0 failed, 1 skipped, 0 blacklisted, 1405ms
+
+==============================================================================
+ctest -R '^(Vst3HostTest|Vst3BusMapTest|Vst3ChunkProbeTest|ControlRegistryTest|ControlDeviceCatalogueTest)$'
+==============================================================================
+3/5 Test #146: Vst3BusMapTest ...................   Passed    0.01 sec
+4/5 Test #147: Vst3HostTest .....................   Passed    0.01 sec
+5/5 Test #148: Vst3ChunkProbeTest ...............   Passed    0.01 sec
+80% tests passed, 1 tests failed out of 5
+The following tests FAILED:
+
+==============================================================================
+ctest -R '^ControlCommandsSnapshot$' (the derived-file red, expected)
+==============================================================================
+      then commit the regenerated file:
+        python3 tools/mcp-zene-control/snapshot_commands.py --socket <sock>    # <sock> = a live instance's control socket
+
+
+0% tests passed, 1 tests failed out of 1
+
+Total Test time (real) =   3.10 sec
+
+The following tests FAILED:
+	198 - ControlCommandsSnapshot (Failed)
+Errors while running CTest
+
+
+==============================================================================
+local-ci.sh --configure-only
+==============================================================================
+machine     : Linux x86_64, Ubuntu 24.04.4 LTS
+compiler    : g++ (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0
+CI CMAKE_OPTS: -DUSE_WERROR=ON -DCMAKE_BUILD_TYPE=RelWithDebInfo -DTARGET_UARCH=official -DUSE_COMPILE_CACHE=ON -DWANT_DEBUG_CPACK=ON -DWANT_VST3=ON -DWANT_CLAP=ON -DWANT_VST3_TEST_INSTRUMENT=ON
+provision EXIT=0   (log: build/provision.log)
+configure EXIT=0   (log: build/configure.log)
+=== job coverage on this machine ===
+CONFIGURE_EXIT=0
+
+==============================================================================
+cmake --build ... --target Vst3Instrument* ControlDeviceCatalogueTest
+==============================================================================
+[100%] Building CXX object tests/CMakeFiles/ControlDeviceCatalogueTest.dir/src/core/ControlDeviceCatalogueTest.cpp.o
+[100%] Linking CXX executable ControlDeviceCatalogueTest
+[100%] Built target ControlDeviceCatalogueTest
+
+
+==============================================================================
+gates
+==============================================================================
+  40 tools-sources (fork tooling), 0 stale entry(ies).
+
+PASS: every tracked source in scope is registered (625 fork-NEW, 1103 inherited, 40 tooling).
+
+
+==============================================================================
+gates: no-upstream-regression (Gate 6)
+==============================================================================
+PASS: every change to upstream-inherited code since 01148947ea4d8bdb05c237942758d61acc867223 is declared
+      (421 changed path(s) declared; the ledger holds 457 entries)
+
+
+==============================================================================
+gates: complexity (Gate 4) - red, none of it this lane's
+==============================================================================
+REGRESSION: new function over target: check_model_store@400-441@tests/stem_commands_lib.py (CCN 11)
+improved: lmms::clap::HostedPlugin::process@plugins/ClapEffect/ClapHost.cpp is no longer over CCN 10 (baseline entry is dead weight; remove it deliberately)
+improved: lmms::vst3::HostedPlugin::process@plugins/Vst3Effect/Vst3Host.cpp is no longer over CCN 10 (baseline entry is dead weight; remove it deliberately)
+improved: lmms::wasm::WasmWorker::run@src/wasm/WasmWorker.cpp is no longer over CCN 10 (baseline entry is dead weight; remove it deliberately)
+FAIL: complexity ratchet regressed (baseline unchanged)
+
+
+==============================================================================
+gates: file length (Gate 7) - red, none of it this lane's
+==============================================================================
+REGRESSION: new file over 500 lines: include/ControlRegistryGroups.h (671)
+REGRESSION: new file over 500 lines: include/ControlRegistry.h (509)
+REGRESSION: new file over 500 lines: include/ControlReversibility.h (518)
+REGRESSION: plugins/Vst3Effect/Vst3Host.cpp grew 800 -> 891 lines
+REGRESSION: new file over 500 lines: src/core/ControlCommandsNotes.cpp (512)
+REGRESSION: new file over 500 lines: src/core/ControlCommandsProject.cpp (510)
+REGRESSION: new file over 500 lines: src/core/ControlCommandsWarpEdit.cpp (510)
+REGRESSION: new file over 500 lines: src/core/ControlReversibilityTablePassive.cpp (518)
+REGRESSION: new file over 500 lines: tests/control-stable-ids-slice2.py (549)
+REGRESSION: new file over 500 lines: tests/src/core/ControlRegistryTest.cpp (505)
+improved: src/core/CrashReporter.cpp is now at or below 500 lines
+FAIL: file-length ratchet regressed (baseline unchanged)
+
+
+==============================================================================
+gates: no-tautology (Gate 3) / duplication (Gate 8)
+==============================================================================
+PASS: every registered test file has test slots and real assertions, no literal tautologies
+
+
+==============================================================================
+gates: duplication (Gate 8)
+==============================================================================
+
+PASS: duplicated lines 0.51% (budget 5%)
+
+

@@ -400,6 +400,12 @@ set(LMMS_SRCS
 	core/ControlDeviceHosted.cpp
 	core/ControlDeviceState.cpp
 	core/ControlDeviceSupport.cpp
+	# The VST3 half of the device catalogue (feature row 78, board task #668):
+	# plugin.list enumerates the VST3 host's own classes and plugin.load loads
+	# one onto a track, the same shape the LADSPA and LV2 halves have
+	# (core/ControlDeviceHosted.cpp). Its own translation unit so neither of
+	# those files grows for a format they do not own.
+	core/ControlDeviceVst3.cpp
 	# The chain PRESET store and the chain.* group (the 0.3.0 ladder's
 	# "plugin-chain presets", OWNER-31 item 2): the store, its read/capture half
 	# and its edit half. A chain preset is NOT a rack chain - see
