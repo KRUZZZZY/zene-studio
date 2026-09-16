@@ -1,19 +1,22 @@
-/*
+/*!
  * dawproject-a16-histogram.cpp - THE SPEC A16 histogram, MEASURED off the tree.
  *
- * tests/src/core/ReversibilityContractTest.cpp asserts a row count and the four
- * class counts against a constant. The lane brief calls that constant a
- * MEASUREMENT, not a sum to compute on a branch: this probe measures it, exactly
- * the way ReversibilityTable's own constructor assembles the table - the four
- * literal blocks (the true_inverse join, the snapshot block, the passive block,
- * the stem block) inserted into a keyed map in the constructor's own order, so a
- * command declared in two blocks counts once, as it does in the product.
+ * This is the instrument behind the ONE figure the release notes publish, and the
+ * number it prints is the number to quote: it measures the table exactly the way
+ * ReversibilityTable's own constructor assembles it - the four literal blocks
+ * (the true_inverse join, the snapshot block, the passive block, the stem block)
+ * inserted into a keyed map in the constructor's own order, so a command declared
+ * in two blocks counts once, as it does in the product.
  *
- * The ctest's constant is the base for a configuration with no telemetry, no
- * wasmtime and no stem engine, and `documentedHistogram()` adds the rows a build
- * option compiles in. So compare like with like: the number this prints is what
- * the TEST would measure in the same configuration, and the constants differ by
- * exactly the #ifdef additions.
+ * It also holds the table to the integrity property that makes the figure worth
+ * quoting (board card #677): the blocks are RAW literal arrays, so a command
+ * declared twice is visible only as declared > entries. `DECLARED rows=...
+ * entries=... duplicates=...` reports it, the duplicate ids are named, and the
+ * probe EXITS 1 when there is one - it refuses to print a figure it cannot stand
+ * behind. `ReversibilityContractTest::theTableHistogramIsTheDocumentedOne()`
+ * asserts the same invariant from the registry side and additionally compares the
+ * measurement with the release notes' published A16-HISTOGRAM block, so the two
+ * cannot drift apart.
  *
  * The class counts are printed as `MEASURED rows=... true_inverse=... snapshot=...
  * irreversible=... not_mutating=...`.
