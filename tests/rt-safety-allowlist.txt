@@ -1,0 +1,26 @@
+# tests/rt-safety-allowlist.txt - the rt-safety sweep's ledger of ACCEPTED hits.
+#
+# Read by tests/rt-safety-sweep.py (ctest RtSafetySweep) and by
+# tests/rt_safety_selftest.py's controls. Format, TAB separated:
+#
+#   <path><TAB><symbol><TAB><rule-id><TAB><count><TAB><reason>
+#
+# * A line without a reason is refused (exit 2), and so is a rule id that is not in
+#   tests/rt_safety_lib.py's RULES.
+# * <count> is a RATCHET: the sweep fails when the tree measures MORE than this
+#   (a new hit, or growth past the line) and when it measures FEWER (the debt was
+#   paid: lower the count or delete the line). It may only fall.
+# * The only way a count rises is --reanchor "reason", which records the reason in
+#   this file's history and refuses a blank one.
+#
+# The reasons below name the CLASS of each accepted hit: inherited upstream code that
+# this line of the product has not replaced yet ('inherited'), a fork path whose hit is
+# bounded by a declared capacity, or a mention that cannot run on the audio thread.
+# Every entry is a debt, not an endorsement: the count is the size of what is left.
+
+# src/core/AudioEngine.cpp:AudioEngine::renderNextPeriod - the audio thread's top-level callback: the audio backend calls it once per period and every stage below runs inside it
+src/core/AudioEngine.cpp	AudioEngine::renderNextPeriod	lock-guard	1	inherited upstream LMMS, unchanged by this fork: the render callback opens with `const auto lock = std::lock_guard{m_changeMutex}` (src/core/AudioEngine.cpp:474). The mutex guards engine-state mutation from the control thread, so removing it is an engine change with its own concurrency proof - it belongs to the fix-up pass, and this line is the debt's address. Count may only fall: when the lock goes, this line goes.
+# src/core/EnvelopeAndLfoParameters.cpp:EnvelopeAndLfoParameters::LfoInstances::trigger - called at the end of STAGE 3: the per-period LFO trigger on the audio thread (EnvelopeAndLfoParameters::instances()->trigger())
+src/core/EnvelopeAndLfoParameters.cpp	EnvelopeAndLfoParameters::LfoInstances::trigger	lock-guard	1	inherited upstream LMMS: the per-period LFO trigger takes `QMutexLocker m(&m_lfoListMutex)` (src/core/EnvelopeAndLfoParameters.cpp:52) and is called from STAGE 3 on the audio thread (AudioEngine::renderStageMix -> EnvelopeAndLfoParameters::instances()->trigger()). Same class as the render lock above: inherited, visible, and the fix-up pass's to remove.
+# src/core/Song.cpp:Song::processNextBuffer - the song's per-period scheduling, called from STAGE 0 on the audio thread (transport edges, MIDI clock, Session View launch scheduling)
+src/core/Song.cpp	Song::processNextBuffer	grow-container	2	inherited upstream LMMS: the Pattern and MidiClip play modes build a local `TrackList trackList` with two push_back calls per period (src/core/Song.cpp:339 and :347), which is a heap allocation on the audio thread. The Song play mode assigns `trackList = tracks()` instead and is not counted by the container-growth rule. Inherited shape, not a fork regression; recorded so the count cannot grow unnoticed.
