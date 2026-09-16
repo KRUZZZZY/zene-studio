@@ -865,11 +865,12 @@ irreversible=13 not_mutating=137`, with `DECLARED rows=340 entries=340 duplicate
 (The 334-row figure this block carried until 2026-09-16 was the same probe on a tree without feature
 row 79: the CLAP instrument path adds exactly ONE row, `plugin.host_notes` -
 `src/core/ControlReversibilityTableClapInstrument.cpp` - and the wave-10 integration train re-measured
-it here rather than carrying the lane's arithmetic. The 335-row figure this block carried until the
-wave-11 train was that tree plus feature row 80, which adds FIVE rows -
-`src/core/ControlReversibilityTableOutOfProcess.cpp`: two `not_mutating` reads and the three
-`irreversible` writers of the `oop.*` group. The lane moved this block to the number its own tree
-measures and the MERGE TIP re-measured it with the command above.)
+it here rather than carrying the lane's arithmetic, which made the figure 335. The 340 rows above are
+those 335 plus feature row 80's FIVE rows - `src/core/ControlReversibilityTableOutOfProcess.cpp`: two
+`not_mutating` reads and the three `irreversible` writers of the `oop.*` group. The lane moved this
+block to the number its own tree measures and the wave-11 merge train RE-MEASURED it at the merged tip
+with the command above: the printed line is `MEASURED rows=340 true_inverse=158 snapshot=32
+irreversible=13 not_mutating=137`, identical to the block's own line, so the re-take changed no digit.)
 
 <!-- A16-HISTOGRAM-BEGIN
      measured: rows=340 true_inverse=158 snapshot=32 irreversible=13 not_mutating=137

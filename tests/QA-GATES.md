@@ -1868,3 +1868,35 @@ one of its assertions fails.
   `plugins/VstBase/VstPlugin.cpp:591-596` and the helpers beside it) are called from GUI
   constructors (`plugins/Vestige/Vestige.cpp:1008-1009`,
   `plugins/VstEffect/VstEffectControls.cpp:398-399`).
+
+## The wave-11 merged tip: four new line(1)s, NAMED and not re-anchored — measured 2026-09-16 on `release/0.3.0` (`ce3fda2be`)
+
+**Why this section exists.** The 0.3.0 fix-up lane disposed the fork scope's open lines with 49
+single-path records (the section above). The wave-11 train then merged five branches whose files had
+grown *after* those records were taken, so the merged tip re-measured before anything was accepted.
+
+```sh
+bash tests/complexity-gate.sh  --check        # EXIT=1 — TWO regression lines (was 57 at the wave-10 tip)
+bash tests/file-length-gate.sh --check        # EXIT=1 — TWO regression lines
+bash tests/run-all-gates.sh --no-mutation     # SUITE_EXIT=1 — gate 1 (ctest) 25 of 213, gates 4 and 7 as above
+```
+
+**The four lines, with the lane each one comes from.** No `--reanchor-file` and no `--reanchor` was
+taken: each of the four is a *shape* decision (split the file/function, or accept the growth) that
+belongs to the fix-up continuation, not to a merge train, and gate 1 is red on 25 inherited tests
+anyway, so no ratchet move could make this suite green.
+
+| gate | line (verbatim from the gate) | comes from |
+|---|---|---|
+| 4 | `REGRESSION: new function over target: check_baseline@162-193@tests/control-pdc-commands.py (CCN 11)` | 030/fixup-engine re-read the master's id off `mixer.get_state` in that driver (the `ch-0` id-prediction fix) |
+| 4 | `REGRESSION: new function over target: OutOfProcessHostClientLoopTest::aRealClientIsHostedKilledNoticedAndRefused@113-230@tests/src/core/OutOfProcessHostClientLoopTest.cpp (CCN 11)` | 030/out-of-process's real-client loop test (splitting it is the same remedy the lane applied to `OutOfProcessHostTest.cpp`) |
+| 7 | `REGRESSION: include/ControlRegistryGroups.h grew 684 -> 696 lines` | 030/out-of-process's five `oop.*` declarations (the file-length *fix-up* record above set 684) |
+| 7 | `REGRESSION: include/ControlReversibility.h grew 528 -> 536 lines` | 030/out-of-process's `reversibilityRowTable` join, same seam |
+
+The same run prints four `improved:` lines that are the ratchet asking for their dead-weight entries to
+be removed deliberately (they are not removals a merge train may make on its own): gate 4 —
+`lmms::clap::HostedPlugin::process@plugins/ClapEffect/ClapHost.cpp` and `lmms::wasm::WasmWorker::run@src/wasm/WasmWorker.cpp`;
+gate 7 — `plugins/ClapEffect/ClapHost.cpp` (1158 → 470, the wave-11 CLAP split) and
+`src/core/CrashReporter.cpp`.
+
+(1) Line = one regression line of the gate, not a line of source.
