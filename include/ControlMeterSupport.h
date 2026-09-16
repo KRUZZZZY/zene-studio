@@ -47,7 +47,13 @@
 namespace lmms
 {
 
-class ControlResult;
+//! The reply to one command, defined as a `struct` in ControlRegistry.h:70.
+//! The class-key here MUST match that definition: msvc-x64 builds with /WX, so
+//! C4099 ("type name first seen using 'class' now seen using 'struct'") is
+//! promoted to C2220 and fails the job. Run 34870198514 reported it at
+//! ControlRegistry.h:70 in the TUs that reach THIS header first
+//! (ControlCommandsMeter.cpp:73/:74, ControlCommandsMeterFile.cpp:63/:66).
+struct ControlResult;
 
 namespace control
 {
