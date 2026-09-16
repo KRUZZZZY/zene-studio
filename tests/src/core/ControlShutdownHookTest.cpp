@@ -81,9 +81,26 @@ private slots:
 		QVERIFY2(id != 0, "the first registered hook was given the 'no hook' id");
 		QCOMPARE(registry->shutdownHookCount(), 1);
 
+		// The instance that comes back must be a NEW object, and the observable
+		// is the destroyed instance's own state - NOT its address. `new` is
+		// allowed to hand back the bytes `delete` has just freed, and on
+		// linux-x86_64 run 35126160372 it did: the pointer comparison this slot
+		// used to make reported "destroy() did not build a new instance for
+		// instance()" on CI while every other fact in that run shows the
+		// recreation happening (the hook count is 1 over a store that outlives
+		// the instance, and the hook is run below by the instance that came
+		// back). A rebuilt registry cannot carry the destroyed one's marker; an
+		// instance() that did NOT destroy-and-rebuild - the failure this case is
+		// here for - cannot lose it.
+		const QString marker = QStringLiteral("registered-on-the-destroyed-instance");
+		registry->setObjectName(marker);
+		QCOMPARE(registry->objectName(), marker);   // the marker is observable at all
+
 		ControlRegistry::destroy();
 		ControlRegistry* recreated = ControlRegistry::instance();
-		QVERIFY2(recreated != registry, "destroy() did not build a new instance for instance()");
+		QVERIFY2(recreated->objectName() != marker,
+			"destroy() did not build a new instance for instance(): the registry it "
+			"handed back still carries the state of the one that was destroyed");
 
 		// The guard's own call, on the re-created instance, with no argument
 		// pointing at the old one: the hook still has to run.
