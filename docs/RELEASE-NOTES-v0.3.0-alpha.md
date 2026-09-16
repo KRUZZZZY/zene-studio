@@ -2012,6 +2012,45 @@ chunk sequence 512, 512, 37; no call larger than the declared block; the full re
 instance prepared for 1061 frames producing identical audio. With the chunk loop removed the same test fails
 on both counts and aborts in the allocator.
 
+## VST3 instrument hosting: a third-party VST3 instrument on an instrument track (feature row 78, board task #668) — added 2026-09-16
+
+A VST3 instrument loads onto an **instrument track**, receives MIDI from a clip (or from live input) through
+the track's existing MIDI path with sample-accurate timing, and renders audio into the track; its state saves
+and reloads with the project. The host half is `plugins/Vst3Effect/Vst3Host.cpp` (shared with the effect
+host): `load()` enumerates the module's `kEvent`/`kInput` buses, activates the first one that is active by
+default and deactivates the others, `prepare()` sizes the VST3 `EventList` and wires
+`ProcessData::inputEvents` — an effect's stays `nullptr` exactly as before — and `process()` drains a bounded,
+lock-free MIDI ring into it in sample order. The instrument itself is the new `plugins/Vst3Instrument` module
+(`IsSingleStreamed | IsMidiBased`); `handleMidiEvent()` translates LMMS' note-on, note-off, key-pressure and
+control-change into VST3 events, and the audio output is the plug-in's own (no wet/dry blend).
+
+Drivable through the socket, which is the half that was missing: **`plugin.list`** carries the VST3 classes of
+every module in the product's VST3 search directory as `format: "vst3"` entries (class name, bundle path,
+class — `loadable: true`) and **`plugin.load`** loads one onto an instrument track. The class enumeration is
+the VST3 host's own (`Vst3SubPluginFeatures::listSubPluginKeys`, the call the instrument browser makes), not a
+second scanner, and the VST3 block sits after the LADSPA and LV2 blocks in the catalogue, so no `dev-<n>` id a
+client already holds is renumbered. No new command ids, so no new A16 row: `plugin.load` keeps the row it
+already had.
+
+**Stated limit: the instrument's own window does not open.** `IPlugView` is not implemented anywhere in this
+tree (the interface is named in exactly one product comment and in the vendored Carla copy of the SDK headers;
+`docs/VST3-INSTRUMENT-HOSTING.md` §7 records the design and why it is deferred), so opening a VST3
+instrument's window shows LMMS' generated parameter grid — the same idiom the VST3 effect host uses — and a
+line saying so. A plug-in that ships no user interface is unaffected. Multi-out, instrument latency in PDC,
+preset browsers and out-of-process hosting remain out of scope, and SysEx, program change, channel pressure
+and pitch bend are not forwarded to the instrument.
+
+Proven by the pinned MIT fixture built from **SDK v3.8.1_build_84** (`tests/data/vst3-test-instrument`, laid
+out as a real `.vst3` bundle) and the registered ctests `Vst3InstrumentFixtureProbe`, `Vst3InstrumentTest`
+(host level: sample-accurate note-off, a block with no events exactly silent, nothing allocated on the process
+thread over MIDI-carrying blocks, a 4096-event flood bounded to the queue's capacity) and
+`Vst3InstrumentIntegrationTest` (product level: a `MidiClip` drives the real module through
+`InstrumentTrack::processOutEvent`, and the state survives the `.mmp`). All three are behind
+`-DWANT_VST3_TEST_INSTRUMENT=ON`, which `tools/local-ci.sh` and the `linux-x86_64` CI job pass. The socket half
+is covered by `ControlDeviceCatalogueTest`: with the fixture in the search directory, `plugin.list
+format=vst3` lists it and `plugin.load` loads it onto an instrument track. **No third-party VST3 instrument
+has been run** — the witness is the in-tree fixture, on a box where none can be installed.
+
 ## A shared WASM worker pool and a deterministic offline render (`wasm.pool`, `wasm.render_offline`, CODE-5, row 73) — added 2026-09-15
 
 The WASM worker owned a `std::thread` and a `sleep_for(200us)` polling loop, so N hosted modules cost N

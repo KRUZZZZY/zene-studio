@@ -151,7 +151,11 @@ that is this page's fault — report it and it gets added.
   VST3 instrument has been tested by us** — the only instrument this release has been proven against is a
   purpose-built test instrument we ship in the source tree
   (`tests/data/vst3-test-instrument/`, an MIT VST3 fixture, proven by the SDK's own validator and by the
-  `Vst3InstrumentFixtureProbe` probe — `docs/VST3-INSTRUMENT-FIXTURE.md` §0, §5). There is no multi-out, no
+  `Vst3InstrumentFixtureProbe` probe — `docs/VST3-INSTRUMENT-FIXTURE.md` §0, §5). Since 2026-09-16 the same
+  hosting is drivable through the socket as well as from the interface: `plugin.list` carries every VST3 class
+  of the product's VST3 search directory as a `format: "vst3"` entry and `plugin.load` loads one onto an
+  instrument track (the class, the bundle and the `(file, class)` key are the same ones the instrument browser
+  uses; `ControlDeviceCatalogueTest` holds the fixture-backed proof). There is no multi-out, no
   preset management, no instrument latency compensation, and no out-of-process hosting. **No instrument hosting
   in CLAP.**
 - **No VCA groups in the interface.** Mix-and-edit groups exist, are tested, and are saved with the project —
