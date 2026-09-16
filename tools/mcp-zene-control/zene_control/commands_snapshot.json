@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-09-16T09:42:20Z",
+  "captured_at": "2026-09-16T14:02:28Z",
   "commands": [
     {
       "args_schema": {
@@ -7560,7 +7560,7 @@
         ],
         "type": "object"
       },
-      "description": "Delete a channel (master ch-0 is refused).",
+      "description": "Delete a channel (the master channel is refused).",
       "group": "mixer",
       "id": "mixer.remove_channel",
       "mutating": true,
@@ -9279,6 +9279,266 @@
     {
       "args_schema": {
         "additionalProperties": false,
+        "properties": {},
+        "required": [],
+        "type": "object"
+      },
+      "description": "Every device chain in the song with each device's out-of-process hosting resolved: the state (in-process / separate-process / client-exited / refused-no-client / refused-crash-loop), the client executable and its live pid, what the device plugin reports itself, whether it can be driven (mode choice, restart), and this session's record for that client (starts, exits, crashes, restarts, last exit code). Also the build's whole family table and every client executable seen. Read-only.",
+      "group": "oop",
+      "id": "oop.get_state",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "bounds": {
+            "type": "object"
+          },
+          "chains": {
+            "type": "array"
+          },
+          "clients": {
+            "type": "array"
+          },
+          "convention": {
+            "type": "object"
+          },
+          "families": {
+            "type": "array"
+          },
+          "family_count": {
+            "type": "integer"
+          },
+          "note": {
+            "type": "string"
+          },
+          "realtime_safe": {
+            "type": "boolean"
+          },
+          "refused_count": {
+            "type": "integer"
+          },
+          "separate_process_count": {
+            "type": "integer"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {},
+        "required": [],
+        "type": "object"
+      },
+      "description": "The build's out-of-process family table: for every plugin family this build classifies, its availability (client-available / always-separate / no-client), the client executable when it has one, and the one-sentence reason when it does not - so a family that cannot be hosted out of process is refused by NAME rather than silently run in the wrong place. Read-only.",
+      "group": "oop",
+      "id": "oop.list_families",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "bounds": {
+            "type": "object"
+          },
+          "clients": {
+            "type": "array"
+          },
+          "convention": {
+            "type": "object"
+          },
+          "families": {
+            "type": "array"
+          },
+          "family_count": {
+            "type": "integer"
+          },
+          "note": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "client": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "description": "Clear this session's crash count for one client executable ('client'), or for every one this session has started (no argument). This is the only thing that lifts a crash-loop refusal; it does not undo a crash, and the exits and the last exit code stay in the record. The count is per client executable, not per plugin instance.",
+      "group": "oop",
+      "id": "oop.reset_crashes",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "after": {
+            "type": "array"
+          },
+          "before": {
+            "type": "array"
+          },
+          "bounds": {
+            "type": "object"
+          },
+          "cleared": {
+            "type": "array"
+          },
+          "cleared_count": {
+            "type": "integer"
+          },
+          "client": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          },
+          "scope": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "plugin": {
+            "type": "string"
+          },
+          "target": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "target",
+          "plugin"
+        ],
+        "type": "object"
+      },
+      "description": "Re-host ONE device: a fresh client process through the plugin's own reload path, which is what a slot that lost its client needs. Reports the state and the pid before and after. Refused when the family ships no client executable, when the plugin implements no reload, and when that client executable is in a crash loop (the count is in the refusal) - a restart never feeds a crash loop.",
+      "group": "oop",
+      "id": "oop.restart",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "client": {
+            "type": "string"
+          },
+          "device": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          },
+          "plugin": {
+            "type": "string"
+          },
+          "process_id_after": {
+            "type": "integer"
+          },
+          "process_id_before": {
+            "type": "integer"
+          },
+          "record": {
+            "type": "object"
+          },
+          "restarted": {
+            "type": "boolean"
+          },
+          "state_after": {
+            "type": "string"
+          },
+          "state_before": {
+            "type": "string"
+          },
+          "target": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "mode": {
+            "type": "string"
+          },
+          "plugin": {
+            "type": "string"
+          },
+          "target": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "target",
+          "plugin",
+          "mode"
+        ],
+        "type": "object"
+      },
+      "description": "Choose the hosting mode of ONE device: 'in-process' (the plugin's own code in this process) or 'separate-process' (a client process, so a crash in it cannot take this one down). 'target' is trk-<n>/ch-<n> and 'plugin' is fx-<n> or 'inst'. Refuses with a typed reason when the family ships no client executable in this build, when the family has no in-process path to fall back to, when the plugin does not implement setHostingMode, or when that client executable is in a crash loop. The choice is stored, so it survives save and reload.",
+      "group": "oop",
+      "id": "oop.set_mode",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "changed": {
+            "type": "boolean"
+          },
+          "device": {
+            "type": "string"
+          },
+          "hosting": {
+            "type": "object"
+          },
+          "mode_after": {
+            "type": "string"
+          },
+          "mode_before": {
+            "type": "string"
+          },
+          "mode_requested": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          },
+          "plugin": {
+            "type": "string"
+          },
+          "target": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
         "properties": {
           "target": {
             "type": "string"
@@ -9515,13 +9775,52 @@
     {
       "args_schema": {
         "additionalProperties": false,
+        "properties": {},
+        "required": [],
+        "type": "object"
+      },
+      "description": "The note path the CLAP host keeps, and what this instance has actually carried: the note input ports (clap.note-ports) and the audio layout of the CLAP plug-in loaded last, plus the note events the MIDI route pushed, the ones the bounded queue (or a missing note port) refused, the ones put into a plug-in's input event list and the note-ONs among them. A plug-in with no note input port refuses every note and counts it here rather than hiding it. Read-only.",
+      "group": "plugin",
+      "id": "plugin.host_notes",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "audio": {
+            "type": "object"
+          },
+          "contract": {
+            "type": "object"
+          },
+          "counters": {
+            "type": "object"
+          },
+          "host": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          },
+          "ports": {
+            "type": "object"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
         "properties": {
           "format": {
             "enum": [
               "builtin",
               "ladspa",
               "lv2",
-              "vst3"
+              "vst3",
+              "clap"
             ],
             "type": "string"
           },
@@ -9541,7 +9840,7 @@
         "required": [],
         "type": "object"
       },
-      "description": "Every device this build can load: built-in effect and instrument modules plus the devices of the shipped hosting formats (LADSPA, LV2 and VST3), each with a dev-<n> id that is deterministic for the binary. dev-<n> is a catalogue index, not a persisted project id, and 'loadable' says whether plugin.load accepts the entry. Format order is built-in, then LADSPA, then LV2, then VST3, so adding a host does not renumber the ids of the formats that were already there.",
+      "description": "Every device this build can load: built-in effect and instrument modules plus the devices of the shipped hosting formats (LADSPA, LV2, VST3 and CLAP), each with a dev-<n> id that is deterministic for the binary. dev-<n> is a catalogue index, not a persisted project id, and 'loadable' says whether plugin.load accepts the entry. Format order is built-in, then LADSPA, then LV2, then VST3, then CLAP, so adding a host does not renumber the ids of the formats that were already there.",
       "group": "plugin",
       "id": "plugin.list",
       "mutating": false,
@@ -13128,7 +13427,7 @@
         "required": [],
         "type": "object"
       },
-      "description": "Every scale this engine knows and the twelve keys, with each scale's degrees (semitone offsets from the root), its pitch classes, its twelve-character membership mask (index 0 = C, so \"101010110101\" is the major scale) and its size. The vocabulary is ChordTable's own - 95 named entries, of which the scales are the ones with more than six degrees; 'include_chords' adds the chord entries too. 'root' (a key index 0..11 or a name such as \"C#\"/\"Db\") shifts every pitch class and every mask; absent, the group's own context root answers. Read-only.",
+      "description": "Every scale this engine knows and the twelve keys, with each scale's degrees (semitone offsets from the root), its pitch classes, its twelve-character membership mask (index 0 = C, so \"101011010101\" is the major scale: C D E F G A B, ChordTable's own scale row) and its size. The vocabulary is the scales are the ones with more than six degrees; 'include_chords' adds the chord entries too. 'root' (a key index 0..11 or a name such as \"C#\"/\"Db\") shifts every pitch class and every mask; absent, the group's own context root answers. Read-only.",
       "group": "scale",
       "id": "scale.list",
       "mutating": false,
@@ -17317,23 +17616,23 @@
       }
     }
   ],
-  "count": 334,
+  "count": 340,
   "instance": {
-    "binary": null,
-    "binary_bytes": null,
-    "binary_sha256": null,
-    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-030/tools/zene-pa-agentctl",
-    "lane_head": null,
+    "binary": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-030/build/zene",
+    "binary_bytes": 263030656,
+    "binary_sha256": "17c2846b1815fc15af9b9a068a3f60b1336c850b4e1e45938f94d4df008ea580",
+    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-030",
+    "lane_head": "ce3fda2be3903ce4e76212993734e15fc3f86712",
     "proto": 1,
-    "source_socket": "/tmp/w9train/snap/zene.sock",
-    "version": "0.2.1-alpha.484+6d8ddde"
+    "source_socket": "/tmp/zctl-run-2drvbfy_/zene.sock",
+    "version": "0.2.1-alpha.545+ce3fda2"
   },
   "kind": "zene-control-command-list",
   "proto": 1,
   "schema": 1,
   "surface": {
-    "group_count": 52,
-    "id_count": 334,
-    "ids_sha256": "7dc75a5ff846671889fdbfc18d35640271771784ad557cbce223997c81f2bab2"
+    "group_count": 53,
+    "id_count": 340,
+    "ids_sha256": "a9c06f9a3f0c79b34144a985a3152b7344b0adf50bb092e2da968f3c662f94db"
   }
 }
