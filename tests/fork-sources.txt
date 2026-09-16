@@ -1092,6 +1092,18 @@ tests/src/core/StableTrackIdsTest.cpp
 tests/src/core/StemExportTest.cpp
 tests/src/core/StemExportTestSupport.h
 tests/src/core/UndoBoundsTest.cpp
+# task #680 (lane 030/coverage-closure, 2026-09-16): the registered REFERENCE
+# for the ids the coverage method found named by no other registered test
+# artefact (16 ids in six groups), and the modulation layer's PROJECT round trip
+# (modulator.* authored, project.save, clear, project.open, identical). Both are
+# fork-NEW test sources, so they belong in this scope list. Added here rather
+# than by re-running the header recipe because the recipe on this branch already
+# emits files this list does not carry (e.g.
+# tests/src/core/ModulationLayerTest.cpp, which is registered in
+# tests/all-sources.txt instead); re-generating is the merge's job, not a lane's,
+# and this gate's own scan (Gate 9) is green with the entries below.
+tests/src/core/ControlSurfaceReferenceTest.cpp
+tests/src/core/ModulationLayerProjectRoundTripTest.cpp
 tests/src/tracks/SampleClipWindowTest.cpp
 tests/stem_commands_lib.py
 tools/local-ci.sh
