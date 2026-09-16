@@ -809,7 +809,7 @@ for a client to drive it: the only route was that CLI, outside the socket, plus 
 
 ## The A16 contract table, and its histogram
 
-**The table holds 334 rows - 158 `true_inverse`, 32 `snapshot`, 10 `irreversible`, 134 `not_mutating` -
+**The table holds 335 rows - 158 `true_inverse`, 32 `snapshot`, 10 `irreversible`, 135 `not_mutating` -
 and this page states that figure ONCE, for the configuration the release ships** (telemetry client in,
 wasmtime sandbox in, session data layer in, offline stem engine out). What each class means, and why
 each row is in it, is `docs/A16-REVERSIBILITY.md` and the rows' own reasons.
@@ -820,11 +820,15 @@ It was MEASURED, class split and all, by
 bash tools/dawproject-proof.sh      # part 2, the A16 histogram probe
 ```
 
-whose own output line is this page's figure verbatim - `MEASURED rows=334 true_inverse=158 snapshot=32
-irreversible=10 not_mutating=134`, with `DECLARED rows=334 entries=334 duplicates=0` on the same run.
+whose own output line is this page's figure verbatim - `MEASURED rows=335 true_inverse=158 snapshot=32
+irreversible=10 not_mutating=135`, with `DECLARED rows=335 entries=335 duplicates=0` on the same run.
+(The 334-row figure this block carried until 2026-09-16 was the same probe on a tree without feature
+row 79: the CLAP instrument path adds exactly ONE row, `plugin.host_notes` -
+`src/core/ControlReversibilityTableClapInstrument.cpp` - and the wave-10 integration train re-measured
+it here rather than carrying the lane's arithmetic.)
 
 <!-- A16-HISTOGRAM-BEGIN
-     measured: rows=334 true_inverse=158 snapshot=32 irreversible=10 not_mutating=134
+     measured: rows=335 true_inverse=158 snapshot=32 irreversible=10 not_mutating=135
      configuration: telemetry.status wasm.load session.get_state
      option telemetry.status rows=2 not_mutating=2
      option wasm.load rows=8 snapshot=3 not_mutating=5

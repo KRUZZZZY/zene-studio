@@ -1071,6 +1071,17 @@ of the product's 136 commits** over upstream master (`git rev-list --count origi
 `4f1acd5e6`), so re-measure rather than quote. Earlier prose in this document cited `0cea9b0b6`, which is 93 commits behind `HEAD`;
 the file is authoritative.
 
+**The 2026-09-16 wave-10 dispositions (integration train).** Two changed paths came in with
+the wave-10 lane merges and neither was a gate that needed widening:
+
+| path | class | disposition |
+|---|---|---|
+| `docs/reports/CLAP-INSTRUMENT-ROW79-EVIDENCE.log` (030/clap-instrument, board card #669) | a run log under `docs/`, which admits `*.md` only — no class this gate allows | **deleted on `CP-1`'s terms**, its sha256 (`73eefc76…b17c`, 6,452 bytes) appended to `tests/evidence-manifest.tsv`; the lane report it backed stays, and the cases it recorded are registered tests. It is invisible to this gate afterwards because `git diff <base>..HEAD` compares the two endpoint TREES: a path added and deleted inside the window is in neither. |
+| `plugins/ClapInstrument/logo.png` (030/clap-instrument, board card #669) | a NEW file under `plugins/`, an upstream directory — not inherited, and not derivable by either scope manifest's recipe (those filter source extensions only, so a `.png` can never be listed without breaking their REPRODUCES check) | **declared** in `tests/upstream-modifications.txt` with its reason (the module's own logo, bytes identical to `plugins/ClapEffect/logo.png`), the same home the brand-placeholder artwork uses. No gate was re-anchored and no accepted-violation row was added. |
+
+Both were measured, then re-measured after the disposition: `bash tests/no-upstream-regression-gate.sh`
+and `bash tests/evidence-gate.sh` are **exit 0** on the merged tip.
+
 ## CI enforcement (`.github/workflows/quality-gates.yml`) — 2026-09-09, trigger policy corrected 2026-09-11
 
 The gates are wired into CI in two tiers. **static-gates** — Gates 3, 4, 6, 7, 8 and 9, no build
@@ -1389,6 +1400,23 @@ REPO-2's gate that refuses evidence file types + oversized files"); `REPO-1` is 
 deletion, `tests/evidence-manifest.tsv` holds the sha256 of every removed file, and this
 gate is what stops the directory refilling in the next lane. Because the evidence is gone,
 **Gate 6 is not widened** and no accepted-violation row was added.
+
+**The gate's second live catch (2026-09-16, wave-10 integration train).** The CLAP
+instrument lane (030/clap-instrument, board card #669) committed
+`docs/reports/CLAP-INSTRUMENT-ROW79-EVIDENCE.log` — a 6,452-byte `cmake --build` +
+`ClapHostTest` transcript — and this gate refused it on the first run after the merges,
+with the two classes it exists for: it is an evidence suffix (class 1) *and* it is the
+gate's own first catch under a class 3/4-era run. It was resolved on the same `CP-1`
+terms: **file deleted, sha256 `73eefc76…b17c` and its 6,452 bytes appended to
+`tests/evidence-manifest.tsv`** (now 1,397 entries), the lane's prose report
+`docs/reports/CLAP-INSTRUMENT-ROW79.md` — which the release notes cite — left in place,
+and no exemption, no re-anchor and no accepted-violation row added. Re-measured after the
+deletion: `bash tests/evidence-gate.sh` → **EXIT=0**, `6635 file(s) scanned, 0 refused
+(cap 1048576 bytes, 4 exemption(s))`. The same merge brought ONE declaration rather than
+a deletion — `plugins/ClapInstrument/logo.png`, a new binary asset under an upstream
+directory, declared in `tests/upstream-modifications.txt` (see the Gate 6 section's
+dispositions table): a class neither this gate nor Gate 6 can drop, because the module
+loads it through `PluginPixmapLoader("logo")`.
 
 ## Gate 12: Real-time safety, whole-tree sweep (`rt-safety-sweep.py`) — WIRED 2026-09-16
 
