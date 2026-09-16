@@ -66,7 +66,19 @@
 namespace lmms
 {
 
-class ControlResult;
+//! The reply to one command, defined as a `struct` in ControlRegistry.h:70.
+//! The class-key here MUST match that definition: msvc-x64 builds with /WX, so
+//! C4099 ("type name first seen using 'class' now seen using 'struct'") is
+//! promoted to C2220 and fails the job. Run 34870198514 failed three TUs on
+//! exactly this disagreement, both ways round:
+//!   * ControlMasteringSupport.cpp.obj and ControlCommandsMastering.cpp.obj saw
+//!     THIS declaration first (header :26 / :69, registry :36 / :70) and were
+//!     reported at ControlRegistry.h:70;
+//!   * ControlCommandsMasteringRun.cpp.obj saw ControlEdit.h:44 - also a
+//!     `struct` - first and was reported at THIS line.
+//! `struct` wherever the name is declared is the only spelling that is legal in
+//! either order ([dcl.type.elab]: the class-key may not disagree with it).
+struct ControlResult;
 
 namespace control
 {
