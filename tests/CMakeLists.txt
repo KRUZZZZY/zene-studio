@@ -2524,8 +2524,37 @@ if(PYTHON3_EXECUTABLE AND CONTROL_SUITE_AVAILABLE)
 			${CMAKE_CURRENT_SOURCE_DIR}/control-stable-ids-slice2.py
 			$<TARGET_FILE:zene>
 	)
+	# Slice 1's own live acceptance evidence, registered by the coverage-closure
+	# lane (task #680). It was the unregistered half of the pair: the slice-2
+	# transcript above has been in this file since it landed, while
+	# tests/control-stable-ids.py - the transcript SPEC-stable-ids.md cites for
+	# the two-instance claims (an id written into the file, a FRESH instance
+	# addressing the track by it, deterministic re-assignment for an id-less
+	# legacy project, and the upgrade reported rather than silent) - ran nowhere
+	# in CI. Registering it changes no assertion in it: the file is unchanged,
+	# it starts its instances through the shared harness, and it fails (never
+	# skips) when a claim does not hold, which is why it carries no
+	# SKIP_RETURN_CODE.
+	add_test(NAME ControlStableIds
+		COMMAND ${PYTHON3_EXECUTABLE}
+			${CMAKE_CURRENT_SOURCE_DIR}/control-stable-ids.py
+			$<TARGET_FILE:zene>
+	)
+	# The A16 raw transcript (task #623), also registered by task #680: apply ->
+	# undo -> read-back for one command of each reversibility class
+	# (track.add true_inverse, project.save snapshot, and the not_mutating
+	# control). docs/CONTROL-UNDO-CONNECTION-DROP.md cites this file as the
+	# evidence for the connection-drop behaviour and no ctest ran it; the C++
+	# A16 tests (ReversibilityContractTest / ReversibilityUndoTest) assert the
+	# contract's shape and the engine inverses, not this socket transcript.
+	add_test(NAME ControlReversibilityTranscript
+		COMMAND ${PYTHON3_EXECUTABLE}
+			${CMAKE_CURRENT_SOURCE_DIR}/control-reversibility-transcript.py
+			$<TARGET_FILE:zene>
+	)
 	set_tests_properties(ControlShutdown ControlReadiness ControlNoAudioDevice
-		ControlNegativeControl ControlStableIdsSlice2 PROPERTIES
+		ControlNegativeControl ControlStableIdsSlice2 ControlStableIds
+		ControlReversibilityTranscript PROPERTIES
 		ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
 		TIMEOUT 420
 		SKIP_RETURN_CODE 77
