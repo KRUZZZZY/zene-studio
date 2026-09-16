@@ -1,0 +1,5 @@
+# A linked build of this lane's BASE commit, copied out of zene-030/build before the merge
+# train could rebuild it underneath the run. 254 MB: never add it to the repository.
+# Recorded in docs/reports/SESSION-API-PROOF-2026-09-15.md, sha256 in zene-a74749d15.sha256.
+*
+!.gitignore
