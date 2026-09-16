@@ -485,6 +485,14 @@ private slots:
 			{QStringLiteral("to"), QStringLiteral("/nonexistent.wav")}});
 		QCOMPARE(noFrom.ok, false);
 		QCOMPARE(noFrom.errorKind, ControlErrorKind::InvalidArgs);
+
+		// ...and the SAME junk arguments with dry_run: true, where nothing is read at all -
+		// the fact that decided the check's order: a preview flag must not change it.
+		const ControlResult noFromDry = run(QStringLiteral("project.relink"), QJsonObject{
+			{QStringLiteral("project"), QStringLiteral("/nonexistent-project.mmp")},
+			{QStringLiteral("from"), QString()}, {QStringLiteral("to"), QStringLiteral("/nonexistent.wav")},
+			{QStringLiteral("dry_run"), true}});
+		QCOMPARE(noFromDry.errorKind, ControlErrorKind::InvalidArgs);
 	}
 };
 

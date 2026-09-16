@@ -179,6 +179,18 @@ LMMS_EXPORT bool controlRelinkProjectAsset(const QString& projectPath, const QSt
 	const QString& to, const QString& expectSha256, bool dryRun, ProjectAssetRelink* out,
 	ControlResult* error);
 
+/*! The relink ADDRESS arguments - `from` and `to`, both non-empty - checked
+ *  before anything reads the project file. The command layer needs the same
+ *  check before it captures the recorded inverse's bytes (SPEC A16), and it
+ *  must see the SAME message: the identical junk arguments answered
+ *  invalid_args with `dry_run` (nothing is read) and not_found without it (the
+ *  missing project was read first) until this was one function.
+ *
+ *  A blank address is a statement about the ARGUMENTS, never about the project,
+ *  so it is invalid_args wherever it is checked. */
+LMMS_EXPORT bool controlRelinkAddressOk(const QString& from, const QString& to,
+	ControlResult* error);
+
 //! The value this product writes for \a path - PathUtil::toShortestRelative
 //! with the same default the engine's own sample loading uses
 //! (SampleBuffer::fromFile: the `factorysample:`/`usersample:` form when one of

@@ -327,6 +327,15 @@ void registerProjectRelink(ControlRegistry& registry)
 		const QString expectSha = args.value(QStringLiteral("expect_sha256")).toString();
 		const bool dryRun = args.value(QStringLiteral("dry_run")).toBool(false);
 
+		// The ADDRESS arguments are checked BEFORE the project file is read. The
+		// read below exists to capture the recorded inverse's bytes, but it must
+		// not decide what a junk 'from'/'to' means: with dry_run nothing is read
+		// and an empty 'from' already answered invalid_args, while without it the
+		// missing project answered not_found first - the same arguments, two
+		// different kinds, because of a preview flag. One check, one answer.
+		ControlResult addressError;
+		if (!controlRelinkAddressOk(from, to, &addressError)) { return addressError; }
+
 		// The recorded inverse is the project file's PREVIOUS BYTES, so they are
 		// captured before the write - and the command refuses rather than run
 		// without an inverse in an instance that has no journal to record one
