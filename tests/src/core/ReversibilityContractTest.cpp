@@ -185,7 +185,14 @@ DocumentedHistogram documentedHistogram()
 	 *  the action half so the block still reads as ONE `true_inverse` block with
 	 *  one row count. Each lane's delta is named beside its rows in
 	 *  src/core/ControlReversibilityTable*.cpp. */
-	DocumentedHistogram out{326, 158, 29, 10, 129};
+	// feature row 79 (board task #669): the CLAP instrument path adds ONE
+	// not_mutating row, plugin.host_notes (src/core/
+	// ControlReversibilityTableClapInstrument.cpp), so the documented figures
+	// move 326 -> 327 rows and 129 -> 130 not_mutating. ARITHMETIC, not a
+	// measurement: this lane could not run this test (it needs a full core
+	// build), so the merge tip must re-measure and correct these two numbers
+	// if anything else moved with it.
+	DocumentedHistogram out{327, 158, 29, 10, 130};
 #ifdef ZENE_TELEMETRY_ENABLED
 	out.rows += 2;          // the two telemetry.* commands' not_mutating rows
 	out.notMutating += 2;
