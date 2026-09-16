@@ -3027,7 +3027,7 @@ endif()
 # WANT_SESSION_VIEW=OFF drops the session.* group and ZENE_TELEMETRY=OFF drops
 # telemetry.* (both `--compiled-out`, because the snapshot was captured from the
 # release configuration, which has them), and WANT_WASM=ON with the wasmtime C API
-# on the find path ADDS the wasm.* group (item #614) - six ids the release snapshot
+# on the find path ADDS the wasm.* group (item #614) - eight ids the release snapshot
 # cannot carry, because the snapshot is one file and a configuration is not, so
 # that one is `--compiled-in`. Every flag is checked in BOTH directions - a prefix
 # declared compiled out that the binary DOES register is a failure, and one
