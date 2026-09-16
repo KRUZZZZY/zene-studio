@@ -155,8 +155,20 @@ fork-authored test sources) and by regenerating `tests/all-sources.txt`, which f
 `src/core/ControlServerSocket.cpp` missing from it entirely — and went red again within two days, at the
 wave-3/4/5 merged tip, where the measurement is **complexity exit 1 with 59 regression lines over 42
 paths, file-length exit 1 with 34 over 34, duplication exit 0 (0.64 %)**, and
-`run-all-gates.sh --whole-tree --no-mutation` exits **1** rather than the expected 3. Every one of those
-93 lines was disposed of individually on the `030/ratchet-decision` lane, never by a scope-wide move.
+`run-all-gates.sh --whole-tree --no-mutation` exits **1** rather than the expected 3.
+
+**The continuation of that lane finished the job rather than restating it.** Re-measured on 2026-09-16
+at `a6e1b62ae`, the same tree held **complexity exit 1 with 49 regression lines over 37 paths and
+file-length exit 1 with 23 over 23** — the disposal list is that measurement, not an earlier report —
+and every open line was then disposed of individually: `tests/control-detect-commands.py`'s
+`run_checks` (CCN 75, the worst fork-authored function in the tree) was **fixed by splitting** and now
+needs no entry in either scope, and the other 60 paths are grandfathered by **60 single-path
+`--reanchor-file` records**, each reason naming the path, its class and the measured growth and quoted
+verbatim in `tests/QA-GATES.md` (never a scope-wide move, never a baseline edited by hand). After them:
+**complexity `--scope all` exit 0, file-length `--scope all` exit 0, duplication `--scope all` exit 0**,
+and `run-all-gates.sh --whole-tree --no-mutation` exits **3** — pass-with-skips, the shape a tag is cut
+from, with gates 1/2/5 skipping for want of a build. The enforced scope's own reds (51 complexity, 10
+file-length lines on the same tree) are untouched by this and remain the fix-up pass's.
 
 **A re-anchor is a recorded act, never a silencer:** one
 `--reanchor-file <path> "<reason>"` per file on the scope's own baseline — the reason naming the
@@ -174,7 +186,19 @@ group fork-NEW and already registered in `tests/fork-sources.txt`, so Gate 9 was
 whole-tree gate measured them. `tests/all-sources-reproduce.sh` is the manifest's own "Verify it" step
 run rather than trusted; Gate 9 runs it on every run and has a `--self-test` control (a dropped path and
 an underivable path are each refused). Registration and derivation are two different questions; the gate
-asks both.
+asks both. The decision lives in `tests/QA-GATES.md` — the file is under `tests/`, and there is no
+`docs/QA-GATES.md` (a merge record from wave 3 names one; the name is wrong).
+
+**The sibling manifest was checked the same way for the first time on 2026-09-16 and did not
+reproduce.** `tests/fork-sources.txt`'s own verify step listed ten entries its recipe could not derive:
+seven fork-NEW `tests/*.py` drivers added after `69123e2f1` were never named in a pathspec, and two
+fork-NEW test sources are dropped by the recipe's awk allowlist. A pathspec naming them (and this
+lane's new `tests/control_detect_fixtures.py`) is added to both blocks of its header, so the recipe and
+the list agree again; no entry changed and no file that was not already registered entered a scope.
+Two facts are recorded rather than resolved: **nothing runs the fork manifest's recipe** (Gate 9 runs
+the all-sources one), and a general pathspec over `tests/*.py` would derive twelve fork-NEW files that
+are in no manifest at all — nine of which report over-target functions or files over 500 lines, so
+registering them is a scope decision for the merge train, not for one lane.
 
 ## Running it
 
