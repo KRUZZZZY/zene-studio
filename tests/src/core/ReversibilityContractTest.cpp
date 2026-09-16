@@ -117,6 +117,30 @@ DocumentedHistogram documentedHistogram()
 	 *  file carries no line-length baseline entry and is 433 lines after this
 	 *  note (limit 500).
 	 *
+	 *  RE-MEASURED AGAIN AT THE WAVE-9 SECOND PASS'S MERGED TIP, 2026-09-16, by
+	 *  the wave-9 integration train's five-lane pass (030/proof-debt,
+	 *  030/ratchet-decision, 030/coverage-closure, 030/vst3-instrument,
+	 *  030/m1-demo): the same probe (`bash tools/dawproject-proof.sh`, part 2) in
+	 *  BOTH configurations, and no digit changed again:
+	 *
+	 *      release configuration (ZENE_TELEMETRY_ENABLED on, LMMS_HAVE_WASM=1,
+	 *      WANT_STEM_SPLIT off):
+	 *          MEASURED rows=334 true_inverse=158 snapshot=32 irreversible=10 not_mutating=134
+	 *      telemetry off (the generated lmmsconfig.h shadowed, everything else
+	 *      identical - the probe run with the header that leaves the kill switch
+	 *      undefined):
+	 *          MEASURED rows=332 true_inverse=158 snapshot=32 irreversible=10 not_mutating=132
+	 *
+	 *  which is this base plus exactly the telemetry guard's two rows, i.e. the
+	 *  constant below is still the merged tip's own number. The five merges add
+	 *  no A16 row (the only schema change is plugin.list's new `vst3` format enum
+	 *  value, on the row that command already had). The build then reaches and
+	 *  PASSES theTableHistogramIsTheDocumentedOne(); the test binary aborts later,
+	 *  in irreversibleUndoFailsTypedAndDoesNotUndoAnOlderStep(), on an INHERITED
+	 *  Lua defect (luabridge::LuaException: No writable member 'apiSurface' -
+	 *  src/core/ScriptDawBindings.cpp:307) that no lane of this pass touched and
+	 *  which is not this histogram's business; the train's report carries it.
+	 *
 	 *  WHAT MOVED IT SINCE THE WAVE-4 TIP (314 / 156 / 27 / 10 / 121 in the same
 	 *  base): the eight branches the wave-5 train merged. Their rows are named
 	 *  beside their own entries in src/core/ControlReversibilityTable*.cpp - the
