@@ -1,8 +1,0 @@
-# The configure-only tree the ctest registration was measured in (81 MB, no objects).
-# It exists so a re-check is one command:
-#   export LD_LIBRARY_PATH=../third_party/wasmtime/lib
-#   ln -sf "$PWD/../.proof-bin/zene-a74749d15" zene
-#   ctest --test-dir tests -R '^ControlSession'
-# Never a source tree: nothing here belongs in the repository.
-*
-!.gitignore

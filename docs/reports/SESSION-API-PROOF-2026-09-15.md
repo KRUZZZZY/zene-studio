@@ -16,7 +16,7 @@ behaviour is a line in the committed socket transcript.
 | Binary under test | `.proof-bin/zene-a74749d15` (a copy of the wave-4 train's linked build at `zene-030/build/zene`) |
 | Binary sha256 | `2eac83506be5bc6c6a691174caa19ec284ed5905d4a5af239279a0b42364c946` |
 | Build switch | `WANT_SESSION_VIEW=ON`, `LMMS_HAVE_SESSION_VIEW` defined (`zene-030/build/lmmsconfig.h:42`) |
-| Committed transcript | `docs/reports/SESSION-API-PROOF-transcript-2026-09-15.txt` (135 158 bytes) |
+| Committed transcript | `docs/reports/SESSION-API-PROOF-TRANSCRIPT-2026-09-15.md` (135 158 bytes; renamed from `…-transcript-2026-09-15.txt` at the wave-9 merge, 2026-09-16 — Gate 6's docs class admits `*.md` only, and `docs/reports/README.md` names a lane transcript `<LANE>-TRANSCRIPT.md`) |
 | Registered ctest | `ControlSessionApiProof` — `tests/control-session-api-proof.py`; measured as **Test #144 of 183** after a configure, and **Passed** when ctest was run (3/3 for the `^ControlSession` set) |
 
 ## The measuring command
@@ -26,7 +26,7 @@ cd zene-030/wsesp/tests
 export LD_LIBRARY_PATH=$PWD/../../third_party/wasmtime/lib
 export PYTHONPATH=$PWD
 QT_QPA_PLATFORM=offscreen python3 control-session-api-proof.py ../.proof-bin/zene-a74749d15 \
-    --out ../docs/reports/SESSION-API-PROOF-transcript-2026-09-15.txt > /tmp/proof.log 2>&1; echo EXIT=$?
+    --out ../docs/reports/SESSION-API-PROOF-TRANSCRIPT-2026-09-15.md > /tmp/proof.log 2>&1; echo EXIT=$?
 # EXIT=0     (PASS: session.* per-id proof table (every one of the eleven ids measured))
 ```
 

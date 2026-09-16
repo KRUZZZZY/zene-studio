@@ -2054,7 +2054,7 @@ file grows as those land; it is not a summary of 0.3.0 and must not be read as o
   carries the same sentence with its bounds (no clip launcher, no scene launcher and no clip grid, and a
   launched slot renders no audio because `src/core/SessionClip.cpp` is serialisation only).
 - **Each of the eleven was driven over `--control-socket` and measured, not read.** The transcript is
-  `docs/reports/SESSION-API-PROOF-transcript-2026-09-15.txt` and the registered ctest is
+  `docs/reports/SESSION-API-PROOF-TRANSCRIPT-2026-09-15.md` and the registered ctest is
   `ControlSessionApiProof` (`tests/control-session-api-proof.py`), which builds a grid, launches a clip and a
   whole scene, stops one slot and then all of them, clears a cell and then the grid, and reads each effect
   back - including the SPEC A16 class read out of the running registry (`control.transactions`), so the

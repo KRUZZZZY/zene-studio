@@ -30,3 +30,15 @@ compile_commands.json
 # the committed evidence on 2026-09-13, REPO-1/CP-1: the harness directory it covered is
 # gone, and an ignore rule for a path that no longer exists only hides a future reuse of
 # the name. tests/evidence-manifest.tsv records what was removed and its hashes.)
+
+# The 030/session-api-proof lane's proof scratch directories (2026-09-15): .proof-bin
+# holds the copy of the wave-4 train's linked binary its transcript was measured
+# against, .proof-ctest the configure-only tree the ctest registration was read out
+# of. Both are working material rather than product content, and only their
+# .gitignore files were committed — which Gate 6 has no class for (its build/config
+# rule admits the ROOT .gitignore, and its docs rule admits *.md). Untracked at the
+# wave-9 merge for the same reason as the /.merge-logs-*/ block above: the files stay
+# on disk, the directories are recorded in docs/reports/SESSION-API-PROOF-2026-09-15.md,
+# and neither is a candidate for any scope manifest (those admit source extensions).
+/.proof-bin/
+/.proof-ctest/
