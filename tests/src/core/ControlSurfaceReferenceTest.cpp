@@ -15,7 +15,17 @@
  *   midi        clients_list, reconnect_arm (controller auto-reconnection)
  *   plugin      host_chunking              (chunked host processing)
  *   project     diff, merge, conflicts, audible_diff (the mmpz-git merge set)
+ *   safestart   get_state, set_skip, acknowledge, clear
+ *                                          (safe-start mode after a crash,
+ *                                           task #666 - its two engine tests
+ *                                           are registered, its four ids were
+ *                                           named nowhere)
  *   session     follow_set, follow_get_state, arrangement_record_status
+ *
+ * plus, in a build where the wasmtime C API is found, the two `wasm.*` ids the
+ * sandbox grew after its transcript was written (`wasm.pool`,
+ * `wasm.render_offline`); they are added under `#ifdef LMMS_HAVE_WASM` because
+ * the group does not exist without it.
  *
  * What this file claims - and what it does NOT. It is a REACHABILITY AND
  * CONTRACT reference, deliberately: each id is asserted to be registered with
@@ -81,11 +91,13 @@ void evidence( const char* label, const QString& detail )
 /*! The ids the 2026-09-16 closure pass measured as referenced by no registered
  *  test artefact. Grouped by the group that owns them, so a reader can see
  *  which feature each one belongs to; the groups are the six named in the file
- *  header. Sorted WITHIN the groups in the order the registry declares them.
+ *  header plus the `safestart` group (safe-start mode after a crash, task #666,
+ *  which landed with its two engine tests registered and its four ids named
+ *  nowhere). Sorted WITHIN the groups in the order the registry declares them.
  */
 QStringList unreferencedIds()
 {
-	return {
+	QStringList ids = {
 		QStringLiteral( "controller.surface_state" ),
 		QStringLiteral( "controller.template_save" ),
 		QStringLiteral( "controller.template_list" ),
@@ -99,10 +111,22 @@ QStringList unreferencedIds()
 		QStringLiteral( "project.merge" ),
 		QStringLiteral( "project.conflicts" ),
 		QStringLiteral( "project.audible_diff" ),
+		QStringLiteral( "safestart.get_state" ),
+		QStringLiteral( "safestart.set_skip" ),
+		QStringLiteral( "safestart.acknowledge" ),
+		QStringLiteral( "safestart.clear" ),
 		QStringLiteral( "session.follow_set" ),
 		QStringLiteral( "session.follow_get_state" ),
 		QStringLiteral( "session.arrangement_record_status" ),
 	};
+#ifdef LMMS_HAVE_WASM
+	// The two ids the WASM sandbox grew after its transcript was written. The
+	// group is compiled in only when the wasmtime C API is found, and this
+	// build's own configuration decides whether they exist at all - which is
+	// why they are guarded rather than asserted unconditionally.
+	ids << QStringLiteral( "wasm.pool" ) << QStringLiteral( "wasm.render_offline" );
+#endif
+	return ids;
 }
 
 } // namespace
@@ -171,22 +195,35 @@ private slots:
 			.arg( checked ) );
 	}
 
-	//! ...and each one ANSWERS: a typed reply through the registry - the
-	//! command's own result, or a typed refusal. Never an unknown command, never
-	//! a hang and never a crash. This is the reachability half of the
-	//! reference; a typed refusal is an acceptable outcome here.
-	void everyUnreferencedIdAnswersWithATypedReply()
+	//! ...and each one that the A16 table says does NOT mutate ANSWERS: a typed
+	//! reply through the registry - the command's own result, or a typed
+	//! refusal. Never an unknown command, never a hang and never a crash.
+	//!
+	//! A MUTATING id is deliberately not invoked here. This is a contract test,
+	//! not a driver: invoking one with empty arguments would write the running
+	//! user's own state (a controller template, a safe-start marker), and the
+	//! behavioural proofs that are allowed to do that are named per group in
+	//! docs/reports/COVERAGE-CLOSURE-2026-09-16.md.
+	void everyNonMutatingUnreferencedIdAnswersWithATypedReply()
 	{
 		ControlRegistry* registry = ControlRegistry::instance();
 		int answered = 0;
+		QStringList notInvoked;
 		for ( const QString& id : unreferencedIds() )
 		{
+			const ControlCommand* cmd = registry->command( id );
+			QVERIFY2( cmd != nullptr, qPrintable( id ) );
+			if ( cmd->mutating )
+			{
+				notInvoked << id;
+				continue;
+			}
 			const ControlResult reply = registry->invoke( id, QJsonObject() );
 			QVERIFY2( reply.ok || !reply.errorMessage.isEmpty(),
 				qPrintable( id + QStringLiteral( ": neither a result nor a typed error - the "
 					"reply cannot be read as either" ) ) );
-			QVERIFY2( reply.errorKind != ControlErrorKind::None || reply.ok,
-				qPrintable( id + QStringLiteral( ": an error kind with nothing said" ) ) );
+			QVERIFY2( reply.ok || reply.errorKind != ControlErrorKind::None,
+				qPrintable( id + QStringLiteral( ": a refusal with no error kind" ) ) );
 			if ( !reply.ok )
 			{
 				evidence( "typed-refusal", QStringLiteral( "%1: %2")
@@ -194,8 +231,10 @@ private slots:
 			}
 			++answered;
 		}
-		QCOMPARE( answered, unreferencedIds().size() );
-		evidence( "reachability", QStringLiteral( "%1 ids answered a typed reply" ).arg( answered ) );
+		QVERIFY( answered > 0 );
+		evidence( "reachability", QStringLiteral( "%1 ids answered a typed reply; %2 mutating ids "
+			"checked for the contract and not invoked (%3)")
+			.arg( answered ).arg( notInvoked.size() ).arg( notInvoked.join( QStringLiteral( ", " ) ) ) );
 	}
 };
 
