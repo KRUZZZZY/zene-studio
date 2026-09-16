@@ -2749,10 +2749,17 @@ precision inside the block.
   a client can check WHICH cell is armed and not only how many.
 - **Milestone M1, and its proof.** A saved project launches **4 clips across 2 scenes in sync at the
   next bar**, driven end to end through `--control-socket` rather than through a grid: the committed
-  transcript is `tests/control-session-m1-transcript.txt` (the binary's sha256, the socket path, every
-  request and reply) and the registered ctest is `ControlSessionLaunch`
+  transcript is `tests/control-session-m1-transcript.txt` (the source commit, the binary's sha256, the
+  socket path, every request and reply) and the registered ctest is `ControlSessionLaunch`
   (`tests/control-session-m1.py`, registered in tests/CMakeLists.txt under `LMMS_HAVE_SESSION_VIEW`).
   The grid UI itself (#598) is **out of 0.3.0** and is not claimed.
+- **UI absence — one line: the clip-launch grid is drivable through the socket, not from the
+  interface.** The grid, its scenes and its slots are the `session.*` group's objects
+  (`session.set_grid` / `session.set_scene` / `session.set_slot` / `session.launch_scene` /
+  `session.get_state`); `src/gui/` contains no `session.*` id and no Session View class — the grep for
+  any `session.*` id under `src/gui/` returns **zero** matches, as does the same grep for
+  `SessionView|SessionModel|SessionClip|SessionScheduler|SessionFollow`. The grid UI (#598) is out of
+  0.3.0, and `docs/KNOWN-LIMITATIONS.md` carries the sentence and the bounds.
 - **The Follow Action / Arrangement Record engine is proven by `SessionFollowTest`**
   (`tests/src/core/SessionFollowTest.cpp`, registered under `LMMS_HAVE_SESSION_VIEW`): all ten action
   types as pure decisions, chance weighting at its boundaries, the packed-fire round trip, the ring
