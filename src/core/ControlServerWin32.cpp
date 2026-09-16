@@ -280,18 +280,32 @@ void ControlServer::win32AcceptLoop()
 		// spelling of "local only" (SPEC A12 / AGENT-TOOLING.md #9.1): the pipe
 		// refuses a client that reaches it over \\<host>\pipe\... , which is the
 		// one way a named pipe could ever be reached from off the machine.
+		//
+		// It goes in the PIPE mode, not the open mode: CreateNamedPipe "fails
+		// if dwOpenMode specifies anything other than 0 or the flags listed",
+		// and the remote-client modes are listed under dwPipeMode (0x8 sits in
+		// the pipe-mode bit space: NOWAIT 0x1, READMODE_MESSAGE 0x2,
+		// TYPE_MESSAGE 0x4).  OR'ed into dwOpenMode it returned
+		// ERROR_INVALID_PARAMETER (87) in the first msvc-x64 run that reached
+		// this line (35126160372).  Qt's QLocalServer and Rust's std pass it
+		// here too.
 		const HANDLE pipe = CreateNamedPipeW(name.c_str(),
-			PIPE_ACCESS_DUPLEX | FILE_FLAG_OVERLAPPED | PIPE_REJECT_REMOTE_CLIENTS,
-			PIPE_TYPE_BYTE | PIPE_READMODE_BYTE | PIPE_WAIT,
+			PIPE_ACCESS_DUPLEX | FILE_FLAG_OVERLAPPED,
+			PIPE_TYPE_BYTE | PIPE_READMODE_BYTE | PIPE_WAIT | PIPE_REJECT_REMOTE_CLIENTS,
 			PIPE_UNLIMITED_INSTANCES,
 			kPipeBufferBytes, kPipeBufferBytes, 0, nullptr);
 		if (pipe == INVALID_HANDLE_VALUE)
 		{
+			// Read the code FIRST: the argument conversions below are Qt's, and
+			// the order arguments are evaluated in is the compiler's - MSVC and
+			// GCC pick opposite ends, so GetLastError() inside the call reports
+			// whatever the last conversion did on one of them.
+			const DWORD error = GetLastError();
 			// The listener is down (the name belongs to a pipe this process
 			// cannot use, or the process is out of handles).  Say so once and
 			// stop; connections already established keep their own instance.
 			qWarning("control socket: cannot create a named-pipe instance for %s (%s)",
-				qPrintable(m_pipeName), qPrintable(win32ErrorText(GetLastError())));
+				qPrintable(m_pipeName), qPrintable(win32ErrorText(error)));
 			break;
 		}
 
