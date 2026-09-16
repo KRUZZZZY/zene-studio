@@ -11,11 +11,19 @@
  *
  * It holds the true_inverse rows whose inverse is a LIVE checkpoint - a plain
  * object checkpoint, a COMPOSITE one (several objects restored as ONE step), or
- * a parameter/model checkpoint - and the not_mutating read-only inspector rows
- * that have lived in this file since before the split (24 of those 25 rows are
- * also stated in ControlReversibilityTablePassive.cpp; they are carried here
- * rather than dropped so that reversibilityRowTable()'s row count, and the
- * table's, do not move). The true_inverse rows whose inverse is a RECORDED
+ * a parameter/model checkpoint - and three not_mutating read-only inspector rows
+ * that have lived here since before the split (`control.id_contract`,
+ * `midi.retro_capture_status`, `transport.tempo_map_get`). The other
+ * twenty-four not_mutating rows that used to be carried here were RETIRED
+ * 2026-09-16 (board card #677): each was a second declaration of a command
+ * ControlReversibilityTablePassive.cpp already declares, the keyed map kept the
+ * passive one (the constructor inserts the joined block, then snapshot, then
+ * passive, then stems - a repeated id OVERWRITES), and the duplicate count was a
+ * hand-kept note rather than a measured invariant. It is now held by
+ * `ReversibilityContractTest::theTableHistogramIsTheDocumentedOne()` (declared
+ * rows == keyed entries, so a duplicate fails by name) and by
+ * `tools/dawproject-proof.sh` part 2 (`DUPLICATES n`, non-zero exit when n is
+ * not 0). The true_inverse rows whose inverse is a RECORDED
  * ACTION - a created or deleted object, a scalar outside the project, a
  * captured XML block the transaction replays - are in
  * ControlReversibilityTableAction.cpp, the snapshot rows in

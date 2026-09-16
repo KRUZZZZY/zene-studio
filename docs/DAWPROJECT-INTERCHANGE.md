@@ -312,10 +312,15 @@ MEASURED rows=287 true_inverse=152 snapshot=21 irreversible=6 not_mutating=108
 ```
 
 which is the tested base `285 / 152 / 21 / 6 / 106` plus the two `telemetry.*` rows this
-configuration compiles in — the constant the test asserts
-(`tests/src/core/ReversibilityContractTest.cpp`). This build's 4 rows contribute 3
-`not_mutating` + 1 `true_inverse`. **The merge tip must re-measure it** (the constant is a
-measurement of the whole table, and other lanes' groups move it).
+configuration compiles in — the figure this page's lane measured, kept as that lane's record.
+
+**That lane's figure is history, not this release's number** (2026-09-16, board card #677): the table's
+size is published ONCE, in the `A16-HISTOGRAM` block of `docs/RELEASE-NOTES-v0.3.0-alpha.md`, and
+`tests/src/core/ReversibilityContractTest.cpp::theTableHistogramIsTheDocumentedOne()` now re-derives the
+histogram from the live table on every run and READS that published figure, failing when the two differ
+— there is no constant in the test to re-measure by hand any more, and the option deltas of a
+configuration are measurements declared in the same published block. This build's 4 rows contribute 3
+`not_mutating` + 1 `true_inverse`.
 
 ---
 

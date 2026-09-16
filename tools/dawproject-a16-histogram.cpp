@@ -1,19 +1,22 @@
-/*
+/*!
  * dawproject-a16-histogram.cpp - THE SPEC A16 histogram, MEASURED off the tree.
  *
- * tests/src/core/ReversibilityContractTest.cpp asserts a row count and the four
- * class counts against a constant. The lane brief calls that constant a
- * MEASUREMENT, not a sum to compute on a branch: this probe measures it, exactly
- * the way ReversibilityTable's own constructor assembles the table - the four
- * literal blocks (the true_inverse join, the snapshot block, the passive block,
- * the stem block) inserted into a keyed map in the constructor's own order, so a
- * command declared in two blocks counts once, as it does in the product.
+ * This is the instrument behind the ONE figure the release notes publish, and the
+ * number it prints is the number to quote: it measures the table exactly the way
+ * ReversibilityTable's own constructor assembles it - the four literal blocks
+ * (the true_inverse join, the snapshot block, the passive block, the stem block)
+ * inserted into a keyed map in the constructor's own order, so a command declared
+ * in two blocks counts once, as it does in the product.
  *
- * The ctest's constant is the base for a configuration with no telemetry, no
- * wasmtime and no stem engine, and `documentedHistogram()` adds the rows a build
- * option compiles in. So compare like with like: the number this prints is what
- * the TEST would measure in the same configuration, and the constants differ by
- * exactly the #ifdef additions.
+ * It also holds the table to the integrity property that makes the figure worth
+ * quoting (board card #677): the blocks are RAW literal arrays, so a command
+ * declared twice is visible only as declared > entries. `DECLARED rows=...
+ * entries=... duplicates=...` reports it, the duplicate ids are named, and the
+ * probe EXITS 1 when there is one - it refuses to print a figure it cannot stand
+ * behind. `ReversibilityContractTest::theTableHistogramIsTheDocumentedOne()`
+ * asserts the same invariant from the registry side and additionally compares the
+ * measurement with the release notes' published A16-HISTOGRAM block, so the two
+ * cannot drift apart.
  *
  * The class counts are printed as `MEASURED rows=... true_inverse=... snapshot=...
  * irreversible=... not_mutating=...`.
@@ -47,6 +50,8 @@
 #include <QCoreApplication>
 #include <QHash>
 #include <QString>
+#include <QStringList>
+#include <QVector>
 
 #include <functional>
 
@@ -111,6 +116,32 @@ void printBlock(const char* name, const ReversibilityRow* rows, int rowCount)
 		name, rowCount, trueInverse, snapshot, irreversible, notMutating);
 }
 
+//! The commands declared MORE THAN ONCE across the blocks, sorted. Each block is
+//! a raw literal array, so the same command in two of them is two declarations
+//! and - because the constructor inserts into one keyed map - ONE entry: the
+//! difference is the duplicate count, and until 2026-09-16 it was a hand-kept
+//! note (24 rows in the live block, retired by board card #677) rather than a
+//! measured invariant. Named here so the count can be a refusal and not a
+//! number a reader has to remember.
+QStringList declaredTwice(const QVector<QPair<const ReversibilityRow*, int>>& blocks)
+{
+	QHash<QString, int> declarations;
+	for (const QPair<const ReversibilityRow*, int>& block : blocks)
+	{
+		for (int index = 0; index < block.second; index++)
+		{
+			++declarations[QString::fromUtf8(block.first[index].command)];
+		}
+	}
+	QStringList duplicates;
+	for (auto it = declarations.constBegin(); it != declarations.constEnd(); ++it)
+	{
+		if (it.value() > 1) { duplicates.append(it.key()); }
+	}
+	duplicates.sort();
+	return duplicates;
+}
+
 } // namespace
 
 int main(int argc, char** argv)
@@ -162,6 +193,24 @@ int main(int argc, char** argv)
 	std::printf("MEASURED rows=%d true_inverse=%d snapshot=%d irreversible=%d not_mutating=%d\n",
 		static_cast<int>(entries.size()), trueInverse, snapshot, irreversible, notMutating);
 
+	// The table's integrity derivation, and the reason this probe is worth
+	// running before quoting the line above: the four blocks are RAW literal
+	// arrays, the constructor inserts them into ONE keyed map, and a command
+	// declared in two blocks is one entry - so a duplicate is invisible in every
+	// figure above and visible only as declared > entries. It is a refusal
+	// (exit 1) rather than a footnote, because the count of these was a hand-kept
+	// note for three waves ("24 pre-existing cross-file duplicates").
+	const QVector<QPair<const ReversibilityRow*, int>> blocks = {
+		{rows, joined}, {snapshotRows, snapshots}, {passiveRows, passive}, {stemRows, stems}};
+	const QStringList duplicates = declaredTwice(blocks);
+	const int declared = joined + snapshots + passive + stems;
+	std::printf("DECLARED rows=%d entries=%d duplicates=%d\n", declared,
+		static_cast<int>(entries.size()), static_cast<int>(duplicates.size()));
+	for (const QString& duplicate : duplicates)
+	{
+		std::printf("  DECLARED TWICE: %s\n", qPrintable(duplicate));
+	}
+
 	for (int index = 0; index < joined; index++)
 	{
 		const QString command = QString::fromUtf8(rows[index].command);
@@ -171,5 +220,7 @@ int main(int argc, char** argv)
 				static_cast<int>(rows[index].cls), rows[index].reversible ? 1 : 0);
 		}
 	}
-	return entries.isEmpty() ? 1 : 0;
+	// 1 = the probe could not measure a table (nothing declared), or the table
+	// declares a command twice: either way the figures above must not be quoted.
+	return (entries.isEmpty() || !duplicates.isEmpty()) ? 1 : 0;
 }

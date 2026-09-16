@@ -40,6 +40,7 @@
 #include <QJsonObject>
 #include <QTemporaryDir>
 #include <QVector>
+#include <QFile>
 
 #include "ControlRegistry.h"
 #include "ControlReversibility.h"
@@ -47,168 +48,223 @@
 #include "ProjectJournal.h"
 #include "ReversibilityTestSupport.h"
 
+
+//! Where the published A16 histogram lives (tests/CMakeLists.txt passes the path;
+//! the fallback makes a build that forgets it fail by name, not check nothing).
+#ifndef A16_HISTOGRAM_DOC
+#define A16_HISTOGRAM_DOC "/nonexistent/A16_HISTOGRAM_DOC-not-passed-by-the-build"
+#endif
+
 using namespace lmms;
 using namespace revtest;
 
 namespace
 {
 
-//! The documented A16 histogram for THIS configuration.
-/*!
- * The invariant part of the table plus the groups a build option moves. Written
- * as a sum rather than as a full set per configuration: four exist (telemetry
- * on/off x sandbox on/off), and a full set per configuration is how one of them
- * gets left stale.
- *
- * The release notes quote the RELEASE configuration's figures - 227 rows /
- * 120 / 18 / 7 / 82 with the telemetry client compiled in and no wasmtime,
- * 225 / 120 / 18 / 7 / 80 with the client out - which these reduce to. The six
- * `wasm.*` rows (item #614: three snapshot, three not_mutating) are present
- * exactly when the wasmtime C API is: without it WANT_WASM degrades to OFF, the
- * group's sources are not compiled, ControlRegistry.cpp's #ifdef removes its
- * registration and the rows leave the table with the ids - which is the
- * direction the other tests in this file assert (every row names a registered
- * command). The seven `stem.*` rows below follow the same rule in the same
- * direction: the offline stem engine is compiled only when WANT_STEM_SPLIT is
- * ON - OFF in the release configuration - so its rows are present exactly when
- * its ids are, and the figures above are the release configuration's own.
- *
- * Split out of the test slot so the slot's own complexity does not carry the four
- * option combinations (the complexity ratchet counts them).
- */
-struct DocumentedHistogram
+//! The five numbers of the A16 histogram, in the table's four classes.
+struct A16Figure
 {
-	int rows;
-	int trueInverse;
-	int snapshot;
-	int irreversible;
-	int notMutating;
+	int rows = 0;
+	int trueInverse = 0;
+	int snapshot = 0;
+	int irreversible = 0;
+	int notMutating = 0;
+
+	QString toString() const
+	{
+		return QStringLiteral("%1 rows = %2 true_inverse + %3 snapshot + %4 irreversible + %5 not_mutating")
+			.arg(rows).arg(trueInverse).arg(snapshot).arg(irreversible).arg(notMutating);
+	}
+
+	//! Adds \a value under \a name; false when the name is not one of the five.
+	bool add(const QString& name, int value)
+	{
+		if (name == QLatin1String("rows")) { rows += value; }
+		else if (name == QLatin1String("true_inverse")) { trueInverse += value; }
+		else if (name == QLatin1String("snapshot")) { snapshot += value; }
+		else if (name == QLatin1String("irreversible")) { irreversible += value; }
+		else if (name == QLatin1String("not_mutating")) { notMutating += value; }
+		else { return false; }
+		return true;
+	}
 };
 
-DocumentedHistogram documentedHistogram()
+//! A build option that moves rows: \a witness is a command it compiles in, \a rows what it adds.
+struct A16Option
 {
-	/*! telemetry-off, wasm-off base; the guards add the rest.
-	 *
-	 *  RE-MEASURED ON THE MERGED TIP, 2026-09-15, by the WAVE-5 integration
-	 *  train - the constant is a MEASUREMENT and this is the tree's own number,
-	 *  not a sum of anybody's lane report. Measured with
-	 *  `bash tools/dawproject-proof.sh` (its part 2, the A16 histogram probe, on
-	 *  its own: the probe tools/dawproject-a16-histogram.cpp compiled against
-	 *  this tree's src/core/ControlReversibilityTable*.cpp with this build's own
-	 *  flags, the tables assembled the way ReversibilityTable's constructor
-	 *  assembles them). It printed, for this configuration (ZENE_TELEMETRY_ENABLED
-	 *  on, -DLMMS_HAVE_WASM=1, WANT_STEM_SPLIT off):
-	 *
-	 *      MEASURED rows=334 true_inverse=158 snapshot=32 irreversible=10 not_mutating=134
-	 *
-	 *  The base below is that measurement with the guards' own additions removed
-	 *  (-2 rows / -2 not_mutating for telemetry, -6 rows / -3 snapshot /
-	 *  -3 not_mutating for wasm; stem is off, so its seven rows are absent from
-	 *  both sides), i.e. 326 / 158 / 29 / 10 / 129 - and the four class columns
-	 *  sum to 326 exactly.
-	 *
-	 *  RE-MEASURED AGAIN AT THE WAVE-9 MERGED TIP, 2026-09-16, by the wave-9
-	 *  integration train: `bash tools/dawproject-proof.sh` printed, verbatim,
-	 *  MEASURED rows=334 true_inverse=158 snapshot=32 irreversible=10
-	 *  not_mutating=134 - identical to the constant below, which is why this
-	 *  re-measure changes no digit. The two merges it followed
-	 *  (030/session-api-proof, 030/rel2-release-job) carry no C++ between them,
-	 *  so the table could not move; the number is measured, not assumed. The
-	 *  file carries no line-length baseline entry and is 433 lines after this
-	 *  note (limit 500).
-	 *
-	 *  RE-MEASURED AGAIN AT THE WAVE-9 SECOND PASS'S MERGED TIP, 2026-09-16, by
-	 *  the wave-9 integration train's five-lane pass (030/proof-debt,
-	 *  030/ratchet-decision, 030/coverage-closure, 030/vst3-instrument,
-	 *  030/m1-demo): the same probe (`bash tools/dawproject-proof.sh`, part 2) in
-	 *  BOTH configurations, and no digit changed again:
-	 *
-	 *      release configuration (ZENE_TELEMETRY_ENABLED on, LMMS_HAVE_WASM=1,
-	 *      WANT_STEM_SPLIT off):
-	 *          MEASURED rows=334 true_inverse=158 snapshot=32 irreversible=10 not_mutating=134
-	 *      telemetry off (the generated lmmsconfig.h shadowed, everything else
-	 *      identical - the probe run with the header that leaves the kill switch
-	 *      undefined):
-	 *          MEASURED rows=332 true_inverse=158 snapshot=32 irreversible=10 not_mutating=132
-	 *
-	 *  which is this base plus exactly the telemetry guard's two rows, i.e. the
-	 *  constant below is still the merged tip's own number. The five merges add
-	 *  no A16 row (the only schema change is plugin.list's new `vst3` format enum
-	 *  value, on the row that command already had). The build then reaches and
-	 *  PASSES theTableHistogramIsTheDocumentedOne(); the test binary aborts later,
-	 *  in irreversibleUndoFailsTypedAndDoesNotUndoAnOlderStep(), on an INHERITED
-	 *  Lua defect (luabridge::LuaException: No writable member 'apiSurface' -
-	 *  src/core/ScriptDawBindings.cpp:307) that no lane of this pass touched and
-	 *  which is not this histogram's business; the train's report carries it.
-	 *
-	 *  WHAT MOVED IT SINCE THE WAVE-4 TIP (314 / 156 / 27 / 10 / 121 in the same
-	 *  base): the eight branches the wave-5 train merged. Their rows are named
-	 *  beside their own entries in src/core/ControlReversibilityTable*.cpp - the
-	 *  session rows in ControlReversibilityTableSessionView.cpp, the crash
-	 *  arm/disarm pair in ControlReversibilityTableScanAndCrash.cpp, the MIDI
-	 *  re-connection rows in ControlReversibilityTableMidiReconnect.cpp (joined
-	 *  by ONE entry each, the rule lane brief section 5 requires of a new group)
-	 *  - and the merge commits record the per-file union counts; the numbers
-	 *  above are what the TABLE measures, which is the thing this assertion is
-	 *  about.
-	 *
-	 *  DRIFT WARNING, STATED RATHER THAN HIDDEN: the A16 paragraph in
-	 *  docs/RELEASE-NOTES-v0.3.0-alpha.md still carries the wave-3 train's
-	 *  branch-local figures (284 rows, 152 / 21 / 7 / 104, and the per-lane deltas
-	 *  around it). The two are meant to agree; re-taking that paragraph against
-	 *  this measurement (334 rows live, 326 base) is the merge point's remaining
-	 *  doc task, named in each train's report rather than silently reconciled
-	 *  here.
-	 *
-	 *  The older history below is kept because each paragraph names a real
-	 *  branch-local figure and why it is not this tree's number.
-	 *
-	 *  THE WAVE-4 TRAIN'S MEASUREMENT, as it stood before the wave-5 merges:
-	 *  314 / 156 / 27 / 10 / 121 (322 rows live in its configuration).
-	 *
-	 *  THE WAVE-2 FIVE-LANE TRAIN'S MEASUREMENT, as it stood before this merge:
-	 *  the table measured 283 rows over the four classes - 151 true_inverse,
-	 *  21 snapshot, 6 irreversible, 105 not_mutating - so its base was
-	 *  281 / 151 / 21 / 6 / 103 with the telemetry guard adding the two
-	 *  telemetry.* rows back. EVERY FIGURE A LANE WROTE WHILE IT WAS LANDING WAS
-	 *  BRANCH-LOCAL, measured on the lane's own base - 228 from
-	 *  030/undo-structural, 236 from 030/chord-track, 227 from 030/project-archive
-	 *  - against the 265 / 141 / 21 / 7 / 96 the wave-1 eight-lane train's tip
-	 *  carried. None of them is this tree's number, and the constant is not a
-	 *  sum of anybody's report either: it was measured. The undo lane's one
-	 *  RECLASSIFICATION shows as the irreversible column going DOWN - a removed
-	 *  device is re-instantiated with its settings by one `control.undo`, so
-	 *  plugin.unload left the irreversible block for true_inverse (-1
-	 *  irreversible, +1 true_inverse) and its four structural rows
-	 *  (track.add, track.move, track.remove, plugin.unload) live in their own
-	 *  table TU, src/core/ControlReversibilityTableStructure.cpp, joined into
-	 *  the action half so the block still reads as ONE `true_inverse` block with
-	 *  one row count. Each lane's delta is named beside its rows in
-	 *  src/core/ControlReversibilityTable*.cpp. */
-	DocumentedHistogram out{326, 158, 29, 10, 129};
-#ifdef ZENE_TELEMETRY_ENABLED
-	out.rows += 2;          // the two telemetry.* commands' not_mutating rows
-	out.notMutating += 2;
-#endif
-#ifdef LMMS_HAVE_WASM
-	out.rows += 6;          // wasm.load / unload / set_param, list / get_state / process
-	out.snapshot += 3;
-	out.notMutating += 3;
-#endif
-#ifdef LMMS_HAVE_STEM_SPLIT
-	// The seven stem.* rows (feature row 26, board task #653): stem.get_state,
-	// stem.job_start / job_status / job_result / job_cancel, and the two
-	// model-store verbs. All seven are not_mutating - one offline engine,
-	// output artefacts and no project state - and they are present exactly
-	// when the engine is (WANT_STEM_SPLIT, OFF by default), so the release
-	// configuration's figures are unchanged by them.
-	out.rows += 7;
-	out.notMutating += 7;
-#endif
-	return out;
+	QString witness;
+	bool inPublished = false;
+	A16Figure rows;
+};
+
+//! The published block: the figure, the witnesses its configuration has in, and each option's rows.
+struct A16Published
+{
+	A16Figure figure;
+	QStringList configuration;
+	QVector<A16Option> options;
+};
+
+//! Parses the `name=value` tokens of one published line into \a figure.
+bool addPublishedTokens(const QStringList& tokens, A16Figure& figure, QString& error)
+{
+	for (const QString& token : tokens)
+	{
+		const int equals = token.indexOf(QLatin1Char('='));
+		bool ok = false;
+		const int value = equals < 0 ? 0 : token.mid(equals + 1).toInt(&ok);
+		if (!ok || !figure.add(token.left(equals), value))
+		{
+			error = QStringLiteral("the A16-HISTOGRAM block carries an unknown token: '%1' "
+				"(expected name=value: rows/true_inverse/snapshot/irreversible/not_mutating)").arg(token);
+			return false;
+		}
+	}
+	return true;
+}
+
+//! The text between the A16-HISTOGRAM markers, or an empty string with \a error set.
+QString publishedBlockText(QString& error)
+{
+	QFile doc(QString::fromUtf8(A16_HISTOGRAM_DOC));
+	if (!doc.open(QIODevice::ReadOnly | QIODevice::Text))
+	{
+		error = QStringLiteral("cannot read %1 - the published A16 histogram lives there, and "
+			"this test measures the table against it: %2")
+			.arg(QString::fromUtf8(A16_HISTOGRAM_DOC), doc.errorString());
+		return QString();
+	}
+	const QString text = QString::fromUtf8(doc.readAll());
+	const int begin = text.indexOf(QLatin1String("A16-HISTOGRAM-BEGIN"));
+	const int end = text.indexOf(QLatin1String("A16-HISTOGRAM-END"));
+	if (begin < 0 || end < begin)
+	{
+		error = QStringLiteral("%1 carries no A16-HISTOGRAM block (the published figure is "
+			"what sits between the BEGIN and END markers)").arg(QString::fromUtf8(A16_HISTOGRAM_DOC));
+		return QString();
+	}
+	return text.mid(begin, end - begin);
+}
+
+//! One line of the block: the figure, the published configuration's witnesses, or one
+//! option and what it adds. An unrecognised line is refused, never skipped.
+bool readPublishedLine(const QString& line, A16Published& published, QString& error)
+{
+	const QStringList tokens = line.split(QLatin1Char(' '), Qt::SkipEmptyParts);
+	const QString keyword = tokens.value(0);
+	if (keyword == QLatin1String("measured:"))
+	{
+		return addPublishedTokens(tokens.mid(1), published.figure, error);
+	}
+	if (keyword == QLatin1String("configuration:"))
+	{
+		published.configuration = tokens.mid(1);
+		return true;
+	}
+	if (keyword == QLatin1String("option"))
+	{
+		if (tokens.size() < 3)
+		{
+			error = QStringLiteral("an option line of the A16-HISTOGRAM block is incomplete: "
+				"'%1' (expected: option <witness-command> name=value ...)")
+				.arg(tokens.join(QLatin1Char(' ')));
+			return false;
+		}
+		A16Option option;
+		option.witness = tokens.at(1);
+		if (!addPublishedTokens(tokens.mid(2), option.rows, error)) { return false; }
+		published.options.append(option);
+		return true;
+	}
+	error = QStringLiteral("the A16-HISTOGRAM block carries a line this test does not know: '%1'")
+		.arg(tokens.join(QLatin1Char(' ')));
+	return false;
+}
+
+//! The ONE published figure (and the options that move it): this test holds NO copy.
+bool readPublishedFigure(A16Published& published, QString& error)
+{
+	const QString block = publishedBlockText(error);
+	if (block.isEmpty()) { return false; }
+	for (const QString& raw : block.split(QLatin1Char('\n')))
+	{
+		const QString line = raw.simplified();
+		if (line.isEmpty() || line.startsWith(QLatin1String("<!--"))
+			|| line.startsWith(QLatin1String("A16-HISTOGRAM")))
+		{
+			continue;
+		}
+		if (!readPublishedLine(line, published, error)) { return false; }
+	}
+	if (published.figure.rows <= 0)
+	{
+		error = QStringLiteral("the A16-HISTOGRAM block in %1 states no figure (a 'measured:' "
+			"line)").arg(QString::fromUtf8(A16_HISTOGRAM_DOC));
+		return false;
+	}
+	for (A16Option& option : published.options)
+	{
+		option.inPublished = published.configuration.contains(option.witness);
+	}
+	return true;
+}
+
+//! The published figure moved by every option whose presence here differs from it.
+A16Figure expectedHere(const A16Published& published, ControlRegistry* registry)
+{
+	A16Figure expected = published.figure;
+	for (const A16Option& option : published.options)
+	{
+		const bool here = registry->command(option.witness) != nullptr;
+		if (here == option.inPublished) { continue; }
+		const int sign = here ? 1 : -1;
+		expected.rows += sign * option.rows.rows;
+		expected.trueInverse += sign * option.rows.trueInverse;
+		expected.snapshot += sign * option.rows.snapshot;
+		expected.irreversible += sign * option.rows.irreversible;
+		expected.notMutating += sign * option.rows.notMutating;
+	}
+	return expected;
+}
+
+//! The table's own histogram: the row total and one count per class.
+A16Figure figureOf(const QVector<control::ReversibilityEntry>& entries)
+{
+	A16Figure figure;
+	figure.rows = static_cast<int>(entries.size());
+	for (const control::ReversibilityEntry& entry : entries)
+	{
+		switch (entry.cls)
+		{
+			case control::ReversibilityClass::TrueInverse: { ++figure.trueInverse; break; }
+			case control::ReversibilityClass::Snapshot: { ++figure.snapshot; break; }
+			case control::ReversibilityClass::Irreversible: { ++figure.irreversible; break; }
+			case control::ReversibilityClass::NotMutating: { ++figure.notMutating; break; }
+		}
+	}
+	return figure;
+}
+
+//! Every command the four blocks DECLARE, sorted. The table is a keyed map, so a command
+//! declared twice is ONE entry: this list's length minus the entry count is the duplicate
+//! count - a hand-kept note ("24 pre-existing cross-file duplicates") until 2026-09-16.
+QStringList declaredCommandIds()
+{
+	QStringList ids;
+	for (const control::ReversibilityRow* (*rowsFor)(int*) : {control::reversibilityRowTable,
+			control::reversibilitySnapshotRowTable, control::reversibilityPassiveRowTable,
+			control::reversibilityStemRowTable})
+	{
+		int count = 0;
+		const control::ReversibilityRow* rows = rowsFor(&count);
+		for (int index = 0; index < count; ++index) { ids.append(QString::fromUtf8(rows[index].command)); }
+	}
+	ids.sort();
+	return ids;
 }
 
 } // namespace
+
 
 class ReversibilityContractTest : public QObject
 {
@@ -255,83 +311,68 @@ private slots:
 	}
 
 
-	//! THE HISTOGRAM (0.2.1 coverage gap 3a). The release's own notes state the
-	//! table's shape as four counts - "the table that ships as data in
-	//! src/core/ControlReversibilityTable.cpp has 74 rows today, one per registered
-	//! command" (docs/RELEASE-NOTES-v0.2.1-alpha.md, at 0.2.1: 30 `true_inverse`,
-	//! 5 `snapshot`, 3 `irreversible`, 36 `not_mutating`) - and nothing asserted them.
-	//! At 0.3.0 the same four counts read 227 / 120 / 18 / 7 / 82 over 227 rows at
-	//! the three-merge tip this train lands, and the
-	//! current figure lives in docs/RELEASE-NOTES-v0.3.0-alpha.md. Two compile-time
-	//! groups move with their option and are ADDED to the invariant part rather
-	//! than written out per configuration: the two `telemetry.*` not_mutating rows
-	//! (ZENE_TELEMETRY_ENABLED) and the six `wasm.*` rows - three snapshot, three
-	//! not_mutating - which are present exactly when the wasmtime C API is
-	//! (LMMS_HAVE_WASM, item #614). The release configuration has the client in and
-	//! no wasmtime, so the notes' own figures are its 227 / 120 / 18 / 7 / 82.
-	//! The two tests above hold the table to account for COVERAGE (every registered command
-	//! has a row, every row names a registered command) and for behaviour; a row
-	//! added or moved between classes could therefore ship with the notes still
-	//! quoting the old split.
-	//!
-	//! The counts are computed from the table itself (never from a second copy of
-	//! the rows) and asserted against the documented literals, so adding a row
-	//! without updating the histogram fails here, naming the row count and the four
-	//! counts. Expected values are keyed on ZENE_TELEMETRY_ENABLED because the two
-	//! `telemetry.*` rows are compiled out with the client - their commands leave
-	//! the registry, so their rows must leave the table, and the notes' 74-row
-	//! figure is the telemetry-on build (see ControlReversibilityTable.cpp and
-	//! docs/TELEMETRY-KILL-SWITCH.md).
+	//! THE HISTOGRAM, DERIVED ON EVERY RUN (0.2.1 coverage gap 3a; board card #677).
+	/*!
+	 * The table's shape is a DERIVED artefact and this slot is its derivation: the four
+	 * counts are measured off the table here, and the ONE number in circulation - the
+	 * figure published in docs/RELEASE-NOTES-v0.3.0-alpha.md, between its
+	 * A16-HISTOGRAM-BEGIN/END markers - is READ FROM THAT FILE on every run and compared
+	 * with the measurement, so neither can go stale alone. A row added, removed or
+	 * reclassified without re-taking the published figure (with `bash
+	 * tools/dawproject-proof.sh`, part 2) fails here, naming both figures.
+	 *
+	 * Two invariants come with it that a hand-kept constant could not hold: every command is
+	 * declared ONCE (declared rows == keyed entries, the duplicates named on failure) and
+	 * every row is in exactly one class (the counts must sum to the row total). The published
+	 * block also declares what each build option adds and a witness command for it, so a build
+	 * whose options differ from the published configuration adjusts the figure rather than
+	 * failing for its options.
+	 */
 	void theTableHistogramIsTheDocumentedOne()
 	{
+		ControlRegistry* registry = ControlRegistry::instance();
 		const control::ReversibilityTable& table = control::ReversibilityTable::instance();
-		const QVector<control::ReversibilityEntry> entries = table.entries();
+		const A16Figure measured = figureOf(table.entries());
 
-		int trueInverse = 0;
-		int snapshot = 0;
-		int irreversible = 0;
-		int notMutating = 0;
-		for (const control::ReversibilityEntry& entry : entries)
+		const QStringList declared = declaredCommandIds();
+		QStringList duplicates;
+		for (int index = 1; index < declared.size(); ++index)
 		{
-			switch (entry.cls)
+			if (declared.at(index) == declared.at(index - 1)
+				&& !duplicates.contains(declared.at(index)))
 			{
-				case control::ReversibilityClass::TrueInverse:  { ++trueInverse; break; }
-				case control::ReversibilityClass::Snapshot:     { ++snapshot; break; }
-				case control::ReversibilityClass::Irreversible: { ++irreversible; break; }
-				case control::ReversibilityClass::NotMutating:  { ++notMutating; break; }
+				duplicates.append(declared.at(index));
 			}
 		}
+		QVERIFY2(duplicates.isEmpty(),
+			qPrintable(QStringLiteral("the table declares %1 command(s) twice: %2 (one row per "
+				"command - see ControlReversibilityTableLive.cpp's retirement note)")
+				.arg(duplicates.size()).arg(duplicates.join(QStringLiteral(", ")))));
+		QVERIFY2(declared.size() == measured.rows,
+			qPrintable(QStringLiteral("the four blocks declare %1 rows, the table has %2 entries")
+				.arg(declared.size()).arg(measured.rows)));
+		const int classSum = measured.trueInverse + measured.snapshot + measured.irreversible
+			+ measured.notMutating;
+		QVERIFY2(measured.rows == classSum,
+			qPrintable(QStringLiteral("the table measures %1 rows but its four classes sum to %2: a "
+				"row is in no class this test counts").arg(measured.rows).arg(classSum)));
 
-		const DocumentedHistogram counts = documentedHistogram();
-		const int kRows = counts.rows;
-		const int kTrueInverse = counts.trueInverse;
-		const int kSnapshot = counts.snapshot;
-		const int kIrreversible = counts.irreversible;
-		const int kNotMutating = counts.notMutating;
+		A16Published published;
+		QString error;
+		QVERIFY2(readPublishedFigure(published, error), qPrintable(error));
 
-		const QByteArray measured = QStringLiteral("%1 true_inverse, %2 snapshot, "
-			"%3 irreversible, %4 not_mutating")
-			.arg(trueInverse).arg(snapshot).arg(irreversible).arg(notMutating).toUtf8();
-		const QByteArray documented = QStringLiteral("%1 true_inverse, %2 snapshot, "
-			"%3 irreversible, %4 not_mutating")
-			.arg(kTrueInverse).arg(kSnapshot).arg(kIrreversible).arg(kNotMutating).toUtf8();
-
-		QVERIFY2(entries.size() == kRows,
-			qPrintable(QStringLiteral("the table has %1 rows, the documented histogram ")
-				.arg(entries.size())
-				+ QStringLiteral("counts %1. If a row was added, update the histogram in ")
-				.arg(kRows)
-				+ QStringLiteral("docs/RELEASE-NOTES-v0.3.0-alpha.md (and here) - the ")
-				+ QStringLiteral("point of this assertion is that the two cannot drift.")));
-
-		QVERIFY2(trueInverse == kTrueInverse && snapshot == kSnapshot
-				&& irreversible == kIrreversible && notMutating == kNotMutating,
-			qPrintable(QStringLiteral("the table's classes measure %1, the documented ")
-				.arg(QString::fromUtf8(measured))
-				+ QStringLiteral("histogram is %1. A row that moved between classes, or ")
-				.arg(QString::fromUtf8(documented))
-				+ QStringLiteral("one added without updating the notes, fails here.")));
+		const A16Figure expected = expectedHere(published, registry);
+		QVERIFY2(measured.rows == expected.rows && measured.trueInverse == expected.trueInverse
+				&& measured.snapshot == expected.snapshot
+				&& measured.irreversible == expected.irreversible
+				&& measured.notMutating == expected.notMutating,
+			qPrintable(QStringLiteral("the table measures %1; %2 publishes %3, which for this build "
+				"is %4 - re-measure it with `bash tools/dawproject-proof.sh` (part 2) and re-take the "
+				"published block in the same change").arg(measured.toString(),
+					QString::fromUtf8(A16_HISTOGRAM_DOC), published.figure.toString(),
+					expected.toString())));
 	}
+
 
 	//! DIRECTION 2: every row names a registered command, and the only mutating
 	//! commands the table calls "writes nothing" are the four the handlers

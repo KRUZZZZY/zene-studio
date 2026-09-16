@@ -809,245 +809,75 @@ for a client to drive it: the only route was that CLI, outside the socket, plus 
 
 ## The A16 contract table, and its histogram
 
-The SPEC A16 classification table holds **284 rows** as this branch measures it:
-**152 `true_inverse`, 21 `snapshot`, 7 `irreversible`, 104 `not_mutating`**, in the configuration this
-build actually is (the telemetry client compiled in, no wasmtime). With the telemetry client
-compiled out (`-DZENE_TELEMETRY=OFF`) the two `telemetry.*` rows leave with their commands, giving
-**282 rows / 102 `not_mutating`** - which is the base
-`ReversibilityContractTest::documentedHistogram()` carries, with the `#ifdef` guards ADDING the
-telemetry group and the six `wasm.*` rows (three `snapshot`, three `not_mutating`, and only when the
-wasmtime C API is on the find path) rather than writing one figure per configuration, because that is
-what left one of them stale before. **The last figure a MERGED tree measured here was 283 rows**
-(151 `true_inverse` / 21 / 6 / 105, the five-lane **wave-2** merge train's tip).
-`030/automation-modes` moves it by its own delta, stated so the merge step can check it rather than
-trust it: `automation.mode_set`'s stale refusal row leaves
-`src/core/ControlReversibilityTablePassive.cpp` (-1 `not_mutating` - the command is a working verb
-now, not a typed refusal) and two rows take its place in their own TU,
-`src/core/ControlReversibilityTableAutomationModes.cpp`, joined with ONE entry (mode_set
-`irreversible` - the mode is runtime state, not persisted and not journalled; record_mode_set
-`true_inverse` - the clip is a `JournallingObject`). That is **+1 row / +1 `true_inverse` / +1
-`irreversible` / -1 `not_mutating`** over the wave-2 measurement, and the merge tip re-takes the
-measurement because the sibling lane `030/sample-accurate-automation` carries rows this branch does
-not. The same build's live `control.commands` list answers **284** commands, which is the second and
-independent instrument: the registry and the contract table are the same size, and no row names a
-command that is not there. (284 = the wave-2 tip's 283 + `automation.record_mode_set`, the one command
-this lane registers; `automation.mode_set` was already registered - as a refusal - and is the same id
-working now.)
+**The table holds 334 rows - 158 `true_inverse`, 32 `snapshot`, 10 `irreversible`, 134 `not_mutating` -
+and this page states that figure ONCE, for the configuration the release ships** (telemetry client in,
+wasmtime sandbox in, session data layer in, offline stem engine out). What each class means, and why
+each row is in it, is `docs/A16-REVERSIBILITY.md` and the rows' own reasons.
 
-What the five wave-2 lanes added - each figure stated beside its own rows, and all five summing to
-the measurement exactly:
+It was MEASURED, class split and all, by
 
-* **`030/smf-tempo-export` (feature row 33) - +4 rows, +1 `true_inverse`, +3 `not_mutating`:**
-  `interchange.smf_import` is the recorded-action `true_inverse` row (it replaces the tempo map);
-  `interchange.smf_convention`, `interchange.smf_export` and `interchange.smf_read` write nothing
-  outside the session - the export writes a file.
-* **`030/undo-structural` (feature row 75) - +1 row, +2 `true_inverse`, -1 `irreversible`:** the new
-  `track.move` is a `true_inverse` row, and `plugin.unload` MOVED out of the `irreversible` block
-  because a removed device is now re-instantiated with its settings by one `control.undo` - the
-  train's only re-classification, and the reason the `irreversible` column goes DOWN. Its four
-  structural rows (`track.add`, `track.move`, `track.remove`, `plugin.unload`) live in their own
-  table TU, `src/core/ControlReversibilityTableStructure.cpp`, joined into the action half so the
-  block still reads as ONE `true_inverse` block with one row count. It is a disagreement with
-  `A16-STATUS-MEASURED.md` that the rows themselves record.
-* **`030/chord-track` (feature row 35) - +9 rows, +6 `true_inverse`, +3 `not_mutating`:** the three
-  reads (`chord.get_state`, `chord.detect`, `chord.progression_list`) are `not_mutating`; the four
-  track edits (`chord.set` / `chord.remove` / `chord.clear` / `chord.detect_to_track`) are
-  recorded-action `true_inverse` rows and the two generators (`chord.track_write`,
-  `chord.progression_generate`) are live-checkpoint `true_inverse` rows.
-* **`030/project-archive` (feature row 38) - +3 rows, +1 `true_inverse`, +2 `not_mutating`:** the two
-  inspectors of a project FILE (`project.missing_assets`, `project.hash_assets`) read and write
-  nothing, and `project.relink` is the one writer, a recorded-action `true_inverse` row.
-* **`030/host-chunking-wasm` (feature rows 82 and 73) - +1 row, +1 `not_mutating`:**
-  `plugin.host_chunking` is read-only. The group's other two ids, `wasm.pool` and
-  `wasm.render_offline`, are registered only when the wasmtime C API is on the find path - it is not
-  in this configuration, so their rows are empty here and the figure above is unchanged by them. The
-  one place this release computes a split is `plugin.host_chunking`'s own counters; that is data, not
-  a row.
+```bash
+bash tools/dawproject-proof.sh      # part 2, the A16 histogram probe
+```
 
+whose own output line is this page's figure verbatim - `MEASURED rows=334 true_inverse=158 snapshot=32
+irreversible=10 not_mutating=134`, with `DECLARED rows=334 entries=334 duplicates=0` on the same run.
 
-Every other figure of this shape below was measured on the branch that wrote it, or on an earlier
-merge tip, and is kept as that lane's own record rather than as this tree's number:
-`030/meter-surface` 231 (122 + 18 + 7 + 84), `030/linked-clips` 231 (123 + 18 + 7 + 83),
-`030/telemetry-code` 228 (120 + 19 + 7 + 82), `030/record-inputs` 236 (121 + 20 + 7 + 88),
-`030/pitch-stretch` 228 (121 + 18 + 7 + 82), and the three-merge tip this wave started from
-227 (120 + 18 + 7 + 82) over the base 225 / 120 / 18 / 7 / 80. This page's rule is that the number
-here is the merged measurement and never a sum of anybody's report - which is why the merge step
-re-ran the test and rewrote this paragraph and that constant together. The measurement agrees with
-the lanes' own deltas exactly, which is the check that it is a measurement and not a total:
-225 base + 1 (telemetry) + 4 (meter) + 4 (linked clips) + 9 (recording) + 1 (pitch-stretch) +
-4 (render presets) + 15 (note/scale) = 263, and the class columns add up the same way.
+<!-- A16-HISTOGRAM-BEGIN
+     measured: rows=334 true_inverse=158 snapshot=32 irreversible=10 not_mutating=134
+     configuration: telemetry.status wasm.load session.get_state
+     option telemetry.status rows=2 not_mutating=2
+     option wasm.load rows=8 snapshot=3 not_mutating=5
+     option session.get_state rows=17 true_inverse=7 not_mutating=10
+     option stem.get_state rows=7 not_mutating=7
+     A16-HISTOGRAM-END -->
 
-What the eight lanes added, in each lane's own words:
+**The figure checks itself (board card #677).** It used to be a constant in
+`tests/src/core/ReversibilityContractTest.cpp` that a merge step had to hand-refresh - a second copy of a
+number this page also carried, with the two free to drift apart (and they had: this page still quoted the
+wave-3 train's 284 rows while the table measured 334). The test no longer holds a copy: it READS the block
+above - between its markers - on every run and compares it against a histogram computed from the live
+table, so a row added, removed or re-classified anywhere in `src/core/ControlReversibilityTable*.cpp`
+fails the registered ctest until this page is re-taken with the command above. Two properties come with
+the derivation that a hand-kept constant could not hold:
 
-* **`030/meter-surface` (feature row 24) - +4 rows, +2 `true_inverse`, +2 `not_mutating`:**
-  `meter.arm` and `export.set_loudness_report` as recorded-action `true_inverse` rows,
-  `meter.get_state` and `meter.measure_file` as `not_mutating` inspectors.
-* **`030/linked-clips` (feature row 6) - +4 rows, +3 `true_inverse`, +1 `not_mutating`:**
-  `clip.link_create`, `clip.link_remove` and `clip.link_sync` are `true_inverse` on LIVE `Clip` /
-  `MidiClip` checkpoints - the relation is the `link` attribute the clip's own element carries,
-  written only when the clip is a member and reset to 0 by `Clip::loadClipEdits` when the attribute
-  is absent, so a checkpoint taken before a *first* link restores "unlinked" exactly and one taken
-  before a mirror restores the members' note lists - and `clip.link_get_state` is `not_mutating` (it
-  reads the groups, their members and each member's content verdict, and writes nothing).
-  `docs/LINKED-CLIPS.md` §4 is the argument, and the one `control.undo` that takes the whole group
-  back is asserted by `ClipLinkTest::undoRestoresEveryMemberOfTheGroup()`.
-* **`030/record-inputs` (feature rows 14/16/64) - +9 rows, +1 `true_inverse`, +2 `snapshot`,
-  +6 `not_mutating`:** `record.arm_track` and the re-classified `track.set_arm` (`snapshot`, each
-  with a paired-command inverse), `record.input_set` (`true_inverse`, the config write's previous
-  plan) and seven `not_mutating` rows (`record.get_state`, `record.disarm_track`,
-  `record.disarm_all`, `record.input_get_state`, `record.retro_capture_arm`,
-  `record.retro_capture_status`, `record.retro_capture_to_take`), while `track.set_arm` LEAVES
-  `not_mutating` because it is no longer one of the refusals.
-* **`030/telemetry-code` (CODE-6) - +1 row, +1 `snapshot`:** `script.set_memory_budget`.
-* **`030/pitch-stretch` (feature row 30) - +1 row, +1 `true_inverse`:** `warp.stretch`, mechanism =
-  the clip's own journal checkpoint, because the stretch mode is the `stretch` attribute of the
-  clip's `<warp>` element.
-* **`030/render-presets` (feature rows 70/71) - +4 rows, +3 `true_inverse`, +1 `not_mutating`:**
-  the render/export preset store's three recorded-action rows and its one read.
-* **`030/note-scale-verbs` (board task #648) - +15 rows, +11 `true_inverse`, +4 `not_mutating`:**
-  the note random/slide/transform verbs, the `scale.*` group and the registry's first `device.*`
-  group. The classes are stated on each row in `src/core/ControlReversibilityTableNoteScale.cpp`,
-  which holds exactly those fifteen.
-* **`030/stem-surface` (feature row 26) - +0 rows in this configuration:** its seven
-  `not_mutating` rows are guarded by `WANT_STEM_SPLIT` and the release does not ship them; see
-  below.
+* **A command declared twice is a failure, and the duplicate is named.** The four blocks are raw literal
+  arrays and the table is one keyed map, so a repeated row is invisible in every count above unless the
+  declared rows are compared against the keyed entries - which the test now does, and the probe reports.
+  It found 24: `app.version`, `arrangement.get_state`, `audio.device_list`, `automation.get_state`,
+  `control.commands_list`, `control.ping`, `control.surface_report`, `control.transactions`,
+  `control.version`, `dsp.get_state`, `midi.device_list`, `mixer.get_state`, `plugin.list`,
+  `plugin.param_get`, `plugin.preset_list`, `project.get_state`, `roll.get_state`, `script.list`,
+  `settings.get`, `telemetry.status`, `track.get_state`, `track.list`, `transport.get_state` and
+  `warp.list` were each declared in BOTH `ControlReversibilityTableLive.cpp` and
+  `ControlReversibilityTablePassive.cpp`. They were harmless (the constructor inserts the joined block,
+  then snapshot, then passive, so the passive copy is the one the table keeps) but dead, and their number
+  was a note in a train's report ("24 pre-existing cross-file duplicates") rather than an invariant. The
+  live block's copies are RETIRED (2026-09-16) - the retirement note, with the before/after, is in that
+  file - so the table now measures 334 declared rows for 334 keyed entries, 0 duplicates, with the class
+  split above unchanged.
+* **Every row is in exactly one class:** the four counts must sum to the row total, so a class added to
+  the enum cannot hide in an uncounted `switch` case.
 
-The seventeen rows this train's three merges added are the verb wave's four
-(`clip.trim` / `clip.slip` / `note.probability_set`, `true_inverse`; `render.stems`, `not_mutating`),
-the plugin scan-cache and crash-reporter groups' ten (two `snapshot` - the two quarantine writers, whose
-recorded inverse is a bounded cache revision - three `irreversible` - `plugin.rescan` and the crash
-reporter's two writers, each with a named fallback - and five `not_mutating` rows: the three scan
-reads, `crash.list_reports` and its refusal `crash.upload_report`) and the auto-mastering
-group's three (`mastering.run`, `true_inverse` through a recorded action checkpoint; the two
-inspectors, `not_mutating`) - `+4 true_inverse / +2 snapshot / +3 irreversible / +8 not_mutating`
-against the base this page carried before the train, 208 / 116 / 16 / 4 / 72. The figures this page
-carried before this train were lane-local and
-incomparable - the fold quoted 164, the MIDI clock lane 167, the chain-preset lane 170 and the folder
-tracks lane 173, each measured on its own base - and one of them (165 rows against 167 ids) was
-internally impossible, which is the reason the number on this page is now the merged measurement and
-never a sum of anybody's report.
-The four rows the 0.3.0 verb wave added are `clip.trim` and `clip.slip` (`true_inverse` on a LIVE
-`Clip` checkpoint: both write only attributes their clip type serialises and reads back
-unconditionally - `pos`, `len`, `off`, `autoresize` - which is what makes a checkpoint taken before a
-*first* edit reversible; neither verb authors `SampleClip`'s `srcin`/`srcout` window precisely
-because that window has no reset-on-absence) and `note.probability_set` (`true_inverse` on the owning
-`MidiClip`'s checkpoint: `Note::loadSettings` reads the optional `prob` attribute with a default of
-1, so restoring a pre-first-edit state brings the note back to "always plays") -
-`+3 true_inverse`. `render.stems` is the fourth and is **`not_mutating`**: it writes one output file
-per unmuted track through the shipped `exportstems` CLI in a child process, so no project state is
-touched and there is nothing for a checkpoint to capture - `+1 not_mutating`. `docs/STEM-EXPORT.md`
-and `docs/KNOWN-LIMITATIONS.md` carry the contract and the declared render bound.
-**The seven `stem.*` rows are NOT in the 284 above, and that is the point:** the offline
-stem-separation group (feature row 26, board task #653) is compiled only when `WANT_STEM_SPLIT=ON` -
-**OFF in the default release configuration** this page describes - so its seven `not_mutating` rows
-(`stem.get_state`, `stem.job_start`, `stem.job_status`, `stem.job_result`, `stem.job_cancel`,
-`stem.model_get_state`, `stem.model_download`) leave the table exactly when its ids leave the registry,
-which is the rule the six `wasm.*` rows already follow in the other direction. A build with the option
-on carries **291 rows / 111 `not_mutating`** - measured, not derived: the seven-row guard was added to
-`ReversibilityContractTest::documentedHistogram()` in the same commit as the rows, and that test passes
-against a `WANT_STEM_SPLIT=ON` build of this tree, which is only possible if the table really has
-283 + 7 rows and 105 + 7 `not_mutating` ones. So no figure on this page has to be rewritten for a
-configuration the release does not ship. All seven drive one offline engine, write output artefacts
-(four stem WAVs and a checksum-verified model file) and record no project state: a job is not a
-document, and a written stem is an output.
-The nine rows the folder-tracks merge added are:
-`track.folder_set_collapsed` and `track.set_pinned` are `true_inverse` on a live Track checkpoint (both
-flags are part of the folder's own `<trackfolder>` element and are reset on absence, so the checkpoint
-is a real inverse), `track.set_folder` / `track.set_routing` / `track.visibility_set_save` /
-`track.visibility_set_apply` / `track.visibility_set_remove` are `true_inverse` **recorded actions**
-(the parent relation lives on the child's element and `track.set_routing` writes every child's own
-mixer channel, so no single live checkpoint covers either; a named visibility set is not a
-`JournallingObject` at all), and `track.folder_get_state` / `track.visibility_set_list` are
-`not_mutating` inspectors - `+7 true_inverse / +2 not_mutating`. `ReversibilityContractTest` asserts both
-sets, so a row added or moved between classes cannot ship with this page quoting the old split. The
-three `midi.retro_capture_*` rows the retrospective MIDI capture merge added are
-`midi.retro_capture_to_clip` as `true_inverse` (a live `Track` checkpoint, the `clip.add` shape) and
-`midi.retro_capture_arm` / `midi.retro_capture_status` as `not_mutating` (a mode flag and a
-read-only inspector) - `+1 true_inverse / +2 not_mutating`. The three rows the MIDI clock merge added
-are `clock.master_set` (`true_inverse`, a recorded action: the enabled flag and the port subscription
-are a bounded pair), `clock.slave_set` (the train's **`snapshot`** row - tempo-follow makes the slave
-write `Song::setTempo` whenever the measurement leaves its dead band, and a trajectory of project-state
-writes is not one state a bounded record restores) and `clock.get_state` (`not_mutating`) -
-`+1 true_inverse / +1 snapshot / +1 not_mutating`. The six rows the chain-preset merge added are
-`chain.save` / `chain.apply` / `chain.rename` / `chain.remove` (`true_inverse` recorded actions: the
-preset store is a file tree OUTSIDE the project, the user preset tree's `chainpresets/`, which no Song
-checkpoint carries) and `chain.list` / `chain.get_state` (`not_mutating` inspectors) -
-`+4 true_inverse / +2 not_mutating`. The 155-row figure this page carried before an earlier merge was
-the pre-punch table's, and the 157 one incoming lane's own page quoted was measured on that lane's
-base - neither is any merged tree's, and this page states only measurements of the tree it ships
-with. At 0.2.1 the same four counts were 30 / 5 / 3 / 36 over 74 rows
-(`docs/RELEASE-NOTES-v0.2.1-alpha.md`) - that record is left as written.
+**The option rows under the figure are measurements too, not arithmetic.** Each was taken by running the
+same probe in that configuration (the telemetry header, the wasmtime define, the session-view option and
+`WANT_STEM_SPLIT` moved in turn), and the test applies exactly these deltas to this page's figure for the
+options whose presence in a build differs from the configuration line above - which is how one figure can
+serve every configuration without a second copy per configuration. The old form had this wrong in its
+parts: it added the wasmtime group as "6 rows, 3 `snapshot`, 3 `not_mutating`" - true when the `wasm.*`
+group was six rows, never re-taken after the host-chunking group added `wasm.pool` and
+`wasm.render_offline` - and its base was two rows high in the same direction, so its total agreed with the
+figure above while its decomposition did not. The real delta is **8 rows, 3 `snapshot`, 5
+`not_mutating`**; a page that lags now fails the ctest instead of being quietly compensated for.
 
-The seven rows the 0.3.0 groove lane added are `groove.list` (one `not_mutating`), `groove.apply` and
-`groove.quantize` (live-checkpoint `true_inverse` rows: a clip edit reverses through the MidiClip's
-own journal checkpoint) and `groove.extract` / `groove.set` / `groove.remove` / `groove.rename`
-(recorded-action `true_inverse` rows: the pool is project state the Song's journal checkpoint does not
-carry, so the recorded step writes the captured `<groove-pool>` element back). `docs/GROOVE-POOL.md`
-section 5 is the argument for each.
+**Where the older figures went.** This page used to carry a copy of every lane's branch-local measurement
+(284 rows at the wave-3 tip, 283 at the wave-2 tip, 227 at the three-merge tip, 231 from two lanes, the
+304/306 pair the wave-9 pass found, and the 155/157 pair an earlier merge found internally impossible).
+None of them is any merged tree's number, and keeping them in circulation beside the figure above is how
+one of them gets quoted as current. They remain where they belong - in the trains' own records under
+`docs/reports/MERGE-TRAIN-030w*.md`, in each lane's state file, and in this page's own history - and the
+figure above is the only one this page states.
 
-The fourteen rows the `vca.*` lane added (OWNER-31 item 11, phase-locked multitrack edit groups) are
-`+12 true_inverse / +2 not_mutating`. The two reads - `vca.list` and `vca.get_state` - are
-`not_mutating` inspectors and live with the other passive rows; the twelve mutating commands are ALL
-`true_inverse`, and none of them through a checkpoint *of the group*: a `VcaGroup` is a `QObject`
-owned by the Mixer rather than a `JournallingObject` with an id on the journal's object map (its
-`<vcagroup>` element is part of the MIXER's serialized state, and a Mixer checkpoint would destroy
-and recreate every channel). Six rows lean on a live checkpoint of a MODEL instead - the group's
-fader (`vca.set_gain`), its mute (`vca.set_mute`), the composite solo step
-(`vca.set_solo`: the group's solo flag, every other group's flags and every channel's mute as ONE
-undo step, the shape `track.set_solo` uses, with the same stated limit that
-`MixerChannel::m_muteBeforeSolo` is transient and not restored) - and, for `vca.edit_move`, a live
-Clip checkpoint per moved clip, merged by the registry into one step. The other six are recorded
-ACTION steps for state that is not a model at all: a name (`vca.rename`), a membership list in either
-direction (`vca.assign`, `vca.unassign`, `vca.track_add`, `vca.track_remove`), a lock flag
-(`vca.set_phase_lock`), and a group's existence (`vca.create`, `vca.remove` - whose delete is
-EXACTLY reconstructible, unlike `mixer.remove_channel`, because a group holds scalars, flags and two
-id lists and nothing else in the mix refers to it). The two limits worth repeating are in the rows
-themselves: the transient `m_muteBeforeSolo` above, and `vca.edit_move`'s index-derived clip ids,
-which are why its inverse is the checkpoint and not a replayed `clip-<n>` id.
-`docs/VCA-EDIT-GROUPS.md` is the lane's report and carries the argument for each.
-
-The three rows the 0.3.0 MIDI clock lane added are the group's whole surface, and only one of them is
-`true_inverse`: `clock.get_state` is a `not_mutating` inspector; `clock.master_set` is a
-recorded-action `true_inverse` row (the enabled flag and the port subscription are a bounded pair a
-recorded undo step restores exactly); and `clock.slave_set` is a **`snapshot`** row - the
-configuration it sets (mode, tempo-follow flag, source port, drift bound) is restored exactly, but
-turning tempo-follow ON makes the slave write `Song::setTempo` every time the measurement leaves the
-dead band, and a *trajectory* of project-state writes is not one state any bounded record can restore.
-The row says exactly that, the transaction reports the tempo the command found, and the fallback is
-`transport.set_tempo`. Claiming `true_inverse` here would be claiming that one Ctrl+Z puts the tempo
-back, which it does not - see the row's own text in
-`src/core/ControlReversibilityTableSnapshot.cpp`.
-
-The eleven rows the routing-surface lane added are the pdc / routing / bus / port groups (feature rows 27-29)
-and the mixer group's four routing verbs: `pdc.report`, `routing.get_state`, `bus.list` and `port.get_state`
-are `not_mutating` inspectors; `bus.create`, `mixer.route_to`, `mixer.send_to`, `mixer.sidechain_to` and
-`mixer.route_remove` are `true_inverse` **recorded actions** (a created channel has no before-state, and a
-`MixerRoute` / `MixerSidechainRoute` is not a `JournallingObject` — the send lists are not project-journalled
-state — so the recorded step deletes the route it created, or writes the captured amount and pre-fader flag /
-tap point back); `bus.remove` is a `snapshot` with no automatic replay (the class `mixer.remove_channel` has,
-for the same reason: nothing creates a channel WITH state) and `port.set_pin` is a `snapshot` whose inverse
-**is** a command (one pin is one bool in the processor's `<pins>` element, and there is no
-`JournallingObject` behind an `AudioPortsModel`, so the recorded inverse is `port.set_pin` with the previous
-value and `control.undo` dispatches it through `applies: command`) - `+5 true_inverse / +2 snapshot /
-+4 not_mutating`. `src/core/ControlReversibilityTableRouting.cpp` holds the rows as one group, whatever their
-class, and `reversibilityRowTable()` joins them exactly as it joins the folder-tracks group's.
-
-The ten rows the scan-cache + crash-reporter lane added are the `plugin.*` scan group (feature row 46) and the
-`crash.*` group (row 54): `plugin.scan_cache_get_state`, `plugin.scan_cache_list`, `plugin.scan_cache_lookup`,
-`crash.list_reports` and `crash.upload_report` are `not_mutating` (`crash.upload_report` is the
-`crash.upload_report` shape - declared mutating, refused by name, so no write and no transaction);
-`plugin.scan_cache_quarantine_add` and `plugin.scan_cache_quarantine_remove` are `snapshot` rows whose inverse
-**is** a command (the scan cache is a JSON file outside the project and is not a `JournallingObject`, so the
-recorded inverse is the paired verb with `applies: command`, exactly as `browser.tag.add` /
-`browser.tag.remove` are - and the removal carries the entry's REASON, captured before the write, because no
-other state reconstructs it); and `plugin.rescan`, `crash.acknowledge_report` and `crash.discard_report` are
-`irreversible` with a named fallback (a scan replaces a file's fingerprint record and nothing puts the previous
-one back; nothing removes the reporter's `offered` sentinel; nothing writes a report from a caller's bytes) -
-`+2 snapshot / +5 not_mutating / +3 irreversible`. `src/core/ControlReversibilityTableScanAndCrash.cpp` holds
-the rows as one group, whatever their class, and `reversibilityRowTable()` joins them for the same reason it
-joins the routing surface's: the passive block and the live block are both at the file-length cap.
-* **`030/revision-timeline` (feature row 76, OWNER-31 item 30) - +3 rows, +1 `true_inverse`,
-* **`030/sample-accurate-automation` (feature row 9) - +2 rows, +1 `true_inverse`, +1 `not_mutating`:**
 
 ## Modulation layer: modulators that drive a set of parameters, and per-note expression (`modulator.*`, `note.expression.*`) — added 2026-09-13
 

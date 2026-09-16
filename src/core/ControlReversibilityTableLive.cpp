@@ -239,38 +239,43 @@ const ReversibilityRow kRows[] = {
 		"",
 		"target,plugin,name,index"),
 
-	// ---------- read-only inspectors ----------
-	R("app.version", RC::NotMutating, false, "reads the build identity", "no write", ""),
-	R("arrangement.get_state", RC::NotMutating, false, "reads the model", "no write", ""),
-	R("audio.device_list", RC::NotMutating, false, "reads the device table", "no write", ""),
-	R("automation.get_state", RC::NotMutating, false, "reads the model", "no write", ""),
-	R("control.commands_list", RC::NotMutating, false, "reads the registry", "no write", ""),
+	/*! ---------- read-only inspectors ----------
+	 *
+	 *  TWENTY-FOUR ROWS WERE RETIRED HERE, 2026-09-16 (board card #677), and
+	 *  the reason is recorded rather than the rows: every one of them was a
+	 *  SECOND declaration of a command the passive block already declares
+	 *  (`app.version`, `arrangement.get_state`, `audio.device_list`,
+	 *  `automation.get_state`, `control.commands_list`, `control.ping`,
+	 *  `control.surface_report`, `control.transactions`, `control.version`,
+	 *  `dsp.get_state`, `midi.device_list`, `mixer.get_state`, `plugin.list`,
+	 *  `plugin.param_get`, `plugin.preset_list`, `project.get_state`,
+	 *  `roll.get_state`, `script.list`, `settings.get`, `telemetry.status`,
+	 *  `track.get_state`, `track.list`, `transport.get_state`, `warp.list` -
+	 *  24 of the 25 rows that used to sit here; `control.id_contract` below
+	 *  was never one of them).
+	 *
+	 *  They were harmless but DEAD: ReversibilityTable's constructor inserts
+	 *  the joined block, then the snapshot rows, then the passive block, then
+	 *  the stems, and a repeated id OVERWRITES - so the passive copy is the
+	 *  one the table keeps, and these copies were never read. The rows and
+	 *  their classes are unchanged; what is gone is the second declaration.
+	 *
+	 *  WHAT KEEPS THEM GONE: the table is now held to `raw == unique` by its
+	 *  own instruments - `ReversibilityContractTest::
+	 *  theTableHistogramIsTheDocumentedOne()` measures the four blocks'
+	 *  declared rows against the table's keyed entries and fails, naming the
+	 *  duplicates, and `tools/dawproject-proof.sh` (part 2) prints
+	 *  `DUPLICATES n` and exits non-zero when n is not 0. Before that, the
+	 *  count was a hand-kept note: "233 rows = 233 registered, 0 losses/
+	 *  duplicates in count but 24 pre-existing cross-file duplicates". The
+	 *  measured before/after on this tree: 358 declared rows / 334 entries /
+	 *  24 duplicates -> 334 declared rows / 334 entries / 0 duplicates, with
+	 *  the class histogram unchanged at 334 / 158 / 32 / 10 / 134.
+	 */
 	R("control.id_contract", RC::NotMutating, false, "reads the stable-id contract", "no write", ""),
-	R("control.ping", RC::NotMutating, false, "liveness probe", "no write", ""),
-	R("control.surface_report", RC::NotMutating, false, "reads the menu/toolbar reflection", "no write", ""),
-	R("control.transactions", RC::NotMutating, false, "reads the transaction record", "no write", ""),
-	R("control.version", RC::NotMutating, false, "reads the version strings", "no write", ""),
-	R("dsp.get_state", RC::NotMutating, false, "reads the device chains", "no write", ""),
-	R("midi.device_list", RC::NotMutating, false, "reads the MIDI client", "no write", ""),
 	R("midi.retro_capture_status", RC::NotMutating, false, "reads the capture ring and the MIDI client", "no write", ""),
-	R("mixer.get_state", RC::NotMutating, false, "reads the mixer", "no write", ""),
-	R("plugin.list", RC::NotMutating, false, "reads the device catalogue", "no write", ""),
-	R("plugin.param_get", RC::NotMutating, false, "reads a parameter", "no write", ""),
-	R("plugin.preset_list", RC::NotMutating, false, "reads a preset directory", "no write", ""),
-	R("project.get_state", RC::NotMutating, false, "reads the project state", "no write", ""),
-	R("roll.get_state", RC::NotMutating, false, "reads the note list", "no write", ""),
-	R("script.list", RC::NotMutating, false, "reads the scripts directory", "no write", ""),
-	R("settings.get", RC::NotMutating, false, "reads one config value", "no write", ""),
-#ifdef ZENE_TELEMETRY_ENABLED
-	R("telemetry.status", RC::NotMutating, false,
-		"reads the consent record and the payload builder", "no write", ""),
-#endif // ZENE_TELEMETRY_ENABLED
-	R("track.get_state", RC::NotMutating, false, "reads one track", "no write", ""),
-	R("track.list", RC::NotMutating, false, "reads the track container", "no write", ""),
-	R("transport.get_state", RC::NotMutating, false, "reads the transport", "no write", ""),
 	R("transport.tempo_map_get", RC::NotMutating, false,
 		"reads the tempo map and what its queries answer at the play head", "no write", ""),
-	R("warp.list", RC::NotMutating, false, "reads a clip's warp map", "no write", ""),
 
 
 	// Rows restored from ControlReversibilityTableTrueInverse.cpp, which this
