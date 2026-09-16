@@ -65,6 +65,7 @@
 #include <csignal>
 #include <cstdint>
 #include <cstdlib>
+#include <cstring>
 #include <string>
 #include <sys/types.h>
 #include <sys/wait.h>
@@ -83,15 +84,53 @@ const std::string ThirdPartyPath = "/tmp/some-user-drop-in/libtotallythirdparty.
 
 #ifndef Q_OS_WIN
 
+//! A wait() status in words: the macOS runners reported these slots as bare FALSE
+//! (run 35126160372, no child output), so the message names the mechanism.
+QString describeStatus(int status)
+{
+	if (status == 0) { return QStringLiteral("no status yet"); }
+	if (WIFSTOPPED(status)) { return QStringLiteral("stopped by signal %1").arg(WSTOPSIG(status)); }
+	if (WIFSIGNALED(status)) { return QStringLiteral("died by signal %1").arg(WTERMSIG(status)); }
+	if (WIFEXITED(status)) { return QStringLiteral("exited with code %1").arg(WEXITSTATUS(status)); }
+	return QStringLiteral("unclassified wait status %1").arg(status);
+}
+
+//! qtestlib's own crash handler (FatalSignalHandler, qtestcase.cpp) is inherited by a
+//! forked child, and it converts a crash: on linux-x86_64 the SIGSEGV slot's child ran
+//! it ("QFATAL : ... Received signal 11") and died by qFatal()'s SIGABRT. "As it would
+//! without any of this" is the default-action death - give the child that.
+void resetFatalSignalsToDefault()
+{
+	const int signals[] = { SIGSEGV, SIGBUS, SIGILL, SIGFPE, SIGABRT, SIGTERM, SIGPIPE, 0 };
+	for (int i = 0; signals[i] != 0; ++i)
+	{
+		struct sigaction dfl;
+		std::memset(&dfl, 0, sizeof(dfl));
+		dfl.sa_handler = SIG_DFL;
+		sigemptyset(&dfl.sa_mask);
+		::sigaction(signals[i], &dfl, nullptr);
+	}
+}
+
 //! Wait for a child, bounded. A timeout is a HANG, which this module must never
 //! cause, and every caller asserts on it. (The CrashReporterTest helper, which
 //! this suite copies because it is the same child-process pattern.)
+//! A child that is merely STOPPED is continued and waited for again - Darwin reports a
+//! stopped child to a WNOHANG waitpid, and the signal death is still demanded after.
 bool waitBounded(pid_t pid, int timeoutMs, int& status)
 {
 	for (int waited = 0; waited < timeoutMs; waited += 20)
 	{
 		const pid_t r = ::waitpid(pid, &status, WNOHANG);
-		if (r == pid) { return true; }
+		if (r == pid)
+		{
+			if (WIFSTOPPED(status))
+			{
+				::kill(pid, SIGCONT);
+				continue;
+			}
+			return true;
+		}
 		if (r < 0) { return false; }
 		usleep(20000);
 	}
@@ -176,15 +215,18 @@ private slots:
 			// CHILD - the session that crashes.
 			install(workDir);
 			beginSession();
+			resetFatalSignalsToDefault();
 			volatile int* p = reinterpret_cast<volatile int*>(static_cast<uintptr_t>(1));
 			*p = 1;                       // SIGSEGV with si_addr == 0x1
 			::_exit(80);                  // must not be reached
 		}
 		int status = 0;
 		QVERIFY2(waitBounded(pid, 15000, status),
-			"the crashing child hung: safe-start mode must not deadlock a dying process");
+			qPrintable(QString("the crashing child neither died nor resumed inside 15s (%1): "
+				"safe-start mode must not deadlock a dying process").arg(describeStatus(status))));
 		QVERIFY2(WIFSIGNALED(status) && WTERMSIG(status) == SIGSEGV,
-			"the child must still die by SIGSEGV, as it would without any of this");
+			qPrintable(QString("the child must still die by SIGSEGV, as it would without any "
+				"of this: %1").arg(describeStatus(status))));
 
 		// THE NEXT LAUNCH: a fresh install + beginSession over the same working
 		// directory, which is exactly what main() does at startup.
@@ -257,12 +299,17 @@ private slots:
 		{
 			install(workDir);
 			beginSession();
+			resetFatalSignalsToDefault();
 			::kill(::getpid(), SIGKILL);  // uncatchable by construction
 			::_exit(81);                  // unreachable
 		}
 		int status = 0;
-		QVERIFY2(waitBounded(pid, 15000, status), "the killed child hung");
-		QVERIFY2(WIFSIGNALED(status) && WTERMSIG(status) == SIGKILL, "the child must die by SIGKILL");
+		QVERIFY2(waitBounded(pid, 15000, status),
+			qPrintable(QString("the killed child neither died nor resumed inside 15s (%1)")
+				.arg(describeStatus(status))));
+		QVERIFY2(WIFSIGNALED(status) && WTERMSIG(status) == SIGKILL,
+			qPrintable(QString("the child must die by SIGKILL: %1 (marker on disk: %2)")
+				.arg(describeStatus(status)).arg(markerExists() ? "yes" : "no")));
 
 		QVERIFY(install(workDir));
 		beginSession();
