@@ -2,7 +2,7 @@
 # run-all-gates.sh — run every executable QA gate for the LMMS standards fork.
 #
 # Usage:
-#   bash tests/run-all-gates.sh                 # gates 1, 3, 4, 5, 6, 7, 8, 9, 10, 11 (Gate 5 ≈3 min)
+#   bash tests/run-all-gates.sh                 # gates 1, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12 (Gate 5 ≈3 min)
 #   bash tests/run-all-gates.sh --with-coverage # + Gate 2 (full coverage build; slow)
 #   bash tests/run-all-gates.sh --no-mutation   # skip Gate 5 (mutation sweep)
 #   bash tests/run-all-gates.sh --strict        # pass --strict to gates that support it
@@ -46,6 +46,12 @@
 #
 # Gate 11 (evidence / oversized files, added 2026-09-13 with REPO-2) measures what the
 # tree carries besides code; tests/QA-GATES.md documents it and its --self-test control.
+#
+# Gate 12 (real-time safety / the whole-tree sweep, added 2026-09-16 with board card
+# #678 and feature row 52) is the sweeping enforcement of AGENTS.md's realtime rule:
+# tests/rt-safety-sweep.py over tests/rt-safety-scope.txt, judged against
+# tests/rt-safety-allowlist.txt. tests/QA-GATES.md and docs/RT-SAFETY-SWEEP.md document
+# it; it needs no build, so it runs in the default set and in CI's static-gates job.
 #
 # Exit codes (a skipped gate is NOT a pass):
 #   0  every gate ran and passed
@@ -107,6 +113,7 @@ skip_hint() {
 		1) echo "configure build/ (cmake -B build -S . -DCMAKE_BUILD_TYPE=Debug -DWANT_QT6=ON)" ;;
 		2) echo "pass --with-coverage" ;;
 		5) echo "drop --no-mutation" ;;
+		12) echo "install python3 (the sweep is a Python gate over the sources)" ;;
 		*) echo "see tests/QA-GATES.md" ;;
 	esac
 }
@@ -214,6 +221,26 @@ bash tests/unregistered-tests-gate.sh
 banner 11 "no committed evidence / no oversized files"
 bash tests/evidence-gate.sh
 [[ $? -eq 0 ]] && record 11 "evidence" "PASS" || record 11 "evidence" "FAIL"
+
+# ---- Gate 12: real-time safety (the whole-tree sweep) ------------------------
+# AGENTS.md rule 4 - "no allocation, no locking, no unbounded growth on
+# audio-thread paths" - was held per feature until 2026-09-16; docs/CONVENTIONS.md
+# row 9 said so in as many words ("partially enforced - a rule held by tests where
+# they exist, not by a sweeping gate"). tests/rt-safety-sweep.py now sweeps every
+# path:symbol pair the tree DECLARES in tests/rt-safety-scope.txt and judges what it
+# finds against tests/rt-safety-allowlist.txt - a reason and a COUNT per accepted
+# hit, a ratchet that may only fall - and it reads sources, so it needs no build and
+# runs here rather than in gate 1. Its own control is the ctest RtSafetySelfTest
+# (a deliberate allocation, lock and growth MUST fail); docs/RT-SAFETY-SWEEP.md
+# records the same control run against this tree.
+banner 12 "real-time safety (whole-tree sweep)"
+if ! command -v python3 > /dev/null 2>&1; then
+	echo "no python3 on PATH — the sweep is a Python gate over the sources"
+	record 12 "rt-safety" "SKIP" "no python3 on PATH"
+else
+	python3 tests/rt-safety-sweep.py --check
+	[[ $? -eq 0 ]] && record 12 "rt-safety" "PASS" || record 12 "rt-safety" "FAIL"
+fi
 
 # ---- summary ----------------------------------------------------------------
 printf '\n================ SUMMARY ================\n'
