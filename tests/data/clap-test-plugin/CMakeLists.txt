@@ -12,8 +12,23 @@ set_target_properties(clap-test-gain PROPERTIES
 
 target_link_libraries(clap-test-gain PRIVATE lmms_clap)
 
-# Plain C plug-in, no LMMS code, no Qt: keep the warnings strict so the test
-# subject stays clean. -Wall and -Wextra are GNU-style flags and cl.exe rejects
+# The INSTRUMENT subject (feature row 79, board task #669): the same kind of
+# real CLAP module, but a generator - clap.note-ports with one CLAP-dialect
+# input port and clap.audio-ports with an output port and no input port. It is
+# what proves the note path end to end: a note goes in, audio comes out.
+add_library(clap-test-instrument MODULE clap-test-instrument.c)
+
+set_target_properties(clap-test-instrument PROPERTIES
+	PREFIX ""
+	SUFFIX ".clap"
+	C_STANDARD 11
+	C_STANDARD_REQUIRED ON
+)
+
+target_link_libraries(clap-test-instrument PRIVATE lmms_clap)
+
+# Plain C plug-ins, no LMMS code, no Qt: keep the warnings strict so the test
+# subjects stay clean. -Wall and -Wextra are GNU-style flags and cl.exe rejects
 # -Wextra outright ("cl : Command line error D8021 : invalid numeric argument
 # '/Wextra'"), so they are guarded the way the rest of this tree guards a
 # GNU-style flag - the same shape as tests/CMakeLists.txt:625. MSVC needs no flag
@@ -21,6 +36,7 @@ target_link_libraries(clap-test-gain PRIVATE lmms_clap)
 # target /W2 plus the /external: policy this target inherits.
 if(NOT MSVC)
 	target_compile_options(clap-test-gain PRIVATE -Wall -Wextra)
+	target_compile_options(clap-test-instrument PRIVATE -Wall -Wextra)
 endif()
 
 # ---------------------------------------------------------------------------

@@ -55,6 +55,14 @@
 #define VST3_TEST_INSTRUMENT_DIR ""
 #endif
 
+//! The directory plugin.list must find the in-tree CLAP instrument fixture in
+//! (feature row 79, board task #669). Set by tests/CMakeLists.txt when this
+//! build has the fixture (it is built whenever the pinned CLAP headers are
+//! present); empty otherwise, and the CLAP case skips.
+#ifndef CLAP_TEST_INSTRUMENT_DIR
+#define CLAP_TEST_INSTRUMENT_DIR ""
+#endif
+
 using namespace lmms;
 
 //! The catalogue is what plugin.list returns and what every dev-<n> id indexes
@@ -113,7 +121,7 @@ private slots:
 	{
 		const QList<ControlDeviceEntry> catalogue = controlDeviceCatalogue();
 		const QStringList known = {QStringLiteral("builtin"), QStringLiteral("ladspa"),
-			QStringLiteral("lv2"), QStringLiteral("vst3")};
+			QStringLiteral("lv2"), QStringLiteral("vst3"), QStringLiteral("clap")};
 		for (const ControlDeviceEntry& entry : catalogue)
 		{
 			QVERIFY2(known.contains(entry.format),
@@ -351,6 +359,111 @@ private slots:
 		qInfo("plugin.list format=vst3: %s -> plugin.load on %s -> %s, %d parameter(s)",
 			qPrintable(deviceId), qPrintable(control::trackIdOf(track)),
 			qPrintable(bundle), instrument->parameterCount());
+	}
+
+	//! The CLAP half (feature row 79, board task #669): with the in-tree MIT
+	//! instrument fixture in the product's plug-in search directory,
+	//! plugin.list must carry the CLAP class and plugin.load must load it onto
+	//! an instrument track - and `plugin.host_notes` must report the note
+	//! ports and the audio-output configuration the host discovered, which is
+	//! the half of the feature that is only real when it can be observed
+	//! through the socket (CHARTER 3.1).
+	//!
+	//! Skipped when this build has no CLAP instrument host or no fixture.
+	void clapInstrumentListsAndLoadsThroughTheSurface()
+	{
+		if (getPluginFactory()->pluginInfo("clapinstrument").isNull())
+		{
+			QSKIP("this build has no clapinstrument module, so it has no CLAP instrument "
+				"catalogue half");
+		}
+		const QString fixtureDir = QStringLiteral(CLAP_TEST_INSTRUMENT_DIR);
+		if (fixtureDir.isEmpty() || !QFileInfo::exists(fixtureDir))
+		{
+			QSKIP("this build has no CLAP instrument fixture, so there is no CLAP class to list "
+				"(the fixture is built from the pinned CLAP headers; see "
+				"tests/data/clap-test-plugin)");
+		}
+
+		// The fixture is what this box offers; point the product's plug-in
+		// search directory at it, exactly as an installed .clap module would
+		// be found. The CLAP scan walks the same directory the VST3 one does.
+		ConfigManager::inst()->setVSTDir(fixtureDir);
+
+		ControlRegistry* registry = ControlRegistry::instance();
+		QJsonObject filter;
+		filter.insert(QStringLiteral("format"), QStringLiteral("clap"));
+		const ControlResult clap = registry->invoke(QStringLiteral("plugin.list"), filter);
+		QVERIFY2(clap.ok, qPrintable(clap.errorMessage));
+
+		QString deviceId;
+		QString module;
+		for (const QJsonValue& value : clap.result.value(QStringLiteral("devices")).toArray())
+		{
+			const QJsonObject device = value.toObject();
+			if (device.value(QStringLiteral("name")).toString()
+				!= QStringLiteral("org.lmms.test.clap-instrument"))
+			{
+				continue;
+			}
+			deviceId = device.value(QStringLiteral("id")).toString();
+			module = device.value(QStringLiteral("file")).toString();
+			QCOMPARE(device.value(QStringLiteral("kind")).toString(),
+				QStringLiteral("instrument"));
+			// The (file, id) pair the host's load() keys on.
+			QCOMPARE(device.value(QStringLiteral("id")).toString(),
+				device.value(QStringLiteral("name")).toString());
+			QVERIFY2(device.value(QStringLiteral("loadable")).toBool(),
+				"the fixture class is not offered as loadable");
+		}
+		QVERIFY2(!deviceId.isEmpty(),
+			"plugin.list format=clap does not carry the fixture's instrument class");
+		QVERIFY2(!module.isEmpty(), "the clap entry carries no module path");
+
+		// plugin.load, onto an instrument track: the whole point of the block.
+		auto* track = new InstrumentTrack(Engine::getSong());
+		QJsonObject args;
+		args.insert(QStringLiteral("target"), control::trackIdOf(track));
+		args.insert(QStringLiteral("device"), deviceId);
+		const ControlResult loaded = registry->invoke(QStringLiteral("plugin.load"), args);
+		QVERIFY2(loaded.ok, qPrintable(loaded.errorMessage));
+		QCOMPARE(loaded.result.value(QStringLiteral("kind")).toString(),
+			QStringLiteral("instrument"));
+		QCOMPARE(loaded.result.value(QStringLiteral("plugin")).toString(),
+			QStringLiteral("clapinstrument"));
+
+		Instrument* instrument = track->instrument();
+		QVERIFY2(instrument != nullptr, "plugin.load reported success but the track has no "
+			"instrument");
+		QCOMPARE(QString::fromUtf8(instrument->descriptor()->name),
+			QStringLiteral("clapinstrument"));
+		QVERIFY2(instrument->isMidiBased(),
+			"the loaded CLAP instrument is not MIDI based, so no clip could drive it");
+
+		// The note path and the audio-output configuration, as the surface
+		// reports them: the fixture is a generator with one note input port
+		// and a stereo output and NO audio input.
+		const ControlResult notes = registry->invoke(QStringLiteral("plugin.host_notes"));
+		QVERIFY2(notes.ok, qPrintable(notes.errorMessage));
+		QCOMPARE(notes.result.value(QStringLiteral("host")).toString(), QStringLiteral("clap"));
+		const QJsonObject ports = notes.result.value(QStringLiteral("ports")).toObject();
+		QCOMPARE(ports.value(QStringLiteral("count")).toInt(), 1);
+		QCOMPARE(ports.value(QStringLiteral("preferred")).toInt(), 0);
+		QVERIFY2(ports.value(QStringLiteral("dialects")).toObject()
+				.value(QStringLiteral("clap")).toBool(),
+			"the note port the surface reports does not declare the CLAP dialect");
+		const QJsonObject audio = notes.result.value(QStringLiteral("audio")).toObject();
+		QCOMPARE(audio.value(QStringLiteral("inputs")).toInt(), 0);
+		QCOMPARE(audio.value(QStringLiteral("outputs")).toInt(), 2);
+		QVERIFY(notes.result.value(QStringLiteral("counters")).toObject()
+			.value(QStringLiteral("loads")).toInt() >= 1);
+
+		qInfo("plugin.list format=clap: %s -> plugin.load on %s -> %s; plugin.host_notes ports=%d "
+			  "audio=%d/%d",
+			qPrintable(deviceId), qPrintable(control::trackIdOf(track)), qPrintable(module),
+			ports.value(QStringLiteral("count")).toInt(),
+			audio.value(QStringLiteral("inputs")).toInt(),
+			audio.value(QStringLiteral("outputs")).toInt());
 	}
 };
 

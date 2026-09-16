@@ -219,6 +219,12 @@ void registerControlCommands(ControlRegistry& registry)
 	// modules, so the counters and the command live in the core
 	// (src/core/PluginHostChunking.cpp) and the modules write into them.
 	registerPluginHostChunkingCommands(registry);
+	// feature row 79 (board task #669): the CLAP note path and the CLAP
+	// instrument's audio-output configuration - the note ports of the plug-in
+	// loaded last and what the note route has carried. Same seam as the
+	// chunking pair above: the counters are core-side (src/core/PluginHostNotes.cpp)
+	// because the host is a plugin module.
+	registerPluginHostNotesCommands(registry);
 	// The crash reporter (feature row 54). No compile-time switch: the module is
 	// a no-op on Windows rather than compiled out, and its read answers in every
 	// configuration (reporting no directory there), so the ids are honest either

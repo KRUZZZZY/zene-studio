@@ -77,6 +77,16 @@ LMMS_EXPORT void controlVst3DeviceEntries(QList<ControlDeviceEntry>* out);
 //! controlDeviceCatalogue() after the LADSPA block.
 LMMS_EXPORT void controlLv2DeviceEntries(QList<ControlDeviceEntry>* out);
 
+//! Appends this build's CLAP classes to \a out, through the CLAP hosts' own
+//! discovery path (the SubPluginFeatures::listSubPluginKeys() dispatch
+//! ClapSubPluginFeatures implements, which walks the product's plug-in
+//! directory for *.clap modules) - not a second scanner. A no-op when the
+//! build has no CLAP host (WANT_CLAP=OFF or no headers), so the catalogue is
+//! simply built-in + LADSPA + LV2 + VST3 there. Called by
+//! controlDeviceCatalogue() after the VST3 block, which is what keeps the
+//! dev-<n> ids of the formats that were already there.
+LMMS_EXPORT void controlClapDeviceEntries(QList<ControlDeviceEntry>* out);
+
 //! The build's device catalogue in the stable order the dev-<n> ids use:
 //! built-in effects, built-in instruments, LADSPA (sorted by name), then LV2
 //! (sorted by URI). The order is deterministic for a binary, which is what
@@ -164,6 +174,15 @@ LMMS_EXPORT bool controlDeviceModule(const ControlDeviceEntry& entry, QString* p
 //! False and *error set when this build has no VST3 host, when the entry names
 //! no class, or when the bundle it named is gone.
 LMMS_EXPORT bool controlVst3DeviceModule(const ControlDeviceEntry& entry, QString* pluginName,
+	Plugin::Descriptor::SubPluginFeatures::Key* key, bool* useKey, ControlResult* error);
+
+//! The same for a CLAP entry: the host module ("clapeffect" / "clapinstrument")
+//! and the (file, id) key its own SubPluginFeatures resolves - the key shape
+//! plugins/ClapEffect/ClapSubPluginFeatures.cpp builds (module path plus the
+//! plug-in's own CLAP id) and a saved project stores. False and *error set when
+//! this build has no CLAP host, when the entry names no plug-in id, or when the
+//! module it named is gone.
+LMMS_EXPORT bool controlClapDeviceModule(const ControlDeviceEntry& entry, QString* pluginName,
 	Plugin::Descriptor::SubPluginFeatures::Key* key, bool* useKey, ControlResult* error);
 
 //! True when the module is present and exposes lmms_plugin_main - the check

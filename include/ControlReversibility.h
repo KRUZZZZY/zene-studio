@@ -295,6 +295,16 @@ LMMS_EXPORT const ReversibilityRow* reversibilityHostChunkingRowTable(int* rowCo
  *  the file-length cap. Joined into reversibilityRowTable().
  */
 LMMS_EXPORT const ReversibilityRow* reversibilityWasmRenderRowTable(int* rowCount);
+/*! The `plugin.host_notes` row (feature row 79, board task #669): the CLAP
+ *  note path (clap.note-ports -> the plug-in's input event list) and the CLAP
+ *  instrument's audio-output configuration, together with the counters the
+ *  audio path increments. A single not_mutating row in its own file, the same
+ *  seam as reversibilityHostChunkingRowTable above and for the same reason -
+ *  the plugin group's rows land where their own lane has room, and the class
+ *  comes from the row, not from the file.
+ *  Joined into reversibilityRowTable().
+ */
+LMMS_EXPORT const ReversibilityRow* reversibilityClapInstrumentRowTable(int* rowCount);
 /*! The `dawproject.*` group's four rows (feature row 37: DAWproject import /
  *  export). Three not_mutating (the convention read, the export that writes a
  *  file OUTSIDE the session, and the reader) and one recorded-action

@@ -313,6 +313,19 @@ LMMS_EXPORT void registerPluginScanEditCommands(ControlRegistry& registry);
  * into them). Read-only: one not_mutating A16 row.
  */
 LMMS_EXPORT void registerPluginHostChunkingCommands(ControlRegistry& registry);
+/*! plugin.host_notes (feature row 79, board task #669): the note path the CLAP
+ * host keeps - clap.note-ports discovery, the plug-in's own port index, the
+ * bounded lock-free queue between LMMS' MIDI route and the audio thread, and
+ * the notes delivered into the plug-in's input event list - together with the
+ * audio layout of the CLAP plug-in loaded last, so the CLAP instrument's
+ * audio-output configuration is observable on a running instance and not only
+ * in a unit test. The engine half is include/PluginHostNotes.h; the counters
+ * live in the core for the same reason the chunking counters do (the host is a
+ * plugin module, plugins/ClapEffect/ClapHost.cpp writes into them, and
+ * plugins/ClapInstrument uses the same host). Read-only: one not_mutating A16
+ * row in src/core/ControlReversibilityTableClapInstrument.cpp.
+ */
+LMMS_EXPORT void registerPluginHostNotesCommands(ControlRegistry& registry);
 /*! crash.list_reports / crash.acknowledge_report / crash.discard_report /
  * crash.upload_report - the crash reporter's agent surface (feature row 54).
  * The engine half is include/CrashReporter.h, installed from main() before this
