@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-09-15T22:03:26Z",
+  "captured_at": "2026-09-16T08:51:05Z",
   "commands": [
     {
       "args_schema": {
@@ -350,7 +350,7 @@
         "required": [],
         "type": "object"
       },
-      "description": "Per automated parameter: the sample-accuracy mode its clip asked for, and the ramp the audio thread built for it in the last rendered block - knots, frames, whether the value MOVES inside the block, and how many knots the fixed capacity had to refuse. 'include_block_mode' false trims it to the parameters asking for sample accuracy.",
+      "description": "Per automated parameter: the sample-accuracy mode its clip asked for, and the ramp the audio thread built for it in the last rendered block - knots, frames, whether the value MOVES inside the block, and how many knots the fixed capacity had to refuse. Entries are read from the clips themselves, on every track the engine plays automation from (including the hidden global automation track), so 'track' is the target the parameter is addressed by ('ch-<n>'/'trk-<n>', the one ramp_set takes) and 'parameter' its '<plugin>/<index>' id: the pair addresses the parameter back. 'track' filters on that target, and 'include_block_mode' false trims it to the parameters asking for sample accuracy. 'unaddressable_object_count' counts the clip objects the surface has no parameter id for (the song's tempo, a pattern-internal control) rather than dropping them silently.",
       "group": "automation",
       "id": "automation.ramp_get",
       "mutating": false,
@@ -371,6 +371,9 @@
             "type": "integer"
           },
           "sample_accurate_count": {
+            "type": "integer"
+          },
+          "unaddressable_object_count": {
             "type": "integer"
           }
         },
@@ -17321,8 +17324,8 @@
     "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-030/tools/zene-pa-agentctl",
     "lane_head": null,
     "proto": 1,
-    "source_socket": "/tmp/zene-w5-snapshot.sock",
-    "version": "0.2.1-alpha.431+2798407"
+    "source_socket": "/tmp/zctl-run-_dy89528/zene.sock",
+    "version": "0.2.1-alpha.450+cf39690"
   },
   "kind": "zene-control-command-list",
   "proto": 1,
