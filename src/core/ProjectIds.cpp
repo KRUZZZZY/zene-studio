@@ -122,9 +122,18 @@ void ProjectIds::restoreFromDocument(int next)
 void ProjectIds::observe(int id)
 {
 	// A document's id, read back by setId: it names a live object, so it is a
-	// floor the counter may not sink below.
+	// floor the counter may not sink below - but the floor it raises is THIS
+	// id's successor, never the counter's current value. During a load pass
+	// the counter sits ABOVE the ids the document carries (every constructor
+	// before this one took a placeholder), so flooring at s_next recorded
+	// those placeholders as handed out and restoreFromDocument() could not
+	// put the document's own counter back: a legacy load whose FIRST loaded
+	// object was a mixer channel carrying id 1 (Mixer::loadSettings ->
+	// MixerChannel::setId) left the counter at 5 for a three-track project
+	// and the second save wrote next-id="5" where the first wrote "3"
+	// (StableTrackIdsTest::legacyProjectGetsDeterministicIdsAndResavesByteIdentically).
 	if (id >= s_next) { s_next = id + 1; }
-	if (s_next > s_documentFloor) { s_documentFloor = s_next; }
+	if (id + 1 > s_documentFloor) { s_documentFloor = id + 1; }
 }
 
 int ProjectIds::allocate()
