@@ -107,6 +107,16 @@ DocumentedHistogram documentedHistogram()
 	 *  both sides), i.e. 326 / 158 / 29 / 10 / 129 - and the four class columns
 	 *  sum to 326 exactly.
 	 *
+	 *  RE-MEASURED AGAIN AT THE WAVE-9 MERGED TIP, 2026-09-16, by the wave-9
+	 *  integration train: `bash tools/dawproject-proof.sh` printed, verbatim,
+	 *  MEASURED rows=334 true_inverse=158 snapshot=32 irreversible=10
+	 *  not_mutating=134 - identical to the constant below, which is why this
+	 *  re-measure changes no digit. The two merges it followed
+	 *  (030/session-api-proof, 030/rel2-release-job) carry no C++ between them,
+	 *  so the table could not move; the number is measured, not assumed. The
+	 *  file carries no line-length baseline entry and is 433 lines after this
+	 *  note (limit 500).
+	 *
 	 *  WHAT MOVED IT SINCE THE WAVE-4 TIP (314 / 156 / 27 / 10 / 121 in the same
 	 *  base): the eight branches the wave-5 train merged. Their rows are named
 	 *  beside their own entries in src/core/ControlReversibilityTable*.cpp - the
