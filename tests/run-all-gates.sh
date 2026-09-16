@@ -44,8 +44,11 @@
 # tooling under tools/, with its own baselines) in the same gate row, so a regression in
 # the tooling fails the same gate as a regression in the product.
 #
-# Gate 11 (evidence / oversized files, added 2026-09-13 with REPO-2) measures what the
-# tree carries besides code; tests/QA-GATES.md documents it and its --self-test control.
+# Gate 11 (evidence / oversized files, added 2026-09-13 with REPO-2, extended 2026-09-16)
+# measures what the tree carries besides code — evidence suffixes, stray renders,
+# archives/packages, compiled artefacts, and anything over the size cap — and runs its
+# own --self-test control in the same row, so the gate's red/green fixtures are part of
+# every suite run rather than a claim in a document. tests/QA-GATES.md documents both.
 #
 # Exit codes (a skipped gate is NOT a pass):
 #   0  every gate ran and passed
@@ -206,14 +209,20 @@ bash tests/unregistered-tests-gate.sh
 # ---- Gate 11: no committed evidence, no oversized files -----------------------
 # Every other gate in this suite measures CODE. Gate 11 measures what the tree
 # carries besides code: run logs, exit files, merge leftovers, coverage captures,
-# stray renders and anything over the size cap. The 0.2.x line shipped 140.4 MiB
-# of it (1,368 tracked files) while all ten gates above stayed green, and the
-# owner's CP-1 decision on 2026-09-13 is what removed it; this gate is what stops
-# it re-accumulating. `bash tests/evidence-gate.sh --self-test` is its own red/green
-# control (the gate has been seen red on a .log, an over-cap file and a render).
+# stray renders, archives/packages and compiled artefacts, and anything over the
+# size cap. The 0.2.x line shipped 140.4 MiB of it (1,368 tracked files) while all
+# ten gates above stayed green, and the owner's CP-1 decision on 2026-09-13 is what
+# removed it; this gate is what stops it re-accumulating. Its own red/green control
+# runs FIRST and is part of the row — a gate that has never been seen red is a
+# claim: the control goes red on a .log, an over-cap file, an archive and a compiled
+# artefact (naming each refused path) and on a TRACKED over-cap file through the git
+# index, and green on a clean tree and on an exempted path.
 banner 11 "no committed evidence / no oversized files"
+bash tests/evidence-gate.sh --self-test
+rc11c=$?
 bash tests/evidence-gate.sh
-[[ $? -eq 0 ]] && record 11 "evidence" "PASS" || record 11 "evidence" "FAIL"
+rc11=$?
+[[ $rc11c -eq 0 && $rc11 -eq 0 ]] && record 11 "evidence" "PASS" || record 11 "evidence" "FAIL"
 
 # ---- summary ----------------------------------------------------------------
 printf '\n================ SUMMARY ================\n'

@@ -79,6 +79,12 @@ jobs:
         run: bash tests/fork-sources-gate.sh
       - name: Gate 11 - no committed evidence and nothing over the size cap
         run: bash tests/evidence-gate.sh
+      # The row runs the gate's own red/green control too: it asserts the gate refuses
+      # a .log, an over-cap file, an archive and a compiled artefact BY NAME, and a
+      # tracked over-cap file through the git index (this job's own path). run-all-gates.sh
+      # runs both in one row for the same reason.
+      - name: Gate 11 control - the evidence gate's own red/green self-test
+        run: bash tests/evidence-gate.sh --self-test
 
   # Gate 1 needs a real build: "it compiles" never substitutes for a passing ctest.
   unit-tests:

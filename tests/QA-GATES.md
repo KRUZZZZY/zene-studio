@@ -1308,22 +1308,40 @@ is registered.
 
 ## Gate 11: No committed evidence, no oversized files (`evidence-gate.sh`) — WIRED 2026-09-13
 
-**Command** (as `run-all-gates.sh` and CI's `static-gates` job run it):
+**Command** (as `run-all-gates.sh` and CI's `static-gates` job run it — the gate's own
+red/green control runs in the same row, and both must exit 0):
 
 ```sh
-bash tests/evidence-gate.sh          # EXIT=0
 bash tests/evidence-gate.sh --self-test   # the gate's own red/green control, EXIT=0
+bash tests/evidence-gate.sh               # the tree itself, EXIT=0
 ```
 
-**Pass criterion**: exit 0. No tracked file may have an evidence suffix anywhere in the
-tree — `log`, `exit`, `ours`, `theirs` (the exit-code and merge-leftover files 0.2.x
-committed per lane), coverage data (`gcda`, `gcno`, `gcov`, `lcov`, `info`), LLVM profile
-data (`profraw`, `profdata`) or machine-readable test reports (`junit`, `jtr`) — and no
-render suffix (`wav`, `mp3`, `flac`, `ogg`, `aiff`, `aif`, `opus`, `mp4`, `mkv`, `webm`,
-`m4a`) outside `data/`, where bundled product content lives (181 `.ogg`, 26 `.wav`, 33
-`.flac` at this commit). Nothing may exceed `EVIDENCE_SIZE_CAP_BYTES` (default 1048576 =
-1 MiB). `--tree DIR` scans a directory instead of the git index, which is how the control
-is built.
+**Pass criterion**: exit 0. Four classes are refused **by name** anywhere in the tree,
+and nothing may exceed the cap:
+
+1. **evidence suffixes** — `log`, `exit`, `ours`, `theirs` (the exit-code and
+   merge-leftover files 0.2.x committed per lane), coverage data (`gcda`, `gcno`,
+   `gcov`, `lcov`, `info`), LLVM profile data (`profraw`, `profdata`) or
+   machine-readable test reports (`junit`, `jtr`);
+2. **renders** — `wav`, `mp3`, `flac`, `ogg`, `aiff`, `aif`, `opus`, `mp4`, `mkv`,
+   `webm`, `m4a` outside `data/`, where bundled product content lives (181 `.ogg`,
+   26 `.wav`, 33 `.flac` at this commit);
+3. **archives and packages** — `zip`, `tar`, `tgz`, `gz`, `bz2`, `tbz2`, `xz`, `txz`,
+   `7z`, `rar`, `zst`, `lz4`, `cab`, `deb`, `rpm`, `apk`, `whl`, `jar`. Refused *by
+   name* because compression is exactly what the cap cannot see through: 100 MB of
+   logs fit in a 2 MB `.zip`;
+4. **compiled and dependency artefacts** — `o`, `obj`, `a`, `lib`, `so`, `dylib`,
+   `dll`, `exe`, `pdb`, `pyc`, `pyo`: a source tree reproduces a build, it does not
+   carry one.
+
+Nothing may exceed `EVIDENCE_SIZE_CAP_BYTES` (default 1048576 = 1 MiB) — the cap
+catches the shapes no suffix can, a `.bin`, `.mmp` or dumped fixture. Classes 3 and 4
+were added 2026-09-16 (`030/repo2-gate`, board card #683) to close row 56's own
+wording, which asked for "a binary/audio/archive extension list plus a size ceiling";
+class 2 is the audio half and classes 3/4 the archive and binary halves. `--tree DIR`
+scans a directory instead of the git index, which is how most of the control is built,
+and `EVIDENCE_GATE_ROOT` points the git-index path at a throwaway repository, which is
+how the rest of it is.
 
 **Exemptions** live in `tests/evidence-gate-exempt.txt` as `<prefix or glob><TAB><reason>`.
 A blank reason is exit 2, not an exemption, and the file is a required input — its absence
@@ -1335,13 +1353,32 @@ are run output that no script in the tree reads. They are exempt because the own
 `CP-1` decision named a specific deletion set that does not include that directory — the
 entry says so in as many words, so the exemption is a record, not a silent grandfather.
 
-**Red/green proof**: `--self-test` builds four fixtures and asserts six exits — a clean
-tree (with a `.wav` under `data/`) 0, a `.log` 1, a 2 MB file against the 1 MiB cap 1, a
-render outside `data/` 1, an exempted prefix 0, a blank reason 2. The same three red
-verdicts reproduce against the real tree by staging one file each. The control is not
-decoration: it is how the suffix list's own bug was found — a `case` pattern whose
-alternatives came from a variable is one *literal* pattern in bash, so the first draft of
-this gate refused nothing by name and passed as a size-cap check only.
+**Red/green proof**: `--self-test` builds nine fixtures and asserts thirteen verdicts —
+a clean tree (with a `.wav` under `data/`) 0, a `.log` 1, a 2 MB file against the 1 MiB
+cap 1, a 1 KB `.zip` (under the cap, refused by name) 1, a 4-byte `.o` 1, a render
+outside `data/` 1, an exempted prefix 0, a blank reason 2, and — through the **git
+index** (`EVIDENCE_GATE_ROOT` at a throwaway repository, which is the path `run-all-gates.sh`
+and CI actually take) — a **tracked** 2 MB file 1. Four of the red verdicts also assert
+the gate **names the refused path** in its output: "it exited 1" must never stand in for
+"it told me which file", and each fixture's reason is a different class of refusal. The
+same red verdicts reproduce against the real tree by staging one file each (measured
+2026-09-16: a staged 2 MB `.bin` and a staged `.zip` were both refused by name alongside
+the tree's own offender). The control is not decoration: it is how the suffix list's own
+bug was found — a `case` pattern whose alternatives came from a variable is one *literal*
+pattern in bash, so the first draft of this gate refused nothing by name and passed as a
+size-cap check only.
+
+**The gate's first live catch (2026-09-16).** The wave-9 VST3 lane committed
+`docs/reports/VST3-INSTRUMENT-ROW78-EVIDENCE.log` — a 12,559-byte ctest + probe
+transcript — and Gate 11 refused it while it was simultaneously the release line's only
+Gate 6 violation (`docs/` admits `*.md` only, so a run log under `docs/` has no class
+Gate 6 allows: the same finding `3fe5addb9` recorded for the 22 release-verification
+logs). Resolved on the owner's `CP-1` terms rather than by re-classing it to `*.md`: the
+file is deleted and its sha256 (`21694c1a…dad14`) joins the other 1,395 entries in
+`tests/evidence-manifest.tsv`, because the cases it recorded are registered tests
+(`Vst3Instrument*` in `tests/CMakeLists.txt`) and the claim stays reproducible without
+shipping the log. Both gates are green on the result by REMOVAL — nothing was re-anchored
+and no accepted-violation row was added.
 
 **Why it exists** (`REPO-2`, the twin of `REPO-1`): the 0.2.x line shipped **140.4 MiB /
 1,368 tracked files** of run output inside `tests/` — 17 `integration-logs-*` directories,
