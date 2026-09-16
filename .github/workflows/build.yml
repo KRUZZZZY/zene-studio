@@ -156,6 +156,24 @@ jobs:
                 $CMAKE_OPTS
       - name: Build
         run: cmake --build build
+      - name: Install the control suite's Python dependencies (numpy + scipy)
+        # tests/control-mastering-commands.py runs tools/auto-mastering-demo.py as the
+        # INDEPENDENT BS.1770-4 measurement its verdicts rest on. That generator exits 2
+        # without numpy and scipy - "auto-mastering-demo.py needs numpy and scipy for its
+        # independent BS.1770-4 measurement: No module named 'numpy'" - and that one line
+        # is the whole of ControlMasteringCommands' failure on all four unix jobs of run
+        # 34870198514 (the ONE red test on both linux jobs: 1/140 and 1/149). It is
+        # installed here, beside the step that needs it, and not in
+        # deps-ubuntu-24.04-gcc.txt: that list is shared with the mingw job, whose ctest
+        # never runs this test (the control suite is POSIX-only, tests/CMakeLists.txt),
+        # and a shared list would carry the dependency to a job that cannot use it.
+        # python3-numpy/python3-scipy land in the system python3 - the interpreter
+        # find_program(PYTHON3_EXECUTABLE NAMES python3 ...) resolves at Configure and
+        # the one ctest logs as /usr/bin/python3 on both linux jobs.
+        run: |
+          sudo apt-get install -y --no-install-recommends python3-numpy python3-scipy
+          echo "BS.1770-4 deps this job will run with (interpreter, numpy, scipy):"
+          python3 -c "import numpy,scipy,sys;print(sys.executable,numpy.__version__,scipy.__version__)"
       - name: Run tests
         run: |
           cd build/tests
@@ -347,6 +365,24 @@ jobs:
                 $CMAKE_OPTS
       - name: Build
         run: cmake --build build
+      - name: Install the control suite's Python dependencies (numpy + scipy)
+        # tests/control-mastering-commands.py runs tools/auto-mastering-demo.py as the
+        # INDEPENDENT BS.1770-4 measurement its verdicts rest on. That generator exits 2
+        # without numpy and scipy - "auto-mastering-demo.py needs numpy and scipy for its
+        # independent BS.1770-4 measurement: No module named 'numpy'" - and that one line
+        # is the whole of ControlMasteringCommands' failure on all four unix jobs of run
+        # 34870198514 (the ONE red test on both linux jobs: 1/140 and 1/149). It is
+        # installed here, beside the step that needs it, and not in
+        # deps-ubuntu-24.04-gcc.txt: that list is shared with the mingw job, whose ctest
+        # never runs this test (the control suite is POSIX-only, tests/CMakeLists.txt),
+        # and a shared list would carry the dependency to a job that cannot use it.
+        # python3-numpy/python3-scipy land in the system python3 - the interpreter
+        # find_program(PYTHON3_EXECUTABLE NAMES python3 ...) resolves at Configure and
+        # the one ctest logs as /usr/bin/python3 on both linux jobs.
+        run: |
+          sudo apt-get install -y --no-install-recommends python3-numpy python3-scipy
+          echo "BS.1770-4 deps this job will run with (interpreter, numpy, scipy):"
+          python3 -c "import numpy,scipy,sys;print(sys.executable,numpy.__version__,scipy.__version__)"
       - name: Run tests
         run: |
           cd build/tests
@@ -549,6 +585,32 @@ jobs:
                 -DUSE_WERROR=OFF
       - name: Build
         run: cmake --build build
+      - name: Install the control suite's Python dependencies (numpy + scipy)
+        # tests/control-mastering-commands.py runs tools/auto-mastering-demo.py as the
+        # INDEPENDENT BS.1770-4 measurement its verdicts rest on. That generator exits 2
+        # without numpy and scipy - "auto-mastering-demo.py needs numpy and scipy for its
+        # independent BS.1770-4 measurement: No module named 'numpy'" - and that one line
+        # is the whole of ControlMasteringCommands' failure on all four unix jobs of run
+        # 34870198514 (the ONE red test on both linux jobs: 1/140 and 1/149). It is
+        # installed here, beside the step that needs it, and not in
+        # deps-ubuntu-24.04-gcc.txt: that list is shared with the mingw job, whose ctest
+        # never runs this test (the control suite is POSIX-only, tests/CMakeLists.txt),
+        # and a shared list would carry the dependency to a job that cannot use it.
+        # The interpreter is whatever `python3` resolves to in THIS step's PATH - the
+        # same PATH find_program(PYTHON3_EXECUTABLE NAMES python3 python3.exe python)
+        # reads at Configure, logged as /usr/local/bin/python3 on both macOS arches. pip
+        # and not brew: Homebrew installs into ITS python, which is later on this PATH.
+        # The last line prints the interpreter and both versions, so a provisioning that
+        # landed in a different python fails HERE instead of leaving
+        # ControlMasteringCommands red for the same reason twice.
+        run: |
+          if ! python3 -m pip install --disable-pip-version-check --no-input numpy scipy; then
+            echo "plain pip refused - retrying with --break-system-packages (PEP 668 python)"
+            python3 -m pip install --disable-pip-version-check --no-input \
+              --break-system-packages numpy scipy
+          fi
+          echo "BS.1770-4 deps this job will run with (interpreter, numpy, scipy):"
+          python3 -c "import numpy,scipy,sys;print(sys.executable,numpy.__version__,scipy.__version__)"
       - name: Run tests
         run: |
           cd build/tests
