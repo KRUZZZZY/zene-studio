@@ -156,6 +156,18 @@ public:
 	//! processing path is gone, so every RemotePlugin has ports).
 	auto audioPorts() -> RemotePluginAudioPortsController& { return *m_audioPorts; }
 
+	//! pid of the client process, or 0 when none is running. Feature row 80
+	//! (out-of-process hosting, board card #670) reports this through `oop.*`;
+	//! it is deliberately a query and not a cached copy, because the pid is the
+	//! QProcess's own and a cached one would go stale on exactly the event the
+	//! surface exists to report (the client going away).
+	qint64 hostProcessId() const { return m_process.processId(); }
+
+	//! The client executable this plugin was started from ("" before init()).
+	//! This - and not the plugin's own key - is what the crash accounting is
+	//! keyed by: see include/OutOfProcessHosting.h.
+	QString hostClientExecutable() const { return m_exec; }
+
 	inline bool failed() const
 	{
 		return m_failed;
@@ -184,6 +196,16 @@ private:
 
 	QString m_exec;
 	QStringList m_args;
+
+	//! Set before this plugin deliberately takes its client down (its own
+	//! destructor's IdQuit/terminate/kill path). QProcess::finished is
+	//! connected DIRECTLY, so that exit arrives in processFinished() while the
+	//! object is being destroyed - and it must be reported as a shutdown, not
+	//! as a crash: the crash accounting in include/OutOfProcessHosting.h keys
+	//! its crash-loop REFUSAL on crashes, and a mode switch that stops a
+	//! healthy client is the normal way a client goes away (feature row 80,
+	//! board card #670).
+	bool m_hostShutdownRequested = false;
 
 	QRecursiveMutex m_commMutex;
 

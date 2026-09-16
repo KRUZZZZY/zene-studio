@@ -427,6 +427,37 @@ QString ZynAddSubFxInstrument::hostingState() const
 
 
 
+qint64 ZynAddSubFxInstrument::hostingProcessId() const
+{
+	// The client is the instrument's own ZynAddSubFxRemotePlugin; its pid is
+	// the QProcess's (feature row 80). Zero means no client is running - the
+	// in-process synth, or a client that has gone away.
+	return m_remotePlugin == nullptr ? 0 : m_remotePlugin->hostProcessId();
+}
+
+
+
+
+bool ZynAddSubFxInstrument::setHostingMode( bool separateProcess )
+{
+	if( m_separateProcessModel.value() == separateProcess )
+	{
+		// Asking for the mode already in force is not a change: no re-host, and
+		// the caller is told so rather than being told it succeeded.
+		return false;
+	}
+
+	m_separateProcessModel.setValue( separateProcess );
+	// Switching implementation re-instantiates the instrument and carries the
+	// patch over. Not done live: the shared audio block and the synth state do
+	// not survive a switch mid-render.
+	reloadPlugin();
+	return true;
+}
+
+
+
+
 void ZynAddSubFxInstrument::reloadPlugin()
 {
 	// save state of current plugin instance
@@ -723,15 +754,11 @@ void ZynAddSubFxView::separateProcessToggled()
 	// The button is an AutomatableButton, whose isChecked() is private: its
 	// own small BoolModel is the state the user sees.
 	const bool checked = m_separateProcess->model()->value();
-	if( model->m_separateProcessModel.value() != checked )
-	{
-		model->m_separateProcessModel.setValue( checked );
-		// Switching implementation re-instantiates the instrument (the route
-		// the Show-GUI button takes); reloadPlugin() carries the patch over.
-		// Not done live: the shared audio block and the synth state do not
-		// survive a switch mid-render.
-		model->reloadPlugin();
-	}
+	// The instrument's own settle point (feature row 80): it stores the choice
+	// and re-instantiates when it changed, which is exactly what the control
+	// surface's oop.set_mode reaches too - one place decides, so the two
+	// cannot drift.
+	model->setHostingMode( checked );
 }
 
 

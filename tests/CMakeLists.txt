@@ -101,6 +101,19 @@ set(LMMS_TESTS
 	# The socket proof of the same claim is the registered ctest
 	# ControlChainPresets (tests/control-chain-presets.py).
 	src/core/ControlChainPresetTest.cpp
+	# Out-of-process plugin hosting BEYOND ZynAddSubFx (feature row 80 of
+	# docs/FEATURE-LIST-0.3.0.md, board card #670): the family table
+	# (include/OutOfProcessHosting.h), the client-process record it keys the
+	# crash-loop refusal on, and the `oop.*` group's five ids driven through the
+	# registry - including, where this build ships both executables, a real
+	# client process hosted, SIGKILLed, counted, restarted and finally refused.
+	src/core/OutOfProcessHostTest.cpp
+	# The same feature's other binary: the whole loop on a REAL client process
+	# (hosted through oop.set_mode, SIGKILLed, counted, restarted, refused at the
+	# crash-loop bound and drivable again after oop.reset_crashes). A second
+	# binary because the file-length ratchet is not moved for a new feature - the
+	# ClipLink / SmfInterchange pairs in this directory are the same shape.
+	src/core/OutOfProcessHostClientLoopTest.cpp
 	# The chord track, its detection and its generators (feature row 35,
 	# docs/CHORD-TRACK.md): the engine half (the track's ordering, bounds and
 	# <chord-track> element; the detection on known note sets; the catalogue and
@@ -537,7 +550,12 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 		OR LMMS_TEST_NAME STREQUAL "ReversibilityUndoTest"
 		OR LMMS_TEST_NAME STREQUAL "ControlAutomationScriptTest"
 		OR LMMS_TEST_NAME STREQUAL "ControlAutomationModesTest"
-		OR LMMS_TEST_NAME STREQUAL "ControlChainPresetTest")
+		OR LMMS_TEST_NAME STREQUAL "ControlChainPresetTest"
+		# The hosting test loads the build's own plugin modules to get devices with
+		# real plugin keys (and, where they exist, the ZynAddSubFx module and its
+		# client - see the OUTOFPROC_ZYN_* definitions below).
+		OR LMMS_TEST_NAME STREQUAL "OutOfProcessHostTest"
+		OR LMMS_TEST_NAME STREQUAL "OutOfProcessHostClientLoopTest")
 		set_target_properties(${LMMS_TEST_NAME} PROPERTIES ENABLE_EXPORTS ON)
 		target_compile_definitions(${LMMS_TEST_NAME} PRIVATE
 			LMMS_TEST_PLUGIN_DIR="${CMAKE_BINARY_DIR}/plugins")
@@ -555,6 +573,26 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 		set_tests_properties(${LMMS_TEST_NAME} PROPERTIES
 			ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 	endif()
+	# OutOfProcessHostTest drives the whole out-of-process loop on a REAL client
+	# when this build has both halves of it: the ZynAddSubFx module (the only
+	# family in this tree with an in-process AND a client implementation) and the
+	# RemoteZynAddSubFx executable. Guarded on the targets, so a build without
+	# them compiles the same test and its Zyn case reports ctest *Skipped* (the
+	# module path defines are simply absent) rather than the suite failing to
+	# build. No other test's definitions, environment or dependencies change.
+	if(LMMS_TEST_NAME STREQUAL "OutOfProcessHostTest"
+			OR LMMS_TEST_NAME STREQUAL "OutOfProcessHostClientLoopTest")
+		if(TARGET zynaddsubfx AND TARGET RemoteZynAddSubFx)
+			target_compile_definitions(${LMMS_TEST_NAME} PRIVATE
+				OUTOFPROC_ZYN_PLUGIN_PATH="$<TARGET_FILE:zynaddsubfx>"
+				OUTOFPROC_ZYN_CLIENT_PATH="$<TARGET_FILE:RemoteZynAddSubFx>")
+			add_dependencies(${LMMS_TEST_NAME} zynaddsubfx RemoteZynAddSubFx)
+		endif()
+		set_tests_properties(${LMMS_TEST_NAME} PROPERTIES
+			ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+			TIMEOUT 300)
+	endif()
+
 	# SafeStartTest proves the load-time predicate on the REAL load path: it
 	# copies the built midiexport module into a fixture directory that this build
 	# does not ship from (which is what makes the file third-party), pins the

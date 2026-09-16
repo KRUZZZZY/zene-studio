@@ -393,6 +393,25 @@ that is this page's fault — report it and it gets added.
 
 - **The offline tool list is stale whenever no instance is running, and the bridge can only *say so* while one is — added 2026-09-15.** Serving a shorter list is a limitation of the design, not a bug: with no instance at the socket the bridge has nothing to compare against and answers from the last-known copy. What changed is that the copy is now checkable — every bundle records the surface it describes (`id_count`, `group_count`, `ids_sha256`), and whenever **an instance IS answering** `zene_status` and `zene_commands` carry an `offline_drift` block naming each offline copy, whether it is stale, and which ids it is missing. Proven against a live binary of the integration tip: **265 ids / 43 groups live against this tree's 144-id snapshot**, the flag fired, and the ten groups feature-list row 49 measured as tool-free (`browser`, `comp`, `export`, `link`, `modulator`, `rack`, `session`, `telemetry`, `warp`, `wasm`) are driven end to end by the registered ctest `ControlMcpGroupCoverage` — nine against the real binary, `wasm.` excused by a both-directions `--compiled-out` flag because **no build on this machine compiles the sandbox in** (`Wasmtime_LIBRARY-NOTFOUND` in every configured build; the vendored C API under `zene-030/whost/third_party/wasmtime` is wired into nothing). A wasm-enabled build gets no flag and must drive the group for real; the bridge's own half of that case is `tools/mcp-zene-control/tests/test_declared_surface.py`. **The limit, stated plainly:** nothing checks the surface of an offline copy *while it is being served* with no instance up, and a copy can still be older than the tree it ships with — it is now loudly stale, not silently short.
 
+- **Out-of-process hosting is socket-only, and it is ONE family of fifteen — added 2026-09-16 (feature row
+  80, board card #670).** The engine can host a plugin in a client process and now reports which families it
+  can do that for (`oop.list_families`) and what the client processes have done this session
+  (`oop.get_state`); **there is no page, dialog, column or toolbar button for any of it** — the hosting
+  choice was and remains a checkbox in the ZynAddSubFx instrument view, and *everything else* — the family
+  table, the crash counts, the refusal, the restart, the mode of any device — is **drivable through
+  `--control-socket`, not from the interface**. In this build **one** family (`zynaddsubfx`) has an
+  out-of-process path to choose and one more (`vestige`/`vsteffect`, VST2) is always out of process because
+  it has no in-process path at all; the other thirteen families the table classifies (CLAP effect and
+  instrument, VST3 effect and instrument, LADSPA, LV2 effect and instrument, SF2, GIG, the three Carla
+  modules) ship **no client executable in this build** and are refused, by name and with that reason, rather
+  than quietly run in-process. Three further limits are stated rather than left to be discovered: a client
+  that dies is **not restarted automatically** (a slot stays silent until `oop.restart` asks for it, and the
+  path REFUSES after 3 deaths in one session until `oop.reset_crashes`); the isolation proof kills the client
+  from outside rather than crashing a plugin by its own bug (the mechanism a real crash trips, with an
+  external trigger — `docs/OUT-OF-PROCESS-BEYOND-ZYN.md` §4); and the client executable has to be part of the
+  build for the family to be hostable at all, which is what the table is for. Full document:
+  `docs/OUT-OF-PROCESS-BEYOND-ZYN.md`.
+
 ## Where the quality bars are not met yet
 
 - **Renders are reproducible — with two exceptions.** Exports now render on a single thread, so for **7 of the

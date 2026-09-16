@@ -807,9 +807,49 @@ for a client to drive it: the only route was that CLI, outside the socket, plus 
   agent-owned job, no model-manager UI, and nothing in the interface says the model is missing —
   `stem.get_state` is where that answer lives.
 
+## Out-of-process hosting beyond ZynAddSubFx: the `oop.*` group (feature row 80, board card #670)
+
+The engine can host a plugin in its **own process**, so a crash in it cannot take this one down — and it
+did that for exactly one family before this change (ZynAddSubFx's opt-in `separateprocess` toggle, landed
+on `post-alpha/oop-hosting`). What this wave adds is the part that made it a *general* mechanism rather
+than one plugin's feature, and the part that makes it reachable at all:
+
+- **A family table, not a paragraph of prose.** `oop.list_families` answers for every plugin family this
+  build classifies: `client-available` (it has BOTH an in-process and a client implementation, so the
+  choice is per instance — `zynaddsubfx`), `always-separate` (its only path is a client process —
+  `vestige`/`vsteffect`, VST2), or `no-client` **with the reason named family by family** (the CLAP and
+  VST3 hosts live in this process, the LADSPA/LV2 libraries are `dlopen(3)`ed into it, the SF2/GIG/Carla
+  modules are in-tree code — none of them ships a client executable in this build).
+- **The lifecycle nothing had.** Client deaths are recorded under the **client executable's** name — starts,
+  exits, crashes, restarts, the last exit code — and `oop.get_state` reports them per device. A deliberate
+  shutdown (the plugin's own destructor taking a healthy client down) is counted as an exit and **not** as
+  a crash, because a mode switch is the normal way a client goes away.
+- **A crash loop refuses, typed.** After **3** deaths in one session, the out-of-process path for that
+  client executable is REFUSED — `oop.set_mode` and `oop.restart` both name the count and the last exit
+  code — and `oop.reset_crashes` is the only thing that lifts it. The in-process path is never blocked.
+- **Five ids, and the choice is drivable:** `oop.get_state`, `oop.list_families`, `oop.set_mode`,
+  `oop.restart`, `oop.reset_crashes`, addressed the way `plugin.*` addresses a device (`target` +
+  `plugin`). `oop.set_mode` is the same settle point the ZynAddSubFx view's checkbox reaches
+  (`ZynAddSubFxInstrument::setHostingMode`, now `Q_INVOKABLE`), so the interface and the socket cannot
+  drift.
+- **Proof:** the registered ctest `OutOfProcessHostTest` — the five ids and their contract rows, the family
+  classification, the crash accounting as a unit, the typed refusals, and (where this build ships both
+  executables) the whole loop on a real client: hosted out of process through `oop.set_mode`, the client
+  SIGKILLed, the death counted, the slot restarted through `oop.restart`, refused at the bound, and drivable
+  again after `oop.reset_crashes`.
+- **UI absence — one line: the whole `oop.*` group is drivable through the socket and only through the
+  socket.** The one control that reaches this engine is the ZynAddSubFx instrument view's existing
+  "Run in a separate process" checkbox; there is no family table view, no crash counter, no refusal banner
+  and no restart button anywhere in `src/gui/`, and the mode of a device other than ZynAddSubFx cannot be
+  chosen from the interface at all. Full document: `docs/OUT-OF-PROCESS-BEYOND-ZYN.md`.
+- **Honest limits, in the same breath:** no plugin is crashed by its own bug in the proof (the client is
+  SIGKILLed from outside); a slot that lost its client is not restarted automatically; **thirteen of the
+  fifteen classified families have no out-of-process path in this build** and are refused rather than
+  quietly run in place.
+
 ## The A16 contract table, and its histogram
 
-**The table holds 335 rows - 158 `true_inverse`, 32 `snapshot`, 10 `irreversible`, 135 `not_mutating` -
+**The table holds 340 rows - 158 `true_inverse`, 32 `snapshot`, 13 `irreversible`, 137 `not_mutating` -
 and this page states that figure ONCE, for the configuration the release ships** (telemetry client in,
 wasmtime sandbox in, session data layer in, offline stem engine out). What each class means, and why
 each row is in it, is `docs/A16-REVERSIBILITY.md` and the rows' own reasons.
@@ -820,15 +860,19 @@ It was MEASURED, class split and all, by
 bash tools/dawproject-proof.sh      # part 2, the A16 histogram probe
 ```
 
-whose own output line is this page's figure verbatim - `MEASURED rows=335 true_inverse=158 snapshot=32
-irreversible=10 not_mutating=135`, with `DECLARED rows=335 entries=335 duplicates=0` on the same run.
+whose own output line is this page's figure verbatim - `MEASURED rows=340 true_inverse=158 snapshot=32
+irreversible=13 not_mutating=137`, with `DECLARED rows=340 entries=340 duplicates=0` on the same run.
 (The 334-row figure this block carried until 2026-09-16 was the same probe on a tree without feature
 row 79: the CLAP instrument path adds exactly ONE row, `plugin.host_notes` -
 `src/core/ControlReversibilityTableClapInstrument.cpp` - and the wave-10 integration train re-measured
-it here rather than carrying the lane's arithmetic.)
+it here rather than carrying the lane's arithmetic. The 335-row figure this block carried until the
+wave-11 train was that tree plus feature row 80, which adds FIVE rows -
+`src/core/ControlReversibilityTableOutOfProcess.cpp`: two `not_mutating` reads and the three
+`irreversible` writers of the `oop.*` group. The lane moved this block to the number its own tree
+measures and the MERGE TIP re-measured it with the command above.)
 
 <!-- A16-HISTOGRAM-BEGIN
-     measured: rows=335 true_inverse=158 snapshot=32 irreversible=10 not_mutating=135
+     measured: rows=340 true_inverse=158 snapshot=32 irreversible=13 not_mutating=137
      configuration: telemetry.status wasm.load session.get_state
      option telemetry.status rows=2 not_mutating=2
      option wasm.load rows=8 snapshot=3 not_mutating=5
