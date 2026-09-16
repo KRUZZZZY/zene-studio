@@ -282,6 +282,14 @@ void registerControlCommands(ControlRegistry& registry)
 	// and no compile-time switch: the module is a plain C API over files in the
 	// working directory, so its ids are honest in every configuration.
 	registerSafeStartCommands(registry);
+	// Out-of-process hosting beyond ZynAddSubFx (feature row 80, board card #670):
+	// the family table and the client-process record are the engine half
+	// (include/OutOfProcessHosting.h), this group is the only surface that reads
+	// them and the only way a headless instance chooses a device's hosting mode.
+	// Registered unconditionally: the table answers for EVERY configuration (a
+	// build with no client executable at all reports that, family by family),
+	// so there is no #ifdef here and no id whose handler could not exist.
+	registerOutOfProcessCommands(registry);
 	// The in-app revision timeline (feature row 76, OWNER-31 item 30): list the
 	// revisions a project already has - the keep-3 rotation, the interface save's
 	// `<file>.bak`, the autosave and its sidecar, the project's own git history -

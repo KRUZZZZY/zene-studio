@@ -520,6 +520,14 @@ LMMS_EXPORT const ReversibilityRow* reversibilityMmpzGitRowTable(int* rowCount);
  *  FAIL, typed, naming the inverse command. Joined into reversibilityRowTable().
  */
 LMMS_EXPORT const ReversibilityRow* reversibilityControllerRowTable(int* rowCount);
+/*! The `oop.*` rows (feature row 80, board card #670): out-of-process plugin
+ *  hosting beyond ZynAddSubFx. Two not_mutating reads (what this build can host,
+ *  what the session's client processes have done) and three irreversible writers
+ *  (the mode switch, a restart, the crash-count clear), each with its own reason
+ *  and fallback. A GROUP file on the safestart/recording/routing seam, joined
+ *  into reversibilityRowTable() by one entry.
+ */
+LMMS_EXPORT const ReversibilityRow* reversibilityOutOfProcessRowTable(int* rowCount);
 
 } // namespace control
 

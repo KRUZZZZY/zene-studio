@@ -509,6 +509,18 @@ LMMS_EXPORT void registerAutomationRampCommands(ControlRegistry& registry);
  *  operated in 0.3.0: there is no dialog, no banner and no toolbar button for
  *  it (docs/KNOWN-LIMITATIONS.md carries the absence line). */
 LMMS_EXPORT void registerSafeStartCommands(ControlRegistry& registry);
+/*! oop.get_state / list_families / set_mode / restart / reset_crashes -
+ *  out-of-process plugin hosting BEYOND ZynAddSubFx (feature row 80 of
+ *  docs/FEATURE-LIST-0.3.0.md, board card #670). The engine half is
+ *  include/OutOfProcessHosting.h: the family table - what each plugin family's
+ *  out-of-process story IS in this build, with a one-sentence reason where it
+ *  has none - and the client-process record the crash-loop REFUSAL is measured
+ *  against. The surface is the only way the choice is made in a headless
+ *  instance and the only place the crash accounting is readable at all; there is
+ *  no page, dialog or column for it in the interface
+ *  (docs/KNOWN-LIMITATIONS.md carries the absence line). Registered from
+ *  src/core/ControlRegistryRegistrations.cpp. */
+LMMS_EXPORT void registerOutOfProcessCommands(ControlRegistry& registry);
 /*! revisions.list / revisions.compare / revisions.restore - the in-app revision
  *  timeline (feature-list row 76, OWNER-31 item 30) over the revision artefacts
  *  this engine ALREADY writes: the keep-3 rotation `project.save` performs

@@ -298,6 +298,15 @@ set(LMMS_SRCS
 	# ...AutomationEdit.cpp established: the read half and the pair's shared header
 	# are the other two files of the same split.
 	core/ControlCommandsSafeStartEdit.cpp
+	# Out-of-process hosting's surface (feature row 80, board card #670): the
+	# family table and the client-process record are the engine half
+	# (core/OutOfProcessHosting.cpp), and the group's reads and writes are split
+	# along the same seam as the safestart pair above. In LMMS_SRCS unconditionally
+	# - the group exists in every configuration, because the table's whole job is
+	# to say what THIS build can and cannot host out of process.
+	core/ControlCommandsOutOfProcess.cpp
+	core/ControlCommandsOutOfProcessEdit.cpp
+	core/OutOfProcessHosting.cpp
 	# plugin.host_chunking (feature row 82, CODE-4): the chunking contract both
 	# host paths keep and the counters their audio paths increment. In the core
 	# because the hosts are plugin modules: this is what makes the property
@@ -491,6 +500,11 @@ set(LMMS_SRCS
 	# row, not from the file - and its own TU because the files it would otherwise
 	# join are both at the file-length ratchet.
 	core/ControlReversibilityTableSafeStart.cpp
+	# The oop.* group's five rows (feature row 80, board card #670): two
+	# not_mutating reads and the three irreversible writers, each with its own
+	# reason and fallback. A GROUP file on the same seam as the safestart rows
+	# above, joined into reversibilityRowTable() by one entry.
+	core/ControlReversibilityTableOutOfProcess.cpp
 	# The auto-mastering group's three rows (feature rows 25 and 72): one
 	# recorded-action true_inverse row and the group's two not_mutating
 	# inspectors. A GROUP file on the same seam as the routing rows above.

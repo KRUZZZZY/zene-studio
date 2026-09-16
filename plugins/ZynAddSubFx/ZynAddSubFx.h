@@ -99,6 +99,22 @@ public:
 	//! it is a plugin module.
 	Q_INVOKABLE QString hostingState() const;
 
+	//! pid of the running client process, or 0 when the in-process synth is the
+	//! one running (feature row 80, board card #670). Q_INVOKABLE so the
+	//! control surface's `oop.*` group reports the client the way the platform
+	//! sees it and a test host needs no header for this class.
+	Q_INVOKABLE qint64 hostingProcessId() const;
+
+	//! Choose the hosting mode: true re-hosts this instance in its own client
+	//! process (RemoteZynAddSubFx), false back to the in-process synth. Returns
+	//! whether the mode changed (a call that asks for the mode already in force
+	//! changes nothing and says so). This is the ONE settle point for the
+	//! choice - the instrument view's checkbox, a project's `separateprocess`
+	//! attribute and the control surface's oop.set_mode all end here - and it
+	//! re-instantiates rather than switching live, because the shared audio
+	//! block and the synth state do not survive a switch mid-render.
+	Q_INVOKABLE bool setHostingMode( bool separateProcess );
+
 	bool handleMidiEvent( const MidiEvent& event, const TimePos& time = TimePos(), f_cnt_t offset = 0 ) override;
 
 	void saveSettings( QDomDocument & _doc, QDomElement & _parent ) override;

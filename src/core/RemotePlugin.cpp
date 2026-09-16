@@ -38,6 +38,7 @@
 #include "AudioEngine.h"
 #include "Engine.h"
 #include "MidiEvent.h"
+#include "OutOfProcessHosting.h"
 #include "RemotePluginAudioPorts.h"
 #include "Song.h"
 
@@ -46,6 +47,7 @@
 #include <QCoreApplication>
 #include <QDebug>
 #include <QDir>
+#include <QFileInfo>
 #include <QUuid>
 
 #ifndef SYNC_WITH_SHM_FIFO
@@ -199,6 +201,10 @@ RemotePlugin::~RemotePlugin()
 	m_watcher.stop();
 	m_watcher.wait();
 
+	// Everything below is a DELIBERATE client shutdown: this flag is what makes
+	// processFinished() report it as one (feature row 80, board card #670).
+	m_hostShutdownRequested = true;
+
 	if( m_failed == false )
 	{
 		if( isRunning() )
@@ -319,6 +325,18 @@ bool RemotePlugin::init(const QString &pluginExecutable,
 			}
 	}
 #endif
+
+	// Feature row 80 (out-of-process hosting, board card #670): the client is
+		// connected, so its pid is the QProcess's own from here on - record the
+		// start under the client executable's name. The record is what `oop.*`
+		// reports and what the crash-loop REFUSAL is measured against; a start that
+	// never got this far leaves no record, which is correct (there is nothing to
+	// say about a client that never ran).
+	{
+		oop::HostTracker& tracker = oop::HostTracker::instance();
+		tracker.noteStarted(QFileInfo{m_exec}.fileName(), m_process.processId(),
+			QString::fromLatin1(metaObject()->className()));
+	}
 
 	sendMessage(message(IdSyncKey).addString(Engine::getSong()->syncKey()));
 
@@ -502,7 +520,7 @@ auto RemotePlugin::updateAudioBuffer(ch_cnt_t channelsIn, ch_cnt_t channelsOut, 
 
 
 void RemotePlugin::processFinished( int exitCode,
-					QProcess::ExitStatus exitStatus )
+						QProcess::ExitStatus exitStatus )
 {
 	if ( exitStatus == QProcess::CrashExit )
 	{
@@ -511,6 +529,27 @@ void RemotePlugin::processFinished( int exitCode,
 	else if ( exitCode )
 	{
 		qCritical() << "Remote plugin exit code: " << exitCode;
+	}
+
+	// Feature row 80 (out-of-process hosting, board card #670): the client's
+	// exit is recorded under the CLIENT EXECUTABLE's name - which is what the
+	// crash-loop refusal and the `oop.*` surface read. A deliberate shutdown
+	// (our own destructor taking the client down, m_hostShutdownRequested) is
+	// counted as an exit but never as a crash: that is the difference between
+	// "this client executable is broken" and "we stopped using it".
+	//
+	// The record is written BEFORE invalidate(), so a plugin that is being
+	// failed reports the exit that failed it.
+	oop::HostTracker& tracker = oop::HostTracker::instance();
+	const QString client = QFileInfo{m_exec}.fileName();
+	if (m_hostShutdownRequested)
+	{
+		tracker.noteShutdown(client, exitCode);
+	}
+	else
+	{
+		tracker.noteExited(client, exitCode, exitStatus == QProcess::CrashExit,
+			QString::fromLatin1(metaObject()->className()));
 	}
 #ifndef SYNC_WITH_SHM_FIFO
 	invalidate();
