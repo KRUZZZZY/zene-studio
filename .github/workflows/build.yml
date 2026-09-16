@@ -187,6 +187,12 @@ jobs:
         # time: 0ms ... dumping stack" then "End of stack trace" with nothing between - so the
         # crashing frame is only obtainable by running the binary under a debugger. Bounded: at
         # most three tests, 120 s each; best-effort: it can never fail the job it explains.
+        # The bound is `timeout` (GNU coreutils), and the macOS runners do not have it: this step
+        # has never produced a backtrace there - run 35126160372, job 104895806458 ends its
+        # debugger loop with "line 19: timeout: command not found", which is why that run's two
+        # macOS failures (SafeStartTest, Vst3ChunkProbeTest) carry no frame. `gtimeout` is the
+        # Homebrew coreutils spelling; with neither, the debugger runs unbounded rather than the
+        # evidence being skipped.
         if: failure()
         continue-on-error: true
         shell: bash
@@ -195,6 +201,9 @@ jobs:
           log=Testing/Temporary/LastTestsFailed.log
           if command -v gdb >/dev/null 2>&1; then dbg=gdb; else dbg=lldb; fi
           command -v "$dbg" >/dev/null 2>&1 || { echo "no gdb or lldb here: no backtrace"; exit 0; }
+          if command -v timeout >/dev/null 2>&1; then tmo=(timeout 120)
+          elif command -v gtimeout >/dev/null 2>&1; then tmo=(gtimeout 120)
+          else tmo=(); echo "no timeout/gtimeout here: the debugger run below is unbounded"; fi
           [ -f "$log" ] || { echo "no $log: nothing to re-run"; exit 0; }
           # ctest writes "<test-number>:<test-name>", one line per failed test - NOT a reason,
           # so the crash/no-crash split cannot be read out of this file; the debugger reports
@@ -206,10 +215,10 @@ jobs:
             case "$name" in Control*) continue ;; esac
             echo "=== $dbg backtrace of failed test $name ==="
             if [ "$dbg" = gdb ]; then
-              QT_QPA_PLATFORM=offscreen timeout 120 gdb -batch -q -ex "set pagination off" \
+              QT_QPA_PLATFORM=offscreen "${tmo[@]}" gdb -batch -q -ex "set pagination off" \
                 -ex run -ex "thread apply all bt" --args "./$name" 2>&1 | tail -120 || true
             else
-              QT_QPA_PLATFORM=offscreen timeout 120 lldb -b -o run \
+              QT_QPA_PLATFORM=offscreen "${tmo[@]}" lldb -b -o run \
                 -o "thread backtrace all" -o quit -- "./$name" 2>&1 | tail -120 || true
             fi
           done
@@ -396,6 +405,12 @@ jobs:
         # time: 0ms ... dumping stack" then "End of stack trace" with nothing between - so the
         # crashing frame is only obtainable by running the binary under a debugger. Bounded: at
         # most three tests, 120 s each; best-effort: it can never fail the job it explains.
+        # The bound is `timeout` (GNU coreutils), and the macOS runners do not have it: this step
+        # has never produced a backtrace there - run 35126160372, job 104895806458 ends its
+        # debugger loop with "line 19: timeout: command not found", which is why that run's two
+        # macOS failures (SafeStartTest, Vst3ChunkProbeTest) carry no frame. `gtimeout` is the
+        # Homebrew coreutils spelling; with neither, the debugger runs unbounded rather than the
+        # evidence being skipped.
         if: failure()
         continue-on-error: true
         shell: bash
@@ -404,6 +419,9 @@ jobs:
           log=Testing/Temporary/LastTestsFailed.log
           if command -v gdb >/dev/null 2>&1; then dbg=gdb; else dbg=lldb; fi
           command -v "$dbg" >/dev/null 2>&1 || { echo "no gdb or lldb here: no backtrace"; exit 0; }
+          if command -v timeout >/dev/null 2>&1; then tmo=(timeout 120)
+          elif command -v gtimeout >/dev/null 2>&1; then tmo=(gtimeout 120)
+          else tmo=(); echo "no timeout/gtimeout here: the debugger run below is unbounded"; fi
           [ -f "$log" ] || { echo "no $log: nothing to re-run"; exit 0; }
           # ctest writes "<test-number>:<test-name>", one line per failed test - NOT a reason,
           # so the crash/no-crash split cannot be read out of this file; the debugger reports
@@ -415,10 +433,10 @@ jobs:
             case "$name" in Control*) continue ;; esac
             echo "=== $dbg backtrace of failed test $name ==="
             if [ "$dbg" = gdb ]; then
-              QT_QPA_PLATFORM=offscreen timeout 120 gdb -batch -q -ex "set pagination off" \
+              QT_QPA_PLATFORM=offscreen "${tmo[@]}" gdb -batch -q -ex "set pagination off" \
                 -ex run -ex "thread apply all bt" --args "./$name" 2>&1 | tail -120 || true
             else
-              QT_QPA_PLATFORM=offscreen timeout 120 lldb -b -o run \
+              QT_QPA_PLATFORM=offscreen "${tmo[@]}" lldb -b -o run \
                 -o "thread backtrace all" -o quit -- "./$name" 2>&1 | tail -120 || true
             fi
           done
@@ -644,6 +662,12 @@ jobs:
         # time: 0ms ... dumping stack" then "End of stack trace" with nothing between - so the
         # crashing frame is only obtainable by running the binary under a debugger. Bounded: at
         # most three tests, 120 s each; best-effort: it can never fail the job it explains.
+        # The bound is `timeout` (GNU coreutils), and the macOS runners do not have it: this step
+        # has never produced a backtrace there - run 35126160372, job 104895806458 ends its
+        # debugger loop with "line 19: timeout: command not found", which is why that run's two
+        # macOS failures (SafeStartTest, Vst3ChunkProbeTest) carry no frame. `gtimeout` is the
+        # Homebrew coreutils spelling; with neither, the debugger runs unbounded rather than the
+        # evidence being skipped.
         if: failure()
         continue-on-error: true
         shell: bash
@@ -652,6 +676,9 @@ jobs:
           log=Testing/Temporary/LastTestsFailed.log
           if command -v gdb >/dev/null 2>&1; then dbg=gdb; else dbg=lldb; fi
           command -v "$dbg" >/dev/null 2>&1 || { echo "no gdb or lldb here: no backtrace"; exit 0; }
+          if command -v timeout >/dev/null 2>&1; then tmo=(timeout 120)
+          elif command -v gtimeout >/dev/null 2>&1; then tmo=(gtimeout 120)
+          else tmo=(); echo "no timeout/gtimeout here: the debugger run below is unbounded"; fi
           [ -f "$log" ] || { echo "no $log: nothing to re-run"; exit 0; }
           # ctest writes "<test-number>:<test-name>", one line per failed test - NOT a reason,
           # so the crash/no-crash split cannot be read out of this file; the debugger reports
@@ -663,10 +690,10 @@ jobs:
             case "$name" in Control*) continue ;; esac
             echo "=== $dbg backtrace of failed test $name ==="
             if [ "$dbg" = gdb ]; then
-              QT_QPA_PLATFORM=offscreen timeout 120 gdb -batch -q -ex "set pagination off" \
+              QT_QPA_PLATFORM=offscreen "${tmo[@]}" gdb -batch -q -ex "set pagination off" \
                 -ex run -ex "thread apply all bt" --args "./$name" 2>&1 | tail -120 || true
             else
-              QT_QPA_PLATFORM=offscreen timeout 120 lldb -b -o run \
+              QT_QPA_PLATFORM=offscreen "${tmo[@]}" lldb -b -o run \
                 -o "thread backtrace all" -o quit -- "./$name" 2>&1 | tail -120 || true
             fi
           done

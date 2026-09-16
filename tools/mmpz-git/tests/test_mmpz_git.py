@@ -468,22 +468,22 @@ class BinarySafety(unittest.TestCase):
 
         `render` goes through DataFile::loadData (src/core/DataFile.cpp:2128),
         which parses the XML first and only falls back to qUncompress -- the
-        path a real project-open takes.  The `dump` action is NOT the right
-        probe here: it calls qUncompress directly with no XML fallback
-        (src/core/main.cpp:461), so on the uncompressed form the merge driver
-        writes it prints "qUncompress: Input data is corrupted" and exits 0
-        with no output, which would look like a pass.
+        path a real project-open takes.  `dump` calls qUncompress directly and
+        has no XML fallback (src/core/main.cpp:461), so the merge driver's
+        uncompressed form makes it exit 0 with "Input data is corrupted".
         """
         out = path + ".loadprobe.wav"
         if os.path.exists(out):
             os.unlink(out)
         env = dict(os.environ)
         env["QT_QPA_PLATFORM"] = "offscreen"
-        r = subprocess.run(["timeout", "180", self.BIN, "render", path,
-                            "-o", out, "-f", "wav"],
-                           capture_output=True, text=True, env=env)
-        self.assertEqual(r.returncode, 0,
-                         "%s: the DAW could not load %s (exit %d, 124 = hang)\n%s"
+        # Hang bound in Python, not `timeout`: GNU coreutils is absent on the macOS runners.
+        try:
+            r = subprocess.run([self.BIN, "render", path, "-o", out, "-f", "wav"],
+                               capture_output=True, text=True, env=env, timeout=180)
+        except subprocess.TimeoutExpired:
+            self.fail("%s: the DAW hung loading %s (180 s)" % (what, path))
+        self.assertEqual(r.returncode, 0, "%s: the DAW could not load %s (exit %d)\n%s"
                          % (what, path, r.returncode, r.stderr[-800:]))
         self.assertTrue(os.path.exists(out) and os.path.getsize(out) > 1024,
                         "%s: %s loaded but produced no audio" % (what, path))
