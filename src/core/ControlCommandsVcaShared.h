@@ -293,13 +293,16 @@ inline MixerChannel* memberChannel(const QJsonObject& args, VcaGroup* group, Con
 		return nullptr;
 	}
 	// Master is refused by IDENTITY (isMaster() is the channel's position 0,
-	// the mix bus itself) and not by the number read off the wire: ch-0 is the
-	// master's id in a fresh project, but an id is not a position any more.
+	// the mix bus itself) and not by the number read off the wire: the master's
+	// id is whatever the project's counter allocated at its construction - in a
+	// fresh session measured on the shipped binary it is ch-1, not ch-0, and an
+	// id is not a position. The refusal names the channel the caller addressed,
+	// read off the object it resolved to.
 	if (channel->isMaster())
 	{
 		*error = ControlResult::failure(ControlErrorKind::Refused,
-			QStringLiteral("ch-0 is the master channel and cannot be a group member: a group "
-				"scales the channels that feed the master"));
+			QStringLiteral("%1 is the master channel and cannot be a group member: a group "
+				"scales the channels that feed the master").arg(control::channelIdOf(channel)));
 		return nullptr;
 	}
 	// The membership itself stays the group's own bookkeeping, which is a

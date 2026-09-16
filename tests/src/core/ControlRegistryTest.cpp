@@ -416,16 +416,16 @@ private slots:
 		QCOMPARE(control::idToIndex(QStringLiteral("trk-"), QStringLiteral("trk-")), -1);
 	}
 
-	//! mixer.set_pan is an honest typed refusal: no pan exists on a mixer channel.
+	//! mixer.set_pan refuses (no channel has a pan) - for a channel that EXISTS:
+	//! a ch-<n> id is a constructed id, not an index (SPEC-stable-ids.md slice 2).
 	void mixerSetPanRefusesTyped()
 	{
 		ControlRegistry* registry = ControlRegistry::instance();
-		QJsonObject args;
-		args.insert(QStringLiteral("channel"), QStringLiteral("ch-0"));
-		args.insert(QStringLiteral("pan"), 0.5);
-		const ControlResult result = registry->invoke(QStringLiteral("mixer.set_pan"), args);
-		QVERIFY(!result.ok);
-		QCOMPARE(result.errorKind, ControlErrorKind::Refused);
+		const ControlResult added = registry->invoke(QStringLiteral("mixer.add_channel"));
+		const ControlResult result = registry->invoke(QStringLiteral("mixer.set_pan"),
+			QJsonObject{{QStringLiteral("channel"), added.result.value(QStringLiteral("channel"))},
+				{QStringLiteral("pan"), 0.5}});
+		QVERIFY2(added.ok && result.errorKind == ControlErrorKind::Refused, qPrintable(added.errorMessage + result.errorMessage));
 		QCOMPARE(controlErrorKindName(result.errorKind), QStringLiteral("refused"));
 	}
 
