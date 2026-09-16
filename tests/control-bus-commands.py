@@ -98,6 +98,21 @@ def channel_count(session):
     return session.result("mixer.get_state").get("count")
 
 
+def master_id(session):
+    """The master channel's id, READ OFF THE WIRE - never predicted.
+
+    A ch-<n> id is allocated at construction from the project's counter
+    (SPEC-stable-ids.md slice 2; section 4.2: a client "never parses, derives, or
+    predicts an id"), so the master carries whatever number the counter held when
+    it was built - measured on this binary: ch-1 in a fresh session, with
+    `mixer.add_channel` handing out ch-7. "ch-0" names no channel at all.
+    """
+    for entry in session.result("mixer.get_state").get("channels") or []:
+        if entry.get("is_master") is True:
+            return entry.get("id")
+    return None
+
+
 def fader_of(entry):
     """A bus entry's volume rounded to the wire's own precision (or -1 when the
     entry is gone, so a missing bus cannot compare equal to a fader value)."""
@@ -202,7 +217,7 @@ def check_remove_is_irreversible(session, recorder):
     if not bus:
         recorder.check("bus.create returned a channel", False, "created=%r" % (created,))
         return
-    session.result("mixer.send_to", {"channel": "ch-0", "to": bus, "amount": 0.25})
+    session.result("mixer.send_to", {"channel": master_id(session), "to": bus, "amount": 0.25})
     removed = session.result("bus.remove", {"channel": bus})
     entry = bus_entry(session.result("bus.list"), bus)
     recorder.check("bus.remove deletes the bus",
@@ -223,7 +238,7 @@ def check_remove_is_irreversible(session, recorder):
 
 def check_master_refusal(session, recorder):
     """The master is not a bus, and bus.remove says which command owns it."""
-    refused = session.typed_error("bus.remove", {"channel": "ch-0"})
+    refused = session.typed_error("bus.remove", {"channel": master_id(session)})
     recorder.check("bus.remove refuses a channel that is not a bus, before writing",
                    refused.get("kind") == "refused" and "mixer.remove_channel" in
                    str(refused.get("message")),
