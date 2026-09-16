@@ -71,6 +71,44 @@
 using namespace lmms;
 using namespace smfsupport;
 
+namespace
+{
+
+//! One event, field by field: an equality failure that prints only "FALSE" says
+//! nothing about WHICH half of WHICH event drifted, and every field here is a
+//! candidate for a writer/reader disagreement.
+QString eventText(const TempoMapEvent& event)
+{
+	return QStringLiteral("{tick %1, has_tempo %2, bpm %3, has_signature %4, %5/%6}")
+		.arg(static_cast<qint64>(event.tick)).arg(event.hasTempo).arg(event.tempo)
+		.arg(event.hasTimeSignature).arg(event.numerator).arg(event.denominator);
+}
+
+//! The first event the two maps disagree on - or the ACTIVE flag, when every
+//! event agrees. The failure message of the claim at the end of this file.
+QString firstDifference(const TempoMap& live, const TempoMap& rebuilt)
+{
+	const std::span<const TempoMapEvent> authored = live.all();
+	const std::span<const TempoMapEvent> other = rebuilt.all();
+	if (authored.size() != other.size())
+	{
+		return QStringLiteral("the maps hold %1 and %2 events")
+			.arg(static_cast<int>(authored.size())).arg(static_cast<int>(other.size()));
+	}
+	for (std::size_t i = 0; i < authored.size(); ++i)
+	{
+		if (!(authored[i] == other[i]))
+		{
+			return QStringLiteral("event %1: live %2 vs rebuilt %3")
+				.arg(static_cast<int>(i)).arg(eventText(authored[i]), eventText(other[i]));
+		}
+	}
+	return QStringLiteral("every event is equal, so the maps differ in active (%1 vs %2)")
+		.arg(live.active()).arg(rebuilt.active());
+}
+
+} // namespace
+
 class SmfInterchangeRoundTripTest : public QObject
 {
 	Q_OBJECT
@@ -165,7 +203,8 @@ private slots:
 			QVERIFY(rebuilt.addEvent(event));
 		}
 		rebuilt.setActive(true);
-		QVERIFY(Engine::getSong()->tempoMap().map() == rebuilt);
+		QVERIFY2(Engine::getSong()->tempoMap().map() == rebuilt,
+			qPrintable(firstDifference(Engine::getSong()->tempoMap().map(), rebuilt)));
 
 		// (c) Both step functions, on and around every event tick, against the
 		// oracle that reads the AUTHORED events.

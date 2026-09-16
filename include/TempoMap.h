@@ -91,11 +91,31 @@ struct TempoMapEvent
 	int numerator = 4;
 	int denominator = 4;
 
+	/*! Equal when the two events MEAN the same thing: the same tick, the same
+	 *  halves, and each PRESENT half's value.
+	 *
+	 *  An absent half's fields are not part of the value. validEvent() does not
+	 *  constrain them (`if (!event.hasTimeSignature) { return true; }`), the two
+	 *  halves are independent, and the published JSON reports an absent half as 0
+	 *  (ControlCommandsTransportMap.cpp, eventState). Comparing them anyway made
+	 *  two maps that answer every query identically compare UNEQUAL, and made a
+	 *  map rebuilt from the engine's own published state impossible to equal by
+	 *  construction. Measured on the merged tip
+	 *  (SmfInterchangeRoundTripTest::theRoundTripComparesTheMapAndNotTheHash):
+	 *  the live map's metre-only event at tick 384 carried tempo 140
+	 *  (TempoMapDefaultTempo) and the same event rebuilt from tempo_map_get
+	 *  carried 0 - the single difference, and the round trip was declared broken
+	 *  for it. */
 	bool operator==(const TempoMapEvent& other) const
 	{
-		return tick == other.tick && hasTempo == other.hasTempo && tempo == other.tempo
-			&& hasTimeSignature == other.hasTimeSignature
-			&& numerator == other.numerator && denominator == other.denominator;
+		if (tick != other.tick || hasTempo != other.hasTempo
+			|| hasTimeSignature != other.hasTimeSignature)
+		{
+			return false;
+		}
+		if (hasTempo && tempo != other.tempo) { return false; }
+		return !hasTimeSignature
+			|| (numerator == other.numerator && denominator == other.denominator);
 	}
 	bool operator!=(const TempoMapEvent& other) const { return !(*this == other); }
 };
