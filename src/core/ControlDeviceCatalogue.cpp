@@ -189,11 +189,17 @@ QJsonObject controlDeviceJson(const ControlDeviceEntry& entry, int index)
 	}
 	if (entry.format == QLatin1String("clap"))
 	{
-		// The module and the plug-in's own CLAP id: the (file, id) pair
+		// The module and the plug-in's own CLAP id - the key
 		// ClapSubPluginFeatures builds and the host's load() matches on. The
-		// id is also the entry's name, exactly as an LV2 entry's URI is.
+		// plug-in's id travels under `clap_id` and NOT under `id`: `id` is
+		// the catalogue's own dev-<n> (set above) and the only id plugin.load
+		// accepts, for every format alike. Publishing the plug-in's id as
+		// `id` (which is what this block did) overwrote the dev-<n> a client
+		// needs and left the catalogue id unpublished - the VST3 `class`,
+		// LADSPA `label` and LV2 `uri` entries all keep their dev-<n> id this
+		// way.
 		out.insert(QStringLiteral("file"), entry.file);
-		out.insert(QStringLiteral("id"), entry.name);
+		out.insert(QStringLiteral("clap_id"), entry.name);
 	}
 	return out;
 }

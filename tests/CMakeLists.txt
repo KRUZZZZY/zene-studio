@@ -1299,6 +1299,9 @@ if(TARGET lmms_clap)
 		src/plugins/ClapHostTest.cpp
 		${LMMS_CLAP_EFFECT_DIR}/ClapBusMap.cpp
 		${LMMS_CLAP_EFFECT_DIR}/ClapHost.cpp
+		${LMMS_CLAP_EFFECT_DIR}/ClapHostLifecycle.cpp
+		${LMMS_CLAP_EFFECT_DIR}/ClapHostNotes.cpp
+		${LMMS_CLAP_EFFECT_DIR}/ClapHostParams.cpp
 		${LMMS_CLAP_EFFECT_DIR}/ClapLoader.cpp
 		# the host path's chunking counters (CODE-4), core-owned
 		${CMAKE_SOURCE_DIR}/src/core/PluginHostChunking.cpp
@@ -1346,6 +1349,9 @@ if(TARGET lmms_clap)
 		src/plugins/ClapLoaderErrorTest.cpp
 		${LMMS_CLAP_EFFECT_DIR}/ClapBusMap.cpp
 		${LMMS_CLAP_EFFECT_DIR}/ClapHost.cpp
+		${LMMS_CLAP_EFFECT_DIR}/ClapHostLifecycle.cpp
+		${LMMS_CLAP_EFFECT_DIR}/ClapHostNotes.cpp
+		${LMMS_CLAP_EFFECT_DIR}/ClapHostParams.cpp
 		${LMMS_CLAP_EFFECT_DIR}/ClapLoader.cpp
 		${CMAKE_SOURCE_DIR}/src/core/PluginHostChunking.cpp
 		# the note-path counters and ports (feature row 79, board task #669),
@@ -1382,6 +1388,9 @@ if(TARGET lmms_clap)
 		${LMMS_CLAP_EFFECT_DIR}/ClapEffectControlDialog.cpp
 		${LMMS_CLAP_EFFECT_DIR}/ClapEffectControls.cpp
 		${LMMS_CLAP_EFFECT_DIR}/ClapHost.cpp
+		${LMMS_CLAP_EFFECT_DIR}/ClapHostLifecycle.cpp
+		${LMMS_CLAP_EFFECT_DIR}/ClapHostNotes.cpp
+		${LMMS_CLAP_EFFECT_DIR}/ClapHostParams.cpp
 		${LMMS_CLAP_EFFECT_DIR}/ClapLoader.cpp
 		${LMMS_CLAP_EFFECT_DIR}/ClapParameter.cpp
 		${LMMS_CLAP_EFFECT_DIR}/ClapSubPluginFeatures.cpp

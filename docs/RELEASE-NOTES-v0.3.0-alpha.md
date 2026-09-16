@@ -1911,7 +1911,9 @@ rule) had rejected; the instrument module then takes its channel counts from the
 usable audio ports".
 
 Drivable through the socket: **`plugin.list`** carries the CLAP classes of the product's plug-in directory as
-`format: "clap"` entries (`(file, id)` — module path plus the plug-in's own CLAP id — and `loadable: true`)
+`format: "clap"` entries (`id` = the catalogue's own `dev-<n>`, the one id `plugin.load` takes for every
+format; `file` = the module path; `clap_id` = the plug-in's own CLAP id, the same shape the VST3 entry's
+`class`, the LADSPA entry's `label` and the LV2 entry's `uri` carry; and `loadable: true`)
 and **`plugin.load`** loads one onto an instrument track, exactly as the VST3 half does. The enumeration is
 the CLAP host's own (`ClapSubPluginFeatures::listSubPluginKeys`, the call the plug-in browser makes), the
 CLAP block sits **after** the VST3 block in the catalogue so no `dev-<n>` id a client already holds is

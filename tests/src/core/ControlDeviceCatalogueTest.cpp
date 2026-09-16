@@ -397,6 +397,7 @@ private slots:
 		QVERIFY2(clap.ok, qPrintable(clap.errorMessage));
 
 		QString deviceId;
+		QString clapId;
 		QString module;
 		for (const QJsonValue& value : clap.result.value(QStringLiteral("devices")).toArray())
 		{
@@ -407,18 +408,29 @@ private slots:
 				continue;
 			}
 			deviceId = device.value(QStringLiteral("id")).toString();
+			clapId = device.value(QStringLiteral("clap_id")).toString();
 			module = device.value(QStringLiteral("file")).toString();
 			QCOMPARE(device.value(QStringLiteral("kind")).toString(),
 				QStringLiteral("instrument"));
-			// The (file, id) pair the host's load() keys on.
-			QCOMPARE(device.value(QStringLiteral("id")).toString(),
-				device.value(QStringLiteral("name")).toString());
+			// The id is the CATALOGUE id (dev-<n>), the one id every format's
+			// entry carries and the only one plugin.load takes - not the
+			// plug-in's own CLAP id, which this case used to hand to
+			// plugin.load and which no client can load (the VST3 case above
+			// asserts the same shape).
+			QVERIFY2(deviceId.startsWith(QStringLiteral("dev-")),
+				qPrintable(QStringLiteral("the clap entry's id '%1' is not a dev-<n> "
+					"catalogue id, so plugin.load cannot take it")
+					.arg(deviceId)));
+			// The (file, clap_id) pair the host's load() keys on: the module
+			// path plus the plug-in's own CLAP id, under its own key.
+			QCOMPARE(clapId, device.value(QStringLiteral("name")).toString());
 			QVERIFY2(device.value(QStringLiteral("loadable")).toBool(),
 				"the fixture class is not offered as loadable");
 		}
 		QVERIFY2(!deviceId.isEmpty(),
 			"plugin.list format=clap does not carry the fixture's instrument class");
 		QVERIFY2(!module.isEmpty(), "the clap entry carries no module path");
+		QVERIFY2(!clapId.isEmpty(), "the clap entry carries no plug-in id");
 
 		// plugin.load, onto an instrument track: the whole point of the block.
 		auto* track = new InstrumentTrack(Engine::getSong());

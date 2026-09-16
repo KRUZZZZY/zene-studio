@@ -553,6 +553,10 @@ plugins/ClapEffect/ClapEffectControls.cpp
 plugins/ClapEffect/ClapEffectControls.h
 plugins/ClapEffect/ClapHost.cpp
 plugins/ClapEffect/ClapHost.h
+plugins/ClapEffect/ClapHostInternals.h
+plugins/ClapEffect/ClapHostLifecycle.cpp
+plugins/ClapEffect/ClapHostNotes.cpp
+plugins/ClapEffect/ClapHostParams.cpp
 plugins/ClapEffect/ClapLoader.cpp
 plugins/ClapEffect/ClapLoader.h
 plugins/ClapEffect/ClapNoteQueue.h
