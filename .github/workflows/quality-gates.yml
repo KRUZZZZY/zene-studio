@@ -48,7 +48,7 @@ jobs:
   # main-protection, main-requires-pull-request and release-tag-protection, none of them
   # a required check), and REL-1 is the item that will require these names.
   static-gates:
-    name: static gates (3, 4, 6, 7, 8, 9, 11)
+    name: static gates (3, 4, 6, 7, 8, 9, 11, 12)
     runs-on: ubuntu-latest
     steps:
       - name: Check out (full history - Gate 6 needs it)
@@ -85,6 +85,14 @@ jobs:
       # runs both in one row for the same reason.
       - name: Gate 11 control - the evidence gate's own red/green self-test
         run: bash tests/evidence-gate.sh --self-test
+      # Gate 12 (board card #678 / feature row 52, added 2026-09-16): the sweeping
+      # enforcement of AGENTS.md's realtime rule - no allocation, no locking, no
+      # unbounded growth on audio-thread paths. It reads the sources named in
+      # tests/rt-safety-scope.txt and judges the hits against
+      # tests/rt-safety-allowlist.txt, so it needs no build and belongs in this job.
+      # Its controls are the ctest RtSafetySelfTest.
+      - name: Gate 12 - real-time safety (whole-tree sweep)
+        run: python3 tests/rt-safety-sweep.py --check
 
   # Gate 1 needs a real build: "it compiles" never substitutes for a passing ctest.
   unit-tests:

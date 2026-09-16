@@ -1,0 +1,56 @@
+# tests/rt-safety-scope.txt - the DECLARED audio-thread path set of the
+# rt-safety whole-tree sweep (row 52, board card #678).
+#
+# Format, TAB separated, one path:symbol pair per line:
+#
+#   <path><TAB><symbol><TAB><reason>
+#
+# * <symbol> is a function definition in <path>: `Class::method`, a free
+#   function, or `*` for "every line of this file" (used only for a small
+#   header whose whole contents are on the audio thread).
+# * The reason states WHY this is an audio-thread path. A blank reason is
+#   refused by the sweep (exit 2): a declared path is a claim, and a claim
+#   without a reason is a claim nobody can check.
+# * The scope is DECLARED, not discovered: the sweep never follows a call.
+#   A path is measured because it is written here, so ADDING A LINE IS THE
+#   ACT that widens the programme - and a new audio-thread path that nobody
+#   declares is measured by nothing (the sweep's own stated bound).
+# * A symbol that no longer resolves is a FAILURE, not a silent skip: the
+#   entry is a ledger line and a deleted function invalidates it.
+#
+# The declared frontier below is the render thread's own path: the backend's
+# callback, its four stages, and the fork's realtime-bearing callees that sit
+# directly on it. AGENTS.md rule 4: "no allocation, no locking, no unbounded
+# growth on audio-thread paths".
+src/core/AudioEngine.cpp	AudioEngine::renderNextPeriod	the audio thread's top-level callback: the audio backend calls it once per period and every stage below runs inside it
+src/core/AudioEngine.cpp	AudioEngine::renderStageNoteSetup	STAGE 0: clears old play handles, prepares the master mix and creates new play handles on the audio thread
+src/core/AudioEngine.cpp	AudioEngine::renderStageInstruments	STAGE 1: runs and renders every play handle on the audio thread (and on its worker threads)
+src/core/AudioEngine.cpp	AudioEngine::renderStageEffects	STAGE 2: processes effects and retires finished play handles on the audio thread
+src/core/AudioEngine.cpp	AudioEngine::renderStageMix	STAGE 3: master mix, master gain and the passive loudness tap, all on the audio thread
+src/core/AudioEngine.cpp	AudioEngine::swapBuffers	called once per period from STAGE 0: swaps the period buffers and drains the capture staging areas
+src/core/AudioEngine.cpp	AudioEngine::drainInputStage	the stereo input staging drain, once per period on the audio thread ("no lock, no allocation" by contract)
+src/core/AudioEngine.cpp	AudioEngine::drainWideInputStage	the N-channel (feature row 64) input staging drain, once per period on the audio thread
+src/core/Song.cpp	Song::processNextBuffer	the song's per-period scheduling, called from STAGE 0 on the audio thread (transport edges, MIDI clock, Session View launch scheduling)
+src/core/Mixer.cpp	Mixer::prepareMasterMix	called from STAGE 0: clears the mixer's per-period buffers before the render
+src/core/Mixer.cpp	Mixer::masterMix	called from STAGE 3: sums every channel into the master buffer on the audio thread
+src/core/SessionScheduler.cpp	SessionScheduler::processAudio	the Session View launch scheduler, called from Song::processNextBuffer on the audio thread once per period
+src/core/SessionScheduler.cpp	SessionScheduler::drainCommands	the bounded drain of the session command queue, called from processAudio on the audio thread
+src/core/SessionScheduler.cpp	SessionScheduler::advanceClock	the session clock's per-period advance, called from processAudio on the audio thread
+src/core/SessionScheduler.cpp	SessionScheduler::advanceSlots	the per-slot state advance, called from processAudio on the audio thread
+src/core/MidiClock.cpp	MidiClock::processAudioPeriod	the DAW's MIDI clock output, called from Song::processNextBuffer on the audio thread once per period
+src/core/EffectChain.cpp	EffectChain::processAudioBuffer	the effect chain's render entry, reached from STAGE 2 (and from an instrument track's own chain) on the audio thread
+src/core/EffectChain.cpp	EffectChain::processThroughGraph	the routing-graph render path of the chain, reached from processAudioBuffer on the audio thread
+include/AutomatableModel.h	AutomatableModel::incrementPeriodCounter	called at the end of STAGE 3: advances the automation period counter on the audio thread (inline definition in this header)
+src/core/Controller.cpp	Controller::triggerFrameCounter	called at the end of STAGE 3: advances every controller's frame counter on the audio thread
+src/core/EnvelopeAndLfoParameters.cpp	EnvelopeAndLfoParameters::LfoInstances::trigger	called at the end of STAGE 3: the per-period LFO trigger on the audio thread (EnvelopeAndLfoParameters::instances()->trigger())
+src/core/ScriptEngine.cpp	ScriptEngine::audioThreadTick	the Lua engine's audio-thread tick, called once per period from the audio thread (documented as allocating nothing and taking no locks)
+
+# --- the fork's own realtime paths on the render thread (0.3.0 additions) ------
+# Each of these is reached from the render callback above and each has a runtime
+# probe of its own (tests/src/core/*RealtimeTest.cpp, RecordRingBufferTest,
+# RetroMidiRingTest, LufsMeterTest); this sweep is the same paths' static half.
+include/SampleRecordAccumulator.h	SampleRecordAccumulator::append	the record demux's audio-thread half: called from STAGE 4 (AudioEngine::renderNextPeriod) for every rendered period
+include/RetroAudioRing.h	RetroAudioRing::push	the retrospective audio capture ring's writer, called from STAGE 4b on the audio thread every period
+include/RetroMidiRing.h	RetroMidiRing::push	the retrospective MIDI capture ring's writer, drained from the audio thread as MIDI events arrive
+src/core/MasterLoudnessTap.cpp	MasterLoudnessTap::feed	the passive loudness tap's per-period feed, called from STAGE 3b on the audio thread (the class doc states the realtime contract)
+src/core/LufsMeter.cpp	LufsMeter::processBlock	the meter's interleaved block measurement behind MasterLoudnessTap::feed, on the audio thread each period it is armed

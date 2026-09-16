@@ -24,7 +24,7 @@ actually checks it:
 | 6 | Mutation kill score ≥ 80% on core | KB ruleset | Gate 5 `tests/mutation-gate.sh` (scoped harness) | one TU, `src/core/RoutingGraph.cpp` | **green**; 27/30 = 90%, scope stated as a limit |
 | 7 | All tests pass | repo | Gate 1 (`ctest` from `build/tests`) | `tests/` | **green**; 24/24 (Debug, Qt6) |
 | 8 | No *undeclared* divergence in inherited code | repo policy 2026-09-11 | Gate 6 `tests/no-upstream-regression-gate.sh` + `tests/upstream-modifications.txt` ledger | commits since `tests/gate-base.txt` | **green**; 10 declared files, blank reason refused (exit 2) |
-| 9 | Realtime safety: no allocation/locking on audio-thread paths | program rule (AGENTS.md) | allocation-counter tests (`tests/src/core/AllocationProbe.h`, used by `RecordRingBufferTest` and the two-track capture/recording harnesses) | the paths that have such tests | **partially enforced** — a rule held by tests where they exist, not by a sweeping gate |
+| 9 | Realtime safety: no allocation/locking on audio-thread paths | program rule (AGENTS.md) | **Gate 12** `tests/rt-safety-sweep.py` — the whole-tree sweep over `tests/rt-safety-scope.txt` (27 declared `path:symbol` pairs) judged against `tests/rt-safety-allowlist.txt` (a reason and a ratchet count per accepted hit); controlled by the ctest `RtSafetySelfTest` (18 checks). The runtime half stays with the allocation-counter tests (`tests/src/core/AllocationProbe.h`, used by `RecordRingBufferTest`, `RecordingRealtimeTest`, `SessionSchedulerTest`, `RetroMidiRingTest`, `LufsMeterTest`, the two-track capture/recording harnesses and the rest) | the audio-thread paths the scope file DECLARES | **enforced, sweeping, since 2026-09-16** (board card #678, feature row 52): exit 0 on the 2026-09-16 tree; 918 region lines, 4 hits in 3 keys, all four in upstream-inherited code (the render callback's `m_changeMutex` lock, the per-period LFO trigger's `QMutexLocker`, `Song::processNextBuffer`'s two `TrackList` `push_back`s) and every declared fork path clean. Positive control on the real tree: a deliberate `new` injected into `AudioEngine::renderStageMix` failed the sweep naming the key (exit 1), and its removal passed (exit 0) — `docs/RT-SAFETY-SWEEP.md` records both commands |
 
 ## Enforced nowhere — stated, not implied
 
@@ -203,9 +203,10 @@ registering them is a scope decision for the merge train, not for one lane.
 ## Running it
 
 ```sh
-bash tests/run-all-gates.sh                  # Gates 1, 3, 4, 5, 6, 7, 8
+bash tests/run-all-gates.sh                  # Gates 1, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12
 bash tests/run-all-gates.sh --with-coverage  # + Gate 2 (full coverage build)
 bash tests/complexity-gate.sh --check        # one gate, CI mode (never writes a baseline)
+python3 tests/rt-safety-sweep.py --check     # Gate 12 alone: the realtime rule, sweep
 ```
 
 Gate definitions, per-gate measurements and every known limitation live in

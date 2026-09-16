@@ -1390,6 +1390,81 @@ deletion, `tests/evidence-manifest.tsv` holds the sha256 of every removed file, 
 gate is what stops the directory refilling in the next lane. Because the evidence is gone,
 **Gate 6 is not widened** and no accepted-violation row was added.
 
+## Gate 12: Real-time safety, whole-tree sweep (`rt-safety-sweep.py`) — WIRED 2026-09-16
+
+**Command** (as `run-all-gates.sh` and CI's `static-gates` job run it):
+
+```sh
+python3 tests/rt-safety-sweep.py --check       # EXIT=0 on the 2026-09-16 tree
+python3 tests/rt-safety-sweep.py --list-scope  # the declared audio-thread path set
+python3 tests/rt_safety_selftest.py            # the gate's own red/green control, EXIT=0
+```
+
+**Pass criterion**: exit 0. Every hit of an allocating, locking or container-growing
+construct inside a **declared** audio-thread path (`tests/rt-safety-scope.txt`, 27
+`path:symbol` pairs, each with a reason) must be allowlisted in
+`tests/rt-safety-allowlist.txt` with a reason **and at its allowed count**. Exit 1 is a
+violation — a new hit, growth past a line, an allowlist line that no longer covers
+anything, or a declared symbol that stops resolving; exit 2 is a setup error (a ledger
+that does not parse, a blank reason, an unknown rule id, an **empty scope**, a declared
+path that is not in the tree), and a 2 means no verdict was reached.
+
+The allowlist count is a **ratchet**: the sweep fails when the tree measures *more* than
+a line allows and when it measures *fewer* (the debt was paid — lower it or delete the
+line), so the ledger can only move in one direction. The only valve is
+`--reanchor "reason"`, which refuses a blank reason and refuses to run while a real
+problem is outstanding — it records a tolerated state, it does not bury a new hit.
+
+**Measured on this tree (2026-09-16)**: 27 declared pairs, 918 region lines scanned, 4
+hits in 3 keys, all four in **upstream-inherited** code —
+`src/core/AudioEngine.cpp:AudioEngine::renderNextPeriod:lock-guard` (the render
+callback's `std::lock_guard{m_changeMutex}`),
+`src/core/EnvelopeAndLfoParameters.cpp:...::LfoInstances::trigger:lock-guard` (the
+per-period LFO trigger's `QMutexLocker`, called from STAGE 3) and
+`src/core/Song.cpp:Song::processNextBuffer:grow-container` (two `TrackList` `push_back`s
+per period). Every declared fork path — the record demux, the retro audio/MIDI rings, the
+loudness tap, the session scheduler, the MIDI clock, the Lua audio tick — is clean. The
+three lines are debt with an address, not endorsements: they name the construct, its line
+and why it is tolerated today.
+
+**Red/green proof**: `tests/rt_safety_selftest.py` (ctest `RtSafetySelfTest`) synthesises
+its fixture sources, scope and allowlist in a temp directory — no build, no engine, no
+socket, no compiler — and asserts **18** checks: a deliberate `new`, `QMutexLocker` and
+container growth on a declared path each FAIL and are each named; a hit that grows past
+its allowlist count FAILS; the CLI's own exit code is 1 (the number a gate records); a
+clean path PASSES; the same allocation WITH an allowlist line PASSES; a member function
+defined in-class resolves; the same allocation **outside** the declared scope is NOT
+seen; `new` in a comment and in a string literal is not a hit; an empty scope is 2; a
+blank reason is 2; an unknown rule id is 2; a symbol that no longer resolves is 1; a file
+that is not in the tree is 2; a stale allowlist line is 1; an allowlist line for an
+undeclared symbol is 1. The gate was also run against the **real** tree with a deliberate
+allocation injected into `AudioEngine::renderStageMix` — exit 1, naming
+`src/core/AudioEngine.cpp:AudioEngine::renderStageMix:alloc-new` at line 446 — and passed
+again (exit 0) once the injection was reverted; both commands and both exit codes are in
+`docs/RT-SAFETY-SWEEP.md`.
+
+**Why it exists** (board card #678, feature row 52 of `docs/FEATURE-LIST-0.3.0.md`):
+`AGENTS.md`'s realtime rule — *no allocation, no locking, no unbounded growth on
+audio-thread paths* — was held **per feature**. `tests/src/core/AllocationProbe.h` proves
+one path at a time, on the paths somebody wrote such a test for; `docs/CONVENTIONS.md`
+row 9 said the rule was *"partially enforced — a rule held by tests where they exist, not
+by a sweeping gate"*. This gate is that sweeping half; the allocation-counter tests remain
+the runtime half. Registration: both ctests in `tests/CMakeLists.txt`'s
+`PYTHON3_EXECUTABLE` block beside `GoldenAudioSelfTest` (neither needs a binary, so a
+build with no audio device still measures the rule), Gate 12 in `tests/run-all-gates.sh`,
+a step in CI's `static-gates` job, and the four Python files in `tests/fork-sources.txt`
+(whose own recipe derives them).
+
+**Stated bound** — what this gate does NOT prove, printed on every run and written out in
+`docs/RT-SAFETY-SWEEP.md`: it is **static** (the engine is not run); its scope is
+**declared, not discovered** (it never follows a call, so a new audio-thread path that
+nobody declares is measured by nothing); it sees **no virtual dispatch, function pointer,
+macro or include**; it checks **no cost, no syscall and no I/O** and no lock-free
+*correctness* (memory ordering); it has **no aliasing analysis** (a hit is a mention, not
+proof that it runs on the audio thread); and its declared frontier is the **render
+thread**, not the capture thread (whose own paths carry their runtime probes).
+
+
 ## Evaluated and NOT wired: dead code (`cppcheck --enable=unusedFunction`) — 2026-09-09
 
 The adopted ruleset requires "dead code: zero (ruff/vulture)". The C++ equivalent is
