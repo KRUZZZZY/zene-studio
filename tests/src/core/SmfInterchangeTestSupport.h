@@ -84,6 +84,11 @@ inline QString path(const QTemporaryDir& directory, const QString& name)
 struct MetaEvent
 {
 	quint32 tick = 0;
+	//! The event's own delta time, as the file encodes it: the format's unit.
+	//! `tick` is the absolute position this parser ACCUMULATES from it, and the
+	//! two answer different questions - "where does this event sit" (tick) and
+	//! "how far after the previous one is it" (delta).
+	quint32 delta = 0;
 	unsigned char type = 0;
 	QByteArray payload;
 };
@@ -179,6 +184,7 @@ inline bool parseConductorFile(const QByteArray& bytes, int* format, int* trackC
 		}
 		MetaEvent event;
 		event.tick = tick;
+		event.delta = delta;
 		event.type = type;
 		event.payload = bytes.mid(offset, static_cast<int>(length));
 		offset += static_cast<int>(length);

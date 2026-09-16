@@ -185,7 +185,14 @@ private slots:
 		QCOMPARE(division, 480);
 		QVERIFY(!events.empty());
 		QCOMPARE(events.back().type, static_cast<unsigned char>(0x2F));  // end of track
-		QCOMPARE(events.back().tick, static_cast<quint32>(0));
+		// The end-of-track meta event CLOSES the track: the writer emits it with a
+		// delta of 0 after the last real event (src/core/SmfInterchange.cpp,
+		// trackBody), so its ABSOLUTE tick is that last event's - 3840 here, the
+		// second tempo/metre pair - and that is the track's end as any reader sees
+		// it. This slot asserted tick == 0, which is the DELTA, not the position:
+		// the file was well formed and the expectation was the transposed one.
+		QCOMPARE(events.back().delta, static_cast<quint32>(0));
+		QCOMPARE(events.back().tick, events[events.size() - 2].tick);
 
 		// The two meta events the format defines for a conductor track, at the
 		// ticks LMMS' own 48-per-quarter grid implies (384 -> 3840 at 480 ppq):
