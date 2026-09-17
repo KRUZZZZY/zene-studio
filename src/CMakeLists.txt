@@ -198,7 +198,63 @@ SET_TARGET_PROPERTIES(zene_api PROPERTIES INCLUDE_DIRECTORIES "${_zene_api_inclu
 # framework path (QtWidgets.framework/Headers) alike.
 SET(_zene_api_qt_libs ${QT_LIBRARIES})
 LIST(FILTER _zene_api_qt_libs EXCLUDE REGEX "[Ww]idgets")
-TARGET_LINK_LIBRARIES(zene_api ${_zene_api_qt_libs})
+
+# A name filter cannot see a module that drags QtWidgets in TRANSITIVELY, and one
+# Qt module does exactly that: Qt5::Svg declares INTERFACE_LINK_LIBRARIES
+# "Qt5::Widgets;Qt5::Gui;Qt5::Core" (measured on this machine in the Ubuntu 24.04
+# kit's Qt5SvgConfig.cmake:152; Qt6 split QtSvgWidgets out, so Qt6::Svg depends on
+# Qt6::Core and Qt6::Gui only). That is why the boundary was clean on the Qt6
+# builds and dirty on every Qt5 CI job: run 35253612993's linux-x86_64 and both
+# macOS jobs compiled all 42 boundary translation units with
+# `-isystem /usr/include/x86_64-linux-gnu/qt5/QtWidgets` AND -DQT_WIDGETS_LIB -
+# the widget include directory and the definition that arms
+# include/zene/api/ControlApi.h's #error guard - while membership, include closure
+# and object symbols all measured clean. Reproduced here before the fix: a Qt5
+# configure (CMAKE_PREFIX_PATH=~/.local/opt/qt5/usr) put both on all 42 zene_api
+# compile lines and the widget include on the MainWindow.cpp control line, exactly
+# the CI reading. The closure is therefore walked and any REMAINING candidate that
+# reaches a widget target is dropped, with the module and the target it reached
+# printed at configure time - the reason belongs in the configure log, not in a
+# build log nobody reads twice.
+FUNCTION(_zene_api_drags_widgets library out_var)
+	# ${library}'s interface closure (INTERFACE_LINK_LIBRARIES, transitively);
+	# ${out_var} is the widget target it reaches, or "" when it reaches none.
+	SET(_zene_api_queue "${library}")
+	SET(_zene_api_seen "")
+	SET(${out_var} "" PARENT_SCOPE)
+	WHILE(_zene_api_queue)
+		LIST(GET _zene_api_queue 0 _zene_api_head)
+		LIST(REMOVE_AT _zene_api_queue 0)
+		IF(_zene_api_head MATCHES "[Ww]idgets")
+			SET(${out_var} "${_zene_api_head}" PARENT_SCOPE)
+			RETURN()
+		ENDIF()
+		IF(NOT TARGET "${_zene_api_head}")
+			CONTINUE()
+		ENDIF()
+		LIST(FIND _zene_api_seen "${_zene_api_head}" _zene_api_index)
+		IF(_zene_api_index GREATER -1)
+			CONTINUE()
+		ENDIF()
+		LIST(APPEND _zene_api_seen "${_zene_api_head}")
+		GET_TARGET_PROPERTY(_zene_api_deps "${_zene_api_head}" INTERFACE_LINK_LIBRARIES)
+		IF(_zene_api_deps)
+			LIST(APPEND _zene_api_queue ${_zene_api_deps})
+		ENDIF()
+	ENDWHILE()
+ENDFUNCTION()
+
+SET(_zene_api_link_libs "")
+FOREACH(_zene_api_qt_lib IN LISTS _zene_api_qt_libs)
+	_zene_api_drags_widgets(${_zene_api_qt_lib} _zene_api_dragged)
+	IF(_zene_api_dragged)
+		MESSAGE(STATUS "zene_api: ${_zene_api_qt_lib} is NOT linked to the boundary - its interface "
+			"closure reaches ${_zene_api_dragged}, which must not be reachable in this target")
+	ELSE()
+		LIST(APPEND _zene_api_link_libs ${_zene_api_qt_lib})
+	ENDIF()
+ENDFOREACH()
+TARGET_LINK_LIBRARIES(zene_api ${_zene_api_link_libs})
 
 # Every consumer of the object library - the executable, the test binaries, the
 # Part C reference modules - links the boundary through the tree's own static
