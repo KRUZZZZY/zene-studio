@@ -25,30 +25,28 @@
 // Acceptance proofs for safe-start mode (feature row 77 of
 // docs/FEATURE-LIST-0.3.0.md, OWNER-31 item 31, board task #666):
 //
-//   * a CHILD process that really dies by a signal leaves the crash MARKER
-//     behind, and the next launch - a fresh beginSession() over the same working
-//     directory - reads the record the crashed session wrote (its pid) and comes
-//     up in safe-start mode;
-//   * the same holds for SIGKILL, which no handler can catch: the design is
-//     "written at session start, unlinked on the clean path", and this is the
-//     case that proves why that is the only construction that works;
-//   * the PREDICATE is wired into the real load path: with safe-start active,
-//     Plugin::instantiate() really returns the engine's DummyPlugin for a
-//     THIRD-PARTY module file, and with the session switch off the SAME call
-//     really loads the module - so the skip is the mode's doing and not a plugin
-//     that failed to load. That half needs a real plugin module and its own
-//     binary (SafeStartLoadPathTest, the file-length ratchet's reason);
-//   * the NEGATIVE CONTROL holds: a session that exits cleanly leaves no marker,
-//     no acknowledgement, no skipped instance and no safe start offered;
-//   * the acknowledgement makes the launch AFTER the next one normal, and it is
-//     consumed by that launch, so a second crash cannot be masked by a decision
-//     taken about the first;
-//   * the marker stays within its byte cap even for absurd input.
+//   * a CHILD process that really dies by a signal leaves the crash MARKER for the
+//     next launch, which reads the crashed session's record (its pid) and starts
+//     safe - SIGKILL too, which no handler can catch: hence the marker is
+//     "written at session start, unlinked on the clean path";
+//   * the PREDICATE is wired into the real load path (Plugin::instantiate()
+//     hands back the engine's DummyPlugin for a THIRD-PARTY module file, and with
+//     the session switch off the SAME call really loads it). That half is
+//     SafeStartLoadPathTest, the file-length ratchet's reason;
+//   * the NEGATIVE CONTROL holds (a clean exit: no marker, no acknowledgement, no
+//     skipped instance, no safe start offered), the acknowledgement makes the
+//     launch after the next one normal and is consumed by it (so a second crash
+//     cannot be masked by the first decision), and the marker stays inside its
+//     byte cap even for absurd input.
 //
-// The signal half is POSIX-only; on Windows the fork-and-signal cases are
-// skipped with the reason the suite's other plugin-module tests give, and the
-// state machine half still runs. The load-path half is
-// tests/src/core/SafeStartLoadPathTest.cpp, registered beside this one.
+// The signal half is POSIX-only (on Windows these cases are skipped, the state
+// machine half still runs); the load-path half is SafeStartLoadPathTest.
+//
+// THE CRASHING CHILD IS FORKED **AND EXECUTED** (runCrashChild): macOS
+// CoreFoundation ABORTS a fork-only child on its first call into the framework
+// ("Process ... was forked to ... without calling exec(). This is not supported by
+// FileManager. Aborting." - run 35212797698, both mac jobs), and beginSession()
+// makes one; child mode is the same engine calls in a process image of its own.
 
 #include "SafeStart.h"
 
@@ -84,8 +82,7 @@ const std::string ThirdPartyPath = "/tmp/some-user-drop-in/libtotallythirdparty.
 
 #ifndef Q_OS_WIN
 
-//! A wait() status in words: the macOS runners reported these slots as bare FALSE
-//! (run 35126160372, no child output), so the message names the mechanism.
+//! A wait() status in words, so the message names the mechanism, not a bare FALSE.
 QString describeStatus(int status)
 {
 	if (status == 0) { return QStringLiteral("no status yet"); }
@@ -95,10 +92,8 @@ QString describeStatus(int status)
 	return QStringLiteral("unclassified wait status %1").arg(status);
 }
 
-//! qtestlib's own crash handler (FatalSignalHandler, qtestcase.cpp) is inherited by a
-//! forked child, and it converts a crash: on linux-x86_64 the SIGSEGV slot's child ran
-//! it ("QFATAL : ... Received signal 11") and died by qFatal()'s SIGABRT. "As it would
-//! without any of this" is the default-action death - give the child that.
+//! The child's death must be the KERNEL's disposition for the signal, never a
+//! handler a runtime installed over it (qtestlib's turns a crash into SIGABRT).
 void resetFatalSignalsToDefault()
 {
 	const int fatalSignals[] = { SIGSEGV, SIGBUS, SIGILL, SIGFPE, SIGABRT, SIGTERM, SIGPIPE, 0 };
@@ -112,11 +107,41 @@ void resetFatalSignalsToDefault()
 	}
 }
 
-//! Wait for a child, bounded. A timeout is a HANG, which this module must never
-//! cause, and every caller asserts on it. (The CrashReporterTest helper, which
-//! this suite copies because it is the same child-process pattern.)
-//! A child that is merely STOPPED is continued and waited for again - Darwin reports a
-//! stopped child to a WNOHANG waitpid, and the signal death is still demanded after.
+//! The child mode's argv[1]: the crash slots fork AND EXEC this binary with it, so
+//! the child (argv[2] = the working directory, argv[3] = "segv" or "kill") runs the
+//! engine's calls in a process image of its own - see the file header.
+const char* const kCrashChildArg = "--safe-start-crash-child";
+
+int runCrashChild(char** argv)
+{
+	if (!install(argv[2])) { ::_exit(83); }   // no directory, no session: fail loudly
+	beginSession();            // begins THIS process's session and writes its marker, with its own pid
+	resetFatalSignalsToDefault();
+	// SIGKILL when the slot asks for it: uncatchable by construction.
+	if (std::strcmp(argv[3], "kill") == 0) { ::kill(::getpid(), SIGKILL); ::_exit(81); }
+	volatile int* p = reinterpret_cast<volatile int*>(static_cast<uintptr_t>(1));
+	*p = 1;                            // SIGSEGV with si_addr == 0x1
+	::_exit(80);                       // must not be reached
+}
+
+//! Fork, then exec THIS binary in child mode: whatever a fork-only child's runtime
+//! would do to it, what the parent's wait() sees is death by the intended signal.
+//! Returns the pid (or -1); a failed exec shows as "exited with code 82".
+pid_t forkCrashChild(const std::string& workDir, const char* mode)
+{
+	const std::string exe = QCoreApplication::applicationFilePath().toStdString();
+	const pid_t pid = ::fork();
+	if (pid != 0) { return pid; }
+	char* argv[] = { const_cast<char*>(exe.c_str()), const_cast<char*>(kCrashChildArg),
+		const_cast<char*>(workDir.c_str()), const_cast<char*>(mode), nullptr };
+	::execv(exe.c_str(), argv);
+	::_exit(82);                       // exec failed: the parent names this code
+}
+
+//! Wait for a child, bounded (the CrashReporterTest helper: the same child-process
+//! pattern). A timeout is a HANG, which this module must never cause, and every
+//! caller asserts on it. A merely STOPPED child is continued and waited for again -
+//! Darwin reports a stopped child to a WNOHANG waitpid, and death is still demanded.
 bool waitBounded(pid_t pid, int timeoutMs, int& status)
 {
 	for (int waited = 0; waited < timeoutMs; waited += 20)
@@ -149,8 +174,8 @@ class SafeStartTest : public QObject
 private slots:
 
 	// -----------------------------------------------------------------------
-	// 1. THE NEGATIVE CONTROL. A session that exits cleanly leaves nothing:
-	//    no marker, no acknowledgement, no skipped instance, no safe start.
+	// 1. THE NEGATIVE CONTROL. A session that exits cleanly leaves nothing: no
+	//    marker, no acknowledgement, no skipped instance, no safe start.
 	// -----------------------------------------------------------------------
 	void cleanExitLeavesNoMarkerAndNoStaleState()
 	{
@@ -200,26 +225,16 @@ private slots:
 		beginSession();
 		QVERIFY(!safeStartActive());
 		QVERIFY(!shouldSkipPluginInstance("totallythirdparty", ThirdPartyPath));
-		// The open project, recorded the way main() records it - so the marker
-		// the crash leaves behind names the file the user was working on.
+		// The open project, recorded the way main() records it - the crash marker
+		// that is left behind then names the file the user was working on.
 		setProjectPath(project);
 		QCOMPARE(QString::fromStdString(projectPath()), QString::fromStdString(project));
-		// ... and it dies abnormally, exactly as the product would: the child
-		// installs over the same working directory, begins its own session
-		// (which rewrites the marker with ITS pid) and then really faults.
+		// ... and it dies abnormally, exactly as the product would: the child (a
+		// fork AND exec of this binary, child mode) installs over the same working
+		// directory, begins ITS OWN session - rewriting the marker with its pid.
 		::fflush(nullptr);
-		const pid_t pid = ::fork();
+		const pid_t pid = forkCrashChild(workDir, "segv");
 		QVERIFY2(pid >= 0, "fork failed");
-		if (pid == 0)
-		{
-			// CHILD - the session that crashes.
-			install(workDir);
-			beginSession();
-			resetFatalSignalsToDefault();
-			volatile int* p = reinterpret_cast<volatile int*>(static_cast<uintptr_t>(1));
-			*p = 1;                       // SIGSEGV with si_addr == 0x1
-			::_exit(80);                  // must not be reached
-		}
 		int status = 0;
 		QVERIFY2(waitBounded(pid, 15000, status),
 			qPrintable(QString("the crashing child neither died nor resumed inside 15s (%1): "
@@ -228,8 +243,7 @@ private slots:
 			qPrintable(QString("the child must still die by SIGSEGV, as it would without any "
 				"of this: %1").arg(describeStatus(status))));
 
-		// THE NEXT LAUNCH: a fresh install + beginSession over the same working
-		// directory, which is exactly what main() does at startup.
+		// THE NEXT LAUNCH: a fresh install + beginSession over the same directory.
 		QVERIFY(install(workDir));
 		beginSession();
 		QVERIFY2(!previousRunExitedCleanly(),
@@ -237,30 +251,22 @@ private slots:
 		QVERIFY2(safeStartActive(), "the launch after a crash must start safe");
 		const SessionRecord previous = lastSession();
 		QVERIFY2(previous.present, "the marker's own record must be readable");
-		// The count is "How many consecutive sessions have started safe; 1 for
-		// the first" (include/SafeStart.h), counted by the engine as
-		// previous.safeStartRuns + 1 whenever a session starts over an
-		// unacknowledged marker. The sequence THIS test builds is:
-		//   1. the parent's session  - idle working directory, runs 0, normal;
-		//   2. the child's session   - starts over the parent's marker, so the
-		//                              engine counts it as safe start 1, and
-		//                              then dies by SIGSEGV;
-		//   3. this session          - starts over the child's marker, safe
-		//                              start 2.
-		// The child HAS to run beginSession() to write its own pid into the
-		// marker (the assertion below), and that is exactly what makes it a
-		// safe start - so 2 consecutive safe starts is the engine's own
-		// answer, and 1 would describe a sequence where the crashing session
-		// started with no marker on disk at all.
+		// The count is "How many consecutive sessions have started safe; 1 for the
+		// first", counted by the engine as previous.safeStartRuns + 1 over an
+		// unacknowledged marker. THIS test builds: the parent's session (runs 0,
+		// normal) -> the child's session (starts over the parent's marker, counted
+		// as safe start 1, then dies by SIGSEGV) -> this session (starts over the
+		// child's marker, safe start 2). The child HAS to run beginSession() to
+		// write its own pid into the marker, which is what makes it a safe start -
+		// so 2 is the engine's own answer.
 		QCOMPARE(safeStartRunCount(), previous.safeStartRuns + 1);
 		QCOMPARE(safeStartRunCount(), 2ULL);
 		QVERIFY2(previous.processId == static_cast<unsigned long long>(pid),
 			"the record must be the CRASHED session's, not a leftover of the test process");
 		QCOMPARE(QString::fromStdString(previous.projectPath), QString::fromStdString(project));
 
-		// THE PREDICATE, in the state the feature actually creates: a
-		// third-party module file is skipped, and the mode's own record proves
-		// it was the mode and not a load failure.
+		// THE PREDICATE, in the state the feature actually creates: a third-party
+		// module file is skipped, and the record proves it was not a load failure.
 		QVERIFY2(shouldSkipPluginInstance("totallythirdparty", ThirdPartyPath),
 			"the launch after a crash must skip third-party plugin instances");
 		noteSkippedInstance("totallythirdparty", ThirdPartyPath, "test");
@@ -268,8 +274,7 @@ private slots:
 		QCOMPARE(QString::fromStdString(skippedInstances().front().pluginName),
 			QStringLiteral("totallythirdparty"));
 
-		// A clean exit from the safe session clears everything, so the launch
-		// after it is a normal one.
+		// A clean exit from the safe session clears everything for the next launch.
 		endSession();
 		QVERIFY(!markerExists());
 		QVERIFY(!safeStartActive());
@@ -277,9 +282,9 @@ private slots:
 	}
 
 	// -----------------------------------------------------------------------
-	// 3. SIGKILL: the case that decides the marker's design. Nothing can run on
-	//    the way out, so the file has to have been written at session START -
-	//    and it is therefore still there for the next launch.
+	// 3. SIGKILL: the case that decides the marker's design. Nothing can run on the
+	//    way out, so the file must have been written at session START - and it is
+	//    therefore still there for the next launch.
 	// -----------------------------------------------------------------------
 	void sigkillAlsoLeavesTheMarker()
 	{
@@ -293,16 +298,8 @@ private slots:
 		beginSession();
 
 		::fflush(nullptr);
-		const pid_t pid = ::fork();
+		const pid_t pid = forkCrashChild(workDir, "kill");
 		QVERIFY2(pid >= 0, "fork failed");
-		if (pid == 0)
-		{
-			install(workDir);
-			beginSession();
-			resetFatalSignalsToDefault();
-			::kill(::getpid(), SIGKILL);  // uncatchable by construction
-			::_exit(81);                  // unreachable
-		}
 		int status = 0;
 		QVERIFY2(waitBounded(pid, 15000, status),
 			qPrintable(QString("the killed child neither died nor resumed inside 15s (%1)")
@@ -321,8 +318,8 @@ private slots:
 	}
 
 	// -----------------------------------------------------------------------
-	// 4. The acknowledgement: "the NEXT launch is the normal one", consumed by
-	//    that launch so a second crash cannot be masked by the first decision.
+	// 4. The acknowledgement: "the NEXT launch is the normal one", consumed by it
+	//    so a second crash cannot be masked by the first decision.
 	// -----------------------------------------------------------------------
 	void acknowledgeMakesTheNextLaunchNormal()
 	{
@@ -330,9 +327,8 @@ private slots:
 		QVERIFY2(dir.isValid(), "could not create a temporary working directory");
 		QVERIFY(install(dir.path().toStdString()));
 
-		// A marker left by a previous run, written the way a crashed session
-		// would have written it (the child-process cases above prove that path
-		// for real; this one needs the state, not the signal).
+		// A marker left by a previous run, written the way a crashed session would
+		// have (the cases above prove that path for real; this needs the state).
 		{
 			QFile marker(QString::fromStdString(markerPath()));
 			QVERIFY(marker.open(QIODevice::WriteOnly | QIODevice::Truncate));
@@ -381,10 +377,9 @@ private slots:
 
 	// -----------------------------------------------------------------------
 	// 5. THE PREDICATE'S CLASSIFICATION. "Third-party" is a definition, so it is
-	//    asserted rather than assumed: a file under a directory this build ships
-	//    from is NOT third-party (LMMS_PLUGIN_DIR names such a directory, which
-	//    is how the product's own tests point at the build tree), anything else
-	//    is, and an empty path is not (a missing plugin is not this feature's
+	//    asserted: a file under a directory this build ships from is NOT
+	//    third-party (LMMS_PLUGIN_DIR is how the build tree names one), anything
+	//    else is, and an empty path is not (a missing plugin is not this feature's
 	//    business).
 	// -----------------------------------------------------------------------
 	void thePredicateOnlySkipsThirdPartyFiles()
@@ -393,8 +388,7 @@ private slots:
 		QVERIFY2(ownDirectory.isValid(), "could not create a temporary own-plugin directory");
 		const std::string own = ownDirectory.path().toStdString();
 
-		// The environment override the product honours, used exactly as a
-		// packager or the build tree uses it.
+		// The environment override the product honours, as the build tree uses it.
 		const QByteArray saved = qgetenv("LMMS_PLUGIN_DIR");
 		qputenv("LMMS_PLUGIN_DIR", QByteArray::fromStdString(own));
 		const std::vector<std::string> ownDirectories = ownPluginDirectories();
@@ -409,20 +403,16 @@ private slots:
 		QVERIFY2(!isThirdPartyPluginFile(""),
 			"an empty path is not third-party: a plugin that resolved to no file at all is the "
 			"missing-plugin case Plugin::instantiate already handles");
-		// The component-wise rule. A SIBLING whose name merely starts with the
-		// own directory's name is not inside it ("/a/lib" does not own
-		// "/a/lib-sibling/x.so"), which a bare startsWith() on the directory
-		// string would get wrong.
+		// The component-wise rule: a SIBLING whose name merely starts with the own
+		// directory's name is not inside it ("/a/lib" does not own
+		// "/a/lib-sibling/x.so"), which a bare startsWith() would get wrong.
 		QVERIFY2(isThirdPartyPluginFile(own + "-sibling/libtripleoscillator.so"),
 			"a sibling directory with a shared name prefix is not inside an own directory");
-		// And a file in a SUBdirectory of an own directory IS under it, so it
-		// is not third-party: "A plugin file under one of these is a file this
-		// build ships" (the ownPluginDirectories() comment above), which is the
-		// rule the predicate is built on - a directory rule, not a file list.
-		// (The factory's own discovery scan is flat - PluginFactory.cpp reads
-		// each search path with QDir::entryInfoList - so such a file is not
-		// reachable through the search paths either way; the tree rule is what
-		// the absence of a per-file list has to mean.)
+		// And a file in a SUBdirectory of an own directory IS under it: "A plugin
+		// file under one of these is a file this build ships" - the rule the
+		// predicate is built on, a directory rule not a file list. (The factory's
+		// discovery scan is flat - PluginFactory.cpp reads each search path with
+		// QDir::entryInfoList - so the tree rule is the absence's only meaning.)
 		QVERIFY2(!isThirdPartyPluginFile(own + "/subdir/libtripleoscillator.so"),
 			"a module under an own plugin directory is a file this build ships");
 
@@ -431,8 +421,7 @@ private slots:
 	}
 
 	// -----------------------------------------------------------------------
-	// 6. The session-scoped switch, and the fact that it is the ONLY cause of a
-	//    skip in this state.
+	// 6. The session-scoped switch - the ONLY cause of a skip in this state.
 	// -----------------------------------------------------------------------
 	void setSkipTurnsThePredicateOffForThisSession()
 	{
@@ -472,9 +461,8 @@ private slots:
 		QVERIFY2(dir.isValid(), "could not create a temporary working directory");
 		QVERIFY(install(dir.path().toStdString()));
 
-		// A marker written by something else, with an absurd project path: the
-		// reader must bound it too, and the marker this session writes must stay
-		// inside the cap.
+		// A marker written by something else, with an absurd project path: the reader
+		// must bound it too, and this session's own marker must stay inside the cap.
 		{
 			QFile marker(QString::fromStdString(markerPath()));
 			QVERIFY(marker.open(QIODevice::WriteOnly | QIODevice::Truncate));
@@ -496,5 +484,16 @@ private slots:
 
 };
 
-QTEST_GUILESS_MAIN(SafeStartTest)
+int main(int argc, char** argv)
+{
+#ifndef Q_OS_WIN
+	// Child mode (kCrashChildArg): the crash slots re-exec this binary; never returns.
+	if (argc == 4 && std::strcmp(argv[1], kCrashChildArg) == 0) { return runCrashChild(argv); }
+#endif
+	QCoreApplication app(argc, argv);
+	app.setAttribute(Qt::AA_Use96Dpi, true);
+	SafeStartTest tc;
+	QTEST_SET_MAIN_SOURCE_PATH
+	return QTest::qExec(&tc, argc, argv);
+}
 #include "SafeStartTest.moc"
