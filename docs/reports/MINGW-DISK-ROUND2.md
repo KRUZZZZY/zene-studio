@@ -201,13 +201,25 @@ Run unpiped from the worktree root, exit codes as returned:
 | `bash tests/evidence-gate.sh` | 0 (6670 files scanned, 0 refused) |
 | `bash tests/release-ref-fitness.sh` | 0 |
 | `bash tests/test-release-ref-fitness.sh` | **1 — pre-existing** |
+| the flag plumbing itself, in a scratch project | 0 |
 
-The last row is red **before** this round: control 5, "a leg whose tool is
-absent refuses (not exit 0)", fails identically at `8edfe30d5` in a pristine
-worktree (`git worktree add /tmp/wpristine 8edfe30d5`; exit 1, same line), so it
-is the branch's state and not this change. The A1/A2 lines it prints under
-control 6 are the *expected* refusals of its deliberately weakened workflow
-copy — that leg passes on both trees.
+The last row is the one thing about the fix that *can* be checked without MinGW,
+and it checks the part that could silently do nothing: the quoted
+`-D…="-O2 -DNDEBUG"` value survives the workflow's `run:` block as a single
+argument (it is literal text in the script file, so the shell's parse-time
+quoting applies), lands in the cache as
+`CMAKE_CXX_FLAGS_RELWITHDEBINFO:STRING=-O2 -DNDEBUG`, appears in `flags.make` as
+`CXX_FLAGS = -O2 -DNDEBUG` with no `-g`, and the object that build produces has
+**zero** `.debug` sections. The same experiment without the override yields
+`-O2 -g -DNDEBUG` and a DWARF-carrying object. What it cannot show is any of the
+MinGW side.
+
+The `test-release-ref-fitness.sh` row is red **before** this round: control 5,
+"a leg whose tool is absent refuses (not exit 0)", fails identically at
+`8edfe30d5` in a pristine worktree (`git worktree add /tmp/wpristine 8edfe30d5`;
+exit 1, same line), so it is the branch's state and not this change. The A1/A2
+lines it prints under control 6 are the *expected* refusals of its deliberately
+weakened workflow copy — that leg passes on both trees.
 
 **This machine has no MinGW and no MSVC**, so nothing here is a mingw build: the
 per-test gigabyte, the `objects.a` rule's effect on the runner, and the ccache
