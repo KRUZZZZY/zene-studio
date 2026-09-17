@@ -56,14 +56,26 @@ def rel(f):
 
 
 def signature(elem):
-    """Order-insensitive structural fingerprint of an element subtree.
-
-    Two trees are content-identical iff their signatures match, regardless of
-    how children or attributes are ordered.
-    """
+    """Order-insensitive structural fingerprint: two trees are content-identical
+    iff their signatures match, however children or attributes are ordered."""
     return (elem.tagName,
             tuple(sorted(M._attrs(elem).items())),
             tuple(sorted(signature(c) for c in M._children(elem))))
+
+
+#: ONE DAW invocation's declared budget - a full `Engine::init` plus the audio, the number
+#: the tree's render transcripts carry (tests/freeze_bounce_evidence.py:57). Measured on the
+#: linux-arm64 runner: ~45 s per render, against 139.41 s for the whole suite on x86.
+RENDER_TIMEOUT = 180.0
+
+
+def run_bounded(argv, renders, **kw):
+    """subprocess.run under `renders` x RENDER_TIMEOUT, so a hang is NAMED, not a bare timeout."""
+    try:
+        return subprocess.run(argv, timeout=renders * RENDER_TIMEOUT, **kw)
+    except subprocess.TimeoutExpired:
+        raise AssertionError("%s did not finish %d DAW render(s) inside %.0f s"
+                             % (" ".join(argv[:3]), renders, renders * RENDER_TIMEOUT))
 
 
 class Container(unittest.TestCase):
@@ -94,11 +106,9 @@ class Container(unittest.TestCase):
 
 class Verbatim(unittest.TestCase):
     def test_verbatim_roundtrip(self):
-        """parse -> serialise(canonical=False) reproduces the input bytes.
-
-        One legacy fixture (tests/emptyproject.mmp) writes `type="song" >`
-        with a space before '>'; it is excluded and reported.
-        """
+        """parse -> serialise(canonical=False) reproduces the input bytes, except one
+        legacy fixture (tests/emptyproject.mmp): a space before '>' in an empty
+        attribute. It is excluded and reported."""
         exact = 0
         legacy = []
         for f in ALL:
@@ -139,13 +149,9 @@ class Canonical(unittest.TestCase):
         self.assertGreater(changed, 0, "expected fixtures to need normalisation")
 
     def test_sibling_keys_never_collapse(self):
-        """keyed_children must keep every sibling distinct.
-
-        Real projects contain duplicate sibling identities (five tracks all
-        named 'Default preset', eight patterns named 'Kick', dozens of
-        plugin 'par' elements); a naive identity key silently merges them
-        and hides edits. The occurrence ordinal must prevent that.
-        """
+        """keyed_children must keep every sibling distinct: real projects carry duplicate
+        identities (five 'Default preset' tracks, eight 'Kick' patterns, dozens of plugin
+        'par' elements), so a naive key merges them and hides edits."""
         base_collisions = 0
         elements = 0
 
@@ -407,9 +413,8 @@ class MergeDepth(unittest.TestCase):
 
 
     def test_no_conflict_marker_lands_where_the_loader_hangs(self):
-        """A comment as a direct child of a <trackcontainer> makes the DAW's
-        loader hang (measured: `render` never returns, vs ~10 s normally).  A
-        conflict at the container's children must be marked somewhere else."""
+        """A comment as a direct child of a <trackcontainer> hangs the DAW's
+        loader (measured), so a container-level conflict is marked elsewhere."""
         rc, ours, _ = self._merge(lambda d: self._delete_track(d, "Kick"),
                                   lambda d: self._add_note(d, "Kick", "Kick", "36", "96"))
         self.assertEqual(rc.returncode, 1)
@@ -871,16 +876,10 @@ class PureAudioMaths(unittest.TestCase):
     def test_missing_renderer_is_an_error_not_a_crash(self):
         """Two files that do not exist must be rejected by name, exit 2.
 
-        audible-diff refuses in two different places. With no renderer anywhere it
-        exits 2 early, printing "no renderer found" - before it ever looks at the
-        paths this test passes. That first refusal is the built-artifact dependency
-        the rest of this suite skips on, so this test skips on the same condition
-        rather than failing on a message that describes a different refusal.
-
-        The condition is the tool's own find_renderer(), not a hardcoded path, so
-        the skip disappears exactly when audible-diff would get past it: a local
-        build (build/zene, build/lmms), $MMPZ_GIT_RENDERER, --renderer, or a
-        zene/lmms on $PATH.
+        audible-diff refuses earlier - and differently - when no renderer exists
+        at all, so this skips on the tool's own find_renderer() (--renderer,
+        $MMPZ_GIT_RENDERER, a local build, or zene/lmms on $PATH): the skip
+        disappears exactly when audible-diff would get past that refusal.
         """
         if M.find_renderer() is None:
             self.skipTest("no renderer found (build/zene or build/lmms, $MMPZ_GIT_RENDERER, "
@@ -897,8 +896,7 @@ class PureAudioMaths(unittest.TestCase):
 class AudibleDiffBinary(unittest.TestCase):
     """End-to-end audible diff, skipped unless the binary was built here."""
 
-    # Wave R renamed the built binary from lmms to zene; accept either so a
-    # pre-rename build tree still runs these tests instead of skipping them.
+    # Wave R renamed the built binary from lmms to zene; accept either - see BinarySafety.
     BIN = os.path.join(ROOT, "build", "zene")
     BIN_PRE_RENAME = os.path.join(ROOT, "build", "lmms")
 
@@ -911,9 +909,9 @@ class AudibleDiffBinary(unittest.TestCase):
 
     def test_identical_project_renders_identically(self):
         src = os.path.join(ROOT, "data", "projects", "shorties", "sv-DnB-Startup.mmpz")
-        rc = subprocess.run([sys.executable, TOOL, "audible-diff", src, src,
-                             "--mix-only", "--keep", "/tmp/mmpz_ad_id"],
-                            capture_output=True, text=True)
+        rc = run_bounded([sys.executable, TOOL, "audible-diff", src, src,
+                          "--mix-only", "--keep", "/tmp/mmpz_ad_id"],
+                         2, capture_output=True, text=True)
         self.assertEqual(rc.returncode, 0, rc.stderr[-2000:])
         self.assertIn("render identically", rc.stdout)
 
@@ -925,9 +923,9 @@ class AudibleDiffBinary(unittest.TestCase):
         subprocess.run([sys.executable, edit, "set-note-vol", variant, "--track",
                         "Bass", "--pattern", "I", "--pos", "0", "--key", "30",
                         "--vol", "20"], check=True)
-        rc = subprocess.run([sys.executable, TOOL, "audible-diff", src, variant,
-                             "--track", "Bass", "--keep", "/tmp/mmpz_ad_tr"],
-                            capture_output=True, text=True)
+        rc = run_bounded([sys.executable, TOOL, "audible-diff", src, variant,
+                          "--track", "Bass", "--keep", "/tmp/mmpz_ad_tr"],
+                         2, capture_output=True, text=True)
         self.assertEqual(rc.returncode, 1, rc.stderr[-2000:])
         self.assertIn('track "Bass"', rc.stdout)
         self.assertIn("bars 1", rc.stdout)       # the edit is in bar 1
@@ -941,11 +939,11 @@ class AudibleDiffBinary(unittest.TestCase):
         out = "/tmp/mmpz_recipe.wav"
         if os.path.exists(out):
             os.unlink(out)
-        rc = subprocess.run(["bash", recipe,
-                             os.path.join(ROOT, "data", "projects", "shorties",
-                                          "sv-DnB-Startup.mmpz"),
-                             "-o", out, "--build-dir", os.path.join(ROOT, "build")],
-                            capture_output=True, text=True)
+        rc = run_bounded(["bash", recipe,
+                          os.path.join(ROOT, "data", "projects", "shorties",
+                                       "sv-DnB-Startup.mmpz"),
+                          "-o", out, "--build-dir", os.path.join(ROOT, "build")],
+                         1, capture_output=True, text=True)
         self.assertEqual(rc.returncode, 0, rc.stderr[-2000:])
         self.assertTrue(os.path.getsize(out) > 1000)
         self.assertIn("sha256", rc.stdout)
