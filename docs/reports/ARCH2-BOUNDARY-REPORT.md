@@ -373,3 +373,9 @@ python3 capture-commands.py build/zene after.json
 # the proof, on its own
 cd build/tests && ctest -R ZeneApiBoundary -V
 ```
+
+The first two probe scripts and the capture script were this lane's scratch
+tools (run against the release tip's build directory and the lane's own build);
+the durable, re-runnable form of the same measurements is the registered
+`ZeneApiBoundary` ctest plus the `flags.make` greps above. Nothing in this
+report rests on a scratch tool that is not reproducible from the committed tree.
