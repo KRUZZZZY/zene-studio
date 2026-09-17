@@ -34,8 +34,13 @@
  *                will ever answer) - which is exactly the endpoint the previous
  *                implementation parked the calling thread on for ten seconds,
  *                because it waited in a nested QEventLoop behind a 10 s timer.
- *                The assertion is "send() returned in under two seconds", which
- *                the old code could not satisfy on any machine.
+ *                The assertion is "send() returned in under five seconds", and
+ *                both sides of that bound are measured rather than chosen: it
+ *                is HALF of the ten seconds the retired implementation waited by
+ *                construction (so that implementation cannot satisfy it on any
+ *                machine), and 2.3x the worst legitimate measurement a loaded CI
+ *                runner has produced (2183 ms, msvc-x64, run 35253612993) - the
+ *                2 s bound this replaced sat inside that noise and flaked once.
  *
  * The transport is compiled only when this build has telemetry enabled, so in a
  * -DZENE_TELEMETRY=OFF build the slots below are replaced by the one thing that
@@ -171,9 +176,19 @@ private slots:
 
 		QVERIFY2(accepted, qPrintable(QStringLiteral("an https endpoint was refused: %1")
 			.arg(transport.lastRefusal())));
-		QVERIFY2(elapsed < 2000,
+		// The bound is two-sided, and both sides are measurements, not taste.
+		// ABOVE it: the retired implementation waited out its own 10 s timer on
+		// this endpoint (it never answers), so a send that takes five seconds or
+		// more has gone back to waiting - the differential this test exists to
+		// catch. BELOW it: a legitimate non-blocking send has been measured as
+		// slow as 2183 ms on a loaded CI runner (msvc-x64, run 35253612993, the
+		// run this bound was re-derived on), which is why the previous 2 s bound
+		// flaked there while passing everywhere else. 5 s is half the endpoint's
+		// own ten seconds (1:2) and 2.3x the worst observed non-blocking send.
+		QVERIFY2(elapsed < 5000,
 			qPrintable(QStringLiteral("send() took %1 ms: it waited for a reply that never comes. "
-				"The transport must hand the POST off and return (CODE-7)").arg(elapsed)));
+				"The transport must hand the POST off and return (CODE-7); the bound is 5000 ms, "
+				"half the retired implementation's own 10 s wait").arg(elapsed)));
 		qInfo() << "a send to a blackholed endpoint returned in" << elapsed << "ms";
 	}
 
