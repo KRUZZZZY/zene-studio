@@ -147,6 +147,82 @@ GENERATE_EXPORT_HEADER(lmmsobjs
 	BASE_NAME lmms
 )
 
+# ---------------------------------------------------------------------------
+# The zene::api boundary (ARCH-2, board card #672): the registry, its contract
+# tables and its undo-coalescing rule, behind a target that BUILDS HEADLESS.
+# The source list and the split from LMMS_SRCS are in src/core/CMakeLists.txt;
+# this is the target they compile in and the widgets axis it must not have.
+#
+# QtWidgets is neither LINKED here nor on this target's include path, so
+# `#include <QWidget>` in a boundary translation unit fails the build in every
+# CI job. Measured before the split: all boundary TUs compile with the
+# QtWidgets include directory removed; docs/reports/ARCH2-BOUNDARY-REPORT.md
+# carries the commands and the numbers, and tests/zene-api-boundary.py (the
+# ZeneApiBoundary ctest) carries the same measurement into the test step with a
+# GUI translation unit as the liveness control.
+ADD_LIBRARY(zene_api STATIC ${ZENE_API_SRCS})
+
+# The Q_OBJECT headers under include/ are AUTOMOCed by lmmsobjs (its include/*.h
+# glob is unchanged) and the boundary links those moc symbols from there;
+# moc'ing them here as well would define every ControlRegistry metaobject twice.
+# No boundary TU declares a Q_OBJECT of its own.
+SET_TARGET_PROPERTIES(zene_api PROPERTIES AUTOMOC OFF)
+
+# The boundary is a split of the lmms object library, not a new library: its
+# translation units compile with the same export macro the object library sets,
+# so LMMS_EXPORT expands exactly as before (default visibility on ELF,
+# dllexport on PE). The split must not move the ABI.
+TARGET_COMPILE_DEFINITIONS(zene_api PRIVATE -Dlmmsobjs_EXPORTS)
+
+# QtWidgets must not be reachable. The tree adds the Qt include directories at
+# DIRECTORY scope (the top-level include_directories()), which every target
+# inherits, so the widget entry is filtered out of THIS target's captured list.
+# Qt6::Widgets is not linked either - that would put the directory straight
+# back. Qt's own headers include each other module-qualified
+# (`QtCore/qcontainertools_impl.h`), so the PARENT directory that holds
+# QtCore/QtGui/QtXml stays; a module-qualified `<QtWidgets/...>` include is
+# therefore still resolvable, which is what the ctest's include-closure and
+# symbol checks are for.
+GET_TARGET_PROPERTY(_zene_api_include_dirs zene_api INCLUDE_DIRECTORIES)
+LIST(FILTER _zene_api_include_dirs EXCLUDE REGEX "[Ww]idgets")
+SET_TARGET_PROPERTIES(zene_api PROPERTIES INCLUDE_DIRECTORIES "${_zene_api_include_dirs}")
+
+# The pattern is "[Ww]idgets", not a path-shaped one, and that is measured, not
+# stylistic: the link list names CMake TARGETS ("Qt6::Widgets"), whose "::" a
+# pattern like "[Qq]t[0-9]*Widgets" does NOT match, so Qt6::Widgets stayed
+# linked and its usage requirements put BOTH the include directory and
+# -DQT_WIDGETS_LIB straight back into this target's flags.make - captured in the
+# first build of this lane (zene_api.dir/flags.make showed
+# `-isystem .../qt6/QtWidgets` and `-DQT_WIDGETS_LIB`). The unanchored
+# "[Ww]idgets" matches the target name, the directory (.../qt6/QtWidgets) and a
+# framework path (QtWidgets.framework/Headers) alike.
+SET(_zene_api_qt_libs ${QT_LIBRARIES})
+LIST(FILTER _zene_api_qt_libs EXCLUDE REGEX "[Ww]idgets")
+TARGET_LINK_LIBRARIES(zene_api ${_zene_api_qt_libs})
+
+# Every consumer of the object library - the executable, the test binaries, the
+# Part C reference modules - links the boundary through the tree's own static
+# dependency chain, so the link surface is unchanged.
+target_static_libraries(lmmsobjs zene_api)
+
+# The boundary compiles with the same feature DEFINITIONS the object library
+# compiles with. Every LMMS_HAVE_* macro the closure uses arrives through the
+# generated lmmsconfig.h - except LMMS_HAVE_WASM, which exists ONLY as this
+# compile definition (lmmsobjs sets it in its IF(WANT_WASM) block) and which
+# gates the registration of the wasm.* group in
+# ControlRegistryRegistrations.cpp. Measured: with it missing here, the boundary
+# silently compiled the group out and the live control.commands_list lost the
+# eight wasm.* ids (340 -> 332) while every file still compiled - which is why
+# the lane's behaviour proof is an id-set equality and not "the suite is green".
+IF(WANT_WASM)
+	TARGET_COMPILE_DEFINITIONS(zene_api PRIVATE LMMS_HAVE_WASM=1)
+ENDIF()
+
+# The ZENE_API_BOUNDARY definition arms include/zene/api/ControlApi.h's #error
+# guard: a boundary TU compiled with QT_WIDGETS_LIB defined says why that is a
+# defect rather than failing later at a link step.
+TARGET_COMPILE_DEFINITIONS(zene_api PRIVATE ZENE_API_BOUNDARY)
+
 ADD_EXECUTABLE(zene
 	core/main.cpp
 	"${WINRC}"
