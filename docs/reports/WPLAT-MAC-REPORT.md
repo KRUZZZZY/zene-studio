@@ -398,3 +398,72 @@ three entries are pre-existing from other lanes (ScriptBindingsTest 741→752, S
 * `tests/control-golden-audio.py` is exactly at the 500-line cap — the diagnostic went into
   `tests/golden_audio_record.py` (380 lines) for that reason, and any future golden-audio work
   has to keep respecting both caps.
+
+---
+
+## Follow-up (2026-09-17): item 4's fix was incomplete — refuted by run `35212797698`, re-fixed on `030/mac-forkfix`
+
+**Where this stands.** The item-4 row above says the SIG_DFL reset is "CI-proof: 48 green both
+arches". Run `35212797698` (head `8edfe30d5`, the merge tip) refutes that: both mac jobs still fail
+*only* `SafeStartTest` (1 failed of 206, the same two slots, each "died by signal 6") on
+`macos-arm64` (job `105174080436`) and `macos-x86_64` (job `105174080471`):
+`realSignalLeavesTheMarkerAndTheNextLaunchStartsSafe` at `:229` and `sigkillAlsoLeavesTheMarker`
+at `:312`. The reset is right for
+the failure this lane diagnosed — a QtTest handler inherited by a fork-only child — and cannot help
+here, because the child dies before it reaches the reset.
+
+**The mechanism, from the jobs' own lldb step** (both jobs, one line per slot, verbatim):
+
+```
+SafeStartTest[58692:137404] Process 58685 was forked to 58692 without calling exec().
+This is not supported by FileManager. Aborting.
+SafeStartTest[58693:137406] Process 58685 was forked to 58693 without calling exec().
+This is not supported by FileManager. Aborting.
+```
+
+`58685` is the test process (it logs `[qt.test.enter] realSignal…` a millisecond earlier);
+`58692`/`58693` are its two fork children, one per slot. macOS CoreFoundation's fork-safety guard
+aborts a forked child that never exec'd, on the child's first call into the framework — and the
+first thing the child does is the engine's `install()` + `beginSession()`, which is such a call. So
+the child dies by SIGABRT, which is the "died by signal 6" the run reports. (The plain ctest run has
+no child output — os_log, not stderr — which is why run `35126160372` showed these slots as bare
+FALSE.)
+
+**The fix (`15ed9753f`, `tests/src/core/SafeStartTest.cpp`, +114/−115, 499 lines).** The child is no
+longer a fork-only clone: both slots **fork AND exec** this binary in child mode
+(`--safe-start-crash-child <workdir> segv|kill`, intercepted by a hand-written `main()` in place of
+`QTEST_GUILESS_MAIN`, before `QCoreApplication` exists). The child runs the same engine calls in a
+process image of its own — so it still writes the marker with its own pid, the record the next
+launch reads back — and then dies by the signal the slot names, with the kernel's disposition. A
+fork-only child no longer exists to be aborted, whatever a platform's runtime does to one. Every
+`QVERIFY`/`QCOMPARE`/`QSKIP` line is byte-identical to `8edfe30d5`.
+
+**Proofs** (linux, Qt 6.4.2 RelWithDebInfo, worktree `zene-030/wmacfork`):
+
+- `env -u DISPLAY ./SafeStartTest` → `EXIT=0`, `Totals: 9 passed, 0 failed`.
+- `strace -f -e trace=execve,wait4` on each slot — the child really re-execs and really dies by its
+  signal:
+
+  ```
+  447467 execve(".../build/tests/SafeStartTest", ["...", "--safe-start-crash-child",
+         "/tmp/SafeStartTest-MHzGlY", "segv"], ...) = 0
+  447465 wait4(447467, [{WIFSIGNALED(s) && WTERMSIG(s) == SIGSEGV && WCOREDUMP(s)}], WNOHANG, NULL) = 447467
+  447523 execve(".../build/tests/SafeStartTest", ["...", "--safe-start-crash-child",
+         "/tmp/SafeStartTest-pGhGRH", "kill"], ...) = 0
+  447522 wait4(447523, [{WIFSIGNALED(s) && WTERMSIG(s) == SIGKILL}], WNOHANG, NULL) = 447523
+  ```
+
+- The linux lane's Qt5-handler kit (`~/.cache/wplat-lin/forkhook.so`): the *unfixed* binary is red
+  under it **in this environment** (`EXIT=1`, "FORKHOOK: the child's SIGSEGV ran the inherited
+  harness-style (Qt5) handler" — the hook is live, so the green below is not vacuous); the new
+  binary is green under it, whole suite and each slot alone (`EXIT=0`, 9 passed / 3 passed each).
+  With exec, the hook's fork-return handler cannot outlive the child's own process image — which is
+  the point of the change.
+- `ctest -R 'SafeStartTest|ControlShutdownHookTest'` → `CTEST_EXIT=0`, 2/2 passed.
+- Gates after the commit: file-length `--check` 0, complexity `--check` 0, fork-sources 0,
+  no-upstream-regression 0, all-sources-reproduce 0.
+
+**What CI must show.** Run #5 (the next mac run): `SafeStartTest` (48) PASS on both mac arches, the
+two slots green because each child died by its intended signal, and 9/9 on the other platforms
+unchanged. **Not verified locally:** there is no macOS host in this environment, so the CF abort is
+refuted from the job logs and designed out — not reproduced here.
