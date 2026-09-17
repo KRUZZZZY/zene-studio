@@ -3143,6 +3143,32 @@ if(PYTHON3_EXECUTABLE AND CONTROL_SUITE_AVAILABLE)
 else()
 	message(STATUS "python3 not found: ControlCommandsSnapshot is not registered")
 endif()
+
+# ---------------------------------------------------------------------------
+# The zene::api boundary's proof (ARCH-2, board card #672). The boundary target
+# (src/CMakeLists.txt: zene_api) makes a widget include in the registry a compile
+# error; this test re-measures the same property on the artifacts the build just
+# produced, so a regression that PASSES the build - Qt6::Widgets linked back onto
+# the target, the module-qualified include form, a widget symbol entering
+# through an include that stays - fails here, in the test step. Every check
+# carries a liveness control: the same measurement on src/gui/MainWindow.cpp,
+# which must show widget reachability, so no check can pass vacuously.
+if(PYTHON3_EXECUTABLE AND TARGET zene_api)
+	add_test(NAME ZeneApiBoundary
+		COMMAND ${PYTHON3_EXECUTABLE}
+			${CMAKE_CURRENT_SOURCE_DIR}/zene-api-boundary.py
+			--build-dir ${CMAKE_BINARY_DIR}
+			--object-dir ${CMAKE_BINARY_DIR}/src/CMakeFiles/zene_api.dir
+			--source-list ${CMAKE_BINARY_DIR}/zene-api-sources.txt
+			--control-source ${CMAKE_SOURCE_DIR}/src/gui/MainWindow.cpp
+			--control-object ${CMAKE_BINARY_DIR}/src/CMakeFiles/lmmsobjs.dir/gui/MainWindow.cpp.o
+	)
+	set_tests_properties(ZeneApiBoundary PROPERTIES
+		TIMEOUT 600
+	)
+else()
+	message(STATUS "python3 not found: ZeneApiBoundary is not registered")
+endif()
 # ---------------------------------------------------------------------------
 # The bridge's GROUP COVERAGE, driven rather than listed:
 # tests/control-mcp-group-coverage.py starts this build's binary, opens a real MCP
