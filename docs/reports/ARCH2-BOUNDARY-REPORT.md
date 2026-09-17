@@ -40,10 +40,12 @@ The headers in the closure are `include/ControlRegistry.h`,
 Measured with the compiler, on the release tip's own compile commands
 (`/home/kruzzzzy/.../zene-030/build/compile_commands.json`), replacing the
 compile action with `-M` (the full include listing, system headers included)
-and grepping for QtWidgets paths:
+and grepping for QtWidgets paths. The probe covered 179 TUs that this
+configuration compiles: the 42-file closure plus the 137 `ControlCommands*.cpp`
+/ `Control*Support.cpp` files:
 
 ```
-$ python3 probe-widgets.py            # 180 TUs: the 42 above + all 138 ControlCommands*.cpp / Control*Support.cpp
+$ python3 probe-widgets.py            # -M over the closure + every command/support TU
 --- 5/180 reach QtWidgets
 WIDGETS  ControlCommandsArrangement.cpp  .../include/TrackContentWidget.h
 WIDGETS  ControlCommandsController.cpp   /usr/include/x86_64-linux-gnu/qt6/QtWidgets/qsizepolicy.h
@@ -52,13 +54,14 @@ WIDGETS  ControlCommandsTelemetry.cpp    /usr/include/x86_64-linux-gnu/qt6/QtWid
 WIDGETS  ControlEditSupport.cpp          .../include/TrackContentWidget.h
 ```
 
-**The registry-core closure is already widget-free: 42/42 TUs reach no Qt
-widget header**, transitively or otherwise. The five that do are command
-groups that read GUI state by design - selection sync via `SongEditor.h` /
-`TrackView.h`, the controller surface's view half, `control.surface_report`'s
-live menu/toolbar reflection and the telemetry consent screen, all through
-`MainWindow.h`. They stay outside the boundary (they are display-side), and the
-composition TU registers them from there.
+Read out: the 42-file closure is 42/42 widget-free (no Qt widget header, transitively or otherwise); of the 137 command/support TUs, 129 are widget-free, **5 reach QtWidgets** and 3 have no compile entry in this configuration (`ControlCommandsStems.cpp`, `ControlCommandsStemModel.cpp`, `ControlStemSupport.cpp` - the stem split is `WANT_STEM_SPLIT=OFF` here, so their status is unmeasured, not assumed).
+
+The five that do reach widgets are command groups that read GUI state by design
+- selection sync via `SongEditor.h` / `TrackView.h`, the controller surface's
+view half, `control.surface_report`'s live menu/toolbar reflection and the
+telemetry consent screen, all through `MainWindow.h`. They stay outside the
+boundary (they are display-side), and the composition TU registers them from
+there.
 
 The second measurement is a compile, not a listing: every one of the 42 TUs
 compiles with the QtWidgets include directory removed and `-DQT_WIDGETS_LIB`
@@ -306,12 +309,14 @@ build fails there, named, with the file and the header.
 
 ### 5.2 The commands that are already widget-free but still compile in the app
 
-The measurement in §1.2 found **175 of the 180 command/support TUs are
-widget-free**. They are not moved into the boundary in this lane: the card's
-closure is the registry, the brief's rule is "do not manufacture churn", and a
-217-file target would widen the boundary's include surface (wasmtime, SDL2,
-lilv, the plugin SDKs) for no property this lane proves. What that measurement
-*does* give the next slice is a named, verified candidate list - the sub-rule for
+The measurement in §1.2 found **129 of the 137 command/support TUs that this
+configuration compiles are widget-free** (5 reach widgets, 3 are stem-split TUs
+this configuration does not build). They are not moved into the boundary in
+this lane: the card's closure is the registry, the brief's rule is "do not
+manufacture churn", and a target three times the size would widen the
+boundary's include surface (wasmtime, SDL2, lilv, the plugin SDKs) for no
+property this lane proves. What that measurement *does* give the next slice is
+a named, verified candidate list - the sub-rule for
 `arrangement`/`controller`/`surface`/`telemetry`/`control-edit` selection sync
 (a display-side group registering into the same registry) is the only design
 question left in it.
@@ -328,7 +333,7 @@ paths, not executed.
 
 ```bash
 # the closure's include closure and its headless compile (release tip's commands)
-python3 probe-widgets.py              # -M over 180 TUs, grep QtWidgets
+python3 probe-widgets.py              # -M over the closure + every command/support TU, grep QtWidgets
 python3 probe-nowidget-compile.py     # 42/42 with the QtWidgets include dir removed
 
 # the boundary target's own compile line
