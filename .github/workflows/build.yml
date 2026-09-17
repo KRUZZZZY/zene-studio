@@ -815,6 +815,22 @@ jobs:
             vcpkg-mingw${{ matrix.arch }}-
           path: build/vcpkg_installed
       - name: Cache ccache data
+        # ccache 4.9.1's cache_dir is `~/.cache/ccache`, not `~/.ccache` (the
+        # job's own `ccache --show-config` prints `(default) cache_dir =
+        # /home/runner/.cache/ccache`), so a step caching `~/.ccache` never met
+        # the data it meant to cache: every run printed `Cache not found for
+        # input keys: ccache-mingw-64-...` and the Post step closed with
+        # `[warning]Path Validation Error: Path(s) specified in the action for
+        # caching do(es) not exist, hence no cache is being saved`. Pointing the
+        # step at the directory ccache actually uses is what makes the restore
+        # work, and that stops this job recompiling its ~1,600 objects from
+        # scratch on every run.
+        #
+        # This is a compile-TIME fix and is NOT the disk fix: the cache is
+        # bounded by CCACHE_MAXSIZE (2G, in the job env above) and a cache hit
+        # still writes the object into the build tree, so ccache cannot return
+        # the tens of GB this job is short of. The disk fix is the two flag
+        # overrides in the Configure step below.
         uses: actions/cache@v3
         with:
           key: "ccache-${{ github.job }}-64-${{ github.ref }}\
@@ -822,7 +838,7 @@ jobs:
           restore-keys: |
             ccache-${{ github.job }}-64-${{ github.ref }}-
             ccache-${{ github.job }}-64-
-          path: ~/.ccache
+          path: ~/.cache/ccache
       - name: Install dependencies
         run: |
           sudo .github/workflows/setup-mingw-packages.sh
@@ -859,21 +875,62 @@ jobs:
         # (x64-mingw-static), the apt mingw set and a ccache cache that MISSES every run
         # ("Cache not found for input keys: ccache-mingw-64-..."), so the objects it
         # writes are written twice. Freeing the pre-installed trees a mingw cross build
-        # cannot use buys the headroom; df -h / is printed before and after, so the next
-        # log carries the measurement instead of an inference from the failure.
+        # cannot use buys the headroom; df -h (every mount, not just /) is printed
+        # before and after, so the next log carries the measurement instead of an
+        # inference from the failure - and answers, in the same lines, whether this
+        # runner has any volume beside / that a build tree could move onto. (Round 2
+        # found no such volume: / is /dev/root, 145 G, and the job's own failures say
+        # the full build needs ~150 G. See docs/reports/MINGW-DISK-ROUND2.md.)
         #
         # Deliberately NOT removed: $AGENT_TOOLSDIRECTORY (Configure runs the Python
         # discovery through it) and /usr/local/share/boost (Configure may find its
         # headers). That is why this list is narrower than the stock free-disk-space
         # action, and both are named in docs/reports/WPLAT-WIN-REPORT.md.
         run: |
-          echo "[free-disk-space] df -h / before:"
-          df -h /
+          echo "[free-disk-space] df -h before (every mount):"
+          df -h
           sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL || true
           if command -v docker >/dev/null 2>&1; then docker image prune -a -f || true; fi
-          echo "[free-disk-space] df -h / after:"
-          df -h /
+          echo "[free-disk-space] df -h after (every mount):"
+          df -h
       - name: Configure
+        # THIS STEP CARRIES THE DISK FIX: the two flag overrides at the bottom of
+        # the cmake call are CMake's RelWithDebInfo flags minus `-g`.
+        #
+        # What consumed the runner, from this job's own two failures (the full
+        # arithmetic and its sources: docs/reports/MINGW-DISK-ROUND2.md):
+        #
+        #   * job 105174080269 (run 35212797698) died in Build at 66% with
+        #     `/bin/x86_64-w64-mingw32-ar: ... No space left on device`, reading
+        #     the lmmsobjs objects into a test target's own archive. The
+        #     Free-disk step's `df -h /` lines bracket the build start at 41 G
+        #     used / 104 G free, so the build itself consumed ~104 G before make
+        #     stopped - after 134 test executables had linked.
+        #   * job 104895806930 (the round before) died at 64% with no free-disk
+        #     step at all: it had the untouched image's 84 G free and ~108 test
+        #     binaries linked. Two failures, same rate: ~0.75 G per test target.
+        #   * This tree builds 207 test executables and this job runs none of
+        #     them (it has no test step), so 207 x 0.75 G = ~155 G against the
+        #     104 G the runner can lend it. A working ccache cannot return that:
+        #     it is bounded at 2 G and a cache hit still writes its object into
+        #     the build tree. The bytes are debug info - on the box this was
+        #     written on, the same tree's RelWithDebInfo build is 42 G with 39 G
+        #     of it under build/tests, `strip --strip-debug` takes test binaries
+        #     from 2266 MB to 117 MB (12 of them) and lmmsobjs objects from
+        #     30 MB to 0 MB (20 of them) - and a Windows target pays for them
+        #     twice: CMake writes a per-target `objects.a` for every test that
+        #     links the lmmsobjs object library, a COPY of the whole object set,
+        #     which is the file both failures name.
+        #
+        # Every other job in this file still builds with the full set. What this
+        # job loses is DWARF in the Windows artifacts it produces: same -O2,
+        # same -DNDEBUG, same -Werror, every target still compiled and linked,
+        # no test skipped, the honesty guard reading the same generated header
+        # and Package the same installer. build/zene-*.exe is uploaded on tags
+        # only, and msvc-x64 and msys2 build their own installers with the full
+        # flag set, so the release keeps symbolized Windows packages from those
+        # two. If LMMS ever changes its RelWithDebInfo flags, these two lines
+        # move with them.
         run: |
           export VCPKG_ROOT=${VCPKG_INSTALLATION_ROOT}
           echo "VCPKG_ROOT=${VCPKG_ROOT}" >> "$GITHUB_ENV"
@@ -882,12 +939,39 @@ jobs:
                 -B build \
                 -DCMAKE_TOOLCHAIN_FILE="./cmake/toolchains/x64-mingw-vcpkg.cmake" \
                 -DVCPKG_MANIFEST_INSTALL="${{ env.should_install_manifest }}" \
+                -DCMAKE_CXX_FLAGS_RELWITHDEBINFO="-O2 -DNDEBUG" \
+                -DCMAKE_C_FLAGS_RELWITHDEBINFO="-O2 -DNDEBUG" \
                 $CMAKE_OPTS
         env:
           should_install_manifest:
             ${{ steps.cache-deps.outputs.cache-hit == 'true' && 'NO' || 'YES' }}
       - name: Build
         run: cmake --build build
+      - name: Disk profile at failure (the arithmetic the disk fix rests on)
+        # Build is where this job has twice died of `No space left on device`
+        # (jobs 104895806930 at 64%, 105174080269 at 66%), and in both logs the
+        # ONLY disk measurement was the Free-disk step's `df -h /` taken before
+        # Configure - so "what consumed the runner" had to be inferred from
+        # where make stopped. This step makes the next failing run measure it
+        # instead: the headroom, the build tree's size, and the two components
+        # the disk fix's arithmetic names (the per-target `objects.a` archives a
+        # Windows target creates for every test that links lmmsobjs - each one a
+        # copy of the whole object set - and the test binaries themselves).
+        # docs/reports/MINGW-DISK-ROUND2.md states the numbers this falsifies.
+        if: failure()
+        # Evidence only: the Build step's failure is the gate, so this must never
+        # add one of its own.
+        continue-on-error: true
+        shell: bash
+        run: |
+          echo "=== disk profile at failure ==="
+          df -h || true
+          echo "--- build tree ---"
+          du -sh build 2>/dev/null || true
+          find build -name 'objects.a' -printf '%s\n' 2>/dev/null \
+            | awk '{s+=$1; n++} END {printf "objects.a archives: %d, %.2f GB\n", n, s/1073741824}'
+          find build/tests -maxdepth 1 -type f -printf '%s\n' 2>/dev/null \
+            | awk '{s+=$1; n++} END {printf "test binaries: %d, %.2f GB\n", n, s/1073741824}'
       - name: Crash evidence (a signal death must name its cause)
         # The C++ QtTest suites do not use the python harness, so an instance that dies of a signal
         # writes its crash report into the runner's XDG data dir rather than a test temp dir - and run
