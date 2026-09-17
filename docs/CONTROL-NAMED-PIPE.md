@@ -163,6 +163,33 @@ Known Windows-side risks, named rather than hidden:
    is on its PATH (the registration is conditional on exactly that) — the smoke test retries without
    the offscreen platform if the plugin is missing, and skips (exit 77) if it is not given a binary.
 
+### The first CI verdict — run 35126160372, msvc-x64 job 104895806855 (2026-09-16)
+
+Risk 1 above came back empty: the file compiled first time. `ControlNamedPipeSmoke` then ran and failed
+at the FIRST pipe instance, which is what this section is the record of:
+
+    control socket listening on \\.\pipe\zene-code9-smoke-7520-96375
+    control socket: cannot create a named-pipe instance for \\.\pipe\zene-code9-smoke-7520-96375 (Windows error 87)
+
+**87 = `ERROR_INVALID_PARAMETER` is this API's answer to a flag in a field that does not take it.**
+`CreateNamedPipe` documents that it "fails if `dwOpenMode` specifies anything other than 0 or the flags
+listed in the following tables" — and `PIPE_REJECT_REMOTE_CLIENTS` (0x8) is not in that table; it is
+listed under **`dwPipeMode`**, where 0x8 sits beside the other pipe-mode bits (`PIPE_NOWAIT` 0x1,
+`PIPE_READMODE_MESSAGE` 0x2, `PIPE_TYPE_MESSAGE` 0x4). The call had it in `dwOpenMode`. Not a runner
+fact, not the name, not the buffer sizes, not `nMaxInstances` (255 = `PIPE_UNLIMITED_INSTANCES`), not
+`nDefaultTimeOut` (0 = `NMPWAIT_USE_DEFAULT_WAIT`): every one of those is documented-legal, and a bad
+name would be `ERROR_INVALID_NAME` (123), a conflicting instance `ERROR_ACCESS_DENIED` (5).
+
+**Fix (`win32AcceptLoop()`, one argument).** The flag moved into the pipe-mode argument. The flag
+itself is unchanged, so the "local only" property row 83 claims is unchanged; what changed is the
+field the kernel reads it from. Qt's `QLocalServer` (`qlocalserver_win.cpp`) and Rust's `std`
+named-pipe server (`sys/windows/pipe.rs`) both pass it in the pipe mode. The failure path also reads
+`GetLastError()` into a local *before* the `qWarning`'s Qt string conversions, so the code it reports
+is the API's own rather than whatever the compiler's argument-evaluation order left behind.
+
+This is a source-level reading, not a measurement: no MSVC and no MinGW exists on the box that wrote
+it, so **the next `msvc-x64` run is the verdict on this fix**, exactly as it was for the first one.
+
 ## 5. The single next action
 
 Watch the next `msvc-x64` run for `ControlNamedPipeSmoke`. If it is green, the Windows half's verdict

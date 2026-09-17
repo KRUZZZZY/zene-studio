@@ -109,6 +109,21 @@ float expectedGain( int pressure, int timbre )
 	return ( 1.0f + pressure / kFullScale ) * ( 1.0f + timbre / kFullScale );
 }
 
+/*!
+ * Windows: a test host cannot load a plugin MODULE library at runtime - the
+ * module's import descriptor names zene.exe (ERROR_MOD_NOT_FOUND, 126) and the
+ * product loads them inside zene.exe; AudioPluginTest.cpp carries the full
+ * mechanism and the CI evidence.
+ */
+constexpr auto testHostCanLoadPluginModules() -> bool
+{
+#ifdef Q_OS_WIN
+	return false;
+#else
+	return true;
+#endif
+}
+
 } // namespace
 
 class MpePlaybackTest : public QObject
@@ -118,6 +133,20 @@ class MpePlaybackTest : public QObject
 private slots:
 	void initTestCase()
 	{
+		// This suite's whole subject is the fixture module below, and a Windows
+		// test host cannot load it, so skip here rather than fail at the
+		// discovery: a skipped initTestCase skips every slot (the tree relies on
+		// that in AudioPluginTest.cpp), and cleanupTestCase() stays behind its
+		// m_engineUp guard, which this path never sets.
+		if( !testHostCanLoadPluginModules() )
+		{
+			QSKIP( "the MPE test consumer fixture cannot be loaded in a Windows test host: plugin "
+				"modules link the zene executable, so on Windows their import descriptor names "
+				"zene.exe and a test host cannot satisfy it; the product loads them inside zene.exe "
+				"where that resolves by construction (CI msvc-x64: QLibrary::load -> "
+				"ERROR_MOD_NOT_FOUND, 126)" );
+		}
+
 		// The fixture module is the only plugin this test wants the scan to
 		// see. Both variables must be set before anything reaches
 		// PluginFactory::instance(): it reads its search paths in the
