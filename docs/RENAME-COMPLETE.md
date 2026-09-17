@@ -286,6 +286,15 @@ falsify the format. The reader must keep accepting them, and does.
 | `creator="LMMS"` | **11 files, all `plugins/RnnoiseDenoiser/testdata/**` + its README** — captured test fixtures, not edited |
 | `multimedia-project` legacy root | 62 presets + `tests/emptyproject.mmp` + the Rnnoise fixtures — kept (§ above) |
 
+> **Remeasured 2026-09-17, after `ATTR-1`.** The `creator="LMMS"` row above is the
+> layer-3-time reading of a tree that had just been rewritten. `c6dbd2d55` reverted the
+> fork creator on the 184 plain-text preset/template/project files and `1d8512cb9` on the
+> 38 `.mmpz` demos, so the live tree now reads `git grep -l 'creator="LMMS"' | wc -l` →
+> **220 files** (183 of them under `data/`), plus the 38 `.mmpz` whose decompressed XML
+> carries `creator="LMMS"` again — **258 files** in all. `creator="Zene Studio"` survives
+> on fork-authored files only (see §5(i)). The table above is left as the record of the
+> tree layer 3 produced, which is what its heading claims.
+
 ---
 
 ## 5. What remains deliberately, and why
@@ -348,6 +357,22 @@ legal. **Stating the scope question the owner needs to settle:** a new logo is *
 scope — it is a design decision, and it must not fall between two lanes and ship as upstream art by
 accident. If the owner wants new artwork it needs its own task; if not, a one-line note in the
 limitations is enough.
+
+**(i) The creator attribute is the upstream value again, and this repository has ONE fork
+identity.** `ATTR-1` (owner decision 2026-09-13, `BACKLOG.md`): the 222 shipped preset/demo files
+layer 3 rewrote carry the `creator` value of `4e677cb6c6ab` again. Measured on this tree: `62`
+are byte-identical to that commit (the `multimedia-project` presets layer 3 had changed in the
+attribute only) and `160` keep **only** the root-element rename above — 113 `.xpf` + 6 `.mpt` +
+3 `.mmp` (`c6dbd2d55`) and the 38 `.mmpz` demos (`1d8512cb9`). No file under `data/` carries
+`creator="Zene Studio"`. The 38 `.mmpz` were reverted **through their container**, not by hand:
+`[4-byte big-endian uncompressed length][zlib]`, decompress → restore the root element's
+`creator` value from the base commit → recompress, which is the round trip layer 3 wrote them
+with; zlib level 6 reproduces these files byte-for-byte. Fork-authored files keep one identity,
+not six: the attribute this build's writer emits is `creator="Zene Studio"`
+(`src/core/DataFile.cpp:141`, `:328`) and the single copyright holder on fork-authored files is
+**"Zene Studio contributors"** (`ATTR-2`/`ATTR-4`; `CMakeLists.txt`'s `PROJECT_COPYRIGHT` carries
+that same holder beside the upstream one). The ledger (`tests/upstream-modifications.txt`) names
+the revert per path, and the evidence is in `docs/reports/ATTR1-REVERT-REPORT.md`.
 
 ---
 
