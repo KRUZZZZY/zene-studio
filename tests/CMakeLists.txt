@@ -3125,8 +3125,20 @@ if(PYTHON3_EXECUTABLE AND CONTROL_SUITE_AVAILABLE)
 	add_test(NAME MmpzGitDepthTest
 		COMMAND ${PYTHON3_EXECUTABLE}
 			${CMAKE_SOURCE_DIR}/tools/mmpz-git/tests/test_mmpz_git.py -v)
+	# TIMEOUT 1800, not the 300 it carried (030/wplat-arm64, 2026-09-17): 300 was an x86
+	# number.  The suite drives the DAW SEVEN times - 2 `_loads` renders, 2 x 2 audible-diff
+	# renders (render_mix, and render_tracks, are one invocation per project) and the render
+	# recipe's 1 - and on the linux-arm64 runner each render costs ~45 s (a full
+	# Engine::init plus the audio, docs/RENDER-CHILD-WAIT.md): run 35126160372 measured the
+	# five DAW-driving tests at 90/88/45/45 s, the fifth still running when the 300.03 s
+	# bound hit, while linux-x86_64 passes the whole suite in 139.41 s.  The number is sized
+	# so this backstop cannot pre-empt an internal bound: 7 bounded DAW calls x the suite's
+	# own declared 180 s per-render budget = 1260 s, plus the suite's non-DAW work (measured
+	# 85.3 s here; allow 3x on the slow runner) = ~1520 s.  Every DAW-driving call inside the
+	# suite carries its own subprocess bound, so a hang fails THERE, named, and this TIMEOUT
+	# is the backstop for a hang outside those calls only.
 	set_tests_properties(MmpzGitDepthTest PROPERTIES
-		TIMEOUT 300
+		TIMEOUT 1800
 	)
 else()
 	message(STATUS "python3 not found: ControlCommandsSnapshot is not registered")

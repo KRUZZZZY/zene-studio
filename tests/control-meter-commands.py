@@ -85,6 +85,20 @@ TONE_TOLERANCE_LU = 0.1
 LIVE_TOLERANCE_LU = 1.0
 LIVE_SEPARATION_TOLERANCE_LU = 0.5
 
+#: A render gets a DECLARED budget, never one socket read - the number the tree's render
+#: transcripts already carry (tests/freeze_bounce_evidence.py:57, tests/control-render-presets.py:44:
+#: "ONE FULL ENGINE START plus the render"). `render.render` runs the product's own CLI in a
+#: CHILD process and the child pays a full `Engine::init` before it renders - measured ~34 s on
+#: the linux-arm64 CI runner against ~0.3 s here (docs/RENDER-CHILD-WAIT.md) - while the
+#: dispatch thread answers NOTHING, this socket included, until the child exits. The harness's
+#: SOCKET_TIMEOUT (30 s) bounds a socket round trip, not a render: on run 35126160372 the
+#: linux-arm64 job failed THIS test at 78.17 s with "no response line inside 30.0s (socket
+#: timed out)" while the render child was in state R, and the same test passed on linux-x86_64
+#: in 13.20 s. Every command NOT in RENDER_COMMANDS keeps SOCKET_TIMEOUT, so a genuine hang
+#: still costs seconds.
+RENDER_TIMEOUT = 180.0
+RENDER_COMMANDS = ("render.render",)
+
 
 # ---------------------------------------------------------------------------
 # the wire client
@@ -114,7 +128,9 @@ class Session:
 
     def reply(self, cmd, args=None):
         self.request_id += 1
-        return self.client.call(self.request_id, cmd, args or {}, transcript=self.transcript)
+        budget = RENDER_TIMEOUT if cmd in RENDER_COMMANDS else None
+        return self.client.call(self.request_id, cmd, args or {}, transcript=self.transcript,
+                                timeout=budget)
 
     def result(self, cmd, args=None):
         reply = self.reply(cmd, args)
