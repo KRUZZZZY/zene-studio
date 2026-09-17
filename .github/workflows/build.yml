@@ -737,7 +737,13 @@ jobs:
         -DUSE_COMPILE_CACHE=ON
         -DWANT_VST3=ON
         -DWANT_CLAP=ON
-      CCACHE_MAXSIZE: 0
+      # 2G, not the 0 ("no limit" per the ccache manual) the other jobs use: this job
+      # writes ~1,616 objects per build into ccache (its own previous run's stats:
+      # Cacheable calls 1618, Hits 2, Misses 1616) on the same filesystem as the build
+      # tree, and that filesystem is the one that filled up at 64% (job 104895806930).
+      # The post-build "Trim ccache and print statistics" step below still clamps the
+      # cache to 500M.
+      CCACHE_MAXSIZE: 2G
       CCACHE_NOCOMPRESS: 1
       MAKEFLAGS: -j2
       # This job runs on a Linux runner but builds a WINDOWS target, so the uname-based
@@ -795,6 +801,31 @@ jobs:
         # ~39 MB of SDK sources + ~7 MB of CLAP headers once per operating system;
         # later runs restore both from the cache and clone nothing.
         run: bash .github/workflows/provision-plugin-hosting-deps.sh build
+      - name: Free disk space (this job builds a Windows target and runs no tests)
+        # The 0.3.0 line's mingw64 job died at 64% with
+        #   /bin/x86_64-w64-mingw32-ar: unable to copy file
+        #   'CMakeFiles/TakeLaneTest.dir/objects.a'; reason: No space left on device
+        # (job 104895806930, log line 4614) while every step before it was clean - 0 x
+        # C4273/C2220 - so TakeLaneTest is only where the runner's / filled up. The job
+        # builds ~2,900 targets (the product, its plugins and ~200 test binaries it never
+        # runs: it has no test step) on top of the restored vcpkg_installed tree
+        # (x64-mingw-static), the apt mingw set and a ccache cache that MISSES every run
+        # ("Cache not found for input keys: ccache-mingw-64-..."), so the objects it
+        # writes are written twice. Freeing the pre-installed trees a mingw cross build
+        # cannot use buys the headroom; df -h / is printed before and after, so the next
+        # log carries the measurement instead of an inference from the failure.
+        #
+        # Deliberately NOT removed: $AGENT_TOOLSDIRECTORY (Configure runs the Python
+        # discovery through it) and /usr/local/share/boost (Configure may find its
+        # headers). That is why this list is narrower than the stock free-disk-space
+        # action, and both are named in docs/reports/WPLAT-WIN-REPORT.md.
+        run: |
+          echo "[free-disk-space] df -h / before:"
+          df -h /
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL || true
+          if command -v docker >/dev/null 2>&1; then docker image prune -a -f || true; fi
+          echo "[free-disk-space] df -h / after:"
+          df -h /
       - name: Configure
         run: |
           export VCPKG_ROOT=${VCPKG_INSTALLATION_ROOT}
