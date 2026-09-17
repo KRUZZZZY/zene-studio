@@ -890,6 +890,43 @@ jobs:
           echo "[free-disk-space] df -h / after:"
           df -h /
       - name: Configure
+        # THIS STEP CARRIES THE DISK FIX: the two flag overrides at the bottom of
+        # the cmake call are CMake's RelWithDebInfo flags minus `-g`.
+        #
+        # What consumed the runner, from this job's own two failures (the full
+        # arithmetic and its sources: docs/reports/MINGW-DISK-ROUND2.md):
+        #
+        #   * job 105174080269 (run 35212797698) died in Build at 66% with
+        #     `/bin/x86_64-w64-mingw32-ar: ... No space left on device`, reading
+        #     the lmmsobjs objects into a test target's own archive. The
+        #     Free-disk step's `df -h /` lines bracket the build start at 41 G
+        #     used / 104 G free, so the build itself consumed ~104 G before make
+        #     stopped - after 134 test executables had linked.
+        #   * job 104895806930 (the round before) died at 64% with no free-disk
+        #     step at all: it had the untouched image's 84 G free and ~108 test
+        #     binaries linked. Two failures, same rate: ~0.75 G per test target.
+        #   * This tree builds 207 test executables and this job runs none of
+        #     them (it has no test step), so 207 x 0.75 G = ~155 G against the
+        #     104 G the runner can lend it. A working ccache cannot return that:
+        #     it is bounded at 2 G and a cache hit still writes its object into
+        #     the build tree. The bytes are debug info - on the box this was
+        #     written on, the same tree's RelWithDebInfo build is 42 G with 39 G
+        #     of it under build/tests, `strip --strip-debug` takes test binaries
+        #     from 2266 MB to 117 MB (12 of them) and lmmsobjs objects from
+        #     30 MB to 0 MB (20 of them) - and a Windows target pays for them
+        #     twice: CMake writes a per-target `objects.a` for every test that
+        #     links the lmmsobjs object library, a COPY of the whole object set,
+        #     which is the file both failures name.
+        #
+        # Every other job in this file still builds with the full set. What this
+        # job loses is DWARF in the Windows artifacts it produces: same -O2,
+        # same -DNDEBUG, same -Werror, every target still compiled and linked,
+        # no test skipped, the honesty guard reading the same generated header
+        # and Package the same installer. build/zene-*.exe is uploaded on tags
+        # only, and msvc-x64 and msys2 build their own installers with the full
+        # flag set, so the release keeps symbolized Windows packages from those
+        # two. If LMMS ever changes its RelWithDebInfo flags, these two lines
+        # move with them.
         run: |
           export VCPKG_ROOT=${VCPKG_INSTALLATION_ROOT}
           echo "VCPKG_ROOT=${VCPKG_ROOT}" >> "$GITHUB_ENV"
@@ -898,6 +935,8 @@ jobs:
                 -B build \
                 -DCMAKE_TOOLCHAIN_FILE="./cmake/toolchains/x64-mingw-vcpkg.cmake" \
                 -DVCPKG_MANIFEST_INSTALL="${{ env.should_install_manifest }}" \
+                -DCMAKE_CXX_FLAGS_RELWITHDEBINFO="-O2 -DNDEBUG" \
+                -DCMAKE_C_FLAGS_RELWITHDEBINFO="-O2 -DNDEBUG" \
                 $CMAKE_OPTS
         env:
           should_install_manifest:
