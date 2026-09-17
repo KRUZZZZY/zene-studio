@@ -88,6 +88,18 @@
 # docs/RENDER-DETERMINISM.md.
 tools/auto-mastering-demo.py
 tools/brand/rasterise-placeholders.py
+# ADDED 2026-09-17 (lane 030/crashbot, T1+T2 of verification/AGENT-CRASH-TESTING-PLAN.md).
+# Four Python modules: the crash-testing instance pool, the scenario runner, the scenario
+# schema and the reaper selftest. Registered HERE and not in tests/fork-sources.txt because
+# they are this fork's developer tooling under tools/ - tests/fork-sources.txt's own header
+# and Gate 9's own failure message both say a tools/ file goes in this list, and the fork
+# ratchets (gates 4, 7, 8) would otherwise measure Python tooling against the C/C++ product
+# scope. `tools/crashbot/scenarios/*.json` and `tools/crashbot/README.md` need no entry:
+# neither extension is a source in any scope.
+tools/crashbot/pool.py
+tools/crashbot/runner.py
+tools/crashbot/scenario.py
+tools/crashbot/selftest_reaper.py
 tools/dawproject-proof.sh
 tools/doc5-citations.py
 tools/import-detection-proof.cpp

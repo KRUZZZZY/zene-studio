@@ -1,0 +1,32 @@
+{
+  "id": "transport/punch-gate-0001",
+  "scope": "transport",
+  "seed": 4471,
+  "groups": ["transport", "control", "arrangement"],
+  "notes": "Ported from tests/control-punch-transcript.py (the transport.punch_* acceptance transcript): the region and the gate at its boundaries, the armed-but-inactive distinction, the disarm-keeps-the-range rule, punch_clear, one control.undo taking the region back off (SPEC A16), then the refusal family and a tempo round trip through transport.get_state. Every expected value in this file was MEASURED on build sha256 26da09c8... / 0.2.1-alpha.590+e9a298b before it was written (see docs/reports/CRASHBOT-V0-REPORT.md); the half-open range (end exclusive) is the transcript's own claim, re-read here as an expectation.",
+  "steps": [
+    {"cmd": "control.version", "note": "identity, recorded in the transcript"},
+    {"cmd": "transport.punch_get_state", "expect": {"punch_begin": 0, "punch_end": 0, "punch_enabled": false, "punch_armed": false, "punch_active": false}, "note": "a fresh session has no region and the gate says no"},
+    {"cmd": "transport.punch_set", "args": {"start": 192, "end": 384}, "expect": {"punch_begin": 192, "punch_end": 384, "punch_armed": true, "punch_enabled": true}, "note": "bar 2 to bar 3 at 4/4"},
+    {"cmd": "transport.seek", "args": {"ticks": 192}, "read_back": "transport.punch_get_state", "expect": {"punch_active": true, "position_ticks": 192}, "note": "at `start`: inside (the range is half-open)"},
+    {"cmd": "transport.seek", "args": {"ticks": 383}, "read_back": "transport.punch_get_state", "expect": {"punch_active": true, "position_ticks": 383}, "note": "the last tick inside"},
+    {"cmd": "transport.seek", "args": {"ticks": 384}, "read_back": "transport.punch_get_state", "expect": {"punch_active": false, "position_ticks": 384}, "note": "at `end`: outside, exclusive"},
+    {"cmd": "transport.seek", "args": {"ticks": 0}, "read_back": "transport.punch_get_state", "expect": {"punch_active": false, "position_ticks": 0}, "note": "before the region"},
+    {"cmd": "transport.punch_set", "args": {"start": 192, "end": 384, "enabled": false}, "expect": {"punch_begin": 192, "punch_end": 384, "punch_armed": false}, "note": "a range without an arm is a range, not a region"},
+    {"cmd": "transport.punch_clear", "expect": {"punch_begin": 0, "punch_end": 0, "punch_armed": false, "punch_enabled": false}, "note": "the region goes away"},
+    {"cmd": "transport.punch_set", "args": {"start": 192, "end": 384}, "expect": {"punch_armed": true}, "note": "re-arm, to be undone"},
+    {"cmd": "control.undo", "read_back": "transport.punch_get_state", "expect": {"punch_end": 0, "punch_armed": false}, "note": "SPEC A16: ONE undo takes the region back off"},
+    {"cmd": "transport.punch_set", "args": {"start": 384, "end": 192}, "expect_error": "invalid_args", "note": "an inverted range captures nothing"},
+    {"cmd": "transport.punch_set", "args": {"start": 100, "end": 100}, "expect_error": "invalid_args", "note": "an empty range is refused rather than armed"},
+    {"cmd": "transport.punch_set", "args": {"start": -1, "end": 96}, "expect_error": "invalid_args", "note": "a negative start"},
+    {"cmd": "transport.punch_set", "args": {"start": 96}, "expect_error": "invalid_args", "note": "a range missing its end"},
+    {"cmd": "transport.punch_set", "args": {"start": 0, "end": 1919809}, "expect_error": "invalid_args", "note": "an end past the timeline"},
+    {"cmd": "transport.punch_set", "args": {"start": "192", "end": 384}, "expect_error": "invalid_args", "note": "a string tick position"},
+    {"cmd": "transport.punch_clear", "expect_error": "refused", "note": "clearing when there is no region is refused, not a silent success"},
+    {"cmd": "transport.set_tempo", "args": {"bpm": 137}, "read_back": "transport.get_state", "expect": {"tempo": 137}, "note": "tempo round trip through the read-back"},
+    {"cmd": "transport.set_tempo", "args": {"bpm": 120}, "read_back": "transport.get_state", "expect": {"tempo": 120}, "note": "and back, so the case leaves the tempo where it found it"},
+    {"cmd": "control.transactions", "note": "the A16 records, dumped into the transcript for triage"},
+    {"cmd": "transport.get_state", "expect": {"playing": false, "paused": false}, "note": "nothing in this case started playback"}
+  ],
+  "teardown": "control.quit"
+}
