@@ -118,11 +118,41 @@ def run(args, cwd, timeout=300):
     return subprocess.run(args, cwd=cwd, capture_output=True, text=True, timeout=timeout)
 
 
+#: A command line that walks a Windows path: a drive-letter or UNC path, or any
+#: backslash that is not the start of an ESCAPED QUOTE (POSIX command lines write
+#: string defines as \"...\", so every backslash in them is followed by a quote).
+#: Measured before it was used: of the 1,944 compile lines in this repo's own Linux
+#: build (compile_commands.json, release configuration, 2026-09-17) NOT ONE carries
+#: either shape, so this rule cannot misfire on the GCC/Clang jobs.
+WINDOWS_COMMAND_RE = re.compile(r"(?:^|[\s=\"'])[A-Za-z]:[\\/]|\\[^\"']")
+
+
+def split_command(command):
+    """A recorded command line as an argument list, under the right quoting rules.
+
+    MSVC's command lines carry Windows paths, and POSIX shlex splits them with
+    "\\" as an ESCAPE character: `-FoD:\\a\\...\\ControlRegistry.cpp.obj` comes back
+    with every separator eaten
+    ("...buildsrcCMakeFileszene_api.dircoreControlRegistry.cpp.obj"), the object
+    path stops resolving under the target's object directory, and check 1 reports
+    all 42 boundary sources as "compiled OUTSIDE the boundary target" - measured
+    on the msvc-x64 job of run #7 (job 105366384268), and the reason the boundary
+    set came out empty there in run #6. A Windows command line is therefore split
+    under non-POSIX rules, which keep the separators, and one layer of surrounding
+    quotes is removed so a Windows-quoted argument arrives as its tool sees it.
+    """
+    if WINDOWS_COMMAND_RE.search(command):
+        arguments = shlex.split(command, posix=False)
+        return [argument[1:-1] if len(argument) > 1 and argument[0] == argument[-1] == '"'
+                else argument for argument in arguments]
+    return shlex.split(command)
+
+
 def entry_arguments(entry):
     """The recorded command as an argument list (compiler at index 0)."""
     command = entry.get("command")
     if command:
-        return shlex.split(command)
+        return split_command(command)
     return list(entry.get("arguments") or [])
 
 
