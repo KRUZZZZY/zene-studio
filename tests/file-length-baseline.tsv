@@ -9,6 +9,7 @@ include/ControlRegistryGroups.h	696
 src/wasm/WasmSandbox.cpp	597
 tests/control-socket-path-safety.py	574
 src/core/CrashReporter.cpp	564
+tests/zene-api-boundary.py	564
 src/core/AudioPortsModel.cpp	549
 tests/control-stable-ids-slice2.py	549
 include/ControlReversibility.h	536

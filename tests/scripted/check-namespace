@@ -75,6 +75,12 @@ known_no_namespace_lmms = {
     # only luabridge::Stack<> specialisations for Qt value types, which C++ requires
     # to live in the namespace of the template they specialise
     'include/ScriptLuaQtTypes.h',
+    # the deliberate zene::api boundary (ARCH-2, board card #672): the registry
+    # module's public entry point, which opens `namespace zene { namespace api {`
+    # and re-exports the lmms:: implementation names on purpose - the boundary is
+    # held by the zene_api target and the registered ZeneApiBoundary ctest, not by
+    # a namespace (docs/reports/ARCH2-BOUNDARY-REPORT.md)
+    'include/zene/api/ControlApi.h',
 }
 
 exclude_files = re.compile(

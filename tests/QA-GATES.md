@@ -1328,6 +1328,12 @@ reason, and exits 2 on a path that is not over the limit or not in the scope's m
 ratchets have it, and the whole-tree scope's 2026-09-12 decisions were made with it, one file at a
 time — see "Scope policy".
 
+**Re-anchored 2026-09-17 (`030/ci-fix6`, CI-FIX6), one file:** `tests/zene-api-boundary.py`
+`none -> 564` — the MSVC empty-boundary fix (run 35253612993's `IndexError` in `probe_flags`) added the
+typed SKIP path, `toolchain_is_msvc()` and the closure guard, taking the boundary's own proof ctest from
+487 to 564 lines. The reason is recorded in the command's own output, in the commit, and in
+`docs/reports/CI-FIX6-REPORT.md`; `--check` after it: **PASS**. Nothing else in the baseline moved.
+
 **Measured (2026-09-12, `post-alpha/gate-hygiene`, 129-file scope):** 129 fork sources measured,
 **9 over 500 lines** — the same nine as below. The all scope measures **1,133 sources with 112 over
 500** and the tools scope **12 with 2 over 500**; both were re-anchored on 2026-09-12 (see "Scope
@@ -1657,6 +1663,52 @@ silence; widening the frontier is a one-line act with a reason (see the lane rep
 action), not something a merge may do silently. As ctests, both run and pass on the merged tip:
 `ctest -R RtSafety` → `2/2 Passed`, EXIT=0.
 
+## Gate 13: the scripted checks (namespace, strings, the fixture harness) — WIRED 2026-09-17
+
+**Command** (as `run-all-gates.sh` and CI's `scripted-checks` job run it):
+
+```sh
+tests/scripted/verify           # the fixtures' own red/green control, EXIT=0
+tests/scripted/check-namespace  # EXIT=0 on the 2026-09-17 tree
+tests/scripted/check-strings    # EXIT=0 on the 2026-09-17 tree
+```
+
+The three are the scripts upstream LMMS wrote to catch what a compiler cannot: a header
+that opens a namespace of its own, a class name a translation file or a stylesheet still
+refers to, and — through `verify`'s fixtures — a check that has stopped checking. CI's
+`checks.yml` job runs all three on every push and pull request (`on: [push,
+pull_request]`); this suite did not, and that was the blind spot this gate closes.
+
+**Why it was added.** `030/ci-fix6`, 2026-09-17: the ARCH-2 boundary header
+(`include/zene/api/ControlApi.h`) deliberately opens `namespace zene { namespace api {`
+and re-exports the `lmms::` implementation names, so `check-namespace` refused it — CI
+run 35253612944's `scripted-checks` job failed with exactly one line,
+`Error: include/zene/api/ControlApi.h: File has no namespace lmms`. Every local bar that
+had reported green on the same commit (`ctest` 214/214, `run-all-gates.sh`
+PASS-WITH-SKIPS) was green *because* it never ran the scripted checks: they were wired
+into CI and into nothing local.
+
+**Pass criterion**: exit 0 from all three. The escape hatch for a file whose namespace
+is deliberately not `lmms` is the `known_no_namespace_lmms` set in
+`tests/scripted/check-namespace` — one entry per file, each with a reason in the file's
+own comment style (the boundary's namespace is `zene::api`; the other fork-added entries
+are `tools/ncpu-shim.c`, a C translation unit with no namespace to put its three
+interposed libc functions in, and `include/ScriptLuaQtTypes.h`, whose
+`luabridge::Stack<>` specialisations C++ requires to live in `luabridge`).
+
+**Skip, and when it is recorded as one.** `check-strings` imports `python3-tinycss2`
+(the one non-stdlib import in the scripted checks; CI installs it in its job, not in the
+source tree). A machine without it records Gate 13 as SKIP with that reason, and the
+run's exit code becomes 3 — a skipped gate is not a pass. The rest of the row
+(`verify`, `check-namespace`) needs nothing beyond `python3`.
+
+**Red/green proof (2026-09-17, `030/ci-fix6` worktree)**: with the allowlist entry
+removed, `tests/scripted/check-namespace` prints
+`Error: include/zene/api/ControlApi.h: File has no namespace lmms` and exits 1; with it
+restored, the same command exits 0 with `0 errors.` Both runs and both exit codes are in
+`docs/reports/CI-FIX6-REPORT.md`.
+
+
 ## Evaluated and NOT wired: dead code (`cppcheck --enable=unusedFunction`) — 2026-09-09
 
 The adopted ruleset requires "dead code: zero (ruff/vulture)". The C++ equivalent is
@@ -1773,7 +1825,7 @@ both configurations' differential evidence and the unchanged-ON proof.
 ## Running all gates
 
 ```sh
-bash tests/run-all-gates.sh                  # Gates 1, 3, 4, 5, 6, 7, 8, 9 (Gate 5 ≈3 min)
+bash tests/run-all-gates.sh                  # Gates 1, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13 (Gate 5 ≈3 min)
 bash tests/run-all-gates.sh --no-mutation    # skip the Gate 5 sweep
 bash tests/run-all-gates.sh --with-coverage  # + Gate 2 (full coverage build)
 bash tests/run-all-gates.sh --whole-tree     # gates 4, 7, 8 over tests/all-sources.txt as well

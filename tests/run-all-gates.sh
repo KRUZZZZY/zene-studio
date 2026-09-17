@@ -2,7 +2,7 @@
 # run-all-gates.sh — run every executable QA gate for the LMMS standards fork.
 #
 # Usage:
-#   bash tests/run-all-gates.sh                 # gates 1, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12 (Gate 5 ≈3 min)
+#   bash tests/run-all-gates.sh                 # gates 1, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13 (Gate 5 ≈3 min)
 #   bash tests/run-all-gates.sh --with-coverage # + Gate 2 (full coverage build; slow)
 #   bash tests/run-all-gates.sh --no-mutation   # skip Gate 5 (mutation sweep)
 #   bash tests/run-all-gates.sh --strict        # pass --strict to gates that support it
@@ -55,6 +55,19 @@
 # tests/rt-safety-sweep.py over tests/rt-safety-scope.txt, judged against
 # tests/rt-safety-allowlist.txt. tests/QA-GATES.md and docs/RT-SAFETY-SWEEP.md document
 # it; it needs no build, so it runs in the default set and in CI's static-gates job.
+#
+# Gate 13 (the scripted checks, added 2026-09-17 with CI-FIX6) runs what CI's checks.yml
+# `scripted-checks` job runs on every push: tests/scripted/verify (the fixtures' own
+# red/green control), tests/scripted/check-namespace and tests/scripted/check-strings.
+# Until this row existed this suite did not run them, so a header that opens a namespace
+# of its own - include/zene/api/ControlApi.h, the ARCH-2 boundary - turned CI red in run
+# 35253612944 ("include/zene/api/ControlApi.h: File has no namespace lmms") while every
+# local run of THIS script stayed green: nothing that runs by default measured the
+# scripted checks, which is the same blind spot the SCOPE POLICY above was written about.
+# check-strings parses the stylesheets with python3-tinycss2 - the one non-stdlib import
+# in the scripted checks, installed by CI in its job and not carried in the source tree -
+# so a machine without it records the row as SKIP with that reason rather than passing
+# quietly: a skipped gate is not a pass (see Exit codes).
 #
 # Exit codes (a skipped gate is NOT a pass):
 #   0  every gate ran and passed
@@ -117,6 +130,7 @@ skip_hint() {
 		2) echo "pass --with-coverage" ;;
 		5) echo "drop --no-mutation" ;;
 		12) echo "install python3 (the sweep is a Python gate over the sources)" ;;
+		13) echo "install python3-tinycss2 (sudo apt-get install -y python3-tinycss2)" ;;
 		*) echo "see tests/QA-GATES.md" ;;
 	esac
 }
@@ -249,6 +263,42 @@ if ! command -v python3 > /dev/null 2>&1; then
 else
 	python3 tests/rt-safety-sweep.py --check
 	[[ $? -eq 0 ]] && record 12 "rt-safety" "PASS" || record 12 "rt-safety" "FAIL"
+fi
+
+# ---- Gate 13: the scripted checks (namespace / strings / the harness) ---------
+# CI's checks.yml `scripted-checks` job runs these on every push; this row is the local
+# half of the same gate (the Gate 13 paragraph in the header says why it exists). The
+# fixtures' own red/green control (tests/scripted/verify) runs FIRST and is part of the
+# row: it drives both scripts against synthetic trees that MUST fail and MUST pass, so a
+# script that stopped detecting its class of defect is a red gate here rather than a
+# green one. The scripts are run as executables, exactly as CI runs them, because their
+# interpreter is the shebang's (`#!/usr/bin/python3`) and not this shell.
+banner 13 "scripted checks (scripted/verify + check-namespace + check-strings)"
+if ! command -v python3 > /dev/null 2>&1; then
+	echo "no python3 on PATH — the scripted checks are Python scripts"
+	record 13 "scripted-checks" "SKIP" "no python3 on PATH"
+else
+	tests/scripted/verify
+	rc13v=$?
+	tests/scripted/check-namespace
+	rc13n=$?
+	if python3 -c 'import tinycss2' > /dev/null 2>&1; then
+		tests/scripted/check-strings
+		rc13s=$?
+		strings_missing=""
+	else
+		echo "python3-tinycss2 is not installed — check-strings cannot parse the stylesheets"
+		echo "(to run it: sudo apt-get install -y python3-tinycss2)"
+		rc13s=0
+		strings_missing="check-strings did not run: python3-tinycss2 is not installed"
+	fi
+	if [[ $rc13v -ne 0 || $rc13n -ne 0 || $rc13s -ne 0 ]]; then
+		record 13 "scripted-checks" "FAIL"
+	elif [[ -n "$strings_missing" ]]; then
+		record 13 "scripted-checks" "SKIP" "$strings_missing"
+	else
+		record 13 "scripted-checks" "PASS"
+	fi
 fi
 
 # ---- summary ----------------------------------------------------------------
