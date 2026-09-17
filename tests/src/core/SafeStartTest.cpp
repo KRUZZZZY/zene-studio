@@ -101,14 +101,14 @@ QString describeStatus(int status)
 //! without any of this" is the default-action death - give the child that.
 void resetFatalSignalsToDefault()
 {
-	const int signals[] = { SIGSEGV, SIGBUS, SIGILL, SIGFPE, SIGABRT, SIGTERM, SIGPIPE, 0 };
-	for (int i = 0; signals[i] != 0; ++i)
+	const int fatalSignals[] = { SIGSEGV, SIGBUS, SIGILL, SIGFPE, SIGABRT, SIGTERM, SIGPIPE, 0 };
+	for (int i = 0; fatalSignals[i] != 0; ++i)
 	{
 		struct sigaction dfl;
 		std::memset(&dfl, 0, sizeof(dfl));
 		dfl.sa_handler = SIG_DFL;
 		sigemptyset(&dfl.sa_mask);
-		::sigaction(signals[i], &dfl, nullptr);
+		::sigaction(fatalSignals[i], &dfl, nullptr);
 	}
 }
 
