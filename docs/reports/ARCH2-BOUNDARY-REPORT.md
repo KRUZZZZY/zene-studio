@@ -290,7 +290,30 @@ Each run as its own command, exit code taken unpiped:
 | file length (Gate 7) | `bash tests/file-length-gate.sh --check` | 0 |
 | no upstream regression (Gate 6) | `bash tests/no-upstream-regression-gate.sh` | 0 |
 
-(recorded below: the full `run-all-gates.sh` run)
+The full suite, `bash tests/run-all-gates.sh` (backgrounded; `LD_LIBRARY_PATH`
+for the vendored libwasmtime exported first), exits **3 = PASS-WITH-SKIPS**, the
+release tip's own result - one gate did not run:
+
+```
+Gate 1  unit tests (ctest):        100% tests passed, 0 tests failed out of 214
+Gate 2  coverage ratchet:          SKIP (opt-in: needs --with-coverage)  <- the only skip
+Gate 3  no tautological tests:     PASS
+Gate 4  per-method complexity:     PASS (fork scope and tools scope)
+Gate 5  mutation (RoutingGraph):   PASS: kill score 88.5% >= 80%
+Gate 6  no upstream regression:    PASS (422 changed paths declared)
+Gate 7  per-file length:           PASS (fork scope and tools scope)
+Gate 8  token duplication:         PASS: 0.52% / 0.00% (budget 5%)
+Gate 9  fork-sources registration: PASS (662 fork-NEW, 1104 inherited, 40 tooling)
+Gate 10 test-source registration:  PASS
+Gate 11 committed evidence/size:   PASS
+Gate 12 real-time safety sweep:    PASS
+RESULT: PASS-WITH-SKIPS (exit 3) — 1 of 12 gates did not run;
+GATES_EXIT=3
+```
+
+The mutation sweep (Gate 5) is the one gate that writes to the tree while it
+runs; it ran to completion (`git status --porcelain` empty afterwards, no
+mutant left in `src/core/RoutingGraph.cpp`).
 
 ## 5. Residuals, and the next slice
 
