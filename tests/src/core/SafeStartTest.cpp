@@ -176,6 +176,24 @@ private slots:
 			// CHILD - the session that crashes.
 			install(workDir);
 			beginSession();
+			// Take the kernel's default disposition back before faulting. A
+			// forked child inherits whatever SIGSEGV handler the TEST HARNESS
+			// had installed, and QtTest's is not a re-raiser: Qt 5.15.3's dumps
+			// a stack (through gdb), reports "Received a fatal error." and then
+			// ends the process through its own result path, so a child that
+			// faulted under it would NOT look like a crash to the parent - the
+			// waiter below saw SIGABRT, and the assertion it feeds names SIGSEGV.
+			// That is the measured CI failure: on linux-x86_64 run 35126160372
+			// this slot failed with "WIFSIGNALED(status) && WTERMSIG(status) ==
+			// SIGSEGV returned FALSE" while the child's own QtTest stack dump
+			// ("Received signal at function time: 3ms ... dumping stack") sat in
+			// the same log, and reproduced on this box against the very same
+			// QtTest 5.15.3 (the job's own ubuntu 22.04 libQt5Test), where the
+			// child came back signaled 6. The assertion is about THIS PRODUCT's
+			// crash path, not about the harness's handler, and "as it would
+			// without any of this" is exactly what it says - so the child resets
+			// the disposition first and then really faults.
+			::signal(SIGSEGV, SIG_DFL);
 			volatile int* p = reinterpret_cast<volatile int*>(static_cast<uintptr_t>(1));
 			*p = 1;                       // SIGSEGV with si_addr == 0x1
 			::_exit(80);                  // must not be reached

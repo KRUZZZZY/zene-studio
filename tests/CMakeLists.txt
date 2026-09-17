@@ -756,9 +756,39 @@ set_tests_properties(PatcherCommandsTest PROPERTIES
 # 500-line file ratchet.
 set_tests_properties(ControlVcaCommandsTest ControlVcaEditGroupsTest PROPERTIES
 	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
-# ImportDetectionTest builds NO Engine and opens no window: it reads WAVs it
-# writes itself and calls the analysis directly, so it needs no Qt platform
-# plugin and deliberately gets no set_tests_properties line here.
+# ClipLinkTest, ClipLinkPersistenceTest and ImportDetectionTest are the other way
+# round, and cost a CI cycle to learn: the TEST may be guiless, but the BINARY is
+# not. Each ends in QTEST_MAIN, and QTEST_MAIN expands to
+# `QTEST_MAIN_SETUP()` -> `QApplication app(argc, argv)` whenever QT_WIDGETS_LIB is
+# defined (qtest.h) - which it is for every test target here, because they all link
+# `${QT_LIBRARIES}` (Qt::Widgets) and Qt defines that macro on the target's usage
+# requirements. A QApplication constructor with no display is a qFatal:
+#
+#   qt.qpa.xcb: could not connect to display
+#   qt.qpa.plugin: Could not load the Qt platform plugin "xcb" in "" even though it was found.
+#   This application failed to start because no Qt platform plugin could be initialized.
+#
+# measured on linux-x86_64 run 35126160372 (job 104895806780): ClipLinkTest (#16),
+# ClipLinkPersistenceTest (#17) and ImportDetectionTest (#57) each died as "Subprocess
+# aborted" 0.2 s in, before their first line of test output - and the SAME job's own
+# signal-backtrace step, which runs those binaries with QT_QPA_PLATFORM=offscreen,
+# passed all of them (8/8, 4/4 and the ImportDetection cases). Reproduced on the
+# developer box the moment DISPLAY is taken away:
+#   env -u DISPLAY ./build/tests/ClipLinkTest   ->  EXIT=134, that message
+#   env -u DISPLAY (build/tests) ctest -R "ClipLinkTest|ClipLinkPersistenceTest|ImportDetectionTest"
+#                                               ->  0% tests passed, 3 tests failed out of 3,
+#                                                   (Subprocess aborted) for #16, #17 and #57
+# Every sibling that constructs an Engine or a control surface already registers this
+# same property for the same reason. ImportDetectionTest does not need the platform
+# for ITS OWN work (no Engine, no window, no widget - its cases read WAVs it writes
+# itself), but the QApplication its QTEST_MAIN builds does, and QT_QPA_PLATFORM is
+# also what lmms::isUnattendedRun() (src/core/UnattendedRun.cpp) reads to answer "can
+# a human click here?" - so registering the platform is what makes a runner run the
+# test in the headless state the product is told about, not merely what keeps it from
+# aborting. Registration and comment only: no test's behaviour changes.
+set_tests_properties(ClipLinkTest ClipLinkPersistenceTest ImportDetectionTest
+	PROPERTIES
+	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 
 # MasteringTest drives a real Engine and the project render path, so it needs a
 # Qt platform plugin even though the test itself is guiless (same reason as
