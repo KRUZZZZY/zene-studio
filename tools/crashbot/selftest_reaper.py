@@ -268,7 +268,56 @@ def proof_orphan_check(_run_dir):
             "foreign_pids_present_during_the_proof": len(during["foreign_alive"])}
 
 
-PROOFS = {"a": proof_raise, "a2": proof_sigterm, "b": proof_sigkill, "d": proof_orphan_check}
+def proof_hang_control(run_dir):
+    """(h) IR-17's negative control, live: a FROZEN instance is a hang, a KILLED one is a crash.
+
+    The two outcomes are the runner's own classifier at work (`runner.run_step`) against a real
+    process: SIGSTOP by exact PID freezes it, a step with a 2 s declared budget expires with the
+    process still alive -> `hang`; SIGCONT proves the freeze was a budget fact and not damage
+    (the instance answers again); after a SIGKILL by exact PID the same step over the same dead
+    socket is a `crash`. The hang is never counted as a crash, and nothing is killed for it.
+    """
+    import runner as R
+    pool = P.InstancePool(names=["i0"], binary=BINARY, run_dir=run_dir, run_id="selftest-hang")
+    P.register(pool)
+    env = {"bindings": {}, "work_dir": run_dir, "fixture_dir": R.FIXTURE_DIR, "fixtures_used": {}}
+    step = {"index": 1, "cmd": "transport.get_state", "args": {}, "budget_s": 2.0}
+    with pool:
+        pool.boot()
+        rec = pool.instances["i0"]
+        transcript = P.H.Transcript()
+        session = {"client": rec.client, "instance": rec.instance, "transcript": transcript,
+                   "registry": R.fetch_registry(rec, transcript, "selftest/hang-classifier"),
+                   "ids": iter(range(2, 100000)), "stopped": None}
+        caps = {"case_cap_s": 60, "run_cap_s": 120, "case_deadline": time.time() + 60,
+                "run_deadline": time.time() + 120}
+        os.kill(rec.pid, signal.SIGSTOP)                     # exact PID: freeze, do not kill
+        hang = R.run_step(session, step, env, caps)
+        alive_during = rec.alive()
+        os.kill(rec.pid, signal.SIGCONT)
+        time.sleep(0.3)
+        recovered = rec.client.call(700001, "control.ping", timeout=10,
+                                    transcript=transcript).get("ok")
+        os.kill(rec.pid, signal.SIGKILL)                     # exact PID: now the crash side
+        rec.process.wait(timeout=30)
+        crash = R.run_step(session, step, env, caps)
+        pid = rec.pid
+    checks = {
+        "frozen_instance_times_out": hang["outcome"] == "hang",
+        "hang_carries_the_budget_as_its_detail": "no response line" in str(hang["detail"])
+                                                 or "timed out" in str(hang["detail"]),
+        "process_was_alive_during_the_hang": alive_during,
+        "hang_is_not_a_crash": hang["outcome"] != "crash",
+        "instance_recovered_after_SIGCONT": recovered is True,
+        "same_step_is_a_crash_once_killed": crash["outcome"] == "crash",
+        "pid_gone_after_the_kill": not os.path.exists("/proc/%d" % pid),
+    }
+    return {"proof": "h: hang vs crash", "run_dir": run_dir, "pid": pid, "hang": hang,
+            "crash": crash, "checks": checks, "passed": all(checks.values())}
+
+
+PROOFS = {"a": proof_raise, "a2": proof_sigterm, "b": proof_sigkill, "d": proof_orphan_check,
+          "h": proof_hang_control}
 
 
 def main(argv=None):
@@ -281,7 +330,7 @@ def main(argv=None):
     for key in wanted:
         definition = PROOFS[key]
         run_dir = fresh({"a": "a-raise", "a2": "a2-sigterm", "b": "b-sigkill",
-                         "d": "d-orphan"}[key])
+                         "d": "d-orphan", "h": "h-hang"}[key])
         started = time.time()
         outcome = definition(run_dir)
         outcome["seconds"] = round(time.time() - started, 2)

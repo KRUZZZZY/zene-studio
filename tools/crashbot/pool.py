@@ -337,7 +337,8 @@ class InstancePool:
         rec.death = {"exit_code": code, "signal": abs(code) if (code or 0) < 0 else None,
                      "signal_name": signal.Signals(-code).name if (code or 0) < 0 else None,
                      "detected_at": utc_now()}
-        rec.state = "died"
+        if rec.state != "killed":          # a deliberate kill keeps its own marker
+            rec.state = "died"
         return self.file_artifact("instance_died", target=rec.name, detail=detail,
                                   outcome=rec.death)
 
@@ -394,7 +395,7 @@ class InstancePool:
         row["exit_code"] = rec.process.returncode
 
     def _record_and_close(self, rec, row):
-        if rec.state != "killed":
+        if rec.state not in ("killed", "died"):
             rec.state = "reaped"
         if rec.death is None and (row["exit_code"] or 0) != 0:
             rec.death = {"exit_code": row["exit_code"], "signal": None, "detected_at": utc_now()}
