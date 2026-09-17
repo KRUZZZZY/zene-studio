@@ -194,12 +194,17 @@ each time:
    verdict: PASS  (5.5 s, one instance, no signal sent except to exact PIDs)
 ```
 
-**Leak proof, PID-scoped, over every run this lane made** (32 ledger/outcome JSON files under
-`/tmp/crashbot-runs/` and `/tmp/crashbot-selftest/`): **19 distinct instance PIDs recorded, 0 alive
-now; 19 distinct harness worlds created, 0 present now; 2 artifacts filed in the whole session**
-(one `run_aborted` from proof (a), one `instance_died` from proof (b)) — the clean smoke filed
-none. Every claim above cites a PID from a ledger, never a process name. No `pkill`, no
-`pgrep`-driven kill, no signal ever sent to a process this lane did not start.
+**Leak proof, PID-scoped, over every run this lane made** (38 ledger/outcome JSON files under
+`/tmp/crashbot-runs/`, `/tmp/crashbot-selftest/` and `/tmp/crashbot-final/`): **22 distinct instance
+PIDs recorded, 0 alive now; 22 distinct harness worlds created, 0 present now; 2 artifacts filed in
+the whole session** (one `run_aborted` from proof (a), one `instance_died` from proof (b)) — the
+clean smoke filed none. Every claim above cites a PID from a ledger, never a process name. No
+`pkill`, no `pgrep`-driven kill, no signal ever sent to a process this lane did not start.
+
+**Reproduction from the committed tree** (`003d9e672`): the smoke re-ran to `EXIT=0`
+(3/3 cases, 3 scenario ids / 33 command ids) and `selftest_reaper.py` re-ran to `EXIT=0` with all
+five proofs PASS; the eight gates in §3 were re-run on the committed tree and are all exit 0;
+`git status --porcelain` is empty.
 
 ## 3. Repo gates (all unpiped, all after the final commit of the tools)
 
