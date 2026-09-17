@@ -1328,6 +1328,12 @@ reason, and exits 2 on a path that is not over the limit or not in the scope's m
 ratchets have it, and the whole-tree scope's 2026-09-12 decisions were made with it, one file at a
 time — see "Scope policy".
 
+**Re-anchored 2026-09-17 (`030/ci-fix6`, CI-FIX6), one file:** `tests/zene-api-boundary.py`
+`none -> 564` — the MSVC empty-boundary fix (run 35253612993's `IndexError` in `probe_flags`) added the
+typed SKIP path, `toolchain_is_msvc()` and the closure guard, taking the boundary's own proof ctest from
+487 to 564 lines. The reason is recorded in the command's own output, in the commit, and in
+`docs/reports/CI-FIX6-REPORT.md`; `--check` after it: **PASS**. Nothing else in the baseline moved.
+
 **Measured (2026-09-12, `post-alpha/gate-hygiene`, 129-file scope):** 129 fork sources measured,
 **9 over 500 lines** — the same nine as below. The all scope measures **1,133 sources with 112 over
 500** and the tools scope **12 with 2 over 500**; both were re-anchored on 2026-09-12 (see "Scope
