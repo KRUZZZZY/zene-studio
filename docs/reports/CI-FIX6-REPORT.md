@@ -15,8 +15,10 @@ discards no decision-relevant verdict — run #7 is a complete re-measurement.
 | worktree | `projects/lmms-fl-research/zene-030/wci6` |
 | branch | `030/ci-fix6` |
 | base (run #6's tip) | `fc2e1f2ed` — the release tip at the time |
-| fixes | `0e962bcc0` `facf3c57b` `24e866dd1` `a089679fa` + `e7479fa76` (Gate 7 re-anchor) + this report |
+| fixes | `0e962bcc0` `facf3c57b` `24e866dd1` `a089679fa` `e7479fa76` + `7001f8ad6` `f2a035c4e` (the MSVC tokenizer, found in run #7) + the report commits |
 | run #6 | `build` **35253612993** (7 jobs), `checks` **35253612944** (3 jobs) |
+| run #7 | `build` **35269927214**, `checks` **35269927503**, `quality-gates` **35269927216**, `doxygen` **35269927226** |
+| run #8 | the re-push carrying the MSVC tokenizer fix (see "Run #7, and the second push") |
 
 ## What run #6 said, per job (read from each job's own log)
 
@@ -187,6 +189,52 @@ The probe's thresholds and checks are unchanged: a **non-empty but dirty** bound
 toolchain. `probe_flags()` additionally raises the file's existing `Failure` (exit 2, a setup error) if
 it is ever handed an empty boundary — defence in depth, not a silent pass.
 
+**And the real cause, found in run #7 (`7001f8ad6`).** The skip made the probe survive long enough to
+print the measurement run #6 could never see, and that measurement named the cause:
+
+```
+target membership: 0/42 boundary sources compile in D:\a\zene-studio\zene-studio\build\src\CMakeFiles\zene_api.dir
+  - D:/a/zene-studio/zene-studio/src/core/ControlRegistry.cpp is compiled OUTSIDE the boundary target
+    (object D:\a\zene-studio\zene-studio\build\srcCMakeFileszene_api.dircoreControlRegistry.cpp.obj)
+```
+
+The object path's separators had been **eaten**. The recorded command is a string (`"command"`) and the
+probe split it with `shlex.split(command)` — POSIX rules, where `\` is an escape character — so
+`-FoD:\a\...\CMakeFiles\zene_api.dir\core\X.cpp.obj` became
+`D:azene-studio...srcCMakeFileszene_api.dircoreX.cpp.obj`, which is not under the object directory (nor
+even absolute under `ntpath`). All 42 sources were therefore reported as compiled outside the boundary
+target, the boundary set was empty, and the by-design MSVC skips were never reached. That empty boundary
+is also what crashed run #6.
+
+**The fix** is a new `split_command()`: a **Windows** command line goes through
+`shlex.split(command, posix=False)` (separators kept) with one layer of surrounding quotes stripped; a
+POSIX command line keeps the old path byte for byte. The Windows test is
+`WINDOWS_COMMAND_RE` = a drive-letter/UNC path **or** a backslash that is not the start of an escaped
+quote. That second form is load-bearing and was measured before it was used: an earlier, looser version
+of the rule ("the command holds backslashes at all") misfired on the GCC jobs' string defines
+(`-DLIB_DIR=\"../lib\"`) and broke the local headless compile probe — and of the **1,944** compile lines
+in this repo's own Linux build, **not one** carries a drive letter or a backslash-followed-by-a-non-quote,
+so the rule is inert on the GCC/Clang jobs and fires only on the Windows ones.
+
+**Proof (this box).**
+
+```
+# the CI command shape, rebuilt as a fixture (/tmp/fix6-sim-win, backslash-named trees):
+fixed splitter: /tmp/fix6-sim-win/D:\a\...\zene_api.dir\core\ControlSchema.cpp.obj   EXACT MATCH: True
+old splitter:   /tmp/fix6-sim-win/D:azene-studiozene-studiobuildsrcCMakeFileszene_api.dircore…obj  False
+
+# the comparison the probe then performs, simulated under ntpath (Windows rules):
+under(obj_dir, fixed) -> True    ntpath.isabs(fixed) -> True
+under(obj_dir, old)   -> False   ntpath.isabs(old)   -> False      <- the CI message, reproduced
+
+# no POSIX regression:
+tests/zene-api-boundary.py against this worktree's Qt6 build -> "=== PASS (zene::api boundary: 42 TUs, headless) ===" EXIT=0
+ctest -R "ZeneApiBoundary|TelemetryTransportTest|ControlRegistryTest|SafeStartTest" -> 4/4 Passed, EXIT=0
+```
+
+What the local proof cannot reach: a Linux box cannot resolve `D:\` paths, so that the runner's
+`os.path.isfile` agrees with the restored paths is CI's to measure — which is exactly what run #8 does.
+
 ## Cause 4 — `TelemetryTransportTest::aSlowEndpointDoesNotBlockTheCaller`: a 2 s bound inside the runner's noise
 
 **Evidence (msvc-x64 job 105311717391).**
@@ -251,14 +299,47 @@ the boundary's own proof ctest) and what the growth is (the typed SKIP, `toolcha
 closure guard). It is in the command's own output, in commit `e7479fa76`, in `tests/QA-GATES.md`'s Gate
 7 section, and here. Only `tests/file-length-baseline.tsv` changed in that commit.
 
+## Run #7, and the second push
+
+The push carried `99b043f71` (the merge of the first five commits) and every workflow it triggers ran:
+`build` **35269927214**, `checks` **35269927503**, `quality-gates` **35269927216**, `doxygen`
+**35269927226**.
+
+| workflow | job | run #7 verdict |
+|---|---|---|
+| checks | `scripted-checks` | **success** — `check-namespace` prints `0 errors.`; cause 1 verified in CI |
+| checks | `shellcheck`, `yamllint` | success |
+| quality-gates | `static gates (3, 4, 6, 7, 8, 9, 11, 12)` | **success** — including `file-length-gate.sh --check` → PASS, so the Gate 7 re-anchor holds in CI |
+| quality-gates | `MCP bridge Python tests (no build)` | success (the build-backed jobs of that workflow are dispatch-only by policy) |
+| doxygen | `linux-x86_64` | success |
+| build | `macos-arm64` | **success** — `ZeneApiBoundary ... Passed 14.17 sec`, `TelemetryTransportTest ... Passed 0.31 sec`, `100% tests passed out of 207`; causes 2 and 4 verified |
+| build | `macos-x86_64` | **success** |
+| build | `linux-x86_64` | **success** — the canonical Qt5 job, red in run #6; cause 2 verified |
+| build | `mingw64`, `windows-arm64` | success |
+| build | `msvc-x64` | **failure** — `ZeneApiBoundary`, now for a *stated* reason (the mangled object paths above). `TelemetryTransportTest` **passed** (cause 4 verified); it is the only red test of 162 |
+| build | `linux-arm64` | the straggler in every run; still in flight when the second push was made (see below) |
+
+So run #7 verified causes 1, 2 and 4 in CI on five jobs, and turned cause 3 from "a crash with no
+measurement" into "a measurement with a cause" — which is what the second push fixes.
+
+**The second push.** `7001f8ad6` + `f2a035c4e` + this report's update were pushed with
+`zene-safe-push --force HEAD:release/0.3.0`, because `linux-arm64` was still running at push time: the
+force prints what it discards, and what it discarded was that job's run on `99b043f71` — a SHA whose
+every other verdict had already been extracted (6 of the 7 build jobs concluded; the 7th is `msvc-x64`,
+whose failure is the reason for this push). Nothing decision-relevant was thrown away, and the new push
+re-runs all seven jobs plus the three other workflows on the fixed tree.
+
 ## What only CI can prove
 
 * That the Qt5 jobs are clean **in CI's own Qt5** (the local Qt5 proof uses the programme's extracted
   Qt5 kit — same Qt 5.15.13 packaging, different install prefix and no X11/`Xvfb` stack: `-DWANT_VST=OFF`
-  locally, because the kit has no `X11_XCB`).
-* That the MSVC job's boundary set is still empty **and** that the new SKIP prints the class behind it —
-  the guard is proved on fixtures, but only CI can execute it on the real MSVC toolchain.
-* That the timing test stays green under the runner load that produced 2183 ms.
+  locally, because the kit has no `X11_XCB`). **Run #7 answered this: `linux-x86_64` and both macOS jobs
+  are green.**
+* That the MSVC job's boundary set is now **non-empty** (the tokenizer fix's own verdict) and that its
+  checks 1–4 then run against the real MSVC toolchain — a Linux box cannot resolve `D:\` paths, so the
+  local proof stops at the `ntpath`-level comparison. **This is run #8's job.**
+* That the timing test stays green under the runner load that produced 2183 ms. **Run #7 answered this:
+  `TelemetryTransportTest` passed on all six concluded build jobs, including `msvc-x64`.**
 
 All seven build jobs of run #6 have now been read (the last one, `linux-arm64`, concluded at 19:31 UTC
 with the same Qt5 boundary reading), so run #7 is a complete re-measurement of every job — nothing from
