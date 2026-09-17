@@ -214,6 +214,9 @@ def compare_fingerprints(print_, row):
     Terms: the per-window RMS envelope (the level answer at a fixed window length), the
     per-window peak envelope (so a shape change that preserves window energy is not
     invisible) and the whole-file level.  The tolerance is the row's own measured floor.
+    A trailing line names the window that reached the worst PEAK envelope delta, with the
+    record's value, the measured value and the signed delta (measured - record).  A term
+    that fails must say which window it failed on and in which direction.
     """
     tol = record_tolerance(row)
     record_env = [float(v) for v in row["env_dbfs"].split(",")]
@@ -232,9 +235,19 @@ def compare_fingerprints(print_, row):
     # version of this file failed its own golden check with a 2.69 dB peak delta against a
     # 1.67 dB limit.  A peak difference is an amplitude difference; the LSB tolerance is the
     # one the floor measured.
-    worst_peak = 0.0
-    for index in range(min(len(record_peak), len(now_peak))):
-        worst_peak = max(worst_peak, abs(record_peak[index] - now_peak[index]))
+    #
+    # The window that reaches that worst value is NAMED, not merely measured: on
+    # macos-arm64 this term failed with `peak envelope delta 1748.015 LSB` while every other
+    # term was inside its own tolerance, and the bare LSB number could not say WHICH of the
+    # windows moved or in which direction.  The index and both of the window's values ride
+    # in the same `max()` that already picks the worst window, so this adds no second pass,
+    # no branch and no CCN (the ratchet for this function is 17).  On an exact tie the
+    # higher index wins: it is still a worst window, and every reported value belongs to it.
+    worst_peak, worst_peak_at, worst_peak_pair = 0.0, -1, (0.0, 0.0)
+    for index, pair in enumerate(zip(record_peak, now_peak)):    # zip stops at the shorter
+        worst_peak, worst_peak_at, worst_peak_pair = max(        # list: exactly the overlap
+            (worst_peak, worst_peak_at, worst_peak_pair),        # the window-count term
+            (abs(pair[0] - pair[1]), index, pair))               # already reports on
     peak_lsb = worst_peak / G.REFERENCE_LSB
     level = None
     if float(row["rms_dbfs"]) != float("-inf") and print_["rms_dbfs"] != float("-inf"):
@@ -258,6 +271,14 @@ def compare_fingerprints(print_, row):
         passed = passed and ok
         lines.append("  %-20s %-24s limit %-12.6g %s"
                      % (name, shown, limit, "ok" if ok else "FAIL"))
+    # ... and the window the worst value belongs to, so a FAIL names it and the direction
+    # (a positive delta means the measured window's peak sits ABOVE the record's).
+    lines.append(
+        "  %-20s window %d of %d: record %.6f, measured %.6f, delta %+.3f LSB "
+        "(measured - record)"
+        % ("worst peak window", worst_peak_at, len(now_peak),
+           worst_peak_pair[0], worst_peak_pair[1],
+           (worst_peak_pair[1] - worst_peak_pair[0]) / G.REFERENCE_LSB))
     return passed, lines
 
 

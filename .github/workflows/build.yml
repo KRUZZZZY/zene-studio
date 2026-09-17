@@ -187,6 +187,12 @@ jobs:
         # time: 0ms ... dumping stack" then "End of stack trace" with nothing between - so the
         # crashing frame is only obtainable by running the binary under a debugger. Bounded: at
         # most three tests, 120 s each; best-effort: it can never fail the job it explains.
+        # The bound is `timeout` (GNU coreutils), and the macOS runners do not have it: this step
+        # has never produced a backtrace there - run 35126160372, job 104895806458 ends its
+        # debugger loop with "line 19: timeout: command not found", which is why that run's two
+        # macOS failures (SafeStartTest, Vst3ChunkProbeTest) carry no frame. `gtimeout` is the
+        # Homebrew coreutils spelling; with neither, the debugger runs unbounded rather than the
+        # evidence being skipped.
         if: failure()
         continue-on-error: true
         shell: bash
@@ -195,6 +201,9 @@ jobs:
           log=Testing/Temporary/LastTestsFailed.log
           if command -v gdb >/dev/null 2>&1; then dbg=gdb; else dbg=lldb; fi
           command -v "$dbg" >/dev/null 2>&1 || { echo "no gdb or lldb here: no backtrace"; exit 0; }
+          if command -v timeout >/dev/null 2>&1; then tmo=(timeout 120)
+          elif command -v gtimeout >/dev/null 2>&1; then tmo=(gtimeout 120)
+          else tmo=(); echo "no timeout/gtimeout here: the debugger run below is unbounded"; fi
           [ -f "$log" ] || { echo "no $log: nothing to re-run"; exit 0; }
           # ctest writes "<test-number>:<test-name>", one line per failed test - NOT a reason,
           # so the crash/no-crash split cannot be read out of this file; the debugger reports
@@ -206,10 +215,10 @@ jobs:
             case "$name" in Control*) continue ;; esac
             echo "=== $dbg backtrace of failed test $name ==="
             if [ "$dbg" = gdb ]; then
-              QT_QPA_PLATFORM=offscreen timeout 120 gdb -batch -q -ex "set pagination off" \
+              QT_QPA_PLATFORM=offscreen "${tmo[@]}" gdb -batch -q -ex "set pagination off" \
                 -ex run -ex "thread apply all bt" --args "./$name" 2>&1 | tail -120 || true
             else
-              QT_QPA_PLATFORM=offscreen timeout 120 lldb -b -o run \
+              QT_QPA_PLATFORM=offscreen "${tmo[@]}" lldb -b -o run \
                 -o "thread backtrace all" -o quit -- "./$name" 2>&1 | tail -120 || true
             fi
           done
@@ -396,6 +405,12 @@ jobs:
         # time: 0ms ... dumping stack" then "End of stack trace" with nothing between - so the
         # crashing frame is only obtainable by running the binary under a debugger. Bounded: at
         # most three tests, 120 s each; best-effort: it can never fail the job it explains.
+        # The bound is `timeout` (GNU coreutils), and the macOS runners do not have it: this step
+        # has never produced a backtrace there - run 35126160372, job 104895806458 ends its
+        # debugger loop with "line 19: timeout: command not found", which is why that run's two
+        # macOS failures (SafeStartTest, Vst3ChunkProbeTest) carry no frame. `gtimeout` is the
+        # Homebrew coreutils spelling; with neither, the debugger runs unbounded rather than the
+        # evidence being skipped.
         if: failure()
         continue-on-error: true
         shell: bash
@@ -404,6 +419,9 @@ jobs:
           log=Testing/Temporary/LastTestsFailed.log
           if command -v gdb >/dev/null 2>&1; then dbg=gdb; else dbg=lldb; fi
           command -v "$dbg" >/dev/null 2>&1 || { echo "no gdb or lldb here: no backtrace"; exit 0; }
+          if command -v timeout >/dev/null 2>&1; then tmo=(timeout 120)
+          elif command -v gtimeout >/dev/null 2>&1; then tmo=(gtimeout 120)
+          else tmo=(); echo "no timeout/gtimeout here: the debugger run below is unbounded"; fi
           [ -f "$log" ] || { echo "no $log: nothing to re-run"; exit 0; }
           # ctest writes "<test-number>:<test-name>", one line per failed test - NOT a reason,
           # so the crash/no-crash split cannot be read out of this file; the debugger reports
@@ -415,10 +433,10 @@ jobs:
             case "$name" in Control*) continue ;; esac
             echo "=== $dbg backtrace of failed test $name ==="
             if [ "$dbg" = gdb ]; then
-              QT_QPA_PLATFORM=offscreen timeout 120 gdb -batch -q -ex "set pagination off" \
+              QT_QPA_PLATFORM=offscreen "${tmo[@]}" gdb -batch -q -ex "set pagination off" \
                 -ex run -ex "thread apply all bt" --args "./$name" 2>&1 | tail -120 || true
             else
-              QT_QPA_PLATFORM=offscreen timeout 120 lldb -b -o run \
+              QT_QPA_PLATFORM=offscreen "${tmo[@]}" lldb -b -o run \
                 -o "thread backtrace all" -o quit -- "./$name" 2>&1 | tail -120 || true
             fi
           done
@@ -596,21 +614,41 @@ jobs:
         # deps-ubuntu-24.04-gcc.txt: that list is shared with the mingw job, whose ctest
         # never runs this test (the control suite is POSIX-only, tests/CMakeLists.txt),
         # and a shared list would carry the dependency to a job that cannot use it.
-        # The interpreter is whatever `python3` resolves to in THIS step's PATH - the
-        # same PATH find_program(PYTHON3_EXECUTABLE NAMES python3 python3.exe python)
-        # reads at Configure, logged as /usr/local/bin/python3 on both macOS arches. pip
-        # and not brew: Homebrew installs into ITS python, which is later on this PATH.
-        # The last line prints the interpreter and both versions, so a provisioning that
-        # landed in a different python fails HERE instead of leaving
+        # THE INTERPRETER IS THE ONE ctest WILL RUN - read out of the cache as
+        # PYTHON3_EXECUTABLE, not whatever `python3` this step's PATH resolves. That is
+        # the measured correction of the first version of this step, which assumed the
+        # two were one interpreter: on macos-arm64 (run 35126160372, job 104895806458)
+        # the ControlMasteringCommands ctest line names /usr/local/bin/python3 while this
+        # step's `python3` was /opt/homebrew/opt/python@3.14/bin/python3.14 - the arm64
+        # runner's PATH puts /opt/homebrew/bin first and CMake's own prefix search found
+        # the /usr/local one, so the step's pip installed numpy 2.5.3 + scipy 1.18.1 into
+        # HOMEBREW's PEP 668 python ("plain pip refused" -> "--break-system-packages" ->
+        # "Successfully installed numpy-2.5.3 scipy-1.18.1") and ControlMasteringCommands
+        # was red for the same missing module anyway. macos-x86_64 passed the same test:
+        # there Homebrew IS /usr/local, so the interpreter the ctest line names and the
+        # one this step installs into coincide. tools/auto-mastering-demo.py is loaded by
+        # path in the test's OWN interpreter (tests/mastering_probe_lib.py
+        # shipped_fixture(), importlib), so the packages have to be in that one.
+        # The PEP 668 retry stays: an Intel runner's /usr/local python is a Homebrew one.
+        # The last two lines print the interpreter and both versions, so a provisioning
+        # that landed in a different python fails HERE instead of leaving
         # ControlMasteringCommands red for the same reason twice.
         run: |
-          if ! python3 -m pip install --disable-pip-version-check --no-input numpy scipy; then
+          py="$(sed -n 's/^PYTHON3_EXECUTABLE:[A-Z]*=//p' build/CMakeCache.txt)"
+          if [ -z "$py" ] || [ ! -x "$py" ]; then
+            echo "no usable PYTHON3_EXECUTABLE in build/CMakeCache.txt (got '${py:-<empty>}')" >&2
+            echo "the interpreter the control suite runs is the one find_program() resolved at" >&2
+            echo "Configure; without it this step cannot know where numpy/scipy have to land" >&2
+            exit 1
+          fi
+          echo "provisioning the interpreter the ctest lines name: $py"
+          if ! "$py" -m pip install --disable-pip-version-check --no-input numpy scipy; then
             echo "plain pip refused - retrying with --break-system-packages (PEP 668 python)"
-            python3 -m pip install --disable-pip-version-check --no-input \
+            "$py" -m pip install --disable-pip-version-check --no-input \
               --break-system-packages numpy scipy
           fi
           echo "BS.1770-4 deps this job will run with (interpreter, numpy, scipy):"
-          python3 -c "import numpy,scipy,sys;print(sys.executable,numpy.__version__,scipy.__version__)"
+          "$py" -c "import numpy,scipy,sys;print(sys.executable,numpy.__version__,scipy.__version__)"
       - name: Run tests
         run: |
           cd build/tests
@@ -624,6 +662,12 @@ jobs:
         # time: 0ms ... dumping stack" then "End of stack trace" with nothing between - so the
         # crashing frame is only obtainable by running the binary under a debugger. Bounded: at
         # most three tests, 120 s each; best-effort: it can never fail the job it explains.
+        # The bound is `timeout` (GNU coreutils), and the macOS runners do not have it: this step
+        # has never produced a backtrace there - run 35126160372, job 104895806458 ends its
+        # debugger loop with "line 19: timeout: command not found", which is why that run's two
+        # macOS failures (SafeStartTest, Vst3ChunkProbeTest) carry no frame. `gtimeout` is the
+        # Homebrew coreutils spelling; with neither, the debugger runs unbounded rather than the
+        # evidence being skipped.
         if: failure()
         continue-on-error: true
         shell: bash
@@ -632,6 +676,9 @@ jobs:
           log=Testing/Temporary/LastTestsFailed.log
           if command -v gdb >/dev/null 2>&1; then dbg=gdb; else dbg=lldb; fi
           command -v "$dbg" >/dev/null 2>&1 || { echo "no gdb or lldb here: no backtrace"; exit 0; }
+          if command -v timeout >/dev/null 2>&1; then tmo=(timeout 120)
+          elif command -v gtimeout >/dev/null 2>&1; then tmo=(gtimeout 120)
+          else tmo=(); echo "no timeout/gtimeout here: the debugger run below is unbounded"; fi
           [ -f "$log" ] || { echo "no $log: nothing to re-run"; exit 0; }
           # ctest writes "<test-number>:<test-name>", one line per failed test - NOT a reason,
           # so the crash/no-crash split cannot be read out of this file; the debugger reports
@@ -643,10 +690,10 @@ jobs:
             case "$name" in Control*) continue ;; esac
             echo "=== $dbg backtrace of failed test $name ==="
             if [ "$dbg" = gdb ]; then
-              QT_QPA_PLATFORM=offscreen timeout 120 gdb -batch -q -ex "set pagination off" \
+              QT_QPA_PLATFORM=offscreen "${tmo[@]}" gdb -batch -q -ex "set pagination off" \
                 -ex run -ex "thread apply all bt" --args "./$name" 2>&1 | tail -120 || true
             else
-              QT_QPA_PLATFORM=offscreen timeout 120 lldb -b -o run \
+              QT_QPA_PLATFORM=offscreen "${tmo[@]}" lldb -b -o run \
                 -o "thread backtrace all" -o quit -- "./$name" 2>&1 | tail -120 || true
             fi
           done
