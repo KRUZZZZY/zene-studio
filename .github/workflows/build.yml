@@ -815,6 +815,22 @@ jobs:
             vcpkg-mingw${{ matrix.arch }}-
           path: build/vcpkg_installed
       - name: Cache ccache data
+        # ccache 4.9.1's cache_dir is `~/.cache/ccache`, not `~/.ccache` (the
+        # job's own `ccache --show-config` prints `(default) cache_dir =
+        # /home/runner/.cache/ccache`), so a step caching `~/.ccache` never met
+        # the data it meant to cache: every run printed `Cache not found for
+        # input keys: ccache-mingw-64-...` and the Post step closed with
+        # `[warning]Path Validation Error: Path(s) specified in the action for
+        # caching do(es) not exist, hence no cache is being saved`. Pointing the
+        # step at the directory ccache actually uses is what makes the restore
+        # work, and that stops this job recompiling its ~1,600 objects from
+        # scratch on every run.
+        #
+        # This is a compile-TIME fix and is NOT the disk fix: the cache is
+        # bounded by CCACHE_MAXSIZE (2G, in the job env above) and a cache hit
+        # still writes the object into the build tree, so ccache cannot return
+        # the tens of GB this job is short of. The disk fix is the two flag
+        # overrides in the Configure step below.
         uses: actions/cache@v3
         with:
           key: "ccache-${{ github.job }}-64-${{ github.ref }}\
@@ -822,7 +838,7 @@ jobs:
           restore-keys: |
             ccache-${{ github.job }}-64-${{ github.ref }}-
             ccache-${{ github.job }}-64-
-          path: ~/.ccache
+          path: ~/.cache/ccache
       - name: Install dependencies
         run: |
           sudo .github/workflows/setup-mingw-packages.sh
