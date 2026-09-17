@@ -42,6 +42,18 @@ GCC/Clang, `/Zs` for MSVC). Checks 5 and 6 need a GCC-compatible preprocessor
 (`-M`) and `nm`; on MSVC they are skipped with the reason printed, because the
 build-level gate (the target's include path) applies there regardless.
 
+On the MSVC job the boundary set itself comes out EMPTY: measured in run
+35253612993 (job 105311717391), compile_commands.json carries no boundary source
+that resolves to an object under the target's object directory, so there is no
+compile line to take flags from - the run died in probe_flags() with an
+IndexError before it could print check 1's own line. That is now a typed SKIP
+with the membership classes printed beside it: an empty boundary measures
+nothing, and checks 2-4 would otherwise pass VACUOUSLY ("0 boundary compile
+lines carry a QtWidgets include"). The skip is reachable in exactly two
+conditions - the boundary set is EMPTY, and the toolchain is MSVC - so it cannot
+mask a non-empty but dirty boundary (check 1 still fails that, on every
+toolchain), and an empty boundary on GCC/Clang is the membership failure it is.
+
 Usage:
     python3 zene-api-boundary.py --build-dir <build> --object-dir <build>/src/CMakeFiles/zene_api.dir \
         --source-list <build>/zene-api-sources.txt \
@@ -207,22 +219,31 @@ def read_source_list(path):
 # --- check 1: target membership -------------------------------------------
 
 
+def toolchain_is_msvc(entries):
+    """True when this build's compile lines are MSVC's - with or without a boundary."""
+    for entry in entries:
+        args = entry_arguments(entry)
+        if args and is_msvc(args[0]):
+            return True
+    return False
+
+
 def boundary_member(source, by_file, object_dir):
-    """(entry, object_path, problem) for one boundary source."""
+    """(entry, object_path, problem, reason_class) for one boundary source."""
     matches = by_file.get(os.path.normpath(source)) or []
     if len(matches) != 1:
         return None, None, "%s is compiled by %d targets (expected exactly the zene_api target)" \
-                           % (source, len(matches))
+                           % (source, len(matches)), "not-compiled-once"
     entry = matches[0]
     _, output = split_output(entry_arguments(entry))
     object_path = resolved_object_path(entry, output)
     if object_path is None:
-        return None, None, "%s: no object path in its compile command" % source
+        return None, None, "%s: no object path in its compile command" % source, "no-object-path"
     if not under(object_dir, object_path):
-        return None, None, "%s is compiled OUTSIDE the boundary target (object %s)" % (source, object_path)
+        return None, None, "%s is compiled OUTSIDE the boundary target (object %s)" % (source, object_path), "outside-object-dir"
     if not os.path.isfile(object_path):
-        return None, None, "%s: the object %s does not exist" % (source, object_path)
-    return entry, object_path, None
+        return None, None, "%s: the object %s does not exist" % (source, object_path), "absent-object"
+    return entry, object_path, None, None
 
 
 def unexpected_boundary_sources(entries, object_dir, boundary):
@@ -241,15 +262,20 @@ def check_target_membership(wanted, entries, object_dir):
         by_file.setdefault(os.path.normpath(entry["file"]), []).append(entry)
     boundary = {}
     problems = []
+    # reason class -> count, kept so that an EMPTY boundary can name what was
+    # measured instead of saying only "no boundary" (see empty_boundary_skip).
+    tally = {}
     for source in wanted:
-        entry, object_path, problem = boundary_member(source, by_file, object_dir)
+        entry, object_path, problem, reason = boundary_member(source, by_file, object_dir)
         if problem:
             problems.append(problem)
+            if reason:
+                tally[reason] = tally.get(reason, 0) + 1
         else:
             boundary[os.path.normpath(source)] = (entry, object_path)
     problems += unexpected_boundary_sources(entries, object_dir, boundary)
     summary = "target membership: %d/%d boundary sources compile in %s" % (len(boundary), len(wanted), object_dir)
-    return boundary, problems, summary
+    return boundary, problems, summary, tally
 
 
 # --- check 2: the include path --------------------------------------------
@@ -291,6 +317,11 @@ def compile_probe(text, flags, cwd, name):
 
 def probe_flags(boundary):
     """The flags half of the alphabetically first boundary TU, syntax-only added."""
+    if not boundary:
+        # Defence in depth: run_all() routes an empty boundary to the typed skip
+        # (MSVC) or reports the membership failure (every other toolchain) before
+        # it gets here, so this is a setup error and not a silent pass.
+        raise Failure("the boundary set is empty: no boundary compile line to take flags from")
     probe_source = sorted(boundary)[0]
     entry, _ = boundary[probe_source]
     args = entry_arguments(entry)
@@ -411,6 +442,35 @@ def boundary_msvc(boundary):
     return is_msvc(entry_arguments(next(iter(boundary.values()))[0])[0]) if boundary else False
 
 
+def empty_boundary_skip(wanted, tally, problems, summary):
+    """The typed SKIP for an empty boundary on the MSVC job.
+
+    An empty boundary measures nothing, and every check below it would iterate
+    over nothing and pass vacuously ("0 boundary compile lines carry a
+    QtWidgets include"), so the run says SKIP - with the membership classes it
+    measured printed beside it - instead of either crashing (the IndexError this
+    replaces, run 35253612993) or reporting a boundary that was never looked at.
+    Reachable only when the boundary set is EMPTY and the toolchain is MSVC: a
+    non-empty but dirty boundary still fails check 1 on every toolchain, and an
+    empty boundary on GCC/Clang is that same check-1 failure, not a skip.
+    """
+    classes = ", ".join("%d x %s" % (count, name) for name, count in sorted(tally.items()))
+    reason = ("MSVC: 0 of %d boundary sources resolved to an object under the boundary target's "
+              "object directory in this build's compile_commands.json (%s)"
+              % (len(wanted), classes or "no membership problem recorded"))
+    lines = [summary,
+             "compile probe: SKIPPED (no boundary compile line to take flags from)",
+             "widget-include negative controls: SKIPPED (same reason)",
+             "include closure: not run (MSVC)",
+             "object symbols: not run (MSVC)"]
+    lines += ["  measured: %s" % problem for problem in problems]
+    notes = ["this is a SKIP, not a pass: 0 of %d boundary translation units were measured on this job, "
+             "so no boundary check ran here. The boundary target's include path (src/CMakeLists.txt) is "
+             "this job's gate; the ZeneApiBoundary checks run in full on the GCC/Clang jobs."
+             % len(wanted)]
+    return [], lines, notes, 0, reason
+
+
 def control_object_path(options):
     path = options.control_object
     if not os.path.isfile(path):
@@ -419,7 +479,7 @@ def control_object_path(options):
 
 
 def run_all(options):
-    """(problems, output lines, notes, the boundary's size)."""
+    """(problems, output lines, notes, the boundary's size, the skip reason or None)."""
     wanted = read_source_list(options.source_list)
     entries = load_entries(options.build_dir)
     object_dir = os.path.normpath(options.object_dir)
@@ -428,16 +488,30 @@ def run_all(options):
     if not control_entries:
         raise Failure("the control source %s is not in compile_commands.json" % options.control_source)
 
-    boundary, problems, summary = check_target_membership(wanted, entries, object_dir)
+    boundary, problems, summary, tally = check_target_membership(wanted, entries, object_dir)
     lines = [summary]
-    extra, summary = check_include_paths(boundary, control_entries, options.control_source)
-    problems += extra
-    lines.append(summary)
-    extra, results = check_compile_probes(boundary)
-    problems += extra
-    lines += results
+    if not boundary and toolchain_is_msvc(entries):
+        return empty_boundary_skip(wanted, tally, problems, summary)
+    if boundary:
+        extra, summary = check_include_paths(boundary, control_entries, options.control_source)
+        problems += extra
+        lines.append(summary)
+        extra, results = check_compile_probes(boundary)
+        problems += extra
+        lines += results
+    else:
+        # Not reachable on MSVC (the typed skip above caught it): an empty boundary
+        # on any other toolchain IS a failure - the membership problems above say
+        # which source failed and how - and the checks below have nothing to
+        # measure, so they say that instead of printing a measurement of zero items.
+        lines.append("no widget include path: NOT MEASURED (the boundary set is empty)")
+        lines.append("compile probe: not run (the boundary set is empty)")
+        lines.append("widget-include negative controls: not run (the boundary set is empty)")
     notes = []
-    if boundary_msvc(boundary):
+    if not boundary:
+        lines += ["include closure: not run (the boundary set is empty)",
+                  "object symbols: not run (the boundary set is empty)"]
+    elif boundary_msvc(boundary):
         notes.append("MSVC toolchain: the include-closure measurement (-M) and the symbol scan (nm) are "
                      "not implemented here; the boundary target's include path is the gate on this job")
         lines += ["include closure: not run (MSVC)", "object symbols: not run (MSVC)"]
@@ -453,7 +527,7 @@ def run_all(options):
             notes.append("nm not available: the object-symbol scan is not run on this job "
                          "(the include checks above are the enforcement)")
             lines.append("object symbols: not run (no nm)")
-    return problems, lines, notes, len(boundary)
+    return problems, lines, notes, len(boundary), None
 
 
 def main():
@@ -464,7 +538,7 @@ def main():
     parser.add_argument("--control-source", required=True)
     parser.add_argument("--control-object", required=True)
     options = parser.parse_args()
-    problems, lines, notes, count = run_all(options)
+    problems, lines, notes, count, skip = run_all(options)
     for line in lines:
         print(line)
     for note in notes:
@@ -475,6 +549,9 @@ def main():
         for problem in problems:
             print("  - %s" % problem)
         return 1
+    if skip:
+        print("=== SKIP (zene::api boundary: %s) ===" % skip)
+        return 0
     print("=== PASS (zene::api boundary: %d TUs, headless) ===" % count)
     return 0
 
