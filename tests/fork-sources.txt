@@ -612,6 +612,7 @@ include/TrackRecorder.h
 include/UnattendedRun.h
 include/VcaGroup.h
 include/WarpMarkers.h
+include/zene/api/ControlApi.h
 plugins/ClapEffect/ClapBusMap.cpp
 plugins/ClapEffect/ClapBusMap.h
 plugins/ClapEffect/ClapEffect.cpp
@@ -1178,5 +1179,10 @@ tests/src/core/StemExportTestSupport.h
 tests/src/core/UndoBoundsTest.cpp
 tests/src/tracks/SampleClipWindowTest.cpp
 tests/stem_commands_lib.py
+tests/zene-api-boundary.py
 tools/local-ci.sh
 tools/ncpu-shim.c
+# 2026-09-17 (lane 030/arch2-api, board card #672, ARCH-2): the zene::api boundary's
+# public header and its proof test. Both are fork-NEW and both are registered here
+# (the header in this list and in tests/all-sources.txt, the test driver in this one),
+# so the fork-scoped ratchets measure them rather than leaving them invisible.

@@ -860,6 +860,94 @@ set(LMMS_SRCS
 	${LMMS_SESSION_SRCS}
 
 	${LMMS_TELEMETRY_SRCS}
-
-	PARENT_SCOPE
 )
+
+# The list is handed to the parent scope at the END of this file, after the
+# zene::api boundary's removal below. That ordering is load-bearing and was
+# measured: `set(... PARENT_SCOPE)` does not set the variable in THIS scope, so
+# a set() that carries PARENT_SCOPE cannot be edited afterwards - the first
+# build of this lane did exactly that and the object library ended up with an
+# EMPTY source list (every moc symbol undefined at link).
+
+# ---------------------------------------------------------------------------
+# The zene::api boundary (ARCH-2, board card #672). The control registry and its
+# contract tables compile in their OWN target (defined in src/CMakeLists.txt)
+# with no Qt widget include reachable - a widget include in any file below is a
+# compile error in every CI job, and the registered ZeneApiBoundary ctest
+# (tests/zene-api-boundary.py) re-measures the include closure and the objects.
+#
+# Measured before the split (2026-09-17): all 42 translation units below compile
+# with the QtWidgets include directory removed, and no widget header appears in
+# any of their include closures. The entries are ALSO named in the LMMS_SRCS
+# list above (with their own comments); LIST(REMOVE_ITEM) takes them out of it,
+# so ONE list drives both the compilation and the split and the two cannot
+# drift apart.
+#
+# The display-side command groups stay in the object library on purpose: they
+# reach QtWidgets through SongEditor.h / TrackView.h / MainWindow.h (clip and
+# note selection sync, the controller surface's view half, the live menu/toolbar
+# reflection, the telemetry consent screen), so they are outside this boundary
+# and register into the same registry from there.
+SET(ZENE_API_SRCS
+	core/ControlRegistry.cpp
+	core/ControlRegistryRegistrations.cpp
+	core/ControlReversibility.cpp
+	core/ControlTransactions.cpp
+	core/ControlUndoCoalescing.cpp
+	core/ControlSchema.cpp
+	core/ControlVocabulary.cpp
+	core/ControlReversibilityTable.cpp
+	core/ControlReversibilityTableAction.cpp
+	core/ControlReversibilityTableArchive.cpp
+	core/ControlReversibilityTableAutomationModes.cpp
+	core/ControlReversibilityTableAutomationRamp.cpp
+	core/ControlReversibilityTableChain.cpp
+	core/ControlReversibilityTableChord.cpp
+	core/ControlReversibilityTableClapInstrument.cpp
+	core/ControlReversibilityTableController.cpp
+	core/ControlReversibilityTableDawProject.cpp
+	core/ControlReversibilityTableDetect.cpp
+	core/ControlReversibilityTableExportPresets.cpp
+	core/ControlReversibilityTableHostChunking.cpp
+	core/ControlReversibilityTableInterchange.cpp
+	core/ControlReversibilityTableLive.cpp
+	core/ControlReversibilityTableMastering.cpp
+	core/ControlReversibilityTableMeter.cpp
+	core/ControlReversibilityTableMidiReconnect.cpp
+	core/ControlReversibilityTableMmpzGit.cpp
+	core/ControlReversibilityTableNoteScale.cpp
+	core/ControlReversibilityTableOutOfProcess.cpp
+	core/ControlReversibilityTablePassive.cpp
+	core/ControlReversibilityTableRecording.cpp
+	core/ControlReversibilityTableRevisions.cpp
+	core/ControlReversibilityTableRouting.cpp
+	core/ControlReversibilityTableSafeStart.cpp
+	core/ControlReversibilityTableScanAndCrash.cpp
+	core/ControlReversibilityTableSessionView.cpp
+	core/ControlReversibilityTableSnapshot.cpp
+	core/ControlReversibilityTableStems.cpp
+	core/ControlReversibilityTableStructure.cpp
+	core/ControlReversibilityTableTrackFolder.cpp
+	core/ControlReversibilityTableVca.cpp
+	core/ControlReversibilityTableVerbs.cpp
+	core/ControlReversibilityTableWasmRender.cpp
+)
+
+# The boundary is what the registry is compiled by: every file named above is
+# removed from the object library's list here, and the result is handed to the
+# parent scope (src/CMakeLists.txt) by the SET below.
+LIST(REMOVE_ITEM LMMS_SRCS ${ZENE_API_SRCS})
+SET(LMMS_SRCS ${LMMS_SRCS} PARENT_SCOPE)
+
+# The proof test (registered in tests/CMakeLists.txt) reads the boundary's
+# expected translation-unit list from this file: absolute paths, one per line.
+SET(ZENE_API_SRCS_ABS "")
+FOREACH(_zene_api_src IN LISTS ZENE_API_SRCS)
+	LIST(APPEND ZENE_API_SRCS_ABS "${CMAKE_SOURCE_DIR}/src/${_zene_api_src}")
+ENDFOREACH()
+STRING(REPLACE ";" "\n" _zene_api_srcs_text "${ZENE_API_SRCS_ABS}")
+FILE(WRITE "${CMAKE_BINARY_DIR}/zene-api-sources.txt"
+	"# The zene::api boundary's translation units (ARCH-2), written by src/core/CMakeLists.txt.\n"
+	"${_zene_api_srcs_text}\n")
+
+SET(ZENE_API_SRCS ${ZENE_API_SRCS} PARENT_SCOPE)

@@ -511,6 +511,7 @@ include/lmms_math.h
 include/panning.h
 include/versioninfo.h
 include/volume.h
+include/zene/api/ControlApi.h
 modules/wasm/demo/gain_clip.c
 plugins/Amplifier/Amplifier.cpp
 plugins/Amplifier/Amplifier.h
@@ -1754,3 +1755,6 @@ tools/mmpz-git/scratch/qtsave.cpp
 tools/mmpz-git/scratch/qtsave2.cpp
 tools/ncpu-shim.c
 tools/wasm/wat2wasm.cpp
+# 2026-09-17 (lane 030/arch2-api, board card #672, ARCH-2): the zene::api
+# boundary's public header (include/zene/api/ControlApi.h), fork-NEW, registered
+# beside the registry headers it re-exports.
