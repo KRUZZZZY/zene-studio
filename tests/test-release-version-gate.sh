@@ -10,7 +10,8 @@
 #   R1 the release is cut from a tag that is not the tree's version (GITHUB_REF=refs/tags/v0.1.0-alpha
 #      on a tree that declares 0.2.0-alpha) — the released artefacts would report 0.1.0-alpha while
 #      every document says 0.2.0-alpha
-#   R2 the tree's version moves and its documents do not (VERSION_MINOR 3, notes still 0.2.0)
+#   R2 the tree's version moves and its documents do not (VERSION_MINOR +1, notes and README
+#      still at the tree's own version)
 #   R3 the tree's version moves and the README's Download section does not (still links v0.1.0-alpha)
 #   R4 the release notes for the declared version do not exist at all
 #   R5 the commit is tagged with a version the tree does not declare (real git repo, real tag)
@@ -43,11 +44,17 @@ check() { # check <expected-exit> <label> <actual-exit>
 	fi
 }
 
-VERSION="$(sed -n 's/^SET(VERSION_MAJOR[[:space:]]*"\([^"]*\)").*/\1/p' "$ROOT/CMakeLists.txt" | head -1)"
-VERSION="$VERSION.$(sed -n 's/^SET(VERSION_MINOR[[:space:]]*"\([^"]*\)").*/\1/p' "$ROOT/CMakeLists.txt" | head -1)"
-VERSION="$VERSION.$(sed -n 's/^SET(VERSION_RELEASE[[:space:]]*"\([^"]*\)").*/\1/p' "$ROOT/CMakeLists.txt" | head -1)"
+V_MAJOR="$(sed -n 's/^SET(VERSION_MAJOR[[:space:]]*"\([^"]*\)").*/\1/p' "$ROOT/CMakeLists.txt" | head -1)"
+V_MINOR="$(sed -n 's/^SET(VERSION_MINOR[[:space:]]*"\([^"]*\)").*/\1/p' "$ROOT/CMakeLists.txt" | head -1)"
+V_RELEASE="$(sed -n 's/^SET(VERSION_RELEASE[[:space:]]*"\([^"]*\)").*/\1/p' "$ROOT/CMakeLists.txt" | head -1)"
 STAGE="$(sed -n 's/^SET(VERSION_STAGE[[:space:]]*"\([^"]*\)").*/\1/p' "$ROOT/CMakeLists.txt" | head -1)"
+VERSION="$V_MAJOR.$V_MINOR.$V_RELEASE"
 [ -n "$STAGE" ] && VERSION="$VERSION-$STAGE"
+# R2 injects a version MOVE, so its value is derived (+1 minor) rather than hard-coded: a
+# release bump that lands on a hard-coded number would make the injection a no-op and the
+# control would silently stop exercising the defect it exists for.
+INJECTED_VERSION="$V_MAJOR.$((V_MINOR + 1)).$V_RELEASE"
+[ -n "$STAGE" ] && INJECTED_VERSION="$INJECTED_VERSION-$STAGE"
 echo "=== release-version-gate red/green harness (tree declares $VERSION) ==="
 echo
 
@@ -80,9 +87,9 @@ check 1 "R1 release build running from refs/tags/v0.1.0-alpha" "$rc"
 grep -m1 "\[FAIL\]" "$SCRATCH/red-release-ref.log" | sed 's/^/       /'
 
 fixture "$SCRATCH/r2"
-inject_version_minor "3" "$SCRATCH/r2/CMakeLists.txt"
+inject_version_minor "$((V_MINOR + 1))" "$SCRATCH/r2/CMakeLists.txt"
 bash "$GATE" --repo "$SCRATCH/r2" > "$SCRATCH/red-r2.log" 2>&1; rc=$?
-check 1 "R2 tree says 0.3.0-alpha, the notes and README still say $VERSION" "$rc"
+check 1 "R2 tree says $INJECTED_VERSION, the notes and README still say $VERSION" "$rc"
 grep -m2 "\[FAIL\]" "$SCRATCH/red-r2.log" | sed 's/^/       /'
 
 fixture "$SCRATCH/r3"
