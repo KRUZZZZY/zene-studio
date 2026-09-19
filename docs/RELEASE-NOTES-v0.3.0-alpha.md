@@ -850,8 +850,13 @@ than one plugin's feature, and the part that makes it reachable at all:
 ## The A16 contract table, and its histogram
 
 **The table holds 340 rows - 158 `true_inverse`, 32 `snapshot`, 13 `irreversible`, 137 `not_mutating` -
-and this page states that figure ONCE, for the configuration the release ships** (telemetry client in,
-wasmtime sandbox in, session data layer in, offline stem engine out). What each class means, and why
+and this page states that figure ONCE, for the REFERENCE configuration it is measured in** (telemetry
+client in, wasmtime sandbox in, session data layer in, offline stem engine out; *corrected 2026-09-19,
+task 691 — this read "the configuration the release ships", which is not the same thing: the wasmtime C
+API is on no release job's find path, so the seven platform builds ship the sandbox OFF and take the
+`wasm.load` row below off the figure, while the Session View data layer **is** in them — `CMakeLists.txt`
+defaults it ON — and the telemetry client is in by default. Measured on `zene-030/build`, the reference
+configuration: `WANT_WASM='ON'`, `WANT_SESSION_VIEW='ON'`, eight `wasm.*` ids registered.*). What each class means, and why
 each row is in it, is `docs/A16-REVERSIBILITY.md` and the rows' own reasons.
 
 It was MEASURED, class split and all, by

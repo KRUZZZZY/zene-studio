@@ -11,7 +11,13 @@
 > **214 registered ctests** in that build (`ctest -N` run from `build/tests`); `tests/fork-sources.txt` **662**
 > non-comment entries, not 244; `WANT_SESSION_VIEW` now **defaults ON** and `tests/advertised-features.tsv`
 > requires it; CLAP hosting is in the release on **every** platform (all seven jobs pass `-DWANT_CLAP=ON`); the
-> committed command snapshot holds **332** ids. Where a line below disagrees with those figures, the figure wins.
+> committed command snapshot holds **332** ids. Where a line below disagrees with those figures, the figure
+> wins. Two further scopes, same reason: (1) the `CMakeLists.txt` **line citations** below are the 0.2.1 file's
+> — at this tip the same options read stem separation `:125`, session view `:133`, telemetry `:152`; (2) the
+> **absence lists** below are `5565b4b1b`'s. Capabilities this tip has since made drivable (clip fades, clip
+> gain, comping, punch in/out, freeze, bounce-in-place, automation ramps, controller surfaces, the groove pool,
+> session sync, the patcher wiring edit, a live loudness meter) are **not** in the product yet *from the
+> interface*: they are stated per feature in `docs/KNOWN-LIMITATIONS.md` and `docs/RELEASE-NOTES-v0.3.0-alpha.md`.
 >
 > **This page describes the tree at `post-alpha/integration` @ `5565b4b1b` — version **0.2.1-alpha**, verified
 > **2026-09-13**.** For what that release changes read
