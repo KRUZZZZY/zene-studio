@@ -1,0 +1,216 @@
+{
+  "id": "clock/link-midi-0001",
+  "scope": "clock",
+  "seed": 5000,
+  "groups": [
+    "clock",
+    "device",
+    "link",
+    "midi"
+  ],
+  "steps": [
+    {
+      "cmd": "clock.get_state",
+      "note": "measured ok on the frozen binary"
+    },
+    {
+      "cmd": "clock.master_set",
+      "args": {
+        "enabled": false
+      },
+      "expect": {
+        "enabled": false
+      },
+      "note": "measured ok on the frozen binary"
+    },
+    {
+      "cmd": "clock.slave_set",
+      "args": {
+        "enabled": false
+      },
+      "expect": {
+        "enabled": false
+      },
+      "note": "measured ok on the frozen binary"
+    },
+    {
+      "cmd": "link.get_state",
+      "expect": {
+        "enabled": false
+      },
+      "note": "measured ok on the frozen binary"
+    },
+    {
+      "cmd": "link.set_enabled",
+      "args": {
+        "enabled": true
+      },
+      "expect": {
+        "enabled": true
+      },
+      "note": "measured ok on the frozen binary"
+    },
+    {
+      "cmd": "link.set_quantum",
+      "args": {
+        "quantum": 4
+      },
+      "expect": {
+        "enabled": true
+      },
+      "note": "measured ok on the frozen binary"
+    },
+    {
+      "cmd": "link.set_session_tempo",
+      "args": {
+        "bpm": 120
+      },
+      "expect": {
+        "enabled": true
+      },
+      "note": "measured ok on the frozen binary"
+    },
+    {
+      "cmd": "link.set_start_stop_sync",
+      "args": {
+        "start_stop_sync": true
+      },
+      "expect": {
+        "enabled": true
+      },
+      "note": "measured ok on the frozen binary"
+    },
+    {
+      "cmd": "link.set_enabled",
+      "args": {
+        "enabled": false
+      },
+      "expect": {
+        "enabled": false
+      },
+      "note": "measured ok on the frozen binary"
+    },
+    {
+      "cmd": "midi.clients_list",
+      "expect": {
+        "count": 4
+      },
+      "note": "measured ok on the frozen binary"
+    },
+    {
+      "cmd": "midi.device_list",
+      "expect": {
+        "count": 4
+      },
+      "note": "measured ok on the frozen binary"
+    },
+    {
+      "cmd": "midi.learn_toggle",
+      "expect": {
+        "armed": true,
+        "changed": true
+      },
+      "note": "measured ok on the frozen binary"
+    },
+    {
+      "cmd": "midi.reconnect_arm",
+      "args": {
+        "enabled": true
+      },
+      "expect": {
+        "changed": false,
+        "enabled": true
+      },
+      "note": "measured ok on the frozen binary"
+    },
+    {
+      "cmd": "midi.reconnect_status",
+      "expect": {
+        "enabled": true
+      },
+      "note": "measured ok on the frozen binary"
+    },
+    {
+      "cmd": "midi.reconnect_arm",
+      "args": {
+        "enabled": false
+      },
+      "expect": {
+        "changed": true,
+        "enabled": false
+      },
+      "note": "measured ok on the frozen binary"
+    },
+    {
+      "cmd": "midi.retro_capture_arm",
+      "args": {
+        "armed": true
+      },
+      "expect": {
+        "armed": true,
+        "changed": true
+      },
+      "note": "measured ok on the frozen binary"
+    },
+    {
+      "cmd": "midi.retro_capture_status",
+      "expect": {
+        "armed": true
+      },
+      "note": "measured ok on the frozen binary"
+    },
+    {
+      "cmd": "midi.retro_capture_arm",
+      "args": {
+        "armed": false
+      },
+      "expect": {
+        "armed": false,
+        "changed": true
+      },
+      "note": "measured ok on the frozen binary"
+    },
+    {
+      "cmd": "device.mpe_get_state",
+      "expect": {
+        "channels": 16,
+        "enabled": false
+      },
+      "note": "measured ok on the frozen binary"
+    },
+    {
+      "cmd": "device.mpe_set",
+      "args": {
+        "enabled": true
+      },
+      "expect": {
+        "changed": true,
+        "channels": 16,
+        "enabled": true
+      },
+      "note": "measured ok on the frozen binary"
+    },
+    {
+      "cmd": "device.mpe_get_state",
+      "expect": {
+        "channels": 16,
+        "enabled": true
+      },
+      "note": "measured ok on the frozen binary"
+    },
+    {
+      "cmd": "device.mpe_set",
+      "args": {
+        "enabled": false
+      },
+      "expect": {
+        "changed": true,
+        "channels": 16,
+        "enabled": false
+      },
+      "note": "measured ok on the frozen binary"
+    }
+  ],
+  "teardown": "control.quit",
+  "notes": "T3 pilot pack, generated from the round-2 measurement of the frozen pilot binary sha256 2eed203147678d3eec7e774d67b555eed95f01bcc96124b423c7c65aa53a7cf6, Zene Studio 0.2.1-alpha.612+a039d26 (probe/measure2.json): every expectation and every refusal kind in this file is a reply that binary actually gave; ids are bound from the replies that created them. The declared 180 s budget on render-class steps is the class bound (IR-15), recorded live in the run ledger."
+}

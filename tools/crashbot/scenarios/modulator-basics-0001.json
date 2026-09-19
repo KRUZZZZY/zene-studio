@@ -1,0 +1,126 @@
+{
+  "id": "modulator/basics-0001",
+  "scope": "modulator",
+  "seed": 5000,
+  "groups": [
+    "mixer",
+    "modulator",
+    "plugin",
+    "track"
+  ],
+  "steps": [
+    {
+      "cmd": "track.add",
+      "args": {
+        "type": "instrument",
+        "name": "ModBot"
+      },
+      "bind": {
+        "track0": "track"
+      },
+      "expect": {
+        "clip_count": 0,
+        "index": 4,
+        "muted": false,
+        "soloed": false,
+        "track_count": 5,
+        "type": "instrument",
+        "visible": true
+      },
+      "note": "measured ok on the frozen binary"
+    },
+    {
+      "cmd": "plugin.load",
+      "args": {
+        "target": "@id:track0",
+        "device": "dev-0"
+      },
+      "bind": {
+        "fx0": "id"
+      },
+      "expect": {
+        "index": 0,
+        "kind": "effect"
+      },
+      "note": "measured ok on the frozen binary"
+    },
+    {
+      "cmd": "mixer.add_channel",
+      "bind": {
+        "channel0": "channel"
+      },
+      "expect": {
+        "index": 1
+      },
+      "note": "measured ok on the frozen binary"
+    },
+    {
+      "cmd": "modulator.create",
+      "args": {
+        "name": "m1"
+      },
+      "bind": {
+        "modulator0": "modulator"
+      },
+      "note": "measured ok on the frozen binary"
+    },
+    {
+      "cmd": "modulator.get_state",
+      "note": "measured ok on the frozen binary"
+    },
+    {
+      "cmd": "modulator.target_set",
+      "args": {
+        "modulator": "@id:modulator0",
+        "channel": "@id:channel0",
+        "effect": "@id:fx0",
+        "parameter": 0
+      },
+      "expect_error": "invalid_args",
+      "note": "measured refusal invalid_args: effect: expected integer"
+    },
+    {
+      "cmd": "modulator.depth_set",
+      "args": {
+        "modulator": "@id:modulator0",
+        "target": 0,
+        "depth": 0.5
+      },
+      "expect_error": "not_found",
+      "note": "measured refusal not_found: modulator modulator-0 has no target 0 (it has 0)"
+    },
+    {
+      "cmd": "modulator.rate_set",
+      "args": {
+        "modulator": "@id:modulator0",
+        "rate": 2.0
+      },
+      "bind": {
+        "modulator1": "modulator"
+      },
+      "note": "measured ok on the frozen binary"
+    },
+    {
+      "cmd": "modulator.get_state",
+      "note": "measured ok on the frozen binary"
+    },
+    {
+      "cmd": "modulator.target_remove",
+      "args": {
+        "modulator": "@id:modulator0",
+        "target": 0
+      },
+      "expect_error": "not_found",
+      "note": "measured refusal not_found: modulator modulator-0 has no target 0 (it has 0)"
+    },
+    {
+      "cmd": "modulator.remove",
+      "args": {
+        "modulator": "@id:modulator0"
+      },
+      "note": "measured ok on the frozen binary"
+    }
+  ],
+  "teardown": "control.quit",
+  "notes": "T3 pilot pack, generated from the round-2 measurement of the frozen pilot binary sha256 2eed203147678d3eec7e774d67b555eed95f01bcc96124b423c7c65aa53a7cf6, Zene Studio 0.2.1-alpha.612+a039d26 (probe/measure2.json): every expectation and every refusal kind in this file is a reply that binary actually gave; ids are bound from the replies that created them. The declared 180 s budget on render-class steps is the class bound (IR-15), recorded live in the run ledger."
+}

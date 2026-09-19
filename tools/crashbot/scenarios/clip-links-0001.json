@@ -1,0 +1,167 @@
+{
+  "id": "clip/links-0001",
+  "scope": "clip",
+  "seed": 5000,
+  "groups": [
+    "clip",
+    "track"
+  ],
+  "steps": [
+    {
+      "cmd": "track.add",
+      "args": {
+        "type": "instrument",
+        "name": "LinkA"
+      },
+      "bind": {
+        "track0": "track"
+      },
+      "expect": {
+        "clip_count": 0,
+        "index": 4,
+        "muted": false,
+        "soloed": false,
+        "track_count": 5,
+        "type": "instrument",
+        "visible": true
+      },
+      "note": "measured ok on the frozen binary"
+    },
+    {
+      "cmd": "track.add",
+      "args": {
+        "type": "instrument",
+        "name": "LinkB"
+      },
+      "bind": {
+        "track1": "track"
+      },
+      "expect": {
+        "clip_count": 0,
+        "index": 5,
+        "muted": false,
+        "soloed": false,
+        "track_count": 6,
+        "type": "instrument",
+        "visible": true
+      },
+      "note": "measured ok on the frozen binary"
+    },
+    {
+      "cmd": "clip.add",
+      "args": {
+        "track": "@id:track0",
+        "position": 0,
+        "length": 960
+      },
+      "bind": {
+        "track2": "track",
+        "clip0": "clip"
+      },
+      "expect": {
+        "auto_resize": false,
+        "muted": false,
+        "note_count": 0
+      },
+      "note": "measured ok on the frozen binary"
+    },
+    {
+      "cmd": "clip.add",
+      "args": {
+        "track": "@id:track1",
+        "position": 0,
+        "length": 960
+      },
+      "bind": {
+        "track3": "track",
+        "clip1": "clip"
+      },
+      "expect": {
+        "auto_resize": false,
+        "muted": false,
+        "note_count": 0
+      },
+      "note": "measured ok on the frozen binary"
+    },
+    {
+      "cmd": "clip.link_create",
+      "args": {
+        "clip": "@id:clip0",
+        "clips": [
+          "@id:clip1"
+        ]
+      },
+      "expect": {
+        "notes": 0
+      },
+      "note": "measured ok on the frozen binary"
+    },
+    {
+      "cmd": "clip.link_get_state",
+      "args": {
+        "clip": "@id:clip0"
+      },
+      "bind": {
+        "clip2": "clip"
+      },
+      "expect": {
+        "count": 1
+      },
+      "expect_len": {
+        "groups": 1
+      },
+      "note": "measured ok on the frozen binary"
+    },
+    {
+      "cmd": "clip.link_sync",
+      "args": {
+        "clip": "@id:clip0"
+      },
+      "bind": {
+        "clip3": "clip"
+      },
+      "note": "measured ok on the frozen binary"
+    },
+    {
+      "cmd": "clip.link_get_state",
+      "args": {
+        "clip": "@id:clip1"
+      },
+      "bind": {
+        "clip4": "clip"
+      },
+      "expect": {
+        "count": 1
+      },
+      "expect_len": {
+        "groups": 1
+      },
+      "note": "measured ok on the frozen binary"
+    },
+    {
+      "cmd": "clip.link_remove",
+      "args": {
+        "clip": "@id:clip0"
+      },
+      "note": "measured ok on the frozen binary"
+    },
+    {
+      "cmd": "clip.link_get_state",
+      "args": {
+        "clip": "@id:clip0"
+      },
+      "bind": {
+        "clip5": "clip"
+      },
+      "expect": {
+        "count": 0
+      },
+      "expect_len": {
+        "groups": 0
+      },
+      "note": "measured ok on the frozen binary"
+    }
+  ],
+  "teardown": "control.quit",
+  "notes": "T3 pilot pack, generated from the round-2 measurement of the frozen pilot binary sha256 2eed203147678d3eec7e774d67b555eed95f01bcc96124b423c7c65aa53a7cf6, Zene Studio 0.2.1-alpha.612+a039d26 (probe/measure2.json): every expectation and every refusal kind in this file is a reply that binary actually gave; ids are bound from the replies that created them. The declared 180 s budget on render-class steps is the class bound (IR-15), recorded live in the run ledger."
+}

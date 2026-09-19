@@ -1,0 +1,90 @@
+{
+  "id": "crash/reports-0001",
+  "scope": "crash",
+  "seed": 5000,
+  "groups": [
+    "control",
+    "crash",
+    "track"
+  ],
+  "steps": [
+    {
+      "cmd": "control.transactions",
+      "expect": {
+        "capped": false,
+        "count": 0,
+        "evicted": 0
+      },
+      "expect_len": {
+        "transactions": 0
+      },
+      "note": "measured ok on the frozen binary"
+    },
+    {
+      "cmd": "crash.list_reports",
+      "bind": {
+        "note0": "note"
+      },
+      "expect": {
+        "agree": true,
+        "armed": true,
+        "installed": true,
+        "pending": false,
+        "report_count": 0
+      },
+      "expect_len": {
+        "reports": 0
+      },
+      "note": "measured ok on the frozen binary"
+    },
+    {
+      "cmd": "crash.discard_report",
+      "expect_error": "not_found",
+      "note": "measured refusal not_found: crash.discard_report: there is no crash report to discard at /tmp/zctl-run-c_n8m60a/workspace/crash-reports/zene-crash-report.txt (and no offered sent"
+    },
+    {
+      "cmd": "crash.acknowledge_report",
+      "expect_error": "not_found",
+      "note": "measured refusal not_found: crash.acknowledge_report: there is no report to acknowledge at /tmp/zctl-run-c_n8m60a/workspace/crash-reports/zene-crash-report.txt"
+    },
+    {
+      "cmd": "crash.list_reports",
+      "bind": {
+        "note1": "note"
+      },
+      "expect": {
+        "agree": true,
+        "armed": true,
+        "installed": true,
+        "pending": false,
+        "report_count": 0
+      },
+      "expect_len": {
+        "reports": 0
+      },
+      "note": "measured ok on the frozen binary"
+    },
+    {
+      "cmd": "track.add",
+      "args": {
+        "type": "instrument",
+        "name": "AfterCrashCmds"
+      },
+      "bind": {
+        "track0": "track"
+      },
+      "expect": {
+        "clip_count": 0,
+        "index": 4,
+        "muted": false,
+        "soloed": false,
+        "track_count": 5,
+        "type": "instrument",
+        "visible": true
+      },
+      "note": "measured ok on the frozen binary"
+    }
+  ],
+  "teardown": "control.quit",
+  "notes": "T3 pilot pack, generated from the round-2 measurement of the frozen pilot binary sha256 2eed203147678d3eec7e774d67b555eed95f01bcc96124b423c7c65aa53a7cf6, Zene Studio 0.2.1-alpha.612+a039d26 (probe/measure2.json): every expectation and every refusal kind in this file is a reply that binary actually gave; ids are bound from the replies that created them. The declared 180 s budget on render-class steps is the class bound (IR-15), recorded live in the run ledger."
+}

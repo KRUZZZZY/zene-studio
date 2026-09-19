@@ -1,0 +1,98 @@
+{
+  "id": "bus/basics-0001",
+  "scope": "bus",
+  "seed": 5000,
+  "groups": [
+    "bus",
+    "mixer"
+  ],
+  "steps": [
+    {
+      "cmd": "bus.list",
+      "bind": {
+        "note0": "note"
+      },
+      "expect": {
+        "count": 0
+      },
+      "expect_len": {
+        "buses": 0
+      },
+      "note": "measured ok on the frozen binary"
+    },
+    {
+      "cmd": "mixer.get_state",
+      "bind": {
+        "ch0": "channels[0].id"
+      },
+      "expect": {
+        "count": 1
+      },
+      "expect_len": {
+        "channels": 1
+      },
+      "note": "measured ok on the frozen binary"
+    },
+    {
+      "cmd": "bus.create",
+      "bind": {
+        "channel0": "channel"
+      },
+      "expect": {
+        "count": 2,
+        "index": 1,
+        "is_bus": true
+      },
+      "note": "measured ok on the frozen binary"
+    },
+    {
+      "cmd": "bus.list",
+      "bind": {
+        "note1": "note"
+      },
+      "expect": {
+        "count": 1
+      },
+      "expect_len": {
+        "buses": 1
+      },
+      "note": "measured ok on the frozen binary"
+    },
+    {
+      "cmd": "mixer.set_volume",
+      "args": {
+        "channel": "@id:channel0",
+        "volume": 0.5
+      },
+      "bind": {
+        "channel1": "channel"
+      },
+      "note": "measured ok on the frozen binary"
+    },
+    {
+      "cmd": "bus.remove",
+      "args": {
+        "channel": "@id:channel0"
+      },
+      "expect": {
+        "count": 1
+      },
+      "note": "measured ok on the frozen binary"
+    },
+    {
+      "cmd": "bus.list",
+      "bind": {
+        "note2": "note"
+      },
+      "expect": {
+        "count": 0
+      },
+      "expect_len": {
+        "buses": 0
+      },
+      "note": "measured ok on the frozen binary"
+    }
+  ],
+  "teardown": "control.quit",
+  "notes": "T3 pilot pack, generated from the round-2 measurement of the frozen pilot binary sha256 2eed203147678d3eec7e774d67b555eed95f01bcc96124b423c7c65aa53a7cf6, Zene Studio 0.2.1-alpha.612+a039d26 (probe/measure2.json): every expectation and every refusal kind in this file is a reply that binary actually gave; ids are bound from the replies that created them. The declared 180 s budget on render-class steps is the class bound (IR-15), recorded live in the run ledger."
+}

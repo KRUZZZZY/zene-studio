@@ -1,0 +1,273 @@
+{
+  "id": "scale/chord-0001",
+  "scope": "scale",
+  "seed": 5000,
+  "groups": [
+    "chord",
+    "clip",
+    "note",
+    "scale",
+    "track"
+  ],
+  "steps": [
+    {
+      "cmd": "track.add",
+      "args": {
+        "type": "instrument",
+        "name": "ChordBot"
+      },
+      "bind": {
+        "track0": "track"
+      },
+      "expect": {
+        "clip_count": 0,
+        "index": 4,
+        "muted": false,
+        "soloed": false,
+        "track_count": 5,
+        "type": "instrument",
+        "visible": true
+      },
+      "note": "measured ok on the frozen binary"
+    },
+    {
+      "cmd": "clip.add",
+      "args": {
+        "track": "@id:track0",
+        "position": 0,
+        "length": 3840
+      },
+      "bind": {
+        "track1": "track",
+        "clip0": "clip"
+      },
+      "expect": {
+        "auto_resize": false,
+        "muted": false,
+        "note_count": 0
+      },
+      "note": "measured ok on the frozen binary"
+    },
+    {
+      "cmd": "note.add",
+      "args": {
+        "clip": "@id:clip0",
+        "key": 60,
+        "position": 0,
+        "length": 480,
+        "velocity": 100
+      },
+      "bind": {
+        "clip1": "clip",
+        "note0": "note"
+      },
+      "expect": {
+        "index": 0,
+        "note_count": 1
+      },
+      "note": "measured ok on the frozen binary"
+    },
+    {
+      "cmd": "note.add",
+      "args": {
+        "clip": "@id:clip0",
+        "key": 64,
+        "position": 0,
+        "length": 480,
+        "velocity": 100
+      },
+      "bind": {
+        "clip2": "clip",
+        "note1": "note"
+      },
+      "expect": {
+        "index": 0,
+        "note_count": 2
+      },
+      "note": "measured ok on the frozen binary"
+    },
+    {
+      "cmd": "note.add",
+      "args": {
+        "clip": "@id:clip0",
+        "key": 67,
+        "position": 0,
+        "length": 480,
+        "velocity": 100
+      },
+      "bind": {
+        "clip3": "clip",
+        "note2": "note"
+      },
+      "expect": {
+        "index": 0,
+        "note_count": 3
+      },
+      "note": "measured ok on the frozen binary"
+    },
+    {
+      "cmd": "scale.list",
+      "expect": {
+        "include_chords": false,
+        "scale_set": false
+      },
+      "expect_len": {
+        "roots": 12
+      },
+      "note": "measured ok on the frozen binary"
+    },
+    {
+      "cmd": "scale.get_state",
+      "expect": {
+        "scale_set": false
+      },
+      "note": "measured ok on the frozen binary"
+    },
+    {
+      "cmd": "scale.set",
+      "args": {
+        "scale": "Minor"
+      },
+      "expect": {
+        "scale_set": true
+      },
+      "note": "measured ok on the frozen binary"
+    },
+    {
+      "cmd": "scale.root_set",
+      "args": {
+        "root": "D"
+      },
+      "expect": {
+        "scale_set": true
+      },
+      "note": "measured ok on the frozen binary"
+    },
+    {
+      "cmd": "scale.get_state",
+      "expect": {
+        "scale_set": true
+      },
+      "note": "measured ok on the frozen binary"
+    },
+    {
+      "cmd": "scale.snap_notes",
+      "args": {
+        "clip": "@id:clip0"
+      },
+      "bind": {
+        "track2": "track",
+        "clip4": "clip"
+      },
+      "expect": {
+        "note_count": 3
+      },
+      "note": "measured ok on the frozen binary"
+    },
+    {
+      "cmd": "chord.get_state",
+      "expect": {
+        "chords": 0,
+        "max_chords": 64
+      },
+      "note": "measured ok on the frozen binary"
+    },
+    {
+      "cmd": "chord.set",
+      "args": {
+        "chord": "I",
+        "pos": 0
+      },
+      "expect_error": "invalid_args",
+      "note": "measured refusal invalid_args: 'I' is not a chord of this engine's vocabulary (see chord.progression_list for the 73 it knows)"
+    },
+    {
+      "cmd": "chord.get_state",
+      "expect": {
+        "chords": 0,
+        "max_chords": 64
+      },
+      "note": "measured ok on the frozen binary"
+    },
+    {
+      "cmd": "chord.detect",
+      "args": {
+        "clip": "@id:clip0"
+      },
+      "bind": {
+        "track3": "track",
+        "clip5": "clip"
+      },
+      "expect": {
+        "count": 1
+      },
+      "note": "measured ok on the frozen binary"
+    },
+    {
+      "cmd": "chord.progression_list",
+      "expect": {
+        "count": 8,
+        "max_chords": 64,
+        "max_steps": 64
+      },
+      "note": "measured ok on the frozen binary"
+    },
+    {
+      "cmd": "chord.progression_generate",
+      "args": {
+        "clip": "@id:clip0",
+        "progression": "I-V-vi-IV",
+        "scale": "Major"
+      },
+      "bind": {
+        "track4": "track",
+        "clip6": "clip"
+      },
+      "expect": {
+        "note_count": 12
+      },
+      "note": "measured ok on the frozen binary"
+    },
+    {
+      "cmd": "chord.track_write",
+      "args": {
+        "clip": "@id:clip0"
+      },
+      "expect_error": "refused",
+      "note": "measured refusal refused: the chord track is empty: write some chords into it first (chord.set or chord.detect_to_track)"
+    },
+    {
+      "cmd": "chord.detect_to_track",
+      "args": {
+        "clip": "@id:clip0"
+      },
+      "bind": {
+        "clip7": "clip"
+      },
+      "expect": {
+        "chords": 4,
+        "max_chords": 64
+      },
+      "note": "measured ok on the frozen binary"
+    },
+    {
+      "cmd": "chord.clear",
+      "expect": {
+        "chords": 0,
+        "max_chords": 64,
+        "removed": 4
+      },
+      "note": "measured ok on the frozen binary"
+    },
+    {
+      "cmd": "chord.remove",
+      "args": {
+        "pos": 0
+      },
+      "expect_error": "not_found",
+      "note": "measured refusal not_found: there is no chord at tick 0 (the track holds 0)"
+    }
+  ],
+  "teardown": "control.quit",
+  "notes": "T3 pilot pack, generated from the round-2 measurement of the frozen pilot binary sha256 2eed203147678d3eec7e774d67b555eed95f01bcc96124b423c7c65aa53a7cf6, Zene Studio 0.2.1-alpha.612+a039d26 (probe/measure2.json): every expectation and every refusal kind in this file is a reply that binary actually gave; ids are bound from the replies that created them. The declared 180 s budget on render-class steps is the class bound (IR-15), recorded live in the run ledger."
+}

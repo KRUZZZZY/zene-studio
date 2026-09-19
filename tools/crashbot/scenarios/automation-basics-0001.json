@@ -1,0 +1,202 @@
+{
+  "id": "automation/basics-0001",
+  "scope": "automation",
+  "seed": 5000,
+  "groups": [
+    "automation",
+    "plugin",
+    "track"
+  ],
+  "steps": [
+    {
+      "cmd": "track.add",
+      "args": {
+        "type": "instrument",
+        "name": "AutoBot"
+      },
+      "bind": {
+        "track0": "track"
+      },
+      "expect": {
+        "clip_count": 0,
+        "index": 4,
+        "muted": false,
+        "soloed": false,
+        "track_count": 5,
+        "type": "instrument",
+        "visible": true
+      },
+      "note": "measured ok on the frozen binary"
+    },
+    {
+      "cmd": "plugin.load",
+      "args": {
+        "target": "@id:track0",
+        "device": "dev-0"
+      },
+      "bind": {
+        "fx0": "id"
+      },
+      "expect": {
+        "index": 0,
+        "kind": "effect"
+      },
+      "note": "measured ok on the frozen binary"
+    },
+    {
+      "cmd": "automation.get_state",
+      "args": {
+        "track": "@id:track0"
+      },
+      "bind": {
+        "ap0": "tracks[0].parameters[0].id"
+      },
+      "expect": {
+        "count": 1,
+        "track_count": 5
+      },
+      "expect_len": {
+        "tracks": 1
+      },
+      "note": "measured ok on the frozen binary"
+    },
+    {
+      "cmd": "automation.ramp_get",
+      "args": {
+        "track": "@id:track0"
+      },
+      "expect": {
+        "count": 0
+      },
+      "note": "measured ok on the frozen binary"
+    },
+    {
+      "cmd": "automation.add_point",
+      "args": {
+        "track": "@id:track0",
+        "parameter": "@id:ap0",
+        "ticks": 0,
+        "value": 0.5
+      },
+      "bind": {
+        "track1": "track"
+      },
+      "note": "measured ok on the frozen binary"
+    },
+    {
+      "cmd": "automation.add_point",
+      "args": {
+        "track": "@id:track0",
+        "parameter": "@id:ap0",
+        "ticks": 960,
+        "value": 1.0
+      },
+      "bind": {
+        "track2": "track"
+      },
+      "note": "measured ok on the frozen binary"
+    },
+    {
+      "cmd": "automation.ramp_set",
+      "args": {
+        "track": "@id:track0",
+        "parameter": "@id:ap0",
+        "mode": "sample"
+      },
+      "bind": {
+        "track3": "track"
+      },
+      "expect": {
+        "changed": true,
+        "mode": "sample"
+      },
+      "note": "measured ok on the frozen binary"
+    },
+    {
+      "cmd": "automation.mode_set",
+      "args": {
+        "track": "@id:track0",
+        "parameter": "@id:ap0",
+        "mode": "read"
+      },
+      "bind": {
+        "track4": "track"
+      },
+      "expect": {
+        "changed": false,
+        "mode": "read"
+      },
+      "note": "measured ok on the frozen binary"
+    },
+    {
+      "cmd": "automation.record_mode_set",
+      "args": {
+        "track": "@id:track0",
+        "parameter": "@id:ap0",
+        "mode": "on"
+      },
+      "bind": {
+        "track5": "track"
+      },
+      "expect": {
+        "changed": true,
+        "mode": "on"
+      },
+      "note": "measured ok on the frozen binary"
+    },
+    {
+      "cmd": "automation.get_state",
+      "args": {
+        "track": "@id:track0",
+        "automated_only": true
+      },
+      "bind": {
+        "ap1": "tracks[0].parameters[0].id"
+      },
+      "expect": {
+        "count": 1,
+        "track_count": 6
+      },
+      "expect_len": {
+        "tracks": 1
+      },
+      "note": "measured ok on the frozen binary"
+    },
+    {
+      "cmd": "automation.remove_point",
+      "args": {
+        "track": "@id:track0",
+        "parameter": "@id:ap0",
+        "ticks": 960
+      },
+      "bind": {
+        "track6": "track"
+      },
+      "note": "measured ok on the frozen binary"
+    },
+    {
+      "cmd": "automation.clear",
+      "args": {
+        "track": "@id:track0",
+        "parameter": "@id:ap0"
+      },
+      "bind": {
+        "track7": "track"
+      },
+      "note": "measured ok on the frozen binary"
+    },
+    {
+      "cmd": "automation.ramp_get",
+      "args": {
+        "track": "@id:track0",
+        "include_block_mode": true
+      },
+      "expect": {
+        "count": 1
+      },
+      "note": "measured ok on the frozen binary"
+    }
+  ],
+  "teardown": "control.quit",
+  "notes": "T3 pilot pack, generated from the round-2 measurement of the frozen pilot binary sha256 2eed203147678d3eec7e774d67b555eed95f01bcc96124b423c7c65aa53a7cf6, Zene Studio 0.2.1-alpha.612+a039d26 (probe/measure2.json): every expectation and every refusal kind in this file is a reply that binary actually gave; ids are bound from the replies that created them. The declared 180 s budget on render-class steps is the class bound (IR-15), recorded live in the run ledger."
+}

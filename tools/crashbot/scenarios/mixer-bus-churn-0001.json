@@ -1,0 +1,160 @@
+{
+  "id": "mixer/bus-churn-0001",
+  "scope": "mixer",
+  "seed": 5000,
+  "groups": [
+    "control",
+    "mixer",
+    "track"
+  ],
+  "steps": [
+    {
+      "cmd": "mixer.get_state",
+      "bind": {
+        "ch0": "channels[0].id"
+      },
+      "expect": {
+        "count": 1
+      },
+      "expect_len": {
+        "channels": 1
+      },
+      "note": "measured ok on the frozen binary"
+    },
+    {
+      "cmd": "track.add",
+      "args": {
+        "type": "instrument",
+        "name": "MixBot"
+      },
+      "bind": {
+        "track0": "track"
+      },
+      "expect": {
+        "clip_count": 0,
+        "index": 4,
+        "muted": false,
+        "soloed": false,
+        "track_count": 5,
+        "type": "instrument",
+        "visible": true
+      },
+      "note": "measured ok on the frozen binary"
+    },
+    {
+      "cmd": "mixer.add_channel",
+      "bind": {
+        "channel0": "channel"
+      },
+      "expect": {
+        "index": 1
+      },
+      "note": "measured ok on the frozen binary"
+    },
+    {
+      "cmd": "mixer.add_channel",
+      "bind": {
+        "channel1": "channel"
+      },
+      "expect": {
+        "index": 2
+      },
+      "note": "measured ok on the frozen binary"
+    },
+    {
+      "cmd": "mixer.set_volume",
+      "args": {
+        "channel": "@id:channel1",
+        "volume": 0.25
+      },
+      "bind": {
+        "channel2": "channel"
+      },
+      "note": "measured ok on the frozen binary"
+    },
+    {
+      "cmd": "mixer.set_pan",
+      "args": {
+        "channel": "@id:channel1",
+        "pan": -0.5
+      },
+      "expect_error": "refused",
+      "note": "measured refusal refused: mixer channels have no pan property in this build: pan lives on InstrumentTrack/SampleTrack (panningModel) and on notes"
+    },
+    {
+      "cmd": "mixer.send_to",
+      "args": {
+        "channel": "@id:channel1",
+        "to": "@id:channel1",
+        "amount": 0.3
+      },
+      "expect_error": "invalid_args",
+      "note": "measured refusal invalid_args: a channel cannot route to itself"
+    },
+    {
+      "cmd": "mixer.sidechain_to",
+      "args": {
+        "channel": "@id:channel1",
+        "to": "@id:channel1"
+      },
+      "expect_error": "invalid_args",
+      "note": "measured refusal invalid_args: a channel cannot route to itself"
+    },
+    {
+      "cmd": "mixer.get_state",
+      "bind": {
+        "ch1": "channels[0].id"
+      },
+      "expect": {
+        "count": 3
+      },
+      "expect_len": {
+        "channels": 3
+      },
+      "note": "measured ok on the frozen binary"
+    },
+    {
+      "cmd": "mixer.route_remove",
+      "args": {
+        "channel": "@id:channel1",
+        "to": "@id:channel1"
+      },
+      "expect_error": "invalid_args",
+      "note": "measured refusal invalid_args: a channel cannot route to itself"
+    },
+    {
+      "cmd": "control.undo",
+      "expect": {
+        "can_redo": true,
+        "can_undo": true,
+        "undone": true
+      },
+      "note": "measured ok on the frozen binary"
+    },
+    {
+      "cmd": "mixer.remove_channel",
+      "args": {
+        "channel": "@id:channel1"
+      },
+      "expect": {
+        "count": 2
+      },
+      "note": "measured ok on the frozen binary"
+    },
+    {
+      "cmd": "mixer.get_state",
+      "bind": {
+        "ch2": "channels[0].id"
+      },
+      "expect": {
+        "count": 2
+      },
+      "expect_len": {
+        "channels": 2
+      },
+      "note": "measured ok on the frozen binary"
+    }
+  ],
+  "teardown": "control.quit",
+  "notes": "T3 pilot pack, generated from the round-2 measurement of the frozen pilot binary sha256 2eed203147678d3eec7e774d67b555eed95f01bcc96124b423c7c65aa53a7cf6, Zene Studio 0.2.1-alpha.612+a039d26 (probe/measure2.json): every expectation and every refusal kind in this file is a reply that binary actually gave; ids are bound from the replies that created them. The declared 180 s budget on render-class steps is the class bound (IR-15), recorded live in the run ledger."
+}

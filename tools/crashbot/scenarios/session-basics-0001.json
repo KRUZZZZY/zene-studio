@@ -1,0 +1,169 @@
+{
+  "id": "session/basics-0001",
+  "scope": "session",
+  "seed": 5000,
+  "groups": [
+    "session",
+    "track"
+  ],
+  "steps": [
+    {
+      "cmd": "session.get_state",
+      "expect": {
+        "quantisation": "bar"
+      },
+      "expect_len": {
+        "scenes": 0,
+        "slots": 0
+      },
+      "note": "measured ok on the frozen binary"
+    },
+    {
+      "cmd": "session.set_grid",
+      "args": {
+        "scenes": 8,
+        "tracks": 8
+      },
+      "note": "measured ok on the frozen binary"
+    },
+    {
+      "cmd": "session.set_quantisation",
+      "args": {
+        "quantisation": "bar"
+      },
+      "expect": {
+        "quantisation": "bar"
+      },
+      "note": "measured ok on the frozen binary"
+    },
+    {
+      "cmd": "session.set_scene",
+      "args": {
+        "scene": 0,
+        "name": "A"
+      },
+      "note": "measured ok on the frozen binary"
+    },
+    {
+      "cmd": "track.add",
+      "args": {
+        "type": "instrument",
+        "name": "ClipLauncher"
+      },
+      "bind": {
+        "track0": "track"
+      },
+      "expect": {
+        "clip_count": 0,
+        "index": 4,
+        "muted": false,
+        "soloed": false,
+        "track_count": 5,
+        "type": "instrument",
+        "visible": true
+      },
+      "note": "measured ok on the frozen binary"
+    },
+    {
+      "cmd": "session.set_slot",
+      "args": {
+        "scene": 0,
+        "track": 0,
+        "type": "empty"
+      },
+      "note": "measured ok on the frozen binary"
+    },
+    {
+      "cmd": "session.launch_slot",
+      "args": {
+        "scene": 0,
+        "track": 0
+      },
+      "expect_error": "invalid_args",
+      "note": "measured refusal invalid_args: slot (track 0, scene 0) is empty: there is no clip to launch; session.set_slot defines one"
+    },
+    {
+      "cmd": "session.get_state",
+      "expect": {
+        "quantisation": "bar"
+      },
+      "expect_len": {
+        "scenes": 8,
+        "slots": 0
+      },
+      "note": "measured ok on the frozen binary"
+    },
+    {
+      "cmd": "session.stop_slot",
+      "args": {
+        "scene": 0,
+        "track": 0
+      },
+      "note": "measured ok on the frozen binary"
+    },
+    {
+      "cmd": "session.launch_scene",
+      "args": {
+        "scene": 0
+      },
+      "expect": {
+        "clips": 0
+      },
+      "note": "measured ok on the frozen binary"
+    },
+    {
+      "cmd": "session.stop_all",
+      "note": "measured ok on the frozen binary"
+    },
+    {
+      "cmd": "session.follow_get_state",
+      "note": "measured ok on the frozen binary"
+    },
+    {
+      "cmd": "session.follow_set",
+      "args": {
+        "scene": 0,
+        "track": 0,
+        "enabled": true
+      },
+      "expect_error": "invalid_args",
+      "note": "measured refusal invalid_args: the cell at this address has no Follow Action chain yet: session.set_slot writes one, or pass 'actions' inline"
+    },
+    {
+      "cmd": "session.follow_get_state",
+      "note": "measured ok on the frozen binary"
+    },
+    {
+      "cmd": "session.clear_slot",
+      "args": {
+        "scene": 0,
+        "track": 0
+      },
+      "note": "measured ok on the frozen binary"
+    },
+    {
+      "cmd": "session.back_to_arrangement",
+      "expect": {
+        "pending": 0
+      },
+      "note": "measured ok on the frozen binary"
+    },
+    {
+      "cmd": "session.clear",
+      "note": "measured ok on the frozen binary"
+    },
+    {
+      "cmd": "session.get_state",
+      "expect": {
+        "quantisation": "bar"
+      },
+      "expect_len": {
+        "scenes": 0,
+        "slots": 0
+      },
+      "note": "measured ok on the frozen binary"
+    }
+  ],
+  "teardown": "control.quit",
+  "notes": "T3 pilot pack, generated from the round-2 measurement of the frozen pilot binary sha256 2eed203147678d3eec7e774d67b555eed95f01bcc96124b423c7c65aa53a7cf6, Zene Studio 0.2.1-alpha.612+a039d26 (probe/measure2.json): every expectation and every refusal kind in this file is a reply that binary actually gave; ids are bound from the replies that created them. The declared 180 s budget on render-class steps is the class bound (IR-15), recorded live in the run ledger."
+}

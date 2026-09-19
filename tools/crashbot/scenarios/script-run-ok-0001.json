@@ -1,0 +1,55 @@
+{
+  "id": "script/run-ok-0001",
+  "scope": "script",
+  "seed": 5000,
+  "groups": [
+    "script"
+  ],
+  "steps": [
+    {
+      "cmd": "script.list",
+      "expect": {
+        "count": 4
+      },
+      "expect_len": {
+        "candidates": 3,
+        "scripts": 4
+      },
+      "note": "measured ok on the frozen binary"
+    },
+    {
+      "cmd": "script.set_memory_budget",
+      "args": {
+        "bytes": 33554432
+      },
+      "expect": {
+        "changed": true
+      },
+      "note": "measured ok on the frozen binary"
+    },
+    {
+      "cmd": "script.run",
+      "args": {
+        "source": "return 1 + 1"
+      },
+      "note": "measured ok on the frozen binary"
+    },
+    {
+      "cmd": "script.run",
+      "args": {
+        "source": "zene.log('crashbot hello')\nreturn 2"
+      },
+      "note": "measured ok on the frozen binary"
+    },
+    {
+      "cmd": "script.run",
+      "args": {
+        "name": "hello.lua"
+      },
+      "expect_error": "invalid_args",
+      "note": "measured refusal invalid_args: exactly one of 'path' or 'source' is required: 'path' runs a file, 'source' runs Lua text supplied inline"
+    }
+  ],
+  "teardown": "control.quit",
+  "notes": "T3 pilot pack, generated from the round-2 measurement of the frozen pilot binary sha256 2eed203147678d3eec7e774d67b555eed95f01bcc96124b423c7c65aa53a7cf6, Zene Studio 0.2.1-alpha.612+a039d26 (probe/measure2.json): every expectation and every refusal kind in this file is a reply that binary actually gave; ids are bound from the replies that created them. The declared 180 s budget on render-class steps is the class bound (IR-15), recorded live in the run ledger."
+}

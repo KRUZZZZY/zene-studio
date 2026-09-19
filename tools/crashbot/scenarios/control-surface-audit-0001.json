@@ -1,0 +1,128 @@
+{
+  "id": "control/surface-audit-0001",
+  "scope": "control",
+  "seed": 5000,
+  "groups": [
+    "control",
+    "track"
+  ],
+  "steps": [
+    {
+      "cmd": "control.surface_report",
+      "note": "measured ok on the frozen binary"
+    },
+    {
+      "cmd": "control.id_contract",
+      "expect": {
+        "count": 6
+      },
+      "note": "measured ok on the frozen binary"
+    },
+    {
+      "cmd": "control.set_undo_depth",
+      "args": {
+        "steps": 64
+      },
+      "expect": {
+        "can_redo": false,
+        "can_undo": true,
+        "evicted": 0
+      },
+      "note": "measured ok on the frozen binary"
+    },
+    {
+      "cmd": "control.set_undo_coalescing",
+      "args": {
+        "window_ms": 0
+      },
+      "expect": {
+        "enabled": false
+      },
+      "note": "measured ok on the frozen binary"
+    },
+    {
+      "cmd": "control.undo_depth",
+      "expect": {
+        "can_redo": false,
+        "can_undo": true,
+        "evicted": 0
+      },
+      "note": "measured ok on the frozen binary"
+    },
+    {
+      "cmd": "track.add",
+      "args": {
+        "type": "instrument",
+        "name": "AuditBot"
+      },
+      "bind": {
+        "track0": "track"
+      },
+      "expect": {
+        "clip_count": 0,
+        "index": 4,
+        "muted": false,
+        "soloed": false,
+        "track_count": 5,
+        "type": "instrument",
+        "visible": true
+      },
+      "note": "measured ok on the frozen binary"
+    },
+    {
+      "cmd": "control.transactions",
+      "expect": {
+        "capped": false,
+        "count": 2,
+        "evicted": 0
+      },
+      "expect_len": {
+        "transactions": 2
+      },
+      "note": "measured ok on the frozen binary"
+    },
+    {
+      "cmd": "control.redo",
+      "expect": {
+        "can_redo": false,
+        "can_undo": true
+      },
+      "note": "measured ok on the frozen binary"
+    },
+    {
+      "cmd": "control.undo",
+      "expect": {
+        "can_redo": true,
+        "can_undo": true,
+        "undone": true
+      },
+      "note": "measured ok on the frozen binary"
+    },
+    {
+      "cmd": "control.undo_depth",
+      "expect": {
+        "can_redo": true,
+        "can_undo": true,
+        "evicted": 0
+      },
+      "note": "measured ok on the frozen binary"
+    },
+    {
+      "cmd": "control.redo",
+      "expect": {
+        "can_redo": false,
+        "can_undo": true
+      },
+      "note": "measured ok on the frozen binary"
+    },
+    {
+      "cmd": "control.commands_list",
+      "expect": {
+        "count": 340
+      },
+      "note": "measured ok on the frozen binary"
+    }
+  ],
+  "teardown": "control.quit",
+  "notes": "T3 pilot pack, generated from the round-2 measurement of the frozen pilot binary sha256 2eed203147678d3eec7e774d67b555eed95f01bcc96124b423c7c65aa53a7cf6, Zene Studio 0.2.1-alpha.612+a039d26 (probe/measure2.json): every expectation and every refusal kind in this file is a reply that binary actually gave; ids are bound from the replies that created them. The declared 180 s budget on render-class steps is the class bound (IR-15), recorded live in the run ledger."
+}

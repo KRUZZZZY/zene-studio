@@ -1,0 +1,65 @@
+{
+  "id": "settings/telemetry-0001",
+  "scope": "settings",
+  "seed": 5000,
+  "groups": [
+    "audio",
+    "settings",
+    "telemetry"
+  ],
+  "steps": [
+    {
+      "cmd": "settings.get",
+      "args": {
+        "key": "audioengine/audiodev"
+      },
+      "note": "measured ok on the frozen binary"
+    },
+    {
+      "cmd": "telemetry.status",
+      "expect": {
+        "enabled": false
+      },
+      "note": "measured ok on the frozen binary"
+    },
+    {
+      "cmd": "audio.device_list",
+      "expect": {
+        "count": 7
+      },
+      "expect_len": {
+        "devices": 7
+      },
+      "note": "measured ok on the frozen binary"
+    },
+    {
+      "cmd": "audio.device_set",
+      "args": {
+        "device": "Dummy (no sound output)"
+      },
+      "expect": {
+        "applied": "next_start"
+      },
+      "note": "measured ok on the frozen binary"
+    },
+    {
+      "cmd": "audio.device_list",
+      "expect": {
+        "count": 7
+      },
+      "expect_len": {
+        "devices": 7
+      },
+      "note": "measured ok on the frozen binary"
+    },
+    {
+      "cmd": "settings.get",
+      "args": {
+        "key": "audioengine/audiodev"
+      },
+      "note": "measured ok on the frozen binary"
+    }
+  ],
+  "teardown": "control.quit",
+  "notes": "T3 pilot pack, generated from the round-2 measurement of the frozen pilot binary sha256 2eed203147678d3eec7e774d67b555eed95f01bcc96124b423c7c65aa53a7cf6, Zene Studio 0.2.1-alpha.612+a039d26 (probe/measure2.json): every expectation and every refusal kind in this file is a reply that binary actually gave; ids are bound from the replies that created them. The declared 180 s budget on render-class steps is the class bound (IR-15), recorded live in the run ledger."
+}
