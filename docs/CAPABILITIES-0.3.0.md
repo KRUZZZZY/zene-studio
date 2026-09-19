@@ -731,6 +731,17 @@ branch left those refreshes out of its commits deliberately (they are maintenanc
 change), so re-running them here leaves `tests/{complexity,file-length}-baseline.tsv` modified in the
 working tree.
 
+**Cross-check, with its residual.** The A16 figure this document headlines is the **ratcheted** one:
+the registered `ReversibilityContractTest` compares the published block against a histogram computed
+from the live table on every run, and `tools/dawproject-proof.sh` (part 2) is the probe that re-takes
+it. A source-level re-derivation with the `grep` two rows above — over the same commit — counts 346
+declared rows (312 ungated + 17 `session.*` + 2 `telemetry.*` + 8 `wasm.*` + 7 `stem.*`), i.e. 339 for
+this build's configuration, **one row short of the published 340**; the extraction also reads 157
+`true_inverse` against the published 158. The likely cause is a row declared in a form the one-line
+`grep` does not match (the anti-drift test's own comparison is the authority, and it is the one that
+fails on a mismatch); the residual is recorded here rather than rounded away, and the live dump of
+Appendix A (per-id, from the binary) plus `tools/dawproject-proof.sh` settle it.
+
 ### B.3 The measurement hygiene this document obeyed
 
 One instance at a time, ≤2 in total; the instance is started through `tests/control_socket_harness.py`
