@@ -521,3 +521,232 @@ can only say so; re-pointing it is a deployment act.
 (`PIPE_REJECT_REMOTE_CLIENTS`, local-only by construction, one thread per connection so a blocking pipe
 call never stalls the accept loop) — `src/core/ControlServerWin32.cpp`; proof `ControlNamedPipeSmoke`,
 registered and CI-only (§2.2).
+---
+
+## 4. Verification — how the claims above are proven
+
+**The rule.** Every capability in §3 is in this release only because all four parts of the scope
+contract hold it there (§1). The four-part contract is also the verification rule: an engine with no
+command group, a command group with no proof, or a proof that is not registered, is not a claim this
+document may make.
+
+**4.1 The registered proofs.** The suite this build registers holds **214 tests** (`ctest -N`, universe
+`zene-030/build/tests`). Three classes do the proving:
+
+- **Engine QTests** under `tests/src/**`, registered in `tests/CMakeLists.txt` — the arithmetic and the
+  persistence (`TempoMapTest`, `TakeLaneCompTest`, `NoteRandomTest`, `WarpMarkersTest`,
+  `SampleAccurateAutomationTest`, …). A test source that is registered nowhere fails
+  `tests/unregistered-tests-gate.sh`, so "no test" cannot hide as "test not run".
+- **Control-surface transcript tests** under `tests/control-*.py`, registered as ctests and run against
+  the **real binary** through `tests/control_socket_harness.py`: one instance, `--control-socket`, offscreen,
+  bounded waits (a hang is a failure, never a wait), `control.quit` shutdown, explicit-PID reaping.
+  These are the proofs for every "drivable through the socket" claim in §3 — e.g. `ControlPunchTranscript`,
+  `ControlRecordingRecovery`, `ControlUndoStructuralTranscript`, `ControlMeterCommands`,
+  `ControlRetroCapture`, `ControlNamedPipeSmoke`, `ControlCommandsSnapshot`.
+- **Suite-level checks** registered beside them: the A16 contract, the honesty guard, the agent-surface
+  gate, the drift ratchets (below).
+
+**4.2 The seven-platform CI.** `.github/workflows/build.yml` — six job definitions, seven platform
+builds, a `release-gate` job that requires the matrix green and that "this commit's own push runs" are
+green. **Five platform builds run the registered tests** (linux-x86_64, linux-arm64, macos-x86_64,
+macos-arm64, msvc-x64); **mingw64 and windows-arm64 build and package only**, which is itself stated in
+the workflow (`mingw64`'s step comment: “this job builds a Windows target and runs no tests”). Every
+package job runs the release-honesty guard and the release version guard before packaging. Runs with
+recorded verdicts in this tree: **#6** (four reds fixed: namespace allowlist + Gate 13, a Qt5 include
+leak, an MSVC empty-boundary skip, a telemetry timing bound), **#7** (whose MSVC red produced the
+root-cause fix: POSIX `shlex` was eating Windows object paths), and the macOS evidence runs
+`35126160372` and `35212797698`. **Run #9 — the current tip's run — was in flight while this document
+was written**; its verdict is deliberately not part of this document, and the two sibling lanes working
+this release (`030/wvbump` reading the run, `030/wdocs`) are separate from the measurement here.
+
+**4.3 The A16 contract ratchet.** The contract table is data (`src/core/ControlReversibilityTable*.cpp`),
+and the registered `ReversibilityContractTest` **reads the histogram block in
+`docs/RELEASE-NOTES-v0.3.0-alpha.md`** and compares it against a histogram computed from the live table
+on every run — so a row added, removed or re-classified anywhere fails the ctest until the published
+figure is re-taken with `bash tools/dawproject-proof.sh` (part 2 is the probe; its own output line is
+the figure: `MEASURED rows=340 true_inverse=158 snapshot=32 irreversible=13 not_mutating=137`, with
+`DECLARED rows=340 entries=340 duplicates=0` on the same run). Two properties come with the derivation:
+**a command declared twice fails by name** (the four raw literal blocks are compared against the keyed
+map — it found and retired 24 cross-file duplicates in `ControlReversibilityTableLive.cpp`), and
+**every row is in exactly one class** (the four counts must sum to the row total).
+
+**4.4 Honesty and documentation gates.** A published claim must be true of the binary the release
+ships, and that is mechanised:
+
+- `tests/release-honesty-gate.sh` reads `tests/advertised-features.tsv` — six rows (VST3 effects, VST3
+  instrument, CLAP effects, Session View, the WASM sandbox, stem separation), each bound to a `WANT_*`
+  option the binary reports in its own build-options dump and, where applicable, a plugin module in the
+  build tree — and fails a build whose dump contradicts the documented claim, in either direction
+  (a documented-absent feature turned ON fails too).
+- `tests/release-version-gate.sh` checks the version, the documents and the tag agree; it runs in every
+  package job. The version-bump lane added a self-test that derives its injection point (card 690).
+- The **agent-surface gate** (SPEC A15) compares every user-visible menu/toolbar action against the
+  command ids and ratchets the gap through `tests/agent-surface-baseline.txt` (one way only: a line is
+  deleted when its action gets an id). The tree's own build records the latest run in
+  `build/tests/agent-surface-report.json` (written 2026-09-17): **340 commands swept, 48 actions
+  reflected, 42 grandfathered baseline entries, 0 stale, 0 problems.**
+- **Drift ratchets** on the fork sources (`tests/{complexity,file-length,duplication}-gate.sh` with
+  their per-scope baselines and `--reanchor` requiring a written reason), a real coverage entry floor
+  (`tests/coverage-gate.sh`, 50 % for new files, with a named exemption home), and **Gate 9**
+  (`tests/fork-sources-gate.sh`), which requires every tracked source to be in a scope manifest AND runs
+  the manifests' own regeneration recipes (`tests/all-sources-reproduce.sh`) so a manifest cannot drift
+  from its own recipe. This lane's changes pass all of the above; exit codes in Appendix B.
+
+**4.5 The crash-testing programme's first tooling.** The crash surface is drivable and observable:
+`crash.list_reports`, `crash.enable`/`crash.disable`, `crash.acknowledge_report`,
+`crash.discard_report`, `crash.upload_report`, over the offline local crash reporter
+(`src/core/CrashReporter.cpp`, `CrashReporterWindows.cpp`) with `ControlCrashReporter` and
+`CrashReporterArmTest` as its registered proofs. The socket harness itself carries the frozen-instance
+diagnosis that makes a hang a *named* failure — liveness, the kernel's wait channel, a debugger
+backtrace (`tests/control_instance_diagnosis.py`) — and the safety-net harness records the arm/pair
+matrix. Two further programmes are in this tree and registered: the **golden-audio integration
+programme** (`tests/control-golden-audio.py`, `tests/golden_audio_lib.py`; headline: 0 LSB over 10
+pairs) and the **RT-safety sweep** (`tests/rt-safety-sweep.py`). **Bound:** there is **no measured
+crash-free rate** — the reporter is new, so the number does not exist yet, and that is the recorded
+statement rather than a placeholder (`docs/KNOWN-LIMITATIONS.md` §Where the quality bars are not met yet).
+
+---
+
+## 5. Limits and exclusions
+
+This section condenses `docs/KNOWN-LIMITATIONS.md` — the honest bounds page, which remains the
+authority — and `docs/FEATURE-LIST-0.3.0.md` §Out of scope. Nothing here contradicts that page; where a
+detail matters, follow the pointer.
+
+**5.1 Before you install.** This is an alpha; parts are unfinished and crashes are possible; keep
+backups and expect that a file saved here may not open in a later build, an older build, or in LMMS.
+The builds are **unsigned** (SmartScreen / Gatekeeper will warn). Packages come from the release page
+and nowhere else, and only for platforms whose build job is green. Every save writes a `.bak` beside
+your project.
+
+**5.2 The interface is deliberately minimal — the release's own promise.** Everything in §3 that is not
+listed here has **no interface**: the Session View grid and clip launcher, racks and their macros/zones,
+VCA/edit groups, folder tracks and visibility sets, clip fade/crossfade/gain gestures, take lanes and
+comping, the modulation layer, the modulation editor, the undo-history panel and its caps, the plugin
+scan-cache/quarantine UI (no user-facing scanning interface worth the name), automation modes, the chord
+track, scale-aware root highlighting (deferred to the interface phase), the revision timeline, stable-id
+inspection, the WASM sandbox, stem export controls, and the browser upgrade. The socket and the MCP
+bridge are the product surface in this release.
+
+**5.3 Whole features that are absent (deliberate exclusions, not gaps).** Notation/score,
+surround/immersive, expression maps/articulation switching, EuCon/HUI, video/timecode/DNx,
+AAF/OMF/MXF, cloud collaboration, AAX and AU, Avid marketplaces; modern stock devices, factory content
+and a design system; auto-mastering waves 2–3 (the reference-matching arm and the learned ranker); the
+patcher GUI. Absent for this release but not excluded: input monitoring; a measured crash-free rate;
+sample accuracy outside the opt-in per-clip ramps.
+
+**5.4 Where the build is real but narrower than it sounds.**
+- **VST3 / CLAP instruments:** one instrument per track, MIDI in to audio out; the plugin's own editor
+  does not open (a generated knob grid is what opens); no multi-out, no presets, no instrument latency
+  in PDC; no out-of-process isolation for the new families; CLAP instruments are new and have no
+  third-party witness.
+- **Session view:** no clip launcher grid, and **a launched session slot does not render audio** — a
+  user cannot see or hear it; an agent can drive all of it (`tests/advertised-features.tsv`,
+  `session-view` row's own text).
+- **WASM sandbox shipping status:** the release binaries have `WANT_WASM=OFF` because no CI job
+  provisions the wasmtime C API; the `wasm.*` group exists and is drivable only in a build that has it
+  (this document's tree build does). The honesty row requires the absence and stays true until the C API
+  is provisioned in CI.
+- **Windows:** mingw64 and windows-arm64 are **build-only** (no ctest), so the Windows halves of CLAP
+  loading and the named-pipe control transport are **CI-only evidence** — no MinGW or MSVC toolchain
+  exists on the box this document was measured on, and no Windows binary was run here.
+- **Racks/zones:** the zone half stores key/velocity ranges but does not route; chain switching is not
+  crossfaded. **Comping:** the composite is a view with no separate playback path. **VCA edit groups:**
+  exactly one media edit kind is propagated by the phase lock.
+- **Undo bounds** (count cap, byte budget) are session state, not project state; neither survives a
+  restart. **Coalescing** covers the five declared commands only.
+- **Automation** outside the opt-in ramps is evaluated once per tick; **modulation** is applied once per
+  audio block (~11 ms at the default block size).
+
+**5.5 Quality bars not met yet (recorded, not exempted).** Renders are reproducible for 7 of the 9
+projects of the determinism sweep; `Root84` and `StrictProduction` are not, with the cause inside their
+instruments. Measured test coverage at the last capture: **87.21 %** of the instrumented lines
+(13 770/15 790 over the 165 fork-scope files that produced a record), and the coverage gate **fails** on
+that build with **15 files below its 50 % entry floor** — recorded in the limitations page with the
+plan, deliberately not exempted at the tag. No hardware was attached for the controller, MIDI
+hotplug, clock, audio-interface or stem-separation proofs; those halves are measured in software or
+not at all, as each section of the limitations page records.
+
+**5.6 Telemetry and privacy.** Telemetry is opt-in, off by default, previewed byte-for-byte before
+consent, built from a **closed allowlist of 24 fields** and cannot carry a project name, path, plugin
+name, email, IP address or installation ID; `ZENE_TELEMETRY=OFF` compiles the client out and drops the
+registry by exactly `telemetry.consent` and `telemetry.status` (the A16 histogram's telemetry delta of 2
+rows). `docs/TELEMETRY-V1.md`, `docs/KNOWN-LIMITATIONS.md` §Telemetry and privacy.
+
+---
+
+## Appendix A — the full command catalogue
+
+> **Status: not generated in this draft.** The catalogue is produced by
+> `scripts/capabilities-dump.py` (committed on this branch, registered in `tests/fork-sources.txt`),
+> which boots ONE instance of the built binary through `tests/control_socket_harness.py` and prints, for
+> every command id in the live registry, its group, whether it mutates and its one-line description —
+> plus a provenance block (binary, sha256, `control.version`, the `control.transactions` caps). The
+> generation run was **denied by the approval gate in the writing session**, so this section is a
+> labelled gap rather than a copy: regenerate it with the command in Appendix B, §B.4, and replace this
+> block with the script's output. Nothing else in this document depends on the missing block: §3's ids
+> were read from the registry sources at this commit and the headline counts from the ratcheted A16
+> table.
+
+## Appendix B — measured matrix, and how to re-run every measurement
+
+### B.1 The platform and test matrix (measured from `.github/workflows/build.yml` + `ctest -N`)
+
+| job (workflow) | runner | platform builds | runs the 214 registered tests | package |
+| --- | --- | --- | --- | --- |
+| `linux-x86_64` | ubuntu-22.04 | linux x86_64 | **yes** (`ctest -j2`) | AppImage |
+| `linux-arm64` | ubuntu-24.04-arm | linux aarch64 | **yes** (`ctest -j2`) | AppImage |
+| `macos` (2-arch matrix) | macos-15-intel, macos-15 | macOS x86_64 + arm64 | **yes** (`ctest -j3`) | `.dmg` |
+| `mingw64` | ubuntu-latest | windows x64 (cross) | no (build-only) | `.exe` (NSIS) |
+| `msvc-x64` | windows-2022 | windows x64 (native) | **yes** | `.exe` (NSIS) |
+| `windows-arm64` | windows-11-arm | windows arm64 | no (build-only) | `.exe` (NSIS) |
+| `release-gate` | ubuntu-latest | — | requires the matrix green + its own push runs green | — |
+
+Per-job options of record: `-DWANT_VST3=ON -DWANT_CLAP=ON` on every platform job;
+`WANT_VST3_TEST_INSTRUMENT=ON` on linux-x86_64 only; `-DWANT_QT6=ON` on msvc-x64 only;
+`WANT_SESSION_VIEW` defaults ON; no job provisions the wasmtime C API (`WANT_WASM` degrades to OFF in
+CI), no job passes `WANT_STEM_SPLIT`.
+
+### B.2 The numbers quoted in this document, and the command that measures each
+
+| claim | value | command (run from the worktree root unless stated) |
+| --- | --- | --- |
+| binary under test | sha256 `ab3f9b32…cb6fb92` | `sha256sum ../build/zene` |
+| its version string | `0.2.1-alpha.626+b89d10a` | `LD_LIBRARY_PATH=../third_party/wasmtime/lib ../build/zene --version` |
+| registered tests | 214 | `ctest -N` in `../build/tests` |
+| A16 histogram (340 / 158 / 32 / 13 / 137) | ratcheted by ctest | `bash tools/dawproject-proof.sh` (part 2 prints `MEASURED rows=…`) |
+| command ids / groups | 340 ids, 53 id prefixes (this config); 332 in release builds | A16 table + Appendix A's live dump |
+| A16 rows by id prefix | 54 declared prefixes (53 with `stem.*` compiled out, 52 in release builds) | `grep -rhoE '(RC\|R)\("[^"]+"' src/core/ControlReversibilityTable*.cpp \| sed 's/.*("//; s/"$//' \| cut -d. -f1 \| sort -u` |
+| agent-surface gate | 340 swept, 48 reflected, 42 baselined, 0 problems | `python3 tests/agent-surface-gate.py ../build/zene`; latest report `../build/tests/agent-surface-report.json` |
+| fork-sources recipe | REPRODUCES | run the `# Verify it` block in `tests/fork-sources.txt` (exit 0) |
+| scope manifests | 663 fork-NEW, 1104 whole-tree, 40 tooling, 0 stale | `bash tests/fork-sources-gate.sh` (exit 0) |
+| upstream-divergence ledger | 422 changed paths declared | `bash tests/no-upstream-regression-gate.sh` (exit 0) |
+| whole-tree manifest reproduces | REPRODUCES | `bash tests/all-sources-reproduce.sh` (exit 0) |
+| file-length ratchet (fork) | PASS | `bash tests/file-length-gate.sh --scope fork` (exit 0) |
+| complexity ratchet (fork) | PASS — 6166 functions, 72 over CCN 10, all grandfathered | `bash tests/complexity-gate.sh --scope fork` (exit 0) |
+| duplication ratchet | PASS — 0.52 % (budget 5 %) | `bash tests/duplication-gate.sh` (exit 0) |
+
+Note on the two ratchet runs: each refreshes its own baseline file when the tree has improved; this
+branch left those refreshes out of its commits deliberately (they are maintenance, not this lane's
+change), so re-running them here leaves `tests/{complexity,file-length}-baseline.tsv` modified in the
+working tree.
+
+### B.3 The measurement hygiene this document obeyed
+
+One instance at a time, ≤2 in total; the instance is started through `tests/control_socket_harness.py`
+(offscreen, scratch `HOME`/`XDG_*`), closed with `control.quit`, and reaped by explicit PID — never a
+pattern kill; no other lane's worktree was touched.
+
+### B.4 Appendix A: regenerate the catalogue
+
+```bash
+# one instance, through the tree's harness; prints the full markdown catalogue to stdout
+python3 scripts/capabilities-dump.py ../build/zene > /tmp/capabilities-appendix-a.md
+# the documented environment the dump uses (the harness derives the same path itself):
+export LD_LIBRARY_PATH=$PWD/../third_party/wasmtime/lib
+```
+
+The script's provenance block records the binary path, its sha256, `control.version`, the surface count
+and the `control.transactions` caps; its body is one section per group with a
+`| command | mutating | description |` table per group — generated, never hand-typed, so Appendix A
+cannot drift from the binary the release ships.
