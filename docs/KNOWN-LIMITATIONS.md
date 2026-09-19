@@ -896,7 +896,11 @@ that is this page's fault — report it and it gets added.
   the `telemetry.*` commands are absent from the registry**. Measured both ways on this release:
   `-DZENE_TELEMETRY=OFF -DUSE_WERROR=ON` compiles and the suite passes 86/86, and against the ON build the
   `nm` telemetry symbols read **99 → 0**, the debug-stripped `strings` count **156 → 0**, and the registry
-  **74 → 72 commands**, the diff being exactly `telemetry.consent` and `telemetry.status`. (An unstripped
+  **74 → 72 commands**, the diff being exactly `telemetry.consent` and `telemetry.status`. *Corrected
+  2026-09-19 (task 691): the diff is still exactly those two ids — re-measured off the built binary, the
+  `telemetry` group holds `telemetry.consent` and `telemetry.status` and nothing else — but the base is this
+  tip's registry, not 74: `ZENE_TELEMETRY=OFF` takes the reference configuration's **340 commands to 338** and
+  the release configuration's **332 to 330**.* (An unstripped
   binary's only `telemetry` string hits are this build directory's own absolute path in the DWARF strings,
   which stripping removes — the raw count is not zero and is not claimed to be.) Verified in the tree:
   `docs/TELEMETRY-KILL-SWITCH.md` is the repair's report — both configurations measured, the ON object
