@@ -54,7 +54,7 @@ that is this page's fault — report it and it gets added.
   upload (`:1191`, `ctest-log-msvc-x64`) runs on failure only and is commented as deliberately exempt
   "because this is evidence, not a package". The workflow's triggers remain `push`, `pull_request` and
   `workflow_dispatch` — a manual dispatch also uploads nothing. (Corrigendum from
-  `docs/CAPABILITIES-0.3.0-VERIFICATION.txt` §4.1: the previous text quoted the retired condition and
+  `docs/CAPABILITIES-0.3.0-VERIFICATION.md` §4.1: the previous text quoted the retired condition and
   stale line numbers.)
   *This bullet is the one piece of an incoming 0.1.0-era rewrite of this page that had no counterpart here;
   everything else in that edit is either already carried above in a newer form or deliberately excluded — see

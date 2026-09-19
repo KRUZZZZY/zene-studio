@@ -24,7 +24,7 @@ is the lane-by-lane record this document condenses; `docs/FEATURE-LIST-0.3.0.md`
 `docs/KNOWN-LIMITATIONS.md` is the honest bounds page, and §5 of this document condenses it with
 pointers rather than repeating it. **Independently verified 2026-09-19** — an independent pass re-measured
 every headline number against the same binary (all match) and found six errata, each applied here; the A16
-one-row residual is settled (`chord.set`). Record: `docs/CAPABILITIES-0.3.0-VERIFICATION.txt`. Appendix A was captured live
+one-row residual is settled (`chord.set`). Record: `docs/CAPABILITIES-0.3.0-VERIFICATION.md`. Appendix A was captured live
 from the merged tip's binary (`d408e35`, `0.2.1-alpha.643+d408e35`, surface 340 ids / 53 groups) on
 2026-09-19; its own provenance block is inside the catalogue.
 
@@ -1360,7 +1360,7 @@ this build's configuration, and 157 `true_inverse` against the published 158. **
 verification, 2026-09-19):** the one missed row is `chord.set`, declared with the `RCO` macro in
 `src/core/ControlReversibilityTableChord.cpp:88` — a form the one-line `(RC|R)\("` pattern above does
 not match; 339 + 1 = 340 and 157 + 1 = 158, so the published figure is correct. The anti-drift test's own
-comparison remains the authority; see `docs/CAPABILITIES-0.3.0-VERIFICATION.txt`.
+comparison remains the authority; see `docs/CAPABILITIES-0.3.0-VERIFICATION.md`.
 
 ### B.3 The measurement hygiene this document obeyed
 
