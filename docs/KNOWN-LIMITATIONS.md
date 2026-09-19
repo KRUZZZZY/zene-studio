@@ -137,8 +137,8 @@ that is this page's fault — report it and it gets added.
 ## What this alpha cannot do at all
 
 - **CLAP hosting is in the release on every platform — this bullet said the opposite and is corrected.**
-  *Corrected 2026-09-19 (task 691): re-measured against `.github/workflows/build.yml` and this tree.* All seven
-  release jobs pass `-DWANT_CLAP=ON`, the loader's Windows half is `LoadLibraryW` / `GetProcAddress` /
+  *Corrected 2026-09-19 (task 691): re-measured against `.github/workflows/build.yml` and this tree.* All six
+  build jobs (seven platform builds) pass `-DWANT_CLAP=ON`, the loader's Windows half is `LoadLibraryW` / `GetProcAddress` /
   `FreeLibrary` instead of `dlopen`/`dlsym`, and `tests/advertised-features.tsv`'s `clap-hosting` row is `*`
   again (every platform), which `tests/release-honesty-gate.sh` asserts in both directions. The 0.2.1 text
   (*"No CLAP hosting on Windows … the Windows builds are configured with `-DWANT_CLAP=OFF`"*) was true of that

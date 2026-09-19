@@ -168,7 +168,11 @@ not rounded up.
   agent to select or persist a mode — `setAutomationMode` is called **only** inside that test, the mode is
   serialised nowhere, and `automation.mode_set` registers a full schema then **refuses every call**, citing "the
   shipped alpha has no automation modes" and a `docs/KNOWN-LIMITATIONS.md` line that is now false. The refusal is
-  honest; its reason is stale. Ruling and method: the correction file, §8.
+  honest; its reason is stale. Ruling and method: the correction file, §8. **Superseded at this tip
+  (2026-09-19, task 691):** `automation.mode_set` answers — measured on the built binary it takes a parameter
+  from `read` to `touch` and `automation.get_state` reports the mode back per parameter — and
+  `automation.record_mode_set` sets the clip record flag. What is still true is the persisting half: the mode
+  is runtime state, serialised nowhere (`docs/KNOWN-LIMITATIONS.md` §"Automation is not sample-accurate").
 - **LUFS / stem export** — *Exists:* the offline meter and render/export report; the `exportstems` CLI. *Missing:* a
   live GUI meter (deliberately out of scope, `docs/LUFS-METER.md`) and any stem-export dialog control (`grep
   StemExport src/gui` returns nothing).
@@ -263,7 +267,8 @@ not rounded up.
   there on every push. The other six jobs do not run them.
 - **CLAP hosting; Qt6** — CLAP is in the release on Linux and macOS and **OFF on the three Windows jobs**
   (`ClapHost.cpp` needs `dlfcn.h`); the manifest records it per platform and the honesty guard asserts the absence
-  on Windows. **Superseded at this tip (2026-09-19):** all seven release jobs pass `-DWANT_CLAP=ON`, the loader's
+  on Windows. **Superseded at this tip (2026-09-19):** all six build jobs (seven platform builds) pass
+ `-DWANT_CLAP=ON`, the loader's
   Windows half is `LoadLibraryW`/`GetProcAddress`/`FreeLibrary`, and `tests/advertised-features.tsv`'s
   `clap-hosting` row is `*` (every platform) again. Qt6 is built only by the msvc job (`-DWANT_QT6=ON` in
   `build.yml`); the other six use the default (Qt5).

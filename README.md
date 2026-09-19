@@ -20,8 +20,9 @@ release is published; until then the previous release,
 download (the `v0.2.0-alpha` tag's build failed on every platform, and 0.2.1-alpha supersedes it, so
 there is no 0.2.0-alpha download).
 
-The seven release build jobs cover Linux (x86_64 and aarch64, AppImage), macOS (Apple Silicon and
-Intel, `.dmg`) and Windows (x64 — two toolchains — and Arm64); a platform has a package only when its
+The six release build jobs cover seven platform builds — Linux (x86_64 and aarch64, AppImage), macOS
+(Apple Silicon and Intel, `.dmg` — one job, a matrix over two architectures) and Windows (x64 — two
+toolchains — and Arm64); a platform has a package only when its
 job is green, and packages come from the release page and nowhere else. Each published file's SHA-256
 digest is generated from the release itself by the publish step (`docs/RELEASING.md`), never typed
 into a file.
@@ -69,8 +70,8 @@ in-tree regression suites sit behind the `WANT_VST3_TEST_INSTRUMENT` option (def
 `linux-x86_64` release job passes it `ON`, so they run there on every push, and the other six jobs
 keep the default.
 
-**CLAP hosting.** CLAP effect hosting is in the release on **every platform** — all seven release
-jobs pass `-DWANT_CLAP=ON`, and the loader's Windows half is `LoadLibraryW`/`GetProcAddress` rather
+**CLAP hosting.** CLAP effect hosting is in the release on **every platform** — all six build jobs
+(seven platform builds) pass `-DWANT_CLAP=ON`, and the loader's Windows half is `LoadLibraryW`/`GetProcAddress` rather
 than `dlopen`. A CLAP generator can also be loaded onto an instrument track
 (`plugins/ClapInstrument`), drivable through the socket: like the VST3 instrument it has no editor
 window of its own, and the notes a user plays reach it through the track's MIDI path.
@@ -147,11 +148,13 @@ Not in this build, and not claimed by it:
 
 ## Build status
 
-`build.yml` compiles the tree on seven jobs: Linux x86_64 and aarch64, macOS Intel and Apple Silicon,
-and Windows (msvc-x64, mingw64, arm64). `quality-gates` runs its **static** gates (3, 4, 6, 7, 8 and
-9, with the tools-scope steps beside them) on every push and pull request; its two build-backed jobs
-(unit tests, and coverage) stay `workflow_dispatch`-only, so a green `quality-gates` check covers the
-static gates only — and proves nothing about whether the tree compiles. `build.yml` is what compiles
+`build.yml` compiles the tree on six jobs covering seven platform builds: Linux x86_64 and aarch64,
+macOS Intel and Apple Silicon (one job, a matrix over two architectures), and Windows (msvc-x64,
+mingw64, arm64). `quality-gates` runs its **static** gates (3, 4, 6, 7, 8 and 9, with the tools-scope
+steps beside them) on every push and pull request; four of its jobs are `workflow_dispatch`-only
+(unit tests, coverage, the MCP bridge's end-to-end suite and the VST3 instrument fixture), so a green
+`quality-gates` check covers the static gates and the bridge's own Python unit tests — and proves
+nothing about whether the tree compiles. `build.yml` is what compiles
 the tree.
 
 This file does not record the live state of any CI run. [`docs/STATUS.md`](docs/STATUS.md) is the
