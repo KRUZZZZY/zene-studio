@@ -850,8 +850,13 @@ than one plugin's feature, and the part that makes it reachable at all:
 ## The A16 contract table, and its histogram
 
 **The table holds 340 rows - 158 `true_inverse`, 32 `snapshot`, 13 `irreversible`, 137 `not_mutating` -
-and this page states that figure ONCE, for the configuration the release ships** (telemetry client in,
-wasmtime sandbox in, session data layer in, offline stem engine out). What each class means, and why
+and this page states that figure ONCE, for the REFERENCE configuration it is measured in** (telemetry
+client in, wasmtime sandbox in, session data layer in, offline stem engine out; *corrected 2026-09-19,
+task 691 — this read "the configuration the release ships", which is not the same thing: the wasmtime C
+API is on no release job's find path, so the seven platform builds ship the sandbox OFF and take the
+`wasm.load` row below off the figure, while the Session View data layer **is** in them — `CMakeLists.txt`
+defaults it ON — and the telemetry client is in by default. Measured on `zene-030/build`, the reference
+configuration: `WANT_WASM='ON'`, `WANT_SESSION_VIEW='ON'`, eight `wasm.*` ids registered.*). What each class means, and why
 each row is in it, is `docs/A16-REVERSIBILITY.md` and the rows' own reasons.
 
 It was MEASURED, class split and all, by
@@ -1134,7 +1139,10 @@ compares the data chunk against a base-commit binary or a recorded hash.
   chain presets together): **185 ids registered, 185 exposed live, 185 exposed offline** (187 tools with the
   two bridge-owned ones), **0 missing and 0 extra** in both directions in all three modes — live, empty state
   directory, and with the stale cache planted and passed over. The 164 the figure read before this train was
-  the freeze/groove/MCP/punch tip's own measurement.
+  the freeze/groove/MCP/punch tip's own measurement. **That figure is that train's, not this release's:
+  re-taken at the release tip by the same test on 2026-09-19 (task 691) it reads 340 ids registered, 340
+  exposed live, 332 exposed offline (342 / 334 tools with the two bridge-owned ones), 0 missing and 0 extra
+  in all three modes** — the surface grew by every group merged after this train.
   **The five lanes of this train add 21 ids to that figure:** folder tracks (10:
   `track.set_folder`, `track.set_routing`, `track.folder_set_collapsed`, `track.set_pinned`,
   `track.folder_get_state` and the four `track.visibility_set_*` verbs), retrospective MIDI capture (3:
@@ -1147,7 +1155,10 @@ compares the data chunk against a base-commit binary or a recorded hash.
   commit on `release/0.3.0`) and `ZENE_CONTROL_BINARY` (so `binary_sha256` names the exact executable that
   answered); a default invocation records `lane` = `tools/zene-pa-agentctl`, a path in no worktree, with
   `lane_head` null — which is what one lane's committed snapshot recorded and what this train repairs. Like
-  every figure in this section it is a measurement of ONE tip; this one is the tip it ships in.
+  every figure in this section it is a measurement of ONE tip; *the sentence this line used to end with —
+  "this one is the tip it ships in" — was true when written and is not now: the committed snapshot was
+  regenerated on 2026-09-16 from a no-wasmtime build (`332` ids, `captured_at 2026-09-16T14:54:53Z`) and the
+  release tip registers `340` (2026-09-19, task 691).*
 - **UI absence — one line:** none of this is in the interface; the tool list exists only through the MCP
   bridge over a control socket. **And the limit, stated plainly:** a Hermes session reads the bridge from the
   registration in `~/.hermes/config.yaml`, which points at a scratch copy outside this repository; until that
@@ -2328,11 +2339,17 @@ PDC, automation clip, controller or settings object, which is what the audit mea
   arguments each command's own schema requires filled from the instance's own state through further MCP calls
   (`track.list`/`track.add`, `mixer.get_state`/`mixer.add_channel`, `arrangement.get_state`/`clip.add`).
   Measured against a build of the integration tip: **265 ids across 43 groups reachable live** (267 tools with
-  the two bridge-owned ones) against the snapshot's **144 ids across 27 groups**, with nine of the ten groups
+  the two bridge-owned ones) against the snapshot's **144 ids across 27 groups** — **re-taken at the release tip,
+  2026-09-19 (task 691): 340 ids across 53 groups live (342 tools with the two bridge-owned ones) against the
+  committed snapshot's 332 ids across 52 groups**, `tests/control-commands-snapshot.py <build>/zene
+  --compiled-in wasm.` reporting 0 missing and 0 extra in all three modes — with nine of the ten groups
   driven end to end (`browser.query`, `comp.lane_list`, `export.get_settings`, `link.get_state`,
   `modulator.get_state`, `rack.get_state`, `session.get_state`, `telemetry.status`, `warp.list`). `wasm.` is
   excused by a `--compiled-out` flag checked in **both** directions (a flag describing a group the binary
-  *does* register is a failure), because no configuration on this machine compiles the wasmtime sandbox in;
+  *does* register is a failure), and it is passed only where the configuration degrades the sandbox to OFF
+  (`tests/CMakeLists.txt` passes it when `WANT_WASM` is off — *corrected 2026-09-19 (task 691): the "no
+  configuration on this machine compiles the wasmtime sandbox in" this line read is no longer true;
+  `zene-030/build` is `WANT_WASM='ON'` and registers all eight `wasm.*` ids*);
   a wasm-enabled build receives no flag and must drive the group against the binary, and the bridge's own
   half — a declared group becomes tools and forwards verbatim — is
   `tools/mcp-zene-control/tests/test_declared_surface.py` (3 tests, stand-in socket, ids read from
@@ -2765,8 +2782,11 @@ precision inside the block.
   `grep -rniI 'lastLoadFailure|ClapLoader|ClapHost|loader::Code' src/gui/` returns 0 hits.
 - **What this does NOT have, stated rather than implied:** no third-party CLAP plug-in has been loaded on
   Windows (the only witness is our own MIT fixture), no plug-in editor (unchanged — the parameters surface as
-  the generated grid, see the 0.2.1 limitations page), no CLAP instrument hosting, and no local execution of
-  the Windows half at all.
+  the generated grid, see the limitations page), and no local execution of the Windows half at all.
+  *Corrected 2026-09-19 (task 691): this list also said "no CLAP instrument hosting" — true on the day it was
+  written and false the next day, when feature row 79 added `plugins/ClapInstrument` (a CLAP generator on an
+  instrument track, socket-only, `plugin.host_notes`; see that section and
+  `docs/KNOWN-LIMITATIONS.md` §"Instrument hosting is new and narrow").*
 
 ## The golden-audio integration programme — added 2026-09-15
 
