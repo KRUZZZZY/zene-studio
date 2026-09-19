@@ -22,7 +22,9 @@ measured against the binary built from that same tip at `zene-030/build/zene`:
 has no interface, this document says so the way `docs/KNOWN-LIMITATIONS.md` does. `docs/RELEASE-NOTES-v0.3.0-alpha.md`
 is the lane-by-lane record this document condenses; `docs/FEATURE-LIST-0.3.0.md` is the row list;
 `docs/KNOWN-LIMITATIONS.md` is the honest bounds page, and §5 of this document condenses it with
-pointers rather than repeating it.
+pointers rather than repeating it. **Independently verified 2026-09-19** — an independent pass re-measured
+every headline number against the same binary (all match) and found six errata, each applied here; the A16
+one-row residual is settled (`chord.set`). Record: `docs/CAPABILITIES-0.3.0-VERIFICATION.txt`.
 
 **Three configurations, kept apart on purpose.** This program's numbers move with the build
 configuration, so each claim below names which one it describes:
@@ -83,8 +85,9 @@ release.
   fails, a duplicate row fails by name. `control.undo` / `control.redo` and the transaction record
   (`control.transactions`) are the agent-facing half — see §3.11.
 - **The registry sources at this commit:** 118 `src/core/ControlCommands*.cpp` translation units and
-  52 declared `cmd.group` literals plus the two groups (`chord`, `modulator`) whose group name is set
-  through their own constant. The authoritative per-id list is Appendix A (generated from a live
+  51 declared `cmd.group` literals in the command TUs — the 52nd, `wasm`, is declared in
+  `src/core/ControlWasmSupport.cpp` — plus the two groups (`chord`, `modulator`) whose group name is set
+  through their own constant (54 declared prefixes in all). The authoritative per-id list is Appendix A (generated from a live
   instance).
 
 **What is not in 0.3.0, in one line each** (detail in §5): no interface for almost any of it; no clip
@@ -95,7 +98,7 @@ this box.
 ## 2. How it runs
 
 **2.1 Platforms and packaging.** Packages come only from the release page; a build job uploads a package
-for a tag build or a manual dispatch, never for an ordinary push (`docs/KNOWN-LIMITATIONS.md`
+for a tag build only — an ordinary push and a manual dispatch both run the jobs but upload no package (`docs/KNOWN-LIMITATIONS.md`
 §Before you download records the six conditional `upload-artifact` steps). The seven platform builds:
 Linux x86_64 and aarch64 (AppImage), macOS Apple Silicon and Intel (`.dmg`), Windows x64 in two
 toolchains (MinGW cross-build and native MSVC) and Windows Arm64 (`README.md` §Download). Each
@@ -356,7 +359,8 @@ addressed by **stable `fx-<n>` ids** persisted in the project (slice 2, §3.12).
 
 **Hosting contract.** Plugin hosts process **exactly the frames they are asked for, in chunks**
 (`plugin.host_chunking`; `ControlChainPresetTest`, `HostChunking` rows, CODE-4), and the note path is
-explicit (`plugin.host_notes`). Every CLAP load failure is **typed** — eleven distinct failure codes
+explicit (`plugin.host_notes`). Every CLAP load failure is **typed** — ten distinct failure codes (an eleven-valued enum whose zero value
+means *no failure*)
 from `plugins/ClapEffect/ClapLoader.h` (`ClapLoaderErrorTest` drives four modules built to fail in
 exactly one way each).
 
@@ -389,9 +393,10 @@ plugin has been loaded on the Windows side; the WASM sandbox is absent from the 
 
 **Render.** `render.render` renders the current session to a file and returns its hash — and it takes a
 **time range**: `start_ticks` and `end_ticks`, both required together, with the range's validity
-enforced (`RenderJobQueueTest`, `ControlRenderCommands`). `render.stems` exports every unmuted track to
-its own file in an absolute directory, one stem per track (`StemExportTest`, `StemJobManagerTest`,
-`StemModelStoreTest`, `StemSplitPipelineTest`, `ControlStemExportVerb`).
+enforced (`RenderJobQueueTest`, `ControlRenderPresets`). `render.stems` exports every unmuted track to
+its own file in an absolute directory, one stem per track (`StemExportTest`, `ControlStemExportVerb`; the
+stem-*separation engine's* own tests compile only under `LMMS_HAVE_STEM_SPLIT`, which is OFF in this build
+and in every release build, and they test the engine, not this verb).
 
 **Export settings.** `export.get_settings` exposes the render/export settings including
 `loudness_report`; `export.set_dither` selects TPDF (triangular-PDF) dither, **off by default**;
@@ -472,7 +477,7 @@ not described**: a script that declares `--! zene-api 0.2` cannot run on a build
 additive change; every 0.1 script keeps running (`ScriptApiVersion.cpp`,
 `docs/LUA-COMPATIBILITY-POLICY.md`). **Bounds:** no console pane, no script editor and no GUI control
 that runs a script — the console is an output path only; channel pan, and the other deliberately
-withheld bindings, are listed one line each in `docs/LUA-API-STABILISATION.md` §5.
+withheld bindings, are listed one line each in `docs/LUA-API-STABILISATION.md` §8 (`Withheld, one line each`).
 
 ### 3.12 The agent surface
 
@@ -542,7 +547,9 @@ document may make.
   bounded waits (a hang is a failure, never a wait), `control.quit` shutdown, explicit-PID reaping.
   These are the proofs for every "drivable through the socket" claim in §3 — e.g. `ControlPunchTranscript`,
   `ControlRecordingRecovery`, `ControlUndoStructuralTranscript`, `ControlMeterCommands`,
-  `ControlRetroCapture`, `ControlNamedPipeSmoke`, `ControlCommandsSnapshot`.
+  `ControlRetroCapture`, `ControlCommandsSnapshot` — plus, on Windows only, `ControlNamedPipeSmoke`
+  (registered under `IF(WIN32 AND PYTHON3_EXECUTABLE)`, so it is CI-only evidence and not among this
+  build's 214).
 - **Suite-level checks** registered beside them: the A16 contract, the honesty guard, the agent-surface
   gate, the drift ratchets (below).
 
@@ -583,8 +590,9 @@ ships, and that is mechanised:
 - The **agent-surface gate** (SPEC A15) compares every user-visible menu/toolbar action against the
   command ids and ratchets the gap through `tests/agent-surface-baseline.txt` (one way only: a line is
   deleted when its action gets an id). The tree's own build records the latest run in
-  `build/tests/agent-surface-report.json` (written 2026-09-17): **340 commands swept, 48 actions
-  reflected, 42 grandfathered baseline entries, 0 stale, 0 problems.**
+  `build/tests/agent-surface-report.json` (written 2026-09-17): **340 commands, 339 swept, 1
+  allowlisted (`telemetry.consent`), 48 actions reflected, 42 grandfathered baseline entries, 0 stale, 0
+  problems.**
 - **Drift ratchets** on the fork sources (`tests/{complexity,file-length,duplication}-gate.sh` with
   their per-scope baselines and `--reanchor` requiring a written reason), a real coverage entry floor
   (`tests/coverage-gate.sh`, 50 % for new files, with a named exemption home), and **Gate 9**
@@ -654,7 +662,8 @@ sample accuracy outside the opt-in per-clip ramps.
   crossfaded. **Comping:** the composite is a view with no separate playback path. **VCA edit groups:**
   exactly one media edit kind is propagated by the phase lock.
 - **Undo bounds** (count cap, byte budget) are session state, not project state; neither survives a
-  restart. **Coalescing** covers the five declared commands only.
+  restart. **Coalescing** covers the six declared commands only (`chord.set`, `clip.move`, `clip.resize`,
+  `mixer.set_volume`, `plugin.param_set`, `rack.macro_set` — the live `control.undo_depth` list).
 - **Automation** outside the opt-in ramps is evaluated once per tick; **modulation** is applied once per
   audio block (~11 ms at the default block size).
 
@@ -717,7 +726,7 @@ CI), no job passes `WANT_STEM_SPLIT`.
 | A16 histogram (340 / 158 / 32 / 13 / 137) | ratcheted by ctest | `bash tools/dawproject-proof.sh` (part 2 prints `MEASURED rows=…`) |
 | command ids / groups | 340 ids, 53 id prefixes (this config); 332 in release builds | A16 table + Appendix A's live dump |
 | A16 rows by id prefix | 54 declared prefixes (53 with `stem.*` compiled out, 52 in release builds) | `grep -rhoE '(RC\|R)\("[^"]+"' src/core/ControlReversibilityTable*.cpp \| sed 's/.*("//; s/"$//' \| cut -d. -f1 \| sort -u` |
-| agent-surface gate | 340 swept, 48 reflected, 42 baselined, 0 problems | `python3 tests/agent-surface-gate.py ../build/zene`; latest report `../build/tests/agent-surface-report.json` |
+| agent-surface gate | 340 commands, 339 swept, 1 allowlisted, 48 reflected, 42 baselined, 0 problems | `python3 tests/agent-surface-gate.py ../build/zene tests/data/agent-control-fixture.mmp --check`; latest report `../build/tests/agent-surface-report.json` |
 | fork-sources recipe | REPRODUCES | run the `# Verify it` block in `tests/fork-sources.txt` (exit 0) |
 | scope manifests | 663 fork-NEW, 1104 whole-tree, 40 tooling, 0 stale | `bash tests/fork-sources-gate.sh` (exit 0) |
 | upstream-divergence ledger | 422 changed paths declared | `bash tests/no-upstream-regression-gate.sh` (exit 0) |
@@ -736,11 +745,11 @@ the registered `ReversibilityContractTest` compares the published block against 
 from the live table on every run, and `tools/dawproject-proof.sh` (part 2) is the probe that re-takes
 it. A source-level re-derivation with the `grep` two rows above — over the same commit — counts 346
 declared rows (312 ungated + 17 `session.*` + 2 `telemetry.*` + 8 `wasm.*` + 7 `stem.*`), i.e. 339 for
-this build's configuration, **one row short of the published 340**; the extraction also reads 157
-`true_inverse` against the published 158. The likely cause is a row declared in a form the one-line
-`grep` does not match (the anti-drift test's own comparison is the authority, and it is the one that
-fails on a mismatch); the residual is recorded here rather than rounded away, and the live dump of
-Appendix A (per-id, from the binary) plus `tools/dawproject-proof.sh` settle it.
+this build's configuration, and 157 `true_inverse` against the published 158. **Settled (independent
+verification, 2026-09-19):** the one missed row is `chord.set`, declared with the `RCO` macro in
+`src/core/ControlReversibilityTableChord.cpp:88` — a form the one-line `(RC|R)\("` pattern above does
+not match; 339 + 1 = 340 and 157 + 1 = 158, so the published figure is correct. The anti-drift test's own
+comparison remains the authority; see `docs/CAPABILITIES-0.3.0-VERIFICATION.txt`.
 
 ### B.3 The measurement hygiene this document obeyed
 

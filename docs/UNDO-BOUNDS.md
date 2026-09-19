@@ -111,6 +111,7 @@ registry and `control.undo_depth`:
 | `mixer.set_volume` | `channel` | dragging a fader |
 | `plugin.param_set` | `target,plugin,name,index` | dragging a device knob |
 | `rack.macro_set` | `channel,macro` | dragging a macro |
+| `chord.set` | `pos` | re-editing the chord event at one timeline position |
 
 Every one of them is `true_inverse` (a live `ProjectJournal` checkpoint), which is a requirement and not
 a coincidence: a step can only be merged into another step if both restore live state. The anti-drift
