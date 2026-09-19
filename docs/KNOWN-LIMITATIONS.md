@@ -7,6 +7,10 @@ that is this page's fault — report it and it gets added.
 > `docs/RELEASE-NOTES-v0.3.0-alpha.md`). Every paragraph added for 0.3.0 carries its own date, and the
 > 2026-09-19 corrections in this pass are marked *Corrected 2026-09-19 (task 691)*.
 >
+> **The release's promise, in one sentence, and the reason most of this page is a list of absences in the
+> interface rather than absences in the product:** **everything is operable through `--control-socket` and the
+> MCP bridge; almost nothing is operable from the interface.**
+>
 > **Version (0.2.1 history).** The page first shipped with the 0.2.1-alpha re-cut of the 0.2.0-alpha release; the feature set is
 > unchanged and the number moved because the `v0.2.0-alpha` tag's build failed 7 of 7 jobs and a `v*` tag is
 > never re-pointed. References below to `0.2.0` as the release that was prepared, and to the `v0.2.0-alpha`

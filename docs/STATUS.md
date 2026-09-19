@@ -1,4 +1,7 @@
 > **Re-measured 2026-09-19 against this tree's own release binary, and it is not the tree below (task 691).**
+> The 0.3.0 line's own promise, stated here in its words so this page is read the right way round:
+> **everything is operable through `--control-socket` and the MCP bridge; almost nothing is operable from the
+> interface.**
 > Everything below describes `post-alpha/integration` @ `5565b4b1b` (2026-09-13). Against `zene-030/build/zene`
 > at this tip (`sha256 2eed2031…`, `--version` = `Zene Studio 0.2.1-alpha.612+a039d26`), measured by asking the
 > built binary over `--control-socket` for `control.commands_list` and by the commands named in
