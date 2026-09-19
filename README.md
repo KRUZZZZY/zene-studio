@@ -13,10 +13,10 @@ this exact commit, [`docs/STATUS.md`](docs/STATUS.md).
 
 ## Download
 
-**Zene Studio 0.2.1-alpha is the version this text documents** — [get it from the releases
-page](https://github.com/KRUZZZZY/zene-studio/releases/tag/v0.2.1-alpha). That page appears when the
+**Zene Studio 0.3.0-alpha is the version this text documents** — [get it from the releases
+page](https://github.com/KRUZZZZY/zene-studio/releases/tag/v0.3.0-alpha). That page appears when the
 release is published; until then the previous release,
-[v0.1.0-alpha](https://github.com/KRUZZZZY/zene-studio/releases/tag/v0.1.0-alpha), is the one you can
+[v0.2.1-alpha](https://github.com/KRUZZZZY/zene-studio/releases/tag/v0.2.1-alpha), is the one you can
 download (the `v0.2.0-alpha` tag's build failed on every platform, and 0.2.1-alpha supersedes it, so
 there is no 0.2.0-alpha download).
 
