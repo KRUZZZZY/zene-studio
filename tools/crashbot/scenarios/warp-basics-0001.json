@@ -1,0 +1,96 @@
+{
+  "id": "warp/basics-0001",
+  "scope": "warp",
+  "seed": 5000,
+  "groups": [
+    "clip",
+    "track",
+    "warp"
+  ],
+  "steps": [
+    {
+      "cmd": "track.add",
+      "args": {
+        "type": "instrument",
+        "name": "WarpBot"
+      },
+      "bind": {
+        "track0": "track"
+      },
+      "expect": {
+        "clip_count": 0,
+        "index": 4,
+        "muted": false,
+        "soloed": false,
+        "track_count": 5,
+        "type": "instrument",
+        "visible": true
+      },
+      "note": "measured ok on the frozen binary"
+    },
+    {
+      "cmd": "clip.add",
+      "args": {
+        "track": "@id:track0",
+        "position": 0,
+        "length": 1920
+      },
+      "bind": {
+        "track1": "track",
+        "clip0": "clip"
+      },
+      "expect": {
+        "auto_resize": false,
+        "muted": false,
+        "note_count": 0
+      },
+      "note": "measured ok on the frozen binary"
+    },
+    {
+      "cmd": "warp.list",
+      "args": {
+        "clip": "@id:clip0"
+      },
+      "expect_error": "refused",
+      "note": "measured refusal refused: clip-10 is not a sample clip: warp markers pin positions on a SampleClip's audio, and this clip sits on a instrument track"
+    },
+    {
+      "cmd": "warp.set",
+      "args": {
+        "clip": "@id:clip0",
+        "mode": "follow"
+      },
+      "expect_error": "refused",
+      "note": "measured refusal refused: clip-10 is not a sample clip: warp markers pin positions on a SampleClip's audio, and this clip sits on a instrument track"
+    },
+    {
+      "cmd": "warp.add",
+      "args": {
+        "clip": "@id:clip0",
+        "source_frame": 0,
+        "offset_ticks": 0
+      },
+      "expect_error": "refused",
+      "note": "measured refusal refused: clip-10 is not a sample clip: warp markers pin positions on a SampleClip's audio, and this clip sits on a instrument track"
+    },
+    {
+      "cmd": "warp.stretch",
+      "args": {
+        "clip": "@id:clip0",
+        "mode": "resample"
+      },
+      "expect_error": "refused",
+      "note": "measured refusal refused: clip-10 is not a sample clip: warp markers pin positions on a SampleClip's audio, and this clip sits on a instrument track"
+    },
+    {
+      "cmd": "warp.list",
+      "args": {
+        "clip": "@id:clip0"
+      },
+      "expect_error": "refused",
+      "note": "measured refusal refused: clip-10 is not a sample clip: warp markers pin positions on a SampleClip's audio, and this clip sits on a instrument track"
+    }
+  ],
+  "teardown": "control.quit",
+  "notes": "T3 pilot pack, generated from the round-2 measurement of the frozen pilot binary sha256 2eed203147678d3eec7e774d67b555eed95f01bcc96124b423c7c65aa53a7cf6, Zene Studio 0.2.1-alpha.612+a039d26 (probe/measure2.json): every expectation and every refusal kind in this file is a reply that binary actually gave; ids are bound from the replies that created them. The declared 180 s budget on render-class steps is the class bound (IR-15), recorded live in the run ledger."
+}

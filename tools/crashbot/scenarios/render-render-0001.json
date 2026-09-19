@@ -1,0 +1,115 @@
+{
+  "id": "render/render-0001",
+  "scope": "render",
+  "seed": 5000,
+  "groups": [
+    "arrangement",
+    "clip",
+    "note",
+    "render",
+    "track"
+  ],
+  "steps": [
+    {
+      "cmd": "track.add",
+      "args": {
+        "type": "instrument",
+        "name": "RenderBot"
+      },
+      "bind": {
+        "track0": "track"
+      },
+      "expect": {
+        "clip_count": 0,
+        "index": 4,
+        "muted": false,
+        "soloed": false,
+        "track_count": 5,
+        "type": "instrument",
+        "visible": true
+      },
+      "note": "measured ok on the frozen binary"
+    },
+    {
+      "cmd": "clip.add",
+      "args": {
+        "track": "@id:track0",
+        "position": 0,
+        "length": 1920
+      },
+      "bind": {
+        "track1": "track",
+        "clip0": "clip"
+      },
+      "expect": {
+        "auto_resize": false,
+        "muted": false,
+        "note_count": 0
+      },
+      "note": "measured ok on the frozen binary"
+    },
+    {
+      "cmd": "note.add",
+      "args": {
+        "clip": "@id:clip0",
+        "key": 60,
+        "position": 0,
+        "length": 480,
+        "velocity": 100
+      },
+      "bind": {
+        "clip1": "clip",
+        "note0": "note"
+      },
+      "expect": {
+        "index": 0,
+        "note_count": 1
+      },
+      "note": "measured ok on the frozen binary"
+    },
+    {
+      "cmd": "note.add",
+      "args": {
+        "clip": "@id:clip0",
+        "key": 64,
+        "position": 480,
+        "length": 480,
+        "velocity": 100
+      },
+      "bind": {
+        "clip2": "clip",
+        "note1": "note"
+      },
+      "expect": {
+        "index": 1,
+        "note_count": 2
+      },
+      "note": "measured ok on the frozen binary"
+    },
+    {
+      "cmd": "render.render",
+      "args": {
+        "out": "@work:render.wav"
+      },
+      "budget_s": 180,
+      "expect": {
+        "format": "wav"
+      },
+      "note": "measured ok on the frozen binary"
+    },
+    {
+      "cmd": "arrangement.get_state",
+      "expect": {
+        "clip_count": 1,
+        "track_count": 5
+      },
+      "expect_len": {
+        "clips": 1,
+        "tracks": 5
+      },
+      "note": "measured ok on the frozen binary"
+    }
+  ],
+  "teardown": "control.quit",
+  "notes": "T3 pilot pack, generated from the round-2 measurement of the frozen pilot binary sha256 2eed203147678d3eec7e774d67b555eed95f01bcc96124b423c7c65aa53a7cf6, Zene Studio 0.2.1-alpha.612+a039d26 (probe/measure2.json): every expectation and every refusal kind in this file is a reply that binary actually gave; ids are bound from the replies that created them. The declared 180 s budget on render-class steps is the class bound (IR-15), recorded live in the run ledger."
+}

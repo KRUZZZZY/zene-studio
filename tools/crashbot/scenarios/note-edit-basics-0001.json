@@ -1,0 +1,401 @@
+{
+  "id": "note/edit-basics-0001",
+  "scope": "note",
+  "seed": 5000,
+  "groups": [
+    "clip",
+    "note",
+    "roll",
+    "track"
+  ],
+  "steps": [
+    {
+      "cmd": "track.add",
+      "args": {
+        "type": "instrument",
+        "name": "NoteBot"
+      },
+      "bind": {
+        "track0": "track"
+      },
+      "expect": {
+        "clip_count": 0,
+        "index": 4,
+        "muted": false,
+        "soloed": false,
+        "track_count": 5,
+        "type": "instrument",
+        "visible": true
+      },
+      "note": "measured ok on the frozen binary"
+    },
+    {
+      "cmd": "clip.add",
+      "args": {
+        "track": "@id:track0",
+        "position": 0,
+        "length": 3840
+      },
+      "bind": {
+        "track1": "track",
+        "clip0": "clip"
+      },
+      "expect": {
+        "auto_resize": false,
+        "muted": false,
+        "note_count": 0
+      },
+      "note": "measured ok on the frozen binary"
+    },
+    {
+      "cmd": "note.add",
+      "args": {
+        "clip": "@id:clip0",
+        "key": 60,
+        "position": 0,
+        "length": 480,
+        "velocity": 100
+      },
+      "bind": {
+        "clip1": "clip",
+        "note0": "note"
+      },
+      "expect": {
+        "index": 0,
+        "note_count": 1
+      },
+      "note": "measured ok on the frozen binary"
+    },
+    {
+      "cmd": "note.add",
+      "args": {
+        "clip": "@id:clip0",
+        "key": 62,
+        "position": 480,
+        "length": 480,
+        "velocity": 100
+      },
+      "bind": {
+        "clip2": "clip",
+        "note1": "note"
+      },
+      "expect": {
+        "index": 1,
+        "note_count": 2
+      },
+      "note": "measured ok on the frozen binary"
+    },
+    {
+      "cmd": "note.add",
+      "args": {
+        "clip": "@id:clip0",
+        "key": 64,
+        "position": 960,
+        "length": 480,
+        "velocity": 100
+      },
+      "bind": {
+        "clip3": "clip",
+        "note2": "note"
+      },
+      "expect": {
+        "index": 2,
+        "note_count": 3
+      },
+      "note": "measured ok on the frozen binary"
+    },
+    {
+      "cmd": "note.add",
+      "args": {
+        "clip": "@id:clip0",
+        "key": 67,
+        "position": 1440,
+        "length": 480,
+        "velocity": 100
+      },
+      "bind": {
+        "clip4": "clip",
+        "note3": "note"
+      },
+      "expect": {
+        "index": 3,
+        "note_count": 4
+      },
+      "note": "measured ok on the frozen binary"
+    },
+    {
+      "cmd": "roll.get_state",
+      "args": {
+        "clip": "@id:clip0"
+      },
+      "bind": {
+        "track2": "track",
+        "clip5": "clip"
+      },
+      "expect": {
+        "auto_resize": false,
+        "muted": false,
+        "note_count": 4
+      },
+      "expect_len": {
+        "notes": 4
+      },
+      "note": "measured ok on the frozen binary"
+    },
+    {
+      "cmd": "note.move",
+      "args": {
+        "clip": "@id:clip0",
+        "note": "@id:note1",
+        "position": 600
+      },
+      "bind": {
+        "clip6": "clip",
+        "note4": "note"
+      },
+      "note": "measured ok on the frozen binary"
+    },
+    {
+      "cmd": "note.resize",
+      "args": {
+        "clip": "@id:clip0",
+        "note": "@id:note1",
+        "length": 240
+      },
+      "bind": {
+        "clip7": "clip",
+        "note5": "note"
+      },
+      "expect": {
+        "index": 1
+      },
+      "note": "measured ok on the frozen binary"
+    },
+    {
+      "cmd": "note.velocity_set",
+      "args": {
+        "clip": "@id:clip0",
+        "note": "@id:note1",
+        "velocity": 80
+      },
+      "bind": {
+        "clip8": "clip",
+        "note6": "note"
+      },
+      "expect": {
+        "index": 1
+      },
+      "note": "measured ok on the frozen binary"
+    },
+    {
+      "cmd": "note.velocity_scale",
+      "args": {
+        "clip": "@id:clip0",
+        "factor": 1.5,
+        "scope": "clip"
+      },
+      "bind": {
+        "track3": "track",
+        "clip9": "clip"
+      },
+      "expect": {
+        "note_count": 4
+      },
+      "note": "measured ok on the frozen binary"
+    },
+    {
+      "cmd": "note.velocity_offset",
+      "args": {
+        "clip": "@id:clip0",
+        "delta": -10,
+        "scope": "clip"
+      },
+      "bind": {
+        "track4": "track",
+        "clip10": "clip"
+      },
+      "expect": {
+        "note_count": 4
+      },
+      "note": "measured ok on the frozen binary"
+    },
+    {
+      "cmd": "note.transpose",
+      "args": {
+        "clip": "@id:clip0",
+        "semitones": 12,
+        "scope": "clip"
+      },
+      "bind": {
+        "track5": "track",
+        "clip11": "clip"
+      },
+      "expect": {
+        "note_count": 4
+      },
+      "note": "measured ok on the frozen binary"
+    },
+    {
+      "cmd": "note.slide_set",
+      "args": {
+        "clip": "@id:clip0",
+        "note": "@id:note1",
+        "slide": true
+      },
+      "bind": {
+        "clip12": "clip",
+        "note7": "note"
+      },
+      "expect": {
+        "index": 1
+      },
+      "note": "measured ok on the frozen binary"
+    },
+    {
+      "cmd": "note.slide_clear",
+      "args": {
+        "clip": "@id:clip0",
+        "scope": "clip"
+      },
+      "bind": {
+        "track6": "track",
+        "clip13": "clip"
+      },
+      "expect": {
+        "note_count": 4
+      },
+      "note": "measured ok on the frozen binary"
+    },
+    {
+      "cmd": "note.probability_set",
+      "args": {
+        "clip": "@id:clip0",
+        "note": "@id:note1",
+        "probability": 0.75
+      },
+      "bind": {
+        "clip14": "clip",
+        "note8": "note"
+      },
+      "expect": {
+        "index": 1
+      },
+      "note": "measured ok on the frozen binary"
+    },
+    {
+      "cmd": "note.randomize",
+      "args": {
+        "clip": "@id:clip0",
+        "velocity_jitter": 0.1,
+        "scope": "clip"
+      },
+      "bind": {
+        "track7": "track",
+        "clip15": "clip"
+      },
+      "expect": {
+        "note_count": 4
+      },
+      "note": "measured ok on the frozen binary"
+    },
+    {
+      "cmd": "note.random_seed_get",
+      "note": "measured ok on the frozen binary"
+    },
+    {
+      "cmd": "note.random_seed_set",
+      "args": {
+        "seed": 1234
+      },
+      "expect": {
+        "changed": true
+      },
+      "note": "measured ok on the frozen binary"
+    },
+    {
+      "cmd": "note.expression_set",
+      "args": {
+        "clip": "@id:clip0",
+        "note": "@id:note1",
+        "pitch": 2,
+        "pressure": 40,
+        "timbre": 30
+      },
+      "bind": {
+        "clip16": "clip",
+        "note9": "note"
+      },
+      "note": "measured ok on the frozen binary"
+    },
+    {
+      "cmd": "note.expression_get",
+      "args": {
+        "clip": "@id:clip0",
+        "note": "@id:note1"
+      },
+      "bind": {
+        "clip17": "clip",
+        "note10": "note"
+      },
+      "note": "measured ok on the frozen binary"
+    },
+    {
+      "cmd": "note.expression_clear",
+      "args": {
+        "clip": "@id:clip0",
+        "note": "@id:note1"
+      },
+      "bind": {
+        "clip18": "clip",
+        "note11": "note"
+      },
+      "note": "measured ok on the frozen binary"
+    },
+    {
+      "cmd": "note.select",
+      "args": {
+        "clip": "@id:clip0",
+        "notes": [
+          "@id:note1",
+          "@id:note2"
+        ]
+      },
+      "bind": {
+        "clip19": "clip"
+      },
+      "note": "measured ok on the frozen binary"
+    },
+    {
+      "cmd": "note.remove",
+      "args": {
+        "clip": "@id:clip0",
+        "note": "@id:note1"
+      },
+      "expect": {
+        "note_count": 3
+      },
+      "note": "measured ok on the frozen binary"
+    },
+    {
+      "cmd": "roll.get_state",
+      "args": {
+        "clip": "@id:clip0"
+      },
+      "bind": {
+        "track8": "track",
+        "clip20": "clip"
+      },
+      "expect": {
+        "auto_resize": false,
+        "muted": false,
+        "note_count": 3
+      },
+      "expect_len": {
+        "notes": 3
+      },
+      "note": "measured ok on the frozen binary"
+    }
+  ],
+  "teardown": "control.quit",
+  "notes": "T3 pilot pack, generated from the round-2 measurement of the frozen pilot binary sha256 2eed203147678d3eec7e774d67b555eed95f01bcc96124b423c7c65aa53a7cf6, Zene Studio 0.2.1-alpha.612+a039d26 (probe/measure2.json): every expectation and every refusal kind in this file is a reply that binary actually gave; ids are bound from the replies that created them. The declared 180 s budget on render-class steps is the class bound (IR-15), recorded live in the run ledger."
+}

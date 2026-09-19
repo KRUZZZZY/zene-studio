@@ -1,0 +1,221 @@
+{
+  "id": "rack/basics-0001",
+  "scope": "rack",
+  "seed": 5000,
+  "groups": [
+    "mixer",
+    "rack"
+  ],
+  "steps": [
+    {
+      "cmd": "mixer.add_channel",
+      "bind": {
+        "channel0": "channel"
+      },
+      "expect": {
+        "index": 1
+      },
+      "note": "measured ok on the frozen binary"
+    },
+    {
+      "cmd": "rack.get_state",
+      "args": {
+        "channel": "@id:channel0"
+      },
+      "bind": {
+        "channel1": "channel"
+      },
+      "expect": {
+        "chain_count": 1,
+        "macro_count": 0,
+        "zone_count": 0
+      },
+      "expect_len": {
+        "chains": 1,
+        "macros": 0,
+        "zones": 0
+      },
+      "note": "measured ok on the frozen binary"
+    },
+    {
+      "cmd": "rack.add_chain",
+      "args": {
+        "channel": "@id:channel0"
+      },
+      "bind": {
+        "channel2": "channel"
+      },
+      "expect": {
+        "chain_count": 2
+      },
+      "note": "measured ok on the frozen binary"
+    },
+    {
+      "cmd": "rack.get_state",
+      "args": {
+        "channel": "@id:channel0"
+      },
+      "bind": {
+        "channel3": "channel"
+      },
+      "expect": {
+        "chain_count": 2,
+        "macro_count": 0,
+        "zone_count": 0
+      },
+      "expect_len": {
+        "chains": 2,
+        "macros": 0,
+        "zones": 0
+      },
+      "note": "measured ok on the frozen binary"
+    },
+    {
+      "cmd": "rack.set_selected",
+      "args": {
+        "channel": "@id:channel0",
+        "chain": 1
+      },
+      "bind": {
+        "channel4": "channel"
+      },
+      "note": "measured ok on the frozen binary"
+    },
+    {
+      "cmd": "rack.zone_add",
+      "args": {
+        "channel": "@id:channel0",
+        "chain": 1,
+        "low_key": 60,
+        "high_key": 72
+      },
+      "bind": {
+        "channel5": "channel",
+        "zone0": "zone"
+      },
+      "expect": {
+        "zone_count": 1
+      },
+      "note": "measured ok on the frozen binary"
+    },
+    {
+      "cmd": "rack.zone_resolve",
+      "args": {
+        "channel": "@id:channel0",
+        "key": 65,
+        "velocity": 100
+      },
+      "bind": {
+        "channel6": "channel",
+        "zone1": "zone"
+      },
+      "expect": {
+        "matched": true
+      },
+      "note": "measured ok on the frozen binary"
+    },
+    {
+      "cmd": "rack.get_state",
+      "args": {
+        "channel": "@id:channel0"
+      },
+      "bind": {
+        "channel7": "channel"
+      },
+      "expect": {
+        "chain_count": 2,
+        "macro_count": 0,
+        "zone_count": 1
+      },
+      "expect_len": {
+        "chains": 2,
+        "macros": 0,
+        "zones": 1
+      },
+      "note": "measured ok on the frozen binary"
+    },
+    {
+      "cmd": "rack.macro_add",
+      "args": {
+        "channel": "@id:channel0",
+        "name": "M1",
+        "value": 0.5
+      },
+      "bind": {
+        "channel8": "channel",
+        "macro0": "macro"
+      },
+      "expect": {
+        "macro_count": 1
+      },
+      "note": "measured ok on the frozen binary"
+    },
+    {
+      "cmd": "rack.macro_set",
+      "args": {
+        "channel": "@id:channel0",
+        "macro": "@id:macro0",
+        "value": 0.7
+      },
+      "bind": {
+        "channel9": "channel",
+        "macro1": "macro"
+      },
+      "expect": {
+        "applied": 0
+      },
+      "note": "measured ok on the frozen binary"
+    },
+    {
+      "cmd": "rack.macro_remove",
+      "args": {
+        "channel": "@id:channel0",
+        "macro": "@id:macro0"
+      },
+      "bind": {
+        "channel10": "channel"
+      },
+      "expect": {
+        "macro_count": 0
+      },
+      "note": "measured ok on the frozen binary"
+    },
+    {
+      "cmd": "rack.remove_chain",
+      "args": {
+        "channel": "@id:channel0",
+        "chain": 1
+      },
+      "bind": {
+        "channel11": "channel"
+      },
+      "expect": {
+        "chain_count": 1,
+        "removed": 1
+      },
+      "note": "measured ok on the frozen binary"
+    },
+    {
+      "cmd": "rack.get_state",
+      "args": {
+        "channel": "@id:channel0"
+      },
+      "bind": {
+        "channel12": "channel"
+      },
+      "expect": {
+        "chain_count": 1,
+        "macro_count": 0,
+        "zone_count": 1
+      },
+      "expect_len": {
+        "chains": 1,
+        "macros": 0,
+        "zones": 1
+      },
+      "note": "measured ok on the frozen binary"
+    }
+  ],
+  "teardown": "control.quit",
+  "notes": "T3 pilot pack, generated from the round-2 measurement of the frozen pilot binary sha256 2eed203147678d3eec7e774d67b555eed95f01bcc96124b423c7c65aa53a7cf6, Zene Studio 0.2.1-alpha.612+a039d26 (probe/measure2.json): every expectation and every refusal kind in this file is a reply that binary actually gave; ids are bound from the replies that created them. The declared 180 s budget on render-class steps is the class bound (IR-15), recorded live in the run ledger."
+}

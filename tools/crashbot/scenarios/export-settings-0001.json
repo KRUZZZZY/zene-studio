@@ -1,0 +1,85 @@
+{
+  "id": "export/settings-0001",
+  "scope": "export",
+  "seed": 5000,
+  "groups": [
+    "export"
+  ],
+  "steps": [
+    {
+      "cmd": "export.get_settings",
+      "note": "measured ok on the frozen binary"
+    },
+    {
+      "cmd": "export.preset_list",
+      "expect": {
+        "count": 0
+      },
+      "note": "measured ok on the frozen binary"
+    },
+    {
+      "cmd": "export.preset_add",
+      "args": {
+        "name": "crashbot-24",
+        "bit_depth": "24",
+        "sample_rate": 44100,
+        "stereo_mode": "stereo"
+      },
+      "expect": {
+        "replaced": false
+      },
+      "note": "measured ok on the frozen binary"
+    },
+    {
+      "cmd": "export.preset_list",
+      "expect": {
+        "count": 1
+      },
+      "note": "measured ok on the frozen binary"
+    },
+    {
+      "cmd": "export.preset_apply",
+      "args": {
+        "name": "crashbot-24"
+      },
+      "note": "measured ok on the frozen binary"
+    },
+    {
+      "cmd": "export.set_loudness_report",
+      "args": {
+        "enabled": true
+      },
+      "note": "measured ok on the frozen binary"
+    },
+    {
+      "cmd": "export.set_dither",
+      "args": {
+        "dither": true
+      },
+      "note": "measured ok on the frozen binary"
+    },
+    {
+      "cmd": "export.set_src_quality",
+      "args": {
+        "src_quality": "sinc_best"
+      },
+      "note": "measured ok on the frozen binary"
+    },
+    {
+      "cmd": "export.get_settings",
+      "note": "measured ok on the frozen binary"
+    },
+    {
+      "cmd": "export.preset_remove",
+      "args": {
+        "name": "crashbot-24"
+      },
+      "expect": {
+        "count": 0
+      },
+      "note": "measured ok on the frozen binary"
+    }
+  ],
+  "teardown": "control.quit",
+  "notes": "T3 pilot pack, generated from the round-2 measurement of the frozen pilot binary sha256 2eed203147678d3eec7e774d67b555eed95f01bcc96124b423c7c65aa53a7cf6, Zene Studio 0.2.1-alpha.612+a039d26 (probe/measure2.json): every expectation and every refusal kind in this file is a reply that binary actually gave; ids are bound from the replies that created them. The declared 180 s budget on render-class steps is the class bound (IR-15), recorded live in the run ledger."
+}

@@ -1,0 +1,100 @@
+{
+  "id": "safestart/record-0001",
+  "scope": "safestart",
+  "seed": 5000,
+  "groups": [
+    "record",
+    "safestart"
+  ],
+  "steps": [
+    {
+      "cmd": "safestart.get_state",
+      "bind": {
+        "note0": "note"
+      },
+      "expect": {
+        "installed": true
+      },
+      "note": "measured ok on the frozen binary"
+    },
+    {
+      "cmd": "safestart.set_skip",
+      "args": {
+        "enabled": true
+      },
+      "bind": {
+        "note1": "note"
+      },
+      "expect": {
+        "changed": false
+      },
+      "note": "measured ok on the frozen binary"
+    },
+    {
+      "cmd": "safestart.acknowledge",
+      "bind": {
+        "note2": "note"
+      },
+      "note": "measured ok on the frozen binary"
+    },
+    {
+      "cmd": "safestart.clear",
+      "bind": {
+        "note3": "note"
+      },
+      "note": "measured ok on the frozen binary"
+    },
+    {
+      "cmd": "record.get_state",
+      "note": "measured ok on the frozen binary"
+    },
+    {
+      "cmd": "record.input_get_state",
+      "note": "measured ok on the frozen binary"
+    },
+    {
+      "cmd": "record.retro_capture_arm",
+      "args": {
+        "armed": true
+      },
+      "expect": {
+        "armed": true
+      },
+      "note": "measured ok on the frozen binary"
+    },
+    {
+      "cmd": "record.retro_capture_status",
+      "expect": {
+        "armed": true
+      },
+      "note": "measured ok on the frozen binary"
+    },
+    {
+      "cmd": "record.retro_capture_arm",
+      "args": {
+        "armed": false
+      },
+      "expect": {
+        "armed": false
+      },
+      "note": "measured ok on the frozen binary"
+    },
+    {
+      "cmd": "record.disarm_all",
+      "note": "measured ok on the frozen binary"
+    },
+    {
+      "cmd": "record.recovery_get_state",
+      "expect": {
+        "count": 0
+      },
+      "note": "measured ok on the frozen binary"
+    },
+    {
+      "cmd": "record.get_state",
+      "note": "measured ok on the frozen binary"
+    }
+  ],
+  "teardown": "control.quit",
+  "notes": "T3 pilot pack, generated from the round-2 measurement of the frozen pilot binary sha256 2eed203147678d3eec7e774d67b555eed95f01bcc96124b423c7c65aa53a7cf6, Zene Studio 0.2.1-alpha.612+a039d26 (probe/measure2.json): every expectation and every refusal kind in this file is a reply that binary actually gave; ids are bound from the replies that created them. The declared 180 s budget on render-class steps is the class bound (IR-15), recorded live in the run ledger."
+}

@@ -1,0 +1,108 @@
+{
+  "id": "detect/oop-wasm-0001",
+  "scope": "detect",
+  "seed": 5000,
+  "groups": [
+    "detect",
+    "oop",
+    "patcher",
+    "track",
+    "wasm"
+  ],
+  "steps": [
+    {
+      "cmd": "detect.get_state",
+      "note": "measured ok on the frozen binary"
+    },
+    {
+      "cmd": "detect.analyze",
+      "args": {
+        "path": "@work:absent.wav"
+      },
+      "expect_error": "invalid_args",
+      "note": "measured refusal invalid_args: no decoder in this build could read `@work:absent.wav`"
+    },
+    {
+      "cmd": "oop.list_families",
+      "bind": {
+        "note0": "note"
+      },
+      "note": "measured ok on the frozen binary"
+    },
+    {
+      "cmd": "oop.get_state",
+      "bind": {
+        "note1": "note"
+      },
+      "expect_len": {
+        "chains": 3
+      },
+      "note": "measured ok on the frozen binary"
+    },
+    {
+      "cmd": "wasm.list",
+      "expect_error": "not_found",
+      "note": "measured refusal not_found: wasm.list: no readable directory at 'wasm-modules'. 'root' names a directory holding .wat or .wasm modules; omitted, it defaults to 'wasm-modules' - t"
+    },
+    {
+      "cmd": "wasm.get_state",
+      "note": "measured ok on the frozen binary"
+    },
+    {
+      "cmd": "wasm.pool",
+      "bind": {
+        "note2": "note"
+      },
+      "note": "measured ok on the frozen binary"
+    },
+    {
+      "cmd": "track.add",
+      "args": {
+        "type": "instrument",
+        "name": "PatchBot"
+      },
+      "bind": {
+        "track0": "track"
+      },
+      "expect": {
+        "clip_count": 0,
+        "index": 4,
+        "muted": false,
+        "soloed": false,
+        "track_count": 5,
+        "type": "instrument",
+        "visible": true
+      },
+      "note": "measured ok on the frozen binary"
+    },
+    {
+      "cmd": "patcher.get_state",
+      "args": {
+        "target": "@id:track0"
+      },
+      "bind": {
+        "note3": "note"
+      },
+      "expect": {
+        "kind": "track"
+      },
+      "note": "measured ok on the frozen binary"
+    },
+    {
+      "cmd": "patcher.set_wiring",
+      "args": {
+        "target": "@id:track0"
+      },
+      "bind": {
+        "note4": "note"
+      },
+      "expect": {
+        "changed": false,
+        "kind": "track"
+      },
+      "note": "measured ok on the frozen binary"
+    }
+  ],
+  "teardown": "control.quit",
+  "notes": "T3 pilot pack, generated from the round-2 measurement of the frozen pilot binary sha256 2eed203147678d3eec7e774d67b555eed95f01bcc96124b423c7c65aa53a7cf6, Zene Studio 0.2.1-alpha.612+a039d26 (probe/measure2.json): every expectation and every refusal kind in this file is a reply that binary actually gave; ids are bound from the replies that created them. The declared 180 s budget on render-class steps is the class bound (IR-15), recorded live in the run ledger."
+}

@@ -1,0 +1,128 @@
+{
+  "id": "chain/presets-0001",
+  "scope": "chain",
+  "seed": 5000,
+  "groups": [
+    "chain",
+    "plugin",
+    "track"
+  ],
+  "steps": [
+    {
+      "cmd": "track.add",
+      "args": {
+        "type": "instrument",
+        "name": "ChainBot"
+      },
+      "bind": {
+        "track0": "track"
+      },
+      "expect": {
+        "clip_count": 0,
+        "index": 4,
+        "muted": false,
+        "soloed": false,
+        "track_count": 5,
+        "type": "instrument",
+        "visible": true
+      },
+      "note": "measured ok on the frozen binary"
+    },
+    {
+      "cmd": "plugin.load",
+      "args": {
+        "target": "@id:track0",
+        "device": "dev-0"
+      },
+      "bind": {
+        "fx0": "id"
+      },
+      "expect": {
+        "index": 0,
+        "kind": "effect"
+      },
+      "note": "measured ok on the frozen binary"
+    },
+    {
+      "cmd": "chain.list",
+      "expect": {
+        "count": 0
+      },
+      "note": "measured ok on the frozen binary"
+    },
+    {
+      "cmd": "chain.save",
+      "args": {
+        "target": "@id:track0",
+        "name": "crashbot-chain"
+      },
+      "expect": {
+        "device_count": 1,
+        "replaced": false
+      },
+      "expect_len": {
+        "devices": 1
+      },
+      "note": "measured ok on the frozen binary"
+    },
+    {
+      "cmd": "chain.get_state",
+      "args": {
+        "name": "crashbot-chain"
+      },
+      "expect": {
+        "device_count": 1
+      },
+      "expect_len": {
+        "devices": 1
+      },
+      "note": "measured ok on the frozen binary"
+    },
+    {
+      "cmd": "chain.rename",
+      "args": {
+        "name": "crashbot-chain",
+        "to": "crashbot-chain-2"
+      },
+      "expect": {
+        "device_count": 1
+      },
+      "note": "measured ok on the frozen binary"
+    },
+    {
+      "cmd": "chain.apply",
+      "args": {
+        "target": "@id:track0",
+        "name": "crashbot-chain-2"
+      },
+      "expect": {
+        "device_count": 1,
+        "replaced": 1
+      },
+      "expect_len": {
+        "devices": 1
+      },
+      "note": "measured ok on the frozen binary"
+    },
+    {
+      "cmd": "chain.list",
+      "expect": {
+        "count": 1
+      },
+      "note": "measured ok on the frozen binary"
+    },
+    {
+      "cmd": "chain.remove",
+      "args": {
+        "name": "crashbot-chain-2"
+      },
+      "expect": {
+        "device_count": 1,
+        "removed": "crashbot-chain-2"
+      },
+      "note": "measured ok on the frozen binary"
+    }
+  ],
+  "teardown": "control.quit",
+  "notes": "T3 pilot pack, generated from the round-2 measurement of the frozen pilot binary sha256 2eed203147678d3eec7e774d67b555eed95f01bcc96124b423c7c65aa53a7cf6, Zene Studio 0.2.1-alpha.612+a039d26 (probe/measure2.json): every expectation and every refusal kind in this file is a reply that binary actually gave; ids are bound from the replies that created them. The declared 180 s budget on render-class steps is the class bound (IR-15), recorded live in the run ledger."
+}
