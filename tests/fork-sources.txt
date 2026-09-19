@@ -26,6 +26,8 @@
 #   tests/session_api_proof_lib.py tests/session_api_proof_rows.py \
 #   tests/control_vendor_libs.py \
 #   tests/src/core/ScriptDawBindingTest.cpp ; \
+#   git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- scripts/capabilities-dump.py \
+#     tests/src/core/OutOfProcessHostSupport.h tests/zene-api-boundary.py ; \
 #   } | LC_ALL=C sort -u
 # Verify it - this must print REPRODUCES and nothing else:
 #   diff <(grep -vE '^[[:space:]]*(#|$)' tests/fork-sources.txt) \
@@ -51,6 +53,8 @@
 #   tests/session_api_proof_lib.py tests/session_api_proof_rows.py \
 #   tests/control_vendor_libs.py \
 #   tests/src/core/ScriptDawBindingTest.cpp ; \
+#   git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- scripts/capabilities-dump.py \
+#     tests/src/core/OutOfProcessHostSupport.h tests/zene-api-boundary.py ; \
 #        } | LC_ALL=C sort -u) && echo REPRODUCES
 # 2026-09-16 (the 0.3.0 fix-up pass, lane 030/fixup-hygiene): three fork-NEW modules enter this
 # scope, each named in the pathspec lines above so the recipe derives them and each registered
@@ -681,6 +685,7 @@ plugins/WasmEffect/WasmEffectControlDialog.cpp
 plugins/WasmEffect/WasmEffectControlDialog.h
 plugins/WasmEffect/WasmEffectControls.cpp
 plugins/WasmEffect/WasmEffectControls.h
+scripts/capabilities-dump.py
 src/core/AudioBus.cpp
 src/core/AudioInputPath.cpp
 src/core/AudioPortsModel.cpp
@@ -1186,3 +1191,21 @@ tools/ncpu-shim.c
 # public header and its proof test. Both are fork-NEW and both are registered here
 # (the header in this list and in tests/all-sources.txt, the test driver in this one),
 # so the fork-scoped ratchets measure them rather than leaving them invisible.
+# 2026-09-19 (lane 030/capabilities, branch 030/capabilities): three changes, all in this
+# one commit, all measured rather than declared.
+#   * scripts/capabilities-dump.py is NEW and is registered here. It is the generator for
+#     the capability specification's Appendix A (docs/CAPABILITIES-0.3.0.md): it boots one
+#     instance of the built binary through tests/control_socket_harness.py and prints the
+#     live command catalogue, so the appendix is the binary's own registry rather than a
+#     copy. `scripts/` is OUTSIDE Gate 9's scan paths (src/, include/, plugins/, tests/,
+#     tools/, modules/), so no gate would demand this entry; it is added deliberately, so
+#     the file has a stated home and the recipe below derives it.
+#   * The recipe (both blocks above) gained one pathspec line. The verify step did NOT
+#     reproduce at b89d10a62: `diff` printed exactly two entries the recipe could not
+#     derive - `tests/src/core/OutOfProcessHostSupport.h` (dropped by the tests/src/core
+#     awk allowlist) and `tests/zene-api-boundary.py` (added to the list while `scripts/`
+#     was out of scope and never named in a pathspec). Both are now named, with the new
+#     script, in `git diff ... -- scripts/capabilities-dump.py
+#     tests/src/core/OutOfProcessHostSupport.h tests/zene-api-boundary.py`, so the recipe
+#     and the entry list agree again: run the Verify step above and it prints REPRODUCES.
+#     No entry that was already here changed, and none was removed.
