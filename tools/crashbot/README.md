@@ -12,8 +12,31 @@ over their control sockets, and REAP them — and the reaping is a tested featur
 | `pool.py` | `InstancePool`: boots N instances through the tree's own harness (`tests/control_socket_harness.py`, imported in place — no second launch path), writes the PID ledger `run.json`, files artifacts, and reaps in `finally` + `atexit` + a SIGTERM handler. `python3 pool.py --orphan-check` runs the wave-start check alone. |
 | `scenario.py` | The scenario schema (v0): `@id:` / `@work:` / `@fixture:` references, path lookups (`channels[id=@id:cha].sends`), and the per-command budget rule. Pure schema: it launches nothing. |
 | `runner.py` | The drive loop: one instance per case (IR-21), per-command declared budgets (IR-15), typed outcomes per step (`ok`/`refusal`/`hang`/`crash`/`mismatch`/`schema_refused`/`cap_exceeded`/`not_run`), raw request/response transcripts per case, a coverage count, and the run ledger. |
-| `scenarios/` | Three packs ported from the strongest existing transcripts: `transport-punch-gate.json` (from `tests/control-punch-transcript.py`), `arrange-undo-structural.json` (from `tests/control-undo-structural.py`), `mixer-routing-churn.json` (from `tests/control-routing-commands.py`). No render commands: the smoke stays cheap. |
-| `selftest_reaper.py` | The reaper's negative controls: `a` raise-mid-run, `a2` SIGTERM mid-run, `b` deliberate SIGKILL, `d` orphan check. Exit 0 only when every proof held. |
+| `capture.py` | **T3.** The replayable directory a NON-OK case files: raw transcript, the case's own outcomes, the project/scratch copy taken before the pool's reap, the instance's argv + environment + settings XML, its logs, exit/signal, the box state — plus `capture.json` and a one-command `replay.sh`. Clean runs file nothing. Also arms/reads the product's own reporter (`crash.list_reports` first; `crash.enable` only when the product says it is not armed; `crash.upload_report` is never called). `python3 capture.py --selftest` proves the bounded copy alone. |
+| `pilot.py` | **T3.** The pilot driver: runs `runner.py` once per PASS over the whole pack set, one pass directory each, and stops on a declared bound (cases / wall / free disk). Verifies hygiene after every pass by reading each wave's own ledger (every pid in `/proc`, every world on disk, `our_pids_alive_after`), aggregates per-case outcomes, distinct-command coverage and captures into `<run-root>/pilot-ledger.json`. |
+| `scenarios/` | 44 packs: the three v0 packs (transport punch gate, structural undo, mixer routing churn) plus 41 packs whose every expectation was MEASURED on the frozen binary before it was written (clip/note editing, plugin chains, chain presets, Lua, crash reports, automation, modulators, VCA/bus/rack/session/groove/scale-chord/warp/clock-link-MIDI/comp/meter/browser/project/settings/track/control/controller/dawproject/interchange/detect/oop/wasm/plugin-scan/transport-play/mixer/undo-hammer/fixture round trip). Five steps carry the render-class 180 s declared budget (IR-15): `render.render`, `freeze.track`, `freeze.region`, `bounce.in_place`, `render.stems`. |
+| `selftest_reaper.py` | The reaper's negative controls: `a` raise-mid-run, `a2` SIGTERM mid-run, `b` deliberate SIGKILL (extended by T3: the crash case must file ONE replayable capture), `d` orphan check. Exit 0 only when every proof held. |
+
+## The frozen binary, and why a bare copy is not enough
+
+A crash hunt must run against a build that cannot move under it, so the pilot copies the release
+binary to `/tmp/zene-pilot/zene` and runs EVERY instance from that copy. A bare copy is not a
+faithful one, measured on 0.2.1-alpha.612+a039d26:
+
+* the launcher resolves the plugin modules from the binary's OWN directory (portable layout,
+  `src/core/PluginFactory.cpp:283`), so a copy without `plugins/` reports an EMPTY device
+  catalogue (`plugin.list` count 0 instead of 409/334);
+* the data directory comes from `LMMS_DATA_DIR`, `<prefix>/share/zene/`, or a dev-tree
+  `CMakeCache.txt` (`src/core/ConfigManager.cpp:88-98,760-800`), so a copy without it reports
+  `script.list` count 0 instead of 4;
+* `libwasmtime.so` is NEEDED with no rpath, and the harness injects it from the binary's own
+  path (`tests/control_vendor_libs.py`), so the copy needs `third_party/wasmtime/lib` beside it.
+
+The pilot's frozen tree is therefore `zene` + `third_party/wasmtime/lib` + `plugins/**/*.so` +
+`data/` + `wasm-modules/*.wasm`, and its parity was MEASURED against the in-tree binary before the
+run (identical `plugin.list` 409/334 dev-0 = Amplifier and identical `script.list` 4-script sha256).
+`capture.json` records `LMMS_DATA_DIR` with the rest of the instance's environment.
+
 
 ## Run it
 
@@ -35,7 +58,18 @@ $PY tools/crashbot/selftest_reaper.py            # all four; --proof b for one
 
 # the wave-start orphan check
 $PY tools/crashbot/pool.py --orphan-check
+
+# T3 - the PILOT: passes over the whole pack set until a declared bound stops it
+LMMS_DATA_DIR=/tmp/zene-pilot/data \
+$PY tools/crashbot/pilot.py --scenarios tools/crashbot/scenarios \
+    --binary /tmp/zene-pilot/zene --run-root /tmp/zene-pilot/pilot \
+    --instances 4 --target-cases 300 --wall-budget-s 4500 --min-free-gb 20
 ```
+
+`LMMS_DATA_DIR` is the frozen tree's `data/` copy: without it the instance finds no scripts and no
+factory presets, and `plugin.*` measures an empty catalogue (see the section above). The pilot's own
+verdict is in `<run-root>/pilot-ledger.json`: per pass, per case, coverage, captures, and the
+hygiene check taken after every pass.
 
 `--binary` defaults to `$ZENE_BINARY`, else `<tree>/build/zene`, else this worktree's PARENT
 build (this lane's worktree carries no build of its own). `LD_LIBRARY_PATH=

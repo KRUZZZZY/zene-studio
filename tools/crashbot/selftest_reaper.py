@@ -116,9 +116,17 @@ def pids_and_worlds(waves):
 
 
 def proof_raise(run_dir):
-    """(a) A scenario run that raises mid-way: reaped anyway, ONE artifact filed."""
+    """(a) A scenario run that raises mid-way: reaped anyway, ONE artifact filed.
+
+    Two packs are named EXPLICITLY, not taken from the scenarios directory: the wave the fault
+    and its sibling land in is part of the proof, and a directory whose pack set grows (T3
+    widened it from 3 packs to 44) would silently re-partition the wave and make the sibling
+    assertion measure a different case than the one it names.
+    """
+    arrange = os.path.join(SCENARIOS, "arrange-undo-structural.json")
+    mixer = os.path.join(SCENARIOS, "mixer-routing-churn.json")
     result = run_runner(run_dir, ["--instances", "2", "--inject-fault-at",
-                                  "arrange/undo-structural-0001:12"])
+                                  "arrange/undo-structural-0001:12"], scenarios=[arrange, mixer])
     waves = wave_ledgers(run_dir)
     pids, worlds, artifacts = pids_and_worlds(waves)
     ledger = ledger_of(run_dir)
@@ -146,9 +154,17 @@ def proof_raise(run_dir):
 
 
 def proof_sigterm(run_dir):
-    """(a2) SIGTERM at the runner mid-case: the pool's handler reaps, by exact PID only."""
-    argv = [PYTHON, RUNNER, "--scenarios", SCENARIOS, "--run-dir", run_dir, "--binary", BINARY,
-            "--instances", "2", "--step-pause-s", "0.5"]
+    """(a2) SIGTERM at the runner mid-case: the pool's handler reaps, by exact PID only.
+
+    The two packs are named explicitly for the same reason proof (a) names its pair: with the
+    scenarios DIRECTORY as the input, a widened pack set re-partitions every wave under the
+    proof (T3 took it from 3 packs to 44) and the "a case was still in flight" claim would
+    then rest on whatever happened to be in wave 1.
+    """
+    arrange = os.path.join(SCENARIOS, "arrange-undo-structural.json")
+    mixer = os.path.join(SCENARIOS, "mixer-routing-churn.json")
+    argv = [PYTHON, RUNNER, "--scenarios", arrange, mixer, "--run-dir", run_dir,
+            "--binary", BINARY, "--instances", "2", "--step-pause-s", "0.5"]
     child = subprocess.Popen(argv, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
     wave_json = os.path.join(run_dir, "waves", "w1", "run.json")
     deadline = time.time() + 90
@@ -211,8 +227,36 @@ def sigkill_checks(result, artifacts, killed, reaping, terminals, pids, worlds, 
     }
 
 
+def capture_checks(captures, killed_pid):
+    """T3's own negative control: the crash case filed ONE replayable directory, complete."""
+    capture = captures[0] if captures else {}
+    directory = capture.get("path") or ""
+    try:
+        with open(os.path.join(directory, "capture.json")) as handle:
+            payload = json.load(handle)
+    except (OSError, ValueError):
+        payload = {}
+    instance = payload.get("instance") or {}
+    return {
+        "crash_case_files_one_capture": len(captures) == 1
+                                        and capture.get("case") == "mixer/routing-churn-0001",
+        "capture_names_the_killed_pid": capture.get("pid") == killed_pid,
+        "capture_has_transcript_and_replay": bool(directory) and all(
+            os.path.exists(os.path.join(directory, name))
+            for name in ("transcript.txt", "replay.sh", "outcome.json", "capture.json")),
+        "capture_carries_exit_and_signal": instance.get("exit_code") == -9
+                                           and instance.get("signal") == 9,
+        "capture_bound_to_the_reap": bool(payload.get("reaping")),
+        "capture_records_the_binary_sha": bool((payload.get("binary") or {}).get("sha256")),
+    }
+
+
 def proof_sigkill(run_dir):
-    """(b) One instance SIGKILLed mid-case: EXACTLY one artifact, the sibling still finishes."""
+    """(b) One instance SIGKILLed mid-case: EXACTLY one artifact, the sibling still finishes.
+
+    T3 extends this proof: the killed case is a CRASH outcome, and a crash outcome must file
+    one replayable capture directory (transcript, replay.sh, argv/env, exit/signal, the reap).
+    """
     arrange = os.path.join(SCENARIOS, "arrange-undo-structural.json")
     mixer = os.path.join(SCENARIOS, "mixer-routing-churn.json")
     killed_case = "mixer/routing-churn-0001"
@@ -224,9 +268,11 @@ def proof_sigkill(run_dir):
     wave = list(waves.values())[0] if waves else {"instances": [], "deliberate": [],
                                                   "reaping": {"instances": {}}}
     killed = [row for row in wave["instances"] if row["name"] == "i1"]
+    killed_pid = killed[0]["pid"] if killed else None
     terminals = {case["case"]: case["terminal"] for case in ledger["cases"]}
     checks = sigkill_checks(result, artifacts, killed, wave["reaping"]["instances"] or {},
                             terminals, pids, worlds, wave)
+    checks.update(capture_checks(ledger.get("captures") or [], killed_pid))
     return {"proof": "b: deliberate SIGKILL", "run_dir": run_dir, "pids": pids, "worlds": worlds,
             "artifacts": artifacts, "terminals": terminals, "killed": killed, "checks": checks,
             "passed": all(checks.values()), "result": result}

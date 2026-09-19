@@ -23,10 +23,9 @@ What it adds is the pool the tree does not have:
 
 Measured on this box (CRASH-TESTING-LIVEPROOF.md): socket connectable 0.06 s, engine ready
 1.80 s single / 1.83 s wall for two concurrent, ~137 MB RSS, ~8% of one core idle, shutdown
-0.16-0.24 s. `LD_LIBRARY_PATH=<tree>/third_party/wasmtime/lib` is MANDATORY (the binary exits
-127 without it); the harness injects it from the binary's own path
-(`tests/control_vendor_libs.py`), and `binary_identity()` proves the binary runs before an
-instance is spent on it. Scratch only under /tmp; nothing here writes into a repo tree.
+0.16-0.24 s. `LD_LIBRARY_PATH=<tree>/third_party/wasmtime/lib` is MANDATORY (the binary exits 127
+without it); the harness injects it from the binary's own path (`tests/control_vendor_libs.py`),
+and `binary_identity()` proves the binary runs before an instance is spent on it.
 """
 
 import atexit
@@ -342,11 +341,13 @@ class InstancePool:
         return self.file_artifact("instance_died", target=rec.name, detail=detail,
                                   outcome=rec.death)
 
-    def collect_deaths(self, detail=None):
+    def collect_deaths(self, detail=None, names=None):
         """Detect instances that died since the last call and file EXACTLY one artifact each."""
+        # `names` scopes the call to the caller's OWN instance: a pool-wide call from one worker
+        # let a sibling's death stamp a surviving case `crash` (measured, T3 proof (b)).
         filed = []
         for rec in self.instances.values():
-            if rec.alive() or rec.death_filed:
+            if rec.alive() or rec.death_filed or (names is not None and rec.name not in names):
                 continue
             path = self._note_death(rec, detail)
             filed.append({"name": rec.name, "pid": rec.pid, "artifact": path, **rec.death})

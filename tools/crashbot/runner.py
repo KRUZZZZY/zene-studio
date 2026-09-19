@@ -35,6 +35,7 @@ if HERE not in sys.path:
 
 import pool as P          # noqa: E402  (the pool owns the processes)
 import scenario as S      # noqa: E402  (the schema, the references, the bounds)
+import capture as C       # noqa: E402  (T3: the replayable directory a non-ok case files)
 
 FIXTURE_DIR = os.path.join(P.TREE, "tools", "mcp-zene-control", "tests", "data")
 DEFAULT_CASE_CAP_S = 120.0
@@ -227,6 +228,7 @@ def run_case(pool, name, scenario, run_dir, caps, step_pause_s=0.0, kill_plan=No
             "instance": name, "pid": rec.pid, "surface_ids": len(session["registry"]),
             "groups": scenario.get("groups"), "notes": scenario.get("notes"), "steps": [],
             "counts": {}, "fixtures": {}, "deliberate_kill": None}
+    case["crash"] = {"arm": C.arm(rec.client, directory)}
     for number, step in enumerate(scenario["steps"], start=1):
         step = dict(step, index=number)
         if fault and fault["case"] == scenario["id"] and fault["step"] == step["index"]:
@@ -246,11 +248,15 @@ def run_case(pool, name, scenario, run_dir, caps, step_pause_s=0.0, kill_plan=No
             time.sleep(step_pause_s)
     case["fixtures"] = env["fixtures_used"]
     case["terminal"] = terminal_outcome(case["steps"])
+    case["crash"]["reports_at_end"] = C.read_reports(rec.client, 900001)
     with open(os.path.join(directory, "outcome.json"), "w") as handle:
         json.dump(case, handle, indent=2, default=str)
     with open(os.path.join(directory, "transcript.txt"), "w") as handle:
         handle.write("\n".join(transcript.lines))
     case["dir"] = directory
+    if case["terminal"] != "ok":                       # clean runs file NOTHING (plan L5/T3)
+        case["capture"] = C.file_capture(pool, case, scenario, run_dir, case["crash"]["arm"],
+                                         os.path.join(directory, "transcript.txt"))
     return case
 
 
@@ -264,7 +270,7 @@ def worker(pool, name, scenario, run_dir, caps, results, lock, kill_plan, fault)
     try:
         case = run_case(pool, name, scenario, run_dir, caps, caps.get("step_pause_s", 0.0),
                         kill_plan, fault)
-        deaths = pool.collect_deaths(detail="while driving case %s" % scenario["id"])
+        deaths = pool.collect_deaths(detail="while driving case %s" % scenario["id"], names=[name])
         if deaths:
             case["terminal"] = "crash"
             case["death"] = deaths
@@ -308,6 +314,7 @@ def run_wave(pool, wave, run_dir, caps, kill_plan, fault_plan, ledger):
             # pool's own context exit, so a mid-run raise reaps by construction and the reaping
             # record names the exception that caused it.
             raise RuntimeError("worker fault: %s" % "; ".join(faults))
+    C.finalize(pool, cases)
     return cases
 
 
@@ -342,6 +349,7 @@ def write_ledger(path, ledger, cases, pool):
                        for case in cases]
     ledger["outcomes"] = tally(cases)
     ledger["coverage"] = coverage_of(cases)
+    ledger["captures"] = [case["capture"] for case in cases if case.get("capture")]
     ledger["finished_at"] = P.utc_now()
     if pool is not None:
         ledger.update({"pids": pool.pids(), "reaping": pool.reaping, "artifacts": pool.artifacts,

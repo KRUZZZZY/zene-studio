@@ -375,4 +375,4 @@ def collect_scenarios(paths, fixture_dir):
             files.append(path)
     if not files:
         raise SchemaError("no scenario files under %s" % ", ".join(paths))
-    return [load_scenario(path, fixture_dir) for path in files]
+    return [dict(load_scenario(path, fixture_dir), _path=path) for path in files]
