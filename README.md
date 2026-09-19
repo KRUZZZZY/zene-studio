@@ -7,7 +7,7 @@ derived from [LMMS](https://github.com/LMMS/lmms), keeps project files portable,
 stack open source. This repository is the **0.2.1-alpha** tree.
 
 This repository ships no screenshot. For what this release is, read
-[`docs/RELEASE-NOTES-v0.2.1-alpha.md`](docs/RELEASE-NOTES-v0.2.1-alpha.md); for what it cannot do,
+[`docs/RELEASE-NOTES-v0.3.0-alpha.md`](docs/RELEASE-NOTES-v0.3.0-alpha.md); for what it cannot do,
 [`docs/KNOWN-LIMITATIONS.md`](docs/KNOWN-LIMITATIONS.md); for a dated, feature-by-feature status of
 this exact commit, [`docs/STATUS.md`](docs/STATUS.md).
 
@@ -33,7 +33,8 @@ anything: this alpha is unfinished, and that page lists what it is missing.
 ## What is in this alpha
 
 This is an **early alpha** — expect crashes and rough edges, and treat the known-limitations page as
-required reading.
+required reading. The release's own promise, in one sentence: **everything is operable through
+`--control-socket` and the MCP bridge; almost nothing is operable from the interface.**
 
 **The DAW core inherited from LMMS**: the Piano Roll, Song Editor and Beat/Bassline editor; a mixer
 with a multi-channel port model, sidechain sends and no fixed channel limit; 15+ built-in
@@ -44,13 +45,19 @@ open in a later or older build, so keep backups).
 
 **The agent control surface** — launch with `--control-socket <path>` and another program, not a
 person, can drive the open session over a local UNIX socket. It is opt-in and off by default: an
-instance not started that way has no socket at all. There are 19 command groups holding 74 commands —
-`app`, `arrangement`, `audio`, `automation`, `clip`, `control`, `dsp`, `midi`, `mixer`, `note`,
-`plugin`, `project`, `render`, `roll`, `script`, `settings`, `telemetry`, `track`, `transport` — each
-command carrying a JSON schema and a declared reversibility class (the A16 contract), with
-`control.undo` reaching the same undo history as the GUI's Ctrl+Z. Three commands are registered
-with full schemas but **refuse every call** rather than fake a write: `automation.mode_set`,
-`mixer.set_pan` and `track.set_arm`.
+instance not started that way has no socket at all. The registry this tree builds holds **340
+commands in 53 groups**, counted by asking the built binary, over its own socket, for
+`control.commands_list`; the release configuration holds **332 commands in 52 groups** — that is the
+tree's own committed command snapshot (`tools/mcp-zene-control/zene_control/commands_snapshot.json`)
+and the MCP bridge's offline list, the eight `wasm.*` commands being registered only where the
+wasmtime C API is found and no release job provisioning it. Every command carries a JSON schema and
+a declared reversibility class (the A16 contract; 340 rows, 158 `true_inverse` / 32 `snapshot` /
+13 `irreversible` / 137 `not_mutating`, measured by `bash tools/dawproject-proof.sh`), with
+`control.undo` reaching the same undo history as the GUI's Ctrl+Z. Exactly one command is registered
+with a full schema and **refuses every call** rather than fake a write: `mixer.set_pan`, because a
+mixer channel in this tree carries no pan property. The two further refusals the 0.2.1 text named are
+implemented in 0.3.0 — measured on the built binary, `automation.mode_set` changes a parameter's mode
+(`read` → `touch`) and `track.set_arm` arms a route and opens its take file.
 
 **VST3 hosting — effects and instruments.** VST3 effects run, and a VST3 **instrument** can be
 loaded on a track: MIDI in, audio out, and its state saved in the project. Instrument hosting is new
@@ -58,13 +65,15 @@ and narrow: one instrument per track; the plugin's **own editor does not open** 
 appear as the host's generated knob grid); there is no multi-out, no preset management and no
 instrument latency compensation; and it is proven only against the purpose-built MIT test instrument
 that ships in the source tree — no third-party VST3 instrument has been tested by us. Its own
-in-tree regression suites sit behind the `WANT_VST3_TEST_INSTRUMENT` option (default OFF), so CI does
-not build or run them.
+in-tree regression suites sit behind the `WANT_VST3_TEST_INSTRUMENT` option (default OFF); the
+`linux-x86_64` release job passes it `ON`, so they run there on every push, and the other six jobs
+keep the default.
 
-**CLAP hosting — effects only, and on Linux and macOS only.** `plugins/ClapEffect` is an effect host
-and there is no CLAP instrument hosting. The three Windows build jobs compile it out
-(`-DWANT_CLAP=OFF`) because the loader needs `dlopen`; the release manifest records the claim per
-platform.
+**CLAP hosting.** CLAP effect hosting is in the release on **every platform** — all seven release
+jobs pass `-DWANT_CLAP=ON`, and the loader's Windows half is `LoadLibraryW`/`GetProcAddress` rather
+than `dlopen`. A CLAP generator can also be loaded onto an instrument track
+(`plugins/ClapInstrument`), drivable through the socket: like the VST3 instrument it has no editor
+window of its own, and the notes a user plays reach it through the track's MIDI path.
 
 **AI DSP** — RNNoise noise suppression and NAM neural amp modelling are in the release.
 
@@ -80,24 +89,28 @@ than it, so a stale recovery file no longer strands you at a prompt before autos
 - a plugin scan cache with a quarantine list — a JSON data layer, **not a GUI** (quarantining a
   plugin means hand-writing an entry in the cache file);
 - an offline BS.1770-4 / EBU R128 loudness meter and a `.loudness.txt` report written on render and
-  export — this is a **render-path report, not a live meter**;
+  export, plus a live master meter drivable through the socket (`meter.arm`, `meter.get_state`) —
+  **no meter appears in the interface**;
 - **stem export** from the command line (`zene exportstems`), rendering a project's tracks as
   separate files that line up and sum back to the mix — **CLI/headless only, no dialog control**;
 - MIDI learn (Edit ▸ MIDI Learn), with the binding saved in the project;
-- a warp engine: markers pinned to the audio that let a clip follow or lead the project tempo — the
-  stretch is resampling, so it **changes pitch**;
+- a warp engine: markers pinned to the audio that let a clip follow or lead the project tempo, with
+  a pitch-preserving `warp.stretch` beside the resampling one — **`warp.*` is socket-only**, and a
+  resampling warp **changes pitch** (2× is an octave up);
 - seeded note probability and velocity jitter, saved per note, plus a note search-and-transform API —
-  **no UI or command reaches it yet**;
-- per-note MPE expression — **pitch is applied on playback; pressure and timbre are captured and
-  stored but not applied**, and there is no expression editor;
+  **no UI reaches it** (`note.probability_set` is the verb);
+- per-note MPE expression — **all three axes are applied on playback**: pitch as a frequency ratio,
+  pressure and timbre as channel pressure / CC74 sent on the note's own channel — and there is still
+  **no expression editor**;
 - racks (parallel chains and a chain selector on a channel) and VCA / mix-and-edit groups, both saved
-  in the project — **you cannot create one from the interface**, only load a project that already
-  contains one;
+  in the project — **you cannot create one from the interface** (the `rack.*` and `vca.*` groups are
+  how one is built over the socket), only load a project that already contains one;
 - auto-mastering wave 1 on the command line (`zene master`): one render, several measured candidates
   against a named loudness target — it **generates and measures; it does not pick a "best"**;
 - a reproducible export render (exports render on one thread; live playback still uses the pool) — 7
   of the 9 projects the determinism sweep covers are bit-reproducible, and the two that are not are
-  named, with the cause in their own instruments;
+  named, with the cause in their own instruments (`bash tools/render-determinism-probe.sh --all`;
+  the figures are `docs/RENDER-DETERMINISM.md` §7);
 - mixer concurrency fixes carried from an external audit, save/load integrity fixes, a fix for the
   exit-time teardown abort, and four test sources recovered into the suite;
 - a two-track recording **prototype** (`MultiTrackRecorder`, `RecordRingBuffer`) — capture exists,
@@ -109,20 +122,28 @@ than it, so a stale recovery file no longer strands you at a prompt before autos
 
 Not in this build, and not claimed by it:
 
-- **Session View / clip launcher** — the data layer and launch scheduler are in the source but
-  compiled out (`WANT_SESSION_VIEW` defaults OFF and no release job passes it); even a flag-ON build
-  has no clip launcher and no grid.
+- **Session View / clip launcher** — the data layer, the launch scheduler and the seventeen
+  `session.*` commands are in every release build (`WANT_SESSION_VIEW` defaults ON since 0.3.0 and the
+  release-honesty contract requires it), but there is still **no clip-launch grid and no scene
+  launcher** in the interface, and a launched slot does not render audio.
 - **Offline HTDemucs stem separation** — opt-in at configure time and off in every release build
   (`WANT_STEM_SPLIT` defaults OFF). This is not the command-line stem *export* above.
 - **WASM DSP sandbox** — `WANT_WASM` defaults ON, but the build falls back to OFF when the wasmtime C
   API is absent, and CI provisions none, so it is compiled out in practice.
-- **Automation modes are not usable** — the Read/Touch/Latch/Write engine is implemented and tested,
-  but nothing can select or persist a mode, and `automation.mode_set` refuses every call.
-- **No CLAP instrument hosting, no plugin editor, no patcher GUI, no live LUFS meter.**
-- **No fades, crossfades or clip gain; no trim or slip gesture for a clip's source window** (clip
-  *length* resize does work); no take lanes, comping or punch in/out; no freeze or bounce-in-place;
-  no sample-accurate automation (values land on a tick boundary); no controller surfaces; no groove
-  pool; no Ableton Link.
+- **No plugin editor, no patcher GUI, no Ableton Link** — and no third-party plug-in of any kind has
+  been proven outside the MIT fixtures this tree ships.
+- **Socket and bridge only, with no interface at all**, each with its stated limits in
+  [`docs/KNOWN-LIMITATIONS.md`](docs/KNOWN-LIMITATIONS.md): automation modes (selectable and
+  observable through `automation.mode_set` / `automation.get_state`, never in the interface); clip
+  fades, crossfades and clip gain; take lanes and comping; punch in/out; freeze and
+  bounce-in-place; sample-accurate automation (`automation.ramp_*` — the tick-resolution path is the
+  one the interface uses); MIDI controller surfaces; the groove pool and quantise; session sync
+  between two instances (not Ableton Link); the patcher's wiring edit; a live loudness meter; the
+  `clip.trim` / `clip.slip` verbs for a clip's source window (**clip *length* resize does work** in
+  the interface); and the whole `vca.*`, `rack.*`, `modulator.*`, `comp.*`, `loop`/`chain` and
+  `export.*` surface. The three things the socket itself cannot do are named too: `mixer.set_pan`
+  refuses every call, a clip's source window still has no authoring gesture, and no command picks a
+  "best" auto-mastering candidate.
 
 ## Build status
 
@@ -133,9 +154,13 @@ and Windows (msvc-x64, mingw64, arm64). `quality-gates` runs its **static** gate
 static gates only — and proves nothing about whether the tree compiles. `build.yml` is what compiles
 the tree.
 
-This file does not record the live state of any CI run. [`docs/STATUS.md`](docs/STATUS.md) carries the
-dated status of record for this commit, names what could not be determined from a local worktree, and
-points at [`docs/RELEASE-NOTES-v0.2.1-alpha.md`](docs/RELEASE-NOTES-v0.2.1-alpha.md) and
+This file does not record the live state of any CI run. [`docs/STATUS.md`](docs/STATUS.md) is the
+dated status of record for the **0.2.1-alpha** tree (`post-alpha/integration` @ `5565b4b1b`,
+2026-09-13), and names what could not be determined from a local worktree; the figures measured
+against this tree's own release binary — command and group counts, the A16 histogram, the registered
+test count, the MCP tool coverage — are in
+[`docs/reports/DOCS-AGREE-REPORT.md`](docs/reports/DOCS-AGREE-REPORT.md), and the release's
+capabilities are in [`docs/RELEASE-NOTES-v0.3.0-alpha.md`](docs/RELEASE-NOTES-v0.3.0-alpha.md) and
 [`docs/KNOWN-LIMITATIONS.md`](docs/KNOWN-LIMITATIONS.md).
 
 ## Building
