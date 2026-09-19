@@ -1,3 +1,15 @@
+> **Re-measured 2026-09-19 against this tree's own release binary, and it is not the tree below (task 691).**
+> Everything below describes `post-alpha/integration` @ `5565b4b1b` (2026-09-13). Against `zene-030/build/zene`
+> at this tip (`sha256 2eed2031…`, `--version` = `Zene Studio 0.2.1-alpha.612+a039d26`), measured by asking the
+> built binary over `--control-socket` for `control.commands_list` and by the commands named in
+> `docs/reports/DOCS-AGREE-REPORT.md`: **340 commands in 53 groups** in the reference configuration and **332 in
+> 52** in the release configuration — not the 19 groups / 74 commands below; the A16 contract table **340 rows**
+> (158 `true_inverse` / 32 `snapshot` / 13 `irreversible` / 137 `not_mutating`, `bash tools/dawproject-proof.sh`);
+> **214 registered ctests** in that build (`ctest -N` run from `build/tests`); `tests/fork-sources.txt` **662**
+> non-comment entries, not 244; `WANT_SESSION_VIEW` now **defaults ON** and `tests/advertised-features.tsv`
+> requires it; CLAP hosting is in the release on **every** platform (all seven jobs pass `-DWANT_CLAP=ON`); the
+> committed command snapshot holds **332** ids. Where a line below disagrees with those figures, the figure wins.
+>
 > **This page describes the tree at `post-alpha/integration` @ `5565b4b1b` — version **0.2.1-alpha**, verified
 > **2026-09-13**.** For what that release changes read
 > [`docs/RELEASE-NOTES-v0.2.1-alpha.md`](RELEASE-NOTES-v0.2.1-alpha.md); for what it does not do,
@@ -197,7 +209,10 @@ not rounded up.
   box.
 - **Auto-mastering** — *Exists:* wave 1 (above). *Missing:* waves 2–3 — the reference-matching arm and the learned
   ranker (the ranker is conditional on pick-logs, i.e. on users).
-- **The agent tooling ladder** — *Exists:* 74 commands in 19 groups, A16, `trk-<n>`. *Missing:* the per-wave groups
+- **The agent tooling ladder** — *Exists:* 74 commands in 19 groups, A16, `trk-<n>` **(the 74/19 is
+  `5565b4b1b`'s own figure; at this tip the registry holds 340 commands in 53 groups, and the "missing" groups
+  listed below — `session.*`, `warp.*`, `rack.*`, `comp.*`, `link.*`, `browser.*` — are registered — see the
+  banner and `docs/reports/DOCS-AGREE-REPORT.md`)**. *Missing:* the per-wave groups
   (`session.*`, `warp.*`, `rack.*`, `comp.*`, `link.*`, `browser.*`) and the boarded-gaps commands
   (`clip.trim/slip/fade`, `record.punch_set`, `plugin.scan`, `mixer.lufs_read`, `render.freeze/bounce`,
   `automation.record_mode_set`, `groove.*`, `scale.*`, `note.probability_set`, `patcher.*`,
@@ -211,8 +226,11 @@ not rounded up.
 
 ## In the tree, off in the release configuration
 
-- **Session View data layer + launch scheduler** — `WANT_SESSION_VIEW` defaults **OFF** (`CMakeLists.txt:121`) and
-  no release job passes it. In the tree: `include/SessionModel.h`, `src/core/SessionModel.cpp`,
+- **Session View data layer + launch scheduler** — *at `5565b4b1b`:* `WANT_SESSION_VIEW` defaults **OFF**
+  (`CMakeLists.txt:121`) and no release job passes it. **Superseded at this tip (2026-09-19):** it **defaults ON**
+  (`CMakeLists.txt:133`, since 0.3.0-alpha) so every release job builds the group, and the `session-view` row of
+  `tests/advertised-features.tsv` requires it; what remains true is the narrow claim — no clip-launch grid, no
+  scene launcher, and a launched slot does not render audio. In the tree: `include/SessionModel.h`, `src/core/SessionModel.cpp`,
   `SessionScheduler.cpp`, wired into `Song::processNextBuffer` under `#ifdef LMMS_HAVE_SESSION_VIEW`; its tests
   register only inside `IF(LMMS_HAVE_SESSION_VIEW)` (`tests/CMakeLists.txt`). Even a flag-ON build has **no clip
   launcher and no grid**.
@@ -242,7 +260,10 @@ not rounded up.
   there on every push. The other six jobs do not run them.
 - **CLAP hosting; Qt6** — CLAP is in the release on Linux and macOS and **OFF on the three Windows jobs**
   (`ClapHost.cpp` needs `dlfcn.h`); the manifest records it per platform and the honesty guard asserts the absence
-  on Windows. Qt6 is built only by the msvc job (`-DWANT_QT6=ON`); the other six use the default (Qt5).
+  on Windows. **Superseded at this tip (2026-09-19):** all seven release jobs pass `-DWANT_CLAP=ON`, the loader's
+  Windows half is `LoadLibraryW`/`GetProcAddress`/`FreeLibrary`, and `tests/advertised-features.tsv`'s
+  `clap-hosting` row is `*` (every platform) again. Qt6 is built only by the msvc job (`-DWANT_QT6=ON` in
+  `build.yml`); the other six use the default (Qt5).
 - **The telemetry client is the opposite case, listed so nobody has to infer it** — `ZENE_TELEMETRY` defaults **ON**
   (`CMakeLists.txt:140`), so it **is** in the release; it compiles out only with `-DZENE_TELEMETRY=OFF` (74 → 72
   commands), and `--version` never reports it (lowercase `option()`, matching neither `^WANT` nor
@@ -303,8 +324,12 @@ record the fix, so it contradicted itself from the start. Line numbers are that 
 
 Also stale, outside this page: `docs/DISARMED-AUDIT.md` calls the crash reporter and the plugin scan cache
 "NOT-ON-BRANCH" and both are now ancestors of HEAD; `docs/LUFS-METER.md`'s headline "Nothing calls it" was true
-when written and is false now; and `tools/mcp-zene-control/zene_control/commands_snapshot.json` holds 70
-commands against the registry's 74, with its README still saying "23 generated tools".
+when written and is false now; and `tools/mcp-zene-control/zene_control/commands_snapshot.json` held 70
+commands against the registry's 74, with its README still saying "23 generated tools" — **both of those moved
+since: the committed snapshot was regenerated 2026-09-16 and now holds 332 ids against this build's 340
+(re-measured 2026-09-19, task 691), and the README carries a staleness banner rather than a count. The README
+note is itself one snapshot behind — it still describes the 70-id, 2026-09-12, `0.1.0-alpha.15` copy, which is
+the *scratch* copy's file, not this tree's.**
 
 ## The numbering problem
 
