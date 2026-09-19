@@ -1,9 +1,13 @@
-# Zene Studio 0.2.1-alpha: known limitations
+# Zene Studio 0.3.0-alpha: known limitations
 
 What this alpha does **not** do, in the order you are most likely to hit it. If something here surprises you,
 that is this page's fault — report it and it gets added.
 
-> **Version.** This page ships with the 0.2.1-alpha re-cut of the 0.2.0-alpha release; the feature set is
+> **Version.** This page ships with **0.3.0-alpha** (`release/0.3.0`,
+> `docs/RELEASE-NOTES-v0.3.0-alpha.md`). Every paragraph added for 0.3.0 carries its own date, and the
+> 2026-09-19 corrections in this pass are marked *Corrected 2026-09-19 (task 691)*.
+>
+> **Version (0.2.1 history).** The page first shipped with the 0.2.1-alpha re-cut of the 0.2.0-alpha release; the feature set is
 > unchanged and the number moved because the `v0.2.0-alpha` tag's build failed 7 of 7 jobs and a `v*` tag is
 > never re-pointed. References below to `0.2.0` as the release that was prepared, and to the `v0.2.0-alpha`
 > tag, are to that superseded tag and stay as written; the `0.1.0-alpha` references are shipped history.
@@ -128,12 +132,15 @@ that is this page's fault — report it and it gets added.
 
 ## What this alpha cannot do at all
 
-- **No CLAP hosting on Windows.** CLAP hosting ships on Linux and macOS in 0.2.1-alpha; the Windows builds are
-  configured with `-DWANT_CLAP=OFF` because the host loads its plugins through `dlopen`/`dlsym` and neither
-  MSVC nor MinGW provides `<dlfcn.h>`. VST3 effect hosting and VST3 instrument hosting **do** work on Windows.
-  `tests/advertised-features.tsv` carries this claim per platform and the release-honesty guard checks it in
-  both directions (present on Linux/macOS, asserted absent on Windows), so a future build that turns it on
-  without updating this page fails the release job.
+- **CLAP hosting is in the release on every platform — this bullet said the opposite and is corrected.**
+  *Corrected 2026-09-19 (task 691): re-measured against `.github/workflows/build.yml` and this tree.* All seven
+  release jobs pass `-DWANT_CLAP=ON`, the loader's Windows half is `LoadLibraryW` / `GetProcAddress` /
+  `FreeLibrary` instead of `dlopen`/`dlsym`, and `tests/advertised-features.tsv`'s `clap-hosting` row is `*`
+  again (every platform), which `tests/release-honesty-gate.sh` asserts in both directions. The 0.2.1 text
+  (*"No CLAP hosting on Windows … the Windows builds are configured with `-DWANT_CLAP=OFF`"*) was true of that
+  release and is not true of this one. What is *not* claimed stays claimed: the Windows half's verdict is
+  CI-only evidence (the port's §"CLAP hosting on Windows" below), and **no third-party CLAP plug-in has been
+  loaded anywhere** — the only modules proven are the MIT fixtures in the source tree.
 
 - **No instrument editor.** You can load a VST3 instrument and play it, but the plugin's own GUI **does not
   open**. What you get instead is the host's generated control grid, and we have **run it** rather than assumed
@@ -389,9 +396,9 @@ that is this page's fault — report it and it gets added.
   it evicted: `control.undo` refuses, typed, when a record's step has fallen off the stack. The two
   decisions and their values are in `docs/UNDO-BOUNDS.md`.
 
-- **An agent session's MCP tool list can be a stale copy, and re-pointing the bridge is a deployment act — added 2026-09-13.** The `zene-control` bridge generates one MCP tool per command id it reads from a live instance, and a registered ctest now fails on any registered id the bridge offers no tool for (live, offline, and against a planted stale cache), so the *bridge in this tree* covers all **173** ids — but the entry in `~/.hermes/config.yaml` points at a **scratch copy** of the bridge (`projects/lmms-fl-research/mcp-zene-control`, git-ignored on purpose) whose offline list is the 0.1.0-alpha **70**, so a Hermes session still sees 70 ids until that entry is re-pointed at this tree's `tools/mcp-zene-control` or an instance answers at the scratch copy's socket (`docs/COVERAGE-MATRIX-2026-09-13.md` §4.2–4.4). No commit can fix a path outside the repository.
+- **An agent session's MCP tool list can be a stale copy, and re-pointing the bridge is a deployment act — added 2026-09-13.** The `zene-control` bridge generates one MCP tool per command id it reads from a live instance, and a registered ctest now fails on any registered id the bridge offers no tool for (live, offline, and against a planted stale cache), so the *bridge in this tree* covers every id the binary registers — **340 ids in 53 groups for the reference configuration, 332 in 52 for the release configuration** (`Corrected 2026-09-19 (task 691)`: the 173 this line read was an earlier tip's count; re-measured with `tests/control-commands-snapshot.py <build>/zene --compiled-in wasm.`, which reports 340 live ids as 340 generated tools and the 332-id snapshot as 334 tools, **0 missing and 0 extra** in all three modes) — but the entry in `~/.hermes/config.yaml` points at a **scratch copy** of the bridge (`projects/lmms-fl-research/mcp-zene-control`, git-ignored on purpose) whose offline list is the 0.1.0-alpha **70** (*confirmed 2026-09-19: that copy's `commands_snapshot.json` holds 70 ids, captured 2026-09-12, version `0.1.0-alpha.15+a244564`*), so a Hermes session still sees 70 ids until that entry is re-pointed at this tree's `tools/mcp-zene-control` or an instance answers at the scratch copy's socket (`docs/COVERAGE-MATRIX-2026-09-13.md` §4.2–4.4). No commit can fix a path outside the repository.
 
-- **The offline tool list is stale whenever no instance is running, and the bridge can only *say so* while one is — added 2026-09-15.** Serving a shorter list is a limitation of the design, not a bug: with no instance at the socket the bridge has nothing to compare against and answers from the last-known copy. What changed is that the copy is now checkable — every bundle records the surface it describes (`id_count`, `group_count`, `ids_sha256`), and whenever **an instance IS answering** `zene_status` and `zene_commands` carry an `offline_drift` block naming each offline copy, whether it is stale, and which ids it is missing. Proven against a live binary of the integration tip: **265 ids / 43 groups live against this tree's 144-id snapshot**, the flag fired, and the ten groups feature-list row 49 measured as tool-free (`browser`, `comp`, `export`, `link`, `modulator`, `rack`, `session`, `telemetry`, `warp`, `wasm`) are driven end to end by the registered ctest `ControlMcpGroupCoverage` — nine against the real binary, `wasm.` excused by a both-directions `--compiled-out` flag because **no build on this machine compiles the sandbox in** (`Wasmtime_LIBRARY-NOTFOUND` in every configured build; the vendored C API under `zene-030/whost/third_party/wasmtime` is wired into nothing). A wasm-enabled build gets no flag and must drive the group for real; the bridge's own half of that case is `tools/mcp-zene-control/tests/test_declared_surface.py`. **The limit, stated plainly:** nothing checks the surface of an offline copy *while it is being served* with no instance up, and a copy can still be older than the tree it ships with — it is now loudly stale, not silently short.
+- **The offline tool list is stale whenever no instance is running, and the bridge can only *say so* while one is — added 2026-09-15.** Serving a shorter list is a limitation of the design, not a bug: with no instance at the socket the bridge has nothing to compare against and answers from the last-known copy. What changed is that the copy is now checkable — every bundle records the surface it describes (`id_count`, `group_count`, `ids_sha256`), and whenever **an instance IS answering** `zene_status` and `zene_commands` carry an `offline_drift` block naming each offline copy, whether it is stale, and which ids it is missing. Proven against a live binary of the integration tip: **340 ids / 53 groups live against this tree's 332-id snapshot** (`Corrected 2026-09-19 (task 691)`: when this bullet was written the same probe read 265 / 43 against a 144-id snapshot; the re-take is `tests/control-commands-snapshot.py`, above), the flag fired, and the ten groups feature-list row 49 measured as tool-free (`browser`, `comp`, `export`, `link`, `modulator`, `rack`, `session`, `telemetry`, `warp`, `wasm`) are driven end to end by the registered ctest `ControlMcpGroupCoverage` — nine against the real binary, `wasm.` excused by a both-directions `--compiled-out` flag only in the builds whose configuration degrades the sandbox to OFF (`tests/CMakeLists.txt` passes the flag when `WANT_WASM` is off, which is what `Wasmtime_LIBRARY-NOTFOUND` produces). *Corrected 2026-09-19 (task 691): the clause "no build on this machine compiles the sandbox in" no longer holds — `zene-030/build` is configured `WANT_WASM='ON'` and its binary registers all eight `wasm.*` ids, so a run of this check against **that** build must drive the group for real and gets no flag.* A wasm-enabled build gets no flag and must drive the group for real; the bridge's own half of that case is `tools/mcp-zene-control/tests/test_declared_surface.py`. **The limit, stated plainly:** nothing checks the surface of an offline copy *while it is being served* with no instance up, and a copy can still be older than the tree it ships with — it is now loudly stale, not silently short.
 
 - **Out-of-process hosting is socket-only, and it is ONE family of fifteen — added 2026-09-16 (feature row
   80, board card #670).** The engine can host a plugin in a client process and now reports which families it
@@ -449,6 +456,15 @@ that is this page's fault — report it and it gets added.
   holds **244** non-comment entries, which is the figure the four-audit verification records
   (`STATUS-CORRECTION-2026-09-13.md` §3, last bullet). Re-run at this tip the universe behind that rate is two
   entries larger.*
+  *Corrected 2026-09-19 (task 691): the coverage figures above are a **claim about their own capture**, not
+  about this tip, and they cannot be re-derived from this tree — no coverage build or `coverage-fork.info`
+  exists in it (`find . -name 'coverage-fork.info'` returns nothing; the capture named above was taken at
+  `3ef822eaf`). What *is* measurable here is the ledger the rate is taken over: at this tip
+  `tests/fork-sources.txt` holds **662** non-comment entries in 1189 lines (`grep -v '^\s*#' tests/fork-sources.txt
+  | grep -v '^\s*$' | wc -l`), against the 242 the capture commit's rate names — so the 87.21 % is quoted
+  figure-for-figure from that capture and is **not** a statement about the 0.3.0 tree's coverage. Re-measuring it
+  is `tests/run-coverage.sh build-coverage` with the pinned VST3 SDK and CLAP headers and
+  `-DWANT_VST3_TEST_INSTRUMENT=ON`, as above.*
 - **Our own coverage gate fails on that same build, and we are telling you rather than exempting it away.**
   `tests/coverage-gate.sh --check` reports **15 new files below its 50 % entry floor**. **Ten** are dialogs,
   views and plugin-browser code that **cannot be constructed in a headless test binary** — a `Knob` needs
