@@ -1526,27 +1526,49 @@ jobs:
           # through `env:` because the run-script interpolation is the form the docs
           # guarantee for this context; the JSON contains no single quotes, so the
           # single-quoted assignment is literal.
+          #
+          # The JSON is whitespace-normalised before anything is matched against it.
+          # `toJSON()` is rendered pretty-printed (`"linux-x86_64": {` — a space after
+          # the colon, one entry per line), so a pattern written against a compact
+          # rendering can never match. That is not a theoretical concern: it is what
+          # happened on the v0.3.0-alpha tag run (35542726197), where all seven platform
+          # jobs reported `success` and this step still refused the release — and the
+          # same whitespace bug made the result check below match nothing at all, so it
+          # was silently non-verifying. Matching the flattened text makes both checks
+          # independent of the renderer's indentation.
           NEEDS='${{ toJSON(needs) }}'
           echo "$NEEDS"
+          FLAT="$(printf '%s' "$NEEDS" | tr -d ' \t\r\n')"
+          JOBS="linux-x86_64 linux-arm64 macos mingw msvc msys2"
+          EXPECTED="$(printf '%s' "$JOBS" | wc -w | tr -d ' ')"
           rc=0
-          for job in linux-x86_64 linux-arm64 macos mingw msvc msys2; do
-            case "$NEEDS" in
+          for job in $JOBS; do
+            case "$FLAT" in
               *"\"$job\":{"*) : ;;
               *) echo "release gate: build job '$job' is not in needs: — this gate no longer covers it" >&2; rc=1 ;;
             esac
           done
-          # A skipped entry would mean a build job never produced a result, so it is
+          # Every job in `needs:` must report a result, every result must be `success`,
+          # and there must be exactly as many results as there are jobs named above. A
+          # skipped entry would mean a build job never produced a result, so it is
           # refused alongside failure and cancellation rather than read as "not red".
-          case "$NEEDS" in
-            *'"result":"failure"'*|*'"result":"cancelled"'*|*'"result":"skipped"'*)
-              echo "release gate: at least one build job did not succeed — refusing the release" >&2
-              rc=1 ;;
-          esac
+          #
+          # The count is asserted first so that a JSON rendering this step cannot parse
+          # yields 0 results and fails closed, rather than matching nothing and passing.
+          TOTAL="$(printf '%s' "$FLAT" | { grep -o '"result":"[a-z]*"' || true; } | wc -l | tr -d ' ')"
+          OK="$(printf '%s' "$FLAT" | { grep -o '"result":"success"' || true; } | wc -l | tr -d ' ')"
+          if [ "$TOTAL" -ne "$EXPECTED" ]; then
+            echo "release gate: $TOTAL result(s) in needs:, expected $EXPECTED — matrix unverifiable" >&2
+            rc=1
+          elif [ "$OK" -ne "$TOTAL" ]; then
+            echo "release gate: $((TOTAL - OK)) of $TOTAL build job(s) did not succeed or report a result" >&2
+            rc=1
+          fi
           if [ "$rc" -ne 0 ]; then
             echo "A release is published only from a commit whose own matrix is green." >&2
             exit 1
           fi
-          echo "release gate: every build job succeeded and every build job is covered."
+          echo "release gate: every build job succeeded and every build job is covered ($OK/$EXPECTED)."
       - name: This commit's own push runs must be green
         env:
           GH_TOKEN: ${{ github.token }}
