@@ -41,6 +41,8 @@
 #include <QUrl>
 
 #ifdef LMMS_BUILD_WIN32
+#include <fcntl.h>  // _O_BINARY, for the byte-exact stdout of --dump/--compress
+#include <io.h>     // _setmode, _fileno
 #include <windows.h>
 #endif
 
@@ -136,6 +138,25 @@ void consoleMessageHandler(QtMsgType type,
     fprintf(stderr, "%s\n", localMsg.constData());
 }
 #endif // LMMS_BUILD_WIN32
+
+// The `--dump` and `--compress` verbs are byte transports: what they write to
+// stdout must be exactly the bytes they were handed, because `--dump`'s output
+// is the document `--compress` frames and a v1 round trip has to be the
+// identity. The Windows CRT opens stdout in TEXT mode instead, where every '\n'
+// becomes "\r\n". Measured in CI on msvc-x64 (run 35653413479, 2026-09-21):
+// `--dump` printed 179 bytes where the same source prints 173 on POSIX - one
+// '\r' per line - and the frame `--compress` wrote failed zlib's own stream
+// check with "invalid literal/lengths set", while every POSIX job stayed green.
+// Both verbs put stdout in binary mode before their first write; on POSIX there
+// is no translation to switch off.
+#ifdef LMMS_BUILD_WIN32
+static void binaryStdout()
+{
+	_setmode( _fileno( stdout ), _O_BINARY );
+}
+#else
+static inline void binaryStdout() {}
+#endif
 
 
 inline void loadTranslation( const QString & tname,
@@ -611,6 +632,7 @@ int main( int argc, char * * argv )
 				return EXIT_FAILURE;
 			}
 			QString d = qUncompress( stored );
+			binaryStdout();
 			printf( "%s\n", d.toUtf8().constData() );
 
 			return EXIT_SUCCESS;
@@ -639,6 +661,7 @@ int main( int argc, char * * argv )
 				return EXIT_FAILURE;
 			}
 			QByteArray d = qCompress( stored ) ;
+			binaryStdout();
 			fwrite( d.constData(), sizeof(char), d.size(), stdout );
 
 			return EXIT_SUCCESS;
