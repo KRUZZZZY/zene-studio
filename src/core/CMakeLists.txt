@@ -796,6 +796,20 @@ set(LMMS_SRCS
 	core/DawProjectRead.cpp
 	core/DawProjectReadTracks.cpp
 	core/DawProjectSession.cpp
+	# The document index (ARCH-4 S2a; SPEC-ARCH-4 1.4): the <z:index> that names
+	# and digests a document's sections so a reader can be asked for a subset of
+	# them. One file, no new vocabulary - it reuses the interchange module's
+	# sha256 rather than writing a second one. It reads the DOM only; whether a
+	# document warrants an index is decided by the model
+	# (Song::saveProjectFile, from the S1 preserved set) and the index is BUILT
+	# and inserted by DataFile::write, because its section digests must be taken
+	# after that writer's own prune. A digest is serialised in a canonical form
+	# of this file's own - attributes sorted by name - because
+	# QDomElement::save() orders attributes by a per-process-random hash seed,
+	# and a value only the writing process can reproduce is not one a reader can
+	# check. The additive rule (risk 2) is why the gate
+	# exists at all: a document carrying no unclaimed section gets no index.
+	core/DocumentIndex.cpp
 	core/ModulationLayer.cpp
 	core/TempoSyncKnobModel.cpp
 	core/ThreadPool.cpp

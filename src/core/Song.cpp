@@ -37,6 +37,7 @@
 #include "AutomationTrack.h"
 #include "AutomationEditor.h"
 #include "ConfigManager.h"
+#include "DocumentIndex.h"
 #include "ControllerRackView.h"
 #include "ControllerConnection.h"
 #include "UnattendedRun.h"
@@ -1839,6 +1840,39 @@ bool Song::saveProjectFile(const QString & filename, bool withResources)
 	// reach the disk - load-time assignment is in memory only, which is what
 	// keeps the agent_surface gate's fixture byte-identical across a sweep.
 	dataFile.documentElement().setAttribute( "next-id", ProjectIds::next() );
+
+	// ARCH-4 S2a (SPEC-ARCH-4 1.4): the document index, and the ONE condition
+	// under which it may be written. The index names and digests the sections of
+	// <song> so a reader can be asked for a subset of them, which is only
+	// meaningful for a document that carries a section this build did not claim
+	// - and writing it for a document that carries none would change the bytes of
+	// every project 0.4.0 saves, which is what the additive rule forbids
+	// (SPEC-ARCH-4 5.2 risk 2 calls it "a release invariant, not a guideline").
+	//
+	// So the gate is the S1 preserved set, and it is asked through the SAME two
+	// answers the load report is built from, so the index and the report cannot
+	// disagree about what a load preserved: unclaimedElements() covers the <song>
+	// sections no reader matched and each track's unclaimed children,
+	// unclaimedChildren() covers the <trackcontainer> children this build could
+	// not construct. Everything re-emitted above is therefore inside the
+	// digests, which is the point - the index describes the document as it is
+	// saved, not as it was loaded.
+	//
+	// It is set as a FLAG rather than written here, and DataFile::write builds
+	// the index from it, because the digests must be taken AFTER the write-time
+	// DOM prune and only the writer knows when that has run. Measured, not
+	// assumed: computing the digests here put <journallingObject id="…"
+	// metadata="1"/> children into every digest - the elements
+	// DataFile::cleanMetaNodes deletes on the way out - so every recorded digest
+	// described a document the file never contained. The gate stays here; the
+	// ordering cannot.
+	//
+	// Deliberately conservative. A document whose only preserved content is an
+	// unknown-version <session> block, which the session model ignores without
+	// reporting it as preserved, gets NO index: a missing index is a missed
+	// optimisation, an unearned one breaks a release invariant.
+	dataFile.setDocumentIndexEnabled(
+		!unclaimedElements().isEmpty() || !unclaimedChildren().isEmpty() );
 
 	return dataFile.writeFile(filename, withResources);
 }

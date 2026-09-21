@@ -216,6 +216,19 @@ set(LMMS_TESTS
 	src/core/SafeStartLoadPathTest.cpp
 	src/core/DataFileFormatTest.cpp
 	src/core/DataFileSaveIntegrityTest.cpp
+	# ARCH-4 S2a: the document index (SPEC-ARCH-4 1.4) and the ONE condition
+	# under which a project may carry one - the S1 preserved set being non-empty
+	# (risk 2, "a release invariant"). The index's own slots are DOM-level; the
+	# owed proof is the integration pair, which loads a real project carrying an
+	# unclaimed <song> section, saves it, and verifies every recorded digest
+	# against the canonical rendering of each section it names - what a reader
+	# in any process would compute, which is the whole point of the digest being
+	# canonical - through the integration path through Song and DataFile, not a
+	# reimplementation of it -
+	# with the SAME project minus that section re-saving with no index and no
+	# namespace, so the additivity half is pinned beside the presence half
+	# rather than assumed.
+	src/core/DocumentIndexTest.cpp
 	# The export dither (TPDF) and the explicit SRC quality: the statistical
 	# proof of the dither, the byte-level off-by-default proof, the converter
 	# ratio convention, and the quality reaching the resampler.

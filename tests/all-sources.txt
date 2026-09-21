@@ -176,6 +176,7 @@ include/DawProjectInterchange.h
 include/Delay.h
 include/DeprecationHelper.h
 include/DetuningHelper.h
+include/DocumentIndex.h
 include/DpiHelper.h
 include/Draggable.h
 include/DrumSynth.h
@@ -1214,6 +1215,7 @@ src/core/DawProjectReadTracks.cpp
 src/core/DawProjectSession.cpp
 src/core/DawProjectWrite.cpp
 src/core/DawProjectZip.cpp
+src/core/DocumentIndex.cpp
 src/core/DrumSynth.cpp
 src/core/Effect.cpp
 src/core/EffectChain.cpp
@@ -1625,6 +1627,7 @@ tests/src/core/CrashReporterTest.cpp
 tests/src/core/DataFileFormatTest.cpp
 tests/src/core/DataFileSaveIntegrityTest.cpp
 tests/src/core/DawProjectInterchangeRoundTripTest.cpp
+tests/src/core/DocumentIndexTest.cpp
 tests/src/core/ExportDitherTest.cpp
 tests/src/core/ExportWavDitherTest.cpp
 tests/src/core/GrooveTemplateTest.cpp

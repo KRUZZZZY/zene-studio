@@ -40,6 +40,7 @@
 
 #include "base64.h"
 #include "ConfigManager.h"
+#include "DocumentIndex.h"
 #include "UnattendedRun.h"
 #include "DeprecationHelper.h"
 #include "Effect.h"
@@ -326,6 +327,32 @@ void DataFile::write( QTextStream & _strm )
 	// the pre-rename name as its creator.
 	documentElement().setAttribute( "creator", "Zene Studio" );
 	documentElement().setAttribute( "creatorversion", LMMS_VERSION );
+
+	// The <z:index>, when the caller asked for one, is built HERE and not in the
+	// caller: its sections are enumerated from the DOM the writer has just
+	// pruned, and cleanMetaNodes() above is what decides what that DOM contains.
+	// Taking the section digests before that prune records a document that never
+	// reaches disk - measured, not assumed: <journallingObject metadata="1"/>
+	// children, which the prune deletes, ended up inside every digest.
+	//
+	// It is written after the root is renamed and re-stamped so that neither the
+	// digest of a section nor the version an unversioned section inherits can
+	// depend on when the writer re-stamped its own identity attributes; the
+	// version it inherits is the root's own `version` attribute, which is the
+	// number every reader of this file will see. writeDocumentIndex() binds
+	// `xmlns:z` on the root itself, and an empty index writes nothing and binds
+	// nothing - which is what keeps the additive rule true for a document with
+	// no skippable section.
+	if( m_documentIndexEnabled )
+	{
+		// documentElement() answers by value; a QDomElement is a handle onto the
+		// node, so the local names the document's own root and writing through
+		// it changes this document.
+		QDomElement root = documentElement();
+		const int documentVersion = root.attribute(
+			QStringLiteral( "version" ) ).toInt();
+		writeDocumentIndex( documentIndex( content(), documentVersion ), *this, root );
+	}
 
 	// ...and the `<!DOCTYPE ...>` a legacy file carries is dropped, because a file
 	// this build writes has no DOCTYPE (see the DataFile(Type) constructor) and

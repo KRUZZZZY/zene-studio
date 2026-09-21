@@ -95,6 +95,23 @@ public:
 
 	unsigned int legacyFileVersion();
 
+	///
+	/// \brief setDocumentIndexEnabled
+	/// Ask this document to carry a <z:index> (SPEC-ARCH-4 1.4, ARCH-4 S2a).
+	///
+	/// The caller decides WHETHER an index is warranted - Song answers it from
+	/// the preserved set - but not WHEN it is built, because the section
+	/// digests must be taken after write()'s own cleanMetaNodes() prune and
+	/// only the writer knows when that has run.  Measured: computing them
+	/// before the prune records digests that include elements the file does not
+	/// carry.  Off by default, so a DataFile that was not asked writes the
+	/// bytes it wrote before this existed.
+	///
+	void setDocumentIndexEnabled( bool enabled )
+	{
+		m_documentIndexEnabled = enabled;
+	}
+
 private:
 	static Type type( const QString& typeName );
 	static QString typeName( Type type );
@@ -154,6 +171,7 @@ private:
 	QDomElement m_head;
 	Type m_type;
 	unsigned int m_fileVersion;
+	bool m_documentIndexEnabled = false;
 } ;
 
 

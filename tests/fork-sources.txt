@@ -524,6 +524,7 @@ include/ControllerSurface.h
 include/CrashReporter.h
 include/CrashReporterFormat.h
 include/DawProjectInterchange.h
+include/DocumentIndex.h
 include/DpiHelper.h
 include/ExportDither.h
 include/ExportRenderSettings.h
@@ -922,6 +923,7 @@ src/core/DawProjectReadTracks.cpp
 src/core/DawProjectSession.cpp
 src/core/DawProjectWrite.cpp
 src/core/DawProjectZip.cpp
+src/core/DocumentIndex.cpp
 src/core/EffectChainPatcher.cpp
 src/core/ExportDither.cpp
 src/core/ExportRenderSettings.cpp
@@ -1139,6 +1141,7 @@ tests/src/core/ControlSurfaceReferenceTest.cpp
 tests/src/core/ControlVerbInverseTest.cpp
 tests/src/core/ControlWarpCommandsTest.cpp
 tests/src/core/DataFileSaveIntegrityTest.cpp
+tests/src/core/DocumentIndexTest.cpp
 tests/src/core/ExportDitherTest.cpp
 tests/src/core/ExportWavDitherTest.cpp
 tests/src/core/ImportDetectionTest.cpp
