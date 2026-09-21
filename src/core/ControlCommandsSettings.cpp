@@ -117,6 +117,15 @@ void registerSettingsGet(ControlRegistry& registry)
 	cmd.id = QStringLiteral("settings.get");
 	cmd.group = QStringLiteral("settings");
 	cmd.verb = QStringLiteral("get");
+	// ConfigManager only: no engine. Declaring that is load-bearing twice. A
+	// setting is exactly what has to be readable and writable BEFORE the engine
+	// exists - many are read at startup, which is when they have to be set - so
+	// requiring readiness refused them at the one moment they are for. And
+	// ControlRegistry::invoke() consults this flag, so a command that declares
+	// it needs the engine cannot be driven from the interface at all: an
+	// interactive run never calls ControlRegistry::setReady (only the control
+	// server does, in src/core/main.cpp), so every invoke() would answer Busy.
+	cmd.requiresEngine = false;
 	cmd.description = QStringLiteral("Read one UI/engine setting by the key the config file "
 		"uses, '<class>/<attribute>' (for example audioengine/audiodev, ui/saveinterval, "
 		"app/configured). 'value' is the config file's own string form and 'present' says "
@@ -145,6 +154,13 @@ void registerSettingsSet(ControlRegistry& registry)
 	cmd.id = QStringLiteral("settings.set");
 	cmd.group = QStringLiteral("settings");
 	cmd.verb = QStringLiteral("set");
+	// ConfigManager only, for the same two reasons settings.get states: a
+	// setting has to be writable before the engine exists, and invoke() refuses
+	// any command that declares it needs the engine - which is what keeps a UI
+	// action from being able to drive it. The handler touches ConfigManager and
+	// control::addUndoStep, and the latter returns without a journal, so this is
+	// a declaration of what the handler actually needs, not a relaxation of it.
+	cmd.requiresEngine = false;
 	cmd.description = QStringLiteral("Write one UI/engine setting by its config-file key and "
 		"persist the config file, exactly as the settings dialog does on OK. 'value' is the "
 		"config file's own string form (booleans are \"1\"/\"0\"). Settings the engine reads at "

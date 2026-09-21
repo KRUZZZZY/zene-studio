@@ -38,6 +38,16 @@ SET(LMMS_SRCS
 	gui/FileBrowser.cpp
 	gui/FileRevealer.cpp
 	gui/FileSearchJob.cpp
+	# Focus Desk - the Direction B shell (UI plan §9.4). FocusDeskModules is the
+	# module register (§4.2) and is deliberately widget-free so its rules are
+	# testable without a QApplication; FocusDeskPlacement holds the card/density
+	# machinery (the file-length ratchet is why the shell is two translation
+	# units, not one). The Q_OBJECT header lives in include/, which the
+	# top-level glob feeds to AUTOMOC.
+	gui/FocusDesk.cpp
+	gui/FocusDeskModules.cpp
+	gui/FocusDeskPane.cpp
+	gui/FocusDeskPlacement.cpp
 	gui/GuiApplication.cpp
 	gui/LadspaControlView.cpp
 	gui/LfoControllerDialog.cpp

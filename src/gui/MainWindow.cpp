@@ -55,6 +55,7 @@
 #include "ExportProjectDialog.h"
 #include "FileBrowser.h"
 #include "FileDialog.h"
+#include "FocusDeskPane.h"
 #include "Metronome.h"
 #include "MixerView.h"
 #include "GuiApplication.h"
@@ -217,6 +218,10 @@ MainWindow::MainWindow() :
 	vbox->addWidget( w );
 	setCentralWidget( main_widget );
 
+	// The Focus Desk (UI plan §9.4) is a page of this window, not a window of
+	// its own: it takes w's place in vbox while it is active.
+	m_focusDeskPane = new FocusDeskPane( workspace(), w, vbox, this );
+
 	m_updateTimer.start( 1000 / 60, this );  // 60 fps
 
 	if( ConfigManager::inst()->value( "ui", "enableautosave" ).toInt() )
@@ -288,9 +293,6 @@ MainWindow::~MainWindow()
 	// destroy engine which will do further cleanups etc.
 	Engine::destroy();
 }
-
-
-
 
 void MainWindow::finalize()
 {
@@ -657,6 +659,9 @@ void MainWindow::finalize()
 	{
 		connect( subWindow, SIGNAL(windowStateChanged(Qt::WindowStates,Qt::WindowStates)), this, SLOT(resetWindowTitle()));
 	}
+
+	// Every editor exists and is wrapped now, which is all claim() needs.
+	m_focusDeskPane->applyConfiguredState();
 }
 
 
@@ -1281,6 +1286,8 @@ void MainWindow::updateViewMenu()
 				tr( "Fullscreen" ) + "\tF11",
 				this, SLOT(toggleFullscreen())
 		);
+	// The Focus Desk joins the same group: it is a layout mode, not an editor.
+	addFocusDeskToggle( m_viewMenu, m_focusDeskPane );
 
 	m_viewMenu->addSeparator();
 
@@ -1324,14 +1331,6 @@ void MainWindow::updateViewMenu()
 	qa->setCheckable( true );
 	qa->setChecked( ConfigManager::inst()->value( "ui", "smoothscroll" ).toInt() );
 	m_viewMenu->addAction(qa);
-
-	// Not yet.
-	/* qa = new QAction(tr( "One instrument track window" ), this);
-	qa->setData("oneinstrument");
-	qa->setCheckable( true );
-	qa->setChecked( ConfigManager::inst()->value( "ui", "oneinstrumenttrackwindow" ).toInt() );
-	m_viewMenu->addAction(qa);
-	*/
 
 	qa = new QAction(tr( "Enable note labels in piano roll" ), this);
 	qa->setData("printnotelabels");

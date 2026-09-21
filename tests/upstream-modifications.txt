@@ -687,3 +687,19 @@ include/MidiAlsaSeq.h	0.3.0 MIDI controller auto-reconnection (feature-list row 
 #-free source files in tests/fork-sources.txt; its module LOGO is the one path with no
 # other home, because the scope manifests' recipes are source-extension filters.
 plugins/ClapInstrument/logo.png	feature row 79 (030/clap-instrument, board task #669, 2026-09-16): the new CLAP instrument module's own logo, the asset plugins/ClapInstrument/CMakeLists.txt installs and ClapInstrument.cpp loads through PluginPixmapLoader("logo") - every plugin module in this tree carries one (its bytes are those of plugins/ClapEffect/logo.png, the CLAP sibling, md5 a7c6655d2b304274af6687b9c8314e2c). It is a NEW path under plugins/, an upstream directory, so it is neither inherited nor derivable by either scope manifest: tests/fork-sources.txt's and tests/all-sources.txt's recipes admit source extensions only (.py .sh .cpp .c .h .hpp .cc .cxx), so a .png can never be derived and listing it would break their own REPRODUCES check - the same reason the brand-placeholder artwork is declared in this ledger rather than in a scope manifest (see the cmake/nsis/assets/Logo.png entry). No behaviour, no build flag, no option and no existing asset changes.
+
+# --- 040/focus-desk (UI plan §9.4, 2026-09-21) ------------------------------
+# One inherited GUI class, two null tests. The Focus Desk mounts an editor by
+# taking it out of the QMdiSubWindow that wraps it, which is what Qt's
+# setWidget(nullptr) is for; LMMS's own SubWindow then holds no widget. Its
+# show/hide and its detach check both read widget() unconditionally, so the
+# first hide() of an emptied window segfaults (measured: SIGSEGV at
+# SubWindow.cpp:219 <- SubWindow::setVisible <- FocusDeskPane::claim, on the
+# real binary with ui/focusdesk=1). Two neighbouring members of the same class,
+# adjustTitleBar() (line 141) and detach() (line 319), already test widget() for
+# null, so the file's own convention is that a subwindow may be empty and these
+# two just missed it. No behaviour changes when a widget is present: the same
+# branches run, in the same order. Regression test beside it -
+# FocusDeskPaneTest::claimingOutOfAProductSubWindowLeavesItSafeToHide, which
+# takes a widget out of a real SubWindow and hides and shows it again.
+src/gui/SubWindow.cpp	040/focus-desk (UI plan §9.4 Direction B, 2026-09-21): isDetached() and setVisible() dereferenced widget() unconditionally, so the first hide() of a subwindow whose editor the Focus Desk had taken onto the desk segfaulted. Both now test the widget for null, which is the convention adjustTitleBar() and detach() in the same class already follow. No change when a widget is present. Regression test: tests/src/gui/FocusDeskPaneTest.cpp, claimingOutOfAProductSubWindowLeavesItSafeToHide.

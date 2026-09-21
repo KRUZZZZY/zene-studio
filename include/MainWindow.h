@@ -43,6 +43,7 @@ namespace lmms
 namespace gui
 {
 
+class FocusDeskPane;
 class PluginView;
 class SubWindow;
 class ToolButton;
@@ -257,6 +258,9 @@ private:
 	friend class GuiApplication;
 
 	QMenu * m_viewMenu;
+
+	//! The Focus Desk page (UI plan §9.4), or null until the layout is built.
+	FocusDeskPane * m_focusDeskPane = nullptr;
 
 	ToolButton * m_metronomeToggle;
 

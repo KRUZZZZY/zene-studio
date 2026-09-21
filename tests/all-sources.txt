@@ -208,6 +208,9 @@ include/FileRevealer.h
 include/FileSearchJob.h
 include/Flags.h
 include/FloatModelEditorBase.h
+include/FocusDesk.h
+include/FocusDeskModules.h
+include/FocusDeskPane.h
 include/FontHelper.h
 include/Graph.h
 include/GroovePool.h
@@ -1422,6 +1425,10 @@ src/gui/EffectView.cpp
 src/gui/FileBrowser.cpp
 src/gui/FileRevealer.cpp
 src/gui/FileSearchJob.cpp
+src/gui/FocusDesk.cpp
+src/gui/FocusDeskModules.cpp
+src/gui/FocusDeskPane.cpp
+src/gui/FocusDeskPlacement.cpp
 src/gui/GuiApplication.cpp
 src/gui/LadspaControlView.cpp
 src/gui/LfoControllerDialog.cpp
@@ -1719,6 +1726,8 @@ tests/src/core/TwoTrackRecordingHarness.cpp
 tests/src/core/UndoBoundsTest.cpp
 tests/src/core/VcaGroupTest.cpp
 tests/src/core/WarpMarkersTest.cpp
+tests/src/gui/FocusDeskPaneTest.cpp
+tests/src/gui/FocusDeskTest.cpp
 tests/src/gui/MidiLearnGuiTest.cpp
 tests/src/plugins/AudioPluginTest.cpp
 tests/src/plugins/ClapBusMapTest.cpp

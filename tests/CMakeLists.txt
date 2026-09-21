@@ -416,6 +416,12 @@ set(LMMS_TESTS
 	src/core/TrackFolderTest.cpp
 	src/core/TwoTrackRecordingHarness.cpp
 	src/core/WarpMarkersTest.cpp
+	# The Focus Desk shell (UI plan §9.4, Direction B): the module
+	# register's rules on their own, then the shell that reads them - the
+	# strip's greyed-with-a-reason rule (X4), promotion to the stage, the
+	# return-to-home rule, releaseAll(), density, and the layout round trip.
+	src/gui/FocusDeskPaneTest.cpp
+	src/gui/FocusDeskTest.cpp
 	src/gui/MidiLearnGuiTest.cpp
 	src/tracks/AutomationTrackTest.cpp
 	src/tracks/SampleClipStretchTest.cpp
@@ -789,6 +795,14 @@ set_tests_properties(ControlVcaCommandsTest ControlVcaEditGroupsTest PROPERTIES
 set_tests_properties(ClipLinkTest ClipLinkPersistenceTest ImportDetectionTest
 	PROPERTIES
 	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+
+# The Focus Desk test builds widgets, so it needs a Qt platform plugin. Its own
+# main() defaults QT_QPA_PLATFORM to offscreen when no display is attached (the
+# same guard MidiLearnGuiTest uses); registering it here is what makes a runner
+# run it in the headless state the product is told about, not what keeps it from
+# aborting.
+set_tests_properties(FocusDeskTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+set_tests_properties(FocusDeskPaneTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 
 # MasteringTest drives a real Engine and the project render path, so it needs a
 # Qt platform plugin even though the test itself is guiless (same reason as
