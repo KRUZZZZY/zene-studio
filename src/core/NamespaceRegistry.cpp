@@ -30,8 +30,21 @@ namespace lmms
 namespace
 {
 
-const QChar kSeparator = QLatin1Char( ':' );
-const QString kVendorPrefix = QStringLiteral( "vendor." );
+// No file-scope objects of class type: this TU is linked into lmmsobjs, so a
+// QString here would be a dynamic initialiser in every binary that links it.
+// The shape used instead is Telemetry.cpp:47's - a file-local helper returning
+// the constant - which is what coreNamespace() below already does. (The tree is
+// not uniform about this; src/core/audio/AudioOss.cpp:61 still holds a
+// file-scope QString.)
+QChar separator()
+{
+	return QLatin1Char( ':' );
+}
+
+QString vendorPrefix()
+{
+	return QStringLiteral( "vendor." );
+}
 
 } // namespace
 
@@ -56,12 +69,12 @@ const QString & NamespaceRegistry::guiNamespace()
 QString NamespaceRegistry::vendorNamespace( const QString & domain, int version )
 {
 	if( domain.isEmpty() || version < 1 ) { return QString(); }
-	if( domain.contains( kSeparator ) ) { return QString(); }
+	if( domain.contains( separator() ) ) { return QString(); }
 	if( domain.contains( QLatin1Char( ' ' ) ) || domain.contains( QLatin1Char( '\t' ) ) )
 	{
 		return QString();
 	}
-	return kVendorPrefix + domain + kSeparator + QString::number( version );
+	return vendorPrefix() + domain + separator() + QString::number( version );
 }
 
 QStringList NamespaceRegistry::knownNamespaces()
@@ -76,10 +89,10 @@ bool NamespaceRegistry::isKnownNamespace( const QString & uri )
 
 bool NamespaceRegistry::isVendorNamespace( const QString & uri )
 {
-	if( !uri.startsWith( kVendorPrefix ) ) { return false; }
-	const int colon = uri.lastIndexOf( kSeparator );
-	if( colon <= kVendorPrefix.size() ) { return false; }
-	if( uri.mid( kVendorPrefix.size(), colon - kVendorPrefix.size() ).isEmpty() )
+	if( !uri.startsWith( vendorPrefix() ) ) { return false; }
+	const int colon = uri.lastIndexOf( separator() );
+	if( colon <= vendorPrefix().size() ) { return false; }
+	if( uri.mid( vendorPrefix().size(), colon - vendorPrefix().size() ).isEmpty() )
 	{
 		return false;
 	}
@@ -149,7 +162,7 @@ QString NamespaceRegistry::prefixForUri( const QString & uri ) const
 NamespaceRegistry::ResolvedName NamespaceRegistry::resolve( const QString & name ) const
 {
 	ResolvedName resolved;
-	const int colon = name.indexOf( kSeparator );
+	const int colon = name.indexOf( separator() );
 	if( colon < 0 )
 	{
 		// The compatibility table: a legacy document's names are unprefixed. An
@@ -176,7 +189,7 @@ QString NamespaceRegistry::qualify( const QString & uri, const QString & localNa
 {
 	const QString prefix = prefixForUri( uri );
 	if( prefix.isEmpty() || localName.isEmpty() ) { return QString(); }
-	return prefix + kSeparator + localName;
+	return prefix + separator() + localName;
 }
 
 } // namespace lmms
