@@ -229,6 +229,15 @@ set(LMMS_TESTS
 	# namespace, so the additivity half is pinned beside the presence half
 	# rather than assumed.
 	src/core/DocumentIndexTest.cpp
+	# The partial load's reducer (ARCH-4 S2b): reduceDocumentSections() is what
+	# makes the spec's "prove the rest was not parsed" true rather than merely
+	# asserted - the unselected section never reaches a parser. Pinned here: the
+	# identity answer when nothing is skipped (the bytes, not an equal document),
+	# byte-exactness against a deletion of the input's own ranges, and the three
+	# boundaries an off-by-one would corrupt (a self-closing section, a section
+	# that is the LAST child, and a same-named element one level deeper that must
+	# NOT count as one), plus the refusal path that must return bytes unchanged.
+	src/core/DocumentSectionsTest.cpp
 	# The export dither (TPDF) and the explicit SRC quality: the statistical
 	# proof of the dither, the byte-level off-by-default proof, the converter
 	# ratio convention, and the quality reaching the resampler.

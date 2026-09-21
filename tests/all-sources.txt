@@ -1628,6 +1628,7 @@ tests/src/core/DataFileFormatTest.cpp
 tests/src/core/DataFileSaveIntegrityTest.cpp
 tests/src/core/DawProjectInterchangeRoundTripTest.cpp
 tests/src/core/DocumentIndexTest.cpp
+tests/src/core/DocumentSectionsTest.cpp
 tests/src/core/ExportDitherTest.cpp
 tests/src/core/ExportWavDitherTest.cpp
 tests/src/core/GrooveTemplateTest.cpp

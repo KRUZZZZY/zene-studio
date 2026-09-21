@@ -30,6 +30,7 @@
 #include <QPair>
 #include <QTextStream>
 #include <QVector>
+#include <QXmlStreamReader>
 
 #include <algorithm>
 
@@ -335,6 +336,161 @@ DocumentIndex parseDocumentIndex( const QDomElement & root )
 	}
 
 	return index;
+}
+
+namespace
+{
+
+//! Is this the content element whose direct children are the sections?
+//! `contentDepth` is -1 outside it, so this is false elsewhere in the document.
+bool isContentElement( int contentDepth, const QString & name, const QString & contentElementName )
+{
+	return contentDepth < 0 && name == contentElementName;
+}
+
+//! Is this a section the caller asked to remove - a DIRECT child of the content
+//! element, one level below it, carrying one of the names? Depth, not a tag-name
+//! search, is what keeps a same-named element deeper inside a section from being
+//! a section itself.
+bool isSkippableSection( int contentDepth, int depth, const QString & name,
+	const QStringList & skipNames )
+{
+	return contentDepth >= 0 && depth == contentDepth + 1 && skipNames.contains( name );
+}
+
+//! Is this the content element's own end tag, after which no child can start?
+bool closesContentElement( int contentDepth, int depth )
+{
+	return contentDepth >= 0 && depth == contentDepth;
+}
+
+/*! One scan's findings: (begin, length) per removed subtree, in document order,
+ *  and the names that produced them in the SAME order, so the two lists stay the
+ *  same length. The ranges are disjoint and increasing - the scanner only walks
+ *  forward. */
+struct SectionRanges
+{
+	QVector<QPair<qint64, qint64> > ranges;
+	QStringList names;
+};
+
+/*! Record in \a out the byte range of every section \a skipNames names that is a
+ *  direct child of \a contentElementName. Answers false - leaving \a out
+ *  meaningless - when the document cannot be followed to its end, or a section's
+ *  begin offset cannot be recovered; those are the two refusals the caller
+ *  answers with unchanged bytes. The offset arithmetic and the three boundaries
+ *  it depends on are documented on the declaration, in DocumentIndex.h. */
+bool scanSectionRanges( const QByteArray & data, const QString & contentElementName,
+	const QStringList & skipNames, SectionRanges & out )
+{
+	QXmlStreamReader xml( data );
+	// Namespace processing OFF, matching the project's own reader (property 3).
+	xml.setNamespaceProcessing( false );
+
+	int depth = 0;         // open elements
+	int contentDepth = -1; // depth of the content element itself, or -1 outside it
+
+	while( !xml.atEnd() )
+	{
+		const QXmlStreamReader::TokenType token = xml.readNext();
+
+		if( token == QXmlStreamReader::StartElement )
+		{
+			const QString name = xml.qualifiedName().toString();
+
+			if( isContentElement( contentDepth, name, contentElementName ) )
+			{
+				contentDepth = depth;
+			}
+
+			if( isSkippableSection( contentDepth, depth, name, skipNames ) )
+			{
+				// characterOffset() sits just PAST the start tag, so the subtree's
+				// first byte is the nearest preceding '<' (property 1).
+				const qint64 afterTag = xml.characterOffset();
+				const qint64 begin = data.lastIndexOf( '<', afterTag - 1 );
+
+				// Refuse rather than corrupt: an unrecoverable begin offset means
+				// the answer would splice bytes we cannot account for.
+				if( begin < 0 ) { return false; }
+
+				xml.skipCurrentElement();
+				out.ranges.append( qMakePair( begin, xml.characterOffset() - begin ) );
+				out.names.append( name );
+
+				// skipCurrentElement() consumed the matching EndElement too, so
+				// there is no depth to unwind for this subtree.
+				continue;
+			}
+
+			++depth;
+		}
+		else if( token == QXmlStreamReader::EndElement )
+		{
+			--depth;
+			if( closesContentElement( contentDepth, depth ) ) { contentDepth = -1; }
+		}
+	}
+
+	return !xml.hasError();
+}
+
+//! \a data with every range in \a ranges cut out. Every byte between the ranges
+//! is copied verbatim, so the answer is the input minus exactly those subtrees.
+QByteArray removeRanges( const QByteArray & data, const QVector<QPair<qint64, qint64> > & ranges )
+{
+	QByteArray reduced;
+	qint64 cursor = 0;
+	for( const QPair<qint64, qint64> & range : ranges )
+	{
+		reduced.append( data.mid( cursor, range.first - cursor ) );
+		cursor = range.first + range.second;
+	}
+	reduced.append( data.mid( cursor ) );
+
+	return reduced;
+}
+
+} // namespace
+
+
+QByteArray reduceDocumentSections( const QByteArray & data,
+	const QString & contentElementName, const QStringList & skipNames,
+	QStringList * skippedNames )
+{
+	// Nothing to remove, or nothing to remove it from. The identity answer is
+	// what makes the caller's "was anything skipped?" question answerable by
+	// looking at skippedNames alone.
+	if( data.isEmpty() || contentElementName.isEmpty() || skipNames.isEmpty() )
+	{
+		return data;
+	}
+
+	// A document the scanner could not follow to its end, or a section whose
+	// begin offset cannot be recovered, is left exactly as it was. A partial
+	// reduction would look well-formed and be missing something arbitrary.
+	SectionRanges found;
+	if( !scanSectionRanges( data, contentElementName, skipNames, found ) )
+	{
+		return data;
+	}
+
+	// Nothing named was found, so nothing was removed - the same identity answer
+	// the guard above gives.
+	if( found.ranges.isEmpty() )
+	{
+		return data;
+	}
+
+	// Assigned, not appended: `skippedNames` receives what THIS call removed, in
+	// document order. A refusal therefore leaves it untouched, which is what makes
+	// a non-empty answer mean bytes really went.
+	if( skippedNames != nullptr )
+	{
+		*skippedNames = found.names;
+	}
+
+	return removeRanges( data, found.ranges );
 }
 
 } // namespace lmms

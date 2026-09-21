@@ -27,9 +27,11 @@
 
 #include "lmms_export.h"
 
+#include <QByteArray>
 #include <QDomDocument>
 #include <QDomElement>
 #include <QString>
+#include <QStringList>
 #include <QVector>
 
 namespace lmms
@@ -176,6 +178,73 @@ LMMS_EXPORT bool writeDocumentIndex( const DocumentIndex & index, QDomDocument &
  *  loaded by name, so admitting it would turn a corrupt index into a load that
  *  silently omits a section. */
 LMMS_EXPORT DocumentIndex parseDocumentIndex( const QDomElement & root );
+
+/*! Reduce \a data - a project document's own bytes, before anything parses it -
+ *  by removing the whole subtree of every DIRECT child of the
+ *  \a contentElementName element whose tag name is named in \a skipNames.
+ *  \a skippedNames, when given, is ASSIGNED what was removed, in DOCUMENT order -
+ *  assigned, not appended to, so a refusal (which removes nothing) leaves it
+ *  exactly as the caller passed it.
+ *
+ *  Every byte outside the removed ranges is copied verbatim, so the answer is
+ *  exactly \a data minus whole section subtrees: the kept part is not
+ *  re-serialised and cannot drift. That property is the whole point of the
+ *  function, and it is why it slices raw ranges rather than writing tokens back
+ *  out. Measured 2026-09-21: a QXmlStreamReader->QXmlStreamWriter round trip over
+ *  a 200-byte sample returned 216 bytes, not equal - the XML declaration is
+ *  rewritten to `<?xml version="1.0" encoding="UTF-8"?>` and the newline after it
+ *  moves. A re-serialiser therefore cannot carry a byte-exactness guarantee.
+ *
+ *  WHY THE ANSWER IS NOT SIMPLY "THE PARSE SKIPPED THEM"
+ *  It is not enough to parse everything and then drop the unselected nodes: that
+ *  still builds every DOM node for the section, so it saves nothing at the peak
+ *  that matters and it does not support the claim SPEC-ARCH-4 1.4 owes for partial
+ *  load ("prove the rest was not parsed"). Handing THIS function's result to the
+ *  ordinary parser is what makes that claim true: the unselected section reaches
+ *  no XML parser, no node is built for it and no object exists for it. Its bytes
+ *  are still traversed by the scanner, which is the honest limit of the mechanism;
+ *  never reading them at all needs an offset-addressed `.mmp` or a per-section
+ *  container entry, which is a later slice's work.
+ *
+ *  THREE PROPERTIES THE IMPLEMENTATION DEPENDS ON, EACH MEASURED (stand-alone Qt
+ *  6.4.2 probes, kept as verification/arch4-s2b-*.cpp at the programme root):
+ *
+ *   1. QXmlStreamReader::characterOffset() at a StartElement points JUST PAST the
+ *      start tag, not at its `<`. A slice taken from it would silently lose the
+ *      start tag and splice an orphan end tag into the document, so the element's
+ *      begin is recovered as the nearest preceding `<`. That is sound because a
+ *      literal `<` cannot occur inside a start tag - an attribute value must
+ *      escape it - nor inside character data; confirmed on an element whose
+ *      attribute value is `a&lt;b`.
+ *   2. The range is exact for a self-closing child, for a child that is the LAST
+ *      child of the content element, and for a same-named element nested one level
+ *      deeper (which must NOT count as a section, because only direct children
+ *      are sections). Measured: 217 B -> 156 B with two ranges removed, the result
+ *      re-parses clean, the nested element survives, and every other byte is
+ *      identical, whitespace included.
+ *   3. Parsing happens with namespace processing OFF, matching the project's own
+ *      reader: with it ON, `z:index` resolves to a prefixed name the rest of the
+ *      build does not match.
+ *
+ *  REFUSAL IS UNCHANGED BYTES, never a half-reduced document. The function answers
+ *  \a data verbatim for: empty input, an empty \a contentElementName or
+ *  \a skipNames, a document the scanner cannot follow to its end (`hasError()`),
+ *  and any element whose begin offset cannot be recovered. A caller can therefore
+ *  treat "nothing was removed" and "this document cannot be reduced" identically
+ *  and safely: both mean the document arrived whole, and the caller's next step
+ *  is the same for each. Because \a skippedNames is only ever assigned what was
+ *  actually removed, a non-empty answer is what says bytes really went - the two
+ *  refusals are deliberately NOT told apart, since naming one of them would
+ *  invite a caller to branch on a distinction it has no use for.
+ *
+ *  Only what the INDEX names is ever removable. A content element has children
+ *  the index deliberately does not list - `head`, and the elements the GUI
+ *  sections claim - and passing a name that is not a section would remove content
+ *  no index ever authorised a reader to skip. This function does not consult the
+ *  index itself; the caller is the one that must pass names it read from one. */
+LMMS_EXPORT QByteArray reduceDocumentSections( const QByteArray & data,
+	const QString & contentElementName, const QStringList & skipNames,
+	QStringList * skippedNames = nullptr );
 
 } // namespace lmms
 
