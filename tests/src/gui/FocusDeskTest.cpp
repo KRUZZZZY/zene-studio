@@ -102,10 +102,13 @@ private slots:
 			"browser", "arrangement", "session", "inspector", "devicechain",
 			"modulation", "detaileditor", "mixer", "automation", "project", "learn"};
 		QStringList actual;
-		for (const auto& row : FocusDeskModules::v1Register()) { actual.append(row.id); }
+		const auto rows = FocusDeskModules::v1Register();
+		for (const auto& row : rows) { actual.append(row.id); }
 		QCOMPARE(actual, expected);
 		// Staging is recorded, not silent: a row with no mount states why.
-		const auto* session = FocusDeskModules::find(FocusDeskModules::v1Register(), "session");
+		// find() returns a pointer INTO its argument, so the register must outlive
+		// the read - given a temporary, `session` points into freed storage.
+		const auto* session = FocusDeskModules::find(rows, "session");
 		QVERIFY(session != nullptr);
 		QVERIFY(!session->unmounted.isEmpty());
 	}
