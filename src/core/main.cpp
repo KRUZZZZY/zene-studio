@@ -72,6 +72,7 @@
 #include "MainWindow.h"
 #include "MixHelpers.h"
 #include "OutputSettings.h"
+#include "ProjectContainer.h"
 #include "ProjectRecovery.h"
 #include "ProjectRenderer.h"
 #include "MasteringJob.h"
@@ -589,7 +590,27 @@ int main( int argc, char * * argv )
 
 			QFile f( QString::fromLocal8Bit( argv[i] ) );
 			f.open( QIODevice::ReadOnly );
-			QString d = qUncompress( f.readAll() );
+			const QByteArray stored = f.readAll();
+			if( lmms::projectcontainer::isContainer( stored ) )
+			{
+				// A `.mmpz` v2 container is a ZIP, and qUncompress() answers one
+				// with an empty string - which this verb then printed as a bare
+				// newline while returning EXIT_SUCCESS (measured 2026-09-21: one
+				// byte of stdout, exit 0). A script reading that stdout got an
+				// empty document and a zero exit, so the container is refused by
+				// name instead.
+				//
+				// Refused rather than rendered on purpose: what --dump prints is
+				// the document's XML, and this build cannot yet reassemble one
+				// from a container's entries - the skeleton's shape is the
+				// writer's to define and no writer emits v2 yet
+				// (ProjectContainer.h:138-154).
+				fprintf( stderr, "%s is a .mmpz v2 container (a ZIP of the document's "
+					"sections); --dump does not read one. Use --dump on a v1 .mmpz "
+					"or on a .mmp.\n", argv[i] );
+				return EXIT_FAILURE;
+			}
+			QString d = qUncompress( stored );
 			printf( "%s\n", d.toUtf8().constData() );
 
 			return EXIT_SUCCESS;
@@ -605,7 +626,19 @@ int main( int argc, char * * argv )
 
 			QFile f( QString::fromLocal8Bit( argv[i] ) );
 			f.open( QIODevice::ReadOnly );
-			QByteArray d = qCompress( f.readAll() ) ;
+			const QByteArray stored = f.readAll();
+			if( lmms::projectcontainer::isContainer( stored ) )
+			{
+				// Compressing a v2 container wraps a ZIP inside v1's qCompress
+				// frame: the result is neither format, and nothing reads it back
+				// (measured 2026-09-21 - the output's inflated body begins
+				// PK\x03\x04). Silent downgrade replaced with a refusal by name.
+				fprintf( stderr, "%s is already a .mmpz v2 container (a ZIP of the "
+					"document's sections); refusing to wrap it in a v1 frame.\n",
+					argv[i] );
+				return EXIT_FAILURE;
+			}
+			QByteArray d = qCompress( stored ) ;
 			fwrite( d.constData(), sizeof(char), d.size(), stdout );
 
 			return EXIT_SUCCESS;

@@ -35,6 +35,8 @@
 
 #include "RevisionTimeline.h"
 
+#include "ProjectContainer.h"
+
 #include <algorithm>
 
 #include <QByteArray>
@@ -160,6 +162,22 @@ QJsonArray differingTags(const QHash<QString, int>& left, const QHash<QString, i
 QByteArray projectDocumentText(const QByteArray& raw)
 {
 	if (raw.isEmpty()) { return QByteArray(); }
+	// A `.mmpz` v2 container must be refused BEFORE the `<?xml` probe below, and
+	// that order is the whole of this guard rather than a precaution. The
+	// container STORES its entries - DawProjectZip.cpp:8-15 records why it cannot
+	// compress them - so its bytes contain a LITERAL `<?xml` and the probe below
+	// matches them. Without this, the ZIP was returned as if it were the document
+	// text, the tag counter read the archive's own headers, and a comparison
+	// reported `readable: true` with counts that mean nothing (measured
+	// 2026-09-21: `contains("<?xml")` is true of a container written by
+	// projectcontainer::writeContainer).
+	//
+	// The refusal is silent, exactly as the `readable: false` answer already was
+	// for a body that will not inflate. The two causes are deliberately NOT told
+	// apart, for the reason DocumentIndex.h:236-238 gives for the same choice:
+	// naming one of them would invite a caller to branch on a distinction it has
+	// no use for.
+	if (projectcontainer::isContainer(raw)) { return QByteArray(); }
 	// An `.mmp` IS its XML text; an `.mmpz` is a qCompress container, the shape
 	// DataFile::writeFile writes and qUncompress reads back.
 	if (raw.contains("<?xml")) { return raw; }

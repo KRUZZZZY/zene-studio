@@ -53,6 +53,7 @@
 
 #include "ControlRegistry.h"
 #include "Engine.h"
+#include "ProjectContainer.h"
 #include "ProjectRevisions.h"
 #include "RevisionTimeline.h"
 
@@ -268,6 +269,58 @@ private slots:
 		QVERIFY(compressed.value(QStringLiteral("readable")).toBool());
 		QCOMPARE(compressed.value(QStringLiteral("differing_tag_count")).toInt(), 0);
 		QVERIFY(!compressed.value(QStringLiteral("identical")).toBool());
+	}
+
+	//! A `.mmpz` v2 CONTAINER is refused rather than counted. This slot is the
+	//! other half of the one above, and the two are the reason the guard has to
+	//! come BEFORE the `<?xml` probe rather than after it: a v2 container is a
+	//! STORE ZIP - DawProjectZip.cpp:8-15 records why it cannot compress - so its
+	//! bytes contain a LITERAL `<?xml` and the probe matches them. Until the guard
+	//! landed, the archive was handed to the tag counter as if it were a document
+	//! and the comparison reported `readable: true` over the ZIP's own headers:
+	//! not a refusal with a bad message, but a confident meaningless answer.
+	void aV2ContainerIsRefusedRatherThanCountedAsADocument()
+	{
+		// One document, three container shapes, so only the container differs.
+		const QByteArray xml = documentWith(3);
+
+		QString error;
+		const std::vector<std::pair<QString, QByteArray>> sections{
+			{ QStringLiteral("sections/0000-track"), QByteArray("<track/>") } };
+		QVERIFY2(projectcontainer::writeContainer(path(QStringLiteral("v2.mmpz")), xml,
+			sections, &error), qPrintable(error));
+		const QByteArray container = readBytes(path(QStringLiteral("v2.mmpz")));
+
+		// The measurement the guard exists for. If a container ever stops holding
+		// its skeleton verbatim this slot stops testing the guard, so it is
+		// asserted rather than assumed.
+		QVERIFY(projectcontainer::isContainer(container));
+		QVERIFY2(container.contains("<?xml"),
+			"a STORE container holds its skeleton verbatim; the guard below is "
+			"only load-bearing while that is true");
+
+		// The fix, at the unit level.
+		QVERIFY(projectDocumentText(container).isEmpty());
+
+		// The two shapes the guard must NOT catch, so a guard that refuses
+		// everything cannot pass this slot: an `.mmp`'s own text, and the v1 blob
+		// the slot above pins as readable.
+		QCOMPARE(projectDocumentText(xml), xml);
+		QCOMPARE(projectDocumentText(qCompress(xml)), xml);
+
+		// End to end through the registry, which is the path a socket client
+		// takes: a revision that IS a v2 container is reported not readable.
+		QVERIFY(writeBytes(path(QStringLiteral("song.mmp.rev2")), container));
+		ControlRegistry* registry = ControlRegistry::instance();
+		const ControlResult result = registry->invoke(QStringLiteral("revisions.compare"),
+			QJsonObject{{QStringLiteral("project"), m_project},
+				{QStringLiteral("a"), QStringLiteral("rev2")},
+				{QStringLiteral("b"), QStringLiteral("live")}});
+		QVERIFY2(result.ok, qPrintable(result.errorMessage));
+		const QJsonObject comparison = result.result.value(QStringLiteral("comparison")).toObject();
+		QVERIFY(!comparison.value(QStringLiteral("readable")).toBool());
+		QCOMPARE(comparison.value(QStringLiteral("differing_tag_count")).toInt(), 0);
+		QCOMPARE(comparison.value(QStringLiteral("differing_tags")).toArray().size(), 0);
 	}
 
 	//! restore puts the revision's bytes back, and the file it replaced is

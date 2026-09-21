@@ -27,7 +27,8 @@
 #   tests/control_vendor_libs.py \
 #   tests/src/core/ScriptDawBindingTest.cpp ; \
 #   git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- scripts/capabilities-dump.py \
-#     tests/src/core/OutOfProcessHostSupport.h tests/zene-api-boundary.py ; \
+#     tests/src/core/OutOfProcessHostSupport.h tests/zene-api-boundary.py \
+#     tests/mmpz-v2-container-refusal.py ; \
 #   } | LC_ALL=C sort -u
 # Verify it - this must print REPRODUCES and nothing else:
 #   diff <(grep -vE '^[[:space:]]*(#|$)' tests/fork-sources.txt) \
@@ -1100,6 +1101,7 @@ tests/mastering_probe_lib.py
 tests/mcp_stdio_session.py
 tests/midi_reconnect_flows.py
 tests/midi_reconnect_probe.py
+tests/mmpz-v2-container-refusal.py
 tests/render-software-tag.py
 tests/rt-safety-sweep.py
 tests/rt_safety_lib.py

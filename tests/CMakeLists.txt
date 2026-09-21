@@ -3234,6 +3234,32 @@ else()
 endif()
 
 # ---------------------------------------------------------------------------
+# MmpzV2CliRefusal (ARCH-4 S2c part 2): the `.mmpz` command-line verbs tell the
+# two container formats apart by CONTENT and REFUSE a v2 container BY NAME.
+#
+# Registered wherever python3 exists, unlike the control-surface suite above it:
+# `--dump` and `--compress` are verbs of the binary itself, they return before
+# the engine comes up and they carry no AF_UNIX assumption, so there is no
+# platform on which this check has to be absent. The defects it pins were
+# MEASURED on this branch with a hand-built v2 container: `--dump` wrote one byte
+# of stdout - a bare newline - and returned EXIT_SUCCESS, so a script reading it
+# got an empty document and a zero exit; `--compress` wrapped the container's ZIP
+# inside v1's qCompress frame, producing a file neither format reads back. Both
+# were silent, and the second is a WRITER that loses the container it was given.
+# ---------------------------------------------------------------------------
+if(PYTHON3_EXECUTABLE AND TARGET zene)
+	add_test(NAME MmpzV2CliRefusal
+		COMMAND ${PYTHON3_EXECUTABLE}
+			${CMAKE_CURRENT_SOURCE_DIR}/mmpz-v2-container-refusal.py
+			$<TARGET_FILE:zene>
+	)
+	set_tests_properties(MmpzV2CliRefusal PROPERTIES
+		ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+		TIMEOUT 300
+	)
+endif()
+
+# ---------------------------------------------------------------------------
 # The zene::api boundary's proof (ARCH-2, board card #672). The boundary target
 # (src/CMakeLists.txt: zene_api) makes a widget include in the registry a compile
 # error; this test re-measures the same property on the artifacts the build just
