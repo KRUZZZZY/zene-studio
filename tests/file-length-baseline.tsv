@@ -1,7 +1,6 @@
 # per-file line-count baseline (files over 500 lines only)
 # maintained by tests/file-length-gate.sh; do not edit by hand
 src/core/ScriptBindings.cpp	1174
-plugins/ClapEffect/ClapHost.cpp	1158
 include/AudioPorts.h	992
 plugins/Vst3Effect/Vst3Host.cpp	891
 src/core/ScriptEngine.cpp	880
@@ -9,7 +8,6 @@ include/ControlRegistryGroups.h	696
 src/wasm/WasmSandbox.cpp	597
 tests/zene-api-boundary.py	594
 tests/control-socket-path-safety.py	574
-src/core/CrashReporter.cpp	564
 src/core/AudioPortsModel.cpp	549
 tests/control-stable-ids-slice2.py	549
 include/ControlReversibility.h	536
