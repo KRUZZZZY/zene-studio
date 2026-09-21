@@ -696,6 +696,10 @@ set(LMMS_SRCS
 	core/MixHelpers.cpp
 	core/Model.cpp
 	core/ModelVisitor.cpp
+	# ARCH-4 S1a: the document format's namespace table and the resolver that
+	# reads it (design/specs/SPEC-ARCH-4-DOCUMENT-MODEL-DRAFT.md 1.3). Additive
+	# on purpose - nothing in the load or save path consults it yet.
+	core/NamespaceRegistry.cpp
 	core/Note.cpp
 	core/NotePlayHandle.cpp
 	core/NoteRandom.cpp

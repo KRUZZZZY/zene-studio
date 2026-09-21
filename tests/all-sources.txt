@@ -330,6 +330,7 @@ include/ModulationLayer.h
 include/MpeExpression.h
 include/MultiTrackRecorder.h
 include/NStateButton.h
+include/NamespaceRegistry.h
 include/NoCopyNoMove.h
 include/Note.h
 include/NotePlayHandle.h
@@ -1266,6 +1267,7 @@ src/core/Mixer.cpp
 src/core/Model.cpp
 src/core/ModelVisitor.cpp
 src/core/ModulationLayer.cpp
+src/core/NamespaceRegistry.cpp
 src/core/Note.cpp
 src/core/NotePlayHandle.cpp
 src/core/NoteRandom.cpp
@@ -1650,6 +1652,7 @@ tests/src/core/MpeInputPathTest.cpp
 tests/src/core/MpeNoteStorageTest.cpp
 tests/src/core/MpePlaybackTest.cpp
 tests/src/core/MultiTrackRecorderTest.cpp
+tests/src/core/NamespaceRegistryTest.cpp
 tests/src/core/NoteRandomTest.cpp
 tests/src/core/NoteTransformTest.cpp
 tests/src/core/OnnxRuntimeStemSeparatorTest.cpp

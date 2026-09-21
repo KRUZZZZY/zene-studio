@@ -306,6 +306,11 @@ set(LMMS_TESTS
 	# ControlRecordInputs below.
 	src/core/RecordingInputPathTest.cpp
 	src/core/RetroAudioCaptureTest.cpp
+	# ARCH-4 S1a: the namespace table and resolver. The compatibility table's
+	# five GUI-section entries are facts about OTHER files, so the test reads
+	# those files' nodeName() literals out of the source tree rather than
+	# restating them - it needs the source root, passed below.
+	src/core/NamespaceRegistryTest.cpp
 	src/core/NoteRandomTest.cpp
 	src/core/NoteTransformTest.cpp
 	src/core/PhaseDSidechainTest.cpp
@@ -526,6 +531,15 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 	if(LMMS_TEST_NAME STREQUAL "ReversibilityContractTest")
 		target_compile_definitions(${LMMS_TEST_NAME} PRIVATE
 			A16_HISTOGRAM_DOC="${CMAKE_SOURCE_DIR}/docs/RELEASE-NOTES-v0.3.0-alpha.md")
+	endif()
+	# The ARCH-4 namespace registry's compatibility table names five GUI-owned
+	# sections, and those names are the GUI classes' own nodeName() literals. The
+	# test extracts them from the headers so the table cannot drift from the tree
+	# unnoticed; it runs from build/tests, so the path is passed absolutely and
+	# only to this target.
+	if(LMMS_TEST_NAME STREQUAL "NamespaceRegistryTest")
+		target_compile_definitions(${LMMS_TEST_NAME} PRIVATE
+			ZENE_ARCH4_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
 	endif()
 	IF(LMMS_HAVE_STEM_SPLIT)
 		target_compile_definitions(${LMMS_TEST_NAME} PRIVATE
