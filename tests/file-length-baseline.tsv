@@ -17,7 +17,6 @@ src/core/ControlReversibilityTablePassive.cpp	518
 src/core/ControlCommandsNotes.cpp	512
 tests/control_socket_harness.py	512
 tests/src/tracks/SampleClipWindowTest.cpp	511
-src/core/ControlCommandsProject.cpp	510
 src/core/ControlCommandsWarpEdit.cpp	510
 include/ControlRegistry.h	509
 tests/src/core/ControlRegistryTest.cpp	505
