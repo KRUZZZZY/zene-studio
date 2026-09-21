@@ -293,6 +293,18 @@ void registerProjectOpen(ControlRegistry& registry)
 		// exactly why the caller is told.
 		{QStringLiteral("ids_assigned"), QJsonObject{{QStringLiteral("type"), QStringLiteral("integer")}}},
 		{QStringLiteral("format_upgraded"), QJsonObject{{QStringLiteral("type"), QStringLiteral("boolean")}}},
+		// SPEC-ARCH-4 1.6.4 (ARCH-4 S1d): what the load PRESERVED rather than
+		// loaded. A document written by a newer build carries elements this one
+		// has no class for; since S1b/S1c they are kept verbatim and re-emitted
+		// on save instead of being dropped, and THIS is how a caller learns
+		// which ones - rather than discovering the loss on the next save, or
+		// never. `unclaimed_count` is the array's own length, in the same
+		// count/name_count shape as the load errors beside it. The list is in
+		// DOCUMENT order (see the handler): an empty one means this build
+		// understood the whole document.
+		{QStringLiteral("unclaimed_count"), QJsonObject{{QStringLiteral("type"), QStringLiteral("integer")}}},
+		{QStringLiteral("unclaimed"), QJsonObject{{QStringLiteral("type"), QStringLiteral("array")},
+			{QStringLiteral("items"), stringProperty()}}},
 	});
 	cmd.mutating = true;
 	cmd.handler = [](const QJsonObject& args) {
@@ -342,6 +354,16 @@ void registerProjectOpen(ControlRegistry& registry)
 		const int idsAssigned = ProjectIds::loadAssignments();
 		result.insert(QStringLiteral("ids_assigned"), idsAssigned);
 		result.insert(QStringLiteral("format_upgraded"), idsAssigned > 0);
+		// What this load preserved rather than loaded (SPEC-ARCH-4 1.6.4), in
+		// DOCUMENT order - and that order is load-bearing, unlike the error list
+		// above, which is sorted only because QHash::keys() has no order of its
+		// own. Each path ends in the child index the re-emitted element occupies,
+		// so sorting would destroy the very information the path carries.
+		const QStringList unclaimed = song->unclaimedElements();
+		QJsonArray unclaimedPaths;
+		for (const QString& elementPath : unclaimed) { unclaimedPaths.append(elementPath); }
+		result.insert(QStringLiteral("unclaimed"), unclaimedPaths);
+		result.insert(QStringLiteral("unclaimed_count"), unclaimedPaths.size());
 		QJsonObject transaction;
 		transaction.insert(QStringLiteral("before"),
 			QJsonObject{{QStringLiteral("previous_file"), previousFile},

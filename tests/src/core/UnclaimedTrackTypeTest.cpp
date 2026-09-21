@@ -4,6 +4,9 @@
  *                             and an element that is not a track at all.
  *                             Neither is dropped and neither is coerced.
  *                             SPEC-ARCH-4 1.6.2. ARCH-4 S1c.
+ *                             The last slot is the LOAD REPORT's half
+ *                             (SPEC-ARCH-4 1.6.4, ARCH-4 S1d): the same paths,
+ *                             answered by project.open instead of re-derived.
  *
  * Copyright (c) 2026 Zene Studio contributors
  *
@@ -30,12 +33,15 @@
 #include <QDomDocument>
 #include <QDomElement>
 #include <QFile>
+#include <QJsonArray>
+#include <QJsonObject>
 #include <QString>
 #include <QStringList>
 #include <QTemporaryDir>
 #include <QTextStream>
 #include <QVector>
 
+#include "ControlRegistry.h"
 #include "DataFile.h"
 #include "Engine.h"
 #include "Song.h"
@@ -179,9 +185,22 @@ class UnclaimedTrackTypeTest : public QObject
 {
 	Q_OBJECT
 private slots:
-	void initTestCase() { Engine::init( true ); }
+	void initTestCase()
+	{
+		Engine::init( true );
+		// The registry only dispatches a handler once the application says the
+		// model is fully up - until then every command gets the typed 'busy'
+		// refusal with the reason code `engine_starting` (ControlSession.cpp).
+		// The last slot drives project.open through ControlRegistry, so this
+		// test sets that flag itself, exactly as ControlRegistryTest does.
+		ControlRegistry::setReady( true );
+	}
 
-	void cleanupTestCase() { Engine::destroy(); }
+	void cleanupTestCase()
+	{
+		ControlRegistry::setReady( false );
+		Engine::destroy();
+	}
 
 	//! The slice's owed proof (SPEC-ARCH-4 1.6.2): a `<track>` whose `type` this
 	//! build has no class for survives a load -> save round trip, is reported,
@@ -342,6 +361,72 @@ private slots:
 		const QDomElement container = containerOf( parse( readText( save ) ) );
 		QCOMPARE( container.elementsByTagName( QStringLiteral( "track" ) ).count(), 2 );
 		QVERIFY( !childWith( container, QStringLiteral( "name" ), QStringLiteral( "folder" ) ).isNull() );
+	}
+
+	//! SPEC-ARCH-4 1.6.4 (ARCH-4 S1d): the load REPORT. What the loader kept is
+	//! answered by `project.open` beside `ids_assigned`, so a caller learns what
+	//! a load preserved instead of discovering it on the next save. The paths
+	//! asserted here are the SAME ones the two slots above assert on the saved
+	//! DOM: the report composes them, it does not invent them.
+	void projectOpenReportsWhatTheLoadPreserved()
+	{
+		QTemporaryDir dir;
+		QVERIFY( dir.isValid() );
+
+		// Both refusals S1c added, in one document, in document order: a <track>
+		// whose `type` has no class here, then an element that is not a track.
+		const QString project = dir.filePath( QStringLiteral( "report.mmp" ) );
+		QVERIFY( writeText( project, projectWithContainerChildren(
+			"      <track type=\"9\" name=\"future\">\n"
+			"        <futuretrack gain=\"2\"/>\n"
+			"      </track>\n"
+			"      <lanes kind=\"bus\">\n"
+			"        <lane index=\"0\"/>\n"
+			"      </lanes>\n" ) ) );
+
+		ControlRegistry* registry = ControlRegistry::instance();
+		const ControlResult opened = registry->invoke( QStringLiteral( "project.open" ),
+			QJsonObject{{ QStringLiteral( "path" ), project }} );
+		QVERIFY2( opened.ok, qPrintable( opened.errorMessage ) );
+
+		const QJsonArray unclaimed =
+			opened.result.value( QStringLiteral( "unclaimed" ) ).toArray();
+		// The count is the array's own length rather than a second estimate, in
+		// the same `count`/`<name>_count` shape as the load errors beside it.
+		QCOMPARE( opened.result.value( QStringLiteral( "unclaimed_count" ) ).toInt(),
+			unclaimed.size() );
+		QCOMPARE( unclaimed.size(), 2 );
+
+		// DOCUMENT order, and that is the assertion: sorting these the way the
+		// error list beside them is sorted would put `lanes` first. The index in
+		// a path is the child number the re-emitted element occupies, so it is
+		// the track count (1: only the known track was built) plus the refused
+		// element's own position among the refusals.
+		QCOMPARE( unclaimed.at( 0 ).toString(),
+			QStringLiteral( "/song/trackcontainer/track[1]" ) );
+		QCOMPARE( unclaimed.at( 1 ).toString(),
+			QStringLiteral( "/song/trackcontainer/lanes[2]" ) );
+
+		// The report describes THIS load: a project of known types answers with
+		// an empty list, so a report that was always non-empty would be saying
+		// nothing about the load at all.
+		const QString known = dir.filePath( QStringLiteral( "known.mmp" ) );
+		QVERIFY( writeText( known, projectWithContainerChildren(
+			"      <track type=\"7\" name=\"folder\">\n"
+			"        <trackfolder/>\n"
+			"      </track>\n" ) ) );
+		const ControlResult clean = registry->invoke( QStringLiteral( "project.open" ),
+			QJsonObject{{ QStringLiteral( "path" ), known }} );
+		QVERIFY2( clean.ok, qPrintable( clean.errorMessage ) );
+
+		const QJsonArray cleanUnclaimed =
+			clean.result.value( QStringLiteral( "unclaimed" ) ).toArray();
+		QStringList cleanNames;
+		for( const QJsonValue& name : cleanUnclaimed ) { cleanNames.append( name.toString() ); }
+		QVERIFY2( cleanUnclaimed.isEmpty(),
+			qPrintable( QStringLiteral( "a project of known types reported unclaimed elements: " )
+				+ listed( cleanNames ) ) );
+		QCOMPARE( clean.result.value( QStringLiteral( "unclaimed_count" ) ).toInt(), 0 );
 	}
 };
 
