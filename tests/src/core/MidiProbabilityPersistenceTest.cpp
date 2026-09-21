@@ -25,8 +25,9 @@
 
 //! This mirrors the slide-notes persistence proof deliberately, because the
 //! serialisation rule is the same one: an optional attribute written only when
-//! set, so an old project loads with the old behaviour and re-saves
-//! byte-identically.
+//! set, so an old project loads with the old behaviour and re-saves its content
+//! unchanged. Not its bytes: see savedDocumentDigest for why a document re-save
+//! is compared through the index's canonical form and not byte for byte.
 
 #include <QtTest>
 
@@ -37,6 +38,7 @@
 #include <QTextStream>
 
 #include "DataFile.h"
+#include "DocumentIndex.h"
 #include "Note.h"
 #include "NoteRandom.h"
 
@@ -61,6 +63,38 @@ QString nodeToString( const QDomNode& node )
 	node.save( stream, 2 );
 	stream.flush();
 	return out;
+}
+
+//! The digest of a saved document in the form the document index canonicalises
+//! a tree to: attributes sorted by name, insignificant whitespace and comments
+//! dropped. tests/src/core/DocumentIndexTest.cpp pins that form, including that
+//! two spellings of one element disagreeing only in the order its attributes
+//! were written digest identically.
+//!
+//! A byte comparison cannot be asked for what this answers. QDomElement::save()
+//! emits an element's attributes in Qt's attribute QHash order, and Qt seeds
+//! that hash PER PROCESS, so two saves of one unchanged DOCUMENT differ in
+//! attribute order a fraction of the time - measured 2 failures / 300 runs
+//! (card #735). The two sides here are independently PARSED documents, which is
+//! what makes their hash states differ; two elements built by the same setter
+//! path, as in probabilityRoundTripsThroughSerialisation below, keep one order
+//! and can still be compared byte for byte. Everything else is still compared:
+//! every attribute name and value, the child order, and the character data.
+//! Only the seed is not.
+//!
+//! Parsed through the one-argument QDomDocument::setContent this file already
+//! uses, which leaves namespace processing off exactly as the project's own
+//! reader does (DocumentIndex.h documents the rule). A document that does not
+//! parse answers "<unparseable>", which no `sha256:` digest can equal, so a
+//! broken side fails the comparison instead of matching an empty one.
+QString savedDocumentDigest( const QString& saved )
+{
+	QDomDocument parsed;
+	if( !parsed.setContent( saved.toUtf8() ) )
+	{
+		return QStringLiteral( "<unparseable>" );
+	}
+	return sectionDigest( parsed.documentElement() );
 }
 
 QStringList attributeNames( const QDomElement& element )
@@ -200,7 +234,7 @@ private slots:
 	}
 
 	//! (c) A project that predates this feature loads with the documented
-	//! defaults and re-saves byte-identically, growing no new attribute.
+	//! defaults and re-saves the same content, growing no new attribute.
 	void legacyProjectLoadsUnchanged()
 	{
 		DataFile fresh( DataFile::Type::SongProject );
@@ -232,9 +266,9 @@ private slots:
 			QCOMPARE( attributeNames( notes.item( i ).toElement() ), upstreamAttributes );
 		}
 
-		// byte-identical re-save
+		// the same content re-saved, compared through the canonical form
 		DataFile roundTrip( first.toUtf8() );
-		QCOMPARE( fileToString( roundTrip ), first );
+		QCOMPARE( savedDocumentDigest( fileToString( roundTrip ) ), savedDocumentDigest( first ) );
 	}
 
 	//! (d) A project with probability, jitter and a seed set survives a full
@@ -289,9 +323,10 @@ private slots:
 		QCOMPARE( secondNote.probability(), 0.25f );
 		QCOMPARE( secondNote.velocityJitter(), 0.5f );
 
-		// save -> reload -> save is byte-identical
+		// save -> reload -> save carries the same content, compared through the
+		// canonical form rather than the writer's per-process attribute order
 		DataFile roundTrip( first.toUtf8() );
-		QCOMPARE( fileToString( roundTrip ), first );
+		QCOMPARE( savedDocumentDigest( fileToString( roundTrip ) ), savedDocumentDigest( first ) );
 	}
 };
 
