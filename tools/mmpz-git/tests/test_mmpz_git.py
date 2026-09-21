@@ -24,6 +24,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+import zipfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.dirname(HERE))
@@ -102,6 +103,94 @@ class Container(unittest.TestCase):
         for f in PLAIN:
             with self.subTest(f=rel(f)):
                 self.assertFalse(M.is_container(read(f)))
+
+
+class V2ContainerRefusal(unittest.TestCase):
+    """A `.mmpz` v2 container is a SECOND format (ARCH-4 S2c part 1: a STORE ZIP of
+    the project's sections).  This module implements only the v1 qCompress frame, so
+    every verb that meets a v2 container must REFUSE IT BY NAME with a non-zero exit.
+
+    What makes the refusal evidence rather than description is the pair of controls
+    at the end: the same verbs on a real v1 container and on a plain .mmp must still
+    succeed, so a guard that refused everything would fail this class.
+    """
+
+    def setUp(self):
+        self.work = tempfile.mkdtemp(prefix="mmpz-git-v2-")
+        self.addCleanup(shutil.rmtree, self.work, ignore_errors=True)
+        self.doc = (b'<?xml version="1.0"?>\n'
+                    b'<zene-project creator="LMMS" type="song" version="1">\n'
+                    b'\t<head><bpm>140</bpm></head>\n'
+                    b'</zene-project>\n')
+        # Written with Python's own zipfile in STORE mode, NOT by the product's
+        # writer: this suite is about what the tool does with ANY v2 container, so
+        # it must not be able to pass by agreeing with one writer's layout.
+        self.v2 = os.path.join(self.work, "v2.mmpz")
+        with zipfile.ZipFile(self.v2, "w", zipfile.ZIP_STORED) as z:
+            z.writestr("project.xml", self.doc)
+            z.writestr("sections/0000-track", b'<track type="instrument"/>')
+        self.v2_raw = read(self.v2)
+
+    def _cli(self, *argv, text=False):
+        return subprocess.run([sys.executable, TOOL] + list(argv),
+                              capture_output=True, text=text)
+
+    def test_fixture_is_a_third_format_not_a_v1_container(self):
+        """If the fixture were secretly v1 the refusals below would pass for the
+        wrong reason, so it is asserted to BE v2 and NOT v1 in the same breath."""
+        self.assertTrue(M.is_v2_container(self.v2_raw))
+        self.assertFalse(M.is_container(self.v2_raw),
+                         "a v2 container must not read as a v1 one")
+        self.assertIn(b"<?xml", self.v2_raw,
+                      "a STORE container holds its skeleton verbatim, which is what "
+                      "makes a text probe the wrong test")
+
+    def test_container_text_refuses_a_v2_container(self):
+        with self.assertRaises(M.V2ContainerError) as ctx:
+            M.container_text(self.v2_raw, "v2.mmpz")
+        self.assertIn("v2 container", str(ctx.exception))
+
+    def test_load_any_refuses_a_v2_container(self):
+        with self.assertRaises(M.V2ContainerError):
+            M.load_any(self.v2)
+
+    def test_every_reading_verb_refuses_and_writes_nothing(self):
+        """stdout must stay EMPTY: a filter that writes half a file on a refusal is
+        worse than one that writes the wrong thing, because git stores it."""
+        for verb in ("dump", "compress", "textconv"):
+            with self.subTest(verb=verb):
+                r = self._cli(verb, self.v2)
+                self.assertNotEqual(r.returncode, 0, "%s must not exit 0" % verb)
+                self.assertEqual(r.stdout, b"", "%s wrote to stdout on a refusal" % verb)
+                self.assertIn(b"v2 container", r.stderr, verb)
+
+    def test_verify_reports_v2_and_exits_nonzero(self):
+        """SKIP + exit 0 is the answer a caller cannot detect: it claims a file was
+        checked when it never was.  Measured before the fix: exactly that."""
+        r = self._cli("verify", self.v2, text=True)
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("V2", r.stdout)
+        self.assertNotIn("SKIP", r.stdout)
+
+    def test_controls_still_succeed_on_v1_and_on_plain_xml(self):
+        """The half that makes the refusals mean something: an over-broad guard
+        fails HERE."""
+        self.assertGreaterEqual(len(CONTAINERS), 1, "need a real v1 fixture")
+        v1 = CONTAINERS[0]
+        r = self._cli("dump", v1)
+        self.assertEqual(r.returncode, 0, "dump of a v1 container must still work")
+        self.assertTrue(r.stdout.lstrip().startswith(b"<?xml"))
+        self.assertNotIn(b"v2 container", r.stderr,
+                         "a success must not carry a refusal")
+        self.assertEqual(self._cli("verify", v1).returncode, 0)
+        self.assertTrue(M.load_any(v1).lstrip().startswith(b"<?xml"))
+
+        plain = os.path.join(self.work, "plain.mmp")
+        write(plain, self.doc)
+        self.assertEqual(M.load_any(plain), self.doc)
+        framed = self._cli("compress", plain)
+        self.assertEqual(framed.returncode, 0, "compress of plain XML must still work")
+        self.assertEqual(M.decompress(framed.stdout), self.doc)
 
 
 class Verbatim(unittest.TestCase):

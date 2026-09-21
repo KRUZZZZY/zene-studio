@@ -22,6 +22,12 @@
 # Container format (verified against src/core/DataFile.cpp:410 `qCompress(xml.toUtf8())`):
 #   [4-byte big-endian uncompressed length][zlib stream, default level]
 #
+# There is a SECOND container format — `.mmpz` v2, a STORE ZIP of the project's
+# sections (ARCH-4 S2c part 1, src/core/ProjectContainer.cpp).  This module does
+# not implement it: every verb that meets one REFUSES IT BY NAME with a non-zero
+# exit rather than answering it, because the ZIP's bytes would otherwise be
+# handed on as if they were XML.  See V2_CONTAINER_MAGIC below.
+#
 # Copyright (c) 2026 Zene Studio contributors
 """mmpz-git: git-friendly LMMS project files."""
 
@@ -86,11 +92,62 @@ def compress(xml: bytes) -> bytes:
     return struct.pack(">I", len(xml)) + zlib.compress(xml, 6)
 
 
+# ---------------------------------------------------------------------------
+# the v2 container — a SECOND format, which this module does not implement
+# ---------------------------------------------------------------------------
+# A `.mmpz` v2 container is a STORE ZIP holding `project.xml` plus one entry per
+# section (src/core/ProjectContainer.cpp, ARCH-4 S2c part 1).  It is a different
+# format from the qCompress frame above, and every verb here reads or writes only
+# the latter, so a v2 container has to be REFUSED BY NAME.
+#
+# The failure this guards against is not a crash — it is an ANSWER.  A v2
+# container's bytes start with the ZIP local-header magic, so `is_container()`
+# below returns False for them and every caller's `else data` branch fires: the
+# ZIP is returned as if it were the project's XML.  Measured on this tree
+# (2026-09-21, a 378-byte hand-built container): `dump` wrote all 378 bytes —
+# the ZIP — to stdout and exited 0, so a git smudge filter would write binary
+# into a working tree as if it were the document; `compress` wrapped the ZIP
+# inside a 214-byte v1 frame, which nothing reads back; `textconv` wrote the ZIP
+# as text; and `verify` printed SKIP and exited 0, reporting success for a file
+# it never checked.
+#
+# The refusal is by NAME and non-zero, because a caller that cannot tell "this is
+# v2" from "this is XML" is exactly the caller that writes the ZIP into a working
+# tree.  The magic is the same 4 bytes src/core/ProjectContainer.cpp matches.
+V2_CONTAINER_MAGIC = b"PK\x03\x04"
+
+
+def is_v2_container(data: bytes) -> bool:
+    """True if `data` is a `.mmpz` v2 container (a ZIP, ARCH-4 S2c)."""
+    return data[:4] == V2_CONTAINER_MAGIC
+
+
+class V2ContainerError(ValueError):
+    """A v2 container reached a verb that only understands the v1 qCompress frame."""
+
+    def __init__(self, source: str) -> None:
+        super().__init__(
+            "%s is a .mmpz v2 container (a ZIP of the project's sections); "
+            "mmpz-git reads and writes only the v1 qCompress container. "
+            "Refusing rather than handing the ZIP's bytes on as XML." % source
+        )
+
+
+def container_text(data: bytes, source: str) -> bytes:
+    """The XML inside a container, or `data` unchanged when it is already XML.
+
+    `source` names the input in the refusal (a path, or "<stdin>").
+    """
+    if is_v2_container(data):
+        raise V2ContainerError(source)
+    return decompress(data) if is_container(data) else data
+
+
 def load_any(path: str) -> bytes:
-    """Return the XML bytes of a project file, whatever the container."""
+    """Return the XML bytes of a project file, whatever the v1 container."""
     with open(path, "rb") as fh:
         data = fh.read()
-    return decompress(data) if is_container(data) else data
+    return container_text(data, path)
 
 
 def dump_bytes(path: str) -> bytes:
@@ -1672,9 +1729,14 @@ def _read_input(path):
         return fh.read()
 
 
+def _source_name(path) -> str:
+    """How a refusal names its input: a path, or "<stdin>" for the pipe form."""
+    return path if path not in (None, "-") else "<stdin>"
+
+
 def cmd_dump(args) -> int:
     data = _read_input(args.file)
-    xml = decompress(data) if is_container(data) else data
+    xml = container_text(data, _source_name(args.file))
     if getattr(args, "canonical", False):
         xml = canonical_xml(xml)
     if args.output:
@@ -1687,6 +1749,12 @@ def cmd_dump(args) -> int:
 
 def cmd_compress(args) -> int:
     xml = _read_input(args.file)
+    # A v2 container is refused here too, and for the reason this verb is the one
+    # that WRITES: `compress` would otherwise wrap the ZIP inside a v1 frame whose
+    # inflated body is a ZIP — a file neither format reads back (measured: a
+    # 378-byte container became a 214-byte frame around it).
+    if is_v2_container(xml):
+        raise V2ContainerError(_source_name(args.file))
     if is_container(xml):
         xml = decompress(xml)
     out = compress(xml)
@@ -1700,7 +1768,7 @@ def cmd_compress(args) -> int:
 
 def cmd_textconv(args) -> int:
     data = _read_input(args.file)
-    sys.stdout.buffer.write(decompress(data) if is_container(data) else data)
+    sys.stdout.buffer.write(container_text(data, _source_name(args.file)))
     return 0
 
 
@@ -1708,6 +1776,16 @@ def cmd_verify(args) -> int:
     rc = 0
     for path in args.files:
         raw = open(path, "rb").read()
+        if is_v2_container(raw):
+            # NOT the "not a container" SKIP below.  This file IS a container —
+            # just not the one this verb can round-trip — so reporting SKIP and
+            # exiting 0 would claim a file was checked when it was not, which is
+            # the one answer a caller cannot detect (measured: SKIP, exit 0).
+            print("V2     %s\n       a .mmpz v2 container (a ZIP of the project's "
+                  "sections); this verb round-trips only the v1 qCompress frame, so "
+                  "the file was NOT verified" % path)
+            rc = 1
+            continue
         if not is_container(raw):
             print("SKIP %s (not a .mmpz container)" % path)
             continue
@@ -1908,7 +1986,15 @@ def main(argv=None) -> int:
     u.set_defaults(func=cmd_uninstall)
 
     args = p.parse_args(argv)
-    return args.func(args)
+    try:
+        return args.func(args)
+    except V2ContainerError as exc:
+        # A refusal, not a crash: the message NAMES the format and the input, and
+        # the exit code is non-zero.  Exit 2 is distinct from 1 so a caller can
+        # tell "this tool cannot read that file" from "the check it ran failed"
+        # — the two answers a git filter and a CI script must not confuse.
+        print("%s: %s" % (PROG, exc), file=sys.stderr)
+        return 2
 
 
 if __name__ == "__main__":
