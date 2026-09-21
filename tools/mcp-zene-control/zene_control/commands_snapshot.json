@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-09-16T14:54:53Z",
+  "captured_at": "2026-09-21T15:57:47Z",
   "commands": [
     {
       "args_schema": {
@@ -11135,6 +11135,15 @@
           },
           "track_count": {
             "type": "integer"
+          },
+          "unclaimed": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "unclaimed_count": {
+            "type": "integer"
           }
         },
         "required": [],
@@ -17205,14 +17214,14 @@
   ],
   "count": 332,
   "instance": {
-    "binary": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-030/wwasm/build-nowasm/zene",
-    "binary_bytes": 13688408,
-    "binary_sha256": "7ef45a3815153d8971fb8a7b7ea9719706615cc7fcee2f511b0112c932dc9b46",
-    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/lmms-fl-research/zene-030/wwasm",
-    "lane_head": "1f5480d431e673f29adabc797e45b3a6a8020b37",
+    "binary": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-040/build-nowasm/zene",
+    "binary_bytes": 263235080,
+    "binary_sha256": "91899b1ae85b0757e9ee3ce0548be976406ee5991421670fff999315abb1e9cf",
+    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-040",
+    "lane_head": "fbe78fe1f31a5e16a49f0230d77bdcb49bbd741a",
     "proto": 1,
-    "source_socket": "/tmp/zctl-run-8d6ppz5r/zene.sock",
-    "version": "0.2.1-alpha.547+1f5480d"
+    "source_socket": "/tmp/zctl-run-wua9ttjx/zene.sock",
+    "version": "0.3.0-alpha.10+fbe78fe"
   },
   "kind": "zene-control-command-list",
   "proto": 1,
