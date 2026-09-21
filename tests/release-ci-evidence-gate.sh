@@ -33,7 +33,7 @@
 #   build.yml           the seven platform jobs (linux-x86_64, linux-arm64, macos-x86_64,
 #                       macos-arm64, mingw64, msvc-x64, windows-arm64)
 #   checks.yml          scripted-checks, shellcheck, yamllint
-#   quality-gates.yml   static gates (3, 4, 6, 7, 8, 9, 11)
+#   quality-gates.yml   static gates (3, 4, 6, 7, 8, 9, 11, 12)
 #
 # Usage:
 #   bash tests/release-ci-evidence-gate.sh --sha <commit> [--repo owner/name]
@@ -82,8 +82,15 @@ done
 
 # One required JOB per line: <workflow file><TAB><job display name>. ONE PER LINE, not a
 # space-separated list per workflow, because a job display name can itself contain spaces
-# and commas (`static gates (3, 4, 6, 7, 8, 9, 11)`) and a word-split would turn it into
-# nine pseudo-jobs that are then all reported missing.
+# and commas (`static gates (3, 4, 6, 7, 8, 9, 11, 12)`) and a word-split would turn it into
+# ten pseudo-jobs that are then all reported missing.
+#
+# THE DISPLAY NAME IS A COUPLING, and it drifted once already: `116653b9d` (2026-09-16)
+# widened quality-gates.yml's `static-gates` job to gate 12, one day after this file was
+# last touched, and the row below kept naming the old string. A renamed job is a RED here
+# by design - that is the point of declaring the set - so the RED was correct and this row
+# was stale. Re-read it against `.github/workflows/quality-gates.yml` whenever that job's
+# `name:` changes.
 REQUIRED="build.yml	linux-x86_64
 build.yml	linux-arm64
 build.yml	macos-x86_64
@@ -94,7 +101,7 @@ build.yml	windows-arm64
 checks.yml	scripted-checks
 checks.yml	shellcheck
 checks.yml	yamllint
-quality-gates.yml	static gates (3, 4, 6, 7, 8, 9, 11)"
+quality-gates.yml	static gates (3, 4, 6, 7, 8, 9, 11, 12)"
 
 if [ "$DUMP" -eq 1 ]; then
 	printf '%s\n' "$REQUIRED"
@@ -139,9 +146,24 @@ else
 		while IFS=$'\t' read -r path id status conclusion; do
 			[ -n "${id:-}" ] || continue
 			base="${path##*/}"
-			# A run with no jobs yet contributes no rows; its absence is caught below.
-			jobs="$(gh api "repos/$REPO/actions/runs/$id/jobs?per_page=100" --paginate \
-				-q --arg wf "$base" '.jobs[] | [$wf, .name, .status, (.conclusion // "-")] | @tsv' 2>/dev/null || true)"
+			# `gh api --jq` takes ONE string and has no jq `--arg` flag, so the workflow
+			# basename is embedded in the program rather than passed beside it. Embedding
+			# cannot inject: the `.path` regex above anchored `$` at `/<workflow>.yml`, so
+			# `${path##*/}` is exactly one of build.yml, checks.yml, quality-gates.yml.
+			# (Measured 2026-09-21: passing `-q --arg wf "$base" <program>` made gh read
+			# `--arg` AS the --jq value and treat the rest as positional arguments, so every
+			# call failed with "accepts 1 arg(s), received 4" and every required job was
+			# reported MISSING. The `--runs-tsv` fixture path never exercises this code.)
+			#
+			# A run with no jobs yet is a legitimate empty result, not a failure: it
+			# contributes no rows and its absence is caught below. A failed CALL is a
+			# different thing — unmeasured, which this gate's doctrine makes a refusal.
+			if ! jobs="$(gh api "repos/$REPO/actions/runs/$id/jobs?per_page=100" --paginate \
+				-q ".jobs[] | [\"$base\", .name, .status, (.conclusion // \"-\")] | @tsv" 2>&1)"; then
+				echo "release-ci-evidence-gate: the jobs API call for run $id failed — unmeasured, refused:" >&2
+				printf '%s\n' "$jobs" >&2
+				exit 3
+			fi
 			if [ -n "$jobs" ]; then
 				ROWS="$ROWS$jobs"$'\n'
 			fi
