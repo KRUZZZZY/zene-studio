@@ -238,6 +238,19 @@ set(LMMS_TESTS
 	# that is the LAST child, and a same-named element one level deeper that must
 	# NOT count as one), plus the refusal path that must return bytes unchanged.
 	src/core/DocumentSectionsTest.cpp
+	# The `.mmpz` v2 container (ARCH-4 S2c part 1): the shape of a project's
+	# bytes decided by CONTENT rather than by a file name, so a v1 `.mmpz` and a
+	# v2 one are told apart by their bytes and never by an extension that
+	# configuration chose (SPEC-ARCH-4 risk 5). Pinned here: all three shipping
+	# shapes plus the two a caller must refuse; XML recognised after a BOM and
+	# leading whitespace; the entry-name rules that stop a section being
+	# silently lost (the position is part of the name, a repeated name is
+	# refused rather than merged); a container with no sections refused so that
+	# writing v1 stays a decision; a ZIP without the skeleton refused BY NAME
+	# rather than guessed at; and the slice's own honest limit asserted - a
+	# subset read keeps the skeleton and the kept entries in the container's
+	# order, while the entries it did not ask for were still read.
+	src/core/ProjectContainerTest.cpp
 	# The export dither (TPDF) and the explicit SRC quality: the statistical
 	# proof of the dither, the byte-level off-by-default proof, the converter
 	# ratio convention, and the quality reaching the resampler.

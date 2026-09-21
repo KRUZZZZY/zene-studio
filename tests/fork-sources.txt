@@ -563,6 +563,7 @@ include/PluginAudioPorts.h
 include/PluginHostChunking.h
 include/PluginHostNotes.h
 include/PluginScanCache.h
+include/ProjectContainer.h
 include/ProjectIds.h
 include/ProjectKey.h
 include/ProjectRecovery.h
@@ -959,6 +960,7 @@ src/core/PatchWiring.cpp
 src/core/PluginHostChunking.cpp
 src/core/PluginHostNotes.cpp
 src/core/PluginScanCache.cpp
+src/core/ProjectContainer.cpp
 src/core/ProjectIds.cpp
 src/core/ProjectJournalBounds.cpp
 src/core/ProjectJournalStructural.cpp
@@ -1156,6 +1158,7 @@ tests/src/core/OutOfProcessHostClientLoopTest.cpp
 tests/src/core/OutOfProcessHostSupport.h
 tests/src/core/OutOfProcessHostTest.cpp
 tests/src/core/PartialLoadTest.cpp
+tests/src/core/ProjectContainerTest.cpp
 tests/src/core/ProjectOpenIntegrityTest.cpp
 tests/src/core/RackMacrosTest.cpp
 

@@ -810,6 +810,17 @@ set(LMMS_SRCS
 	# check. The additive rule (risk 2) is why the gate
 	# exists at all: a document carrying no unclaimed section gets no index.
 	core/DocumentIndex.cpp
+	# The `.mmpz` v2 container (ARCH-4 S2c): a STORE ZIP holding the document
+	# skeleton plus one entry per section, so a reader can address a section
+	# without parsing its neighbours. It is a policy layer over the container
+	# writer/reader already in the tree (DawProjectInterchange.h) - no new ZIP
+	# code - and it decides the one thing the format cannot leave to chance:
+	# which entry holds which section. Section names COLLIDE (two <track>
+	# elements are two sections with one name), so the position is part of the
+	# entry name and a repeated name is refused rather than merged. The shape
+	# of a project's bytes is decided by CONTENT and never by the extension
+	# (SPEC-ARCH-4 risk 5), because the extension is chosen by configuration.
+	core/ProjectContainer.cpp
 	core/ModulationLayer.cpp
 	core/TempoSyncKnobModel.cpp
 	core/ThreadPool.cpp

@@ -372,6 +372,7 @@ include/PluginScanCache.h
 include/PluginView.h
 include/PositionLine.h
 include/PresetPreviewPlayHandle.h
+include/ProjectContainer.h
 include/ProjectIds.h
 include/ProjectJournal.h
 include/ProjectKey.h
@@ -1293,6 +1294,7 @@ src/core/PluginHostNotes.cpp
 src/core/PluginIssue.cpp
 src/core/PluginScanCache.cpp
 src/core/PresetPreviewPlayHandle.cpp
+src/core/ProjectContainer.cpp
 src/core/ProjectIds.cpp
 src/core/ProjectJournal.cpp
 src/core/ProjectJournalBounds.cpp
@@ -1675,6 +1677,7 @@ tests/src/core/PhaseFChannelScaleTest.cpp
 tests/src/core/PluginAudioPortsTest.cpp
 tests/src/core/PluginLogoResourceTest.cpp
 tests/src/core/PluginScanCacheTest.cpp
+tests/src/core/ProjectContainerTest.cpp
 tests/src/core/ProjectOpenIntegrityTest.cpp
 tests/src/core/ProjectRecoveryTest.cpp
 tests/src/core/ProjectVersionTest.cpp
