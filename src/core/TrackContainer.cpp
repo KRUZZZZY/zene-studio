@@ -39,6 +39,7 @@
 #include "PatternTrack.h"
 #include "Song.h"
 #include "UnattendedRun.h"
+#include "UnclaimedElements.h"
 
 // The structural-undo helpers (task #664): journalling a reorder at the ONE
 // place every reorder passes through, and the replay guard that keeps a
@@ -51,6 +52,43 @@
 
 namespace lmms
 {
+
+namespace
+{
+
+/*! Claim \a element as a track of \a container, or keep it verbatim in \a into
+ *  (SPEC-ARCH-4 1.6.1 / 1.6.2). File-local, the shape Track.cpp's own
+ *  claimClipOrPreserveChild() uses, because it is a rule of ONE walk.
+ *
+ *  The two tests are ordered, and the order is load-bearing:
+ *
+ *   - `Track::create()` reads `type` with QVariant::toInt(), so an element with
+ *     NO `type` attribute reads as 0 - an Instrument track. Without the name
+ *     test first, every element a newer writer put inside `<trackcontainer>`
+ *     would be coerced into an instrument track. That is the same trap
+ *     SPEC-stable-ids.md 3.1 records for `<track>`'s children, one level up.
+ *     The name is the tag `Track::saveTrack` sets on every track's own element
+ *     (src/core/Track.cpp) and the same literal Song::loadProject's pre-count
+ *     walk compares against.
+ *   - A `<track>` whose `type` this build has no class for hits
+ *     `Track::create`'s `default: break` arm and returns nullptr. That arm
+ *     STAYS: it is the forward-compatibility contract documented beside the
+ *     folder track's own case (an older build reading type=7 drops the row).
+ *     This helper does not change what the build can MODEL; it changes what it
+ *     LOSES.
+ */
+void claimTrackOrPreserveChild( TrackContainer & container, const QDomElement & element,
+	QVector<UnclaimedElement> & into )
+{
+	if( element.nodeName() == QStringLiteral( "track" )
+		&& Track::create( element, &container ) != nullptr )
+	{
+		return;
+	}
+	captureUnclaimed( element, element.nodeName(), into );
+}
+
+} // namespace
 
 
 TrackContainer::TrackContainer() :
@@ -84,6 +122,14 @@ void TrackContainer::saveSettings( QDomDocument & _doc, QDomElement & _this )
 		track->saveState(_doc, _this);
 	}
 	m_tracksMutex.unlock();
+
+	// SPEC-ARCH-4 1.6.1: the tracks this build refused, put back AFTER the
+	// tracks it wrote - the position Song::saveProjectFile already gives the
+	// <song> sections nothing claimed, and the only one available to a build
+	// that cannot know where a newer writer put them. An empty list appends
+	// nothing, which is why a project whose every track was claimed still
+	// re-saves byte for byte.
+	reemitUnclaimed( m_unclaimedChildren, _doc, _this );
 
 	// The named visibility sets are written by Song::saveProjectFile into the
 	// project's own content element, not here: see visibilitySetsNodeName().
@@ -157,15 +203,27 @@ void TrackContainer::loadSettings( const QDomElement & _this )
 		if( node.isElement() &&
 			!node.toElement().attribute( "metadata" ).toInt() )
 		{
-			QString trackName = node.toElement().hasAttribute( "name" ) ?
-						node.toElement().attribute( "name" ) :
-						node.firstChild().toElement().attribute( "name" );
+			const QDomElement child = node.toElement();
+			QString trackName = child.hasAttribute( "name" ) ?
+						child.attribute( "name" ) :
+						child.firstChild().toElement().attribute( "name" );
 			if( pd != nullptr )
 			{
 				pd->setLabelText( tr("Loading Track %1 (%2/Total %3)").arg( trackName ).
 						  arg( pd->value() + 1 ).arg( Engine::getSong()->getLoadingTrackCount() ) );
 			}
-			Track::create( node.toElement(), this );
+			// SPEC-ARCH-4 1.6.1/1.6.2: the element is claimed only when this
+			// build can construct a track from it. Otherwise it is kept verbatim
+			// and re-emitted on save, instead of being dropped (a `type` with no
+			// class here) or coerced into an instrument track (an element that
+			// is not a <track> at all) - Track::create() would do the latter by
+			// reading an absent `type` as 0.
+			//
+			// The `metadata` guard above is unchanged, and it deliberately does
+			// NOT preserve: a marked element is REMOVED on write by
+			// DataFile::cleanMetaNodes(), so re-emitting one would only
+			// resurrect a one-way flag.
+			claimTrackOrPreserveChild( *this, child, m_unclaimedChildren );
 		}
 		node = node.nextSibling();
 	}
@@ -297,6 +355,13 @@ void TrackContainer::clearAllTracks()
 	// The visibility sets belong to the project the tracks belonged to, so they
 	// go with them (owner items 3+20+21).
 	clearVisibilitySets();
+	// ...and so do the children no build here could construct (ARCH-4 S1c). They
+	// are what this container would otherwise RE-EMIT into the NEXT project's
+	// file, so they are cleared at the one place the tracks they arrived with
+	// go: Song::clearProject() reaches this through its own clearAllTracks()
+	// call, a journal restore reaches it below, and ~TrackContainer reaches it
+	// on the way out.
+	m_unclaimedChildren.clear();
 }
 
 

@@ -1536,8 +1536,18 @@ void Song::loadProject( const QString & fileName )
 					n += nd.toElement().elementsByTagName("patterntrack").at(0)
 						.toElement().firstChildElement().childNodes().count();
 				}
-				nd=nd.nextSibling();
 			}
+			// The advance belongs HERE, not inside the branch above (ARCH-4 S1c,
+			// measured 2026-09-21). Inside it, the walk only moved on when the
+			// child it was looking at WAS a <track>: the first child of
+			// <trackcontainer> that was anything else - a <track> this build's
+			// factory refuses is still named `track`, so the trigger is an
+			// element a NEWER writer put there, or a hand-edited file - left
+			// `nd` where it was, `while( !nd.isNull() )` never terminated, and
+			// Song::loadProject spun at 100% CPU before the load proper had
+			// begun. It is a latent defect rather than a live one only because
+			// every file this tree writes has <track> children alone.
+			nd=nd.nextSibling();
 		}
 	}
 
@@ -2121,6 +2131,21 @@ QStringList Song::unclaimedElements() const
 			paths.append( QStringLiteral( "/song/trackcontainer/track[%1]/%2" )
 				.arg( i ).arg( child.key ) );
 		}
+	}
+
+	// And the children of <trackcontainer> this build could not construct
+	// (ARCH-4 S1c): a <track> whose `type` has no class here, or an element that
+	// is not a track at all. They are re-emitted AFTER the tracks above, so the
+	// j-th of them is child number tracks().size()+j of the element - which is
+	// what the index in the path means, exactly as it does one line up. The name
+	// is the element's OWN, so a refused track reports as `track[n]` and
+	// anything else reports under the name the newer writer gave it.
+	const QVector<UnclaimedElement>& refused = unclaimedChildren();
+	for( int j = 0; j < static_cast<int>( refused.size() ); ++j )
+	{
+		paths.append( QStringLiteral( "/song/trackcontainer/%1[%2]" )
+			.arg( refused.at( j ).key )
+			.arg( static_cast<int>( all.size() ) + j ) );
 	}
 
 	return paths;

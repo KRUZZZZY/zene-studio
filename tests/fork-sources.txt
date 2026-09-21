@@ -1194,6 +1194,7 @@ tests/src/core/StemExportTest.cpp
 # and this gate's own scan (Gate 9) is green with the entries below.
 tests/src/core/StemExportTestSupport.h
 tests/src/core/UnclaimedElementsTest.cpp
+tests/src/core/UnclaimedTrackTypeTest.cpp
 tests/src/core/UndoBoundsTest.cpp
 tests/src/tracks/SampleClipWindowTest.cpp
 tests/stem_commands_lib.py

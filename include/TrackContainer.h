@@ -31,6 +31,7 @@
 
 #include "Track.h"
 #include "JournallingObject.h"
+#include "UnclaimedElements.h"
 
 namespace lmms
 {
@@ -157,6 +158,24 @@ public:
 	//! walk: a project with no `<visibilitysets>` element holds no sets.
 	void loadVisibilitySetState( const QDomElement & element );
 
+	/*! The children of this container that no build here could construct, kept
+	 *  verbatim and re-emitted on save (SPEC-ARCH-4 1.6.1 / 1.6.2): a `<track>`
+	 *  whose `type` has no class in this build - `Track::create()` returns
+	 *  nullptr for it, which is the forward-compatibility arm documented beside
+	 *  the folder track in src/core/Track.cpp - and an element inside the
+	 *  container that is not a track at all, which `Track::create()` would
+	 *  otherwise coerce into an Instrument track by reading its absent `type`
+	 *  as 0.
+	 *
+	 *  EMPTY for a document this build understands completely, which is why
+	 *  such a project still re-saves byte for byte. The list describes ONE
+	 *  document: it is cleared with the tracks it came in with, in
+	 *  clearAllTracks(). */
+	const QVector<UnclaimedElement> & unclaimedChildren() const
+	{
+		return m_unclaimedChildren;
+	}
+
 	bool isEmpty() const;
 
 	static const QString classNodeName()
@@ -228,6 +247,13 @@ private:
 	//! the walk that reads them (see saveVisibilitySetState).
 	QVector<VisibilitySet> m_visibilitySets;
 	QString m_activeVisibilitySet;
+
+	//! The container's own unclaimed children (ARCH-4 S1c). Reset on absence,
+	//! like every other set in this file: they are what this container will
+	//! RE-EMIT on the next save, so a child kept from the previous project
+	//! would be written into this one. clearAllTracks() is the reset point
+	//! because it is the one place the tracks they arrived with go too.
+	QVector<UnclaimedElement> m_unclaimedChildren;
 
 	Type m_TrackContainerType;
 

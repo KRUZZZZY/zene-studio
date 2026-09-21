@@ -1729,6 +1729,7 @@ tests/src/core/TrackFolderTest.cpp
 tests/src/core/TwoTrackAlsaCaptureProbe.cpp
 tests/src/core/TwoTrackRecordingHarness.cpp
 tests/src/core/UnclaimedElementsTest.cpp
+tests/src/core/UnclaimedTrackTypeTest.cpp
 tests/src/core/UndoBoundsTest.cpp
 tests/src/core/VcaGroupTest.cpp
 tests/src/core/WarpMarkersTest.cpp

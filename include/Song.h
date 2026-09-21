@@ -469,12 +469,15 @@ public:
 	const ProjectKey& projectKey() const { return m_projectKey; }
 
 	/*! The document paths of everything the LAST load did not claim, in the
-	 *  order the document carried them (SPEC-ARCH-4 1.6.1/1.6.4): the <song>
-	 *  sections no reader matched, then each track's unclaimed children as
-	 *  `/song/trackcontainer/track[i]/<name>`. These elements are preserved
-	 *  verbatim and re-emitted on save, so this list is the report of what a
-	 *  load preserved rather than loaded - it is what `project.open` answers
-	 *  with, and it is empty for a project this build understands completely.
+	 *  order the document carried them (SPEC-ARCH-4 1.6.1/1.6.2/1.6.4): the
+	 *  <song> sections no reader matched, then each track's unclaimed children
+	 *  as `/song/trackcontainer/track[i]/<name>`, then the <trackcontainer>
+	 *  children this build could not CONSTRUCT as `/song/trackcontainer/
+	 *  <name>[i]` (a <track> whose `type` has no class here, or an element that
+	 *  is not a track at all). These elements are preserved verbatim and
+	 *  re-emitted on save, so this list is the report of what a load preserved
+	 *  rather than loaded - it is what `project.open` answers with, and it is
+	 *  empty for a project this build understands completely.
 	 *
 	 *  RESET ON ABSENCE, the rule every other project-scoped element in the load
 	 *  walk follows: the list describes ONE document and clearProject() empties

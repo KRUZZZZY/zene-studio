@@ -345,6 +345,13 @@ set(LMMS_TESTS
 	# again - so what is pinned is the whole round trip and the report that
 	# names what was left unclaimed, not the helper in isolation.
 	src/core/UnclaimedElementsTest.cpp
+	# ARCH-4 S1c: the <trackcontainer> children this build cannot construct -
+	# a <track> whose `type` has no class here, and an element that is not a
+	# track at all (SPEC-ARCH-4 1.6.2). Pins that neither is dropped and neither
+	# is coerced into an instrument track, across a real load -> save -> load
+	# -> save, with the negative control that a type this build CAN build is
+	# claimed and never reported.
+	src/core/UnclaimedTrackTypeTest.cpp
 	# The bounded, coalescing undo (task #623): the declared depth caps, the
 	# drag rule, the byte budget and the refusal of an evicted step.
 	src/core/UndoBoundsTest.cpp
