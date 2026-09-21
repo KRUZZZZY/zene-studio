@@ -137,6 +137,19 @@ QString listed( const QStringList& names )
 }
 
 
+//! Load \a project into the engine's song from a known-empty state, and hand it
+//! back. Clearing and disabling load-on-launch first is what makes every slot
+//! here a statement about THIS project rather than about the default one.
+Song* loadFresh( const QString& project )
+{
+	Song* song = Engine::getSong();
+	song->clearProject();
+	song->setLoadOnLaunch( false );
+	song->loadProject( project );
+	return song;
+}
+
+
 //! How many clips the song's first track holds - what a load walk made of the
 //! clip elements inside one <track>. Guarded because Track::getClip() CREATES a
 //! clip when asked for one that does not exist.
@@ -292,10 +305,7 @@ private slots:
 			"        <futureChild mode=\"mystery\"/>\n",
 			"    <futureSection invented=\"yes\"><child/></futureSection>\n" ) ) );
 
-		Song* song = Engine::getSong();
-		song->clearProject();
-		song->setLoadOnLaunch( false );
-		song->loadProject( project );
+		Song* song = loadFresh( project );
 
 		const QStringList reported = song->unclaimedElements();
 		QVERIFY2( reported.contains( QStringLiteral( "/song/futureSection" ) ),
@@ -346,10 +356,7 @@ private slots:
 		const QString project = dir.filePath( QStringLiteral( "known.mmp" ) );
 		QVERIFY( writeText( project, projectWith( "", "    <controllers/>\n" ) ) );
 
-		Song* song = Engine::getSong();
-		song->clearProject();
-		song->setLoadOnLaunch( false );
-		song->loadProject( project );
+		Song* song = loadFresh( project );
 
 		QVERIFY2( song->unclaimedElements().isEmpty(),
 			qPrintable( QStringLiteral( "a claimed element was reported as unclaimed: " )
@@ -383,10 +390,7 @@ private slots:
 			"    <pianoroll width=\"840\" x=\"-11\" y=\"0\" maximized=\"0\""
 			" height=\"480\" visible=\"0\" minimized=\"0\"/>\n" ) ) );
 
-		Song* song = Engine::getSong();
-		song->clearProject();
-		song->setLoadOnLaunch( false );
-		song->loadProject( project );
+		Song* song = loadFresh( project );
 
 		QVERIFY2( song->unclaimedElements().contains( QStringLiteral( "/song/pianoroll" ) ),
 			qPrintable( QStringLiteral( "a GUI-less build did not report the window state it "
@@ -425,10 +429,7 @@ private slots:
 			"        </midiclip>\n",
 			"" ) ) );
 
-		Song* song = Engine::getSong();
-		song->clearProject();
-		song->setLoadOnLaunch( false );
-		song->loadProject( project );
+		Song* song = loadFresh( project );
 
 		QVERIFY2( song->unclaimedElements().isEmpty(),
 			qPrintable( QStringLiteral( "a clip element was preserved instead of loaded: " )
@@ -463,10 +464,7 @@ private slots:
 			"        <automationpattern pos=\"0\" len=\"192\"/>\n",
 			"" ) ) );
 
-		Song* song = Engine::getSong();
-		song->clearProject();
-		song->setLoadOnLaunch( false );
-		song->loadProject( project );
+		Song* song = loadFresh( project );
 
 		QVERIFY2( song->unclaimedElements().isEmpty(),
 			qPrintable( QStringLiteral( "a pre-rename clip element was preserved instead "
@@ -487,10 +485,7 @@ private slots:
 		QVERIFY( writeText( project, projectWith(
 			"        <futureChild mode=\"mystery\"/>\n", "" ) ) );
 
-		Song* song = Engine::getSong();
-		song->clearProject();
-		song->setLoadOnLaunch( false );
-		song->loadProject( project );
+		Song* song = loadFresh( project );
 
 		QVERIFY2( song->unclaimedElements().contains(
 			QStringLiteral( "/song/trackcontainer/track[0]/futureChild" ) ),
