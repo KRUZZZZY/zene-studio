@@ -496,6 +496,7 @@ include/TrackRecorder.h
 include/TrackRenameLineEdit.h
 include/TrackView.h
 include/UnattendedRun.h
+include/UnclaimedElements.h
 include/ValueBuffer.h
 include/VcaGroup.h
 include/VersionedSaveDialog.h
@@ -1362,6 +1363,7 @@ src/core/Track.cpp
 src/core/TrackContainer.cpp
 src/core/TrackContainerFolders.cpp
 src/core/UnattendedRun.cpp
+src/core/UnclaimedElements.cpp
 src/core/UpgradeExtendedNoteRange.cpp
 src/core/UpgradeExtendedNoteRange.h
 src/core/ValueBuffer.cpp
@@ -1726,6 +1728,7 @@ tests/src/core/TimelineTest.cpp
 tests/src/core/TrackFolderTest.cpp
 tests/src/core/TwoTrackAlsaCaptureProbe.cpp
 tests/src/core/TwoTrackRecordingHarness.cpp
+tests/src/core/UnclaimedElementsTest.cpp
 tests/src/core/UndoBoundsTest.cpp
 tests/src/core/VcaGroupTest.cpp
 tests/src/core/WarpMarkersTest.cpp

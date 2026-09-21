@@ -40,6 +40,7 @@
 #include "ControllerRackView.h"
 #include "ControllerConnection.h"
 #include "UnattendedRun.h"
+#include "UnclaimedElements.h"
 #include "EnvelopeAndLfoParameters.h"
 #include "Mixer.h"
 #include "MixerView.h"
@@ -1265,6 +1266,12 @@ void Song::clearProject()
 	m_preservedSessionXml.clear();
 #endif
 
+	// ...and neither may the sections the previous project left unclaimed. The
+	// list describes ONE document (SPEC-ARCH-4 1.6.4), and the walk below only
+	// APPENDS to it, so this is the one place the next project starts from
+	// empty.
+	m_unclaimedElements.clear();
+
 	// The tempo map is project state, so a new project starts with none: a map
 	// from one project must not retime the next (docs/TEMPO-MAP.md).
 	m_tempoMap.edit([](TempoMap& map) { map.clear(); return true; });
@@ -1544,83 +1551,17 @@ void Song::loadProject( const QString & fileName )
 	{
 		if( node.isElement() )
 		{
-			if( node.nodeName() == "trackcontainer" )
+			const QDomElement element = node.toElement();
+			// SPEC-ARCH-4 1.6.1: an element NO reader claims is kept verbatim
+			// and re-emitted on save, so a document written by a newer build -
+			// or by a build of this one with more features compiled in - cannot
+			// lose a section merely by being opened and saved here. The two
+			// helpers answer "did I claim this element?", and the walk keeps
+			// only the dispatch (which is also what keeps its own complexity
+			// down; the branches that were here moved into them unchanged).
+			if( !restoreNamedSection( element ) && !restoreGuiSection( element ) )
 			{
-				( (JournallingObject *)( this ) )->restoreState( node.toElement() );
-			}
-			else if( node.nodeName() == TrackContainer::visibilitySetsNodeName() )
-			{
-				// The named visibility sets (owner items 3+20+21; the same
-				// project-state shape the tempo map and the modulation layer
-				// use). A build without this feature leaves the element alone
-				// and re-emits it, exactly as it does for an unknown section.
-				loadVisibilitySetState( node.toElement() );
-			}
-			else if( node.nodeName() == "controllers" )
-			{
-				restoreControllerStates( node.toElement() );
-			}
-			else if (node.nodeName() == "scales")
-			{
-				restoreScaleStates(node.toElement());
-			}
-			else if (node.nodeName() == "keymaps")
-			{
-				restoreKeymapStates(node.toElement());
-			}
-			// The two song-state elements that live behind a lock-free
-			// publisher: the tempo map (D11, docs/TEMPO-MAP.md) and the
-			// modulation layer (#602, docs/MODULATION.md). Each restores
-			// itself from its own <element>; the pair shares ONE helper so
-			// this walk carries one test for both instead of one each.
-			else if ( restorePublisherBackedSection( node ) )
-			{
-				// Handled: the node was a tempo-map or a modulation-layer.
-			}
-#ifdef LMMS_HAVE_SESSION_VIEW
-			else if( node.nodeName() == "session" )
-			{
-				// Versioned <session> block (SPEC-zene-studio A1). Unknown or
-				// future versions are ignored and preserved by the model.
-				m_sessionModel.restoreState( node.toElement() );
-			}
-#else
-			else if( node.nodeName() == "session" )
-			{
-				// This build has no Session View reader (WANT_SESSION_VIEW=OFF,
-				// the default). No other branch matches the element, so
-				// without this the block would simply vanish from the project
-				// the moment a default build re-saved it - silently, with no
-				// error, losing a whole feature's data. The raw XML is kept and
-				// re-emitted on save (see saveProjectFile()) so a load -> save
-				// round trip through a session-blind build cannot drop it.
-				QTextStream preserved( &m_preservedSessionXml );
-				node.toElement().save( preserved, 2 );
-				preserved.flush();
-			}
-#endif
-			else if( getGUI() != nullptr )
-			{
-				if( node.nodeName() == getGUI()->getControllerRackView()->nodeName() )
-				{
-					getGUI()->getControllerRackView()->restoreState( node.toElement() );
-				}
-				else if( node.nodeName() == getGUI()->pianoRoll()->nodeName() )
-				{
-					getGUI()->pianoRoll()->restoreState( node.toElement() );
-				}
-				else if( node.nodeName() == getGUI()->automationEditor()->m_editor->nodeName() )
-				{
-					getGUI()->automationEditor()->m_editor->restoreState( node.toElement() );
-				}
-				else if( node.nodeName() == getGUI()->getProjectNotes()->nodeName() )
-				{
-					 getGUI()->getProjectNotes()->SerializingObject::restoreState( node.toElement() );
-				}
-				else if (node.nodeName() == getTimeline(PlayMode::Song).nodeName())
-				{
-					getTimeline(PlayMode::Song).restoreState(node.toElement());
-				}
+				captureUnclaimed( element, element.nodeName(), m_unclaimedElements );
 			}
 		}
 		node = node.nextSibling();
@@ -1869,6 +1810,16 @@ bool Song::saveProjectFile(const QString & filename, bool withResources)
 	appendPreservedSessionXml( m_preservedSessionXml, dataFile );
 #endif
 
+	// SPEC-ARCH-4 1.6.1: the <song> sections this build did not claim, put back
+	// in capture order AFTER everything this build writes. That is the position
+	// the <session> block above has always been written at, and the only one
+	// available to a build that cannot know where a newer writer put them (this
+	// writer has never preserved section ORDER - it emits a fixed sequence, so
+	// trackcontainer comes first whatever the file said). An empty list appends
+	// nothing, which is why a project this build understands completely still
+	// round-trips byte-identically.
+	reemitUnclaimed( m_unclaimedElements, dataFile, dataFile.content() );
+
 	m_savingProject = false;
 
 	// The project-scoped id counter, on the root element beside version /
@@ -2012,6 +1963,167 @@ void Song::restoreKeymapStates(const QDomElement &element)
 		node = node.nextSibling();
 	}
 	emit keymapListChanged(-1);
+}
+
+/*! The named <song> sections this build reads (SPEC-ARCH-4 1.6.1). Extracted
+ *  from loadProject()'s walk when the walk's job became "claim it, or preserve
+ *  it": every branch below is what it was inline, one answer added. That answer
+ *  is what lets the walk treat anything else as unclaimed rather than dropped.
+ *  The five GUI window-state sections answer for themselves, in
+ *  restoreGuiSection(), because whether they have a reader depends on the
+ *  build. */
+bool Song::restoreNamedSection(const QDomElement & element)
+{
+	const QString name = element.nodeName();
+
+	// The mixer. loadProject() restores it BEFORE this walk on purpose - its
+	// channels set the range the track walk needs - so by the time the walk
+	// reaches the element it has already been read, and the only thing the walk
+	// owes it is the answer "claimed". Without this branch the mixer was an
+	// unclaimed section: it was captured and re-emitted beside the writer's own
+	// <mixer>, so the SECOND save of any project carried two of them (measured:
+	// SessionModelTest::preSessionProjectLoadsAndSavesUnchanged gained exactly
+	// one <mixer> block on its second save). The pre-walk lookup and this test
+	// both name the element through Engine::mixer()->nodeName(), so they cannot
+	// drift apart.
+	if( name == Engine::mixer()->nodeName() )
+	{
+		return true;
+	}
+	if( name == "trackcontainer" )
+	{
+		( (JournallingObject *)( this ) )->restoreState( element );
+		return true;
+	}
+	if( name == TrackContainer::visibilitySetsNodeName() )
+	{
+		// The named visibility sets (owner items 3+20+21; the same project-state
+		// shape the tempo map and the modulation layer use). A build without
+		// this feature leaves the element alone and re-emits it, exactly as it
+		// does for an unknown section.
+		loadVisibilitySetState( element );
+		return true;
+	}
+	if( name == "controllers" )
+	{
+		restoreControllerStates( element );
+		return true;
+	}
+	if( name == "scales" )
+	{
+		restoreScaleStates( element );
+		return true;
+	}
+	if( name == "keymaps" )
+	{
+		restoreKeymapStates( element );
+		return true;
+	}
+	// The two song-state elements that live behind a lock-free publisher: the
+	// tempo map (D11, docs/TEMPO-MAP.md) and the modulation layer (#602,
+	// docs/MODULATION.md). Each restores itself from its own <element>; the pair
+	// shares ONE helper so this walk carries one test for both instead of one
+	// each.
+	if( restorePublisherBackedSection( element ) ) { return true; }
+
+#ifdef LMMS_HAVE_SESSION_VIEW
+	if( name == "session" )
+	{
+		// Versioned <session> block (SPEC-zene-studio A1). Unknown or future
+		// versions are ignored and preserved by the model.
+		m_sessionModel.restoreState( element );
+		return true;
+	}
+#else
+	if( name == "session" )
+	{
+		// This build has no Session View reader (WANT_SESSION_VIEW=OFF, the
+		// default). No other branch claims the element, so without this the
+		// block would simply vanish from the project the moment a default build
+		// re-saved it - silently, with no error, losing a whole feature's data.
+		// The raw XML is kept and re-emitted on save (see saveProjectFile()) so
+		// a load -> save round trip through a session-blind build cannot drop
+		// it. This is the precedent S1b generalises; the path is unchanged.
+		QTextStream preserved( &m_preservedSessionXml );
+		element.save( preserved, 2 );
+		preserved.flush();
+		return true;
+	}
+#endif
+
+	return false;
+}
+
+/*! The five GUI window-state sections the project writer puts in <song>: the
+ *  controller rack, the piano roll, the automation editor, the project notes and
+ *  the timeline. With no GUI this answers false for all five, which is the point:
+ *  the loader genuinely does not claim them (GuiApplication::getGUI() is null, so
+ *  nothing could restore them), and the walk then preserves and reports them the
+ *  way it preserves an unknown section - the same build-capability gap the
+ *  <session> block is preserved for. A GUI build claims them and never preserves
+ *  them, so the two builds agree about what the FORMAT knows while disagreeing
+ *  about what this BUILD can read. */
+bool Song::restoreGuiSection(const QDomElement & element)
+{
+	using gui::getGUI;
+
+	if( getGUI() == nullptr ) { return false; }
+
+	const QString name = element.nodeName();
+	if( name == getGUI()->getControllerRackView()->nodeName() )
+	{
+		getGUI()->getControllerRackView()->restoreState( element );
+		return true;
+	}
+	if( name == getGUI()->pianoRoll()->nodeName() )
+	{
+		getGUI()->pianoRoll()->restoreState( element );
+		return true;
+	}
+	if( name == getGUI()->automationEditor()->m_editor->nodeName() )
+	{
+		getGUI()->automationEditor()->m_editor->restoreState( element );
+		return true;
+	}
+	if( name == getGUI()->getProjectNotes()->nodeName() )
+	{
+		getGUI()->getProjectNotes()->SerializingObject::restoreState( element );
+		return true;
+	}
+	if( name == getTimeline(PlayMode::Song).nodeName() )
+	{
+		getTimeline(PlayMode::Song).restoreState( element );
+		return true;
+	}
+	return false;
+}
+
+QStringList Song::unclaimedElements() const
+{
+	QStringList paths;
+	paths.reserve( m_unclaimedElements.size() );
+
+	for( const UnclaimedElement & element : m_unclaimedElements )
+	{
+		// The walk's parent element IS the document's <song>, so a captured
+		// section sits one level below it.
+		paths.append( QStringLiteral( "/song/" ) + element.key );
+	}
+
+	// The tracks are written FLAT under <trackcontainer> - TrackContainer::
+	// saveSettings writes one child element per track, a folder's children
+	// included - so a track's index in tracks() is its index in the document.
+	const TrackList& all = tracks();
+	for( int i = 0; i < static_cast<int>( all.size() ); ++i )
+	{
+		for( const UnclaimedElement & child : all.at( i )->unclaimedChildren() )
+		{
+			paths.append( QStringLiteral( "/song/trackcontainer/track[%1]/%2" )
+				.arg( i ).arg( child.key ) );
+		}
+	}
+
+	return paths;
 }
 
 /*! The song-state elements that live behind a lock-free publisher and carry no

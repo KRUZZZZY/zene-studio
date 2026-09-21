@@ -42,9 +42,10 @@ public:
 
 	void saveSettings( QDomDocument & _doc, QDomElement & _parent ) override;
 	void loadSettings( const QDomElement & _this ) override;
+	static const QString classNodeName() { return "patternclip"; }
 	inline QString nodeName() const override
 	{
-		return "patternclip";
+		return classNodeName();
 	}
 
 	int patternIndex();

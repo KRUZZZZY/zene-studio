@@ -32,6 +32,7 @@
 #include <QString>
 #include <QHash>  // IWYU pragma: keep
 #include <QPointer>
+#include <QStringList>
 
 #include "AudioEngine.h"
 #include "Controller.h"
@@ -47,6 +48,7 @@
 #include "ProjectKey.h"
 #include "Timeline.h"
 #include "TrackContainer.h"
+#include "UnclaimedElements.h"
 #include "VstSyncController.h"
 
 #ifdef LMMS_HAVE_SESSION_VIEW
@@ -466,6 +468,19 @@ public:
 	ProjectKey& projectKey() { return m_projectKey; }
 	const ProjectKey& projectKey() const { return m_projectKey; }
 
+	/*! The document paths of everything the LAST load did not claim, in the
+	 *  order the document carried them (SPEC-ARCH-4 1.6.1/1.6.4): the <song>
+	 *  sections no reader matched, then each track's unclaimed children as
+	 *  `/song/trackcontainer/track[i]/<name>`. These elements are preserved
+	 *  verbatim and re-emitted on save, so this list is the report of what a
+	 *  load preserved rather than loaded - it is what `project.open` answers
+	 *  with, and it is empty for a project this build understands completely.
+	 *
+	 *  RESET ON ABSENCE, the rule every other project-scoped element in the load
+	 *  walk follows: the list describes ONE document and clearProject() empties
+	 *  it, so a report can never describe the project before this one. */
+	QStringList unclaimedElements() const;
+
 	//! The tempo in force at \a tick: the map's event at or before it, else the
 	//! global tempo model (the map's own out-of-range rule).
 	int tempoAtTick(tick_t tick) const;
@@ -585,6 +600,22 @@ private:
 	 *  renaming a private helper that every branch in this line also edits
 	 *  would buy no behaviour. */
 	bool restorePublisherBackedSection(const QDomNode &node);
+
+	/*! SPEC-ARCH-4 1.6.1: the named sections of <song> this build does read.
+	 *  Restores whichever \a element is and answers true when it was one of
+	 *  them - the pair of answers is what lets loadProject()'s walk say "no
+	 *  reader claimed this element" without repeating the name list, which is
+	 *  what makes an element no branch here knows about preserved rather than
+	 *  dropped. */
+	bool restoreNamedSection(const QDomElement & element);
+
+	/*! The five GUI window-state sections the project writer puts in <song>
+	 *  (the controller rack, the piano roll, the automation editor, the project
+	 *  notes and the timeline). Answers false with no GUI at all - in a headless
+	 *  build the loader genuinely does not claim them, so the walk preserves and
+	 *  reports them, the same build-capability gap the <session> block is
+	 *  preserved for. */
+	bool restoreGuiSection(const QDomElement & element);
 
 	void processAutomations(const TrackList& tracks, TimePos timeStart, f_cnt_t frames);
 	void processMetronome(size_t bufferOffset);
@@ -735,6 +766,12 @@ private:
 	//! post-alpha/integration with PR #594 - see docs/SAVELOAD-INTEGRITY.md.
 	QString m_preservedSessionXml;
 #endif
+
+	//! The <song> sections the last load did not claim, kept verbatim and
+	//! re-emitted on save (SPEC-ARCH-4 1.6.1). Each track keeps its own
+	//! unclaimed children (Track::m_unclaimedChildren); unclaimedElements()
+	//! composes both into the document paths the report names.
+	QVector<UnclaimedElement> m_unclaimedElements;
 
 	friend class Engine;
 	friend class gui::SongEditor;

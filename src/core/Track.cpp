@@ -39,16 +39,20 @@
 #include "ConfigManager.h"
 #include "Engine.h"
 #include "InstrumentTrack.h"
+#include "MidiClip.h"
+#include "PatternClip.h"
 #include "PatternStore.h"
 #include "PatternTrack.h"
 #include "ProjectIds.h"
 #include "Sample.h"
 #include "SampleBuffer.h"
+#include "SampleClip.h"
 #include "SamplePlayHandle.h"
 #include "SampleTrack.h"
 #include "Song.h"
 #include "TrackContainer.h"
 #include "TrackFolder.h"
+#include "UnclaimedElements.h"
 
 
 namespace lmms
@@ -76,6 +80,60 @@ Clip* clipAt(Track::clipVector& clips, tick_t startTicks, tick_t lengthTicks)
 		}
 	}
 	return nullptr;
+}
+
+/*! The child of a <track> element that loadTrack's walk recognised as nothing
+ *  else: a CLIP element is loaded into a real clip, exactly as that branch has
+ *  always done, and anything else is kept verbatim as an unclaimed child so
+ *  saveTrack() re-emits it (SPEC-ARCH-4 1.6.1/1.6.3).
+ *
+ *  The name test is what keeps 1.6.3's rule true. That branch used to make a
+ *  real Clip out of EVERY child it saw, and that is how every clip in a project
+ *  was loaded: a clip element is named for its class and reached that branch
+ *  only because no earlier branch matched it. Replacing the coercion with a
+ *  capture therefore removed the clip loader with it - no clip element matched
+ *  anything, nothing was added to m_clips, TrackContainer::isEmpty() answered
+ *  true, and every project loaded empty.
+ *
+ *  So the accepted names are exactly the ones a clip element can carry, and
+ *  nothing else is coerced:
+ *
+ *   - The four clip classes this build writes. Their names are asked for, not
+ *     repeated: Track::createClip() returns one of the four, Clip::saveState()
+ *     writes that class's nodeName(), and the class publishes that literal, so
+ *     the loader and the writer cannot drift apart. (The four are the complete
+ *     set of Clip subclasses, so no clip element this build writes can miss
+ *     this test.)
+ *   - The four spellings DataFile::upgrade_bbTcoRename renames those elements
+ *     FROM. A document that reaches this walk without having been upgraded - a
+ *     current `version` attribute carrying a pre-rename tag, which is what the
+ *     tree's own legacy-shaped fixtures are - was loaded as a clip before this
+ *     change and still is, so nothing that loads today can stop loading.
+ *
+ *  A clip element of a class that is not this track's own (a <sampleclip> under
+ *  an <instrumenttrack>) is loaded into this track's own clip class, exactly as
+ *  the name-agnostic branch always did. That is unchanged here, and 1.6.3 does
+ *  not ask for it: what it forbids is a child the FORMAT has never heard of
+ *  coming back as a phantom clip, and such a child is preserved now. */
+void claimClipOrPreserveChild(Track& track, const QDomElement& element,
+	QVector<UnclaimedElement>& unclaimed)
+{
+	const QString name = element.nodeName();
+	if (name == MidiClip::classNodeName()
+		|| name == SampleClip::classNodeName()
+		|| name == PatternClip::classNodeName()
+		|| name == AutomationClip::classNodeName()
+		|| name == QLatin1String( "pattern" )
+		|| name == QLatin1String( "sampletco" )
+		|| name == QLatin1String( "bbtco" )
+		|| name == QLatin1String( "automationpattern" ))
+	{
+		Clip* clip = track.createClip(TimePos(0));
+		clip->restoreState(element);
+		return;
+	}
+
+	captureUnclaimed(element, name, unclaimed);
 }
 
 /*! The clips a region freeze muted, as one attribute: "start:length" pairs,
@@ -438,6 +496,12 @@ void Track::saveTrack(QDomDocument& doc, QDomElement& element, bool presetMode)
 	{
 		clip->saveState(doc, element);
 	}
+
+	// SPEC-ARCH-4 1.6.1: the track's own unclaimed children, put back after
+	// everything this build writes, exactly as the clips above. Nothing is
+	// appended for a track whose load claimed every child, so a project this
+	// build understands completely still round-trips unchanged.
+	reemitUnclaimed( m_unclaimedChildren, doc, element );
 }
 
 /*! \brief Load the settings from a file
@@ -542,6 +606,11 @@ void Track::loadTrack(const QDomElement& element, bool presetMode)
 	// the lane tag itself.
 	m_takeLanes.clear();
 
+	// The unclaimed children are reset on absence too, and for a sharper reason:
+	// they are what this track will RE-EMIT on the next save, so a child kept
+	// from the previous project would be written into this one.
+	m_unclaimedChildren.clear();
+
 	QDomNode node = element.firstChild();
 	while( !node.isNull() )
 	{
@@ -562,9 +631,13 @@ void Track::loadTrack(const QDomElement& element, bool presetMode)
 			&& node.nodeName() != "solo"
 			&& !node.toElement().attribute( "metadata" ).toInt() )
 			{
-				Clip * clip = createClip(
-								TimePos( 0 ) );
-				clip->restoreState( node.toElement() );
+				// SPEC-ARCH-4 1.6.3: the child this build does not read - a
+				// clip element, or one it has never heard of. The three
+				// exclusions above stay: `muted` and `solo` are read by the
+				// models just before this walk, and a metadata marker is
+				// deleted on write by DataFile::cleanMetaNodes(), so preserving
+				// one would resurrect a one-way flag.
+				claimClipOrPreserveChild( *this, node.toElement(), m_unclaimedChildren );
 			}
 		}
 		node = node.nextSibling();

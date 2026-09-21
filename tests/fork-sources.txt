@@ -618,6 +618,7 @@ include/TempoMap.h
 include/TrackFolder.h
 include/TrackRecorder.h
 include/UnattendedRun.h
+include/UnclaimedElements.h
 include/VcaGroup.h
 include/WarpMarkers.h
 include/zene/api/ControlApi.h
@@ -1005,6 +1006,7 @@ src/core/TelemetryNetworkTransport.cpp
 src/core/TempoMap.cpp
 src/core/TrackContainerFolders.cpp
 src/core/UnattendedRun.cpp
+src/core/UnclaimedElements.cpp
 src/core/VcaGroup.cpp
 src/core/audio/MultiTrackRecorder.cpp
 src/core/audio/TrackRecorder.cpp
@@ -1191,6 +1193,7 @@ tests/src/core/StemExportTest.cpp
 # tests/all-sources.txt instead); re-generating is the merge's job, not a lane's,
 # and this gate's own scan (Gate 9) is green with the entries below.
 tests/src/core/StemExportTestSupport.h
+tests/src/core/UnclaimedElementsTest.cpp
 tests/src/core/UndoBoundsTest.cpp
 tests/src/tracks/SampleClipWindowTest.cpp
 tests/stem_commands_lib.py

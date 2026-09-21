@@ -100,9 +100,10 @@ public:
 
 	void saveSettings( QDomDocument & _doc, QDomElement & _parent ) override;
 	void loadSettings( const QDomElement & _this ) override;
+	static const QString classNodeName() { return "sampleclip"; }
 	inline QString nodeName() const override
 	{
-		return "sampleclip";
+		return classNodeName();
 	}
 
 	Sample& sample()

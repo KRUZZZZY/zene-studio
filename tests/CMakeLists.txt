@@ -337,6 +337,14 @@ set(LMMS_TESTS
 	# a real git repository for the history half - driven through the registry, so
 	# the proof covers the path a socket client takes.
 	src/core/RevisionTimelineTest.cpp
+	# ARCH-4 S1b: the elements a loader did not claim, kept verbatim so that
+	# opening and re-saving cannot destroy them (SPEC-ARCH-4 1.6.1). The
+	# mechanism's own slots are unit-level; the owed proof is the integration
+	# pair, which writes a real project file carrying an unknown section and an
+	# unknown track child, loads it through Song::loadProject and saves it
+	# again - so what is pinned is the whole round trip and the report that
+	# names what was left unclaimed, not the helper in isolation.
+	src/core/UnclaimedElementsTest.cpp
 	# The bounded, coalescing undo (task #623): the declared depth caps, the
 	# drag rule, the byte budget and the refusal of an evicted step.
 	src/core/UndoBoundsTest.cpp

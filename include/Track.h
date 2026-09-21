@@ -36,6 +36,7 @@
 #include "LmmsTypes.h"
 #include <optional>
 #include "TakeLane.h"
+#include "UnclaimedElements.h"
 
 
 namespace lmms
@@ -210,6 +211,17 @@ public:
 	const FrozenTake& frozenTake() const { return m_frozen; }
 	//! True when the take's audio is in memory, i.e. it will actually sound.
 	bool frozenAudioReady() const { return m_frozenBuffer != nullptr; }
+
+	/*! SPEC-ARCH-4 1.6.1: the children of this track's own <track> element that
+	 *  the last load did not claim - not this track type's own element, not
+	 *  <takelanes>, not one of the two booleans the track reads itself, and not
+	 *  a CLIP element (a clip belongs to the class createClip() builds, and
+	 *  claimClipOrPreserveChild() hands it to that class). Each is kept verbatim
+	 *  and re-emitted by saveTrack(), so a project written by a newer build
+	 *  cannot lose a child this build never heard of by being opened and saved
+	 *  here; Song::unclaimedElements() composes these into the report's paths.
+	 *  (1.6.3: this branch used to make a real Clip of every unknown child.) */
+	const QVector<UnclaimedElement>& unclaimedChildren() const { return m_unclaimedChildren; }
 
 	/*! Loads \a path into memory and makes this track play it instead of its own
 	 *  clips. The load happens HERE, on the calling (control or load) thread,
@@ -430,6 +442,11 @@ private:
 	//! Take lanes + composite (comping; docs/COMPING.md). Serialised by
 	//! Track::saveTrack as a <takelanes> child, absent when empty.
 	TakeLaneModel m_takeLanes;
+
+	//! The children of this track's <track> element that the last load did not
+	//! claim, kept verbatim and re-emitted by saveTrack() (SPEC-ARCH-4 1.6.1).
+	//! Cleared per load, like every other reset-on-absence member here.
+	QVector<UnclaimedElement> m_unclaimedChildren;
 
 	//! The frozen take (freeze / bounce-in-place). `m_frozenBuffer` is loaded
 	//! on the control thread and never touched by the audio thread while the

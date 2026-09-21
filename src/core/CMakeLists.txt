@@ -808,6 +808,7 @@ set(LMMS_SRCS
 	core/UnattendedRun.cpp
 	core/UpgradeExtendedNoteRange.h
 	core/UpgradeExtendedNoteRange.cpp
+	core/UnclaimedElements.cpp
 	core/Clip.cpp
 	core/ValueBuffer.cpp
 	core/VstSyncController.cpp

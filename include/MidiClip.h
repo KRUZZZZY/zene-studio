@@ -102,9 +102,10 @@ public:
 	void exportToXML(QDomDocument& doc, QDomElement& midiClipElement, bool onlySelectedNotes = false);
 	void saveSettings( QDomDocument & _doc, QDomElement & _parent ) override;
 	void loadSettings( const QDomElement & _this ) override;
+	static const QString classNodeName() { return "midiclip"; }
 	inline QString nodeName() const override
 	{
-		return "midiclip";
+		return classNodeName();
 	}
 
 	inline InstrumentTrack * instrumentTrack() const
