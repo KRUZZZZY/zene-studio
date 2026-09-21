@@ -128,6 +128,30 @@ public:
 		return m_loadRefusal;
 	}
 
+	//! The sections a PARTIAL load did not load, in document order - the ones the
+	//! caller named through loadProject()'s skip list and the reducer removed
+	//! before anything parsed them (SPEC-ARCH-4 1.4, ARCH-4 S2b). Empty for every
+	//! load that named none, which is every ordinary load.
+	QStringList notLoadedSections() const
+	{
+		return m_notLoadedSections;
+	}
+
+	//! True when this session holds LESS than the file it was loaded from, so
+	//! saving it would write that loss back and a render would render an
+	//! incomplete project. Such a session is READ-ONLY: saveProjectFile() refuses
+	//! and says why through saveRefusal().
+	bool isPartialLoad() const
+	{
+		return !m_notLoadedSections.isEmpty();
+	}
+
+	//! Why the most recent saveProjectFile() refused, empty when it wrote.
+	QString saveRefusal() const
+	{
+		return m_saveRefusal;
+	}
+
 	void processNextBuffer();
 
 	/*! Sample-accurate automation (feature-list row 9,
@@ -356,7 +380,7 @@ public:
 	// file management
 	void createNewProject();
 	void createNewProjectFromTemplate( const QString & templ );
-	void loadProject( const QString & filename );
+	void loadProject( const QString & filename, const QStringList & skipSections = QStringList() );
 	bool guiSaveProject();
 	bool guiSaveProjectAs(const QString & filename);
 	bool saveProjectFile(const QString & filename, bool withResources = false);
@@ -707,6 +731,16 @@ private:
 	QHash<QString, int> m_errors;
 	//! Set by loadProject() when it refuses a file; empty after a good load.
 	QString m_loadRefusal;
+
+	//! The sections the most recent ACCEPTED load did not load, in document
+	//! order (SPEC-ARCH-4 1.4, ARCH-4 S2b). A partial project.open names the
+	//! sections it does not want and DataFile's reducer removes their bytes
+	//! before anything parses them, so nothing in this session corresponds to
+	//! them. Non-empty therefore means the session holds LESS than its file -
+	//! which is what makes it read-only (see saveProjectFile()).
+	QStringList m_notLoadedSections;
+	//! Set by saveProjectFile() when it refuses; empty after a write.
+	QString m_saveRefusal;
 
 	std::array<Timeline, PlayModeCount> m_timelines;
 

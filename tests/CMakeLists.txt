@@ -340,6 +340,17 @@ set(LMMS_TESTS
 	src/core/PluginLogoResourceTest.cpp
 	src/core/PluginAudioPortsTest.cpp
 	src/core/PluginScanCacheTest.cpp
+	# The reader half of ARCH-4 S2b, integration rather than unit: a project opened
+	# with sections named to SKIP. Pinned here: the content element name DERIVED from
+	# the root's type attribute (the "pattern" -> midiclip compat mapping is what
+	# proves it, so reading the attribute instead would still pass a naive fixture),
+	# the reduction happening on BOTH payload shapes (raw and qUncompress-ed - a
+	# legacy .mmpz arrives compressed), a report that describes the DOCUMENT rather
+	# than the request (a name that was asked for and never present is not "skipped"),
+	# the surviving document being byte-identical to a load that never had the section,
+	# and the read-only policy: a partial session refuses to save unless every writer
+	# is told, and a REFUSED load is not a partial one.
+	src/core/PartialLoadTest.cpp
 	src/core/ProjectOpenIntegrityTest.cpp
 	src/core/ProjectRecoveryTest.cpp
 	src/core/ProjectVersionTest.cpp

@@ -1273,6 +1273,12 @@ void Song::clearProject()
 	// empty.
 	m_unclaimedElements.clear();
 
+	// ...and neither may the sections a PARTIAL load left out (ARCH-4 S2b). The
+	// list describes one document and names bytes that are not in this one, so a
+	// new project must start whole - leaving it set would mark a fresh, complete
+	// session read-only.
+	m_notLoadedSections.clear();
+
 	// The tempo map is project state, so a new project starts with none: a map
 	// from one project must not retime the next (docs/TEMPO-MAP.md).
 	m_tempoMap.edit([](TempoMap& map) { map.clear(); return true; });
@@ -1400,8 +1406,12 @@ void Song::createNewProjectFromTemplate( const QString & templ )
 
 
 
-// load given song
-void Song::loadProject( const QString & fileName )
+// load given song. \a skipSections names sections the caller does not want
+// loaded (SPEC-ARCH-4 1.4, ARCH-4 S2b): their bytes are removed before anything
+// parses them, and what was removed becomes this session's notLoadedSections() -
+// which makes the session read-only (see saveProjectFile). An empty list is an
+// ordinary, whole load.
+void Song::loadProject( const QString & fileName, const QStringList & skipSections )
 {
 	using gui::getGUI;
 
@@ -1419,7 +1429,13 @@ void Song::loadProject( const QString & fileName )
 	m_oldFileName = m_fileName;
 	setProjectFileName(fileName);
 
-	DataFile dataFile( m_fileName );
+	// The report is carried in a LOCAL list and only becomes this session's
+	// state once the load has been ACCEPTED, a few lines below. Assigning the
+	// member directly would let a refused load - unparseable, no <head>, or the
+	// local-plugin refusal - leave the PREVIOUS project looking partial, and
+	// the previous project is still the loaded one on that path.
+	QStringList skippedSections;
+	DataFile dataFile( m_fileName, skipSections, &skippedSections );
 
 	bool cantLoadProject = false;
 	// if file could not be opened, head-node is null and we create
@@ -1481,6 +1497,11 @@ void Song::loadProject( const QString & fileName )
 	m_oldFileName = m_fileName;
 
 	clearProject();
+
+	// The load was ACCEPTED, so what it skipped is now this session's state
+	// (ARCH-4 S2b). clearProject() runs first because it is what resets the rest
+	// of the per-document state and this belongs with it.
+	m_notLoadedSections = skippedSections;
 
 	clearErrors();
 
@@ -1723,6 +1744,32 @@ void appendPreservedSessionXml( const QString & xml, DataFile & dataFile )
 bool Song::saveProjectFile(const QString & filename, bool withResources)
 {
 	using gui::getGUI;
+
+	// ARCH-4 S2b, and the whole of the read-only policy for a partial load. A
+	// session that holds LESS than the file it came from must not write that
+	// loss back: its <song> is missing the sections a partial project.open
+	// named, so a save would replace a whole document with a subset of it and
+	// nothing downstream could tell the result from a document that merely lost
+	// those sections.
+	//
+	// There is deliberately no "save what you have" mode. The skipped sections
+	// are not in this session's DOM at all - that is the mechanism's point - so
+	// there is nothing to write them from, and inventing a carrier for them is a
+	// FORMAT decision (SPEC-ARCH-4's `z:unclaimed`, or the v2 container) rather
+	// than this slice's. Every writer therefore refuses, including the temporary
+	// project files render.stems and the mastering run take: a render of an
+	// incomplete session is an incomplete render, and refusing is the honest
+	// answer rather than a quietly short one.
+	m_saveRefusal.clear();
+	if (isPartialLoad())
+	{
+		m_saveRefusal = tr("this session was loaded PARTIALLY: %1 section(s) are not in memory "
+			"(%2), so saving would write a document missing them. Reopen the project without "
+			"\"sections\" to save it.")
+			.arg(m_notLoadedSections.size())
+			.arg(m_notLoadedSections.join(QStringLiteral(", ")));
+		return false;
+	}
 
 	DataFile dataFile( DataFile::Type::SongProject );
 	m_savingProject = true;

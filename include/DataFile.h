@@ -28,6 +28,7 @@
 
 #include <map>
 #include <QDomDocument>
+#include <QStringList>
 #include <vector>
 
 #include "lmms_export.h"
@@ -59,8 +60,27 @@ public:
 		MidiClip
 	} ;
 
-	DataFile( const QString& fileName );
-	DataFile( const QByteArray& data );
+	//! ARCH-4 S2b, SPEC-ARCH-4 1.4. \a skipSections names sections of THIS
+	//! document that the caller does not want loaded. Their whole subtrees are
+	//! removed from the document's own bytes BEFORE anything parses them, so no
+	//! XML node and no model object is ever built for one - which is what the
+	//! spec's partial-load claim ("prove the rest was not parsed") owes, and what
+	//! parsing everything and then dropping the nodes cannot say
+	//! (DocumentIndex.h's reduceDocumentSections states the measurement).
+	//!
+	//! \a skippedNames, when given, is ASSIGNED what was actually removed, in
+	//! document order, and only once the reduced payload has PARSED. So a caller
+	//! can answer "is this a partial load?" from that one list: it is non-empty
+	//! exactly when this object holds less than the file did. It is left
+	//! untouched by a load that refuses, and assigned empty by one that removes
+	//! nothing.
+	//!
+	//! Both default to "no partial load", which is the identity - the bytes go to
+	//! the parser exactly as before this overload existed.
+	DataFile( const QString& fileName, const QStringList& skipSections = {},
+		QStringList* skippedNames = nullptr );
+	DataFile( const QByteArray& data, const QStringList& skipSections = {},
+		QStringList* skippedNames = nullptr );
 	DataFile( Type type );
 
 	virtual ~DataFile() = default;
@@ -164,7 +184,29 @@ private:
 
 	void upgrade();
 
-	void loadData( const QByteArray & _data, const QString & _sourceFile );
+	//! ARCH-4 S2b. Reduce \a data by \a skipSections and parse the answer into
+	//! \a document. Answers true when the parser accepted it; on a refusal
+	//! \a errorMsg / \a line / \a col carry the parser's report of the FAILED
+	//! attempt, exactly as lmms::setContent left them.
+	//!
+	//! The removal report is written to \a skippedNames only once the reduced
+	//! payload has parsed, so a reduction that succeeds and a parse that then
+	//! fails cannot leave the caller holding sections removed from a document it
+	//! never got.
+	static bool reduceAndParse( QDomDocument& document, const QByteArray& data,
+		const QStringList& skipSections, QStringList* skippedNames,
+		QString& errorMsg, int& line, int& col );
+
+	//! ARCH-4 S2b. The element name a document's own root declares as its CONTENT
+	//! element - `typeName( type( root's "type" attribute ) )`, the same round
+	//! trip loadData() makes - recovered from a bounded prologue scan that reads
+	//! only the first StartElement. Answers an empty string for a payload no
+	//! parser can start on, which makes the reducer refuse and hand the bytes on
+	//! unchanged.
+	static QString contentElementNameFor( const QByteArray& data );
+
+	void loadData( const QByteArray & _data, const QString & _sourceFile,
+		const QStringList & skipSections, QStringList * skippedNames );
 
 	QString m_fileName; //!< The origin file name or "" if this DataFile didn't originate from a file
 	QDomElement m_content;

@@ -37,6 +37,7 @@
 #include <QMessageBox>
 #include <QRegularExpression>
 #include <QSaveFile>
+#include <QXmlStreamReader>
 
 #include "base64.h"
 #include "ConfigManager.h"
@@ -155,7 +156,8 @@ DataFile::DataFile( Type type ) :
 
 
 
-DataFile::DataFile( const QString & _fileName ) :
+DataFile::DataFile( const QString & _fileName, const QStringList & skipSections,
+	QStringList * skippedNames ) :
 	QDomDocument(),
 	m_fileName(_fileName),
 	m_content(),
@@ -186,20 +188,21 @@ DataFile::DataFile( const QString & _fileName ) :
 		return;
 	}
 
-	loadData( inFile.readAll(), _fileName );
+	loadData( inFile.readAll(), _fileName, skipSections, skippedNames );
 }
 
 
 
 
-DataFile::DataFile( const QByteArray & _data ) :
+DataFile::DataFile( const QByteArray & _data, const QStringList & skipSections,
+	QStringList * skippedNames ) :
 	QDomDocument(),
 	m_fileName(""),
 	m_content(),
 	m_head(),
 	m_fileVersion( UPGRADE_METHODS.size() )
 {
-	loadData( _data, "<internal data>" );
+	loadData( _data, "<internal data>", skipSections, skippedNames );
 }
 
 
@@ -2259,17 +2262,114 @@ void DataFile::upgrade()
 
 
 
-void DataFile::loadData( const QByteArray & _data, const QString & _sourceFile )
+// ARCH-4 S2b. The prologue scan and the reduce-then-parse attempt, both stated
+// in full on their declarations in DataFile.h. They are defined here, above
+// loadData(), because that is the only caller and the two of them together ARE
+// the partial-load mechanism.
+
+
+QString DataFile::contentElementNameFor( const QByteArray & data )
+{
+	// Bounded: the first StartElement is the document's root and nothing after
+	// it is looked at, so this costs a fixed amount however large the document
+	// is. It has to be a SCAN and not a search for `type=`, because the attribute
+	// is not guaranteed to be first or at any known offset - measured 2026-09-21
+	// over 8 shapes, including a BOM-prefixed and a whitespace-prefixed document,
+	// `type` last after three other attributes, and qCompress()-shaped input
+	// (which answers empty here, so the reducer refuses and loadData's second,
+	// decompressed attempt does the work).
+	QXmlStreamReader xml( data );
+	xml.setNamespaceProcessing( false );
+
+	while( !xml.atEnd() )
+	{
+		const QXmlStreamReader::TokenType token = xml.readNext();
+		if( token == QXmlStreamReader::StartElement )
+		{
+			// DERIVED, not read off the attribute - the round trip is
+			// load-bearing, and the compat mapping is the case that proves it.
+			// A legacy `<zene-project type="pattern">` has `<midiclip>` as its
+			// content element (type() maps "pattern" to MidiClip, typeName()
+			// names it "midiclip"). Looking for a `<pattern>` child instead
+			// would match nothing, remove nothing, and hand the caller's
+			// skipped section to the parser while reporting that it had been
+			// skipped. The failure case is faithful in the same way: an absent
+			// or unrecognised `type` yields "unknown", which names no content
+			// element HERE and no content element THERE either (loadData
+			// selects its content with the identical call), so this agrees with
+			// the parser rather than diverging from it.
+			return typeName( type( xml.attributes().value(
+				QStringLiteral( "type" ) ).toString() ) );
+		}
+		if( token == QXmlStreamReader::Invalid ) { break; }
+	}
+
+	return QString();
+}
+
+
+
+
+bool DataFile::reduceAndParse( QDomDocument & document, const QByteArray & data,
+	const QStringList & skipSections, QStringList * skippedNames,
+	QString & errorMsg, int & line, int & col )
+{
+	// The report is taken into a LOCAL list and handed on only after the reduced
+	// payload has parsed. Handing it over earlier would let a reduction that
+	// succeeded beside a parse that then failed leave the caller holding
+	// sections of a document it never got - and the caller's one test for
+	// "partial?" reads that list.
+	QStringList removed;
+	const QByteArray payload = reduceDocumentSections( data,
+		contentElementNameFor( data ), skipSections, &removed );
+
+	if( !lmms::setContent( document, payload, &errorMsg, &line, &col ) )
+	{
+		return false;
+	}
+
+	// ASSIGNED, so a load that removed nothing clears a list the caller reused.
+	if( skippedNames != nullptr ) { *skippedNames = removed; }
+	return true;
+}
+
+
+
+
+void DataFile::loadData( const QByteArray & _data, const QString & _sourceFile,
+	const QStringList & skipSections, QStringList * skippedNames )
 {
 	QString errorMsg;
 	int line = -1, col = -1;
-	if (!lmms::setContent(*this, _data, &errorMsg, &line, &col))
+
+	// ARCH-4 S2b. The reduction happens BEFORE anything parses the payload, so a
+	// section the caller did not ask for reaches no XML parser and no node is
+	// ever built for it - the property SPEC-ARCH-4 1.4's partial load owes and
+	// the reason the reducer slices raw byte ranges instead of pruning a parsed
+	// DOM. With an empty skip list reduceDocumentSections() refuses and answers
+	// its input verbatim, so this whole path is the identity for a caller that
+	// did not ask for a partial load.
+	//
+	// It is attempted on BOTH payload shapes, in the order the parser itself
+	// tries them, and that ordering is the whole of the wiring's subtlety. A
+	// legacy `.mmpz` reaches loadData as the file's bytes whole, which are
+	// qCompress() output - the scanner cannot follow compressed bytes to an end
+	// tag, so it refuses and names nothing (measured 2026-09-21). Reducing only
+	// the raw payload and stopping there would leave the qUncompress() parse
+	// below to read every section, and the load would then report `not_loaded`
+	// for sections it had in fact read in full: a lie in the direction that
+	// matters, because the caller would believe it holds less than it does.
+	if (!reduceAndParse(*this, _data, skipSections, skippedNames, errorMsg, line, col))
 	{
 		// parsing failed? then try to uncompress data
 		QByteArray uncompressed = qUncompress( _data );
 		if( !uncompressed.isEmpty() )
 		{
-			if (lmms::setContent(*this, uncompressed, &errorMsg, &line, &col))
+			// A second attempt on the decompressed bytes, with its own report:
+			// the failed pass above assigned nothing, and this one only assigns
+			// once what it reduced has parsed.
+			if (reduceAndParse(*this, uncompressed, skipSections, skippedNames,
+					errorMsg, line, col))
 			{
 				line = col = -1;
 			}

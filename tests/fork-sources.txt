@@ -1155,6 +1155,7 @@ tests/src/core/NamespaceRegistryTest.cpp
 tests/src/core/OutOfProcessHostClientLoopTest.cpp
 tests/src/core/OutOfProcessHostSupport.h
 tests/src/core/OutOfProcessHostTest.cpp
+tests/src/core/PartialLoadTest.cpp
 tests/src/core/ProjectOpenIntegrityTest.cpp
 tests/src/core/RackMacrosTest.cpp
 

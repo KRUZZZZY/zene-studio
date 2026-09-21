@@ -97,8 +97,15 @@ void registerProjectSave(ControlRegistry& registry)
 
 		if (!song->saveProjectFile(target))
 		{
+			// The engine can state a reason of its own - a partial load is the
+			// one it has (ARCH-4 S2b) - and reporting it is the difference
+			// between "try again" and "this session cannot be saved as it
+			// stands, and reopening it whole is the fix".
+			const QString refusal = song->saveRefusal();
 			return ControlResult::failure(ControlErrorKind::Refused,
-				QStringLiteral("the engine refused to write %1").arg(target));
+				refusal.isEmpty()
+					? QStringLiteral("the engine refused to write %1").arg(target)
+					: QStringLiteral("%1: %2").arg(target, refusal));
 		}
 
 		QJsonObject result;
@@ -270,7 +277,17 @@ void registerProjectOpen(ControlRegistry& registry)
 	cmd.group = QStringLiteral("project");
 	cmd.verb = QStringLiteral("open");
 	cmd.description = QStringLiteral("Load a project file into this running instance.");
-	cmd.argsSchema = objectSchema({{QStringLiteral("path"), stringProperty()}}, {QStringLiteral("path")});
+	cmd.argsSchema = objectSchema({
+		{QStringLiteral("path"), stringProperty()},
+		// SPEC-ARCH-4 1.4 (ARCH-4 S2b): name the sections this load should NOT
+		// read. Their subtrees are removed from the document's bytes before
+		// anything parses them, so nothing is built for them and the rest of the
+		// file loads exactly as it would have. Absent or empty means a whole
+		// load, which is what every caller did before this existed; unknown
+		// names are simply not sections and are skipped over without effect.
+		{QStringLiteral("sections"), QJsonObject{{QStringLiteral("type"), QStringLiteral("array")},
+			{QStringLiteral("items"), stringProperty()}}},
+	}, {QStringLiteral("path")});
 	// SPEC A13: the load path must work with no display. A project that loads
 	// with errors returns the per-item list here instead of stopping on the
 	// "LMMS Error report" box, which in an agent instance nobody can click
@@ -305,6 +322,20 @@ void registerProjectOpen(ControlRegistry& registry)
 		{QStringLiteral("unclaimed_count"), QJsonObject{{QStringLiteral("type"), QStringLiteral("integer")}}},
 		{QStringLiteral("unclaimed"), QJsonObject{{QStringLiteral("type"), QStringLiteral("array")},
 			{QStringLiteral("items"), stringProperty()}}},
+		// SPEC-ARCH-4 1.4 (ARCH-4 S2b): the reader half. `sections` above names
+		// what NOT to load; these three say what that cost. `not_loaded` is in
+		// DOCUMENT order and lists the sections actually REMOVED - a name the
+		// document does not carry skips nothing and appears nowhere - and it is
+		// NOT the same answer as `unclaimed`: unclaimed is content this build
+		// could not understand and preserved, not_loaded is content the CALLER
+		// asked it not to read. A load can report either, both or neither.
+		// `partial` is `not_loaded_count > 0`, and it is the flag that matters:
+		// such a session holds less than its file and is read-only, which
+		// project.save reports as a typed refusal rather than a silent subset.
+		{QStringLiteral("not_loaded_count"), QJsonObject{{QStringLiteral("type"), QStringLiteral("integer")}}},
+		{QStringLiteral("not_loaded"), QJsonObject{{QStringLiteral("type"), QStringLiteral("array")},
+			{QStringLiteral("items"), stringProperty()}}},
+		{QStringLiteral("partial"), QJsonObject{{QStringLiteral("type"), QStringLiteral("boolean")}}},
 	});
 	cmd.mutating = true;
 	cmd.handler = [](const QJsonObject& args) {
@@ -319,7 +350,17 @@ void registerProjectOpen(ControlRegistry& registry)
 		// what was replaced instead of pretending an inverse exists.
 		const QString previousFile = song->projectFileName();
 		const QString previousSha = previousFile.isEmpty() ? QString() : sha256OfFile(previousFile);
-		song->loadProject(path);
+		// SPEC-ARCH-4 1.4 (ARCH-4 S2b): the sections to skip, as the caller named
+		// them. Taken in the order given and passed through unchanged - the
+		// reducer reports back what it ACTUALLY removed, so a name that is not a
+		// section of this document costs nothing and is not echoed as if it had
+		// been skipped.
+		QStringList skipSections;
+		for (const QJsonValue& value : args.value(QStringLiteral("sections")).toArray())
+		{
+			skipSections.append(value.toString());
+		}
+		song->loadProject(path, skipSections);
 
 		// A refused file (unparseable, or carrying local plugin paths) leaves
 		// the session as it was; the reason is a typed refusal, not a modal.
@@ -364,6 +405,18 @@ void registerProjectOpen(ControlRegistry& registry)
 		for (const QString& elementPath : unclaimed) { unclaimedPaths.append(elementPath); }
 		result.insert(QStringLiteral("unclaimed"), unclaimedPaths);
 		result.insert(QStringLiteral("unclaimed_count"), unclaimedPaths.size());
+		// What this load was ASKED to leave out and did (SPEC-ARCH-4 1.4, ARCH-4
+		// S2b), in document order and for the same reason `unclaimed` is: the
+		// order is the document's, not Qt's. Reported from the engine's own
+		// record of what the reducer removed, never from the request - a caller
+		// that named a section this document does not carry is told nothing went,
+		// because nothing did.
+		const QStringList notLoaded = song->notLoadedSections();
+		QJsonArray notLoadedNames;
+		for (const QString& sectionName : notLoaded) { notLoadedNames.append(sectionName); }
+		result.insert(QStringLiteral("not_loaded"), notLoadedNames);
+		result.insert(QStringLiteral("not_loaded_count"), notLoadedNames.size());
+		result.insert(QStringLiteral("partial"), song->isPartialLoad());
 		QJsonObject transaction;
 		transaction.insert(QStringLiteral("before"),
 			QJsonObject{{QStringLiteral("previous_file"), previousFile},

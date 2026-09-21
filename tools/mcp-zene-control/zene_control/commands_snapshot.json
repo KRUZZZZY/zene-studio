@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-09-21T15:57:47Z",
+  "captured_at": "2026-09-21T19:34:19Z",
   "commands": [
     {
       "args_schema": {
@@ -11084,6 +11084,12 @@
         "properties": {
           "path": {
             "type": "string"
+          },
+          "sections": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
           }
         },
         "required": [
@@ -11128,6 +11134,18 @@
             "type": "integer"
           },
           "loaded_with_errors": {
+            "type": "boolean"
+          },
+          "not_loaded": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "not_loaded_count": {
+            "type": "integer"
+          },
+          "partial": {
             "type": "boolean"
           },
           "tempo": {
@@ -17215,13 +17233,13 @@
   "count": 332,
   "instance": {
     "binary": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-040/build-nowasm/zene",
-    "binary_bytes": 263235080,
-    "binary_sha256": "91899b1ae85b0757e9ee3ce0548be976406ee5991421670fff999315abb1e9cf",
+    "binary_bytes": 264194560,
+    "binary_sha256": "f6e60dd8f8364b2e37f47f63a646bdb73dac6a57adb4568ba5a62b91bb661e45",
     "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-040",
-    "lane_head": "fbe78fe1f31a5e16a49f0230d77bdcb49bbd741a",
+    "lane_head": "6a1205d6a40af446a01416e28d7827da02aa7495",
     "proto": 1,
-    "source_socket": "/tmp/zctl-run-wua9ttjx/zene.sock",
-    "version": "0.3.0-alpha.10+fbe78fe"
+    "source_socket": "/tmp/zctl-run-jh1rmuuh/zene.sock",
+    "version": "0.3.0-alpha.14+6a1205d"
   },
   "kind": "zene-control-command-list",
   "proto": 1,
