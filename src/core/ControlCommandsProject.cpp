@@ -41,7 +41,6 @@
 #include "Engine.h"
 #include "ExportRenderSettings.h"
 #include "OutputSettings.h"
-#include "ProjectIds.h"
 #include "ProjectRevisions.h"
 #include "ProjectRenderer.h"
 #include "Song.h"
@@ -161,112 +160,8 @@ QString sha256OfFile(const QString& path)
 
 } // namespace
 
-// ---------------------------------------------------------------------------
-// project.open
-// ---------------------------------------------------------------------------
-
 namespace
 {
-
-void registerProjectOpen(ControlRegistry& registry)
-{
-	ControlCommand cmd;
-	cmd.id = QStringLiteral("project.open");
-	cmd.group = QStringLiteral("project");
-	cmd.verb = QStringLiteral("open");
-	cmd.description = QStringLiteral("Load a project file into this running instance.");
-	cmd.argsSchema = objectSchema({{QStringLiteral("path"), stringProperty()}}, {QStringLiteral("path")});
-	// SPEC A13: the load path must work with no display. A project that loads
-	// with errors returns the per-item list here instead of stopping on the
-	// "LMMS Error report" box, which in an agent instance nobody can click
-	// (task #625).
-	cmd.resultSchema = objectSchema({
-		{QStringLiteral("file"), stringProperty()},
-		{QStringLiteral("track_count"), QJsonObject{{QStringLiteral("type"), QStringLiteral("integer")}}},
-		{QStringLiteral("tempo"), QJsonObject{{QStringLiteral("type"), QStringLiteral("integer")}}},
-		{QStringLiteral("loaded_with_errors"), QJsonObject{{QStringLiteral("type"), QStringLiteral("boolean")}}},
-		{QStringLiteral("error_count"), QJsonObject{{QStringLiteral("type"), QStringLiteral("integer")}}},
-		{QStringLiteral("errors"), QJsonObject{{QStringLiteral("type"), QStringLiteral("array")},
-			{QStringLiteral("items"), objectSchema({
-				{QStringLiteral("message"), stringProperty()},
-				{QStringLiteral("count"), QJsonObject{{QStringLiteral("type"), QStringLiteral("integer")}}}})}}},
-		// The id upgrade, reported rather than silent (SPEC-stable-ids.md 7, Q1).
-		// `ids_assigned` counts the objects this load had to give an id to because
-		// the file carried none (plus any duplicate-id repair); `format_upgraded`
-		// is that count above zero. The upgrade is content-preserving and happens
-		// in memory only - the file changes on the next project.save, which is
-		// exactly why the caller is told.
-		{QStringLiteral("ids_assigned"), QJsonObject{{QStringLiteral("type"), QStringLiteral("integer")}}},
-		{QStringLiteral("format_upgraded"), QJsonObject{{QStringLiteral("type"), QStringLiteral("boolean")}}},
-	});
-	cmd.mutating = true;
-	cmd.handler = [](const QJsonObject& args) {
-		const QString path = args.value(QStringLiteral("path")).toString();
-		if (!QFileInfo::exists(path))
-		{
-			return ControlResult::failure(ControlErrorKind::NotFound,
-				QStringLiteral("no such project file: %1").arg(path));
-		}
-		Song* song = Engine::getSong();
-		// SPEC A16: the displaced session is NOT snapshotted, so the record says
-		// what was replaced instead of pretending an inverse exists.
-		const QString previousFile = song->projectFileName();
-		const QString previousSha = previousFile.isEmpty() ? QString() : sha256OfFile(previousFile);
-		song->loadProject(path);
-
-		// A refused file (unparseable, or carrying local plugin paths) leaves
-		// the session as it was; the reason is a typed refusal, not a modal.
-		const QString refusal = song->loadRefusal();
-		if (!refusal.isEmpty())
-		{
-			return ControlResult::failure(ControlErrorKind::Refused,
-				QStringLiteral("%1: %2").arg(path, refusal));
-		}
-
-		QJsonObject result;
-		result.insert(QStringLiteral("file"), song->projectFileName());
-		result.insert(QStringLiteral("track_count"), static_cast<int>(song->tracks().size()));
-		result.insert(QStringLiteral("tempo"), song->getTempo());
-		// The per-item load errors, sorted so the answer is reproducible: each
-		// entry is what failed (the sample or plugin path, in the message) and
-		// why (the same sentence the "LMMS Error report" box used to show).
-		QJsonArray errors;
-		QStringList messages = song->errors().keys();
-		messages.sort();
-		for (const QString& message : messages)
-		{
-			errors.append(QJsonObject{{QStringLiteral("message"), message},
-				{QStringLiteral("count"), song->errors().value(message)}});
-		}
-		result.insert(QStringLiteral("errors"), errors);
-		result.insert(QStringLiteral("error_count"), errors.size());
-		result.insert(QStringLiteral("loaded_with_errors"), !errors.isEmpty());
-		// SPEC-stable-ids.md 7 Q1 (owner decision): a legacy file's first load is
-		// a content-preserving one-time id UPGRADE, and the caller must be told
-		// so rather than discover it when the file changes on the next save.
-		const int idsAssigned = ProjectIds::loadAssignments();
-		result.insert(QStringLiteral("ids_assigned"), idsAssigned);
-		result.insert(QStringLiteral("format_upgraded"), idsAssigned > 0);
-		QJsonObject transaction;
-		transaction.insert(QStringLiteral("before"),
-			QJsonObject{{QStringLiteral("previous_file"), previousFile},
-				{QStringLiteral("previous_sha256"), previousSha}});
-		transaction.insert(QStringLiteral("inverse"),
-			QJsonObject{{QStringLiteral("op"), QStringLiteral("project.open")},
-				{QStringLiteral("args"), QJsonObject{{QStringLiteral("path"), previousFile}}}});
-		// Loading a project replaces the whole session; the engine keeps no
-		// pre-load snapshot, so this transaction is documented, not reversible -
-		// and control.undo says exactly that instead of undoing an older step.
-		transaction.insert(QStringLiteral("reversible"), false);
-		transaction.insert(QStringLiteral("mechanism"),
-			QStringLiteral("none: the displaced session is not snapshotted; only the file path "
-				"and its hash are recorded, so the caller can see what it replaced. UNSAVED "
-				"changes to the previous session are lost"));
-		result.insert(QStringLiteral("__transaction"), transaction);
-		return ControlResult::success(result);
-	};
-	registry.registerCommand(cmd);
-}
 
 // ---------------------------------------------------------------------------
 // project.save
@@ -502,7 +397,6 @@ void registerRenderRender(ControlRegistry& registry)
 
 void registerProjectCommands(ControlRegistry& registry)
 {
-	registerProjectOpen(registry);
 	registerRenderRender(registry);
 	registerProjectFilesCommands(registry);
 }
