@@ -1655,3 +1655,22 @@ ignored. (Adds the `fsync`-before-rename durability step on POSIX; on Windows th
 `QSaveFile::commit()` and no explicit `FlushFileBuffers` is issued, so a power cut there is not covered by this
 guarantee. The `complete="1"` index marker the same spec section sketches is *not* implemented — it belongs to
 `<z:index>`/`DocumentIndex`, which this slice is scoped out of.)
+
+## The destructive waveform editor's first slice (`sample.*`, board card #706) — socket-only, no interface
+
+Five commands exist — `sample.generate` (tone / white / pink / silence into a new audio clip),
+`sample.amplify`, `sample.normalize`, `sample.reverse` and `sample.fade` (linear, in or out) — and
+**no interface reaches any of them**: there is no waveform view, no menu entry, no toolbar button, no
+docked panel and no dialog for them in `src/gui/`, so the ONLY way to run a generator or a baker in
+this release is the control socket (the MCP bridge is the same door). **Placement is an open owner
+decision for the UI phase** — mixer-slot vs clip editor vs window — and this lane did not take it
+(board card #706, question 4; `design/specs/DECISION-706-DESTRUCTION-MODEL.md` records the same
+defer). The bounds around them, stated rather than left to be discovered: every operator transforms
+the clip's **whole source** — there is no range/selection model, a clip playing a trimmed
+`srcin/srcout` window is REFUSED with the typed error naming that limit, and a fade therefore always
+spans the whole clip and has only the linear curve (`clip.set_fade` remains the non-baking window
+fade; `clip.set_gain` remains the non-baking gain); `sample.amplify` applies **no limiter** (the
+float pipeline keeps values past 0 dBFS); each step's undo bound is the ENGINE's own — `min(100
+steps, 16 MiB)` of retained checkpoints (`docs/UNDO-BOUNDS.md`), against which a baked buffer's
+serialized bytes count — not a private stack; and the deferred verbs register **no id at all** in this
+slice: noise reduction, pitch/tempo change and chirp are named here as not started, not stubbed.

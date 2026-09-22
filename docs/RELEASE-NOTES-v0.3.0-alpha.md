@@ -865,8 +865,8 @@ It was MEASURED, class split and all, by
 bash tools/dawproject-proof.sh      # part 2, the A16 histogram probe
 ```
 
-whose own output line is this page's figure verbatim - `MEASURED rows=340 true_inverse=158 snapshot=32
-irreversible=13 not_mutating=137`, with `DECLARED rows=340 entries=340 duplicates=0` on the same run.
+whose own output line is this page's figure verbatim - `MEASURED rows=345 true_inverse=163 snapshot=32
+irreversible=13 not_mutating=137`, with `DECLARED rows=345 entries=345 duplicates=0` on the same run.
 (The 334-row figure this block carried until 2026-09-16 was the same probe on a tree without feature
 row 79: the CLAP instrument path adds exactly ONE row, `plugin.host_notes` -
 `src/core/ControlReversibilityTableClapInstrument.cpp` - and the wave-10 integration train re-measured
@@ -875,10 +875,13 @@ those 335 plus feature row 80's FIVE rows - `src/core/ControlReversibilityTableO
 `not_mutating` reads and the three `irreversible` writers of the `oop.*` group. The lane moved this
 block to the number its own tree measures and the wave-11 merge train RE-MEASURED it at the merged tip
 with the command above: the printed line is `MEASURED rows=340 true_inverse=158 snapshot=32
-irreversible=13 not_mutating=137`, identical to the block's own line, so the re-take changed no digit.)
+irreversible=13 not_mutating=137`, identical to the block's own line, so the re-take changed no digit.
+The `040/feat-706` lane (board card #706) then added the `sample.*` group's FIVE `true_inverse` rows
+and moved the block to the number its own tree measures - LANE-LOCAL, the merge tip must re-run the
+probe at the merged tip (the lane's section at the end of this page records it).
 
 <!-- A16-HISTOGRAM-BEGIN
-     measured: rows=340 true_inverse=158 snapshot=32 irreversible=13 not_mutating=137
+     measured: rows=345 true_inverse=163 snapshot=32 irreversible=13 not_mutating=137
      configuration: telemetry.status wasm.load session.get_state
      option telemetry.status rows=2 not_mutating=2
      option wasm.load rows=8 snapshot=3 not_mutating=5
@@ -2895,3 +2898,26 @@ a result would be a deleted test, which the file's own header says.
   identity the name last matched wins and the ambiguity is reported (`identity_matches`), never guessed
   silently; and the whole mechanism is bounded by the client's poll, so a re-connection is observed
   within about a second rather than at the instant the device returns.
+
+## The destructive waveform editor's first slice: `sample.*` bakes results through the clip model (board card #706) — added 2026-09-22
+
+- **Five commands, one undo step each, proved the A16 way.** `sample.generate` produces a tone /
+  white-noise / pink-noise / silence buffer into a **new** audio clip on a sample track;
+  `sample.amplify`, `sample.normalize`, `sample.reverse` and `sample.fade` bake a transformed COPY of
+  a sample clip's source and swap it in with `SampleClip::setSampleBuffer` — no operator writes sample
+  data in place, so a buffer a second clip shares keeps its audio, and the inverse of every step is
+  the Track/Clip journal checkpoint taken before the write (decision
+  `design/specs/DECISION-706-DESTRUCTION-MODEL.md`, which measured why an in-place operator would be
+  `reversible:false` by construction: one second of stereo 32-bit float at 44.1 kHz is 5.4× the
+  64 KiB per-record cap). The registered proof invokes each verb through the registry, reads the
+  samples back from the model, runs `control.undo` ONCE, and reads them back against the exact frames
+  that were there (`tests/src/core/ControlSampleOperatorTest.cpp`).
+- **UI absence — one line: socket-only.** No waveform view, menu, toolbar, dock or dialog reaches
+  these operators; placement (mixer-slot vs clip editor vs window) stays an open owner decision for
+  the UI phase. `docs/KNOWN-LIMITATIONS.md` carries the same sentence plus the whole-source scope,
+  the linear-only fade, the no-limiter bake, the engine's `min(100 steps, 16 MiB)` undo bound, and
+  the three DEFERRED verbs that register no id at all: noise reduction, pitch/tempo change, chirp.
+- **LANE-LOCAL, the merge tip must re-take it:** this lane added the group's FIVE `true_inverse`
+  rows, so the A16-HISTOGRAM figure above was moved by this tree's own measurement to
+  `rows=345 true_inverse=163` (`src/core/ControlReversibilityTableSample.cpp`); the wave's merge
+  train re-runs the probe at the merged tip before the release notes are final.

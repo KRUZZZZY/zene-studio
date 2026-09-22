@@ -72,6 +72,7 @@ tests/src/plugins/PluginPortsMigrationTest.cpp	731
 plugins/FreeBoy/FreeBoy.cpp	730
 plugins/Monstro/Monstro.h	730
 plugins/SlewDistortion/SlewDistortion.cpp	725
+include/ControlRegistryGroups.h	714
 tests/src/core/SampleAccurateAutomationTest.cpp	708
 src/core/LadspaManager.cpp	707
 tests/src/core/RackTest.cpp	701
@@ -79,7 +80,6 @@ src/tracks/MidiClip.cpp	700
 plugins/SpectrumAnalyzer/SaProcessor.cpp	692
 src/core/PluginFactory.cpp	690
 include/AutomatableModel.h	676
-include/ControlRegistryGroups.h	671
 tests/src/core/RemotePluginAudioPortsTest.cpp	665
 plugins/LadspaEffect/caps/dsp/tonestack/ks_tab.h	663
 src/core/SampleClip.cpp	663

@@ -167,6 +167,14 @@ set(LMMS_SRCS
 	core/ClipLinks.cpp
 	core/ControlCommandsClipLink.cpp
 	core/ControlCommandsClipLinkState.cpp
+	# The destructive waveform editor's first slice (board card #706): the
+	# sample.* group over SampleClip's non-destructive model - the generator,
+	# the four bakers, the in-tree DSP they share, and their A16 row file
+	# (the row file also joins ZENE_API_SRCS below, like every table file).
+	core/ControlCommandsSample.cpp
+	core/ControlCommandsSampleEdit.cpp
+	core/SampleOperators.cpp
+	core/ControlReversibilityTableSample.cpp
 	# MIDI clock / MTC (0.3.0): the DAW as a clock master and as a clock slave.
 	# The engine half is the MidiClock* sources below; this is the command group
 	# that drives it. See docs/KNOWN-LIMITATIONS.md for the bound it states.
@@ -961,6 +969,7 @@ SET(ZENE_API_SRCS
 	core/ControlReversibilityTableRevisions.cpp
 	core/ControlReversibilityTableRouting.cpp
 	core/ControlReversibilityTableSafeStart.cpp
+	core/ControlReversibilityTableSample.cpp
 	core/ControlReversibilityTableScanAndCrash.cpp
 	core/ControlReversibilityTableSessionView.cpp
 	core/ControlReversibilityTableSnapshot.cpp

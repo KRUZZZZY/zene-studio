@@ -185,6 +185,16 @@ set(LMMS_TESTS
 	# argument contract is proved without running a render. The end-to-end stem
 	# export is the ControlStemExportVerb ctest below, which drives the real binary.
 	src/core/ControlVerbInverseTest.cpp
+	# The destructive waveform editor's first slice (board card #706, group
+	# sample.*): the five ids with their schemas and their A16 contract rows,
+	# every generator and baker proved the A16 way - invoke through the
+	# registry, read the SAMPLES back from the model, control.undo ONCE, read
+	# them back against the exact frames that were there - plus the typed
+	# refusals (MIDI clip, empty clip, trimmed window, out-of-range arguments,
+	# non-sample track, the oversize guard) each with the negative control that
+	# it pushed no undo step. Needs a real Engine: the checkpoints are the
+	# Track/Clip journal steps ProjectJournal owns.
+	src/core/ControlSampleOperatorTest.cpp
 	# The 0.3.0 note/scale/device wave (board task #648; feature-list rows 11, 66 and
 	# 81): the fifteen ids, their contract rows and the REAL inverses - the seed pair
 	# (persisted + undone), the repeatability pair of the seeded roll (same seed ->
@@ -2962,6 +2972,11 @@ set_tests_properties(ControlEditCommandsTest PROPERTIES
 # control.undo, and render.stems' refusals touch the filesystem - so this wants a
 # real Qt platform plugin even though nothing opens a window.
 set_tests_properties(ControlVerbInverseTest PROPERTIES
+	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+# The sample.* first slice (#706) bakes real SampleClip buffers on a real
+# Engine and undoes them through control.undo, which wants a real Qt platform
+# plugin even though nothing opens a window.
+set_tests_properties(ControlSampleOperatorTest PROPERTIES
 	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 # The warp.* group edits a SampleClip created through track.add/clip.add, which
 # also wants a real Qt platform plugin even though nothing opens a window.
