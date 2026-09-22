@@ -6,7 +6,14 @@
  * (`Clip::laneIndex`, the `lane` attribute of the design's §2.6). A "lane" is a
  * child relationship of the track, NOT a second track type: the clips stay in
  * the track's own clip list and the lane is a number on them, exactly as
- * docs/CLIP-CAPTURE-DESIGN.md §2.2 decides.
+ * docs/CLIP-CAPTURE-DESIGN.md §2.2 decides. Since ARCH-4 S7 that number names
+ * a first-class ENTITY — `TakeLane::id`, from the project's `lane-` id family,
+ * written as `<z:lane id>` in the project's top-level `<z:lanes>` section
+ * (SPEC-ARCH-4 1.1 / migration row; docs/COMPING.md section 3) — and this model
+ * type serialises into BOTH contexts that exist: that section in a project
+ * file, and a track's `<takelanes>` payload in a journal checkpoint or a copy
+ * payload (neither of which ever reaches DataFile::write, which is why the
+ * compatibility rule lets the payload keep the track-child form).
  *
  * A "composite" (a "comp") is a VIEW: an ordered list of segments, each naming a
  * lane and a tick range, resolved to (lane, offset) at any timeline tick. Nothing
@@ -24,7 +31,8 @@
  *       the track does not have is dropped by a load, never silently re-pointed;
  *   I9  serialisation is additive: a track with no take lanes writes no element
  *       at all, so a project that never used comping saves byte for byte as it
- *       did before this feature existed.
+ *       did before this feature existed (and, since S7, gains no <z:lanes>
+ *       section and no `z` prefix binding either).
  *
  * See docs/COMPING.md for the element shape, the group-name decision and the
  * precise list of what is NOT wired yet (nothing renders a composite on the
@@ -44,8 +52,8 @@
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * General Public License for more details.
  *
- * You should have received a copy of the GNU General Public
- * License along with this program (see COPYING); if not, write to the
+ * You should have received a copy of the GNU General Public License
+ * along with this program (see COPYING); if not, write to the
  * Free Software Foundation, Inc., 51 Franklin Street, Fifth Floor,
  * Boston, MA 02110-1301 USA.
  */
@@ -68,14 +76,21 @@ namespace lmms
 
 class Clip;
 
-/*! One take lane of a track: a stable index and a display name.
+/*! One take lane of a track: a project-wide ENTITY id, a stable index within
+ *  the track, and a display name.
  *
  *  The lane carries NO audio of its own and no mute flag: the clips tagged with
  *  its index are the takes, and per-lane audibility is the take clip's own
  *  `muted` (which already exists, is already serialised, and is already what the
- *  engine reads). A second mute flag here would be state nothing renders. */
+ *  engine reads). A second mute flag here would be state nothing renders.
+ *
+ *  Equality compares the SLOT (index + name), not the entity id: `id` is
+ *  document identity across the whole project (SPEC-ARCH-4 1.5 R4), while
+ *  everything in memory addresses a lane by its per-track index (I7). */
 struct TakeLane
 {
+	int id = 0;      //!< project id from the `lane-` family: allocated when the lane is
+	                 //!< added, taken from `<z:lane id>` on load
 	int index = 0;   //!< stable within the track, never renumbered by a removal
 	QString name;    //!< display name; may be empty
 
@@ -110,18 +125,22 @@ struct TakeLaneSegment
 
 /*! The take lanes of one track and the composite they are comped into.
  *
- *  Plain value type, owned by `Track`, serialised by `Track::saveTrack`. It is
- *  deliberately NOT a QObject and NOT a JournallingObject of its own: the
- *  track's own ProjectJournal checkpoint (`Track::saveState`/`restoreState`)
- *  already carries it, which is what makes every comp.* mutation one undo step
- *  through the same mechanism every other track edit uses. */
+ *  Plain value type, owned by `Track`, serialised by `Track::saveTrack` (a
+ *  journal-checkpoint payload) and by Song's top-level `<z:lanes>` writer (a
+ *  project file) through the SAME saveSettings below. It is deliberately NOT a
+ *  QObject and NOT a JournallingObject of its own: the track's own
+ *  ProjectJournal checkpoint (`Track::saveState`/`restoreState`) already carries
+ *  it, which is what makes every comp.* mutation one undo step through the same
+ *  mechanism every other track edit uses. */
 class LMMS_EXPORT TakeLaneModel
 {
 public:
 	// ---- lanes ----------------------------------------------------------
 	/*! Adds a lane and returns its index: the lowest index the track does not
 	 *  already use. An index is never reused while a lane still holds it, and a
-	 *  removal never renumbers the survivors (invariant I7). */
+	 *  removal never renumbers the survivors (invariant I7). The new lane's
+	 *  ENTITY id is allocated here too (the `lane-` family, exactly as the
+	 *  Track and Clip constructors allocate theirs - SPEC-ARCH-4 1.5 R4). */
 	int addLane(const QString& name = QString());
 	//! Removes the lane; every segment naming it falls back to the base lane.
 	bool removeLane(int index);
@@ -180,13 +199,21 @@ public:
 	bool isEmpty() const { return m_lanes.empty() && m_segments.empty(); }
 
 	// ---- project file ---------------------------------------------------
-	/*! Writes `<takelanes>`'s CHILDREN onto \p element (the caller creates and
-	 *  places the element, so an empty model writes nothing at all - I9). */
+	/*! Writes the model's CHILDREN onto \p element (the caller creates and
+	 *  places the element, so an empty model writes nothing at all - I9):
+	 *  `<z:lane id index name>` entities, then `<z:segment begin end lane
+	 *  [srcpos]>` - ONE vocabulary for both contexts since ARCH-4 S7 (S7). A
+	 *  project file's parent is the `<z:tracklanes>` group of the top-level
+	 *  `<z:lanes>` section; a journal checkpoint's or copy payload's is the
+	 *  track's `<takelanes>` (docs/COMPING.md section 3). */
 	void saveSettings(QDomDocument& doc, QDomElement& element) const;
-	/*! Loads from `element`'s children. It CLEARS first: a track element with no
-	 *  `<takelanes>` child must reset the model, or a checkpoint taken before
-	 *  this feature's first edit could never take it back (the trap the
-	 *  zene-control-command-group skill records). */
+	/*! Loads from `element`'s children, accepting both spellings this build's
+	 *  two writers can meet - the `z:`-prefixed one and the bare pre-S7 one -
+	 *  because read-both is how the upconversion stays order-independent (S1's
+	 *  rule). It CLEARS first: a parent that carries no lane children must
+	 *  reset the model, or a checkpoint taken before this feature's first edit
+	 *  could never take it back (the trap the zene-control-command-group skill
+	 *  records) - and the `<z:lanes>` section load rides the same clear. */
 	void loadSettings(const QDomElement& element);
 
 private:

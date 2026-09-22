@@ -1656,6 +1656,7 @@ tests/src/core/ExportWavDitherTest.cpp
 tests/src/core/GrooveTemplateTest.cpp
 tests/src/core/GrooveTestSupport.h
 tests/src/core/ImportDetectionTest.cpp
+tests/src/core/LanesUpconvertTest.cpp
 tests/src/core/LoudnessReportTest.cpp
 tests/src/core/LufsMeterTest.cpp
 tests/src/core/MasteringTest.cpp

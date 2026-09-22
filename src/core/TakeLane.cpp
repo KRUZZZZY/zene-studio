@@ -36,6 +36,7 @@
 #include <QLatin1String>
 
 #include "Clip.h"
+#include "ProjectIds.h"
 #include "TimePos.h"
 
 namespace lmms
@@ -68,6 +69,21 @@ TakeLane laneFromElement(const QDomElement& element)
 	TakeLane lane;
 	lane.index = std::max(0, element.attribute(QStringLiteral("index"), QStringLiteral("0")).toInt());
 	lane.name = element.attribute(QStringLiteral("name"));
+	// The ENTITY id rides the clip-id rule (SPEC-ARCH-4 1.5 R4/R3): take the
+	// document's value and raise the counter above it, or allocate one and
+	// count it as assigned when the document carries no id (a pre-S7 payload).
+	bool ok = false;
+	const int id = element.attribute(QStringLiteral("id")).toInt(&ok);
+	if (ok && id >= 0)
+	{
+		lane.id = id;
+		ProjectIds::observe(id);
+	}
+	else
+	{
+		lane.id = ProjectIds::allocate();
+		ProjectIds::noteLoadAssignment(lane.id);
+	}
 	return lane;
 }
 
@@ -98,6 +114,10 @@ int TakeLaneModel::addLane(const QString& name)
 	TakeLane added;
 	added.index = index;
 	added.name = name;
+	// The entity id is allocated with the lane, exactly as the Track and Clip
+	// constructors allocate theirs (SPEC-ARCH-4 1.5 R4, the lane- family S3
+	// declared for S7).
+	added.id = ProjectIds::allocate();
 	const auto pos = std::lower_bound(m_lanes.begin(), m_lanes.end(), index, laneLessThan);
 	m_lanes.insert(pos, added);
 	return index;
@@ -344,14 +364,17 @@ void TakeLaneModel::saveSettings(QDomDocument& doc, QDomElement& element) const
 {
 	for (const TakeLane& lane : m_lanes)
 	{
-		QDomElement laneElement = doc.createElement(QStringLiteral("lane"));
+		// The ARCH-4 S7 vocabulary: the ENTITY spelling, one for both contexts
+		// (top-level <z:lanes> section, or a checkpoint payload's <takelanes>).
+		QDomElement laneElement = doc.createElement(QStringLiteral("z:lane"));
+		laneElement.setAttribute(QStringLiteral("id"), lane.id);
 		laneElement.setAttribute(QStringLiteral("index"), lane.index);
 		if (!lane.name.isEmpty()) { laneElement.setAttribute(QStringLiteral("name"), lane.name); }
 		element.appendChild(laneElement);
 	}
 	for (const TakeLaneSegment& seg : m_segments)
 	{
-		QDomElement segElement = doc.createElement(QStringLiteral("segment"));
+		QDomElement segElement = doc.createElement(QStringLiteral("z:segment"));
 		segElement.setAttribute(QStringLiteral("begin"), seg.beginTick);
 		segElement.setAttribute(QStringLiteral("end"), seg.endTick);
 		segElement.setAttribute(QStringLiteral("lane"), seg.laneIndex);
@@ -376,7 +399,10 @@ void TakeLaneModel::loadSettings(const QDomElement& element)
 	{
 		const QDomElement child = node.toElement();
 		if (child.isNull()) { continue; }
-		if (child.tagName() == QLatin1String("lane"))
+		// Read-both spellings (S1's rule, ARCH-4 S7): the `z:`-prefixed one
+		// this build writes in either context, and the bare pre-S7 one a
+		// payload or a hand-written file may still carry.
+		if (child.tagName() == QLatin1String("z:lane") || child.tagName() == QLatin1String("lane"))
 		{
 			const TakeLane lane = laneFromElement(child);
 			const auto pos = std::lower_bound(m_lanes.begin(), m_lanes.end(), lane.index,
@@ -384,7 +410,8 @@ void TakeLaneModel::loadSettings(const QDomElement& element)
 			m_lanes.insert(pos, lane);
 			continue;
 		}
-		if (child.tagName() == QLatin1String("segment"))
+		if (child.tagName() == QLatin1String("z:segment")
+			|| child.tagName() == QLatin1String("segment"))
 		{
 			const TakeLaneSegment seg = segmentFromElement(child);
 			if (seg.endTick > seg.beginTick && hasLane(seg.laneIndex)) { m_segments.push_back(seg); }

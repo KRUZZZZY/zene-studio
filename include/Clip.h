@@ -183,7 +183,14 @@ public:
 	 *  child relationship of the track, not a track type, and the tag is
 	 *  type-agnostic. It is written with the clip's other non-default attributes
 	 *  (Clip::saveClipEdits) and resets to 0 when the attribute is absent, so a
-	 *  clip with no lane writes nothing at all. */
+	 *  clip with no lane writes nothing at all.
+	 *
+	 *  Since ARCH-4 S7 a lane is a first-class `<z:lane id>` entity in the
+	 *  project's top-level `<z:lanes>` section (SPEC-ARCH-4 1.1): this value is
+	 *  the per-track INDEX that names the entity, and the attribute's name,
+	 *  value vocabulary and write rule deliberately do NOT move - byte identity
+	 *  for every file carrying it, and an older build reads the same index it
+	 *  always read (docs/COMPING.md section 3). */
 	int laneIndex() const { return m_laneIndex; }
 	void setLaneIndex(int laneIndex) { m_laneIndex = laneIndex < 0 ? 0 : laneIndex; }
 
@@ -342,7 +349,8 @@ private:
 	//! The clip's fades and its gain. Neutral by default (see clipEdits()).
 	ClipEdits m_edits;
 
-	//! The take lane this clip is a take of (comping; docs/COMPING.md).
+	//! The take lane this clip is a take of: its per-track INDEX into the
+	//! track's `<z:lane id>` entities (comping; docs/COMPING.md section 3).
 	int m_laneIndex = 0;
 
 	//! The link group this clip shares its content with (row 6; 0 = unlinked).

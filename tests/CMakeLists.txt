@@ -442,6 +442,15 @@ set(LMMS_TESTS
 	# in TakeLaneCompTest.cpp); the fixtures both halves use are in
 	# tests/src/core/TakeLaneTestSupport.h.
 	src/core/TakeLaneTest.cpp
+	# ARCH-4 slice S7, lanes native (SPEC-ARCH-4 1.1 sketch, migration row
+	# <takelanes>+clip lane -> <z:lane id>; BRIEF-2026-09-22 LANE 13 pins this
+	# entry to sit immediately after the TakeLaneTest entry above): the
+	# document layer - the top-level <z:lanes> section's shape and the lane
+	# entities' ids, the save/load/save byte identity of a project that uses
+	# lanes, the lane-free additive pin (no section, no takelanes, no z:
+	# binding), and the RISK 1 negative control that fails on new-model state
+	# planted under <track>.
+	src/core/LanesUpconvertTest.cpp
 	src/core/RemotePluginAudioPortsTest.cpp
 	src/core/RemotePluginClientE2ETest.cpp
 	src/core/RenderJobQueueTest.cpp
@@ -850,6 +859,11 @@ set_tests_properties(UndoBoundsTest PROPERTIES
 # through the registry, so both need the same headless Qt platform as the tests
 # above - the developer box has no display.
 set_tests_properties(TakeLaneCompTest TakeLaneTest PROPERTIES
+	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+
+# LanesUpconvertTest (ARCH-4 S7) saves and loads real project files through
+# Song directly - same headless shape as the two tests above, no window.
+set_tests_properties(LanesUpconvertTest PROPERTIES
 	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 
 # ---------------------------------------------------------------------------

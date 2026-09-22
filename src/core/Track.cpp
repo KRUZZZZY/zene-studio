@@ -490,20 +490,34 @@ void Track::saveTrack(QDomDocument& doc, QDomElement& element, bool presetMode)
 		return;
 	}
 
-	// Take lanes and the composite (comping; docs/COMPING.md). ONE element
-	// holds both lists, and it is written ONLY when the model is not empty, so a
-	// project that never comped serialises byte for byte as it did before this
-	// feature existed (invariant I9).
+	// Take lanes and the composite (comping; docs/COMPING.md section 3). TWO
+	// contexts since ARCH-4 S7 (SPEC-ARCH-4 1.1 / migration upconversion row):
 	//
-	// `metadata="1"` is load-bearing, not decoration: Track::loadTrack turns an
-	// unrecognised child element of <track> into a REAL Clip, and so would an
-	// older build reading this file without the attribute present. The same trap
-	// SPEC-stable-ids.md §3.1 records for the track id is why the take-lane model
-	// is a marked element and not a plain one.
-	if (!m_takeLanes.isEmpty())
+	//  - A PROJECT FILE's lanes are NOT written here. The compatibility rule
+	//    (SPEC-ARCH-4 2) puts new model state only in top-level namespaced
+	//    sections - never as a child of <track> - because an older build's
+	//    loadTrack materialises an unrecognised <track> child as a real Clip
+	//    (5.2 risk 1, the phantom this wave's negative control is about).
+	//    Song::saveProjectFile writes them into the top-level <z:lanes>
+	//    section instead, only when some track's model is non-empty, so the
+	//    document's <track> elements gain nothing (I9 at document scope).
+	//
+	//  - A JOURNAL CHECKPOINT or a copy payload is not a project file: neither
+	//    is ever handed to DataFile::write (ProjectJournal serialises a
+	//    JournalData document, a clone its <clonedtrack>), and every comp.*
+	//    undo step restores through loadTrack's `takelanes` branch below - so
+	//    outside a project save the element is still written HERE, now
+	//    UNMARKED. The `metadata="1"` marker goes with the migration row
+	//    ("markers dropped - the coercion they guard no longer exists"): S1b
+	//    closed the unknown-child coercion for unclaimed names, and the marker
+	//    bought nothing on a save path anyway - cleanMetaNodes() DELETED a
+	//    marked <takelanes> at every save, so the lane list never reached a
+	//    disk through this branch at all (measured, 2026-09-13).
+	const Song* song = Engine::getSong();
+	const bool savingProjectFile = song != nullptr && song->isSavingProject();
+	if (!m_takeLanes.isEmpty() && !savingProjectFile)
 	{
 		QDomElement lanesElement = doc.createElement(QStringLiteral("takelanes"));
-		lanesElement.setAttribute(QStringLiteral("metadata"), 1);
 		m_takeLanes.saveSettings(doc, lanesElement);
 		element.appendChild(lanesElement);
 	}
@@ -515,12 +529,14 @@ void Track::saveTrack(QDomDocument& doc, QDomElement& element, bool presetMode)
 	// this file. Written ONLY when a take is installed, so a track that was never
 	// frozen serialises exactly the bytes it always did.
 	//
-	// A child element marked metadata="1" - the pattern the take lanes use -
-	// cannot be used here: DataFile::write calls cleanMetaNodes(), which REMOVES
-	// every element carrying that attribute from a saved project, so a marked
-	// take would not survive a save at all (measured on this tree, 2026-09-13:
-	// a <frozen metadata="1"> child and a <takelanes metadata="1"> child are both
-	// absent from the file project.save writes).
+	// A child element marked metadata="1" cannot be used here: DataFile::write
+	// calls cleanMetaNodes(), which REMOVES every element carrying that
+	// attribute from a saved project, so a marked take would not survive a save
+	// at all (measured on this tree, 2026-09-13: a <frozen metadata="1"> child
+	// and a <takelanes metadata="1"> child are both absent from the file
+	// project.save writes - which is half of why ARCH-4 S7 moved the lanes into
+	// the top-level <z:lanes> section; the other half is the compatibility rule
+	// that keeps new state out of <track>).
 	if (m_frozen.isFrozen())
 	{
 		element.setAttribute(QStringLiteral("frozenAudio"), m_frozen.path);
@@ -655,10 +671,13 @@ void Track::loadTrack(const QDomElement& element, bool presetMode)
 	}
 
 	// Reset-on-absence for the take lanes: a track element with no <takelanes>
-	// child (every file written before comping) empties the model rather than
-	// inheriting whatever it held before this call - an ELEMENT-valued rule from
-	// TRACK_RESTORE_SCHEMA above (SPEC-ARCH-4 1.7 R6). Clip::loadClipEdits
-	// follows the same rule for the lane tag itself.
+	// child empties the model rather than inheriting whatever it held before
+	// this call - an ELEMENT-valued rule from TRACK_RESTORE_SCHEMA above
+	// (SPEC-ARCH-4 1.7 R6), and the rule the ARCH-4 S7 document form rides: a
+	// project's lanes arrive LATER than this walk, through the top-level
+	// <z:lanes> section (Song::restoreNamedSection), which fills exactly the
+	// tracks it names and leaves every other track empty by this clear.
+	// Clip::loadClipEdits follows the same rule for the lane tag itself.
 	m_takeLanes.clear();
 
 	// The unclaimed children are reset on absence too, and for a sharper reason:
@@ -677,9 +696,12 @@ void Track::loadTrack(const QDomElement& element, bool presetMode)
 			}
 			else if( node.nodeName() == "takelanes" )
 			{
-				// The take lanes and the composite (comping; docs/COMPING.md),
-				// a marked element so that neither this loader nor an older
-				// build's turns it into a phantom Clip.
+				// The take lanes and the composite (comping; docs/COMPING.md).
+				// Since ARCH-4 S7 this is the CHECKPOINT/COPY-PAYLOAD form: a
+				// project file carries its lanes in the top-level <z:lanes>
+				// section instead. Claimed BY NAME, before the clip branch
+				// below, so no reader can coerce it; unmarked now that the
+				// metadata="1" marker went with the migration row.
 				m_takeLanes.loadSettings( node.toElement() );
 			}
 			else if( node.nodeName() != "muted"

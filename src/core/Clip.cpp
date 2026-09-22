@@ -396,11 +396,17 @@ void Clip::setStartTimeOffset( const TimePos &startTimeOffset )
  *  The take lane (comping, docs/COMPING.md) rides the same helper rather than a
  *  second one: it is the clip's other non-default attribute, it follows the same
  *  write-nothing-when-default rule, and every caller of this pair therefore
- *  carries the lane tag by construction.
+ *  carries the lane tag by construction. Since ARCH-4 S7 the value names the
+ *  clip's per-track slot among the track's `<z:lane id>` entities (the
+ *  top-level `<z:lanes>` section, docs/COMPING.md section 3); the attribute
+ *  itself is byte-identical to what it always wrote - an older build reading
+ *  the same index is exactly the point.
  */
 void Clip::saveClipEdits(QDomElement& element) const
 {
-	// The design's own attribute name for a clip's take lane (§2.6).
+	// The design's own attribute name for a clip's take lane (§2.6): since
+	// ARCH-4 S7 the value indexes the track's `<z:lane id>` entities; the
+	// name, the >0 rule and the bytes do not move.
 	if (m_laneIndex > 0)
 	{
 		element.setAttribute("lane", m_laneIndex);
