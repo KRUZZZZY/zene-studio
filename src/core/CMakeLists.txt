@@ -912,6 +912,14 @@ set(LMMS_SRCS
 	core/midi/MpeExpression.cpp
 	core/midi/MidiWinMM.cpp
 
+	# ARCH-4 slice S6 (SPEC-ARCH-4 1.9): the append-only <z:provenance>
+	# section - the document-scoped change log ControlRegistry's record seam
+	# appends to, Song::saveProjectFile writes and Song::restoreNamedSection
+	# reads back. Its own translation unit for the usual reasons: the section
+	# keeps the journal-shaped bound and the digesting, and neither belongs in
+	# the registry dispatch or the song's writer/loader chain.
+	core/ProvenanceSection.cpp
+
 	${LMMS_STEM_SRCS}
 	${LMMS_SESSION_SRCS}
 

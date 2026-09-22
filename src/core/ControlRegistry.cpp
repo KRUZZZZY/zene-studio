@@ -26,6 +26,7 @@
 
 #include "ControlReversibility.h"
 #include "ProjectJournal.h"
+#include "ProvenanceSection.h"
 
 
 #include <QCoreApplication>
@@ -323,8 +324,15 @@ void ControlRegistry::recordTransactionOf(const QString& commandId, ControlResul
 	// this call's step into the previous run's, the record that run started is
 	// extended and no second record is written. Nothing this call reported is
 	// lost - `before` is still the state before the gesture and `inverse` still
-	// reverts all of it - so the count is the only thing that changes.
-	if (coalesced) { extendTopTransaction(); return; }
+	// reverts all of it - so the count is the only thing that changes. The
+	// document's provenance extends with it (SPEC-ARCH-4 1.9: one <z:change>
+	// per recorded change, and a coalesced run is the change it extends).
+	if (coalesced)
+	{
+		extendTopTransaction();
+		provenance::extendTopChange(result->result);
+		return;
+	}
 
 	// The handler describes before-state + inverse under the private
 	// "__transaction" key; the registry records it. A handler that supplies
@@ -340,6 +348,11 @@ void ControlRegistry::recordTransactionOf(const QString& commandId, ControlResul
 		honest.mechanism = QStringLiteral("this command recorded no inverse or "
 			"snapshot; ") + honest.mechanism;
 		recordTransaction(honest);
+		// SPEC-ARCH-4 1.9 (ARCH-4 S6): BOTH exits below feed the document's
+		// append-only <z:provenance>, so a change reaches the file exactly
+		// when one was recorded here - the additive rule, one seam.
+		provenance::recordChange(commandId, recorded.value(QStringLiteral("before")).toObject(),
+			result->result);
 		return;
 	}
 
@@ -352,6 +365,7 @@ void ControlRegistry::recordTransactionOf(const QString& commandId, ControlResul
 	tx.step = step;
 	stampContract(commandId, &tx);
 	recordTransaction(tx);
+	provenance::recordChange(commandId, tx.before, result->result);
 }
 
 void ControlRegistry::stampContract(const QString& commandId, Transaction* tx) const

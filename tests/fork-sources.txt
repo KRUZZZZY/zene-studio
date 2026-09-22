@@ -571,6 +571,7 @@ include/ProjectIds.h
 include/ProjectKey.h
 include/ProjectRecovery.h
 include/ProjectRevisions.h
+include/ProvenanceSection.h
 include/Rack.h
 include/RackMacros.h
 include/RackNodes.h
@@ -977,6 +978,7 @@ src/core/ProjectJournalStructural.cpp
 src/core/ProjectKey.cpp
 src/core/ProjectRecovery.cpp
 src/core/ProjectRevisions.cpp
+src/core/ProvenanceSection.cpp
 src/core/Rack.cpp
 src/core/RackMacros.cpp
 src/core/RackNodes.cpp
@@ -1177,6 +1179,7 @@ tests/src/core/ProjectContainerEntriesTest.cpp
 tests/src/core/ProjectContainerTest.cpp
 tests/src/core/ProjectOpenIntegrityTest.cpp
 tests/src/core/ProjectRevIdsTest.cpp
+tests/src/core/ProvenanceSectionTest.cpp
 tests/src/core/RackMacrosTest.cpp
 
 # git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/agent-surface-gate.py tests/agent_surface_lib.py tests/control-absent-socket.py tests/control-export-settings.py tests/control-freeze-commands-transcript.py tests/control-headless-no-audio-device.py tests/freeze_bounce_evidence.py tests/control-headless-project-open.py tests/control-headless-working-directory.py tests/control-negative-control.py tests/control-no-audio-device.py tests/control-readiness.py tests/control-reversibility-transcript.py tests/control-session-lifecycle-transcript.py tests/control-session-m1.py tests/control-shutdown.py tests/control-socket-path-safety.py tests/control-stable-ids.py tests/control-warp-commands-transcript.py tests/control_instance_diagnosis.py tests/control_socket_diagnosis.py tests/control_socket_flows.py tests/control_socket_harness.py tests/render-software-tag.py tests/control-punch-transcript.py tests/control-recording-recovery.py tests/control-track-folder.py tests/control-retro-capture.py tests/control-chain-presets.py tests/control-vca-commands.py tests/control-pdc-commands.py tests/control-routing-commands.py tests/control-bus-commands.py tests/control-ports-commands.py tests/control-stem-export-verb.py tests/control-plugin-scan-commands.py tests/control-crash-reporter.py tests/control-mastering-commands.py tests/mastering_probe_lib.py tests/control-detect-commands.py tests/control-session-api-proof.py ; \
