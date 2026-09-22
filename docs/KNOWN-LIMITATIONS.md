@@ -1760,3 +1760,160 @@ says that **compensation is SUSPENDED for the loop** - carrying REAPER's warning
 - **Removing the loop's other send by hand does not clear the flag.** A send created as feedback
   keeps its flag until `feedback.disable`; disable removes every flagged send even when its loop
   was already broken manually (conservative - that is how normal PDC is guaranteed back).
+
+## UI precondition #1 - accessible names, focus order, palette roles (branch 040/ui-precond, 2026-09-22)
+
+The accessibility + palette pass of SPEC-zene-ui-v0 §5 item 1 swept exactly three
+surfaces - the Focus Desk shell (`src/gui/FocusDesk.cpp`, `FocusDeskPane.cpp`,
+`FocusDeskPlacement.cpp`; `FocusDeskModules.cpp` is the widget-free register and has
+nothing to announce), the main window's menus and toolbar (`MainWindow.cpp`, plus every
+`ToolButton` in the product through `widgets/ToolButton.cpp`'s constructor), and the two
+palette files named by the spec (`LmmsStyle.cpp`, `widgets/TabWidget.cpp`) - with the
+reusable mechanism in `include/Accessibility.h` (announce/describe) and
+`include/WcagContrast.h` (the WCAG contrast helper, registered as WcagContrastTest).
+Two stated absences ship with it:
+
+1. **The rest of the interface is unswept.** Every other widget source is deferred to
+   the wave-2 sweep; none of them has an accessible name added, so any screen-reader use
+   outside the Focus Desk and the main window toolbar/menus still meets the measured
+   starting point of zero. The complete deferred set (120 files):
+
+```
+src/gui/ActionGroup.cpp
+src/gui/AudioAlsaSetupWidget.cpp
+src/gui/AudioDeviceSetupWidget.cpp
+src/gui/AutomatableModelView.cpp
+src/gui/ControlLayout.cpp
+src/gui/ControllerDialog.cpp
+src/gui/ControllerRackView.cpp
+src/gui/ControllerView.cpp
+src/gui/Controls.cpp
+src/gui/EffectControlDialog.cpp
+src/gui/EffectRackView.cpp
+src/gui/EffectView.cpp
+src/gui/FileBrowser.cpp
+src/gui/FileRevealer.cpp
+src/gui/FileSearchJob.cpp
+src/gui/LadspaControlView.cpp
+src/gui/LfoControllerDialog.cpp
+src/gui/LinkedModelGroupViews.cpp
+src/gui/LmmsPalette.cpp
+src/gui/Lv2ViewBase.cpp
+src/gui/MainApplication.cpp
+src/gui/MidiCCRackView.cpp
+src/gui/MidiLearnGui.cpp
+src/gui/MidiSetupWidget.cpp
+src/gui/MixerChannelView.cpp
+src/gui/MixerView.cpp
+src/gui/ModelView.cpp
+src/gui/PeakControllerDialog.cpp
+src/gui/PinConnector.cpp
+src/gui/PluginBrowser.cpp
+src/gui/ProjectNotes.cpp
+src/gui/RowTableView.cpp
+src/gui/SampleThumbnail.cpp
+src/gui/SampleTrackWindow.cpp
+src/gui/SendButtonIndicator.cpp
+src/gui/SideBar.cpp
+src/gui/SideBarWidget.cpp
+src/gui/StemSplitController.cpp
+src/gui/StringPairDrag.cpp
+src/gui/SubWindow.cpp
+src/gui/TelemetryConsentDialog.cpp
+src/gui/ToolPluginView.cpp
+src/gui/clips/AutomationClipView.cpp
+src/gui/clips/ClipView.cpp
+src/gui/clips/MidiClipView.cpp
+src/gui/clips/PatternClipView.cpp
+src/gui/clips/SampleClipView.cpp
+src/gui/editors/AutomationEditor.cpp
+src/gui/editors/Editor.cpp
+src/gui/editors/PatternEditor.cpp
+src/gui/editors/PianoRoll.cpp
+src/gui/editors/PositionLine.cpp
+src/gui/editors/Rubberband.cpp
+src/gui/editors/SongEditor.cpp
+src/gui/editors/StepRecorderWidget.cpp
+src/gui/editors/TimeLineWidget.cpp
+src/gui/editors/TrackContainerView.cpp
+src/gui/embed.cpp
+src/gui/instrument/EnvelopeAndLfoView.cpp
+src/gui/instrument/EnvelopeGraph.cpp
+src/gui/instrument/InstrumentFunctionViews.cpp
+src/gui/instrument/InstrumentMidiIOView.cpp
+src/gui/instrument/InstrumentSoundShapingView.cpp
+src/gui/instrument/InstrumentTrackWindow.cpp
+src/gui/instrument/InstrumentTuningView.cpp
+src/gui/instrument/InstrumentView.cpp
+src/gui/instrument/LfoGraph.cpp
+src/gui/instrument/PianoView.cpp
+src/gui/menus/MidiPortMenu.cpp
+src/gui/menus/RecentProjectsMenu.cpp
+src/gui/menus/TemplatesMenu.cpp
+src/gui/modals/AboutDialog.cpp
+src/gui/modals/ColorChooser.cpp
+src/gui/modals/ControllerConnectionDialog.cpp
+src/gui/modals/EffectSelectDialog.cpp
+src/gui/modals/ExportProjectDialog.cpp
+src/gui/modals/FileDialog.cpp
+src/gui/modals/RenameDialog.cpp
+src/gui/modals/SetupDialog.cpp
+src/gui/modals/VersionedSaveDialog.cpp
+src/gui/tracks/AutomationTrackView.cpp
+src/gui/tracks/FadeButton.cpp
+src/gui/tracks/InstrumentTrackView.cpp
+src/gui/tracks/PatternTrackView.cpp
+src/gui/tracks/SampleTrackView.cpp
+src/gui/tracks/TrackContentWidget.cpp
+src/gui/tracks/TrackGrip.cpp
+src/gui/tracks/TrackLabelButton.cpp
+src/gui/tracks/TrackOperationsWidget.cpp
+src/gui/tracks/TrackRenameLineEdit.cpp
+src/gui/tracks/TrackView.cpp
+src/gui/widgets/AutomatableButton.cpp
+src/gui/widgets/AutomatableSlider.cpp
+src/gui/widgets/BarModelEditor.cpp
+src/gui/widgets/CPULoadWidget.cpp
+src/gui/widgets/CaptionMenu.cpp
+src/gui/widgets/ComboBox.cpp
+src/gui/widgets/Draggable.cpp
+src/gui/widgets/Fader.cpp
+src/gui/widgets/FloatModelEditorBase.cpp
+src/gui/widgets/Graph.cpp
+src/gui/widgets/GroupBox.cpp
+src/gui/widgets/Knob.cpp
+src/gui/widgets/LcdFloatSpinBox.cpp
+src/gui/widgets/LcdSpinBox.cpp
+src/gui/widgets/LcdWidget.cpp
+src/gui/widgets/LedCheckBox.cpp
+src/gui/widgets/LeftRightNav.cpp
+src/gui/widgets/MeterDialog.cpp
+src/gui/widgets/MixerChannelLcdSpinBox.cpp
+src/gui/widgets/NStateButton.cpp
+src/gui/widgets/Oscilloscope.cpp
+src/gui/widgets/PeakIndicator.cpp
+src/gui/widgets/PixmapButton.cpp
+src/gui/widgets/SimpleTextFloat.cpp
+src/gui/widgets/TabBar.cpp
+src/gui/widgets/TempoSyncBarModelEditor.cpp
+src/gui/widgets/TempoSyncKnob.cpp
+src/gui/widgets/TextFloat.cpp
+src/gui/widgets/TimeDisplayWidget.cpp
+```
+
+   (`src/gui/MicrotunerConfig.cpp` is not deferred - it belongs to lane zene-712.)
+2. **The system dark/light hook cannot run on any builder in this wave.**
+   `QStyleHints::colorSchemeChanged` exists only from Qt 6.5; this box builds Qt 6.4.2
+   and CI builds Qt 5.15, so the guarded block in `GuiApplication.cpp` compiles out of
+   both and the connection is `unverified` by execution - reviewed against the Qt 6.5
+   documentation only. One palette variant ships, so the handler re-applies it and the
+   variant pick is the one branch still to add.
+
+Two palette replacements are deliberate behaviour changes, recorded here rather than
+hidden: `LmmsStyle`'s titlebar branch no longer forces #ffffff/#c0c0c0/#404040 over the
+palette (the palette's Text roles decide), and its MDI-button override of #dfe4ec is
+gone with the branch. Both were win32-era constants; their effect on a Windows titlebar
+is `unverified` - no Windows builder exists in this wave. The frame bevel,
+`hoverColors()` and TabWidget's tab background now read Shadow/Window/Dark/Mid roles;
+under LmmsPalette the bevel is byte-identical (its Shadow role *is* black), the others
+move to whatever the theme defines - which is the point of the change.

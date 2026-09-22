@@ -22,12 +22,12 @@
  *
  */
 
+#include "Accessibility.h"
 #include "FocusDesk.h"
 
 #include <QFrame>
 #include <QHBoxLayout>
 #include <QLabel>
-#include <QScrollArea>
 #include <QSplitter>
 #include <QToolButton>
 #include <QVBoxLayout>
@@ -35,43 +35,54 @@
 namespace lmms::gui
 {
 
-namespace
-{
-
-//! A rail: a scrollable container, because §5.1 keeps regions as splitters and
-//! lets more than one module share a region (stacked or tabbed) - a rail that
-//! held exactly one widget could not.
-QScrollArea* makeRail(QWidget* parent, QWidget** host, QVBoxLayout** layout)
-{
-	auto* scroll = new QScrollArea(parent);
-	scroll->setWidgetResizable(true);
-	scroll->setFrameShape(QFrame::NoFrame);
-
-	*host = new QWidget(scroll);
-	*layout = new QVBoxLayout(*host);
-	(*layout)->setContentsMargins(6, 6, 6, 6);
-	(*layout)->setSpacing(6);
-	// Deliberately no trailing stretch. A card mounted in a region *is* that
-	// region's content, so it takes the region and shares it with the other
-	// cards when several are stacked - which is the shell's reading of
-	// `flex: 1 1 auto` for rail and stage panels in the mockup
-	// (research/ui/mockups/B-desk.html :33). A trailing stretch would instead
-	// split the region between the card and empty space, and a mounted editor
-	// would sit at its size hint with the rest of the rail blank.
-	scroll->setWidget(*host);
-	return scroll;
-}
-
-} // namespace
-
 FocusDesk::FocusDesk(QWidget* parent) :
 	QWidget(parent),
 	m_rows(FocusDeskModules::v1Register())
 {
 	setObjectName(QStringLiteral("focusDesk"));
+	a11y::announce(this, tr("Focus Desk"),
+		tr("The desk shell: a FOCUS strip of module chips, two rails, a stage "
+		"and a bottom dock."));
 	buildStrip();
 	buildBody();
 	for (const auto& row : m_rows) { addChip(row); }
+
+	// One explicit setTabOrder() pass over the Focus Desk's own flow (spec §5
+	// item 1): register order across the strip's chips, then the density
+	// control, then the two splitter handles so keyboard resizing is reachable
+	// by tab and not only by click. The pass lives here because the chips only
+	// exist once the loop above has run; a card's promote button is created
+	// per mount and joins the chain through its own explicit TabFocus policy.
+	QWidget* previous = nullptr;
+	for (const auto& row : m_rows)
+	{
+		QToolButton* chip = m_chips.value(row.id, nullptr);
+		if (chip == nullptr) { continue; }
+		if (previous != nullptr) { setTabOrder(previous, chip); }
+		previous = chip;
+	}
+	// The density control and both splitters are guaranteed non-null here:
+	// buildStrip() and buildBody() ran above the addChip loop.
+	if (previous != nullptr)
+	{
+		setTabOrder(previous, m_densityButton);
+		previous = m_densityButton;
+	}
+	if (previous != nullptr)
+	{
+		setTabOrder(previous, m_splitter);
+		previous = m_splitter;
+	}
+	if (previous != nullptr)
+	{
+		// The vertical splitter is a local of buildBody(), reachable by the
+		// objectName buildBody() gives it rather than by a header change.
+		if (auto* rows = findChild<QSplitter*>(QStringLiteral("focusDeskRows")))
+		{
+			setTabOrder(previous, rows);
+		}
+	}
+
 	refreshChips();
 	applyDensity();
 }
@@ -164,8 +175,13 @@ void FocusDesk::buildStrip()
 
 	auto* label = new QLabel(tr("FOCUS"), m_strip);
 	label->setObjectName(QStringLiteral("focusDeskStripLabel"));
-	label->setToolTip(tr("One chip per module in the register. A greyed chip "
-		"states why its module cannot be shown yet; a chip is never removed."));
+	const QString stripTip = tr("One chip per module in the register. A greyed chip "
+		"states why its module cannot be shown yet; a chip is never removed.");
+	label->setToolTip(stripTip);
+	// The label's name falls back to its "FOCUS" text, so it is described, not
+	// renamed; the strip around it is named for what it groups.
+	a11y::describe(label, stripTip);
+	a11y::announce(m_strip, tr("FOCUS strip"), stripTip);
 	layout->addWidget(label);
 
 	// The chips are inserted before this stretch by addChip().
@@ -175,103 +191,30 @@ void FocusDesk::buildStrip()
 	m_densityButton->setObjectName(QStringLiteral("focusDeskDensity"));
 	m_densityButton->setToolButtonStyle(Qt::ToolButtonTextOnly);
 	m_densityButton->setAutoRaise(true);
-	m_densityButton->setToolTip(tr("Density preset. A preset hides information, "
-		"never capability, and never state."));
+	m_densityButton->setFocusPolicy(Qt::TabFocus);
+	const QString densityTip = tr("Density preset. A preset hides information, "
+		"never capability, and never state.");
+	m_densityButton->setToolTip(densityTip);
+	a11y::describe(m_densityButton, densityTip);
 	connect(m_densityButton, &QToolButton::clicked, this,
 		[this]() { setDensity(FocusDeskModules::nextDensity(m_density)); });
 	layout->addWidget(m_densityButton);
-}
-
-void FocusDesk::buildBody()
-{
-	// §5.1's four regions: three across the top, the bottom dock beneath them.
-	// Every row of the register is homed in one of the four, so none of them is
-	// a place a module can be told to live and then not be shown.
-	m_splitter = new QSplitter(Qt::Horizontal, this);
-	m_splitter->setObjectName(QStringLiteral("focusDeskSplitter"));
-	m_splitter->setChildrenCollapsible(false);
-
-	// Creation order is the splitter's child order.
-	makeRail(m_splitter, &m_leftHost, &m_leftLayout);
-
-	auto* stage = new QFrame(m_splitter);
-	stage->setObjectName(QStringLiteral("focusDeskStage"));
-	stage->setFrameShape(QFrame::StyledPanel);
-	auto* stageLayout = new QVBoxLayout(stage);
-	stageLayout->setContentsMargins(6, 6, 6, 6);
-	stageLayout->setSpacing(4);
-	m_stageTitle = new QLabel(tr("Stage"), stage);
-	m_stageTitle->setObjectName(QStringLiteral("focusDeskStageTitle"));
-	stageLayout->addWidget(m_stageTitle);
-	m_stageHost = new QWidget(stage);
-	m_stageLayout = new QVBoxLayout(m_stageHost);
-	m_stageLayout->setContentsMargins(0, 0, 0, 0);
-	m_stageLayout->setSpacing(0);
-	// No trailing stretch: the stage holds exactly one module and one module
-	// fills the stage (§4.3, and the mockup's `flex: 1 1 auto`). With a stretch
-	// the module would share the stage with empty space at half size.
-	stageLayout->addWidget(m_stageHost, 1);
-
-	makeRail(m_splitter, &m_rightHost, &m_rightLayout);
-
-	// The bottom dock is the fourth region (§5.1). It is a rail like the other
-	// two - a stack, not a single slot - because the mixer, the detail editor
-	// and automation are all homed here.
-	auto* rows = new QSplitter(Qt::Vertical, this);
-	rows->setObjectName(QStringLiteral("focusDeskRows"));
-	rows->setChildrenCollapsible(false);
-	rows->addWidget(m_splitter);
-
-	auto* dock = new QFrame(rows);
-	dock->setObjectName(QStringLiteral("focusDeskDock"));
-	dock->setFrameShape(QFrame::StyledPanel);
-	auto* dockLayout = new QVBoxLayout(dock);
-	dockLayout->setContentsMargins(6, 6, 6, 6);
-	dockLayout->setSpacing(4);
-	auto* dockTitle = new QLabel(tr("Bottom"), dock);
-	dockTitle->setObjectName(QStringLiteral("focusDeskDockTitle"));
-	dockLayout->addWidget(dockTitle);
-	m_bottomHost = new QWidget(dock);
-	m_bottomLayout = new QVBoxLayout(m_bottomHost);
-	m_bottomLayout->setContentsMargins(0, 0, 0, 0);
-	m_bottomLayout->setSpacing(6);
-	// Like the rails, the dock has no trailing stretch: the modules homed here
-	// (the mixer, the detail editor, automation) share its height.
-	dockLayout->addWidget(m_bottomHost, 1);
-	rows->addWidget(dock);
-
-	// The holding area for mounted modules that are neither on a rail nor on
-	// the stage. It is never shown; chipState() reports "parked" instead, so the
-	// module is not on screen but its position is still stated (X4).
-	m_park = new QWidget(this);
-	m_park->setObjectName(QStringLiteral("focusDeskPark"));
-	m_park->hide();
-	m_parkLayout = new QVBoxLayout(m_park);
-
-	auto* outer = new QVBoxLayout(this);
-	outer->setContentsMargins(0, 0, 0, 0);
-	outer->setSpacing(0);
-	outer->addWidget(m_strip);
-	outer->addWidget(rows, 1);
-
-	m_splitter->setStretchFactor(0, 0);
-	m_splitter->setStretchFactor(1, 1);
-	m_splitter->setStretchFactor(2, 0);
-	m_splitter->setSizes({240, 900, 260});
-	rows->setStretchFactor(0, 1);
-	rows->setStretchFactor(1, 0);
-	rows->setSizes({720, 200});
 }
 
 void FocusDesk::addChip(const FocusModule& row)
 {
 	auto* chip = new QToolButton(m_strip);
 	chip->setObjectName(focusActionCommandId(row.id));
+	// The visible text leads with a glyph a screen reader would spell out, so
+	// the chip is ANNOUNCED with the clean module title; the description
+	// follows the mounted/unmounted state in refreshChips().
 	chip->setText(row.glyph + QStringLiteral("  ") + row.title);
 	chip->setCheckable(true);
 	chip->setAutoExclusive(true);
 	chip->setToolButtonStyle(Qt::ToolButtonTextOnly);
 	chip->setAutoRaise(true);
+	chip->setFocusPolicy(Qt::TabFocus);
+	a11y::announce(chip, row.title);
 	connect(chip, &QToolButton::clicked, this, [this, id = row.id]() { focusModule(id); });
 
 	auto* layout = qobject_cast<QHBoxLayout*>(m_strip->layout());
@@ -403,16 +346,20 @@ void FocusDesk::refreshChips()
 		chip->setEnabled(mounted);
 		if (mounted)
 		{
-			chip->setToolTip(tr("%1 - %2. Press to show it on the stage; the "
+			const QString tip = tr("%1 - %2. Press to show it on the stage; the "
 				"action is %3.").arg(row.title,
-				FocusDeskModules::regionName(row.home), focusActionCommandId(row.id)));
+				FocusDeskModules::regionName(row.home), focusActionCommandId(row.id));
+			chip->setToolTip(tip);
+			a11y::describe(chip, tip);
 		}
 		else
 		{
 			const QString reason = row.unmounted.isEmpty()
 				? tr("no widget is mounted for '%1' in this build").arg(row.id)
 				: row.unmounted;
-			chip->setToolTip(tr("%1 - not shown: %2").arg(row.title, reason));
+			const QString tip = tr("%1 - not shown: %2").arg(row.title, reason);
+			chip->setToolTip(tip);
+			a11y::describe(chip, tip);
 		}
 		chip->setChecked(row.id == m_focused);
 	}

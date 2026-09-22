@@ -1,5 +1,9 @@
 /*
- * FocusDeskPlacement.cpp - card placement and density for the Focus Desk shell.
+ * FocusDeskPlacement.cpp - card placement, body construction and density for
+ * the Focus Desk shell. buildBody() and makeRail() live here beside the card
+ * builder because they construct the same layout the placement code moves
+ * cards through; keeping them in FocusDesk.cpp would push that file past the
+ * fork's 500-line gate (Gate 7), which is a limit this change may not spend.
  *
  * Copyright (c) 2026 Zene Studio contributors
  *
@@ -22,12 +26,14 @@
  *
  */
 
+#include "Accessibility.h"
 #include "FocusDesk.h"
 
 #include <QFrame>
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QScrollArea>
+#include <QSplitter>
 #include <QToolButton>
 #include <QVBoxLayout>
 
@@ -45,6 +51,35 @@ QString headerObjectName(const QString& moduleId)
 QString cardObjectName(const QString& moduleId)
 {
 	return QStringLiteral("focusDeskCard_") + moduleId;
+}
+
+//! A rail: a scrollable container, because §5.1 keeps regions as splitters and
+//! lets more than one module share a region (stacked or tabbed) - a rail that
+//! held exactly one widget could not. Named and given an explicit focus policy
+//! here so both come with the widget rather than being remembered by callers
+//! (SPEC-zene-ui-v0 §5 item 1).
+QScrollArea* makeRail(QWidget* parent, QWidget** host, QVBoxLayout** layout,
+	const QString& name, const QString& description)
+{
+	auto* scroll = new QScrollArea(parent);
+	scroll->setWidgetResizable(true);
+	scroll->setFrameShape(QFrame::NoFrame);
+	scroll->setFocusPolicy(Qt::WheelFocus);
+	lmms::a11y::announce(scroll, name, description);
+
+	*host = new QWidget(scroll);
+	*layout = new QVBoxLayout(*host);
+	(*layout)->setContentsMargins(6, 6, 6, 6);
+	(*layout)->setSpacing(6);
+	// Deliberately no trailing stretch. A card mounted in a region *is* that
+	// region's content, so it takes the region and shares it with the other
+	// cards when several are stacked - which is the shell's reading of
+	// `flex: 1 1 auto` for rail and stage panels in the mockup
+	// (research/ui/mockups/B-desk.html :33). A trailing stretch would instead
+	// split the region between the card and empty space, and a mounted editor
+	// would sit at its size hint with the rest of the rail blank.
+	scroll->setWidget(*host);
+	return scroll;
 }
 } // namespace
 
@@ -89,6 +124,103 @@ FocusDesk::Destination FocusDesk::homeDestination(FocusRegion home)
 	return Destination::Park;
 }
 
+void FocusDesk::buildBody()
+{
+	// §5.1's four regions: three across the top, the bottom dock beneath them.
+	// Every row of the register is homed in one of the four, so none of them is
+	// a place a module can be told to live and then not be shown.
+	m_splitter = new QSplitter(Qt::Horizontal, this);
+	m_splitter->setObjectName(QStringLiteral("focusDeskSplitter"));
+	m_splitter->setChildrenCollapsible(false);
+	// StrongFocus so the handles take the arrow keys after a click or a tab;
+	// "unreachable by keyboard" is the defect SPEC-zene-ui-v0 §5 item 1 removes.
+	m_splitter->setFocusPolicy(Qt::StrongFocus);
+	a11y::announce(m_splitter, tr("Focus Desk regions"),
+		tr("Splits the left rail, the stage and the right rail; focus a handle "
+		"and use the arrow keys to resize."));
+
+	// Creation order is the splitter's child order.
+	makeRail(m_splitter, &m_leftHost, &m_leftLayout, tr("Left rail"),
+		tr("Stacked module cards; each module's chip states where its card is."));
+
+	auto* stage = new QFrame(m_splitter);
+	stage->setObjectName(QStringLiteral("focusDeskStage"));
+	stage->setFrameShape(QFrame::StyledPanel);
+	a11y::announce(stage, tr("Stage"),
+		tr("The stage shows the module whose chip is selected."));
+	auto* stageLayout = new QVBoxLayout(stage);
+	stageLayout->setContentsMargins(6, 6, 6, 6);
+	stageLayout->setSpacing(4);
+	m_stageTitle = new QLabel(tr("Stage"), stage);
+	m_stageTitle->setObjectName(QStringLiteral("focusDeskStageTitle"));
+	stageLayout->addWidget(m_stageTitle);
+	m_stageHost = new QWidget(stage);
+	m_stageLayout = new QVBoxLayout(m_stageHost);
+	m_stageLayout->setContentsMargins(0, 0, 0, 0);
+	m_stageLayout->setSpacing(0);
+	// No trailing stretch: the stage holds exactly one module and one module
+	// fills the stage (§4.3, and the mockup's `flex: 1 1 auto`). With a stretch
+	// the module would share the stage with empty space at half size.
+	stageLayout->addWidget(m_stageHost, 1);
+
+	makeRail(m_splitter, &m_rightHost, &m_rightLayout, tr("Right rail"),
+		tr("Stacked module cards; each module's chip states where its card is."));
+
+	// The bottom dock is the fourth region (§5.1). It is a rail like the other
+	// two - a stack, not a single slot - because the mixer, the detail editor
+	// and automation are all homed here.
+	auto* rows = new QSplitter(Qt::Vertical, this);
+	rows->setObjectName(QStringLiteral("focusDeskRows"));
+	rows->setChildrenCollapsible(false);
+	rows->setFocusPolicy(Qt::StrongFocus);
+	a11y::announce(rows, tr("Focus Desk dock split"),
+		tr("Splits the top regions from the bottom dock; focus the handle and "
+		"use the arrow keys to resize."));
+	rows->addWidget(m_splitter);
+
+	auto* dock = new QFrame(rows);
+	dock->setObjectName(QStringLiteral("focusDeskDock"));
+	dock->setFrameShape(QFrame::StyledPanel);
+	a11y::announce(dock, tr("Bottom dock"),
+		tr("Stacked module cards for the mixer, the detail editor and automation."));
+	auto* dockLayout = new QVBoxLayout(dock);
+	dockLayout->setContentsMargins(6, 6, 6, 6);
+	dockLayout->setSpacing(4);
+	auto* dockTitle = new QLabel(tr("Bottom"), dock);
+	dockTitle->setObjectName(QStringLiteral("focusDeskDockTitle"));
+	dockLayout->addWidget(dockTitle);
+	m_bottomHost = new QWidget(dock);
+	m_bottomLayout = new QVBoxLayout(m_bottomHost);
+	m_bottomLayout->setContentsMargins(0, 0, 0, 0);
+	m_bottomLayout->setSpacing(6);
+	// Like the rails, the dock has no trailing stretch: the modules homed here
+	// (the mixer, the detail editor, automation) share its height.
+	dockLayout->addWidget(m_bottomHost, 1);
+	rows->addWidget(dock);
+
+	// The holding area for mounted modules that are neither on a rail nor on
+	// the stage. It is never shown; chipState() reports "parked" instead, so the
+	// module is not on screen but its position is still stated (X4).
+	m_park = new QWidget(this);
+	m_park->setObjectName(QStringLiteral("focusDeskPark"));
+	m_park->hide();
+	m_parkLayout = new QVBoxLayout(m_park);
+
+	auto* outer = new QVBoxLayout(this);
+	outer->setContentsMargins(0, 0, 0, 0);
+	outer->setSpacing(0);
+	outer->addWidget(m_strip);
+	outer->addWidget(rows, 1);
+
+	m_splitter->setStretchFactor(0, 0);
+	m_splitter->setStretchFactor(1, 1);
+	m_splitter->setStretchFactor(2, 0);
+	m_splitter->setSizes({240, 900, 260});
+	rows->setStretchFactor(0, 1);
+	rows->setStretchFactor(1, 0);
+	rows->setSizes({720, 200});
+}
+
 QFrame* FocusDesk::buildCard(const FocusModule& row, QWidget* content)
 {
 	auto* card = new QFrame(m_park);
@@ -111,8 +243,15 @@ QFrame* FocusDesk::buildCard(const FocusModule& row, QWidget* content)
 	focusButton->setText(tr("Show on stage"));
 	focusButton->setToolButtonStyle(Qt::ToolButtonTextOnly);
 	focusButton->setAutoRaise(true);
-	focusButton->setToolTip(tr("Promote '%1' to the stage - the same action the "
-		"FOCUS strip dispatches (%2)").arg(row.title, focusActionCommandId(row.id)));
+	const QString promoteTip = tr("Promote '%1' to the stage - the same action the "
+		"FOCUS strip dispatches (%2)").arg(row.title, focusActionCommandId(row.id));
+	focusButton->setToolTip(promoteTip);
+	// The visible label is identical on every card, so the announced NAME is
+	// the module this button would promote; the dispatch command stays in the
+	// description. Explicit TabFocus: the card is built late, per mount (§5.1).
+	focusButton->setFocusPolicy(Qt::TabFocus);
+	lmms::a11y::announce(focusButton,
+		tr("Show %1 on stage").arg(row.title), promoteTip);
 	connect(focusButton, &QToolButton::clicked, this,
 		[this, id = row.id]() { focusModule(id); });
 	headerLayout->addWidget(focusButton);
@@ -219,7 +358,11 @@ void FocusDesk::detachFromLayouts(QFrame* card)
 void FocusDesk::refreshDensityLabel()
 {
 	if (m_densityButton == nullptr) { return; }
-	m_densityButton->setText(tr("Density: %1").arg(FocusDeskModules::densityName(m_density)));
+	const QString text = tr("Density: %1").arg(FocusDeskModules::densityName(m_density));
+	m_densityButton->setText(text);
+	// Re-announced with the text on every change: the current preset IS the
+	// state, and a construction-time name would freeze it (spec §5 item 1).
+	lmms::a11y::announce(m_densityButton, text);
 }
 
 void FocusDesk::setDensity(FocusDensity density)

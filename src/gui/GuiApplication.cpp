@@ -50,6 +50,10 @@
 #include <QSplashScreen>
 #include <QSocketNotifier>
 
+#if QT_VERSION >= QT_VERSION_CHECK(6, 5, 0)
+#include <QStyleHints>
+#endif
+
 #include <cstdio>
 
 #include "UnattendedRun.h"
@@ -145,6 +149,24 @@ GuiApplication::GuiApplication()
 
 	QApplication::setPalette( *lpal );
 	LmmsStyle::s_palette = lpal;
+
+#if QT_VERSION >= QT_VERSION_CHECK(6, 5, 0)
+	// SPEC-zene-ui-v0 §4.5: the OS dark/light choice reaches the product as
+	// QStyleHints::colorSchemeChanged(Qt::ColorScheme), whose notifier this
+	// property gained in Qt 6.5 - above this program's floor (CI builds Qt
+	// 5.15, this box Qt 6.4.2), so the hook compiles in where the API exists
+	// and is absent where it does not. One palette ships today, so a scheme
+	// change re-applies it; the connection is the pick point a light variant
+	// needs to become a branch here rather than another connection.
+	connect(QGuiApplication::styleHints(), &QStyleHints::colorSchemeChanged, this,
+		[](Qt::ColorScheme)
+		{
+			if (LmmsStyle::s_palette != nullptr)
+			{
+				qApp->setPalette(*LmmsStyle::s_palette);
+			}
+		});
+#endif
 
 #ifdef LMMS_BUILD_APPLE
 	QApplication::setAttribute(Qt::AA_DontShowIconsInMenus, true);

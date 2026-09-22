@@ -9,7 +9,7 @@ src/wasm/WasmSandbox.cpp	597
 tests/zene-api-boundary.py	594
 tests/control-socket-path-safety.py	574
 src/core/ProjectContainerEntries.cpp	573
-tests/control-retro-capture.py	569
+tests/control-retro-capture.py	568
 src/core/AudioPortsModel.cpp	549
 tests/control-stable-ids-slice2.py	549
 include/ControlReversibility.h	544

@@ -61,7 +61,11 @@ TabWidget::TabWidget(const QString& caption, QWidget* parent, bool usePixmap,
 	setFont(adjustedToPixelSize(font(), DEFAULT_FONT_SIZE));
 
 	setAutoFillBackground(true);
-	QColor bg_color = QApplication::palette().color(QPalette::Active, QPalette::Window).darker(132);
+	// The palette's own Shadow role: the darkest shade it defines for this
+	// theme. The old `darker(132)` multiply was a constant with no
+	// luminance awareness (the anti-pattern §4.3 records; the pattern the rest
+	// of the GUI should follow is Knob.cpp's role lookup).
+	QColor bg_color = QApplication::palette().color(QPalette::Active, QPalette::Shadow);
 	QPalette pal = palette();
 	pal.setColor(QPalette::Window, bg_color);
 	setPalette(pal);

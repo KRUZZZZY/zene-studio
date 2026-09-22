@@ -40,6 +40,7 @@
 #include <QSplitter>
 #include <QStatusBar>
 
+#include "Accessibility.h"
 #include "AboutDialog.h"
 #include "AudioEngine.h"
 #include "AutomationEditor.h"
@@ -206,6 +207,11 @@ MainWindow::MainWindow() :
 	// create global-toolbar at the top of our window
 	m_toolBar = new QWidget( main_widget );
 	m_toolBar->setObjectName( "mainToolbar" );
+	// The toolbar is a plain QWidget around icon-only ToolButtons: unnamed, it
+	// is a region a screen reader cannot even indicate (spec §5 item 1). The
+	// buttons inside it are named in ToolButton's constructor.
+	a11y::announce(m_toolBar, tr("Main toolbar"),
+		tr("Project actions, the metronome toggle and the editor window toggles."));
 	m_toolBar->setFixedHeight(scaledPixels(64));
 	m_toolBar->move( 0, 0 );
 
@@ -310,7 +316,16 @@ void MainWindow::finalize()
 	};
 
 	// project-popup-menu
+	// Each menu is announced with its clean title: these QMenu objects never
+	// get a title of their own (only the menu bar's action text does, "&File"
+	// and friends), so their accessible name would otherwise fall back to
+	// nothing an assistive tool can read (SPEC-zene-ui-v0 §5 item 1).
+	a11y::announce(menuBar(), tr("Main menu"),
+		tr("The top-level menus: File, Edit, View, Tools and Help."));
+
 	auto project_menu = new QMenu(this);
+	a11y::announce(project_menu, tr("File"),
+		tr("Create, open, save, import and export projects."));
 	menuBar()->addMenu( project_menu )->setText( tr( "&File" ) );
 
 	addAction(project_menu, "project_new", tr("&New"),
@@ -362,6 +377,7 @@ void MainWindow::finalize()
 		qApp, SLOT(closeAllWindows()))->setShortcut(keySequence(Qt::CTRL, Qt::Key_Q));
 
 	auto edit_menu = new QMenu(this);
+	a11y::announce(edit_menu, tr("Edit"), tr("Undo, redo, settings and MIDI learn."));
 	menuBar()->addMenu( edit_menu )->setText( tr( "&Edit" ) );
 
 	m_undoAction = addAction(edit_menu, "edit_undo", tr("Undo"),
@@ -429,6 +445,8 @@ void MainWindow::finalize()
 	connect(edit_menu, SIGNAL(aboutToShow()), this, SLOT(updateUndoRedoButtons()));
 
 	m_viewMenu = new QMenu( this );
+	a11y::announce(m_viewMenu, tr("View"),
+		tr("Show, hide and arrange the editors, and switch the Focus Desk."));
 	menuBar()->addMenu( m_viewMenu )->setText( tr( "&View" ) );
 	connect( m_viewMenu, SIGNAL(aboutToShow()),
 		 this, SLOT(updateViewMenu()));
@@ -438,6 +456,7 @@ void MainWindow::finalize()
 
 
 	m_toolsMenu = new QMenu( this );
+	a11y::announce(m_toolsMenu, tr("Tools"), tr("Plugin and tool maintenance."));
 	// The Tools menu is populated the first time it is opened (updateToolsMenu),
 	// not at start-up: a session that never opens it never pays for plugin
 	// discovery. See docs/PLUGIN-SCAN-CACHE.md.
@@ -448,6 +467,8 @@ void MainWindow::finalize()
 
 	// help-popup-menu
 	auto help_menu = new QMenu(this);
+	a11y::announce(help_menu, tr("Help"),
+		tr("Help, about and telemetry consent."));
 	menuBar()->addMenu( help_menu )->setText( tr( "&Help" ) );
 	// May use offline help
 	if( true )

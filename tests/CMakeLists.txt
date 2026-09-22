@@ -545,6 +545,12 @@ set(LMMS_TESTS
 	# strip's greyed-with-a-reason rule (X4), promotion to the stage, the
 	# return-to-home rule, releaseAll(), density, and the layout round trip.
 	src/gui/FocusDeskPaneTest.cpp
+	# UI precondition #1 (040/ui-precond): include/WcagContrast.h at the AA
+	# boundary, and include/Accessibility.h on the Focus Desk surface the owner
+	# manual-tests - the helper, then the chips, density control and promote
+	# button as the sweep leaves them.
+	src/gui/WcagContrastTest.cpp
+	src/gui/AccessibilityHelperTest.cpp
 	src/gui/FocusDeskTest.cpp
 	src/gui/MidiLearnGuiTest.cpp
 	src/tracks/AutomationTrackTest.cpp
@@ -936,6 +942,10 @@ set_tests_properties(ClipLinkTest ClipLinkPersistenceTest ImportDetectionTest
 # aborting.
 set_tests_properties(FocusDeskTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(FocusDeskPaneTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+# AccessibilityHelperTest constructs the Focus Desk, so it takes the same
+# platform registration (040/ui-precond). WcagContrastTest is guiless and needs
+# none: QColor loads no platform plugin.
+set_tests_properties(AccessibilityHelperTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 
 # MasteringTest drives a real Engine and the project render path, so it needs a
 # Qt platform plugin even though the test itself is guiless (same reason as

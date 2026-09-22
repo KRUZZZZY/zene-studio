@@ -37,6 +37,7 @@
 // The editors are named through their own types: a pointer to a concrete window
 // converts to QWidget* only where that window is complete, so this is what lets
 // the header's forward declarations be enough for everyone else.
+#include "Accessibility.h"
 #include "AutomationEditor.h"
 #include "ConfigManager.h"
 #include "ControlRegistry.h"
@@ -111,6 +112,14 @@ FocusDeskPane::~FocusDeskPane()
 
 void FocusDeskPane::build(QBoxLayout* hostLayout)
 {
+	// The pane is the Focus Desk as a page of the main window: named so a
+	// screen reader can say which pane holds the chips it is hearing (spec §5
+	// item 1). The toggle action's name falls back to its "Focus Desk" text -
+	// QAction gained setAccessibleName only in Qt 6.9, above this program's
+	// floor, so the text is what an assistive tool reads.
+	lmms::a11y::announce(this, tr("Focus Desk pane"),
+		tr("A page of the main window holding the Focus Desk."));
+
 	auto* layout = new QVBoxLayout(this);
 	layout->setContentsMargins(0, 0, 0, 0);
 	layout->setSpacing(0);
