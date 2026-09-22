@@ -473,6 +473,15 @@
 # Measured before registering: every function in the four files is CCN <= 10 (lizard), every
 # file is under 500 lines, so the fork ratchets gates 4 and 7 measure them at their existing
 # thresholds rather than moving a baseline.
+# 2026-09-22 (lane 040/ui-precond, UI precondition #1): two fork-NEW headers enter here -
+# include/Accessibility.h (the announce/describe pattern every later accessibility sweep
+# copies) and include/WcagContrast.h (the WCAG contrast helper of SPEC-zene-ui-v0 §4.5,
+# lower in the file under W). Both are header-only; measured before registering, every
+# function is CCN <= 3 and both are far under 500 lines, so gates 4 and 7 measure them at
+# their thresholds. The two tests that exercise them live in tests/src/gui/, which the
+# recipe's pathspec does not cover - the FocusDesk tests sit the same way, registered in
+# tests/CMakeLists.txt and listed in tests/all-sources.txt.
+include/Accessibility.h
 include/AudioBus.h
 include/AudioInputPath.h
 include/AudioPlugin.h
@@ -624,6 +633,7 @@ include/UnattendedRun.h
 include/UnclaimedElements.h
 include/VcaGroup.h
 include/WarpMarkers.h
+include/WcagContrast.h
 include/zene/api/ControlApi.h
 plugins/ClapEffect/ClapBusMap.cpp
 plugins/ClapEffect/ClapBusMap.h

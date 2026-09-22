@@ -23,6 +23,7 @@
  */
  
 
+#include "Accessibility.h"
 #include "ToolButton.h"
 
 namespace lmms::gui
@@ -42,6 +43,13 @@ ToolButton::ToolButton( const QPixmap & _pixmap, const QString & _tooltip,
 	}
 	setToolTip(_tooltip);
 	setIcon( _pixmap );
+	// The visible label exists only as the tooltip, so a screen reader would
+	// otherwise never hear it (the measured zero of SPEC-zene-ui-v0 §4.3).
+	// Announced once here, every icon-only ToolButton in the product is named.
+	a11y::announce(this, _tooltip);
+	// QToolButton's documented default is TabFocus; pinned so a default change
+	// cannot silently make every toolbar unreachable by keyboard (§5 item 1).
+	setFocusPolicy(Qt::TabFocus);
 }
 
 

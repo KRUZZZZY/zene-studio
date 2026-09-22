@@ -60,7 +60,12 @@
 # (tests/control-detect-commands.py, added by 69123e2f1 so the whole-tree complexity ratchet
 # measures it - it carries run_checks, CCN 75) rather than an entry the command cannot
 # reproduce. tests/all-sources-reproduce.sh and Gate 9 are what stop the next silent loss.
+# 2026-09-22 (040/ui-precond): the UI precondition #1 helpers and their two tests are
+# fork-NEW (include/Accessibility.h, include/WcagContrast.h, tests/src/gui/WcagContrastTest.cpp,
+# tests/src/gui/AccessibilityHelperTest.cpp); like the FocusDesk tests they sit outside
+# tests/fork-sources.txt's pathspec and are measured here.
 include/AboutDialog.h
+include/Accessibility.h
 include/ActionGroup.h
 include/ArrayVector.h
 include/AudioAlsa.h
@@ -505,6 +510,7 @@ include/VersionedSaveDialog.h
 include/VstSyncController.h
 include/VstSyncData.h
 include/WarpMarkers.h
+include/WcagContrast.h
 include/aeffectx.h
 include/base64.h
 include/embed.h
@@ -1743,9 +1749,11 @@ tests/src/core/UnclaimedTrackTypeTest.cpp
 tests/src/core/UndoBoundsTest.cpp
 tests/src/core/VcaGroupTest.cpp
 tests/src/core/WarpMarkersTest.cpp
+tests/src/gui/AccessibilityHelperTest.cpp
 tests/src/gui/FocusDeskPaneTest.cpp
 tests/src/gui/FocusDeskTest.cpp
 tests/src/gui/MidiLearnGuiTest.cpp
+tests/src/gui/WcagContrastTest.cpp
 tests/src/plugins/AudioPluginTest.cpp
 tests/src/plugins/ClapBusMapTest.cpp
 tests/src/plugins/ClapEffectIntegrationTest.cpp

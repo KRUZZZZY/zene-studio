@@ -192,26 +192,21 @@ void LmmsStyle::drawComplexControl( ComplexControl control,
 		const auto titleBar = qstyleoption_cast<const QStyleOptionTitleBar*>(option);
 		if( titleBar )
 		{
+			// The palette decides both text roles now (spec §4.3: roles, not
+			// literals). The three hardcoded colours this branch used to force
+			// over it - #ffffff / #c0c0c0 for the active/inactive caption and
+			// #404040 for the text - collapsed every colour group to one pair
+			// of constants, which is exactly what a dark palette inverts.
 			QStyleOptionTitleBar so( *titleBar );
 			so.palette = standardPalette();
-			so.palette.setColor( QPalette::HighlightedText,
-				( titleBar->titleBarState & State_Active ) ?
-					QColor( 255, 255, 255 ) :
-						QColor( 192, 192, 192 ) );
-			so.palette.setColor( QPalette::Text,
-							QColor( 64, 64, 64 ) );
 			QProxyStyle::drawComplexControl( control, &so,
 							painter, widget );
 			return;
 		}
 	}
-	else if (control == CC_MdiControls)
-	{
-		QStyleOptionComplex so(*option);
-		so.palette.setColor(QPalette::Button, QColor(223, 228, 236));
-		QProxyStyle::drawComplexControl(control, &so, painter, widget);
-		return;
-	}
+	// CC_MdiControls used to force QPalette::Button to a hardcoded light grey
+	// (#dfe4ec); the palette's own role decides the buttons now, so the only
+	// thing that branch drew is the fall-through below.
 /*	else if( control == CC_ScrollBar )
 	{
 		painter->fillRect( option->rect, QApplication::palette().color( QPalette::Active,
@@ -234,7 +229,10 @@ void LmmsStyle::drawPrimitive( PrimitiveElement element,
 	{
 		const QRect rect = option->rect;
 
-		QColor black = QColor( 0, 0, 0 );
+		// The inner bevel comes from the palette's Shadow role instead of a
+		// hardcoded #000 (spec §4.3: role lookups, not literals); LmmsPalette
+		// defines Shadow as black, so the paint is unchanged under this theme.
+		QColor inner = option->palette.color(QPalette::Active, QPalette::Shadow);
 		QColor shadow = option->palette.shadow().color();
 		QColor highlight = option->palette.highlight().color();
 
@@ -246,10 +244,10 @@ void LmmsStyle::drawPrimitive( PrimitiveElement element,
 		auto lines = std::array<QLine, 4>{};
 		auto points = std::array<QPoint, 4>{};
 
-		// black inside lines
+		// inner lines
 		// 50%
-		black.setAlpha(a100);
-		painter->setPen(QPen(black, 0));
+		inner.setAlpha(a100);
+		painter->setPen(QPen(inner, 0));
 		lines[0] = QLine(rect.left() + 2, rect.top() + 1,
 					rect.right() - 2, rect.top() + 1);
 		lines[1] = QLine(rect.left() + 2, rect.bottom() - 1,
@@ -260,9 +258,9 @@ void LmmsStyle::drawPrimitive( PrimitiveElement element,
 					rect.right() - 1, rect.bottom() - 2);
 		painter->drawLines(lines.data(), 4);
 
-		// black inside dots
-		black.setAlpha(a50);
-		painter->setPen(QPen(black, 0));
+		// inner dots
+		inner.setAlpha(a50);
+		painter->setPen(QPen(inner, 0));
 		points[0] = QPoint(rect.left() + 2, rect.top() + 2);
 		points[1] = QPoint(rect.left() + 2, rect.bottom() - 2);
 		points[2] = QPoint(rect.right() - 2, rect.top() + 2);
@@ -376,28 +374,23 @@ QImage LmmsStyle::colorizeXpm( const char * const * xpm, const QBrush& fill ) co
 
 void LmmsStyle::hoverColors( bool sunken, bool hover, bool active, QColor& color, QColor& blend ) const
 {
-	if( active )
+	// The three states below used to hardcode their greys (#151515/#212121
+	// idle, #646464/#4b4b4b hover, #4b4b4b/#414141 pressed); they are read
+	// from the application palette's roles now, so the same states invert
+	// under a dark theme instead of painting the same two greys over it
+	// (spec §4.3: "the fix is lookup").
+	const QPalette pal = QApplication::palette();
+	color = pal.color( QPalette::Active, QPalette::Window );
+	blend = pal.color( QPalette::Active, QPalette::Dark );
+	if( active && sunken )
 	{
-		if( sunken )
-		{
-			color = QColor( 75, 75, 75 );
-			blend = QColor( 65, 65, 65 );
-		}
-		else if( hover )
-		{
-			color = QColor( 100, 100, 100 );
-			blend = QColor( 75, 75, 75 );
-		}
-		else
-		{
-			color = QColor( 21, 21, 21 );
-			blend = QColor( 33, 33, 33 );
-		}
+		color = pal.color( QPalette::Active, QPalette::Shadow );
+		blend = pal.color( QPalette::Active, QPalette::Dark );
 	}
-	else
+	else if( active && hover )
 	{
-		color = QColor( 21, 21, 21 );
-		blend = QColor( 33, 33, 33 );
+		color = pal.color( QPalette::Active, QPalette::Mid );
+		blend = pal.color( QPalette::Active, QPalette::Dark );
 	}
 }
 
