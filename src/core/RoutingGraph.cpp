@@ -43,6 +43,41 @@ namespace
 constexpr auto GRAPH_ELEMENT = "routinggraph";
 constexpr auto GRAPH_VERSION = 1;
 
+//! The scheduling class of a node, read from its own typeName() declaration at
+//! rebuild time (SPEC-MULTICORE-SCHEDULING §2.3): only graph-local DSP is
+//! instance-free. effect and rack_chain wrap a serialized plugin instance, and an
+//! unknown type classifies as Chain so a future node type is never silently
+//! offered parallel work.
+auto schedulingClassOf(const RoutingNode& node) -> RoutingScheduleClass
+{
+	const QString type = node.typeName();
+	if (type == QLatin1String("chain_input") || type == QLatin1String("rack_sum") ||
+		type == QLatin1String("constant") || type == QLatin1String("onepole_lowpass") ||
+		type == QLatin1String("gain") || type == QLatin1String("sink"))
+	{
+		return RoutingScheduleClass::InstanceFree;
+	}
+	return RoutingScheduleClass::Chain;
+}
+
+//! Publish required/pending/class per node alongside the plan (Slice 1,
+//! SPEC-MULTICORE-SCHEDULING §2.3/§6). Kept out of rebuildPlan() so the
+//! Kahn pass itself stays at its baselined complexity; process() keeps
+//! walking m_plan, so publishing changes no behaviour.
+void publishScheduleFor(std::vector<RoutingNodeSchedule>& schedule,
+	const std::vector<int>& required,
+	const std::vector<std::unique_ptr<RoutingNode>>& nodes)
+{
+	schedule.assign(nodes.size(), RoutingNodeSchedule{});
+	for (std::size_t i = 0; i < nodes.size(); ++i)
+	{
+		if (nodes[i] == nullptr) { continue; } // removed ids stay zeroed
+		schedule[i].required = required[i];
+		schedule[i].pending = required[i];
+		schedule[i].schedulingClass = schedulingClassOf(*nodes[i]);
+	}
+}
+
 } // namespace
 
 auto RoutingGraph::addNode(std::unique_ptr<RoutingNode> node) -> int
@@ -145,6 +180,8 @@ void RoutingGraph::clear()
 	m_nodes.clear();
 	m_connections.clear();
 	m_plan.clear();
+	m_schedule.clear();
+	m_readyList.clear();
 	m_outputNodeId = -1;
 }
 
@@ -335,6 +372,9 @@ auto RoutingGraph::rebuildPlan() -> bool
 		}
 	}
 
+	// Slice 1 publishes required as the in-degree BEFORE Kahn mutates it
+	const std::vector<int> required = indegree;
+
 	// Kahn's algorithm with ascending node ids for a deterministic order
 	std::priority_queue<int, std::vector<int>, std::greater<int>> ready;
 	for (int i = 0; i < count; ++i)
@@ -357,7 +397,12 @@ auto RoutingGraph::rebuildPlan() -> bool
 
 	if (static_cast<int>(plan.size()) != nodeCount()) { return false; }
 
+	// Slice 1: publish the schedule data with the plan, and the ready list a
+	// serial scheduler pops (the Kahn pop sequence - equal to the plan today,
+	// proved by RoutingGraphScheduleTest together with the reference bytes).
+	publishScheduleFor(m_schedule, required, m_nodes);
 	m_plan = std::move(plan);
+	m_readyList = m_plan;
 	return true;
 }
 

@@ -46,6 +46,32 @@ struct RoutingConnection
 	int destPort = 0;
 };
 
+//! Scheduling class published with the schedule (SPEC-MULTICORE-SCHEDULING §2.3).
+//! Chain: the node's work is a serialized instance chain and must never be offered
+//! as parallel node-level work. InstanceFree: pure graph DSP. The class is read
+//! from the node's own typeName() declaration at rebuild time, and an UNKNOWN type
+//! classifies as Chain so a future node type is never silently schedulable.
+enum class RoutingScheduleClass
+{
+	InstanceFree,
+	Chain,
+};
+
+//! One node's published schedule entry, built on the control thread alongside the
+//! plan (SPEC-MULTICORE-SCHEDULING §2.3) and read-only thereafter. Slice 1
+//! publishes it while execution stays serial over m_plan; a later slice decrements
+//! pending as producers run. A removed node id keeps a zeroed entry and never
+//! appears in the ready list.
+struct RoutingNodeSchedule
+{
+	//! in-degree over gating edges, measured before execution mutates anything
+	int required = 0;
+	//! work counter: starts equal to required; an entry is ready when it reaches 0
+	int pending = 0;
+	//! scheduling class of the node at this slot (Chain for a removed node)
+	RoutingScheduleClass schedulingClass = RoutingScheduleClass::Chain;
+};
+
 /**
  * @brief A directed acyclic graph of RoutingNodes with a cached execution plan.
  *
@@ -95,6 +121,16 @@ public:
 	//! Cached, topologically sorted node ids (rebuilt on every topology edit)
 	auto processingOrder() const -> const std::vector<int>& { return m_plan; }
 
+	//! Published schedule: one entry per node id slot (zeroed for removed ids),
+	//! carrying required, pending and the scheduling class (multicore Slice 1)
+	auto schedule() const -> const std::vector<RoutingNodeSchedule>& { return m_schedule; }
+
+	//! Published ready list in execution order: the order a serial scheduler pops
+	//! each node once its pending count reaches zero. Equals processingOrder()
+	//! while execution is serial - RoutingGraphScheduleTest proves that, and that
+	//! both walks reproduce the committed reference bytes.
+	auto readyList() const -> const std::vector<int>& { return m_readyList; }
+
 	//! The node whose first output is copied into the host channel buffer
 	auto setOutputNode(int id) -> bool;
 	auto outputNodeId() const -> int { return m_outputNodeId; }
@@ -132,6 +168,8 @@ private:
 	std::vector<std::unique_ptr<RoutingNode>> m_nodes; //!< indexed by node id
 	std::vector<RoutingConnection> m_connections;
 	std::vector<int> m_plan;
+	std::vector<RoutingNodeSchedule> m_schedule; //!< published with m_plan (Slice 1)
+	std::vector<int> m_readyList;                //!< published with m_plan (Slice 1)
 	int m_outputNodeId = -1;
 	f_cnt_t m_frames = 0;
 	ch_cnt_t m_channels = 0;

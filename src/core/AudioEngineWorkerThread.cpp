@@ -29,6 +29,7 @@
 #include <QWaitCondition>
 
 #include <atomic>
+#include <cstdint>
 
 #include "AudioEngine.h"
 #include "Hardware.h"
@@ -55,6 +56,16 @@ bool AudioEngineWorkerThread::deterministicProcessing()
 	return s_deterministicProcessing.load(std::memory_order_acquire);
 }
 
+// Counted queue-full refusals since the process started (SPEC-MULTICORE-SCHEDULING
+// §2.6 / §3.2.3: "a counted, lock-free refusal"). addJob()'s overflow branch runs on
+// the audio thread - Mixer.cpp:255 and :1729 seed this queue from masterMix - so it
+// increments this counter and formats nothing: qWarning() there would build a QString
+// on the path tests/rt-safety-scope.txt declares. External linkage so
+// tests/src/core/RoutingGraphScheduleTest.cpp can assert the refusal fired and was
+// counted, without a header/ABI change (the member accessor lands when a later slice
+// touches AudioEngineWorkerThread.h).
+std::atomic<std::uint64_t> queueFullRefusals{0};
+
 // implementation of internal JobQueue
 void AudioEngineWorkerThread::JobQueue::reset( OperationMode _opMode )
 {
@@ -77,7 +88,13 @@ void AudioEngineWorkerThread::JobQueue::addJob( ThreadableJob * _job )
 		if (index < JOB_QUEUE_SIZE) {
 			m_items[index] = _job;
 		} else {
-			qWarning() << "Job queue is full!";
+			// Counted refusal instead of a bare qWarning (multicore Slice 0,
+			// SPEC-MULTICORE-SCHEDULING §2.6 / §3.2.3). The refusal itself is
+			// unchanged - the job is dropped and m_itemsDone is still advanced, so
+			// wait() terminates - but the event is now a lock-free increment on the
+			// audio thread rather than formatted log text, and it is readable by the
+			// registered test that proves the branch fires.
+			queueFullRefusals.fetch_add(1, std::memory_order_relaxed);
 			++m_itemsDone;
 		}
 	}
