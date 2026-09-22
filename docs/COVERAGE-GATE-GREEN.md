@@ -349,6 +349,17 @@ $ bash tests/test-verification-debt.sh                                          
   RESULT: PASS — every red/green assertion held.
 ```
 
+**Update 2026-09-22 (board card #740).** That `EXIT=0` was no longer true at the branch tip:
+measured unpiped, `bash tests/test-verification-debt.sh; echo "DEBT_RC=$?"` returned **`DEBT_RC=1`**.
+Because the harness drives this lane's `coverage-gate.sh` fixture, its red bears on this document's
+"the gate's own verification harness is also green" claim. Defect 1 itself was still fully green; the
+reds were in defects 2 and 3, whose fixtures had stopped matching the gates they drive (defect 2
+stubbed only the nine gates that existed at the harness's pre-fix base; defect 3 predated
+`tests/fork-sources-gate.sh`'s `tests/all-sources-reproduce.sh` requirement — setup `exit 2`,
+`tests/fork-sources-gate.sh:210`). The fixtures were repaired to derive the gate set from the runner
+itself; the harness now exits 0 with 30 assertions and is wired into `run-all-gates.sh` as **Gate 15**
+(`tests/QA-GATES.md`, "Gate 15").
+
 ### 5.1 The control harness — `tests/coverage-green/gate-controls.sh` (21 controls, 0 failed)
 
 Run against the **real** tracefile; only the baseline or the tracefile is mutated. Output:

@@ -275,7 +275,7 @@ declaration omissions by merged lanes, not product defects; neither fix changes 
 | `bash tests/file-length-gate.sh --check --scope tools` | **0** | tools baseline holds |
 | `bash tests/duplication-gate.sh` / `--scope tools` | **0** / **0** | both under the 5% budget |
 | `bash tests/no-tautology-gate.sh` | **0** | passes |
-| `bash tests/test-verification-debt.sh` | **0** | Gate 9's red/green fixture harness still holds |
+| `bash tests/test-verification-debt.sh` | **0** | Gate 9's red/green fixture harness still holds. **Superseded 2026-09-22 (card #740):** measured **red** at the branch tip (`DEBT_RC=1`) — its fixtures stubbed only the nine gates that existed at their own pre-fix base, so later gates ran inside them and failed. Repaired to derive the gate set from the runner; now wired in as Gate 15 (`tests/QA-GATES.md`). |
 | `bash tools/local-ci.sh --build-dir build --jobs 4` | **0** | configure + build + **ctest 27/27 passed** |
 | `bash tests/run-all-gates.sh` | **3** | PASS-WITH-SKIPS (gate 2 not requested) — gates 1,3,4,5,6,7,8,9 PASS; mutation kill score 23/26 = 88.5% (threshold 80%); **not** a green run, see below |
 

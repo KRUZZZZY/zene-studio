@@ -1473,7 +1473,9 @@ every push and pull request.
 **Red/green proof**: `bash tests/test-verification-debt.sh` builds a fixture in which a new file is
 committed in no scope list: at the pre-fix revision no such check exists and Gate 6 calls it an
 undeclared change to upstream code; the fixed Gate 9 names it and exits 1, then exits 0 once the file
-is registered.
+is registered. That harness is now wired in as **Gate 15**; see that section for its own red/green
+proof, the 2026-09-22 repair of its stale fixtures, and the four documents that had gone on claiming
+it exits 0 while it was red.
 
 ## Gate 11: No committed evidence, no oversized files (`evidence-gate.sh`) — WIRED 2026-09-13
 
@@ -1777,6 +1779,74 @@ then restored byte-exactly (blob identical to `HEAD`) and the tree left clean, s
 committed tree is the unmuted one.
 
 
+## Gate 15: the verification-debt proof's own red/green proof (`test-verification-debt.sh`) — WIRED 2026-09-22
+
+**Command** (as `run-all-gates.sh` runs it):
+
+```sh
+bash tests/test-verification-debt.sh   # EXIT=0, 30 assertions OK, measured 2026-09-22 (with this card's repair)
+```
+
+`tests/test-verification-debt.sh` is the red/green proof for the three verification-debt fixes:
+`coverage-gate.sh`'s entry floor and unmeasurable-file accounting, `run-all-gates.sh`'s
+SKIP-is-not-a-pass rule, and `fork-sources-gate.sh`'s diagnosis of a source committed in no scope
+manifest. For each defect it drives the gate **twice** against the same synthetic fixture — once from
+the pre-fix revision, fetched inside the fixture with `git show <base>:tests/<name>`, and once from
+this working tree — and asserts the *direction* of the change: the pre-fix gate does not bite, the
+fixed gate does, and the fixed gate stops biting once its precondition is met. A proof that has never
+been seen red is a claim rather than a gate, and this harness is the only evidence those three fixes
+still work.
+
+**Why it was added.** Board card #740, 2026-09-22 — the sibling of Gate 14's card, same failure
+class: a proof harness wired into nothing, decaying silently while four documents kept asserting it
+was green. Measured unpiped at the branch tip, `DEBT_RC=1` where those documents said `EXIT=0`. Two
+causes, both pre-existing and neither caused by wiring #738:
+
+- **Defect 2's fixture had stopped matching the runner it drives.** It stubbed the nine gates that
+  existed at the harness's own pre-fix base (`0c23587d2`, the default at
+  `tests/test-verification-debt.sh:37`), but the runner has since grown gates 10-13 — and then 14,
+  with #738 — so those ran inside the fixture against absent scripts, recorded FAIL, and four
+  assertions expected the hard-coded literals `skipped: 2 of 9 gates did not run` and `(9/9 ran)`.
+- **Defect 3's fixture predated one of the gate's own preconditions.** It created
+  `tests/fork-sources.txt` and `tests/all-sources.txt` but not `tests/all-sources-reproduce.sh`, so
+  `tests/fork-sources-gate.sh` stopped at its setup check — `FAIL: tests/all-sources-reproduce.sh is
+  missing` (`tests/fork-sources-gate.sh:208`) then `exit 2` (`:210`) — and four assertions failed.
+  The gate is correct; the fixture was stale.
+
+**Direction proven by A/B, on the same fixture, with only the runner swapped (2026-09-22).** The
+`bb7154e04` runner (pre-Gate-14): `RESULT: FAIL, RC=1`, gates 10-13 FAIL, summary
+`skipped: 2 of 13 gates did not run`. The working-tree runner (Gate 14 present): `RESULT: FAIL,
+RC=1`, gates 10-14 FAIL, summary `skipped: 2 of 14 gates did not run`. That is what establishes the
+reds depend on the runner's real gate set rather than on anything #738 touched. Evidence:
+`/tmp/arch4fix/debtfixture.9FT1Fj/` (`head-nobuild.log`, `wt-nobuild.log`).
+
+**Pass criterion.** Exit 0 with every assertion OK.
+
+**Measured (2026-09-22).** 0.9 s wall on a developer box — it costs a default run nothing. It needs
+`git` with real history (it fetches the pre-fix revision by name) and `python3`. No SKIP path, on the
+same reasoning as Gate 14: a harness that cannot run is not a pass.
+
+**The repair, and the proof the repair generalises.** The fixture no longer lists its gate set. It
+reads the gate count out of the runner's own `banner N` rows (`tests/test-verification-debt.sh:151`)
+and stubs every script the runner's text names (`:156-157`), excluding the runner itself — then
+**asserts that the exclusion held** (`:167-172`), because the first version of this repair stubbed
+over the runner it tests and the run exited 0 while proving nothing. `EXPECTED_SKIPS` is derived the
+same way. It also puts a stub `python3` at the front of the fixture's `PATH` so gates 12 and 13
+cannot make the fixture's SKIP count depend on the host, and adds the fixture's own
+`tests/all-sources-reproduce.sh` (`:233`). The derivation was then *proved* rather than asserted:
+with Gate 15 added to the runner, the fixture reported `the runner names 15 gates; 19 scripts stubbed
+from its text` with no edit to the harness.
+
+**Not yet a CI step (measured 2026-09-22).** Same gap as Gate 14, and the same reason — see that
+section: `quality-gates.yml`'s `static-gates` job runs each gate as its own step and never invokes
+`run-all-gates.sh`. This row is enforced on every suite run and is **not** yet enforced by a
+workflow.
+
+**Documents corrected (card #740, R4/A5).** Each now carries the measured red and the date:
+`docs/VERIFICATION-DEBT-FIXES.md:223`, `docs/INTEGRATION-VERIFY.md:228`,
+`docs/PIPELINE-HARDENING.md:278`, `docs/COVERAGE-GATE-GREEN.md:345`.
+
+
 ## Evaluated and NOT wired: dead code (`cppcheck --enable=unusedFunction`) — 2026-09-09
 
 The adopted ruleset requires "dead code: zero (ruff/vulture)". The C++ equivalent is
@@ -1893,7 +1963,7 @@ both configurations' differential evidence and the unchanged-ON proof.
 ## Running all gates
 
 ```sh
-bash tests/run-all-gates.sh                  # Gates 1, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14 (Gate 5 ≈3 min)
+bash tests/run-all-gates.sh                  # Gates 1, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15 (Gate 5 ≈3 min)
 bash tests/run-all-gates.sh --no-mutation    # skip the Gate 5 sweep
 bash tests/run-all-gates.sh --with-coverage  # + Gate 2 (full coverage build)
 bash tests/run-all-gates.sh --whole-tree     # gates 4, 7, 8 over tests/all-sources.txt as well

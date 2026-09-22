@@ -216,6 +216,20 @@ prints `FAIL ... expected exit 1, got 0` and exits 1 — it is not a script that
 Set `KEEP_FIXTURES=1` to keep the temp trees; `VERIFICATION_DEBT_BASE=<rev>` to prove against a
 different pre-fix revision.
 
+**Update 2026-09-22 (board card #740) — the counts above and the `EXIT=0` below are history, not the
+current state.** At the branch tip the harness was measured **red**, unpiped:
+`bash tests/test-verification-debt.sh; echo "DEBT_RC=$?"` → **`DEBT_RC=1`**, against the `EXIT=0` and
+`29 assertions` asserted here. Two stale fixtures, neither caused by that day's other work: defect 2's
+fixture stubbed only the nine gates that existed at the harness's own pre-fix base, so gates 10-13 —
+added later — ran inside it against absent scripts, recorded FAIL, and four assertions failed against
+the hard-coded literals `skipped: 2 of 9 gates did not run` and `(9/9 ran)`; and defect 3's fixture
+predated `tests/fork-sources-gate.sh`'s `tests/all-sources-reproduce.sh` requirement, so that gate
+stopped at its setup check (`exit 2`, `tests/fork-sources-gate.sh:210`) and four more assertions
+failed. The fixtures were repaired to **derive** the gate set from the runner's own text, the harness
+now exits 0 with **30** assertions, and it is wired into `run-all-gates.sh` as **Gate 15** — see
+`tests/QA-GATES.md`, "Gate 15". The `29` figures in this document are the counts as measured when it
+was written.
+
 ## Real-tree runs, all unpiped
 
 | command | exit | note |

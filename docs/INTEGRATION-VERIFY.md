@@ -240,6 +240,15 @@ RESULT: PASS — every red/green assertion held.
 All three defects' red/green assertions hold. (The harness passes because it proves the *gate
 mechanism* against synthetic fixtures; it does not assert that this tree is registered.)
 
+**Update 2026-09-22 (board card #740).** The `DEBT_HARNESS_EXIT=0` above was no longer true at the
+branch tip: measured unpiped, the same command returned **`DEBT_HARNESS_EXIT=1`**. Its fixtures had
+stopped matching the gates they drive — defect 2's stubbed only the nine gates that existed at the
+harness's own pre-fix base, so gates 10-13 ran inside it against absent scripts and FAILED, and
+defect 3's predated `tests/fork-sources-gate.sh`'s `tests/all-sources-reproduce.sh` requirement
+(setup `exit 2`, `tests/fork-sources-gate.sh:210`). Repaired to derive the gate set from the runner
+itself; the harness now exits 0 with 30 assertions and is wired into `run-all-gates.sh` as Gate 15
+(`tests/QA-GATES.md`).
+
 ---
 
 ## 4. Composition proof — `WANT_SESSION_VIEW` OFF → ON → OFF

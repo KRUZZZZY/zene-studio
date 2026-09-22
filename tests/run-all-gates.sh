@@ -2,7 +2,7 @@
 # run-all-gates.sh — run every executable QA gate for the LMMS standards fork.
 #
 # Usage:
-#   bash tests/run-all-gates.sh                 # gates 1, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14 (Gate 5 ≈3 min)
+#   bash tests/run-all-gates.sh                 # gates 1, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15 (Gate 5 ≈3 min)
 #   bash tests/run-all-gates.sh --with-coverage # + Gate 2 (full coverage build; slow)
 #   bash tests/run-all-gates.sh --no-mutation   # skip Gate 5 (mutation sweep)
 #   bash tests/run-all-gates.sh --strict        # pass --strict to gates that support it
@@ -91,6 +91,25 @@
 # carries the gate numbers and is bound in tests/release-ci-evidence-gate.sh:36 and :104 -
 # a change to the release path's required-job set, recorded on card #738. tests/QA-GATES.md
 # ("Gate 14") says the same in full.
+#
+# Gate 15 (the verification-debt proof, added 2026-09-22 with board card #740) runs
+# tests/test-verification-debt.sh, which drives the three gates that were fixed for
+# verification debt - coverage-gate.sh's entry floor, this runner's own SKIP-is-not-a-pass
+# rule, and the unregistered-source diagnosis - TWICE against the same synthetic fixture:
+# once from the pre-fix revision, fetched with `git show <base>:tests/<name>`, and once from
+# this working tree, asserting the direction of the change rather than just the end state.
+# It is a gate for the same reason Gate 14 is: measured 2026-09-22 it was RED at the branch
+# tip and wired into nothing, so four documents went on claiming it exits 0. Its fixtures had
+# stopped matching the gates they drive - they stubbed only the nine gates that existed at the
+# harness's own pre-fix base, so gates 10-13 ran inside it against absent scripts and FAILED,
+# and its registration fixture predated Gate 9's all-sources-reproduce.sh requirement (which
+# the gate reports as a setup error, tests/fork-sources-gate.sh:208). Its fixture now DERIVES
+# the runner's gate count from this file's own `banner N` rows and stubs every script this
+# file names, so a sixteenth gate is stubbed the day it lands; a stub interpreter at the front
+# of the fixture PATH removes the python3/tinycss2 host dependency; and it asserts that it did
+# not stub over the runner it tests. It needs `git` with real history (it fetches the pre-fix
+# revision by name) and `python3`; measured 2026-09-22: about 1 s, so it costs a default run
+# nothing. No SKIP path, on the same reasoning as Gate 14.
 #
 # Exit codes (a skipped gate is NOT a pass):
 #   0  every gate ran and passed
@@ -330,6 +349,13 @@ fi
 banner 14 "release oracle's own red/green proof (test-release-ref-fitness.sh)"
 bash tests/test-release-ref-fitness.sh
 [[ $? -eq 0 ]] && record 14 "release-fitness-selftest" "PASS" || record 14 "release-fitness-selftest" "FAIL"
+
+# ---- Gate 15: the verification-debt proof ------------------------------------
+# The header's Gate 15 paragraph says why this row exists. Like Gate 14 it has no SKIP path:
+# a harness that cannot run is not a pass, and this one costs about a second.
+banner 15 "verification-debt red/green proof (test-verification-debt.sh)"
+bash tests/test-verification-debt.sh
+[[ $? -eq 0 ]] && record 15 "verification-debt-selftest" "PASS" || record 15 "verification-debt-selftest" "FAIL"
 
 # ---- summary ----------------------------------------------------------------
 printf '\n================ SUMMARY ================\n'

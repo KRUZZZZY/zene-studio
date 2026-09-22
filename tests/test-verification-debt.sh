@@ -140,24 +140,63 @@ C2="$SCRATCH/runner"
 mkdir -p "$C2/tests"
 git show "$BASE:tests/run-all-gates.sh" > "$C2/tests/run-all-gates-old.sh"
 cp "$ROOT/tests/run-all-gates.sh" "$C2/tests/run-all-gates.sh"
-# stub gates: every one passes, so only the SKIP treatment differs between revisions
-for g in no-tautology-gate.sh complexity-gate.sh no-upstream-regression-gate.sh \
-	file-length-gate.sh duplication-gate.sh mutation-gate.sh run-coverage.sh coverage-gate.sh \
-	fork-sources-gate.sh; do
-	printf '#!/usr/bin/env bash\nexit 0\n' > "$C2/tests/$g"
+# The fixture's gate set is DERIVED FROM THE RUNNER, never listed by hand. It used to stub the
+# nine gates that existed at this harness's pre-fix base, and when the runner grew gates 10-13
+# the four new ones ran here against absent scripts and failed - so the harness went red for a
+# reason that said nothing about the SKIP-laundering defect it exists to prove, and four of the
+# assertions below expected a literal gate count that had stopped being true (board card #740,
+# measured 2026-09-22). Every script the runner can invoke is now stubbed from the runner's own
+# text, so a gate added later is stubbed the day it lands, and the expected gate COUNT is read
+# from the runner's own `banner N` rows for the same reason.
+NGATES="$(grep -c '^banner [0-9]' "$C2/tests/run-all-gates.sh")"
+if [[ "$NGATES" -lt 9 ]]; then
+	printf '  FAIL %-64s got %s\n' "the runner still names its gates with banner rows" "$NGATES"
+	FAILED=1
+fi
+mapfile -t STUB_PATHS < <(grep -oE 'tests/[A-Za-z0-9_./-]+\.(sh|py)|tests/scripted/[A-Za-z0-9_-]+' \
+	"$C2/tests/run-all-gates.sh" | grep -vxF 'tests/run-all-gates.sh' | LC_ALL=C sort -u)
+for p in "${STUB_PATHS[@]}"; do
+	mkdir -p "$C2/$(dirname "$p")"
+	printf '#!/usr/bin/env bash\nexit 0\n' > "$C2/$p"
+	chmod +x "$C2/$p"
 done
+# The runner's own path appears in its usage text, so the stubbing loop above must EXCLUDE it --
+# otherwise the fixture replaces the runner it is testing with a stub that exits 0, and the run
+# proves nothing while looking green. Asserted rather than assumed (measured: without the
+# exclusion this assertion's first version failed exactly that way on 2026-09-22).
+NGATES_AFTER="$(grep -c '^banner [0-9]' "$C2/tests/run-all-gates.sh")"
+if [[ "$NGATES_AFTER" == "$NGATES" ]]; then
+	printf '  OK   %-64s %s gates\n' "the fixture did not stub over the runner it tests" "$NGATES_AFTER"
+else
+	printf '  FAIL %-64s expected %s gate rows, got %s\n' \
+		"the fixture did not stub over the runner it tests" "$NGATES" "$NGATES_AFTER"
+	FAILED=1
+fi
+echo "fixture: the runner names $NGATES gates; ${#STUB_PATHS[@]} scripts stubbed from its text"
+
+# Gates 12 and 13 decide with `command -v python3` and `python3 -c 'import tinycss2'`, so without
+# those installed the fixture's SKIP count would depend on the HOST - and the "every gate runs"
+# control could never exit 0 on a box that has neither. A stub interpreter at the FRONT of PATH
+# makes the fixture deterministic anywhere, the same shape control 5 of
+# tests/test-release-ref-fitness.sh uses to create the lizard-absent condition.
+mkdir -p "$C2/bin"
+printf '#!/bin/sh\nexit 0\n' > "$C2/bin/python3"
+chmod +x "$C2/bin/python3"
+FX_PATH="$C2/bin:$PATH"
+# gate 1 cannot run without a build/ directory, gate 2 only runs with --with-coverage
+EXPECTED_SKIPS=2
 
 show "bash <fixture>/tests/run-all-gates-old.sh   # no build/, no --with-coverage: gates 1 and 2 skip"
-bash "$C2/tests/run-all-gates-old.sh" > "$C2/old.log" 2>&1
+PATH="$FX_PATH" bash "$C2/tests/run-all-gates-old.sh" > "$C2/old.log" 2>&1
 rc=$?; check "defect 2 RED    pre-fix runner with 2 skipped gates (must be exit 0: looks green)" 0 "$rc"
 assert_has "defect 2 RED    pre-fix summary claims every executed gate passed" \
 	"$C2/old.log" "RESULT: PASS — every executed gate passed"
 
 show "bash <fixture>/tests/run-all-gates.sh       # same fixture, fixed runner"
-bash "$C2/tests/run-all-gates.sh" > "$C2/new.log" 2>&1
+PATH="$FX_PATH" bash "$C2/tests/run-all-gates.sh" > "$C2/new.log" 2>&1
 rc=$?; check "defect 2 GREEN  fixed runner with 2 skipped gates (must be exit 3)" 3 "$rc"
 assert_has "defect 2 GREEN  summary counts the skipped gates" \
-	"$C2/new.log" "skipped: 2 of 9 gates did not run"
+	"$C2/new.log" "skipped: $EXPECTED_SKIPS of $NGATES gates did not run"
 assert_has "defect 2 GREEN  summary names gate 1" "$C2/new.log" "gate 1 (ctest): no configured build/ directory"
 assert_has "defect 2 GREEN  summary names gate 2" "$C2/new.log" "gate 2 (coverage): --with-coverage was not passed"
 assert_has "defect 2 GREEN  verdict is not a pass" "$C2/new.log" "RESULT: PASS-WITH-SKIPS (exit 3)"
@@ -169,9 +208,9 @@ printf 'cmake_minimum_required(VERSION 3.16)\nproject(gate_fixture CXX)\nenable_
 printf 'add_test(NAME fixture_smoke COMMAND ${CMAKE_COMMAND} -E true)\n' > "$C2/build/tests/CMakeLists.txt"
 cmake -S "$C2/build" -B "$C2/build" > "$C2/build-configure.log" 2>&1
 show "bash <fixture>/tests/run-all-gates.sh --with-coverage   # every gate runs"
-bash "$C2/tests/run-all-gates.sh" --with-coverage > "$C2/new-full.log" 2>&1
+PATH="$FX_PATH" bash "$C2/tests/run-all-gates.sh" --with-coverage > "$C2/new-full.log" 2>&1
 rc=$?; check "defect 2 CONTROL fixed runner with every gate run (must be exit 0)" 0 "$rc"
-assert_has "defect 2 CONTROL verdict is a real pass" "$C2/new-full.log" "RESULT: PASS — every executed gate passed (9/9 ran)"
+assert_has "defect 2 CONTROL verdict is a real pass" "$C2/new-full.log" "RESULT: PASS — every executed gate passed ($NGATES/$NGATES ran)"
 
 # ============================================================================
 # Defect 3 — nothing says "this new source is not in tests/fork-sources.txt"
@@ -185,6 +224,14 @@ git -C "$C3" config user.email proof@example.invalid
 git -C "$C3" config user.name "verification-debt proof"
 printf '# fork-NEW sources\nsrc/fork_new.cpp\n' > "$C3/tests/fork-sources.txt"
 printf '# upstream-inherited sources\nsrc/upstream_known.cpp\n' > "$C3/tests/all-sources.txt"
+# Gate 9 also RUNS the whole-tree manifest's own recipe and treats a missing recipe as a SETUP
+# error (tests/fork-sources-gate.sh:208 -> exit 2), so this fixture must carry one: it exists to
+# prove the UNREGISTERED-SOURCE diagnosis, not the recipe check. Without it the gate stops before
+# it can name anything, which is what made four assertions below fail for a reason unrelated to
+# the defect they test (board card #740, measured 2026-09-22).
+printf '#!/usr/bin/env bash\n# fixture recipe: this synthetic tree proves the registration check, not the recipe\nexit 0\n' \
+	> "$C3/tests/all-sources-reproduce.sh"
+chmod +x "$C3/tests/all-sources-reproduce.sh"
 printf 'int fork_new = 1;\n' > "$C3/src/fork_new.cpp"
 printf 'int upstream_known = 1;\n' > "$C3/src/upstream_known.cpp"
 git -C "$C3" add -A >/dev/null && git -C "$C3" commit -qm base
