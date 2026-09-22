@@ -16,6 +16,7 @@ include/ControlReversibility.h	544
 src/gui/PinConnector.cpp	529
 tests/control-undo-structural.py	526
 src/core/ControlReversibilityTablePassive.cpp	518
+tests/src/core/DataFileSaveIntegrityTest.cpp	517
 src/core/ControlCommandsNotes.cpp	512
 tests/control_socket_harness.py	512
 tests/src/tracks/SampleClipWindowTest.cpp	511
