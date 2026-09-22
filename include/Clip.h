@@ -32,6 +32,9 @@
 
 #include "AutomatableModel.h"
 #include "ClipEdits.h"
+// The warp vocabulary and WarpMarkers, the base clip's warp state's value type
+// (SPEC-ARCH-4 census row 5: warp is native to the base clip).
+#include "WarpMarkers.h"
 
 // GLOBAL scope, never inside namespace lmms: a `class QDomDocument;` declared
 // after `namespace lmms {` declares the DIFFERENT type lmms::QDomDocument, and
@@ -236,6 +239,40 @@ public:
 	/*! The inverse of sourceFrameAt(): the timeline position a source frame is
 	 *  reached at, clamped to the clip's source range. Trimming is what needs it. */
 	virtual TimePos timelinePosAt(f_cnt_t sourceFrame) const;
+
+	// --- the warp seam (SPEC-ARCH-4 census row 5 / migration upconversion row;
+	// Q3's recorded recommendation: base Clip, because an audio-only warp "would
+	// re-introduce the per-type bolt-on this item exists to remove"). The warp
+	// STATE and its `<warp>` serialisation live on the base clip, so every clip
+	// type carries them; the mapping still rides the two virtuals above, and the
+	// authoring API (setWarpMarkers & co, each announcing through SampleClip's
+	// own sampleChanged) stays on SampleClip in this slice.
+protected:
+	//! The warp map (#597): markers pinning source frames to clip-relative
+	//! ticks. Empty for every project written before #597, and an empty map is
+	//! what makes the mapping the linear one (design §2.4). A fixed-capacity
+	//! value type, so reading it on the audio thread allocates nothing.
+	WarpMarkers m_warp;
+	//! Follow the project tempo (default), or lead it with `m_sourceTempo`.
+	WarpTempoMode m_tempoMode = WarpTempoMode::FollowProject;
+	//! The clip's declared source tempo in BPM; only read in `SourceTempo`.
+	float m_sourceTempo = 0.0f;
+	/*! How a rate change is rendered (feature-list row 30): the historical
+	 *  resampling, or the pitch-preserving WSOLA stretch. `Resample` is the
+	 *  default, so a clip that does not ask renders exactly as it did. */
+	WarpStretchMode m_stretchMode = WarpStretchMode::Resample;
+
+	//! Writes the `<warp>` child (mode/tempo/stretch/marker — the vocabulary
+	//! ports unchanged) ONLY when the clip is not at every default: additive,
+	//! so a clip with no warp serialises byte for byte as before (I9).
+	void saveWarp(QDomDocument& doc, QDomElement& element) const;
+	//! Reads the `<warp>` child, and RESETS the state when it is absent — a
+	//! journal checkpoint restores by reloading, so absent must mean unwarped
+	//! or a warp edit could never be taken back off (SPEC-ARCH-4 1.7 R6 form;
+	//! the mechanism note is at Clip::loadWarp).
+	void loadWarp(const QDomElement& element);
+
+public:
 
 	// Will copy the state of a clip to another clip
 	static void copyStateTo( Clip *src, Clip *dst );

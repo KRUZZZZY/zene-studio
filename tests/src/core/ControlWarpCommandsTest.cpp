@@ -14,7 +14,8 @@
  * of the FIRST marker added carries no <warp> element at all. If restoring that
  * state does not clear the map, control.undo reports success and leaves the
  * marker in place. That is what this test measures, and it is why
- * SampleClip::loadSettings resets the warp when the element is absent.
+ * Clip::loadWarp resets the warp when the element is absent (the reader moved
+ * to the base clip with SPEC-ARCH-4 census row 5).
  *
  * Copyright (c) 2026 Zene Studio contributors
  *
@@ -383,7 +384,7 @@ private slots:
 		QCOMPARE(tx->inverse.value(QStringLiteral("op")).toString(), QStringLiteral("warp.set"));
 	}
 
-	/*! THE A16 PROOF, and the reason SampleClip::loadSettings resets the warp
+	/*! THE A16 PROOF, and the reason Clip::loadWarp resets the warp
 	 *  when the clip carries no <warp> element. Each case applies an edit and
 	 *  then asks control.undo to take it back, reading the map through warp.list
 	 *  afterwards - the same behaviour an agent gets over the socket.

@@ -45,40 +45,10 @@ class SampleClipView;
 } // namespace gui
 
 
-/*! Whether a clip's rate is set by the project or declared by the clip.
- *
- *  `FollowProject` is the default and the behaviour every project written
- *  before #597 has: the clip's audio plays at its natural rate and the project
- *  tempo only decides how many ticks that is. `SourceTempo` makes the clip a
- *  **tempo leader**: it declares the tempo it was recorded at, and its content
- *  is re-timed to the project grid (`projTempo / sourceTempo`), so one bar of
- *  its music occupies one bar of the project whatever the project tempo is.
- */
-enum class WarpTempoMode
-{
-	FollowProject = 0,
-	SourceTempo = 1
-};
-
-/*! How a clip whose mapping changes the rate renders that rate change
- *  (0.3.0, feature-list row 30 — pitch-preserving time-stretch).
- *
- *  `Resample` is the historical behaviour and the default, so every project
- *  written before this feature (and every clip that does not ask) renders
- *  through `AudioResampler` exactly as it did. `PreservePitch` routes the
- *  clip's audio through `AudioStretcher` (WSOLA) instead, which keeps the
- *  waveform's period — the pitch — where it was and moves only the grain
- *  positions, at the cost of the alignment search (see AudioStretcher.h).
- *
- *  The mode only means anything for a clip that is NOT `rendersLinearly()`:
- *  a clip with no marker and no source tempo has no rate change to preserve
- *  pitch across, and the playback path deliberately does not route it through
- *  the stretcher at all (docs/PITCH-STRETCH.md §5). */
-enum class WarpStretchMode
-{
-	Resample = 0,
-	PreservePitch = 1
-};
+// The warp vocabulary (WarpTempoMode / WarpStretchMode) moved to
+// WarpMarkers.h with the warp state itself (SPEC-ARCH-4 census row 5: warp is
+// native to the base clip); both names still reach this header through
+// Clip.h/WarpMarkers.h, so no caller of theirs changed.
 
 
 class SampleClip : public Clip
@@ -212,19 +182,9 @@ private:
 	//! never by the playback path - and mirrored into Sample's render-time frame
 	//! fields so drawing and Sample::render see it.
 	SampleWindow m_window;
-	//! The warp map (#597): markers pinning source frames to clip-relative
-	//! ticks. Empty for every project written before #597, and an empty map is
-	//! what makes the mapping the linear one (§2.4). A fixed-capacity value
-	//! type, so reading it on the audio thread allocates nothing.
-	WarpMarkers m_warp;
-	//! Follow the project tempo (default), or lead it with `m_sourceTempo`.
-	WarpTempoMode m_tempoMode = WarpTempoMode::FollowProject;
-	//! The clip's declared source tempo in BPM; only read in `SourceTempo`.
-	float m_sourceTempo = 0.0f;
-	/*! How a rate change is rendered (feature-list row 30): the historical
-	 *  resampling, or the pitch-preserving WSOLA stretch. `Resample` is the
-	 *  default, so a clip that does not ask renders exactly as it did. */
-	WarpStretchMode m_stretchMode = WarpStretchMode::Resample;
+	// The warp state (m_warp, m_tempoMode, m_sourceTempo, m_stretchMode) moved
+	// to Clip with its `<warp>` serialisation (SPEC-ARCH-4 census row 5); the
+	// accessors and the mapping above read the inherited members unchanged.
 	BoolModel m_recordModel;
 	bool m_isPlaying;
 	int m_startFrameOffset;

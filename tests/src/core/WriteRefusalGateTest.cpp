@@ -25,8 +25,8 @@
  *   2. derivedValuesNeverReachTheFile(): a value marked derived-and-not-
  *      written has no setAttribute of its name anywhere in the write path
  *      (measured on this tree: the Sample render frame fields are re-derived
- *      from `srcin`/`srcout` at load - src/core/SampleClip.cpp:399-400 and
- *      :419-420 - and are never persisted), and every manifest row carries a
+ *      from `srcin`/`srcout` at load - src/core/SampleClip.cpp:397-398 and
+ *      :417-418 - and are never persisted), and every manifest row carries a
  *      non-empty marking. The marking column IS slice S4's item 1: a derived
  *      value is either not written at all (below) or, once the v2 writer
  *      starts carrying such values, carries `z:derived`. S4 must not change a
@@ -108,7 +108,7 @@ const AttributeRule ATTRIBUTE_RULES[] = {
 		"src/core/Track.cpp", "frozenAudio,frozenStart,frozenEnd,frozenMuted", false },
 	{ "Sample render frame fields",
 		"DERIVED, NOT WRITTEN: re-derived from srcin/srcout at load "
-		"(src/core/SampleClip.cpp:399-400, :419-420) - no setAttribute may name them",
+		"(src/core/SampleClip.cpp:397-398, :417-418) - no setAttribute may name them",
 		"", "startframe,endframe", true },
 };
 

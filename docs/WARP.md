@@ -129,7 +129,9 @@ The two mapping functions are closed at the markers; only the rate is half-open.
 
 ### 2.4 Persistence — additive, and only when there is something to say
 
-`src/core/SampleClip.cpp:491` writes the element, `:565` reads it:
+`Clip::saveWarp` (`src/core/Clip.cpp`) writes the element, `Clip::loadWarp` reads
+it — both moved to the base clip with SPEC-ARCH-4 census row 5 (formerly
+`src/core/SampleClip.cpp:491` / `:565`); the vocabulary below is unchanged:
 
 ```xml
 <sampleclip pos="96" len="768" muted="0" src="take.wav" off="0" autoresize="0"
@@ -145,10 +147,10 @@ The two mapping functions are closed at the markers; only the rate is half-open.
   the project tempo, so a project without warp serialises exactly as task #611 left it —
   no new attribute, no new element, no `UPGRADE_METHODS` entry, and no
   `ELEMENTS_WITH_RESOURCES` entry (the markers carry no `src`).
-* `loadSettings` reads it **after** `len`/`off`/`srcin`/`srcout`/`autoresize`, i.e. after
+* `Clip::loadWarp` reads it **after** `loadSettings` has applied `len`/`off`/`srcin`/`srcout`/`autoresize`, i.e. after
   the window it clamps into and after `setSampleFile()` — which is the call that replaces
   the source the markers are anchored to. A clip that names a *different* source clears
-  its markers (`:171`); the copy constructor's `setSampleFile("")` deliberately does not,
+  its markers (`:170`); the copy constructor's `setSampleFile("")` deliberately does not,
   so `clone()` and `Clip::copyStateTo` carry the warp.
 * A hand-edited file with a non-monotonic marker list is refused with a project error, not
   loaded half-way.
