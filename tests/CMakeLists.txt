@@ -78,6 +78,14 @@ set(LMMS_TESTS
 	# are src/core/ClipLinkTestSupport.h.
 	src/core/ClipLinkPersistenceTest.cpp
 	src/core/ClipSerialisationTest.cpp
+	# ARCH-4 slice S4 (SPEC-ARCH-4 1.7 Requirement 6): the write-refusal gate -
+	# the one-writer rule made mechanical. It reads the write path as text and
+	# fails on a setter called for a value it does not own (the shape
+	# tests/rt-safety-scope.txt and the file-length ratchets already use), and
+	# refuses to let a value marked derived-and-not-written reach the file at
+	# all. Registered right after the serialiser it protects; text scan only, no
+	# Engine and no socket, so it runs wherever a binary runs.
+	src/core/WriteRefusalGateTest.cpp
 	src/core/ClipWarpPersistenceTest.cpp
 	src/core/ConfigMigrationTest.cpp
 	src/core/ControlAutomationScriptTest.cpp

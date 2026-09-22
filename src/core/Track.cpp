@@ -61,6 +61,47 @@ namespace lmms
 namespace
 {
 
+/*! SPEC-ARCH-4 1.7 Requirement 6 (slice S4): the <track> element's
+ *  checkpoint-restore SCHEMA, stated once.
+ *
+ *  Reset-on-absence is derived from this table - absent => the default the
+ *  entry names - instead of from a comment per field: a journal checkpoint
+ *  restores by RE-LOADING the element, so state that survived its own absence
+ *  could never be taken back off. The element-valued rules of the same kind
+ *  (the frozen take, carried as `frozenAudio` attributes, and the take lanes,
+ *  carried as a <takelanes> child) have no string default to table - their
+ *  default is "cleared", and their load sites apply exactly that before the
+ *  read. An attribute the table does not name is a schema change nobody
+ *  declared: trackRestoreDefault() fails loudly rather than inventing a
+ *  default at the call site.
+ *
+ *  docs/TRACK-FOLDER-DESIGN.md 4.3/4.4 carry the folder pair's own history.
+ */
+struct TrackRestoreRule
+{
+	const char* attribute; // the attribute read on <track>
+	const char* fallback;  // absent => this value
+};
+
+constexpr TrackRestoreRule TRACK_RESTORE_SCHEMA[] = {
+	{ "folder", "-1" }, // absent => the track is in no folder (-1 = no id)
+	{ "visible", "1" },  // absent => visible
+};
+
+//! The schema's default for \a attribute (SPEC-ARCH-4 1.7 R6).
+const char* trackRestoreDefault(const char* attribute)
+{
+	for (const TrackRestoreRule& rule : TRACK_RESTORE_SCHEMA)
+	{
+		if (qstrcmp(rule.attribute, attribute) == 0)
+		{
+			return rule.fallback;
+		}
+	}
+	Q_ASSERT_X(false, "trackRestoreDefault", "attribute missing from TRACK_RESTORE_SCHEMA");
+	return "";
+}
+
 /*! The clip of a track whose position and length are exactly these ticks, or
  *  nullptr.
  *
@@ -534,11 +575,11 @@ void Track::loadTrack(const QDomElement& element, bool presetMode)
 	// Older project files that didn't have this attribute will set the value to false (issue 5562)
 	m_mutedBeforeSolo = QVariant( element.attribute( "mutedBeforeSolo", "0" ) ).toBool();
 
-	// Reset the frozen take before reading the element (freeze / bounce-in-place):
-	// a track element with no frozenAudio attribute is NOT frozen, whatever this
-	// object held before the call. A journal checkpoint restores by re-loading, so
-	// state that survived its own absence could never be undone - the same rule
-	// m_takeLanes follows below. A preset never carries a take either.
+	// Reset-on-absence for the frozen take (freeze / bounce-in-place): the rule
+	// and its reason are stated once in TRACK_RESTORE_SCHEMA above
+	// (SPEC-ARCH-4 1.7 R6) - an ELEMENT-valued rule, so the reset is the clear
+	// below (whatever this object held before the call, a preset included) and
+	// loadFrozenTake() fills in only what the file's `frozenAudio` carries.
 	clearFrozenTake();
 	loadFrozenTake(element);
 
@@ -598,12 +639,11 @@ void Track::loadTrack(const QDomElement& element, bool presetMode)
 		deleteClips();
 	}
 
-	// Reset the take-lane model before reading the element: a track element with
-	// no <takelanes> child (every file written before comping) must empty it, not
-	// inherit whatever the model held before this call - a journal checkpoint
-	// restores by re-loading, so state that survived its own absence could never
-	// be undone. The same reset-on-absence rule Clip::loadClipEdits follows for
-	// the lane tag itself.
+	// Reset-on-absence for the take lanes: a track element with no <takelanes>
+	// child (every file written before comping) empties the model rather than
+	// inheriting whatever it held before this call - an ELEMENT-valued rule from
+	// TRACK_RESTORE_SCHEMA above (SPEC-ARCH-4 1.7 R6). Clip::loadClipEdits
+	// follows the same rule for the lane tag itself.
 	m_takeLanes.clear();
 
 	// The unclaimed children are reset on absence too, and for a sharper reason:
@@ -649,13 +689,10 @@ void Track::loadTrack(const QDomElement& element, bool presetMode)
 		m_height = storedHeight;
 	}
 
-	// The folder relation and the visibility flag, both RESET ON ABSENCE
-	// (docs/TRACK-FOLDER-DESIGN.md sections 4.3/4.4; owner items 3+20+21). A
-	// track element with no `folder` attribute is not in a folder, whatever this
-	// object held before the call, and a missing `visible` means visible: a
-	// journal checkpoint restores by RE-LOADING, so state that survived its own
-	// absence could never be taken back off - the rule m_takeLanes and the
-	// frozen take follow above.
+	// The folder relation and the visibility flag (docs/TRACK-FOLDER-DESIGN.md
+	// sections 4.3/4.4; owner items 3+20+21): both reset on absence - the rule
+	// and both defaults live once in TRACK_RESTORE_SCHEMA above
+	// (SPEC-ARCH-4 1.7 R6), the attribute-valued half that table drives.
 	//
 	// It is done HERE, at the END of the walk, and not before it: the child's
 	// own `mixch` is loaded by its own loadTrackSpecificSettings above, and
@@ -667,9 +704,10 @@ void Track::loadTrack(const QDomElement& element, bool presetMode)
 	// walk by TrackContainer::resolveTrackFolders when it does not, because a
 	// file may name a folder that is constructed later in the same walk (a
 	// folder created after the tracks it holds sits after them in the file).
-	m_pendingFolderId = element.hasAttribute( "folder" )
-		? element.attribute( "folder" ).toInt() : -1;
-	m_visible = element.attribute( "visible", QStringLiteral("1") ).toInt() != 0;
+	m_pendingFolderId = element.attribute( "folder",
+		trackRestoreDefault( "folder" ) ).toInt();
+	m_visible = element.attribute( "visible",
+		trackRestoreDefault( "visible" ) ).toInt() != 0;
 	{
 		TrackFolder* resolved = m_pendingFolderId >= 0
 			? m_trackContainer->findTrackFolderById( m_pendingFolderId ) : nullptr;
