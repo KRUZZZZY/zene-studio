@@ -16,3 +16,9 @@ G13_check-namespace EXIT=0
 G13_check-strings EXIT=0
 G14_release-fitness-selftest EXIT=0
 G15_verification-debt-selftest EXIT=0
+
+== after commit c35143079 (logs renamed .txt -> .md, docs reference fix) ==
+G6_upstream-regression EXIT=0
+G9_fork-sources EXIT=0
+G11_evidence EXIT=0
+git status --porcelain: empty (tree clean)
