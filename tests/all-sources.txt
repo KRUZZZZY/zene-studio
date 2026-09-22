@@ -381,6 +381,7 @@ include/ProjectRecovery.h
 include/ProjectRenderer.h
 include/ProjectRevisions.h
 include/ProjectVersion.h
+include/ProvenanceSection.h
 include/QuadratureLfo.h
 include/Rack.h
 include/RackMacros.h
@@ -1311,6 +1312,7 @@ src/core/ProjectRecovery.cpp
 src/core/ProjectRenderer.cpp
 src/core/ProjectRevisions.cpp
 src/core/ProjectVersion.cpp
+src/core/ProvenanceSection.cpp
 src/core/Rack.cpp
 src/core/RackMacros.cpp
 src/core/RackNodes.cpp
@@ -1694,6 +1696,7 @@ tests/src/core/ProjectOpenIntegrityTest.cpp
 tests/src/core/ProjectRecoveryTest.cpp
 tests/src/core/ProjectRevIdsTest.cpp
 tests/src/core/ProjectVersionTest.cpp
+tests/src/core/ProvenanceSectionTest.cpp
 tests/src/core/RackMacrosTest.cpp
 tests/src/core/RackTest.cpp
 tests/src/core/RackTestSupport.h

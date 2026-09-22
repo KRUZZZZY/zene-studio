@@ -60,6 +60,7 @@
 #include "ProjectJournal.h"
 #include "ProjectIds.h"
 #include "ProjectNotes.h"
+#include "ProvenanceSection.h"
 #include "RetroMidiCapture.h"
 #include "Scale.h"
 #include "SongEditor.h"
@@ -1579,6 +1580,13 @@ void Song::loadProject( const QString & fileName, const QStringList & skipSectio
 	// container's own walk cannot, because the element is not its child.
 	clearVisibilitySets();
 
+	// RESET ON ABSENCE for the ARCH-4 S6 provenance section (SPEC-ARCH-4 1.9),
+	// for the same reason and in the same place: the change log belongs to the
+	// document being opened. The walk below either claims <z:provenance> and
+	// adopts its entries, or this session holds none - which is also why a
+	// project that never carried a section still saves without one.
+	provenance::Section::instance().clear();
+
 	while( !node.isNull() && !isCancelled() )
 	{
 		if( node.isElement() )
@@ -1896,6 +1904,16 @@ bool Song::saveProjectFile(const QString & filename, bool withResources)
 	appendPreservedSessionXml( m_preservedSessionXml, dataFile );
 #endif
 
+	// ARCH-4 S6 (SPEC-ARCH-4 1.9): the append-only <z:provenance> section,
+	// written ONLY when this session has recorded a change - the additive rule
+	// (a project that never carried one saves the exact bytes it always did) -
+	// and bounded exactly as ProjectJournal is bounded (Section::trim quotes
+	// the journal's own count cap and byte budget). Every entry loaded from
+	// the file is re-emitted before this session's own, so a second save
+	// APPENDS rather than rewrites. Placed before the unclaimed tail because
+	// 1.6.1's re-emission must stay the last thing this writer emits.
+	provenance::writeTo( dataFile );
+
 	// SPEC-ARCH-4 1.6.1: the <song> sections this build did not claim, put back
 	// in capture order AFTER everything this build writes. That is the position
 	// the <session> block above has always been written at, and the only one
@@ -2151,6 +2169,15 @@ bool Song::restoreNamedSection(const QDomElement & element)
 	{
 		restoreKeymapStates( element );
 		return true;
+	}
+	// ARCH-4 S6 (SPEC-ARCH-4 1.9): the append-only provenance section, adopted
+	// only in the exact shape this writer produces (v="1", well-formed
+	// <z:change> children - Section::load's contract). A future version or a
+	// foreign child answers false here, so the walk preserves the element
+	// verbatim as unclaimed instead of letting a write-back rewrite it.
+	if( name == provenance::nodeName() )
+	{
+		if( provenance::Section::instance().load( element ) ) { return true; }
 	}
 	// The two song-state elements that live behind a lock-free publisher: the
 	// tempo map (D11, docs/TEMPO-MAP.md) and the modulation layer (#602,

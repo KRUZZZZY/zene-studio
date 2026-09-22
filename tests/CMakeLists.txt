@@ -516,6 +516,16 @@ set(LMMS_TESTS
 	# the StableTrackIdsTest entry above (union-of-entries; siblings append
 	# theirs after, never reorder this block).
 	src/core/ProjectRevIdsTest.cpp
+	# ARCH-4 slice S6 (SPEC-ARCH-4 1.9 Requirement 8): the append-only
+	# <z:provenance> section - changes driven through the control registry,
+	# SAVED, read back with a FRESH DataFile load ("the restart") with the seq
+	# chain and both digests intact, a second save proven APPEND-only (the
+	# first file's entries are a byte prefix of the second's), the additive
+	# rule (no recorded change, no section) and the journal-shaped bound.
+	# Registered where LANE 12 pins its anchor: immediately after the
+	# ProjectRevIdsTest entry above (union-of-entries; siblings append theirs
+	# after, never reorder this block).
+	src/core/ProvenanceSectionTest.cpp
 	src/core/StemExportTest.cpp
 	src/core/TelemetryTest.cpp
 	# CODE-7: the telemetry transport's two structural properties - https only
@@ -3053,6 +3063,10 @@ set_tests_properties(StableTrackIdsTest PROPERTIES
 # ProjectRevIdsTest (ARCH-4 S3) is the same shape: a full Engine, save/load/save
 # through Song directly, no window.
 set_tests_properties(ProjectRevIdsTest PROPERTIES
+	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+# ProvenanceSectionTest (ARCH-4 S6) is the same shape: a full Engine, mutating
+# commands through the registry, save/load/save through Song, no window.
+set_tests_properties(ProvenanceSectionTest PROPERTIES
 	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 # Headless load path (task #625, SPEC A13/A15): no modal dialog may block an
 # instance started with --control-socket.

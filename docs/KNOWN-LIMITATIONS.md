@@ -1708,3 +1708,22 @@ measured by `ScriptClockTest` or the `ControlLivecodeCommands` transcript:
 - **Beat means the quarter note** (four to a bar, `ticksPerBar / 4`): odd-metre eighth-note beats are
   not separately detected. No scheduled device definitions exist - a persistent Lua interpreter that
   defines one stays OQ-1 (`docs/LUA-SCRIPT-DEVICES-DESIGN.md`).
+
+## The project file remembers who changed it only as `human` or `agent` (ARCH-4 S6)
+
+- **The record is a session kind, never a person.** Since ARCH-4 slice S6 a save writes an
+  append-only `<z:provenance>` section when this session recorded changes through the control
+  surface: one `<z:change seq at actor instance command target before after/>` per undo step,
+  bounded like the undo journal. `actor` is `agent` while a `--control-socket` client is being
+  dispatched to and `human` otherwise, and `instance` is the same 12-character per-process
+  UUID fragment (eight hex digits, a dash, three more) `<head writer>` wears - deliberately
+  no name, path or address, because a project file is shared.
+  Attribution is best-effort around the socket dispatch: automation that does not arrive on the
+  socket records as `human` until its own path claims `agent`.
+- **Nothing reads the section back yet outside the app and its test.** `ProvenanceSectionTest`
+  proves the round trip (save, fresh load, digests intact, second save appends), but no control
+  command, view or tool surfaces the history - the section is durable state waiting for a reader,
+  not a feature you can browse. The `after` digest is taken over the command's post-change report;
+  for state-shaped commands (`clip.move`, `transport.punch_set`, ...) that report is the
+  after-state, and where a command reports something else the digest commits to the report rather
+  than to a state that was never recorded.

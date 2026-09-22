@@ -38,6 +38,7 @@
 #include <QSocketNotifier>
 
 #include "ControlRegistry.h"
+#include "ProvenanceSection.h"
 
 #if defined(Q_OS_UNIX)
 #include <fcntl.h>
@@ -430,6 +431,11 @@ QByteArray ControlServer::dispatchLine(const QByteArray& line)
 	QJsonObject args;
 	if (!readArgs(request, &args, id, &reply)) { return reply; }
 
+	// Every control-socket client is an agent session (SPEC-ARCH-4 1.9): while
+	// this dispatch runs, the provenance it may record says actor="agent" - a
+	// session KIND, never a person - and the default (human) is restored when
+	// the scope ends.
+	const provenance::AgentScope agentSession;
 	const ControlResult result = m_registry->invoke(cmdValue.toString(), args);
 	reply = responseLine(id, result);
 	emit exchanged(trimmed, reply);
