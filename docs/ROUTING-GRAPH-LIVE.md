@@ -283,3 +283,73 @@ can actually be run from this branch.
 * the `build/` directory was deleted out from under this worktree once during
   verification (disk pressure from the sibling lanes building concurrently), so
   the numbers above come from a second, complete run rather than the first.
+
+## 9. The published schedule (multicore Slice 0 + Slice 1)
+
+`rebuildPlan()` now publishes the scheduler's data beside the plan
+(`SPEC-MULTICORE-SCHEDULING-DRAFT` §2.3/§6): per node `required` (the
+in-degree measured **before** Kahn mutates it), `pending` (starts equal to
+required), and the scheduling class read from the node's own `typeName()`
+declaration — instance-free graph DSP (`chain_input`, `rack_sum`, `constant`,
+`onepole_lowpass`, `gain`, `sink`) versus chain-scheduled instance work
+(`effect`, `rack_chain`, and every unknown type, so a future node type is
+never silently schedulable) — plus the ready list a serial scheduler pops
+(the Kahn pop sequence). Read it with `RoutingGraph::schedule()` and
+`readyList()`; `process()` still walks `m_plan`, so publishing changed no
+behaviour.
+
+The claim is pinned by the registered `RoutingGraphScheduleTest`: the
+published schedule equals the plan-order execution — checked against an
+in-degree recompute made from `connections()`, not against rebuildPlan's own
+bookkeeping — and **both** walks reproduce the committed reference bytes.
+All three are 32768 bytes and hash identically:
+
+```
+ROUTING_GRAPH_EVIDENCE reference     bytes=32768 sha256=323109a4fef596076154f5fa2be851ab5349182693fb48519cfb2ce1b26d9cb7
+ROUTING_GRAPH_EVIDENCE plan-walk     bytes=32768 sha256=323109a4fef596076154f5fa2be851ab5349182693fb48519cfb2ce1b26d9cb7
+ROUTING_GRAPH_EVIDENCE schedule-walk bytes=32768 sha256=323109a4fef596076154f5fa2be851ab5349182693fb48519cfb2ce1b26d9cb7
+```
+
+`plan-walk` is `RoutingGraph::process()` over `m_plan`; `schedule-walk` is
+the published ready list executed node by node with process()'s output copy;
+`reference` is §3's committed file. Slice 0's two runtime halves print on
+the same run:
+
+```
+MC_SLICE0_WORKER_PROBE graph-allocations=0 control-allocations=1
+MC_SLICE0_QUEUE_FULL refused=1
+```
+
+The probe is armed **on a pool worker thread**: it reads the declared graph
+path as zero allocations while a deliberate allocation on that same thread
+is seen, so a zero cannot mean "the probe was never armed". The queue-full
+branch of `AudioEngineWorkerThread::JobQueue::addJob()` is now that counted
+refusal — a lock-free increment, nothing formatted on the audio thread —
+with external linkage so the test can read the count.
+
+Slice 0 also declared the scheduler's future paths in
+`tests/rt-safety-scope.txt` with reason lines: `RoutingGraph::process`, the
+worker run loop (`AudioEngineWorkerThread::run`), and the queue's
+ready-list push and pop (`JobQueue::addJob` / `JobQueue::run`). The run
+loop's inherited bounded `m.lock()` is named in
+`tests/rt-safety-allowlist.txt` at count 1 — may only fall.
+
+Runs behind these numbers (this worktree, 2026-09-22, all unpiped):
+
+```sh
+cmake -B build -S . -DCMAKE_BUILD_TYPE=RelWithDebInfo -DWANT_QT6=ON \
+      -DUSE_WERROR=ON -DTARGET_UARCH=official          # -> exit 0
+cmake --build build --target RoutingGraphScheduleTest \
+      RoutingGraphLiveTest RoutingGraphTest -j2        # -> exit 0, 0 warnings
+cd build/tests && QT_QPA_PLATFORM=offscreen \
+      ctest -R "RoutingGraph|RtSafety" --output-on-failure
+                                                        # -> exit 0, 5/5
+python3 tests/rt-safety-sweep.py --check               # -> exit 0 (31 declared pairs)
+bash tests/run-all-gates.sh --no-mutation              # -> exit 3 = PASS-WITH-SKIPS
+                                                        #    (1 ctest / 2 coverage /
+                                                        #     5 mutation not run by design)
+```
+
+Evidence: `docs/mc-logs/gates-slice01-dev.txt`,
+`docs/mc-logs/ctest-slice01.txt`, `docs/mc-logs/schedule-test.txt`,
+`docs/mc-logs/rt-safety-slice01.txt`.

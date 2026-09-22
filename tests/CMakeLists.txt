@@ -428,6 +428,7 @@ set(LMMS_TESTS
 	src/core/RemotePluginClientE2ETest.cpp
 	src/core/RenderJobQueueTest.cpp
 	src/core/RoutingGraphLiveTest.cpp
+	src/core/RoutingGraphScheduleTest.cpp
 	src/core/RoutingGraphTest.cpp
 	src/core/PdcMixerTest.cpp
 	# The patcher node-graph group (feature row 69, docs/PATCHER-GRAPH.md): the
@@ -2136,6 +2137,20 @@ if(PYTHON3_EXECUTABLE)
 			${CMAKE_CURRENT_SOURCE_DIR}/rt_safety_selftest.py)
 	set_tests_properties(RtSafetySelfTest PROPERTIES TIMEOUT 300)
 endif()
+
+# Multicore Slice 0+1 (SPEC-MULTICORE-SCHEDULING-DRAFT §6): the published
+# schedule (required/pending/class + ready list) versus the plan-order
+# execution, both walks against the committed reference render, plus the two
+# runtime halves Slice 0 promises - AllocationProbe armed ON a worker thread
+# and the queue-full refusal counted. Engine + mixer, same harness shape as
+# RoutingGraphLiveTest, so it needs the offscreen platform like every
+# engine-launching test here.
+target_compile_definitions(RoutingGraphScheduleTest PRIVATE
+	ROUTING_GRAPH_LIVE_REFERENCE_FILE="${CMAKE_CURRENT_SOURCE_DIR}/reference/routing-graph-live-render.raw"
+)
+set_tests_properties(RoutingGraphScheduleTest PROPERTIES
+	ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+	TIMEOUT 300)
 
 if(PYTHON3_EXECUTABLE AND CONTROL_SUITE_AVAILABLE)
 	add_test(NAME ControlSocketIntegration

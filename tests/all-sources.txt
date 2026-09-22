@@ -1703,6 +1703,7 @@ tests/src/core/ReversibilityTestSupport.h
 tests/src/core/ReversibilityUndoTest.cpp
 tests/src/core/RevisionTimelineTest.cpp
 tests/src/core/RoutingGraphLiveTest.cpp
+tests/src/core/RoutingGraphScheduleTest.cpp
 tests/src/core/RoutingGraphTest.cpp
 tests/src/core/SafeStartLoadPathTest.cpp
 tests/src/core/SafeStartTest.cpp

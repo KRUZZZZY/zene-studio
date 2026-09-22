@@ -54,3 +54,15 @@ include/RetroAudioRing.h	RetroAudioRing::push	the retrospective audio capture ri
 include/RetroMidiRing.h	RetroMidiRing::push	the retrospective MIDI capture ring's writer, drained from the audio thread as MIDI events arrive
 src/core/MasterLoudnessTap.cpp	MasterLoudnessTap::feed	the passive loudness tap's per-period feed, called from STAGE 3b on the audio thread (the class doc states the realtime contract)
 src/core/LufsMeter.cpp	LufsMeter::processBlock	the meter's interleaved block measurement behind MasterLoudnessTap::feed, on the audio thread each period it is armed
+
+# --- the multicore scheduler's future paths (SPEC-MULTICORE-SCHEDULING-DRAFT §6 Slice 0) ------
+# Declared by the multicore S01 lane so the fence covers the paths the scheduler will
+# drive BEFORE any parallelism lands: the graph's node-execution entry, the worker run
+# loop, and the job queue's ready-list push and pop. The queue's own doc comment says
+# these bodies run on the audio thread (Mixer.cpp:255 and :1729 seed the queue from
+# masterMix); static measurement is the fence's half, the worker-side AllocationProbe run
+# in tests/src/core/RoutingGraphScheduleTest.cpp is the runtime half.
+src/core/RoutingGraph.cpp	RoutingGraph::process	the scheduler's node-execution path: the audio-thread entry that walks the cached plan node by node and copies the output block out (Slice 1 publishes that walk's schedule as data but keeps process() on m_plan); reached from EffectChain::processThroughGraph, it must allocate and lock nothing
+src/core/AudioEngineWorkerThread.cpp	AudioEngineWorkerThread::run	the worker run loop: every pool thread waits here and drains the shared job queue from inside this loop, so the scheduler's jobs and any node-level work they carry executes on this declared body (SPEC §3.2 item 1)
+src/core/AudioEngineWorkerThread.cpp	AudioEngineWorkerThread::JobQueue::run	the queue's run loop and the ready-list POP: each slot is taken with an atomic exchange and the job runs inline here, both on a worker thread and on the render thread via startAndWaitForJobs (SPEC §3.2 item 1)
+src/core/AudioEngineWorkerThread.cpp	AudioEngineWorkerThread::JobQueue::addJob	the ready-list PUSH: Mixer.cpp:255 and :1729 call it from the audio thread, and this body holds the queue-full refusal branch, which Slice 0 made a counted, allocation-free refusal instead of a qWarning (SPEC §3.2 item 3)
