@@ -1766,11 +1766,8 @@ tests/src/core/UnclaimedTrackTypeTest.cpp
 tests/src/core/UndoBoundsTest.cpp
 tests/src/core/VcaGroupTest.cpp
 tests/src/core/WarpMarkersTest.cpp
-<<<<<<< HEAD
 tests/src/core/WriteRefusalGateTest.cpp
-=======
 tests/src/gui/AccessibilityHelperTest.cpp
->>>>>>> 040/ui-precond
 tests/src/gui/FocusDeskPaneTest.cpp
 tests/src/gui/FocusDeskTest.cpp
 tests/src/gui/MidiLearnGuiTest.cpp
