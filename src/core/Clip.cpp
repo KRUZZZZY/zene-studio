@@ -25,6 +25,8 @@
 #include "Clip.h"
 
 #include <algorithm>
+#include <array>
+#include <span>
 
 #include <QDomDocument>
 #include <QDomElement>
@@ -83,6 +85,13 @@ Clip::Clip( Track * track ) :
  */
 Clip::Clip(const Clip& other):
 	Model(other.m_track),
+	// The warp state rides the base clip (SPEC-ARCH-4 census row 5): a copy
+	// carries it exactly as SampleClip's own copy constructor did when the
+	// four members lived there.
+	m_warp(other.m_warp),
+	m_tempoMode(other.m_tempoMode),
+	m_sourceTempo(other.m_sourceTempo),
+	m_stretchMode(other.m_stretchMode),
 	m_track(other.m_track),
 	m_name(other.m_name),
 	// A COPY IS A NEW CLIP: it gets its own id and does NOT inherit the
@@ -138,6 +147,12 @@ QDomElement Clip::saveState( QDomDocument & doc, QDomElement & parent )
 {
 	QDomElement element = JournallingObject::saveState( doc, parent );
 
+	// The `<warp>` child (SPEC-ARCH-4 census row 5: warp is native to the base
+	// clip; formerly written by SampleClip::saveSettings). Deliberately BEFORE
+	// the revision stamp below, so writeRevision()'s fingerprint still covers
+	// these bytes as it did when saveSettings wrote them.
+	saveWarp( doc, element );
+
 	if( ProjectIds::isDocumentElement( element ) )
 	{
 		element.setAttribute( QStringLiteral( "id" ), m_id );
@@ -173,6 +188,16 @@ QDomElement Clip::saveState( QDomDocument & doc, QDomElement & parent )
 void Clip::restoreState( const QDomElement & element )
 {
 	JournallingObject::restoreState( element );
+
+	// The `<warp>` child, read UNCONDITIONALLY — before the copy-payload guard
+	// below: saveWarp writes it for every payload, so a pasted or cloned clip
+	// keeps its warp. It runs after loadSettings, which is where SampleClip read
+	// it before the census-row-5 move, and the order is load-bearing:
+	// `len`/`off`/`srcin`/`srcout`/`autoresize` and `setSampleFile()` have all
+	// applied by then, so the window the markers clamp into is the file's window
+	// and the source they are anchored to has been replaced (setSampleFile
+	// CLEARS the map when a source changes).
+	loadWarp( element );
 
 	if( !ProjectIds::isDocumentElement( element ) )
 	{
@@ -413,6 +438,61 @@ void Clip::saveClipEdits(QDomElement& element) const
 
 
 
+/*! Write the clip's `<warp>` child (SPEC-ARCH-4 census row 5: the element
+ *  moves from SampleClip::saveSettings to the base clip — the mode/tempo/
+ *  stretch/marker vocabulary ports unchanged; task #597, design §2.4/§2.6).
+ *
+ *  Additive by construction (I9), the same rule saveClipEdits follows: a clip
+ *  with no markers, the default (follower) tempo mode and the default
+ *  (resampling) stretch mode writes no `<warp>` element at all, so a project
+ *  without warp serialises exactly as it did before warp existed.
+ *
+ *  The child is inserted BEFORE the element's first child, not appended:
+ *  saveSettings runs inside JournallingObject::saveState, which appends
+ *  `<journallingObject>` after it, so `[warp][journallingObject]` is the order
+ *  every writer has produced so far. Appending here would silently reorder the
+ *  file on the first resave of a warp project; contentSignature() excludes the
+ *  journal node, but a file a human diffs must not move either.
+ */
+void Clip::saveWarp(QDomDocument& doc, QDomElement& element) const
+{
+	// !isJournalling: saveState handed back a null element and saveSettings
+	// never ran, so there is nothing to mirror — the guard the old call site
+	// inside saveSettings had by construction.
+	if (element.isNull())
+	{
+		return;
+	}
+	if (!m_warp.empty() || m_tempoMode != WarpTempoMode::FollowProject
+		|| m_stretchMode != WarpStretchMode::Resample)
+	{
+		QDomElement warp = doc.createElement( "warp" );
+		warp.setAttribute( "mode", m_tempoMode == WarpTempoMode::SourceTempo ? "source" : "follow" );
+		if (m_tempoMode == WarpTempoMode::SourceTempo)
+		{
+			warp.setAttribute( "tempo", QString::number( m_sourceTempo ) );
+		}
+		// Row 30 of the 0.3.0 list: how the rate change is rendered. Written
+		// only when it is not the historical resampling, so a clip that never
+		// chose the stretch serialises byte for byte as #597 left it.
+		if (m_stretchMode == WarpStretchMode::PreservePitch)
+		{
+			warp.setAttribute( "stretch", "wsola" );
+		}
+		for (const auto& marker : m_warp.all())
+		{
+			QDomElement node = doc.createElement( "marker" );
+			node.setAttribute( "src", QString::number( marker.sourceFrame ) );
+			node.setAttribute( "pos", QString::number( marker.offsetTicks ) );
+			warp.appendChild( node );
+		}
+		element.insertBefore( warp, element.firstChild() );
+	}
+}
+
+
+
+
 namespace
 {
 
@@ -500,6 +580,74 @@ void Clip::loadClipEdits(const QDomElement& element)
 	if (m_linkId > 0)
 	{
 		ProjectIds::observe(m_linkId);
+	}
+}
+
+
+
+
+/*! Read the clip's `<warp>` child (SPEC-ARCH-4 census row 5: the reader moved
+ *  here from SampleClip::loadSettings; the mode/tempo/stretch/marker
+ *  vocabulary is read unchanged — task #597).
+ *
+ *  Called from restoreState right after loadSettings — the position this code
+ *  had inside SampleClip::loadSettings — and UNCONDITIONALLY, before the
+ *  copy-payload guard, because saveWarp writes the child for every payload: a
+ *  pasted or cloned clip keeps its warp.
+ *
+ *  RESET-ON-ABSENCE (SPEC-ARCH-4 1.7 R6, the CLIP_RESTORE_SCHEMA rule stated
+ *  here in its child-element form): no `<warp>` child means "this clip has no
+ *  markers and follows the project" — #597 writes the element only when that
+ *  is not the truth. Resetting in the else branch is what makes the clip's own
+ *  journal checkpoint a TRUE inverse of a warp edit: the checkpoint a warp.*
+ *  command takes captures the clip BEFORE its first marker is added, i.e.
+ *  state with no `<warp>` element, and control.undo replays it through this
+ *  function. Without the branch the restore would leave the added marker in
+ *  place (the registered catcher is ControlWarpCommandsTest
+ *  markerEditsAreReversibleThroughTheJournal, and ClipWarpPersistenceTest
+ *  restores an element without `<warp>` onto a warped clip directly).
+ *
+ *  A fresh load from a project file is unaffected — the members already hold
+ *  exactly these defaults — so no existing project's sound moves.
+ */
+void Clip::loadWarp(const QDomElement& element)
+{
+	if (const auto warpNode = element.firstChildElement("warp"); !warpNode.isNull())
+	{
+		std::array<WarpMarker, WarpMarkers::MaxMarkers> markers{};
+		std::size_t count = 0;
+		for (auto node = warpNode.firstChildElement("marker");
+			!node.isNull() && count < static_cast<std::size_t>(WarpMarkers::MaxMarkers);
+			node = node.nextSiblingElement("marker"))
+		{
+			markers[count++] = { node.attribute("src", "0").toULongLong(),
+				node.attribute("pos", "0").toInt() };
+		}
+
+		m_tempoMode = warpNode.attribute("mode", "follow") == "source"
+			? WarpTempoMode::SourceTempo : WarpTempoMode::FollowProject;
+		m_sourceTempo = warpNode.attribute("tempo", "0").toFloat();
+		// Row 30: absent means resampling, which is what every file written
+		// before this attribute existed asks for.
+		m_stretchMode = warpNode.attribute("stretch", "resample") == "wsola"
+			? WarpStretchMode::PreservePitch : WarpStretchMode::Resample;
+
+		m_warp.clear();
+		if (count > 0 && !m_warp.set(std::span<const WarpMarker>(markers.data(), count)))
+		{
+			Engine::getSong()->collectError(tr("Warp markers in the project file "
+				"are not strictly increasing; they were ignored."));
+		}
+	}
+	else
+	{
+		// Reset-on-absence: see the function comment — this branch IS the
+		// negative control's subject (neuter it and the two tests named above
+		// fail, because a restored checkpoint would keep its warp).
+		m_warp.clear();
+		m_tempoMode = WarpTempoMode::FollowProject;
+		m_sourceTempo = 0.0f;
+		m_stretchMode = WarpStretchMode::Resample;
 	}
 }
 

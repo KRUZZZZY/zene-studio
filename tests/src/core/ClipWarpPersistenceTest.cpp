@@ -253,6 +253,40 @@ private slots:
 		QCOMPARE(clip->timelinePosAt(44100).getTicks(), 0);
 	}
 
+	//! RESET-ON-ABSENCE at the persistence layer (SPEC-ARCH-4 census row 5:
+	//! the reader is Clip::loadWarp now, and its else branch is the whole
+	//! undo mechanism for a warp edit). The journal checkpoint a warp.* command
+	//! takes BEFORE its edit carries no `<warp>` child; restoring it onto a
+	//! clip that IS warped must take the warp back off. Neutering the reset in
+	//! Clip::loadWarp makes this fail (and the command-surface half,
+	//! ControlWarpCommandsTest::markerEditsAreReversibleThroughTheJournal).
+	void restoringAnElementWithoutAWarpUnwarpsTheClip()
+	{
+		SampleTrack track(Engine::getSong());
+		auto* warped = makeClip(track, m_rate);
+		applyWarp(*warped);
+		warped->setWarpTempoMode(WarpTempoMode::SourceTempo);
+		warped->setSourceTempo(128.5f);
+		QVERIFY(!warped->rendersLinearly());
+
+		// the checkpoint's own bytes: an unwarped clip serialised with no
+		// <warp> child at all (I9)
+		SampleTrack fresh(Engine::getSong());
+		auto* plain = makeClip(fresh, m_rate);
+		QDomDocument doc;
+		QDomElement parent = doc.createElement("track");
+		const QDomElement noWarp = plain->saveState(doc, parent);
+		QVERIFY(noWarp.firstChildElement("warp").isNull());
+
+		warped->restoreState(noWarp);
+
+		QVERIFY(warped->warpMarkers().empty());
+		QCOMPARE(static_cast<int>(warped->warpTempoMode()),
+			static_cast<int>(WarpTempoMode::FollowProject));
+		QCOMPARE(warped->sourceTempo(), 0.0f);
+		QVERIFY(warped->rendersLinearly());
+	}
+
 private:
 	int m_rate = 44100;
 };

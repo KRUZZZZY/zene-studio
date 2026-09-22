@@ -79,10 +79,8 @@ SampleClip::SampleClip(const SampleClip& orig) :
 	Clip(orig),
 	m_sample(std::move(orig.m_sample)),
 	m_window(orig.m_window),
-	m_warp(orig.m_warp),
-	m_tempoMode(orig.m_tempoMode),
-	m_sourceTempo(orig.m_sourceTempo),
-	m_stretchMode(orig.m_stretchMode),
+	// The warp members moved to Clip (SPEC-ARCH-4 census row 5);
+	// Clip(const Clip&) copies them for every clip type now.
 	m_isPlaying(orig.m_isPlaying),
 	m_startFrameOffset(orig.m_startFrameOffset)
 {
@@ -495,36 +493,10 @@ void SampleClip::saveSettings( QDomDocument & _doc, QDomElement & _this )
 		_this.setAttribute( "srcin", QString::number(m_window.sourceIn) );
 		_this.setAttribute( "srcout", QString::number(m_window.sourceOut) );
 	}
-	// The warp map (#597), as a child element of the clip exactly as the design
-	// asks (§2.4, §2.6). Additive: a clip with no markers, the default
-	// (follower) tempo mode and the default (resampling) stretch mode writes no
-	// <warp> element at all, so a project without warp serialises exactly as it
-	// did before this task (I9).
-	if (!m_warp.empty() || m_tempoMode != WarpTempoMode::FollowProject
-		|| m_stretchMode != WarpStretchMode::Resample)
-	{
-		QDomElement warp = _doc.createElement( "warp" );
-		warp.setAttribute( "mode", m_tempoMode == WarpTempoMode::SourceTempo ? "source" : "follow" );
-		if (m_tempoMode == WarpTempoMode::SourceTempo)
-		{
-			warp.setAttribute( "tempo", QString::number( m_sourceTempo ) );
-		}
-		// Row 30 of the 0.3.0 list: how the rate change is rendered. Written
-		// only when it is not the historical resampling, so a clip that never
-		// chose the stretch serialises byte for byte as #597 left it.
-		if (m_stretchMode == WarpStretchMode::PreservePitch)
-		{
-			warp.setAttribute( "stretch", "wsola" );
-		}
-		for (const auto& marker : m_warp.all())
-		{
-			QDomElement node = _doc.createElement( "marker" );
-			node.setAttribute( "src", QString::number( marker.sourceFrame ) );
-			node.setAttribute( "pos", QString::number( marker.offsetTicks ) );
-			warp.appendChild( node );
-		}
-		_this.appendChild( warp );
-	}
+	// The warp map (#597): the `<warp>` child moved to the base clip
+	// (Clip::saveWarp — SPEC-ARCH-4 census row 5). Same element, same
+	// mode/tempo/stretch/marker vocabulary, same additive rule (I9), now
+	// written by every clip type instead of only this one.
 	// The clip's fades and its clip gain (fade/crossfade/clip-gain wave), written
 	// by the base class so every clip type that serialises shares one rule.
 	// Additive like the two blocks above: a clip with no fade and unity gain
@@ -586,53 +558,13 @@ void SampleClip::loadSettings( const QDomElement & _this )
 
 	setAutoResize(_this.attribute("autoresize", "1").toInt());
 
-	// The warp map (#597). Read after `len`/`off`/`srcin`/`srcout` so the window
-	// it clamps into is already the file's window, and after `setSampleFile()`,
-	// which is what replaces the source the markers are anchored to.
-	if (const auto warpNode = _this.firstChildElement("warp"); !warpNode.isNull())
-	{
-		std::array<WarpMarker, WarpMarkers::MaxMarkers> markers{};
-		std::size_t count = 0;
-		for (auto node = warpNode.firstChildElement("marker");
-			!node.isNull() && count < static_cast<std::size_t>(WarpMarkers::MaxMarkers);
-			node = node.nextSiblingElement("marker"))
-		{
-			markers[count++] = { node.attribute("src", "0").toULongLong(),
-				node.attribute("pos", "0").toInt() };
-		}
-
-		m_tempoMode = warpNode.attribute("mode", "follow") == "source"
-			? WarpTempoMode::SourceTempo : WarpTempoMode::FollowProject;
-		m_sourceTempo = warpNode.attribute("tempo", "0").toFloat();
-		// Row 30: absent means resampling, which is what every file written
-		// before this attribute existed asks for.
-		m_stretchMode = warpNode.attribute("stretch", "resample") == "wsola"
-			? WarpStretchMode::PreservePitch : WarpStretchMode::Resample;
-
-		m_warp.clear();
-		if (count > 0 && !m_warp.set(std::span<const WarpMarker>(markers.data(), count)))
-		{
-			Engine::getSong()->collectError(tr("Warp markers in the project file "
-				"are not strictly increasing; they were ignored."));
-		}
-	}
-	else
-	{
-		// No <warp> child means "this clip has no markers and follows the project"
-		// - #597 writes the element only when that is not the truth. Resetting the
-		// warp state here is what makes the clip's own journal checkpoint a TRUE
-		// inverse of a warp edit: the checkpoint a warp.* command takes captures
-		// the clip BEFORE its first marker is added, i.e. state with no <warp>
-		// element, and control.undo replays it through this function. Without this
-		// branch the restore would leave the added marker in place.
-		//
-		// A fresh load from a project file is unaffected - the members already
-		// hold exactly these defaults - so no existing project's sound moves.
-		m_warp.clear();
-		m_tempoMode = WarpTempoMode::FollowProject;
-		m_sourceTempo = 0.0f;
-		m_stretchMode = WarpStretchMode::Resample;
-	}
+	// The `<warp>` child moved to the base clip (Clip::loadWarp — SPEC-ARCH-4
+	// census row 5). It reads right AFTER this function returns, which keeps
+	// the order the old inline code had: after `len`/`off`/`srcin`/`srcout`/
+	// `autoresize` and after `setSampleFile()` (the call that replaces the
+	// source the markers are anchored to), and it still resets the warp state
+	// when the element is absent - the checkpoint-inverse rule lives at the
+	// new site.
 
 	if (_this.hasAttribute("color"))
 	{

@@ -60,6 +60,46 @@ struct WarpMarker
 	bool operator!=(const WarpMarker& other) const { return !(*this == other); }
 };
 
+/*! Whether a clip's rate is set by the project or declared by the clip.
+ *
+ *  (Moved here from SampleClip.h with the rest of the warp vocabulary when the
+ *  warp state became native to the base clip — SPEC-ARCH-4 census row 5;
+ *  `include/SampleClip.h` reaches this header through Clip.h, so every caller
+ *  still sees the names.)
+ *
+ *  `FollowProject` is the default and the behaviour every project written
+ *  before #597 has: the clip's audio plays at its natural rate and the project
+ *  tempo only decides how many ticks that is. `SourceTempo` makes the clip a
+ *  **tempo leader**: it declares the tempo it was recorded at, and its content
+ *  is re-timed to the project grid (`projTempo / sourceTempo`), so one bar of
+ *  its music occupies one bar of the project whatever the project tempo is.
+ */
+enum class WarpTempoMode
+{
+	FollowProject = 0,
+	SourceTempo = 1
+};
+
+/*! How a clip whose mapping changes the rate renders that rate change
+ *  (0.3.0, feature-list row 30 — pitch-preserving time-stretch).
+ *
+ *  `Resample` is the historical behaviour and the default, so every project
+ *  written before this feature (and every clip that does not ask) renders
+ *  through `AudioResampler` exactly as it did. `PreservePitch` routes the
+ *  clip's audio through `AudioStretcher` (WSOLA) instead, which keeps the
+ *  waveform's period — the pitch — where it was and moves only the grain
+ *  positions, at the cost of the alignment search (see AudioStretcher.h).
+ *
+ *  The mode only means anything for a clip that is NOT `rendersLinearly()`:
+ *  a clip with no marker and no source tempo has no rate change to preserve
+ *  pitch across, and the playback path deliberately does not route it through
+ *  the stretcher at all (docs/PITCH-STRETCH.md §5). */
+enum class WarpStretchMode
+{
+	Resample = 0,
+	PreservePitch = 1
+};
+
 /*! A monotonic marker set and the piecewise-linear map it defines.
  *
  *  The set is a value type with a **fixed capacity**: no marker operation, and
