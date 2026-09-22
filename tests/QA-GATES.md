@@ -1709,6 +1709,74 @@ restored, the same command exits 0 with `0 errors.` Both runs and both exit code
 `docs/reports/CI-FIX6-REPORT.md`.
 
 
+## Gate 14: the release oracle's own red/green proof (`test-release-ref-fitness.sh`) — WIRED 2026-09-22
+
+**Command** (as `run-all-gates.sh` runs it):
+
+```sh
+bash tests/test-release-ref-fitness.sh   # EXIT=0, measured 2026-09-22 (with this card's two control repairs)
+```
+
+`tests/release-ref-fitness.sh` is the only thing in this repository that decides whether a
+ref may be cut a tag: `release.yml`'s fitness job runs it against the commit under
+judgement, beside `tests/release-ci-evidence-gate.sh`. A check that has never been seen
+refusing a ref is a claim rather than a gate, so the harness drives the oracle **both ways**
+against refs it builds itself — it commits a deliberately red ref (a test file no scope
+manifest registers), asserts `g9-fork-sources` refuses it and the full leg set refuses it,
+asserts the same leg passes on the ref the red ref was cut from, asserts that a leg whose
+tool is absent refuses rather than passing, and asserts the staging-path policy gate goes
+red against a deliberately weakened copy of the workflow. Every fixture is a scratch
+worktree and a scratch branch (`rel2/selftest-*`), removed on exit including on failure.
+
+**Why it was added.** Board card #738, 2026-09-22. The harness existed, was wired into
+nothing, and had gone **red** — two of its controls had silently stopped controlling: control 2
+compared `release-ci-evidence-gate.sh --dump-required` against the literal
+`static gates (3, 4, 6, 7, 8, 9, 11)` while `quality-gates.yml:51` names that job
+`static gates (3, 4, 6, 7, 8, 9, 11, 12)` — the parenthesised literal does not match, so the
+control reported FAIL for a reason that said nothing about the oracle; and control 5 ran the
+`g4-complexity` leg under `PATH=/usr/bin:/bin` expecting that to hide the lizard tool, which
+`complexity-gate.sh:78` reaches as a Python **module** (`python3 -c "import lizard"`), so on
+any host with lizard in a user site the leg stayed green and the control became "a leg WITH
+its tool passes". A control that passes for the wrong reason is worse than no control,
+because it reports confidence.
+
+**Pass criterion.** Exit 0. Control 2 now reads the job name *out of* `quality-gates.yml` and
+requires the evidence gate to name it, so a future gate number cannot silently break it and
+stale drift fails loudly instead; control 5 creates the tool-absence condition with a stub
+interpreter earlier on the PATH — the same shape the fix for the fitness refusal used — and
+asserts its own premise by recording that the gate's probe reached the stub.
+
+**Measured (2026-09-22).** 46 s on a developer box; 33 s under `PYTHONNOUSERSITE=1` with
+`PATH=/usr/bin:/bin` and `/bin/bash` (the bare-runner shape), both EXIT=0. It needs nothing
+but `git` and `python3`, so a default run measures it; there is no SKIP path.
+
+**Not yet a CI step (measured 2026-09-22).** CI does not run this suite: `quality-gates.yml`'s
+`static-gates` job runs each gate as its own step — gates 3, 4, 6, 7, 8, 9, 11 and 12 — and
+never invokes `run-all-gates.sh` (its only mention there is a comment at `:84`). So this row is
+enforced on every suite run and is **not** yet enforced by a workflow, and "Gate 14" must not be
+read as "CI-enforced". Adding it as a step means renaming that job, because its name carries the
+gate numbers; that name is bound in two places, `tests/release-ci-evidence-gate.sh:36` and
+`:104`, which is what this harness's control 2 reads back. It is therefore a deliberate change to
+the release path's required-job set — one that pairs with REL-1 (`release-tag-protection` is the
+item that will require these names) — and not something to slip in with the wiring. Recorded on
+board card #738.
+
+**Red/green proof.** Control 3/4's refusal line is printed by the harness on every run
+(`the red ref is REFUSED by g9-fork-sources (exit 1)`), and control 6 prints the policy
+gate's own `FAIL A1` against the weakened copy. Both were re-measured after the repairs.
+
+**Seen red against a weakened oracle (2026-09-22).** The harness's own falsifiability was
+measured, not asserted — which is the same standard this section applies to the oracle. With
+the oracle's leg classification mutated so that every leg reads PASS
+(`tests/release-ref-fitness.sh:232`, `if [ "$rc" -eq 0 ]` → `if true`), the oracle announced
+`RESULT: FIT — every required leg ran and passed` for a ref carrying a deliberately red leg,
+and the harness exited **1** on five failing assertions: `the red ref is REFUSED by
+g9-fork-sources (exit 1)` (got 0), the same for the full leg set, control 5's
+`a leg whose tool is absent refuses` (got PASSED), and control 7's two. The mutated file was
+then restored byte-exactly (blob identical to `HEAD`) and the tree left clean, so the
+committed tree is the unmuted one.
+
+
 ## Evaluated and NOT wired: dead code (`cppcheck --enable=unusedFunction`) — 2026-09-09
 
 The adopted ruleset requires "dead code: zero (ruff/vulture)". The C++ equivalent is
@@ -1825,7 +1893,7 @@ both configurations' differential evidence and the unchanged-ON proof.
 ## Running all gates
 
 ```sh
-bash tests/run-all-gates.sh                  # Gates 1, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13 (Gate 5 ≈3 min)
+bash tests/run-all-gates.sh                  # Gates 1, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14 (Gate 5 ≈3 min)
 bash tests/run-all-gates.sh --no-mutation    # skip the Gate 5 sweep
 bash tests/run-all-gates.sh --with-coverage  # + Gate 2 (full coverage build)
 bash tests/run-all-gates.sh --whole-tree     # gates 4, 7, 8 over tests/all-sources.txt as well

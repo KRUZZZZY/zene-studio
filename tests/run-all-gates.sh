@@ -2,7 +2,7 @@
 # run-all-gates.sh — run every executable QA gate for the LMMS standards fork.
 #
 # Usage:
-#   bash tests/run-all-gates.sh                 # gates 1, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13 (Gate 5 ≈3 min)
+#   bash tests/run-all-gates.sh                 # gates 1, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14 (Gate 5 ≈3 min)
 #   bash tests/run-all-gates.sh --with-coverage # + Gate 2 (full coverage build; slow)
 #   bash tests/run-all-gates.sh --no-mutation   # skip Gate 5 (mutation sweep)
 #   bash tests/run-all-gates.sh --strict        # pass --strict to gates that support it
@@ -68,6 +68,29 @@
 # in the scripted checks, installed by CI in its job and not carried in the source tree -
 # so a machine without it records the row as SKIP with that reason rather than passing
 # quietly: a skipped gate is not a pass (see Exit codes).
+#
+# Gate 14 (the release oracle's own red/green proof, added 2026-09-22 with board card #738)
+# runs tests/test-release-ref-fitness.sh. tests/release-ref-fitness.sh is the only thing
+# that decides whether a ref may be cut a tag, and a check that has never been seen
+# refusing a ref is a claim rather than a gate — so its harness drives it BOTH ways
+# against refs it builds itself: a deliberately red ref is REFUSED by g9-fork-sources, the
+# same leg PASSES on the ref that red ref was cut from, a leg that cannot be measured
+# refuses rather than passing, and the staging-path policy gate has been seen red against a
+# deliberately weakened workflow copy. Until this row existed the harness was wired into
+# nothing, and two of its controls had silently stopped controlling: control 2 compared a
+# literal `static gates (3, 4, 6, 7, 8, 9, 11)` against a job that quality-gates.yml names
+# `static gates (3, 4, 6, 7, 8, 9, 11, 12)`, and control 5 stripped PATH expecting that to
+# remove the lizard tool, which reaches the complexity gate as a Python MODULE and so
+# stayed reachable — a control that passes for the wrong reason is worse than no control,
+# because it reports confidence. It needs no build and no tool beyond git and python3
+# (measured 2026-09-22: 46 s on a developer box, 33 s under PYTHONNOUSERSITE=1 with
+# PATH=/usr/bin:/bin, which is the bare-runner shape), so it runs in the default set.
+# What that does NOT buy is CI enforcement: quality-gates.yml's static-gates job runs its
+# gates as individual steps and never invokes this runner, so this row is measured by every
+# suite run and by no workflow yet. Making it a CI step means renaming that job, whose name
+# carries the gate numbers and is bound in tests/release-ci-evidence-gate.sh:36 and :104 -
+# a change to the release path's required-job set, recorded on card #738. tests/QA-GATES.md
+# ("Gate 14") says the same in full.
 #
 # Exit codes (a skipped gate is NOT a pass):
 #   0  every gate ran and passed
@@ -300,6 +323,13 @@ else
 		record 13 "scripted-checks" "PASS"
 	fi
 fi
+
+# ---- Gate 14: the release oracle's own red/green proof -----------------------
+# The header's Gate 14 paragraph says why this row exists. It has no SKIP path on purpose:
+# it needs nothing but git and python3, and a harness that cannot run is not a pass either.
+banner 14 "release oracle's own red/green proof (test-release-ref-fitness.sh)"
+bash tests/test-release-ref-fitness.sh
+[[ $? -eq 0 ]] && record 14 "release-fitness-selftest" "PASS" || record 14 "release-fitness-selftest" "FAIL"
 
 # ---- summary ----------------------------------------------------------------
 printf '\n================ SUMMARY ================\n'

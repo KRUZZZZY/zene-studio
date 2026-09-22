@@ -10,15 +10,19 @@
 #
 #   control 1  the oracle's leg table is intact          every leg of the three upstream
 #                                                        jobs is still named
-#   control 2  the CI leg's required job set is exact    7 platform jobs + checks' 3 +
-#                                                        static-gates = 11 named jobs
+#   control 2  the CI leg's required job set is exact    7 platform jobs + checks' 3 + the
+#                                                        static-gates job, whose name is read
+#                                                        from quality-gates.yml rather than
+#                                                        written here (11 required names)
 #   control 3  a deliberately red ref is REFUSED          a scratch ref whose new test is
 #                                                        registered in no scope manifest
 #                                                        -> g9-fork-sources exit 1, and the
 #                                                        oracle exits 1
 #   control 4  the same leg PASSES on the ref it was cut from
 #   control 5  a leg that cannot run is not a pass         a missing tool must not become
-#                                                        exit 0
+#                                                        exit 0. Gate 4's tool is the lizard
+#                                                        MODULE, so the interpreter is stubbed
+#                                                        rather than only the PATH
 #   control 6  the staging-path policy gate goes red       a workflow COPY with the
 #                                                        dispatch staging path restored is
 #                                                        refused (the checker has been seen
@@ -96,10 +100,21 @@ for job in linux-x86_64 linux-arm64 macos-x86_64 macos-arm64 mingw64 msvc-x64 wi
 		*) printf '  FAIL required job %-59s missing\n' "$job"; FAILED=1 ;;
 	esac
 done
-case "$REQ" in
-	*"static gates (3, 4, 6, 7, 8, 9, 11)"*) check "quality-gates' static-gates job is required by name" 0 0 ;;
-	*) check "quality-gates' static-gates job is required by name" 0 1 ;;
-esac
+# The static-gates job name is READ FROM THE WORKFLOW, never written here. The name carries
+# the gate numbers, so a literal in this file goes stale the moment a gate is added - and a
+# stale literal does not fail loudly, it silently stops controlling: the form that stood here
+# until 2026-09-22 matched "static gates (3, 4, 6, 7, 8, 9, 11)" while quality-gates.yml:51
+# names the job "static gates (3, 4, 6, 7, 8, 9, 11, 12)"; the parenthesised substring does
+# not match, so the control reported FAIL on a tree where nothing was wrong with the oracle.
+STATIC_NAME="$(grep -m1 -E '^[[:space:]]*name: static gates' .github/workflows/quality-gates.yml \
+	| sed -E 's/^[[:space:]]*name:[[:space:]]*//; s/[[:space:]]+$//')"
+if [ -z "$STATIC_NAME" ]; then
+	printf '  FAIL %-74s %s\n' "quality-gates.yml still names a static-gates job" "no such name"
+	FAILED=1
+else
+	check "the evidence gate requires the job quality-gates.yml actually runs" \
+		"$STATIC_NAME" "$(printf '%s\n' "$REQ" | awk -F'\t' '$1=="quality-gates.yml"{print $2}')"
+fi
 check "one required job per line: 11 required names" 11 "$(printf '%s\n' "$REQ" | grep -c .)"
 echo
 
@@ -148,10 +163,40 @@ echo
 
 # ---------------------------------------------------------------------------
 echo "=== control 5: a leg that cannot run is a refusal, never a pass ==="
-# lizard is Gate 4's tool. With it off the PATH the leg cannot be measured; the oracle must
-# not read that as green. Exit 1 (the leg went red on the missing binary) and exit 3 (the
-# oracle classified the leg incomplete) are both refusals; 0 is not acceptable.
-PATH="/usr/bin:/bin" bash tests/release-ref-fitness.sh --ref "$BASE_SHA" --only g4-complexity > "$TMP/notool.log" 2>&1
+# Gate 4's tool is the lizard PYTHON MODULE, not a binary on the PATH: complexity-gate.sh:78
+# decides with `python3 -c "import lizard"`. Stripping PATH therefore does NOT take the tool
+# away from a host that has it in a user site-packages - measured 2026-09-22 on this box,
+# where lizard lives in ~/.local/lib/python3.12/site-packages and the stripped-PATH form of
+# this control silently became "a leg WITH its tool passes" and stopped controlling. The
+# interpreter is stubbed instead, so the leg fails for the documented reason on any host,
+# exactly as it would on a runner where the tool was never installed.
+REAL_PYTHON3="$(command -v python3)"
+mkdir -p "$TMP/nolizard"
+MARKER="$TMP/nolizard/probe-hit"
+cat > "$TMP/nolizard/python3" <<SH
+#!/bin/sh
+# An interpreter without the lizard module. Everything except the gate's own probe is
+# forwarded to the real interpreter. The probe records that it was reached, so the control
+# can prove the refusal came through THIS stub and not from a quirk of the host.
+for a in "\$@"; do
+	case "\$a" in
+		*"import lizard"*) : > "$MARKER"; exit 2 ;;
+	esac
+done
+exec "$REAL_PYTHON3" "\$@"
+SH
+chmod +x "$TMP/nolizard/python3"
+if [ ! -x "$TMP/nolizard/python3" ]; then
+	printf '  FAIL %-74s %s\n' "the stub interpreter was created" "not executable"
+	FAILED=1
+fi
+PATH="$TMP/nolizard:/usr/bin:/bin" bash tests/complexity-gate.sh --check > "$TMP/cg.log" 2>&1
+check "the leg refuses for the documented reason (tool absent, exit 2)" 2 "$?"
+check "and names the absent tool rather than failing for another reason" "yes" \
+	"$(grep -q 'lizard is not installed' "$TMP/cg.log" && echo yes || echo no)"
+check "the premise held: the leg's own probe reached the stub" "yes" \
+	"$([ -f "$MARKER" ] && echo yes || echo no)"
+PATH="$TMP/nolizard:/usr/bin:/bin" bash tests/release-ref-fitness.sh --ref "$BASE_SHA" --only g4-complexity > "$TMP/notool.log" 2>&1
 NO_TOOL_RC=$?
 if [ "$NO_TOOL_RC" -ne 0 ]; then
 	check "a leg whose tool is absent refuses (not exit 0)" "refused" "refused"
