@@ -128,14 +128,26 @@ QString repoRoot()
 	return {};
 }
 
-//! Textual comment stripping: block comments first, then //-to-end-of-line.
-//! The bound this leaves is stated in the file header.
+//! Textual comment stripping: block comments first (keeping their newlines,
+//! so reported line numbers stay true), then //-to-end-of-line. The bound
+//! this leaves is stated in the file header.
 QString stripComments(QString text)
 {
 	static const QRegularExpression block{QStringLiteral(R"(/\*.*?\*/)"),
 		QRegularExpression::DotMatchesEverythingOption};
+	QString out;
+	out.reserve(text.size());
+	int last = 0;
+	for (auto it = block.globalMatch(text); it.hasNext();)
+	{
+		const auto match = it.next();
+		out += text.mid(last, match.capturedStart() - last);
+		out += QString(match.captured().count(QLatin1Char('\n')), QLatin1Char('\n'));
+		last = match.capturedEnd();
+	}
+	out += text.mid(last);
 	static const QRegularExpression line{QStringLiteral(R"(//[^\n]*)")};
-	return text.replace(block, QStringLiteral(" ")).replace(line, QStringLiteral(" "));
+	return out.replace(line, QStringLiteral(" "));
 }
 
 //! Read one file with comments stripped; an unreadable file is a violation,
