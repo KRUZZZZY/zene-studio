@@ -276,6 +276,13 @@ LMMS_EXPORT void registerPortCommands(ControlRegistry& registry);
  * there.
  */
 LMMS_EXPORT void registerRoutingSurfaceCommands(ControlRegistry& registry);
+/*! feedback.* - the cycle-permitted signal-graph submode (board card #709): with
+ *  the mode off (the default) the mixer's cycle rule is untouched; inside it a
+ *  loop-closing send is accepted WITH PDC suspended for it, stated at every point
+ *  of use with REAPER's warning verbatim. Rationale: src/core/ControlCommandsFeedback.cpp;
+ *  bounds it does NOT cover: docs/KNOWN-LIMITATIONS.md.
+ */
+LMMS_EXPORT void registerFeedbackCommands(ControlRegistry& registry);
 /*! patcher.get_state / patcher.set_wiring - the patcher node-graph group
  * (feature row 69, "Patcher node-graph driving"): the graph a target's signal
  * is processed through, read in PATCH terms (the role each node is addressed by,

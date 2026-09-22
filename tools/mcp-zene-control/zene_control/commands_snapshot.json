@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-09-22T14:50:49Z",
+  "captured_at": "2026-09-22T17:10:16Z",
   "commands": [
     {
       "args_schema": {
@@ -5317,6 +5317,117 @@
     {
       "args_schema": {
         "additionalProperties": false,
+        "properties": {},
+        "required": [],
+        "type": "object"
+      },
+      "description": "Leave the cycle-permitted submode: this RESTORES normal PDC - every cycle-permitted send is removed, the cycle rule is back in force and the next mixer.send_to / mixer.route_to that would close a loop is refused again. `enabled` is the new flag, `removed` counts the sends taken out, `feedback_routes` lists each one with its endpoints, amount and pre-fader flag (exactly what comes back), `pdc_suspended` is false because compensation is normal again, and `note` says so. A no-op (already off) records no undo step. Reversible: ONE control.undo re-enables the mode and re-creates every removed send with its captured amount and pre-fader flag.",
+      "group": "feedback",
+      "id": "feedback.disable",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "feedback_routes": {
+            "type": "array"
+          },
+          "note": {
+            "type": "string"
+          },
+          "pdc_suspended": {
+            "type": "boolean"
+          },
+          "removed": {
+            "type": "integer"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {},
+        "required": [],
+        "type": "object"
+      },
+      "description": "Enter the cycle-permitted submode: the next mixer.send_to / mixer.route_to that would close a loop (bus -> effect -> same bus) is ACCEPTED instead of refused, and is flagged as a cycle-permitted send. `enabled` is the new flag, `already_enabled` says the call changed nothing (then no undo step is recorded), `pdc_suspended` is true because compensation is SUSPENDED for every cycle-permitted send (stated again in `suspension`: their compensation is fixed at 0 frames and the alignment solve does not traverse them, the rest of the graph unchanged), `warning` is REAPER's feedback warning verbatim and `note` says how to leave and what leaving restores. Creates nothing by itself. Reversible: one control.undo turns the mode off again.",
+      "group": "feedback",
+      "id": "feedback.enable",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "already_enabled": {
+            "type": "boolean"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "note": {
+            "type": "string"
+          },
+          "pdc_suspended": {
+            "type": "boolean"
+          },
+          "suspension": {
+            "type": "string"
+          },
+          "warning": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {},
+        "required": [],
+        "type": "object"
+      },
+      "description": "The cycle-permitted signal-graph submode's live state: `enabled` (whether a loop-closing send would be accepted), `pdc_suspended` (true exactly while enabled - compensation for the loop is off), `feedback_routes` (every loop-closing send with its endpoints, amount, pre-fader flag and its compensation, 0 while suspended), `suspension` (what is suspended and what is not - the rest of the graph keeps its normal PDC), `warning` (REAPER's own feedback warning, verbatim) and `note` (how to leave, and what leaving restores). Read-only: this command writes nothing.",
+      "group": "feedback",
+      "id": "feedback.get_state",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "feedback_routes": {
+            "type": "array"
+          },
+          "note": {
+            "type": "string"
+          },
+          "pdc_suspended": {
+            "type": "boolean"
+          },
+          "suspension": {
+            "type": "string"
+          },
+          "warning": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
         "properties": {
           "end": {
             "type": "integer"
@@ -7798,7 +7909,7 @@
         ],
         "type": "object"
       },
-      "description": "Make a channel's output go to another channel's input (the channel's routing), at unity. Validated against the mixer's own feedback rule before anything is written. Reversible: one undo step.",
+      "description": "Make a channel's output go to another channel's input (the channel's routing), at unity. Validated against the mixer's own feedback rule before anything is written; inside the cycle-permitted submode (feedback.enable) a loop-closing routing is instead accepted and the result says so: `feedback` is true, `pdc_suspended` is true (compensation is SUSPENDED for that loop) and `warning` carries REAPER's feedback warning verbatim - otherwise those three answer false, false and \"\". `from`, `to`, `amount`, `pre_fader` and `created` describe the routing written and `route` is pdc.report's own element for it. Reversible: one undo step.",
       "group": "mixer",
       "id": "mixer.route_to",
       "mutating": true,
@@ -7812,8 +7923,14 @@
           "created": {
             "type": "boolean"
           },
+          "feedback": {
+            "type": "boolean"
+          },
           "from": {
             "type": "string"
+          },
+          "pdc_suspended": {
+            "type": "boolean"
           },
           "pre_fader": {
             "type": "boolean"
@@ -7822,6 +7939,9 @@
             "type": "object"
           },
           "to": {
+            "type": "string"
+          },
+          "warning": {
             "type": "string"
           }
         },
@@ -7852,7 +7972,7 @@
         ],
         "type": "object"
       },
-      "description": "Create or adjust an auxiliary send from one channel to another, with an amount. A send INTO a bus is pre-fader by default, which is the engine's own rule. Reversible: one undo step.",
+      "description": "Create or adjust an auxiliary send from one channel to another, with an amount. A send INTO a bus is pre-fader by default, which is the engine's own rule. A loop-closing send is refused unless the cycle-permitted submode (feedback.enable) is on; when it is accepted there, the result says so: `feedback` true, `pdc_suspended` true (compensation SUSPENDED for that loop) and `warning` carrying REAPER's feedback warning verbatim - an ordinary send answers false, false and \"\". `from`, `to`, `amount`, `pre_fader` and `created` describe the send written and `route` is pdc.report's element for it. Reversible: one undo step.",
       "group": "mixer",
       "id": "mixer.send_to",
       "mutating": true,
@@ -7866,8 +7986,14 @@
           "created": {
             "type": "boolean"
           },
+          "feedback": {
+            "type": "boolean"
+          },
           "from": {
             "type": "string"
+          },
+          "pdc_suspended": {
+            "type": "boolean"
           },
           "pre_fader": {
             "type": "boolean"
@@ -7876,6 +8002,9 @@
             "type": "object"
           },
           "to": {
+            "type": "string"
+          },
+          "warning": {
             "type": "string"
           }
         },
@@ -17629,23 +17758,23 @@
       }
     }
   ],
-  "count": 337,
+  "count": 343,
   "instance": {
-    "binary": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-706/build/zene",
-    "binary_bytes": 266417792,
-    "binary_sha256": "dd8348275aaaa6c339718510d91f992d2c9ddcc68b1f37681577f453f8e2a679",
-    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-706",
-    "lane_head": "ab9462d56142cf342ab327f6bb737dea03e42f77",
+    "binary": null,
+    "binary_bytes": null,
+    "binary_sha256": null,
+    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-709/tools/zene-pa-agentctl",
+    "lane_head": null,
     "proto": 1,
-    "source_socket": "/tmp/zctl-run-y4ntllah/zene.sock",
-    "version": "0.3.0-alpha.26+ab9462d"
+    "source_socket": "/tmp/zctl-run-fa4y886z/zene.sock",
+    "version": "0.3.0-alpha.52+4ef3065"
   },
   "kind": "zene-control-command-list",
   "proto": 1,
   "schema": 1,
   "surface": {
-    "group_count": 53,
-    "id_count": 337,
-    "ids_sha256": "9c311ffc7c08921553eadd7a09dc53b399c0350b4987ed335f4ecb09189c84e0"
+    "group_count": 55,
+    "id_count": 343,
+    "ids_sha256": "3642264a7248d9addd2a53c99c9aa0289f302810fb36192f8dc316d7aebae6bc"
   }
 }

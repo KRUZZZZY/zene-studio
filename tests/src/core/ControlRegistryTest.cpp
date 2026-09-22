@@ -494,9 +494,9 @@ private slots:
 		//   + 7 (feature row 19, board task #651): the controller.* ids -
 		//   surface_state, soft_takeover, feedback, template_save,
 		//   template_list, template_apply, template_delete.
-		// MEASUREMENT, re-taken by the merge train: base 102 + sample 5 + livecode 3 = 110;
-		// both lanes measured the same base independently; re-run at tip, mismatch = finding.
-		QCOMPARE(registry->commandCount(), 85 + 7 + 5 + 5 + 5 + 3);
+		// MEASUREMENT, re-taken by the merge train: base 102 + sample 5 + livecode 3 + 3 feedback
+		// = 113; mismatch at tip = finding. LANE-LOCAL, board card #709: the merge tip must re-measure.
+		QCOMPARE(registry->commandCount(), 85 + 7 + 5 + 5 + 5 + 3 + 3);
 	}
 #endif
 };

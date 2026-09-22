@@ -68,6 +68,66 @@ void MixerRoute::updateName()
 }
 
 
+// ---- the cycle-permitted submode (board card #709) -------------------------
+
+void MixerRoute::setFeedback( bool on )
+{
+	if( m_feedback == on ) { return; }
+	m_feedback = on;
+	if( !on )
+	{
+		m_feedbackIntermediate.clear();
+		m_feedbackCommitted.clear();
+		return;
+	}
+	// Control thread only (the same rule as the constructor's delay-line
+	// init): preallocate both snapshots so the audio path only ever copies.
+	const f_cnt_t frames = Engine::audioEngine()->framesPerPeriod();
+	m_feedbackIntermediate.assign( frames, SampleFrame{} );
+	m_feedbackCommitted.assign( frames, SampleFrame{} );
+	m_feedbackQuiet = true;
+	m_feedbackCommittedQuiet = true;
+}
+
+
+void MixerRoute::writeFeedback( const SampleFrame* in, f_cnt_t frames )
+{
+	if( m_feedbackIntermediate.size() < frames )
+	{
+		return; // cannot happen: sized with framesPerPeriod like m_buffer
+	}
+	std::copy( in, in + frames, m_feedbackIntermediate.begin() );
+	bool quiet = true;
+	for( f_cnt_t f = 0; f < frames && quiet; ++f )
+	{
+		quiet = in[f][0] == 0.0f && in[f][1] == 0.0f;
+	}
+	m_feedbackQuiet = quiet;
+}
+
+
+void MixerRoute::clearFeedback()
+{
+	for( auto& frame : m_feedbackIntermediate ) { frame = SampleFrame{}; }
+	m_feedbackQuiet = true;
+}
+
+
+void MixerRoute::commitFeedback()
+{
+	if( m_feedbackCommitted.size() != m_feedbackIntermediate.size() )
+	{
+		m_feedbackCommitted = m_feedbackIntermediate;
+	}
+	else
+	{
+		std::copy( m_feedbackIntermediate.begin(), m_feedbackIntermediate.end(),
+			m_feedbackCommitted.begin() );
+	}
+	m_feedbackCommittedQuiet = m_feedbackQuiet;
+}
+
+
 MixerSidechainRoute::MixerSidechainRoute( MixerChannel * from, MixerChannel * to,
 			float amount, SidechainTapPoint mode, bool deferred ) :
 	m_from( from ),
@@ -210,6 +270,15 @@ inline void MixerChannel::processed()
 	// (see m_muted in include/Mixer.h).
 	for( const MixerRoute * receiverRoute : m_sends )
 	{
+		// board card #709: a cycle-permitted (feedback) send does NOT gate its
+		// receiver - waiting on it inside the loop it closes would deadlock
+		// the dependency count, the same reason a deferred sidechain send is
+		// skipped below. Its audio arrives as the receiver's own
+		// previous-period snapshot pull instead (spec 5.2 generalized).
+		if( receiverRoute->feedback() )
+		{
+			continue;
+		}
 		if( receiverRoute->receiver()->m_muted.load(std::memory_order_relaxed) == false )
 		{
 			receiverRoute->receiver()->incrementDeps();
@@ -246,10 +315,27 @@ int MixerChannel::gatingSidechainReceives() const
 	return count;
 }
 
+std::size_t MixerChannel::gatingReceives() const
+{
+	std::size_t count = 0;
+	for( const MixerRoute * route : m_receives )
+	{
+		// board card #709: only sends that can actually gate count - a
+		// loop-closing (feedback) send never increments this channel either
+		// (processed() skips it), so counting it here would leave the channel
+		// waiting for a delivery that never comes.
+		if( ! route->feedback() )
+		{
+			++count;
+		}
+	}
+	return count;
+}
+
 void MixerChannel::incrementDeps()
 {
 	const auto i = m_dependenciesMet++ + 1;
-	if( i >= m_receives.size() + gatingSidechainReceives() && ! m_queued )
+	if( i >= gatingReceives() + gatingSidechainReceives() && ! m_queued )
 	{
 		m_queued = true;
 		AudioEngineWorkerThread::addJob( this );
@@ -467,16 +553,30 @@ void MixerChannel::doProcessing()
 			// even while the sender is momentarily silent, because the delay
 			// line can still hold the tail of the signal.
 			const bool compensate = senderRoute->compensationFrames() > 0;
-			if( sender->m_hasInput || sender->m_stillRunning || compensate )
+			// board card #709: a cycle-permitted (feedback) send delivers this
+			// sender's PREVIOUS period snapshot (committed by prepareMasterMix
+			// while no worker ran - the receiver worker and the sender worker
+			// never touch the same buffer), and the one-period delay is the
+			// loop's inherent, uncompensatable offset. Pull it while the
+			// committed snapshot may still hold signal, so a decaying loop is
+			// not truncated - the compensate rule, for the snapshot's own
+			// quiet flag.
+			const bool feedback = senderRoute->feedback();
+			if( sender->m_hasInput || sender->m_stillRunning || compensate
+				|| (feedback && !senderRoute->feedbackCommittedQuiet()) )
 			{
 				// figure out if we're getting sample-exact input
 				ValueBuffer * sendBuf = sendModel->valueBuffer();
 				ValueBuffer * volBuf = sender->m_volumeModel.valueBuffer();
 
 				// Delay the sender's block to this channel's alignment point.
-				// A zero delay returns the sender's buffer unchanged.
-				const SampleFrame* ch_buf =
-					senderRoute->compensatedBuffer(sender->m_buffer, fpp);
+				// A zero delay returns the sender's buffer unchanged. A
+				// feedback send never uses the delay line at all: its source
+				// is the committed snapshot (compensation is suspended for
+				// the loop, #709).
+				const SampleFrame* ch_buf = feedback
+					? senderRoute->feedbackCommitted()
+					: senderRoute->compensatedBuffer(sender->m_buffer, fpp);
 
 				if( senderRoute->preFader() )
 				{
@@ -513,7 +613,7 @@ void MixerChannel::doProcessing()
 					const float v = sender->m_volumeModel.value();
 					MixHelpers::addMultipliedByBuffer( m_buffer, ch_buf, v, sendBuf, fpp );
 				}
-				if( ! compensate )
+				if( ! compensate && ! feedback )
 				{
 					m_bus.quietChannels() &= sender->m_bus.quietChannels(); // mix silence status
 				}
@@ -526,7 +626,10 @@ void MixerChannel::doProcessing()
 					// effect downstream would discard it as "no input" if the
 					// flags still said quiet (1 = quiet, so clear this bus's
 					// pair). Inverting this - skipping the merge without
-					// clearing - silences the channel (#605 audit C2).
+					// clearing - silences the channel (#605 audit C2). A
+					// feedback snapshot is the same story (#709): it is one
+					// period old, so the sender's current flags describe a
+					// different block.
 					m_bus.quietChannels().reset(0);
 					m_bus.quietChannels().reset(1);
 				}
@@ -585,6 +688,19 @@ void MixerChannel::doProcessing()
 
 		// D1: the volume multiply happens after the send loop, producing the
 		// post-fader snapshot used by post-fader sidechain taps.
+		// board card #709: publish this period's block to every outgoing
+		// cycle-permitted send. The receiver reads only the copy
+		// prepareMasterMix() commits before the NEXT period starts, so the
+		// two workers never touch this buffer (the sidechain-intermediate
+		// rule, applied to feedback).
+		for( MixerRoute * senderRoute : m_sends )
+		{
+			if( senderRoute->feedback() )
+			{
+				senderRoute->writeFeedback( m_buffer, fpp );
+			}
+		}
+
 		const float v = m_volumeModel.value();
 		updatePostFaderBuffer(v, fpp);
 
@@ -1147,6 +1263,20 @@ MixerRoute * Mixer::createRoute( MixerChannel * from, MixerChannel * to, float a
 	Engine::audioEngine()->requestChangeInModel();
 	auto route = new MixerRoute(from, to, amount, preFader);
 
+	// board card #709: inside the cycle-permitted submode a route that CLOSES
+	// a loop is flagged at creation - non-gating (processed() skips it),
+	// snapshot-delivered (doProcessing pulls the committed copy) and
+	// uncompensated (the latency pass fixes it at 0 frames). The check runs
+	// against the graph WITHOUT this edge, so it answers exactly the question
+	// the surface asked (resolveRoutingEnds). With the submode off this branch
+	// cannot run, so the default path is byte-for-byte the old one;
+	// loadSettings flags its own sends from their persisted attribute. The
+	// master guard keeps the "master cannot send" rule outside the submode.
+	if( m_feedbackMode && from != m_mixerChannels[0] && checkInfiniteLoop( from, to ) )
+	{
+		route->setFeedback( true );
+	}
+
 	// add us to from's sends
 	from->m_sends.push_back(route);
 
@@ -1354,6 +1484,42 @@ bool Mixer::isInfiniteLoop( mix_ch_t sendFrom, mix_ch_t sendTo )
 }
 
 
+/*! Enter or leave the cycle-permitted submode (board card #709). Entering
+ *  creates nothing and changes no audio - it only permits the next
+ *  loop-closing send, which createRoute then FLAGS (that flag, not this one,
+ *  is what the workers read). Leaving is what restores normal PDC: every
+ *  flagged send is deleted here, so the next period's latency pass recomputes
+ *  a graph without them and the cycle rule is back in force. Control thread
+ *  only. Returns how many loop-closing sends leaving removed (0 entering).
+ */
+int Mixer::setFeedbackMode( bool enabled )
+{
+	if( m_feedbackMode == enabled )
+	{
+		return 0;
+	}
+	m_feedbackMode = enabled;
+	if( enabled )
+	{
+		return 0;
+	}
+	// Collect first: deleteChannelSend mutates both channels' lists.
+	std::vector<MixerRoute*> doomed;
+	for( MixerRoute * route : m_mixerRoutes )
+	{
+		if( route->feedback() )
+		{
+			doomed.push_back( route );
+		}
+	}
+	for( MixerRoute * route : doomed )
+	{
+		deleteChannelSend( route );
+	}
+	return static_cast<int>( doomed.size() );
+}
+
+
 bool Mixer::checkInfiniteLoop( MixerChannel * from, MixerChannel * to )
 {
 	// can't send master to anything
@@ -1484,6 +1650,19 @@ void Mixer::prepareMasterMix()
 			route->commitIntermediate();
 		}
 	}
+
+	// board card #709: publish each cycle-permitted send's previous-period
+	// snapshot - the same quiescent moment, the same rule: no worker runs, and
+	// only copies between the route's own pre-allocated buffers. The receiver
+	// worker reads only this committed copy, so it never races the sender
+	// worker writing the intermediate.
+	for( MixerRoute * route : m_mixerRoutes )
+	{
+		if( route->feedback() )
+		{
+			route->commitFeedback();
+		}
+	}
 }
 
 
@@ -1519,10 +1698,11 @@ int Mixer::resolveLatency(std::size_t index)
 	}
 	if (m_latencyVisitScratch[index] == 1)
 	{
-		// Defensive: the regular-send graph is acyclic (checkInfiniteLoop)
-		// and non-deferred sidechain edges are scheduling edges that the same
-		// check traverses. A cycle here would be a scheduling bug, not a
-		// latency source.
+		// Defensive: every REAL cycle has at least one cycle-permitted
+		// (feedback) edge, and the loops below skip those edges, so the solve
+		// never enters one. A cycle here would be a legacy file's regular-send
+		// loop with no feedback flag (checkInfiniteLoop refuses creating one),
+		// not a latency source.
 		return 0;
 	}
 	m_latencyVisitScratch[index] = 1;
@@ -1532,6 +1712,15 @@ int Mixer::resolveLatency(std::size_t index)
 
 	for (const MixerRoute* route : channel->m_receives)
 	{
+		if (route->feedback())
+		{
+			// board card #709: a cycle-permitted send reads a one-period-old
+			// snapshot; that offset is inherent to feedback and cannot be
+			// compensated, so the edge does not raise the receiver's
+			// alignment point - PDC is suspended for the loop, and this skip
+			// is what keeps the solve acyclic (every cycle has one of these).
+			continue;
+		}
 		input = std::max(input, resolveLatency(route->senderIndex()));
 	}
 	for (const MixerSidechainRoute* route : channel->m_sidechainReceives)
@@ -1613,6 +1802,17 @@ void Mixer::updateLatencyCompensation()
 	// Regular sends: delay the sender so it lands on the receiver's point.
 	for (MixerRoute* route : m_mixerRoutes)
 	{
+		if (route->feedback())
+		{
+			// board card #709: compensation is SUSPENDED for a cycle-permitted
+			// send - a loop has no single latency to compensate, so its edge
+			// gets no delay line at all (0 frames is the bit-identical
+			// bypass), the alignment solve never traverses it (resolveLatency
+			// skips it) and feedback.* says so at the point of use. Every
+			// other edge is computed exactly as before.
+			route->setCompensationFrames(0);
+			continue;
+		}
 		const int delay = m_latencyInputScratch[route->receiverIndex()]
 			- m_latencyOutputScratch[route->senderIndex()];
 		clamped = clamped || delay > cap;
@@ -1720,10 +1920,21 @@ void Mixer::masterMix( SampleFrame* _buf )
 			{
 				route->clearIntermediate();
 			}
+			// board card #709: a muted sender writes no feedback snapshot
+			// (doProcessing never runs), so clear its outgoing ones here -
+			// otherwise the loop would replay the last block forever, the
+			// D2(iii) rule for cycle-permitted sends.
+			for( MixerRoute * route : ch->m_sends )
+			{
+				if( route->feedback() )
+				{
+					route->clearFeedback();
+				}
+			}
 			ch->processed();
 			ch->done();
 		}
-		else if( ch->m_receives.size() == 0 && ch->gatingSidechainReceives() == 0 )
+		else if( ch->gatingReceives() == 0 && ch->gatingSidechainReceives() == 0 )
 		{
 			ch->m_queued = true;
 			AudioEngineWorkerThread::addJob( ch );
@@ -1910,6 +2121,12 @@ void Mixer::saveSettings( QDomDocument & _doc, QDomElement & _this )
 
 			sendsDom.setAttribute("channel", send->receiverIndex());
 			if (send->preFader()) { sendsDom.setAttribute("prefader", "1"); }
+			// board card #709: a cycle-permitted send carries its own flag -
+			// the persisted half of the submode (the mode itself is derived
+			// from these flags on load). A send without the flag writes byte
+			// exactly what it always wrote, so a normal project's saved bytes
+			// are unchanged.
+			if (send->feedback()) { sendsDom.setAttribute("feedback", "1"); }
 			send->amount()->saveSettings(_doc, sendsDom, "amount");
 		}
 
@@ -2071,6 +2288,15 @@ void Mixer::loadSettings( const QDomElement & _this )
 					chDataItem.attribute( "prefader" ).toInt() != 0;
 				MixerRoute * mxr = createChannelSend( num, sendTo, 1.0f, preFader );
 				if( mxr ) mxr->amount()->loadSettings( chDataItem, "amount" );
+				// board card #709: a cycle-permitted send carries its own
+				// flag, and loading one turns the submode on WITH it (the
+				// mode is derived from the flags - it is not saved itself).
+				// A file without the attribute loads exactly as before.
+				if( mxr && chDataItem.attribute( "feedback" ).toInt() != 0 )
+				{
+					mxr->setFeedback( true );
+					m_feedbackMode = true;
+				}
 			}
 			else if( chDataItem.nodeName() == QString( "sidechain-send" ) )
 			{

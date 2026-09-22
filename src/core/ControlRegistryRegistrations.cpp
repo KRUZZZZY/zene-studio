@@ -216,6 +216,10 @@ void registerControlCommands(ControlRegistry& registry)
 	// The routing surface (feature rows 27-29) and the mixer's routing verbs; the
 	// rationale for each group is on its declaration in ControlRegistryGroups.h.
 	registerRoutingSurfaceCommands(registry);
+	// The cycle-permitted signal-graph submode (board card #709): the mixer's
+	// cycle rule made optional, with PDC suspended for the loop and stated at
+	// every point of use. Rationale on its declaration.
+	registerFeedbackCommands(registry);
 	// The patcher node graph (feature row 69): the same graph routing.get_state
 	// reads, addressed by ROLE and EDITABLE. Its own group because it writes
 	// where routing.* is an inspector by decision; the rationale, the threading

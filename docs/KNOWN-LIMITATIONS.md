@@ -1727,3 +1727,36 @@ measured by `ScriptClockTest` or the `ControlLivecodeCommands` transcript:
   for state-shaped commands (`clip.move`, `transport.punch_set`, ...) that report is the
   after-state, and where a command reports something else the digest commits to the report rather
   than to a state that was never recorded.
+
+## The cycle-permitted submode does NOT make a loop a normal path (feedback.*, board card #709)
+
+`feedback.enable` lets a send close a loop (`bus -> effect -> same bus`), and every point of use
+says that **compensation is SUSPENDED for the loop** - carrying REAPER's warning verbatim:
+"feedback routing can in some instances be useful, but can risk damaging audio equipment"
+(REAPER User Guide, main changes 6.66-6.70). What the submode does NOT do:
+
+- **No per-send compensation estimate while suspended.** A loop-closing send's compensation is
+  fixed at 0 frames and the alignment solve does not traverse it (a cyclic path has no single
+  latency to compensate - the one-period snapshot delay is inherent, the same reason a deferred
+  sidechain send is excluded from dependency counting, `research/mixer/SPEC-dynamic-routing.md`
+  line 120). `feedback.get_state` and the write's own result state `pdc_suspended`, but no
+  command estimates the audible offset inside the loop. The rest of the graph keeps its normal
+  PDC, unchanged byte for byte from before the submode existed (the proof's negative control,
+  `tests/control-feedback-commands.py`).
+- **No automatic exit when the loop stops.** The mode stays on - and keeps permitting loop
+  sends - until `feedback.disable` runs; it does not watch the audio for silence or decay.
+- **No GUI surface.** The submode and its sends are socket-only: MixerView still hides the
+  loop-closing arrows it always hid (`src/gui/mixer/MixerView.cpp`, the `isInfiniteLoop` guard),
+  so the interface cannot create or show a feedback send.
+- **The rack/chain `RoutingGraph` is not covered.** That topology is a derived cache re-wired on
+  every list change and its live edit path is contractually closed (`routing.get_state`'s design
+  decision, `src/core/ControlCommandsRouting.cpp`), so there is no user-authored edge there that
+  could cycle; only the mixer's sends - the settable signal graph - are in the submode.
+- **The mode flag itself is not saved.** A project reloads with the submode ON exactly when it
+  carries a feedback-flagged send (the per-send flag is the persisted half); enabling the mode
+  and saving without ever creating a loop reloads with the mode off. A pre-#709 build reading a
+  feedback-flagged send ignores the flag, sees a normal cycle it has no rule to schedule, and
+  stalls that loop's downstream channels - downgrade is not supported for such a project.
+- **Removing the loop's other send by hand does not clear the flag.** A send created as feedback
+  keeps its flag until `feedback.disable`; disable removes every flagged send even when its loop
+  was already broken manually (conservative - that is how normal PDC is guaranteed back).
