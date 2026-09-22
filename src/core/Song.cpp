@@ -1644,6 +1644,30 @@ void Song::loadProject( const QString & fileName, const QStringList & skipSectio
 				seen.insert(track->id());
 			}
 		}
+
+		// ARCH-4 S3 (SPEC-ARCH-4 1.5 R4, census row 8): the SAME rule for the
+		// clip family. Duplicated ids arrive exactly like the tracks' - a
+		// merge of two branches that each edited a copy of the file - and the
+		// addresses are per family (`trk-7` and `clip-7` are distinct), so the
+		// clip family gets its own seen-set over every clip of every loaded
+		// track. Track ids are untouched; this block runs only where it always
+		// ran, after the walk and before endLoad().
+		QSet<int> seenClips;
+		for (int i = 0; i < static_cast<int>(loaded.size()); ++i)
+		{
+			for (Clip* clip : loaded[i]->getClips())
+			{
+				if (seenClips.contains(clip->id()))
+				{
+					clip->setId(ProjectIds::allocate());
+					ProjectIds::noteLoadAssignment(clip->id());
+				}
+				else
+				{
+					seenClips.insert(clip->id());
+				}
+			}
+		}
 	}
 
 	// The walk is over: from here on allocate() hands out ids to objects that
@@ -1773,6 +1797,10 @@ bool Song::saveProjectFile(const QString & filename, bool withResources)
 
 	DataFile dataFile( DataFile::Type::SongProject );
 	m_savingProject = true;
+	// ARCH-4 S3: nothing has stamped a revision in THIS save yet; writeRevision
+	// raises the flag per object and the <head> writer attribute is gated on it
+	// at the far end of this function (SPEC-ARCH-4 1.5 R4).
+	ProjectIds::beginSave();
 
 	m_tempoModel.saveSettings( dataFile, dataFile.head(), "bpm" );
 	m_timeSigModel.saveSettings( dataFile, dataFile.head(), "timesig" );
@@ -1887,6 +1915,20 @@ bool Song::saveProjectFile(const QString & filename, bool withResources)
 	// reach the disk - load-time assignment is in memory only, which is what
 	// keeps the agent_surface gate's fixture byte-identical across a sweep.
 	dataFile.documentElement().setAttribute( "next-id", ProjectIds::next() );
+
+	// ARCH-4 S3 (SPEC-ARCH-4 1.5 R4): `writer`, the instance identifier behind
+	// the per-object `rev`/`writer` pair, in <head> where the spec puts it -
+	// written ONLY when this save actually carries a revision (the flag
+	// ProjectIds::beginSave() cleared and writeRevision() raises). A project
+	// nobody revised re-saves exactly the bytes it always had: no `rev` on any
+	// object, no `writer` in the head. A file that does carry revisions names
+	// here the instance whose `writer` attributes its objects wear, which is
+	// how a three-way merge can say WHICH SIDE changed an object instead of
+	// rebuilding the answer from XML diffs.
+	if (ProjectIds::revisionWritten())
+	{
+		dataFile.head().setAttribute( "writer", ProjectIds::writerInstance() );
+	}
 
 	// ARCH-4 S2a (SPEC-ARCH-4 1.4): the document index, and the ONE condition
 	// under which it may be written. The index names and digests the sections of

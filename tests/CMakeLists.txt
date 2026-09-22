@@ -486,6 +486,14 @@ set(LMMS_TESTS
 	# new-file cap; it builds a real Engine and drives the dawproject.* commands.
 	src/core/DawProjectInterchangeRoundTripTest.cpp
 	src/core/StableTrackIdsTest.cpp
+	# ARCH-4 slice S3: the id-family registry (clip/lane/note/scene/warp over
+	# the one counter) and the per-object revision pair - absent rev == 0, an
+	# unrevised project saves byte-identically with no rev/writer anywhere,
+	# and the duplicate-id repair rule applied to the clip family. Registered
+	# here because plans/BRIEFS-2026-09-22-WAVE1.md LANE 6 pins its anchor to
+	# the StableTrackIdsTest entry above (union-of-entries; siblings append
+	# theirs after, never reorder this block).
+	src/core/ProjectRevIdsTest.cpp
 	src/core/StemExportTest.cpp
 	src/core/TelemetryTest.cpp
 	# CODE-7: the telemetry transport's two structural properties - https only
@@ -3000,6 +3008,10 @@ set_tests_properties(MidiReconnectTest PROPERTIES
 # the control registry, so they need a Qt platform plugin even though nothing
 # opens a window.
 set_tests_properties(StableTrackIdsTest PROPERTIES
+	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+# ProjectRevIdsTest (ARCH-4 S3) is the same shape: a full Engine, save/load/save
+# through Song directly, no window.
+set_tests_properties(ProjectRevIdsTest PROPERTIES
 	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 # Headless load path (task #625, SPEC A13/A15): no modal dialog may block an
 # instance started with --control-socket.

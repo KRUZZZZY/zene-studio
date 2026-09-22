@@ -154,7 +154,13 @@ tools/mmpz-git/demo_edits.py
 tools/mmpz-git/depth-demo.sh
 tools/mmpz-git/mmpz_git.py
 tools/mmpz-git/render-recipe.sh
+# ARCH-4 S3 (2026-09-22): rev_report.py names which side of a three-way merge
+# changed each object from the model's own rev/writer pair (SPEC-ARCH-4 1.5
+# R4); s3-rev-demo.sh is the git-merge proof it is run by. Both belong to the
+# mmpz-git tool family, so both are registered here, not in fork-sources.
+tools/mmpz-git/rev_report.py
 tools/mmpz-git/run-demo.sh
+tools/mmpz-git/s3-rev-demo.sh
 tools/mmpz-git/scratch/exp-renormalize.sh
 tools/mmpz-git/scratch/proto.py
 tools/mmpz-git/tests/test_mmpz_git.py

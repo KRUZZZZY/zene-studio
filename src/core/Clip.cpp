@@ -141,6 +141,11 @@ QDomElement Clip::saveState( QDomDocument & doc, QDomElement & parent )
 	if( ProjectIds::isDocumentElement( element ) )
 	{
 		element.setAttribute( QStringLiteral( "id" ), m_id );
+		// ARCH-4 S3 (SPEC-ARCH-4 1.5 R4): the revision pair, stamped LAST so
+		// the fingerprint writeRevision() takes covers every byte the subclass
+		// just wrote. Copy payloads never reach this line (the guard above).
+		ProjectIds::writeRevision( element, m_revision, m_revisionWriter,
+			m_revisionContentHash );
 	}
 
 	return element;
@@ -186,6 +191,12 @@ void Clip::restoreState( const QDomElement & element )
 		// m_id, not id(): the local above is named `id` and shadows the accessor.
 		ProjectIds::noteLoadAssignment( m_id );
 	}
+
+	// ARCH-4 S3: the loaded content fingerprint and the revision pair the next
+	// save compares against. Absent attributes read back as "rev 0, no
+	// writer" - a pre-S3 clip is an unrevised clip.
+	ProjectIds::readRevision( element, m_revision, m_revisionWriter,
+		m_revisionContentHash );
 }
 
 /*! Replace the id with \a id, and raise the project counter above it so the
