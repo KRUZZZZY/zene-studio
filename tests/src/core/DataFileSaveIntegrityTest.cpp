@@ -76,6 +76,42 @@ bool occupy( const QString& path )
 	return writeText( path + QStringLiteral( "/occupied" ), QStringLiteral( "keep out" ) );
 }
 
+
+/*! \brief Captures the Qt log lines emitted while it is alive, so a test can
+ *  ASSERT that a report line was actually printed rather than merely tolerate
+ *  it - QTest::ignoreMessage suppresses, it does not prove presence.
+ *
+ *  The handler deliberately does NOT chain to the previous one: while this is
+ *  installed the messages are held here and never reach QTest, so the report a
+ *  recovery emits cannot itself fail the run (and this stays correct whether
+ *  or not a stray warning would). The destructor restores the previous handler
+ *  FIRST, so no QVERIFY below it can be swallowed.
+ */
+class MessageRecorder
+{
+public:
+	MessageRecorder()
+	{
+		s_messages.clear();
+		m_previous = qInstallMessageHandler( &MessageRecorder::handle );
+	}
+	~MessageRecorder() { qInstallMessageHandler( m_previous ); }
+
+	MessageRecorder( const MessageRecorder& ) = delete;
+	MessageRecorder& operator=( const MessageRecorder& ) = delete;
+
+	QString messages() const { return s_messages.join( QLatin1Char( '\n' ) ); }
+
+private:
+	static void handle( QtMsgType, const QMessageLogContext&, const QString& message )
+	{
+		s_messages.append( message );
+	}
+
+	static inline QStringList s_messages;
+	QtMessageHandler m_previous{ nullptr };
+};
+
 } // namespace
 
 
@@ -261,6 +297,219 @@ private slots:
 		QVERIFY2( dataFile.writeFile( target ),
 			"a stale .bak that could not be removed blocked saving a new project" );
 		QVERIFY( readText( target ).contains( QStringLiteral( "<zene-project" ) ) );
+	}
+
+	//! ARCH-4 S5, SPEC-ARCH-4 1.8 part 1. The gap the fix closes, transcribed:
+	//! the pre-fix sequence MOVED the canonical file to <name>.bak and then
+	//! renamed <name>.new into place, so between those two calls the canonical
+	//! path held NO file at all. This inverted control proves the fixture would
+	//! catch that absence - which is what makes the fault-injection test below
+	//! (canonical present at the same point) non-vacuous. If this control ever
+	//! finds the path populated mid-flight, QFile has changed and the pair no
+	//! longer measures the gap.
+	void moveBasedBackupOpensACanonicalGap()
+	{
+		QTemporaryDir dir;
+		QVERIFY( dir.isValid() );
+		const QString target = dir.filePath( QStringLiteral( "song.mmp" ) );
+		const QString bak = target + QStringLiteral( ".bak" );
+		const QString temp = target + QStringLiteral( ".new" );
+
+		const QString oldDoc = QStringLiteral(
+			"<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
+			"<zene-project version=\"40\" type=\"song\"></zene-project>\n" );
+		const QString newDoc = QStringLiteral(
+			"<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
+			"<zene-project version=\"40\" type=\"song\"><head s5=\"new\"/></zene-project>\n" );
+		QVERIFY( writeText( target, oldDoc ) );
+		QVERIFY( writeText( temp, newDoc ) );
+
+		// the old dance, step by step:
+		QVERIFY( QFile::rename( target, bak ) );	// MOVE current -> .bak: gap opens
+		const bool canonicalAbsentMidFlight = !QFile::exists( target );
+		QVERIFY( QFile::rename( temp, target ) );	// then .new -> canonical: gap closes
+
+		QVERIFY2( canonicalAbsentMidFlight,
+			"control: the move-based sequence did not leave the canonical path empty, "
+			"so it no longer reproduces the gap S5 closes" );
+		QVERIFY( QFile::exists( target ) );
+	}
+
+	//! ARCH-4 S5, SPEC-ARCH-4 1.8 part 1. Kill a save at each point of its
+	//! finalisation and prove the canonical path ALWAYS holds a complete file.
+	//! Before the atomic rename it is still the untouched old document; after
+	//! it, it is the new one - never absent, never half-written. The seam is a
+	//! test-only env var writeFile() checks at each named step, stopping there
+	//! as a crash would (false, no cleanup) so the on-disk state mid-flight is
+	//! observable; unset in production it costs one qgetenv per save.
+	void saveStoppedMidFlightKeepsCanonicalComplete()
+	{
+		// A leftover from any earlier run must not stop THIS test's saves.
+		qunsetenv( "ZENE_TEST_SAVE_FAULT" );
+		QTemporaryDir dir;
+		QVERIFY( dir.isValid() );
+		ConfigManager::inst()->setValue( QStringLiteral( "app" ),
+			QStringLiteral( "disablebackup" ), QStringLiteral( "0" ) );
+
+		const QString target = dir.filePath( QStringLiteral( "song.mmp" ) );
+		const QString temp = target + QStringLiteral( ".new" );
+		const QString bak = target + QStringLiteral( ".bak" );
+
+		for( const QString& point : { QStringLiteral( "after-write" ),
+				QStringLiteral( "after-backup" ), QStringLiteral( "after-rename" ) } )
+		{
+			// Reset: a known-complete "old" document at the canonical path.
+			DataFile first( DataFile::Type::SongProject );
+			first.content().setAttribute( "s5probe", "old" );
+			QVERIFY2( first.writeFile( target ),
+				qPrintable( QStringLiteral( "could not seed the canonical file at %1" )
+					.arg( point ) ) );
+			const QString oldText = readText( target );
+			QVERIFY( oldText.contains( QStringLiteral( "</zene-project>" ) ) );
+
+			// Arm the fault, attempt a DIFFERENT save, disarm before asserting
+			// (so an early QVERIFY return cannot leak the env var into a later
+			// test and cascade failures).
+			qputenv( "ZENE_TEST_SAVE_FAULT", point.toUtf8() );
+			DataFile second( DataFile::Type::SongProject );
+			second.content().setAttribute( "s5probe", "new" );
+			const bool saved = second.writeFile( target );
+			qunsetenv( "ZENE_TEST_SAVE_FAULT" );
+
+			QVERIFY2( !saved, qPrintable( QStringLiteral(
+				"the save was not interrupted at %1" ).arg( point ) ) );
+
+			// THE invariant: at every instant the canonical path holds a
+			// complete file - one of the two known-good documents, never absent
+			// and never truncated.
+			QVERIFY2( QFile::exists( target ), qPrintable( QStringLiteral(
+				"the canonical path vanished when the save stopped at %1" ).arg( point ) ) );
+			const QString now = readText( target );
+			QVERIFY2( now.contains( QStringLiteral( "<zene-project" ) )
+					&& now.contains( QStringLiteral( "</zene-project>" ) ),
+				qPrintable( QStringLiteral( "the canonical file was incomplete at %1" )
+					.arg( point ) ) );
+
+			if( point == QLatin1String( "after-rename" ) )
+			{
+				// The atomic step landed: canonical is the NEW complete file.
+				QVERIFY2( now.contains( QStringLiteral( "s5probe=\"new\"" ) ),
+					"after the rename the canonical path did not hold the new save" );
+			}
+			else
+			{
+				// Before the rename: canonical is still the untouched OLD file
+				// (under the pre-fix move it would be ABSENT here - see the
+				// control above), and the new content waits in .new.
+				QCOMPARE( now, oldText );
+				QVERIFY2( QFile::exists( temp ),
+					qPrintable( QStringLiteral( "the staged .new went missing at %1" )
+						.arg( point ) ) );
+				QVERIFY( readText( temp ).contains( QStringLiteral( "s5probe=\"new\"" ) ) );
+				if( point == QLatin1String( "after-backup" ) )
+				{
+					QVERIFY( QFile::exists( bak ) );
+					QCOMPARE( readText( bak ), oldText );
+				}
+			}
+		}
+	}
+
+	//! ARCH-4 S5, SPEC-ARCH-4 1.8 part 2. A crash after writing <name>.new but
+	//! before the final rename used to orphan that temp forever. The next open
+	//! must ADOPT a complete .new - it is the newest intended content - over
+	//! the canonical path, and say so with a report line. The proof is the
+	//! round-trip: the interrupted save's content becomes the file's content,
+	//! the orphan is consumed, and the report was actually printed (captured,
+	//! not merely tolerated).
+	void orphanedNewFileIsAdoptedWithReport()
+	{
+		qunsetenv( "ZENE_TEST_SAVE_FAULT" );
+		QTemporaryDir dir;
+		QVERIFY( dir.isValid() );
+		ConfigManager::inst()->setValue( QStringLiteral( "app" ),
+			QStringLiteral( "disablebackup" ), QStringLiteral( "0" ) );
+
+		const QString target = dir.filePath( QStringLiteral( "song.mmp" ) );
+		const QString temp = target + QStringLiteral( ".new" );
+
+		// canonical holds a complete "old" save
+		DataFile first( DataFile::Type::SongProject );
+		first.content().setAttribute( "s5probe", "old" );
+		QVERIFY( first.writeFile( target ) );
+		const QString oldText = readText( target );
+
+		// Leave a COMPLETE .new the way a real interruption does: fault the
+		// save right after the temp is written, so the orphan is byte-for-byte
+		// what an interrupted save leaves behind.
+		qputenv( "ZENE_TEST_SAVE_FAULT", "after-write" );
+		DataFile second( DataFile::Type::SongProject );
+		second.content().setAttribute( "s5probe", "new" );
+		QVERIFY( !second.writeFile( target ) );
+		qunsetenv( "ZENE_TEST_SAVE_FAULT" );
+		QVERIFY( QFile::exists( temp ) );
+		QVERIFY( readText( temp ).contains( QStringLiteral( "s5probe=\"new\"" ) ) );
+		QCOMPARE( readText( target ), oldText );	// canonical untouched by the crash
+
+		// Opening the file adopts the orphan. Capture the report inside the
+		// scope so the handler is restored before any QVERIFY can run.
+		QString report;
+		QString adoptedProbe;
+		{
+			MessageRecorder recorder;
+			DataFile loaded( target );
+			report = recorder.messages();
+			adoptedProbe = loaded.content().attribute( QStringLiteral( "s5probe" ) );
+		}
+
+		QVERIFY2( report.contains( QStringLiteral( "Recovered interrupted save" ) ),
+			qPrintable( QStringLiteral( "adoption printed no report line; captured: [%1]" )
+				.arg( report ) ) );
+		// Round-trip: the interrupted save's content is now the file's content...
+		QCOMPARE( adoptedProbe, QStringLiteral( "new" ) );
+		QVERIFY( readText( target ).contains( QStringLiteral( "s5probe=\"new\"" ) ) );
+		// ...and the orphan that used to sit there forever is consumed.
+		QVERIFY2( !QFile::exists( temp ), "the adopted .new was not consumed" );
+	}
+
+	//! ARCH-4 S5, SPEC-ARCH-4 1.8 part 2. The other half: a .new truncated
+	//! mid-write must be DISCARDED with its own report line, not adopted - and
+	//! adopting garbage would trade one corrupt file for another. The canonical
+	//! file is left exactly as it was.
+	void truncatedNewFileIsDiscardedWithReport()
+	{
+		qunsetenv( "ZENE_TEST_SAVE_FAULT" );
+		QTemporaryDir dir;
+		QVERIFY( dir.isValid() );
+		ConfigManager::inst()->setValue( QStringLiteral( "app" ),
+			QStringLiteral( "disablebackup" ), QStringLiteral( "0" ) );
+
+		const QString target = dir.filePath( QStringLiteral( "song.mmp" ) );
+		const QString temp = target + QStringLiteral( ".new" );
+
+		DataFile first( DataFile::Type::SongProject );
+		first.content().setAttribute( "s5probe", "old" );
+		QVERIFY( first.writeFile( target ) );
+		const QString oldText = readText( target );
+
+		// A .new cut off mid-tag: well-formed enough to exist, not complete.
+		QVERIFY( writeText( temp, QStringLiteral(
+			"<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
+			"<zene-project version=\"40\" type=\"song\"><head><s5" ) ) );
+
+		QString report;
+		{
+			MessageRecorder recorder;
+			DataFile loaded( target );
+			report = recorder.messages();
+		}
+
+		QVERIFY2( report.contains( QStringLiteral( "Discarded incomplete" ) ),
+			qPrintable( QStringLiteral( "discard printed no report line; captured: [%1]" )
+				.arg( report ) ) );
+		QVERIFY2( !QFile::exists( temp ), "the truncated .new was not discarded" );
+		// The canonical file is untouched by the discard.
+		QCOMPARE( readText( target ), oldText );
 	}
 };
 
