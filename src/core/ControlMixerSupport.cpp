@@ -207,9 +207,23 @@ bool resolveRoutingEnds(const QJsonObject& args, RoutingEnds* ends, ControlResul
 	Mixer* mixer = Engine::mixer();
 	if (mixer->isInfiniteLoop(ends->from->index(), ends->to->index()))
 	{
+		// board card #709: the cycle rule is OPTIONAL inside the
+		// cycle-permitted submode - feedback.enable - and ONLY there. The
+		// master rule is not part of the submode: the master still cannot
+		// send, feedback mode or not.
+		if (mixer->feedbackMode() && !ends->from->isMaster())
+		{
+			return true;
+		}
 		*error = ControlResult::failure(ControlErrorKind::Refused,
-			QStringLiteral("routing %1 to %2 would close a feedback path (the mixer refuses it)")
-				.arg(channelIdOf(ends->from), channelIdOf(ends->to)));
+			ends->from->isMaster()
+				? QStringLiteral("routing %1 to %2 would close a feedback path (the mixer "
+					"refuses it; the master cannot send, feedback mode or not)")
+					.arg(channelIdOf(ends->from), channelIdOf(ends->to))
+				: QStringLiteral("routing %1 to %2 would close a feedback path (the mixer "
+					"refuses it; feedback.enable turns on the cycle-permitted submode, which "
+					"accepts the loop WITH PDC suspended for it)")
+					.arg(channelIdOf(ends->from), channelIdOf(ends->to)));
 		return false;
 	}
 	return true;
@@ -294,6 +308,22 @@ QJsonObject mixerRouteResult(const RoutingEnds& ends, MixerRoute* route,
 	result.insert(QStringLiteral("pre_fader"), route->preFader());
 	result.insert(QStringLiteral("created"), !before.value(QStringLiteral("existed")).toBool());
 	result.insert(QStringLiteral("route"), routeJson(*route));
+	// board card #709: every route write says whether the edge is
+	// cycle-permitted (`feedback`), a loop-closing write repeats that
+	// compensation is suspended for it (`pdc_suspended`) and carries REAPER's
+	// warning in the very result that wrote the loop - compensation-off is
+	// stated AT THE POINT OF USE. An ordinary edge answers false/false/"",
+	// byte-identically to before this card existed except for these three
+	// declared keys. The warning text is the one feedback.* carries; the two
+	// copies stay in step by hand (different translation units).
+	const bool feedback = route->feedback();
+	result.insert(QStringLiteral("feedback"), feedback);
+	result.insert(QStringLiteral("pdc_suspended"), feedback);
+	result.insert(QStringLiteral("warning"),
+		feedback
+			? QStringLiteral("feedback routing can in some instances be useful, but can risk "
+				"damaging audio equipment (REAPER User Guide, main changes 6.66-6.70)")
+			: QString());
 	return result;
 }
 

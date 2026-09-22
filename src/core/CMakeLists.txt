@@ -365,6 +365,9 @@ set(LMMS_SRCS
 	# (controlExportPresetRenderArgs), so there is no second render path.
 	core/ControlCommandsExportPresets.cpp
 	core/ControlExportPresetSupport.cpp
+	# board card #709: the feedback.* group - the cycle-permitted
+	# signal-graph submode (get_state / enable / disable) and its engine seam.
+	core/ControlCommandsFeedback.cpp
 	core/ControlCommandsFreeze.cpp
 	# The session tempo/phase sync model and its wire (D11 "Ableton Link sync"):
 	# the model, the transport seam, the UDP multicast transport, and the

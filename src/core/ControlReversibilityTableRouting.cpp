@@ -136,6 +136,37 @@ const ReversibilityRow kRoutingRows[] = {
 		"cycle that made it deferred still exists",
 		""),
 
+	// ---- the cycle-permitted submode (board card #709) ----
+	// feedback.* holds the mixer's cycle rule's own on-switch. The interesting
+	// part is what each verb has to CARRY: enable's undo may not delete sends
+	// it never saw (they carry their own later steps, LIFO), and disable's
+	// undo must not silently lose the sends it removed - hence the captured
+	// edge list re-created as part of the same step.
+	R("feedback.get_state", RC::NotMutating, false,
+		"reads the submode's flag and the loop-closing sends (endpoints, amount, pre-fader, "
+		"their suspended compensation) plus the suspension text and warning; no write",
+		"no write",
+		""),
+	R("feedback.enable", RC::TrueInverse, true,
+		"a mode flag is one bool the engine owns; no object behind it changes - enabling "
+		"CREATES nothing, it only permits the next loop-closing send",
+		"action checkpoint: ONE recorded step whose undo calls Mixer::setFeedbackMode(false). "
+		"Safe by ordering: enabling precedes every send made under it, and those sends carry "
+		"their own later steps which the LIFO stack undoes first - so at this step's undo no "
+		"flagged send remains and the mode flip restores the pre-state exactly. A no-op enable "
+		"(already on) records no step",
+		""),
+	R("feedback.disable", RC::TrueInverse, true,
+		"the mode flag plus the loop-closing sends themselves: a removed MixerRoute has no live "
+		"object and no journalled state, but its endpoints, amount and pre-fader flag are its "
+		"whole state and must not be lost by leaving the submode",
+		"action checkpoint: the recorded undo re-enables the mode AND re-creates every send this "
+		"command removed, through the same Mixer::createChannelSend call with the captured "
+		"amount and pre-fader flag, each re-flagged as cycle-permitted - ONE step restores the "
+		"whole substate; the recorded redo leaves it again. A no-op disable (already off) "
+		"records no step",
+		""),
+
 	// ---- snapshot: a bounded recorded state ----
 	R("bus.remove", RC::Snapshot, false,
 		"the bus's full state is in the transaction's before-state, but no command recreates a "

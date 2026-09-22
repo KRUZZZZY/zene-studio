@@ -172,6 +172,12 @@ public:
 	//! scheduling. Deferred routes never gate (spec 5.2), so they are
 	//! excluded here.
 	int gatingSidechainReceives() const;
+	//! Number of incoming regular sends that gate this channel's scheduling
+	//! (board card #709): loop-closing (feedback) sends never gate their
+	//! receiver - their audio arrives as the previous-period snapshot pull -
+	//! so they are excluded exactly as deferred sidechain routes are. The
+	//! size_t return keeps the compare in incrementDeps() unsigned.
+	std::size_t gatingReceives() const;
 
 	auto color() const -> const std::optional<QColor>& { return m_color; }
 	void setColor(const std::optional<QColor>& color) { m_color = color; }
@@ -276,6 +282,35 @@ public:
 	//! Keep the delay line's timeline aligned for a muted receiver.
 	void advanceSilence(f_cnt_t frames) { m_compensation.advanceSilence(frames); }
 
+	//! The cycle-permitted submode (board card #709): a send that CLOSES a loop
+	//! is accepted only while Mixer::feedbackMode() is on, and such a send does
+	//! three things differently - it does not gate its receiver (the loop would
+	//! deadlock the dependency count, the same reason sidechain sends are
+	//! excluded from it, spec 5.2), the receiver pulls the sender's PREVIOUS
+	//! period snapshot (one period of delay is inherent to feedback and cannot
+	//! be compensated), and its PDC delay is fixed at 0 frames: compensation is
+	//! suspended FOR THE LOOP, and feedback.* says so at the point of use.
+	bool feedback() const { return m_feedback; }
+	//! Control thread only: allocates the snapshot buffers and clears them.
+	void setFeedback(bool on);
+	//! The receiver's pull source for a feedback send - this sender's previous
+	//! period snapshot, committed by Mixer::prepareMasterMix() while no worker
+	//! runs (the quiescent moment the deferred sidechain commit uses).
+	const SampleFrame* feedbackCommitted() const { return m_feedbackCommitted.data(); }
+	//! Whether the committed snapshot was silence when it was taken, so the
+	//! receiver can stop pulling a decayed loop instead of staying awake on it.
+	bool feedbackCommittedQuiet() const { return m_feedbackCommittedQuiet; }
+	//! Sender side (doProcessing): copy this period's block into the route's
+	//! private intermediate and record whether it was silence.
+	void writeFeedback(const SampleFrame* in, f_cnt_t frames);
+	//! A muted sender writes no snapshot (doProcessing never runs); clearing
+	//! here gives the loop silence instead of the last block forever - the
+	//! D2(iii) rule, for feedback sends.
+	void clearFeedback();
+	//! Render thread, prepareMasterMix: intermediate -> committed, with the
+	//! quiet flag. The receiver worker only reads the committed copy.
+	void commitFeedback();
+
 	void updateName();
 
 	private:
@@ -285,6 +320,17 @@ public:
 		bool m_preFader;
 		//! PDC delay line (#605); touched only by the receiver's worker.
 		LatencyCompensation m_compensation;
+		//! Cycle-permitted submode (#709): flag set at creation (control
+		//! thread), read by both workers and the latency pass.
+		bool m_feedback = false;
+		//! Sender-written block, receiver-read copy (#709): sized on the
+		//! control thread by setFeedback, same lifetime rule as m_buffer.
+		std::vector<SampleFrame> m_feedbackIntermediate;
+		std::vector<SampleFrame> m_feedbackCommitted;
+		//! Quiet flags captured with each snapshot (setFeedback / writeFeedback
+		//! write them, prepareMasterMix publishes them to the committed pair).
+		bool m_feedbackQuiet = true;
+		bool m_feedbackCommittedQuiet = true;
 };
 
 //! A sidechain send (Phase D, task #587). Unlike MixerRoute, sidechain audio
@@ -544,6 +590,21 @@ public:
 	//! Called for the AudioEngine-less case too, so it is safe on a bare Mixer.
 	void applyGroupSolo(VcaGroup* group, bool soloed);
 
+	//! Whether creating a route that closes a loop is permitted right now
+	//! (board card #709, the cycle-permitted signal-graph submode, the
+	//! feedback.* command group). Off by default: with it off the mixer's
+	//! cycle rule is exactly what it was - isInfiniteLoop stays the answer
+	//! and every caller that asked it first keeps its refusal. Control thread
+	//! only; the audio thread never reads it (the per-route feedback flag is
+	//! what the workers see, set before a route can be scheduled).
+	bool feedbackMode() const { return m_feedbackMode; }
+	//! Enter or leave the submode. Entering creates nothing and changes no
+	//! audio; leaving is what RESTORES normal PDC - it deletes every
+	//! loop-closing send, so the next period's latency pass recomputes a graph
+	//! without them and the cycle rule is back in force. Returns how many
+	//! sends were removed (always 0 entering).
+	int setFeedbackMode(bool enabled);
+
 	inline mix_ch_t numChannels() const
 	{
 		return m_mixerChannels.size();
@@ -578,6 +639,10 @@ private:
 
 	//! VCA / mix groups (#622); control thread only.
 	std::vector<VcaGroup*> m_vcaGroups;
+
+	//! The cycle-permitted submode (#709); control thread only - the flag a
+	//! route was CREATED under is what the workers see (MixerRoute::m_feedback).
+	bool m_feedbackMode = false;
 
 	int m_lastSoloed;
 } ;

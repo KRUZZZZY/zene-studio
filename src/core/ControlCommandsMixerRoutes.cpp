@@ -316,7 +316,13 @@ void registerMixerRouteCommands(ControlRegistry& registry)
 		cmd.verb = QStringLiteral("route_to");
 		cmd.description = QStringLiteral("Make a channel's output go to another channel's input "
 			"(the channel's routing), at unity. Validated against the mixer's own feedback rule "
-			"before anything is written. Reversible: one undo step.");
+			"before anything is written; inside the cycle-permitted submode (feedback.enable) a "
+			"loop-closing routing is instead accepted and the result says so: `feedback` is true, "
+			"`pdc_suspended` is true (compensation is SUSPENDED for that loop) and `warning` "
+			"carries REAPER's feedback warning verbatim - otherwise those three answer false, "
+			"false and \"\". `from`, `to`, `amount`, `pre_fader` and `created` describe the "
+			"routing written and `route` is pdc.report's own element for it. Reversible: one "
+			"undo step.");
 		cmd.argsSchema = objectSchema(
 			{{QStringLiteral("channel"), stringProperty()},
 				{QStringLiteral("to"), stringProperty()},
@@ -329,6 +335,9 @@ void registerMixerRouteCommands(ControlRegistry& registry)
 			{QStringLiteral("pre_fader"), booleanProperty()},
 			{QStringLiteral("created"), booleanProperty()},
 			{QStringLiteral("route"), objectProperty()},
+			{QStringLiteral("feedback"), booleanProperty()},
+			{QStringLiteral("pdc_suspended"), booleanProperty()},
+			{QStringLiteral("warning"), stringProperty()},
 		});
 		cmd.mutating = true;
 		cmd.handler = [](const QJsonObject& args) { return handleRouteWrite(args, false); };
@@ -342,7 +351,13 @@ void registerMixerRouteCommands(ControlRegistry& registry)
 		cmd.verb = QStringLiteral("send_to");
 		cmd.description = QStringLiteral("Create or adjust an auxiliary send from one channel to "
 			"another, with an amount. A send INTO a bus is pre-fader by default, which is the "
-			"engine's own rule. Reversible: one undo step.");
+			"engine's own rule. A loop-closing send is refused unless the cycle-permitted "
+			"submode (feedback.enable) is on; when it is accepted there, the result says so: "
+			"`feedback` true, `pdc_suspended` true (compensation SUSPENDED for that loop) and "
+			"`warning` carrying REAPER's feedback warning verbatim - an ordinary send answers "
+			"false, false and \"\". `from`, `to`, `amount`, `pre_fader` and `created` describe "
+			"the send written and `route` is pdc.report's element for it. Reversible: one undo "
+			"step.");
 		cmd.argsSchema = objectSchema(
 			{{QStringLiteral("channel"), stringProperty()},
 				{QStringLiteral("to"), stringProperty()},
@@ -356,6 +371,9 @@ void registerMixerRouteCommands(ControlRegistry& registry)
 			{QStringLiteral("pre_fader"), booleanProperty()},
 			{QStringLiteral("created"), booleanProperty()},
 			{QStringLiteral("route"), objectProperty()},
+			{QStringLiteral("feedback"), booleanProperty()},
+			{QStringLiteral("pdc_suspended"), booleanProperty()},
+			{QStringLiteral("warning"), stringProperty()},
 		});
 		cmd.mutating = true;
 		cmd.handler = [](const QJsonObject& args) { return handleRouteWrite(args, true); };

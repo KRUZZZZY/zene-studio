@@ -1037,6 +1037,7 @@ src/core/ControlCommandsDevice.cpp
 src/core/ControlCommandsDsp.cpp
 src/core/ControlCommandsExport.cpp
 src/core/ControlCommandsExportPresets.cpp
+src/core/ControlCommandsFeedback.cpp
 src/core/ControlCommandsFreeze.cpp
 src/core/ControlCommandsGroove.cpp
 src/core/ControlCommandsGrooveEdit.cpp

@@ -2422,6 +2422,23 @@ if(PYTHON3_EXECUTABLE AND CONTROL_SUITE_AVAILABLE)
 		ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
 		TIMEOUT 600
 	)
+	# feedback.* (board card #709, cycle-permitted signal-graph submode): the
+	# loop refused in default mode, accepted only after feedback.enable (which
+	# says PDC is suspended and carries REAPER's warning), the suspension read
+	# back at the point of use, disable restoring normal PDC, and the negative
+	# control - the default-mode project's pdc.report, mixer.get_state and
+	# saved bytes equal to the baseline captured on the PRE-CHANGE build,
+	# equal again after disable. The immediate neighbour above is the routing
+	# proof this submode generalizes (its check_feedback_refusal is the same
+	# refusal this test re-asserts as the control).
+	add_test(NAME ControlFeedbackCommands
+		COMMAND ${PYTHON3_EXECUTABLE}
+			${CMAKE_CURRENT_SOURCE_DIR}/control-feedback-commands.py
+			$<TARGET_FILE:zene>)
+	set_tests_properties(ControlFeedbackCommands PROPERTIES
+		ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+		TIMEOUT 600
+	)
 	# bus.* (0.3.0, parallel buses - feature row 29 of
 	# docs/FEATURE-LIST-0.3.0.md): the bus topology driven end to end, with both
 	# A16 answers measured - bus.create is ONE undoable step and bus.remove is

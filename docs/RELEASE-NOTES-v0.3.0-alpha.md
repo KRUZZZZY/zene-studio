@@ -865,8 +865,9 @@ It was MEASURED, class split and all, by
 bash tools/dawproject-proof.sh      # part 2, the A16 histogram probe
 ```
 
-whose own output line is this page's figure verbatim - `MEASURED rows=348 true_inverse=163 snapshot=34
-irreversible=13 not_mutating=138`, with `DECLARED rows=348 entries=345 duplicates=0` on the same run.
+whose own output line is this page's figure verbatim - `MEASURED rows=351 true_inverse=165
+snapshot=34 irreversible=13 not_mutating=139`, with `DECLARED rows=351 entries=348 duplicates=0`
+on the same run.
 (The 334-row figure this block carried until 2026-09-16 was the same probe on a tree without feature
 row 79: the CLAP instrument path adds exactly ONE row, `plugin.host_notes` -
 `src/core/ControlReversibilityTableClapInstrument.cpp` - and the wave-10 integration train re-measured
@@ -882,10 +883,16 @@ the `040/feat-708` lane (board card #708) added the `livecode.*` group's THREE r
 `snapshot` writers in src/core/ControlReversibilityTableLivecode.cpp and one `not_mutating`
 read). The merged figure below is the train's arithmetic from both lanes' independent
 measurements - base 340 rows, +5, +3 = 348 - and the train re-takes it with the probe at the
-merged tip before release (LANE-LOCAL resolved to TRAIN-LOCAL).
+merged tip before release (LANE-LOCAL resolved to TRAIN-LOCAL). The `040/feat-709` lane (board
+card #709) then added the `feedback.*` group's THREE rows in
+src/core/ControlReversibilityTableRouting.cpp - two `true_inverse` writers and one
+`not_mutating` read - taking this block to 351 (LANE-LOCAL: its own build, configured without
+wasm, probed `MEASURED rows=343 ... DECLARED rows=343 entries=343 duplicates=0`, which is this
+figure minus wasm's 8 and exactly matches the class deltas; the merge tip re-takes the reference
+figures with the probe).
 
 <!-- A16-HISTOGRAM-BEGIN
-     measured: rows=348 true_inverse=163 snapshot=34 irreversible=13 not_mutating=138
+     measured: rows=351 true_inverse=165 snapshot=34 irreversible=13 not_mutating=139
      configuration: telemetry.status wasm.load session.get_state
      option telemetry.status rows=2 not_mutating=2
      option wasm.load rows=8 snapshot=3 not_mutating=5
@@ -2943,3 +2950,20 @@ explicit v0 trigger is unchanged by construction - `ScriptEngine.cpp` was not to
 transcript runs an existing-shape `data/scripts/create-pattern.lua` through `script.run` to show it.
 Limits, each stated where it bites: `docs/KNOWN-LIMITATIONS.md` (25 ms poll overshoot, fires only
 while playing, fresh state per fire, coalescing cap).
+
+## Cycle-permitted signal-graph submode (feedback.*, board card #709)
+
+The mixer's acyclicity rule is now OPTIONAL behind an explicit submode. `feedback.enable` permits
+a send to close a loop (`bus -> effect -> same bus`); only inside the submode is such a write
+accepted, and the write's own result - like `feedback.get_state` - states that **PDC is SUSPENDED
+for the loop** (the loop send's compensation is fixed at 0 frames and the alignment solve does not
+traverse it; the rest of the graph keeps its normal, unchanged PDC), carrying REAPER's warning
+verbatim: "feedback routing can in some instances be useful, but can risk damaging audio
+equipment" (REAPER User Guide, main changes 6.66-6.70). `feedback.disable` removes every
+loop-closing send, reports what it removed, restores normal PDC and refuses the loop again - one
+`control.undo` step per verb. Musically: dub-style feedback delays, self-oscillating drones,
+no-input mixing. Proof: `tests/control-feedback-commands.py` (ctest `ControlFeedbackCommands`),
+whose negative control compares a default-mode project's `pdc.report`, `mixer.get_state` and
+saved bytes against a baseline captured on the pre-change build. Limits: `docs/KNOWN-LIMITATIONS.md`
+(no per-send compensation estimate while suspended, no automatic exit, socket-only, the rack's
+derived RoutingGraph is not covered).

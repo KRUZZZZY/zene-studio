@@ -751,6 +751,7 @@ src/core/ControlCommandsDevice.cpp
 src/core/ControlCommandsDsp.cpp
 src/core/ControlCommandsExport.cpp
 src/core/ControlCommandsExportPresets.cpp
+src/core/ControlCommandsFeedback.cpp
 src/core/ControlCommandsFreeze.cpp
 src/core/ControlCommandsGroove.cpp
 src/core/ControlCommandsGrooveEdit.cpp
@@ -1060,6 +1061,7 @@ tests/control-commands-snapshot.py
 tests/control-crash-reporter.py
 tests/control-detect-commands.py
 tests/control-export-settings.py
+tests/control-feedback-commands.py
 tests/control-freeze-commands-transcript.py
 tests/control-golden-audio.py
 tests/control-headless-no-audio-device.py
