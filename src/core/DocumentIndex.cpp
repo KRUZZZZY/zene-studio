@@ -363,16 +363,7 @@ bool closesContentElement( int contentDepth, int depth )
 {
 	return contentDepth >= 0 && depth == contentDepth;
 }
-
-/*! One scan's findings: (begin, length) per removed subtree, in document order,
- *  and the names that produced them in the SAME order, so the two lists stay the
- *  same length. The ranges are disjoint and increasing - the scanner only walks
- *  forward. */
-struct SectionRanges
-{
-	QVector<QPair<qint64, qint64> > ranges;
-	QStringList names;
-};
+} // namespace
 
 /*! Record in \a out the byte range of every section \a skipNames names that is a
  *  direct child of \a contentElementName. Answers false - leaving \a out
@@ -450,8 +441,6 @@ QByteArray removeRanges( const QByteArray & data, const QVector<QPair<qint64, qi
 
 	return reduced;
 }
-
-} // namespace
 
 
 QByteArray reduceDocumentSections( const QByteArray & data,

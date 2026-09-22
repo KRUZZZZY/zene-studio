@@ -153,6 +153,164 @@ LMMS_EXPORT bool writeContainer( const QString& path, const QByteArray& skeleton
 LMMS_EXPORT bool readContainer( const QString& path, const QStringList& keepEntries,
 	std::vector<std::pair<QString, QByteArray>>* entries, QString* error );
 
+/*! True when \a entryName is shaped to be one of this container's section
+ *  entries: the `sections/` namespace (sectionNamespace(), as spelled by
+ *  sectionEntryName()) and nothing outside the character set
+ *  sectionEntryName() can produce.
+ *
+ *  The predicate version of the rule writeContainer() enforces on every write
+ *  (src/core/ProjectContainer.cpp:276-283), exported so the REASSEMBLER checks
+ *  entry names by the SAME rule the writer enforces instead of restating it -
+ *  two spellings of the entry-shape rule could drift apart without either being
+ *  wrong alone, and this module has already paid for that class of bug once
+ *  (the index's `entry` attribute, reconciled on deriveContainerEntries below). */
+LMMS_EXPORT bool isSectionEntryName( const QString& entryName );
+
+/*! Derive a document's container entries: the skeleton, then one entry per
+ *  section.
+ *
+ *  \a document is a project document carrying a `<z:index>` (DocumentIndex.h,
+ *  SPEC-ARCH-4 1.4) - the index this tree writes when a project has a section a
+ *  reader may skip. \a contentElementName names the document's CONTENT element
+ *  (`"song"` for a song project), the parameter reduceDocumentSections()
+ *  already takes: only the document knows which child of the root holds the
+ *  sections, so the caller says. On success \a entries receives pairs in one
+ *  order and only one: skeletonEntryName() first, then
+ *  sectionEntryName( position, name ) per index row in index (document) order -
+ *  the same shape readContainer() returns (see :138-154), so a derived set and
+ *  a read set are interchangeable, and writeContainer() takes the first pair as
+ *  its skeleton argument and the rest as its sections.
+ *
+ *  THE INDEX'S `entry` ATTRIBUTE IS NOT THIS CONTAINER'S KEY. The two naming
+ *  rules are reconciled HERE, because neither header used to cross-reference the
+ *  other. documentIndex() records `entry` as `<name> + ".xml"`
+ *  (src/core/DocumentIndex.cpp:263; the field's contract is DocumentIndex.h
+ *  around its DocumentSection struct), while this container files sections
+ *  under sectionEntryName() - `sections/<position>-<name>`
+ *  (src/core/ProjectContainer.cpp:216-227, validated on every write :276-283).
+ *  The two cannot be swapped, measured by their own contracts rather than by
+ *  preference: `<name>.xml` carries no position, so a document with two
+ *  `<track>` sections - the exact case sectionEntryName() exists for (see
+ *  :112-120) - would make both index rows claim `track.xml`, and writeContainer
+ *  refuses that collision as "a section silently lost" (:285-294); and
+ *  `<name>.xml` lacks the `sections/` namespace every entry must carry
+ *  (:276-283), so a writer fed it would refuse on the first row. So this
+ *  function derives each entry name from the row's POSITION plus its name,
+ *  through sectionEntryName(), and never reads the recorded `entry` attribute;
+ *  the reassembler below regenerates the same expected names from the
+ *  skeleton's index and matches the container's entries against those. The
+ *  attribute rides along inside the skeleton, written and read exactly as
+ *  DocumentIndex defines it - this slice redefines nothing (additive rule).
+ *
+ *  THE ROUND-TRIP GUARANTEE IS RAW BYTE IDENTITY, chosen deliberately against
+ *  the spec's own corrected oracle. SPEC-ARCH-4's S0 correction (:544-557 of
+ *  SPEC-ARCH-4-DOCUMENT-MODEL-DRAFT.md) reclassifies every "byte identity"
+ *  proof as CANONICAL byte identity, measured: five `zene upgrade` runs on one
+ *  unchanged file produced five distinct raw byte streams, because
+ *  QDomElement::save() orders attributes by Qt's per-process-random QHash seed
+ *  - "a raw-cmp gate would be flaky by construction". That flake lives in
+ *  RE-SERIALISATION, and this pair never re-serialises: the deriver copies the
+ *  document's own bytes verbatim (the reduceDocumentSections precedent,
+ *  DocumentIndex.h - "every byte outside the removed ranges is copied verbatim,
+ *  so the answer is exactly \a data minus whole section subtrees") and the
+ *  reassembler splices those same bytes back, so the round trip is compared RAW
+ *  in the test and cannot flake for the reason the spec measured. Parsing here
+ *  is navigation only - byte offsets from QXmlStreamReader - never a re-render;
+ *  neither QDomDocument::save() nor QTextStream is called on this path.
+ *
+ *  HOW THE SPLICE WORKS (why raw identity is possible at all): each section's
+ *  entry carries the section element AND every byte up to the next `<` - the
+ *  whitespace that FOLLOWS it in the document - while the skeleton keeps each
+ *  section's LEADING whitespace. The reassembler inserts the entries, in index
+ *  order, immediately before the content element's close tag; the concatenation
+ *  of `section + trailing whitespace`, in order, is then exactly the original
+ *  interior. What could sit between sections but never travels in an entry - a
+ *  comment or a processing instruction - would break that placement, so this
+ *  function REFUSES a document whose content interior is not whitespace-only
+ *  once the indexed sections are out, rather than promising identity it cannot
+ *  hold. Nothing this tree writes puts one there today; a document that does is
+ *  refused by name instead of mis-assembled.
+ *
+ *  REFUSALS: \a error is set and \a entries is left exactly as passed (no
+ *  half-derived output - the unchanged-bytes shape where bytes are involved) for:
+ *  a null \a entries; an empty \a contentElementName; a document that is not
+ *  well-formed XML; a document with no content element; a document with no
+ *  `<z:index>`; an index carrying a `<z:section>` with no name
+ *  (parseDocumentIndex() silently drops that row by contract - see its
+ *  declaration - but the deriver cannot, because the row-count-to-document
+ *  correspondence IS the split's cross-check, and a dropped row silently shifts
+ *  every later position); an index that names no section; a section name
+ *  sectionEntryName() cannot file; a document scanSectionRanges() cannot follow
+ *  to its end; an index and a document that disagree about which section sits
+ *  where (count or order); an interior that still carries a child the index
+ *  does not name; and a section whose end cannot be bounded (defensive - a
+ *  well-formed document cannot reach it).
+ *
+ *  HONEST LIMITS, stated because they are easy to assume away: the document is
+ *  parsed twice (QDomDocument to navigate, QXmlStreamReader to slice) - two
+ *  passes over bytes that may be large, accepted because this runs on save, not
+ *  on the audio thread; the index's digests are NOT verified against the entry
+ *  bytes (the index rides along verbatim; sectionDigest() is a reader's
+ *  integrity check to apply, not this function's job); and a section name
+ *  outside sectionEntryName()'s character set (a non-ASCII element name, say)
+ *  is refused, not escaped - an entry name this module cannot round-trip is a
+ *  name the container would silently lose. */
+LMMS_EXPORT bool deriveContainerEntries( const QByteArray& document,
+	const QString& contentElementName,
+	std::vector<std::pair<QString, QByteArray>>* entries, QString* error );
+
+/*! Rebuild a document from a container's entries - the inverse of
+ *  deriveContainerEntries(), and the step this tree could not do at all when
+ *  ProjectContainer shipped: "--dump does not read one... this build cannot yet
+ *  reassemble one from a container's entries" (src/core/main.cpp:624-628).
+ *
+ *  \a entries is the pair list readContainer() returns - the container's own
+ *  central-directory order, skeleton not special-cased out (:138-154).
+ *  \a contentElementName means what it means to the deriver: the content
+ *  element's own tag name (`"song"`).
+ *
+ *  THE ORDER OF THE PAIRS IS DELIBERATELY NOT CONSULTED. The position lives
+ *  inside each entry's NAME (sectionEntryName embeds it,
+ *  src/core/ProjectContainer.cpp:216-227), so the expected names are
+ *  regenerated from the skeleton's `<z:index>` rows and every entry is matched
+ *  BY NAME. A shuffled pair list reassembles to the same bytes; a list whose
+ *  POSITIONS disagree with the index - names swapped, shifted, invented, or
+ *  duplicated - is refused, because the position is what maps an entry back to
+ *  an index row and a wrong position is a section filed where another belongs.
+ *  The skeleton is likewise found by name rather than assumed to be first
+ *  (readContainer's contract promises the container's own order, not this
+ *  function's convenience).
+ *
+ *  On success \a document receives the reassembled bytes: the skeleton with the
+ *  section entries spliced in before the content element's close tag, in index
+ *  order - the ORIGINAL bytes, raw. The guarantee, and why it is raw rather
+ *  than merely canonical, is deriveContainerEntries' contract above.
+ *
+ *  REFUSALS: \a error is set and \a document is left exactly as passed (no
+ *  half-reassembled output) for: a null destination; no entries; no entry named
+ *  skeletonEntryName(); two entries sharing a name (a container that lost or
+ *  doubled an entry, refused rather than guessed between - the write side's own
+ *  rule, :285-294); an entry that is neither the skeleton nor one
+ *  isSectionEntryName() accepts (a foreign archive, or a name writeContainer
+ *  would never have written); an entry the index does not name (it would be
+ *  dropped); a section the index names that the entries lack (it would be a
+ *  hole); a skeleton that is not well-formed XML; a skeleton with no content
+ *  element; a skeleton whose `<z:index>` is absent, empty, or has a row whose
+ *  name sectionEntryName() cannot file (no trustworthy rows to place sections
+ *  against - a nameless row the deriver refused at the source reappears here as
+ *  a shifted expected-name set, refused by the missing/unexpected pair); and a
+ *  content interior that is not whitespace-only (only whitespace can sit where
+ *  the deriver left the gaps).
+ *
+ *  NOT A VERIFIER: the index's digests are not checked against the entry bytes
+ *  here, same as the deriver. This function answers "can these entries be
+ *  reassembled into a document byte-for-byte"; "are these the entries the index
+ *  recorded" is a separate question with a separate answer (sectionDigest()),
+ *  and conflating them would make a digest mismatch look like a parse failure. */
+LMMS_EXPORT bool reassembleContainerDocument(
+	const std::vector<std::pair<QString, QByteArray>>& entries,
+	const QString& contentElementName, QByteArray* document, QString* error );
+
 } // namespace projectcontainer
 
 } // namespace lmms

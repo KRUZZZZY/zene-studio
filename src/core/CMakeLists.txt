@@ -821,6 +821,15 @@ set(LMMS_SRCS
 	# of a project's bytes is decided by CONTENT and never by the extension
 	# (SPEC-ARCH-4 risk 5), because the extension is chosen by configuration.
 	core/ProjectContainer.cpp
+	# The `.mmpz` v2 document-level pair (ARCH-4 S2c part 2): the deriver that
+	# turns a project document carrying <z:index> into the container's entries,
+	# and the reassembler that builds the document back from them - the two
+	# halves writeContainer/readContainer shipped without. A separate file from
+	# ProjectContainer.cpp because that module's charter is "moves entries, does
+	# not parse" (ProjectContainer.h) and this is the parsing half of the bridge;
+	# it reuses DocumentIndex's measured range scanner and the container's entry
+	# naming rules across their exported contracts rather than restating either.
+	core/ProjectContainerEntries.cpp
 	core/ModulationLayer.cpp
 	core/TempoSyncKnobModel.cpp
 	core/ThreadPool.cpp

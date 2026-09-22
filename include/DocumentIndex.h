@@ -30,6 +30,7 @@
 #include <QByteArray>
 #include <QDomDocument>
 #include <QDomElement>
+#include <QPair>
 #include <QString>
 #include <QStringList>
 #include <QVector>
@@ -245,6 +246,42 @@ LMMS_EXPORT DocumentIndex parseDocumentIndex( const QDomElement & root );
 LMMS_EXPORT QByteArray reduceDocumentSections( const QByteArray & data,
 	const QString & contentElementName, const QStringList & skipNames,
 	QStringList * skippedNames = nullptr );
+
+/*! One scan's findings: (begin, length) per section subtree, in document order,
+ *  and the names that produced them in the SAME order, so the two lists stay the
+ *  same length. The ranges are disjoint and increasing - the scanner only walks
+ *  forward.
+ *
+ *  This is reduceDocumentSections()'s own scanner made VISIBLE, not a second
+ *  one: the `.mmpz` v2 deriver (ProjectContainer.h, deriveContainerEntries)
+ *  cuts the very ranges this scan finds, and a second scanner written beside it
+ *  would be a second opinion about where a section begins - two rules that could
+ *  drift apart without either being wrong alone. The definitions, the helpers
+ *  they rest on, and the three MEASURED properties the offsets depend on stay
+ *  in src/core/DocumentIndex.cpp and on reduceDocumentSections() above; this
+ *  declaration is the reuse, not a new contract. */
+struct SectionRanges
+{
+	QVector<QPair<qint64, qint64> > ranges;
+	QStringList names;
+};
+
+/*! Record in \a out the byte range of every section \a skipNames names that is
+ *  a DIRECT child of the \a contentElementName element. Answers false - leaving
+ *  \a out meaningless - when the document cannot be followed to its end or a
+ *  section's begin offset cannot be recovered: the two refusals
+ *  reduceDocumentSections() turns into unchanged bytes, and a caller that cuts
+ *  ranges itself must treat them the same way. */
+LMMS_EXPORT bool scanSectionRanges( const QByteArray & data,
+	const QString & contentElementName, const QStringList & skipNames,
+	SectionRanges & out );
+
+/*! \a data with every range in \a ranges cut out. Every byte between the ranges
+ *  is copied verbatim, so the answer is the input minus exactly those subtrees
+ *  - the property reduceDocumentSections() is built on, factored out so the
+ *  deriver removes the same ranges the same way rather than re-deriving it. */
+LMMS_EXPORT QByteArray removeRanges( const QByteArray & data,
+	const QVector<QPair<qint64, qint64> > & ranges );
 
 } // namespace lmms
 

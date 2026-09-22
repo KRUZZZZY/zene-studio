@@ -251,6 +251,24 @@ set(LMMS_TESTS
 	# subset read keeps the skeleton and the kept entries in the container's
 	# order, while the entries it did not ask for were still read.
 	src/core/ProjectContainerTest.cpp
+	# The `.mmpz` v2 container (ARCH-4 S2c part 2): the document-level deriver
+	# and reassembler that close the gap part 1 shipped with - writeContainer and
+	# readContainer had zero production callers because nothing could turn a
+	# document into entries or entries back into a document (src/core/main.cpp
+	# said so verbatim in its --dump refusal). Pinned here: the RAW byte-identity
+	# round trip this pair chose deliberately over the spec's corrected canonical
+	# oracle (SPEC-ARCH-4 :544-557 - a raw cmp over a re-serialising path would
+	# flake; this path never re-serialises), proven over an indented and a compact
+	# document; the entry-naming reconciliation (the index's `entry` =
+	# `name.xml` is NOT the container's key - sectionEntryName's position-first
+	# name is, and the fixtures write `name.xml` so a deriver that keyed on it
+	# would be caught); the deriver's refusals (no <z:index>, a nameless index
+	# row whose dropped position would shift every later one, a section name the
+	# container cannot file, a child the index does not name); the reassembler's
+	# (missing skeleton, colliding entries, positions that disagree with the
+	# index - with the pair ORDER shown free, position living inside the name);
+	# and the integration pair through the real writeContainer/readContainer.
+	src/core/ProjectContainerEntriesTest.cpp
 	# The export dither (TPDF) and the explicit SRC quality: the statistical
 	# proof of the dither, the byte-level off-by-default proof, the converter
 	# ratio convention, and the quality reaching the resampler.

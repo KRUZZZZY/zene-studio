@@ -227,6 +227,16 @@ QString sectionEntryName( int index, const QString& sectionName )
 }
 
 
+bool isSectionEntryName( const QString& entryName )
+{
+	// Exactly the predicate writeContainer() applies on every write (:276-283),
+	// spelled once so the REASSEMBLER can check entry names by the rule the
+	// writer enforces rather than by a second copy of it that could drift.
+	return entryName.startsWith( sectionNamespace() )
+		&& isUsableName( entryName, true );
+}
+
+
 bool writeContainer( const QString& path, const QByteArray& skeleton,
 	const std::vector<std::pair<QString, QByteArray>>& sections, QString* error )
 {
