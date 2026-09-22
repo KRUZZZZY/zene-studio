@@ -4,7 +4,7 @@ src/core/ScriptBindings.cpp	1174
 include/AudioPorts.h	992
 plugins/Vst3Effect/Vst3Host.cpp	891
 src/core/ScriptEngine.cpp	880
-include/ControlRegistryGroups.h	714
+include/ControlRegistryGroups.h	725
 src/wasm/WasmSandbox.cpp	597
 tests/zene-api-boundary.py	594
 tests/control-socket-path-safety.py	574
@@ -12,7 +12,7 @@ src/core/ProjectContainerEntries.cpp	573
 tests/control-retro-capture.py	569
 src/core/AudioPortsModel.cpp	549
 tests/control-stable-ids-slice2.py	549
-include/ControlReversibility.h	536
+include/ControlReversibility.h	544
 src/gui/PinConnector.cpp	529
 tests/control-undo-structural.py	526
 src/core/ControlReversibilityTablePassive.cpp	518

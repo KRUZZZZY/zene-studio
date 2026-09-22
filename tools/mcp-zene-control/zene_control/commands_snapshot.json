@@ -6714,6 +6714,160 @@
         "required": [],
         "type": "object"
       },
+      "description": "Everything the schedule clock holds: every schedule (id, hook, budget, source bytes) with its fire/error/budget-exceeded counters and last typed failure, the aggregate counters (fires, errors, budget_exceeded, busy_skips, regrids, coalesced), and the transport observation the grid is working from (poll_ms, position, next bar/beat ticks). Reads only - it schedules nothing and fires nothing.",
+      "group": "livecode",
+      "id": "livecode.get_state",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "count": {
+            "maximum": 2147483647,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "counters": {
+            "type": "object"
+          },
+          "next_bar_ticks": {
+            "type": "integer"
+          },
+          "next_beat_ticks": {
+            "type": "integer"
+          },
+          "playing": {
+            "type": "boolean"
+          },
+          "poll_ms": {
+            "maximum": 1000000,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "position_ticks": {
+            "type": "integer"
+          },
+          "schedules": {
+            "type": "array"
+          },
+          "ticks_per_bar": {
+            "type": "integer"
+          },
+          "ticks_per_beat": {
+            "type": "integer"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "budget": {
+            "maximum": 2147483647,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "hook": {
+            "enum": [
+              "bar",
+              "beat",
+              "transport"
+            ],
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "description": "Put a Lua script on the schedule clock: from then on the engine evaluates it on its own - 'hook' = 'bar' (default), 'beat' or 'transport' - with NO re-trigger, exactly as the scheduled hook fires (board card #708; docs/LUA-SCRIPTING.md). Exactly one of 'path' (absolute) and 'source', like script.run; the source is compiled once (parsed, not run) and a syntax error is refused HERE, not on the first fire. 'budget' bounds each fire's instructions (0 = inherit the engine's). Scheduling an id that exists REPLACES its script - the live edit - and keeps its counters. Reversible: one control.undo restores the previous definition, or removes the schedule if there was none.",
+      "group": "livecode",
+      "id": "livecode.schedule",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "budget": {
+            "maximum": 2147483647,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "hook": {
+            "enum": [
+              "bar",
+              "beat",
+              "transport"
+            ],
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "replaced": {
+            "type": "boolean"
+          },
+          "scheduled": {
+            "type": "boolean"
+          },
+          "source_bytes": {
+            "type": "integer"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "type": "object"
+      },
+      "description": "Take a script off the schedule clock; the clock stops evaluating that id on its hook. Reversible: one control.undo rearms the same id with the definition this call removed (its fire counters start over - a snapshot restores the definition, not the history).",
+      "group": "livecode",
+      "id": "livecode.unschedule",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "unscheduled": {
+            "type": "boolean"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {},
+        "required": [],
+        "type": "object"
+      },
       "description": "The last auto-mastering run this instance performed: the report the run itself produced (one measured row per candidate - LUFS-I, the loudest 3 s window, measured dBTP, crest, the residual against that candidate's target and the two verdicts - plus the source render's own readings and the counted number of project renders), and the live state of the files it wrote, hashed now. `has_run` is false and `last_run` is null before the first run. `session_empty` is the fact mastering.run refuses on. Read-only.",
       "group": "mastering",
       "id": "mastering.get_state",

@@ -51,6 +51,13 @@ binaries.
    caller in the tree** (`grep -rn audioThreadTick src include` → definition and
    declaration only), and the only production caller of `processCommands()` is
    the headless action (`src/core/main.cpp:799`).
+   *Updated 2026-09-22, board card #708:* the trigger gap is now HALF closed —
+   `src/core/ScriptClock.cpp` evaluates a script on bar/beat boundaries and
+   play/stop edges, reached from the CONTROL thread through `runString` (the
+   explicit path, unchanged), so the engine owns a schedule hook. What stands
+   from the sentence above: no audio-thread trigger (`audioThreadTick()` keeps
+   having no caller — the clock never runs Lua on the audio thread), no
+   persistent state across fires, and no script-defined device.
 
 ## 2. What landed
 
@@ -138,10 +145,12 @@ state:
   restrictions, that a failing script does not take the DAW down, and the
   console.
 * **What is explicitly not promised:** surface stability, script-defined
-  devices, audio-thread access or audio-buffer DSP, event/idle triggers, GUI
-  scripting, package discovery, an in-GUI console pane, and an on-disk
-  deprecation ledger (the spec's "v0 fields are never removed" is intent, not
-  implementation — the policy says so).
+  devices, audio-thread access or audio-buffer DSP, an audio-thread trigger or
+  wall-clock idle evaluation (board card #708's CONTROL-thread schedule clock
+  — bar, beat, transport edges — is what is promised instead, bounded as
+  `docs/KNOWN-LIMITATIONS.md` states), GUI scripting, package discovery, an
+  in-GUI console pane, and an on-disk deprecation ledger (the spec's "v0 fields
+  are never removed" is intent, not implementation — the policy says so).
 * **How to bump:** one file (`CMakeLists.txt`), one edit; the tests fail if the
   build and the reported version disagree.
 

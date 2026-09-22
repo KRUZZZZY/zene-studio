@@ -193,6 +193,17 @@ LMMS_EXPORT void registerVcaEditCommands(ControlRegistry& registry);
  *  to build one from, and clock.get_state reports that as `mtc: "absent"`. */
 LMMS_EXPORT void registerClockCommands(ControlRegistry& registry);
 
+/*! livecode.schedule / livecode.unschedule / livecode.get_state - SCHEDULED Lua
+ *  evaluation (board card #708): a script loaded once and evaluated by the
+ *  engine on its own - every bar, every beat, or each transport edge - with
+ *  nothing re-triggering it, under a per-fire instruction budget so a runaway
+ *  hits a bound instead of a stall. `livecode` because `clock` is taken (the
+ *  MIDI clock group above) and `script.clock` would name a sub-verb of a group
+ *  whose verbs run scripts NOW; the registry derives the group from the first
+ *  dot-delimited segment, so these three ids are their own group. The engine
+ *  half is include/ScriptClock.h (the grid, the poll and the bounded fire). */
+LMMS_EXPORT void registerLivecodeCommands(ControlRegistry& registry);
+
 
 //! The retrospective MIDI capture surface (owner item 14, docs/MIDI-RETRO-CAPTURE.md),
 //! and the two halves of the chain-preset group (OWNER-31 item 2). Moved here from

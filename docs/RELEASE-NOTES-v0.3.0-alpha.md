@@ -849,7 +849,7 @@ than one plugin's feature, and the part that makes it reachable at all:
 
 ## The A16 contract table, and its histogram
 
-**The table holds 340 rows - 158 `true_inverse`, 32 `snapshot`, 13 `irreversible`, 137 `not_mutating` -
+**The table holds 343 rows - 158 `true_inverse`, 34 `snapshot`, 13 `irreversible`, 138 `not_mutating` -
 and this page states that figure ONCE, for the REFERENCE configuration it is measured in** (telemetry
 client in, wasmtime sandbox in, session data layer in, offline stem engine out; *corrected 2026-09-19,
 task 691 — this read "the configuration the release ships", which is not the same thing: the wasmtime C
@@ -865,23 +865,27 @@ It was MEASURED, class split and all, by
 bash tools/dawproject-proof.sh      # part 2, the A16 histogram probe
 ```
 
-whose own output line is this page's figure verbatim - `MEASURED rows=345 true_inverse=163 snapshot=32
-irreversible=13 not_mutating=137`, with `DECLARED rows=345 entries=345 duplicates=0` on the same run.
+whose own output line is this page's figure verbatim - `MEASURED rows=348 true_inverse=163 snapshot=34
+irreversible=13 not_mutating=138`, with `DECLARED rows=348 entries=345 duplicates=0` on the same run.
 (The 334-row figure this block carried until 2026-09-16 was the same probe on a tree without feature
 row 79: the CLAP instrument path adds exactly ONE row, `plugin.host_notes` -
 `src/core/ControlReversibilityTableClapInstrument.cpp` - and the wave-10 integration train re-measured
-it here rather than carrying the lane's arithmetic, which made the figure 335. The 340 rows above are
+it here rather than carrying the lane's arithmetic, which made the figure 335. The 340 rows were
 those 335 plus feature row 80's FIVE rows - `src/core/ControlReversibilityTableOutOfProcess.cpp`: two
 `not_mutating` reads and the three `irreversible` writers of the `oop.*` group. The lane moved this
 block to the number its own tree measures and the wave-11 merge train RE-MEASURED it at the merged tip
 with the command above: the printed line is `MEASURED rows=340 true_inverse=158 snapshot=32
-irreversible=13 not_mutating=137`, identical to the block's own line, so the re-take changed no digit.
-The `040/feat-706` lane (board card #706) then added the `sample.*` group's FIVE `true_inverse` rows
-and moved the block to the number its own tree measures - LANE-LOCAL, the merge tip must re-run the
-probe at the merged tip (the lane's section at the end of this page records it).
+irreversible=13 not_mutating=137`, identical to the block's own line at the time, so that
+re-take changed no digit. TWO lanes then moved the block, each by its own registered rows: the
+`040/feat-706` lane (board card #706) added the `sample.*` group's FIVE `true_inverse` rows, and
+the `040/feat-708` lane (board card #708) added the `livecode.*` group's THREE rows (two
+`snapshot` writers in src/core/ControlReversibilityTableLivecode.cpp and one `not_mutating`
+read). The merged figure below is the train's arithmetic from both lanes' independent
+measurements - base 340 rows, +5, +3 = 348 - and the train re-takes it with the probe at the
+merged tip before release (LANE-LOCAL resolved to TRAIN-LOCAL).
 
 <!-- A16-HISTOGRAM-BEGIN
-     measured: rows=345 true_inverse=163 snapshot=32 irreversible=13 not_mutating=137
+     measured: rows=348 true_inverse=163 snapshot=34 irreversible=13 not_mutating=138
      configuration: telemetry.status wasm.load session.get_state
      option telemetry.status rows=2 not_mutating=2
      option wasm.load rows=8 snapshot=3 not_mutating=5
@@ -2921,3 +2925,21 @@ a result would be a deleted test, which the file's own header says.
   rows, so the A16-HISTOGRAM figure above was moved by this tree's own measurement to
   `rows=345 true_inverse=163` (`src/core/ControlReversibilityTableSample.cpp`); the wave's merge
   train re-runs the probe at the merged tip before the release notes are final.
+
+## Scheduled Lua evaluation - the schedule clock (livecode.*, board card #708)
+
+The Lua engine's documented gap is closed: a script no longer runs only on an explicit trigger
+(`SPEC-lua-api-v0.md` line 78, OQ-1). `livecode.schedule` puts a source on the clock under `hook:
+"bar" | "beat" | "transport"`, compile-checked once (parsed, never executed) and capped at 64 KiB;
+from then on the engine evaluates it on its own - the boundary crossing, or the play/stop edge -
+with **nothing re-triggering it**, through the same `ScriptEngine::runString` path `script.run`
+uses, on the worker thread, apply side pumped on the control thread exactly as before. Each fire is
+budget-bounded (`budget: 0` inherits the engine's instruction budget), so a runaway script hits
+`instruction budget exceeded` while the audio keeps running - the transcript's negative control reads
+the play head advancing across the overrun and the clock still firing the next bar. The control group
+is `livecode.*` because `clock.*` is taken (the MIDI clock group); its two writers are `snapshot`
+rows and its read `not_mutating`, and `control.undo` removes a schedule or rearms one taken off. The
+explicit v0 trigger is unchanged by construction - `ScriptEngine.cpp` was not touched - and the
+transcript runs an existing-shape `data/scripts/create-pattern.lua` through `script.run` to show it.
+Limits, each stated where it bites: `docs/KNOWN-LIMITATIONS.md` (25 ms poll overshoot, fires only
+while playing, fresh state per fire, coalescing cap).

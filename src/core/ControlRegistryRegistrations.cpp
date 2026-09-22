@@ -128,6 +128,10 @@ void registerControlCommands(ControlRegistry& registry)
 	// configuration.
 	registerGrooveCommands(registry);
 	registerScriptCommands(registry);
+	// board card #708: the schedule clock beside the script group - the same
+	// ScriptEngine, reached through hooks (bar/beat/transport) instead of only
+	// an explicit run.
+	registerLivecodeCommands(registry);
 #ifdef LMMS_HAVE_SESSION_VIEW
 	// The session.* group travels with the Session View data layer: without
 	// LMMS_HAVE_SESSION_VIEW there is no grid to address, and the registry

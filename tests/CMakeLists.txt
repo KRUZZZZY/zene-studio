@@ -481,6 +481,9 @@ set(LMMS_TESTS
 	# own buffer), and checks the version surface zene.apiSurface() reports.
 	src/core/ScriptDawBindingTest.cpp
 	src/core/ScriptEngineTest.cpp
+	# board card #708: the schedule clock's PURE half - the boundary grid, the
+	# registry's typed refusals and the livecode.* A16 rows, no audio device.
+	src/core/ScriptClockTest.cpp
 	# CODE-6: the Lua MEMORY budget beside the instruction budget. The same
 	# script completes under the shipping cap and is refused, typed, under one
 	# it cannot fit in - the pair is the proof, because a refusal on its own is
@@ -3403,4 +3406,31 @@ if(PYTHON3_EXECUTABLE)
 	)
 else()
 	message(STATUS "python3 not found: ControlMcpGroupCoverage is not registered")
+endif()
+
+# board card #708: the livecode.* transcript - the registered proof that a
+# script scheduled ONCE edits a mixer value on every bar with no re-trigger,
+# that the EXPLICIT v0 trigger still runs an existing-shape script unchanged,
+# and that a runaway hits its typed instruction budget while the audio keeps
+# running. This is this lane's own block, appended as a whole: the named
+# insertion anchor for this file (the ScriptEngineTest entry in set(LMMS_TESTS)
+# above) cannot hold an add_test() call.
+if(PYTHON3_EXECUTABLE)
+	add_test(NAME ControlLivecodeCommands
+		COMMAND ${PYTHON3_EXECUTABLE}
+			${CMAKE_CURRENT_SOURCE_DIR}/control-livecode-commands.py
+			$<TARGET_FILE:zene>
+			${CMAKE_SOURCE_DIR}/data/scripts/create-pattern.lua
+	)
+	set_tests_properties(ControlLivecodeCommands PROPERTIES
+		ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+		TIMEOUT 600
+	)
+	# The grid test opens no audio device but builds a QApplication: offscreen,
+	# the same property the engine QTests carry.
+	set_tests_properties(ScriptClockTest PROPERTIES
+		ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+	)
+else()
+	message(STATUS "python3 not found: ControlLivecodeCommands is not registered")
 endif()

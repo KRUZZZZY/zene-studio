@@ -494,9 +494,11 @@ private slots:
 		//   + 7 (feature row 19, board task #651): the controller.* ids -
 		//   surface_state, soft_takeover, feedback, template_save,
 		//   template_list, template_apply, template_delete.
-		// A MEASUREMENT, moved with this tree's registration and not run here:
-		// the merge tip must re-measure it. LANE-LOCAL: +5 = sample.* (#706), live 337 ON.
-		QCOMPARE(registry->commandCount(), 85 + 7 + 5 + 5 + 5);
+		// A MEASUREMENT, re-taken by the merge train: base 85+7+5+5 (=102), plus
+		// sample.* (#706, +5) plus livecode.* (#708, +3) = 110. Both lane deltas
+		// independently corroborate the base (each wrote the same 85+7+5+5 prefix).
+		// The train re-runs this test at the merged tip; a mismatch is a finding.
+		QCOMPARE(registry->commandCount(), 85 + 7 + 5 + 5 + 5 + 3);
 	}
 #endif
 };

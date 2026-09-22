@@ -1674,3 +1674,37 @@ float pipeline keeps values past 0 dBFS); each step's undo bound is the ENGINE's
 steps, 16 MiB)` of retained checkpoints (`docs/UNDO-BOUNDS.md`), against which a baked buffer's
 serialized bytes count — not a private stack; and the deferred verbs register **no id at all** in this
 slice: noise reduction, pitch/tempo change and chirp are named here as not started, not stubbed.
+
+## Scheduled Lua evaluation (livecode.*) - board card #708 - 2026-09-22
+
+The schedule clock (`livecode.schedule` / `livecode.unschedule` / `livecode.get_state`,
+`src/core/ScriptClock.cpp`) evaluates a script on bar, beat or transport boundaries. Its bounds, each
+measured by `ScriptClockTest` or the `ControlLivecodeCommands` transcript:
+
+- **Fires up to one 25 ms poll after its boundary** (`ScriptClock::PollMs`), not sample-accurately:
+  the transport is OBSERVED from the control thread (the accessors `transport.get_state` already
+  reads), because the spec puts every Lua evaluation off the audio thread (SPEC-lua-api-v0 section 4)
+  and the audio thread may not post events. The bar-line check in the transcript bounds the overshoot
+  at 12 ticks.
+- **Bar and beat hooks fire only while the transport PLAYS; the transport hook fires play/stop edges.**
+  There is no wall-clock "idle" evaluation while stopped - a stopped clock is frozen (the transcript
+  asserts it), and there is no seek event: a seek or meter change silently re-anchors the grid
+  (`regrids` in `livecode.get_state`), and a loop wrap is a regrid, not an edge.
+- **A fresh `lua_State` per fire** - the v0 invariant `ScriptEngine` has always kept - so globals do
+  NOT survive between bars: no Lua-side counter or pattern state persists across fires. "Loaded once"
+  means the SOURCE is captured and compile-checked once (`setSchedule`'s parse) and re-evaluated per
+  boundary; a syntax error is refused at schedule time, never silently per bar.
+- **The source is snapshotted at schedule time**: editing the file behind a `path` changes nothing
+  until `livecode.schedule` runs again for that id (the live edit is re-scheduling it - replace in
+  place, one slot).
+- **Every fire is budget-bounded** (per-fire instruction budget; `budget: 0` inherits the engine's
+  5,000,000): a runaway hits `instruction budget exceeded`, recorded typed in `last_error` /
+  `budget_exceeded` - and a schedule that ALWAYS overruns still costs its control thread that budget
+  on every bar (bounded, not free). The audio thread is never on this path, which the transcript's
+  negative control proves by reading the play head advancing across the overrun.
+- **More than four crossings in one observation coalesce** (`ScriptClockGrid::CrossCap`): a forward
+  seek or a control thread blocked inside a long `script.run` re-anchors the grid and counts the
+  dropped bars as `coalesced` rather than firing stale bars late.
+- **Beat means the quarter note** (four to a bar, `ticksPerBar / 4`): odd-metre eighth-note beats are
+  not separately detected. No scheduled device definitions exist - a persistent Lua interpreter that
+  defines one stays OQ-1 (`docs/LUA-SCRIPT-DEVICES-DESIGN.md`).

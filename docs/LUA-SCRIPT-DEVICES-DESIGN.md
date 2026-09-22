@@ -63,6 +63,16 @@ which is exactly the deferred open question OQ-1 in `SPEC-lua-api-v0.md` §11
 cannot be designed before it, and folding it in silently would pre-empt a v1
 decision.
 
+*(Updated 2026-09-22, board card #708: `runFile`/`runString` are still the only
+entry points into a script — but the SCHEDULE CLOCK now reaches them without a
+human or a control-surface call per run: `src/core/ScriptClock.cpp` observes the
+transport on the control thread and calls `runString` on every bar, beat or
+play/stop edge (`livecode.schedule`). OQ-1's scheduling half is therefore
+answered for those three hooks; its DEVICE half — a persistent interpreter a
+script defines devices inside — stays open, as does every claim above about the
+audio thread: `audioThreadTick()` still has no caller, and nothing changed in
+mutation's single path (§2.3).)*
+
 ### 2.3 Mutation already has exactly one path, and it is the right one
 
 Every engine change a script can request is a `ScriptCommand`
