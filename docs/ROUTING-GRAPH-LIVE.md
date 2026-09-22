@@ -350,6 +350,10 @@ bash tests/run-all-gates.sh --no-mutation              # -> exit 3 = PASS-WITH-S
                                                         #     5 mutation not run by design)
 ```
 
-Evidence: `docs/mc-logs/gates-slice01-dev.txt`,
-`docs/mc-logs/ctest-slice01.txt`, `docs/mc-logs/schedule-test.txt`,
-`docs/mc-logs/rt-safety-slice01.txt`.
+Evidence: `docs/mc-logs/gates-slice01-dev.md`,
+`docs/mc-logs/ctest-slice01.md`, `docs/mc-logs/schedule-test.md`,
+`docs/mc-logs/rt-safety-slice01.md` (Gate 12 clean + the positive control),
+`docs/mc-logs/mutation-gate-slice01.md` (Gate 5) and
+`docs/mc-logs/postcommit-static-gates.md` (the static gates re-run on the
+committed tree). The evidence files carry `.md` because Gate 6's docs class
+allows `*.md` only — raw `.txt` logs read as undeclared changed files.
