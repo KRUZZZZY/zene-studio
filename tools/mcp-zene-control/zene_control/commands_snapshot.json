@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-09-21T19:34:19Z",
+  "captured_at": "2026-09-22T14:50:49Z",
   "commands": [
     {
       "args_schema": {
@@ -13365,6 +13365,251 @@
           "clip": {
             "type": "string"
           },
+          "gain_db": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "clip",
+          "gain_db"
+        ],
+        "type": "object"
+      },
+      "description": "Bake a gain change into a sample clip's source: every frame multiplied by the requested dB, swapped in through SampleClip::setSampleBuffer as a transformed COPY - the previous buffer is never modified, so a second clip sharing it keeps its audio, and one control.undo re-loads the previous source. No limiter is applied (the float pipeline keeps values past 0 dBFS); sample.normalize is the peak-targeted bake and clip.set_gain the non-baking alternative. Socket-only in this release (docs/KNOWN-LIMITATIONS.md).",
+      "group": "sample",
+      "id": "sample.amplify",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "clip": {
+            "type": "string"
+          },
+          "frames": {
+            "type": "integer"
+          },
+          "gain_db": {
+            "type": "number"
+          },
+          "sample_rate": {
+            "type": "integer"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "clip": {
+            "type": "string"
+          },
+          "direction": {
+            "enum": [
+              "in",
+              "out"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "clip",
+          "direction"
+        ],
+        "type": "object"
+      },
+      "description": "Bake a LINEAR fade into a sample clip's source: direction=in ramps 0 -> unity across the whole source, direction=out ramps unity -> 0, both channels together. The result replaces the source through SampleClip::setSampleBuffer as a transformed COPY and one control.undo re-loads the previous source. This release has no range/selection model, so a fade always spans the whole clip source and has only the linear curve; clip.set_fade remains the non-baking window fade. Socket-only (docs/KNOWN-LIMITATIONS.md).",
+      "group": "sample",
+      "id": "sample.fade",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "clip": {
+            "type": "string"
+          },
+          "direction": {
+            "type": "string"
+          },
+          "frames": {
+            "type": "integer"
+          },
+          "sample_rate": {
+            "type": "integer"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "amplitude": {
+            "type": "number"
+          },
+          "frequency": {
+            "type": "number"
+          },
+          "kind": {
+            "enum": [
+              "tone",
+              "white",
+              "pink",
+              "silence"
+            ],
+            "type": "string"
+          },
+          "length": {
+            "maximum": 1919808,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "position": {
+            "maximum": 1919808,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "track": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "track",
+          "position",
+          "length",
+          "kind"
+        ],
+        "type": "object"
+      },
+      "description": "Generate a buffer (kind: tone, white noise, pink noise or silence) into a NEW audio clip on a sample track, routed through the non-destructive clip model: Track::createClip makes the clip and SampleClip::setSampleBuffer hands it the source, so an existing clip's audio is never overwritten (decision design/specs/DECISION-706-DESTRUCTION-MODEL.md). One journal checkpoint before the clip exists: one control.undo removes clip and buffer together. length is in ticks, position the clip's start; frequency (Hz) and amplitude (0..1) reach the tone and noise kinds - silence ignores them. Socket-only in this release: no interface reaches this verb (docs/KNOWN-LIMITATIONS.md).",
+      "group": "sample",
+      "id": "sample.generate",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "clip": {
+            "type": "string"
+          },
+          "frames": {
+            "type": "integer"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "length": {
+            "type": "integer"
+          },
+          "position": {
+            "type": "integer"
+          },
+          "sample_rate": {
+            "type": "integer"
+          },
+          "track": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "clip": {
+            "type": "string"
+          },
+          "target_db": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "clip"
+        ],
+        "type": "object"
+      },
+      "description": "Bake a level change that puts the sample clip's peak at target_dbFS (default 0): the peak across both channels is measured, one scale factor is applied to every frame, and the result replaces the source through SampleClip::setSampleBuffer as a transformed COPY. A silent source is REFUSED with the measured peak - there is no scale factor to apply - and one control.undo re-loads the previous source. Socket-only in this release (docs/KNOWN-LIMITATIONS.md).",
+      "group": "sample",
+      "id": "sample.normalize",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "applied_gain_db": {
+            "type": "number"
+          },
+          "clip": {
+            "type": "string"
+          },
+          "frames": {
+            "type": "integer"
+          },
+          "peak_before_db": {
+            "type": "number"
+          },
+          "sample_rate": {
+            "type": "integer"
+          },
+          "target_db": {
+            "type": "number"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "clip": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "clip"
+        ],
+        "type": "object"
+      },
+      "description": "Bake a reversal into a sample clip's source: the frame order is reversed, both channels together, and the result replaces the source through SampleClip::setSampleBuffer as a transformed COPY - the previous buffer is never modified and one control.undo re-loads it, so the command is its own documented inverse rather than a flag to toggle. Socket-only in this release (docs/KNOWN-LIMITATIONS.md).",
+      "group": "sample",
+      "id": "sample.reverse",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "clip": {
+            "type": "string"
+          },
+          "frames": {
+            "type": "integer"
+          },
+          "sample_rate": {
+            "type": "integer"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "clip": {
+            "type": "string"
+          },
           "root": {
             "description": "key index 0..11, or a name (\"C\", \"C#\", \"Db\")"
           },
@@ -17230,23 +17475,23 @@
       }
     }
   ],
-  "count": 332,
+  "count": 337,
   "instance": {
-    "binary": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-040/build-nowasm/zene",
-    "binary_bytes": 264194560,
-    "binary_sha256": "f6e60dd8f8364b2e37f47f63a646bdb73dac6a57adb4568ba5a62b91bb661e45",
-    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-040",
-    "lane_head": "6a1205d6a40af446a01416e28d7827da02aa7495",
+    "binary": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-706/build/zene",
+    "binary_bytes": 266417792,
+    "binary_sha256": "dd8348275aaaa6c339718510d91f992d2c9ddcc68b1f37681577f453f8e2a679",
+    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-706",
+    "lane_head": "ab9462d56142cf342ab327f6bb737dea03e42f77",
     "proto": 1,
-    "source_socket": "/tmp/zctl-run-jh1rmuuh/zene.sock",
-    "version": "0.3.0-alpha.14+6a1205d"
+    "source_socket": "/tmp/zctl-run-y4ntllah/zene.sock",
+    "version": "0.3.0-alpha.26+ab9462d"
   },
   "kind": "zene-control-command-list",
   "proto": 1,
   "schema": 1,
   "surface": {
-    "group_count": 52,
-    "id_count": 332,
-    "ids_sha256": "c6a605888aa39366534eaaafe3b3251d7e481caed89e5c5cba0d5086478274ba"
+    "group_count": 53,
+    "id_count": 337,
+    "ids_sha256": "9c311ffc7c08921553eadd7a09dc53b399c0350b4987ed335f4ecb09189c84e0"
   }
 }

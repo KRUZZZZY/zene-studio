@@ -96,6 +96,13 @@ void registerControlCommands(ControlRegistry& registry)
 	registerClipCommands(registry);
 	registerClipEditsCommands(registry);
 	registerClipTrimCommands(registry);
+	// The destructive waveform editor's first slice (board card #706): the
+	// sample.* group over SampleClip's non-destructive model - the generator,
+	// then the four bakers - each its own translation unit. No compile-time
+	// switch: the DSP is in-tree arithmetic, so the ids are honest in every
+	// configuration; no interface reaches them yet (docs/KNOWN-LIMITATIONS.md).
+	registerSampleCommands(registry);
+	registerSampleEditCommands(registry);
 	registerNoteCommands(registry);
 	registerNoteProbabilityCommands(registry);
 	registerRenderStemsCommands(registry);

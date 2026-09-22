@@ -1,0 +1,57 @@
+[  0%] Built target zene_api_autogen_timestamp_deps
+[  5%] Built target lua
+[  5%] Built target ringbuffer
+[  5%] Built target weakjack
+[  5%] Built target zene_api_autogen
+[ 15%] Built target zene_api
+[ 15%] Built target lmmsobjs_autogen_timestamp_deps
+[ 15%] Automatic MOC and UIC for target lmmsobjs
+[ 15%] Built target lmmsobjs_autogen
+[ 15%] Building CXX object src/CMakeFiles/lmmsobjs.dir/core/ControlCommandsSampleEdit.cpp.o
+[ 15%] Building CXX object src/CMakeFiles/lmmsobjs.dir/core/ControlCommandsSample.cpp.o
+[100%] Built target lmmsobjs
+[100%] Built target zene_autogen_timestamp_deps
+[100%] Built target zene_autogen
+[100%] Linking CXX executable ../zene
+[100%] Built target zene
+[  0%] Built target zene_api_autogen_timestamp_deps
+[  5%] Built target lua
+[  5%] Built target ringbuffer
+[  5%] Built target weakjack
+[  5%] Built target zene_api_autogen
+[ 15%] Built target zene_api
+[ 15%] Built target lmmsobjs_autogen_timestamp_deps
+[ 15%] Built target lmmsobjs_autogen
+[100%] Built target lmmsobjs
+[100%] Built target ControlSampleOperatorTest_autogen_timestamp_deps
+[100%] Automatic MOC for target ControlSampleOperatorTest
+[100%] Built target ControlSampleOperatorTest_autogen
+[100%] Building CXX object tests/CMakeFiles/ControlSampleOperatorTest.dir/ControlSampleOperatorTest_autogen/mocs_compilation.cpp.o
+[100%] Building CXX object tests/CMakeFiles/ControlSampleOperatorTest.dir/src/core/ControlSampleOperatorTest.cpp.o
+In file included from /usr/include/x86_64-linux-gnu/qt6/QtTest/qtesteventloop.h:8,
+                 from /usr/include/x86_64-linux-gnu/qt6/QtTest/qsignalspy.h:11,
+                 from /usr/include/x86_64-linux-gnu/qt6/QtTest/QtTest:10,
+                 from /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-706/tests/src/core/ControlSampleOperatorTest.cpp:34:
+/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-706/tests/src/core/ControlSampleOperatorTest.cpp: In member function ‘void ControlSampleOperatorTest::generateMakesAClipPerKindAndOneUndoRemovesIt()’:
+/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-706/tests/src/core/ControlSampleOperatorTest.cpp:208:51: error: ‘const class std::vector<lmms::SampleFrame>’ has no member named ‘isEmpty’; did you mean ‘empty’?
+  208 |                         QVERIFY2(!captured.frames.isEmpty(), qPrintable(kind + " produced no frames"));
+      |                                                   ^~~~~~~
+/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-706/tests/src/core/ControlSampleOperatorTest.cpp:237:72: error: taking address of rvalue [-fpermissive]
+  237 |                         QVERIFY2(!control::resolveClip(clip, &control::ClipRef{}, &error),
+      |                                                                        ^~~~~~~~~
+/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-706/tests/src/core/ControlSampleOperatorTest.cpp: In member function ‘void ControlSampleOperatorTest::normalizeScalesThePeakAndOneUndoRestoresTheFrames()’:
+/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-706/tests/src/core/ControlSampleOperatorTest.cpp:310:65: error: taking address of rvalue [-fpermissive]
+  310 |                 QVERIFY(!control::resolveClip(silent, &control::ClipRef{}, &error));
+      |                                                                 ^~~~~~~~~
+/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-706/tests/src/core/ControlSampleOperatorTest.cpp: In member function ‘void ControlSampleOperatorTest::refusalsAreTypedAndWriteNothing()’:
+/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-706/tests/src/core/ControlSampleOperatorTest.cpp:396:62: error: taking address of rvalue [-fpermissive]
+  396 |                 QVERIFY(control::resolveClip(midi, &control::ClipRef{}, &error));
+      |                                                              ^~~~~~~~~
+/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-706/tests/src/core/ControlSampleOperatorTest.cpp:450:63: error: taking address of rvalue [-fpermissive]
+  450 |                 QVERIFY(!control::resolveClip(clip, &control::ClipRef{}, &error));
+      |                                                               ^~~~~~~~~
+gmake[3]: *** [tests/CMakeFiles/ControlSampleOperatorTest.dir/build.make:96: tests/CMakeFiles/ControlSampleOperatorTest.dir/src/core/ControlSampleOperatorTest.cpp.o] Error 1
+gmake[2]: *** [CMakeFiles/Makefile2:11433: tests/CMakeFiles/ControlSampleOperatorTest.dir/all] Error 2
+gmake[1]: *** [CMakeFiles/Makefile2:11440: tests/CMakeFiles/ControlSampleOperatorTest.dir/rule] Error 2
+gmake: *** [Makefile:4011: ControlSampleOperatorTest] Error 2
+EXIT=2

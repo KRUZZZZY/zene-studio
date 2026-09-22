@@ -477,6 +477,24 @@ LMMS_EXPORT void registerClipLinkCommands(ControlRegistry& registry);
  *  prefix, so an agent finds the read where it finds the write.
  */
 LMMS_EXPORT void registerClipLinkStateCommands(ControlRegistry& registry);
+/*! sample.generate - the destructive waveform editor's FIRST slice (board card
+ *  #706, design/specs/DECISION-706-DESTRUCTION-MODEL.md): a tone / white / pink
+ *  / silence buffer produced into a NEW SampleClip, routed through the
+ *  non-destructive clip model (Track::createClip + SampleClip::setSampleBuffer),
+ *  one ProjectJournal checkpoint per generate. The four bakers of the same
+ *  group (amplify / normalize / reverse / fade) are declared next. Declared here
+ *  rather than in include/ControlRegistry.h because that header sits at the
+ *  file-length ratchet's limit; registered by
+ *  src/core/ControlRegistryRegistrations.cpp. Socket-only this release: no
+ *  interface reaches these ids (docs/KNOWN-LIMITATIONS.md). */
+LMMS_EXPORT void registerSampleCommands(ControlRegistry& registry);
+/*! sample.amplify / sample.normalize / sample.reverse / sample.fade - the
+ *  group's four BAKERS, in their own translation unit (the clip group's
+ *  read/edit split): each computes a transformed COPY of the clip's frames and
+ *  swaps it in with SampleClip::setSampleBuffer, so the inverse of every one is
+ *  the Clip checkpoint taken before the write - one undo step, no buffer in the
+ *  transaction record, no inverse machinery (decision §2.1/§3.2). */
+LMMS_EXPORT void registerSampleEditCommands(ControlRegistry& registry);
 /*! record.get_state / arm_track / disarm_track / disarm_all - the ROUTE verbs of
  *  the `record.` group, in their own translation unit (0.3.0, feature rows 14 and
  *  64; docs/RECORD-INPUTS.md): the multi-track recorder's own state, and the verbs

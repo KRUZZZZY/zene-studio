@@ -1,0 +1,15 @@
+Test project /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-706/build/tests
+    Start 170: LuaApiSurface
+1/5 Test #170: LuaApiSurface ....................   Passed    0.06 sec
+    Start 211: agent_surface
+2/5 Test #211: agent_surface ....................   Passed    3.14 sec
+    Start 218: ControlCommandsSnapshot
+3/5 Test #218: ControlCommandsSnapshot ..........   Passed    3.00 sec
+    Start 221: ZeneApiBoundary
+4/5 Test #221: ZeneApiBoundary ..................   Passed    5.53 sec
+    Start 222: ControlMcpGroupCoverage
+5/5 Test #222: ControlMcpGroupCoverage ..........   Passed    5.67 sec
+
+100% tests passed, 0 tests failed out of 5
+
+Total Test time (real) =  17.41 sec

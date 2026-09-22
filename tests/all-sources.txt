@@ -1098,6 +1098,8 @@ src/core/ControlCommandsRouting.cpp
 src/core/ControlCommandsSafeStart.cpp
 src/core/ControlCommandsSafeStartEdit.cpp
 src/core/ControlCommandsSafeStartShared.h
+src/core/ControlCommandsSample.cpp
+src/core/ControlCommandsSampleEdit.cpp
 src/core/ControlCommandsScale.cpp
 src/core/ControlCommandsScaleEdit.cpp
 src/core/ControlCommandsScript.cpp
@@ -1179,6 +1181,7 @@ src/core/ControlReversibilityTableRecording.cpp
 src/core/ControlReversibilityTableRevisions.cpp
 src/core/ControlReversibilityTableRouting.cpp
 src/core/ControlReversibilityTableSafeStart.cpp
+src/core/ControlReversibilityTableSample.cpp
 src/core/ControlReversibilityTableScanAndCrash.cpp
 src/core/ControlReversibilityTableSessionView.cpp
 src/core/ControlReversibilityTableSnapshot.cpp
@@ -1330,6 +1333,8 @@ src/core/Sample.cpp
 src/core/SampleBuffer.cpp
 src/core/SampleClip.cpp
 src/core/SampleDecoder.cpp
+src/core/SampleOperators.cpp
+src/core/SampleOperators.h
 src/core/SamplePlayHandle.cpp
 src/core/SampleRecordHandle.cpp
 src/core/Scale.cpp
@@ -1616,6 +1621,7 @@ tests/src/core/ControlNoteExpressionCommandsTest.cpp
 tests/src/core/ControlNoteScaleVerbsTest.cpp
 tests/src/core/ControlProjectArchiveTest.cpp
 tests/src/core/ControlRegistryTest.cpp
+tests/src/core/ControlSampleOperatorTest.cpp
 tests/src/core/ControlShutdownHookTest.cpp
 tests/src/core/ControlSurfaceReferenceTest.cpp
 tests/src/core/ControlTempoMapCommandsTest.cpp

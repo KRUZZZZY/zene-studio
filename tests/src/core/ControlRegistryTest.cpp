@@ -495,8 +495,8 @@ private slots:
 		//   surface_state, soft_takeover, feedback, template_save,
 		//   template_list, template_apply, template_delete.
 		// A MEASUREMENT, moved with this tree's registration and not run here:
-		// the merge tip must re-measure it.
-		QCOMPARE(registry->commandCount(), 85 + 7 + 5 + 5);
+		// the merge tip must re-measure it. LANE-LOCAL: +5 = sample.* (#706), live 337 ON.
+		QCOMPARE(registry->commandCount(), 85 + 7 + 5 + 5 + 5);
 	}
 #endif
 };

@@ -1,0 +1,59 @@
+================================================
+  NLOC    CCN   token  PARAM  length  location  
+------------------------------------------------
+      11      5     69      1      11 lmms::kindName@88-98@src/core/ControlCommandsSample.cpp
+      11      5    154      3      11 lmms::parseKind@104-114@src/core/ControlCommandsSample.cpp
+      21      5    183      3      21 lmms::parseLevel@116-136@src/core/ControlCommandsSample.cpp
+      29      5    262      3      29 lmms::sizeFrames@138-166@src/core/ControlCommandsSample.cpp
+       6      3     64      3       6 lmms::parseGenerate@168-173@src/core/ControlCommandsSample.cpp
+      82      4    762      1      87 lmms::registerSampleCommands@177-263@src/core/ControlCommandsSample.cpp
+      34      5    254      3      34 lmms::resolveBakeTarget@80-113@src/core/ControlCommandsSampleEdit.cpp
+      10      1     90      1      10 lmms::sourceState@117-126@src/core/ControlCommandsSampleEdit.cpp
+      13      1    153      4      13 lmms::commitBake@130-142@src/core/ControlCommandsSampleEdit.cpp
+      48      4    377      1      48 lmms::registerSampleAmplify@146-193@src/core/ControlCommandsSampleEdit.cpp
+      62      5    498      1      62 lmms::registerSampleNormalize@195-256@src/core/ControlCommandsSampleEdit.cpp
+      34      2    266      1      34 lmms::registerSampleReverse@258-291@src/core/ControlCommandsSampleEdit.cpp
+      48      4    381      1      48 lmms::registerSampleFade@293-340@src/core/ControlCommandsSampleEdit.cpp
+       8      1     56      0       9 lmms::sampleops::WhiteSource::next@47-55@src/core/SampleOperators.cpp
+      13      1    124      0      13 lmms::sampleops::PinkChannel::next@66-78@src/core/SampleOperators.cpp
+       4      1     33      1       4 lmms::sampleops::silence@81-84@src/core/SampleOperators.cpp
+      12      2    108      4      12 lmms::sampleops::tone@86-97@src/core/SampleOperators.cpp
+      12      2     83      2      12 lmms::sampleops::white@99-110@src/core/SampleOperators.cpp
+      12      2     87      2      12 lmms::sampleops::pink@112-123@src/core/SampleOperators.cpp
+      16      5     81      5      16 lmms::sampleops::generate@127-142@src/core/SampleOperators.cpp
+      10      2     82      3      10 lmms::sampleops::amplify@144-153@src/core/SampleOperators.cpp
+      10      2     66      2      10 lmms::sampleops::reverse@155-164@src/core/SampleOperators.cpp
+      18      4    145      3      18 lmms::sampleops::fade@166-183@src/core/SampleOperators.cpp
+      10      2     83      2      10 lmms::sampleops::peakOf@185-194@src/core/SampleOperators.cpp
+       5      2     24      1       5 lmms::control::reversibilitySampleRowTable@108-112@src/core/ControlReversibilityTableSample.cpp
+      14      3    138      1      14 captureOf@71-84@tests/src/core/ControlSampleOperatorTest.cpp
+      10      5    120      2      10 sameFrames@88-97@tests/src/core/ControlSampleOperatorTest.cpp
+      10      2     74      1      10 peakOf@99-108@tests/src/core/ControlSampleOperatorTest.cpp
+      14      3    146      2      14 makeGeneratedClip@113-126@tests/src/core/ControlSampleOperatorTest.cpp
+       4      1     23      1       4 contractRow@128-131@tests/src/core/ControlSampleOperatorTest.cpp
+       6      2     29      0       8 ControlSampleOperatorTest::initTestCase@140-147@tests/src/core/ControlSampleOperatorTest.cpp
+       5      1     18      0       5 ControlSampleOperatorTest::cleanupTestCase@149-153@tests/src/core/ControlSampleOperatorTest.cpp
+      27      2    265      0      27 ControlSampleOperatorTest::theGroupIsRegisteredWithSchemasAndContractRows@159-185@tests/src/core/ControlSampleOperatorTest.cpp
+      50      5    444      0      51 ControlSampleOperatorTest::generateMakesAClipPerKindAndOneUndoRemovesIt@190-240@tests/src/core/ControlSampleOperatorTest.cpp
+      29      4    338      0      30 ControlSampleOperatorTest::amplifyBakesTheGainAndOneUndoRestoresTheFrames@245-274@tests/src/core/ControlSampleOperatorTest.cpp
+      28      1    284      0      32 ControlSampleOperatorTest::normalizeScalesThePeakAndOneUndoRestoresTheFrames@280-311@tests/src/core/ControlSampleOperatorTest.cpp
+      21      3    199      0      22 ControlSampleOperatorTest::reverseBakesTheReversedOrderAndOneUndoRestoresTheFrames@315-336@tests/src/core/ControlSampleOperatorTest.cpp
+      33      1    421      0      36 ControlSampleOperatorTest::fadeBakesTheRampAndOneUndoRestoresTheFrames@342-377@tests/src/core/ControlSampleOperatorTest.cpp
+      61      1    705      0      71 ControlSampleOperatorTest::refusalsAreTypedAndWriteNothing@381-451@tests/src/core/ControlSampleOperatorTest.cpp
+      32      1    403      0      39 ControlSampleOperatorTest::guardsAndDeferredVerbsAreNamed@457-495@tests/src/core/ControlSampleOperatorTest.cpp
+5 file analyzed.
+==============================================================
+NLOC    Avg.NLOC  AvgCCN  Avg.token  function_cnt    file
+--------------------------------------------------------------
+    198      26.7     4.5      249.0         6     src/core/ControlCommandsSample.cpp
+    281      35.6     3.1      288.4         7     src/core/ControlCommandsSampleEdit.cpp
+    148      11.4     2.2       86.2        11     src/core/SampleOperators.cpp
+     71       5.0     2.0       24.0         1     src/core/ControlReversibilityTableSample.cpp
+    379      22.9     2.3      240.5        15     tests/src/core/ControlSampleOperatorTest.cpp
+
+===============================================================================================================
+No thresholds exceeded (cyclomatic_complexity > 15 or length > 1000 or nloc > 1000000 or parameter_count > 100)
+==========================================================================================
+Total nloc   Avg.NLOC  AvgCCN  Avg.token   Fun Cnt  Warning cnt   Fun Rt   nloc Rt
+------------------------------------------------------------------------------------------
+      1077      22.1     2.8      202.3       40            0      0.00    0.00
