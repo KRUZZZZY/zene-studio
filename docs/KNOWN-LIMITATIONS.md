@@ -1640,3 +1640,18 @@ What it is bounded by, stated rather than measured-away (every number below was 
   device present, so a project naming a port that is absent at load time has no subscription to remember
   and is not re-attached; and a controller whose driver renames its sequencer client on every replug is a
   different identity, which is not re-attached.
+
+## An interrupted save is recovered the next time you open the file — and says so (ARCH-4 S5)
+
+A save writes `<project>.new` first and only then, atomically, replaces `<project>`. If the app dies between
+those two steps (a crash, a kill, a power cut) the completed `.new` used to be orphaned forever — the save you
+asked for sat beside your project and was never opened. The next time you open that file this build now
+**adopts** a complete `<project>.new` (it is the newer save, so it replaces the file) or **deletes** a truncated
+one, and prints exactly one report line to the log/stderr either way — `Recovered interrupted save: … adopted
+as …` or `Discarded incomplete … left by an interrupted save of …`. This is a **log line, not a dialog**: a
+graphical user only sees it if they look at the console/log, there is no prompt asking whether to adopt, and
+adopting **overwrites** the file that was already there — so a `.new` you meant to throw away is recovered, not
+ignored. (Adds the `fsync`-before-rename durability step on POSIX; on Windows the file-buffer flush is left to
+`QSaveFile::commit()` and no explicit `FlushFileBuffers` is issued, so a power cut there is not covered by this
+guarantee. The `complete="1"` index marker the same spec section sketches is *not* implemented — it belongs to
+`<z:index>`/`DocumentIndex`, which this slice is scoped out of.)

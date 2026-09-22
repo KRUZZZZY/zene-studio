@@ -28,6 +28,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <filesystem>
 #include <map>
 
 #include <QDebug>
@@ -58,6 +59,11 @@
 #include "UpgradeExtendedNoteRange.h"
 
 #include "lmmsversion.h"
+
+#ifndef Q_OS_WIN
+#	include <fcntl.h>
+#	include <unistd.h>
+#endif
 
 namespace lmms
 {
@@ -125,6 +131,143 @@ namespace
 }
 
 
+namespace
+{
+
+// ARCH-4 S5 (SPEC-ARCH-4 1.8). Write-safety primitives. The old dance MOVED
+// the current file to <name>.bak and then renamed <name>.new into place with
+// QFile::rename - which, by Qt's own contract, never overwrites an existing
+// target. That refusal is why the move was needed, and the move is the whole
+// defect: between the two calls the canonical path did not exist. Both steps
+// below are the shape every careful editor uses instead.
+
+//! Replace \a to with \a from in a single atomic step. std::filesystem::rename
+//! is POSIX rename(2) (and the equivalent replace-existing rename on Windows):
+//! an existing regular-file target is swapped out in one uninterruptible
+//! operation, so \a to is never absent and never half-written. QFile::rename
+//! cannot be used here precisely because it refuses to overwrite.
+inline bool renameOverwrite( const QString & from, const QString & to )
+{
+	std::error_code ec;
+#ifdef Q_OS_WIN
+	std::filesystem::rename( std::filesystem::path( from.toStdWString() ),
+		std::filesystem::path( to.toStdWString() ), ec );
+#else
+	std::filesystem::rename(
+		std::filesystem::path( QFile::encodeName( from ).toStdString() ),
+		std::filesystem::path( QFile::encodeName( to ).toStdString() ), ec );
+#endif
+	return ! ec;
+}
+
+#ifndef Q_OS_WIN
+//! Flush \a path's data to stable storage (SPEC-ARCH-4 1.8 part 2: fsync the
+//! file before the rename publishes it). Qt offers no fsync, so this reaches
+//! for the descriptor directly. On Windows there is no POSIX fsync and this
+//! slice issues none - QSaveFile::commit() has already flushed the write
+//! buffer; see docs/KNOWN-LIMITATIONS.md. Best-effort: a failure is reported
+//! by the caller and does not by itself fail the save, because the rename
+//! below stays atomic either way - only durability across a power cut is in
+//! question, never whether the canonical path holds a complete file.
+inline bool fsyncPath( const QString & path, bool isDirectory = false )
+{
+	const int fd = ::open( QFile::encodeName( path ).constData(),
+		O_RDONLY | ( isDirectory ? O_DIRECTORY : 0 ) );
+	if( fd < 0 )
+	{
+		return false;
+	}
+	const bool ok = ::fsync( fd ) == 0;
+	::close( fd );
+	return ok;
+}
+#else
+inline bool fsyncPath( const QString &, bool = false )
+{
+	return true;
+}
+#endif
+
+//! ARCH-4 S5. True when \a path holds a COMPLETE document: it parses as XML
+//! (or, for a compressed .mmpz/.xptz temp, parses after qUncompress). A crash
+//! can leave a .new truncated at any byte, and adopting truncated bytes would
+//! trade one corrupt file for another. A payload that begins with '<' but does
+//! not parse is truncated plain XML and is never handed to qUncompress, which
+//! would only warn on XML bytes; anything else is tried as compressed.
+inline bool isCompleteDocument( const QString & path )
+{
+	QFile f( path );
+	if( ! f.open( QIODevice::ReadOnly ) )
+	{
+		return false;
+	}
+	const QByteArray bytes = f.readAll();
+	if( bytes.isEmpty() )
+	{
+		return false;
+	}
+	QDomDocument doc;
+	if( lmms::setContent( doc, bytes ) && ! doc.documentElement().isNull() )
+	{
+		return true;
+	}
+	if( bytes.trimmed().startsWith( '<' ) )
+	{
+		return false;
+	}
+	const QByteArray uncompressed = qUncompress( bytes );
+	if( uncompressed.isEmpty() )
+	{
+		return false;
+	}
+	QDomDocument compressed;
+	return lmms::setContent( compressed, uncompressed )
+		&& ! compressed.documentElement().isNull();
+}
+
+//! ARCH-4 S5 (SPEC-ARCH-4 1.8 part 2). A save that wrote <file>.new and died
+//! before the final rename used to leave that temp orphaned forever - the
+//! content the user asked to save, sitting beside the old file, never opened.
+//! Called before the file itself is opened: a COMPLETE .new is the newest
+//! intended content (a successful save would have renamed it away), so it is
+//! adopted over the canonical path; a truncated one is discarded. Either way a
+//! report line is printed, so the recovery - or the loss - is never silent.
+//! Called only from the file constructor, never from audio or realtime paths.
+void recoverPendingWrite( const QString & fileName )
+{
+	const QString pending = fileName + QStringLiteral( ".new" );
+	if( ! QFile::exists( pending ) )
+	{
+		return;
+	}
+	if( isCompleteDocument( pending ) )
+	{
+		if( renameOverwrite( pending, fileName ) )
+		{
+			qWarning() << "Recovered interrupted save:" << pending
+				<< "adopted as" << fileName;
+		}
+		else
+		{
+			qWarning() << "Found a complete" << pending << "but could not adopt it over"
+				<< fileName << "- leaving it beside the file for the next open";
+		}
+	}
+	else if( QFile::remove( pending ) )
+	{
+		qWarning() << "Discarded incomplete" << pending
+			<< "left by an interrupted save of" << fileName;
+	}
+	else
+	{
+		qWarning() << "Found an incomplete" << pending << "but could not remove it; ignoring it for"
+			<< fileName;
+	}
+}
+
+} // namespace
+
+
 
 
 DataFile::DataFile( Type type ) :
@@ -164,6 +307,11 @@ DataFile::DataFile( const QString & _fileName, const QStringList & skipSections,
 	m_head(),
 	m_fileVersion( UPGRADE_METHODS.size() )
 {
+	// ARCH-4 S5: adopt or discard a <file>.new an interrupted save left
+	// behind, before this file is opened - so a completed temp is what gets
+	// read, and the orphan is never left for good. Reports either outcome.
+	recoverPendingWrite( _fileName );
+
 	QFile inFile( _fileName );
 	if( !inFile.open( QIODevice::ReadOnly ) )
 	{
@@ -496,69 +644,95 @@ bool DataFile::writeFile(const QString& filename, bool withResources)
 		return false;
 	}
 
-	// The final renames are the point where a save can go anywhere without the
-	// content having gone anywhere. Upstream discarded every return value here
-	// and returned true unconditionally, so a rename the filesystem refused
-	// (a locked or foreign-owned target, a read-only mount, an antivirus
-	// scanner holding the file) still ended in "saved": the document was
-	// marked clean, the file name was adopted, and the new project sat in
-	// <name>.new while the file on disk was the old one - or was absent
-	// entirely, if the previous file had already been moved to <name>.bak.
-	// Every step is checked now, a failure is reported where the user can see
-	// it, and the previous project is put back before returning false.
+	// ARCH-4 S5 (SPEC-ARCH-4 1.8): a save must never leave the canonical path
+	// without a complete file, and the completed bytes must be on disk before
+	// the name that points at them changes. Upstream MOVED the current file to
+	// <name>.bak and then renamed <name>.new into place, so between those two
+	// calls the canonical path did not exist at all - and QFile::rename never
+	// overwrites, which is why the move was needed in the first place. The
+	// sequence is now: fsync <name>.new, COPY the current file to <name>.bak
+	// (it never leaves the canonical path), then ONE atomic overwrite-rename of
+	// <name>.new onto the canonical path. At every instant the canonical name
+	// resolves to a complete file: the old one until the rename, the new one
+	// after it, because the rename swaps the two in a single step.
+	//
+	// Every step is still checked: a backup that cannot be made, and a rename
+	// the filesystem refuses, are both reported where the user can see them and
+	// return false with <name>.new kept for recovery - the D3 contract
+	// DataFileSaveIntegrityTest pins. Steps are named for the test-only fault
+	// seam below, which stops the save at a chosen point so a test can inspect
+	// the on-disk state mid-flight.
+
+	const QByteArray saveFault = qgetenv( "ZENE_TEST_SAVE_FAULT" );
+
+	// SPEC-ARCH-4 1.8 part 2: fsync the completed temp BEFORE the rename that
+	// publishes it, so a crash just after cannot leave the canonical name
+	// pointing at bytes the disk never saw. Best-effort and reported.
+	if( ! fsyncPath( fullNameTemp ) )
+	{
+		qWarning() << "Could not flush" << fullNameTemp << "to disk before saving";
+	}
+	if( saveFault == QByteArrayLiteral( "after-write" ) )
+	{
+		return false;	// injected stop: .new complete, canonical untouched
+	}
+
 	const bool backupDisabled =
 		ConfigManager::inst()->value("app", "disablebackup").toInt() != 0;
 
-	bool previousFileMoved = false;
-	if (backupDisabled)
+	// Back the current file up by COPYING it, so the canonical path keeps
+	// holding it right up to the atomic rename. A current file that cannot be
+	// backed up is not overwritten - the save is refused, exactly as the old
+	// move-then-failed-rename sequence refused it (there the still-present
+	// target blocked QFile::rename), because destroying the only copy of the
+	// previous version with no backup is the one outcome worth stopping for.
+	if( ! backupDisabled && QFile::exists( fullName ) )
 	{
-		// remove current file
-		if (QFile::exists(fullName) && !QFile::remove(fullName))
+		QFile::remove( fullNameBak );	// clear a stale backup; best effort
+		if( ! QFile::copy( fullName, fullNameBak ) )
 		{
+			showError(SongEditor::tr("Could not create a backup"),
+				SongEditor::tr("The previous version of %1 could not be copied to %2, "
+					"so it will not be kept as a backup.")
+					.arg(fullName, fullNameBak));
 			showError(SongEditor::tr("Could not save file"),
-				SongEditor::tr("The existing project file %1 could not be replaced, "
-					"so the project was not saved there. Nothing has been discarded: "
-					"the project was written to %2.")
+				SongEditor::tr("The project was NOT saved to %1. Nothing has been "
+					"discarded: the previous file is unchanged and the new project "
+					"data is at %2 - copy it aside before trying again.")
 					.arg(fullName, fullNameTemp));
 			return false;
 		}
 	}
-	else
+	if( saveFault == QByteArrayLiteral( "after-backup" ) )
 	{
-		// remove old backup file
-		QFile::remove(fullNameBak);
-		// move current file to backup file
-		previousFileMoved = QFile::exists(fullName)
-			&& QFile::rename(fullName, fullNameBak);
-		if (QFile::exists(fullName) && !previousFileMoved)
-		{
-			// Losing the backup is not losing the save: the new content still
-			// replaces the old one below. It is reported because the user is
-			// told to keep backups and this is the one save that will not make
-			// one.
-			showError(SongEditor::tr("Could not create a backup"),
-				SongEditor::tr("The previous version of %1 could not be moved to %2, "
-					"so it will not be kept as a backup.")
-					.arg(fullName, fullNameBak));
-		}
+		return false;	// injected stop: .bak copied, canonical still the old file
 	}
-	// move temporary file to current file. This is the step that must not fail
-	// quietly: until it succeeds, the project file on disk is still the old
-	// one, or is absent because the backup step above moved it away.
-	if (!QFile::rename(fullNameTemp, fullName))
+
+	// The one atomic step: <name>.new becomes the canonical file. It replaces
+	// an existing target in one uninterruptible operation, so no reader ever
+	// sees the path empty or half-written - the gap the move-then-rename dance
+	// opened. If it fails, nothing was published and nothing was discarded:
+	// the previous file is untouched at the canonical path and .new is kept.
+	if( ! renameOverwrite( fullNameTemp, fullName ) )
 	{
-		// Put the previous project back rather than leaving it only in the
-		// backup file.
-		if (previousFileMoved)
-		{
-			QFile::rename(fullNameBak, fullName);
-		}
 		showError(SongEditor::tr("Could not save file"),
 			SongEditor::tr("The project could not be moved into place as %1, so it "
 				"was NOT saved. Nothing has been discarded: the project data is at "
 				"%2 - copy it aside before trying again.")
 				.arg(fullName, fullNameTemp));
 		return false;
+	}
+	// Durability of the rename itself (SPEC-ARCH-4 1.8 also names the parent
+	// directory): flush the directory entry. The rename already landed, so a
+	// failure here is reported but does not fail the save.
+	if( ! fsyncPath( QFileInfo( fullName ).absolutePath(), true ) )
+	{
+		qWarning() << "Could not flush" << QFileInfo( fullName ).absolutePath()
+			<< "to disk after saving";
+	}
+	if( saveFault == QByteArrayLiteral( "after-rename" ) )
+	{
+		return false;	// injected stop: the atomic step has landed
 	}
 
 	return true;
