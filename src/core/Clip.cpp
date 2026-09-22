@@ -413,6 +413,43 @@ void Clip::saveClipEdits(QDomElement& element) const
 
 
 
+namespace
+{
+
+/*! SPEC-ARCH-4 1.7 Requirement 6 (slice S4): the clip element's
+ *  checkpoint-restore SCHEMA, stated once - reset-on-absence is derived from
+ *  this table (absent => default) instead of from a comment per field. A
+ *  journal checkpoint restores by RE-LOADING the element, so state that
+ *  survived its own absence could never be taken back off; an attribute the
+ *  table does not name is a schema change nobody declared and fails loudly.
+ */
+struct ClipRestoreRule
+{
+	const char* attribute; // the attribute read on the clip's own element
+	const char* fallback;  // absent => this value
+};
+
+constexpr ClipRestoreRule CLIP_RESTORE_SCHEMA[] = {
+	{ "lane", "0" }, // absent => never assigned to a take lane (lane 0)
+	{ "link", "0" }, // absent => unlinked, exactly what link_create's checkpoint carries
+};
+
+//! The schema's default for \a attribute (SPEC-ARCH-4 1.7 R6).
+const char* clipRestoreDefault(const char* attribute)
+{
+	for (const ClipRestoreRule& rule : CLIP_RESTORE_SCHEMA)
+	{
+		if (qstrcmp(rule.attribute, attribute) == 0)
+		{
+			return rule.fallback;
+		}
+	}
+	Q_ASSERT_X(false, "clipRestoreDefault", "attribute missing from CLIP_RESTORE_SCHEMA");
+	return "";
+}
+
+} // namespace
+
 /*! \brief Read the clip's fades and its gain back off its own element.
  *
  *  A file that carries none of these attributes - every project written before
@@ -447,21 +484,19 @@ void Clip::loadClipEdits(const QDomElement& element)
 	edits.fadeOutShape = shapeFromIndex(element.attribute("fadeoutshape", "0").toInt());
 
 	m_edits = edits;
-	// Reset-on-absence, deliberately: a clip element with no `lane` attribute
-	// (every file written before comping, and every clip that was never assigned
-	// to a take lane) loads as lane 0. A field that survived its own absence here
-	// would make the pre-edit state unreachable from a journal checkpoint.
-	m_laneIndex = std::max(0, element.attribute("lane", "0").toInt());
-	/* The link group (row 6), on the same reset-on-absence rule and for the same
-	 * reason: the checkpoint a clip.link_create takes BEFORE the first link
-	 * carries no `link` attribute, so loading it restores "unlinked" exactly -
-	 * the inverse of a first link is a real inverse rather than a no-op.
-	 *
-	 * An id read from a file is OBSERVED by the project-scoped counter
+	// Reset-on-absence for `lane` and `link`: both defaults live once in
+	// CLIP_RESTORE_SCHEMA above (SPEC-ARCH-4 1.7 R6). Every file written before
+	// comping has no `lane`, so such a clip loads as lane 0 and the pre-edit
+	// state stays reachable from a journal checkpoint; the checkpoint a
+	// clip.link_create takes BEFORE the first link carries no `link`, so loading
+	// it restores "unlinked" exactly - the inverse of a first link is a real
+	// inverse rather than a no-op.
+	m_laneIndex = std::max(0, element.attribute("lane", clipRestoreDefault("lane")).toInt());
+	/* An id read from a file is OBSERVED by the project-scoped counter
 	 * (SPEC-stable-ids.md R3), so a group number that a project already uses can
 	 * never be handed out again by allocateGroupId() - including for a reloaded
 	 * document whose ids are read before any new clip is created. */
-	m_linkId = std::max(0, element.attribute("link", "0").toInt());
+	m_linkId = std::max(0, element.attribute("link", clipRestoreDefault("link")).toInt());
 	if (m_linkId > 0)
 	{
 		ProjectIds::observe(m_linkId);
