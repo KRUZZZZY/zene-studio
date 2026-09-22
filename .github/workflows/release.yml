@@ -129,11 +129,26 @@ jobs:
           fetch-depth: 0
 
       - name: Install the tools the fitness legs use
-        # Same two the upstream jobs install (quality-gates.yml installs lizard; the
-        # static-gates job runs gates 3,4,6,7,8,9,11). A missing tool is exit 3 from the
-        # oracle - a refusal, never a pass - but installing them keeps the refusal about
-        # the ref rather than about this runner.
-        run: pip install lizard
+        # The dependencies the MIRRORED jobs install, and only those. Three legs run a
+        # Python suite with no build, and each one's upstream job provisions what it needs:
+        #   lizard            quality-gates.yml/static-gates - Gate 4, and the tool scopes
+        #                     of Gates 7 and 8
+        #   mcp==2.0.0        quality-gates.yml/mcp-bridge-python-tests. Without it
+        #                     tests/release-mcp-bridge-leg.sh exits 3 ("an unmeasured leg is
+        #                     a refusal"), so the leg would refuse EVERY ref for a reason
+        #                     that belongs to this runner and not to the ref.
+        #   python3-tinycss2  checks.yml/scripted-checks. tests/scripted/check-strings
+        #                     imports tinycss2 at module level, so tests/scripted/verify
+        #                     exits 1 before printing a single line of its own - which is
+        #                     why the refusal below showed no failure line to quote.
+        # Measured 2026-09-22 on eb2b8b6d0: with only lizard installed this job REFUSED a
+        # ref that is fit (scripted-verify + mcp-bridge-python-tests red, 12 legs PASS),
+        # while those same two legs passed on that same commit locally and in the two jobs
+        # they mirror. A missing tool is a refusal, never a pass; installing them keeps the
+        # refusal about the ref rather than about this runner.
+        run: |
+          pip install lizard "mcp==2.0.0"
+          sudo apt-get install -y python3-tinycss2
 
       - name: The ref's own CI evidence, at job granularity
         env:

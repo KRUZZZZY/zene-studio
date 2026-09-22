@@ -25,6 +25,15 @@
 #                                                        red, against a weakened copy - the
 #                                                        same control shape as
 #                                                        tests/test-package-upload-guard.sh)
+#   control 7  an unmeasurable leg is not a red ref        a leg that exits 3 because its
+#                                                        own dependency is missing refuses
+#                                                        (a refusal is correct) but as
+#                                                        INCOMPLETE; the oracle must not
+#                                                        report that as a red REF. This is
+#                                                        the shape of the release run of
+#                                                        eb2b8b6d0, where two legs went red
+#                                                        for want of python3-tinycss2 and
+#                                                        mcp==2.0.0 in the judging job.
 #
 # The scratch ref is a TEMPORARY BRANCH under rel2/selftest-* which this script deletes on
 # exit, including on failure. Nothing is pushed; no other ref is touched.
@@ -165,6 +174,29 @@ sed -i "s|if: startsWith(github.ref, 'refs/tags/')$|if: startsWith(github.ref, '
 RELEASE_STAGING_ROOT="$TMP/weakened" bash tests/release-staging-path-gate.sh > "$TMP/policy-red.log" 2>&1
 check "a workflow copy with the dispatch staging path restored is REFUSED (exit 1)" 1 "$?"
 grep -m1 -A1 'FAIL A1' "$TMP/policy-red.log" | sed 's/^/        /' || true
+echo
+
+# ---------------------------------------------------------------------------
+echo "=== control 7: a leg that cannot be measured is INCOMPLETE, not a red ref ==="
+# tests/release-mcp-bridge-leg.sh exits 3 when its `mcp` dependency is missing - its own
+# header makes 3 mean "the environment cannot run it", and its message is "an unmeasured leg
+# is a refusal". A stub python3 stands in for a runner without that package, so this control
+# is deterministic: it does not depend on what this machine happens to have installed.
+mkdir -p "$TMP/nodep"
+printf '#!/bin/sh\nexit 3\n' > "$TMP/nodep/python3"
+chmod +x "$TMP/nodep/python3"
+PATH="$TMP/nodep:/usr/bin:/bin" bash tests/release-ref-fitness.sh --ref "$BASE_SHA" \
+	--only mcp-bridge-python-tests > "$TMP/nodep.log" 2>&1
+NODEP_RC=$?
+if [ "$NODEP_RC" -ne 0 ]; then
+	check "an unmeasurable leg refuses (never exit 0)" "refused" "refused"
+else
+	check "an unmeasurable leg refuses (never exit 0)" "refused" "PASSED (exit 0)"
+fi
+check "the oracle calls it INCOMPLETE (exit 3)" "INCOMPLETE (exit 3)" \
+	"$(grep -o 'INCOMPLETE (exit 3)' "$TMP/nodep.log" | head -1)"
+check "no leg is called red on that evidence" 0 "$(grep -c 'RED (exit' "$TMP/nodep.log" || true)"
+grep -m1 '^RESULT' "$TMP/nodep.log" | sed 's/^/        /' || true
 echo
 
 if [ "$FAILED" -eq 1 ]; then

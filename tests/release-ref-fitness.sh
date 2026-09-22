@@ -69,8 +69,9 @@
 #   0  FIT      — every required leg ran and passed
 #   1  REFUSED  — at least one leg is red
 #   2  usage / environment error (no such ref, not a git worktree, bad option)
-#   3  REFUSED  — no leg is red, but at least one could not run (tool absent, ref not
-#                 materialisable). Incomplete is not green.
+#   3  REFUSED  — no leg is red, but at least one could not run (a tool absent from the
+#                 PATH, a leg's own exit 3 - this repo's code for "this environment cannot
+#                 run me" - or a ref that cannot be materialised). Incomplete is not green.
 #
 # Every non-zero status is a refusal: the release path fails on any of them.
 #
@@ -206,8 +207,17 @@ RAN=0
 declare -a RED_LEGS=() INCOMPLETE_LEGS=()
 printf '%-24s %-34s %s\n' "leg" "mirrors" "verdict"
 
-# A leg whose tool is absent from the PATH cannot run: that is INCOMPLETE (exit 3),
-# never a pass.
+# A leg that CANNOT BE MEASURED is INCOMPLETE: never a pass, and never a statement about
+# the ref. Two shapes of that are recognised here:
+#   * exit 127, or a log that says the tool is not on the PATH;
+#   * exit 3, which is this repo's own code for "this environment cannot run me" - see the
+#     exit-status block of tests/release-mcp-bridge-leg.sh (3 = the environment cannot run
+#     it, and its message is "an unmeasured leg is a refusal"). No leg of the table below
+#     returns 3 for a defect: measured 2026-09-22, no tests/*-gate.sh contains an `exit 3`.
+# Both INCOMPLETE and RED are refusals, so this distinction never turns a refusal into a
+# pass. What it buys is an HONEST refusal: "2 leg(s) red on <sha>" is a claim about the
+# ref, and a missing dependency cannot support it. Measured on the release run of
+# eb2b8b6d0, where the job's own missing dependencies were reported as a red REF.
 for row in "${LEGS[@]}"; do
 	name="${row%%|*}"; rest="${row#*|}"; mirrors="${rest%%|*}"; cmd="${rest#*|}"
 	[ -n "$ONLY" ] && [ "$name" != "$ONLY" ] && continue
@@ -221,7 +231,7 @@ for row in "${LEGS[@]}"; do
 	fi
 	if [ "$rc" -eq 0 ]; then
 		printf '%-24s %-34s %s\n' "$name" "$mirrors" "PASS"
-	elif [ "$rc" -eq 127 ] || grep -qi 'command not found\|not found in PATH' "$log"; then
+	elif [ "$rc" -eq 127 ] || [ "$rc" -eq 3 ] || grep -qi 'command not found\|not found in PATH' "$log"; then
 		printf '%-24s %-34s %s\n' "$name" "$mirrors" "INCOMPLETE (exit $rc)"
 		INCOMPLETE=$((INCOMPLETE + 1)); INCOMPLETE_LEGS+=("$name|$log")
 	else
