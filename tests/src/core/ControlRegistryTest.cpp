@@ -494,9 +494,9 @@ private slots:
 		//   + 7 (feature row 19, board task #651): the controller.* ids -
 		//   surface_state, soft_takeover, feedback, template_save,
 		//   template_list, template_apply, template_delete.
-		// A MEASUREMENT, moved with this tree's registration and not run here:
-		// the merge tip must re-measure it.
-		QCOMPARE(registry->commandCount(), 85 + 7 + 5 + 5);
+		// A MEASUREMENT, moved with this tree's registration and not run here: the merge
+		// tip must re-measure it. + 3 (board card #708): the livecode.* ids - LANE-LOCAL, the merge tip must re-measure.
+		QCOMPARE(registry->commandCount(), 85 + 7 + 5 + 5 + 3);
 	}
 #endif
 };

@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-09-21T19:34:19Z",
+  "captured_at": "2026-09-22T15:00:58Z",
   "commands": [
     {
       "args_schema": {
@@ -6700,6 +6700,160 @@
             "type": "boolean"
           },
           "start_stop_sync": {
+            "type": "boolean"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {},
+        "required": [],
+        "type": "object"
+      },
+      "description": "Everything the schedule clock holds: every schedule (id, hook, budget, source bytes) with its fire/error/budget-exceeded counters and last typed failure, the aggregate counters (fires, errors, budget_exceeded, busy_skips, regrids, coalesced), and the transport observation the grid is working from (poll_ms, position, next bar/beat ticks). Reads only - it schedules nothing and fires nothing.",
+      "group": "livecode",
+      "id": "livecode.get_state",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "count": {
+            "maximum": 2147483647,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "counters": {
+            "type": "object"
+          },
+          "next_bar_ticks": {
+            "type": "integer"
+          },
+          "next_beat_ticks": {
+            "type": "integer"
+          },
+          "playing": {
+            "type": "boolean"
+          },
+          "poll_ms": {
+            "maximum": 1000000,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "position_ticks": {
+            "type": "integer"
+          },
+          "schedules": {
+            "type": "array"
+          },
+          "ticks_per_bar": {
+            "type": "integer"
+          },
+          "ticks_per_beat": {
+            "type": "integer"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "budget": {
+            "maximum": 2147483647,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "hook": {
+            "enum": [
+              "bar",
+              "beat",
+              "transport"
+            ],
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "description": "Put a Lua script on the schedule clock: from then on the engine evaluates it on its own - 'hook' = 'bar' (default), 'beat' or 'transport' - with NO re-trigger, exactly as the scheduled hook fires (board card #708; docs/LUA-SCRIPTING.md). Exactly one of 'path' (absolute) and 'source', like script.run; the source is compiled once (parsed, not run) and a syntax error is refused HERE, not on the first fire. 'budget' bounds each fire's instructions (0 = inherit the engine's). Scheduling an id that exists REPLACES its script - the live edit - and keeps its counters. Reversible: one control.undo restores the previous definition, or removes the schedule if there was none.",
+      "group": "livecode",
+      "id": "livecode.schedule",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "budget": {
+            "maximum": 2147483647,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "hook": {
+            "enum": [
+              "bar",
+              "beat",
+              "transport"
+            ],
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "replaced": {
+            "type": "boolean"
+          },
+          "scheduled": {
+            "type": "boolean"
+          },
+          "source_bytes": {
+            "type": "integer"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "type": "object"
+      },
+      "description": "Take a script off the schedule clock; the clock stops evaluating that id on its hook. Reversible: one control.undo rearms the same id with the definition this call removed (its fire counters start over - a snapshot restores the definition, not the history).",
+      "group": "livecode",
+      "id": "livecode.unschedule",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "unscheduled": {
             "type": "boolean"
           }
         },
@@ -17230,23 +17384,23 @@
       }
     }
   ],
-  "count": 332,
+  "count": 335,
   "instance": {
-    "binary": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-040/build-nowasm/zene",
-    "binary_bytes": 264194560,
-    "binary_sha256": "f6e60dd8f8364b2e37f47f63a646bdb73dac6a57adb4568ba5a62b91bb661e45",
-    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-040",
-    "lane_head": "6a1205d6a40af446a01416e28d7827da02aa7495",
+    "binary": null,
+    "binary_bytes": null,
+    "binary_sha256": null,
+    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-708/tools/zene-pa-agentctl",
+    "lane_head": null,
     "proto": 1,
-    "source_socket": "/tmp/zctl-run-jh1rmuuh/zene.sock",
-    "version": "0.3.0-alpha.14+6a1205d"
+    "source_socket": "/tmp/zctl-run-o79txzpe/zene.sock",
+    "version": "0.3.0-alpha.26+ab9462d"
   },
   "kind": "zene-control-command-list",
   "proto": 1,
   "schema": 1,
   "surface": {
-    "group_count": 52,
-    "id_count": 332,
-    "ids_sha256": "c6a605888aa39366534eaaafe3b3251d7e481caed89e5c5cba0d5086478274ba"
+    "group_count": 53,
+    "id_count": 335,
+    "ids_sha256": "cad99110d6c865ffca9424a44589445a6191b33a056094dc1b15f8dad5e4c7f9"
   }
 }

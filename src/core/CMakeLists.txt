@@ -347,6 +347,9 @@ set(LMMS_SRCS
 	core/ControlCommandsRackMacros.cpp
 	core/ControlCommandsRackZones.cpp
 	core/ControlCommandsScript.cpp
+	# board card #708: the livecode.* group - schedule a Lua script for
+	# evaluation on bar/beat/transport boundaries (the clock's surface).
+	core/ControlCommandsLivecode.cpp
 	core/ControlCommandsExport.cpp
 	# The render/export preset store (feature row 70): the saved presets and the
 	# settings the NEXT render is started with, plus the group's A16 rows. The
@@ -613,6 +616,9 @@ set(LMMS_SRCS
 	# not_mutating read verbs and five snapshot rows, in their own file so the
 	# capped join file and the passive block both stay untouched.
 	core/ControlReversibilityTableController.cpp
+	# The livecode.* rows (board card #708): two snapshot rows and the
+	# not_mutating read of the schedule clock, in their own group file.
+	core/ControlReversibilityTableLivecode.cpp
 	# ControllerSurface.cpp - the mapping-template store of the controller
 	# surface (feature row 19, board task #651). Missed by the lane's WIP commit
 	# cbb717660: the file was written but never added to this list, so nothing
@@ -761,6 +767,9 @@ set(LMMS_SRCS
 	core/ScriptApiVersion.cpp
 	core/ScriptBindings.cpp
 	core/ScriptCommandQueue.cpp
+	# board card #708: the schedule clock - the Lua engine's idle/transport
+	# hooks (bar, beat, transport edges) and the bounded fire behind livecode.*.
+	core/ScriptClock.cpp
 	core/ScriptConsole.cpp
 	core/ScriptDawBindings.cpp
 	core/ScriptDawEdit.cpp

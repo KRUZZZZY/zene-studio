@@ -528,6 +528,14 @@ LMMS_EXPORT const ReversibilityRow* reversibilityControllerRowTable(int* rowCoun
  *  into reversibilityRowTable() by one entry.
  */
 LMMS_EXPORT const ReversibilityRow* reversibilityOutOfProcessRowTable(int* rowCount);
+/*! The `livecode.*` rows (board card #708): scheduled Lua evaluation - the bar,
+ *  beat and transport hooks the Lua engine did not have. Two snapshot rows (the
+ *  schedule that replaces one that was there, the unschedule that removes one)
+ *  whose handler writes the definition into __transaction before the clock
+ *  moves, and one not_mutating read. A GROUP file on the safestart/oop seam,
+ *  joined into reversibilityRowTable() by one entry.
+ */
+LMMS_EXPORT const ReversibilityRow* reversibilityLivecodeRowTable(int* rowCount);
 
 } // namespace control
 

@@ -129,9 +129,15 @@ These are implemented, not aspirational. Each is proved by a test in
   `docs/LUA-SCRIPT-DEVICES-DESIGN.md` (not implemented).
 * **No audio-thread access and no audio-buffer DSP in Lua.** v0 is a command
   queue; audio-rate DSP is the WASM track (spec §1).
-* **No event- or idle-triggered scripts.** A script runs when a host runs it —
-  the menu action, `--run-script`, or the embedding application. Auto-run on
-  transport events is deferred (spec §11, OQ-1).
+* **Scheduling exists; a script defining its own trigger does not.** Since
+  board card #708 the control surface puts a script on the schedule clock
+  (`livecode.schedule`, `hook: bar | beat | transport`) and the ENGINE
+  evaluates it on those boundaries and on play/stop edges itself, with no
+  re-trigger — bounded by a 25 ms control-thread poll and a per-fire
+  instruction budget, fresh state per fire (`docs/KNOWN-LIMITATIONS.md`).
+  Still not promised: evaluation on a wall clock
+  while the transport is stopped, seek events, a persistent Lua interpreter
+  across fires, and script-defined devices (spec §11, OQ-1's device half).
 * **No GUI scripting** and no arbitrary C bindings (spec §1, §5).
 * **No package format or discovery yet.** A script is a file you run by path.
 * **No in-GUI console pane.** Output goes to the process log; a dock widget is
