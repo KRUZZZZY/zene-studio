@@ -25,11 +25,18 @@ Each assertion is a real effect rather than a success report:
     own numbers have to match the documented bound exactly: retained == the
     documented capacity, and retained + overwritten + paused_dropped == played.
     The capacity the build reports must also equal the figure the bounds
-    document states, so the document and the binary cannot drift apart.
+    document states, so the document and the binary cannot drift apart. The
+    identity is a statement about what the ENGINE received, so delivery is
+    read back from the kernel's own input-pool counters first: if the
+    environment did not hand over the whole paced stream, that is not the
+    engine losing an event, and the test reports Skipped rather than a number
+    it cannot stand behind.
 
 It reports ctest *Skipped* (exit 77) - never *Passed* - when the host cannot
 supply real MIDI input (no `aconnect`/`aplaymidi`, or the engine came up on the
-dummy MIDI client), because a test that cannot make its measurement must not
+dummy MIDI client), or when the sequencer's kernel refuses the paced bound
+stream so delivery cannot be proven (a slow Debug+coverage build saturates the
+200-cell input pool), because a test that cannot make its measurement must not
 report that it did.
 
 Usage: QT_QPA_PLATFORM=offscreen python3 control-retro-capture.py <zene-binary>
@@ -71,8 +78,12 @@ CLIP_LENGTH = 960
 # client has a bounded INPUT POOL, so events blasted at it are dropped IN THE
 # KERNEL before the capture sees them: one 18000-event burst delivered 614 events,
 # and even 100 runs of 200 events lost 400. Pacing the same 20000 events into that
-# stream delivers all 20000, which is what makes the accounting below exact and the
-# assertion a statement about the window rather than about the kernel's pool.
+# stream delivers all 20000 - ON A BUILD FAST ENOUGH TO DRAIN THE POOL. The same
+# calibration does NOT hold everywhere: measured 2026-09-22, the Debug+coverage
+# build cannot drain the 200-cell pool at ~960 events/s and the kernel refused
+# 8676 of them. So delivery is READ BACK from /proc/asound/seq/clients in
+# check_bound() rather than assumed, and an environment that will not deliver
+# makes this test Skipped - never a wrong number, never the engine's fault.
 # BIG_PAIRS x 2 = 20000 events, 2.4x the window.
 BIG_PAIRS = 10000
 BIG_SPACING = 2
@@ -172,6 +183,44 @@ def documented_capacity():
         text = handle.read()
     match = re.search(r"\*\*([\d,]+) events\*\*", text)
     return int(match.group(1).replace(",", "")) if match else None
+
+
+def input_pool_counters(client):
+    """(alloc_success, alloc_failures) of `client`'s INPUT pool, or None.
+
+    The kernel's own count from /proc/asound/seq/clients: success is the
+    events it handed this ALSA client, failures the events it refused while
+    the 200-cell pool was full - the instrument that separates "the engine
+    lost an event" from "the kernel never delivered it", which the engine's
+    own counters cannot tell apart. Matched by the number aconnect reports
+    for the engine's pid (the test's own port key), never by display name:
+    the name is not unique when several instances run. Only the "Input pool"
+    section counts. None = instrument absent, so the bound is unmeasurable
+    here - not measured-with-assumptions.
+    """
+    try:
+        with open("/proc/asound/seq/clients") as handle:
+            lines = handle.readlines()
+    except OSError:
+        return None
+    in_block = in_input = False
+    counts = {}
+    for line in lines:
+        head = re.match(r"^Client\s+(\d+)\s*:", line)
+        if head:
+            if in_block:
+                break  # the next client's block starts: ours is over
+            in_block = int(head.group(1)) == client
+            continue
+        if in_block:
+            if re.match(r"^\s+Input pool\s*:", line):
+                in_input = True
+                continue
+            if in_input:
+                number = re.match(r"^\s+Alloc (success|failures)\s*:\s*(\d+)", line)
+                if number:
+                    counts[number.group(1)] = int(number.group(2))
+    return (counts["success"], counts["failures"]) if len(counts) == 2 else None
 
 
 # ---------------------------------------------------------------------------
@@ -331,8 +380,42 @@ def check_bound(context, problems):
                      "the build retains %r events, %s documents %r"
                      % (capacity, os.path.basename(BOUNDS_DOC), documented))
 
+    # Delivery FIRST: the identity below says the ENGINE accounts for every event
+    # PLAYED, which only means anything if the kernel delivered them all. The pool
+    # counters are cumulative for the client's whole lifetime, so the baseline is
+    # read immediately before aplaymidi starts, and play_notes is synchronous -
+    # aplaymidi drains its queue before exiting - so by the time it returns every
+    # delivery and every refusal for this play has already been counted.
+    pool_before = input_pool_counters(context["port"][0])
     play_notes(context["aplaymidi"], context["port"], context["bound_file"], problems)
     played = context["played"] + 2 * BIG_PAIRS
+    pool_after = input_pool_counters(context["port"][0])
+    if pool_before is None or pool_after is None:
+        if not problems:
+            skipped("cannot read the kernel's input-pool counters for client %d "
+                    "(/proc/asound/seq/clients): delivery is unprovable, so the "
+                    "bound is not measurable on this host" % context["port"][0],
+                    context["instance"])
+    else:
+        delivered = pool_after[0] - pool_before[0]
+        refused = pool_after[1] - pool_before[1]
+        print("  kernel input pool: %d delivered, %d refused (this play sent %d "
+              "events; any surplus delivered events are announce traffic)"
+              % (delivered, refused, 2 * BIG_PAIRS))
+        # Refused events never reached the engine and surplus announce events are
+        # not recordable, so `delivered` need only COVER the played count. If the
+        # kernel refused any, the accounting identity is not measurable here -
+        # that is the environment failing the pacing premise, not the engine
+        # losing an event, and this test reports Skipped rather than either one.
+        # Checked BEFORE wait_buffered: the counters are final once aplaymidi
+        # exits, and waiting out BOUND_SECONDS for a ring that can never fill
+        # would spend 180 s proving nothing.
+        if not problems and (refused > 0 or delivered < 2 * BIG_PAIRS):
+            skipped("this build's kernel refused %d of the paced bound events "
+                    "(delivered %d of %d): the engine never received them all, so "
+                    "the accounting identity cannot be measured here - the pacing "
+                    "must be recalibrated for the slowest build this test runs on"
+                    % (refused, delivered, 2 * BIG_PAIRS), context["instance"])
     status = wait_buffered(session, capacity, BOUND_SECONDS)
     print("  played %d event(s) into a %d-event window: retained %d, overwritten %d, "
         "paused %d, refused %d"
