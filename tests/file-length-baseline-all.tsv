@@ -40,6 +40,7 @@ src/core/DrumSynth.cpp	933
 src/core/lv2/Lv2Proc.cpp	931
 include/BasicFilters.h	917
 plugins/Nes/Nes.cpp	913
+thirdparty/mts-esp/libMTSClient.cpp	908
 plugins/Xpressive/Xpressive.cpp	895
 src/core/ConfigManager.cpp	895
 plugins/Vst3Effect/Vst3Host.cpp	891
@@ -61,10 +62,10 @@ tests/src/core/PdcMixerTest.cpp	786
 src/core/audio/AudioAlsa.cpp	782
 plugins/Lb302/Lb302.cpp	779
 plugins/Sid/SidInstrument.cpp	776
+src/core/NotePlayHandle.cpp	775
 src/gui/widgets/Fader.cpp	766
 include/Song.h	762
 plugins/ZynAddSubFx/ZynAddSubFx.cpp	757
-src/core/NotePlayHandle.cpp	752
 plugins/TripleOscillator/TripleOscillator.cpp	750
 src/gui/widgets/Graph.cpp	743
 tests/src/core/ScriptBindingsTest.cpp	741
@@ -80,12 +81,12 @@ src/tracks/MidiClip.cpp	700
 plugins/SpectrumAnalyzer/SaProcessor.cpp	692
 src/core/PluginFactory.cpp	690
 include/AutomatableModel.h	676
+src/gui/MicrotunerConfig.cpp	666
 tests/src/core/RemotePluginAudioPortsTest.cpp	665
 plugins/LadspaEffect/caps/dsp/tonestack/ks_tab.h	663
 src/core/SampleClip.cpp	663
 src/gui/SubWindow.cpp	659
 src/core/audio/AudioJack.cpp	657
-src/gui/MicrotunerConfig.cpp	654
 include/RemotePluginBase.h	649
 include/PianoRoll.h	647
 tests/src/core/RoutingGraphTest.cpp	641

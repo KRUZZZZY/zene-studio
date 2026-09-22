@@ -892,7 +892,7 @@ figure minus wasm's 8 and exactly matches the class deltas; the merge tip re-tak
 figures with the probe).
 
 <!-- A16-HISTOGRAM-BEGIN
-     measured: rows=351 true_inverse=165 snapshot=34 irreversible=13 not_mutating=139
+     measured: rows=358 true_inverse=166 snapshot=39 irreversible=13 not_mutating=140
      configuration: telemetry.status wasm.load session.get_state
      option telemetry.status rows=2 not_mutating=2
      option wasm.load rows=8 snapshot=3 not_mutating=5
@@ -2967,3 +2967,50 @@ whose negative control compares a default-mode project's `pdc.report`, `mixer.ge
 saved bytes against a baseline captured on the pre-change build. Limits: `docs/KNOWN-LIMITATIONS.md`
 (no per-send compensation estimate while suspended, no automatic exit, socket-only, the rack's
 derived RoutingGraph is not covered).
+
+## Host-wide dynamic tuning (`mts.*`, board card #712, lane `zene-712`) — added 2026-09-22
+
+- **One session-wide tuning table, read at render.** `include/SessionTuning.h` (+ its
+  three TUs) holds a 128-entry frequency table the WHOLE session reads:
+  `NotePlayHandle::updateFrequency()` takes the session branch whenever the table is
+  active, so a socket write retunes every SOUNDING instrument on the next audio period
+  while the transport keeps playing, and every track follows the same table whatever its
+  own Microtuner says. Interval/Scale/Keymap stay the Microtuner's — this card adds only
+  the missing session-wide object (FEATURE-LIST-0.3.0.md:386 already ships microtuning;
+  docs/MIDI-DEPTH.md:20 keeps the vocabulary where it was). INACTIVE (the default, and
+  what `mts.reset` leaves) means the pre-#712 branches run unchanged.
+- **Fed from the existing `.scl`/`.kbm` parsing** — `MicrotunerConfig::applyScale()` /
+  `applyKeymap()` hand the session the objects they just applied (gui may call core;
+  core gains no gui dependency) — and driven from the socket by seven ids:
+  `mts.get_state`, `mts.load_scale`, `mts.load_keymap`, `mts.set_tuning` (the
+  whole-table writer and the inverse every mutator records), `mts.set_note`,
+  `mts.reset`, `mts.master_set`. All mutating verbs are A16 `snapshot` rows over one
+  STATED cap — 128 finite frequencies + `active` + a `source` of ≤ 256 characters —
+  except `mts.master_set`, a `true_inverse` action checkpoint; `mts.get_state` is the
+  `not_mutating` read.
+- **MTS-ESP, vendored and honest.** `thirdparty/mts-esp/` is upstream
+  ODDSound/MTS-ESP byte-for-byte (commit `f214739b`, blob hashes verified, 0BSD
+  SPDX + the files' own grant text — README beside the files). `mts.master_set` arms
+  publication of the table through it so MTS-ESP client plugins follow Zene's tuning;
+  without upstream's separately-installed `libMTS.so` that arm is a typed refusal
+  naming the path, never a silent no-op dressed as success.
+- **Proof:** the registered ctest `SessionTuningTest`
+  (`tests/src/core/SessionTuningTest.cpp`) — baseline untouched while inactive; a `.scl`
+  load with the transport playing moving BOTH sounding notes onto the table and
+  `control.undo` moving them back, transport never stopping; ten typed refusals that
+  write no table and push no undo step; the 128-key parity against `Microtuner::keyToFreq`
+  reading the SAME Scale/Keymap; and the MTS-ESP refusal. Plus the registry-wide
+  `ReversibilityContractTest` / `ControlRegistryTest` / `ControlCommandsSnapshot` gates.
+- **UI absence — one line:** the session-wide tuning table (the `mts.*` group) has no
+  interface surface yet — it is socket-only (SPEC A16), and the MTS-ESP publication path
+  is inert (a typed refusal names the library) until upstream's separately-installed
+  `libMTS.so` is present. `docs/KNOWN-LIMITATIONS.md` carries the same line under its
+  own heading.
+- **Two measurement constants moved with this group — LANE-LOCAL, the merge tip must
+  re-measure:** the A16-HISTOGRAM block above (re-taken on this tree with
+  `bash tools/dawproject-proof.sh`, part 2: this lane's build added the seven mts rows —
+  five `snapshot`, one `true_inverse`, one `not_mutating`) and `ControlRegistryTest`'s
+  `commandCount()` (`85 + 7 + 5 + 5 + 5 + 3 + 3 + 7`). Two sibling lanes add groups too:
+  the train re-takes both at the merged tip, and the `commands_snapshot.json` beside the
+  bridge is regenerated from a live instance of that tip (this lane regenerated it from
+  its own build; the JSON WILL conflict with a sibling's and is never hand-merged).

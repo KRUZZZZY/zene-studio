@@ -47,6 +47,7 @@
 #include "MainWindow.h"
 #include "Note.h"
 #include "Scale.h"
+#include "SessionTuning.h"
 #include "Song.h"
 #include "SubWindow.h"
 
@@ -422,6 +423,13 @@ bool MicrotunerConfig::applyScale()
 	auto newScale = std::make_shared<Scale>(m_scaleNameEdit->text(), std::move(newIntervals));
 	song->setScale(m_scaleComboModel.value(), newScale);
 
+	// Board card #712: the EXISTING .scl parsing feeds the session-wide table
+	// (gui may call core; core gains no gui dependency). Content only: the
+	// dialog's apply does not switch the session table ON - activation is the
+	// mts.* group's job, and there is no interface for it yet
+	// (docs/KNOWN-LIMITATIONS.md).
+	SessionTuning::instance()->feedScale(newScale, m_scaleNameEdit->text());
+
 	return true;
 }
 
@@ -463,6 +471,10 @@ bool MicrotunerConfig::applyKeymap()
 		m_baseFreqModel.value()
 	);
 	song->setKeymap(m_keymapComboModel.value(), newKeymap);
+
+	// Board card #712: feed the session-wide table's CONTENT with the keymap
+	// just applied - activation is unchanged, exactly as applyScale says.
+	SessionTuning::instance()->feedKeymap(newKeymap, newKeymap->getDescription());
 
 	if (newKeymap->getDegree(newKeymap->getBaseKey()) == -1) {
 		QMessageBox::warning(this, tr("Invalid keymap"), tr("Base key is not mapped to any scale degree. No sound will be produced as there is no way to assign reference frequency to any note."));}

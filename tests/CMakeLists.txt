@@ -202,6 +202,17 @@ set(LMMS_TESTS
 	# the slide verbs from the DEFAULT-flag trap state, the scale vocabulary and
 	# context, scale.snap_notes with both of its inverse answers, and the MPE switch.
 	src/core/ControlNoteScaleVerbsTest.cpp
+	# Board card #712, lane 3 - session-wide dynamic tuning + the mts.* group.
+	# ANCHOR NOTE: `grep -i microtuner tests/CMakeLists.txt` returns NOTHING
+	# (there is no microtuner-named test anywhere in tests/); this entry IS the
+	# scale/microtuner-family registration the brief's anchor meant - the
+	# scale.* vocabulary test (#648) - so the anchor is immediately after it,
+	# as asked, on the real entry. Proof: inactive baseline == the pre-#712
+	# branch; a .scl load moving BOTH sounding notes onto the one table with
+	# the transport playing and control.undo moving them back; ten typed
+	# refusals with no table write and no undo step; 128-key parity against
+	# Microtuner::keyToFreq over the SAME Scale/Keymap; the MTS-ESP refusal.
+	src/core/SessionTuningTest.cpp
 	src/core/ControlWarpCommandsTest.cpp
 	# The groove pool and quantise surface (docs/GROOVE-POOL.md): the engine
 	# half (the extraction and application arithmetic and the pool's XML form,
@@ -696,6 +707,11 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 		OR LMMS_TEST_NAME STREQUAL "ControlAutomationScriptTest"
 		OR LMMS_TEST_NAME STREQUAL "ControlAutomationModesTest"
 		OR LMMS_TEST_NAME STREQUAL "ControlChainPresetTest"
+		# Board card #712: SessionTuningTest's proof slot needs tracks with a
+		# REAL instrument (revtest::addInstrumentTrack -> plugin.load) so both
+		# sounding notes go through the engine's own render path - the same
+		# reason ReversibilityUndoTest is on this list.
+		OR LMMS_TEST_NAME STREQUAL "SessionTuningTest"
 		# The hosting test loads the build's own plugin modules to get devices with
 		# real plugin keys (and, where they exist, the ZynAddSubFx module and its
 		# client - see the OUTOFPROC_ZYN_* definitions below).

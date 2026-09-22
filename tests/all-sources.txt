@@ -449,6 +449,7 @@ include/SessionArrangementRecorder.h
 include/SessionFollow.h
 include/SessionModel.h
 include/SessionScheduler.h
+include/SessionTuning.h
 include/SetupDialog.h
 include/SharedMemory.h
 include/SideBar.h
@@ -1067,6 +1068,7 @@ src/core/ControlCommandsMixer.cpp
 src/core/ControlCommandsMixerRoutes.cpp
 src/core/ControlCommandsModulator.cpp
 src/core/ControlCommandsModulatorRoutes.cpp
+src/core/ControlCommandsMts.cpp
 src/core/ControlCommandsNoteExpression.cpp
 src/core/ControlCommandsNoteProbability.cpp
 src/core/ControlCommandsNoteRandom.cpp
@@ -1185,6 +1187,7 @@ src/core/ControlReversibilityTableMastering.cpp
 src/core/ControlReversibilityTableMeter.cpp
 src/core/ControlReversibilityTableMidiReconnect.cpp
 src/core/ControlReversibilityTableMmpzGit.cpp
+src/core/ControlReversibilityTableMts.cpp
 src/core/ControlReversibilityTableNoteScale.cpp
 src/core/ControlReversibilityTableOutOfProcess.cpp
 src/core/ControlReversibilityTablePassive.cpp
@@ -1366,6 +1369,9 @@ src/core/SessionFollow.cpp
 src/core/SessionModel.cpp
 src/core/SessionModelPrivate.h
 src/core/SessionScheduler.cpp
+src/core/SessionTuning.cpp
+src/core/SessionTuningMtsEsp.cpp
+src/core/SessionTuningScala.cpp
 src/core/SmfInterchange.cpp
 src/core/SmfInterchangeReader.cpp
 src/core/Song.cpp
@@ -1740,6 +1746,7 @@ tests/src/core/SessionFollowTest.cpp
 tests/src/core/SessionModelTest.cpp
 tests/src/core/SessionSchedulerRenderTest.cpp
 tests/src/core/SessionSchedulerTest.cpp
+tests/src/core/SessionTuningTest.cpp
 tests/src/core/SlideNotesTest.cpp
 tests/src/core/SmfInterchangeRoundTripTest.cpp
 tests/src/core/SmfInterchangeTest.cpp
@@ -1798,6 +1805,10 @@ tests/src/tracks/SampleClipWindowTest.cpp
 tests/src/wasm/WasmAbiConformanceTest.cpp
 tests/src/wasm/WasmSandboxTest.cpp
 tests/src/wasm/WasmWorkerPoolTest.cpp
+thirdparty/mts-esp/libMTSClient.cpp
+thirdparty/mts-esp/libMTSClient.h
+thirdparty/mts-esp/libMTSMaster.cpp
+thirdparty/mts-esp/libMTSMaster.h
 tools/dawproject-a16-histogram.cpp
 tools/dawproject-roundtrip-proof.cpp
 tools/import-detection-proof.cpp

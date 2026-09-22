@@ -616,6 +616,7 @@ include/SessionArrangementRecorder.h
 include/SessionFollow.h
 include/SessionModel.h
 include/SessionScheduler.h
+include/SessionTuning.h
 include/SmfInterchange.h
 include/SrcQuality.h
 include/StemSeparation/ExternalProcessStemSeparator.h
@@ -785,6 +786,7 @@ src/core/ControlCommandsMixer.cpp
 src/core/ControlCommandsMixerRoutes.cpp
 src/core/ControlCommandsModulator.cpp
 src/core/ControlCommandsModulatorRoutes.cpp
+src/core/ControlCommandsMts.cpp
 src/core/ControlCommandsNoteExpression.cpp
 src/core/ControlCommandsNoteProbability.cpp
 src/core/ControlCommandsNoteRandom.cpp
@@ -903,6 +905,7 @@ src/core/ControlReversibilityTableMastering.cpp
 src/core/ControlReversibilityTableMeter.cpp
 src/core/ControlReversibilityTableMidiReconnect.cpp
 src/core/ControlReversibilityTableMmpzGit.cpp
+src/core/ControlReversibilityTableMts.cpp
 src/core/ControlReversibilityTableNoteScale.cpp
 src/core/ControlReversibilityTableOutOfProcess.cpp
 src/core/ControlReversibilityTablePassive.cpp
@@ -1025,6 +1028,9 @@ src/core/SessionFollow.cpp
 src/core/SessionModel.cpp
 src/core/SessionModelPrivate.h
 src/core/SessionScheduler.cpp
+src/core/SessionTuning.cpp
+src/core/SessionTuningMtsEsp.cpp
+src/core/SessionTuningScala.cpp
 src/core/SmfInterchange.cpp
 src/core/SmfInterchangeReader.cpp
 src/core/StemJobManager.cpp
