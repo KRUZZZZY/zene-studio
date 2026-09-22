@@ -23,7 +23,11 @@
 
 #include "ProjectIds.h"
 
+#include <QCryptographicHash>
+#include <QDomElement>
 #include <QDomNode>
+#include <QStringList>
+#include <QUuid>
 
 namespace lmms
 {
@@ -97,6 +101,59 @@ bool isCopyContainer(const QString& name)
 		|| name == QLatin1String("zenepluginstate")
 		|| name == QLatin1String("instrumenttracksettings");
 }
+
+/*! The content fingerprint behind the revision pair: a hex digest of the
+ *  element's own attributes (sorted, so Qt's attribute order cannot fake a
+ *  change; `rev`/`writer` excluded, because they ARE the revision) plus its
+ *  ELEMENT children in document order (whitespace text nodes skipped - the
+ *  file's indentation is not content).
+ *
+ *  Two children are excluded for one reason: they are bookkeeping this writer
+ *  itself adds or removes AFTER the fingerprint is taken, so including them
+ *  would make the fingerprint differ on every single save:
+ *    - metadata="1" elements: DataFile::write's cleanMetaNodes() deletes them
+ *      from the file (a <takelanes> the model holds would be in memory and not
+ *      on disk), so the LOADED element never has what the BUILT element has;
+ *    - <journallingObject>: the undo machinery's own node, stripped from a
+ *      comparison by ClipSerialisationTest for the same reason.
+ *
+ *  Every other byte the writer emits reaches this function, so "fingerprint
+ *  changed" means "this save writes different bytes for this object" - the
+ *  stated form of what a merge would otherwise rebuild from an XML diff.
+ */
+QString contentSignature(const QDomElement& element)
+{
+	QStringList attributes;
+	const QDomNamedNodeMap map = element.attributes();
+	for (int i = 0; i < map.length(); ++i)
+	{
+		const QDomNode attribute = map.item(i);
+		const QString name = attribute.nodeName();
+		if (name == QLatin1String("rev") || name == QLatin1String("writer"))
+		{
+			continue;
+		}
+		attributes.append(name + QLatin1Char('=') + attribute.nodeValue());
+	}
+	attributes.sort();
+
+	QString structural = attributes.join(QLatin1Char('\n'));
+	for (QDomNode child = element.firstChild(); !child.isNull(); child = child.nextSibling())
+	{
+		if (!child.isElement()) { continue; }
+		const QDomElement childElement = child.toElement();
+		if (childElement.attribute(QStringLiteral("metadata")).toInt()) { continue; }
+		if (childElement.nodeName() == QLatin1String("journallingObject")) { continue; }
+		structural.append(QLatin1Char('\n')).append(childElement.nodeName())
+			.append(QLatin1Char('{')).append(contentSignature(childElement))
+			.append(QLatin1Char('}'));
+	}
+	return QString::fromLatin1(
+		QCryptographicHash::hash(structural.toUtf8(), QCryptographicHash::Sha256).toHex());
+}
+
+//! True when this save has stamped a `rev` (see ProjectIds::revisionWritten()).
+bool s_revisionsWritten = false;
 
 } // namespace
 
@@ -193,6 +250,76 @@ bool ProjectIds::isDocumentElement(const QDomNode& node)
 		if (isCopyContainer(ancestor.toElement().nodeName())) { return false; }
 	}
 	return true;
+}
+
+const char* ProjectIds::familyPrefix(IdFamily family)
+{
+	// Order mirrors the enum; the grammar itself is control::idToIndex's and
+	// the test binds the two together, so a prefix here can never drift from
+	// the formatter the surface spells it with.
+	static const char* const prefixes[] = {
+		"trk-", "clip-", "lane-", "note-", "scene-", "warp-", "ch-", "fx-"};
+	return prefixes[static_cast<int>(family)];
+}
+
+QString ProjectIds::writerInstance()
+{
+	// Function-local static: one id per process, generated on first use.
+	static const QString instance =
+		QUuid::createUuid().toString(QUuid::WithoutBraces).left(12);
+	return instance;
+}
+
+void ProjectIds::beginSave()
+{
+	s_revisionsWritten = false;
+}
+
+bool ProjectIds::revisionWritten()
+{
+	return s_revisionsWritten;
+}
+
+void ProjectIds::readRevision(const QDomElement& element, int& rev,
+	QString& writer, QString& contentHash)
+{
+	// Absent, unparseable or non-positive: 0. "Neither is needed to load a
+	// file" is exactly this line - a pre-S3 file loads with rev 0 / no writer
+	// and behaves as it always did.
+	bool ok = false;
+	const int stored = element.attribute(QStringLiteral("rev")).toInt(&ok);
+	rev = (ok && stored > 0) ? stored : 0;
+	writer = element.attribute(QStringLiteral("writer"));
+	contentHash = contentSignature(element);
+}
+
+void ProjectIds::writeRevision(QDomElement& element, int& rev,
+	QString& writer, QString& contentHash)
+{
+	const QString now = contentSignature(element);
+	if (contentHash.isEmpty())
+	{
+		// Never loaded and never saved before: this save defines the baseline.
+		// A brand-new object has made no revisions, so nothing is written.
+		contentHash = now;
+	}
+	else if (now != contentHash)
+	{
+		// This writer is about to emit different bytes for the object than the
+		// ones it loaded: that is a revision.
+		contentHash = now;
+		++rev;
+		writer = writerInstance();
+	}
+	if (rev > 0)
+	{
+		element.setAttribute(QStringLiteral("rev"), rev);
+		if (!writer.isEmpty())
+		{
+			element.setAttribute(QStringLiteral("writer"), writer);
+		}
+		s_revisionsWritten = true;
+	}
 }
 
 } // namespace lmms

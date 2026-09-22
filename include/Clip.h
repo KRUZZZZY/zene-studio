@@ -279,6 +279,17 @@ private:
 	 *  restoreState). */
 	int m_id;
 
+	/*! The per-object revision pair (SPEC-ARCH-4 §1.5 R4, ARCH-4 S3): `rev` is
+	 *  the counter ProjectIds::writeRevision() bumps when this save emits
+	 *  different bytes for the clip than the load brought, `writer` the
+	 *  instance that wrote that revision, and the hash the content they compare
+	 *  against (loaded element -> readRevision, last save -> writeRevision).
+	 *  All three start empty, which on disk means "no revisions" - an absent
+	 *  `rev` reads back as 0, so a clip nobody edited never wears the pair. */
+	int m_revision = 0;
+	QString m_revisionWriter;
+	QString m_revisionContentHash;
+
 	TimePos m_startPosition;
 	TimePos m_length;
 	TimePos m_startTimeOffset;

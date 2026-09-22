@@ -25,8 +25,11 @@
 #ifndef LMMS_PROJECT_IDS_H
 #define LMMS_PROJECT_IDS_H
 
+#include <QString>
+
 #include "lmms_export.h"
 
+class QDomElement;
 class QDomNode;
 
 namespace lmms
@@ -52,6 +55,36 @@ namespace lmms
 class LMMS_EXPORT ProjectIds
 {
 public:
+	/*! The id families this ONE counter serves (SPEC-ARCH-4 §1.5 Requirement 4
+	 *  and the S3 slice row; census row 8 - "the header says this was always the
+	 *  plan"). Every family draws from the same `next-id` and answers to the
+	 *  same duplicate-id repair rule; the prefix is only the address the agent
+	 *  surface spells it with (`trk-7` vs `clip-7` are different addresses even
+	 *  though one counter handed out both numbers).
+	 *
+	 *  S3 declares all five families the spec names (clip-, lane-, note-,
+	 *  scene-, warp-, beside the trk-/ch-/fx- the counter already serves). The
+	 *  LANE-, SCENE- and WARP-OBJECTS do not exist until their own slices (S7,
+	 *  S8, S9) - this declaration is what those slices inherit, and it is purely
+	 *  additive: nothing allocates per-family and `next-id` stays ONE number
+	 *  (census row 8: "One counter, one `next-id` on the root").
+	 */
+	enum class IdFamily
+	{
+		Track,   //!< `trk-`  (control::trackId; the family that existed first)
+		Clip,    //!< `clip-` (control::clipId)
+		Lane,    //!< `lane-` (entity lands with S7)
+		Note,    //!< `note-` (control::noteId)
+		Scene,   //!< `scene-` (entity lands with S8)
+		Warp,    //!< `warp-` (entity lands with S9)
+		Channel, //!< `ch-`   (control::channelId)
+		Effect   //!< `fx-`   (control::effectId)
+	};
+
+	//! The grammar prefix of \a family, e.g. `"clip-"` - the exact spelling
+	//! `control::idToIndex()` parses back (SPEC-ARCH-4 census row 8).
+	static const char* familyPrefix(IdFamily family);
+
 	//! The value allocate() will hand out next. This is the file's `next-id`.
 	static int next();
 
@@ -125,6 +158,58 @@ public:
 	 *  the writer that produces it.
 	 */
 	static bool isDocumentElement(const QDomNode& node);
+
+	// ---------------------------------------------------------------------
+	// The per-object revision pair (SPEC-ARCH-4 §1.5 Requirement 4, S3):
+	// `rev`, "a counter the writer increments on every change to that object",
+	// and `writer`, "an instance identifier in <head>". Neither is needed to
+	// load a file: an absent `rev` means 0 (readRevision's rule), so every
+	// project written before this slice loads and behaves exactly as it did.
+	// ---------------------------------------------------------------------
+
+	//! The instance id every `writer` attribute this process stamps carries,
+	//! and the value Song writes into `<head>` when a save holds a revision.
+	//! Stable within one process (so a save/load/save round trip is byte
+	//! identical) and different in the next one (so two writers of two branches
+	//! name themselves). QUuid, first 12 hex digits.
+	static QString writerInstance();
+
+	//! Starts a project save: clears revisionWritten()'s flag. Song calls it
+	//! the moment it begins serialising a document.
+	static void beginSave();
+
+	//! True when THIS save has stamped a `rev` on any object - the one
+	//! condition under which Song writes the `<head>` writer attribute, so a
+	//! project nobody revised re-saves exactly the bytes it always had.
+	static bool revisionWritten();
+
+	/*! Reads the revision pair off a loaded element: `rev` (absent, unparseable
+	 *  or non-positive all mean 0 - "neither is needed to load a file"), the
+	 *  `writer` string (empty when absent) and the content fingerprint the next
+	 *  save compares against. The three references are the OBJECT's own fields
+	 *  (Track, Clip); nothing is counted, observed or repaired here - a
+	 *  revision is content state, not an id.
+	 */
+	static void readRevision(const QDomElement& element, int& rev,
+		QString& writer, QString& contentHash);
+
+	/*! Stamps the revision pair on \a element, the LAST thing a writer does
+	 *  with the element. Compares the element's content fingerprint with the
+	 *  one read at load (or recorded at the previous save):
+	 *
+	 *  - no fingerprint yet (an object that was never loaded) -> this IS the
+	 *    baseline; nothing is written, because a brand-new object has made no
+	 *    revisions (`rev` absent == 0);
+	 *  - content differs -> this writer changed the object: rev+1, writer =
+	 *    writerInstance(), fingerprint updated;
+	 *  - content matches -> an unchanged object keeps the `rev`/`writer` it
+	 *    came with (written back verbatim when it has them, nothing when it
+	 *    has none), which is what keeps save/load/save byte-identical.
+	 *
+	 *  `rev > 0` also raises revisionWritten() for Song's `<head>` gate.
+	 */
+	static void writeRevision(QDomElement& element, int& rev,
+		QString& writer, QString& contentHash);
 };
 
 } // namespace lmms

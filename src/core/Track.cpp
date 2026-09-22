@@ -502,6 +502,14 @@ void Track::saveTrack(QDomDocument& doc, QDomElement& element, bool presetMode)
 	// appended for a track whose load claimed every child, so a project this
 	// build understands completely still round-trips unchanged.
 	reemitUnclaimed( m_unclaimedChildren, doc, element );
+
+	// ARCH-4 S3 (SPEC-ARCH-4 1.5 R4): the revision pair, stamped LAST - after
+	// the clips and the unclaimed children above - so the fingerprint
+	// ProjectIds::writeRevision() takes covers every byte of the track
+	// element. Reached only on the non-preset path (presetMode returned
+	// earlier), the same guard the stable id uses.
+	ProjectIds::writeRevision(element, m_revision, m_revisionWriter,
+		m_revisionContentHash);
 }
 
 /*! \brief Load the settings from a file
@@ -591,6 +599,13 @@ void Track::loadTrack(const QDomElement& element, bool presetMode)
 		{
 			ProjectIds::noteLoadAssignment(id());
 		}
+
+		// ARCH-4 S3 (SPEC-ARCH-4 1.5 R4): the revision pair and the content
+		// fingerprint the next save compares against. An absent `rev` reads
+		// back as 0 - a pre-S3 track is an unrevised track, and loading it
+		// behaves exactly as it did before this slice existed.
+		ProjectIds::readRevision(element, m_revision, m_revisionWriter,
+			m_revisionContentHash);
 	}
 
 	{

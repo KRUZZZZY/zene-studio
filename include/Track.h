@@ -418,6 +418,14 @@ private:
 	QString m_name;
 	int m_height;
 
+	/*! The per-object revision pair (SPEC-ARCH-4 §1.5 R4, ARCH-4 S3) - the
+	 *  track's copy of the same three fields Clip carries. Written and read
+	 *  ONLY through ProjectIds::writeRevision / readRevision: `rev` absent on
+	 *  disk means 0, so a track nobody edited never wears the pair. */
+	int m_revision = 0;
+	QString m_revisionWriter;
+	QString m_revisionContentHash;
+
 protected:
 	BoolModel m_mutedModel;
 	BoolModel m_soloModel;
