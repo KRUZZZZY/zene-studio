@@ -124,6 +124,14 @@ private:
 	void build(QBoxLayout* hostLayout);
 	void claim();
 	void release();
+	//! The three desk-state signals that persist through ONE guarded save
+	//! (focus, density, workspace) - extracted from build() beside the
+	//! observer below so neither wiring block carries the other's branches.
+	void wireDeskState();
+	//! The `ConfigManager::valueChanged` observer: the `ui/focusdesk[.density|
+	//! .workspace]` keys route into the same FocusDesk methods the strip's
+	//! own controls call (SPEC A11).
+	void wireConfigObserver();
 	void readConfig();
 	void saveToConfig() const;
 

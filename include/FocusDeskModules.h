@@ -129,7 +129,8 @@ public:
 //! disagree about its spelling - but the registration itself is staged: adding
 //! a command id obliges an A16 reversibility row, and the A16 histogram is
 //! published in docs/RELEASE-NOTES-v0.3.0-alpha.md, which is a shipped record.
-//! See src/gui/FocusDesk.cpp for the seam this id is dispatched through.
+//! See src/gui/FocusDeskActions.cpp for the seam this id is dispatched through
+//! (FocusDesk::dispatchAction: registry-first, then the desk's own answer).
 QString focusActionCommandId(const QString& moduleId);
 
 } // namespace lmms::gui

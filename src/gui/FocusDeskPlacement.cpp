@@ -124,6 +124,47 @@ FocusDesk::Destination FocusDesk::homeDestination(FocusRegion home)
 	return Destination::Park;
 }
 
+void FocusDesk::applyStripTabOrder()
+{
+	// Register order across the strip's chips, then each strip control in
+	// build order, then the horizontal splitter. The chips and controls all
+	// exist by the time the constructor calls this (buildStrip, buildBody and
+	// addChip ran first), so a null check here would only hide a call-order
+	// bug - the density/splitter comment at the original site said the same.
+	QWidget* previous = nullptr;
+	for (const auto& row : m_rows)
+	{
+		QToolButton* chip = m_chips.value(row.id, nullptr);
+		if (chip == nullptr) { continue; }
+		if (previous != nullptr) { setTabOrder(previous, chip); }
+		previous = chip;
+	}
+	if (previous != nullptr) { setTabOrder(previous, m_densityButton); previous = m_densityButton; }
+	if (previous != nullptr) { setTabOrder(previous, m_workspaceButton); previous = m_workspaceButton; }
+	if (previous != nullptr) { setTabOrder(previous, m_commandsButton); previous = m_commandsButton; }
+	if (previous != nullptr) { setTabOrder(previous, m_splitter); previous = m_splitter; }
+	if (previous != nullptr)
+	{
+		// The vertical splitter is a local of buildBody(), reachable by the
+		// objectName buildBody() gives it rather than by a header change.
+		if (auto* rows = findChild<QSplitter*>(QStringLiteral("focusDeskRows")))
+		{
+			setTabOrder(previous, rows);
+		}
+	}
+}
+
+FocusDesk::Destination FocusDesk::mountDestination(const FocusModule& row,
+	const QString& moduleId)
+{
+	// The register's home is the default; a current workspace that does not
+	// declare this row a member parks it instead - §6.1 membership is
+	// declared data, read at mount time too, never inferred from what is
+	// mounted. With no workspace applied the register's rule stands alone.
+	if (!m_workspace.isEmpty() && !workspaceContains(moduleId)) { return Destination::Park; }
+	return homeDestination(row.home);
+}
+
 void FocusDesk::buildBody()
 {
 	// §5.1's four regions: three across the top, the bottom dock beneath them.
@@ -252,8 +293,11 @@ QFrame* FocusDesk::buildCard(const FocusModule& row, QWidget* content)
 	focusButton->setFocusPolicy(Qt::TabFocus);
 	lmms::a11y::announce(focusButton,
 		tr("Show %1 on stage").arg(row.title), promoteTip);
+	// The promote button is the `mod:` action's second mount (§9.4): the same
+	// dispatchAction() path as the chip and View ▸ Modules, not a shortcut to
+	// focusModule() that could drift from the command.
 	connect(focusButton, &QToolButton::clicked, this,
-		[this, id = row.id]() { focusModule(id); });
+		[this, id = row.id]() { dispatchAction(focusActionCommandId(id)); });
 	headerLayout->addWidget(focusButton);
 	cardLayout->addWidget(header);
 
@@ -367,22 +411,35 @@ void FocusDesk::refreshDensityLabel()
 
 void FocusDesk::setDensity(FocusDensity density)
 {
+	if (density == m_density) { return; } // one writer, no redundant collapse churn
 	m_density = density;
 	applyDensity();
+	// The pane persists this; an external `settings.set ui/focusdesk.density`
+	// arrives through the pane's observer and lands in this same method, so
+	// strip button, generated-menu record and agent are one implementation.
+	emit densityChanged(FocusDeskModules::densityName(m_density));
 }
 
 void FocusDesk::applyDensity()
 {
 	// Minimal collapses the rails' card bodies; Standard and Complete show them.
 	// The bodies are collapsed, never removed, and the chip for each module says
-	// where it went - which is the `reveal-hint` §4.3(4) asks for. State
-	// controls are exempt (§4.3(5)) and none of them live in a rail body, so
-	// nothing here can hide state.
+	// where it went - which is the `reveal-hint` §4.3(4) asks for; the strip's
+	// m_revealHint below makes that hint a visible sentence too (§8.1(4)).
+	// State controls are exempt (§4.3(5)) and none of them live in a rail body,
+	// so nothing here can hide state. The per-module contract is row.minDensity:
+	// the global preset may hide a body, and a row's own floor may exempt it -
+	// a floor can only keep a body VISIBLE, never hide one the preset shows
+	// ("A preset hides information, never capability").
 	const bool bodiesVisible = railBodyVisible();
 	for (auto it = m_bodies.begin(); it != m_bodies.end(); ++it)
 	{
-		it.value()->setVisible(bodiesVisible);
+		const FocusModule* row = FocusDeskModules::find(m_rows, it.key());
+		const FocusDensity floor = (row != nullptr) ? row->minDensity : FocusDensity::Standard;
+		it.value()->setVisible(bodiesVisible || m_density >= floor);
 	}
+	// Shown exactly when something is hidden, naming the one-click way back.
+	if (m_revealHint != nullptr) { m_revealHint->setVisible(!bodiesVisible); }
 	refreshDensityLabel();
 }
 

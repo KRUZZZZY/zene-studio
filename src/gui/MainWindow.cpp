@@ -56,6 +56,7 @@
 #include "ExportProjectDialog.h"
 #include "FileBrowser.h"
 #include "FileDialog.h"
+#include "FocusDeskActions.h"
 #include "FocusDeskPane.h"
 #include "Metronome.h"
 #include "MixerView.h"
@@ -1311,6 +1312,12 @@ void MainWindow::updateViewMenu()
 	addFocusDeskToggle( m_viewMenu, m_focusDeskPane );
 
 	m_viewMenu->addSeparator();
+	// Work-list row 5: the register rendered as menu entries - module
+	// visibility reachable from a menu (acceptance #6), each entry the `mod:`
+	// action through FocusDesk::dispatchAction, greyed with the register's own
+	// reason when this build cannot show the row (X4).
+	addModulesMenu(m_viewMenu,
+		m_focusDeskPane != nullptr ? m_focusDeskPane->desk() : nullptr);
 
 #if (QT_VERSION >= QT_VERSION_CHECK(6, 3, 0))
 	// Qt 6.3 deprecated addAction(icon, text, receiver, slot, shortcut) in favour

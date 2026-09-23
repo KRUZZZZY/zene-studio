@@ -42,6 +42,8 @@ class QVBoxLayout;
 namespace lmms::gui
 {
 
+struct FocusWorkspace; // FocusDeskWorkspaces.h - applied by value through const&
+
 //! The Focus Desk shell (UI plan §9.4, Direction B).
 //!
 //! "One thing at a time, at full size." Two rails hold the small modules you
@@ -116,16 +118,48 @@ public:
 	void setDensity(FocusDensity density);
 	FocusDensity density() const { return m_density; }
 	//! Minimal collapses rail bodies. Nothing is removed: the card header and
-	//! the chip both stay, which is the `reveal-hint` §4.3(4) requires.
+	//! the chip both stay, which is the `reveal-hint` §4.3(4) requires - and
+	//! buildDensityHint()'s strip label names what was hidden, so the hint is
+	//! also a visible sentence (§8.1(4)), not only an implied affordance.
 	bool railBodyVisible() const;
 
-	//! The desk's persistent state, as data - no config file is touched.
+	//! The §6.1 workspace currently applied (its id), empty until one is.
+	//! Restored from `ui/focusdesk.workspace`, persisted by the pane.
+	QString workspace() const;
+
+	/*! Dispatch one Focus Desk action by its stable id - the `mod:` seam.
+	 *
+	 *  §9.4's "one command, mounted wherever the user is looking": chips, the
+	 *  promote button, `View ▸ Modules` and any future mount all call this.
+	 *  The registry wins when it owns the id (a registered `mod:` command IS
+	 *  the command); while that group is staged (FocusDeskModules.h), the desk
+	 *  answers its own `mod:<id>` ids with focusModule(), which carries the
+	 *  register's refusal reasons. Anything else is refused, typed. Returns
+	 *  whether the action ran.
+	 */
+	bool dispatchAction(const QString& actionId);
+
+	/*! Apply a §6.1 workspace by id (work-list row 7): re-measure the rails,
+	 *  park mounted non-members, and move the stage's flagship only when the
+	 *  current focus left the workspace. Idempotent per id; an unknown id is
+	 *  refused through moduleRefused and changes nothing.
+	 */
+	bool applyWorkspace(const QString& workspaceId);
+
+	// The desk's persistent state, as data - no config file is touched.
 	QVariantMap saveLayout() const;
 	bool restoreLayout(const QVariantMap& layout);
 
 signals:
 	void focusChanged(const QString& moduleId);
 	void moduleRefused(const QString& moduleId, const QString& reason);
+	//! The density changed (strip button, restore, or an external
+	//! `settings.set ui/focusdesk.density` through the pane's observer);
+	//! the pane persists it so every writer lands in the same config key.
+	void densityChanged(const QString& densityName);
+	//! A §6.1 workspace was applied; the pane persists it under
+	//! `ui/focusdesk.workspace` so the arrangement survives a restart.
+	void workspaceChanged(const QString& workspaceId);
 
 private:
 	//! Where a card is put. Deliberately not `FocusRegion`: a region says where
@@ -136,6 +170,43 @@ private:
 
 	void buildStrip();
 	void buildBody();
+	//! The one explicit setTabOrder() pass over the strip's flow (spec §5 item
+	//! 1), extracted from the constructor: chips, density, workspace switcher,
+	//! Commands, both splitter handles. Defined in FocusDeskPlacement.cpp.
+	void applyStripTabOrder();
+	//! Where a freshly mounted row goes: its register home, unless the current
+	//! workspace does not declare it a member (then it parks). Extracted from
+	//! mountModule(); defined in FocusDeskPlacement.cpp.
+	Destination mountDestination(const FocusModule& row, const QString& moduleId);
+	//! Restore the workspace + rail-width half of a layout map (row 6's
+	//! layout-as-data), before density/focus restore. Unknown workspace ids
+	//! refuse and return false. Defined in FocusDeskWorkspaces.cpp.
+	bool restoreWorkspaceRails(const QVariantMap& layout);
+	//! applyWorkspace() step 2: promote the flagship only when the focus left
+	//! the workspace. Defined in FocusDeskWorkspaces.cpp.
+	void applyWorkspaceFlagship(const FocusWorkspace& workspace);
+	//! applyWorkspace() step 3: park mounted non-members except the current
+	//! focus. Defined in FocusDeskWorkspaces.cpp.
+	void parkWorkspaceNonMembers(const FocusWorkspace& workspace);
+	//! The workspace switcher button + menu (row 7); defined beside the
+	//! workspace data in FocusDeskWorkspaces.cpp.
+	void buildWorkspaceSwitcher();
+	//! The generated `Commands` menu button (row 4); defined beside the
+	//! command-record type in FocusDeskActions.cpp.
+	void buildCommandsButton();
+	//! The reveal-hint label §8.1(4) requires; shown exactly when a preset
+	//! hides rail bodies. Defined in FocusDeskActions.cpp beside the strip's
+	//! other extras.
+	void buildDensityHint();
+	//! Re-set the switcher's label and accessible name (its text carries the
+	//! workspace title AND the scope - C2 requires both on screen).
+	void refreshWorkspaceLabel();
+	//! Whether the current workspace declares `moduleId` a member; false when
+	//! no workspace has been applied (the register's homes rule then).
+	bool workspaceContains(const QString& moduleId) const;
+	//! Move the splitter's left/right rails to the given pixel widths, giving
+	//! the stage whatever of the current total remains.
+	void applyRailWidths(int leftRail, int rightRail);
 	void addChip(const FocusModule& row);
 	QFrame* buildCard(const FocusModule& row, QWidget* content);
 	//! The region a card goes back to when it is not the focus module. Centre is
@@ -180,6 +251,9 @@ private:
 
 	QFrame* m_strip = nullptr;
 	QToolButton* m_densityButton = nullptr;
+	QToolButton* m_workspaceButton = nullptr;
+	QToolButton* m_commandsButton = nullptr;
+	QLabel* m_revealHint = nullptr;
 	QSplitter* m_splitter = nullptr;
 	QLabel* m_stageTitle = nullptr;
 
@@ -199,6 +273,10 @@ private:
 	QString m_focused;
 	//! A focus choice restored before its module is mounted, applied on mount.
 	QString m_pendingFocus;
+	//! The §6.1 workspace applied, empty until one is. Membership decisions
+	//! (mount placement, applyWorkspace's parking) read it through
+	//! workspaceContains(), never by inferring from what is mounted.
+	QString m_workspace;
 	FocusDensity m_density = FocusDensity::Standard;
 };
 
