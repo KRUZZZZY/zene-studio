@@ -102,9 +102,11 @@ private slots:
 		QCOMPARE(densityChoices, 3);
 		QCOMPARE(workspaceChoices, 5);
 
-		// The two in-flight features ship as NAMED `todo.*` stubs, greyed with
-		// the reason - never invented command ids.
-		const auto stubs = [&records](const QString& id)
+		// UI-FREEZE (2026-09-24): the two formerly in-flight families LANDED
+		// and are wired to the real commands - no `todo.*` stub survives the
+		// freeze, nothing is left in flight, and availability is mechanical
+		// (registry reasons only), never "in flight".
+		const auto recordFor = [&records](const QString& id)
 		{
 			for (const auto& record : records)
 			{
@@ -112,15 +114,19 @@ private slots:
 			}
 			return FocusCommandRecord{};
 		};
-		const FocusCommandRecord mts = stubs(QStringLiteral("todo.mts"));
-		QVERIFY(!mts.unavailable.isEmpty());
-		QVERIFY2(mts.unavailable.contains(QLatin1String("#712")), qPrintable(mts.unavailable));
-		QVERIFY2(mts.unavailable.contains(QLatin1String("mts.*")), qPrintable(mts.unavailable));
-		const FocusCommandRecord lanes = stubs(QStringLiteral("todo.s7-lanes"));
-		QVERIFY(!lanes.unavailable.isEmpty());
-		QVERIFY2(lanes.unavailable.contains(QLatin1String("S7")), qPrintable(lanes.unavailable));
-		QVERIFY2(!focusCommandUnavailable(mts).isEmpty(),
-			qPrintable(focusCommandUnavailable(mts)));
+		for (const auto& id : {QStringLiteral("todo.mts"), QStringLiteral("todo.s7-lanes")})
+		{
+			QVERIFY2(recordFor(id).id.isEmpty(), qPrintable(id));
+		}
+		for (const auto& id : {QStringLiteral("mts.get_state"), QStringLiteral("mts.load_scale"),
+				QStringLiteral("mts.reset"), QStringLiteral("comp.lane_list"),
+				QStringLiteral("comp.lane_add"), QStringLiteral("comp.select")})
+		{
+			const FocusCommandRecord record = recordFor(id);
+			QCOMPARE(record.id, id);
+			QVERIFY2(!record.unavailable.contains(QLatin1String("in flight")),
+				qPrintable(record.unavailable));
+		}
 
 		// One `mod:` record per register row, id exactly focusActionCommandId's
 		// spelling - the menu and the strip cannot disagree about the verb.

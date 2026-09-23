@@ -76,18 +76,6 @@ FocusCommandRecord settingChoice(const QString& name, const QString& where,
 		QJsonObject{{QStringLiteral("key"), key}, {QStringLiteral("value"), value}});
 }
 
-//! A record for a command that is still in flight. The `todo.*` id is a
-//! placeholder, never dispatched (focusCommandUnavailable refuses it by
-//! prefix), so the gap is visible in the menu, greyed with the reason, and
-//! greppable - the named-TODO-stub rule rather than an invented command id.
-FocusCommandRecord stubRecord(const QString& id, const QString& name,
-	const QString& where, const QString& reason)
-{
-	FocusCommandRecord r = makeRecord(id, name, where);
-	r.unavailable = reason;
-	return r;
-}
-
 //! The args `record` does not fill from the command's own `argsSchema.required`
 //! - the mechanical half of X4. Empty when the command needs nothing this
 //! mount does not carry, and empty when there is no command to ask (the
@@ -199,13 +187,15 @@ QList<FocusCommandRecord> focusDeskCommandRecords()
 	out.append(makeRecord(QStringLiteral("mixer.route_to"), QObject::tr("Route a channel"), QObject::tr("Routing")));
 	out.append(makeRecord(QStringLiteral("routing.get_state"), QObject::tr("Signal graph"), QObject::tr("Routing")));
 
-	// The two in-flight features, named rather than invented: no id exists on
-	// the train for either, so they ship as `todo.*` placeholders greyed with
-	// the reason (the brief's named-TODO-stub rule; no engine code invented).
-	out.append(stubRecord(QStringLiteral("todo.mts"), QObject::tr("MIDI time sync"), QObject::tr("Transport"),
-		QObject::tr("in flight: board #712 (mts.*) - the command is not on the control surface yet")));
-	out.append(stubRecord(QStringLiteral("todo.s7-lanes"), QObject::tr("Take lanes"), QObject::tr("Track"),
-		QObject::tr("in flight: the S7 take-lanes work - the command is not on the control surface yet")));
+	// UI-FREEZE (2026-09-24): the two placeholder features LANDED on the train
+	// (#712's mts.* group, S7's take lanes under comp.lane_*) - the stubs are
+	// wired to the real commands now, and NOTHING is left in flight at freeze.
+	out.append(makeRecord(QStringLiteral("mts.get_state"), QObject::tr("MTS-ESP tuning state"), QObject::tr("Tuning")));
+	out.append(makeRecord(QStringLiteral("mts.load_scale"), QObject::tr("Load a Scala scale"), QObject::tr("Tuning")));
+	out.append(makeRecord(QStringLiteral("mts.reset"), QObject::tr("Reset to 12-TET"), QObject::tr("Tuning")));
+	out.append(makeRecord(QStringLiteral("comp.lane_list"), QObject::tr("List take lanes"), QObject::tr("Track")));
+	out.append(makeRecord(QStringLiteral("comp.lane_add"), QObject::tr("Add a take lane"), QObject::tr("Track")));
+	out.append(makeRecord(QStringLiteral("comp.select"), QObject::tr("Select the composite take"), QObject::tr("Track")));
 
 	return out;
 }
