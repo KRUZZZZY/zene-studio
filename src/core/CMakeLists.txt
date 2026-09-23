@@ -630,6 +630,20 @@ set(LMMS_SRCS
 	# The livecode.* rows (board card #708): two snapshot rows and the
 	# not_mutating read of the schedule clock, in their own group file.
 	core/ControlReversibilityTableLivecode.cpp
+	# board card #712: the session-wide dynamic-tuning table (mts.* group) -
+	# the engine object (three TUs: the table, the .scl/.kbm parsers, the
+	# MTS-ESP publication - split for the file-length ratchet), the group
+	# itself, its A16 row file, and the vendored MTS-ESP master/client API the
+	# table publishes through (thirdparty/mts-esp/, 0BSD - see the README
+	# beside them; BOTH TUs compile, so the "these two files build in a
+	# GPLv2 tree" claim is measured, not claimed).
+	core/SessionTuning.cpp
+	core/SessionTuningScala.cpp
+	core/SessionTuningMtsEsp.cpp
+	core/ControlCommandsMts.cpp
+	core/ControlReversibilityTableMts.cpp
+	${CMAKE_SOURCE_DIR}/thirdparty/mts-esp/libMTSClient.cpp
+	${CMAKE_SOURCE_DIR}/thirdparty/mts-esp/libMTSMaster.cpp
 	# ControllerSurface.cpp - the mapping-template store of the controller
 	# surface (feature row 19, board task #651). Missed by the lane's WIP commit
 	# cbb717660: the file was written but never added to this list, so nothing
@@ -982,6 +996,10 @@ SET(ZENE_API_SRCS
 	core/ControlReversibilityTableMeter.cpp
 	core/ControlReversibilityTableMidiReconnect.cpp
 	core/ControlReversibilityTableMmpzGit.cpp
+	# The mts.* rows (board card #712): five snapshot rows, the master's
+	# action true_inverse and the read - the row file joins the boundary like
+	# every table file.
+	core/ControlReversibilityTableMts.cpp
 	core/ControlReversibilityTableNoteScale.cpp
 	core/ControlReversibilityTableOutOfProcess.cpp
 	core/ControlReversibilityTablePassive.cpp

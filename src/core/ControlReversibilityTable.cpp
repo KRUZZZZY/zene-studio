@@ -93,6 +93,12 @@ namespace control
 // ControlReversibilityTableSample.cpp, joined below.
 LMMS_EXPORT const ReversibilityRow* reversibilitySampleRowTable(int* rowCount);
 
+// Board card #712: the mts.* group's seven rows, DECLARED here beside the
+// join for the same reason sample's are - include/ControlReversibility.h sits
+// over the file-length ratchet and one new group does not move it. The table
+// itself is ControlReversibilityTableMts.cpp, joined below.
+LMMS_EXPORT const ReversibilityRow* reversibilityMtsRowTable(int* rowCount);
+
 /*! The true_inverse block, in its SIX files JOINED: the LIVE-checkpoint rows
  *  (ControlReversibilityTableLive.cpp, this train's move - see that file's own
  *  header), then the recorded-ACTION rows (ControlReversibilityTableAction.cpp),
@@ -124,7 +130,8 @@ const ReversibilityRow* reversibilityRowTable(int* rowCount)
 				reversibilityRevisionsRowTable, reversibilityDetectRowTable, reversibilitySafeStartRowTable,
 				reversibilityAutomationRampRowTable, reversibilitySessionViewRowTable,
 				reversibilityClapInstrumentRowTable, reversibilityOutOfProcessRowTable,
-				reversibilitySampleRowTable, reversibilityLivecodeRowTable})
+				reversibilitySampleRowTable, reversibilityLivecodeRowTable,
+				reversibilityMtsRowTable})
 		{
 			int count = 0;
 			const ReversibilityRow* rows = rowsFor(&count);

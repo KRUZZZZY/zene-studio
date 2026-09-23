@@ -204,6 +204,20 @@ LMMS_EXPORT void registerClockCommands(ControlRegistry& registry);
  *  half is include/ScriptClock.h (the grid, the poll and the bounded fire). */
 LMMS_EXPORT void registerLivecodeCommands(ControlRegistry& registry);
 
+/*! mts.get_state / mts.load_scale / mts.load_keymap / mts.set_tuning /
+ *  mts.set_note / mts.reset / mts.master_set - the session-wide dynamic
+ *  tuning table (board card #712; MTS-ESP host-wide tuning). The engine half
+ *  is include/SessionTuning.h / src/core/SessionTuning.cpp: ONE 128-entry
+ *  table every instrument reads AT RENDER when it is active - Interval/Scale/
+ *  Keymap stay the Microtuner's (docs/MIDI-DEPTH.md:20), this adds only the
+ *  session-wide object. thirdparty/mts-esp/ (upstream ODDSound/MTS-ESP, 0BSD
+ *  - see the README beside the files) is the master API the table publishes
+ *  through once mts.master_set arms it. The group is the ONLY way to reach
+ *  the table: there is no interface surface for it in this release
+ *  (docs/KNOWN-LIMITATIONS.md). `mts.*` was free in the registry (`clock.*`
+ *  is the MIDI clock's). */
+LMMS_EXPORT void registerMtsCommands(ControlRegistry& registry);
+
 
 //! The retrospective MIDI capture surface (owner item 14, docs/MIDI-RETRO-CAPTURE.md),
 //! and the two halves of the chain-preset group (OWNER-31 item 2). Moved here from

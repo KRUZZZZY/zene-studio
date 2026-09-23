@@ -92,6 +92,27 @@ public:
 		return ( key >= 0 && key < NumKeys ) ? m_notes[key] : nullptr;
 	}
 
+	/*! Mark every NotePlayHandle this track is currently driving for a
+	 *  frequency recomputation (board card #712). The session-wide tuning
+	 *  table calls this from the CONTROL thread after a table flip; each
+	 *  handle picks the flag up on the AUDIO thread's next period
+	 *  (NotePlayHandle::play -> updateFrequency), so the write is a plain
+	 *  bool store on both sides - no allocation, no lock, and no frequency is
+	 *  computed off the control thread. Both lists are walked: the keyed MIDI
+	 *  notes (m_notes) and every handle the engine is playing this period
+	 *  (m_processHandles, which is where clip-driven notes live). */
+	void retunePlayingNotes()
+	{
+		for (int key = 0; key < NumKeys; ++key)
+		{
+			if (m_notes[key] != nullptr) { m_notes[key]->setFrequencyUpdate(); }
+		}
+		for (NotePlayHandle* handle : m_processHandles)
+		{
+			handle->setFrequencyUpdate();
+		}
+	}
+
 	// silence all running notes played by this track
 	void silenceAllNotes( bool removeIPH = false );
 

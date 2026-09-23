@@ -31,6 +31,7 @@
 #include "InstrumentTrack.h"
 #include "Instrument.h"
 #include "MpeExpression.h"
+#include "SessionTuning.h"
 #include "Song.h"
 #include "lmms_math.h"
 
@@ -590,7 +591,29 @@ void NotePlayHandle::updateFrequency()
 		slideOffset = slidePitchOffset( m_slideSourceKey, key(), progress );
 	}
 
-	if (m_instrumentTrack->m_microtuner.enabled())
+	// The session-wide table (board card #712) wins when it is ACTIVE: one
+	// table, every instrument, read HERE at render - SessionTuning's retune
+	// walk marked this handle after the flip, so a change retunes even notes
+	// that are already sounding while the transport plays. Inactive (the
+	// default) means the branches below run exactly as they did before #712.
+	SessionTuning* const sessionTuning = SessionTuning::instance();
+	if (sessionTuning->isActive())
+	{
+		const auto transposedKey = key() + masterPitch;
+		const auto frequency = sessionTuning->noteToFreq(transposedKey);
+		if (frequency > 0.f)
+		{
+			m_frequency = frequency * std::exp2((detune + slideOffset + instrumentPitch / 100) / 12.f);
+			m_unpitchedFrequency = frequency * std::exp2((detune + slideOffset) / 12.f);
+		}
+		else
+		{
+			// The keymap does not map the key: silence, the Microtuner's own
+			// contract for an unmapped key.
+			m_frequency = m_unpitchedFrequency = 0;
+		}
+	}
+	else if (m_instrumentTrack->m_microtuner.enabled())
 	{
 		// custom key mapping and scale: get frequency from the microtuner
 		const auto transposedKey = key() + masterPitch;

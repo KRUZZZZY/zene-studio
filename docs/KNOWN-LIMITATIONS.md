@@ -1917,3 +1917,40 @@ is `unverified` - no Windows builder exists in this wave. The frame bevel,
 `hoverColors()` and TabWidget's tab background now read Shadow/Window/Dark/Mid roles;
 under LmmsPalette the bevel is byte-identical (its Shadow role *is* black), the others
 move to whatever the theme defines - which is the point of the change.
+
+## Host-wide dynamic tuning (`mts.*`, board card #712, lane `zene-712`) — added 2026-09-22
+
+**The one line this card owes, in its own heading: the session-wide tuning table (the
+`mts.*` group) has no interface surface yet — it is socket-only (SPEC A16), and the
+MTS-ESP publication path is inert (a typed refusal names the library) until upstream's
+separately-installed `libMTS.so` is present.**
+
+Fleshed out, because both halves of that sentence hide something real:
+
+- **No GUI reaches the table.** `mts.load_scale` / `mts.set_tuning` / `mts.set_note` /
+  `mts.load_keymap` / `mts.reset` / `mts.master_set` are reachable only through the
+  control socket; the existing Microtuner dialog merely FEEDS the table's content
+  (`MicrotunerConfig::applyScale()` / `applyKeymap()` call `SessionTuning::feedScale()` /
+  `feedKeymap()`), and feeding never activates it — there is no switch anywhere in the
+  interface that turns the session table on. An INACTIVE table is the default, and then
+  render takes exactly the pre-#712 branches (proved by
+  `tests/src/core/SessionTuningTest.cpp::baselineInactiveKeepsTheOldRenderPath`).
+  Those two dialog lines compile and call the tested setter; the dialog itself cannot be
+  driven headless, so their run-time path is `unverified` by the ctest.
+- **MTS-ESP's IPC library is not shipped here.** `thirdparty/mts-esp/` is upstream's
+  client/master pair (0BSD, provenance verified in its README), but upstream ships the
+  actual shared-memory core as a separately-installed `libMTS.so`
+  (`/usr/local/lib/libMTS.so` on Linux) that the wrappers `dlopen` at startup — without
+  it every master call is an inert no-op. So `mts.master_set {"enabled": true}` is a
+  typed REFUSAL naming that path on every builder without the library (this box: proven
+  by the `masterSetReportsItsOwnMtsEspState` slot), and the CLIENT half is compiled but
+  never called — no "follow an external MTS-ESP master" mode exists yet. The
+  library-present branch of that slot stays runnable for a builder that does have
+  upstream's MTS-ESP installed; **no builder in this wave has one**, so the arm →
+  publish → client-observe round trip is `unverified` here, as is the Windows
+  presence probe (`GetModuleHandleW` — no Windows builder in this wave).
+- **The two measurement constants this group moved are LANE-LOCAL, the merge tip must
+  re-measure**: the A16-HISTOGRAM block in `docs/RELEASE-NOTES-v0.3.0-alpha.md`
+  (re-taken with `bash tools/dawproject-proof.sh`, part 2) and `ControlRegistryTest`'s
+  `commandCount()` (`85 + 7 + 5 + 5 + 5 + 3 + 3 + 7`). Two sibling lanes add groups
+  too; the train re-takes both at the merged tip.

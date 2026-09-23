@@ -4,7 +4,7 @@ src/core/ScriptBindings.cpp	1174
 include/AudioPorts.h	992
 plugins/Vst3Effect/Vst3Host.cpp	891
 src/core/ScriptEngine.cpp	880
-include/ControlRegistryGroups.h	732
+include/ControlRegistryGroups.h	746
 src/wasm/WasmSandbox.cpp	597
 tests/zene-api-boundary.py	594
 tests/control-socket-path-safety.py	574

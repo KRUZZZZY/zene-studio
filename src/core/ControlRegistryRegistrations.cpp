@@ -132,6 +132,9 @@ void registerControlCommands(ControlRegistry& registry)
 	// ScriptEngine, reached through hooks (bar/beat/transport) instead of only
 	// an explicit run.
 	registerLivecodeCommands(registry);
+	// board card #712: the session-wide dynamic-tuning table (MTS-ESP
+	// host-wide tuning) - the mts.* group over include/SessionTuning.h.
+	registerMtsCommands(registry);
 #ifdef LMMS_HAVE_SESSION_VIEW
 	// The session.* group travels with the Session View data layer: without
 	// LMMS_HAVE_SESSION_VIEW there is no grid to address, and the registry
