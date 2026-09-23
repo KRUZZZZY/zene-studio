@@ -91,3 +91,24 @@ naming requirement is vacuously satisfied: `todo.mts` → `mts.*`, `todo.s7-lane
   run; 10/10 green in repeat probes (recorded in `docs/s10-logs/gates.md`).
 - The stripped-build mtime trap (strip rewrites `.o` timestamps and make skips
   recompiles) bit twice and is documented for future lanes.
+
+## OPEN at close (boarded — do not read this report as fully executed)
+
+Three items were reported in this session but are NOT closed here; each has a
+boarded task with a full spec, and this section exists so a cold reader cannot
+mistake the acceptance for their completion:
+
+1. **#745 — the owner's actual crashing songs are unconfirmed on the fixed
+   build.** The UAF class is fixed and proved (8/8 `SessionTuningTest`), but no
+   crashing file from the owner's session was re-opened against it. Open the
+   files (or the 42-fixture corpus + `Crunk(Demo).mmp`) on `9d658259d`+ before
+   calling the legacy-load crash dead.
+2. **#743 — `ProjectVersionTest`'s transient** (one failure under a disk-full
+   parallel run; 10/10 green in probes) is un-stressed under the triggering
+   conditions.
+3. **#744 — `verification/CRASH-TESTING-INVENTORY.md` still reads 340 ids**;
+   the measured surface is 350/56 groups. The doc needs its figure folded to
+   measured state with the stale number kept as dated history.
+
+Frontier (not a defect, for the next wave): multicore S2+ — the published
+schedule exists (Slice 0+1); execution is unbuilt (see `ARCH-8` §5).
