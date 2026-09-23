@@ -324,7 +324,6 @@ const ReversibilityRow kPassiveRows[] = {
 		"no write", ""),
 	R("transport.get_state", RC::NotMutating, false, "reads the transport", "no write", ""),
 
-#ifdef LMMS_HAVE_SESSION_VIEW
 	// The session.* launch requests write NO project state - they queue into
 	// SessionScheduler exactly like transport.play - so recording a transaction
 	// for one would shadow the undo of the real edit underneath it (the defect
@@ -339,7 +338,6 @@ const ReversibilityRow kPassiveRows[] = {
 		"one atomic reset request; it edits no model and drops only the audio thread's transient slot table", "nothing to reverse: the slots are relaunched from the model, which the reset did not touch", ""),
 	R("session.get_state", RC::NotMutating, false,
 		"reads the model and the launch engine's atomics", "no write", ""),
-#endif // LMMS_HAVE_SESSION_VIEW
 
 	R("warp.list", RC::NotMutating, false, "reads a clip's warp map", "no write", ""),
 

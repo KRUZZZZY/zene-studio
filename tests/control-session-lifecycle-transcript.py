@@ -37,8 +37,9 @@ Started through the shared harness (tests/control_socket_harness.py), so this
 file adds no second launch path.
 
 Usage: QT_QPA_PLATFORM=offscreen python3 control-session-lifecycle-transcript.py <lmms>
-Exit code 0 only when every check held; 77 (ctest Skipped, never Passed) when
-this build has no session.* group at all (WANT_SESSION_VIEW=OFF).
+Exit code 0 only when every check held; 1 when a check failed or the
+session.* group is missing (native engine code since ARCH-4 S10 removed
+WANT_SESSION_VIEW, so a build without it is broken, not skipped).
 """
 
 import os
@@ -482,9 +483,9 @@ def main(argv):
     report_results(recorder)
     transcript.dump()
     if not registered:
-        H.ok("this build has no session.* group (WANT_SESSION_VIEW=OFF): "
-             "Skipped, never Passed")
-        return 77
+        print("FAIL: this build registers no session.* id - the group is "
+              "native engine code since ARCH-4 S10 removed WANT_SESSION_VIEW")
+        return 1
     if recorder.problems:
         print("")
         recorder.problems.report("session.* slot lifecycle control-surface transcript")

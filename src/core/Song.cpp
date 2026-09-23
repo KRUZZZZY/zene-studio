@@ -279,7 +279,6 @@ void Song::processNextBuffer()
 			MidiClock::nowNs() );
 	}
 
-#ifdef LMMS_HAVE_SESSION_VIEW
 	// Session View launch scheduling (task #595, SPEC-zene-studio A2/A3). The
 	// session has its own clock domain, so this runs every audio period -
 	// before the transport gate below - and launches can be scheduled while
@@ -295,7 +294,6 @@ void Song::processNextBuffer()
 		m_sessionScheduler.processAudio(sessionClock,
 			Engine::audioEngine()->framesPerPeriod());
 	}
-#endif
 
 	// If nothing is playing, there is nothing to do
 	if (!m_playing) { return; }
@@ -455,15 +453,12 @@ void Song::processNextBuffer()
 			processAutomations(trackList, getPlayPos(), framesToPlay);
 			processMetronome(frameOffsetInPeriod);
 
-#ifdef LMMS_HAVE_SESSION_VIEW
 			// Column index of the next track in the song's own track list;
 			// only meaningful in PlayMode::Song, which is the only mode this
 			// test is applied in.
 			int sessionTrackIndex = 0;
-#endif
 			for (const auto track : trackList)
 			{
-#ifdef LMMS_HAVE_SESSION_VIEW
 				// SPEC-zene-studio A1: a track's session and arrangement
 				// content are mutually exclusive. While a session clip on this
 				// column is playing, the track is taken over and its
@@ -474,7 +469,6 @@ void Song::processNextBuffer()
 				{
 					continue;
 				}
-#endif
 				track->play(getPlayPos(), framesToPlay, frameOffsetInPeriod, clipNum);
 			}
 		}
@@ -1260,14 +1254,8 @@ void Song::clearProject()
 
 	removeAllControllers();
 
-#ifdef LMMS_HAVE_SESSION_VIEW
 	m_sessionModel.clear();
 	m_sessionScheduler.reset();
-#else
-	// This build has no session reader; whatever block the previous project
-	// carried must not leak into the next one (see loadProject()).
-	m_preservedSessionXml.clear();
-#endif
 
 	// ...and neither may the sections the previous project left unclaimed. The
 	// list describes ONE document (SPEC-ARCH-4 1.6.4), and the walk below only
@@ -1750,29 +1738,6 @@ void Song::loadProject( const QString & fileName, const QStringList & skipSectio
 
 
 // only save current song as filename and do nothing else
-namespace
-{
-#ifndef LMMS_HAVE_SESSION_VIEW
-//! Write back a `<session>` block this build cannot parse. Extracted from
-//! Song::saveProjectFile, whose three branches for this one concern - is there a
-//! preserved block, did it parse, did it have a root element - measured it at
-//! CCN 11 against the all-scope ratchet's target of 10. Behaviour is identical:
-//! an empty block appends nothing, an unparseable one is left alone, a parsed
-//! one is appended verbatim, so a build without the Session View cannot drop a
-//! feature's data by opening and saving a project. Guarded like its only caller:
-//! in a session-view build the block is never written back, and an unguarded
-//! helper is an unused function, which -Werror refuses.
-void appendPreservedSessionXml( const QString & xml, DataFile & dataFile )
-{
-	if( xml.isEmpty() ) { return; }
-	QDomDocument preserved;
-	if( !preserved.setContent( xml, false ) ) { return; }
-	const QDomElement root = preserved.documentElement();
-	if( root.isNull() ) { return; }
-	dataFile.content().appendChild( dataFile.importNode( root, true ) );
-}
-#endif // !LMMS_HAVE_SESSION_VIEW
-} // namespace
 
 /*! ARCH-4 S7 (SPEC-ARCH-4 1.1 sketch / migration upconversion row): the lane
  *  entities as ONE top-level <z:lanes> section, written ONLY when some track's
@@ -1931,7 +1896,6 @@ bool Song::saveProjectFile(const QString & filename, bool withResources)
 		saveVisibilitySetState( dataFile, dataFile.content() );
 	}
 
-#ifdef LMMS_HAVE_SESSION_VIEW
 	// Only projects that use the session view carry scene state; a pre-session
 	// project re-saves without a section (see SessionModel::shouldPersist).
 	// ARCH-4 S8 (SPEC-ARCH-4 5.1 row S8, migration row :403): the section is
@@ -1947,14 +1911,6 @@ bool Song::saveProjectFile(const QString & filename, bool withResources)
 	{
 		m_sessionModel.saveScenesSection( dataFile, dataFile.content() );
 	}
-#else
-	// A <session> block read by a build without the Session View feature is
-	// written back exactly as it was read, so this build cannot drop a
-	// feature's data by opening and saving a project. Nothing is appended when
-	// the loaded project had no block, which is why project I/O stays
-	// byte-identical for every project that never used the session view.
-	appendPreservedSessionXml( m_preservedSessionXml, dataFile );
-#endif
 
 	// ARCH-4 S7 (SPEC-ARCH-4 1.1 / migration row): the lane entities, before
 	// the unclaimed tail so 1.6.1's re-emission stays last, and before the
@@ -2282,7 +2238,6 @@ bool Song::restoreNamedSection(const QDomElement & element)
 	// each.
 	if( restorePublisherBackedSection( element ) ) { return true; }
 
-#ifdef LMMS_HAVE_SESSION_VIEW
 	// ARCH-4 S8 (SPEC-ARCH-4 5.1 row S8 / migration row :403): the NATIVE
 	// scene cells, top-level <z:scenes> - claim-or-preserve like the
 	// <z:lanes> branch above: the exact shape saveScenesSection produces
@@ -2306,22 +2261,6 @@ bool Song::restoreNamedSection(const QDomElement & element)
 		m_sessionModel.restoreState( element );
 		return true;
 	}
-#else
-	if( name == "session" )
-	{
-		// This build has no Session View reader (WANT_SESSION_VIEW=OFF, the
-		// default). No other branch claims the element, so without this the
-		// block would simply vanish from the project the moment a default build
-		// re-saved it - silently, with no error, losing a whole feature's data.
-		// The raw XML is kept and re-emitted on save (see saveProjectFile()) so
-		// a load -> save round trip through a session-blind build cannot drop
-		// it. This is the precedent S1b generalises; the path is unchanged.
-		QTextStream preserved( &m_preservedSessionXml );
-		element.save( preserved, 2 );
-		preserved.flush();
-		return true;
-	}
-#endif
 
 	return false;
 }

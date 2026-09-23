@@ -45,14 +45,15 @@ THE FIX IS PRINTED WITH THE FAILURE: the exact
 `python3 tools/mcp-zene-control/snapshot_commands.py --socket <sock>` invocation,
 against a live instance, then commit the regenerated file.
 
-CONFIGURATION. The snapshot is captured from the RELEASE configuration (both
-command-group options ON). Two CMake options remove a whole group at compile
-time - `WANT_SESSION_VIEW=OFF` (the `session.*` group) and `ZENE_TELEMETRY=OFF`
-(the `telemetry.*` group) - and a build that chose either has a shorter live list
-for a reason that is not drift. `tests/CMakeLists.txt` passes each one in as
-`--compiled-out <prefix>`; those ids are excused from the comparison, and the
-flag is checked in BOTH directions, so a flag naming a group the binary DOES
-declare is a failure rather than a silent blindfold.
+CONFIGURATION. The snapshot is captured from the RELEASE configuration.
+One CMake option still removes a whole group at compile time -
+`ZENE_TELEMETRY=OFF` (the `telemetry.*` group) - and a build that chose it has
+a shorter live list for a reason that is not drift. (`WANT_SESSION_VIEW=OFF`
+used to remove `session.*` as well; ARCH-4 S10 removed the option and the
+group is native engine code now.) `tests/CMakeLists.txt` passes each remaining
+flag in as `--compiled-out <prefix>`; those ids are excused from the
+comparison, and the flag is checked in BOTH directions, so a flag naming a
+group the binary DOES declare is a failure rather than a silent blindfold.
 
 There is ONE option in the other direction, and it needs both directions checked
 for the same reason: `WANT_WASM=ON` with the wasmtime C API on the find path
@@ -127,8 +128,8 @@ def parse_args(argv):
     parser.add_argument("binary", help="the built zene binary ($<TARGET_FILE:zene>)")
     parser.add_argument("--compiled-out", action="append", default=[], metavar="PREFIX",
                         help="a command-id prefix this build's configuration removed at "
-                             "compile time (session. for -DWANT_SESSION_VIEW=OFF, "
-                             "telemetry. for -DZENE_TELEMETRY=OFF); repeatable")
+                             "compile time (telemetry. for -DZENE_TELEMETRY=OFF); "
+                             "repeatable")
     parser.add_argument("--compiled-in", action="append", default=[], metavar="PREFIX",
                         help="a command-id prefix this build's configuration ADDS to the "
                              "surface, which the release snapshot therefore cannot carry "

@@ -344,9 +344,9 @@ LMMS_EXPORT const ReversibilityRow* reversibilityStemRowTable(int* rowCount);
  *  because the two files the other session.* rows live in are at the
  *  file-length ratchet (include/ControlRegistry.h at 502 lines, and the passive
  *  block at its limit). Joined into reversibilityRowTable() by ONE entry.
- *  The array is EMPTY without LMMS_HAVE_SESSION_VIEW: the ids do not exist in
- *  that configuration, and a row naming an unregistered command is a failure in
- *  the other direction (ReversibilityContractTest). */
+ *  The array is unconditional since ARCH-4 S10 removed WANT_SESSION_VIEW: the
+ *  ids exist in every configuration, and a row naming an unregistered command
+ *  remains a failure in the other direction (ReversibilityContractTest). */
 LMMS_EXPORT const ReversibilityRow* reversibilitySessionViewRowTable(int* rowCount);
 /*! The sample-accurate automation GROUP's two rows (0.3.0, feature-list row 9,
  *  board task #646): `automation.ramp_set` (a live checkpoint on the automation

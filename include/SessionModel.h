@@ -50,8 +50,8 @@ namespace lmms
  *  track's session and arrangement content stay mutually exclusive.
  *
  *  Serialisation is the versioned <session> block (see SessionModel.cpp for the
- *  schema and the version policy). Everything is feature-gated behind
- *  WANT_SESSION_VIEW (LMMS_HAVE_SESSION_VIEW).
+ *  schema and the version policy). Native engine code: ARCH-4 S10 removed the
+ *  WANT_SESSION_VIEW (LMMS_HAVE_SESSION_VIEW) gate.
  */
 class LMMS_EXPORT SessionModel;
 

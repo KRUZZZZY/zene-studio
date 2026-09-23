@@ -51,10 +51,8 @@
 #include "UnclaimedElements.h"
 #include "VstSyncController.h"
 
-#ifdef LMMS_HAVE_SESSION_VIEW
 #include "SessionModel.h"
 #include "SessionScheduler.h"
-#endif
 
 namespace lmms
 {
@@ -532,9 +530,9 @@ public:
 
 	Metronome& metronome() { return m_metronome; }
 
-#ifdef LMMS_HAVE_SESSION_VIEW
-	//! Session View data layer (SPEC-zene-studio A1). Compiled only with
-	//! WANT_SESSION_VIEW; persisted as the versioned <session> block.
+	//! Session View data layer (SPEC-zene-studio A1): native engine code since
+	//! ARCH-4 S10 removed WANT_SESSION_VIEW; persisted as the native <z:scenes>
+	//! section (a legacy <session> block upconverts through the model).
 	SessionModel& sessionModel() { return m_sessionModel; }
 	const SessionModel& sessionModel() const { return m_sessionModel; }
 
@@ -543,7 +541,6 @@ public:
 	 *  and takes a track over while its session clip plays (SPEC A1). */
 	SessionScheduler& sessionScheduler() { return m_sessionScheduler; }
 	const SessionScheduler& sessionScheduler() const { return m_sessionScheduler; }
-#endif
 
 public slots:
 	void playSong();
@@ -793,16 +790,8 @@ private:
 
 	Metronome m_metronome;
 
-#ifdef LMMS_HAVE_SESSION_VIEW
 	SessionModel m_sessionModel;
 	SessionScheduler m_sessionScheduler;
-#else
-	//! Raw XML of a <session> block loaded by a build without the Session View
-	//! reader (WANT_SESSION_VIEW=OFF), re-emitted verbatim on save so this
-	//! build cannot silently drop another build's feature data. Merged into
-	//! post-alpha/integration with PR #594 - see docs/SAVELOAD-INTEGRITY.md.
-	QString m_preservedSessionXml;
-#endif
 
 	//! The <song> sections the last load did not claim, kept verbatim and
 	//! re-emitted on save (SPEC-ARCH-4 1.6.1). Each track keeps its own

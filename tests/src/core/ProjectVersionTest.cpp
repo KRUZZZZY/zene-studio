@@ -28,8 +28,6 @@
 
 #include "lmmsconfig.h"
 
-#ifdef LMMS_HAVE_SESSION_VIEW
-
 #include <QDomDocument>
 #include <QDomElement>
 #include <QString>
@@ -61,8 +59,6 @@ QString nodeToString( const QDomElement& node )
 }
 
 } // namespace
-
-#endif // LMMS_HAVE_SESSION_VIEW
 
 
 class ProjectVersionTest : public QObject
@@ -114,8 +110,6 @@ private slots:
 		//An identifier of the form "-x" is non-numeric, not negative
 		QVERIFY(ProjectVersion("1.0.0-alpha.-1") > "1.0.0-alpha.1");
 	}
-
-#ifdef LMMS_HAVE_SESSION_VIEW
 
 	//! (task #594) A <session> block round-trips every ClipSlot and Scene
 	//! field without loss, and re-serialising the loaded model is
@@ -382,7 +376,6 @@ private slots:
 		QCOMPARE( reparsed.slot( 0, 0 ).patternId(), 4 );
 	}
 
-#endif // LMMS_HAVE_SESSION_VIEW
 };
 
 QTEST_GUILESS_MAIN(ProjectVersionTest)

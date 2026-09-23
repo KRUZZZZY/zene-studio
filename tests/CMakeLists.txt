@@ -606,8 +606,8 @@ IF(LMMS_HAVE_STEM_SPLIT)
 	ENDIF()
 ENDIF()
 
-# Session View data layer tests (opt-in, see include/SessionModel.h).
-IF(LMMS_HAVE_SESSION_VIEW)
+# Session View data layer tests (native engine code since ARCH-4 S10 removed
+# WANT_SESSION_VIEW; see include/SessionModel.h).
 	LIST(APPEND LMMS_TESTS
 		src/core/SessionModelTest.cpp
 		# Launch scheduler + quantisation engine (task #595): the pure launch
@@ -631,7 +631,6 @@ IF(LMMS_HAVE_SESSION_VIEW)
 		src/core/SessionFollowTest.cpp
 		src/core/SessionArrangementRecordTest.cpp
 	)
-ENDIF()
 
 # gcov coverage instrumentation (see WANT_COVERAGE in the top-level
 # CMakeLists.txt). Applied to the unit-test executables only; the Part C
@@ -2266,12 +2265,11 @@ if(PYTHON3_EXECUTABLE AND CONTROL_SUITE_AVAILABLE)
 	)
 	# Session View milestone M1 (SPEC-zene-studio A1/A2, NEXT-0.3.0-AGENT-PROMPT
 	# 3.2): a saved project launches 4 clips across 2 scenes in sync at the next
-	# bar, driven END TO END through --control-socket. It is registered only
-	# when the session.* group is compiled in, because the commands it drives do
-	# not exist otherwise - a test that could not run must not be registered as
-	# one that passed. It takes no fixture: it builds the session through the
-	# socket, saves it, and reopens it, which is the point of the milestone.
-	if(LMMS_HAVE_SESSION_VIEW)
+	# bar, driven END TO END through --control-socket. The session.* group is
+	# native engine code (ARCH-4 S10 removed WANT_SESSION_VIEW), so the test
+	# registers unconditionally. It takes no fixture: it builds the session
+	# through the socket, saves it, and reopens it, which is the point of the
+	# milestone.
 		add_test(NAME ControlSessionLaunch
 			COMMAND ${PYTHON3_EXECUTABLE}
 				${CMAKE_CURRENT_SOURCE_DIR}/control-session-m1.py
@@ -2284,10 +2282,8 @@ if(PYTHON3_EXECUTABLE AND CONTROL_SUITE_AVAILABLE)
 		# launch_slot, stop_slot, stop_all, clear_slot and clear. The coverage
 		# audit (docs/COVERAGE-MATRIX-2026-09-13.md section 3.3) measured them as
 		# referenced nowhere outside src/ and include/ - the group's only proof
-		# named those five as its gap. Registered under the same guard, because a
-		# build with the Session View compiled out has no session.* group and a
-		# test that cannot run must not be registered as one that passed (the
-		# transcript reports ctest *Skipped*, exit 77, if it finds no group).
+		# named those five as its gap. The group is native engine code (ARCH-4
+		# S10 removed WANT_SESSION_VIEW), so this registers unconditionally.
 		add_test(NAME ControlSessionLifecycleTranscript
 			COMMAND ${PYTHON3_EXECUTABLE}
 				${CMAKE_CURRENT_SOURCE_DIR}/control-session-lifecycle-transcript.py
@@ -2306,10 +2302,9 @@ if(PYTHON3_EXECUTABLE AND CONTROL_SUITE_AVAILABLE)
 		# group is incidental. Each row carries the live reply, the read-back
 		# that shows the claimed effect, and the A16 class read OUT OF THE
 		# RUNNING INSTANCE (control.transactions), so the table's registered
-		# reference is a measurement and not a grep. Registered under the same
-		# guard as its siblings: a build with the Session View compiled out has
-		# no session.* group and a test that cannot run must not be registered
-		# as one that passed (the transcript reports ctest *Skipped*, exit 77).
+		# reference is a measurement and not a grep. The group is native engine
+		# code (ARCH-4 S10 removed WANT_SESSION_VIEW), so this registers with
+		# its siblings unconditionally.
 		add_test(NAME ControlSessionApiProof
 			COMMAND ${PYTHON3_EXECUTABLE}
 				${CMAKE_CURRENT_SOURCE_DIR}/control-session-api-proof.py
@@ -2319,7 +2314,6 @@ if(PYTHON3_EXECUTABLE AND CONTROL_SUITE_AVAILABLE)
 			TIMEOUT 300
 			SKIP_RETURN_CODE 77
 		)
-	endif()
 	# The export.* group (render settings): dither and the SRC converter. It had
 	# NO registered proof at all before the 2026-09-13 coverage audit - the only
 	# artefact that exercised it, tests/control-export-settings.py, was not in
@@ -3321,28 +3315,25 @@ endif()
 # never pass by doing nothing. There is no WANT_* option that gates the bridge: it
 # is Python under tools/, not a build target.
 #
-# The three options that move a whole command group at compile time are passed in
+# The options that move a whole command group at compile time are passed in
 # as prefixes, so a non-release configuration is compared against the ids it could
 # actually register instead of being failed for the options it chose:
-# WANT_SESSION_VIEW=OFF drops the session.* group and ZENE_TELEMETRY=OFF drops
-# telemetry.* (both `--compiled-out`, because the snapshot was captured from the
-# release configuration, which has them), and WANT_WASM=ON with the wasmtime C API
-# on the find path ADDS the wasm.* group (item #614) - eight ids the release snapshot
+# ZENE_TELEMETRY=OFF drops telemetry.* (`--compiled-out`, because the snapshot
+# was captured from the release configuration, which has it), and WANT_WASM=ON
+# with the wasmtime C API on the find path ADDS the wasm.* group (item #614) -
+# eight ids the release snapshot
 # cannot carry, because the snapshot is one file and a configuration is not, so
 # that one is `--compiled-in`. Every flag is checked in BOTH directions - a prefix
 # declared compiled out that the binary DOES register is a failure, and one
 # declared compiled in that the binary does NOT register (or that the snapshot
 # already carries) is a failure too - so no flag can become a blindfold.
-# SESSION_VIEW and TELEMETRY default ON (the configuration the snapshot was
-# captured from); WANT_WASM defaults ON but degrades to OFF without the wasmtime C
+# TELEMETRY defaults ON (the configuration the snapshot was captured from);
+# WANT_WASM defaults ON but degrades to OFF without the wasmtime C
 # API, which is every CI job, so on a default build the sandbox's ids are absent
 # on both sides and this test compares the release surface in full.
 # ---------------------------------------------------------------------------
 if(PYTHON3_EXECUTABLE AND CONTROL_SUITE_AVAILABLE)
 	set(ZENE_SNAPSHOT_COMPILED_OUT "")
-	if(NOT LMMS_HAVE_SESSION_VIEW)
-		list(APPEND ZENE_SNAPSHOT_COMPILED_OUT --compiled-out session.)
-	endif()
 	if(NOT ZENE_TELEMETRY_ENABLED)
 		list(APPEND ZENE_SNAPSHOT_COMPILED_OUT --compiled-out telemetry.)
 	endif()
@@ -3468,8 +3459,8 @@ endif()
 #     out; a wasm-enabled build gets no flag and must drive the group for real.
 #     The bridge's own half of that case is
 #     tools/mcp-zene-control/tests/test_declared_surface.py.
-#   - WANT_SESSION_VIEW=OFF drops session.* and ZENE_TELEMETRY=OFF drops
-#     telemetry.*; both default ON.
+#   - ZENE_TELEMETRY=OFF drops telemetry.* (it defaults ON); the session.*
+#     group is native engine code since ARCH-4 S10 and is never compiled out.
 #
 # SKIPPED (exit 77 -> ctest "Skipped", never "Passed") when no interpreter with
 # the `mcp` distribution can be found: the bridge's stdio server is the thing
@@ -3477,9 +3468,6 @@ endif()
 # ---------------------------------------------------------------------------
 if(PYTHON3_EXECUTABLE)
 	set(ZENE_MCP_COMPILED_OUT "")
-	if(NOT LMMS_HAVE_SESSION_VIEW)
-		list(APPEND ZENE_MCP_COMPILED_OUT --compiled-out session.)
-	endif()
 	if(NOT ZENE_TELEMETRY_ENABLED)
 		list(APPEND ZENE_MCP_COMPILED_OUT --compiled-out telemetry.)
 	endif()

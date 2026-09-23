@@ -59,11 +59,10 @@
 // this compiler, so it is included explicitly.
 #include <vector>
 
-// lmmsconfig.h carries the ZENE_TELEMETRY_ENABLED and LMMS_HAVE_SESSION_VIEW
-// switches. ControlReversibility.h pulls in neither, and the session.* rows
-// below are guarded by the second one, so it has to be included explicitly -
-// without it the #ifdef reads "off" in a session-view build and silently drops
-// the six rows the registry declares.
+// lmmsconfig.h: build configuration. The session.* rows below were guarded by
+// LMMS_HAVE_SESSION_VIEW until ARCH-4 S10 removed WANT_SESSION_VIEW; they are
+// unconditional now, and the include stays so this file's dependency set does
+// not change under a guard removal.
 #include "lmmsconfig.h"
 
 /*!
@@ -249,7 +248,6 @@ const ReversibilityRow kActionRows[] = {
 		"action checkpoint: the recorded undo step restores the revision the "
 		"restore replaced",
 		""),
-#ifdef LMMS_HAVE_SESSION_VIEW
 	// The session.* group: SessionModel is not a JournallingObject, so each edit
 	// captures the whole <session> block and records ONE action checkpoint that
 	// restores it (the true_inverse form clip.split and track.add use).
@@ -265,7 +263,6 @@ const ReversibilityRow kActionRows[] = {
 		"clearing a cell destroys a reference id or an audio source path that no live object holds a copy of", "action checkpoint: the captured <session> block is the only place the cleared reference still exists, and it is restored", ""),
 	R("session.clear", RC::TrueInverse, true,
 		"it empties every cell, every scene override and the global quantisation at once, on a model the engine does not journal", "action checkpoint: ONE control.undo restores the whole session, so clearing a grid is one undoable step rather than one per cell", ""),
-#endif // LMMS_HAVE_SESSION_VIEW
 
 	// ---- racks (#599): the chains, the selector, the macros and the zones ----
 	R("rack.add_chain", RC::TrueInverse, true,
