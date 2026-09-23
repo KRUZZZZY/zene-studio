@@ -35,11 +35,11 @@
 
 #include "ControlReversibility.h"
 
-// lmmsconfig.h carries LMMS_HAVE_SESSION_VIEW. These six rows are guarded by the
-// same switch that guards ControlRegistryRegistrations.cpp's two registration
-// calls and ControlCommandsSession*.cpp's sources, so the table and the registry
-// stay consistent in both directions - the rule
-// ControlReversibilityTablePassive.cpp states for the launch rows.
+// lmmsconfig.h: build configuration. These six rows were guarded by
+// LMMS_HAVE_SESSION_VIEW until ARCH-4 S10 removed WANT_SESSION_VIEW; they are
+// unconditional now, mirroring the registration calls in
+// ControlRegistryRegistrations.cpp (the rule
+// ControlReversibilityTablePassive.cpp states for the launch rows).
 #include "lmmsconfig.h"
 
 namespace lmms
@@ -56,7 +56,6 @@ using RC = ReversibilityClass;
 #define R(id, cls, rev, reason, mechanism, fallback) \
 	{ id, cls, reason, mechanism, fallback, rev, nullptr }
 
-#ifdef LMMS_HAVE_SESSION_VIEW
 const ReversibilityRow kSessionViewRows[] = {
 	// =====================================================================
 	// Follow Actions (task #641, SPEC §4.1 / SPEC-zene-studio A3): the engine
@@ -124,12 +123,6 @@ const ReversibilityRow kSessionViewRows[] = {
 
 constexpr int kSessionViewRowCount =
 	static_cast<int>(sizeof(kSessionViewRows) / sizeof(kSessionViewRows[0]));
-#else
-// No Session View: an EMPTY table, but a valid pointer - the join in
-// ControlReversibilityTable.cpp walks [rows, rows + count).
-const ReversibilityRow kSessionViewRows[1] = {};
-constexpr int kSessionViewRowCount = 0;
-#endif // LMMS_HAVE_SESSION_VIEW
 
 } // namespace
 

@@ -94,7 +94,6 @@ QDomElement savedSession( const QString& project )
 		.firstChildElement( QStringLiteral( "session" ) );
 }
 
-#ifdef LMMS_HAVE_SESSION_VIEW
 //! The <z:scenes> ... </z:scenes> substring: the NATIVE scene-state form a
 //! session-aware build writes since ARCH-4 S8 (the legacy helpers above stay
 //! for the absence assertions here and for a session-blind build's verbatim
@@ -122,7 +121,6 @@ QDomElement savedScenesSection( const QString& project )
 		.firstChildElement( QStringLiteral( "song" ) )
 		.firstChildElement( QStringLiteral( "z:scenes" ) );
 }
-#endif // LMMS_HAVE_SESSION_VIEW
 
 
 //! A song project whose only interesting content is a version-1 <session>
@@ -192,13 +190,11 @@ private slots:
 	void cleanupTestCase() { Engine::destroy(); }
 
 	//! The deliverable: a project carrying scene state must not lose it when a
-	//! build opens and re-saves it. Two shapes, both asserted: a
-	//! session-aware build (the default since 0.3.0-alpha) UPCONVERTS the
-	//! legacy <session> block into the native <z:scenes> section - same data,
-	//! new form (ARCH-4 S8, migration row :403); a session-blind build
-	//! (WANT_SESSION_VIEW=OFF) preserves the block verbatim, which is this
-	//! test's original claim and is unchanged.
-	void sessionBlockSurvivesARoundTripThroughASessionBlindBuild()
+	//! build opens and re-saves it. The build UPCONVERTS the legacy
+	//! <session> block into the native <z:scenes> section - same data, new
+	//! form (ARCH-4 S8, migration row :403). This test's original claim -
+	//! no data is lost by an open -> save round trip - is unchanged.
+	void sessionBlockSurvivesALegacySessionRoundTrip()
 	{
 		QTemporaryDir dir;
 		QVERIFY( dir.isValid() );
@@ -215,7 +211,6 @@ private slots:
 		QVERIFY( song->saveProjectFile( firstSave ) );
 		const QString firstText = readText( firstSave );
 
-#ifdef LMMS_HAVE_SESSION_VIEW
 		// ARCH-4 S8: a session-aware build claims the legacy block through the
 		// upconverter and re-saves the SAME data as the native <z:scenes>
 		// section - the claim here is "no data is lost by opening and
@@ -244,23 +239,6 @@ private slots:
 		QCOMPARE( nativeRows.length(), 1 );
 		QCOMPARE( nativeRows.at( 0 ).toElement().attribute( QStringLiteral( "name" ) ),
 			QStringLiteral( "Verse" ) );
-#else
-		const QDomElement firstSession = savedSession( firstText );
-		QVERIFY2( !firstSession.isNull(),
-			"the <session> block was dropped by a load -> save round trip: a build "
-			"without the Session View reader silently destroyed a feature's data" );
-		QCOMPARE( firstSession.attribute( QStringLiteral( "version" ) ).toInt(), 1 );
-		QCOMPARE( firstSession.attribute( QStringLiteral( "tracks" ) ).toInt(), 2 );
-		QCOMPARE( firstSession.attribute( QStringLiteral( "scenes" ) ).toInt(), 2 );
-
-		const QDomNodeList clips = firstSession.elementsByTagName( QStringLiteral( "clip" ) );
-		QCOMPARE( clips.length(), 1 );
-		QCOMPARE( clips.at( 0 ).toElement().attribute( QStringLiteral( "pattern" ) ).toInt(), 11 );
-		const QDomNodeList scenes = firstSession.elementsByTagName( QStringLiteral( "scene" ) );
-		QCOMPARE( scenes.length(), 1 );
-		QCOMPARE( scenes.at( 0 ).toElement().attribute( QStringLiteral( "name" ) ),
-			QStringLiteral( "Verse" ) );
-#endif
 
 		// ...and it is stable: the second round trip is byte-identical to the
 		// first, so repeated opening and saving cannot degrade the state -
@@ -268,16 +246,12 @@ private slots:
 		song->loadProject( firstSave );
 		const QString secondSave = dir.filePath( QStringLiteral( "round2.mmp" ) );
 		QVERIFY( song->saveProjectFile( secondSave ) );
-#ifdef LMMS_HAVE_SESSION_VIEW
 		QCOMPARE( scenesSectionText( readText( secondSave ) ), scenesSectionText( firstText ) );
-#else
-		QCOMPARE( sessionBlock( readText( secondSave ) ), sessionBlock( firstText ) );
-#endif
 	}
 
 	//! Behaviour preservation: a project that never used the session view is
 	//! untouched by the fix - load and save leave the file byte-identical.
-	//! (With WANT_SESSION_VIEW=ON the same guarantee is held by
+	//! (The same guarantee is held by
 	//! SessionModelTest::preSessionProjectLoadsAndSavesUnchanged.)
 	void projectWithoutASessionBlockIsUnchanged()
 	{

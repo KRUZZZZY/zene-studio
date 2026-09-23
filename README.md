@@ -124,8 +124,8 @@ than it, so a stale recovery file no longer strands you at a prompt before autos
 Not in this build, and not claimed by it:
 
 - **Session View / clip launcher** — the data layer, the launch scheduler and the seventeen
-  `session.*` commands are in every release build (`WANT_SESSION_VIEW` defaults ON since 0.3.0 and the
-  release-honesty contract requires it), but there is still **no clip-launch grid and no scene
+  `session.*` commands are in every build (native engine code since ARCH-4 removed the last
+  `WANT_SESSION_VIEW` build option), but there is still **no clip-launch grid and no scene
   launcher** in the interface, and a launched slot does not render audio.
 - **Offline HTDemucs stem separation** — opt-in at configure time and off in every release build
   (`WANT_STEM_SPLIT` defaults OFF). This is not the command-line stem *export* above.

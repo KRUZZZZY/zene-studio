@@ -74,17 +74,15 @@ IF(WANT_WASM)
 	)
 ENDIF()
 
-# Session View data layer (opt-in, see include/SessionModel.h). Pure Qt: the
-# model, the clip slots and scenes, and the versioned <session> block.
-IF(LMMS_HAVE_SESSION_VIEW)
-	SET(LMMS_SESSION_SRCS
+# Session View data layer (native engine code since ARCH-4 S10 removed
+# WANT_SESSION_VIEW). Pure Qt: the model, the clip slots and scenes, and the
+# versioned <session> block.
+SET(LMMS_SESSION_SRCS
 		core/SessionClip.cpp
 		core/SessionModel.cpp
 		core/SessionScheduler.cpp
-		# The session.* control-surface group (SPEC A11-A16). It travels with
-		# the data layer: with WANT_SESSION_VIEW=OFF the registry must not
-		# advertise commands whose model is not compiled in, and
-		# registerControlCommands() guards the two calls the same way.
+		# The session.* control-surface group (SPEC A11-A16): always compiled
+		# with the data layer since ARCH-4 S10 removed WANT_SESSION_VIEW.
 		core/ControlCommandsSession.cpp
 		core/ControlCommandsSessionLaunch.cpp
 		# The Session View's completion halves (board task #641): Follow Actions
@@ -97,7 +95,6 @@ IF(LMMS_HAVE_SESSION_VIEW)
 		core/ControlCommandsSessionRecord.cpp
 		core/ControlCommandsSessionRecordLand.cpp
 	)
-ENDIF()
 
 set(LMMS_SRCS
 	${LMMS_SRCS}
@@ -612,8 +609,8 @@ set(LMMS_SRCS
 	# seam, and it exists because the two files the other session.* rows live in
 	# are at the file-length ratchet (include/ControlRegistry.h at 502 lines, and
 	# the passive block at its limit). Joined into reversibilityRowTable() by ONE
-	# entry; EMPTY without LMMS_HAVE_SESSION_VIEW, the same way the wasm render
-	# rows are empty without the wasmtime C API.
+	# entry. The rows are unconditional since ARCH-4 S10 removed
+	# WANT_SESSION_VIEW (the wasm render rows keep their own wasmtime guard).
 	core/ControlReversibilityTableSessionView.cpp
 
 	# the controller.* group (feature row 19, board task #651): MIDI controller

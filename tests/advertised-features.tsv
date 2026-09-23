@@ -26,24 +26,19 @@
 #     as a generated grid; no multi-out, no presets, no instrument latency in PDC,
 #     no out-of-process hosting.
 #
-# A NOTE ON WHY `session-view` MOVED FROM required=OFF TO required=ON IN 0.3.0-alpha.
-# Until 0.3.0 this row read OFF, because `OPTION(WANT_SESSION_VIEW "..." OFF)` defaulted OFF and no
-# release job passed it: the Session View data layer, its launch scheduler and the session.* control
-# group existed in the source and shipped in no build. The row was the thing that made the flip
-# non-optional (a build that turned the option on failed this gate until the documents moved), and it
-# worked - 0.3.0-alpha is an engine-and-agent release, so the option now defaults ON, the release jobs
-# get it without passing anything, and this row requires ON with the same commit flipping the default.
-#
-# WHAT THE ROW PROTECTS NOW, stated as narrowly as it can be, because it is the difference between a
-# claim and a wish. What this build CONTAINS with the option ON: the data layer (include/SessionModel.h,
-# the versioned <session> project block), the launch scheduler wired into Song::processNextBuffer
-# (src/core/SessionScheduler.cpp), and the session.* command group (src/core/ControlCommandsSession*.cpp)
-# through which an agent builds the grid, launches a clip or a whole scene, and reads the launch back.
-# What it still does NOT contain, and what the release notes must therefore not claim: there is NO CLIP
-# LAUNCHER - no grid, no scene launcher, no clip-cell UI, no Follow Action editor - and a launched
-# session slot does not render audio, because this tree has no session-clip playback path. A user cannot
-# see or hear the Session View; an agent can drive all of it through --control-socket. That sentence, not
-# the option's value, is the honest description of 0.3.0-alpha's Session View.
+# WHY THERE IS NO `session-view` ROW ANY MORE (ARCH-4 S10). There was one, and its history is the
+# discipline this manifest exists for: until 0.3.0 it read OFF (`OPTION(WANT_SESSION_VIEW "..." OFF)`
+# defaulted OFF and no release job passed it - the data layer, the scheduler and the session.* group
+# existed in source and shipped in no build), then from 0.3.0-alpha it read ON (the option's default
+# flipped, and this row is what made the flip non-optional: a build with the option ON failed this gate
+# until the documents moved). ARCH-4 S10 removed the option entirely - the scenes/lanes/session data
+# layer, the launch scheduler and the session.* control group are native engine code with no
+# compile-time switch - so there is nothing left for a row and a build to agree about
+# (SPEC-ARCH-4 3.3 step 2: "the gate does not need a row to be changed - it needs the row and the build
+# to agree"). The narrow claim the row carried stays true and stays documented in
+# docs/KNOWN-LIMITATIONS.md: drivable through --control-socket, NO clip-launch grid or scene-launcher
+# UI, and a launched session slot renders no audio. That is a product limitation, not a build option,
+# so this manifest (features keyed to options the binary reports) is not where it lives.
 #
 # WHY THERE IS NO ROW FOR TELEMETRY, THOUGH THE RELEASE DOCUMENTS IT.
 # The gate can only judge what the binary REPORTS, and the build-options string is assembled by
@@ -66,7 +61,7 @@
 # no row — the guard's job is to describe the build, not the build directory's biography. The fixture is a test
 # asset documented in prose; that is the whole claim.
 # GENERAL CAVEAT THIS EXPOSES, which belongs with the guard rather than only here: the dump is a function of the
-# source tree AND the build directory's configure history. All six rows below use options declared at the TOP
+# source tree AND the build directory's configure history. All five rows below use options declared at the TOP
 # LEVEL of `CMakeLists.txt`, so they are present either way — but any future row for a nested or conditionally
 # declared option must be verified on a FRESH configure before it is trusted.
 # Columns (TAB separated):
@@ -111,6 +106,5 @@
 vst3-hosting	WANT_VST3	ON	vst3effect	VST3 hosting (effects) is in the release	*
 vst3-instrument-hosting	WANT_VST3	ON	vst3instrument	VST3 instrument hosting (one instrument per track, MIDI in to audio out) is in the release	*
 clap-hosting	WANT_CLAP	ON	clapeffect	CLAP hosting (effects) is in the release on every platform	*
-session-view	WANT_SESSION_VIEW	ON	-	The Session View data layer, its launch scheduler and the session.* control group are in the release builds. The claim this row keeps true is the narrow one: it is drivable and observable through --control-socket, and there is still NO clip-launch grid and NO scene-launcher UI, and a launched session slot does not render audio (docs/KNOWN-LIMITATIONS.md)	*
 wasm-sandbox	WANT_WASM	OFF	-	The WASM DSP sandbox is documented as absent from these builds	*
 stem-separation	WANT_STEM_SPLIT	OFF	-	Offline stem separation is documented as absent from these builds	*

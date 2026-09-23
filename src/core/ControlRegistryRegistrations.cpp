@@ -41,13 +41,15 @@
 
 #include "ControlRegistry.h"
 
-// The #ifdef blocks in registerControlCommands() below use the two macros the
-// build sets (LMMS_HAVE_SESSION_VIEW, ZENE_TELEMETRY_ENABLED); they live in
-// lmmsconfig.h, which reached ControlRegistry.cpp transitively and did NOT
-// reach this file. Without this include a session/telemetry build would silently
-// register neither group - the failure was measured (ReversibilityContractTest:
-// "session.clear is in the table but not registered") and this include is the
-// fix. Included by name rather than relying on another header's chain.
+// The #ifdef block in registerControlCommands() below uses the macro the build
+// sets (ZENE_TELEMETRY_ENABLED); it lives in lmmsconfig.h, which reached
+// ControlRegistry.cpp transitively and did NOT reach this file. Without this
+// include a telemetry build would silently register neither group - the failure
+// was measured (ReversibilityContractTest: "session.clear is in the table but
+// not registered") and this include is the fix. Included by name rather than
+// relying on another header's chain. (The session.* registrations used to sit
+// behind LMMS_HAVE_SESSION_VIEW as well; ARCH-4 S10 removed that option and the
+// group is unconditional now.)
 #include "lmmsconfig.h"
 
 namespace lmms
@@ -135,21 +137,19 @@ void registerControlCommands(ControlRegistry& registry)
 	// board card #712: the session-wide dynamic-tuning table (MTS-ESP
 	// host-wide tuning) - the mts.* group over include/SessionTuning.h.
 	registerMtsCommands(registry);
-#ifdef LMMS_HAVE_SESSION_VIEW
-	// The session.* group travels with the Session View data layer: without
-	// LMMS_HAVE_SESSION_VIEW there is no grid to address, and the registry
-	// must not carry ids whose handler could not exist (the same rule the
-	// telemetry.* group above follows). The A16 table guards its rows with the
-	// same #ifdef, so the two stay consistent in both directions.
+	// The session.* group: the grid is native project state since ARCH-4 S10
+	// removed WANT_SESSION_VIEW, so these ids register unconditionally (the
+	// groove-pool rule stated above: ids whose handlers always exist are honest
+	// in every configuration). The A16 tables carry their session rows ungated
+	// to match.
 	registerSessionCommands(registry);
 	registerSessionLaunchCommands(registry);
 	// The Session View's completion halves (board task #641): the Follow Action
 	// evaluation and the Arrangement Record ring, each with its own ids
 	// (src/core/ControlCommandsSessionFollow.cpp, ...SessionRecord.cpp). They
-	// travel with the same flag and for the same reason as the two above.
+	// register under the same unconditional rule as the two above.
 	registerSessionFollowCommands(registry);
 	registerSessionRecordCommands(registry);
-#endif // LMMS_HAVE_SESSION_VIEW
 	registerExportCommands(registry);
 	// The render/export presets (feature row 70) - the saved store and the
 	// selection the next render is started with. No compile-time switch: the

@@ -112,7 +112,8 @@ measured until its proof line says so.
   (every field intact, block bytes stable across save/load/save) are asserted against the
   new section. Runtime slots unchanged.
 - `tests/src/core/ProjectOpenIntegrityTest.cpp`
-  `sessionBlockSurvivesARoundTripThroughASessionBlindBuild`: the flag-OFF half is
-  byte-for-byte the original claim (verbatim `<session>` preservation); the flag-ON half
-  asserts the same data survived into `<z:scenes>` (S8's upconversion) and that the legacy
-  block is not re-emitted alongside it.
+  `sessionBlockSurvivesALegacySessionRoundTrip` (renamed from
+  `...ThroughASessionBlindBuild` by ARCH-4 S10, which removed the build option and
+  with it the flag-OFF half): asserts the legacy `<session>` block's data survived
+  into `<z:scenes>` (S8's upconversion) and that the legacy block is not
+  re-emitted alongside it.

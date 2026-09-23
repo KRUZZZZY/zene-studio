@@ -55,9 +55,10 @@ namespace lmms
  *  everything - QDomElement::save( stream, 2 ) - which is what makes a re-emitted
  *  block identical to the one that was read.
  *
- *  The in-tree precedent this generalises is the `<session>` block a build
- *  without the Session View reader reads and writes back verbatim (src/core/
- *  Song.cpp, the `#else` of `#ifdef LMMS_HAVE_SESSION_VIEW`). S1b does not
+ *  The in-tree precedent this generalises was the `<session>` block a build
+ *  without the Session View reader read and wrote back verbatim (src/core/
+ *  Song.cpp's former `#else`; that path died with WANT_SESSION_VIEW, ARCH-4
+ *  S10). S1b does not
  *  rewrite that path; it gives the same treatment to everything else no reader
  *  claims.
  */

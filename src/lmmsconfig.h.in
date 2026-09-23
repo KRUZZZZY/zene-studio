@@ -39,7 +39,6 @@
 #cmakedefine LMMS_HAVE_SF_COMPLEVEL
 #cmakedefine LMMS_HAVE_WINMM
 #cmakedefine LMMS_HAVE_STEM_SPLIT
-#cmakedefine LMMS_HAVE_SESSION_VIEW
 #cmakedefine LMMS_HAVE_ONNXRUNTIME
 
 #cmakedefine LMMS_DEBUG_FPE

@@ -717,9 +717,9 @@ LMMS_EXPORT void registerControllerTemplateCommands(ControlRegistry& registry);
  *    event ring (include/SessionArrangementRecorder.h) and the one verb that
  *    writes it into the arrangement timeline as clips.
  *
- *  Both travel with the Session View data layer and are registered only inside
- *  registerControlCommands()'s #ifdef LMMS_HAVE_SESSION_VIEW block, because
- *  without the flag there is no grid to address and the registry must not carry
+ *  Both travel with the Session View data layer, native engine code since
+ *  ARCH-4 S10 removed WANT_SESSION_VIEW, so registerControlCommands() calls
+ *  them unconditionally; the registry must still not carry
  *  ids whose handler could not exist - the rule the telemetry.*, wasm.* and
  *  stem.* groups follow. Their six A16 rows are guarded by the same switch in
  *  src/core/ControlReversibilityTableSessionView.cpp, so the table and the

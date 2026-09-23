@@ -53,8 +53,9 @@ Started through the shared harness (tests/control_socket_harness.py), so this
 file adds no second launch path.
 
 Usage: QT_QPA_PLATFORM=offscreen python3 control-session-api-proof.py <zene>
-Exit code 0 only when every row's checks held; 77 (ctest Skipped, never Passed)
-when this build has no session.* group at all (WANT_SESSION_VIEW=OFF).
+Exit code 0 only when every row's checks held; 1 when a row failed or the
+session.* group is missing (it is native engine code since ARCH-4 S10 removed
+WANT_SESSION_VIEW, so a build without it is broken, not skipped).
 
 SPLIT, 2026-09-16 (the 0.3.0 fix-up pass): this file was 889 lines with five
 functions over CCN 10. The machinery it used to carry is now
@@ -62,7 +63,7 @@ functions over CCN 10. The machinery it used to carry is now
 drivers, reporting) and `session_api_proof_rows.py` (the eleven row drivers);
 this file keeps the group's surface, the drive order and the exit contract.
 The proof's behaviour is unchanged - same ids, same order, same rows, same
-strings, same exit codes (0 measured / 77 no group / 1 a row failed).
+strings, same exit codes (0 measured / 1 a row failed; the 77 no-group skip died with WANT_SESSION_VIEW, ARCH-4 S10).
 """
 
 import os
@@ -96,17 +97,15 @@ def announce(instance, session, rows):
 
 
 def registration_gap(rows):
-    """77 when this build registers NO session.* id at all, else None.
+    """None when every session.* id is registered, else a recorded problem.
 
-    A partial gap is a problem, not a skip: it means the group is half-built.
+    There is no skip path any more: the group is native engine code since
+    ARCH-4 S10 removed WANT_SESSION_VIEW, so a build that registers none of it
+    is broken rather than "a configuration that chose the feature off".
     """
     missing = [command for command in IDS if command not in rows.live_ids]
     if not missing:
         return None
-    if len(missing) == len(IDS):
-        print("this build registers no session.* id (WANT_SESSION_VIEW=OFF): "
-              "Skipped, never Passed")
-        return 77
     rows.problems.add("registered ids missing from the live registry: %r" % missing)
     return None
 
