@@ -16,8 +16,13 @@ proof that overstates itself is worse than none:
      id (the model's own semantics: a slot stores a reference, SPEC A1); the
      test does NOT claim the referenced pattern exists.
   2. The project is SAVED (`project.save`) and the saved file is read back on
-     the client side and asserted to contain a <session> block with four
-     <clip> children - external evidence, not the engine's word for it.
+     the client side and asserted to contain a <z:scenes> section with four
+     <z:cell> children - external evidence, not the engine's word for it.
+     (Before ARCH-4 S8 this asserted a <session> block with four <clip>
+     children; S8 moved the scene cells into the native top-level section,
+     SPEC-ARCH-4 migration row :403. The claim - the saved FILE carries the
+     four cells, read back by a client that trusts nothing else - is
+     unchanged; only the element names moved.)
   3. It is REOPENED (`project.open`) and the grid reads back as 2x2 with four
      clips, so the launch below happens against a SAVED project.
   4. The transport runs, the play head is moved to a position strictly inside a
@@ -137,17 +142,22 @@ def source_commit():
     return "%s (worktree dirty: %d tracked path(s) modified)" % (revision, len(changed))
 
 
-def session_block(text):
-    """The <session>...</session> substring, or "" when the file has none.
+def scenes_section(text):
+    """The <z:scenes>...</z:scenes> substring, or "" when the file has none.
 
-    The clips are counted INSIDE this block: the arrangement writes <clip>
+    ARCH-4 S8: the scene cells live in the native top-level section. Before
+    S8 this helper sliced the <session> block, which the project writer no
+    longer emits (the legacy form is the migration's input, SPEC-ARCH-4
+    migration row :403).
+
+    The cells are counted INSIDE this section: the arrangement writes <clip>
     elements of its own, and conflating the two would let a project with no
-    session block pass.
+    scene state pass.
     """
-    start = text.find("<session")
+    start = text.find("<z:scenes")
     if start < 0:
         return ""
-    end = text.find("</session>", start)
+    end = text.find("</z:scenes>", start)
     return text[start:end] if end > start else text[start:]
 
 
@@ -273,14 +283,14 @@ class Milestone:
         except OSError as error:
             self.problems.add("could not read the saved project back: %s" % error)
             return
-        block = session_block(text)
-        clips = block.count("<clip ")
-        self.finding("saved file", "%d bytes, session block %d bytes, %d <clip> children"
-                     % (len(text), len(block), clips))
+        section = scenes_section(text)
+        cells = section.count("<z:cell ")
+        self.finding("saved file", "%d bytes, scenes section %d bytes, %d <z:cell> children"
+                     % (len(text), len(section), cells))
         self.finding("saved sha256", sha256_of(self.project))
-        self.require("<session" in text, "the saved project carries no <session> block")
-        self.require(clips == 4, "the saved project's <session> block has %d <clip> children, "
-                                 "expected 4" % clips)
+        self.require("<z:scenes" in text, "the saved project carries no <z:scenes> section")
+        self.require(cells == 4, "the saved project's <z:scenes> section has %d <z:cell> children, "
+                                 "expected 4" % cells)
 
     def step_reopen(self):
         self.evidence.section("3. reopen the saved project - the launch is against a SAVED session")
