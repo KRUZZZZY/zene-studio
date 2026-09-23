@@ -531,7 +531,8 @@ float AutomatableModel::controllerValue( int frameOffset ) const
 			break;
 		default:
 			qFatal("AutomatableModel::controllerValue(int)"
-				"lacks implementation for a scale type");
+				"lacks implementation for a scale type (%d, model %p)",
+				static_cast<int>(m_scaleType), static_cast<const void*>(this));
 			break;
 	}
 	if (approximatelyEqual(m_step, 1) && m_hasStrictStepSize)

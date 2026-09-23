@@ -315,6 +315,16 @@ private slots:
 
 		first->processInEvent(MidiEvent(MidiNoteOn, 1, 60, 100));
 		second->processInEvent(MidiEvent(MidiNoteOn, 1, 60, 100));
+
+		// The manual render loop below must be the ONLY renderer. transport.play
+		// started the device's render thread, which races the direct
+		// renderNextPeriod() calls on m_processHandles (one side deletes a
+		// finished NotePlayHandle while the other's fillJobQueue still iterates
+		// it -> use-after-free in isFinished, the abort this test hit at the
+		// merged tip). Stopping processing keeps the transport PLAYING (the
+		// song state is separate) while making the renders single-threaded -
+		// the AutomationModesTest pattern the helper's comment already states.
+		Engine::audioEngine()->audioDev()->stopProcessing();
 		NotePlayHandle* noteA = first->playingNote(60);
 		NotePlayHandle* noteB = second->playingNote(60);
 		QVERIFY(noteA != nullptr && noteB != nullptr);

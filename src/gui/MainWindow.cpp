@@ -36,6 +36,7 @@
 #include <QMdiArea>
 #include <QMenuBar>
 #include <QMessageBox>
+#include <QScrollBar>
 #include <QShortcut>
 #include <QSplitter>
 #include <QStatusBar>
@@ -886,6 +887,33 @@ void MainWindow::saveWidgetState(QWidget* w, QDomElement& de)
 	de.setAttribute("height", normalGeometry.height());
 }
 
+//! The slice of the MDI virtual desktop currently scrolled into view, in MDI
+//! coordinates. A subwindow outside it is unreachable - the bug the owner hit
+//! live: "when a thing goes off screen there's no way to get it back".
+static QRect visibleMdiRegion(QMdiArea* workspace)
+{
+	if (workspace == nullptr) { return QRect(); }
+	const QWidget* view = workspace->viewport();
+	return QRect(workspace->horizontalScrollBar()->value(),
+		workspace->verticalScrollBar()->value(),
+		view->width(), view->height());
+}
+
+//! Keep a grabbable sliver (48px of the title bar) inside \a area; a window
+//! entirely outside jumps back to the area's origin + cascade margin.
+static QRect clampToVisibleArea(QRect geometry, const QRect& area)
+{
+	if (area.isEmpty()) { return geometry; }
+	if (!geometry.intersects(area))
+	{
+		geometry.moveTopLeft(area.topLeft() + QPoint(24, 24));
+		return geometry;
+	}
+	geometry.setLeft(qBound(area.left(), geometry.left(), area.right() - 48));
+	geometry.setTop(qBound(area.top(), geometry.top(), area.bottom() - 48));
+	return geometry;
+}
+
 void MainWindow::restoreWidgetState(QWidget* w, const QDomElement& de)
 {
 	// TODO: Only use one of these
@@ -899,12 +927,21 @@ void MainWindow::restoreWidgetState(QWidget* w, const QDomElement& de)
 		if (!win) { return; }
 	}
 
-	const auto normalGeometry = QRect{
+	// A layout saved on a monitor that is gone (or a window dragged out of the
+	// workspace) must come back REACHABLE: clamp the restored geometry into the
+	// visible MDI region so its title bar can be grabbed again. The workspace
+	// comes from the window's own parent chain (this function is static).
+	QMdiArea* workspace = nullptr;
+	for (QWidget* ancestor = win->parentWidget(); ancestor != nullptr; ancestor = ancestor->parentWidget())
+	{
+		if ((workspace = qobject_cast<QMdiArea*>(ancestor)) != nullptr) { break; }
+	}
+	const auto normalGeometry = clampToVisibleArea(QRect{
 		de.attribute("x").toInt(),
 		de.attribute("y").toInt(),
 		de.attribute("width").toInt(),
 		de.attribute("height").toInt(),
-	};
+	}, visibleMdiRegion(workspace));
 
 	// First restore the window, as attempting to resize a maximized window can cause graphical glitches.
 	win->setWindowState(win->windowState() & ~(Qt::WindowMaximized | Qt::WindowMinimized));
@@ -1155,6 +1192,10 @@ void MainWindow::toggleWindow( QWidget *window, bool forceShow )
 		m_workspace->activeSubWindow() != parent ||
 		parent->isHidden() )
 	{
+		// Re-showing is the "get it back" path: an off-screen window must come
+		// back INTO view (owner bug: the song editor was lost off screen with no
+		// way to recover it).
+		parent->setGeometry(clampToVisibleArea(parent->geometry(), visibleMdiRegion(m_workspace)));
 		parent->show();
 		window->show();
 		if (window->isEnabled()) { window->setFocus(); }

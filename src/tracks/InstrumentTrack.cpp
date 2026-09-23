@@ -220,6 +220,14 @@ InstrumentTrack::~InstrumentTrack()
 
 	// now we're save deleting the instrument
 	if( m_instrument ) delete m_instrument;
+
+	// Deleting the instrument can re-enter note teardown and leave a fresh
+	// handle behind - the UAF SessionTuningTest caught (a NotePlayHandle
+	// rendering through this track after the track is freed: its read of
+	// m_firstKeyModel lands in freed memory). Silence AGAIN so no handle can
+	// outlive its track. The healthy path is unchanged (the second call finds
+	// nothing).
+	silenceAllNotes( true );
 }
 
 

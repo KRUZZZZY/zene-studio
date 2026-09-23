@@ -752,6 +752,45 @@ void AudioEngine::removePlayHandlesOfTypes(Track * track, PlayHandle::Types type
 			++it;
 		}
 	}
+
+	// Handles created since the last render wait in m_newPlayHandles and merge
+	// into m_playHandles only at the next render - a removal that walks just
+	// m_playHandles misses them, and the survivor later renders through its
+	// FREED track (the use-after-free SessionTuningTest caught: a
+	// NotePlayHandle reading m_firstKeyModel in freed memory; the same class
+	// of stale handle is behind old-project load crashes). Sweep the staging
+	// list with the SAME predicate and release path, re-staging survivors.
+	decltype( m_newPlayHandles )::Element * keep = nullptr;
+	for( auto * e = m_newPlayHandles.popList(); e; )
+	{
+		auto * next = e->next;
+		PlayHandle * handle = e->value;
+		if (handle->isFromTrack(track) && (handle->type() & types))
+		{
+			handle->audioBusHandle()->removePlayHandle(handle);
+			if(handle->type() == PlayHandle::Type::NotePlayHandle)
+			{
+				NotePlayHandleManager::release((NotePlayHandle*)handle);
+			}
+			else delete handle;
+			m_newPlayHandles.free( e );
+		}
+		else
+		{
+			e->next = keep;
+			keep = e;
+		}
+		e = next;
+	}
+	// put the survivors back (LIFO; the ordering among same-slice new handles
+	// is not load-bearing) and free the detached chain cells.
+	for( auto * e = keep; e; )
+	{
+		auto * next = e->next;
+		m_newPlayHandles.push( e->value );
+		m_newPlayHandles.free( e );
+		e = next;
+	}
 	doneChangeInModel();
 }
 
