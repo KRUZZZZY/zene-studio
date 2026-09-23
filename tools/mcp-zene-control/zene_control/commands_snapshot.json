@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-09-22T17:10:16Z",
+  "captured_at": "2026-09-23T23:18:46Z",
   "commands": [
     {
       "args_schema": {
@@ -8549,6 +8549,287 @@
           },
           "target_index": {
             "type": "integer"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {},
+        "required": [],
+        "type": "object"
+      },
+      "description": "The session-wide tuning table: whether it is ACTIVE (every instrument reads it at render then - that is what makes host-wide tuning host-wide), its 128 frequencies in Hz (0 = unmapped key), the source, the Scale/Keymap it was built from, and the MTS-ESP status (mts_library is 'absent' unless upstream's libMTS.so is installed - docs/KNOWN-LIMITATIONS.md). Read-only.",
+      "group": "mts",
+      "id": "mts.get_state",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "active": {
+            "type": "boolean"
+          },
+          "frequencies": {
+            "type": "array"
+          },
+          "keymap": {
+            "type": "string"
+          },
+          "mts_clients": {
+            "maximum": 4096,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "mts_library": {
+            "type": "string"
+          },
+          "mts_master": {
+            "type": "boolean"
+          },
+          "scale": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string"
+          },
+          "table_size": {
+            "maximum": 128,
+            "minimum": 128,
+            "type": "integer"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "path": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "path"
+        ],
+        "type": "object"
+      },
+      "description": "Parse a Scala .kbm file (the fields the Microtuner dialog reads) and rebuild the session table's CONTENT with it. Content only - it does not switch an inactive table on. Typed refusals write nothing; reversible through the same bounded snapshot as mts.load_scale.",
+      "group": "mts",
+      "id": "mts.load_keymap",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "active": {
+            "type": "boolean"
+          },
+          "frequencies": {
+            "type": "array"
+          },
+          "source": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "path": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "path"
+        ],
+        "type": "object"
+      },
+      "description": "Parse a Scala .scl file (the same line rules the Microtuner dialog's loader applies) and ACTIVATE the session-wide tuning table from it: from the next audio period, EVERY track reads this table at render - sounding notes included - whatever its own Microtuner says. Typed refusals (nothing written): empty or missing path, a file that is not a scale, a keymap that leaves the base key unmapped. Reversible: one control.undo restores the previous table (and the previous sound).",
+      "group": "mts",
+      "id": "mts.load_scale",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "active": {
+            "type": "boolean"
+          },
+          "frequencies": {
+            "type": "array"
+          },
+          "source": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "enabled"
+        ],
+        "type": "object"
+      },
+      "description": "Arm or disarm publishing the session table through MTS-ESP, so MTS-ESP CLIENT plugins loaded anywhere in this host follow Zene's tuning (thirdparty/mts-esp/, upstream ODDSound/MTS-ESP, 0BSD). Arming needs upstream's IPC library (libMTS.so at /usr/local/lib on Linux) and is a TYPED REFUSAL naming that path when it is absent - inert no-ops are not a success. 'enabled' is required. Reversible: an action checkpoint restores the flag.",
+      "group": "mts",
+      "id": "mts.master_set",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "active": {
+            "type": "boolean"
+          },
+          "mts_clients": {
+            "maximum": 4096,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "mts_library": {
+            "type": "string"
+          },
+          "mts_master": {
+            "type": "boolean"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {},
+        "required": [],
+        "type": "object"
+      },
+      "description": "Put the session table back to 12-TET content and INACTIVE it: render then takes exactly the branches it took before board card #712. Reversible: one control.undo re-activates the previous table.",
+      "group": "mts",
+      "id": "mts.reset",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "active": {
+            "type": "boolean"
+          },
+          "frequencies": {
+            "type": "array"
+          },
+          "source": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "frequency": {
+            "type": "number"
+          },
+          "note": {
+            "maximum": 127,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "source": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "note",
+          "frequency"
+        ],
+        "type": "object"
+      },
+      "description": "Set ONE key's frequency in the session-wide table (MTS-ESP's per-note dynamic tuning) and activate the table. 'note' is 0..127, 'frequency' is finite and > 0 Hz, 'source' is an optional label (<= 256 characters). Typed refusals write nothing; reversible through the bounded whole-table snapshot like every mutator.",
+      "group": "mts",
+      "id": "mts.set_note",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "active": {
+            "type": "boolean"
+          },
+          "frequencies": {
+            "type": "array"
+          },
+          "source": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "active": {
+            "type": "boolean"
+          },
+          "frequencies": {
+            "type": "array"
+          },
+          "frequency": {
+            "type": "number"
+          },
+          "note": {
+            "maximum": 127,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "source": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "description": "Write the session-wide table. Exactly one of: 'frequencies' - all 128 entries in Hz (0 = unmapped key; this is also the inverse command every mutating mts.* verb records, over the stated cap: 128 finite numbers + active + a source of <= 256 characters), or the pair 'note' (0..127) + 'frequency' (finite, > 0 Hz) for one entry. Optional 'active' (default true on a whole-table write) and 'source'. Table and note writes ACTIVATE the table; mts.reset deactivates. Reversible through the same bounded snapshot.",
+      "group": "mts",
+      "id": "mts.set_tuning",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "active": {
+            "type": "boolean"
+          },
+          "frequencies": {
+            "type": "array"
+          },
+          "source": {
+            "type": "string"
           }
         },
         "required": [],
@@ -17758,23 +18039,23 @@
       }
     }
   ],
-  "count": 343,
+  "count": 350,
   "instance": {
     "binary": null,
     "binary_bytes": null,
     "binary_sha256": null,
-    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-709/tools/zene-pa-agentctl",
+    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-040/tools/zene-pa-agentctl",
     "lane_head": null,
     "proto": 1,
-    "source_socket": "/tmp/zctl-run-fa4y886z/zene.sock",
-    "version": "0.3.0-alpha.52+4ef3065"
+    "source_socket": "/tmp/final-tip.sock",
+    "version": "0.3.0-alpha.84+2f6218c"
   },
   "kind": "zene-control-command-list",
   "proto": 1,
   "schema": 1,
   "surface": {
-    "group_count": 55,
-    "id_count": 343,
-    "ids_sha256": "3642264a7248d9addd2a53c99c9aa0289f302810fb36192f8dc316d7aebae6bc"
+    "group_count": 56,
+    "id_count": 350,
+    "ids_sha256": "2fcc8f64f1dd661e80964d995418caf5b5bb04185b01611d92dcdaa10d76a144"
   }
 }
