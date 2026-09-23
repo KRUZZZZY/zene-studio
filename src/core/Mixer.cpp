@@ -2088,6 +2088,15 @@ void Mixer::saveSettings( QDomDocument & _doc, QDomElement & _this )
 		// element, for the reason Track::saveTrack records for the track id -
 		// this loader walks the element's children, so a child would become a
 		// phantom send to a legacy reader on every channel of every project.
+		// An id this save is ABOUT to write must clear the counter even when no
+		// load pass ever saw it: engine-born default channels take their id from
+		// allocate() with no document element to setId() from, so nothing noted
+		// it. Without this the file writes an id at/above its own `next-id`, the
+		// next load's setId() floors above that, and every save/load/save round
+		// trip grows `next-id` once (LanesUpconvertTest::
+		// aProjectThatUsesNoneOfThisWritesNoLanesSection caught it on a one-track
+		// fixture whose highest track id sits below the Master channel's).
+		ProjectIds::observe( ch->id() );
 		mixch.setAttribute("id", ch->id());
 		mixch.setAttribute( "name", ch->m_name );
 		if (const auto& color = ch->color()) { mixch.setAttribute("color", color->name()); }
@@ -2153,6 +2162,7 @@ void Mixer::saveSettings( QDomDocument & _doc, QDomElement & _this )
 		QDomElement groupDom = _doc.createElement( QString( "vcagroup" ) );
 		_this.appendChild( groupDom );
 
+		ProjectIds::observe( group->id() );		// same unreported-id rule as the channel id above
 		groupDom.setAttribute("id", group->id());
 		groupDom.setAttribute("name", group->name());
 		group->vcaModel()->saveSettings(_doc, groupDom, "vca");
