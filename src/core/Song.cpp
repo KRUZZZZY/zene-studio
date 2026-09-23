@@ -1932,11 +1932,20 @@ bool Song::saveProjectFile(const QString & filename, bool withResources)
 	}
 
 #ifdef LMMS_HAVE_SESSION_VIEW
-	// Only projects that use the session view carry a <session> block; a
-	// pre-session project re-saves without one (see SessionModel::shouldPersist).
+	// Only projects that use the session view carry scene state; a pre-session
+	// project re-saves without a section (see SessionModel::shouldPersist).
+	// ARCH-4 S8 (SPEC-ARCH-4 5.1 row S8, migration row :403): the section is
+	// the NATIVE top-level <z:scenes>, not the legacy <session> block - the
+	// <session> READER below stays as the upconverter for files carrying the
+	// old form, and SessionModel::saveState keeps the <session> shape for the
+	// undo checkpoint payload (ControlCommandsSession.cpp sessionBlockXml).
+	// Written before the <z:lanes> section so the unclaimed tail and the
+	// provenance write stay last (S7's ordering comment). Nothing is appended
+	// for a project that never used the session view: the additive rule at
+	// document scope, and the byte-identity the S8 row owes.
 	if( m_sessionModel.shouldPersist() )
 	{
-		m_sessionModel.saveState( dataFile, dataFile.content() );
+		m_sessionModel.saveScenesSection( dataFile, dataFile.content() );
 	}
 #else
 	// A <session> block read by a build without the Session View feature is
@@ -2274,10 +2283,26 @@ bool Song::restoreNamedSection(const QDomElement & element)
 	if( restorePublisherBackedSection( element ) ) { return true; }
 
 #ifdef LMMS_HAVE_SESSION_VIEW
+	// ARCH-4 S8 (SPEC-ARCH-4 5.1 row S8 / migration row :403): the NATIVE
+	// scene cells, top-level <z:scenes> - claim-or-preserve like the
+	// <z:lanes> branch above: the exact shape saveScenesSection produces
+	// claims it and fills the model; anything else answers false so 1.6.1
+	// keeps the element verbatim as unclaimed (a future v="2", a foreign
+	// child, an out-of-grid coordinate). No ordering constraint: the section
+	// references nothing outside itself, so it claims wherever the walk
+	// meets it.
+	if( name == QLatin1String( "z:scenes" ) )
+	{
+		if( m_sessionModel.restoreScenesSection( element ) ) { return true; }
+	}
 	if( name == "session" )
 	{
 		// Versioned <session> block (SPEC-zene-studio A1). Unknown or future
-		// versions are ignored and preserved by the model.
+		// versions are ignored and preserved by the model. Since ARCH-4 S8
+		// this reader is the UPCONVERTER (migration row :403): an old block
+		// fills the same model the native section fills, and the next save
+		// writes <z:scenes> - the legacy form is the migration's input,
+		// never its output again.
 		m_sessionModel.restoreState( element );
 		return true;
 	}

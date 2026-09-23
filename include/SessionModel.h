@@ -271,16 +271,47 @@ public:
 	//! without one, byte-identically.
 	bool shouldPersist() const { return m_hadSessionBlock || !isEmpty(); }
 
-	//! True when the loaded project contained a <session> element.
+	//! True when the loaded project contained a session section: a legacy
+	//! <session> element or, since ARCH-4 S8, its native successor the
+	//! <z:scenes> section. Both mean "the document carried scene state".
 	bool hadSessionBlock() const { return m_hadSessionBlock; }
 
 	void clear();
 
 	// ---- persistence ---------------------------------------------------
 
-	//! Appends <session version="1" ...> to `parent` and returns it. The
-	//! caller decides whether to call this (see shouldPersist()).
+	//! Appends <session version="1" ...> to `parent` and returns it: the
+	//! LEGACY form. Since ARCH-4 S8 the project FILE's writer is
+	//! saveScenesSection() (Song::saveProjectFile); this pair survives as the
+	//! upconverter's own serialiser and the undo checkpoint payload's shape
+	//! (ControlCommandsSession.cpp sessionBlockXml reads back a <session>
+	//! child), so its bytes do not move.
 	QDomElement saveState( QDomDocument& doc, QDomElement& parent ) const;
+
+	/*! ARCH-4 S8 (SPEC-ARCH-4 5.1 row S8, migration row :403): the NATIVE
+	 *  document form - one top-level <z:scenes v="1"> child of `parent`,
+	 *  carrying `tracks`/`scenes`/`launchquantisation` as attributes (the
+	 *  same vocabulary the legacy block used) and the state as direct
+	 *  <z:scene>/<z:cell> children, each cell addressed by the unchanged
+	 *  `track * scenes + scene` rule (SPEC-ARCH-4 1.1 keeps that arithmetic
+	 *  as the addressing rule so the 17 session.* handlers survive). Callers
+	 *  gate it on shouldPersist(), so a project that uses none of scenes
+	 *  gains no section and no `z` binding - the additive rule. A preserved
+	 *  unknown-version <session> block (below) is re-emitted verbatim
+	 *  instead, so a newer build's data is never downgraded to ours. */
+	QDomElement saveScenesSection( QDomDocument& doc, QDomElement& parent ) const;
+
+	/*! Claims a top-level <z:scenes> element - ONLY in the exact shape
+	 *  saveScenesSection produces: v="1", both dimension attributes present
+	 *  and within the grid's own clamp, every child a <z:scene>/<z:cell> with
+	 *  in-range coordinates. Anything else answers false so
+	 *  Song::restoreNamedSection's 1.6.1 walk preserves the element verbatim
+	 *  as unclaimed instead of half-loading it or letting a write-back
+	 *  rewrite it (the <z:lanes> branch's contract, S7). Atomic: a section
+	 *  that fails at any point leaves the model exactly as it arrived. On
+	 *  success the model holds the section's state and hadSessionBlock()
+	 *  answers true. */
+	bool restoreScenesSection( const QDomElement& section );
 
 	//! Loads a <session> element. Returns false when the block was not
 	//! understood (unknown/future version); such a block is preserved verbatim

@@ -462,6 +462,15 @@ set(LMMS_TESTS
 	# binding), and the RISK 1 negative control that fails on new-model state
 	# planted under <track>.
 	src/core/LanesUpconvertTest.cpp
+	# ARCH-4 slice S8, scenes native (SPEC-ARCH-4 5.1 row S8, migration row
+	# <session>+<scenes>+<clips> -> <z:scenes>+<z:cell>): the document layer -
+	# the top-level <z:scenes> section's shape and its (track, scene)
+	# coordinates, the legacy <session> block upconverting into it, the
+	# save/load/save byte identity of a project that uses scenes, the
+	# scene-free additive pin (no section, no block, no z: binding), and the
+	# RISK 1 negative control that fails on new-model state planted under
+	# <track>.
+	src/core/ScenesUpconvertTest.cpp
 	src/core/RemotePluginAudioPortsTest.cpp
 	src/core/RemotePluginClientE2ETest.cpp
 	src/core/RenderJobQueueTest.cpp
@@ -886,6 +895,11 @@ set_tests_properties(TakeLaneCompTest TakeLaneTest PROPERTIES
 # LanesUpconvertTest (ARCH-4 S7) saves and loads real project files through
 # Song directly - same headless shape as the two tests above, no window.
 set_tests_properties(LanesUpconvertTest PROPERTIES
+	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+
+# ScenesUpconvertTest (ARCH-4 S8) saves and loads real project files through
+# Song directly - same headless shape as LanesUpconvertTest, no window.
+set_tests_properties(ScenesUpconvertTest PROPERTIES
 	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 
 # ---------------------------------------------------------------------------

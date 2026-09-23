@@ -111,6 +111,82 @@ inline QString elementToString( const QDomElement& element )
 	return out;
 }
 
+//! Grid clamp bounds for a section read from a file, so a malformed or
+//! hostile project cannot make the loader allocate an unbounded grid.
+//! Moved here from SessionModel.cpp's anonymous namespace so the <z:scenes>
+//! claim helpers below (ARCH-4 S8) can share them; only SessionModel.cpp
+//! and SessionClip.cpp include this header, so the constants stay TU-private.
+constexpr int MaxTracks = 256;
+constexpr int MaxScenes = 512;
+
+//! ARCH-4 S8 claim-shape check for a top-level <z:scenes> section: the
+//! version this build writes and both dimension attributes, each within the
+//! grid clamp (the unsigned compare also rejects negatives). Anything else
+//! declines, and Song::restoreNamedSection's walk preserves the element
+//! verbatim as unclaimed instead of half-loading it.
+inline bool scenesSectionDims( const QDomElement& section, int& tracks, int& scenes )
+{
+	if( section.attribute( QStringLiteral( "v" ) ) != QLatin1String( "1" )
+		|| !section.hasAttribute( QStringLiteral( "tracks" ) )
+		|| !section.hasAttribute( QStringLiteral( "scenes" ) ) )
+	{
+		return false;
+	}
+	bool ok = false;
+	tracks = section.attribute( QStringLiteral( "tracks" ) ).toInt( &ok );
+	if( !ok || static_cast<unsigned>( tracks ) > static_cast<unsigned>( MaxTracks ) )
+	{
+		return false;
+	}
+	scenes = section.attribute( QStringLiteral( "scenes" ) ).toInt( &ok );
+	if( !ok || static_cast<unsigned>( scenes ) > static_cast<unsigned>( MaxScenes ) )
+	{
+		return false;
+	}
+	return true;
+}
+
+//! A <z:scene> row: the index attribute this build writes, in range, then
+//! Scene's own restoreState at the legacy reader's depth (upconverter
+//! parity - the attribute vocabulary never moved).
+inline bool applySceneRow( const QDomElement& row, std::vector<Scene>& scenes )
+{
+	if( !row.hasAttribute( QStringLiteral( "index" ) ) ) { return false; }
+	bool ok = false;
+	const int index = row.attribute( QStringLiteral( "index" ) ).toInt( &ok );
+	if( !ok || static_cast<unsigned>( index ) >= scenes.size() ) { return false; }
+	scenes[static_cast<std::size_t>( index )].restoreState( row );
+	return true;
+}
+
+//! A <z:cell>: the two coordinates of the unchanged `track * scenes + scene`
+//! addressing rule (SPEC-ARCH-4 1.1), in range, then ClipSlot's own
+//! restoreState at the legacy reader's depth. A missing or out-of-grid
+//! coordinate declines the whole section.
+inline bool applySceneCell( const QDomElement& cell, std::vector<ClipSlot>& slotList,
+	int tracks, int scenes )
+{
+	// NOTE: the parameter is slotList, never `slots` - Qt defines slots as a
+	// macro (Q_SLOTS) in every TU that pulls in qobjectdefs, and the macro
+	// would eat the identifier here (cost one compile cycle in S8).
+	if( !cell.hasAttribute( QStringLiteral( "track" ) )
+		|| !cell.hasAttribute( QStringLiteral( "scene" ) ) ) { return false; }
+	bool ok = false;
+	const int track = cell.attribute( QStringLiteral( "track" ) ).toInt( &ok );
+	if( !ok || static_cast<unsigned>( track ) >= static_cast<unsigned>( tracks ) )
+	{
+		return false;
+	}
+	const int scene = cell.attribute( QStringLiteral( "scene" ) ).toInt( &ok );
+	if( !ok || static_cast<unsigned>( scene ) >= static_cast<unsigned>( scenes ) )
+	{
+		return false;
+	}
+	slotList[static_cast<std::size_t>( track ) * static_cast<std::size_t>( scenes )
+		+ static_cast<std::size_t>( scene )].restoreState( cell );
+	return true;
+}
+
 } // namespace sessionSerialization
 
 } // namespace lmms

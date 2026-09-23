@@ -64,6 +64,9 @@
 # fork-NEW (include/Accessibility.h, include/WcagContrast.h, tests/src/gui/WcagContrastTest.cpp,
 # tests/src/gui/AccessibilityHelperTest.cpp); like the FocusDesk tests they sit outside
 # tests/fork-sources.txt's pathspec and are measured here.
+# 2026-09-17 (lane 030/arch2-api, board card #672, ARCH-2): the zene::api
+# boundary's public header (include/zene/api/ControlApi.h), fork-NEW, registered
+# beside the registry headers it re-exports.
 include/AboutDialog.h
 include/Accessibility.h
 include/ActionGroup.h
@@ -1740,6 +1743,7 @@ tests/src/core/RoutingGraphTest.cpp
 tests/src/core/SafeStartLoadPathTest.cpp
 tests/src/core/SafeStartTest.cpp
 tests/src/core/SampleAccurateAutomationTest.cpp
+tests/src/core/ScenesUpconvertTest.cpp
 tests/src/core/ScriptBindingsTest.cpp
 tests/src/core/ScriptClockTest.cpp
 tests/src/core/ScriptDawBindingTest.cpp
@@ -1825,6 +1829,3 @@ tools/mmpz-git/scratch/qtsave.cpp
 tools/mmpz-git/scratch/qtsave2.cpp
 tools/ncpu-shim.c
 tools/wasm/wat2wasm.cpp
-# 2026-09-17 (lane 030/arch2-api, board card #672, ARCH-2): the zene::api
-# boundary's public header (include/zene/api/ControlApi.h), fork-NEW, registered
-# beside the registry headers it re-exports.

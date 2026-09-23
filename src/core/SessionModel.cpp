@@ -31,6 +31,8 @@
 #include <QDomElement>
 #include <QString>
 
+#include "DocumentIndex.h"
+
 namespace lmms
 {
 
@@ -38,10 +40,9 @@ namespace
 {
 using namespace sessionSerialization;
 
-//! Upper bounds for a grid read from a file, so a malformed or hostile
-//! project cannot make the loader allocate an unbounded grid.
-constexpr int MaxTracks = 256;
-constexpr int MaxScenes = 512;
+// MaxTracks/MaxScenes moved to SessionModelPrivate.h with the <z:scenes>
+// claim helpers (ARCH-4 S8) - one spelling, still TU-private through this
+// header's include.
 
 //! Restores every <scene> child of a <session> block.
 void restoreScenes( const QDomElement& scenesElement, std::vector<Scene>& scenes )
@@ -325,6 +326,123 @@ bool SessionModel::restoreState( const QDomElement& element )
 	restoreScenes( element.firstChildElement( QStringLiteral( "scenes" ) ), m_scenes );
 	restoreClips( element.firstChildElement( QStringLiteral( "clips" ) ), *this );
 
+	return true;
+}
+
+
+// ---------------------------------------------------------------------------
+// ARCH-4 S8 (SPEC-ARCH-4 5.1 row S8): the native <z:scenes> section - one
+// top-level namespaced section, written only when shouldPersist() says the
+// model holds state (Song::saveProjectFile), claimed only in the exact shape
+// produced here (Song::restoreNamedSection). The <session> reader beside it
+// stays the UPCONVERTER for the legacy form (migration row :403); the claim
+// helpers live in SessionModelPrivate.h's sessionSerialization so this file
+// stays inside its file-length anchor.
+// ---------------------------------------------------------------------------
+
+QDomElement SessionModel::saveScenesSection( QDomDocument& doc, QDomElement& parent ) const
+{
+	// A <session> block written by a newer build stays opaque: re-emit it
+	// verbatim rather than downgrade it (restoreState's policy, unchanged by
+	// the form migration - the legacy block is still what this build cannot
+	// parse).
+	if( !m_preservedUnknownXml.isEmpty() )
+	{
+		QDomDocument preserved;
+		if( preserved.setContent( m_preservedUnknownXml, false )
+			&& !preserved.documentElement().isNull() )
+		{
+			QDomElement imported = doc.importNode( preserved.documentElement(), true ).toElement();
+			parent.appendChild( imported );
+			return imported;
+		}
+	}
+
+	// ONE spelling of the `z` binding (DocumentIndex.h): the same attribute
+	// and URI writeLanesSection and <z:provenance> set; setAttribute through
+	// the document handle is idempotent, so several z: sections bind it once
+	// and bytes do not depend on write order.
+	const QDomElement root = doc.documentElement();
+	if( !root.isNull() )
+	{
+		QDomElement mutableRoot = root;
+		mutableRoot.setAttribute( documentIndexNamespaceAttribute(), documentIndexNamespaceUri() );
+	}
+
+	QDomElement section = doc.createElement( QStringLiteral( "z:scenes" ) );
+	parent.appendChild( section );
+	section.setAttribute( QStringLiteral( "v" ), QStringLiteral( "1" ) );
+	section.setAttribute( QStringLiteral( "tracks" ), m_trackCount );
+	section.setAttribute( QStringLiteral( "scenes" ), m_sceneCount );
+	section.setAttribute( QStringLiteral( "launchquantisation" ),
+		static_cast<int>( m_globalLaunchQuantisation ) );
+
+	// Scene rows first, then cells: two fixed document-order passes, so
+	// save/load/save is byte-stable; the sparse rule rides along (an
+	// unmodified scene and an empty slot are not written, as in the legacy
+	// block). Each cell keeps the unchanged (track, scene) coordinates - the
+	// addressing rule the 17 session.* handlers use, so no id or schema moved.
+	for( int scene = 0; scene < m_sceneCount; ++scene )
+	{
+		const Scene& sceneModel = m_scenes[static_cast<std::size_t>( scene )];
+		if( !sceneModel.isModified() ) { continue; }
+		QDomElement sceneElement = doc.createElement( QStringLiteral( "z:scene" ) );
+		sceneElement.setAttribute( QStringLiteral( "index" ), scene );
+		sceneModel.saveState( doc, sceneElement );
+		section.appendChild( sceneElement );
+	}
+	for( int track = 0; track < m_trackCount; ++track )
+	{
+		for( int scene = 0; scene < m_sceneCount; ++scene )
+		{
+			const ClipSlot& clipSlot = slot( track, scene );
+			if( clipSlot.isEmpty() ) { continue; }
+			QDomElement cell = doc.createElement( QStringLiteral( "z:cell" ) );
+			cell.setAttribute( QStringLiteral( "track" ), track );
+			cell.setAttribute( QStringLiteral( "scene" ), scene );
+			clipSlot.saveState( doc, cell );
+			section.appendChild( cell );
+		}
+	}
+	return section;
+}
+
+
+bool SessionModel::restoreScenesSection( const QDomElement& section )
+{
+	// Claim-or-preserve, validated into a CANDIDATE first: a section failing
+	// at any point leaves this model as it arrived, so the walk keeps the
+	// element verbatim as unclaimed rather than a half-load (S7's <z:lanes>
+	// branch contract). Version, dimensions and coordinates are the claim;
+	// a foreign child element answers false too.
+	int tracks = 0;
+	int scenes = 0;
+	if( !scenesSectionDims( section, tracks, scenes ) ) { return false; }
+
+	SessionModel candidate;
+	candidate.resize( tracks, scenes );
+	candidate.m_globalLaunchQuantisation = launchQuantisationFromInt(
+		section.attribute( QStringLiteral( "launchquantisation" ),
+			QString::number( static_cast<int>( DefaultLaunchQuantisation ) ) ).toInt(), false );
+
+	for( QDomNode node = section.firstChild(); !node.isNull(); node = node.nextSibling() )
+	{
+		if( !node.isElement() ) { continue; }  // non-elements carry no state
+		const QDomElement child = node.toElement();
+		const QString name = node.nodeName();
+		if( name == QLatin1String( "z:scene" ) )
+		{
+			if( !applySceneRow( child, candidate.m_scenes ) ) { return false; }
+		}
+		else if( name == QLatin1String( "z:cell" ) )
+		{
+			if( !applySceneCell( child, candidate.m_slots, tracks, scenes ) ) { return false; }
+		}
+		else { return false; }
+	}
+
+	candidate.m_hadSessionBlock = true;
+	*this = std::move( candidate );
 	return true;
 }
 

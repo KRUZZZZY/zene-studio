@@ -49,17 +49,20 @@ QString readFile( const QString& path )
 }
 
 
-//! The <session> ... </session> substring of a project file, for byte-exact
-//! comparison across a save/load/save cycle (session blocks never nest).
-QString sessionBlock( const QString& project )
+//! The <z:scenes> ... </z:scenes> substring of a project file, for byte-exact
+//! comparison across a save/load/save cycle (the section never nests). Since
+//! ARCH-4 S8 this is the scene state's form in a project file; before S8 this
+//! helper sliced the legacy <session> block, which the project writer no
+//! longer emits (the block is the migration's input - SPEC-ARCH-4 row :403).
+QString scenesSection( const QString& project )
 {
-	const int start = project.indexOf( QStringLiteral( "<session " ) );
-	const int end = project.indexOf( QStringLiteral( "</session>" ) );
+	const int start = project.indexOf( QStringLiteral( "<z:scenes " ) );
+	const int end = project.indexOf( QStringLiteral( "</z:scenes>" ) );
 	if( start < 0 || end < 0 )
 	{
 		return QString();
 	}
-	return project.mid( start, end + 10 - start );
+	return project.mid( start, end + 11 - start );
 }
 
 } // namespace
@@ -79,8 +82,10 @@ private slots:
 		Engine::destroy();
 	}
 
-	//! The deliverable: a saved project round-trips a <session> block with
-	//! every clip-slot and scene field intact through a real .mmp file.
+	//! The deliverable: a saved project round-trips every clip-slot and scene
+	//! field intact through a real .mmp file - as the native <z:scenes>
+	//! section since ARCH-4 S8, with no legacy <session> block, and
+	//! re-serialising the loaded model byte-identical.
 	void songProjectRoundTripsSessionBlock()
 	{
 		QTemporaryDir dir;
@@ -147,26 +152,32 @@ private slots:
 		const QString firstText = readFile( first );
 		QVERIFY( !firstText.isEmpty() );
 
-		// QDom serialises attributes in hash order, so verify the block
-		// through the DOM rather than by substring.
+		// QDom serialises attributes in hash order, so verify the section
+		// through the DOM rather than by substring. ARCH-4 S8: the document
+		// form is the native top-level <z:scenes>, not the legacy block.
 		QDomDocument parsed;
 		QVERIFY( parsed.setContent( firstText.toUtf8() ) );
-		const QDomElement savedSession = parsed.documentElement()
+		const QDomElement savedScenes = parsed.documentElement()
 			.firstChildElement( QStringLiteral( "song" ) )
-			.firstChildElement( QStringLiteral( "session" ) );
-		QVERIFY( !savedSession.isNull() );
-		QCOMPARE( savedSession.attribute( QStringLiteral( "version" ) ).toInt(),
+			.firstChildElement( QStringLiteral( "z:scenes" ) );
+		QVERIFY2( !savedScenes.isNull(),
+			"the project writer must emit the native <z:scenes> section (ARCH-4 S8)" );
+		QVERIFY2( parsed.documentElement()
+				.firstChildElement( QStringLiteral( "song" ) )
+				.firstChildElement( QStringLiteral( "session" ) ).isNull(),
+			"the legacy <session> block must not be written any more - one "
+			"authority for the scene state (SPEC-ARCH-4 migration row :403)" );
+		QCOMPARE( savedScenes.attribute( QStringLiteral( "v" ) ).toInt(),
 			SessionModel::CurrentVersion );
-		QCOMPARE( savedSession.attribute( QStringLiteral( "tracks" ) ).toInt(), 2 );
-		QCOMPARE( savedSession.attribute( QStringLiteral( "scenes" ) ).toInt(), 2 );
-		QCOMPARE( savedSession.attribute( QStringLiteral( "launchquantisation" ) ).toInt(),
+		QCOMPARE( savedScenes.attribute( QStringLiteral( "tracks" ) ).toInt(), 2 );
+		QCOMPARE( savedScenes.attribute( QStringLiteral( "scenes" ) ).toInt(), 2 );
+		QCOMPARE( savedScenes.attribute( QStringLiteral( "launchquantisation" ) ).toInt(),
 			static_cast<int>( LaunchQuantisation::FourBars ) );
-		QCOMPARE( savedSession.firstChildElement( QStringLiteral( "clips" ) )
-			.elementsByTagName( QStringLiteral( "clip" ) ).length(), 2 );
+		QCOMPARE( savedScenes.elementsByTagName( QStringLiteral( "z:cell" ) ).length(), 2 );
 		QVERIFY( firstText.contains( QStringLiteral( "pattern=\"11\"" ) ) );
 		QVERIFY( firstText.contains( QStringLiteral( "src=\"samples/snare.wav\"" ) ) );
-		const QString firstSession = sessionBlock( firstText );
-		QVERIFY( !firstSession.isEmpty() );
+		const QString firstScenes = scenesSection( firstText );
+		QVERIFY( !firstScenes.isEmpty() );
 
 		// A new project must not inherit the previous one's session state.
 		song->clearProject();
@@ -224,10 +235,10 @@ private slots:
 		QCOMPARE( loadedAudio.detune(), 3 );
 		QVERIFY( loaded.slot( 0, 1 ).isEmpty() );
 
-		// Save the loaded project again: the <session> block is byte-identical.
+		// Save the loaded project again: the <z:scenes> section is byte-identical.
 		const QString second = dir.filePath( QStringLiteral( "second.mmp" ) );
 		QVERIFY( song->saveProjectFile( second ) );
-		QCOMPARE( sessionBlock( readFile( second ) ), firstSession );
+		QCOMPARE( scenesSection( readFile( second ) ), firstScenes );
 
 		// .mmpz is the same document, compressed (DataFile::writeFile).
 		const QString compressed = dir.filePath( QStringLiteral( "compressed.mmpz" ) );
