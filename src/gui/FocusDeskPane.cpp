@@ -60,6 +60,7 @@ namespace
 QString deskEnabledKey() { return QStringLiteral("focusdesk"); }
 QString deskFocusKey()   { return QStringLiteral("focusdesk.focus"); }
 QString deskDensityKey() { return QStringLiteral("focusdesk.density"); }
+QString deskWorkspaceKey() { return QStringLiteral("focusdesk.workspace"); }
 
 } // namespace
 
@@ -131,6 +132,15 @@ void FocusDeskPane::build(QBoxLayout* hostLayout)
 	if (hostLayout != nullptr) { hostLayout->addWidget(this); }
 	hide();
 
+	// Rows 3/6/7: persistence and observation are their own methods beside
+	// build() (FocusDeskPane.cpp), so neither wiring block's branches count
+	// against the other's.
+	wireDeskState();
+	wireConfigObserver();
+}
+
+void FocusDeskPane::wireDeskState()
+{
 	connect(m_desk, &FocusDesk::focusChanged, this,
 		[this](const QString&)
 		{
@@ -142,6 +152,20 @@ void FocusDeskPane::build(QBoxLayout* hostLayout)
 			saveToConfig();
 		});
 
+	// Rows 3 and 7: the strip's density button and workspace switcher change
+	// desk state without going through config, so the DESK announces it and
+	// the pane persists it - one writer for the key, whoever moved the state.
+	const auto persistDeskState = [this](const QString&)
+	{
+		if (m_settling) { return; }
+		saveToConfig();
+	};
+	connect(m_desk, &FocusDesk::densityChanged, this, persistDeskState);
+	connect(m_desk, &FocusDesk::workspaceChanged, this, persistDeskState);
+}
+
+void FocusDeskPane::wireConfigObserver()
+{
 	// The desk's mode IS the `ui/focusdesk` setting, so the setting is what
 	// drives it: writing that key enters or leaves the mode, whoever writes it -
 	// the View menu's action (which dispatches the registry's settings.set), an
@@ -149,7 +173,11 @@ void FocusDeskPane::build(QBoxLayout* hostLayout)
 	// is what makes the action's declaration TRUE rather than decorative
 	// (SPEC A11: one action, one implementation), and it is why the key is
 	// seeded in readConfig(): the first write to a key that does not exist yet
-	// is an insert, and an insert does not announce itself.
+	// is an insert, and an insert does not announce itself. The density and
+	// workspace keys are seeded for the same reason, and this is the observer
+	// they are seeded FOR: menu records and agents write them through
+	// settings.set, and the pane routes them into FocusDesk's own methods -
+	// menu, strip button and socket being one implementation (SPEC A11).
 	connect(ConfigManager::inst(), &ConfigManager::valueChanged, this,
 		[this](const QString& cls, const QString& attribute, const QString& value)
 		{
@@ -159,7 +187,22 @@ void FocusDeskPane::build(QBoxLayout* hostLayout)
 			// Only the pane hearing *itself* is suppressed; every other
 			// listener still sees what it wrote.
 			if (m_settling) { return; }
-			if (cls != QStringLiteral("ui") || attribute != deskEnabledKey()) { return; }
+			if (cls != QStringLiteral("ui")) { return; }
+			if (attribute == deskDensityKey())
+			{
+				FocusDensity density = m_desk->density();
+				if (FocusDeskModules::densityFromName(value, &density))
+				{
+					m_desk->setDensity(density);
+				}
+				return;
+			}
+			if (attribute == deskWorkspaceKey())
+			{
+				if (!value.isEmpty()) { m_desk->applyWorkspace(value); }
+				return;
+			}
+			if (attribute != deskEnabledKey()) { return; }
 			const bool wanted = value.toInt() != 0;
 			if (wanted == m_active) { return; }
 			if (setDeskActive(wanted) == wanted) { return; }
@@ -194,7 +237,23 @@ void FocusDeskPane::readConfig()
 	if (!density.isEmpty()) { layout.insert(QStringLiteral("density"), density); }
 	const QString focus = conf->value("ui", deskFocusKey());
 	if (!focus.isEmpty()) { layout.insert(QStringLiteral("focus"), focus); }
+	const QString workspace = conf->value("ui", deskWorkspaceKey());
+	if (!workspace.isEmpty()) { layout.insert(QStringLiteral("workspace"), workspace); }
 	if (!layout.isEmpty()) { m_desk->restoreLayout(layout); }
+
+	// Seed the two keys the way the enabled key is seeded below's sibling: a
+	// write to a key that does not exist yet is an INSERT, and an insert does
+	// not announce itself - so the first `settings.set ui/focusdesk.density`
+	// (or .workspace) from a menu record or an agent would land silently and
+	// the desk would not follow it. In memory only: no config file is written.
+	if (conf->value("ui", deskDensityKey()).isEmpty())
+	{
+		conf->setValue("ui", deskDensityKey(), FocusDeskModules::densityName(m_desk->density()));
+	}
+	if (conf->value("ui", deskWorkspaceKey()).isEmpty())
+	{
+		conf->setValue("ui", deskWorkspaceKey(), m_desk->workspace());
+	}
 }
 
 bool FocusDeskPane::applyConfiguredState()
@@ -219,6 +278,7 @@ void FocusDeskPane::saveToConfig() const
 	conf->setValue("ui", deskEnabledKey(), QString::number(m_active ? 1 : 0));
 	conf->setValue("ui", deskFocusKey(), m_desk->focused());
 	conf->setValue("ui", deskDensityKey(), FocusDeskModules::densityName(m_desk->density()));
+	conf->setValue("ui", deskWorkspaceKey(), m_desk->workspace());
 	conf->saveConfigFile();
 }
 

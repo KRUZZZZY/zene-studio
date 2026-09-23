@@ -41,13 +41,17 @@ SET(LMMS_SRCS
 	# Focus Desk - the Direction B shell (UI plan §9.4). FocusDeskModules is the
 	# module register (§4.2) and is deliberately widget-free so its rules are
 	# testable without a QApplication; FocusDeskPlacement holds the card/density
-	# machinery (the file-length ratchet is why the shell is two translation
-	# units, not one). The Q_OBJECT header lives in include/, which the
-	# top-level glob feeds to AUTOMOC.
+	# machinery (the file-length ratchet is why the shell is now four
+	# translation units, not one): FocusDeskActions is §10 rows 4/5's command
+	# record, generated menus and mod: seam, FocusDeskWorkspaces row 7's
+	# workspace data and switcher. The Q_OBJECT header lives in include/, which
+	# the top-level glob feeds to AUTOMOC.
 	gui/FocusDesk.cpp
+	gui/FocusDeskActions.cpp
 	gui/FocusDeskModules.cpp
 	gui/FocusDeskPane.cpp
 	gui/FocusDeskPlacement.cpp
+	gui/FocusDeskWorkspaces.cpp
 	gui/GuiApplication.cpp
 	gui/LadspaControlView.cpp
 	gui/LfoControllerDialog.cpp

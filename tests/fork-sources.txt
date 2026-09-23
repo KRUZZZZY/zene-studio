@@ -541,8 +541,10 @@ include/DpiHelper.h
 include/ExportDither.h
 include/ExportRenderSettings.h
 include/FocusDesk.h
+include/FocusDeskActions.h
 include/FocusDeskModules.h
 include/FocusDeskPane.h
+include/FocusDeskWorkspaces.h
 include/GroovePool.h
 include/GrooveTemplate.h
 include/ImportDetection.h
@@ -1043,9 +1045,11 @@ src/core/audio/TrackRecorder.cpp
 src/core/midi/MidiReconnect.cpp
 src/core/midi/MpeExpression.cpp
 src/gui/FocusDesk.cpp
+src/gui/FocusDeskActions.cpp
 src/gui/FocusDeskModules.cpp
 src/gui/FocusDeskPane.cpp
 src/gui/FocusDeskPlacement.cpp
+src/gui/FocusDeskWorkspaces.cpp
 src/gui/MidiLearnGui.cpp
 src/gui/PinConnector.cpp
 src/gui/StemSplitController.cpp

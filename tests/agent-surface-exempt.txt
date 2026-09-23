@@ -19,3 +19,5 @@ class:RecentProjectsMenu	entries are the user's recently-opened .mmp files (user
 class:TemplatesMenu	entries are template files discovered on disk at run time (environment-dependent)
 # Whatever Tool plugins this build happens to ship (LadspaBrowser, TapTempo, ...).
 path:Tools	entries are the Tool plugins this build has registered, not a fixed action list
+# The Focus Desk's module register, rendered into View > Modules (work-list row 5).
+path:Modules	entries are generated at run time from the Focus Desk module register (UI plan §4.2) - one `mod:` action per row, greyed with the register's own stated reason; not a fixed action list (same category as path:Tools; the report's container_path is the menu's own label, so the matcher names it `Modules`)

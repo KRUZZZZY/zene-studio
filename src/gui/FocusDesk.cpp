@@ -49,39 +49,13 @@ FocusDesk::FocusDesk(QWidget* parent) :
 
 	// One explicit setTabOrder() pass over the Focus Desk's own flow (spec §5
 	// item 1): register order across the strip's chips, then the density
-	// control, then the two splitter handles so keyboard resizing is reachable
-	// by tab and not only by click. The pass lives here because the chips only
-	// exist once the loop above has run; a card's promote button is created
-	// per mount and joins the chain through its own explicit TabFocus policy.
-	QWidget* previous = nullptr;
-	for (const auto& row : m_rows)
-	{
-		QToolButton* chip = m_chips.value(row.id, nullptr);
-		if (chip == nullptr) { continue; }
-		if (previous != nullptr) { setTabOrder(previous, chip); }
-		previous = chip;
-	}
-	// The density control and both splitters are guaranteed non-null here:
-	// buildStrip() and buildBody() ran above the addChip loop.
-	if (previous != nullptr)
-	{
-		setTabOrder(previous, m_densityButton);
-		previous = m_densityButton;
-	}
-	if (previous != nullptr)
-	{
-		setTabOrder(previous, m_splitter);
-		previous = m_splitter;
-	}
-	if (previous != nullptr)
-	{
-		// The vertical splitter is a local of buildBody(), reachable by the
-		// objectName buildBody() gives it rather than by a header change.
-		if (auto* rows = findChild<QSplitter*>(QStringLiteral("focusDeskRows")))
-		{
-			setTabOrder(previous, rows);
-		}
-	}
+	// control, then the workspace switcher, the Commands menu and the two
+	// splitter handles so keyboard resizing is reachable by tab and not only
+	// by click. The pass is its own member (FocusDeskPlacement.cpp) because
+	// the chips only exist once the loop above has run; a card's promote
+	// button is created per mount and joins the chain through its own
+	// explicit TabFocus policy.
+	applyStripTabOrder();
 
 	refreshChips();
 	applyDensity();
@@ -199,6 +173,11 @@ void FocusDesk::buildStrip()
 	connect(m_densityButton, &QToolButton::clicked, this,
 		[this]() { setDensity(FocusDeskModules::nextDensity(m_density)); });
 	layout->addWidget(m_densityButton);
+	// Rows 7, 4 and 3's strip furniture - each built beside the code it
+	// labels (FocusDeskWorkspaces.cpp, FocusDeskActions.cpp).
+	buildWorkspaceSwitcher();
+	buildCommandsButton();
+	buildDensityHint();
 }
 
 void FocusDesk::addChip(const FocusModule& row)
@@ -215,7 +194,10 @@ void FocusDesk::addChip(const FocusModule& row)
 	chip->setAutoRaise(true);
 	chip->setFocusPolicy(Qt::TabFocus);
 	a11y::announce(chip, row.title);
-	connect(chip, &QToolButton::clicked, this, [this, id = row.id]() { focusModule(id); });
+	// The chip is the `mod:` action's first mount (§9.4): one dispatchAction()
+	// path shared with the promote button and View ▸ Modules.
+	connect(chip, &QToolButton::clicked, this,
+		[this, id = row.id]() { dispatchAction(focusActionCommandId(id)); });
 
 	auto* layout = qobject_cast<QHBoxLayout*>(m_strip->layout());
 	if (layout != nullptr && layout->count() > 0)
@@ -243,7 +225,10 @@ bool FocusDesk::mountModule(const QString& moduleId, QWidget* content)
 	m_cards.insert(moduleId, card);
 	m_modules.insert(moduleId, content);
 	m_hosted.append(content);
-	placeCard(moduleId, homeDestination(row->home));
+	// The register's home is the default; mountDestination() parks instead
+	// when the current workspace does not declare this row a member - §6.1
+	// membership is declared data, read at mount time too.
+	placeCard(moduleId, mountDestination(*row, moduleId));
 
 	if (m_focused.isEmpty() && m_pendingFocus.isEmpty() && row->focusable
 		&& row->home == FocusRegion::Centre)
@@ -371,6 +356,18 @@ QVariantMap FocusDesk::saveLayout() const
 	QVariantMap out;
 	out.insert(QStringLiteral("focus"), m_focused);
 	out.insert(QStringLiteral("density"), FocusDeskModules::densityName(m_density));
+	// Row 6's layout-as-data: the workspace and the two rail widths travel
+	// with the rest of the layout, so a restart comes back where it was.
+	out.insert(QStringLiteral("workspace"), m_workspace);
+	if (m_splitter != nullptr)
+	{
+		const QList<int> sizes = m_splitter->sizes();
+		if (sizes.size() == 3)
+		{
+			out.insert(QStringLiteral("leftRail"), sizes[0]);
+			out.insert(QStringLiteral("rightRail"), sizes[2]);
+		}
+	}
 	for (const auto& row : m_rows)
 	{
 		if (m_modules.contains(row.id))
@@ -383,7 +380,12 @@ QVariantMap FocusDesk::saveLayout() const
 
 bool FocusDesk::restoreLayout(const QVariantMap& layout)
 {
-	bool ok = true;
+	// The workspace + rail keys apply FIRST (they carry row 6's layout-as-
+	// data): they re-measure the rails, park non-members and hold a flagship-
+	// pending choice; the focus key below then wins over everything for the
+	// stage, being the last word on what the user was looking at.
+	bool ok = restoreWorkspaceRails(layout);
+
 	FocusDensity density = m_density;
 	if (layout.contains(QStringLiteral("density")))
 	{

@@ -545,6 +545,12 @@ set(LMMS_TESTS
 	# strip's greyed-with-a-reason rule (X4), promotion to the stage, the
 	# return-to-home rule, releaseAll(), density, and the layout round trip.
 	src/gui/FocusDeskPaneTest.cpp
+	# UI plan §10 rows 3-7 (040/ui-precond wave 2): the command record and
+	# generated menus with the mod: dispatch seam, then §6.1 workspaces as
+	# declarative data plus their application on the desk. Both construct the
+	# desk, so both take the offscreen platform registration below.
+	src/gui/FocusDeskActionsTest.cpp
+	src/gui/FocusDeskWorkspacesTest.cpp
 	# UI precondition #1 (040/ui-precond): include/WcagContrast.h at the AA
 	# boundary, and include/Accessibility.h on the Focus Desk surface the owner
 	# manual-tests - the helper, then the chips, density control and promote
@@ -942,6 +948,8 @@ set_tests_properties(ClipLinkTest ClipLinkPersistenceTest ImportDetectionTest
 # aborting.
 set_tests_properties(FocusDeskTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(FocusDeskPaneTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+set_tests_properties(FocusDeskActionsTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+set_tests_properties(FocusDeskWorkspacesTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 # AccessibilityHelperTest constructs the Focus Desk, so it takes the same
 # platform registration (040/ui-precond). WcagContrastTest is guiless and needs
 # none: QColor loads no platform plugin.
