@@ -756,40 +756,41 @@ void AudioEngine::removePlayHandlesOfTypes(Track * track, PlayHandle::Types type
 	// Handles created since the last render wait in m_newPlayHandles and merge
 	// into m_playHandles only at the next render - a removal that walks just
 	// m_playHandles misses them, and the survivor later renders through its
-	// FREED track (the use-after-free SessionTuningTest caught: a
-	// NotePlayHandle reading m_firstKeyModel in freed memory; the same class
-	// of stale handle is behind old-project load crashes). Sweep the staging
-	// list with the SAME predicate and release path, re-staging survivors.
-	decltype( m_newPlayHandles )::Element * keep = nullptr;
-	for( auto * e = m_newPlayHandles.popList(); e; )
+	// FREED track (the use-after-free SessionTuningTest caught; the same class
+	// is behind old-project load crashes). Sweep the staging list IN PLACE,
+	// the splice pattern the singular removePlayHandle() uses for this list.
 	{
-		auto * next = e->next;
-		PlayHandle * handle = e->value;
-		if (handle->isFromTrack(track) && (handle->type() & types))
+		LocklessList<PlayHandle *>::Element * e = m_newPlayHandles.first();
+		LocklessList<PlayHandle *>::Element * ePrev = nullptr;
+		while( e )
 		{
-			handle->audioBusHandle()->removePlayHandle(handle);
-			if(handle->type() == PlayHandle::Type::NotePlayHandle)
+			LocklessList<PlayHandle *>::Element * next = e->next;
+			PlayHandle * handle = e->value;
+			// NOTE handles only: the proven survivor class (a staged
+			// NotePlayHandle rendering through its freed track). A staged
+			// InstrumentPlayHandle is owned by its instrument's create/delete
+			// bookkeeping and deleting it here double-frees it (the
+			// PluginPortsMigrationTest segfault), so non-note handles wait
+			// for their own owner as before.
+			if (handle->type() == PlayHandle::Type::NotePlayHandle
+				&& handle->isFromTrack(track) && (handle->type() & types))
 			{
-				NotePlayHandleManager::release((NotePlayHandle*)handle);
+				handle->audioBusHandle()->removePlayHandle(handle);
+				if(handle->type() == PlayHandle::Type::NotePlayHandle)
+				{
+					NotePlayHandleManager::release((NotePlayHandle*)handle);
+				}
+				else delete handle;
+				if( ePrev ) { ePrev->next = next; }
+				else { m_newPlayHandles.setFirst( next ); }
+				m_newPlayHandles.free( e );
 			}
-			else delete handle;
-			m_newPlayHandles.free( e );
+			else
+			{
+				ePrev = e;
+			}
+			e = next;
 		}
-		else
-		{
-			e->next = keep;
-			keep = e;
-		}
-		e = next;
-	}
-	// put the survivors back (LIFO; the ordering among same-slice new handles
-	// is not load-bearing) and free the detached chain cells.
-	for( auto * e = keep; e; )
-	{
-		auto * next = e->next;
-		m_newPlayHandles.push( e->value );
-		m_newPlayHandles.free( e );
-		e = next;
 	}
 	doneChangeInModel();
 }

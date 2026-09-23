@@ -92,9 +92,13 @@ QString targetProject(const QJsonObject& args, QString* error)
 }
 
 //! The autosave file this build looks at: ConfigManager's own recovery file,
-//! read here rather than assumed, so a test can point the timeline elsewhere.
+//! read here rather than assumed, so a test can point the timeline elsewhere
+//! (ZENE_RECOVERY_FILE overrides it - without that a test inherits the real
+//! session's recover.mmp.bak and its 'gone' ids resolve: RevisionTimelineTest).
 QString autosaveFile()
 {
+	const QString overridden = qEnvironmentVariable("ZENE_RECOVERY_FILE");
+	if (!overridden.isEmpty()) { return overridden; }
 	return ConfigManager::inst()->recoveryFile();
 }
 

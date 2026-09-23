@@ -153,6 +153,11 @@ private slots:
 	void initTestCase()
 	{
 		QVERIFY(m_dir.isValid());
+		// Point the HANDLERS at this test's own recovery path too: without the
+		// override they read the machine's real recover.mmp.bak and the
+		// 'autosave_prev' refusal case resolves an artefact the kit never wrote
+		// (measured: the handler opened Documents/Zene Studio/recover.mmp.bak).
+		qputenv("ZENE_RECOVERY_FILE", path(QStringLiteral("recover.mmp")).toUtf8());
 		// A real Engine: the group's handlers read the session's own project path
 		// where no 'project' argument names one, and the registry refuses (busy)
 		// until the model is up - the same two lines the other command-group tests

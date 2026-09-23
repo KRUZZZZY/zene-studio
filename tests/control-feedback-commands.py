@@ -55,14 +55,12 @@ REAPER_WARNING = ("feedback routing can in some instances be useful, but can "
                   "risk damaging audio equipment (REAPER User Guide, main "
                   "changes 6.66-6.70)")
 
-#: Pre-change baseline (integration tip 4ef3065fa): canonical JSON of the
-#: fixture's pdc.report and of mixer.get_state, captured by --capture BEFORE
-#: any engine line of this card (both STILL the pre-change values), plus the
-#: save-file sha256 - which ROTATED at the 0.4.0 train tip, see
+#: Baselines: pdc/mixer JSON + save sha256 captured at 4ef3065fa (pre-change,
+#: both still those values). The save sha ROTATED twice (see the rotation doc):
 #: docs/709-logs/709-baseline-rotate.md; record: 709-baseline-prechange.md.
 BASELINE_PDC = '''{"channel_count":3,"channels":[{"chain_latency_frames":0,"id":"ch-1","index":0,"input_latency_frames":0,"is_bus":false,"is_master":true,"muted":false,"name":"Master","send_count":0,"sends":[],"sidechain_receive_count":0,"sidechain_send_count":0,"sidechain_sends":[],"volume":1},{"chain_latency_frames":0,"id":"ch-9","index":1,"input_latency_frames":0,"is_bus":true,"is_master":false,"muted":false,"name":"Bus 1","send_count":2,"sends":[{"amount":1,"compensation_frames":0,"from":"ch-9","pre_fader":false,"to":"ch-1"},{"amount":1,"compensation_frames":0,"from":"ch-9","pre_fader":false,"to":"ch-10"}],"sidechain_receive_count":0,"sidechain_send_count":0,"sidechain_sends":[],"volume":1},{"chain_latency_frames":0,"id":"ch-10","index":2,"input_latency_frames":0,"is_bus":false,"is_master":false,"muted":false,"name":"Channel 2","send_count":1,"sends":[{"amount":1,"compensation_frames":0,"from":"ch-10","pre_fader":false,"to":"ch-1"}],"sidechain_receive_count":0,"sidechain_send_count":0,"sidechain_sends":[],"volume":1}],"delay_line_capacity_frames":16384,"delay_line_clamped":false,"note":"total_latency_frames is the delay from a source entering the mixer to the master output (Mixer::totalLatencyFrames); input_latency_frames is the alignment point the mixer publishes per channel (Mixer::channelInputLatency). Both are recomputed once per period by Mixer::updateLatencyCompensation - no command sets them, and this command writes nothing","route_count":3,"routes":[{"amount":1,"compensation_frames":0,"from":"ch-9","pre_fader":false,"to":"ch-1"},{"amount":1,"compensation_frames":0,"from":"ch-10","pre_fader":false,"to":"ch-1"},{"amount":1,"compensation_frames":0,"from":"ch-9","pre_fader":false,"to":"ch-10"}],"sidechain":{"count":0,"note":"sidechain sends ARE in this engine (Mixer::createSidechainSend, src/core/Mixer.cpp); create or adjust one with mixer.sidechain_to and read its tap and compensation here","routes":[],"supported":true,"tap_points":["post_fader","pre_fx","pre_fader","post_fader_no_gain"]},"total_latency_frames":0,"track_input_count":4,"track_inputs":[{"channel":"ch-1","latency_frames":0,"name":"Default preset"},{"channel":"ch-1","latency_frames":0,"name":"TripleOscillator"},{"channel":"ch-1","latency_frames":0,"name":"Sample track"},{"channel":"ch-1","latency_frames":0,"name":"Kicker"}]}'''
 BASELINE_MIXER = '''{"channels":[{"id":"ch-1","index":0,"is_bus":false,"is_master":true,"muted":false,"name":"Master","pan":null,"sends":[],"soloed":false,"volume":1},{"id":"ch-9","index":1,"is_bus":true,"is_master":false,"muted":false,"name":"Bus 1","pan":null,"sends":[{"amount":1,"pre_fader":false,"to":"ch-1"},{"amount":1,"pre_fader":false,"to":"ch-10"}],"soloed":false,"volume":1},{"id":"ch-10","index":2,"is_bus":false,"is_master":false,"muted":false,"name":"Channel 2","pan":null,"sends":[{"amount":1,"pre_fader":false,"to":"ch-1"}],"soloed":false,"volume":1}],"count":3}'''
-BASELINE_SAVE_SHA256 = "40265a89e25cd1f46f70c3f57e36ef2a9c23b1b0e500b6fa9911fa9dd2367381"
+BASELINE_SAVE_SHA256 = "33a5053f5ea0d4a5406166b832fe58c9b0dfc70a7137ed979c7bdfd1128f56c2"
 
 
 class Session:
@@ -150,13 +148,11 @@ def save_path_for(binary):
 def canonical_project_sha(path):
     """sha256 of the saved project's XML in CANONICAL form.
 
-    Not byte-stable run to run: zlib prefix, QHash attribute order, per-
-    instance `writer` + per-build `creatorversion` strings, and since ARCH-4
-    S6 an append-only <z:provenance> journal with wall-clock `at` stamps. So
-    the canonical form drops those three (instance/build/journal metadata,
-    never project content; s6's goldens cover the journal) and sorts
-    attributes; what remains is the project's own content. The baseline
-    constant's rotation: docs/709-logs/709-baseline-rotate.md."""
+    Drops instance/build/journal/window-LAYOUT metadata - writer,
+    creatorversion, the <z:provenance> journal (wall-clock stamps), the GUI
+    view sections and the window-geometry attrs; none of it is project
+    content - and sorts attributes. Rotations of the constant:
+    docs/709-logs/709-baseline-rotate.md."""
     import xml.etree.ElementTree as ET
     import zlib
 
@@ -164,8 +160,11 @@ def canonical_project_sha(path):
         root = ET.fromstring(zlib.decompress(handle.read()[4:]))
 
     def clean(element):
-        element.attrib.pop("writer", None); element.attrib.pop("creatorversion", None)
-        [element.remove(c) for c in list(element) if c.tag.endswith("}provenance")]
+        for v in ("writer", "creatorversion", "x", "y", "width", "height", "maximized", "visible"):
+            element.attrib.pop(v, None)
+        [element.remove(c) for c in list(element) if c.tag.endswith("}provenance")
+         or c.tag in ("ControllerRackView", "automationeditor", "pianoroll", "projectnotes",
+                      "timeline", "automationtrack")]
         items = sorted(element.attrib.items())
         element.attrib.clear()
         element.attrib.update(items)
