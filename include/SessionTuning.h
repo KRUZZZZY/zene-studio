@@ -168,7 +168,7 @@ public:
 	// ---------------------------------------------------------------------
 	/*! True when the separately-installed MTS-ESP IPC core (libMTS.so /
 	 *  libMTS.dylib / LIBMTS.dll - upstream's own install paths, the ones
-	 *  thirdparty/mts-esp/*.cpp dlopen at static init) is present in THIS
+	 *  thirdparty/mts-esp .cpp files dlopen at static init) is present in THIS
 	 *  process. The wrappers make every master call an inert no-op without
 	 *  it, and expose no "am I connected" call, so the probe asks the loader
 	 *  directly (POSIX: dlopen(..., RTLD_NOLOAD) on the two paths the wrapper
