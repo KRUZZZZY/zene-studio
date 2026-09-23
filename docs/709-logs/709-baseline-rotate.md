@@ -60,3 +60,38 @@ Scope of the change: one test file's canonicalisation + one constant; no
 engine line, no other check. `unverified:` the rotated constant is only
 re-verified forward from this tip; no byte-identity against pre-`4ef3065fa`
 builds can be re-executed here (that build is gone — one-build-dir rule).
+
+---
+
+# Rotation act #2 (2026-09-23, train tip 6f5894cba) — window-layout metadata
+
+WHY: `ControlFeedbackCommands`'s two save-sha comparisons failed deterministically
+(`afbfeee…` both stages vs `40265a89…`). Measured causes, each independently verified:
+
+1. The canonical form kept **window/session layout state**: the `<song>` GUI view
+   sections (`ControllerRackView`, `pianoroll`, `automationeditor`, `projectnotes`,
+   `timeline`, `automationtrack`) and the window-geometry attrs (`x`, `y`, `width`,
+   `height`, `maximized`, `visible`). The owner's live testing session saved a real
+   layout into the machine's session state, and the newly-added off-screen-window
+   clamp (owner bug #1's fix) legitimately shifts restored geometry — so instance
+   layout metadata froze into a content-equality constant twice over.
+2. An earlier red (`RevisionTimelineTest`, same family) was traced by strace to the
+   machine's global `Documents/Zene Studio/recover.mmp.bak` leaking into test
+   expectations — fixed separately by the `ZENE_RECOVERY_FILE` override.
+
+THE ACT:
+
+- `canonical_project_sha()` now also drops the six GUI view elements and the six
+   window-geometry attrs (layout is instance state, never project content — the
+   same exclusion class as `writer`, `creatorversion`, and the `<z:provenance>`
+   journal). File held at 499 lines (anchor 500).
+- `BASELINE_SAVE_SHA256` ROTATED: `40265a89e25cd1f4…` → `33a5053f5ea0d4a5406166b832fe58c9b0dfc70a7137ed979c7bdfd1128f56c2`
+  (captured at `6f5894cba`-era build with the updated canonical form).
+- `BASELINE_PDC` / `BASELINE_MIXER` again untouched (they compare equal across
+  all three states measured today).
+
+WHAT STILL STANDS: rotations #1/#2 never erased the historical proofs in
+`709-baseline-prechange.md` and the lane's passing runs; the live check keeps
+detecting genuine save-path content regressions (proven in the other direction:
+it caught real drift today), and is now immune to build identity, journal
+timestamps, and window layout — the three measured classes of churn.
