@@ -64,6 +64,7 @@
 #include "RetroMidiCapture.h"
 #include "Scale.h"
 #include "SongEditor.h"
+#include "TakeLane.h"
 #include "PeakController.h"
 
 
@@ -1773,6 +1774,48 @@ void appendPreservedSessionXml( const QString & xml, DataFile & dataFile )
 #endif // !LMMS_HAVE_SESSION_VIEW
 } // namespace
 
+/*! ARCH-4 S7 (SPEC-ARCH-4 1.1 sketch / migration upconversion row): the lane
+ *  entities as ONE top-level <z:lanes> section, written ONLY when some track's
+ *  TakeLaneModel is non-empty - the additive rule at document scope (a project
+ *  that never comped gains no section, no `z` binding and byte-identical
+ *  output) and the compatibility rule (SPEC-ARCH-4 2: new state only in
+ *  top-level namespaced sections, never as a child of <track>, because an older
+ *  build's loadTrack materialises an unrecognised <track> child as a phantom
+ *  Clip - 5.2 risk 1). Each non-empty track contributes a <z:tracklanes>
+ *  group keyed by its track id, filled by TakeLaneModel::saveSettings: the same
+ *  z:lane/z:segment children a journal checkpoint gets under the track's own
+ *  <takelanes>, the two contexts docs/COMPING.md section 3 records. */
+static void writeLanesSection( DataFile & dataFile, const TrackContainer::TrackList & tracks )
+{
+	bool any = false;
+	for( const Track * track : tracks )
+	{
+		if( ! track->takeLanes().isEmpty() ) { any = true; break; }
+	}
+	if( ! any ) { return; }
+
+	// ONE spelling of the `z` binding - the same attribute and URI the
+	// <z:provenance> writer below sets (DocumentIndex.h). setAttribute through
+	// a document handle is idempotent, so a document carrying two sections
+	// binds the prefix once and its bytes do not depend on write order.
+	QDomElement & content = dataFile.content();
+	QDomElement root = dataFile.documentElement();
+	root.setAttribute( documentIndexNamespaceAttribute(), documentIndexNamespaceUri() );
+
+	QDomDocument document = content.ownerDocument();
+	QDomElement section = document.createElement( QStringLiteral( "z:lanes" ) );
+	section.setAttribute( QStringLiteral( "v" ), QStringLiteral( "1" ) );
+	for( Track * track : tracks )
+	{
+		if( track->takeLanes().isEmpty() ) { continue; }
+		QDomElement group = document.createElement( QStringLiteral( "z:tracklanes" ) );
+		group.setAttribute( QStringLiteral( "track" ), track->id() );
+		track->takeLanes().saveSettings( document, group );
+		section.appendChild( group );
+	}
+	content.appendChild( section );
+}
+
 bool Song::saveProjectFile(const QString & filename, bool withResources)
 {
 	using gui::getGUI;
@@ -1903,6 +1946,13 @@ bool Song::saveProjectFile(const QString & filename, bool withResources)
 	// byte-identical for every project that never used the session view.
 	appendPreservedSessionXml( m_preservedSessionXml, dataFile );
 #endif
+
+	// ARCH-4 S7 (SPEC-ARCH-4 1.1 / migration row): the lane entities, before
+	// the unclaimed tail so 1.6.1's re-emission stays last, and before the
+	// provenance write so that section's comment about being placed before the
+	// tail still holds. Writes nothing when no track holds lanes (I9 at
+	// document scope).
+	writeLanesSection( dataFile, tracks() );
 
 	// ARCH-4 S6 (SPEC-ARCH-4 1.9): the append-only <z:provenance> section,
 	// written ONLY when this session has recorded a change - the additive rule
@@ -2116,6 +2166,35 @@ void Song::restoreKeymapStates(const QDomElement &element)
 	emit keymapListChanged(-1);
 }
 
+/*! ARCH-4 S7 (SPEC-ARCH-4 1.1/2): the lane section, claimed only in the exact
+ *  shape this writer produces - v="1", every child a <z:tracklanes> naming a
+ *  track the file also contains. Anything else answers false, so the walk
+ *  preserves the element verbatim as unclaimed instead of letting a write-back
+ *  rewrite it (the provenance branch's contract). Load order is the writer's
+ *  order: <trackcontainer> is emitted first, so by the time the walk reaches
+ *  this section the track ids resolve; a file that puts it earlier declines
+ *  rather than half-loads. TakeLaneModel::loadSettings clears each model
+ *  before filling it, so a section that names one track and not another leaves
+ *  the other empty - reset-on-absence rides s4's rule, unchanged. */
+static bool loadLanesSection( const Song & song, const QDomElement & section )
+{
+	if( section.attribute( QStringLiteral( "v" ) ) != QLatin1String( "1" ) ) { return false; }
+	for( QDomNode node = section.firstChild(); ! node.isNull(); node = node.nextSibling() )
+	{
+		if( ! node.isElement() || node.nodeName() != QLatin1String( "z:tracklanes" ) )
+		{
+			return false;
+		}
+		const QDomElement group = node.toElement();
+		bool ok = false;
+		const int trackId = group.attribute( QStringLiteral( "track" ) ).toInt( & ok );
+		Track * track = ok ? song.findTrackById( trackId ) : nullptr;
+		if( track == nullptr ) { return false; }
+		track->takeLanes().loadSettings( group );
+	}
+	return true;
+}
+
 /*! The named <song> sections this build reads (SPEC-ARCH-4 1.6.1). Extracted
  *  from loadProject()'s walk when the walk's job became "claim it, or preserve
  *  it": every branch below is what it was inline, one answer added. That answer
@@ -2178,6 +2257,14 @@ bool Song::restoreNamedSection(const QDomElement & element)
 	if( name == provenance::nodeName() )
 	{
 		if( provenance::Section::instance().load( element ) ) { return true; }
+	}
+	// ARCH-4 S7 (SPEC-ARCH-4 1.1/2): the lane entities, top-level <z:lanes>.
+	// Claim-or-preserve like the provenance branch: the exact shape this
+	// writer produces claims it and fills the named tracks' models; anything
+	// else answers false so 1.6.1 keeps the element verbatim as unclaimed.
+	if( name == QLatin1String( "z:lanes" ) )
+	{
+		if( loadLanesSection( *this, element ) ) { return true; }
 	}
 	// The two song-state elements that live behind a lock-free publisher: the
 	// tempo map (D11, docs/TEMPO-MAP.md) and the modulation layer (#602,
