@@ -49,9 +49,9 @@ struct WhiteSource
 		state ^= state << 13;
 		state ^= state >> 17;
 		state ^= state << 5;
-		// Map the 32-bit word onto [-1, 1] by taking the high 24 bits.
-		const auto word = static_cast<float>(static_cast<int32_t>(state >> 8)) / 8388608.0f;
-		return word * 0.5f;
+		// Map the high 24 bits around their midpoint onto [-1, 1].
+		const auto word = static_cast<float>(state >> 8) - 8388608.0f;
+		return word / 8388608.0f;
 	}
 };
 
