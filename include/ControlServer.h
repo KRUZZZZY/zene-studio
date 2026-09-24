@@ -44,6 +44,7 @@
 #include "ControlRegistry.h"
 
 class QSocketNotifier;
+class QTimer;
 
 namespace lmms
 {
@@ -85,6 +86,11 @@ public:
 	//! line). The bound is far above any legitimate answer: the largest reply on
 	//! this surface (control.commands_list) is a few hundred kilobytes.
 	static constexpr int MaxQueuedReplyBytes = 8 * 1024 * 1024;
+	//! Maximum simultaneous local peers. Excess accepted sockets are refused and
+	//! closed before they can allocate a per-client buffer.
+	static constexpr int MaxClients = 64;
+	//! Idle/read/write activity deadline for one peer.
+	static constexpr int ClientIdleTimeoutMs = 30000;
 
 	explicit ControlServer(ControlRegistry* registry, QObject* parent = nullptr);
 	~ControlServer() override;
@@ -135,6 +141,7 @@ private:
 		//! each line whole and in order.
 		QByteArray pending;
 		QByteArray buffer;
+		qint64 deadlineMs = 0;
 
 		//! Retire this connection's notifiers (either may never have been armed).
 		//! Defined in ControlServer.cpp, where QSocketNotifier is complete.
@@ -148,6 +155,7 @@ private:
 	};
 
 	void onNewConnection();
+	void retireIdleClients();
 	void onClientReadable(int fd);
 	//! The socket is writable again: flush the tail of a reply that did not fit
 	//! earlier (Client::pending). Defined in ControlServer.cpp beside sendBytes.
@@ -245,6 +253,7 @@ private:
 	//! must never outlive it (CODE-8).
 	ControlRegistry::ShutdownHookId m_shutdownHookId = 0;
 	QHash<int, Client> m_clients;
+	QTimer* m_clientSweep = nullptr;
 };
 
 } // namespace lmms

@@ -148,6 +148,10 @@ void ControlRegistry::destroy()
 void ControlRegistry::registerCommand(const ControlCommand& command)
 {
 	Q_ASSERT(!command.id.isEmpty());
+	if (command.id.isEmpty() || m_commands.contains(command.id))
+	{
+		qFatal("ControlRegistry: duplicate or empty command id '%s'", command.id.toUtf8().constData());
+	}
 	m_commands.insert(command.id, command);
 }
 

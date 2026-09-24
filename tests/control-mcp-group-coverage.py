@@ -116,8 +116,11 @@ def parse_args(argv):
 
 
 def command_ids(commands: list[dict]) -> list[str]:
-    """Every non-empty id in a command list, sorted and deduplicated."""
-    return sorted({str(entry.get("id") or "") for entry in commands} - {""})
+    """Every command id, rejecting empty or duplicate entries before set checks."""
+    raw_ids = [str(entry.get("id") or "") for entry in commands]
+    if "" in raw_ids or len(raw_ids) != len(set(raw_ids)):
+        raise AssertionError("command list contains an empty or duplicate id")
+    return sorted(raw_ids)
 
 
 def group_of(command_id: str) -> str:

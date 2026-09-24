@@ -1468,3 +1468,33 @@ f190a668ee7a5ad1bcb7b6e31efd796e25f4e5bd2554be0e73303f42a2f3dd4a	3202	tests/inte
 #   shipping the log. Removed: 1 file, 6452 bytes.
 # ---------------------------------------------------------------------------
 73eefc7681c0dbaacf5d9cd6aa17e3f00a4bc829e27a79603377e7f74799b17c	6452	docs/reports/CLAP-INSTRUMENT-ROW79-EVIDENCE.log
+# ---------------------------------------------------------------------------
+# 2026-09-24, lane bugs/hunt-2026-09-24: the four-fix regression pass's run
+# output. Gate 11 refuses a .log anywhere in the tree and two of these exceed the
+# 1 MiB cap (baseline-targeted.log 1426763 bytes, final-targeted.log 1434097
+# bytes), so they are recorded here by hash rather than committed. The lane's
+# durable evidence is the prose in docs/bug-fix-2026-09-24-logs/EVIDENCE.md -
+# which names the regression test, its red/green exit codes and the battery
+# result - plus the four small per-test .log files whose hashes are below; the
+# full ctest and build transcripts are reproducible from the commands EVIDENCE.md
+# records. Removed: 20 files, 3388008 bytes.
+c41cda4d585ebef39647fe19912bf23dad8cde84fa3b3472c42d166dff1c27ee	2444	docs/bug-fix-2026-09-24-logs/ControlDeviceCatalogueTest.log
+b3842b705290bd362355952095a2e8d771076fdd2ff1f23d54ec7864ffd66485	1267	docs/bug-fix-2026-09-24-logs/ControlEditCommandsTest.log
+df84f5e58f4d52e1c47e0e89599dc4d455115f02833fb4629349fb22a759be66	2133	docs/bug-fix-2026-09-24-logs/ControlRegistryTest.log
+eb46270a60c982281109f7b14992625a212855a70a2cf99321fbacdd313cbf36	732	docs/bug-fix-2026-09-24-logs/ControlShutdownHookTest.log
+92a3dc308740de55e5c672efebe49dbe0b25d2554551b2fd88aac0eedca81e23	1728	docs/bug-fix-2026-09-24-logs/ControlSurfaceReferenceTest.log
+e1e4599fa03bc7627d701775acfedf2a78accc4a32d898d2a5ab8f214ec804c3	1301	docs/bug-fix-2026-09-24-logs/ControlVerbInverseTest.log
+a6f7506199088ff4df3e5abb82516e9630c046e18c95ff496a8a5fbf2a7ec3f1	467272	docs/bug-fix-2026-09-24-logs/baseline-list.log
+5d53c1c2ee4e96392ccb927c21e5f33894a4d12d9322f3b3ae781ad9df4c6382	1426763	docs/bug-fix-2026-09-24-logs/baseline-targeted.log
+c399720b1efd876f496ba55c54ce5633ce2485262d0463121094c5531039d57a	2384	docs/bug-fix-2026-09-24-logs/baseline/ControlDeviceCatalogueTest.log
+5a37dcc0f5b2a1c99ba740a56a17ee7351e4712863c926d0c8f3b5431f70f587	1267	docs/bug-fix-2026-09-24-logs/baseline/ControlEditCommandsTest.log
+42587bdc8d9d39c2e24086ff49c886b27c87ef8661f89823b0efa0dd0d3d5d50	2133	docs/bug-fix-2026-09-24-logs/baseline/ControlRegistryTest.log
+09060728382333329b339df6fe0842b8f6317a96af55121a8c4830500336d5ab	732	docs/bug-fix-2026-09-24-logs/baseline/ControlShutdownHookTest.log
+77b5894c92a22295b6b31135c9d8bea771fbf5732cfd9b11bc31e915ed06a49e	1728	docs/bug-fix-2026-09-24-logs/baseline/ControlSurfaceReferenceTest.log
+e6e1c7f0739ac779fd57e916794bfd23231e94bf1edebd9c94b8ab2b905522f9	1301	docs/bug-fix-2026-09-24-logs/baseline/ControlVerbInverseTest.log
+e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855	0	docs/bug-fix-2026-09-24-logs/build-tests-final.log
+3d75ae851dfa59f7f96d92c87785cc5ea6b6a6ea1d018952e6e9b591b60473e3	8620	docs/bug-fix-2026-09-24-logs/build-zene-final.log
+25a57b128fde8f7fec8f55750586987db6867c33c6e88638a9a067f192fb7fe8	149	docs/bug-fix-2026-09-24-logs/commit-stems.log
+6dab6742c6d67b6f12d5040c72f3a4fce7312fdc3d64f6e21b2ddaafe0b4e181	2939	docs/bug-fix-2026-09-24-logs/final-build.log
+e238f0a9ebc787ffe88c599085a94552d2e5ecc882bcf8300c01ba3a50f43c3f	1434097	docs/bug-fix-2026-09-24-logs/final-targeted.log
+e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855	0	docs/bug-fix-2026-09-24-logs/python-checkers.log

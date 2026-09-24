@@ -138,6 +138,12 @@ bool resolveChannelTarget(const QString& id, ControlTarget* target, ControlResul
 			}
 		}
 	}
+	if (wanted < 0)
+	{
+		*error = ControlResult::failure(ControlErrorKind::InvalidArgs,
+			QStringLiteral("channel target '%1' must use the ch-<index> form").arg(id));
+		return false;
+	}
 	if (channel == nullptr)
 	{
 		*error = ControlResult::failure(ControlErrorKind::NotFound,

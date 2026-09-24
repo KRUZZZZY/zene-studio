@@ -30,12 +30,16 @@
 #include "ControlServer.h"
 
 #include <cerrno>
+#include <cmath>
 #include <cstring>
+#include <limits>
 
+#include <QDateTime>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QJsonParseError>
 #include <QSocketNotifier>
+#include <QTimer>
 
 #include "ControlRegistry.h"
 #include "ProvenanceSection.h"
@@ -111,8 +115,12 @@ bool readArgs(const QJsonObject& request, QJsonObject* args, int id, QByteArray*
 
 ControlServer::ControlServer(ControlRegistry* registry, QObject* parent) :
 	QObject(parent),
-	m_registry(registry)
+	m_registry(registry),
+	m_clientSweep(new QTimer(this))
 {
+	m_clientSweep->setInterval(1000);
+	connect(m_clientSweep, &QTimer::timeout, this, &ControlServer::retireIdleClients);
+	m_clientSweep->start();
 }
 
 ControlServer::~ControlServer()
@@ -151,10 +159,18 @@ void ControlServer::onNewConnection()
 		{
 			return; // EAGAIN: no more pending connections
 		}
+		if (m_clients.size() >= MaxClients)
+		{
+			// Accept and immediately refuse excess peers: leaving them queued would
+			// let one local user consume the listener backlog indefinitely.
+			::close(fd);
+			continue;
+		}
 		::fcntl(fd, F_SETFD, FD_CLOEXEC);
 		::fcntl(fd, F_SETFL, O_NONBLOCK);
 		Client client;
 		client.fd = fd;
+		client.deadlineMs = QDateTime::currentMSecsSinceEpoch() + ClientIdleTimeoutMs;
 		client.notifier = new QSocketNotifier(fd, QSocketNotifier::Read, this);
 		connect(client.notifier, &QSocketNotifier::activated, this, [this, fd]() { onClientReadable(fd); });
 		// A reply larger than the peer's socket buffer cannot be written in one
@@ -245,6 +261,19 @@ WriteOutcome writeWhatFits(int fd, const char* data, int size, int* written)
 } // namespace
 #endif
 
+void ControlServer::retireIdleClients()
+{
+#if defined(Q_OS_UNIX)
+	const qint64 now = QDateTime::currentMSecsSinceEpoch();
+	QVector<int> expired;
+	for (auto it = m_clients.constBegin(); it != m_clients.constEnd(); ++it)
+	{
+		if (it->deadlineMs <= now) { expired.append(it.key()); }
+	}
+	for (const int fd : expired) { dropClient(fd); }
+#endif
+}
+
 void ControlServer::onClientReadable(int fd)
 {
 #if !defined(Q_OS_UNIX)
@@ -268,6 +297,10 @@ void ControlServer::onClientReadable(int fd)
 	// A reply that could not be written in full leaves a TRUNCATED line on the
 	// wire; dispatchPendingLines drops the client and the loop stops there.
 	if (!dispatchPendingLines(fd, buffer)) { return; }
+	if (buffer.isEmpty())
+	{
+		it->deadlineMs = QDateTime::currentMSecsSinceEpoch() + ClientIdleTimeoutMs;
+	}
 
 	// Every complete line is gone, so a buffer still over the cap is ONE request
 	// line that never ended. Refuse it in the surface's own vocabulary, then
@@ -393,6 +426,7 @@ void ControlServer::onClientWritable(int fd)
 		return;
 	}
 	if (it->pending.isEmpty()) { it->writeNotifier->setEnabled(false); }
+	it->deadlineMs = QDateTime::currentMSecsSinceEpoch() + ClientIdleTimeoutMs;
 #endif
 }
 
@@ -416,7 +450,15 @@ QByteArray ControlServer::dispatchLine(const QByteArray& line)
 		return errorLine(-1, ControlErrorKind::InvalidArgs,
 			QStringLiteral("request 'id' must be an integer"));
 	}
-	const int id = static_cast<int>(idValue.toDouble());
+	const double idNumber = idValue.toDouble();
+	if (!std::isfinite(idNumber) || std::trunc(idNumber) != idNumber ||
+		idNumber < static_cast<double>(std::numeric_limits<int>::min()) ||
+		idNumber > static_cast<double>(std::numeric_limits<int>::max()))
+	{
+		return errorLine(-1, ControlErrorKind::InvalidArgs,
+			QStringLiteral("request 'id' must be a finite integer in the signed 32-bit range"));
+	}
+	const int id = static_cast<int>(idNumber);
 
 	QByteArray reply;
 	if (!protoMatches(request, id, &reply)) { return reply; }

@@ -27,10 +27,16 @@ Three kinds of control:
 Usage: control-negative-control.py <lmms-binary> [--legacy-binary <lmms>]
 """
 
+import importlib.util
+import json
 import os
 import signal
 import sys
+import tempfile
 import time
+from pathlib import Path
+
+HERE = Path(__file__).resolve().parent
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
@@ -82,8 +88,88 @@ def must_reject(problems, name, defective, check, reason):
     return found
 
 
+def load_checker(filename):
+    """The checker module at tests/<filename>, loaded by path (the names are hyphenated)."""
+    name = "checker_" + filename.replace("-", "_").replace(".", "_")
+    spec = importlib.util.spec_from_file_location(name, HERE / filename)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+#: The two command-id checkers whose id-set comparison BUG-CTL-3 hardened. Both
+#: are loaded once, by path, because their file names are hyphenated and cannot be
+#: imported as modules.
+GROUP_COVERAGE = load_checker("control-mcp-group-coverage.py")
+SNAPSHOT_CHECKER = load_checker("control-commands-snapshot.py")
+
+
+def group_coverage_ids_rejected(commands):
+    """[] when the group-coverage checker ACCEPTED the list, else its refusal.
+
+    The checker's contract is that it RAISES on a list carrying an empty or a
+    duplicate id, so the detection IS the raise: a version that returned a
+    deduplicated list instead would leave this empty and the control would fail.
+    """
+    try:
+        GROUP_COVERAGE.command_ids(commands)
+    except AssertionError as error:
+        return ["rejected: %s" % error]
+    return []
+
+
+def snapshot_ids_rejected(commands):
+    """Feed a fixture bundle to the snapshot checker's own loader; require the refusal.
+
+    The checker reads a fixed path, so the fixture is handed to it the way the
+    real snapshot is: a bundle on disk, through the bridge's own `load_bundle`.
+    `committed_ids` returning (None, why) is the refusal; an id set coming back
+    means the defective bundle was ACCEPTED and this control has failed.
+    """
+    modules, _ = SNAPSHOT_CHECKER.load_bridge()
+    if modules is None:
+        return []
+    with tempfile.TemporaryDirectory() as tmp:
+        path = Path(tmp) / "commands_snapshot.json"
+        path.write_text(json.dumps({"kind": modules.registry.BUNDLE_KIND,
+                                    "commands": commands}), encoding="utf-8")
+        original = SNAPSHOT_CHECKER.SNAPSHOT
+        SNAPSHOT_CHECKER.SNAPSHOT = path
+        try:
+            ids, why = SNAPSHOT_CHECKER.committed_ids(modules)
+        finally:
+            SNAPSHOT_CHECKER.SNAPSHOT = original
+    return [] if ids is not None else ["rejected: %s" % why]
+
+
 def assertion_level_controls():
     problems = Problems()
+
+    # --- the command-id checkers (BUG-CTL-3) -------------------------------
+    # Both checkers compared id SETS, and a set silently absorbs the two shapes
+    # that must never pass: an empty id and a duplicate. A snapshot holding one
+    # command twice, or a live list naming one id twice, compared equal to the
+    # correct set - so the drift the check exists to catch was invisible in
+    # exactly the shape a bad generator produces. Each checker now refuses such a
+    # list BEFORE the set comparison, and these controls prove the refusal is real
+    # by feeding it the defective fixture.
+    duplicate = [{"id": "control.ping"}, {"id": "control.ping"}]
+    must_reject(problems, "group coverage: duplicate id", duplicate,
+                group_coverage_ids_rejected,
+                "a duplicated id made the set comparison pass")
+    must_reject(problems, "group coverage: empty id", [{"id": ""}],
+                group_coverage_ids_rejected,
+                "an empty id was discarded instead of refused")
+    if SNAPSHOT_CHECKER.load_bridge()[0] is None:
+        print("  SKIPPED (stated, not a pass): the snapshot checker's bridge package is not "
+              "importable, so its two command-id controls did not run")
+    else:
+        must_reject(problems, "snapshot: duplicate id", duplicate,
+                    snapshot_ids_rejected,
+                    "a duplicated id in the committed snapshot compared equal")
+        must_reject(problems, "snapshot: empty id", [{"id": ""}],
+                    snapshot_ids_rejected,
+                    "an empty id was discarded instead of refused")
 
     # --- the shutdown checker (test: control-shutdown.py) -------------------
     base = (True, 0, False, "", 0.4)  # a clean run, for contrast

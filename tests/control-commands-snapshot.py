@@ -168,8 +168,10 @@ def committed_ids(modules):
     if bundle is None:
         return None, ("the committed snapshot %s is missing, unreadable, or is not a %r "
                       "bundle" % (SNAPSHOT, modules.registry.BUNDLE_KIND))
-    ids = {str(entry.get("id") or "") for entry in bundle["commands"]}
-    ids.discard("")
+    raw_ids = [str(entry.get("id") or "") for entry in bundle["commands"]]
+    if "" in raw_ids or len(raw_ids) != len(set(raw_ids)):
+        return None, "the committed snapshot contains an empty or duplicate command id"
+    ids = set(raw_ids)
     print("snapshot          %s" % SNAPSHOT)
     print("snapshot ids      %d command(s), captured %s, proto %s"
           % (len(ids), bundle.get("captured_at"), bundle.get("proto")))

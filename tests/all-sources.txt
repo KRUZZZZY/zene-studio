@@ -323,6 +323,7 @@ include/MidiJack.h
 include/MidiLearn.h
 include/MidiLearnGui.h
 include/MidiOss.h
+include/MidiOutQueue.h
 include/MidiPort.h
 include/MidiPortMenu.h
 include/MidiReconnect.h
@@ -519,6 +520,7 @@ include/VstSyncController.h
 include/VstSyncData.h
 include/WarpMarkers.h
 include/WcagContrast.h
+include/XmlDepthGuard.h
 include/aeffectx.h
 include/base64.h
 include/embed.h
@@ -1679,6 +1681,7 @@ tests/src/core/MeterTapTest.cpp
 tests/src/core/MidiClockTest.cpp
 tests/src/core/MidiLearnTest.cpp
 tests/src/core/MidiLearnThreadTest.cpp
+tests/src/core/MidiOutQueueTest.cpp
 tests/src/core/MidiProbabilityPersistenceTest.cpp
 tests/src/core/MidiReconnectTest.cpp
 tests/src/core/MidiRetroCaptureTest.cpp

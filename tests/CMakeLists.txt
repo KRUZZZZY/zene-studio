@@ -3516,3 +3516,34 @@ if(PYTHON3_EXECUTABLE)
 else()
 	message(STATUS "python3 not found: ControlLivecodeCommands is not registered")
 endif()
+
+# BUG-CTL-2 / BUG-SRV-1 / BUG-SRV-2 (lane bugs/hunt-2026-09-24): the control
+# surface's own input validation and connection bounds, driven over
+# --control-socket against the real binary. Four cases, each the regression test
+# for one fix, each measured on the wire because that is where the defect was:
+#   * BUG-CTL-2 (src/core/ControlDeviceSupport.cpp) - a channel target that is not
+#     ch-<index> is invalid_args; a well-formed but absent one stays not_found.
+#     Driven through two channel-targeting commands (plugin.param_get, chain.save)
+#     that resolve the target before they touch a device.
+#   * BUG-SRV-1 (src/core/ControlServer.cpp) - a request `id` that is not a finite
+#     signed 32-bit integer is refused invalid_args and the instance serves on.
+#   * BUG-SRV-2 - past MaxClients (64) the excess peers are closed at once rather
+#     than left in the listener backlog, and a request line carries an absolute
+#     30 s deadline that a partial read does NOT extend while a completed exchange
+#     does. The deadline case costs ~35 s of wall clock: the product has no
+#     shortened override, so expiry is observed by waiting for it.
+# It needs no plugin module (every refusal under test happens before a device is
+# touched), and it starts the REAL binary, so nothing it writes escapes the
+# instance's own temp HOME. This is this lane's own block, appended as a whole.
+if(PYTHON3_EXECUTABLE)
+	add_test(NAME ControlSurfaceHardening
+		COMMAND ${PYTHON3_EXECUTABLE}
+			${CMAKE_CURRENT_SOURCE_DIR}/control-surface-hardening.py
+			$<TARGET_FILE:zene>)
+	set_tests_properties(ControlSurfaceHardening PROPERTIES
+		ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+		TIMEOUT 300
+	)
+else()
+	message(STATUS "python3 not found: ControlSurfaceHardening is not registered")
+endif()
