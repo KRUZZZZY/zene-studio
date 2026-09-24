@@ -51,7 +51,9 @@ Usage:
     QT_QPA_PLATFORM=offscreen python3 control-meter-commands.py <zene-binary>
 
 Exit codes: 0 every check held; 1 a check failed (the app log is printed);
-2 cannot run (no binary at the path, or no loudness fixture generator in the tree).
+2 cannot run (no binary at the path, no loudness fixture generator in the tree, or no
+loadable `audiofileprocessor` module in this build - every generated fixture plays
+through it, and without it the fixture is silent and every live reading is null).
 """
 
 from __future__ import annotations
@@ -71,6 +73,15 @@ import control_socket_harness as H  # noqa: E402  (path set above)
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 FIXTURE_GENERATOR = os.path.join(HERE, "data", "loudness", "make-fixtures.py")
+
+#: The instrument every generated fixture project plays through
+#: (`make-fixtures.py`'s `<instrument name="audiofileprocessor">`). It is the only
+#: way to put an EBU Tech 3341 signal through the engine: the tone is a WAV at a
+#: known level, played at unity by the sample player and nothing else. This build
+#: must therefore have that module, or the fixture is silent - see
+#: `fixture_instrument_missing()` for what a silent fixture costs and why it is
+#: named before the checks run.
+FIXTURE_INSTRUMENT = "audiofileprocessor"
 
 # The independently known values of the fixtures (EBU Tech 3341 case 1 / case 2: a
 # 1 kHz sine in phase in both channels, each channel's peak N dB below full scale).
@@ -233,6 +244,36 @@ def play_and_measure(session, project_path, arm_seconds=4.0):
     state = session.result("meter.get_state")
     session.result("transport.stop")
     return state
+
+
+def fixture_instrument_missing(session):
+    """The fixture's instrument when this build cannot load it, else None.
+
+    WHY THIS EXISTS, and why it is a refusal rather than a check. Every project
+    `make-fixtures.py` writes plays a WAV at a known level through
+    `audiofileprocessor` - the only way to put an EBU Tech 3341 case-1 signal
+    through the engine. When that module is absent from the build,
+    `Instrument::instantiate()` returns a DummyInstrument instead of failing (a
+    trap this tree documents), the project opens with NO error, and the fixture
+    renders and plays SILENCE: the tap is armed and fed, `blocks_fed` climbs,
+    every reading stays null - and the run fails as "the live tap measures a
+    playing project ... loud=None", which reads exactly like a defect in the
+    metering path. That is what it cost on 2026-09-24: a whole diagnosis session
+    spent on `LufsMeter`/`MasterLoudnessTap` while the meter, the tap and the
+    engine's live mix were all correct and the fixture simply had no instrument
+    (`build/plugins` held 3 modules, not 4; the offline render of the same fixture
+    measured `-inf LUFS-I ... NOT MEASURED` for the same reason). Naming the
+    module here turns that into a two-minute fix:
+    `cmake --build build --target audiofileprocessor`.
+
+    It cannot turn a green run red. A fixture with no instrument always fails the
+    live checks below - the transcript at the failing tip has exactly that shape
+    (`loud=None quiet=None` with `blocks_fed` 680) - so this only fires where the
+    run was already failing, and says why.
+    """
+    catalogue = session.result("plugin.list", {"kind": "instrument", "loadable_only": True})
+    names = {device.get("name") for device in catalogue.get("devices") or []}
+    return None if FIXTURE_INSTRUMENT in names else FIXTURE_INSTRUMENT
 
 
 # ---------------------------------------------------------------------------
@@ -541,6 +582,18 @@ def main(argv):
         session = Session(client, transcript)
         print("instance: %s" % binary)
         print("socket:   %s" % instance.socket_path)
+        # The fixture's own prerequisite, named before any check runs: without it
+        # the live readings are null for a reason that has nothing to do with the
+        # meter (see fixture_instrument_missing).
+        missing = fixture_instrument_missing(session)
+        if missing:
+            print("cannot run: this build has no loadable `%s` module, and every "
+                  "generated fixture plays through it - the project would open with "
+                  "no error and sound nothing, so the live tap would read null for "
+                  "that reason. Build it:" % missing)
+            print("    cmake --build build --target %s" % missing)
+            session.client.close()
+            return 2
         run_checks(session, workdir, fixtures, recorder)
         session.client.close()
 
