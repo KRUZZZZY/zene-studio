@@ -752,6 +752,41 @@ void AudioEngine::removePlayHandlesOfTypes(Track * track, PlayHandle::Types type
 			++it;
 		}
 	}
+
+	// Handles created since the last render wait in m_newPlayHandles and merge
+	// into m_playHandles only at the next render - a removal that walks just
+	// m_playHandles misses them, and the survivor later renders through its
+	// FREED track. Sweep the staging list IN PLACE, the splice pattern the
+	// singular removePlayHandle() uses for this list.
+	{
+		LocklessList<PlayHandle *>::Element * e = m_newPlayHandles.first();
+		LocklessList<PlayHandle *>::Element * ePrev = nullptr;
+		while( e )
+		{
+			LocklessList<PlayHandle *>::Element * next = e->next;
+			PlayHandle * handle = e->value;
+			// NOTE handles only: staged InstrumentPlayHandles are owned by
+			// their instrument's bookkeeping and must not be deleted here.
+			if (handle->type() == PlayHandle::Type::NotePlayHandle
+				&& handle->isFromTrack(track) && (handle->type() & types))
+			{
+				handle->audioBusHandle()->removePlayHandle(handle);
+				if(handle->type() == PlayHandle::Type::NotePlayHandle)
+				{
+					NotePlayHandleManager::release((NotePlayHandle*)handle);
+				}
+				else delete handle;
+				if( ePrev ) { ePrev->next = next; }
+				else { m_newPlayHandles.setFirst( next ); }
+				m_newPlayHandles.free( e );
+			}
+			else
+			{
+				ePrev = e;
+			}
+			e = next;
+		}
+	}
 	doneChangeInModel();
 }
 
