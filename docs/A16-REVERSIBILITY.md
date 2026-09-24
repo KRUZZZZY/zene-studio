@@ -274,6 +274,23 @@ creating call of `automation.add_point`, which would have to rebuild an Automati
 redo stack instead of leaving an older entry in place: a redo that replays the wrong step is worse
 than no redo. The transaction's mechanism says so for the command in question.
 
+**4.3 The one exception this rule has, and the reply that declares it (BUG-CTL-4, 2026-09-24).**
+One `control.undo` unwinds one undo STEP, and a step is one command EXCEPT where the coalescing rule
+(§10, `docs/UNDO-BOUNDS.md` Decision 2) merged a run: `plugin.param_set 0.5` → a NON-journaled
+`dsp.get_state` → `plugin.param_set -0.16` inside the window is ONE step, so one `control.undo`
+restores the value from BEFORE the first set and the second edit is not separately reversible. That is
+the declared drag rule working - `UndoBoundsTest`'s 200-call drag is the same rule, and the window is
+fixed at 400 ms by `control::UndoCoalesceWindowMs` and is settable (`control.set_undo_coalescing`;
+`0` = per-call granularity). Read against the spec row it is measured by - SPEC §7 A16
+(`research/ableton-gap/SPEC-zene-studio.md`): *"Every command is reversible. ... The registry records
+a transaction per mutating command - before-state plus the inverse operation - so `control.undo` /
+`control.redo` reverse it"* - the reconciliation is that "reverse it" is per undo STEP under the
+declared window, per COMMAND at window 0 or whenever any other step-producing command intervenes, and
+that the reply now says which of the two it was: `undone_commands` (1 normally, the merged count for a
+coalesced span) beside `undone_command`. Before this fix the reply was the singular name and nothing
+else, so an agent - and the QA sweep's undo-correctness check - read a two-edit span as a one-command
+inversion. Proof: `tests/control-reversibility-transcript.py` section D asserts both windows.
+
 **The one deliberate asymmetry.** File-level commands (`project.save`) are NOT on the GUI stack: a
 file is not project state, and reverting the user's file behind their back on a Ctrl+Z would be a
 surprise. Their inverse is a COMMAND (`project.restore_revision`, `inverse.applies: "command"`),
@@ -426,11 +443,13 @@ declares that a run of that command on the named target argument(s) is ONE undo 
 `ReversibilityContractTest::coalescingIsDeclaredOnlyForCommandsWithALiveCheckpoint` asserts both the
 class and that the declaration is reachable through `control.undo_depth`.
 
-**Two behaviours the contract now states rather than implies.** (1) A coalesced run is ONE record, with
+**Three behaviours the contract now states rather than implies.** (1) A coalesced run is ONE record, with
 the count in `control.transactions`' new per-record `commands` field: `before` and `inverse` still
 describe the state before the gesture and still revert the whole of it. (2) `control.undo` on a record
 whose journal step a bound has evicted FAILS with the typed `irreversible` error naming the caps —
-the same "never pretend" rule as §6, now also covering the case the bound itself creates.
+the same "never pretend" rule as §6, now also covering the case the bound itself creates. (3) The undo
+reply carries that count too: `undone_commands` beside `undone_command` (§4.3), because a merged step
+answered with the singular name alone reads as a one-command inversion.
 
 **What did NOT change.** The inverses of existing commands are unchanged: a merged step keeps the
 EARLIEST capture of each object, which is the pre-gesture state, so one `control.undo` (or one Ctrl+Z,

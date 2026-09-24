@@ -245,7 +245,14 @@ QString irreversibleUndoMessage(const ControlRegistry::Transaction& tx,
 }
 
 //! Unwinds one step of the engine's own undo stack.
-ControlResult undoThroughJournal(const QString& command)
+//!
+//! \a commands is how many COMMANDS that one step covered: 1 for an ordinary
+//! edit, more when the step is a coalesced run of the same command on the same
+//! target (the drag rule, docs/UNDO-BOUNDS.md). It travels in the reply as
+//! `undone_commands`, because `undone_command` alone reads as "one command was
+//! undone" and a merged span is NOT one command: BUG-CTL-4 was an agent that
+//! saw the singular claim, read the state back, and found two edits reverted.
+ControlResult undoThroughJournal(const QString& command, int commands = 1)
 {
 	ProjectJournal* journal = Engine::projectJournal();
 	// A structural step's callback cannot return a failure - the journal's
@@ -281,6 +288,10 @@ ControlResult undoThroughJournal(const QString& command)
 	QJsonObject result;
 	result.insert(QStringLiteral("undone"), undone);
 	result.insert(QStringLiteral("undone_command"), command);
+	// How many commands that one step covered: 1 normally, more for a coalesced
+	// run (the drag rule). Never implied away - the count is what tells an agent
+	// "one command" from "a merged span" (BUG-CTL-4).
+	result.insert(QStringLiteral("undone_commands"), commands);
 	result.insert(QStringLiteral("mechanism"), QStringLiteral("lmms::ProjectJournal"));
 	result.insert(QStringLiteral("can_undo"), journal != nullptr && journal->canUndo());
 	result.insert(QStringLiteral("can_redo"), journal != nullptr && journal->canRedo());
@@ -365,12 +376,13 @@ ControlResult undoLastCommand(ControlRegistry& registry)
 		QJsonObject result;
 		result.insert(QStringLiteral("undone"), true);
 		result.insert(QStringLiteral("undone_command"), record.command);
+		result.insert(QStringLiteral("undone_commands"), record.commands);
 		result.insert(QStringLiteral("class"), record.cls);
 		result.insert(QStringLiteral("restored_by"), op);
 		result.insert(QStringLiteral("inverse_result"), applied.result);
 		return ControlResult::success(result);
 	}
-	return undoThroughJournal(record.command);
+	return undoThroughJournal(record.command, record.commands);
 }
 
 void registerUndoCommand(ControlRegistry& registry)
@@ -383,11 +395,17 @@ void registerUndoCommand(ControlRegistry& registry)
 		"ProjectJournal step it recorded (the same stack the GUI's Ctrl+Z unwinds), or the "
 		"recorded inverse command when the change is file-level. If the last recorded command "
 		"has no inverse, this FAILS with the typed 'irreversible' error and names the "
-		"documented fallback instead of undoing an older command.");
+		"documented fallback instead of undoing an older command. One call unwinds ONE undo "
+		"STEP, and one step is one command EXCEPT under the coalescing rule "
+		"(docs/UNDO-BOUNDS.md): a run of the same command on the same target inside the "
+		"window - reads in between do not break it - is one step, so the reply's "
+		"'undone_commands' is 1 normally and more for a merged span. Set the window to 0 "
+		"(control.set_undo_coalescing) for strict one-command-per-call granularity.");
 	cmd.argsSchema = objectSchema();
 	cmd.resultSchema = objectSchema({
 		{QStringLiteral("undone"), booleanProperty()},
 		{QStringLiteral("undone_command"), stringProperty()},
+		{QStringLiteral("undone_commands"), integerProperty()},
 		{QStringLiteral("class"), stringProperty()},
 		{QStringLiteral("restored_by"), stringProperty()},
 		{QStringLiteral("can_undo"), booleanProperty()},

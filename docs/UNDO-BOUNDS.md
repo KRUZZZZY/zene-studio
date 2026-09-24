@@ -147,6 +147,18 @@ the same call) returns the clip to where the drag started, not to the second-to-
 primitive is `ProjectJournal::coalesceTopStepIntoPrevious()`, and the existing merge rule
 (`mergeCheckpointsFrom`) is unchanged.
 
+**The reply says which of the two it was (BUG-CTL-4, 2026-09-24).** `control.undo` answers
+`undone_command` *and* `undone_commands` — how many commands the ONE step it unwound actually covered:
+`1` for an ordinary edit, the merged count (`2`, `200`, …) for a coalesced run. The field exists
+because the singular name alone reads as "one command was undone", and that is false for a merged
+span. Measured by the QA sweep before the fix: `plugin.param_set 0.5` → a non-journaled `dsp.get_state`
+→ `plugin.param_set -0.16` → `control.undo` answered `undone_command: "plugin.param_set"` and restored
+the value from BEFORE the first call, and **nothing on the wire said two edits had been reverted** —
+so an agent's own bookkeeping (which command is still reversible, and what the next Ctrl+Z will take
+back) had to be guessed from a state read-back. The window-0 row below is the per-command escape
+hatch; this field is what makes the merged case *visible* instead of implied, and the same defect
+shape is asserted in `tests/control-reversibility-transcript.py` section D.
+
 **The record side: one record per undo step, not per call.** A coalesced run extends the record it
 started (`ControlRegistry::extendTopTransaction()`): `before` and `inverse` stay what they were — the
 state before the gesture, which still reverts the whole of it — and the count grows in
@@ -232,7 +244,8 @@ behaviour and is not what this fix addresses.
    drag was one step before this change and is one step after it.
 5. **Two gestures of the same target closer together than the window are one step.** That is the rule
    working, not a defect: a client that needs a boundary sets the window down (or to 0), or issues any
-   other command between the two.
+   other command between the two. The reply does not hide it — `control.undo`'s `undone_commands`
+   reports how many commands that one step covered (BUG-CTL-4).
 6. **`control.set_undo_depth` cannot restore what it evicted.** The inverse restores the CAP; the steps
    a lower cap dropped are gone, and the transaction's mechanism says so rather than implying
    otherwise.
