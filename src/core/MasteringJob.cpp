@@ -28,6 +28,7 @@
 #include <QEventLoop>
 #include <QFile>
 #include <QFileInfo>
+#include <QTimer>
 
 #include <algorithm>
 #include <cmath>
@@ -116,6 +117,28 @@ QString sanitiseName(const QString& name)
 	}
 	cleaned = cleaned.trimmed();
 	return cleaned.isEmpty() ? QStringLiteral("candidate") : cleaned;
+}
+
+/*! Test hook: hold this render child before it renders, so a client-side bound on
+ *  a mastering run can be exercised deterministically without a long fixture -
+ *  the shape `LMMS_STEM_CHUNK_DELAY_MS` (the stem separator's own hook,
+ *  src/core/ExternalProcessStemSeparator.cpp:308) uses for the cancellation path.
+ *  Only a process that runs THIS job is held: the instance that serves the
+ *  control socket never runs a MasteringJob, and the variable is unset in every
+ *  ordinary run. Split out of run() so run()'s own complexity budget is not spent
+ *  on a test seam.
+ */
+void holdRenderChildForTest()
+{
+	const int slowChildMs = qEnvironmentVariableIntValue("ZENE_MASTER_SLOW_CHILD_MS");
+	if (slowChildMs <= 0) { return; }
+
+	QEventLoop settle;
+	QTimer hold;
+	hold.setSingleShot(true);
+	QObject::connect(&hold, &QTimer::timeout, &settle, &QEventLoop::quit);
+	hold.start(slowChildMs);
+	settle.exec();
 }
 
 } // namespace
@@ -352,6 +375,9 @@ bool MasteringJob::run(QString* error)
 	{
 		error = &sink;
 	}
+
+	holdRenderChildForTest();
+
 	if (m_candidates.isEmpty())
 	{
 		*error = QStringLiteral("no mastering candidates were requested");

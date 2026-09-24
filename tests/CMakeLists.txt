@@ -2841,6 +2841,29 @@ if(PYTHON3_EXECUTABLE AND CONTROL_SUITE_AVAILABLE)
 		TIMEOUT 600
 		SKIP_RETURN_CODE 77
 	)
+	# DEFECT-D3: `mastering.run` must be ANSWERED inside the client's own socket
+	# bound however long the render behind it takes, and the run must still be
+	# completable and readable afterwards. The render child is HELD past 30 s by
+	# the product's own test hook (ZENE_MASTER_SLOW_CHILD_MS, src/core/
+	# MasteringJob.cpp) so the pair is load-bearing: with the blocking handler
+	# reverted this reports NO REPLY inside 30 s - which is exactly what the
+	# 2026-09-24 certification sweep measured twice (evidence
+	# /tmp/zene-cert-w2r3-rw/run-6413{,-replay}/). It asserts the ACK
+	# (state "running", poll mastering.get_state), that control.ping is answered
+	# WHILE the run is in flight and a second run is refused busy, that the run
+	# reaches `completed` with its own document in last_run and the six wav files
+	# on disk, and that no `zene-master-*` scratch is left in the shared temp
+	# directory. It reports ctest *Skipped* (exit 77) - never *Passed* - when the
+	# tree has no fixture generator to run.
+	add_test(NAME ControlMasteringRunBound
+		COMMAND ${PYTHON3_EXECUTABLE}
+			${CMAKE_CURRENT_SOURCE_DIR}/control-mastering-run-bound.py
+			$<TARGET_FILE:zene>)
+	set_tests_properties(ControlMasteringRunBound PROPERTIES
+		ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+		TIMEOUT 300
+		SKIP_RETURN_CODE 77
+	)
 	# Import detection (0.3.0, feature row 34 of docs/FEATURE-LIST-0.3.0.md): the
 	# `detect.*` group driven END TO END through --control-socket, which is the
 	# release contract's section 3.1 claim for it. The fixtures are SYNTHESISED by

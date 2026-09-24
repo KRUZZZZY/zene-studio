@@ -63,6 +63,9 @@
 
 #include "lmms_export.h"
 
+class QProcess;
+class QTemporaryDir;
+
 namespace lmms
 {
 
@@ -82,6 +85,65 @@ struct ControlResult;
 
 namespace control
 {
+
+//! The rate a mastering render runs at. One number, named once, and reported in
+//! the run's own document so a caller never has to assume it - render.render and
+//! BounceInPlace::renderTrack render at the same rate from a live instance.
+constexpr int MasteringRenderSampleRate = 44100;
+
+/*! Everything ONE in-flight `mastering.run` owns. mastering.run starts the
+ *  render child and answers with an ACK, so this outlives the request: the
+ *  QProcess that started the child, the scratch directory the run writes into
+ *  (its serialised session, the child's report and its stderr) and the captured
+ *  inverse.
+ *
+ *  The destructor OWNS both pointers: deleting a QProcess that is still running
+ *  kills its child, and QTemporaryDir's destructor removes the directory. That
+ *  is what makes a run cut short clean up after itself - the pre-fix shape wrote
+ *  into the shared temp directory and left the files there.
+ */
+struct LMMS_EXPORT MasteringPendingRun
+{
+	MasteringPendingRun();
+	~MasteringPendingRun();
+
+	MasteringPendingRun(const MasteringPendingRun&) = delete;
+	MasteringPendingRun& operator=(const MasteringPendingRun&) = delete;
+
+	QProcess* process = nullptr;
+	QTemporaryDir* scratch = nullptr;
+	QString sessionPath;
+	QString reportPath;
+	QString errorPath;
+	QString outDir;
+	QMap<QString, QByteArray> before;
+};
+
+/*! The run in flight, or null. At most ONE, so a non-null answer doubles as the
+ *  busy fact `mastering.run` refuses a second concurrent run on.
+ */
+LMMS_EXPORT MasteringPendingRun* masteringPendingRun();
+LMMS_EXPORT void setMasteringPendingRun(MasteringPendingRun* run);
+
+/*! Finish one run, on the application thread the child's QProcess lives on: read
+ *  the report the child wrote, record the inverse of the files it created and
+ *  publish the result for `mastering.get_state`. A failure is published too - the
+ *  ACK has already left the socket, so this is the only place a client can learn
+ *  that the run produced no candidate set.
+ *
+ *  A no-op unless \a run is still the pending run, which is what makes a signal
+ *  already queued for a completed or aborted run harmless. Takes ownership of
+ *  \a run and deletes it, which removes the run's scratch directory.
+ */
+LMMS_EXPORT void completeMasteringRun(MasteringPendingRun* run, bool finished, int exitCode);
+
+/*! The inverse descriptor that travels with a run's reply. \a createdKnown is
+ *  FALSE for the ACK, which is written before the run has created anything: the
+ *  record then declares `created_not_yet_known` instead of naming files the run
+ *  has not written.
+ */
+LMMS_EXPORT QJsonObject masteringRunInverse(const QString& outDir, const QStringList& created,
+	const QMap<QString, QByteArray>& before, bool createdKnown = true);
 
 /*! The bound on what ONE mastering.run can record for its inverse: the total
  *  size of the .wav entries the output directory already holds when the run
@@ -148,6 +210,27 @@ LMMS_EXPORT void recordMasteringUndo(const QStringList& created,
 //! back after another command has answered.
 LMMS_EXPORT QJsonObject masteringLastRun();
 LMMS_EXPORT void setMasteringLastRun(const QJsonObject& report);
+
+/*! The state of the instance's mastering runs, as `mastering.get_state` reports
+ *  it and a client polls it. mastering.run answers with an ACK and finishes on
+ *  the event loop, so a client that needs the run's own document reads it back
+ *  from mastering.get_state once `state` leaves `running`.
+ *
+ *  The four values, and nothing else:
+ *
+ *   * `idle`      - no run has been asked for in this process;
+ *   * `running`   - a run is in flight;
+ *   * `completed` - the last run finished and its result is in masteringLastRun();
+ *   * `failed`    - the last run failed and \a error says why. A failed run
+ *                   leaves the session untouched and records no inverse.
+ *
+ *  A FAILED RUN IS NOT DROPPED, because nothing else can report it: the ACK
+ *  mastering.run returned already left the socket, so this is where a client
+ *  learns that the child it started did not produce a candidate set.
+ */
+LMMS_EXPORT QString masteringRunState();
+LMMS_EXPORT QString masteringRunError();
+LMMS_EXPORT void setMasteringRunState(const QString& state, const QString& error = QString());
 
 /*! Reads the JSON document writeMasteringReport() wrote in the child process
  *  (`zene master ... --report <path>`). False with a typed error when the file

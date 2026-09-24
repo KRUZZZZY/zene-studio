@@ -1094,6 +1094,7 @@ tests/control-headless-working-directory.py
 tests/control-link-sync.py
 tests/control-livecode-commands.py
 tests/control-mastering-commands.py
+tests/control-mastering-run-bound.py
 tests/control-mcp-group-coverage.py
 tests/control-midi-reconnect.py
 tests/control-named-pipe-smoke.py

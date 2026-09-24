@@ -161,19 +161,28 @@ ControlResult handleMasteringGetState()
 	// Before any run this is false and `last_run` is null: an empty candidate
 	// list would read as "the run measured nothing", which is a different fact.
 	result.insert(QStringLiteral("has_run"), !report.isEmpty());
+	result.insert(QStringLiteral("state"), masteringRunState());
+	result.insert(QStringLiteral("error"),
+		masteringRunError().isEmpty() ? QJsonValue(QJsonValue::Null)
+									 : QJsonValue(masteringRunError()));
 	result.insert(QStringLiteral("last_run"),
 		report.isEmpty() ? QJsonValue(QJsonValue::Null) : QJsonValue(report));
 	result.insert(QStringLiteral("files"), facts);
 	result.insert(QStringLiteral("files_present"), present);
 	result.insert(QStringLiteral("session_empty"), song == nullptr || song->isEmpty());
 	result.insert(QStringLiteral("note"),
-		QStringLiteral("`last_run` is the report the last mastering.run in THIS process produced, "
-			"verbatim (the same document the run returns, and the same one the CLI writes with "
-			"`zene master ... --report <path>`); `files` is the LIVE state of the files it wrote, "
-			"hashed now, so a candidate set that was edited or deleted after the run is visible "
-			"as such. It is not project state and is not saved or restored with a project: a "
-			"fresh instance has no last run (has_run false). `session_empty` is the pre-flight "
-			"fact mastering.run refuses on"));
+		QStringLiteral("`state` is what a caller polls: mastering.run STARTS the render and "
+			"answers with an acknowledgement, so `running` means a run is in flight and its "
+			"document is not here yet; `completed` means `last_run` holds it; `failed` means the "
+			"last run produced no candidate set and `error` carries the child's own reason; "
+			"`idle` means no run has been asked for in this process. `last_run` is the document "
+			"the last completed mastering.run in THIS process produced - the same measurements "
+			"the run reports, including its `files`, `created` and `replaced_count` - so a "
+			"`completed` state here is the run's own answer, not a summary of it. `files` is the "
+			"LIVE state of the files it wrote, hashed now, so a candidate set that was edited or "
+			"deleted after the run is visible as such. It is not project state and is not saved "
+			"or restored with a project: a fresh instance has no last run (has_run false, state "
+			"idle). `session_empty` is the pre-flight fact mastering.run refuses on"));
 	return ControlResult::success(result);
 }
 
@@ -207,16 +216,21 @@ void registerMasteringGetState(ControlRegistry& registry)
 	cmd.id = QStringLiteral("mastering.get_state");
 	cmd.group = QStringLiteral("mastering");
 	cmd.verb = QStringLiteral("get_state");
-	cmd.description = QStringLiteral("The last auto-mastering run this instance performed: the "
-		"report the run itself produced (one measured row per candidate - LUFS-I, the loudest 3 s "
-		"window, measured dBTP, crest, the residual against that candidate's target and the two "
-		"verdicts - plus the source render's own readings and the counted number of project "
-		"renders), and the live state of the files it wrote, hashed now. `has_run` is false and "
-		"`last_run` is null before the first run. `session_empty` is the fact mastering.run "
-		"refuses on. Read-only.");
+	cmd.description = QStringLiteral("The last auto-mastering run this instance performed: its "
+		"`state` (idle, running, completed, failed - mastering.run is ASYNCHRONOUS, so this is the "
+		"verb a caller polls after it, and `error` carries the child's own reason when the state is "
+		"failed), the document the last COMPLETED run produced (one measured row per candidate - "
+		"LUFS-I, the loudest 3 s window, measured dBTP, crest, the residual against that "
+		"candidate's target and the two verdicts - plus the source render's own readings and the "
+		"counted number of project renders), and the live state of the files it wrote, hashed now. "
+		"`has_run` is false and `last_run` is null before the first run. `session_empty` is the "
+		"fact mastering.run refuses on. Read-only.");
 	cmd.argsSchema = objectSchema({});
 	cmd.resultSchema = objectSchema({
 		{QStringLiteral("has_run"), booleanProperty()},
+		{QStringLiteral("state"), enumProperty({QStringLiteral("idle"), QStringLiteral("running"),
+			QStringLiteral("completed"), QStringLiteral("failed")})},
+		{QStringLiteral("error"), stringProperty()},
 		{QStringLiteral("last_run"), objectProperty()},
 		{QStringLiteral("files"), arrayProperty()},
 		{QStringLiteral("files_present"), integerProperty()},

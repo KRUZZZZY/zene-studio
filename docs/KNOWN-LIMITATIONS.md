@@ -1041,7 +1041,22 @@ session **once** and writes N measured candidates into a directory the caller na
 publishes the set the candidates are generated from, `mastering.get_state` reads the last run back); it **does
 not rank them and does not claim a best**, because no validated preference scorer exists for master variants of
 one song. Candidate verdicts are against named, cited targets — EBU R 128 with its published ±0.5 LU, and a
-−14 LUFS-I streaming **convention** with a tolerance this project chose and states. The run is a **child
+−14 LUFS-I streaming **convention** with a tolerance this project chose and states. **`mastering.run` does not
+carry the dead-surface bound the render family carries** (`render.stems` above): it is ASYNCHRONOUS — the verb
+starts the render child and answers with an acknowledgement in milliseconds (`state: "running"`, naming
+`mastering.get_state` as the verb to poll), so the control surface — `control.ping` included — keeps answering
+while a mastering run is in flight, however long the render takes. That was DEFECT-D3: the 2026-09-24
+certification sweep measured the blocking reply twice as a socket-protocol violation ("hang >30s waiting for
+mastering.run"), on a session whose child had rendered for 19.27 s of its own accord. **The run's own document
+(therefore the candidate measurements, the files and the counts) is read back from `mastering.get_state`'s
+`last_run` once its `state` reads `completed`** — and a run that fails reports `state: "failed"` with the
+child's own reason in `error` there, because the ACK has already left the socket and nothing else can report
+it. A **second** `mastering.run` while one is in flight is refused `busy` rather than queued behind a render
+it cannot see, and because the inverse is recorded when the run **completes**, `control.undo` must not be
+asked to take a run back until `get_state` says it completed. The run's own scratch (the serialised session,
+the child's report and its stderr) lives in a temporary directory the run deletes, so it is **not** left in
+the shared temp directory — the pre-fix shape wrote `/tmp/zene-master-<pid>-<ms>.mmp` and left it behind when
+a run was cut short. The run is a **child
 process on a serialised copy of the session**, so the session is not modified and the running instance's audio
 path is untouched — but that also means the candidate files themselves are the only artefact, `control.undo`
 takes them back by **removing what the run created** and writing back the revisions the directory already held

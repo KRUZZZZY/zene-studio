@@ -35,6 +35,42 @@
  * without an inverse. The removal half is the half that matters on a first run:
  * a file that never existed cannot be restored, only deleted.
  *
+ * THE REPLY IS AN ACK, AND THE RUN FINISHES ON THE EVENT LOOP (the agent-API
+ * rule: no request may go >30 s without a reply a client can act on). This
+ * command used to START the render child and then WAIT for it on the dispatch
+ * thread - `waitForStarted(30000) && waitForFinished(600000)` - so the control
+ * surface answered nothing, `control.ping` included, until the child was done.
+ * That is the defect docs/RENDER-CHILD-WAIT.md:120-126 records for the whole
+ * render-running family (render.render, render.stems, the three bounce/freeze
+ * commands and stem.model_download), and it was measured twice in the 2026-09-24
+ * certification sweep as DEFECT-D3: a mastering.run on a grown session whose
+ * child rendered for 19.27 s (the child's own PERFLOG line) left the request
+ * unanswered past the client's 30 s bound.
+ *
+ * So this verb now does what the stems' own long work does
+ * (`stem.job_start` -> `stem.job_status` -> `stem.job_result`;
+ * src/core/StemJobManager.cpp runs it on its own worker thread so "the control
+ * surface keeps answering while the job runs"): the handler validates, captures
+ * the inverse, serialises the session, STARTS the child and RETURNS - in
+ * milliseconds, whatever the render costs - reporting `state: "running"`. The
+ * child's completion is delivered by the ordinary event loop, and the run's own
+ * document is then readable through `mastering.get_state`, whose `state` leaves
+ * `running` for `completed` (or `failed`, with the child's own reason in
+ * `error`). A second run while one is in flight is REFUSED with `busy` rather
+ * than queued behind it.
+ *
+ * This does NOT build the deferred-reply design of docs/RENDER-CHILD-WAIT.md
+ * :128-141 (a reply sink in ControlServer, which that document scopes to its own
+ * lane): it needs no dispatch-core change and no new id, because
+ * `mastering.get_state` is already the poll verb for this family.
+ *
+ * THE RUN'S SCRATCH IS A QTemporaryDir. The serialised session, the child's
+ * report and its stderr used to be written to /tmp/zene-master-* where nothing
+ * removed them (the same certification sweep saw them left behind when a run was
+ * cut short). They now live in a temporary directory the run owns and deletes -
+ * including on an instance quit that interrupts a run, which is when the old
+ * shape leaked them.
+ *
  * Copyright (c) 2026 Zene Studio contributors
  *
  * This file is part of LMMS - https://lmms.io
@@ -64,6 +100,8 @@
 #include <QProcess>
 #include <QString>
 #include <QStringList>
+#include <QTemporaryDir>
+#include <QTimer>
 
 #include "ControlEdit.h"
 #include "ControlMasteringSupport.h"
@@ -81,16 +119,22 @@ using namespace control;  // the shared vocabulary lives in ControlVocabulary.h
 namespace
 {
 
-/*! The rate the render runs at. 44100 is what render.render and
- *  BounceInPlace::renderTrack render at from a live instance, and the candidate
- *  set is one render branched N ways, so every candidate is measured at the same
- *  rate whatever the session's own device rate is.
- */
-constexpr int MasteringRenderSampleRate = 44100;
 
-//! The child's stderr is kept, bounded: it carries the engine's own refusal
-//! text (a candidate with no measurable signal, a project that will not load).
-constexpr int ChildErrorKeep = 600;
+/*! How long the child is given to EXEC before the request is refused. This is
+ *  the fork/exec handshake, not the child's engine construction: `started` is
+ *  emitted once the child is running, so a successful start spends milliseconds
+ *  here however long the render that follows takes. A child that cannot exec at
+ *  all is a REFUSAL (nothing has been written yet) rather than a run that never
+ *  finishes.
+ */
+constexpr int MasteringChildStartMs = 10000;
+
+/*! How long one run's child may live before it is killed and the run is
+ *  reported failed. This is the bound the old blocking handler expressed as
+ *  `waitForFinished(600000)`; it is now enforced off the dispatch thread, by the
+ *  timer startMasteringChild() arms, so it costs the control surface nothing.
+ */
+constexpr int MasteringChildLifeMs = 600000;
 
 /*! Everything that can refuse, checked BEFORE anything is written or launched
  *  (SPEC A16: a refusal leaves nothing behind). Empty when the request is
@@ -148,83 +192,40 @@ QStringList configArgs()
 	return QStringList();
 }
 
-/*! Runs the shipped CLI mastering action as a child process and reads its stderr
- *  back (bounded). Returns false when the child did not finish inside the bound;
- *  \a exitCode is -1 then, and the caller reports the run as failed.
+/*! Starts the shipped CLI mastering action as a child process and RETURNS - it
+ *  never waits for the render. The QProcess, its standard-error file and the
+ *  scratch directory are owned by \a run, which the completion deletes.
+ *
+ *  False with \a error set when the child could not be started at all; the child
+ *  is then killed and nothing has been written, so the caller refuses the
+ *  request without an inverse having to be recorded.
  */
-bool runCliMaster(const QString& projectPath, const QString& outDir, const QString& reportPath,
-	QString* childError, int* exitCode)
+bool startMasteringChild(MasteringPendingRun* run, ControlResult* error)
 {
-	QStringList arguments{QStringLiteral("master"), projectPath,
-		QStringLiteral("-o"), outDir,
+	QStringList arguments{QStringLiteral("master"), run->sessionPath,
+		QStringLiteral("-o"), run->outDir,
 		QStringLiteral("-f"), QStringLiteral("wav"),
 		QStringLiteral("-s"), QString::number(MasteringRenderSampleRate),
-		QStringLiteral("--report"), reportPath};
+		QStringLiteral("--report"), run->reportPath};
 	arguments += configArgs();
 
-	const QString errorPath = reportPath + QStringLiteral(".stderr");
-	QProcess renderer;
-	renderer.setStandardOutputFile(QProcess::nullDevice());
-	renderer.setStandardErrorFile(errorPath);
-	renderer.start(QCoreApplication::applicationFilePath(), arguments);
-	const bool finished = renderer.waitForStarted(30000) && renderer.waitForFinished(600000);
-	if (!finished) { renderer.kill(); }
-	*exitCode = finished ? renderer.exitCode() : -1;
-
-	QFile errorFile(errorPath);
-	if (errorFile.open(QIODevice::ReadOnly))
+	run->process = new QProcess();
+	run->process->setStandardOutputFile(QProcess::nullDevice());
+	run->process->setStandardErrorFile(run->errorPath);
+	run->process->start(QCoreApplication::applicationFilePath(), arguments);
+	if (!run->process->waitForStarted(MasteringChildStartMs))
 	{
-		*childError = QString::fromUtf8(errorFile.readAll().right(ChildErrorKeep)).trimmed();
+		*error = ControlResult::failure(ControlErrorKind::Refused,
+			QStringLiteral("could not start the mastering renderer (%1): the session is unchanged "
+				"and nothing was written").arg(run->process->errorString()));
+		run->process->kill();
+		delete run;
+		return false;
 	}
-	QFile::remove(errorPath);
-	return finished;
+	return true;
 }
 
 //! What the run created: everything the directory holds now and did not hold
-//! before. Derived from the two listings rather than predicted from the engine's
-//! naming, so the inverse covers exactly the files that are there.
-QStringList filesCreatedBy(const QStringList& before, const QStringList& after)
-{
-	QStringList created;
-	for (const QString& path : after)
-	{
-		if (!before.contains(path)) { created.append(path); }
-	}
-	return created;
-}
-
-//! The inverse descriptor that travels with the result. There is no command that
-//! deletes a candidate set, so the recorded operation is named for what it does
-//! and `applies` stays at its default "journal": the action checkpoint on the
-//! engine's own undo stack is what control.undo unwinds.
-QJsonObject runInverse(const QString& outDir, const QStringList& created,
-	const QMap<QString, QByteArray>& before)
-{
-	QJsonObject inverseArgs;
-	inverseArgs.insert(QStringLiteral("out_dir"), outDir);
-	inverseArgs.insert(QStringLiteral("created"), QJsonArray::fromStringList(created));
-
-	QJsonObject inverse;
-	inverse.insert(QStringLiteral("op"),
-		QStringLiteral("remove the files this run created and write the captured revisions back"));
-	inverse.insert(QStringLiteral("args"), inverseArgs);
-	inverse.insert(QStringLiteral("applies"), QStringLiteral("journal"));
-
-	QJsonObject payload;
-	payload.insert(QStringLiteral("before"), masteringCaptureJson(outDir, before, created));
-	payload.insert(QStringLiteral("inverse"), inverse);
-	payload.insert(QStringLiteral("reversible"), true);
-	payload.insert(QStringLiteral("mechanism"),
-		QStringLiteral("action checkpoint: the run's outputs are FILES in a directory outside the "
-			"project, so no Song checkpoint carries them and no live object restores them. The "
-			"recorded step removes every file the run created (before.created) and writes the "
-			"revisions the directory already held (before.held_before) back byte for byte, both "
-			"captured before the first write and bounded at before.capture_limit_bytes. ONE-WAY: "
-			"there is no redo half (a faithful redo would have to hold the run's own outputs), so "
-			"control.redo has nothing to replay - re-issue mastering.run instead"));
-	return payload;
-}
-
 ControlResult handleMasteringRun(const QJsonObject& args)
 {
 	QString outDir;
@@ -234,61 +235,101 @@ ControlResult handleMasteringRun(const QJsonObject& args)
 		return ControlResult::failure(ControlErrorKind::InvalidArgs, invalid);
 	}
 
+	// ONE run at a time. A second render cannot see the first, so queueing it
+	// would be queueing behind work the caller knows nothing about; the refusal
+	// says which verb reports the run that is already going.
+	if (masteringPendingRun() != nullptr)
+	{
+		return ControlResult::failure(ControlErrorKind::Busy,
+			QStringLiteral("a mastering run is already in flight in this instance: poll "
+				"mastering.get_state until its `state` leaves \"running\", then ask again"));
+	}
+
 	// The inverse is captured BEFORE the first write; an oversized capture is a
 	// typed refusal rather than a run recorded without one (SPEC A16).
 	QMap<QString, QByteArray> before;
 	ControlResult error;
 	if (!captureMasteringWavDirectory(outDir, &before, &error)) { return error; }
 
+	auto* run = new MasteringPendingRun;
+	run->outDir = outDir;
+	run->before = before;
+	run->scratch = new QTemporaryDir(QDir::tempPath() + QStringLiteral("/zene-master-XXXXXX"));
+	if (!run->scratch->isValid())
+	{
+		delete run;
+		return ControlResult::failure(ControlErrorKind::Refused,
+			QStringLiteral("could not create a scratch directory for this run's serialised "
+				"session: the session is unchanged and nothing was written"));
+	}
+	run->sessionPath = run->scratch->filePath(QStringLiteral("session.mmp"));
+	run->reportPath = run->scratch->filePath(QStringLiteral("report.json"));
+	run->errorPath = run->reportPath + QStringLiteral(".stderr");
+
+	if (!serialiseSession(run->sessionPath, &error))
+	{
+		delete run;
+		return error;
+	}
+	if (!startMasteringChild(run, &error)) { return error; }
+
+	// The run is in flight from here on: publishing it before the connections
+	// below is what makes `busy` mean "a run is going", and it is what the
+	// completion's own guard tests.
+	setMasteringPendingRun(run);
+
+	// The child is running. Everything from here is delivered by the ordinary
+	// event loop, on this same application thread, so nothing is shared and the
+	// dispatch thread is free the moment this returns.
+	QProcess* process = run->process;
+	QObject::connect(process, &QProcess::finished, process,
+		[run](int exitCode, QProcess::ExitStatus) { completeMasteringRun(run, true, exitCode); });
+	QObject::connect(process, &QProcess::errorOccurred, process,
+		[run](QProcess::ProcessError kind)
+		{
+			// Not `finished`: a child that never ran at all reports here, and a
+			// run nobody completes would sit at `running` for the rest of the
+			// instance's life pretending to render.
+			if (kind != QProcess::Crashed) { completeMasteringRun(run, false, -1); }
+		});
+	// The life bound the blocking handler used to hold as waitForFinished(600000).
+	QTimer::singleShot(MasteringChildLifeMs, process, [run] {
+		if (run->process->state() != QProcess::NotRunning) { run->process->kill(); }
+	});
+	// A quit that interrupts a run must not leave the child rendering into a
+	// directory nobody will read, nor the scratch behind: kill it and take the
+	// run (and its QTemporaryDir) down with the instance.
+	QObject::connect(qApp, &QCoreApplication::aboutToQuit, process, [run] {
+		if (masteringPendingRun() == run)
+		{
+			run->process->kill();
+			delete run;
+			setMasteringPendingRun(nullptr);
+		}
+	});
+
+	setMasteringRunState(QStringLiteral("running"));
 	const QString stamp = QStringLiteral("%1-%2").arg(QCoreApplication::applicationPid())
 		.arg(QDateTime::currentMSecsSinceEpoch());
-	const QString tempProject = QDir::tempPath() + QStringLiteral("/zene-master-%1.mmp").arg(stamp);
-	const QString reportPath = QDir::tempPath() + QStringLiteral("/zene-master-%1.json").arg(stamp);
-	if (!serialiseSession(tempProject, &error)) { return error; }
 
-	QString childError;
-	int exitCode = -1;
-	const bool finished = runCliMaster(tempProject, outDir, reportPath, &childError, &exitCode);
-	QFile::remove(tempProject);
-	QFile::remove(reportPath + QStringLiteral(".stderr"));
-
-	QJsonObject report;
-	ControlResult reportError;
-	if (!finished || exitCode != 0 || !readMasteringReportFile(reportPath, &report, &reportError))
-	{
-		QFile::remove(reportPath);
-		const QString why = childError.isEmpty() ? reportError.errorMessage : childError;
-		return ControlResult::failure(ControlErrorKind::Refused,
-			QStringLiteral("the mastering run failed (exit %1) and the session is unchanged: %2")
-				.arg(exitCode)
-				.arg(why.isEmpty() ? QStringLiteral("the child process reported no reason") : why));
-	}
-	QFile::remove(reportPath);
-
-	const QStringList created = filesCreatedBy(before.keys(), masteringWavFiles(outDir));
-	recordMasteringUndo(created, before);
-	setMasteringLastRun(report);
-
-	QJsonObject result = report;
-	result.insert(QStringLiteral("out_dir"), outDir);
-	result.insert(QStringLiteral("files"), masteringFileFacts(masteringWavFiles(outDir)));
-	result.insert(QStringLiteral("created"), QJsonArray::fromStringList(created));
-	result.insert(QStringLiteral("created_count"), created.size());
-	result.insert(QStringLiteral("replaced_count"), before.size());
-	result.insert(QStringLiteral("renderer"),
-		QStringLiteral("zene master (the shipped CLI action, in a child process on a serialised "
-			"copy of the session; the running instance's audio engine is not touched)"));
-	result.insert(QStringLiteral("render_sample_rate"), MasteringRenderSampleRate);
-	result.insert(QStringLiteral("note"),
-		QStringLiteral("%1 candidate files were written into out_dir by ONE project render, and "
-			"every one was measured against its own named target. No candidate is preferred and "
-			"none is ranked or called best - see mastering.list_candidates' note. The session is "
-			"NOT modified: the child renders a serialised copy. UNDO takes the files back (the "
-			"created ones are removed, replaced revisions are restored); `mastering.get_state` "
-			"reads the same report back, and its `files` field is hashed live, so an edit made "
-			"after the run is visible").arg(result.value(QStringLiteral("candidate_count")).toInt()));
-	result.insert(QStringLiteral("__transaction"), runInverse(outDir, created, before));
-	return ControlResult::success(result);
+	QJsonObject ack;
+	ack.insert(QStringLiteral("state"), QStringLiteral("running"));
+	ack.insert(QStringLiteral("out_dir"), outDir);
+	ack.insert(QStringLiteral("poll"), QStringLiteral("mastering.get_state"));
+	ack.insert(QStringLiteral("since_submit_seconds"), 0.0);
+	// The A16 record travels with the REPLY (ControlRegistry records it there),
+	// so the ACK carries it with the one fact it cannot have yet declared.
+	ack.insert(QStringLiteral("__transaction"), masteringRunInverse(outDir, QStringList(), before, false));
+	ack.insert(QStringLiteral("note"),
+		QStringLiteral("ACCEPTED, not finished: the render runs in a child process and this reply "
+			"is the acknowledgement, so the control surface stays answerable for as long as the "
+			"render takes (a blocking reply was DEFECT-D3, measured 2026-09-24). Poll "
+			"`mastering.get_state`: `state` is \"running\" now and becomes \"completed\" with the "
+			"run's own document in `last_run` (or \"failed\", with the child's reason in `error`). "
+			"Nothing has been written yet and no inverse has been recorded, so `control.undo` "
+			"must not be asked to take this run back until `state` leaves \"running\". The session "
+			"is not modified. Run id %1.").arg(stamp));
+	return ControlResult::success(ack);
 }
 
 } // namespace
@@ -306,29 +347,29 @@ void registerMasteringRunCommands(ControlRegistry& registry)
 		"window, measured true peak and crest factor, plus the residual against that candidate's "
 		"target and its loudness and true-peak verdicts. `out_dir` is required and absolute. The "
 		"session is not modified (the render runs in a child process on a serialised copy). "
+		"ASYNCHRONOUS, like the stems' own long work: this verb STARTS the render and answers with "
+		"`state: \"running\"` in milliseconds, whatever the render costs - it never waits for it, so "
+		"the control surface (control.ping included) stays answerable while a mastering run is in "
+		"flight. The run's own document - the candidate measurements, the files and the counts - "
+		"appears in `mastering.get_state`'s `last_run` once its `state` leaves \"running\", so the "
+		"caller polls that verb; a run that fails reports `state: \"failed\"` and the child's own "
+		"reason in `error` there. A second run while one is in flight is refused with `busy` rather "
+		"than queued. "
 		"REVERSIBLE through a recorded action checkpoint: the files this run created are removed "
 		"and the revisions the directory already held are written back, byte for byte (bounded at "
 		"64 MiB of pre-existing wav files - beyond that the run is refused rather than performed "
-		"without an inverse). Names no best candidate: there is no validated preference scorer, so "
+		"without an inverse). The inverse is recorded when the run COMPLETES, so `control.undo` must "
+		"not be asked to take a run back until `mastering.get_state` reports it completed. "
+		"Names no best candidate: there is no validated preference scorer, so "
 		"the choice is the user's.");
 	cmd.argsSchema = objectSchema({
 		{QStringLiteral("out_dir"), stringProperty()},
 	}, {QStringLiteral("out_dir")});
 	cmd.resultSchema = objectSchema({
+		{QStringLiteral("state"), enumProperty({QStringLiteral("running")})},
 		{QStringLiteral("out_dir"), stringProperty()},
-		{QStringLiteral("candidate_count"), integerProperty()},
-		{QStringLiteral("candidates"), arrayProperty()},
-		{QStringLiteral("render_count"), integerProperty()},
-		{QStringLiteral("render_sample_rate"), integerProperty()},
-		{QStringLiteral("sample_rate"), integerProperty()},
-		{QStringLiteral("source_render_file"), stringProperty()},
-		{QStringLiteral("source"), objectProperty()},
-		{QStringLiteral("format"), stringProperty()},
-		{QStringLiteral("files"), arrayProperty()},
-		{QStringLiteral("created"), arrayProperty()},
-		{QStringLiteral("created_count"), integerProperty()},
-		{QStringLiteral("replaced_count"), integerProperty()},
-		{QStringLiteral("renderer"), stringProperty()},
+		{QStringLiteral("poll"), stringProperty()},
+		{QStringLiteral("since_submit_seconds"), numberProperty()},
 		{QStringLiteral("note"), stringProperty()},
 	});
 	cmd.mutating = true;

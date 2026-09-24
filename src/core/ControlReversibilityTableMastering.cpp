@@ -91,7 +91,12 @@ const ReversibilityRow kMasteringRows[] = {
 		"it renders the mix ONCE in a child process and writes N candidate wav files into a "
 		"directory the caller names, outside the project: no Song checkpoint carries those "
 		"files and no live object restores them. The session itself is NOT modified (the child "
-		"renders a serialised copy), which is why nothing about the project is recorded here",
+		"renders a serialised copy), which is why nothing about the project is recorded here. "
+		"ASYNCHRONOUS REPLY: the verb starts the render and answers with an acknowledgement "
+		"(state \"running\"), so the surface answers inside any client's bound however long the "
+		"render takes; the run's document is read back from mastering.get_state once its state "
+		"leaves \"running\" (DEFECT-D3, measured 2026-09-24: the blocking reply left the request "
+		"unanswered past a 30 s client bound)",
 		"action checkpoint: the run's output directory is captured BEFORE the first write "
 		"(held_before: the path, size and sha256 of every .wav it already contains, plus the "
 		"bytes themselves in the recorded step) and the recorded undo removes every file the "

@@ -57,6 +57,7 @@ from __future__ import annotations
 
 import os
 import sys
+import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
@@ -69,6 +70,13 @@ from mastering_probe_lib import (  # noqa: E402  (path set above)
     dynamics_names, ranked_keys, sha256_of, standard_less_names, target_tuple,
     wav_names,
 )
+
+
+#: How long the run itself gets after its ACK, polling mastering.get_state. This
+#: is the per-command budget the render family's own tests use for a command that
+#: runs a render child (tests/freeze_bounce_evidence.py's RENDER_TIMEOUT shape),
+#: applied to the poll rather than to the request that no longer waits.
+RUN_COMPLETION_BOUND = 120.0
 
 
 # ---------------------------------------------------------------------------
@@ -157,6 +165,33 @@ def check_refusals(session, recorder, outdir):
                    wav_names(outdir) == before, "after=%r" % (wav_names(outdir),))
 
 
+def run_mastering(session, outdir):
+    """Issues mastering.run and returns the RUN'S OWN document once it completes.
+
+    mastering.run is ASYNCHRONOUS: it starts the render and answers with an
+    acknowledgement (DEFECT-D3 was its blocking reply - a render that outlasted
+    the client's socket bound left the request unanswered, measured twice in the
+    2026-09-24 certification sweep). The document is therefore read back from
+    `mastering.get_state` - the poll verb the ACK names - once its `state` leaves
+    "running". Every assertion below is unchanged: it reads the same
+    measurements, from the same run, in the same shape.
+    """
+    ack = session.result("mastering.run", {"out_dir": outdir}, timeout=H.SOCKET_TIMEOUT)
+    if ack.get("error"):
+        return ack
+    deadline = time.monotonic() + RUN_COMPLETION_BOUND
+    while time.monotonic() < deadline:
+        state = session.result("mastering.get_state")
+        if state.get("state") == "completed":
+            return state.get("last_run") or {}
+        if state.get("state") == "failed":
+            return {"error": {"kind": "refused", "message": state.get("error") or ""}}
+        time.sleep(0.25)
+    return {"error": {"kind": "timeout",
+                      "message": "the run did not complete inside %.0fs"
+                                 % RUN_COMPLETION_BOUND}}
+
+
 def reading_problems(rows):
     """Every candidate that is outside its own target's tolerance or ceiling."""
     problems = []
@@ -195,6 +230,12 @@ def check_the_run_counts(recorder, result, outdir, rows):
                    len(facts) == CANDIDATES + 1
                    and all(entry.get("exists") and entry.get("sha256") for entry in facts),
                    "facts=%d" % len(facts))
+    # The set the run CREATED is counted here, in the run's own document: the
+    # ACK's A16 record cannot carry it (the render had not started), so this is
+    # where the number the inverse removes is measured.
+    recorder.check("the run's document counts the %d files it created" % (CANDIDATES + 1),
+                   result.get("created_count") == CANDIDATES + 1,
+                   "created_count=%r" % result.get("created_count"))
 
 
 def check_the_session_is_not_modified(session, recorder, before, after):
@@ -211,7 +252,7 @@ def check_the_session_is_not_modified(session, recorder, before, after):
 def check_the_run(session, recorder, outdir):
     """The run: one render, five measured candidates, files that match the report."""
     before_state = session.result("project.get_state")
-    result = session.result("mastering.run", {"out_dir": outdir}, timeout=H.READY_TIMEOUT)
+    result = run_mastering(session, outdir)
     if result.get("error"):
         recorder.check("mastering.run completed", False, "error=%r" % result.get("error"))
         return result
@@ -250,7 +291,14 @@ def check_the_readback(session, recorder, run_result, outdir):
 
 
 def check_transaction(session, recorder):
-    """The run's A16 record: a true_inverse whose before-state is the directory."""
+    """The run's A16 record: a true_inverse whose before-state is the directory.
+
+    Read from the ACK's own record, because that is when the registry writes it:
+    mastering.run answers before the render has created anything, so the record
+    declares `created_not_yet_known` rather than naming files it has not seen,
+    and the real created set is counted from the run's own document (see
+    check_the_run_counts).
+    """
     records = session.result("control.transactions").get("transactions") or []
     mine = [record for record in records if record.get("command") == "mastering.run"]
     if not mine:
@@ -265,10 +313,10 @@ def check_transaction(session, recorder):
     before = top.get("before") or {}
     measured = {"directory_is_set": bool(before.get("directory")),
                 "capture_limit_bytes": before.get("capture_limit_bytes"),
-                "created_count": before.get("created_count")}
+                "created_not_yet_known": before.get("created_not_yet_known")}
     recorder.check("the record's before-state is the output directory, bounded",
                    measured == {"directory_is_set": True, "capture_limit_bytes": CAPTURE_LIMIT,
-                                "created_count": CANDIDATES + 1},
+                                "created_not_yet_known": True},
                    "before=%r" % measured)
     mechanism = top.get("mechanism") or ""
     recorder.check("the mechanism names the recorded action and is honest about redo",
@@ -307,7 +355,7 @@ def differing_names(left, right):
 
 def check_a_replaced_revision_comes_back(session, recorder, outdir):
     """The inverse, second half: a RE-RUN's replaced revision is restored byte for byte."""
-    first = session.result("mastering.run", {"out_dir": outdir}, timeout=H.READY_TIMEOUT)
+    first = run_mastering(session, outdir)
     if first.get("error"):
         recorder.check("the first run of the pair completed", False,
                        "error=%r" % first.get("error"))
@@ -320,7 +368,7 @@ def check_a_replaced_revision_comes_back(session, recorder, outdir):
     if names != planted:
         return
 
-    session.result("mastering.run", {"out_dir": outdir}, timeout=H.READY_TIMEOUT)
+    run_mastering(session, outdir)
     session.call("control.undo", timeout=H.READY_TIMEOUT)
     after = file_hashes(outdir, list(names.keys()))
     recorder.check("control.undo restores a REPLACED revision byte for byte",
