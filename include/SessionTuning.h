@@ -22,14 +22,12 @@
  * in core - the socket path never needs a dialog.
  *
  * REALTIME RULE (AGENTS.md #4): the audio thread only ever calls
- * isActive() and noteToFreq(). Those read an atomic index and a plain POD
- * buffer - no allocation, no locking, no growth. Every writer runs on the
- * control/UI thread and commits a whole table with ONE double-buffer flip
- * (write the back buffer, release-store the index), then marks the sounding
- * NotePlayHandles for recomputation on their next play() and, when armed,
- * republishes to MTS-ESP. A reader spans at most one flip in practice (two
- * control commands would have to complete inside one noteToFreq call); the
- * writer never writes the buffer a reader can be holding.
+ * isActive() and noteToFreq(). Those acquire a reader-held slot in a fixed
+ * three-slot ring - no allocation, no locking, no growth. Every writer runs
+ * on the control/UI thread and claims a slot that has no readers, writes a
+ * whole table, then release-publishes its index. A reader revalidates the
+ * published index before touching the table, so a second commit cannot
+ * recycle a slot it is holding.
  *
  * BOUNDS, STATED (the snapshot class needs them): the whole mutable state is
  * 128 finite positive frequencies + one active flag + one source string of at
@@ -101,7 +99,10 @@ public:
 	//! decides render frequencies.
 	bool isActive() const noexcept
 	{
-		return m_tables[m_front.load(std::memory_order_acquire)].active;
+		const int slot = acquireReadSlot();
+		const bool active = m_tables[slot].active;
+		releaseReadSlot(slot);
+		return active;
 	}
 
 	/*! Frequency for \a key from the ACTIVE table, in Hz.
@@ -113,9 +114,12 @@ public:
 	float noteToFreq(int key) const noexcept
 	{
 		if (key < 0 || key >= TableSize) { return 0.f; }
-		const auto& table = m_tables[m_front.load(std::memory_order_acquire)];
-		if (!table.active) { return 0.f; }
-		return static_cast<float>(table.frequencies[key]);
+		const int slot = acquireReadSlot();
+		const auto& table = m_tables[slot];
+		const float frequency = table.active
+			? static_cast<float>(table.frequencies[key]) : 0.f;
+		releaseReadSlot(slot);
+		return frequency;
 	}
 
 	// ---------------------------------------------------------------------
@@ -198,6 +202,33 @@ private:
 		bool active = false;
 	};
 
+	static constexpr int TableCount = 3;
+	static constexpr unsigned WriterBit = 1u;
+
+	int acquireReadSlot() const noexcept
+	{
+		for (;;)
+		{
+			const int front = m_front.load(std::memory_order_acquire);
+			unsigned state = m_slotStates[front].load(std::memory_order_acquire);
+			while ((state & WriterBit) == 0u)
+			{
+				if (m_slotStates[front].compare_exchange_weak(state, state + 2u,
+					std::memory_order_acquire, std::memory_order_relaxed))
+				{
+					if (front == m_front.load(std::memory_order_acquire)) { return front; }
+					m_slotStates[front].fetch_sub(2u, std::memory_order_release);
+					break;
+				}
+			}
+		}
+	}
+
+	void releaseReadSlot(int slot) const noexcept
+	{
+		m_slotStates[slot].fetch_sub(2u, std::memory_order_release);
+	}
+
 	//! 12-TET content (the default, and what reset() puts back).
 	static Table twelveTetTable();
 	/*! The table for \a scale over \a keymap - the SAME arithmetic
@@ -208,8 +239,8 @@ private:
 	 *  a second scale engine. */
 	static bool buildTable(const Scale* scale, const Keymap& keymap,
 		Table* out, QString* error);
-	//! Commit \a next into the back buffer, flip, retune sounding notes,
-	//! publish to MTS-ESP if armed. Control thread only.
+	//! Commit \a next into an unoccupied ring slot, flip, retune sounding
+	//! notes, publish to MTS-ESP if armed. Control thread only.
 	void commit(const Table& next, bool nextActive, const QString& source);
 	//! Walk every InstrumentTrack and mark its playing NotePlayHandles so the
 	//! next audio period recomputes them from this table.
@@ -219,7 +250,8 @@ private:
 	void publishToMtsEsp();
 
 	std::atomic<int> m_front{0};
-	Table m_tables[2];
+	mutable std::atomic<unsigned> m_slotStates[TableCount]{};
+	Table m_tables[TableCount];
 
 	std::shared_ptr<const Scale> m_scale;
 	std::shared_ptr<const Keymap> m_keymap;
