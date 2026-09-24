@@ -109,6 +109,7 @@ private:
 	bool m_playing = false;
 	qint64 m_pos = 0;
 	qint64 m_ticksPerBar = 0;
+	qint64 m_ticksPerBeat = 0;
 	qint64 m_nextBar = 0;
 	qint64 m_nextBeat = 0;
 };
