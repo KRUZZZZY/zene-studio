@@ -9,7 +9,7 @@ probe keeps both captured byte images on disk with their sha256 recorded here.
 
 ## The probe
 
-`docs/d4b-logs/capture_pair_probe.py` starts the built binary with the repo's own headless recipe
+`tests/integration-logs-4856817be/capture_pair_probe.py` starts the built binary with the repo's own headless recipe
 (`QT_QPA_PLATFORM=offscreen`, a `--config` whose `<audioengine audiodev="Dummy (no sound output)"/>`
 is exact, fresh `HOME`/`XDG_*`/cwd, `LMMS_PLUGIN_DIR=<build>/plugins` — `tests/control_socket_harness.py`
 lines 20–22), replays a sweep window's exact step sequence up to the failing checkpoint, then
@@ -17,10 +17,10 @@ lines 20–22), replays a sweep window's exact step sequence up to the failing c
 ended with `control.quit` and the driver's own `EXIT=0`:
 
 ```
-python3 docs/d4b-logs/capture_pair_probe.py <build>/zene <build>/plugins 5403 1-20 /tmp/zene-d4b/run-5403
-python3 docs/d4b-logs/capture_pair_probe.py <build>/zene <build>/plugins 5412 1-20 /tmp/zene-d4b/run-5412
-python3 docs/d4b-logs/capture_pair_probe.py <build>/zene <build>/plugins 0    0-0  /tmp/zene-d4b/run-fresh
-python3 docs/d4b-logs/capture_pair_probe.py <build>/zene <build>/plugins 0    0-0  /tmp/zene-d4b/run-index /tmp/zene-d4b/foreign.mmp
+python3 tests/integration-logs-4856817be/capture_pair_probe.py <build>/zene <build>/plugins 5403 1-20 /tmp/zene-d4b/run-5403
+python3 tests/integration-logs-4856817be/capture_pair_probe.py <build>/zene <build>/plugins 5412 1-20 /tmp/zene-d4b/run-5412
+python3 tests/integration-logs-4856817be/capture_pair_probe.py <build>/zene <build>/plugins 0    0-0  /tmp/zene-d4b/run-fresh
+python3 tests/integration-logs-4856817be/capture_pair_probe.py <build>/zene <build>/plugins 0    0-0  /tmp/zene-d4b/run-index /tmp/zene-d4b/foreign.mmp
 ```
 
 Verdict, all four runs: `save_a_ok=true`, `save_b_ok=true`, `raw_equal=false`, `normalized_equal=false`.

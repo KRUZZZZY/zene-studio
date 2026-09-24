@@ -143,7 +143,7 @@ every other section's bytes and every other index row are all expected to match.
 
 ```bash
 # the capture-pair probe: replays a window's step sequence, then saves twice and keeps both files
-python3 docs/d4b-logs/capture_pair_probe.py <abs build>/zene <abs build>/plugins 5403 1-20 /tmp/d4b-run
+python3 tests/integration-logs-4856817be/capture_pair_probe.py <abs build>/zene <abs build>/plugins 5403 1-20 /tmp/d4b-run
 ```
 
 The probe's verdicts, the quoted deltas and both mechanisms' raw evidence are in
