@@ -38,6 +38,7 @@
 #include "Engine.h"
 #include "ScriptEngine.h"
 #include "Song.h"
+#include "TimePos.h"
 
 extern "C"
 {
@@ -111,6 +112,7 @@ int ScriptClockGrid::consume(qint64 pos, qint64 stride, qint64* next, int* coale
 void ScriptClockGrid::regrid(qint64 pos, qint64 ticksPerBar, qint64 ticksPerBeat)
 {
 	m_ticksPerBar = ticksPerBar;
+	m_ticksPerBeat = ticksPerBeat;
 	m_nextBar = ((pos / ticksPerBar) + 1) * ticksPerBar;
 	m_nextBeat = ((pos / ticksPerBeat) + 1) * ticksPerBeat;
 }
@@ -136,7 +138,8 @@ ScriptTickEvents ScriptClockGrid::advance(bool playing, qint64 pos, qint64 ticks
 	}
 	// First observation, a seek backwards, or a meter change: re-anchor where
 	// playback IS. Nothing crossed a boundary, so nothing fires.
-	if (!m_playing || pos < m_pos || ticksPerBar != m_ticksPerBar)
+	if (!m_playing || pos < m_pos || ticksPerBar != m_ticksPerBar
+		|| ticksPerBeat != m_ticksPerBeat)
 	{
 		events.regrids = 1;
 		regrid(pos, ticksPerBar, ticksPerBeat);
@@ -347,7 +350,9 @@ void ScriptClock::pollOnce()
 	const bool playing = song->isPlaying();
 	const qint64 pos = static_cast<qint64>(song->getPlayPos().getTicks());
 	const qint64 ticksPerBar = song->ticksPerBar();
-	const qint64 ticksPerBeat = std::max<qint64>(1, ticksPerBar / 4);
+	const TimeSig timeSig(song->getTimeSigModel());
+	const qint64 ticksPerBeat = std::max<qint64>(1,
+		TimePos().ticksPerBeat(timeSig));
 	const ScriptTickEvents events = m_grid.advance(playing, pos, ticksPerBar, ticksPerBeat);
 
 	m_playing = playing;
