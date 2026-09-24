@@ -276,16 +276,26 @@ bool writeTo(DataFile& file)
 
 	QDomElement& content = file.content();
 	QDomDocument document = content.ownerDocument();
-	// A QDom handle copy points at the same node, so setting through it is
-	// setting on the document's root.
-	QDomElement root = file.documentElement();
-	// ONE spelling of the `z` binding: the same attribute and URI the
-	// <z:index> writer sets (DocumentIndex.h). setAttribute on an attribute
-	// the index later re-sets is idempotent, so a document carrying both
-	// binds the prefix exactly once and its bytes do not depend on order.
-	root.setAttribute(documentIndexNamespaceAttribute(), documentIndexNamespaceUri());
 
 	QDomElement element = document.createElement(nodeName());
+	// ONE spelling of the `z` binding: the same attribute and URI the
+	// <z:index> writer sets (DocumentIndex.h). It is declared HERE, on the
+	// section that carries the prefixed name, and NOT on the document root
+	// (DEFECT-D4b).
+	//
+	// The root spelling was a per-save volatile. This section is written only
+	// when a change has been recorded, and a save's own change is recorded
+	// AFTER its write, so the FIRST save of a session whose journal is empty
+	// wrote neither a section nor a root binding while the SECOND wrote both:
+	// two consecutive saves of one UNCHANGED session differed in a root
+	// ATTRIBUTE, which stripping the journal block cannot remove. The
+	// save-canonical contract (docs/SAVE-CANONICAL-STABILITY.md) is "the same
+	// bytes modulo the journal block, declaration included", and a document
+	// whose only z-prefixed content is the journal still binds the prefix - a
+	// local declaration is in scope for the name exactly as the root's was,
+	// because the reader parses with namespace processing OFF
+	// (include/ProvenanceSection.h) and matches `z:provenance` as a literal.
+	element.setAttribute(documentIndexNamespaceAttribute(), documentIndexNamespaceUri());
 	element.setAttribute(QStringLiteral("seq"), QString::number(section.lastSeq()));
 	element.setAttribute(QStringLiteral("v"), QStringLiteral("1"));
 	for (int i = 0; i < section.size(); ++i)

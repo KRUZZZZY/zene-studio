@@ -99,6 +99,21 @@ QByteArray childrenSlice(const QByteArray& raw)
 	return raw.mid(gt + 1, close - gt - 1);
 }
 
+//! The journal block as the FILE carries it, removed with its own line: the
+//! leading indentation goes with it, because stripping the tags alone leaves a
+//! whitespace-only line - a normaliser artefact, not a file difference (the D4b
+//! captures show it as a stray `+    ` hunk).
+QString withoutJournal(const QString& raw)
+{
+	static const QRegularExpression block(
+		QStringLiteral("^[ \\t]*<z:provenance\\b[^>]*>.*?</z:provenance>[ \\t]*\\r?\\n"),
+		QRegularExpression::MultilineOption
+			| QRegularExpression::DotMatchesEverythingOption);
+	QString out = raw;
+	out.remove(block);
+	return out;
+}
+
 //! The digest rule, written independently of the implementation and applied
 //! to what control.transactions reports: if the file's `before` does not
 //! equal THIS, the provenance is not quoting the recorded before-state.
@@ -278,8 +293,19 @@ private slots:
 		QVERIFY(!provenance1.isNull());
 		QCOMPARE(provenance1.attribute(QStringLiteral("seq")), QStringLiteral("4"));
 		QCOMPARE(provenance1.attribute(QStringLiteral("v")), QStringLiteral("1"));
-		QCOMPARE(document1.documentElement().attribute(QStringLiteral("xmlns:z")),
+		// The `z` binding is declared on the SECTION, not on the root
+		// (DEFECT-D4b): a root-level declaration appeared and disappeared with
+		// the journal's own presence, so two saves of one unchanged session
+		// differed in a root attribute that no journal strip can remove. The
+		// URI is still the one spelling the <z:index> writer binds, and the
+		// prefixed name is still bound - a document whose only z-prefixed
+		// content is the journal stays a legal document.
+		QCOMPARE(provenance1.attribute(documentIndexNamespaceAttribute()),
 			documentIndexNamespaceUri());
+		QVERIFY2(!document1.documentElement().hasAttribute(
+				documentIndexNamespaceAttribute()),
+			"a journal-only document gained a ROOT-level z binding: it would appear and "
+			"disappear with the journal's presence across two saves");
 		QList<provenance::Change> inFile = changesFrom(provenance1);
 		QCOMPARE(inFile, expected);
 
@@ -369,6 +395,43 @@ private slots:
 		const QString unchanged = m_dir.filePath(QStringLiteral("unchanged.mmp"));
 		QVERIFY(Engine::getSong()->saveProjectFile(unchanged, false));
 		QCOMPARE(readFile(unchanged), readFile(m_file2));
+	}
+
+	//! DEFECT-D4b, the writer half: two consecutive saves of ONE UNCHANGED
+	//! session to the SAME path differ only inside the append-only journal
+	//! block - INCLUDING the block's own `xmlns:z` declaration, which used to
+	//! be written on the document ROOT and only when the journal was non-empty.
+	//! This is the failing window of the D4b sweep (seeds 5403/5412 checkpoint
+	//! 20): a session whose journal is empty at the first write, so the second
+	//! save is the first file that carries a block. The contract, and the one
+	//! declared exception, are docs/SAVE-CANONICAL-STABILITY.md.
+	void twoConsecutiveSavesDifferOnlyByTheDocumentedJournal()
+	{
+		loadProject(m_pristine);
+		QVERIFY2(heldChanges().isEmpty(), "the fixture must start with an empty journal");
+
+		const QString path = m_dir.filePath(QStringLiteral("save-twice.mmp"));
+		QVERIFY(Engine::getSong()->saveProjectFile(path, false));
+		const QString first = readFile(path);
+		QVERIFY2(!first.contains(QStringLiteral("z:provenance")),
+			"the first save of an empty journal must write no section (the additive rule)");
+
+		// A save's own change: the control path records `project.save` through
+		// the registry AFTER the write, which is how the window arises - the
+		// journal is empty at the first write and non-empty at the second.
+		provenance::recordChange(QStringLiteral("project.save"), QJsonObject(),
+			QJsonObject{{QStringLiteral("path"), path}});
+
+		QVERIFY(Engine::getSong()->saveProjectFile(path, false));
+		const QString second = readFile(path);
+		QVERIFY2(second.contains(QStringLiteral("z:provenance")),
+			"the second save must carry the entry recorded since the first");
+		QVERIFY2(first != second, "the two saves are identical, so this slot proves nothing");
+
+		// THE CONTRACT: everything outside the journal block is byte-identical.
+		// A root attribute appearing between the two saves fails HERE, with the
+		// two documents quoted side by side.
+		QCOMPARE(withoutJournal(second), withoutJournal(first));
 	}
 
 	//! THE BOUND: bounded exactly as the in-memory journal is (1.9 cites

@@ -149,10 +149,10 @@ def canonical_project_sha(path):
     """sha256 of the saved project's XML in CANONICAL form.
 
     Drops instance/build/journal/window-LAYOUT metadata - writer,
-    creatorversion, the <z:provenance> journal (wall-clock stamps), the GUI
-    view sections and the window-geometry attrs; none of it is project
-    content - and sorts attributes. Rotations of the constant:
-    docs/709-logs/709-baseline-rotate.md."""
+    creatorversion, the <z:provenance> journal (wall-clock stamps), the ONE
+    <z:index> row that restates it, the GUI view sections and the window-geometry
+    attrs; none of it is project content - and sorts attributes. Rotations of the
+    constant: docs/709-logs/709-baseline-rotate.md."""
     import xml.etree.ElementTree as ET
     import zlib
 
@@ -162,9 +162,9 @@ def canonical_project_sha(path):
     def clean(element):
         for v in ("writer", "creatorversion", "x", "y", "width", "height", "maximized", "visible"):
             element.attrib.pop(v, None)
-        [element.remove(c) for c in list(element) if c.tag.endswith("}provenance")
+        [element.remove(c) for c in list(element) if c.tag.endswith("}provenance") or c.tag.endswith("}section") and c.get("name") == "z:provenance"
          or c.tag in ("ControllerRackView", "automationeditor", "pianoroll", "projectnotes",
-                      "timeline", "automationtrack")]
+                      "timeline", "automationtrack")]  # reasons: docs/SAVE-CANONICAL-STABILITY.md 4
         items = sorted(element.attrib.items())
         element.attrib.clear()
         element.attrib.update(items)

@@ -162,7 +162,10 @@ private:
 
 /*! Write the section into \a file's <song>: re-emitting every held entry and
  *  binding xmlns:z to the one URI the <z:index> writer binds (DocumentIndex's
- *  measured spelling, so the two cannot drift). Writes NOTHING - and returns
+ *  measured spelling, so the two cannot drift), on the SECTION element itself -
+ *  never on the document root, whose attribute set must not change with the
+ *  journal's presence across two saves of one unchanged session
+ *  (docs/SAVE-CANONICAL-STABILITY.md, DEFECT-D4b). Writes NOTHING - and returns
  *  false - when no change has been recorded (the additive rule). */
 LMMS_EXPORT bool writeTo(DataFile& file);
 
