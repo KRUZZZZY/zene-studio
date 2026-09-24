@@ -111,6 +111,33 @@ bool readArgs(const QJsonObject& request, QJsonObject* args, int id, QByteArray*
 	return true;
 }
 
+//! The request's integer id, or a filled \p reply when it is not one. BUG-SRV-1
+//! (2026-09-24): a string, a fraction, NaN, an infinity or an out-of-32-bit id is
+//! a typed invalid_args, not a silent cast - the bounds are checked on the DOUBLE
+//! before the cast, because casting an out-of-range double to int is undefined
+//! behaviour. Split out of dispatchLine() for the complexity ratchet.
+bool readRequestId(const QJsonObject& request, int* id, QByteArray* reply)
+{
+	const QJsonValue idValue = request.value(QStringLiteral("id"));
+	if (!idValue.isDouble())
+	{
+		*reply = errorLine(-1, ControlErrorKind::InvalidArgs,
+			QStringLiteral("request 'id' must be an integer"));
+		return false;
+	}
+	const double idNumber = idValue.toDouble();
+	if (!std::isfinite(idNumber) || std::trunc(idNumber) != idNumber ||
+		idNumber < static_cast<double>(std::numeric_limits<int>::min()) ||
+		idNumber > static_cast<double>(std::numeric_limits<int>::max()))
+	{
+		*reply = errorLine(-1, ControlErrorKind::InvalidArgs,
+			QStringLiteral("request 'id' must be a finite integer in the signed 32-bit range"));
+		return false;
+	}
+	*id = static_cast<int>(idNumber);
+	return true;
+}
+
 } // namespace
 
 ControlServer::ControlServer(ControlRegistry* registry, QObject* parent) :
@@ -444,23 +471,9 @@ QByteArray ControlServer::dispatchLine(const QByteArray& line)
 	}
 
 	const QJsonObject request = document.object();
-	const QJsonValue idValue = request.value(QStringLiteral("id"));
-	if (!idValue.isDouble())
-	{
-		return errorLine(-1, ControlErrorKind::InvalidArgs,
-			QStringLiteral("request 'id' must be an integer"));
-	}
-	const double idNumber = idValue.toDouble();
-	if (!std::isfinite(idNumber) || std::trunc(idNumber) != idNumber ||
-		idNumber < static_cast<double>(std::numeric_limits<int>::min()) ||
-		idNumber > static_cast<double>(std::numeric_limits<int>::max()))
-	{
-		return errorLine(-1, ControlErrorKind::InvalidArgs,
-			QStringLiteral("request 'id' must be a finite integer in the signed 32-bit range"));
-	}
-	const int id = static_cast<int>(idNumber);
-
 	QByteArray reply;
+	int id = -1;
+	if (!readRequestId(request, &id, &reply)) { return reply; }
 	if (!protoMatches(request, id, &reply)) { return reply; }
 
 	const QJsonValue cmdValue = request.value(QStringLiteral("cmd"));
