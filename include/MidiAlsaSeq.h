@@ -28,6 +28,8 @@
 #include "lmmsconfig.h"
 
 #ifdef LMMS_HAVE_ALSA
+#include <cstdint>
+
 #include <alsa/asoundlib.h>
 
 #include <QMap>
@@ -37,6 +39,7 @@
 
 
 #include "MidiClient.h"
+#include "MidiOutQueue.h"
 
 
 
@@ -87,6 +90,11 @@ public:
 		return true;
 	}
 
+	std::uint64_t outputQueueOverflowCount() const noexcept override
+	{
+		return m_outQueue.overflowCount();
+	}
+
 	// list seq-ports from ALSA
 	QStringList readablePorts() const override
 	{
@@ -130,6 +138,7 @@ private slots:
 
 private:
 	void run() override;
+	void processQueuedOutEvent(const MidiOutQueue::Command& command);
 
 #ifdef LMMS_HAVE_ALSA
 	QMutex m_seqMutex;
@@ -145,6 +154,7 @@ private:
 #endif
 
 	int m_queueID;
+	MidiOutQueue m_outQueue;
 
 	volatile bool m_quit;
 

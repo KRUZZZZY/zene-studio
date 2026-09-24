@@ -127,6 +127,12 @@ public:
 		return false;
 	}
 
+	//! Number of realtime MIDI output events refused by this client queue.
+	virtual std::uint64_t outputQueueOverflowCount() const noexcept
+	{
+		return 0;
+	}
+
 	//! This client's controller-assignment memory (include/MidiReconnect.h).
 	/*!
 	 * Every MidiPort registers its subscriptions here through

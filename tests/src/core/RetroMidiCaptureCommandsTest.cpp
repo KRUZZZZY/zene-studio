@@ -395,6 +395,8 @@ private slots:
 			static_cast<int>(client->retroCapture().ring().capacity()));
 		QCOMPARE(status.result.value(QStringLiteral("events_buffered")).toInt(),
 			static_cast<int>(client->retroCapture().ring().bufferedCount()));
+		QVERIFY(status.result.contains(QStringLiteral("out_queue_overflows")));
+		QVERIFY(status.result.value(QStringLiteral("out_queue_overflows")).toDouble() >= 0.0);
 		QVERIFY(!status.result.value(QStringLiteral("client")).toString().isEmpty());
 
 		const ControlResult off = registry->invoke(QStringLiteral("midi.retro_capture_arm"),

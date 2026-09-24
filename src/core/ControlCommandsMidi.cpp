@@ -232,6 +232,7 @@ void registerMidiRetroCaptureStatus(ControlRegistry& registry)
 		{QStringLiteral("overwritten"), integerProperty(0, MaxSongLength)},
 		{QStringLiteral("paused_dropped"), integerProperty(0, MaxSongLength)},
 		{QStringLiteral("refused_snapshots"), integerProperty(0, MaxSongLength)},
+		{QStringLiteral("out_queue_overflows"), integerProperty(0, MaxSongLength)},
 		{QStringLiteral("ticks_span"), integerProperty(0, MaxSongLength)},
 		{QStringLiteral("seconds_span"), numberProperty()},
 	});
@@ -269,6 +270,9 @@ void registerMidiRetroCaptureStatus(ControlRegistry& registry)
 			static_cast<double>(capture->ring().pausedDropCount()));
 		result.insert(QStringLiteral("refused_snapshots"),
 			static_cast<double>(capture->ring().refusedSnapshots()));
+		MidiClient* client = Engine::audioEngine() != nullptr ? Engine::audioEngine()->midiClient() : nullptr;
+		result.insert(QStringLiteral("out_queue_overflows"),
+			static_cast<double>(client != nullptr ? client->outputQueueOverflowCount() : 0));
 		result.insert(QStringLiteral("ticks_span"), span);
 		result.insert(QStringLiteral("seconds_span"),
 			TimePos::ticksToMilliseconds(span, tempo) / 1000.0);

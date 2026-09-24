@@ -1265,6 +1265,9 @@ tools/ncpu-shim.c
 # public header and its proof test. Both are fork-NEW and both are registered here
 # (the header in this list and in tests/all-sources.txt, the test driver in this one),
 # so the fork-scoped ratchets measure them rather than leaving them invisible.
+# BUG-MIDI-003 (2026-09-24): fixed-capacity MIDI output queue and regression probe.
+include/MidiOutQueue.h
+tests/src/core/MidiOutQueueTest.cpp
 # 2026-09-19 (lane 030/capabilities, branch 030/capabilities): three changes, all in this
 # one commit, all measured rather than declared.
 #   * scripts/capabilities-dump.py is NEW and is registered here. It is the generator for

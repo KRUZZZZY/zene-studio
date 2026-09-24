@@ -335,6 +335,7 @@ set(LMMS_TESTS
 	src/core/MidiClockTest.cpp
 	src/core/MidiLearnThreadTest.cpp
 	src/core/MidiRetroCaptureTest.cpp
+	src/core/MidiOutQueueTest.cpp
 	src/core/RetroMidiCaptureCommandsTest.cpp
 	src/core/MidiProbabilityPersistenceTest.cpp
 	# The engine half of MIDI controller auto-reconnection (0.3.0 feature-list

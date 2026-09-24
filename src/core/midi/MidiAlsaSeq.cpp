@@ -277,6 +277,18 @@ QString MidiAlsaSeq::probeDevice()
 
 void MidiAlsaSeq::processOutEvent( const MidiEvent& event, const TimePos& time, const MidiPort* port )
 {
+	// This is called from the audio path. The sequencer thread owns all ALSA
+	// calls and the mutex; enqueueing is bounded, lock-free, and allocation-free.
+	(void) m_outQueue.push(event, time, port);
+}
+
+
+void MidiAlsaSeq::processQueuedOutEvent(const MidiOutQueue::Command& command)
+{
+	const MidiEvent& event = command.event;
+	const TimePos& time = command.time;
+	const MidiPort* port = command.port;
+
 	// HACK!!! - need a better solution which isn't that easy since we
 	// cannot store const-ptrs in our map because we need to call non-const
 	// methods of MIDI-port - it's a mess...
@@ -706,6 +718,12 @@ void MidiAlsaSeq::run()
 
 	while( m_quit == false )
 	{
+		MidiOutQueue::Command command;
+		while (m_outQueue.pop(command))
+		{
+			processQueuedOutEvent(command);
+		}
+
 		int pollRet = poll( pollfd_set, pollfd_count, EventPollTimeOut );
 		if( pollRet == 0 )
 		{

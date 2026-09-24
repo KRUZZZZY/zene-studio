@@ -307,6 +307,35 @@ private slots:
 		}
 	}
 
+	//! Every producer event is retained, overwritten, or paused exactly once.
+	void ConcurrentSnapshot_PreservesAccountingIdentity()
+	{
+		RetroMidiRing ring{64};
+		constexpr std::uint64_t total = 20000;
+		std::atomic<std::uint64_t> played{0};
+		std::atomic<bool> done{false};
+		std::thread producer([&] {
+			for (std::uint64_t i = 0; i < total; ++i)
+			{
+				ring.push(testEvent(i));
+				played.fetch_add(1, std::memory_order_relaxed);
+			}
+			done.store(true, std::memory_order_release);
+		});
+		std::vector<RetroMidiEvent> window(64);
+		while (!done.load(std::memory_order_acquire))
+		{
+			ring.beginSnapshot();
+			for (int spin = 0; spin < 10000 && !ring.writerIdle(); ++spin) { std::this_thread::yield(); }
+			if (ring.writerIdle()) { ring.copyOut(window.data(), window.size()); }
+			ring.endSnapshot();
+		}
+		producer.join();
+		const auto retained = ring.bufferedCount();
+		QCOMPARE(static_cast<qulonglong>(retained + ring.overwrittenCount() + ring.pausedDropCount()),
+				static_cast<qulonglong>(played.load(std::memory_order_relaxed)));
+	}
+
 	//! The producer path must not allocate (dynamic check on this thread).
 	void ProducerPath_DoesNotAllocate()
 	{

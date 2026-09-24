@@ -28,6 +28,14 @@
 
 
 
+# BUG-MIDI-003/004 (2026-09-24): realtime MIDI output queue and defined retro snapshot publication;
+# regression coverage: tests/src/core/MidiOutQueueTest.cpp and RetroMidiRingTest.cpp.
+include/MidiAlsaSeq.h	BUG-MIDI-003: queue outbound events off the audio thread and expose overflow count; covered by MidiOutQueueTest and RetroMidiCaptureCommandsTest.
+include/MidiClient.h	BUG-MIDI-003: expose realtime MIDI output queue overflow count to status commands; covered by RetroMidiCaptureCommandsTest.
+include/RetroMidiRing.h	BUG-MIDI-004: snapshot writer quiescence prevents non-atomic slot races; covered by RetroMidiRingTest.
+src/core/midi/MidiAlsaSeq.cpp	BUG-MIDI-003: drain ALSA output only on sequencer thread; covered by MidiOutQueueTest.
+src/core/ControlCommandsMidi.cpp	BUG-MIDI-003: report outbound queue overflow counter through midi.retro_capture_status; covered by RetroMidiCaptureCommandsTest.
+
 # --- post-alpha/midi-depth (2026-09-11) ------------------------------------
 # --- fork-new developer tooling under tools/ (task #612, 2026-09-11) ---------------------------
 # SUPERSEDED 2026-09-12 (gate hygiene, merge train 3A #1): Gate 6 now classifies a path registered in

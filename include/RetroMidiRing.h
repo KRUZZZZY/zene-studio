@@ -30,6 +30,7 @@
 #include <atomic>
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <memory>
 
 #include "LmmsTypes.h"
@@ -103,7 +104,7 @@ public:
 	explicit RetroMidiRing(std::size_t minCapacityEvents) :
 		m_capacity(nextPowerOfTwo(minCapacityEvents == 0 ? 1 : minCapacityEvents)),
 		m_mask(m_capacity - 1),
-		m_slots(std::make_unique<RetroMidiEvent[]>(m_capacity))
+		m_slots(std::make_unique<SlotWords[]>(m_capacity))
 	{
 	}
 
@@ -115,7 +116,7 @@ public:
 	//! no syscall, O(1); one relaxed atomic load on the fast path.
 	bool push(const RetroMidiEvent& event) noexcept
 	{
-		if (m_snapshotPending.load(std::memory_order_relaxed))
+		if (m_snapshotPending.load(std::memory_order_acquire))
 		{
 			m_pausedDrops.fetch_add(1, std::memory_order_relaxed);
 			m_writerAck.store(m_snapshotEpoch.load(std::memory_order_acquire),
@@ -124,11 +125,14 @@ public:
 		}
 
 		const auto head = m_head.load(std::memory_order_relaxed);
-		const auto sequence = m_sequence.load(std::memory_order_relaxed);
-		m_sequence.store(sequence + 1, std::memory_order_release);  // odd: a slot is being written
-		m_slots[head & m_mask] = event;
+		const auto sequence = m_sequence.fetch_add(1, std::memory_order_acq_rel);
+		const auto index = head & m_mask;
+		std::uint64_t words[2]{};
+		std::memcpy(words, &event, sizeof(event));
+		m_slots[index].lo.store(words[0], std::memory_order_relaxed);
+		m_slots[index].hi.store(words[1], std::memory_order_release);
 		m_head.store(head + 1, std::memory_order_release);
-		m_sequence.store(sequence + 2, std::memory_order_release);  // even: the window is consistent
+		m_sequence.store(sequence + 2, std::memory_order_release);
 
 		if (head >= m_capacity)
 		{
@@ -166,7 +170,7 @@ public:
 		for (int attempt = 0; attempt < kSnapshotAttempts; ++attempt)
 		{
 			const auto sequence = m_sequence.load(std::memory_order_acquire);
-			if ((sequence & 1u) != 0u) { continue; }  // a slot is being written
+			if ((sequence & 1u) != 0u) { continue; }
 
 			const auto head = m_head.load(std::memory_order_acquire);
 			const auto first = head > m_capacity ? head - m_capacity : 0;
@@ -174,12 +178,16 @@ public:
 			const auto count = std::min(retained, maxEvents);
 			for (std::size_t i = 0; i < count; ++i)
 			{
-				dst[i] = m_slots[(first + i) & m_mask];
+				const auto& slot = m_slots[(first + i) & m_mask];
+				std::uint64_t words[2]{};
+				words[1] = slot.hi.load(std::memory_order_acquire);
+				words[0] = slot.lo.load(std::memory_order_relaxed);
+				std::memcpy(&dst[i], words, sizeof(RetroMidiEvent));
 			}
 
 			if (m_sequence.load(std::memory_order_acquire) == sequence)
 			{
-				return count;  // no producer write overlapped the copy
+				return count;
 			}
 		}
 
@@ -238,7 +246,12 @@ private:
 	const std::size_t m_capacity;
 	const std::size_t m_mask;
 
-	std::unique_ptr<RetroMidiEvent[]> m_slots;
+	struct SlotWords
+	{
+		std::atomic<std::uint64_t> lo{0};
+		std::atomic<std::uint64_t> hi{0};
+	};
+	std::unique_ptr<SlotWords[]> m_slots;
 
 	// One cache line each for the indices the two sides own, and one for the
 	// three counters, so a producer write never invalidates the consumer's.
