@@ -111,8 +111,7 @@ SessionTuning::SessionTuning()
 {
 	// Default content is 12-TET and the table starts INACTIVE, so the first
 	// render after startup takes exactly the branches it took before #712.
-	m_tables[0] = twelveTetTable();
-	m_tables[1] = twelveTetTable();
+	for (Table& table : m_tables) { table = twelveTetTable(); }
 }
 
 SessionTuning* SessionTuning::instance()
@@ -186,16 +185,47 @@ bool SessionTuning::buildTable(const Scale* scale, const Keymap& keymap,
 
 void SessionTuning::commit(const Table& next, bool nextActive, const QString& source)
 {
-	// ONE flip: write the back buffer completely, then release-publish its
-	// index. noteToFreq() on the audio thread acquire-loads that index and
-	// reads only the published buffer - no lock, no allocation, and the
-	// writer never touches the buffer a reader can be holding.
-	const int back = 1 - m_front.load(std::memory_order_relaxed);
-	Table& target = m_tables[back];
-	target = next;
-	target.active = nextActive;
-	m_source = source.left(MaxSourceLength);
-	m_front.store(back, std::memory_order_release);
+	// Claim a non-published, reader-free slot before writing it. With three
+	// slots, one can remain published while another is held by a reader and
+	// the third is available for this commit. Concurrent writers retry if a
+	// competing commit publishes first, preserving publication order.
+	for (;;)
+	{
+		const int front = m_front.load(std::memory_order_acquire);
+		int back = (front + 1) % TableCount;
+		bool claimed = false;
+		for (int attempt = 0; attempt < TableCount - 1; ++attempt)
+		{
+			unsigned expected = 0u;
+			if (back != front && m_slotStates[back].compare_exchange_weak(
+				expected, WriterBit, std::memory_order_acquire,
+				std::memory_order_relaxed))
+			{
+				claimed = true;
+				break;
+			}
+			back = (back + 1) % TableCount;
+		}
+		if (!claimed) { continue; }
+
+		if (m_front.load(std::memory_order_acquire) != front)
+		{
+			m_slotStates[back].fetch_and(~WriterBit, std::memory_order_release);
+			continue;
+		}
+		Table& target = m_tables[back];
+		target = next;
+		target.active = nextActive;
+		int expectedFront = front;
+		if (m_front.compare_exchange_strong(expectedFront, back,
+			std::memory_order_release, std::memory_order_acquire))
+		{
+			m_source = source.left(MaxSourceLength);
+			m_slotStates[back].fetch_and(~WriterBit, std::memory_order_release);
+			break;
+		}
+		m_slotStates[back].fetch_and(~WriterBit, std::memory_order_release);
+	}
 
 	retuneSoundingNotes();
 	publishToMtsEsp();
