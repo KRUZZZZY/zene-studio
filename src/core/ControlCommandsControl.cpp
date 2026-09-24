@@ -23,6 +23,8 @@
 
 #include <cstdio>
 
+#include <optional>
+
 #include <QJsonArray>
 #include <QJsonObject>
 
@@ -30,6 +32,7 @@
 
 #include "ControlRegistry.h"
 #include "ControlReversibility.h"
+#include "ControlStructuralSupport.h"
 #include "Engine.h"
 #include "ProjectJournal.h"
 #include "Song.h"
@@ -245,11 +248,35 @@ QString irreversibleUndoMessage(const ControlRegistry::Transaction& tx,
 ControlResult undoThroughJournal(const QString& command)
 {
 	ProjectJournal* journal = Engine::projectJournal();
+	// A structural step's callback cannot return a failure - the journal's
+	// callbacks are `void` and undo() is `void` - so a recreate that could not put
+	// the captured settings back records it in the structural-support layer
+	// instead (BUG-CTL-1). Clearing BEFORE the unwind means only a failure THIS
+	// step recorded can be reported; the read below consumes the record, so
+	// nothing leaks into a later undo.
+	clearStructuralRestoreFailure();
 	bool undone = false;
 	if (journal != nullptr && journal->canUndo())
 	{
 		journal->undo();
 		undone = true;
+	}
+	if (const std::optional<ControlResult> failed = takeStructuralRestoreFailure())
+	{
+		// The step left the stack, but the inverse did NOT happen: the device was
+		// not restored, and reporting success here is the SPEC A16 lie this
+		// answers. The half-restored instance is already gone, so what remains is
+		// the honest state - the removal still stands, and the command's captured
+		// 'before.state_xml' is the bounded record that allows a rebuild by hand.
+		const QString what = command.isEmpty()
+			? QStringLiteral("the last journal step")
+			: QStringLiteral("'%1'").arg(command);
+		return ControlResult::failure(failed->errorKind,
+			QStringLiteral("cannot undo %1: the recorded inverse ran but the device was NOT "
+				"restored - %2. The half-restored instance was removed again, so no "
+				"default-parameters device is left behind and the removal still stands; the "
+				"command's 'before.state_xml' is the bounded record that allows a rebuild by "
+				"hand").arg(what, failed->errorMessage));
 	}
 	QJsonObject result;
 	result.insert(QStringLiteral("undone"), undone);

@@ -35,14 +35,21 @@
 
 #include <QtTest>
 
+#include <memory>
+
+#include <QDomDocument>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QTemporaryDir>
 #include <QVector>
 
+#include "ControlDeviceSupport.h"
 #include "ControlRegistry.h"
 #include "ControlReversibility.h"
+#include "ControlStructuralSupport.h"
+#include "Effect.h"
+#include "EffectChain.h"
 #include "Engine.h"
 #include "ProjectJournal.h"
 #include "ReversibilityTestSupport.h"
@@ -350,6 +357,83 @@ private slots:
 		QCOMPARE(deviceParameterValue(track, fx, parameter.value(QStringLiteral("index")).toInt()), previous);
 		REV_UNDO_OR_FAIL();
 		QCOMPARE(deviceParameterValue(track, fx, parameter.value(QStringLiteral("index")).toInt()), wanted);
+	}
+
+
+	/*! BUG-CTL-1 (SPEC A16): the undo of plugin.unload must NOT report success when
+	 *  the recreated device could not be given its captured settings. Before the fix
+	 *  recreateEffectFromState() discarded controlRestoreEffectState()'s result, so
+	 *  the undo answered `undone: true` over a device sitting at its DEFAULTS.
+	 *
+	 *  The refusal is driven through the PRODUCTION recreate path with a document whose
+	 *  body element is removed: one controlEffectStateXml() captured from a live device
+	 *  is always restorable by that same engine, so plugin.unload cannot reach it. The
+	 *  step is pushed with the API journalEffectRemoval() uses.
+	 */
+	void unloadUndoRefusesWhenTheDeviceCannotBeRestored()
+	{
+		const QString device = firstLoadableEffect();
+		if (device.isEmpty()) { QSKIP("this build exposes no loadable built-in effect"); }
+		const QString track = addInstrumentTrack();
+		if (track.isEmpty()) { QSKIP("this build exposes no loadable built-in instrument"); }
+		ControlTarget target; ControlResult error;
+		QVERIFY2(resolveControlTarget(track, &target, &error), qPrintable(error.errorMessage));
+
+		const ControlResult loaded = run(QStringLiteral("plugin.load"),
+			{{QStringLiteral("target"), track}, {QStringLiteral("device"), device}});
+		QVERIFY2(loaded.ok, qPrintable(loaded.errorMessage));
+		const QString fx = loaded.result.value(QStringLiteral("id")).toString();
+
+		// The happy path is untouched: the undo reports success and the device is back.
+		QVERIFY(run(QStringLiteral("plugin.unload"),
+			{{QStringLiteral("target"), track}, {QStringLiteral("plugin"), fx}}).ok);
+		QCOMPARE(deviceCount(track), 0);
+		REV_UNDO_OR_FAIL();
+		QCOMPARE(deviceCount(track), 1);
+
+		// The defect: a document the DEVICE refuses, naming a device this build can build.
+		const QString restored = deviceIdAt(track, 0);
+		Effect* live = resolveControlEffect(target, restored, &error);
+		QVERIFY2(live != nullptr, qPrintable(error.errorMessage));
+		QDomDocument document;
+		QVERIFY(document.setContent(controlEffectStateXml(live)));
+		const QDomElement body = document.documentElement().firstChildElement(live->nodeName());
+		QVERIFY2(!body.isNull(), "the captured device document carries no body to remove");
+		document.documentElement().removeChild(body);
+		const QString refused = document.toString();
+
+		// plugin.unload again, the REAL command (so the transaction control.undo consults
+		// is the one it recorded), then the step it recorded with the refused document.
+		QVERIFY(run(QStringLiteral("plugin.unload"),
+			{{QStringLiteral("target"), track}, {QStringLiteral("plugin"), restored}}).ok);
+		QCOMPARE(deviceCount(track), 0);
+		auto holder = std::make_shared<Effect*>(nullptr);
+		control::addStructuralUndoStep(
+			[chain = target.chain, refused, holder]() {
+				*holder = control::recreateEffectFromState(chain, refused, 0);
+			},
+			[chain = target.chain, holder]() {
+				if (*holder != nullptr) { chain->removeEffect(*holder); (*holder)->deleteLater(); *holder = nullptr; }
+			},
+			refused.size());
+
+		// (1) the undo must NOT report success - `undone: true` here was the lie ...
+		const ControlResult undo = run(QStringLiteral("control.undo"));
+		QVERIFY2(!undo.ok, "control.undo reported SUCCESS although the device was not restored "
+			"(BUG-CTL-1): the recreated instance sat at its defaults");
+		QVERIFY(undo.errorKind == ControlErrorKind::InvalidArgs
+			|| undo.errorKind == ControlErrorKind::Refused);
+		QVERIFY2(undo.errorMessage.contains(QStringLiteral("NOT restored")), qPrintable(undo.errorMessage));
+		QCOMPARE(deviceCount(track), 0);  // (2) no half-restored device left behind
+		// (3) ... and repeated undo/redo stays honest. No depth delta is asserted:
+		// undo_depth also counts the chain's own enabled-flag checkpoints (appendEffect/
+		// removeEffect), a pre-existing EffectChain behaviour the happy path has too.
+		QVERIFY(run(QStringLiteral("control.redo")).ok);
+		QCOMPARE(deviceCount(track), 0);
+		QVERIFY2(!run(QStringLiteral("control.undo")).ok, "a second undo of the failed restore "
+			"reported SUCCESS (BUG-CTL-1)");
+		QCOMPARE(deviceCount(track), 0);
+		QVERIFY(run(QStringLiteral("track.list")).ok);
 	}
 
 

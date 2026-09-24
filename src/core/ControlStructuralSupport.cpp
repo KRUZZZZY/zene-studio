@@ -60,6 +60,7 @@
  */
 
 #include <memory>
+#include <optional>
 
 #include <QDomDocument>
 #include <QDomElement>
@@ -112,6 +113,23 @@ struct StructuralReplayGuard
 	~StructuralReplayGuard() { g_structuralReplay = false; }
 };
 
+/*! The failure of the last device restore a structural step attempted, if any.
+ *
+ * The record the header declares: the journal's structural callbacks are `void`,
+ * so a recreate that could not put the captured settings back has no other way to
+ * reach control.undo. UI thread only, like every helper here (an undo is a
+ * control-thread operation).
+ */
+std::optional<ControlResult> g_lastRestoreFailure;
+
+//! Records a failed recreate and answers nullptr, so every failure exit of
+//! recreateEffectFromState() records itself in one line and none can forget to.
+Effect* restoreFailed(ControlErrorKind kind, const QString& message)
+{
+	g_lastRestoreFailure = ControlResult::failure(kind, message);
+	return nullptr;
+}
+
 /*! The track's XML, or an empty string when it could not be captured.
  *
  * Bounded at StructuralSnapshotLimit: a track whose serialized state is larger
@@ -128,6 +146,15 @@ QString captureTrack(const Track* track)
 } // namespace
 
 bool structuralReplayInProgress() { return g_structuralReplay; }
+
+std::optional<ControlResult> takeStructuralRestoreFailure()
+{
+	const std::optional<ControlResult> failure = g_lastRestoreFailure;
+	g_lastRestoreFailure.reset();
+	return failure;
+}
+
+void clearStructuralRestoreFailure() { g_lastRestoreFailure.reset(); }
 
 int trackIndexIn(const TrackContainer* container, const Track* track)
 {
@@ -230,39 +257,74 @@ void placeEffectAt(EffectChain* chain, Effect* effect, int index)
 
 Effect* recreateEffectFromState(EffectChain* chain, const QString& stateXml, int index)
 {
-	if (chain == nullptr || stateXml.isEmpty()) { return nullptr; }
+	if (chain == nullptr || stateXml.isEmpty())
+	{
+		return restoreFailed(ControlErrorKind::InvalidArgs, QStringLiteral(
+			"the recorded device document is missing, so the device cannot be re-created"));
+	}
 
 	QDomDocument document;
-	if (!document.setContent(stateXml)) { return nullptr; }
+	if (!document.setContent(stateXml))
+	{
+		return restoreFailed(ControlErrorKind::InvalidArgs, QStringLiteral(
+			"the recorded device document is not valid XML, so the device cannot be re-created"));
+	}
 	const QDomElement root = document.documentElement();
-	if (root.tagName() != StateRootElement) { return nullptr; }
+	if (root.tagName() != StateRootElement)
+	{
+		return restoreFailed(ControlErrorKind::InvalidArgs,
+			QStringLiteral("the recorded device document is not a <%1> document (root <%2>), "
+				"so the device cannot be re-created").arg(StateRootElement, root.tagName()));
+	}
 
 	const QString pluginName = root.attribute(QStringLiteral("plugin"));
-	if (pluginName.isEmpty()) { return nullptr; }
+	if (pluginName.isEmpty())
+	{
+		return restoreFailed(ControlErrorKind::InvalidArgs, QStringLiteral(
+			"the recorded device document names no plugin, so the device cannot be re-created"));
+	}
 
 	ControlResult error;
 	// The check that keeps Plugin::instantiate()'s modal error box out of a
 	// headless undo: a device this build cannot load must fail here, silently,
 	// not park an unattended instance on a dialog.
-	if (!controlPluginIsInstantiable(pluginName, &error)) { return nullptr; }
+	if (!controlPluginIsInstantiable(pluginName, &error))
+	{
+		return restoreFailed(error.errorKind, error.errorMessage);
+	}
 
 	Plugin::Descriptor::SubPluginFeatures::Key key;
 	const bool hosted = deviceKeyFromState(root, &key);
 
 	Effect* effect = Effect::instantiate(pluginName, chain, hosted ? &key : nullptr);
-	if (effect == nullptr) { return nullptr; }
+	if (effect == nullptr)
+	{
+		return restoreFailed(ControlErrorKind::Refused,
+			QStringLiteral("the device '%1' could not be re-instantiated, so the removal was "
+				"not undone").arg(pluginName));
+	}
 
 	// appendEffect() puts it at the END of the chain, which is where a project
 	// load leaves it too; the recorded index is restored afterwards.
 	chain->appendEffect(effect);
 	placeEffectAt(chain, effect, index);
 
-	// The settings last, and only onto a device that is already in the chain:
-	// an unrestored (default) device is a wrong-sounding device, an absent one
-	// is a missing device. A document the DEVICE refuses (it was written for
-	// another plugin) leaves the fresh instance at its defaults - the structural
-	// half of the inverse, which is the plugin itself, still holds.
-	controlRestoreEffectState(effect, stateXml.toUtf8());
+	// The settings last, and only onto a device that is already in the chain.
+	// A document the DEVICE refuses (it was written for another plugin) is NOT a
+	// half-restored device to keep: a device at its DEFAULTS is a wrong-sounding
+	// device, and leaving it in the chain would persist those defaults over the
+	// settings the removal captured. So the fresh instance goes back OUT and the
+	// failure is recorded for control.undo to answer with - reporting success
+	// here was the SPEC A16 lie BUG-CTL-1 records.
+	const ControlResult restored = controlRestoreEffectState(effect, stateXml.toUtf8());
+	if (!restored.ok)
+	{
+		chain->removeEffect(effect);
+		// Same lifetime as the removal path beside this: the audio engine may
+		// still hold the pointer for the period in flight.
+		effect->deleteLater();
+		return restoreFailed(restored.errorKind, restored.errorMessage);
+	}
 	return effect;
 }
 

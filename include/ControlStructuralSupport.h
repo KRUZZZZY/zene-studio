@@ -25,8 +25,11 @@
 #ifndef LMMS_CONTROL_STRUCTURAL_SUPPORT_H
 #define LMMS_CONTROL_STRUCTURAL_SUPPORT_H
 
+#include <optional>
+
 #include <QString>
 
+#include "ControlRegistry.h"
 #include "lmms_export.h"
 
 namespace lmms
@@ -134,6 +137,29 @@ LMMS_EXPORT bool journalEffectRemoval(EffectChain* chain, Effect* effect, int in
  *  device. The new instance carries the captured settings.
  */
 LMMS_EXPORT Effect* recreateEffectFromState(EffectChain* chain, const QString& stateXml, int index);
+
+/*! The failure of the LAST device restore a structural step attempted, or
+ *  nullopt when the last one succeeded (or none has run) - BUG-CTL-1, SPEC A16.
+ *
+ *  WHY A SIDE CHANNEL AND NOT A RETURN VALUE: the journal's structural callbacks
+ *  are `void` and `ProjectJournal::undo()` returns `void`, so a recreate that
+ *  could not put the captured settings back has no way to hand a failure to the
+ *  command that asked for the undo. Without this record the undo of
+ *  `plugin.unload` answered SUCCESS over a recreated device sitting at its
+ *  DEFAULTS - an inverse that silently half-works, which is the contract
+ *  violation A16 exists to remove. `recreateEffectFromState()` records the
+ *  failure here; `control.undo` clears the record before it unwinds a step and
+ *  reads it after, so the answer describes exactly the step that just ran.
+ *
+ *  CONSUMING: the read clears the record, so one failure is reported once and
+ *  cannot leak into a later undo. UI thread only, like every helper here.
+ */
+LMMS_EXPORT std::optional<ControlResult> takeStructuralRestoreFailure();
+
+//! Drops any recorded restore failure without reporting it. Called before an
+//! undo unwinds a step, so a failure recorded by an earlier operation (a GUI
+//! Ctrl+Z, say) can never be attributed to this one.
+LMMS_EXPORT void clearStructuralRestoreFailure();
 
 } // namespace control
 
