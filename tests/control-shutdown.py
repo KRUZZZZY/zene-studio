@@ -12,6 +12,12 @@ Both scenarios must now end the way a normal application exit does:
 exit code 0, the control socket unlinked, the autosave recovery file cleaned up,
 and NO "the event loop did not stop" line on stderr.
 
+Scenario (d) is the same class of defect one layer earlier: a crash report left by
+an earlier session is a MODAL offer, and main() asks it BEFORE app->exec(). Where
+nobody can click it (an unattended run - --control-socket, or no display) the box
+used to run a nested event loop, so the engine never became ready and control.quit
+died on the last-resort shutdown guard (exit 1). The offer must go to stderr there.
+
 Bounded everywhere: a hang is a failure, never a wait. `control-negative-control.py`
 shows this checker failing on defective evidence.
 
@@ -155,6 +161,95 @@ def shutdown_scenario(binary, project, name, device, steps, extra_env=None):
     return name, not problems, problems.items
 
 
+#: The crash reporter's own names (include/CrashReporter.h), relative to the
+#: configured working directory.
+CRASH_REPORT_DIR = "crash-reports"
+CRASH_REPORT_FILE = "zene-crash-report.txt"
+OFFERED_MARKER_FILE = "zene-crash-report.offered"
+#: The line main() writes where nobody can click the crash-report box
+#: (offerPendingCrashReport, src/core/main.cpp).
+CRASH_OFFER_LINE = "A crash report from an earlier session is pending:"
+
+
+def plant_crash_report(inst):
+    """Put a PENDING crash report in the instance's working directory.
+
+    `pending` is the module's own predicate - the report file exists and the
+    offered sentinel does not (CrashReporter.cpp, hasPendingReport) - and main()
+    reads it at STARTUP. So this runs BEFORE spawn(), which is the one thing a
+    fixture planted into a RUNNING instance can never do: by then the offer has
+    already been decided.
+    """
+    directory = os.path.join(inst.workspace, CRASH_REPORT_DIR)
+    os.makedirs(directory, exist_ok=True)
+    with open(os.path.join(directory, CRASH_REPORT_FILE), "w") as handle:
+        handle.write("Zene Studio crash report v1\nsignal=SIGSEGV(11)\n")
+
+
+def check_crash_offer(stderr_text, inst, problems):
+    """The offer was MADE where it can be read, and recorded as made."""
+    offer_at = stderr_text.find(CRASH_OFFER_LINE)
+    problems.require(offer_at >= 0,
+                     "the unattended offer must be on stderr, where the log and the operator "
+                     "can see it; stderr tail: %r" % (stderr_text[-600:],))
+    if offer_at >= 0:
+        # By NAME, not by the planted path: reportFileInDir() joins "<working dir>/"
+        # with "/crash-reports", so the module's own path doubles the separator.
+        problems.require(CRASH_REPORT_FILE in stderr_text[offer_at:offer_at + 512],
+                         "the offer must NAME the report file so it can be attached by hand: "
+                         "%r" % (stderr_text[offer_at:offer_at + 200],))
+    directory = os.path.join(inst.workspace, CRASH_REPORT_DIR)
+    problems.require(os.path.exists(os.path.join(directory, OFFERED_MARKER_FILE)),
+                     "the offer must be recorded as made (the module's own sentinel): %s"
+                     % os.path.join(directory, OFFERED_MARKER_FILE))
+    problems.require(os.path.exists(os.path.join(directory, CRASH_REPORT_FILE)),
+                     "the report itself must be KEPT for a hand attach")
+
+
+def crash_report_scenario(binary):
+    """(d) A report pending AT STARTUP must not park the startup path.
+
+    The offer is a MODAL box and main() asks it BEFORE app->exec(). Where nobody
+    can click it - the harness's offscreen platform is one, which is what
+    lmms::isUnattendedRun() names - the box runs a nested event loop: the engine
+    never reaches setReady() (control.ping answers engine_ready=false forever and
+    every engine command is the typed 'busy' refusal), and control.quit is answered
+    and then dies on the shutdown guard ten seconds later, exit 1, with "this is a
+    bug in the shutdown path, not in the client" on stderr. That is the boundary
+    sweep's seed-1005 defect, and this is its only input.
+
+    The shape of the three scenarios above, plus the offer's own evidence. The
+    readiness poll inside drive_and_quit is the load-bearing assertion: a parked
+    startup never answers engine_ready=true.
+    """
+    name = "shutdown: a crash report pending at startup"
+    problems = Problems()
+    exited, exit_code, socket_exists, stderr_text, elapsed = False, None, True, "", 0.0
+    with Instance(binary) as inst:
+        try:
+            plant_crash_report(inst)         # BEFORE spawn: main() reads it at startup
+            inst.spawn()
+            inst.wait_for_socket(CONNECT_TIMEOUT)
+            # The save keeps the recorded sequence's shape (a save, then the quit).
+            exited, exit_code, socket_exists, stderr_text, elapsed = drive_and_quit(
+                inst, [("project.save", {"path": os.path.join(inst.tmp, "boundary.mmp")})],
+                problems)
+            check_crash_offer(stderr_text, inst, problems)
+        except Timeout as exc:
+            problems.add(str(exc))
+            inst.kill()
+            exited, exit_code, socket_exists, stderr_text, elapsed = (
+                False, None, inst.socket_exists(), inst.stderr_text(), 0.0)
+        finally:
+            inst.close()
+
+    problems.extend(check_clean_shutdown(exited, exit_code, socket_exists, stderr_text, elapsed))
+    print("[%s] exit=%s after %.2fs, socket exists=%s" % (name, exit_code, elapsed, socket_exists))
+    if problems:
+        dump("%s stderr" % name, stderr_text[-STDERR_DUMP_LIMIT:])
+    return name, not problems, problems.items
+
+
 def main():
     if len(sys.argv) < 3:
         print(__doc__)
@@ -197,6 +292,10 @@ def main():
         [("mixer.add_channel", {}),
          ("project.open", {"path": project}),
          ("mixer.get_state", {})]))
+    # (d) A crash report pending at startup: the modal offer runs BEFORE
+    # app->exec(), so it parked the startup path where nobody could click it. Its
+    # own function because the report has to be on disk BEFORE spawn().
+    results.append(crash_report_scenario(binary))
     return finish(results)
 
 

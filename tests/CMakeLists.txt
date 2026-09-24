@@ -2925,7 +2925,11 @@ endif()
 # ControlShutdown         - a clean shutdown for BOTH reproductions (undo/redo
 #                           leaves the project modified -> the quit prompt used to
 #                           block; an audio device that cannot open -> the startup
-#                           audio dialog used to block before app->exec()).
+#                           audio dialog used to block before app->exec()), plus a
+#                           crash report pending AT STARTUP -> the modal offer used
+#                           to park the startup path where nobody could click it
+#                           (engine_ready stayed false, the quit died on the
+#                           shutdown guard).
 # ControlReadiness        - connects BEFORE readiness and asserts the documented
 #                           order: connect -> poll control.ping -> wait for
 #                           engine_ready -> issue engine commands.

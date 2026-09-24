@@ -353,6 +353,73 @@ void announceSafeStart()
 }
 
 
+// Offer a crash report left by an earlier session, if one is pending. This is the
+// whole reporting UX: the user is given the file path and can attach it to a bug
+// report by hand.  Nothing is sent anywhere.
+//
+// The box is a question for a human and it runs BEFORE app->exec(): in an
+// unattended run (--control-socket, or no display at all) nobody can click it, so
+// Qt parks the startup path in a nested event loop - the instance then answers
+// control.ping with engine_ready=false forever (setReady() is below this call),
+// every engine command is the typed 'busy' refusal, and a control.quit is answered
+// and then dies on the shutdown guard ten seconds later. So ask only when a human
+// is actually there; otherwise make the same offer on stderr, where the log and
+// the operator can see it, and treat that as the one offer - exactly what the
+// headless (coreOnly) path above already does. The file itself stays put so it can
+// still be attached by hand, and crash.list_reports still reports it.
+void offerPendingCrashReport()
+{
+	if( !lmms::crashreporter::hasPendingReport() )
+	{
+		return;
+	}
+	if( lmms::isUnattendedRun() )
+	{
+		fprintf( stderr, "A crash report from an earlier session is pending: %s\n",
+			lmms::crashreporter::pendingReportPath().c_str() );
+		fflush( stderr );
+		lmms::crashreporter::acknowledgePendingReport();
+		return;
+	}
+
+	using namespace lmms::gui;
+
+	const QString reportPath = QString::fromStdString(
+		lmms::crashreporter::pendingReportPath() );
+	QMessageBox crashBox;
+	crashBox.setWindowTitle( MainWindow::tr( "Crash report" ) );
+	crashBox.setIcon( QMessageBox::Warning );
+	crashBox.setWindowIcon( lmms::embed::getIconPixmap( "icon_small" ) );
+	crashBox.setTextFormat( Qt::PlainText );
+	crashBox.setText( MainWindow::tr( "The previous session ended "
+		"unexpectedly and Zene Studio saved a crash report." ) );
+	crashBox.setInformativeText( MainWindow::tr( "Zene Studio never "
+		"sends anything on its own. To report this crash, attach the "
+		"file below to your bug report.\n\n%1" ).arg( reportPath ) );
+	auto keepReport = crashBox.addButton(
+		MainWindow::tr( "Keep report" ), QMessageBox::AcceptRole );
+	auto openFolder = crashBox.addButton(
+		MainWindow::tr( "Open folder" ), QMessageBox::ActionRole );
+	auto discardReport = crashBox.addButton(
+		MainWindow::tr( "Discard" ), QMessageBox::DestructiveRole );
+	crashBox.setDefaultButton( keepReport );
+	crashBox.exec();
+	if( crashBox.clickedButton() == discardReport )
+	{
+		lmms::crashreporter::discardPendingReport();
+	}
+	else
+	{
+		if( crashBox.clickedButton() == openFolder )
+		{
+			QDesktopServices::openUrl( QUrl::fromLocalFile(
+				QFileInfo( reportPath ).absolutePath() ) );
+		}
+		lmms::crashreporter::acknowledgePendingReport();
+	}
+}
+
+
 // Print one line per candidate: the three BS.1770-4 readings the task asks for,
 // the verdict against that candidate's named target, and the file it was written
 // to. Nothing here ranks the candidates or picks one - that is not measured.
@@ -1310,45 +1377,10 @@ int main( int argc, char * * argv )
 		announceSafeStart();
 
 		// Offer a crash report written by a previous session, if one is
-		// pending.  This is the whole reporting UX: the user is given the file
-		// path and can attach it to a bug report by hand.  Nothing is sent
-		// anywhere, and the offer is made once (acknowledging keeps the file).
-		if( crashreporter::hasPendingReport() )
-		{
-			const QString reportPath = QString::fromStdString(
-				crashreporter::pendingReportPath() );
-			QMessageBox crashBox;
-			crashBox.setWindowTitle( MainWindow::tr( "Crash report" ) );
-			crashBox.setIcon( QMessageBox::Warning );
-			crashBox.setWindowIcon( embed::getIconPixmap( "icon_small" ) );
-			crashBox.setTextFormat( Qt::PlainText );
-			crashBox.setText( MainWindow::tr( "The previous session ended "
-				"unexpectedly and Zene Studio saved a crash report." ) );
-			crashBox.setInformativeText( MainWindow::tr( "Zene Studio never "
-				"sends anything on its own. To report this crash, attach the "
-				"file below to your bug report.\n\n%1" ).arg( reportPath ) );
-			auto keepReport = crashBox.addButton(
-				MainWindow::tr( "Keep report" ), QMessageBox::AcceptRole );
-			auto openFolder = crashBox.addButton(
-				MainWindow::tr( "Open folder" ), QMessageBox::ActionRole );
-			auto discardReport = crashBox.addButton(
-				MainWindow::tr( "Discard" ), QMessageBox::DestructiveRole );
-			crashBox.setDefaultButton( keepReport );
-			crashBox.exec();
-			if( crashBox.clickedButton() == discardReport )
-			{
-				crashreporter::discardPendingReport();
-			}
-			else
-			{
-				if( crashBox.clickedButton() == openFolder )
-				{
-					QDesktopServices::openUrl( QUrl::fromLocalFile(
-						QFileInfo( reportPath ).absolutePath() ) );
-				}
-				crashreporter::acknowledgePendingReport();
-			}
-		}
+		// pending - the box only where a human can answer it (see
+		// offerPendingCrashReport above, which is also where the unattended
+		// offer goes). The offer is made once (acknowledging keeps the file).
+		offerPendingCrashReport();
 
 		// re-intialize RNG - shared libraries might have srand() or
 		// srandom() calls in their init procedure
