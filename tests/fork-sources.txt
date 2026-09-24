@@ -1235,6 +1235,7 @@ tests/src/core/ScriptDawBindingTest.cpp
 tests/src/core/SessionModelTest.cpp
 tests/src/core/StableTrackIdsTest.cpp
 tests/src/core/StemExportTest.cpp
+tests/src/core/StemJobManagerTest.cpp
 # task #680 (lane 030/coverage-closure, 2026-09-16): the registered REFERENCE
 # for the ids the coverage method found named by no other registered test
 # artefact (16 ids in six groups), and the modulation layer's PROJECT round trip

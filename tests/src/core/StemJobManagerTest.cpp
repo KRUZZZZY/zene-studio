@@ -23,7 +23,9 @@
 
 #include <QtTest>
 
+#include <atomic>
 #include <memory>
+#include <thread>
 #include <vector>
 
 #include <QSignalSpy>
@@ -234,6 +236,51 @@ private slots:
 		QTRY_VERIFY_WITH_TIMEOUT(finishedSpy.count() == 1, 10000);
 		QCOMPARE(static_cast<int>(manager.state(first)),
 			static_cast<int>(StemJobManager::State::Completed));
+	}
+
+	void testDequeueThenCancelEmitsExactlyOnce()
+	{
+		for (int iteration = 0; iteration < 40; ++iteration)
+		{
+			StemJobManager manager;
+			manager.setSeparator(std::make_unique<FakeSeparator>(FakeSeparator::Mode::SlowSuccess, 8));
+			QSignalSpy startedSpy(&manager, &StemJobManager::jobStarted);
+			QSignalSpy cancelledSpy(&manager, &StemJobManager::jobCancelled);
+			const int id = manager.submit(makeMix(), StemModelSampleRate, 1024);
+			QTRY_VERIFY_WITH_TIMEOUT(startedSpy.count() == 1, 10000);
+			manager.cancel(id);
+			QTRY_VERIFY_WITH_TIMEOUT(cancelledSpy.count() == 1, 10000);
+			QTest::qWait(20);
+			QCOMPARE(cancelledSpy.count(), 1);
+			QCOMPARE(static_cast<int>(manager.state(id)),
+				static_cast<int>(StemJobManager::State::Cancelled));
+		}
+	}
+
+	void testTerminalPayloadIsPublishedAsOneSnapshot()
+	{
+		StemJobManager manager;
+		manager.setSeparator(std::make_unique<FakeSeparator>(FakeSeparator::Mode::Success, 12));
+		const int id = manager.submit(makeMix(4096), StemModelSampleRate, 1024);
+		std::atomic<bool> stop{false};
+		std::atomic<bool> torn{false};
+		std::thread reader([&]
+		{
+			while (!stop.load(std::memory_order_relaxed))
+			{
+				const auto stems = manager.result(id);
+				int present = 0;
+				for (const auto& stem : stems) { present += stem != nullptr ? 1 : 0; }
+				if (present != 0 && present != NumStems) { torn.store(true); break; }
+			}
+		});
+		QTRY_VERIFY_WITH_TIMEOUT(static_cast<int>(manager.state(id))
+			== static_cast<int>(StemJobManager::State::Completed), 10000);
+		stop.store(true, std::memory_order_relaxed);
+		reader.join();
+		QVERIFY(!torn.load());
+		const auto stems = manager.result(id);
+		for (const auto& stem : stems) { QVERIFY(stem != nullptr); }
 	}
 
 	void testFailureCarriesTheBackendError()

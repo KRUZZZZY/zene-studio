@@ -252,6 +252,13 @@ void StemJobManager::workerLoop()
 			}
 			job = m_queue.front();
 			m_queue.pop_front();
+			// Dequeue claims ownership of the queued-to-running transition while
+			// holding the same mutex cancel() uses. A concurrent cancel therefore
+			// sees Running and leaves terminal emission to this worker only.
+			if (!job->cancelRequested.load())
+			{
+				job->state.store(State::Running);
+			}
 		}
 
 		if (job->cancelRequested.load())
@@ -269,14 +276,17 @@ void StemJobManager::workerLoop()
 
 void StemJobManager::runJob(const std::shared_ptr<Job>& job)
 {
-	job->state.store(State::Running);
 	emit jobStarted(job->id);
 
 	if (m_separator == nullptr)
 	{
-		job->error = QStringLiteral("No stem-separation backend configured");
-		job->state.store(State::Failed);
-		emit jobFailed(job->id, job->error);
+		const auto error = QStringLiteral("No stem-separation backend configured");
+		{
+			QMutexLocker locker(&m_mutex);
+			job->error = error;
+			job->state.store(State::Failed);
+		}
+		emit jobFailed(job->id, error);
 		return;
 	}
 
@@ -311,22 +321,31 @@ void StemJobManager::runJob(const std::shared_ptr<Job>& job)
 	switch (status)
 	{
 	case StemSeparator::Status::Success:
-		job->stems = stems;
-		job->progress.store(1.0f);
-		job->state.store(State::Completed);
+		{
+			QMutexLocker locker(&m_mutex);
+			job->stems = stems;
+			job->progress.store(1.0f);
+			job->state.store(State::Completed);
+		}
 		emit jobProgress(job->id, 1.0f);
 		emit jobFinished(job->id, job->elapsedSeconds);
 		break;
 	case StemSeparator::Status::Cancelled:
 		// Partial stems are kept when the backend produced them.
-		job->stems = stems;
-		job->state.store(State::Cancelled);
+		{
+			QMutexLocker locker(&m_mutex);
+			job->stems = stems;
+			job->state.store(State::Cancelled);
+		}
 		emit jobCancelled(job->id);
 		break;
 	case StemSeparator::Status::Failed:
 	default:
-		job->error = error;
-		job->state.store(State::Failed);
+		{
+			QMutexLocker locker(&m_mutex);
+			job->error = error;
+			job->state.store(State::Failed);
+		}
 		emit jobFailed(job->id, error);
 		break;
 	}
