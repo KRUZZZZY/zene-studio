@@ -22,6 +22,8 @@
  * Boston, MA 02110-1301 USA.
  */
 
+#include <cmath>
+
 #include <QJsonArray>
 #include <QJsonObject>
 
@@ -166,6 +168,22 @@ ControlResult rangeRefusal(const AutomatableModel* model, double value)
 			.arg(model->displayName()));
 }
 
+//! The typed boolean refusal (BUG-CTL-5). A boolean parameter's enforced domain
+//! is the two values the engine can act on: `AutomatableModel::castValue<bool>`
+//! reads it as `std::round(v) != 0`, so 0.5 is not "half enabled" - the effect
+//! is ENABLED - while the reply would report the value back as 0.5, and the
+//! parameter's own metadata (`type: boolean`, `step: 1`) excludes it. Refused
+//! rather than silently rounded, the same rule the range check above follows.
+ControlResult booleanRefusal(const AutomatableModel* model, double value)
+{
+	return ControlResult::failure(ControlErrorKind::InvalidArgs,
+		QStringLiteral("value %1 is not a boolean: parameter '%2' takes 0 or 1 "
+			"(the engine reads it as round(value) != 0, so a fractional value "
+			"would report one thing and act on another)")
+			.arg(value)
+			.arg(model->displayName()));
+}
+
 void registerParamSet(ControlRegistry& registry)
 {
 	ControlCommand cmd;
@@ -212,6 +230,11 @@ void registerParamSet(ControlRegistry& registry)
 			value > static_cast<double>(model->maxValue<float>()))
 		{
 			return rangeRefusal(model, value);
+		}
+		// Inside the range is not enough for a boolean: see booleanRefusal.
+		if (dynamic_cast<const BoolModel*>(model) != nullptr && value != std::floor(value))
+		{
+			return booleanRefusal(model, value);
 		}
 		const float previous = model->value<float>();
 		// The model is a JournallingObject, so the checkpoint is a real inverse

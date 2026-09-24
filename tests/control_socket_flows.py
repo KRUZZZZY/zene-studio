@@ -38,7 +38,7 @@ import time
 
 from control_socket_harness import (  # noqa: E402
     FATAL_GUARD_MARKER, LEGACY_WATCHDOG_LINE, PING_TIMEOUT, Blocked, Timeout, Transcript,
-    connect, ok, start_instance, wait_ready,
+    connect, ok, ok_result, start_instance, wait_ready,
 )
 
 
@@ -328,3 +328,154 @@ def check_requires_device_refusal(reply):
     if not message:
         problems.append("the refusal carries no message: %r" % error)
     return problems
+
+
+# ---------------------------------------------------------------------------
+# the parameter metadata contract (BUG-CTL-5) - a save-canonical-style check on
+# the device surface: what plugin.param_get REPORTS is what plugin.param_set
+# ENFORCES, for every parameter of a device, probed on both sides.
+# ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# E. the parameter metadata contract (BUG-CTL-5)
+# ---------------------------------------------------------------------------
+
+
+def amplifier_device(catalogue):
+    """The catalogue's built-in Amplifier entry, or None (reported, never a
+    silent skip: it is a compiled-in device, so its absence is a defect)."""
+    for entry in catalogue.get("devices") or []:
+        if entry.get("name") == "amplifier":
+            return entry
+    return None
+
+
+def _parameter_of(reply):
+    """The `parameter` object of a plugin.param_get reply, or {} when refused."""
+    if reply.get("ok") is not True:
+        return {}
+    return (reply.get("result") or {}).get("parameter") or {}
+
+
+def declared_parameters(client, call, host, effect, first_id):
+    """Every parameter of `effect` as plugin.param_get reports it, in the order
+    the getter hands them out - stopped by the first typed refusal, which is how
+    the wire says the list ended."""
+    specs = []
+    for offset in range(0, 32):
+        reply = call(client, first_id + offset, "plugin.param_get",
+                     {"target": host, "plugin": effect, "index": offset})
+        if reply.get("ok") is not True:
+            break
+        specs.append(_parameter_of(reply))
+    return specs
+
+
+def check_edge(client, call, problems, where, spec, request_id, label, value, accepted):
+    """One probe of one parameter's edge. `accepted` says which half of the
+    contract this probe is: a value INSIDE the reported range must be taken, a
+    value just outside it must be refused, with a message that states the very
+    range the getter reported. That equality - not just a refusal - is the
+    contract: a setter that refused a wider or narrower band would pass a
+    bare "was it refused" check and still lie."""
+    reply = call(client, request_id, "plugin.param_set",
+                 dict(where, name=spec["name"], value=value))
+    error = reply.get("error") or {}
+    if accepted:
+        problems.require(reply.get("ok") is True,
+                         "%s: %s at %s was refused (%r), so the reported range is not the "
+                         "range the setter takes" % (spec["name"], label, value, error))
+        return request_id
+    problems.require(reply.get("ok") is not True,
+                     "%s: %s at %s was ACCEPTED, so the reported %g..%g range is narrower than "
+                     "the enforcement" % (spec["name"], label, value, spec["min"], spec["max"]))
+    problems.require("outside the range %g..%g" % (spec["min"], spec["max"]) in error.get("message", ""),
+                     "%s: the refusal for %s does not state the range plugin.param_get reported "
+                     "(%g..%g): %r" % (spec["name"], label, spec["min"], spec["max"], error))
+    problems.require(error.get("kind") == "invalid_args",
+                     "%s: %s was refused with %r, not the typed invalid_args"
+                     % (spec["name"], label, error.get("kind")))
+    return request_id
+
+
+def check_one_parameter(client, call, problems, host, effect, spec, first_id):
+    """One parameter's contract: the setter enforces the range the getter
+    reported, probed just-outside on BOTH sides and just-inside on both, by
+    NAME and by INDEX. A boolean is additionally probed at a fractional value,
+    because its accepted domain is two values, not a continuous range. Returns
+    the next free request id and the (label, text) notes the caller prints -
+    this module owns no transcript."""
+    notes = []
+    low, high = float(spec["min"]), float(spec["max"])
+    step = float(spec.get("step") or 0.0) or (high - low) or 1.0
+    where = {"target": host, "plugin": effect}
+    for label, value, accepted in (("below min", low - step, False), ("above max", high + step, False),
+                                   ("at min", low, True), ("at max", high, True)):
+        check_edge(client, call, problems, where, spec, first_id, label, value, accepted)
+        first_id += 1
+    # The INDEX-addressed leg: the same parameter, the same bounds.
+    by_index = _parameter_of(call(client, first_id + 1, "plugin.param_get", dict(where, index=spec["index"])))
+    problems.require(by_index.get("min") == spec.get("min") and by_index.get("max") == spec.get("max"),
+                     "%s: index %s reports %r..%r while the name leg reported %r..%r"
+                     % (spec["name"], spec["index"], by_index.get("min"), by_index.get("max"),
+                        spec.get("min"), spec.get("max")))
+    if spec.get("type") == "boolean":
+        notes.append(check_boolean_parameter(client, call, problems, where, spec, first_id + 2))
+    return first_id + 3, notes
+
+
+def check_boolean_parameter(client, call, problems, where, spec, first_id):
+    """A boolean's enforced domain is the two values the engine can act on.
+    `AutomatableModel::castValue<bool>` reads it as `std::round(v) != 0`, so a
+    fractional value would be REPORTED as one thing and acted on as another -
+    the contract lie BUG-CTL-5 fixes."""
+    low, high = float(spec["min"]), float(spec["max"])
+    fraction = low + (high - low) / 2.0
+    reply = call(client, first_id, "plugin.param_set", dict(where, name=spec["name"], value=fraction))
+    problems.require(reply.get("ok") is not True,
+                     "%s: the fractional value %g was ACCEPTED on a boolean; the engine reads it "
+                     "as round(%g) != 0, so the reply would name a value it never acts on"
+                     % (spec["name"], fraction, fraction))
+    problems.require("not a boolean" in (reply.get("error") or {}).get("message", ""),
+                     "%s: the refusal of %g does not say the parameter is a boolean: %r"
+                     % (spec["name"], fraction, (reply.get("error") or {}).get("message")))
+    ok_result(call(client, first_id + 1, "plugin.param_set",
+                     dict(where, name=spec["name"], value=0)), first_id + 1)
+    read_back = _parameter_of(call(client, first_id + 2, "plugin.param_get",
+                                  dict(where, name=spec["name"])))
+    problems.require(read_back.get("value") in (0, 1),
+                     "%s: a boolean reported the value %r; the engine's own reading of it is "
+                     "castValue<bool>, which is 0 or 1" % (spec["name"], read_back.get("value")))
+    return ("boolean %s" % spec["name"],
+            "range %g..%g, fractional %g -> %s, value read back after setting 0: %r"
+            % (low, high, fraction, (reply.get("error") or {}).get("message"),
+               read_back.get("value")))
+
+
+def the_parameter_metadata_is_the_enforcement(client, call, problems, report):
+    """Section E - BUG-CTL-5. For EVERY parameter of the built-in amplifier, the
+    min/max plugin.param_get reports must be the bounds plugin.param_set
+    enforces, on both sides, by name and by index - and a boolean must take the
+    two values the engine can act on."""
+    host = ok_result(call(client, 600, "track.add", {"type": "instrument"}), 600)["track"]
+    catalogue = ok_result(call(client, 601, "plugin.list",
+                                 {"kind": "effect", "loadable_only": True}), 601)
+    device = amplifier_device(catalogue)
+    if device is None:
+        problems.add("section E could not run: plugin.list offered no 'amplifier' device")
+        return
+    effect = ok_result(call(client, 602, "plugin.load",
+                              {"target": host, "device": device["id"]}), 602)["id"]
+    specs = declared_parameters(client, call, host, effect, 610)
+    problems.require(len(specs) > 1,
+                     "the amplifier reported %d parameters; the amplifier's own metadata "
+                     "(enabled, wet/dry, decay, sync, volume) is what this section exists for"
+                     % len(specs))
+    request_id = 700
+    for spec in specs:
+        request_id, notes = check_one_parameter(client, call, problems, host, effect, spec, request_id)
+        for label, text in notes:
+            report(label, text)
+    report("amplifier parameters", "%d checked over %d..%d: %s"
+           % (len(specs), 610, 610 + len(specs) - 1,
+              ", ".join("%s=%g..%g(%s)" % (s["name"], s["min"], s["max"], s["type"])
+                        for s in specs)))

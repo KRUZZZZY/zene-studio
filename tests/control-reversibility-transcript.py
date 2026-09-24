@@ -23,6 +23,11 @@ run inside the window is ONE undo step, and `control.undo` has to SAY how many
 commands that one step covered - a "one command" reply over a merged span is
 the A16 honesty failure this section exists to prevent.
 
+and E, the parameter metadata contract (BUG-CTL-5): for EVERY parameter of the
+built-in amplifier, the min/max `plugin.param_get` reports is the range
+`plugin.param_set` enforces, probed just-outside on both sides by name and by
+index - and a boolean takes the two values the engine can act on.
+
 The instance is started with the documented headless recipe through the shared
 harness (tests/control_socket_harness.py), so this file adds no second launch
 path.
@@ -36,6 +41,7 @@ import os
 import sys
 
 import control_socket_harness as H
+import control_socket_flows as F
 
 
 def sha256_of(path):
@@ -185,6 +191,15 @@ def main(argv):
         the_coalescing_rule_reports_what_it_covered(client, call, problems)
 
         # ------------------------------------------------------------------
+        # E. the parameter metadata contract (BUG-CTL-5)
+        # ------------------------------------------------------------------
+        print("")
+        print("=" * 74)
+        print("E. every amplifier parameter: reported range == enforced range (BUG-CTL-5)")
+        print("=" * 74)
+        F.the_parameter_metadata_is_the_enforcement(client, call, problems, report)
+
+        # ------------------------------------------------------------------
         quit_reply = call(client, 400, "control.quit", {"save": False})
         report("control.quit", quit_reply)
         client.close()
@@ -209,10 +224,20 @@ def parameter_of(reply):
 
 
 def is_bipolar_number(spec):
-    """A bipolar NUMBER parameter: the range it reports is the range the setter
-    takes. A boolean flag's is not - an effect's own 'Effect enabled' reports the
-    schema's -1..1 while plugin.param_set enforces 0..1 (measured, BUG-CTL-4) - so
-    the values this section derives have to come from a parameter that passes."""
+    """A bipolar NUMBER parameter, used only to PICK the parameter section D
+    drives the coalescing rule with: it needs values that are clear of the
+    default on both sides of zero, which a boolean flag (0 or 1) cannot give.
+
+    This is NOT a workaround for a lying range. The earlier version of this
+    docstring claimed an effect's own "Effect enabled" reports -1..1 while
+    plugin.param_set enforces 0..1, quoting a sweep's reading. Measured over the
+    wire on this tree (2026-09-24, BUG-CTL-5): `plugin.param_get` reports the
+    amplifier's index 0 as `min=0 max=1 step=1 type=boolean` and the setter
+    refuses -0.6 with "value -0.6 is outside the range 0..1 of parameter
+    'Effect enabled'" - the two AGREE. What did NOT agree was the boolean's
+    ACCEPTED domain: 0.5 was taken (the reply reported 0.5) while the engine
+    reads it as `round(v) != 0`, i.e. ENABLED. Section E pins the whole
+    metadata-versus-enforcement contract for every amplifier parameter."""
     if spec.get("type") != "number":
         return False
     return float(spec.get("min", 0)) < 0 < float(spec.get("max", 0))

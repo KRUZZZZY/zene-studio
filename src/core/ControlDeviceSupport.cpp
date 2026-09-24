@@ -267,16 +267,25 @@ QList<AutomatableModel*> controlEffectParameters(Effect* effect)
 
 QJsonObject controlParameterJson(const AutomatableModel* model, int index)
 {
+	// A boolean parameter's value is reported as the value the ENGINE acts on,
+	// and the engine's own conversion is the model's: `BoolModel::value()`
+	// applies `AutomatableModel::castValue<bool>` - `std::round(v) != 0`
+	// (include/AutomatableModel.h) - so a model holding 0.5 is ENABLED, and
+	// reporting 0.5 would name a value no reader can act on and none that
+	// `plugin.param_set` takes (BUG-CTL-5). Reusing the model's own accessor
+	// rather than re-deriving round() here is what keeps the two in step.
+	const BoolModel* boolean = dynamic_cast<const BoolModel*>(model);
 	QJsonObject out;
 	out.insert(QStringLiteral("index"), index);
 	out.insert(QStringLiteral("name"), model->displayName());
-	out.insert(QStringLiteral("value"), static_cast<double>(model->value<float>()));
+	out.insert(QStringLiteral("value"),
+		boolean != nullptr ? (boolean->value() ? 1.0 : 0.0)
+						   : static_cast<double>(model->value<float>()));
 	out.insert(QStringLiteral("min"), static_cast<double>(model->minValue<float>()));
 	out.insert(QStringLiteral("max"), static_cast<double>(model->maxValue<float>()));
 	out.insert(QStringLiteral("step"), static_cast<double>(model->step<float>()));
 	out.insert(QStringLiteral("type"),
-		dynamic_cast<const BoolModel*>(model) != nullptr ? QStringLiteral("boolean")
-														 : QStringLiteral("number"));
+		boolean != nullptr ? QStringLiteral("boolean") : QStringLiteral("number"));
 	return out;
 }
 
