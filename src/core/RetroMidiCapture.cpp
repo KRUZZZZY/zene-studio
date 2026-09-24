@@ -40,7 +40,7 @@ namespace
 //! Written by the audio thread once per rendered period, read relaxed by the
 //! MIDI thread. One process-wide value: the transport position is a property of
 //! the song, not of the client that received the event.
-std::atomic<std::uint32_t> g_publishedTick{0};
+std::atomic<tick_t> g_publishedTick{0};
 
 //! Split a 14-bit pitch-bend value into the two seven-bit fields the element
 //! stores (the ALSA-sequencer path already folds its -8192..8191 into
@@ -81,10 +81,8 @@ void storeEventParams(RetroMidiEvent& recorded, const MidiEvent& event) noexcept
 			return;
 
 		default:
-			// A SysEx, which is variable-length and is recorded as one flagged
-			// placeholder rather than dropped silently. recordable() admits
-			// nothing else here.
-			recorded.flags |= RetroMidiFlagSysExDropped;
+			// recordable() admits channel messages only, so this is unreachable
+			// for a captured event. Keep the fixed-size snapshot untouched.
 			return;
 	}
 }
@@ -101,14 +99,15 @@ RetroMidiCapture::RetroMidiCapture() :
 bool RetroMidiCapture::recordable(std::uint8_t type) noexcept
 {
 	// The channel messages, whose status byte is the MidiEventTypes value
-	// (include/Midi.h:33-61), plus SysEx, which is recorded as a flagged
-	// placeholder. Everything else (clock, start/stop, active sensing, ...) is
-	// a bare transport byte with nothing to place in a clip.
-	return type == MidiSysEx || (type >= MidiNoteOff && type <= MidiPitchBend);
+	// (include/Midi.h:33-61). SysEx is intentionally excluded: the raw parser
+	// discards its variable-length payload and this fixed-size ring has no byte
+	// store, so the capture contract must not promise a placeholder it cannot
+	// receive from that backend. Everything else is transport/system data.
+	return type >= MidiNoteOff && type <= MidiPitchBend;
 }
 
 
-void RetroMidiCapture::capture(const MidiEvent& event, std::uint32_t tick, std::uint16_t source) noexcept
+void RetroMidiCapture::capture(const MidiEvent& event, tick_t tick, std::uint16_t source) noexcept
 {
 	// While nothing is armed this is the whole cost: one relaxed atomic load.
 	if (!m_armed.load(std::memory_order_relaxed)) { return; }
@@ -131,13 +130,13 @@ void RetroMidiCapture::capture(const MidiEvent& event, std::uint32_t tick, std::
 }
 
 
-void RetroMidiCapture::publishTick(std::uint32_t tick) noexcept
+void RetroMidiCapture::publishTick(tick_t tick) noexcept
 {
 	g_publishedTick.store(tick, std::memory_order_relaxed);
 }
 
 
-std::uint32_t RetroMidiCapture::publishedTick() noexcept
+tick_t RetroMidiCapture::publishedTick() noexcept
 {
 	return g_publishedTick.load(std::memory_order_relaxed);
 }

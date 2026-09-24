@@ -32,6 +32,8 @@
 #include <cstdint>
 #include <memory>
 
+#include "LmmsTypes.h"
+
 namespace lmms
 {
 
@@ -51,7 +53,7 @@ namespace lmms
  */
 struct RetroMidiEvent
 {
-	std::uint32_t tick;      //!< transport tick the event was stamped with
+	tick_t tick;             //!< transport tick the event was stamped with
 	std::uint16_t source;    //!< ALSA source port; 0 for the raw clients
 	std::uint8_t type;       //!< MidiEventTypes (include/Midi.h)
 	std::uint8_t channel;    //!< widened from MidiEvent's int8_t m_channel
@@ -67,7 +69,9 @@ static_assert(sizeof(RetroMidiEvent) == 16,
 
 // RetroMidiEvent::flags
 constexpr std::uint8_t RetroMidiFlagExternal = 1u << 0;      //!< MidiEvent::Source::External
-constexpr std::uint8_t RetroMidiFlagSysExDropped = 1u << 1;  //!< a SysEx was seen and not stored
+// SysEx is not recordable by the raw-backend contract; the bit remains reserved
+// for compatibility with existing fixed-size snapshots.
+constexpr std::uint8_t RetroMidiFlagSysExDropped = 1u << 1;  //!< reserved SysEx marker
 
 
 //! Bounded ring of the most recent MIDI events; single producer, single consumer.

@@ -746,4 +746,6 @@ thirdparty/mts-esp/libMTSMaster.h	fork-ADDED vendoring by board card #712 (commi
 tools/mmpz-git/run-demo.sh	wave R rename: demo script invokes the renamed binary
 vcpkg.json	wave R rename (018d2041f): the vcpkg manifest's "name" field lmms -> zene (the manifest's product identity, not a dependency).; wave R rename: vcpkg manifest name follows the CMake project rename
 src/core/DataFile.cpp	BUG-A4-1: shared pre-parse XML depth bound and iterative replacements for all four DOM walkers, proved by DataFileFormatTest.
-src/core/Song.cpp	BUG-A4-3: legacy session restore now propagates transactional failure so the existing unclaimed-element walk preserves the original block once, proved by SessionModelTest.
+src/core/Song.cpp	BUG-A4-3: legacy session restore now propagates transactional failure so the existing unclaimed-element walk preserves the original block once, proved by SessionModelTest.; BUG-MIDI-008: published transport position is passed as signed tick_t without an unsigned narrowing conversion.
+src/core/midi/MidiAlsaSeq.cpp	BUG-MIDI-001/002/006/007: scoped ALSA input locking, locked port-map snapshots and lifecycle-safe pipe/queue/port/output error handling; covered by the MIDI regression suite and static lock/error-path review.
+include/MidiAlsaSeq.h	BUG-MIDI-007: pipe descriptors are initialized invalid so failed pipe startup cannot poll an uninitialized descriptor; destructor closes both ends.

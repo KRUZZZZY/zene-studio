@@ -95,13 +95,11 @@ public:
 	//! the raw clients, which have no tick of their own. \a source is the ALSA
 	//! source port (0 for the raw clients).
 	//!
-	//! Channel messages are recorded, and a SysEx - which is variable-length and
-	//! would need a second bounded byte store - is recorded as one flagged
-	//! placeholder rather than dropped silently. System real-time and system
-	//! common bytes (clock, active sensing, ...) are not recorded: they are not
-	//! music, and in a window that holds only the most recent events they would
-	//! evict the notes a capture exists to keep.
-	void capture(const MidiEvent& event, std::uint32_t tick, std::uint16_t source = 0) noexcept;
+	//! Channel messages are recorded. SysEx and system real-time/common bytes are
+	//! not recorded: SysEx is variable-length and the raw parser deliberately
+	//! discards it, while transport bytes are not music and would evict notes in
+	//! a window that holds only the most recent events.
+	void capture(const MidiEvent& event, tick_t tick, std::uint16_t source = 0) noexcept;
 
 	//! Audio thread: publish this period's play position, once per period, so a
 	//! raw MIDI client can stamp an event without reading Song state (Song's
@@ -111,16 +109,15 @@ public:
 	//! It is a single process-wide value rather than a per-client one on
 	//! purpose: the alternative - dereferencing AudioEngine::midiClient() on the
 	//! audio thread - would race the GUI thread that swaps and deletes clients.
-	static void publishTick(std::uint32_t tick) noexcept;
-	static std::uint32_t publishedTick() noexcept;
+	static void publishTick(tick_t tick) noexcept;
+	static tick_t publishedTick() noexcept;
 
 	//! The ring behind this capture (the consumer side, the GUI/control thread).
 	RetroMidiRing& ring() noexcept { return m_ring; }
 	const RetroMidiRing& ring() const noexcept { return m_ring; }
 
 private:
-	//! True for the event types this capture stores (channel messages and the
-	//! SysEx placeholder).
+	//! True for the channel event types this capture stores.
 	static bool recordable(std::uint8_t type) noexcept;
 
 	RetroMidiRing m_ring;

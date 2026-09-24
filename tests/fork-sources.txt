@@ -1190,6 +1190,8 @@ tests/src/core/ImportDetectionTest.cpp
 tests/src/core/LufsMeterTest.cpp
 tests/src/core/MidiClockTest.cpp
 tests/src/core/MidiLearnTest.cpp
+tests/src/core/MidiRetroCaptureTest.cpp
+tests/src/core/RetroMidiRingTest.cpp
 tests/src/core/MixerConcurrencyTest.cpp
 tests/src/core/ModulationLayerProjectRoundTripTest.cpp
 tests/src/core/NamespaceRegistryTest.cpp

@@ -138,6 +138,7 @@ private:
 	{
 		Ports() { p[0] = -1; p[1] = -1; }
 		int & operator[]( const int _i ) { return p[_i]; }
+		const int & operator[]( const int _i ) const { return p[_i]; }
 		private: int p[2];
 	} ;
 	QMap<MidiPort *, Ports> m_portIDs;
@@ -151,7 +152,7 @@ private:
 	QStringList m_readablePorts;
 	QStringList m_writablePorts;
 
-	int m_pipe[2];
+	int m_pipe[2] = {-1, -1};
 
 
 signals:

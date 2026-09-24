@@ -30,6 +30,9 @@
 #include "MidiLearn.h"
 #include "MidiPort.h"
 
+#include <cerrno>
+#include <cstring>
+
 
 #ifdef LMMS_HAVE_ALSA
 
@@ -129,19 +132,56 @@ MidiAlsaSeq::MidiAlsaSeq() :
 							snd_strerror( err ) );
 		return;
 	}
-	snd_seq_set_client_name( m_seqHandle, "Zene Studio" );
-
+	if( int err = snd_seq_set_client_name( m_seqHandle, "Zene Studio" ); err < 0 )
+	{
+		qCritical( "MidiAlsaSeq: cannot set client name: %s", snd_strerror( err ) );
+		snd_seq_close( m_seqHandle );
+		m_seqHandle = nullptr;
+		return;
+	}
 
 	m_queueID = snd_seq_alloc_queue( m_seqHandle );
-	snd_seq_queue_tempo_t * tempo;
-	snd_seq_queue_tempo_malloc( &tempo );
+	if( m_queueID < 0 )
+	{
+		qCritical( "MidiAlsaSeq: cannot allocate queue: %s", snd_strerror( m_queueID ) );
+		snd_seq_close( m_seqHandle );
+		m_seqHandle = nullptr;
+		return;
+	}
+	snd_seq_queue_tempo_t * tempo = nullptr;
+	if( int err = snd_seq_queue_tempo_malloc( &tempo ); err < 0 )
+	{
+		qCritical( "MidiAlsaSeq: cannot allocate queue tempo: %s", snd_strerror( err ) );
+		snd_seq_free_queue( m_seqHandle, m_queueID );
+		snd_seq_close( m_seqHandle );
+		m_queueID = -1;
+		m_seqHandle = nullptr;
+		return;
+	}
 	snd_seq_queue_tempo_set_tempo( tempo, 6000000 /
 					Engine::getSong()->getTempo() );
 	snd_seq_queue_tempo_set_ppq( tempo, 16 );
-	snd_seq_set_queue_tempo( m_seqHandle, m_queueID, tempo );
+	if( int err = snd_seq_set_queue_tempo( m_seqHandle, m_queueID, tempo ); err < 0 )
+	{
+		qCritical( "MidiAlsaSeq: cannot configure queue tempo: %s", snd_strerror( err ) );
+		snd_seq_queue_tempo_free( tempo );
+		snd_seq_free_queue( m_seqHandle, m_queueID );
+		snd_seq_close( m_seqHandle );
+		m_queueID = -1;
+		m_seqHandle = nullptr;
+		return;
+	}
 	snd_seq_queue_tempo_free( tempo );
 
-	snd_seq_start_queue( m_seqHandle, m_queueID, nullptr );
+	if( int err = snd_seq_start_queue( m_seqHandle, m_queueID, nullptr ); err < 0 )
+	{
+		qCritical( "MidiAlsaSeq: cannot start queue: %s", snd_strerror( err ) );
+		snd_seq_free_queue( m_seqHandle, m_queueID );
+		snd_seq_close( m_seqHandle );
+		m_queueID = -1;
+		m_seqHandle = nullptr;
+		return;
+	}
 	changeQueueTempo( Engine::getSong()->getTempo() );
 	connect( Engine::getSong(), SIGNAL(tempoChanged(lmms::bpm_t)),
 			this, SLOT(changeQueueTempo(lmms::bpm_t)), Qt::DirectConnection );
@@ -157,7 +197,8 @@ MidiAlsaSeq::MidiAlsaSeq() :
 	// use a pipe to detect shutdown
 	if( pipe( m_pipe ) == -1 )
 	{
-		perror( "MidiAlsaSeq: pipe" );
+		qCritical( "MidiAlsaSeq: pipe failed: %s", strerror( errno ) );
+		return;
 	}
 
 	start( QThread::IdlePriority );
@@ -185,11 +226,32 @@ MidiAlsaSeq::~MidiAlsaSeq()
 		// that never returns now blocks the shutdown instead of aborting it.
 		wait();
 
-		m_seqMutex.lock();
-		snd_seq_stop_queue( m_seqHandle, m_queueID, nullptr );
-		snd_seq_free_queue( m_seqHandle, m_queueID );
+	}
+	if( m_seqHandle != nullptr )
+	{
+		QMutexLocker locker( &m_seqMutex );
+		if( m_queueID >= 0 )
+		{
+			if( int err = snd_seq_stop_queue( m_seqHandle, m_queueID, nullptr ); err < 0 )
+			{
+				qWarning( "MidiAlsaSeq: cannot stop queue: %s", snd_strerror( err ) );
+			}
+			if( int err = snd_seq_free_queue( m_seqHandle, m_queueID ); err < 0 )
+			{
+				qWarning( "MidiAlsaSeq: cannot free queue: %s", snd_strerror( err ) );
+			}
+			m_queueID = -1;
+		}
 		snd_seq_close( m_seqHandle );
-		m_seqMutex.unlock();
+		m_seqHandle = nullptr;
+	}
+	for( int& fd : m_pipe )
+	{
+		if( fd >= 0 )
+		{
+			close( fd );
+			fd = -1;
+		}
 	}
 }
 
@@ -220,10 +282,18 @@ void MidiAlsaSeq::processOutEvent( const MidiEvent& event, const TimePos& time, 
 	// methods of MIDI-port - it's a mess...
 	auto p = const_cast<MidiPort*>(port);
 
+	int sourcePort = -1;
+	{
+		QMutexLocker locker( &m_seqMutex );
+		const auto it = m_portIDs.constFind( p );
+		if( it == m_portIDs.cend() ) { return; }
+		sourcePort = it.value()[1] != -1 ? it.value()[1] : it.value()[0];
+	}
+	if( sourcePort < 0 ) { return; }
+
 	snd_seq_event_t ev;
 	snd_seq_ev_clear( &ev );
-	snd_seq_ev_set_source( &ev, ( m_portIDs[p][1] != -1 ) ?
-					m_portIDs[p][1] : m_portIDs[p][0] );
+	snd_seq_ev_set_source( &ev, sourcePort );
 	snd_seq_ev_set_subs( &ev );
 	/* The MIDI-clock family is delivered DIRECT and not on the tick queue
 	 * (0.3.0, the `clock.*` group's master half): a clock that waited behind
@@ -327,10 +397,16 @@ void MidiAlsaSeq::processOutEvent( const MidiEvent& event, const TimePos& time, 
 			return;
 	}
 
-	m_seqMutex.lock();
-	snd_seq_event_output( m_seqHandle, &ev );
-	snd_seq_drain_output( m_seqHandle );
-	m_seqMutex.unlock();
+	QMutexLocker locker( &m_seqMutex );
+	if( int err = snd_seq_event_output( m_seqHandle, &ev ); err < 0 )
+	{
+		qCritical( "MidiAlsaSeq: cannot queue outbound MIDI event: %s", snd_strerror( err ) );
+		return;
+	}
+	if( int err = snd_seq_drain_output( m_seqHandle ); err < 0 )
+	{
+		qCritical( "MidiAlsaSeq: cannot drain outbound MIDI events: %s", snd_strerror( err ) );
+	}
 
 }
 
@@ -372,30 +448,53 @@ void MidiAlsaSeq::applyPortMode( MidiPort * _port )
 			if( m_portIDs[_port][i] == -1 )
 			{
 				// then create one;
-				m_portIDs[_port][i] =
-						snd_seq_create_simple_port(
-							m_seqHandle,
-				_port->displayName().toUtf8().constData(),
-							caps[i],
-						SND_SEQ_PORT_TYPE_MIDI_GENERIC |
-						SND_SEQ_PORT_TYPE_APPLICATION );
+				const int portID = snd_seq_create_simple_port(
+					m_seqHandle,
+					_port->displayName().toUtf8().constData(),
+					caps[i],
+					SND_SEQ_PORT_TYPE_MIDI_GENERIC | SND_SEQ_PORT_TYPE_APPLICATION );
+				if( portID < 0 )
+				{
+					qCritical( "MidiAlsaSeq: cannot create port %s: %s",
+						qPrintable( _port->displayName() ), snd_strerror( portID ) );
+					m_portIDs[_port][i] = -1;
+				}
+				else
+				{
+					m_portIDs[_port][i] = portID;
+				}
 				continue;
 			}
-			snd_seq_port_info_t * port_info;
-			snd_seq_port_info_malloc( &port_info );
-			snd_seq_get_port_info( m_seqHandle, m_portIDs[_port][i],
-							port_info );
+			snd_seq_port_info_t * port_info = nullptr;
+			if( int err = snd_seq_port_info_malloc( &port_info ); err < 0 )
+			{
+				qCritical( "MidiAlsaSeq: cannot allocate port info: %s", snd_strerror( err ) );
+				continue;
+			}
+			if( int err = snd_seq_get_port_info( m_seqHandle, m_portIDs[_port][i],
+							port_info ); err < 0 )
+			{
+				qCritical( "MidiAlsaSeq: cannot read port info: %s", snd_strerror( err ) );
+				snd_seq_port_info_free( port_info );
+				continue;
+			}
 			snd_seq_port_info_set_capability( port_info, caps[i] );
-			snd_seq_set_port_info( m_seqHandle, m_portIDs[_port][i],
-							port_info );
+			if( int err = snd_seq_set_port_info( m_seqHandle, m_portIDs[_port][i],
+							port_info ); err < 0 )
+			{
+				qCritical( "MidiAlsaSeq: cannot set port info: %s", snd_strerror( err ) );
+			}
 			snd_seq_port_info_free( port_info );
 		}
 		// still a port there although no caps? ( = dummy port)
 		else if( m_portIDs[_port][i] != -1 )
 		{
 			// then remove this port
-			snd_seq_delete_simple_port( m_seqHandle,
-							m_portIDs[_port][i] );
+			if( int err = snd_seq_delete_simple_port( m_seqHandle,
+							m_portIDs[_port][i] ); err < 0 )
+			{
+				qCritical( "MidiAlsaSeq: cannot delete port: %s", snd_strerror( err ) );
+			}
 			m_portIDs[_port][i] = -1;
 		}
 	}
@@ -435,15 +534,23 @@ void MidiAlsaSeq::applyPortName( MidiPort * _port )
 
 void MidiAlsaSeq::removePort( MidiPort * _port )
 {
-	if( m_portIDs.contains( _port ) )
+	QMutexLocker locker( &m_seqMutex );
+	const auto it = m_portIDs.find( _port );
+	if( it != m_portIDs.end() )
 	{
-		m_seqMutex.lock();
-		snd_seq_delete_simple_port( m_seqHandle, m_portIDs[_port][0] );
-		snd_seq_delete_simple_port( m_seqHandle, m_portIDs[_port][1] );
-		m_seqMutex.unlock();
-
-		m_portIDs.remove( _port );
+		for( int i = 0; i < 2; ++i )
+		{
+			if( it.value()[i] >= 0 )
+			{
+				if( int err = snd_seq_delete_simple_port( m_seqHandle, it.value()[i] ); err < 0 )
+				{
+					qCritical( "MidiAlsaSeq: cannot delete port: %s", snd_strerror( err ) );
+				}
+			}
+		}
+		m_portIDs.erase( it );
 	}
+	locker.unlock();
 	MidiClient::removePort( _port );
 }
 
@@ -620,20 +727,28 @@ void MidiAlsaSeq::run()
 			break;
 		}
 
-		m_seqMutex.lock();
-
-		// while event queue is not empty
-		while( snd_seq_event_input_pending( m_seqHandle, true ) > 0 )
+		// Process one input operation per lock scope. Dispatching below may
+		// re-enter port management, and every path (including continue/error)
+		// must release exactly the lock it acquired.
+		while( true )
 		{
-			snd_seq_event_t * ev;
-			if( snd_seq_event_input( m_seqHandle, &ev ) < 0 )
+			snd_seq_event_t * ev = nullptr;
+			int pending = 0;
 			{
-				m_seqMutex.unlock();
-
-				qCritical( "error while fetching MIDI event from sequencer" );
-				break;
+				QMutexLocker locker( &m_seqMutex );
+				pending = snd_seq_event_input_pending( m_seqHandle, true );
+				if( pending > 0 )
+				{
+					const int err = snd_seq_event_input( m_seqHandle, &ev );
+					if( err < 0 )
+					{
+						qCritical( "MidiAlsaSeq: error while fetching MIDI event: %s",
+							snd_strerror( err ) );
+						break;
+					}
+				}
 			}
-			m_seqMutex.unlock();
+			if( pending <= 0 ) { break; }
 
 			/* The clock family is SYSTEM-wide - a pulse names no port of ours -
 			 * so it is dispatched before the destination lookup (0.3.0,
@@ -653,15 +768,19 @@ void MidiAlsaSeq::run()
 
 			snd_seq_addr_t * source = nullptr;
 			MidiPort * dest = nullptr;
-			for( int i = 0; i < m_portIDs.size(); ++i )
+			QMap<MidiPort *, Ports> portSnapshot;
 			{
-				if( m_portIDs.values()[i][0] == ev->dest.port )
+				QMutexLocker locker( &m_seqMutex );
+				portSnapshot = m_portIDs;
+			}
+			for( auto it = portSnapshot.cbegin(); it != portSnapshot.cend(); ++it )
+			{
+				if( it.value()[0] == ev->dest.port )
 				{
-					dest = m_portIDs.keys()[i];
+					dest = it.key();
 				}
-				if( ( m_portIDs.values()[i][1] != -1 &&
-						m_portIDs.values()[i][1] == ev->source.port ) ||
-							m_portIDs.values()[i][0] == ev->source.port )
+				if( ( it.value()[1] != -1 && it.value()[1] == ev->source.port ) ||
+						it.value()[0] == ev->source.port )
 				{
 					source = &ev->source;
 				}
@@ -769,11 +888,7 @@ void MidiAlsaSeq::run()
 					break;
 			}	// end switch
 
-			m_seqMutex.lock();
-
 		}	// end while
-
-		m_seqMutex.unlock();
 
 	}
 

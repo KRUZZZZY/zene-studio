@@ -197,25 +197,23 @@ private slots:
 		QCOMPARE(static_cast<unsigned>(window[6].param2), 127u);
 	}
 
-	//! A SysEx is recorded as one flagged placeholder rather than lost silently;
-	//! transport bytes are not recorded at all.
-	void SysEx_IsFlaggedAndTransportBytesAreNotRecorded()
+	//! SysEx and transport bytes are not recordable by the fixed-size capture
+	//! contract; channel messages remain the only captured event class.
+	void SysExAndTransportBytesAreNotRecorded()
 	{
 		RetroMidiCapture capture;
 		capture.arm(true);
 
 		capture.capture(MidiEvent(lmms::MidiSysEx, "abc", 3), 200, 0);
-		QCOMPARE(asNumber(capture.ring().bufferedCount()), asNumber(1));
+		QCOMPARE(asNumber(capture.ring().bufferedCount()), asNumber(0));
 
 		std::vector<RetroMidiEvent> window(4);
-		QCOMPARE(asNumber(capture.ring().copyOut(window.data(), window.size())), asNumber(1));
-		QVERIFY((window[0].flags & lmms::RetroMidiFlagSysExDropped) != 0);
-		QCOMPARE(static_cast<unsigned>(window[0].type), static_cast<unsigned>(lmms::MidiSysEx));
+		QCOMPARE(asNumber(capture.ring().copyOut(window.data(), window.size())), asNumber(0));
 
 		capture.capture(MidiEvent(lmms::MidiActiveSensing), 201, 0);
 		capture.capture(MidiEvent(lmms::MidiSync), 202, 0);
 		capture.capture(MidiEvent(lmms::MidiStop), 203, 0);
-		QCOMPARE(asNumber(capture.ring().bufferedCount()), asNumber(1));
+		QCOMPARE(asNumber(capture.ring().bufferedCount()), asNumber(0));
 	}
 
 	//! The published tick is what the raw clients stamp their events with; it

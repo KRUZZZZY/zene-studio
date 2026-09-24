@@ -316,7 +316,7 @@ void Song::processNextBuffer()
 	// store per rendered period, and the same value is not published while stopped, so
 	// a capture that is armed but not rolling stamps nothing new. Placed after
 	// followTempoMap() so the tick published is the one this block's tempo map sets.
-	RetroMidiCapture::publishTick( static_cast<std::uint32_t>( getPlayPos().getTicks() ) );
+	RetroMidiCapture::publishTick( getPlayPos().getTicks() );
 
 	// At the beginning of the song, we have to reset the LFOs
 	if (m_playMode == PlayMode::Song && getPlayPos() == 0)

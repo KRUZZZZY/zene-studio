@@ -28,6 +28,7 @@
 #include <QtTest>
 
 #include <cstdint>
+#include <type_traits>
 #include <thread>
 #include <vector>
 
@@ -97,6 +98,20 @@ private slots:
 		RetroMidiEvent out = testEvent(999);
 		QCOMPARE(asNumber(ring.copyOut(&out, 1)), asNumber(0));
 		QCOMPARE(static_cast<unsigned>(out.tick), 999u);  // untouched
+	}
+
+	//! Signed transport ticks retain negative positions instead of converting
+	//! through uint32_t and wrapping the signed ordering used by capture windows.
+	void SignedTicks_RetainTheirValue()
+	{
+		static_assert(std::is_same_v<decltype(RetroMidiEvent::tick), lmms::tick_t>);
+		RetroMidiRing ring{2};
+		RetroMidiEvent event = testEvent(0);
+		event.tick = static_cast<lmms::tick_t>(-1);
+		QVERIFY(ring.push(event));
+		RetroMidiEvent out{};
+		QCOMPARE(asNumber(ring.copyOut(&out, 1)), asNumber(1));
+		QCOMPARE(out.tick, static_cast<lmms::tick_t>(-1));
 	}
 
 	//! The slot is exactly the 16 bytes the capacity budget is written in.

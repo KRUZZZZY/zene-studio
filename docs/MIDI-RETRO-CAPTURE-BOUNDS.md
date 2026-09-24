@@ -80,12 +80,12 @@ so an event that is lost without being counted is a test failure, not a rounding
 
 - **Not a recording.** No audio is captured, by this feature or by anything it calls. Owner's-31 item 15
   ("retrospective audio capture") is **not in this release** — see §7.
-- **Not lossless for SysEx.** A SysEx is variable-length; the ring stores a 16-byte flagged placeholder
-  (`RetroMidiFlagSysExDropped`) rather than the bytes, so a recovered window can say a SysEx was seen and
-  never reproduces it.
-- **Not every byte on the wire.** System real-time and system common messages (clock, start/stop, active
-  sensing) are not stored at all: they are not music, and in a window that holds only the most recent
-  events they would evict the notes the feature exists to keep.
+- **SysEx is outside the capture contract.** A SysEx is variable-length, and the raw MIDI parser discards
+  its bytes before capture; this fixed-size ring therefore does not claim to retain a placeholder or the
+  payload. System real-time and system common messages (clock, start/stop, active sensing) are not stored
+  either: they are not music, and would evict notes from the bounded window.
+- **Not every byte on the wire.** Only channel voice messages are recordable. Raw-backend SysEx and
+  transport/system bytes are deliberately excluded rather than counted as captured events.
 - **Not a quantiser and not a repairer.** A release with no note-on inside the window is counted
   (`unmatched_offs`) and invents no note; a note-on still open at the window's edge is closed there and
   counted (`unmatched_ons`), so a window that starts mid-phrase is reported as truncated rather than
