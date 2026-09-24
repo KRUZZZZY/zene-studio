@@ -27,6 +27,7 @@
 #include <QtTest>
 
 #include "DataFile.h"
+#include "XmlDepthGuard.h"
 
 using namespace lmms;
 
@@ -106,6 +107,17 @@ private slots:
 
 	// read-both: a pre-rename file still loads, and it loads as the type it says
 	// it is with its head and content resolved.
+	void deeplyNestedProjectIsRefusedWithoutRecursion()
+	{
+		QByteArray bytes = "<zene-project version=\"31\" type=\"song\"><song>";
+		for( int i = 0; i < MaxProjectXmlDepth + 16; ++i ) { bytes += "<x>"; }
+		for( int i = 0; i < MaxProjectXmlDepth + 16; ++i ) { bytes += "</x>"; }
+		bytes += "</song></zene-project>";
+		DataFile document( bytes );
+		QVERIFY( document.head().isNull() );
+		QVERIFY( document.content().isNull() );
+	}
+
 	void preRenameFileStillLoads()
 	{
 		QTemporaryDir tmp;

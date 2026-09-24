@@ -39,6 +39,7 @@
 #include "ProjectContainer.h"
 
 #include "DocumentIndex.h"
+#include "XmlDepthGuard.h"
 
 #include <QByteArray>
 #include <QDomDocument>
@@ -80,6 +81,12 @@ bool openDocument( const QByteArray& bytes, const QString& contentElementName,
 	{
 		setError( error, QStringLiteral(
 			"no content element name, so the document's sections cannot be located" ) );
+		return false;
+	}
+	QString depthError;
+	if( !projectXmlDepthWithinLimit( bytes, &depthError ) )
+	{
+		setError( error, depthError );
 		return false;
 	}
 	if( !document->setContent( bytes ) )

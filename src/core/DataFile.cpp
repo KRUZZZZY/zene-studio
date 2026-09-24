@@ -25,6 +25,7 @@
 
 
 #include "DataFile.h"
+#include "XmlDepthGuard.h"
 
 #include <algorithm>
 #include <cmath>
@@ -841,53 +842,35 @@ bool DataFile::copyResources(const QString& resourcesDir)
  */
 bool DataFile::hasLocalPlugins(QDomElement parent /* = QDomElement()*/, bool firstCall /* = true*/) const
 {
-	// If this is the first iteration of the recursion we use the root element
-	if (firstCall) { parent = documentElement(); }
-
-	auto children = parent.childNodes();
-	for (int i = 0; i < children.size(); ++i)
+	QVector<QDomElement> pending;
+	pending.append(firstCall ? documentElement() : parent);
+	while (!pending.isEmpty())
 	{
-		QDomNode child = children.at(i);
-		QDomElement childElement = child.toElement();
-
-		bool skipNode = false;
-		// Skip the nodes allowed to have "local:" attributes, but
-		// still check its children
-		for (const auto& element : ELEMENTS_WITH_RESOURCES)
+		const QDomElement current = pending.takeLast();
+		for (QDomNode node = current.firstChild(); !node.isNull(); node = node.nextSibling())
 		{
-			if (childElement.tagName() == element.first)
+			if (!node.isElement()) { continue; }
+			const QDomElement childElement = node.toElement();
+			bool skipNode = false;
+			for (const auto& element : ELEMENTS_WITH_RESOURCES)
 			{
-				skipNode = true;
-				break;
+				if (childElement.tagName() == element.first) { skipNode = true; break; }
 			}
-		}
-
-		// Check if they have "local:" attribute (unless they are allowed to
-		// and skipNode is true)
-		if (!skipNode)
-		{
-			auto attributes = childElement.attributes();
-			for (int i = 0; i < attributes.size(); ++i)
+			if (!skipNode)
 			{
-				QDomNode attribute = attributes.item(i);
-				QDomAttr attr = attribute.toAttr();
-				if (attr.value().startsWith(PathUtil::basePrefix(PathUtil::Base::LocalDir),
-					Qt::CaseInsensitive))
+				const auto attributes = childElement.attributes();
+				for (int i = 0; i < attributes.size(); ++i)
 				{
-					return true;
+					if (attributes.item(i).toAttr().value().startsWith(
+						PathUtil::basePrefix(PathUtil::Base::LocalDir), Qt::CaseInsensitive))
+					{
+						return true;
+					}
 				}
 			}
-		}
-
-		// Now we check the children of this node (recursively)
-		// and if any return true we return true.
-		if (hasLocalPlugins(childElement, false))
-		{
-			return true;
+			pending.append(childElement);
 		}
 	}
-
-	// If we got here none of the nodes had the "local:" path.
 	return false;
 }
 
@@ -927,24 +910,26 @@ QString DataFile::typeName( Type type )
 
 void DataFile::cleanMetaNodes( QDomElement _de )
 {
-	QDomNode node = _de.firstChild();
-	while( !node.isNull() )
+	QVector<QDomElement> pending{_de};
+	while (!pending.isEmpty())
 	{
-		if( node.isElement() )
+		QDomElement current = pending.takeLast();
+		QDomNode node = current.firstChild();
+		while( !node.isNull() )
 		{
-			if( node.toElement().attribute( "metadata" ).toInt() )
+			if( node.isElement() )
 			{
-				QDomNode ns = node.nextSibling();
-				_de.removeChild( node );
-				node = ns;
-				continue;
+				if( node.toElement().attribute( "metadata" ).toInt() )
+				{
+					QDomNode ns = node.nextSibling();
+					current.removeChild( node );
+					node = ns;
+					continue;
+				}
+				if( node.hasChildNodes() ) { pending.append(node.toElement()); }
 			}
-			if( node.hasChildNodes() )
-			{
-				cleanMetaNodes( node.toElement() );
-			}
+			node = node.nextSibling();
 		}
-		node = node.nextSibling();
 	}
 }
 
@@ -1486,7 +1471,11 @@ void DataFile::upgrade_1_1_91()
 
 static void upgradeElement_1_2_0_rc2_42( QDomElement & el )
 {
-	if( el.hasAttribute( "syncmode" ) )
+	QVector<QDomElement> pending{el};
+	while (!pending.isEmpty())
+	{
+		el = pending.takeLast();
+		if( el.hasAttribute( "syncmode" ) )
 	{
 		int syncmode = el.attribute( "syncmode" ).toInt();
 		QStringList names;
@@ -1507,11 +1496,12 @@ static void upgradeElement_1_2_0_rc2_42( QDomElement & el )
 		}
 	}
 
-	QDomElement child = el.firstChildElement();
-	while ( !child.isNull() )
-	{
-		upgradeElement_1_2_0_rc2_42( child );
-		child = child.nextSiblingElement();
+		QDomElement child = el.lastChildElement();
+		while ( !child.isNull() )
+		{
+			pending.append(child);
+			child = child.previousSiblingElement();
+		}
 	}
 }
 
@@ -2497,6 +2487,11 @@ bool DataFile::reduceAndParse( QDomDocument & document, const QByteArray & data,
 	const QByteArray payload = reduceDocumentSections( data,
 		contentElementNameFor( data ), skipSections, &removed );
 
+	if( !projectXmlDepthWithinLimit(payload, &errorMsg) )
+	{
+		line = col = 0;
+		return false;
+	}
 	if( !lmms::setContent( document, payload, &errorMsg, &line, &col ) )
 	{
 		return false;
@@ -2621,15 +2616,19 @@ void DataFile::loadData( const QByteArray & _data, const QString & _sourceFile,
 
 void findIds(const QDomElement& elem, QList<jo_id_t>& idList)
 {
-	if(elem.hasAttribute("id"))
+	QVector<QDomElement> pending{elem};
+	while (!pending.isEmpty())
 	{
-		idList.append(elem.attribute("id").toInt());
-	}
-	QDomElement child = elem.firstChildElement();
-	while(!child.isNull())
-	{
-		findIds(child, idList);
-		child = child.nextSiblingElement();
+		const QDomElement current = pending.takeLast();
+		if(current.hasAttribute("id"))
+		{
+			idList.append(current.attribute("id").toInt());
+		}
+		for (QDomElement child = current.lastChildElement(); !child.isNull();
+			child = child.previousSiblingElement())
+		{
+			pending.append(child);
+		}
 	}
 }
 

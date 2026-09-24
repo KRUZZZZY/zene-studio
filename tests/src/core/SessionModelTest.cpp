@@ -281,6 +281,35 @@ private slots:
 		QCOMPARE( secondText, firstText );
 	}
 
+	void malformedLegacySessionIsPreservedOnce()
+	{
+		QTemporaryDir dir;
+		QVERIFY( dir.isValid() );
+		Song* song = Engine::getSong();
+		song->clearProject();
+		const QString source = dir.filePath( QStringLiteral( "legacy.mmp" ) );
+		QVERIFY( song->saveProjectFile( source ) );
+		QString project = readFile( source );
+		const QString session = QStringLiteral(
+			"<session version=\"1\" tracks=\"1\" scenes=\"1\"><scenes>"
+			"<scene index=\"9\" name=\"must-survive\"/></scenes><clips/>"
+			"</session>" );
+		const int insertion = project.indexOf( QStringLiteral( "</song>" ) );
+		QVERIFY( insertion >= 0 );
+		project.insert( insertion, session );
+		QVERIFY( QFile( source ).remove() );
+		QFile file( source );
+		QVERIFY( file.open( QIODevice::WriteOnly ) );
+		QVERIFY( file.write( project.toUtf8() ) == project.toUtf8().size() );
+		file.close();
+		song->loadProject( source );
+		const QString saved = dir.filePath( QStringLiteral( "saved.mmp" ) );
+		QVERIFY( song->saveProjectFile( saved ) );
+		const QString output = readFile( saved );
+		QCOMPARE( output.count( QStringLiteral( "must-survive" ) ), 1 );
+		QCOMPARE( output.count( QStringLiteral( "must-survive" ) ), 1 );
+	}
+
 	//! A slot references either a pattern or an audio clip, never both
 	//! (SPEC-zene-studio A1 mutual exclusivity).
 	void slotReferenceIsMutuallyExclusive()

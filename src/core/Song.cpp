@@ -2258,8 +2258,8 @@ bool Song::restoreNamedSection(const QDomElement & element)
 		// fills the same model the native section fills, and the next save
 		// writes <z:scenes> - the legacy form is the migration's input,
 		// never its output again.
-		m_sessionModel.restoreState( element );
-		return true;
+		if( m_sessionModel.restoreState( element ) ) { return true; }
+		return false;
 	}
 
 	return false;

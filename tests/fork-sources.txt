@@ -1281,3 +1281,5 @@ tools/ncpu-shim.c
 #     tests/src/core/OutOfProcessHostSupport.h tests/zene-api-boundary.py`, so the recipe
 #     and the entry list agree again: run the Verify step above and it prints REPRODUCES.
 #     No entry that was already here changed, and none was removed.
+# BUG-A4-1/A4-2: shared iterative XML depth guard used by DataFile and container parsing.
+include/XmlDepthGuard.h

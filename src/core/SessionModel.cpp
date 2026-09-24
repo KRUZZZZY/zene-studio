@@ -45,7 +45,7 @@ using namespace sessionSerialization;
 // header's include.
 
 //! Restores every <scene> child of a <session> block.
-void restoreScenes( const QDomElement& scenesElement, std::vector<Scene>& scenes )
+bool restoreScenes( const QDomElement& scenesElement, std::vector<Scene>& scenes )
 {
 	for( QDomElement sceneElement = scenesElement.firstChildElement( QStringLiteral( "scene" ) );
 		!sceneElement.isNull();
@@ -53,17 +53,16 @@ void restoreScenes( const QDomElement& scenesElement, std::vector<Scene>& scenes
 	{
 		const int index = sceneElement.attribute( QStringLiteral( "index" ),
 			QStringLiteral( "-1" ) ).toInt();
-		if( index >= 0 && index < static_cast<int>( scenes.size() ) )
-		{
-			scenes[static_cast<std::size_t>( index )].restoreState( sceneElement );
-		}
+		if( index < 0 || index >= static_cast<int>( scenes.size() ) ) { return false; }
+		scenes[static_cast<std::size_t>( index )].restoreState( sceneElement );
 	}
+	return true;
 }
 
 
 //! Restores every <clip> child of a <session> block. Slots pointing outside
 //! the grid are dropped (the block is malformed or truncated).
-void restoreClips( const QDomElement& clipsElement, SessionModel& model )
+bool restoreClips( const QDomElement& clipsElement, SessionModel& model )
 {
 	for( QDomElement clipElement = clipsElement.firstChildElement( QStringLiteral( "clip" ) );
 		!clipElement.isNull();
@@ -73,11 +72,13 @@ void restoreClips( const QDomElement& clipsElement, SessionModel& model )
 			QStringLiteral( "-1" ) ).toInt();
 		const int scene = clipElement.attribute( QStringLiteral( "scene" ),
 			QStringLiteral( "-1" ) ).toInt();
-		if( track >= 0 && track < model.trackCount() && scene >= 0 && scene < model.sceneCount() )
+		if( track < 0 || track >= model.trackCount() || scene < 0 || scene >= model.sceneCount() )
 		{
-			model.slot( track, scene ).restoreState( clipElement );
+			return false;
 		}
+		model.slot( track, scene ).restoreState( clipElement );
 	}
+	return true;
 }
 }
 
@@ -323,8 +324,12 @@ bool SessionModel::restoreState( const QDomElement& element )
 		element.attribute( QStringLiteral( "launchquantisation" ),
 			QString::number( static_cast<int>( DefaultLaunchQuantisation ) ) ).toInt(), false );
 
-	restoreScenes( element.firstChildElement( QStringLiteral( "scenes" ) ), m_scenes );
-	restoreClips( element.firstChildElement( QStringLiteral( "clips" ) ), *this );
+	if( !restoreScenes( element.firstChildElement( QStringLiteral( "scenes" ) ), m_scenes )
+		|| !restoreClips( element.firstChildElement( QStringLiteral( "clips" ) ), *this ) )
+	{
+		clear();
+		return false;
+	}
 
 	return true;
 }

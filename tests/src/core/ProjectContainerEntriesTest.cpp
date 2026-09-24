@@ -38,6 +38,7 @@
 #include <vector>
 
 #include "ProjectContainer.h"
+#include "XmlDepthGuard.h"
 
 using namespace lmms;
 
@@ -189,6 +190,20 @@ private slots:
 	 *  to derive - refused with the destination left exactly as passed, not
 	 *  cleared: refusal must look like "nothing happened", never like an empty
 	 *  success. */
+	void derivingRefusesDeeplyNestedDocument()
+	{
+		QByteArray deep = "<lmms-project version=\"31\" type=\"song\"><song>";
+		for( int i = 0; i < lmms::MaxProjectXmlDepth + 16; ++i ) { deep += "<x>"; }
+		for( int i = 0; i < lmms::MaxProjectXmlDepth + 16; ++i ) { deep += "</x>"; }
+		deep += "</song></lmms-project>";
+		auto entries = sentinelEntries();
+		QString error;
+		QVERIFY( !projectcontainer::deriveContainerEntries( deep,
+			QString::fromLatin1( kContent ), &entries, &error ) );
+		QVERIFY( error.contains( QStringLiteral( "nesting" ) ) );
+		QCOMPARE( int( entries.size() ), 1 );
+	}
+
 	void derivingRefusesADocumentWithNoIndex()
 	{
 		QByteArray noIndex =
