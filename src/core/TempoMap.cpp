@@ -172,6 +172,11 @@ bool TempoMap::set(std::span<const TempoMapEvent> events)
 	candidate.m_active = m_active;
 	for (const TempoMapEvent& event : events)
 	{
+		// A replace-the-whole-set call has no answer for two events at one tick, and
+		// the contract in TempoMap.h refuses them. addEvent() is the call that merges
+		// them, per property, and stays the caller's tool for that (BUG-TEMPOSET).
+		// Checked on the candidate, so a refusal never disturbs the live map.
+		if (candidate.hasEventAt(event.tick)) { return false; }
 		if (!candidate.addEvent(event)) { return false; }
 	}
 	*this = candidate;

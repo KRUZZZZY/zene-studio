@@ -46,6 +46,7 @@
 
 #include <QtTest>
 
+#include <array>
 #include <cmath>
 
 #include "AudioEngine.h"
@@ -448,6 +449,52 @@ private slots:
 
 		QVERIFY(!publisher.edit([](TempoMap& map) { return map.removeEvent(999); }));
 		QCOMPARE(publisher.snapshot().size(), 3);
+	}
+
+	//! BUG-TEMPOSET: set() refuses two events that share a tick and changes nothing,
+	//! which is what include/TempoMap.h documents ("False - and no change - when any
+	//! event is invalid, two events share a tick, or the set is too large"). It
+	//! delegated to addEvent(), which MERGES the two halves at one tick, and returned
+	//! that success as its own - so "replace the whole set" quietly accepted an
+	//! ambiguous set.
+	void setRefusesTwoEventsAtTheSameTick()
+	{
+		TempoMapEvent tempo;
+		tempo.tick = 100;
+		tempo.hasTempo = true;
+		tempo.tempo = 140;
+		TempoMapEvent metre;
+		metre.tick = 100; // the SAME tick as `tempo`
+		metre.hasTimeSignature = true;
+		metre.numerator = 3;
+		metre.denominator = 4;
+		const std::array<TempoMapEvent, 2> duplicated{tempo, metre};
+
+		// the refusal, and the map it was refused over is untouched
+		TempoMap map;
+		QVERIFY(!map.set(duplicated));
+		QVERIFY(map.empty());
+		QCOMPARE(map.size(), 0);
+
+		// the merge stays where it belongs - addEvent() - and still works there
+		QVERIFY(map.addEvent(tempo));
+		QVERIFY(map.addEvent(metre));
+		QCOMPARE(map.size(), 1);
+
+		// positive control: the same two events at DIFFERENT ticks are accepted
+		TempoMap populated;
+		populated.setActive(true); // an inactive map answers the global metre
+		metre.tick = 384;
+		const std::array<TempoMapEvent, 2> ordered{tempo, metre};
+		QVERIFY(populated.set(ordered));
+		QCOMPARE(populated.size(), 2);
+		QCOMPARE(populated.tempoAtTick(100, kGlobalTempo()), 140);
+		QCOMPARE(populated.timeSignatureAtTick(384, TempoMapTimeSignature{4, 4}), (TempoMapTimeSignature{3, 4}));
+
+		// and a refusal leaves an ALREADY POPULATED map exactly as it was
+		QVERIFY(!populated.set(duplicated));
+		QCOMPARE(populated.size(), 2);
+		QCOMPARE(populated.tempoAtTick(100, kGlobalTempo()), 140);
 	}
 };
 
