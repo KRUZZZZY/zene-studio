@@ -150,6 +150,34 @@ public:
 
 		void updateAllUsedChannels();
 
+		/**
+		 * BUG-PINBOUNDS: set the pin a persisted `cN_M` attribute name names, or do
+		 * nothing when the name is malformed or names a channel outside this matrix.
+		 *
+		 * A project file is user-editable input. This never throws and never indexes
+		 * with a value the file supplied: the name must be `c`-prefixed, must carry
+		 * digits on both sides of the `_`, and both one-based indices must be inside
+		 * the matrix. Anything else is dropped, and the rest of the file still loads.
+		 */
+		void setPinFromAttributeName(const QString& name)
+		{
+			if (name.size() < 3 || name.at(0) != QLatin1Char('c')) { return; }
+			const auto pos = name.indexOf('_');
+			if (pos <= 1) { return; }
+
+			bool trackOk = false;
+			bool processorOk = false;
+			const auto track = name.mid(1, pos - 1).toInt(&trackOk);
+			const auto processor = name.mid(pos + 1).toInt(&processorOk);
+			if (!trackOk || !processorOk || track < 1 || track > static_cast<int>(m_pins.size())
+				|| processor < 1 || processor > static_cast<int>(m_channelCount))
+			{
+				return;
+			}
+
+			setPinBatch(static_cast<ch_cnt_t>(track - 1), static_cast<ch_cnt_t>(processor - 1), true);
+		}
+
 		void saveSettings(QDomDocument& doc, QDomElement& elem) const;
 		void loadSettings(const QDomElement& elem);
 
@@ -205,11 +233,12 @@ public:
 	auto getChannelCountText() const -> QString;
 
 	/**
-	 * Caches the highest indexed track channel in use, so that the audio ports router can
-	 * loop over [0, trackChannelsUpperBound) rather than [0, totalTrackChannels).
+	 * Caches the highest indexed track channel in use, rounded up to a whole L/R pair
+	 * (the unit AudioBus and AudioPorts walk), so that the audio ports router can loop
+	 * over [0, trackChannelsUpperBound) rather than [0, totalTrackChannels).
 	 *
-	 * This value is always <= to the total number of track channels (currently always 2).
-	 * TODO: Need to recalculate when pins are set/unset
+	 * Recomputed from the pin matrices whenever pins or channel counts change
+	 * (updateTrackChannelsUpperBound). It is never below DEFAULT_CHANNELS.
 	 */
 	auto trackChannelsUpperBound() const -> ch_cnt_t { return m_trackChannelsUpperBound; }
 
@@ -255,6 +284,49 @@ private:
 	auto setProcessorChannelCountsImpl(ch_cnt_t inCount, ch_cnt_t outCount, bool silent) -> bool;
 
 	void updateDirectRouting();
+
+	/**
+	 * BUG-CHBOUND: recompute the cached highest indexed track channel in use from the
+	 * pin matrices, rounded up to a whole L/R pair, and never below DEFAULT_CHANNELS.
+	 *
+	 * The matrices are read rather than the used-channel cache: a cache entry above
+	 * the current track channel count is stale until it is refreshed, and a pair the
+	 * user removed must stay removed. This used to be assigned std::min(...) only, so
+	 * it could never grow past its DEFAULT_CHANNELS initializer and the router and
+	 * AudioBus skipped every pair above the first one.
+	 */
+	void updateTrackChannelsUpperBound()
+	{
+		ch_cnt_t bound = DEFAULT_CHANNELS;
+		for (ch_cnt_t tc = 0; tc < m_totalTrackChannels; ++tc)
+		{
+			const auto used = [tc](const Matrix& matrix) {
+				const auto& pins = matrix.pins()[tc];
+				return std::any_of(pins.begin(), pins.end(), [](bool pin) { return pin; });
+			};
+			if (used(m_in) || used(m_out))
+			{
+				bound = std::max(bound, static_cast<ch_cnt_t>(tc + 1));
+			}
+		}
+
+		m_trackChannelsUpperBound = static_cast<ch_cnt_t>(bound + bound % 2);
+	}
+
+	/**
+	 * BUG-PINBOUNDS: parse an integer that came out of a project file and range-check
+	 * it. False - and no write - for a value that is not a number or is outside
+	 * [min, max]. Used for the port counts, which size the matrices and are therefore
+	 * just as much untrusted input as the pin names.
+	 */
+	static auto parseAttributeInRange(const QString& text, int min, int max, ch_cnt_t* out) -> bool
+	{
+		bool ok = false;
+		const auto value = text.toInt(&ok);
+		if (!ok || value < min || value > max) { return false; }
+		*out = static_cast<ch_cnt_t>(value);
+		return true;
+	}
 
 	Matrix m_in{this, false}; //!< LMMS --> audio processor
 	Matrix m_out{this, true}; //!< audio processor --> LMMS

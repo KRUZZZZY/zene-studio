@@ -23,15 +23,21 @@
  */
 
 #include <QtTest>
+#include <QDomDocument>
+#include <QDomElement>
 #include <QSignalSpy>
 
+#include <array>
+#include <limits>
 #include <stdexcept>
 #include <string>
 
 #include "AudioBufferView.h"
+#include "AudioBus.h"
 #include "AudioEngine.h"
 #include "AudioPortsModel.h"
 #include "Engine.h"
+#include "SampleFrame.h"
 
 using namespace lmms;
 
@@ -402,6 +408,131 @@ private slots:
 		QCOMPARE(survivor.bufferPropertiesChangingCalls, 1);
 		QCOMPARE(survivor.lastInChannels, ch_cnt_t(2));
 		QCOMPARE(survivor.lastOutChannels, ch_cnt_t(2));
+	}
+
+	//! BUG-PINBOUNDS: every persisted `cN_M` pin attribute is validated, in EVERY
+	//! build. A project file is user-editable input and the loader used to index the
+	//! pin matrix with whatever the file supplied, guarded only by `#ifndef NDEBUG`
+	//! asserts - and this build is NDEBUG. On the pre-fix binary the element below
+	//! SIGSEGVs: `c40000_1` walks off the row vector and the non-pin name `junk`
+	//! lands at index -1. The malformed names must be ignored and the valid ones
+	//! must still apply.
+	void loadSettingsIgnoresMalformedAndOutOfRangePins()
+	{
+		TestAudioPortsModel model{2, 2, false};
+
+		QDomDocument doc;
+		QVERIFY(doc.setContent(QStringLiteral(
+			"<audioengine><pins inputs=\"2\" outputs=\"2\">"
+			"<in_matrix c1_1=\"true\" c40000_1=\"true\" c9_1=\"true\" junk=\"true\""
+			" x1_1=\"true\" c0_1=\"true\" c1_0=\"true\" c_1=\"true\" c1_1_1=\"true\"/>"
+			"<out_matrix c2_1=\"true\"/>"
+			"</pins></audioengine>")));
+		model.loadSettings(doc.documentElement());
+
+		// the loader resets every pin first, so exactly one input pin is set: the
+		// valid `c1_1`. Nothing the bad names "addressed" was written.
+		for (ch_cnt_t tc = 0; tc < model.trackChannelCount(); ++tc)
+		{
+			for (ch_cnt_t pc = 0; pc < model.in().channelCount(); ++pc)
+			{
+				QCOMPARE(model.in().enabled(tc, pc), tc == 0 && pc == 0);
+			}
+		}
+		// and the valid output pin applied: track channel 2 is the last one this
+		// model has, so the range check must accept the bound itself
+		QVERIFY(model.out().enabled(1, 0));
+		QVERIFY(!model.out().enabled(0, 0));
+		QCOMPARE(model.trackChannelCount(), DEFAULT_CHANNELS);
+	}
+
+	//! BUG-PINBOUNDS: the channel counts a file carries are validated before they
+	//! size the matrices. 134 was applied verbatim - a 134-channel matrix built from
+	//! the file, above the engine's own MaxChannelsPerAudioBuffer ceiling - and a
+	//! negative count wrapped into the unsigned ch_cnt_t.
+	void loadSettingsIgnoresOutOfRangeChannelCounts()
+	{
+		TestAudioPortsModel model{2, 2, false};
+
+		QDomDocument doc;
+		QVERIFY(doc.setContent(QStringLiteral(
+			"<audioengine><pins inputs=\"134\" outputs=\"134\">"
+			"<in_matrix c1_1=\"true\"/><out_matrix/></pins></audioengine>")));
+		model.loadSettings(doc.documentElement());
+		QCOMPARE(model.in().channelCount(), ch_cnt_t(2));
+		QCOMPARE(model.out().channelCount(), ch_cnt_t(2));
+		QVERIFY(model.in().enabled(0, 0));
+
+		// a negative count is refused the same way
+		QDomDocument negative;
+		QVERIFY(negative.setContent(QStringLiteral(
+			"<audioengine><pins inputs=\"-4\" outputs=\"2\">"
+			"<in_matrix c1_1=\"true\"/><out_matrix/></pins></audioengine>")));
+		model.loadSettings(negative.documentElement());
+		QCOMPARE(model.in().channelCount(), ch_cnt_t(2));
+
+		// ... and the boundary itself is still accepted, so the check is a range
+		// and not a refusal of large-but-legal processors
+		QDomDocument atLimit;
+		QVERIFY(atLimit.setContent(QStringLiteral(
+			"<audioengine><pins inputs=\"128\" outputs=\"2\">"
+			"<in_matrix c1_1=\"true\"/><out_matrix/></pins></audioengine>")));
+		model.loadSettings(atLimit.documentElement());
+		QCOMPARE(model.in().channelCount(), MaxChannelsPerAudioBuffer);
+		QVERIFY(model.in().enabled(0, 0));
+	}
+
+	//! BUG-CHBOUND: the cached track-channel upper bound follows the pins actually
+	//! in use. It was initialised to DEFAULT_CHANNELS and only ever assigned
+	//! std::min(...), so it never grew. AudioBus and AudioPorts loop [0, bound), so
+	//! audio routed to a pair above the default one was never examined - and a bus
+	//! carrying signal on track channels 2/3 was reported all-quiet.
+	void trackChannelsUpperBoundFollowsPinUsage()
+	{
+		TestAudioPortsModel model{0, 2, false};
+		QCOMPARE(model.trackChannelsUpperBound(), DEFAULT_CHANNELS);
+
+		// growing the track channel count alone does not grow the bound
+		model.setTrackChannelCount(4);
+		QCOMPARE(model.trackChannelsUpperBound(), DEFAULT_CHANNELS);
+
+		// route ONLY the second pair (track channels 2 and 3)
+		model.out().setPin(0, 0, false);
+		model.out().setPin(1, 1, false);
+		model.out().setPin(2, 0, true);
+		model.out().setPin(3, 1, true);
+		QCOMPARE(model.trackChannelsUpperBound(), ch_cnt_t(4));
+
+		// the bound is what AudioBus::update() loops over: the signal in the pair
+		// above the default one is examined, so the bus is NOT all-quiet
+		std::array<std::array<SampleFrame, 8>, 2> storage{};
+		std::array<SampleFrame*, 2> pointers{storage[0].data(), storage[1].data()};
+		AudioBus bus{pointers.data(), ch_cnt_t(2), f_cnt_t(8)};
+		storage[1][0][0] = 0.5f; // track channel 2
+		QVERIFY(!bus.update(model));
+
+		// control: the same measurement on a model that routes the DEFAULT pair, so a
+		// signal the router does examine is reported not-quiet too - the result above
+		// is the bound, not the harness
+		TestAudioPortsModel defaultPair{0, 2, false};
+		std::array<std::array<SampleFrame, 8>, 2> controlStorage{};
+		std::array<SampleFrame*, 2> controlPointers{controlStorage[0].data(), controlStorage[1].data()};
+		AudioBus controlBus{controlPointers.data(), ch_cnt_t(2), f_cnt_t(8)};
+		controlStorage[0][0][0] = 0.5f;
+		QVERIFY(!controlBus.update(defaultPair));
+
+		// and the pair is sanitized: a NaN left in it is cleared
+		storage[1][0][0] = std::numeric_limits<float>::quiet_NaN();
+		bus.sanitize(model);
+		QCOMPARE(storage[1][0][0], 0.f);
+
+		// shrink then grow again: the removed pair must not come back
+		model.setTrackChannelCount(2);
+		QCOMPARE(model.trackChannelsUpperBound(), DEFAULT_CHANNELS);
+		model.setTrackChannelCount(4);
+		QCOMPARE(model.trackChannelsUpperBound(), DEFAULT_CHANNELS);
+		QVERIFY(!model.out().usedTrackChannels()[2]);
+		QVERIFY(!model.out().usedTrackChannels()[3]);
 	}
 };
 

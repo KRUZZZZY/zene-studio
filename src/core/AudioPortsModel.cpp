@@ -157,7 +157,6 @@ auto AudioPortsModel::setTrackChannelCountImpl(ch_cnt_t count) -> bool
 		return false;
 	}
 
-	m_trackChannelsUpperBound = std::min(m_trackChannelsUpperBound, count);
 	m_totalTrackChannels = count;
 
 	m_in.setTrackChannelCount(count);
@@ -229,10 +228,15 @@ void AudioPortsModel::loadSettings(const QDomElement& elem)
 	const auto pins = elem.firstChildElement(nodeName());
 	if (pins.isNull()) { return; }
 
-	// TODO: Assert port counts are what was expected?
-	const auto inputs = pins.attribute("inputs", "0").toInt();
-	const auto outputs = pins.attribute("outputs", "0").toInt();
-	setChannelCounts(inputs, outputs);
+	// BUG-PINBOUNDS: the counts a file carries size the matrices, so they are
+	// validated in every build; an out-of-range count used to be applied verbatim.
+	ch_cnt_t inputs = 0;
+	ch_cnt_t outputs = 0;
+	const bool countsInRange
+		= parseAttributeInRange(pins.attribute("inputs", "0"), 0, MaxChannelsPerAudioBuffer, &inputs)
+		&& parseAttributeInRange(pins.attribute("outputs", "0"), 0, MaxChannelsPerAudioBuffer, &outputs);
+	if (countsInRange) { setChannelCounts(inputs, outputs); }
+	else { qWarning() << "Ignoring out-of-range audio port channel counts"; }
 
 	m_in.loadSettings(pins.firstChildElement("in_matrix"));
 	m_out.loadSettings(pins.firstChildElement("out_matrix"));
@@ -246,6 +250,11 @@ void AudioPortsModel::loadSettings(const QDomElement& elem)
 
 void AudioPortsModel::updateDirectRouting()
 {
+	// BUG-CHBOUND: every pin edit and every channel-count change lands here, so this
+	// is where the cached track-channel upper bound is recomputed. It does not depend
+	// on the routing decision below, so it runs before that decision's early returns.
+	updateTrackChannelsUpperBound();
+
 	const auto ins = in().channelCount();
 	const auto outs = out().channelCount();
 
@@ -391,6 +400,11 @@ void AudioPortsModel::Matrix::setTrackChannelCount(ch_cnt_t count)
 			processorChannels.resize(m_channelCount, false);
 		}
 	}
+
+	// BUG-CHBOUND: the cached "used" bits above the new count describe rows that are
+	// gone now, so recompute over the rows that exist. Without this a shrink-then-grow
+	// leaves a pair the user removed reported as used again.
+	updateUsedTrackChannels();
 }
 
 void AudioPortsModel::Matrix::setChannelCount(ch_cnt_t count)
@@ -519,30 +533,14 @@ void AudioPortsModel::Matrix::loadSettings(const QDomElement& elem)
 		std::fill(processorChannels.begin(), processorChannels.end(), false);
 	}
 
-	auto addConnection = [&](const QString& name) {
-		const auto pos = name.indexOf('_');
-#ifndef NDEBUG
-		constexpr auto minSize = static_cast<int>(std::string_view{"c#_#"}.size());
-		if (name.size() < minSize) { throw std::runtime_error{"string too small"}; }
-		if (name[0] != 'c') { throw std::runtime_error{"invalid string: \"" + name.toStdString() + "\""}; }
-		if (pos <= 0) { throw std::runtime_error{"parse failure"}; }
-#endif
-
-		auto trackChannel = name.mid(1, pos - 1).toInt();
-		auto processorChannel = name.mid(pos + 1).toInt();
-#ifndef NDEBUG
-		if (trackChannel == 0 || processorChannel == 0) { throw std::runtime_error{"failed to parse integer"}; }
-#endif
-
-		setPinBatch(trackChannel - 1, processorChannel - 1, true);
-	};
-
-	// Get pin connector connections
+	// BUG-PINBOUNDS: every persisted pin name is validated before it reaches the
+	// matrix. The old checks lived under `#ifndef NDEBUG`, so a release build wrote
+	// wherever the file pointed: `c40000_1` ran off the row vector and a name that is
+	// not a pin at all landed at index -1 (both fault on the pre-fix binary).
 	const auto& attrs = elem.attributes();
 	for (int idx = 0; idx < attrs.size(); ++idx)
 	{
-		const auto node = attrs.item(idx);
-		addConnection(node.nodeName());
+		setPinFromAttributeName(attrs.item(idx).nodeName());
 	}
 }
 
