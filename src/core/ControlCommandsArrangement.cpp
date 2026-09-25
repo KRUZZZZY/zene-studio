@@ -214,12 +214,11 @@ void registerTrackRemove(ControlRegistry& registry)
 		QJsonObject snapshot = trackEditState(track, index);
 		if (args.value(QStringLiteral("dry_run")).toBool(false))
 		{
+			// A PREVIEW records nothing - the registry keys the journal rule on
+			// this result's `dry_run: true`, so the undo of the last real edit
+			// survives it (BUG-DRYRUN-UNDO).
 			QJsonObject preview = snapshot;
 			preview.insert(QStringLiteral("dry_run"), true);
-			preview.insert(QStringLiteral("__transaction"),
-				control::transactionPayload(snapshot,
-					QStringLiteral("recreate the track from its captured XML"), QJsonObject(), true,
-					QStringLiteral("dry_run preview: nothing was changed")));
 			return ControlResult::success(preview);
 		}
 		const QString id = args.value(QStringLiteral("track")).toString();

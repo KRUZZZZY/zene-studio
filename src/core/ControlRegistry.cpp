@@ -312,7 +312,13 @@ ControlResult ControlRegistry::runHandler(
 			coalesced = coalesceStepOf(*journal, commandId, args, true);
 		}
 	}
-	if (mutating && result.ok)
+	// A dry run changes NOTHING and so must leave the journal exactly as it found
+	// it: recording one put a non-reversible record on top of the last real step,
+	// and the next control.undo refused 'irreversible' while the edit the caller
+	// meant to take back stayed in place (BUG-DRYRUN-UNDO). The three preview
+	// handlers share the one `dry_run: true` result field, so the seam is here.
+	const bool dryRunPreview = result.result.value(QStringLiteral("dry_run")).toBool(false);
+	if (mutating && result.ok && !dryRunPreview)
 	{
 		recordTransactionOf(commandId, &result, coalesced, step);
 	}

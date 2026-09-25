@@ -87,7 +87,8 @@ const ReversibilityRow kArchiveRows[] = {
 		"before the write and the recorded step writes them back, so one "
 		"control.undo restores the file byte for byte; the redo half re-writes "
 		"the document this command wrote. A dry run records nothing and says so "
-		"(reversible=false, 'dry_run preview: nothing was changed'), and an "
+		"(its result carries dry_run=true, and the journal keeps no record of "
+		"it), and an "
 		"instance with no project journal REFUSES the write rather than make an "
 		"unrecordable change to a project file",
 		""),

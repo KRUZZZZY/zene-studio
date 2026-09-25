@@ -2286,18 +2286,22 @@ def main():
             fail("track.remove left clips of the removed track behind: %r" % final, process, log_path)
         transactions = ok_result(client.call(64, "control.transactions"), 64).get("transactions", [])
         removals = [t for t in transactions if t.get("command") == "track.remove"]
-        if len(removals) != 2:
-            fail("expected a dry_run and a real transaction for track.remove, got %r" % removals,
-                 process, log_path)
+        # ONE entry: the real removal. The dry_run above changed NOTHING, so it
+        # left the journal exactly as it found it - a preview that recorded a
+        # transaction of its own would sit on top of the last real step and make
+        # the next control.undo refuse 'irreversible' while the edit the caller
+        # meant to take back stayed in place (BUG-DRYRUN-UNDO). The preview's own
+        # honesty is asserted above, on the reply: dry_run=true and the track
+        # still there.
+        if len(removals) != 1:
+            fail("expected ONE transaction for track.remove (a dry_run preview records "
+                 "nothing), got %r" % removals, process, log_path)
         if not removals[-1].get("reversible"):
             fail("track.remove must record reversible=true (SPEC A16 #623: the track's own "
                  "XML is captured and the undo step recreates it): %r" % removals[-1],
                  process, log_path)
         if "recreate" not in str(removals[-1].get("mechanism", "")):
             fail("track.remove does not name its inverse mechanism: %r" % removals[-1],
-                 process, log_path)
-        if "nothing was changed" not in str(removals[0].get("mechanism", "")):
-            fail("the dry_run preview does not say it changed nothing: %r" % removals[0],
                  process, log_path)
 
 

@@ -372,11 +372,10 @@ void registerProjectRelink(ControlRegistry& registry)
 
 		if (dryRun)
 		{
-			result.insert(QStringLiteral("__transaction"), transactionPayload(
-				QJsonObject{{QStringLiteral("previous_sha256"), QString()},
-					{QStringLiteral("path"), project}},
-				QStringLiteral("project.relink"), QJsonObject(), false,
-				QStringLiteral("dry_run preview: nothing was written")));
+			// A PREVIEW writes nothing and records nothing: the registry reads
+			// this result's `dry_run: true` and leaves the transaction list and
+			// the document's provenance alone, so the preview cannot block the
+			// undo of the write before it (BUG-DRYRUN-UNDO).
 			return ControlResult::success(result);
 		}
 

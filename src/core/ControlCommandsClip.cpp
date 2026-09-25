@@ -328,12 +328,13 @@ void registerClipDelete(ControlRegistry& registry)
 		QJsonObject snapshot = control::clipState(ref);
 		if (args.value(QStringLiteral("dry_run")).toBool(false))
 		{
+			// A PREVIEW records nothing: no `__transaction` and no provenance
+			// change. The result says `dry_run: true` and the registry keys the
+			// journal rule on exactly that field, so one control.undo after a
+			// dry run still takes back the last real edit (BUG-DRYRUN-UNDO).
 			QJsonObject preview = snapshot;
 			preview.insert(QStringLiteral("dry_run"), true);
 			preview.insert(QStringLiteral("deleted"), control::clipId(ref.id));
-			preview.insert(QStringLiteral("__transaction"),
-				control::transactionPayload(snapshot, QStringLiteral("UNIMPLEMENTED: re-create the clip"),
-					QJsonObject(), false, QStringLiteral("dry_run preview: nothing was changed")));
 			return ControlResult::success(preview);
 		}
 

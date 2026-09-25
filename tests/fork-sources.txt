@@ -1085,6 +1085,7 @@ tests/control-clock-commands.py
 tests/control-commands-snapshot.py
 tests/control-crash-reporter.py
 tests/control-detect-commands.py
+tests/control-dry-run-journal.py
 tests/control-export-settings.py
 tests/control-feedback-commands.py
 tests/control-freeze-commands-transcript.py
