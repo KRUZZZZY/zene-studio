@@ -95,3 +95,29 @@ WHAT STILL STANDS: rotations #1/#2 never erased the historical proofs in
 detecting genuine save-path content regressions (proven in the other direction:
 it caught real drift today), and is now immune to build identity, journal
 timestamps, and window layout — the three measured classes of churn.
+
+# Rotation act #3 (2026-09-25, train tip 79a42ecc5) — post-4856817be serialization
+
+WHY: `ControlFeedbackCommands`'s two save-sha comparisons failed deterministically
+(`5fe616f2…` expected, `33a5053f…` both stages) on the merged train tip. The
+disagreement was re-verified against the tree before the constant was touched,
+with the test's OWN `canonical_project_sha()`:
+
+- two consecutive `project.save` calls of the SAME unchanged fixture state produce
+  byte-identical canonical hashes (`33a5053f5ea0d4a5406166b832fe58c9b0dfc70a7137ed979c7bdfd1128f56c2`),
+  and their RAW bytes differ only by the append-only `<z:provenance>` journal block
+  (stripping exactly that block makes the two files byte-identical) — i.e. the save
+  path is deterministic modulo the declared per-save growth
+  (`docs/SAVE-CANONICAL-STABILITY.md` §0). So this is a constant/tree disagreement,
+  not a nondeterminism defect, and the golden is what moves.
+- the measured value is the one rotation act #1 recorded
+  (`33a5053f…`, captured at `6f5894cba`), i.e. `4856817be` (DEFECT-D4b) changed the
+  save serialization so that this fixture's canonical form returned to its pre-S8/S10
+  shape; the `5fe616f2…` rotation of `68ac6ee9f` no longer describes what the tree
+  writes.
+
+THE ACT:
+
+- `BASELINE_SAVE_SHA256` ROTATED: `5fe616f2b5aef63da9552ca1b5a00fefdb578cdf7abfddd8216fed0002b10145`
+  → `33a5053f5ea0d4a5406166b832fe58c9b0dfc70a7137ed979c7bdfd1128f56c2`.
+- `BASELINE_PDC` / `BASELINE_MIXER` untouched (both compare equal on this tip).
