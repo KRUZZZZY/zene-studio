@@ -340,12 +340,12 @@ def check_effect_removal_is_undoable(session, recorder, fixture):
 # same messages.
 def change_effect_parameter(session, recorder, target, effect):
     """Write a non-default value and prove it landed. Returns (name, changed)."""
-    # A non-default parameter: "the device is back" is not "an empty device with
-    # the same name is back".
-    param = (session.result("plugin.param_get", {"target": target, "plugin": effect,
-                                                "index": 0}).get("parameter") or {})
-    name = param.get("name")
-    changed = a_different_value(param.get("value"))
+    # A non-default NUMERIC parameter - not "index 0", which on the amplifier is the
+    # boolean "Effect enabled" whose accepted domain is 0 or 1 (BUG-CTL-5).
+    devices = (devices_of(session, target)[1] or {}).get("devices") or []
+    param = next((p for d in devices if d.get("id") == effect
+                  for p in d.get("parameters") or [] if p.get("type") == "number"), {})
+    name, changed = param.get("name"), a_different_value(param.get("value"))
     session.result("plugin.param_set", {"target": target, "plugin": effect,
                                         "name": name, "value": changed})
     read_back = (session.result("plugin.param_get", {"target": target, "plugin": effect,

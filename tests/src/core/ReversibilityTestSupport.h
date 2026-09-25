@@ -326,6 +326,28 @@ inline QJsonArray deviceParameters(const QString& target, const QString& fx)
 	return deviceEntry(target, fx).value(QStringLiteral("parameters")).toArray();
 }
 
+/*! The index of the first parameter of @a fx whose reported `type` is @a type, or -1.
+ *
+ *  `dsp.get_state` reports each parameter's engine type ("number"/"boolean"), and the
+ *  two have different accepted domains: a boolean's is the two values the engine acts
+ *  on, so `plugin.param_set` REFUSES a fractional value on one (BUG-CTL-5,
+ *  `booleanRefusal()` in src/core/ControlCommandsPluginParams.cpp). A test that mutates
+ *  a parameter to prove a value round-tripped must therefore pick a NUMBER rather than
+ *  "index 0", which on this build is the amplifier's boolean "Effect enabled".
+ */
+inline int firstParameterIndexOfType(const QString& target, const QString& fx, const QString& type)
+{
+	const QJsonArray parameters = deviceParameters(target, fx);
+	for (int i = 0; i < parameters.size(); ++i)
+	{
+		if (parameters.at(i).toObject().value(QStringLiteral("type")).toString() == type)
+		{
+			return i;
+		}
+	}
+	return -1;
+}
+
 inline double deviceParameterValue(const QString& target, const QString& fx, int index)
 {
 	const ControlResult read = run(QStringLiteral("plugin.param_get"),

@@ -379,21 +379,48 @@ private slots:
 		QCOMPARE(loadEffects(source, 2, &ids), 2);
 		QCOMPARE(deviceCount(target), 0);
 
-		// A parameter away from its default, so "the same values" means something,
-		// on the first loaded device that HAS one.
+		// A parameter away from its default, so "the same values" means something -
+		// and it must be a NUMBER: a boolean's accepted domain is the two values the
+		// engine acts on, so plugin.param_set REFUSES a fractional value on one
+		// (BUG-CTL-5, booleanRefusal()). "Index 0" blindly picks the amplifier's
+		// boolean "Effect enabled" and asserts a value the honest contract refuses.
 		QString parameterised;
+		int parameterIndex = -1;
 		for (const QString& fx : ids)
 		{
-			if (!deviceParameters(source, fx).isEmpty()) { parameterised = fx; break; }
+			parameterIndex = firstParameterIndexOfType(source, fx, QStringLiteral("number"));
+			if (parameterIndex >= 0) { parameterised = fx; break; }
 		}
-		QVERIFY2(!parameterised.isEmpty(), "no loaded effect exposes a parameter");
-		const QJsonObject parameter = deviceParameters(source, parameterised).at(0).toObject();
+		QVERIFY2(parameterIndex >= 0, "no loaded effect exposes a number parameter");
+		const QJsonObject parameter = deviceParameters(source, parameterised)
+			.at(parameterIndex).toObject();
 		const double wanted = (parameter.value(QStringLiteral("min")).toDouble()
 			+ parameter.value(QStringLiteral("max")).toDouble()) / 3.0;
 		QVERIFY(run(QStringLiteral("plugin.param_set"),
 			QJsonObject{{QStringLiteral("target"), source},
 				{QStringLiteral("plugin"), parameterised},
-				{QStringLiteral("index"), 0}, {QStringLiteral("value"), wanted}}).ok);
+				{QStringLiteral("index"), parameterIndex}, {QStringLiteral("value"), wanted}}).ok);
+
+		// STRENGTHENING (BUG-CTL-5): the SAME command on a BOOLEAN parameter refuses
+		// that fractional value, typed - the honest contract that is why the parameter
+		// above had to be a number. Asserted on every boolean this build loads.
+		bool sawBoolean = false;
+		for (const QString& fx : ids)
+		{
+			const int index = firstParameterIndexOfType(source, fx, QStringLiteral("boolean"));
+			if (index < 0) { continue; }
+			const ControlResult onBoolean = run(QStringLiteral("plugin.param_set"),
+				QJsonObject{{QStringLiteral("target"), source}, {QStringLiteral("plugin"), fx},
+					{QStringLiteral("index"), index}, {QStringLiteral("value"), 0.333}});
+			QVERIFY2(!onBoolean.ok && onBoolean.errorKind == ControlErrorKind::InvalidArgs,
+				qPrintable(onBoolean.errorMessage));
+			sawBoolean = true;
+		}
+		if (!sawBoolean)
+		{
+			qWarning("no loaded effect exposes a boolean parameter: the fractional-on-boolean "
+				"refusal of BUG-CTL-5 is UNEXERCISED here");
+		}
 		// The device's POSITION on the source. chain.apply creates NEW devices on
 		// the target, so the id to read the value back with is the target's own,
 		// asked for at the same position (line 419 asserts the same devices in
@@ -427,7 +454,8 @@ private slots:
 		const QString targetParameterised = deviceIdAt(target, parameterisedIndex);
 		QVERIFY2(!targetParameterised.isEmpty(),
 			"the target's chain has no device at the parameterised position");
-		QVERIFY(qAbs(deviceParameterValue(target, targetParameterised, 0) - wanted) < 1e-6);
+		QVERIFY(qAbs(deviceParameterValue(target, targetParameterised, parameterIndex)
+			- wanted) < 1e-6);
 
 		// The A16 record classes it as the table says, and the undo really
 		// reverses it: the target is empty again.
