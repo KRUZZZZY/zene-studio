@@ -2027,11 +2027,19 @@ bool Song::guiSaveProjectAs(const QString & filename)
 	// file and still keep it as modified
 	if (saveResult && !withResources)
 	{
-		setModified(false);
-		setProjectFileName(fileNameWithExtension);
+		noteProjectSaved(fileNameWithExtension);
 	}
 
 	return saveResult;
+}
+
+
+
+
+void Song::noteProjectSaved(const QString & fileNameWithExtension)
+{
+	setModified(false);
+	setProjectFileName(fileNameWithExtension);
 }
 
 

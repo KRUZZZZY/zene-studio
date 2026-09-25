@@ -164,6 +164,12 @@ void registerProjectSave(ControlRegistry& registry)
 					: QStringLiteral("%1: %2").arg(target, refusal));
 		}
 
+		// The file is written; the SESSION state a successful save records is the
+		// step this handler used to skip, so its reply said saved:true while
+		// get_state still said modified:true with no file name and the bare save
+		// and control.quit {save:true} then refused (BUG-SAVE-01).
+		song->noteProjectSaved(target);
+
 		QJsonObject result;
 		result.insert(QStringLiteral("file"), target);
 		result.insert(QStringLiteral("saved"), true);

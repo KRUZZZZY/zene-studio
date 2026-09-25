@@ -383,6 +383,18 @@ public:
 	bool guiSaveProjectAs(const QString & filename);
 	bool saveProjectFile(const QString & filename, bool withResources = false);
 
+	/*! The session state a SUCCESSFUL save records: the file that was written,
+	 *  and the clean modified flag.
+	 *
+	 *  One implementation on purpose. `saveProjectFile()` writes the document
+	 *  and touches neither, so a caller of it had to remember both: the GUI's
+	 *  guiSaveProjectAs() did, and the control surface's project.save did not -
+	 *  it wrote the file and left `modified` true and the file name empty, so
+	 *  its own bare form then refused for want of a project file and
+	 *  control.quit {save:true} refused after a save that had just succeeded
+	 *  (BUG-SAVE-01). Both paths call THIS. */
+	void noteProjectSaved(const QString & projectFileName);
+
 	const QString & projectFileName() const
 	{
 		return m_fileName;

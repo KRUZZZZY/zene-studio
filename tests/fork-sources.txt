@@ -1115,6 +1115,7 @@ tests/control-render-presets.py
 tests/control-retro-capture.py
 tests/control-reversibility-transcript.py
 tests/control-routing-commands.py
+tests/control-save-state.py
 tests/control-session-api-proof.py
 tests/control-session-lifecycle-transcript.py
 tests/control-session-m1.py
