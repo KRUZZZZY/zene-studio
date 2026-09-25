@@ -28,12 +28,16 @@
 #include <QSignalSpy>
 
 #include <type_traits>
+#include <array>
+#include <limits>
 
+#include "AudioBus.h"
 #include "AudioPorts.h"
 #include "AudioPortsModel.h"
 #include "AudioPortsSettings.h"
 #include "Engine.h"
 #include "PluginAudioPorts.h"
+#include "SampleFrame.h"
 
 namespace lmms
 {
@@ -252,6 +256,62 @@ private slots:
 		doc3.appendChild(elem3);
 		loaded.saveSettings(doc3, elem3);
 		QCOMPARE(doc3.toString(), doc.toString());
+	}
+
+	//! BUG-CHBOUND: the cached track-channel upper bound follows the pins actually
+	//! in use. It was initialised to DEFAULT_CHANNELS and only ever assigned
+	//! std::min(...), so it never grew. AudioBus and the AudioPorts views loop
+	//! [0, bound), so audio routed to a pair above the default one was never
+	//! examined - and a bus carrying signal on track channels 2/3 was reported
+	//! all-quiet.
+	void trackChannelsUpperBoundFollowsPinUsage()
+	{
+		using namespace lmms;
+
+		TestAudioPortsModel model{0, 2, false};
+		QCOMPARE(model.trackChannelsUpperBound(), DEFAULT_CHANNELS);
+
+		// growing the track channel count alone does not grow the bound
+		model.setTrackChannelCount(4);
+		QCOMPARE(model.trackChannelsUpperBound(), DEFAULT_CHANNELS);
+
+		// route ONLY the second pair (track channels 2 and 3)
+		model.out().setPin(0, 0, false);
+		model.out().setPin(1, 1, false);
+		model.out().setPin(2, 0, true);
+		model.out().setPin(3, 1, true);
+		QCOMPARE(model.trackChannelsUpperBound(), ch_cnt_t(4));
+
+		// the bound is what AudioBus::update() loops over: the signal in the pair
+		// above the default one is examined, so the bus is NOT all-quiet
+		std::array<std::array<SampleFrame, 8>, 2> storage{};
+		std::array<SampleFrame*, 2> pointers{storage[0].data(), storage[1].data()};
+		AudioBus bus{pointers.data(), ch_cnt_t(2), f_cnt_t(8)};
+		storage[1][0][0] = 0.5f; // track channel 2
+		QVERIFY(!bus.update(model));
+
+		// control: the same measurement on a model that routes the DEFAULT pair, so a
+		// signal the router does examine is reported not-quiet too - the result above
+		// is the bound, not the harness
+		TestAudioPortsModel defaultPair{0, 2, false};
+		std::array<std::array<SampleFrame, 8>, 2> controlStorage{};
+		std::array<SampleFrame*, 2> controlPointers{controlStorage[0].data(), controlStorage[1].data()};
+		AudioBus controlBus{controlPointers.data(), ch_cnt_t(2), f_cnt_t(8)};
+		controlStorage[0][0][0] = 0.5f;
+		QVERIFY(!controlBus.update(defaultPair));
+
+		// and the pair is sanitized: a NaN left in it is cleared
+		storage[1][0][0] = std::numeric_limits<float>::quiet_NaN();
+		bus.sanitize(model);
+		QCOMPARE(storage[1][0][0], 0.f);
+
+		// shrink then grow again: the removed pair must not come back
+		model.setTrackChannelCount(2);
+		QCOMPARE(model.trackChannelsUpperBound(), DEFAULT_CHANNELS);
+		model.setTrackChannelCount(4);
+		QCOMPARE(model.trackChannelsUpperBound(), DEFAULT_CHANNELS);
+		QVERIFY(!model.out().usedTrackChannels()[2]);
+		QVERIFY(!model.out().usedTrackChannels()[3]);
 	}
 };
 

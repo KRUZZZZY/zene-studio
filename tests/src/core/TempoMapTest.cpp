@@ -452,11 +452,9 @@ private slots:
 	}
 
 	//! BUG-TEMPOSET: set() refuses two events that share a tick and changes nothing,
-	//! which is what include/TempoMap.h documents ("False - and no change - when any
-	//! event is invalid, two events share a tick, or the set is too large"). It
-	//! delegated to addEvent(), which MERGES the two halves at one tick, and returned
-	//! that success as its own - so "replace the whole set" quietly accepted an
-	//! ambiguous set.
+	//! as include/TempoMap.h documents. It delegated to addEvent(), which MERGES the
+	//! two halves at one tick, and returned that success as its own - so "replace the
+	//! whole set" quietly accepted an ambiguous set.
 	void setRefusesTwoEventsAtTheSameTick()
 	{
 		TempoMapEvent tempo;
