@@ -300,12 +300,20 @@ ControlResult handleMasteringRun(const QJsonObject& args)
 	// directory nobody will read, nor the scratch behind: kill it and take the
 	// run (and its QTemporaryDir) down with the instance.
 	QObject::connect(qApp, &QCoreApplication::aboutToQuit, process, [run] {
-		if (masteringPendingRun() == run)
-		{
-			run->process->kill();
-			delete run;
-			setMasteringPendingRun(nullptr);
-		}
+		if (masteringPendingRun() != run) { return; }
+		// The slot is cleared BEFORE the run is taken down, and that order is
+		// the fix: ~MasteringPendingRun deletes its QProcess, and deleting a
+		// QProcess whose child is still running kills and reaps it - which can
+		// deliver the child's own completion to completeMasteringRun on this
+		// same stack. Its one guard compares the pending slot with the run, so
+		// clearing the slot first makes that nested completion the no-op it must
+		// be. With the slot still set it passed the guard and deleted this run a
+		// SECOND time: measured SIGSEGV in ~QTemporaryDir (~MasteringPendingRun's
+		// `delete scratch` on already-freed memory) after a clean
+		// `control.quit` while a run was in flight (BUG-MASTER-QUIT-CRASH).
+		setMasteringPendingRun(nullptr);
+		run->process->kill();
+		delete run;
 	});
 
 	setMasteringRunState(QStringLiteral("running"));
