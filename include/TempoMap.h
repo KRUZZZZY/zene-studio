@@ -235,8 +235,11 @@ public:
 	//! Serialise the map as a `<tempo-map>` child of \a parent. The CALLER
 	//! decides whether to call this; shouldPersist() is the rule.
 	void saveSettings(QDomDocument& doc, QDomElement& parent) const;
-	//! Read a `<tempo-map>` element back. The map is left EMPTY - the state a
-	//! project with no map loads into - when the element holds no valid event.
+	//! Read a `<tempo-map>` element back. When the element holds no event this
+	//! build accepts, the EVENT SET is left empty - the timing path's
+	//! global-tempo answer - and the AUTHORITY the element declares is kept, so
+	//! an empty-but-active map (shouldPersist() writes one) reads back as the
+	//! state it was written from. Returns whether any event was read.
 	bool loadSettings(const QDomElement& element);
 
 private:

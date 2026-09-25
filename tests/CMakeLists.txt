@@ -2696,6 +2696,24 @@ if(PYTHON3_EXECUTABLE AND CONTROL_SUITE_AVAILABLE)
 		ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
 		TIMEOUT 300
 	)
+	# The tempo map as PROJECT STATE (docs/TEMPO-MAP.md section 3): the round trip
+	# the certification sweep broke (BUG-D4c-8402 - an ACTIVATED empty map was
+	# written, then dropped by the reader, so the element vanished one
+	# save -> open -> save later). tests/src/core/TempoMapPersistenceTest.cpp holds
+	# the map's own file claim in process; only the real binary can show the
+	# release contract's section 3.1 path, so here an external client activates the
+	# map over --control-socket, saves with project.save, reloads with project.open
+	# and reads the bytes back out of the documents the application wrote. It also
+	# covers a POPULATED map as the control: the fix must not change what a
+	# non-empty map does. No fixture file: it authors its own events.
+	add_test(NAME ControlTempoMapPersistence
+		COMMAND ${PYTHON3_EXECUTABLE}
+			${CMAKE_CURRENT_SOURCE_DIR}/control-tempo-map-persistence.py
+			$<TARGET_FILE:zene>)
+	set_tests_properties(ControlTempoMapPersistence PROPERTIES
+		ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+		TIMEOUT 300
+	)
 	# render.stems (0.3.0 verb wave, feature-tracker row 68): per-track stem
 	# export driven end to end through --control-socket, which is the half the
 	# engine's own StemExportTest cannot cover - that suite proves the four stems

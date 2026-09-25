@@ -60,6 +60,7 @@
 #     tests/src/core/OutOfProcessHostSupport.h tests/zene-api-boundary.py ; \
 # git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/control-livecode-commands.py ; \
 # git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/control-surface-hardening.py ; \
+# git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/control-tempo-map-persistence.py ; \
 #        } | LC_ALL=C sort -u) && echo REPRODUCES
 # 2026-09-16 (the 0.3.0 fix-up pass, lane 030/fixup-hygiene): three fork-NEW modules enter this
 # scope, each named in the pathspec lines above so the recipe derives them and each registered
@@ -1121,6 +1122,7 @@ tests/control-stable-ids.py
 tests/control-stem-commands.py
 tests/control-stem-export-verb.py
 tests/control-surface-hardening.py
+tests/control-tempo-map-persistence.py
 tests/control-track-folder.py
 tests/control-undo-structural.py
 tests/control-vca-commands.py

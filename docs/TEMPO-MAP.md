@@ -95,6 +95,14 @@ that a bundled project renders byte-identically across the change — rests on
 exactly that, and `TempoMapTest` measures both halves of it: the file bytes and
 the audio path.
 
+The same rule runs in the other direction, and the reader has to honour it:
+`shouldPersist()` is what makes an EMPTY-but-active map `transport.tempo_map_set_active`
+switched on a written element, so `TempoMap::loadSettings()` keeps the `active`
+attribute the element declares even when it carries no event this build accepts — the
+event set is emptied either way, and the map reports `active` because the file says so
+(BUG-D4c-8402: a reader that reset the flag lost the state on the NEXT save).
+`tests/control-tempo-map-persistence.py` measures the round trip end to end.
+
 ## 4. The audio-thread read (workspace rule 4)
 
 The map is authored on the control thread and read on the audio thread, so a

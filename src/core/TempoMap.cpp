@@ -337,10 +337,17 @@ bool TempoMap::loadSettings(const QDomElement& element)
 		if (addEvent(event)) { any = true; }
 	}
 
-	// An element holding nothing this build accepts loads as the EMPTY map -
-	// the state a project with no tempo map is in - so a truncated or future
-	// block degrades to "no map" and never to a wrong timeline.
-	if (!any) { clear(); }
+	// An element holding nothing this build accepts loads with an EMPTY event
+	// set - already the state the clear() at the top left - and it keeps the
+	// AUTHORITY the element declares. The authority is not the reader's to
+	// drop: shouldPersist() is `active || size() > 0`, so the writer emits the
+	// element for an empty-but-active map, and a reader that reset `active`
+	// here lost that state on the NEXT save, which is how
+	// `transport.tempo_map_set_active {"active":true}` disappeared from a
+	// document across save -> open -> save (BUG-D4c-8402, the BUG-A4-3 class).
+	// Dropping the events of a truncated or future block still degrades it to
+	// "no events" - the timing path's global-tempo answer
+	// (docs/TEMPO-MAP.md section 3) - and never to a wrong timeline.
 	return any;
 }
 
