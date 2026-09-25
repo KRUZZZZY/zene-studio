@@ -250,6 +250,17 @@ void Lv2SubPluginFeatures::listSubPluginKeys(const Plugin::Descriptor* desc,
 												KeyList& kl) const
 {
 	Lv2Manager* lv2Mgr = Engine::getLv2Manager();
+	// A missing manager means "no LV2 devices", the rule the sibling catalogue walk
+	// already follows (src/core/ControlDeviceHosted.cpp:264-266: `if (manager ==
+	// nullptr) { return; }`). Engine::init() is the ONLY place s_lv2Manager is
+	// created (src/core/Engine.cpp:66-77) and it starts as nullptr (Engine.cpp:50),
+	// so a scan that runs before the Engine exists - a test host, or any plugin
+	// scan on a path that never calls Engine::init() - must report an empty key list
+	// rather than dereference null. Measured: the forced full scan in
+	// tests/src/core/PluginScanCacheTest.cpp segfaulted here
+	// (Lv2Manager::begin() with this==0x0) once the build's own liblv2instrument.so
+	// was in the plugin search path.
+	if (lv2Mgr == nullptr) { return; }
 	for (const auto& uriInfoPair : *lv2Mgr)
 	{
 		if (uriInfoPair.second.type() == m_type && uriInfoPair.second.isValid())

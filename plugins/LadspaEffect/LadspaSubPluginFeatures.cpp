@@ -108,6 +108,16 @@ void LadspaSubPluginFeatures::listSubPluginKeys(
 						const Plugin::Descriptor * _desc, KeyList & _kl ) const
 {
 	Ladspa2LMMS * lm = Engine::getLADSPAManager();
+	// A missing manager means "no LADSPA devices", the rule the catalogue walk already
+	// follows (src/core/ControlDeviceCatalogue.cpp:104-105: `if (manager == nullptr) {
+	// return; }`). Engine::init() is the ONLY place s_ladspaManager is created
+	// (src/core/Engine.cpp:79) and it starts as nullptr (Engine.cpp:52), so a plugin
+	// scan that runs before the Engine exists - a test host, or any scan on a path
+	// that never calls Engine::init() - must report an empty key list rather than
+	// dereference null. Measured: the forced full scan in
+	// tests/src/core/PluginScanCacheTest.cpp segfaulted here once this build's own
+	// ladspaeffect.so was in the plugin search path.
+	if (lm == nullptr) { return; }
 
 	l_sortable_plugin_t plugins;
 	switch( m_type )

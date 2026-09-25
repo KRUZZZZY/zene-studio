@@ -89,6 +89,7 @@
 #include "lmmsconfig.h"
 
 #include "embed.h"
+#include "Engine.h"
 #include "Plugin.h"
 #include "PluginBrowser.h"
 #include "PluginFactory.h"
@@ -781,6 +782,45 @@ private slots:
 		}
 
 		browser.hide();
+	}
+
+	/*! A full scan that loads an LV2 host module must not crash when the Engine was
+	 *  never initialized, so `Engine::getLv2Manager()` is null: the module's
+	 *  descriptor carries SubPluginFeatures, and PluginFactory::appendLoadedPlugin()
+	 *  calls Lv2SubPluginFeatures::listSubPluginKeys(), which dereferenced that null
+	 *  manager (SEGFAULT, src/core/lv2/Lv2SubPluginFeatures.cpp:253). The rule it now
+	 *  follows is the one the sibling catalogue walk states
+	 *  (src/core/ControlDeviceHosted.cpp:264-266): a missing manager means "no LV2
+	 *  devices". Load-bearing: without the guard the PROCESS dies here, not just an
+	 *  assertion.
+	 */
+	void testFullScanOfAnLv2ModuleWithoutAManagerDoesNotCrash()
+	{
+#ifdef LMMS_HAVE_LV2
+#	ifdef LMMS_BUILD_WIN32
+		QSKIP(PluginModuleHostSkipMessage);
+#	else
+		using namespace lmms;
+		// The LV2 host module is the file that reaches the call; without it this build
+		// cannot exercise the path, and passing quietly would be a lie.
+		const QString module = QDir(QStringLiteral(LMMS_TEST_SCAN_PLUGIN_DIR))
+			.filePath(QStringLiteral("liblv2instrument.so"));
+		if (!QFileInfo::exists(module)) { QSKIP("this build ships no LV2 host module to scan"); }
+		// The pre-condition this regression is about: no Engine::init() in this host.
+		QVERIFY2(Engine::getLv2Manager() == nullptr,
+			"this host must not have initialized the LV2 manager");
+		qputenv("LMMS_PLUGIN_SCAN_CACHE", cachePath("lv2").toLocal8Bit());
+		QDir::setSearchPaths("plugins", QStringList{QStringLiteral(LMMS_TEST_SCAN_PLUGIN_DIR)});
+		PluginFactory factory;
+		QVERIFY2(factory.scanStats().candidateFiles >= 1,
+			"the scan must have walked this build's plugin directory");
+		QVERIFY2(!factory.pluginInfo("lv2instrument").isNull(),
+			qPrintable(QStringLiteral("the LV2 host module was not discovered: %1")
+				.arg(factory.errorString("lv2instrument"))));
+#	endif
+#else
+		QSKIP("this build has no LV2 support");
+#endif
 	}
 
 private:
