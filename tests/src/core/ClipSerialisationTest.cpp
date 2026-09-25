@@ -340,6 +340,61 @@ private slots:
 		QCOMPARE(windowAfter.value("len"), windowBefore.value("len"));
 	}
 
+	//! BUG-CLIPREV: `reversed` is reset on absence by a restore. The writer emits the
+	//! attribute only for a reversed source, so absence means "not reversed" - not
+	//! "no change". Reading it as "no change" left the LIVE flag alone, so a restore
+	//! over a clip the GUI had since reversed (SampleClipView's toggle writes no
+	//! journal step of its own) left the clip reversed.
+	//!
+	//! The element here has no `src`, which isolates the loader's own rule: the
+	//! loader's setSampleFile() path REPLACES the Sample outright (a separate
+	//! mechanism, and the one docs/KNOWN-LIMITATIONS.md documents for the window),
+	//! so a source-carrying element would clear the flag for a reason that is not
+	//! this rule. Both paths must end un-reversed; only this one measures the rule.
+	void reversedIsResetOnAbsenceAndAppliedWhenPresent()
+	{
+		SampleTrack track(Engine::getSong());
+		auto* clip = makeFileClip(track, m_wav);
+		QSignalSpy reversedSpy(clip, &SampleClip::wasReversed);
+		QVERIFY(reversedSpy.isValid());
+
+		// the write rule: a clip that is not reversed writes no attribute
+		QDomDocument doc;
+		QDomElement parent = doc.createElement("track");
+		const QDomElement checkpoint = clip->saveState(doc, parent);
+		QVERIFY(!checkpoint.hasAttribute("reversed"));
+		QCOMPARE(clip->sample().reversed(), false);
+
+		// the loader's rule for an ABSENT attribute, over a live reversal: not
+		// reversed, and the view told so it repaints
+		QDomElement withoutSource = checkpoint.cloneNode(true).toElement();
+		withoutSource.removeAttribute("src");
+		clip->sample().setReversed(true);
+		reversedSpy.clear();
+		clip->restoreState(withoutSource);
+		QCOMPARE(clip->sample().reversed(), false);
+		QCOMPARE(reversedSpy.count(), 1);
+
+		// and the same for the real checkpoint, which does carry `src`
+		clip->sample().setReversed(true);
+		clip->restoreState(checkpoint);
+		QCOMPARE(clip->sample().reversed(), false);
+
+		// positive control: with the attribute present it still applies, and the
+		// round trip through the serialiser is unchanged for a reversed clip
+		clip->sample().setReversed(true);
+		QDomDocument doc2;
+		QDomElement parent2 = doc2.createElement("track");
+		const QDomElement reversed = clip->saveState(doc2, parent2);
+		QCOMPARE(reversed.attribute("reversed"), QString("true"));
+
+		clip->sample().setReversed(false);
+		reversedSpy.clear();
+		clip->restoreState(reversed);
+		QCOMPARE(clip->sample().reversed(), true);
+		QCOMPARE(reversedSpy.count(), 1);
+	}
+
 private:
 	//! The files a round trip needs; `m_dir` outlives every test slot.
 	QString m_wav;

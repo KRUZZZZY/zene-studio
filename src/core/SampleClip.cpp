@@ -576,9 +576,19 @@ void SampleClip::loadSettings( const QDomElement & _this )
 	// on nothing here: a file without the attributes keeps the neutral defaults.
 	loadClipEdits(_this);
 
-	if(_this.hasAttribute("reversed"))
+	// `reversed` is written ONLY for a reversed source (saveSettings above), so on
+	// restore its absence is an explicit "plays forwards", not "no change". Reading
+	// it as "no change" left the live flag alone, so a restore over a clip the GUI
+	// had since reversed left the clip reversed (BUG-CLIPREV). A value that is
+	// present but says "not true" ("false"/"0") is read the same way. The window
+	// attributes above stay additive on purpose: THEIR absent case is the declared
+	// limit in docs/KNOWN-LIMITATIONS.md ("no reset-on-absence for it").
+	const auto reversedText = _this.attribute("reversed");
+	const bool reversed = _this.hasAttribute("reversed")
+		&& reversedText != QStringLiteral("false") && reversedText != QStringLiteral("0");
+	if(m_sample.reversed() != reversed)
 	{
-		m_sample.setReversed(true);
+		m_sample.setReversed(reversed);
 		emit wasReversed(); // tell SampleClipView to update the view
 	}
 }
