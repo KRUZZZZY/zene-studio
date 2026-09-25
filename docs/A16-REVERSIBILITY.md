@@ -323,6 +323,17 @@ revision, while a GUI Ctrl+Z after the same save behaves exactly as it did befor
 * the recoverable set is **reported, not assumed**: `project.get_state` and both save/restore
   results carry `revisions: {policy, revisions[], count, retained_bytes, max_revision_bytes,
   max_total_bytes}`.
+* **a first save has no inverse, and the reply says so (BUG-CTL-6, 2026-09-25).** The inverse is
+  the revision the save REPLACED; on a save to a path that has no earlier revision there is
+  nothing to replace, `rotateProjectRevision` keeps nothing, and no `rev0` exists. The reply
+  therefore reports `revision_kept: false` with `revision_skipped` naming the first save, and the
+  recorded transaction carries **no** `project.restore_revision` inverse and `reversible: false`,
+  so `control.undo` refuses it typed (`irreversible`) instead of dispatching a
+  `project.restore_revision {revision: 0}` that answers `not_found`. This is the contract's own
+  allowance for a handler to record **less** than its class (`ControlRegistry::stampContract`); the
+  `project.save` row stays snapshot/reversible because a save OVER an existing revisioned file does
+  keep a revision and does offer the working inverse. Both cases are asserted by
+  `tests/control-reversibility-transcript.py` (sections B and B2).
 * `control.undo` after `project.save` dispatches `project.restore_revision` (see section 4).
 
 ---

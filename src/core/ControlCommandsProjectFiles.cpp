@@ -54,6 +54,57 @@ QString sha256OfFile(const QString& path)
 	return QString::fromLatin1(hash.result().toHex());
 }
 
+//! The `__transaction` project.save records, honest PER CALL (BUG-CTL-6).
+//! `revisionKept` is true only when the rotation actually retained a revision,
+//! so the `project.restore_revision {revision: 0}` inverse is recorded ONLY
+//! then: a first save has no file to replace, so advertising that inverse
+//! would name an undo the engine cannot perform - `control.undo` would answer
+//! restoreProjectRevision's typed `not_found`, the same class of lie BUG-CTL-1
+//! fixed. Recording `reversible: false` there is the honest shape and is exactly
+//! what the contract permits a handler to do (ControlRegistry::stampContract:
+//! "A handler may still record LESS than its class allows ... never more"); the
+//! table ROW stays snapshot/reversible because a save OVER an existing file
+//! does keep a revision and does offer the inverse.
+QJsonObject saveTransaction(const QString& target, bool refused, bool revisionKept)
+{
+	QJsonObject transaction;
+	transaction.insert(QStringLiteral("before"),
+		QJsonObject{{QStringLiteral("file"), target},
+			{QStringLiteral("previous_revision_replaced"), revisionKept ? 0 : -1}});
+	if (revisionKept)
+	{
+		// The inverse is a COMMAND, not a live object: the file is not project
+		// state and has no JournallingObject, so control.undo dispatches this
+		// instead of unwinding the model's undo stack (see
+		// docs/A16-REVERSIBILITY.md for why a file write stays off the GUI
+		// stack).
+		transaction.insert(QStringLiteral("inverse"),
+			QJsonObject{{QStringLiteral("op"), QStringLiteral("project.restore_revision")},
+				{QStringLiteral("applies"), QStringLiteral("command")},
+				{QStringLiteral("args"),
+					QJsonObject{{QStringLiteral("path"), target},
+						{QStringLiteral("revision"), 0}}}});
+	}
+	transaction.insert(QStringLiteral("reversible"), revisionKept);
+	QString mechanism;
+	if (!revisionKept)
+	{
+		mechanism = refused
+			? QStringLiteral("snapshot only: the file is over the 'keep-3' policy's per-revision "
+				"cap, so no revision was kept and no inverse is offered")
+			: QStringLiteral("snapshot only: this is the file's first save - there was no "
+				"previous revision to keep, so no revision 0 exists and no inverse is offered");
+	}
+	else
+	{
+		mechanism = QStringLiteral("file revision: the replaced file is kept as revision 0 of "
+			"the named 'keep-3' policy and project.restore_revision restores it");
+	}
+	transaction.insert(QStringLiteral("mechanism"), mechanism);
+	return transaction;
+}
+
+
 // ---------------------------------------------------------------------------
 // project.save (SPEC A16 deliverable 4: the previous revision is kept)
 // ---------------------------------------------------------------------------
@@ -93,7 +144,12 @@ void registerProjectSave(ControlRegistry& registry)
 		// truncated project is a corrupt one) and the result says so.
 		bool refused = false;
 		QString refusedReason;
-		control::rotateProjectRevision(target, &refused, &refusedReason);
+		const int revisionsKept = control::rotateProjectRevision(target, &refused, &refusedReason);
+		// A revision was actually retained only when the rotation copied one
+		// (BUG-CTL-6): a first save has no file to replace and a cap refusal
+		// copies nothing, and both return 0 here. Everything the reply claims as
+		// reversible is gated on this, not on `!refused`.
+		const bool revisionKept = revisionsKept > 0;
 
 		if (!song->saveProjectFile(target))
 		{
@@ -111,32 +167,18 @@ void registerProjectSave(ControlRegistry& registry)
 		QJsonObject result;
 		result.insert(QStringLiteral("file"), target);
 		result.insert(QStringLiteral("saved"), true);
-		result.insert(QStringLiteral("revision_kept"), !refused);
+		result.insert(QStringLiteral("revision_kept"), revisionKept);
 		result.insert(QStringLiteral("revisions"), control::projectRevisionState(target));
 		if (refused) { result.insert(QStringLiteral("revision_skipped"), refusedReason); }
+		else if (!revisionKept)
+		{
+			// Not a refusal and not a cap: a first save simply had nothing to
+			// keep, and the reply says which of the two it was (BUG-CTL-6).
+			result.insert(QStringLiteral("revision_skipped"), QStringLiteral("there was no "
+				"previous revision to keep: this is the file's first save"));
+		}
 
-		QJsonObject transaction;
-		transaction.insert(QStringLiteral("before"),
-			QJsonObject{{QStringLiteral("file"), target},
-				{QStringLiteral("previous_revision_replaced"), refused ? -1 : 0}});
-		// The inverse is a COMMAND, not a live object: the file is not project
-		// state and has no JournallingObject, so control.undo dispatches this
-		// instead of unwinding the model's undo stack (see
-		// docs/A16-REVERSIBILITY.md for why a file write stays off the GUI
-		// stack).
-		transaction.insert(QStringLiteral("inverse"),
-			QJsonObject{{QStringLiteral("op"), QStringLiteral("project.restore_revision")},
-				{QStringLiteral("applies"), QStringLiteral("command")},
-				{QStringLiteral("args"),
-					QJsonObject{{QStringLiteral("path"), target},
-						{QStringLiteral("revision"), 0}}}});
-		transaction.insert(QStringLiteral("reversible"), !refused);
-		transaction.insert(QStringLiteral("mechanism"), refused
-			? QStringLiteral("snapshot only: the file is over the 'keep-3' policy's per-revision "
-				"cap, so no revision was kept and no inverse is offered")
-			: QStringLiteral("file revision: the replaced file is kept as revision 0 of the "
-				"named 'keep-3' policy and project.restore_revision restores it"));
-		result.insert(QStringLiteral("__transaction"), transaction);
+		result.insert(QStringLiteral("__transaction"), saveTransaction(target, refused, revisionKept));
 		return ControlResult::success(result);
 	};
 	registry.registerCommand(cmd);

@@ -79,7 +79,10 @@ const ReversibilityRow kSnapshotRows[] = {
 		"8 MiB, 24 MiB per project). The recorded inverse is the command "
 		"project.restore_revision, which control.undo dispatches. File-level "
 		"commands are deliberately NOT put on the GUI undo stack - see "
-		"docs/A16-REVERSIBILITY.md - because a file is not project state",
+		"docs/A16-REVERSIBILITY.md - because a file is not project state. "
+		"Recorded PER CALL: a first save has no revision to replace, so it "
+		"registers NO inverse and reports reversible:false rather than naming a "
+		"revision 0 that cannot exist (BUG-CTL-6)",
 		""),
 	R("plugin.load", RC::Snapshot, false,
 		"two branches: appending an EFFECT has an exact inverse (the instance "

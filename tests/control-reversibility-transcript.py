@@ -13,7 +13,12 @@ see exactly what the engine answered. The three commands are one of each class:
                            the recorded inverse is the command
                            `project.restore_revision`, which control.undo
                            dispatches (the file bytes are hashed here on the
-                           client side, so the read-back is external evidence)
+                           client side, so the read-back is external evidence).
+                           B2 (BUG-CTL-6): a FIRST save - to a path with no
+                           earlier revision - must record `reversible: false`
+                           with NO inverse, and control.undo must refuse it
+                           typed (`irreversible`) instead of chasing a
+                           revision 0 that cannot exist
   C. `script.run`          irreversible - control.undo must FAIL, typed, naming
                            the command and its documented fallback, and must NOT
                            silently undo the reversible step underneath it
@@ -120,10 +125,44 @@ def main(argv):
         print("B. snapshot: project.save (file-level; the inverse is a command)")
         print("=" * 74)
         target = os.path.join(instance.tmp, "revision-transcript.mmp")
-        H.ok_result(call(client, 201, "project.save", {"path": target}), 201)
+        first_save = H.ok_result(call(client, 201, "project.save", {"path": target}), 201)
         first_sha = sha256_of(target)
         first_size = size_of(target)
-        report("first save", "sha256=%s bytes=%d" % (first_sha, first_size))
+        report("first save", "sha256=%s bytes=%d revision_kept=%s"
+               % (first_sha, first_size, first_save.get("revision_kept")))
+        report("first save revisions", first_save.get("revisions"))
+
+        # B2. BUG-CTL-6: a FIRST save has no earlier revision to replace, so it
+        # must NOT advertise the revision-0 inverse. The old shape recorded
+        # reversible:true + project.restore_revision{revision:0} here; the
+        # advertised undo then answered the typed not_found of a revision that
+        # cannot exist. The honest record is reversible:false with no inverse,
+        # which makes control.undo refuse it TYPED instead.
+        problems.require(first_save.get("revision_kept") is False,
+                         "a first save reported revision_kept:true with no revision to keep")
+        problems.require(not os.path.exists(target + ".rev0"),
+                         "a first save left a .rev0 behind; there was nothing to rotate")
+        first_record = last_transaction(client, call, 206, "project.save")
+        report("first save transaction", "class=%s reversible=%s inverse=%s"
+               % (first_record.get("class"), first_record.get("reversible"),
+                  first_record.get("inverse")))
+        problems.require(first_record.get("class") == "snapshot",
+                         "project.save is not classed snapshot (the table row moved)")
+        problems.require(first_record.get("reversible") is False,
+                         "a FIRST save advertised reversible:true (BUG-CTL-6)")
+        problems.require(not first_record.get("inverse"),
+                         "a FIRST save advertised a revision-0 inverse that cannot exist (BUG-CTL-6)")
+        refused_first = call(client, 207, "control.undo")
+        first_error = refused_first.get("error") or {}
+        report("control.undo after the first save",
+               "ok=%s error.kind=%s" % (refused_first.get("ok"), first_error.get("kind")))
+        report("message", first_error.get("message"))
+        problems.require(refused_first.get("ok") is False,
+                         "control.undo after a first save reported success")
+        problems.require(first_error.get("kind") == "irreversible",
+                         "control.undo after a first save answered %r, not the typed "
+                         "'irreversible': it still chased the missing revision 0"
+                         % first_error.get("kind"))
 
         # Change the session, save again: the first revision must be recoverable.
         H.ok_result(call(client, 202, "track.add", {"type": "pattern"}), 202)
@@ -133,6 +172,8 @@ def main(argv):
                % (second_sha, size_of(target), second.get("revision_kept")))
         report("retained revisions", second.get("revisions"))
         problems.require(second_sha != first_sha, "the second save wrote identical bytes; the test proves nothing")
+        problems.require(second.get("revision_kept") is True,
+                         "a save OVER an existing file kept no revision (the regression B2 guards)")
 
         save_record = last_transaction(client, call, 204, "project.save")
         report("transaction", "class=%s reversible=%s inverse=%s"
@@ -142,6 +183,8 @@ def main(argv):
         report("file read back", "sha256=%s bytes=%d (expected the first save's bytes)"
                % (sha256_of(target), size_of(target)))
         problems.require(save_record.get("reversible") is True, "project.save did not record reversible:true")
+        problems.require((save_record.get("inverse") or {}).get("args", {}).get("revision") == 0,
+                         "a save over an existing file lost its revision-0 inverse (BUG-CTL-6 over-corrected)")
         problems.require(undone.get("restored_by") == "project.restore_revision",
                          "the save's undo did not dispatch project.restore_revision")
         problems.require(sha256_of(target) == first_sha,
