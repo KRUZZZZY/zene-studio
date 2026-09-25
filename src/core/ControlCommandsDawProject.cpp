@@ -184,11 +184,11 @@ SessionSnapshot captureSession(Song* song)
 	return snapshot;
 }
 
-//! Put a captured session back: the tracks first (through the same
-//! Track::create(element, container) the project loader uses), then the mixer
-//! strips, then the map and the two globals.
+//! Put a captured session back: views first (BUG-DWP-UNDO), then tracks, then the
+//! mixer strips, then the map and the two globals.
 void restoreSession(Song* song, const SessionSnapshot& snapshot)
 {
+	song->aboutToClearTracks();
 	song->clearAllTracks();
 	for (const QString& xml : snapshot.trackXml)
 	{

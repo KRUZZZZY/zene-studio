@@ -1093,6 +1093,7 @@ tests/control-golden-audio.py
 tests/control-headless-no-audio-device.py
 tests/control-headless-project-open.py
 tests/control-headless-working-directory.py
+tests/control-import-lifetime.py
 tests/control-link-sync.py
 tests/control-livecode-commands.py
 tests/control-mastering-commands.py

@@ -24,12 +24,12 @@
  *                      SampleTrack::panningModel() - LOSSY #6, because LMMS'
  *                      MixerChannel has no pan of its own
  *
- * WHAT IT WRITES BACK. `applyDawProjectModel` REPLACES the session: it clears
- * every track, writes the global tempo and metre, replaces the tempo map and
- * creates one track per model track with its clips and notes, then applies each
- * track's mixer strip to the channel the engine assigned it. The caller owns the
- * inverse - see the `dawproject.import` handler, which captures the whole
- * previous session as one recorded action before calling this.
+ * WHAT IT WRITES BACK. `applyDawProjectModel` REPLACES the session: it
+ * announces aboutToClearTracks() (the views go first - docs/UNDO-RELEASE-CONFIG.md,
+ * BUG-DAW-SMF-CRASH) and clears every track, writes the global tempo and metre,
+ * replaces the tempo map and creates one track per model track with its clips
+ * and notes, then applies each track's mixer strip. The caller owns the inverse
+ * (see the `dawproject.import` handler, which captured the previous session).
  *
  * A NOTE ON TRACK TYPES. Track::create() supports Instrument, Pattern, Sample,
  * Automation, HiddenAutomation and Folder; Event and Video have no
@@ -343,6 +343,7 @@ DawProjectModel dawProjectModelFromSong(Song* song, DawProjectLossReport* loss)
 
 bool applyDawProjectModel(Song* song, const DawProjectModel& model, QString* error)
 {
+	song->aboutToClearTracks();
 	song->clearAllTracks();
 	song->setTempo(static_cast<bpm_t>(model.tempo));
 	song->getTimeSigModel().numeratorModel().setValue(model.numerator);

@@ -2892,6 +2892,16 @@ if(PYTHON3_EXECUTABLE AND CONTROL_SUITE_AVAILABLE)
 		ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
 		TIMEOUT 300
 	)
+	# The ControlImportLifetime regression of the 2026-09-25 free-form hunt; see the test's own
+	# header for the reproduction, the root cause and the red/green pair.
+	add_test(NAME ControlImportLifetime
+		COMMAND ${PYTHON3_EXECUTABLE}
+			${CMAKE_CURRENT_SOURCE_DIR}/control-import-lifetime.py
+			$<TARGET_FILE:zene>)
+	set_tests_properties(ControlImportLifetime PROPERTIES
+		ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+		TIMEOUT 300
+	)
 	# Import detection (0.3.0, feature row 34 of docs/FEATURE-LIST-0.3.0.md): the
 	# `detect.*` group driven END TO END through --control-socket, which is the
 	# release contract's section 3.1 claim for it. The fixtures are SYNTHESISED by
