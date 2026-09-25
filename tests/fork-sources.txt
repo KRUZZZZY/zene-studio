@@ -1111,6 +1111,7 @@ tests/control-ports-commands.py
 tests/control-punch-transcript.py
 tests/control-readiness.py
 tests/control-recording-recovery.py
+tests/control-render-format-capability.py
 tests/control-render-presets.py
 tests/control-retro-capture.py
 tests/control-reversibility-transcript.py

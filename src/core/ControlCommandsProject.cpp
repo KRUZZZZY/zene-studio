@@ -62,6 +62,41 @@ bool formatFromName(const QString& name, ProjectRenderer::ExportFileFormat* form
 	return false;
 }
 
+//! The encoder a format needs, named so a refusal can say WHICH one is missing.
+QString encoderNameFor(ProjectRenderer::ExportFileFormat format)
+{
+	switch (format)
+	{
+	case ProjectRenderer::ExportFileFormat::Ogg: return QStringLiteral("libvorbis");
+	case ProjectRenderer::ExportFileFormat::MP3: return QStringLiteral("LAME");
+	default: return QStringLiteral("this build's own encoder");
+	}
+}
+
+/*! The formats THIS build can actually write, as the render command's own
+ *  schema lists them.
+ *
+ *  The authority is the same `isAvailable()` filter the export dialog applies to
+ *  `ProjectRenderer::fileEncodeDevices` (ExportProjectDialog.cpp:84): a device
+ *  whose instantiation function is null (no LAME / no libvorbis in this
+ *  configuration) is not offered. Advertising mp3 on such a build accepted the
+ *  request and then failed it with a generic "the render failed (exit 1);
+ *  the session is unchanged" - a capability the API promised and the encoder
+ *  could not deliver (BUG-RENDER-MP3). The names are the devices' own
+ *  extensions without the dot, which is exactly what the render child's `-f`
+ *  argument and formatFromName above take.
+ */
+QJsonArray renderableFormatNames()
+{
+	QJsonArray names;
+	for (const ProjectRenderer::FileEncodeDevice& device : ProjectRenderer::fileEncodeDevices)
+	{
+		if (!device.isAvailable()) { continue; }
+		names.append(QString::fromLatin1(device.m_extension).mid(1));
+	}
+	return names;
+}
+
 //! What a RIFF/WAVE header tells us. `-1`/`0` mean "not present".
 struct WavInfo
 {
@@ -186,6 +221,18 @@ QString parseRenderArgs(const QJsonObject& args, QString* out, QString* formatNa
 	if (!formatFromName(*formatName, format))
 	{
 		return QStringLiteral("unsupported format '%1'").arg(*formatName);
+	}
+	// A format THIS build has no encoder for is refused here, before the session
+	// is serialised or a child is spawned, naming the missing encoder. The
+	// schema's enum already lists only the compiled-in formats, so this is the
+	// second half of one rule rather than a second rule: `format` is a name
+	// here, and a name whose device is unavailable cannot be rendered
+	// (BUG-RENDER-MP3).
+	if (!ProjectRenderer::fileEncodeDevices[static_cast<std::size_t>(*format)].isAvailable())
+	{
+		return QStringLiteral("this build has no %1 encoder, so '%2' cannot be rendered; the "
+			"format list reports the formats this build can produce")
+				.arg(encoderNameFor(*format), *formatName);
 	}
 	// The settings this render is started with: the preset that was applied
 	// through export.preset_apply, or the render path's own defaults (44100 Hz,
@@ -374,8 +421,10 @@ void registerRenderRender(ControlRegistry& registry)
 	cmd.argsSchema = objectSchema(
 		{{QStringLiteral("out"), stringProperty()},
 			{QStringLiteral("format"), QJsonObject{{QStringLiteral("type"), QStringLiteral("string")},
-				{QStringLiteral("enum"), QJsonArray{QStringLiteral("wav"), QStringLiteral("flac"),
-					QStringLiteral("ogg"), QStringLiteral("mp3")}}}},
+				// BUILT-CAPABILITY list, not the format vocabulary: a build
+				// without LAME/libvorbis must not advertise mp3/ogg
+				// (BUG-RENDER-MP3).
+				{QStringLiteral("enum"), renderableFormatNames()}}},
 			{QStringLiteral("start_ticks"), tickProperty()},
 			{QStringLiteral("end_ticks"), tickProperty()}},
 		{QStringLiteral("out")});
