@@ -34,7 +34,7 @@ What it drives, in order:
      instance A's `record.input_set` WROTE - the file is read off disk by this test and
      handed to the harness's own Instance class, so "the next start reads it" is measured
      rather than assumed;
-  6. `record.get_state`                    the new count is live: sixteen routes,
+  6. `record.get_state`                    the new count is live: sixty-four routes,
      each able to select any of the eight input channels;
   7. `record.arm_track {route: 0, input_channel: 7}`  a route armed for channel 7 -
      the input channel instance A refused - writes a take and journals it, and
@@ -86,7 +86,7 @@ NEW_IDS = (
 RETRO_CAPACITY_FRAMES = 1 << 20
 
 #: MultiTrackRecorder::MaxRoutes.
-ROUTE_COUNT = 16
+ROUTE_COUNT = 64
 
 
 class Session:
@@ -270,7 +270,7 @@ def check_input_set_refusals(session, recorder, shared):
 
 def check_instance_b(session, recorder, shared):
     state = session.result("record.get_state")
-    recorder.check("instance B's engine prepared sixteen routes",
+    recorder.check("instance B's engine prepared sixty-four routes",
                    state.get("route_count") == ROUTE_COUNT,
                    "route_count=%r" % state.get("route_count"))
     recorder.check("instance B's routes can select EIGHT input channels "

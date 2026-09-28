@@ -78,10 +78,19 @@ class LMMS_EXPORT AudioInputPath
 public:
 	//! One channel of input is the minimum that means anything.
 	static constexpr int MinChannels = 1;
-	//! The bound the config, the argument schema and the staging ring share. 32
-	//! in + 32 out is beyond every interface a DAW is expected to drive, and a
+	//! The bound the config, the argument schema and the staging ring share. A
 	//! bound is what keeps the staging buffers pre-allocatable.
-	static constexpr int MaxChannels = 32;
+	//!
+	//! 32 was the prototype's number and it was below the pro tier this product
+	//! is measured against: the reference figures are 256 physical inputs and
+	//! outputs (Cubase Pro, Pro Tools | Ultimate), so a 32-channel ceiling
+	//! refused rigs those products accept. 128 is the target because it is the
+	//! engine's OWN per-buffer ceiling - MaxChannelsPerAudioBuffer
+	//! (src/core/AudioBuffer.cpp asserts against it, and AudioPortsModel parses
+	//! its `inputs`/`outputs` pins against it) - so the capture path can now
+	//! address every channel the routing layer is able to name. Lifting it
+	//! further would mean raising that ceiling first, not this constant.
+	static constexpr int MaxChannels = 128;
 	//! The engine's stereo bus (SampleFrame is two floats), and therefore what
 	//! a route can select with no capture device open.
 	static constexpr int DefaultChannels = 2;

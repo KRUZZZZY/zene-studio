@@ -55,9 +55,9 @@ snd_pcm_readi (blocking,       pushInputFramesWide ─┐                   reco
   timeout so the stop flag is honoured on a device that has gone quiet. Everything it touches is allocated
   before the thread starts.
 - **`include/MultiTrackRecorder.h` / `TrackRecorder.h`** — N routes (fixed at construction, default 2, bound
-  `MaxRoutes = 16`), each able to select **any** input channel in `[0, inputChannelCapacity)`, and each
+  `MaxRoutes = 64`), each able to select **any** input channel in `[0, inputChannelCapacity)`, and each
   writing one mono 24-bit WAV with a take journal beside it. `MaxRoutes` bounds the pre-allocated rings
-  (~4 MiB at 16 routes).
+  (~16 MiB at 64 routes).
 - **`include/RetroAudioCapture.h` / `RetroAudioRing.h`** — the audio half of retrospective capture: OFF by
   default, one bounded ring of the last 2^20 frames (~21.8 s at 48 kHz), drop-oldest, a publication-guarded
   snapshot, and a one-pass stereo 24-bit WAV writer. Model and differences are stated in the header.
