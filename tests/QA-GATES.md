@@ -1276,6 +1276,15 @@ target — read it from `gh run list --repo KRUZZZZY/zene-studio` rather than fr
 
 ## Gate 7: Per-file length (`file-length-gate.sh`) — 2026-09-09
 
+> **Unit changed 2026-09-28 (owner decision): the gate counts CODE lines** — a blank or
+> comment-only line does not count (C/C++ `//` and `/* */`; Python/shell `#`); the 500 limit and
+> every rule below are unchanged. Physical lines made documentation the thing a file paid for
+> (111 fork files said they existed to stay under the limit; `include/ControlRegistryGroups.h` was
+> 638 comment lines of 746). All three scopes were re-anchored ONCE for the change, with that
+> reason: baseline entries fork scope **23 → 5**, whole tree **140 → 73**, tools **2 → 2**. The counter
+> is `code_lines()` in `file-length-gate.sh`; its one known blind spot — a `/*` inside a string
+> literal would open a phantom comment — matched no fork source when the unit changed.
+
 Source: the adopted code-quality ruleset (KB `adopted-code-quality-gates`) requires
 "<= 500 lines default per file (generated tables/fixtures exempt)". QA-GATES.md's original
 six gates did not cover it, so the fork claimed a ruleset item it did not enforce. This

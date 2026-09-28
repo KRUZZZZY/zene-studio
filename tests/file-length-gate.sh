@@ -5,6 +5,18 @@
 #   "Per-file: <= 500 lines default (generated tables/fixtures exempt via inline pragma)."
 # Enforced as a ratchet — "no retroactive rewrite, no new violations".
 #
+# WHAT IS COUNTED (2026-09-28, owner decision via the 040/survey-fixes lane): CODE lines —
+# a line that is blank, or holds only comment, does not count. The gate used to count
+# physical lines (`wc -l`), which made documentation the thing a file paid for: 111 fork
+# files carried a header saying they existed to stay under the limit, 63 more sat at
+# 480-500, and include/ControlRegistryGroups.h was 638 comment lines of 746. The limit
+# (500) and every other rule below are unchanged; the baseline was re-anchored once, with
+# that reason recorded, when the unit changed.
+#   - C/C++ (.c .cc .cpp .cxx .h .hpp): `//` lines and `/* ... */` blocks are comment; a
+#     line with code before or after a comment counts.
+#   - Python / shell (.py .sh): `#` lines are comment (docstrings count as code).
+#   - anything else: physical lines, as before.
+#
 # Policy:
 #   - a fork-NEW source already over LIMIT is grandfathered in tests/file-length-baseline.tsv;
 #   - a NEW file over LIMIT fails;
@@ -90,6 +102,39 @@ if [[ ! -f "$EXEMPT" ]]; then
 	exit 2
 fi
 
+# code_lines <path> -> the number of lines that hold code (see "WHAT IS COUNTED").
+code_lines() {
+	case "$1" in
+	*.c|*.cc|*.cpp|*.cxx|*.h|*.hpp)
+		awk '
+		{
+			line = $0
+			code = 0
+			while (length(line) > 0) {
+				if (inblock) {
+					end = index(line, "*/")
+					if (end == 0) { line = ""; break }
+					line = substr(line, end + 2); inblock = 0; continue
+				}
+				sub(/^[ \t]+/, "", line)
+				if (line == "") break
+				if (substr(line, 1, 2) == "//") break
+				if (substr(line, 1, 2) == "/*") { inblock = 1; line = substr(line, 3); continue }
+				code = 1
+				start = index(line, "/*"); slash = index(line, "//")
+				if (start > 0 && (slash == 0 || start < slash)) { line = substr(line, start + 2); inblock = 1; continue }
+				break
+			}
+			n += code
+		}
+		END { print n + 0 }' "$1" ;;
+	*.py|*.sh)
+		awk '{ t = $0; sub(/^[ \t]+/, "", t); if (t != "" && substr(t, 1, 1) != "#") n++ } END { print n + 0 }' "$1" ;;
+	*)
+		wc -l < "$1" ;;
+	esac
+}
+
 is_exempt() {
 	grep -vE '^\s*(#|$)' "$EXEMPT" | cut -f1 | grep -qxF "$1"
 }
@@ -113,12 +158,12 @@ while read -r f; do
 	[[ -n "$f" ]] || continue
 	[[ -f "$f" ]] || continue
 	is_exempt "$f" && continue
-	printf '%s\t%s\n' "$f" "$(wc -l < "$f")"
+	printf '%s\t%s\n' "$f" "$(code_lines "$f")"
 done < <(grep -vE '^\s*(#|$)' "$SOURCES" | sort) > "$current"
 
 over=$(awk -v lim="$LIMIT" -F'\t' '$2 > lim' "$current" | wc -l)
 total=$(wc -l < "$current")
-echo "file-length-gate: ${total} ${SCOPE}-scope sources measured; ${over} exceed ${LIMIT} lines"
+echo "file-length-gate: ${total} ${SCOPE}-scope sources measured; ${over} exceed ${LIMIT} code lines"
 
 if [[ "$over" -gt 0 ]]; then
 	echo
