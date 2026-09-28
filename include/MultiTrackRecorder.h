@@ -77,9 +77,16 @@ public:
 	//! channel, so this is NOT the input count - several routes may record the
 	//! same channel, and one route records one channel. The bound exists because
 	//! each route pre-allocates its ring (TrackRecorder::RingCapacityFrames) at
-	//! construction: 16 routes is about 4 MiB of rings, paid once, and is more
-	//! routes than a small multi-track session has tracks.
-	static constexpr int MaxRoutes = 16;
+	//! construction: 64 routes is about 16 MiB of rings, paid once, off the
+	//! audio thread.
+	//!
+	//! 16 was the prototype's number, and it - not the input count - was the
+	//! real ceiling on multitrack capture: a 24-channel interface could be
+	//! captured, but only 16 of its channels could be written to files at once.
+	//! The pro tier this product is measured against records in the hundreds of
+	//! simultaneous tracks, so 64 removes the ceiling from the range a project
+	//! studio actually hits while keeping the pre-allocation honest.
+	static constexpr int MaxRoutes = 64;
 
 	//! \a routeCapacity routes (bounded below by 1), each able to select an
 	//! input channel in [0, \a inputChannelCapacity).
