@@ -1082,12 +1082,14 @@ void Song::processModulation()
 	// nothing for it: no snapshot copy, no arithmetic, no model write. This
 	// early return IS the byte-identity guarantee on the audio path, and
 	// ModulationLayerTest measures it.
-	if( !m_modulationLayer.layer().shouldPersist() ) { return; }
+	// hasLayer() is the published flag: the authored layer itself is control
+	// thread only and must not be read here.
+	if( !m_modulationLayer.hasLayer() ) { return; }
 
-	// The snapshot is a fixed-capacity value copy with a version re-check - no
-	// lock, no allocation, no growth (include/ModulationLayer.h).
-	const ModulationRuntime runtime = m_modulationLayer.snapshot();
-	if( !runtime.active() ) { return; }
+	// The snapshot is a fixed-capacity plain-value copy with a version re-check
+	// - no lock, no allocation, no growth, no QPointer (include/ModulationLayer.h).
+	const ModulationAudioView view = m_modulationLayer.snapshot();
+	if( !view.active() ) { return; }
 
 	// The modulator runs on WALL-CLOCK seconds measured at the play head, so it
 	// follows the timeline (including a tempo map's own rate) rather than the
@@ -1097,7 +1099,7 @@ void Song::processModulation()
 	if( rate == 0 ) { return; }
 	const double frames = static_cast<double>( getPlayPos().getTicks() )
 		* static_cast<double>( Engine::framesPerTick() );
-	applyModulationBlock( runtime, frames / static_cast<double>( rate ) );
+	applyModulationBlock( m_modulationLayer, view, frames / static_cast<double>( rate ) );
 }
 
 

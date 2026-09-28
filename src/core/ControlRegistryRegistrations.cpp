@@ -40,6 +40,7 @@
  */
 
 #include "ControlRegistry.h"
+#include "ControlWindowCommands.h"
 
 // The #ifdef block in registerControlCommands() below uses the macro the build
 // sets (ZENE_TELEMETRY_ENABLED); it lives in lmmsconfig.h, which reached
@@ -223,6 +224,9 @@ void registerControlCommands(ControlRegistry& registry)
 	// cycle rule made optional, with PDC suspended for the loop and stated at
 	// every point of use. Rationale on its declaration.
 	registerFeedbackCommands(registry);
+	// The editors' windows (include/ControlWindowCommands.h): the View menu's and the
+	// window toolbar's toggles, which dispatch through these ids.
+	registerWindowCommands(registry);
 	// The patcher node graph (feature row 69): the same graph routing.get_state
 	// reads, addressed by ROLE and EDITABLE. Its own group because it writes
 	// where routing.* is an inspector by decision; the rationale, the threading

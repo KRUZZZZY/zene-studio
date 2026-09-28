@@ -240,9 +240,9 @@ class Instance:
         env["HOME"] = self.tmp
         env["XDG_CONFIG_HOME"] = os.path.join(self.tmp, "config")
         env["XDG_DATA_HOME"] = os.path.join(self.tmp, "data")
+        env.setdefault("ZENE_CONTROL_CHECK_RESULTS", os.path.join(os.path.dirname(os.path.abspath(__file__)), "result-schema-known-violations.txt"))  # replies held to their resultSchema (ControlResultCheck.h)
         env.update(self.extra_env)
-        os.makedirs(env["XDG_CONFIG_HOME"], exist_ok=True)
-        os.makedirs(env["XDG_DATA_HOME"], exist_ok=True)
+        for key in ("XDG_CONFIG_HOME", "XDG_DATA_HOME"): os.makedirs(env[key], exist_ok=True)
         return env
 
     def spawn(self):

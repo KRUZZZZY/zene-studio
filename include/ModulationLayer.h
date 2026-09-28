@@ -33,12 +33,17 @@
  * an edit lands, never per block. The reader copies a fixed-capacity value and
  * never allocates, locks or grows.
  *
- * The resolved write targets are QPointer<AutomatableModel>, deliberately: a
- * target can be destroyed under the audio thread (a device unloaded, a chain or
- * channel removed, a project opened), and a QPointer nulls itself in
- * ~QObject, so the audio thread skips a destroyed target instead of
- * dereferencing it. That is the same guarded-key technique the Darwin fix
- * applied to Song::m_oldAutomatedValues.
+ * The resolved write targets are QPointer<AutomatableModel> on the CONTROL
+ * side (ModulationRuntime), deliberately: a target can be destroyed under the
+ * audio thread (a device unloaded, a chain or channel removed, a project
+ * opened), and a QPointer nulls itself in ~QObject. The audio thread must not
+ * copy a QPointer, though - it shares a reference-counted block, so copying one
+ * inside the seqlock while the control thread drops it touches freed memory,
+ * and destroying the copy can free on the audio thread (2026-09-28 survey, G1).
+ * What the audio thread copies is ModulationAudioView: raw pointers, each
+ * paired with a per-slot liveness token that QObject::destroyed clears at the
+ * same moment a QPointer would null itself. A destroyed target is skipped
+ * exactly as before, and the copy is plain bytes.
  *
  * Copyright (c) 2026 Zene Studio contributors
  *
@@ -63,11 +68,15 @@
 #ifndef LMMS_MODULATION_LAYER_H
 #define LMMS_MODULATION_LAYER_H
 
+#include <algorithm>
 #include <array>
 #include <atomic>
+#include <cstdint>
+#include <type_traits>
 #include <vector>
 
 #include <QDomElement>
+#include <QMetaObject>
 #include <QPointer>
 #include <QString>
 
@@ -227,6 +236,42 @@ struct ModulationRuntime
 	bool active() const noexcept { return entryCount > 0; }
 };
 
+/*! The audio thread's copy of the runtime: the same sources and entries, as
+ *  plain values. An entry's model is valid only while its slot's liveness token
+ *  (ModulationLayerPublisher::targetAlive) still equals the entry's token.
+ */
+struct ModulationAudioView
+{
+	struct Entry
+	{
+		AutomatableModel* model = nullptr;
+		std::uint32_t token = 0; //!< 0 = no target
+		int modulator = -1;
+		float depth = 0.0f;
+		float base = 0.0f;
+		float minimum = 0.0f;
+		float maximum = 0.0f;
+	};
+
+	std::array<ModulatorSource, ModulationLayer::MaxModulators> sources{};
+	int sourceCount = 0;
+	std::array<Entry, ModulationRuntime::MaxEntries> entries{};
+	int entryCount = 0;
+
+	bool active() const noexcept { return entryCount > 0; }
+};
+static_assert(std::is_trivially_copyable_v<ModulationAudioView>,
+	"the audio thread's seqlock copy must be plain bytes");
+
+//! One entry's written value for @a seconds: the multiply-add and the bounds
+//! both block paths share.
+inline float modulatedValue(const ModulatorSource& source, float base, float depth,
+	float minimum, float maximum, double seconds)
+{
+	const float output = ModulationLayer::outputAt(source, seconds);
+	return std::clamp(base + depth * output * (maximum - minimum), minimum, maximum);
+}
+
 /*! The layer plus the lock-free hand-off of it to the audio thread. Same shape
  *  and the same honest limits as TempoMapPublisher (include/TempoMap.h): one
  *  writer (the control thread), every mutation routed through edit() so a
@@ -237,6 +282,12 @@ struct ModulationRuntime
 class LMMS_EXPORT ModulationLayerPublisher
 {
 public:
+	ModulationLayerPublisher() = default;
+	//! Drops the destroyed() watches; they point into this object.
+	~ModulationLayerPublisher();
+	ModulationLayerPublisher(const ModulationLayerPublisher&) = delete;
+	ModulationLayerPublisher& operator=(const ModulationLayerPublisher&) = delete;
+
 	/*! One mutation of the layer, published the moment it lands. @a fn receives
 	 *  the authored layer and the runtime to rebuild; it returns true when it
 	 *  changed the layer. Callers that only clear stale write targets pass
@@ -246,6 +297,7 @@ public:
 	{
 		m_version.fetch_add(1, std::memory_order_acq_rel);
 		const bool changed = fn(m_layer, m_runtime);
+		publishView();
 		m_version.fetch_add(1, std::memory_order_acq_rel);
 		return changed;
 	}
@@ -257,25 +309,45 @@ public:
 	ModulationRuntime& runtime() noexcept { return m_runtime; }
 	const ModulationRuntime& runtime() const noexcept { return m_runtime; }
 
-	//! The runtime as of the last completed edit. Lock-free, allocation-free
-	//! and bounded; safe to call from the audio thread.
-	ModulationRuntime snapshot() const noexcept
+	//! Whether the layer holds any modulator, as of the last edit. The audio
+	//! thread's pay-nothing test (it must not read layer(), G2).
+	bool hasLayer() const noexcept { return m_hasLayer.load(std::memory_order_acquire); }
+
+	//! Whether @a slot's target is still the one @a token was issued for.
+	bool targetAlive(int slot, std::uint32_t token) const noexcept
 	{
-		ModulationRuntime copy;
+		return token != 0
+			&& m_alive[static_cast<std::size_t>(slot)].load(std::memory_order_acquire) == token;
+	}
+
+	//! The audio view as of the last completed edit. Lock-free, allocation-free
+	//! and bounded; safe to call from the audio thread.
+	ModulationAudioView snapshot() const noexcept
+	{
+		ModulationAudioView copy;
 		unsigned version = 0;
 		do
 		{
 			version = m_version.load(std::memory_order_acquire);
 			if ((version & 1u) != 0u) { continue; }  // a write is in progress
-			copy = m_runtime;
+			copy = m_view;
 		}
 		while (m_version.load(std::memory_order_acquire) != version);
 		return copy;
 	}
 
 private:
+	//! Rebuilds m_view and the liveness watches from m_runtime (control thread,
+	//! inside edit()'s write window).
+	void publishView();
+
 	ModulationLayer m_layer{};
 	ModulationRuntime m_runtime{};
+	ModulationAudioView m_view{};
+	std::array<std::atomic<std::uint32_t>, ModulationRuntime::MaxEntries> m_alive{};
+	std::array<QMetaObject::Connection, ModulationRuntime::MaxEntries> m_watch{};
+	std::uint32_t m_nextToken = 0;
+	std::atomic<bool> m_hasLayer{false};
 	std::atomic<unsigned> m_version{0};
 };
 
@@ -323,6 +395,10 @@ LMMS_EXPORT void writeModulationBase(AutomatableModel* model, float base);
 //! The block's write set: every entry's value for @a seconds, applied to its
 //! model. Allocation-free, lock-free, bounded.
 LMMS_EXPORT void applyModulationBlock(const ModulationRuntime& runtime, double seconds);
+//! The audio thread's form: the same writes from @a view, skipping any entry
+//! whose target @a publisher no longer holds alive.
+LMMS_EXPORT void applyModulationBlock(const ModulationLayerPublisher& publisher,
+	const ModulationAudioView& view, double seconds);
 
 } // namespace lmms
 

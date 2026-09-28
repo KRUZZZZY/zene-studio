@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-09-23T23:18:46Z",
+  "captured_at": "2026-09-28T18:44:56Z",
   "commands": [
     {
       "args_schema": {
@@ -3711,7 +3711,7 @@
         "required": [],
         "type": "object"
       },
-      "description": "Undo the last agent command: the engine's own ProjectJournal step it recorded (the same stack the GUI's Ctrl+Z unwinds), or the recorded inverse command when the change is file-level. If the last recorded command has no inverse, this FAILS with the typed 'irreversible' error and names the documented fallback instead of undoing an older command.",
+      "description": "Undo the last agent command: the engine's own ProjectJournal step it recorded (the same stack the GUI's Ctrl+Z unwinds), or the recorded inverse command when the change is file-level. If the last recorded command has no inverse, this FAILS with the typed 'irreversible' error and names the documented fallback instead of undoing an older command. One call unwinds ONE undo STEP, and one step is one command EXCEPT under the coalescing rule (docs/UNDO-BOUNDS.md): a run of the same command on the same target inside the window - reads in between do not break it - is one step, so the reply's 'undone_commands' is 1 normally and more for a merged span. Set the window to 0 (control.set_undo_coalescing) for strict one-command-per-call granularity.",
       "group": "control",
       "id": "control.undo",
       "mutating": false,
@@ -3742,6 +3742,9 @@
           },
           "undone_command": {
             "type": "string"
+          },
+          "undone_commands": {
+            "type": "integer"
           }
         },
         "required": [],
@@ -6979,7 +6982,7 @@
         "required": [],
         "type": "object"
       },
-      "description": "The last auto-mastering run this instance performed: the report the run itself produced (one measured row per candidate - LUFS-I, the loudest 3 s window, measured dBTP, crest, the residual against that candidate's target and the two verdicts - plus the source render's own readings and the counted number of project renders), and the live state of the files it wrote, hashed now. `has_run` is false and `last_run` is null before the first run. `session_empty` is the fact mastering.run refuses on. Read-only.",
+      "description": "The last auto-mastering run this instance performed: its `state` (idle, running, completed, failed - mastering.run is ASYNCHRONOUS, so this is the verb a caller polls after it, and `error` carries the child's own reason when the state is failed), the document the last COMPLETED run produced (one measured row per candidate - LUFS-I, the loudest 3 s window, measured dBTP, crest, the residual against that candidate's target and the two verdicts - plus the source render's own readings and the counted number of project renders), and the live state of the files it wrote, hashed now. `has_run` is false and `last_run` is null before the first run. `session_empty` is the fact mastering.run refuses on. Read-only.",
       "group": "mastering",
       "id": "mastering.get_state",
       "mutating": false,
@@ -6987,6 +6990,9 @@
       "result_schema": {
         "additionalProperties": false,
         "properties": {
+          "error": {
+            "type": "string"
+          },
           "files": {
             "type": "array"
           },
@@ -7004,6 +7010,15 @@
           },
           "session_empty": {
             "type": "boolean"
+          },
+          "state": {
+            "enum": [
+              "idle",
+              "running",
+              "completed",
+              "failed"
+            ],
+            "type": "string"
           }
         },
         "required": [],
@@ -7052,7 +7067,7 @@
         ],
         "type": "object"
       },
-      "description": "Auto-master the session, wave 1: render the mix ONCE (counted by the render machinery, returned as render_count), branch every candidate of MasteringJob::defaultCandidates() off that one render, write one wav per candidate into out_dir and measure each with the BS.1770-4 meter - integrated loudness, the loudest 3 s window, measured true peak and crest factor, plus the residual against that candidate's target and its loudness and true-peak verdicts. `out_dir` is required and absolute. The session is not modified (the render runs in a child process on a serialised copy). REVERSIBLE through a recorded action checkpoint: the files this run created are removed and the revisions the directory already held are written back, byte for byte (bounded at 64 MiB of pre-existing wav files - beyond that the run is refused rather than performed without an inverse). Names no best candidate: there is no validated preference scorer, so the choice is the user's.",
+      "description": "Auto-master the session, wave 1: render the mix ONCE (counted by the render machinery, returned as render_count), branch every candidate of MasteringJob::defaultCandidates() off that one render, write one wav per candidate into out_dir and measure each with the BS.1770-4 meter - integrated loudness, the loudest 3 s window, measured true peak and crest factor, plus the residual against that candidate's target and its loudness and true-peak verdicts. `out_dir` is required and absolute. The session is not modified (the render runs in a child process on a serialised copy). ASYNCHRONOUS, like the stems' own long work: this verb STARTS the render and answers with `state: \"running\"` in milliseconds, whatever the render costs - it never waits for it, so the control surface (control.ping included) stays answerable while a mastering run is in flight. The run's own document - the candidate measurements, the files and the counts - appears in `mastering.get_state`'s `last_run` once its `state` leaves \"running\", so the caller polls that verb; a run that fails reports `state: \"failed\"` and the child's own reason in `error` there. A second run while one is in flight is refused with `busy` rather than queued. REVERSIBLE through a recorded action checkpoint: the files this run created are removed and the revisions the directory already held are written back, byte for byte (bounded at 64 MiB of pre-existing wav files - beyond that the run is refused rather than performed without an inverse). The inverse is recorded when the run COMPLETES, so `control.undo` must not be asked to take a run back until `mastering.get_state` reports it completed. Names no best candidate: there is no validated preference scorer, so the choice is the user's.",
       "group": "mastering",
       "id": "mastering.run",
       "mutating": true,
@@ -7060,49 +7075,22 @@
       "result_schema": {
         "additionalProperties": false,
         "properties": {
-          "candidate_count": {
-            "type": "integer"
-          },
-          "candidates": {
-            "type": "array"
-          },
-          "created": {
-            "type": "array"
-          },
-          "created_count": {
-            "type": "integer"
-          },
-          "files": {
-            "type": "array"
-          },
-          "format": {
-            "type": "string"
-          },
           "note": {
             "type": "string"
           },
           "out_dir": {
             "type": "string"
           },
-          "render_count": {
-            "type": "integer"
-          },
-          "render_sample_rate": {
-            "type": "integer"
-          },
-          "renderer": {
+          "poll": {
             "type": "string"
           },
-          "replaced_count": {
-            "type": "integer"
+          "since_submit_seconds": {
+            "type": "number"
           },
-          "sample_rate": {
-            "type": "integer"
-          },
-          "source": {
-            "type": "object"
-          },
-          "source_render_file": {
+          "state": {
+            "enum": [
+              "running"
+            ],
             "type": "string"
           }
         },
@@ -7637,6 +7625,11 @@
             "type": "string"
           },
           "events_buffered": {
+            "maximum": 1919808,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "out_queue_overflows": {
             "maximum": 1919808,
             "minimum": 0,
             "type": "integer"
@@ -13370,8 +13363,7 @@
             "enum": [
               "wav",
               "flac",
-              "ogg",
-              "mp3"
+              "ogg"
             ],
             "type": "string"
           },
@@ -18037,25 +18029,89 @@
         "required": [],
         "type": "object"
       }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {},
+        "required": [],
+        "type": "object"
+      },
+      "description": "Which editors' windows are showing: `editors` is one {editor, visible} entry per window.toggle editor, in the menu's Ctrl+1..7 order. Read-only. Refused `requires` in a process with no interface.",
+      "group": "window",
+      "id": "window.get_state",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "editors": {
+            "type": "array"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "editor": {
+            "enum": [
+              "song",
+              "pattern",
+              "piano_roll",
+              "automation",
+              "mixer",
+              "controller_rack",
+              "project_notes"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "editor"
+        ],
+        "type": "object"
+      },
+      "description": "Show or hide one editor's window - the View menu's Ctrl+1..7 items and the window toolbar dispatch exactly this. `editor` is one of song, pattern, piano_roll, automation, mixer, controller_rack, project_notes. A hidden or unfocused editor is brought forward (and back into view if it was off screen); the focused one is hidden. `visible` is the editor's state afterwards. Interface state, not project state: nothing is journalled. Refused `requires` in a process with no interface.",
+      "group": "window",
+      "id": "window.toggle",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "editor": {
+            "type": "string"
+          },
+          "visible": {
+            "type": "boolean"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
     }
   ],
-  "count": 350,
+  "count": 352,
   "instance": {
     "binary": null,
     "binary_bytes": null,
     "binary_sha256": null,
-    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-040/tools/zene-pa-agentctl",
+    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-survey/tools/zene-pa-agentctl",
     "lane_head": null,
     "proto": 1,
-    "source_socket": "/tmp/final-tip.sock",
-    "version": "0.3.0-alpha.84+2f6218c"
+    "source_socket": "/tmp/zctl-run-c6kmdmti/zene.sock",
+    "version": "0.3.0-alpha.124+042abe4"
   },
   "kind": "zene-control-command-list",
   "proto": 1,
   "schema": 1,
   "surface": {
-    "group_count": 56,
-    "id_count": 350,
-    "ids_sha256": "2fcc8f64f1dd661e80964d995418caf5b5bb04185b01611d92dcdaa10d76a144"
+    "group_count": 57,
+    "id_count": 352,
+    "ids_sha256": "764e573a27684ca8c8f24eecf6ff995b10e44dcc18e693347c4facd8df0a1c08"
   }
 }

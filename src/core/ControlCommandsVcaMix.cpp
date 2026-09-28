@@ -345,12 +345,8 @@ void registerVcaSetGain(ControlRegistry& registry)
 		{QStringLiteral("group"), control::stringProperty()},
 		{QStringLiteral("gain"), control::numberProperty()},
 	}, {QStringLiteral("group"), QStringLiteral("gain")});
-	cmd.resultSchema = control::objectSchema({
-		{QStringLiteral("id"), control::stringProperty()},
-		{QStringLiteral("gain"), control::numberProperty()},
-		{QStringLiteral("volume"), control::numberProperty()},
+	cmd.resultSchema = vcacontrol::groupStateSchema({
 		{QStringLiteral("previous_gain"), control::numberProperty()},
-		{QStringLiteral("members"), control::arrayProperty()},
 	});
 	cmd.mutating = true;
 	cmd.handler = [](const QJsonObject& args) { return setGain(args); };
@@ -372,12 +368,7 @@ void registerVcaSetMute(ControlRegistry& registry)
 		{QStringLiteral("group"), control::stringProperty()},
 		{QStringLiteral("muted"), control::booleanProperty()},
 	}, {QStringLiteral("group"), QStringLiteral("muted")});
-	cmd.resultSchema = control::objectSchema({
-		{QStringLiteral("id"), control::stringProperty()},
-		{QStringLiteral("gain"), control::numberProperty()},
-		{QStringLiteral("muted"), control::booleanProperty()},
-		{QStringLiteral("members"), control::arrayProperty()},
-	});
+	cmd.resultSchema = vcacontrol::groupStateSchema();
 	cmd.mutating = true;
 	cmd.handler = [](const QJsonObject& args) { return setMute(args); };
 	registry.registerCommand(cmd);
@@ -398,11 +389,8 @@ void registerVcaSetSolo(ControlRegistry& registry)
 		{QStringLiteral("group"), control::stringProperty()},
 		{QStringLiteral("soloed"), control::booleanProperty()},
 	}, {QStringLiteral("group"), QStringLiteral("soloed")});
-	cmd.resultSchema = control::objectSchema({
-		{QStringLiteral("id"), control::stringProperty()},
-		{QStringLiteral("soloed"), control::booleanProperty()},
+	cmd.resultSchema = vcacontrol::groupStateSchema({
 		{QStringLiteral("previous_soloed"), control::booleanProperty()},
-		{QStringLiteral("members"), control::arrayProperty()},
 	});
 	cmd.mutating = true;
 	cmd.handler = [](const QJsonObject& args) { return setSolo(args); };
@@ -424,11 +412,8 @@ void registerVcaAssign(ControlRegistry& registry)
 		{QStringLiteral("group"), control::stringProperty()},
 		{QStringLiteral("channel"), control::stringProperty()},
 	}, {QStringLiteral("group"), QStringLiteral("channel")});
-	cmd.resultSchema = control::objectSchema({
-		{QStringLiteral("id"), control::stringProperty()},
+	cmd.resultSchema = vcacontrol::groupStateSchema({
 		{QStringLiteral("assigned"), control::stringProperty()},
-		{QStringLiteral("members"), control::arrayProperty()},
-		{QStringLiteral("member_count"), control::integerProperty()},
 	});
 	cmd.mutating = true;
 	cmd.handler = [](const QJsonObject& args) { return assignChannel(args); };
@@ -450,11 +435,8 @@ void registerVcaUnassign(ControlRegistry& registry)
 		{QStringLiteral("group"), control::stringProperty()},
 		{QStringLiteral("channel"), control::stringProperty()},
 	}, {QStringLiteral("group"), QStringLiteral("channel")});
-	cmd.resultSchema = control::objectSchema({
-		{QStringLiteral("id"), control::stringProperty()},
+	cmd.resultSchema = vcacontrol::groupStateSchema({
 		{QStringLiteral("unassigned"), control::stringProperty()},
-		{QStringLiteral("members"), control::arrayProperty()},
-		{QStringLiteral("member_count"), control::integerProperty()},
 	});
 	cmd.mutating = true;
 	cmd.handler = [](const QJsonObject& args) { return unassignChannel(args); };

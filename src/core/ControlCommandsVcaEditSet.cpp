@@ -233,12 +233,8 @@ void registerVcaSetPhaseLock(ControlRegistry& registry)
 		{QStringLiteral("group"), control::stringProperty()},
 		{QStringLiteral("locked"), control::booleanProperty()},
 	}, {QStringLiteral("group"), QStringLiteral("locked")});
-	cmd.resultSchema = control::objectSchema({
-		{QStringLiteral("id"), control::stringProperty()},
-		{QStringLiteral("phase_locked"), control::booleanProperty()},
+	cmd.resultSchema = vcacontrol::groupStateSchema({
 		{QStringLiteral("previous_phase_locked"), control::booleanProperty()},
-		{QStringLiteral("tracks"), control::arrayProperty()},
-		{QStringLiteral("track_count"), control::integerProperty()},
 	});
 	cmd.mutating = true;
 	cmd.handler = [](const QJsonObject& args) { return setPhaseLock(args); };
@@ -261,11 +257,8 @@ void registerVcaTrackAdd(ControlRegistry& registry)
 		{QStringLiteral("group"), control::stringProperty()},
 		{QStringLiteral("track"), control::stringProperty()},
 	}, {QStringLiteral("group"), QStringLiteral("track")});
-	cmd.resultSchema = control::objectSchema({
-		{QStringLiteral("id"), control::stringProperty()},
+	cmd.resultSchema = vcacontrol::groupStateSchema({
 		{QStringLiteral("added"), control::stringProperty()},
-		{QStringLiteral("tracks"), control::arrayProperty()},
-		{QStringLiteral("track_count"), control::integerProperty()},
 	});
 	cmd.mutating = true;
 	cmd.handler = [](const QJsonObject& args) { return addEditTrack(args); };
@@ -286,11 +279,8 @@ void registerVcaTrackRemove(ControlRegistry& registry)
 		{QStringLiteral("group"), control::stringProperty()},
 		{QStringLiteral("track"), control::stringProperty()},
 	}, {QStringLiteral("group"), QStringLiteral("track")});
-	cmd.resultSchema = control::objectSchema({
-		{QStringLiteral("id"), control::stringProperty()},
+	cmd.resultSchema = vcacontrol::groupStateSchema({
 		{QStringLiteral("removed"), control::stringProperty()},
-		{QStringLiteral("tracks"), control::arrayProperty()},
-		{QStringLiteral("track_count"), control::integerProperty()},
 	});
 	cmd.mutating = true;
 	cmd.handler = [](const QJsonObject& args) { return removeEditTrack(args); };

@@ -154,6 +154,9 @@ set(LMMS_TESTS
 	# real Engine (the recorded action checkpoint goes on the project journal).
 	src/core/ControlProjectArchiveTest.cpp
 	src/core/ControlRegistryTest.cpp
+	# Replies held to their declared resultSchema (ZENE_CONTROL_CHECK_RESULTS), and
+	# every command's id is its group.verb.
+	src/core/ControlResultSchemaTest.cpp
 	# The coverage closure's reference (board task #680): the ids the
 	# 2026-09-16 pass measured as named by no other registered test artefact
 	# (controller.* surfaces/templates, dawproject.convention, the two
@@ -369,6 +372,9 @@ set(LMMS_TESTS
 	# A16 classes and their inverses). docs/MODULATION.md is the design record.
 	src/core/ModulationLayerValueTest.cpp
 	src/core/ModulationLayerTest.cpp
+	# The audio thread's modulation snapshot is plain bytes (no QPointer copied in the
+	# seqlock) and a destroyed target is skipped through its liveness token.
+	src/core/ModulationAudioViewTest.cpp
 	src/core/ControlModulatorCommandsTest.cpp
 	src/core/ControlNoteExpressionCommandsTest.cpp
 	# The PROJECT path of the same layer (task #680): modulators authored on the
@@ -489,6 +495,9 @@ set(LMMS_TESTS
 	# plain effect loop and would prove nothing.
 	src/core/PatcherCommandsTest.cpp
 	src/core/VcaGroupTest.cpp
+	# Mixer::refreshGroups publishes each channel's VCA gain with ONE store, so a
+	# concurrent reader (the audio thread) never sees a grouped channel at unity.
+	src/core/VcaRefreshAtomicityTest.cpp
 	# The `vca.*` command group's own suite (OWNER-31 item 11, phase-locked
 	# multitrack edit groups): the fourteen ids and their schemas, the typed
 	# refusals junk arguments must produce, the measured effect of the fader and
@@ -586,10 +595,14 @@ set(LMMS_TESTS
 	# manual-tests - the helper, then the chips, density control and promote
 	# button as the sweep leaves them.
 	src/gui/WcagContrastTest.cpp
+	# The shipped themes' declared text/background pairs against AA (4.5:1), as a ratchet.
+	src/gui/ThemeContrastTest.cpp
 	src/gui/AccessibilityHelperTest.cpp
 	src/gui/FocusDeskTest.cpp
 	src/gui/MidiLearnGuiTest.cpp
 	src/tracks/AutomationTrackTest.cpp
+	# Inherited clip paths that dereferenced getGUI() unguarded, run headless.
+	src/tracks/HeadlessGuiGuardTest.cpp
 	src/tracks/SampleClipStretchTest.cpp
 	src/tracks/SampleClipWarpTest.cpp
 	src/tracks/SampleClipWindowTest.cpp
@@ -867,7 +880,7 @@ set_tests_properties(RackMacrosTest RackZonesTest PROPERTIES
 # platform for the same reason. ModulationLayerProjectRoundTripTest joins them:
 # it drives project.save / project.open through the registry, which is the same
 # dependency.
-set_tests_properties(ModulationLayerValueTest ModulationLayerTest
+set_tests_properties(ModulationLayerValueTest ModulationLayerTest ModulationAudioViewTest
 	ControlModulatorCommandsTest ControlNoteExpressionCommandsTest
 	ModulationLayerProjectRoundTripTest PROPERTIES
 	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
@@ -937,6 +950,8 @@ target_compile_definitions(RoutingGraphLiveTest PRIVATE
 # synchronously, the same shape as the Phase D harnesses.
 set_tests_properties(VcaGroupTest PROPERTIES
 	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+set_tests_properties(VcaRefreshAtomicityTest PROPERTIES
+	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 # PatcherCommandsTest constructs a full Engine, appends effects to a real mixer
 # channel's chain and drives Mixer::masterMix() to measure that a re-wire changes
 # the render, so it needs a Qt platform plugin for the same reason (guiless
@@ -998,6 +1013,9 @@ set_tests_properties(FocusDeskWorkspacesTest PROPERTIES ENVIRONMENT "QT_QPA_PLAT
 # platform registration (040/ui-precond). WcagContrastTest is guiless and needs
 # none: QColor loads no platform plugin.
 set_tests_properties(AccessibilityHelperTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+# ThemeContrastTest reads the themes from the source tree; guiless like WcagContrastTest.
+target_compile_definitions(ThemeContrastTest PRIVATE
+	ZENE_THEMES_DIR="${CMAKE_SOURCE_DIR}/data/themes")
 
 # MasteringTest drives a real Engine and the project render path, so it needs a
 # Qt platform plugin even though the test itself is guiless (same reason as

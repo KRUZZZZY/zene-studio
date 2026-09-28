@@ -47,6 +47,7 @@
 #include "AutomationEditor.h"
 #include "AudioEngine.h"
 #include "ControlRegistry.h"
+#include "ControlWindowCommands.h"
 #include "RetroMidiCaptureSettings.h"
 #include "UnattendedRun.h"
 #include "ControllerRackView.h"
@@ -95,6 +96,30 @@
 
 namespace lmms::gui
 {
+
+namespace
+{
+
+// The editor toggles (View menu Ctrl+1..7, the window toolbar) dispatch the
+// registered window.toggle command instead of calling the slot directly, so the
+// interface, the palette-to-be and an agent on the socket share one path; the
+// `controlCommand` property is the agent-surface gate's declaration channel.
+void dispatchesWindowToggle(ToolButton* button, const char* editor)
+{
+	button->setProperty("controlCommand", QStringLiteral("window.toggle"));
+	const QString name = QString::fromLatin1(editor);
+	QObject::connect(button, &QToolButton::clicked, button, [name]() { dispatchWindowToggle(name); });
+}
+
+QAction* windowToggleAction(QMenu* menu, const QPixmap& icon, const QString& text, const char* editor)
+{
+	const QString name = QString::fromLatin1(editor);
+	QAction* action = menu->addAction(icon, text, menu, [name]() { dispatchWindowToggle(name); });
+	action->setProperty("controlCommand", QStringLiteral("window.toggle"));
+	return action;
+}
+
+} // namespace
 
 
 MainWindow::MainWindow() :
@@ -559,32 +584,38 @@ void MainWindow::finalize()
 
 
 	// window-toolbar
-	auto song_editor_window = new ToolButton(embed::getIconPixmap("songeditor"), tr("Song Editor") + " (Ctrl+1)", this,
-		SLOT(toggleSongEditorWin()), m_toolBar);
+	auto song_editor_window = new ToolButton(embed::getIconPixmap("songeditor"), tr("Song Editor") + " (Ctrl+1)", nullptr, nullptr, m_toolBar);
+	dispatchesWindowToggle(song_editor_window, "song");
 	song_editor_window->setShortcut(keySequence(Qt::CTRL, Qt::Key_1));
 
 	auto pattern_editor_window = new ToolButton(embed::getIconPixmap("pattern_track_btn"),
-		tr("Pattern Editor") + " (Ctrl+2)", this, SLOT(togglePatternEditorWin()), m_toolBar);
+		tr("Pattern Editor") + " (Ctrl+2)", nullptr, nullptr, m_toolBar);
+	dispatchesWindowToggle(pattern_editor_window, "pattern");
 	pattern_editor_window->setShortcut(keySequence(Qt::CTRL, Qt::Key_2));
 
 	auto piano_roll_window = new ToolButton(
-		embed::getIconPixmap("piano"), tr("Piano Roll") + " (Ctrl+3)", this, SLOT(togglePianoRollWin()), m_toolBar);
+		embed::getIconPixmap("piano"), tr("Piano Roll") + " (Ctrl+3)", nullptr, nullptr, m_toolBar);
+	dispatchesWindowToggle(piano_roll_window, "piano_roll");
 	piano_roll_window->setShortcut(keySequence(Qt::CTRL, Qt::Key_3));
 
 	auto automation_editor_window = new ToolButton(embed::getIconPixmap("automation"),
-		tr("Automation Editor") + " (Ctrl+4)", this, SLOT(toggleAutomationEditorWin()), m_toolBar);
+		tr("Automation Editor") + " (Ctrl+4)", nullptr, nullptr, m_toolBar);
+	dispatchesWindowToggle(automation_editor_window, "automation");
 	automation_editor_window->setShortcut(keySequence(Qt::CTRL, Qt::Key_4));
 
 	auto mixer_window = new ToolButton(
-		embed::getIconPixmap("mixer"), tr("Mixer") + " (Ctrl+5)", this, SLOT(toggleMixerWin()), m_toolBar);
+		embed::getIconPixmap("mixer"), tr("Mixer") + " (Ctrl+5)", nullptr, nullptr, m_toolBar);
+	dispatchesWindowToggle(mixer_window, "mixer");
 	mixer_window->setShortcut(keySequence(Qt::CTRL, Qt::Key_5));
 
 	auto controllers_window = new ToolButton(embed::getIconPixmap("controller"),
-		tr("Show/hide controller rack") + " (Ctrl+6)", this, SLOT(toggleControllerRack()), m_toolBar);
+		tr("Show/hide controller rack") + " (Ctrl+6)", nullptr, nullptr, m_toolBar);
+	dispatchesWindowToggle(controllers_window, "controller_rack");
 	controllers_window->setShortcut(keySequence(Qt::CTRL, Qt::Key_6));
 
 	auto project_notes_window = new ToolButton(embed::getIconPixmap("project_notes"),
-		tr("Show/hide project notes") + " (Ctrl+7)", this, SLOT(toggleProjectNotesWin()), m_toolBar);
+		tr("Show/hide project notes") + " (Ctrl+7)", nullptr, nullptr, m_toolBar);
+	dispatchesWindowToggle(project_notes_window, "project_notes");
 	project_notes_window->setShortcut(keySequence(Qt::CTRL, Qt::Key_7));
 
 	m_toolBarLayout->addWidget( song_editor_window, 1, 1 );
@@ -1313,35 +1344,13 @@ void MainWindow::updateViewMenu()
 	// TODO: get current visibility for these and indicate in menu?
 	// Not that it's straight visible <-> invisible, more like
 	// not on top -> top <-> invisible
-	m_viewMenu->addAction(embed::getIconPixmap( "songeditor" ),
-			      tr( "Song Editor" ) + "\tCtrl+1",
-			      this, SLOT(toggleSongEditorWin())
-		);
-	m_viewMenu->addAction(embed::getIconPixmap("pattern_track"),
-					tr("Pattern Editor") + "\tCtrl+2",
-					this, SLOT(togglePatternEditorWin())
-		);
-	m_viewMenu->addAction(embed::getIconPixmap( "piano" ),
-			      tr( "Piano Roll" ) + "\tCtrl+3",
-			      this, SLOT(togglePianoRollWin())
-		);
-	m_viewMenu->addAction(embed::getIconPixmap( "automation" ),
-			      tr( "Automation Editor" ) + "\tCtrl+4",
-			      this,
-			      SLOT(toggleAutomationEditorWin())
-		);
-	m_viewMenu->addAction(embed::getIconPixmap( "mixer" ),
-			      tr( "Mixer" ) + "\tCtrl+5",
-			      this, SLOT(toggleMixerWin())
-		);
-	m_viewMenu->addAction(embed::getIconPixmap( "controller" ),
-			      tr( "Controller Rack" ) + "\tCtrl+6",
-			      this, SLOT(toggleControllerRack())
-		);
-	m_viewMenu->addAction(embed::getIconPixmap( "project_notes" ),
-			      tr( "Project Notes" ) + "\tCtrl+7",
-			      this, SLOT(toggleProjectNotesWin())
-		);
+	windowToggleAction(m_viewMenu, embed::getIconPixmap( "songeditor" ), tr( "Song Editor" ) + "\tCtrl+1", "song");
+	windowToggleAction(m_viewMenu, embed::getIconPixmap("pattern_track"), tr("Pattern Editor") + "\tCtrl+2", "pattern");
+	windowToggleAction(m_viewMenu, embed::getIconPixmap( "piano" ), tr( "Piano Roll" ) + "\tCtrl+3", "piano_roll");
+	windowToggleAction(m_viewMenu, embed::getIconPixmap( "automation" ), tr( "Automation Editor" ) + "\tCtrl+4", "automation");
+	windowToggleAction(m_viewMenu, embed::getIconPixmap( "mixer" ), tr( "Mixer" ) + "\tCtrl+5", "mixer");
+	windowToggleAction(m_viewMenu, embed::getIconPixmap( "controller" ), tr( "Controller Rack" ) + "\tCtrl+6", "controller_rack");
+	windowToggleAction(m_viewMenu, embed::getIconPixmap( "project_notes" ), tr( "Project Notes" ) + "\tCtrl+7", "project_notes");
 
 	m_viewMenu->addSeparator();
 	

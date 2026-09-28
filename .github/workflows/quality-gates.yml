@@ -25,6 +25,11 @@ name: quality-gates
 'on':
   push:
   pull_request:
+  # Nightly (2026-09-28, 040/survey-fixes): gate 2 was dispatch-only, so nothing ran it
+  # routinely and a coverage fall could sit unseen. The schedule runs it in CHECK mode
+  # only - `inputs.capture_baseline` is empty on a schedule, so the write step never runs.
+  schedule:
+    - cron: '17 3 * * *'
   workflow_dispatch:
     inputs:
       capture_baseline:
@@ -127,8 +132,9 @@ jobs:
   # Gate 2 is the ratchet: the number must not fall, and the gate must PASS.
   coverage:
     name: gate 2 - coverage ratchet
-    # Dispatch-only: instrumented build + lcov, and capture_baseline WRITES the baseline.
-    if: ${{ github.event_name == 'workflow_dispatch' }}
+    # Dispatch or nightly: instrumented build + lcov. Only a dispatch with
+    # capture_baseline=true writes the baseline (the nightly run is check mode).
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event_name == 'schedule' }}
     runs-on: ubuntu-24.04
     steps:
       - name: Check out
