@@ -156,6 +156,53 @@ bool readHumanise(const QJsonObject& args, tick_t grid, NoteTransform::QuantizeO
 }
 
 
+//! groove.apply's optional random amount. OFF when absent, which is what every
+//! existing caller already had. It is drawn from each note's own identity and the
+//! seed given here, so the same call on the same notes reproduces the same take:
+//! an agent can reproduce a take it liked, and a taken-back edit is control.undo
+//! rather than a second apply.
+struct GrooveRandom
+{
+	tick_t ticks = 0;
+	int velocity = 0;
+	std::uint32_t seed = 0;
+};
+
+bool readGrooveRandom(const QJsonObject& args, GrooveRandom* out, ControlResult* error)
+{
+	if (args.contains(QStringLiteral("random_ticks"))
+		&& !readTicks(args, QStringLiteral("random_ticks"), 0,
+			static_cast<tick_t>(GrooveTemplate::MaxStepTicks), &out->ticks, error))
+	{
+		return false;
+	}
+	if (args.contains(QStringLiteral("random_velocity")))
+	{
+		const double value = args.value(QStringLiteral("random_velocity")).toDouble(-1.0);
+		if (value < 0.0 || value > 200.0)
+		{
+			*error = ControlResult::failure(ControlErrorKind::InvalidArgs,
+				QStringLiteral("'random_velocity' is %1; it is a jitter in the engine's own "
+					"note-volume range 0..200").arg(value));
+			return false;
+		}
+		out->velocity = static_cast<int>(value);
+	}
+	if (args.contains(QStringLiteral("seed")))
+	{
+		const double value = args.value(QStringLiteral("seed")).toDouble(-1.0);
+		if (value < 0.0 || value > static_cast<double>(kMaxSchemaInteger))
+		{
+			*error = ControlResult::failure(ControlErrorKind::InvalidArgs,
+				QStringLiteral("'seed' is %1; it is the whole number the jitter is drawn from")
+					.arg(value));
+			return false;
+		}
+		out->seed = static_cast<std::uint32_t>(value);
+	}
+	return true;
+}
+
 ControlResult grooveApply(const QJsonObject& args)
 {
 	GroovePool* pool = projectGroovePool();
@@ -181,44 +228,12 @@ ControlResult grooveApply(const QJsonObject& args)
 	float strength = 1.0f;
 	if (!readStrength(args, &strength, &error)) { return error; }
 
-	// The RANDOM amount, optional and OFF when absent, which is what every
-	// existing caller already had. It is drawn from each note's own identity and
-	// the seed given here, so the same call on the same notes reproduces the
-	// same take: an agent can reproduce a take it liked, and a taken-back edit
-	// is control.undo rather than a second apply.
-	tick_t randomTicks = 0;
-	int randomVelocity = 0;
-	std::uint32_t seed = 0;
-	if (args.contains(QStringLiteral("random_ticks"))
-		&& !readTicks(args, QStringLiteral("random_ticks"), 0,
-			static_cast<tick_t>(GrooveTemplate::MaxStepTicks), &randomTicks, &error))
-	{
-		return error;
-	}
-	if (args.contains(QStringLiteral("random_velocity")))
-	{
-		const double value = args.value(QStringLiteral("random_velocity")).toDouble(-1.0);
-		if (value < 0.0 || value > 200.0)
-		{
-			error = ControlResult::failure(ControlErrorKind::InvalidArgs,
-				QStringLiteral("'random_velocity' is %1; it is a jitter in the engine's own "
-					"note-volume range 0..200").arg(value));
-			return error;
-		}
-		randomVelocity = static_cast<int>(value);
-	}
-	if (args.contains(QStringLiteral("seed")))
-	{
-		const double value = args.value(QStringLiteral("seed")).toDouble(-1.0);
-		if (value < 0.0 || value > static_cast<double>(kMaxSchemaInteger))
-		{
-			error = ControlResult::failure(ControlErrorKind::InvalidArgs,
-				QStringLiteral("'seed' is %1; it is the whole number the jitter is drawn from")
-					.arg(value));
-			return error;
-		}
-		seed = static_cast<std::uint32_t>(value);
-	}
+	// The RANDOM amount, optional and OFF when absent (readGrooveRandom).
+	GrooveRandom random;
+	if (!readGrooveRandom(args, &random, &error)) { return error; }
+	const tick_t randomTicks = random.ticks;
+	const int randomVelocity = random.velocity;
+	const std::uint32_t seed = random.seed;
 
 	// The groove is captured BY VALUE: the pool can be edited through another
 	// command while this one runs, and the edit below must apply the groove

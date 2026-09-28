@@ -233,6 +233,13 @@ private:
 	static double channelWeight(int channel, int channelCount);
 	int binIndex(float lufs) const;
 	float binLoudness(int index) const;
+	//! loudnessRangeLu()'s two stages: the short-term relative gate (false when nothing
+	//! is binned), then the 10th..95th percentile spread of the windows above it.
+	bool shortTermRelativeGate(float* threshold) const;
+	float shortTermSpreadAbove(float threshold) const;
+	//! The first bin above @a threshold, at or before @a lastIndex, where the running
+	//! short-term window count exceeds (@a strictly) or reaches @a target; -1 if none.
+	int shortTermBinAtCount(float threshold, std::uint64_t target, bool strictly, int lastIndex) const;
 	float gatedLoudness() const;
 
 	//! +6 dB is 1.41^2; the weight is applied squared on the energy domain.

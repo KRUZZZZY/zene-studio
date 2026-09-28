@@ -188,6 +188,19 @@ void SessionScheduler::afterLaunchEvents( ActiveSlot& slot, const SessionClockCo
 }
 
 
+bool SessionScheduler::followActionDue( ActiveSlot& slot, tick_t step, tick_t positionTicks ) noexcept
+{
+	if( !slot.followScheduled )
+	{
+		// The first evaluation only SCHEDULES: the action time is one step after
+		// the start, never the period that first noticed the slot.
+		slot.followScheduled = true;
+		slot.followNextTick = slot.state.startedTick + step;
+		return false;
+	}
+	return positionTicks >= slot.followNextTick;
+}
+
 void SessionScheduler::evaluateFollow( ActiveSlot& slot, const SessionClockContext& ctx ) noexcept
 {
 	// The global toggle: off makes a chain INERT, not cleared - plans stay installed
@@ -210,13 +223,7 @@ void SessionScheduler::evaluateFollow( ActiveSlot& slot, const SessionClockConte
 		// not firing at all.
 		return;
 	}
-	if( !slot.followScheduled )
-	{
-		slot.followScheduled = true;
-		slot.followNextTick = slot.state.startedTick + step;
-		return;
-	}
-	if( ctx.positionTicks < slot.followNextTick )
+	if( !followActionDue( slot, step, ctx.positionTicks ) )
 	{
 		return;
 	}
@@ -462,39 +469,33 @@ void SessionScheduler::publishStart( tick_t line, tick_t observed ) noexcept
  *  the launch bodies already live. */
 tick_t quantisationTicks( LaunchQuantisation quantisation, tick_t ticksPerBar ) noexcept
 {
+	// One row per named grid: the quantum is ticksPerBar * multiplier / divisor. The
+	// sub-bar grids are a FRACTION of a bar, which the integer bar counts cannot
+	// express (the reason they carry their own enumerators rather than being derived
+	// from a bar count). A table rather than a switch keeps the mapping one list.
+	struct Grid { LaunchQuantisation value; tick_t multiplier; tick_t divisor; };
+	static constexpr Grid Grids[] = {
+		{ LaunchQuantisation::None, 0, 1 },
+		{ LaunchQuantisation::EightBars, 8, 1 },
+		{ LaunchQuantisation::FourBars, 4, 1 },
+		{ LaunchQuantisation::TwoBars, 2, 1 },
+		{ LaunchQuantisation::Half, 1, 2 },
+		{ LaunchQuantisation::Quarter, 1, 4 },
+		{ LaunchQuantisation::Eighth, 1, 8 },
+		{ LaunchQuantisation::Sixteenth, 1, 16 },
+	};
 	if( ticksPerBar <= 0 )
 	{
 		return 0;
 	}
-	switch( quantisation )
+	for( const Grid& grid : Grids )
 	{
-		case LaunchQuantisation::None:
-			return 0;
-		case LaunchQuantisation::EightBars:
-			return 8 * ticksPerBar;
-		case LaunchQuantisation::FourBars:
-			return 4 * ticksPerBar;
-		case LaunchQuantisation::TwoBars:
-			return 2 * ticksPerBar;
-		// Sub-bar grids: the quantum is a FRACTION of a bar, which is what the
-		// integer bar counts above cannot express (the reason these values carry
-		// their own enumerators rather than being derived from a bar count).
-		case LaunchQuantisation::Half:
-			return ticksPerBar / 2;
-		case LaunchQuantisation::Quarter:
-			return ticksPerBar / 4;
-		case LaunchQuantisation::Eighth:
-			return ticksPerBar / 8;
-		case LaunchQuantisation::Sixteenth:
-			return ticksPerBar / 16;
-		case LaunchQuantisation::Bar:
-		case LaunchQuantisation::Global:
-		default:
-			// Global is a pointer to the session default, not a length; a
-			// caller that reaches here unresolved gets the session default's
-			// own default (one bar, SessionModel::DefaultLaunchQuantisation).
-			return ticksPerBar;
+		if( grid.value == quantisation ) { return ticksPerBar * grid.multiplier / grid.divisor; }
 	}
+	// Bar, and Global - a pointer to the session default, not a length: a caller
+	// that reaches here unresolved gets the session default's own default (one
+	// bar, SessionModel::DefaultLaunchQuantisation).
+	return ticksPerBar;
 }
 
 } // namespace lmms

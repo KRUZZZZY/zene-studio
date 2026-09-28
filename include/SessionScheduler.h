@@ -443,6 +443,9 @@ private:
 	/*! Evaluates one playing slot's chain against the clock, firing at most one
 	 *  action per action time. Audio thread; the rules are in SessionFollow.h. */
 	void evaluateFollow( ActiveSlot& slot, const SessionClockContext& ctx ) noexcept;
+	//! evaluateFollow's clock: schedules the first action time one @a step after the start,
+	//! then reports whether @a positionTicks has reached the scheduled one.
+	static bool followActionDue( ActiveSlot& slot, tick_t step, tick_t positionTicks ) noexcept;
 	/*! Everything the launch state machine's events imply for this task: the launch
 	 *  counters and the start-line publication, the slot's schedule, and the Arrangement
 	 *  Record's ring. One place, so they cannot disagree about what happened here. */

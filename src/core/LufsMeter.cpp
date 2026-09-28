@@ -353,8 +353,17 @@ float LufsMeter::truePeakDbtp() const
 
 float LufsMeter::loudnessRangeLu() const
 {
-	// EBU Tech 3342. The absolute gate is already applied: binIndex() refuses a
-	// value below it, so every binned short-term window is a survivor of it.
+	// EBU Tech 3342, in two stages: the relative gate over the short-term
+	// distribution, then the 10th..95th percentile spread of what survives it.
+	float threshold = 0.0f;
+	if (!shortTermRelativeGate(&threshold)) { return MinusInfinity; }
+	return shortTermSpreadAbove(threshold);
+}
+
+bool LufsMeter::shortTermRelativeGate(float* threshold) const
+{
+	// The absolute gate is already applied: binIndex() refuses a value below it,
+	// so every binned short-term window is a survivor of it.
 	constexpr float ShortTermRelativeGateLu = -20.0f;
 
 	double energy = 0.0;
@@ -364,13 +373,16 @@ float LufsMeter::loudnessRangeLu() const
 		energy += m_shortTerm[index].energy;
 		count += m_shortTerm[index].count;
 	}
-	if (count == 0) { return MinusInfinity; }
+	if (count == 0) { return false; }
 
 	// The relative gate: 20 LU below the mean of the survivors - the same shape
 	// as the integrated gate, a different offset.
-	const float threshold = loudnessFromEnergy(energy / static_cast<double>(count))
-		+ ShortTermRelativeGateLu;
+	*threshold = loudnessFromEnergy(energy / static_cast<double>(count)) + ShortTermRelativeGateLu;
+	return true;
+}
 
+float LufsMeter::shortTermSpreadAbove(float threshold) const
+{
 	std::uint64_t surviving = 0;
 	for (int index = 1; index < BinCount; ++index)
 	{
@@ -385,22 +397,26 @@ float LufsMeter::loudnessRangeLu() const
 	const std::uint64_t highTarget =
 		static_cast<std::uint64_t>(0.95 * static_cast<double>(surviving));
 
-	float low = MinusInfinity;
-	float high = MinusInfinity;
+	// The high percentile first: the low one must be found at or before it (one
+	// scan used to stop at the high bin, so a low bin past it never counted).
+	const int high = shortTermBinAtCount(threshold, highTarget, false, BinCount - 1);
+	if (high < 0) { return MinusInfinity; }
+	const int low = shortTermBinAtCount(threshold, lowTarget, true, high);
+	if (low < 0) { return MinusInfinity; }
+	return binLoudness(high) - binLoudness(low);
+}
+
+int LufsMeter::shortTermBinAtCount(float threshold, std::uint64_t target, bool strictly,
+	int lastIndex) const
+{
 	std::uint64_t seen = 0;
-	for (int index = 1; index < BinCount; ++index)
+	for (int index = 1; index <= lastIndex; ++index)
 	{
 		if (binLoudness(index) <= threshold) { continue; }
 		seen += m_shortTerm[index].count;
-		if (low == MinusInfinity && seen > lowTarget) { low = binLoudness(index); }
-		if (seen >= highTarget)
-		{
-			high = binLoudness(index);
-			break;
-		}
+		if (strictly ? seen > target : seen >= target) { return index; }
 	}
-	if (low == MinusInfinity || high == MinusInfinity) { return MinusInfinity; }
-	return high - low;
+	return -1;
 }
 
 float LufsMeter::peakToLoudnessRatioDb() const
