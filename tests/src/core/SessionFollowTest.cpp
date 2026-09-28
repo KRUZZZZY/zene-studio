@@ -402,6 +402,44 @@ private slots:
 				.arg(allocations)));
 		QVERIFY(scheduler.followFires() > 0u);
 	}
+	/*! Live's global toggle: with it OFF a chain is inert - nothing fires - while
+	 *  the plans stay INSTALLED, so switching it back on resumes rather than
+	 *  restarting. That distinction is the whole reason it is a performance
+	 *  control and not an edit, so it is asserted directly: the armed-cell count
+	 *  is unchanged across the toggle, and the same chain fires again after.
+	 */
+	void theGlobalToggleMakesChainsInertWithoutDisarmingThem()
+	{
+		SessionScheduler scheduler;
+		QVERIFY(scheduler.requestFollowPlan(0, 0,
+			single(action(FollowAction::Type::Next, 1.0, false, 1.0, 0), kSceneCount)));
+		QVERIFY(scheduler.requestLaunch(0, 0, LaunchMode::Trigger, LaunchQuantisation::None));
+
+		SessionClockContext ctx = clock(0);
+		scheduler.processAudio(ctx, kFramesPerPeriod);
+		QCOMPARE(scheduler.armedFollowCells(), 1);
+		QVERIFY2(scheduler.followActionsEnabled(), "the toggle does not start enabled");
+
+		// Off: nothing fires, and the plan is still installed.
+		scheduler.setFollowActionsEnabled(false);
+		QVERIFY(!scheduler.followActionsEnabled());
+		for (int period = 0; period < 200; ++period)
+		{
+			ctx.positionTicks = static_cast<tick_t>(period) * kTickStep;
+			scheduler.processAudio(ctx, kFramesPerPeriod);
+		}
+		QVERIFY2(scheduler.followFires() == 0u, "a chain fired with the toggle off");
+		QCOMPARE(scheduler.armedFollowCells(), 1);   // inert, NOT disarmed
+
+		// On again: the same chain resumes.
+		scheduler.setFollowActionsEnabled(true);
+		for (int period = 0; period < 400; ++period)
+		{
+			ctx.positionTicks = static_cast<tick_t>(period + 200) * kTickStep;
+			scheduler.processAudio(ctx, kFramesPerPeriod);
+		}
+		QVERIFY2(scheduler.followFires() > 0u, "the chain did not resume when re-enabled");
+	}
 };
 
 QTEST_GUILESS_MAIN(SessionFollowTest)

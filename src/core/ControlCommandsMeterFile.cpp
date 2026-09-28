@@ -96,7 +96,8 @@ QJsonValue meterReadingJson(float value)
 }
 
 QJsonObject meterReadingsJson(float integratedLufs, float momentaryLufs, float shortTermLufs,
-	float shortTermMaxLufs, float truePeakDbtp)
+	float shortTermMaxLufs, float truePeakDbtp, float loudnessRangeLu,
+	float peakToLoudnessRatioDb)
 {
 	QJsonObject out;
 	out.insert(QStringLiteral("integrated_lufs"), meterReadingJson(integratedLufs));
@@ -104,6 +105,8 @@ QJsonObject meterReadingsJson(float integratedLufs, float momentaryLufs, float s
 	out.insert(QStringLiteral("short_term_lufs"), meterReadingJson(shortTermLufs));
 	out.insert(QStringLiteral("short_term_max_lufs"), meterReadingJson(shortTermMaxLufs));
 	out.insert(QStringLiteral("true_peak_dbtp"), meterReadingJson(truePeakDbtp));
+	out.insert(QStringLiteral("loudness_range_lu"), meterReadingJson(loudnessRangeLu));
+	out.insert(QStringLiteral("plr_db"), meterReadingJson(peakToLoudnessRatioDb));
 	return out;
 }
 
@@ -226,7 +229,8 @@ ControlResult meterMeasureFile(const QString& path)
 		static_cast<int>(audioInfo.format & SF_FORMAT_TYPEMASK));
 
 	QJsonObject readings = meterReadingsJson(report.integratedLufs(), report.momentaryLufs(),
-		report.shortTermLufs(), report.shortTermMaxLufs(), report.truePeakDbtp());
+		report.shortTermLufs(), report.shortTermMaxLufs(), report.truePeakDbtp(),
+		report.loudnessRangeLu(), report.peakToLoudnessRatioDb());
 	for (auto it = readings.constBegin(); it != readings.constEnd(); ++it)
 	{
 		result.insert(it.key(), it.value());

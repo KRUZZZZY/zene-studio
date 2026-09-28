@@ -111,6 +111,8 @@ void MasterLoudnessTap::clearMeasurement() noexcept
 	m_shortTermLufs.store(LufsMeter::MinusInfinity, std::memory_order_relaxed);
 	m_shortTermMaxLufs.store(LufsMeter::MinusInfinity, std::memory_order_relaxed);
 	m_truePeakDbtp.store(LufsMeter::MinusInfinity, std::memory_order_relaxed);
+	m_loudnessRangeLu.store(LufsMeter::MinusInfinity, std::memory_order_relaxed);
+	m_peakToLoudnessRatioDb.store(LufsMeter::MinusInfinity, std::memory_order_relaxed);
 }
 
 void MasterLoudnessTap::feed(const SampleFrame* frames, f_cnt_t frameCount) noexcept
@@ -144,6 +146,10 @@ void MasterLoudnessTap::publish() noexcept
 	m_momentaryLufs.store(reading.momentaryLufs, std::memory_order_relaxed);
 	m_shortTermLufs.store(reading.shortTermLufs, std::memory_order_relaxed);
 	m_truePeakDbtp.store(reading.truePeakDbtp, std::memory_order_relaxed);
+	// The two distribution measures are derived, not incremental: they are read
+	// off the meter's histograms, so they cost nothing to publish here.
+	m_loudnessRangeLu.store(m_meter.loudnessRangeLu(), std::memory_order_relaxed);
+	m_peakToLoudnessRatioDb.store(m_meter.peakToLoudnessRatioDb(), std::memory_order_relaxed);
 
 	if (reading.shortTermLufs > m_shortTermMax) { m_shortTermMax = reading.shortTermLufs; }
 	m_shortTermMaxLufs.store(m_shortTermMax, std::memory_order_relaxed);
@@ -174,6 +180,8 @@ MasterLoudnessTap::Snapshot MasterLoudnessTap::snapshot() const noexcept
 	out.shortTermLufs = m_shortTermLufs.load(std::memory_order_relaxed);
 	out.shortTermMaxLufs = m_shortTermMaxLufs.load(std::memory_order_relaxed);
 	out.truePeakDbtp = m_truePeakDbtp.load(std::memory_order_relaxed);
+	out.loudnessRangeLu = m_loudnessRangeLu.load(std::memory_order_relaxed);
+	out.peakToLoudnessRatioDb = m_peakToLoudnessRatioDb.load(std::memory_order_relaxed);
 	return out;
 }
 

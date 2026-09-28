@@ -31,30 +31,6 @@ namespace lmms
 // Pure launch decision
 // ---------------------------------------------------------------------------
 
-tick_t quantisationTicks( LaunchQuantisation quantisation, tick_t ticksPerBar ) noexcept
-{
-	if( ticksPerBar <= 0 )
-	{
-		return 0;
-	}
-	switch( quantisation )
-	{
-		case LaunchQuantisation::None:
-			return 0;
-		case LaunchQuantisation::FourBars:
-			return 4 * ticksPerBar;
-		case LaunchQuantisation::TwoBars:
-			return 2 * ticksPerBar;
-		case LaunchQuantisation::Bar:
-		case LaunchQuantisation::Global:
-		default:
-			// Global is a pointer to the session default, not a length; a
-			// caller that reaches here unresolved gets the session default's
-			// own default (one bar, SessionModel::DefaultLaunchQuantisation).
-			return ticksPerBar;
-	}
-}
-
 
 LaunchQuantisation resolveQuantisation( LaunchQuantisation perClip,
 	LaunchQuantisation sessionDefault ) noexcept
@@ -338,6 +314,13 @@ void SessionScheduler::drainCommands( const SessionClockContext& ctx ) noexcept
 			{
 				m_dropped.fetch_add( 1, std::memory_order_relaxed );
 			}
+			continue;
+		}
+		if( command.type == LaunchCommandType::Content )
+		{
+			// Content, not a launch: stored for the cell and read by the render
+			// path (#597). Touches no launch state.
+			applySlotContent( command.content );
 			continue;
 		}
 		ActiveSlot* slot = findSlot( command.track, command.scene );

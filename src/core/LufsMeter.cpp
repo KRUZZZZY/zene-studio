@@ -111,6 +111,7 @@ void LufsMeter::reset()
 	m_subBlocksClosed = 0;
 	m_framesInSubBlock = 0;
 	m_gating = {};
+	m_shortTerm = {};
 }
 
 void LufsMeter::kWeightingCoefficients(sample_rate_t sampleRate, Biquad& preFilter, Biquad& rlbHighPass)
@@ -227,6 +228,19 @@ void LufsMeter::addGatingBlock()
 	const int index = binIndex(loudnessFromEnergy(meanSquare));
 	m_gating[index].energy += meanSquare;
 	++m_gating[index].count;
+
+	// The short-term window is the one EBU Tech 3342 measures the loudness range
+	// over, so it is binned here too - at the same 10 Hz block rate, so the two
+	// histograms stay one pass over the audio. windowMeanSquare() answers
+	// negative until the window is full, and loudnessRangeLu() needs a filled
+	// window to mean anything.
+	const double shortTermSquare = windowMeanSquare(ShortTermSubBlocks);
+	if (shortTermSquare >= 0.0)
+	{
+		const int shortIndex = binIndex(loudnessFromEnergy(shortTermSquare));
+		m_shortTerm[shortIndex].energy += shortTermSquare;
+		++m_shortTerm[shortIndex].count;
+	}
 }
 
 double LufsMeter::windowMeanSquare(int blocks) const
@@ -335,6 +349,66 @@ float LufsMeter::truePeakDbtp() const
 		peak = std::max(peak, m_truePeak[channel].peak);
 	}
 	return peak > 0.0 ? static_cast<float>(20.0 * std::log10(peak)) : MinusInfinity;
+}
+
+float LufsMeter::loudnessRangeLu() const
+{
+	// EBU Tech 3342. The absolute gate is already applied: binIndex() refuses a
+	// value below it, so every binned short-term window is a survivor of it.
+	constexpr float ShortTermRelativeGateLu = -20.0f;
+
+	double energy = 0.0;
+	std::uint64_t count = 0;
+	for (int index = 1; index < BinCount; ++index)
+	{
+		energy += m_shortTerm[index].energy;
+		count += m_shortTerm[index].count;
+	}
+	if (count == 0) { return MinusInfinity; }
+
+	// The relative gate: 20 LU below the mean of the survivors - the same shape
+	// as the integrated gate, a different offset.
+	const float threshold = loudnessFromEnergy(energy / static_cast<double>(count))
+		+ ShortTermRelativeGateLu;
+
+	std::uint64_t surviving = 0;
+	for (int index = 1; index < BinCount; ++index)
+	{
+		if (binLoudness(index) > threshold) { surviving += m_shortTerm[index].count; }
+	}
+	if (surviving == 0) { return MinusInfinity; }
+
+	// Percentiles by COUNT, not by energy: LRA is a spread of LEVELS, so every
+	// surviving window weighs the same regardless of how loud it is.
+	const std::uint64_t lowTarget =
+		static_cast<std::uint64_t>(0.10 * static_cast<double>(surviving));
+	const std::uint64_t highTarget =
+		static_cast<std::uint64_t>(0.95 * static_cast<double>(surviving));
+
+	float low = MinusInfinity;
+	float high = MinusInfinity;
+	std::uint64_t seen = 0;
+	for (int index = 1; index < BinCount; ++index)
+	{
+		if (binLoudness(index) <= threshold) { continue; }
+		seen += m_shortTerm[index].count;
+		if (low == MinusInfinity && seen > lowTarget) { low = binLoudness(index); }
+		if (seen >= highTarget)
+		{
+			high = binLoudness(index);
+			break;
+		}
+	}
+	if (low == MinusInfinity || high == MinusInfinity) { return MinusInfinity; }
+	return high - low;
+}
+
+float LufsMeter::peakToLoudnessRatioDb() const
+{
+	const float integrated = integratedLufs();
+	const float peak = truePeakDbtp();
+	if (integrated == MinusInfinity || peak == MinusInfinity) { return MinusInfinity; }
+	return peak - integrated;
 }
 
 LufsMeter::Reading LufsMeter::read() const

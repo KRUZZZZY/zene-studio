@@ -34,6 +34,7 @@
 #include "SessionArrangementRecorder.h"
 #include "SessionFollow.h"
 #include "SessionModel.h"
+#include "SessionPlayback.h"
 #include "lmms_export.h"
 
 namespace lmms
@@ -124,7 +125,9 @@ enum class LaunchCommandType : std::uint8_t
 	 *  cell. It touches no launch state: the plan is stored and the slot's own
 	 *  state machine consults it while it plays (task #641). Same queue, same
 	 *  producer, same POD rule as the three above. */
-	Follow
+	Follow,
+	//! Publishes what a cell HOLDS so a launched slot renders it (#597); POD.
+	Content
 };
 
 //! Where a slot is in its launch life cycle.
@@ -230,6 +233,16 @@ public:
 	 *  the project changes under the engine. Lock-free and allocation-free:
 	 *  it is one atomic increment, so it is safe from anywhere. */
 	void reset() noexcept;
+
+	//! Enables/disables EVERY chain at once (Live's global toggle); engine state, not project state.
+	void setFollowActionsEnabled( bool enabled ) noexcept;
+	bool followActionsEnabled() const noexcept;
+
+	//! Publishes what a cell holds so a launched slot renders it (#597); one queue push.
+	bool publishSlotContent( int track, int scene, int patternId, tick_t loopLengthTicks ) noexcept;
+
+	//! What this column should render this period (#597). Audio thread.
+	SessionSlotPlayback playbackForColumn( int track ) const noexcept;
 
 	//! Commands refused because the queue was full. Any thread.
 	std::uint64_t droppedCommands() const noexcept
@@ -340,6 +353,8 @@ private:
 		//! Only read for LaunchCommandType::Follow; a POD payload, so the queue
 		//! stays a fixed array of trivially copyable elements.
 		FollowPlan plan;
+		//! Only read for Content (#597). POD, like `plan`.
+		SessionSlotContent content;
 	};
 
 	/*! Fixed-capacity single-producer/single-consumer queue. The model thread
@@ -409,24 +424,10 @@ private:
 	ActiveSlot* findSlot( int track, int scene ) noexcept;
 	ActiveSlot* claimSlot( int track, int scene ) noexcept;
 	void drainCommands( const SessionClockContext& ctx ) noexcept;
-	/*! Publishes one start event for the model thread: repacks the pair when the
-	 *  event landed on the line already reported, so the count is the number of
-	 *  clips that began on THAT line. Audio thread; two relaxed stores. Defined
-	 *  here rather than in the .cpp because that file is at the file-length
-	 *  ratchet and this is the whole of it - the surrounding state machine lives
-	 *  in the .cpp, the hot path belongs beside the atomics it writes. */
-	void publishStart( tick_t line, tick_t observed ) noexcept
-	{
-		const std::uint64_t previous = m_lastStartLine.load( std::memory_order_relaxed );
-		const std::uint32_t starts = startLineStarts( previous );
-		const std::uint32_t count = ( startLineTick( previous ) == line && starts > 0 )
-			? starts + 1 : 1;
-		m_lastStartObservedTick.store( observed, std::memory_order_relaxed );
-		// The pair goes in as ONE store, so a reader can never see the new line
-		// with the old count (or the reverse) and conclude a synchronisation
-		// that did not happen.
-		m_lastStartLine.store( packStartLine( line, count ), std::memory_order_relaxed );
-	}
+	//! Audio thread: applies one published cell's content (#597); body in SessionPlayback.cpp.
+	bool applySlotContent( const SessionSlotContent& content ) noexcept;
+	//! Publishes one start event for the model thread. Audio thread; body in SessionFollow.cpp.
+	void publishStart( tick_t line, tick_t observed ) noexcept;
 	//! Applies a pending reset() request. True when everything was dropped.
 	bool consumeResetRequest() noexcept;
 	//! Moves the session clock for this period (SPEC A2's separate domain).
@@ -442,23 +443,21 @@ private:
 	/*! Evaluates one playing slot's chain against the clock, firing at most one
 	 *  action per action time. Audio thread; the rules are in SessionFollow.h. */
 	void evaluateFollow( ActiveSlot& slot, const SessionClockContext& ctx ) noexcept;
-	/*! Everything the launch state machine's events imply for this task: the
-	 *  launch counters and the start-line publication, the slot's schedule, and
-	 *  the Arrangement Record's ring. One place, so they cannot disagree about
-	 *  what happened this period. Audio thread. */
+	/*! Everything the launch state machine's events imply for this task: the launch
+	 *  counters and the start-line publication, the slot's schedule, and the Arrangement
+	 *  Record's ring. One place, so they cannot disagree about what happened here. */
 	void afterLaunchEvents( ActiveSlot& slot, const SessionClockContext& ctx,
 		LaunchEvent event ) noexcept;
-	//! Publishes a fire for the model thread. Audio thread; one relaxed store.
-	void publishFollowFire( const FollowFire& fire, tick_t tick ) noexcept
-	{
-		m_lastFollowFire.store( packFollowFire( fire.outcome, fire.chosenIndex,
-			fire.targetScene, tick ), std::memory_order_relaxed );
-	}
+	//! Publishes a fire for the model thread. Audio thread; body in SessionFollow.cpp.
+	void publishFollowFire( const FollowFire& fire, tick_t tick ) noexcept;
 	//! Audio thread: how many installed cells have an ENABLED plan.
 	void recountArmedFollowCells() noexcept;
 
 	std::array<ActiveSlot, MaxActiveSlots> m_active{};
 	std::array<InstalledFollowPlan, MaxFollowPlans> m_followPlans{};
+	//! What each cell holds, published through the queue (#597); capacity and
+	//! its refusal rule are in SessionPlayback.h.
+	SessionSlotContentTable m_slotContent{};
 	CommandQueue m_queue;
 	std::atomic<std::uint64_t> m_dropped{ 0 };
 	std::atomic<std::uint64_t> m_launches{ 0 };
@@ -472,6 +471,7 @@ private:
 	//! Project-change generation; bumping it makes the audio thread drop every
 	//! active slot on its next period (see reset()).
 	std::atomic<std::uint32_t> m_resetGeneration{ 0 };
+	std::atomic<bool> m_followEnabled{ true };  //!< the global Follow Actions toggle.
 	std::uint32_t m_seenGeneration = 0;
 
 	// ---- Follow Actions and Arrangement Record (task #641) --------------

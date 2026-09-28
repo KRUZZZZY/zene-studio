@@ -152,7 +152,21 @@ public:
 	float shortTermLufs() const;
 	//! Maximum true peak (dBTP) since reset(); MinusInfinity until a block was fed.
 	float truePeakDbtp() const;
-
+	/*! Loudness range (LRA, LU) as EBU Tech 3342 defines it: the 10th..95th
+	 *  percentile spread of the SHORT-TERM loudness values, after the absolute
+	 *  gate and a relative gate 20 LU below the mean of the survivors.
+	 *  MinusInfinity until enough short-term windows have been fed to measure.
+	 *
+	 *  LRA is a *distribution* statistic, not a loudness: it says how much the
+	 *  programme's level moves, which is the one thing LUFS-I and dBTP cannot
+	 *  show. It is the reason the gating histogram here is paired with a second
+	 *  one for short-term values - the same bins, a different window length. */
+	float loudnessRangeLu() const;
+	/*! Peak-to-loudness ratio (dB): maximum true peak minus gated integrated
+	 *  loudness. A crest measure on the programme, complementing LRA: PLR moves
+	 *  with how transient the material is at the same loudness. MinusInfinity
+	 *  until both its operands exist. */
+	float peakToLoudnessRatioDb() const;
 	/**
 	 * K-weighting filter coefficients for \p sampleRate: the pre-filter (stage 1
 	 * high shelf) and the RLB high-pass (stage 2). At 48000 Hz the two rows are
@@ -241,6 +255,11 @@ private:
 	int m_subBlocksClosed = 0;
 
 	std::array<GatingBin, BinCount> m_gating;
+	/*! The same bins over the SHORT-TERM (3 s) window rather than the 400 ms
+	 *  block: loudnessRangeLu() reads the distribution of short-term values, and
+	 *  a histogram is what keeps that bounded in memory with no per-block
+	 *  storage growing with programme length. */
+	std::array<GatingBin, BinCount> m_shortTerm;
 };
 
 } // namespace lmms

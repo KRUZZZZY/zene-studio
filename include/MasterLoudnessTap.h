@@ -108,6 +108,12 @@ public:
 		//! only holds the current 3 s window; a report wants the worst case).
 		float shortTermMaxLufs = LufsMeter::MinusInfinity;
 		float truePeakDbtp = LufsMeter::MinusInfinity;
+		//! Loudness range (LU) and peak-to-loudness ratio (dB) - the two
+		//! DISTRIBUTION measures (EBU Tech 3342 / EBU R 128's crest reading).
+		//! They answer a question LUFS-I and dBTP cannot: how much this
+		//! programme's level moves.
+		float loudnessRangeLu = LufsMeter::MinusInfinity;
+		float peakToLoudnessRatioDb = LufsMeter::MinusInfinity;
 	};
 
 	/*! @param sampleRate   The engine's PROCESSING rate, which is the rate of
@@ -198,6 +204,8 @@ private:
 	std::atomic<float> m_shortTermLufs{LufsMeter::MinusInfinity};
 	std::atomic<float> m_shortTermMaxLufs{LufsMeter::MinusInfinity};
 	std::atomic<float> m_truePeakDbtp{LufsMeter::MinusInfinity};
+	std::atomic<float> m_loudnessRangeLu{LufsMeter::MinusInfinity};
+	std::atomic<float> m_peakToLoudnessRatioDb{LufsMeter::MinusInfinity};
 
 	//! The loudest short-term window so far. Written by the audio thread only
 	//! (the same rule LoudnessReport::m_shortTermMax follows on the render

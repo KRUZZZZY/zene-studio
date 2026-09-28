@@ -416,6 +416,42 @@ def check_file_measurements(session, recorder, fixtures):
                                                              "measured", "verdict")})
 
 
+def check_distribution_readings(session, recorder, fixtures):
+    """The two DISTRIBUTION measures, through the surface (row 24's siblings).
+
+    LRA and PLR answer what integrated loudness and true peak cannot: how much
+    the programme's level moves, and how far its peaks sit above its own
+    loudness. Both fixtures are STEADY tones, so the honest assertion here is the
+    one their steadiness implies - a range of essentially zero - plus PLR's
+    definition against the two readings the same answer already carries. A
+    programme that actually steps down is covered by the meter's own unit test
+    (LufsMeterTest.loudnessRangeSeparatesSteadyFromDynamicProgrammes), which can
+    synthesise it; a file fixture cannot be authored here.
+    """
+    result = measure(session, os.path.join(fixtures, "tone-23.wav"))
+
+    lra = result.get("loudness_range_lu")
+    plr = result.get("plr_db")
+    recorder.check("meter.measure_file reports the loudness range and PLR",
+                   lra is not None and plr is not None,
+                   "loudness_range_lu=%r plr_db=%r keys=%r"
+                   % (lra, plr, sorted(k for k in result if "loud" in k or "plr" in k)))
+
+    # A steady tone has no range. 1 LU is generous for a real constant-level file
+    # and still far below any programme that moves.
+    recorder.check("a steady tone measures an essentially zero loudness range",
+                   lra is not None and abs(lra) < 1.0,
+                   "loudness_range_lu=%r" % (lra,))
+
+    integrated = result.get("integrated_lufs")
+    peak = result.get("true_peak_dbtp")
+    expected = None if (integrated is None or peak is None) else peak - integrated
+    recorder.check("PLR is the true peak less the integrated loudness",
+                   expected is not None and plr is not None and abs(plr - expected) < 0.05,
+                   "plr_db=%r expected=%r (peak=%r integrated=%r)"
+                   % (plr, expected, peak, integrated))
+
+
 def check_measuring_does_not_touch_the_file(session, recorder, fixtures):
     """NEGATIVE CONTROL 3, file half: measure_file reads the file and nothing else."""
     path = os.path.join(fixtures, "tone-23.wav")
@@ -542,6 +578,7 @@ def run_checks(session, workdir, fixtures, recorder):
     check_default_state(session, recorder)
     check_arm_is_live_and_reversible(session, recorder)
     check_file_measurements(session, recorder, fixtures)
+    check_distribution_readings(session, recorder, fixtures)
     check_measuring_does_not_touch_the_file(session, recorder, fixtures)
     check_live_measurement_of_a_playing_project(session, recorder, fixtures)
     check_render_is_byte_identical_with_the_tap_attached(session, recorder, workdir, fixtures)

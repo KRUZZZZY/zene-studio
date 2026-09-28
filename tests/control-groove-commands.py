@@ -224,6 +224,44 @@ def check_apply(session, instance, transcript, recorder):
     return clip
 
 
+def check_apply_random(session, instance, transcript, recorder):
+    """The RANDOM amount, through the surface.
+
+    What an agent needs from a jitter is that a take it liked can be asked for
+    again, so the same seed must reproduce the same take exactly - and the
+    amount must actually do something, which is why the take is compared against
+    the plain groove's own landing rather than only against itself.
+    """
+    clip = make_clip(session, instance, transcript, "Random Target")
+    add_notes(session, clip, ((60, 0, 100), (62, 12, 100), (64, 24, 100), (65, 36, 100)))
+
+    session.result("groove.apply", {"clip": clip, "name": "feel"})
+    groove_only = take_of(session, clip)
+    session.result("control.undo")
+
+    def apply_random(seed):
+        session.result("groove.apply", {"clip": clip, "name": "feel",
+                                       "random_ticks": 6, "seed": seed})
+        return take_of(session, clip)
+
+    first = apply_random(12345)
+    recorder.check("the random amount moves the take off the groove's own landing",
+                   first != groove_only,
+                   "random=%s groove=%s" % (first, groove_only))
+
+    session.result("control.undo")
+    second = apply_random(12345)
+    recorder.check("the same seed reproduces the same take through the surface",
+                   first == second, "first=%s second=%s" % (first, second))
+
+    session.result("control.undo")
+    third = apply_random(999)
+    recorder.check("a different seed produces a different take",
+                   third != first, "seed999=%s seed12345=%s" % (third, first))
+
+    session.result("control.undo")
+
+
 def check_quantize(session, instance, transcript, recorder):
     """Strength is how far a note travels; humanise is a bounded seeded jitter."""
     clip = make_clip(session, instance, transcript, "Quantise Target")
@@ -433,6 +471,7 @@ def main(argv):
         add_notes(session, feel_clip, FEEL_NOTES)
         check_extract(session, feel_clip, recorder)
         check_apply(session, instance, transcript, recorder)
+        check_apply_random(session, instance, transcript, recorder)
         check_quantize(session, instance, transcript, recorder)
         check_pool_edits_and_persistence(session, instance, transcript, recorder)
         check_refusals(session, instance, transcript, recorder)

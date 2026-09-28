@@ -29,6 +29,8 @@
 #include <cmath>
 #include <cstdlib>
 
+#include "NoteRandom.h"
+
 #include <QDomDocument>
 #include <QDomElement>
 
@@ -331,7 +333,20 @@ bool extractGroove(const NoteVector& notes, const QString& name, tick_t lengthTi
 }
 
 
-int applyGroove(const NoteVector& notes, const GrooveTemplate& groove, float strength)
+namespace
+{
+/*! Salts for the random amount's draws. A DISTINCT salt per axis matters: the
+ *  draw is a pure function of the seed and the note's identity, so without one
+ *  a groove's random offset and a quantise's humanise would be the SAME number
+ *  for the same note - two operations would then add the identical jitter to
+ *  one note instead of two independent ones. */
+constexpr std::uint32_t GrooveRandomTickSalt = 0x6F1D2C3B;
+constexpr std::uint32_t GrooveRandomVelocitySalt = 0x1A5E7C90;
+} // namespace
+
+
+int applyGroove(const NoteVector& notes, const GrooveTemplate& groove, float strength,
+	tick_t randomTicks, int randomVelocity, std::uint32_t seed)
 {
 	if (!groove.valid()) { return 0; }
 	const float amount = std::clamp(strength, 0.0f, 1.0f);
@@ -348,9 +363,33 @@ int applyGroove(const NoteVector& notes, const GrooveTemplate& groove, float str
 		const int velocity = static_cast<int>(note->getVolume());
 		const int newVelocity = groovedVelocity(velocity, groove.targetVelocityFor(pos), amount);
 
-		if (moved != pos) { note->setPos(TimePos(moved)); }
-		if (newVelocity != velocity) { note->setVolume(static_cast<volume_t>(newVelocity)); }
-		if (moved != pos || newVelocity != velocity) { ++changed; }
+		// The RANDOM amount (the groove pool's own control, alongside its
+		// timing and velocity amounts). Drawn from the note's identity and the
+		// caller's seed, never from hidden state, so the same call on the same
+		// notes reproduces the same take - the rule quantise's humanise follows.
+		tick_t jittered = moved;
+		int jitteredVelocity = newVelocity;
+		if (randomTicks > 0)
+		{
+			const double unit = static_cast<double>(NoteRandom::rollUnit(seed,
+				note->key(), pos, note->length().getTicks(), GrooveRandomTickSalt));
+			jittered = moved + static_cast<tick_t>(std::lround(
+				(unit * 2.0 - 1.0) * static_cast<double>(randomTicks)));
+			// Never before tick 0: a position the engine cannot represent is
+			// clamped rather than produced, exactly as quantizeNotes does.
+			if (jittered < 0) { jittered = 0; }
+		}
+		if (randomVelocity > 0)
+		{
+			const double unit = static_cast<double>(NoteRandom::rollUnit(seed,
+				note->key(), pos, note->length().getTicks(), GrooveRandomVelocitySalt));
+			jitteredVelocity = std::clamp(newVelocity + static_cast<int>(std::lround(
+				(unit * 2.0 - 1.0) * static_cast<double>(randomVelocity))), 0, 200);
+		}
+
+		if (jittered != pos) { note->setPos(TimePos(jittered)); }
+		if (jitteredVelocity != velocity) { note->setVolume(static_cast<volume_t>(jitteredVelocity)); }
+		if (jittered != pos || jitteredVelocity != velocity) { ++changed; }
 	}
 	return changed;
 }

@@ -467,6 +467,22 @@ void Song::processNextBuffer()
 				if (m_playMode == PlayMode::Song
 					&& m_sessionScheduler.trackIsSessionActive(trackIndex))
 				{
+					// Board card #597: the A1 take-over used to be the whole of
+					// the session behaviour - the column was silenced and
+					// nothing played in its place. Now the cell's published
+					// content is rendered at its own loop position, through the
+					// pattern store (the store owns the instruments a pattern's
+					// notes belong to). A cell with no published content - an
+					// empty slot - leaves patternId < 0 and keeps the old
+					// silence, which is what makes "the launch fired" separable
+					// from "there was content to play".
+					const SessionSlotPlayback played =
+						m_sessionScheduler.playbackForColumn(trackIndex);
+					if (played.patternId >= 0)
+					{
+						Engine::patternStore()->play(TimePos(played.positionTicks),
+							framesToPlay, frameOffsetInPeriod, played.patternId);
+					}
 					continue;
 				}
 				track->play(getPlayPos(), framesToPlay, frameOffsetInPeriod, clipNum);
@@ -1731,6 +1747,12 @@ void Song::loadProject( const QString & fileName, const QStringList & skipSectio
 	}
 
 	m_loadingProject = false;
+	// Board card #597: publish what the loaded project's session cells hold, or
+	// a launch of a cell that came from the FILE would take its track over and
+	// render nothing. Here rather than in the per-element reader, so every
+	// section that fills the model - the native <z:scenes> and the legacy
+	// <session> upconverter alike - has already run.
+	publishSessionSlotContent(m_sessionScheduler, m_sessionModel);
 	updateLength();
 	setModified(false);
 	m_loadOnLaunch = false;

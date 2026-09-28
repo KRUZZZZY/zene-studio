@@ -86,6 +86,19 @@ QJsonObject launchOne(SessionScheduler& scheduler, const SessionClockContext& ct
 	return launched;
 }
 
+/*! Publishes what every non-empty cell holds, just before a launch (board card
+ *  #597). Without this a launch would still only take its track over and render
+ *  nothing. The whole grid goes over rather than only the cell being launched,
+ *  because a Follow Action chain fires on the audio thread and can choose a cell
+ *  this command never named. One queue push per cell; the grid is small. */
+void publishContentBeforeLaunch(Song* song)
+{
+	if (song != nullptr)
+	{
+		publishSessionSlotContent(song->sessionScheduler(), song->sessionModel());
+	}
+}
+
 //! The columns a scene launch can actually take over: the session grid may be
 //! wider than the song's track list, and a column with no song track can never
 //! take a track over (Song.cpp indexes the song's track list by column).
@@ -143,6 +156,7 @@ void registerLaunchSlot(ControlRegistry& registry)
 		}
 		const LaunchRequest request = launchRequestOf(*model, model->slot(track, scene), args);
 		const SessionClockContext ctx = clockOf(*song);
+		publishContentBeforeLaunch(song);
 		QJsonObject result = launchOne(song->sessionScheduler(), ctx, track, scene, request);
 		result.insert(QStringLiteral("clip"), clipSlotState(track, scene, model->slot(track, scene)));
 		result.insert(QStringLiteral("next_bar"),
@@ -193,6 +207,7 @@ void registerLaunchScene(ControlRegistry& registry)
 		QJsonArray launched;
 		int syncTick = 0;
 		bool inSync = true;
+		publishContentBeforeLaunch(song);
 		for (int track = 0; track < columns; ++track)
 		{
 			const ClipSlot& slot = model->slot(track, scene);

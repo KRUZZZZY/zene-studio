@@ -187,6 +187,52 @@ private slots:
 	}
 
 	//! The pool: the name is the key, and its XML form round-trips exactly.
+	/*! The RANDOM amount is a REPRODUCIBLE jitter, which is the whole reason it
+	 *  is drawn from the seed and the note's identity rather than from hidden
+	 *  state: an agent that liked a take can ask for it again. Three claims, and
+	 *  the third is the one that protects every existing caller - with the amount
+	 *  left at its default the groove lands exactly where it did before this
+	 *  argument existed. */
+	void theRandomAmountIsReproducibleAndDoesNotDisturbTheDefault()
+	{
+		const auto straight = []() {
+			NoteTable table;
+			table.add(60, 0, 12, 100);
+			table.add(62, 12, 12, 100);
+			table.add(64, 24, 12, 100);
+			table.add(65, 36, 12, 100);
+			return table;
+		};
+
+		NoteTable feelSource;
+		fillFeelClip(&feelSource);
+		GrooveTemplate captured;
+		QVERIFY(extractGroove(feelSource.vector(), QStringLiteral("feel"), 48, 12, &captured, nullptr));
+
+		// The default: no random at all.
+		NoteTable exact = straight();
+		applyGroove(exact.vector(), captured, 1.0f);
+		const QVector<NoteAt> grooveOnly = takeOf(exact.vector());
+
+		// The same seed twice is the same take, note for note.
+		NoteTable first = straight();
+		applyGroove(first.vector(), captured, 1.0f, 6, 0, 12345u);
+		NoteTable second = straight();
+		applyGroove(second.vector(), captured, 1.0f, 6, 0, 12345u);
+		QVERIFY2(takeOf(first.vector()) == takeOf(second.vector()),
+			qPrintable(describe(takeOf(first.vector()))));
+
+		// It is a real jitter: the take is not the groove's own landing.
+		QVERIFY2(takeOf(first.vector()) != grooveOnly,
+			"the random amount did not move a single note");
+
+		// A different seed is a different take.
+		NoteTable other = straight();
+		applyGroove(other.vector(), captured, 1.0f, 6, 0, 999u);
+		QVERIFY2(takeOf(other.vector()) != takeOf(first.vector()),
+			"two different seeds produced the same take");
+	}
+
 	void thePoolIsKeyedByItsNameAndRoundTrips()
 	{
 		GroovePool pool;

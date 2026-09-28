@@ -190,6 +190,9 @@ void SessionScheduler::afterLaunchEvents( ActiveSlot& slot, const SessionClockCo
 
 void SessionScheduler::evaluateFollow( ActiveSlot& slot, const SessionClockContext& ctx ) noexcept
 {
+	// The global toggle: off makes a chain INERT, not cleared - plans stay installed
+	// and switching back resumes next period unchanged, so it is a performance control.
+	if( !m_followEnabled.load( std::memory_order_relaxed ) ) { return; }
 	if( slot.state.phase != SlotPhase::Playing )
 	{
 		return;
@@ -414,7 +417,84 @@ bool SessionScheduler::consumeResetRequest() noexcept
 	m_launches.store( 0, std::memory_order_relaxed );
 	m_lastStartLine.store( 0, std::memory_order_relaxed );
 	m_lastStartObservedTick.store( 0, std::memory_order_relaxed );
+	// The published cell content goes with the launch state (#597): a stale
+	// entry would let a cell of the NEXT project render the previous project's
+	// pattern. Bounded writes, no allocation - this runs on the audio thread.
+	m_slotContent.clear();
 	return true;
+}
+
+
+void SessionScheduler::publishFollowFire( const FollowFire& fire, tick_t tick ) noexcept
+{
+	// Moved here from the header for the ratchet reason publishStart() was.
+	m_lastFollowFire.store( packFollowFire( fire.outcome, fire.chosenIndex,
+		fire.targetScene, tick ), std::memory_order_relaxed );
+}
+
+// A relaxed store, read once per period: a toggle landing a period late is not wrong.
+void SessionScheduler::setFollowActionsEnabled( bool enabled ) noexcept
+{ m_followEnabled.store( enabled, std::memory_order_relaxed ); }
+
+bool SessionScheduler::followActionsEnabled() const noexcept
+{ return m_followEnabled.load( std::memory_order_relaxed ); }
+
+
+void SessionScheduler::publishStart( tick_t line, tick_t observed ) noexcept
+{
+	// Moved here from the header (2026-09-28, board card #597): the header is AT
+	// the whole-tree file-length limit, and this body belongs beside its one
+	// caller, afterLaunchEvents(), which is defined in this file too.
+	const std::uint64_t previous = m_lastStartLine.load( std::memory_order_relaxed );
+	const std::uint32_t starts = startLineStarts( previous );
+	const std::uint32_t count = ( startLineTick( previous ) == line && starts > 0 )
+		? starts + 1 : 1;
+	m_lastStartObservedTick.store( observed, std::memory_order_relaxed );
+	// The pair goes in as ONE store, so a reader can never see the new line
+	// with the old count (or the reverse) and conclude a synchronisation
+	// that did not happen.
+	m_lastStartLine.store( packStartLine( line, count ), std::memory_order_relaxed );
+}
+
+/*! The launch grid a quantisation value means, in ticks. MOVED here from
+ *  SessionScheduler.cpp on 2026-09-28, unchanged apart from two new cases:
+ *  that file crossed the whole-tree 500-line ratchet, and this one is where
+ *  the launch bodies already live. */
+tick_t quantisationTicks( LaunchQuantisation quantisation, tick_t ticksPerBar ) noexcept
+{
+	if( ticksPerBar <= 0 )
+	{
+		return 0;
+	}
+	switch( quantisation )
+	{
+		case LaunchQuantisation::None:
+			return 0;
+		case LaunchQuantisation::EightBars:
+			return 8 * ticksPerBar;
+		case LaunchQuantisation::FourBars:
+			return 4 * ticksPerBar;
+		case LaunchQuantisation::TwoBars:
+			return 2 * ticksPerBar;
+		// Sub-bar grids: the quantum is a FRACTION of a bar, which is what the
+		// integer bar counts above cannot express (the reason these values carry
+		// their own enumerators rather than being derived from a bar count).
+		case LaunchQuantisation::Half:
+			return ticksPerBar / 2;
+		case LaunchQuantisation::Quarter:
+			return ticksPerBar / 4;
+		case LaunchQuantisation::Eighth:
+			return ticksPerBar / 8;
+		case LaunchQuantisation::Sixteenth:
+			return ticksPerBar / 16;
+		case LaunchQuantisation::Bar:
+		case LaunchQuantisation::Global:
+		default:
+			// Global is a pointer to the session default, not a length; a
+			// caller that reaches here unresolved gets the session default's
+			// own default (one bar, SessionModel::DefaultLaunchQuantisation).
+			return ticksPerBar;
+	}
 }
 
 } // namespace lmms

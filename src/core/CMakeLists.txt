@@ -81,6 +81,10 @@ SET(LMMS_SESSION_SRCS
 		core/SessionClip.cpp
 		core/SessionModel.cpp
 		core/SessionScheduler.cpp
+		# The published cell content + the render path's view (board card #597):
+		# its own TU because SessionScheduler.h is AT the file-length limit, so
+		# the new declarations' bodies cannot live beside their class.
+		core/SessionPlayback.cpp
 		# The session.* control-surface group (SPEC A11-A16): always compiled
 		# with the data layer since ARCH-4 S10 removed WANT_SESSION_VIEW.
 		core/ControlCommandsSession.cpp

@@ -347,6 +347,55 @@ private slots:
 	//! reader under-reads the 0 dBTP waveform by 3 LU. The square wave is the
 	//! other direction: its samples sit at full scale and the waveform between
 	//! them overshoots to about +2 dBTP.
+	/*! LRA and PLR are DISTRIBUTION measures, which is the whole point of them:
+	 *  two programmes at the same integrated loudness have different ranges, and
+	 *  the meter has to tell them apart. A steady tone must report no range; a
+	 *  programme that steps down 15 LU must report that step; and PLR is
+	 *  defined against the meter's own two readings, so the identity is checked
+	 *  rather than a magic number. */
+	void loudnessRangeSeparatesSteadyFromDynamicProgrammes()
+	{
+		constexpr double LouderDbfs = -20.0;
+		// 15 LU below: inside the 20 LU relative gate (EBU Tech 3342 excludes
+		// anything further down), so BOTH sections must count towards the range.
+		constexpr double QuieterDbfs = -35.0;
+
+		LufsMeter dynamic;
+		dynamic.reset();
+		feed(dynamic, makeSine(LouderDbfs, 6.0));
+		feed(dynamic, makeSine(QuieterDbfs, 6.0));
+
+		LufsMeter steady;
+		steady.reset();
+		feed(steady, makeSine(LouderDbfs, 12.0));
+
+		const float dynamicRange = dynamic.loudnessRangeLu();
+		const float steadyRange = steady.loudnessRangeLu();
+
+		QVERIFY2(dynamicRange > 5.0f && dynamicRange < 20.0f,
+			qPrintable(QStringLiteral("dynamic LRA %1 LU, expected roughly 15")
+				.arg(dynamicRange)));
+		QVERIFY2(steadyRange < dynamicRange,
+			qPrintable(QStringLiteral("a steady tone reported LRA %1 LU against a "
+				"stepping programme's %2 - the range is not measuring a spread")
+				.arg(steadyRange).arg(dynamicRange)));
+		QVERIFY2(steadyRange < 3.0f,
+			qPrintable(QStringLiteral("steady LRA %1 LU").arg(steadyRange)));
+
+		// PLR is true peak minus integrated loudness, by definition.
+		const float plr = dynamic.peakToLoudnessRatioDb();
+		const float expected = dynamic.truePeakDbtp() - dynamic.integratedLufs();
+		QVERIFY2(qAbs(plr - expected) < 0.01f,
+			qPrintable(QStringLiteral("PLR %1 dB against %2 dB").arg(plr).arg(expected)));
+		QVERIFY(plr > 0.0f);
+
+		// Nothing fed, nothing to report.
+		LufsMeter empty;
+		empty.reset();
+		QCOMPARE(empty.loudnessRangeLu(), LufsMeter::MinusInfinity);
+		QCOMPARE(empty.peakToLoudnessRatioDb(), LufsMeter::MinusInfinity);
+	}
+
 	void truePeakOversamplesTheSignal()
 	{
 		LufsMeter meter(SampleRate, 2);
