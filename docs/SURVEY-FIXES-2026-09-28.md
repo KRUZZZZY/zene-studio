@@ -62,6 +62,21 @@ a device path is the thing this programme refuses).
   as a ratchet (two `classic` pairs are below it today and listed with their ratio; a new failure
   fails, and so does a listed pair that starts passing).
 - `quality-gates.yml` — gate 2 (coverage) now also runs **nightly**, in check mode only.
+- **ThreadSanitizer, run locally (no CI job — see below).** A Debug TSan tree (`build-tsan`,
+  `-DWANT_DEBUG_TSAN=ON`) built six concurrency tests; every one passes functionally. Run them with
+  `TSAN_OPTIONS="halt_on_error=0" setarch $(uname -m) -R ./<Test>` — without `setarch -R` this
+  kernel's high-entropy ASLR makes TSan abort with `FATAL: unexpected memory mapping` (not a finding).
+  TSan reports races in five of the six, **none in this lane's code**:
+  - **every Engine test (3):** `AudioEngineWorkerThread::quit()` (`src/core/AudioEngineWorkerThread.cpp:171`)
+    against the worker's mutex/condition destruction (`:164`) during `~AudioEngine` — a teardown race;
+  - **MixerConcurrencyTest, MidiLearnThreadTest:** `AudioEngineWorkerThread::JobQueue::reset` (`:74`)
+    writing the queue's indices/mode while workers read them;
+  - **MidiLearnThreadTest:** `Controller::updateValueBuffer` (`src/core/Controller.cpp:137`) reached
+    from `MidiController`'s constructor.
+  `SessionSchedulerTest` is clean. Both files are fork-modified upstream code (`git diff 4e677cb6c6ab`
+  shows +104 / +112 lines). **No CI job was added**: it would be red on these pre-existing races
+  from its first run, and suppressing them to make it green would hide exactly what it exists to
+  find. Fixing them is realtime-core work for its own lane; filed as `BUGS_FOUND.md` §10.9.
 
 ## 4. Left for the owner (blocked or a decision)
 
