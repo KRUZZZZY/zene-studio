@@ -38,6 +38,9 @@ SET(LMMS_SRCS
 	gui/FileBrowser.cpp
 	gui/FileRevealer.cpp
 	gui/FileSearchJob.cpp
+	# The window.* command group: the editors' windows as registered commands
+	# (include/ControlWindowCommands.h).
+	gui/ControlCommandsWindow.cpp
 	# Focus Desk - the Direction B shell (UI plan §9.4). FocusDeskModules is the
 	# module register (§4.2) and is deliberately widget-free so its rules are
 	# testable without a QApplication; FocusDeskPlacement holds the card/density

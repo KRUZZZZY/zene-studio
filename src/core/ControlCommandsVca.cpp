@@ -454,9 +454,7 @@ void registerVcaRename(ControlRegistry& registry)
 		{QStringLiteral("group"), control::stringProperty()},
 		{QStringLiteral("name"), control::stringProperty()},
 	}, {QStringLiteral("group"), QStringLiteral("name")});
-	cmd.resultSchema = control::objectSchema({
-		{QStringLiteral("id"), control::stringProperty()},
-		{QStringLiteral("name"), control::stringProperty()},
+	cmd.resultSchema = vcacontrol::groupStateSchema({
 		{QStringLiteral("previous_name"), control::stringProperty()},
 	});
 	cmd.mutating = true;

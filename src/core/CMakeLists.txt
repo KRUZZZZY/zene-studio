@@ -643,6 +643,8 @@ set(LMMS_SRCS
 	core/SessionTuningMtsEsp.cpp
 	core/ControlCommandsMts.cpp
 	core/ControlReversibilityTableMts.cpp
+	# The window.* group's rows (040/survey-fixes); the group itself is src/gui.
+	core/ControlReversibilityTableWindow.cpp
 	${CMAKE_SOURCE_DIR}/thirdparty/mts-esp/libMTSClient.cpp
 	${CMAKE_SOURCE_DIR}/thirdparty/mts-esp/libMTSMaster.cpp
 	# ControllerSurface.cpp - the mapping-template store of the controller
@@ -867,6 +869,7 @@ set(LMMS_SRCS
 	# naming rules across their exported contracts rather than restating either.
 	core/ProjectContainerEntries.cpp
 	core/ModulationLayer.cpp
+	core/ModulationLayerPublisher.cpp
 	core/TempoSyncKnobModel.cpp
 	core/ThreadPool.cpp
 	core/Timeline.cpp
@@ -1019,6 +1022,7 @@ SET(ZENE_API_SRCS
 	core/ControlReversibilityTableVca.cpp
 	core/ControlReversibilityTableVerbs.cpp
 	core/ControlReversibilityTableWasmRender.cpp
+	core/ControlReversibilityTableWindow.cpp
 )
 
 # The boundary is what the registry is compiled by: every file named above is

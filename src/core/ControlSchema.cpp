@@ -29,10 +29,14 @@
 // are checked against before its handler runs.
 
 #include "ControlRegistry.h"
+#include "ControlResultCheck.h"
 
 #include <cmath>
+#include <cstdlib>
 
+#include <QFile>
 #include <QJsonValue>
+#include <QSet>
 
 namespace lmms
 {
@@ -149,5 +153,58 @@ QString ControlRegistry::validateArgs(const QJsonObject& schema, const QJsonObje
 	}
 	return QString();
 }
+
+namespace control
+{
+
+QString resultSchemaViolation(const QJsonObject& schema, const QJsonObject& result)
+{
+	if (schema.isEmpty()) { return QString(); }
+	return validateValue(QJsonValue(result), schema, QStringLiteral("result"));
+}
+
+bool resultChecksEnabled()
+{
+	static const bool enabled = [] {
+		const char* value = std::getenv("ZENE_CONTROL_CHECK_RESULTS");
+		return value != nullptr && value[0] != '\0' && value[0] != '0';
+	}();
+	return enabled;
+}
+
+//! When ZENE_CONTROL_CHECK_RESULTS names a readable file rather than "1", that
+//! file is the grandfather list: one `<command.id><TAB><reason>` per line, `#`
+//! comments. Those commands are not checked; every other command is.
+static const QSet<QString>& knownViolations()
+{
+	static const QSet<QString> known = [] {
+		QSet<QString> ids;
+		QFile file(QString::fromLocal8Bit(qgetenv("ZENE_CONTROL_CHECK_RESULTS")));
+		if (!file.exists() || !file.open(QIODevice::ReadOnly | QIODevice::Text)) { return ids; }
+		while (!file.atEnd())
+		{
+			const QString line = QString::fromUtf8(file.readLine()).trimmed();
+			if (line.isEmpty() || line.startsWith(QLatin1Char('#'))) { continue; }
+			ids.insert(line.section(QLatin1Char('\t'), 0, 0).trimmed());
+		}
+		return ids;
+	}();
+	return known;
+}
+
+void finishResult(const QString& commandId, const QJsonObject& resultSchema, ControlResult* result)
+{
+	result->result.remove(QStringLiteral("__transaction"));
+	if (!result->ok || !resultChecksEnabled() || knownViolations().contains(commandId)) { return; }
+	const QString why = resultSchemaViolation(resultSchema, result->result);
+	if (why.isEmpty()) { return; }
+	// Refused, not a new wire kind: the closed error set is a protocol contract,
+	// and this mode exists only in test runs.
+	*result = ControlResult::failure(ControlErrorKind::Refused,
+		QStringLiteral("%1 broke its own resultSchema (ZENE_CONTROL_CHECK_RESULTS): %2")
+			.arg(commandId, why));
+}
+
+} // namespace control
 
 } // namespace lmms

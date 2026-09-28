@@ -891,8 +891,19 @@ wasm, probed `MEASURED rows=343 ... DECLARED rows=343 entries=343 duplicates=0`,
 figure minus wasm's 8 and exactly matches the class deltas; the merge tip re-takes the reference
 figures with the probe).
 
+The `040/survey-fixes` lane (2026-09-28) added the `window.*` group's TWO `not_mutating` rows
+(src/core/ControlReversibilityTableWindow.cpp), measured with the probe on both trees in the same
+configuration: `MEASURED rows=350 ... not_mutating=135` on the untouched live line and
+`MEASURED rows=352 ... not_mutating=137` on the lane (`DECLARED rows=352 entries=352 duplicates=0`) -
+so the reference figure below moves by exactly those two rows.
+The train then merged it together with `040/feat-597`, whose `session.set_follow_actions` row
+(`not_mutating`) had not moved this block - `ReversibilityContractTest` failed on the merged tip for
+exactly that. Re-measured with the probe at the merge: `MEASURED rows=353 true_inverse=166 snapshot=36
+irreversible=13 not_mutating=138` (`DECLARED rows=353 entries=353 duplicates=0`) against the live line's
+350/135, i.e. +3 `not_mutating`, so the reference figure is 358 + 3 = 361.
+
 <!-- A16-HISTOGRAM-BEGIN
-     measured: rows=358 true_inverse=166 snapshot=39 irreversible=13 not_mutating=140
+     measured: rows=361 true_inverse=166 snapshot=39 irreversible=13 not_mutating=143
      configuration: telemetry.status wasm.load session.get_state
      option telemetry.status rows=2 not_mutating=2
      option wasm.load rows=8 snapshot=3 not_mutating=5

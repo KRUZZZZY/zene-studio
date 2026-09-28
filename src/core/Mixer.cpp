@@ -25,6 +25,7 @@
 #include "Mixer.h"
 
 #include <algorithm>
+#include <limits>
 
 #include <QDomElement>
 
@@ -954,23 +955,23 @@ void Mixer::clearVcaGroups()
 
 void Mixer::refreshGroups()
 {
-	// Reset first, then apply: a channel that is in no group, or that has just
-	// left one, must publish unity. This is also what makes an old project
-	// (no groups at all) load into exactly the pre-#622 playback state.
-	for (MixerChannel* channel : m_mixerChannels)
+	// A channel that is in no group, or that has just left one, publishes
+	// unity - which is also what makes an old project (no groups at all) load
+	// into exactly the pre-#622 playback state. Each channel's gain is decided
+	// first and stored ONCE: resetting every channel to unity and then
+	// re-applying let the audio thread read 1.0 for a grouped channel between
+	// the two stores (a VCA at -20 dB playing a block at 0 dB). The later group
+	// wins, as it did when groups were applied in order.
+	// (A member id is a mix_ch_t, so a channel past its range is in no group.)
+	for (std::size_t ch = 0; ch < m_mixerChannels.size(); ++ch)
 	{
-		channel->setVcaGain(1.0f);
-	}
-	for (VcaGroup* group : m_vcaGroups)
-	{
-		const float gain = group->gain();
-		for (mix_ch_t member : group->members())
+		float gain = 1.0f;
+		for (auto it = m_vcaGroups.rbegin();
+			ch <= std::numeric_limits<mix_ch_t>::max() && it != m_vcaGroups.rend(); ++it)
 		{
-			if (member < m_mixerChannels.size())
-			{
-				m_mixerChannels[member]->setVcaGain(gain);
-			}
+			if ((*it)->contains(static_cast<mix_ch_t>(ch))) { gain = (*it)->gain(); break; }
 		}
+		m_mixerChannels[ch]->setVcaGain(gain);
 	}
 }
 

@@ -323,6 +323,32 @@ inline MixerChannel* memberChannel(const QJsonObject& args, VcaGroup* group, Con
 	return channel;
 }
 
+//! The result schema of every command that replies with groupState() plus a
+//! few keys of its own: the group's fourteen fields (vca.create's reply shape)
+//! and @a extras. Declared once so a command cannot publish a subset of the
+//! reply it actually sends (040/survey-fixes: eight vca.* commands did).
+inline QJsonObject groupStateSchema(QJsonObject extras = {})
+{
+	QJsonObject properties{
+		{QStringLiteral("group"), control::stringProperty()},
+		{QStringLiteral("id"), control::stringProperty()},
+		{QStringLiteral("name"), control::stringProperty()},
+		{QStringLiteral("gain"), control::numberProperty()},
+		{QStringLiteral("volume"), control::numberProperty()},
+		{QStringLiteral("muted"), control::booleanProperty()},
+		{QStringLiteral("soloed"), control::booleanProperty()},
+		{QStringLiteral("phase_locked"), control::booleanProperty()},
+		{QStringLiteral("members"), control::arrayProperty()},
+		{QStringLiteral("member_count"), control::integerProperty()},
+		{QStringLiteral("tracks"), control::arrayProperty()},
+		{QStringLiteral("track_count"), control::integerProperty()},
+		{QStringLiteral("missing_tracks"), control::arrayProperty()},
+		{QStringLiteral("missing_count"), control::integerProperty()},
+	};
+	for (auto it = extras.begin(); it != extras.end(); ++it) { properties.insert(it.key(), it.value()); }
+	return control::objectSchema(properties);
+}
+
 } // namespace vcacontrol
 } // namespace lmms
 

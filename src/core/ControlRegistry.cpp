@@ -22,6 +22,7 @@
  */
 
 #include "ControlRegistry.h"
+#include "ControlResultCheck.h"
 #include "UnattendedRun.h"
 
 #include "ControlReversibility.h"
@@ -322,7 +323,7 @@ ControlResult ControlRegistry::runHandler(
 	{
 		recordTransactionOf(commandId, &result, coalesced, step);
 	}
-	result.result.remove(QStringLiteral("__transaction"));
+	control::finishResult(commandId, m_commands.value(commandId).resultSchema, &result);
 	return result;
 }
 

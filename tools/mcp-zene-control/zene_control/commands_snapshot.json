@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-09-28T15:43:10Z",
+  "captured_at": "2026-09-28T20:29:34Z",
   "commands": [
     {
       "args_schema": {
@@ -12500,7 +12500,7 @@
             "type": "string"
           },
           "input_channel": {
-            "maximum": 31,
+            "maximum": 127,
             "minimum": 0,
             "type": "integer"
           },
@@ -12671,7 +12671,7 @@
         "required": [],
         "type": "object"
       },
-      "description": "Every record route the engine prepared, and the input path that feeds them. A route is one capture stream: an arm flag, the interleaved input channel it reads, the take file it writes, the take JOURNAL beside it, and the frame counters (pushed / recorded / journalled / overflow / write errors). The engine prepares 16 routes, and each may select ANY of the configured input channels - that pair of numbers (route_count and input_channel_capacity) is the 'arbitrary input count / multiple simultaneous inputs' feature row 64 asks for. `input` is record.input_get_state's own report, including `input_frames_staged` and `wide_frames`: both are 0 under a backend with no capture path, which is what 'a record route takes no inputs' measured. Read-only.",
+      "description": "Every record route the engine prepared, and the input path that feeds them. A route is one capture stream: an arm flag, the interleaved input channel it reads, the take file it writes, the take JOURNAL beside it, and the frame counters (pushed / recorded / journalled / overflow / write errors). The engine prepares 64 routes, and each may select ANY of the configured input channels - that pair of numbers (route_count and input_channel_capacity) is the 'arbitrary input count / multiple simultaneous inputs' feature row 64 asks for. `input` is record.input_get_state's own report, including `input_frames_staged` and `wide_frames`: both are 0 under a backend with no capture path, which is what 'a record route takes no inputs' measured. Read-only.",
       "group": "record",
       "id": "record.get_state",
       "mutating": false,
@@ -12793,7 +12793,7 @@
         "additionalProperties": false,
         "properties": {
           "channels": {
-            "maximum": 32,
+            "maximum": 128,
             "minimum": 1,
             "type": "integer"
           },
@@ -12801,12 +12801,12 @@
             "type": "string"
           },
           "left": {
-            "maximum": 31,
+            "maximum": 127,
             "minimum": 0,
             "type": "integer"
           },
           "right": {
-            "maximum": 31,
+            "maximum": 127,
             "minimum": 0,
             "type": "integer"
           }
@@ -12814,7 +12814,7 @@
         "required": [],
         "type": "object"
       },
-      "description": "Set the capture input path: 'device' (empty = the playback device), 'channels' (1..32 - the ARBITRARY input count of feature row 64), and 'left'/'right' (which two captured channels the stereo engine bus carries, so an interface's third and fourth input can be what the rest of the engine hears). Fields not given keep their current value. The four keys are written to the config file under `audioinput`, exactly as the settings dialog writes its own, and 'restart_required' is true: the backend opens the device at start and the recorder's routes are built when the engine is, so the next start is when this takes effect - there is no live device swap to pretend about. Reversible: the recorded inverse is this command with the previous plan, and control.undo dispatches it (the settings.set precedent, which records a command inverse for the same kind of config write).",
+      "description": "Set the capture input path: 'device' (empty = the playback device), 'channels' (1..128 - the ARBITRARY input count of feature row 64), and 'left'/'right' (which two captured channels the stereo engine bus carries, so an interface's third and fourth input can be what the rest of the engine hears). Fields not given keep their current value. The four keys are written to the config file under `audioinput`, exactly as the settings dialog writes its own, and 'restart_required' is true: the backend opens the device at start and the recorder's routes are built when the engine is, so the next start is when this takes effect - there is no live device swap to pretend about. Reversible: the recorded inverse is this command with the previous plan, and control.undo dispatches it (the settings.set precedent, which records a command inverse for the same kind of config write).",
       "group": "record",
       "id": "record.input_set",
       "mutating": true,
@@ -16104,7 +16104,7 @@
             "type": "string"
           },
           "input_channel": {
-            "maximum": 31,
+            "maximum": 127,
             "minimum": 0,
             "type": "integer"
           },
@@ -17049,6 +17049,12 @@
           "assigned": {
             "type": "string"
           },
+          "gain": {
+            "type": "number"
+          },
+          "group": {
+            "type": "string"
+          },
           "id": {
             "type": "string"
           },
@@ -17057,6 +17063,33 @@
           },
           "members": {
             "type": "array"
+          },
+          "missing_count": {
+            "type": "integer"
+          },
+          "missing_tracks": {
+            "type": "array"
+          },
+          "muted": {
+            "type": "boolean"
+          },
+          "name": {
+            "type": "string"
+          },
+          "phase_locked": {
+            "type": "boolean"
+          },
+          "soloed": {
+            "type": "boolean"
+          },
+          "track_count": {
+            "type": "integer"
+          },
+          "tracks": {
+            "type": "array"
+          },
+          "volume": {
+            "type": "number"
           }
         },
         "required": [],
@@ -17357,14 +17390,50 @@
       "result_schema": {
         "additionalProperties": false,
         "properties": {
+          "gain": {
+            "type": "number"
+          },
+          "group": {
+            "type": "string"
+          },
           "id": {
             "type": "string"
+          },
+          "member_count": {
+            "type": "integer"
+          },
+          "members": {
+            "type": "array"
+          },
+          "missing_count": {
+            "type": "integer"
+          },
+          "missing_tracks": {
+            "type": "array"
+          },
+          "muted": {
+            "type": "boolean"
           },
           "name": {
             "type": "string"
           },
+          "phase_locked": {
+            "type": "boolean"
+          },
           "previous_name": {
             "type": "string"
+          },
+          "soloed": {
+            "type": "boolean"
+          },
+          "track_count": {
+            "type": "integer"
+          },
+          "tracks": {
+            "type": "array"
+          },
+          "volume": {
+            "type": "number"
           }
         },
         "required": [],
@@ -17399,14 +17468,44 @@
           "gain": {
             "type": "number"
           },
+          "group": {
+            "type": "string"
+          },
           "id": {
             "type": "string"
+          },
+          "member_count": {
+            "type": "integer"
           },
           "members": {
             "type": "array"
           },
+          "missing_count": {
+            "type": "integer"
+          },
+          "missing_tracks": {
+            "type": "array"
+          },
+          "muted": {
+            "type": "boolean"
+          },
+          "name": {
+            "type": "string"
+          },
+          "phase_locked": {
+            "type": "boolean"
+          },
           "previous_gain": {
             "type": "number"
+          },
+          "soloed": {
+            "type": "boolean"
+          },
+          "track_count": {
+            "type": "integer"
+          },
+          "tracks": {
+            "type": "array"
           },
           "volume": {
             "type": "number"
@@ -17444,14 +17543,44 @@
           "gain": {
             "type": "number"
           },
+          "group": {
+            "type": "string"
+          },
           "id": {
             "type": "string"
+          },
+          "member_count": {
+            "type": "integer"
           },
           "members": {
             "type": "array"
           },
+          "missing_count": {
+            "type": "integer"
+          },
+          "missing_tracks": {
+            "type": "array"
+          },
           "muted": {
             "type": "boolean"
+          },
+          "name": {
+            "type": "string"
+          },
+          "phase_locked": {
+            "type": "boolean"
+          },
+          "soloed": {
+            "type": "boolean"
+          },
+          "track_count": {
+            "type": "integer"
+          },
+          "tracks": {
+            "type": "array"
+          },
+          "volume": {
+            "type": "number"
           }
         },
         "required": [],
@@ -17483,7 +17612,31 @@
       "result_schema": {
         "additionalProperties": false,
         "properties": {
+          "gain": {
+            "type": "number"
+          },
+          "group": {
+            "type": "string"
+          },
           "id": {
+            "type": "string"
+          },
+          "member_count": {
+            "type": "integer"
+          },
+          "members": {
+            "type": "array"
+          },
+          "missing_count": {
+            "type": "integer"
+          },
+          "missing_tracks": {
+            "type": "array"
+          },
+          "muted": {
+            "type": "boolean"
+          },
+          "name": {
             "type": "string"
           },
           "phase_locked": {
@@ -17492,11 +17645,17 @@
           "previous_phase_locked": {
             "type": "boolean"
           },
+          "soloed": {
+            "type": "boolean"
+          },
           "track_count": {
             "type": "integer"
           },
           "tracks": {
             "type": "array"
+          },
+          "volume": {
+            "type": "number"
           }
         },
         "required": [],
@@ -17528,17 +17687,50 @@
       "result_schema": {
         "additionalProperties": false,
         "properties": {
+          "gain": {
+            "type": "number"
+          },
+          "group": {
+            "type": "string"
+          },
           "id": {
             "type": "string"
           },
+          "member_count": {
+            "type": "integer"
+          },
           "members": {
             "type": "array"
+          },
+          "missing_count": {
+            "type": "integer"
+          },
+          "missing_tracks": {
+            "type": "array"
+          },
+          "muted": {
+            "type": "boolean"
+          },
+          "name": {
+            "type": "string"
+          },
+          "phase_locked": {
+            "type": "boolean"
           },
           "previous_soloed": {
             "type": "boolean"
           },
           "soloed": {
             "type": "boolean"
+          },
+          "track_count": {
+            "type": "integer"
+          },
+          "tracks": {
+            "type": "array"
+          },
+          "volume": {
+            "type": "number"
           }
         },
         "required": [],
@@ -17573,14 +17765,47 @@
           "added": {
             "type": "string"
           },
+          "gain": {
+            "type": "number"
+          },
+          "group": {
+            "type": "string"
+          },
           "id": {
             "type": "string"
+          },
+          "member_count": {
+            "type": "integer"
+          },
+          "members": {
+            "type": "array"
+          },
+          "missing_count": {
+            "type": "integer"
+          },
+          "missing_tracks": {
+            "type": "array"
+          },
+          "muted": {
+            "type": "boolean"
+          },
+          "name": {
+            "type": "string"
+          },
+          "phase_locked": {
+            "type": "boolean"
+          },
+          "soloed": {
+            "type": "boolean"
           },
           "track_count": {
             "type": "integer"
           },
           "tracks": {
             "type": "array"
+          },
+          "volume": {
+            "type": "number"
           }
         },
         "required": [],
@@ -17612,17 +17837,50 @@
       "result_schema": {
         "additionalProperties": false,
         "properties": {
+          "gain": {
+            "type": "number"
+          },
+          "group": {
+            "type": "string"
+          },
           "id": {
             "type": "string"
           },
+          "member_count": {
+            "type": "integer"
+          },
+          "members": {
+            "type": "array"
+          },
+          "missing_count": {
+            "type": "integer"
+          },
+          "missing_tracks": {
+            "type": "array"
+          },
+          "muted": {
+            "type": "boolean"
+          },
+          "name": {
+            "type": "string"
+          },
+          "phase_locked": {
+            "type": "boolean"
+          },
           "removed": {
             "type": "string"
+          },
+          "soloed": {
+            "type": "boolean"
           },
           "track_count": {
             "type": "integer"
           },
           "tracks": {
             "type": "array"
+          },
+          "volume": {
+            "type": "number"
           }
         },
         "required": [],
@@ -17654,6 +17912,12 @@
       "result_schema": {
         "additionalProperties": false,
         "properties": {
+          "gain": {
+            "type": "number"
+          },
+          "group": {
+            "type": "string"
+          },
           "id": {
             "type": "string"
           },
@@ -17663,8 +17927,35 @@
           "members": {
             "type": "array"
           },
+          "missing_count": {
+            "type": "integer"
+          },
+          "missing_tracks": {
+            "type": "array"
+          },
+          "muted": {
+            "type": "boolean"
+          },
+          "name": {
+            "type": "string"
+          },
+          "phase_locked": {
+            "type": "boolean"
+          },
+          "soloed": {
+            "type": "boolean"
+          },
+          "track_count": {
+            "type": "integer"
+          },
+          "tracks": {
+            "type": "array"
+          },
           "unassigned": {
             "type": "string"
+          },
+          "volume": {
+            "type": "number"
           }
         },
         "required": [],
@@ -18120,25 +18411,89 @@
         "required": [],
         "type": "object"
       }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {},
+        "required": [],
+        "type": "object"
+      },
+      "description": "Which editors' windows are showing: `editors` is one {editor, visible} entry per window.toggle editor, in the menu's Ctrl+1..7 order. Read-only. Refused `requires` in a process with no interface.",
+      "group": "window",
+      "id": "window.get_state",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "editors": {
+            "type": "array"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "editor": {
+            "enum": [
+              "song",
+              "pattern",
+              "piano_roll",
+              "automation",
+              "mixer",
+              "controller_rack",
+              "project_notes"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "editor"
+        ],
+        "type": "object"
+      },
+      "description": "Show or hide one editor's window - the View menu's Ctrl+1..7 items and the window toolbar dispatch exactly this. `editor` is one of song, pattern, piano_roll, automation, mixer, controller_rack, project_notes. A hidden or unfocused editor is brought forward (and back into view if it was off screen); the focused one is hidden. `visible` is the editor's state afterwards. Interface state, not project state: nothing is journalled. Refused `requires` in a process with no interface.",
+      "group": "window",
+      "id": "window.toggle",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "editor": {
+            "type": "string"
+          },
+          "visible": {
+            "type": "boolean"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
     }
   ],
-  "count": 351,
+  "count": 353,
   "instance": {
     "binary": null,
     "binary_bytes": null,
     "binary_sha256": null,
-    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-597/tools/zene-pa-agentctl",
+    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-040/tools/zene-pa-agentctl",
     "lane_head": null,
     "proto": 1,
-    "source_socket": "/tmp/zene-snap-262741.sock",
-    "version": "0.3.0-alpha.124+042abe4"
+    "source_socket": "/tmp/zctl-run-v6bil1_9/zene.sock",
+    "version": "0.3.0-alpha.128+fa431de"
   },
   "kind": "zene-control-command-list",
   "proto": 1,
   "schema": 1,
   "surface": {
-    "group_count": 56,
-    "id_count": 351,
-    "ids_sha256": "07e08fdc23dcab2d4ea86453f5f5a733ba81778716f01326a5b7432f587a15d9"
+    "group_count": 57,
+    "id_count": 353,
+    "ids_sha256": "fb92116ef08b59455df865851a97672ad4865518994c38cb6a02291126b4fb95"
   }
 }

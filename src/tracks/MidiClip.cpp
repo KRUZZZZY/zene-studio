@@ -181,7 +181,9 @@ TimePos MidiClip::beatClipLength() const
 Note * MidiClip::addNote( const Note & _new_note, const bool _quant_pos )
 {
 	auto new_note = _new_note.clone();
-	if (_quant_pos && gui::getGUI()->pianoRoll())
+	// Headless (no GUI) there is no piano roll to take a quantisation from, so
+	// the note keeps its own position - the Song.cpp getGUI() guard idiom.
+	if (_quant_pos && gui::getGUI() != nullptr && gui::getGUI()->pianoRoll())
 	{
 		new_note->quantizePos(gui::getGUI()->pianoRoll()->quantization());
 	}

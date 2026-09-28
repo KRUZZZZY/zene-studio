@@ -473,9 +473,8 @@ void applyModulationBlock(const ModulationRuntime& runtime, double seconds)
 		if (entry.modulator < 0 || entry.modulator >= runtime.sourceCount) { continue; }
 		const ModulatorSource& source = runtime.sources[static_cast<std::size_t>(entry.modulator)];
 		if (!source.active) { continue; }
-		const float output = ModulationLayer::outputAt(source, seconds);
-		const float written = entry.base + entry.depth * output * (entry.maximum - entry.minimum);
-		writeModulationBase(entry.model.data(), std::clamp(written, entry.minimum, entry.maximum));
+		writeModulationBase(entry.model.data(), modulatedValue(source, entry.base, entry.depth,
+			entry.minimum, entry.maximum, seconds));
 	}
 }
 

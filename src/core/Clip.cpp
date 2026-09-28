@@ -325,7 +325,11 @@ void Clip::copyStateTo( Clip *src, Clip *dst )
 		dst->movePosition( pos );
 
 		AutomationClip::resolveAllIDs();
-		gui::getGUI()->automationEditor()->m_editor->updateAfterClipChange();
+		// Headless there is no automation editor to refresh.
+		if (gui::getGUI() != nullptr && gui::getGUI()->automationEditor() != nullptr)
+		{
+			gui::getGUI()->automationEditor()->m_editor->updateAfterClipChange();
+		}
 	}
 }
 

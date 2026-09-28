@@ -160,6 +160,7 @@ include/ControlRackSupport.h
 include/ControlRecordingSupport.h
 include/ControlRegistry.h
 include/ControlRegistryGroups.h
+include/ControlResultCheck.h
 include/ControlReversibility.h
 include/ControlScaleShared.h
 include/ControlServer.h
@@ -169,6 +170,7 @@ include/ControlUndoCoalescing.h
 include/ControlVocabulary.h
 include/ControlWarpSupport.h
 include/ControlWasmSupport.h
+include/ControlWindowCommands.h
 include/Controller.h
 include/ControllerConnection.h
 include/ControllerConnectionDialog.h
@@ -454,6 +456,7 @@ include/SerializingObject.h
 include/SessionArrangementRecorder.h
 include/SessionFollow.h
 include/SessionModel.h
+include/SessionPlayback.h
 include/SessionScheduler.h
 include/SessionTuning.h
 include/SetupDialog.h
@@ -1212,6 +1215,7 @@ src/core/ControlReversibilityTableTrackFolder.cpp
 src/core/ControlReversibilityTableVca.cpp
 src/core/ControlReversibilityTableVerbs.cpp
 src/core/ControlReversibilityTableWasmRender.cpp
+src/core/ControlReversibilityTableWindow.cpp
 src/core/ControlScaleSupport.cpp
 src/core/ControlSchema.cpp
 src/core/ControlServer.cpp
@@ -1295,6 +1299,7 @@ src/core/Mixer.cpp
 src/core/Model.cpp
 src/core/ModelVisitor.cpp
 src/core/ModulationLayer.cpp
+src/core/ModulationLayerPublisher.cpp
 src/core/NamespaceRegistry.cpp
 src/core/Note.cpp
 src/core/NotePlayHandle.cpp
@@ -1375,6 +1380,7 @@ src/core/SessionClip.cpp
 src/core/SessionFollow.cpp
 src/core/SessionModel.cpp
 src/core/SessionModelPrivate.h
+src/core/SessionPlayback.cpp
 src/core/SessionScheduler.cpp
 src/core/SessionTuning.cpp
 src/core/SessionTuningMtsEsp.cpp
@@ -1454,6 +1460,7 @@ src/gui/ActionGroup.cpp
 src/gui/AudioAlsaSetupWidget.cpp
 src/gui/AudioDeviceSetupWidget.cpp
 src/gui/AutomatableModelView.cpp
+src/gui/ControlCommandsWindow.cpp
 src/gui/ControlLayout.cpp
 src/gui/ControllerDialog.cpp
 src/gui/ControllerRackView.cpp
@@ -1649,6 +1656,7 @@ tests/src/core/ControlNoteExpressionCommandsTest.cpp
 tests/src/core/ControlNoteScaleVerbsTest.cpp
 tests/src/core/ControlProjectArchiveTest.cpp
 tests/src/core/ControlRegistryTest.cpp
+tests/src/core/ControlResultSchemaTest.cpp
 tests/src/core/ControlSampleOperatorTest.cpp
 tests/src/core/ControlShutdownHookTest.cpp
 tests/src/core/ControlSurfaceReferenceTest.cpp
@@ -1688,6 +1696,7 @@ tests/src/core/MidiRetroCaptureTest.cpp
 tests/src/core/MixerAbRegressionTest.cpp
 tests/src/core/MixerConcurrencyTest.cpp
 tests/src/core/MixerRoutingBackwardCompatTest.cpp
+tests/src/core/ModulationAudioViewTest.cpp
 tests/src/core/ModulationLayerProjectRoundTripTest.cpp
 tests/src/core/ModulationLayerTest.cpp
 tests/src/core/ModulationLayerValueTest.cpp
@@ -1756,6 +1765,8 @@ tests/src/core/ScriptStabilisationTest.cpp
 tests/src/core/SessionArrangementRecordTest.cpp
 tests/src/core/SessionFollowTest.cpp
 tests/src/core/SessionModelTest.cpp
+tests/src/core/SessionPlaybackRenderTest.cpp
+tests/src/core/SessionPlaybackTest.cpp
 tests/src/core/SessionSchedulerRenderTest.cpp
 tests/src/core/SessionSchedulerTest.cpp
 tests/src/core/SessionTuningTest.cpp
@@ -1784,6 +1795,7 @@ tests/src/core/UnclaimedElementsTest.cpp
 tests/src/core/UnclaimedTrackTypeTest.cpp
 tests/src/core/UndoBoundsTest.cpp
 tests/src/core/VcaGroupTest.cpp
+tests/src/core/VcaRefreshAtomicityTest.cpp
 tests/src/core/WarpMarkersTest.cpp
 tests/src/core/WriteRefusalGateTest.cpp
 tests/src/gui/AccessibilityHelperTest.cpp
@@ -1792,6 +1804,7 @@ tests/src/gui/FocusDeskPaneTest.cpp
 tests/src/gui/FocusDeskTest.cpp
 tests/src/gui/FocusDeskWorkspacesTest.cpp
 tests/src/gui/MidiLearnGuiTest.cpp
+tests/src/gui/ThemeContrastTest.cpp
 tests/src/gui/WcagContrastTest.cpp
 tests/src/plugins/AudioPluginTest.cpp
 tests/src/plugins/ClapBusMapTest.cpp
@@ -1813,6 +1826,7 @@ tests/src/plugins/Vst3InstrumentIntegrationTest.cpp
 tests/src/plugins/Vst3InstrumentTest.cpp
 tests/src/plugins/ZynSeparateProcessTest.cpp
 tests/src/tracks/AutomationTrackTest.cpp
+tests/src/tracks/HeadlessGuiGuardTest.cpp
 tests/src/tracks/SampleClipStretchTest.cpp
 tests/src/tracks/SampleClipWarpTest.cpp
 tests/src/tracks/SampleClipWindowTest.cpp
