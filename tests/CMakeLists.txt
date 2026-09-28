@@ -617,6 +617,16 @@ ENDIF()
 		# Behaviour-preservation proof: a real headless render is byte-identical
 		# with nothing launched, and differs with a launched clip.
 		src/core/SessionSchedulerRenderTest.cpp
+		# The published cell content and the view the render path reads (board
+		# card #597): the hand-off, the position, the empty-cell control and the
+		# reset. Its own file because SessionSchedulerTest.cpp is grandfathered
+		# at 549 lines in the whole-tree file-length ratchet.
+		src/core/SessionPlaybackTest.cpp
+		# THE RENDER proof for #597: a launched slot holding a pattern makes a
+		# silent arrangement sound. Own file because it needs a real instrument
+		# (the render fixture above is deliberately plugin-free) and because it
+		# measures silence on the PCM payload rather than on the file.
+		src/core/SessionPlaybackRenderTest.cpp
 		# Follow Actions + Arrangement Record (task #641, the #596 engine
 		# halves). Two files, because they measured 667 lines as one and the
 		# file-length ratchet is not moved for a new feature:
@@ -736,6 +746,11 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 		# sounding notes go through the engine's own render path - the same
 		# reason ReversibilityUndoTest is on this list.
 		OR LMMS_TEST_NAME STREQUAL "SessionTuningTest"
+		# Board card #597: SessionPlaybackRenderTest's proof is that a launched
+		# session slot holding a pattern makes a silent arrangement SOUND, so it
+		# needs a real instrument in the pattern store - the same requirement, for
+		# the same reason, as SessionTuningTest above.
+		OR LMMS_TEST_NAME STREQUAL "SessionPlaybackRenderTest"
 		# The hosting test loads the build's own plugin modules to get devices with
 		# real plugin keys (and, where they exist, the ZynAddSubFx module and its
 		# client - see the OUTOFPROC_ZYN_* definitions below).

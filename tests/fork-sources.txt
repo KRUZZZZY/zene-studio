@@ -620,6 +620,7 @@ include/ScriptPackage.h
 include/SessionArrangementRecorder.h
 include/SessionFollow.h
 include/SessionModel.h
+include/SessionPlayback.h
 include/SessionScheduler.h
 include/SessionTuning.h
 include/SmfInterchange.h
@@ -1032,6 +1033,7 @@ src/core/SessionClip.cpp
 src/core/SessionFollow.cpp
 src/core/SessionModel.cpp
 src/core/SessionModelPrivate.h
+src/core/SessionPlayback.cpp
 src/core/SessionScheduler.cpp
 src/core/SessionTuning.cpp
 src/core/SessionTuningMtsEsp.cpp
@@ -1244,6 +1246,8 @@ tests/src/core/ReversibilityUndoTest.cpp
 tests/src/core/RoutingGraphScheduleTest.cpp
 tests/src/core/ScriptDawBindingTest.cpp
 tests/src/core/SessionModelTest.cpp
+tests/src/core/SessionPlaybackTest.cpp
+tests/src/core/SessionPlaybackRenderTest.cpp
 tests/src/core/StableTrackIdsTest.cpp
 tests/src/core/StemExportTest.cpp
 tests/src/core/StemJobManagerTest.cpp

@@ -329,13 +329,61 @@ void registerFollowSet(ControlRegistry& registry)
 	registry.registerCommand(cmd);
 }
 
+/*! session.set_follow_actions - Live's "Enable Follow Actions Globally".
+ *
+ *  With it OFF every chain is INERT rather than cleared: the plans stay
+ *  installed, the armed-cell count still reports them, and switching it back on
+ *  resumes the next period with the chains exactly as they were. That is what
+ *  makes it a performance control rather than an edit - which is also why it is
+ *  engine state, not project state: nothing is persisted and control.undo has
+ *  nothing to reverse (the midi.learn_toggle rule).
+ */
+void registerSetFollowActions(ControlRegistry& registry)
+{
+	ControlCommand cmd;
+	cmd.id = QStringLiteral("session.set_follow_actions");
+	cmd.group = QStringLiteral("session");
+	cmd.verb = QStringLiteral("set_follow_actions");
+	cmd.description = QStringLiteral("Turn Follow Actions on or off for the WHOLE session: with "
+		"'enabled' false every cell's chain is inert - nothing fires - while the chains stay "
+		"installed, so turning it back on resumes them where they were rather than restarting "
+		"them. Engine state, not project state: not saved with the project and not journalled, so "
+		"there is no undo step to reverse. session.follow_get_state reports it back.");
+	cmd.argsSchema = objectSchema({
+		{QStringLiteral("enabled"), booleanProperty()},
+	}, {QStringLiteral("enabled")});
+	cmd.resultSchema = objectSchema({
+		{QStringLiteral("enabled"), booleanProperty()},
+		{QStringLiteral("armed_cells"), integerProperty()},
+	});
+	cmd.mutating = false;
+	cmd.handler = [](const QJsonObject& args) {
+		Song* song = Engine::getSong();
+		if (song == nullptr)
+		{
+			return ControlResult::failure(ControlErrorKind::Requires,
+				QStringLiteral("no song: there is no session to toggle"));
+		}
+		const bool enabled = args.value(QStringLiteral("enabled")).toBool();
+		song->sessionScheduler().setFollowActionsEnabled(enabled);
+		QJsonObject result;
+		result.insert(QStringLiteral("enabled"), enabled);
+		result.insert(QStringLiteral("armed_cells"),
+			song->sessionScheduler().armedFollowCells());
+		return ControlResult::success(result);
+	};
+	registry.registerCommand(cmd);
+}
+
+
 void registerFollowGetState(ControlRegistry& registry)
 {
 	ControlCommand cmd;
 	cmd.id = QStringLiteral("session.follow_get_state");
 	cmd.group = QStringLiteral("session");
 	cmd.verb = QStringLiteral("follow_get_state");
-	cmd.description = QStringLiteral("Read the Follow Action engine back: which cells are armed "
+	cmd.description = QStringLiteral("Read the Follow Action engine back: `follow_actions_enabled` is Live's global toggle (with it "
+		"off every chain is inert, not cleared), which cells are armed "
 		"(the count and the bit(track * 8 + scene) mask), how many actions have fired, what the "
 		"newest fire did (its outcome, the chain entry that produced it, the scene it addressed "
 		"and the tick it was scheduled for), and - when track and scene are given - that cell's "
@@ -346,6 +394,7 @@ void registerFollowGetState(ControlRegistry& registry)
 		{QStringLiteral("scene"), integerProperty(0, 511)},
 	});
 	cmd.resultSchema = objectSchema({
+		{QStringLiteral("follow_actions_enabled"), booleanProperty()},
 		{QStringLiteral("armed_cells"), integerProperty()},
 		{QStringLiteral("armed_cells_mask"), stringProperty()},
 		{QStringLiteral("fires"), integerProperty()},
@@ -370,6 +419,8 @@ void registerFollowGetState(ControlRegistry& registry)
 		const SessionClockContext ctx = clockOf(*song);
 
 		QJsonObject result = followEngineState(scheduler);
+		result.insert(QStringLiteral("follow_actions_enabled"),
+			song->sessionScheduler().followActionsEnabled());
 		result.insert(QStringLiteral("ticks_per_bar"), static_cast<int>(ctx.ticksPerBar));
 
 		// Addressing one cell is optional: the engine reading above answers for
@@ -419,6 +470,7 @@ void registerFollowGetState(ControlRegistry& registry)
 void registerSessionFollowCommands(ControlRegistry& registry)
 {
 	registerFollowSet(registry);
+	registerSetFollowActions(registry);
 	registerFollowGetState(registry);
 }
 

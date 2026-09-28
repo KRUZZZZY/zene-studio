@@ -124,7 +124,8 @@ QJsonObject liveJson(const MasterLoudnessTap& tap)
 	out.insert(QStringLiteral("engine_running"), engineRunning());
 
 	QJsonObject readings = meterReadingsJson(live.integratedLufs, live.momentaryLufs,
-		live.shortTermLufs, live.shortTermMaxLufs, live.truePeakDbtp);
+		live.shortTermLufs, live.shortTermMaxLufs, live.truePeakDbtp,
+		live.loudnessRangeLu, live.peakToLoudnessRatioDb);
 	for (auto it = readings.constBegin(); it != readings.constEnd(); ++it)
 	{
 		out.insert(it.key(), it.value());
@@ -322,6 +323,8 @@ void registerMeterCommands(ControlRegistry& registry)
 			{QStringLiteral("short_term_lufs"), numberProperty()},
 			{QStringLiteral("short_term_max_lufs"), numberProperty()},
 			{QStringLiteral("true_peak_dbtp"), numberProperty()},
+			{QStringLiteral("loudness_range_lu"), numberProperty()},
+			{QStringLiteral("plr_db"), numberProperty()},
 			{QStringLiteral("measured"), booleanProperty()},
 			{QStringLiteral("deviation_lu"), numberProperty()},
 			{QStringLiteral("loudness_pass"), booleanProperty()},

@@ -70,6 +70,13 @@ const ReversibilityRow kSessionViewRows[] = {
 		"session.follow_set enabled: false - the same distinction session.launch_slot "
 		"draws between a launch and an edit",
 		""),
+	R("session.set_follow_actions", RC::NotMutating, false,
+		"flips the audio thread's global Follow Actions flag (one relaxed atomic); it edits no "
+		"model and writes nothing to the project",
+		"nothing to reverse: the flag is engine state, and calling this again with the previous "
+		"value is the operation a caller would use - the same rule midi.learn_toggle follows for "
+		"a mode that is a performance control rather than an edit",
+		""),
 	R("session.follow_get_state", RC::NotMutating, false,
 		"reads the engine's published atomics (the armed-cell count and mask, the fire "
 		"count, the newest fire) and the model's persisted chain; it writes nothing",

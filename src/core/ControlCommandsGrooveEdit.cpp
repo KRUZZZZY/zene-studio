@@ -180,6 +180,46 @@ ControlResult grooveApply(const QJsonObject& args)
 	}
 	float strength = 1.0f;
 	if (!readStrength(args, &strength, &error)) { return error; }
+
+	// The RANDOM amount, optional and OFF when absent, which is what every
+	// existing caller already had. It is drawn from each note's own identity and
+	// the seed given here, so the same call on the same notes reproduces the
+	// same take: an agent can reproduce a take it liked, and a taken-back edit
+	// is control.undo rather than a second apply.
+	tick_t randomTicks = 0;
+	int randomVelocity = 0;
+	std::uint32_t seed = 0;
+	if (args.contains(QStringLiteral("random_ticks"))
+		&& !readTicks(args, QStringLiteral("random_ticks"), 0,
+			static_cast<tick_t>(GrooveTemplate::MaxStepTicks), &randomTicks, &error))
+	{
+		return error;
+	}
+	if (args.contains(QStringLiteral("random_velocity")))
+	{
+		const double value = args.value(QStringLiteral("random_velocity")).toDouble(-1.0);
+		if (value < 0.0 || value > 200.0)
+		{
+			error = ControlResult::failure(ControlErrorKind::InvalidArgs,
+				QStringLiteral("'random_velocity' is %1; it is a jitter in the engine's own "
+					"note-volume range 0..200").arg(value));
+			return error;
+		}
+		randomVelocity = static_cast<int>(value);
+	}
+	if (args.contains(QStringLiteral("seed")))
+	{
+		const double value = args.value(QStringLiteral("seed")).toDouble(-1.0);
+		if (value < 0.0 || value > static_cast<double>(kMaxSchemaInteger))
+		{
+			error = ControlResult::failure(ControlErrorKind::InvalidArgs,
+				QStringLiteral("'seed' is %1; it is the whole number the jitter is drawn from")
+					.arg(value));
+			return error;
+		}
+		seed = static_cast<std::uint32_t>(value);
+	}
+
 	// The groove is captured BY VALUE: the pool can be edited through another
 	// command while this one runs, and the edit below must apply the groove
 	// this call found.
@@ -188,7 +228,7 @@ ControlResult grooveApply(const QJsonObject& args)
 	const NoteSnapshot before = snapshotNotes(*clip);
 	const QJsonObject beforeState = grooveClipBefore(ref, *clip);
 	clip->addJournalCheckPoint();
-	applyGroove(clip->notes(), applied, strength);
+	applyGroove(clip->notes(), applied, strength, randomTicks, randomVelocity, seed);
 	// The notes moved, so the clip's own order (position, then key) has to be
 	// restored - the call note.move makes after it moves one note.
 	clip->rearrangeAllNotes();
@@ -197,6 +237,9 @@ ControlResult grooveApply(const QJsonObject& args)
 	QJsonObject target;
 	target.insert(QStringLiteral("clip"), clipId(ref.id));
 	target.insert(QStringLiteral("name"), name);
+	target.insert(QStringLiteral("random_ticks"), static_cast<int>(randomTicks));
+	target.insert(QStringLiteral("random_velocity"), randomVelocity);
+	target.insert(QStringLiteral("seed"), static_cast<int>(seed));
 
 	QJsonObject result;
 	result.insert(QStringLiteral("clip"), clipId(ref.id));
@@ -264,18 +307,27 @@ void registerGrooveApply(ControlRegistry& registry)
 		"snapped to the slot it is nearest to and given that slot's tick and that slot's "
 		"velocity. 'strength' (0..1, default 1) is how far each note travels toward both, so "
 		"0.5 is half the feel and 1 is the groove exactly - at which point a second apply has "
-		"nothing left to do. Reversible through the ProjectJournal (MidiClip checkpoint): one "
-		"control.undo restores every position and velocity.");
+		"nothing left to do. 'random_ticks' (0..192, default 0) and 'random_velocity' "
+		"(0..200, default 0) add a jitter on top of the groove, drawn from each note's own "
+		"identity and 'seed', so the same call on the same notes reproduces the same take. "
+		"Reversible through the ProjectJournal (MidiClip checkpoint): one control.undo "
+		"restores every position and velocity.");
 	cmd.argsSchema = objectSchema({
 		{QStringLiteral("clip"), stringProperty()},
 		{QStringLiteral("name"), stringProperty()},
 		{QStringLiteral("strength"), numberProperty()},
+		{QStringLiteral("random_ticks"), integerProperty(0, GrooveTemplate::MaxStepTicks)},
+		{QStringLiteral("random_velocity"), integerProperty(0, 200)},
+		{QStringLiteral("seed"), integerProperty(0, kMaxSchemaInteger)},
 	}, {QStringLiteral("clip"), QStringLiteral("name")});
 	cmd.resultSchema = grooveStateSchema({
 		{QStringLiteral("clip"), stringProperty()},
 		{QStringLiteral("track"), stringProperty()},
 		{QStringLiteral("name"), stringProperty()},
 		{QStringLiteral("strength"), numberProperty()},
+		{QStringLiteral("random_ticks"), integerProperty(0, GrooveTemplate::MaxStepTicks)},
+		{QStringLiteral("random_velocity"), integerProperty(0, 200)},
+		{QStringLiteral("seed"), integerProperty(0, kMaxSchemaInteger)},
 		{QStringLiteral("note_count"), integerProperty(0, kMaxSchemaInteger)},
 		{QStringLiteral("positions_moved"), integerProperty(0, kMaxSchemaInteger)},
 		{QStringLiteral("velocities_moved"), integerProperty(0, kMaxSchemaInteger)},

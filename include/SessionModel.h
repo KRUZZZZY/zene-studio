@@ -73,7 +73,21 @@ enum class LaunchQuantisation : int
 	None = 0,
 	Bar = 1,
 	TwoBars = 2,
-	FourBars = 4
+	FourBars = 4,
+	/*! Sub-bar and longer values. Their numbers are NOT meaningful: the value
+	 *  is a NAME, and `quantisationTicks()` maps it to a tick quantum. They are
+	 *  distinct from the four above rather than recomputed, so that every value
+	 *  a project file already holds keeps the meaning it had.
+	 *
+	 *  Present because the vocabulary was the one place this product was
+	 *  measurably coarser than its reference paradigm: Live offers None, sub-bar
+	 *  values and up to eight bars, and this product stopped at bars
+	 *  (research/industry-standard/FEATURE-VS-INDUSTRY.md, cluster 1). */
+	Sixteenth = -2,
+	Eighth = -3,
+	Quarter = -4,
+	Half = -5,
+	EightBars = 8
 };
 
 //! One entry of a clip's Follow Action chain (SPEC §4.1).

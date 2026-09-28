@@ -140,6 +140,10 @@ public:
 	float shortTermLufs() const { return m_meter.shortTermLufs(); }
 	//! Loudest 3 s window seen during the render (LUFS-S max).
 	float shortTermMaxLufs() const { return m_shortTermMax; }
+	//! EBU Tech 3342 loudness range (LU) over the measured programme.
+	float loudnessRangeLu() const { return m_meter.loudnessRangeLu(); }
+	//! Peak-to-loudness ratio (dB): true peak less gated integrated loudness.
+	float peakToLoudnessRatioDb() const { return m_meter.peakToLoudnessRatioDb(); }
 	//! Maximum true peak (dBTP) over the whole render.
 	float truePeakDbtp() const { return m_meter.truePeakDbtp(); }
 

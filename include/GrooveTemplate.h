@@ -235,7 +235,8 @@ bool extractGroove(const NoteVector& notes, const QString& name, tick_t lengthTi
  *  \a strength is clamped to [0, 1]. Returns the number of notes whose
  *  position or velocity actually changed.
  */
-int applyGroove(const NoteVector& notes, const GrooveTemplate& groove, float strength);
+int applyGroove(const NoteVector& notes, const GrooveTemplate& groove, float strength,
+	tick_t randomTicks = 0, int randomVelocity = 0, std::uint32_t seed = 0);
 
 //! Clamps \a velocity to the engine's own note-volume range.
 int clampNoteVelocity(int velocity) noexcept;

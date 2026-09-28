@@ -80,8 +80,12 @@ inline const QStringList& modeNames()
 inline const QStringList& quantisationNames()
 {
 	static const QStringList names{
-		QStringLiteral("none"), QStringLiteral("bar"),
-		QStringLiteral("two_bars"), QStringLiteral("four_bars")};
+		QStringLiteral("none"),
+		QStringLiteral("1/16"), QStringLiteral("1/8"),
+		QStringLiteral("1/4"), QStringLiteral("1/2"),
+		QStringLiteral("bar"),
+		QStringLiteral("two_bars"), QStringLiteral("four_bars"),
+		QStringLiteral("8_bars")};
 	return names;
 }
 
@@ -136,23 +140,48 @@ inline LaunchMode modeFromName(const QString& name)
 	return index < 0 ? LaunchMode::Trigger : static_cast<LaunchMode>(index);
 }
 
-inline QString quantisationName(LaunchQuantisation value)
-{
-	switch (value)
-	{
-		case LaunchQuantisation::None:     return QStringLiteral("none");
-		case LaunchQuantisation::Bar:      return QStringLiteral("bar");
-		case LaunchQuantisation::TwoBars:  return QStringLiteral("two_bars");
-		case LaunchQuantisation::FourBars: return QStringLiteral("four_bars");
-		case LaunchQuantisation::Global:   break;
-	}
-	return QStringLiteral("global");
-}
-
+/*! A name and the value it means, IN ONE TABLE.
+ *
+ *  The previous pair of functions mapped a name by its INDEX in the vocabulary
+ *  list and cast that index to the enumerator, which only worked while the list
+ *  happened to be ordered by the enum's value. It is not: `four_bars` is 4 but
+ *  sat third, so it parsed to the undefined value 3, no switch matched it, and
+ *  `session.set_slot quantisation:"four_bars"` read back as "global" - measured,
+ *  with a reproducing test (BUGS_FOUND.md section 9). One table instead of two
+ *  index-coupled lists, and the test asserts every name round-trips.
+ */
 inline LaunchQuantisation quantisationFromName(const QString& name)
 {
-	const int index = quantisationNames().indexOf(name);
-	return index < 0 ? LaunchQuantisation::Global : static_cast<LaunchQuantisation>(index);
+	static const QMap<QString, LaunchQuantisation> table{
+		{QStringLiteral("global"),    LaunchQuantisation::Global},
+		{QStringLiteral("none"),      LaunchQuantisation::None},
+		{QStringLiteral("1/16"),      LaunchQuantisation::Sixteenth},
+		{QStringLiteral("1/8"),       LaunchQuantisation::Eighth},
+		{QStringLiteral("1/4"),       LaunchQuantisation::Quarter},
+		{QStringLiteral("1/2"),       LaunchQuantisation::Half},
+		{QStringLiteral("bar"),       LaunchQuantisation::Bar},
+		{QStringLiteral("two_bars"),  LaunchQuantisation::TwoBars},
+		{QStringLiteral("four_bars"), LaunchQuantisation::FourBars},
+		{QStringLiteral("8_bars"),    LaunchQuantisation::EightBars}};
+	const auto found = table.constFind(name);
+	return found == table.constEnd() ? LaunchQuantisation::Global : found.value();
+}
+
+inline QString quantisationName(LaunchQuantisation value)
+{
+	static const QMap<LaunchQuantisation, QString> table{
+		{LaunchQuantisation::Global,    QStringLiteral("global")},
+		{LaunchQuantisation::None,      QStringLiteral("none")},
+		{LaunchQuantisation::Sixteenth, QStringLiteral("1/16")},
+		{LaunchQuantisation::Eighth,    QStringLiteral("1/8")},
+		{LaunchQuantisation::Quarter,   QStringLiteral("1/4")},
+		{LaunchQuantisation::Half,      QStringLiteral("1/2")},
+		{LaunchQuantisation::Bar,       QStringLiteral("bar")},
+		{LaunchQuantisation::TwoBars,   QStringLiteral("two_bars")},
+		{LaunchQuantisation::FourBars,  QStringLiteral("four_bars")},
+		{LaunchQuantisation::EightBars, QStringLiteral("8_bars")}};
+	const auto found = table.constFind(value);
+	return found == table.constEnd() ? QStringLiteral("global") : found.value();
 }
 
 // ---------------------------------------------------------------------------

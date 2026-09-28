@@ -71,12 +71,13 @@ namespace control
 LMMS_EXPORT QJsonValue meterReadingJson(float value);
 
 /*! The five numbers, under the names the whole group uses: `integrated_lufs`,
- *  `momentary_lufs`, `short_term_lufs`, `short_term_max_lufs`, `true_peak_dbtp`.
- *  One function, so the live readout and a measured file cannot drift into two
- *  spellings of "integrated_lufs".
+ *  `momentary_lufs`, `short_term_lufs`, `short_term_max_lufs`, `true_peak_dbtp`,
+ *  `loudness_range_lu` and `plr_db`. One function, so the live readout and a
+ *  measured file cannot drift into two spellings of "integrated_lufs".
  */
 LMMS_EXPORT QJsonObject meterReadingsJson(float integratedLufs, float momentaryLufs,
-	float shortTermLufs, float shortTermMaxLufs, float truePeakDbtp);
+	float shortTermLufs, float shortTermMaxLufs, float truePeakDbtp, float loudnessRangeLu,
+	float peakToLoudnessRatioDb);
 
 /*! The target this release grades against, published rather than implied: EBU
  *  R 128's delivery guidance over the ITU-R BS.1770-4 measurement (EBU Tech
