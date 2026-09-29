@@ -114,6 +114,9 @@ set(LMMS_SRCS
 	# Pitch-preserving time stretch (0.3.0 feature-list row 30): WSOLA. The
 	# DSP the warp/clip path selects when a clip asks for PreservePitch.
 	core/AudioStretcher.cpp
+	# The optional Rubber Band stretch (owner decision 12): always compiled, the
+	# library calls only under LMMS_HAVE_RUBBERBAND.
+	core/RubberBandStretch.cpp
 	core/AutomatableModel.cpp
 	core/AutomationClip.cpp
 	core/AutomationNode.cpp

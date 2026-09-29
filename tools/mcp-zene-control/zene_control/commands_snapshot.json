@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-09-29T11:13:57Z",
+  "captured_at": "2026-09-29T13:22:37Z",
   "commands": [
     {
       "args_schema": {
@@ -19394,7 +19394,8 @@
           "mode": {
             "enum": [
               "resample",
-              "preserve_pitch"
+              "preserve_pitch",
+              "rubberband"
             ],
             "type": "string"
           }
@@ -19405,7 +19406,7 @@
         ],
         "type": "object"
       },
-      "description": "Choose how a warped sample clip renders its rate change: 'resample' (the default, and what the engine has always done - the rate goes to the resampler and the pitch moves with it, so a 2x warp is an octave up) or 'preserve_pitch' (the same rate is rendered by the WSOLA stretcher, AudioStretcher: the clip lasts as long as the mapping says and keeps its own pitch). Refused for a clip that renders linearly - with no marker and no source tempo there is no rate change to render. Reversible through the ProjectJournal (Clip checkpoint).",
+      "description": "Choose how a warped sample clip renders its rate change: 'resample' (the default, and what the engine has always done - the rate goes to the resampler and the pitch moves with it, so a 2x warp is an octave up), 'preserve_pitch' (the same rate is rendered by the WSOLA stretcher, AudioStretcher: the clip lasts as long as the mapping says and keeps its own pitch) or 'rubberband' (the optional Rubber Band R3 stretcher, for tonal and polyphonic material; refused by a build without the library, and rendered by WSOLA for the pass in which both of the clip's voices are busy). Refused for a clip that renders linearly - with no marker and no source tempo there is no rate change to render. Reversible through the ProjectJournal (Clip checkpoint).",
       "group": "warp",
       "id": "warp.stretch",
       "mutating": true,
@@ -19531,11 +19532,11 @@
     "binary": null,
     "binary_bytes": null,
     "binary_sha256": null,
-    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-040/tools/zene-pa-agentctl",
+    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-survey/tools/zene-pa-agentctl",
     "lane_head": null,
     "proto": 1,
-    "source_socket": "/tmp/zctl-run-zx10b_uv/zene.sock",
-    "version": "0.3.0-alpha.140+30ceb4d"
+    "source_socket": "/tmp/zctl-run-mo7hbo8j/zene.sock",
+    "version": "0.3.0-alpha.144+8b69d75"
   },
   "kind": "zene-control-command-list",
   "proto": 1,

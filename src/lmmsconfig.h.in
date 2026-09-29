@@ -38,6 +38,7 @@
 #cmakedefine LMMS_HAVE_VST_64
 #cmakedefine LMMS_HAVE_SF_COMPLEVEL
 #cmakedefine LMMS_HAVE_WINMM
+#cmakedefine LMMS_HAVE_RUBBERBAND
 #cmakedefine LMMS_HAVE_STEM_SPLIT
 #cmakedefine LMMS_HAVE_ONNXRUNTIME
 

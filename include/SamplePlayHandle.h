@@ -28,6 +28,7 @@
 
 #include "Sample.h"
 #include "AudioStretcher.h"
+#include "RubberBandStretch.h"
 #include "ClipEdits.h"
 #include "SampleWindow.h"
 #include "WarpMarkers.h"
@@ -115,6 +116,10 @@ private:
 	 *  touching the source). Fixed size, allocated with the handle - nothing on
 	 *  the render path allocates (I8). */
 	AudioStretcher m_stretcher;
+	/*! Owner decision 12: the Rubber Band voice this handle claimed from its
+	 *  clip's pool, or nullptr (WSOLA renders). Borrowed, never owned: released
+	 *  dirty in the destructor, reset by the pool's recycler off this thread. */
+	RubberBandVoice* m_rubberBand = nullptr;
 	/*! The clip's fades and its gain, snapshotted at construction exactly as the
 	 *  window and the warp are (invariant I1): a live handle renders the envelope
 	 *  it was created with, and nothing the control thread does to the clip

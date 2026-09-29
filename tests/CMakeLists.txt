@@ -607,6 +607,8 @@ set(LMMS_TESTS
 	# Inherited clip paths that dereferenced getGUI() unguarded, run headless.
 	src/tracks/HeadlessGuiGuardTest.cpp
 	src/tracks/SampleClipStretchTest.cpp
+	# Owner decision 12: the optional Rubber Band stretch mode, through the same clip path.
+	src/tracks/SampleClipRubberBandTest.cpp
 	src/tracks/SampleClipWarpTest.cpp
 	src/tracks/SampleClipWindowTest.cpp
 )
@@ -3228,7 +3230,7 @@ set_tests_properties(ControlWarpCommandsTest PROPERTIES
 # opens a window. AudioStretcherTest needs no Engine (it is pure DSP), but it is
 # built from the same objects; it is listed here only to keep the pair together
 # in one place whose reason is written down.
-set_tests_properties(SampleClipStretchTest AudioStretcherTest PROPERTIES
+set_tests_properties(SampleClipStretchTest SampleClipRubberBandTest AudioStretcherTest PROPERTIES
 	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 # The link.* group drives the process-wide session model (and the Song's tempo,
 # for an adopted one) and starts the UI-thread service timer, so it wants a real

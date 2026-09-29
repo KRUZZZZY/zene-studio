@@ -365,6 +365,13 @@ target_link_libraries(lmmsobjs
 	${LMMS_REQUIRED_LIBS}
 )
 
+# Optional Rubber Band dependency of the warp stretch (owner decision 12).
+IF(LMMS_HAVE_RUBBERBAND)
+	TARGET_LINK_LIBRARIES(lmmsobjs ${RUBBERBAND_LIBRARIES})
+	TARGET_INCLUDE_DIRECTORIES(lmmsobjs SYSTEM PRIVATE ${RUBBERBAND_INCLUDE_DIRS})
+	TARGET_LINK_DIRECTORIES(lmmsobjs PRIVATE ${RUBBERBAND_LIBRARY_DIRS})
+ENDIF()
+
 # Optional ONNX Runtime dependency of the stem-separation feature. The imported
 # target only exists when find_package(ONNXRuntime) succeeded at configure time.
 IF(LMMS_HAVE_ONNXRUNTIME)

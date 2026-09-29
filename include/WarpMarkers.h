@@ -97,7 +97,12 @@ enum class WarpTempoMode
 enum class WarpStretchMode
 {
 	Resample = 0,
-	PreservePitch = 1
+	PreservePitch = 1,
+	//! Owner decision 12: the optional Rubber Band R3 stretch, for tonal and
+	//! polyphonic material (include/RubberBandStretch.h). A build without the
+	//! library keeps the mode (and the file keeps asking for it) and renders
+	//! the clip through WSOLA, exactly as PreservePitch.
+	RubberBand = 2
 };
 
 /*! A monotonic marker set and the piecewise-linear map it defines.

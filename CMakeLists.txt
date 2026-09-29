@@ -122,6 +122,7 @@ OPTION(WANT_VST		"Include VST support" ON)
 OPTION(WANT_VST_32	"Include 32-bit Windows VST support" ON)
 OPTION(WANT_VST_64	"Include 64-bit Windows VST support" ON)
 OPTION(WANT_WINMM	"Include WinMM MIDI support" OFF)
+OPTION(WANT_RUBBERBAND	"Include the optional Rubber Band time stretch (owner decision 12; WSOLA stays the default)" ON)
 OPTION(WANT_STEM_SPLIT	"Include offline stem separation (HTDemucs via ONNX Runtime, opt-in)" OFF)
 OPTION(WANT_DEBUG_FPE	"Debug floating point exceptions" OFF)
 option(WANT_DEBUG_ASAN	"Enable AddressSanitizer" OFF)
@@ -727,6 +728,21 @@ IF(WANT_SNDIO)
 	ENDIF(SNDIO_FOUND)
 ENDIF(WANT_SNDIO)
 
+# check for Rubber Band (owner decision 12): an OPTIONAL dependency. Found, it
+# backs the 'rubberband' warp stretch mode (include/RubberBandStretch.h); absent,
+# the mode stays in the vocabulary and such a clip renders through WSOLA.
+IF(WANT_RUBBERBAND)
+	PKG_CHECK_MODULES(RUBBERBAND rubberband>=3.0)
+	IF(RUBBERBAND_FOUND)
+		SET(LMMS_HAVE_RUBBERBAND TRUE)
+		SET(STATUS_RUBBERBAND "OK (${RUBBERBAND_VERSION})")
+	ELSE()
+		SET(STATUS_RUBBERBAND "not found, please install librubberband-dev (or similar) if you want the Rubber Band stretch mode")
+	ENDIF()
+ELSE()
+	SET(STATUS_RUBBERBAND "not built as requested")
+ENDIF()
+
 # check for WINE
 if(WANT_VST)
 	if((WANT_VST_32 OR WANT_VST_64) AND NOT LMMS_BUILD_WIN32)
@@ -1021,6 +1037,7 @@ MESSAGE(
 "* JACK                        : ${STATUS_JACK}\n"
 "* OSS                         : ${STATUS_OSS}\n"
 "* Sndio                       : ${STATUS_SNDIO}\n"
+"* Rubber Band stretch         : ${STATUS_RUBBERBAND}\n"
 "* PortAudio                   : ${STATUS_PORTAUDIO}\n"
 "* libsoundio                  : ${STATUS_SOUNDIO}\n"
 "* PulseAudio                  : ${STATUS_PULSEAUDIO}\n"

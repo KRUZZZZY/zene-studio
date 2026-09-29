@@ -22,6 +22,7 @@ libmp3lame-dev
 libogg-dev
 libqt5svg5-dev
 libqt5x11extras5-dev
+librubberband-dev
 libsamplerate0-dev
 libsdl2-dev
 libsndfile1-dev

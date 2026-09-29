@@ -63,7 +63,8 @@ QString tempoModeName(WarpTempoMode mode);
 
 /*! The wire name of a stretch mode (row 30 of the 0.3.0 list): how the clip
  *  renders a rate change. "resample" is the historical one — the pitch moves
- *  with the rate — and "preserve_pitch" is the WSOLA stretch. */
+ *  with the rate — "preserve_pitch" is the WSOLA stretch and "rubberband" the
+ *  optional Rubber Band one (owner decision 12). */
 QString stretchModeName(WarpStretchMode mode);
 
 //! One marker as the wire reports it: its position in the engine's order, the

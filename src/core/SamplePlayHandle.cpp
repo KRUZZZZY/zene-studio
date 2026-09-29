@@ -111,9 +111,27 @@ SamplePlayHandle::SamplePlayHandle( SampleClip* clip, const SampleWindow& window
 	 *  path it was even if the mode was somehow set. The stretcher is prepared
 	 *  once here (a table fill, no allocation) and its analysis cursor starts
 	 *  at the head of the window, in window-relative frames. */
-	m_preservePitch = clip->warpStretchMode() == WarpStretchMode::PreservePitch
-		&& !m_rendersLinearly;
-	if (m_preservePitch)
+	const WarpStretchMode stretchMode = clip->warpStretchMode();
+	m_preservePitch = (stretchMode == WarpStretchMode::PreservePitch
+		|| stretchMode == WarpStretchMode::RubberBand) && !m_rendersLinearly;
+
+	/*! Owner decision 12: a RubberBand clip claims one of its pool's voices -
+	 *  a lock-free compare-and-swap, the voice already built and reset off this
+	 *  thread. The pitch scale corrects the source rate to the output rate (the
+	 *  stretcher keeps a period in SAMPLES, so without it a 44.1 kHz source on a
+	 *  48 kHz engine would come out sharp). No voice - a build without the
+	 *  library, or both voices still in use or dirty - is the WSOLA render,
+	 *  which is the documented fallback and the pool counts it. */
+	if (m_preservePitch && stretchMode == WarpStretchMode::RubberBand && clip->rubberBandPool() != nullptr)
+	{
+		m_rubberBand = clip->rubberBandPool()->claim();
+		if (m_rubberBand != nullptr)
+		{
+			m_rubberBand->begin(static_cast<double>(m_sample->sampleRate())
+				/ static_cast<double>(Engine::audioEngine()->outputSampleRate()));
+		}
+	}
+	if (m_preservePitch && m_rubberBand == nullptr)
 	{
 		m_stretcher.prepare();
 		m_stretcher.seek(0.0);
@@ -224,6 +242,8 @@ void SamplePlayHandle::applyClipEdits(SampleFrame* buffer, f_cnt_t frames) const
 
 SamplePlayHandle::~SamplePlayHandle()
 {
+	// The voice goes back dirty; the pool's recycler resets it off this thread.
+	if (m_rubberBand != nullptr) { m_rubberBand->release(); }
 	if(m_ownAudioBusHandle)
 	{
 		delete audioBusHandle();
@@ -391,13 +411,18 @@ void SamplePlayHandle::renderPreservingPitch(SampleFrame* dst, f_cnt_t frames)
 		? 1.0 / (converterRatio * sampleRateRatio * freqRatio)
 		: 1.0;
 
-	const f_cnt_t written = m_stretcher.process(window, windowFrames, dst, frames, speed);
+	// Owner decision 12: the same speed, the same window, a different stretcher.
+	const f_cnt_t written = m_rubberBand != nullptr
+		? m_rubberBand->render(window, windowFrames, dst, frames, speed)
+		: m_stretcher.process(window, windowFrames, dst, frames, speed);
 	if (written < frames) { zeroSampleFrames(dst + written, frames - written); }
 
 	// The analysis cursor IS the source position this period reached; the next
 	// period's rate is taken from the frame it starts on.
+	const double sourcePosition = m_rubberBand != nullptr
+		? m_rubberBand->sourcePosition() : m_stretcher.sourcePosition();
 	m_state.setFrameIndex(static_cast<int>(m_window.sourceIn
-		+ static_cast<f_cnt_t>(std::llround(m_stretcher.sourcePosition()))));
+		+ static_cast<f_cnt_t>(std::llround(sourcePosition))));
 }
 
 
