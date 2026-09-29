@@ -305,6 +305,9 @@ set(LMMS_TESTS
 	# proof of the dither, the byte-level off-by-default proof, the converter
 	# ratio convention, and the quality reaching the resampler.
 	src/core/ExportDitherTest.cpp
+	# Noise-shaped TPDF (owner decision 13): determinism, the measured shaping, and the
+	# dither mode's mapping onto the pre-mode bool API.
+	src/core/ExportNoiseShaperTest.cpp
 	src/core/ExportWavDitherTest.cpp
 	src/core/LoudnessReportTest.cpp
 	src/core/LufsMeterTest.cpp

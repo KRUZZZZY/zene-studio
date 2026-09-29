@@ -692,6 +692,8 @@ set(LMMS_SRCS
 	core/Engine.cpp
 	core/EnvelopeAndLfoParameters.cpp
 	core/ExportDither.cpp
+	# Noise-shaped TPDF requantisation for 16-bit export (040/dither, owner decision 13).
+	core/ExportNoiseShaper.cpp
 	core/ExportRenderSettings.cpp
 	core/fft_helpers.cpp
 	core/Mixer.cpp

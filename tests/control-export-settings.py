@@ -240,6 +240,36 @@ restored = report("export.get_settings", call("export.get_settings")).get("resul
 if restored.get("dither") is not False:
     failures.append("the undo did not restore the previous dither: %r" % restored)
 
+# 4b. the dither MODE (owner decision 13): noise_shaped by name, read back, the two typed
+#     refusals, and an undo that restores the previous mode rather than a bool.
+if restored.get("dither_mode") != "off":
+    failures.append("the restored dither_mode is not 'off': %r" % restored.get("dither_mode"))
+if restored.get("dither_mode_choices") != ["off", "tpdf", "noise_shaped"]:
+    failures.append("dither_mode_choices is not the three modes: %r" % restored.get("dither_mode_choices"))
+shaped = report("export.set_dither(mode=noise_shaped)",
+                call("export.set_dither", {"mode": "noise_shaped"})).get("result") or {}
+if shaped.get("dither_mode") != "noise_shaped" or shaped.get("dither") is not True \
+        or shaped.get("previous_mode") != "off":
+    failures.append("export.set_dither(mode=noise_shaped) did not report the change: %r" % shaped)
+read_back = report("export.get_settings", call("export.get_settings")).get("result") or {}
+if read_back.get("dither_mode") != "noise_shaped":
+    failures.append("the noise_shaped mode did not stick: %r" % read_back.get("dither_mode"))
+contradiction = report("export.set_dither(dither=false, mode=tpdf)",
+                       call("export.set_dither", {"dither": False, "mode": "tpdf"}))
+if contradiction.get("error", {}).get("kind") != "invalid_args":
+    failures.append("a contradictory dither/mode pair did not answer invalid_args: %r" % contradiction)
+neither = report("export.set_dither({})", call("export.set_dither", {}))
+if neither.get("error", {}).get("kind") != "invalid_args":
+    failures.append("export.set_dither with neither argument did not answer invalid_args: %r" % neither)
+tpdf = report("export.set_dither(mode=tpdf)", call("export.set_dither", {"mode": "tpdf"})).get("result") or {}
+if tpdf.get("previous_mode") != "noise_shaped":
+    failures.append("export.set_dither(mode=tpdf) did not report noise_shaped as previous: %r" % tpdf)
+report("control.undo", call("control.undo"))
+back = report("export.get_settings", call("export.get_settings")).get("result") or {}
+if back.get("dither_mode") != "noise_shaped":
+    failures.append("control.undo did not restore the previous MODE (noise_shaped): %r" % back.get("dither_mode"))
+report("control.undo", call("control.undo"))
+
 # 5. the SRC quality, its wire names, and the typed refusal
 quality = report("export.set_src_quality(sinc_best)",
                  call("export.set_src_quality", {"src_quality": "sinc_best"})).get("result") or {}

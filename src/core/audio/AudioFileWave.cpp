@@ -64,7 +64,8 @@ AudioFileWave::AudioFileWave( OutputSettings const & outputSettings,
 				AudioEngine* audioEngine ) :
 	AudioFileDevice( outputSettings, channels, file, audioEngine ),
 	m_sf( nullptr ),
-	m_dither()
+	m_dither(),
+	m_noiseShaper( channels )
 {
 	successful = outputFileOpened() && startEncoding();
 }
@@ -149,7 +150,13 @@ void AudioFileWave::writeBuffer(const SampleFrame* _ab, const f_cnt_t _frames)
 	else
 	{
 		auto buf = new int_sample_t[_frames * channels()];
-		if (ditherBits > 0)
+		if (getOutputSettings().ditherMode() == DitherMode::NoiseShaped)
+		{
+			// Noise-shaped TPDF: the shaper requantises (same scale, clip and byte order
+			// as convertToS16) and feeds each sample's error back into the next.
+			m_noiseShaper.quantiseFrames(_ab, _frames, channels(), buf, !isLittleEndian());
+		}
+		else if (ditherBits > 0)
 		{
 			// The 16-bit path converts a whole SampleFrame array, so the dither
 			// is applied to a staged copy and the conversion then reads the

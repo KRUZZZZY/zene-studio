@@ -138,7 +138,7 @@ private:
 	 *  m_progress/m_abort so the initialiser order in the constructor matches
 	 *  the declaration order (-Werror=reorder).
 	 */
-	bool m_previousDither;
+	DitherMode m_previousDither;
 	SrcQuality m_previousSrcQuality;
 
 } ;

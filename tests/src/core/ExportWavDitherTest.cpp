@@ -48,8 +48,10 @@
 #include <QtTest>
 
 #include <QDir>
+#include <QFile>
 #include <QTemporaryDir>
 
+#include <algorithm>
 #include <cmath>
 #include <cstdio>
 #include <memory>
@@ -227,7 +229,55 @@ private slots:
 		evidence("32-bit float off == on", 1.0);
 	}
 
+	//! Owner decision 13: 'noise_shaped' at 16-bit is reproducible, is NOT the TPDF file,
+	//! stays within a few counts of the undithered quantisation, and at 24-bit falls back
+	//! to plain TPDF byte for byte (libsndfile quantises 24-bit, so nothing can be shaped).
+	void noiseShapedIsReproducibleDistinctAndFallsBackAt24Bit()
+	{
+		const std::vector<float> signal = lowLevelSine(2048, 4.0, 0.4);
+		const auto depth16 = OutputSettings::BitDepth::Depth16Bit;
+		const auto depth24 = OutputSettings::BitDepth::Depth24Bit;
+		const std::vector<std::int16_t> off = readWavS16(writeWavMode(signal, DitherMode::Off, depth16, "ns-off.wav"));
+		const std::vector<std::int16_t> tpdf = readWavS16(writeWavMode(signal, DitherMode::Tpdf, depth16, "ns-tpdf.wav"));
+		const std::vector<std::int16_t> shaped = readWavS16(writeWavMode(signal, DitherMode::NoiseShaped, depth16, "ns-1.wav"));
+		const std::vector<std::int16_t> again = readWavS16(writeWavMode(signal, DitherMode::NoiseShaped, depth16, "ns-2.wav"));
+		QCOMPARE(shaped.size(), off.size());
+		QVERIFY2(shaped == again, "two noise-shaped renders of the same signal differ");
+		QVERIFY2(shaped != tpdf, "the noise-shaped file is the TPDF file");
+		int maxDelta = 0;
+		for (std::size_t i = 0; i < off.size(); ++i) { maxDelta = std::max(maxDelta, std::abs(shaped[i] - off[i])); }
+		evidence("noise-shaped max |delta| from undithered (16-bit counts)", static_cast<double>(maxDelta));
+		QVERIFY2(maxDelta <= 6, qPrintable(QStringLiteral("noise-shaped deviates %1 counts").arg(maxDelta)));
+		const QByteArray tpdf24 = readBytes(writeWavMode(signal, DitherMode::Tpdf, depth24, "ns-tpdf24.wav"));
+		const QByteArray shaped24 = readBytes(writeWavMode(signal, DitherMode::NoiseShaped, depth24, "ns-24.wav"));
+		QVERIFY2(tpdf24 == shaped24, "a 24-bit noise-shaped render is not the 24-bit TPDF render");
+		ExportRenderSettings::reset();
+	}
+
 private:
+
+	QString writeWavMode(const std::vector<float>& signal, DitherMode mode,
+		OutputSettings::BitDepth depth, const QString& name)
+	{
+		OutputSettings settings(44100, 160, depth, OutputSettings::StereoMode::Stereo);
+		settings.setDitherMode(mode);
+		ExportRenderSettings::setDitherMode(mode);
+		const QString out = QDir(m_dir.path()).filePath(name);
+		bool successful = false;
+		std::unique_ptr<AudioFileDevice> device(
+			AudioFileWave::getInst(out, settings, DEFAULT_CHANNELS, Engine::audioEngine(), successful));
+		if (device == nullptr || !successful) { return QString(); }
+		std::vector<SampleFrame> frames(signal.size());
+		for (std::size_t i = 0; i < signal.size(); ++i) { frames[i] = SampleFrame(signal[i], signal[i]); }
+		device->writeBuffer(frames.data(), static_cast<f_cnt_t>(frames.size()));
+		return out;
+	}
+
+	QByteArray readBytes(const QString& path)
+	{
+		QFile file(path);
+		return file.open(QIODevice::ReadOnly) ? file.readAll() : QByteArray();
+	}
 
 	//! Writes \p signal through the real export path and returns the file path.
 	QString writeWav(const std::vector<float>& signal, bool dither,

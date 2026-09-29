@@ -207,7 +207,9 @@ include/EnvelopeAndLfoParameters.h
 include/EnvelopeAndLfoView.h
 include/EnvelopeGraph.h
 include/ExportDither.h
+include/ExportDitherMode.h
 include/ExportFilter.h
+include/ExportNoiseShaper.h
 include/ExportProjectDialog.h
 include/ExportRenderSettings.h
 include/FadeButton.h
@@ -1252,6 +1254,7 @@ src/core/EffectChainPatcher.cpp
 src/core/Engine.cpp
 src/core/EnvelopeAndLfoParameters.cpp
 src/core/ExportDither.cpp
+src/core/ExportNoiseShaper.cpp
 src/core/ExportRenderSettings.cpp
 src/core/ExternalProcessStemSeparator.cpp
 src/core/GroovePool.cpp
@@ -1675,6 +1678,7 @@ tests/src/core/DawProjectInterchangeRoundTripTest.cpp
 tests/src/core/DocumentIndexTest.cpp
 tests/src/core/DocumentSectionsTest.cpp
 tests/src/core/ExportDitherTest.cpp
+tests/src/core/ExportNoiseShaperTest.cpp
 tests/src/core/ExportWavDitherTest.cpp
 tests/src/core/GrooveTemplateTest.cpp
 tests/src/core/GrooveTestSupport.h

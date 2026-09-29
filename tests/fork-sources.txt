@@ -552,6 +552,8 @@ include/DawProjectInterchange.h
 include/DocumentIndex.h
 include/DpiHelper.h
 include/ExportDither.h
+include/ExportDitherMode.h
+include/ExportNoiseShaper.h
 include/ExportRenderSettings.h
 include/FocusDesk.h
 include/FocusDeskActions.h
@@ -970,6 +972,7 @@ src/core/DawProjectZip.cpp
 src/core/DocumentIndex.cpp
 src/core/EffectChainPatcher.cpp
 src/core/ExportDither.cpp
+src/core/ExportNoiseShaper.cpp
 src/core/ExportRenderSettings.cpp
 src/core/ExternalProcessStemSeparator.cpp
 src/core/GroovePool.cpp

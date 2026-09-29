@@ -29,6 +29,7 @@
 #include "lmmsconfig.h"
 #include "AudioFileDevice.h"
 #include "ExportDither.h"
+#include "ExportNoiseShaper.h"
 
 #include <sndfile.h>
 
@@ -69,6 +70,9 @@ private:
 	//! OutputSettings::dither() is on; seeded from a constant so a dithered
 	//! render is still reproducible.
 	ExportDither m_dither;
+	//! DitherMode::NoiseShaped at 16-bit (include/ExportNoiseShaper.h): the encoder does the
+	//! requantisation itself so the error it feeds back is known.
+	ExportNoiseShaper m_noiseShaper;
 } ;
 
 
