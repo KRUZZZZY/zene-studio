@@ -293,6 +293,7 @@ private slots:
 		const quint32 startBefore = clock->emittedCount(MidiClockMessage::Start);
 		const quint32 queriesBefore = clock->emittedCount(MidiClockMessage::SongPosition);
 		const quint32 stopsBefore = clock->emittedCount(MidiClockMessage::Stop);
+		const quint32 continuesBefore = clock->emittedCount(MidiClockMessage::Continue);
 		const quint32 totalBefore = clock->emittedTotal();
 
 		QString error;
@@ -348,12 +349,19 @@ private slots:
 		QVERIFY2(clock->emittedCount(MidiClockMessage::Stop) - stopsBefore >= 1u,
 			qPrintable(measured));
 		// The counters and the total agree, so the monitor below is the whole of
-		// what was emitted.
+		// what was emitted. CONTINUE is in the sum (BUGS_FOUND 10.10): an
+		// interleaved device period - which this slot's own header allows -
+		// is a falling edge, and the script's next running period is then a
+		// rising edge at a non-zero position, which is a CONTINUE. Measured
+		// once in 30 runs (monitor=start,song_position,stop,continue,...);
+		// leaving it out of the sum made the flake the TEST's contradiction of
+		// its own model, not the clock's.
 		QVERIFY2(clock->emittedTotal() - totalBefore
 				== clock->emittedCount(MidiClockMessage::Clock) - pulsesBefore
 					+ clock->emittedCount(MidiClockMessage::Start) - startBefore
 					+ clock->emittedCount(MidiClockMessage::SongPosition) - queriesBefore
-					+ clock->emittedCount(MidiClockMessage::Stop) - stopsBefore,
+					+ clock->emittedCount(MidiClockMessage::Stop) - stopsBefore
+					+ clock->emittedCount(MidiClockMessage::Continue) - continuesBefore,
 			qPrintable(measured));
 
 		// THE ORDER, from the monitor: the run opens with the START of the rising

@@ -437,7 +437,10 @@ int AudioJack::processCallback(jack_nframes_t nframes)
 
 		for (jack_nframes_t frame = 0; frame < nframes; frame++)
 		{
-			m_inputFrameBuffer[frame][c] = static_cast<sample_t>(jack_input_buffer[frame]);
+			// A SampleFrame carries two channels: past them only the wide
+			// buffer holds the port (BUGS_FOUND 10.11 - latent while the device
+			// opens DEFAULT_CHANNELS, an overflow the day it opens more).
+			if (c < DEFAULT_CHANNELS) { m_inputFrameBuffer[frame][c] = static_cast<sample_t>(jack_input_buffer[frame]); }
 			if (wide) { m_captureWide[static_cast<std::size_t>(frame) * width + c] = jack_input_buffer[frame]; }
 		}
 	}
