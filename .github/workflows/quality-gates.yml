@@ -117,7 +117,7 @@ jobs:
             cmake g++ \
             qt6-base-dev libqt6svg6-dev qt6-l10n-tools \
             libsndfile1-dev libfftw3-dev libasound2-dev libjack-jackd2-dev \
-            libsamplerate0-dev libxml2-dev \
+            libsamplerate0-dev librubberband-dev libxml2-dev \
             liblist-moreutils-perl libxml-parser-perl
       - name: Configure (Debug, Qt6)
         run: cmake -B build -S . -DCMAKE_BUILD_TYPE=Debug -DWANT_QT6=ON
@@ -152,7 +152,7 @@ jobs:
             cmake g++ \
             qt6-base-dev libqt6svg6-dev qt6-l10n-tools \
             libsndfile1-dev libfftw3-dev libasound2-dev libjack-jackd2-dev \
-            libsamplerate0-dev libxml2-dev \
+            libsamplerate0-dev librubberband-dev libxml2-dev \
             liblist-moreutils-perl libxml-parser-perl
       - name: Configure (Debug, TSan)
         run: cmake -B build-tsan -S . -DCMAKE_BUILD_TYPE=Debug -DWANT_DEBUG_TSAN=ON -DWANT_QT6=ON -DWANT_VST3=OFF -DLMMS_CLAP_FETCH=ON
@@ -192,7 +192,7 @@ jobs:
             cmake g++ lcov \
             qt6-base-dev libqt6svg6-dev qt6-l10n-tools \
             libsndfile1-dev libfftw3-dev libasound2-dev libjack-jackd2-dev \
-            libsamplerate0-dev libxml2-dev \
+            libsamplerate0-dev librubberband-dev libxml2-dev \
             liblist-moreutils-perl libxml-parser-perl
       # Default mode is the ratchet: the number must not fall. The baseline is
       # committed, so it must have been captured in the SAME environment the gate
@@ -309,7 +309,7 @@ jobs:
             cmake g++ \
             qt6-base-dev libqt6svg6-dev qt6-l10n-tools \
             libsndfile1-dev libfftw3-dev libasound2-dev libjack-jackd2-dev \
-            libsamplerate0-dev libxml2-dev \
+            libsamplerate0-dev librubberband-dev libxml2-dev \
             liblist-moreutils-perl libxml-parser-perl
       - name: Install the MCP SDK the bridge imports
         run: pip install "mcp==2.0.0"
@@ -405,7 +405,7 @@ jobs:
             cmake g++ \
             qt6-base-dev libqt6svg6-dev qt6-l10n-tools \
             libsndfile1-dev libfftw3-dev libasound2-dev libjack-jackd2-dev \
-            libsamplerate0-dev libxml2-dev \
+            libsamplerate0-dev librubberband-dev libxml2-dev \
             liblist-moreutils-perl libxml-parser-perl
       - name: Configure (Debug, Qt6, fixture ON)
         run: |

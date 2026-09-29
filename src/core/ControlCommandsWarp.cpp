@@ -48,6 +48,7 @@
 #include "ControlEdit.h"
 #include "ControlRegistry.h"
 #include "ControlWarpSupport.h"
+#include "RubberBandStretch.h"
 
 namespace lmms
 {
@@ -78,8 +79,13 @@ QString tempoModeName(WarpTempoMode mode)
 
 QString stretchModeName(WarpStretchMode mode)
 {
-	return mode == WarpStretchMode::PreservePitch
-		? QStringLiteral("preserve_pitch") : QStringLiteral("resample");
+	switch (mode)
+	{
+	case WarpStretchMode::PreservePitch: return QStringLiteral("preserve_pitch");
+	case WarpStretchMode::RubberBand: return QStringLiteral("rubberband");
+	case WarpStretchMode::Resample: break;
+	}
+	return QStringLiteral("resample");
 }
 
 QJsonObject markerJson(const WarpMarker& marker, int index)
@@ -116,7 +122,11 @@ QJsonObject warpState(const ClipRef& ref, const SampleClip& clip)
 	// for EVERY clip, because "resample" is the answer that matters as much as
 	// "preserve_pitch" - it is the mode the pitch moves in.
 	out.insert(QStringLiteral("stretch"), stretchModeName(clip.warpStretchMode()));
-	out.insert(QStringLiteral("stretch_algorithm"), QStringLiteral("wsola"));
+	// Owner decision 12: 'rubberband' names its algorithm only when this build
+	// links the library; without it the clip is rendered by WSOLA and says so.
+	out.insert(QStringLiteral("stretch_algorithm"),
+		clip.warpStretchMode() == WarpStretchMode::RubberBand && RubberBandPool::available()
+			? QStringLiteral("rubberband") : QStringLiteral("wsola"));
 	out.insert(QStringLiteral("renders_linearly"), clip.rendersLinearly());
 	out.insert(QStringLiteral("marker_count"), clip.warpMarkers().size());
 	out.insert(QStringLiteral("max_markers"), WarpMarkers::MaxMarkers);
@@ -267,7 +277,7 @@ QJsonObject stretchModeProperty()
 	return QJsonObject{
 		{QStringLiteral("type"), QStringLiteral("string")},
 		{QStringLiteral("enum"), QJsonArray{QStringLiteral("resample"),
-			QStringLiteral("preserve_pitch")}}};
+			QStringLiteral("preserve_pitch"), QStringLiteral("rubberband")}}};
 }
 
 QJsonObject markerProperty()

@@ -489,6 +489,10 @@ void Clip::saveWarp(QDomDocument& doc, QDomElement& element) const
 		{
 			warp.setAttribute( "stretch", "wsola" );
 		}
+		else if (m_stretchMode == WarpStretchMode::RubberBand)
+		{
+			warp.setAttribute( "stretch", "rubberband" );
+		}
 		for (const auto& marker : m_warp.all())
 		{
 			QDomElement node = doc.createElement( "marker" );
@@ -639,8 +643,11 @@ void Clip::loadWarp(const QDomElement& element)
 		m_sourceTempo = warpNode.attribute("tempo", "0").toFloat();
 		// Row 30: absent means resampling, which is what every file written
 		// before this attribute existed asks for.
-		m_stretchMode = warpNode.attribute("stretch", "resample") == "wsola"
-			? WarpStretchMode::PreservePitch : WarpStretchMode::Resample;
+		// Owner decision 12 adds "rubberband"; any other value is the default.
+		const QString stretch = warpNode.attribute("stretch", "resample");
+		m_stretchMode = stretch == "wsola" ? WarpStretchMode::PreservePitch
+			: stretch == "rubberband" ? WarpStretchMode::RubberBand
+			: WarpStretchMode::Resample;
 
 		m_warp.clear();
 		if (count > 0 && !m_warp.set(std::span<const WarpMarker>(markers.data(), count)))

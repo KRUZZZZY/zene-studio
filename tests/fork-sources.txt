@@ -617,6 +617,7 @@ include/RoutingChainNodes.h
 include/RoutingGraph.h
 include/RoutingNode.h
 include/RoutingNodes.h
+include/RubberBandStretch.h
 include/SafeStart.h
 include/SampleFrameRingBuffer.h
 include/SampleRecordAccumulator.h
@@ -1033,6 +1034,7 @@ src/core/RoutingChainNodes.cpp
 src/core/RoutingGraph.cpp
 src/core/RoutingNode.cpp
 src/core/RoutingNodes.cpp
+src/core/RubberBandStretch.cpp
 src/core/SafeStart.cpp
 src/core/SampleOperators.cpp
 src/core/SampleOperators.h

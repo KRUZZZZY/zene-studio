@@ -28,6 +28,7 @@
 #include <memory>
 #include <span>
 #include "Clip.h"
+#include "RubberBandStretch.h"
 #include "Sample.h"
 #include "SampleWindow.h"
 #include "WarpMarkers.h"
@@ -135,6 +136,16 @@ public:
 	WarpStretchMode warpStretchMode() const { return m_stretchMode; }
 	void setWarpStretchMode(WarpStretchMode mode);
 
+	/*! The Rubber Band voices this clip's play handles claim (owner decision
+	 *  12), or nullptr. Built on the control thread the first time the clip is
+	 *  in the RubberBand mode - by the setter, a restore or a copy - and kept
+	 *  for the clip's lifetime, because a handle may still hold a voice when
+	 *  the mode changes back. */
+	RubberBandPool* rubberBandPool() const { return m_rubberBand.get(); }
+
+	//! Clip::restoreState plus the Rubber Band pool a restored mode may need.
+	void restoreState(const QDomElement& element) override;
+
 	//! The tempo the clip was recorded at, in BPM; only read in `SourceTempo`.
 	float sourceTempo() const { return m_sourceTempo; }
 	void setSourceTempo(float bpm);
@@ -186,6 +197,10 @@ private:
 	// to Clip with its `<warp>` serialisation (SPEC-ARCH-4 census row 5); the
 	// accessors and the mapping above read the inherited members unchanged.
 	BoolModel m_recordModel;
+	//! See rubberBandPool(); never replaced once built.
+	std::unique_ptr<RubberBandPool> m_rubberBand;
+	//! Builds m_rubberBand if the mode asks for it and it does not exist yet.
+	void ensureRubberBandPool();
 	bool m_isPlaying;
 	int m_startFrameOffset;
 

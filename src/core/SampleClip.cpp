@@ -109,6 +109,9 @@ SampleClip::SampleClip(const SampleClip& orig) :
 	connect( this, SIGNAL(positionChanged()), this, SLOT(updateTrackClips()));
 
 	updateTrackClips();
+	// A copy carries the mode (Clip's copy constructor) but never the source's
+	// voices: each clip claims from its own pool.
+	ensureRubberBandPool();
 }
 
 
@@ -352,8 +355,29 @@ void SampleClip::setWarpStretchMode(WarpStretchMode mode)
 	// handle construction, so a change takes effect on the next playback pass.
 	if (m_stretchMode == mode) { return; }
 	m_stretchMode = mode;
+	ensureRubberBandPool();
 	Engine::getSong()->setModified();
 	emit sampleChanged();
+}
+
+
+void SampleClip::restoreState(const QDomElement& element)
+{
+	Clip::restoreState(element);
+	// A load, a paste or an undo can bring the RubberBand mode back; the voices
+	// have to exist before the next play handle looks for them, and building
+	// them is the one step the audio thread must never take.
+	ensureRubberBandPool();
+}
+
+
+void SampleClip::ensureRubberBandPool()
+{
+	if (m_stretchMode != WarpStretchMode::RubberBand || m_rubberBand || !RubberBandPool::available())
+	{
+		return;
+	}
+	m_rubberBand = std::make_unique<RubberBandPool>(m_sample.sampleRate());
 }
 
 

@@ -279,3 +279,51 @@ QT_QPA_PLATFORM=offscreen ./SampleClipStretchTest -v1
 ```
 
 Raw logs for this lane: `/home/kruzzzzy/zene-030-wstretch-logs/`.
+
+## 7. Rubber Band, the optional third mode (owner decision 12, 040/rubberband)
+
+WSOLA stays the default pitch-preserving stretch. `warp.stretch mode:"rubberband"` (persisted as
+`<warp stretch="rubberband">`, `WarpStretchMode::RubberBand`) renders the same rate change through
+Rubber Band 3's R3 ("finer") engine in real-time mode, for tonal and polyphonic material where
+WSOLA's ±128-frame alignment search runs out (§5). The library is an OPTIONAL dependency
+(`WANT_RUBBERBAND`, default ON, pkg-config `rubberband>=3.0`; GPL-2.0-or-later, compatible):
+
+- **Without it:** `warp.stretch` refuses the mode (`refused`, not a silent WSOLA), a file that asks
+  for it still loads, keeps asking and renders through WSOLA, and `warp.list` reports
+  `stretch_algorithm:"wsola"` so a caller can see which algorithm rendered.
+- **Timeline:** the speed the play handle computes is the one WSOLA gets, so both modes put the same
+  source on the same timeline. The start pad and start delay are fed and discarded, so output frame
+  0 is source frame 0. A pitch scale of source rate over output rate corrects a source recorded at
+  another rate (the stretcher keeps a period in samples).
+
+**Realtime, measured and not assumed.** A malloc/`posix_memalign` interposer on the calling thread
+(Rubber Band allocates through `posix_memalign`, which an operator-new probe cannot see) showed that
+with 3.3.0/R3 `process`, `retrieve`, `setTimeRatio` and `setPitchScale` allocate nothing once the
+stretcher exists, but **`reset()` allocates twice on every call** (the R2 "faster" engine allocates
+on a ratio change instead, which is why R3 is the engine). So:
+
+- a clip in the mode owns a `RubberBandPool` of **two voices**, built on the control thread by the
+  setter, a restore (load, paste, undo) or a copy, and kept for the clip's lifetime;
+- a play handle **claims** a ready voice with one compare-and-swap on the audio thread and releases
+  it **dirty** with one atomic store;
+- a single recycler thread polls one atomic flag every 4 ms and `reset()`s dirty voices off the
+  audio thread;
+- a handle that finds no ready voice (a third concurrent pass, or a re-trigger within the recycle
+  window) renders through **WSOLA**, and the pool counts the miss (`RubberBandPool::misses()`).
+  This is the documented fallback: that one pass is the WSOLA render, not silence.
+
+**Proofs** (`tests/src/tracks/SampleClipRubberBandTest.cpp`, same fixture as §4):
+
+| Row | Measured |
+| --- | --- |
+| 2× warp, 440 / 660 / 880 / 1320 Hz bins | 0.5000 / 0.3000 / 0.0000 / 0.0000 |
+| Half-rate source, 440 / 220 Hz bins | 0.4829 / 0.0006 |
+| Allocations: `reset()` (the probe's negative control) / claim / 32 periods | 2 / 0 / 0 |
+| Pool | a third concurrent handle misses once and still renders (WSOLA); released voices come back through `recycleNow()` and through the thread alone |
+
+The test also checks that the Rubber Band render has the WSOLA render's length and differs from it:
+the voice really rendered, not the fallback.
+
+**Not done:** a GUI selector (no stretch mode has one yet: the modes live on the agent surface and in the
+file), per-clip formant or transient options, and a CPU figure for R3
+against WSOLA on the bench projects.

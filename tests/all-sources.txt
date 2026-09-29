@@ -426,6 +426,7 @@ include/RoutingGraph.h
 include/RoutingNode.h
 include/RoutingNodes.h
 include/RowTableView.h
+include/RubberBandStretch.h
 include/Rubberband.h
 include/SafeStart.h
 include/Sample.h
@@ -1358,6 +1359,7 @@ src/core/RoutingChainNodes.cpp
 src/core/RoutingGraph.cpp
 src/core/RoutingNode.cpp
 src/core/RoutingNodes.cpp
+src/core/RubberBandStretch.cpp
 src/core/SafeStart.cpp
 src/core/Sample.cpp
 src/core/SampleBuffer.cpp
@@ -1831,6 +1833,7 @@ tests/src/plugins/Vst3InstrumentTest.cpp
 tests/src/plugins/ZynSeparateProcessTest.cpp
 tests/src/tracks/AutomationTrackTest.cpp
 tests/src/tracks/HeadlessGuiGuardTest.cpp
+tests/src/tracks/SampleClipRubberBandTest.cpp
 tests/src/tracks/SampleClipStretchTest.cpp
 tests/src/tracks/SampleClipWarpTest.cpp
 tests/src/tracks/SampleClipWindowTest.cpp
