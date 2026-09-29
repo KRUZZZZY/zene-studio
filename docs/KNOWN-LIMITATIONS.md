@@ -112,7 +112,10 @@ that is this page's fault — report it and it gets added.
   action types, chance weighting, linked/unlinked timing) and the performance can be recorded into the
   arrangement ring and landed as timeline clips — through `session.follow_set` /
   `session.follow_get_state` / `session.arrangement_record_arm` / `_status` / `_land` /
-  `session.back_to_arrangement`, and through nothing else: there is **no Follow Action editor, no
+  `session.back_to_arrangement` (2026-09-29, R5.2: and SCENE chains - `session.set_scene follow_actions`
+  persists one, `session.scene_follow_set` arms it, and a launched row's chain moves the whole row and
+  overrides its cells' chains; `session.set_slot follow_actions` is now how a cell's chain is persisted,
+  which no socket path could do before), and through nothing else: there is **no Follow Action editor, no
   Arrangement Record button, no take lane and no Back-to-Arrangement light**, and the clip-launch grid
   (#598) is **out of 0.3.0**. A landed clip carries the recorded **position and length**, not the
   session slot's notes (`pattern` reports the reference it names), so the "rendered audio matches the
@@ -296,7 +299,9 @@ that is this page's fault — report it and it gets added.
   (R3.3: a note plays where the composite selects its clip's lane at the note's start), and `comp.audition` plays
   one lane whole. Still absent: the per-segment `srcpos` slip is recorded but not applied; there is **no lane
   geometry, no lane handle, no comping gesture and no waveform drawing** anywhere in `src/gui/`; and there is **no
-  flatten** (the destructive bounce a comp can end in).*
+  flatten** (the destructive bounce a comp can end in). *(2026-09-29, R3.2: `clip.consolidate` is that flatten for
+  a region of a sample track - every lane through the composite's gate, one clip back, one undo restores. A clip
+  crossing the region's edge is refused rather than cut, and a MIDI region is not consolidated.)**
 - **The modulation layer is in the engine and on the socket, and there is no interface for it.**
   Modulators (`modulator.*`, ten ids with `note.expression.*`) drive device parameters in a mixer channel's rack
   chains by a relative depth, on the audio path, once per block — `include/ModulationLayer.h`,
@@ -537,6 +542,13 @@ that is this page's fault — report it and it gets added.
 - **Recording is a two-track prototype.** Two input channels captured into two tracks, with the capture path
   hardware-verified. Arbitrary input counts and input monitoring are not implemented, and the default Linux
   ALSA backend has **no capture path at all** — recording needs JACK or SDL.
+  *(Updated 2026-09-29, R2.1: input monitoring IS implemented - `track.set_monitor off|auto|in`, reported by
+  `track.get_state`. An audio track monitors its record route's input channel through its own devices and
+  fader; `auto` passes while the track is armed and not playing a clip. An instrument track takes `off` or
+  `in` only - `auto` is refused, because the MIDI thread cannot read the route's arm without a lock - and its
+  default stays `in`, the old behaviour; the plan's "MIDI Auto" default is not taken for that reason. The
+  monitored signal is one engine period late plus the device's own latency: there is no latency-compensated
+  recording yet (R2.2).)*
 - **Shutdown waits rather than aborts, and that is deliberate.** This release fixes a crash where the
   application could die on exit (`QThread: Destroyed while thread is still running`) because the engine gave up
   waiting for an audio worker. The fix makes that wait unbounded: if a job ever failed to return, shutdown
