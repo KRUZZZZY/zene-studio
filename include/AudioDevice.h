@@ -73,6 +73,18 @@ public:
 	void setSampleRateForTesting(const sample_rate_t _new_sr) { setSampleRate(_new_sr); }
 #endif
 
+	/*! R2.2: the device's own latency, in frames at its rate - input jack to the engine's
+	 *  input buffer, and the engine's output buffer to the output jack. 0 when the backend
+	 *  reports none (in this build JACK reports both; the Dummy reports what its loopback
+	 *  is configured with; the others report nothing). */
+	virtual f_cnt_t inputLatencyFrames() const { return 0; }
+	virtual f_cnt_t outputLatencyFrames() const { return 0; }
+	/*! R2.2: the frames one capture push carries. Input captured during one push is read by
+	 *  the NEXT render (the engine's staging ring), so a take lags the output by this much
+	 *  beyond the two latencies above. The device's buffer by default; the Dummy pushes one
+	 *  engine period per render. */
+	virtual f_cnt_t captureBlockFrames() const;
+
 	void startProcessing();
 
 	void stopProcessing();
@@ -91,6 +103,7 @@ protected:
 	ch_cnt_t channels() const { return m_channels; }
 
 	AudioEngine* audioEngine() { return m_audioEngine; }
+	const AudioEngine* audioEngine() const { return m_audioEngine; }
 
 	void setSampleRate(const sample_rate_t _new_sr) { m_sampleRate = _new_sr; }
 	void setChannels(const ch_cnt_t channels) { m_channels = channels; }

@@ -547,8 +547,14 @@ that is this page's fault — report it and it gets added.
   fader; `auto` passes while the track is armed and not playing a clip. An instrument track takes `off` or
   `in` only - `auto` is refused, because the MIDI thread cannot read the route's arm without a lock - and its
   default stays `in`, the old behaviour; the plan's "MIDI Auto" default is not taken for that reason. The
-  monitored signal is one engine period late plus the device's own latency: there is no latency-compensated
-  recording yet (R2.2).)*
+  monitored signal is one engine period late plus the device's own latency. R2.2: a take recorded into a
+  record-armed clip is shifted back by the recording round trip (`record.get_state` `latency_frames`: the
+  device's two latencies, one capture block and one engine output period) and lands on the playback it was
+  performed against (RecordingLatencyTest: within one frame through the Dummy loopback). Only JACK reports
+  real device latencies; ALSA, PulseAudio, PortAudio and SDL report 0, so on those the device term is
+  missing and a take lands late by the device's own buffering. Clip recording itself had recorded nothing
+  since #611 (BUGS_FOUND 11.8), and the routed recorder (`record.arm_track`) writes a file, not a clip, so
+  it is not compensated.)*
 - **Shutdown waits rather than aborts, and that is deliberate.** This release fixes a crash where the
   application could die on exit (`QThread: Destroyed while thread is still running`) because the engine gave up
   waiting for an audio worker. The fix makes that wait unbounded: if a job ever failed to return, shutdown

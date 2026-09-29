@@ -674,6 +674,24 @@ QMenu* AudioJack::setupWidget::buildMenu(QToolButton* toolButton, const std::vec
 }
 
 
+f_cnt_t AudioJack::inputLatencyFrames() const
+{
+	if (m_inputPorts.empty() || m_inputPorts[0] == nullptr) { return 0; }
+	jack_latency_range_t range{};
+	jack_port_get_latency_range(m_inputPorts[0], JackCaptureLatency, &range);
+	return static_cast<f_cnt_t>(range.max);
+}
+
+
+f_cnt_t AudioJack::outputLatencyFrames() const
+{
+	if (m_outputPorts.empty() || m_outputPorts[0] == nullptr) { return 0; }
+	jack_latency_range_t range{};
+	jack_port_get_latency_range(m_outputPorts[0], JackPlaybackLatency, &range);
+	return static_cast<f_cnt_t>(range.max);
+}
+
+
 } // namespace lmms
 
 #endif // LMMS_HAVE_JACK

@@ -347,6 +347,12 @@ public:
 	 */
 	f_cnt_t framesPerAudioBuffer() const { return m_framesPerAudioBuffer; }
 
+	/*! R2.2: how far a recorded take lags what the engine was playing when it was captured -
+	 *  the device's output and input latency, one capture block of input staging
+	 *  (AudioDevice.h) and one period of the engine's own output double buffer. A take shifted back by this lines up with the playback it was
+	 *  performed against. 0 with no device. */
+	f_cnt_t recordingLatencyFrames() const { return m_recordingLatency.load(std::memory_order_relaxed); }
+
 	/**
 	 * @brief Renders the next audio period.
 	 *
@@ -442,7 +448,13 @@ private:
 	AudioEngine( bool renderOnly );
 	~AudioEngine() override;
 
-	void startProcessing() { m_audioDev->startProcessing(); }
+	void startProcessing()
+	{
+		m_audioDev->startProcessing();
+		refreshRecordingLatency();
+	}
+	//! R2.2: re-reads the device's figures into the cached round trip (off the audio thread).
+	void refreshRecordingLatency();
 	void stopProcessing() { m_audioDev->stopProcessing(); }
 
 
@@ -464,6 +476,8 @@ private:
 	std::vector<AudioBusHandle*> m_audioBusHandles;
 
 	f_cnt_t m_framesPerAudioBuffer;
+	//! R2.2: the cached round trip; the audio thread reads it when a take starts.
+	std::atomic<f_cnt_t> m_recordingLatency{0};
 	f_cnt_t m_framesPerPeriod;
 	sample_rate_t m_baseSampleRate;
 

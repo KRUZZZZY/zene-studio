@@ -24,11 +24,14 @@
 
 
 #include "SampleRecordHandle.h"
+
+#include <algorithm>
 #include "AudioEngine.h"
 #include "Engine.h"
 #include "PatternTrack.h"
 #include "SampleBuffer.h"
 #include "SampleClip.h"
+#include "SampleTrack.h"
 #include "SampleRecordAccumulator.h"
 
 
@@ -44,8 +47,18 @@ SampleRecordHandle::SampleRecordHandle( SampleClip* clip ) :
 	m_minLength( clip->length() ),
 	m_track( clip->getTrack() ),
 	m_patternTrack( nullptr ),
-	m_clip( clip )
+	m_clip( clip ),
+	// R2.2: the round trip this take lags the playback by - dropped from its head, so the
+	// take lines up with what was playing when it was performed. A cached atomic: this
+	// constructor runs on the audio thread (SampleTrack::play).
+	m_compensationFrames( Engine::audioEngine() != nullptr ? Engine::audioEngine()->recordingLatencyFrames() : 0 )
 {
+	// AudioEngine::addPlayHandle registers every handle with its bus, and this one had none:
+	// the first record-armed clip that reached the engine dereferenced a null bus (BUGS_FOUND
+	// 11.8 - unreachable until the window gate below stopped hiding it). It joins its track's
+	// bus and uses no buffer, so the bus mixes nothing from it.
+	setAudioBusHandle( static_cast<SampleTrack*>( clip->getTrack() )->audioBusHandle() );
+	setUsesBuffer( false );
 }
 
 
@@ -69,7 +82,11 @@ SampleRecordHandle::~SampleRecordHandle()
 void SampleRecordHandle::play( std::span<SampleFrame> /*buffer*/ )
 {
 	const SampleFrame* recbuf = Engine::audioEngine()->inputBuffer();
-	const f_cnt_t frames = Engine::audioEngine()->inputBufferFrames();
+	f_cnt_t frames = Engine::audioEngine()->inputBufferFrames();
+	const f_cnt_t skipped = std::min( frames, m_compensationFrames );
+	m_compensationFrames -= skipped;
+	recbuf += skipped;
+	frames -= skipped;
 	writeBuffer( recbuf, frames );
 	m_framesRecorded += frames;
 
