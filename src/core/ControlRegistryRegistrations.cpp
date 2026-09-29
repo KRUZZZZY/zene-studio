@@ -100,6 +100,7 @@ void registerControlCommands(ControlRegistry& registry)
 	registerClipCommands(registry);
 	registerClipEditsCommands(registry);
 	registerClipConsolidateCommands(registry);
+	registerTrackMonitorCommands(registry);
 	registerClipTrimCommands(registry);
 	// The destructive waveform editor's first slice (board card #706): the
 	// sample.* group over SampleClip's non-destructive model - the generator,

@@ -240,6 +240,7 @@ include/ImportDetectionDsp.h
 include/ImportFilter.h
 include/InlineAutomation.h
 include/InputChannelRing.h
+include/InputMonitor.h
 include/Instrument.h
 include/InstrumentFunctionViews.h
 include/InstrumentFunctions.h
@@ -345,6 +346,7 @@ include/Model.h
 include/ModelView.h
 include/ModelVisitor.h
 include/ModulationLayer.h
+include/MonitorMode.h
 include/MpeExpression.h
 include/MultiTrackRecorder.h
 include/NStateButton.h
@@ -1087,6 +1089,7 @@ src/core/ControlCommandsMixer.cpp
 src/core/ControlCommandsMixerRoutes.cpp
 src/core/ControlCommandsModulator.cpp
 src/core/ControlCommandsModulatorRoutes.cpp
+src/core/ControlCommandsMonitor.cpp
 src/core/ControlCommandsMts.cpp
 src/core/ControlCommandsNoteExpression.cpp
 src/core/ControlCommandsNoteProbability.cpp
@@ -1276,6 +1279,7 @@ src/core/ImportDetectionSpectrum.cpp
 src/core/ImportDetectionSpectrum.h
 src/core/ImportFilter.cpp
 src/core/InlineAutomation.cpp
+src/core/InputMonitor.cpp
 src/core/Instrument.cpp
 src/core/InstrumentFunctions.cpp
 src/core/InstrumentPlayHandle.cpp
@@ -1701,6 +1705,7 @@ tests/src/core/ExportWavDitherTest.cpp
 tests/src/core/GrooveTemplateTest.cpp
 tests/src/core/GrooveTestSupport.h
 tests/src/core/ImportDetectionTest.cpp
+tests/src/core/InputMonitorTest.cpp
 tests/src/core/LanesUpconvertTest.cpp
 tests/src/core/LoudnessReportTest.cpp
 tests/src/core/LufsMeterTest.cpp

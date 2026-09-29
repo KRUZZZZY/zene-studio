@@ -32,6 +32,7 @@
 #include <QColor>
 
 #include "AutomatableModel.h"
+#include "MonitorMode.h"
 #include "JournallingObject.h"
 #include "LmmsTypes.h"
 #include <optional>
@@ -170,6 +171,20 @@ public:
 	 *  Empty by default, and an empty one writes no element at all. */
 	TakeLaneModel& takeLanes() { return m_takeLanes; }
 	const TakeLaneModel& takeLanes() const { return m_takeLanes; }
+
+	/*! R2.1: how the track treats its live input (InputMonitor.h). Read on the audio and
+	 *  MIDI threads, so it is an atomic. The default is the behaviour the track type had
+	 *  before monitoring existed - an audio track heard no input (Off), an instrument track
+	 *  played every incoming note (In) - and only a non-default mode is saved. */
+	MonitorMode monitorMode() const noexcept
+	{
+		return static_cast<MonitorMode>(m_monitorMode.load(std::memory_order_relaxed));
+	}
+	void setMonitorMode(MonitorMode mode);
+	MonitorMode defaultMonitorMode() const noexcept
+	{
+		return m_type == Type::Sample ? MonitorMode::Off : MonitorMode::In;
+	}
 
 	/*! A FROZEN TAKE: this track's own output rendered to audio, which the
 	 *  engine then plays INSTEAD of the clips it was rendered from.
@@ -450,6 +465,15 @@ private:
 	//! Take lanes + composite (comping; docs/COMPING.md). Serialised by
 	//! Track::saveTrack as a <takelanes> child, absent when empty.
 	TakeLaneModel m_takeLanes;
+
+	std::atomic<int> m_monitorMode{static_cast<int>(MonitorMode::Off)};
+
+protected:
+	//! R2.1: a mode change the track type acts on (SampleTrack adds or removes its
+	//! monitor handle). Model thread.
+	virtual void monitorModeChanged() {}
+
+private:
 
 	//! The children of this track's <track> element that the last load did not
 	//! claim, kept verbatim and re-emitted by saveTrack() (SPEC-ARCH-4 1.6.1).

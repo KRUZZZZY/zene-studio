@@ -610,7 +610,8 @@ void AudioEngine::clearInternal()
 	// TODO: m_midiClient->noteOffAll();
 	for (auto ph : m_playHandles)
 	{
-		if (ph->type() != PlayHandle::Type::InstrumentPlayHandle)
+		if (ph->type() != PlayHandle::Type::InstrumentPlayHandle
+			&& ph->type() != PlayHandle::Type::InputMonitorHandle)
 		{
 			m_playHandlesToRemove.push_back(ph);
 		}
@@ -699,7 +700,8 @@ bool AudioEngine::addPlayHandle( PlayHandle* handle )
 	// Only add play handles if we have the CPU capacity to process them.
 	// Instrument play handles are not added during playback, but when the
 	// associated instrument is created, so add those unconditionally.
-	if (handle->type() == PlayHandle::Type::InstrumentPlayHandle || !criticalXRuns())
+	if (handle->type() == PlayHandle::Type::InstrumentPlayHandle
+		|| handle->type() == PlayHandle::Type::InputMonitorHandle || !criticalXRuns())
 	{
 		m_newPlayHandles.push( handle );
 		handle->audioBusHandle()->addPlayHandle(handle);

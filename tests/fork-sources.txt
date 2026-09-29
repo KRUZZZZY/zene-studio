@@ -567,6 +567,7 @@ include/GrooveTemplate.h
 include/ImportDetection.h
 include/ImportDetectionDsp.h
 include/InputChannelRing.h
+include/InputMonitor.h
 include/LatencyCompensation.h
 include/LinkPeerTransport.h
 include/LinkSync.h
@@ -583,6 +584,7 @@ include/MidiLearnGui.h
 include/MidiOutQueue.h
 include/MidiReconnect.h
 include/ModulationLayer.h
+include/MonitorMode.h
 include/MpeExpression.h
 include/MultiTrackRecorder.h
 include/NamespaceRegistry.h
@@ -813,6 +815,7 @@ src/core/ControlCommandsMixer.cpp
 src/core/ControlCommandsMixerRoutes.cpp
 src/core/ControlCommandsModulator.cpp
 src/core/ControlCommandsModulatorRoutes.cpp
+src/core/ControlCommandsMonitor.cpp
 src/core/ControlCommandsMts.cpp
 src/core/ControlCommandsNoteExpression.cpp
 src/core/ControlCommandsNoteProbability.cpp
@@ -992,6 +995,7 @@ src/core/ImportDetectionDsp.cpp
 src/core/ImportDetectionKey.cpp
 src/core/ImportDetectionSpectrum.cpp
 src/core/ImportDetectionSpectrum.h
+src/core/InputMonitor.cpp
 src/core/LatencyCompensation.cpp
 src/core/LinkSync.cpp
 src/core/LinkSyncWire.cpp

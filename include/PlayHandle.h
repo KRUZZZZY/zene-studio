@@ -54,7 +54,10 @@ public:
 		NotePlayHandle = 0x01,
 		InstrumentPlayHandle = 0x02,
 		SamplePlayHandle = 0x04,
-		PresetPreviewHandle = 0x08
+		PresetPreviewHandle = 0x08,
+		//! R2.1: a sample track's input monitor (InputMonitor.h) - persistent, like an
+		//! instrument's own handle: the song-stop clear keeps it.
+		InputMonitorHandle = 0x10
 	} ;
 	using Types = Flags<Type>;
 

@@ -30,6 +30,8 @@
 #include "ControlReversibility.h"
 #include "ControlVocabulary.h"
 #include "Engine.h"
+#include "SampleTrack.h"
+#include "InputMonitor.h"
 #include "Song.h"
 #include "Track.h"
 #include "TrackFolder.h"
@@ -69,6 +71,14 @@ QJsonObject trackState(Track* track, int index)
 	entry.insert(QStringLiteral("type"), trackTypeName(track->type()));
 	entry.insert(QStringLiteral("muted"), track->isMuted());
 	entry.insert(QStringLiteral("soloed"), track->isSolo());
+	// R2.1: the monitor mode, and - for an audio track that monitors - the frames its gate
+	// has passed, the engine's own reading of whether the input is being heard.
+	entry.insert(QStringLiteral("monitor"), monitorModeName(track->monitorMode()));
+	if (const auto* sampleTrack = dynamic_cast<const SampleTrack*>(track))
+	{
+		entry.insert(QStringLiteral("monitor_frames"), sampleTrack->monitorHandle() != nullptr
+			? static_cast<double>(sampleTrack->monitorHandle()->framesPassed()) : 0.0);
+	}
 	// The frozen take (freeze / bounce-in-place): whether this track plays a
 	// render instead of its clips (freeze.track / freeze.region), the file, the
 	// window it covers, and how many clips the freeze muted. `audio_ready` is
@@ -318,6 +328,8 @@ void registerTransportCommands(ControlRegistry& registry)
 			{QStringLiteral("folder_mode"), stringProperty()},
 			{QStringLiteral("index"), numberProperty()},
 			{QStringLiteral("muted"), booleanProperty()},
+			{QStringLiteral("monitor"), enumProperty({QStringLiteral("off"), QStringLiteral("auto"), QStringLiteral("in")})},
+			{QStringLiteral("monitor_frames"), numberProperty()},
 			{QStringLiteral("pinned"), booleanProperty()},
 			{QStringLiteral("soloed"), booleanProperty()},
 			{QStringLiteral("visible"), booleanProperty()},

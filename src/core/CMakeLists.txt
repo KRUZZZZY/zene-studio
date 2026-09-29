@@ -160,6 +160,7 @@ set(LMMS_SRCS
 	core/ControlCommandsArrangement.cpp
 	core/ControlCommandsClip.cpp
 	core/ControlCommandsConsolidate.cpp
+	core/ControlCommandsMonitor.cpp
 	core/ControlCommandsClipEdits.cpp
 	# clip.trim / clip.slip (0.3.0 verb wave): the clip group's edge-editing verbs.
 	# Split into its own TU because ControlCommandsClipEdits.cpp is at the file
@@ -190,6 +191,7 @@ set(LMMS_SRCS
 	core/ControlCommandsComp.cpp
 	core/ControlCommandsCompEdits.cpp
 	core/ClipConsolidate.cpp
+	core/InputMonitor.cpp
 	core/ClipEdits.cpp
 	core/ControlAutomationSupport.cpp
 	core/ControlBrowserSupport.cpp

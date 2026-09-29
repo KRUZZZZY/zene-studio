@@ -85,6 +85,11 @@ const ReversibilityRow kRows[] = {
 		"the name is part of the Track's own serialized state",
 		"ProjectJournal (Track checkpoint)",
 		""),
+	R("track.set_monitor", RC::TrueInverse, true,
+		"the monitor mode is a Track attribute, written only when not the type's default and "
+		"reset on absence by Track::loadTrack",
+		"ProjectJournal (Track checkpoint)",
+		""),
 	R("track.set_mute", RC::TrueInverse, true,
 		"the muted flag is a BoolModel, i.e. a JournallingObject of its own",
 		"ProjectJournal (Track mute BoolModel checkpoint)",
