@@ -210,6 +210,9 @@ void SessionScheduler::evaluateFollow( ActiveSlot& slot, const SessionClockConte
 	{
 		return;
 	}
+	// R5.2: a launched row with a chain of its own moves the whole row; the cell's
+	// chain would move one column out from under it.
+	if( sceneOverrides( slot ) ) { return; }
 	const FollowPlan* plan = planFor( slot.track, slot.scene );
 	if( plan == nullptr || !plan->enabled || plan->count <= 0 )
 	{
@@ -408,6 +411,7 @@ bool SessionScheduler::consumeResetRequest() noexcept
 	{
 		installed = InstalledFollowPlan{};
 	}
+	resetSceneFollow();
 	m_followArmed.store( 0, std::memory_order_relaxed );
 	m_followArmedMask.store( 0, std::memory_order_relaxed );
 	m_followFires.store( 0, std::memory_order_relaxed );

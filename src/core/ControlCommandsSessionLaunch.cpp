@@ -210,17 +210,22 @@ void registerLaunchScene(ControlRegistry& registry)
 		int syncTick = 0;
 		bool inSync = true;
 		publishContentBeforeLaunch(song);
+		LaunchQuantisation rowQuantisation = LaunchQuantisation::None;
 		for (int track = 0; track < columns; ++track)
 		{
 			const ClipSlot& slot = model->slot(track, scene);
 			if (slot.isEmpty()) { continue; }
-			const QJsonObject entry = launchOne(song->sessionScheduler(), ctx, track, scene,
-				launchRequestOf(*model, slot, args));
+			const LaunchRequest request = launchRequestOf(*model, slot, args);
+			if (launched.isEmpty()) { rowQuantisation = request.quantisation; }
+			const QJsonObject entry = launchOne(song->sessionScheduler(), ctx, track, scene, request);
 			const int at = entry.value(QStringLiteral("scheduled_tick")).toInt();
 			if (launched.isEmpty()) { syncTick = at; }
 			else if (at != syncTick) { inSync = false; }
 			launched.append(entry);
 		}
+		// R5.2: the row is now the launched scene, from the line its first cell resolved
+		// to - which is what a scene's own Follow Action chain is timed from.
+		if (!launched.isEmpty()) { song->sessionScheduler().requestSceneLaunch(scene, rowQuantisation); }
 		QJsonObject result;
 		result.insert(QStringLiteral("scene"), scene);
 		result.insert(QStringLiteral("clips"), launched.size());

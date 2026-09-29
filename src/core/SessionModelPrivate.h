@@ -126,7 +126,9 @@ constexpr int MaxScenes = 512;
 //! verbatim as unclaimed instead of half-loading it.
 inline bool scenesSectionDims( const QDomElement& section, int& tracks, int& scenes )
 {
-	if( section.attribute( QStringLiteral( "v" ) ) != QLatin1String( "1" )
+	// v2 (R5.2) is v1 plus scene Follow Action chains; this build reads both.
+	const QString version = section.attribute( QStringLiteral( "v" ) );
+	if( ( version != QLatin1String( "1" ) && version != QLatin1String( "2" ) )
 		|| !section.hasAttribute( QStringLiteral( "tracks" ) )
 		|| !section.hasAttribute( QStringLiteral( "scenes" ) ) )
 	{

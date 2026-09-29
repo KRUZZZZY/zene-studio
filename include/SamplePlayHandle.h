@@ -73,6 +73,12 @@ public:
 	bool isFromTrack( const Track * _track ) const override;
 
 	f_cnt_t totalFrames() const;
+
+	/*! An offline render of the clip's own audio (clip.consolidate) sounds whatever the
+	 *  track's mute says: consolidating a muted track must not bake silence. Set on a
+	 *  handle that never reaches the engine; the live path never sets it. */
+	void setIgnoresTrackMute(bool ignores) { m_ignoresTrackMute = ignores; }
+
 	inline f_cnt_t framesDone() const
 	{
 		return( m_frame );
@@ -144,6 +150,7 @@ private:
 	PatternTrack* m_patternTrack = nullptr;
 	bool m_doneMayReturnTrue = true;
 	bool m_ownAudioBusHandle = false;
+	bool m_ignoresTrackMute = false;
 
 	//! The resampler ratio for the period about to be rendered: the local
 	//! warp rate at the source frame this period starts on, over the natural

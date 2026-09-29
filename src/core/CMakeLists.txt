@@ -95,6 +95,7 @@ SET(LMMS_SESSION_SRCS
 		# as one file) and because the pairing both halves share lives in
 		# core/ControlCommandsSessionRecordInternal.h.
 		core/SessionFollow.cpp
+		core/SessionSceneFollow.cpp
 		core/ControlCommandsSessionFollow.cpp
 		core/ControlCommandsSessionRecord.cpp
 		core/ControlCommandsSessionRecordLand.cpp
@@ -158,6 +159,7 @@ set(LMMS_SRCS
 	core/SafeStart.cpp
 	core/ControlCommandsArrangement.cpp
 	core/ControlCommandsClip.cpp
+	core/ControlCommandsConsolidate.cpp
 	core/ControlCommandsClipEdits.cpp
 	# clip.trim / clip.slip (0.3.0 verb wave): the clip group's edge-editing verbs.
 	# Split into its own TU because ControlCommandsClipEdits.cpp is at the file
@@ -187,6 +189,7 @@ set(LMMS_SRCS
 	# the composite half, and the helpers the two share. See docs/COMPING.md.
 	core/ControlCommandsComp.cpp
 	core/ControlCommandsCompEdits.cpp
+	core/ClipConsolidate.cpp
 	core/ClipEdits.cpp
 	core/ControlAutomationSupport.cpp
 	core/ControlBrowserSupport.cpp

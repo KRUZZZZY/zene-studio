@@ -48,6 +48,9 @@
  * tick it scheduled and the tick the audio thread observed.
  */
 
+#include <algorithm>
+#include <vector>
+
 #include <QJsonArray>
 #include <QJsonObject>
 #include <QJsonValue>
@@ -136,6 +139,48 @@ bool followActionFromJson(const QJsonObject& entry, int sceneCount, FollowAction
 	}
 	return true;
 }
+
+} // namespace
+
+namespace sessioncontrol
+{
+
+bool followChainFromJson(const QJsonValue& value, int sceneCount, std::vector<FollowAction>* chain,
+	QString* error)
+{
+	if (!value.isArray())
+	{
+		*error = QStringLiteral("'follow_actions' is an array of Follow Action entries");
+		return false;
+	}
+	const QJsonArray entries = value.toArray();
+	// Refused, never truncated - the engine's rule (followPlanFromArgs below).
+	if (entries.size() > MaxFollowChainEntries)
+	{
+		*error = QStringLiteral("the chain has %1 entries; the engine's table holds %2")
+			.arg(entries.size()).arg(MaxFollowChainEntries);
+		return false;
+	}
+	chain->clear();
+	for (int i = 0; i < entries.size(); ++i)
+	{
+		FollowAction action;
+		if (!entries.at(i).isObject()
+			|| !followActionFromJson(entries.at(i).toObject(), sceneCount, &action, error))
+		{
+			*error = QStringLiteral("Follow Action entry %1: %2").arg(i)
+				.arg(entries.at(i).isObject() ? *error : QStringLiteral("not an object"));
+			return false;
+		}
+		chain->push_back(action);
+	}
+	return true;
+}
+
+} // namespace sessioncontrol
+
+namespace
+{
 
 //! Fills `plan` from the args' `actions` array, or from the slot's own persisted
 //! chain when the array is absent.
@@ -232,6 +277,10 @@ QJsonObject followEngineState(const SessionScheduler& scheduler)
 	fire.insert(QStringLiteral("tick"), static_cast<int>(followFireTick(packed)));
 	state.insert(QStringLiteral("last_fire"), fire);
 	state.insert(QStringLiteral("max_plans"), MaxFollowPlans);
+	// R5.2: the row whose chain is running (-1: none), and the scene chains' own count.
+	state.insert(QStringLiteral("active_scene"), scheduler.activeScene());
+	state.insert(QStringLiteral("armed_scenes"), scheduler.armedFollowScenes());
+	state.insert(QStringLiteral("scene_fires"), static_cast<double>(scheduler.sceneFollowFires()));
 	return state;
 }
 
@@ -329,6 +378,104 @@ void registerFollowSet(ControlRegistry& registry)
 	registry.registerCommand(cmd);
 }
 
+/*! R5.2 session.scene_follow_set - arm (or clear) a SCENE's chain, the row-level twin of
+ *  follow_set. Linked timing follows the row's longest cell loop (one bar when no cell has
+ *  one). Not a project edit, for follow_set's reason; the persisted chain is written by
+ *  session.set_scene's `follow_actions`. */
+void registerSceneFollowSet(ControlRegistry& registry)
+{
+	ControlCommand cmd;
+	cmd.id = QStringLiteral("session.scene_follow_set");
+	cmd.group = QStringLiteral("session");
+	cmd.verb = QStringLiteral("scene_follow_set");
+	cmd.description = QStringLiteral("Arm (or clear, with enabled: false) one SCENE's Follow Action "
+		"chain. While that scene is the launched row (session.launch_scene), its chain fires at "
+		"the action time and moves every column playing the row together - Stop, PlayAgain, or "
+		"the row-addressing actions - and it takes precedence over the chains of the row's cells. "
+		"Linked timing is the row's longest cell loop, one bar when none has one. Without "
+		"'actions' the scene's own persisted chain (session.set_scene follow_actions) is used. "
+		"Not a project edit: no transaction is recorded.");
+	cmd.argsSchema = objectSchema({
+		{QStringLiteral("scene"), integerProperty(0, 511)},
+		{QStringLiteral("enabled"), booleanProperty()},
+		{QStringLiteral("actions"), arrayProperty()},
+	}, {QStringLiteral("scene")});
+	cmd.resultSchema = objectSchema({
+		{QStringLiteral("scene"), integerProperty()},
+		{QStringLiteral("enabled"), booleanProperty()},
+		{QStringLiteral("queued"), booleanProperty()},
+		{QStringLiteral("source"), stringProperty()},
+		{QStringLiteral("entries"), integerProperty()},
+		{QStringLiteral("chain"), arrayProperty()},
+		{QStringLiteral("step_ticks"), integerProperty()},
+		{QStringLiteral("row_length_ticks"), integerProperty()},
+		{QStringLiteral("armed_scenes"), integerProperty()},
+	});
+	cmd.mutating = false;
+	cmd.handler = [](const QJsonObject& args) {
+		ControlResult error;
+		SessionModel* model = sessionModelOrNull(&error);
+		if (model == nullptr) { return error; }
+		Song* song = Engine::getSong();
+		const int scene = args.value(QStringLiteral("scene")).toInt();
+		if (scene < 0 || scene >= model->sceneCount())
+		{
+			return ControlResult::failure(ControlErrorKind::InvalidArgs,
+				QStringLiteral("scene %1 is outside the grid's %2 scenes; session.set_grid resizes it")
+					.arg(scene).arg(model->sceneCount()));
+		}
+		FollowPlan plan;
+		plan.enabled = args.value(QStringLiteral("enabled")).toBool(true);
+		plan.sceneCount = model->sceneCount();
+		for (int track = 0; track < model->trackCount(); ++track)
+		{
+			plan.clipLengthTicks = std::max(plan.clipLengthTicks,
+				static_cast<tick_t>(model->slot(track, scene).loopLength()));
+		}
+		std::vector<FollowAction> chain = model->scene(scene).followActions();
+		const bool fromArgs = args.contains(QStringLiteral("actions"));
+		QString reason;
+		if (fromArgs && !followChainFromJson(args.value(QStringLiteral("actions")), plan.sceneCount,
+				&chain, &reason))
+		{
+			return ControlResult::failure(ControlErrorKind::InvalidArgs, reason);
+		}
+		if (plan.enabled && chain.empty())
+		{
+			return ControlResult::failure(ControlErrorKind::InvalidArgs,
+				QStringLiteral("scene %1 has no Follow Action chain yet: session.set_scene "
+					"follow_actions writes one, or pass 'actions' inline").arg(scene));
+		}
+		if (chain.size() > static_cast<std::size_t>(MaxFollowChainEntries))
+		{
+			return ControlResult::failure(ControlErrorKind::InvalidArgs,
+				QStringLiteral("the scene's chain has %1 entries; the engine's table holds %2")
+					.arg(chain.size()).arg(MaxFollowChainEntries));
+		}
+		plan.count = static_cast<int>(chain.size());
+		for (int i = 0; i < plan.count; ++i) { plan.entries[i] = chain[static_cast<std::size_t>(i)]; }
+		SessionScheduler& scheduler = song->sessionScheduler();
+		if (!scheduler.requestSceneFollowPlan(scene, plan))
+		{
+			return ControlResult::failure(ControlErrorKind::Refused,
+				QStringLiteral("the session command queue is full: the plan was dropped"));
+		}
+		QJsonObject result;
+		result.insert(QStringLiteral("scene"), scene);
+		result.insert(QStringLiteral("enabled"), plan.enabled);
+		result.insert(QStringLiteral("queued"), true);
+		result.insert(QStringLiteral("source"), fromArgs ? QStringLiteral("args") : QStringLiteral("scene"));
+		result.insert(QStringLiteral("entries"), plan.count);
+		result.insert(QStringLiteral("chain"), followPlanJson(plan));
+		result.insert(QStringLiteral("step_ticks"),
+			static_cast<int>(followActionTicks(plan, clockOf(*song).ticksPerBar)));
+		result.insert(QStringLiteral("row_length_ticks"), static_cast<int>(plan.clipLengthTicks));
+		result.insert(QStringLiteral("armed_scenes"), scheduler.armedFollowScenes());
+		return ControlResult::success(result);
+	};
+	registry.registerCommand(cmd);
+}
+
 /*! session.set_follow_actions - Live's "Enable Follow Actions Globally".
  *
  *  With it OFF every chain is INERT rather than cleared: the plans stay
@@ -408,6 +555,9 @@ void registerFollowGetState(ControlRegistry& registry)
 		{QStringLiteral("cell"), objectProperty()},
 		{QStringLiteral("chain"), arrayProperty()},
 		{QStringLiteral("chain_step_ticks"), integerProperty()},
+		{QStringLiteral("active_scene"), integerProperty()},
+		{QStringLiteral("armed_scenes"), integerProperty()},
+		{QStringLiteral("scene_fires"), integerProperty()},
 	});
 	cmd.mutating = false;
 	cmd.handler = [](const QJsonObject& args) {
@@ -470,6 +620,7 @@ void registerFollowGetState(ControlRegistry& registry)
 void registerSessionFollowCommands(ControlRegistry& registry)
 {
 	registerFollowSet(registry);
+	registerSceneFollowSet(registry);
 	registerSetFollowActions(registry);
 	registerFollowGetState(registry);
 }

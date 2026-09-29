@@ -337,7 +337,7 @@ void SamplePlayHandle::play( std::span<SampleFrame> buffer )
 		frames -= offset();
 	}
 
-	if( !( m_track && m_track->isMuted() )
+	if( !( m_track && m_track->isMuted() && !m_ignoresTrackMute )
 				&& !(m_patternTrack && m_patternTrack->isMuted()))
 	{
 /*		StereoVolumeVector v =

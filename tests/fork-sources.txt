@@ -511,6 +511,7 @@ include/ChordDetect.h
 include/ChordProgression.h
 include/ChordTrack.h
 include/ChordVocabulary.h
+include/ClipConsolidate.h
 include/ClipEdits.h
 include/ClipLinks.h
 include/CommandPalette.h
@@ -748,6 +749,7 @@ src/core/ChordDetect.cpp
 src/core/ChordProgression.cpp
 src/core/ChordTrack.cpp
 src/core/ChordVocabulary.cpp
+src/core/ClipConsolidate.cpp
 src/core/ClipEdits.cpp
 src/core/ClipLinks.cpp
 src/core/ControlAutomationSupport.cpp
@@ -775,6 +777,7 @@ src/core/ControlCommandsClipTrim.cpp
 src/core/ControlCommandsClock.cpp
 src/core/ControlCommandsComp.cpp
 src/core/ControlCommandsCompEdits.cpp
+src/core/ControlCommandsConsolidate.cpp
 src/core/ControlCommandsControl.cpp
 src/core/ControlCommandsController.cpp
 src/core/ControlCommandsControllerTemplates.cpp
@@ -1059,6 +1062,7 @@ src/core/SessionFollow.cpp
 src/core/SessionModel.cpp
 src/core/SessionModelPrivate.h
 src/core/SessionPlayback.cpp
+src/core/SessionSceneFollow.cpp
 src/core/SessionScheduler.cpp
 src/core/SessionTuning.cpp
 src/core/SessionTuningMtsEsp.cpp

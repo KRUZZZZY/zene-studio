@@ -376,7 +376,13 @@ QDomElement SessionModel::saveScenesSection( QDomDocument& doc, QDomElement& par
 
 	QDomElement section = doc.createElement( QStringLiteral( "z:scenes" ) );
 	parent.appendChild( section );
-	section.setAttribute( QStringLiteral( "v" ), QStringLiteral( "1" ) );
+	// R5.2: v="2" exactly when a scene carries a Follow Action chain. A v1 reader would
+	// load such a section and drop the chain on its next save; it declines v="2" and
+	// preserves the section verbatim instead. Every section without one stays v="1",
+	// byte for byte what this build wrote before scene chains existed.
+	const bool sceneChains = std::any_of( m_scenes.begin(), m_scenes.end(),
+		[]( const Scene& scene ) { return !scene.followActions().empty(); } );
+	section.setAttribute( QStringLiteral( "v" ), sceneChains ? QStringLiteral( "2" ) : QStringLiteral( "1" ) );
 	section.setAttribute( QStringLiteral( "tracks" ), m_trackCount );
 	section.setAttribute( QStringLiteral( "scenes" ), m_sceneCount );
 	section.setAttribute( QStringLiteral( "launchquantisation" ),

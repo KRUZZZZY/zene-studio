@@ -524,6 +524,9 @@ set(LMMS_TESTS
 	src/core/ControlVcaEditGroupsTest.cpp
 	# R3.5: the phase-locked split, trim, slip and fade.
 	src/core/ControlVcaLockedEditsTest.cpp
+	# R3.2: clip.consolidate - the clips' own audio (gain, fades, the composite's gate, a
+	# muted track included) becomes one clip; refusals change nothing; one undo restores.
+	src/core/ClipConsolidateTest.cpp
 	src/core/ScriptBindingsTest.cpp
 	# Feature row 50 (0.3.0): the Lua API's DAW-control half - the mixer channel
 	# and effect-chain bindings. Drives a REAL mixer channel and the chain the
@@ -673,6 +676,9 @@ ENDIF()
 		#     per action time, and the reset that records the stops it ends.
 		src/core/SessionFollowTest.cpp
 		src/core/SessionArrangementRecordTest.cpp
+		# R5.2: Follow Action chains on SCENES - whole rows, precedence over the clip,
+		# the v1/v2 section rule and the socket half (set_slot's missing chain arg).
+		src/core/SessionSceneFollowTest.cpp
 	)
 
 # gcov coverage instrumentation (see WANT_COVERAGE in the top-level

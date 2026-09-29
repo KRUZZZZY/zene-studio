@@ -317,6 +317,13 @@ inline QJsonObject clipSlotState(int track, int scene, const ClipSlot& slot)
 	return state;
 }
 
+/*! A `follow_actions` array into a chain; false (with @a error) on an unknown type, an
+ *  out-of-range field or a chain longer than the engine's table. One parser for
+ *  session.set_slot, session.set_scene and session.scene_follow_set
+ *  (ControlCommandsSessionFollow.cpp). */
+bool followChainFromJson(const QJsonValue& value, int sceneCount, std::vector<FollowAction>* chain,
+	QString* error);
+
 inline QJsonObject sceneState(int index, const Scene& scene)
 {
 	QJsonObject state;
@@ -327,6 +334,9 @@ inline QJsonObject sceneState(int index, const Scene& scene)
 	state.insert(QStringLiteral("timesig_enabled"), scene.timeSigEnabled());
 	state.insert(QStringLiteral("numerator"), scene.timeSigNumerator());
 	state.insert(QStringLiteral("denominator"), scene.timeSigDenominator());
+	QJsonArray follow;
+	for (const FollowAction& action : scene.followActions()) { follow.append(followActionState(action)); }
+	state.insert(QStringLiteral("follow_actions"), follow);
 	return state;
 }
 

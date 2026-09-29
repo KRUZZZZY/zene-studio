@@ -137,6 +137,12 @@ const ReversibilityRow kRows[] = {
 		"the split rewrites the clip list of one Track",
 		"ProjectJournal (Track checkpoint)",
 		""),
+	R("clip.consolidate", RC::TrueInverse, true,
+		"the source clips, the one consolidated clip and the take-lane composite all live in the "
+		"one Track's serialized state; the rendered file is written BEFORE the checkpoint (a failed "
+		"render records nothing) and is left on disk by an undo, under a name no later call reuses",
+		"ProjectJournal (Track checkpoint)",
+		""),
 	R("clip.set_fade", RC::TrueInverse, true,
 		"the two fade ramps are part of the Clip's own serialized state "
 		"(Clip::saveClipEdits writes them onto the clip's element), so the Clip "

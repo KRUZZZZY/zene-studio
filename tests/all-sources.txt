@@ -129,6 +129,7 @@ include/ChordProgression.h
 include/ChordTrack.h
 include/ChordVocabulary.h
 include/Clip.h
+include/ClipConsolidate.h
 include/ClipEdits.h
 include/ClipLinks.h
 include/ClipView.h
@@ -1019,6 +1020,7 @@ src/core/ChordProgression.cpp
 src/core/ChordTrack.cpp
 src/core/ChordVocabulary.cpp
 src/core/Clip.cpp
+src/core/ClipConsolidate.cpp
 src/core/ClipEdits.cpp
 src/core/ClipLinks.cpp
 src/core/Clipboard.cpp
@@ -1049,6 +1051,7 @@ src/core/ControlCommandsClipTrim.cpp
 src/core/ControlCommandsClock.cpp
 src/core/ControlCommandsComp.cpp
 src/core/ControlCommandsCompEdits.cpp
+src/core/ControlCommandsConsolidate.cpp
 src/core/ControlCommandsControl.cpp
 src/core/ControlCommandsController.cpp
 src/core/ControlCommandsControllerTemplates.cpp
@@ -1392,6 +1395,7 @@ src/core/SessionFollow.cpp
 src/core/SessionModel.cpp
 src/core/SessionModelPrivate.h
 src/core/SessionPlayback.cpp
+src/core/SessionSceneFollow.cpp
 src/core/SessionScheduler.cpp
 src/core/SessionTuning.cpp
 src/core/SessionTuningMtsEsp.cpp
@@ -1647,6 +1651,7 @@ tests/src/core/ChordDetectTest.cpp
 tests/src/core/ChordProgressionTest.cpp
 tests/src/core/ChordTestSupport.h
 tests/src/core/ChordTrackTest.cpp
+tests/src/core/ClipConsolidateTest.cpp
 tests/src/core/ClipEditsTest.cpp
 tests/src/core/ClipFadesRenderTest.cpp
 tests/src/core/ClipLinkPersistenceTest.cpp
@@ -1786,6 +1791,7 @@ tests/src/core/SessionFollowTest.cpp
 tests/src/core/SessionModelTest.cpp
 tests/src/core/SessionPlaybackRenderTest.cpp
 tests/src/core/SessionPlaybackTest.cpp
+tests/src/core/SessionSceneFollowTest.cpp
 tests/src/core/SessionSchedulerRenderTest.cpp
 tests/src/core/SessionSchedulerTest.cpp
 tests/src/core/SessionTuningTest.cpp

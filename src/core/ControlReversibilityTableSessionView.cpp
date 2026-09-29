@@ -70,6 +70,14 @@ const ReversibilityRow kSessionViewRows[] = {
 		"session.follow_set enabled: false - the same distinction session.launch_slot "
 		"draws between a launch and an edit",
 		""),
+	R("session.scene_follow_set", RC::NotMutating, false,
+		"installs (or clears) one SCENE's plan in the audio thread's fixed scene-plan table: "
+		"requestSceneFollowPlan queues one POD on the same lock-free command queue and edits no "
+		"model. The PERSISTED chain is a Scene attribute written by session.set_scene, whose own "
+		"row carries the inverse",
+		"nothing to reverse: the arm is engine state, cleared with enabled: false - "
+		"session.follow_set's distinction, one level up",
+		""),
 	R("session.set_follow_actions", RC::NotMutating, false,
 		"flips the audio thread's global Follow Actions flag (one relaxed atomic); it edits no "
 		"model and writes nothing to the project",
