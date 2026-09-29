@@ -534,6 +534,9 @@ set(LMMS_TESTS
 	src/core/RecordingLatencyTest.cpp
 	# R2.3: AudioDevice::publishCaptured, the one capture publisher ALSA/JACK/SDL/PortAudio call.
 	src/core/CapturePublisherTest.cpp
+	# R1.1 + R1.3: the 20 Hz LFO zipper measured at the block rate, and the per-sample
+	# modulation route that beats it by two orders of magnitude without allocating.
+	src/core/ModulationRateTest.cpp
 	src/core/ScriptBindingsTest.cpp
 	# Feature row 50 (0.3.0): the Lua API's DAW-control half - the mixer channel
 	# and effect-chain bindings. Drives a REAL mixer channel and the chain the
