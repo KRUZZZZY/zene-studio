@@ -317,8 +317,23 @@ bool StemModelStore::download(const StemModelSpec& spec,
 	const QString refusal = downloadRefusal(spec, destDir);
 	if (!refusal.isEmpty())
 	{
+		// A file already in place that verifies against the pinned spec IS the download:
+		// nothing is fetched, so neither offline mode nor a dead network refuses it. The
+		// policy refusals (HTTPS, pinned) still come first - an unpinned spec has nothing
+		// to verify a file against.
+		const bool policyAllows = isDownloadUrlAllowed(spec.url)
+			&& !spec.sha256.trimmed().isEmpty() && spec.sizeBytes > 0;
+		if (policyAllows && verify(QDir(destDir).filePath(spec.name + QStringLiteral(".onnx")),
+				spec.sha256, spec.sizeBytes))
+		{
+			return true;
+		}
 		setError(error, refusal);
 		return false;
+	}
+	if (verify(QDir(destDir).filePath(spec.name + QStringLiteral(".onnx")), spec.sha256, spec.sizeBytes))
+	{
+		return true;
 	}
 
 	QDir dir(destDir);

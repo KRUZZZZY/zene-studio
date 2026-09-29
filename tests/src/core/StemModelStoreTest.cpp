@@ -232,6 +232,40 @@ private slots:
 		qunsetenv("LMMS_STEM_OFFLINE");
 		QVERIFY(!StemModelStore::isOffline());
 	}
+
+	//! A file already in place that verifies IS the download: success with no transfer,
+	//! offline included. A file that does not verify is still refused, and left alone.
+	void testAVerifiedFileInPlaceIsSuccessEvenOffline()
+	{
+		QTemporaryDir dir;
+		QVERIFY(dir.isValid());
+		StemModelSpec spec;
+		spec.name = QStringLiteral("inplace");
+		spec.url = QStringLiteral("https://example.invalid/never-contacted.onnx");
+		spec.sha256 = QString::fromLatin1(Sha256OfAbc);
+		spec.sizeBytes = 3;
+		const QString path = QDir(dir.path()).filePath(QStringLiteral("inplace.onnx"));
+		{
+			QFile file(path);
+			QVERIFY(file.open(QIODevice::WriteOnly));
+			file.write("abc");
+		}
+		qputenv("LMMS_STEM_OFFLINE", QByteArrayLiteral("1"));
+		QString error;
+		QVERIFY2(StemModelStore::download(spec, dir.path(), {}, &error), qPrintable(error));
+
+		{
+			QFile file(path);
+			QVERIFY(file.open(QIODevice::WriteOnly | QIODevice::Truncate));
+			file.write("abd");
+		}
+		QVERIFY(!StemModelStore::download(spec, dir.path(), {}, &error));
+		QVERIFY2(error.contains(QStringLiteral("offline"), Qt::CaseInsensitive), qPrintable(error));
+		QFile file(path);
+		QVERIFY(file.open(QIODevice::ReadOnly));
+		QCOMPARE(file.readAll(), QByteArrayLiteral("abd"));
+		qunsetenv("LMMS_STEM_OFFLINE");
+	}
 };
 
 QTEST_GUILESS_MAIN(StemModelStoreTest)

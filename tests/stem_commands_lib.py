@@ -457,6 +457,24 @@ def check_model_downloads(session, recorder):
                    error_kind(unpinned) == "refused"
                    and "pinned" in error_message(unpinned),
                    "kind=%r message=%r" % (error_kind(unpinned), error_message(unpinned)))
+    check_model_download_in_place(session, recorder)
+
+
+def check_model_download_in_place(session, recorder):
+    """A pinned file already in place is the download: success, nothing fetched, offline."""
+    dest = tempfile.mkdtemp(prefix="zene-stem-inplace-")
+    payload = b"zene in-place model\n"
+    with open(os.path.join(dest, "inplace.onnx"), "wb") as handle:
+        handle.write(payload)
+    reply = session.result("stem.model_download",
+                          {"url": "https://example.invalid/never-contacted.onnx",
+                           "sha256": hashlib.sha256(payload).hexdigest(),
+                           "size_bytes": len(payload), "name": "inplace", "dest_dir": dest})
+    recorder.check("a verified file already in place succeeds offline with nothing fetched",
+                   isinstance(reply, dict) and reply.get("verified") is True
+                   and reply.get("fetched") is False and reply.get("bytes") == len(payload),
+                   "reply=%r" % (reply,))
+    shutil.rmtree(dest, ignore_errors=True)
 
 
 def check_transactions(session, recorder):
