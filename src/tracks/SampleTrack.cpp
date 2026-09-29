@@ -163,8 +163,11 @@ bool SampleTrack::play( const TimePos & _start, const f_cnt_t _frames,
 					// where this pass begins and ends inside the clip's window
 					const auto windowStart = sClip->sourceFrameAt( _start );
 					const auto windowEnd = sClip->sourceFrameAt( sClip->endPosition() );
-					//we only play within the clip's window
-					if( windowStart < windowEnd )
+					//we only play within the clip's window - except a clip armed to RECORD, which
+					//holds no sample yet (its window is empty) and is exactly the clip that must
+					//start: #611 Slice 0 added the window test and silently stopped clip
+					//recording (BUGS_FOUND 11.8, RecordingLatencyTest)
+					if( windowStart < windowEnd || sClip->isRecord() )
 					{
 						clips.push_back({sClip, { windowStart, windowEnd }});
 						sClip->setIsPlaying( true );

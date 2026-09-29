@@ -348,8 +348,8 @@ public:
 	f_cnt_t framesPerAudioBuffer() const { return m_framesPerAudioBuffer; }
 
 	/*! R2.2: how far a recorded take lags what the engine was playing when it was captured -
-	 *  the device's output and input latency plus one capture block of the engine's own
-	 *  staging (AudioDevice.h). A take shifted back by this lines up with the playback it was
+	 *  the device's output and input latency, one capture block of input staging
+	 *  (AudioDevice.h) and one period of the engine's own output double buffer. A take shifted back by this lines up with the playback it was
 	 *  performed against. 0 with no device. */
 	f_cnt_t recordingLatencyFrames() const { return m_recordingLatency.load(std::memory_order_relaxed); }
 

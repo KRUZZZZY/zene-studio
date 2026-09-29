@@ -31,6 +31,7 @@
 #include "PatternTrack.h"
 #include "SampleBuffer.h"
 #include "SampleClip.h"
+#include "SampleTrack.h"
 #include "SampleRecordAccumulator.h"
 
 
@@ -52,6 +53,12 @@ SampleRecordHandle::SampleRecordHandle( SampleClip* clip ) :
 	// constructor runs on the audio thread (SampleTrack::play).
 	m_compensationFrames( Engine::audioEngine() != nullptr ? Engine::audioEngine()->recordingLatencyFrames() : 0 )
 {
+	// AudioEngine::addPlayHandle registers every handle with its bus, and this one had none:
+	// the first record-armed clip that reached the engine dereferenced a null bus (BUGS_FOUND
+	// 11.8 - unreachable until the window gate below stopped hiding it). It joins its track's
+	// bus and uses no buffer, so the bus mixes nothing from it.
+	setAudioBusHandle( static_cast<SampleTrack*>( clip->getTrack() )->audioBusHandle() );
+	setUsesBuffer( false );
 }
 
 

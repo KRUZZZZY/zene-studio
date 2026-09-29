@@ -86,7 +86,9 @@ private slots:
 		AudioEngine* engine = Engine::audioEngine();
 		QCOMPARE(engine->audioDev()->outputLatencyFrames(), kOutputLatency);
 		QCOMPARE(engine->audioDev()->inputLatencyFrames(), kInputLatency);
-		QCOMPARE(engine->recordingLatencyFrames(), kOutputLatency + kInputLatency + engine->framesPerPeriod());
+		// Device out + in, one capture push (the Dummy pushes an engine period), and one
+		// period of the engine's output double buffer.
+		QCOMPARE(engine->recordingLatencyFrames(), kOutputLatency + kInputLatency + 2 * engine->framesPerPeriod());
 	}
 
 	void aTakeRecordedThroughTheLoopbackLandsOnThePlayedTransient()

@@ -237,8 +237,13 @@ void AudioEngine::pushInputFrames( const SampleFrame* _ab, const f_cnt_t _frames
 
 void AudioEngine::refreshRecordingLatency()
 {
+	// Four terms: the device's two latencies, one capture block of input staging, and one
+	// engine period of OUTPUT staging - renderNextPeriod() hands the device the period it
+	// rendered the time before (the output double buffer swapBuffers() flips). The fourth was
+	// found by measurement: RecordingLatencyTest was one period late without it.
 	m_recordingLatency.store(m_audioDev == nullptr ? 0
-		: m_audioDev->inputLatencyFrames() + m_audioDev->outputLatencyFrames() + m_audioDev->captureBlockFrames(),
+		: m_audioDev->inputLatencyFrames() + m_audioDev->outputLatencyFrames()
+			+ m_audioDev->captureBlockFrames() + m_framesPerPeriod,
 		std::memory_order_relaxed);
 }
 
