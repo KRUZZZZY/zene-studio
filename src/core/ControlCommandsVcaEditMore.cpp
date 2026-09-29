@@ -277,6 +277,25 @@ ControlResult editSlip(const QJsonObject& args)
 
 // ---- vca.edit_fade --------------------------------------------------------
 
+//! The fit check for vca.edit_fade: empty when the fades fit every locked clip, else the refusal.
+//! The whole lock is checked first, so a fade that does not fit ANY locked clip refuses the lot.
+QString fadeMisfit(const std::vector<Locked>& locked, bool hasIn, int fadeIn, bool hasOut, int fadeOut)
+{
+	for (const Locked& entry : locked)
+	{
+		const ClipEdits current = entry.clip->clipEdits();
+		const int in = hasIn ? fadeIn : current.fadeInTicks;
+		const int out = hasOut ? fadeOut : current.fadeOutTicks;
+		if (dynamic_cast<SampleClip*>(entry.clip) == nullptr || in + out > entry.clip->length().getTicks())
+		{
+			return QStringLiteral("the fades (%1 in, %2 out) do not fit %3's locked clip (an audio clip of "
+				"%4 ticks is needed), so the locked fade is refused and nothing changed")
+				.arg(in).arg(out).arg(trackIdOf(entry.track)).arg(entry.clip->length().getTicks());
+		}
+	}
+	return QString();
+}
+
 ControlResult editFade(const QJsonObject& args)
 {
 	VcaGroup* group = nullptr;
@@ -294,20 +313,10 @@ ControlResult editFade(const QJsonObject& args)
 	}
 	const int fadeIn = args.value(QStringLiteral("fade_in")).toInt();
 	const int fadeOut = args.value(QStringLiteral("fade_out")).toInt();
-	// Fades live on audio clips; the whole lock is checked first, so a fade that
-	// does not fit ANY locked clip refuses the lot (clip.set_fade's own rule).
-	for (const Locked& entry : locked)
+	// Fades live on audio clips (clip.set_fade's own rule).
+	if (const QString misfit = fadeMisfit(locked, hasIn, fadeIn, hasOut, fadeOut); !misfit.isEmpty())
 	{
-		const ClipEdits current = entry.clip->clipEdits();
-		const int in = hasIn ? fadeIn : current.fadeInTicks;
-		const int out = hasOut ? fadeOut : current.fadeOutTicks;
-		if (dynamic_cast<SampleClip*>(entry.clip) == nullptr || in + out > entry.clip->length().getTicks())
-		{
-			return ControlResult::failure(ControlErrorKind::InvalidArgs,
-				QStringLiteral("the fades (%1 in, %2 out) do not fit %3's locked clip (an audio clip of "
-					"%4 ticks is needed), so the locked fade is refused and nothing changed")
-					.arg(in).arg(out).arg(trackIdOf(entry.track)).arg(entry.clip->length().getTicks()));
-		}
+		return ControlResult::failure(ControlErrorKind::InvalidArgs, misfit);
 	}
 	QJsonArray edits;
 	for (const Locked& entry : locked)

@@ -8,9 +8,9 @@ lmms::interchange::applyDawProjectModel@src/core/DawProjectSession.cpp	33
 check_result@tests/stem_commands_lib.py	31
 lmms::detection::estimateTempo@src/core/ImportDetectionDsp.cpp	30
 lmms::clap::HostedPlugin::load@plugins/ClapEffect/ClapHost.cpp	28
-lmms::OnnxRuntimeStemSeparator::separate@src/core/OnnxRuntimeStemSeparator.cpp	27
 lmms::ScriptEngine::applyCommand@src/core/ScriptEngine.cpp	27
 lmms::vst3::HostedPlugin::load@plugins/Vst3Effect/Vst3Host.cpp	27
+lmms::OnnxRuntimeStemSeparator::separate@src/core/OnnxRuntimeStemSeparator.cpp	26
 main@tests/control-golden-audio.py	26
 check_id_contract@tests/control-stable-ids-slice2.py	25
 lmms::AudioPortsModel::updateDirectRouting@src/core/AudioPortsModel.cpp	23
@@ -60,15 +60,12 @@ lmms::pickFollowIndex@include/SessionFollow.h	12
 lmms::sessionrecord::landPairEvents@src/core/ControlCommandsSessionRecordInternal.h	12
 lmms::wasm::WasmWorker::processSlot@src/wasm/WasmWorker.cpp	12
 run@tests/control-named-pipe-smoke.py	12
-check_model_store@tests/stem_commands_lib.py	11
 lmms::AudioPortsModel::setAllChannelCounts@src/core/AudioPortsModel.cpp	11
 lmms::clap::describe@plugins/ClapEffect/ClapHost.cpp	11
-lmms::control::stemModelDownload@src/core/ControlStemModel.cpp	11
 lmms::registerFollowGetState@src/core/ControlCommandsSessionFollow.cpp	11
 lmms::registerIdContractCommand@src/core/ControlCommandsIdContract.cpp	11
 lmms::registerRecordLand@src/core/ControlCommandsSessionRecordLand.cpp	11
 lmms::renderSession@src/core/ControlCommandsProject.cpp	11
 lmms::ScriptMemoryState::allocate@include/ScriptMemoryBudget.h	11
-lmms::StemModelStore::download@src/core/StemModelStore.cpp	11
 wav_facts@tests/stem_commands_lib.py	11
 lmms::interchange::DawProjectTrack::operator ==@src/core/DawProjectModel.cpp	15
