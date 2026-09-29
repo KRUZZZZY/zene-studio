@@ -1769,6 +1769,7 @@ tests/src/core/RackZonesTest.cpp
 tests/src/core/RecordClipTest.cpp
 tests/src/core/RecordRingBufferTest.cpp
 tests/src/core/RecordingInputPathTest.cpp
+tests/src/core/RecordingLatencyTest.cpp
 tests/src/core/RecordingRealtimeTest.cpp
 tests/src/core/RelativePathsTest.cpp
 tests/src/core/RemotePluginAudioPortsTest.cpp

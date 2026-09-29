@@ -235,6 +235,15 @@ void AudioEngine::pushInputFrames( const SampleFrame* _ab, const f_cnt_t _frames
 
 
 
+void AudioEngine::refreshRecordingLatency()
+{
+	m_recordingLatency.store(m_audioDev == nullptr ? 0
+		: m_audioDev->inputLatencyFrames() + m_audioDev->outputLatencyFrames() + m_audioDev->captureBlockFrames(),
+		std::memory_order_relaxed);
+}
+
+
+
 void AudioEngine::drainInputStage() noexcept
 {
 	if( m_inputStage == nullptr )
@@ -1253,5 +1262,54 @@ MidiClient * AudioEngine::tryMidiClients()
 
 	return new MidiDummy;
 }
+
+// ---------------------------------------------------------------------------
+// R2.2: the Dummy device's loopback fixture (declared in include/AudioDummy.h)
+// ---------------------------------------------------------------------------
+
+namespace
+{
+
+f_cnt_t latencyFromEnv(const char* name)
+{
+	bool ok = false;
+	const int value = qEnvironmentVariableIntValue(name, &ok);
+	return ok && value > 0 ? static_cast<f_cnt_t>(value) : 0;
+}
+
+} // namespace
+
+
+void AudioDummy::configureLoopback()
+{
+	m_loopback = !qEnvironmentVariableIsEmpty("LMMS_DUMMY_LOOPBACK");
+	if (!m_loopback) { return; }
+	m_loopInLatency = latencyFromEnv("LMMS_DUMMY_INPUT_LATENCY");
+	m_loopOutLatency = latencyFromEnv("LMMS_DUMMY_OUTPUT_LATENCY");
+	// The line holds the whole delay plus the largest period a render can hand back.
+	m_loopLine.assign(static_cast<std::size_t>(m_loopInLatency + m_loopOutLatency) + MAXIMUM_BUFFER_SIZE + 1,
+		SampleFrame(0.0f, 0.0f));
+	m_loopBlock.assign(MAXIMUM_BUFFER_SIZE, SampleFrame(0.0f, 0.0f));
+}
+
+
+f_cnt_t AudioDummy::captureBlockFrames() const
+{
+	return audioEngine() != nullptr ? audioEngine()->framesPerPeriod() : 0;
+}
+
+
+void AudioDummy::feedBack(std::span<const SampleFrame> period)
+{
+	// Write the period, then read the same span back delayed: in[t] = out[t - delay].
+	const std::size_t size = m_loopLine.size();
+	const std::size_t delay = static_cast<std::size_t>(m_loopInLatency + m_loopOutLatency);
+	const std::size_t frames = std::min(period.size(), m_loopBlock.size());
+	for (std::size_t f = 0; f < frames; ++f) { m_loopLine[(m_loopWrite + f) % size] = period[f]; }
+	for (std::size_t f = 0; f < frames; ++f) { m_loopBlock[f] = m_loopLine[(m_loopWrite + f + size - delay) % size]; }
+	m_loopWrite = (m_loopWrite + frames) % size;
+	audioEngine()->pushInputFrames(m_loopBlock.data(), static_cast<f_cnt_t>(frames));
+}
+
 
 } // namespace lmms

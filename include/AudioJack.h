@@ -63,6 +63,10 @@ public:
 	AudioJack(bool& successful, AudioEngine* audioEngine);
 	~AudioJack() override;
 
+	//! R2.2: JACK's own latency ranges for the first capture and playback port (the max).
+	f_cnt_t inputLatencyFrames() const override;
+	f_cnt_t outputLatencyFrames() const override;
+
 	// this is to allow the jack midi connection to use the same jack client connection
 	// the jack callback is handled here, we call the midi client so that it can read
 	// it's midi data during the callback

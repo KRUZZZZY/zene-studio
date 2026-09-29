@@ -24,6 +24,8 @@
 
 
 #include "SampleRecordHandle.h"
+
+#include <algorithm>
 #include "AudioEngine.h"
 #include "Engine.h"
 #include "PatternTrack.h"
@@ -44,7 +46,11 @@ SampleRecordHandle::SampleRecordHandle( SampleClip* clip ) :
 	m_minLength( clip->length() ),
 	m_track( clip->getTrack() ),
 	m_patternTrack( nullptr ),
-	m_clip( clip )
+	m_clip( clip ),
+	// R2.2: the round trip this take lags the playback by - dropped from its head, so the
+	// take lines up with what was playing when it was performed. A cached atomic: this
+	// constructor runs on the audio thread (SampleTrack::play).
+	m_compensationFrames( Engine::audioEngine() != nullptr ? Engine::audioEngine()->recordingLatencyFrames() : 0 )
 {
 }
 
@@ -69,7 +75,11 @@ SampleRecordHandle::~SampleRecordHandle()
 void SampleRecordHandle::play( std::span<SampleFrame> /*buffer*/ )
 {
 	const SampleFrame* recbuf = Engine::audioEngine()->inputBuffer();
-	const f_cnt_t frames = Engine::audioEngine()->inputBufferFrames();
+	f_cnt_t frames = Engine::audioEngine()->inputBufferFrames();
+	const f_cnt_t skipped = std::min( frames, m_compensationFrames );
+	m_compensationFrames -= skipped;
+	recbuf += skipped;
+	frames -= skipped;
 	writeBuffer( recbuf, frames );
 	m_framesRecorded += frames;
 

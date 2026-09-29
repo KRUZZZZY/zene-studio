@@ -127,6 +127,8 @@ ControlResult getState(const QJsonObject&)
 
 	QJsonObject result = recorderJson(*recorder);
 	result.insert(QStringLiteral("input"), inputPathJson());
+	// R2.2: the round trip a take recorded against playback is shifted back by.
+	result.insert(QStringLiteral("latency_frames"), static_cast<int>(Engine::audioEngine()->recordingLatencyFrames()));
 	return ControlResult::success(result);
 }
 
@@ -287,7 +289,9 @@ void registerGetState(ControlRegistry& registry)
 		"(route_count and input_channel_capacity) is the 'arbitrary input count / multiple "
 		"simultaneous inputs' feature row 64 asks for. `input` is record.input_get_state's own "
 		"report, including `input_frames_staged` and `wide_frames`: both are 0 under a backend with "
-		"no capture path, which is what 'a record route takes no inputs' measured. Read-only.")
+		"no capture path, which is what 'a record route takes no inputs' measured. `latency_frames` "
+		"is the recording round trip - the device's output and input latency plus one capture "
+		"block of staging - that a take recorded against playback is shifted back by. Read-only.")
 		.arg(MultiTrackRecorder::MaxRoutes);
 	cmd.argsSchema = objectSchema({});
 	cmd.resultSchema = objectSchema({
@@ -296,6 +300,7 @@ void registerGetState(ControlRegistry& registry)
 		{QStringLiteral("routes"), arrayProperty()},
 		{QStringLiteral("total_overflow_frames"), integerProperty()},
 		{QStringLiteral("input"), QJsonObject{{QStringLiteral("type"), QStringLiteral("object")}}},
+		{QStringLiteral("latency_frames"), integerProperty()},
 	});
 	cmd.mutating = false;
 	cmd.handler = [](const QJsonObject& args) { return getState(args); };

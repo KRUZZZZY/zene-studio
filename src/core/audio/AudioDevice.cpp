@@ -45,6 +45,14 @@ AudioDevice::~AudioDevice()
 	assert(!isRunning() && "device should have been stopped before being destroyed");
 }
 
+f_cnt_t AudioDevice::captureBlockFrames() const
+{
+	return m_audioEngine != nullptr ? m_audioEngine->framesPerAudioBuffer() : 0;
+}
+
+
+
+
 void AudioDevice::startProcessing()
 {
 	m_running.test_and_set(std::memory_order_acquire);

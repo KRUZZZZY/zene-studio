@@ -530,6 +530,8 @@ set(LMMS_TESTS
 	# R2.1: input monitoring on the real engine - In/Off/Auto measured on the master meter
 	# with a synthetic capture feed, the instrument track's two modes, save/undo.
 	src/core/InputMonitorTest.cpp
+	# R2.2: a take recorded through the Dummy's loopback fixture lands on the played transient.
+	src/core/RecordingLatencyTest.cpp
 	src/core/ScriptBindingsTest.cpp
 	# Feature row 50 (0.3.0): the Lua API's DAW-control half - the mixer channel
 	# and effect-chain bindings. Drives a REAL mixer channel and the chain the

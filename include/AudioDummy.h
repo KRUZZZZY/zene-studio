@@ -25,6 +25,9 @@
 #ifndef LMMS_AUDIO_DUMMY_H
 #define LMMS_AUDIO_DUMMY_H
 
+#include <span>
+#include <vector>
+
 #include "AudioDevice.h"
 #include "AudioDeviceSetupWidget.h"
 #include "AudioEngine.h"
@@ -41,7 +44,14 @@ public:
 		AudioDevice( DEFAULT_CHANNELS, audioEngine )
 	{
 		_success_ful = true;
+		configureLoopback();
 	}
+
+	//! R2.2: the loopback's configured figures (0 when it is off).
+	f_cnt_t inputLatencyFrames() const override { return m_loopInLatency; }
+	f_cnt_t outputLatencyFrames() const override { return m_loopOutLatency; }
+	//! One capture push per rendered engine period (run() below).
+	f_cnt_t captureBlockFrames() const override;
 
 	~AudioDummy() override
 	{
@@ -94,7 +104,8 @@ private:
 		while (AudioDevice::isRunning())
 		{
 			timer.reset();
-			audioEngine()->renderNextPeriod();
+			const std::span<const SampleFrame> period = audioEngine()->renderNextPeriod();
+			if( m_loopback ) { feedBack( period ); }
 
 			const int microseconds = static_cast<int>( audioEngine()->framesPerPeriod() * 1000000.0f / audioEngine()->outputSampleRate() - timer.elapsed() );
 			if( microseconds > 0 )
@@ -103,6 +114,22 @@ private:
 			}
 		}
 	}
+
+	/*! R2.2's LOOPBACK FIXTURE, for a box with no audio interface: with
+	 *  LMMS_DUMMY_LOOPBACK set, each rendered period is fed back as the capture input after
+	 *  exactly LMMS_DUMMY_OUTPUT_LATENCY + LMMS_DUMMY_INPUT_LATENCY frames - a cable from
+	 *  the output jack to the input jack of a device that reports those two figures. Off
+	 *  (the default) the Dummy behaves as it always has. The delay line is allocated here,
+	 *  once, never on the render loop. Defined in src/core/AudioEngine.cpp. */
+	void configureLoopback();
+	void feedBack( std::span<const SampleFrame> period );
+
+	bool m_loopback = false;
+	f_cnt_t m_loopInLatency = 0;
+	f_cnt_t m_loopOutLatency = 0;
+	std::vector<SampleFrame> m_loopLine;
+	std::vector<SampleFrame> m_loopBlock;
+	std::size_t m_loopWrite = 0;
 
 } ;
 

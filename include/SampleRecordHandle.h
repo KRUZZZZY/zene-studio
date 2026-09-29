@@ -70,6 +70,8 @@ private:
 	Track * m_track;
 	PatternTrack* m_patternTrack;
 	SampleClip * m_clip;
+	//! R2.2: frames still to drop from the take's head (the recording round trip).
+	f_cnt_t m_compensationFrames;
 
 } ;
 
