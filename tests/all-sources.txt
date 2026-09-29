@@ -1654,6 +1654,7 @@ tests/src/core/AutomatableModelTest.cpp
 tests/src/core/AutomationModesTest.cpp
 tests/src/core/BrowserCatalogTest.cpp
 tests/src/core/BrowserTestSupport.h
+tests/src/core/CapturePublisherTest.cpp
 tests/src/core/ChordDetectTest.cpp
 tests/src/core/ChordProgressionTest.cpp
 tests/src/core/ChordTestSupport.h

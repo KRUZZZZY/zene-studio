@@ -25,10 +25,13 @@
 #ifndef LMMS_AUDIO_DEVICE_H
 #define LMMS_AUDIO_DEVICE_H
 
+#include <vector>
+
 #include <QMutex>
 #include <samplerate.h>
 
 #include "LmmsTypes.h"
+#include "SampleFrame.h"
 
 class QThread;
 
@@ -109,6 +112,19 @@ protected:
 	void setChannels(const ch_cnt_t channels) { m_channels = channels; }
 
 	static void stopProcessingThread( QThread * thread );
+
+	/*! R2.3: sizes the stereo scratch bus for pushes of up to @a maxFrames and selects the
+	 *  captured pair (@a left, @a right) that bus carries. Off the audio thread - at open, or
+	 *  in a backend's buffer-size callback - because publishCaptured() must not allocate. */
+	void prepareCapture( f_cnt_t maxFrames, int left = 0, int right = 1 );
+	/*! R2.3: THE capture publisher, one for every backend (it was AudioAlsa's alone, and JACK
+	 *  and SDL each fed a different subset). One interleaved block of @a channels channels
+	 *  feeds all three consumers: the N-channel path (record routes), the stereo bus (the
+	 *  selected pair - SampleRecordHandle, the monitor, every play handle) and the capture
+	 *  counter AudioInputPath reports. Capture thread; allocation-free - a block longer than
+	 *  the prepared bus is carried in bus-sized pieces. */
+	void publishCaptured( const float* interleaved, int channels, f_cnt_t frames ) noexcept;
+
 protected:
 	bool m_supportsCapture;
 
@@ -118,6 +134,9 @@ private:
 
 	sample_rate_t m_sampleRate;
 	ch_cnt_t m_channels;
+	std::vector<SampleFrame> m_captureBus;
+	int m_captureLeft = 0;
+	int m_captureRight = 1;
 	AudioEngine* m_audioEngine = nullptr;
 	std::atomic_flag m_running = ATOMIC_FLAG_INIT;
 };

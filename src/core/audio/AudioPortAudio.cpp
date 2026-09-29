@@ -31,6 +31,8 @@
 
 #include "AudioEngine.h"
 #include "AudioPortAudio.h"
+
+#include <algorithm>
 #include "ConfigManager.h"
 #include "LcdSpinBox.h"
 
@@ -170,6 +172,23 @@ AudioPortAudio::AudioPortAudio(bool& successful, AudioEngine* engine)
 	successful = true;
 	setSampleRate(sampleRate);
 	setChannels(outputDeviceChannels);
+	// R2.3: the input stream was opened and its block discarded; it now reaches the engine
+	// through the shared capture publisher.
+	m_inputChannels = inputParametersPtr != nullptr ? inputDeviceChannels : 0;
+	m_supportsCapture = m_inputChannels > 0;
+	if (m_supportsCapture) { prepareCapture(static_cast<f_cnt_t>(std::max<unsigned long>(framesPerBuffer, 1))); }
+}
+
+f_cnt_t AudioPortAudio::inputLatencyFrames() const
+{
+	const PaStreamInfo* info = m_paStream != nullptr ? Pa_GetStreamInfo(m_paStream) : nullptr;
+	return info != nullptr && m_inputChannels > 0 ? static_cast<f_cnt_t>(info->inputLatency * info->sampleRate) : 0;
+}
+
+f_cnt_t AudioPortAudio::outputLatencyFrames() const
+{
+	const PaStreamInfo* info = m_paStream != nullptr ? Pa_GetStreamInfo(m_paStream) : nullptr;
+	return info != nullptr ? static_cast<f_cnt_t>(info->outputLatency * info->sampleRate) : 0;
 }
 
 AudioPortAudio::~AudioPortAudio()
@@ -188,7 +207,7 @@ void AudioPortAudio::stopProcessingImpl()
 	Pa_StopStream(m_paStream);
 }
 
-int AudioPortAudio::processCallback(const void*, void* output, unsigned long frameCount,
+int AudioPortAudio::processCallback(const void* input, void* output, unsigned long frameCount,
 	const PaStreamCallbackTimeInfo*, PaStreamCallbackFlags, void* userData)
 {
 	const auto device = static_cast<AudioPortAudio*>(userData);
@@ -202,6 +221,12 @@ int AudioPortAudio::processCallback(const void*, void* output, unsigned long fra
 	}
 
 	device->audioEngine()->renderNextBuffer({outputBuffer, channels, frameCount});
+	// After the render, as JACK does: this block is read by the next one (the staging term
+	// AudioEngine::recordingLatencyFrames counts).
+	if (input != nullptr && device->m_inputChannels > 0)
+	{
+		device->publishCaptured(static_cast<const float*>(input), device->m_inputChannels, static_cast<f_cnt_t>(frameCount));
+	}
 	return paContinue;
 }
 } // namespace lmms
