@@ -1,0 +1,5 @@
+# engine CPU baseline - median child CPU seconds per render, per HOST (tests/engine-cpu-bench.py)
+# last recorded on kruzzzputer: first baseline: 0.4.0/train-w1 @ 6a381c7d2 (M1 + TSan + dither + JACK merged), idle machine
+kruzzzputer	data/projects/demos/DnB.mmpz	5.7164
+kruzzzputer	data/projects/shorties/Root84-TrancyLoop.mmpz	1.1143
+kruzzzputer	data/projects/shorties/Skiessi-222.mmpz	1.2115
