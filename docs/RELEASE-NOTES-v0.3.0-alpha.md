@@ -902,9 +902,16 @@ exactly that. Re-measured with the probe at the merge: `MEASURED rows=353 true_i
 irreversible=13 not_mutating=138` (`DECLARED rows=353 entries=353 duplicates=0`) against the live line's
 350/135, i.e. +3 `not_mutating`, so the reference figure is 358 + 3 = 361.
 
+Two moves on 2026-09-29. **Owner decision 14** turned stem separation ON by default, so the
+`stem.*` group's seven `not_mutating` rows belong to the release configuration, and `stem.get_state` joins
+the configuration line (+7 rows, +7 `not_mutating`). **Channel pan** made `mixer.set_pan` a real command,
+moving its row from `not_mutating` (a documented refusal) to `true_inverse` (+1 `true_inverse`, -1
+`not_mutating`). Measured on `040/m1-checked-coverage` (no wasmtime): `rows=360 true_inverse=167 snapshot=36
+irreversible=13 not_mutating=144`, which is this block minus wasm's option row, exactly.
+
 <!-- A16-HISTOGRAM-BEGIN
-     measured: rows=361 true_inverse=166 snapshot=39 irreversible=13 not_mutating=143
-     configuration: telemetry.status wasm.load session.get_state
+     measured: rows=368 true_inverse=167 snapshot=39 irreversible=13 not_mutating=149
+     configuration: telemetry.status wasm.load session.get_state stem.get_state
      option telemetry.status rows=2 not_mutating=2
      option wasm.load rows=8 snapshot=3 not_mutating=5
      option session.get_state rows=17 true_inverse=7 not_mutating=10

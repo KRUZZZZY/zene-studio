@@ -375,7 +375,7 @@ private slots:
 
 
 	//! DIRECTION 2: every row names a registered command, and the only mutating
-	//! commands the table calls "writes nothing" are the four the handlers
+	//! commands the table calls "writes nothing" are the three the handlers
 	//! refuse on every call. Anything else would be a command whose class and
 	//! behaviour disagree.
 	void theOnlyUnclassedMutatingCommandsAreTheRefusals()
@@ -383,7 +383,6 @@ private slots:
 		ControlRegistry* registry = ControlRegistry::instance();
 		const control::ReversibilityTable& table = control::ReversibilityTable::instance();
 		const QStringList documentedRefusals = {
-			QStringLiteral("mixer.set_pan"),
 			QStringLiteral("track.set_arm"),
 			QStringLiteral("automation.mode_set"),
 			// Declared mutating and refused on every call: this build has no

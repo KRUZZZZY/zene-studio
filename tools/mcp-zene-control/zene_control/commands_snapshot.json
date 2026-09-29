@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-09-29T15:48:03Z",
+  "captured_at": "2026-09-29T16:43:57Z",
   "commands": [
     {
       "args_schema": {
@@ -4032,6 +4032,9 @@
       "result_schema": {
         "additionalProperties": false,
         "properties": {
+          "captured": {
+            "type": "boolean"
+          },
           "channel": {
             "maximum": 16,
             "minimum": 0,
@@ -4048,6 +4051,13 @@
           "feedback": {
             "type": "boolean"
           },
+          "mode": {
+            "enum": [
+              "duplex",
+              "not-duplex"
+            ],
+            "type": "string"
+          },
           "output_events_offered": {
             "maximum": 1919808,
             "minimum": 0,
@@ -4057,6 +4067,15 @@
             "maximum": 1919808,
             "minimum": 0,
             "type": "integer"
+          },
+          "soft_takeover": {
+            "type": "boolean"
+          },
+          "takeover_target": {
+            "type": "number"
+          },
+          "value": {
+            "type": "number"
           },
           "written": {
             "type": "boolean"
@@ -4107,10 +4126,26 @@
             "minimum": -1,
             "type": "integer"
           },
+          "feedback": {
+            "type": "boolean"
+          },
+          "output_events_offered": {
+            "maximum": 1919808,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "output_events_written": {
+            "maximum": 1919808,
+            "minimum": 0,
+            "type": "integer"
+          },
           "soft_takeover": {
             "type": "boolean"
           },
           "takeover_target": {
+            "type": "number"
+          },
+          "value": {
             "type": "number"
           }
         },
@@ -8603,14 +8638,24 @@
         ],
         "type": "object"
       },
-      "description": "Set a channel pan. Refused: this tree has no pan on a mixer channel.",
+      "description": "Set a channel pan: -1 (hard left) .. +1 (hard right), 0 = centre. A balance law - the centre is unity on both sides and a pan attenuates only the opposite side - applied after the channel's effects and VCA gain, so the fader, the meter, pre- and post-fader sends and every receiver hear the panned signal. Saved only when not centred. Reversible through the ProjectJournal.",
       "group": "mixer",
       "id": "mixer.set_pan",
       "mutating": true,
       "requires": [],
       "result_schema": {
         "additionalProperties": false,
-        "properties": {},
+        "properties": {
+          "channel": {
+            "type": "string"
+          },
+          "pan": {
+            "type": "number"
+          },
+          "previous_pan": {
+            "type": "number"
+          }
+        },
         "required": [],
         "type": "object"
       }
@@ -13400,6 +13445,9 @@
           "armed": {
             "type": "boolean"
           },
+          "armed_before": {
+            "type": "boolean"
+          },
           "armed_now": {
             "type": "boolean"
           },
@@ -13426,6 +13474,9 @@
           },
           "journal": {
             "type": "string"
+          },
+          "journal_retired": {
+            "type": "boolean"
           },
           "overflow_frames": {
             "type": "integer"
@@ -17939,6 +17990,9 @@
       "result_schema": {
         "additionalProperties": false,
         "properties": {
+          "flags_unchanged": {
+            "type": "boolean"
+          },
           "name": {
             "type": "string"
           },
@@ -19958,11 +20012,11 @@
     "binary": null,
     "binary_bytes": null,
     "binary_sha256": null,
-    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-040/tools/zene-pa-agentctl",
+    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-survey/tools/zene-pa-agentctl",
     "lane_head": null,
     "proto": 1,
-    "source_socket": "/tmp/zctl-run-b5bbn_rx/zene.sock",
-    "version": "0.3.0-alpha.148+f0f5336"
+    "source_socket": "/tmp/zctl-run-ty1zyez_/zene.sock",
+    "version": "0.3.0-alpha.150+f2aedbe"
   },
   "kind": "zene-control-command-list",
   "proto": 1,

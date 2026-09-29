@@ -332,6 +332,8 @@ void registerVisibilitySetRemove(ControlRegistry& registry)
 		{QStringLiteral("removed"), control::booleanProperty()},
 		{QStringLiteral("tracks"), QJsonObject{{QStringLiteral("type"), QStringLiteral("array")}}},
 		{QStringLiteral("track_count"), control::integerProperty(0, MaxSongLength)},
+		// Measured (R6.3): the reply always carried it; the schema never declared it.
+		{QStringLiteral("flags_unchanged"), control::booleanProperty()},
 	});
 	cmd.mutating = true;
 	cmd.handler = [](const QJsonObject& args) { return removeSet(args); };

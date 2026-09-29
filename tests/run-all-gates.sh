@@ -178,7 +178,8 @@ skip_hint() {
 }
 
 # ---- Gate 1: unit tests -----------------------------------------------------
-banner 1 "unit tests (ctest)"
+banner 1 "unit tests (ctest) + the checked-command ratchet"
+checked_log="$PWD/build/gate1-checked-commands.log"
 if [[ ! -d build ]]; then
 	echo "no build/ — configure first: cmake -B build -S . -DCMAKE_BUILD_TYPE=Debug -DWANT_QT6=ON && cmake --build build -j4"
 	record 1 "ctest" "SKIP" "no configured build/ directory"
@@ -193,9 +194,19 @@ else
 		echo "build FAILED (exit $build_rc) — tail of $build_log:"; tail -15 "$build_log"
 		record 1 "ctest" "FAIL"
 	else
-		( cd build/tests && QT_QPA_PLATFORM=offscreen ctest --output-on-failure )
+		# Gate 16 reads what this run held to its contract: every process appends
+		# the ids whose successful reply passed its resultSchema (ControlSchema.cpp).
+		rm -f "$checked_log"
+		( cd build/tests && QT_QPA_PLATFORM=offscreen ZENE_CONTROL_CHECKED_LOG="$checked_log" \
+			ctest --output-on-failure )
 		ctest_rc=$?
-		[[ $ctest_rc -eq 0 ]] && record 1 "ctest" "PASS" || record 1 "ctest" "FAIL"
+		# R6.3's ratchet rides the same run (it has no run of its own to read):
+		# every command on the release surface reaches its success path under
+		# result checks, or is listed in tests/checked-coverage-unreached.txt,
+		# a list that only shrinks (tests/checked-coverage.py).
+		python3 tests/checked-coverage.py --log "$checked_log"
+		coverage_rc=$?
+		[[ $ctest_rc -eq 0 && $coverage_rc -eq 0 ]] && record 1 "ctest" "PASS" || record 1 "ctest" "FAIL"
 	fi
 fi
 

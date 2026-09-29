@@ -119,6 +119,7 @@ private:
 	AutomatableButton* m_muteButton;
 	AutomatableButton* m_soloButton;
 	PeakIndicator* m_peakIndicator = nullptr;
+	Knob* m_panKnob;
 	Fader* m_fader;
 	EffectRackView* m_effectRackView;
 	MixerView* m_mixerView;

@@ -379,6 +379,8 @@ set(LMMS_TESTS
 	# seqlock) and a destroyed target is skipped through its liveness token.
 	src/core/ModulationAudioViewTest.cpp
 	src/core/ControlModulatorCommandsTest.cpp
+	# R6.3: the success path of every command the suite had only ever refused (gate 1's checked-command ratchet).
+	src/core/ControlSuccessPathsTest.cpp
 	src/core/ControlNoteExpressionCommandsTest.cpp
 	# The PROJECT path of the same layer (task #680): modulators authored on the
 	# surface, written by project.save, the session cleared, project.open - and
@@ -498,6 +500,8 @@ set(LMMS_TESTS
 	# plain effect loop and would prove nothing.
 	src/core/PatcherCommandsTest.cpp
 	src/core/VcaGroupTest.cpp
+	# Mixer channel pan (MixerChannel::m_panModel): the render, the file and the command.
+	src/core/MixerChannelPanTest.cpp
 	# Mixer::refreshGroups publishes each channel's VCA gain with ONE store, so a
 	# concurrent reader (the audio thread) never sees a grouped channel at unity.
 	src/core/VcaRefreshAtomicityTest.cpp
@@ -2662,6 +2666,17 @@ if(PYTHON3_EXECUTABLE AND CONTROL_SUITE_AVAILABLE)
 		SKIP_RETURN_CODE 77
 		TIMEOUT 300
 		RUN_SERIAL TRUE
+	)
+	# R6.3 (gate 1's checked-command ratchet): the success paths only a RUNNING instance reaches - a landed
+	# Arrangement Record performance (the audio thread records it) and
+	# project.audible_diff (it renders through the running binary as children).
+	add_test(NAME ControlSuccessPaths
+		COMMAND ${PYTHON3_EXECUTABLE}
+			${CMAKE_CURRENT_SOURCE_DIR}/control-success-paths.py
+			$<TARGET_FILE:zene>)
+	set_tests_properties(ControlSuccessPaths PROPERTIES
+		ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+		TIMEOUT 600
 	)
 	# midi.retro_capture_* (0.3.0, retrospective MIDI capture - owner's-31 item
 	# 14): PLAY real MIDI into the running engine from the host's ALSA sequencer

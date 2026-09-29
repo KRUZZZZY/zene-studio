@@ -416,17 +416,24 @@ private slots:
 		QCOMPARE(control::idToIndex(QStringLiteral("trk-"), QStringLiteral("trk-")), -1);
 	}
 
-	//! mixer.set_pan refuses (no channel has a pan) - for a channel that EXISTS:
-	//! a ch-<n> id is a constructed id, not an index (SPEC-stable-ids.md slice 2).
-	void mixerSetPanRefusesTyped()
+	//! mixer.set_pan sets the channel's pan model (it was a typed refusal until
+	//! MixerChannel gained m_panModel) - on a channel that EXISTS: a ch-<n> id is a
+	//! constructed id, not an index (SPEC-stable-ids.md slice 2). Out of range is
+	//! invalid_args, the schema's own -1..+1 bound.
+	void mixerSetPanSetsTheChannelPan()
 	{
 		ControlRegistry* registry = ControlRegistry::instance();
 		const ControlResult added = registry->invoke(QStringLiteral("mixer.add_channel"));
 		const ControlResult result = registry->invoke(QStringLiteral("mixer.set_pan"),
 			QJsonObject{{QStringLiteral("channel"), added.result.value(QStringLiteral("channel"))},
 				{QStringLiteral("pan"), 0.5}});
-		QVERIFY2(added.ok && result.errorKind == ControlErrorKind::Refused, qPrintable(added.errorMessage + result.errorMessage));
-		QCOMPARE(controlErrorKindName(result.errorKind), QStringLiteral("refused"));
+		QVERIFY2(added.ok && result.ok, qPrintable(added.errorMessage + result.errorMessage));
+		QCOMPARE(result.result.value(QStringLiteral("pan")).toDouble(), 0.5);
+		QCOMPARE(result.result.value(QStringLiteral("previous_pan")).toDouble(), 0.0);
+		const ControlResult wide = registry->invoke(QStringLiteral("mixer.set_pan"),
+			QJsonObject{{QStringLiteral("channel"), added.result.value(QStringLiteral("channel"))},
+				{QStringLiteral("pan"), 1.5}});
+		QCOMPARE(controlErrorKindName(wide.errorKind), QStringLiteral("invalid_args"));
 	}
 
 #ifdef ZENE_TELEMETRY_ENABLED

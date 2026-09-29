@@ -23,6 +23,9 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  */
 
+#include <initializer_list>
+#include <utility>
+
 #include <QJsonArray>
 #include <QJsonObject>
 #include <QString>
@@ -203,29 +206,36 @@ QJsonObject controlState(const BoundControl& bound)
 }
 
 
-QJsonObject softTakeoverSchema()
+/*! Both verbs answer with the whole controlState() - measured (R6.3,
+ *  ControlSuccessPathsTest) the first time either one was driven to success:
+ *  each schema had declared only its own half, so every successful reply broke
+ *  it. One shape, every key controlState() writes, plus the verb's own extra. */
+QJsonObject controlStateSchema(std::initializer_list<std::pair<QString, QJsonObject>> extra = {})
 {
-	return objectSchema({
+	QJsonObject schema = objectSchema({
 		{QStringLiteral("control"), stringProperty()},
 		{QStringLiteral("channel"), integerProperty(0, 16)},
 		{QStringLiteral("controller"), integerProperty(-1, 127)},
 		{QStringLiteral("soft_takeover"), booleanProperty()},
 		{QStringLiteral("captured"), booleanProperty()},
 		{QStringLiteral("takeover_target"), numberProperty()},
-	});
-}
-
-QJsonObject feedbackSchema()
-{
-	return objectSchema({
-		{QStringLiteral("control"), stringProperty()},
-		{QStringLiteral("channel"), integerProperty(0, 16)},
-		{QStringLiteral("controller"), integerProperty(-1, 127)},
 		{QStringLiteral("feedback"), booleanProperty()},
-		{QStringLiteral("written"), booleanProperty()},
+		{QStringLiteral("value"), numberProperty()},
 		{QStringLiteral("output_events_offered"), integerProperty(0, MaxSongLength)},
 		{QStringLiteral("output_events_written"), integerProperty(0, MaxSongLength)},
 	});
+	QJsonObject properties = schema.value(QStringLiteral("properties")).toObject();
+	for (const auto& [key, property] : extra) { properties.insert(key, property); }
+	schema.insert(QStringLiteral("properties"), properties);
+	return schema;
+}
+
+QJsonObject softTakeoverSchema() { return controlStateSchema(); }
+
+QJsonObject feedbackSchema()
+{
+	return controlStateSchema({{QStringLiteral("written"), booleanProperty()},
+		{QStringLiteral("mode"), enumProperty({QStringLiteral("duplex"), QStringLiteral("not-duplex")})}});
 }
 
 void registerControllerSurfaceState(ControlRegistry& registry)

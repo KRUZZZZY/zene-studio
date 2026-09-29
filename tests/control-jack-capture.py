@@ -7,6 +7,8 @@ drives the REAL binary on the JACK backend against a private `jackd -d dummy` se
 ports, silent - silence is still frames) and asserts, through the socket:
 
   1. `record.input_get_state` reports the capture CAPABLE and OPEN, with the channels JACK granted;
+  (R6.3) `record.disarm_track` and `record.retro_capture_to_take` succeed here, the one host kind
+     whose capture is real - their success replies are held to their schemas nowhere else;
   2. its captured-frame count RISES between two readings (frames are arriving);
   3. a record route armed on input channel 0 has its pushed-frame count RISE (a non-regression
      check only: routes were already fed through the stereo engine input before this change, so
@@ -97,7 +99,23 @@ def main():
         print("route 0 frames_pushed: %s -> %s" % (p0, p1))
         if p0 is None or p1 is None or p1 <= p0:
             problems.append("an armed route received no frames on JACK (%r -> %r)" % (p0, p1))
-        call(6, "record.disarm_all")
+        # R6.3: two success paths only a host with a REAL capture reaches (the
+        # Dummy device captures nothing, so control-record-inputs.py can only
+        # prove their refusals). One route disarmed by name, then the retained
+        # retrospective window written to a take.
+        disarmed = call(6, "record.disarm_track", {"route": 0})
+        if disarmed.get("armed") is not False:
+            problems.append("record.disarm_track left route 0 armed: %r" % disarmed)
+        call(7, "record.retro_capture_arm", {"armed": True})
+        time.sleep(1.5)
+        retained = number(call(8, "record.retro_capture_status"), "retained_frames")
+        take = os.path.join(instance.tmp, "retro-take.wav")
+        written = call(9, "record.retro_capture_to_take", {"file": take})
+        print("retro window: %s frames retained, %s written" % (retained, written.get("frames_written")))
+        if not retained or not written.get("frames_written") or not os.path.exists(take):
+            problems.append("the JACK retro window was not written to a take (%r, %r)" % (retained, written))
+        call(10, "record.retro_capture_arm", {"armed": False})
+        call(11, "record.disarm_all")
     finally:
         if instance is not None:
             instance.close()

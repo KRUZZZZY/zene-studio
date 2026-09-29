@@ -1664,6 +1664,7 @@ tests/src/core/ControlRegistryTest.cpp
 tests/src/core/ControlResultSchemaTest.cpp
 tests/src/core/ControlSampleOperatorTest.cpp
 tests/src/core/ControlShutdownHookTest.cpp
+tests/src/core/ControlSuccessPathsTest.cpp
 tests/src/core/ControlSurfaceReferenceTest.cpp
 tests/src/core/ControlTempoMapCommandsTest.cpp
 tests/src/core/ControlVcaCommandsTest.cpp
@@ -1700,6 +1701,7 @@ tests/src/core/MidiProbabilityPersistenceTest.cpp
 tests/src/core/MidiReconnectTest.cpp
 tests/src/core/MidiRetroCaptureTest.cpp
 tests/src/core/MixerAbRegressionTest.cpp
+tests/src/core/MixerChannelPanTest.cpp
 tests/src/core/MixerConcurrencyTest.cpp
 tests/src/core/MixerRoutingBackwardCompatTest.cpp
 tests/src/core/ModulationAudioViewTest.cpp
