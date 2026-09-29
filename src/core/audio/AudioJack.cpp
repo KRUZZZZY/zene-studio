@@ -35,6 +35,7 @@
 #include <QStringList>
 
 #include "AudioEngine.h"
+#include "AudioInputPath.h"
 #include "ConfigManager.h"
 #include "GuiApplication.h"
 #include "MainWindow.h"
@@ -122,7 +123,11 @@ AudioJack::~AudioJack()
 
 	if (m_client != nullptr)
 	{
-		if (m_active) { jack_deactivate(m_client); }
+		if (m_active)
+		{
+			jack_deactivate(m_client);
+			AudioInputPath::publishClosed(QStringLiteral("closed"));
+		}
 		jack_client_close(m_client);
 	}
 
@@ -233,6 +238,7 @@ bool AudioJack::initJackClient()
 void AudioJack::resizeInputBuffer(jack_nframes_t nframes)
 {
 	m_inputFrameBuffer.resize(nframes);
+	m_captureWide.assign(static_cast<std::size_t>(nframes) * static_cast<std::size_t>(channels()), 0.f);
 }
 
 void AudioJack::attemptToConnect(size_t index, const char *lmms_port_type, const char *source_port, const char *destination_port)
@@ -292,6 +298,9 @@ void AudioJack::startProcessingImpl()
 	}
 
 	m_active = true;
+	AudioInputPath::setCaptureCapable(true);
+	AudioInputPath::publishOpen(AudioInputPath::configuredPlan(), static_cast<int>(channels()),
+		static_cast<int>(jack_get_sample_rate(m_client)), QStringLiteral("float"));
 
 	// try to sync JACK's and LMMS's buffer-size
 	//	jack_set_buffer_size( m_client, audioEngine()->framesPerPeriod() );
@@ -420,16 +429,26 @@ int AudioJack::processCallback(jack_nframes_t nframes)
 		audioEngine()->renderNextBuffer({m_tempOutBufs, channels(), nframes});
 	}
 
-	for (int c = 0; c < channels(); ++c)
+	const int width = channels();
+	const bool wide = m_captureWide.size() >= static_cast<std::size_t>(nframes) * static_cast<std::size_t>(width);
+	for (int c = 0; c < width; ++c)
 	{
 		jack_default_audio_sample_t* jack_input_buffer = (jack_default_audio_sample_t*) jack_port_get_buffer(m_inputPorts[c], nframes);
 
 		for (jack_nframes_t frame = 0; frame < nframes; frame++)
 		{
 			m_inputFrameBuffer[frame][c] = static_cast<sample_t>(jack_input_buffer[frame]);
+			if (wide) { m_captureWide[static_cast<std::size_t>(frame) * width + c] = jack_input_buffer[frame]; }
 		}
 	}
 	audioEngine()->pushInputFrames (m_inputFrameBuffer.data(), nframes);
+	// The N-channel path and its counter, as AudioAlsa::publishCaptured feeds them: without
+	// these the modern recorder (record routes, AudioInputPath) saw nothing on JACK.
+	if (wide && nframes > 0)
+	{
+		audioEngine()->pushInputFramesWide(m_captureWide.data(), width, static_cast<f_cnt_t>(nframes));
+		AudioInputPath::addCapturedFrames(static_cast<std::uint64_t>(nframes));
+	}
 	return 0;
 }
 
