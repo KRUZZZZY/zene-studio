@@ -502,6 +502,8 @@ set(LMMS_TESTS
 	src/core/VcaGroupTest.cpp
 	# Mixer channel pan (MixerChannel::m_panModel): the render, the file and the command.
 	src/core/MixerChannelPanTest.cpp
+	# R2.4: the punch region's frame-accurate audio gate (include/PunchWindow.h).
+	src/core/PunchWindowTest.cpp
 	# Mixer::refreshGroups publishes each channel's VCA gain with ONE store, so a
 	# concurrent reader (the audio thread) never sees a grouped channel at unity.
 	src/core/VcaRefreshAtomicityTest.cpp
@@ -606,6 +608,10 @@ set(LMMS_TESTS
 	src/gui/ThemeContrastTest.cpp
 	src/gui/AccessibilityHelperTest.cpp
 	src/gui/FocusDeskTest.cpp
+	# M3.4: the command palette - what it lists, how it ranks, what it runs.
+	src/gui/CommandPaletteTest.cpp
+	# M3.7: the mixer's VCA strip and the channel's VCA menu.
+	src/gui/VcaStripViewTest.cpp
 	src/gui/MidiLearnGuiTest.cpp
 	src/tracks/AutomationTrackTest.cpp
 	# Inherited clip paths that dereferenced getGUI() unguarded, run headless.
@@ -1038,6 +1044,8 @@ set_tests_properties(ClipLinkTest ClipLinkPersistenceTest ImportDetectionTest
 # run it in the headless state the product is told about, not what keeps it from
 # aborting.
 set_tests_properties(FocusDeskTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+set_tests_properties(CommandPaletteTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+set_tests_properties(VcaStripViewTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(FocusDeskPaneTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(FocusDeskActionsTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(FocusDeskWorkspacesTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")

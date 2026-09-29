@@ -299,6 +299,12 @@ public:
 	MultiTrackRecorder& recorder() { return m_recorder; }
 	const MultiTrackRecorder& recorder() const { return m_recorder; }
 
+	/*! R2.4: the punch region the recorders are gated by, as the render thread
+	 *  reads it (include/PunchWindow.h). Published from the control thread by the
+	 *  Song whenever its timeline's punch changes; plain atomics, so the audio
+	 *  thread never reads the Timeline's own fields. */
+	void setPunchWindow(bool armed, tick_t begin, tick_t end) noexcept;
+
 	// -----------------------------------------------------------------------
 	// The N-CHANNEL capture IN path (0.3.0, feature row 64 "Arbitrary input
 	// count / multiple simultaneous inputs") and the retrospective AUDIO window
@@ -485,6 +491,15 @@ private:
 
 	//! prototype: N-route capture (task #556; N-wide since 0.3.0)
 	MultiTrackRecorder m_recorder;
+
+	//! R2.4: the published punch window (setPunchWindow) ...
+	std::atomic<bool> m_punchArmed{false};
+	std::atomic<tick_t> m_punchBegin{0};
+	std::atomic<tick_t> m_punchEnd{0};
+	//! ... and where the period being rendered STARTED on the song timeline,
+	//! taken by the render thread before the song advances (renderStageNoteSetup).
+	double m_periodStartFrame = 0.0;
+	bool m_periodSongPlaying = false;
 
 	//! Retrospective AUDIO capture (feature row 16). Its ring is allocated in
 	//! this object's constructor - i.e. off the audio thread - and the audio

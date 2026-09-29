@@ -150,6 +150,14 @@ Song::Song() :
 		connect(&m_timelines[i], &Timeline::positionJumped, this, onPositionJumped);
 	}
 
+	// R2.4: the song timeline's punch region, published to the render thread's
+	// gate every time it changes (a set, a clear, a load, an undo).
+	const auto publishPunch = [this] {
+		const Timeline& timeline = getTimeline(PlayMode::Song);
+		Engine::audioEngine()->setPunchWindow(timeline.punchArmed(), timeline.punchBegin(), timeline.punchEnd());
+	};
+	connect(&getTimeline(PlayMode::Song), &Timeline::punchChanged, this, publishPunch);
+
 	// Inform VST plugins if the user moved the play head
 	connect(this, &Song::playbackPositionJumped, this, [this](){ m_vstSyncController.setPlaybackJumped(true); }, Qt::DirectConnection);
 }

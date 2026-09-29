@@ -240,6 +240,10 @@ class Instance:
         env["HOME"] = self.tmp
         env["XDG_CONFIG_HOME"] = os.path.join(self.tmp, "config")
         env["XDG_DATA_HOME"] = os.path.join(self.tmp, "data")
+        # No test instance fetches the 166 MB stem model by accident (decision 14
+        # pinned it and a job fetches it on first use); a test that means to
+        # fetch sets LMMS_STEM_OFFLINE=0 in its own extra_env.
+        env.setdefault("LMMS_STEM_OFFLINE", "1")
         env.setdefault("ZENE_CONTROL_CHECK_RESULTS", os.path.join(os.path.dirname(os.path.abspath(__file__)), "result-schema-known-violations.txt"))  # replies held to their resultSchema (ControlResultCheck.h)
         env.update(self.extra_env)
         for key in ("XDG_CONFIG_HOME", "XDG_DATA_HOME"): os.makedirs(env[key], exist_ok=True)

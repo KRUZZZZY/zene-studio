@@ -80,6 +80,7 @@ void registerControlCommands(ControlRegistry& registry)
 	registerRecordingRetroCommands(registry);
 	registerMixerCommands(registry);
 	registerProjectCommands(registry);
+	registerProjectLifecycleCommands(registry);
 	// The project-asset reference group (feature row 38): detection, hashing and
 	// relink over a project FILE.
 	registerProjectArchiveCommands(registry);
@@ -227,6 +228,7 @@ void registerControlCommands(ControlRegistry& registry)
 	// The editors' windows (include/ControlWindowCommands.h): the View menu's and the
 	// window toolbar's toggles, which dispatch through these ids.
 	registerWindowCommands(registry);
+	registerShellCommands(registry);
 	// The patcher node graph (feature row 69): the same graph routing.get_state
 	// reads, addressed by ROLE and EDITABLE. Its own group because it writes
 	// where routing.* is an inspector by decision; the rationale, the threading

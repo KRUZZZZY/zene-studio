@@ -214,6 +214,13 @@ public:
 	//! Stop the last-resort guard: main() calls this the moment the event loop
 	//! returns, so a slow but healthy teardown is never force-exited.
 	static void cancelShutdownGuard();
+	/*! Run synchronously by scheduleQuit() BEFORE the quit is posted: the main
+	 *  window registers one that reattaches every detached editor. Under Qt6 a
+	 *  quit closes every top-level window and ANY close that is ignored cancels it,
+	 *  and a detached editor ignores its close (SubWindow::eventFilter reattaches
+	 *  instead) - so window.detach_all then control.quit hung until the 10 s guard
+	 *  forced exit 1 (measured by the agent-surface sweep, 2026-09-29). */
+	static void setPreQuitHook(std::function<void()> hook);
 
 	//! Milliseconds the last-resort shutdown guard waits before forcing an exit.
 	//! Kept deliberately long: it must never fire on a healthy shutdown.
@@ -364,6 +371,8 @@ LMMS_EXPORT void registerRecordingRetroCommands(ControlRegistry& registry);  //!
 LMMS_EXPORT void registerMixerCommands(ControlRegistry& registry);
 //! project.open and render.render
 LMMS_EXPORT void registerProjectCommands(ControlRegistry& registry);
+//! M3.2: project.new / save_as_template / import / export_midi and transport.set_metronome.
+LMMS_EXPORT void registerProjectLifecycleCommands(ControlRegistry& registry);
 //! project.save / project.restore_revision / project.get_state - the file-level
 //! commands, whose inverse is a retained file revision rather than an object.
 LMMS_EXPORT void registerProjectFilesCommands(ControlRegistry& registry);

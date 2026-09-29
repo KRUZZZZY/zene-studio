@@ -38,3 +38,4 @@
 # one allowlist, not one per configuration, so the reason above stays reviewable
 # in both.
 telemetry.consent	requires: display, human - it opens the modal consent screen, so it cannot be exercised headlessly (the sweep would only measure the typed `requires` refusal). Reverse completeness is still accounted for: telemetry.status covers the readable half of the feature and is swept like any other headless-safe command. In a -DZENE_TELEMETRY=OFF build the whole group is absent and tests/CMakeLists.txt declares this id compiled out.
+app.online_help	requires: display, human - it hands the documentation URL to the desktop, which launches a browser outside this process; the sweep must not start one. Its reachable half is the URL itself, which the reply names, and the Help menu is the human that dispatches it (M3.2, 2026-09-29).

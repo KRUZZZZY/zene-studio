@@ -41,6 +41,12 @@ SET(LMMS_SRCS
 	# The window.* command group: the editors' windows as registered commands
 	# (include/ControlWindowCommands.h).
 	gui/ControlCommandsWindow.cpp
+	# M3.2: the main window's own verbs (fullscreen, dialogs, save as new version).
+	gui/ControlCommandsShell.cpp
+	# M3.4: the command palette (menu actions + argument-free commands, searchable).
+	gui/CommandPalette.cpp
+	# M3.7: VCA group strips in the mixer + the channel's VCA menu.
+	gui/VcaStripView.cpp
 	# Focus Desk - the Direction B shell (UI plan §9.4). FocusDeskModules is the
 	# module register (§4.2) and is deliberately widget-free so its rules are
 	# testable without a QApplication; FocusDeskPlacement holds the card/density

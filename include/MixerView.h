@@ -94,6 +94,18 @@ public:
 	// useful for loading projects
 	void refreshDisplay();
 
+	//! M3.7: rebuild the VCA strips from Mixer::vcaGroups() (after a load, and
+	//! after a VCA menu edit). A mix with no groups shows no VCA area at all.
+	void refreshVcaStrips();
+
+	/*! Brings the view in line with the model when something other than this
+	 *  view changed it - mixer.add_channel, vca.*, a script, an undo: the view used
+	 *  to add a channel view only for its own "+" button, so a channel created over
+	 *  the socket was invisible until a reload. Channel count differs -> the whole
+	 *  display is rebuilt; VCA structure differs -> the VCA strips are. Run every
+	 *  500 ms on the GUI thread; the check is a count and a short signature. */
+	void syncWithMixer();
+
 public slots:
 	int addNewChannel();
 
@@ -121,6 +133,11 @@ private:
 	QWidget* m_channelAreaWidget;
 	QStackedLayout* m_racksLayout;
 	QWidget* m_racksWidget;
+	//! M3.7: the VCA groups' strips, to the right of the channels.
+	QWidget* m_vcaArea = nullptr;
+	QHBoxLayout* m_vcaLayout = nullptr;
+	//! What the VCA strips were last built from (id, name, member count per group).
+	QString m_vcaSignature;
 	Mixer* m_mixer;
 
 	void updateMaxChannelSelector();

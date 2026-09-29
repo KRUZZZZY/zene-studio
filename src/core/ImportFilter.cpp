@@ -57,27 +57,7 @@ ImportFilter::ImportFilter( const QString & _file_name,
 void ImportFilter::import( const QString & _file_to_import,
 							TrackContainer* tc )
 {
-	bool successful = false;
-
-	QByteArray s = _file_to_import.toUtf8();
-	s.detach();
-
-	// do not record changes while importing files
-	const bool j = Engine::projectJournal()->isJournalling();
-	Engine::projectJournal()->setJournalling( false );
-
-	for (const Plugin::Descriptor* desc : getPluginFactory()->descriptors(Plugin::Type::ImportFilter))
-	{
-		unique_ptr<Plugin> p(Plugin::instantiate( desc->name, nullptr, s.data() ));
-		if( dynamic_cast<ImportFilter *>( p.get() ) != nullptr &&
-			dynamic_cast<ImportFilter *>( p.get() )->tryImport( tc ) )
-		{
-			successful = true;
-			break;
-		}
-	}
-
-	Engine::projectJournal()->setJournalling( j );
+	const bool successful = tryImportFile( _file_to_import, tc );
 
 	if( successful == false )
 	{
@@ -102,6 +82,35 @@ void ImportFilter::import( const QString & _file_to_import,
 					.arg( _file_to_import );
 		}
 	}
+}
+
+
+
+
+bool ImportFilter::tryImportFile( const QString & fileToImport, TrackContainer* tc )
+{
+	bool successful = false;
+
+	QByteArray s = fileToImport.toUtf8();
+	s.detach();
+
+	// do not record changes while importing files
+	const bool j = Engine::projectJournal()->isJournalling();
+	Engine::projectJournal()->setJournalling( false );
+
+	for (const Plugin::Descriptor* desc : getPluginFactory()->descriptors(Plugin::Type::ImportFilter))
+	{
+		unique_ptr<Plugin> p(Plugin::instantiate( desc->name, nullptr, s.data() ));
+		if( dynamic_cast<ImportFilter *>( p.get() ) != nullptr &&
+			dynamic_cast<ImportFilter *>( p.get() )->tryImport( tc ) )
+		{
+			successful = true;
+			break;
+		}
+	}
+
+	Engine::projectJournal()->setJournalling( j );
+	return successful;
 }
 
 

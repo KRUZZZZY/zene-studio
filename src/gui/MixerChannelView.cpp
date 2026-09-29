@@ -45,6 +45,7 @@
 #include "FontHelper.h"
 #include "GuiApplication.h"
 #include "Knob.h"
+#include "VcaStripView.h"
 #include "LcdWidget.h"
 #include "lmms_math.h"
 #include "Mixer.h"
@@ -198,6 +199,12 @@ void MixerChannelView::contextMenuEvent(QContextMenuEvent*)
 	colorMenu.addAction(tr("Reset"), this, &MixerChannelView::resetColor);
 	colorMenu.addAction(tr("Pick random"), this, &MixerChannelView::randomizeColor);
 	contextMenu->addMenu(&colorMenu);
+
+	// M3.7: VCA membership, through the vca.* commands (one undoable step each).
+	auto vcaMenu = QMenu{tr("VCA group"), this};
+	MixerView* view = m_mixerView;
+	populateVcaMenu(&vcaMenu, static_cast<mix_ch_t>(m_channelIndex), [view]() { view->refreshVcaStrips(); });
+	contextMenu->addMenu(&vcaMenu);
 
 	contextMenu->exec(QCursor::pos());
 	delete contextMenu;

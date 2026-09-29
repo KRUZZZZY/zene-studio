@@ -1,6 +1,58 @@
 {
-  "captured_at": "2026-09-29T16:43:57Z",
+  "captured_at": "2026-09-29T17:41:36Z",
   "commands": [
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {},
+        "required": [],
+        "type": "object"
+      },
+      "description": "Open the About dialog (non-modally) - Help > About dispatches this. app.version answers the same facts as data.",
+      "group": "app",
+      "id": "app.about",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "shown": {
+            "type": "boolean"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {},
+        "required": [],
+        "type": "object"
+      },
+      "description": "Open the online documentation in the system browser - Help > Online Help dispatches this. It hands a URL to the desktop, which opens a program outside this one, so it declares `requires: human`: an unattended caller is refused rather than having a browser launched for it. `url` is where it points.",
+      "group": "app",
+      "id": "app.online_help",
+      "mutating": false,
+      "requires": [
+        "display",
+        "human"
+      ],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "opened": {
+            "type": "boolean"
+          },
+          "url": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
     {
       "args_schema": {
         "additionalProperties": false,
@@ -12270,6 +12322,38 @@
     {
       "args_schema": {
         "additionalProperties": false,
+        "properties": {
+          "path": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "path"
+        ],
+        "type": "object"
+      },
+      "description": "Write the session's notes as a Standard MIDI File (the midiexport filter; interchange.smf_export writes the tempo map only). File > Export MIDI dispatches this after its file dialog. A missing `.mid` suffix is appended. The session is not modified.",
+      "group": "project",
+      "id": "project.export_midi",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "bytes": {
+            "type": "integer"
+          },
+          "path": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
         "properties": {},
         "required": [],
         "type": "object"
@@ -12361,6 +12445,41 @@
           },
           "unresolved_count": {
             "type": "number"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "path": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "path"
+        ],
+        "type": "object"
+      },
+      "description": "Import a foreign file INTO the session through the import filters this build carries (a Standard MIDI File's notes, a Hydrogen song): the tracks it yields are added beside the existing ones. File > Import dispatches this. Refused, typed, when no filter takes the file - with no dialog, unlike the menu's own failure box. Not undoable: the filters write with the project journal paused.",
+      "group": "project",
+      "id": "project.import",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "path": {
+            "type": "string"
+          },
+          "track_count": {
+            "type": "integer"
+          },
+          "tracks_added": {
+            "type": "integer"
           }
         },
         "required": [],
@@ -12474,6 +12593,39 @@
             "type": "array"
           },
           "unresolved_count": {
+            "type": "integer"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "template": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "description": "Replace the session with a new project: the user's default template (or the factory one), or `template` - an absolute path to an .mpt - when given. File > New and the toolbar's new-project buttons dispatch this. The previous session is gone (unsaved edits included), exactly as project.open replaces it. `file` is empty afterwards: a new project has no file until it is saved.",
+      "group": "project",
+      "id": "project.new",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "file": {
+            "type": "string"
+          },
+          "template": {
+            "type": "string"
+          },
+          "track_count": {
             "type": "integer"
           }
         },
@@ -12714,6 +12866,58 @@
           },
           "saved": {
             "type": "boolean"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {},
+        "required": [],
+        "type": "object"
+      },
+      "description": "Write the session as the user's DEFAULT TEMPLATE (<user template dir>/default.mpt) - what every later project.new starts from. File > Save as default template dispatches this after asking before an overwrite. The session itself is unchanged; an existing default template is REPLACED (`replaced` says so).",
+      "group": "project",
+      "id": "project.save_as_template",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "path": {
+            "type": "string"
+          },
+          "replaced": {
+            "type": "boolean"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {},
+        "required": [],
+        "type": "object"
+      },
+      "description": "Save the session as the NEXT VERSION of its file - <name>-01.mmp, -02, ... the first free one - and make that the project's file; the previous version stays on disk untouched. File > Save as New Version dispatches this. Refused while the session has no file yet (save it once with project.save first). Needs no interface.",
+      "group": "project",
+      "id": "project.save_version",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "file": {
+            "type": "string"
+          },
+          "previous_file": {
+            "type": "string"
           }
         },
         "required": [],
@@ -18277,6 +18481,38 @@
       "args_schema": {
         "additionalProperties": false,
         "properties": {
+          "enabled": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "enabled"
+        ],
+        "type": "object"
+      },
+      "description": "Switch the metronome click on or off - the main toolbar's metronome toggle dispatches this. `previous` is the state before. Monitoring state, not project state: the project file does not carry it and nothing is journalled.",
+      "group": "transport",
+      "id": "transport.set_metronome",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "previous": {
+            "type": "boolean"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
           "bpm": {
             "maximum": 999,
             "minimum": 10,
@@ -19949,6 +20185,108 @@
         "required": [],
         "type": "object"
       },
+      "description": "Attach every detached editor window back into the main window's workspace - View > Attach all subwindows dispatches this. Interface state only.",
+      "group": "window",
+      "id": "window.attach_all",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "detached": {
+            "type": "boolean"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {},
+        "required": [],
+        "type": "object"
+      },
+      "description": "Open the command palette (non-modally) - View > Command Palette and Ctrl+Shift+P dispatch this. It lists every enabled menu action with its menu path and shortcut, plus every command that needs no argument, filters them as you type and runs the highlighted one: a menu entry triggers the real action (its dialog included), a command entry is dispatched through the registry. `entries` is how many it offers.",
+      "group": "window",
+      "id": "window.command_palette",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "entries": {
+            "type": "integer"
+          },
+          "shown": {
+            "type": "boolean"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {},
+        "required": [],
+        "type": "object"
+      },
+      "description": "Detach every editor sub-window into its own top-level window - View > Detach all subwindows dispatches this. Interface state only.",
+      "group": "window",
+      "id": "window.detach_all",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "detached": {
+            "type": "boolean"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "description": "Put the main window into fullscreen or take it out - View > Fullscreen dispatches this. With no `enabled` it toggles. Leaving fullscreen restores the maximised or normal state the window had. Interface state only.",
+      "group": "window",
+      "id": "window.fullscreen",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "changed": {
+            "type": "boolean"
+          },
+          "fullscreen": {
+            "type": "boolean"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {},
+        "required": [],
+        "type": "object"
+      },
       "description": "Which editors' windows are showing: `editors` is one {editor, visible} entry per window.toggle editor, in the menu's Ctrl+1..7 order. Read-only. Refused `requires` in a process with no interface.",
       "group": "window",
       "id": "window.get_state",
@@ -19969,6 +20307,71 @@
       "args_schema": {
         "additionalProperties": false,
         "properties": {
+          "path": {
+            "type": "string"
+          },
+          "window": {
+            "enum": [
+              "main",
+              "active"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "path"
+        ],
+        "type": "object"
+      },
+      "description": "Write a PNG of the main window - or, with `window: \"active\"`, of the top-level window that has focus (a dialog, the palette) - to the absolute `path`. For an agent that has to SEE the interface it drives: layout, labels and state as rendered, which no read command reports. Works under the offscreen platform. `width`/`height` are the image's.",
+      "group": "window",
+      "id": "window.screenshot",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "height": {
+            "type": "integer"
+          },
+          "path": {
+            "type": "string"
+          },
+          "width": {
+            "type": "integer"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {},
+        "required": [],
+        "type": "object"
+      },
+      "description": "Open the Settings dialog (non-modally) - Edit > Settings dispatches this. What the dialog changes on OK is what settings.set writes; this only shows it.",
+      "group": "window",
+      "id": "window.settings",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "shown": {
+            "type": "boolean"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
           "editor": {
             "enum": [
               "song",
@@ -19977,7 +20380,8 @@
               "automation",
               "mixer",
               "controller_rack",
-              "project_notes"
+              "project_notes",
+              "microtuner"
             ],
             "type": "string"
           }
@@ -19987,7 +20391,7 @@
         ],
         "type": "object"
       },
-      "description": "Show or hide one editor's window - the View menu's Ctrl+1..7 items and the window toolbar dispatch exactly this. `editor` is one of song, pattern, piano_roll, automation, mixer, controller_rack, project_notes. A hidden or unfocused editor is brought forward (and back into view if it was off screen); the focused one is hidden. `visible` is the editor's state afterwards. Interface state, not project state: nothing is journalled. Refused `requires` in a process with no interface.",
+      "description": "Show or hide one editor's window - the View menu's Ctrl+1..7 items, Edit > Scales and keymaps and the window toolbar dispatch exactly this. `editor` is one of song, pattern, piano_roll, automation, mixer, controller_rack, project_notes, microtuner. A hidden or unfocused editor is brought forward (and back into view if it was off screen); the focused one is hidden. `visible` is the editor's state afterwards. Interface state, not project state: nothing is journalled. Refused `requires` in a process with no interface.",
       "group": "window",
       "id": "window.toggle",
       "mutating": false,
@@ -20007,23 +20411,23 @@
       }
     }
   ],
-  "count": 360,
+  "count": 374,
   "instance": {
     "binary": null,
     "binary_bytes": null,
     "binary_sha256": null,
-    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-survey/tools/zene-pa-agentctl",
+    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-ui/tools/zene-pa-agentctl",
     "lane_head": null,
     "proto": 1,
-    "source_socket": "/tmp/zctl-run-ty1zyez_/zene.sock",
-    "version": "0.3.0-alpha.150+f2aedbe"
+    "source_socket": "/tmp/zctl-run-p1mayuxb/zene.sock",
+    "version": "0.3.0-alpha.154+b6afcc5"
   },
   "kind": "zene-control-command-list",
   "proto": 1,
   "schema": 1,
   "surface": {
     "group_count": 58,
-    "id_count": 360,
-    "ids_sha256": "3ecf33adf1f3b13080b0b92c591885abb3788a14852de1deae9e44ce1846fce0"
+    "id_count": 374,
+    "ids_sha256": "01a782695bef8f6eb450f21c22dac7ef8d7774e088f2e2712fe6aa625077adfb"
   }
 }
