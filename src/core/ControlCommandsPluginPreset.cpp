@@ -126,6 +126,8 @@ void registerPresetList(ControlRegistry& registry)
 		{QStringLiteral("presets"), QJsonObject{{QStringLiteral("type"), QStringLiteral("array")}}},
 		{QStringLiteral("count"), integerProperty()},
 		{QStringLiteral("dir"), stringProperty()},
+		{QStringLiteral("factory_dir"), stringProperty()},
+		{QStringLiteral("plugin"), stringProperty()},
 	});
 	cmd.handler = [](const QJsonObject& args) {
 		ControlTarget target;
@@ -172,6 +174,7 @@ void registerPresetSave(ControlRegistry& registry)
 		{QStringLiteral("name"), stringProperty()},
 		{QStringLiteral("bytes"), integerProperty()},
 		{QStringLiteral("sha256"), stringProperty()},
+		{QStringLiteral("plugin"), stringProperty()},
 	});
 	cmd.mutating = true;
 	cmd.handler = [](const QJsonObject& args) {
@@ -241,6 +244,7 @@ void registerPresetLoad(ControlRegistry& registry)
 	cmd.resultSchema = objectSchema({
 		{QStringLiteral("restored"), booleanProperty()},
 		{QStringLiteral("path"), stringProperty()},
+		{QStringLiteral("plugin"), stringProperty()},
 	});
 	cmd.mutating = true;
 	cmd.handler = [](const QJsonObject& args) {

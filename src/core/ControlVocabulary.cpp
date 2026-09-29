@@ -105,6 +105,15 @@ QJsonObject objectProperty()
 	return QJsonObject{{QStringLiteral("type"), QStringLiteral("object")}};
 }
 
+QJsonObject nullable(QJsonObject property)
+{
+	const QJsonValue type = property.value(QStringLiteral("type"));
+	QJsonArray types = type.isArray() ? type.toArray() : QJsonArray{type};
+	if (!types.contains(QStringLiteral("null"))) { types.append(QStringLiteral("null")); }
+	property.insert(QStringLiteral("type"), types);
+	return property;
+}
+
 QJsonObject tickProperty()
 {
 	return integerProperty(0, 0x7fffffff);

@@ -221,6 +221,13 @@ void registerRecoveryRestore(ControlRegistry& registry)
 		{QStringLiteral("audio_untouched"), booleanProperty()},
 		{QStringLiteral("audio"), stringProperty()},
 		{QStringLiteral("next_step"), stringProperty()},
+		{QStringLiteral("channels"), numberProperty()},
+		{QStringLiteral("frames_beyond_the_journal"), numberProperty()},
+		{QStringLiteral("journal_lag_bound_frames"), numberProperty()},
+		{QStringLiteral("ring_frames_not_recoverable"), numberProperty()},
+		{QStringLiteral("sample_rate"), numberProperty()},
+		{QStringLiteral("track"), stringProperty()},
+		{QStringLiteral("updated_utc"), stringProperty()},
 	});
 	cmd.mutating = true;
 	cmd.handler = [](const QJsonObject& args) { return recoveryRestore(args); };

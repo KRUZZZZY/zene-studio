@@ -98,6 +98,18 @@ void registerClipAdd(ControlRegistry& registry)
 		{QStringLiteral("track"), control::stringProperty()},
 		{QStringLiteral("position"), control::integerProperty(0, MaxSongLength)},
 		{QStringLiteral("length"), control::integerProperty(0, MaxSongLength)},
+		{QStringLiteral("auto_resize"), control::booleanProperty()},
+		{QStringLiteral("fade_in"), control::numberProperty()},
+		{QStringLiteral("fade_in_shape"), control::stringProperty()},
+		{QStringLiteral("fade_out"), control::numberProperty()},
+		{QStringLiteral("fade_out_shape"), control::stringProperty()},
+		{QStringLiteral("gain_db"), control::numberProperty()},
+		{QStringLiteral("id"), control::stringProperty()},
+		{QStringLiteral("index_in_track"), control::numberProperty()},
+		{QStringLiteral("muted"), control::booleanProperty()},
+		{QStringLiteral("name"), control::stringProperty()},
+		{QStringLiteral("note_count"), control::nullable(control::numberProperty())},
+		{QStringLiteral("selected"), control::booleanProperty()},
 	});
 	cmd.mutating = true;
 	cmd.handler = [](const QJsonObject& args) {
@@ -316,6 +328,20 @@ void registerClipDelete(ControlRegistry& registry)
 		{QStringLiteral("deleted"), control::stringProperty()},
 		{QStringLiteral("track"), control::stringProperty()},
 		{QStringLiteral("dry_run"), control::booleanProperty()},
+		{QStringLiteral("auto_resize"), control::booleanProperty()},
+		{QStringLiteral("fade_in"), control::numberProperty()},
+		{QStringLiteral("fade_in_shape"), control::stringProperty()},
+		{QStringLiteral("fade_out"), control::numberProperty()},
+		{QStringLiteral("fade_out_shape"), control::stringProperty()},
+		{QStringLiteral("gain_db"), control::numberProperty()},
+		{QStringLiteral("id"), control::stringProperty()},
+		{QStringLiteral("index_in_track"), control::numberProperty()},
+		{QStringLiteral("length"), control::numberProperty()},
+		{QStringLiteral("muted"), control::booleanProperty()},
+		{QStringLiteral("name"), control::stringProperty()},
+		{QStringLiteral("note_count"), control::numberProperty()},
+		{QStringLiteral("position"), control::numberProperty()},
+		{QStringLiteral("selected"), control::booleanProperty()},
 	});
 	cmd.mutating = true;
 	cmd.handler = [](const QJsonObject& args) {

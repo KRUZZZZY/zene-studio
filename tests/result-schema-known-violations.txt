@@ -9,49 +9,8 @@
 # The nine vca.* mutators left the list in the same change (vcacontrol::groupStateSchema).
 #
 # Format: <command.id><TAB><the violations measured, abbreviated>
-arrangement.get_state	undeclared 'selected_clip' (str); result: unexpected property 'selected_clip'
-bus.list	undeclared 'note' (str); result: unexpected property 'note'
-chain.save	undeclared 'dir' (str); undeclared 'target' (str)
-clip.add	undeclared 'auto_resize' (bool); undeclared 'fade_in' (int); undeclared 'fade_in_shape' (str); undeclared 'fade_out' (int) (+8 more)
-clip.delete	undeclared 'auto_resize' (bool); undeclared 'fade_in' (int); undeclared 'fade_in_shape' (str); undeclared 'fade_out' (int) (+10 more)
-clock.master_set	undeclared 'emitted_total' (int); undeclared 'last_emitted' (str); undeclared 'last_emitted_ticks' (int); undeclared 'monitor' (list) (+2 more)
-clock.slave_set	undeclared 'interval_ms' (int); undeclared 'messages' (dict); undeclared 'pulses' (int); undeclared 'song_position' (int) (+4 more)
-control.commands_list	undeclared 'proto' (int); result: unexpected property 'proto'
-control.undo	undeclared 'inverse_result' (dict); result: unexpected property 'inverse_result'
-export.preset_list	undeclared 'settings' (dict); applied_preset: expected string, got NoneType
-export.preset_remove	undeclared 'bit_depth' (str); undeclared 'sample_rate' (int); undeclared 'stereo_mode' (str)
-freeze.region	undeclared 'audio_ready' (bool); undeclared 'bytes' (int); undeclared 'name' (str); undeclared 'sample_rate' (int)
-freeze.track	undeclared 'bytes' (int); undeclared 'muted_clips' (int); undeclared 'name' (str); undeclared 'overlapping_clips' (list) (+1 more)
-freeze.unfreeze	undeclared 'audio_ready' (bool); undeclared 'end_ticks' (int); undeclared 'name' (str); undeclared 'start_ticks' (int)
-link.set_enabled	undeclared 'beat' (float); undeclared 'engine_phase_beats' (int); undeclared 'engine_tempo' (int); undeclared 'instance' (str) (+15 more)
-link.set_session_tempo	undeclared 'beat' (float); undeclared 'enabled' (bool); undeclared 'engine_phase_beats' (int); undeclared 'instance' (str) (+14 more)
-mastering.get_state	error: expected string, got NoneType; last_run: expected object, got NoneType; result.error: expected string; result.error: expected string'}
-meter.measure_file	deviation_lu: expected number, got NoneType; integrated_lufs: expected number, got NoneType; momentary_lufs: expected number, got NoneType; short_term_lufs: expected number, got NoneType (+2 more)
-note.add	undeclared 'id' (str); undeclared 'index' (int); undeclared 'midi_velocity' (int); undeclared 'note_count' (int) (+3 more)
-pdc.report	undeclared 'note' (str); result: unexpe'; result: unexpected property 'note'
-plugin.list	counts_by_format: undeclared 'builtin' (int); counts_by_format: undeclared 'ladspa' (int); counts_by_format: undeclared 'lv2' (int); counts_by_kind: undeclared 'effect' (int) (+4 more)
-plugin.load	undeclared 'device' (str); undeclared 'display_name' (str); undeclared 'index' (int); undeclared 'previous_plugin' (str)
-plugin.param_get	undeclared 'device_plugin' (str); parameter: undeclared 'step' (float); parameter: undeclared 'step' (int)
-plugin.param_set	undeclared 'device_plugin' (str); parameter: undeclared 'step' (float); parameter: undeclared 'step' (int)
-plugin.scan_cache_list	undeclared 'dirty' (bool); undeclared 'format_version' (int); undeclared 'persistent' (bool); result: unexpected property 'dirty'
-plugin.scan_cache_lookup	undeclared 'dirty' (bool); undeclared 'format_version' (int); undeclared 'persistent' (bool); record: expected object, got NoneType (+1 more)
-port.get_state	undeclared 'note' (str)
-project.get_state	undeclared 'playing' (bool); undeclared 'tracks' (list); result: unexpected property 'playing'
-project.save	undeclared 'revision_skipped' (str); result: unexpected property 'revision_skipped'
-record.arm_track	undeclared 'armed_now' (bool); undeclared 'input_frames_staged_at_arm' (int); result: unexpected property 'armed_now'
-record.input_get_state	configured: undeclared 'channels' (int); configured: undeclared 'device' (str); configured: undeclared 'left' (int); configured: undeclared 'right' (int) (+1 more)
-record.input_set	previous: undeclared 'channels' (int); previous: undeclared 'device' (str); previous: undeclared 'left' (int); previous: undeclared 'right' (int) (+1 more)
-record.recovery_restore	undeclared 'channels' (int); undeclared 'frames_beyond_the_journal' (int); undeclared 'journal_lag_bound_frames' (int); undeclared 'ring_frames_not_recoverable' (int) (+4 more)
-render.render	undeclared 'bytes' (int); undeclared 'format' (str); range: expected object, got NoneType
-roll.get_state	undeclared 'auto_resize' (bool); undeclared 'fade_in' (int); undeclared 'fade_in_shape' (str); undeclared 'fade_out' (int) (+10 more)
-routing.get_state	undeclared 'note' (str); rack: expected object, got NoneType; result: unexpected property 'note'
-session.launch_scene	undeclared 'next_bar' (int); result: unexpected property 'next_bar'
-session.launch_slot	undeclared 'clip' (dict); result: unexpected property 'clip'
-track.add	undeclared 'child_count' (int); undeclared 'clip_count' (int); undeclared 'collapsed' (bool); undeclared 'folder' (str) (+9 more)
-track.folder_set_collapsed	undeclared 'children' (list); undeclared 'mixer_channel' (int); undeclared 'mode' (str); undeclared 'name' (str) (+2 more)
-track.get_state	undeclared 'child_count' (int); undeclared 'collapsed' (bool); undeclared 'folder' (str); undeclared 'folder_mode' (str) (+5 more)
-track.set_arm	result: unexpected property 'armed_before'
-track.set_folder	undeclared 'collapsed' (bool); undeclared 'mixer_channel' (int); undeclared 'mode' (str); undeclared 'name' (str) (+2 more)
-track.set_pinned	undeclared 'children' (list); undeclared 'collapsed' (bool); undeclared 'mixer_channel' (int); undeclared 'mode' (str) (+2 more)
-track.set_routing	undeclared 'child_count' (int); undeclared 'collapsed' (bool); undeclared 'name' (str); undeclared 'pinned' (bool)
-transport.get_state	undeclared 'master_volume' (int); result: unexpected property 'master_volume'
+#
+# EMPTY since 2026-09-28 (040/m1-contract, relief plan R6.1): all 46 grandfathered commands' schemas
+# were fixed - 41 by declaring the keys their replies were measured carrying, the rest by hand
+# (four closed objectSchema({}) properties that refused every key; nullable readings). Re-measured
+# over 2,531 driver replies: 0 violations. Every command is now held to its schema.

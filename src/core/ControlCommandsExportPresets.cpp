@@ -176,8 +176,9 @@ void registerExportPresetList(ControlRegistry& registry)
 		{QStringLiteral("presets"), arrayProperty()},
 		{QStringLiteral("count"), integerProperty()},
 		{QStringLiteral("dir"), stringProperty()},
-		{QStringLiteral("applied_preset"), stringProperty()},
+		{QStringLiteral("applied_preset"), nullable(stringProperty())},
 		{QStringLiteral("active"), booleanProperty()},
+		{QStringLiteral("settings"), objectProperty()},
 	});
 	cmd.mutating = false;
 	cmd.handler = [](const QJsonObject& args) {
@@ -333,7 +334,7 @@ void registerExportPresetApply(ControlRegistry& registry)
 	cmd.resultSchema = objectSchema({
 		{QStringLiteral("name"), stringProperty()},
 		{QStringLiteral("path"), stringProperty()},
-		{QStringLiteral("applied_preset"), stringProperty()},
+		{QStringLiteral("applied_preset"), nullable(stringProperty())},
 		{QStringLiteral("active"), booleanProperty()},
 		{QStringLiteral("previous_preset"), stringProperty()},
 		{QStringLiteral("previous"), objectProperty()},
@@ -420,6 +421,9 @@ void registerExportPresetRemove(ControlRegistry& registry)
 		{QStringLiteral("sha256"), stringProperty()},
 		{QStringLiteral("count"), integerProperty()},
 		{QStringLiteral("dir"), stringProperty()},
+		{QStringLiteral("bit_depth"), stringProperty()},
+		{QStringLiteral("sample_rate"), numberProperty()},
+		{QStringLiteral("stereo_mode"), stringProperty()},
 	});
 	cmd.mutating = true;
 	cmd.handler = [](const QJsonObject& args) {

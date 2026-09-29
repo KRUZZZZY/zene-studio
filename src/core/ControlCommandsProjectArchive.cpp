@@ -236,6 +236,8 @@ void registerProjectHashAssets(ControlRegistry& registry)
 		{QStringLiteral("missing_count"), integerProperty()},
 		{QStringLiteral("embedded_count"), integerProperty()},
 		{QStringLiteral("references"), arrayProperty()},
+		{QStringLiteral("present_count"), numberProperty()},
+		{QStringLiteral("unresolved_count"), numberProperty()},
 	});
 	cmd.mutating = false;
 	cmd.handler = [](const QJsonObject& args) {

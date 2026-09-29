@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-09-28T20:29:34Z",
+  "captured_at": "2026-09-29T09:00:16Z",
   "commands": [
     {
       "args_schema": {
@@ -56,6 +56,9 @@
           "clips": {
             "type": "array"
           },
+          "selected_clip": {
+            "type": "string"
+          },
           "track_count": {
             "maximum": 1919808,
             "minimum": 0,
@@ -95,6 +98,9 @@
           },
           "devices": {
             "type": "array"
+          },
+          "start_failed": {
+            "type": "boolean"
           }
         },
         "required": [],
@@ -127,6 +133,9 @@
           },
           "device": {
             "type": "string"
+          },
+          "live_switch": {
+            "type": "boolean"
           },
           "previous": {
             "type": "string"
@@ -1062,6 +1071,9 @@
           },
           "count": {
             "type": "integer"
+          },
+          "note": {
+            "type": "string"
           }
         },
         "required": [],
@@ -1348,6 +1360,9 @@
           "devices": {
             "type": "array"
           },
+          "dir": {
+            "type": "string"
+          },
           "name": {
             "type": "string"
           },
@@ -1358,6 +1373,9 @@
             "type": "boolean"
           },
           "sha256": {
+            "type": "string"
+          },
+          "target": {
             "type": "string"
           }
         },
@@ -2160,18 +2178,57 @@
       "result_schema": {
         "additionalProperties": false,
         "properties": {
+          "auto_resize": {
+            "type": "boolean"
+          },
           "clip": {
             "type": "string"
+          },
+          "fade_in": {
+            "type": "number"
+          },
+          "fade_in_shape": {
+            "type": "string"
+          },
+          "fade_out": {
+            "type": "number"
+          },
+          "fade_out_shape": {
+            "type": "string"
+          },
+          "gain_db": {
+            "type": "number"
+          },
+          "id": {
+            "type": "string"
+          },
+          "index_in_track": {
+            "type": "number"
           },
           "length": {
             "maximum": 1919808,
             "minimum": 0,
             "type": "integer"
           },
+          "muted": {
+            "type": "boolean"
+          },
+          "name": {
+            "type": "string"
+          },
+          "note_count": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
           "position": {
             "maximum": 1919808,
             "minimum": 0,
             "type": "integer"
+          },
+          "selected": {
+            "type": "boolean"
           },
           "track": {
             "type": "string"
@@ -2262,10 +2319,52 @@
       "result_schema": {
         "additionalProperties": false,
         "properties": {
+          "auto_resize": {
+            "type": "boolean"
+          },
           "deleted": {
             "type": "string"
           },
           "dry_run": {
+            "type": "boolean"
+          },
+          "fade_in": {
+            "type": "number"
+          },
+          "fade_in_shape": {
+            "type": "string"
+          },
+          "fade_out": {
+            "type": "number"
+          },
+          "fade_out_shape": {
+            "type": "string"
+          },
+          "gain_db": {
+            "type": "number"
+          },
+          "id": {
+            "type": "string"
+          },
+          "index_in_track": {
+            "type": "number"
+          },
+          "length": {
+            "type": "number"
+          },
+          "muted": {
+            "type": "boolean"
+          },
+          "name": {
+            "type": "string"
+          },
+          "note_count": {
+            "type": "number"
+          },
+          "position": {
+            "type": "number"
+          },
+          "selected": {
             "type": "boolean"
           },
           "track": {
@@ -2343,17 +2442,35 @@
       "result_schema": {
         "additionalProperties": false,
         "properties": {
+          "adopted": {
+            "type": "array"
+          },
           "content": {
             "type": "string"
+          },
+          "content_members": {
+            "type": "number"
+          },
+          "divergent": {
+            "type": "array"
           },
           "group": {
             "type": "integer"
           },
+          "in_sync": {
+            "type": "array"
+          },
           "members": {
             "type": "array"
           },
+          "mirrored": {
+            "type": "number"
+          },
           "notes": {
             "type": "integer"
+          },
+          "reference": {
+            "type": "string"
           },
           "size": {
             "type": "integer"
@@ -2382,8 +2499,14 @@
       "result_schema": {
         "additionalProperties": false,
         "properties": {
+          "clip": {
+            "type": "string"
+          },
           "count": {
             "type": "integer"
+          },
+          "group": {
+            "type": "number"
           },
           "groups": {
             "type": "array"
@@ -2736,6 +2859,9 @@
           "clip": {
             "type": "string"
           },
+          "end": {
+            "type": "number"
+          },
           "length": {
             "maximum": 1919808,
             "minimum": 0,
@@ -2938,8 +3064,23 @@
           "emitted": {
             "type": "object"
           },
+          "emitted_total": {
+            "type": "number"
+          },
           "enabled": {
             "type": "boolean"
+          },
+          "last_emitted": {
+            "type": "string"
+          },
+          "last_emitted_ticks": {
+            "type": "number"
+          },
+          "monitor": {
+            "type": "array"
+          },
+          "period_ms": {
+            "type": "number"
           },
           "port": {
             "type": "string"
@@ -2996,13 +3137,34 @@
           "follow_tempo": {
             "type": "boolean"
           },
+          "interval_ms": {
+            "type": "number"
+          },
           "locked": {
             "type": "boolean"
+          },
+          "messages": {
+            "type": "object"
+          },
+          "pulses": {
+            "type": "number"
+          },
+          "song_position": {
+            "type": "number"
           },
           "source_port": {
             "type": "string"
           },
           "tempo_bpm": {
+            "type": "number"
+          },
+          "tempo_error_bound_bpm": {
+            "type": "number"
+          },
+          "time_code": {
+            "type": "number"
+          },
+          "window_ms": {
             "type": "number"
           }
         },
@@ -3395,6 +3557,9 @@
           },
           "count": {
             "type": "integer"
+          },
+          "proto": {
+            "type": "number"
           }
         },
         "required": [],
@@ -3602,11 +3767,20 @@
           "bounded": {
             "type": "boolean"
           },
+          "can_redo": {
+            "type": "boolean"
+          },
+          "can_undo": {
+            "type": "boolean"
+          },
           "cap_bytes": {
             "type": "integer"
           },
           "cap_steps": {
             "type": "integer"
+          },
+          "coalesced_steps": {
+            "type": "number"
           },
           "depth": {
             "type": "integer"
@@ -3622,6 +3796,9 @@
           },
           "previous_steps": {
             "type": "integer"
+          },
+          "redo_depth": {
+            "type": "number"
           },
           "retained_bytes": {
             "type": "integer"
@@ -3727,6 +3904,9 @@
           },
           "class": {
             "type": "string"
+          },
+          "inverse_result": {
+            "type": "object"
           },
           "mechanism": {
             "type": "string"
@@ -4886,14 +5066,32 @@
       "result_schema": {
         "additionalProperties": false,
         "properties": {
+          "applies_to": {
+            "type": "string"
+          },
           "axes": {
             "type": "object"
           },
           "changed": {
             "type": "boolean"
           },
+          "channels": {
+            "type": "number"
+          },
+          "default_bend_range_semitones": {
+            "type": "number"
+          },
+          "default_master_channel": {
+            "type": "number"
+          },
           "enabled": {
             "type": "boolean"
+          },
+          "max_active_notes_per_channel": {
+            "type": "number"
+          },
+          "max_pitch_cents": {
+            "type": "number"
           },
           "note_expressions_unchanged": {
             "type": "boolean"
@@ -5083,7 +5281,10 @@
             "type": "boolean"
           },
           "applied_preset": {
-            "type": "string"
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "bit_depth": {
             "type": "string"
@@ -5134,7 +5335,10 @@
             "type": "boolean"
           },
           "applied_preset": {
-            "type": "string"
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "count": {
             "type": "integer"
@@ -5144,6 +5348,9 @@
           },
           "presets": {
             "type": "array"
+          },
+          "settings": {
+            "type": "object"
           }
         },
         "required": [],
@@ -5171,6 +5378,9 @@
       "result_schema": {
         "additionalProperties": false,
         "properties": {
+          "bit_depth": {
+            "type": "string"
+          },
           "bytes": {
             "type": "integer"
           },
@@ -5186,7 +5396,13 @@
           "path": {
             "type": "string"
           },
+          "sample_rate": {
+            "type": "number"
+          },
           "sha256": {
+            "type": "string"
+          },
+          "stereo_mode": {
             "type": "string"
           }
         },
@@ -5463,6 +5679,12 @@
           "audio": {
             "type": "string"
           },
+          "audio_ready": {
+            "type": "boolean"
+          },
+          "bytes": {
+            "type": "number"
+          },
           "end_ticks": {
             "type": "integer"
           },
@@ -5475,11 +5697,17 @@
           "muted_clips": {
             "type": "integer"
           },
+          "name": {
+            "type": "string"
+          },
           "overlapping_clips": {
             "type": "array"
           },
           "path": {
             "type": "string"
+          },
+          "sample_rate": {
+            "type": "number"
           },
           "sha256": {
             "type": "string"
@@ -5525,6 +5753,9 @@
           "audio_ready": {
             "type": "boolean"
           },
+          "bytes": {
+            "type": "number"
+          },
           "end_ticks": {
             "type": "integer"
           },
@@ -5534,8 +5765,20 @@
           "frozen": {
             "type": "boolean"
           },
+          "muted_clips": {
+            "type": "number"
+          },
+          "name": {
+            "type": "string"
+          },
+          "overlapping_clips": {
+            "type": "array"
+          },
           "path": {
             "type": "string"
+          },
+          "sample_rate": {
+            "type": "number"
           },
           "sha256": {
             "type": "string"
@@ -5575,11 +5818,23 @@
           "audio": {
             "type": "string"
           },
+          "audio_ready": {
+            "type": "boolean"
+          },
+          "end_ticks": {
+            "type": "number"
+          },
           "frozen": {
             "type": "boolean"
           },
           "muted_clips": {
             "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          },
+          "start_ticks": {
+            "type": "number"
           },
           "track": {
             "type": "string"
@@ -6715,16 +6970,70 @@
       "result_schema": {
         "additionalProperties": false,
         "properties": {
+          "beat": {
+            "type": "number"
+          },
           "enabled": {
             "type": "boolean"
+          },
+          "engine_phase_beats": {
+            "type": "number"
+          },
+          "engine_tempo": {
+            "type": "number"
+          },
+          "instance": {
+            "type": "string"
           },
           "interop": {
             "type": "object"
           },
+          "last_packet_age_ms": {
+            "type": "number"
+          },
+          "model": {
+            "type": "string"
+          },
           "peer_count": {
             "type": "integer"
           },
+          "peer_id": {
+            "type": "string"
+          },
+          "peers": {
+            "type": "array"
+          },
+          "phase_beats": {
+            "type": "number"
+          },
+          "phase_error_beats": {
+            "type": "number"
+          },
           "previous": {
+            "type": "boolean"
+          },
+          "published_count": {
+            "type": "number"
+          },
+          "quantum": {
+            "type": "number"
+          },
+          "quantum_choices": {
+            "type": "array"
+          },
+          "session_revision": {
+            "type": "number"
+          },
+          "session_revision_owner": {
+            "type": "string"
+          },
+          "session_tempo": {
+            "type": "number"
+          },
+          "start_stop_sync": {
+            "type": "boolean"
+          },
+          "tempo_is_local": {
             "type": "boolean"
           },
           "transport": {
@@ -6758,17 +7067,74 @@
       "result_schema": {
         "additionalProperties": false,
         "properties": {
+          "beat": {
+            "type": "number"
+          },
           "enabled": {
             "type": "boolean"
           },
+          "engine_phase_beats": {
+            "type": "number"
+          },
+          "engine_tempo": {
+            "type": "number"
+          },
+          "instance": {
+            "type": "string"
+          },
+          "interop": {
+            "type": "object"
+          },
+          "last_packet_age_ms": {
+            "type": "number"
+          },
+          "model": {
+            "type": "string"
+          },
+          "peer_count": {
+            "type": "number"
+          },
+          "peer_id": {
+            "type": "string"
+          },
+          "peers": {
+            "type": "array"
+          },
           "phase_beats": {
+            "type": "number"
+          },
+          "phase_error_beats": {
             "type": "number"
           },
           "previous": {
             "type": "integer"
           },
+          "published_count": {
+            "type": "number"
+          },
           "quantum": {
             "type": "integer"
+          },
+          "quantum_choices": {
+            "type": "array"
+          },
+          "session_revision": {
+            "type": "number"
+          },
+          "session_revision_owner": {
+            "type": "string"
+          },
+          "session_tempo": {
+            "type": "number"
+          },
+          "start_stop_sync": {
+            "type": "boolean"
+          },
+          "tempo_is_local": {
+            "type": "boolean"
+          },
+          "transport": {
+            "type": "object"
           }
         },
         "required": [],
@@ -6796,20 +7162,74 @@
       "result_schema": {
         "additionalProperties": false,
         "properties": {
+          "beat": {
+            "type": "number"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "engine_phase_beats": {
+            "type": "number"
+          },
           "engine_tempo": {
             "type": "integer"
+          },
+          "instance": {
+            "type": "string"
+          },
+          "interop": {
+            "type": "object"
+          },
+          "last_packet_age_ms": {
+            "type": "number"
+          },
+          "model": {
+            "type": "string"
+          },
+          "peer_count": {
+            "type": "number"
+          },
+          "peer_id": {
+            "type": "string"
+          },
+          "peers": {
+            "type": "array"
+          },
+          "phase_beats": {
+            "type": "number"
+          },
+          "phase_error_beats": {
+            "type": "number"
           },
           "previous": {
             "type": "number"
           },
+          "published_count": {
+            "type": "number"
+          },
+          "quantum": {
+            "type": "number"
+          },
+          "quantum_choices": {
+            "type": "array"
+          },
           "session_revision": {
             "type": "integer"
+          },
+          "session_revision_owner": {
+            "type": "string"
           },
           "session_tempo": {
             "type": "number"
           },
+          "start_stop_sync": {
+            "type": "boolean"
+          },
           "tempo_is_local": {
             "type": "boolean"
+          },
+          "transport": {
+            "type": "object"
           }
         },
         "required": [],
@@ -6837,14 +7257,74 @@
       "result_schema": {
         "additionalProperties": false,
         "properties": {
+          "beat": {
+            "type": "number"
+          },
           "enabled": {
             "type": "boolean"
+          },
+          "engine_phase_beats": {
+            "type": "number"
+          },
+          "engine_tempo": {
+            "type": "number"
+          },
+          "instance": {
+            "type": "string"
+          },
+          "interop": {
+            "type": "object"
+          },
+          "last_packet_age_ms": {
+            "type": "number"
+          },
+          "model": {
+            "type": "string"
+          },
+          "peer_count": {
+            "type": "number"
+          },
+          "peer_id": {
+            "type": "string"
+          },
+          "peers": {
+            "type": "array"
+          },
+          "phase_beats": {
+            "type": "number"
+          },
+          "phase_error_beats": {
+            "type": "number"
           },
           "previous": {
             "type": "boolean"
           },
+          "published_count": {
+            "type": "number"
+          },
+          "quantum": {
+            "type": "number"
+          },
+          "quantum_choices": {
+            "type": "array"
+          },
+          "session_revision": {
+            "type": "number"
+          },
+          "session_revision_owner": {
+            "type": "string"
+          },
+          "session_tempo": {
+            "type": "number"
+          },
           "start_stop_sync": {
             "type": "boolean"
+          },
+          "tempo_is_local": {
+            "type": "boolean"
+          },
+          "transport": {
+            "type": "object"
           }
         },
         "required": [],
@@ -7021,7 +7501,10 @@
         "additionalProperties": false,
         "properties": {
           "error": {
-            "type": "string"
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "files": {
             "type": "array"
@@ -7033,7 +7516,10 @@
             "type": "boolean"
           },
           "last_run": {
-            "type": "object"
+            "type": [
+              "object",
+              "null"
+            ]
           },
           "note": {
             "type": "string"
@@ -7229,7 +7715,10 @@
             "type": "integer"
           },
           "deviation_lu": {
-            "type": "number"
+            "type": [
+              "number",
+              "null"
+            ]
           },
           "duration_seconds": {
             "type": "number"
@@ -7241,19 +7730,28 @@
             "type": "integer"
           },
           "integrated_lufs": {
-            "type": "number"
+            "type": [
+              "number",
+              "null"
+            ]
           },
           "loudness_pass": {
             "type": "boolean"
           },
           "loudness_range_lu": {
-            "type": "number"
+            "type": [
+              "number",
+              "null"
+            ]
           },
           "measured": {
             "type": "boolean"
           },
           "momentary_lufs": {
-            "type": "number"
+            "type": [
+              "number",
+              "null"
+            ]
           },
           "note": {
             "type": "string"
@@ -7262,16 +7760,25 @@
             "type": "string"
           },
           "plr_db": {
-            "type": "number"
+            "type": [
+              "number",
+              "null"
+            ]
           },
           "sample_rate": {
             "type": "integer"
           },
           "short_term_lufs": {
-            "type": "number"
+            "type": [
+              "number",
+              "null"
+            ]
           },
           "short_term_max_lufs": {
-            "type": "number"
+            "type": [
+              "number",
+              "null"
+            ]
           },
           "source": {
             "type": "array"
@@ -7280,7 +7787,10 @@
             "type": "object"
           },
           "true_peak_dbtp": {
-            "type": "number"
+            "type": [
+              "number",
+              "null"
+            ]
           },
           "true_peak_pass": {
             "type": "boolean"
@@ -8219,11 +8729,20 @@
           "engine_active": {
             "type": "boolean"
           },
+          "max_modulators": {
+            "type": "integer"
+          },
+          "max_targets_per_modulator": {
+            "type": "integer"
+          },
           "modulator": {
             "type": "string"
           },
           "modulator_count": {
             "type": "integer"
+          },
+          "modulators": {
+            "type": "array"
           },
           "removed": {
             "type": "object"
@@ -8386,11 +8905,20 @@
           "engine_active": {
             "type": "boolean"
           },
+          "max_modulators": {
+            "type": "integer"
+          },
+          "max_targets_per_modulator": {
+            "type": "integer"
+          },
           "modulator": {
             "type": "string"
           },
           "modulator_count": {
             "type": "integer"
+          },
+          "modulators": {
+            "type": "array"
           },
           "removed": {
             "type": "object"
@@ -8430,11 +8958,20 @@
           "engine_active": {
             "type": "boolean"
           },
+          "max_modulators": {
+            "type": "integer"
+          },
+          "max_targets_per_modulator": {
+            "type": "integer"
+          },
           "modulator": {
             "type": "string"
           },
           "modulator_count": {
             "type": "integer"
+          },
+          "modulators": {
+            "type": "array"
           },
           "removed": {
             "type": "object"
@@ -8729,6 +9266,12 @@
           "active": {
             "type": "boolean"
           },
+          "frequencies": {
+            "type": "array"
+          },
+          "keymap": {
+            "type": "string"
+          },
           "mts_clients": {
             "maximum": 4096,
             "minimum": 0,
@@ -8739,6 +9282,15 @@
           },
           "mts_master": {
             "type": "boolean"
+          },
+          "scale": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string"
+          },
+          "table_size": {
+            "type": "number"
           }
         },
         "required": [],
@@ -8912,6 +9464,12 @@
           "clip": {
             "type": "string"
           },
+          "id": {
+            "type": "string"
+          },
+          "index": {
+            "type": "number"
+          },
           "key": {
             "maximum": 127,
             "minimum": 0,
@@ -8922,13 +9480,28 @@
             "minimum": 0,
             "type": "integer"
           },
+          "midi_velocity": {
+            "type": "number"
+          },
           "note": {
             "type": "string"
+          },
+          "note_count": {
+            "type": "number"
+          },
+          "pan": {
+            "type": "number"
           },
           "position": {
             "maximum": 1919808,
             "minimum": 0,
             "type": "integer"
+          },
+          "slide": {
+            "type": "boolean"
+          },
+          "velocity": {
+            "type": "number"
           }
         },
         "required": [],
@@ -9202,6 +9775,12 @@
           "clip": {
             "type": "string"
           },
+          "id": {
+            "type": "string"
+          },
+          "index": {
+            "type": "number"
+          },
           "key": {
             "maximum": 127,
             "minimum": 0,
@@ -9212,8 +9791,14 @@
             "minimum": 0,
             "type": "integer"
           },
+          "midi_velocity": {
+            "type": "number"
+          },
           "note": {
             "type": "string"
+          },
+          "pan": {
+            "type": "number"
           },
           "position": {
             "maximum": 1919808,
@@ -9221,6 +9806,12 @@
             "type": "integer"
           },
           "probability": {
+            "type": "number"
+          },
+          "slide": {
+            "type": "boolean"
+          },
+          "velocity": {
             "type": "number"
           }
         },
@@ -9453,13 +10044,37 @@
           "clip": {
             "type": "string"
           },
+          "id": {
+            "type": "string"
+          },
+          "index": {
+            "type": "number"
+          },
+          "key": {
+            "type": "number"
+          },
           "length": {
             "maximum": 1919808,
             "minimum": 0,
             "type": "integer"
           },
+          "midi_velocity": {
+            "type": "number"
+          },
           "note": {
             "type": "string"
+          },
+          "pan": {
+            "type": "number"
+          },
+          "position": {
+            "type": "number"
+          },
+          "slide": {
+            "type": "boolean"
+          },
+          "velocity": {
+            "type": "number"
           }
         },
         "required": [],
@@ -9853,6 +10468,18 @@
           "clip": {
             "type": "string"
           },
+          "id": {
+            "type": "string"
+          },
+          "index": {
+            "type": "number"
+          },
+          "key": {
+            "type": "number"
+          },
+          "length": {
+            "type": "number"
+          },
           "midi_velocity": {
             "maximum": 127,
             "minimum": 0,
@@ -9860,6 +10487,15 @@
           },
           "note": {
             "type": "string"
+          },
+          "pan": {
+            "type": "number"
+          },
+          "position": {
+            "type": "number"
+          },
+          "slide": {
+            "type": "boolean"
           },
           "velocity": {
             "type": "number"
@@ -10167,6 +10803,9 @@
           "kind": {
             "type": "string"
           },
+          "note": {
+            "type": "string"
+          },
           "patch_dropped": {
             "type": "boolean"
           },
@@ -10217,11 +10856,26 @@
           "changed": {
             "type": "boolean"
           },
+          "editable": {
+            "type": "object"
+          },
+          "effect_count": {
+            "type": "number"
+          },
           "effective_wiring": {
             "type": "object"
           },
           "graph": {
             "type": "object"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          },
+          "patch_dropped": {
+            "type": "boolean"
           },
           "previous": {
             "type": "object"
@@ -10230,6 +10884,9 @@
             "type": "boolean"
           },
           "target": {
+            "type": "string"
+          },
+          "target_type": {
             "type": "string"
           },
           "wiring": {
@@ -10266,6 +10923,9 @@
           },
           "delay_line_clamped": {
             "type": "boolean"
+          },
+          "note": {
+            "type": "string"
           },
           "route_count": {
             "type": "integer"
@@ -10445,15 +11105,9 @@
             "type": "integer"
           },
           "counts_by_format": {
-            "additionalProperties": false,
-            "properties": {},
-            "required": [],
             "type": "object"
           },
           "counts_by_kind": {
-            "additionalProperties": false,
-            "properties": {},
-            "required": [],
             "type": "object"
           },
           "devices": {
@@ -10495,13 +11149,25 @@
       "result_schema": {
         "additionalProperties": false,
         "properties": {
+          "device": {
+            "type": "string"
+          },
+          "display_name": {
+            "type": "string"
+          },
           "id": {
             "type": "string"
+          },
+          "index": {
+            "type": "number"
           },
           "kind": {
             "type": "string"
           },
           "plugin": {
+            "type": "string"
+          },
+          "previous_plugin": {
             "type": "string"
           },
           "target": {
@@ -10543,6 +11209,9 @@
       "result_schema": {
         "additionalProperties": false,
         "properties": {
+          "device_plugin": {
+            "type": "string"
+          },
           "parameter": {
             "additionalProperties": false,
             "properties": {
@@ -10557,6 +11226,9 @@
               },
               "name": {
                 "type": "string"
+              },
+              "step": {
+                "type": "number"
               },
               "type": {
                 "type": "string"
@@ -10614,6 +11286,9 @@
       "result_schema": {
         "additionalProperties": false,
         "properties": {
+          "device_plugin": {
+            "type": "string"
+          },
           "parameter": {
             "additionalProperties": false,
             "properties": {
@@ -10628,6 +11303,9 @@
               },
               "name": {
                 "type": "string"
+              },
+              "step": {
+                "type": "number"
               },
               "type": {
                 "type": "string"
@@ -10684,6 +11362,12 @@
           "dir": {
             "type": "string"
           },
+          "factory_dir": {
+            "type": "string"
+          },
+          "plugin": {
+            "type": "string"
+          },
           "presets": {
             "type": "array"
           }
@@ -10722,6 +11406,9 @@
         "additionalProperties": false,
         "properties": {
           "path": {
+            "type": "string"
+          },
+          "plugin": {
             "type": "string"
           },
           "restored": {
@@ -10771,6 +11458,9 @@
             "type": "string"
           },
           "path": {
+            "type": "string"
+          },
+          "plugin": {
             "type": "string"
           },
           "sha256": {
@@ -10914,8 +11604,14 @@
           "count": {
             "type": "integer"
           },
+          "dirty": {
+            "type": "boolean"
+          },
           "entries": {
             "type": "array"
+          },
+          "format_version": {
+            "type": "number"
           },
           "has_descriptor_count": {
             "type": "integer"
@@ -10928,6 +11624,9 @@
           },
           "note": {
             "type": "string"
+          },
+          "persistent": {
+            "type": "boolean"
           }
         },
         "required": [],
@@ -10961,11 +11660,20 @@
           "cached": {
             "type": "boolean"
           },
+          "dirty": {
+            "type": "boolean"
+          },
           "file_exists": {
             "type": "boolean"
           },
+          "format_version": {
+            "type": "number"
+          },
           "path": {
             "type": "string"
+          },
+          "persistent": {
+            "type": "boolean"
           },
           "quarantine_reason": {
             "type": "string"
@@ -10974,7 +11682,10 @@
             "type": "boolean"
           },
           "record": {
-            "type": "object"
+            "type": [
+              "object",
+              "null"
+            ]
           },
           "stale": {
             "type": "boolean"
@@ -11122,6 +11833,9 @@
           "plugin": {
             "type": "string"
           },
+          "previous_sha256": {
+            "type": "string"
+          },
           "restored": {
             "type": "boolean"
           }
@@ -11166,6 +11880,9 @@
             "type": "integer"
           },
           "path": {
+            "type": "string"
+          },
+          "plugin": {
             "type": "string"
           },
           "replaced": {
@@ -11253,6 +11970,9 @@
         "additionalProperties": false,
         "properties": {
           "device": {
+            "type": "string"
+          },
+          "note": {
             "type": "string"
           },
           "ports": {
@@ -11490,6 +12210,9 @@
           "modified": {
             "type": "boolean"
           },
+          "playing": {
+            "type": "boolean"
+          },
           "revisions": {
             "type": "object"
           },
@@ -11498,6 +12221,9 @@
           },
           "track_count": {
             "type": "integer"
+          },
+          "tracks": {
+            "type": "array"
           }
         },
         "required": [],
@@ -11543,6 +12269,9 @@
           "missing_count": {
             "type": "integer"
           },
+          "present_count": {
+            "type": "number"
+          },
           "reference_count": {
             "type": "integer"
           },
@@ -11551,6 +12280,9 @@
           },
           "unhashed_present": {
             "type": "integer"
+          },
+          "unresolved_count": {
+            "type": "number"
           }
         },
         "required": [],
@@ -11895,6 +12627,9 @@
           },
           "revision_kept": {
             "type": "boolean"
+          },
+          "revision_skipped": {
+            "type": "string"
           },
           "revisions": {
             "type": "object"
@@ -12529,6 +13264,9 @@
           "armed": {
             "type": "boolean"
           },
+          "armed_now": {
+            "type": "boolean"
+          },
           "file": {
             "type": "string"
           },
@@ -12545,6 +13283,9 @@
             "type": "integer"
           },
           "input_channel_capacity": {
+            "type": "integer"
+          },
+          "input_frames_staged_at_arm": {
             "type": "integer"
           },
           "journal": {
@@ -12626,6 +13367,9 @@
           "armed": {
             "type": "boolean"
           },
+          "armed_now": {
+            "type": "boolean"
+          },
           "file": {
             "type": "string"
           },
@@ -12642,6 +13386,9 @@
             "type": "integer"
           },
           "input_channel_capacity": {
+            "type": "integer"
+          },
+          "input_frames_staged_at_arm": {
             "type": "integer"
           },
           "journal": {
@@ -12752,7 +13499,20 @@
           },
           "configured": {
             "additionalProperties": false,
-            "properties": {},
+            "properties": {
+              "channels": {
+                "type": "integer"
+              },
+              "device": {
+                "type": "string"
+              },
+              "left": {
+                "type": "integer"
+              },
+              "right": {
+                "type": "integer"
+              }
+            },
             "required": [],
             "type": "object"
           },
@@ -12833,7 +13593,20 @@
           },
           "previous": {
             "additionalProperties": false,
-            "properties": {},
+            "properties": {
+              "channels": {
+                "type": "integer"
+              },
+              "device": {
+                "type": "string"
+              },
+              "left": {
+                "type": "integer"
+              },
+              "right": {
+                "type": "integer"
+              }
+            },
             "required": [],
             "type": "object"
           },
@@ -13202,6 +13975,12 @@
           "audio_untouched": {
             "type": "boolean"
           },
+          "channels": {
+            "type": "number"
+          },
+          "frames_beyond_the_journal": {
+            "type": "number"
+          },
           "frames_in_file": {
             "type": "integer"
           },
@@ -13214,16 +13993,31 @@
           "journal": {
             "type": "string"
           },
+          "journal_lag_bound_frames": {
+            "type": "number"
+          },
           "next_step": {
             "type": "string"
           },
           "restored": {
             "type": "boolean"
           },
+          "ring_frames_not_recoverable": {
+            "type": "number"
+          },
+          "sample_rate": {
+            "type": "number"
+          },
           "state": {
             "type": "string"
           },
           "take": {
+            "type": "string"
+          },
+          "track": {
+            "type": "string"
+          },
+          "updated_utc": {
             "type": "string"
           }
         },
@@ -13431,6 +14225,12 @@
           "bit_depth": {
             "type": "string"
           },
+          "bytes": {
+            "type": "number"
+          },
+          "format": {
+            "type": "string"
+          },
           "frames": {
             "type": "integer"
           },
@@ -13438,7 +14238,10 @@
             "type": "string"
           },
           "range": {
-            "type": "object"
+            "type": [
+              "object",
+              "null"
+            ]
           },
           "sample_rate": {
             "type": "integer"
@@ -13672,7 +14475,40 @@
       "result_schema": {
         "additionalProperties": false,
         "properties": {
+          "auto_resize": {
+            "type": "boolean"
+          },
           "clip": {
+            "type": "string"
+          },
+          "fade_in": {
+            "type": "number"
+          },
+          "fade_in_shape": {
+            "type": "string"
+          },
+          "fade_out": {
+            "type": "number"
+          },
+          "fade_out_shape": {
+            "type": "string"
+          },
+          "gain_db": {
+            "type": "number"
+          },
+          "id": {
+            "type": "string"
+          },
+          "index_in_track": {
+            "type": "number"
+          },
+          "length": {
+            "type": "number"
+          },
+          "muted": {
+            "type": "boolean"
+          },
+          "name": {
             "type": "string"
           },
           "note_count": {
@@ -13681,6 +14517,15 @@
             "type": "integer"
           },
           "notes": {
+            "type": "array"
+          },
+          "position": {
+            "type": "number"
+          },
+          "selected": {
+            "type": "boolean"
+          },
+          "selected_notes": {
             "type": "array"
           },
           "track": {
@@ -13718,8 +14563,14 @@
           "kind": {
             "type": "string"
           },
+          "note": {
+            "type": "string"
+          },
           "rack": {
-            "type": "object"
+            "type": [
+              "object",
+              "null"
+            ]
           },
           "target": {
             "type": "string"
@@ -15126,6 +15977,9 @@
           "launched": {
             "type": "array"
           },
+          "next_bar": {
+            "type": "number"
+          },
           "scene": {
             "type": "integer"
           },
@@ -15193,6 +16047,9 @@
       "result_schema": {
         "additionalProperties": false,
         "properties": {
+          "clip": {
+            "type": "object"
+          },
           "mode": {
             "type": "string"
           },
@@ -15613,6 +16470,9 @@
           "persisted": {
             "type": "boolean"
           },
+          "present": {
+            "type": "boolean"
+          },
           "previous": {
             "type": "string"
           },
@@ -15768,19 +16628,52 @@
       "result_schema": {
         "additionalProperties": false,
         "properties": {
+          "child_count": {
+            "type": "number"
+          },
+          "clip_count": {
+            "type": "number"
+          },
+          "collapsed": {
+            "type": "boolean"
+          },
+          "folder": {
+            "type": "string"
+          },
+          "folder_mode": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
           "index": {
             "maximum": 1919808,
             "minimum": 0,
             "type": "integer"
           },
+          "muted": {
+            "type": "boolean"
+          },
           "name": {
             "type": "string"
+          },
+          "pinned": {
+            "type": "boolean"
+          },
+          "soloed": {
+            "type": "boolean"
           },
           "track": {
             "type": "string"
           },
+          "track_count": {
+            "type": "number"
+          },
           "type": {
             "type": "string"
+          },
+          "visible": {
+            "type": "boolean"
           }
         },
         "required": [],
@@ -15872,7 +16765,25 @@
             "minimum": 0,
             "type": "integer"
           },
+          "children": {
+            "type": "array"
+          },
           "collapsed": {
+            "type": "boolean"
+          },
+          "mixer_channel": {
+            "type": "number"
+          },
+          "mode": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "pinned": {
+            "type": "boolean"
+          },
+          "routing": {
             "type": "boolean"
           },
           "track": {
@@ -15904,6 +16815,18 @@
       "result_schema": {
         "additionalProperties": false,
         "properties": {
+          "child_count": {
+            "type": "number"
+          },
+          "collapsed": {
+            "type": "boolean"
+          },
+          "folder": {
+            "type": "string"
+          },
+          "folder_mode": {
+            "type": "string"
+          },
           "frozen": {
             "type": "boolean"
           },
@@ -15925,11 +16848,26 @@
           "id": {
             "type": "string"
           },
+          "index": {
+            "type": "number"
+          },
+          "muted": {
+            "type": "boolean"
+          },
           "name": {
             "type": "string"
           },
+          "pinned": {
+            "type": "boolean"
+          },
+          "soloed": {
+            "type": "boolean"
+          },
           "type": {
             "type": "string"
+          },
+          "visible": {
+            "type": "boolean"
           }
         },
         "required": [],
@@ -16038,19 +16976,43 @@
       "result_schema": {
         "additionalProperties": false,
         "properties": {
+          "clip_count": {
+            "type": "number"
+          },
           "dry_run": {
             "type": "boolean"
+          },
+          "folder": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
           },
           "index": {
             "type": "integer"
           },
+          "muted": {
+            "type": "boolean"
+          },
+          "name": {
+            "type": "string"
+          },
           "removed": {
             "type": "string"
+          },
+          "soloed": {
+            "type": "boolean"
           },
           "track_count": {
             "maximum": 1919808,
             "minimum": 0,
             "type": "integer"
+          },
+          "type": {
+            "type": "string"
+          },
+          "visible": {
+            "type": "boolean"
           }
         },
         "required": [],
@@ -16129,6 +17091,9 @@
           "armed": {
             "type": "boolean"
           },
+          "armed_before": {
+            "type": "boolean"
+          },
           "file": {
             "type": "string"
           },
@@ -16193,10 +17158,28 @@
           "children": {
             "type": "array"
           },
+          "collapsed": {
+            "type": "boolean"
+          },
           "index": {
             "maximum": 1919808,
             "minimum": 0,
             "type": "integer"
+          },
+          "mixer_channel": {
+            "type": "number"
+          },
+          "mode": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "pinned": {
+            "type": "boolean"
+          },
+          "routing": {
+            "type": "boolean"
           },
           "track": {
             "type": "string"
@@ -16272,7 +17255,25 @@
             "minimum": 0,
             "type": "integer"
           },
+          "children": {
+            "type": "array"
+          },
+          "collapsed": {
+            "type": "boolean"
+          },
+          "mixer_channel": {
+            "type": "number"
+          },
+          "mode": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
           "pinned": {
+            "type": "boolean"
+          },
+          "routing": {
             "type": "boolean"
           },
           "track": {
@@ -16308,14 +17309,26 @@
       "result_schema": {
         "additionalProperties": false,
         "properties": {
+          "child_count": {
+            "type": "number"
+          },
           "children": {
             "type": "array"
+          },
+          "collapsed": {
+            "type": "boolean"
           },
           "mixer_channel": {
             "type": "integer"
           },
           "mode": {
             "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "pinned": {
+            "type": "boolean"
           },
           "previous_routing": {
             "type": "boolean"
@@ -16544,6 +17557,9 @@
       "result_schema": {
         "additionalProperties": false,
         "properties": {
+          "master_volume": {
+            "type": "number"
+          },
           "paused": {
             "type": "boolean"
           },
@@ -18482,11 +19498,11 @@
     "binary": null,
     "binary_bytes": null,
     "binary_sha256": null,
-    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-040/tools/zene-pa-agentctl",
+    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-survey/tools/zene-pa-agentctl",
     "lane_head": null,
     "proto": 1,
-    "source_socket": "/tmp/zctl-run-v6bil1_9/zene.sock",
-    "version": "0.3.0-alpha.128+fa431de"
+    "source_socket": "/tmp/zctl-run-y6jv4pgp/zene.sock",
+    "version": "0.3.0-alpha.135+4175598"
   },
   "kind": "zene-control-command-list",
   "proto": 1,

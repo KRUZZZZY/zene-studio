@@ -303,6 +303,8 @@ void registerChainSave(ControlRegistry& registry)
 		{QStringLiteral("device_count"), integerProperty()},
 		{QStringLiteral("devices"), arrayProperty()},
 		{QStringLiteral("replaced"), booleanProperty()},
+		{QStringLiteral("dir"), stringProperty()},
+		{QStringLiteral("target"), stringProperty()},
 	});
 	cmd.mutating = true;
 	cmd.handler = [](const QJsonObject& args) {

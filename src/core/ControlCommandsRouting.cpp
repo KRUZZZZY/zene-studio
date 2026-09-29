@@ -228,7 +228,8 @@ void registerRoutingCommands(ControlRegistry& registry)
 			{QStringLiteral("kind"), stringProperty()},
 			{QStringLiteral("target_type"), stringProperty()},
 			{QStringLiteral("chain"), objectProperty()},
-			{QStringLiteral("rack"), objectProperty()},
+			{QStringLiteral("rack"), nullable(objectProperty())},
+			{QStringLiteral("note"), stringProperty()},
 		});
 		cmd.handler = [](const QJsonObject& args) { return handleRoutingGetState(args); };
 		registry.registerCommand(cmd);

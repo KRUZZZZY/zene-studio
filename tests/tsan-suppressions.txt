@@ -1,0 +1,19 @@
+# ThreadSanitizer suppressions for the TSan job (relief plan R7.1).
+#
+# EVERY entry is a KNOWN, FILED race - suppressed so the job can go green and catch NEW races,
+# never to make an unknown one disappear. Each line names its defect. Remove an entry when its
+# fix lands; an entry added without a filed defect is a review failure.
+#
+# Measured 2026-09-28 on a Debug -DWANT_DEBUG_TSAN=ON tree (six concurrency tests, all
+# functionally green) - BUGS_FOUND.md §10.9:
+
+# 10.9a - AudioEngineWorkerThread::quit() writes m_quit / resets the job queue while the worker's
+#         mutex and condition are destroyed in ~AudioEngine (every Engine test's teardown).
+race:lmms::AudioEngineWorkerThread::quit
+race:lmms::AudioEngineWorkerThread::~AudioEngineWorkerThread
+# 10.9b - AudioEngineWorkerThread::JobQueue::reset writes the queue indices/mode that running
+#         workers read (MixerConcurrencyTest, MidiLearnThreadTest).
+race:lmms::AudioEngineWorkerThread::JobQueue::reset
+# 10.9c - Controller::updateValueBuffer reached from MidiController's constructor while the
+#         engine's controller processing runs (MidiLearnThreadTest).
+race:lmms::Controller::updateValueBuffer

@@ -101,8 +101,9 @@ void registerPluginList(ControlRegistry& registry)
 		{QStringLiteral("count"), integerProperty()},
 		{QStringLiteral("total"), integerProperty()},
 		{QStringLiteral("loadable_count"), integerProperty()},
-		{QStringLiteral("counts_by_format"), objectSchema({})},
-		{QStringLiteral("counts_by_kind"), objectSchema({})},
+		// Maps (format or kind -> count), so free-form: a closed objectSchema({}) refused every key.
+		{QStringLiteral("counts_by_format"), objectProperty()},
+		{QStringLiteral("counts_by_kind"), objectProperty()},
 	});
 	cmd.handler = [](const QJsonObject& args) {
 		const QString format = args.value(QStringLiteral("format")).toString();
@@ -273,6 +274,10 @@ void registerPluginLoad(ControlRegistry& registry)
 		{QStringLiteral("kind"), stringProperty()},
 		{QStringLiteral("id"), stringProperty()},
 		{QStringLiteral("plugin"), stringProperty()},
+		{QStringLiteral("device"), stringProperty()},
+		{QStringLiteral("display_name"), stringProperty()},
+		{QStringLiteral("index"), numberProperty()},
+		{QStringLiteral("previous_plugin"), stringProperty()},
 	});
 	cmd.mutating = true;
 	cmd.handler = [](const QJsonObject& args) {

@@ -201,6 +201,7 @@ void registerBusCommands(ControlRegistry& registry)
 			{QStringLiteral("buses"), arrayProperty()},
 			{QStringLiteral("count"), integerProperty()},
 			{QStringLiteral("channel_count"), integerProperty()},
+			{QStringLiteral("note"), stringProperty()},
 		});
 		cmd.handler = [](const QJsonObject&) { return handleBusList(); };
 		registry.registerCommand(cmd);

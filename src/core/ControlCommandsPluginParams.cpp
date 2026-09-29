@@ -53,6 +53,7 @@ QJsonObject parameterSchema()
 		{QStringLiteral("min"), numberProperty()},
 		{QStringLiteral("max"), numberProperty()},
 		{QStringLiteral("type"), stringProperty()},
+		{QStringLiteral("step"), numberProperty()},
 	});
 }
 
@@ -134,6 +135,7 @@ void registerParamGet(ControlRegistry& registry)
 		{QStringLiteral("target"), stringProperty()},
 		{QStringLiteral("plugin"), stringProperty()},
 		{QStringLiteral("parameter"), parameterSchema()},
+		{QStringLiteral("device_plugin"), stringProperty()},
 	});
 	cmd.handler = [](const QJsonObject& args) {
 		ControlTarget target;
@@ -205,6 +207,7 @@ void registerParamSet(ControlRegistry& registry)
 		{QStringLiteral("plugin"), stringProperty()},
 		{QStringLiteral("parameter"), parameterSchema()},
 		{QStringLiteral("previous"), numberProperty()},
+		{QStringLiteral("device_plugin"), stringProperty()},
 	});
 	cmd.mutating = true;
 	cmd.handler = [](const QJsonObject& args) {

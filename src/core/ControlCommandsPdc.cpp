@@ -203,6 +203,7 @@ void registerPdcCommands(ControlRegistry& registry)
 			{QStringLiteral("sidechain"), objectProperty()},
 			{QStringLiteral("track_inputs"), arrayProperty()},
 			{QStringLiteral("track_input_count"), integerProperty()},
+			{QStringLiteral("note"), stringProperty()},
 		});
 		cmd.handler = [](const QJsonObject&) { return handlePdcReport(); };
 		registry.registerCommand(cmd);

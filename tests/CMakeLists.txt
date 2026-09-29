@@ -677,6 +677,14 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 
 	add_executable(${LMMS_TEST_NAME} ${LMMS_TEST_SRC})
 	add_test(NAME ${LMMS_TEST_NAME} COMMAND ${LMMS_TEST_NAME})
+	# Every in-process command test holds each reply to its declared resultSchema too
+	# (include/ControlResultCheck.h): they call the registry directly, so the socket
+	# harness's setting never reached them. ENVIRONMENT_MODIFICATION leaves each test's
+	# own ENVIRONMENT property alone.
+	if(CMAKE_VERSION VERSION_GREATER_EQUAL 3.22)
+		set_tests_properties(${LMMS_TEST_NAME} PROPERTIES
+			ENVIRONMENT_MODIFICATION "ZENE_CONTROL_CHECK_RESULTS=set:1")
+	endif()
 
 	# TODO CMake 3.12: Propagate usage requirements by linking to lmmsobjs
 	target_include_directories(${LMMS_TEST_NAME} PRIVATE $<TARGET_PROPERTY:lmmsobjs,INCLUDE_DIRECTORIES>)
@@ -3674,4 +3682,12 @@ if(PYTHON3_EXECUTABLE)
 	)
 else()
 	message(STATUS "python3 not found: ControlSurfaceHardening is not registered")
+endif()
+
+# One published figure (040/m1-contract, relief plan R6.5): every document that claims the CURRENT
+# command-surface figure marks it <!-- canary -->N ids / M groups<!-- /canary -->, and this checks
+# each against the committed snapshot. tests/doc-figures.txt lists the docs that must carry one.
+if(PYTHON3_EXECUTABLE)
+	add_test(NAME DocFiguresGate
+		COMMAND ${PYTHON3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/doc-figures-gate.py)
 endif()

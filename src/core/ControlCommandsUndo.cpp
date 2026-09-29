@@ -279,6 +279,10 @@ void registerSetUndoDepthCommand(ControlRegistry& registry)
 		{QStringLiteral("dropped"), integerProperty()},
 		{QStringLiteral("evicted"), integerProperty()},
 		{QStringLiteral("bounded"), booleanProperty()},
+		{QStringLiteral("can_redo"), booleanProperty()},
+		{QStringLiteral("can_undo"), booleanProperty()},
+		{QStringLiteral("coalesced_steps"), numberProperty()},
+		{QStringLiteral("redo_depth"), numberProperty()},
 	});
 	cmd.handler = [](const QJsonObject& args) { return handleSetUndoDepth(args); };
 	registry.registerCommand(cmd);

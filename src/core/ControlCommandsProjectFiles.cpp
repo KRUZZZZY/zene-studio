@@ -127,6 +127,7 @@ void registerProjectSave(ControlRegistry& registry)
 		{QStringLiteral("saved"), QJsonObject{{QStringLiteral("type"), QStringLiteral("boolean")}}},
 		{QStringLiteral("revision_kept"), QJsonObject{{QStringLiteral("type"), QStringLiteral("boolean")}}},
 		{QStringLiteral("revisions"), QJsonObject{{QStringLiteral("type"), QStringLiteral("object")}}},
+		{QStringLiteral("revision_skipped"), stringProperty()},
 	});
 	cmd.mutating = true;
 	cmd.handler = [](const QJsonObject& args) {
@@ -290,6 +291,8 @@ void registerProjectGetState(ControlRegistry& registry)
 		{QStringLiteral("tempo"), QJsonObject{{QStringLiteral("type"), QStringLiteral("integer")}}},
 		{QStringLiteral("track_count"), QJsonObject{{QStringLiteral("type"), QStringLiteral("integer")}}},
 		{QStringLiteral("revisions"), QJsonObject{{QStringLiteral("type"), QStringLiteral("object")}}},
+		{QStringLiteral("playing"), booleanProperty()},
+		{QStringLiteral("tracks"), arrayProperty()},
 	});
 	cmd.handler = [](const QJsonObject&) {
 		Song* song = Engine::getSong();

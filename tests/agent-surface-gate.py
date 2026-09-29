@@ -264,6 +264,10 @@ def launch(binary, tmp):
     env["HOME"] = tmp
     env["XDG_CONFIG_HOME"] = os.path.join(tmp, "config")
     env["XDG_DATA_HOME"] = os.path.join(tmp, "data")
+    # Every swept reply that SUCCEEDS is held to its declared resultSchema (relief plan R6.3;
+    # include/ControlResultCheck.h), with the same grandfather list the socket drivers use.
+    env.setdefault("ZENE_CONTROL_CHECK_RESULTS",
+                   os.path.join(os.path.dirname(os.path.abspath(__file__)), "result-schema-known-violations.txt"))
     os.makedirs(env["XDG_CONFIG_HOME"], exist_ok=True)
     os.makedirs(env["XDG_DATA_HOME"], exist_ok=True)
 

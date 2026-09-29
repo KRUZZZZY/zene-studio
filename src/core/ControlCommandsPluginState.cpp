@@ -70,6 +70,7 @@ void registerStateSave(ControlRegistry& registry)
 		{QStringLiteral("bytes"), integerProperty()},
 		{QStringLiteral("sha256"), stringProperty()},
 		{QStringLiteral("replaced"), booleanProperty()},
+		{QStringLiteral("plugin"), stringProperty()},
 	});
 	cmd.mutating = true;
 	cmd.handler = [](const QJsonObject& args) {
@@ -147,6 +148,7 @@ void registerStateLoad(ControlRegistry& registry)
 		{QStringLiteral("restored"), booleanProperty()},
 		{QStringLiteral("plugin"), stringProperty()},
 		{QStringLiteral("path"), stringProperty()},
+		{QStringLiteral("previous_sha256"), stringProperty()},
 	});
 	cmd.mutating = true;
 	cmd.handler = [](const QJsonObject& args) {

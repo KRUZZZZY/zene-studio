@@ -46,14 +46,14 @@ open in a later or older build, so keep backups).
 
 **The agent control surface** — launch with `--control-socket <path>` and another program, not a
 person, can drive the open session over a local UNIX socket. It is opt-in and off by default: an
-instance not started that way has no socket at all. The registry this tree builds holds **340
-commands in 53 groups**, counted by asking the built binary, over its own socket, for
-`control.commands_list`; the release configuration holds **332 commands in 52 groups** — that is the
-tree's own committed command snapshot (`tools/mcp-zene-control/zene_control/commands_snapshot.json`)
-and the MCP bridge's offline list, the eight `wasm.*` commands being registered only where the
-wasmtime C API is found and no release job provisioning it. Every command carries a JSON schema and
-a declared reversibility class (the A16 contract; 340 rows, 158 `true_inverse` / 32 `snapshot` /
-13 `irreversible` / 137 `not_mutating`, measured by `bash tools/dawproject-proof.sh`), with
+instance not started that way has no socket at all. The tree's committed command snapshot
+(`tools/mcp-zene-control/zene_control/commands_snapshot.json`, captured from a live instance and held
+equal to the binary by the `ControlCommandsSnapshot` test) holds **<!-- canary -->353 ids / 57 groups<!-- /canary -->**;
+the eight `wasm.*` commands are registered on top of that only where the wasmtime C API is found,
+which no release job provisions. Every command carries a JSON schema and a declared reversibility
+class (the A16 contract; in the reference configuration 361 rows - 166 `true_inverse` / 39
+`snapshot` / 13 `irreversible` / 143 `not_mutating` - as published in
+`docs/RELEASE-NOTES-v0.3.0-alpha.md` and measured by `bash tools/dawproject-proof.sh`), with
 `control.undo` reaching the same undo history as the GUI's Ctrl+Z. Exactly one command is registered
 with a full schema and **refuses every call** rather than fake a write: `mixer.set_pan`, because a
 mixer channel in this tree carries no pan property. The two further refusals the 0.2.1 text named are

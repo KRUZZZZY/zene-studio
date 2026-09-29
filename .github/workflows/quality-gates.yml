@@ -129,6 +129,50 @@ jobs:
       - name: Gate 5 - mutation testing (scoped harness, src/core/RoutingGraph.cpp)
         run: bash tests/mutation-gate.sh
 
+  # ThreadSanitizer (relief plan R7.1, 2026-09-28). The concurrency suites under
+  # -fsanitize=thread, with tests/tsan-suppressions.txt: every entry there is a FILED race
+  # (BUGS_FOUND.md 10.9), so the job is green today and fails on any NEW race. Validated
+  # locally with exactly these commands (six suites, 0 reports; a deliberately racy program
+  # is still reported through the same suppressions) - NOT yet run on a hosted runner.
+  # setarch -R: TSan aborts with "unexpected memory mapping" under high-entropy ASLR.
+  tsan:
+    name: ThreadSanitizer (concurrency suites)
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event_name == 'schedule' }}
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          submodules: recursive
+      - name: Install build dependencies (Qt6, mirrors the locally verified build)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            cmake g++ \
+            qt6-base-dev libqt6svg6-dev qt6-l10n-tools \
+            libsndfile1-dev libfftw3-dev libasound2-dev libjack-jackd2-dev \
+            libsamplerate0-dev libxml2-dev \
+            liblist-moreutils-perl libxml-parser-perl
+      - name: Configure (Debug, TSan)
+        run: cmake -B build-tsan -S . -DCMAKE_BUILD_TYPE=Debug -DWANT_DEBUG_TSAN=ON -DWANT_QT6=ON -DWANT_VST3=OFF -DLMMS_CLAP_FETCH=ON
+      - name: Build the concurrency suites
+        run: |
+          cmake --build build-tsan -j4 --target VcaRefreshAtomicityTest ModulationAudioViewTest \
+            MixerConcurrencyTest MidiLearnThreadTest TempoMapTest SessionSchedulerTest
+      - name: Run them under TSan
+        working-directory: build-tsan/tests
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: |
+          fail=0
+          for t in VcaRefreshAtomicityTest ModulationAudioViewTest MixerConcurrencyTest \
+                   MidiLearnThreadTest TempoMapTest SessionSchedulerTest; do
+            TSAN_OPTIONS="suppressions=$GITHUB_WORKSPACE/tests/tsan-suppressions.txt halt_on_error=1 exitcode=66" \
+              setarch "$(uname -m)" -R ./"$t" || { echo "::error::$t failed under TSan"; fail=1; }
+          done
+          exit $fail
+
   # Gate 2 is the ratchet: the number must not fall, and the gate must PASS.
   coverage:
     name: gate 2 - coverage ratchet

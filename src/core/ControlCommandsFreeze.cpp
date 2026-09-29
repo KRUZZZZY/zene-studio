@@ -406,6 +406,11 @@ void registerFreezeTrack(ControlRegistry& registry)
 		{QStringLiteral("path"), stringProperty()},
 		{QStringLiteral("frames"), integerProperty()},
 		{QStringLiteral("sha256"), stringProperty()},
+		{QStringLiteral("bytes"), numberProperty()},
+		{QStringLiteral("muted_clips"), numberProperty()},
+		{QStringLiteral("name"), stringProperty()},
+		{QStringLiteral("overlapping_clips"), arrayProperty()},
+		{QStringLiteral("sample_rate"), numberProperty()},
 	});
 	cmd.mutating = true;
 	cmd.handler = [](const QJsonObject& args) { return freezeTrack(args); };
@@ -442,6 +447,10 @@ void registerFreezeRegion(ControlRegistry& registry)
 		{QStringLiteral("path"), stringProperty()},
 		{QStringLiteral("frames"), integerProperty()},
 		{QStringLiteral("sha256"), stringProperty()},
+		{QStringLiteral("audio_ready"), booleanProperty()},
+		{QStringLiteral("bytes"), numberProperty()},
+		{QStringLiteral("name"), stringProperty()},
+		{QStringLiteral("sample_rate"), numberProperty()},
 	});
 	cmd.mutating = true;
 	cmd.handler = [](const QJsonObject& args) { return freezeRegion(args); };
@@ -466,6 +475,10 @@ void registerFreezeUnfreeze(ControlRegistry& registry)
 		{QStringLiteral("frozen"), booleanProperty()},
 		{QStringLiteral("audio"), stringProperty()},
 		{QStringLiteral("muted_clips"), integerProperty()},
+		{QStringLiteral("audio_ready"), booleanProperty()},
+		{QStringLiteral("end_ticks"), numberProperty()},
+		{QStringLiteral("name"), stringProperty()},
+		{QStringLiteral("start_ticks"), numberProperty()},
 	});
 	cmd.mutating = true;
 	cmd.handler = [](const QJsonObject& args) { return freezeUnfreeze(args); };

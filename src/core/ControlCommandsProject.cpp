@@ -436,7 +436,9 @@ void registerRenderRender(ControlRegistry& registry)
 		{QStringLiteral("bit_depth"), stringProperty()},
 		{QStringLiteral("stereo_mode"), stringProperty()},
 		{QStringLiteral("applied_preset"), stringProperty()},
-		{QStringLiteral("range"), objectProperty()},
+		{QStringLiteral("range"), nullable(objectProperty())},
+		{QStringLiteral("bytes"), numberProperty()},
+		{QStringLiteral("format"), stringProperty()},
 	});
 	cmd.handler = [](const QJsonObject& args) { return renderSession(args); };
 	registry.registerCommand(cmd);
