@@ -155,11 +155,17 @@ by the SAME DELTA. Then all of them - anchor included - are one undo step.
 
 ## 4. Honest limits
 
-1. **One media edit is propagated: a clip move.** Trim, slip, split and fades on
-   a locked group are not propagated. The entity carries the membership and the
-   lock, and the rule (§3.2) is implemented for the edit a multitrack take needs
-   first - sliding a whole take against the rest of the song. Saying "edit
-   groups" without this sentence would be claiming far more than is built.
+1. **Every media edit is propagated (R3.5, 2026-09-29):** the move
+   (`vca.edit_move`), and since then the split (`vca.edit_split`, every locked clip
+   cut at one song tick), the trim (`vca.edit_trim`, every locked clip's edges moved
+   by the anchor's deltas, audio held at its song position), the slip
+   (`vca.edit_slip`, every locked clip's content offset moved by the anchor's delta)
+   and the fade (`vca.edit_fade`, the same fade lengths on every locked AUDIO clip).
+   All five follow §3.2's rule: they lock the clips overlapping the anchor's
+   PRE-edit span, plan the whole lock before writing, and take one live checkpoint
+   per clip, so one `control.undo` reverses every member. Still not locked:
+   crossfades, clip gain and a locked DELETE (ControlVcaLockedEditsTest holds the
+   five).
 2. **A deleted track stays in the edit set** until `vca.track_remove`, and is
    reported as `missing_tracks` / `skipped_tracks` (§2.1). This is a decision
    about not rewriting a caller's membership, not an omission.

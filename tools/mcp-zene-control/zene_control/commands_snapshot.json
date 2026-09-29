@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-09-29T17:41:36Z",
+  "captured_at": "2026-09-29T18:01:22Z",
   "commands": [
     {
       "args_schema": {
@@ -18934,6 +18934,73 @@
           "clip": {
             "type": "string"
           },
+          "fade_in": {
+            "maximum": 1919808,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "fade_out": {
+            "maximum": 1919808,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "group": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "group",
+          "clip"
+        ],
+        "type": "object"
+      },
+      "description": "Set the same fade-in and/or fade-out length (ticks) on every locked AUDIO clip. A locked MIDI clip, or a fade longer than a locked clip, refuses the whole edit. The named clip is the anchor; a member track's clips that overlap the anchor's PRE-edit span are locked to it, a member with nothing there is reported in unlocked_tracks and a gone track in skipped_tracks. Refused, typed, when the group's phase lock is off, when the anchor's track is not in the edit set, or when the set has fewer than two live tracks - and every edit refusal is checked for every locked clip first, so a refusal writes nothing. One control.undo reverses every member.",
+      "group": "vca",
+      "id": "vca.edit_fade",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "anchor": {
+            "type": "string"
+          },
+          "clip": {
+            "type": "string"
+          },
+          "edited_count": {
+            "type": "integer"
+          },
+          "edits": {
+            "type": "array"
+          },
+          "group": {
+            "type": "string"
+          },
+          "skipped_count": {
+            "type": "integer"
+          },
+          "skipped_tracks": {
+            "type": "array"
+          },
+          "unlocked_count": {
+            "type": "integer"
+          },
+          "unlocked_tracks": {
+            "type": "array"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "clip": {
+            "type": "string"
+          },
           "group": {
             "type": "string"
           },
@@ -18980,6 +19047,209 @@
             "maximum": 1919808,
             "minimum": 0,
             "type": "integer"
+          },
+          "skipped_count": {
+            "type": "integer"
+          },
+          "skipped_tracks": {
+            "type": "array"
+          },
+          "unlocked_count": {
+            "type": "integer"
+          },
+          "unlocked_tracks": {
+            "type": "array"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "clip": {
+            "type": "string"
+          },
+          "group": {
+            "type": "string"
+          },
+          "offset": {
+            "maximum": 1919808,
+            "minimum": -1919808,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "group",
+          "clip",
+          "offset"
+        ],
+        "type": "object"
+      },
+      "description": "Slip the anchor's content to `offset` and every locked clip's content by the SAME delta; no clip's position or length moves. The named clip is the anchor; a member track's clips that overlap the anchor's PRE-edit span are locked to it, a member with nothing there is reported in unlocked_tracks and a gone track in skipped_tracks. Refused, typed, when the group's phase lock is off, when the anchor's track is not in the edit set, or when the set has fewer than two live tracks - and every edit refusal is checked for every locked clip first, so a refusal writes nothing. One control.undo reverses every member.",
+      "group": "vca",
+      "id": "vca.edit_slip",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "anchor": {
+            "type": "string"
+          },
+          "clip": {
+            "type": "string"
+          },
+          "delta": {
+            "type": "integer"
+          },
+          "edited_count": {
+            "type": "integer"
+          },
+          "edits": {
+            "type": "array"
+          },
+          "group": {
+            "type": "string"
+          },
+          "skipped_count": {
+            "type": "integer"
+          },
+          "skipped_tracks": {
+            "type": "array"
+          },
+          "unlocked_count": {
+            "type": "integer"
+          },
+          "unlocked_tracks": {
+            "type": "array"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "clip": {
+            "type": "string"
+          },
+          "group": {
+            "type": "string"
+          },
+          "position": {
+            "maximum": 1919808,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "group",
+          "clip",
+          "position"
+        ],
+        "type": "object"
+      },
+      "description": "Split every locked clip at one song tick (`position`), so the members are cut at exactly the same place - the phase-locked multitrack split. A locked clip the cut does not fall inside is left whole; the anchor must contain it. The named clip is the anchor; a member track's clips that overlap the anchor's PRE-edit span are locked to it, a member with nothing there is reported in unlocked_tracks and a gone track in skipped_tracks. Refused, typed, when the group's phase lock is off, when the anchor's track is not in the edit set, or when the set has fewer than two live tracks - and every edit refusal is checked for every locked clip first, so a refusal writes nothing. One control.undo reverses every member.",
+      "group": "vca",
+      "id": "vca.edit_split",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "anchor": {
+            "type": "string"
+          },
+          "clip": {
+            "type": "string"
+          },
+          "edited_count": {
+            "type": "integer"
+          },
+          "edits": {
+            "type": "array"
+          },
+          "group": {
+            "type": "string"
+          },
+          "skipped_count": {
+            "type": "integer"
+          },
+          "skipped_tracks": {
+            "type": "array"
+          },
+          "unlocked_count": {
+            "type": "integer"
+          },
+          "unlocked_tracks": {
+            "type": "array"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "clip": {
+            "type": "string"
+          },
+          "end": {
+            "maximum": 1919808,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "group": {
+            "type": "string"
+          },
+          "start": {
+            "maximum": 1919808,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "group",
+          "clip",
+          "start"
+        ],
+        "type": "object"
+      },
+      "description": "Trim the anchor's start edge to `start` (and its end to `end`) and move every locked clip's edges by the SAME deltas, holding each clip's audio at its song position (clip.trim's head-trim rule). `delta_start`/`delta_end` report the deltas. The named clip is the anchor; a member track's clips that overlap the anchor's PRE-edit span are locked to it, a member with nothing there is reported in unlocked_tracks and a gone track in skipped_tracks. Refused, typed, when the group's phase lock is off, when the anchor's track is not in the edit set, or when the set has fewer than two live tracks - and every edit refusal is checked for every locked clip first, so a refusal writes nothing. One control.undo reverses every member.",
+      "group": "vca",
+      "id": "vca.edit_trim",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "anchor": {
+            "type": "string"
+          },
+          "clip": {
+            "type": "string"
+          },
+          "delta_end": {
+            "type": "integer"
+          },
+          "delta_start": {
+            "type": "integer"
+          },
+          "edited_count": {
+            "type": "integer"
+          },
+          "edits": {
+            "type": "array"
+          },
+          "group": {
+            "type": "string"
           },
           "skipped_count": {
             "type": "integer"
@@ -20411,23 +20681,23 @@
       }
     }
   ],
-  "count": 374,
+  "count": 378,
   "instance": {
     "binary": null,
     "binary_bytes": null,
     "binary_sha256": null,
-    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-ui/tools/zene-pa-agentctl",
+    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-survey/tools/zene-pa-agentctl",
     "lane_head": null,
     "proto": 1,
-    "source_socket": "/tmp/zctl-run-p1mayuxb/zene.sock",
-    "version": "0.3.0-alpha.154+b6afcc5"
+    "source_socket": "/tmp/zctl-run-8_kos3wb/zene.sock",
+    "version": "0.3.0-alpha.154+ffd8ffa"
   },
   "kind": "zene-control-command-list",
   "proto": 1,
   "schema": 1,
   "surface": {
     "group_count": 58,
-    "id_count": 374,
-    "ids_sha256": "01a782695bef8f6eb450f21c22dac7ef8d7774e088f2e2712fe6aa625077adfb"
+    "id_count": 378,
+    "ids_sha256": "a2ee1f78849cac01a04be44a4ee130c1cd86ffe6f11fcf1f849469ce1b42e932"
   }
 }

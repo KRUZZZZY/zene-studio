@@ -522,6 +522,8 @@ set(LMMS_TESTS
 	# entity's own edit set + lock in the mixer element. The helpers both halves
 	# use are in src/core/ControlVcaTestSupport.h.
 	src/core/ControlVcaEditGroupsTest.cpp
+	# R3.5: the phase-locked split, trim, slip and fade.
+	src/core/ControlVcaLockedEditsTest.cpp
 	src/core/ScriptBindingsTest.cpp
 	# Feature row 50 (0.3.0): the Lua API's DAW-control half - the mixer channel
 	# and effect-chain bindings. Drives a REAL mixer channel and the chain the

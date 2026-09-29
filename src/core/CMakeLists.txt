@@ -399,6 +399,8 @@ set(LMMS_SRCS
 	core/ControlCommandsVca.cpp
 	core/ControlCommandsVcaMix.cpp
 	core/ControlCommandsVcaEdit.cpp
+	# R3.5: the phase-locked split, trim, slip and fade.
+	core/ControlCommandsVcaEditMore.cpp
 	core/ControlCommandsVcaEditSet.cpp
 	core/TrackContainerFolders.cpp
 	# The bounded-undo slice: the depth caps, the coalescing window, and the
