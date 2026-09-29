@@ -1,5 +1,5 @@
 # Commands the test suite has never seen SUCCEED under result checks (R6.3).
-# Measured by tests/checked-coverage.py over a full ctest run (gate 16). This
+# Measured by tests/checked-coverage.py over a full ctest run (gate 1's checked-command ratchet). This
 # list only shrinks: reach a command's success path in a test, then delete its
 # line in the same change. <command.id><TAB><why it is not reached yet>
 crash.upload_report	refuses every call by design: the product does no network upload (the report stays on disk for the user to send); tests/control-crash-reporter.py holds the refusal

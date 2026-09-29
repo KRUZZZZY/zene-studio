@@ -24,7 +24,7 @@
 
 /*! R6.3: a command whose reply was never seen SUCCEED under result checks has an
  *  unverified reply contract. tests/checked-coverage.py measured 27 such commands
- *  on the release surface (gate 16's ratchet, tests/checked-coverage-unreached.txt).
+ *  on the release surface (gate 1's checked-command ratchet, tests/checked-coverage-unreached.txt).
  *  Their own test files hold only refusals, so the success path of each is built
  *  here: the prerequisite state first, then one call that must succeed. Every
  *  LMMS_TESTS entry runs with ZENE_CONTROL_CHECK_RESULTS, so a reply that breaks

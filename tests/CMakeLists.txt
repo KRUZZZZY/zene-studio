@@ -379,7 +379,7 @@ set(LMMS_TESTS
 	# seqlock) and a destroyed target is skipped through its liveness token.
 	src/core/ModulationAudioViewTest.cpp
 	src/core/ControlModulatorCommandsTest.cpp
-	# R6.3: the success path of every command the suite had only ever refused (gate 16).
+	# R6.3: the success path of every command the suite had only ever refused (gate 1's checked-command ratchet).
 	src/core/ControlSuccessPathsTest.cpp
 	src/core/ControlNoteExpressionCommandsTest.cpp
 	# The PROJECT path of the same layer (task #680): modulators authored on the
@@ -2667,7 +2667,7 @@ if(PYTHON3_EXECUTABLE AND CONTROL_SUITE_AVAILABLE)
 		TIMEOUT 300
 		RUN_SERIAL TRUE
 	)
-	# R6.3 (gate 16): the success paths only a RUNNING instance reaches - a landed
+	# R6.3 (gate 1's checked-command ratchet): the success paths only a RUNNING instance reaches - a landed
 	# Arrangement Record performance (the audio thread records it) and
 	# project.audible_diff (it renders through the running binary as children).
 	add_test(NAME ControlSuccessPaths

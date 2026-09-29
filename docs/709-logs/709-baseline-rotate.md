@@ -121,3 +121,19 @@ THE ACT:
 - `BASELINE_SAVE_SHA256` ROTATED: `5fe616f2b5aef63da9552ca1b5a00fefdb578cdf7abfddd8216fed0002b10145`
   → `33a5053f5ea0d4a5406166b832fe58c9b0dfc70a7137ed979c7bdfd1128f56c2`.
 - `BASELINE_PDC` / `BASELINE_MIXER` untouched (both compare equal on this tip).
+
+## Second rotation: `BASELINE_MIXER`, `pan` (2026-09-29, 040/m1-checked-coverage)
+
+WHY: mixer channels gained a pan model (`MixerChannel::m_panModel`, the commit
+"mixer: channel pan"). `mixer.get_state` had published `"pan": null` for every channel, on
+purpose, because a channel had no pan ("the field is emitted as null so a caller can see
+that rather than guess"). It now publishes the value, which is `0` (centre) for every
+channel of this fixture.
+
+MEASURED: the one check that moved was "mixer.get_state equals the pre-change baseline byte
+for byte" (both stages). `pdc.report` and the saved-project sha256 stayed equal, because a
+centred pan writes no attribute, so the save bytes did not move.
+
+THE ACT: in `BASELINE_MIXER`, the three `"pan":null` became `"pan":0`, and nothing else
+changed. The #709 claims this constant carries (no send, route or volume moved) are
+unchanged, because those fields are byte-identical.

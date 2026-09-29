@@ -22,7 +22,7 @@
  *
  */
 
-/*! A mixer channel had no pan (mixer.set_pan was a typed refusal; gate 16's ratchet
+/*! A mixer channel had no pan (mixer.set_pan was a typed refusal; gate 1's checked-command ratchet
  *  listed it as a missing feature). The channel now carries m_panModel, a BALANCE law
  *  applied after its effects and VCA gain. What this file holds, on the real render
  *  path (Mixer::mixToChannel -> masterMix, the VcaGroupTest harness):

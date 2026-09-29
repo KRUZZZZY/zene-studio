@@ -12,7 +12,7 @@
 """Success paths that need a RUNNING instance, held to their result schemas.
 
 tests/src/core/ControlSuccessPathsTest.cpp drives most of the commands the suite had only
-ever refused (gate 16, tests/checked-coverage-unreached.txt). Two need what an in-process
+ever refused (gate 1, tests/checked-coverage-unreached.txt). Two need what an in-process
 test does not have:
 
   1. `session.arrangement_record_land` needs a PERFORMANCE: the audio thread pushes one event

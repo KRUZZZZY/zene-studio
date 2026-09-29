@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# checked-coverage.py - R6.3's ratchet: every command id the suite holds to its resultSchema
+# checked-coverage.py - R6.3's ratchet: every command id the suite holds to its resultSchema (gate 1)
 #
 # Copyright (c) 2026 Zene Studio contributors
 #
@@ -63,7 +63,7 @@ def ratchet_entries(path):
 
 def write_ratchet(path, unreached, reasons):
     header = ("# Commands the test suite has never seen SUCCEED under result checks (R6.3).\n"
-              "# Measured by tests/checked-coverage.py over a full ctest run (gate 16). This\n"
+              "# Measured by tests/checked-coverage.py over a full ctest run (gate 1). This\n"
               "# list only shrinks: reach a command's success path in a test, then delete its\n"
               "# line in the same change. <command.id><TAB><why it is not reached yet>\n")
     with open(path, "w", encoding="utf-8") as handle:
