@@ -463,6 +463,7 @@ include/SendButtonIndicator.h
 include/SerializingObject.h
 include/SessionArrangementRecorder.h
 include/SessionFollow.h
+include/SessionGridView.h
 include/SessionModel.h
 include/SessionPlayback.h
 include/SessionScheduler.h
@@ -1523,6 +1524,7 @@ src/gui/RowTableView.cpp
 src/gui/SampleThumbnail.cpp
 src/gui/SampleTrackWindow.cpp
 src/gui/SendButtonIndicator.cpp
+src/gui/SessionGridView.cpp
 src/gui/SideBar.cpp
 src/gui/SideBarWidget.cpp
 src/gui/StemSplitController.cpp
@@ -1835,6 +1837,7 @@ tests/src/gui/FocusDeskPaneTest.cpp
 tests/src/gui/FocusDeskTest.cpp
 tests/src/gui/FocusDeskWorkspacesTest.cpp
 tests/src/gui/MidiLearnGuiTest.cpp
+tests/src/gui/SessionGridViewTest.cpp
 tests/src/gui/ThemeContrastTest.cpp
 tests/src/gui/VcaStripViewTest.cpp
 tests/src/gui/WcagContrastTest.cpp

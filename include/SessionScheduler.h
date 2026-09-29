@@ -359,6 +359,16 @@ public:
 	//! Fires of SCENE chains since the last reset() (followFires() counts them too).
 	std::uint64_t sceneFollowFires() const noexcept;
 
+	/*! R5.3: what column @a track is doing, as the audio thread last published it - the
+	 *  clip-launch grid's reading. Columns past PublishedColumns read as idle. Any thread. */
+	static constexpr int PublishedColumns = 64;
+	struct ColumnState
+	{
+		SlotPhase phase = SlotPhase::Idle;
+		int scene = -1;
+	};
+	ColumnState columnState( int track ) const noexcept;
+
 	//! Arrangement Record's event ring (task #641): the model thread consumes it
 	//! (ControlCommandsSessionRecord.cpp); the audio thread feeds it while armed.
 	SessionArrangementRecorder& arrangementRecorder() noexcept;
@@ -494,6 +504,9 @@ private:
 	//! Applies a fired scene action to every column playing the launched row.
 	void applySceneFire( const FollowFire& fire, tick_t firedAt, const SessionClockContext& ctx ) noexcept;
 	void resetSceneFollow() noexcept;
+	//! Audio thread, once per period: each column's phase and scene, packed per column.
+	void publishColumns() noexcept;
+	std::array<std::atomic<std::uint32_t>, PublishedColumns> m_columnStates{};
 
 	std::array<InstalledScenePlan, MaxFollowPlans> m_scenePlans{};
 	int m_activeScene = -1;

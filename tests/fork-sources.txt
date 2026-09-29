@@ -638,6 +638,7 @@ include/ScriptMemoryBudget.h
 include/ScriptPackage.h
 include/SessionArrangementRecorder.h
 include/SessionFollow.h
+include/SessionGridView.h
 include/SessionModel.h
 include/SessionPlayback.h
 include/SessionScheduler.h
@@ -1099,6 +1100,7 @@ src/gui/FocusDeskPlacement.cpp
 src/gui/FocusDeskWorkspaces.cpp
 src/gui/MidiLearnGui.cpp
 src/gui/PinConnector.cpp
+src/gui/SessionGridView.cpp
 src/gui/StemSplitController.cpp
 src/gui/TelemetryConsentDialog.cpp
 src/gui/VcaStripView.cpp

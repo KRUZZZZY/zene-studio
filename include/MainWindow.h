@@ -44,6 +44,7 @@ namespace gui
 {
 
 class FocusDeskPane;
+class SessionGridView;
 class PluginView;
 class SubWindow;
 class ToolButton;
@@ -162,6 +163,8 @@ public slots:
 	void toggleSongEditorWin();
 	void toggleProjectNotesWin();
 	void toggleMicrotunerWin();
+	//! R5.3: the clip-launch grid, created on first use (SessionGridView).
+	void toggleClipLauncherWin();
 	void toggleMixerWin();
 	void togglePianoRollWin();
 	void toggleControllerRack();
@@ -195,7 +198,12 @@ protected:
 	void timerEvent( QTimerEvent * _ev ) override;
 
 
+public:
+	//! R5.3: the clip-launch grid's widget, created (in a hidden sub-window) on first use.
+	SessionGridView* clipLauncher();
+
 private:
+	SessionGridView* m_clipLauncher = nullptr;
 	MainWindow();
 	MainWindow( const MainWindow & );
 	~MainWindow() override;

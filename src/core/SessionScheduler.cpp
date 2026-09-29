@@ -439,6 +439,7 @@ void SessionScheduler::processAudio( const SessionClockContext& snapshot,
 	drainCommands( ctx );
 	advanceSlots( ctx );
 	evaluateSceneFollow( ctx );
+	publishColumns();
 }
 
 

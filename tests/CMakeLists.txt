@@ -620,6 +620,9 @@ set(LMMS_TESTS
 	src/gui/CommandPaletteTest.cpp
 	# M3.7: the mixer's VCA strip and the channel's VCA menu.
 	src/gui/VcaStripViewTest.cpp
+	# R5.3: the clip-launch grid - launch, stop and scene-launch from the grid produce the
+	# socket-visible state; every cell focusable and announced; the arrow keys.
+	src/gui/SessionGridViewTest.cpp
 	src/gui/MidiLearnGuiTest.cpp
 	src/tracks/AutomationTrackTest.cpp
 	# Inherited clip paths that dereferenced getGUI() unguarded, run headless.
@@ -1059,6 +1062,7 @@ set_tests_properties(ClipLinkTest ClipLinkPersistenceTest ImportDetectionTest
 set_tests_properties(FocusDeskTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(CommandPaletteTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(VcaStripViewTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+set_tests_properties(SessionGridViewTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(FocusDeskPaneTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(FocusDeskActionsTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(FocusDeskWorkspacesTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")

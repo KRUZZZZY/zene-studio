@@ -194,7 +194,8 @@ void registerSessionGetState(ControlRegistry& registry)
 	state.description = QStringLiteral("The Session View: grid dimensions, the global launch "
 		"quantisation, every non-empty clip slot with its launch settings, every scene override, "
 		"and the launch engine's read-back (completed launches, the grid line the newest starts "
-		"fired on, how many clips started on that one line).");
+		"fired on, how many clips started on that one line), and `columns`: every column that is "
+		"launching, playing or stopping and the scene it is on.");
 	state.argsSchema = objectSchema();
 	state.resultSchema = objectSchema({
 		{QStringLiteral("grid"), objectProperty()},
@@ -202,6 +203,7 @@ void registerSessionGetState(ControlRegistry& registry)
 		{QStringLiteral("slots"), arrayProperty()},
 		{QStringLiteral("scenes"), arrayProperty()},
 		{QStringLiteral("launch"), objectProperty()},
+		{QStringLiteral("columns"), arrayProperty()},
 	});
 	state.mutating = false;
 	state.handler = [](const QJsonObject&) {
@@ -220,6 +222,20 @@ void registerSessionGetState(ControlRegistry& registry)
 		result.insert(QStringLiteral("slots"), cells);
 		result.insert(QStringLiteral("scenes"), sceneStates(*model));
 		result.insert(QStringLiteral("launch"), launchState(*song, song->sessionScheduler()));
+		// R5.3: every column that is not idle - its phase and the scene it is on, the
+		// engine's published reading (up to one audio period old).
+		QJsonArray columns;
+		for (int track = 0; track < SessionScheduler::PublishedColumns; ++track)
+		{
+			const SessionScheduler::ColumnState column = song->sessionScheduler().columnState(track);
+			if (column.phase == SlotPhase::Idle) { continue; }
+			columns.append(QJsonObject{{QStringLiteral("track"), track},
+				{QStringLiteral("scene"), column.scene},
+				{QStringLiteral("phase"), column.phase == SlotPhase::Playing ? QStringLiteral("playing")
+					: column.phase == SlotPhase::LaunchPending ? QStringLiteral("launching")
+					: QStringLiteral("stopping")}});
+		}
+		result.insert(QStringLiteral("columns"), columns);
 		return ControlResult::success(result);
 	};
 	registry.registerCommand(state);

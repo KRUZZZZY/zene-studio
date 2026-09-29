@@ -67,6 +67,7 @@
 #include "InstrumentTrackView.h"
 #include "InstrumentTrackWindow.h"
 #include "MicrotunerConfig.h"
+#include "SessionGridView.h"
 #include "MidiLearnGui.h"
 #include "PatternEditor.h"
 #include "PianoRoll.h"
@@ -1376,6 +1377,28 @@ void MainWindow::toggleMicrotunerWin()
 
 
 
+SessionGridView* MainWindow::clipLauncher()
+{
+	if( m_clipLauncher == nullptr )
+	{
+		m_clipLauncher = new SessionGridView;
+		addWindowedWidget( m_clipLauncher );
+		m_clipLauncher->parentWidget()->hide();
+	}
+	return m_clipLauncher;
+}
+
+
+
+
+void MainWindow::toggleClipLauncherWin()
+{
+	toggleWindow( clipLauncher() );
+}
+
+
+
+
 void MainWindow::updateViewMenu()
 {
 	m_viewMenu->clear();
@@ -1389,6 +1412,7 @@ void MainWindow::updateViewMenu()
 	windowToggleAction(m_viewMenu, embed::getIconPixmap( "mixer" ), tr( "Mixer" ) + "\tCtrl+5", "mixer");
 	windowToggleAction(m_viewMenu, embed::getIconPixmap( "controller" ), tr( "Controller Rack" ) + "\tCtrl+6", "controller_rack");
 	windowToggleAction(m_viewMenu, embed::getIconPixmap( "project_notes" ), tr( "Project Notes" ) + "\tCtrl+7", "project_notes");
+	windowToggleAction(m_viewMenu, embed::getIconPixmap( "pattern_track" ), tr( "Clip Launcher" ), "clip_launcher");
 
 	m_viewMenu->addSeparator();
 	

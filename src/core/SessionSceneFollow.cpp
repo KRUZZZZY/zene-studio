@@ -39,6 +39,8 @@
  * the audio thread over fixed tables: no allocation, no lock (AGENTS.md rule 4).
  */
 
+#include <array>
+
 #include "SessionArrangementRecorder.h"
 #include "SessionFollow.h"
 #include "SessionScheduler.h"
@@ -247,6 +249,56 @@ void SessionScheduler::applySceneFire( const FollowFire& fire, tick_t firedAt,
 	}
 	if( fire.outcome == FollowOutcome::Stop ) { startScene( -1, 0 ); }
 	else { startScene( fire.outcome == FollowOutcome::SwitchScene ? fire.targetScene : row, firedAt ); }
+}
+
+// ---------------------------------------------------------------------------
+// R5.3: the per-column reading the clip-launch grid draws from
+// ---------------------------------------------------------------------------
+
+namespace
+{
+
+//! 0 is idle; otherwise (phase << 16) | scene, scene < 65536 (the grid clamps at 512).
+std::uint32_t packColumn( SlotPhase phase, int scene ) noexcept
+{
+	return phase == SlotPhase::Idle || scene < 0 ? 0u
+		: ( static_cast<std::uint32_t>( phase ) << 16 ) | ( static_cast<std::uint32_t>( scene ) & 0xffffu );
+}
+
+} // namespace
+
+
+void SessionScheduler::publishColumns() noexcept
+{
+	std::array<std::uint32_t, PublishedColumns> packed{};
+	for( const auto& slot : m_active )
+	{
+		if( slot.track < 0 || slot.track >= PublishedColumns ) { continue; }
+		const std::uint32_t value = packColumn( slot.state.phase, slot.scene );
+		// A column can hold a playing cell and a pending one (a launch at the next bar):
+		// the pending one is what the grid must show as about to happen, so it wins.
+		if( value != 0 && ( packed[static_cast<std::size_t>( slot.track )] == 0
+			|| slot.state.phase == SlotPhase::LaunchPending ) )
+		{
+			packed[static_cast<std::size_t>( slot.track )] = value;
+		}
+	}
+	for( std::size_t column = 0; column < packed.size(); ++column )
+	{
+		m_columnStates[column].store( packed[column], std::memory_order_relaxed );
+	}
+}
+
+
+SessionScheduler::ColumnState SessionScheduler::columnState( int track ) const noexcept
+{
+	ColumnState state;
+	if( track < 0 || track >= PublishedColumns ) { return state; }
+	const std::uint32_t value = m_columnStates[static_cast<std::size_t>( track )].load( std::memory_order_relaxed );
+	if( value == 0 ) { return state; }
+	state.phase = static_cast<SlotPhase>( value >> 16 );
+	state.scene = static_cast<int>( value & 0xffffu );
+	return state;
 }
 
 } // namespace lmms

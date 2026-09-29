@@ -78,6 +78,10 @@ const EditorEntry kEditors[] = {
 	// M3.2: Edit > Scales and keymaps dispatches this editor too.
 	{"microtuner", [](gui::GuiApplication* g) -> QWidget* { return g->getMicrotunerConfig(); },
 		&gui::MainWindow::toggleMicrotunerWin},
+	// R5.3: the clip-launch grid (SessionGridView), created by its first toggle.
+	{"clip_launcher", [](gui::GuiApplication* g) -> QWidget* {
+		return g->mainWindow() != nullptr ? g->mainWindow()->clipLauncher() : nullptr; },
+		&gui::MainWindow::toggleClipLauncherWin},
 };
 
 const EditorEntry* findEditor(const QString& name)
@@ -143,7 +147,7 @@ void registerWindowCommands(ControlRegistry& registry)
 		cmd.description = QStringLiteral("Show or hide one editor's window - the View menu's "
 			"Ctrl+1..7 items, Edit > Scales and keymaps and the window toolbar dispatch exactly this. "
 			"`editor` is one of song, pattern, piano_roll, automation, mixer, controller_rack, "
-			"project_notes, microtuner. A "
+			"project_notes, microtuner, clip_launcher. A "
 			"hidden or unfocused editor is brought forward (and back into view if it was off "
 			"screen); the focused one is hidden. `visible` is the editor's state afterwards. "
 			"Interface state, not project state: nothing is journalled. Refused `requires` in a "
