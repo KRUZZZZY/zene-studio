@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-09-29T17:41:36Z",
+  "captured_at": "2026-09-29T18:20:12Z",
   "commands": [
     {
       "args_schema": {
@@ -17107,7 +17107,7 @@
         "required": [],
         "type": "object"
       },
-      "description": "Fetch a model file into the store (default directory, or `dest_dir`), HTTPS only, verifying the pinned SHA-256 and size BEFORE the file is moved into place - a partial or mismatched download never replaces a good file. With no arguments it fetches the store's own pinned default spec; with any of `url`, `sha256` or `size_bytes` it fetches a caller spec, which must be pinned in full. Refused in offline mode (LMMS_STEM_OFFLINE). A stem job does not need this verb: it fetches the default model itself on first use, on the job's worker thread. DECLARED BOUND: a performing call is a real network transfer on the control surface's own thread, so the surface does not answer - `control.ping` included - until it finishes or fails (the same defect the child-process renders carry, docs/RENDER-CHILD-WAIT.md); the transfer is not exercised by any registered proof, which runs offline so CI never fetches 166 MB.",
+      "description": "Fetch a model file into the store (default directory, or `dest_dir`), HTTPS only, verifying the pinned SHA-256 and size BEFORE the file is moved into place - a partial or mismatched download never replaces a good file. With no arguments it fetches the store's own pinned default spec; with any of `url`, `sha256` or `size_bytes` it fetches a caller spec, which must be pinned in full. A file already in place that verifies against the pinned spec is not fetched again (`fetched: false`), offline or not; any other call is refused in offline mode (LMMS_STEM_OFFLINE). A stem job does not need this verb: it fetches the default model itself on first use, on the job's worker thread. DECLARED BOUND: a performing call is a real network transfer on the control surface's own thread, so the surface does not answer - `control.ping` included - until it finishes or fails (the same defect the child-process renders carry, docs/RENDER-CHILD-WAIT.md); the transfer is not exercised by any registered proof, which runs offline so CI never fetches 166 MB.",
       "group": "stem",
       "id": "stem.model_download",
       "mutating": false,
@@ -17117,6 +17117,9 @@
         "properties": {
           "bytes": {
             "type": "number"
+          },
+          "fetched": {
+            "type": "boolean"
           },
           "model_card_url": {
             "type": "string"
@@ -20419,7 +20422,7 @@
     "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-ui/tools/zene-pa-agentctl",
     "lane_head": null,
     "proto": 1,
-    "source_socket": "/tmp/zctl-run-p1mayuxb/zene.sock",
+    "source_socket": "/tmp/zctl-run-efwfgf4s/zene.sock",
     "version": "0.3.0-alpha.154+b6afcc5"
   },
   "kind": "zene-control-command-list",

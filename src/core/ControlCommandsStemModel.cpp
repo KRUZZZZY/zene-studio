@@ -67,7 +67,7 @@ ControlResult stemModelGetState(const QJsonObject& args)
  *  renders, stated in the command's own description, in its A16 row and in
  *  docs/KNOWN-LIMITATIONS.md. A stem job needs none of this: it fetches on its
  *  own worker thread. No registered proof performs a transfer (the proof runs
- *  offline); the refusal paths are what it covers.
+ *  offline); the refusal paths and the verified-in-place success are what it covers.
  *
  *  Named ...Command because the engine function it wraps has the same name and
  *  an unqualified call would find this one first.
@@ -149,8 +149,9 @@ void registerStemModelDownload(ControlRegistry& registry)
 		"`dest_dir`), HTTPS only, verifying the pinned SHA-256 and size BEFORE the file is moved "
 		"into place - a partial or mismatched download never replaces a good file. With no "
 		"arguments it fetches the store's own pinned default spec; with any of `url`, `sha256` or "
-		"`size_bytes` it fetches a caller spec, which must be pinned in full. Refused in offline "
-		"mode (LMMS_STEM_OFFLINE). A stem job does not need this verb: it fetches the default "
+		"`size_bytes` it fetches a caller spec, which must be pinned in full. A file already in "
+		"place that verifies against the pinned spec is not fetched again (`fetched: false`), "
+		"offline or not; any other call is refused in offline mode (LMMS_STEM_OFFLINE). A stem job does not need this verb: it fetches the default "
 		"model itself on first use, on the job's worker thread. DECLARED BOUND: a performing call is a real "
 		"network transfer on the control surface's own thread, so the surface does not answer - "
 		"`control.ping` included - until it finishes or fails (the same defect the child-process "
@@ -169,6 +170,7 @@ void registerStemModelDownload(ControlRegistry& registry)
 		{QStringLiteral("bytes"), numberProperty()},
 		{QStringLiteral("sha256"), stringProperty()},
 		{QStringLiteral("verified"), booleanProperty()},
+		{QStringLiteral("fetched"), booleanProperty()},
 		{QStringLiteral("model_card_url"), stringProperty()},
 	});
 	cmd.handler = [](const QJsonObject& args) { return stemModelDownloadCommand(args); };

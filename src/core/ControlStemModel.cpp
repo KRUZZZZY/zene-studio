@@ -142,6 +142,8 @@ bool stemModelDownload(const QString& url,
 	}
 
 	const QString directory = destDir.isEmpty() ? StemModelStore::defaultModelDir() : destDir;
+	const bool alreadyInPlace = StemModelStore::verify(
+		QDir(directory).filePath(spec.name + QStringLiteral(".onnx")), spec.sha256, spec.sizeBytes);
 	QString storeError;
 	if (!StemModelStore::download(spec, directory, StemModelStore::DownloadProgressFn(), &storeError))
 	{
@@ -156,6 +158,8 @@ bool stemModelDownload(const QString& url,
 	out.insert(QStringLiteral("bytes"), static_cast<double>(QFileInfo(path).size()));
 	out.insert(QStringLiteral("sha256"), spec.sha256);
 	out.insert(QStringLiteral("verified"), true);
+	// false: the file was already in place and verified, so nothing was transferred.
+	out.insert(QStringLiteral("fetched"), !alreadyInPlace);
 	out.insert(QStringLiteral("model_card_url"), spec.modelCardUrl);
 	*result = out;
 	return true;

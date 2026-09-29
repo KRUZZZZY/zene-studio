@@ -104,6 +104,8 @@ public:
 	// `error` on any failure; a partial file never replaces a good one.
 	// A non-null `cancel` that becomes true aborts the transfer (reported as
 	// "cancelled"); the partial file is removed as on any other failure.
+	// A file already at `<destDir>/<spec.name>.onnx` that verifies against the
+	// pinned spec is success with nothing fetched - offline mode included.
 	static bool download(const StemModelSpec& spec,
 		const QString& destDir,
 		const DownloadProgressFn& progress,
