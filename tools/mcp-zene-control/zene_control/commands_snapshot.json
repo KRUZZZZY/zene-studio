@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-09-29T19:27:16Z",
+  "captured_at": "2026-09-29T21:38:09Z",
   "commands": [
     {
       "args_schema": {
@@ -13833,7 +13833,7 @@
         "required": [],
         "type": "object"
       },
-      "description": "Every record route the engine prepared, and the input path that feeds them. A route is one capture stream: an arm flag, the interleaved input channel it reads, the take file it writes, the take JOURNAL beside it, and the frame counters (pushed / recorded / journalled / overflow / write errors). The engine prepares 64 routes, and each may select ANY of the configured input channels - that pair of numbers (route_count and input_channel_capacity) is the 'arbitrary input count / multiple simultaneous inputs' feature row 64 asks for. `input` is record.input_get_state's own report, including `input_frames_staged` and `wide_frames`: both are 0 under a backend with no capture path, which is what 'a record route takes no inputs' measured. Read-only.",
+      "description": "Every record route the engine prepared, and the input path that feeds them. A route is one capture stream: an arm flag, the interleaved input channel it reads, the take file it writes, the take JOURNAL beside it, and the frame counters (pushed / recorded / journalled / overflow / write errors). The engine prepares 64 routes, and each may select ANY of the configured input channels - that pair of numbers (route_count and input_channel_capacity) is the 'arbitrary input count / multiple simultaneous inputs' feature row 64 asks for. `input` is record.input_get_state's own report, including `input_frames_staged` and `wide_frames`: both are 0 under a backend with no capture path, which is what 'a record route takes no inputs' measured. `latency_frames` is the recording round trip - the device's output and input latency plus one capture block of staging - that a take recorded against playback is shifted back by. Read-only.",
       "group": "record",
       "id": "record.get_state",
       "mutating": false,
@@ -13845,6 +13845,9 @@
             "type": "object"
           },
           "input_channel_capacity": {
+            "type": "integer"
+          },
+          "latency_frames": {
             "type": "integer"
           },
           "route_count": {
@@ -20957,8 +20960,8 @@
     "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-survey/tools/zene-pa-agentctl",
     "lane_head": null,
     "proto": 1,
-    "source_socket": "/tmp/zctl-run-di9wfwnt/zene.sock",
-    "version": "0.3.0-alpha.166+b2fcdf9"
+    "source_socket": "/tmp/zctl-run-tmcp38a4/zene.sock",
+    "version": "0.3.0-alpha.170+f478c95"
   },
   "kind": "zene-control-command-list",
   "proto": 1,
