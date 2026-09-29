@@ -871,6 +871,7 @@ src/core/ControlCommandsSessionLaunch.cpp
 src/core/ControlCommandsSessionRecord.cpp
 src/core/ControlCommandsSessionRecordInternal.h
 src/core/ControlCommandsSessionRecordLand.cpp
+src/core/ControlCommandsSessionSceneFollow.cpp
 src/core/ControlCommandsSessionShared.h
 src/core/ControlCommandsSettings.cpp
 src/core/ControlCommandsStemModel.cpp

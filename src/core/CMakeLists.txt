@@ -97,6 +97,7 @@ SET(LMMS_SESSION_SRCS
 		core/SessionFollow.cpp
 		core/SessionSceneFollow.cpp
 		core/ControlCommandsSessionFollow.cpp
+		core/ControlCommandsSessionSceneFollow.cpp
 		core/ControlCommandsSessionRecord.cpp
 		core/ControlCommandsSessionRecordLand.cpp
 	)
