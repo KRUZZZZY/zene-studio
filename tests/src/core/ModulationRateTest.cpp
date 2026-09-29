@@ -38,6 +38,7 @@
 #include <cmath>
 
 #include "AllocationProbe.h"
+#include "AudioDevice.h"
 #include "AudioEngine.h"
 #include "AutomatableModel.h"
 #include "Engine.h"
@@ -115,7 +116,7 @@ private slots:
 		Engine::init(true);
 		// The Dummy's render thread increments the period counter too; the test is the only
 		// renderer, so the counter it reads is the one it moves.
-		Engine::audioEngine()->stopProcessing();
+		Engine::audioEngine()->audioDev()->stopProcessing();
 	}
 
 	void cleanupTestCase() { Engine::destroy(); }

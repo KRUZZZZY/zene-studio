@@ -38,6 +38,7 @@
 #include "AudioDevice.h"
 #include "AudioEngine.h"
 #include "AudioInputPath.h"
+#include "AudioWideInputStage.h"
 #include "Engine.h"
 
 using namespace lmms;
@@ -81,7 +82,7 @@ private slots:
 	void initTestCase()
 	{
 		Engine::init(true);
-		Engine::audioEngine()->stopProcessing();
+		Engine::audioEngine()->audioDev()->stopProcessing();
 	}
 
 	void cleanupTestCase() { Engine::destroy(); }
@@ -132,6 +133,26 @@ private slots:
 		engine->renderNextPeriod();
 		QCOMPARE(engine->inputBuffer()[5][0], 5.0f);
 		QCOMPARE(engine->inputBuffer()[5][1], 5.0f);
+	}
+
+	//! BUGS_FOUND 11.9: the stage's width was fixed at its 128-channel storage, so a real
+	//! device's block was always refused. It now carries the producer's width, changing it
+	//! only once every block of the old width has been drained.
+	void theWideStageCarriesTheDevicesWidthAndChangesItOnlyWhenEmpty()
+	{
+		AudioWideInputStage stage(AudioInputPath::MaxChannels, 256);
+		const std::vector<float> stereo(64 * 2, 0.5f);
+		const std::vector<float> eight(64 * 8, 0.25f);
+		QCOMPARE(stage.push(stereo.data(), 2, 64), std::size_t{64});
+		QCOMPARE(stage.push(eight.data(), 8, 64), std::size_t{0});  // stereo still unread
+		stage.drain();
+		QCOMPARE(stage.channels(), 2);
+		QCOMPARE(stage.frames(), f_cnt_t{64});
+		QCOMPARE(stage.push(eight.data(), 8, 64), std::size_t{64});  // empty: adopted
+		stage.drain();
+		QCOMPARE(stage.channels(), 8);
+		QCOMPARE(stage.data()[7], 0.25f);
+		QCOMPARE(stage.push(eight.data(), AudioInputPath::MaxChannels + 1, 1), std::size_t{0});
 	}
 };
 
