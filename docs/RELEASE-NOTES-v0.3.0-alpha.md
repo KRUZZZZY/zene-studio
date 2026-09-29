@@ -916,10 +916,11 @@ attach_all / detach_all / settings / command_palette (M3.4) / screenshot and app
 are `not_mutating` (+10).
 
 **R3.5 (edit groups carry every edit type)** added vca.edit_split, edit_trim, edit_slip and edit_fade,
-each a `true_inverse` composite checkpoint like vca.edit_move (+4).
+each a `true_inverse` composite checkpoint like vca.edit_move (+4); R3.1's comp.audition is `not_mutating`
+monitoring state (+1).
 
 <!-- A16-HISTOGRAM-BEGIN
-     measured: rows=386 true_inverse=171 snapshot=39 irreversible=17 not_mutating=159
+     measured: rows=387 true_inverse=171 snapshot=39 irreversible=17 not_mutating=160
      configuration: telemetry.status wasm.load session.get_state stem.get_state
      option telemetry.status rows=2 not_mutating=2
      option wasm.load rows=8 snapshot=3 not_mutating=5

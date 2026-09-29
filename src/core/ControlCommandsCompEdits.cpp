@@ -307,9 +307,54 @@ void registerCompGetState(ControlRegistry& registry)
 } // namespace
 
 
+/*! comp.audition (R3.1): hear one lane's takes on their own, the composite set aside.
+ *  Monitoring state - it changes what plays, not the project: not saved, not journalled,
+ *  and the composite is untouched, so stopping the audition plays the comp again. */
+void registerCompAudition(ControlRegistry& registry)
+{
+	ControlCommand cmd;
+	cmd.id = QStringLiteral("comp.audition");
+	cmd.group = QStringLiteral("comp");
+	cmd.verb = QStringLiteral("audition");
+	cmd.description = QStringLiteral("Audition one take lane: while it is set, that lane's takes "
+		"play WHOLE and every other lane of the track is silent - the composite is set aside, not "
+		"changed. Omit 'lane' (or pass -1) to stop and play the composite again. Monitoring state: "
+		"not saved and not journalled, so it records no transaction. Takes effect from the next "
+		"clip a playback pass starts.");
+	cmd.argsSchema = objectSchema({
+		{ArgTrack, stringProperty()},
+		{ArgLane, integerProperty(-1, MaxSongLength)},
+	}, {ArgTrack});
+	cmd.resultSchema = objectSchema({
+		{ArgTrack, stringProperty()},
+		{QStringLiteral("auditioning"), nullable(integerProperty(0, MaxSongLength))},
+		{QStringLiteral("previous"), nullable(integerProperty(0, MaxSongLength))},
+	});
+	cmd.handler = [](const QJsonObject& args) {
+		ControlResult error;
+		Track* track = resolveTrack(args.value(ArgTrack).toString(), &error);
+		if (track == nullptr) { return error; }
+		TakeLaneModel& model = track->takeLanes();
+		const int lane = args.value(ArgLane).toInt(-1);
+		if (lane >= 0 && !model.hasLane(lane))
+		{
+			return ControlResult::failure(ControlErrorKind::NotFound,
+				QStringLiteral("%1 has no take lane %2 (its lanes: %3)")
+					.arg(trackIdOf(track)).arg(lane).arg(laneIndexList(model)));
+		}
+		const int previous = model.auditionLane();
+		model.setAuditionLane(lane);
+		const auto orNull = [](int value) { return value >= 0 ? QJsonValue(value) : QJsonValue(QJsonValue::Null); };
+		return ControlResult::success(QJsonObject{{ArgTrack, trackIdOf(track)},
+			{QStringLiteral("auditioning"), orNull(lane)}, {QStringLiteral("previous"), orNull(previous)}});
+	};
+	registry.registerCommand(cmd);
+}
+
 void registerCompEditCommands(ControlRegistry& registry)
 {
 	registerCompSelect(registry);
+	registerCompAudition(registry);
 	registerCompRebuild(registry);
 	registerCompGetState(registry);
 }

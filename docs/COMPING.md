@@ -59,7 +59,8 @@ Three decisions say exactly what that means:
    reported **`unresolved`** rather than guessed at.
 3. **`srcpos` is recorded and reported, not yet applied.** It is the intended slip into the lane's
    take (0 = that take's own start, which is what a plain "use this lane here" selection means).
-   No playback path consumes the composite in this release, so nothing can apply it yet — see §4.
+   The composite now PLAYS (R3.1, below), but playback gates each take by its own lane's spans
+   and reads the take at its own mapping, so `srcpos` is still not applied - see §5.
 
 **The non-destructive property, stated as the thing the test measures:** after every `comp.*`
 command, after a save and after a load, the takes' **files** and the takes' **in-memory buffers**
@@ -171,15 +172,18 @@ not have (`not_found`, naming the lanes it does have), a MIDI clip (`refused`), 
 
 ## 5. What is NOT built here (read this before assuming)
 
-- **Nothing renders a composite.** No playback path, no `SampleTrack::play` branch, no play handle
-  reads the composite: a comp sounds exactly like the track's clips as they lie. `resolve()` and
-  `resolveSource()` are the engine's answer to "which take supplies this tick", and they are what a
-  future render path consumes — this lane stops at the model, the surface and their proof.
+- **The composite PLAYS (R3.1, 2026-09-29).** Each take's play handle snapshots the spans the
+  composite selects for ITS lane (`SamplePlayHandle::snapshotComp`, fixed-size, no allocation) and
+  sounds only there, with a 64-frame ramp at every lane switch, so a switch is a short crossfade and
+  not a click. A track with no composite has no gate and renders byte-for-byte as before. **Audition**
+  is built too: `comp.audition {track, lane}` plays that lane's takes whole and silences the others,
+  as monitoring state that is not saved or journalled. `TakeLaneCompPlaybackTest` holds both. Still not
+  built: applying `srcpos` (a take plays at its own mapping), and MIDI takes (the next item below).
 - **No interface at all.** No lane geometry, no lane header, no lane handle, no comping gesture,
   and no waveform drawing of the composite: `src/gui/` is untouched, and the release notes and
   `docs/KNOWN-LIMITATIONS.md` carry the one-line absence.
-- **No MIDI comping** (design §3: note-level merging across takes is a different edit), **no
-  audition** (`comp.audition` of the design's sketch) and **no flatten** (the destructive bounce a
+- **No MIDI comping** (design §3: note-level merging across takes is a different edit) and **no
+  flatten** (the destructive bounce a
   comp can end in; deliberately absent while nothing renders).
 - **The `srcpos` slip is not applied** by anything (§2.3).
 - **Divergence from the design's `CompClip`**: the design sketches the composite as a new clip

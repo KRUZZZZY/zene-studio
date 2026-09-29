@@ -1852,6 +1852,7 @@ tests/src/tracks/SampleClipRubberBandTest.cpp
 tests/src/tracks/SampleClipStretchTest.cpp
 tests/src/tracks/SampleClipWarpTest.cpp
 tests/src/tracks/SampleClipWindowTest.cpp
+tests/src/tracks/TakeLaneCompPlaybackTest.cpp
 tests/src/wasm/WasmAbiConformanceTest.cpp
 tests/src/wasm/WasmSandboxTest.cpp
 tests/src/wasm/WasmWorkerPoolTest.cpp

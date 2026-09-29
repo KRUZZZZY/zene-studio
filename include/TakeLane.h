@@ -105,9 +105,9 @@ struct TakeLane
  *  ticks into that lane's take (0 = the take's own start, which is what a plain
  *  "use this lane here" selection means).
  *
- *  The offset is RECORDED AND REPORTED, not yet applied: this release resolves a
- *  tick to the take by the clip's own mapping (see resolveSource), and no
- *  playback path consumes the composite yet - docs/COMPING.md says so plainly. */
+ *  The offset is RECORDED AND REPORTED, not yet applied: the composite PLAYS
+ *  (SamplePlayHandle gates each take by its lane's segments, R3.1), but a take
+ *  plays at its own mapping - docs/COMPING.md says so plainly. */
 struct TakeLaneSegment
 {
 	int beginTick = 0;
@@ -198,6 +198,14 @@ public:
 	void clear();
 	bool isEmpty() const { return m_lanes.empty() && m_segments.empty(); }
 
+	/*! R3.1, audition: while a lane is auditioned its takes sound WHOLE and every
+	 *  other lane of the track is silent - the composite is set aside, not
+	 *  changed. -1 = no audition (the composite plays). Monitoring state: not
+	 *  serialized, not journalled, and not part of operator== (a checkpoint or a
+	 *  file never carries it). */
+	int auditionLane() const { return m_auditionLane; }
+	void setAuditionLane(int lane) { m_auditionLane = lane; }
+
 	// ---- project file ---------------------------------------------------
 	/*! Writes the model's CHILDREN onto \p element (the caller creates and
 	 *  places the element, so an empty model writes nothing at all - I9):
@@ -228,6 +236,7 @@ private:
 
 	std::vector<TakeLane> m_lanes;
 	std::vector<TakeLaneSegment> m_segments;
+	int m_auditionLane = -1;
 };
 
 } // namespace lmms

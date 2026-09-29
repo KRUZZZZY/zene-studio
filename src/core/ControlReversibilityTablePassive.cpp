@@ -253,6 +253,11 @@ const ReversibilityRow kPassiveRows[] = {
 		"reads the engine's own undo stack - its depth, the two caps it is bounded by, the serialised bytes it retains, how many steps a bound has evicted, and the coalescing window - and writes nothing",
 		"no write",
 		""),
+	R("comp.audition", RC::NotMutating, false,
+		"auditioning a lane is MONITORING state on the take-lane model: not serialized, not "
+		"journalled, and the composite it sets aside is untouched",
+		"no project write (omit 'lane' to stop the audition)",
+		""),
 	R("comp.get_state", RC::NotMutating, false,
 		"reads the take lanes and the composite of one track, plus what each "
 		"segment resolves to (the take clip and its source frame); it writes "

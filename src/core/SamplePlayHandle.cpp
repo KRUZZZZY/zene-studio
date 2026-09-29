@@ -23,6 +23,8 @@
  */
 
 #include "SamplePlayHandle.h"
+#include "TakeLane.h"
+#include "Track.h"
 
 #include <algorithm>
 #include <cmath>
@@ -142,6 +144,7 @@ SamplePlayHandle::SamplePlayHandle( SampleClip* clip, const SampleWindow& window
 	// renders the envelope it was created with. A neutral clip leaves m_edits
 	// neutral, and play() then skips the envelope entirely.
 	snapshotClipEdits(clip, window);
+	snapshotComp(clip);
 }
 
 
@@ -172,7 +175,11 @@ SamplePlayHandle::SamplePlayHandle( SampleClip* clip, const SampleWindow& window
 void SamplePlayHandle::snapshotClipEdits(const SampleClip* clip, const SampleWindow& window)
 {
 	m_edits = clip->clipEdits();
-	if (m_edits.isNeutral()) { return; }
+	// The comp gate (R3.1) measures against the same span, so the span is taken
+	// for a comped clip too; a clip with neither stays on the early return.
+	const Track* owner = clip->getTrack();
+	const bool comped = owner != nullptr && !owner->takeLanes().segments().empty();
+	if (m_edits.isNeutral() && !comped) { return; }
 
 	const auto outputRate = Engine::audioEngine()->outputSampleRate();
 	const double outputFramesPerTick = Engine::framesPerTick(outputRate);
@@ -224,6 +231,62 @@ void SamplePlayHandle::snapshotClipEdits(const SampleClip* clip, const SampleWin
  *  The multiply is skipped wholesale for the neutral case by play()'s own guard,
  *  so this function is never entered for a clip nobody has edited.
  */
+void SamplePlayHandle::snapshotComp(const SampleClip* clip)
+{
+	const Track* owner = clip->getTrack();
+	if (owner == nullptr) { return; }
+	const TakeLaneModel& comp = owner->takeLanes();
+	if (comp.segments().empty() && comp.auditionLane() < 0) { return; }
+	const double fpt = Engine::framesPerTick(Engine::audioEngine()->outputSampleRate());
+	const int start = clip->startPosition().getTicks();
+	const int end = clip->endPosition().getTicks();
+	const int lane = clip->laneIndex();
+	m_comped = true;
+	m_compSpanCount = 0;
+	// Auditioning a lane (comp.audition) replaces the composite: that lane's
+	// takes sound whole and every other lane is silent.
+	if (comp.auditionLane() >= 0)
+	{
+		if (lane == comp.auditionLane())
+		{
+			m_compSpans[0] = {0, static_cast<f_cnt_t>(std::llround((end - start) * fpt))};
+			m_compSpanCount = 1;
+		}
+		return;
+	}
+	for (const TakeLaneSegment& segment : comp.segments())
+	{
+		if (segment.laneIndex != lane || m_compSpanCount >= MaxCompSpans) { continue; }
+		const int from = std::max(segment.beginTick, start);
+		const int to = std::min(segment.endTick, end);
+		if (to <= from) { continue; }
+		m_compSpans[static_cast<std::size_t>(m_compSpanCount++)] = {
+			static_cast<f_cnt_t>(std::llround((from - start) * fpt)),
+			static_cast<f_cnt_t>(std::llround((to - start) * fpt))};
+	}
+}
+
+void SamplePlayHandle::applyComp(SampleFrame* buffer, f_cnt_t frames) const
+{
+	const f_cnt_t base = m_envelopeStart + m_frame;
+	for (f_cnt_t f = 0; f < frames; ++f)
+	{
+		const f_cnt_t at = base + f;
+		float gain = 0.0f;
+		for (int i = 0; i < m_compSpanCount; ++i)
+		{
+			const auto [from, to] = m_compSpans[static_cast<std::size_t>(i)];
+			if (at < from || at >= to) { continue; }
+			// A linear ramp over CompRampFrames at each edge: the lane switch is a
+			// crossfade of two clips, each fading at its own span's edge.
+			const f_cnt_t edge = std::min(at - from, to - 1 - at);
+			gain = std::max(gain, std::min(1.0f, static_cast<float>(edge + 1) / CompRampFrames));
+		}
+		buffer[f][0] *= gain;
+		buffer[f][1] *= gain;
+	}
+}
+
 void SamplePlayHandle::applyClipEdits(SampleFrame* buffer, f_cnt_t frames) const
 {
 	const f_cnt_t base = m_envelopeStart + m_frame;
@@ -313,6 +376,12 @@ void SamplePlayHandle::play( std::span<SampleFrame> buffer )
 		if (!m_edits.isNeutral())
 		{
 			applyClipEdits(workingBuffer, frames);
+		}
+		// R3.1: a comped track plays only its composite - this clip sounds over
+		// the spans the composite selects its lane for.
+		if (m_comped)
+		{
+			applyComp(workingBuffer, frames);
 		}
 	}
 
