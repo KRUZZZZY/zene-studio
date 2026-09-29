@@ -26,6 +26,7 @@
 #include "Clip.h"
 #include "ControlEdit.h"   // enumerateClips(), resolveClip(), ClipRef
 #include "ControlRegistry.h"
+#include "MidiClip.h"
 #include "SampleClip.h"
 #include "TimePos.h"
 #include "Track.h"
@@ -49,9 +50,15 @@ QString takeClipId(const Clip* clip)
 bool resolveTakeClip(const QString& id, ClipRef* ref, ControlResult* error)
 {
 	if (!resolveClip(id, ref, error)) { return false; }
-	if (dynamic_cast<SampleClip*>(ref->clip) != nullptr) { return true; }
+	// R3.3: MIDI takes are comped too (a note plays where the composite selects
+	// its clip's lane - InstrumentTrack::compPlays); only a pattern or automation
+	// clip is not a take.
+	if (dynamic_cast<SampleClip*>(ref->clip) != nullptr || dynamic_cast<MidiClip*>(ref->clip) != nullptr)
+	{
+		return true;
+	}
 	*error = ControlResult::failure(ControlErrorKind::Refused,
-		QStringLiteral("take lanes carry audio takes in this release; %1 is a %2 clip "
+		QStringLiteral("take lanes carry audio and MIDI takes; %1 is a %2 clip "
 			"(docs/COMPING.md)")
 			.arg(clipId(ref->id), ref->clip->nodeName()));
 	return false;

@@ -291,12 +291,12 @@ that is this page's fault — report it and it gets added.
   comping test files, `tests/src/core/TakeLaneTest.cpp` (the lanes, the take audio and the project file) and
   `tests/src/core/TakeLaneCompTest.cpp` (the composite and the `comp.*` surface); the decisions are recorded
   in **`docs/COMPING.md`**.
-  *What this bullet still means, and what is still absent: **nothing renders a composite** — no playback path reads
-  it, so a comp sounds exactly like the track's clips as they lie and the per-segment `srcpos` slip is recorded but
-  not applied; there is **no lane geometry, no lane handle, no comping gesture and no waveform drawing** anywhere in
-  `src/gui/`; there is **no audition and no flatten** (the destructive bounce a comp can end in); and **MIDI
-  comping is out** — `comp.assign` refuses a MIDI clip with a typed error, because the lane tag rides the clip
-  attribute helper only `SampleClip` calls in this release.*
+  *What this bullet still means, and what is still absent (updated 2026-09-29): the composite **plays** (R3.1:
+  each audio take sounds only where its lane is selected, with a short ramp at a switch) and **MIDI takes are comped**
+  (R3.3: a note plays where the composite selects its clip's lane at the note's start), and `comp.audition` plays
+  one lane whole. Still absent: the per-segment `srcpos` slip is recorded but not applied; there is **no lane
+  geometry, no lane handle, no comping gesture and no waveform drawing** anywhere in `src/gui/`; and there is **no
+  flatten** (the destructive bounce a comp can end in).*
 - **The modulation layer is in the engine and on the socket, and there is no interface for it.**
   Modulators (`modulator.*`, ten ids with `note.expression.*`) drive device parameters in a mixer channel's rack
   chains by a relative depth, on the audio path, once per block — `include/ModulationLayer.h`,

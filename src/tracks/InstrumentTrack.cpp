@@ -22,6 +22,7 @@
  *
  */
 #include "InstrumentTrack.h"
+#include "TakeLane.h"
 
 #include "AudioEngine.h"
 #include "AutomationClip.h"
@@ -800,6 +801,19 @@ void InstrumentTrack::removeMidiPortNode( DataFile & _dataFile )
 
 
 
+bool InstrumentTrack::compPlays(const MidiClip* clip, int songTick) const
+{
+	const TakeLaneModel& comp = takeLanes();
+	if (comp.auditionLane() >= 0) { return clip->laneIndex() == comp.auditionLane(); }
+	if (comp.segments().empty()) { return true; }
+	int lane = -1;
+	int offset = 0;
+	return comp.resolve(songTick, &lane, &offset) && lane == clip->laneIndex();
+}
+
+
+
+
 bool InstrumentTrack::play( const TimePos & _start, const f_cnt_t _frames,
 							const f_cnt_t _offset, int _clip_num )
 {
@@ -889,6 +903,17 @@ bool InstrumentTrack::play( const TimePos & _start, const f_cnt_t _frames,
 			// Skip any notes note at the current time pos or not overlapping with the start.
 			if (!(currentNote->pos() == cur_start
 				|| (cur_start == -c->startTimeOffset() && (*nit)->pos() < cur_start && (*nit)->endPos() > cur_start)))
+			{
+				++nit;
+				continue;
+			}
+			// R3.3, MIDI comping: on a comped track a note plays only where the
+			// composite selects its clip's lane at the note's song position (while a
+			// lane is auditioned, only that lane's notes play). The choice is made per
+			// NOTE: a note that starts inside a selected span plays whole. A track
+			// with no composite and no audition skips this entirely.
+			if (_clip_num < 0 && !compPlays(c, c->startPosition().getTicks()
+				+ c->startTimeOffset().getTicks() + currentNote->pos().getTicks()))
 			{
 				++nit;
 				continue;

@@ -45,6 +45,8 @@
 
 #include <QCryptographicHash>
 #include <QDomDocument>
+
+#include "ControlEdit.h"
 #include <QDomElement>
 #include <QFile>
 #include <QTemporaryDir>
@@ -218,6 +220,33 @@ private slots:
 	//! The command group, driven the way an agent drives it: lanes, assignment,
 	//! selection, rebuild and the state query, each with a typed refusal where
 	//! the request is one the model cannot honour.
+	//! R3.3: a MIDI clip is a take too - comp.assign tags it, and the tag survives the
+	//! clip's own save/load (MidiClip writes Clip::saveClipEdits' `lane`).
+	void aMidiClipIsAssignedToALane()
+	{
+		const ControlResult track = revtest::run(QStringLiteral("track.add"), {{QStringLiteral("type"), QStringLiteral("instrument")}});
+		QVERIFY(track.ok);
+		const QString trackId = track.result.value(QStringLiteral("track")).toString();
+		const ControlResult clip = revtest::run(QStringLiteral("clip.add"),
+			{{QStringLiteral("track"), trackId}, {QStringLiteral("position"), 0}});
+		QVERIFY(clip.ok);
+		QVERIFY(revtest::run(QStringLiteral("comp.lane_add"), {{QStringLiteral("track"), trackId}}).ok);
+		QVERIFY(revtest::run(QStringLiteral("comp.lane_add"), {{QStringLiteral("track"), trackId}}).ok);
+		const ControlResult assigned = revtest::run(QStringLiteral("comp.assign"),
+			{{QStringLiteral("clip"), clip.result.value(QStringLiteral("clip"))}, {QStringLiteral("lane"), 1}});
+		QVERIFY2(assigned.ok, qPrintable(assigned.errorMessage));
+		control::ClipRef ref;
+		ControlResult error;
+		QVERIFY(control::resolveClip(clip.result.value(QStringLiteral("clip")).toString(), &ref, &error));
+		QCOMPARE(ref.clip->laneIndex(), 1);
+		QDomDocument document;
+		QDomElement parent = document.createElement(QStringLiteral("track"));
+		const QDomElement saved = ref.clip->saveState(document, parent);
+		ref.clip->setLaneIndex(0);
+		ref.clip->restoreState(saved);
+		QCOMPARE(ref.clip->laneIndex(), 1);
+	}
+
 	//! R3.1: comp.audition sets a lane aside as monitoring state and back, touching no
 	//! composite and no journal (TakeLaneCompPlaybackTest holds what it does to the sound).
 	void auditionIsMonitoringStateOnTheModel()

@@ -281,11 +281,12 @@ void registerCompAssign(ControlRegistry& registry)
 	cmd.id = QStringLiteral("comp.assign");
 	cmd.group = QStringLiteral("comp");
 	cmd.verb = QStringLiteral("assign");
-	cmd.description = QStringLiteral("Assign an audio clip to a take lane of its own track: "
-		"the lane tag is a field on the clip, so the take is the clip and its audio is never "
-		"copied or moved. A lane the clip's track does not have is refused, as is a MIDI clip "
-		"(take lanes carry audio takes in this release; docs/COMPING.md). Reversible through "
-		"the ProjectJournal (Clip checkpoint).");
+	cmd.description = QStringLiteral("Assign an audio or MIDI clip to a take lane of its own "
+		"track: the lane tag is a field on the clip, so the take is the clip and its content is "
+		"never copied or moved. A lane the clip's track does not have is refused, as is a pattern "
+		"or automation clip. A MIDI take is comped by NOTE: a note plays where the composite "
+		"selects its clip's lane at the note's start (docs/COMPING.md). Reversible through the "
+		"ProjectJournal (Clip checkpoint).");
 	cmd.argsSchema = objectSchema({
 		{QStringLiteral("clip"), stringProperty()},
 		{ArgLane, integerProperty(0, MaxSongLength)},

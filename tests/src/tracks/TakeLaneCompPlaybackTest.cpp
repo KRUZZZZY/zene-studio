@@ -44,6 +44,8 @@
 
 #include "AudioEngine.h"
 #include "Engine.h"
+#include "InstrumentTrack.h"
+#include "MidiClip.h"
 #include "SampleBuffer.h"
 #include "SampleClip.h"
 #include "SamplePlayHandle.h"
@@ -178,6 +180,33 @@ private slots:
 			QVERIFY(withLanes[i][0] == plain[i][0] && withLanes[i][1] == plain[i][1]);
 		}
 		QVERIFY(std::fabs(meanLevel(plain, 256, plain.size() / 2) - 0.5) < 1e-6);
+	}
+
+	//! R3.3: a MIDI take is comped by note - the gate InstrumentTrack::play asks per note.
+	void midiNotesPlayWhereTheirLaneIsSelected()
+	{
+		auto* track = dynamic_cast<InstrumentTrack*>(Track::create(Track::Type::Instrument, Engine::getSong()));
+		QVERIFY(track != nullptr);
+		auto* first = dynamic_cast<MidiClip*>(track->createClip(TimePos(0)));
+		auto* second = dynamic_cast<MidiClip*>(track->createClip(TimePos(0)));
+		QVERIFY(first != nullptr && second != nullptr);
+		second->setLaneIndex(1);
+		QVERIFY2(track->compPlays(first, 120) && track->compPlays(second, 120),
+			"with no composite every note must play");
+		TakeLaneModel& comp = track->takeLanes();
+		comp.addLane();
+		comp.addLane();
+		QVERIFY(comp.selectSegment(0, 96, 0));
+		QVERIFY(comp.selectSegment(96, 192, 1));
+		QVERIFY(track->compPlays(first, 50));
+		QVERIFY(!track->compPlays(first, 120));
+		QVERIFY(!track->compPlays(second, 50));
+		QVERIFY(track->compPlays(second, 120));
+		comp.setAuditionLane(1);
+		QVERIFY(!track->compPlays(first, 50));
+		QVERIFY(track->compPlays(second, 50));
+		comp.setAuditionLane(-1);
+		delete track;
 	}
 
 private:
