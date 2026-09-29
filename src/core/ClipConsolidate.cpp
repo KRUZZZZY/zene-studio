@@ -26,6 +26,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <span>
 
 #include <QDir>
 #include <QFile>

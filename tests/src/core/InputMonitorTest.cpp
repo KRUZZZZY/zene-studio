@@ -37,6 +37,7 @@
 #include <QtTest>
 
 #include <QDomDocument>
+#include <QElapsedTimer>
 #include <QJsonObject>
 #include <QTemporaryDir>
 
@@ -172,13 +173,14 @@ private slots:
 		ControlResult error;
 		auto* track = dynamic_cast<SampleTrack*>(control::resolveTrack(addTrack(QStringLiteral("sample")), &error));
 		QDomDocument doc;
-		QDomElement plain = doc.createElement(QStringLiteral("track"));
-		track->saveState(doc, plain);
+		QDomElement root = doc.createElement(QStringLiteral("root"));
+		doc.appendChild(root);
+		// saveState appends the track's own element to the parent and returns it.
+		const QDomElement plain = track->saveState(doc, root);
 		QVERIFY(!plain.hasAttribute(QStringLiteral("monitor")));
 
 		track->setMonitorMode(MonitorMode::Auto);
-		QDomElement changed = doc.createElement(QStringLiteral("track"));
-		track->saveState(doc, changed);
+		const QDomElement changed = track->saveState(doc, root);
 		QCOMPARE(changed.attribute(QStringLiteral("monitor")), QStringLiteral("1"));
 		track->restoreState(plain);
 		QCOMPARE(track->monitorMode(), MonitorMode::Off);

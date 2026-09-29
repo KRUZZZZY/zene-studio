@@ -38,6 +38,7 @@
 #include "PatternEditor.h"
 #include "PianoRoll.h"
 #include "ProjectNotes.h"
+#include "SessionGridView.h"
 #include "SongEditor.h"
 
 namespace lmms

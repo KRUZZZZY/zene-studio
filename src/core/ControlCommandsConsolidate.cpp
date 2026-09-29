@@ -32,6 +32,8 @@
  *  are - they sound nothing, so there is nothing of theirs to consolidate.
  */
 
+#include <algorithm>
+
 #include <QDir>
 #include <QFileInfo>
 #include <QJsonArray>

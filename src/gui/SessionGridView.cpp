@@ -24,6 +24,8 @@
 
 #include "SessionGridView.h"
 
+#include <algorithm>
+
 #include <QGridLayout>
 #include <QJsonArray>
 #include <QKeyEvent>
