@@ -26,6 +26,7 @@
 #ifndef LMMS_CONTROLLER_H
 #define LMMS_CONTROLLER_H
 
+#include <atomic>
 #include "lmms_export.h"
 #include "Engine.h"
 #include "Model.h"
@@ -168,7 +169,9 @@ protected:
 
 	static ControllerVector s_controllers;
 
-	static long s_periods;
+	//! Atomic: triggerFrameCounter() advances it on the audio thread while constructors, the
+	//! GUI and runningFrames() read it elsewhere (BUGS_FOUND 10.9c).
+	static std::atomic<long> s_periods;
 
 
 signals:

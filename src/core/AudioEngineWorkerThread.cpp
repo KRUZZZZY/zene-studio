@@ -71,7 +71,7 @@ void AudioEngineWorkerThread::JobQueue::reset( OperationMode _opMode )
 {
 	m_writeIndex = 0;
 	m_itemsDone = 0;
-	m_opMode = _opMode;
+	m_opMode.store( _opMode, std::memory_order_relaxed );
 }
 
 
@@ -119,7 +119,7 @@ void AudioEngineWorkerThread::JobQueue::run()
 			}
 		}
 		// always exit loop if we're not in dynamic mode
-		processedJob = processedJob && ( m_opMode == OperationMode::Dynamic );
+		processedJob = processedJob && ( m_opMode.load( std::memory_order_relaxed ) == OperationMode::Dynamic );
 	}
 }
 
@@ -168,7 +168,7 @@ AudioEngineWorkerThread::~AudioEngineWorkerThread()
 
 void AudioEngineWorkerThread::quit()
 {
-	m_quit = true;
+	m_quit.store( true, std::memory_order_release );
 	resetJobQueue();
 }
 
@@ -214,7 +214,7 @@ void AudioEngineWorkerThread::run()
 	disableDenormals();
 
 	QMutex m;
-	while( m_quit == false )
+	while( !m_quit.load( std::memory_order_acquire ) )
 	{
 		m.lock();
 		// BOUNDED wait, and this bound is load-bearing. `quit()` sets m_quit and

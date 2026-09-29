@@ -39,7 +39,7 @@ namespace lmms
 {
 
 
-long Controller::s_periods = 0;
+std::atomic<long> Controller::s_periods{0};
 std::vector<Controller*> Controller::s_controllers;
 
 
