@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-09-29T09:00:16Z",
+  "captured_at": "2026-09-29T11:13:57Z",
   "commands": [
     {
       "args_schema": {
@@ -5164,6 +5164,12 @@
           "dither": {
             "type": "boolean"
           },
+          "dither_mode": {
+            "type": "string"
+          },
+          "dither_mode_choices": {
+            "type": "array"
+          },
           "loudness_report": {
             "type": "boolean"
           },
@@ -5416,14 +5422,20 @@
         "properties": {
           "dither": {
             "type": "boolean"
+          },
+          "mode": {
+            "enum": [
+              "off",
+              "tpdf",
+              "noise_shaped"
+            ],
+            "type": "string"
           }
         },
-        "required": [
-          "dither"
-        ],
+        "required": [],
         "type": "object"
       },
-      "description": "Turn TPDF dither for the integer export formats on or off. The dither is applied by the WAV encoder immediately before quantisation, at the depth actually written (16- and 24-bit; 32-bit float has no quantisation step and is left alone). It is DETERMINISTIC - seeded from a constant - so a dithered render is still reproducible and two runs produce identical files. Off by default; turning it on changes the bytes of every subsequent render, which is the point.",
+      "description": "Choose the dither the integer export formats get. Pass `mode` - 'off', 'tpdf' or 'noise_shaped' - or the original boolean `dither` (true = 'tpdf', false = 'off'); one of the two is required, and a contradictory pair is refused. TPDF is applied by the WAV encoder immediately before quantisation, at the depth actually written (16- and 24-bit; 32-bit float has no quantisation step and is left alone). 'noise_shaped' adds error-feedback noise shaping, which moves the requantisation noise out of the band hearing is most sensitive to; it applies to 16-bit renders, and a 24-bit render of it uses plain TPDF (libsndfile quantises 24-bit, so the error cannot be fed back). Every mode is DETERMINISTIC - seeded from a constant - so a dithered render is still reproducible. Off by default; choosing a dither changes the bytes of every subsequent render, which is the point. No RPDF: include/ExportDither.h says why.",
       "group": "export",
       "id": "export.set_dither",
       "mutating": true,
@@ -5434,11 +5446,20 @@
           "dither": {
             "type": "boolean"
           },
+          "dither_mode": {
+            "type": "string"
+          },
+          "dither_mode_choices": {
+            "type": "array"
+          },
           "loudness_report": {
             "type": "boolean"
           },
           "previous": {
             "type": "boolean"
+          },
+          "previous_mode": {
+            "type": "string"
           },
           "src_quality": {
             "type": "string"
@@ -5474,6 +5495,12 @@
         "properties": {
           "dither": {
             "type": "boolean"
+          },
+          "dither_mode": {
+            "type": "string"
+          },
+          "dither_mode_choices": {
+            "type": "array"
           },
           "loudness_report": {
             "type": "boolean"
@@ -5515,6 +5542,12 @@
         "properties": {
           "dither": {
             "type": "boolean"
+          },
+          "dither_mode": {
+            "type": "string"
+          },
+          "dither_mode_choices": {
+            "type": "array"
           },
           "loudness_report": {
             "type": "boolean"
@@ -19498,11 +19531,11 @@
     "binary": null,
     "binary_bytes": null,
     "binary_sha256": null,
-    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-survey/tools/zene-pa-agentctl",
+    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-040/tools/zene-pa-agentctl",
     "lane_head": null,
     "proto": 1,
-    "source_socket": "/tmp/zctl-run-y6jv4pgp/zene.sock",
-    "version": "0.3.0-alpha.135+4175598"
+    "source_socket": "/tmp/zctl-run-zx10b_uv/zene.sock",
+    "version": "0.3.0-alpha.140+30ceb4d"
   },
   "kind": "zene-control-command-list",
   "proto": 1,
