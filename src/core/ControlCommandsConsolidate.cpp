@@ -66,40 +66,35 @@ struct Region
 	int mutedKept = 0;
 };
 
-//! The region the call names, or the extent of the track's unmuted clips when it names
-//! none; empty \a problem on success. Fills the clips inside it and refuses one that
-//! crosses an edge (the error kind goes to \a kind).
-QString collectRegion(SampleTrack* track, const QJsonObject& args, Region* region, ControlErrorKind* kind)
+std::vector<SampleClip*> sampleClipsOf(SampleTrack* track)
 {
-	*kind = ControlErrorKind::InvalidArgs;
-	const bool hasStart = args.contains(QStringLiteral("start"));
-	if (hasStart != args.contains(QStringLiteral("end")))
-	{
-		return QStringLiteral("'start' and 'end' go together: give both, or neither for every clip");
-	}
 	std::vector<SampleClip*> clips;
 	for (Clip* clip : track->getClips())
 	{
 		if (auto* sampleClip = dynamic_cast<SampleClip*>(clip)) { clips.push_back(sampleClip); }
 	}
-	if (hasStart)
+	return clips;
+}
+
+//! The extent of the unmuted clips: the region a call that names none consolidates.
+void unmutedExtent(const std::vector<SampleClip*>& clips, Region* region)
+{
+	bool any = false;
+	for (const SampleClip* clip : clips)
 	{
-		region->start = static_cast<tick_t>(args.value(QStringLiteral("start")).toDouble());
-		region->end = static_cast<tick_t>(args.value(QStringLiteral("end")).toDouble());
-		if (region->end <= region->start) { return QStringLiteral("'end' must be past 'start'"); }
+		if (clip->isMuted()) { continue; }
+		const tick_t from = clip->startPosition().getTicks();
+		const tick_t to = clip->endPosition().getTicks();
+		region->start = any ? std::min(region->start, from) : from;
+		region->end = any ? std::max(region->end, to) : to;
+		any = true;
 	}
-	else
-	{
-		bool any = false;
-		for (const SampleClip* clip : clips)
-		{
-			if (clip->isMuted()) { continue; }
-			const tick_t from = clip->startPosition().getTicks();
-			region->start = any ? std::min(region->start, from) : from;
-			region->end = any ? std::max(region->end, clip->endPosition().getTicks()) : clip->endPosition().getTicks();
-			any = true;
-		}
-	}
+}
+
+//! Sorts the clips against the region: inside (consolidated), muted (kept), outside
+//! (ignored); a clip crossing an edge is the refusal returned.
+QString sortIntoRegion(const std::vector<SampleClip*>& clips, Region* region)
+{
 	for (SampleClip* clip : clips)
 	{
 		const tick_t from = clip->startPosition().getTicks();
@@ -114,6 +109,29 @@ QString collectRegion(SampleTrack* track, const QJsonObject& args, Region* regio
 		}
 		region->inside.push_back(clip);
 	}
+	return QString();
+}
+
+//! The region the call names, or the extent of the track's unmuted clips when it names
+//! none; empty on success. Fills the clips inside it and refuses one that crosses an edge
+//! (the error kind goes to \a kind).
+QString collectRegion(SampleTrack* track, const QJsonObject& args, Region* region, ControlErrorKind* kind)
+{
+	*kind = ControlErrorKind::InvalidArgs;
+	const bool hasStart = args.contains(QStringLiteral("start"));
+	if (hasStart != args.contains(QStringLiteral("end")))
+	{
+		return QStringLiteral("'start' and 'end' go together: give both, or neither for every clip");
+	}
+	const std::vector<SampleClip*> clips = sampleClipsOf(track);
+	if (hasStart)
+	{
+		region->start = static_cast<tick_t>(args.value(QStringLiteral("start")).toDouble());
+		region->end = static_cast<tick_t>(args.value(QStringLiteral("end")).toDouble());
+		if (region->end <= region->start) { return QStringLiteral("'end' must be past 'start'"); }
+	}
+	else { unmutedExtent(clips, region); }
+	if (const QString crossing = sortIntoRegion(clips, region); !crossing.isEmpty()) { return crossing; }
 	if (region->inside.empty())
 	{
 		*kind = ControlErrorKind::Refused;
@@ -141,6 +159,31 @@ QString uniqueOutPath(const QJsonObject& args, const Track* track, const Region&
 		candidate = directory.filePath(QStringLiteral("%1-%2.wav").arg(base).arg(n));
 	}
 	return candidate;
+}
+
+/*! ONE Track checkpoint, then the swap: the source clips go, one clip playing @a path takes
+ *  the region, on the base lane when the track has lanes, and the composite over the region
+ *  names it. @a recomped says whether there was a composite to repaint. */
+SampleClip* replaceWithConsolidated(SampleTrack* track, const Region& region, const QString& path,
+	bool* recomped)
+{
+	track->addJournalCheckPoint();
+	track->saveJournallingState(false);
+	for (SampleClip* clip : region.inside)
+	{
+		track->removeClip(clip);
+		delete clip;
+	}
+	auto* fresh = dynamic_cast<SampleClip*>(track->createClip(TimePos(region.start)));
+	fresh->setSampleFile(path);
+	fresh->changeLength(TimePos(region.end - region.start));
+	fresh->setAutoResize(false);
+	TakeLaneModel& lanes = track->takeLanes();
+	*recomped = lanes.laneCount() > 0 && !lanes.segments().empty();
+	if (lanes.laneCount() > 0) { control::assignTakeLane(fresh, lanes.baseLane()); }
+	if (*recomped) { lanes.selectSegment(region.start, region.end, lanes.baseLane()); }
+	track->restoreJournallingState();
+	return fresh;
 }
 
 ControlResult clipConsolidate(const QJsonObject& args)
@@ -176,23 +219,8 @@ ControlResult clipConsolidate(const QJsonObject& args)
 	before.insert(QStringLiteral("track"), control::trackIdOf(track));
 	before.insert(QStringLiteral("clips"), sources);
 
-	track->addJournalCheckPoint();
-	track->saveJournallingState(false);
-	for (SampleClip* clip : region.inside)
-	{
-		track->removeClip(clip);
-		delete clip;
-	}
-	auto* fresh = dynamic_cast<SampleClip*>(track->createClip(TimePos(region.start)));
-	fresh->setSampleFile(rendered.path);
-	fresh->changeLength(TimePos(region.end - region.start));
-	fresh->setAutoResize(false);
-	TakeLaneModel& lanes = track->takeLanes();
-	const bool recomped = lanes.laneCount() > 0 && !lanes.segments().empty();
-	if (lanes.laneCount() > 0) { fresh->setLaneIndex(lanes.baseLane()); }
-	// The composite over the region now names the one clip that holds it.
-	if (recomped) { lanes.selectSegment(region.start, region.end, lanes.baseLane()); }
-	track->restoreJournallingState();
+	bool recomped = false;
+	SampleClip* fresh = replaceWithConsolidated(track, region, rendered.path, &recomped);
 
 	QJsonObject result;
 	result.insert(QStringLiteral("track"), control::trackIdOf(track));

@@ -167,6 +167,35 @@ void registerLaunchSlot(ControlRegistry& registry)
 	registry.registerCommand(cmd);
 }
 
+/*! Launches every non-empty cell of @a scene in the first @a columns columns, reports whether
+ *  they all resolved to one grid line, and marks the row as the launched scene (R5.2: from the
+ *  line its first cell resolved to, which is what a scene's own chain is timed from). */
+QJsonArray launchRow(const SessionModel& model, Song& song, int scene, int columns,
+	const QJsonObject& args, int* syncTick, bool* inSync)
+{
+	const SessionClockContext ctx = clockOf(song);
+	QJsonArray launched;
+	publishContentBeforeLaunch(&song);
+	LaunchQuantisation rowQuantisation = LaunchQuantisation::None;
+	for (int track = 0; track < columns; ++track)
+	{
+		const ClipSlot& slot = model.slot(track, scene);
+		if (slot.isEmpty()) { continue; }
+		const LaunchRequest request = launchRequestOf(model, slot, args);
+		const QJsonObject entry = launchOne(song.sessionScheduler(), ctx, track, scene, request);
+		const int at = entry.value(QStringLiteral("scheduled_tick")).toInt();
+		if (launched.isEmpty())
+		{
+			rowQuantisation = request.quantisation;
+			*syncTick = at;
+		}
+		*inSync = *inSync && at == *syncTick;
+		launched.append(entry);
+	}
+	if (!launched.isEmpty()) { song.sessionScheduler().requestSceneLaunch(scene, rowQuantisation); }
+	return launched;
+}
+
 void registerLaunchScene(ControlRegistry& registry)
 {
 	ControlCommand cmd;
@@ -206,26 +235,9 @@ void registerLaunchScene(ControlRegistry& registry)
 		}
 		const int columns = launchableColumns(*model, *song);
 		const SessionClockContext ctx = clockOf(*song);
-		QJsonArray launched;
 		int syncTick = 0;
 		bool inSync = true;
-		publishContentBeforeLaunch(song);
-		LaunchQuantisation rowQuantisation = LaunchQuantisation::None;
-		for (int track = 0; track < columns; ++track)
-		{
-			const ClipSlot& slot = model->slot(track, scene);
-			if (slot.isEmpty()) { continue; }
-			const LaunchRequest request = launchRequestOf(*model, slot, args);
-			if (launched.isEmpty()) { rowQuantisation = request.quantisation; }
-			const QJsonObject entry = launchOne(song->sessionScheduler(), ctx, track, scene, request);
-			const int at = entry.value(QStringLiteral("scheduled_tick")).toInt();
-			if (launched.isEmpty()) { syncTick = at; }
-			else if (at != syncTick) { inSync = false; }
-			launched.append(entry);
-		}
-		// R5.2: the row is now the launched scene, from the line its first cell resolved
-		// to - which is what a scene's own Follow Action chain is timed from.
-		if (!launched.isEmpty()) { song->sessionScheduler().requestSceneLaunch(scene, rowQuantisation); }
+		const QJsonArray launched = launchRow(*model, *song, scene, columns, args, &syncTick, &inSync);
 		QJsonObject result;
 		result.insert(QStringLiteral("scene"), scene);
 		result.insert(QStringLiteral("clips"), launched.size());

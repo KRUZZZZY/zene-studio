@@ -27,6 +27,7 @@
 
 #include <vector>
 
+#include <QJsonArray>
 #include <QJsonObject>
 #include <QTimer>
 #include <QWidget>
@@ -75,6 +76,11 @@ private:
 	void launchCell(int track, int scene);
 	void stopColumn(int track);
 	QToolButton* makeButton(const QString& command);
+	void readColumns(const QJsonArray& columns);
+	std::vector<QString> cellNames(const QJsonArray& slotList) const;
+	void paintCell(int track, int scene, const QString& name);
+	void paintScenes(const QJsonArray& sceneStates);
+	QWidget* neighbour(QToolButton* button, int key) const;
 
 	QGridLayout* m_grid = nullptr;
 	QLabel* m_status = nullptr;
@@ -83,6 +89,7 @@ private:
 	std::vector<QToolButton*> m_sceneButtons;
 	std::vector<QToolButton*> m_stopButtons;
 	std::vector<int> m_playingScene;  //!< per column, from the last refresh; -1 when idle
+	std::vector<QString> m_phases;    //!< per column: launching, playing, stopping or empty
 	int m_tracks = -1;
 	int m_scenes = -1;
 	QTimer m_timer;

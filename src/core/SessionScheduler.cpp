@@ -316,19 +316,8 @@ void SessionScheduler::drainCommands( const SessionClockContext& ctx ) noexcept
 			}
 			continue;
 		}
-		if( command.type == LaunchCommandType::SceneFollow )
-		{
-			if( !installScenePlan( command.scene, command.plan ) )
-			{
-				m_dropped.fetch_add( 1, std::memory_order_relaxed );
-			}
-			continue;
-		}
-		if( command.type == LaunchCommandType::SceneLaunch )
-		{
-			startScene( command.scene, launchTickAt( command.quantisation, ctx ) );
-			continue;
-		}
+		// R5.2's two scene commands (SessionSceneFollow.cpp).
+		if( applySceneCommand( command, ctx ) ) { continue; }
 		if( command.type == LaunchCommandType::Content )
 		{
 			// Content, not a launch: stored for the cell and read by the render

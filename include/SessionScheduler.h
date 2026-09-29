@@ -495,6 +495,14 @@ private:
 		FollowPlan plan;
 	};
 	bool installScenePlan( int scene, const FollowPlan& plan ) noexcept;
+	//! The scene's table entry, or (with @a claimFree) a free one; nullptr when neither.
+	InstalledScenePlan* sceneEntry( int scene, bool claimFree ) noexcept;
+	const FollowPlan* dueScenePlan( const SessionClockContext& ctx ) noexcept;
+	bool rowPlaying( int scene ) const noexcept;
+	//! Drains a SceneFollow or SceneLaunch command; false for any other type.
+	bool applySceneCommand( const Command& command, const SessionClockContext& ctx ) noexcept;
+	//! A playing cell's own enabled plan, unless its launched row's chain governs it.
+	const FollowPlan* cellPlanFor( const ActiveSlot& slot ) const noexcept;
 	const FollowPlan* scenePlanFor( int scene ) const noexcept;
 	//! The launched row's chain governs @a slot: the cell's own chain is skipped.
 	bool sceneOverrides( const ActiveSlot& slot ) const noexcept;

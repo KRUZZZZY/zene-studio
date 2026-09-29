@@ -50,49 +50,60 @@ bool InputMonitorHandle::isFromTrack(const Track* track) const
 }
 
 
-void InputMonitorHandle::play(std::span<SampleFrame> buffer)
+namespace
 {
-	std::fill(buffer.begin(), buffer.end(), SampleFrame(0.0f, 0.0f));
-	const MonitorMode mode = m_track->monitorMode();
-	if (mode == MonitorMode::Off) { return; }
 
-	int route = -1;
+//! The track's record route: its position in the song (track.set_arm's rule), or -1.
+int routeOf(const Track* track)
+{
 	const TrackContainer::TrackList& tracks = Engine::getSong()->tracks();
-	for (int i = 0; i < static_cast<int>(tracks.size()); ++i)
-	{
-		if (tracks[i] == m_track) { route = i; break; }
-	}
-	AudioEngine* engine = Engine::audioEngine();
-	const MultiTrackRecorder& recorder = engine->recorder();
-	const bool routed = route >= 0 && route < recorder.trackCount();
-	const bool armed = routed && recorder.track(route).isArmed();
-	if (!monitorPasses(mode, armed, m_track->isPlaying())) { return; }
-	const int channel = routed ? recorder.track(route).inputChannel() : 0;
+	const auto it = std::find(tracks.begin(), tracks.end(), track);
+	return it == tracks.end() ? -1 : static_cast<int>(it - tracks.begin());
+}
 
-	f_cnt_t passed = 0;
+//! Copies input channel @a channel into @a buffer, mono to both sides; returns the frames.
+//! The wide capture buffer when the backend fills it, the stereo input buffer otherwise.
+f_cnt_t copyInput(AudioEngine* engine, int channel, std::span<SampleFrame> buffer)
+{
 	const f_cnt_t wideFrames = engine->inputWideFrames();
 	const int wideChannels = engine->inputWideChannels();
 	if (wideFrames > 0 && channel < wideChannels)
 	{
 		const float* wide = engine->inputWideBuffer();
-		passed = std::min(static_cast<f_cnt_t>(buffer.size()), wideFrames);
-		for (f_cnt_t f = 0; f < passed; ++f)
+		const f_cnt_t frames = std::min(static_cast<f_cnt_t>(buffer.size()), wideFrames);
+		for (f_cnt_t f = 0; f < frames; ++f)
 		{
 			const float value = wide[static_cast<std::size_t>(f) * static_cast<std::size_t>(wideChannels)
 				+ static_cast<std::size_t>(channel)];
 			buffer[f] = SampleFrame(value, value);
 		}
+		return frames;
 	}
-	else
+	const SampleFrame* input = engine->inputBuffer();
+	const f_cnt_t frames = std::min(static_cast<f_cnt_t>(buffer.size()), engine->inputBufferFrames());
+	const int side = channel == 1 ? 1 : 0;
+	for (f_cnt_t f = 0; f < frames; ++f)
 	{
-		const SampleFrame* input = engine->inputBuffer();
-		passed = std::min(static_cast<f_cnt_t>(buffer.size()), engine->inputBufferFrames());
-		const int side = channel == 1 ? 1 : 0;
-		for (f_cnt_t f = 0; f < passed; ++f)
-		{
-			buffer[f] = SampleFrame(input[f][side], input[f][side]);
-		}
+		buffer[f] = SampleFrame(input[f][side], input[f][side]);
 	}
+	return frames;
+}
+
+} // namespace
+
+
+void InputMonitorHandle::play(std::span<SampleFrame> buffer)
+{
+	std::fill(buffer.begin(), buffer.end(), SampleFrame(0.0f, 0.0f));
+	const MonitorMode mode = m_track->monitorMode();
+	if (mode == MonitorMode::Off) { return; }
+	AudioEngine* engine = Engine::audioEngine();
+	const MultiTrackRecorder& recorder = engine->recorder();
+	const int route = routeOf(m_track);
+	const bool routed = route >= 0 && route < recorder.trackCount();
+	const bool armed = routed && recorder.track(route).isArmed();
+	if (!monitorPasses(mode, armed, m_track->isPlaying())) { return; }
+	const f_cnt_t passed = copyInput(engine, routed ? recorder.track(route).inputChannel() : 0, buffer);
 	m_framesPassed.fetch_add(static_cast<std::uint64_t>(passed), std::memory_order_relaxed);
 }
 

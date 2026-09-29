@@ -148,6 +148,16 @@ inline bool scenesSectionDims( const QDomElement& section, int& tracks, int& sce
 	return true;
 }
 
+//! R5.2: "2" when any scene carries a Follow Action chain, else "1" (the v1 bytes).
+inline QString scenesSectionVersion( const std::vector<Scene>& scenes )
+{
+	for( const Scene& scene : scenes )
+	{
+		if( !scene.followActions().empty() ) { return QStringLiteral( "2" ); }
+	}
+	return QStringLiteral( "1" );
+}
+
 //! A <z:scene> row: the index attribute this build writes, in range, then
 //! Scene's own restoreState at the legacy reader's depth (upconverter
 //! parity - the attribute vocabulary never moved).

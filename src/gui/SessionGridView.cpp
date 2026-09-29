@@ -170,55 +170,75 @@ void SessionGridView::refresh()
 	m_status->setText(tracks == 0 || scenes == 0
 		? tr("The session grid is empty: session.set_grid sizes it.")
 		: tr("%1 tracks, %2 scenes").arg(tracks).arg(scenes));
-
-	std::fill(m_playingScene.begin(), m_playingScene.end(), -1);
-	std::vector<QString> phases(static_cast<std::size_t>(tracks));
-	for (const QJsonValue& value : state.result.value(QStringLiteral("columns")).toArray())
-	{
-		const QJsonObject column = value.toObject();
-		const int track = column.value(QStringLiteral("track")).toInt();
-		if (track < 0 || track >= tracks) { continue; }
-		m_playingScene[static_cast<std::size_t>(track)] = column.value(QStringLiteral("scene")).toInt();
-		phases[static_cast<std::size_t>(track)] = column.value(QStringLiteral("phase")).toString();
-	}
-	std::vector<QString> names(static_cast<std::size_t>(tracks * scenes));
-	std::vector<bool> filled(names.size(), false);
-	for (const QJsonValue& value : state.result.value(QStringLiteral("slots")).toArray())
-	{
-		const QJsonObject slot = value.toObject();
-		const int track = slot.value(QStringLiteral("track")).toInt();
-		const int scene = slot.value(QStringLiteral("scene")).toInt();
-		if (track < 0 || scene < 0 || track >= tracks || scene >= scenes) { continue; }
-		const auto index = static_cast<std::size_t>(track * scenes + scene);
-		filled[index] = true;
-		const QString name = slot.value(QStringLiteral("name")).toString();
-		names[index] = name.isEmpty() ? tr("clip") : name;
-	}
+	readColumns(state.result.value(QStringLiteral("columns")).toArray());
+	const std::vector<QString> names = cellNames(state.result.value(QStringLiteral("slots")).toArray());
 	for (int track = 0; track < tracks; ++track)
 	{
 		for (int scene = 0; scene < scenes; ++scene)
 		{
-			const auto index = static_cast<std::size_t>(track * scenes + scene);
-			QToolButton* cell = m_cells[index];
-			const bool here = m_playingScene[static_cast<std::size_t>(track)] == scene;
-			const QString phase = here ? phases[static_cast<std::size_t>(track)] : QString();
-			const QString marker = phase == QLatin1String("playing") ? QStringLiteral("▶ ")
-				: phase == QLatin1String("launching") ? QStringLiteral("… ") : QString();
-			cell->setText(filled[index] ? marker + names[index] : QString());
-			cell->setCheckable(true);
-			cell->setChecked(here && phase == QLatin1String("playing"));
-			cell->setAccessibleName(filled[index]
-				? tr("Track %1, scene %2: %3%4").arg(track + 1).arg(scene + 1).arg(names[index])
-					.arg(phase.isEmpty() ? QString() : QStringLiteral(", ") + phase)
-				: tr("Track %1, scene %2: empty").arg(track + 1).arg(scene + 1));
+			paintCell(track, scene, names[static_cast<std::size_t>(track * scenes + scene)]);
 		}
 	}
-	const QJsonArray sceneStates = state.result.value(QStringLiteral("scenes")).toArray();
-	for (int scene = 0; scene < scenes; ++scene)
+	paintScenes(state.result.value(QStringLiteral("scenes")).toArray());
+}
+
+
+void SessionGridView::readColumns(const QJsonArray& columns)
+{
+	std::fill(m_playingScene.begin(), m_playingScene.end(), -1);
+	m_phases.assign(static_cast<std::size_t>(std::max(m_tracks, 0)), QString());
+	for (const QJsonValue& value : columns)
+	{
+		const QJsonObject column = value.toObject();
+		const int track = column.value(QStringLiteral("track")).toInt();
+		if (track < 0 || track >= m_tracks) { continue; }
+		m_playingScene[static_cast<std::size_t>(track)] = column.value(QStringLiteral("scene")).toInt();
+		m_phases[static_cast<std::size_t>(track)] = column.value(QStringLiteral("phase")).toString();
+	}
+}
+
+
+//! Each cell's display name in (track * scenes + scene) order; empty for an empty cell.
+std::vector<QString> SessionGridView::cellNames(const QJsonArray& slotList) const
+{
+	std::vector<QString> names(static_cast<std::size_t>(std::max(m_tracks * m_scenes, 0)));
+	for (const QJsonValue& value : slotList)
+	{
+		const QJsonObject slot = value.toObject();
+		const int track = slot.value(QStringLiteral("track")).toInt();
+		const int scene = slot.value(QStringLiteral("scene")).toInt();
+		if (cellButton(track, scene) == nullptr) { continue; }
+		const QString name = slot.value(QStringLiteral("name")).toString();
+		names[static_cast<std::size_t>(track * m_scenes + scene)] = name.isEmpty() ? tr("clip") : name;
+	}
+	return names;
+}
+
+
+void SessionGridView::paintCell(int track, int scene, const QString& name)
+{
+	QToolButton* cell = cellButton(track, scene);
+	const bool here = m_playingScene[static_cast<std::size_t>(track)] == scene;
+	const QString phase = here ? m_phases[static_cast<std::size_t>(track)] : QString();
+	const bool playing = phase == QLatin1String("playing");
+	const QString marker = playing ? QStringLiteral("\u25B6 ")
+		: phase == QLatin1String("launching") ? QStringLiteral("\u2026 ") : QString();
+	cell->setText(name.isEmpty() ? QString() : marker + name);
+	cell->setCheckable(true);
+	cell->setChecked(playing);
+	const QString where = tr("Track %1, scene %2").arg(track + 1).arg(scene + 1);
+	cell->setAccessibleName(name.isEmpty() ? tr("%1: empty").arg(where)
+		: tr("%1: %2%3").arg(where, name, phase.isEmpty() ? QString() : QStringLiteral(", ") + phase));
+}
+
+
+void SessionGridView::paintScenes(const QJsonArray& sceneStates)
+{
+	for (int scene = 0; scene < m_scenes; ++scene)
 	{
 		const QString name = sceneStates.at(scene).toObject().value(QStringLiteral("name")).toString();
 		const QString label = name.isEmpty() ? tr("Scene %1").arg(scene + 1) : name;
-		m_sceneButtons[static_cast<std::size_t>(scene)]->setText(QStringLiteral("▶ ") + label);
+		m_sceneButtons[static_cast<std::size_t>(scene)]->setText(QStringLiteral("\u25B6 ") + label);
 		m_sceneButtons[static_cast<std::size_t>(scene)]->setAccessibleName(tr("Launch %1").arg(label));
 	}
 }
@@ -246,34 +266,40 @@ void SessionGridView::stopColumn(int track)
 
 bool SessionGridView::eventFilter(QObject* watched, QEvent* event)
 {
-	if (event->type() != QEvent::KeyPress) { return QWidget::eventFilter(watched, event); }
 	auto* button = qobject_cast<QToolButton*>(watched);
+	if (event->type() != QEvent::KeyPress || button == nullptr) { return QWidget::eventFilter(watched, event); }
 	const auto key = static_cast<QKeyEvent*>(event)->key();
-	if (button != nullptr && (key == Qt::Key_Return || key == Qt::Key_Enter))
+	if (key == Qt::Key_Return || key == Qt::Key_Enter)
 	{
 		button->click();
 		return true;
 	}
+	QWidget* next = neighbour(button, key);
+	if (next == nullptr) { return QWidget::eventFilter(watched, event); }
+	next->setFocus(Qt::TabFocusReason);
+	return true;
+}
+
+
+//! The widget an arrow key moves to from @a button, or nullptr (not an arrow, or off the grid).
+QWidget* SessionGridView::neighbour(QToolButton* button, int key) const
+{
+	const int index = m_grid->indexOf(button);
+	if (index < 0) { return nullptr; }
 	int row = 0;
 	int column = 0;
 	int rowSpan = 0;
 	int columnSpan = 0;
-	const int index = button != nullptr ? m_grid->indexOf(button) : -1;
-	if (index < 0) { return QWidget::eventFilter(watched, event); }
 	m_grid->getItemPosition(index, &row, &column, &rowSpan, &columnSpan);
-	switch (key)
+	static const std::pair<int, std::pair<int, int>> moves[] = {{Qt::Key_Left, {0, -1}},
+		{Qt::Key_Right, {0, 1}}, {Qt::Key_Up, {-1, 0}}, {Qt::Key_Down, {1, 0}}};
+	for (const auto& [arrow, step] : moves)
 	{
-		case Qt::Key_Left: --column; break;
-		case Qt::Key_Right: ++column; break;
-		case Qt::Key_Up: --row; break;
-		case Qt::Key_Down: ++row; break;
-		default: return QWidget::eventFilter(watched, event);
+		if (arrow != key) { continue; }
+		QLayoutItem* item = m_grid->itemAtPosition(row + step.first, column + step.second);
+		return item != nullptr ? item->widget() : nullptr;
 	}
-	if (QLayoutItem* item = m_grid->itemAtPosition(row, column); item != nullptr && item->widget() != nullptr)
-	{
-		item->widget()->setFocus(Qt::TabFocusReason);
-	}
-	return true;
+	return nullptr;
 }
 
 } // namespace lmms::gui

@@ -34,6 +34,7 @@
  */
 
 #include <cstdint>
+#include <optional>
 #include <vector>
 
 #include <QDomDocument>
@@ -167,6 +168,23 @@ void applySlotLaunchSettings(ClipSlot& slot, const QJsonObject& args)
 	{
 		slot.setLaunchQuantisation(quantisationFromName(args.value(QStringLiteral("quantisation")).toString()));
 	}
+}
+
+//! The optional `follow_actions` argument of set_slot / set_scene: absent leaves @a chain
+//! empty, present fills it; false (with @a error) when an entry is refused.
+bool followActionsArg(const QJsonObject& args, int sceneCount,
+	std::optional<std::vector<FollowAction>>* chain, ControlResult* error)
+{
+	if (!args.contains(QStringLiteral("follow_actions"))) { return true; }
+	std::vector<FollowAction> parsed;
+	QString reason;
+	if (!followChainFromJson(args.value(QStringLiteral("follow_actions")), sceneCount, &parsed, &reason))
+	{
+		*error = ControlResult::failure(ControlErrorKind::InvalidArgs, reason);
+		return false;
+	}
+	*chain = std::move(parsed);
+	return true;
 }
 
 void applySlotShape(ClipSlot& slot, const QJsonObject& args)
@@ -346,17 +364,12 @@ void registerSessionSetScene(ControlRegistry& registry)
 				QStringLiteral("scene %1 is outside the grid's %2 scenes; session.set_grid resizes it")
 					.arg(index).arg(model->sceneCount()));
 		}
-		std::vector<FollowAction> chain;
-		QString reason;
-		if (args.contains(QStringLiteral("follow_actions"))
-			&& !followChainFromJson(args.value(QStringLiteral("follow_actions")), model->sceneCount(), &chain, &reason))
-		{
-			return ControlResult::failure(ControlErrorKind::InvalidArgs, reason);
-		}
+		std::optional<std::vector<FollowAction>> chain;
+		if (!followActionsArg(args, model->sceneCount(), &chain, &error)) { return error; }
 		const QString captured = captureSession(*model);
 		const QJsonObject before = gridState(*model, clipSlots(*model));
 		Scene& sceneModel = model->scene(index);
-		if (args.contains(QStringLiteral("follow_actions"))) { sceneModel.setFollowActions(chain); }
+		if (chain) { sceneModel.setFollowActions(*chain); }
 		if (args.contains(QStringLiteral("name")))
 		{
 			sceneModel.setName(args.value(QStringLiteral("name")).toString());
@@ -429,18 +442,13 @@ void registerSessionSetSlot(ControlRegistry& registry)
 		const QString captured = captureSession(*model);
 		const QJsonObject before = gridState(*model, clipSlots(*model));
 		// Parsed BEFORE anything is written, so a refused chain leaves the slot as it was.
-		std::vector<FollowAction> chain;
-		QString reason;
-		if (args.contains(QStringLiteral("follow_actions"))
-			&& !followChainFromJson(args.value(QStringLiteral("follow_actions")), model->sceneCount(), &chain, &reason))
-		{
-			return ControlResult::failure(ControlErrorKind::InvalidArgs, reason);
-		}
+		std::optional<std::vector<FollowAction>> chain;
+		if (!followActionsArg(args, model->sceneCount(), &chain, &error)) { return error; }
 		ClipSlot& target = model->slot(track, scene);
 		if (!applySlotReference(target, args, &error)) { return error; }
 		applySlotLaunchSettings(target, args);
 		applySlotShape(target, args);
-		if (args.contains(QStringLiteral("follow_actions"))) { target.setFollowActions(chain); }
+		if (chain) { target.setFollowActions(*chain); }
 		QJsonObject result;
 		result.insert(QStringLiteral("slot"), clipSlotState(track, scene, target));
 		result.insert(QStringLiteral("__transaction"), recordSessionEdit(captured, before,

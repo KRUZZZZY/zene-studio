@@ -95,31 +95,34 @@ std::uint64_t SessionScheduler::sceneFollowFires() const noexcept
 
 bool SessionScheduler::installScenePlan( int scene, const FollowPlan& plan ) noexcept
 {
-	InstalledScenePlan* target = nullptr;
-	for( auto& installed : m_scenePlans )
-	{
-		if( installed.scene == scene ) { target = &installed; break; }
-	}
-	if( target == nullptr && plan.enabled )
-	{
-		for( auto& installed : m_scenePlans )
-		{
-			if( installed.scene < 0 ) { target = &installed; break; }
-		}
-		if( target == nullptr ) { return false; }
-	}
-	if( target != nullptr )
-	{
-		target->scene = scene;
-		target->plan = plan;
-	}
+	// A scene already carrying a plan REPLACES it in place; disarming one that carries
+	// none consumes nothing (installFollowPlan's two rules).
+	InstalledScenePlan* target = sceneEntry( scene, plan.enabled );
+	if( target == nullptr ) { return !plan.enabled; }
+	target->scene = scene;
+	target->plan = plan;
 	int armed = 0;
 	for( const auto& installed : m_scenePlans )
 	{
-		if( installed.scene >= 0 && installed.plan.enabled && installed.plan.count > 0 ) { ++armed; }
+		armed += installed.scene >= 0 && installed.plan.enabled && installed.plan.count > 0 ? 1 : 0;
 	}
 	m_armedScenes.store( armed, std::memory_order_relaxed );
 	return true;
+}
+
+
+SessionScheduler::InstalledScenePlan* SessionScheduler::sceneEntry( int scene, bool claimFree ) noexcept
+{
+	for( auto& installed : m_scenePlans )
+	{
+		if( installed.scene == scene ) { return &installed; }
+	}
+	if( !claimFree ) { return nullptr; }
+	for( auto& installed : m_scenePlans )
+	{
+		if( installed.scene < 0 ) { return &installed; }
+	}
+	return nullptr;
 }
 
 
@@ -139,6 +142,30 @@ const FollowPlan* SessionScheduler::scenePlanFor( int scene ) const noexcept
 bool SessionScheduler::sceneOverrides( const ActiveSlot& slot ) const noexcept
 {
 	return m_activeScene >= 0 && slot.scene == m_activeScene && scenePlanFor( m_activeScene ) != nullptr;
+}
+
+
+bool SessionScheduler::applySceneCommand( const Command& command, const SessionClockContext& ctx ) noexcept
+{
+	if( command.type == LaunchCommandType::SceneLaunch )
+	{
+		startScene( command.scene, launchTickAt( command.quantisation, ctx ) );
+		return true;
+	}
+	if( command.type != LaunchCommandType::SceneFollow ) { return false; }
+	// Counted like a dropped press when the fixed table has no free entry.
+	if( !installScenePlan( command.scene, command.plan ) ) { m_dropped.fetch_add( 1, std::memory_order_relaxed ); }
+	return true;
+}
+
+
+const FollowPlan* SessionScheduler::cellPlanFor( const ActiveSlot& slot ) const noexcept
+{
+	// A launched row with a chain of its own moves the whole row; the cell's chain would
+	// move one column out from under it.
+	if( slot.state.phase != SlotPhase::Playing || sceneOverrides( slot ) ) { return nullptr; }
+	const FollowPlan* plan = planFor( slot.track, slot.scene );
+	return plan != nullptr && plan->enabled && plan->count > 0 ? plan : nullptr;
 }
 
 
@@ -163,34 +190,15 @@ void SessionScheduler::resetSceneFollow() noexcept
 
 void SessionScheduler::evaluateSceneFollow( const SessionClockContext& ctx ) noexcept
 {
-	if( m_activeScene < 0 || !m_followEnabled.load( std::memory_order_relaxed ) ) { return; }
-	const FollowPlan* plan = scenePlanFor( m_activeScene );
-	// The row has not started yet (its presses are still pending): nothing to time.
-	if( plan == nullptr || ctx.positionTicks < m_sceneStartTick ) { return; }
-	const tick_t step = followActionTicks( *plan, ctx.ticksPerBar );
-	if( step <= 0 ) { return; }
-	if( !m_sceneFollowScheduled )
-	{
-		m_sceneFollowScheduled = true;
-		m_sceneFollowNext = m_sceneStartTick + step;
-		return;
-	}
-	if( ctx.positionTicks < m_sceneFollowNext ) { return; }
-
-	bool rowPlaying = false;
-	for( const auto& slot : m_active )
-	{
-		rowPlaying = rowPlaying || ( slot.track >= 0 && slot.scene == m_activeScene
-			&& slot.state.phase == SlotPhase::Playing );
-	}
-	if( !rowPlaying )
+	const FollowPlan* plan = dueScenePlan( ctx );
+	if( plan == nullptr ) { return; }
+	if( !rowPlaying( m_activeScene ) )
 	{
 		// Nothing of the row is left to move: the chain ends rather than firing into
 		// an empty row every action time.
 		startScene( -1, 0 );
 		return;
 	}
-
 	FollowEval eval;
 	eval.startedTick = m_sceneStartTick;
 	eval.positionTicks = ctx.positionTicks;
@@ -202,12 +210,42 @@ void SessionScheduler::evaluateSceneFollow( const SessionClockContext& ctx ) noe
 	// Reported at the tick it was scheduled for, then moved on by one step, so an
 	// outcome that does nothing still consumes its action time (the cells' rule).
 	const tick_t firedAt = m_sceneFollowNext;
-	m_sceneFollowNext += step;
+	m_sceneFollowNext += followActionTicks( *plan, ctx.ticksPerBar );
 	if( fire.outcome == FollowOutcome::None ) { return; }
 	m_followFires.fetch_add( 1, std::memory_order_relaxed );
 	m_sceneFollowFires.fetch_add( 1, std::memory_order_relaxed );
 	publishFollowFire( fire, firedAt );
 	applySceneFire( fire, firedAt, ctx );
+}
+
+
+//! The launched row's plan when its action time has come, else nullptr. The first due
+//! evaluation only SCHEDULES (one step after the row's start line), as a cell's does.
+const FollowPlan* SessionScheduler::dueScenePlan( const SessionClockContext& ctx ) noexcept
+{
+	if( m_activeScene < 0 || !m_followEnabled.load( std::memory_order_relaxed ) ) { return nullptr; }
+	const FollowPlan* plan = scenePlanFor( m_activeScene );
+	// The row has not started yet (its presses are still pending): nothing to time.
+	if( plan == nullptr || ctx.positionTicks < m_sceneStartTick ) { return nullptr; }
+	const tick_t step = followActionTicks( *plan, ctx.ticksPerBar );
+	if( step <= 0 ) { return nullptr; }
+	if( !m_sceneFollowScheduled )
+	{
+		m_sceneFollowScheduled = true;
+		m_sceneFollowNext = m_sceneStartTick + step;
+		return nullptr;
+	}
+	return ctx.positionTicks >= m_sceneFollowNext ? plan : nullptr;
+}
+
+
+bool SessionScheduler::rowPlaying( int scene ) const noexcept
+{
+	for( const auto& slot : m_active )
+	{
+		if( slot.track >= 0 && slot.scene == scene && slot.state.phase == SlotPhase::Playing ) { return true; }
+	}
+	return false;
 }
 
 

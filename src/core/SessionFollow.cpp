@@ -206,18 +206,9 @@ void SessionScheduler::evaluateFollow( ActiveSlot& slot, const SessionClockConte
 	// The global toggle: off makes a chain INERT, not cleared - plans stay installed
 	// and switching back resumes next period unchanged, so it is a performance control.
 	if( !m_followEnabled.load( std::memory_order_relaxed ) ) { return; }
-	if( slot.state.phase != SlotPhase::Playing )
-	{
-		return;
-	}
-	// R5.2: a launched row with a chain of its own moves the whole row; the cell's
-	// chain would move one column out from under it.
-	if( sceneOverrides( slot ) ) { return; }
-	const FollowPlan* plan = planFor( slot.track, slot.scene );
-	if( plan == nullptr || !plan->enabled || plan->count <= 0 )
-	{
-		return;
-	}
+	// Playing, not governed by its launched row's chain (R5.2), and an enabled plan.
+	const FollowPlan* plan = cellPlanFor( slot );
+	if( plan == nullptr ) { return; }
 	const tick_t step = followActionTicks( *plan, ctx.ticksPerBar );
 	if( step <= 0 )
 	{
