@@ -155,6 +155,10 @@ QJsonObject layerResultSchema()
 		{QStringLiteral("source"), objectProperty()},
 		{QStringLiteral("engine_active"), booleanProperty()},
 		{QStringLiteral("driving"), integerProperty()},
+		// layerResult() starts from modulationLayerJson(), so the whole layer rides along.
+		{QStringLiteral("modulators"), arrayProperty()},
+		{QStringLiteral("max_modulators"), integerProperty()},
+		{QStringLiteral("max_targets_per_modulator"), integerProperty()},
 	});
 }
 

@@ -253,6 +253,9 @@ QJsonObject routeResultSchema()
 		{QStringLiteral("overflow_frames"), integerProperty()},
 		{QStringLiteral("write_errors"), integerProperty()},
 		{QStringLiteral("sample_rate"), integerProperty()},
+		// record.arm_track only: whether this call armed the route, and the input already staged.
+		{QStringLiteral("armed_now"), booleanProperty()},
+		{QStringLiteral("input_frames_staged_at_arm"), integerProperty()},
 	});
 }
 

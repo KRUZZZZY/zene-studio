@@ -114,6 +114,12 @@ void registerNoteProbabilitySet(ControlRegistry& registry)
 		{QStringLiteral("position"), integerProperty(0, MaxSongLength)},
 		{QStringLiteral("length"), integerProperty(0, MaxSongLength)},
 		{QStringLiteral("key"), integerProperty(0, 127)},
+		{QStringLiteral("id"), stringProperty()},
+		{QStringLiteral("index"), numberProperty()},
+		{QStringLiteral("midi_velocity"), numberProperty()},
+		{QStringLiteral("pan"), numberProperty()},
+		{QStringLiteral("slide"), booleanProperty()},
+		{QStringLiteral("velocity"), numberProperty()},
 	});
 	cmd.mutating = true;
 	cmd.handler = [](const QJsonObject& args) {

@@ -207,6 +207,10 @@ def sweep_problem(command, outcome, timeout):
         return ("command '%s' is neither allowlisted nor swept - the reverse completeness "
                 "check cannot account for it" % command)
     status = outcome.get("status")
+    if status == "typed_error" and "broke its own resultSchema" in outcome.get("message", ""):
+        # Typed, but it is the result check refusing a reply that breaks the command's own
+        # published schema - a contract defect, not an acceptable refusal (R6.3).
+        return "SCHEMA: '%s' -> %s" % (command, outcome.get("message", ""))
     if status in ("ok", "typed_error"):
         return None
     if status == "timeout":

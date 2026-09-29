@@ -194,6 +194,7 @@ void registerCommandsListCommand(ControlRegistry& registry)
 	cmd.resultSchema = objectSchema({
 		{QStringLiteral("commands"), arrayProperty()},
 		{QStringLiteral("count"), integerProperty()},
+		{QStringLiteral("proto"), numberProperty()},
 	});
 	cmd.handler = [&registry](const QJsonObject&) { return ControlResult::success(registry.describeAll()); };
 	registry.registerCommand(cmd);
@@ -412,6 +413,7 @@ void registerUndoCommand(ControlRegistry& registry)
 		{QStringLiteral("can_redo"), booleanProperty()},
 		{QStringLiteral("mechanism"), stringProperty()},
 		{QStringLiteral("reason"), stringProperty()},
+		{QStringLiteral("inverse_result"), objectProperty()},
 	});
 	cmd.handler = [&registry](const QJsonObject&) { return undoLastCommand(registry); };
 	registry.registerCommand(cmd);

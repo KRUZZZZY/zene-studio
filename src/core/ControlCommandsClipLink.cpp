@@ -169,6 +169,12 @@ void registerClipLinkCreate(ControlRegistry& registry)
 		{QStringLiteral("size"), integerProperty()},
 		{QStringLiteral("content"), stringProperty()},
 		{QStringLiteral("notes"), integerProperty()},
+		{QStringLiteral("adopted"), arrayProperty()},
+		{QStringLiteral("content_members"), numberProperty()},
+		{QStringLiteral("divergent"), arrayProperty()},
+		{QStringLiteral("in_sync"), arrayProperty()},
+		{QStringLiteral("mirrored"), numberProperty()},
+		{QStringLiteral("reference"), stringProperty()},
 	});
 	cmd.mutating = true;
 	cmd.handler = [](const QJsonObject& args) {

@@ -131,6 +131,7 @@ void registerLaunchSlot(ControlRegistry& registry)
 		{QStringLiteral("quantisation"), stringProperty()},
 		{QStringLiteral("scheduled_tick"), integerProperty()},
 		{QStringLiteral("next_bar"), integerProperty()},
+		{QStringLiteral("clip"), objectProperty()},
 	});
 	cmd.mutating = false;
 	cmd.handler = [](const QJsonObject& args) {
@@ -188,6 +189,7 @@ void registerLaunchScene(ControlRegistry& registry)
 		{QStringLiteral("in_sync"), booleanProperty()},
 		{QStringLiteral("sync_tick"), integerProperty()},
 		{QStringLiteral("skipped_columns"), integerProperty()},
+		{QStringLiteral("next_bar"), numberProperty()},
 	});
 	cmd.mutating = false;
 	cmd.handler = [](const QJsonObject& args) {

@@ -309,6 +309,7 @@ void registerPatcherCommands(ControlRegistry& registry)
 			{QStringLiteral("effective_wiring"), objectProperty()},
 			{QStringLiteral("graph"), objectProperty()},
 			{QStringLiteral("editable"), objectProperty()},
+			{QStringLiteral("note"), stringProperty()},
 		});
 		cmd.mutating = false;
 		cmd.handler = [](const QJsonObject& args) { return getState(args); };

@@ -247,6 +247,7 @@ void registerTransportCommands(ControlRegistry& registry)
 			{QStringLiteral("paused"), QJsonObject{{QStringLiteral("type"), QStringLiteral("boolean")}}},
 			{QStringLiteral("position_ticks"), QJsonObject{{QStringLiteral("type"), QStringLiteral("integer")}}},
 			{QStringLiteral("tempo"), QJsonObject{{QStringLiteral("type"), QStringLiteral("integer")}}},
+			{QStringLiteral("master_volume"), numberProperty()},
 		});
 		cmd.handler = [](const QJsonObject&) {
 			Song* song = Engine::getSong();
@@ -311,6 +312,15 @@ void registerTransportCommands(ControlRegistry& registry)
 			{QStringLiteral("frozen_start_ticks"), integerProperty()},
 			{QStringLiteral("frozen_end_ticks"), integerProperty()},
 			{QStringLiteral("frozen_muted_clips"), integerProperty()},
+			{QStringLiteral("child_count"), numberProperty()},
+			{QStringLiteral("collapsed"), booleanProperty()},
+			{QStringLiteral("folder"), stringProperty()},
+			{QStringLiteral("folder_mode"), stringProperty()},
+			{QStringLiteral("index"), numberProperty()},
+			{QStringLiteral("muted"), booleanProperty()},
+			{QStringLiteral("pinned"), booleanProperty()},
+			{QStringLiteral("soloed"), booleanProperty()},
+			{QStringLiteral("visible"), booleanProperty()},
 		});
 		cmd.handler = [](const QJsonObject& args) {
 			const QString id = args.value(QStringLiteral("track")).toString();

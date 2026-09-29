@@ -80,6 +80,8 @@ void registerClipLinkGetState(ControlRegistry& registry)
 		{QStringLiteral("groups"), arrayProperty()},
 		{QStringLiteral("count"), integerProperty()},
 		{QStringLiteral("linked"), QJsonObject{{QStringLiteral("type"), QStringLiteral("boolean")}}},
+		{QStringLiteral("clip"), stringProperty()},
+		{QStringLiteral("group"), numberProperty()},
 	});
 	cmd.mutating = false;
 	cmd.handler = [](const QJsonObject& args) {

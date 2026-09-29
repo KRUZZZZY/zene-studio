@@ -239,6 +239,12 @@ void registerDeviceCommands(ControlRegistry& registry)
 			{QStringLiteral("storage"), objectProperty()},
 			{QStringLiteral("per_stream_settings_reachable"), booleanProperty()},
 			{QStringLiteral("per_stream_settings"), stringProperty()},
+			{QStringLiteral("applies_to"), stringProperty()},
+			{QStringLiteral("channels"), numberProperty()},
+			{QStringLiteral("default_bend_range_semitones"), numberProperty()},
+			{QStringLiteral("default_master_channel"), numberProperty()},
+			{QStringLiteral("max_active_notes_per_channel"), numberProperty()},
+			{QStringLiteral("max_pitch_cents"), numberProperty()},
 		});
 		cmd.mutating = true;
 		cmd.handler = [](const QJsonObject& args) { return mpeSet(args); };

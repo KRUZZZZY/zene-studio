@@ -69,6 +69,9 @@ LMMS_EXPORT QJsonObject arrayProperty();
 LMMS_EXPORT QJsonObject objectProperty();
 //! A tick position: an integer that cannot be negative.
 LMMS_EXPORT QJsonObject tickProperty();
+//! @a property, also accepting null: `"type": [<its type>, "null"]` (JSON Schema's own form).
+//! For a reading that honestly has no value yet - an unmeasured loudness, no run so far.
+LMMS_EXPORT QJsonObject nullable(QJsonObject property);
 /*! A string property restricted to \p values (the registry's validator
  *  enforces "enum"). Added 2026-09-13 for the session.* group, whose mode and
  *  quantisation arguments ARE closed vocabularies (LaunchMode,

@@ -35,6 +35,7 @@
 #include <cstdlib>
 
 #include <QFile>
+#include <QJsonArray>
 #include <QJsonValue>
 #include <QSet>
 
@@ -52,6 +53,7 @@ static bool typeMatches(const QJsonValue& value, const QString& type)
 	if (type == QLatin1String("boolean")) { return value.isBool(); }
 	if (type == QLatin1String("object")) { return value.isObject(); }
 	if (type == QLatin1String("array")) { return value.isArray(); }
+	if (type == QLatin1String("null")) { return value.isNull(); }
 	return true; // an unknown type never rejects a value
 }
 
@@ -62,9 +64,20 @@ static QString pathLabel(const QString& path)
 
 static QString checkType(const QJsonValue& value, const QJsonObject& spec, const QString& path)
 {
-	const QString type = spec.value(QStringLiteral("type")).toString();
-	if (type.isEmpty() || typeMatches(value, type)) { return QString(); }
-	return QStringLiteral("%1: expected %2").arg(pathLabel(path), type);
+	// "type" is one name, or - JSON Schema's own form, used by control::nullable() - a
+	// list of names any one of which matches.
+	const QJsonValue declared = spec.value(QStringLiteral("type"));
+	QStringList types;
+	for (const QJsonValue& name : declared.isArray() ? declared.toArray() : QJsonArray{declared})
+	{
+		if (!name.toString().isEmpty()) { types << name.toString(); }
+	}
+	if (types.isEmpty()) { return QString(); }
+	for (const QString& type : types)
+	{
+		if (typeMatches(value, type)) { return QString(); }
+	}
+	return QStringLiteral("%1: expected %2").arg(pathLabel(path), types.join(QLatin1Char('|')));
 }
 
 static QString checkRange(const QJsonValue& value, const QJsonObject& spec, const QString& path)

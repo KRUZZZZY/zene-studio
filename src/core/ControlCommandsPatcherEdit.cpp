@@ -451,6 +451,12 @@ void registerPatcherEditCommands(ControlRegistry& registry)
 		{QStringLiteral("changed"), booleanProperty()},
 		{QStringLiteral("routes_through_graph"), booleanProperty()},
 		{QStringLiteral("graph"), objectProperty()},
+		{QStringLiteral("editable"), objectProperty()},
+		{QStringLiteral("effect_count"), numberProperty()},
+		{QStringLiteral("kind"), stringProperty()},
+		{QStringLiteral("note"), stringProperty()},
+		{QStringLiteral("patch_dropped"), booleanProperty()},
+		{QStringLiteral("target_type"), stringProperty()},
 	});
 	cmd.mutating = true;
 	cmd.handler = [](const QJsonObject& args) { return setWiring(args); };

@@ -101,6 +101,13 @@ void registerNoteAdd(ControlRegistry& registry)
 		{QStringLiteral("key"), control::integerProperty(0, NumKeys - 1)},
 		{QStringLiteral("position"), control::integerProperty(0, MaxSongLength)},
 		{QStringLiteral("length"), control::integerProperty(0, MaxSongLength)},
+		{QStringLiteral("id"), control::stringProperty()},
+		{QStringLiteral("index"), control::numberProperty()},
+		{QStringLiteral("midi_velocity"), control::numberProperty()},
+		{QStringLiteral("note_count"), control::numberProperty()},
+		{QStringLiteral("pan"), control::numberProperty()},
+		{QStringLiteral("slide"), control::booleanProperty()},
+		{QStringLiteral("velocity"), control::numberProperty()},
 	});
 	cmd.mutating = true;
 	cmd.handler = [](const QJsonObject& args) {
@@ -298,6 +305,14 @@ void registerNoteResize(ControlRegistry& registry)
 		{QStringLiteral("clip"), control::stringProperty()},
 		{QStringLiteral("note"), control::stringProperty()},
 		{QStringLiteral("length"), control::integerProperty(0, MaxSongLength)},
+		{QStringLiteral("id"), control::stringProperty()},
+		{QStringLiteral("index"), control::numberProperty()},
+		{QStringLiteral("key"), control::numberProperty()},
+		{QStringLiteral("midi_velocity"), control::numberProperty()},
+		{QStringLiteral("pan"), control::numberProperty()},
+		{QStringLiteral("position"), control::numberProperty()},
+		{QStringLiteral("slide"), control::booleanProperty()},
+		{QStringLiteral("velocity"), control::numberProperty()},
 	});
 	cmd.mutating = true;
 	cmd.handler = [](const QJsonObject& args) {
@@ -354,6 +369,13 @@ void registerNoteVelocitySet(ControlRegistry& registry)
 		{QStringLiteral("note"), control::stringProperty()},
 		{QStringLiteral("velocity"), control::numberProperty()},
 		{QStringLiteral("midi_velocity"), control::integerProperty(0, 127)},
+		{QStringLiteral("id"), control::stringProperty()},
+		{QStringLiteral("index"), control::numberProperty()},
+		{QStringLiteral("key"), control::numberProperty()},
+		{QStringLiteral("length"), control::numberProperty()},
+		{QStringLiteral("pan"), control::numberProperty()},
+		{QStringLiteral("position"), control::numberProperty()},
+		{QStringLiteral("slide"), control::booleanProperty()},
 	});
 	cmd.mutating = true;
 	cmd.handler = [](const QJsonObject& args) {
@@ -478,6 +500,20 @@ void registerRollGetState(ControlRegistry& registry)
 		{QStringLiteral("track"), control::stringProperty()},
 		{QStringLiteral("notes"), QJsonObject{{QStringLiteral("type"), QStringLiteral("array")}}},
 		{QStringLiteral("note_count"), control::integerProperty(0, MaxSongLength)},
+		{QStringLiteral("auto_resize"), control::booleanProperty()},
+		{QStringLiteral("fade_in"), control::numberProperty()},
+		{QStringLiteral("fade_in_shape"), control::stringProperty()},
+		{QStringLiteral("fade_out"), control::numberProperty()},
+		{QStringLiteral("fade_out_shape"), control::stringProperty()},
+		{QStringLiteral("gain_db"), control::numberProperty()},
+		{QStringLiteral("id"), control::stringProperty()},
+		{QStringLiteral("index_in_track"), control::numberProperty()},
+		{QStringLiteral("length"), control::numberProperty()},
+		{QStringLiteral("muted"), control::booleanProperty()},
+		{QStringLiteral("name"), control::stringProperty()},
+		{QStringLiteral("position"), control::numberProperty()},
+		{QStringLiteral("selected"), control::booleanProperty()},
+		{QStringLiteral("selected_notes"), control::arrayProperty()},
 	});
 	cmd.handler = [](const QJsonObject& args) {
 		QString id = args.value(QStringLiteral("clip")).toString();

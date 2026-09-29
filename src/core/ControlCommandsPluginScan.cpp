@@ -366,6 +366,9 @@ void registerPluginScanCommands(ControlRegistry& registry)
 			{QStringLiteral("not_a_plugin_count"), integerProperty()},
 			{QStringLiteral("load_failed_count"), integerProperty()},
 			{QStringLiteral("note"), stringProperty()},
+			{QStringLiteral("dirty"), booleanProperty()},
+			{QStringLiteral("format_version"), numberProperty()},
+			{QStringLiteral("persistent"), booleanProperty()},
 		});
 		cmd.handler = [](const QJsonObject&) { return handleScanCacheList(); };
 		registry.registerCommand(cmd);
@@ -392,7 +395,10 @@ void registerPluginScanCommands(ControlRegistry& registry)
 			{QStringLiteral("quarantined"), booleanProperty()},
 			{QStringLiteral("quarantine_reason"), stringProperty()},
 			// null when there is no record at all.
-			{QStringLiteral("record"), objectProperty()},
+			{QStringLiteral("record"), nullable(objectProperty())},
+			{QStringLiteral("dirty"), booleanProperty()},
+			{QStringLiteral("format_version"), numberProperty()},
+			{QStringLiteral("persistent"), booleanProperty()},
 		});
 		cmd.handler = [](const QJsonObject& args) { return handleScanCacheLookup(args); };
 		registry.registerCommand(cmd);

@@ -257,6 +257,11 @@ void registerClockCommands(ControlRegistry& registry)
 			{QStringLiteral("port"), stringProperty()},
 			{QStringLiteral("port_ready"), booleanProperty()},
 			{QStringLiteral("emitted"), objectProperty()},
+			{QStringLiteral("emitted_total"), numberProperty()},
+			{QStringLiteral("last_emitted"), stringProperty()},
+			{QStringLiteral("last_emitted_ticks"), numberProperty()},
+			{QStringLiteral("monitor"), arrayProperty()},
+			{QStringLiteral("period_ms"), numberProperty()},
 		});
 		cmd.mutating = true;
 		cmd.handler = [](const QJsonObject& args) { return masterSet(args); };
@@ -299,6 +304,13 @@ void registerClockCommands(ControlRegistry& registry)
 			{QStringLiteral("drift_ms"), numberProperty()},
 			{QStringLiteral("drift_bound_ms"), numberProperty()},
 			{QStringLiteral("source_port"), stringProperty()},
+			{QStringLiteral("interval_ms"), numberProperty()},
+			{QStringLiteral("messages"), objectProperty()},
+			{QStringLiteral("pulses"), numberProperty()},
+			{QStringLiteral("song_position"), numberProperty()},
+			{QStringLiteral("tempo_error_bound_bpm"), numberProperty()},
+			{QStringLiteral("time_code"), numberProperty()},
+			{QStringLiteral("window_ms"), numberProperty()},
 		});
 		cmd.mutating = true;
 		cmd.handler = [](const QJsonObject& args) { return slaveSet(args); };

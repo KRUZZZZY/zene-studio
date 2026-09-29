@@ -96,6 +96,23 @@ private slots:
 		QVERIFY2(why.contains(QStringLiteral("result.count")), qPrintable(why));
 	}
 
+	void aNullableFieldAcceptsNullAndItsTypeButNothingElse()
+	{
+		const QJsonObject schema = control::objectSchema({
+			{QStringLiteral("lufs"), control::nullable(control::numberProperty())}});
+		QCOMPARE(schema.value(QStringLiteral("properties")).toObject().value(QStringLiteral("lufs"))
+			.toObject().value(QStringLiteral("type")).toArray(),
+			(QJsonArray{QStringLiteral("number"), QStringLiteral("null")}));
+		QVERIFY(control::resultSchemaViolation(schema, QJsonObject{{QStringLiteral("lufs"), QJsonValue::Null}}).isEmpty());
+		QVERIFY(control::resultSchemaViolation(schema, QJsonObject{{QStringLiteral("lufs"), -23.0}}).isEmpty());
+		const QString why = control::resultSchemaViolation(schema, QJsonObject{{QStringLiteral("lufs"), QStringLiteral("x")}});
+		QVERIFY2(why.contains(QStringLiteral("number|null")), qPrintable(why));
+		// A plain (non-nullable) field still refuses null.
+		QVERIFY(!control::resultSchemaViolation(schemaWithCount(), QJsonObject{{QStringLiteral("count"), QJsonValue::Null}}).isEmpty());
+		// Applying it twice does not add a second "null".
+		QCOMPARE(control::nullable(control::nullable(control::stringProperty())).value(QStringLiteral("type")).toArray().size(), 2);
+	}
+
 	void finishResultDropsTheTransactionSideChannel()
 	{
 		ControlResult result = ControlResult::success(QJsonObject{{QStringLiteral("count"), 1},

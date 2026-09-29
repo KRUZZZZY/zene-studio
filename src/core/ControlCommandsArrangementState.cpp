@@ -66,6 +66,7 @@ void registerArrangementGetState(ControlRegistry& registry)
 		{QStringLiteral("clips"), QJsonObject{{QStringLiteral("type"), QStringLiteral("array")}}},
 		{QStringLiteral("track_count"), control::integerProperty(0, MaxSongLength)},
 		{QStringLiteral("clip_count"), control::integerProperty(0, MaxSongLength)},
+		{QStringLiteral("selected_clip"), control::stringProperty()},
 	});
 	cmd.handler = [](const QJsonObject&) {
 		const QVector<control::ClipRef> refs = control::enumerateClips();
@@ -261,6 +262,7 @@ void registerTrackSetArm(ControlRegistry& registry)
 		{QStringLiteral("frames_pushed"), control::integerProperty()},
 		{QStringLiteral("frames_recorded"), control::integerProperty()},
 		{QStringLiteral("sample_rate"), control::integerProperty()},
+		{QStringLiteral("armed_before"), control::booleanProperty()},
 	});
 	cmd.mutating = true;
 	cmd.handler = [](const QJsonObject& args) {

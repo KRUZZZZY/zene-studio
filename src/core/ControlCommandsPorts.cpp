@@ -328,6 +328,7 @@ void registerPortCommands(ControlRegistry& registry)
 			{QStringLiteral("target"), stringProperty()},
 			{QStringLiteral("device"), stringProperty()},
 			{QStringLiteral("ports"), objectProperty()},
+			{QStringLiteral("note"), stringProperty()},
 		});
 		cmd.handler = [](const QJsonObject& args) { return handlePortGetState(args); };
 		registry.registerCommand(cmd);

@@ -176,6 +176,7 @@ void registerSettingsSet(ControlRegistry& registry)
 		{QStringLiteral("value"), stringProperty()},
 		{QStringLiteral("previous"), stringProperty()},
 		{QStringLiteral("persisted"), QJsonObject{{QStringLiteral("type"), QStringLiteral("boolean")}}},
+		{QStringLiteral("present"), booleanProperty()},
 	});
 	cmd.mutating = true;
 	cmd.handler = [](const QJsonObject& args) {
@@ -281,6 +282,7 @@ void registerAudioDeviceList(ControlRegistry& registry)
 		{QStringLiteral("count"), integerProperty()},
 		{QStringLiteral("current"), stringProperty()},
 		{QStringLiteral("configured"), stringProperty()},
+		{QStringLiteral("start_failed"), booleanProperty()},
 	});
 	cmd.handler = [](const QJsonObject&) { return ControlResult::success(audioDevicesJson()); };
 	registry.registerCommand(cmd);
@@ -306,6 +308,7 @@ void registerAudioDeviceSet(ControlRegistry& registry)
 		{QStringLiteral("applied"), stringProperty()},
 		{QStringLiteral("restart_required"), QJsonObject{{QStringLiteral("type"),
 			QStringLiteral("boolean")}}},
+		{QStringLiteral("live_switch"), booleanProperty()},
 	});
 	cmd.mutating = true;
 	cmd.handler = [](const QJsonObject& args) {

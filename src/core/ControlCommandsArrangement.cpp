@@ -127,6 +127,17 @@ void registerTrackAdd(ControlRegistry& registry)
 		{QStringLiteral("index"), control::integerProperty(0, MaxSongLength)},
 		{QStringLiteral("name"), control::stringProperty()},
 		{QStringLiteral("type"), control::stringProperty()},
+		{QStringLiteral("child_count"), control::numberProperty()},
+		{QStringLiteral("clip_count"), control::numberProperty()},
+		{QStringLiteral("collapsed"), control::booleanProperty()},
+		{QStringLiteral("folder"), control::stringProperty()},
+		{QStringLiteral("folder_mode"), control::stringProperty()},
+		{QStringLiteral("id"), control::stringProperty()},
+		{QStringLiteral("muted"), control::booleanProperty()},
+		{QStringLiteral("pinned"), control::booleanProperty()},
+		{QStringLiteral("soloed"), control::booleanProperty()},
+		{QStringLiteral("track_count"), control::numberProperty()},
+		{QStringLiteral("visible"), control::booleanProperty()},
 	});
 	cmd.mutating = true;
 	cmd.handler = [](const QJsonObject& args) {
@@ -199,6 +210,14 @@ void registerTrackRemove(ControlRegistry& registry)
 		{QStringLiteral("track_count"), control::integerProperty(0, MaxSongLength)},
 		{QStringLiteral("dry_run"), control::booleanProperty()},
 		{QStringLiteral("index"), control::integerProperty()},
+		{QStringLiteral("clip_count"), control::numberProperty()},
+		{QStringLiteral("folder"), control::stringProperty()},
+		{QStringLiteral("id"), control::stringProperty()},
+		{QStringLiteral("muted"), control::booleanProperty()},
+		{QStringLiteral("name"), control::stringProperty()},
+		{QStringLiteral("soloed"), control::booleanProperty()},
+		{QStringLiteral("type"), control::stringProperty()},
+		{QStringLiteral("visible"), control::booleanProperty()},
 	});
 	cmd.mutating = true;
 	cmd.handler = [](const QJsonObject& args) {

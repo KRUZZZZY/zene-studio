@@ -205,6 +205,7 @@ void registerClipSlip(ControlRegistry& registry)
 		{QStringLiteral("position"), integerProperty(0, MaxSongLength)},
 		{QStringLiteral("length"), integerProperty(0, MaxSongLength)},
 		{QStringLiteral("offset"), integerProperty(-MaxSongLength, MaxSongLength)},
+		{QStringLiteral("end"), numberProperty()},
 	});
 	cmd.mutating = true;
 	cmd.handler = [](const QJsonObject& args) {

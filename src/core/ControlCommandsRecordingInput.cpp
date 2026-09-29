@@ -108,6 +108,17 @@ AudioInputPath::Plan requestedPlan(const QJsonObject& args)
 	return plan;
 }
 
+//! The shape planJson() writes - one definition for both replies that carry a plan.
+QJsonObject planSchema()
+{
+	return objectSchema({
+		{QStringLiteral("device"), stringProperty()},
+		{QStringLiteral("channels"), integerProperty()},
+		{QStringLiteral("left"), integerProperty()},
+		{QStringLiteral("right"), integerProperty()},
+	});
+}
+
 QJsonObject planJson(const AudioInputPath::Plan& plan)
 {
 	QJsonObject out;
@@ -153,7 +164,7 @@ ControlResult inputSet(const QJsonObject& args)
 QJsonObject inputStateSchema()
 {
 	return objectSchema({
-		{QStringLiteral("configured"), objectSchema({})},
+		{QStringLiteral("configured"), planSchema()},
 		{QStringLiteral("capture_capable"), booleanProperty()},
 		{QStringLiteral("capture_open"), booleanProperty()},
 		{QStringLiteral("capture_device"), stringProperty()},
@@ -233,7 +244,7 @@ void registerInputSet(ControlRegistry& registry)
 		{QStringLiteral("left"), integerProperty()},
 		{QStringLiteral("right"), integerProperty()},
 		{QStringLiteral("route_capacity"), integerProperty()},
-		{QStringLiteral("previous"), objectSchema({})},
+		{QStringLiteral("previous"), planSchema()},
 		{QStringLiteral("restart_required"), booleanProperty()},
 	});
 	cmd.mutating = true;

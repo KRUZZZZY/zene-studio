@@ -490,6 +490,11 @@ void registerMtsCommands(ControlRegistry& registry)
 			{QStringLiteral("mts_library"), stringProperty()},
 			{QStringLiteral("mts_master"), booleanProperty()},
 			{QStringLiteral("mts_clients"), integerProperty(0, 4096)},
+			{QStringLiteral("frequencies"), arrayProperty()},
+			{QStringLiteral("keymap"), stringProperty()},
+			{QStringLiteral("scale"), stringProperty()},
+			{QStringLiteral("source"), stringProperty()},
+			{QStringLiteral("table_size"), numberProperty()},
 		});
 		cmd.handler = [](const QJsonObject& args) { return masterSet(args); };
 		registry.registerCommand(cmd);

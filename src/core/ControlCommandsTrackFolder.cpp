@@ -298,6 +298,12 @@ void registerTrackSetFolder(ControlRegistry& registry)
 		{QStringLiteral("index"), control::integerProperty(0, MaxSongLength)},
 		{QStringLiteral("children"), QJsonObject{{QStringLiteral("type"), QStringLiteral("array")}}},
 		{QStringLiteral("child_count"), control::integerProperty(0, MaxSongLength)},
+		{QStringLiteral("collapsed"), control::booleanProperty()},
+		{QStringLiteral("mixer_channel"), control::numberProperty()},
+		{QStringLiteral("mode"), control::stringProperty()},
+		{QStringLiteral("name"), control::stringProperty()},
+		{QStringLiteral("pinned"), control::booleanProperty()},
+		{QStringLiteral("routing"), control::booleanProperty()},
 	});
 	cmd.mutating = true;
 	cmd.handler = [](const QJsonObject& args) { return setFolder(args); };
@@ -321,6 +327,12 @@ void registerTrackFolderSetCollapsed(ControlRegistry& registry)
 		{QStringLiteral("track"), control::stringProperty()},
 		{QStringLiteral("collapsed"), control::booleanProperty()},
 		{QStringLiteral("child_count"), control::integerProperty(0, MaxSongLength)},
+		{QStringLiteral("children"), control::arrayProperty()},
+		{QStringLiteral("mixer_channel"), control::numberProperty()},
+		{QStringLiteral("mode"), control::stringProperty()},
+		{QStringLiteral("name"), control::stringProperty()},
+		{QStringLiteral("pinned"), control::booleanProperty()},
+		{QStringLiteral("routing"), control::booleanProperty()},
 	});
 	cmd.mutating = true;
 	cmd.handler = [](const QJsonObject& args) { return setCollapsed(args); };
@@ -349,6 +361,10 @@ void registerTrackSetRouting(ControlRegistry& registry)
 		{QStringLiteral("previous_routing"), control::booleanProperty()},
 		{QStringLiteral("mixer_channel"), control::integerProperty()},
 		{QStringLiteral("children"), QJsonObject{{QStringLiteral("type"), QStringLiteral("array")}}},
+		{QStringLiteral("child_count"), control::numberProperty()},
+		{QStringLiteral("collapsed"), control::booleanProperty()},
+		{QStringLiteral("name"), control::stringProperty()},
+		{QStringLiteral("pinned"), control::booleanProperty()},
 	});
 	cmd.mutating = true;
 	cmd.handler = [](const QJsonObject& args) { return setRouting(args); };
@@ -372,6 +388,12 @@ void registerTrackSetPinned(ControlRegistry& registry)
 		{QStringLiteral("track"), control::stringProperty()},
 		{QStringLiteral("pinned"), control::booleanProperty()},
 		{QStringLiteral("child_count"), control::integerProperty(0, MaxSongLength)},
+		{QStringLiteral("children"), control::arrayProperty()},
+		{QStringLiteral("collapsed"), control::booleanProperty()},
+		{QStringLiteral("mixer_channel"), control::numberProperty()},
+		{QStringLiteral("mode"), control::stringProperty()},
+		{QStringLiteral("name"), control::stringProperty()},
+		{QStringLiteral("routing"), control::booleanProperty()},
 	});
 	cmd.mutating = true;
 	cmd.handler = [](const QJsonObject& args) { return setPinned(args); };
