@@ -341,6 +341,8 @@ set(LMMS_SRCS
 	core/ControlCommandsArrangementState.cpp
 	core/ControlCommandsProject.cpp
 	core/ControlCommandsProjectFiles.cpp
+	# M3.2: the File menu / toolbar verbs the registry lacked (project.new, ...).
+	core/ControlCommandsProjectLifecycle.cpp
 	# The in-app revision timeline (feature-list row 76, OWNER-31 item 30): the
 	# list/compare/restore surface over the revision artefacts the engine already
 	# writes. Its engine half is include/RevisionTimeline.h, split across three
@@ -397,6 +399,8 @@ set(LMMS_SRCS
 	core/ControlCommandsVca.cpp
 	core/ControlCommandsVcaMix.cpp
 	core/ControlCommandsVcaEdit.cpp
+	# R3.5: the phase-locked split, trim, slip and fade.
+	core/ControlCommandsVcaEditMore.cpp
 	core/ControlCommandsVcaEditSet.cpp
 	core/TrackContainerFolders.cpp
 	# The bounded-undo slice: the depth caps, the coalescing window, and the
@@ -648,6 +652,7 @@ set(LMMS_SRCS
 	core/ControlReversibilityTableMts.cpp
 	# The window.* group's rows (040/survey-fixes); the group itself is src/gui.
 	core/ControlReversibilityTableWindow.cpp
+	core/ControlReversibilityTableShell.cpp
 	${CMAKE_SOURCE_DIR}/thirdparty/mts-esp/libMTSClient.cpp
 	${CMAKE_SOURCE_DIR}/thirdparty/mts-esp/libMTSMaster.cpp
 	# ControllerSurface.cpp - the mapping-template store of the controller
@@ -1028,6 +1033,7 @@ SET(ZENE_API_SRCS
 	core/ControlReversibilityTableVerbs.cpp
 	core/ControlReversibilityTableWasmRender.cpp
 	core/ControlReversibilityTableWindow.cpp
+	core/ControlReversibilityTableShell.cpp
 )
 
 # The boundary is what the registry is compiled by: every file named above is

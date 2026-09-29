@@ -23,6 +23,7 @@
  */
 
 #include "AudioEngine.h"
+#include "PunchWindow.h"
 
 #include "MixHelpers.h"
 
@@ -253,6 +254,19 @@ void AudioEngine::drainInputStage() noexcept
 
 
 
+void AudioEngine::setPunchWindow(bool armed, tick_t begin, tick_t end) noexcept
+{
+	// Begin and end first, the armed flag last: a render thread that sees the
+	// flag set sees the range it arms (each is relaxed; a period that straddles
+	// the publish gates by either the old or the new window, both valid).
+	m_punchBegin.store(begin, std::memory_order_relaxed);
+	m_punchEnd.store(end, std::memory_order_relaxed);
+	m_punchArmed.store(armed && end > begin, std::memory_order_release);
+}
+
+
+
+
 void AudioEngine::pushInputFramesWide( const float* _interleaved, int _channels,
 	const f_cnt_t _frames ) noexcept
 {
@@ -375,6 +389,14 @@ void AudioEngine::renderStageNoteSetup()
 	Mixer * mixer = Engine::mixer();
 	mixer->prepareMasterMix();
 
+	// R2.4: where this period starts, for STAGE 4's punch gate - taken BEFORE
+	// the song advances. Render thread; the song position is this thread's own.
+	{
+		const Song* song = Engine::getSong();
+		m_periodSongPlaying = song->isPlaying() && song->playMode() == Song::PlayMode::Song;
+		m_periodStartFrame = static_cast<double>(song->getFrames());
+	}
+
 	// create play-handles for new notes, samples etc.
 	Engine::getSong()->processNextBuffer();
 
@@ -494,15 +516,36 @@ std::span<const SampleFrame> AudioEngine::renderNextPeriod()
 	// with NO capture path at all the stereo bus is empty
 	// (inputBufferFrames() == 0) and every armed route records nothing, which is
 	// exactly the state docs/RECORDING-REALTIME-FIXES.md describes.
+	//
+	// THE PUNCH GATE (R2.4): with a punch region armed, only the frames of this
+	// period whose song position is inside [punch-in, punch-out) reach the
+	// recorders - frame-accurately, so a region that starts mid-period starts
+	// mid-period. No armed region: every frame, the pre-gate behaviour. Pure
+	// arithmetic on atomics (include/PunchWindow.h): no lock, no allocation.
+	const bool punchArmed = m_punchArmed.load(std::memory_order_relaxed);
+	const auto gate = [&](f_cnt_t frames) {
+		return punchFramesForPeriod(punchArmed, m_periodSongPlaying, m_periodStartFrame,
+			Engine::framesPerTick(), frames, m_punchBegin.load(std::memory_order_relaxed),
+			m_punchEnd.load(std::memory_order_relaxed));
+	};
 	if (m_wideInputStage != nullptr && m_wideInputStage->frames() > 0
 		&& m_wideInputStage->channels() > 0)
 	{
-		m_recorder.processInputInterleaved(m_wideInputStage->data(),
-			m_wideInputStage->channels(), m_wideInputStage->frames());
+		const int channels = m_wideInputStage->channels();
+		const PunchFrames window = gate(m_wideInputStage->frames());
+		if (window.count() > 0)
+		{
+			m_recorder.processInputInterleaved(m_wideInputStage->data() + window.begin * channels,
+				channels, window.count());
+		}
 	}
 	else
 	{
-		m_recorder.processInput(m_inputBuffer[m_inputBufferRead], m_inputBufferFrames[m_inputBufferRead]);
+		const PunchFrames window = gate(m_inputBufferFrames[m_inputBufferRead]);
+		if (window.count() > 0)
+		{
+			m_recorder.processInput(m_inputBuffer[m_inputBufferRead] + window.begin, window.count());
+		}
 	}
 
 	// STAGE 4b: the retrospective AUDIO window (feature row 16, the audio

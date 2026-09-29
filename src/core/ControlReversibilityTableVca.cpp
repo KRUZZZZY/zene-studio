@@ -198,6 +198,29 @@ const ReversibilityRow kVcaRows[] = {
 		"arrangement order, and a move re-sorts a track's clips), so the inverse "
 		"is the checkpoint and not a replayed clip-<n> id",
 		""),
+	R("vca.edit_split", RC::TrueInverse, true,
+		"it splits every locked clip (the anchor, and each member clip overlapping the anchor's "
+		"pre-edit span that the cut falls inside) at one song tick, clip.split's own sequence per "
+		"clip - a Track checkpoint before each clone, so each split has a real inverse",
+		"composite checkpoint: one live Track checkpoint per split clip, merged by the registry into "
+		"ONE undo step, so one control.undo re-joins every member",
+		""),
+	R("vca.edit_trim", RC::TrueInverse, true,
+		"it moves every locked clip's start and end edges by the anchor's deltas (and its source "
+		"offset against the start); each clip is a JournallingObject whose serialized state carries "
+		"pos, len and off, so each trim has a real inverse",
+		"composite checkpoint: one live Clip checkpoint per trimmed clip, merged into ONE undo step",
+		""),
+	R("vca.edit_slip", RC::TrueInverse, true,
+		"it moves every locked clip's content offset by the anchor's delta; `off` is written "
+		"unconditionally, so each slip has a real inverse",
+		"composite checkpoint: one live Clip checkpoint per slipped clip, merged into ONE undo step",
+		""),
+	R("vca.edit_fade", RC::TrueInverse, true,
+		"it sets the same fade lengths on every locked audio clip; the fades are the clip's own "
+		"ClipEdits, serialized with it",
+		"composite checkpoint: one live Clip checkpoint per faded clip, merged into ONE undo step",
+		""),
 };
 
 constexpr int kVcaRowCount = static_cast<int>(sizeof(kVcaRows) / sizeof(kVcaRows[0]));

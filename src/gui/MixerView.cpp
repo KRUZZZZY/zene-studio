@@ -17,6 +17,8 @@
  */
 
 #include "MixerView.h"
+#include "VcaGroup.h"
+#include "VcaStripView.h"
 /* ---------------------------------------------------------------------------
  * THE VIEW LIST AND THE MIXER'S CHANNEL LIST ARE NOT THE SAME LIST.
  * One MixerView per mixer channel, and THE MIXER is indexed with a VIEW index -
@@ -33,6 +35,7 @@
  * --------------------------------------------------------------------------- */
 
 #include <QHBoxLayout>
+#include <QTimer>
 #include <QLayout>
 #include <QLineEdit>
 #include <QPushButton>
@@ -148,6 +151,15 @@ MixerView::MixerView(Mixer* mixer) :
 
 	ml->addWidget(channelArea, 1);
 
+	// M3.7: the VCA groups' strips (hidden while the mix has none).
+	m_vcaArea = new QWidget(this);
+	m_vcaArea->setObjectName(QStringLiteral("vcaArea"));
+	m_vcaArea->setAccessibleName(tr("VCA groups"));
+	m_vcaLayout = new QHBoxLayout(m_vcaArea);
+	m_vcaLayout->setContentsMargins(0, 0, 0, 0);
+	m_vcaLayout->setSpacing(0);
+	ml->addWidget(m_vcaArea, 0);
+
 	// show the add new mixer channel button
 	auto newChannelBtn = new QPushButton(embed::getIconPixmap("new_channel"), QString(), this);
 	newChannelBtn->setObjectName("newChannelBtn");
@@ -162,6 +174,11 @@ MixerView::MixerView(Mixer* mixer) :
 	ml->addWidget(m_racksWidget);
 
 	setCurrentMixerChannel(m_mixerChannelViews[0]);
+	refreshVcaStrips();
+
+	auto* syncTimer = new QTimer(this);
+	connect(syncTimer, &QTimer::timeout, this, &MixerView::syncWithMixer);
+	syncTimer->start(500);
 
 	updateGeometry();
 
@@ -239,6 +256,51 @@ void MixerView::refreshDisplay()
 	}
 
 	updateMaxChannelSelector();
+	refreshVcaStrips();
+}
+
+
+
+
+namespace
+{
+
+QString vcaSignatureOf(const Mixer* mixer)
+{
+	QString signature;
+	for (const VcaGroup* group : mixer->vcaGroups())
+	{
+		signature += QStringLiteral("%1:%2:%3;").arg(group->id()).arg(group->name())
+			.arg(group->members().size());
+	}
+	return signature;
+}
+
+} // namespace
+
+void MixerView::syncWithMixer()
+{
+	if (m_mixerChannelViews.size() != static_cast<int>(getMixer()->numChannels()))
+	{
+		refreshDisplay();
+		return;
+	}
+	if (vcaSignatureOf(getMixer()) != m_vcaSignature) { refreshVcaStrips(); }
+}
+
+void MixerView::refreshVcaStrips()
+{
+	m_vcaSignature = vcaSignatureOf(getMixer());
+	while (QLayoutItem* item = m_vcaLayout->takeAt(0))
+	{
+		delete item->widget();
+		delete item;
+	}
+	for (VcaGroup* group : getMixer()->vcaGroups())
+	{
+		m_vcaLayout->addWidget(new VcaStripView(group, m_vcaArea));
+	}
+	m_vcaArea->setVisible(!getMixer()->vcaGroups().empty());
 }
 
 

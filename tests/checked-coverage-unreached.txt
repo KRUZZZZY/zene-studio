@@ -2,5 +2,6 @@
 # Measured by tests/checked-coverage.py over a full ctest run (gate 1's checked-command ratchet). This
 # list only shrinks: reach a command's success path in a test, then delete its
 # line in the same change. <command.id><TAB><why it is not reached yet>
+app.online_help	requires: display, human - it hands the documentation URL to the desktop browser, which launches a program outside this one; the agent-surface sweep allowlists it for that reason, so no test reaches its success path
 crash.upload_report	refuses every call by design: the product does no network upload (the report stays on disk for the user to send); tests/control-crash-reporter.py holds the refusal
 telemetry.consent	refuses every unattended caller by design: it declares requires: display, human (consent is a person's act); TelemetryTest and ControlRegistryTest hold the refusal

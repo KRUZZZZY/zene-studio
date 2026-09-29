@@ -50,6 +50,11 @@ public:
 	static void import( const QString & _file_to_import,
 						TrackContainer* tc );
 
+	//! The same attempt with no dialog of any kind: true when a filter took the
+	//! file. The project.import command's path (a socket caller has nobody to
+	//! click a message box); import() is this plus the GUI's failure box.
+	static bool tryImportFile( const QString & fileToImport, TrackContainer* tc );
+
 
 protected:
 	virtual bool tryImport( TrackContainer* tc ) = 0;

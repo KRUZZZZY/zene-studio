@@ -7,6 +7,8 @@ drives the REAL binary on the JACK backend against a private `jackd -d dummy` se
 ports, silent - silence is still frames) and asserts, through the socket:
 
   1. `record.input_get_state` reports the capture CAPABLE and OPEN, with the channels JACK granted;
+  (R2.4) the punch gate: a route armed through a punch region takes the region's frames, and the
+     pre- and post-roll around it play without capture;
   (R6.3) `record.disarm_track` and `record.retro_capture_to_take` succeed here, the one host kind
      whose capture is real - their success replies are held to their schemas nowhere else;
   2. its captured-frame count RISES between two readings (frames are arriving);
@@ -116,6 +118,30 @@ def main():
             problems.append("the JACK retro window was not written to a take (%r, %r)" % (retained, written))
         call(10, "record.retro_capture_arm", {"armed": False})
         call(11, "record.disarm_all")
+
+        # R2.4, the punch AUDIO gate: with a region armed, a route receives only
+        # the frames whose song position is inside it - pre-roll before it and
+        # post-roll after it play without capture. Region [48, 96) ticks from a
+        # play at tick 0, and a pass long past punch-out.
+        tempo = number(call(12, "transport.get_state"), "tempo") or 140
+        rate = 48000.0
+        frames_per_tick = rate * 60.0 / (tempo * 48.0)
+        call(13, "transport.punch_set", {"start": 48, "end": 96, "enabled": True})
+        call(14, "record.arm_track", {"route": 0, "input_channel": 0,
+                                      "file": os.path.join(instance.tmp, "punched-take.wav")})
+        call(15, "transport.seek", {"ticks": 0})
+        before_punch = pushed(call(16, "record.get_state")) or 0
+        call(17, "transport.play")
+        time.sleep(96 * frames_per_tick / rate + 1.0)
+        call(18, "transport.stop")
+        after_punch = pushed(call(19, "record.get_state")) or 0
+        taken = after_punch - before_punch
+        expected = 48 * frames_per_tick
+        print("punch [48, 96): %d frames captured, the region is %.0f" % (taken, expected))
+        if abs(taken - expected) > 1024:
+            problems.append("the punch gate let %d frames through; the region is %.0f frames" % (taken, expected))
+        call(20, "record.disarm_all")
+        call(21, "transport.punch_clear")
     finally:
         if instance is not None:
             instance.close()

@@ -909,8 +909,18 @@ moving its row from `not_mutating` (a documented refusal) to `true_inverse` (+1 
 `not_mutating`). Measured on `040/m1-checked-coverage` (no wasmtime): `rows=360 true_inverse=167 snapshot=36
 irreversible=13 not_mutating=144`, which is this block minus wasm's option row, exactly.
 
+Then **M3.2 (registry-first actions)** gave every File/Edit/View/Help action and main-toolbar button a
+command (src/core/ControlReversibilityTableShell.cpp): project.new, save_as_template, import and
+save_version are `irreversible` (+4), and export_midi, transport.set_metronome, window.fullscreen /
+attach_all / detach_all / settings / command_palette (M3.4) / screenshot and app.about / online_help
+are `not_mutating` (+10).
+
+**R3.5 (edit groups carry every edit type)** added vca.edit_split, edit_trim, edit_slip and edit_fade,
+each a `true_inverse` composite checkpoint like vca.edit_move (+4); R3.1's comp.audition is `not_mutating`
+monitoring state (+1).
+
 <!-- A16-HISTOGRAM-BEGIN
-     measured: rows=368 true_inverse=167 snapshot=39 irreversible=13 not_mutating=149
+     measured: rows=387 true_inverse=171 snapshot=39 irreversible=17 not_mutating=160
      configuration: telemetry.status wasm.load session.get_state stem.get_state
      option telemetry.status rows=2 not_mutating=2
      option wasm.load rows=8 snapshot=3 not_mutating=5

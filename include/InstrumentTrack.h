@@ -47,6 +47,7 @@ namespace lmms
 
 class Instrument;
 class DataFile;
+class MidiClip;
 
 namespace gui
 {
@@ -163,6 +164,9 @@ public:
 	// play everything in given frame-range - creates note-play-handles
 	bool play( const TimePos & _start, const f_cnt_t _frames,
 						const f_cnt_t _frame_base, int _clip_num = -1 ) override;
+	//! R3.3: whether a note of @a clip at @a songTick plays under the track's
+	//! composite (and audition). True for every note of a track with neither.
+	bool compPlays(const MidiClip* clip, int songTick) const;
 	// create new view for me
 	gui::TrackView* createView( gui::TrackContainerView* tcv ) override;
 

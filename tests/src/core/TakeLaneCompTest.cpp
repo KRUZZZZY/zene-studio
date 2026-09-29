@@ -45,6 +45,8 @@
 
 #include <QCryptographicHash>
 #include <QDomDocument>
+
+#include "ControlEdit.h"
 #include <QDomElement>
 #include <QFile>
 #include <QTemporaryDir>
@@ -218,6 +220,56 @@ private slots:
 	//! The command group, driven the way an agent drives it: lanes, assignment,
 	//! selection, rebuild and the state query, each with a typed refusal where
 	//! the request is one the model cannot honour.
+	//! R3.3: a MIDI clip is a take too - comp.assign tags it, and the tag survives the
+	//! clip's own save/load (MidiClip writes Clip::saveClipEdits' `lane`).
+	void aMidiClipIsAssignedToALane()
+	{
+		const ControlResult track = revtest::run(QStringLiteral("track.add"), {{QStringLiteral("type"), QStringLiteral("instrument")}});
+		QVERIFY(track.ok);
+		const QString trackId = track.result.value(QStringLiteral("track")).toString();
+		const ControlResult clip = revtest::run(QStringLiteral("clip.add"),
+			{{QStringLiteral("track"), trackId}, {QStringLiteral("position"), 0}});
+		QVERIFY(clip.ok);
+		QVERIFY(revtest::run(QStringLiteral("comp.lane_add"), {{QStringLiteral("track"), trackId}}).ok);
+		QVERIFY(revtest::run(QStringLiteral("comp.lane_add"), {{QStringLiteral("track"), trackId}}).ok);
+		const ControlResult assigned = revtest::run(QStringLiteral("comp.assign"),
+			{{QStringLiteral("clip"), clip.result.value(QStringLiteral("clip"))}, {QStringLiteral("lane"), 1}});
+		QVERIFY2(assigned.ok, qPrintable(assigned.errorMessage));
+		control::ClipRef ref;
+		ControlResult error;
+		QVERIFY(control::resolveClip(clip.result.value(QStringLiteral("clip")).toString(), &ref, &error));
+		QCOMPARE(ref.clip->laneIndex(), 1);
+		QDomDocument document;
+		QDomElement parent = document.createElement(QStringLiteral("track"));
+		const QDomElement saved = ref.clip->saveState(document, parent);
+		ref.clip->setLaneIndex(0);
+		ref.clip->restoreState(saved);
+		QCOMPARE(ref.clip->laneIndex(), 1);
+	}
+
+	//! R3.1: comp.audition sets a lane aside as monitoring state and back, touching no
+	//! composite and no journal (TakeLaneCompPlaybackTest holds what it does to the sound).
+	void auditionIsMonitoringStateOnTheModel()
+	{
+		QVector<SampleClip*> clips;
+		SampleTrack* track = makeTakeTrack(m_dir.path(), 2, &clips);
+		QVERIFY(track != nullptr);
+		const QString id = control::trackIdOf(track);
+		QVERIFY(revtest::run(QStringLiteral("comp.lane_add"), {{QStringLiteral("track"), id}}).ok);
+		const ControlResult on = revtest::run(QStringLiteral("comp.audition"),
+			{{QStringLiteral("track"), id}, {QStringLiteral("lane"), 0}});
+		QVERIFY2(on.ok, qPrintable(on.errorMessage));
+		QCOMPARE(on.result.value(QStringLiteral("auditioning")).toInt(), 0);
+		QVERIFY(on.result.value(QStringLiteral("previous")).isNull());
+		QCOMPARE(track->takeLanes().auditionLane(), 0);
+		QCOMPARE(revtest::run(QStringLiteral("comp.audition"), {{QStringLiteral("track"), id},
+			{QStringLiteral("lane"), 7}}).errorKind, ControlErrorKind::NotFound);
+		const ControlResult off = revtest::run(QStringLiteral("comp.audition"), {{QStringLiteral("track"), id}});
+		QVERIFY2(off.ok, qPrintable(off.errorMessage));
+		QVERIFY(off.result.value(QStringLiteral("auditioning")).isNull());
+		QCOMPARE(track->takeLanes().auditionLane(), -1);
+	}
+
 	void theCommandGroupAddsSelectsRebuildsAndReports()
 	{
 		QVector<SampleClip*> clips;
@@ -347,7 +399,7 @@ private slots:
 			QVERIFY2(!entry->reason.isEmpty(), qPrintable(id + " has an empty reason"));
 			QVERIFY2(!entry->mechanism.isEmpty(), qPrintable(id + " has an empty mechanism"));
 		}
-		QCOMPARE(seen, 7);   // 4 in the take half, 3 in the composite half
+		QCOMPARE(seen, 8);   // 4 in the take half, 4 in the composite half (comp.audition, R3.1)
 	}
 
 private:

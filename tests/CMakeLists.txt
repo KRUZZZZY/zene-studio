@@ -502,6 +502,8 @@ set(LMMS_TESTS
 	src/core/VcaGroupTest.cpp
 	# Mixer channel pan (MixerChannel::m_panModel): the render, the file and the command.
 	src/core/MixerChannelPanTest.cpp
+	# R2.4: the punch region's frame-accurate audio gate (include/PunchWindow.h).
+	src/core/PunchWindowTest.cpp
 	# Mixer::refreshGroups publishes each channel's VCA gain with ONE store, so a
 	# concurrent reader (the audio thread) never sees a grouped channel at unity.
 	src/core/VcaRefreshAtomicityTest.cpp
@@ -520,6 +522,8 @@ set(LMMS_TESTS
 	# entity's own edit set + lock in the mixer element. The helpers both halves
 	# use are in src/core/ControlVcaTestSupport.h.
 	src/core/ControlVcaEditGroupsTest.cpp
+	# R3.5: the phase-locked split, trim, slip and fade.
+	src/core/ControlVcaLockedEditsTest.cpp
 	src/core/ScriptBindingsTest.cpp
 	# Feature row 50 (0.3.0): the Lua API's DAW-control half - the mixer channel
 	# and effect-chain bindings. Drives a REAL mixer channel and the chain the
@@ -606,11 +610,17 @@ set(LMMS_TESTS
 	src/gui/ThemeContrastTest.cpp
 	src/gui/AccessibilityHelperTest.cpp
 	src/gui/FocusDeskTest.cpp
+	# M3.4: the command palette - what it lists, how it ranks, what it runs.
+	src/gui/CommandPaletteTest.cpp
+	# M3.7: the mixer's VCA strip and the channel's VCA menu.
+	src/gui/VcaStripViewTest.cpp
 	src/gui/MidiLearnGuiTest.cpp
 	src/tracks/AutomationTrackTest.cpp
 	# Inherited clip paths that dereferenced getGUI() unguarded, run headless.
 	src/tracks/HeadlessGuiGuardTest.cpp
 	src/tracks/SampleClipStretchTest.cpp
+	# R3.1: the composite plays, and a lane can be auditioned.
+	src/tracks/TakeLaneCompPlaybackTest.cpp
 	# Owner decision 12: the optional Rubber Band stretch mode, through the same clip path.
 	src/tracks/SampleClipRubberBandTest.cpp
 	src/tracks/SampleClipWarpTest.cpp
@@ -1038,6 +1048,8 @@ set_tests_properties(ClipLinkTest ClipLinkPersistenceTest ImportDetectionTest
 # run it in the headless state the product is told about, not what keeps it from
 # aborting.
 set_tests_properties(FocusDeskTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+set_tests_properties(CommandPaletteTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+set_tests_properties(VcaStripViewTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(FocusDeskPaneTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(FocusDeskActionsTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(FocusDeskWorkspacesTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
@@ -3245,7 +3257,7 @@ set_tests_properties(ControlWarpCommandsTest PROPERTIES
 # opens a window. AudioStretcherTest needs no Engine (it is pure DSP), but it is
 # built from the same objects; it is listed here only to keep the pair together
 # in one place whose reason is written down.
-set_tests_properties(SampleClipStretchTest SampleClipRubberBandTest AudioStretcherTest PROPERTIES
+set_tests_properties(SampleClipStretchTest SampleClipRubberBandTest TakeLaneCompPlaybackTest AudioStretcherTest PROPERTIES
 	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 # The link.* group drives the process-wide session model (and the Song's tempo,
 # for an adopted one) and starts the UI-thread service timer, so it wants a real

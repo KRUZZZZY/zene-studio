@@ -119,6 +119,10 @@ instead.
 | `plugin.unload` | no | the removed Effect's state XML is captured, but recreating the instance would need plugin.load by catalogue id plus a state restore, and the instance id (fx-<n>) is position-derived - the inverse is not one operation the registry can run | none. before holds the device's full state XML (bounded at 64 KiB) plus its plugin name and chain index | write before.state_xml to a file, plugin.load the same dev-<n> onto the same target, then plugin.state_load that file. The chain ORDER is not restored |
 | `project.open` | no | loading a project replaces the whole session, and the engine keeps no pre-load snapshot: the previous document, including any UNSAVED edits, is gone | none. The transaction records the previous file path and its sha256 so the caller can see what was displaced | reopen the file named in before.previous_file; unsaved changes to the displaced session are LOST - save first (project.save keeps a revision) if they matter |
 | `script.run` | no | a Lua script mutates the engine through its own bindings; the registry sees one command and cannot know what the script wrote | none. A script that wants to be undoable must take its own checkpoint (Lua addCheckPoint()), which ProjectJournal::undo DOES replay - so the record is honest about what it can and cannot cover | run a script that takes its own checkpoint (Lua addCheckPoint()) before it edits; control.undo then replays that checkpoint |
+| `project.new` | no | a new project replaces the whole session, exactly as project.open does, and no snapshot of what it replaced is kept | none | save first, then reopen that file with project.open |
+| `project.save_as_template` | no | it replaces the user's default template file and keeps no copy; the session is not modified | none | copy default.mpt aside first; `replaced` says whether one existed |
+| `project.import` | no | the import filters add tracks with the journal paused, so control.undo has no checkpoint | none | save before importing, or track.remove the added tracks (the reply counts them) |
+| `project.save_version` | no | it writes a NEW file (the next free -NN version) and makes it the project's file; nothing is overwritten | none | the previous version is untouched on disk; delete the new file by hand |
 
 ### 1.4 `not_mutating` - nothing to reverse
 
@@ -161,6 +165,16 @@ transport run state, and `render.render` (an output artefact).
 | `transport.get_state` | no | reads the transport | no write | - |
 | `transport.play` | no | the transport run state is engine state, not project state, and the registry has never recorded a transaction for it | nothing to reverse: transport.stop is the operation a client calls, and it is available directly | - |
 | `transport.stop` | no | same engine run state | nothing to reverse: transport.play is the operation | - |
+| `project.export_midi` | no | it writes a MIDI file at the caller's path; the session is unchanged | no write | - |
+| `transport.set_metronome` | no | monitoring state: the project file does not carry it | no write (set `previous` back) | - |
+| `window.fullscreen` | no | interface state | no write | - |
+| `window.detach_all` | no | interface state | no write (window.attach_all) | - |
+| `window.attach_all` | no | interface state | no write (window.detach_all) | - |
+| `window.settings` | no | it only shows the Settings dialog; its OK is settings.set's write | no write | - |
+| `window.command_palette` | no | it shows the palette; what it runs is that action's or command's own write | no write | - |
+| `window.screenshot` | no | it renders a window to a PNG at the caller's path | no write to the session | - |
+| `app.about` | no | it shows the About dialog | no write | - |
+| `app.online_help` | no | it hands the documentation URL to the desktop browser | no write | - |
 
 ---
 

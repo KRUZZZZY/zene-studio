@@ -111,6 +111,15 @@ void dispatchesWindowToggle(ToolButton* button, const char* editor)
 	QObject::connect(button, &QToolButton::clicked, button, [name]() { dispatchWindowToggle(name); });
 }
 
+//! M3.2 (registry-first actions): the agent-surface gate's declaration - the
+//! registered command this action or button implements (SPEC A15).
+template <typename Object>
+Object* declares(Object* object, const char* commandId)
+{
+	object->setProperty("controlCommand", QString::fromLatin1(commandId));
+	return object;
+}
+
 QAction* windowToggleAction(QMenu* menu, const QPixmap& icon, const QString& text, const char* editor)
 {
 	const QString name = QString::fromLatin1(editor);
@@ -298,6 +307,14 @@ MainWindow::MainWindow() :
 
 	maximized = isMaximized();
 	new QShortcut(QKeySequence(Qt::Key_F11), this, SLOT(toggleFullscreen()));
+	// control.quit reattaches detached editors before it posts the quit (the
+	// reason is ControlRegistry::setPreQuitHook's).
+	ControlRegistry::setPreQuitHook([this]() { setAllSubWindowsDetached(false); });
+	// M3.4: the command palette, application-wide.
+	auto* paletteShortcut = new QShortcut(keySequence(Qt::CTRL, Qt::SHIFT, Qt::Key_P), this);
+	paletteShortcut->setContext(Qt::ApplicationShortcut);
+	connect(paletteShortcut, &QShortcut::activated, this,
+		[]() { dispatchShellCommand(QStringLiteral("window.command_palette")); });
 
 	if (ConfigManager::inst()->value("tooltips", "disabled").toInt())
 	{
@@ -355,53 +372,60 @@ void MainWindow::finalize()
 		tr("Create, open, save, import and export projects."));
 	menuBar()->addMenu( project_menu )->setText( tr( "&File" ) );
 
-	addAction(project_menu, "project_new", tr("&New"),
-		QKeySequence::New, &MainWindow::createNewProject);
+	declares(addAction(project_menu, "project_new", tr("&New"),
+		QKeySequence::New, &MainWindow::createNewProject), "project.new");
 
 	auto templates_menu = new TemplatesMenu( this );
 	project_menu->addMenu(templates_menu);
 
-	addAction(project_menu, "project_open", tr("&Open..."),
-		QKeySequence::Open, &MainWindow::openProject);
+	declares(addAction(project_menu, "project_open", tr("&Open..."),
+		QKeySequence::Open, &MainWindow::openProject), "project.open");
 
 	project_menu->addMenu(new RecentProjectsMenu(this));
 
-	addAction(project_menu, "project_save", tr("&Save"),
-		QKeySequence::Save, &MainWindow::saveProject);
+	declares(addAction(project_menu, "project_save", tr("&Save"),
+		QKeySequence::Save, &MainWindow::saveProject), "project.save");
 
-	addAction(project_menu, "project_save", tr("Save &As..."),
-		keySequence(Qt::CTRL, Qt::SHIFT, Qt::Key_S), &MainWindow::saveProjectAs);
+	declares(addAction(project_menu, "project_save", tr("Save &As..."),
+		keySequence(Qt::CTRL, Qt::SHIFT, Qt::Key_S), &MainWindow::saveProjectAs), "project.save");
 
-	addAction(project_menu, "project_save", tr("Save as New &Version"),
-		keySequence(Qt::CTRL, Qt::ALT, Qt::Key_S), &MainWindow::saveProjectAsNewVersion);
+	declares(addAction(project_menu, "project_save", tr("Save as New &Version"),
+		keySequence(Qt::CTRL, Qt::ALT, Qt::Key_S), &MainWindow::saveProjectAsNewVersion),
+		"project.save_version");
 
-	project_menu->addAction(embed::getIconPixmap("project_save"), tr("Save as default template"),
-		this, &MainWindow::saveProjectAsDefaultTemplate);
+	declares(project_menu->addAction(embed::getIconPixmap("project_save"), tr("Save as default template"),
+		this, &MainWindow::saveProjectAsDefaultTemplate), "project.save_as_template");
 
 	project_menu->addSeparator();
 
-	project_menu->addAction(embed::getIconPixmap("project_import"), tr("Import..."),
-		this, &MainWindow::onImportProject);
+	declares(project_menu->addAction(embed::getIconPixmap("project_import"), tr("Import..."),
+		this, &MainWindow::onImportProject), "project.import");
 
 	// Lua scripting (spec: docs/specs/SPEC-lua-api-v0.md, G4). The script runs on
 	// the ScriptEngine worker thread; engine mutations are applied on this
 	// (GUI) thread when the run finishes, so nothing touches the audio thread.
-	addAction(project_menu, "tool", tr("Run &Script..."),
-		keySequence(Qt::CTRL, Qt::SHIFT, Qt::Key_R), &MainWindow::runScript);
+	declares(addAction(project_menu, "tool", tr("Run &Script..."),
+		keySequence(Qt::CTRL, Qt::SHIFT, Qt::Key_R), &MainWindow::runScript), "script.run");
 
-	addAction(project_menu, "project_export", tr("E&xport..."),
-		keySequence(Qt::CTRL, Qt::Key_E), &MainWindow::onExportProject);
+	declares(addAction(project_menu, "project_export", tr("E&xport..."),
+		keySequence(Qt::CTRL, Qt::Key_E), &MainWindow::onExportProject), "render.render");
 
-	addAction(project_menu, "project_export", tr("Export &Tracks..."),
-		keySequence(Qt::CTRL, Qt::SHIFT, Qt::Key_E), &MainWindow::onExportProjectTracks);
+	declares(addAction(project_menu, "project_export", tr("Export &Tracks..."),
+		keySequence(Qt::CTRL, Qt::SHIFT, Qt::Key_E), &MainWindow::onExportProjectTracks), "render.stems");
 
-	addAction(project_menu, "midi_file", tr("Export &MIDI..."),
-		keySequence(Qt::CTRL, Qt::Key_M), &MainWindow::onExportProjectMidi);
+	declares(addAction(project_menu, "midi_file", tr("Export &MIDI..."),
+		keySequence(Qt::CTRL, Qt::Key_M), &MainWindow::onExportProjectMidi), "project.export_midi");
 
 	project_menu->addSeparator();
 
-	project_menu->addAction(embed::getIconPixmap("exit"), tr("&Quit"),
-		qApp, SLOT(closeAllWindows()))->setShortcut(keySequence(Qt::CTRL, Qt::Key_Q));
+	// Detached editors are reattached first: a detached editor ignores its close
+	// (SubWindow reattaches instead), and one ignored close cancels the whole quit.
+	QAction* quitAction = project_menu->addAction(embed::getIconPixmap("exit"), tr("&Quit"),
+		this, [this]() { setAllSubWindowsDetached(false); qApp->closeAllWindows(); });
+	quitAction->setShortcut(keySequence(Qt::CTRL, Qt::Key_Q));
+	// The menu's quit asks about unsaved work first (closeAllWindows); the
+	// command it names is the same shutdown, which an agent asks for directly.
+	declares(quitAction, "control.quit");
 
 	auto edit_menu = new QMenu(this);
 	a11y::announce(edit_menu, tr("Edit"), tr("Undo, redo, settings and MIDI learn."));
@@ -420,10 +444,9 @@ void MainWindow::finalize()
 	m_redoAction->setShortcutContext(Qt::ApplicationShortcut);
 
 	edit_menu->addSeparator();
-	edit_menu->addAction(embed::getIconPixmap("microtuner"), tr("Scales and keymaps"),
-		this, SLOT(toggleMicrotunerWin()));
-	edit_menu->addAction(embed::getIconPixmap("setup_general"), tr("Settings"),
-		this, SLOT(showSettingsDialog()));
+	windowToggleAction(edit_menu, embed::getIconPixmap("microtuner"), tr("Scales and keymaps"), "microtuner");
+	declares(edit_menu->addAction(embed::getIconPixmap("setup_general"), tr("Settings"),
+		this, SLOT(showSettingsDialog())), "window.settings");
 
 	// Global MIDI learn: arm this, touch a control, move a hardware knob.
 	m_midiLearnAction = edit_menu->addAction(embed::getIconPixmap("setup_midi"), tr("MIDI Learn"),
@@ -500,9 +523,9 @@ void MainWindow::finalize()
 	// May use offline help
 	if( true )
 	{
-		help_menu->addAction( embed::getIconPixmap( "help" ),
+		declares(help_menu->addAction( embed::getIconPixmap( "help" ),
 						tr( "Online Help" ),
-						this, SLOT(browseHelp()));
+						this, SLOT(browseHelp())), "app.online_help");
 	}
 	else
 	{
@@ -512,8 +535,8 @@ void MainWindow::finalize()
 	}
 
 	help_menu->addSeparator();
-	help_menu->addAction( embed::getIconPixmap( "icon_small" ), tr( "About" ),
-				  this, SLOT(aboutLMMS()));
+	declares(help_menu->addAction( embed::getIconPixmap( "icon_small" ), tr( "About" ),
+				  this, SLOT(aboutLMMS())), "app.about");
 
 #ifdef ZENE_TELEMETRY_ENABLED
 	// Opt-in telemetry: default off, and this screen is where a user turns it
@@ -572,6 +595,15 @@ void MainWindow::finalize()
 							m_toolBar );
 	m_metronomeToggle->setCheckable(true);
 	m_metronomeToggle->setChecked(Engine::getSong()->metronome().active());
+
+	// M3.2: every main-toolbar button names the command it implements.
+	declares(project_new, "project.new");
+	declares(project_new_from_template, "project.new");
+	declares(project_open, "project.open");
+	declares(project_open_recent, "project.open");
+	declares(project_save, "project.save");
+	declares(project_export, "render.render");
+	declares(m_metronomeToggle, "transport.set_metronome");
 
 	m_toolBarLayout->setColumnMinimumWidth( 0, 5 );
 	m_toolBarLayout->addWidget( project_new, 0, 1 );
@@ -1001,7 +1033,8 @@ void MainWindow::createNewProject()
 {
 	if( mayChangeProject(true) )
 	{
-		Engine::getSong()->createNewProject();
+		// M3.2: the menu, the toolbar and the socket share project.new.
+		dispatchShellCommand(QStringLiteral("project.new"));
 	}
 }
 
@@ -1149,10 +1182,13 @@ bool MainWindow::saveProjectAsNewVersion()
 	}
 	else
 	{
-		do 		VersionedSaveDialog::changeFileNameVersion( fileName, true );
-		while 	( QFile( fileName ).exists() );
-
-		return this->guiSaveProjectAs( fileName );
+		// M3.2: project.save_version computes the next free version and writes it;
+		// the window then does what it does after any save (title, recent list).
+		const ControlResult saved = ControlRegistry::instance()->invoke(
+			QStringLiteral("project.save_version"));
+		const QString written = saved.ok ? saved.result.value(QStringLiteral("file")).toString() : fileName;
+		handleSaveResult(written, saved.ok);
+		return saved.ok;
 	}
 }
 
@@ -1176,7 +1212,8 @@ void MainWindow::saveProjectAsDefaultTemplate()
 		}
 	}
 
-	Engine::getSong()->saveProjectFile( defaultTemplate );
+	// M3.2: the question above is the window's; the write is project.save_as_template.
+	dispatchShellCommand(QStringLiteral("project.save_as_template"));
 }
 
 
@@ -1184,8 +1221,9 @@ void MainWindow::saveProjectAsDefaultTemplate()
 
 void MainWindow::showSettingsDialog()
 {
-	SetupDialog sd;
-	sd.exec();
+	// M3.2: window.settings opens the dialog - non-modally, so the menu and the
+	// socket share one path and neither holds the other while it is open.
+	dispatchShellCommand(QStringLiteral("window.settings"));
 }
 
 
@@ -1193,7 +1231,7 @@ void MainWindow::showSettingsDialog()
 
 void MainWindow::aboutLMMS()
 {
-	AboutDialog(this).exec();
+	dispatchShellCommand(QStringLiteral("app.about"));
 }
 
 
@@ -1354,10 +1392,13 @@ void MainWindow::updateViewMenu()
 
 	m_viewMenu->addSeparator();
 	
-	m_viewMenu->addAction(embed::getIconPixmap( "fullscreen" ),
+	declares(m_viewMenu->addAction(embed::getIconPixmap( "fullscreen" ),
 				tr( "Fullscreen" ) + "\tF11",
-				this, SLOT(toggleFullscreen())
-		);
+				this, [](){ dispatchShellCommand(QStringLiteral("window.fullscreen")); }
+		), "window.fullscreen");
+	declares(m_viewMenu->addAction(embed::getIconPixmap("tool"), tr("Command Palette...") + "\tCtrl+Shift+P",
+		this, [](){ dispatchShellCommand(QStringLiteral("window.command_palette")); }),
+		"window.command_palette");
 	// The Focus Desk joins the same group: it is a layout mode, not an editor.
 	addFocusDeskToggle( m_viewMenu, m_focusDeskPane );
 
@@ -1376,41 +1417,45 @@ void MainWindow::updateViewMenu()
 	auto detachAllAction = m_viewMenu->addAction(embed::getIconPixmap("detach"),
 		tr("Detach all subwindows"),
 		QKeySequence{Qt::CTRL | Qt::SHIFT | Qt::Key_D},
-		this, [this](){ setAllSubWindowsDetached(true); }
+		this, [](){ dispatchShellCommand(QStringLiteral("window.detach_all")); }
 	);
 	auto attachAllAction = m_viewMenu->addAction(embed::getIconPixmap("detach"),
 		tr("Attach all subwindows"),
 		QKeySequence{Qt::CTRL | Qt::ALT | Qt::SHIFT | Qt::Key_D},
-		this, [this](){ setAllSubWindowsDetached(false); }
+		this, [](){ dispatchShellCommand(QStringLiteral("window.attach_all")); }
 	);
 #else
 	auto detachAllAction = m_viewMenu->addAction(embed::getIconPixmap("detach"),
 		tr("Detach all subwindows"),
-		this, [this](){ setAllSubWindowsDetached(true); },
+		this, [](){ dispatchShellCommand(QStringLiteral("window.detach_all")); },
 		QKeySequence{Qt::CTRL | Qt::SHIFT | Qt::Key_D}
 	);
 	auto attachAllAction = m_viewMenu->addAction(embed::getIconPixmap("detach"),
 		tr("Attach all subwindows"),
-		this, [this](){ setAllSubWindowsDetached(false); },
+		this, [](){ dispatchShellCommand(QStringLiteral("window.attach_all")); },
 		QKeySequence{Qt::CTRL | Qt::ALT | Qt::SHIFT | Qt::Key_D}
 	);
 #endif
 
 	detachAllAction->setShortcutContext(Qt::ApplicationShortcut);
 	attachAllAction->setShortcutContext(Qt::ApplicationShortcut);
+	declares(detachAllAction, "window.detach_all");
+	declares(attachAllAction, "window.attach_all");
 
 	m_viewMenu->addSeparator();
 
 	// Here we should put all look&feel -stuff from configmanager
 	// that is safe to change on the fly. There is probably some
 	// more elegant way to do this.
-	auto qa = new QAction(tr("Smooth scroll"), this);
+	// These two write a config key; the command they route through (updateConfig)
+	// is settings.set, the same write the settings dialog makes on OK.
+	auto qa = declares(new QAction(tr("Smooth scroll"), this), "settings.set");
 	qa->setData("smoothscroll");
 	qa->setCheckable( true );
 	qa->setChecked( ConfigManager::inst()->value( "ui", "smoothscroll" ).toInt() );
 	m_viewMenu->addAction(qa);
 
-	qa = new QAction(tr( "Enable note labels in piano roll" ), this);
+	qa = declares(new QAction(tr( "Enable note labels in piano roll" ), this), "settings.set");
 	qa->setData("printnotelabels");
 	qa->setCheckable( true );
 	qa->setChecked( ConfigManager::inst()->value( "ui", "printnotelabels" ).toInt() );
@@ -1437,8 +1482,10 @@ void MainWindow::updateConfig( QAction * _who )
 	}
 	else if ( tag == "smoothscroll" )
 	{
-		ConfigManager::inst()->setValue( "ui", "smoothscroll",
-						 QString::number(checked) );
+		// M3.2: the same config write the settings dialog makes, through settings.set.
+		dispatchShellCommand(QStringLiteral("settings.set"),
+			QJsonObject{{QStringLiteral("key"), QStringLiteral("ui/smoothscroll")},
+				{QStringLiteral("value"), QString::number(checked)}});
 	}
 	else if ( tag == "oneinstrument" )
 	{
@@ -1447,8 +1494,9 @@ void MainWindow::updateConfig( QAction * _who )
 	}
 	else if ( tag == "printnotelabels" )
 	{
-		ConfigManager::inst()->setValue( "ui", "printnotelabels",
-						 QString::number(checked) );
+		dispatchShellCommand(QStringLiteral("settings.set"),
+			QJsonObject{{QStringLiteral("key"), QStringLiteral("ui/printnotelabels")},
+				{QStringLiteral("value"), QString::number(checked)}});
 	}
 }
 
@@ -1456,7 +1504,8 @@ void MainWindow::updateConfig( QAction * _who )
 
 void MainWindow::onToggleMetronome()
 {
-	Engine::getSong()->metronome().setActive(m_metronomeToggle->isChecked());
+	dispatchShellCommand(QStringLiteral("transport.set_metronome"),
+		QJsonObject{{QStringLiteral("enabled"), m_metronomeToggle->isChecked()}});
 }
 
 
@@ -1646,6 +1695,10 @@ void MainWindow::closeEvent( QCloseEvent * _ce )
 {
 	if( mayChangeProject(true) )
 	{
+		// A detached editor is a top-level window of its own: bring every one
+		// back into the workspace so it closes with the main window instead of
+		// keeping the application alive (and a Qt6 quit from being cancelled).
+		setAllSubWindowsDetached(false);
 		// delete recovery file
 		if( ConfigManager::inst()->
 				value( "ui", "enableautosave" ).toInt() )
@@ -1812,10 +1865,8 @@ void MainWindow::showTool( QAction * _idx )
 
 void MainWindow::browseHelp()
 {
-	// file:// alternative for offline help
-	QString url = "https://lmms.io/documentation/";
-	QDesktopServices::openUrl( url );
-	// TODO: Handle error
+	// M3.2: app.online_help opens the documentation (the menu is its human).
+	dispatchShellCommand(QStringLiteral("app.online_help"));
 }
 
 
@@ -1888,7 +1939,9 @@ void MainWindow::onExportProjectMidi()
 		QString export_filename = efd.selectedFiles()[0];
 		if (!export_filename.endsWith(suffix)) export_filename += suffix;
 
-		Engine::getSong()->exportProjectMidi(export_filename);
+		// M3.2: the dialog is the window's; the export is project.export_midi.
+		dispatchShellCommand(QStringLiteral("project.export_midi"),
+			QJsonObject{{QStringLiteral("path"), export_filename}});
 	}
 }
 
@@ -2040,7 +2093,14 @@ void MainWindow::onImportProject()
 		ofd.setFileMode( FileDialog::ExistingFiles );
 		if( ofd.exec () == QDialog::Accepted && !ofd.selectedFiles().isEmpty() )
 		{
-			ImportFilter::import( ofd.selectedFiles()[0], song );
+			// M3.2: project.import is the import; the window keeps only the failure box.
+			const ControlResult imported = ControlRegistry::instance()->invoke(
+				QStringLiteral("project.import"),
+				QJsonObject{{QStringLiteral("path"), ofd.selectedFiles()[0]}});
+			if (!imported.ok)
+			{
+				QMessageBox::information(this, tr("Couldn't import file"), imported.errorMessage);
+			}
 		}
 
 		song->setLoadOnLaunch(false);

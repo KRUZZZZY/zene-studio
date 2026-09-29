@@ -27,6 +27,9 @@
 #define LMMS_SAMPLE_PLAY_HANDLE_H
 
 #include "Sample.h"
+#include <array>
+#include <utility>
+
 #include "AudioStretcher.h"
 #include "RubberBandStretch.h"
 #include "ClipEdits.h"
@@ -167,6 +170,21 @@ private:
 	//! Derives m_clipFrames / m_envelopeStart / the two fade lengths from the
 	//! clip and the window this handle renders (construction time only).
 	void snapshotClipEdits(const SampleClip* clip, const SampleWindow& window);
+
+	/*! R3.1, comp PLAYBACK: when the clip's track has a composite (take lanes
+	 *  comped into one performance, include/TakeLane.h), the spans of this clip's
+	 *  own lane the composite selects - in output frames from the clip's start,
+	 *  snapshotted here like the fades. A clip whose track has no composite has
+	 *  m_comped false and pays nothing (bit-identical render). */
+	void snapshotComp(const SampleClip* clip);
+	//! Silences the frames outside the selected spans, with a short ramp at
+	//! every edge so a lane switch does not click. Only run when m_comped.
+	void applyComp(SampleFrame* buffer, f_cnt_t frames) const;
+	static constexpr int MaxCompSpans = 32;
+	static constexpr f_cnt_t CompRampFrames = 64;
+	bool m_comped = false;
+	int m_compSpanCount = 0;
+	std::array<std::pair<f_cnt_t, f_cnt_t>, MaxCompSpans> m_compSpans{};
 } ;
 
 

@@ -137,6 +137,7 @@ include/ColorChooser.h
 include/ColorHelper.h
 include/ComboBox.h
 include/ComboBoxModel.h
+include/CommandPalette.h
 include/ConfigManager.h
 include/ControlAutomationSupport.h
 include/ControlBrowserSupport.h
@@ -397,6 +398,7 @@ include/ProjectRenderer.h
 include/ProjectRevisions.h
 include/ProjectVersion.h
 include/ProvenanceSection.h
+include/PunchWindow.h
 include/QuadratureLfo.h
 include/Rack.h
 include/RackMacros.h
@@ -521,6 +523,7 @@ include/UnattendedRun.h
 include/UnclaimedElements.h
 include/ValueBuffer.h
 include/VcaGroup.h
+include/VcaStripView.h
 include/VersionedSaveDialog.h
 include/VstSyncController.h
 include/VstSyncData.h
@@ -1107,6 +1110,7 @@ src/core/ControlCommandsPorts.cpp
 src/core/ControlCommandsProject.cpp
 src/core/ControlCommandsProjectArchive.cpp
 src/core/ControlCommandsProjectFiles.cpp
+src/core/ControlCommandsProjectLifecycle.cpp
 src/core/ControlCommandsProjectMmpzGit.cpp
 src/core/ControlCommandsPunch.cpp
 src/core/ControlCommandsRack.cpp
@@ -1149,6 +1153,7 @@ src/core/ControlCommandsTransportMap.cpp
 src/core/ControlCommandsUndo.cpp
 src/core/ControlCommandsVca.cpp
 src/core/ControlCommandsVcaEdit.cpp
+src/core/ControlCommandsVcaEditMore.cpp
 src/core/ControlCommandsVcaEditSet.cpp
 src/core/ControlCommandsVcaMix.cpp
 src/core/ControlCommandsVcaShared.h
@@ -1211,6 +1216,7 @@ src/core/ControlReversibilityTableSafeStart.cpp
 src/core/ControlReversibilityTableSample.cpp
 src/core/ControlReversibilityTableScanAndCrash.cpp
 src/core/ControlReversibilityTableSessionView.cpp
+src/core/ControlReversibilityTableShell.cpp
 src/core/ControlReversibilityTableSnapshot.cpp
 src/core/ControlReversibilityTableStems.cpp
 src/core/ControlReversibilityTableStructure.cpp
@@ -1465,6 +1471,8 @@ src/gui/ActionGroup.cpp
 src/gui/AudioAlsaSetupWidget.cpp
 src/gui/AudioDeviceSetupWidget.cpp
 src/gui/AutomatableModelView.cpp
+src/gui/CommandPalette.cpp
+src/gui/ControlCommandsShell.cpp
 src/gui/ControlCommandsWindow.cpp
 src/gui/ControlLayout.cpp
 src/gui/ControllerDialog.cpp
@@ -1514,6 +1522,7 @@ src/gui/StringPairDrag.cpp
 src/gui/SubWindow.cpp
 src/gui/TelemetryConsentDialog.cpp
 src/gui/ToolPluginView.cpp
+src/gui/VcaStripView.cpp
 src/gui/clips/AutomationClipView.cpp
 src/gui/clips/ClipView.cpp
 src/gui/clips/MidiClipView.cpp
@@ -1669,6 +1678,7 @@ tests/src/core/ControlSurfaceReferenceTest.cpp
 tests/src/core/ControlTempoMapCommandsTest.cpp
 tests/src/core/ControlVcaCommandsTest.cpp
 tests/src/core/ControlVcaEditGroupsTest.cpp
+tests/src/core/ControlVcaLockedEditsTest.cpp
 tests/src/core/ControlVcaTestSupport.h
 tests/src/core/ControlVerbInverseTest.cpp
 tests/src/core/ControlWarpCommandsTest.cpp
@@ -1738,6 +1748,7 @@ tests/src/core/ProjectRecoveryTest.cpp
 tests/src/core/ProjectRevIdsTest.cpp
 tests/src/core/ProjectVersionTest.cpp
 tests/src/core/ProvenanceSectionTest.cpp
+tests/src/core/PunchWindowTest.cpp
 tests/src/core/RackMacrosTest.cpp
 tests/src/core/RackTest.cpp
 tests/src/core/RackTestSupport.h
@@ -1807,12 +1818,14 @@ tests/src/core/VcaRefreshAtomicityTest.cpp
 tests/src/core/WarpMarkersTest.cpp
 tests/src/core/WriteRefusalGateTest.cpp
 tests/src/gui/AccessibilityHelperTest.cpp
+tests/src/gui/CommandPaletteTest.cpp
 tests/src/gui/FocusDeskActionsTest.cpp
 tests/src/gui/FocusDeskPaneTest.cpp
 tests/src/gui/FocusDeskTest.cpp
 tests/src/gui/FocusDeskWorkspacesTest.cpp
 tests/src/gui/MidiLearnGuiTest.cpp
 tests/src/gui/ThemeContrastTest.cpp
+tests/src/gui/VcaStripViewTest.cpp
 tests/src/gui/WcagContrastTest.cpp
 tests/src/plugins/AudioPluginTest.cpp
 tests/src/plugins/ClapBusMapTest.cpp
@@ -1839,6 +1852,7 @@ tests/src/tracks/SampleClipRubberBandTest.cpp
 tests/src/tracks/SampleClipStretchTest.cpp
 tests/src/tracks/SampleClipWarpTest.cpp
 tests/src/tracks/SampleClipWindowTest.cpp
+tests/src/tracks/TakeLaneCompPlaybackTest.cpp
 tests/src/wasm/WasmAbiConformanceTest.cpp
 tests/src/wasm/WasmSandboxTest.cpp
 tests/src/wasm/WasmWorkerPoolTest.cpp

@@ -264,6 +264,10 @@ def launch(binary, tmp):
     env["HOME"] = tmp
     env["XDG_CONFIG_HOME"] = os.path.join(tmp, "config")
     env["XDG_DATA_HOME"] = os.path.join(tmp, "data")
+    # Stem split is ON with a PINNED model since owner decision 14, so the sweep's
+    # argument-free stem.model_download would fetch 166 MB (measured: 22.4 s on
+    # every run). The sweep proves a typed result, and offline mode's refusal is one.
+    env.setdefault("LMMS_STEM_OFFLINE", "1")
     # Every swept reply that SUCCEEDS is held to its declared resultSchema (relief plan R6.3;
     # include/ControlResultCheck.h), with the same grandfather list the socket drivers use.
     env.setdefault("ZENE_CONTROL_CHECK_RESULTS",

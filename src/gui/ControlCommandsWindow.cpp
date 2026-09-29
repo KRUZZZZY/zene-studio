@@ -33,6 +33,7 @@
 #include "ControlRegistry.h"
 #include "GuiApplication.h"
 #include "MainWindow.h"
+#include "MicrotunerConfig.h"
 #include "MixerView.h"
 #include "PatternEditor.h"
 #include "PianoRoll.h"
@@ -74,6 +75,9 @@ const EditorEntry kEditors[] = {
 		&gui::MainWindow::toggleControllerRack},
 	{"project_notes", [](gui::GuiApplication* g) -> QWidget* { return g->getProjectNotes(); },
 		&gui::MainWindow::toggleProjectNotesWin},
+	// M3.2: Edit > Scales and keymaps dispatches this editor too.
+	{"microtuner", [](gui::GuiApplication* g) -> QWidget* { return g->getMicrotunerConfig(); },
+		&gui::MainWindow::toggleMicrotunerWin},
 };
 
 const EditorEntry* findEditor(const QString& name)
@@ -137,8 +141,9 @@ void registerWindowCommands(ControlRegistry& registry)
 	{
 		ControlCommand cmd = command("toggle");
 		cmd.description = QStringLiteral("Show or hide one editor's window - the View menu's "
-			"Ctrl+1..7 items and the window toolbar dispatch exactly this. `editor` is one of "
-			"song, pattern, piano_roll, automation, mixer, controller_rack, project_notes. A "
+			"Ctrl+1..7 items, Edit > Scales and keymaps and the window toolbar dispatch exactly this. "
+			"`editor` is one of song, pattern, piano_roll, automation, mixer, controller_rack, "
+			"project_notes, microtuner. A "
 			"hidden or unfocused editor is brought forward (and back into view if it was off "
 			"screen); the focused one is hidden. `visible` is the editor's state afterwards. "
 			"Interface state, not project state: nothing is journalled. Refused `requires` in a "

@@ -5,31 +5,3 @@
 #   tests/agent-surface-gate.py ... --reanchor "reason"
 #
 # re-anchored 2026-09-12: initial baseline: the lane features in flight predate the command registry, so the measured surface is grandfathered (SPEC A15, task #620)
-menu:Edit/Scales and keymaps
-menu:Edit/Settings
-menu:File/Export MIDI...
-menu:File/Export Tracks...
-menu:File/Export...
-menu:File/Import...
-menu:File/New
-menu:File/Open...
-menu:File/Quit
-menu:File/Run Script...
-menu:File/Save
-menu:File/Save As...
-menu:File/Save as New Version
-menu:File/Save as default template
-menu:Help/About
-menu:Help/Online Help
-menu:View/Attach all subwindows
-menu:View/Detach all subwindows
-menu:View/Enable note labels in piano roll
-menu:View/Fullscreen
-menu:View/Smooth scroll
-toolbar:mainToolbar/Create new project
-toolbar:mainToolbar/Create new project from template
-toolbar:mainToolbar/Export current project
-toolbar:mainToolbar/Metronome
-toolbar:mainToolbar/Open existing project
-toolbar:mainToolbar/Recently opened projects
-toolbar:mainToolbar/Save current project

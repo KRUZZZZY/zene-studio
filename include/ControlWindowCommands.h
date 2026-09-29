@@ -37,6 +37,7 @@
 #ifndef LMMS_CONTROL_WINDOW_COMMANDS_H
 #define LMMS_CONTROL_WINDOW_COMMANDS_H
 
+#include <QJsonObject>
 #include <QString>
 #include <QStringList>
 
@@ -48,6 +49,14 @@ namespace lmms
 class ControlRegistry;
 
 LMMS_EXPORT void registerWindowCommands(ControlRegistry& registry);
+
+//! M3.2: window.fullscreen / attach_all / detach_all / settings, app.about /
+//! online_help and project.save_version (src/gui/ControlCommandsShell.cpp).
+LMMS_EXPORT void registerShellCommands(ControlRegistry& registry);
+
+//! What a menu action whose command is one of these does: the registry call,
+//! so the action and the socket share one implementation (SPEC A11).
+LMMS_EXPORT void dispatchShellCommand(const QString& id, const QJsonObject& args = QJsonObject());
 
 //! The `editor` values window.toggle accepts, in the menu's Ctrl+1..7 order.
 LMMS_EXPORT QStringList windowEditorNames();

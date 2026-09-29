@@ -1,6 +1,58 @@
 {
-  "captured_at": "2026-09-29T16:43:57Z",
+  "captured_at": "2026-09-29T18:21:25Z",
   "commands": [
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {},
+        "required": [],
+        "type": "object"
+      },
+      "description": "Open the About dialog (non-modally) - Help > About dispatches this. app.version answers the same facts as data.",
+      "group": "app",
+      "id": "app.about",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "shown": {
+            "type": "boolean"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {},
+        "required": [],
+        "type": "object"
+      },
+      "description": "Open the online documentation in the system browser - Help > Online Help dispatches this. It hands a URL to the desktop, which opens a program outside this one, so it declares `requires: human`: an unattended caller is refused rather than having a browser launched for it. `url` is where it points.",
+      "group": "app",
+      "id": "app.online_help",
+      "mutating": false,
+      "requires": [
+        "display",
+        "human"
+      ],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "opened": {
+            "type": "boolean"
+          },
+          "url": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
     {
       "args_schema": {
         "additionalProperties": false,
@@ -3191,7 +3243,7 @@
         ],
         "type": "object"
       },
-      "description": "Assign an audio clip to a take lane of its own track: the lane tag is a field on the clip, so the take is the clip and its audio is never copied or moved. A lane the clip's track does not have is refused, as is a MIDI clip (take lanes carry audio takes in this release; docs/COMPING.md). Reversible through the ProjectJournal (Clip checkpoint).",
+      "description": "Assign an audio or MIDI clip to a take lane of its own track: the lane tag is a field on the clip, so the take is the clip and its content is never copied or moved. A lane the clip's track does not have is refused, as is a pattern or automation clip. A MIDI take is comped by NOTE: a note plays where the composite selects its clip's lane at the note's start (docs/COMPING.md). Reversible through the ProjectJournal (Clip checkpoint).",
       "group": "comp",
       "id": "comp.assign",
       "mutating": true,
@@ -3219,6 +3271,56 @@
             "maximum": 1919808,
             "minimum": 0,
             "type": "integer"
+          },
+          "track": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "lane": {
+            "maximum": 1919808,
+            "minimum": -1,
+            "type": "integer"
+          },
+          "track": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "track"
+        ],
+        "type": "object"
+      },
+      "description": "Audition one take lane: while it is set, that lane's takes play WHOLE and every other lane of the track is silent - the composite is set aside, not changed. Omit 'lane' (or pass -1) to stop and play the composite again. Monitoring state: not saved and not journalled, so it records no transaction. Takes effect from the next clip a playback pass starts.",
+      "group": "comp",
+      "id": "comp.audition",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "auditioning": {
+            "maximum": 1919808,
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "previous": {
+            "maximum": 1919808,
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
           },
           "track": {
             "type": "string"
@@ -12270,6 +12372,38 @@
     {
       "args_schema": {
         "additionalProperties": false,
+        "properties": {
+          "path": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "path"
+        ],
+        "type": "object"
+      },
+      "description": "Write the session's notes as a Standard MIDI File (the midiexport filter; interchange.smf_export writes the tempo map only). File > Export MIDI dispatches this after its file dialog. A missing `.mid` suffix is appended. The session is not modified.",
+      "group": "project",
+      "id": "project.export_midi",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "bytes": {
+            "type": "integer"
+          },
+          "path": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
         "properties": {},
         "required": [],
         "type": "object"
@@ -12361,6 +12495,41 @@
           },
           "unresolved_count": {
             "type": "number"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "path": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "path"
+        ],
+        "type": "object"
+      },
+      "description": "Import a foreign file INTO the session through the import filters this build carries (a Standard MIDI File's notes, a Hydrogen song): the tracks it yields are added beside the existing ones. File > Import dispatches this. Refused, typed, when no filter takes the file - with no dialog, unlike the menu's own failure box. Not undoable: the filters write with the project journal paused.",
+      "group": "project",
+      "id": "project.import",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "path": {
+            "type": "string"
+          },
+          "track_count": {
+            "type": "integer"
+          },
+          "tracks_added": {
+            "type": "integer"
           }
         },
         "required": [],
@@ -12474,6 +12643,39 @@
             "type": "array"
           },
           "unresolved_count": {
+            "type": "integer"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "template": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "description": "Replace the session with a new project: the user's default template (or the factory one), or `template` - an absolute path to an .mpt - when given. File > New and the toolbar's new-project buttons dispatch this. The previous session is gone (unsaved edits included), exactly as project.open replaces it. `file` is empty afterwards: a new project has no file until it is saved.",
+      "group": "project",
+      "id": "project.new",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "file": {
+            "type": "string"
+          },
+          "template": {
+            "type": "string"
+          },
+          "track_count": {
             "type": "integer"
           }
         },
@@ -12714,6 +12916,58 @@
           },
           "saved": {
             "type": "boolean"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {},
+        "required": [],
+        "type": "object"
+      },
+      "description": "Write the session as the user's DEFAULT TEMPLATE (<user template dir>/default.mpt) - what every later project.new starts from. File > Save as default template dispatches this after asking before an overwrite. The session itself is unchanged; an existing default template is REPLACED (`replaced` says so).",
+      "group": "project",
+      "id": "project.save_as_template",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "path": {
+            "type": "string"
+          },
+          "replaced": {
+            "type": "boolean"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {},
+        "required": [],
+        "type": "object"
+      },
+      "description": "Save the session as the NEXT VERSION of its file - <name>-01.mmp, -02, ... the first free one - and make that the project's file; the previous version stays on disk untouched. File > Save as New Version dispatches this. Refused while the session has no file yet (save it once with project.save first). Needs no interface.",
+      "group": "project",
+      "id": "project.save_version",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "file": {
+            "type": "string"
+          },
+          "previous_file": {
+            "type": "string"
           }
         },
         "required": [],
@@ -16903,7 +17157,7 @@
         "required": [],
         "type": "object"
       },
-      "description": "Fetch a model file into the store (default directory, or `dest_dir`), HTTPS only, verifying the pinned SHA-256 and size BEFORE the file is moved into place - a partial or mismatched download never replaces a good file. With no arguments it fetches the store's own pinned default spec; with any of `url`, `sha256` or `size_bytes` it fetches a caller spec, which must be pinned in full. Refused in offline mode (LMMS_STEM_OFFLINE). A stem job does not need this verb: it fetches the default model itself on first use, on the job's worker thread. DECLARED BOUND: a performing call is a real network transfer on the control surface's own thread, so the surface does not answer - `control.ping` included - until it finishes or fails (the same defect the child-process renders carry, docs/RENDER-CHILD-WAIT.md); the transfer is not exercised by any registered proof, which runs offline so CI never fetches 166 MB.",
+      "description": "Fetch a model file into the store (default directory, or `dest_dir`), HTTPS only, verifying the pinned SHA-256 and size BEFORE the file is moved into place - a partial or mismatched download never replaces a good file. With no arguments it fetches the store's own pinned default spec; with any of `url`, `sha256` or `size_bytes` it fetches a caller spec, which must be pinned in full. A file already in place that verifies against the pinned spec is not fetched again (`fetched: false`), offline or not; any other call is refused in offline mode (LMMS_STEM_OFFLINE). A stem job does not need this verb: it fetches the default model itself on first use, on the job's worker thread. DECLARED BOUND: a performing call is a real network transfer on the control surface's own thread, so the surface does not answer - `control.ping` included - until it finishes or fails (the same defect the child-process renders carry, docs/RENDER-CHILD-WAIT.md); the transfer is not exercised by any registered proof, which runs offline so CI never fetches 166 MB.",
       "group": "stem",
       "id": "stem.model_download",
       "mutating": false,
@@ -16913,6 +17167,9 @@
         "properties": {
           "bytes": {
             "type": "number"
+          },
+          "fetched": {
+            "type": "boolean"
           },
           "model_card_url": {
             "type": "string"
@@ -18277,6 +18534,38 @@
       "args_schema": {
         "additionalProperties": false,
         "properties": {
+          "enabled": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "enabled"
+        ],
+        "type": "object"
+      },
+      "description": "Switch the metronome click on or off - the main toolbar's metronome toggle dispatches this. `previous` is the state before. Monitoring state, not project state: the project file does not carry it and nothing is journalled.",
+      "group": "transport",
+      "id": "transport.set_metronome",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "previous": {
+            "type": "boolean"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
           "bpm": {
             "maximum": 999,
             "minimum": 10,
@@ -18698,6 +18987,73 @@
           "clip": {
             "type": "string"
           },
+          "fade_in": {
+            "maximum": 1919808,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "fade_out": {
+            "maximum": 1919808,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "group": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "group",
+          "clip"
+        ],
+        "type": "object"
+      },
+      "description": "Set the same fade-in and/or fade-out length (ticks) on every locked AUDIO clip. A locked MIDI clip, or a fade longer than a locked clip, refuses the whole edit. The named clip is the anchor; a member track's clips that overlap the anchor's PRE-edit span are locked to it, a member with nothing there is reported in unlocked_tracks and a gone track in skipped_tracks. Refused, typed, when the group's phase lock is off, when the anchor's track is not in the edit set, or when the set has fewer than two live tracks - and every edit refusal is checked for every locked clip first, so a refusal writes nothing. One control.undo reverses every member.",
+      "group": "vca",
+      "id": "vca.edit_fade",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "anchor": {
+            "type": "string"
+          },
+          "clip": {
+            "type": "string"
+          },
+          "edited_count": {
+            "type": "integer"
+          },
+          "edits": {
+            "type": "array"
+          },
+          "group": {
+            "type": "string"
+          },
+          "skipped_count": {
+            "type": "integer"
+          },
+          "skipped_tracks": {
+            "type": "array"
+          },
+          "unlocked_count": {
+            "type": "integer"
+          },
+          "unlocked_tracks": {
+            "type": "array"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "clip": {
+            "type": "string"
+          },
           "group": {
             "type": "string"
           },
@@ -18744,6 +19100,209 @@
             "maximum": 1919808,
             "minimum": 0,
             "type": "integer"
+          },
+          "skipped_count": {
+            "type": "integer"
+          },
+          "skipped_tracks": {
+            "type": "array"
+          },
+          "unlocked_count": {
+            "type": "integer"
+          },
+          "unlocked_tracks": {
+            "type": "array"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "clip": {
+            "type": "string"
+          },
+          "group": {
+            "type": "string"
+          },
+          "offset": {
+            "maximum": 1919808,
+            "minimum": -1919808,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "group",
+          "clip",
+          "offset"
+        ],
+        "type": "object"
+      },
+      "description": "Slip the anchor's content to `offset` and every locked clip's content by the SAME delta; no clip's position or length moves. The named clip is the anchor; a member track's clips that overlap the anchor's PRE-edit span are locked to it, a member with nothing there is reported in unlocked_tracks and a gone track in skipped_tracks. Refused, typed, when the group's phase lock is off, when the anchor's track is not in the edit set, or when the set has fewer than two live tracks - and every edit refusal is checked for every locked clip first, so a refusal writes nothing. One control.undo reverses every member.",
+      "group": "vca",
+      "id": "vca.edit_slip",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "anchor": {
+            "type": "string"
+          },
+          "clip": {
+            "type": "string"
+          },
+          "delta": {
+            "type": "integer"
+          },
+          "edited_count": {
+            "type": "integer"
+          },
+          "edits": {
+            "type": "array"
+          },
+          "group": {
+            "type": "string"
+          },
+          "skipped_count": {
+            "type": "integer"
+          },
+          "skipped_tracks": {
+            "type": "array"
+          },
+          "unlocked_count": {
+            "type": "integer"
+          },
+          "unlocked_tracks": {
+            "type": "array"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "clip": {
+            "type": "string"
+          },
+          "group": {
+            "type": "string"
+          },
+          "position": {
+            "maximum": 1919808,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "group",
+          "clip",
+          "position"
+        ],
+        "type": "object"
+      },
+      "description": "Split every locked clip at one song tick (`position`), so the members are cut at exactly the same place - the phase-locked multitrack split. A locked clip the cut does not fall inside is left whole; the anchor must contain it. The named clip is the anchor; a member track's clips that overlap the anchor's PRE-edit span are locked to it, a member with nothing there is reported in unlocked_tracks and a gone track in skipped_tracks. Refused, typed, when the group's phase lock is off, when the anchor's track is not in the edit set, or when the set has fewer than two live tracks - and every edit refusal is checked for every locked clip first, so a refusal writes nothing. One control.undo reverses every member.",
+      "group": "vca",
+      "id": "vca.edit_split",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "anchor": {
+            "type": "string"
+          },
+          "clip": {
+            "type": "string"
+          },
+          "edited_count": {
+            "type": "integer"
+          },
+          "edits": {
+            "type": "array"
+          },
+          "group": {
+            "type": "string"
+          },
+          "skipped_count": {
+            "type": "integer"
+          },
+          "skipped_tracks": {
+            "type": "array"
+          },
+          "unlocked_count": {
+            "type": "integer"
+          },
+          "unlocked_tracks": {
+            "type": "array"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "clip": {
+            "type": "string"
+          },
+          "end": {
+            "maximum": 1919808,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "group": {
+            "type": "string"
+          },
+          "start": {
+            "maximum": 1919808,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "group",
+          "clip",
+          "start"
+        ],
+        "type": "object"
+      },
+      "description": "Trim the anchor's start edge to `start` (and its end to `end`) and move every locked clip's edges by the SAME deltas, holding each clip's audio at its song position (clip.trim's head-trim rule). `delta_start`/`delta_end` report the deltas. The named clip is the anchor; a member track's clips that overlap the anchor's PRE-edit span are locked to it, a member with nothing there is reported in unlocked_tracks and a gone track in skipped_tracks. Refused, typed, when the group's phase lock is off, when the anchor's track is not in the edit set, or when the set has fewer than two live tracks - and every edit refusal is checked for every locked clip first, so a refusal writes nothing. One control.undo reverses every member.",
+      "group": "vca",
+      "id": "vca.edit_trim",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "anchor": {
+            "type": "string"
+          },
+          "clip": {
+            "type": "string"
+          },
+          "delta_end": {
+            "type": "integer"
+          },
+          "delta_start": {
+            "type": "integer"
+          },
+          "edited_count": {
+            "type": "integer"
+          },
+          "edits": {
+            "type": "array"
+          },
+          "group": {
+            "type": "string"
           },
           "skipped_count": {
             "type": "integer"
@@ -19949,6 +20508,108 @@
         "required": [],
         "type": "object"
       },
+      "description": "Attach every detached editor window back into the main window's workspace - View > Attach all subwindows dispatches this. Interface state only.",
+      "group": "window",
+      "id": "window.attach_all",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "detached": {
+            "type": "boolean"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {},
+        "required": [],
+        "type": "object"
+      },
+      "description": "Open the command palette (non-modally) - View > Command Palette and Ctrl+Shift+P dispatch this. It lists every enabled menu action with its menu path and shortcut, plus every command that needs no argument, filters them as you type and runs the highlighted one: a menu entry triggers the real action (its dialog included), a command entry is dispatched through the registry. `entries` is how many it offers.",
+      "group": "window",
+      "id": "window.command_palette",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "entries": {
+            "type": "integer"
+          },
+          "shown": {
+            "type": "boolean"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {},
+        "required": [],
+        "type": "object"
+      },
+      "description": "Detach every editor sub-window into its own top-level window - View > Detach all subwindows dispatches this. Interface state only.",
+      "group": "window",
+      "id": "window.detach_all",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "detached": {
+            "type": "boolean"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "description": "Put the main window into fullscreen or take it out - View > Fullscreen dispatches this. With no `enabled` it toggles. Leaving fullscreen restores the maximised or normal state the window had. Interface state only.",
+      "group": "window",
+      "id": "window.fullscreen",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "changed": {
+            "type": "boolean"
+          },
+          "fullscreen": {
+            "type": "boolean"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {},
+        "required": [],
+        "type": "object"
+      },
       "description": "Which editors' windows are showing: `editors` is one {editor, visible} entry per window.toggle editor, in the menu's Ctrl+1..7 order. Read-only. Refused `requires` in a process with no interface.",
       "group": "window",
       "id": "window.get_state",
@@ -19969,6 +20630,71 @@
       "args_schema": {
         "additionalProperties": false,
         "properties": {
+          "path": {
+            "type": "string"
+          },
+          "window": {
+            "enum": [
+              "main",
+              "active"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "path"
+        ],
+        "type": "object"
+      },
+      "description": "Write a PNG of the main window - or, with `window: \"active\"`, of the top-level window that has focus (a dialog, the palette) - to the absolute `path`. For an agent that has to SEE the interface it drives: layout, labels and state as rendered, which no read command reports. Works under the offscreen platform. `width`/`height` are the image's.",
+      "group": "window",
+      "id": "window.screenshot",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "height": {
+            "type": "integer"
+          },
+          "path": {
+            "type": "string"
+          },
+          "width": {
+            "type": "integer"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {},
+        "required": [],
+        "type": "object"
+      },
+      "description": "Open the Settings dialog (non-modally) - Edit > Settings dispatches this. What the dialog changes on OK is what settings.set writes; this only shows it.",
+      "group": "window",
+      "id": "window.settings",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "shown": {
+            "type": "boolean"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
           "editor": {
             "enum": [
               "song",
@@ -19977,7 +20703,8 @@
               "automation",
               "mixer",
               "controller_rack",
-              "project_notes"
+              "project_notes",
+              "microtuner"
             ],
             "type": "string"
           }
@@ -19987,7 +20714,7 @@
         ],
         "type": "object"
       },
-      "description": "Show or hide one editor's window - the View menu's Ctrl+1..7 items and the window toolbar dispatch exactly this. `editor` is one of song, pattern, piano_roll, automation, mixer, controller_rack, project_notes. A hidden or unfocused editor is brought forward (and back into view if it was off screen); the focused one is hidden. `visible` is the editor's state afterwards. Interface state, not project state: nothing is journalled. Refused `requires` in a process with no interface.",
+      "description": "Show or hide one editor's window - the View menu's Ctrl+1..7 items, Edit > Scales and keymaps and the window toolbar dispatch exactly this. `editor` is one of song, pattern, piano_roll, automation, mixer, controller_rack, project_notes, microtuner. A hidden or unfocused editor is brought forward (and back into view if it was off screen); the focused one is hidden. `visible` is the editor's state afterwards. Interface state, not project state: nothing is journalled. Refused `requires` in a process with no interface.",
       "group": "window",
       "id": "window.toggle",
       "mutating": false,
@@ -20007,7 +20734,7 @@
       }
     }
   ],
-  "count": 360,
+  "count": 379,
   "instance": {
     "binary": null,
     "binary_bytes": null,
@@ -20015,15 +20742,15 @@
     "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-survey/tools/zene-pa-agentctl",
     "lane_head": null,
     "proto": 1,
-    "source_socket": "/tmp/zctl-run-ty1zyez_/zene.sock",
-    "version": "0.3.0-alpha.150+f2aedbe"
+    "source_socket": "/tmp/zctl-run-20h3gv4d/zene.sock",
+    "version": "0.3.0-alpha.155+9950658"
   },
   "kind": "zene-control-command-list",
   "proto": 1,
   "schema": 1,
   "surface": {
     "group_count": 58,
-    "id_count": 360,
-    "ids_sha256": "3ecf33adf1f3b13080b0b92c591885abb3788a14852de1deae9e44ce1846fce0"
+    "id_count": 379,
+    "ids_sha256": "3185e970193fc68ff6c3e5c012b384714be0a8321d108eff769c6c8a02f41de3"
   }
 }

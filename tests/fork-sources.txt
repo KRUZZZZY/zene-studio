@@ -513,6 +513,7 @@ include/ChordTrack.h
 include/ChordVocabulary.h
 include/ClipEdits.h
 include/ClipLinks.h
+include/CommandPalette.h
 include/ControlAutomationSupport.h
 include/ControlBrowserSupport.h
 include/ControlChainPresetSupport.h
@@ -599,6 +600,7 @@ include/ProjectKey.h
 include/ProjectRecovery.h
 include/ProjectRevisions.h
 include/ProvenanceSection.h
+include/PunchWindow.h
 include/Rack.h
 include/RackMacros.h
 include/RackNodes.h
@@ -657,6 +659,7 @@ include/TrackRecorder.h
 include/UnattendedRun.h
 include/UnclaimedElements.h
 include/VcaGroup.h
+include/VcaStripView.h
 include/WarpMarkers.h
 include/WcagContrast.h
 include/XmlDepthGuard.h
@@ -833,6 +836,7 @@ src/core/ControlCommandsPorts.cpp
 src/core/ControlCommandsProject.cpp
 src/core/ControlCommandsProjectArchive.cpp
 src/core/ControlCommandsProjectFiles.cpp
+src/core/ControlCommandsProjectLifecycle.cpp
 src/core/ControlCommandsProjectMmpzGit.cpp
 src/core/ControlCommandsPunch.cpp
 src/core/ControlCommandsRack.cpp
@@ -875,6 +879,7 @@ src/core/ControlCommandsTransportMap.cpp
 src/core/ControlCommandsUndo.cpp
 src/core/ControlCommandsVca.cpp
 src/core/ControlCommandsVcaEdit.cpp
+src/core/ControlCommandsVcaEditMore.cpp
 src/core/ControlCommandsVcaEditSet.cpp
 src/core/ControlCommandsVcaMix.cpp
 src/core/ControlCommandsVcaShared.h
@@ -937,6 +942,7 @@ src/core/ControlReversibilityTableSafeStart.cpp
 src/core/ControlReversibilityTableSample.cpp
 src/core/ControlReversibilityTableScanAndCrash.cpp
 src/core/ControlReversibilityTableSessionView.cpp
+src/core/ControlReversibilityTableShell.cpp
 src/core/ControlReversibilityTableSnapshot.cpp
 src/core/ControlReversibilityTableStems.cpp
 src/core/ControlReversibilityTableStructure.cpp
@@ -1074,6 +1080,8 @@ src/core/audio/MultiTrackRecorder.cpp
 src/core/audio/TrackRecorder.cpp
 src/core/midi/MidiReconnect.cpp
 src/core/midi/MpeExpression.cpp
+src/gui/CommandPalette.cpp
+src/gui/ControlCommandsShell.cpp
 src/gui/ControlCommandsWindow.cpp
 src/gui/FocusDesk.cpp
 src/gui/FocusDeskActions.cpp
@@ -1085,6 +1093,7 @@ src/gui/MidiLearnGui.cpp
 src/gui/PinConnector.cpp
 src/gui/StemSplitController.cpp
 src/gui/TelemetryConsentDialog.cpp
+src/gui/VcaStripView.cpp
 src/tracks/TrackFolder.cpp
 src/wasm/WasmAbi.h
 src/wasm/WasmOfflineRender.cpp

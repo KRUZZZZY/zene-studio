@@ -125,10 +125,25 @@ bool ControlRegistry::applyPendingQuit()
 	return true;
 }
 
+namespace
+{
+std::function<void()>& preQuitHook()
+{
+	static std::function<void()> hook;
+	return hook;
+}
+} // namespace
+
+void ControlRegistry::setPreQuitHook(std::function<void()> hook)
+{
+	preQuitHook() = std::move(hook);
+}
+
 void ControlRegistry::scheduleQuit()
 {
 	QCoreApplication* app = QCoreApplication::instance();
 	if (app == nullptr) { return; }
+	if (preQuitHook()) { preQuitHook()(); }
 
 	// The NORMAL application quit: QCoreApplication::quit(). What that does about
 	// the main window depends on the toolkit - Qt6 sends a QEvent::Quit, so

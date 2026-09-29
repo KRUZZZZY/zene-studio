@@ -64,6 +64,8 @@
 
 #include <QJsonArray>
 #include <QJsonObject>
+#include <algorithm>
+
 #include <QString>
 
 #include "Clip.h"            // control::clipState()'s object, and a moved clip's own state
@@ -244,6 +246,58 @@ inline int moveLockedClip(LockedEditResult* out, Track* track, Clip* clip, tick_
 	out->moves.append(move);
 	++out->checkpoints;
 	return out->checkpoints;
+}
+
+//! How many of the edit set's tracks still exist. A lock needs at least two:
+//! with one track there is nothing to lock it to, and the command's whole claim
+//! is cross-track.
+inline int liveEditTracks(VcaGroup* group)
+{
+	int live = 0;
+	for (int trackId : group->editTracks())
+	{
+		ControlResult ignored;
+		if (control::resolveTrack(control::trackId(trackId), &ignored) != nullptr)
+		{
+			++live;
+		}
+	}
+	return live;
+}
+
+/*! Every reason a phase-locked edit (vca.edit_move/_split/_trim/_slip/_fade) cannot lock, checked BEFORE anything is written
+ *  (so a refusal writes nothing at all), each as its own typed refusal naming
+ *  the command that fixes it.
+ */
+inline bool checkLockable(VcaGroup* group, const control::ClipRef& anchor, ControlResult* error)
+{
+	if (!group->isPhaseLocked())
+	{
+		*error = ControlResult::failure(ControlErrorKind::Refused,
+			QStringLiteral("%1 has its phase lock OFF, so a media edit is not propagated: "
+				"switch it on with vca.set_phase_lock")
+				.arg(vcaGroupId(group->id())));
+		return false;
+	}
+	if (std::find(group->editTracks().begin(), group->editTracks().end(),
+			anchor.track->id()) == group->editTracks().end())
+	{
+		*error = ControlResult::failure(ControlErrorKind::Refused,
+			QStringLiteral("%1 is not in %2's edit set, so there is nothing to lock it to: "
+				"add it with vca.track_add")
+				.arg(control::trackIdOf(anchor.track), vcaGroupId(group->id())));
+		return false;
+	}
+	if (liveEditTracks(group) < 2)
+	{
+		*error = ControlResult::failure(ControlErrorKind::Refused,
+			QStringLiteral("%1 has %2 live track(s) in its edit set; a phase lock needs at "
+				"least two, or there is no other member to lock the edit to - add one with "
+				"vca.track_add")
+				.arg(vcaGroupId(group->id())).arg(liveEditTracks(group)));
+		return false;
+	}
+	return true;
 }
 
 /*! Resolve the `channel` argument of vca.assign / vca.unassign.
