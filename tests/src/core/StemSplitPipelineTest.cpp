@@ -23,6 +23,8 @@
 
 #include <QtTest>
 
+#include <array>
+
 #include <cmath>
 #include <memory>
 #include <vector>
@@ -143,6 +145,41 @@ private slots:
 		{
 			QVERIFY2(stems[static_cast<std::size_t>(s)] != nullptr, stemName(static_cast<Stem>(s)));
 			QCOMPARE(stems[static_cast<std::size_t>(s)]->size(), mix->size());
+		}
+	}
+
+	/*! Owner decision 14: the public HTDemucs exports put all four stems in ONE
+	 *  [1, 4, 2, T] output. The stacked stub carries the same gains as the
+	 *  four-output one, so the two layouts must split a mix into the same
+	 *  samples, bit for bit - the loader's slicing is the only thing between them.
+	 */
+	void testStackedOutputModelSplitsLikeTheFourOutputOne()
+	{
+		const auto mix = makeSineMix(1);
+		const QString stacked = QStringLiteral(LMMS_TEST_DATA_DIR) + QStringLiteral("/stub-4stem-stacked.onnx");
+		std::array<StemSet, 2> results;
+		const std::array<QString, 2> models{ stubModelPath(), stacked };
+		for (std::size_t m = 0; m < models.size(); ++m)
+		{
+			ExternalProcessStemSeparator separator(QString(), QString(), models[m]);
+			QString error;
+			const auto status = separator.separate(*mix, StemModelSampleRate, 16384,
+				[](float) { return true; }, results[m], error);
+			QVERIFY2(status == StemSeparator::Status::Success, qPrintable(models[m] + ": " + error));
+		}
+		for (int s = 0; s < NumStems; ++s)
+		{
+			const auto& four = results[0][static_cast<std::size_t>(s)];
+			const auto& one = results[1][static_cast<std::size_t>(s)];
+			QVERIFY(four != nullptr && one != nullptr);
+			QCOMPARE(one->size(), four->size());
+			int differing = 0;
+			for (std::size_t i = 0; i < four->size(); ++i)
+			{
+				differing += four->data()[i][0] != one->data()[i][0] || four->data()[i][1] != one->data()[i][1];
+			}
+			QVERIFY2(differing == 0, qPrintable(QStringLiteral("%1: %2 frames differ between the layouts")
+				.arg(stemName(static_cast<Stem>(s))).arg(differing)));
 		}
 	}
 

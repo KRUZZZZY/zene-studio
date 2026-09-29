@@ -20,6 +20,8 @@
 # The file is assembled with a hand-rolled protobuf writer so the test fixture
 # can be regenerated with the Python standard library alone (no onnx package
 # needed). Run: python3 tools/make_stub_model.py tests/data/stub-4stem-linear.onnx
+# and, for the single stacked-output layout the public HTDemucs exports use:
+#      python3 tools/make_stub_model.py --stacked tests/data/stub-4stem-stacked.onnx
 
 import struct
 import sys
@@ -112,14 +114,47 @@ def build_model(dim_param="T"):
     return model
 
 
+def tensor_type_dims(dims):
+    """TypeProto float32 of any rank; a str entry is a symbolic dimension."""
+    shape = b""
+    for dim in dims:
+        shape += field_bytes(1, field_string(2, dim) if isinstance(dim, str) else field_varint(1, dim))
+    return field_bytes(1, field_varint(1, ELEM_TYPE_FLOAT) + field_bytes(2, shape))
+
+
+def build_stacked_model(dim_param="T"):
+    """The layout the public HTDemucs exports ship (owner decision 14): ONE output
+    `stems` of shape [1, 4, 2, T], the stems on axis 1 in contract order. It is
+    one Mul: mix [1, 2, T] broadcasts against gains [1, 4, 1, 1] to [1, 4, 2, T],
+    with the same gains as the four-output stub, so both stubs split alike."""
+    gains = [gain for _, gain in STEM_GAINS]
+    graph = field_bytes(1, node("Mul", ["mix", "gains"], "stems", "mul_stems"))
+    graph += field_string(2, "stub-4stem-stacked")
+    graph += field_bytes(5, b"".join(field_varint(1, d) for d in (1, len(gains), 1, 1))
+                         + field_varint(2, ELEM_TYPE_FLOAT)
+                         + b"".join(field_float(4, g) for g in gains)
+                         + field_string(8, "gains"))
+    graph += field_bytes(11, field_string(1, "mix") + field_bytes(2, tensor_type_dims([1, 2, dim_param])))
+    graph += field_bytes(12, field_string(1, "stems")
+                         + field_bytes(2, tensor_type_dims([1, len(gains), 2, dim_param])))
+    return (field_varint(1, 8)
+            + field_string(2, "lmms-stem-split-stub")
+            + field_bytes(7, graph)
+            + field_bytes(8, field_varint(2, 17)))
+
+
 def main():
-    if len(sys.argv) != 2:
+    args = sys.argv[1:]
+    stacked = "--stacked" in args
+    args = [a for a in args if a != "--stacked"]
+    if len(args) != 1:
         print(__doc__)
         sys.exit(2)
-    path = sys.argv[1]
+    path = args[0]
+    model = build_stacked_model() if stacked else build_model()
     with open(path, "wb") as fh:
-        fh.write(build_model())
-    print(f"wrote {path} ({len(build_model())} bytes)")
+        fh.write(model)
+    print(f"wrote {path} ({len(model)} bytes)")
 
 
 if __name__ == "__main__":

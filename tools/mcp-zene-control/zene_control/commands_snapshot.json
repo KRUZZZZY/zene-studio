@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-09-29T13:22:37Z",
+  "captured_at": "2026-09-29T13:43:58Z",
   "commands": [
     {
       "args_schema": {
@@ -16518,6 +16518,432 @@
       }
     },
     {
+      "args_schema": {},
+      "description": "The offline stem-separation engine's own facts: the inference backend this build drives (`onnxruntime-cpp` when the ONNX Runtime SDK was found at configure time, otherwise `external-process (python onnxruntime)`), whether it can run right now (`available`, with the reason in `error` when it cannot - the model file is usually what is missing, and models are never bundled), whether a job would fetch the pinned model itself on first use (`fetch_on_first_use`: the model is absent, the default spec is pinned, LMMS_STEM_MODEL does not name a file and LMMS_STEM_OFFLINE is unset - owner decision 14), the model path the store resolves, the model contract's constants (44100 Hz, the 343980-frame / 7.8 s segment) and `realtime: false` with the reason: HTDemucs needs the whole segment as context, so separation is an OFFLINE job and there is no live mode. NOTE: the whole `stem.*` group is compiled only when WANT_STEM_SPLIT is ON - the default since owner decision 14; a build configured with it OFF has no such ids at all (docs/KNOWN-LIMITATIONS.md).",
+      "group": "stem",
+      "id": "stem.get_state",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "available": {
+            "type": "boolean"
+          },
+          "backend": {
+            "type": "string"
+          },
+          "error": {
+            "type": "string"
+          },
+          "fetch_on_first_use": {
+            "type": "boolean"
+          },
+          "jobs": {
+            "type": "object"
+          },
+          "lookahead_seconds": {
+            "type": "number"
+          },
+          "model_bytes": {
+            "type": "number"
+          },
+          "model_dir": {
+            "type": "string"
+          },
+          "model_path": {
+            "type": "string"
+          },
+          "model_present": {
+            "type": "boolean"
+          },
+          "realtime": {
+            "type": "boolean"
+          },
+          "realtime_reason": {
+            "type": "string"
+          },
+          "sample_rate": {
+            "type": "integer"
+          },
+          "segment_frames": {
+            "type": "integer"
+          },
+          "stem_order": {
+            "type": "array"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "job_id": {
+            "maximum": 1073741824,
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "job_id"
+        ],
+        "type": "object"
+      },
+      "description": "Ask the worker to stop an outstanding separation job and report its state after the request. Cancellation is cooperative and observed between inference segments, so a running job answers `cancel_requested` first and settles as `cancelled` (poll `stem.job_status`); a job still queued is cancelled immediately. A job that already finished is refused, naming its state, rather than reported as cancelled.",
+      "group": "stem",
+      "id": "stem.job_cancel",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "backend": {
+            "type": "string"
+          },
+          "download_progress": {
+            "type": "number"
+          },
+          "error": {
+            "type": "string"
+          },
+          "fetching_model": {
+            "type": "boolean"
+          },
+          "frames": {
+            "type": "integer"
+          },
+          "job_id": {
+            "type": "integer"
+          },
+          "progress": {
+            "type": "number"
+          },
+          "sample_rate": {
+            "type": "integer"
+          },
+          "seconds": {
+            "type": "number"
+          },
+          "segment_frames": {
+            "type": "integer"
+          },
+          "since_submit_seconds": {
+            "type": "number"
+          },
+          "source": {
+            "type": "string"
+          },
+          "state": {
+            "enum": [
+              "queued",
+              "running",
+              "cancel_requested",
+              "completed",
+              "cancelled",
+              "failed"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "format": {
+            "enum": [
+              "wav"
+            ],
+            "type": "string"
+          },
+          "job_id": {
+            "maximum": 1073741824,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "out": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "job_id",
+          "out"
+        ],
+        "type": "object"
+      },
+      "description": "Write the four stems of a COMPLETED job into an absolute directory as `<stem>.wav` (drums, bass, other, vocals - the model contract's fixed order), float32 RIFF/WAVE, and report each file's name, frames, seconds, bytes and sha256. Refuses a job that is not completed, naming its state (a failed job's message is in `stem.job_status`), and refuses an id this instance never issued. A directory that does not exist is created; a file of the same name is overwritten and its reported hash is the one on disk after the write. This writes OUTPUT ARTEFACTS and no project state - building tracks from the files is a separate, deliberate step.",
+      "group": "stem",
+      "id": "stem.job_result",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "count": {
+            "type": "integer"
+          },
+          "directory": {
+            "type": "string"
+          },
+          "format": {
+            "type": "string"
+          },
+          "job_id": {
+            "type": "integer"
+          },
+          "sample_format": {
+            "type": "string"
+          },
+          "sample_rate": {
+            "type": "integer"
+          },
+          "source": {
+            "type": "string"
+          },
+          "stems": {
+            "type": "array"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "segment_frames": {
+            "maximum": 26460000,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "source": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "source"
+        ],
+        "type": "object"
+      },
+      "description": "Queue one offline 4-stem separation of an absolute audio FILE (drums, bass, other, vocals) and return its job id immediately - the engine runs on its own worker thread, so the control surface keeps answering while the job runs. The source must be stereo at the model's own 44100 Hz: `render.render`'s output is exactly that, so \"bounce the session, then split the bounce\" is the composable flow. Refused, typed, when the file is missing or undecodable, when its rate is not 44100 Hz (resampling is not implemented - SPEC-stem-split.md OQ-1), or when the engine cannot run at all (no python onnxruntime, or the model absent and not fetchable). An absent model that IS fetchable (see `stem.get_state` `fetch_on_first_use`) does not refuse: the job fetches the pinned 166 MB file on its own worker first (`fetching_model`, `download_progress`), then separates. NOT realtime, by nature: HTDemucs needs a 7.8 s lookahead. Follow with `stem.job_status`, then `stem.job_result`.",
+      "group": "stem",
+      "id": "stem.job_start",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "backend": {
+            "type": "string"
+          },
+          "download_progress": {
+            "type": "number"
+          },
+          "error": {
+            "type": "string"
+          },
+          "fetching_model": {
+            "type": "boolean"
+          },
+          "frames": {
+            "type": "integer"
+          },
+          "job_id": {
+            "type": "integer"
+          },
+          "progress": {
+            "type": "number"
+          },
+          "sample_rate": {
+            "type": "integer"
+          },
+          "seconds": {
+            "type": "number"
+          },
+          "segment_frames": {
+            "type": "integer"
+          },
+          "since_submit_seconds": {
+            "type": "number"
+          },
+          "source": {
+            "type": "string"
+          },
+          "state": {
+            "enum": [
+              "queued",
+              "running",
+              "cancel_requested",
+              "completed",
+              "cancelled",
+              "failed"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "job_id": {
+            "maximum": 1073741824,
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "description": "One separator job by `job_id`, or every job this instance has run when `job_id` is omitted: each job's `state` (queued, running, cancel_requested, completed, cancelled, failed), `progress` (0..1), `fetching_model` and `download_progress` (0..1) while a first job fetches the model, its source, frame count and `since_submit_seconds` (the surface's own wall clock, not a claim about inference time), and `error` when it failed. Reads the manager's atomics, so it answers even while a job is running - this is the poll that proves the control surface is not held by the work.",
+      "group": "stem",
+      "id": "stem.job_status",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "count": {
+            "type": "integer"
+          },
+          "jobs": {
+            "type": "array"
+          },
+          "running": {
+            "type": "integer"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "dest_dir": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "sha256": {
+            "type": "string"
+          },
+          "size_bytes": {
+            "maximum": 1073741824,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "url": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "description": "Fetch a model file into the store (default directory, or `dest_dir`), HTTPS only, verifying the pinned SHA-256 and size BEFORE the file is moved into place - a partial or mismatched download never replaces a good file. With no arguments it fetches the store's own pinned default spec; with any of `url`, `sha256` or `size_bytes` it fetches a caller spec, which must be pinned in full. Refused in offline mode (LMMS_STEM_OFFLINE). A stem job does not need this verb: it fetches the default model itself on first use, on the job's worker thread. DECLARED BOUND: a performing call is a real network transfer on the control surface's own thread, so the surface does not answer - `control.ping` included - until it finishes or fails (the same defect the child-process renders carry, docs/RENDER-CHILD-WAIT.md); the transfer is not exercised by any registered proof, which runs offline so CI never fetches 166 MB.",
+      "group": "stem",
+      "id": "stem.model_download",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "bytes": {
+            "type": "number"
+          },
+          "model_card_url": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "sha256": {
+            "type": "string"
+          },
+          "verified": {
+            "type": "boolean"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "hash": {
+            "type": "boolean"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "description": "The model store's own facts: the directory and path it resolves (honouring LMMS_STEM_MODEL and LMMS_STEM_MODEL_DIR), whether the file is present and its size, the spec it would download (`name`, `url`, `sha256`, `size_bytes`, `license`, `license_url`, `model_card_url`, `pinned`) and whether that spec could be downloaded at all (`download_allowed` + `download_reason`). The default spec is PINNED (HTDemucs fp16, MIT, one commit of the model card's repository, SHA-256 and size) and a stem job fetches it on first use, off the control thread; LMMS_STEM_OFFLINE turns that off and reports `download_allowed: false`. Models are never bundled with the product. With `hash: true` the file's SHA-256 is computed and reported (`matches_spec` is null when there is nothing pinned to compare against) - it is off by default because hashing a 166 MB model must be a decision, not a side effect of a read.",
+      "group": "stem",
+      "id": "stem.model_get_state",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "bytes": {
+            "type": "number"
+          },
+          "dir": {
+            "type": "string"
+          },
+          "download_allowed": {
+            "type": "boolean"
+          },
+          "download_reason": {
+            "type": "string"
+          },
+          "env": {
+            "type": "object"
+          },
+          "hash_error": {
+            "type": "string"
+          },
+          "matches_spec": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "path": {
+            "type": "string"
+          },
+          "present": {
+            "type": "boolean"
+          },
+          "sha256": {
+            "type": "string"
+          },
+          "spec": {
+            "type": "object"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
       "args_schema": {
         "additionalProperties": false,
         "properties": {},
@@ -19394,8 +19820,7 @@
           "mode": {
             "enum": [
               "resample",
-              "preserve_pitch",
-              "rubberband"
+              "preserve_pitch"
             ],
             "type": "string"
           }
@@ -19406,7 +19831,7 @@
         ],
         "type": "object"
       },
-      "description": "Choose how a warped sample clip renders its rate change: 'resample' (the default, and what the engine has always done - the rate goes to the resampler and the pitch moves with it, so a 2x warp is an octave up), 'preserve_pitch' (the same rate is rendered by the WSOLA stretcher, AudioStretcher: the clip lasts as long as the mapping says and keeps its own pitch) or 'rubberband' (the optional Rubber Band R3 stretcher, for tonal and polyphonic material; refused by a build without the library, and rendered by WSOLA for the pass in which both of the clip's voices are busy). Refused for a clip that renders linearly - with no marker and no source tempo there is no rate change to render. Reversible through the ProjectJournal (Clip checkpoint).",
+      "description": "Choose how a warped sample clip renders its rate change: 'resample' (the default, and what the engine has always done - the rate goes to the resampler and the pitch moves with it, so a 2x warp is an octave up) or 'preserve_pitch' (the same rate is rendered by the WSOLA stretcher, AudioStretcher: the clip lasts as long as the mapping says and keeps its own pitch). Refused for a clip that renders linearly - with no marker and no source tempo there is no rate change to render. Reversible through the ProjectJournal (Clip checkpoint).",
       "group": "warp",
       "id": "warp.stretch",
       "mutating": true,
@@ -19527,23 +19952,23 @@
       }
     }
   ],
-  "count": 353,
+  "count": 360,
   "instance": {
     "binary": null,
     "binary_bytes": null,
     "binary_sha256": null,
-    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-survey/tools/zene-pa-agentctl",
+    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-dither/tools/zene-pa-agentctl",
     "lane_head": null,
     "proto": 1,
-    "source_socket": "/tmp/zctl-run-mo7hbo8j/zene.sock",
+    "source_socket": "/tmp/zctl-run-ncadjidk/zene.sock",
     "version": "0.3.0-alpha.144+8b69d75"
   },
   "kind": "zene-control-command-list",
   "proto": 1,
   "schema": 1,
   "surface": {
-    "group_count": 57,
-    "id_count": 353,
-    "ids_sha256": "fb92116ef08b59455df865851a97672ad4865518994c38cb6a02291126b4fb95"
+    "group_count": 58,
+    "id_count": 360,
+    "ids_sha256": "3ecf33adf1f3b13080b0b92c591885abb3788a14852de1deae9e44ce1846fce0"
   }
 }

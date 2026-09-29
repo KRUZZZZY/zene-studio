@@ -24,6 +24,7 @@
 #ifndef LMMS_STEM_MODEL_STORE_H
 #define LMMS_STEM_MODEL_STORE_H
 
+#include <atomic>
 #include <functional>
 
 #include <QString>
@@ -62,11 +63,27 @@ public:
 	// Path from LMMS_STEM_MODEL, else modelPath(spec.name + ".onnx").
 	static QString defaultModelPath();
 
-	// HTDemucs fp16 (166 MB), MIT. The URL and checksum are intentionally
-	// unpinned in v1: they must be taken from the model card at G3 rather than
-	// guessed. download() refuses unpinned specs, which is what makes the
-	// "never bundled, always verified" policy enforceable.
+	// HTDemucs fp16 (165612636 bytes), MIT, pinned to one commit of the model
+	// card's repository (owner decision 14). download() still refuses any spec
+	// that is not pinned, which is what keeps "never bundled, always verified"
+	// enforceable for a caller-supplied spec.
 	static StemModelSpec defaultModelSpec();
+
+	// True when LMMS_STEM_OFFLINE is set to anything but "0": download() then
+	// refuses, and a job never fetches a missing model on first use.
+	static bool isOffline();
+
+	// Owner decision 14, the first-use fetch both front ends share (the agent
+	// surface and the GUI action). canFetchDefaultModel(): the default model is
+	// absent, its spec is pinned, LMMS_STEM_MODEL does not name its own file
+	// (an explicit path is the operator's, never overwritten) and offline mode
+	// is off. fetchDefaultModelIfMissing(): true at once when the model is
+	// present, otherwise download()s the default spec into defaultModelDir(),
+	// reporting progress in [0, 1]. Blocking: call it from a worker thread
+	// (StemJobManager::setModelProvisioner is the intended caller).
+	static bool canFetchDefaultModel();
+	static bool fetchDefaultModelIfMissing(const std::atomic<bool>& cancel,
+		const std::function<void(float)>& progress, QString* error);
 
 	static bool isModelPresent(const QString& filePath, QString* error = nullptr);
 
@@ -85,10 +102,13 @@ public:
 	// Downloads to `<destDir>/<spec.name>.onnx.part`, verifies size and
 	// SHA-256, then atomically renames into place. Returns false and sets
 	// `error` on any failure; a partial file never replaces a good one.
+	// A non-null `cancel` that becomes true aborts the transfer (reported as
+	// "cancelled"); the partial file is removed as on any other failure.
 	static bool download(const StemModelSpec& spec,
 		const QString& destDir,
 		const DownloadProgressFn& progress,
-		QString* error = nullptr);
+		QString* error = nullptr,
+		const std::atomic<bool>* cancel = nullptr);
 };
 
 } // namespace lmms

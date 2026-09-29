@@ -24,6 +24,8 @@
 #include <QtTest>
 
 #include <atomic>
+#include <chrono>
+#include <functional>
 #include <memory>
 #include <thread>
 #include <vector>
@@ -313,6 +315,76 @@ private slots:
 		StemJobManager manager;
 		manager.setSeparator(std::make_unique<FakeSeparator>(FakeSeparator::Mode::Success, 1));
 		QCOMPARE(manager.submit(nullptr, StemModelSampleRate, 1024), -1);
+	}
+
+	/*! Owner decision 14: the first job fetches its model through the
+	 *  provisioner, on the WORKER (never the caller's thread), before the
+	 *  separator runs, and reports that it is doing so. */
+	void testTheProvisionerRunsOnTheWorkerBeforeSeparation()
+	{
+		StemJobManager manager;
+		manager.setSeparator(std::make_unique<FakeSeparator>(FakeSeparator::Mode::Success, 4));
+		std::atomic<bool> release{false};
+		std::atomic<bool> ranOffTheCaller{false};
+		const auto caller = std::this_thread::get_id();
+		manager.setModelProvisioner([&](const std::atomic<bool>&, const std::function<void(float)>& progress,
+			QString*)
+		{
+			ranOffTheCaller.store(std::this_thread::get_id() != caller);
+			progress(0.5f);
+			while (!release.load()) { std::this_thread::sleep_for(std::chrono::milliseconds(2)); }
+			return true;
+		});
+		QSignalSpy finishedSpy(&manager, &StemJobManager::jobFinished);
+		const int id = manager.submit(makeMix(), StemModelSampleRate, 1024);
+
+		QTRY_VERIFY_WITH_TIMEOUT(manager.fetchingModel(id), 5000);
+		QCOMPARE(manager.downloadProgress(id), 0.5f);
+		QCOMPARE(manager.progress(id), 0.0f); // separation has not begun
+		release.store(true);
+		QTRY_VERIFY_WITH_TIMEOUT(finishedSpy.count() == 1, 10000);
+		QVERIFY(!manager.fetchingModel(id));
+		QVERIFY(ranOffTheCaller.load());
+		QCOMPARE(static_cast<int>(manager.state(id)), static_cast<int>(StemJobManager::State::Completed));
+	}
+
+	void testAFailedFetchFailsTheJobWithItsReason()
+	{
+		StemJobManager manager;
+		manager.setSeparator(std::make_unique<FakeSeparator>(FakeSeparator::Mode::Success, 4));
+		manager.setModelProvisioner([](const std::atomic<bool>&, const std::function<void(float)>&,
+			QString* error)
+		{
+			*error = QStringLiteral("Download failed: host unreachable");
+			return false;
+		});
+		QSignalSpy failedSpy(&manager, &StemJobManager::jobFailed);
+		const int id = manager.submit(makeMix(), StemModelSampleRate, 1024);
+		QTRY_VERIFY_WITH_TIMEOUT(failedSpy.count() == 1, 10000);
+		QCOMPARE(static_cast<int>(manager.state(id)), static_cast<int>(StemJobManager::State::Failed));
+		QCOMPARE(manager.error(id), QStringLiteral("Download failed: host unreachable"));
+		QVERIFY(manager.result(id)[0] == nullptr); // the separator never ran
+	}
+
+	//! A cancel during the fetch reaches the provisioner's flag and ends the job
+	//! cancelled - the transfer is not something a user has to wait out.
+	void testCancelDuringTheFetchCancelsTheJob()
+	{
+		StemJobManager manager;
+		manager.setSeparator(std::make_unique<FakeSeparator>(FakeSeparator::Mode::Success, 4));
+		manager.setModelProvisioner([](const std::atomic<bool>& cancel, const std::function<void(float)>&,
+			QString* error)
+		{
+			while (!cancel.load()) { std::this_thread::sleep_for(std::chrono::milliseconds(2)); }
+			*error = QStringLiteral("Download failed: cancelled");
+			return false;
+		});
+		QSignalSpy cancelledSpy(&manager, &StemJobManager::jobCancelled);
+		const int id = manager.submit(makeMix(), StemModelSampleRate, 1024);
+		QTRY_VERIFY_WITH_TIMEOUT(manager.fetchingModel(id), 5000);
+		manager.cancel(id);
+		QTRY_VERIFY_WITH_TIMEOUT(cancelledSpy.count() == 1, 10000);
+		QCOMPARE(static_cast<int>(manager.state(id)), static_cast<int>(StemJobManager::State::Cancelled));
 	}
 
 	void testUnknownJobQueriesAreSafe()

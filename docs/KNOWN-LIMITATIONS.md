@@ -1139,16 +1139,18 @@ and this is the honest half.
   `StemSplitController::splitClipToStems`): it takes its mix from the clip a human selected and exists
   only when a display does. Nothing in the interface shows an agent's job, its progress or its error,
   nothing lists or fetches models, and no menu item, toolbar button or keybinding reaches a `stem.*` id.
-- **The feature is OFF in the default release configuration.** `WANT_STEM_SPLIT` defaults to OFF
-  (`CMakeLists.txt:120`), so a default build compiles none of this engine and registers none of these
-  ids — poll `control.commands` and they are simply not there, which is the truth rather than a bug. The
-  A16 rows are guarded by the same macro, so the contract table and the registry cannot disagree. This
-  is the same shape as the `telemetry.*` / `session.*` / `wasm.*` rows above.
-- **It needs the model present, and models are never bundled.** A build with the option ON can still
-  refuse every job: the default spec is deliberately unpinned in v1 (no URL, no SHA-256, no size), so
-  `stem.model_download` refuses to fetch it and names the model card instead; `stem.get_state` reports
-  the path it looked in, whether the file is there, and the reason when it is not. Place the file by
-  hand (or pin a spec with `url` + `sha256` + `size_bytes`) and the group works.
+- **The feature is ON by default since owner decision 14.** `WANT_STEM_SPLIT` defaults to ON. A
+  build configured with it OFF compiles none of this engine and registers none of these ids. The A16
+  rows are guarded by the same macro, so the contract table and the registry cannot disagree. Without
+  the ONNX Runtime SDK the external-process backend is used, which needs `python3` with `onnxruntime`
+  and the installed `stem_split_cli.py`; without those, every job is refused and says why.
+- **The model is fetched on first use, never bundled.** The default spec is pinned (HTDemucs fp16,
+  MIT, one commit of the model card's repository, SHA-256 and size; doc/STEM-SPLIT.md). A job that
+  starts with the model absent fetches the 166 MB file on the job's worker first, so the surface keeps
+  answering. `LMMS_STEM_OFFLINE` turns this off, and so does an explicit `LMMS_STEM_MODEL` path.
+  `stem.get_state` reports `fetch_on_first_use`. The GUI's "Split to stems" action asks first
+  (name, size, licence, model card, destination) and then fetches the model through the same job
+  worker. Its progress dialog shows only the separation's percentage, not the transfer's.
 - **No live mode is claimed, and none exists.** HTDemucs is a hybrid transformer that needs the whole
   7.8 s segment (343980 frames at 44100 Hz) as context, so no chunk size fits an audio buffer: this is an
   **offline job only**. `stem.get_state` reports `realtime: false` and the lookahead; the group offers no
@@ -1168,9 +1170,9 @@ and this is the honest half.
   runs on the control surface's own thread, so the surface does not answer — `control.ping` included —
   until it finishes or fails. This is the **same** defect `docs/RENDER-CHILD-WAIT.md:120-126` records for
   `render.render` and the bounce/freeze commands, and the deferred-reply fix that document designs is
-  **not built in this release**. The refusal path (`download_allowed: false`) is all the default build
-  ever reaches. The transfer's performing path is **not exercised by any registered proof**: CI has no
-  pinned artefact to fetch. The proof that IS registered is the ctest `ControlStemCommands`
+  **not built in this release**. A stem job does not need this verb, because it fetches on its own
+  worker. The transfer's performing path is **not exercised by any registered proof**: the proof runs
+  with `LMMS_STEM_OFFLINE` set, so CI never fetches 166 MB. The proof that IS registered is the ctest `ControlStemCommands`
   (`tests/control-stem-commands.py`), which drives the real pipeline over `--control-socket` on the
   committed stub ONNX graph, and which **skips** (exit 77) on a host with no python onnxruntime rather
   than passing.

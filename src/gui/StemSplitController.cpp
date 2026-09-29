@@ -49,6 +49,9 @@ StemSplitController::StemSplitController(QWidget* parent) :
 	// isolates the model from the LMMS process. The optional in-process ONNX
 	// Runtime backend can be swapped in here when available.
 	m_manager.setSeparator(std::make_unique<ExternalProcessStemSeparator>());
+	// Owner decision 14: a first split fetches the pinned model on the job's
+	// worker (after the user agreed to it, below), never on the GUI thread.
+	m_manager.setModelProvisioner(&StemModelStore::fetchDefaultModelIfMissing);
 
 	connect(&m_manager, &StemJobManager::jobProgress,
 		this, &StemSplitController::handleProgress);
@@ -99,6 +102,37 @@ QString StemSplitController::availabilityError()
 
 
 
+bool StemSplitController::ensureBackendReady(bool* fetching)
+{
+	QString error;
+	if (ExternalProcessStemSeparator::isAvailable(&error)) { return true; }
+	if (StemModelStore::canFetchDefaultModel()
+		&& !ExternalProcessStemSeparator::locatePython().isEmpty()
+		&& !ExternalProcessStemSeparator::locateCli().isEmpty())
+	{
+		// Only the model is missing, and it is fetchable: ask once, because a
+		// 166 MB download is the user's decision, not a side effect of a click.
+		const auto spec = StemModelStore::defaultModelSpec();
+		const auto answer = QMessageBox::question(m_parent, tr("Split to stems"),
+			tr("Stem separation needs the %1 model (%2 MB, %3 licence), which is not on this "
+				"computer yet.\n\nDownload it now from %4? It is verified by SHA-256 before use "
+				"and kept in %5.")
+				.arg(spec.name).arg(spec.sizeBytes / 1000000).arg(spec.license, spec.modelCardUrl,
+					StemModelStore::defaultModelDir()));
+		*fetching = answer == QMessageBox::Yes;
+		return *fetching;
+	}
+	const auto spec = StemModelStore::defaultModelSpec();
+	QMessageBox::warning(m_parent, tr("Split to stems"),
+		tr("Stem separation is not ready.\n\n%1\n\n"
+			"Model: %2 (optional download, never bundled)\nDownload page: %3")
+			.arg(error, spec.name, spec.modelCardUrl));
+	return false;
+}
+
+
+
+
 void StemSplitController::splitClipToStems(SampleClip* clip)
 {
 	if (clip == nullptr)
@@ -112,16 +146,8 @@ void StemSplitController::splitClipToStems(SampleClip* clip)
 		return;
 	}
 
-	QString error;
-	if (!ExternalProcessStemSeparator::isAvailable(&error))
-	{
-		const auto spec = StemModelStore::defaultModelSpec();
-		QMessageBox::warning(m_parent, tr("Split to stems"),
-			tr("Stem separation is not ready.\n\n%1\n\n"
-				"Model: %2 (optional download, never bundled)\nDownload page: %3")
-				.arg(error, spec.name, spec.modelCardUrl));
-		return;
-	}
+	bool fetching = false;
+	if (!ensureBackendReady(&fetching)) { return; }
 
 	const auto buffer = clip->sample().buffer();
 	if (!buffer || buffer->empty())
@@ -141,7 +167,9 @@ void StemSplitController::splitClipToStems(SampleClip* clip)
 	m_clip = clip;
 	m_jobId = m_manager.submit(buffer, buffer->sampleRate(), HTDemucsSegmentFrames);
 
-	m_dialog = new QProgressDialog(tr("Separating stems (offline job)..."),
+	m_dialog = new QProgressDialog(fetching
+			? tr("Downloading the stem model, then separating (offline job)...")
+			: tr("Separating stems (offline job)..."),
 		tr("Cancel"), 0, 100, m_parent);
 	m_dialog->setWindowTitle(tr("Split to stems"));
 	m_dialog->setWindowModality(Qt::WindowModal);

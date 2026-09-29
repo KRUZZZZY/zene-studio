@@ -23,6 +23,7 @@
 
 #include <QtTest>
 
+#include <QDir>
 #include <QFile>
 #include <QTemporaryDir>
 
@@ -192,17 +193,44 @@ private slots:
 		QVERIFY(error.contains(QStringLiteral("https"), Qt::CaseInsensitive));
 	}
 
-	void testDefaultSpecNeverPinsAGuessedUrlOrChecksum()
+	void testDefaultSpecIsPinnedToOneCommitOfTheModelCard()
 	{
-		// Policy: the real model is an optional download whose URL and checksum
-		// must come from the model card, never from a guess. This test pins the
-		// current state (unpinned) so that pinning the model is a deliberate,
-		// test-visible change.
+		// Owner decision 14 pinned the model - the deliberate, test-visible change
+		// this slot's predecessor (which asserted the unpinned state) asked for.
+		// The values are the ones measured from the file (sha256sum, byte count)
+		// and the URL names a COMMIT, not a branch, so the bytes cannot move.
 		const auto spec = StemModelStore::defaultModelSpec();
-		QVERIFY(!spec.name.isEmpty());
-		QVERIFY(!spec.modelCardUrl.isEmpty());
-		QVERIFY(spec.sha256.isEmpty());
-		QCOMPARE(spec.sizeBytes, 0);
+		QCOMPARE(spec.name, QStringLiteral("htdemucs-fp16"));
+		QVERIFY(StemModelStore::isDownloadUrlAllowed(spec.url));
+		QVERIFY(spec.url.startsWith(spec.modelCardUrl + QStringLiteral("/resolve/")));
+		QVERIFY2(spec.url.contains(QStringLiteral("/d54ed9eb60e258ea82131c6ee14578628816456a/")),
+			qPrintable(QStringLiteral("not pinned to the verified commit: ") + spec.url));
+		QCOMPARE(spec.sha256, QStringLiteral("d05c269d0178d2a72ad484b10b11dd370193fc923201c3b27a99f848745db70a"));
+		QCOMPARE(spec.sizeBytes, qint64{165612636});
+		QCOMPARE(spec.license, QStringLiteral("MIT"));
+	}
+
+	//! Offline mode refuses the pinned default BEFORE any network, and says why;
+	//! the policy refusals still come first (an unpinned spec is still named).
+	void testOfflineModeRefusesEveryDownload()
+	{
+		QTemporaryDir dir;
+		QVERIFY(dir.isValid());
+		qputenv("LMMS_STEM_OFFLINE", QByteArrayLiteral("1"));
+		QVERIFY(StemModelStore::isOffline());
+		QString error;
+		QVERIFY(!StemModelStore::download(StemModelStore::defaultModelSpec(), dir.path(), {}, &error));
+		QVERIFY2(error.contains(QStringLiteral("offline"), Qt::CaseInsensitive), qPrintable(error));
+		QVERIFY(QDir(dir.path()).entryList(QDir::Files).isEmpty());
+		StemModelSpec unpinned;
+		unpinned.name = QStringLiteral("unpinned");
+		unpinned.url = QStringLiteral("https://example.com/model.onnx");
+		QVERIFY(!StemModelStore::download(unpinned, dir.path(), {}, &error));
+		QVERIFY2(error.contains(QStringLiteral("unpinned"), Qt::CaseInsensitive), qPrintable(error));
+		qputenv("LMMS_STEM_OFFLINE", QByteArrayLiteral("0"));
+		QVERIFY(!StemModelStore::isOffline());
+		qunsetenv("LMMS_STEM_OFFLINE");
+		QVERIFY(!StemModelStore::isOffline());
 	}
 };
 

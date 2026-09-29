@@ -407,25 +407,43 @@ def check_model_store(session, recorder, model_dir):
                    "path=%r present=%r" % (state.get("path"), state.get("present")))
     recorder.check("the store's directory is the one LMMS_STEM_MODEL_DIR names",
                    state.get("dir") == model_dir, "dir=%r" % (state.get("dir"),))
-    spec = state.get("spec") or {}
-    recorder.check("the default spec is UNPINNED (models are never bundled)",
-                   spec.get("pinned") is False and state.get("download_allowed") is False,
-                   "pinned=%r allowed=%r" % (spec.get("pinned"), state.get("download_allowed")))
-    card = spec.get("model_card_url") or ""
-    reason = state.get("download_reason") or ""
-    recorder.check("the refusal names the model card an operator must go to",
-                   bool(card) and card in reason, "reason=%r" % (reason,))
+    check_model_spec(recorder, state)
 
     hashed = session.result("stem.model_get_state", {"hash": True})
     recorder.check("the optional hash is the file's own SHA-256",
                    hashed.get("sha256") == sha256_of(STUB_MODEL),
                    "reported=%r local=%r" % (hashed.get("sha256"), sha256_of(STUB_MODEL)))
-    recorder.check("with nothing pinned there is no match verdict to claim",
-                   hashed.get("matches_spec") is None, "matches=%r" % (hashed.get("matches_spec"),))
+    recorder.check("the stub is not the pinned model, and the verdict says so",
+                   hashed.get("matches_spec") is False, "matches=%r" % (hashed.get("matches_spec"),))
 
+    check_model_downloads(session, recorder)
+
+
+def check_model_spec(recorder, state):
+    """Owner decision 14: the default spec is PINNED (and fetched on first use).
+    This proof runs with LMMS_STEM_OFFLINE set, so CI never fetches 166 MB and
+    the store says so: allowed is false for the offline reason, not a pin."""
+    spec = state.get("spec") or {}
+    pinned = all([spec.get("pinned") is True,
+                  str(spec.get("url", "")).startswith("https://"),
+                  len(spec.get("sha256") or "") == 64,
+                  (spec.get("size_bytes") or 0) > 0])
+    recorder.check("the default spec is PINNED: HTTPS, a SHA-256 and a size",
+                   pinned, "spec=%r" % (spec,))
+    card = spec.get("model_card_url") or ""
+    reason = state.get("download_reason") or ""
+    refused_offline = all([state.get("download_allowed") is False, "offline" in reason,
+                           bool(card), card in reason])
+    recorder.check("offline mode refuses the fetch and names the model card",
+                   refused_offline,
+                   "allowed=%r reason=%r" % (state.get("download_allowed"), reason))
+
+
+def check_model_downloads(session, recorder):
+    """The three typed refusals of stem.model_download (the proof runs offline)."""
     default = session.result("stem.model_download")
-    recorder.check("a download of the unpinned default spec is refused typed",
-                   error_kind(default) == "refused" and "unpinned" in error_message(default),
+    recorder.check("a download of the pinned default spec is refused typed while offline",
+                   error_kind(default) == "refused" and "offline" in error_message(default),
                    "kind=%r message=%r" % (error_kind(default), error_message(default)))
     insecure = session.result("stem.model_download",
                              {"url": "http://example.invalid/model.onnx",

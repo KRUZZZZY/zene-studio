@@ -26,6 +26,8 @@
 #include "ControlStemSupport.h"
 
 #include <algorithm>
+#include <atomic>
+#include <functional>
 #include <memory>
 
 #include <QDateTime>
@@ -130,6 +132,9 @@ public:
 		m_manager.setSeparator(std::make_unique<ExternalProcessStemSeparator>());
 #endif
 		m_backend = m_manager.backendName();
+		// Owner decision 14: the first job fetches the pinned model on the
+		// manager's worker. Present already: nothing to do and no network.
+		m_manager.setModelProvisioner(&StemModelStore::fetchDefaultModelIfMissing);
 	}
 
 	const QString& backend() const { return m_backend; }
@@ -182,6 +187,7 @@ public:
 		for (const QString& name : stemOrder()) { order.append(name); }
 		out.insert(QStringLiteral("stem_order"), order);
 		out.insert(QStringLiteral("jobs"), jobCounts());
+		out.insert(QStringLiteral("fetch_on_first_use"), fetchable(nullptr));
 		return out;
 	}
 
@@ -192,7 +198,9 @@ public:
 		QString* error)
 	{
 		QString reason;
-		if (!available(&reason))
+		// Owner decision 14: an absent model that the job can fetch itself is
+		// not a refusal - the provisioner fetches it on the worker first.
+		if (!available(&reason) && !fetchable(nullptr))
 		{
 			// The engine's own sentence, not a paraphrase: it names what is
 			// missing (the interpreter with onnxruntime, the CLI, the model).
@@ -358,6 +366,23 @@ public:
 	}
 
 private:
+	/*! True when the only thing between the backend and a run is the default
+	 *  model, and a job may fetch it: the model is absent, the default spec is
+	 *  pinned, LMMS_STEM_MODEL does not name its own file (an explicit path is
+	 *  the operator's, never overwritten by a fetch), offline mode is off, and
+	 *  the backend itself can run. */
+	bool fetchable(QString* error) const
+	{
+		if (!StemModelStore::canFetchDefaultModel()) { return false; }
+#ifdef LMMS_HAVE_ONNXRUNTIME
+		(void) error;
+		return true;
+#else
+		return !ExternalProcessStemSeparator::locatePython(error).isEmpty()
+			&& !ExternalProcessStemSeparator::locateCli(error).isEmpty();
+#endif
+	}
+
 	bool probe(QString* error) const
 	{
 #ifdef LMMS_HAVE_ONNXRUNTIME
@@ -417,6 +442,8 @@ private:
 			(QDateTime::currentMSecsSinceEpoch() - record.submittedMs) / 1000.0);
 		out.insert(QStringLiteral("backend"), m_backend);
 		out.insert(QStringLiteral("error"), m_manager.error(jobId));
+		out.insert(QStringLiteral("fetching_model"), m_manager.fetchingModel(jobId));
+		out.insert(QStringLiteral("download_progress"), static_cast<double>(m_manager.downloadProgress(jobId)));
 		return out;
 	}
 
