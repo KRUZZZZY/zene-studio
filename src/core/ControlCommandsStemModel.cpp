@@ -11,11 +11,12 @@
  * (registerStemCommands) calls into both.
  *
  * THE POLICY IS THE ENGINE'S, NOT THIS FILE'S: StemModelStore refuses a spec
- * that is not pinned with an HTTPS URL, a SHA-256 and a size, and the default
- * spec is deliberately unpinned in v1 - so the DEFAULT call to
- * stem.model_download is a typed refusal that names the model card. That is the
- * "models are never bundled, always verified" rule working, not a gap
- * (include/StemSeparation/StemModelStore.h:65-69, doc/STEM-SPLIT.md).
+ * that is not pinned with an HTTPS URL, a SHA-256 and a size. Since owner
+ * decision 14 the default spec IS pinned (one commit of the model card's
+ * repository), so the default call fetches it, and a stem job fetches it on
+ * first use; offline mode (LMMS_STEM_OFFLINE) refuses both. Models are still
+ * never bundled, always verified (include/StemSeparation/StemModelStore.h,
+ * doc/STEM-SPLIT.md).
  *
  * Copyright (c) 2026 Zene Studio contributors
  *
@@ -59,14 +60,14 @@ ControlResult stemModelGetState(const QJsonObject& args)
 
 /*! `stem.model_download`: the store's one policy-preserving entry point.
  *
- *  With no arguments it refuses - the default spec is unpinned in v1, on
- *  purpose, because the URL and the checksum must come from the model card
- *  rather than from a guess (src/core/StemModelStore.cpp:78-92). With a pinned
- *  spec it performs the transfer, and that transfer BLOCKS the control surface
+ *  With no arguments it fetches the pinned default spec (owner decision 14);
+ *  with any pin argument it fetches a caller spec that must be pinned in full.
+ *  A performing call's transfer BLOCKS the control surface
  *  for its duration: a declared bound, the same category as the child-process
  *  renders, stated in the command's own description, in its A16 row and in
- *  docs/KNOWN-LIMITATIONS.md. No registered proof exercises it (CI has no
- *  pinned artefact to fetch); the refusal path is what the proof covers.
+ *  docs/KNOWN-LIMITATIONS.md. A stem job needs none of this: it fetches on its
+ *  own worker thread. No registered proof performs a transfer (the proof runs
+ *  offline); the refusal paths are what it covers.
  *
  *  Named ...Command because the engine function it wraps has the same name and
  *  an unqualified call would find this one first.
@@ -110,9 +111,10 @@ void registerStemModelGetState(ControlRegistry& registry)
 		"resolves (honouring LMMS_STEM_MODEL and LMMS_STEM_MODEL_DIR), whether the file is present "
 		"and its size, the spec it would download (`name`, `url`, `sha256`, `size_bytes`, "
 		"`license`, `license_url`, `model_card_url`, `pinned`) and whether that spec could be "
-		"downloaded at all (`download_allowed` + `download_reason`). The default spec is "
-		"deliberately UNPINNED in v1, so a default build reports `download_allowed: false` and "
-		"names the model card: models are never bundled with the product. With `hash: true` the "
+		"downloaded at all (`download_allowed` + `download_reason`). The default spec is PINNED "
+		"(HTDemucs fp16, MIT, one commit of the model card's repository, SHA-256 and size) and a "
+		"stem job fetches it on first use, off the control thread; LMMS_STEM_OFFLINE turns that "
+		"off and reports `download_allowed: false`. Models are never bundled with the product. With `hash: true` the "
 		"file's SHA-256 is computed and reported (`matches_spec` is null when there is nothing "
 		"pinned to compare against) - it is off by default because hashing a 166 MB model must be "
 		"a decision, not a side effect of a read.");
@@ -124,12 +126,14 @@ void registerStemModelGetState(ControlRegistry& registry)
 		{QStringLiteral("path"), stringProperty()},
 		{QStringLiteral("present"), booleanProperty()},
 		{QStringLiteral("bytes"), numberProperty()},
-		{QStringLiteral("spec"), objectSchema()},
+		{QStringLiteral("spec"), objectProperty()},
 		{QStringLiteral("download_allowed"), booleanProperty()},
 		{QStringLiteral("download_reason"), stringProperty()},
-		{QStringLiteral("env"), objectSchema()},
+		{QStringLiteral("env"), objectProperty()},
 		{QStringLiteral("sha256"), stringProperty()},
 		{QStringLiteral("hash_error"), stringProperty()},
+		// null when nothing is pinned to compare against, else the verdict.
+		{QStringLiteral("matches_spec"), nullable(booleanProperty())},
 	});
 	cmd.handler = [](const QJsonObject& args) { return stemModelGetState(args); };
 	registry.registerCommand(cmd);
@@ -143,14 +147,15 @@ void registerStemModelDownload(ControlRegistry& registry)
 	cmd.verb = QStringLiteral("model_download");
 	cmd.description = QStringLiteral("Fetch a model file into the store (default directory, or "
 		"`dest_dir`), HTTPS only, verifying the pinned SHA-256 and size BEFORE the file is moved "
-		"into place - a partial or mismatched download never replaces a good file. Pinning is not "
-		"optional: with no arguments this REFUSES, because the default spec is deliberately "
-		"unpinned in v1 (take the URL and checksum from the model card, named in the refusal, and "
-		"pass `url`, `sha256` and `size_bytes`). DECLARED BOUND: a performing call is a real "
+		"into place - a partial or mismatched download never replaces a good file. With no "
+		"arguments it fetches the store's own pinned default spec; with any of `url`, `sha256` or "
+		"`size_bytes` it fetches a caller spec, which must be pinned in full. Refused in offline "
+		"mode (LMMS_STEM_OFFLINE). A stem job does not need this verb: it fetches the default "
+		"model itself on first use, on the job's worker thread. DECLARED BOUND: a performing call is a real "
 		"network transfer on the control surface's own thread, so the surface does not answer - "
 		"`control.ping` included - until it finishes or fails (the same defect the child-process "
 		"renders carry, docs/RENDER-CHILD-WAIT.md); the transfer is not exercised by any "
-		"registered proof, because CI has no pinned artefact to fetch.");
+		"registered proof, which runs offline so CI never fetches 166 MB.");
 	cmd.argsSchema = objectSchema({
 		{QStringLiteral("url"), stringProperty()},
 		{QStringLiteral("sha256"), stringProperty()},

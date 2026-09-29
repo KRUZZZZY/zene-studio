@@ -207,12 +207,15 @@ void registerStemGetState(ControlRegistry& registry)
 		"inference backend this build drives (`onnxruntime-cpp` when the ONNX Runtime SDK was "
 		"found at configure time, otherwise `external-process (python onnxruntime)`), whether it "
 		"can run right now (`available`, with the reason in `error` when it cannot - the model "
-		"file is usually what is missing, and models are never bundled), the model path the store "
+		"file is usually what is missing, and models are never bundled), whether a job would fetch "
+		"the pinned model itself on first use (`fetch_on_first_use`: the model is absent, the "
+		"default spec is pinned, LMMS_STEM_MODEL does not name a file and LMMS_STEM_OFFLINE is "
+		"unset - owner decision 14), the model path the store "
 		"resolves, the model contract's constants (44100 Hz, the 343980-frame / 7.8 s segment) and "
 		"`realtime: false` with the reason: HTDemucs needs the whole segment as context, so "
 		"separation is an OFFLINE job and there is no live mode. NOTE: the whole `stem.*` group is "
-		"compiled only when WANT_STEM_SPLIT is ON - it is OFF in the default release configuration, "
-		"where these ids do not exist at all (docs/KNOWN-LIMITATIONS.md).");
+		"compiled only when WANT_STEM_SPLIT is ON - the default since owner decision 14; a build "
+		"configured with it OFF has no such ids at all (docs/KNOWN-LIMITATIONS.md).");
 	cmd.resultSchema = objectSchema({
 		{QStringLiteral("backend"), stringProperty()},
 		{QStringLiteral("available"), booleanProperty()},
@@ -227,7 +230,8 @@ void registerStemGetState(ControlRegistry& registry)
 		{QStringLiteral("realtime"), booleanProperty()},
 		{QStringLiteral("realtime_reason"), stringProperty()},
 		{QStringLiteral("stem_order"), arrayProperty()},
-		{QStringLiteral("jobs"), objectSchema()},
+		{QStringLiteral("jobs"), objectProperty()},
+		{QStringLiteral("fetch_on_first_use"), booleanProperty()},
 	});
 	cmd.handler = [](const QJsonObject& args) { return stemGetState(args); };
 	registry.registerCommand(cmd);
@@ -245,9 +249,12 @@ void registerStemJobStart(ControlRegistry& registry)
 		"source must be stereo at the model's own 44100 Hz: `render.render`'s output is exactly "
 		"that, so \"bounce the session, then split the bounce\" is the composable flow. Refused, "
 		"typed, when the file is missing or undecodable, when its rate is not 44100 Hz (resampling "
-		"is not implemented - SPEC-stem-split.md OQ-1), or when the engine cannot run at all "
-		"(model absent / no python onnxruntime). NOT realtime, by nature: HTDemucs needs a 7.8 s "
-		"lookahead. Follow with `stem.job_status`, then `stem.job_result`.");
+		"is not implemented - SPEC-stem-split.md OQ-1), or when the engine cannot run at all (no "
+		"python onnxruntime, or the model absent and not fetchable). An absent model that IS "
+		"fetchable (see `stem.get_state` `fetch_on_first_use`) does not refuse: the job fetches the "
+		"pinned 166 MB file on its own worker first (`fetching_model`, `download_progress`), then "
+		"separates. NOT realtime, by nature: HTDemucs needs a 7.8 s lookahead. Follow with "
+		"`stem.job_status`, then `stem.job_result`.");
 	cmd.argsSchema = objectSchema({
 		{QStringLiteral("source"), stringProperty()},
 		{QStringLiteral("segment_frames"), integerProperty(1, 44100 * 600)},
@@ -266,6 +273,8 @@ void registerStemJobStart(ControlRegistry& registry)
 		{QStringLiteral("since_submit_seconds"), numberProperty()},
 		{QStringLiteral("backend"), stringProperty()},
 		{QStringLiteral("error"), stringProperty()},
+		{QStringLiteral("fetching_model"), booleanProperty()},
+		{QStringLiteral("download_progress"), numberProperty()},
 	});
 	cmd.handler = [](const QJsonObject& args) { return stemJobStart(args); };
 	registry.registerCommand(cmd);
@@ -279,7 +288,8 @@ void registerStemJobStatus(ControlRegistry& registry)
 	cmd.verb = QStringLiteral("job_status");
 	cmd.description = QStringLiteral("One separator job by `job_id`, or every job this instance "
 		"has run when `job_id` is omitted: each job's `state` (queued, running, cancel_requested, "
-		"completed, cancelled, failed), `progress` (0..1), its source, frame count and "
+		"completed, cancelled, failed), `progress` (0..1), `fetching_model` and `download_progress` "
+		"(0..1) while a first job fetches the model, its source, frame count and "
 		"`since_submit_seconds` (the surface's own wall clock, not a claim about inference time), "
 		"and `error` when it failed. Reads the manager's atomics, so it answers even while a job is "
 		"running - this is the poll that proves the control surface is not held by the work.");
@@ -356,6 +366,8 @@ void registerStemJobCancel(ControlRegistry& registry)
 		{QStringLiteral("since_submit_seconds"), numberProperty()},
 		{QStringLiteral("backend"), stringProperty()},
 		{QStringLiteral("error"), stringProperty()},
+		{QStringLiteral("fetching_model"), booleanProperty()},
+		{QStringLiteral("download_progress"), numberProperty()},
 	});
 	cmd.handler = [](const QJsonObject& args) { return stemJobCancel(args); };
 	registry.registerCommand(cmd);

@@ -26,6 +26,7 @@
 
 #include <atomic>
 #include <deque>
+#include <functional>
 #include <memory>
 
 #include <QMutex>
@@ -86,6 +87,10 @@ public:
 		std::atomic<float> progress{0.0f};
 		std::atomic<bool> cancelRequested{false};
 		float lastEmittedProgress = -1.0f;
+		//! Owner decision 14: true while the worker is fetching the model this
+		//! job needs (first use), before separation starts; and how far it got.
+		std::atomic<bool> fetchingModel{false};
+		std::atomic<float> downloadProgress{0.0f};
 		double elapsedSeconds = 0.0;
 		StemSet stems{};
 		QString error;
@@ -100,6 +105,20 @@ public:
 
 	// Empty string when no backend was set.
 	QString backendName() const;
+
+	/*! Owner decision 14: run before every job's separation, ON THE WORKER
+	 *  THREAD, to make the model present (fetch it on first use). It returns at
+	 *  once when the model is already there; it reports progress in [0, 1] and
+	 *  must give up when `cancel` becomes true. A false return fails the job
+	 *  with `error`. Unset (the default, and every test double): no step. */
+	using ModelProvisioner = std::function<bool(const std::atomic<bool>& cancel,
+		const std::function<void(float)>& progress, QString* error)>;
+	void setModelProvisioner(ModelProvisioner provisioner);
+
+	//! The first-use fetch of a job, for a caller reporting it (false/0 when
+	//! the job is unknown or fetched nothing).
+	bool fetchingModel(int jobId) const;
+	float downloadProgress(int jobId) const;
 
 	// Queues a job and returns its id immediately. The caller keeps ownership
 	// of the mix buffer through the shared_ptr. `mix` must not be null.
@@ -129,6 +148,9 @@ signals:
 private:
 	void workerLoop();
 	void runJob(const std::shared_ptr<Job>& job);
+	//! The provisioner step of runJob: false when it ended the job (the
+	//! terminal state and its signal are already published).
+	bool provisionModel(const std::shared_ptr<Job>& job);
 	std::shared_ptr<Job> findJob(int jobId) const;
 
 	QThread* m_thread = nullptr;
@@ -137,6 +159,7 @@ private:
 	std::deque<std::shared_ptr<Job>> m_queue;
 	mutable QHash<int, std::shared_ptr<Job>> m_jobs;
 	std::unique_ptr<StemSeparator> m_separator;
+	ModelProvisioner m_provisioner;
 	int m_nextJobId = 1;
 	bool m_quit = false;
 };

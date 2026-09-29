@@ -74,13 +74,18 @@ QJsonObject stemModelState(bool withHash)
 	out.insert(QStringLiteral("spec"), specJson);
 	// The policy, in the store's own terms: an unpinned spec is never fetched,
 	// and this is what makes the "never bundled, always verified" rule
-	// enforceable rather than aspirational.
-	out.insert(QStringLiteral("download_allowed"), pinned);
-	out.insert(QStringLiteral("download_reason"), pinned
-		? QStringLiteral("the spec is pinned (HTTPS URL, SHA-256 and size present)")
-		: QStringLiteral("the default spec is deliberately unpinned in v1: take the URL and the "
-			"SHA-256 from the model card (%1) and pass them to stem.model_download, or place the "
-			"file at 'path' by hand").arg(spec.modelCardUrl));
+	// enforceable rather than aspirational. Offline mode refuses every fetch.
+	const bool offline = StemModelStore::isOffline();
+	out.insert(QStringLiteral("download_allowed"), pinned && !offline);
+	out.insert(QStringLiteral("download_reason"), !pinned
+		? QStringLiteral("the default spec is not pinned: take the URL and the SHA-256 from the "
+			"model card (%1) and pass them to stem.model_download, or place the file at 'path' "
+			"by hand").arg(spec.modelCardUrl)
+		: offline
+		? QStringLiteral("offline mode (LMMS_STEM_OFFLINE is set): nothing is fetched; place the "
+			"file from the model card (%1) at 'path' by hand").arg(spec.modelCardUrl)
+		: QStringLiteral("the spec is pinned (HTTPS URL, SHA-256 and size present); a stem job "
+			"fetches it on first use, from the model card's repository (%1)").arg(spec.modelCardUrl));
 	QJsonObject env;
 	env.insert(QStringLiteral("LMMS_STEM_MODEL"), qEnvironmentVariable("LMMS_STEM_MODEL"));
 	env.insert(QStringLiteral("LMMS_STEM_MODEL_DIR"), qEnvironmentVariable("LMMS_STEM_MODEL_DIR"));
@@ -110,18 +115,16 @@ bool stemModelDownload(const QString& url,
 	QString* error)
 {
 	StemModelSpec spec = StemModelStore::defaultModelSpec();
-	if (!url.isEmpty()) { spec.url = url; }
-	if (sha256.isEmpty() && sizeBytes <= 0 && url.isEmpty())
+	// No url/sha256/size_bytes: the store's own pinned spec, exactly as it is
+	// (owner decision 14). Any one of them: a caller-supplied spec, which must
+	// then be pinned in full - a url is never paired with the default's hash.
+	const bool defaultSpec = sha256.isEmpty() && sizeBytes <= 0 && url.isEmpty();
+	if (!defaultSpec)
 	{
-		// The default path: the store's own spec, which is unpinned by policy.
-		*error = QStringLiteral("refusing to download the default model spec: it is deliberately "
-			"unpinned in v1 (no URL, no SHA-256, no size). Take the URL and checksum from the "
-			"model card (%1) and pass url/sha256/size_bytes, or place the file at '%2' by hand")
-			.arg(spec.modelCardUrl).arg(StemModelStore::defaultModelPath());
-		return false;
+		spec.url = url;
+		spec.sha256 = sha256;
+		spec.sizeBytes = sizeBytes;
 	}
-	spec.sha256 = sha256;
-	spec.sizeBytes = sizeBytes;
 	if (!name.isEmpty()) { spec.name = name; }
 	if (!StemModelStore::isDownloadUrlAllowed(spec.url))
 	{

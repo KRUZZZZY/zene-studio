@@ -122,7 +122,7 @@ OPTION(WANT_VST		"Include VST support" ON)
 OPTION(WANT_VST_32	"Include 32-bit Windows VST support" ON)
 OPTION(WANT_VST_64	"Include 64-bit Windows VST support" ON)
 OPTION(WANT_WINMM	"Include WinMM MIDI support" OFF)
-OPTION(WANT_STEM_SPLIT	"Include offline stem separation (HTDemucs via ONNX Runtime, opt-in)" OFF)
+OPTION(WANT_STEM_SPLIT	"Include offline stem separation (HTDemucs via ONNX Runtime; the model is fetched on first use)" ON)
 OPTION(WANT_DEBUG_FPE	"Debug floating point exceptions" OFF)
 option(WANT_DEBUG_ASAN	"Enable AddressSanitizer" OFF)
 option(WANT_DEBUG_TSAN	"Enable ThreadSanitizer" OFF)
@@ -147,12 +147,14 @@ IF(ZENE_TELEMETRY)
 ENDIF()
 
 
-# Offline stem separation (HTDemucs). Opt-in, background-only: the model needs
+# Offline stem separation (HTDemucs). On by default since owner decision 14
+# (2026-09-29); background-only: the model needs
 # ~7.8 s of lookahead, so it can never run on the audio thread (see
 # doc/STEM-SPLIT.md). ONNX Runtime is an optional dependency of this feature:
 # when it is absent the C++ inference backend is disabled but the feature
 # still builds and runs with the external-process backend. Models are never
-# bundled - they are optional downloads with SHA-256 pinning.
+# bundled - the pinned default is fetched on first use (LMMS_STEM_OFFLINE
+# refuses that) and verified by SHA-256 and size.
 IF(WANT_STEM_SPLIT)
 	SET(LMMS_HAVE_STEM_SPLIT 1)
 	find_package(ONNXRuntime QUIET)

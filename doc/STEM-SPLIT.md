@@ -150,10 +150,28 @@ say nothing about HTDemucs throughput — see "Not verified".
 
 - Models are never bundled. `StemModelStore` downloads HTTPS-only, refuses
   unpinned specs, and verifies SHA-256 + size before use.
-- HTDemucs fp16 (166 MB, MIT) is **intentionally not pinned in v1**: the URL and
-  checksum must come from the model card at G3 rather than be guessed
-  (`StemModelStore.h`). The model is **not present on this machine** and was
-  not used for any result here.
+- **Pinned since owner decision 14 (2026-09-29)**: HTDemucs fp16, MIT, from the
+  model card https://huggingface.co/StemSplitio/htdemucs-onnx, pinned to commit
+  `d54ed9eb60e258ea82131c6ee14578628816456a` (`htdemucs_fp16weights.onnx`,
+  165612636 bytes, sha256
+  `d05c269d0178d2a72ad484b10b11dd370193fc923201c3b27a99f848745db70a`, which is also
+  its Hugging Face LFS oid). Measured by download and `sha256sum`, not copied
+  from a card. Its input is `mix float32 [1,2,343980]` and its ONE output is
+  `stems float32 [1,4,2,343980]` (drums, bass, other, vocals). Both backends take
+  that stacked layout as well as four named outputs.
+- **Fetched on first use:** when a job starts with the model absent and the
+  spec pinned, the job manager's worker fetches the model before separating. It
+  streams to `<name>.onnx.part`, verifies it, then renames it into place. The
+  job reports `fetching_model` and `download_progress`, and a cancel aborts the
+  transfer. Nothing is fetched when `LMMS_STEM_MODEL` names a file (that path is
+  the operator's) or when `LMMS_STEM_OFFLINE` is set; offline mode also refuses
+  `stem.model_download`.
+- **Measured on the real model** (this box, CPU, while a build ran): a 10 s
+  synthetic stereo mix (110/220 Hz sines plus a square wave) through
+  `tools/stem_split_cli.py`. It took 44.8 s wall, 6 chunks, and every stem was
+  finite. Bass carried the energy (RMS 0.219 of the mix's 0.224), and the four
+  stems sum back to the mix at 33.2 dB SNR. That is a sanity check of the
+  pipeline, not a separation-quality figure.
 - Tests use `tests/data/stub-4stem-linear.onnx` — 458 B, sha256
   `feda86ca23ddda75dc67c2ccbd73a346e5c4ad33afb14bd9d0f9019848a1976d`, a linear
   4-way split (drums 0.4, bass 0.3, other 0.2, vocals 0.1) built by
@@ -162,6 +180,11 @@ say nothing about HTDemucs throughput — see "Not verified".
   `float32 [1,2,T]` outputs named drums/bass/other/vocals) and the real
   overlap-add segmentation, while making correctness exactly checkable (the
   gains sum to 1, so the stems must reconstruct the mix).
+- `tests/data/stub-4stem-stacked.onnx` (189 B, sha256 `ee2d30cf3c9d8d9e95911d3e4df659b8b145d3dbd1162ad0bd8682cb5522a9ad`, built by
+  `tools/make_stub_model.py --stacked`) uses the same gains in the pinned
+  model's stacked `[1,4,2,T]` layout, as one broadcast `Mul`.
+  `StemSplitPipelineTest` requires that it and the four-output stub split a mix
+  into bit-identical stems.
 
 ## Audio-thread audit
 

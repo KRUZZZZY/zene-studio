@@ -79,12 +79,15 @@ StemModelSpec StemModelStore::defaultModelSpec()
 {
 	StemModelSpec spec;
 	spec.name = QStringLiteral("htdemucs-fp16");
-	// Intentionally unset until G3 pins the exact file URL and SHA-256 from the
-	// model card. download() refuses to fetch anything that is not pinned, so
-	// a guessed URL can never turn into an unverified download.
-	spec.url = QString();
-	spec.sha256 = QString();
-	spec.sizeBytes = 0;
+	// Owner decision 14 (2026-09-29): pinned from the model card, to one COMMIT
+	// of the repository rather than to a branch, so the bytes behind the URL
+	// cannot move under the checksum. Verified by download and sha256sum, and
+	// the SHA-256 is also the file's Hugging Face LFS oid. The file's one output
+	// is the stems stacked as [1, 4, 2, 343980], which both backends accept.
+	spec.url = QStringLiteral("https://huggingface.co/StemSplitio/htdemucs-onnx/resolve/"
+		"d54ed9eb60e258ea82131c6ee14578628816456a/htdemucs_fp16weights.onnx");
+	spec.sha256 = QStringLiteral("d05c269d0178d2a72ad484b10b11dd370193fc923201c3b27a99f848745db70a");
+	spec.sizeBytes = 165612636;
 	spec.license = QStringLiteral("MIT");
 	spec.licenseUrl = QStringLiteral("https://github.com/facebookresearch/demucs/blob/main/LICENSE");
 	spec.modelCardUrl = QStringLiteral("https://huggingface.co/StemSplitio/htdemucs-onnx");
@@ -200,21 +203,121 @@ bool StemModelStore::isDownloadUrlAllowed(const QString& url)
 
 
 
-bool StemModelStore::download(const StemModelSpec& spec,
-	const QString& destDir,
-	const DownloadProgressFn& progress,
-	QString* error)
+bool StemModelStore::isOffline()
 {
-	if (!isDownloadUrlAllowed(spec.url))
+	const QByteArray value = qgetenv("LMMS_STEM_OFFLINE");
+	return !value.isEmpty() && value != "0";
+}
+
+
+
+
+bool StemModelStore::canFetchDefaultModel()
+{
+	if (isModelPresent(defaultModelPath()) || isOffline()
+		|| !qEnvironmentVariableIsEmpty("LMMS_STEM_MODEL"))
 	{
-		setError(error, QStringLiteral("Refusing non-HTTPS or empty download URL for model '%1'")
-			.arg(spec.name));
 		return false;
+	}
+	const StemModelSpec spec = defaultModelSpec();
+	return !spec.sha256.trimmed().isEmpty() && spec.sizeBytes > 0 && isDownloadUrlAllowed(spec.url);
+}
+
+
+
+
+bool StemModelStore::fetchDefaultModelIfMissing(const std::atomic<bool>& cancel,
+	const std::function<void(float)>& progress, QString* error)
+{
+	if (isModelPresent(defaultModelPath())) { return true; }
+	const StemModelSpec spec = defaultModelSpec();
+	return download(spec, defaultModelDir(),
+		[&progress, &spec](qint64 received, qint64 total)
+		{
+			const qint64 whole = total > 0 ? total : spec.sizeBytes;
+			if (progress && whole > 0) { progress(static_cast<float>(received) / static_cast<float>(whole)); }
+		},
+		error, &cancel);
+}
+
+
+
+
+namespace
+{
+
+//! The download policy, in order: HTTPS, pinned, then offline - so an offline
+//! caller still learns that a spec is unpinned or insecure. Empty: allowed.
+QString downloadRefusal(const StemModelSpec& spec, const QString& destDir)
+{
+	if (!StemModelStore::isDownloadUrlAllowed(spec.url))
+	{
+		return QStringLiteral("Refusing non-HTTPS or empty download URL for model '%1'").arg(spec.name);
 	}
 	if (spec.sha256.trimmed().isEmpty() || spec.sizeBytes <= 0)
 	{
-		setError(error, QStringLiteral("Refusing to download unpinned model '%1' "
-			"(no SHA-256/size); pin it from the model card first").arg(spec.name));
+		return QStringLiteral("Refusing to download unpinned model '%1' "
+			"(no SHA-256/size); pin it from the model card first").arg(spec.name);
+	}
+	if (StemModelStore::isOffline())
+	{
+		return QStringLiteral("Refusing to download model '%1': offline mode "
+			"(LMMS_STEM_OFFLINE is set); place the file at %2 by hand")
+			.arg(spec.name, QDir(destDir).filePath(spec.name + QStringLiteral(".onnx")));
+	}
+	return QString();
+}
+
+/*! The network half: GET \a url into \a partFile. Streamed as it arrives, so a
+ *  166 MB model is never held in memory whole; a set \a cancel aborts at the
+ *  next chunk. Blocks on a local event loop, so it runs on any QThread. */
+bool transfer(const QString& url, QFile& partFile, const StemModelStore::DownloadProgressFn& progress,
+	const std::atomic<bool>* cancel, QString* networkError)
+{
+	QNetworkAccessManager manager;
+	QNetworkRequest request{QUrl(url)};
+	request.setAttribute(QNetworkRequest::RedirectPolicyAttribute,
+		QNetworkRequest::NoLessSafeRedirectPolicy);
+	request.setHeader(QNetworkRequest::UserAgentHeader, QStringLiteral("Zene-Studio-stem-split/1.0"));
+
+	QNetworkReply* reply = manager.get(request);
+	QObject::connect(reply, &QNetworkReply::readyRead,
+		[reply, &partFile]() { partFile.write(reply->readAll()); });
+	QObject::connect(reply, &QNetworkReply::downloadProgress,
+		[&progress, reply, cancel](qint64 received, qint64 total)
+		{
+			if (cancel != nullptr && cancel->load()) { reply->abort(); return; }
+			if (progress) { progress(received, total); }
+		});
+
+	QEventLoop loop;
+	QObject::connect(reply, &QNetworkReply::finished, &loop, &QEventLoop::quit);
+	loop.exec();
+
+	const bool cancelled = cancel != nullptr && cancel->load();
+	const bool ok = !cancelled && reply->error() == QNetworkReply::NoError;
+	if (!ok) { *networkError = cancelled ? QStringLiteral("cancelled") : reply->errorString(); }
+	partFile.write(reply->readAll());
+	partFile.close();
+	reply->deleteLater();
+	return ok;
+}
+
+} // namespace
+
+
+
+
+bool StemModelStore::download(const StemModelSpec& spec,
+	const QString& destDir,
+	const DownloadProgressFn& progress,
+	QString* error,
+	const std::atomic<bool>* cancel)
+{
+	const QString refusal = downloadRefusal(spec, destDir);
+	if (!refusal.isEmpty())
+	{
+		setError(error, refusal);
 		return false;
 	}
 
@@ -234,31 +337,8 @@ bool StemModelStore::download(const StemModelSpec& spec,
 		return false;
 	}
 
-	QNetworkAccessManager manager;
-	QNetworkRequest request(QUrl(spec.url));
-	request.setAttribute(QNetworkRequest::RedirectPolicyAttribute,
-		QNetworkRequest::NoLessSafeRedirectPolicy);
-	request.setHeader(QNetworkRequest::UserAgentHeader, QStringLiteral("Zene-Studio-stem-split/1.0"));
-
-	QNetworkReply* reply = manager.get(request);
-	QObject::connect(reply, &QNetworkReply::downloadProgress,
-		[&progress](qint64 received, qint64 total) { if (progress) { progress(received, total); } });
-
-	QEventLoop loop;
-	QObject::connect(reply, &QNetworkReply::finished, &loop, &QEventLoop::quit);
-	loop.exec();
-
-	bool ok = (reply->error() == QNetworkReply::NoError);
 	QString networkError;
-	if (!ok)
-	{
-		networkError = reply->errorString();
-	}
-	partFile.write(reply->readAll());
-	partFile.close();
-	reply->deleteLater();
-
-	if (!ok)
+	if (!transfer(spec.url, partFile, progress, cancel, &networkError))
 	{
 		QFile::remove(partPath);
 		setError(error, QStringLiteral("Download failed: %1").arg(networkError));

@@ -393,3 +393,15 @@ IF(NOT WIN32 AND NOT LMMS_BUILD_APPLE)
 ENDIF()
 
 INSTALL(TARGETS zene RUNTIME DESTINATION "${BIN_DIR}")
+
+# Owner decision 14 turned stem separation on by default, so a package now has to
+# carry the external-process backend's CLI: installed where
+# ExternalProcessStemSeparator::locateCli() looks for it next to the binary
+# (<bin>/tools on Windows, <bin>/../share/zene/tools elsewhere).
+IF(LMMS_HAVE_STEM_SPLIT)
+	IF(LMMS_BUILD_WIN32)
+		INSTALL(PROGRAMS "${CMAKE_SOURCE_DIR}/tools/stem_split_cli.py" DESTINATION "${BIN_DIR}/tools")
+	ELSE()
+		INSTALL(PROGRAMS "${CMAKE_SOURCE_DIR}/tools/stem_split_cli.py" DESTINATION "${DATA_DIR}/zene/tools")
+	ENDIF()
+ENDIF()

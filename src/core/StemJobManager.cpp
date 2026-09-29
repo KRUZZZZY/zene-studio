@@ -224,6 +224,35 @@ int StemJobManager::runningJobCount() const
 
 
 
+void StemJobManager::setModelProvisioner(ModelProvisioner provisioner)
+{
+	QMutexLocker locker(&m_mutex);
+	m_provisioner = std::move(provisioner);
+}
+
+
+
+
+bool StemJobManager::fetchingModel(int jobId) const
+{
+	QMutexLocker locker(&m_mutex);
+	auto it = m_jobs.find(jobId);
+	return it != m_jobs.end() && (*it)->fetchingModel.load();
+}
+
+
+
+
+float StemJobManager::downloadProgress(int jobId) const
+{
+	QMutexLocker locker(&m_mutex);
+	auto it = m_jobs.find(jobId);
+	return it == m_jobs.end() ? 0.0f : (*it)->downloadProgress.load();
+}
+
+
+
+
 std::shared_ptr<StemJobManager::Job> StemJobManager::findJob(int jobId) const
 {
 	QMutexLocker locker(&m_mutex);
@@ -274,6 +303,45 @@ void StemJobManager::workerLoop()
 
 
 
+bool StemJobManager::provisionModel(const std::shared_ptr<Job>& job)
+{
+	// Owner decision 14: the model a first job needs is fetched HERE, on the
+	// worker, so neither the GUI nor the control surface waits for 166 MB.
+	ModelProvisioner provisioner;
+	{
+		QMutexLocker locker(&m_mutex);
+		provisioner = m_provisioner;
+	}
+	if (!provisioner) { return true; }
+
+	job->fetchingModel.store(true);
+	QString provisionError;
+	const bool provisioned = provisioner(job->cancelRequested,
+		[job](float fraction) { job->downloadProgress.store(std::clamp(fraction, 0.0f, 1.0f)); },
+		&provisionError);
+	job->fetchingModel.store(false);
+	if (job->cancelRequested.load())
+	{
+		job->state.store(State::Cancelled);
+		emit jobCancelled(job->id);
+		return false;
+	}
+	if (!provisioned)
+	{
+		{
+			QMutexLocker locker(&m_mutex);
+			job->error = provisionError;
+			job->state.store(State::Failed);
+		}
+		emit jobFailed(job->id, provisionError);
+		return false;
+	}
+	return true;
+}
+
+
+
+
 void StemJobManager::runJob(const std::shared_ptr<Job>& job)
 {
 	emit jobStarted(job->id);
@@ -291,6 +359,8 @@ void StemJobManager::runJob(const std::shared_ptr<Job>& job)
 	}
 
 	const auto startTime = std::chrono::steady_clock::now();
+
+	if (!provisionModel(job)) { return; }
 
 	StemSet stems;
 	QString error;

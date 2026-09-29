@@ -18,6 +18,8 @@
 # Model contract (fixed):
 #   input   float32 [1, 2, T]      (T = native segment or --segment)
 #   outputs float32 [1, 2, T] x 4  named drums, bass, other, vocals
+#       or  float32 [1, 4, 2, T]   one output, stems stacked in that order
+#                                  (the public HTDemucs exports' layout)
 #
 # I/O defaults to headerless interleaved float32 (f32) so the C++ side needs no
 # audio decoder; --in-format wav / --out-format wav add PCM16 + float32 RIFF.
@@ -147,8 +149,9 @@ def load_session(model_path):
     outputs = session.get_outputs()
     if len(inputs) != 1:
         raise ValueError(f"model has {len(inputs)} inputs, expected 1")
-    if len(outputs) < len(STEM_NAMES):
-        raise ValueError(f"model has {len(outputs)} outputs, expected >= 4")
+    if len(outputs) < len(STEM_NAMES) and not is_stacked(outputs):
+        raise ValueError(f"model has {len(outputs)} outputs, expected >= 4 "
+                         "(or one stacked [1, 4, 2, T] output)")
     shape = inputs[0].shape
     if len(shape) != 3 or shape[0] not in (1, "1") or shape[1] not in (2, "2"):
         raise ValueError(f"model input must be [1, 2, T], got {shape}")
@@ -156,7 +159,27 @@ def load_session(model_path):
     return session, static_segment
 
 
+def is_stacked(outputs):
+    """One output of shape [1, S, 2, T], S >= 4: the stems stacked on axis 1 in
+    the contract order (drums, bass, other, vocals). This is how the public MIT
+    HTDemucs ONNX exports ship (StemSplitio/htdemucs-onnx: `stems`
+    (1, 4, 2, 343980)), so the loader takes both layouts."""
+    if len(outputs) != 1:
+        return False
+    shape = outputs[0].shape
+    return (len(shape) == 4 and shape[0] in (1, "1")
+            and (not isinstance(shape[1], int) or shape[1] >= len(STEM_NAMES))
+            and shape[2] in (2, "2"))
+
+
+def stem_block(outputs, out_index, stacked, stem):
+    """The [2, T] block of one stem from one run's outputs, in either layout."""
+    return outputs[0][0][stem] if stacked else outputs[out_index][0]
+
+
 def resolve_output_indices(session):
+    if is_stacked(session.get_outputs()):
+        return list(range(len(STEM_NAMES)))
     names = [o.name for o in session.get_outputs()]
     indices = []
     for position, stem in enumerate(STEM_NAMES):
@@ -188,6 +211,7 @@ def separate(session, mix, segment, progress_cb, cancel_cb, chunk_delay_ms=0.0):
 
     input_name = session.get_inputs()[0].name
     out_indices = resolve_output_indices(session)
+    stacked = is_stacked(session.get_outputs())
 
     chunks_done = 0
     cancelled = False
@@ -209,7 +233,8 @@ def separate(session, mix, segment, progress_cb, cancel_cb, chunk_delay_ms=0.0):
             b = a + (hi - lo)
             dst = slice(lo, hi)
             for s, out_index in enumerate(out_indices):
-                acc[s, :, dst] += outputs[out_index][0][:, a:b].astype(np.float64) * window[a:b]
+                block_out = stem_block(outputs, out_index, stacked, s)
+                acc[s, :, dst] += block_out[:, a:b].astype(np.float64) * window[a:b]
             window_sum[dst] += window[a:b]
         chunks_done = chunk + 1
         progress_cb(chunks_done / chunk_count)

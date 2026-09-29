@@ -26,6 +26,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <cstddef>
 #include <string>
 #include <vector>
 
@@ -57,6 +58,39 @@ int outputIndexFor(const std::vector<std::string>& names, const char* wanted, in
 		}
 	}
 	return fallback;
+}
+
+/*! Where each stem is read from. Four named outputs: an output per stem, names
+ *  winning over the fixed contract order. Owner decision 14: the public HTDemucs
+ *  exports ship ONE output, the stems stacked on axis 1 as [1, S, 2, T] in
+ *  contract order (S >= 4; -1 is a dynamic dimension) - every stem is then read
+ *  from output 0 at \a stemStride floats apart. tools/stem_split_cli.py accepts
+ *  the same two layouts. False, with \a error, for anything else. */
+bool isStackedOutput(Ort::Session& session, std::size_t outputCount)
+{
+	if (outputCount != 1) { return false; }
+	const auto shape = session.GetOutputTypeInfo(0).GetTensorTypeAndShapeInfo().GetShape();
+	return shape.size() == 4 && (shape[1] < 0 || shape[1] >= NumStems)
+		&& (shape[2] < 0 || shape[2] == Channels);
+}
+
+bool resolveStemOutputs(Ort::Session& session, const std::vector<std::string>& outputNames, int segment,
+	std::array<int, NumStems>* stemOutput, std::ptrdiff_t* stemStride, QString* error)
+{
+	const bool stacked = isStackedOutput(session, outputNames.size());
+	if (outputNames.size() < NumStems && !stacked)
+	{
+		*error = QStringLiteral("Model has %1 outputs, expected at least %2 (or one stacked "
+			"[1, %2, 2, T] output)").arg(outputNames.size()).arg(NumStems);
+		return false;
+	}
+	for (int s = 0; s < NumStems; ++s)
+	{
+		(*stemOutput)[static_cast<size_t>(s)] = stacked ? 0 : outputIndexFor(
+			outputNames, stemName(static_cast<Stem>(s)), s);
+	}
+	*stemStride = stacked ? static_cast<std::ptrdiff_t>(Channels) * segment : 0;
+	return true;
 }
 
 } // namespace
@@ -134,19 +168,11 @@ StemSeparator::Status OnnxRuntimeStemSeparator::separate(const SampleBuffer& mix
 	{
 		outputNamesRaw.push_back(name.c_str());
 	}
-	if (outputNames.size() < NumStems)
-	{
-		error = QStringLiteral("Model has %1 outputs, expected at least %2")
-			.arg(outputNames.size()).arg(NumStems);
-		return Status::Failed;
-	}
-
-	// Fixed contract order; names win when present.
 	std::array<int, NumStems> stemOutput{};
-	for (int s = 0; s < NumStems; ++s)
+	std::ptrdiff_t stemStride = 0;
+	if (!resolveStemOutputs(session, outputNames, segment, &stemOutput, &stemStride, &error))
 	{
-		stemOutput[static_cast<size_t>(s)] = outputIndexFor(
-			outputNames, stemName(static_cast<Stem>(s)), s);
+		return Status::Failed;
 	}
 
 	const int hop = segment / 2;
@@ -198,7 +224,7 @@ StemSeparator::Status OnnxRuntimeStemSeparator::separate(const SampleBuffer& mix
 		for (int s = 0; s < NumStems; ++s)
 		{
 			const float* data = outputs[static_cast<size_t>(stemOutput[static_cast<size_t>(s)])]
-				.GetTensorData<float>();
+				.GetTensorData<float>() + static_cast<std::ptrdiff_t>(s) * stemStride;
 			for (int i = 0; i < segment; ++i)
 			{
 				const int dst = start + i - padLeft;

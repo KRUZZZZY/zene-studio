@@ -69,6 +69,11 @@ private slots:
 	void handleFailed(int jobId, const QString& error);
 
 private:
+	/*! Owner decision 14: true when a job may be submitted - the backend is
+	 *  ready, or only the model is missing and the user agreed to fetch it
+	 *  (\a fetching set). False after telling the user why not. */
+	bool ensureBackendReady(bool* fetching);
+
 	void closeDialog();
 
 	QWidget* m_parent = nullptr;

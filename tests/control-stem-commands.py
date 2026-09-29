@@ -55,12 +55,14 @@ What it drives, in order:
                                            refused, and its stems cannot be
                                            written (not completed);
   7. `stem.model_get_state`                the store's real path (the stub,
-                                           from LMMS_STEM_MODEL), the UNPINNED
-                                           default spec, and the file's own
+                                           from LMMS_STEM_MODEL), the PINNED
+                                           default spec (owner decision 14),
+                                           refused offline, and the file's own
                                            SHA-256, cross-checked against the
                                            hash this script computes locally;
-  8. `stem.model_download`                 refused three ways - the unpinned
-                                           default spec, an http:// URL, and a
+  8. `stem.model_download`                 refused three ways - the pinned
+                                           default spec while offline, an
+                                           http:// URL, and a
                                            spec with no size/sha256 - which is
                                            the "never bundled, always verified"
                                            policy working. The performing path
@@ -161,6 +163,9 @@ def main(argv):
             "LMMS_STEM_CLI": CLI_PATH,
             "LMMS_STEM_PYTHON": python,
             "LMMS_STEM_CHUNK_DELAY_MS": str(CHUNK_DELAY_MS),
+            # Owner decision 14 pinned the default model and fetches it on
+            # first use; this proof must never pull 166 MB, so it runs offline.
+            "LMMS_STEM_OFFLINE": "1",
         }
         # The instance's HOME is redirected into its own temp directory, so a
         # user-site onnxruntime is invisible to it unless its directory travels
