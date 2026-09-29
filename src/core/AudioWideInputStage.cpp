@@ -24,15 +24,18 @@
 
 #include "AudioWideInputStage.h"
 
+#include "lmms_constants.h"
+
 namespace lmms
 {
 
 AudioWideInputStage::AudioWideInputStage(int maxChannels, f_cnt_t capacityFrames) :
 	m_maxChannels(maxChannels < 1 ? 1 : maxChannels),
 	m_capacityFrames(capacityFrames < 1 ? 1 : capacityFrames),
+	// Storage for the widest block; the width itself is the producer's (adoptWidth).
 	m_stage(std::make_unique<InputChannelRing>(
 		static_cast<std::size_t>(capacityFrames < 1 ? 1 : capacityFrames),
-		maxChannels < 1 ? 1 : maxChannels)),
+		DEFAULT_CHANNELS, maxChannels < 1 ? 1 : maxChannels)),
 	m_buffers(static_cast<std::size_t>(kBufferCount)),
 	m_frames{0, 0},
 	m_channels{0, 0}
@@ -58,7 +61,10 @@ std::size_t AudioWideInputStage::push(const float* interleaved, int channels, f_
 	{
 		return 0;
 	}
-	if (channels < 1 || channels > m_maxChannels || channels != m_stage->channels())
+	// One width at a time: a block of a new width is adopted only once every block of the
+	// old one has been drained (BUGS_FOUND 11.9 - the width was fixed at m_maxChannels, so
+	// every real device's block was refused here).
+	if (channels < 1 || channels > m_maxChannels || !m_stage->adoptWidth(channels))
 	{
 		// Refused whole, and counted: a reader that saw part of a block at one
 		// width and part at another would attribute a channel to the wrong
@@ -99,9 +105,10 @@ void AudioWideInputStage::drain() noexcept
 		return;
 	}
 
-	const auto read = m_stage->read(m_buffers[static_cast<std::size_t>(m_read)].data(), frames);
+	int width = 0;
+	const auto read = m_stage->read(m_buffers[static_cast<std::size_t>(m_read)].data(), frames, &width);
 	m_frames[m_read] = static_cast<f_cnt_t>(read);
-	m_channels[m_read] = read > 0 ? m_stage->channels() : 0;
+	m_channels[m_read] = read > 0 ? width : 0;
 }
 
 

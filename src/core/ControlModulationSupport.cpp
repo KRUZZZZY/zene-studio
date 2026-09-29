@@ -163,6 +163,7 @@ QJsonObject modulationRouteJson(const ModulationRoute& route, int index)
 	out.insert(QStringLiteral("effect"), route.effect);
 	out.insert(QStringLiteral("parameter"), route.parameter);
 	out.insert(QStringLiteral("depth"), static_cast<double>(route.depth));
+	out.insert(QStringLiteral("per_sample"), route.perSample);
 	QString why;
 	out.insert(QStringLiteral("resolved"), modulationTargetModel(route, &why) != nullptr);
 	if (!why.isEmpty()) { out.insert(QStringLiteral("why"), why); }
@@ -250,6 +251,7 @@ ModulationRoute modulationRouteFromArgs(const QJsonObject& args)
 	route.parameter = args.value(QStringLiteral("parameter")).toString();
 	route.depth = std::clamp(static_cast<float>(args.value(QStringLiteral("depth")).toDouble()),
 		-1.0f, 1.0f);
+	route.perSample = args.value(QStringLiteral("per_sample")).toBool(false);
 	return route;
 }
 

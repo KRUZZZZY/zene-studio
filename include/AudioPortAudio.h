@@ -78,6 +78,10 @@ public:
 
 	static auto name() -> QString { return QT_TRANSLATE_NOOP("AudioDeviceSetupWidget", "PortAudio"); }
 
+	//! R2.2: the opened stream's own latencies (Pa_GetStreamInfo, seconds -> frames).
+	f_cnt_t inputLatencyFrames() const override;
+	f_cnt_t outputLatencyFrames() const override;
+
 private:
 	void startProcessingImpl() override;
 	void stopProcessingImpl() override;
@@ -87,6 +91,8 @@ private:
 
 	detail::PortAudioInitializationGuard m_initGuard;
 	PaStream* m_paStream = nullptr;
+	//! R2.3: the input stream's channel count; 0 with no input device (nothing captured).
+	int m_inputChannels = 0;
 };
 } // namespace lmms
 

@@ -61,21 +61,40 @@ namespace lmms
  *    producer never blocks.
  *
  * The one difference from SampleFrameRingBuffer is that the element is
- * `channels()` floats rather than one SampleFrame, and the channel count is
- * fixed for the ring's whole life. A backend that changes its channel count
- * must build a new ring (which is what reopening the device does).
+ * `channels()` floats rather than one SampleFrame. The STORAGE is sized for
+ * `maxChannels`; the WIDTH is the producer's, adopted by adoptWidth() only while
+ * the ring is empty (BUGS_FOUND 11.9: the width used to be fixed at the storage's
+ * 128 channels, so every real device's 1..32-channel block was refused). The
+ * consumer reads the width after the write index, so it never reads frames of
+ * one width as another.
  */
 class InputChannelRing
 {
 public:
 	//! Allocates storage for at least \a minCapacityFrames frames of
 	//! \a channels channels each. Must run off the audio thread.
-	InputChannelRing(std::size_t minCapacityFrames, int channels) :
+	//! \a maxChannels (default: \a channels) sizes the storage for the widest block the
+	//! ring can ever carry.
+	InputChannelRing(std::size_t minCapacityFrames, int channels, int maxChannels = 0) :
 		m_capacity(nextPowerOfTwo(minCapacityFrames == 0 ? 1 : minCapacityFrames)),
 		m_mask(m_capacity - 1),
+		m_maxChannels(std::max(channels < 1 ? 1 : channels, maxChannels)),
 		m_channels(channels < 1 ? 1 : channels),
-		m_data(m_capacity * static_cast<std::size_t>(m_channels < 1 ? 1 : channels))
+		m_data(m_capacity * static_cast<std::size_t>(m_maxChannels))
 	{
+	}
+
+	/*! Producer: make \a channels the ring's width. True when it already is, or when the
+	 *  ring is EMPTY and \a channels fits the storage - a width change between blocks that
+	 *  are still unread would rotate the channels of the unread ones, so it is refused.
+	 *  The width is stored before any frame of that width is published (writeBlock's
+	 *  release), and read() loads it after the write index. Realtime-safe. */
+	bool adoptWidth(int channels) noexcept
+	{
+		if (channels == m_channels.load(std::memory_order_relaxed)) { return true; }
+		if (channels < 1 || channels > m_maxChannels || available() != 0) { return false; }
+		m_channels.store(channels, std::memory_order_relaxed);
+		return true;
 	}
 
 	InputChannelRing(const InputChannelRing&) = delete;
@@ -89,13 +108,13 @@ public:
 	std::size_t writeBlock(const float* interleaved, int channels, std::size_t frames) noexcept
 	{
 		if (interleaved == nullptr || frames == 0) { return 0; }
-		if (channels != m_channels) { return 0; }
+		if (channels != m_channels.load(std::memory_order_relaxed)) { return 0; }
 
 		const auto writePos = m_writePos.load(std::memory_order_relaxed);
 		const auto readPos = m_readPos.load(std::memory_order_acquire);
 		const auto freeFrames = m_capacity - static_cast<std::size_t>(writePos - readPos);
 		const auto toWrite = std::min(frames, freeFrames);
-		const auto width = static_cast<std::size_t>(m_channels);
+		const auto width = static_cast<std::size_t>(channels);
 		for (std::size_t frame = 0; frame < toWrite; ++frame)
 		{
 			const auto dstBase = ((writePos + frame) & m_mask) * width;
@@ -116,19 +135,24 @@ public:
 	//! Consumer: read up to \a frames frames into \a dst, which must hold at
 	//! least frames * channels() floats. Returns the number of frames read.
 	//! Realtime-safe (it runs on the render thread, where the same rule holds).
-	std::size_t read(float* dst, std::size_t frames) noexcept
+	//! \a width, when given, receives the width the frames were read at.
+	std::size_t read(float* dst, std::size_t frames, int* width = nullptr) noexcept
 	{
 		if (dst == nullptr) { return 0; }
 		const auto readPos = m_readPos.load(std::memory_order_relaxed);
 		const auto writePos = m_writePos.load(std::memory_order_acquire);
+		// AFTER the write index: the width that was stored before these frames were
+		// published (adoptWidth only changes it while the ring is empty).
+		const int channels = m_channels.load(std::memory_order_relaxed);
+		if (width != nullptr) { *width = channels; }
 		const auto available = writePos - readPos;
 		const auto toRead = std::min(frames, static_cast<std::size_t>(available));
-		const auto width = static_cast<std::size_t>(m_channels);
+		const auto widthFloats = static_cast<std::size_t>(channels);
 		for (std::size_t frame = 0; frame < toRead; ++frame)
 		{
-			const auto srcBase = ((readPos + frame) & m_mask) * width;
-			const auto dstBase = frame * width;
-			for (std::size_t channel = 0; channel < width; ++channel)
+			const auto srcBase = ((readPos + frame) & m_mask) * widthFloats;
+			const auto dstBase = frame * widthFloats;
+			for (std::size_t channel = 0; channel < widthFloats; ++channel)
 			{
 				dst[dstBase + channel] = m_data[srcBase + channel];
 			}
@@ -144,7 +168,8 @@ public:
 			- m_readPos.load(std::memory_order_acquire));
 	}
 
-	int channels() const noexcept { return m_channels; }
+	int channels() const noexcept { return m_channels.load(std::memory_order_relaxed); }
+	int maxChannels() const noexcept { return m_maxChannels; }
 	std::size_t capacity() const noexcept { return m_capacity; }
 
 	//! Total number of frames dropped by the producer so far.
@@ -172,7 +197,8 @@ private:
 
 	const std::size_t m_capacity;
 	const std::size_t m_mask;
-	const int m_channels;
+	const int m_maxChannels;
+	std::atomic<int> m_channels;
 
 	std::vector<float> m_data;
 

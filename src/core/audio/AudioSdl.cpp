@@ -23,6 +23,8 @@
  */
 
 #include "AudioSdl.h"
+
+#include <algorithm>
 #include "LmmsTypes.h"
 
 #ifdef LMMS_HAVE_SDL
@@ -106,6 +108,10 @@ AudioSdl::AudioSdl(bool& _success_ful, AudioEngine* _audioEngine)
 
 	if (m_inputDevice != 0) {
 		m_supportsCapture = true;
+		// R2.3: the shared publisher's stereo bus, sized off the audio thread. The
+		// requested spec is taken as-is (allowed_changes 0), so the block is float at
+		// m_inputAudioHandle's channel count.
+		prepareCapture(static_cast<f_cnt_t>(m_inputAudioHandle.samples));
 	} else {
 		m_supportsCapture = false;
 		qWarning ( "Couldn't open SDL capture device: %s\n", SDL_GetError ());
@@ -181,10 +187,11 @@ void AudioSdl::sdlInputAudioCallback(void *_udata, Uint8 *_buf, int _len) {
 }
 
 void AudioSdl::sdlInputAudioCallback(Uint8 *_buf, int _len) {
-	auto samples_buffer = (SampleFrame*)_buf;
-	f_cnt_t frames = _len / sizeof ( SampleFrame );
-
-	audioEngine()->pushInputFrames (samples_buffer, frames);
+	// R2.3: through the ONE capture publisher, so SDL also feeds the N-channel path the
+	// record routes read and the capture counter - it fed the stereo bus alone.
+	const int inputChannels = std::max<int>(m_inputAudioHandle.channels, 1);
+	const auto frames = static_cast<f_cnt_t>(_len / static_cast<int>(sizeof(float)) / inputChannels);
+	publishCaptured(reinterpret_cast<const float*>(_buf), inputChannels, frames);
 }
 
 QString AudioSdl::setupWidget::s_systemDefaultDevice = AudioDeviceSetupWidget::tr("[System Default]");

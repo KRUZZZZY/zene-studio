@@ -26,6 +26,8 @@
 
 #include "ModulationLayer.h"
 
+#include "AutomationRamp.h"
+
 #include <algorithm>
 #include <cmath>
 
@@ -69,6 +71,8 @@ void saveRoute(QDomDocument& doc, QDomElement& modulatorElement, const Modulatio
 	routeElement.setAttribute(QStringLiteral("effect"), route.effect);
 	routeElement.setAttribute(QStringLiteral("parameter"), route.parameter);
 	routeElement.setAttribute(QStringLiteral("depth"), static_cast<double>(route.depth));
+	// R1.3: written only when on, so every existing route keeps its bytes.
+	if (route.perSample) { routeElement.setAttribute(QStringLiteral("persample"), 1); }
 	modulatorElement.appendChild(routeElement);
 }
 
@@ -92,6 +96,7 @@ ModulationRoute readRoute(const QDomElement& element)
 	route.effect = element.attribute(QStringLiteral("effect")).toInt();
 	route.parameter = element.attribute(QStringLiteral("parameter"));
 	route.depth = static_cast<float>(element.attribute(QStringLiteral("depth")).toDouble());
+	route.perSample = element.attribute(QStringLiteral("persample"), QStringLiteral("0")).toInt() != 0;
 	return route;
 }
 
@@ -148,6 +153,7 @@ void appendEntry(const Modulator& modulator, int modulatorIndex, const Modulatio
 	if (runtime->entryCount >= ModulationRuntime::MaxEntries) { return; }
 	ModulationRuntime::Entry entry;
 	entry.modulator = modulatorIndex;
+	entry.perSample = route.perSample;
 	if (!resolveRoute(route, &entry)) { return; }
 	runtime->entries[static_cast<std::size_t>(runtime->entryCount)] = entry;
 	++runtime->entryCount;
@@ -458,7 +464,28 @@ void restoreModulationBases(const ModulationRuntime& runtime)
 	}
 }
 
-void applyModulationBlock(const ModulationRuntime& runtime, double seconds)
+void writeModulatedEntry(AutomatableModel* model, const ModulatorSource& source, float base, float depth,
+	float minimum, float maximum, double seconds, bool perSample, ModulationBlock block)
+{
+	if (!perSample || block.frames <= 1 || block.sampleRate == 0)
+	{
+		writeModulationBase(model, modulatedValue(source, base, depth, minimum, maximum, seconds));
+		return;
+	}
+	AutomationRamp ramp;
+	ramp.reset(block.frames);
+	const f_cnt_t last = block.frames - 1;
+	for (int k = 0; k < AutomationRamp::MaxKnots; ++k)
+	{
+		const auto frame = static_cast<f_cnt_t>(static_cast<long long>(last) * k / (AutomationRamp::MaxKnots - 1));
+		ramp.addKnot(frame, modulatedValue(source, base, depth, minimum, maximum,
+			seconds + static_cast<double>(frame) / static_cast<double>(block.sampleRate)));
+	}
+	writeModulationBase(model, ramp.knot(0).value);
+	model->publishAutomationRamp(ramp);
+}
+
+void applyModulationBlock(const ModulationRuntime& runtime, double seconds, ModulationBlock block)
 {
 	if (!runtime.active()) { return; }
 	for (int i = 0; i < runtime.entryCount; ++i)
@@ -473,8 +500,8 @@ void applyModulationBlock(const ModulationRuntime& runtime, double seconds)
 		if (entry.modulator < 0 || entry.modulator >= runtime.sourceCount) { continue; }
 		const ModulatorSource& source = runtime.sources[static_cast<std::size_t>(entry.modulator)];
 		if (!source.active) { continue; }
-		writeModulationBase(entry.model.data(), modulatedValue(source, entry.base, entry.depth,
-			entry.minimum, entry.maximum, seconds));
+		writeModulatedEntry(entry.model.data(), source, entry.base, entry.depth, entry.minimum,
+			entry.maximum, seconds, entry.perSample, block);
 	}
 }
 

@@ -59,8 +59,6 @@ AudioAlsa::AudioAlsa( bool & _success_ful, AudioEngine*  _audioEngine ) :
 	m_capturePeriodSize( 0 ),
 	m_captureChannels( 0 ),
 	m_captureFloat( false ),
-	m_captureLeft( 0 ),
-	m_captureRight( 1 ),
 	m_captureStop( false ),
 	m_captureOpen( false )
 {
@@ -403,14 +401,13 @@ bool AudioAlsa::openCapture()
 	if( grantedChannels == 0 ) { grantedChannels = 1; }
 
 	m_captureChannels = static_cast<int>( grantedChannels );
-	m_captureLeft = std::clamp( plan.left, 0, m_captureChannels - 1 );
-	m_captureRight = std::clamp( plan.right, 0, m_captureChannels - 1 );
 
 	// Everything the capture thread touches is allocated HERE, once, off that
 	// thread: the loop below must not allocate (the realtime rule).
 	const auto blockFrames = static_cast<std::size_t>( m_capturePeriodSize );
 	m_captureWide.assign( blockFrames * static_cast<std::size_t>( m_captureChannels ), 0.f );
-	m_captureBus.assign( blockFrames, SampleFrame{} );
+	prepareCapture( static_cast<f_cnt_t>( blockFrames ), std::clamp( plan.left, 0, m_captureChannels - 1 ),
+		std::clamp( plan.right, 0, m_captureChannels - 1 ) );
 	if( !m_captureFloat )
 	{
 		m_captureRaw16.assign( blockFrames * static_cast<std::size_t>( m_captureChannels ), 0 );
@@ -542,36 +539,7 @@ int AudioAlsa::handleCaptureError( int _err )
 
 
 
-void AudioAlsa::publishCaptured( const float* interleaved, int channels, snd_pcm_uframes_t frames )
-{
-	AudioEngine* engine = audioEngine();
-	if( engine == nullptr || interleaved == nullptr || frames == 0 )
-	{
-		return;
-	}
-
-	// 1. The N-CHANNEL path (feature row 64): every captured channel, so a
-	//    record route can select any of them - including channels 2..N-1, which
-	//    the stereo bus below cannot carry.
-	engine->pushInputFramesWide( interleaved, channels, static_cast<f_cnt_t>( frames ) );
-
-	// 2. The STEREO bus the rest of the engine already reads
-	//    (AudioEngine::inputBuffer(), SampleRecordHandle, any play handle):
-	//    the configured pair of captured channels, so the existing input
-	//    consumers see the interface the user selected rather than a fixed
-	//    first-two-channels mapping.
-	const auto width = static_cast<snd_pcm_uframes_t>( channels );
-	const auto left = static_cast<snd_pcm_uframes_t>( m_captureLeft );
-	const auto right = static_cast<snd_pcm_uframes_t>( m_captureRight );
-	for( snd_pcm_uframes_t i = 0; i < frames; ++i )
-	{
-		m_captureBus[i] = SampleFrame( interleaved[i * width + left],
-			interleaved[i * width + right] );
-	}
-	engine->pushInputFrames( m_captureBus.data(), static_cast<f_cnt_t>( frames ) );
-
-	AudioInputPath::addCapturedFrames( static_cast<std::uint64_t>( frames ) );
-}
+// R2.3: AudioAlsa::publishCaptured moved to AudioDevice::publishCaptured, shared by every backend.
 
 
 
@@ -629,8 +597,7 @@ void AudioAlsa::captureLoop()
 		{
 			continue;
 		}
-		publishCaptured( m_captureWide.data(), m_captureChannels,
-			static_cast<snd_pcm_uframes_t>( got ) );
+		publishCaptured( m_captureWide.data(), m_captureChannels, static_cast<f_cnt_t>( got ) );
 	}
 }
 

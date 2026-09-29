@@ -63,6 +63,7 @@ void ModulationLayerPublisher::publishView()
 		ModulationAudioView::Entry& to = view.entries[slot];
 		to.modulator = from.modulator;
 		to.depth = from.depth;
+		to.perSample = from.perSample;
 		to.base = from.base;
 		to.minimum = from.minimum;
 		to.maximum = from.maximum;
@@ -89,7 +90,7 @@ void ModulationLayerPublisher::publishView()
 }
 
 void applyModulationBlock(const ModulationLayerPublisher& publisher,
-	const ModulationAudioView& view, double seconds)
+	const ModulationAudioView& view, double seconds, ModulationBlock block)
 {
 	if (!view.active()) { return; }
 	for (int i = 0; i < view.entryCount; ++i)
@@ -102,8 +103,8 @@ void applyModulationBlock(const ModulationLayerPublisher& publisher,
 		if (entry.modulator < 0 || entry.modulator >= view.sourceCount) { continue; }
 		const ModulatorSource& source = view.sources[static_cast<std::size_t>(entry.modulator)];
 		if (!source.active) { continue; }
-		writeModulationBase(entry.model, modulatedValue(source, entry.base, entry.depth,
-			entry.minimum, entry.maximum, seconds));
+		writeModulatedEntry(entry.model, source, entry.base, entry.depth, entry.minimum, entry.maximum,
+			seconds, entry.perSample, block);
 	}
 }
 

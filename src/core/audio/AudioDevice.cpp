@@ -26,6 +26,9 @@
 
 #include "AudioDevice.h"
 #include "AudioEngine.h"
+#include "AudioInputPath.h"
+
+#include <algorithm>
 
 namespace lmms
 {
@@ -44,6 +47,49 @@ AudioDevice::~AudioDevice()
 {
 	assert(!isRunning() && "device should have been stopped before being destroyed");
 }
+
+void AudioDevice::prepareCapture(f_cnt_t maxFrames, int left, int right)
+{
+	m_captureBus.assign(static_cast<std::size_t>(std::max<f_cnt_t>(maxFrames, 1)), SampleFrame{});
+	m_captureLeft = std::max(left, 0);
+	m_captureRight = std::max(right, 0);
+}
+
+
+
+
+void AudioDevice::publishCaptured(const float* interleaved, int channels, f_cnt_t frames) noexcept
+{
+	AudioEngine* engine = m_audioEngine;
+	if (engine == nullptr || interleaved == nullptr || frames == 0 || channels <= 0 || m_captureBus.empty())
+	{
+		return;
+	}
+	// 1. The N-CHANNEL path (feature row 64): every captured channel, so a record route can
+	//    select any of them - channels 2..N-1 included, which the stereo bus cannot carry.
+	engine->pushInputFramesWide(interleaved, channels, frames);
+	// 2. The STEREO bus the rest of the engine reads: the selected pair, clamped to what
+	//    this block carries (a mono device feeds its one channel to both sides).
+	const auto width = static_cast<std::size_t>(channels);
+	const auto left = static_cast<std::size_t>(std::min(m_captureLeft, channels - 1));
+	const auto right = static_cast<std::size_t>(std::min(m_captureRight, channels - 1));
+	const auto piece = static_cast<f_cnt_t>(m_captureBus.size());
+	for (f_cnt_t done = 0; done < frames; done += piece)
+	{
+		const f_cnt_t count = std::min(piece, frames - done);
+		for (f_cnt_t i = 0; i < count; ++i)
+		{
+			const std::size_t frame = static_cast<std::size_t>(done + i) * width;
+			m_captureBus[static_cast<std::size_t>(i)] = SampleFrame(interleaved[frame + left], interleaved[frame + right]);
+		}
+		engine->pushInputFrames(m_captureBus.data(), count);
+	}
+	// 3. The counter record.input_get_state reports.
+	AudioInputPath::addCapturedFrames(static_cast<std::uint64_t>(frames));
+}
+
+
+
 
 f_cnt_t AudioDevice::captureBlockFrames() const
 {

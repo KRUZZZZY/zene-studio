@@ -116,8 +116,6 @@ private:
 	void closeCapture();
 	//! The capture thread: read a period, publish it to both engine input paths.
 	void captureLoop();
-	//! Publishes one interleaved block of \a frames frames into the engine.
-	void publishCaptured( const float* interleaved, int channels, snd_pcm_uframes_t frames );
 	//! Error recovery for the capture PCM (overrun/suspend), the read-side twin
 	//! of handleError()'s write-side one.
 	int handleCaptureError( int _err );
@@ -143,12 +141,6 @@ private:
 	//! The raw device block (FLOAT in place, or S16_LE before conversion).
 	std::vector<float> m_captureWide;
 	std::vector<std::int16_t> m_captureRaw16;
-	//! The pair of captured channels the STEREO engine bus carries.
-	std::vector<SampleFrame> m_captureBus;
-	//! The bus routing in force, cached at open time: the capture thread must
-	//! not read the published state (that takes a lock) once per period.
-	int m_captureLeft;
-	int m_captureRight;
 	std::thread m_captureThread;
 	std::atomic<bool> m_captureStop;
 	std::atomic<bool> m_captureOpen;
