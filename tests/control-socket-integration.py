@@ -1805,6 +1805,9 @@ def main():
         )
 
     env = dict(os.environ)
+    # Replies held to their resultSchema (ControlResultCheck.h), as every
+    # harness-launched instance is - this standalone launcher had missed it.
+    env.setdefault("ZENE_CONTROL_CHECK_RESULTS", "1")
     env["QT_QPA_PLATFORM"] = "offscreen"
     env["HOME"] = tmp
     env["XDG_CONFIG_HOME"] = os.path.join(tmp, "config")

@@ -1,0 +1,7 @@
+# Commands the test suite has never seen SUCCEED under result checks (R6.3).
+# Measured by tests/checked-coverage.py over a full ctest run (gate 16). This
+# list only shrinks: reach a command's success path in a test, then delete its
+# line in the same change. <command.id><TAB><why it is not reached yet>
+crash.upload_report	refuses every call by design: the product does no network upload (the report stays on disk for the user to send); tests/control-crash-reporter.py holds the refusal
+mixer.set_pan	refuses every call: a MixerChannel carries no pan in this tree (ControlCommandsMixer.cpp) - a missing feature, not a design decision; reaching it means building channel pan
+telemetry.consent	refuses every unattended caller by design: it declares requires: display, human (consent is a person's act); TelemetryTest and ControlRegistryTest hold the refusal

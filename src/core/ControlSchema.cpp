@@ -37,6 +37,7 @@
 #include <QFile>
 #include <QJsonArray>
 #include <QJsonValue>
+#include <QMutex>
 #include <QSet>
 
 namespace lmms
@@ -205,12 +206,35 @@ static const QSet<QString>& knownViolations()
 	return known;
 }
 
+/*! R6.3, made measurable: with ZENE_CONTROL_CHECKED_LOG naming a file, every
+ *  command id whose successful reply PASSED its schema check is appended to it,
+ *  once per process. A whole ctest run with the variable set is then the list
+ *  of commands the suite holds to their contract; tests/checked-coverage.py
+ *  ratchets it. Control thread only (never the audio thread), so a file append
+ *  under a mutex is fine; the variable is unset in every shipped run. */
+static void noteChecked(const QString& commandId)
+{
+	static const QString path = QString::fromLocal8Bit(std::getenv("ZENE_CONTROL_CHECKED_LOG"));
+	if (path.isEmpty()) { return; }
+	static QMutex mutex;
+	static QSet<QString> seen;
+	QMutexLocker locker(&mutex);
+	if (seen.contains(commandId)) { return; }
+	seen.insert(commandId);
+	QFile file(path);
+	if (file.open(QIODevice::Append | QIODevice::Text)) { file.write((commandId + QLatin1Char('\n')).toUtf8()); }
+}
+
 void finishResult(const QString& commandId, const QJsonObject& resultSchema, ControlResult* result)
 {
 	result->result.remove(QStringLiteral("__transaction"));
 	if (!result->ok || !resultChecksEnabled() || knownViolations().contains(commandId)) { return; }
 	const QString why = resultSchemaViolation(resultSchema, result->result);
-	if (why.isEmpty()) { return; }
+	if (why.isEmpty())
+	{
+		noteChecked(commandId);
+		return;
+	}
 	// Refused, not a new wire kind: the closed error set is a protocol contract,
 	// and this mode exists only in test runs.
 	*result = ControlResult::failure(ControlErrorKind::Refused,

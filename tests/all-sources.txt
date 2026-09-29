@@ -1664,6 +1664,7 @@ tests/src/core/ControlRegistryTest.cpp
 tests/src/core/ControlResultSchemaTest.cpp
 tests/src/core/ControlSampleOperatorTest.cpp
 tests/src/core/ControlShutdownHookTest.cpp
+tests/src/core/ControlSuccessPathsTest.cpp
 tests/src/core/ControlSurfaceReferenceTest.cpp
 tests/src/core/ControlTempoMapCommandsTest.cpp
 tests/src/core/ControlVcaCommandsTest.cpp

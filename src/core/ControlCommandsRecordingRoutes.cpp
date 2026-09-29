@@ -345,7 +345,15 @@ void registerDisarmTrack(ControlRegistry& registry)
 		"re-arming writes a NEW take rather than restoring this one, and there is nothing the "
 		"engine could hand back.");
 	cmd.argsSchema = routeSchema();
-	cmd.resultSchema = routeResultSchema();
+	// The route's shape plus the two facts only a disarm reports. Measured (R6.3,
+	// tests/control-jack-capture.py): the first disarm driven to SUCCESS broke
+	// the shared route schema, which declared neither.
+	QJsonObject schema = routeResultSchema();
+	QJsonObject properties = schema.value(QStringLiteral("properties")).toObject();
+	properties.insert(QStringLiteral("armed_before"), booleanProperty());
+	properties.insert(QStringLiteral("journal_retired"), booleanProperty());
+	schema.insert(QStringLiteral("properties"), properties);
+	cmd.resultSchema = schema;
 	cmd.mutating = false;
 	cmd.handler = [](const QJsonObject& args) { return disarmTrack(args); };
 	registry.registerCommand(cmd);

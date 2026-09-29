@@ -334,6 +334,21 @@ private slots:
 		QCOMPARE(result.errorKind, ControlErrorKind::NotFound);
 		QVERIFY2(result.errorMessage.contains(QStringLiteral("no automation clip")),
 			qPrintable(result.errorMessage));
+
+		// And its success path (R6.3: never reached before, so its reply was never
+		// held to its schema): a point creates the clip, then the flag sets.
+		const QJsonObject target{{QStringLiteral("track"), trackId}, {QStringLiteral("parameter"), paramId}};
+		QJsonObject point = target;
+		point.insert(QStringLiteral("ticks"), 0);
+		point.insert(QStringLiteral("value"), 0.5);
+		const ControlResult added = registry->invoke(QStringLiteral("automation.add_point"), point);
+		QVERIFY2(added.ok, qPrintable(added.errorMessage));
+		QJsonObject on = target;
+		on.insert(QStringLiteral("mode"), qstr("on"));
+		const ControlResult recording = registry->invoke(QStringLiteral("automation.record_mode_set"), on);
+		QVERIFY2(recording.ok, qPrintable(recording.errorMessage));
+		QCOMPARE(recording.result.value(QStringLiteral("mode")).toString(), qstr("on"));
+		QVERIFY(registry->invoke(QStringLiteral("automation.clear"), target).ok);
 	}
 
 	//! The MODES' own proof (the no-destruction property, the mode round trip for all

@@ -58,6 +58,9 @@ with open(CONFIG, "w") as handle:
         '</lmmsconfig>\n' % WORKSPACE)
 
 env = dict(os.environ, QT_QPA_PLATFORM="offscreen")
+# Replies held to their resultSchema (ControlResultCheck.h), as every
+# harness-launched instance is - this standalone launcher had missed it.
+env.setdefault("ZENE_CONTROL_CHECK_RESULTS", "1")
 env["HOME"] = RUN_DIR
 env["XDG_CONFIG_HOME"] = os.path.join(RUN_DIR, "config")
 env["XDG_DATA_HOME"] = os.path.join(RUN_DIR, "data")

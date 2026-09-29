@@ -173,12 +173,14 @@ skip_hint() {
 		5) echo "drop --no-mutation" ;;
 		12) echo "install python3 (the sweep is a Python gate over the sources)" ;;
 		13) echo "install python3-tinycss2 (sudo apt-get install -y python3-tinycss2)" ;;
+		16) echo "let gate 1 run ctest (it writes the checked-command log gate 16 reads)" ;;
 		*) echo "see tests/QA-GATES.md" ;;
 	esac
 }
 
 # ---- Gate 1: unit tests -----------------------------------------------------
 banner 1 "unit tests (ctest)"
+checked_log="$PWD/build/gate1-checked-commands.log"
 if [[ ! -d build ]]; then
 	echo "no build/ — configure first: cmake -B build -S . -DCMAKE_BUILD_TYPE=Debug -DWANT_QT6=ON && cmake --build build -j4"
 	record 1 "ctest" "SKIP" "no configured build/ directory"
@@ -193,7 +195,11 @@ else
 		echo "build FAILED (exit $build_rc) — tail of $build_log:"; tail -15 "$build_log"
 		record 1 "ctest" "FAIL"
 	else
-		( cd build/tests && QT_QPA_PLATFORM=offscreen ctest --output-on-failure )
+		# Gate 16 reads what this run held to its contract: every process appends
+		# the ids whose successful reply passed its resultSchema (ControlSchema.cpp).
+		rm -f "$checked_log"
+		( cd build/tests && QT_QPA_PLATFORM=offscreen ZENE_CONTROL_CHECKED_LOG="$checked_log" \
+			ctest --output-on-failure )
 		ctest_rc=$?
 		[[ $ctest_rc -eq 0 ]] && record 1 "ctest" "PASS" || record 1 "ctest" "FAIL"
 	fi
@@ -356,6 +362,19 @@ bash tests/test-release-ref-fitness.sh
 banner 15 "verification-debt red/green proof (test-verification-debt.sh)"
 bash tests/test-verification-debt.sh
 [[ $? -eq 0 ]] && record 15 "verification-debt-selftest" "PASS" || record 15 "verification-debt-selftest" "FAIL"
+
+# ---- Gate 16: checked-command coverage (R6.3) ---------------------------------
+# Every command on the release surface must reach its success path under result checks
+# somewhere in the suite, or be listed in tests/checked-coverage-unreached.txt - a list that
+# only shrinks. It reads gate 1's log, so it SKIPs (never passes) when gate 1 did not run ctest.
+banner 16 "checked-command coverage (checked-coverage.py)"
+if [[ ! -s "$checked_log" ]]; then
+	echo "gate 1 produced no checked-command log ($checked_log)"
+	record 16 "checked-coverage" "SKIP" "gate 1 did not run ctest"
+else
+	python3 tests/checked-coverage.py --log "$checked_log"
+	[[ $? -eq 0 ]] && record 16 "checked-coverage" "PASS" || record 16 "checked-coverage" "FAIL"
+fi
 
 # ---- summary ----------------------------------------------------------------
 printf '\n================ SUMMARY ================\n'
