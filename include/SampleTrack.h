@@ -41,6 +41,8 @@ class SampleTrackWindow;
 } // namespace gui
 
 
+class InputMonitorHandle;
+
 class SampleTrack : public Track
 {
 	Q_OBJECT
@@ -83,6 +85,9 @@ public:
 		m_isPlaying = playing;
 	}
 
+	//! R2.1: the monitor handle while the mode is not Off, else nullptr. Model thread.
+	const InputMonitorHandle* monitorHandle() const { return m_monitorHandle; }
+
 signals:
 	void playingChanged();
 
@@ -91,7 +96,11 @@ public slots:
 	void setPlayingClips( bool isPlaying );
 	void updateMixerChannel();
 
+protected:
+	void monitorModeChanged() override;
+
 private:
+	InputMonitorHandle* m_monitorHandle = nullptr;
 	FloatModel m_volumeModel;
 	FloatModel m_panningModel;
 	IntModel m_mixerChannelModel;

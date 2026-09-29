@@ -27,10 +27,14 @@
 #include <QApplication>
 #include <QHBoxLayout>
 #include <QMenu>
+#include <QJsonObject>
 #include <QSpacerItem>
+#include <QToolButton>
 #include <QVBoxLayout>
 
 #include "ConfigManager.h"
+#include "ControlRegistry.h"
+#include "ControlVocabulary.h"
 #include "DeprecationHelper.h"
 #include "MainWindow.h"
 #include "embed.h"
@@ -82,6 +86,16 @@ SampleTrackView::SampleTrackView( SampleTrack * _t, TrackContainerView* tcv ) :
 	m_activityIndicator->setFixedSize(8, 28);
 	m_activityIndicator->show();
 
+	// R2.1: the input monitor, a registry action like every other (M3.2): the button runs
+	// track.set_monitor and shows what the track reports back, so an agent and a person
+	// change the same state through the same verb.
+	m_monitorButton = new QToolButton(getTrackSettingsWidget());
+	m_monitorButton->setFixedSize(24, 28);
+	m_monitorButton->setProperty("controlCommand", QStringLiteral("track.set_monitor"));
+	m_monitorButton->setAccessibleName(tr("Input monitoring"));
+	connect(m_monitorButton, &QToolButton::clicked, this, &SampleTrackView::cycleMonitor);
+	showMonitorMode();
+
 	auto masterLayout = new QVBoxLayout(getTrackSettingsWidget());
 	masterLayout->setContentsMargins(0, 1, 0, 0);
 	auto layout = new QHBoxLayout();
@@ -90,6 +104,7 @@ SampleTrackView::SampleTrackView( SampleTrack * _t, TrackContainerView* tcv ) :
 	layout->addWidget(m_tlb);
 	layout->addWidget(m_mixerChannelNumber);
 	layout->addWidget(m_activityIndicator);
+	layout->addWidget(m_monitorButton);
 	layout->addWidget(m_volumeKnob);
 	layout->addWidget(m_panningKnob);
 	masterLayout->addLayout(layout);
@@ -249,6 +264,9 @@ void SampleTrackView::assignMixerLine(int channelIndex)
 
 void SampleTrackView::corruptStateUpdate()
 {
+	// The monitor mode can change under the view (an agent, an undo): the periodic tick
+	// that already polls the bus state re-reads it too.
+	showMonitorMode();
 	if (model()->audioBusHandle()->isCorrupted())
 	{
 		m_activityIndicator->setState(FadeButton::State::Corrupted);
@@ -260,6 +278,36 @@ void SampleTrackView::corruptStateUpdate()
 		m_activityIndicator->setToolTip(QString{});
 	}
 }
+
+
+void SampleTrackView::cycleMonitor()
+{
+	const Track* track = getTrack();
+	if (track == nullptr) { return; }
+	const MonitorMode next = track->monitorMode() == MonitorMode::Off ? MonitorMode::Auto
+		: track->monitorMode() == MonitorMode::Auto ? MonitorMode::In : MonitorMode::Off;
+	ControlRegistry::instance()->invoke(QStringLiteral("track.set_monitor"), QJsonObject{
+		{QStringLiteral("track"), control::trackIdOf(track)},
+		{QStringLiteral("mode"), monitorModeName(next)}});
+	showMonitorMode();
+}
+
+
+void SampleTrackView::showMonitorMode()
+{
+	// getTrack(), not model(): this runs from the constructor, before the view's model is
+	// attached (model() is null there - measured, a SIGSEGV on every project load).
+	const Track* track = getTrack();
+	if (track == nullptr) { return; }
+	const MonitorMode mode = track->monitorMode();
+	m_monitorButton->setText(mode == MonitorMode::In ? tr("IN") : mode == MonitorMode::Auto ? tr("AUT") : tr("OFF"));
+	m_monitorButton->setCheckable(true);
+	m_monitorButton->setChecked(mode != MonitorMode::Off);
+	m_monitorButton->setToolTip(tr("Input monitoring: %1 (click to cycle off, auto, in)")
+		.arg(monitorModeName(mode)));
+}
+
+
 
 
 } // namespace lmms::gui

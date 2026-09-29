@@ -34,6 +34,8 @@
  */
 
 #include <cstdint>
+#include <optional>
+#include <vector>
 
 #include <QDomDocument>
 #include <QDomElement>
@@ -168,6 +170,23 @@ void applySlotLaunchSettings(ClipSlot& slot, const QJsonObject& args)
 	}
 }
 
+//! The optional `follow_actions` argument of set_slot / set_scene: absent leaves @a chain
+//! empty, present fills it; false (with @a error) when an entry is refused.
+bool followActionsArg(const QJsonObject& args, int sceneCount,
+	std::optional<std::vector<FollowAction>>* chain, ControlResult* error)
+{
+	if (!args.contains(QStringLiteral("follow_actions"))) { return true; }
+	std::vector<FollowAction> parsed;
+	QString reason;
+	if (!followChainFromJson(args.value(QStringLiteral("follow_actions")), sceneCount, &parsed, &reason))
+	{
+		*error = ControlResult::failure(ControlErrorKind::InvalidArgs, reason);
+		return false;
+	}
+	*chain = std::move(parsed);
+	return true;
+}
+
 void applySlotShape(ClipSlot& slot, const QJsonObject& args)
 {
 	if (args.contains(QStringLiteral("loop_start"))) { slot.setLoopStart(args.value(QStringLiteral("loop_start")).toInt()); }
@@ -193,7 +212,8 @@ void registerSessionGetState(ControlRegistry& registry)
 	state.description = QStringLiteral("The Session View: grid dimensions, the global launch "
 		"quantisation, every non-empty clip slot with its launch settings, every scene override, "
 		"and the launch engine's read-back (completed launches, the grid line the newest starts "
-		"fired on, how many clips started on that one line).");
+		"fired on, how many clips started on that one line), and `columns`: every column that is "
+		"launching, playing or stopping and the scene it is on.");
 	state.argsSchema = objectSchema();
 	state.resultSchema = objectSchema({
 		{QStringLiteral("grid"), objectProperty()},
@@ -201,6 +221,7 @@ void registerSessionGetState(ControlRegistry& registry)
 		{QStringLiteral("slots"), arrayProperty()},
 		{QStringLiteral("scenes"), arrayProperty()},
 		{QStringLiteral("launch"), objectProperty()},
+		{QStringLiteral("columns"), arrayProperty()},
 	});
 	state.mutating = false;
 	state.handler = [](const QJsonObject&) {
@@ -219,6 +240,20 @@ void registerSessionGetState(ControlRegistry& registry)
 		result.insert(QStringLiteral("slots"), cells);
 		result.insert(QStringLiteral("scenes"), sceneStates(*model));
 		result.insert(QStringLiteral("launch"), launchState(*song, song->sessionScheduler()));
+		// R5.3: every column that is not idle - its phase and the scene it is on, the
+		// engine's published reading (up to one audio period old).
+		QJsonArray columns;
+		for (int track = 0; track < SessionScheduler::PublishedColumns; ++track)
+		{
+			const SessionScheduler::ColumnState column = song->sessionScheduler().columnState(track);
+			if (column.phase == SlotPhase::Idle) { continue; }
+			columns.append(QJsonObject{{QStringLiteral("track"), track},
+				{QStringLiteral("scene"), column.scene},
+				{QStringLiteral("phase"), column.phase == SlotPhase::Playing ? QStringLiteral("playing")
+					: column.phase == SlotPhase::LaunchPending ? QStringLiteral("launching")
+					: QStringLiteral("stopping")}});
+		}
+		result.insert(QStringLiteral("columns"), columns);
 		return ControlResult::success(result);
 	};
 	registry.registerCommand(state);
@@ -303,13 +338,16 @@ void registerSessionSetScene(ControlRegistry& registry)
 	scene.verb = QStringLiteral("set_scene");
 	scene.description = QStringLiteral("Set one scene's name and/or its tempo and time-signature "
 		"overrides; a field that is supplied is written and its override switched on, a field that "
-		"is not is left alone. Reversible through the ProjectJournal (action checkpoint).");
+		"is not is left alone. `follow_actions` replaces the scene's own Follow Action chain ([] "
+		"clears it); session.scene_follow_set arms it. Reversible through the ProjectJournal "
+		"(action checkpoint).");
 	scene.argsSchema = objectSchema({
 		{QStringLiteral("scene"), integerProperty(0, 511)},
 		{QStringLiteral("name"), stringProperty()},
 		{QStringLiteral("tempo"), numberProperty()},
 		{QStringLiteral("timesig_numerator"), integerProperty(1, 64)},
 		{QStringLiteral("timesig_denominator"), integerProperty(1, 64)},
+		{QStringLiteral("follow_actions"), arrayProperty()},
 	}, {QStringLiteral("scene")});
 	scene.resultSchema = objectSchema({
 		{QStringLiteral("scene"), objectProperty()},
@@ -326,9 +364,12 @@ void registerSessionSetScene(ControlRegistry& registry)
 				QStringLiteral("scene %1 is outside the grid's %2 scenes; session.set_grid resizes it")
 					.arg(index).arg(model->sceneCount()));
 		}
+		std::optional<std::vector<FollowAction>> chain;
+		if (!followActionsArg(args, model->sceneCount(), &chain, &error)) { return error; }
 		const QString captured = captureSession(*model);
 		const QJsonObject before = gridState(*model, clipSlots(*model));
 		Scene& sceneModel = model->scene(index);
+		if (chain) { sceneModel.setFollowActions(*chain); }
 		if (args.contains(QStringLiteral("name")))
 		{
 			sceneModel.setName(args.value(QStringLiteral("name")).toString());
@@ -366,8 +407,9 @@ void registerSessionSetSlot(ControlRegistry& registry)
 	slot.verb = QStringLiteral("set_slot");
 	slot.description = QStringLiteral("Define one grid cell: a MIDI clip ('type':'midi' + "
 		"'pattern'), an audio clip ('type':'audio' + 'source'), or empty ('type':'empty'); plus its "
-		"launch mode, launch quantisation and playback settings. Only the fields supplied are "
-		"written. Reversible through the ProjectJournal (action checkpoint on the <session> block).");
+		"launch mode, launch quantisation and playback settings, and `follow_actions`, the cell's "
+		"persisted Follow Action chain ([] clears it; session.follow_set arms it). Only the fields "
+		"supplied are written. Reversible through the ProjectJournal (action checkpoint on the <session> block).");
 	slot.argsSchema = objectSchema({
 		{QStringLiteral("track"), integerProperty(0, 255)},
 		{QStringLiteral("scene"), integerProperty(0, 511)},
@@ -384,6 +426,7 @@ void registerSessionSetSlot(ControlRegistry& registry)
 		{QStringLiteral("transpose"), integerProperty(-128, 128)},
 		{QStringLiteral("detune"), integerProperty(-1200, 1200)},
 		{QStringLiteral("ram"), booleanProperty()},
+		{QStringLiteral("follow_actions"), arrayProperty()},
 	}, {QStringLiteral("track"), QStringLiteral("scene")});
 	slot.resultSchema = objectSchema({
 		{QStringLiteral("slot"), objectProperty()},
@@ -398,10 +441,14 @@ void registerSessionSetSlot(ControlRegistry& registry)
 		if (!gridContains(*model, track, scene, &error)) { return error; }
 		const QString captured = captureSession(*model);
 		const QJsonObject before = gridState(*model, clipSlots(*model));
+		// Parsed BEFORE anything is written, so a refused chain leaves the slot as it was.
+		std::optional<std::vector<FollowAction>> chain;
+		if (!followActionsArg(args, model->sceneCount(), &chain, &error)) { return error; }
 		ClipSlot& target = model->slot(track, scene);
 		if (!applySlotReference(target, args, &error)) { return error; }
 		applySlotLaunchSettings(target, args);
 		applySlotShape(target, args);
+		if (chain) { target.setFollowActions(*chain); }
 		QJsonObject result;
 		result.insert(QStringLiteral("slot"), clipSlotState(track, scene, target));
 		result.insert(QStringLiteral("__transaction"), recordSessionEdit(captured, before,

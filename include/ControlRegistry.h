@@ -402,6 +402,8 @@ LMMS_EXPORT void registerClipCommands(ControlRegistry& registry);
 //! clip.set_fade/set_gain/crossfade - the same group's fade, crossfade and
 //! clip-gain commands (the fade/crossfade/clip-gain wave).
 LMMS_EXPORT void registerClipEditsCommands(ControlRegistry& registry);
+LMMS_EXPORT void registerClipConsolidateCommands(ControlRegistry& registry);
+LMMS_EXPORT void registerTrackMonitorCommands(ControlRegistry& registry);
 //! clip.trim / clip.slip - the same group's EDGE-editing verbs: a head trim that
 //! holds the audio still on the timeline, and a slip that moves the audio inside
 //! a fixed clip rectangle. Split out of registerClipCommands' file because the

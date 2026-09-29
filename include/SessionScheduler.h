@@ -127,7 +127,11 @@ enum class LaunchCommandType : std::uint8_t
 	 *  producer, same POD rule as the three above. */
 	Follow,
 	//! Publishes what a cell HOLDS so a launched slot renders it (#597); POD.
-	Content
+	Content,
+	//! R5.2: installs (or clears) a SCENE's chain - `scene` and `plan` are read.
+	SceneFollow,
+	//! R5.2: a scene row was launched - `scene` and `quantisation` are read.
+	SceneLaunch
 };
 
 //! Where a slot is in its launch life cycle.
@@ -337,6 +341,34 @@ public:
 	std::uint64_t followFires() const noexcept;
 	std::uint64_t lastFollowFire() const noexcept;
 
+	// ---- Scene Follow Actions (R5.2; bodies in src/core/SessionSceneFollow.cpp) ----
+
+	/*! Installs a SCENE's chain, or clears it with `plan.enabled` false. Model thread;
+	 *  one queue push, no allocation. The chain runs while the scene is the launched row:
+	 *  at its action time it moves every column playing that row together - Stop stops
+	 *  them, PlayAgain restarts them, the scene-addressing actions move them to the target
+	 *  row - and while it runs it takes precedence over the chains of the row's cells. */
+	bool requestSceneFollowPlan( int scene, const FollowPlan& plan ) noexcept;
+	/*! Marks @a scene as the launched row from the grid line @a quantisation resolves to
+	 *  (the line its cells' presses resolve to). Model thread; session.launch_scene calls it. */
+	bool requestSceneLaunch( int scene, LaunchQuantisation quantisation ) noexcept;
+	//! The row whose chain is running, or -1. Any thread; relaxed.
+	int activeScene() const noexcept;
+	//! Scenes with an enabled chain installed. Any thread; relaxed.
+	int armedFollowScenes() const noexcept;
+	//! Fires of SCENE chains since the last reset() (followFires() counts them too).
+	std::uint64_t sceneFollowFires() const noexcept;
+
+	/*! R5.3: what column @a track is doing, as the audio thread last published it - the
+	 *  clip-launch grid's reading. Columns past PublishedColumns read as idle. Any thread. */
+	static constexpr int PublishedColumns = 64;
+	struct ColumnState
+	{
+		SlotPhase phase = SlotPhase::Idle;
+		int scene = -1;
+	};
+	ColumnState columnState( int track ) const noexcept;
+
 	//! Arrangement Record's event ring (task #641): the model thread consumes it
 	//! (ControlCommandsSessionRecord.cpp); the audio thread feeds it while armed.
 	SessionArrangementRecorder& arrangementRecorder() noexcept;
@@ -455,6 +487,43 @@ private:
 	void publishFollowFire( const FollowFire& fire, tick_t tick ) noexcept;
 	//! Audio thread: how many installed cells have an ENABLED plan.
 	void recountArmedFollowCells() noexcept;
+
+	// ---- Scene Follow Actions, audio thread (bodies in SessionSceneFollow.cpp) ----
+	struct InstalledScenePlan
+	{
+		int scene = -1;
+		FollowPlan plan;
+	};
+	bool installScenePlan( int scene, const FollowPlan& plan ) noexcept;
+	//! The scene's table entry, or (with @a claimFree) a free one; nullptr when neither.
+	InstalledScenePlan* sceneEntry( int scene, bool claimFree ) noexcept;
+	const FollowPlan* dueScenePlan( const SessionClockContext& ctx ) noexcept;
+	bool rowPlaying( int scene ) const noexcept;
+	//! Drains a SceneFollow or SceneLaunch command; false for any other type.
+	bool applySceneCommand( const Command& command, const SessionClockContext& ctx ) noexcept;
+	//! A playing cell's own enabled plan, unless its launched row's chain governs it.
+	const FollowPlan* cellPlanFor( const ActiveSlot& slot ) const noexcept;
+	const FollowPlan* scenePlanFor( int scene ) const noexcept;
+	//! The launched row's chain governs @a slot: the cell's own chain is skipped.
+	bool sceneOverrides( const ActiveSlot& slot ) const noexcept;
+	void startScene( int scene, tick_t startTick ) noexcept;
+	//! Once per period after the slots: the launched row's chain, if it has one.
+	void evaluateSceneFollow( const SessionClockContext& ctx ) noexcept;
+	//! Applies a fired scene action to every column playing the launched row.
+	void applySceneFire( const FollowFire& fire, tick_t firedAt, const SessionClockContext& ctx ) noexcept;
+	void resetSceneFollow() noexcept;
+	//! Audio thread, once per period: each column's phase and scene, packed per column.
+	void publishColumns() noexcept;
+	std::array<std::atomic<std::uint32_t>, PublishedColumns> m_columnStates{};
+
+	std::array<InstalledScenePlan, MaxFollowPlans> m_scenePlans{};
+	int m_activeScene = -1;
+	tick_t m_sceneStartTick = 0;
+	bool m_sceneFollowScheduled = false;
+	tick_t m_sceneFollowNext = 0;
+	std::atomic<int> m_activeSceneReading{ -1 };
+	std::atomic<int> m_armedScenes{ 0 };
+	std::atomic<std::uint64_t> m_sceneFollowFires{ 0 };
 
 	std::array<ActiveSlot, MaxActiveSlots> m_active{};
 	std::array<InstalledFollowPlan, MaxFollowPlans> m_followPlans{};

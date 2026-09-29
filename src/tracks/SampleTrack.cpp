@@ -32,6 +32,7 @@
 #include "EffectChain.h"
 #include "Mixer.h"
 #include "panning.h"
+#include "InputMonitor.h"
 #include "PatternStore.h"
 #include "PatternTrack.h"
 #include "SampleClip.h"
@@ -66,7 +67,31 @@ SampleTrack::SampleTrack(TrackContainer* tc) :
 
 SampleTrack::~SampleTrack()
 {
-	Engine::audioEngine()->removePlayHandlesOfTypes( this, PlayHandle::Type::SamplePlayHandle );
+	Engine::audioEngine()->removePlayHandlesOfTypes( this,
+		PlayHandle::Type::SamplePlayHandle | PlayHandle::Type::InputMonitorHandle );
+}
+
+
+
+
+//! R2.1: the monitor handle lives exactly while the mode is not Off, so a track that never
+//! monitors costs the render nothing.
+void SampleTrack::monitorModeChanged()
+{
+	if( monitorMode() == MonitorMode::Off )
+	{
+		if( m_monitorHandle != nullptr )
+		{
+			Engine::audioEngine()->removePlayHandlesOfTypes( this, PlayHandle::Type::InputMonitorHandle );
+			m_monitorHandle = nullptr;
+		}
+		return;
+	}
+	if( m_monitorHandle == nullptr )
+	{
+		m_monitorHandle = new InputMonitorHandle( this );
+		Engine::audioEngine()->addPlayHandle( m_monitorHandle );
+	}
 }
 
 

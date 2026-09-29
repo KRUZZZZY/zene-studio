@@ -165,6 +165,9 @@ LMMS_EXPORT Track* restoreTrackFromXml(const QString& xml, TrackContainer* conta
 // ---------------------------------------------------------------------------
 // SPEC A16 transactions
 // ---------------------------------------------------------------------------
+//! A clip's take-lane tag - defined in ControlCommandsComp.cpp, the value's one owner.
+void assignTakeLane(Clip* clip, int lane);
+
 //! The private "__transaction" payload a mutating handler returns; the registry
 //! records it and strips it from the wire result.
 QJsonObject transactionPayload(const QJsonObject& before, const QString& inverseOp,

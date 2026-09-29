@@ -409,6 +409,13 @@ void InstrumentTrack::processInEvent( const MidiEvent& event, const TimePos& tim
 	{
 		return;
 	}
+	// R2.1: monitoring Off keeps live notes out of the instrument. Only the NOTE-ON is
+	// dropped - a note-off still reaches a note that sounded before the mode changed.
+	if (event.type() == MidiNoteOn && event.source() == MidiEvent::Source::External
+		&& monitorMode() == MonitorMode::Off)
+	{
+		return;
+	}
 
 	// MPE per-note expression (task #601). Off unless MpeExpression::isEnabled();
 	// when it is on, a bend / channel pressure / CC74 arriving on the note's own

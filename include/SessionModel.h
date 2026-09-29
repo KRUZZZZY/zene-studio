@@ -224,10 +224,16 @@ public:
 	int timeSigDenominator() const { return m_timeSigDenominator; }
 	void setTimeSigDenominator( int denominator ) { m_timeSigDenominator = denominator; }
 
+	/*! R5.2: the scene's own Follow Action chain. When the scene is LAUNCHED as a row its
+	 *  chain moves the whole row at the action time, and it takes precedence over the
+	 *  chains of the cells it launched (SessionScheduler::evaluateSceneFollow). */
+	const std::vector<FollowAction>& followActions() const { return m_followActions; }
+	void setFollowActions( std::vector<FollowAction> chain ) { m_followActions = std::move( chain ); }
+
 	//! True when the scene carries anything beyond its (empty) defaults.
 	bool isModified() const
 	{
-		return !m_name.isEmpty() || m_tempoEnabled || m_timeSigEnabled;
+		return !m_name.isEmpty() || m_tempoEnabled || m_timeSigEnabled || !m_followActions.empty();
 	}
 
 	void saveState( QDomDocument& doc, QDomElement& element ) const;
@@ -240,6 +246,7 @@ private:
 	bool m_timeSigEnabled = false;
 	int m_timeSigNumerator = 4;
 	int m_timeSigDenominator = 4;
+	std::vector<FollowAction> m_followActions;
 };
 
 class LMMS_EXPORT SessionModel

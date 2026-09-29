@@ -731,6 +731,8 @@ LMMS_EXPORT void registerControllerTemplateCommands(ControlRegistry& registry);
  *  this release: an agent can drive all of it through --control-socket, and
  *  nobody can from the UI (docs/KNOWN-LIMITATIONS.md). */
 LMMS_EXPORT void registerSessionFollowCommands(ControlRegistry& registry);
+//! R5.2: session.scene_follow_set (ControlCommandsSessionSceneFollow.cpp).
+LMMS_EXPORT void registerSessionSceneFollowCommands(ControlRegistry& registry);
 LMMS_EXPORT void registerSessionRecordCommands(ControlRegistry& registry);
 /*! session.arrangement_record_land - the one WRITING verb of the Arrangement
  *  Record group, in its own translation unit (the automation, warp, vca and

@@ -316,6 +316,8 @@ void SessionScheduler::drainCommands( const SessionClockContext& ctx ) noexcept
 			}
 			continue;
 		}
+		// R5.2's two scene commands (SessionSceneFollow.cpp).
+		if( applySceneCommand( command, ctx ) ) { continue; }
 		if( command.type == LaunchCommandType::Content )
 		{
 			// Content, not a launch: stored for the cell and read by the render
@@ -425,6 +427,8 @@ void SessionScheduler::processAudio( const SessionClockContext& snapshot,
 
 	drainCommands( ctx );
 	advanceSlots( ctx );
+	evaluateSceneFollow( ctx );
+	publishColumns();
 }
 
 

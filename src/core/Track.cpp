@@ -252,6 +252,16 @@ Track::Track( Type type, TrackContainer * tc ) :
 {	
 m_trackContainer->addTrack( this );
 m_height = -1;
+// R2.1: the behaviour this track type had before monitoring existed (Track.h).
+m_monitorMode.store( static_cast<int>( defaultMonitorMode() ), std::memory_order_relaxed );
+}
+
+
+void Track::setMonitorMode( MonitorMode mode )
+{
+	if( monitorMode() == mode ) { return; }
+	m_monitorMode.store( static_cast<int>( mode ), std::memory_order_relaxed );
+	monitorModeChanged();
 }
 
 /*! Subscribe to the signals that END a pass through a frozen take (freeze /
@@ -454,6 +464,12 @@ void Track::saveTrack(QDomDocument& doc, QDomElement& element, bool presetMode)
 	m_soloModel.saveSettings( doc, element, "solo" );
 	// Save the mutedBeforeSolo value so we can recover the muted state if any solo was active (issue 5562)
 	element.setAttribute( "mutedBeforeSolo", int(m_mutedBeforeSolo) );
+	// R2.1: only a non-default monitor mode is written, so every track saved before
+	// monitoring existed - and every track that never changed it - keeps its bytes.
+	if( !presetMode && monitorMode() != defaultMonitorMode() )
+	{
+		element.setAttribute( "monitor", static_cast<int>( monitorMode() ) );
+	}
 
 	if( m_height >= MINIMAL_TRACK_HEIGHT )
 	{
@@ -598,6 +614,15 @@ void Track::loadTrack(const QDomElement& element, bool presetMode)
 	// Get the mutedBeforeSolo value so we can recover the muted state if any solo was active.
 	// Older project files that didn't have this attribute will set the value to false (issue 5562)
 	m_mutedBeforeSolo = QVariant( element.attribute( "mutedBeforeSolo", "0" ) ).toBool();
+	// R2.1: absent (every older file) or out of range is the type's default - reset on
+	// absence, so a journal restore of a pre-change checkpoint takes a mode change back.
+	{
+		bool ok = false;
+		const int monitor = element.attribute( "monitor" ).toInt( &ok );
+		setMonitorMode( ok && monitor >= static_cast<int>( MonitorMode::Off )
+			&& monitor <= static_cast<int>( MonitorMode::In )
+			? static_cast<MonitorMode>( monitor ) : defaultMonitorMode() );
+	}
 
 	// Reset-on-absence for the frozen take (freeze / bounce-in-place): the rule
 	// and its reason are stated once in TRACK_RESTORE_SCHEMA above

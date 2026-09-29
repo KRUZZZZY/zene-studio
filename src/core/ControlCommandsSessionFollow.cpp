@@ -48,6 +48,9 @@
  * tick it scheduled and the tick the audio thread observed.
  */
 
+#include <algorithm>
+#include <vector>
+
 #include <QJsonArray>
 #include <QJsonObject>
 #include <QJsonValue>
@@ -136,6 +139,48 @@ bool followActionFromJson(const QJsonObject& entry, int sceneCount, FollowAction
 	}
 	return true;
 }
+
+} // namespace
+
+namespace sessioncontrol
+{
+
+bool followChainFromJson(const QJsonValue& value, int sceneCount, std::vector<FollowAction>* chain,
+	QString* error)
+{
+	if (!value.isArray())
+	{
+		*error = QStringLiteral("'follow_actions' is an array of Follow Action entries");
+		return false;
+	}
+	const QJsonArray entries = value.toArray();
+	// Refused, never truncated - the engine's rule (followPlanFromArgs below).
+	if (entries.size() > MaxFollowChainEntries)
+	{
+		*error = QStringLiteral("the chain has %1 entries; the engine's table holds %2")
+			.arg(entries.size()).arg(MaxFollowChainEntries);
+		return false;
+	}
+	chain->clear();
+	for (int i = 0; i < entries.size(); ++i)
+	{
+		FollowAction action;
+		if (!entries.at(i).isObject()
+			|| !followActionFromJson(entries.at(i).toObject(), sceneCount, &action, error))
+		{
+			*error = QStringLiteral("Follow Action entry %1: %2").arg(i)
+				.arg(entries.at(i).isObject() ? *error : QStringLiteral("not an object"));
+			return false;
+		}
+		chain->push_back(action);
+	}
+	return true;
+}
+
+} // namespace sessioncontrol
+
+namespace
+{
 
 //! Fills `plan` from the args' `actions` array, or from the slot's own persisted
 //! chain when the array is absent.
@@ -232,6 +277,10 @@ QJsonObject followEngineState(const SessionScheduler& scheduler)
 	fire.insert(QStringLiteral("tick"), static_cast<int>(followFireTick(packed)));
 	state.insert(QStringLiteral("last_fire"), fire);
 	state.insert(QStringLiteral("max_plans"), MaxFollowPlans);
+	// R5.2: the row whose chain is running (-1: none), and the scene chains' own count.
+	state.insert(QStringLiteral("active_scene"), scheduler.activeScene());
+	state.insert(QStringLiteral("armed_scenes"), scheduler.armedFollowScenes());
+	state.insert(QStringLiteral("scene_fires"), static_cast<double>(scheduler.sceneFollowFires()));
 	return state;
 }
 
@@ -408,6 +457,9 @@ void registerFollowGetState(ControlRegistry& registry)
 		{QStringLiteral("cell"), objectProperty()},
 		{QStringLiteral("chain"), arrayProperty()},
 		{QStringLiteral("chain_step_ticks"), integerProperty()},
+		{QStringLiteral("active_scene"), integerProperty()},
+		{QStringLiteral("armed_scenes"), integerProperty()},
+		{QStringLiteral("scene_fires"), integerProperty()},
 	});
 	cmd.mutating = false;
 	cmd.handler = [](const QJsonObject& args) {

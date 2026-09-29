@@ -85,6 +85,11 @@ const ReversibilityRow kRows[] = {
 		"the name is part of the Track's own serialized state",
 		"ProjectJournal (Track checkpoint)",
 		""),
+	R("track.set_monitor", RC::TrueInverse, true,
+		"the monitor mode is a Track attribute, written only when not the type's default and "
+		"reset on absence by Track::loadTrack",
+		"ProjectJournal (Track checkpoint)",
+		""),
 	R("track.set_mute", RC::TrueInverse, true,
 		"the muted flag is a BoolModel, i.e. a JournallingObject of its own",
 		"ProjectJournal (Track mute BoolModel checkpoint)",
@@ -135,6 +140,12 @@ const ReversibilityRow kRows[] = {
 		"clip"),
 	R("clip.split", RC::TrueInverse, true,
 		"the split rewrites the clip list of one Track",
+		"ProjectJournal (Track checkpoint)",
+		""),
+	R("clip.consolidate", RC::TrueInverse, true,
+		"the source clips, the one consolidated clip and the take-lane composite all live in the "
+		"one Track's serialized state; the rendered file is written BEFORE the checkpoint (a failed "
+		"render records nothing) and is left on disk by an undo, under a name no later call reuses",
 		"ProjectJournal (Track checkpoint)",
 		""),
 	R("clip.set_fade", RC::TrueInverse, true,

@@ -35,7 +35,47 @@ namespace lmms
 namespace
 {
 using namespace sessionSerialization;
+
+//! A Follow Action chain as a <followactions> child - the one vocabulary a cell and (R5.2) a
+//! scene share. An empty chain writes nothing, so neither element gains a byte.
+void saveFollowChain( QDomDocument& doc, QDomElement& element, const std::vector<FollowAction>& actions )
+{
+	if( actions.empty() ) { return; }
+	QDomElement chain = doc.createElement( QStringLiteral( "followactions" ) );
+	element.appendChild( chain );
+	for( const FollowAction& action : actions )
+	{
+		QDomElement actionElement = doc.createElement( QStringLiteral( "followaction" ) );
+		actionElement.setAttribute( QStringLiteral( "type" ), static_cast<int>( action.type ) );
+		actionElement.setAttribute( QStringLiteral( "chance" ), doubleToAttribute( action.chance ) );
+		actionElement.setAttribute( QStringLiteral( "linked" ), action.linked ? 1 : 0 );
+		actionElement.setAttribute( QStringLiteral( "time" ), doubleToAttribute( action.timeBars ) );
+		actionElement.setAttribute( QStringLiteral( "jump" ), action.jumpTo );
+		chain.appendChild( actionElement );
+	}
 }
+
+std::vector<FollowAction> restoreFollowChain( const QDomElement& element )
+{
+	std::vector<FollowAction> actions;
+	const QDomElement chain = element.firstChildElement( QStringLiteral( "followactions" ) );
+	for( QDomElement actionElement = chain.firstChildElement( QStringLiteral( "followaction" ) );
+		!actionElement.isNull();
+		actionElement = actionElement.nextSiblingElement( QStringLiteral( "followaction" ) ) )
+	{
+		FollowAction action;
+		action.type = followActionTypeFromInt( actionElement.attribute( QStringLiteral( "type" ),
+			QStringLiteral( "0" ) ).toInt() );
+		action.chance = doubleAttribute( actionElement, QStringLiteral( "chance" ), 1.0 );
+		action.linked = actionElement.attribute( QStringLiteral( "linked" ), QStringLiteral( "1" ) ).toInt() != 0;
+		action.timeBars = doubleAttribute( actionElement, QStringLiteral( "time" ), 1.0 );
+		action.jumpTo = actionElement.attribute( QStringLiteral( "jump" ), QStringLiteral( "0" ) ).toInt();
+		actions.push_back( action );
+	}
+	return actions;
+}
+
+} // namespace
 
 // ---------------------------------------------------------------------------
 // ClipSlot
@@ -93,21 +133,7 @@ void ClipSlot::saveState( QDomDocument& doc, QDomElement& element ) const
 	element.setAttribute( QStringLiteral( "detune" ), m_detune );
 	element.setAttribute( QStringLiteral( "ram" ), m_ramMode ? 1 : 0 );
 
-	if( !m_followActions.empty() )
-	{
-		QDomElement chain = doc.createElement( QStringLiteral( "followactions" ) );
-		element.appendChild( chain );
-		for( const FollowAction& action : m_followActions )
-		{
-			QDomElement actionElement = doc.createElement( QStringLiteral( "followaction" ) );
-			actionElement.setAttribute( QStringLiteral( "type" ), static_cast<int>( action.type ) );
-			actionElement.setAttribute( QStringLiteral( "chance" ), doubleToAttribute( action.chance ) );
-			actionElement.setAttribute( QStringLiteral( "linked" ), action.linked ? 1 : 0 );
-			actionElement.setAttribute( QStringLiteral( "time" ), doubleToAttribute( action.timeBars ) );
-			actionElement.setAttribute( QStringLiteral( "jump" ), action.jumpTo );
-			chain.appendChild( actionElement );
-		}
-	}
+	saveFollowChain( doc, element, m_followActions );
 }
 
 
@@ -144,20 +170,7 @@ void ClipSlot::restoreState( const QDomElement& element )
 	m_detune = element.attribute( QStringLiteral( "detune" ), QStringLiteral( "0" ) ).toInt();
 	m_ramMode = element.attribute( QStringLiteral( "ram" ), QStringLiteral( "0" ) ).toInt() != 0;
 
-	const QDomElement chain = element.firstChildElement( QStringLiteral( "followactions" ) );
-	for( QDomElement actionElement = chain.firstChildElement( QStringLiteral( "followaction" ) );
-		!actionElement.isNull();
-		actionElement = actionElement.nextSiblingElement( QStringLiteral( "followaction" ) ) )
-	{
-		FollowAction action;
-		action.type = followActionTypeFromInt( actionElement.attribute( QStringLiteral( "type" ),
-			QStringLiteral( "0" ) ).toInt() );
-		action.chance = doubleAttribute( actionElement, QStringLiteral( "chance" ), 1.0 );
-		action.linked = actionElement.attribute( QStringLiteral( "linked" ), QStringLiteral( "1" ) ).toInt() != 0;
-		action.timeBars = doubleAttribute( actionElement, QStringLiteral( "time" ), 1.0 );
-		action.jumpTo = actionElement.attribute( QStringLiteral( "jump" ), QStringLiteral( "0" ) ).toInt();
-		m_followActions.push_back( action );
-	}
+	m_followActions = restoreFollowChain( element );
 }
 
 
@@ -168,8 +181,6 @@ void ClipSlot::restoreState( const QDomElement& element )
 
 void Scene::saveState( QDomDocument& doc, QDomElement& element ) const
 {
-	Q_UNUSED( doc )
-
 	if( !m_name.isEmpty() )
 	{
 		element.setAttribute( QStringLiteral( "name" ), m_name );
@@ -183,6 +194,8 @@ void Scene::saveState( QDomDocument& doc, QDomElement& element ) const
 		element.setAttribute( QStringLiteral( "timesig_numerator" ), m_timeSigNumerator );
 		element.setAttribute( QStringLiteral( "timesig_denominator" ), m_timeSigDenominator );
 	}
+	// R5.2: the cell's own vocabulary, so one reader serves both.
+	saveFollowChain( doc, element, m_followActions );
 }
 
 
@@ -205,6 +218,7 @@ void Scene::restoreState( const QDomElement& element )
 		m_timeSigDenominator = element.attribute( QStringLiteral( "timesig_denominator" ),
 			QStringLiteral( "4" ) ).toInt();
 	}
+	m_followActions = restoreFollowChain( element );
 }
 
 } // namespace lmms

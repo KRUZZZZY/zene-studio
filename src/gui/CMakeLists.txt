@@ -45,6 +45,7 @@ SET(LMMS_SRCS
 	gui/ControlCommandsShell.cpp
 	# M3.4: the command palette (menu actions + argument-free commands, searchable).
 	gui/CommandPalette.cpp
+	gui/SessionGridView.cpp
 	# M3.7: VCA group strips in the mixer + the channel's VCA menu.
 	gui/VcaStripView.cpp
 	# Focus Desk - the Direction B shell (UI plan §9.4). FocusDeskModules is the

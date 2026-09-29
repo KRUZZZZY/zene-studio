@@ -524,6 +524,12 @@ set(LMMS_TESTS
 	src/core/ControlVcaEditGroupsTest.cpp
 	# R3.5: the phase-locked split, trim, slip and fade.
 	src/core/ControlVcaLockedEditsTest.cpp
+	# R3.2: clip.consolidate - the clips' own audio (gain, fades, the composite's gate, a
+	# muted track included) becomes one clip; refusals change nothing; one undo restores.
+	src/core/ClipConsolidateTest.cpp
+	# R2.1: input monitoring on the real engine - In/Off/Auto measured on the master meter
+	# with a synthetic capture feed, the instrument track's two modes, save/undo.
+	src/core/InputMonitorTest.cpp
 	src/core/ScriptBindingsTest.cpp
 	# Feature row 50 (0.3.0): the Lua API's DAW-control half - the mixer channel
 	# and effect-chain bindings. Drives a REAL mixer channel and the chain the
@@ -614,6 +620,9 @@ set(LMMS_TESTS
 	src/gui/CommandPaletteTest.cpp
 	# M3.7: the mixer's VCA strip and the channel's VCA menu.
 	src/gui/VcaStripViewTest.cpp
+	# R5.3: the clip-launch grid - launch, stop and scene-launch from the grid produce the
+	# socket-visible state; every cell focusable and announced; the arrow keys.
+	src/gui/SessionGridViewTest.cpp
 	src/gui/MidiLearnGuiTest.cpp
 	src/tracks/AutomationTrackTest.cpp
 	# Inherited clip paths that dereferenced getGUI() unguarded, run headless.
@@ -673,6 +682,9 @@ ENDIF()
 		#     per action time, and the reset that records the stops it ends.
 		src/core/SessionFollowTest.cpp
 		src/core/SessionArrangementRecordTest.cpp
+		# R5.2: Follow Action chains on SCENES - whole rows, precedence over the clip,
+		# the v1/v2 section rule and the socket half (set_slot's missing chain arg).
+		src/core/SessionSceneFollowTest.cpp
 	)
 
 # gcov coverage instrumentation (see WANT_COVERAGE in the top-level
@@ -1050,6 +1062,7 @@ set_tests_properties(ClipLinkTest ClipLinkPersistenceTest ImportDetectionTest
 set_tests_properties(FocusDeskTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(CommandPaletteTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(VcaStripViewTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+set_tests_properties(SessionGridViewTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(FocusDeskPaneTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(FocusDeskActionsTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(FocusDeskWorkspacesTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
