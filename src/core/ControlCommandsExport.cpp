@@ -30,6 +30,7 @@
 #include "ControlReversibility.h"
 #include "ControlVocabulary.h"
 #include "ExportDither.h"
+#include "ExportDitherMode.h"
 #include "ExportRenderSettings.h"
 #include "SrcQuality.h"
 
@@ -65,6 +66,10 @@ QJsonObject exportSettingsJson()
 {
 	QJsonObject result;
 	result.insert(QStringLiteral("dither"), ExportRenderSettings::dither());
+	// The mode behind the switch (include/ExportDitherMode.h): noise shaping applies to
+	// 16-bit renders; a 24-bit render of a noise-shaped request uses plain TPDF.
+	result.insert(QStringLiteral("dither_mode"), ditherModeName(ExportRenderSettings::ditherMode()));
+	result.insert(QStringLiteral("dither_mode_choices"), QJsonArray::fromStringList(ditherModeNames()));
 	result.insert(QStringLiteral("src_quality"), qualityWireName(ExportRenderSettings::srcQuality()));
 	result.insert(QStringLiteral("src_quality_choices"), srcQualityChoices());
 	// Feature row 24: the render path's EBU R128 loudness report, which used to
@@ -94,6 +99,8 @@ void registerExportGetSettings(ControlRegistry& registry)
 	cmd.argsSchema = objectSchema({});
 	cmd.resultSchema = objectSchema({
 		{QStringLiteral("dither"), booleanProperty()},
+		{QStringLiteral("dither_mode"), stringProperty()},
+		{QStringLiteral("dither_mode_choices"), arrayProperty()},
 		{QStringLiteral("src_quality"), stringProperty()},
 		{QStringLiteral("src_quality_choices"), arrayProperty()},
 		{QStringLiteral("loudness_report"), booleanProperty()},
@@ -114,46 +121,71 @@ void registerExportSetDither(ControlRegistry& registry)
 	cmd.id = QStringLiteral("export.set_dither");
 	cmd.group = QStringLiteral("export");
 	cmd.verb = QStringLiteral("set_dither");
-	cmd.description = QStringLiteral("Turn TPDF dither for the integer export formats on or off. The "
-		"dither is applied by the WAV encoder immediately before quantisation, at the depth "
-		"actually written (16- and 24-bit; 32-bit float has no quantisation step and is left "
-		"alone). It is DETERMINISTIC - seeded from a constant - so a dithered render is still "
-		"reproducible and two runs produce identical files. Off by default; turning it on "
-		"changes the bytes of every subsequent render, which is the point.");
+	cmd.description = QStringLiteral("Choose the dither the integer export formats get. Pass `mode` - "
+		"'off', 'tpdf' or 'noise_shaped' - or the original boolean `dither` (true = 'tpdf', false = "
+		"'off'); one of the two is required, and a contradictory pair is refused. TPDF is applied by "
+		"the WAV encoder immediately before quantisation, at the depth actually written (16- and "
+		"24-bit; 32-bit float has no quantisation step and is left alone). 'noise_shaped' adds "
+		"error-feedback noise shaping, which moves the requantisation noise out of the band hearing "
+		"is most sensitive to; it applies to 16-bit renders, and a 24-bit render of it uses plain "
+		"TPDF (libsndfile quantises 24-bit, so the error cannot be fed back). Every mode is "
+		"DETERMINISTIC - seeded from a constant - so a dithered render is still reproducible. Off by "
+		"default; choosing a dither changes the bytes of every subsequent render, which is the point. "
+		"No RPDF: include/ExportDither.h says why.");
 	cmd.argsSchema = objectSchema({
 		{QStringLiteral("dither"), booleanProperty()},
-	}, {QStringLiteral("dither")});
+		{QStringLiteral("mode"), enumProperty(ditherModeNames())},
+	});
 	cmd.resultSchema = objectSchema({
 		{QStringLiteral("dither"), booleanProperty()},
+		{QStringLiteral("dither_mode"), stringProperty()},
+		{QStringLiteral("dither_mode_choices"), arrayProperty()},
 		{QStringLiteral("previous"), booleanProperty()},
+		{QStringLiteral("previous_mode"), stringProperty()},
 		{QStringLiteral("src_quality"), stringProperty()},
 		{QStringLiteral("src_quality_choices"), arrayProperty()},
 		{QStringLiteral("loudness_report"), booleanProperty()},
 	});
 	cmd.mutating = true;
 	cmd.handler = [](const QJsonObject& args) {
-		const bool previous = ExportRenderSettings::dither();
-		const bool requested = args.value(QStringLiteral("dither")).toBool();
+		const DitherMode previous = ExportRenderSettings::ditherMode();
+		const bool hasBool = args.contains(QStringLiteral("dither"));
+		const bool hasMode = args.contains(QStringLiteral("mode"));
+		if (!hasBool && !hasMode)
+		{
+			return ControlResult::failure(ControlErrorKind::InvalidArgs,
+				QStringLiteral("give 'mode' (off, tpdf, noise_shaped) or the boolean 'dither'"));
+		}
+		DitherMode requested = args.value(QStringLiteral("dither")).toBool() ? DitherMode::Tpdf : DitherMode::Off;
+		if (hasMode) { ditherModeFromName(args.value(QStringLiteral("mode")).toString(), &requested); }
+		if (hasBool && hasMode && args.value(QStringLiteral("dither")).toBool() != (requested != DitherMode::Off))
+		{
+			return ControlResult::failure(ControlErrorKind::InvalidArgs,
+				QStringLiteral("'dither' is %1 but 'mode' is '%2' - they contradict each other")
+					.arg(args.value(QStringLiteral("dither")).toBool() ? QStringLiteral("true") : QStringLiteral("false"),
+						ditherModeName(requested)));
+		}
 
 		// SPEC A16: the selection is a bounded scalar owned by a subsystem the
 		// engine does not journal, so the inverse is a recorded undo STEP on the
 		// engine's own stack - exactly the mechanism settings.set uses, and the
 		// reason the class below is true_inverse rather than "not reversible".
 		control::addUndoStep(
-			[previous]() { ExportRenderSettings::setDither(previous); },
-			[requested]() { ExportRenderSettings::setDither(requested); });
-		ExportRenderSettings::setDither(requested);
+			[previous]() { ExportRenderSettings::setDitherMode(previous); },
+			[requested]() { ExportRenderSettings::setDitherMode(requested); });
+		ExportRenderSettings::setDitherMode(requested);
 
 		QJsonObject result = exportSettingsJson();
-		result.insert(QStringLiteral("previous"), previous);
+		result.insert(QStringLiteral("previous"), previous != DitherMode::Off);
+		result.insert(QStringLiteral("previous_mode"), ditherModeName(previous));
 
 		QJsonObject transaction;
 		transaction.insert(QStringLiteral("before"),
-			QJsonObject{{QStringLiteral("dither"), previous}});
+			QJsonObject{{QStringLiteral("dither_mode"), ditherModeName(previous)}});
 		transaction.insert(QStringLiteral("inverse"),
 			QJsonObject{{QStringLiteral("op"), QStringLiteral("export.set_dither")},
 				{QStringLiteral("args"),
-					QJsonObject{{QStringLiteral("dither"), previous}}}});
+					QJsonObject{{QStringLiteral("mode"), ditherModeName(previous)}}}});
 		transaction.insert(QStringLiteral("reversible"), true);
 		transaction.insert(QStringLiteral("mechanism"),
 			QStringLiteral("action checkpoint: the recorded undo step restores the previous "
@@ -184,6 +216,8 @@ void registerExportSetSrcQuality(ControlRegistry& registry)
 		{QStringLiteral("src_quality"), stringProperty()},
 		{QStringLiteral("previous"), stringProperty()},
 		{QStringLiteral("dither"), booleanProperty()},
+		{QStringLiteral("dither_mode"), stringProperty()},
+		{QStringLiteral("dither_mode_choices"), arrayProperty()},
 		{QStringLiteral("src_quality_choices"), arrayProperty()},
 		{QStringLiteral("loudness_report"), booleanProperty()},
 	});
@@ -256,6 +290,8 @@ void registerExportSetLoudnessReport(ControlRegistry& registry)
 		{QStringLiteral("loudness_report"), booleanProperty()},
 		{QStringLiteral("previous"), booleanProperty()},
 		{QStringLiteral("dither"), booleanProperty()},
+		{QStringLiteral("dither_mode"), stringProperty()},
+		{QStringLiteral("dither_mode_choices"), arrayProperty()},
 		{QStringLiteral("src_quality"), stringProperty()},
 		{QStringLiteral("src_quality_choices"), arrayProperty()},
 	});

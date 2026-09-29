@@ -555,6 +555,12 @@ that is this page's fault — report it and it gets added.
   engine has always used, so a render that asks for nothing is byte-for-byte what it was. It is implemented
   for **WAV only** — FLAC, OGG and MP3 do not take the dither yet — and 32-bit float is deliberately never
   dithered (a float format has no quantisation step to dither against). See `docs/EXPORT-SRC-DITHER.md`.
+  *Added 2026-09-29 (`040/dither`, owner decision 13):* the dither is now a **mode** — `off`, `tpdf`
+  or `noise_shaped` (`export.set_dither {mode}`, `--dither-mode`; the boolean `dither` / `--dither` still
+  mean TPDF). **Noise shaping applies to 16-bit WAV only**: the 24-bit path hands quantisation to
+  libsndfile, so a 24-bit `noise_shaped` render is plain TPDF, byte for byte (`ExportWavDitherTest`).
+  Measured on a -60 dBFS tone: low-band error energy -8.4 dB and high-band +9.0 dB against flat TPDF
+  (`ExportNoiseShaperTest`). There is still no interface for any of it, and no RPDF by decision.
 
 - **Browser tag/metadata search and the waveform peak cache have no interface — added 2026-09-13.**
   The browser's items can be queried by name, by tag and by what the audio file itself says it is (sample

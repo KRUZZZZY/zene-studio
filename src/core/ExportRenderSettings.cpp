@@ -32,7 +32,7 @@ namespace lmms
 // The defaults are the pre-existing behaviour, and they are written out rather
 // than implied: dither OFF (the reproducibility claim) and Linear (the
 // converter every render the engine has produced so far used).
-std::atomic<bool> ExportRenderSettings::s_dither{false};
+std::atomic<int> ExportRenderSettings::s_ditherMode{static_cast<int>(DitherMode::Off)};
 std::atomic<int> ExportRenderSettings::s_srcQuality{
 	static_cast<int>(SrcQuality::Linear)};
 // OFF by default: the report is opt-in (feature row 24 of
@@ -41,14 +41,24 @@ std::atomic<int> ExportRenderSettings::s_srcQuality{
 // but not constructing a meter is still the honest default.
 std::atomic<bool> ExportRenderSettings::s_loudnessReport{false};
 
+DitherMode ExportRenderSettings::ditherMode() noexcept
+{
+	return static_cast<DitherMode>(s_ditherMode.load(std::memory_order_relaxed));
+}
+
+void ExportRenderSettings::setDitherMode(DitherMode mode) noexcept
+{
+	s_ditherMode.store(static_cast<int>(mode), std::memory_order_relaxed);
+}
+
 bool ExportRenderSettings::dither() noexcept
 {
-	return s_dither.load(std::memory_order_relaxed);
+	return ditherMode() != DitherMode::Off;
 }
 
 void ExportRenderSettings::setDither(bool enabled) noexcept
 {
-	s_dither.store(enabled, std::memory_order_relaxed);
+	setDitherMode(enabled ? DitherMode::Tpdf : DitherMode::Off);
 }
 
 bool ExportRenderSettings::loudnessReport() noexcept

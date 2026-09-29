@@ -28,6 +28,7 @@
 
 #include <atomic>
 
+#include "ExportDitherMode.h"
 #include "SrcQuality.h"
 #include "lmms_export.h"
 
@@ -63,7 +64,11 @@ namespace lmms
 class LMMS_EXPORT ExportRenderSettings
 {
 public:
-	//! The dither choice for the next render. OFF by default.
+	//! The dither choice for the next render (include/ExportDitherMode.h). OFF by
+	//! default. The bool pair is the pre-mode API, kept exactly: dither() is "any
+	//! dither", setDither(true) selects TPDF.
+	static DitherMode ditherMode() noexcept;
+	static void setDitherMode(DitherMode mode) noexcept;
 	static bool dither() noexcept;
 	static void setDither(bool enabled) noexcept;
 
@@ -83,7 +88,7 @@ public:
 	static void reset() noexcept;
 
 private:
-	static std::atomic<bool> s_dither;
+	static std::atomic<int> s_ditherMode;
 	static std::atomic<int> s_srcQuality;
 	static std::atomic<bool> s_loudnessReport;
 };

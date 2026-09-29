@@ -242,6 +242,10 @@ void printHelp()
 		"          bundled projects render byte-identically without it. The\n"
 		"          dither is deterministic, so a dithered render is still\n"
 		"          reproducible\n"
+		"      --dither-mode <m>          'off', 'tpdf' (what --dither selects) or\n"
+		"          'noise_shaped': TPDF plus error-feedback noise shaping, which\n"
+		"          moves the noise out of the band hearing is most sensitive to\n"
+		"          (16-bit WAV; a 24-bit render uses plain TPDF)\n"
 		"      --src-quality <q>          Sample-rate-conversion converter for the\n"
 		"          render: 'linear' (default, the converter the engine has always\n"
 		"          used), 'sinc_fastest', 'sinc_medium' or 'sinc_best'\n"
@@ -984,6 +988,24 @@ int main( int argc, char * * argv )
 			// surface reads the process-wide selection.
 			os.setDither(true);
 			ExportRenderSettings::setDither(true);
+		}
+		else if( arg == "--dither-mode" )
+		{
+			++i;
+
+			if( i == argc )
+			{
+				return usageError( "No dither mode specified" );
+			}
+
+			DitherMode mode = DitherMode::Off;
+			if( !ditherModeFromName( argv[i], &mode ) )
+			{
+				return usageError( QString( "Invalid dither mode %1 (expected off, tpdf or "
+					"noise_shaped)" ).arg( argv[i] ) );
+			}
+			os.setDitherMode( mode );
+			ExportRenderSettings::setDitherMode( mode );
 		}
 		else if( arg == "--src-quality" )
 		{

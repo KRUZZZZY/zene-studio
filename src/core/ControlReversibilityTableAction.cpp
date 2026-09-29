@@ -171,10 +171,10 @@ const ReversibilityRow kActionRows[] = {
 		""),
 	R("export.set_dither", RC::TrueInverse, true,
 		"ExportRenderSettings is not a JournallingObject, so there is no object "
-		"checkpoint - but the choice is a bounded scalar (on/off) and the "
-		"previous value is captured before the write",
+		"checkpoint - but the choice is a bounded scalar (off/tpdf/noise_shaped) and "
+		"the previous value is captured before the write",
 		"action checkpoint: the recorded undo step restores the previous dither "
-		"choice through ExportRenderSettings::setDither, exactly as the command "
+		"mode through ExportRenderSettings::setDitherMode, exactly as the command "
 		"sets the new one. The step goes on the engine's own stack, so a user's "
 		"Ctrl+Z and control.undo are one history",
 		""),

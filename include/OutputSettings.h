@@ -67,7 +67,7 @@ public:
 		 *  with the defaults (dither off, Linear) when nobody has chosen.
 		 *  ProjectRenderer publishes this value back for the render's duration.
 		 */
-		, m_dither(ExportRenderSettings::dither())
+		, m_ditherMode(ExportRenderSettings::ditherMode())
 		, m_srcQuality(ExportRenderSettings::srcQuality())
 		/*! The loudness report follows the same rule as the two above: this
 		 *  render is handed the process-wide selection unless it is told
@@ -130,8 +130,12 @@ public:
 	 *  It dithers 16- and 24-bit output. 32-bit float has no fixed quantisation
 	 *  step, so it is left alone.
 	 */
-	bool dither() const { return m_dither; }
-	void setDither(bool enabled) { m_dither = enabled; }
+	bool dither() const { return m_ditherMode != DitherMode::Off; }
+	//! The pre-mode switch, kept: true selects TPDF.
+	void setDither(bool enabled) { m_ditherMode = enabled ? DitherMode::Tpdf : DitherMode::Off; }
+	//! Which dither (include/ExportDitherMode.h); NoiseShaped applies at 16-bit.
+	DitherMode ditherMode() const { return m_ditherMode; }
+	void setDitherMode(DitherMode mode) { m_ditherMode = mode; }
 
 	/*! Which sample-rate-conversion converter the render's resampler uses
 	 *  (include/SrcQuality.h). `Linear` is the converter the engine has always
@@ -147,7 +151,7 @@ private:
 	BitDepth m_bitDepth;
 	StereoMode m_stereoMode;
 	double m_compressionLevel;
-	bool m_dither = false;
+	DitherMode m_ditherMode = DitherMode::Off;
 	SrcQuality m_srcQuality = SrcQuality::Linear;
 	//! Declared AFTER the two above so the constructor's initialiser list is in
 	//! declaration order (the tree builds with -Werror; a reordered list is a

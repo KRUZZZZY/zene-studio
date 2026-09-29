@@ -150,10 +150,10 @@ ProjectRenderer::ProjectRenderer(
 	// duration, and the previous selection is put back when the renderer is
 	// destroyed. Same reason as DeterministicRenderScope below: two renders of
 	// the same project must not differ because of what ran in between.
-	, m_previousDither(ExportRenderSettings::dither())
+	, m_previousDither(ExportRenderSettings::ditherMode())
 	, m_previousSrcQuality(ExportRenderSettings::srcQuality())
 {
-	ExportRenderSettings::setDither(outputSettings.dither());
+	ExportRenderSettings::setDitherMode(outputSettings.ditherMode());
 	ExportRenderSettings::setSrcQuality(outputSettings.srcQuality());
 
 	AudioFileDeviceInstantiaton audioEncoderFactory = fileEncodeDevices[static_cast<std::size_t>(exportFileFormat)].m_getDevInst;
@@ -192,7 +192,7 @@ ProjectRenderer::~ProjectRenderer()
 	// Put the process-wide selection back exactly as it was found, whatever
 	// route this renderer leaves by (finish, abort, or a file device that never
 	// opened).
-	ExportRenderSettings::setDither(m_previousDither);
+	ExportRenderSettings::setDitherMode(m_previousDither);
 	ExportRenderSettings::setSrcQuality(m_previousSrcQuality);
 }
 
