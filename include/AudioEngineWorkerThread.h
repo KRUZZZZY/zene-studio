@@ -73,7 +73,8 @@ public:
 		std::atomic<ThreadableJob*> m_items[JOB_QUEUE_SIZE];
 		std::atomic_size_t m_writeIndex;
 		std::atomic_size_t m_itemsDone;
-		OperationMode m_opMode;
+		//! Atomic: reset() writes it while running workers read it (BUGS_FOUND 10.9b).
+		std::atomic<OperationMode> m_opMode;
 	} ;
 
 
@@ -135,7 +136,8 @@ private:
 	static QWaitCondition * queueReadyWaitCond;
 	static QList<AudioEngineWorkerThread *> workerThreads;
 
-	volatile bool m_quit;
+	//! Atomic, not volatile: quit() writes it while run() reads it on the worker (10.9a).
+	std::atomic<bool> m_quit;
 } ;
 
 } // namespace lmms

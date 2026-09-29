@@ -4,16 +4,15 @@
 # never to make an unknown one disappear. Each line names its defect. Remove an entry when its
 # fix lands; an entry added without a filed defect is a review failure.
 #
-# Measured 2026-09-28 on a Debug -DWANT_DEBUG_TSAN=ON tree (six concurrency tests, all
-# functionally green) - BUGS_FOUND.md §10.9:
-
-# 10.9a - AudioEngineWorkerThread::quit() writes m_quit / resets the job queue while the worker's
-#         mutex and condition are destroyed in ~AudioEngine (every Engine test's teardown).
-race:lmms::AudioEngineWorkerThread::quit
+# 2026-09-29 (040/tsan-races): the three races measured on 2026-09-28 (BUGS_FOUND.md §10.9a/b/c)
+# were REAL by the C++ memory model and are FIXED - AudioEngineWorkerThread::m_quit (was volatile),
+# JobQueue::m_opMode and Controller::s_periods are std::atomic. MixerConcurrencyTest went 7 -> 3
+# reports, MidiLearnThreadTest 5 -> 3.
+#
+# ONE pattern remains, and it is a TSan LIMITATION, not a race (BUGS_FOUND.md §10.9d): the worker
+# thread object and the shared QWaitCondition are destroyed in ~AudioEngineWorkerThread AFTER
+# ~AudioEngine joins every worker (m_workers[w]->wait(), src/core/AudioEngine.cpp:159-162). The
+# join's happens-before lives inside QThread::wait()/QWaitCondition in the system Qt, which is not
+# TSan-instrumented, so TSan cannot see it. Scoped to the destructor frame only - never to a Qt
+# primitive - so no race elsewhere can hide behind it. Remove it on a TSan-instrumented Qt build.
 race:lmms::AudioEngineWorkerThread::~AudioEngineWorkerThread
-# 10.9b - AudioEngineWorkerThread::JobQueue::reset writes the queue indices/mode that running
-#         workers read (MixerConcurrencyTest, MidiLearnThreadTest).
-race:lmms::AudioEngineWorkerThread::JobQueue::reset
-# 10.9c - Controller::updateValueBuffer reached from MidiController's constructor while the
-#         engine's controller processing runs (MidiLearnThreadTest).
-race:lmms::Controller::updateValueBuffer
