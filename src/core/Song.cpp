@@ -1123,7 +1123,9 @@ void Song::processModulation()
 	if( rate == 0 ) { return; }
 	const double frames = static_cast<double>( getPlayPos().getTicks() )
 		* static_cast<double>( Engine::framesPerTick() );
-	applyModulationBlock( m_modulationLayer, view, frames / static_cast<double>( rate ) );
+	// R1.3: the block's size and rate, so a per-sample route can spread its knots across it.
+	applyModulationBlock( m_modulationLayer, view, frames / static_cast<double>( rate ),
+		ModulationBlock{ Engine::audioEngine()->framesPerPeriod(), rate } );
 }
 
 

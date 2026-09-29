@@ -145,6 +145,7 @@ QJsonObject routeSchema(bool withAddress)
 		properties.insert(QStringLiteral("chain"), integerProperty());
 		properties.insert(QStringLiteral("effect"), integerProperty());
 		properties.insert(QStringLiteral("parameter"), stringProperty());
+		properties.insert(QStringLiteral("per_sample"), booleanProperty());
 	}
 	return properties;
 }
@@ -209,7 +210,9 @@ void registerTargetSet(ControlRegistry& registry)
 		"'effect' address a device in a mixer channel's rack (fx-<n> order) and 'parameter' is "
 		"its display name, exactly as rack.macro_target_add names one; 'depth' is the modulation "
 		"amount as a FRACTION of that parameter's own range (-1..1), added to the value the "
-		"parameter already has. Refused when the parameter does not resolve or is already driven, "
+		"parameter already has. 'per_sample' true evaluates the route INSIDE each block (the value "
+		"is published as a ramp and read per sample, so a fast LFO does not zipper) - off, the "
+		"route moves once per block, as it always has. Refused when the parameter does not resolve or is already driven, "
 		"so a modulator never carries a route that can only fail. Reversible through the "
 		"ProjectJournal.");
 	cmd.argsSchema = objectSchema(routeSchema(true),

@@ -80,6 +80,7 @@
 #include <QPointer>
 #include <QString>
 
+#include "LmmsTypes.h"
 #include "lmms_export.h"
 
 namespace lmms
@@ -114,6 +115,18 @@ struct ModulationRoute
 	int effect = 0;          //!< effect inside that chain (fx-<n> order)
 	QString parameter;       //!< the parameter's display name
 	float depth = 0.0f;      //!< -1..1, a fraction of the target's own range
+	/*! R1.3: evaluate this route INSIDE the block - the value is published as a ramp of
+	 *  knots across the block and read per sample - instead of one value per block (the
+	 *  zipper a fast LFO makes). Off by default; saved only when on. */
+	bool perSample = false;
+};
+
+//! The frames and rate of the block being modulated - what a per-sample route needs to
+//! place its knots. A default block (0 frames) writes every route once, as before.
+struct ModulationBlock
+{
+	f_cnt_t frames = 0;
+	sample_rate_t sampleRate = 0;
 };
 
 //! The LFO one modulator runs.
@@ -226,6 +239,7 @@ struct ModulationRuntime
 		float base = 0.0f;       //!< captured when the route was resolved
 		float minimum = 0.0f;
 		float maximum = 0.0f;
+		bool perSample = false;  //!< R1.3, the route's own flag
 	};
 
 	std::array<Source, ModulationLayer::MaxModulators> sources{};
@@ -251,6 +265,7 @@ struct ModulationAudioView
 		float base = 0.0f;
 		float minimum = 0.0f;
 		float maximum = 0.0f;
+		bool perSample = false;
 	};
 
 	std::array<ModulatorSource, ModulationLayer::MaxModulators> sources{};
@@ -394,11 +409,20 @@ LMMS_EXPORT void writeModulationBase(AutomatableModel* model, float base);
 
 //! The block's write set: every entry's value for @a seconds, applied to its
 //! model. Allocation-free, lock-free, bounded.
-LMMS_EXPORT void applyModulationBlock(const ModulationRuntime& runtime, double seconds);
+//! A per-sample entry (R1.3) is written as a ramp across @a block; with the default
+//! block every entry is written once, as before.
+LMMS_EXPORT void applyModulationBlock(const ModulationRuntime& runtime, double seconds,
+	ModulationBlock block = ModulationBlock{});
 //! The audio thread's form: the same writes from @a view, skipping any entry
 //! whose target @a publisher no longer holds alive.
 LMMS_EXPORT void applyModulationBlock(const ModulationLayerPublisher& publisher,
-	const ModulationAudioView& view, double seconds);
+	const ModulationAudioView& view, double seconds, ModulationBlock block = ModulationBlock{});
+/*! R1.3: one entry's write for the block. A per-sample entry over a real block publishes
+ *  AutomationRamp::MaxKnots knots spread across it (linear between them, per sample in
+ *  AutomatableModel::valueBuffer) and writes the first as the scalar value; any other entry
+ *  writes its one value, exactly the pre-R1.3 write. Allocation-free. */
+LMMS_EXPORT void writeModulatedEntry(AutomatableModel* model, const ModulatorSource& source, float base,
+	float depth, float minimum, float maximum, double seconds, bool perSample, ModulationBlock block);
 
 } // namespace lmms
 
