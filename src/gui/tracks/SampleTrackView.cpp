@@ -282,10 +282,12 @@ void SampleTrackView::corruptStateUpdate()
 
 void SampleTrackView::cycleMonitor()
 {
-	const MonitorMode next = model()->monitorMode() == MonitorMode::Off ? MonitorMode::Auto
-		: model()->monitorMode() == MonitorMode::Auto ? MonitorMode::In : MonitorMode::Off;
+	const Track* track = getTrack();
+	if (track == nullptr) { return; }
+	const MonitorMode next = track->monitorMode() == MonitorMode::Off ? MonitorMode::Auto
+		: track->monitorMode() == MonitorMode::Auto ? MonitorMode::In : MonitorMode::Off;
 	ControlRegistry::instance()->invoke(QStringLiteral("track.set_monitor"), QJsonObject{
-		{QStringLiteral("track"), control::trackIdOf(model())},
+		{QStringLiteral("track"), control::trackIdOf(track)},
 		{QStringLiteral("mode"), monitorModeName(next)}});
 	showMonitorMode();
 }
@@ -293,7 +295,11 @@ void SampleTrackView::cycleMonitor()
 
 void SampleTrackView::showMonitorMode()
 {
-	const MonitorMode mode = model()->monitorMode();
+	// getTrack(), not model(): this runs from the constructor, before the view's model is
+	// attached (model() is null there - measured, a SIGSEGV on every project load).
+	const Track* track = getTrack();
+	if (track == nullptr) { return; }
+	const MonitorMode mode = track->monitorMode();
 	m_monitorButton->setText(mode == MonitorMode::In ? tr("IN") : mode == MonitorMode::Auto ? tr("AUT") : tr("OFF"));
 	m_monitorButton->setCheckable(true);
 	m_monitorButton->setChecked(mode != MonitorMode::Off);

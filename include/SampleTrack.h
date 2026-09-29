@@ -85,11 +85,11 @@ public:
 		m_isPlaying = playing;
 	}
 
-signals:
-	void playingChanged();
-
 	//! R2.1: the monitor handle while the mode is not Off, else nullptr. Model thread.
 	const InputMonitorHandle* monitorHandle() const { return m_monitorHandle; }
+
+signals:
+	void playingChanged();
 
 public slots:
 	void updateClips();

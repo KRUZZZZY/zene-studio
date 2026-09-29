@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-09-29T18:21:25Z",
+  "captured_at": "2026-09-29T19:27:16Z",
   "commands": [
     {
       "args_schema": {
@@ -2281,6 +2281,83 @@
           },
           "selected": {
             "type": "boolean"
+          },
+          "track": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "end": {
+            "maximum": 1919808,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "out": {
+            "type": "string"
+          },
+          "start": {
+            "maximum": 1919808,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "track": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "track"
+        ],
+        "type": "object"
+      },
+      "description": "Replace the clips of a sample-track region with ONE clip playing their audio: every lane through the composite's gate, with each clip's window, warp, gain and fades - the clips' own audio, not the track's output (the track's devices, fader and pan still apply once, on playback). `start`/`end` (ticks) name the region; neither means every unmuted clip. A clip crossing the region's edge is refused (clip.split it first); muted clips are left in place. The file is stereo float WAV at the engine rate, at `out` or beside the project under a name never reused. Rendered BEFORE anything changes, so a failed render writes nothing; one control.undo restores every source clip and the composite (Track checkpoint).",
+      "group": "clip",
+      "id": "clip.consolidate",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "clip": {
+            "type": "string"
+          },
+          "consolidated": {
+            "type": "array"
+          },
+          "end": {
+            "maximum": 1919808,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "frames": {
+            "type": "number"
+          },
+          "muted_kept": {
+            "maximum": 1048576,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "path": {
+            "type": "string"
+          },
+          "recomped": {
+            "type": "boolean"
+          },
+          "sample_rate": {
+            "maximum": 1048576,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "start": {
+            "maximum": 1919808,
+            "minimum": 0,
+            "type": "integer"
           },
           "track": {
             "type": "string"
@@ -16095,6 +16172,9 @@
       "result_schema": {
         "additionalProperties": false,
         "properties": {
+          "active_scene": {
+            "type": "integer"
+          },
           "armed": {
             "type": "boolean"
           },
@@ -16106,6 +16186,9 @@
           },
           "armed_mask_covers_cell": {
             "type": "boolean"
+          },
+          "armed_scenes": {
+            "type": "integer"
           },
           "cell": {
             "type": "object"
@@ -16129,6 +16212,9 @@
             "type": "integer"
           },
           "scene": {
+            "type": "integer"
+          },
+          "scene_fires": {
             "type": "integer"
           },
           "ticks_per_bar": {
@@ -16231,7 +16317,7 @@
         "required": [],
         "type": "object"
       },
-      "description": "The Session View: grid dimensions, the global launch quantisation, every non-empty clip slot with its launch settings, every scene override, and the launch engine's read-back (completed launches, the grid line the newest starts fired on, how many clips started on that one line).",
+      "description": "The Session View: grid dimensions, the global launch quantisation, every non-empty clip slot with its launch settings, every scene override, and the launch engine's read-back (completed launches, the grid line the newest starts fired on, how many clips started on that one line), and `columns`: every column that is launching, playing or stopping and the scene it is on.",
       "group": "session",
       "id": "session.get_state",
       "mutating": false,
@@ -16239,6 +16325,9 @@
       "result_schema": {
         "additionalProperties": false,
         "properties": {
+          "columns": {
+            "type": "array"
+          },
           "grid": {
             "type": "object"
           },
@@ -16415,6 +16504,67 @@
       "args_schema": {
         "additionalProperties": false,
         "properties": {
+          "actions": {
+            "type": "array"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "scene": {
+            "maximum": 511,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "scene"
+        ],
+        "type": "object"
+      },
+      "description": "Arm (or clear, with enabled: false) one SCENE's Follow Action chain. While that scene is the launched row (session.launch_scene), its chain fires at the action time and moves every column playing the row together - Stop, PlayAgain, or the row-addressing actions - and it takes precedence over the chains of the row's cells. Linked timing is the row's longest cell loop, one bar when none has one. Without 'actions' the scene's own persisted chain (session.set_scene follow_actions) is used. Not a project edit: no transaction is recorded.",
+      "group": "session",
+      "id": "session.scene_follow_set",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "armed_scenes": {
+            "type": "integer"
+          },
+          "chain": {
+            "type": "array"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "entries": {
+            "type": "integer"
+          },
+          "queued": {
+            "type": "boolean"
+          },
+          "row_length_ticks": {
+            "type": "integer"
+          },
+          "scene": {
+            "type": "integer"
+          },
+          "source": {
+            "type": "string"
+          },
+          "step_ticks": {
+            "type": "integer"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
           "enabled": {
             "type": "boolean"
           }
@@ -16524,6 +16674,9 @@
       "args_schema": {
         "additionalProperties": false,
         "properties": {
+          "follow_actions": {
+            "type": "array"
+          },
           "name": {
             "type": "string"
           },
@@ -16551,7 +16704,7 @@
         ],
         "type": "object"
       },
-      "description": "Set one scene's name and/or its tempo and time-signature overrides; a field that is supplied is written and its override switched on, a field that is not is left alone. Reversible through the ProjectJournal (action checkpoint).",
+      "description": "Set one scene's name and/or its tempo and time-signature overrides; a field that is supplied is written and its override switched on, a field that is not is left alone. `follow_actions` replaces the scene's own Follow Action chain ([] clears it); session.scene_follow_set arms it. Reversible through the ProjectJournal (action checkpoint).",
       "group": "session",
       "id": "session.set_scene",
       "mutating": true,
@@ -16575,6 +16728,9 @@
             "maximum": 1200,
             "minimum": -1200,
             "type": "integer"
+          },
+          "follow_actions": {
+            "type": "array"
           },
           "gain_db": {
             "type": "number"
@@ -16660,7 +16816,7 @@
         ],
         "type": "object"
       },
-      "description": "Define one grid cell: a MIDI clip ('type':'midi' + 'pattern'), an audio clip ('type':'audio' + 'source'), or empty ('type':'empty'); plus its launch mode, launch quantisation and playback settings. Only the fields supplied are written. Reversible through the ProjectJournal (action checkpoint on the <session> block).",
+      "description": "Define one grid cell: a MIDI clip ('type':'midi' + 'pattern'), an audio clip ('type':'audio' + 'source'), or empty ('type':'empty'); plus its launch mode, launch quantisation and playback settings, and `follow_actions`, the cell's persisted Follow Action chain ([] clears it; session.follow_set arms it). Only the fields supplied are written. Reversible through the ProjectJournal (action checkpoint on the <session> block).",
       "group": "session",
       "id": "session.set_slot",
       "mutating": true,
@@ -17618,6 +17774,17 @@
           "index": {
             "type": "number"
           },
+          "monitor": {
+            "enum": [
+              "off",
+              "auto",
+              "in"
+            ],
+            "type": "string"
+          },
+          "monitor_frames": {
+            "type": "number"
+          },
           "muted": {
             "type": "boolean"
           },
@@ -17947,6 +18114,53 @@
           },
           "routing": {
             "type": "boolean"
+          },
+          "track": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "mode": {
+            "enum": [
+              "off",
+              "auto",
+              "in"
+            ],
+            "type": "string"
+          },
+          "track": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "track",
+          "mode"
+        ],
+        "type": "object"
+      },
+      "description": "Set how a track treats its live input: `off` never heard, `in` always heard, `auto` heard while the track is record-armed (track.set_arm) and not playing a clip. An audio track's input is its record route's input channel, played through the track's own devices, fader, pan and mixer channel; its default is off. An instrument track takes off or in (default in: every live note plays, as before); off keeps live notes out of the instrument. track.get_state reports `monitor`, and `monitor_frames` - the frames an audio track's gate has passed. Saved with the project only when not the default; reversible through the ProjectJournal (Track checkpoint).",
+      "group": "track",
+      "id": "track.set_monitor",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "changed": {
+            "type": "boolean"
+          },
+          "mode": {
+            "type": "string"
+          },
+          "previous": {
+            "type": "string"
           },
           "track": {
             "type": "string"
@@ -20704,7 +20918,8 @@
               "mixer",
               "controller_rack",
               "project_notes",
-              "microtuner"
+              "microtuner",
+              "clip_launcher"
             ],
             "type": "string"
           }
@@ -20714,7 +20929,7 @@
         ],
         "type": "object"
       },
-      "description": "Show or hide one editor's window - the View menu's Ctrl+1..7 items, Edit > Scales and keymaps and the window toolbar dispatch exactly this. `editor` is one of song, pattern, piano_roll, automation, mixer, controller_rack, project_notes, microtuner. A hidden or unfocused editor is brought forward (and back into view if it was off screen); the focused one is hidden. `visible` is the editor's state afterwards. Interface state, not project state: nothing is journalled. Refused `requires` in a process with no interface.",
+      "description": "Show or hide one editor's window - the View menu's Ctrl+1..7 items, Edit > Scales and keymaps and the window toolbar dispatch exactly this. `editor` is one of song, pattern, piano_roll, automation, mixer, controller_rack, project_notes, microtuner, clip_launcher. A hidden or unfocused editor is brought forward (and back into view if it was off screen); the focused one is hidden. `visible` is the editor's state afterwards. Interface state, not project state: nothing is journalled. Refused `requires` in a process with no interface.",
       "group": "window",
       "id": "window.toggle",
       "mutating": false,
@@ -20734,7 +20949,7 @@
       }
     }
   ],
-  "count": 379,
+  "count": 382,
   "instance": {
     "binary": null,
     "binary_bytes": null,
@@ -20742,15 +20957,15 @@
     "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-survey/tools/zene-pa-agentctl",
     "lane_head": null,
     "proto": 1,
-    "source_socket": "/tmp/zctl-run-20h3gv4d/zene.sock",
-    "version": "0.3.0-alpha.155+9950658"
+    "source_socket": "/tmp/zctl-run-di9wfwnt/zene.sock",
+    "version": "0.3.0-alpha.166+b2fcdf9"
   },
   "kind": "zene-control-command-list",
   "proto": 1,
   "schema": 1,
   "surface": {
     "group_count": 58,
-    "id_count": 379,
-    "ids_sha256": "3185e970193fc68ff6c3e5c012b384714be0a8321d108eff769c6c8a02f41de3"
+    "id_count": 382,
+    "ids_sha256": "fceb5cb55a7a8f30bf7ced098baa27aaa78f3086ad07a752de3c95aa03834723"
   }
 }

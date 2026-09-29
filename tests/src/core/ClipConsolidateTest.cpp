@@ -82,7 +82,7 @@ std::vector<SampleClip*> clipsOf(Track* track)
 }
 
 //! Mean |left| of \a clip's audio over the ticks [from, to), relative to the clip's start.
-double levelAt(const SampleClip* clip, tick_t from, tick_t to)
+double levelAt(SampleClip* clip, tick_t from, tick_t to)
 {
 	const auto buffer = clip->sample().buffer();
 	const double fpt = Engine::framesPerTick(buffer->sampleRate());
