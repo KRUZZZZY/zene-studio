@@ -128,6 +128,9 @@ private:
 	std::vector<jack_port_t*> m_inputPorts;
 	jack_default_audio_sample_t** m_tempOutBufs;
 	std::vector<SampleFrame> m_inputFrameBuffer;
+	//! Every input port interleaved, for the N-channel capture path (AudioInputPath) that record
+	//! routes read. Sized with m_inputFrameBuffer, outside the process thread.
+	std::vector<float> m_captureWide;
 
 #ifdef AUDIO_BUS_HANDLE_SUPPORT
 	struct StereoPort

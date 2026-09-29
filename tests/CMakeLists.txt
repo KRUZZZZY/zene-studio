@@ -2647,6 +2647,20 @@ if(PYTHON3_EXECUTABLE AND CONTROL_SUITE_AVAILABLE)
 		ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
 		TIMEOUT 600
 	)
+	# JACK into the capture path (relief plan R2.3, owner decision 16): the real binary on the
+	# JACK backend against a private `jackd -d dummy`; the capture must report open, its frame
+	# count must rise and an armed route must receive frames. Exit 77 = skipped (no jackd here),
+	# which ctest reports as NOT RUN rather than passed.
+	add_test(NAME ControlJackCapture
+		COMMAND ${PYTHON3_EXECUTABLE}
+			${CMAKE_CURRENT_SOURCE_DIR}/control-jack-capture.py
+			$<TARGET_FILE:zene>)
+	set_tests_properties(ControlJackCapture PROPERTIES
+		ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+		SKIP_RETURN_CODE 77
+		TIMEOUT 300
+		RUN_SERIAL TRUE
+	)
 	# midi.retro_capture_* (0.3.0, retrospective MIDI capture - owner's-31 item
 	# 14): PLAY real MIDI into the running engine from the host's ALSA sequencer
 	# (`aplaymidi` is an external client, exactly like a keyboard) and recover it
