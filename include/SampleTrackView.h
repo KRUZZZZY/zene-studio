@@ -27,6 +27,8 @@
 
 
 #include "SampleTrack.h"
+
+class QToolButton;
 #include "TrackView.h"
 
 namespace lmms
@@ -86,6 +88,8 @@ private slots:
 	void assignMixerLine( int channelIndex );
 	void createMixerLine();
 	void corruptStateUpdate();
+	//! R2.1: cycles Off -> Auto -> In through track.set_monitor (the registry, not the model).
+	void cycleMonitor();
 
 
 private:
@@ -94,6 +98,8 @@ private:
 	Knob * m_volumeKnob;
 	Knob * m_panningKnob;
 	FadeButton * m_activityIndicator;
+	QToolButton* m_monitorButton;
+	void showMonitorMode();
 
 	TrackLabelButton * m_tlb;
 
