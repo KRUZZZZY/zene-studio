@@ -1908,7 +1908,7 @@ def main():
         typed_error(client.call(5, "transport.seek", {"ticks": "not-a-number"}), 5, "invalid_args")
         typed_error(client.call(6, "mixer.set_volume", {"channel": "ch-9999", "volume": 0.5}), 6, "not_found")
         typed_error(client.call(7, "control.version", proto=99), 7, "refused")
-        # Two CHANNEL-addressed refusals (mixer.set_pan's honest refusal, and the
+        # Two CHANNEL-addressed calls (mixer.set_pan on the master, and the
         # master that cannot be removed) are checked below `mixer.get_state`, not
         # here: they must name a channel that EXISTS, and its ch-<n> id is the
         # engine's own answer. "ch-0" is not the master - a ch-<n> id is a
@@ -1932,9 +1932,13 @@ def main():
         master = channels[0].get("id")
         if not master or not master.startswith("ch-"):
             fail("mixer.get_state reported %r as the first channel" % master, process, log_path)
-        # mixer.set_pan is an honest, TYPED refusal about the pan - not a not_found
-        # about a channel that does not exist, so it addresses the real master.
-        typed_error(client.call(81, "mixer.set_pan", {"channel": master, "pan": 0.5}), 81, "refused")
+        # mixer.set_pan pans the real master (a channel pan model since 040's channel
+        # pan; it was a typed refusal before), and centring it again leaves the
+        # rest of this flow - and the saved file - exactly as before.
+        panned = ok_result(client.call(81, "mixer.set_pan", {"channel": master, "pan": 0.5}), 81)
+        if panned.get("pan") != 0.5:
+            fail("mixer.set_pan reported pan %r, asked for 0.5" % panned.get("pan"), process, log_path)
+        ok_result(client.call(83, "mixer.set_pan", {"channel": master, "pan": 0.0}), 83)
         # ...and the master channel cannot be removed.
         typed_error(client.call(82, "mixer.remove_channel", {"channel": master}), 82, "refused")
 

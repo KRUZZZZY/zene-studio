@@ -93,6 +93,12 @@ public:
 	BoolModel m_muteModel;
 	BoolModel m_soloModel;
 	FloatModel m_volumeModel;
+	/*! Channel pan, -1 (hard left) .. +1 (hard right), 0 = centre. A BALANCE
+	 *  law, the one LMMS's own track panning uses: the centre is unity on both
+	 *  sides and a pan attenuates only the opposite side, so a centred channel
+	 *  is not touched at all (doProcessing skips the stage) and every project
+	 *  saved before this model existed renders and saves byte-identically. */
+	FloatModel m_panModel;
 	QString m_name;
 	QMutex m_lock;
 	bool m_queued; // are we queued up for rendering yet?

@@ -138,14 +138,6 @@ const ReversibilityRow kPassiveRows[] = {
 		"same view state, per note",
 		"same: no transaction, the previous selection is reported in the result",
 		""),
-	R("mixer.set_pan", RC::NotMutating, false,
-		"declared mutating, but the handler REFUSES every call: this tree has "
-		"no pan on a MixerChannel, and inventing one would change the mixer's "
-		"serialization format",
-		"no write happens, so no transaction is recorded and control.undo is "
-		"not blocked by it",
-		"none needed: the command is a typed refusal, use track panning "
-		"(InstrumentTrack/SampleTrack panningModel) or per-note panning"),
 	R("control.undo", RC::NotMutating, false,
 		"it IS the inverse applier: it is the thing that reverses another "
 		"command, so classifying it as a command to be reversed would recurse",

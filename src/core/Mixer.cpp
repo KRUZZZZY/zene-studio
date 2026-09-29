@@ -203,6 +203,7 @@ MixerChannel::MixerChannel( int idx, Model * _parent ) :
 	m_muteModel( false, _parent ),
 	m_soloModel( false, _parent ),
 	m_volumeModel(1.f, 0.f, 2.f, 0.001f, _parent),
+	m_panModel(0.f, -1.f, 1.f, 0.001f, _parent),
 	m_name(),
 	m_lock(),
 	m_queued( false ),
@@ -685,6 +686,27 @@ void MixerChannel::doProcessing()
 			// optimisation the DSP trusts, and claiming silence we do not have
 			// loses audio, while claiming audio we do not have only wastes
 			// work. A silent group is silent either way.
+		}
+
+		// Channel pan (m_panModel, a balance law). Applied HERE for the reason the
+		// VCA gain is: m_buffer is what the fader snapshot, the meter, the taps
+		// and every receiver read, so one multiply pans the channel's whole
+		// output, and pre-fader sends carry it too (pan is part of the channel's
+		// insert stage, not of the fader). Centred and unautomated - every
+		// channel in every project written before this - skips the stage, so the
+		// arithmetic is the pre-pan arithmetic, bit for bit. No allocation, no
+		// lock: the model's value and its sample-exact buffer are the same reads
+		// the volume fader makes on this thread.
+		const ValueBuffer* panBuf = m_panModel.valueBuffer();
+		const float pan = m_panModel.value();
+		if (panBuf != nullptr || pan != 0.0f)
+		{
+			for (f_cnt_t f = 0; f < fpp; ++f)
+			{
+				const float p = panBuf != nullptr ? panBuf->values()[f] : pan;
+				m_buffer[f][0] *= std::min(1.0f, 1.0f - p);
+				m_buffer[f][1] *= std::min(1.0f, 1.0f + p);
+			}
 		}
 
 		// D1: the volume multiply happens after the send loop, producing the
@@ -1306,6 +1328,8 @@ int Mixer::createBusChannel()
 	m_mixerChannels[index]->m_name = tr("Bus %1").arg(index);
 	m_mixerChannels[index]->m_volumeModel.setDisplayName(
 			m_mixerChannels[index]->m_name + ">" + tr("Volume"));
+	m_mixerChannels[index]->m_panModel.setDisplayName(
+			m_mixerChannels[index]->m_name + ">" + tr("Pan"));
 	m_mixerChannels[index]->m_muteModel.setDisplayName(
 			m_mixerChannels[index]->m_name + ">" + tr("Mute"));
 	m_mixerChannels[index]->m_soloModel.setDisplayName(
@@ -2021,10 +2045,12 @@ void Mixer::clearChannel(mix_ch_t index)
 	// #599: a cleared channel has no rack (no parallel chains, no selector).
 	ch->m_rack.clear();
 	ch->m_volumeModel.setValue( 1.0f );
+	ch->m_panModel.setValue( 0.0f );
 	ch->m_muteModel.setValue( false );
 	ch->m_soloModel.setValue( false );
 	ch->m_name = ( index == 0 ) ? tr( "Master" ) : tr( "Channel %1" ).arg( index );
 	ch->m_volumeModel.setDisplayName( ch->m_name + ">" + tr( "Volume" ) );
+	ch->m_panModel.setDisplayName( ch->m_name + ">" + tr( "Pan" ) );
 	ch->m_muteModel.setDisplayName( ch->m_name + ">" + tr( "Mute" ) );
 	ch->m_soloModel.setDisplayName( ch->m_name + ">" + tr( "Solo" ) );
 	ch->setColor(std::nullopt);
@@ -2077,6 +2103,13 @@ void Mixer::saveSettings( QDomDocument & _doc, QDomElement & _this )
 		// with no rack writes no element at all.
 		ch->m_rack.saveSettings( _doc, mixch );
 		ch->m_volumeModel.saveSettings( _doc, mixch, "volume" );
+		// Written only when it says something: a centred, unautomated pan
+		// writes nothing, so a project that never panned a channel saves
+		// byte-identically to one written before the model existed.
+		if (ch->m_panModel.value() != 0.0f || ch->m_panModel.isAutomatedOrControlled())
+		{
+			ch->m_panModel.saveSettings( _doc, mixch, "pan" );
+		}
 		ch->m_muteModel.saveSettings( _doc, mixch, "muted" );
 		ch->m_soloModel.saveSettings( _doc, mixch, "soloed" );
 		mixch.setAttribute("num", static_cast<qulonglong>(i));
@@ -2271,6 +2304,18 @@ void Mixer::loadSettings( const QDomElement & _this )
 		}
 
 		m_mixerChannels[num]->m_volumeModel.loadSettings( mixch, "volume" );
+		// Absent means centred - every file written before channel pan existed.
+		// Explicit, so a restored journal checkpoint without the attribute
+		// takes a pan back off rather than keeping it.
+		if (mixch.hasAttribute("pan") || !mixch.firstChildElement("pan").isNull()
+			|| !mixch.firstChildElement("connection").firstChildElement("pan").isNull())
+		{
+			m_mixerChannels[num]->m_panModel.loadSettings( mixch, "pan" );
+		}
+		else
+		{
+			m_mixerChannels[num]->m_panModel.setValue( 0.0f );
+		}
 		m_mixerChannels[num]->m_muteModel.loadSettings( mixch, "muted" );
 		m_mixerChannels[num]->m_soloModel.loadSettings( mixch, "soloed" );
 		m_mixerChannels[num]->m_name = mixch.attribute( "name" );

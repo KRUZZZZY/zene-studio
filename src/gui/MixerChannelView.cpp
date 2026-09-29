@@ -135,6 +135,12 @@ MixerChannelView::MixerChannelView(QWidget* parent, MixerView* mixerView, int ch
 	soloMuteLayout->addWidget(m_soloButton, 0, Qt::AlignHCenter);
 	soloMuteLayout->addWidget(m_muteButton, 0, Qt::AlignHCenter);
 
+	// Channel pan (MixerChannel::m_panModel): -1 .. +1, a balance law.
+	m_panKnob = new Knob{KnobType::Small17, this, tr("Pan %1").arg(channelIndex)};
+	m_panKnob->setModel(&mixerChannel->m_panModel);
+	m_panKnob->setHintText(tr("Pan:"), "");
+	m_panKnob->setToolTip(tr("Pan this channel (centre = both sides at unity)"));
+
 	m_fader = new Fader{&mixerChannel->m_volumeModel, tr("Fader %1").arg(channelIndex), this};
 
 	m_peakIndicator = new PeakIndicator(this);
@@ -153,6 +159,7 @@ MixerChannelView::MixerChannelView(QWidget* parent, MixerView* mixerView, int ch
 	mainLayout->addWidget(m_channelNumberLcd, 0, Qt::AlignHCenter);
 	mainLayout->addWidget(m_renameLineEditView, 0, Qt::AlignHCenter);
 	mainLayout->addLayout(soloMuteLayout);
+	mainLayout->addWidget(m_panKnob, 0, Qt::AlignHCenter);
 	mainLayout->addWidget(m_peakIndicator);
 	mainLayout->addWidget(m_fader, 1, Qt::AlignHCenter);
 

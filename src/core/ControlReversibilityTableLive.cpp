@@ -180,6 +180,12 @@ const ReversibilityRow kRows[] = {
 		"ProjectJournal (MixerChannel volume model checkpoint)",
 		"",
 		"channel"),
+	RC("mixer.set_pan", RC::TrueInverse, true,
+		"the channel pan is a FloatModel, i.e. a JournallingObject (it was a typed "
+		"refusal until MixerChannel gained m_panModel)",
+		"ProjectJournal (MixerChannel pan model checkpoint)",
+		"",
+		"channel"),
 	R("automation.add_point", RC::TrueInverse, true,
 		"the point lives on an AutomationClip, which is a JournallingObject - "
 		"EXCEPT on the call that has to create the AutomationClip first",

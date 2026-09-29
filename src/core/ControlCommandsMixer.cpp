@@ -85,9 +85,8 @@ QJsonObject channelState(MixerChannel* channel)
 	entry.insert(QStringLiteral("soloed"), channel->m_soloModel.value());
 	entry.insert(QStringLiteral("is_master"), channel->isMaster());
 	entry.insert(QStringLiteral("is_bus"), channel->isBus());
-	// This tree has no pan property on a mixer channel; the field is emitted as
-	// null so a caller can see that rather than guess (mixer.set_pan refuses).
-	entry.insert(QStringLiteral("pan"), QJsonValue::Null);
+	// -1 (hard left) .. +1 (hard right), 0 = centre (MixerChannel::m_panModel).
+	entry.insert(QStringLiteral("pan"), static_cast<double>(channel->m_panModel.value()));
 
 	QJsonArray sends;
 	for (MixerRoute* route : channel->m_sends)
@@ -189,25 +188,53 @@ void registerMixerCommands(ControlRegistry& registry)
 		cmd.id = QStringLiteral("mixer.set_pan");
 		cmd.group = QStringLiteral("mixer");
 		cmd.verb = QStringLiteral("set_pan");
-		cmd.description = QStringLiteral("Set a channel pan. Refused: this tree has no pan on a mixer channel.");
+		cmd.description = QStringLiteral("Set a channel pan: -1 (hard left) .. +1 (hard right), 0 = "
+			"centre. A balance law - the centre is unity on both sides and a pan attenuates only "
+			"the opposite side - applied after the channel's effects and VCA gain, so the fader, "
+			"the meter, pre- and post-fader sends and every receiver hear the panned signal. "
+			"Saved only when not centred. Reversible through the ProjectJournal.");
 		cmd.argsSchema = objectSchema(
 			{{QStringLiteral("channel"), stringProperty()},
 				{QStringLiteral("pan"), QJsonObject{{QStringLiteral("type"), QStringLiteral("number")},
 					{QStringLiteral("minimum"), -1.0}, {QStringLiteral("maximum"), 1.0}}}},
 			{QStringLiteral("channel"), QStringLiteral("pan")});
-		cmd.resultSchema = objectSchema({});
+		cmd.resultSchema = objectSchema({
+			{QStringLiteral("channel"), stringProperty()},
+			{QStringLiteral("pan"), QJsonObject{{QStringLiteral("type"), QStringLiteral("number")}}},
+			{QStringLiteral("previous_pan"), QJsonObject{{QStringLiteral("type"), QStringLiteral("number")}}},
+		});
 		cmd.mutating = true;
 		cmd.handler = [](const QJsonObject& args) {
-			// Honest refusal, not a fake success: lmms::MixerChannel carries no pan
-			// control in this tree (only InstrumentTrack/SampleTrack panningModel
-			// and per-note panning exist). Inventing one would change the mixer's
-			// serialization format.
 			ControlResult error;
 			MixerChannel* channel = resolveChannel(args.value(QStringLiteral("channel")).toString(), &error);
 			if (channel == nullptr) { return error; }
-			return ControlResult::failure(ControlErrorKind::Refused,
-				QStringLiteral("mixer channels have no pan property in this build: ") +
-				QStringLiteral("pan lives on InstrumentTrack/SampleTrack (panningModel) and on notes"));
+
+			const float previous = channel->m_panModel.value();
+			const float pan = static_cast<float>(args.value(QStringLiteral("pan")).toDouble());
+			// A FloatModel is a JournallingObject: the checkpoint is the inverse
+			// the engine's undo stack applies (SPEC A16), as for the fader.
+			channel->m_panModel.addJournalCheckPoint();
+			channel->m_panModel.setValue(pan);
+
+			const QString channelIdText = control::channelIdOf(channel);
+			QJsonObject result;
+			result.insert(QStringLiteral("channel"), channelIdText);
+			result.insert(QStringLiteral("pan"), static_cast<double>(channel->m_panModel.value()));
+			result.insert(QStringLiteral("previous_pan"), static_cast<double>(previous));
+			QJsonObject transaction;
+			transaction.insert(QStringLiteral("before"),
+				QJsonObject{{QStringLiteral("channel"), channelIdText},
+					{QStringLiteral("pan"), static_cast<double>(previous)}});
+			transaction.insert(QStringLiteral("inverse"),
+				QJsonObject{{QStringLiteral("op"), QStringLiteral("mixer.set_pan")},
+					{QStringLiteral("args"),
+						QJsonObject{{QStringLiteral("channel"), channelIdText},
+							{QStringLiteral("pan"), static_cast<double>(previous)}}}});
+			transaction.insert(QStringLiteral("reversible"), true);
+			transaction.insert(QStringLiteral("mechanism"),
+				QStringLiteral("ProjectJournal (MixerChannel pan model checkpoint)"));
+			result.insert(QStringLiteral("__transaction"), transaction);
+			return ControlResult::success(result);
 		};
 		registry.registerCommand(cmd);
 	}

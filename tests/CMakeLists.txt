@@ -500,6 +500,8 @@ set(LMMS_TESTS
 	# plain effect loop and would prove nothing.
 	src/core/PatcherCommandsTest.cpp
 	src/core/VcaGroupTest.cpp
+	# Mixer channel pan (MixerChannel::m_panModel): the render, the file and the command.
+	src/core/MixerChannelPanTest.cpp
 	# Mixer::refreshGroups publishes each channel's VCA gain with ONE store, so a
 	# concurrent reader (the audio thread) never sees a grouped channel at unity.
 	src/core/VcaRefreshAtomicityTest.cpp

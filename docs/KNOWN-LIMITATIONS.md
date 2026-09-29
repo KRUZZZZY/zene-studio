@@ -1452,8 +1452,8 @@ surface. There is **no interface** for any of it: no Lua console pane, no script
 widget that shows what a script changed (`grep -rniI 'luaConsole\|LuaConsole\|scriptEditor' src/
 include/` returns 0 hits); the only GUI path is the pre-existing File > Run Lua Script file dialog
 (`src/gui/MainWindow.cpp:942`), which runs a whole file and reports nothing back. Withheld on
-purpose, one line each: channel **pan** (a `MixerChannel` has no pan control in this tree, which is
-why `mixer.set_pan` refuses), channel/effect **removal** (no inverse exists for a deleted channel;
+purpose, one line each: channel **pan** (a `MixerChannel` pan exists since 2026-09-29 and
+`mixer.set_pan` drives it, but no Lua binding reaches it yet), channel/effect **removal** (no inverse exists for a deleted channel;
 that stays the socket's `irreversible` `mixer.remove_channel`), **sends** (read-only — routing is
 `mixer.route_*`'s job), **PDC** (not bound: derived per chain, reported by `dsp.get_state`),
 **plugins beyond a chain** (no scan, no preset publishing from Lua), **automation clips and

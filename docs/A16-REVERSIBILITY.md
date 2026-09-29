@@ -75,6 +75,7 @@ Edit->Undo (Ctrl+Z) makes:
 | `clip.split` | yes | the split rewrites the clip list of one Track | ProjectJournal (Track checkpoint) | - |
 | `mixer.add_channel` | yes | a created MixerChannel has no before-state; the mixer is a JournallingObject but restoring its checkpoint would destroy and recreate every channel, and a MixerView holds those pointers - the same GUI-safety reason the TrackContainer checkpoints are commented out upstream. DISAGREEMENT with A16-STATUS-MEASURED.md, which records this as reversible:false | action checkpoint: the recorded undo step deletes the channel it created (Mixer::deleteChannel), through the same code path mixer.remove_channel uses; a fresh channel carries only defaults, so removing it restores the mixer exactly | - |
 | `mixer.set_volume` | yes | the fader is a FloatModel, i.e. a JournallingObject | ProjectJournal (MixerChannel volume model checkpoint) | - |
+| `mixer.set_pan` | yes | the channel pan is a FloatModel, i.e. a JournallingObject (a typed refusal until `MixerChannel::m_panModel` existed, 2026-09-29) | ProjectJournal (MixerChannel pan model checkpoint) | - |
 | `note.add` | yes | the note list belongs to the MidiClip, which is a JournallingObject | ProjectJournal (Clip checkpoint) | - |
 | `note.move` | yes | note position is part of the clip's saved note list | ProjectJournal (Clip checkpoint) | - |
 | `note.remove` | yes | same clip-owned list | ProjectJournal (Clip checkpoint) | - |
@@ -145,7 +146,6 @@ transport run state, and `render.render` (an output artefact).
 | `midi.device_list` | no | reads the MIDI client | no write | - |
 | `midi.learn_toggle` | no | the armed flag is GUI/engine mode state (MidiLearn's own enabled flag), not project state: no model, no serialized field and no journal checkpoint is written, so the registry records no transaction | nothing to reverse: calling midi.learn_toggle again is the operation a client calls, and setArmed() keeps the Edit menu tick in step | - |
 | `mixer.get_state` | no | reads the mixer | no write | - |
-| `mixer.set_pan` | no | declared mutating, but the handler REFUSES every call: this tree has no pan on a MixerChannel, and inventing one would change the mixer's serialization format | no write happens, so no transaction is recorded and control.undo is not blocked by it | none needed: the command is a typed refusal, use track panning (InstrumentTrack/SampleTrack panningModel) or per-note panning |
 | `note.select` | no | same view state, per note | same: no transaction, the previous selection is reported in the result | - |
 | `plugin.list` | no | reads the device catalogue | no write | - |
 | `plugin.param_get` | no | reads a parameter | no write | - |
