@@ -450,6 +450,15 @@ def widget_symbol_count(path):
     return sum(1 for line in result.stdout.splitlines() if WIDGET_SYMBOL_RE.search(line.split(" ")[0]))
 
 
+def lister_sample(control_object):
+    """Evidence for a host whose lister reads nothing (windows-arm64): which tool ran, its exit
+    code, and the first undefined symbols it listed for the control object."""
+    sample = run([NM, "--undefined-only", "--format=posix", control_object], cwd=os.path.dirname(control_object))
+    listed = " ".join(line.split(" ")[0] for line in sample.stdout.splitlines()[:12])
+    return "  (lister %r, exit %s; first undefined symbols: %s)" % (
+        NM, sample.returncode, listed or "none; stderr: %s" % (sample.stderr or "")[-200:])
+
+
 def check_object_symbols(boundary, control_object):
     problems = []
     hits = []
@@ -465,12 +474,7 @@ def check_object_symbols(boundary, control_object):
     if control_hits == 0:
         problems.append("the control object %s shows no widget symbol - check 6 would pass vacuously"
                         % control_object)
-        # Evidence for a host whose lister reads nothing (windows-arm64): which tool, and a sample
-        # of what it did list for the control object.
-        sample = run([NM, "--undefined-only", "--format=posix", control_object], cwd=os.path.dirname(control_object))
-        problems.append("  (lister %r, exit %s; first undefined symbols: %s)"
-                        % (NM, sample.returncode, " ".join(line.split(" ")[0] for line in sample.stdout.splitlines()[:12])
-                           or "none; stderr: %s" % (sample.stderr or "")[-200:]))
+        problems.append(lister_sample(control_object))
     summary = ("object symbols: %d/%d boundary objects reference a Qt widget symbol (liveness: the "
                "control references %d)" % (len(hits), len(boundary), control_hits))
     return problems, summary

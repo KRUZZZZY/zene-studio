@@ -42,7 +42,6 @@ build_fixture@tests/control-golden-audio.py	14
 lmms::controlExportPresetFromBytes@src/core/ControlExportPresetSupport.cpp	14
 lmms::gui::PinConnector::paintEvent@src/gui/PinConnector.cpp	14
 lmms::ScriptEngine::resolveProjectPath@src/core/ScriptEngine.cpp	14
-lmms::SessionScheduler::evaluateFollow@src/core/SessionFollow.cpp	14
 lmms::vst3::HostedPlugin::Impl::runChunk@plugins/Vst3Effect/Vst3Host.cpp	14
 lmms::vst3::HostedPlugin::prepare@plugins/Vst3Effect/Vst3Host.cpp	14
 check_refusals@tests/control-named-pipe-smoke.py	13
@@ -67,5 +66,6 @@ lmms::registerIdContractCommand@src/core/ControlCommandsIdContract.cpp	11
 lmms::registerRecordLand@src/core/ControlCommandsSessionRecordLand.cpp	11
 lmms::renderSession@src/core/ControlCommandsProject.cpp	11
 lmms::ScriptMemoryState::allocate@include/ScriptMemoryBudget.h	11
+lmms::SessionScheduler::evaluateFollow@src/core/SessionFollow.cpp	11
 wav_facts@tests/stem_commands_lib.py	11
 lmms::interchange::DawProjectTrack::operator ==@src/core/DawProjectModel.cpp	15

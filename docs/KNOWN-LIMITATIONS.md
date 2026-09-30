@@ -107,6 +107,11 @@ that is this page's fault — report it and it gets added.
   `SessionModel`, `SessionClip`, `SessionScheduler`, `SessionFollow`) — the only `session` spellings
   in `src/gui/` are `MainWindow`'s crash-recovery `SessionState` and one telemetry-consent string.
   The clip-launch grid UI itself (#598) is **out of 0.3.0**.
+- *(Updated 2026-09-30.)* **The clip launcher (View ▸ Clip Launcher, the R5.3 grid) now has a row for these**:
+  Follow Actions (the session-wide switch, `session.set_follow_actions`), Record to arrangement
+  (`session.arrangement_record_arm`), Land the recording (`session.arrangement_record_land`) and Back to
+  arrangement (`session.back_to_arrangement`), kept in step with the engine once a second
+  (`SessionTransportBarTest`). Per-cell chain editing is still socket-only. The bullet below is the earlier record.
 - **Follow Actions, Arrangement Record and the Back-to-Arrangement switch are drivable through the
   socket, not from the interface.** The chain a slot has carried since #594 is now EVALUATED (all ten
   action types, chance weighting, linked/unlinked timing) and the performance can be recorded into the
@@ -199,7 +204,11 @@ that is this page's fault — report it and it gets added.
   `plugin.host_notes` reports the note ports and the audio-output configuration the host discovered. It is
   **drivable through the socket, not from the interface**: the CLAP instrument browser entries lead to a
   generated parameter view and there is no `clap.gui` support anywhere in this tree, so the instrument's own
-  window does not open (the same limit the VST3 instrument has).
+  window does not open (the same limit the VST3 instrument has). *(Superseded 2026-09-30: R4.3 implements the
+  clap.gui life cycle, X11 embedded, and the instrument view's "Show plugin editor" button opens it.)*
+- *(Superseded 2026-09-29/30: the mixer draws a VCA strip per group - fader, mute, solo - and a channel's
+  context menu assigns it to a group, through the `vca.*` commands (M3.7, `VcaStripViewTest`,
+  `VcaStripLifetimeTest`).)* The bullet below is the pre-M3.7 record.
 - **No VCA groups in the interface.** Mix-and-edit groups exist, are tested, and are saved with the project —
   and since 2026-09-14 the **whole group is drivable through `--control-socket`, which is still the only way
   to reach one: nothing in the interface creates a group, names one, assigns a member, locks it or edits
