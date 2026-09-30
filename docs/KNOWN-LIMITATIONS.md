@@ -694,6 +694,10 @@ Dither (off / TPDF / noise-shaped) and Resampling (linear / sinc fastest, medium
   track's own device chain and fader (they are already baked into the render), so those controls are inert
   until `freeze.unfreeze`; and a take whose WAV has moved since it was frozen still reports `frozen: true` but
   has nothing to play, which `track.get_state` reports as `frozen_audio_ready: false`.
+- *(Updated 2026-09-30.)* **The piano roll's note tools now have a Groove menu**: Extract groove from this clip...
+  (at the roll's grid, `groove.extract`), Apply groove ▸ each pooled groove at a chosen strength (`groove.apply`),
+  and Quantize with strength... (`groove.quantize`) - `GrooveMenuTest`. Renaming and removing grooves, and the
+  random/humanise amounts, are still socket-only. The bullet below is the pre-menu record.
 - **The groove pool and quantise have no interface — added 2026-09-13.** A note pattern's timing and
   velocity feel can be captured into a named groove, re-applied to another clip with a strength, and notes
   can be quantised with a strength and a humanise amount — drivable through `--control-socket`

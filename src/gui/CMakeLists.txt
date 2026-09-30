@@ -40,6 +40,7 @@ SET(LMMS_SRCS
 	gui/ExportQualityControls.cpp
 	gui/embed.cpp
 	gui/FileBrowser.cpp
+	gui/GrooveMenu.cpp
 	gui/FileRevealer.cpp
 	gui/FileSearchJob.cpp
 	# The window.* command group: the editors' windows as registered commands
