@@ -421,6 +421,11 @@ tresult PLUGIN_API TestInstrument::getEditorState (IBStream* state)
 // R4.2: the fixture's EDITOR - what a real plug-in's view does with its host, minus the
 // drawing: it embeds in an X11 window, resizes, and on attach asks the frame for
 // Linux::IRunLoop and registers a 10 ms timer (a repaint timer), unregistering it on
+// The two Linux interfaces' UIDs, spelled here: the SDK defines their iids only in its Linux build
+// (commoniids.cpp, #if SMTG_OS_LINUX), so naming Linux::...::iid failed to link elsewhere.
+static const TUID kTimerHandlerIid = INLINE_UID (0x10BDD94F, 0x41424774, 0x821FAD8F, 0xECA72CA9);
+static const TUID kRunLoopIid = INLINE_UID (0x18C35366, 0x97764F1A, 0x9C5B8385, 0x7A871389);
+
 // removal. The host's side is plugins/Vst3Effect/Vst3EditorSession.cpp.
 class RepaintTimer : public Linux::ITimerHandler
 {
@@ -429,7 +434,7 @@ public:
 	void PLUGIN_API onTimer () SMTG_OVERRIDE { ++ticks; }
 	tresult PLUGIN_API queryInterface (const TUID iid, void** obj) SMTG_OVERRIDE
 	{
-		if (FUnknownPrivate::iidEqual (iid, Linux::ITimerHandler::iid) || FUnknownPrivate::iidEqual (iid, FUnknown::iid))
+		if (FUnknownPrivate::iidEqual (iid, kTimerHandlerIid) || FUnknownPrivate::iidEqual (iid, FUnknown::iid))
 		{
 			*obj = this;
 			addRef ();
@@ -473,7 +478,7 @@ public:
 	{
 		const tresult attachedResult = CPluginView::attached (parent, type);
 		Linux::IRunLoop* loop = nullptr;
-		if (plugFrame && plugFrame->queryInterface (Linux::IRunLoop::iid, reinterpret_cast<void**> (&loop)) == kResultOk)
+		if (plugFrame && plugFrame->queryInterface (kRunLoopIid, reinterpret_cast<void**> (&loop)) == kResultOk)
 		{
 			runLoop = loop;
 			timer = new RepaintTimer;
