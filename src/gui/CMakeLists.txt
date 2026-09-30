@@ -35,6 +35,7 @@ SET(LMMS_SRCS
 	gui/EffectControlDialog.cpp
 	gui/EffectRackView.cpp
 	gui/EffectView.cpp
+	gui/ExportQualityControls.cpp
 	gui/embed.cpp
 	gui/FileBrowser.cpp
 	gui/FileRevealer.cpp
@@ -48,10 +49,12 @@ SET(LMMS_SRCS
 	gui/CommandPalette.cpp
 	gui/PluginNativeEditor.cpp
 	gui/SessionGridView.cpp
+	gui/SessionSyncAction.cpp
 	gui/ShortcutsPage.cpp
 	gui/StartHub.cpp
 	gui/TakeLanesPanel.cpp
 	gui/TrackFolderMenu.cpp
+	gui/UndoHistoryPanel.cpp
 	# M3.7: VCA group strips in the mixer + the channel's VCA menu.
 	gui/VcaStripView.cpp
 	# Focus Desk - the Direction B shell (UI plan §9.4). FocusDeskModules is the

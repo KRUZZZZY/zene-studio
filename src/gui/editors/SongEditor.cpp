@@ -27,6 +27,7 @@
 #include <QSignalBlocker>
 #include "Timeline.h"
 #include "ControlRegistry.h"
+#include "SessionSyncAction.h"
 
 #include <cmath>
 
@@ -968,6 +969,9 @@ SongEditorWindow::SongEditorWindow(Song* song) :
 	});
 	m_toolBar->addAction(m_punchAction);
 	m_toolBar->widgetForAction(m_punchAction)->setObjectName("punchButton");
+
+	// Session sync (link.set_enabled), with its peers and tempo on the button.
+	m_toolBar->addAction(makeSessionSyncAction(this));
 
 
 	// Track actions

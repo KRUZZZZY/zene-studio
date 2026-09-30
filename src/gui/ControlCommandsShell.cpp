@@ -42,6 +42,7 @@
 #include "ConfigManager.h"
 #include "ShortcutsPage.h"
 #include "StartHub.h"
+#include "UndoHistoryPanel.h"
 #include "ControlRegistry.h"
 #include "ControlVocabulary.h"
 #include "ControlWindowCommands.h"
@@ -234,6 +235,30 @@ void registerShortcuts(ControlRegistry& registry)
 	registry.registerCommand(cmd);
 }
 
+void registerUndoHistory(ControlRegistry& registry)
+{
+	ControlCommand cmd = command("window", "undo_history");
+	cmd.description = QStringLiteral("Open Edit > Undo History (non-modally): the undo stack as "
+		"control.undo_depth reports it, Undo and Redo buttons that run control.undo / control.redo, and "
+		"the command record control.transactions keeps, newest first. An edit made directly in an "
+		"editor is undone by Undo but is not in that record, and the panel says so. `rows` is how many "
+		"recorded commands it lists.");
+	cmd.argsSchema = objectSchema({});
+	cmd.resultSchema = objectSchema({{QStringLiteral("shown"), booleanProperty()},
+		{QStringLiteral("rows"), integerProperty()}});
+	cmd.handler = [](const QJsonObject&) {
+		gui::MainWindow* window = mainWindow();
+		if (window == nullptr) { return noInterface(QStringLiteral("window.undo_history")); }
+		auto* panel = new gui::UndoHistoryPanel(window);
+		panel->setAttribute(Qt::WA_DeleteOnClose);
+		panel->setModal(false);
+		panel->show();
+		return ControlResult::success(QJsonObject{{QStringLiteral("shown"), true},
+			{QStringLiteral("rows"), panel->rowCount()}});
+	};
+	registry.registerCommand(cmd);
+}
+
 void registerStartHub(ControlRegistry& registry)
 {
 	ControlCommand cmd = command("window", "start_hub");
@@ -347,6 +372,7 @@ void registerShellCommands(ControlRegistry& registry)
 	registerOnlineHelp(registry);
 	registerCommandPalette(registry);
 	registerShortcuts(registry);
+	registerUndoHistory(registry);
 	registerStartHub(registry);
 	registerScreenshot(registry);
 	registerSaveVersion(registry);

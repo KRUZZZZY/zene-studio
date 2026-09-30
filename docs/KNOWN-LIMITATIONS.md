@@ -413,6 +413,12 @@ that is this page's fault — report it and it gets added.
   `tests/advertised-features.tsv` and `tests/release-honesty-gate.sh` would have to be reconciled in the
   same commit that did it. Until then the row states the truth and the gate enforces it.
 
+- *(Updated 2026-09-30.)* **Edit ▸ Undo History... now shows the stack** (`window.undo_history`,
+  `UndoHistoryPanel`): depth, redo depth, the two caps, the bytes kept and the evicted count from
+  `control.undo_depth`, Undo/Redo buttons through `control.undo`/`control.redo`, and the command record
+  newest first. The record lists edits made through the registry only - an edit made directly in an
+  editor is undone by Undo but not listed, and the panel says so. The caps and the coalescing window are
+  still set only through the socket. The bullet below is the pre-panel record.
 - **There is no undo-history UI — added 2026-09-13.** The undo stack is now bounded and its drags are
   grouped: `control.undo_depth` reports the depth, the count cap and the byte budget it is kept within,
   the bytes it retains and how many steps a bound has evicted, `control.set_undo_depth` sets the two
@@ -602,7 +608,9 @@ that is this page's fault — report it and it gets added.
   mean TPDF). **Noise shaping applies to 16-bit WAV only**: the 24-bit path hands quantisation to
   libsndfile, so a 24-bit `noise_shaped` render is plain TPDF, byte for byte (`ExportWavDitherTest`).
   Measured on a -60 dBFS tone: low-band error energy -8.4 dB and high-band +9.0 dB against flat TPDF
-  (`ExportNoiseShaperTest`). There is still no interface for any of it, and no RPDF by decision.
+  (`ExportNoiseShaperTest`). *(Updated 2026-09-30: the export dialog now has a Render quality group -
+Dither (off / TPDF / noise-shaped) and Resampling (linear / sinc fastest, medium, best) - set through
+`export.set_dither` / `export.set_src_quality`; `ExportQualityControlsTest`.)* No RPDF, by decision.
 
 - **Browser tag/metadata search and the waveform peak cache have no interface — added 2026-09-13.**
   The browser's items can be queried by name, by tag and by what the audio file itself says it is (sample
@@ -636,6 +644,10 @@ that is this page's fault — report it and it gets added.
   from the interface. `docs/DAWPROJECT-INTERCHANGE.md` records the format version (1.0), the eleven stated
   losses (audio clips, automation, device state, sends, fades, loop points, scenes, folder nesting, mixer
   routing and sharing) and the time convention (beats, 48 ticks per quarter).
+- *(Updated 2026-09-30.)* **The song editor's transport now has a Sync toggle** (`link.set_enabled`) whose
+  text shows the peer count and the session tempo while enabled (`SessionSyncAction`,
+  `SessionSyncActionTest`). The quantum, start/stop sync and the peer list are still socket-only. The
+  bullet below is the pre-toggle record.
 - **Session sync has no interface, and it is not Ableton Link — added 2026-09-13.** Two Zene instances on
   one machine (or one network segment, over UDP multicast on `224.76.78.75:20808`) can join one session and
   agree on a tempo and a shared beat phase — drivable through `--control-socket`

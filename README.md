@@ -48,7 +48,7 @@ open in a later or older build, so keep backups).
 person, can drive the open session over a local UNIX socket. It is opt-in and off by default: an
 instance not started that way has no socket at all. The tree's committed command snapshot
 (`tools/mcp-zene-control/zene_control/commands_snapshot.json`, captured from a live instance and held
-equal to the binary by the `ControlCommandsSnapshot` test) holds **<!-- canary -->386 ids / 58 groups<!-- /canary -->**;
+equal to the binary by the `ControlCommandsSnapshot` test) holds **<!-- canary -->387 ids / 58 groups<!-- /canary -->**;
 the eight `wasm.*` commands are registered on top of that only where the wasmtime C API is found,
 which no release job provisions. Every command carries a JSON schema and a declared reversibility
 class (the A16 contract; in the reference configuration 361 rows - 166 `true_inverse` / 39

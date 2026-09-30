@@ -557,6 +557,7 @@ include/DpiHelper.h
 include/ExportDither.h
 include/ExportDitherMode.h
 include/ExportNoiseShaper.h
+include/ExportQualityControls.h
 include/ExportRenderSettings.h
 include/FocusDesk.h
 include/FocusDeskActions.h
@@ -645,6 +646,7 @@ include/SessionGridView.h
 include/SessionModel.h
 include/SessionPlayback.h
 include/SessionScheduler.h
+include/SessionSyncAction.h
 include/SessionTuning.h
 include/ShortcutsPage.h
 include/SmfInterchange.h
@@ -669,6 +671,7 @@ include/TrackFolderMenu.h
 include/TrackRecorder.h
 include/UnattendedRun.h
 include/UnclaimedElements.h
+include/UndoHistoryPanel.h
 include/VcaGroup.h
 include/VcaStripView.h
 include/WarpMarkers.h
@@ -1106,6 +1109,7 @@ src/gui/AutomationModeMenu.cpp
 src/gui/CommandPalette.cpp
 src/gui/ControlCommandsShell.cpp
 src/gui/ControlCommandsWindow.cpp
+src/gui/ExportQualityControls.cpp
 src/gui/FocusDesk.cpp
 src/gui/FocusDeskActions.cpp
 src/gui/FocusDeskModules.cpp
@@ -1116,12 +1120,14 @@ src/gui/MidiLearnGui.cpp
 src/gui/PinConnector.cpp
 src/gui/PluginNativeEditor.cpp
 src/gui/SessionGridView.cpp
+src/gui/SessionSyncAction.cpp
 src/gui/ShortcutsPage.cpp
 src/gui/StartHub.cpp
 src/gui/StemSplitController.cpp
 src/gui/TakeLanesPanel.cpp
 src/gui/TelemetryConsentDialog.cpp
 src/gui/TrackFolderMenu.cpp
+src/gui/UndoHistoryPanel.cpp
 src/gui/VcaStripView.cpp
 src/tracks/TrackFolder.cpp
 src/wasm/WasmAbi.h
