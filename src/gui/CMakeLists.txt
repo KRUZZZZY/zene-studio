@@ -92,6 +92,7 @@ SET(LMMS_SRCS
 	gui/MidiLearnGui.cpp
 	gui/MidiControllerMenu.cpp
 	gui/ChainPresetMenu.cpp
+	gui/ClipEditsMenu.cpp
 	gui/CrashReportMenu.cpp
 	gui/MidiClockMenu.cpp
 	gui/MidiReconnectAction.cpp

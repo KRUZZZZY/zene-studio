@@ -516,6 +516,7 @@ include/ChordTrack.h
 include/ChordVocabulary.h
 include/ClipConsolidate.h
 include/ClipEdits.h
+include/ClipEditsMenu.h
 include/ClipLinks.h
 include/CommandPalette.h
 include/ControlAutomationSupport.h
@@ -1124,6 +1125,7 @@ src/core/midi/MpeExpression.cpp
 src/gui/AutomationModeMenu.cpp
 src/gui/BrowserTagMenu.cpp
 src/gui/ChainPresetMenu.cpp
+src/gui/ClipEditsMenu.cpp
 src/gui/CommandPalette.cpp
 src/gui/ControlCommandsShell.cpp
 src/gui/ControlCommandsWindow.cpp

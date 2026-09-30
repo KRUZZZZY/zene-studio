@@ -28,6 +28,7 @@
 #include <QMenu>
 #include <QPainter>
 
+#include "ClipEditsMenu.h"
 #include "FileDialog.h"
 #include "GuiApplication.h"
 #include "AutomationEditor.h"
@@ -104,6 +105,9 @@ void SampleClipView::constructContextMenu(QMenu* cm)
 		this,
 		SLOT(setAutomationGhost())
 	);
+
+	// Clip gain, fade lengths and the fade shape (clip.set_gain / clip.set_fade).
+	addClipEditsMenu(cm, m_clip);
 
 #ifdef LMMS_HAVE_STEM_SPLIT
 	cm->addAction(

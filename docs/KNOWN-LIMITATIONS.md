@@ -290,6 +290,12 @@ that is this page's fault — report it and it gets added.
   `default: break` and **drops the row** — a dropped track rather than a degrading one, which
   `docs/TRACK-FOLDER-DESIGN.md` §4.4 states as the forward-compatibility cost of the enumerator
   approach.
+- *(Updated 2026-09-30.)* **A sample clip's context menu now has Gain and fades**: Clip gain... (a dB value,
+  `clip.set_gain`, the item naming the current gain) and Reset gain; Fade in and Fade out, each None / 1 beat /
+  2 beats / 1 bar with the current length checked (`clip.set_fade`; a fade the clip cannot hold is refused);
+  and Fade shape for both ramps - each change one `control.undo` step (`ClipEditsMenuTest`). These are menu
+  items, not drag gestures: there are still no fade handles on the clip, and crossfades (`clip.crossfade`)
+  and the source-window trim/slip stay socket-only. The bullet below is the pre-menu record.
 - **No clip fade, crossfade or clip-gain gestures.** The clip model is in (an authored window that survives
   playback and is saved with the project) and so, since 2026-09-13, is the fade/gain model — but there are
   **no trim, slip, fade, crossfade or clip-gain tools** in the interface, and **fades, crossfades and clip gain
