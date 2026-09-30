@@ -627,7 +627,10 @@ Dither (off / TPDF / noise-shaped) and Resampling (linear / sinc fastest, medium
   it — `docs/TEMPO-MAP.md`) and it is drivable through `--control-socket`
   (`transport.tempo_map_get` / `tempo_map_add` / `tempo_map_remove` / `tempo_map_clear` /
   `tempo_map_set_active`), but **nothing in `src/gui/` draws, edits or reads a tempo map**: drivable through
-  the socket, not from the interface. With an empty or inactive map the tempo is the single project value it
+  the socket, not from the interface. *(Updated 2026-09-30: Edit ▸ Tempo Map... now lists, adds at the
+  playhead, removes, clears and activates it through those commands - `window.tempo_map`, `TempoMapPanelTest`;
+  the timeline still does not draw it, and an event is added at the song's tempo and signature, not edited
+  in place.)* With an empty or inactive map the tempo is the single project value it
   has always been, so a project that never used one renders byte-for-byte what it did.
 - **Standard MIDI File tempo-map interchange has no interface — added 2026-09-15.** The tempo map can be
   written as a conductor track in a Standard MIDI File another DAW reads, and a file's tempo and

@@ -53,6 +53,7 @@ SET(LMMS_SRCS
 	gui/ShortcutsPage.cpp
 	gui/StartHub.cpp
 	gui/TakeLanesPanel.cpp
+	gui/TempoMapPanel.cpp
 	gui/TrackFolderMenu.cpp
 	gui/UndoHistoryPanel.cpp
 	# M3.7: VCA group strips in the mixer + the channel's VCA menu.
