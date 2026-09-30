@@ -744,6 +744,11 @@ Dither (off / TPDF / noise-shaped) and Resampling (linear / sinc fastest, medium
   matching span of a whole-project render once that render's own tail is counted; and a render already
   performed is **not** undone by undoing the apply that influenced it — its file stays where it was
   written, so the fallback is to apply the right preset and render again.
+- *(Updated 2026-09-30.)* **An instrument or sample track's menu now has Effect chain presets**: Save chain
+  as preset... (a name, then `chain.save`; an existing name asks before it is replaced), one Apply item per
+  stored preset (`chain.apply` - one `control.undo` puts the previous chain back) and a Delete submenu
+  (`chain.remove`, after a confirmation) (`ChainPresetMenuTest`). Renaming (`chain.rename`) and a mixer
+  channel's chain (`ch-<n>`) are still socket-only. The bullet below is the pre-menu record.
 - **Plugin-chain presets have no interface, and their store is per-user rather than per-project — added
   2026-09-13.** A track's effect chain (its ordered devices together with each device's own settings)
   can be captured as a named preset and applied to another track, drivable through `--control-socket`

@@ -509,6 +509,7 @@ include/BounceInPlace.h
 include/BrowserCatalog.h
 include/BrowserPeakCache.h
 include/BrowserTagMenu.h
+include/ChainPresetMenu.h
 include/ChordDetect.h
 include/ChordProgression.h
 include/ChordTrack.h
@@ -1122,6 +1123,7 @@ src/core/midi/MidiReconnect.cpp
 src/core/midi/MpeExpression.cpp
 src/gui/AutomationModeMenu.cpp
 src/gui/BrowserTagMenu.cpp
+src/gui/ChainPresetMenu.cpp
 src/gui/CommandPalette.cpp
 src/gui/ControlCommandsShell.cpp
 src/gui/ControlCommandsWindow.cpp

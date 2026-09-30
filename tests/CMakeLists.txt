@@ -666,6 +666,8 @@ set(LMMS_TESTS
 	# The piano roll's Groove menu: extract, apply with strength, quantise with strength.
 	src/gui/GrooveMenuTest.cpp
 	# A mixer strip's tooltip names its delay compensation.
+	# A track menu's Effect chain presets (chain.save / apply / remove / list) against a real effect.
+	src/gui/ChainPresetMenuTest.cpp
 	# Edit > Plugin Quarantine (plugin.scan_cache_* / plugin.rescan), over a throwaway scan-cache file.
 	src/gui/PluginQuarantineMenuTest.cpp
 	# Help > Crash Reports (crash.enable / disable / list / acknowledge / discard), over throwaway directories.
@@ -865,6 +867,8 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 		# The automation-mode context menu is driven against a real instrument's parameter.
 		OR LMMS_TEST_NAME STREQUAL "AutomationModeMenuTest"
 		OR LMMS_TEST_NAME STREQUAL "ControlChainPresetTest"
+		# The track menu's chain presets save and apply a chain holding one real effect.
+		OR LMMS_TEST_NAME STREQUAL "ChainPresetMenuTest"
 		# Board card #712: SessionTuningTest's proof slot needs tracks with a
 		# REAL instrument (revtest::addInstrumentTrack -> plugin.load) so both
 		# sounding notes go through the engine's own render path - the same
@@ -1165,6 +1169,7 @@ set_tests_properties(MidiControllerMenuTest PROPERTIES ENVIRONMENT "QT_QPA_PLATF
 set_tests_properties(ControllerTemplateMenuTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(TrackRenderMenuTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(GrooveMenuTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+set_tests_properties(ChainPresetMenuTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(PluginQuarantineMenuTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(CrashReportMenuTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(MidiClockMenuTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
