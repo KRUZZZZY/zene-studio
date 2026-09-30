@@ -70,6 +70,7 @@
 #include "SessionGridView.h"
 #include "MidiLearnGui.h"
 #include "MpeInputAction.h"
+#include "CrashReportMenu.h"
 #include "MidiClockMenu.h"
 #include "MidiReconnectAction.h"
 #include "TrackRenderMenu.h"
@@ -565,6 +566,7 @@ void MainWindow::finalize()
 	// M3 item 4: every shortcut, read from these very menus (ShortcutsPage).
 	declares(help_menu->addAction(embed::getIconPixmap("help"), tr("Keyboard Shortcuts"),
 		this, [](){ dispatchShellCommand(QStringLiteral("window.shortcuts")); }), "window.shortcuts");
+	addCrashReportMenu(help_menu);
 	help_menu->addSeparator();
 	declares(help_menu->addAction( embed::getIconPixmap( "icon_small" ), tr( "About" ),
 				  this, SLOT(aboutLMMS())), "app.about");

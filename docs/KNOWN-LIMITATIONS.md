@@ -943,6 +943,14 @@ Dither (off / TPDF / noise-shaped) and Resampling (linear / sinc fastest, medium
   The engine layer keeps its proof (`tests/src/core/PluginScanCacheTest.cpp`, extended with the two enumeration
   cases) and the **surface** is proven by `tests/control-plugin-scan-commands.py`, which reads the cache file
   off disk as well as off the wire.
+- *(Updated 2026-09-30.)* **Help ▸ Crash Reports** arms and disarms the reporter (**Report Crashes**,
+  `crash.enable` / `crash.disable` - disarming deletes nothing), names its state on a line re-read from
+  `crash.list_reports` each time the submenu opens (armed or not; no report, one not yet offered, or one
+  already offered), opens the report directory (**Show Report Folder**), acknowledges a pending report
+  (**Stop Offering the Report**, the file stays) and deletes it after a confirmation (**Delete the
+  Report...**, `crash.discard_report`) (`CrashReportMenuTest`, POSIX; the module is a no-op on Windows).
+  There is still no way to SEND a report, by design: this build has no upload. The bullet below is the
+  pre-menu record.
 - **The crash reporter is drivable, and there is no way to see or send a report from the interface — added
   2026-09-14.** The reporter's state (whether it is installed, its report directory, every report it holds with
   its size and last-written time, whether one is still pending an offer, the `offered` sentinel, whether a

@@ -184,6 +184,7 @@ include/ControllerSurface.h
 include/ControllerTemplateMenu.h
 include/ControllerView.h
 include/Controls.h
+include/CrashReportMenu.h
 include/CrashReporter.h
 include/CrashReporterFormat.h
 include/DataFile.h
@@ -1520,6 +1521,7 @@ src/gui/ControllerRackView.cpp
 src/gui/ControllerTemplateMenu.cpp
 src/gui/ControllerView.cpp
 src/gui/Controls.cpp
+src/gui/CrashReportMenu.cpp
 src/gui/EffectControlDialog.cpp
 src/gui/EffectRackView.cpp
 src/gui/EffectView.cpp
@@ -1894,6 +1896,7 @@ tests/src/gui/BrowserTagMenuTest.cpp
 tests/src/gui/CaptureMidiMenuTest.cpp
 tests/src/gui/CommandPaletteTest.cpp
 tests/src/gui/ControllerTemplateMenuTest.cpp
+tests/src/gui/CrashReportMenuTest.cpp
 tests/src/gui/ExportQualityControlsTest.cpp
 tests/src/gui/FocusDeskActionsTest.cpp
 tests/src/gui/FocusDeskPaneTest.cpp

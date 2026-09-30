@@ -551,6 +551,7 @@ include/ControlWasmSupport.h
 include/ControlWindowCommands.h
 include/ControllerSurface.h
 include/ControllerTemplateMenu.h
+include/CrashReportMenu.h
 include/CrashReporter.h
 include/CrashReporterFormat.h
 include/DawProjectInterchange.h
@@ -1124,6 +1125,7 @@ src/gui/CommandPalette.cpp
 src/gui/ControlCommandsShell.cpp
 src/gui/ControlCommandsWindow.cpp
 src/gui/ControllerTemplateMenu.cpp
+src/gui/CrashReportMenu.cpp
 src/gui/ExportQualityControls.cpp
 src/gui/FocusDesk.cpp
 src/gui/FocusDeskActions.cpp
