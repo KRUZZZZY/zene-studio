@@ -639,6 +639,9 @@ that is this page's fault — report it and it gets added.
   (`src/core/AudioEngineWorkerThread.cpp:204`) and `tests/src/core/AudioEngineTeardownTest.cpp` (asserting
   `stranded == 0`, `:135-148`, `:170-179`). The lane `post-alpha/test-hygiene` is an ancestor of this tip.
 
+- *(Corrected 2026-09-30.)* **The export dialog has a Dither and resampling group** (`makeExportQualityControls`,
+  `src/gui/ExportQualityControls.cpp`) that runs `export.set_dither` and `export.set_src_quality`, so the "no
+  interface" below is no longer true; the bullet is the record of when it was.
 - **Export dither and the SRC quality have no interface — added 2026-09-13.** The engine is in and both are
   drivable through `--control-socket` (`export.get_settings`, `export.set_dither`, `export.set_src_quality`)
   and the CLI (`--dither`, `--src-quality`), but **neither is on any dialog**: drivable through the socket,
@@ -801,6 +804,10 @@ Dither (off / TPDF / noise-shaped) and Resampling (linear / sinc fastest, medium
   the same project can hold different presets. A preset carries effects only: the track's instrument and
   the rack's parallel chains (`rack.*`) are not part of it, and a preset naming a device this build
   cannot load is refused, typed, with the target's chain left untouched.
+- *(Corrected 2026-09-30.)* **The song editor's transport has Punch in/out (the loop range)**
+  (`src/gui/editors/SongEditor.cpp`, `transport.punch_set` / `punch_clear`), and the capture path DOES consult
+  the gate since R2.4 (`AudioEngine::renderNextPeriod`'s punch window, `PunchWindowTest`). Still missing: a punch
+  ruler with its own handles - the region is the loop markers' range. The bullet below is the earlier record.
 - **Punch in/out is the region and its gate, and there is no interface for it — added 2026-09-13.**
   A punch region (a tick range that capture is gated to, plus an arm flag) lives on the transport, is written
   with the project and survives a save/load — drivable through `--control-socket` (`transport.punch_set`,
@@ -862,6 +869,9 @@ Dither (off / TPDF / noise-shaped) and Resampling (linear / sinc fastest, medium
   and the tree's ALSA Raw reader polls after a 5 ms sleep (`src/core/midi/MidiAlsaRaw.cpp`). Drivable through the
   socket, not from the interface.
 
+- *(Corrected 2026-09-30.)* **Edit ▸ Arm MIDI Capture and Capture MIDI** (`src/gui/MainWindow.cpp`,
+  `midi.retro_capture_arm` / `midi.retro_capture_to_clip`; Ctrl+Shift+C captures onto the monitored track, R5.4)
+  are the interface the bullet below says is missing. The 8192-event bound is unchanged.
 - **Retrospective MIDI capture keeps the last 8192 events, not a recording, and has no interface — added
   2026-09-13.** Arming the mode makes the engine keep a rolling window of the MIDI it receives, so what you
   just played can be written into a new clip AFTER the fact — drivable through `--control-socket`
