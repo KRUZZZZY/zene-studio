@@ -137,3 +137,16 @@ centred pan writes no attribute, so the save bytes did not move.
 THE ACT: in `BASELINE_MIXER`, the three `"pan":null` became `"pan":0`, and nothing else
 changed. The #709 claims this constant carries (no send, route or volume moved) are
 unchanged, because those fields are byte-identical.
+
+
+## Rotation 4 - 2026-09-30: the writer's PLATFORM is not project content
+
+The canonical form dropped `writer` and `creatorversion` but not the header's `creatorplatform` /
+`creatorplatformtype`, so the constant held "linux" and the hosted macOS jobs - the first macOS ctest
+runs - failed both save checks with an identical project (hosted runs 36720131455, 36733845444; the
+printed canonical XML showed `creatorplatform="darwin" creatorplatformtype="osx"`). Both attributes
+are now stripped like the other writer metadata.
+
+- Proof the rotation changes nothing else: on the same saved file, the OLD rule reproduces the old
+  constant exactly (`33a5053f...56c2`) and the new rule gives `5131ec2c...9140`.
+- Measured on this box, commit on 040/ci-fixes-8.
