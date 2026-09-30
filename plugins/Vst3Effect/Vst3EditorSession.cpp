@@ -38,6 +38,15 @@ namespace lmms::vst3
 
 using namespace Steinberg;
 
+namespace
+{
+//! Linux::IRunLoop's UID, spelled here: the SDK DEFINES the Linux interfaces' iids only when it
+//! builds for Linux (public.sdk/source/common/commoniids.cpp, #if SMTG_OS_LINUX), so a reference to
+//! Linux::IRunLoop::iid failed to link on macOS (hosted run 36691164314). A view on another platform
+//! never asks for a run loop; the answer is the same bytes everywhere.
+const TUID kRunLoopIid = INLINE_UID(0x18C35366, 0x97764F1A, 0x9C5B8385, 0x7A871389);
+} // namespace
+
 /*! The frame a view is given: IPlugFrame (the view asks to be resized) and Linux::IRunLoop
  *  (the view asks for its descriptors and timers to be run), both on PluginEditorHost. */
 class HostPlugFrame : public IPlugFrame, public Linux::IRunLoop
@@ -116,7 +125,7 @@ public:
 		{
 			*obj = static_cast<IPlugFrame*>(this);
 		}
-		else if (FUnknownPrivate::iidEqual(iid, Linux::IRunLoop::iid))
+		else if (FUnknownPrivate::iidEqual(iid, kRunLoopIid))
 		{
 			*obj = static_cast<Linux::IRunLoop*>(this);
 		}
