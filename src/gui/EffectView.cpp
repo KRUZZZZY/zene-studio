@@ -31,6 +31,7 @@
 
 #include "EffectView.h"
 #include "DummyEffect.h"
+#include "EffectHostingMenu.h"
 #include "CaptionMenu.h"
 #include "embed.h"
 #include "GuiApplication.h"
@@ -173,6 +174,8 @@ void EffectView::contextMenuEvent( QContextMenuEvent * )
 						tr( "&Remove this plugin" ),
 						this, SLOT(deletePlugin()));
 	contextMenu->addSeparator();
+	// In-process or a separate process, and restart (oop.set_mode / oop.restart).
+	addEffectHostingMenu(contextMenu, effect());
 	contextMenu->exec( QCursor::pos() );
 	delete contextMenu;
 }
