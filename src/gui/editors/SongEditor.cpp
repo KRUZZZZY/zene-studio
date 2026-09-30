@@ -28,10 +28,13 @@
 #include "Timeline.h"
 #include "ControlRegistry.h"
 #include "SessionSyncAction.h"
+#include "VisibilitySetMenu.h"
 
 #include <cmath>
 
 #include <QAction>
+#include <QMenu>
+#include <QToolButton>
 #include <QKeyEvent>
 #include <QLabel>
 #include <QMdiArea>
@@ -972,6 +975,17 @@ SongEditorWindow::SongEditorWindow(Song* song) :
 
 	// Session sync (link.set_enabled), with its peers and tempo on the button.
 	m_toolBar->addAction(makeSessionSyncAction(this));
+
+	// Named track-visibility sets (track.visibility_*), rebuilt each time the menu opens.
+	auto* viewsButton = new QToolButton(m_toolBar);
+	viewsButton->setText(tr("Views"));
+	viewsButton->setAccessibleName(tr("Track views"));
+	viewsButton->setToolTip(tr("Show a saved set of tracks, all tracks, or save the tracks shown now"));
+	viewsButton->setPopupMode(QToolButton::InstantPopup);
+	auto* viewsMenu = new QMenu(viewsButton);
+	connect(viewsMenu, &QMenu::aboutToShow, viewsMenu, [viewsMenu] { populateVisibilitySetMenu(viewsMenu); });
+	viewsButton->setMenu(viewsMenu);
+	m_toolBar->addWidget(viewsButton);
 
 
 	// Track actions

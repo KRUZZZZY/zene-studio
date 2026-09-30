@@ -207,7 +207,25 @@ bool TrackContainer::applyVisibilitySet(const QString& name, int* shown, int* hi
 	if (shown != nullptr) { *shown = visibleTracks; }
 	if (hidden != nullptr) { *hidden = hiddenTracks; }
 	if (Engine::getSong() != nullptr) { Engine::getSong()->setModified(); }
+	emit visibilityChanged();
 	return true;
+}
+
+
+void TrackContainer::showAllTracks(int* shown)
+{
+	int count = 0;
+	m_tracksMutex.lockForRead();
+	for (Track* track : m_tracks)
+	{
+		track->setVisible(true);
+		++count;
+	}
+	m_tracksMutex.unlock();
+	m_activeVisibilitySet.clear();
+	if (shown != nullptr) { *shown = count; }
+	if (Engine::getSong() != nullptr) { Engine::getSong()->setModified(); }
+	emit visibilityChanged();
 }
 
 

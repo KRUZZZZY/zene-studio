@@ -185,6 +185,7 @@ ControlResult applySet(const QJsonObject& args)
 				}
 			}
 			song->setActiveVisibilitySet(previousActive);
+			emit song->visibilityChanged();
 		},
 		[song, name]() {
 			int shown = 0;
@@ -212,6 +213,43 @@ ControlResult applySet(const QJsonObject& args)
 				"captured visible flag and the previous active name back, because one apply "
 				"changes the flag of EVERY track of the song and only the members' are in the "
 				"set. `visible` is a view flag: it mutes nothing and changes no render")));
+	return ControlResult::success(result);
+}
+
+// ---------------------------------------------------------------------------
+// track.visibility_show_all
+// ---------------------------------------------------------------------------
+ControlResult showAll(const QJsonObject&)
+{
+	TrackContainer* song = Engine::getSong();
+	const QString previousActive = song->activeVisibilitySet();
+	const std::shared_ptr<std::vector<VisibleFlag>> flags = captureVisibleFlags(song);
+	// The apply shape: every track's flag and the active name are one recorded action.
+	control::addUndoStep(
+		[song, flags, previousActive]() {
+			for (const VisibleFlag& flag : *flags)
+			{
+				if (Track* track = song->findTrackById(flag.first)) { track->setVisible(flag.second); }
+			}
+			song->setActiveVisibilitySet(previousActive);
+			emit song->visibilityChanged();
+		},
+		[song]() { song->showAllTracks(nullptr); });
+	int shown = 0;
+	song->showAllTracks(&shown);
+
+	QJsonObject result;
+	result.insert(QStringLiteral("shown"), shown);
+	result.insert(QStringLiteral("active"), song->activeVisibilitySet());
+	result.insert(QStringLiteral("previous_active"), previousActive);
+	result.insert(QStringLiteral("__transaction"),
+		control::transactionPayload(
+			QJsonObject{{QStringLiteral("active_before"), previousActive}},
+			QStringLiteral("track.visibility_show_all"),
+			QJsonObject{{QStringLiteral("active_before"), previousActive}},
+			true,
+			QStringLiteral("action checkpoint: the recorded undo step writes every track's captured "
+				"visible flag and the previous active name back, as for track.visibility_set_apply")));
 	return ControlResult::success(result);
 }
 
@@ -316,6 +354,26 @@ void registerVisibilitySetApply(ControlRegistry& registry)
 	registry.registerCommand(cmd);
 }
 
+void registerVisibilityShowAll(ControlRegistry& registry)
+{
+	ControlCommand cmd;
+	cmd.id = QStringLiteral("track.visibility_show_all");
+	cmd.group = QStringLiteral("track");
+	cmd.verb = QStringLiteral("visibility_show_all");
+	cmd.description = QStringLiteral("Make every track of the song visible again and leave no set "
+		"active - the way back from track.visibility_set_apply. A view flag only: it mutes nothing "
+		"and changes no render. One control.undo puts the previous flags and active set back.");
+	cmd.argsSchema = control::objectSchema({});
+	cmd.resultSchema = control::objectSchema({
+		{QStringLiteral("shown"), control::integerProperty(0, MaxSongLength)},
+		{QStringLiteral("active"), control::stringProperty()},
+		{QStringLiteral("previous_active"), control::stringProperty()},
+	});
+	cmd.mutating = true;
+	cmd.handler = [](const QJsonObject& args) { return showAll(args); };
+	registry.registerCommand(cmd);
+}
+
 void registerVisibilitySetRemove(ControlRegistry& registry)
 {
 	ControlCommand cmd;
@@ -379,6 +437,7 @@ void registerTrackFolderSetCommands(ControlRegistry& registry)
 {
 	registerVisibilitySetSave(registry);
 	registerVisibilitySetApply(registry);
+	registerVisibilityShowAll(registry);
 	registerVisibilitySetRemove(registry);
 	registerVisibilitySetList(registry);
 }

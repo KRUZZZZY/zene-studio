@@ -678,6 +678,7 @@ include/UnclaimedElements.h
 include/UndoHistoryPanel.h
 include/VcaGroup.h
 include/VcaStripView.h
+include/VisibilitySetMenu.h
 include/WarpMarkers.h
 include/WcagContrast.h
 include/XmlDepthGuard.h
@@ -1137,6 +1138,7 @@ src/gui/TempoMapPanel.cpp
 src/gui/TrackFolderMenu.cpp
 src/gui/UndoHistoryPanel.cpp
 src/gui/VcaStripView.cpp
+src/gui/VisibilitySetMenu.cpp
 src/tracks/TrackFolder.cpp
 src/wasm/WasmAbi.h
 src/wasm/WasmOfflineRender.cpp
