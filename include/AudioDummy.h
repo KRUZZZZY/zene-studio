@@ -25,13 +25,14 @@
 #ifndef LMMS_AUDIO_DUMMY_H
 #define LMMS_AUDIO_DUMMY_H
 
+#include <chrono>
 #include <span>
+#include <thread>
 #include <vector>
 
 #include "AudioDevice.h"
 #include "AudioDeviceSetupWidget.h"
 #include "AudioEngine.h"
-#include "MicroTimer.h"
 
 namespace lmms
 {
@@ -100,18 +101,23 @@ private:
 
 	void run() override
 	{
-		MicroTimer timer;
+		// Paced against an absolute deadline, not "a period minus the render time": each sleep's
+		// overshoot used to be lost for good, so a host with coarse sleep slack (macOS) drifted
+		// far below real time - two bars in 25 s on the hosted macos-arm64 runner (run
+		// 36720131455, ControlLivecodeCommands). Now an overshoot is paid back by the next period
+		// sleeping less; a stall longer than a quarter second is not caught up in a burst.
+		using Clock = std::chrono::steady_clock;
+		auto due = Clock::now();
 		while (AudioDevice::isRunning())
 		{
-			timer.reset();
 			const std::span<const SampleFrame> period = audioEngine()->renderNextPeriod();
 			if( m_loopback ) { feedBack( period ); }
 
-			const int microseconds = static_cast<int>( audioEngine()->framesPerPeriod() * 1000000.0f / audioEngine()->outputSampleRate() - timer.elapsed() );
-			if( microseconds > 0 )
-			{
-				usleep( microseconds );
-			}
+			due += std::chrono::microseconds( static_cast<long long>(
+				audioEngine()->framesPerPeriod() * 1000000.0 / audioEngine()->outputSampleRate() ) );
+			const auto now = Clock::now();
+			if( now < due ) { std::this_thread::sleep_until( due ); }
+			else if( now - due > std::chrono::milliseconds( 250 ) ) { due = now; }
 		}
 	}
 
