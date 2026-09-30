@@ -347,6 +347,7 @@ include/MixHelpers.h
 include/Mixer.h
 include/MixerChannelLcdSpinBox.h
 include/MixerChannelView.h
+include/MixerLatencyText.h
 include/MixerView.h
 include/Model.h
 include/ModelView.h
@@ -1897,6 +1898,7 @@ tests/src/gui/GuiTestApplication.h
 tests/src/gui/KnobKeyboardTest.cpp
 tests/src/gui/MidiControllerMenuTest.cpp
 tests/src/gui/MidiLearnGuiTest.cpp
+tests/src/gui/MixerLatencyTextTest.cpp
 tests/src/gui/MpeInputActionTest.cpp
 tests/src/gui/NoteTransformActionsTest.cpp
 tests/src/gui/PianoRollBenchmarkTest.cpp
