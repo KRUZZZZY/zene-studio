@@ -85,8 +85,10 @@ private slots:
 
 	void theLineNamesTheRouting()
 	{
-		QCOMPARE(rackStatusText({{QStringLiteral("chain_count"), 1}, {QStringLiteral("selected"), 0}}),
-			QStringLiteral("1 chain, routed to chain 0"));
+		QCOMPARE(rackStatusText({{QStringLiteral("chain_count"), 1}, {QStringLiteral("selected"), -1}}),
+			QStringLiteral("1 chain (the channel's own)"));
+		QCOMPARE(rackStatusText({{QStringLiteral("chain_count"), 2}, {QStringLiteral("selected"), 1}}),
+			QStringLiteral("2 chains, routed to chain 1"));
 		QCOMPARE(rackStatusText({{QStringLiteral("chain_count"), 3}, {QStringLiteral("selected"), -1}}),
 			QStringLiteral("3 chains, routed to parallel"));
 	}
@@ -110,14 +112,15 @@ private slots:
 		QMenu parent;
 		QMenu* menu = rack(parent);
 		QVERIFY(menu != nullptr);
-		QCOMPARE(menu->actions().first()->text(), QStringLiteral("1 chain, routed to chain 0"));
+		QCOMPARE(menu->actions().first()->text(), QStringLiteral("1 chain (the channel's own)"));
 		QVERIFY(submenu(menu, QStringLiteral("Remove chain")) == nullptr);
 		item(menu, QStringLiteral("Add parallel chain"))->trigger();
 		QCOMPARE(state().value(QStringLiteral("chain_count")).toInt(), 2);
 
 		menu = rack(parent);
 		QMenu* route = submenu(menu, QStringLiteral("Route to"));
-		QVERIFY(item(route, QStringLiteral("Chain 0 (the channel's own)"))->isChecked());
+		// A fresh rack's selector is -1, parallel.
+		QVERIFY(item(route, QStringLiteral("Parallel (every chain, summed)"))->isChecked());
 		item(route, QStringLiteral("Chain 1"))->trigger();
 		QCOMPARE(state().value(QStringLiteral("selected")).toInt(), 1);
 		item(route, QStringLiteral("Parallel (every chain, summed)"))->trigger();

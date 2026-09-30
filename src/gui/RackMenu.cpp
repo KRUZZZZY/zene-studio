@@ -140,7 +140,8 @@ QString rackStatusText(const QJsonObject& state)
 	const int chains = state.value(QStringLiteral("chain_count")).toInt();
 	const int selected = state.value(QStringLiteral("selected")).toInt();
 	const QString routing = selected < 0 ? QMenu::tr("parallel") : QMenu::tr("chain %1").arg(selected);
-	return chains == 1 ? QMenu::tr("1 chain, routed to %1").arg(routing)
+	// One chain is the channel's own whatever the selector says: parallel over one chain is that chain.
+	return chains <= 1 ? QMenu::tr("1 chain (the channel's own)")
 		: QMenu::tr("%1 chains, routed to %2").arg(chains).arg(routing);
 }
 
