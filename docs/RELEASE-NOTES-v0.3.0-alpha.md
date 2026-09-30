@@ -920,7 +920,7 @@ each a `true_inverse` composite checkpoint like vca.edit_move (+4); R3.1's comp.
 monitoring state (+1).
 
 <!-- A16-HISTOGRAM-BEGIN
-     measured: rows=397 true_inverse=174 snapshot=39 irreversible=17 not_mutating=167
+     measured: rows=398 true_inverse=175 snapshot=39 irreversible=17 not_mutating=167
      configuration: telemetry.status wasm.load session.get_state stem.get_state
      option telemetry.status rows=2 not_mutating=2
      option wasm.load rows=8 snapshot=3 not_mutating=5

@@ -37,6 +37,7 @@
 #include "ClipEdits.h"
 #include "ControlRegistry.h"
 #include "ControlVocabulary.h"
+#include "SampleClip.h"
 #include "TimePos.h"
 #include "UnattendedRun.h"
 
@@ -95,6 +96,21 @@ void addFadeMenu(QMenu* parent, Clip* clip, const QString& title, const QString&
 }
 
 } // namespace
+
+void addClipRecordAction(QMenu* menu, Clip* clip)
+{
+	auto* audio = dynamic_cast<SampleClip*>(clip);
+	if (audio == nullptr) { return; }
+	QAction* record = menu->addAction(QMenu::tr("Record into this clip"));
+	record->setCheckable(true);
+	record->setChecked(audio->isRecord());
+	record->setData(QStringLiteral("clip.set_record"));
+	record->setToolTip(QMenu::tr("Take the input into this clip the next time the song plays with "
+		"Record while playing"));
+	QObject::connect(record, &QAction::triggered, menu, [clip](bool on) {
+		run(clip, QStringLiteral("clip.set_record"), {{QStringLiteral("record"), on}});
+	});
+}
 
 void setClipGainPrompt(std::function<std::optional<double>(double)> prompt) { s_gainPrompt = std::move(prompt); }
 

@@ -38,6 +38,7 @@
 #include "ClipEditsMenu.h"
 #include "ConfigManager.h"
 #include "ControlRegistry.h"
+#include "ControlVocabulary.h"
 #include "Engine.h"
 #include "SampleClip.h"
 #include "SampleTrack.h"
@@ -145,6 +146,44 @@ private slots:
 		const ClipEdits before = clip->clipEdits();
 		item(submenu(menu, QStringLiteral("Fade out")), QStringLiteral("2 beats"))->trigger();
 		QVERIFY(clip->clipEdits() == before);
+	}
+
+	//! clip.set_record from the menu: the item arms and disarms the clip, one control.undo takes an
+	//! arm back, and a MIDI clip gets no item and a typed refusal from the command itself.
+	void aClipIsArmedToRecordFromTheMenu()
+	{
+		auto* track = dynamic_cast<SampleTrack*>(Track::create(Track::Type::Sample, Engine::getSong()));
+		auto* clip = dynamic_cast<SampleClip*>(track->createClip(TimePos(0)));
+		QVERIFY(clip != nullptr);
+		QVERIFY(!clip->isRecord());
+
+		QMenu menu;
+		addClipRecordAction(&menu, clip);
+		QAction* record = item(&menu, QStringLiteral("Record into this clip"));
+		QVERIFY(record != nullptr);
+		QVERIFY(record->isCheckable() && !record->isChecked());
+		record->trigger();
+		QVERIFY(clip->isRecord());
+		QVERIFY(ControlRegistry::instance()->invoke(QStringLiteral("control.undo"), QJsonObject{}).ok);
+		QVERIFY(!clip->isRecord());
+
+		QMenu again;
+		clip->setRecord(true);
+		addClipRecordAction(&again, clip);
+		QAction* armed = item(&again, QStringLiteral("Record into this clip"));
+		QVERIFY(armed->isChecked());
+		armed->trigger();
+		QVERIFY(!clip->isRecord());
+
+		Track* instrument = Track::create(Track::Type::Instrument, Engine::getSong());
+		Clip* notes = instrument->createClip(TimePos(0));
+		QMenu none;
+		addClipRecordAction(&none, notes);
+		QVERIFY(none.actions().isEmpty());
+		const ControlResult refused = ControlRegistry::instance()->invoke(QStringLiteral("clip.set_record"),
+			{{QStringLiteral("clip"), control::clipIdOf(notes)}, {QStringLiteral("record"), true}});
+		QVERIFY(!refused.ok);
+		QVERIFY(refused.errorMessage.contains(QStringLiteral("piano roll")));
 	}
 
 	void noClipNoMenu()

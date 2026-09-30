@@ -298,6 +298,11 @@ that is this page's fault — report it and it gets added.
   `default: break` and **drops the row** — a dropped track rather than a degrading one, which
   `docs/TRACK-FOLDER-DESIGN.md` §4.4 states as the forward-compatibility cost of the enumerator
   approach.
+- *(Updated 2026-09-30.)* **A sample clip's context menu now has Record into this clip** (`clip.set_record`,
+  new): the clip is armed to take the input the next time the song plays with the song editor's **Record while
+  playing**, and shows upstream's "Rec" badge until the take lands - the interface route to the recording path
+  RecordingLatencyTest proves (latency-compensated, and since BUGS_FOUND 11.17 exact for a clip that starts
+  inside a period) (`ClipEditsMenuTest`). The flag is not saved with the project, as upstream's never was.
 - *(Updated 2026-09-30.)* **A sample clip's context menu now has Gain and fades**: Clip gain... (a dB value,
   `clip.set_gain`, the item naming the current gain) and Reset gain; Fade in and Fade out, each None / 1 beat /
   2 beats / 1 bar with the current length checked (`clip.set_fade`; a fade the clip cannot hold is refused);

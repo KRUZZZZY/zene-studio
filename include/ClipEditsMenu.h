@@ -47,6 +47,11 @@ namespace lmms::gui
  *  applied to both ramps. Every change is one control.undo step (the Clip checkpoint). */
 LMMS_EXPORT void addClipEditsMenu(QMenu* menu, Clip* clip);
 
+/*! The record step of the plan's five-user test: a checkable "Record into this clip" item on an
+ *  audio clip's menu (clip.set_record). A clip it arms takes the input the next time the song
+ *  plays with Record while playing, and the clip shows "Rec" until then. Nothing for a MIDI clip. */
+LMMS_EXPORT void addClipRecordAction(QMenu* menu, Clip* clip);
+
 //! Tests replace the gain prompt (default: a number input seeded with @a currentDb; nullopt
 //! cancels). Passing an empty function restores the default.
 LMMS_EXPORT void setClipGainPrompt(std::function<std::optional<double>(double currentDb)> prompt);

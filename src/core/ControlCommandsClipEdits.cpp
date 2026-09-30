@@ -43,6 +43,8 @@
 #include "ClipEdits.h"
 #include "ControlEdit.h"
 #include "ControlRegistry.h"
+#include "ControlReversibility.h"
+#include "Engine.h"
 #include "SampleClip.h"
 #include "Song.h"
 #include "Track.h"
@@ -393,9 +395,76 @@ void registerClipCrossfade(ControlRegistry& registry)
 
 } // namespace
 
+/*! clip.set_record (M3, the record step of the plan's five-user test): arm or disarm ONE audio clip
+ *  to receive the input the next time the song plays with recording (Song::playAndRecord - the
+ *  song editor's Record while playing). The flag is the one SampleTrack::play reads to start a
+ *  SampleRecordHandle; it is not part of the clip's serialized state, so the inverse is a recorded
+ *  action step rather than a Clip checkpoint. */
+void registerClipSetRecord(ControlRegistry& registry)
+{
+	ControlCommand cmd;
+	cmd.id = QStringLiteral("clip.set_record");
+	cmd.group = QStringLiteral("clip");
+	cmd.verb = QStringLiteral("set_record");
+	cmd.description = QStringLiteral("Arm (record: true) or disarm an audio clip to receive the "
+		"input the next time the song plays with recording (the song editor's Record while "
+		"playing): the take starts where the clip starts, is latency-compensated, and replaces the "
+		"clip's audio when the transport stops. A MIDI clip is refused - notes are recorded in the "
+		"piano roll. Reversible through a recorded action step (the flag is not serialized).");
+	cmd.argsSchema = control::objectSchema({
+		{QStringLiteral("clip"), control::stringProperty()},
+		{QStringLiteral("record"), control::booleanProperty()},
+	}, {QStringLiteral("clip"), QStringLiteral("record")});
+	cmd.resultSchema = control::objectSchema({
+		{QStringLiteral("clip"), control::stringProperty()},
+		{QStringLiteral("record"), control::booleanProperty()},
+		{QStringLiteral("record_before"), control::booleanProperty()},
+		{QStringLiteral("song_recording"), control::booleanProperty()},
+	});
+	cmd.mutating = true;
+	cmd.handler = [](const QJsonObject& args) {
+		ControlResult error;
+		ClipRef ref;
+		if (!resolveClip(args.value(QStringLiteral("clip")).toString(), &ref, &error)) { return error; }
+		auto* clip = dynamic_cast<SampleClip*>(ref.clip);
+		if (clip == nullptr)
+		{
+			return ControlResult::failure(ControlErrorKind::Refused,
+				QStringLiteral("%1 is a %2 clip: only an audio clip records the input; notes are "
+					"recorded in the piano roll").arg(clipId(ref.id), ref.clip->nodeName()));
+		}
+		const bool before = clip->isRecord();
+		const bool wanted = args.value(QStringLiteral("record")).toBool();
+		const QString id = clipId(ref.id);
+		const auto apply = [id](bool on) {
+			ClipRef again;
+			ControlResult ignored;
+			if (!resolveClip(id, &again, &ignored)) { return; }
+			if (auto* audio = dynamic_cast<SampleClip*>(again.clip)) { audio->setRecord(on); }
+		};
+		control::addUndoStep([apply, before] { apply(before); }, [apply, wanted] { apply(wanted); });
+		clip->setRecord(wanted);
+
+		QJsonObject result;
+		result.insert(QStringLiteral("clip"), id);
+		result.insert(QStringLiteral("record"), clip->isRecord());
+		result.insert(QStringLiteral("record_before"), before);
+		result.insert(QStringLiteral("song_recording"), Engine::getSong()->isRecording());
+		result.insert(QStringLiteral("__transaction"),
+			control::transactionPayload(QJsonObject{{QStringLiteral("record"), before}},
+				QStringLiteral("clip.set_record"),
+				QJsonObject{{QStringLiteral("clip"), id}, {QStringLiteral("record"), before}}, true,
+				QStringLiteral("action checkpoint: the recorded undo step sets the clip's record "
+					"flag back to its before-state value, found again by its id")));
+		return ControlResult::success(result);
+	};
+	registry.registerCommand(cmd);
+}
+
 void registerClipEditsCommands(ControlRegistry& registry)
 {
 	registerClipSetGain(registry);
+	registerClipSetRecord(registry);
 	registerClipSetFade(registry);
 	registerClipCrossfade(registry);
 }
