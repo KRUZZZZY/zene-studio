@@ -37,35 +37,48 @@
  *  surface/class counts - empty now. A count may not rise and a new pair fails; a listed count
  *  that falls fails until it is lowered, so the list only shrinks (ThemeContrastTest's rule).
  *
- *  NOT walked: controls that take no keyboard focus at all - the knobs, faders and LEDs of the
- *  track rows and instrument windows. They are unreachable by keyboard, which is a larger gap
- *  than a missing name (docs/KNOWN-LIMITATIONS.md). */
+ *  The windows that open on demand are walked too - an instrument track's window and a sample
+ *  track's (every page of every nested tab), the settings and export dialogs - and since knobs
+ *  take Tab focus (KnobKeyboardTest) they are walked with the rest; the second walk found 13
+ *  more, all named. NOT walked: controls that still take no keyboard focus - the faders (the
+ *  mixer drives its current channel's fader from the keyboard instead) and the LED buttons -
+ *  and the dialogs not listed here (docs/KNOWN-LIMITATIONS.md). */
 
 #include <QtTest>
 
 #include <QAccessible>
 #include <QMap>
 #include <QMenuBar>
+#include <QSet>
 #include <QTemporaryDir>
 
 #include <functional>
 #include <memory>
 
 #include "AutomationEditor.h"
-#include "ConfigManager.h"
 #include "ControllerRackView.h"
 #include "Engine.h"
+#include "ExportProjectDialog.h"
 #include "GuiApplication.h"
+#include "GuiTestApplication.h"
+#include "InstrumentTrack.h"
+#include "InstrumentTrackView.h"
+#include "InstrumentTrackWindow.h"
 #include "MainWindow.h"
 #include "MicrotunerConfig.h"
 #include "MixerView.h"
 #include "PatternEditor.h"
 #include "PianoRoll.h"
 #include "ProjectNotes.h"
+#include "SampleTrack.h"
+#include "SampleTrackView.h"
+#include "SampleTrackWindow.h"
 #include "SessionGridView.h"
+#include "SetupDialog.h"
 #include "ShortcutsPage.h"
 #include "SongEditor.h"
 #include "StartHub.h"
+#include "TabWidget.h"
 
 using namespace lmms;
 using namespace lmms::gui;
@@ -87,22 +100,60 @@ QString accessibleNameOf(QWidget* widget)
 	return face != nullptr ? face->text(QAccessible::Name).trimmed() : widget->accessibleName().trimmed();
 }
 
-//! "surface/Class" -> unnamed focusable widgets in @a root; @a focusable counts every one walked.
-QMap<QString, int> unnamedIn(const QString& surface, QWidget* root, QStringList* detail, int* focusable)
+//! One surface's walk: every Tab-reachable widget seen (each once), and the unnamed ones.
+struct Walk
 {
-	QMap<QString, int> found;
+	QString surface;
+	QSet<QWidget*> seen;
+	QMap<QString, int>* found;
+	QStringList* detail;
+};
+
+//! Collects what is visible in @a root now.
+void collect(QWidget* root, Walk* walk)
+{
 	for (QWidget* widget : root->findChildren<QWidget*>())
 	{
 		if ((widget->focusPolicy() & Qt::TabFocus) == 0 || !widget->isVisibleTo(root)) { continue; }
-		++*focusable;
+		if (walk->seen.contains(widget)) { continue; }
+		walk->seen.insert(widget);
 		if (!accessibleNameOf(widget).isEmpty()) { continue; }
-		const QString key = surface + QLatin1Char('/') + QString::fromLatin1(widget->metaObject()->className());
-		found[key] += 1;
-		*detail << key + QStringLiteral(" (objectName '%1', tooltip '%2', parent %3)")
+		const QString key = walk->surface + QLatin1Char('/') + QString::fromLatin1(widget->metaObject()->className());
+		(*walk->found)[key] += 1;
+		*walk->detail << key + QStringLiteral(" (objectName '%1', tooltip '%2', parent %3)")
 			.arg(widget->objectName(), widget->toolTip(),
 				QString::fromLatin1(widget->parentWidget()->metaObject()->className()));
 	}
-	return found;
+}
+
+//! The TabWidgets under @a scope whose nearest TabWidget ancestor below @a scope is none.
+QList<TabWidget*> outermostTabs(QWidget* scope)
+{
+	QList<TabWidget*> tabs;
+	for (TabWidget* candidate : scope->findChildren<TabWidget*>())
+	{
+		QWidget* up = candidate->parentWidget();
+		while (up != nullptr && up != scope && qobject_cast<TabWidget*>(up) == nullptr) { up = up->parentWidget(); }
+		if (up == scope || up == nullptr) { tabs << candidate; }
+	}
+	return tabs;
+}
+
+//! Collects @a root with every page of every (nested) TabWidget under @a scope shown in turn,
+//! so a tabbed window's hidden pages are walked too.
+void collectAllPages(QWidget* root, QWidget* scope, Walk* walk)
+{
+	collect(root, walk);
+	for (TabWidget* tabs : outermostTabs(scope))
+	{
+		const int active = tabs->activeTab();
+		for (int page = 0; page < 16; ++page)
+		{
+			tabs->setActiveTab(page);
+			if (tabs->activeTab() == page) { collectAllPages(root, tabs, walk); }
+		}
+		tabs->setActiveTab(active);
+	}
 }
 
 } // namespace
@@ -112,23 +163,10 @@ class AccessibilityWalkTest : public QObject
 	Q_OBJECT
 
 private slots:
-	//! The REAL application - GuiApplication builds the main window and every editor the way
-	//! the product does (most of them cannot be built without it: they add themselves to the
-	//! main window's workspace or toolbar) - over a throwaway home, config and working
-	//! directory and the Dummy audio device, so nothing the person running it owns is touched.
 	void initTestCase()
 	{
 		QVERIFY(m_home.isValid());
-		for (const char* name : {"HOME", "XDG_CONFIG_HOME", "XDG_DATA_HOME", "XDG_CACHE_HOME"})
-		{
-			qputenv(name, m_home.path().toLocal8Bit());
-		}
-		ConfigManager* config = ConfigManager::inst();
-		config->loadConfigFile(m_home.filePath(QStringLiteral("zene.xml")));
-		config->setValue(QStringLiteral("audioengine"), QStringLiteral("audiodev"), QStringLiteral("Dummy (no sound output)"));
-		config->setWorkingDir(m_home.filePath(QStringLiteral("work")));
-		config->createWorkingDir();
-		m_app = new GuiApplication();
+		m_app = guitest::startGui(m_home);
 		QVERIFY(getGUI() != nullptr && getGUI()->mainWindow() != nullptr);
 	}
 
@@ -162,14 +200,25 @@ private slots:
 			QWidget* window = root->parentWidget() != nullptr ? root->parentWidget() : root;
 			window->show();
 			root->show();
-			int focusable = 0;
-			const QMap<QString, int> here = unnamedIn(surface, root, &detail, &focusable);
-			std::printf("A11Y_WALKED %s: %d focusable widgets\n", qPrintable(surface), focusable);
+			Walk one{surface, {}, &found, &detail};
+			collectAllPages(root, root, &one);
+			std::printf("A11Y_WALKED %s: %d focusable widgets\n", qPrintable(surface), static_cast<int>(one.seen.size()));
 			// A surface with nothing to walk would pass for the wrong reason.
-			if (focusable == 0) { empty << surface; }
-			for (auto it = here.cbegin(); it != here.cend(); ++it) { found[it.key()] += it.value(); }
+			if (one.seen.isEmpty()) { empty << surface; }
 		};
 		for (const auto& [surface, get] : editors) { walk(surface, get()); }
+		// The windows that open on demand: a track's own window (every tab page) and the two
+		// largest dialogs.
+		QWidget* instrument = instrumentWindow();
+		QVERIFY2(instrument != nullptr, "no instrument track window");
+		walk(QStringLiteral("InstrumentWindow"), instrument);
+		QWidget* sample = sampleTrackWindow();
+		QVERIFY2(sample != nullptr, "no sample track window");
+		walk(QStringLiteral("SampleTrackWindow"), sample);
+		SetupDialog settings;
+		walk(QStringLiteral("Settings"), &settings);
+		ExportProjectDialog exporter(m_home.filePath(QStringLiteral("out.wav")), ExportProjectDialog::Mode::ExportProject);
+		walk(QStringLiteral("Export"), &exporter);
 		for (const auto& [surface, make] : standalone)
 		{
 			std::unique_ptr<QWidget> root(make());
@@ -196,6 +245,28 @@ private slots:
 	}
 
 private:
+	//! The track view the song editor made for a new track of type @a T.
+	template<typename View>
+	View* newTrackView(Track::Type type)
+	{
+		Track::create(type, Engine::getSong());
+		QCoreApplication::processEvents();
+		const QList<TrackView*>& views = getGUI()->songEditor()->m_editor->trackViews();
+		return views.isEmpty() ? nullptr : dynamic_cast<View*>(views.last());
+	}
+
+	QWidget* instrumentWindow()
+	{
+		auto* view = newTrackView<InstrumentTrackView>(Track::Type::Instrument);
+		return view != nullptr ? view->getInstrumentTrackWindow() : nullptr;
+	}
+
+	QWidget* sampleTrackWindow()
+	{
+		auto* view = newTrackView<SampleTrackView>(Track::Type::Sample);
+		return view != nullptr ? view->getSampleTrackWindow() : nullptr;
+	}
+
 	QTemporaryDir m_home;
 	GuiApplication* m_app = nullptr;
 };

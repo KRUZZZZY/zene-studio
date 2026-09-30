@@ -27,6 +27,7 @@
 
 #include "AutomatableModelView.h"
 #include "AutomationClip.h"
+#include "AutomationModeMenu.h"
 #include "ControllerConnectionDialog.h"
 #include "ControllerConnection.h"
 #include "embed.h"
@@ -120,6 +121,9 @@ void AutomatableModelView::addDefaultActions( QMenu* menu )
 							AutomatableModel::tr("Connect to controller..."),
 							amvSlots, SLOT(execConnectionDialog()));
 	}
+
+	// The automation mode (off/read/touch/latch/write), through automation.mode_set.
+	addAutomationModeMenu(menu, model);
 }
 
 

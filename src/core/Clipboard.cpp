@@ -34,7 +34,13 @@ namespace lmms::Clipboard
 
 	const QMimeData * getMimeData()
 	{
-		return QApplication::clipboard()->mimeData( QClipboard::Clipboard );
+		// The clipboard can hold nothing at all - no owner yet, an offscreen or headless
+		// session - and Qt then returns null, which every caller read through: opening any
+		// control's context menu crashed in floatFromClipboard (BUGS_FOUND 11.13). An empty
+		// one stands in, so "nothing to paste" is what they see.
+		static const QMimeData empty;
+		const QMimeData * data = QApplication::clipboard()->mimeData( QClipboard::Clipboard );
+		return data != nullptr ? data : &empty;
 	}
 
 

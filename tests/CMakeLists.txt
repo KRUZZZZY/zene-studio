@@ -629,6 +629,12 @@ set(LMMS_TESTS
 	src/gui/AccessibilityHelperTest.cpp
 	# R8.5: every surface built on its own, walked - no unnamed focusable widget (a ratchet).
 	src/gui/AccessibilityWalkTest.cpp
+	# R8.5: a knob takes Tab focus, answers the arrow/page/Home/End keys and is named.
+	src/gui/KnobKeyboardTest.cpp
+	# Every control's context menu sets its automation mode (automation.mode_set).
+	src/gui/AutomationModeMenuTest.cpp
+	# BUGS_FOUND 11.12: a removed VCA group's strip never paints its freed fader model.
+	src/gui/VcaStripLifetimeTest.cpp
 	src/gui/FocusDeskTest.cpp
 	# M3.4: the command palette - what it lists, how it ranks, what it runs.
 	src/gui/CommandPaletteTest.cpp
@@ -814,6 +820,8 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 		OR LMMS_TEST_NAME STREQUAL "ReversibilityUndoTest"
 		OR LMMS_TEST_NAME STREQUAL "ControlAutomationScriptTest"
 		OR LMMS_TEST_NAME STREQUAL "ControlAutomationModesTest"
+		# The automation-mode context menu is driven against a real instrument's parameter.
+		OR LMMS_TEST_NAME STREQUAL "AutomationModeMenuTest"
 		OR LMMS_TEST_NAME STREQUAL "ControlChainPresetTest"
 		# Board card #712: SessionTuningTest's proof slot needs tracks with a
 		# REAL instrument (revtest::addInstrumentTrack -> plugin.load) so both
@@ -1097,6 +1105,9 @@ set_tests_properties(FocusDeskWorkspacesTest PROPERTIES ENVIRONMENT "QT_QPA_PLAT
 # none: QColor loads no platform plugin.
 set_tests_properties(AccessibilityHelperTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(AccessibilityWalkTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+set_tests_properties(KnobKeyboardTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+set_tests_properties(AutomationModeMenuTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+set_tests_properties(VcaStripLifetimeTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 # ThemeContrastTest reads the themes from the source tree; guiless like WcagContrastTest.
 target_compile_definitions(ThemeContrastTest PRIVATE
 	ZENE_THEMES_DIR="${CMAKE_SOURCE_DIR}/data/themes")

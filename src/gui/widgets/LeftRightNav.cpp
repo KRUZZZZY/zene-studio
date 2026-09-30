@@ -57,6 +57,9 @@ LeftRightNav::LeftRightNav(QWidget *parent)
 
 	m_leftBtn.setToolTip(tr("Previous"));
 	m_rightBtn.setToolTip(tr("Next"));
+	// R8.5: icon-only arrows are announced by what they do.
+	m_leftBtn.setAccessibleName(tr("Previous"));
+	m_rightBtn.setAccessibleName(tr("Next"));
 
 	// The context menu contains irrelevant options for these buttons,
 	// such as copying and pasting values

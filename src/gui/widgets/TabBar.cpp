@@ -62,6 +62,8 @@ TabButton * TabBar::addTab( QWidget * _w, const QString & _text, int _id,
 	{
 		b->setToolTip(_text);
 	}
+	// R8.5: an icon tab keeps its text as its tooltip only; a screen reader needs it as the name.
+	b->setAccessibleName(_text);
 
 	// small workaround, because QBoxLayout::addWidget(...) doesn't
 	// work properly, so we first have to remove all tabs from the
