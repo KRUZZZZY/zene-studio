@@ -41,6 +41,7 @@
 #include "ConfigManager.h"
 #include "ControlRegistry.h"
 #include "Engine.h"
+#include "PathUtil.h"
 #include "RecordingRecoveryMenu.h"
 #include "SampleClip.h"
 #include "SampleTrack.h"
@@ -148,7 +149,11 @@ private slots:
 		QCOMPARE(track->numOfClips(), 1);
 		auto* clip = dynamic_cast<SampleClip*>(track->getClip(0));
 		QVERIFY(clip != nullptr);
-		QCOMPARE(clip->sampleFile(), placed);
+		// The clip stores the path relative to a user directory when it can (PathUtil), so the
+		// file it names is compared resolved.
+		QCOMPARE(QFileInfo(PathUtil::toAbsolute(clip->sampleFile())).canonicalFilePath(),
+			QFileInfo(placed).canonicalFilePath());
+		QVERIFY(clip->sampleLength().getTicks() > 0);
 
 		item(dismissedTake->menu(), QStringLiteral("Dismiss (keep the file)"))->trigger();
 		QVERIFY(QFileInfo::exists(dismissed));
