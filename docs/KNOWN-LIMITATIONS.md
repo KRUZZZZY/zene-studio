@@ -157,8 +157,9 @@ that is this page's fault — report it and it gets added.
   in-tree test instrument's view (attach, the view's size and minimum, its repaint timer, close and
   reopen); **no third-party plug-in's editor has been opened on a real X11 display**, and there is no
   button for it in the instrument window yet - the socket and the Plugin API are the way in. CLAP
-  editors (the gui extension) are NOT embedded: the host answers timer- and fd-support, so a CLAP
-  plug-in's own run loop works, but `plugin.editor_open` refuses a CLAP device with that reason. The
+  editors embed too (R4.3: the clap.gui life cycle, X11 embedded only - a plug-in that can only float
+  is refused rather than given a window this host does not manage), proved the same way against the
+  in-tree CLAP fixture's gui; the host also answers timer- and fd-support. The
   paragraph below is the pre-R4 record, kept for its reasoning.
 - **No instrument editor.** You can load a VST3 instrument and play it, but the plugin's own GUI **does not
   open**. What you get instead is the host's generated control grid, and we have **run it** rather than assumed

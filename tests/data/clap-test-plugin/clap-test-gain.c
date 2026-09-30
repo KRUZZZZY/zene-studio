@@ -66,6 +66,12 @@ typedef struct gain_plugin
 	clap_id timer_id;
 	bool timer_registered;
 	uint32_t timer_ticks;
+	/* R4.3: an embedded X11 editor - sized 400x300, never smaller than 100x80. */
+	bool gui_created;
+	bool gui_visible;
+	uint64_t gui_parent;
+	uint32_t gui_width;
+	uint32_t gui_height;
 } gain_plugin_t;
 
 static const clap_plugin_descriptor_t s_descriptor = {
@@ -306,6 +312,127 @@ static void gain_on_timer(const clap_plugin_t* plugin, clap_id timer_id)
 	if (timer_id == self->timer_id) { ++self->timer_ticks; }
 }
 
+/* ------------------------------------------------------------------ gui --- */
+
+static bool gui_is_api_supported(const clap_plugin_t* plugin, const char* api, bool is_floating)
+{
+	(void)plugin;
+	return strcmp(api, CLAP_WINDOW_API_X11) == 0 && !is_floating;
+}
+
+static bool gui_get_preferred_api(const clap_plugin_t* plugin, const char** api, bool* is_floating)
+{
+	(void)plugin;
+	*api = CLAP_WINDOW_API_X11;
+	*is_floating = false;
+	return true;
+}
+
+static bool gui_create(const clap_plugin_t* plugin, const char* api, bool is_floating)
+{
+	gain_plugin_t* self = (gain_plugin_t*)plugin->plugin_data;
+	if (!gui_is_api_supported(plugin, api, is_floating) || self->gui_created) { return false; }
+	self->gui_created = true;
+	self->gui_width = 400;
+	self->gui_height = 300;
+	return true;
+}
+
+static void gui_destroy(const clap_plugin_t* plugin)
+{
+	gain_plugin_t* self = (gain_plugin_t*)plugin->plugin_data;
+	self->gui_created = false;
+	self->gui_visible = false;
+	self->gui_parent = 0;
+}
+
+static bool gui_set_scale(const clap_plugin_t* plugin, double scale) { (void)plugin; (void)scale; return true; }
+
+static bool gui_get_size(const clap_plugin_t* plugin, uint32_t* width, uint32_t* height)
+{
+	const gain_plugin_t* self = (const gain_plugin_t*)plugin->plugin_data;
+	if (!self->gui_created) { return false; }
+	*width = self->gui_width;
+	*height = self->gui_height;
+	return true;
+}
+
+static bool gui_can_resize(const clap_plugin_t* plugin) { (void)plugin; return true; }
+
+static bool gui_get_resize_hints(const clap_plugin_t* plugin, clap_gui_resize_hints_t* hints)
+{
+	(void)plugin;
+	hints->can_resize_horizontally = true;
+	hints->can_resize_vertically = true;
+	hints->preserve_aspect_ratio = false;
+	return true;
+}
+
+static bool gui_adjust_size(const clap_plugin_t* plugin, uint32_t* width, uint32_t* height)
+{
+	(void)plugin;
+	if (*width < 100) { *width = 100; }
+	if (*height < 80) { *height = 80; }
+	return true;
+}
+
+static bool gui_set_size(const clap_plugin_t* plugin, uint32_t width, uint32_t height)
+{
+	gain_plugin_t* self = (gain_plugin_t*)plugin->plugin_data;
+	if (!self->gui_created || width < 100 || height < 80) { return false; }
+	self->gui_width = width;
+	self->gui_height = height;
+	return true;
+}
+
+static bool gui_set_parent(const clap_plugin_t* plugin, const clap_window_t* window)
+{
+	gain_plugin_t* self = (gain_plugin_t*)plugin->plugin_data;
+	if (!self->gui_created || window == NULL || strcmp(window->api, CLAP_WINDOW_API_X11) != 0) { return false; }
+	self->gui_parent = (uint64_t)window->x11;
+	return self->gui_parent != 0;
+}
+
+static bool gui_set_transient(const clap_plugin_t* plugin, const clap_window_t* window)
+{
+	(void)plugin;
+	(void)window;
+	return false;
+}
+
+static void gui_suggest_title(const clap_plugin_t* plugin, const char* title) { (void)plugin; (void)title; }
+
+static bool gui_show(const clap_plugin_t* plugin)
+{
+	gain_plugin_t* self = (gain_plugin_t*)plugin->plugin_data;
+	self->gui_visible = self->gui_created && self->gui_parent != 0;
+	return self->gui_visible;
+}
+
+static bool gui_hide(const clap_plugin_t* plugin)
+{
+	((gain_plugin_t*)plugin->plugin_data)->gui_visible = false;
+	return true;
+}
+
+static const clap_plugin_gui_t s_gui = {
+	.is_api_supported = gui_is_api_supported,
+	.get_preferred_api = gui_get_preferred_api,
+	.create = gui_create,
+	.destroy = gui_destroy,
+	.set_scale = gui_set_scale,
+	.get_size = gui_get_size,
+	.can_resize = gui_can_resize,
+	.get_resize_hints = gui_get_resize_hints,
+	.adjust_size = gui_adjust_size,
+	.set_size = gui_set_size,
+	.set_parent = gui_set_parent,
+	.set_transient = gui_set_transient,
+	.suggest_title = gui_suggest_title,
+	.show = gui_show,
+	.hide = gui_hide,
+};
+
 static const clap_plugin_timer_support_t s_timer = {
 	.on_timer = gain_on_timer,
 };
@@ -401,6 +528,7 @@ static const void* gain_get_extension(const clap_plugin_t* plugin, const char* i
 	if (strcmp(id, CLAP_EXT_STATE) == 0) { return &s_state; }
 	if (strcmp(id, CLAP_EXT_LATENCY) == 0) { return &s_latency; }
 	if (strcmp(id, CLAP_EXT_TIMER_SUPPORT) == 0) { return &s_timer; }
+	if (strcmp(id, CLAP_EXT_GUI) == 0) { return &s_gui; }
 	return NULL;
 }
 

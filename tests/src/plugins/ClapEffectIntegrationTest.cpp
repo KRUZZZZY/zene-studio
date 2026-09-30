@@ -24,6 +24,9 @@
 
 #include <QtTest>
 
+#include <QApplication>
+#include <QWidget>
+
 #include <QDataStream>
 #include <QDir>
 #include <QFile>
@@ -62,6 +65,7 @@ private slots:
 	void testStateRoundTripThroughMmp();
 	void testRendersBeforeAfterWav();
 	void testLegacyAudioBufferPathRoutesPlanarPorts();
+	void testTheEffectsOwnEditorOpensInItsOwnWindow();
 
 private:
 	auto makeKey() const -> Plugin::Descriptor::SubPluginFeatures::Key;
@@ -421,6 +425,31 @@ void ClapEffectIntegrationTest::testLegacyAudioBufferPathRoutesPlanarPorts()
 
 } // namespace lmms
 
-QTEST_GUILESS_MAIN(lmms::ClapEffectIntegrationTest)
+/*! R4.3/R4.4 through the product's own path: a ClapEffect opens its plug-in's embedded
+ *  clap.gui in a native window of its own (Plugin::openNativeEditor -> PluginNativeEditor ->
+ *  the host's gui life cycle), the window takes the gui's size, and closing leaves nothing
+ *  open. Offscreen: what is proved is the embed/size/close contract, not pixels. */
+void lmms::ClapEffectIntegrationTest::testTheEffectsOwnEditorOpensInItsOwnWindow()
+{
+	EffectChain chain{nullptr};
+	const auto key = makeKey();
+	auto* effect = new ClapEffect{&chain, &key};
+	chain.appendEffect(effect);
+	QVERIFY(!effect->nativeEditorOpen());
+	QString error;
+	QVERIFY2(effect->openNativeEditor(&error), qPrintable(error));
+	QVERIFY(effect->nativeEditorOpen());
+	QWidget* window = nullptr;
+	for (QWidget* top : QApplication::topLevelWidgets())
+	{
+		if (top->isVisible() && top->windowTitle() == effect->displayName()) { window = top; }
+	}
+	QVERIFY2(window != nullptr, "no window titled after the effect is showing");
+	QCOMPARE(window->size(), QSize(400, 300));
+	effect->closeNativeEditor();
+	QVERIFY(!effect->nativeEditorOpen());
+}
+
+QTEST_MAIN(lmms::ClapEffectIntegrationTest)
 
 #include "ClapEffectIntegrationTest.moc"

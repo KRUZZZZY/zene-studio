@@ -309,6 +309,7 @@ auto HostedPlugin::load(const QString& modulePath, const QString& pluginId, QStr
 void HostedPlugin::unload()
 {
 	auto& impl = *m_impl;
+	closeEditor();  // R4.3: the gui goes before the plug-in does
 	release();
 	if (impl.plugin)
 	{

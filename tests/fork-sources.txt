@@ -597,6 +597,7 @@ include/PluginAudioPorts.h
 include/PluginEditorHost.h
 include/PluginHostChunking.h
 include/PluginHostNotes.h
+include/PluginNativeEditor.h
 include/PluginScanCache.h
 include/ProjectContainer.h
 include/ProjectIds.h
@@ -655,6 +656,7 @@ include/StemSeparation/StemTrackBuilder.h
 include/StemSeparation/StemTypes.h
 include/StemSplitController.h
 include/TakeLane.h
+include/TakeLanesPanel.h
 include/Telemetry.h
 include/TelemetryConsentDialog.h
 include/TelemetryNetworkTransport.h
@@ -679,6 +681,7 @@ plugins/ClapEffect/ClapEffectControls.cpp
 plugins/ClapEffect/ClapEffectControls.h
 plugins/ClapEffect/ClapHost.cpp
 plugins/ClapEffect/ClapHost.h
+plugins/ClapEffect/ClapHostGui.cpp
 plugins/ClapEffect/ClapHostInternals.h
 plugins/ClapEffect/ClapHostLifecycle.cpp
 plugins/ClapEffect/ClapHostNotes.cpp
@@ -723,8 +726,6 @@ plugins/Vst3Effect/Vst3Host.h
 plugins/Vst3Effect/Vst3MidiEvent.cpp
 plugins/Vst3Effect/Vst3MidiEvent.h
 plugins/Vst3Effect/Vst3MidiQueue.h
-plugins/Vst3Effect/Vst3NativeEditor.cpp
-plugins/Vst3Effect/Vst3NativeEditor.h
 plugins/Vst3Effect/Vst3ParamDescriptor.h
 plugins/Vst3Effect/Vst3Parameter.cpp
 plugins/Vst3Effect/Vst3Parameter.h
@@ -1108,8 +1109,10 @@ src/gui/FocusDeskPlacement.cpp
 src/gui/FocusDeskWorkspaces.cpp
 src/gui/MidiLearnGui.cpp
 src/gui/PinConnector.cpp
+src/gui/PluginNativeEditor.cpp
 src/gui/SessionGridView.cpp
 src/gui/StemSplitController.cpp
+src/gui/TakeLanesPanel.cpp
 src/gui/TelemetryConsentDialog.cpp
 src/gui/VcaStripView.cpp
 src/tracks/TrackFolder.cpp

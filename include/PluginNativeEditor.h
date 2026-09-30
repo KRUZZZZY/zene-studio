@@ -1,5 +1,5 @@
 /*
- * Vst3NativeEditor.h - R4.4: the window a VST3 plug-in's own editor opens in
+ * PluginNativeEditor.h - R4.4: the window a plug-in's own editor opens in
  *
  * Copyright (c) 2026 Zene Studio contributors
  *
@@ -22,36 +22,46 @@
  *
  */
 
-#ifndef LMMS_VST3_NATIVE_EDITOR_H
-#define LMMS_VST3_NATIVE_EDITOR_H
+#ifndef LMMS_GUI_PLUGIN_NATIVE_EDITOR_H
+#define LMMS_GUI_PLUGIN_NATIVE_EDITOR_H
+
+#include <functional>
 
 #include <QPointer>
 #include <QString>
 
+#include "lmms_export.h"
+
 class QWidget;
 
-namespace lmms::vst3
+namespace lmms::gui
 {
 
-class HostedPlugin;
-
-/*! One plug-in's editor WINDOW: a native top-level window whose X11 id the plug-in's view is
- *  attached to (Vst3EditorSession), sized to the view. Closing the window closes the editor;
- *  closing the editor deletes the window. Shared by the effect and the instrument. Main
- *  thread. */
-class Vst3NativeEditor
+/*! One plug-in's editor WINDOW, for every format: a native top-level window whose id the
+ *  plug-in's view is attached to, sized to the view. The format supplies three hooks - attach
+ *  to a parent window id, detach, report the view's size (VST3: Vst3EditorSession; CLAP: the
+ *  host's gui extension). Closing the window detaches the editor; closing the editor deletes
+ *  the window. Main thread. */
+class LMMS_EXPORT PluginNativeEditor
 {
 public:
-	~Vst3NativeEditor();
-	bool open(HostedPlugin& plugin, const QString& title, QString* error);
+	struct Hooks
+	{
+		std::function<bool(void* parentWindow, QString* error)> attach;
+		std::function<void()> detach;
+		std::function<void(int* width, int* height)> size;
+	};
+
+	~PluginNativeEditor();
+	bool open(Hooks hooks, const QString& title, QString* error);
 	void close();
 	bool isOpen() const { return !m_window.isNull(); }
 
 private:
-	HostedPlugin* m_plugin = nullptr;
+	Hooks m_hooks;
 	QPointer<QWidget> m_window;
 };
 
-} // namespace lmms::vst3
+} // namespace lmms::gui
 
-#endif // LMMS_VST3_NATIVE_EDITOR_H
+#endif // LMMS_GUI_PLUGIN_NATIVE_EDITOR_H

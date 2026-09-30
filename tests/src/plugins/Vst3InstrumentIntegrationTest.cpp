@@ -620,7 +620,7 @@ void Vst3InstrumentIntegrationTest::testTheViewsEntryPointIsSafeOutsideAnInstrum
 
 /*! R4.4, through the product's own path: the installed vst3instrument module, loaded by an
  *  InstrumentTrack, opens its plug-in's editor view in a native window of its own
- *  (Plugin::openNativeEditor -> Vst3NativeEditor -> Vst3EditorSession). The window takes the
+ *  (Plugin::openNativeEditor -> PluginNativeEditor -> Vst3EditorSession). The window takes the
  *  view's size, a second open raises rather than stacks, and closing leaves nothing open. It
  *  runs on the offscreen platform, whose native ids no plug-in draws into; the fixture draws
  *  nothing either, so what is proved is the attach/size/close contract, not pixels. */

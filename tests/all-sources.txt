@@ -388,6 +388,7 @@ include/PluginFactory.h
 include/PluginHostChunking.h
 include/PluginHostNotes.h
 include/PluginIssue.h
+include/PluginNativeEditor.h
 include/PluginScanCache.h
 include/PluginView.h
 include/PositionLine.h
@@ -495,6 +496,7 @@ include/TabBar.h
 include/TabButton.h
 include/TabWidget.h
 include/TakeLane.h
+include/TakeLanesPanel.h
 include/Telemetry.h
 include/TelemetryConsentDialog.h
 include/TelemetryNetworkTransport.h
@@ -592,6 +594,7 @@ plugins/ClapEffect/ClapEffectControls.cpp
 plugins/ClapEffect/ClapEffectControls.h
 plugins/ClapEffect/ClapHost.cpp
 plugins/ClapEffect/ClapHost.h
+plugins/ClapEffect/ClapHostGui.cpp
 plugins/ClapEffect/ClapHostInternals.h
 plugins/ClapEffect/ClapHostLifecycle.cpp
 plugins/ClapEffect/ClapHostNotes.cpp
@@ -949,8 +952,6 @@ plugins/Vst3Effect/Vst3Host.h
 plugins/Vst3Effect/Vst3MidiEvent.cpp
 plugins/Vst3Effect/Vst3MidiEvent.h
 plugins/Vst3Effect/Vst3MidiQueue.h
-plugins/Vst3Effect/Vst3NativeEditor.cpp
-plugins/Vst3Effect/Vst3NativeEditor.h
 plugins/Vst3Effect/Vst3ParamDescriptor.h
 plugins/Vst3Effect/Vst3Parameter.cpp
 plugins/Vst3Effect/Vst3Parameter.h
@@ -1527,6 +1528,7 @@ src/gui/ModelView.cpp
 src/gui/PeakControllerDialog.cpp
 src/gui/PinConnector.cpp
 src/gui/PluginBrowser.cpp
+src/gui/PluginNativeEditor.cpp
 src/gui/ProjectNotes.cpp
 src/gui/RowTableView.cpp
 src/gui/SampleThumbnail.cpp
@@ -1538,6 +1540,7 @@ src/gui/SideBarWidget.cpp
 src/gui/StemSplitController.cpp
 src/gui/StringPairDrag.cpp
 src/gui/SubWindow.cpp
+src/gui/TakeLanesPanel.cpp
 src/gui/TelemetryConsentDialog.cpp
 src/gui/ToolPluginView.cpp
 src/gui/VcaStripView.cpp
@@ -1850,6 +1853,7 @@ tests/src/gui/FocusDeskTest.cpp
 tests/src/gui/FocusDeskWorkspacesTest.cpp
 tests/src/gui/MidiLearnGuiTest.cpp
 tests/src/gui/SessionGridViewTest.cpp
+tests/src/gui/TakeLanesPanelTest.cpp
 tests/src/gui/ThemeContrastTest.cpp
 tests/src/gui/VcaStripViewTest.cpp
 tests/src/gui/WcagContrastTest.cpp

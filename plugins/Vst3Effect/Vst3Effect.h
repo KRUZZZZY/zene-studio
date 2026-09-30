@@ -29,7 +29,7 @@
 
 #include "AudioPlugin.h"
 #include "Vst3Host.h"
-#include "Vst3NativeEditor.h"
+#include "PluginNativeEditor.h"
 
 namespace lmms
 {
@@ -57,7 +57,7 @@ public:
 	auto vst3Controls() -> Vst3EffectControls* { return m_controls.get(); }
 	auto plugin() -> vst3::HostedPlugin* { return &m_plugin; }
 
-	//! R4.4: the plug-in's own editor, in its own window (Vst3NativeEditor).
+	//! R4.4: the plug-in's own editor, in its own window (PluginNativeEditor + Vst3EditorSession).
 	bool openNativeEditor(QString* error) override;
 	void closeNativeEditor() override;
 	bool nativeEditorOpen() const override;
@@ -79,7 +79,7 @@ protected:
 
 private:
 	vst3::HostedPlugin m_plugin;
-	vst3::Vst3NativeEditor m_editor;
+	gui::PluginNativeEditor m_editor;
 	std::unique_ptr<Vst3EffectControls> m_controls;
 	//! Set from the audio thread when the plug-in is not prepared, polled by
 	//! Vst3EffectControls on the GUI thread which then calls reprepare().

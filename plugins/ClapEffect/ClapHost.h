@@ -151,6 +151,15 @@ public:
 	auto editorTimerCount() const -> int;
 	auto timerDeliveries() const -> std::uint32_t;
 
+	// ---- R4.3: the plug-in's own editor, embedded (ClapHostGui.cpp) ---------------------
+	//! Main thread: create the plug-in's X11 gui and embed it in @a parentWindow.
+	auto openEditor(void* parentWindow, QString* error) -> bool;
+	void closeEditor();
+	auto editorOpen() const -> bool;
+	//! The plug-in adjusts the size to what it can take (adjust_size), then applies it.
+	auto resizeEditor(int width, int height) -> bool;
+	void editorSize(int* width, int* height) const;
+
 	void setTempo(double bpm);
 	void setTransportPlaying(bool playing);
 

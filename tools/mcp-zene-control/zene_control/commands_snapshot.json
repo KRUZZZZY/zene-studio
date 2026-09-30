@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-09-30T01:34:08Z",
+  "captured_at": "2026-09-30T02:39:14Z",
   "commands": [
     {
       "args_schema": {
@@ -11320,7 +11320,7 @@
         ],
         "type": "object"
       },
-      "description": "Open a device's OWN editor - the plug-in's interface, not the host's generic knob view (which stays) - in a window of its own. 'target' is the track or channel (trk-<n>/ch-<n>) and 'plugin' the device on it (fx-<n>, or 'inst' for a track's instrument), as plugin.param_set names them. VST3 plug-ins with an editor view open; a plug-in with none, and CLAP (whose gui extension is not embedded yet), refuse with the reason. An editor already open is brought forward. Needs a display; interface state, not project state: nothing is saved or journalled.",
+      "description": "Open a device's OWN editor - the plug-in's interface, not the host's generic knob view (which stays) - in a window of its own. 'target' is the track or channel (trk-<n>/ch-<n>) and 'plugin' the device on it (fx-<n>, or 'inst' for a track's instrument), as plugin.param_set names them. VST3 plug-ins with an editor view and CLAP plug-ins whose gui embeds in X11 open; a plug-in with no editor, or one that can only float, refuses with the reason. An editor already open is brought forward. Needs a display; interface state, not project state: nothing is saved or journalled.",
       "group": "plugin",
       "id": "plugin.editor_open",
       "mutating": false,
@@ -21054,8 +21054,8 @@
     "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-survey/tools/zene-pa-agentctl",
     "lane_head": null,
     "proto": 1,
-    "source_socket": "/tmp/zctl-run-5ap91ous/zene.sock",
-    "version": "0.3.0-alpha.179+4cacae9"
+    "source_socket": "/tmp/zctl-run-q2fh3d14/zene.sock",
+    "version": "0.3.0-alpha.185+43d2724"
   },
   "kind": "zene-control-command-list",
   "proto": 1,

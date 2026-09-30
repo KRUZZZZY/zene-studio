@@ -29,6 +29,7 @@
 
 #include "AudioPlugin.h"
 #include "ClapHost.h"
+#include "PluginNativeEditor.h"
 
 namespace lmms
 {
@@ -56,6 +57,11 @@ public:
 	auto clapControls() -> ClapEffectControls* { return m_controls.get(); }
 	auto plugin() -> clap::HostedPlugin* { return &m_plugin; }
 
+	//! R4.3/R4.4: the plug-in's own editor, embedded in its own window (PluginNativeEditor).
+	bool openNativeEditor(QString* error) override;
+	void closeNativeEditor() override;
+	bool nativeEditorOpen() const override;
+
 	//! GUI thread: re-create the processing setup, e.g. after a sample rate
 	//! change or a restart request from the plug-in.
 	void reprepare();
@@ -73,6 +79,7 @@ protected:
 
 private:
 	clap::HostedPlugin m_plugin;
+	gui::PluginNativeEditor m_editor;
 	std::unique_ptr<ClapEffectControls> m_controls;
 	//! Set from the audio thread when the plug-in is not prepared, polled by
 	//! ClapEffectControls on the GUI thread which then calls reprepare().

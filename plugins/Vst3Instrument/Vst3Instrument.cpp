@@ -161,7 +161,10 @@ Vst3Instrument::Vst3Instrument(InstrumentTrack* parent,
 
 bool Vst3Instrument::openNativeEditor(QString* error)
 {
-	return m_editor.open(m_plugin, displayName(), error);
+	return m_editor.open(gui::PluginNativeEditor::Hooks{
+		[this](void* parent, QString* why) { return m_plugin.openEditor(parent, why); },
+		[this] { m_plugin.closeEditor(); },
+		[this](int* width, int* height) { m_plugin.editorSize(width, height); }}, displayName(), error);
 }
 
 void Vst3Instrument::closeNativeEditor()

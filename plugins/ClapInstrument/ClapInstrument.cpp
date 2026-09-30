@@ -160,6 +160,25 @@ ClapInstrument::ClapInstrument(InstrumentTrack* parent,
 	}
 }
 
+
+bool ClapInstrument::openNativeEditor(QString* error)
+{
+	return m_editor.open(gui::PluginNativeEditor::Hooks{
+		[this](void* parent, QString* why) { return m_plugin.openEditor(parent, why); },
+		[this] { m_plugin.closeEditor(); },
+		[this](int* width, int* height) { m_plugin.editorSize(width, height); }}, displayName(), error);
+}
+
+void ClapInstrument::closeNativeEditor()
+{
+	m_editor.close();
+}
+
+bool ClapInstrument::nativeEditorOpen() const
+{
+	return m_editor.isOpen();
+}
+
 ClapInstrument::~ClapInstrument()
 {
 	if (auto* engine = Engine::audioEngine())

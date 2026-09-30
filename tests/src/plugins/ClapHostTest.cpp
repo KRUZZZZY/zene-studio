@@ -181,6 +181,7 @@ private slots:
 	void testEffectRefusesNotes();
 	void testInstrumentNotePath();
 	void testTimerSupportRunsThePluginsTimer();
+	void testTheEditorEmbedsResizesAndCloses();
 
 private:
 	void process(HostedPlugin& plugin, const std::vector<std::vector<float>>& inputs,
@@ -713,6 +714,36 @@ void lmms::clap::ClapHostTest::testTimerSupportRunsThePluginsTimer()
 	const std::uint32_t delivered = m_plugin.timerDeliveries() - before;
 	std::printf("CLAP_TIMER_EVIDENCE 10 ms timer: %u on_timer calls in 150 ms\n", delivered);
 	QVERIFY2(delivered >= 5, qPrintable(QStringLiteral("%1 on_timer calls").arg(delivered)));
+}
+
+/*! R4.3: the clap.gui life cycle against the fixture's embedded editor - create, set_parent,
+ *  show; the size it reports; a resize adjusted to its minimum; hide + destroy on close, and a
+ *  reopen. The parent is a stand-in X11 id: the fixture draws nothing into it. */
+void lmms::clap::ClapHostTest::testTheEditorEmbedsResizesAndCloses()
+{
+	void* const standInWindow = reinterpret_cast<void*>(std::uintptr_t{0x2a});
+	QString error;
+	QVERIFY2(m_plugin.openEditor(standInWindow, &error), qPrintable(error));
+	QVERIFY(m_plugin.editorOpen());
+	int width = 0;
+	int height = 0;
+	m_plugin.editorSize(&width, &height);
+	QCOMPARE(width, 400);
+	QCOMPARE(height, 300);
+	QVERIFY(m_plugin.resizeEditor(640, 480));
+	m_plugin.editorSize(&width, &height);
+	QCOMPARE(width, 640);
+	QCOMPARE(height, 480);
+	QVERIFY(m_plugin.resizeEditor(10, 10));
+	m_plugin.editorSize(&width, &height);
+	QCOMPARE(width, 100);
+	QCOMPARE(height, 80);
+	m_plugin.closeEditor();
+	QVERIFY(!m_plugin.editorOpen());
+	QVERIFY2(m_plugin.openEditor(standInWindow, &error), qPrintable(error));
+	m_plugin.closeEditor();
+	QVERIFY2(!m_plugin.openEditor(nullptr, &error), "an editor attached to no window");
+	QVERIFY(!m_plugin.editorOpen());
 }
 
 QTEST_GUILESS_MAIN(lmms::clap::ClapHostTest)

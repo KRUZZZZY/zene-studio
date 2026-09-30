@@ -90,6 +90,25 @@ ClapEffect::ClapEffect(Model* parent, const Descriptor::SubPluginFeatures::Key* 
 	m_controls = std::make_unique<ClapEffectControls>(this);
 }
 
+
+bool ClapEffect::openNativeEditor(QString* error)
+{
+	return m_editor.open(gui::PluginNativeEditor::Hooks{
+		[this](void* parent, QString* why) { return m_plugin.openEditor(parent, why); },
+		[this] { m_plugin.closeEditor(); },
+		[this](int* width, int* height) { m_plugin.editorSize(width, height); }}, displayName(), error);
+}
+
+void ClapEffect::closeNativeEditor()
+{
+	m_editor.close();
+}
+
+bool ClapEffect::nativeEditorOpen() const
+{
+	return m_editor.isOpen();
+}
+
 ClapEffect::~ClapEffect() = default;
 
 auto ClapEffect::controls() -> EffectControls* { return m_controls.get(); }

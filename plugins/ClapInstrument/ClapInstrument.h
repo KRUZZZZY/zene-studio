@@ -35,6 +35,7 @@
 
 #include "AudioPlugin.h"
 #include "ClapHost.h"
+#include "PluginNativeEditor.h"
 #include "ClapParameter.h"
 
 class QTimer;
@@ -90,6 +91,11 @@ public:
 
 	auto clapPlugin() -> clap::HostedPlugin* { return &m_plugin; }
 
+	//! R4.3/R4.4: the plug-in's own editor, embedded in its own window (PluginNativeEditor).
+	bool openNativeEditor(QString* error) override;
+	void closeNativeEditor() override;
+	bool nativeEditorOpen() const override;
+
 	auto paramModels() const -> const std::vector<ClapParamModel*>& { return m_paramModels; }
 	auto modelForParam(std::uint32_t id) -> ClapParamModel*;
 
@@ -127,6 +133,7 @@ private slots:
 
 private:
 	clap::HostedPlugin m_plugin;
+	gui::PluginNativeEditor m_editor;
 	std::vector<ClapParamModel*> m_paramModels;
 	QTimer* m_pollTimer = nullptr;
 	bool m_syncing = false;
