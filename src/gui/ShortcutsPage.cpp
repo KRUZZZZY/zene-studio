@@ -27,6 +27,7 @@
 #include <algorithm>
 
 #include <QHeaderView>
+#include <QKeySequence>
 #include <QLineEdit>
 #include <QTableWidget>
 #include <QVBoxLayout>
@@ -76,6 +77,10 @@ ShortcutsPage::ShortcutsPage(QMenuBar* bar, QWidget* parent) :
 		{
 			m_table->setItem(row, column, new QTableWidgetItem(cells[column]));
 		}
+		// The portable spelling too ("Ctrl+S"): on macOS the shown text is native ("⌘S"), and a
+		// filter typed the way the rest of the product writes shortcuts must still find it.
+		m_table->item(row, 0)->setData(Qt::UserRole,
+			QKeySequence::fromString(entry.shortcut, QKeySequence::NativeText).toString(QKeySequence::PortableText));
 	}
 	m_table->resizeColumnsToContents();
 	layout->addWidget(m_table);
@@ -103,7 +108,8 @@ void ShortcutsPage::setFilter(const QString& text)
 	const QString needle = text.trimmed();
 	for (int row = 0; row < m_table->rowCount(); ++row)
 	{
-		bool match = needle.isEmpty();
+		bool match = needle.isEmpty()
+			|| m_table->item(row, 0)->data(Qt::UserRole).toString().contains(needle, Qt::CaseInsensitive);
 		for (int column = 0; column < m_table->columnCount() && !match; ++column)
 		{
 			match = m_table->item(row, column)->text().contains(needle, Qt::CaseInsensitive);
