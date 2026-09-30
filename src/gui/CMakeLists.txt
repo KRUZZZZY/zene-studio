@@ -53,6 +53,7 @@ SET(LMMS_SRCS
 	gui/PluginNativeEditor.cpp
 	gui/SessionGridView.cpp
 	gui/SessionSyncAction.cpp
+	gui/SessionTransportBar.cpp
 	gui/ShortcutsPage.cpp
 	gui/StartHub.cpp
 	gui/TakeLanesPanel.cpp

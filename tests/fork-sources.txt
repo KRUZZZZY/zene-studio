@@ -655,6 +655,7 @@ include/SessionModel.h
 include/SessionPlayback.h
 include/SessionScheduler.h
 include/SessionSyncAction.h
+include/SessionTransportBar.h
 include/SessionTuning.h
 include/ShortcutsPage.h
 include/SmfInterchange.h
@@ -1139,6 +1140,7 @@ src/gui/PinConnector.cpp
 src/gui/PluginNativeEditor.cpp
 src/gui/SessionGridView.cpp
 src/gui/SessionSyncAction.cpp
+src/gui/SessionTransportBar.cpp
 src/gui/ShortcutsPage.cpp
 src/gui/StartHub.cpp
 src/gui/StemSplitController.cpp

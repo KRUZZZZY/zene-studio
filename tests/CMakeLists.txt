@@ -677,6 +677,8 @@ set(LMMS_TESTS
 	# R5.3: the clip-launch grid - launch, stop and scene-launch from the grid produce the
 	# socket-visible state; every cell focusable and announced; the arrow keys.
 	src/gui/SessionGridViewTest.cpp
+	# The clip launcher's Follow Actions / arrangement-record row.
+	src/gui/SessionTransportBarTest.cpp
 	# M3 item 6: the take lanes panel - comp, audition and consolidate from its own buttons.
 	src/gui/TakeLanesPanelTest.cpp
 	# M3 item 4: the keyboard shortcuts page lists what the menus bind, filterable.
@@ -1127,6 +1129,7 @@ set_tests_properties(FocusDeskTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offsc
 set_tests_properties(CommandPaletteTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(VcaStripViewTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(SessionGridViewTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+set_tests_properties(SessionTransportBarTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(TakeLanesPanelTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(ShortcutsPageTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(StartHubTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")

@@ -480,6 +480,7 @@ include/SessionModel.h
 include/SessionPlayback.h
 include/SessionScheduler.h
 include/SessionSyncAction.h
+include/SessionTransportBar.h
 include/SessionTuning.h
 include/SetupDialog.h
 include/SharedMemory.h
@@ -1563,6 +1564,7 @@ src/gui/SampleTrackWindow.cpp
 src/gui/SendButtonIndicator.cpp
 src/gui/SessionGridView.cpp
 src/gui/SessionSyncAction.cpp
+src/gui/SessionTransportBar.cpp
 src/gui/ShortcutsPage.cpp
 src/gui/SideBar.cpp
 src/gui/SideBarWidget.cpp
@@ -1907,6 +1909,7 @@ tests/src/gui/NoteTransformActionsTest.cpp
 tests/src/gui/PianoRollBenchmarkTest.cpp
 tests/src/gui/SessionGridViewTest.cpp
 tests/src/gui/SessionSyncActionTest.cpp
+tests/src/gui/SessionTransportBarTest.cpp
 tests/src/gui/ShortcutsPageTest.cpp
 tests/src/gui/StartHubTest.cpp
 tests/src/gui/TakeLanesPanelTest.cpp

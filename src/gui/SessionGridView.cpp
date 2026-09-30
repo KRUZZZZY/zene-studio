@@ -34,6 +34,7 @@
 #include <QVBoxLayout>
 
 #include "ControlRegistry.h"
+#include "SessionTransportBar.h"
 
 namespace lmms::gui
 {
@@ -60,6 +61,8 @@ SessionGridView::SessionGridView(QWidget* parent) :
 	m_status = new QLabel(this);
 	m_status->setAccessibleName(tr("Clip launcher status"));
 	outer->addWidget(m_status);
+	// Follow Actions, arrangement record/land, back to arrangement (session.*).
+	outer->addWidget(new SessionTransportBar(this));
 	auto* gridHost = new QWidget(this);
 	m_grid = new QGridLayout(gridHost);
 	m_grid->setSpacing(2);
