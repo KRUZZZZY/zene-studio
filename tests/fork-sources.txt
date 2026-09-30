@@ -628,6 +628,7 @@ include/RackNodes.h
 include/RackZones.h
 include/RecordRingBuffer.h
 include/RecordingJournal.h
+include/RecordingRecoveryMenu.h
 include/RemotePluginAudioPorts.h
 include/RenderPresetMenu.h
 include/RetroAudioCapture.h
@@ -1151,6 +1152,7 @@ src/gui/PinConnector.cpp
 src/gui/PluginNativeEditor.cpp
 src/gui/PluginQuarantineMenu.cpp
 src/gui/RackMenu.cpp
+src/gui/RecordingRecoveryMenu.cpp
 src/gui/RenderPresetMenu.cpp
 src/gui/SessionGridView.cpp
 src/gui/SessionSyncAction.cpp

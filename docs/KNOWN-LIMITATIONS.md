@@ -798,6 +798,13 @@ Dither (off / TPDF / noise-shaped) and Resampling (linear / sinc fastest, medium
   `Timeline::punchCapturesAt()` are real and proved, and **wiring the audio-side capture gate is deferred** —
   this build has no capture path to gate (ALSA records nothing and the two-track prototype is fed by tests), so
   a gate here would be a change no test could exercise. Drivable through the socket, not from the interface.
+- *(Updated 2026-09-30.)* **File ▸ Recover Recordings** is rebuilt from `record.recovery_get_state` each time it
+  opens: a count, and per interrupted take (named with its recoverable length) **Place on a New Sample Track** -
+  `record.recovery_restore`, then the interface loads the recovered file into a clip at bar 1 of a new sample
+  track, the import the command itself does not make - and **Dismiss** (`record.recovery_discard`: the journal
+  goes, the audio file stays) (`RecordingRecoveryMenuTest`). There is still no prompt at start-up; the menu is
+  where a user looks. The placement is an interface action, not a registry command, so `control.undo` does not
+  take the new track back. The bullet below is the pre-menu record.
 - **Recording crash recovery is journalling and recovery, not an import — added 2026-09-13.** A capture in
   progress is journalled to a side file beside its take (`<take>.rec-journal`), a clean stop retires it, and an
   abnormal exit leaves it — so the next start can find the interrupted take and hand the material back, drivable

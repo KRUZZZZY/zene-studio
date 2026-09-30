@@ -429,6 +429,7 @@ include/RaiiHelpers.h
 include/RecentProjectsMenu.h
 include/RecordRingBuffer.h
 include/RecordingJournal.h
+include/RecordingRecoveryMenu.h
 include/RemotePlugin.h
 include/RemotePluginAudioPorts.h
 include/RemotePluginBase.h
@@ -1571,6 +1572,7 @@ src/gui/PluginNativeEditor.cpp
 src/gui/PluginQuarantineMenu.cpp
 src/gui/ProjectNotes.cpp
 src/gui/RackMenu.cpp
+src/gui/RecordingRecoveryMenu.cpp
 src/gui/RenderPresetMenu.cpp
 src/gui/RowTableView.cpp
 src/gui/SampleThumbnail.cpp
@@ -1927,6 +1929,7 @@ tests/src/gui/NoteTransformActionsTest.cpp
 tests/src/gui/PianoRollBenchmarkTest.cpp
 tests/src/gui/PluginQuarantineMenuTest.cpp
 tests/src/gui/RackMenuTest.cpp
+tests/src/gui/RecordingRecoveryMenuTest.cpp
 tests/src/gui/RenderPresetMenuTest.cpp
 tests/src/gui/SessionGridViewTest.cpp
 tests/src/gui/SessionSyncActionTest.cpp

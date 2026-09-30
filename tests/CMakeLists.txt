@@ -672,6 +672,8 @@ set(LMMS_TESTS
 	src/gui/ChainPresetMenuTest.cpp
 	# A mixer channel's Rack menu (rack.* chains, routing and macros).
 	src/gui/RackMenuTest.cpp
+	# File > Recover Recordings (record.recovery_*), over two journalled WAV takes.
+	src/gui/RecordingRecoveryMenuTest.cpp
 	# File > Render Presets (export.preset_* / render.render), over a throwaway preset store.
 	src/gui/RenderPresetMenuTest.cpp
 	# Edit > Plugin Quarantine (plugin.scan_cache_* / plugin.rescan), over a throwaway scan-cache file.
@@ -1178,6 +1180,7 @@ set_tests_properties(GrooveMenuTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offs
 set_tests_properties(ClipEditsMenuTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(ChainPresetMenuTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(RackMenuTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+set_tests_properties(RecordingRecoveryMenuTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(RenderPresetMenuTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(PluginQuarantineMenuTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(CrashReportMenuTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")

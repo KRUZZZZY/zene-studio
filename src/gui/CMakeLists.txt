@@ -98,6 +98,7 @@ SET(LMMS_SRCS
 	gui/MidiReconnectAction.cpp
 	gui/PluginQuarantineMenu.cpp
 	gui/RackMenu.cpp
+	gui/RecordingRecoveryMenu.cpp
 	gui/RenderPresetMenu.cpp
 	gui/MidiSetupWidget.cpp
 	gui/MpeInputAction.cpp

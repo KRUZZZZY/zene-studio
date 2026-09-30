@@ -74,6 +74,7 @@
 #include "MidiClockMenu.h"
 #include "MidiReconnectAction.h"
 #include "PluginQuarantineMenu.h"
+#include "RecordingRecoveryMenu.h"
 #include "RenderPresetMenu.h"
 #include "TrackRenderMenu.h"
 #include "ControllerTemplateMenu.h"
@@ -431,6 +432,8 @@ void MainWindow::finalize()
 	addDawProjectActions(project_menu);
 	// Named render presets for render.render (export.preset_*).
 	addRenderPresetMenu(project_menu);
+	// Captures an abnormal exit left behind (record.recovery_*).
+	addRecordingRecoveryMenu(project_menu);
 
 	project_menu->addSeparator();
 
