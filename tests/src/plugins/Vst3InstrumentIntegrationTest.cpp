@@ -50,6 +50,7 @@
 #include <QApplication>
 #include <QJsonObject>
 #include <QWidget>
+#include <QToolButton>
 
 #include "ControlVocabulary.h"
 
@@ -669,6 +670,20 @@ void Vst3InstrumentIntegrationTest::testTheInstrumentsOwnEditorOpensInItsOwnWind
 	QVERIFY2(closed.ok, qPrintable(closed.errorMessage));
 	QVERIFY(closed.result.value(QStringLiteral("was_open")).toBool());
 	QVERIFY(!closed.result.value(QStringLiteral("open")).toBool());
+
+	// And from the instrument's own control view: its "Show plugin editor" button.
+	QWidget parent;
+	gui::PluginView* view = instrument->createView(&parent);
+	QVERIFY(view != nullptr);
+	QToolButton* show = nullptr;
+	for (QToolButton* button : view->findChildren<QToolButton*>())
+	{
+		if (button->property("controlCommand").toString() == QLatin1String("plugin.editor_open")) { show = button; }
+	}
+	QVERIFY2(show != nullptr, "the instrument view has no plugin-editor button");
+	QTest::mouseClick(show, Qt::LeftButton);
+	QVERIFY2(instrument->nativeEditorOpen(), "the view's button did not open the editor");
+	instrument->closeNativeEditor();
 	ControlRegistry::instance()->setHeadless(headless);
 	ControlRegistry::setReady(false);
 }
