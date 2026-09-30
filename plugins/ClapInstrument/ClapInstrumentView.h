@@ -40,10 +40,9 @@ namespace gui
  * value-to-string conversion - the same generated grid the CLAP effect host
  * uses (plugins/ClapEffect/ClapEffectControlDialog.cpp).
  *
- * This is NOT the plug-in's own editor. `CLAP_EXT_GUI` is not fetched anywhere
- * in this tree (the check is on ClapHost.cpp), so a user of a CLAP instrument
- * gets this grid and not the instrument's own window. That limitation is
- * stated in the view itself and in docs/KNOWN-LIMITATIONS.md.
+ * This is NOT the plug-in's own editor: an embeddable clap.gui opens in a window of its own
+ * (R4.3/R4.4, ClapHostGui.cpp + PluginNativeEditor), from this view's "Show plugin editor"
+ * button or plugin.editor_open. The grid stays as the fallback and the agent-visible view.
  *
  * A plug-in with no parameters, or with every parameter hidden, is handled
  * too: the view then says so instead of showing an empty grid.

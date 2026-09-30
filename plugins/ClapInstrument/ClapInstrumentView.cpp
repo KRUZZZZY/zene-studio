@@ -28,6 +28,8 @@
 #include <QLabel>
 #include <QVBoxLayout>
 
+#include "PluginNativeEditor.h"
+
 #include "ClapHost.h"
 #include "ClapInstrument.h"
 #include "Knob.h"
@@ -95,11 +97,9 @@ ClapInstrumentView::ClapInstrumentView(ClapInstrument* instrument, QWidget* pare
 	outputs->setWordWrap(true);
 	outer->addWidget(outputs);
 
-	// Disclosed, not hidden: the instrument's own window is not available.
-	auto* note = new QLabel(tr("The instrument's own editor is not shown in this "
-		"version (CLAP_EXT_GUI is not implemented) - these are its parameters."), this);
-	note->setWordWrap(true);
-	outer->addWidget(note);
+	// R4.3/R4.4: the instrument's own (clap.gui) editor opens in a window of its own; these
+	// knobs stay as the fallback. A plug-in with no embeddable gui says so in place.
+	outer->addWidget(makeNativeEditorButton(instrument, this));
 	outer->addStretch();
 
 	setLayout(outer);

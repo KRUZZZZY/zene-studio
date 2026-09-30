@@ -24,7 +24,15 @@
 
 #include "PluginNativeEditor.h"
 
+#include "ControlRegistry.h"
+#include "ControlVocabulary.h"
+#include "Instrument.h"
+#include "InstrumentTrack.h"
+
 #include <QCloseEvent>
+#include <QLabel>
+#include <QToolButton>
+#include <QVBoxLayout>
 #include <QWidget>
 
 namespace lmms::gui
@@ -96,6 +104,31 @@ void PluginNativeEditor::close()
 	if (m_hooks.detach) { m_hooks.detach(); }
 	m_hooks = Hooks{};
 	if (!m_window.isNull()) { delete m_window.data(); }
+}
+
+QWidget* makeNativeEditorButton(Instrument* instrument, QWidget* parent)
+{
+	auto* box = new QWidget(parent);
+	auto* layout = new QVBoxLayout(box);
+	layout->setContentsMargins(0, 0, 0, 0);
+	auto* button = new QToolButton(box);
+	button->setText(QObject::tr("Show plugin editor"));
+	button->setAccessibleName(QObject::tr("Show the plug-in's own editor"));
+	button->setProperty("controlCommand", QStringLiteral("plugin.editor_open"));
+	auto* reason = new QLabel(box);
+	reason->setWordWrap(true);
+	reason->hide();
+	layout->addWidget(button);
+	layout->addWidget(reason);
+	QObject::connect(button, &QToolButton::clicked, box, [instrument, reason] {
+		const QString track = instrument->instrumentTrack() != nullptr
+			? control::trackIdOf(instrument->instrumentTrack()) : QString();
+		const ControlResult result = ControlRegistry::instance()->invoke(QStringLiteral("plugin.editor_open"),
+			{{QStringLiteral("target"), track}, {QStringLiteral("plugin"), QStringLiteral("inst")}});
+		reason->setText(result.ok ? QString() : result.errorMessage);
+		reason->setVisible(!result.ok);
+	});
+	return box;
 }
 
 } // namespace lmms::gui

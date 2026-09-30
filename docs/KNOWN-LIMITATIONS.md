@@ -155,8 +155,9 @@ that is this page's fault — report it and it gets added.
   own, through `plugin.editor_open` (the host's `Vst3EditorSession`: createView, X11 embedding, resize,
   IPlugFrame and Linux::IRunLoop on the Qt loop). What is proved is the contract, offscreen, against the
   in-tree test instrument's view (attach, the view's size and minimum, its repaint timer, close and
-  reopen); **no third-party plug-in's editor has been opened on a real X11 display**, and there is no
-  button for it in the instrument window yet - the socket and the Plugin API are the way in. CLAP
+  reopen); **no third-party plug-in's editor has been opened on a real X11 display**. The instrument window's
+  control view carries a "Show plugin editor" button (plugin.editor_open through the registry); effects
+  have no button yet - the socket and the Plugin API reach them. CLAP
   editors embed too (R4.3: the clap.gui life cycle, X11 embedded only - a plug-in that can only float
   is refused rather than given a window this host does not manage), proved the same way against the
   in-tree CLAP fixture's gui; the host also answers timer- and fd-support. The
