@@ -3321,6 +3321,18 @@ int PianoRoll::resizeGripWidth(const Note& note) const
 }
 
 
+//! Whether the piano-roll WINDOW has focus - the application's own piano roll when there is
+//! one (unchanged), else this roll's own window: a roll built without the full GuiApplication
+//! (the R7.3 benchmark) dereferenced the null application here (the BUGS_FOUND 10.4 class).
+bool PianoRoll::editorWindowHasFocus() const
+{
+	if (getGUI() != nullptr && getGUI()->pianoRoll() != nullptr) { return getGUI()->pianoRoll()->hasFocus(); }
+	return window() != nullptr && window()->isActiveWindow();
+}
+
+
+
+
 void PianoRoll::paintEvent(QPaintEvent * pe )
 {
 	bool drawNoteNames = ConfigManager::inst()->value( "ui", "printnotelabels").toInt();
@@ -3994,7 +4006,7 @@ void PianoRoll::paintEvent(QPaintEvent * pe )
 	currentKeyCol.setAlpha( 64 );
 
 	// horizontal line for the key under the cursor
-	if(hasValidMidiClip() && getGUI()->pianoRoll()->hasFocus())
+	if(hasValidMidiClip() && editorWindowHasFocus())
 	{
 		int key_num = getKey( mapFromGlobal( QCursor::pos() ).y() );
 		p.fillRect(
@@ -4010,7 +4022,7 @@ void PianoRoll::paintEvent(QPaintEvent * pe )
 	p.fillRect( QRect( 0, keyAreaBottom(),
 					width()-PR_RIGHT_MARGIN, NOTE_EDIT_RESIZE_BAR ), editAreaCol );
 
-	if (getGUI()->pianoRoll()->hasFocus())
+	if (editorWindowHasFocus())
 	{
 		const QPixmap * cursor = nullptr;
 		// draw current edit-mode-icon below the cursor

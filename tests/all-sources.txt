@@ -1856,6 +1856,7 @@ tests/src/gui/FocusDeskPaneTest.cpp
 tests/src/gui/FocusDeskTest.cpp
 tests/src/gui/FocusDeskWorkspacesTest.cpp
 tests/src/gui/MidiLearnGuiTest.cpp
+tests/src/gui/PianoRollBenchmarkTest.cpp
 tests/src/gui/SessionGridViewTest.cpp
 tests/src/gui/ShortcutsPageTest.cpp
 tests/src/gui/StartHubTest.cpp
