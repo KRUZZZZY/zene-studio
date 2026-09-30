@@ -25,6 +25,7 @@
 #include <QtTest>
 
 #include <QApplication>
+#include <QToolButton>
 #include <QWidget>
 
 #include <QDataStream>
@@ -41,8 +42,11 @@
 #include "BufferManager.h"
 #include "ClapEffect.h"
 #include "ClapEffectControls.h"
+#include "ControlRegistry.h"
 #include "EffectChain.h"
+#include "EffectControlDialog.h"
 #include "Engine.h"
+#include "Mixer.h"
 #include "Plugin.h"
 #include "plugin_export.h" // PLUGIN_EXPORT of the clapeffect plug-in
 
@@ -66,6 +70,7 @@ private slots:
 	void testRendersBeforeAfterWav();
 	void testLegacyAudioBufferPathRoutesPlanarPorts();
 	void testTheEffectsOwnEditorOpensInItsOwnWindow();
+	void testTheControlDialogsButtonOpensTheEditor();
 
 private:
 	auto makeKey() const -> Plugin::Descriptor::SubPluginFeatures::Key;
@@ -448,6 +453,37 @@ void lmms::ClapEffectIntegrationTest::testTheEffectsOwnEditorOpensInItsOwnWindow
 	QCOMPARE(window->size(), QSize(400, 300));
 	effect->closeNativeEditor();
 	QVERIFY(!effect->nativeEditorOpen());
+}
+
+/*! R4.4's surface for an effect: the generated control dialog carries a "Show plugin editor"
+ *  button, and clicking it runs plugin.editor_open for the effect where it sits - here the
+ *  master channel (ch-0) and its own fx-<n> - which opens the editor. */
+void lmms::ClapEffectIntegrationTest::testTheControlDialogsButtonOpensTheEditor()
+{
+	EffectChain& master = Engine::mixer()->mixerChannel(0)->m_fxChain;
+	const auto key = makeKey();
+	auto* effect = new ClapEffect{&master, &key};
+	master.appendEffect(effect);
+	ControlRegistry::setReady(true);
+	const bool headless = ControlRegistry::instance()->isHeadless();
+	ControlRegistry::instance()->setHeadless(false);  // the offscreen platform is a display
+	QWidget parent;
+	gui::EffectControlDialog* dialog = effect->controls()->createView();
+	dialog->setParent(&parent);
+	QToolButton* show = nullptr;
+	for (QToolButton* button : dialog->findChildren<QToolButton*>())
+	{
+		if (button->property("controlCommand").toString() == QLatin1String("plugin.editor_open")) { show = button; }
+	}
+	QVERIFY2(show != nullptr, "the effect's control dialog has no plugin-editor button");
+	QTest::mouseClick(show, Qt::LeftButton);
+	const bool opened = effect->nativeEditorOpen();
+	effect->closeNativeEditor();
+	ControlRegistry::instance()->setHeadless(headless);
+	ControlRegistry::setReady(false);
+	master.removeEffect(effect);
+	delete effect;
+	QVERIFY2(opened, "the dialog's button did not open the editor");
 }
 
 QTEST_MAIN(lmms::ClapEffectIntegrationTest)

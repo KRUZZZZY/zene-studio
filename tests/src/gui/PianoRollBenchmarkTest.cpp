@@ -23,7 +23,7 @@
  */
 
 /*! The relief plan's R7.3: frame time, offscreen, for the real PianoRollWindow over clips of
- *  1 000, 5 000, 10 000 and 50 000 notes, so R8.8 (a successor editor) has a number to beat.
+ *  1 000, 5 000, 10 000 and 50 000 notes, at the default zoom and at 12.5%, so R8.8 (a successor editor) has a number to beat.
  *
  *  A frame is one grab() of the window at 1600 x 900: a full paint of the roll, its keyboard
  *  and its note-property area, which is what a scroll or a zoom costs. Each size is the MEDIAN
@@ -40,13 +40,13 @@
 #include <QtTest>
 
 #include <QElapsedTimer>
-#include <QFile>
 #include <QMap>
-#include <QTextStream>
 
 #include <algorithm>
 #include <vector>
 
+#include "../core/BenchmarkBaseline.h"
+#include "ComboBox.h"
 #include "Engine.h"
 #include "InstrumentTrack.h"
 #include "MidiClip.h"
@@ -69,6 +69,16 @@ void fill(MidiClip* clip, int count)
 		clip->addNote(Note(TimePos(12), TimePos(i * 12), key), false);
 	}
 	clip->rearrangeAllNotes();
+}
+
+//! The window's horizontal zoom (the toolbar combo box its tooltip names); nullptr if not found.
+ComboBoxModel* zoomOf(PianoRollWindow& window)
+{
+	for (ComboBox* box : window.findChildren<ComboBox*>())
+	{
+		if (box->toolTip() == PianoRollWindow::tr("Horizontal zooming")) { return box->model(); }
+	}
+	return nullptr;
 }
 
 double medianFrameMs(PianoRollWindow& window)
@@ -98,7 +108,7 @@ private slots:
 
 	void frameTimeAtFourSizes()
 	{
-		QMap<int, double> measured;
+		QMap<QString, double> measured;
 		for (const int notes : {1000, 5000, 10000, 50000})
 		{
 			auto* track = dynamic_cast<InstrumentTrack*>(Track::create(Track::Type::Instrument, Engine::getSong()));
@@ -114,44 +124,25 @@ private slots:
 			window.show();
 			QVERIFY(QTest::qWaitForWindowExposed(&window));
 			const double ms = medianFrameMs(window);
-			measured.insert(notes, ms);
-			std::printf("PIANOROLL_BENCH notes=%d frame_ms=%.2f\n", notes, ms);
-			QVERIFY2(ms < 5000.0, qPrintable(QStringLiteral("a %1-note frame took %2 ms").arg(notes).arg(ms)));
+			measured.insert(QString::number(notes), ms);
+			// Zoomed all the way out (12.5%) every note of a long clip is on screen at once: the
+			// case a successor editor has to survive, and the one the default zoom hides.
+			ComboBoxModel* zoom = zoomOf(window);
+			QVERIFY2(zoom != nullptr, "no horizontal zoom control on the piano-roll window");
+			const int defaultZoom = zoom->value();
+			zoom->setValue(0);
+			const double outMs = medianFrameMs(window);
+			zoom->setValue(defaultZoom);
+			measured.insert(QStringLiteral("%1@12.5%").arg(notes), outMs);
+			std::printf("PIANOROLL_BENCH notes=%d frame_ms=%.2f zoomed_out_ms=%.2f\n", notes, ms, outMs);
+			QVERIFY2(ms < 5000.0 && outMs < 5000.0,
+				qPrintable(QStringLiteral("a %1-note frame took %2 ms (%3 zoomed out)").arg(notes).arg(ms).arg(outMs)));
 			window.hide();
 			delete track;
 		}
-		compareOrWriteBaseline(measured);
+		benchtest::compareOrWriteBaseline(measured);
 	}
 
-private:
-	static void compareOrWriteBaseline(const QMap<int, double>& measured)
-	{
-		const QString write = qEnvironmentVariable("ZENE_BENCH_WRITE");
-		if (!write.isEmpty())
-		{
-			QFile file(write);
-			QVERIFY(file.open(QIODevice::WriteOnly | QIODevice::Text));
-			QTextStream out(&file);
-			for (auto it = measured.begin(); it != measured.end(); ++it) { out << it.key() << '\t' << it.value() << '\n'; }
-			return;
-		}
-		const QString baseline = qEnvironmentVariable("ZENE_BENCH_BASELINE");
-		if (baseline.isEmpty()) { return; }
-		QFile file(baseline);
-		QVERIFY2(file.open(QIODevice::ReadOnly | QIODevice::Text), qPrintable(baseline));
-		QTextStream in(&file);
-		while (!in.atEnd())
-		{
-			const QStringList fields = in.readLine().split(QLatin1Char('\t'));
-			if (fields.size() != 2) { continue; }
-			const int notes = fields[0].toInt();
-			const double reference = fields[1].toDouble();
-			if (!measured.contains(notes)) { continue; }
-			QVERIFY2(measured[notes] <= reference * 1.2, qPrintable(QStringLiteral(
-				"%1 notes: %2 ms against a %3 ms baseline - more than 20% slower")
-				.arg(notes).arg(measured[notes]).arg(reference)));
-		}
-	}
 };
 
 QTEST_MAIN(PianoRollBenchmarkTest)

@@ -29,6 +29,7 @@
 #include <QPalette>
 
 #include "Knob.h"
+#include "PluginNativeEditor.h"
 #include "Vst3Effect.h"
 #include "Vst3EffectControls.h"
 #include "embed.h"
@@ -73,6 +74,9 @@ Vst3EffectControlDialog::Vst3EffectControlDialog(Vst3EffectControls* controls) :
 		layout->addWidget(new QLabel(tr("This plug-in has no visible parameters."), this),
 			0, 0);
 	}
+	// R4.4: the plug-in's own editor, beside the generic knobs, through plugin.editor_open.
+	const int rows = visible == 0 ? 1 : (visible + KnobsPerRow - 1) / KnobsPerRow;
+	layout->addWidget(makeNativeEditorButton(controls->effect(), this), rows, 0, 1, KnobsPerRow);
 
 	setLayout(layout);
 	adjustSize();

@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-09-30T03:15:57Z",
+  "captured_at": "2026-09-30T04:52:25Z",
   "commands": [
     {
       "args_schema": {
@@ -8477,7 +8477,7 @@
         "required": [],
         "type": "object"
       },
-      "description": "Write the events retrospective MIDI capture has retained into a NEW MIDI clip on 'track', and return its clip-<n> id. Without 'track', the track of the clip selected in the control surface is used, and with nothing selected the song's first instrument track. The clip starts at the window's first tick and is 'length' ticks long, or - without it - the window rounded up to whole bars. The note matcher closes an unmatched note-on at the window's end and reports it in 'unmatched_ons': the capture never truncates silently. One journal checkpoint (the Track's, like clip.add) over the new clip, so ONE control.undo removes the whole capture; the inverse is clip.delete. Reversible through the ProjectJournal (Track checkpoint).",
+      "description": "Write the events retrospective MIDI capture has retained into a NEW MIDI clip on 'track', and return its clip-<n> id. Without 'track', the track of the clip selected in the control surface is used; with nothing selected, the track the MIDI input is monitored on (the one the auto-assigned device follows - last created, or last focused in the piano roll); then the song's first instrument track. 'chosen_by' names the rule that picked it. The clip starts at the window's first tick and is 'length' ticks long, or - without it - the window rounded up to whole bars. The note matcher closes an unmatched note-on at the window's end and reports it in 'unmatched_ons': the capture never truncates silently. One journal checkpoint (the Track's, like clip.add) over the new clip, so ONE control.undo removes the whole capture; the inverse is clip.delete. Reversible through the ProjectJournal (Track checkpoint).",
       "group": "midi",
       "id": "midi.retro_capture_to_clip",
       "mutating": true,
@@ -8485,6 +8485,9 @@
       "result_schema": {
         "additionalProperties": false,
         "properties": {
+          "chosen_by": {
+            "type": "string"
+          },
           "clip": {
             "type": "string"
           },
@@ -21109,8 +21112,8 @@
     "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-survey/tools/zene-pa-agentctl",
     "lane_head": null,
     "proto": 1,
-    "source_socket": "/tmp/zctl-run-yse6ncin/zene.sock",
-    "version": "0.3.0-alpha.188+f5d678d"
+    "source_socket": "/tmp/zctl-run-4u_89tp1/zene.sock",
+    "version": "0.3.0-alpha.202+e6f1bc9"
   },
   "kind": "zene-control-command-list",
   "proto": 1,

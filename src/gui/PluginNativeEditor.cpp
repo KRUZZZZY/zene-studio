@@ -26,10 +26,18 @@
 
 #include "ControlRegistry.h"
 #include "ControlVocabulary.h"
+#include "Effect.h"
+#include "EffectChain.h"
+#include "Engine.h"
 #include "Instrument.h"
 #include "InstrumentTrack.h"
+#include "AudioBusHandle.h"
+#include "Mixer.h"
+#include "SampleTrack.h"
+#include "Song.h"
 
 #include <QCloseEvent>
+#include <QJsonObject>
 #include <QLabel>
 #include <QToolButton>
 #include <QVBoxLayout>
@@ -106,7 +114,13 @@ void PluginNativeEditor::close()
 	if (!m_window.isNull()) { delete m_window.data(); }
 }
 
-QWidget* makeNativeEditorButton(Instrument* instrument, QWidget* parent)
+namespace
+{
+
+using DeviceArgs = std::function<QJsonObject()>;
+
+//! The button and its refusal line; @a args names the device when the button is clicked.
+QWidget* editorButton(DeviceArgs args, QWidget* parent)
 {
 	auto* box = new QWidget(parent);
 	auto* layout = new QVBoxLayout(box);
@@ -120,15 +134,49 @@ QWidget* makeNativeEditorButton(Instrument* instrument, QWidget* parent)
 	reason->hide();
 	layout->addWidget(button);
 	layout->addWidget(reason);
-	QObject::connect(button, &QToolButton::clicked, box, [instrument, reason] {
-		const QString track = instrument->instrumentTrack() != nullptr
-			? control::trackIdOf(instrument->instrumentTrack()) : QString();
-		const ControlResult result = ControlRegistry::instance()->invoke(QStringLiteral("plugin.editor_open"),
-			{{QStringLiteral("target"), track}, {QStringLiteral("plugin"), QStringLiteral("inst")}});
+	QObject::connect(button, &QToolButton::clicked, box, [args = std::move(args), reason] {
+		const ControlResult result = ControlRegistry::instance()->invoke(QStringLiteral("plugin.editor_open"), args());
 		reason->setText(result.ok ? QString() : result.errorMessage);
 		reason->setVisible(!result.ok);
 	});
 	return box;
+}
+
+//! The plugin.* target id of the track or mixer channel that owns @a chain; empty if none does.
+QString targetIdOfChain(const EffectChain* chain)
+{
+	for (Track* track : Engine::getSong()->tracks())
+	{
+		AudioBusHandle* bus = nullptr;
+		if (auto* instrumentTrack = dynamic_cast<InstrumentTrack*>(track)) { bus = instrumentTrack->audioBusHandle(); }
+		if (auto* sampleTrack = dynamic_cast<SampleTrack*>(track)) { bus = sampleTrack->audioBusHandle(); }
+		if (bus != nullptr && bus->effects() == chain) { return control::trackIdOf(track); }
+	}
+	Mixer* mixer = Engine::mixer();
+	for (int i = 0; i < static_cast<int>(mixer->numChannels()); ++i)
+	{
+		if (&mixer->mixerChannel(i)->m_fxChain == chain) { return control::channelIdOf(mixer->mixerChannel(i)); }
+	}
+	return QString();
+}
+
+} // namespace
+
+QWidget* makeNativeEditorButton(Instrument* instrument, QWidget* parent)
+{
+	return editorButton([instrument] {
+		const QString track = instrument->instrumentTrack() != nullptr
+			? control::trackIdOf(instrument->instrumentTrack()) : QString();
+		return QJsonObject{{QStringLiteral("target"), track}, {QStringLiteral("plugin"), QStringLiteral("inst")}};
+	}, parent);
+}
+
+QWidget* makeNativeEditorButton(Effect* effect, QWidget* parent)
+{
+	return editorButton([effect] {
+		return QJsonObject{{QStringLiteral("target"), targetIdOfChain(effect->effectChain())},
+			{QStringLiteral("plugin"), control::effectIdOf(effect)}};
+	}, parent);
 }
 
 } // namespace lmms::gui

@@ -36,6 +36,7 @@ class QWidget;
 
 namespace lmms
 {
+class Effect;
 class Instrument;
 }
 
@@ -72,6 +73,11 @@ private:
  *  editor, or one that can only float) is shown in place of the button's hint. One helper, so
  *  every format's view offers the same control. */
 LMMS_EXPORT QWidget* makeNativeEditorButton(Instrument* instrument, QWidget* parent);
+
+/*! The same button for an effect's control dialog: it names the effect as plugin.editor_open
+ *  does - the track or mixer channel whose chain holds it, and its stable fx-<n> - at the
+ *  moment it is clicked, so a chain edited since the dialog opened is still addressed right. */
+LMMS_EXPORT QWidget* makeNativeEditorButton(Effect* effect, QWidget* parent);
 
 } // namespace lmms::gui
 

@@ -281,6 +281,9 @@ public:
 	void replaceInstrument(DataFile dataFile);
 
 	void autoAssignMidiDevice( bool );
+	//! R5.4: the track the auto-assigned MIDI input follows - the one last created or last focused
+	//! in the piano roll or piano view, i.e. the track being monitored; nullptr when there is none.
+	static InstrumentTrack* autoAssignedTrack() { return s_autoAssignedTrack; }
 
 	//! Returns a non-owning pointer to the model for the knob at the given index in the track's MIDI CC rack
 	FloatModel* midiCCModel(int index) const { return m_midiCCModel[index].get(); }

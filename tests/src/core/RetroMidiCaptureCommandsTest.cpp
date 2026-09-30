@@ -33,6 +33,7 @@
 #include "ControlEdit.h"
 #include "ControlRegistry.h"
 #include "Engine.h"
+#include "InstrumentTrack.h"
 #include "Midi.h"
 #include "MidiClient.h"
 #include "MidiClip.h"
@@ -552,6 +553,51 @@ private slots:
 
 		registry->invoke(QStringLiteral("midi.retro_capture_arm"),
 			QJsonObject{{QStringLiteral("armed"), false}});
+	}
+
+	//! R5.4, "Capture MIDI into the focused view": with no track named and no clip selected,
+	//! the capture lands on the track being MONITORED - the one the auto-assigned MIDI input
+	//! follows (the newest track, or the one last focused in the piano roll) - not the song's
+	//! first instrument track; 'chosen_by' names the rule, and a named track still wins.
+	void captureLandsOnTheMonitoredTrack()
+	{
+		ControlRegistry* registry = ControlRegistry::instance();
+		RetroMidiCapture& capture = Engine::audioEngine()->midiClient()->retroCapture();
+		QVERIFY(registry->invoke(QStringLiteral("midi.retro_capture_arm"),
+			QJsonObject{{QStringLiteral("armed"), true}}).ok);
+		capture.capture(noteOn(0, 62, 100), 960);
+		capture.capture(noteOff(0, 62), 1008);
+
+		QString first;
+		QString second;
+		QString unusedClip;
+		makeInstrumentClip(&first, &unusedClip);
+		makeInstrumentClip(&second, &unusedClip);
+		const auto landsOn = [registry](const QJsonObject& args, QString* track, QString* rule) {
+			const ControlResult captured = registry->invoke(QStringLiteral("midi.retro_capture_to_clip"), args);
+			*track = captured.ok ? captured.result.value(QStringLiteral("track")).toString() : captured.errorMessage;
+			*rule = captured.result.value(QStringLiteral("chosen_by")).toString();
+			if (captured.ok) { registry->invoke(QStringLiteral("control.undo")); }
+		};
+		QString track;
+		QString rule;
+		// The newest track is the monitored one: its constructor took the auto-assigned input.
+		landsOn(QJsonObject{}, &track, &rule);
+		QCOMPARE(track, second);
+		QCOMPARE(rule, QStringLiteral("monitored"));
+		// Focus moves the input (what the piano roll and piano view do), and the capture follows it.
+		ControlResult error;
+		auto* firstTrack = dynamic_cast<InstrumentTrack*>(control::resolveTrack(first, &error));
+		QVERIFY(firstTrack != nullptr);
+		firstTrack->autoAssignMidiDevice(true);
+		landsOn(QJsonObject{}, &track, &rule);
+		QCOMPARE(track, first);
+		QCOMPARE(rule, QStringLiteral("monitored"));
+		landsOn(QJsonObject{{QStringLiteral("track"), second}}, &track, &rule);
+		QCOMPARE(track, second);
+		QCOMPARE(rule, QStringLiteral("track"));
+
+		registry->invoke(QStringLiteral("midi.retro_capture_arm"), QJsonObject{{QStringLiteral("armed"), false}});
 	}
 };
 
