@@ -663,6 +663,8 @@ set(LMMS_TESTS
 	src/gui/TrackRenderMenuTest.cpp
 	# The piano roll's Groove menu: extract, apply with strength, quantise with strength.
 	src/gui/GrooveMenuTest.cpp
+	# Edit > MIDI Controller Reconnect (midi.reconnect_arm / _status), over a throwaway config.
+	src/gui/MidiReconnectActionTest.cpp
 	src/gui/FocusDeskTest.cpp
 	# M3.4: the command palette - what it lists, how it ranks, what it runs.
 	src/gui/CommandPaletteTest.cpp
@@ -1150,6 +1152,7 @@ set_tests_properties(MidiControllerMenuTest PROPERTIES ENVIRONMENT "QT_QPA_PLATF
 set_tests_properties(ControllerTemplateMenuTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(TrackRenderMenuTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(GrooveMenuTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+set_tests_properties(MidiReconnectActionTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 # ThemeContrastTest reads the themes from the source tree; guiless like WcagContrastTest.
 target_compile_definitions(ThemeContrastTest PRIVATE
 	ZENE_THEMES_DIR="${CMAKE_SOURCE_DIR}/data/themes")
