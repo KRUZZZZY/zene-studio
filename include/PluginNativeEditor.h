@@ -34,6 +34,11 @@
 
 class QWidget;
 
+namespace lmms
+{
+class Instrument;
+}
+
 namespace lmms::gui
 {
 
@@ -61,6 +66,12 @@ private:
 	Hooks m_hooks;
 	QPointer<QWidget> m_window;
 };
+
+/*! R4.4's button, for an instrument's generated control view: "Show plugin editor" runs
+ *  plugin.editor_open for @a instrument's own track through the registry, and a refusal (no
+ *  editor, or one that can only float) is shown in place of the button's hint. One helper, so
+ *  every format's view offers the same control. */
+LMMS_EXPORT QWidget* makeNativeEditorButton(Instrument* instrument, QWidget* parent);
 
 } // namespace lmms::gui
 

@@ -28,6 +28,8 @@
 #include <QLabel>
 #include <QVBoxLayout>
 
+#include "PluginNativeEditor.h"
+
 #include "Knob.h"
 #include "Vst3Instrument.h"
 
@@ -76,13 +78,9 @@ Vst3InstrumentView::Vst3InstrumentView(Vst3Instrument* instrument, QWidget* pare
 	}
 	outer->addLayout(grid);
 
-	// Disclosed, not hidden: the instrument's own window is not available.
-	// A plug-in with no user interface at all (the in-tree test fixture is
-	// one) is therefore perfectly usable, and this label is all a user sees.
-	auto* note = new QLabel(tr("The instrument's own editor is not shown in this "
-		"version - these are its parameters."), this);
-	note->setWordWrap(true);
-	outer->addWidget(note);
+	// R4.4: the instrument's own editor opens in a window of its own; these knobs stay as the
+	// fallback and the agent-visible view. A plug-in with no editor says so in place.
+	outer->addWidget(makeNativeEditorButton(instrument, this));
 	outer->addStretch();
 
 	setLayout(outer);
