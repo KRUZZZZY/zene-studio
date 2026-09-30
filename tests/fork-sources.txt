@@ -645,8 +645,10 @@ include/SessionModel.h
 include/SessionPlayback.h
 include/SessionScheduler.h
 include/SessionTuning.h
+include/ShortcutsPage.h
 include/SmfInterchange.h
 include/SrcQuality.h
+include/StartHub.h
 include/StemSeparation/ExternalProcessStemSeparator.h
 include/StemSeparation/OnnxRuntimeStemSeparator.h
 include/StemSeparation/StemJobManager.h
@@ -1111,6 +1113,8 @@ src/gui/MidiLearnGui.cpp
 src/gui/PinConnector.cpp
 src/gui/PluginNativeEditor.cpp
 src/gui/SessionGridView.cpp
+src/gui/ShortcutsPage.cpp
+src/gui/StartHub.cpp
 src/gui/StemSplitController.cpp
 src/gui/TakeLanesPanel.cpp
 src/gui/TelemetryConsentDialog.cpp

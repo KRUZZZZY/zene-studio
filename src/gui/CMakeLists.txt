@@ -47,6 +47,8 @@ SET(LMMS_SRCS
 	gui/CommandPalette.cpp
 	gui/PluginNativeEditor.cpp
 	gui/SessionGridView.cpp
+	gui/ShortcutsPage.cpp
+	gui/StartHub.cpp
 	gui/TakeLanesPanel.cpp
 	# M3.7: VCA group strips in the mixer + the channel's VCA menu.
 	gui/VcaStripView.cpp

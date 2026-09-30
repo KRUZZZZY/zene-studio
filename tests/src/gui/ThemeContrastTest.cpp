@@ -33,9 +33,9 @@
 //! `:disabled` rules are skipped - WCAG 1.4.3 exempts inactive components.
 //!
 //! It is a ratchet. The themes are inherited upstream files, and recolouring
-//! them is a visible design change, so today's failures are listed below with
-//! their measured ratio instead of being fixed here. A NEW failure fails the
-//! test; so does a listed pair that now passes (take it off the list).
+//! them is a visible design change, so a failure is listed below with its
+//! measured ratio until it is fixed - the list is empty now (2026-09-30). A NEW
+//! failure fails the test; so does a listed pair that now passes.
 
 #include <QtTest>
 
@@ -59,12 +59,10 @@ struct Pair
 //! "<theme>|<selector as written, whitespace collapsed>". Measured 2026-09-28.
 const QSet<QString>& knownFailures()
 {
-	static const QSet<QString> known{
-		// 3.58:1 - #c9c9c9 on #5b6571.
-		QStringLiteral("classic|lmms--gui--TrackLabelButton"),
-		// 4.49:1 - #e0e0e0 on #5b6571.
-		QStringLiteral("classic|lmms--gui--MixerChannelView"),
-	};
+	// Empty since 2026-09-30 (M3's exit criterion): the classic theme's two failures -
+	// TrackLabelButton #c9c9c9 (3.58:1) and MixerChannelView #e0e0e0 (4.49:1), both on
+	// #5b6571 - were recoloured to #e2e2e2 (4.57:1). Keep it empty: a new failure is a fix.
+	static const QSet<QString> known{};
 	return known;
 }
 

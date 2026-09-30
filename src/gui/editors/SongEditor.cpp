@@ -24,6 +24,10 @@
 
 #include "SongEditor.h"
 
+#include <QSignalBlocker>
+#include "Timeline.h"
+#include "ControlRegistry.h"
+
 #include <cmath>
 
 #include <QAction>
@@ -937,6 +941,31 @@ SongEditorWindow::SongEditorWindow(Song* song) :
 	m_recordAction->setToolTip(tr("Record samples from Audio-device"));
 	m_recordAccompanyAction->setToolTip(tr("Record samples from Audio-device while playing song or pattern track"));
 	m_stopAction->setToolTip(tr( "Stop song (Space)" ));
+
+	// M3 item 9: punch in/out on the transport, through the registry (R2.4's audio gate).
+	// On: the punch region is the loop markers' range, as Live's punch uses the loop brace;
+	// off: the region is cleared. A refused call puts the button back and says why.
+	m_punchAction = new QAction(embed::getIconPixmap("record"), tr("Punch in/out (the loop range)"), this);
+	m_punchAction->setCheckable(true);
+	m_punchAction->setProperty("controlCommand", QStringLiteral("transport.punch_set"));
+	m_punchAction->setToolTip(tr("Punch in/out: record only between the loop markers"));
+	connect(m_punchAction, &QAction::toggled, this, [this](bool on) {
+		const Timeline& timeline = m_editor->m_song->getTimeline(Song::PlayMode::Song);
+		const ControlResult result = on
+			? ControlRegistry::instance()->invoke(QStringLiteral("transport.punch_set"),
+				{{QStringLiteral("start"), static_cast<int>(timeline.loopBegin().getTicks())},
+					{QStringLiteral("end"), static_cast<int>(timeline.loopEnd().getTicks())},
+					{QStringLiteral("enabled"), true}})
+			: ControlRegistry::instance()->invoke(QStringLiteral("transport.punch_clear"), {});
+		if (!result.ok)
+		{
+			const QSignalBlocker block(m_punchAction);
+			m_punchAction->setChecked(!on);
+			m_punchAction->setToolTip(result.errorMessage);
+		}
+	});
+	m_toolBar->addAction(m_punchAction);
+	m_toolBar->widgetForAction(m_punchAction)->setObjectName("punchButton");
 
 
 	// Track actions

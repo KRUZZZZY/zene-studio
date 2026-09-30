@@ -378,6 +378,9 @@ void MainWindow::finalize()
 
 	auto templates_menu = new TemplatesMenu( this );
 	project_menu->addMenu(templates_menu);
+	// M3 item 10: the start hub - new, templates, recent and Learn in one place (StartHub).
+	declares(project_menu->addAction(embed::getIconPixmap("project_new"), tr("Start Hub..."),
+		this, [](){ dispatchShellCommand(QStringLiteral("window.start_hub")); }), "window.start_hub");
 
 	declares(addAction(project_menu, "project_open", tr("&Open..."),
 		QKeySequence::Open, &MainWindow::openProject), "project.open");
@@ -535,6 +538,9 @@ void MainWindow::finalize()
 							this, SLOT(help()));
 	}
 
+	// M3 item 4: every shortcut, read from these very menus (ShortcutsPage).
+	declares(help_menu->addAction(embed::getIconPixmap("help"), tr("Keyboard Shortcuts"),
+		this, [](){ dispatchShellCommand(QStringLiteral("window.shortcuts")); }), "window.shortcuts");
 	help_menu->addSeparator();
 	declares(help_menu->addAction( embed::getIconPixmap( "icon_small" ), tr( "About" ),
 				  this, SLOT(aboutLMMS())), "app.about");

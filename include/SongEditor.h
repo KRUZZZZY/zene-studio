@@ -207,6 +207,7 @@ signals:
 private:
 	QAction* m_addPatternTrackAction;
 	QAction* m_addSampleTrackAction;
+	QAction* m_punchAction = nullptr;  //!< M3 item 9: punch in/out over the loop range
 	QAction* m_addAutomationTrackAction;
 	QAction* m_setProportionalSnapAction;
 
