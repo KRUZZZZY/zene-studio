@@ -29,7 +29,11 @@
 
 #include <QtTest>
 
+#include <QtGlobal>
+
+#ifndef Q_OS_WIN
 #include <unistd.h>
+#endif
 
 #include <QElapsedTimer>
 
@@ -44,6 +48,10 @@ class PluginEditorHostTest : public QObject
 private slots:
 	void aReadableDescriptorFiresItsHandler()
 	{
+#ifdef Q_OS_WIN
+		QSKIP("file descriptors are the POSIX half of the host (the Linux run loops of VST3 and CLAP); "
+			"Windows editors bring their own message loop");
+#else
 		int fds[2] = {-1, -1};
 		QVERIFY(::pipe(fds) == 0);
 		PluginEditorHost host;
@@ -70,10 +78,15 @@ private slots:
 		QVERIFY(!host.unregisterFd(fds[0]));
 		::close(fds[0]);
 		::close(fds[1]);
+#endif
 	}
 
 	void aCallbackMayUnregisterItsOwnDescriptor()
 	{
+#ifdef Q_OS_WIN
+		QSKIP("file descriptors are the POSIX half of the host (the Linux run loops of VST3 and CLAP); "
+			"Windows editors bring their own message loop");
+#else
 		int fds[2] = {-1, -1};
 		QVERIFY(::pipe(fds) == 0);
 		PluginEditorHost host;
@@ -89,6 +102,7 @@ private slots:
 		QCOMPARE(fired, 1);
 		::close(fds[0]);
 		::close(fds[1]);
+#endif
 	}
 
 	void aTimerFiresAtItsIntervalAndStopsWhenUnregistered()
