@@ -127,6 +127,11 @@ private slots:
 		QVERIFY2(into != nullptr, "the Move to folder menu does not list the folder");
 		into->trigger();
 		QCOMPARE(child->parentFolder(), folder);
+		// The child's row is indented, its settings column keeping its width.
+		const int width = viewOf(child)->getTrackSettingsWidget()->width();
+		QTRY_VERIFY(viewOf(child)->getTrackSettingsWidget()->contentsMargins().left() > 0);
+		QCOMPARE(viewOf(child)->getTrackSettingsWidget()->width(), width);
+		QCOMPARE(viewOf(folder)->getTrackSettingsWidget()->contentsMargins().left(), 0);
 
 		// The folder's own menu collapses it: the child's row leaves the list, the folder's stays.
 		QMenu folderMenu;
@@ -151,6 +156,7 @@ private slots:
 		addTrackFolderMenu(&out, child);
 		actionIn(&out, QObject::tr("No folder"))->trigger();
 		QVERIFY(child->parentFolder() == nullptr);
+		QTRY_COMPARE(viewOf(child)->getTrackSettingsWidget()->contentsMargins().left(), 0);
 	}
 
 private:

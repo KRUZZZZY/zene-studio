@@ -292,6 +292,7 @@ void TrackContainerView::realignTracks()
 		// A collapsed folder's children leave the list (M3: the folder's collapse flag had no
 		// affordance reading it); the folder's own row stays.
 		trackView->setVisible(!hiddenByFolder(trackView->getTrack()));
+		trackView->updateFolderIndent();
 		trackView->update();
 	}
 
