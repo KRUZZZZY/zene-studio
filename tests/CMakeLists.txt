@@ -674,6 +674,8 @@ set(LMMS_TESTS
 	src/gui/RackMenuTest.cpp
 	# Edit > Modulators (window.modulators; modulator.*), against one real effect on a mixer channel.
 	src/gui/ModulatorPanelTest.cpp
+	# File > Script Memory Budget... (script.set_memory_budget).
+	src/gui/ScriptBudgetActionTest.cpp
 	# File > Recover Recordings (record.recovery_*), over two journalled WAV takes.
 	src/gui/RecordingRecoveryMenuTest.cpp
 	# File > Render Presets (export.preset_* / render.render), over a throwaway preset store.
@@ -1185,6 +1187,7 @@ set_tests_properties(ClipEditsMenuTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=o
 set_tests_properties(ChainPresetMenuTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(RackMenuTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(ModulatorPanelTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+set_tests_properties(ScriptBudgetActionTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(RecordingRecoveryMenuTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(RenderPresetMenuTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(PluginQuarantineMenuTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")

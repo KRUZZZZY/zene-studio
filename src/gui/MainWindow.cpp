@@ -76,6 +76,7 @@
 #include "PluginQuarantineMenu.h"
 #include "RecordingRecoveryMenu.h"
 #include "RenderPresetMenu.h"
+#include "ScriptBudgetAction.h"
 #include "TrackRenderMenu.h"
 #include "ControllerTemplateMenu.h"
 #include "PatternEditor.h"
@@ -419,6 +420,8 @@ void MainWindow::finalize()
 	// (GUI) thread when the run finishes, so nothing touches the audio thread.
 	declares(addAction(project_menu, "tool", tr("Run &Script..."),
 		keySequence(Qt::CTRL, Qt::SHIFT, Qt::Key_R), &MainWindow::runScript), "script.run");
+	// The Lua memory a run may hold (script.set_memory_budget).
+	addScriptBudgetAction(project_menu);
 
 	declares(addAction(project_menu, "project_export", tr("E&xport..."),
 		keySequence(Qt::CTRL, Qt::Key_E), &MainWindow::onExportProject), "render.render");

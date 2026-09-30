@@ -474,6 +474,7 @@ include/SampleWindow.h
 include/Scale.h
 include/ScriptApiVersion.h
 include/ScriptBindings.h
+include/ScriptBudgetAction.h
 include/ScriptClock.h
 include/ScriptConsole.h
 include/ScriptDawBindings.h
@@ -1580,6 +1581,7 @@ src/gui/RenderPresetMenu.cpp
 src/gui/RowTableView.cpp
 src/gui/SampleThumbnail.cpp
 src/gui/SampleTrackWindow.cpp
+src/gui/ScriptBudgetAction.cpp
 src/gui/SendButtonIndicator.cpp
 src/gui/SessionGridView.cpp
 src/gui/SessionSyncAction.cpp
@@ -1935,6 +1937,7 @@ tests/src/gui/PluginQuarantineMenuTest.cpp
 tests/src/gui/RackMenuTest.cpp
 tests/src/gui/RecordingRecoveryMenuTest.cpp
 tests/src/gui/RenderPresetMenuTest.cpp
+tests/src/gui/ScriptBudgetActionTest.cpp
 tests/src/gui/SessionGridViewTest.cpp
 tests/src/gui/SessionSyncActionTest.cpp
 tests/src/gui/SessionTransportBarTest.cpp

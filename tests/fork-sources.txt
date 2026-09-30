@@ -651,6 +651,7 @@ include/SampleRecordAccumulator.h
 include/SampleWindow.h
 include/ScriptApiVersion.h
 include/ScriptBindings.h
+include/ScriptBudgetAction.h
 include/ScriptClock.h
 include/ScriptConsole.h
 include/ScriptDawBindings.h
@@ -1157,6 +1158,7 @@ src/gui/PluginQuarantineMenu.cpp
 src/gui/RackMenu.cpp
 src/gui/RecordingRecoveryMenu.cpp
 src/gui/RenderPresetMenu.cpp
+src/gui/ScriptBudgetAction.cpp
 src/gui/SessionGridView.cpp
 src/gui/SessionSyncAction.cpp
 src/gui/SessionTransportBar.cpp
