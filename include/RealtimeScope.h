@@ -26,7 +26,12 @@
 #define LMMS_REALTIME_SCOPE_H
 
 #ifdef LMMS_RTSAN
-#include <sanitizer/rtsan_interface.h>
+// The RealtimeSanitizer runtime's entry points. They are what the compiler itself calls around a
+// [[clang::nonblocking]] function, so the runtime exports them, but clang 20's public
+// <sanitizer/rtsan_interface.h> does not declare them (hosted run 8: "use of undeclared identifier
+// '__rtsan_realtime_enter'"). Declared here, with the runtime's C linkage.
+extern "C" void __rtsan_realtime_enter();
+extern "C" void __rtsan_realtime_exit();
 #endif
 
 namespace lmms
