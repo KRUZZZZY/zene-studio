@@ -42,7 +42,7 @@ using namespace lmms::gui;
 namespace
 {
 
-QToolButton* control(SessionTransportBar& bar, const char* command)
+QToolButton* controlFor(SessionTransportBar& bar, const char* command)
 {
 	for (QToolButton* b : bar.findChildren<QToolButton*>())
 	{
@@ -79,10 +79,10 @@ private slots:
 	void theRowRunsItsCommandsAndFollowsTheEngine()
 	{
 		SessionTransportBar bar;
-		QToolButton* follow = control(bar, "session.set_follow_actions");
-		QToolButton* record = control(bar, "session.arrangement_record_arm");
-		QToolButton* land = control(bar, "session.arrangement_record_land");
-		QVERIFY(follow && record && land && control(bar, "session.back_to_arrangement"));
+		QToolButton* follow = controlFor(bar, "session.set_follow_actions");
+		QToolButton* record = controlFor(bar, "session.arrangement_record_arm");
+		QToolButton* land = controlFor(bar, "session.arrangement_record_land");
+		QVERIFY(follow && record && land && controlFor(bar, "session.back_to_arrangement"));
 
 		const bool followBefore = state("session.follow_get_state").value(QStringLiteral("follow_actions_enabled")).toBool();
 		QCOMPARE(follow->isChecked(), followBefore);
