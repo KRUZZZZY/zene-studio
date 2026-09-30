@@ -305,6 +305,14 @@ private slots:
 
 		const QString trackAId = addInstrumentTrack();
 		const QString trackBId = addInstrumentTrack();
+#ifdef Q_OS_WIN
+		if (trackAId.isEmpty() || trackBId.isEmpty())
+		{
+			song->stop();
+			QSKIP("no instrument could be loaded: on Windows the plugin modules link the zene executable, "
+				"so a test host cannot load them (the same limit ControlAutomationModesTest skips for)");
+		}
+#endif
 		QVERIFY2(!trackAId.isEmpty() && !trackBId.isEmpty(),
 			"two instrument tracks with a real instrument could not be created");
 		QVector<InstrumentTrack*> tracks = instrumentTracks();
