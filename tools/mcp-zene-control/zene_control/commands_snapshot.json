@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-09-30T04:52:25Z",
+  "captured_at": "2026-09-30T07:31:10Z",
   "commands": [
     {
       "args_schema": {
@@ -21102,9 +21102,35 @@
         "required": [],
         "type": "object"
       }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {},
+        "required": [],
+        "type": "object"
+      },
+      "description": "Open Edit > Undo History (non-modally): the undo stack as control.undo_depth reports it, Undo and Redo buttons that run control.undo / control.redo, and the command record control.transactions keeps, newest first. An edit made directly in an editor is undone by Undo but is not in that record, and the panel says so. `rows` is how many recorded commands it lists.",
+      "group": "window",
+      "id": "window.undo_history",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "rows": {
+            "type": "integer"
+          },
+          "shown": {
+            "type": "boolean"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
     }
   ],
-  "count": 386,
+  "count": 387,
   "instance": {
     "binary": null,
     "binary_bytes": null,
@@ -21112,15 +21138,15 @@
     "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-survey/tools/zene-pa-agentctl",
     "lane_head": null,
     "proto": 1,
-    "source_socket": "/tmp/zctl-run-4u_89tp1/zene.sock",
-    "version": "0.3.0-alpha.202+e6f1bc9"
+    "source_socket": "/tmp/zctl-run-g11dfx3l/zene.sock",
+    "version": "0.3.0-alpha.205+7749057"
   },
   "kind": "zene-control-command-list",
   "proto": 1,
   "schema": 1,
   "surface": {
     "group_count": 58,
-    "id_count": 386,
-    "ids_sha256": "34803d7d77119d1fdc9ded2fbeb267e07b5a5f23a9aa17bf1e3987d142f8a388"
+    "id_count": 387,
+    "ids_sha256": "12547737a7d133e2bc5f9c8b5b8ff954aa6ed9c344691df05ffdf410a5fa7aa2"
   }
 }

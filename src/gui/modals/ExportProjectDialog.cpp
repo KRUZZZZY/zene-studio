@@ -38,6 +38,7 @@
 #include <QVBoxLayout>
 
 #include "Engine.h"
+#include "ExportQualityControls.h"
 #include "ProjectRenderer.h"
 #include "Song.h"
 
@@ -190,6 +191,8 @@ ExportProjectDialog::ExportProjectDialog(const QString& path, Mode mode, QWidget
 	auto mainLayout = new QVBoxLayout(this);
 	mainLayout->addWidget(exportSettingsGroupBox);
 	mainLayout->addWidget(m_fileFormatSettingsGroupBox);
+	// Dither and resampling, through export.set_dither / export.set_src_quality.
+	mainLayout->addWidget(makeExportQualityControls(this));
 	mainLayout->addStretch();
 	mainLayout->addWidget(m_loudnessResultLabel);
 	mainLayout->addLayout(startCancelButtonsLayout);

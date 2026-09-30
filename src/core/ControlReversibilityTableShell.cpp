@@ -97,6 +97,11 @@ const ReversibilityRow kShellRows[] = {
 		"own row",
 		"nothing to reverse: the hub is closed like any window",
 		""),
+	R("window.undo_history", RC::NotMutating, false,
+		"opens the undo history panel: interface state; its Undo/Redo buttons run control.undo and "
+		"control.redo, each with its own row",
+		"nothing to reverse: the panel is closed like any window",
+		""),
 	R("window.shortcuts", RC::NotMutating, false,
 		"opens the keyboard shortcuts page: interface state, reads the menus",
 		"nothing to reverse: the page is closed like any window",

@@ -214,6 +214,7 @@ include/ExportDitherMode.h
 include/ExportFilter.h
 include/ExportNoiseShaper.h
 include/ExportProjectDialog.h
+include/ExportQualityControls.h
 include/ExportRenderSettings.h
 include/FadeButton.h
 include/Fader.h
@@ -470,6 +471,7 @@ include/SessionGridView.h
 include/SessionModel.h
 include/SessionPlayback.h
 include/SessionScheduler.h
+include/SessionSyncAction.h
 include/SessionTuning.h
 include/SetupDialog.h
 include/SharedMemory.h
@@ -532,6 +534,7 @@ include/TrackRenameLineEdit.h
 include/TrackView.h
 include/UnattendedRun.h
 include/UnclaimedElements.h
+include/UndoHistoryPanel.h
 include/ValueBuffer.h
 include/VcaGroup.h
 include/VcaStripView.h
@@ -1505,6 +1508,7 @@ src/gui/Controls.cpp
 src/gui/EffectControlDialog.cpp
 src/gui/EffectRackView.cpp
 src/gui/EffectView.cpp
+src/gui/ExportQualityControls.cpp
 src/gui/FileBrowser.cpp
 src/gui/FileRevealer.cpp
 src/gui/FileSearchJob.cpp
@@ -1540,6 +1544,7 @@ src/gui/SampleThumbnail.cpp
 src/gui/SampleTrackWindow.cpp
 src/gui/SendButtonIndicator.cpp
 src/gui/SessionGridView.cpp
+src/gui/SessionSyncAction.cpp
 src/gui/ShortcutsPage.cpp
 src/gui/SideBar.cpp
 src/gui/SideBarWidget.cpp
@@ -1551,6 +1556,7 @@ src/gui/TakeLanesPanel.cpp
 src/gui/TelemetryConsentDialog.cpp
 src/gui/ToolPluginView.cpp
 src/gui/TrackFolderMenu.cpp
+src/gui/UndoHistoryPanel.cpp
 src/gui/VcaStripView.cpp
 src/gui/clips/AutomationClipView.cpp
 src/gui/clips/ClipView.cpp
@@ -1859,6 +1865,7 @@ tests/src/gui/AccessibilityHelperTest.cpp
 tests/src/gui/AccessibilityWalkTest.cpp
 tests/src/gui/AutomationModeMenuTest.cpp
 tests/src/gui/CommandPaletteTest.cpp
+tests/src/gui/ExportQualityControlsTest.cpp
 tests/src/gui/FocusDeskActionsTest.cpp
 tests/src/gui/FocusDeskPaneTest.cpp
 tests/src/gui/FocusDeskTest.cpp
@@ -1868,11 +1875,13 @@ tests/src/gui/KnobKeyboardTest.cpp
 tests/src/gui/MidiLearnGuiTest.cpp
 tests/src/gui/PianoRollBenchmarkTest.cpp
 tests/src/gui/SessionGridViewTest.cpp
+tests/src/gui/SessionSyncActionTest.cpp
 tests/src/gui/ShortcutsPageTest.cpp
 tests/src/gui/StartHubTest.cpp
 tests/src/gui/TakeLanesPanelTest.cpp
 tests/src/gui/ThemeContrastTest.cpp
 tests/src/gui/TrackFolderMenuTest.cpp
+tests/src/gui/UndoHistoryPanelTest.cpp
 tests/src/gui/VcaStripLifetimeTest.cpp
 tests/src/gui/VcaStripViewTest.cpp
 tests/src/gui/WcagContrastTest.cpp

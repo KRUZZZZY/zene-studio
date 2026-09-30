@@ -446,6 +446,8 @@ void MainWindow::finalize()
 	m_redoAction->setData(QStringLiteral("control.redo"));
 	m_undoAction->setShortcutContext(Qt::ApplicationShortcut);
 	m_redoAction->setShortcutContext(Qt::ApplicationShortcut);
+	declares(edit_menu->addAction(embed::getIconPixmap("edit_undo"), tr("Undo History..."),
+		this, [](){ dispatchShellCommand(QStringLiteral("window.undo_history")); }), "window.undo_history");
 
 	edit_menu->addSeparator();
 	windowToggleAction(edit_menu, embed::getIconPixmap("microtuner"), tr("Scales and keymaps"), "microtuner");
