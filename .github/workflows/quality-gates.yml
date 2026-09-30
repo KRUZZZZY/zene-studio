@@ -216,7 +216,10 @@ jobs:
             qt6-base-dev libqt6svg6-dev qt6-l10n-tools \
             libsndfile1-dev libfftw3-dev libasound2-dev libjack-jackd2-dev \
             libsamplerate0-dev librubberband-dev libxml2-dev \
-            liblist-moreutils-perl libxml-parser-perl
+            liblist-moreutils-perl libxml-parser-perl \
+            python3-numpy python3-scipy
+      # numpy/scipy: run-coverage.sh runs the whole ctest suite, mastering included (the gate-1
+      # job needed the same two; hosted run 36713575679 failed here without them).
       # Default mode is the ratchet: the number must not fall. The baseline is
       # committed, so it must have been captured in the SAME environment the gate
       # runs in; run this workflow with capture_baseline=true to refresh it here.
