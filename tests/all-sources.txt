@@ -224,6 +224,7 @@ include/ExportQualityControls.h
 include/ExportRenderSettings.h
 include/FadeButton.h
 include/Fader.h
+include/FeedbackModeAction.h
 include/FifoBuffer.h
 include/FileBrowser.h
 include/FileDialog.h
@@ -1539,6 +1540,7 @@ src/gui/EffectHostingMenu.cpp
 src/gui/EffectRackView.cpp
 src/gui/EffectView.cpp
 src/gui/ExportQualityControls.cpp
+src/gui/FeedbackModeAction.cpp
 src/gui/FileBrowser.cpp
 src/gui/FileRevealer.cpp
 src/gui/FileSearchJob.cpp
@@ -1920,6 +1922,7 @@ tests/src/gui/ControllerTemplateMenuTest.cpp
 tests/src/gui/CrashReportMenuTest.cpp
 tests/src/gui/EffectHostingMenuTest.cpp
 tests/src/gui/ExportQualityControlsTest.cpp
+tests/src/gui/FeedbackModeActionTest.cpp
 tests/src/gui/FocusDeskActionsTest.cpp
 tests/src/gui/FocusDeskPaneTest.cpp
 tests/src/gui/FocusDeskTest.cpp

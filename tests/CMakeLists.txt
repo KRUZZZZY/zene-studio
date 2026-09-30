@@ -678,6 +678,8 @@ set(LMMS_TESTS
 	src/gui/ScriptBudgetActionTest.cpp
 	# An effect's Hosting submenu (oop.set_mode / oop.restart), against one real effect.
 	src/gui/EffectHostingMenuTest.cpp
+	# A mixer channel menu's Allow feedback sends (feedback.enable / disable).
+	src/gui/FeedbackModeActionTest.cpp
 	# File > Recover Recordings (record.recovery_*), over two journalled WAV takes.
 	src/gui/RecordingRecoveryMenuTest.cpp
 	# File > Render Presets (export.preset_* / render.render), over a throwaway preset store.
@@ -1195,6 +1197,7 @@ set_tests_properties(RackMenuTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscr
 set_tests_properties(ModulatorPanelTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(ScriptBudgetActionTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(EffectHostingMenuTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+set_tests_properties(FeedbackModeActionTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(RecordingRecoveryMenuTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(RenderPresetMenuTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(PluginQuarantineMenuTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")

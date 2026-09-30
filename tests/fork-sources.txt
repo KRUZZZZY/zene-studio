@@ -565,6 +565,7 @@ include/ExportDitherMode.h
 include/ExportNoiseShaper.h
 include/ExportQualityControls.h
 include/ExportRenderSettings.h
+include/FeedbackModeAction.h
 include/FocusDesk.h
 include/FocusDeskActions.h
 include/FocusDeskModules.h
@@ -1140,6 +1141,7 @@ src/gui/ControllerTemplateMenu.cpp
 src/gui/CrashReportMenu.cpp
 src/gui/EffectHostingMenu.cpp
 src/gui/ExportQualityControls.cpp
+src/gui/FeedbackModeAction.cpp
 src/gui/FocusDesk.cpp
 src/gui/FocusDeskActions.cpp
 src/gui/FocusDeskModules.cpp

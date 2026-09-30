@@ -1976,6 +1976,10 @@ says that **compensation is SUSPENDED for the loop** - carrying REAPER's warning
   `tests/control-feedback-commands.py`).
 - **No automatic exit when the loop stops.** The mode stays on - and keeps permitting loop
   sends - until `feedback.disable` runs; it does not watch the audio for silence or decay.
+- *(Updated 2026-09-30.)* **A mixer channel's context menu now has Allow feedback sends** (`feedback.enable` /
+  `feedback.disable`, leaving asks first and names the loop-closing sends it deletes), and while it is on the
+  mixer offers the send button for a channel whose send would close a loop (`FeedbackModeActionTest`). Still
+  missing: a visual mark on a feedback send. The bullet below is the pre-menu record.
 - **No GUI surface.** The submode and its sends are socket-only: MixerView still hides the
   loop-closing arrows it always hid (`src/gui/mixer/MixerView.cpp`, the `isInfiniteLoop` guard),
   so the interface cannot create or show a feedback send.
