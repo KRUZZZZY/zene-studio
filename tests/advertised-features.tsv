@@ -107,4 +107,4 @@ vst3-hosting	WANT_VST3	ON	vst3effect	VST3 hosting (effects) is in the release	*
 vst3-instrument-hosting	WANT_VST3	ON	vst3instrument	VST3 instrument hosting (one instrument per track, MIDI in to audio out) is in the release	*
 clap-hosting	WANT_CLAP	ON	clapeffect	CLAP hosting (effects) is in the release on every platform	*
 wasm-sandbox	WANT_WASM	OFF	-	The WASM DSP sandbox is documented as absent from these builds	*
-stem-separation	WANT_STEM_SPLIT	OFF	-	Offline stem separation is documented as absent from these builds	*
+stem-separation	WANT_STEM_SPLIT	ON	-	Offline HTDemucs stem separation is in the build (owner decision 14): the pinned model (~166 MB) is fetched on first use, and separation runs through the bundled CLI, which needs Python with numpy and onnxruntime, unless the build found the ONNX Runtime SDK	*
