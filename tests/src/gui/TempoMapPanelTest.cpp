@@ -32,6 +32,8 @@
 #include <QtTest>
 
 #include <QCheckBox>
+#include <QFile>
+#include <QFileInfo>
 #include <QJsonArray>
 #include <QPushButton>
 #include <QTableWidget>
