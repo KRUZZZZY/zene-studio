@@ -126,6 +126,8 @@ TrackContainerView::TrackContainerView( TrackContainer * _tc ) :
 	// are deleted by the very next statement in TrackContainer::loadSettings.
 	connect( m_tc, SIGNAL(aboutToClearTracks()),
 			this, SLOT(removeAllTrackViews()) );
+	// A visibility set applied (menu or socket) hides and shows rows.
+	connect(m_tc, &TrackContainer::visibilityChanged, this, &TrackContainerView::realignTracks, Qt::QueuedConnection);
 }
 
 
@@ -291,7 +293,8 @@ void TrackContainerView::realignTracks()
 	{
 		// A collapsed folder's children leave the list (M3: the folder's collapse flag had no
 		// affordance reading it); the folder's own row stays.
-		trackView->setVisible(!hiddenByFolder(trackView->getTrack()));
+		// Hidden by a visibility set (the track's own view flag) or by a collapsed folder.
+		trackView->setVisible(trackView->getTrack()->isVisible() && !hiddenByFolder(trackView->getTrack()));
 		trackView->updateFolderIndent();
 		trackView->update();
 	}

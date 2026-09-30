@@ -149,6 +149,8 @@ public:
 		m_activeVisibilitySet = name;
 	}
 	void clearVisibilitySets();
+	//! Every track visible and no set active (track.visibility_show_all); \a shown gets the count.
+	void showAllTracks( int * shown );
 	//! Writes the sets into \a parent (the project's content element) as ONE
 	//! `<visibilitysets>` element, called by Song::saveProjectFile and only when
 	//! there is at least one set, so a project that never made one re-saves the
@@ -199,6 +201,8 @@ signals:
 	void trackAdded( lmms::Track * _track );
 	void trackRemoved();
 	void trackMoved();
+	//! A track's view flag changed (a set applied, all shown, either undone): views re-lay out.
+	void visibilityChanged();
 
 	/*! Emitted immediately before a serialization restore clears this
 	 * container's tracks, so that the container's views can take themselves

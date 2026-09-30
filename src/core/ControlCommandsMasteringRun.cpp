@@ -282,7 +282,8 @@ ControlResult handleMasteringRun(const QJsonObject& args)
 	// event loop, on this same application thread, so nothing is shared and the
 	// dispatch thread is free the moment this returns.
 	QProcess* process = run->process;
-	QObject::connect(process, &QProcess::finished, process,
+	// Qt5 overloads finished (int) and (int, ExitStatus); name the one taken (macOS CI builds Qt5).
+	QObject::connect(process, QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished), process,
 		[run](int exitCode, QProcess::ExitStatus) { completeMasteringRun(run, true, exitCode); });
 	QObject::connect(process, &QProcess::errorOccurred, process,
 		[run](QProcess::ProcessError kind)

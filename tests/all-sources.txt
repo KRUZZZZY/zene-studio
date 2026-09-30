@@ -543,6 +543,7 @@ include/ValueBuffer.h
 include/VcaGroup.h
 include/VcaStripView.h
 include/VersionedSaveDialog.h
+include/VisibilitySetMenu.h
 include/VstSyncController.h
 include/VstSyncData.h
 include/WarpMarkers.h
@@ -1566,6 +1567,7 @@ src/gui/ToolPluginView.cpp
 src/gui/TrackFolderMenu.cpp
 src/gui/UndoHistoryPanel.cpp
 src/gui/VcaStripView.cpp
+src/gui/VisibilitySetMenu.cpp
 src/gui/clips/AutomationClipView.cpp
 src/gui/clips/ClipView.cpp
 src/gui/clips/MidiClipView.cpp
@@ -1896,6 +1898,7 @@ tests/src/gui/TrackFolderMenuTest.cpp
 tests/src/gui/UndoHistoryPanelTest.cpp
 tests/src/gui/VcaStripLifetimeTest.cpp
 tests/src/gui/VcaStripViewTest.cpp
+tests/src/gui/VisibilitySetMenuTest.cpp
 tests/src/gui/WcagContrastTest.cpp
 tests/src/plugins/AudioPluginTest.cpp
 tests/src/plugins/ClapBusMapTest.cpp

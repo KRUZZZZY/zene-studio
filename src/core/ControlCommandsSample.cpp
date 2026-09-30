@@ -77,7 +77,7 @@ constexpr qint64 MaxGeneratedBytes = 512ll * 1024 * 1024;
 
 struct GenerateSpec
 {
-	sampleops::Kind kind;
+	sampleops::Kind kind = sampleops::Kind::Silence;  // set by the parser; initialised so GCC -Werror=maybe-uninitialized can see it
 	double frequency = 440.0;
 	float amplitude = 0.8f;
 	tick_t length = 0;
