@@ -383,6 +383,7 @@ include/PlayHandle.h
 include/Plugin.h
 include/PluginAudioPorts.h
 include/PluginBrowser.h
+include/PluginEditorHost.h
 include/PluginFactory.h
 include/PluginHostChunking.h
 include/PluginHostNotes.h
@@ -935,6 +936,8 @@ plugins/Vibed/VibratingString.cpp
 plugins/Vibed/VibratingString.h
 plugins/Vst3Effect/Vst3BusMap.cpp
 plugins/Vst3Effect/Vst3BusMap.h
+plugins/Vst3Effect/Vst3EditorSession.cpp
+plugins/Vst3Effect/Vst3EditorSession.h
 plugins/Vst3Effect/Vst3Effect.cpp
 plugins/Vst3Effect/Vst3Effect.h
 plugins/Vst3Effect/Vst3EffectControlDialog.cpp
@@ -946,6 +949,8 @@ plugins/Vst3Effect/Vst3Host.h
 plugins/Vst3Effect/Vst3MidiEvent.cpp
 plugins/Vst3Effect/Vst3MidiEvent.h
 plugins/Vst3Effect/Vst3MidiQueue.h
+plugins/Vst3Effect/Vst3NativeEditor.cpp
+plugins/Vst3Effect/Vst3NativeEditor.h
 plugins/Vst3Effect/Vst3ParamDescriptor.h
 plugins/Vst3Effect/Vst3Parameter.cpp
 plugins/Vst3Effect/Vst3Parameter.h
@@ -1107,6 +1112,7 @@ src/core/ControlCommandsPatcherEdit.cpp
 src/core/ControlCommandsPatcherShared.h
 src/core/ControlCommandsPdc.cpp
 src/core/ControlCommandsPlugin.cpp
+src/core/ControlCommandsPluginEditor.cpp
 src/core/ControlCommandsPluginParams.cpp
 src/core/ControlCommandsPluginPreset.cpp
 src/core/ControlCommandsPluginScan.cpp
@@ -1336,6 +1342,7 @@ src/core/PerfLog.cpp
 src/core/Piano.cpp
 src/core/PlayHandle.cpp
 src/core/Plugin.cpp
+src/core/PluginEditorHost.cpp
 src/core/PluginFactory.cpp
 src/core/PluginHostChunking.cpp
 src/core/PluginHostNotes.cpp
@@ -1754,6 +1761,7 @@ tests/src/core/PhaseDPerfBench.cpp
 tests/src/core/PhaseDSidechainTest.cpp
 tests/src/core/PhaseFChannelScaleTest.cpp
 tests/src/core/PluginAudioPortsTest.cpp
+tests/src/core/PluginEditorHostTest.cpp
 tests/src/core/PluginLogoResourceTest.cpp
 tests/src/core/PluginScanCacheTest.cpp
 tests/src/core/ProjectContainerEntriesTest.cpp

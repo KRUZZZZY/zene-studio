@@ -177,6 +177,15 @@ void Plugin::loadFile( const QString & )
 
 
 
+bool Plugin::openNativeEditor( QString* error )
+{
+	if( error != nullptr ) { *error = QStringLiteral( "this plug-in has no editor of its own" ); }
+	return false;
+}
+
+
+
+
 AutomatableModel * Plugin::childModel( const QString & )
 {
 	static FloatModel fm;

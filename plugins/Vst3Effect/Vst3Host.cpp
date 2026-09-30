@@ -33,6 +33,7 @@
 #include <QDebug>
 
 #include "PluginHostChunking.h"
+#include "Vst3EditorSession.h"
 #include "Vst3MidiEvent.h"
 #include "pluginterfaces/vst/ivstaudioprocessor.h"
 #include "pluginterfaces/vst/ivstcomponent.h"
@@ -59,6 +60,13 @@ namespace
 void setError(QString* error, const QString& message)
 {
 	if (error) { *error = message; }
+}
+
+//! setError, then false: the one refusal every load step returns.
+auto refuse(QString* error, const QString& why) -> bool
+{
+	setError(error, why);
+	return false;
 }
 
 auto fromString128(const String128 text) -> QString
@@ -248,6 +256,7 @@ HostedPlugin::HostedPlugin() :
 HostedPlugin::~HostedPlugin()
 {
 	auto& d = *m_impl;
+	m_editor.reset();  // R4.2: the editor goes before the controller does
 	release();
 	d.handler = nullptr;
 	d.processor = nullptr;
@@ -286,11 +295,7 @@ auto HostedPlugin::load(const QString& modulePath, const QString& classId, QStri
 	auto& d = *m_impl;
 	std::string errorText;
 	d.module = VST3::Hosting::Module::create(modulePath.toStdString(), errorText);
-	if (!d.module)
-	{
-		setError(error, QString::fromStdString(errorText));
-		return false;
-	}
+	if (!d.module) { return refuse(error, QString::fromStdString(errorText)); }
 
 	const auto& factory = d.module->getFactory();
 	bool found = false;
@@ -303,28 +308,16 @@ auto HostedPlugin::load(const QString& modulePath, const QString& classId, QStri
 		found = true;
 		break;
 	}
-	if (!found)
-	{
-		setError(error, QString("no audio class '%1' in %2").arg(classId, modulePath));
-		return false;
-	}
+	if (!found) { return refuse(error, QString("no audio class '%1' in %2").arg(classId, modulePath)); }
 
 	hostContext();
 	d.provider = std::make_unique<PlugProvider>(factory, classInfo);
-	if (!d.provider->initialize())
-	{
-		setError(error, QString("failed to initialize '%1'").arg(classId));
-		return false;
-	}
+	if (!d.provider->initialize()) { return refuse(error, QString("failed to initialize '%1'").arg(classId)); }
 	d.component = d.provider->getComponentPtr();
 	d.controller = d.provider->getControllerPtr();
 	FUnknownPtr<IAudioProcessor> processor{d.component.get()};
 	d.processor = processor;
-	if (!d.component || !d.processor)
-	{
-		setError(error, QString("'%1' is not an audio processor").arg(classId));
-		return false;
-	}
+	if (!d.component || !d.processor) { return refuse(error, QString("'%1' is not an audio processor").arg(classId)); }
 
 	FUnknown* componentAsController = nullptr;
 	d.singleComponent = d.component->queryInterface(IEditController::iid,
@@ -582,32 +575,16 @@ auto HostedPlugin::prepare(double sampleRate, int maxBlockSize, QString* error) 
 {
 	auto& d = *m_impl;
 	release();
-	if (!d.component || !d.processor)
-	{
-		setError(error, "no plug-in loaded");
-		return false;
-	}
-	if (sampleRate <= 0.0 || maxBlockSize <= 0)
-	{
-		setError(error, "invalid sample rate or block size");
-		return false;
-	}
+	if (!d.component || !d.processor) { return refuse(error, "no plug-in loaded"); }
+	if (sampleRate <= 0.0 || maxBlockSize <= 0) { return refuse(error, "invalid sample rate or block size"); }
 
 	ProcessSetup setup{};
 	setup.processMode = kRealtime;
 	setup.symbolicSampleSize = kSample32;
 	setup.maxSamplesPerBlock = maxBlockSize;
 	setup.sampleRate = sampleRate;
-	if (d.processor->setupProcessing(setup) != kResultOk)
-	{
-		setError(error, "setupProcessing() failed");
-		return false;
-	}
-	if (d.component->setActive(true) != kResultOk)
-	{
-		setError(error, "setActive() failed");
-		return false;
-	}
+	if (d.processor->setupProcessing(setup) != kResultOk) { return refuse(error, "setupProcessing() failed"); }
+	if (d.component->setActive(true) != kResultOk) { return refuse(error, "setActive() failed"); }
 	// The SDK's AudioEffect base class returns kNotImplemented here and the
 	// SDK's own host ignores the return value (audiohost/audioclient.cpp:
 	// "processor->setProcessing (true); // != kResultOk"). Only an explicit
@@ -887,5 +864,7 @@ auto hostChunkingStats() -> HostChunkingStats
 {
 	return control::vst3HostChunkingCounters().read();
 }
+
+auto HostedPlugin::editController() const -> IEditController* { return m_impl->controller.get(); }
 
 } // namespace lmms::vst3

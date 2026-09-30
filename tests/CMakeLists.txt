@@ -537,6 +537,8 @@ set(LMMS_TESTS
 	# R1.1 + R1.3: the 20 Hz LFO zipper measured at the block rate, and the per-sample
 	# modulation route that beats it by two orders of magnitude without allocating.
 	src/core/ModulationRateTest.cpp
+	# R4.1: the run loop a plugin editor asks for - descriptors and timers on the Qt loop.
+	src/core/PluginEditorHostTest.cpp
 	src/core/ScriptBindingsTest.cpp
 	# Feature row 50 (0.3.0): the Lua API's DAW-control half - the mixer channel
 	# and effect-chain bindings. Drives a REAL mixer channel and the chain the
@@ -1658,6 +1660,8 @@ if(TARGET lmms_clap)
 		src/plugins/ClapHostTest.cpp
 		${LMMS_CLAP_EFFECT_DIR}/ClapBusMap.cpp
 		${LMMS_CLAP_EFFECT_DIR}/ClapHost.cpp
+		# R4.1: the editor run loop the host answers posix-fd/timer-support with
+		${CMAKE_SOURCE_DIR}/src/core/PluginEditorHost.cpp
 		${LMMS_CLAP_EFFECT_DIR}/ClapHostLifecycle.cpp
 		${LMMS_CLAP_EFFECT_DIR}/ClapHostNotes.cpp
 		${LMMS_CLAP_EFFECT_DIR}/ClapHostParams.cpp
@@ -1712,6 +1716,8 @@ if(TARGET lmms_clap)
 		src/plugins/ClapLoaderErrorTest.cpp
 		${LMMS_CLAP_EFFECT_DIR}/ClapBusMap.cpp
 		${LMMS_CLAP_EFFECT_DIR}/ClapHost.cpp
+		# R4.1: the editor run loop the host answers posix-fd/timer-support with
+		${CMAKE_SOURCE_DIR}/src/core/PluginEditorHost.cpp
 		${LMMS_CLAP_EFFECT_DIR}/ClapHostLifecycle.cpp
 		${LMMS_CLAP_EFFECT_DIR}/ClapHostNotes.cpp
 		${LMMS_CLAP_EFFECT_DIR}/ClapHostParams.cpp
@@ -1859,6 +1865,9 @@ if(TARGET lmms_vst3_sdk)
 		src/plugins/Vst3HostTest.cpp
 		${LMMS_VST3_EFFECT_DIR}/Vst3BusMap.cpp
 		${LMMS_VST3_EFFECT_DIR}/Vst3Host.cpp
+		# R4.2: the editor session the host owns, and the R4.1 run loop it answers IRunLoop with
+		${LMMS_VST3_EFFECT_DIR}/Vst3EditorSession.cpp
+		${CMAKE_SOURCE_DIR}/src/core/PluginEditorHost.cpp
 		${LMMS_VST3_EFFECT_DIR}/Vst3MidiEvent.cpp
 		# the host path's chunking counters (CODE-4), core-owned
 		${CMAKE_SOURCE_DIR}/src/core/PluginHostChunking.cpp
@@ -1898,6 +1907,9 @@ if(TARGET lmms_vst3_sdk)
 		src/plugins/Vst3ChunkProbeTest.cpp
 		${LMMS_VST3_EFFECT_DIR}/Vst3BusMap.cpp
 		${LMMS_VST3_EFFECT_DIR}/Vst3Host.cpp
+		# R4.2: the editor session the host owns, and the R4.1 run loop it answers IRunLoop with
+		${LMMS_VST3_EFFECT_DIR}/Vst3EditorSession.cpp
+		${CMAKE_SOURCE_DIR}/src/core/PluginEditorHost.cpp
 		${LMMS_VST3_EFFECT_DIR}/Vst3MidiEvent.cpp
 		# the host path's chunking counters (CODE-4), core-owned
 		${CMAKE_SOURCE_DIR}/src/core/PluginHostChunking.cpp
@@ -1936,6 +1948,9 @@ if(TARGET lmms_vst3_sdk)
 		${LMMS_VST3_EFFECT_DIR}/Vst3EffectControlDialog.cpp
 		${LMMS_VST3_EFFECT_DIR}/Vst3EffectControls.cpp
 		${LMMS_VST3_EFFECT_DIR}/Vst3Host.cpp
+		${LMMS_VST3_EFFECT_DIR}/Vst3NativeEditor.cpp
+		# R4.2: the editor session the host owns (the R4.1 run loop comes with lmmsobjs)
+		${LMMS_VST3_EFFECT_DIR}/Vst3EditorSession.cpp
 		${LMMS_VST3_EFFECT_DIR}/Vst3MidiEvent.cpp
 		${LMMS_VST3_EFFECT_DIR}/Vst3Parameter.cpp
 		${LMMS_VST3_EFFECT_DIR}/Vst3SubPluginFeatures.cpp
@@ -2113,6 +2128,8 @@ if(TARGET lmms_vst3_sdk)
 			src/plugins/Vst3InstrumentTest.cpp
 			${CMAKE_SOURCE_DIR}/plugins/Vst3Effect/Vst3BusMap.cpp
 			${CMAKE_SOURCE_DIR}/plugins/Vst3Effect/Vst3Host.cpp
+			${CMAKE_SOURCE_DIR}/plugins/Vst3Effect/Vst3EditorSession.cpp
+			${CMAKE_SOURCE_DIR}/src/core/PluginEditorHost.cpp
 			${CMAKE_SOURCE_DIR}/plugins/Vst3Effect/Vst3MidiEvent.cpp
 			# the host path's chunking counters (CODE-4), core-owned
 			${CMAKE_SOURCE_DIR}/src/core/PluginHostChunking.cpp
@@ -2157,6 +2174,12 @@ if(TARGET lmms_vst3_sdk)
 			# view, so it needs a Qt platform plugin even when headless.
 			set_tests_properties(Vst3InstrumentIntegrationTest PROPERTIES
 				ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+			# It drives plugin.editor_open/close through the registry: their replies are held
+			# to their schemas, as every LMMS_TESTS entry's are.
+			if(CMAKE_VERSION VERSION_GREATER_EQUAL 3.22)
+				set_tests_properties(Vst3InstrumentIntegrationTest PROPERTIES
+					ENVIRONMENT_MODIFICATION "ZENE_CONTROL_CHECK_RESULTS=set:1")
+			endif()
 			target_include_directories(Vst3InstrumentIntegrationTest PRIVATE
 				$<TARGET_PROPERTY:lmmsobjs,INCLUDE_DIRECTORIES>
 			)

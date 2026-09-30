@@ -39,12 +39,16 @@
  *   the host's event list and its audio buffers.
  */
 
+#include <cstring>
+
+#include "public.sdk/source/common/pluginview.h"
 #include "public.sdk/source/main/pluginfactory.h"
 #include "public.sdk/source/vst/vstsinglecomponenteffect.h"
 
 #include "pluginterfaces/base/fstrdefs.h"
 #include "pluginterfaces/base/ibstream.h"
 #include "pluginterfaces/base/ustring.h"
+#include "pluginterfaces/gui/iplugview.h"
 #include "pluginterfaces/vst/ivstevents.h"
 #include "pluginterfaces/vst/ivstprocesscontext.h"
 #include "pluginterfaces/vst/vstspeaker.h"
@@ -103,6 +107,9 @@ public:
 	tresult PLUGIN_API setEditorState (IBStream* state) SMTG_OVERRIDE;
 	tresult PLUGIN_API getEditorState (IBStream* state) SMTG_OVERRIDE;
 	tresult PLUGIN_API setParamNormalized (ParamID tag, ParamValue value) SMTG_OVERRIDE;
+
+	//--- R4.2: the editor the host embeds --------------------------------
+	IPlugView* PLUGIN_API createView (FIDString name) SMTG_OVERRIDE;
 
 	//--- non-interface helpers (also used by the probe) -----------------
 	/** Number of keys currently down. */
@@ -408,6 +415,98 @@ tresult PLUGIN_API TestInstrument::setEditorState (IBStream* state)
 tresult PLUGIN_API TestInstrument::getEditorState (IBStream* state)
 {
 	return writeState (mLevel, state);
+}
+
+//------------------------------------------------------------------------
+// R4.2: the fixture's EDITOR - what a real plug-in's view does with its host, minus the
+// drawing: it embeds in an X11 window, resizes, and on attach asks the frame for
+// Linux::IRunLoop and registers a 10 ms timer (a repaint timer), unregistering it on
+// removal. The host's side is plugins/Vst3Effect/Vst3EditorSession.cpp.
+class RepaintTimer : public Linux::ITimerHandler
+{
+public:
+	virtual ~RepaintTimer () = default;
+	void PLUGIN_API onTimer () SMTG_OVERRIDE { ++ticks; }
+	tresult PLUGIN_API queryInterface (const TUID iid, void** obj) SMTG_OVERRIDE
+	{
+		if (FUnknownPrivate::iidEqual (iid, Linux::ITimerHandler::iid) || FUnknownPrivate::iidEqual (iid, FUnknown::iid))
+		{
+			*obj = this;
+			addRef ();
+			return kResultOk;
+		}
+		*obj = nullptr;
+		return kNoInterface;
+	}
+	uint32 PLUGIN_API addRef () SMTG_OVERRIDE { return ++refCount; }
+	uint32 PLUGIN_API release () SMTG_OVERRIDE
+	{
+		const uint32 count = --refCount;
+		if (count == 0) delete this;
+		return count;
+	}
+	uint32 ticks {0};
+
+private:
+	uint32 refCount {1};
+};
+
+class TestEditorView : public CPluginView
+{
+public:
+	TestEditorView () : CPluginView (&initialSize ()) {}
+	~TestEditorView () override { if (timer) timer->release (); }
+
+	tresult PLUGIN_API isPlatformTypeSupported (FIDString type) SMTG_OVERRIDE
+	{
+		return strcmp (type, kPlatformTypeX11EmbedWindowID) == 0 ? kResultTrue : kResultFalse;
+	}
+	tresult PLUGIN_API canResize () SMTG_OVERRIDE { return kResultTrue; }
+	tresult PLUGIN_API checkSizeConstraint (ViewRect* rect) SMTG_OVERRIDE
+	{
+		// Never smaller than 100 x 80: a real editor has a minimum, and the host must honour it.
+		if (rect->getWidth () < 100) rect->right = rect->left + 100;
+		if (rect->getHeight () < 80) rect->bottom = rect->top + 80;
+		return kResultTrue;
+	}
+	tresult PLUGIN_API attached (void* parent, FIDString type) SMTG_OVERRIDE
+	{
+		const tresult attachedResult = CPluginView::attached (parent, type);
+		Linux::IRunLoop* loop = nullptr;
+		if (plugFrame && plugFrame->queryInterface (Linux::IRunLoop::iid, reinterpret_cast<void**> (&loop)) == kResultOk)
+		{
+			runLoop = loop;
+			timer = new RepaintTimer;
+			runLoop->registerTimer (timer, 10);
+		}
+		return attachedResult;
+	}
+	tresult PLUGIN_API removed () SMTG_OVERRIDE
+	{
+		if (runLoop)
+		{
+			runLoop->unregisterTimer (timer);
+			runLoop->release ();
+			runLoop = nullptr;
+		}
+		return CPluginView::removed ();
+	}
+
+private:
+	//! ViewRect is not a literal type, so the initial size is a function-local static.
+	static const ViewRect& initialSize ()
+	{
+		static const ViewRect size (0, 0, 400, 300);
+		return size;
+	}
+	Linux::IRunLoop* runLoop {nullptr};
+	RepaintTimer* timer {nullptr};
+};
+
+IPlugView* PLUGIN_API TestInstrument::createView (FIDString name)
+{
+	if (name != nullptr && strcmp (name, ViewType::kEditor) == 0) return new TestEditorView;
+	return nullptr;
 }
 
 //------------------------------------------------------------------------

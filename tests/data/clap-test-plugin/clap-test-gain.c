@@ -61,6 +61,11 @@ typedef struct gain_plugin
 	uint32_t oversized_calls;
 	uint32_t recorded_count;
 	uint32_t recorded[TEST_PLUGIN_MAX_RECORDED_BLOCKS];
+	/* R4.1: a timer registered through the host's clap.timer-support, as an editor's
+	   repaint timer is, and the ticks it has delivered. */
+	clap_id timer_id;
+	bool timer_registered;
+	uint32_t timer_ticks;
 } gain_plugin_t;
 
 static const clap_plugin_descriptor_t s_descriptor = {
@@ -278,14 +283,32 @@ static const clap_plugin_latency_t s_latency = {
 
 static bool gain_init(const clap_plugin_t* plugin)
 {
-	(void)plugin;
+	gain_plugin_t* self = (gain_plugin_t*)plugin->plugin_data;
+	/* R4.1: a host without clap.timer-support is still a valid host - the timer is optional. */
+	const clap_host_timer_support_t* timers =
+		(const clap_host_timer_support_t*)self->host->get_extension(self->host, CLAP_EXT_TIMER_SUPPORT);
+	self->timer_registered = timers != NULL && timers->register_timer(self->host, 10, &self->timer_id);
 	return true;
 }
 
 static void gain_destroy(const clap_plugin_t* plugin)
 {
+	gain_plugin_t* self = (gain_plugin_t*)plugin->plugin_data;
+	const clap_host_timer_support_t* timers =
+		(const clap_host_timer_support_t*)self->host->get_extension(self->host, CLAP_EXT_TIMER_SUPPORT);
+	if (self->timer_registered && timers != NULL) { timers->unregister_timer(self->host, self->timer_id); }
 	free(plugin->plugin_data);
 }
+
+static void gain_on_timer(const clap_plugin_t* plugin, clap_id timer_id)
+{
+	gain_plugin_t* self = (gain_plugin_t*)plugin->plugin_data;
+	if (timer_id == self->timer_id) { ++self->timer_ticks; }
+}
+
+static const clap_plugin_timer_support_t s_timer = {
+	.on_timer = gain_on_timer,
+};
 
 static bool gain_activate(const clap_plugin_t* plugin, double sample_rate, uint32_t min_frames_count,
 	uint32_t max_frames_count)
@@ -377,6 +400,7 @@ static const void* gain_get_extension(const clap_plugin_t* plugin, const char* i
 	if (strcmp(id, CLAP_EXT_AUDIO_PORTS) == 0) { return &s_audio_ports; }
 	if (strcmp(id, CLAP_EXT_STATE) == 0) { return &s_state; }
 	if (strcmp(id, CLAP_EXT_LATENCY) == 0) { return &s_latency; }
+	if (strcmp(id, CLAP_EXT_TIMER_SUPPORT) == 0) { return &s_timer; }
 	return NULL;
 }
 

@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-09-30T00:13:02Z",
+  "captured_at": "2026-09-30T01:34:08Z",
   "commands": [
     {
       "args_schema": {
@@ -467,7 +467,7 @@
         ],
         "type": "object"
       },
-      "description": "Render one automation clip at SAMPLE precision inside each audio block ('sample'), or leave it block-quantised ('block', the behaviour every project has always had). In 'sample' mode the parameter's per-sample buffer - what the mixer, the fx chain and the tracks multiply their samples with - carries the curve at every frame instead of one value smeared over the whole block. Reversible through the ProjectJournal.",
+      "description": "Render one automation clip at SAMPLE precision inside each audio block ('sample'), or block-quantised ('block'). With neither set (ramp_get's mode_source 'default') a clip carrying a curve is 'sample' and a Discrete (stepped) one 'block' - the default since R1.2. In 'sample' mode the parameter's per-sample buffer - what the mixer, the fx chain and the tracks multiply their samples with - carries the curve at every frame instead of one value smeared over the whole block. Reversible through the ProjectJournal.",
       "group": "automation",
       "id": "automation.ramp_set",
       "mutating": true,
@@ -11259,6 +11259,97 @@
     {
       "args_schema": {
         "additionalProperties": false,
+        "properties": {
+          "plugin": {
+            "type": "string"
+          },
+          "target": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "target",
+          "plugin"
+        ],
+        "type": "object"
+      },
+      "description": "Close a device's own editor window, if it has one open. 'was_open' says whether there was one; closing a closed editor is not an error. Needs a display; nothing is saved or journalled.",
+      "group": "plugin",
+      "id": "plugin.editor_close",
+      "mutating": false,
+      "requires": [
+        "display"
+      ],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "open": {
+            "type": "boolean"
+          },
+          "plugin": {
+            "type": "string"
+          },
+          "target": {
+            "type": "string"
+          },
+          "was_open": {
+            "type": "boolean"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "plugin": {
+            "type": "string"
+          },
+          "target": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "target",
+          "plugin"
+        ],
+        "type": "object"
+      },
+      "description": "Open a device's OWN editor - the plug-in's interface, not the host's generic knob view (which stays) - in a window of its own. 'target' is the track or channel (trk-<n>/ch-<n>) and 'plugin' the device on it (fx-<n>, or 'inst' for a track's instrument), as plugin.param_set names them. VST3 plug-ins with an editor view open; a plug-in with none, and CLAP (whose gui extension is not embedded yet), refuse with the reason. An editor already open is brought forward. Needs a display; interface state, not project state: nothing is saved or journalled.",
+      "group": "plugin",
+      "id": "plugin.editor_open",
+      "mutating": false,
+      "requires": [
+        "display"
+      ],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "open": {
+            "type": "boolean"
+          },
+          "plugin": {
+            "type": "string"
+          },
+          "target": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
         "properties": {},
         "required": [],
         "type": "object"
@@ -20955,7 +21046,7 @@
       }
     }
   ],
-  "count": 382,
+  "count": 384,
   "instance": {
     "binary": null,
     "binary_bytes": null,
@@ -20963,15 +21054,15 @@
     "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-survey/tools/zene-pa-agentctl",
     "lane_head": null,
     "proto": 1,
-    "source_socket": "/tmp/zctl-run-_djz7zu_/zene.sock",
-    "version": "0.3.0-alpha.175+19234a6"
+    "source_socket": "/tmp/zctl-run-5ap91ous/zene.sock",
+    "version": "0.3.0-alpha.179+4cacae9"
   },
   "kind": "zene-control-command-list",
   "proto": 1,
   "schema": 1,
   "surface": {
     "group_count": 58,
-    "id_count": 382,
-    "ids_sha256": "fceb5cb55a7a8f30bf7ced098baa27aaa78f3086ad07a752de3c95aa03834723"
+    "id_count": 384,
+    "ids_sha256": "5988a54dee113d9fc84dd94d51fe284cbc9e0bdcee82febc99e2dda8abc67837"
   }
 }

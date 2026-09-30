@@ -127,6 +127,16 @@ void HostedPlugin::clearNeedsReprepare()
 	m_impl->needsReprepare.store(false, std::memory_order_relaxed);
 }
 
+auto HostedPlugin::editorTimerCount() const -> int
+{
+	return m_impl->editorHost != nullptr ? m_impl->editorHost->timerCount() : 0;
+}
+
+auto HostedPlugin::timerDeliveries() const -> std::uint32_t
+{
+	return m_impl->timerDeliveries.load(std::memory_order_relaxed);
+}
+
 auto HostedPlugin::takeCallbackRequest() -> bool
 {
 	return m_impl->callbackRequested.exchange(false, std::memory_order_relaxed);

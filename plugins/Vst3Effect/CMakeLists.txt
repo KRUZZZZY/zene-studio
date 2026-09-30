@@ -24,6 +24,8 @@ SET(LMMS_VST3_EFFECT_SOURCES
 	Vst3EffectControlDialog.cpp
 	Vst3EffectControls.cpp
 	Vst3Host.cpp
+	Vst3EditorSession.cpp
+	Vst3NativeEditor.cpp
 	Vst3Parameter.cpp
 	Vst3SubPluginFeatures.cpp
 )

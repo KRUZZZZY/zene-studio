@@ -180,6 +180,7 @@ private slots:
 	void testChunkedProcessing();
 	void testEffectRefusesNotes();
 	void testInstrumentNotePath();
+	void testTimerSupportRunsThePluginsTimer();
 
 private:
 	void process(HostedPlugin& plugin, const std::vector<std::vector<float>>& inputs,
@@ -699,6 +700,20 @@ void ClapHostTest::process(HostedPlugin& plugin, const std::vector<std::vector<f
 }
 
 } // namespace lmms::clap
+
+/*! R4.1: the host answers clap.timer-support. The fixture registers a 10 ms timer from its
+ *  init() - before the host has fetched any plug-in extension - and the host's Qt loop must run
+ *  it: the delivered count moves only if the host registered the timer AND found the plug-in's
+ *  on_timer, so it proves both halves. */
+void lmms::clap::ClapHostTest::testTimerSupportRunsThePluginsTimer()
+{
+	QCOMPARE(m_plugin.editorTimerCount(), 1);
+	const std::uint32_t before = m_plugin.timerDeliveries();
+	QTest::qWait(150);
+	const std::uint32_t delivered = m_plugin.timerDeliveries() - before;
+	std::printf("CLAP_TIMER_EVIDENCE 10 ms timer: %u on_timer calls in 150 ms\n", delivered);
+	QVERIFY2(delivered >= 5, qPrintable(QStringLiteral("%1 on_timer calls").arg(delivered)));
+}
 
 QTEST_GUILESS_MAIN(lmms::clap::ClapHostTest)
 
