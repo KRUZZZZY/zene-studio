@@ -827,6 +827,10 @@ Dither (off / TPDF / noise-shaped) and Resampling (linear / sinc fastest, medium
   bound stated for it could be measured by a registered test. Item 14's own recorded dependency is *none*;
   item 15's is the capture path itself.
 
+- *(Updated 2026-09-30.)* **A mixer strip's tooltip now shows its delay compensation** - the latency its effects
+  add and the point its input is aligned to, in frames and ms, and on the master the compensated total
+  (`mixerLatencyText`, refreshed with the mixer's 500 ms sync; `MixerLatencyTextTest`). It is still not
+  settable. The bullet below is the pre-display record.
 - **Plugin delay compensation is readable, not settable, and has no interface — added 2026-09-14.** The
   mixer's own PDC graph (#605: the total latency from a source to the master output, every channel's
   alignment point, the latency a channel's effect chain adds, and the compensation the mixer applies at every

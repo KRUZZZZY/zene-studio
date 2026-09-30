@@ -590,6 +590,7 @@ include/MidiLearnGui.h
 include/MidiOutQueue.h
 include/MidiReconnect.h
 include/MidiReconnectAction.h
+include/MixerLatencyText.h
 include/ModulationLayer.h
 include/MonitorMode.h
 include/MpeExpression.h

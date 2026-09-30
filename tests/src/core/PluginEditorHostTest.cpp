@@ -114,11 +114,12 @@ private slots:
 		clock.start();
 		QVERIFY(host.registerTimer(20, [&](std::uint32_t timer) { QCOMPARE(timer, id); ++ticks; }, &id));
 		QVERIFY(id != 0);
-		QTest::qWait(210);
+		// Five ticks, however long a loaded runner's event loop takes to deliver them (the hosted
+		// macOS VM delivered 2-4 in a fixed 150-210 ms window) - and never FASTER than the interval.
+		QTRY_VERIFY_WITH_TIMEOUT(ticks >= 5, 3000);
 		const qint64 elapsed = clock.elapsed();
 		std::printf("EDITOR_HOST_EVIDENCE 20 ms timer: %d ticks in %lld ms\n", ticks, static_cast<long long>(elapsed));
-		// About elapsed/20; a loaded CI machine runs late, never early.
-		QVERIFY2(ticks >= 5 && ticks <= elapsed / 20 + 1, qPrintable(QStringLiteral("%1 ticks").arg(ticks)));
+		QVERIFY2(ticks <= elapsed / 20 + 1, qPrintable(QStringLiteral("%1 ticks in %2 ms: faster than 20 ms").arg(ticks).arg(elapsed)));
 		QVERIFY(host.unregisterTimer(id));
 		const int stopped = ticks;
 		QTest::qWait(80);
