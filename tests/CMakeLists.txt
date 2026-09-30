@@ -3768,7 +3768,9 @@ if(PYTHON3_EXECUTABLE AND TARGET zene_api)
 			--object-dir ${CMAKE_BINARY_DIR}/src/CMakeFiles/zene_api.dir
 			--source-list ${CMAKE_BINARY_DIR}/zene-api-sources.txt
 			--control-source ${CMAKE_SOURCE_DIR}/src/gui/MainWindow.cpp
-			--control-object ${CMAKE_BINARY_DIR}/src/CMakeFiles/lmmsobjs.dir/gui/MainWindow.cpp.o
+			# The object suffix is the toolchain's own (.obj under MSVC and MSYS2 CLANGARM64 - hosted
+			# windows-arm64, run 36747963198, found no MainWindow.cpp.o), not a spelling of ours.
+			--control-object ${CMAKE_BINARY_DIR}/src/CMakeFiles/lmmsobjs.dir/gui/MainWindow.cpp${CMAKE_CXX_OUTPUT_EXTENSION}
 	)
 	set_tests_properties(ZeneApiBoundary PROPERTIES
 		TIMEOUT 600
