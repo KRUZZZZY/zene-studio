@@ -151,6 +151,11 @@ private slots:
 	//! The render loop calls addBlock() per period: it must allocate nothing.
 	void thePerBlockPathAllocatesNothing();
 
+	//! The paths the render-time tests do not reach: every verdict name, the summary's deviation
+	//! clause, reset(), the planar tap (mono fed channel by channel) and a sidecar that cannot be
+	//! written (gate 2, hosted run 36747963198: these lines entered uncovered).
+	void theRestOfTheReportsSurface();
+
 	void cleanupTestCase();
 };
 
@@ -319,6 +324,53 @@ void LoudnessReportTest::thePerBlockPathAllocatesNothing()
 	lmms::test::tlCountAllocations = false;
 
 	QCOMPARE(static_cast<qulonglong>(lmms::test::tlAllocationCount), static_cast<qulonglong>(0));
+}
+
+void LoudnessReportTest::theRestOfTheReportsSurface()
+{
+	LoudnessReport::Verdict verdict;
+	QCOMPARE(LoudnessReport::verdictName(verdict), QStringLiteral("NOT MEASURED (no measurable signal)"));
+	verdict.measured = true;
+	QCOMPARE(LoudnessReport::verdictName(verdict), QStringLiteral("WARN (loudness and true peak)"));
+	verdict.loudnessOk = true;
+	QCOMPARE(LoudnessReport::verdictName(verdict), QStringLiteral("WARN (true peak)"));
+	verdict.loudnessOk = false;
+	verdict.truePeakOk = true;
+	QCOMPARE(LoudnessReport::verdictName(verdict), QStringLiteral("WARN (loudness)"));
+	verdict.loudnessOk = true;
+	QCOMPARE(LoudnessReport::verdictName(verdict), QStringLiteral("PASS"));
+
+	LoudnessReport stereo(SampleRate, lmms::DEFAULT_CHANNELS);
+	feedInBlocks(stereo, makeSine(-23.0, 20.0));
+	QVERIFY(stereo.summary().contains(QStringLiteral("[deviation ")));
+	QVERIFY(stereo.summary().endsWith(QStringLiteral(" LU]")));
+	stereo.reset();
+	QVERIFY(!std::isfinite(stereo.integratedLufs()));
+	QVERIFY(!std::isfinite(stereo.shortTermMaxLufs()));
+	QVERIFY(!stereo.summary().contains(QStringLiteral("[deviation ")));
+
+	// Mono through the planar path: one channel, fed in blocks, measures a finite level whose
+	// short-term maximum is tracked the same way the interleaved tap tracks it.
+	LoudnessReport mono(SampleRate, 1);
+	const auto sine = makeSine(-20.0, 10.0);
+	std::vector<sample_t> channel(sine.size());
+	for (std::size_t i = 0; i < sine.size(); ++i) { channel[i] = sine[i][0]; }
+	for (std::size_t offset = 0; offset < channel.size(); offset += BlockFrames)
+	{
+		const sample_t* block[] = {channel.data() + offset};
+		mono.addPlanarBlock(block, 1, static_cast<lmms::f_cnt_t>(std::min<std::size_t>(BlockFrames, channel.size() - offset)));
+	}
+	QVERIFY(std::isfinite(mono.integratedLufs()));
+	QVERIFY(std::isfinite(mono.shortTermMaxLufs()));
+	QVERIFY(mono.shortTermMaxLufs() >= mono.integratedLufs() - 0.5f);
+
+	QTemporaryDir directory;
+	QVERIFY(directory.isValid());
+	const QString unwritable = directory.filePath(QStringLiteral("no-such-directory/song.wav"));
+	QString error;
+	QVERIFY(!stereo.writeSidecar(unwritable, &error));
+	QVERIFY(error.startsWith(QStringLiteral("cannot write ")));
+	QVERIFY(!stereo.writeSidecar(unwritable, nullptr));
 }
 
 QTEST_GUILESS_MAIN(LoudnessReportTest)

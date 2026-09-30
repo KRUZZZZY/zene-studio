@@ -47,6 +47,22 @@ class MultiTrackRecorderTest : public QObject
 	Q_OBJECT
 
 private slots:
+	//! A null block or a channel count below one is refused before any track is walked
+	//! (gate 2, hosted run 36747963198: both early returns entered uncovered).
+	void NullOrChannellessInputIsIgnored()
+	{
+		MultiTrackRecorder recorder;
+		recorder.processInput(nullptr, 64);
+		recorder.processInputInterleaved(nullptr, 2, 64);
+		const float samples[4] = {0.5f, 0.5f, 0.5f, 0.5f};
+		recorder.processInputInterleaved(samples, 0, 2);
+		recorder.processInputInterleaved(samples, -3, 2);
+		for (int i = 0; i < MultiTrackRecorder::NumTracks; ++i)
+		{
+			QCOMPARE(recorder.track(i).framesPushed(), std::uint64_t{0});
+		}
+	}
+
 	//! Out-of-range track indexes are rejected before touching any track.
 	void ArmTrackRejectsOutOfRangeIndexes()
 	{
