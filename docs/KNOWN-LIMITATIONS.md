@@ -526,8 +526,10 @@ that is this page's fault — report it and it gets added.
   Read, Touch, Latch, Write, the current one checked) that runs `automation.mode_set` for that parameter
   (`src/gui/AutomationModeMenu.cpp`, held by `AutomationModeMenuTest` against a real instrument). It
   appears only on a control the command surface can name; the song's tempo and the master fader, which
-  the socket cannot address as parameters, get none. The per-clip record flag
-  (`automation.record_mode_set`) still has no interface. The bullet below is the pre-menu record.
+  the socket cannot address as parameters, get none. The per-clip record flag that
+  `automation.record_mode_set` sets is the one the automation clip's own "Set/clear record" menu item
+  has always toggled (upstream's), so it is reachable from the interface too. The bullet below is the
+  pre-menu record.
 - **Automation modes are drivable through the socket but not from the interface — added 2026-09-15.**
   `automation.mode_set` (off / read / touch / latch / write) and `automation.record_mode_set` (per-clip record
   flag) are registered, have schemas, are reported back per parameter (`automation.get_state` carries each
@@ -790,7 +792,9 @@ Dither (off / TPDF / noise-shaped) and Resampling (linear / sinc fastest, medium
   just played can be written into a new clip AFTER the fact — drivable through `--control-socket`
   (`midi.retro_capture_arm`, `midi.retro_capture_status`, `midi.retro_capture_to_clip`), with a registered
   ctest playing REAL MIDI into the running engine and recovering it — but **nothing in `src/gui/` shows the
-  window, how long it is or what it holds**: there is no view of it and no "you played something" prompt.
+  window, how long it is or what it holds**: there is no view of it and no "you played something" prompt
+  *(2026-09-30: the Edit menu's Capture MIDI item now reads "Capture MIDI (N events, S s)" whenever the
+  menu opens with something captured - the count and span, not the notes)*.
   *(Updated 2026-09-30, R5.4: the interface does arm and write it - Edit ▸ Arm MIDI Capture and Edit ▸
   Capture MIDI, Ctrl+Shift+C - and the capture lands on the monitored track, the one the MIDI input
   follows, when no clip is selected; it was "no keyboard shortcut, not from the interface".)*
@@ -1452,6 +1456,10 @@ produce no audio the user hears — the limit `docs/WASM-EFFECT-ABI.md` section 
 **mmpz-git depth is drivable through the socket, not from the interface.** The merge driver, semantic diff, conflict reporter and audible-diff CLI are wrapped as `project.merge`, `project.diff`, `project.conflicts` and `project.audible_diff` on the control surface, but nothing in the GUI reaches them. The audible-diff command requires the built binary as its renderer; the merge driver operates on project files, not the running session.
 
 ## MIDI controller surfaces — soft-takeover, LED/feedback and mapping templates (feature row 19, board task #651)
+
+*(Updated 2026-09-30: a MIDI-driven control's context menu - its "Connected to ..." submenu - now has
+Soft takeover and LED feedback toggles through `controller.soft_takeover` / `controller.feedback`
+(`MidiControllerMenuTest`); the mapping templates are still socket-only.)* The record below predates that.
 
 **The controller surface is drivable through the socket, not from the interface.** There is no
 soft-takeover toggle, no feedback switch and no template menu: `grep -rniI

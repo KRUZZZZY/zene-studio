@@ -86,6 +86,7 @@ SET(LMMS_SRCS
 	gui/MicrotunerConfig.cpp
 	gui/MidiCCRackView.cpp
 	gui/MidiLearnGui.cpp
+	gui/MidiControllerMenu.cpp
 	gui/MidiSetupWidget.cpp
 	gui/MpeInputAction.cpp
 	gui/NoteTransformActions.cpp

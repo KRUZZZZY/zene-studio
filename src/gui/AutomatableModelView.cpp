@@ -28,6 +28,7 @@
 #include "AutomatableModelView.h"
 #include "AutomationClip.h"
 #include "AutomationModeMenu.h"
+#include "MidiControllerMenu.h"
 #include "ControllerConnectionDialog.h"
 #include "ControllerConnection.h"
 #include "embed.h"
@@ -114,6 +115,8 @@ void AutomatableModelView::addDefaultActions( QMenu* menu )
 		contMenu->addAction( embed::getIconPixmap( "cancel" ),
 								AutomatableModel::tr("Remove connection"),
 								amvSlots, SLOT(removeConnection()));
+		// Soft takeover and LED feedback for a MIDI-driven control (controller.*).
+		addMidiControllerToggles(contMenu, model);
 	}
 	else
 	{
