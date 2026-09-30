@@ -97,6 +97,11 @@ const ReversibilityRow kShellRows[] = {
 		"own row",
 		"nothing to reverse: the hub is closed like any window",
 		""),
+	R("window.tempo_map", RC::NotMutating, false,
+		"opens the tempo map panel: interface state; its buttons run the transport.tempo_map_* "
+		"commands, each with its own row",
+		"nothing to reverse: the panel is closed like any window",
+		""),
 	R("window.undo_history", RC::NotMutating, false,
 		"opens the undo history panel: interface state; its Undo/Redo buttons run control.undo and "
 		"control.redo, each with its own row",
