@@ -224,9 +224,12 @@ class ZeneControlBridgeE2E(unittest.TestCase):
             result, payload, _ = await F.call(session, "zene_mixer_set_volume",
                                               {"channel": "ch-9999", "volume": 0.5}, "daw_errors")
             out["unknown_channel"] = (result.is_error, payload)
-            result, payload, _ = await F.call(session, "zene_mixer_set_pan",
-                                              {"channel": "ch-0", "pan": 0.5}, "daw_errors")
-            out["pan_refused"] = (result.is_error, payload)
+            # A refusal BY DESIGN, not a missing feature: this used to be mixer.set_pan on
+            # "ch-0", which stopped being a refusal when channel pan landed, and "ch-0" is not
+            # the master either (channel ids come from the project id allocator). The product
+            # has no upload by construction, so crash.upload_report refuses every call.
+            result, payload, _ = await F.call(session, "zene_crash_upload_report", {}, "daw_errors")
+            out["refused"] = (result.is_error, payload)
             result, payload, _ = await F.call(session, "zene_transport_seek",
                                               {"ticks": "not-a-number"}, "daw_errors")
             out["bad_args"] = (result.is_error, payload)
@@ -238,7 +241,8 @@ class ZeneControlBridgeE2E(unittest.TestCase):
         self.assertTrue(out["unknown_channel"][0])
         self.assertEqual(out["unknown_channel"][1]["error"]["kind"], "not_found")
         self.assertEqual(out["unknown_channel"][1]["error"]["origin"], "daw")
-        self.assertEqual(out["pan_refused"][1]["error"]["kind"], "refused")
+        self.assertTrue(out["refused"][0])
+        self.assertEqual(out["refused"][1]["error"]["kind"], "refused")
         self.assertEqual(out["bad_args"][1]["error"]["kind"], "invalid_args")
         self.assertEqual(out["unknown_tool"][1]["error"]["kind"], "not_found")
         self.assertIn("zene_mixer_get_state", out["unknown_tool"][1]["error"]["message"])
