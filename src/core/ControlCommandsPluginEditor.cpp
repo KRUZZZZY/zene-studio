@@ -96,7 +96,7 @@ void registerOne(ControlRegistry& registry, const char* verb, const QString& des
 	if (reportsWasOpen) { result.insert(QStringLiteral("was_open"), control::booleanProperty()); }
 	cmd.resultSchema = control::objectSchema(result);
 	cmd.mutating = false;
-	cmd.requiresDecl = {QStringLiteral("display")};
+	cmd.requiresDecl = QStringList{QStringLiteral("display")};
 	cmd.handler = handler;
 	registry.registerCommand(cmd);
 }

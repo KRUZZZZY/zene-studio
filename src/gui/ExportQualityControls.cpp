@@ -60,7 +60,7 @@ QComboBox* choiceBox(const QJsonArray& choices, const QString& current, const QS
 	box->setProperty("controlCommand", command);
 	for (const QJsonValue& choice : choices) { box->addItem(labelFor(choice.toString()), choice.toString()); }
 	box->setCurrentIndex(std::max(0, box->findData(current)));
-	QObject::connect(box, &QComboBox::currentIndexChanged, box, [box, command, argument] {
+	QObject::connect(box, QOverload<int>::of(&QComboBox::currentIndexChanged), box, [box, command, argument] {
 		ControlRegistry::instance()->invoke(command, {{argument, box->currentData().toString()}});
 	});
 	return box;
