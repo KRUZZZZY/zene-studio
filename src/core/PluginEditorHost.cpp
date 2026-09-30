@@ -136,6 +136,10 @@ bool PluginEditorHost::registerTimer(std::uint32_t periodMs, TimerCallback callb
 	entry->callback = std::move(callback);
 	entry->timer = std::make_unique<QTimer>();
 	entry->timer->setInterval(static_cast<int>(std::max<std::uint32_t>(periodMs, 1)));
+	// Precise: an editor's repaint timer is asked for by its interval, and Qt's default
+	// CoarseTimer lets macOS coalesce a 10 ms timer to a third of the ticks (hosted run
+	// 36720131455, macos-arm64: 3 of the >= 5 calls in 150 ms).
+	entry->timer->setTimerType(Qt::PreciseTimer);
 	connect(entry->timer.get(), &QTimer::timeout, this, [this, timerId] {
 		const auto it = m_timers.find(timerId);
 		if (it == m_timers.end()) { return; }

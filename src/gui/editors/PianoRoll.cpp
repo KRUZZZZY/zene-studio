@@ -64,6 +64,7 @@
 #include "MainWindow.h"
 #include "MidiClip.h"
 #include "NoteTransformActions.h"
+#include "GrooveMenu.h"
 #include "PatternStore.h"
 #include "PianoView.h"
 #include "PositionLine.h"
@@ -5390,6 +5391,9 @@ PianoRollWindow::PianoRollWindow() :
 	noteToolsButton->addAction(reverseAction);
 	// Randomize / humanize / scale velocities, through note.randomize and note.velocity_scale.
 	noteToolsButton->addActions(makeNoteTransformActions([this] { return m_editor->currentMidiClip(); }, noteToolsButton));
+	// The groove pool: extract, apply with strength, quantise with strength (groove.*).
+	noteToolsButton->addAction(makeGrooveMenu([this] { return m_editor->currentMidiClip(); },
+		[this] { return m_editor->quantization(); }, noteToolsButton)->menuAction());
 
 	notesActionsToolBar->addWidget(noteToolsButton);
 

@@ -566,6 +566,7 @@ include/FocusDeskActions.h
 include/FocusDeskModules.h
 include/FocusDeskPane.h
 include/FocusDeskWorkspaces.h
+include/GrooveMenu.h
 include/GroovePool.h
 include/GrooveTemplate.h
 include/ImportDetection.h
@@ -1126,6 +1127,7 @@ src/gui/FocusDeskModules.cpp
 src/gui/FocusDeskPane.cpp
 src/gui/FocusDeskPlacement.cpp
 src/gui/FocusDeskWorkspaces.cpp
+src/gui/GrooveMenu.cpp
 src/gui/MidiControllerMenu.cpp
 src/gui/MidiLearnGui.cpp
 src/gui/MpeInputAction.cpp

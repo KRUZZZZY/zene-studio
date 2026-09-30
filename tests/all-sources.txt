@@ -234,6 +234,7 @@ include/FocusDeskPane.h
 include/FocusDeskWorkspaces.h
 include/FontHelper.h
 include/Graph.h
+include/GrooveMenu.h
 include/GroovePool.h
 include/GrooveTemplate.h
 include/GroupBox.h
@@ -1528,6 +1529,7 @@ src/gui/FocusDeskModules.cpp
 src/gui/FocusDeskPane.cpp
 src/gui/FocusDeskPlacement.cpp
 src/gui/FocusDeskWorkspaces.cpp
+src/gui/GrooveMenu.cpp
 src/gui/GuiApplication.cpp
 src/gui/LadspaControlView.cpp
 src/gui/LfoControllerDialog.cpp
@@ -1890,6 +1892,7 @@ tests/src/gui/FocusDeskActionsTest.cpp
 tests/src/gui/FocusDeskPaneTest.cpp
 tests/src/gui/FocusDeskTest.cpp
 tests/src/gui/FocusDeskWorkspacesTest.cpp
+tests/src/gui/GrooveMenuTest.cpp
 tests/src/gui/GuiTestApplication.h
 tests/src/gui/KnobKeyboardTest.cpp
 tests/src/gui/MidiControllerMenuTest.cpp
