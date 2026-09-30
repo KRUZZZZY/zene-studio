@@ -234,6 +234,14 @@ that is this page's fault — report it and it gets added.
   `vca.set_solo`'s undo does not restore the transient `MixerChannel::m_muteBeforeSolo`. There is still no
   Lua binding for any of it, and a group's audibility is proved by `VcaGroupTest`'s rendered dB delta, not
   by the socket transcript.*
+- *(Updated 2026-09-30.)* **A mixer channel's context menu now has a Rack submenu**, read from `rack.get_state`:
+  a line naming the chains and the routing; Route to (Parallel, or one chain; `rack.set_selected`); Add
+  parallel chain and Remove chain (`rack.add_chain` / `rack.remove_chain`; chain 0 is the channel's own and is
+  not offered); and the rack's macros - one item per macro showing its value, which sets it
+  (`rack.macro_set`), Add macro... and Remove macro (`rack.macro_add` / `rack.macro_remove`) (`RackMenuTest`).
+  Still socket-only: putting effects into a parallel chain, binding a macro to a parameter
+  (`rack.macro_target_add`), the key/velocity zones, and a Lua binding. The two bullets below are the
+  pre-menu record.
 - **No racks in the interface, and no scripting access.** Parallel chains and a chain selector exist and are
   saved with the project, but a user can only load a project that already contains a `<rack>`; there is no UI
   and no binding. Switching chains is not crossfaded, so it can click.

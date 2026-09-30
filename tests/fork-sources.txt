@@ -623,6 +623,7 @@ include/ProvenanceSection.h
 include/PunchWindow.h
 include/Rack.h
 include/RackMacros.h
+include/RackMenu.h
 include/RackNodes.h
 include/RackZones.h
 include/RecordRingBuffer.h
@@ -1149,6 +1150,7 @@ src/gui/NoteTransformActions.cpp
 src/gui/PinConnector.cpp
 src/gui/PluginNativeEditor.cpp
 src/gui/PluginQuarantineMenu.cpp
+src/gui/RackMenu.cpp
 src/gui/RenderPresetMenu.cpp
 src/gui/SessionGridView.cpp
 src/gui/SessionSyncAction.cpp

@@ -422,6 +422,7 @@ include/PunchWindow.h
 include/QuadratureLfo.h
 include/Rack.h
 include/RackMacros.h
+include/RackMenu.h
 include/RackNodes.h
 include/RackZones.h
 include/RaiiHelpers.h
@@ -1569,6 +1570,7 @@ src/gui/PluginBrowser.cpp
 src/gui/PluginNativeEditor.cpp
 src/gui/PluginQuarantineMenu.cpp
 src/gui/ProjectNotes.cpp
+src/gui/RackMenu.cpp
 src/gui/RenderPresetMenu.cpp
 src/gui/RowTableView.cpp
 src/gui/SampleThumbnail.cpp
@@ -1924,6 +1926,7 @@ tests/src/gui/MpeInputActionTest.cpp
 tests/src/gui/NoteTransformActionsTest.cpp
 tests/src/gui/PianoRollBenchmarkTest.cpp
 tests/src/gui/PluginQuarantineMenuTest.cpp
+tests/src/gui/RackMenuTest.cpp
 tests/src/gui/RenderPresetMenuTest.cpp
 tests/src/gui/SessionGridViewTest.cpp
 tests/src/gui/SessionSyncActionTest.cpp

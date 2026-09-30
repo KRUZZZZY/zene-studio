@@ -51,6 +51,7 @@
 #include "Mixer.h"
 #include "MixerView.h"
 #include "PeakIndicator.h"
+#include "RackMenu.h"
 #include "SendButtonIndicator.h"
 #include "Song.h"
 
@@ -210,6 +211,8 @@ void MixerChannelView::contextMenuEvent(QContextMenuEvent*)
 	MixerView* view = m_mixerView;
 	populateVcaMenu(&vcaMenu, static_cast<mix_ch_t>(m_channelIndex), [view]() { view->refreshVcaStrips(); });
 	contextMenu->addMenu(&vcaMenu);
+	// Parallel chains, the chain the rack routes to, and its macros (rack.*).
+	addRackMenu(contextMenu, mixerChannel());
 
 	contextMenu->exec(QCursor::pos());
 	delete contextMenu;
