@@ -23,6 +23,7 @@
  */
 
 #include "Vst3EditorSession.h"
+#include "Vst3Host.h"
 
 #include <atomic>
 #include <cstring>
@@ -240,6 +241,45 @@ int Vst3EditorSession::runLoopTimers() const
 std::uint32_t Vst3EditorSession::timerDeliveries() const
 {
 	return m_frame != nullptr ? m_frame->deliveries() : 0;
+}
+
+// ---- the HostedPlugin wrappers (Vst3Host.h), here so Vst3Host.cpp does not grow ------------
+
+auto HostedPlugin::openEditor(void* parentWindow, QString* error) -> bool
+{
+	if (m_editor == nullptr) { m_editor = std::make_unique<Vst3EditorSession>(editController()); }
+	return m_editor->open(parentWindow, error);
+}
+
+void HostedPlugin::closeEditor()
+{
+	if (m_editor != nullptr) { m_editor->close(); }
+}
+
+auto HostedPlugin::editorOpen() const -> bool
+{
+	return m_editor != nullptr && m_editor->isOpen();
+}
+
+auto HostedPlugin::resizeEditor(int width, int height) -> bool
+{
+	return m_editor != nullptr && m_editor->resize(width, height);
+}
+
+void HostedPlugin::editorSize(int* width, int* height) const
+{
+	if (m_editor == nullptr) { *width = 0; *height = 0; return; }
+	m_editor->size(width, height);
+}
+
+auto HostedPlugin::editorTimerCount() const -> int
+{
+	return m_editor != nullptr ? m_editor->runLoopTimers() : 0;
+}
+
+auto HostedPlugin::editorTimerDeliveries() const -> std::uint32_t
+{
+	return m_editor != nullptr ? m_editor->timerDeliveries() : 0;
 }
 
 } // namespace lmms::vst3

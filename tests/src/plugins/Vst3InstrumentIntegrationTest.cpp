@@ -48,7 +48,12 @@
 #include <QtTest>
 
 #include <QApplication>
+#include <QJsonObject>
 #include <QWidget>
+
+#include "ControlVocabulary.h"
+
+#include "ControlRegistry.h"
 
 #include <QDomDocument>
 #include <QDomElement>
@@ -644,6 +649,28 @@ void Vst3InstrumentIntegrationTest::testTheInstrumentsOwnEditorOpensInItsOwnWind
 	QCOMPARE(windows, 1);
 	instrument->closeNativeEditor();
 	QVERIFY(!instrument->nativeEditorOpen());
+
+	// The same path through the socket's verbs (their replies held to their schemas here:
+	// the test runs with ZENE_CONTROL_CHECK_RESULTS, tests/CMakeLists.txt).
+	ControlRegistry::setReady(true);
+	const QJsonObject address{{QStringLiteral("target"), control::trackIdOf(track.get())},
+		{QStringLiteral("plugin"), QStringLiteral("inst")}};
+	// An unattended run has no display to open a window on, and the verb says so, typed.
+	const bool headless = ControlRegistry::instance()->isHeadless();
+	ControlRegistry::instance()->setHeadless(true);
+	QCOMPARE(ControlRegistry::instance()->invoke(QStringLiteral("plugin.editor_open"), address).errorKind,
+		ControlErrorKind::Requires);
+	// This process DOES have one - the offscreen platform its windows open on above.
+	ControlRegistry::instance()->setHeadless(false);
+	const ControlResult opened = ControlRegistry::instance()->invoke(QStringLiteral("plugin.editor_open"), address);
+	QVERIFY2(opened.ok, qPrintable(opened.errorMessage));
+	QVERIFY(opened.result.value(QStringLiteral("open")).toBool());
+	const ControlResult closed = ControlRegistry::instance()->invoke(QStringLiteral("plugin.editor_close"), address);
+	QVERIFY2(closed.ok, qPrintable(closed.errorMessage));
+	QVERIFY(closed.result.value(QStringLiteral("was_open")).toBool());
+	QVERIFY(!closed.result.value(QStringLiteral("open")).toBool());
+	ControlRegistry::instance()->setHeadless(headless);
+	ControlRegistry::setReady(false);
 }
 
 } // namespace lmms

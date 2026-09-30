@@ -38,8 +38,12 @@
 #include "Vst3MidiQueue.h"
 #include "Vst3ParamDescriptor.h"
 
+namespace Steinberg::Vst { class IEditController; }
+
 namespace lmms::vst3
 {
+
+class Vst3EditorSession;
 
 //! A VST3 class as reported by a module's plug-in factory
 struct Vst3ClassInfo
@@ -192,7 +196,12 @@ public:
 
 private:
 	struct Impl;
+	//! R4.2: the plug-in's edit controller, for the editor session (Vst3EditorSession.cpp).
+	auto editController() const -> Steinberg::Vst::IEditController*;
 	std::unique_ptr<Impl> m_impl;
+	//! R4.2: the open editor, if any. Declared after m_impl so it is destroyed first, and
+	//! reset explicitly in the destructor before the controller is released.
+	std::unique_ptr<Vst3EditorSession> m_editor;
 };
 
 } // namespace lmms::vst3

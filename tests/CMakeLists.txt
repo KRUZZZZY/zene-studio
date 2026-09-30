@@ -2174,6 +2174,12 @@ if(TARGET lmms_vst3_sdk)
 			# view, so it needs a Qt platform plugin even when headless.
 			set_tests_properties(Vst3InstrumentIntegrationTest PROPERTIES
 				ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+			# It drives plugin.editor_open/close through the registry: their replies are held
+			# to their schemas, as every LMMS_TESTS entry's are.
+			if(CMAKE_VERSION VERSION_GREATER_EQUAL 3.22)
+				set_tests_properties(Vst3InstrumentIntegrationTest PROPERTIES
+					ENVIRONMENT_MODIFICATION "ZENE_CONTROL_CHECK_RESULTS=set:1")
+			endif()
 			target_include_directories(Vst3InstrumentIntegrationTest PRIVATE
 				$<TARGET_PROPERTY:lmmsobjs,INCLUDE_DIRECTORIES>
 			)
