@@ -596,6 +596,7 @@ include/MidiReconnect.h
 include/MidiReconnectAction.h
 include/MixerLatencyText.h
 include/ModulationLayer.h
+include/ModulatorPanel.h
 include/MonitorMode.h
 include/MpeExpression.h
 include/MpeInputAction.h
@@ -1147,6 +1148,7 @@ src/gui/MidiClockMenu.cpp
 src/gui/MidiControllerMenu.cpp
 src/gui/MidiLearnGui.cpp
 src/gui/MidiReconnectAction.cpp
+src/gui/ModulatorPanel.cpp
 src/gui/MpeInputAction.cpp
 src/gui/NoteTransformActions.cpp
 src/gui/PinConnector.cpp
