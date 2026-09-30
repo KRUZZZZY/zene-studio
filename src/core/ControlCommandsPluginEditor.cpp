@@ -22,7 +22,7 @@
  *
  */
 
-/*! A plug-in's OWN editor (a VST3 IPlugView today; CLAP's gui extension is not embedded yet)
+/*! A plug-in's OWN editor (a VST3 IPlugView, or a CLAP plug-in's embedded clap.gui)
  *  opened in a window of its own through Plugin::openNativeEditor, so an agent can drive and
  *  test an editor the way a person opens one. They need a display - a process with no
  *  interface refuses them, typed - and they are interface state, not project state: nothing
@@ -109,8 +109,8 @@ void registerPluginEditorCommands(ControlRegistry& registry)
 		"interface, not the host's generic knob view (which stays) - in a window of its own. 'target' "
 		"is the track or channel (trk-<n>/ch-<n>) and 'plugin' the device on it (fx-<n>, or 'inst' for "
 		"a track's instrument), as plugin.param_set names them. VST3 plug-ins with an editor view "
-		"open; a plug-in with none, and CLAP (whose gui extension is not embedded yet), refuse with "
-		"the reason. An editor already open is brought forward. Needs a display; interface state, "
+		"and CLAP plug-ins whose gui embeds in X11 open; a plug-in with no editor, or one that can "
+		"only float, refuses with the reason. An editor already open is brought forward. Needs a display; interface state, "
 		"not project state: nothing is saved or journalled."), &editorOpen, false);
 	registerOne(registry, "editor_close", QStringLiteral("Close a device's own editor window, if "
 		"it has one open. 'was_open' says whether there was one; closing a closed editor is not an "

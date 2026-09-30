@@ -205,6 +205,19 @@ struct HostedPlugin::Impl
 	//! on_timer calls delivered to the plugin: nonzero only when BOTH halves exist.
 	std::atomic<std::uint32_t> timerDeliveries{0};
 
+	// R4.3: the plug-in's own editor (ClapHostGui.cpp). guiCreated between create() and
+	// destroy(); guiRequestedSize is the last request_resize the plug-in made.
+	clap_host_gui_t hostGui{};
+	bool guiCreated = false;
+	std::uint32_t guiRequestedWidth = 0;
+	std::uint32_t guiRequestedHeight = 0;
+	bool guiClosedByPlugin = false;
+	auto guiExt() const -> const clap_plugin_gui_t*
+	{
+		return plugin != nullptr ? static_cast<const clap_plugin_gui_t*>(plugin->get_extension(plugin, CLAP_EXT_GUI))
+			: nullptr;
+	}
+
 	PluginEditorHost& editorLoop()
 	{
 		if (editorHost == nullptr) { editorHost = std::make_unique<PluginEditorHost>(); }
@@ -232,7 +245,29 @@ struct HostedPlugin::Impl
 		if (std::strcmp(id, CLAP_EXT_THREAD_CHECK) == 0) { return &self->hostThreadCheck; }
 		if (std::strcmp(id, CLAP_EXT_POSIX_FD_SUPPORT) == 0) { return &self->hostPosixFd; }
 		if (std::strcmp(id, CLAP_EXT_TIMER_SUPPORT) == 0) { return &self->hostTimer; }
+		if (std::strcmp(id, CLAP_EXT_GUI) == 0) { return &self->hostGui; }
 		return nullptr;
+	}
+
+	// --- clap.gui, the host half (R4.3) ---------------------------------------
+	static void CLAP_ABI guiResizeHintsChanged(const clap_host_t*) {}
+
+	//! The plug-in asks for a new size: granted (the embedding window follows the view).
+	static auto CLAP_ABI guiRequestResize(const clap_host_t* host, std::uint32_t width, std::uint32_t height) -> bool
+	{
+		auto* self = static_cast<Impl*>(host->host_data);
+		self->guiRequestedWidth = width;
+		self->guiRequestedHeight = height;
+		const auto* gui = self->guiExt();
+		return gui != nullptr && self->guiCreated && gui->set_size(self->plugin, width, height);
+	}
+
+	static auto CLAP_ABI guiRequestShow(const clap_host_t*) -> bool { return true; }
+	static auto CLAP_ABI guiRequestHide(const clap_host_t*) -> bool { return true; }
+
+	static void CLAP_ABI guiClosed(const clap_host_t* host, bool)
+	{
+		static_cast<Impl*>(host->host_data)->guiClosedByPlugin = true;
 	}
 
 	// --- clap.posix-fd-support / clap.timer-support (R4.1) -----------------
@@ -392,6 +427,11 @@ struct HostedPlugin::Impl
 		hostPosixFd.unregister_fd = &Impl::unregisterFd;
 		hostTimer.register_timer = &Impl::registerTimer;
 		hostTimer.unregister_timer = &Impl::unregisterTimer;
+		hostGui.resize_hints_changed = &Impl::guiResizeHintsChanged;
+		hostGui.request_resize = &Impl::guiRequestResize;
+		hostGui.request_show = &Impl::guiRequestShow;
+		hostGui.request_hide = &Impl::guiRequestHide;
+		hostGui.closed = &Impl::guiClosed;
 	}
 
 	void freeRealtimeBuffers()

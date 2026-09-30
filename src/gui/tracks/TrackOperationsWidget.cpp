@@ -38,13 +38,19 @@
 #include "ColorChooser.h"
 #include "ConfigManager.h"
 #include "ControlStructuralSupport.h"
+#include "ControlVocabulary.h"
 #include "embed.h"
 #include "Engine.h"
+#include "GuiApplication.h"
 #include "InstrumentTrackView.h"
-#include "lmms_math.h"
 #include "KeyboardShortcuts.h"
+#include "lmms_math.h"
+#include "MainWindow.h"
+#include "SampleTrackView.h"
 #include "Song.h"
 #include "StringPairDrag.h"
+#include "SubWindow.h"
+#include "TakeLanesPanel.h"
 #include "Track.h"
 #include "TrackContainerView.h"
 #include "TrackGrip.h"
@@ -302,6 +308,17 @@ void TrackOperationsWidget::updateMenu()
 	{
 		toMenu->addSeparator();
 		toMenu->addMenu(trackView->midiMenu());
+	}
+	// M3 item 6: a sample track's take lanes, audition and consolidate - a registry-first
+	// panel (TakeLanesPanel) in a sub-window of its own.
+	if (dynamic_cast<SampleTrackView*>(m_trackView) != nullptr)
+	{
+		QAction* lanes = toMenu->addAction(tr("Take lanes..."), this, [this] {
+			auto* panel = new TakeLanesPanel(control::trackIdOf(m_trackView->getTrack()));
+			panel->setAttribute(Qt::WA_DeleteOnClose);
+			getGUI()->mainWindow()->addWindowedWidget(panel)->show();
+		});
+		lanes->setProperty("controlCommand", QStringLiteral("comp.get_state"));
 	}
 	if( dynamic_cast<AutomationTrackView *>( m_trackView ) )
 	{

@@ -35,7 +35,7 @@
 
 #include "AudioPlugin.h"
 #include "Vst3Host.h"
-#include "Vst3NativeEditor.h"
+#include "PluginNativeEditor.h"
 #include "Vst3Parameter.h"
 
 class QTimer;
@@ -90,7 +90,7 @@ public:
 
 	auto vst3Plugin() -> vst3::HostedPlugin* { return &m_plugin; }
 
-	//! R4.4: the plug-in's own editor, in its own window (Vst3NativeEditor).
+	//! R4.4: the plug-in's own editor, in its own window (PluginNativeEditor + Vst3EditorSession).
 	bool openNativeEditor(QString* error) override;
 	void closeNativeEditor() override;
 	bool nativeEditorOpen() const override;
@@ -132,7 +132,7 @@ private slots:
 
 private:
 	vst3::HostedPlugin m_plugin;
-	vst3::Vst3NativeEditor m_editor;
+	gui::PluginNativeEditor m_editor;
 	std::vector<Vst3ParamModel*> m_paramModels;
 	QTimer* m_pollTimer = nullptr;
 	bool m_syncing = false;

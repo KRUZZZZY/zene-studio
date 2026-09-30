@@ -632,6 +632,8 @@ set(LMMS_TESTS
 	# R5.3: the clip-launch grid - launch, stop and scene-launch from the grid produce the
 	# socket-visible state; every cell focusable and announced; the arrow keys.
 	src/gui/SessionGridViewTest.cpp
+	# M3 item 6: the take lanes panel - comp, audition and consolidate from its own buttons.
+	src/gui/TakeLanesPanelTest.cpp
 	src/gui/MidiLearnGuiTest.cpp
 	src/tracks/AutomationTrackTest.cpp
 	# Inherited clip paths that dereferenced getGUI() unguarded, run headless.
@@ -1072,6 +1074,7 @@ set_tests_properties(FocusDeskTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offsc
 set_tests_properties(CommandPaletteTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(VcaStripViewTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(SessionGridViewTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+set_tests_properties(TakeLanesPanelTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(FocusDeskPaneTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(FocusDeskActionsTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(FocusDeskWorkspacesTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
@@ -1665,6 +1668,7 @@ if(TARGET lmms_clap)
 		${LMMS_CLAP_EFFECT_DIR}/ClapHostLifecycle.cpp
 		${LMMS_CLAP_EFFECT_DIR}/ClapHostNotes.cpp
 		${LMMS_CLAP_EFFECT_DIR}/ClapHostParams.cpp
+		${LMMS_CLAP_EFFECT_DIR}/ClapHostGui.cpp
 		${LMMS_CLAP_EFFECT_DIR}/ClapLoader.cpp
 		# the host path's chunking counters (CODE-4), core-owned
 		${CMAKE_SOURCE_DIR}/src/core/PluginHostChunking.cpp
@@ -1721,6 +1725,7 @@ if(TARGET lmms_clap)
 		${LMMS_CLAP_EFFECT_DIR}/ClapHostLifecycle.cpp
 		${LMMS_CLAP_EFFECT_DIR}/ClapHostNotes.cpp
 		${LMMS_CLAP_EFFECT_DIR}/ClapHostParams.cpp
+		${LMMS_CLAP_EFFECT_DIR}/ClapHostGui.cpp
 		${LMMS_CLAP_EFFECT_DIR}/ClapLoader.cpp
 		${CMAKE_SOURCE_DIR}/src/core/PluginHostChunking.cpp
 		# the note-path counters and ports (feature row 79, board task #669),
@@ -1763,11 +1768,14 @@ if(TARGET lmms_clap)
 		${LMMS_CLAP_EFFECT_DIR}/ClapHostLifecycle.cpp
 		${LMMS_CLAP_EFFECT_DIR}/ClapHostNotes.cpp
 		${LMMS_CLAP_EFFECT_DIR}/ClapHostParams.cpp
+		${LMMS_CLAP_EFFECT_DIR}/ClapHostGui.cpp
 		${LMMS_CLAP_EFFECT_DIR}/ClapLoader.cpp
 		${LMMS_CLAP_EFFECT_DIR}/ClapParameter.cpp
 		${LMMS_CLAP_EFFECT_DIR}/ClapSubPluginFeatures.cpp
 	)
 	add_test(NAME ClapEffectIntegrationTest COMMAND ClapEffectIntegrationTest)
+	# R4.4: it opens the plug-in's editor window, so it needs a Qt platform even headless.
+	set_tests_properties(ClapEffectIntegrationTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 	target_include_directories(ClapEffectIntegrationTest PRIVATE
 		# generated plugin_export.h (PLUGIN_EXPORT) of the clapeffect plug-in
 		${CMAKE_BINARY_DIR}/plugins/ClapEffect
@@ -1948,7 +1956,6 @@ if(TARGET lmms_vst3_sdk)
 		${LMMS_VST3_EFFECT_DIR}/Vst3EffectControlDialog.cpp
 		${LMMS_VST3_EFFECT_DIR}/Vst3EffectControls.cpp
 		${LMMS_VST3_EFFECT_DIR}/Vst3Host.cpp
-		${LMMS_VST3_EFFECT_DIR}/Vst3NativeEditor.cpp
 		# R4.2: the editor session the host owns (the R4.1 run loop comes with lmmsobjs)
 		${LMMS_VST3_EFFECT_DIR}/Vst3EditorSession.cpp
 		${LMMS_VST3_EFFECT_DIR}/Vst3MidiEvent.cpp

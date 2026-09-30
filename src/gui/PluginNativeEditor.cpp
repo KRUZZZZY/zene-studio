@@ -1,5 +1,5 @@
 /*
- * Vst3NativeEditor.cpp - R4.4: the window a VST3 plug-in's own editor opens in
+ * PluginNativeEditor.cpp - R4.4: the window a plug-in's own editor opens in
  *
  * Copyright (c) 2026 Zene Studio contributors
  *
@@ -22,22 +22,18 @@
  *
  */
 
-#include "Vst3NativeEditor.h"
-
-#include <functional>
+#include "PluginNativeEditor.h"
 
 #include <QCloseEvent>
 #include <QWidget>
 
-#include "Vst3Host.h"
-
-namespace lmms::vst3
+namespace lmms::gui
 {
 
 namespace
 {
 
-//! The window: a close from the window manager closes the editor first.
+//! The window: a close from the window manager detaches the editor first.
 class EditorWindow : public QWidget
 {
 public:
@@ -57,13 +53,13 @@ private:
 } // namespace
 
 
-Vst3NativeEditor::~Vst3NativeEditor()
+PluginNativeEditor::~PluginNativeEditor()
 {
 	close();
 }
 
 
-bool Vst3NativeEditor::open(HostedPlugin& plugin, const QString& title, QString* error)
+bool PluginNativeEditor::open(Hooks hooks, const QString& title, QString* error)
 {
 	if (isOpen())
 	{
@@ -72,33 +68,34 @@ bool Vst3NativeEditor::open(HostedPlugin& plugin, const QString& title, QString*
 		return true;
 	}
 	auto* window = new EditorWindow([this] {
-		if (m_plugin != nullptr) { m_plugin->closeEditor(); }
+		if (m_hooks.detach) { m_hooks.detach(); }
+		m_hooks = Hooks{};
 		if (m_window != nullptr) { m_window->deleteLater(); }
 	});
 	window->setWindowTitle(title);
 	window->setAttribute(Qt::WA_NativeWindow);
 	const WId id = window->winId();
-	if (!plugin.openEditor(reinterpret_cast<void*>(id), error))
+	if (!hooks.attach || !hooks.attach(reinterpret_cast<void*>(id), error))
 	{
 		delete window;
 		return false;
 	}
 	int width = 0;
 	int height = 0;
-	plugin.editorSize(&width, &height);
+	if (hooks.size) { hooks.size(&width, &height); }
 	if (width > 0 && height > 0) { window->resize(width, height); }
-	m_plugin = &plugin;
+	m_hooks = std::move(hooks);
 	m_window = window;
 	window->show();
 	return true;
 }
 
 
-void Vst3NativeEditor::close()
+void PluginNativeEditor::close()
 {
-	if (m_plugin != nullptr) { m_plugin->closeEditor(); }
+	if (m_hooks.detach) { m_hooks.detach(); }
+	m_hooks = Hooks{};
 	if (!m_window.isNull()) { delete m_window.data(); }
-	m_plugin = nullptr;
 }
 
-} // namespace lmms::vst3
+} // namespace lmms::gui

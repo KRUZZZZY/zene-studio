@@ -28,6 +28,7 @@ SET(LMMS_CLAP_EFFECT_SOURCES
 	ClapHostLifecycle.cpp
 	ClapHostNotes.cpp
 	ClapHostParams.cpp
+	ClapHostGui.cpp
 	ClapLoader.cpp
 	ClapParameter.cpp
 	ClapSubPluginFeatures.cpp
