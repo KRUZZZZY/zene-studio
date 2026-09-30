@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-09-30T07:31:10Z",
+  "captured_at": "2026-09-30T08:37:27Z",
   "commands": [
     {
       "args_schema": {
@@ -21063,6 +21063,32 @@
     {
       "args_schema": {
         "additionalProperties": false,
+        "properties": {},
+        "required": [],
+        "type": "object"
+      },
+      "description": "Open Edit > Tempo Map (non-modally): the tempo map's events as transport.tempo_map_get reports them, its Active switch, and Add at playhead / Remove / Clear, each running the transport.tempo_map_* command it names. `rows` is how many events it lists.",
+      "group": "window",
+      "id": "window.tempo_map",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "rows": {
+            "type": "integer"
+          },
+          "shown": {
+            "type": "boolean"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
         "properties": {
           "editor": {
             "enum": [
@@ -21130,7 +21156,7 @@
       }
     }
   ],
-  "count": 387,
+  "count": 388,
   "instance": {
     "binary": null,
     "binary_bytes": null,
@@ -21138,15 +21164,15 @@
     "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-survey/tools/zene-pa-agentctl",
     "lane_head": null,
     "proto": 1,
-    "source_socket": "/tmp/zctl-run-g11dfx3l/zene.sock",
-    "version": "0.3.0-alpha.205+7749057"
+    "source_socket": "/tmp/zctl-run-1cfm2vyx/zene.sock",
+    "version": "0.3.0-alpha.205+751554e"
   },
   "kind": "zene-control-command-list",
   "proto": 1,
   "schema": 1,
   "surface": {
     "group_count": 58,
-    "id_count": 387,
-    "ids_sha256": "12547737a7d133e2bc5f9c8b5b8ff954aa6ed9c344691df05ffdf410a5fa7aa2"
+    "id_count": 388,
+    "ids_sha256": "131cfe0745b2b4b6d4d469554db6e399a186ae0b0f049ae96eed8569a2bd0c9d"
   }
 }

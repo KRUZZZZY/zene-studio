@@ -42,6 +42,7 @@
 #include "ConfigManager.h"
 #include "ShortcutsPage.h"
 #include "StartHub.h"
+#include "TempoMapPanel.h"
 #include "UndoHistoryPanel.h"
 #include "ControlRegistry.h"
 #include "ControlVocabulary.h"
@@ -259,6 +260,28 @@ void registerUndoHistory(ControlRegistry& registry)
 	registry.registerCommand(cmd);
 }
 
+void registerTempoMapPanel(ControlRegistry& registry)
+{
+	ControlCommand cmd = command("window", "tempo_map");
+	cmd.description = QStringLiteral("Open Edit > Tempo Map (non-modally): the tempo map's events as "
+		"transport.tempo_map_get reports them, its Active switch, and Add at playhead / Remove / Clear, "
+		"each running the transport.tempo_map_* command it names. `rows` is how many events it lists.");
+	cmd.argsSchema = objectSchema({});
+	cmd.resultSchema = objectSchema({{QStringLiteral("shown"), booleanProperty()},
+		{QStringLiteral("rows"), integerProperty()}});
+	cmd.handler = [](const QJsonObject&) {
+		gui::MainWindow* window = mainWindow();
+		if (window == nullptr) { return noInterface(QStringLiteral("window.tempo_map")); }
+		auto* panel = new gui::TempoMapPanel(window);
+		panel->setAttribute(Qt::WA_DeleteOnClose);
+		panel->setModal(false);
+		panel->show();
+		return ControlResult::success(QJsonObject{{QStringLiteral("shown"), true},
+			{QStringLiteral("rows"), panel->rowCount()}});
+	};
+	registry.registerCommand(cmd);
+}
+
 void registerStartHub(ControlRegistry& registry)
 {
 	ControlCommand cmd = command("window", "start_hub");
@@ -373,6 +396,7 @@ void registerShellCommands(ControlRegistry& registry)
 	registerCommandPalette(registry);
 	registerShortcuts(registry);
 	registerUndoHistory(registry);
+	registerTempoMapPanel(registry);
 	registerStartHub(registry);
 	registerScreenshot(registry);
 	registerSaveVersion(registry);

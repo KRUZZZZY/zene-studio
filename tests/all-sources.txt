@@ -509,6 +509,7 @@ include/TelemetryConsentDialog.h
 include/TelemetryNetworkTransport.h
 include/TemplatesMenu.h
 include/TempoMap.h
+include/TempoMapPanel.h
 include/TempoSyncBarModelEditor.h
 include/TempoSyncKnob.h
 include/TempoSyncKnobModel.h
@@ -1558,6 +1559,7 @@ src/gui/StringPairDrag.cpp
 src/gui/SubWindow.cpp
 src/gui/TakeLanesPanel.cpp
 src/gui/TelemetryConsentDialog.cpp
+src/gui/TempoMapPanel.cpp
 src/gui/ToolPluginView.cpp
 src/gui/TrackFolderMenu.cpp
 src/gui/UndoHistoryPanel.cpp
@@ -1885,6 +1887,7 @@ tests/src/gui/SessionSyncActionTest.cpp
 tests/src/gui/ShortcutsPageTest.cpp
 tests/src/gui/StartHubTest.cpp
 tests/src/gui/TakeLanesPanelTest.cpp
+tests/src/gui/TempoMapPanelTest.cpp
 tests/src/gui/ThemeContrastTest.cpp
 tests/src/gui/TrackFolderMenuTest.cpp
 tests/src/gui/UndoHistoryPanelTest.cpp

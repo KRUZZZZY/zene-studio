@@ -668,6 +668,7 @@ include/Telemetry.h
 include/TelemetryConsentDialog.h
 include/TelemetryNetworkTransport.h
 include/TempoMap.h
+include/TempoMapPanel.h
 include/TrackFolder.h
 include/TrackFolderMenu.h
 include/TrackRecorder.h
@@ -1130,6 +1131,7 @@ src/gui/StartHub.cpp
 src/gui/StemSplitController.cpp
 src/gui/TakeLanesPanel.cpp
 src/gui/TelemetryConsentDialog.cpp
+src/gui/TempoMapPanel.cpp
 src/gui/TrackFolderMenu.cpp
 src/gui/UndoHistoryPanel.cpp
 src/gui/VcaStripView.cpp
