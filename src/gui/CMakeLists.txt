@@ -90,6 +90,7 @@ SET(LMMS_SRCS
 	gui/MidiCCRackView.cpp
 	gui/MidiLearnGui.cpp
 	gui/MidiControllerMenu.cpp
+	gui/MidiReconnectAction.cpp
 	gui/MidiSetupWidget.cpp
 	gui/MpeInputAction.cpp
 	gui/NoteTransformActions.cpp

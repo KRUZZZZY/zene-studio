@@ -340,6 +340,7 @@ include/MidiOutQueue.h
 include/MidiPort.h
 include/MidiPortMenu.h
 include/MidiReconnect.h
+include/MidiReconnectAction.h
 include/MidiSetupWidget.h
 include/MidiSndio.h
 include/MidiWinMM.h
@@ -1543,6 +1544,7 @@ src/gui/MicrotunerConfig.cpp
 src/gui/MidiCCRackView.cpp
 src/gui/MidiControllerMenu.cpp
 src/gui/MidiLearnGui.cpp
+src/gui/MidiReconnectAction.cpp
 src/gui/MidiSetupWidget.cpp
 src/gui/MixerChannelView.cpp
 src/gui/MixerView.cpp
@@ -1897,6 +1899,7 @@ tests/src/gui/GuiTestApplication.h
 tests/src/gui/KnobKeyboardTest.cpp
 tests/src/gui/MidiControllerMenuTest.cpp
 tests/src/gui/MidiLearnGuiTest.cpp
+tests/src/gui/MidiReconnectActionTest.cpp
 tests/src/gui/MpeInputActionTest.cpp
 tests/src/gui/NoteTransformActionsTest.cpp
 tests/src/gui/PianoRollBenchmarkTest.cpp

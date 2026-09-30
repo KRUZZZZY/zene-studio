@@ -1728,6 +1728,10 @@ What it is bounded by, stated rather than measured-away (every number below was 
   samples move less than the floor is indistinguishable by construction, and a difference the
   programme does report is not attributed to a commit — that attribution is the reader's work.
 
+- *(Updated 2026-09-30.)* **Edit ▸ MIDI Controller Reconnect** arms and disarms it (`midi.reconnect_arm`) and
+  names what it holds - "(N bound, M live, K lost)" from `midi.reconnect_status` - each time the menu opens
+  (`MidiReconnectActionTest`). Binding a port (`midi.reconnect_set`) is still socket-only. The bullet below is
+  the pre-menu record.
 - **MIDI controller auto-reconnection has no interface, and its reach is the client poll — added
   2026-09-14.** A controller assignment is remembered by IDENTITY (the MIDI client's NAME and the port's
   NAME, "<client name>:<port name>") and re-established without user action when the device comes back
