@@ -582,6 +582,7 @@ include/MasteringChain.h
 include/MasteringJob.h
 include/MasteringReport.h
 include/MidiClock.h
+include/MidiControllerMenu.h
 include/MidiLearn.h
 include/MidiLearnGui.h
 include/MidiOutQueue.h
@@ -1122,6 +1123,7 @@ src/gui/FocusDeskModules.cpp
 src/gui/FocusDeskPane.cpp
 src/gui/FocusDeskPlacement.cpp
 src/gui/FocusDeskWorkspaces.cpp
+src/gui/MidiControllerMenu.cpp
 src/gui/MidiLearnGui.cpp
 src/gui/MpeInputAction.cpp
 src/gui/NoteTransformActions.cpp

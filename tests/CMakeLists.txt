@@ -653,6 +653,10 @@ set(LMMS_TESTS
 	src/gui/BrowserTagMenuTest.cpp
 	# The song editor's Views menu: visibility sets applied, all tracks shown, saved, removed.
 	src/gui/VisibilitySetMenuTest.cpp
+	# Edit > Capture MIDI names what the retrospective capture window holds.
+	src/gui/CaptureMidiMenuTest.cpp
+	# A MIDI-driven control's menu: soft takeover and LED feedback through controller.*.
+	src/gui/MidiControllerMenuTest.cpp
 	src/gui/FocusDeskTest.cpp
 	# M3.4: the command palette - what it lists, how it ranks, what it runs.
 	src/gui/CommandPaletteTest.cpp
@@ -1135,6 +1139,8 @@ set_tests_properties(MpeInputActionTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=
 set_tests_properties(TempoMapPanelTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(BrowserTagMenuTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(VisibilitySetMenuTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+set_tests_properties(CaptureMidiMenuTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+set_tests_properties(MidiControllerMenuTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 # ThemeContrastTest reads the themes from the source tree; guiless like WcagContrastTest.
 target_compile_definitions(ThemeContrastTest PRIVATE
 	ZENE_THEMES_DIR="${CMAKE_SOURCE_DIR}/data/themes")

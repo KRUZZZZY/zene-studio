@@ -1711,8 +1711,13 @@ void MainWindow::updateMidiRetroCaptureActions()
 	}
 	m_armRetroCaptureAction->setChecked(
 		status.result.value(QStringLiteral("armed")).toBool());
-	m_captureMidiAction->setEnabled(
-		status.result.value(QStringLiteral("events_buffered")).toInt() > 0);
+	const int buffered = status.result.value(QStringLiteral("events_buffered")).toInt();
+	m_captureMidiAction->setEnabled(buffered > 0);
+	// What the window holds, on the item itself: how many events and how many seconds back.
+	m_captureMidiAction->setText(buffered > 0
+		? tr("Capture MIDI (%n event(s), %1 s)", nullptr, buffered)
+			.arg(status.result.value(QStringLiteral("seconds_span")).toDouble(), 0, 'f', 1)
+		: tr("Capture MIDI"));
 }
 
 

@@ -325,6 +325,7 @@ include/MidiClip.h
 include/MidiClipView.h
 include/MidiClock.h
 include/MidiController.h
+include/MidiControllerMenu.h
 include/MidiDummy.h
 include/MidiEvent.h
 include/MidiEventProcessor.h
@@ -1535,6 +1536,7 @@ src/gui/MainApplication.cpp
 src/gui/MainWindow.cpp
 src/gui/MicrotunerConfig.cpp
 src/gui/MidiCCRackView.cpp
+src/gui/MidiControllerMenu.cpp
 src/gui/MidiLearnGui.cpp
 src/gui/MidiSetupWidget.cpp
 src/gui/MixerChannelView.cpp
@@ -1875,6 +1877,7 @@ tests/src/gui/AccessibilityHelperTest.cpp
 tests/src/gui/AccessibilityWalkTest.cpp
 tests/src/gui/AutomationModeMenuTest.cpp
 tests/src/gui/BrowserTagMenuTest.cpp
+tests/src/gui/CaptureMidiMenuTest.cpp
 tests/src/gui/CommandPaletteTest.cpp
 tests/src/gui/ExportQualityControlsTest.cpp
 tests/src/gui/FocusDeskActionsTest.cpp
@@ -1883,6 +1886,7 @@ tests/src/gui/FocusDeskTest.cpp
 tests/src/gui/FocusDeskWorkspacesTest.cpp
 tests/src/gui/GuiTestApplication.h
 tests/src/gui/KnobKeyboardTest.cpp
+tests/src/gui/MidiControllerMenuTest.cpp
 tests/src/gui/MidiLearnGuiTest.cpp
 tests/src/gui/MpeInputActionTest.cpp
 tests/src/gui/NoteTransformActionsTest.cpp
