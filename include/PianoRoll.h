@@ -301,6 +301,7 @@ private:
 	int m_pianoKeySelected;
 
 	PianoRoll();
+	bool editorWindowHasFocus() const;
 	PianoRoll( const PianoRoll & );
 	~PianoRoll() override;
 

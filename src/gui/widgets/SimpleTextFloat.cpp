@@ -36,7 +36,10 @@ namespace lmms::gui
 
 
 SimpleTextFloat::SimpleTextFloat() :
-	QWidget(getGUI()->mainWindow(), Qt::ToolTip)
+	// A float with no main window (a widget built without the full GuiApplication, as the
+	// R7.3 benchmark builds the piano roll) is a parentless tooltip - it dereferenced the
+	// null application instead (the BUGS_FOUND 10.4 class).
+	QWidget(getGUI() != nullptr ? getGUI()->mainWindow() : nullptr, Qt::ToolTip)
 {
 	QHBoxLayout * layout = new QHBoxLayout(this);
 	layout->setContentsMargins(3, 3, 3, 3);
