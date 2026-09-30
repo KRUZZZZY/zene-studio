@@ -1459,7 +1459,8 @@ produce no audio the user hears — the limit `docs/WASM-EFFECT-ABI.md` section 
 
 *(Updated 2026-09-30: a MIDI-driven control's context menu - its "Connected to ..." submenu - now has
 Soft takeover and LED feedback toggles through `controller.soft_takeover` / `controller.feedback`
-(`MidiControllerMenuTest`); the mapping templates are still socket-only.)* The record below predates that.
+(`MidiControllerMenuTest`), and Edit ▸ Controller Templates applies, saves and deletes the mapping
+templates through `controller.template_*` (`ControllerTemplateMenuTest`).)* The record below predates that.
 
 **The controller surface is drivable through the socket, not from the interface.** There is no
 soft-takeover toggle, no feedback switch and no template menu: `grep -rniI
