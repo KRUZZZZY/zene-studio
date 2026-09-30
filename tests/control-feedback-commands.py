@@ -146,7 +146,12 @@ def save_path_for(binary):
 
 
 def canonical_project_sha(path):
-    """sha256 of the saved project's XML in CANONICAL form.
+    """sha256 of canonical_project_xml(path)."""
+    return hashlib.sha256(canonical_project_xml(path)).hexdigest()
+
+
+def canonical_project_xml(path):
+    """The saved project's XML in CANONICAL form (the bytes the baseline hashes).
 
     Drops instance/build/journal/window-LAYOUT metadata - writer,
     creatorversion, the <z:provenance> journal (wall-clock stamps), the ONE
@@ -172,7 +177,7 @@ def canonical_project_sha(path):
             clean(child)
 
     clean(root)
-    return hashlib.sha256(ET.tostring(root)).hexdigest()
+    return ET.tostring(root)
 
 
 def save_and_hash(session, path):
@@ -273,6 +278,12 @@ def check_baselines(session, recorder, binary, stage):
                    % stage, bundle["save_sha256"] == BASELINE_SAVE_SHA256,
                    "expected=%r seen=%r save=%r"
                    % (BASELINE_SAVE_SHA256, bundle["save_sha256"], bundle["save"]))
+    if bundle["save_sha256"] != BASELINE_SAVE_SHA256 and bundle["save"].get("file"):
+        # Evidence for a platform difference (macOS differed on hosted run 36720131455): the
+        # canonical XML the hash is taken over, to diff against the same text from a passing box.
+        print("---- canonical XML of %s (%s) ----" % (bundle["save"]["file"], stage))
+        print(canonical_project_xml(bundle["save"]["file"]).decode("utf-8", "replace")[:40000])
+        print("---- end canonical XML ----")
 
 
 # ---------------------------------------------------------------------------

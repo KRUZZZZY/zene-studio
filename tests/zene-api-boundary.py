@@ -80,6 +80,11 @@ from pathlib import Path
 
 #: Symbols that only a Qt widget translation unit can reference. Deliberately
 #: broad - a false positive on a boundary object is itself worth stopping for.
+#: The symbol lister. MSYS2's clang64 objects are read by llvm-nm (binutils nm lists them as
+#: empty, and check 6's own guard then refuses - hosted run 36720131455, windows-arm64); every
+#: other host uses nm. NM in the environment overrides either.
+NM = os.environ.get("NM") or ("llvm-nm" if os.environ.get("MSYSTEM") and shutil.which("llvm-nm") else "nm")
+
 WIDGET_SYMBOL_RE = re.compile(
     r"QWidget|QApplication|QMenu|QToolBar|QToolButton|QMenuBar|QDialog|QMainWindow"
     r"|QFrame|QRubberBand|QAbstractButton|QAbstractScrollArea|QTabWidget|QMdiArea"
@@ -430,7 +435,7 @@ def check_include_closure(boundary, control_entries):
 
 def object_widget_symbol(path):
     """(path, symbol or None, error) for one object file."""
-    result = run(["nm", "--undefined-only", "--format=posix", path], cwd=os.path.dirname(path))
+    result = run([NM, "--undefined-only", "--format=posix", path], cwd=os.path.dirname(path))
     if result.returncode != 0:
         return path, None, "nm failed on %s: %s" % (path, (result.stderr or "")[-300:])
     for line in result.stdout.splitlines():
@@ -441,7 +446,7 @@ def object_widget_symbol(path):
 
 
 def widget_symbol_count(path):
-    result = run(["nm", "--undefined-only", "--format=posix", path], cwd=os.path.dirname(path))
+    result = run([NM, "--undefined-only", "--format=posix", path], cwd=os.path.dirname(path))
     return sum(1 for line in result.stdout.splitlines() if WIDGET_SYMBOL_RE.search(line.split(" ")[0]))
 
 
@@ -549,12 +554,12 @@ def run_all(options):
         extra, summary = check_include_closure(boundary, control_entries)
         problems += extra
         lines.append(summary)
-        if shutil.which("nm"):
+        if shutil.which(NM):
             extra, summary = check_object_symbols(boundary, control_object_path(options))
             problems += extra
             lines.append(summary)
         else:
-            notes.append("nm not available: the object-symbol scan is not run on this job "
+            notes.append(NM + " not available: the object-symbol scan is not run on this job "
                          "(the include checks above are the enforcement)")
             lines.append("object symbols: not run (no nm)")
     return problems, lines, notes, len(boundary), None

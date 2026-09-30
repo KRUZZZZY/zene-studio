@@ -542,6 +542,8 @@ set(LMMS_TESTS
 	# R7.4: the engine's render cost - sixteen tracks, plain and with a sample-accurate automated
 	# fader - as a tracked number (the opt-in +20% gate, tests/src/core/BenchmarkBaseline.h).
 	src/core/EngineRenderBenchmarkTest.cpp
+	# The Dummy device keeps real time (it drifted far below it on macOS: sleep overshoot was lost).
+	src/core/DummyPacingTest.cpp
 	src/core/ScriptBindingsTest.cpp
 	# Feature row 50 (0.3.0): the Lua API's DAW-control half - the mixer channel
 	# and effect-chain bindings. Drives a REAL mixer channel and the chain the
