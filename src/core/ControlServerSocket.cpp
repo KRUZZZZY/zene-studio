@@ -205,7 +205,11 @@ bool pinAndListen(int fd, const char* nativePath, QString* error)
 		if (error) { *error = QStringLiteral("could not pin the socket file to mode 0600"); }
 		return false;
 	}
-	if (::listen(fd, 16) != 0)
+	// The backlog must exceed MaxClients (64): the server's own cap refuses the excess with a close
+	// after accept, which is the contract. With 16, macOS refused a burst at the kernel before the
+	// server saw it (ECONNREFUSED; hosted run 36733845444, ControlSurfaceHardening's client-cap case)
+	// where Linux queued it. SOMAXCONN is the system's own ceiling.
+	if (::listen(fd, SOMAXCONN) != 0)
 	{
 		if (error) { *error = QString::fromLocal8Bit(std::strerror(errno)); }
 		return false;
