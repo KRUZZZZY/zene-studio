@@ -281,11 +281,26 @@ void registerMidiRetroCaptureStatus(ControlRegistry& registry)
 	registry.registerCommand(cmd);
 }
 
-//! The track a capture is written to: the named one, else the track of the clip
-//! selected in the control surface, else the song's first instrument track.
-//! nullptr with \a error filled when none of the three answers.
-Track* captureTargetTrack(const QString& trackId, ControlResult* error)
+//! With nothing named or selected: the monitored instrument track (R5.4), else the first one.
+Track* defaultCaptureTrack(QString* rule)
 {
+	const TrackContainer::TrackList& tracks = Engine::getSong()->tracks();
+	InstrumentTrack* monitored = InstrumentTrack::autoAssignedTrack();
+	*rule = QStringLiteral("monitored");
+	if (monitored != nullptr && std::find(tracks.begin(), tracks.end(), monitored) != tracks.end()) { return monitored; }
+	*rule = QStringLiteral("first_instrument");
+	const auto first = std::find_if(tracks.begin(), tracks.end(),
+		[](Track* track) { return qobject_cast<InstrumentTrack*>(track) != nullptr; });
+	return first == tracks.end() ? nullptr : *first;
+}
+
+//! The track a capture is written to, and which rule chose it: the named one ("track"), else
+//! the track of the clip selected in the control surface ("selected_clip"), else the track the
+//! MIDI input is monitored on - the auto-assigned one, R5.4 ("monitored") - else the song's first
+//! instrument track ("first_instrument"). nullptr with \a error filled when none answers.
+Track* captureTargetTrack(const QString& trackId, QString* rule, ControlResult* error)
+{
+	*rule = QStringLiteral("track");
 	if (!trackId.isEmpty()) { return resolveTrack(trackId, error); }
 
 	const QString selected = selectedClipId();
@@ -293,13 +308,11 @@ Track* captureTargetTrack(const QString& trackId, ControlResult* error)
 	{
 		ClipRef ref;
 		ControlResult selectionError;
+		*rule = QStringLiteral("selected_clip");
 		if (resolveClip(selected, &ref, &selectionError)) { return ref.track; }
 	}
 
-	for (Track* songTrack : Engine::getSong()->tracks())
-	{
-		if (qobject_cast<InstrumentTrack*>(songTrack) != nullptr) { return songTrack; }
-	}
+	if (Track* fallback = defaultCaptureTrack(rule)) { return fallback; }
 
 	*error = ControlResult::failure(ControlErrorKind::NotFound,
 		QStringLiteral("no 'track' given, no clip is selected and the song has no "
@@ -366,8 +379,10 @@ void registerMidiRetroCaptureToClip(ControlRegistry& registry)
 	cmd.verb = QStringLiteral("retro_capture_to_clip");
 	cmd.description = QStringLiteral("Write the events retrospective MIDI capture has retained "
 		"into a NEW MIDI clip on 'track', and return its clip-<n> id. Without 'track', the "
-		"track of the clip selected in the control surface is used, and with nothing selected "
-		"the song's first instrument track. The clip starts at the window's first tick and is "
+		"track of the clip selected in the control surface is used; with nothing selected, the "
+		"track the MIDI input is monitored on (the one the auto-assigned device follows - last "
+		"created, or last focused in the piano roll); then the song's first instrument track. "
+		"'chosen_by' names the rule that picked it. The clip starts at the window's first tick and is "
 		"'length' ticks long, or - without it - the window rounded up to whole bars. The note "
 		"matcher closes an unmatched note-on at the window's end and reports it in "
 		"'unmatched_ons': the capture never truncates silently. One journal checkpoint (the "
@@ -395,6 +410,7 @@ void registerMidiRetroCaptureToClip(ControlRegistry& registry)
 		{QStringLiteral("events_overwritten"), integerProperty(0, MaxSongLength)},
 		{QStringLiteral("window_start"), integerProperty(0, MaxSongLength)},
 		{QStringLiteral("window_end"), integerProperty(0, MaxSongLength)},
+		{QStringLiteral("chosen_by"), stringProperty()},
 	});
 	// SPEC A16: the clip list is part of the Track's serialized state, which is
 	// why the checkpoint is the Track's - the clip.add shape.
@@ -404,7 +420,8 @@ void registerMidiRetroCaptureToClip(ControlRegistry& registry)
 		if (capture == nullptr) { return noCapture(); }
 
 		ControlResult error;
-		Track* track = captureTargetTrack(args.value(QStringLiteral("track")).toString(), &error);
+		QString rule;
+		Track* track = captureTargetTrack(args.value(QStringLiteral("track")).toString(), &rule, &error);
 		if (track == nullptr) { return error; }
 		InstrumentTrack* instrumentTrack = qobject_cast<InstrumentTrack*>(track);
 		if (instrumentTrack == nullptr)
@@ -449,6 +466,7 @@ void registerMidiRetroCaptureToClip(ControlRegistry& registry)
 
 		QJsonObject result = capturedClipState(clip, track, clipText, written,
 			static_cast<int>(snapshot.events.size()), capture->ring().overwrittenCount());
+		result.insert(QStringLiteral("chosen_by"), rule);
 		result.insert(QStringLiteral("__transaction"),
 			transactionPayload(
 				QJsonObject{{QStringLiteral("track"), trackIdOf(track)},

@@ -485,8 +485,11 @@ void MainWindow::finalize()
 	m_captureMidiAction = edit_menu->addAction(embed::getIconPixmap("setup_midi"),
 		tr("Capture MIDI"), this, SLOT(captureMidiToClip()));
 	m_captureMidiAction->setToolTip(tr("Write the captured MIDI events into a new clip on the "
-		"selected track (nothing to capture unless capture is armed)"));
+		"track you are playing - the selected clip's, else the monitored one (nothing to capture "
+		"unless capture is armed)"));
 	m_captureMidiAction->setData(QStringLiteral("midi.retro_capture_to_clip"));
+	// R5.4: Live's Capture MIDI key.
+	m_captureMidiAction->setShortcut(keySequence(Qt::CTRL, Qt::SHIFT, Qt::Key_C));
 	connect(edit_menu, SIGNAL(aboutToShow()), this, SLOT(updateMidiRetroCaptureActions()));
 
 	// The arm switch is persisted (the config key midi/retrocapture), and this is
@@ -1661,7 +1664,8 @@ void MainWindow::captureMidiToClip()
 		// Non-modal feedback: a transient status line, never a box the user has
 		// to dismiss after a successful capture. An unmatched note-on means the
 		// window was cut off, so it is said out loud rather than left in the log.
-		QString message = tr( "Captured %1 note(s) into %2" ).arg( written ).arg( clip );
+		QString message = tr( "Captured %1 note(s) into %2 on %3" ).arg( written ).arg( clip )
+			.arg( result.result.value( QStringLiteral( "track" ) ).toString() );
 		if( unmatched > 0 )
 		{
 			message += tr( " - %1 note-on(s) had no release inside the window and were closed "

@@ -539,6 +539,9 @@ set(LMMS_TESTS
 	src/core/ModulationRateTest.cpp
 	# R4.1: the run loop a plugin editor asks for - descriptors and timers on the Qt loop.
 	src/core/PluginEditorHostTest.cpp
+	# R7.4: the engine's render cost - sixteen tracks, plain and with a sample-accurate automated
+	# fader - as a tracked number (the opt-in +20% gate, tests/src/core/BenchmarkBaseline.h).
+	src/core/EngineRenderBenchmarkTest.cpp
 	src/core/ScriptBindingsTest.cpp
 	# Feature row 50 (0.3.0): the Lua API's DAW-control half - the mixer channel
 	# and effect-chain bindings. Drives a REAL mixer channel and the chain the
