@@ -213,7 +213,9 @@ class Instance:
         if not os.path.exists(self.binary):
             raise Timeout("no lmms binary at %s" % self.binary)
         self.extra_env = dict(extra_env or {})
-        self.tmp = tempfile.mkdtemp(prefix="zctl-run-", dir="/tmp")
+        # /tmp keeps the unix socket path short (sun_path is ~108 bytes); a host with no /tmp
+        # (Windows, where the socket is a named pipe) takes the system temp directory.
+        self.tmp = tempfile.mkdtemp(prefix="zctl-run-", dir="/tmp" if os.path.isdir("/tmp") else None)
         self.socket_path = os.path.join(self.tmp, "zene.sock")
         # workingdir=None means "a working directory that exists": a fresh one is
         # created inside the instance's temp dir.  Pass an explicit path to drive
