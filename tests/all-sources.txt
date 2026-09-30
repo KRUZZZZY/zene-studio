@@ -401,6 +401,7 @@ include/PluginHostChunking.h
 include/PluginHostNotes.h
 include/PluginIssue.h
 include/PluginNativeEditor.h
+include/PluginQuarantineMenu.h
 include/PluginScanCache.h
 include/PluginView.h
 include/PositionLine.h
@@ -1561,6 +1562,7 @@ src/gui/PeakControllerDialog.cpp
 src/gui/PinConnector.cpp
 src/gui/PluginBrowser.cpp
 src/gui/PluginNativeEditor.cpp
+src/gui/PluginQuarantineMenu.cpp
 src/gui/ProjectNotes.cpp
 src/gui/RowTableView.cpp
 src/gui/SampleThumbnail.cpp
@@ -1913,6 +1915,7 @@ tests/src/gui/MixerLatencyTextTest.cpp
 tests/src/gui/MpeInputActionTest.cpp
 tests/src/gui/NoteTransformActionsTest.cpp
 tests/src/gui/PianoRollBenchmarkTest.cpp
+tests/src/gui/PluginQuarantineMenuTest.cpp
 tests/src/gui/SessionGridViewTest.cpp
 tests/src/gui/SessionSyncActionTest.cpp
 tests/src/gui/SessionTransportBarTest.cpp

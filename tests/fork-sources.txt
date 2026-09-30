@@ -610,6 +610,7 @@ include/PluginEditorHost.h
 include/PluginHostChunking.h
 include/PluginHostNotes.h
 include/PluginNativeEditor.h
+include/PluginQuarantineMenu.h
 include/PluginScanCache.h
 include/ProjectContainer.h
 include/ProjectIds.h
@@ -1142,6 +1143,7 @@ src/gui/MpeInputAction.cpp
 src/gui/NoteTransformActions.cpp
 src/gui/PinConnector.cpp
 src/gui/PluginNativeEditor.cpp
+src/gui/PluginQuarantineMenu.cpp
 src/gui/SessionGridView.cpp
 src/gui/SessionSyncAction.cpp
 src/gui/SessionTransportBar.cpp

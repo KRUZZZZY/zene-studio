@@ -926,6 +926,12 @@ Dither (off / TPDF / noise-shaped) and Resampling (linear / sinc fastest, medium
   not be measured** because this build has no device with an audio-ports model — a test that cannot make its
   measurement must not report that it did. The pin write's engine half is proven in process by the registered
   `tests/src/core/AudioPortsModelTest.cpp`.
+- *(Updated 2026-09-30.)* **Edit ▸ Plugin Quarantine** is rebuilt from `plugin.scan_cache_get_state` each
+  time it opens: a line with the cache's file and quarantine counts, one **Release** item per quarantined
+  file (its tooltip is the path and the reason; a file that is gone says so), **Quarantine a Plugin
+  File...** (a picker, then `plugin.scan_cache_quarantine_add`) and **Rescan Plugins** (`plugin.rescan`),
+  which applies an edit (`PluginQuarantineMenuTest`). The cache's per-file records are still only on the
+  socket (`plugin.scan_cache_list` / `_lookup`). The bullet below is the pre-menu record.
 - **The plugin scan cache and its quarantine list are drivable, and there is no interface for either —
   added 2026-09-14.** The cache the plugin scan fills (one record per candidate file: its path, the size and
   mtime it had, its status and, for a plugin, the descriptor metadata the scan resolved) and the quarantine
