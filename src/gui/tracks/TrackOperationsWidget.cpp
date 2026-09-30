@@ -52,6 +52,7 @@
 #include "SubWindow.h"
 #include "TakeLanesPanel.h"
 #include "Track.h"
+#include "TrackFolderMenu.h"
 #include "TrackContainerView.h"
 #include "TrackGrip.h"
 #include "TrackView.h"
@@ -325,6 +326,9 @@ void TrackOperationsWidget::updateMenu()
 		toMenu->addAction( tr( "Turn all recording on" ), this, SLOT(recordingOn()));
 		toMenu->addAction( tr( "Turn all recording off" ), this, SLOT(recordingOff()));
 	}
+
+	// Folder membership, and on a folder its collapse/pin/routing, through the track.* commands.
+	addTrackFolderMenu(toMenu, m_trackView->getTrack());
 
 	toMenu->addSeparator();
 

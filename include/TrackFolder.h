@@ -180,6 +180,11 @@ public:
 	bool enableRouting( QString * error );
 	bool releaseRouting();
 
+signals:
+	//! Collapse, pin, membership or mode changed - what a view of the folder draws (R8/M3:
+	//! TrackContainerView re-lays out its rows on it). GUI-thread consumers connect queued.
+	void stateChanged();
+
 private:
 	void routeChild( Track * child );
 	//! Puts \a child back on its own recorded channel (shared by

@@ -259,6 +259,13 @@ that is this page's fault — report it and it gets added.
   can never double-free one) and the latency-compensation answer are in
   **`docs/TRACK-FOLDER-DESIGN.md`**; the proofs are `tests/src/core/TrackFolderTest.cpp` and the
   registered socket transcript `tests/control-track-folder.py`.
+  *(Updated 2026-09-30, M3.)* **Folders now have an interface**: the song editor's "Add folder track"
+  makes one, every track's menu has a Folder submenu (Move to folder / No folder; on a folder,
+  Collapsed, Pinned and Route children through the folder), all through the same `track.*` commands,
+  and a collapsed folder's children leave the track list - from the menu or the socket
+  (`TrackFolderMenuTest`). Still missing: an indent or drawn relation for a child, a pinned folder
+  staying on screen while the list scrolls (the flag is set and saved; nothing reads it yet), and a
+  visibility-set switcher. The paragraph below is the pre-M3 record.
   **Folder tracks, their two modes, pinning and the named visibility sets are drivable through the
   socket, not from the interface**: nothing in `src/gui/` creates a folder, indents a child, collapses
   a row, draws the relation, shows a pin or offers a set switcher — a folder's row is an ordinary

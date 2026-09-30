@@ -990,6 +990,15 @@ SongEditorWindow::SongEditorWindow(Song* song) :
 	trackActionsToolBar->addAction( m_addSampleTrackAction );
 	trackActionsToolBar->addAction( m_addAutomationTrackAction );
 
+	// M3: a folder track, through track.add like an agent's (a folder had no way to be made here).
+	auto* addFolderTrackAction = new QAction(embed::getIconPixmap("folder"), tr("Add folder track"), this);
+	addFolderTrackAction->setData(QStringLiteral("track.add"));
+	connect(addFolderTrackAction, &QAction::triggered, this, [] {
+		ControlRegistry::instance()->invoke(QStringLiteral("track.add"),
+			{{QStringLiteral("type"), QStringLiteral("folder")}, {QStringLiteral("name"), tr("New folder")}});
+	});
+	trackActionsToolBar->addAction(addFolderTrackAction);
+
 
 	// Edit actions
 	DropToolBar *editActionsToolBar = addDropToolBarToTop(tr("Edit actions"));

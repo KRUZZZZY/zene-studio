@@ -200,6 +200,7 @@ bool TrackFolder::canHold( const Track * child, QString * reason ) const
 
 void TrackFolder::childLinked( Track * child )
 {
+	emit stateChanged();
 	if( m_mode != Mode::Routing ) { return; }
 	routeChild( child );
 }
@@ -211,6 +212,7 @@ void TrackFolder::childUnlinked( Track * child )
 	// must not keep feeding it. The binding recorded for \a child is what it goes
 	// back to, and it stays in the list so a child that rejoins can be routed
 	// again without inventing a channel for it.
+	emit stateChanged();
 	if( m_mode != Mode::Routing ) { return; }
 	unrouteChild( child );
 }
@@ -345,8 +347,9 @@ bool TrackFolder::releaseRouting()
 bool TrackFolder::setMode( Mode mode, QString * error )
 {
 	if( mode == m_mode ) { return true; }
-	if( mode == Mode::Routing ) { return enableRouting( error ); }
-	return releaseRouting();
+	const bool changed = mode == Mode::Routing ? enableRouting( error ) : releaseRouting();
+	emit stateChanged();
+	return changed;
 }
 
 void TrackFolder::setCollapsed( bool collapsed )
@@ -354,6 +357,7 @@ void TrackFolder::setCollapsed( bool collapsed )
 	if( m_collapsed == collapsed ) { return; }
 	m_collapsed = collapsed;
 	Engine::getSong()->setModified();
+	emit stateChanged();
 }
 
 void TrackFolder::setPinned( bool pinned )
@@ -361,6 +365,7 @@ void TrackFolder::setPinned( bool pinned )
 	if( m_pinned == pinned ) { return; }
 	m_pinned = pinned;
 	Engine::getSong()->setModified();
+	emit stateChanged();
 }
 
 // ---------------------------------------------------------------------------
