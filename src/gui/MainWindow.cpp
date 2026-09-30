@@ -70,6 +70,7 @@
 #include "SessionGridView.h"
 #include "MidiLearnGui.h"
 #include "MpeInputAction.h"
+#include "ControllerTemplateMenu.h"
 #include "PatternEditor.h"
 #include "PianoRoll.h"
 #include "PianoView.h"
@@ -459,6 +460,10 @@ void MainWindow::finalize()
 
 	// MPE input on/off, through device.mpe_set (re-read each time the menu opens).
 	addMpeInputAction(edit_menu);
+
+	// Saved MIDI mapping sets (controller.template_*), re-read each time the submenu opens.
+	QMenu* templatesMenu = edit_menu->addMenu(tr("Controller Templates"));
+	connect(templatesMenu, &QMenu::aboutToShow, templatesMenu, [templatesMenu] { populateControllerTemplateMenu(templatesMenu); });
 
 	// Global MIDI learn: arm this, touch a control, move a hardware knob.
 	m_midiLearnAction = edit_menu->addAction(embed::getIconPixmap("setup_midi"), tr("MIDI Learn"),

@@ -29,7 +29,10 @@
 
 #include <algorithm>
 #include <cmath>
-#include <filesystem>
+#include <cstdio>
+#ifdef _WIN32
+#include <filesystem>  // renameOverwrite, Windows only (below)
+#endif
 #include <map>
 
 #include <QDebug>
@@ -149,16 +152,17 @@ namespace
 //! cannot be used here precisely because it refuses to overwrite.
 inline bool renameOverwrite( const QString & from, const QString & to )
 {
-	std::error_code ec;
 #ifdef Q_OS_WIN
+	std::error_code ec;
 	std::filesystem::rename( std::filesystem::path( from.toStdWString() ),
 		std::filesystem::path( to.toStdWString() ), ec );
-#else
-	std::filesystem::rename(
-		std::filesystem::path( QFile::encodeName( from ).toStdString() ),
-		std::filesystem::path( QFile::encodeName( to ).toStdString() ), ec );
-#endif
 	return ! ec;
+#else
+	// rename(2) itself - what std::filesystem::rename is on POSIX - because std::filesystem is
+	// unavailable below macOS 10.15, the macos-x86_64 job's deployment target (hosted run
+	// 36713559404: "'path' is unavailable: introduced in macOS 10.15").
+	return ::rename( QFile::encodeName( from ).constData(), QFile::encodeName( to ).constData() ) == 0;
+#endif
 }
 
 #ifndef Q_OS_WIN

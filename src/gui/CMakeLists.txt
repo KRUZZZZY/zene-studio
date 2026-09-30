@@ -31,6 +31,7 @@ SET(LMMS_SRCS
 	gui/ControlLayout.cpp
 	gui/ControllerDialog.cpp
 	gui/ControllerRackView.cpp
+	gui/ControllerTemplateMenu.cpp
 	gui/ControllerView.cpp
 	gui/Controls.cpp
 	gui/EffectControlDialog.cpp

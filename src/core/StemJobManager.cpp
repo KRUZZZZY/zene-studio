@@ -25,6 +25,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <functional>
 
 #include <QHash>
 #include <QMutexLocker>
@@ -35,10 +36,30 @@
 namespace lmms
 {
 
+namespace
+{
+
+/*! QThread::create is compiled out of Qt5 where the toolchain has no std::future (MinGW's
+ *  win32-threads builds; hosted run 36713559404, mingw64) - the same gap
+ *  plugins/SpectrumAnalyzer/DataprocLauncher.h works around. A thread that runs one callable. */
+class CallableThread : public QThread
+{
+public:
+	explicit CallableThread(std::function<void()> body) : m_body(std::move(body)) {}
+
+protected:
+	void run() override { m_body(); }
+
+private:
+	std::function<void()> m_body;
+};
+
+} // namespace
+
 StemJobManager::StemJobManager(QObject* parent) :
 	QObject(parent)
 {
-	m_thread = QThread::create([this] { workerLoop(); });
+	m_thread = new CallableThread([this] { workerLoop(); });
 	m_thread->setObjectName(QStringLiteral("StemJobManager"));
 	m_thread->start();
 }

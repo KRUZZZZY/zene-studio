@@ -178,7 +178,7 @@ void registerOnlineHelp(ControlRegistry& registry)
 	cmd.argsSchema = objectSchema({});
 	cmd.resultSchema = objectSchema({{QStringLiteral("url"), stringProperty()},
 		{QStringLiteral("opened"), booleanProperty()}});
-	cmd.requiresDecl = {QStringLiteral("display"), QStringLiteral("human")};
+	cmd.requiresDecl = QStringList{QStringLiteral("display"), QStringLiteral("human")};
 	cmd.handler = [](const QJsonObject&) {
 		if (mainWindow() == nullptr) { return noInterface(QStringLiteral("app.online_help")); }
 		const QString url = QString::fromLatin1(kHelpUrl);
