@@ -1818,6 +1818,17 @@ says that **compensation is SUSPENDED for the loop** - carrying REAPER's warning
 
 ## UI precondition #1 - accessible names, focus order, palette roles (branch 040/ui-precond, 2026-09-22)
 
+*(Updated 2026-09-30, R8.5.)* **Every keyboard-focusable widget on the main surfaces now has a
+name**, and a test holds it: `tests/src/gui/AccessibilityWalkTest.cpp` builds the real application
+(the main window's toolbar, the song, piano-roll, automation and pattern editors, the mixer, the
+controller rack, project notes and the microtuner) plus the clip-launch grid, the start hub and the
+shortcuts page, and asks Qt's accessibility layer for the name of every widget Tab can reach. The
+first walk found 30 announced as nothing; all 30 are named, and the ratchet list is empty. **What
+it does not cover:** controls that take no keyboard focus at all - the knobs, faders and LEDs of
+track rows, mixer strips and instrument windows - are unreachable by keyboard, which no name
+fixes; and windows that open on demand (instrument and effect windows, dialogs) are not walked
+yet. Both are the next slice. The paragraph below is the 2026-09-22 record.
+
 The accessibility + palette pass of SPEC-zene-ui-v0 §5 item 1 swept exactly three
 surfaces - the Focus Desk shell (`src/gui/FocusDesk.cpp`, `FocusDeskPane.cpp`,
 `FocusDeskPlacement.cpp`; `FocusDeskModules.cpp` is the widget-free register and has

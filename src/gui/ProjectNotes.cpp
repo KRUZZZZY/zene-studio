@@ -53,6 +53,7 @@ ProjectNotes::ProjectNotes()
 	: QMainWindow{getGUI()->mainWindow()->workspace()}
 {
 	m_edit = new QTextEdit( this );
+	m_edit->setAccessibleName(tr("Project notes")); // R8.5
 	m_edit->setAutoFillBackground( true );
 	QPalette pal;
 	pal.setColor( m_edit->backgroundRole(), QColor( 64, 64, 64 ) );
@@ -143,7 +144,9 @@ void ProjectNotes::setupActions()
 	tb = addToolBar( tr( "Format Actions" ) );
 
 	m_comboFont = new QComboBox( tb );
+	m_comboFont->setAccessibleName(tr("Font")); // R8.5
 	m_comboFont->setEditable( true );
+	m_comboFont->lineEdit()->setAccessibleName(tr("Font")); // R8.5: the editable part is what Tab reaches
 	QFontDatabase db;
 	m_comboFont->addItems( db.families() );
 
@@ -152,7 +155,9 @@ void ProjectNotes::setupActions()
 	m_comboFont->lineEdit()->setText( QApplication::font().family() );
 
 	m_comboSize = new QComboBox( tb );
+	m_comboSize->setAccessibleName(tr("Font size")); // R8.5
 	m_comboSize->setEditable( true );
+	m_comboSize->lineEdit()->setAccessibleName(tr("Font size")); // R8.5: the editable part is what Tab reaches
 	QList<int> sizes = db.standardSizes();
 	QList<int>::Iterator it = sizes.begin();
 	for ( ; it != sizes.end(); ++it )

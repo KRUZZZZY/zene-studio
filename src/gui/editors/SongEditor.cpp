@@ -99,6 +99,8 @@ SongEditor::SongEditor( Song * song ) :
 					 : DEFAULT_SETTINGS_WIDGET_WIDTH + TRACK_OP_WIDTH),
 	m_selectRegion(false)
 {
+	// R8.5: what a screen reader announces when Tab reaches it.
+	setAccessibleName(tr("Song editor"));
 	// Set up timeline
 	m_timeLine = new TimeLineWidget(m_trackHeadWidth, 32, pixelsPerBar(),
 		m_song->getTimeline(Song::PlayMode::Song),

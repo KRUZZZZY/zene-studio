@@ -55,6 +55,7 @@ EffectRackView::EffectRackView( EffectChain* model, QWidget* parent ) :
 	effectsLayout->setContentsMargins( 2, m_effectsGroupBox->titleBarHeight() + 2, 2, 2 );
 
 	m_scrollArea = new QScrollArea;
+	m_scrollArea->setAccessibleName(tr("Effects chain")); // R8.5
 	m_scrollArea->setVerticalScrollBarPolicy( Qt::ScrollBarAlwaysOn );
 	m_scrollArea->setHorizontalScrollBarPolicy( Qt::ScrollBarAlwaysOff );
 	m_scrollArea->setPalette( QApplication::palette( m_scrollArea ) );

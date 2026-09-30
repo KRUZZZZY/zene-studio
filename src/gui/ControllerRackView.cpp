@@ -53,6 +53,7 @@ ControllerRackView::ControllerRackView()
 	setWindowTitle( tr( "Controller Rack" ) );
 
 	m_scrollArea = new QScrollArea( this );
+	m_scrollArea->setAccessibleName(tr("Controllers")); // R8.5
 	m_scrollArea->setPalette( QApplication::palette( m_scrollArea ) );
 	m_scrollArea->setHorizontalScrollBarPolicy( Qt::ScrollBarAlwaysOff );
 

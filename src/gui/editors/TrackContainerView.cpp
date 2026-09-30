@@ -475,6 +475,7 @@ TrackContainerView::scrollArea::scrollArea( TrackContainerView * _parent ) :
 {
 	setFrameStyle( QFrame::NoFrame );
 	setHorizontalScrollBarPolicy( Qt::ScrollBarAlwaysOff );
+	setAccessibleName(tr("Tracks")); // R8.5
 }
 
 

@@ -42,6 +42,7 @@ AutomatableSlider::AutomatableSlider( QWidget * _parent,
 	m_showStatus( false )
 {
 	setWindowTitle( _name );
+	setAccessibleName( _name ); // R8.5: the name it was built with is what a screen reader says
 
 	connect( this, SIGNAL(valueChanged(int)),
 					this, SLOT(changeValue(int)));

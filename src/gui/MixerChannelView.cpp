@@ -100,6 +100,7 @@ MixerChannelView::MixerChannelView(QWidget* parent, MixerView* mixerView, int ch
 	const auto mixerChannel = Engine::mixer()->mixerChannel(channelIndex);
 	const auto mixerName = mixerChannel->m_name;
 	setToolTip(mixerName);
+	setAccessibleName(mixerName); // R8.5 (kept in step with the tooltip on rename)
 
 	m_renameLineEdit = new QLineEdit{mixerName, nullptr};
 	m_renameLineEdit->setFixedWidth(65);
@@ -112,6 +113,10 @@ MixerChannelView::MixerChannelView(QWidget* parent, MixerView* mixerView, int ch
 	m_renameLineEditView->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
 	m_renameLineEditView->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
 	m_renameLineEditView->setAttribute(Qt::WA_TransparentForMouseEvents, true);
+	// R8.5: the rotated name is a picture of the channel's name, not a control - Tab must not stop
+	// on it (it was announced as nothing). Renaming stays on the channel's own double-click/menu.
+	m_renameLineEditView->setFocusPolicy(Qt::NoFocus);
+	m_renameLineEditView->viewport()->setFocusPolicy(Qt::NoFocus);
 	m_renameLineEditView->setScene(renameLineEditScene);
 
 	auto renameLineEditProxy = renameLineEditScene->addWidget(m_renameLineEdit);
@@ -303,6 +308,7 @@ void MixerChannelView::renameFinished()
 	}
 
 	setToolTip(mc->m_name);
+	setAccessibleName(mc->m_name);
 }
 
 void MixerChannelView::resetColor()

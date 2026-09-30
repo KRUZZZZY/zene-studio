@@ -627,6 +627,8 @@ set(LMMS_TESTS
 	# The shipped themes' declared text/background pairs against AA (4.5:1), as a ratchet.
 	src/gui/ThemeContrastTest.cpp
 	src/gui/AccessibilityHelperTest.cpp
+	# R8.5: every surface built on its own, walked - no unnamed focusable widget (a ratchet).
+	src/gui/AccessibilityWalkTest.cpp
 	src/gui/FocusDeskTest.cpp
 	# M3.4: the command palette - what it lists, how it ranks, what it runs.
 	src/gui/CommandPaletteTest.cpp
@@ -1094,6 +1096,7 @@ set_tests_properties(FocusDeskWorkspacesTest PROPERTIES ENVIRONMENT "QT_QPA_PLAT
 # platform registration (040/ui-precond). WcagContrastTest is guiless and needs
 # none: QColor loads no platform plugin.
 set_tests_properties(AccessibilityHelperTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+set_tests_properties(AccessibilityWalkTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 # ThemeContrastTest reads the themes from the source tree; guiless like WcagContrastTest.
 target_compile_definitions(ThemeContrastTest PRIVATE
 	ZENE_THEMES_DIR="${CMAKE_SOURCE_DIR}/data/themes")
