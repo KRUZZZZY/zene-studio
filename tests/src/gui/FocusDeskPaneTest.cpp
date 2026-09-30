@@ -112,6 +112,29 @@ private slots:
 		conf->deleteValue("ui", QStringLiteral("focusdesk.density"));
 	}
 
+	//! M3.1 (owner decision 2026-09-30): with no saved choice the desk is asked for - ON by default -
+	//! and the key is seeded "1" so the first settings.set is heard; a saved "0" keeps it off.
+	void theDeskIsOnByDefaultAndASavedOffIsKept()
+	{
+		auto* conf = ConfigManager::inst();
+		conf->deleteValue("ui", QStringLiteral("focusdesk"));
+		World world;
+		QWidget* mixer = world.editor(QStringLiteral("mixer"));
+		{
+			FocusDeskPane fresh(&world.workspace, &world.page, world.layout,
+				{{QStringLiteral("mixer"), mixer}}, &world.window);
+			QCOMPARE(conf->value("ui", QStringLiteral("focusdesk")), QStringLiteral("1"));
+			QVERIFY(fresh.applyConfiguredState());
+			QVERIFY(fresh.deskActive());
+			QVERIFY(fresh.setDeskActive(false));
+		}
+		QCOMPARE(conf->value("ui", QStringLiteral("focusdesk")), QStringLiteral("0"));
+		FocusDeskPane chosenOff(&world.workspace, &world.page, world.layout,
+			{{QStringLiteral("mixer"), mixer}}, &world.window);
+		chosenOff.applyConfiguredState();
+		QVERIFY(!chosenOff.deskActive());
+	}
+
 	//! Activating with nothing to claim is refused. An empty shell over the
 	//! workspace would hide every editor and show nothing in their place, which
 	//! is worse than not switching at all.

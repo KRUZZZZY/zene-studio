@@ -218,18 +218,22 @@ void FocusDeskPane::wireConfigObserver()
 void FocusDeskPane::readConfig()
 {
 	auto* conf = ConfigManager::inst();
-	m_wantActive = conf->value("ui", deskEnabledKey()).toInt() != 0;
+	// M3.1 / R8.1 (owner decision 2026-09-30): the Focus Desk is ON by default. An absent key is a
+	// user who never chose, and gets the desk; a saved "0" is a user who turned it off, and keeps
+	// the classic workspace.
+	const QString saved = conf->value("ui", deskEnabledKey());
+	m_wantActive = saved.isEmpty() || saved.toInt() != 0;
 
 	// The key has to EXIST before a write to it can announce itself:
 	// ConfigManager::setValue emits valueChanged only when it REPLACES a value,
 	// and nothing writes this one by default, so without this the first
 	// `settings.set ui/focusdesk 1` - the View menu's action, or an agent on the
 	// socket - would land silently and the desk would not follow it. Seeded in
-	// memory only, with the state the window actually started in, so merely
+	// memory only, with the state the window asks for (the default, on), so merely
 	// opening the product still writes no config file.
 	if (conf->value("ui", deskEnabledKey()).isEmpty())
 	{
-		conf->setValue("ui", deskEnabledKey(), QStringLiteral("0"));
+		conf->setValue("ui", deskEnabledKey(), QStringLiteral("1"));
 	}
 
 	const QString density = conf->value("ui", deskDensityKey());
