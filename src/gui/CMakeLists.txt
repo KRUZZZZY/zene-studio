@@ -57,6 +57,7 @@ SET(LMMS_SRCS
 	gui/TempoMapPanel.cpp
 	gui/TrackFolderMenu.cpp
 	gui/UndoHistoryPanel.cpp
+	gui/VisibilitySetMenu.cpp
 	# M3.7: VCA group strips in the mixer + the channel's VCA menu.
 	gui/VcaStripView.cpp
 	# Focus Desk - the Direction B shell (UI plan §9.4). FocusDeskModules is the

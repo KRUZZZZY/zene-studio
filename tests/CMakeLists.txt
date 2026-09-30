@@ -651,6 +651,8 @@ set(LMMS_TESTS
 	src/gui/TempoMapPanelTest.cpp
 	# The file browser's Tags menu (browser.tag.add / browser.tag.remove), over a throwaway store.
 	src/gui/BrowserTagMenuTest.cpp
+	# The song editor's Views menu: visibility sets applied, all tracks shown, saved, removed.
+	src/gui/VisibilitySetMenuTest.cpp
 	src/gui/FocusDeskTest.cpp
 	# M3.4: the command palette - what it lists, how it ranks, what it runs.
 	src/gui/CommandPaletteTest.cpp
@@ -1132,6 +1134,7 @@ set_tests_properties(NoteTransformActionsTest PROPERTIES ENVIRONMENT "QT_QPA_PLA
 set_tests_properties(MpeInputActionTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(TempoMapPanelTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(BrowserTagMenuTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+set_tests_properties(VisibilitySetMenuTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 # ThemeContrastTest reads the themes from the source tree; guiless like WcagContrastTest.
 target_compile_definitions(ThemeContrastTest PRIVATE
 	ZENE_THEMES_DIR="${CMAKE_SOURCE_DIR}/data/themes")

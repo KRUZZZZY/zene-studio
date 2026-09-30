@@ -120,6 +120,12 @@ const ReversibilityRow kTrackFolderRows[] = {
 		"visible flag back and restores the previous active-set name, as ONE step "
 		"(SPEC A16 deliverable 3: one agent command is one undo)",
 		""),
+	R("track.visibility_show_all", RC::TrueInverse, true,
+		"showing every track writes the visible flag of EVERY track plus the active-set name, "
+		"so the recorded state is what an inverse must put back",
+		"action checkpoint: the recorded undo step writes every track's captured visible flag "
+		"back and restores the previous active-set name, as ONE step",
+		""),
 	R("track.visibility_set_remove", RC::TrueInverse, true,
 		"a deleted set has no live object behind it; the container's store holds "
 		"the only copy of the definition",

@@ -265,8 +265,11 @@ that is this page's fault — report it and it gets added.
   and a collapsed folder's children leave the track list - from the menu or the socket
   (`TrackFolderMenuTest`), and a child's row is indented one step per folder level (its settings column
   keeping its width) with the membership as its accessible description. Still missing: a pinned folder
-  staying on screen while the list scrolls (the flag is set and saved; nothing reads it yet), and a
-  visibility-set switcher. The paragraph below is the pre-M3 record.
+  staying on screen while the list scrolls (the flag is set and saved; nothing reads it yet). The named
+  visibility sets have a switcher too - the song editor's Views menu: All tracks (the new
+  `track.visibility_show_all`), each set (apply), Save visible tracks as..., Remove - and applying a
+  set now actually hides the other rows (the view flag had never been read by the track list;
+  `VisibilitySetMenuTest`). The paragraph below is the pre-M3 record.
   **Folder tracks, their two modes, pinning and the named visibility sets are drivable through the
   socket, not from the interface**: nothing in `src/gui/` creates a folder, indents a child, collapses
   a row, draws the relation, shows a pin or offers a set switcher — a folder's row is an ordinary
