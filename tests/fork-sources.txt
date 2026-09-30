@@ -588,10 +588,12 @@ include/MidiReconnect.h
 include/ModulationLayer.h
 include/MonitorMode.h
 include/MpeExpression.h
+include/MpeInputAction.h
 include/MultiTrackRecorder.h
 include/NamespaceRegistry.h
 include/NoteRandom.h
 include/NoteTransform.h
+include/NoteTransformActions.h
 include/OutOfProcessHosting.h
 include/PatchWiring.h
 include/PinConnector.h
@@ -1117,6 +1119,8 @@ src/gui/FocusDeskPane.cpp
 src/gui/FocusDeskPlacement.cpp
 src/gui/FocusDeskWorkspaces.cpp
 src/gui/MidiLearnGui.cpp
+src/gui/MpeInputAction.cpp
+src/gui/NoteTransformActions.cpp
 src/gui/PinConnector.cpp
 src/gui/PluginNativeEditor.cpp
 src/gui/SessionGridView.cpp

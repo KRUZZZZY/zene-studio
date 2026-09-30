@@ -84,6 +84,8 @@ SET(LMMS_SRCS
 	gui/MidiCCRackView.cpp
 	gui/MidiLearnGui.cpp
 	gui/MidiSetupWidget.cpp
+	gui/MpeInputAction.cpp
+	gui/NoteTransformActions.cpp
 	gui/MixerChannelView.cpp
 	gui/MixerView.cpp
 	gui/ModelView.cpp
