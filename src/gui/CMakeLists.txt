@@ -97,6 +97,7 @@ SET(LMMS_SRCS
 	gui/MidiClockMenu.cpp
 	gui/MidiReconnectAction.cpp
 	gui/PluginQuarantineMenu.cpp
+	gui/RenderPresetMenu.cpp
 	gui/MidiSetupWidget.cpp
 	gui/MpeInputAction.cpp
 	gui/NoteTransformActions.cpp

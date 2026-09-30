@@ -434,6 +434,7 @@ include/RemotePluginBase.h
 include/RemotePluginClient.h
 include/RenameDialog.h
 include/RenderManager.h
+include/RenderPresetMenu.h
 include/RetroAudioCapture.h
 include/RetroAudioRing.h
 include/RetroMidiCapture.h
@@ -1568,6 +1569,7 @@ src/gui/PluginBrowser.cpp
 src/gui/PluginNativeEditor.cpp
 src/gui/PluginQuarantineMenu.cpp
 src/gui/ProjectNotes.cpp
+src/gui/RenderPresetMenu.cpp
 src/gui/RowTableView.cpp
 src/gui/SampleThumbnail.cpp
 src/gui/SampleTrackWindow.cpp
@@ -1922,6 +1924,7 @@ tests/src/gui/MpeInputActionTest.cpp
 tests/src/gui/NoteTransformActionsTest.cpp
 tests/src/gui/PianoRollBenchmarkTest.cpp
 tests/src/gui/PluginQuarantineMenuTest.cpp
+tests/src/gui/RenderPresetMenuTest.cpp
 tests/src/gui/SessionGridViewTest.cpp
 tests/src/gui/SessionSyncActionTest.cpp
 tests/src/gui/SessionTransportBarTest.cpp

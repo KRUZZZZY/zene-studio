@@ -670,6 +670,8 @@ set(LMMS_TESTS
 	src/gui/ClipEditsMenuTest.cpp
 	# A track menu's Effect chain presets (chain.save / apply / remove / list) against a real effect.
 	src/gui/ChainPresetMenuTest.cpp
+	# File > Render Presets (export.preset_* / render.render), over a throwaway preset store.
+	src/gui/RenderPresetMenuTest.cpp
 	# Edit > Plugin Quarantine (plugin.scan_cache_* / plugin.rescan), over a throwaway scan-cache file.
 	src/gui/PluginQuarantineMenuTest.cpp
 	# Help > Crash Reports (crash.enable / disable / list / acknowledge / discard), over throwaway directories.
@@ -1173,6 +1175,7 @@ set_tests_properties(TrackRenderMenuTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM
 set_tests_properties(GrooveMenuTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(ClipEditsMenuTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(ChainPresetMenuTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+set_tests_properties(RenderPresetMenuTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(PluginQuarantineMenuTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(CrashReportMenuTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(MidiClockMenuTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")

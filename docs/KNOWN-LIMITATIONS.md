@@ -727,6 +727,13 @@ Dither (off / TPDF / noise-shaped) and Resampling (linear / sinc fastest, medium
   the grid but restores no velocity — a humanised take is reversed with `control.undo`, not by
   re-quantising).
 
+- *(Updated 2026-09-30.)* **File ▸ Render Presets** is rebuilt from `export.preset_list` each time it opens:
+  Default Settings and one item per stored preset with the applied one checked (`export.preset_apply`), Save
+  Preset... (name, sample rate, bit depth, stereo mode; `export.preset_add`, asking before a name is replaced),
+  a Delete submenu (`export.preset_remove`, after a confirmation), and Render Song with Preset... - the
+  interface's first route to `render.render`, which is what a preset governs (`RenderPresetMenuTest`). The
+  export dialog still keeps its own settings and ignores the applied preset, and a ranged render is still
+  socket-only. The bullet below is the pre-menu record.
 - **Render/export presets have no interface, and a ranged render is socket-only — added 2026-09-15.**
   A named render preset (a sample rate, a bit depth and a stereo mode) can be saved, listed, applied
   and removed, drivable through `--control-socket` (`export.preset_add`, `export.preset_list`,

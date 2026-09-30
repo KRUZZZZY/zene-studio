@@ -74,6 +74,7 @@
 #include "MidiClockMenu.h"
 #include "MidiReconnectAction.h"
 #include "PluginQuarantineMenu.h"
+#include "RenderPresetMenu.h"
 #include "TrackRenderMenu.h"
 #include "ControllerTemplateMenu.h"
 #include "PatternEditor.h"
@@ -428,6 +429,8 @@ void MainWindow::finalize()
 		keySequence(Qt::CTRL, Qt::Key_M), &MainWindow::onExportProjectMidi), "project.export_midi");
 	// DAWproject interchange, through dawproject.import / dawproject.export.
 	addDawProjectActions(project_menu);
+	// Named render presets for render.render (export.preset_*).
+	addRenderPresetMenu(project_menu);
 
 	project_menu->addSeparator();
 

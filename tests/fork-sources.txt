@@ -628,6 +628,7 @@ include/RackZones.h
 include/RecordRingBuffer.h
 include/RecordingJournal.h
 include/RemotePluginAudioPorts.h
+include/RenderPresetMenu.h
 include/RetroAudioCapture.h
 include/RetroAudioRing.h
 include/RetroMidiCapture.h
@@ -1148,6 +1149,7 @@ src/gui/NoteTransformActions.cpp
 src/gui/PinConnector.cpp
 src/gui/PluginNativeEditor.cpp
 src/gui/PluginQuarantineMenu.cpp
+src/gui/RenderPresetMenu.cpp
 src/gui/SessionGridView.cpp
 src/gui/SessionSyncAction.cpp
 src/gui/SessionTransportBar.cpp
