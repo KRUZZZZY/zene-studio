@@ -172,6 +172,7 @@ private slots:
 	void testTheQueueIsBoundedAndCountsWhatItDrops();
 	void testStateRoundTripsIntoAFreshInstance();
 	void testProcessAllocatesNothing();
+	void testTheEditorAttachesResizesAndDetaches();
 
 private:
 	auto renderWith(const std::vector<MidiEventIn>& events) -> Block;
@@ -462,6 +463,50 @@ void Vst3InstrumentTest::testProcessAllocatesNothing()
 		qPrintable(QStringLiteral("allocation probe: %1 allocation(s) on the "
 			"process thread").arg(allocations)));
 	qInfo("allocation probe: 8 MIDI-carrying blocks, 0 allocations on the process thread");
+}
+
+} // namespace lmms::vst3
+
+namespace lmms::vst3
+{
+
+/*! R4.2's acceptance, offscreen: the fixture's editor attaches, resizes (honouring the view's
+ *  own minimum), runs its repaint timer on the host's loop through Linux::IRunLoop, detaches,
+ *  and attaches again - no leak, no double release (a release too many is a crash here). The
+ *  test runs without an X server, so the parent is a stand-in id the fixture does not draw
+ *  into; the manual check with a real plug-in on X11 is what proves the embedding itself. */
+void Vst3InstrumentTest::testTheEditorAttachesResizesAndDetaches()
+{
+	void* const standInWindow = reinterpret_cast<void*>(std::uintptr_t{0x2a});
+	QString error;
+	QVERIFY2(m_plugin.openEditor(standInWindow, &error), qPrintable(error));
+	QVERIFY(m_plugin.editorOpen());
+	int width = 0;
+	int height = 0;
+	m_plugin.editorSize(&width, &height);
+	QCOMPARE(width, 400);
+	QCOMPARE(height, 300);
+	QVERIFY(m_plugin.resizeEditor(640, 480));
+	m_plugin.editorSize(&width, &height);
+	QCOMPARE(width, 640);
+	QCOMPARE(height, 480);
+	QVERIFY(m_plugin.resizeEditor(10, 10));  // the view's constraint raises it to its minimum
+	m_plugin.editorSize(&width, &height);
+	QCOMPARE(width, 100);
+	QCOMPARE(height, 80);
+
+	QCOMPARE(m_plugin.editorTimerCount(), 1);
+	QTest::qWait(150);
+	const std::uint32_t delivered = m_plugin.editorTimerDeliveries();
+	std::printf("VST3_EDITOR_EVIDENCE 10 ms repaint timer: %u onTimer calls in 150 ms\n", delivered);
+	QVERIFY2(delivered >= 5, qPrintable(QStringLiteral("%1 onTimer calls").arg(delivered)));
+
+	m_plugin.closeEditor();
+	QVERIFY(!m_plugin.editorOpen());
+	QCOMPARE(m_plugin.editorTimerCount(), 0);
+	QVERIFY2(m_plugin.openEditor(standInWindow, &error), qPrintable(error));
+	QCOMPARE(m_plugin.editorTimerCount(), 1);
+	m_plugin.closeEditor();
 }
 
 } // namespace lmms::vst3

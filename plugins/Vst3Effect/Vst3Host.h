@@ -179,6 +179,17 @@ public:
 	//! GUI thread: plug-in rendered string for a normalized value
 	auto paramDisplayValue(std::uint32_t id, float normalized) const -> QString;
 
+	// ---- R4.2: the plug-in's own editor (Vst3EditorSession.h) --------------------------
+	//! Main thread: attach the plug-in's editor to @a parentWindow (an X11 window id).
+	auto openEditor(void* parentWindow, QString* error) -> bool;
+	void closeEditor();
+	auto editorOpen() const -> bool;
+	auto resizeEditor(int width, int height) -> bool;
+	void editorSize(int* width, int* height) const;
+	//! Timers the open editor registered through Linux::IRunLoop, and onTimer calls delivered.
+	auto editorTimerCount() const -> int;
+	auto editorTimerDeliveries() const -> std::uint32_t;
+
 private:
 	struct Impl;
 	std::unique_ptr<Impl> m_impl;

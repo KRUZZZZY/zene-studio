@@ -159,6 +159,21 @@ Vst3Instrument::Vst3Instrument(InstrumentTrack* parent,
 	}
 }
 
+bool Vst3Instrument::openNativeEditor(QString* error)
+{
+	return m_editor.open(m_plugin, displayName(), error);
+}
+
+void Vst3Instrument::closeNativeEditor()
+{
+	m_editor.close();
+}
+
+bool Vst3Instrument::nativeEditorOpen() const
+{
+	return m_editor.isOpen();
+}
+
 Vst3Instrument::~Vst3Instrument()
 {
 	if (auto* engine = Engine::audioEngine())

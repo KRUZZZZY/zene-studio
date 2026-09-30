@@ -253,6 +253,15 @@ const ReversibilityRow kPassiveRows[] = {
 		"reads the engine's own undo stack - its depth, the two caps it is bounded by, the serialised bytes it retains, how many steps a bound has evicted, and the coalescing window - and writes nothing",
 		"no write",
 		""),
+	R("plugin.editor_open", RC::NotMutating, false,
+		"opens the device's own editor in a window: interface state, not project state - nothing "
+		"is saved, nothing journalled",
+		"nothing to reverse: plugin.editor_close closes it",
+		""),
+	R("plugin.editor_close", RC::NotMutating, false,
+		"closes the device's own editor window: interface state only",
+		"nothing to reverse: plugin.editor_open opens it again",
+		""),
 	R("comp.audition", RC::NotMutating, false,
 		"auditioning a lane is MONITORING state on the take-lane model: not serialized, not "
 		"journalled, and the composite it sets aside is untouched",

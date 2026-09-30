@@ -47,6 +47,9 @@
 
 #include <QtTest>
 
+#include <QApplication>
+#include <QWidget>
+
 #include <QDomDocument>
 #include <QDomElement>
 #include <QFileInfo>
@@ -168,6 +171,7 @@ private slots:
 	void testStateSurvivesTheProjectFile();
 	void testAGuiLessInstrumentExposesItsParameters();
 	void testTheViewsEntryPointIsSafeOutsideAnInstrumentTrackWindow();
+	void testTheInstrumentsOwnEditorOpensInItsOwnWindow();
 
 private:
 	//! The real module, loaded exactly as the plugin factory loads it.
@@ -607,6 +611,39 @@ void Vst3InstrumentIntegrationTest::testTheViewsEntryPointIsSafeOutsideAnInstrum
 	qInfo("instrument view built without an instrument window: model=%p parent=%p window=%p",
 		static_cast<void*>(view.model()), static_cast<void*>(view.parentWidget()),
 		static_cast<void*>(view.instrumentTrackWindow()));
+}
+
+/*! R4.4, through the product's own path: the installed vst3instrument module, loaded by an
+ *  InstrumentTrack, opens its plug-in's editor view in a native window of its own
+ *  (Plugin::openNativeEditor -> Vst3NativeEditor -> Vst3EditorSession). The window takes the
+ *  view's size, a second open raises rather than stacks, and closing leaves nothing open. It
+ *  runs on the offscreen platform, whose native ids no plug-in draws into; the fixture draws
+ *  nothing either, so what is proved is the attach/size/close contract, not pixels. */
+void Vst3InstrumentIntegrationTest::testTheInstrumentsOwnEditorOpensInItsOwnWindow()
+{
+	auto track = makeTrack();
+	auto* instrument = makeInstrument(track.get());
+	QVERIFY(instrument != nullptr);
+	QVERIFY(!instrument->nativeEditorOpen());
+	QString error;
+	QVERIFY2(instrument->openNativeEditor(&error), qPrintable(error));
+	QVERIFY(instrument->nativeEditorOpen());
+	QWidget* window = nullptr;
+	for (QWidget* top : QApplication::topLevelWidgets())
+	{
+		if (top->isVisible() && top->windowTitle() == instrument->displayName()) { window = top; }
+	}
+	QVERIFY2(window != nullptr, "no window titled after the instrument is showing");
+	QCOMPARE(window->size(), QSize(400, 300));
+	QVERIFY2(instrument->openNativeEditor(&error), qPrintable(error));  // raised, not stacked
+	int windows = 0;
+	for (QWidget* top : QApplication::topLevelWidgets())
+	{
+		windows += top->isVisible() && top->windowTitle() == instrument->displayName() ? 1 : 0;
+	}
+	QCOMPARE(windows, 1);
+	instrument->closeNativeEditor();
+	QVERIFY(!instrument->nativeEditorOpen());
 }
 
 } // namespace lmms

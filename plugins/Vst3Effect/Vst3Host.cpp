@@ -33,6 +33,7 @@
 #include <QDebug>
 
 #include "PluginHostChunking.h"
+#include "Vst3EditorSession.h"
 #include "Vst3MidiEvent.h"
 #include "pluginterfaces/vst/ivstaudioprocessor.h"
 #include "pluginterfaces/vst/ivstcomponent.h"
@@ -178,6 +179,8 @@ struct HostedPlugin::Impl
 	IPtr<IComponent> component;
 	IPtr<IAudioProcessor> processor;
 	IPtr<IEditController> controller;
+	//! R4.2: the open editor, if any - closed before the controller goes.
+	std::unique_ptr<Vst3EditorSession> editor;
 	IPtr<IComponentHandler> handler;
 	bool singleComponent = false;
 
@@ -248,6 +251,7 @@ HostedPlugin::HostedPlugin() :
 HostedPlugin::~HostedPlugin()
 {
 	auto& d = *m_impl;
+	d.editor.reset();
 	release();
 	d.handler = nullptr;
 	d.processor = nullptr;
@@ -886,6 +890,46 @@ auto HostedPlugin::paramDisplayValue(std::uint32_t id, float normalized) const -
 auto hostChunkingStats() -> HostChunkingStats
 {
 	return control::vst3HostChunkingCounters().read();
+}
+
+// ---- R4.2: the editor ---------------------------------------------------------------
+
+auto HostedPlugin::openEditor(void* parentWindow, QString* error) -> bool
+{
+	auto& d = *m_impl;
+	if (d.editor == nullptr) { d.editor = std::make_unique<Vst3EditorSession>(d.controller.get()); }
+	return d.editor->open(parentWindow, error);
+}
+
+void HostedPlugin::closeEditor()
+{
+	if (m_impl->editor != nullptr) { m_impl->editor->close(); }
+}
+
+auto HostedPlugin::editorOpen() const -> bool
+{
+	return m_impl->editor != nullptr && m_impl->editor->isOpen();
+}
+
+auto HostedPlugin::resizeEditor(int width, int height) -> bool
+{
+	return m_impl->editor != nullptr && m_impl->editor->resize(width, height);
+}
+
+void HostedPlugin::editorSize(int* width, int* height) const
+{
+	if (m_impl->editor == nullptr) { *width = 0; *height = 0; return; }
+	m_impl->editor->size(width, height);
+}
+
+auto HostedPlugin::editorTimerCount() const -> int
+{
+	return m_impl->editor != nullptr ? m_impl->editor->runLoopTimers() : 0;
+}
+
+auto HostedPlugin::editorTimerDeliveries() const -> std::uint32_t
+{
+	return m_impl->editor != nullptr ? m_impl->editor->timerDeliveries() : 0;
 }
 
 } // namespace lmms::vst3

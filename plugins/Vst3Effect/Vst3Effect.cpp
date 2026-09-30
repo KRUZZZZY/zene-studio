@@ -93,6 +93,21 @@ Vst3Effect::Vst3Effect(Model* parent, const Descriptor::SubPluginFeatures::Key* 
 
 Vst3Effect::~Vst3Effect() = default;
 
+bool Vst3Effect::openNativeEditor(QString* error)
+{
+	return m_editor.open(m_plugin, displayName(), error);
+}
+
+void Vst3Effect::closeNativeEditor()
+{
+	m_editor.close();
+}
+
+bool Vst3Effect::nativeEditorOpen() const
+{
+	return m_editor.isOpen();
+}
+
 auto Vst3Effect::controls() -> EffectControls* { return m_controls.get(); }
 
 void Vst3Effect::reprepare()

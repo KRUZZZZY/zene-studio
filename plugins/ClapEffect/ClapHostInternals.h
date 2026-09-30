@@ -42,6 +42,8 @@
 
 #include <clap/clap.h>
 
+#include "PluginEditorHost.h"
+
 namespace lmms::clap
 {
 
@@ -196,6 +198,18 @@ struct HostedPlugin::Impl
 	clap_host_latency_t hostLatency{};
 	clap_host_log_t hostLog{};
 	clap_host_thread_check_t hostThreadCheck{};
+	// R4.1: the editor's run loop - descriptors and timers on the host's main thread.
+	clap_host_posix_fd_support_t hostPosixFd{};
+	clap_host_timer_support_t hostTimer{};
+	std::unique_ptr<PluginEditorHost> editorHost;
+	//! on_timer calls delivered to the plugin: nonzero only when BOTH halves exist.
+	std::atomic<std::uint32_t> timerDeliveries{0};
+
+	PluginEditorHost& editorLoop()
+	{
+		if (editorHost == nullptr) { editorHost = std::make_unique<PluginEditorHost>(); }
+		return *editorHost;
+	}
 
 	auto indexOfParam(std::uint32_t id) const -> int
 	{
@@ -216,7 +230,55 @@ struct HostedPlugin::Impl
 		if (std::strcmp(id, CLAP_EXT_LATENCY) == 0) { return &self->hostLatency; }
 		if (std::strcmp(id, CLAP_EXT_LOG) == 0) { return &self->hostLog; }
 		if (std::strcmp(id, CLAP_EXT_THREAD_CHECK) == 0) { return &self->hostThreadCheck; }
+		if (std::strcmp(id, CLAP_EXT_POSIX_FD_SUPPORT) == 0) { return &self->hostPosixFd; }
+		if (std::strcmp(id, CLAP_EXT_TIMER_SUPPORT) == 0) { return &self->hostTimer; }
 		return nullptr;
+	}
+
+	// --- clap.posix-fd-support / clap.timer-support (R4.1) -----------------
+	// The plugin's own half is looked up when a descriptor or timer FIRES, not when it is
+	// registered: a plugin may register from init(), before the host fetches its extensions.
+	// CLAP's fd flags are the same three bits PluginEditorHost uses.
+	static auto CLAP_ABI registerFd(const clap_host_t* host, int fd, clap_posix_fd_flags_t flags) -> bool
+	{
+		auto* self = static_cast<Impl*>(host->host_data);
+		return self->editorLoop().registerFd(fd, static_cast<unsigned>(flags), [self](int readyFd, unsigned ready) {
+			const auto* ext = static_cast<const clap_plugin_posix_fd_support_t*>(
+				self->plugin != nullptr ? self->plugin->get_extension(self->plugin, CLAP_EXT_POSIX_FD_SUPPORT) : nullptr);
+			if (ext != nullptr && ext->on_fd != nullptr) { ext->on_fd(self->plugin, readyFd, static_cast<clap_posix_fd_flags_t>(ready)); }
+		});
+	}
+
+	static auto CLAP_ABI modifyFd(const clap_host_t* host, int fd, clap_posix_fd_flags_t flags) -> bool
+	{
+		return static_cast<Impl*>(host->host_data)->editorLoop().modifyFd(fd, static_cast<unsigned>(flags));
+	}
+
+	static auto CLAP_ABI unregisterFd(const clap_host_t* host, int fd) -> bool
+	{
+		return static_cast<Impl*>(host->host_data)->editorLoop().unregisterFd(fd);
+	}
+
+	static auto CLAP_ABI registerTimer(const clap_host_t* host, std::uint32_t periodMs, clap_id* timerId) -> bool
+	{
+		auto* self = static_cast<Impl*>(host->host_data);
+		std::uint32_t id = 0;
+		const bool ok = self->editorLoop().registerTimer(periodMs, [self](std::uint32_t fired) {
+			const auto* ext = static_cast<const clap_plugin_timer_support_t*>(
+				self->plugin != nullptr ? self->plugin->get_extension(self->plugin, CLAP_EXT_TIMER_SUPPORT) : nullptr);
+			if (ext != nullptr && ext->on_timer != nullptr)
+			{
+				ext->on_timer(self->plugin, fired);
+				self->timerDeliveries.fetch_add(1, std::memory_order_relaxed);
+			}
+		}, &id);
+		if (ok && timerId != nullptr) { *timerId = id; }
+		return ok;
+	}
+
+	static auto CLAP_ABI unregisterTimer(const clap_host_t* host, clap_id timerId) -> bool
+	{
+		return static_cast<Impl*>(host->host_data)->editorLoop().unregisterTimer(timerId);
 	}
 
 	static void CLAP_ABI requestRestart(const clap_host_t* host)
@@ -325,6 +387,11 @@ struct HostedPlugin::Impl
 		hostLog.log = &Impl::logMessage;
 		hostThreadCheck.is_main_thread = &Impl::isMainThread;
 		hostThreadCheck.is_audio_thread = &Impl::isAudioThread;
+		hostPosixFd.register_fd = &Impl::registerFd;
+		hostPosixFd.modify_fd = &Impl::modifyFd;
+		hostPosixFd.unregister_fd = &Impl::unregisterFd;
+		hostTimer.register_timer = &Impl::registerTimer;
+		hostTimer.unregister_timer = &Impl::unregisterTimer;
 	}
 
 	void freeRealtimeBuffers()

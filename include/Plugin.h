@@ -276,6 +276,14 @@ public:
 	//! reference the class header.  Should return null if not key not found.
 	virtual AutomatableModel* childModel( const QString & modelName );
 
+	/*! R4.4: the plug-in's OWN editor (VST3's IPlugView, CLAP's gui extension), in a window
+	 *  of its own beside the host's generic parameter view - which stays, as the fallback
+	 *  and the agent-visible one. The default is a plug-in with no editor: false, and
+	 *  @a error says so. Main thread. */
+	virtual bool openNativeEditor( QString* error );
+	virtual void closeNativeEditor() {}
+	virtual bool nativeEditorOpen() const { return false; }
+
 	//! Overload if the argument passed to the plugin is a subPluginKey
 	//! If you can not pass the key and are aware that it's stored in
 	//! Engine::pickDndPluginKey(), use this function, too

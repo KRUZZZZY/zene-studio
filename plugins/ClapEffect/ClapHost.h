@@ -146,6 +146,10 @@ public:
 	void clearNeedsReprepare();
 	//! The plug-in asked to be called on the main thread; poll from the GUI.
 	auto takeCallbackRequest() -> bool;
+	//! R4.1: timers the plug-in registered through clap.timer-support, and the on_timer
+	//! calls the host has delivered to it (the Qt loop runs them).
+	auto editorTimerCount() const -> int;
+	auto timerDeliveries() const -> std::uint32_t;
 
 	void setTempo(double bpm);
 	void setTransportPlaying(bool playing);
