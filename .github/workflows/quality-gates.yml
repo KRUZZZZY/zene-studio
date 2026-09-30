@@ -241,7 +241,7 @@ jobs:
           # A build that silently lost the sanitizer would report no findings: refuse it by name.
           flags=build-rtsan/src/CMakeFiles/lmmsobjs.dir/flags.make
           grep -q "fsanitize=realtime" "$flags" && grep -q "LMMS_RTSAN=1" "$flags" \
-            || { echo "::error::the build is not instrumented (no -fsanitize=realtime / LMMS_RTSAN in $flags)"; exit 1; }
+            || { echo "::error::not instrumented (no -fsanitize=realtime / LMMS_RTSAN in $flags)"; exit 1; }
           cmake --build build-rtsan -j4 --target RecordingLatencyTest DummyPacingTest \
             SessionSchedulerRenderTest MixerConcurrencyTest ModulationAudioViewTest TempoMapTest
       - name: Run them under RTSan

@@ -424,7 +424,8 @@ jobs:
           done
           wait "$pid"; code=$?
           end=$(date +%s.%N)
-          echo "render exit $code in $(awk -v a="$start" -v b="$end" "BEGIN{print b - a}") s"; tail -5 $RUNNER_TEMP/render.log
+          echo "render exit $code in $(awk -v a="$start" -v b="$end" "BEGIN{print b - a}") s"
+          tail -5 "$RUNNER_TEMP/render.log"
           lscpu | grep -E "Model name|Flags" | cut -c1-300
       - name: Signal-death backtrace (a SIGSEGV must name its frame)
         # QtTest's own handler prints an EMPTY stack on a runner - "Received signal at function
