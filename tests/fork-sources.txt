@@ -589,6 +589,7 @@ include/MidiLearn.h
 include/MidiLearnGui.h
 include/MidiOutQueue.h
 include/MidiReconnect.h
+include/MidiReconnectAction.h
 include/MixerLatencyText.h
 include/ModulationLayer.h
 include/MonitorMode.h
@@ -1131,6 +1132,7 @@ src/gui/FocusDeskWorkspaces.cpp
 src/gui/GrooveMenu.cpp
 src/gui/MidiControllerMenu.cpp
 src/gui/MidiLearnGui.cpp
+src/gui/MidiReconnectAction.cpp
 src/gui/MpeInputAction.cpp
 src/gui/NoteTransformActions.cpp
 src/gui/PinConnector.cpp
