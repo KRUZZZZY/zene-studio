@@ -207,6 +207,7 @@ include/Effect.h
 include/EffectChain.h
 include/EffectControlDialog.h
 include/EffectControls.h
+include/EffectHostingMenu.h
 include/EffectRackView.h
 include/EffectSelectDialog.h
 include/EffectView.h
@@ -223,6 +224,7 @@ include/ExportQualityControls.h
 include/ExportRenderSettings.h
 include/FadeButton.h
 include/Fader.h
+include/FeedbackModeAction.h
 include/FifoBuffer.h
 include/FileBrowser.h
 include/FileDialog.h
@@ -493,6 +495,7 @@ include/SessionScheduler.h
 include/SessionSyncAction.h
 include/SessionTransportBar.h
 include/SessionTuning.h
+include/SessionTuningMenu.h
 include/SetupDialog.h
 include/SharedMemory.h
 include/ShortcutsPage.h
@@ -1534,9 +1537,11 @@ src/gui/ControllerView.cpp
 src/gui/Controls.cpp
 src/gui/CrashReportMenu.cpp
 src/gui/EffectControlDialog.cpp
+src/gui/EffectHostingMenu.cpp
 src/gui/EffectRackView.cpp
 src/gui/EffectView.cpp
 src/gui/ExportQualityControls.cpp
+src/gui/FeedbackModeAction.cpp
 src/gui/FileBrowser.cpp
 src/gui/FileRevealer.cpp
 src/gui/FileSearchJob.cpp
@@ -1586,6 +1591,7 @@ src/gui/SendButtonIndicator.cpp
 src/gui/SessionGridView.cpp
 src/gui/SessionSyncAction.cpp
 src/gui/SessionTransportBar.cpp
+src/gui/SessionTuningMenu.cpp
 src/gui/ShortcutsPage.cpp
 src/gui/SideBar.cpp
 src/gui/SideBarWidget.cpp
@@ -1916,7 +1922,9 @@ tests/src/gui/ClipEditsMenuTest.cpp
 tests/src/gui/CommandPaletteTest.cpp
 tests/src/gui/ControllerTemplateMenuTest.cpp
 tests/src/gui/CrashReportMenuTest.cpp
+tests/src/gui/EffectHostingMenuTest.cpp
 tests/src/gui/ExportQualityControlsTest.cpp
+tests/src/gui/FeedbackModeActionTest.cpp
 tests/src/gui/FocusDeskActionsTest.cpp
 tests/src/gui/FocusDeskPaneTest.cpp
 tests/src/gui/FocusDeskTest.cpp
@@ -1941,6 +1949,7 @@ tests/src/gui/ScriptBudgetActionTest.cpp
 tests/src/gui/SessionGridViewTest.cpp
 tests/src/gui/SessionSyncActionTest.cpp
 tests/src/gui/SessionTransportBarTest.cpp
+tests/src/gui/SessionTuningMenuTest.cpp
 tests/src/gui/ShortcutsPageTest.cpp
 tests/src/gui/StartHubTest.cpp
 tests/src/gui/TakeLanesPanelTest.cpp

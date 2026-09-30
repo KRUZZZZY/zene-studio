@@ -37,6 +37,7 @@ class QWidget;
 namespace lmms
 {
 class Effect;
+class EffectChain;
 class Instrument;
 }
 
@@ -78,6 +79,10 @@ LMMS_EXPORT QWidget* makeNativeEditorButton(Instrument* instrument, QWidget* par
  *  does - the track or mixer channel whose chain holds it, and its stable fx-<n> - at the
  *  moment it is clicked, so a chain edited since the dialog opened is still addressed right. */
 LMMS_EXPORT QWidget* makeNativeEditorButton(Effect* effect, QWidget* parent);
+
+//! The plugin.* / oop.* target id (trk-<n> or ch-<n>) of the track or mixer channel that owns
+//! @a chain; empty if none does.
+LMMS_EXPORT QString targetIdOfChain(const EffectChain* chain);
 
 } // namespace lmms::gui
 

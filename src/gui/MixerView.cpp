@@ -444,7 +444,9 @@ void MixerView::updateMixerChannel(int index)
 	}
 	else
 	{
-		thisLine->m_receiveArrowOrSendButton->setVisible(!mixer->isInfiniteLoop(currentIndex, index));
+		// Board card #709: with the feedback submode on (Allow feedback sends) a send that closes a loop
+		// is offered too; Mixer::createRoute flags it as a one-period feedback path.
+		thisLine->m_receiveArrowOrSendButton->setVisible(mixer->feedbackMode() || !mixer->isInfiniteLoop(currentIndex, index));
 		thisLine->m_receiveArrowOrSendButton->setCurrentIndex(thisLine->m_sendButtonStackedIndex);
 	}
 

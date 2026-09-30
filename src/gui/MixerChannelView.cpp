@@ -42,6 +42,7 @@
 #include "ConfigManager.h"
 #include "EffectRackView.h"
 #include "Fader.h"
+#include "FeedbackModeAction.h"
 #include "FontHelper.h"
 #include "GuiApplication.h"
 #include "Knob.h"
@@ -213,6 +214,10 @@ void MixerChannelView::contextMenuEvent(QContextMenuEvent*)
 	contextMenu->addMenu(&vcaMenu);
 	// Parallel chains, the chain the rack routes to, and its macros (rack.*).
 	addRackMenu(contextMenu, mixerChannel());
+	// The cycle-permitted submode (feedback.enable / feedback.disable), mixer-wide.
+	addFeedbackModeAction(contextMenu, [view]() {
+		for (int i = 0; i < static_cast<int>(Engine::mixer()->numChannels()); ++i) { view->updateMixerChannel(i); }
+	});
 
 	contextMenu->exec(QCursor::pos());
 	delete contextMenu;

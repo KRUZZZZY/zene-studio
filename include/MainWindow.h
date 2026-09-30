@@ -54,6 +54,8 @@ class MainWindow : public QMainWindow
 {
 	Q_OBJECT
 public:
+	//! True while the Focus Desk holds the editors (it has claimed them out of their sub-windows).
+	bool focusDeskActive() const;
 	QMdiArea* workspace()
 	{
 		return static_cast<QMdiArea*>(m_workspace);

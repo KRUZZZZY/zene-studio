@@ -95,6 +95,8 @@ SET(LMMS_SRCS
 	gui/ChainPresetMenu.cpp
 	gui/ClipEditsMenu.cpp
 	gui/CrashReportMenu.cpp
+	gui/EffectHostingMenu.cpp
+	gui/FeedbackModeAction.cpp
 	gui/MidiClockMenu.cpp
 	gui/MidiReconnectAction.cpp
 	gui/PluginQuarantineMenu.cpp
@@ -102,6 +104,7 @@ SET(LMMS_SRCS
 	gui/RecordingRecoveryMenu.cpp
 	gui/RenderPresetMenu.cpp
 	gui/ScriptBudgetAction.cpp
+	gui/SessionTuningMenu.cpp
 	gui/MidiSetupWidget.cpp
 	gui/MpeInputAction.cpp
 	gui/NoteTransformActions.cpp

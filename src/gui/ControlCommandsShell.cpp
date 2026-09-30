@@ -116,7 +116,8 @@ void registerDetachAll(ControlRegistry& registry, const char* verb, bool detache
 	ControlCommand cmd = command("window", verb);
 	cmd.description = detached
 		? QStringLiteral("Detach every editor sub-window into its own top-level window - View > "
-			"Detach all subwindows dispatches this. Interface state only.")
+			"Detach all subwindows dispatches this. Interface state only. While the Focus Desk holds "
+			"the editors there are no sub-windows, and `detached` answers false.")
 		: QStringLiteral("Attach every detached editor window back into the main window's "
 			"workspace - View > Attach all subwindows dispatches this. Interface state only.");
 	cmd.argsSchema = objectSchema({});
@@ -125,6 +126,13 @@ void registerDetachAll(ControlRegistry& registry, const char* verb, bool detache
 	cmd.handler = [detached, id](const QJsonObject&) {
 		gui::MainWindow* window = mainWindow();
 		if (window == nullptr) { return noInterface(id); }
+		// While the Focus Desk holds the editors (it mounts them in its own panes) there are no
+		// sub-windows to detach: the call detaches nothing and says so (`detached: false`). It used
+		// to reach SubWindow::detach with the claimed window's null widget and kill the process.
+		if (detached && window->focusDeskActive())
+		{
+			return ControlResult::success(QJsonObject{{QStringLiteral("detached"), false}});
+		}
 		window->setAllSubWindowsDetached(detached);
 		return ControlResult::success(QJsonObject{{QStringLiteral("detached"), detached}});
 	};

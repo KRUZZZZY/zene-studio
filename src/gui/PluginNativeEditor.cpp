@@ -142,7 +142,9 @@ QWidget* editorButton(DeviceArgs args, QWidget* parent)
 	return box;
 }
 
-//! The plugin.* target id of the track or mixer channel that owns @a chain; empty if none does.
+
+} // namespace
+
 QString targetIdOfChain(const EffectChain* chain)
 {
 	for (Track* track : Engine::getSong()->tracks())
@@ -159,8 +161,6 @@ QString targetIdOfChain(const EffectChain* chain)
 	}
 	return QString();
 }
-
-} // namespace
 
 QWidget* makeNativeEditorButton(Instrument* instrument, QWidget* parent)
 {

@@ -239,8 +239,10 @@ that is this page's fault — report it and it gets added.
   parallel chain and Remove chain (`rack.add_chain` / `rack.remove_chain`; chain 0 is the channel's own and is
   not offered); and the rack's macros - one item per macro showing its value, which sets it
   (`rack.macro_set`), Add macro... and Remove macro (`rack.macro_add` / `rack.macro_remove`) (`RackMenuTest`).
-  Still socket-only: putting effects into a parallel chain, binding a macro to a parameter
-  (`rack.macro_target_add`), the key/velocity zones, and a Lua binding. The two bullets below are the
+  *Since the same day each macro also has Bind <name> to (effect > parameter of the channel's own chain, full
+  range; `rack.macro_target_add`) and Unbind <name> (`rack.macro_target_remove`).* Still socket-only: putting
+  effects into a parallel chain, a binding narrower than the full range, the key/velocity zones, and a Lua
+  binding. The two bullets below are the
   pre-menu record.
 - **No racks in the interface, and no scripting access.** Parallel chains and a chain selector exist and are
   saved with the project, but a user can only load a project that already contains a `<rack>`; there is no UI
@@ -476,6 +478,11 @@ that is this page's fault — report it and it gets added.
 
 - **The offline tool list is stale whenever no instance is running, and the bridge can only *say so* while one is — added 2026-09-15.** Serving a shorter list is a limitation of the design, not a bug: with no instance at the socket the bridge has nothing to compare against and answers from the last-known copy. What changed is that the copy is now checkable — every bundle records the surface it describes (`id_count`, `group_count`, `ids_sha256`), and whenever **an instance IS answering** `zene_status` and `zene_commands` carry an `offline_drift` block naming each offline copy, whether it is stale, and which ids it is missing. Proven against a live binary of the integration tip: **340 ids / 53 groups live against this tree's 332-id snapshot** (`Corrected 2026-09-19 (task 691)`: when this bullet was written the same probe read 265 / 43 against a 144-id snapshot; the re-take is `tests/control-commands-snapshot.py`, above), the flag fired, and the ten groups feature-list row 49 measured as tool-free (`browser`, `comp`, `export`, `link`, `modulator`, `rack`, `session`, `telemetry`, `warp`, `wasm`) are driven end to end by the registered ctest `ControlMcpGroupCoverage` — nine against the real binary, `wasm.` excused by a both-directions `--compiled-out` flag only in the builds whose configuration degrades the sandbox to OFF (`tests/CMakeLists.txt` passes the flag when `WANT_WASM` is off, which is what `Wasmtime_LIBRARY-NOTFOUND` produces). *Corrected 2026-09-19 (task 691): the clause "no build on this machine compiles the sandbox in" no longer holds — `zene-030/build` is configured `WANT_WASM='ON'` and its binary registers all eight `wasm.*` ids, so a run of this check against **that** build must drive the group for real and gets no flag.* A wasm-enabled build gets no flag and must drive the group for real; the bridge's own half of that case is `tools/mcp-zene-control/tests/test_declared_surface.py`. **The limit, stated plainly:** nothing checks the surface of an offline copy *while it is being served* with no instance up, and a copy can still be older than the tree it ships with — it is now loudly stale, not silently short.
 
+- *(Updated 2026-09-30.)* **An effect's context menu now has Hosting**: a line with the device's state from
+  `oop.get_state`, Run in a separate process (`oop.set_mode`, offered only where the family has a client and the
+  plugin can switch - otherwise disabled, saying so) and Restart its process (`oop.restart`)
+  (`EffectHostingMenuTest`). It is still ONE family of fifteen, and an instrument's hosting has no interface yet.
+  The bullet below is the pre-menu record.
 - **Out-of-process hosting is socket-only, and it is ONE family of fifteen — added 2026-09-16 (feature row
   80, board card #670).** The engine can host a plugin in a client process and now reports which families it
   can do that for (`oop.list_families`) and what the client processes have done this session
@@ -1165,12 +1172,14 @@ release-prep base and is false at this one.
 Four ids whose engines were already in the tree and whose command surface was not. All four
 are **drivable through the socket, not from the interface**, and this section is the honest half.
 
+- *(Updated 2026-09-30.)* A sample clip's context menu now runs `clip.trim`: **Trim start to playhead / Trim end to playhead** (`ClipEditsMenuTest`). A drag with a slip modifier is still missing. The line below is the earlier record.
 - **UI absence — one line: `clip.trim` is drivable through the socket, not from the interface.**
   The song editor does have the gesture the command implements — the left-edge drag in
   `src/gui/clips/ClipView.cpp`, whose three-line rule (position, length and source offset move
   together) `clip.trim` reproduces exactly — but no menu item, action or keybinding reaches the
   *command*: the GUI path is the drag, an agent's path is the id. Nothing in `src/gui/` invokes
   `clip.trim`.
+- *(Updated 2026-09-30.)* A sample clip's context menu now runs `clip.slip`: **Slip content -1 beat / +1 beat** (`ClipEditsMenuTest`). A drag with a slip modifier is still missing. The line below is the earlier record.
 - **UI absence — one line: `clip.slip` is drivable through the socket, not from the interface.**
   There is no slip gesture anywhere in the product: a case-insensitive grep for `slip` over `src/`
   and `include/` returns seven hits and every one of them is a comment or a doc-string. The
@@ -1967,6 +1976,10 @@ says that **compensation is SUSPENDED for the loop** - carrying REAPER's warning
   `tests/control-feedback-commands.py`).
 - **No automatic exit when the loop stops.** The mode stays on - and keeps permitting loop
   sends - until `feedback.disable` runs; it does not watch the audio for silence or decay.
+- *(Updated 2026-09-30.)* **A mixer channel's context menu now has Allow feedback sends** (`feedback.enable` /
+  `feedback.disable`, leaving asks first and names the loop-closing sends it deletes), and while it is on the
+  mixer offers the send button for a channel whose send would close a loop (`FeedbackModeActionTest`). Still
+  missing: a visual mark on a feedback send. The bullet below is the pre-menu record.
 - **No GUI surface.** The submode and its sends are socket-only: MixerView still hides the
   loop-closing arrows it always hid (`src/gui/mixer/MixerView.cpp`, the `isInfiniteLoop` guard),
   so the interface cannot create or show a feedback send.
@@ -2162,6 +2175,11 @@ separately-installed `libMTS.so` is present.**
 
 Fleshed out, because both halves of that sentence hide something real:
 
+- *(Updated 2026-09-30.)* **Edit ▸ Session Tuning** reaches the table: a line with its state (12-TET, or the
+  scale and keymap in force), Load Scala Scale... / Load Keymap... (`mts.load_scale` / `mts.load_keymap`, which
+  activate it), Reset to 12-TET (`mts.reset`) and Publish as MTS-ESP Master (`mts.master_set`, offered only
+  where the MTS-ESP library is present) (`SessionTuningMenuTest`). Per-note edits (`mts.set_note`,
+  `mts.set_tuning`) stay socket-only. The bullet below is the pre-menu record.
 - **No GUI reaches the table.** `mts.load_scale` / `mts.set_tuning` / `mts.set_note` /
   `mts.load_keymap` / `mts.reset` / `mts.master_set` are reachable only through the
   control socket; the existing Microtuner dialog merely FEEDS the table's content
