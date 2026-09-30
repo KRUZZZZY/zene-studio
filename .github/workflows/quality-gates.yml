@@ -124,6 +124,13 @@ jobs:
       # dispatched run failed ControlMasteringCommands and ControlMasteringRunBound without them).
       # BUGS_FOUND 11.15: ControlGoldenAudio passes or fails by runner, not by commit; the CPU is
       # the remaining difference, so every build-backed run names it.
+      # The stem suites' external-process backend needs a python with onnxruntime (the version on
+      # the box the baseline was measured on). Without it StemSplitPipelineTest and
+      # ControlStemCommands SKIP, and hosted run 36747963198's ratchet read that as coverage lost
+      # (StemTrackBuilder 90% -> 0%, ExternalProcessStemSeparator 71% -> 23%). A user-site install,
+      # as on that box; stem_commands_lib.py passes the site directory into the sandboxed instance.
+      - name: onnxruntime for the stem suites
+        run: python3 -m pip install --user --break-system-packages "onnxruntime==1.28.0"
       - name: Runner CPU (BUGS_FOUND 11.15)
         run: lscpu | grep -E 'Model name|Flags' | cut -c1-400
       - name: Configure (Debug, Qt6)
@@ -226,6 +233,13 @@ jobs:
       # job needed the same two; hosted run 36713575679 failed here without them).
       # BUGS_FOUND 11.15: ControlGoldenAudio passes or fails by runner, not by commit; the CPU is
       # the remaining difference, so every build-backed run names it.
+      # The stem suites' external-process backend needs a python with onnxruntime (the version on
+      # the box the baseline was measured on). Without it StemSplitPipelineTest and
+      # ControlStemCommands SKIP, and hosted run 36747963198's ratchet read that as coverage lost
+      # (StemTrackBuilder 90% -> 0%, ExternalProcessStemSeparator 71% -> 23%). A user-site install,
+      # as on that box; stem_commands_lib.py passes the site directory into the sandboxed instance.
+      - name: onnxruntime for the stem suites
+        run: python3 -m pip install --user --break-system-packages "onnxruntime==1.28.0"
       - name: Runner CPU (BUGS_FOUND 11.15)
         run: lscpu | grep -E 'Model name|Flags' | cut -c1-400
       # Default mode is the ratchet: the number must not fall. The baseline is
