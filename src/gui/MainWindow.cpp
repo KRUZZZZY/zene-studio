@@ -70,7 +70,12 @@
 #include "SessionGridView.h"
 #include "MidiLearnGui.h"
 #include "MpeInputAction.h"
+#include "CrashReportMenu.h"
+#include "MidiClockMenu.h"
 #include "MidiReconnectAction.h"
+#include "PluginQuarantineMenu.h"
+#include "RecordingRecoveryMenu.h"
+#include "RenderPresetMenu.h"
 #include "TrackRenderMenu.h"
 #include "ControllerTemplateMenu.h"
 #include "PatternEditor.h"
@@ -425,6 +430,10 @@ void MainWindow::finalize()
 		keySequence(Qt::CTRL, Qt::Key_M), &MainWindow::onExportProjectMidi), "project.export_midi");
 	// DAWproject interchange, through dawproject.import / dawproject.export.
 	addDawProjectActions(project_menu);
+	// Named render presets for render.render (export.preset_*).
+	addRenderPresetMenu(project_menu);
+	// Captures an abnormal exit left behind (record.recovery_*).
+	addRecordingRecoveryMenu(project_menu);
 
 	project_menu->addSeparator();
 
@@ -466,6 +475,8 @@ void MainWindow::finalize()
 	addMpeInputAction(edit_menu);
 	// Controller re-connection (midi.reconnect_*): armed state and what it holds, re-read on open.
 	addMidiReconnectAction(edit_menu);
+	addMidiClockMenu(edit_menu);
+	addPluginQuarantineMenu(edit_menu);
 
 	// Saved MIDI mapping sets (controller.template_*), re-read each time the submenu opens.
 	QMenu* templatesMenu = edit_menu->addMenu(tr("Controller Templates"));
@@ -563,6 +574,7 @@ void MainWindow::finalize()
 	// M3 item 4: every shortcut, read from these very menus (ShortcutsPage).
 	declares(help_menu->addAction(embed::getIconPixmap("help"), tr("Keyboard Shortcuts"),
 		this, [](){ dispatchShellCommand(QStringLiteral("window.shortcuts")); }), "window.shortcuts");
+	addCrashReportMenu(help_menu);
 	help_menu->addSeparator();
 	declares(help_menu->addAction( embed::getIconPixmap( "icon_small" ), tr( "About" ),
 				  this, SLOT(aboutLMMS())), "app.about");

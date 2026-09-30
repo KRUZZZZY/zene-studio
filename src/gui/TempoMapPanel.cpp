@@ -25,11 +25,13 @@
 #include "TempoMapPanel.h"
 
 #include <QCheckBox>
+#include <QFileDialog>
 #include <QHBoxLayout>
 #include <QHeaderView>
 #include <QJsonArray>
 #include <QJsonObject>
 #include <QLabel>
+#include <QMessageBox>
 #include <QPushButton>
 #include <QSignalBlocker>
 #include <QTableWidget>
@@ -38,6 +40,7 @@
 #include "ControlRegistry.h"
 #include "Engine.h"
 #include "Song.h"
+#include "UnattendedRun.h"
 
 namespace lmms::gui
 {
@@ -79,6 +82,10 @@ TempoMapPanel::TempoMapPanel(QWidget* parent) :
 	auto* add = commandButton(tr("Add at playhead"), "transport.tempo_map_add", this);
 	auto* remove = commandButton(tr("Remove"), "transport.tempo_map_remove", this);
 	auto* clear = commandButton(tr("Clear"), "transport.tempo_map_clear", this);
+	auto* exportMidi = commandButton(tr("Export MIDI..."), "interchange.smf_export", this);
+	auto* importMidi = commandButton(tr("Import MIDI..."), "interchange.smf_import", this);
+	exportMidi->setToolTip(tr("Write the tempo map as a Standard MIDI File conductor track another DAW reads"));
+	importMidi->setToolTip(tr("Replace the tempo map with a Standard MIDI File's tempo and time-signature events"));
 	connect(m_active, &QCheckBox::toggled, this, [this](bool on) {
 		run("transport.tempo_map_set_active", {{QStringLiteral("active"), on}});
 		refresh();
@@ -91,11 +98,28 @@ TempoMapPanel::TempoMapPanel(QWidget* parent) :
 		run("transport.tempo_map_clear");
 		refresh();
 	});
+	const auto report = [this](const QString& refusal) {
+		if (refusal.isEmpty()) { return; }
+		if (isUnattendedRun()) { qWarning("tempo map interchange refused: %s", qPrintable(refusal)); }
+		else { QMessageBox::warning(this, windowTitle(), refusal); }
+	};
+	connect(exportMidi, &QPushButton::clicked, this, [this, report] {
+		const QString path = QFileDialog::getSaveFileName(this, tr("Export Tempo Map"), QString(),
+			tr("MIDI file (*.mid *.midi)"));
+		if (!path.isEmpty()) { report(exportTo(path)); }
+	});
+	connect(importMidi, &QPushButton::clicked, this, [this, report] {
+		const QString path = QFileDialog::getOpenFileName(this, tr("Import Tempo Map"), QString(),
+			tr("MIDI file (*.mid *.midi)"));
+		if (!path.isEmpty()) { report(importFrom(path)); }
+	});
 
 	auto* buttons = new QHBoxLayout;
 	buttons->addWidget(add);
 	buttons->addWidget(remove);
 	buttons->addStretch();
+	buttons->addWidget(importMidi);
+	buttons->addWidget(exportMidi);
 	buttons->addWidget(clear);
 	auto* layout = new QVBoxLayout(this);
 	layout->addWidget(m_active);
@@ -161,6 +185,20 @@ bool TempoMapPanel::removeRow(int row)
 	if (!removed.ok) { m_summary->setText(removed.errorMessage); return false; }
 	refresh();
 	return true;
+}
+
+QString TempoMapPanel::exportTo(const QString& path)
+{
+	const ControlResult result = run("interchange.smf_export",
+		{{QStringLiteral("path"), path}, {QStringLiteral("overwrite"), true}});
+	return result.ok ? QString() : result.errorMessage;
+}
+
+QString TempoMapPanel::importFrom(const QString& path)
+{
+	const ControlResult result = run("interchange.smf_import", {{QStringLiteral("path"), path}});
+	refresh();
+	return result.ok ? QString() : result.errorMessage;
 }
 
 } // namespace lmms::gui

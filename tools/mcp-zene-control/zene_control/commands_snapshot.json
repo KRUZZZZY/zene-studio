@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-09-30T10:58:43Z",
+  "captured_at": "2026-09-30T18:36:54Z",
   "commands": [
     {
       "args_schema": {
@@ -2952,6 +2952,48 @@
           },
           "gain_db": {
             "type": "number"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "clip": {
+            "type": "string"
+          },
+          "record": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "clip",
+          "record"
+        ],
+        "type": "object"
+      },
+      "description": "Arm (record: true) or disarm an audio clip to receive the input the next time the song plays with recording (the song editor's Record while playing): the take starts where the clip starts, is latency-compensated, and replaces the clip's audio when the transport stops. A MIDI clip is refused - notes are recorded in the piano roll. Reversible through a recorded action step (the flag is not serialized).",
+      "group": "clip",
+      "id": "clip.set_record",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "clip": {
+            "type": "string"
+          },
+          "record": {
+            "type": "boolean"
+          },
+          "record_before": {
+            "type": "boolean"
+          },
+          "song_recording": {
+            "type": "boolean"
           }
         },
         "required": [],
@@ -21187,7 +21229,7 @@
       }
     }
   ],
-  "count": 389,
+  "count": 390,
   "instance": {
     "binary": null,
     "binary_bytes": null,
@@ -21195,15 +21237,15 @@
     "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-survey/tools/zene-pa-agentctl",
     "lane_head": null,
     "proto": 1,
-    "source_socket": "/tmp/zctl-run-yc_lx45p/zene.sock",
-    "version": "0.3.0-alpha.225+35f1eb7"
+    "source_socket": "/tmp/zctl-run-l7he5588/zene.sock",
+    "version": "0.3.0-alpha.289+1b1ed2a"
   },
   "kind": "zene-control-command-list",
   "proto": 1,
   "schema": 1,
   "surface": {
     "group_count": 58,
-    "id_count": 389,
-    "ids_sha256": "93e676f591f8e41cf55fdadcb4a172b374d08270df3f9759b0f5d9a3a2f09ab4"
+    "id_count": 390,
+    "ids_sha256": "dd228b802a3b5314d5d8b2d4ae52a0b3276d7568b9dfb92877af6e81d6d9e366"
   }
 }

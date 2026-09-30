@@ -28,7 +28,9 @@
 #include <QMenu>
 #include <QPainter>
 
+#include "ClipEditsMenu.h"
 #include "FileDialog.h"
+#include "FontHelper.h"
 #include "GuiApplication.h"
 #include "AutomationEditor.h"
 #include "embed.h"
@@ -104,6 +106,11 @@ void SampleClipView::constructContextMenu(QMenu* cm)
 		this,
 		SLOT(setAutomationGhost())
 	);
+
+	// Clip gain, fade lengths and the fade shape (clip.set_gain / clip.set_fade).
+	addClipEditsMenu(cm, m_clip);
+	// Arm the clip to take the input under Record while playing (clip.set_record).
+	addClipRecordAction(cm, m_clip);
 
 #ifdef LMMS_HAVE_STEM_SPLIT
 	cm->addAction(
@@ -352,11 +359,11 @@ void SampleClipView::paintEvent( QPaintEvent * pe )
 		p.setPen(markerColor());
 		p.drawLine(m_markerPos, rect().bottom(), m_markerPos, rect().top());
 	}
-	// recording sample tracks is not possible at the moment
-
-	/* if( m_clip->isRecord() )
+	// A clip armed to record (clip.set_record) says so until its take lands: recording a sample
+	// track works since R2.2 / BUGS_FOUND 11.8 and 11.17, which is why upstream's badge is back.
+	if( m_clip->isRecord() )
 	{
-		p.setFont( pointSize<7>( p.font() ) );
+		p.setFont( adjustedToPixelSize( p.font(), SMALL_FONT_SIZE ) );
 
 		p.setPen( textShadowColor() );
 		p.drawText( 10, p.fontMetrics().height()+1, "Rec" );
@@ -365,7 +372,7 @@ void SampleClipView::paintEvent( QPaintEvent * pe )
 
 		p.setBrush( QBrush( textColor() ) );
 		p.drawEllipse( 4, 5, 4, 4 );
-	}*/
+	}
 
 	p.end();
 

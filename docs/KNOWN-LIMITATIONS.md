@@ -234,6 +234,14 @@ that is this page's fault — report it and it gets added.
   `vca.set_solo`'s undo does not restore the transient `MixerChannel::m_muteBeforeSolo`. There is still no
   Lua binding for any of it, and a group's audibility is proved by `VcaGroupTest`'s rendered dB delta, not
   by the socket transcript.*
+- *(Updated 2026-09-30.)* **A mixer channel's context menu now has a Rack submenu**, read from `rack.get_state`:
+  a line naming the chains and the routing; Route to (Parallel, or one chain; `rack.set_selected`); Add
+  parallel chain and Remove chain (`rack.add_chain` / `rack.remove_chain`; chain 0 is the channel's own and is
+  not offered); and the rack's macros - one item per macro showing its value, which sets it
+  (`rack.macro_set`), Add macro... and Remove macro (`rack.macro_add` / `rack.macro_remove`) (`RackMenuTest`).
+  Still socket-only: putting effects into a parallel chain, binding a macro to a parameter
+  (`rack.macro_target_add`), the key/velocity zones, and a Lua binding. The two bullets below are the
+  pre-menu record.
 - **No racks in the interface, and no scripting access.** Parallel chains and a chain selector exist and are
   saved with the project, but a user can only load a project that already contains a `<rack>`; there is no UI
   and no binding. Switching chains is not crossfaded, so it can click.
@@ -290,6 +298,17 @@ that is this page's fault — report it and it gets added.
   `default: break` and **drops the row** — a dropped track rather than a degrading one, which
   `docs/TRACK-FOLDER-DESIGN.md` §4.4 states as the forward-compatibility cost of the enumerator
   approach.
+- *(Updated 2026-09-30.)* **A sample clip's context menu now has Record into this clip** (`clip.set_record`,
+  new): the clip is armed to take the input the next time the song plays with the song editor's **Record while
+  playing**, and shows upstream's "Rec" badge until the take lands - the interface route to the recording path
+  RecordingLatencyTest proves (latency-compensated, and since BUGS_FOUND 11.17 exact for a clip that starts
+  inside a period) (`ClipEditsMenuTest`). The flag is not saved with the project, as upstream's never was.
+- *(Updated 2026-09-30.)* **A sample clip's context menu now has Gain and fades**: Clip gain... (a dB value,
+  `clip.set_gain`, the item naming the current gain) and Reset gain; Fade in and Fade out, each None / 1 beat /
+  2 beats / 1 bar with the current length checked (`clip.set_fade`; a fade the clip cannot hold is refused);
+  and Fade shape for both ramps - each change one `control.undo` step (`ClipEditsMenuTest`). These are menu
+  items, not drag gestures: there are still no fade handles on the clip, and crossfades (`clip.crossfade`)
+  and the source-window trim/slip stay socket-only. The bullet below is the pre-menu record.
 - **No clip fade, crossfade or clip-gain gestures.** The clip model is in (an authored window that survives
   playback and is saved with the project) and so, since 2026-09-13, is the fade/gain model — but there are
   **no trim, slip, fade, crossfade or clip-gain tools** in the interface, and **fades, crossfades and clip gain
@@ -653,6 +672,11 @@ Dither (off / TPDF / noise-shaped) and Resampling (linear / sinc fastest, medium
   the timeline still does not draw it, and an event is added at the song's tempo and signature, not edited
   in place.)* With an empty or inactive map the tempo is the single project value it
   has always been, so a project that never used one renders byte-for-byte what it did.
+- *(Updated 2026-09-30.)* **Edit ▸ Tempo Map... now has Export MIDI... and Import MIDI...**, which run
+  `interchange.smf_export` (the map as a conductor track, replacing the picked file) and
+  `interchange.smf_import` (the map replaced by a file's tempo and time-signature events, a refusal leaving
+  it as it was) (`TempoMapPanelTest`). Reading a file without importing it (`interchange.smf_read`) is still
+  socket-only. The bullet below is the pre-panel record.
 - **Standard MIDI File tempo-map interchange has no interface — added 2026-09-15.** The tempo map can be
   written as a conductor track in a Standard MIDI File another DAW reads, and a file's tempo and
   time-signature events can be read back and imported, through `--control-socket`
@@ -721,6 +745,13 @@ Dither (off / TPDF / noise-shaped) and Resampling (linear / sinc fastest, medium
   the grid but restores no velocity — a humanised take is reversed with `control.undo`, not by
   re-quantising).
 
+- *(Updated 2026-09-30.)* **File ▸ Render Presets** is rebuilt from `export.preset_list` each time it opens:
+  Default Settings and one item per stored preset with the applied one checked (`export.preset_apply`), Save
+  Preset... (name, sample rate, bit depth, stereo mode; `export.preset_add`, asking before a name is replaced),
+  a Delete submenu (`export.preset_remove`, after a confirmation), and Render Song with Preset... - the
+  interface's first route to `render.render`, which is what a preset governs (`RenderPresetMenuTest`). The
+  export dialog still keeps its own settings and ignores the applied preset, and a ranged render is still
+  socket-only. The bullet below is the pre-menu record.
 - **Render/export presets have no interface, and a ranged render is socket-only — added 2026-09-15.**
   A named render preset (a sample rate, a bit depth and a stereo mode) can be saved, listed, applied
   and removed, drivable through `--control-socket` (`export.preset_add`, `export.preset_list`,
@@ -744,6 +775,11 @@ Dither (off / TPDF / noise-shaped) and Resampling (linear / sinc fastest, medium
   matching span of a whole-project render once that render's own tail is counted; and a render already
   performed is **not** undone by undoing the apply that influenced it — its file stays where it was
   written, so the fallback is to apply the right preset and render again.
+- *(Updated 2026-09-30.)* **An instrument or sample track's menu now has Effect chain presets**: Save chain
+  as preset... (a name, then `chain.save`; an existing name asks before it is replaced), one Apply item per
+  stored preset (`chain.apply` - one `control.undo` puts the previous chain back) and a Delete submenu
+  (`chain.remove`, after a confirmation) (`ChainPresetMenuTest`). Renaming (`chain.rename`) and a mixer
+  channel's chain (`ch-<n>`) are still socket-only. The bullet below is the pre-menu record.
 - **Plugin-chain presets have no interface, and their store is per-user rather than per-project — added
   2026-09-13.** A track's effect chain (its ordered devices together with each device's own settings)
   can be captured as a named preset and applied to another track, drivable through `--control-socket`
@@ -767,6 +803,13 @@ Dither (off / TPDF / noise-shaped) and Resampling (linear / sinc fastest, medium
   `Timeline::punchCapturesAt()` are real and proved, and **wiring the audio-side capture gate is deferred** —
   this build has no capture path to gate (ALSA records nothing and the two-track prototype is fed by tests), so
   a gate here would be a change no test could exercise. Drivable through the socket, not from the interface.
+- *(Updated 2026-09-30.)* **File ▸ Recover Recordings** is rebuilt from `record.recovery_get_state` each time it
+  opens: a count, and per interrupted take (named with its recoverable length) **Place on a New Sample Track** -
+  `record.recovery_restore`, then the interface loads the recovered file into a clip at bar 1 of a new sample
+  track, the import the command itself does not make - and **Dismiss** (`record.recovery_discard`: the journal
+  goes, the audio file stays) (`RecordingRecoveryMenuTest`). There is still no prompt at start-up; the menu is
+  where a user looks. The placement is an interface action, not a registry command, so `control.undo` does not
+  take the new track back. The bullet below is the pre-menu record.
 - **Recording crash recovery is journalling and recovery, not an import — added 2026-09-13.** A capture in
   progress is journalled to a side file beside its take (`<take>.rec-journal`), a clean stop retires it, and an
   abnormal exit leaves it — so the next start can find the interrupted take and hand the material back, drivable
@@ -781,6 +824,12 @@ Dither (off / TPDF / noise-shaped) and Resampling (linear / sinc fastest, medium
   audio that never reached a file. `include/RecordingJournal.h` states it, `record.recovery_get_state` reports
   it per take, and `docs/RELEASE-NOTES-v0.3.0-alpha.md` records the test that measures it. Drivable through the
   socket, not from the interface.
+- *(Updated 2026-09-30.)* **Edit ▸ MIDI Clock** switches the master (**Send Clock**, `clock.master_set`) and
+  the slave (**Follow External Clock**, and **Follow Its Tempo** while it follows, `clock.slave_set`), and a
+  line under them re-reads `clock.get_state` each time the submenu opens - not sending/sending, not
+  following, following with no lock, or locked at the measured BPM; a refused switch (a master with no MIDI
+  client to send through) stays unchecked and the line names the refusal (`MidiClockMenuTest`). Choosing the
+  port and the drift bound is still socket-only. The bullet below is the pre-menu record.
 - **MIDI clock is the engine and the socket, and there is no interface for it — added 2026-09-13.** The DAW runs
   as a MIDI clock **master** (24 pulses to the quarter note, START/STOP/CONTINUE and a Song Position Pointer on
   the transport's own edges, emitted from the audio thread through the engine's existing MIDI output) and as a
@@ -920,6 +969,12 @@ Dither (off / TPDF / noise-shaped) and Resampling (linear / sinc fastest, medium
   not be measured** because this build has no device with an audio-ports model — a test that cannot make its
   measurement must not report that it did. The pin write's engine half is proven in process by the registered
   `tests/src/core/AudioPortsModelTest.cpp`.
+- *(Updated 2026-09-30.)* **Edit ▸ Plugin Quarantine** is rebuilt from `plugin.scan_cache_get_state` each
+  time it opens: a line with the cache's file and quarantine counts, one **Release** item per quarantined
+  file (its tooltip is the path and the reason; a file that is gone says so), **Quarantine a Plugin
+  File...** (a picker, then `plugin.scan_cache_quarantine_add`) and **Rescan Plugins** (`plugin.rescan`),
+  which applies an edit (`PluginQuarantineMenuTest`). The cache's per-file records are still only on the
+  socket (`plugin.scan_cache_list` / `_lookup`). The bullet below is the pre-menu record.
 - **The plugin scan cache and its quarantine list are drivable, and there is no interface for either —
   added 2026-09-14.** The cache the plugin scan fills (one record per candidate file: its path, the size and
   mtime it had, its status and, for a plugin, the descriptor metadata the scan resolved) and the quarantine
@@ -937,6 +992,14 @@ Dither (off / TPDF / noise-shaped) and Resampling (linear / sinc fastest, medium
   The engine layer keeps its proof (`tests/src/core/PluginScanCacheTest.cpp`, extended with the two enumeration
   cases) and the **surface** is proven by `tests/control-plugin-scan-commands.py`, which reads the cache file
   off disk as well as off the wire.
+- *(Updated 2026-09-30.)* **Help ▸ Crash Reports** arms and disarms the reporter (**Report Crashes**,
+  `crash.enable` / `crash.disable` - disarming deletes nothing), names its state on a line re-read from
+  `crash.list_reports` each time the submenu opens (armed or not; no report, one not yet offered, or one
+  already offered), opens the report directory (**Show Report Folder**), acknowledges a pending report
+  (**Stop Offering the Report**, the file stays) and deletes it after a confirmation (**Delete the
+  Report...**, `crash.discard_report`) (`CrashReportMenuTest`, POSIX; the module is a no-op on Windows).
+  There is still no way to SEND a report, by design: this build has no upload. The bullet below is the
+  pre-menu record.
 - **The crash reporter is drivable, and there is no way to see or send a report from the interface — added
   2026-09-14.** The reporter's state (whether it is installed, its report directory, every report it holds with
   its size and last-written time, whether one is still pending an offer, the `offered` sentinel, whether a

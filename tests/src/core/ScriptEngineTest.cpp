@@ -86,6 +86,21 @@ class ScriptEngineTest : public QObject
 {
 	Q_OBJECT
 private slots:
+	//! isCompatibleVersion on strings no header could produce - the header's own pattern only
+	//! passes digits.digits - which is why runScript's rows never reach these refusals (gate 2,
+	//! hosted run 36747963198: both "malformed" branches entered uncovered).
+	void aMalformedVersionIsRefusedByName()
+	{
+		for (const QString& version : {QStringLiteral("1"), QStringLiteral("1.2.3"), QStringLiteral("a.b"),
+			QStringLiteral("1.x"), QString()})
+		{
+			QString reason;
+			QVERIFY2(!lmms::ScriptEngine::isCompatibleVersion(version, &reason), qPrintable(version));
+			QCOMPARE(reason, QStringLiteral("malformed version '%1'").arg(version));
+			QVERIFY(!lmms::ScriptEngine::isCompatibleVersion(version));
+		}
+	}
+
 	void initTestCase()
 	{
 		using namespace lmms;

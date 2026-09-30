@@ -666,6 +666,22 @@ set(LMMS_TESTS
 	# The piano roll's Groove menu: extract, apply with strength, quantise with strength.
 	src/gui/GrooveMenuTest.cpp
 	# A mixer strip's tooltip names its delay compensation.
+	# A sample clip's Gain and fades (clip.set_gain / clip.set_fade), with one control.undo.
+	src/gui/ClipEditsMenuTest.cpp
+	# A track menu's Effect chain presets (chain.save / apply / remove / list) against a real effect.
+	src/gui/ChainPresetMenuTest.cpp
+	# A mixer channel's Rack menu (rack.* chains, routing and macros).
+	src/gui/RackMenuTest.cpp
+	# File > Recover Recordings (record.recovery_*), over two journalled WAV takes.
+	src/gui/RecordingRecoveryMenuTest.cpp
+	# File > Render Presets (export.preset_* / render.render), over a throwaway preset store.
+	src/gui/RenderPresetMenuTest.cpp
+	# Edit > Plugin Quarantine (plugin.scan_cache_* / plugin.rescan), over a throwaway scan-cache file.
+	src/gui/PluginQuarantineMenuTest.cpp
+	# Help > Crash Reports (crash.enable / disable / list / acknowledge / discard), over throwaway directories.
+	src/gui/CrashReportMenuTest.cpp
+	# Edit > MIDI Clock (clock.master_set / slave_set / get_state), over a throwaway config.
+	src/gui/MidiClockMenuTest.cpp
 	# Edit > MIDI Controller Reconnect (midi.reconnect_arm / _status), over a throwaway config.
 	src/gui/MidiReconnectActionTest.cpp
 	src/gui/MixerLatencyTextTest.cpp
@@ -859,6 +875,8 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 		# The automation-mode context menu is driven against a real instrument's parameter.
 		OR LMMS_TEST_NAME STREQUAL "AutomationModeMenuTest"
 		OR LMMS_TEST_NAME STREQUAL "ControlChainPresetTest"
+		# The track menu's chain presets save and apply a chain holding one real effect.
+		OR LMMS_TEST_NAME STREQUAL "ChainPresetMenuTest"
 		# Board card #712: SessionTuningTest's proof slot needs tracks with a
 		# REAL instrument (revtest::addInstrumentTrack -> plugin.load) so both
 		# sounding notes go through the engine's own render path - the same
@@ -1159,6 +1177,14 @@ set_tests_properties(MidiControllerMenuTest PROPERTIES ENVIRONMENT "QT_QPA_PLATF
 set_tests_properties(ControllerTemplateMenuTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(TrackRenderMenuTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(GrooveMenuTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+set_tests_properties(ClipEditsMenuTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+set_tests_properties(ChainPresetMenuTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+set_tests_properties(RackMenuTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+set_tests_properties(RecordingRecoveryMenuTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+set_tests_properties(RenderPresetMenuTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+set_tests_properties(PluginQuarantineMenuTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+set_tests_properties(CrashReportMenuTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+set_tests_properties(MidiClockMenuTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(MidiReconnectActionTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 # ThemeContrastTest reads the themes from the source tree; guiless like WcagContrastTest.
 target_compile_definitions(ThemeContrastTest PRIVATE
@@ -3401,6 +3427,11 @@ set_tests_properties(BrowserCatalogTest ControlBrowserCommandsTest PROPERTIES
 # The chain-preset group constructs a full Engine and drives real devices through
 # the registry (plugin.load, plugin.param_set, chain.save/apply), so it wants a
 # real Qt platform plugin even though nothing opens a window.
+# SessionPlaybackTest is a QTEST_MAIN (a QApplication), so it needs a platform like every other one:
+# hosted build.yml linux-x86_64 (run 36747963198) aborted it on "could not connect to display",
+# where quality-gates.yml passes it only because that job exports QT_QPA_PLATFORM itself.
+set_tests_properties(SessionPlaybackTest PROPERTIES
+	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(ControlChainPresetTest PROPERTIES
 	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 # The project-asset reference group constructs a full Engine (the relink's
@@ -3742,7 +3773,9 @@ if(PYTHON3_EXECUTABLE AND TARGET zene_api)
 			--object-dir ${CMAKE_BINARY_DIR}/src/CMakeFiles/zene_api.dir
 			--source-list ${CMAKE_BINARY_DIR}/zene-api-sources.txt
 			--control-source ${CMAKE_SOURCE_DIR}/src/gui/MainWindow.cpp
-			--control-object ${CMAKE_BINARY_DIR}/src/CMakeFiles/lmmsobjs.dir/gui/MainWindow.cpp.o
+			# The object suffix is the toolchain's own (.obj under MSVC and MSYS2 CLANGARM64 - hosted
+			# windows-arm64, run 36747963198, found no MainWindow.cpp.o), not a spelling of ours.
+			--control-object ${CMAKE_BINARY_DIR}/src/CMakeFiles/lmmsobjs.dir/gui/MainWindow.cpp${CMAKE_CXX_OUTPUT_EXTENSION}
 	)
 	set_tests_properties(ZeneApiBoundary PROPERTIES
 		TIMEOUT 600

@@ -52,6 +52,11 @@ public:
 	//! Adds an event at @a tick with @a bpm (0: the song's tempo); for the button and the tests.
 	bool addEvent(int tick, int bpm);
 	bool removeRow(int row);
+	//! Writes the map as a Standard MIDI File conductor track (interchange.smf_export, replacing
+	//! @a path) and replaces it with a file's tempo and meter events (interchange.smf_import); for
+	//! the Export MIDI... / Import MIDI... buttons and the tests. The message is a refusal's, or empty.
+	QString exportTo(const QString& path);
+	QString importFrom(const QString& path);
 
 private:
 	QCheckBox* m_active = nullptr;

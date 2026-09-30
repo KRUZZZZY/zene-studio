@@ -158,6 +158,11 @@ const ReversibilityRow kRows[] = {
 		"the clip gain is part of the same Clip serialized state as the fades",
 		"ProjectJournal (Clip checkpoint)",
 		""),
+	R("clip.set_record", RC::TrueInverse, true,
+		"the record flag is not in the clip's serialized state, so no checkpoint could restore "
+		"it; the command records the flag's before-value",
+		"action checkpoint: the recorded undo step sets the flag back, finding the clip by its id",
+		""),
 	R("clip.crossfade", RC::TrueInverse, true,
 		"the command writes TWO clips, and it refuses unless both are on the same "
 		"track - which is what lets one Track checkpoint cover the pair. Its "

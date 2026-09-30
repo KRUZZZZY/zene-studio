@@ -166,8 +166,12 @@ def check_completion(recorder, state, outdir):
 def check_no_legacy_scratch(recorder, before):
     """The run's own scratch is not left in the shared temp directory."""
     after = legacy_scratch()
+    # APPEARED, not "changed": the temp directory is shared, and under `ctest -j2` another suite's
+    # own scratch can vanish while this run is in flight (hosted run 36747963198, linux-x86_64:
+    # the old `after == before` failed with appeared=[] - an entry had gone, none had come).
+    appeared = sorted(set(after) - set(before))
     recorder.check("the run leaves no zene-master-* scratch in the shared temp directory",
-                   after == before, "appeared=%r" % sorted(set(after) - set(before)))
+                   not appeared, "appeared=%r" % appeared)
 
 
 def check_quit(session, instance, recorder):

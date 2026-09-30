@@ -91,7 +91,15 @@ SET(LMMS_SRCS
 	gui/MidiCCRackView.cpp
 	gui/MidiLearnGui.cpp
 	gui/MidiControllerMenu.cpp
+	gui/ChainPresetMenu.cpp
+	gui/ClipEditsMenu.cpp
+	gui/CrashReportMenu.cpp
+	gui/MidiClockMenu.cpp
 	gui/MidiReconnectAction.cpp
+	gui/PluginQuarantineMenu.cpp
+	gui/RackMenu.cpp
+	gui/RecordingRecoveryMenu.cpp
+	gui/RenderPresetMenu.cpp
 	gui/MidiSetupWidget.cpp
 	gui/MpeInputAction.cpp
 	gui/NoteTransformActions.cpp

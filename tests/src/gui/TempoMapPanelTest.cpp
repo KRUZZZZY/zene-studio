@@ -24,14 +24,20 @@
 
 /*! The panel over a real engine, every edit through its transport.tempo_map_* command: an event
  *  added at a tick appears as a row (with its bar) and in transport.tempo_map_get; the Active box
- *  follows and sets the map's switch; Remove deletes the selected row's event; Clear empties it. */
+ *  follows and sets the map's switch; Remove deletes the selected row's event; Clear empties it.
+ *  And the Standard MIDI File round trip the Export MIDI... / Import MIDI... buttons run: a map
+ *  exported, cleared and imported comes back with its events, and a file that is not MIDI is
+ *  refused with the map left as it was. */
 
 #include <QtTest>
 
 #include <QCheckBox>
+#include <QFile>
+#include <QFileInfo>
 #include <QJsonArray>
 #include <QPushButton>
 #include <QTableWidget>
+#include <QTemporaryDir>
 
 #include "ControlRegistry.h"
 #include "Engine.h"
@@ -96,6 +102,39 @@ private slots:
 		}
 		QCOMPARE(mapState().value(QStringLiteral("event_count")).toInt(), 0);
 		QCOMPARE(panel.rowCount(), 0);
+	}
+
+	void theMapRoundTripsThroughAMidiFile()
+	{
+		QTemporaryDir dir;
+		QVERIFY(dir.isValid());
+		TempoMapPanel panel;
+		QVERIFY(panel.addEvent(0, 128));
+		QVERIFY(panel.addEvent(8 * 192, 100));  // bar 9
+		const QString file = dir.filePath(QStringLiteral("conductor.mid"));
+		QCOMPARE(panel.exportTo(file), QString());
+		QVERIFY(QFileInfo(file).size() > 0);
+		// Written again over the same file: the panel's own save dialog has already asked.
+		QCOMPARE(panel.exportTo(file), QString());
+
+		ControlRegistry::instance()->invoke(QStringLiteral("transport.tempo_map_clear"), QJsonObject{});
+		panel.refresh();
+		QCOMPARE(panel.rowCount(), 0);
+		QCOMPARE(panel.importFrom(file), QString());
+		QCOMPARE(panel.rowCount(), 2);
+		auto* table = panel.findChild<QTableWidget*>();
+		QCOMPARE(table->item(1, 0)->text(), QStringLiteral("9"));
+		QCOMPARE(table->item(1, 2)->text(), QStringLiteral("100"));
+
+		const QString notMidi = dir.filePath(QStringLiteral("not.mid"));
+		{
+			QFile garbage(notMidi);
+			QVERIFY(garbage.open(QIODevice::WriteOnly));
+			garbage.write("this is not a MIDI file");
+		}
+		QVERIFY(!panel.importFrom(notMidi).isEmpty());
+		QCOMPARE(panel.rowCount(), 2);
+		ControlRegistry::instance()->invoke(QStringLiteral("transport.tempo_map_clear"), QJsonObject{});
 	}
 };
 

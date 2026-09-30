@@ -129,6 +129,7 @@ option(WANT_DEBUG_ASAN	"Enable AddressSanitizer" OFF)
 option(WANT_DEBUG_TSAN	"Enable ThreadSanitizer" OFF)
 option(WANT_DEBUG_MSAN	"Enable MemorySanitizer" OFF)
 option(WANT_DEBUG_UBSAN	"Enable UndefinedBehaviorSanitizer" OFF)
+option(WANT_DEBUG_RTSAN	"Enable RealtimeSanitizer on the audio thread (Clang >= 20)" OFF)
 option(WANT_DEBUG_GPROF	"Enable gprof profiler" OFF)
 option(WANT_COVERAGE	"Build test targets with gcov coverage instrumentation" OFF)
 OPTION(BUNDLE_QT_TRANSLATIONS	"Install Qt translation files for LMMS" OFF)
@@ -950,6 +951,12 @@ add_sanitizer(memory "Clang" WANT_DEBUG_MSAN STATUS_DEBUG_MSAN -fno-omit-frame-p
 # UBSan does not link with vptr enabled due to a problem with references from PeakControllerEffect
 # not being found by PeakController
 add_sanitizer(undefined "GNU|Clang" WANT_DEBUG_UBSAN STATUS_DEBUG_UBSAN -fno-sanitize=vptr)
+# RealtimeSanitizer (R7.2): the checks only run inside an lmms::RealtimeScope (include/RealtimeScope.h),
+# which LMMS_RTSAN switches on.
+add_sanitizer(realtime "Clang" WANT_DEBUG_RTSAN STATUS_DEBUG_RTSAN)
+if(STATUS_DEBUG_RTSAN STREQUAL "Enabled")
+	add_compile_definitions(LMMS_RTSAN=1)
+endif()
 
 # Add warning and error flags
 include(ErrorFlags)
@@ -1093,6 +1100,7 @@ MESSAGE(
 "* Debug FP exceptions               : ${STATUS_DEBUG_FPE}\n"
 "* Debug using AddressSanitizer      : ${STATUS_DEBUG_ASAN}\n"
 "* Debug using ThreadSanitizer       : ${STATUS_DEBUG_TSAN}\n"
+"* Debug using RealtimeSanitizer     : ${STATUS_DEBUG_RTSAN}\n"
 "* Debug using MemorySanitizer       : ${STATUS_DEBUG_MSAN}\n"
 "* Debug using UBSanitizer           : ${STATUS_DEBUG_UBSAN}\n"
 "* Debug packaging commands          : ${STATUS_DEBUG_CPACK}\n"

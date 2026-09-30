@@ -37,6 +37,7 @@
 #include "Song.h"
 #include "EnvelopeAndLfoParameters.h"
 #include "NotePlayHandle.h"
+#include "RealtimeScope.h"
 #include "ConfigManager.h"
 
 // platform-specific audio-interface-classes
@@ -508,6 +509,8 @@ void AudioEngine::renderStageMix()
 std::span<const SampleFrame> AudioEngine::renderNextPeriod()
 {
 	const auto lock = std::lock_guard{m_changeMutex};
+	// R7.2: under WANT_DEBUG_RTSAN everything from here to the return is checked as realtime code.
+	const RealtimeScope realtime;
 
 	m_profiler.startPeriod();
 	s_renderingThread = true;

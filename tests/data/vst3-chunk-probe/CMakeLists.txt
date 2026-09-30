@@ -70,6 +70,23 @@ if(NOT LMMS_VST3_TEST_MACHINE)
 	set(LMMS_VST3_TEST_MACHINE "${CMAKE_SYSTEM_PROCESSOR}")
 endif()
 
+# On Windows the arch directory is the TARGET's, which is what the SDK's loader
+# compiles in (_M_ARM64 -> "arm64-win"): hosted windows-arm64 (run 36747963198)
+# runs MSYS2, whose `uname -m` is an emulated x86_64 program, so the bundle was
+# laid out as x86_64-win and LoadLibraryW found no module in arm64-win. Ask the
+# compiler instead; x86_64 targets keep the machine word they had.
+if(WIN32)
+	include(CheckCXXSourceCompiles)
+	check_cxx_source_compiles("
+#if !(defined(_M_ARM64) || defined(__aarch64__)) || defined(_M_ARM64EC)
+#error not a native ARM64 target
+#endif
+int main() { return 0; }" LMMS_VST3_FIXTURE_TARGET_ARM64)
+	if(LMMS_VST3_FIXTURE_TARGET_ARM64)
+		set(LMMS_VST3_TEST_MACHINE "ARM64")
+	endif()
+endif()
+
 set(LMMS_VST3_CHUNK_PROBE_NAME "vst3-chunk-probe")
 set(LMMS_VST3_CHUNK_PROBE_BUNDLE_DIR
 	"${CMAKE_CURRENT_BINARY_DIR}/${LMMS_VST3_CHUNK_PROBE_NAME}.vst3")

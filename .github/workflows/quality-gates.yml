@@ -124,6 +124,13 @@ jobs:
       # dispatched run failed ControlMasteringCommands and ControlMasteringRunBound without them).
       # BUGS_FOUND 11.15: ControlGoldenAudio passes or fails by runner, not by commit; the CPU is
       # the remaining difference, so every build-backed run names it.
+      # The stem suites' external-process backend needs a python with onnxruntime (the version on
+      # the box the baseline was measured on). Without it StemSplitPipelineTest and
+      # ControlStemCommands SKIP, and hosted run 36747963198's ratchet read that as coverage lost
+      # (StemTrackBuilder 90% -> 0%, ExternalProcessStemSeparator 71% -> 23%). A user-site install,
+      # as on that box; stem_commands_lib.py passes the site directory into the sandboxed instance.
+      - name: onnxruntime for the stem suites
+        run: python3 -m pip install --user --break-system-packages "onnxruntime==1.28.0"
       - name: Runner CPU (BUGS_FOUND 11.15)
         run: lscpu | grep -E 'Model name|Flags' | cut -c1-400
       - name: Configure (Debug, Qt6)
@@ -200,6 +207,62 @@ jobs:
           done
           exit $fail
 
+  # R7.2 (docs/RELEASE-0.4.0-PLAN.md M1): RealtimeSanitizer on the audio thread. Only the code
+  # inside an lmms::RealtimeScope is checked (include/RealtimeScope.h): one period's render after
+  # renderNextPeriod has taken the model lock, and each job a worker thread takes. Every finding is
+  # printed (halt_on_error=false) and the job fails if there is one - each is a BUGS_FOUND row.
+  rtsan:
+    name: RealtimeSanitizer (audio-thread suites)
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event_name == 'schedule' }}
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Install build dependencies and clang 20 (RTSan needs clang >= 20)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            cmake g++ lsb-release wget software-properties-common gnupg \
+            qt6-base-dev libqt6svg6-dev qt6-l10n-tools \
+            libsndfile1-dev libfftw3-dev libasound2-dev libjack-jackd2-dev \
+            libsamplerate0-dev librubberband-dev libxml2-dev \
+            liblist-moreutils-perl libxml-parser-perl
+          wget -qO llvm.sh https://apt.llvm.org/llvm.sh
+          sudo bash llvm.sh 20
+          clang++-20 --version
+      - name: Configure (Debug, RTSan, clang 20)
+        run: >-
+          cmake -B build-rtsan -S . -DCMAKE_BUILD_TYPE=Debug -DWANT_DEBUG_RTSAN=ON -DWANT_QT6=ON
+          -DWANT_VST3=OFF -DCMAKE_C_COMPILER=clang-20 -DCMAKE_CXX_COMPILER=clang++-20
+      - name: Build the audio-thread suites
+        run: |
+          # A build that silently lost the sanitizer would report no findings: refuse it by name.
+          flags=build-rtsan/src/CMakeFiles/lmmsobjs.dir/flags.make
+          grep -q "fsanitize=realtime" "$flags" && grep -q "LMMS_RTSAN=1" "$flags" \
+            || { echo "::error::the build is not instrumented (no -fsanitize=realtime / LMMS_RTSAN in $flags)"; exit 1; }
+          cmake --build build-rtsan -j4 --target RecordingLatencyTest DummyPacingTest \
+            SessionSchedulerRenderTest MixerConcurrencyTest ModulationAudioViewTest TempoMapTest
+      - name: Run them under RTSan
+        working-directory: build-rtsan/tests
+        env:
+          QT_QPA_PLATFORM: offscreen
+          RTSAN_OPTIONS: halt_on_error=false:print_stats_on_exit=true
+        run: |
+          fail=0
+          for t in RecordingLatencyTest DummyPacingTest SessionSchedulerRenderTest MixerConcurrencyTest \
+                   ModulationAudioViewTest TempoMapTest; do
+            ./"$t" > "$t.rtsan.log" 2>&1 || { echo "::error::$t failed under RTSan"; fail=1; }
+            if grep -q "RealtimeSanitizer" "$t.rtsan.log"; then
+              echo "::error::$t: RealtimeSanitizer findings"
+              grep -A12 "==ERROR: RealtimeSanitizer" "$t.rtsan.log" | head -120
+              fail=1
+            fi
+            grep -E "^(PASS|FAIL!|Totals)" "$t.rtsan.log" | tail -3
+          done
+          exit $fail
+
   # Gate 2 is the ratchet: the number must not fall, and the gate must PASS.
   coverage:
     name: gate 2 - coverage ratchet
@@ -226,6 +289,13 @@ jobs:
       # job needed the same two; hosted run 36713575679 failed here without them).
       # BUGS_FOUND 11.15: ControlGoldenAudio passes or fails by runner, not by commit; the CPU is
       # the remaining difference, so every build-backed run names it.
+      # The stem suites' external-process backend needs a python with onnxruntime (the version on
+      # the box the baseline was measured on). Without it StemSplitPipelineTest and
+      # ControlStemCommands SKIP, and hosted run 36747963198's ratchet read that as coverage lost
+      # (StemTrackBuilder 90% -> 0%, ExternalProcessStemSeparator 71% -> 23%). A user-site install,
+      # as on that box; stem_commands_lib.py passes the site directory into the sandboxed instance.
+      - name: onnxruntime for the stem suites
+        run: python3 -m pip install --user --break-system-packages "onnxruntime==1.28.0"
       - name: Runner CPU (BUGS_FOUND 11.15)
         run: lscpu | grep -E 'Model name|Flags' | cut -c1-400
       # Default mode is the ratchet: the number must not fall. The baseline is

@@ -54,6 +54,7 @@
 #include "Track.h"
 #include "TrackFolderMenu.h"
 #include "TrackRenderMenu.h"
+#include "ChainPresetMenu.h"
 #include "TrackContainerView.h"
 #include "TrackGrip.h"
 #include "TrackView.h"
@@ -332,6 +333,8 @@ void TrackOperationsWidget::updateMenu()
 	addTrackFolderMenu(toMenu, m_trackView->getTrack());
 	// Freeze / Unfreeze and Bounce in place (freeze.* / bounce.in_place).
 	addTrackRenderActions(toMenu, m_trackView->getTrack());
+	// Effect chain presets (chain.save / chain.apply / chain.remove).
+	addChainPresetMenu(toMenu, m_trackView->getTrack());
 
 	toMenu->addSeparator();
 

@@ -360,6 +360,50 @@ private slots:
 		QCOMPARE( dump( positionsOf( t.vector() ) ), QString( "48,96,144" ) );
 	}
 
+	//! quantizeNotes() - the options form the groove menu and groove.quantize use - by every mode,
+	//! and its velocity humanise: bounded, clamped, reproducible from the seed (gate 2, hosted run
+	//! 36747963198: the Floor/Ceil targets and the velocity draw entered uncovered).
+	void quantizeNotesByModeAndHumaniseVelocity()
+	{
+		const auto positionsAfter = []( NoteTransform::QuantizeMode mode ) {
+			NoteTable t;
+			t.add( 60, 50, 24, 100 );
+			t.add( 62, 70, 24, 100 );
+			t.add( 64, 96, 24, 100 );
+			NoteTransform::QuantizeOptions options;
+			options.grid = 48;
+			options.mode = mode;
+			NoteTransform::quantizeNotes( t.vector(), options );
+			return dump( positionsOf( t.vector() ) );
+		};
+		QCOMPARE( positionsAfter( NoteTransform::QuantizeMode::Nearest ), QString( "48,48,96" ) );
+		QCOMPARE( positionsAfter( NoteTransform::QuantizeMode::Floor ), QString( "48,48,96" ) );
+		QCOMPARE( positionsAfter( NoteTransform::QuantizeMode::Ceil ), QString( "96,96,96" ) );
+
+		const auto velocitiesAfter = []( uint32_t seed ) {
+			NoteTable t;
+			for( int i = 0; i < 16; ++i ) { t.add( 48 + i, i * 48, 24, i % 2 ? 195 : 5 ); }
+			NoteTransform::QuantizeOptions options;
+			options.grid = 48;
+			options.humaniseVelocity = 20;
+			options.seed = seed;
+			NoteTransform::quantizeNotes( t.vector(), options );
+			return volumesOf( t.vector() );
+		};
+		const std::vector<int> first = velocitiesAfter( 7 );
+		QCOMPARE( velocitiesAfter( 7 ), first );
+		QVERIFY( velocitiesAfter( 8 ) != first );
+		bool anyMoved = false;
+		for( std::size_t i = 0; i < first.size(); ++i )
+		{
+			const int start = i % 2 ? 195 : 5;
+			QVERIFY( first[i] >= static_cast<int>( MinVolume ) && first[i] <= static_cast<int>( MaxVolume ) );
+			QVERIFY( std::abs( first[i] - start ) <= 20 );
+			anyMoved = anyMoved || first[i] != start;
+		}
+		QVERIFY( anyMoved );
+	}
+
 	void snapToScaleMovesOnlyOutOfKeyNotes()
 	{
 		NoteTable t;

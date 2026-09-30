@@ -509,12 +509,14 @@ include/BounceInPlace.h
 include/BrowserCatalog.h
 include/BrowserPeakCache.h
 include/BrowserTagMenu.h
+include/ChainPresetMenu.h
 include/ChordDetect.h
 include/ChordProgression.h
 include/ChordTrack.h
 include/ChordVocabulary.h
 include/ClipConsolidate.h
 include/ClipEdits.h
+include/ClipEditsMenu.h
 include/ClipLinks.h
 include/CommandPalette.h
 include/ControlAutomationSupport.h
@@ -551,6 +553,7 @@ include/ControlWasmSupport.h
 include/ControlWindowCommands.h
 include/ControllerSurface.h
 include/ControllerTemplateMenu.h
+include/CrashReportMenu.h
 include/CrashReporter.h
 include/CrashReporterFormat.h
 include/DawProjectInterchange.h
@@ -584,6 +587,7 @@ include/MasteringChain.h
 include/MasteringJob.h
 include/MasteringReport.h
 include/MidiClock.h
+include/MidiClockMenu.h
 include/MidiControllerMenu.h
 include/MidiLearn.h
 include/MidiLearnGui.h
@@ -608,6 +612,7 @@ include/PluginEditorHost.h
 include/PluginHostChunking.h
 include/PluginHostNotes.h
 include/PluginNativeEditor.h
+include/PluginQuarantineMenu.h
 include/PluginScanCache.h
 include/ProjectContainer.h
 include/ProjectIds.h
@@ -618,11 +623,15 @@ include/ProvenanceSection.h
 include/PunchWindow.h
 include/Rack.h
 include/RackMacros.h
+include/RackMenu.h
 include/RackNodes.h
 include/RackZones.h
+include/RealtimeScope.h
 include/RecordRingBuffer.h
 include/RecordingJournal.h
+include/RecordingRecoveryMenu.h
 include/RemotePluginAudioPorts.h
+include/RenderPresetMenu.h
 include/RetroAudioCapture.h
 include/RetroAudioRing.h
 include/RetroMidiCapture.h
@@ -1119,10 +1128,13 @@ src/core/midi/MidiReconnect.cpp
 src/core/midi/MpeExpression.cpp
 src/gui/AutomationModeMenu.cpp
 src/gui/BrowserTagMenu.cpp
+src/gui/ChainPresetMenu.cpp
+src/gui/ClipEditsMenu.cpp
 src/gui/CommandPalette.cpp
 src/gui/ControlCommandsShell.cpp
 src/gui/ControlCommandsWindow.cpp
 src/gui/ControllerTemplateMenu.cpp
+src/gui/CrashReportMenu.cpp
 src/gui/ExportQualityControls.cpp
 src/gui/FocusDesk.cpp
 src/gui/FocusDeskActions.cpp
@@ -1131,6 +1143,7 @@ src/gui/FocusDeskPane.cpp
 src/gui/FocusDeskPlacement.cpp
 src/gui/FocusDeskWorkspaces.cpp
 src/gui/GrooveMenu.cpp
+src/gui/MidiClockMenu.cpp
 src/gui/MidiControllerMenu.cpp
 src/gui/MidiLearnGui.cpp
 src/gui/MidiReconnectAction.cpp
@@ -1138,6 +1151,10 @@ src/gui/MpeInputAction.cpp
 src/gui/NoteTransformActions.cpp
 src/gui/PinConnector.cpp
 src/gui/PluginNativeEditor.cpp
+src/gui/PluginQuarantineMenu.cpp
+src/gui/RackMenu.cpp
+src/gui/RecordingRecoveryMenu.cpp
+src/gui/RenderPresetMenu.cpp
 src/gui/SessionGridView.cpp
 src/gui/SessionSyncAction.cpp
 src/gui/SessionTransportBar.cpp
