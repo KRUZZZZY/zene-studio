@@ -659,6 +659,11 @@ Dither (off / TPDF / noise-shaped) and Resampling (linear / sinc fastest, medium
   the timeline still does not draw it, and an event is added at the song's tempo and signature, not edited
   in place.)* With an empty or inactive map the tempo is the single project value it
   has always been, so a project that never used one renders byte-for-byte what it did.
+- *(Updated 2026-09-30.)* **Edit ▸ Tempo Map... now has Export MIDI... and Import MIDI...**, which run
+  `interchange.smf_export` (the map as a conductor track, replacing the picked file) and
+  `interchange.smf_import` (the map replaced by a file's tempo and time-signature events, a refusal leaving
+  it as it was) (`TempoMapPanelTest`). Reading a file without importing it (`interchange.smf_read`) is still
+  socket-only. The bullet below is the pre-panel record.
 - **Standard MIDI File tempo-map interchange has no interface — added 2026-09-15.** The tempo map can be
   written as a conductor track in a Standard MIDI File another DAW reads, and a file's tempo and
   time-signature events can be read back and imported, through `--control-socket`
