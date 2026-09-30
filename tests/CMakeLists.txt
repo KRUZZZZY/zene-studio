@@ -883,6 +883,8 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 		OR LMMS_TEST_NAME STREQUAL "ChainPresetMenuTest"
 		# The modulators panel binds a parameter of one real effect.
 		OR LMMS_TEST_NAME STREQUAL "ModulatorPanelTest"
+		# The rack menu binds a macro to a parameter of one real effect.
+		OR LMMS_TEST_NAME STREQUAL "RackMenuTest"
 		# Board card #712: SessionTuningTest's proof slot needs tracks with a
 		# REAL instrument (revtest::addInstrumentTrack -> plugin.load) so both
 		# sounding notes go through the engine's own render path - the same

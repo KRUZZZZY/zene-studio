@@ -71,6 +71,9 @@ class RackMenuTest : public QObject
 private slots:
 	void initTestCase()
 	{
+#ifdef LMMS_TEST_PLUGIN_DIR
+		qputenv("LMMS_PLUGIN_DIR", LMMS_TEST_PLUGIN_DIR);
+#endif
 		Engine::init(true);
 		ControlRegistry::setReady(true);
 	}
@@ -154,6 +157,50 @@ private slots:
 		QCOMPARE(state().value(QStringLiteral("macro_count")).toInt(), 0);
 		item(submenu(menu, QStringLiteral("Remove chain")), QStringLiteral("Chain 1"))->trigger();
 		QCOMPARE(state().value(QStringLiteral("chain_count")).toInt(), 1);
+	}
+
+	//! A macro is bound to, and unbound from, a parameter of a real effect on the channel's own chain.
+	void aMacroIsBoundToAParameterFromTheMenu()
+	{
+		const int index = Engine::mixer()->createChannel();
+		const MixerChannel* channel = Engine::mixer()->mixerChannel(index);
+		const QString id = control::channelIdOf(channel);
+		const auto invoke = [](const char* command, const QJsonObject& args) {
+			return ControlRegistry::instance()->invoke(QLatin1String(command), args);
+		};
+		bool loaded = false;
+		for (const QJsonValue& device : invoke("plugin.list", {{QStringLiteral("kind"), QStringLiteral("effect")},
+			{QStringLiteral("loadable_only"), true}}).result.value(QStringLiteral("devices")).toArray())
+		{
+			loaded = invoke("plugin.load", {{QStringLiteral("target"), id},
+				{QStringLiteral("device"), device.toObject().value(QStringLiteral("id")).toString()}}).ok;
+			if (loaded) { break; }
+		}
+		if (!loaded) { QSKIP("this host loads no effect module"); }
+		QVERIFY(invoke("rack.macro_add", {{QStringLiteral("channel"), id}, {QStringLiteral("name"), QStringLiteral("Tone")}}).ok);
+		const auto macro = [&] {
+			return invoke("rack.get_state", {{QStringLiteral("channel"), id}}).result
+				.value(QStringLiteral("macros")).toArray().first().toObject();
+		};
+
+		QMenu parent;
+		addRackMenu(&parent, channel);
+		QMenu* bind = submenu(submenu(&parent, QStringLiteral("Rack")), QStringLiteral("Bind Tone to"));
+		QVERIFY(bind != nullptr);
+		QMenu* firstEffect = bind->actions().first()->menu();
+		QVERIFY(firstEffect != nullptr && !firstEffect->actions().isEmpty());
+		const QString parameter = firstEffect->actions().first()->text();
+		firstEffect->actions().first()->trigger();
+		QCOMPARE(macro().value(QStringLiteral("target_count")).toInt(), 1);
+		QCOMPARE(macro().value(QStringLiteral("targets")).toArray().first().toObject()
+			.value(QStringLiteral("parameter")).toString(), parameter);
+
+		QMenu again;
+		addRackMenu(&again, channel);
+		QMenu* unbind = submenu(submenu(&again, QStringLiteral("Rack")), QStringLiteral("Unbind Tone"));
+		QVERIFY(unbind != nullptr);
+		unbind->actions().first()->trigger();
+		QCOMPARE(macro().value(QStringLiteral("target_count")).toInt(), 0);
 	}
 
 	void noChannelNoMenu()

@@ -95,6 +95,57 @@ void addRouting(QMenu* rack, const QString& channel, int chains, int selected)
 	}
 }
 
+//! The devices of the channel's own chain (chain 0), as dsp.get_state reports them.
+QJsonArray channelDevices(const QString& channel)
+{
+	const QJsonArray chains = ControlRegistry::instance()->invoke(QStringLiteral("dsp.get_state"),
+		{{QStringLiteral("target"), channel}}).result.value(QStringLiteral("chains")).toArray();
+	return chains.isEmpty() ? QJsonArray() : chains.first().toObject().value(QStringLiteral("devices")).toArray();
+}
+
+//! "Bind <macro> to" > fx-<n> <device> > <parameter>, over the full range (rack.macro_target_add).
+void addBindMenu(QMenu* rack, const QString& channel, const QString& id, const QString& name)
+{
+	const QJsonArray devices = channelDevices(channel);
+	if (devices.isEmpty()) { return; }
+	QMenu* bind = rack->addMenu(QMenu::tr("Bind %1 to").arg(name));
+	for (int effect = 0; effect < devices.size(); ++effect)
+	{
+		const QJsonObject device = devices.at(effect).toObject();
+		QMenu* parameters = bind->addMenu(QStringLiteral("fx-%1 %2").arg(effect)
+			.arg(device.value(QStringLiteral("display_name")).toString()));
+		for (const QJsonValue& parameter : device.value(QStringLiteral("parameters")).toArray())
+		{
+			const QString parameterName = parameter.toObject().value(QStringLiteral("name")).toString();
+			QAction* action = commandItem(parameters, parameterName, "rack.macro_target_add");
+			QObject::connect(action, &QAction::triggered, rack, [channel, id, effect, parameterName] {
+				run(channel, QStringLiteral("rack.macro_target_add"), {{QStringLiteral("macro"), id},
+					{QStringLiteral("chain"), 0}, {QStringLiteral("effect"), effect},
+					{QStringLiteral("parameter"), parameterName}, {QStringLiteral("low"), 0.0}, {QStringLiteral("high"), 1.0}});
+			});
+		}
+	}
+}
+
+//! "Unbind <macro>" > one item per bound parameter (rack.macro_target_remove, by target index).
+void addUnbindMenu(QMenu* rack, const QString& channel, const QJsonObject& macro)
+{
+	const QJsonArray targets = macro.value(QStringLiteral("targets")).toArray();
+	if (targets.isEmpty()) { return; }
+	const QString id = macro.value(QStringLiteral("macro")).toString();
+	QMenu* unbind = rack->addMenu(QMenu::tr("Unbind %1").arg(macro.value(QStringLiteral("name")).toString()));
+	for (int index = 0; index < targets.size(); ++index)
+	{
+		const QJsonObject target = targets.at(index).toObject();
+		QAction* action = commandItem(unbind, QStringLiteral("fx-%1 %2").arg(target.value(QStringLiteral("effect")).toInt())
+			.arg(target.value(QStringLiteral("parameter")).toString()), "rack.macro_target_remove");
+		QObject::connect(action, &QAction::triggered, rack, [channel, id, index] {
+			run(channel, QStringLiteral("rack.macro_target_remove"), {{QStringLiteral("macro"), id},
+				{QStringLiteral("target"), index}});
+		});
+	}
+}
+
 void addMacros(QMenu* rack, const QString& channel, const QJsonArray& macros)
 {
 	for (const QJsonValue& value : macros)
@@ -111,6 +162,8 @@ void addMacros(QMenu* rack, const QString& channel, const QJsonArray& macros)
 				run(channel, QStringLiteral("rack.macro_set"), {{QStringLiteral("macro"), id}, {QStringLiteral("value"), *wanted}});
 			}
 		});
+		addBindMenu(rack, channel, id, macro.value(QStringLiteral("name")).toString());
+		addUnbindMenu(rack, channel, macro);
 	}
 	QAction* add = commandItem(rack, QMenu::tr("Add macro..."), "rack.macro_add");
 	QObject::connect(add, &QAction::triggered, rack, [channel] {

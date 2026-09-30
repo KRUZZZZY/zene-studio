@@ -49,7 +49,9 @@ namespace lmms::gui
  *  parallel chain (rack.add_chain) and Remove chain (rack.remove_chain, chain 0 is the channel's
  *  own and is not offered); one item per macro showing its value, which sets it (rack.macro_set),
  *  Add macro... (rack.macro_add) and Remove macro (rack.macro_remove). Each change is one
- *  control.undo step. Binding a macro to a parameter and the key/velocity zones stay socket-only. */
+ *  control.undo step. Each macro also gets "Bind <name> to" (effect > parameter of the channel's own
+ *  chain, over the full range; rack.macro_target_add) and "Unbind <name>" (rack.macro_target_remove).
+ *  The key/velocity zones and a narrower binding range stay socket-only. */
 LMMS_EXPORT void addRackMenu(QMenu* menu, const MixerChannel* channel);
 
 //! The line for a rack.get_state reply.
