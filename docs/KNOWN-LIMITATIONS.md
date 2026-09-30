@@ -1398,6 +1398,10 @@ unlink, the A16 rows, and a save/reload round trip that shows the link is still 
 after `loadProject`).
 **CODE-6/CODE-7/CODE-8 — the change-plan code rows: what each of them does NOT do.** Four absences,
 each one line, because each is a bound rather than a bug:
+- *(Updated 2026-09-30.)* **File ▸ Script Memory Budget...** names the current cap and sets a new one in MiB
+  (`script.set_memory_budget`; out-of-range values refused, one `control.undo` restores the previous cap)
+  (`ScriptBudgetActionTest`). Still missing: a live readout of a running script's Lua bytes. The bullet below is
+  the pre-menu record.
 - **The Lua memory budget has no interface.** `script.set_memory_budget` sets the cap and
   `script.run` reports what a run measured against it; **no dialog shows live Lua bytes and nothing in
   the window lets a user set a budget**. The default is 64 MiB
