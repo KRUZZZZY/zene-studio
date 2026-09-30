@@ -193,12 +193,10 @@ class RenderJobQueueTest : public QObject
 private slots:
 	void initTestCase()
 	{
-		// One pool worker for the whole run. It exists for two reasons: it makes
-		// queueReadyWaitCond non-null, exactly as it always is under a real AudioEngine
-		// (a case that calls startAndWaitForJobs() with no worker ever constructed would
-		// otherwise dereference a null condition), and it is the thread that steals a job
-		// from a render that lets the pool take the work - which is the failure the
-		// regression case below is looking for.
+		// One pool worker for the whole run: it is the thread that steals a job from a
+		// render that lets the pool take the work - which is the failure the regression
+		// case below is looking for. (It used to also make the wake condition non-null;
+		// the wake is an atomic generation now, BUGS_FOUND 11.22 a.)
 		m_poolWorker = std::make_unique<AudioEngineWorkerThread>(nullptr);
 		m_poolWorker->start();
 	}

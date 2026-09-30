@@ -28,8 +28,8 @@
 #include <QThread>
 
 #include <atomic>
+#include <cstdint>
 
-class QWaitCondition;
 
 namespace lmms
 {
@@ -133,7 +133,11 @@ private:
 	void run() override;
 
 	static JobQueue globalJobQueue;
-	static QWaitCondition * queueReadyWaitCond;
+	//! The wake (R7.2, BUGS_FOUND 11.22 a): startAndWaitForJobs() and quit() bump it and
+	//! notify; a worker waits for it to move. Replaces a QWaitCondition, whose wakeAll() took a
+	//! mutex on the render thread every period. A wait on a value that has already moved returns
+	//! at once, so no wake can be lost between reading m_quit and sleeping.
+	static std::atomic<std::uint32_t> s_wakeGeneration;
 	static QList<AudioEngineWorkerThread *> workerThreads;
 
 	//! Atomic, not volatile: quit() writes it while run() reads it on the worker (10.9a).
