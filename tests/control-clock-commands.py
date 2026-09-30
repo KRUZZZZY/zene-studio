@@ -275,12 +275,19 @@ def check_seek_while_running_is_reported(session, recorder):
     """A seek a slave cannot know about must be TOLD to it."""
     before = int(transport_state(session).get("position_ticks") or 0)
     session.result("transport.seek", {"ticks": 1920})
-    pause(0.5)
+    # The monitor keeps the LAST 32 messages and clock pulses stream into it at ~56/s at 140 BPM,
+    # so a fixed half-second pause could let the pointer be pushed out before it was read (the
+    # hosted macOS runner, run 36733845444). Read it as soon as it is there.
+    entries = []
+    deadline = time.time() + 2.0
+    while time.time() < deadline and not entries:
+        entries = [entry for entry in (master_state(session).get("monitor") or [])
+                   if entry.get("message") == "song_position"]
+        if not entries:
+            pause(0.01)
     recorder.check("a seek while running emitted a Song Position Pointer",
                    emitted(session, "song_position") >= 1,
                    "spp=%r (moved from %r to 1920)" % (emitted(session, "song_position"), before))
-    entries = [entry for entry in (master_state(session).get("monitor") or [])
-               if entry.get("message") == "song_position"]
     recorder.check("the pointer carries the position it was taken at, in the engine's ticks",
                    bool(entries) and 1920 <= int(entries[0].get("ticks", -1)) < 1920 + 960,
                    "pointer=%r (the seek target was 1920)" % entries[:1])

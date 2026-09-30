@@ -665,8 +665,10 @@ set(LMMS_TESTS
 	src/gui/TrackRenderMenuTest.cpp
 	# The piano roll's Groove menu: extract, apply with strength, quantise with strength.
 	src/gui/GrooveMenuTest.cpp
+	# A mixer strip's tooltip names its delay compensation.
 	# Edit > MIDI Controller Reconnect (midi.reconnect_arm / _status), over a throwaway config.
 	src/gui/MidiReconnectActionTest.cpp
+	src/gui/MixerLatencyTextTest.cpp
 	src/gui/FocusDeskTest.cpp
 	# M3.4: the command palette - what it lists, how it ranks, what it runs.
 	src/gui/CommandPaletteTest.cpp

@@ -18,6 +18,7 @@
 
 #include "MixerView.h"
 #include "VcaGroup.h"
+#include "MixerLatencyText.h"
 #include "VcaStripView.h"
 /* ---------------------------------------------------------------------------
  * THE VIEW LIST AND THE MIXER'S CHANNEL LIST ARE NOT THE SAME LIST.
@@ -46,6 +47,7 @@
 #include <QStackedWidget>
 
 #include "EffectRackView.h"
+#include "AudioEngine.h"
 #include "Engine.h"
 #include "Fader.h"
 #include "GuiApplication.h"
@@ -286,6 +288,15 @@ void MixerView::syncWithMixer()
 		return;
 	}
 	if (vcaSignatureOf(getMixer()) != m_vcaSignature) { refreshVcaStrips(); }
+	// Delay compensation, readable where the strip is (the same figures pdc.report gives).
+	const int rate = static_cast<int>(Engine::audioEngine()->outputSampleRate());
+	for (int i = 0; i < m_mixerChannelViews.size(); ++i)
+	{
+		MixerChannel* channel = getMixer()->mixerChannel(i);
+		if (channel == nullptr || m_mixerChannelViews[i] == nullptr) { continue; }
+		m_mixerChannelViews[i]->setToolTip(mixerLatencyText(channel->m_name, channel->m_fxChain.latencyFrames(),
+			channel->inputLatencyFrames(), i == 0 ? getMixer()->totalLatencyFrames() : -1, rate));
+	}
 }
 
 void MixerView::refreshVcaStrips()
