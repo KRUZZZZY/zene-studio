@@ -326,6 +326,7 @@ include/MidiClient.h
 include/MidiClip.h
 include/MidiClipView.h
 include/MidiClock.h
+include/MidiClockMenu.h
 include/MidiController.h
 include/MidiControllerMenu.h
 include/MidiDummy.h
@@ -1544,6 +1545,7 @@ src/gui/MainApplication.cpp
 src/gui/MainWindow.cpp
 src/gui/MicrotunerConfig.cpp
 src/gui/MidiCCRackView.cpp
+src/gui/MidiClockMenu.cpp
 src/gui/MidiControllerMenu.cpp
 src/gui/MidiLearnGui.cpp
 src/gui/MidiReconnectAction.cpp
@@ -1900,6 +1902,7 @@ tests/src/gui/FocusDeskWorkspacesTest.cpp
 tests/src/gui/GrooveMenuTest.cpp
 tests/src/gui/GuiTestApplication.h
 tests/src/gui/KnobKeyboardTest.cpp
+tests/src/gui/MidiClockMenuTest.cpp
 tests/src/gui/MidiControllerMenuTest.cpp
 tests/src/gui/MidiLearnGuiTest.cpp
 tests/src/gui/MidiReconnectActionTest.cpp

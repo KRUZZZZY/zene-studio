@@ -781,6 +781,12 @@ Dither (off / TPDF / noise-shaped) and Resampling (linear / sinc fastest, medium
   audio that never reached a file. `include/RecordingJournal.h` states it, `record.recovery_get_state` reports
   it per take, and `docs/RELEASE-NOTES-v0.3.0-alpha.md` records the test that measures it. Drivable through the
   socket, not from the interface.
+- *(Updated 2026-09-30.)* **Edit ▸ MIDI Clock** switches the master (**Send Clock**, `clock.master_set`) and
+  the slave (**Follow External Clock**, and **Follow Its Tempo** while it follows, `clock.slave_set`), and a
+  line under them re-reads `clock.get_state` each time the submenu opens - not sending/sending, not
+  following, following with no lock, or locked at the measured BPM; a refused switch (a master with no MIDI
+  client to send through) stays unchecked and the line names the refusal (`MidiClockMenuTest`). Choosing the
+  port and the drift bound is still socket-only. The bullet below is the pre-menu record.
 - **MIDI clock is the engine and the socket, and there is no interface for it — added 2026-09-13.** The DAW runs
   as a MIDI clock **master** (24 pulses to the quarter note, START/STOP/CONTINUE and a Song Position Pointer on
   the transport's own edges, emitted from the audio thread through the engine's existing MIDI output) and as a

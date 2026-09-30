@@ -70,6 +70,7 @@
 #include "SessionGridView.h"
 #include "MidiLearnGui.h"
 #include "MpeInputAction.h"
+#include "MidiClockMenu.h"
 #include "MidiReconnectAction.h"
 #include "TrackRenderMenu.h"
 #include "ControllerTemplateMenu.h"
@@ -466,6 +467,7 @@ void MainWindow::finalize()
 	addMpeInputAction(edit_menu);
 	// Controller re-connection (midi.reconnect_*): armed state and what it holds, re-read on open.
 	addMidiReconnectAction(edit_menu);
+	addMidiClockMenu(edit_menu);
 
 	// Saved MIDI mapping sets (controller.template_*), re-read each time the submenu opens.
 	QMenu* templatesMenu = edit_menu->addMenu(tr("Controller Templates"));
