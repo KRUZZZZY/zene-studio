@@ -122,6 +122,10 @@ jobs:
             python3-numpy python3-scipy
       # numpy/scipy: the mastering suites measure BS.1770-4 independently with them (the first
       # dispatched run failed ControlMasteringCommands and ControlMasteringRunBound without them).
+      # BUGS_FOUND 11.15: ControlGoldenAudio passes or fails by runner, not by commit; the CPU is
+      # the remaining difference, so every build-backed run names it.
+      - name: Runner CPU (BUGS_FOUND 11.15)
+        run: lscpu | grep -E 'Model name|Flags' | cut -c1-400
       - name: Configure (Debug, Qt6)
         run: cmake -B build -S . -DCMAKE_BUILD_TYPE=Debug -DWANT_QT6=ON
       - name: Build
@@ -220,6 +224,10 @@ jobs:
             python3-numpy python3-scipy
       # numpy/scipy: run-coverage.sh runs the whole ctest suite, mastering included (the gate-1
       # job needed the same two; hosted run 36713575679 failed here without them).
+      # BUGS_FOUND 11.15: ControlGoldenAudio passes or fails by runner, not by commit; the CPU is
+      # the remaining difference, so every build-backed run names it.
+      - name: Runner CPU (BUGS_FOUND 11.15)
+        run: lscpu | grep -E 'Model name|Flags' | cut -c1-400
       # Default mode is the ratchet: the number must not fall. The baseline is
       # committed, so it must have been captured in the SAME environment the gate
       # runs in; run this workflow with capture_baseline=true to refresh it here.
@@ -228,6 +236,21 @@ jobs:
         run: |
           bash tests/run-coverage.sh build-coverage -DWANT_QT6=ON
           bash tests/coverage-gate.sh build-coverage/coverage/coverage-fork.info --check
+      - name: Keep the golden-audio renders (on failure)
+        if: failure()
+        continue-on-error: true
+        run: |
+          mkdir -p /tmp/golden-keep
+          cd build-coverage/tests && ZENE_HARNESS_KEEP_DIR=/tmp/golden-keep QT_QPA_PLATFORM=offscreen \
+            ctest -R '^ControlGoldenAudio$' --output-on-failure || true
+          find /tmp/golden-keep -name '*.wav' | head -40
+      - name: Upload the golden-audio renders (on failure)
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: golden-audio-renders-coverage
+          path: /tmp/golden-keep/**/*.wav
+          if-no-files-found: warn
       - name: Gate 2 - capture the baseline on the runner (write mode)
         if: ${{ inputs.capture_baseline }}
         run: |
