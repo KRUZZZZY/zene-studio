@@ -345,7 +345,8 @@ that is this page's fault — report it and it gets added.
   quarantine a plugin is a `{"path": …, "reason": …}` entry in that file; `docs/PLUGIN-SCAN-CACHE.md` §5
   records that there is **no GUI for it yet**.
 - **Two features are compiled out of these builds**: the **WASM DSP sandbox** (needs the wasmtime C API) and
-  **offline HTDemucs stem separation** (opt-in at configure time). Both report `OFF` in the binary's own build
+  **offline HTDemucs stem separation** (opt-in at configure time - *since owner decision 14 it is on by default;
+  the release-honesty manifest row requires ON, 2026-09-30*). Both report `OFF` in the binary's own build
   options, re-stated from the build this page was applied against:
   `WANT_WASM='OFF'`, `WANT_STEM_SPLIT='OFF'` (`build/lmmsversion.h`, the same text the binary prints on its
   `Build options:` line). **What enforces "everything the release notes document as present is in this build"

@@ -127,8 +127,10 @@ Not in this build, and not claimed by it:
   `session.*` commands are in every build (native engine code since ARCH-4 removed the last
   `WANT_SESSION_VIEW` build option), but there is still **no clip-launch grid and no scene
   launcher** in the interface, and a launched slot does not render audio.
-- **Offline HTDemucs stem separation** — opt-in at configure time and off in every release build
-  (`WANT_STEM_SPLIT` defaults OFF). This is not the command-line stem *export* above.
+- **Offline HTDemucs stem separation** — in the build by default (`WANT_STEM_SPLIT` defaults ON since
+  owner decision 14): the pinned model (~166 MB) is fetched on first use, and separation runs through the
+  bundled CLI, which needs Python with numpy and onnxruntime, unless the build found the ONNX Runtime SDK.
+  This is not the command-line stem *export* above.
 - **WASM DSP sandbox** — `WANT_WASM` defaults ON, but the build falls back to OFF when the wasmtime C
   API is absent, and CI provisions none, so it is compiled out in practice.
 - **No plugin editor, no patcher GUI, no Ableton Link** — and no third-party plug-in of any kind has
@@ -184,9 +186,10 @@ cd build/tests && QT_QPA_PLATFORM=offscreen ctest --output-on-failure
 The top-level build directory has no `CTestTestfile.cmake`, so `ctest` run there reports **0 tests**.
 Treat 0 tests as an error, never as a pass.
 
-Optional feature flags, both **off in the published alpha builds**:
+Optional feature flags:
 
-- `-DWANT_STEM_SPLIT=ON` — offline HTDemucs stem separation via ONNX Runtime (off by default).
+- `-DWANT_STEM_SPLIT=OFF` — leave out offline HTDemucs stem separation (on by default since owner
+  decision 14; the published 0.3.0 alpha builds had it off).
 - `-DWANT_WASM=ON` — the WASM DSP sandbox (on by default; it needs the wasmtime C API and is switched
   off automatically when that is not found).
 
