@@ -670,6 +670,7 @@ include/SessionScheduler.h
 include/SessionSyncAction.h
 include/SessionTransportBar.h
 include/SessionTuning.h
+include/SessionTuningMenu.h
 include/ShortcutsPage.h
 include/SmfInterchange.h
 include/SrcQuality.h
@@ -1166,6 +1167,7 @@ src/gui/ScriptBudgetAction.cpp
 src/gui/SessionGridView.cpp
 src/gui/SessionSyncAction.cpp
 src/gui/SessionTransportBar.cpp
+src/gui/SessionTuningMenu.cpp
 src/gui/ShortcutsPage.cpp
 src/gui/StartHub.cpp
 src/gui/StemSplitController.cpp

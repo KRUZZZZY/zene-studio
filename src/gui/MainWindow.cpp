@@ -77,6 +77,7 @@
 #include "RecordingRecoveryMenu.h"
 #include "RenderPresetMenu.h"
 #include "ScriptBudgetAction.h"
+#include "SessionTuningMenu.h"
 #include "TrackRenderMenu.h"
 #include "ControllerTemplateMenu.h"
 #include "PatternEditor.h"
@@ -481,6 +482,7 @@ void MainWindow::finalize()
 	// Controller re-connection (midi.reconnect_*): armed state and what it holds, re-read on open.
 	addMidiReconnectAction(edit_menu);
 	addMidiClockMenu(edit_menu);
+	addSessionTuningMenu(edit_menu);
 	addPluginQuarantineMenu(edit_menu);
 
 	// Saved MIDI mapping sets (controller.template_*), re-read each time the submenu opens.

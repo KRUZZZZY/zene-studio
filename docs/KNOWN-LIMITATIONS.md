@@ -2175,6 +2175,11 @@ separately-installed `libMTS.so` is present.**
 
 Fleshed out, because both halves of that sentence hide something real:
 
+- *(Updated 2026-09-30.)* **Edit ▸ Session Tuning** reaches the table: a line with its state (12-TET, or the
+  scale and keymap in force), Load Scala Scale... / Load Keymap... (`mts.load_scale` / `mts.load_keymap`, which
+  activate it), Reset to 12-TET (`mts.reset`) and Publish as MTS-ESP Master (`mts.master_set`, offered only
+  where the MTS-ESP library is present) (`SessionTuningMenuTest`). Per-note edits (`mts.set_note`,
+  `mts.set_tuning`) stay socket-only. The bullet below is the pre-menu record.
 - **No GUI reaches the table.** `mts.load_scale` / `mts.set_tuning` / `mts.set_note` /
   `mts.load_keymap` / `mts.reset` / `mts.master_set` are reachable only through the
   control socket; the existing Microtuner dialog merely FEEDS the table's content

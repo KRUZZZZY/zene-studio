@@ -104,6 +104,7 @@ SET(LMMS_SRCS
 	gui/RecordingRecoveryMenu.cpp
 	gui/RenderPresetMenu.cpp
 	gui/ScriptBudgetAction.cpp
+	gui/SessionTuningMenu.cpp
 	gui/MidiSetupWidget.cpp
 	gui/MpeInputAction.cpp
 	gui/NoteTransformActions.cpp
