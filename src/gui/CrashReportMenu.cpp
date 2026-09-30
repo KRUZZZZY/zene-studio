@@ -124,6 +124,8 @@ QMenu* addCrashReportMenu(QMenu* menu)
 	const CrashItems items{arm, status, folder, acknowledge, discard};
 
 	status->setEnabled(false);
+	// The line shows crash.list_reports; declaring it keeps the item a registry action (A15).
+	status->setData(QStringLiteral("crash.list_reports"));
 	arm->setCheckable(true);
 	arm->setData(QStringLiteral("crash.enable"));
 	arm->setToolTip(QMenu::tr("Write a local report file if the program crashes. Nothing is ever sent: "

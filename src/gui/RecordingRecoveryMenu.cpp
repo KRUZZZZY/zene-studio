@@ -75,6 +75,7 @@ void rebuild(QMenu* menu)
 		: takes.isEmpty() ? QMenu::tr("No interrupted recording")
 		: QMenu::tr("%n interrupted recording(s)", nullptr, static_cast<int>(takes.size())));
 	line->setEnabled(false);
+	line->setData(QStringLiteral("record.recovery_get_state"));
 	for (const QJsonValue& value : takes)
 	{
 		const QJsonObject take = value.toObject();

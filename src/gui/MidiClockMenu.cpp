@@ -113,6 +113,8 @@ QMenu* addMidiClockMenu(QMenu* menu)
 	clock->addSeparator();
 	const ClockItems items{send, follow, followTempo, clock->addAction(QString())};
 	items.status->setEnabled(false);
+	// The line shows clock.get_state; declaring it keeps the item a registry action (A15).
+	items.status->setData(QStringLiteral("clock.get_state"));
 
 	items.send->setCheckable(true);
 	items.send->setData(QStringLiteral("clock.master_set"));

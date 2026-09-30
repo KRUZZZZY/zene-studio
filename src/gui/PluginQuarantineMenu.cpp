@@ -82,6 +82,7 @@ void rebuild(QMenu* menu, const QString& refusal)
 	QAction* status = menu->addAction(!refusal.isEmpty() ? refusal
 		: state.ok ? pluginQuarantineStatusText(state.result) : state.errorMessage);
 	status->setEnabled(false);
+	status->setData(QStringLiteral("plugin.scan_cache_get_state"));
 	menu->addSeparator();
 	for (const QJsonValue& entry : state.result.value(QStringLiteral("quarantine")).toArray())
 	{

@@ -132,7 +132,7 @@ void renderWithPreset()
 	report(QStringLiteral("render.render"), rendered);
 }
 
-void rebuild(QMenu* menu)
+void clearMenu(QMenu* menu)
 {
 	for (QAction* action : menu->actions())
 	{
@@ -144,14 +144,11 @@ void rebuild(QMenu* menu)
 	{
 		if (qobject_cast<QActionGroup*>(child) != nullptr) { child->deleteLater(); }
 	}
-	const QJsonObject listed = ControlRegistry::instance()->invoke(QStringLiteral("export.preset_list"), QJsonObject{}).result;
-	const QString applied = listed.value(QStringLiteral("applied_preset")).toString();
-	QStringList names;
-	for (const QJsonValue& preset : listed.value(QStringLiteral("presets")).toArray())
-	{
-		names << preset.toObject().value(QStringLiteral("name")).toString();
-	}
+}
 
+//! Default Settings and one checkable item per stored preset, the applied one checked.
+void addApplyItems(QMenu* menu, const QStringList& names, const QString& applied)
+{
 	auto* group = new QActionGroup(menu);
 	QAction* defaults = menu->addAction(QMenu::tr("Default Settings"));
 	defaults->setCheckable(true);
@@ -171,24 +168,39 @@ void rebuild(QMenu* menu)
 			run(QStringLiteral("export.preset_apply"), {{QStringLiteral("name"), name}});
 		});
 	}
+}
+
+void addDeleteMenu(QMenu* menu, const QStringList& names)
+{
+	if (names.isEmpty()) { return; }
+	QMenu* remove = new QMenu(QMenu::tr("Delete"), menu);
+	menu->addMenu(remove);
+	for (const QString& name : names)
+	{
+		QAction* item = remove->addAction(name);
+		item->setData(QStringLiteral("export.preset_remove"));
+		QObject::connect(item, &QAction::triggered, menu, [name] {
+			if (!ask(QMenu::tr("Delete the render preset \"%1\"?").arg(name))) { return; }
+			run(QStringLiteral("export.preset_remove"), {{QStringLiteral("name"), name}});
+		});
+	}
+}
+
+void rebuild(QMenu* menu)
+{
+	clearMenu(menu);
+	const QJsonObject listed = ControlRegistry::instance()->invoke(QStringLiteral("export.preset_list"), QJsonObject{}).result;
+	QStringList names;
+	for (const QJsonValue& preset : listed.value(QStringLiteral("presets")).toArray())
+	{
+		names << preset.toObject().value(QStringLiteral("name")).toString();
+	}
+	addApplyItems(menu, names, listed.value(QStringLiteral("applied_preset")).toString());
 	menu->addSeparator();
 	QAction* save = menu->addAction(QMenu::tr("Save Preset..."));
 	save->setData(QStringLiteral("export.preset_add"));
 	QObject::connect(save, &QAction::triggered, menu, [] { savePreset(); });
-	if (!names.isEmpty())
-	{
-		QMenu* remove = new QMenu(QMenu::tr("Delete"), menu);
-		menu->addMenu(remove);
-		for (const QString& name : names)
-		{
-			QAction* item = remove->addAction(name);
-			item->setData(QStringLiteral("export.preset_remove"));
-			QObject::connect(item, &QAction::triggered, menu, [name] {
-				if (!ask(QMenu::tr("Delete the render preset \"%1\"?").arg(name))) { return; }
-				run(QStringLiteral("export.preset_remove"), {{QStringLiteral("name"), name}});
-			});
-		}
-	}
+	addDeleteMenu(menu, names);
 	menu->addSeparator();
 	QAction* render = menu->addAction(QMenu::tr("Render Song with Preset..."));
 	render->setData(QStringLiteral("render.render"));

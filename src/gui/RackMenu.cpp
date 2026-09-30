@@ -154,6 +154,7 @@ void addRackMenu(QMenu* menu, const MixerChannel* channel)
 	QMenu* rack = menu->addMenu(QMenu::tr("Rack"));
 	QAction* line = rack->addAction(state.ok ? rackStatusText(state.result) : state.errorMessage);
 	line->setEnabled(false);
+	line->setData(QStringLiteral("rack.get_state"));
 	if (!state.ok) { return; }
 	const int chains = state.result.value(QStringLiteral("chain_count")).toInt();
 	rack->addSeparator();
