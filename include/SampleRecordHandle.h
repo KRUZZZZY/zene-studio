@@ -72,6 +72,8 @@ private:
 	SampleClip * m_clip;
 	//! R2.2: frames still to drop from the take's head (the recording round trip).
 	f_cnt_t m_compensationFrames;
+	//! BUGS_FOUND 11.17: the start offset is folded into m_compensationFrames on the first play().
+	bool m_offsetApplied;
 
 } ;
 

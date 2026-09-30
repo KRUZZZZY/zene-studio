@@ -697,12 +697,30 @@ int Song::getExportProgress() const
 
 void Song::playSong()
 {
+	startSongPlayback( false );
+}
+
+
+
+
+void Song::startSongPlayback( bool recording )
+{
 	m_recording = false;
 
 	if( isStopped() == false )
 	{
 		stop();
 	}
+
+	// BUGS_FOUND 11.17: the render thread must not see the transport running before the
+	// playbackStateChanged slots below have run - SampleClip's resets every sample clip's
+	// playing flag and removes its play handles (Qt::DirectConnection), so a period that
+	// rendered in between started the clips, lost them, and restarted them a tick later;
+	// and playAndRecord's flag was set after this returned, so a period in THAT gap marked
+	// a record clip as playing without starting its handle and the take stayed empty. The
+	// model lock is recursive, so the slots' own requestChangeInModel() nests.
+	Engine::audioEngine()->requestChangeInModel();
+	if( recording ) { m_recording = true; }
 
 	m_playMode = PlayMode::Song;
 	m_playing = true;
@@ -713,6 +731,7 @@ void Song::playSong()
 	savePlayStartPosition();
 
 	emit playbackStateChanged();
+	Engine::audioEngine()->doneChangeInModel();
 }
 
 
@@ -729,8 +748,7 @@ void Song::record()
 
 void Song::playAndRecord()
 {
-	playSong();
-	m_recording = true;
+	startSongPlayback( true );
 }
 
 
