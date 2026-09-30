@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-09-30T02:39:14Z",
+  "captured_at": "2026-09-30T03:15:57Z",
   "commands": [
     {
       "args_schema": {
@@ -21005,6 +21005,61 @@
     {
       "args_schema": {
         "additionalProperties": false,
+        "properties": {},
+        "required": [],
+        "type": "object"
+      },
+      "description": "Open Help > Keyboard Shortcuts (non-modally): every menu action that carries a shortcut, with its menu path and the registry command it declares, read from the live menus and filterable. Read-only: it lists shortcuts, it does not remap them. `entries` is how many shortcuts it lists.",
+      "group": "window",
+      "id": "window.shortcuts",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "entries": {
+            "type": "integer"
+          },
+          "shown": {
+            "type": "boolean"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {},
+        "required": [],
+        "type": "object"
+      },
+      "description": "Open File > Start Hub (non-modally): start a new project, empty or from a template, reopen a recent one, and the Learn section (the command palette, the keyboard shortcuts page, the online manual). Its buttons run project.new, project.open and those window verbs through the registry. It never opens by itself at startup. `recent` and `templates` are how many it offers.",
+      "group": "window",
+      "id": "window.start_hub",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "recent": {
+            "type": "integer"
+          },
+          "shown": {
+            "type": "boolean"
+          },
+          "templates": {
+            "type": "integer"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
         "properties": {
           "editor": {
             "enum": [
@@ -21046,7 +21101,7 @@
       }
     }
   ],
-  "count": 384,
+  "count": 386,
   "instance": {
     "binary": null,
     "binary_bytes": null,
@@ -21054,15 +21109,15 @@
     "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-survey/tools/zene-pa-agentctl",
     "lane_head": null,
     "proto": 1,
-    "source_socket": "/tmp/zctl-run-q2fh3d14/zene.sock",
-    "version": "0.3.0-alpha.185+43d2724"
+    "source_socket": "/tmp/zctl-run-yse6ncin/zene.sock",
+    "version": "0.3.0-alpha.188+f5d678d"
   },
   "kind": "zene-control-command-list",
   "proto": 1,
   "schema": 1,
   "surface": {
     "group_count": 58,
-    "id_count": 384,
-    "ids_sha256": "5988a54dee113d9fc84dd94d51fe284cbc9e0bdcee82febc99e2dda8abc67837"
+    "id_count": 386,
+    "ids_sha256": "34803d7d77119d1fdc9ded2fbeb267e07b5a5f23a9aa17bf1e3987d142f8a388"
   }
 }

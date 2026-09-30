@@ -472,6 +472,7 @@ include/SessionScheduler.h
 include/SessionTuning.h
 include/SetupDialog.h
 include/SharedMemory.h
+include/ShortcutsPage.h
 include/SideBar.h
 include/SideBarWidget.h
 include/SimpleTextFloat.h
@@ -479,6 +480,7 @@ include/SmfInterchange.h
 include/Song.h
 include/SongEditor.h
 include/SrcQuality.h
+include/StartHub.h
 include/StemSeparation/ExternalProcessStemSeparator.h
 include/StemSeparation/OnnxRuntimeStemSeparator.h
 include/StemSeparation/StemJobManager.h
@@ -1535,8 +1537,10 @@ src/gui/SampleThumbnail.cpp
 src/gui/SampleTrackWindow.cpp
 src/gui/SendButtonIndicator.cpp
 src/gui/SessionGridView.cpp
+src/gui/ShortcutsPage.cpp
 src/gui/SideBar.cpp
 src/gui/SideBarWidget.cpp
+src/gui/StartHub.cpp
 src/gui/StemSplitController.cpp
 src/gui/StringPairDrag.cpp
 src/gui/SubWindow.cpp
@@ -1853,6 +1857,8 @@ tests/src/gui/FocusDeskTest.cpp
 tests/src/gui/FocusDeskWorkspacesTest.cpp
 tests/src/gui/MidiLearnGuiTest.cpp
 tests/src/gui/SessionGridViewTest.cpp
+tests/src/gui/ShortcutsPageTest.cpp
+tests/src/gui/StartHubTest.cpp
 tests/src/gui/TakeLanesPanelTest.cpp
 tests/src/gui/ThemeContrastTest.cpp
 tests/src/gui/VcaStripViewTest.cpp

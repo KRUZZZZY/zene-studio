@@ -39,6 +39,9 @@
 
 #include "AboutDialog.h"
 #include "CommandPalette.h"
+#include "ConfigManager.h"
+#include "ShortcutsPage.h"
+#include "StartHub.h"
 #include "ControlRegistry.h"
 #include "ControlVocabulary.h"
 #include "ControlWindowCommands.h"
@@ -208,6 +211,56 @@ void registerCommandPalette(ControlRegistry& registry)
 	registry.registerCommand(cmd);
 }
 
+void registerShortcuts(ControlRegistry& registry)
+{
+	ControlCommand cmd = command("window", "shortcuts");
+	cmd.description = QStringLiteral("Open Help > Keyboard Shortcuts (non-modally): every menu action "
+		"that carries a shortcut, with its menu path and the registry command it declares, read from "
+		"the live menus and filterable. Read-only: it lists shortcuts, it does not remap them. "
+		"`entries` is how many shortcuts it lists.");
+	cmd.argsSchema = objectSchema({});
+	cmd.resultSchema = objectSchema({{QStringLiteral("shown"), booleanProperty()},
+		{QStringLiteral("entries"), integerProperty()}});
+	cmd.handler = [](const QJsonObject&) {
+		gui::MainWindow* window = mainWindow();
+		if (window == nullptr) { return noInterface(QStringLiteral("window.shortcuts")); }
+		auto* page = new gui::ShortcutsPage(window->menuBar(), window);
+		page->setAttribute(Qt::WA_DeleteOnClose);
+		page->setModal(false);
+		page->show();
+		return ControlResult::success(QJsonObject{{QStringLiteral("shown"), true},
+			{QStringLiteral("entries"), page->rowCount()}});
+	};
+	registry.registerCommand(cmd);
+}
+
+void registerStartHub(ControlRegistry& registry)
+{
+	ControlCommand cmd = command("window", "start_hub");
+	cmd.description = QStringLiteral("Open File > Start Hub (non-modally): start a new project, empty or "
+		"from a template, reopen a recent one, and the Learn section (the command palette, the keyboard "
+		"shortcuts page, the online manual). Its buttons run project.new, project.open and those window "
+		"verbs through the registry. It never opens by itself at startup. `recent` and `templates` are "
+		"how many it offers.");
+	cmd.argsSchema = objectSchema({});
+	cmd.resultSchema = objectSchema({{QStringLiteral("shown"), booleanProperty()},
+		{QStringLiteral("recent"), integerProperty()}, {QStringLiteral("templates"), integerProperty()}});
+	cmd.handler = [](const QJsonObject&) {
+		gui::MainWindow* window = mainWindow();
+		if (window == nullptr) { return noInterface(QStringLiteral("window.start_hub")); }
+		const QStringList recent = ConfigManager::inst()->recentlyOpenedProjects();
+		const QStringList templates = gui::startHubTemplates();
+		auto* hub = new gui::StartHub(recent, templates, window);
+		hub->setAttribute(Qt::WA_DeleteOnClose);
+		hub->setModal(false);
+		hub->show();
+		return ControlResult::success(QJsonObject{{QStringLiteral("shown"), true},
+			{QStringLiteral("recent"), static_cast<int>(recent.size())},
+			{QStringLiteral("templates"), static_cast<int>(templates.size())}});
+	};
+	registry.registerCommand(cmd);
+}
+
 void registerScreenshot(ControlRegistry& registry)
 {
 	ControlCommand cmd = command("window", "screenshot");
@@ -293,6 +346,8 @@ void registerShellCommands(ControlRegistry& registry)
 	registerAbout(registry);
 	registerOnlineHelp(registry);
 	registerCommandPalette(registry);
+	registerShortcuts(registry);
+	registerStartHub(registry);
 	registerScreenshot(registry);
 	registerSaveVersion(registry);
 }
