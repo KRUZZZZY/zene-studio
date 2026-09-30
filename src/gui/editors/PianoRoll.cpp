@@ -63,6 +63,7 @@
 #include "lmms_math.h"
 #include "MainWindow.h"
 #include "MidiClip.h"
+#include "NoteTransformActions.h"
 #include "PatternStore.h"
 #include "PianoView.h"
 #include "PositionLine.h"
@@ -5387,6 +5388,8 @@ PianoRollWindow::PianoRollWindow() :
 	noteToolsButton->addAction(minLengthAction);
 	noteToolsButton->addAction(maxLengthAction);
 	noteToolsButton->addAction(reverseAction);
+	// Randomize / humanize / scale velocities, through note.randomize and note.velocity_scale.
+	noteToolsButton->addActions(makeNoteTransformActions([this] { return m_editor->currentMidiClip(); }, noteToolsButton));
 
 	notesActionsToolBar->addWidget(noteToolsButton);
 

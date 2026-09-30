@@ -1137,6 +1137,11 @@ mastering mode, no candidate list panel and no A/B player.
 through the socket and absent from the interface** (board task #648; feature-list rows 11, 66 and 81). One
 line each, because the scope contract asks for one each:
 
+- *(Updated 2026-09-30.)* **The piano roll's note-tools menu now has Randomize velocities..., Humanize
+  timing... and Scale velocities...** (`note.randomize` / `note.velocity_scale` on the selected notes, or
+  the clip when none is selected; `NoteTransformActionsTest`), and slide notes have had a draw tool (Note
+  tools ▸ Slide notes, Shift+L) since the slide work. Still socket-only: the seed, velocity offset and
+  the typed transpose. The bullet below is the earlier record.
 - **Note randomisation, transforms and slide notes are drivable through the socket, not from the interface.**
   `note.randomize` (the seeded roll), `note.random_seed_get` / `note.random_seed_set` (the project's MIDI
   seed), `note.transpose` / `note.velocity_offset` / `note.velocity_scale` and `note.slide_set` /
@@ -1169,6 +1174,9 @@ line each, because the scope contract asks for one each:
   socket-side scale and root-note facts are the `scale.*` group's (row 66, already in the tree), and the
   scale-aware edit operation `docs/MIDI-DEPTH.md` §1.1 asked for is that group's `scale.snap_notes`. The
   decision is also stated in `docs/FEATURE-LIST-0.3.0.md` row 65 and in `docs/RELEASE-NOTES-v0.3.0-alpha.md`.
+- *(Updated 2026-09-30.)* **Edit ▸ MPE Input now throws the switch** (`device.mpe_set`, the check mark
+  re-read from `device.mpe_get_state` each time the menu opens; `MpeInputActionTest`). The per-note
+  expression editor is still absent. The bullet below is the pre-menu record.
 - **`device.mpe_set` is drivable through the socket, not from the interface.** No checkbox, menu entry or
   setting reaches the MPE input switch and none shows its state; the per-note expression editor
   `docs/MPE.md` names is still absent (this page's MPE entry above stands). What it gates, exactly: while it

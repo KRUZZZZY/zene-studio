@@ -643,6 +643,10 @@ set(LMMS_TESTS
 	src/gui/ExportQualityControlsTest.cpp
 	# The transport's Sync toggle (link.set_enabled) and its session read-out.
 	src/gui/SessionSyncActionTest.cpp
+	# The piano roll's Randomize / Humanize / Scale velocities items (note.randomize, note.velocity_scale).
+	src/gui/NoteTransformActionsTest.cpp
+	# Edit > MPE Input (device.mpe_set), following the real state.
+	src/gui/MpeInputActionTest.cpp
 	src/gui/FocusDeskTest.cpp
 	# M3.4: the command palette - what it lists, how it ranks, what it runs.
 	src/gui/CommandPaletteTest.cpp
@@ -1120,6 +1124,8 @@ set_tests_properties(TrackFolderMenuTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM
 set_tests_properties(UndoHistoryPanelTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(ExportQualityControlsTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(SessionSyncActionTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+set_tests_properties(NoteTransformActionsTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+set_tests_properties(MpeInputActionTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 # ThemeContrastTest reads the themes from the source tree; guiless like WcagContrastTest.
 target_compile_definitions(ThemeContrastTest PRIVATE
 	ZENE_THEMES_DIR="${CMAKE_SOURCE_DIR}/data/themes")

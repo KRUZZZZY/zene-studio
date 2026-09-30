@@ -69,6 +69,7 @@
 #include "MicrotunerConfig.h"
 #include "SessionGridView.h"
 #include "MidiLearnGui.h"
+#include "MpeInputAction.h"
 #include "PatternEditor.h"
 #include "PianoRoll.h"
 #include "PianoView.h"
@@ -453,6 +454,9 @@ void MainWindow::finalize()
 	windowToggleAction(edit_menu, embed::getIconPixmap("microtuner"), tr("Scales and keymaps"), "microtuner");
 	declares(edit_menu->addAction(embed::getIconPixmap("setup_general"), tr("Settings"),
 		this, SLOT(showSettingsDialog())), "window.settings");
+
+	// MPE input on/off, through device.mpe_set (re-read each time the menu opens).
+	addMpeInputAction(edit_menu);
 
 	// Global MIDI learn: arm this, touch a control, move a hardware knob.
 	m_midiLearnAction = edit_menu->addAction(embed::getIconPixmap("setup_midi"), tr("MIDI Learn"),

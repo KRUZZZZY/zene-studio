@@ -350,6 +350,7 @@ include/ModelVisitor.h
 include/ModulationLayer.h
 include/MonitorMode.h
 include/MpeExpression.h
+include/MpeInputAction.h
 include/MultiTrackRecorder.h
 include/NStateButton.h
 include/NamespaceRegistry.h
@@ -358,6 +359,7 @@ include/Note.h
 include/NotePlayHandle.h
 include/NoteRandom.h
 include/NoteTransform.h
+include/NoteTransformActions.h
 include/Oscillator.h
 include/OscillatorConstants.h
 include/Oscilloscope.h
@@ -1534,6 +1536,8 @@ src/gui/MidiSetupWidget.cpp
 src/gui/MixerChannelView.cpp
 src/gui/MixerView.cpp
 src/gui/ModelView.cpp
+src/gui/MpeInputAction.cpp
+src/gui/NoteTransformActions.cpp
 src/gui/PeakControllerDialog.cpp
 src/gui/PinConnector.cpp
 src/gui/PluginBrowser.cpp
@@ -1873,6 +1877,8 @@ tests/src/gui/FocusDeskWorkspacesTest.cpp
 tests/src/gui/GuiTestApplication.h
 tests/src/gui/KnobKeyboardTest.cpp
 tests/src/gui/MidiLearnGuiTest.cpp
+tests/src/gui/MpeInputActionTest.cpp
+tests/src/gui/NoteTransformActionsTest.cpp
 tests/src/gui/PianoRollBenchmarkTest.cpp
 tests/src/gui/SessionGridViewTest.cpp
 tests/src/gui/SessionSyncActionTest.cpp
