@@ -101,6 +101,8 @@ AutomationEditor::AutomationEditor() :
 	m_ghostNoteColor(0, 0, 0),
 	m_outOfBoundsShade(0, 0, 0, 128)
 {
+	// R8.5: what a screen reader announces when Tab reaches it.
+	setAccessibleName(tr("Automation editor"));
 	connect( this, SIGNAL(currentClipChanged()),
 				this, SLOT(updateAfterClipChange()),
 				Qt::QueuedConnection );
@@ -2156,6 +2158,7 @@ AutomationEditorWindow::AutomationEditorWindow() :
 	m_resetGhostNotes = new QPushButton(m_toolBar);
 	m_resetGhostNotes->setIcon(embed::getIconPixmap("clear_ghost_note"));
 	m_resetGhostNotes->setToolTip(tr("Clear ghost notes"));
+	m_resetGhostNotes->setAccessibleName(tr("Clear ghost notes")); // R8.5
 	m_resetGhostNotes->setEnabled(true);
 
 	connect(m_resetGhostNotes, &QPushButton::pressed, m_editor, &AutomationEditor::resetGhostNotes);

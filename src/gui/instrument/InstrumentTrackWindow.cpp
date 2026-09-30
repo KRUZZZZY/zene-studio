@@ -103,6 +103,7 @@ InstrumentTrackWindow::InstrumentTrackWindow( InstrumentTrackView * _itv ) :
 
 	// setup line edit for changing instrument track name
 	m_nameLineEdit = new QLineEdit;
+	m_nameLineEdit->setAccessibleName(tr("Track name")); // R8.5
 	connect( m_nameLineEdit, SIGNAL( textChanged( const QString& ) ),
 				this, SLOT( textChanged( const QString& ) ) );
 
@@ -219,6 +220,7 @@ InstrumentTrackWindow::InstrumentTrackWindow( InstrumentTrackView * _itv ) :
 	connect( saveSettingsBtn, SIGNAL(clicked()), this, SLOT(saveSettingsBtnClicked()));
 
 	saveSettingsBtn->setToolTip(tr("Save current instrument track settings in a preset file"));
+	saveSettingsBtn->setAccessibleName(tr("Save preset")); // R8.5: an icon-only button
 
 	basicControlsLayout->addWidget(saveSettingsBtn, 0, 8);
 
@@ -269,6 +271,7 @@ InstrumentTrackWindow::InstrumentTrackWindow( InstrumentTrackView * _itv ) :
 
 	// setup piano-widget
 	m_pianoView = new PianoView( this );
+	m_pianoView->setAccessibleName(tr("Piano keyboard")); // R8.5
 	m_pianoView->setMinimumHeight( PIANO_HEIGHT );
 	m_pianoView->setMaximumHeight( PIANO_HEIGHT );
 
@@ -720,6 +723,9 @@ void InstrumentTrackWindow::viewPrevInstrument()
 
 void InstrumentTrackWindow::adjustTabSize(QWidget *w)
 {
+	// A track with no instrument loaded yet (track.add over the socket makes one) has no
+	// instrument view; resizing its window resized a null (BUGS_FOUND 11.14).
+	if (w == nullptr) { return; }
 	// "-1" :
 	// in "TabWidget::addTab", under "Position tab's window", the widget is
 	// moved up by 1 pixel

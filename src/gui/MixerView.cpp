@@ -130,7 +130,7 @@ MixerView::MixerView(Mixer* mixer) :
 	{
 		public:
 			ChannelArea(QWidget* parent, MixerView* mv) :
-				QScrollArea(parent), m_mv(mv) {}
+				QScrollArea(parent), m_mv(mv) { setAccessibleName(MixerView::tr("Mixer channels")); } // R8.5
 			~ChannelArea() override = default;
 			void keyPressEvent(QKeyEvent* e) override
 			{

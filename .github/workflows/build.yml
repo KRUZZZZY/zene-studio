@@ -1367,6 +1367,28 @@ jobs:
           cmake -B build $CMAKE_OPTS
       - name: Build
         run: cmake --build build
+      - name: Run tests
+        # R7.5 (relief plan): ctest on every platform. This job builds the whole test tree on a
+        # real Windows ARM64 machine and, until now, ran none of it. Same step as msvc's.
+        run: |
+          cd build/tests
+          ctest --output-on-failure -j2 || {
+            echo "=== ctest failed: re-running only the failed tests, verbosely ==="
+            ctest --rerun-failed -V
+            exit 1
+          }
+        env:
+          # The msvc job's finding holds on any Windows: without a console QtTest logs to the
+          # debugger, and ctest captures an empty Output section for every test.
+          QT_FORCE_STDERR_LOGGING: "1"
+      - name: Upload the ctest log on failure
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: ctest-log-windows-arm64
+          path: build/tests/Testing/Temporary/LastTest.log
+          # Evidence, not a package; a missing log must not hide the real failure.
+          if-no-files-found: warn
       - name: Crash evidence (a signal death must name its cause)
         # The C++ QtTest suites do not use the python harness, so an instance that dies of a signal
         # writes its crash report into the runner's XDG data dir rather than a test temp dir - and run

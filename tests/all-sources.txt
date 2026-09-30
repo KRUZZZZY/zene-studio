@@ -111,6 +111,7 @@ include/AutomatableSlider.h
 include/AutomationClip.h
 include/AutomationClipView.h
 include/AutomationEditor.h
+include/AutomationModeMenu.h
 include/AutomationNode.h
 include/AutomationRamp.h
 include/AutomationTrack.h
@@ -1491,6 +1492,7 @@ src/gui/ActionGroup.cpp
 src/gui/AudioAlsaSetupWidget.cpp
 src/gui/AudioDeviceSetupWidget.cpp
 src/gui/AutomatableModelView.cpp
+src/gui/AutomationModeMenu.cpp
 src/gui/CommandPalette.cpp
 src/gui/ControlCommandsShell.cpp
 src/gui/ControlCommandsWindow.cpp
@@ -1852,11 +1854,15 @@ tests/src/core/VcaRefreshAtomicityTest.cpp
 tests/src/core/WarpMarkersTest.cpp
 tests/src/core/WriteRefusalGateTest.cpp
 tests/src/gui/AccessibilityHelperTest.cpp
+tests/src/gui/AccessibilityWalkTest.cpp
+tests/src/gui/AutomationModeMenuTest.cpp
 tests/src/gui/CommandPaletteTest.cpp
 tests/src/gui/FocusDeskActionsTest.cpp
 tests/src/gui/FocusDeskPaneTest.cpp
 tests/src/gui/FocusDeskTest.cpp
 tests/src/gui/FocusDeskWorkspacesTest.cpp
+tests/src/gui/GuiTestApplication.h
+tests/src/gui/KnobKeyboardTest.cpp
 tests/src/gui/MidiLearnGuiTest.cpp
 tests/src/gui/PianoRollBenchmarkTest.cpp
 tests/src/gui/SessionGridViewTest.cpp
@@ -1864,6 +1870,7 @@ tests/src/gui/ShortcutsPageTest.cpp
 tests/src/gui/StartHubTest.cpp
 tests/src/gui/TakeLanesPanelTest.cpp
 tests/src/gui/ThemeContrastTest.cpp
+tests/src/gui/VcaStripLifetimeTest.cpp
 tests/src/gui/VcaStripViewTest.cpp
 tests/src/gui/WcagContrastTest.cpp
 tests/src/plugins/AudioPluginTest.cpp

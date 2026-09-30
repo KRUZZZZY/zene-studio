@@ -560,6 +560,9 @@ QString Fader::getModelValueAsDbString() const
 
 void Fader::paintEvent(QPaintEvent* ev)
 {
+	// The model is a QPointer (ModelView): when it is destroyed under a live fader, there is
+	// nothing to draw - painting read through the null (BUGS_FOUND 11.12).
+	if (model() == nullptr) { return; }
 	QPainter painter(this);
 
 	// Draw the levels with peaks

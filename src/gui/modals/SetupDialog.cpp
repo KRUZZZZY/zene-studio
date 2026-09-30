@@ -201,6 +201,7 @@ SetupDialog::SetupDialog(ConfigTab tab_to_open) :
 
 	// General scroll area.
 	auto generalScroll = new QScrollArea(general_w);
+	generalScroll->setAccessibleName(tr("General settings")); // R8.5
 	generalScroll->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOn);
 	generalScroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
 
@@ -808,6 +809,7 @@ SetupDialog::SetupDialog(ConfigTab tab_to_open) :
 
 	// Paths scroll area.
 	auto pathsScroll = new QScrollArea(paths_w);
+	pathsScroll->setAccessibleName(tr("Paths")); // R8.5
 	pathsScroll->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOn);
 	pathsScroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
 

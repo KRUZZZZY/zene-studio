@@ -503,6 +503,7 @@ include/AudioPortsModel.h
 include/AudioPortsSettings.h
 include/AudioStretcher.h
 include/AudioWideInputStage.h
+include/AutomationModeMenu.h
 include/AutomationRamp.h
 include/BounceInPlace.h
 include/BrowserCatalog.h
@@ -1100,6 +1101,7 @@ src/core/audio/MultiTrackRecorder.cpp
 src/core/audio/TrackRecorder.cpp
 src/core/midi/MidiReconnect.cpp
 src/core/midi/MpeExpression.cpp
+src/gui/AutomationModeMenu.cpp
 src/gui/CommandPalette.cpp
 src/gui/ControlCommandsShell.cpp
 src/gui/ControlCommandsWindow.cpp

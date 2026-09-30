@@ -88,6 +88,7 @@ MicrotunerConfig::MicrotunerConfig() :
 	connect(&m_scaleComboModel, &ComboBoxModel::dataChanged, this, &MicrotunerConfig::updateScaleForm);
 
 	m_scaleNameEdit = new QLineEdit("12-TET");
+	m_scaleNameEdit->setAccessibleName(tr("Scale description")); // R8.5
 	m_scaleNameEdit->setToolTip(tr("Scale description. Cannot start with \"!\" and cannot contain a newline character."));
 	microtunerLayout->addWidget(m_scaleNameEdit, 2, 0, 1, 2);
 
@@ -101,6 +102,7 @@ MicrotunerConfig::MicrotunerConfig() :
 	connect(saveScaleButton, &QPushButton::clicked, this, &MicrotunerConfig::saveScaleToFile);
 
 	m_scaleTextEdit = new QPlainTextEdit();
+	m_scaleTextEdit->setAccessibleName(tr("Scale intervals")); // R8.5
 	m_scaleTextEdit->setPlainText("100.0\n200.0\n300.0\n400.0\n500.0\n600.0\n700.0\n800.0\n900.0\n1000.0\n1100.0\n1200.0");
 	m_scaleTextEdit->setToolTip(tr("Enter intervals on separate lines. Numbers containing a decimal point are treated as cents.\nOther inputs are treated as integer ratios and must be in the form of \'a/b\' or \'a\'.\nUnity (0.0 cents or ratio 1/1) is always present as a hidden first value; do not enter it manually."));
 	microtunerLayout->addWidget(m_scaleTextEdit, 4, 0, 2, 2);
@@ -126,6 +128,7 @@ MicrotunerConfig::MicrotunerConfig() :
 	connect(&m_keymapComboModel, &ComboBoxModel::dataChanged, this, &MicrotunerConfig::updateKeymapForm);
 
 	m_keymapNameEdit = new QLineEdit("default");
+	m_keymapNameEdit->setAccessibleName(tr("Keymap description")); // R8.5
 	m_keymapNameEdit->setToolTip(tr("Keymap description. Cannot start with \"!\" and cannot contain a newline character."));
 	microtunerLayout->addWidget(m_keymapNameEdit, 2, 2, 1, 2);
 
@@ -139,6 +142,7 @@ MicrotunerConfig::MicrotunerConfig() :
 	connect(saveKeymapButton, &QPushButton::clicked, this, &MicrotunerConfig::saveKeymapToFile);
 
 	m_keymapTextEdit = new QPlainTextEdit();
+	m_keymapTextEdit->setAccessibleName(tr("Key mappings")); // R8.5
 	m_keymapTextEdit->setPlainText("0\n1\n2\n3\n4\n5\n6\n7\n8\n9\n10\n11");
 	m_keymapTextEdit->setToolTip(tr("Enter key mappings on separate lines. Each line assigns a scale degree to a MIDI key,\nstarting with the middle key and continuing in sequence.\nThe pattern repeats for keys outside of the explicit keymap range.\nMultiple keys can be mapped to the same scale degree.\nEnter \'x\' if you wish to leave the key disabled / not mapped."));
 	microtunerLayout->addWidget(m_keymapTextEdit, 4, 2, 1, 2);

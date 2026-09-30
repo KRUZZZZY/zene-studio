@@ -105,6 +105,10 @@ protected:
 	void mouseDoubleClickEvent(QMouseEvent * me) override;
 	void paintEvent(QPaintEvent * me) override;
 	void wheelEvent(QWheelEvent * me) override;
+	//! R8.5: arrows step as the wheel does (same modifiers), PageUp/PageDown step coarsely,
+	//! Home/End go to the ends; every other key goes on to the parent as before.
+	void keyPressEvent(QKeyEvent * ke) override;
+	void showEvent(QShowEvent * se) override;
 
 #if (QT_VERSION >= QT_VERSION_CHECK(6, 0, 0))
 	void enterEvent(QEnterEvent*) override;
@@ -149,6 +153,13 @@ protected:
 	virtual QString getDynamicFloatingText(const QString& currentValue) const;
 
 	void doConnections() override;
+
+	//! One wheel or key step in @a direction (+1/-1), sized by @a modifiers as the wheel's are.
+	void nudge(float direction, Qt::KeyboardModifiers modifiers);
+	//! R8.5: what a screen reader calls the control - its constructed name, else its model's
+	//! display name, else its description. A name someone set explicitly is left alone.
+	void refreshAccessibleName();
+	QString m_derivedAccessibleName;
 
 	void showTextFloat(int msecBeforeDisplay, int msecDisplayTime, bool forceTextUpdate = false);
 	void showTextFloat(bool forceTextUpdate = false);

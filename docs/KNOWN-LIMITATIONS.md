@@ -504,6 +504,12 @@ that is this page's fault — report it and it gets added.
   rather than a sample. Verified in the tree via the automation lane's own record: `docs/AUTOMATION-MODES.md`
   states that automation is evaluated once per tick and names the line that stands between that and a
   per-frame read.
+- *(Updated 2026-09-30.)* **Every control's context menu now has an "Automation mode" submenu** (Off,
+  Read, Touch, Latch, Write, the current one checked) that runs `automation.mode_set` for that parameter
+  (`src/gui/AutomationModeMenu.cpp`, held by `AutomationModeMenuTest` against a real instrument). It
+  appears only on a control the command surface can name; the song's tempo and the master fader, which
+  the socket cannot address as parameters, get none. The per-clip record flag
+  (`automation.record_mode_set`) still has no interface. The bullet below is the pre-menu record.
 - **Automation modes are drivable through the socket but not from the interface — added 2026-09-15.**
   `automation.mode_set` (off / read / touch / latch / write) and `automation.record_mode_set` (per-clip record
   flag) are registered, have schemas, are reported back per parameter (`automation.get_state` carries each
@@ -753,8 +759,10 @@ that is this page's fault — report it and it gets added.
   just played can be written into a new clip AFTER the fact — drivable through `--control-socket`
   (`midi.retro_capture_arm`, `midi.retro_capture_status`, `midi.retro_capture_to_clip`), with a registered
   ctest playing REAL MIDI into the running engine and recovering it — but **nothing in `src/gui/` shows the
-  window, how long it is or what it holds**: there is no view of it, no "you played something" prompt, and
-  no keyboard shortcut. Retrospective MIDI capture is drivable through the socket, not from the interface.
+  window, how long it is or what it holds**: there is no view of it and no "you played something" prompt.
+  *(Updated 2026-09-30, R5.4: the interface does arm and write it - Edit ▸ Arm MIDI Capture and Edit ▸
+  Capture MIDI, Ctrl+Shift+C - and the capture lands on the monitored track, the one the MIDI input
+  follows, when no clip is selected; it was "no keyboard shortcut, not from the interface".)*
   The bound is stated rather than implied: **8192 events (128 KiB), the most recent ones, per open MIDI
   client** — a **memory bound, not a time bound**, because the ring is written from the MIDI input thread and
   that path may not allocate, lock or call out, so its storage is allocated once and never resized. In the
@@ -1817,6 +1825,19 @@ says that **compensation is SUSPENDED for the loop** - carrying REAPER's warning
   was already broken manually (conservative - that is how normal PDC is guaranteed back).
 
 ## UI precondition #1 - accessible names, focus order, palette roles (branch 040/ui-precond, 2026-09-22)
+
+*(Updated 2026-09-30, R8.5.)* **Every keyboard-focusable widget on the main surfaces now has a
+name**, and a test holds it: `tests/src/gui/AccessibilityWalkTest.cpp` builds the real application
+(the main window's toolbar, the song, piano-roll, automation and pattern editors, the mixer, the
+controller rack, project notes and the microtuner) plus the clip-launch grid, the start hub and the
+shortcuts page, then an instrument track's and a sample track's own window (every page of every
+nested tab) and the settings and export dialogs, and asks Qt's accessibility layer for the name of
+every widget Tab can reach - 155 of them. The walks found 43 announced as nothing; all 43 are
+named, and the ratchet list is empty. **Knobs are now keyboard-operable** (Tab reaches them;
+arrows step as the wheel does, PageUp/PageDown coarsely, Home/End to the ends - `KnobKeyboardTest`)
+and named from their label, model or hint. **What it does not cover:** faders and LED buttons still
+take no keyboard focus (the mixer's own keys move the current channel's fader), and dialogs other
+than those two are not walked. The paragraph below is the 2026-09-22 record.
 
 The accessibility + palette pass of SPEC-zene-ui-v0 §5 item 1 swept exactly three
 surfaces - the Focus Desk shell (`src/gui/FocusDesk.cpp`, `FocusDeskPane.cpp`,

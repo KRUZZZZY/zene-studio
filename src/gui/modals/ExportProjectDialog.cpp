@@ -33,6 +33,7 @@
 #include <QLabel>
 #include <QProgressBar>
 #include <QPushButton>
+#include <QLineEdit>
 #include <QSpinBox>
 #include <QVBoxLayout>
 
@@ -198,6 +199,9 @@ ExportProjectDialog::ExportProjectDialog(const QString& path, Mode mode, QWidget
 	m_loopRepeatBox->setRange(1, maxLoopRepeat);
 	m_loopRepeatBox->setValue(1);
 	m_loopRepeatBox->setSuffix(tr(" time(s)"));
+	// R8.5: the label beside it names it; the editable field inside is what Tab reaches.
+	m_loopRepeatBox->setAccessibleName(tr("Render looped section"));
+	if (auto* field = m_loopRepeatBox->findChild<QLineEdit*>()) { field->setAccessibleName(tr("Render looped section")); }
 
 	m_fileFormatComboBox->setCurrentIndex(-1);
 	connect(m_fileFormatComboBox, qOverload<int>(&QComboBox::currentIndexChanged), this,

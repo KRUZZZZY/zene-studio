@@ -75,6 +75,7 @@ void NStateButton::changeState(int state)
 
 		const auto& [icon, tooltip] = m_states[m_curState];
 		setToolTip(tooltip.isEmpty() ? m_generalToolTip : tooltip);
+		setAccessibleName(toolTip()); // R8.5: an icon-only button is announced by what it does
 		setIcon(icon);
 
 		emit changedState(m_curState);

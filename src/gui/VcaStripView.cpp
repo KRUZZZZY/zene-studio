@@ -82,6 +82,15 @@ VcaStripView::VcaStripView(VcaGroup* group, QWidget* parent) :
 	layout->addWidget(m_solo, 0, Qt::AlignHCenter);
 	layout->addWidget(m_mute, 0, Qt::AlignHCenter);
 	layout->addWidget(m_fader, 1, Qt::AlignHCenter);
+
+	// A removed group (vca.remove, an undo) frees these models before the mixer's next sync
+	// rebuilds the strips - MixerView polls every 500 ms - and a repaint in between read the
+	// freed fader model: a SIGSEGV in Fader::calculateKnobPosYFromModel, ~1 run in 12 of
+	// control-vca-commands.py (BUGS_FOUND 11.12). The strip retires the moment the fader goes.
+	connect(group->vcaModel(), &QObject::destroyed, this, [this] {
+		hide();
+		deleteLater();
+	});
 }
 
 QString VcaStripView::caption() const

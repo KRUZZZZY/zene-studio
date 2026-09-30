@@ -223,6 +223,8 @@ PianoRoll::PianoRoll() :
 	m_whiteKeyWidth(WHITE_KEY_WIDTH),
 	m_blackKeyWidth(BLACK_KEY_WIDTH)
 {
+	// R8.5: what a screen reader announces when Tab reaches it.
+	setAccessibleName(tr("Piano roll"));
 	// gui names of edit modes
 	m_nemStr.push_back( tr( "Note Velocity" ) );
 	m_nemStr.push_back( tr( "Note Panning" ) );
@@ -5263,6 +5265,7 @@ PianoRollWindow::PianoRollWindow() :
 
 	// Quantize combo button
 	auto quantizeButton = new QToolButton(notesActionsToolBar);
+	quantizeButton->setAccessibleName(tr("Quantize")); // R8.5
 	auto quantizeButtonMenu = new QMenu(quantizeButton);
 
 	auto quantizeAction = new QAction(embed::getIconPixmap("quantize"), tr("Quantize"), this);
@@ -5292,6 +5295,7 @@ PianoRollWindow::PianoRollWindow() :
 	// -- File ToolButton
 	m_fileToolsButton = new QToolButton(m_toolBar);
 	m_fileToolsButton->setIcon(embed::getIconPixmap("file"));
+	m_fileToolsButton->setAccessibleName(tr("Clip import and export")); // R8.5
 	m_fileToolsButton->setPopupMode(QToolButton::InstantPopup);
 
 	// Import / export
@@ -5335,6 +5339,7 @@ PianoRollWindow::PianoRollWindow() :
 	// -- Note modifier tools
 	auto noteToolsButton = new QToolButton(m_toolBar);
 	noteToolsButton->setIcon(embed::getIconPixmap("tool"));
+	noteToolsButton->setAccessibleName(tr("Note tools")); // R8.5
 	noteToolsButton->setPopupMode(QToolButton::InstantPopup);
 
 	auto glueAction = new QAction(embed::getIconPixmap("glue"), tr("Glue"), noteToolsButton);
@@ -5461,6 +5466,7 @@ PianoRollWindow::PianoRollWindow() :
 	m_clearGhostButton = new QPushButton( m_toolBar );
 	m_clearGhostButton->setIcon( embed::getIconPixmap( "clear_ghost_note" ) );
 	m_clearGhostButton->setToolTip( tr( "Clear ghost notes" ) );
+	m_clearGhostButton->setAccessibleName( tr( "Clear ghost notes" ) ); // R8.5
 	m_clearGhostButton->setEnabled( false );
 	connect( m_clearGhostButton, SIGNAL(clicked()), m_editor, SLOT(clearGhostClip()));
 	connect( m_editor, SIGNAL(ghostClipSet(bool)), this, SLOT(ghostClipSet(bool)));

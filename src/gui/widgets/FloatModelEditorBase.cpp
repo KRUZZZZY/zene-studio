@@ -28,7 +28,9 @@
 
 #include <QApplication>
 #include <QInputDialog>
+#include <QKeyEvent>
 #include <QPainter>
+#include <QShowEvent>
 #include <QTimerEvent>
 
 #include "lmms_math.h"
@@ -78,7 +80,9 @@ void FloatModelEditorBase::initUi(const QString & name)
 
 	setWindowTitle(name);
 
-	setFocusPolicy(Qt::ClickFocus);
+	// R8.5: Tab reaches a knob (it was click-focus only, so a keyboard could never get to one),
+	// and keyPressEvent below operates it.
+	setFocusPolicy(Qt::StrongFocus);
 
 	doConnections();
 }
@@ -330,6 +334,35 @@ void FloatModelEditorBase::wheelEvent(QWheelEvent * we)
 	const int deltaY = we->angleDelta().y();
 	float direction = deltaY > 0 ? 1 : -1;
 
+	const auto modKeys = we->modifiers();
+	// It seems that on some systems pressing Alt with mess with the directions,
+	// i.e. scrolling the mouse wheel is interpreted as pressing the mouse wheel
+	// left and right. Account for this quirk.
+	if (modKeys == Qt::AltModifier && deltaY == 0)
+	{
+		const int deltaX = we->angleDelta().x();
+		if (deltaX != 0)
+		{
+			direction = deltaX > 0 ? 1 : -1;
+		}
+	}
+
+	// Handle "natural" scrolling, which is common on trackpads and touch devices
+	if (we->inverted()) {
+		direction = -direction;
+	}
+
+	nudge(direction, modKeys);
+
+	// Only force a text update for the 1st wheel event
+	showTextFloat(0, 1000, m_interaction != oldInteraction);
+
+	emit sliderMoved(model()->value());
+}
+
+
+void FloatModelEditorBase::nudge(float direction, Qt::KeyboardModifiers modKeys)
+{
 	auto * m = model();
 	const float step = m->step<float>();
 	const float range = m->range();
@@ -339,7 +372,6 @@ void FloatModelEditorBase::wheelEvent(QWheelEvent * we)
 	// It might be modified if the user presses modifier keys. See below.
 	float numberOfStepsForFullSweep = 100.;
 
-	const auto modKeys = we->modifiers();
 	if (modKeys == Qt::ShiftModifier)
 	{
 		// The shift is intended to go through the values in very coarse steps as in:
@@ -355,23 +387,6 @@ void FloatModelEditorBase::wheelEvent(QWheelEvent * we)
 	{
 		// The alt key enables even finer adjustments
 		numberOfStepsForFullSweep = 2000;
-
-		// It seems that on some systems pressing Alt with mess with the directions,
-		// i.e. scrolling the mouse wheel is interpreted as pressing the mouse wheel
-		// left and right. Account for this quirk.
-		if (deltaY == 0)
-		{
-			const int deltaX = we->angleDelta().x();
-			if (deltaX != 0)
-			{
-				direction = deltaX > 0 ? 1 : -1;
-			}
-		}
-	}
-
-	// Handle "natural" scrolling, which is common on trackpads and touch devices
-	if (we->inverted()) {
-		direction = -direction;
 	}
 
 	// Compute the number of steps but make sure that we always do at least one step
@@ -381,11 +396,46 @@ void FloatModelEditorBase::wheelEvent(QWheelEvent * we)
 	const float stepMult = std::max(scaledValueOffset / step, 1.f);
 	const int inc = direction * stepMult;
 	model()->incValue(inc);
+}
 
-	// Only force a text update for the 1st wheel event
-	showTextFloat(0, 1000, m_interaction != oldInteraction);
 
+void FloatModelEditorBase::keyPressEvent(QKeyEvent * ke)
+{
+	if (model() == nullptr) { QWidget::keyPressEvent(ke); return; }
+	switch (ke->key())
+	{
+		case Qt::Key_Up:
+		case Qt::Key_Right: nudge(1.f, ke->modifiers()); break;
+		case Qt::Key_Down:
+		case Qt::Key_Left: nudge(-1.f, ke->modifiers()); break;
+		case Qt::Key_PageUp: nudge(1.f, Qt::ShiftModifier); break;
+		case Qt::Key_PageDown: nudge(-1.f, Qt::ShiftModifier); break;
+		case Qt::Key_Home: model()->setValue(model()->minValue()); break;
+		case Qt::Key_End: model()->setValue(model()->maxValue()); break;
+		default: QWidget::keyPressEvent(ke); return;
+	}
+	ke->accept();
 	emit sliderMoved(model()->value());
+}
+
+
+void FloatModelEditorBase::showEvent(QShowEvent * se)
+{
+	// The description is usually set after the model, so the name is settled here too.
+	refreshAccessibleName();
+	QWidget::showEvent(se);
+}
+
+
+void FloatModelEditorBase::refreshAccessibleName()
+{
+	if (!accessibleName().isEmpty() && accessibleName() != m_derivedAccessibleName) { return; }
+	QString name = windowTitle().trimmed();
+	if (name.isEmpty() && model() != nullptr) { name = model()->displayName().trimmed(); }
+	if (name.isEmpty()) { name = m_description; }
+	while (name.endsWith(QLatin1Char(':'))) { name.chop(1); }
+	m_derivedAccessibleName = name;
+	setAccessibleName(name);
 }
 
 
@@ -560,6 +610,7 @@ QString FloatModelEditorBase::getDynamicFloatingText(const QString& currentValue
 
 void FloatModelEditorBase::doConnections()
 {
+	refreshAccessibleName();
 	if (model() != nullptr)
 	{
 		QObject::connect(model(), SIGNAL(dataChanged()),
