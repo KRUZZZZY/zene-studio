@@ -316,7 +316,9 @@ void SubWindow::setBorderColor( const QColor &c )
 
 void SubWindow::detach()
 {
-	if (!isDetachable() || isDetached()) { return; }
+	// No widget: the Focus Desk has claimed this window's editor (FocusDeskPane mounts it in its own
+	// pane), so there is nothing here to detach. window.detach_all dereferenced it and died.
+	if (!isDetachable() || isDetached() || widget() == nullptr) { return; }
 
 	const auto pos = mapToGlobal(widget()->pos());
 	const bool shown = isVisible();
@@ -336,7 +338,7 @@ void SubWindow::detach()
 
 void SubWindow::attach()
 {
-	if (!isDetached()) { return; }
+	if (!isDetached()) { return; }  // also covers a claimed window: isDetached() needs a widget
 
 	const bool shown = widget()->isVisible();
 

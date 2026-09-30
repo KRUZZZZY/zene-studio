@@ -126,7 +126,7 @@ private slots:
 			QCOMPARE(conf->value("ui", QStringLiteral("focusdesk")), QStringLiteral("1"));
 			QVERIFY(fresh.applyConfiguredState());
 			QVERIFY(fresh.deskActive());
-			QVERIFY(fresh.setDeskActive(false));
+			QVERIFY(!fresh.setDeskActive(false));  // returns the state it leaves: off
 		}
 		QCOMPARE(conf->value("ui", QStringLiteral("focusdesk")), QStringLiteral("0"));
 		FocusDeskPane chosenOff(&world.workspace, &world.page, world.layout,

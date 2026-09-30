@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-09-30T20:31:11Z",
+  "captured_at": "2026-09-30T22:22:16Z",
   "commands": [
     {
       "args_schema": {
@@ -20944,7 +20944,7 @@
         "required": [],
         "type": "object"
       },
-      "description": "Detach every editor sub-window into its own top-level window - View > Detach all subwindows dispatches this. Interface state only.",
+      "description": "Detach every editor sub-window into its own top-level window - View > Detach all subwindows dispatches this. Interface state only. While the Focus Desk holds the editors there are no sub-windows, and `detached` answers false.",
       "group": "window",
       "id": "window.detach_all",
       "mutating": false,
@@ -21263,8 +21263,8 @@
     "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-survey/tools/zene-pa-agentctl",
     "lane_head": null,
     "proto": 1,
-    "source_socket": "/tmp/zctl-run-9otixbio/zene.sock",
-    "version": "0.3.0-alpha.296+87d33d7"
+    "source_socket": "/tmp/zctl-run-_zu3bdab/zene.sock",
+    "version": "0.3.0-alpha.301+b9de58b"
   },
   "kind": "zene-control-command-list",
   "proto": 1,

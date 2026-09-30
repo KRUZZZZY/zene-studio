@@ -850,6 +850,12 @@ SubWindow* MainWindow::addWindowedWidget(QWidget *w, Qt::WindowFlags windowFlags
 
 
 
+bool MainWindow::focusDeskActive() const
+{
+	return m_focusDeskPane != nullptr && m_focusDeskPane->deskActive();
+}
+
+
 void MainWindow::setAllSubWindowsDetached(bool detached)
 {
 	emit detachAllSubWindows(detached);
