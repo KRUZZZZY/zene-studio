@@ -174,12 +174,16 @@ jobs:
           sudo apt-get install -y --no-install-recommends python3-numpy python3-scipy
           echo "BS.1770-4 deps this job will run with (interpreter, numpy, scipy):"
           python3 -c "import numpy,scipy,sys;print(sys.executable,numpy.__version__,scipy.__version__)"
+      # --timeout 1500: a default bound for every test that sets no TIMEOUT of its own (above the
+      # slowest measured, ControlGoldenAudio's 1018 s on linux-arm64), so a hang fails by name instead of
+      # holding the job to its 6-hour limit - hosted run 36768209640's windows-arm64 job sat in
+      # PdcMixerTest for over three hours (BUGS_FOUND 11.20). A test's own TIMEOUT still wins.
       - name: Run tests
         run: |
           cd build/tests
-          ctest --output-on-failure -j2 || {
+          ctest --output-on-failure --timeout 1500 -j2 || {
             echo "=== ctest failed: re-running only the failed tests, verbosely ==="
-            ctest --rerun-failed -V
+            ctest --rerun-failed -V --timeout 1500
             exit 1
           }
       - name: Signal-death backtrace (a SIGSEGV must name its frame)
@@ -395,9 +399,9 @@ jobs:
       - name: Run tests
         run: |
           cd build/tests
-          ctest --output-on-failure -j2 || {
+          ctest --output-on-failure --timeout 1500 -j2 || {
             echo "=== ctest failed: re-running only the failed tests, verbosely ==="
-            ctest --rerun-failed -V
+            ctest --rerun-failed -V --timeout 1500
             exit 1
           }
       # BUGS_FOUND 11.20: every render suite runs ~50x slower here than on linux-x86_64 (run
@@ -679,9 +683,9 @@ jobs:
       - name: Run tests
         run: |
           cd build/tests
-          ctest --output-on-failure -j3 || {
+          ctest --output-on-failure --timeout 1500 -j3 || {
             echo "=== ctest failed: re-running only the failed tests, verbosely ==="
-            ctest --rerun-failed -V
+            ctest --rerun-failed -V --timeout 1500
             exit 1
           }
       - name: Signal-death backtrace (a SIGSEGV must name its frame)
@@ -1180,9 +1184,9 @@ jobs:
       - name: Run tests
         run: |
           cd build/tests
-          ctest --output-on-failure -j2 || {
+          ctest --output-on-failure --timeout 1500 -j2 || {
             echo "=== ctest failed: re-running only the failed tests, verbosely ==="
-            ctest --rerun-failed -V
+            ctest --rerun-failed -V --timeout 1500
             exit 1
           }
         env:
@@ -1399,9 +1403,9 @@ jobs:
         # real Windows ARM64 machine and, until now, ran none of it. Same step as msvc's.
         run: |
           cd build/tests
-          ctest --output-on-failure -j2 || {
+          ctest --output-on-failure --timeout 1500 -j2 || {
             echo "=== ctest failed: re-running only the failed tests, verbosely ==="
-            ctest --rerun-failed -V
+            ctest --rerun-failed -V --timeout 1500
             exit 1
           }
         env:
