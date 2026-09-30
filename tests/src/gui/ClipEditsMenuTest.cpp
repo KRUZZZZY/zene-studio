@@ -186,6 +186,49 @@ private slots:
 		QVERIFY(refused.errorMessage.contains(QStringLiteral("piano roll")));
 	}
 
+	//! Trim to the playhead and slip by a beat: each runs its command and one control.undo takes it
+	//! back; with the playhead outside the clip the trims are not offered.
+	void aClipIsTrimmedAndSlippedFromTheMenu()
+	{
+		auto* track = dynamic_cast<SampleTrack*>(Track::create(Track::Type::Sample, Engine::getSong()));
+		auto* clip = dynamic_cast<SampleClip*>(track->createClip(TimePos(0)));
+		QVERIFY(clip != nullptr);
+		clip->setAutoResize(false);
+		clip->changeLength(TimePos(4 * DefaultTicksPerBar));
+		const auto seek = [](int ticks) {
+			QVERIFY(ControlRegistry::instance()->invoke(QStringLiteral("transport.seek"),
+				{{QStringLiteral("ticks"), ticks}}).ok);
+		};
+
+		seek(DefaultTicksPerBar);
+		QMenu menu;
+		addClipTrimActions(&menu, clip);
+		item(&menu, QStringLiteral("Trim start to playhead"))->trigger();
+		QCOMPARE(clip->startPosition().getTicks(), DefaultTicksPerBar);
+		QCOMPARE(clip->endPosition().getTicks(), 4 * DefaultTicksPerBar);
+		QVERIFY(ControlRegistry::instance()->invoke(QStringLiteral("control.undo"), QJsonObject{}).ok);
+		QCOMPARE(clip->startPosition().getTicks(), 0);
+
+		QMenu again;
+		addClipTrimActions(&again, clip);
+		item(&again, QStringLiteral("Trim end to playhead"))->trigger();
+		QCOMPARE(clip->startPosition().getTicks(), 0);
+		QCOMPARE(clip->endPosition().getTicks(), DefaultTicksPerBar);
+
+		const int offset = clip->startTimeOffset().getTicks();
+		item(&again, QStringLiteral("Slip content +1 beat"))->trigger();
+		QCOMPARE(clip->startTimeOffset().getTicks(), offset + DefaultTicksPerBar / 4);
+		QCOMPARE(clip->startPosition().getTicks(), 0);
+		QCOMPARE(clip->endPosition().getTicks(), DefaultTicksPerBar);
+
+		seek(8 * DefaultTicksPerBar);
+		QMenu outside;
+		addClipTrimActions(&outside, clip);
+		QVERIFY(!item(&outside, QStringLiteral("Trim start to playhead"))->isEnabled());
+		QVERIFY(!item(&outside, QStringLiteral("Trim end to playhead"))->isEnabled());
+		seek(0);
+	}
+
 	void noClipNoMenu()
 	{
 		QMenu menu;

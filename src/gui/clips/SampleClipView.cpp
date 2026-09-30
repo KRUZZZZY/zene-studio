@@ -111,6 +111,8 @@ void SampleClipView::constructContextMenu(QMenu* cm)
 	addClipEditsMenu(cm, m_clip);
 	// Arm the clip to take the input under Record while playing (clip.set_record).
 	addClipRecordAction(cm, m_clip);
+	// Trim to the playhead and slip the content by a beat (clip.trim / clip.slip).
+	addClipTrimActions(cm, m_clip);
 
 #ifdef LMMS_HAVE_STEM_SPLIT
 	cm->addAction(

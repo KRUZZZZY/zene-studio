@@ -1167,12 +1167,14 @@ release-prep base and is false at this one.
 Four ids whose engines were already in the tree and whose command surface was not. All four
 are **drivable through the socket, not from the interface**, and this section is the honest half.
 
+- *(Updated 2026-09-30.)* A sample clip's context menu now runs `clip.trim`: **Trim start to playhead / Trim end to playhead** (`ClipEditsMenuTest`). A drag with a slip modifier is still missing. The line below is the earlier record.
 - **UI absence — one line: `clip.trim` is drivable through the socket, not from the interface.**
   The song editor does have the gesture the command implements — the left-edge drag in
   `src/gui/clips/ClipView.cpp`, whose three-line rule (position, length and source offset move
   together) `clip.trim` reproduces exactly — but no menu item, action or keybinding reaches the
   *command*: the GUI path is the drag, an agent's path is the id. Nothing in `src/gui/` invokes
   `clip.trim`.
+- *(Updated 2026-09-30.)* A sample clip's context menu now runs `clip.slip`: **Slip content -1 beat / +1 beat** (`ClipEditsMenuTest`). A drag with a slip modifier is still missing. The line below is the earlier record.
 - **UI absence — one line: `clip.slip` is drivable through the socket, not from the interface.**
   There is no slip gesture anywhere in the product: a case-insensitive grep for `slip` over `src/`
   and `include/` returns seven hits and every one of them is a comment or a doc-string. The

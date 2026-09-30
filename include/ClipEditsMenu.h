@@ -52,6 +52,12 @@ LMMS_EXPORT void addClipEditsMenu(QMenu* menu, Clip* clip);
  *  plays with Record while playing, and the clip shows "Rec" until then. Nothing for a MIDI clip. */
 LMMS_EXPORT void addClipRecordAction(QMenu* menu, Clip* clip);
 
+/*! A clip's source-window edits by the playhead and the beat: Trim start to playhead / Trim end to
+ *  playhead (clip.trim - the same edit the left- and right-edge drags make, offered only when the
+ *  playhead is inside the clip) and Slip content -1 beat / +1 beat (clip.slip, the content moves inside
+ *  a clip that stays put). Each is one control.undo step. */
+LMMS_EXPORT void addClipTrimActions(QMenu* menu, Clip* clip);
+
 //! Tests replace the gain prompt (default: a number input seeded with @a currentDb; nullopt
 //! cancels). Passing an empty function restores the default.
 LMMS_EXPORT void setClipGainPrompt(std::function<std::optional<double>(double currentDb)> prompt);

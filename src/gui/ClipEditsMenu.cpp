@@ -37,7 +37,9 @@
 #include "ClipEdits.h"
 #include "ControlRegistry.h"
 #include "ControlVocabulary.h"
+#include "Engine.h"
 #include "SampleClip.h"
+#include "Song.h"
 #include "TimePos.h"
 #include "UnattendedRun.h"
 
@@ -110,6 +112,37 @@ void addClipRecordAction(QMenu* menu, Clip* clip)
 	QObject::connect(record, &QAction::triggered, menu, [clip](bool on) {
 		run(clip, QStringLiteral("clip.set_record"), {{QStringLiteral("record"), on}});
 	});
+}
+
+void addClipTrimActions(QMenu* menu, Clip* clip)
+{
+	if (clip == nullptr) { return; }
+	const int playhead = static_cast<int>(Engine::getSong()->getPlayPos().getTicks());
+	const int start = clip->startPosition().getTicks();
+	const int end = clip->endPosition().getTicks();
+	const bool inside = playhead > start && playhead < end;
+	QAction* trimStart = menu->addAction(QMenu::tr("Trim start to playhead"));
+	trimStart->setData(QStringLiteral("clip.trim"));
+	trimStart->setEnabled(inside);
+	QObject::connect(trimStart, &QAction::triggered, menu, [clip, playhead] {
+		run(clip, QStringLiteral("clip.trim"), {{QStringLiteral("start"), playhead}});
+	});
+	QAction* trimEnd = menu->addAction(QMenu::tr("Trim end to playhead"));
+	trimEnd->setData(QStringLiteral("clip.trim"));
+	trimEnd->setEnabled(inside);
+	QObject::connect(trimEnd, &QAction::triggered, menu, [clip, start, playhead] {
+		run(clip, QStringLiteral("clip.trim"), {{QStringLiteral("start"), start}, {QStringLiteral("end"), playhead}});
+	});
+	const int beat = DefaultTicksPerBar / 4;
+	for (const int step : {-beat, beat})
+	{
+		QAction* slip = menu->addAction(step < 0 ? QMenu::tr("Slip content -1 beat") : QMenu::tr("Slip content +1 beat"));
+		slip->setData(QStringLiteral("clip.slip"));
+		QObject::connect(slip, &QAction::triggered, menu, [clip, step] {
+			run(clip, QStringLiteral("clip.slip"),
+				{{QStringLiteral("offset"), static_cast<int>(clip->startTimeOffset().getTicks()) + step}});
+		});
+	}
 }
 
 void setClipGainPrompt(std::function<std::optional<double>(double)> prompt) { s_gainPrompt = std::move(prompt); }
