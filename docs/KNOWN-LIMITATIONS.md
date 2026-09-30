@@ -151,6 +151,15 @@ that is this page's fault — report it and it gets added.
   CI-only evidence (the port's §"CLAP hosting on Windows" below), and **no third-party CLAP plug-in has been
   loaded anywhere** — the only modules proven are the MIT fixtures in the source tree.
 
+- *(Updated 2026-09-30, R4.1/R4.2/R4.4.)* **A VST3 plug-in's own editor now opens** - in a window of its
+  own, through `plugin.editor_open` (the host's `Vst3EditorSession`: createView, X11 embedding, resize,
+  IPlugFrame and Linux::IRunLoop on the Qt loop). What is proved is the contract, offscreen, against the
+  in-tree test instrument's view (attach, the view's size and minimum, its repaint timer, close and
+  reopen); **no third-party plug-in's editor has been opened on a real X11 display**, and there is no
+  button for it in the instrument window yet - the socket and the Plugin API are the way in. CLAP
+  editors (the gui extension) are NOT embedded: the host answers timer- and fd-support, so a CLAP
+  plug-in's own run loop works, but `plugin.editor_open` refuses a CLAP device with that reason. The
+  paragraph below is the pre-R4 record, kept for its reasoning.
 - **No instrument editor.** You can load a VST3 instrument and play it, but the plugin's own GUI **does not
   open**. What you get instead is the host's generated control grid, and we have **run it** rather than assumed
   it: with a VST3 instrument track loaded, the instrument window opens and lists the plugin's controls (verified
