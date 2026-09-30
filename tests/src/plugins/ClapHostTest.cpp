@@ -24,6 +24,8 @@
 
 #include <QtTest>
 
+#include <QElapsedTimer>
+
 #include <QFileInfo>
 
 #include <cmath>
@@ -710,10 +712,15 @@ void lmms::clap::ClapHostTest::testTimerSupportRunsThePluginsTimer()
 {
 	QCOMPARE(m_plugin.editorTimerCount(), 1);
 	const std::uint32_t before = m_plugin.timerDeliveries();
-	QTest::qWait(150);
+	QElapsedTimer clock;
+	clock.start();
+	// Five calls however long a loaded runner's loop takes (the hosted macOS VM delivered 2-4 in a
+	// fixed 150 ms), and never faster than the 10 ms the plug-in asked for.
+	QTRY_VERIFY_WITH_TIMEOUT(m_plugin.timerDeliveries() - before >= 5, 3000);
 	const std::uint32_t delivered = m_plugin.timerDeliveries() - before;
-	std::printf("CLAP_TIMER_EVIDENCE 10 ms timer: %u on_timer calls in 150 ms\n", delivered);
-	QVERIFY2(delivered >= 5, qPrintable(QStringLiteral("%1 on_timer calls").arg(delivered)));
+	const qint64 elapsed = clock.elapsed();
+	std::printf("CLAP_TIMER_EVIDENCE 10 ms timer: %u on_timer calls in %lld ms\n", delivered, static_cast<long long>(elapsed));
+	QVERIFY2(delivered <= elapsed / 10 + 1, qPrintable(QStringLiteral("%1 on_timer calls in %2 ms: faster than 10 ms").arg(delivered).arg(elapsed)));
 }
 
 /*! R4.3: the clap.gui life cycle against the fixture's embedded editor - create, set_parent,
