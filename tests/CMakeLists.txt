@@ -3427,6 +3427,11 @@ set_tests_properties(BrowserCatalogTest ControlBrowserCommandsTest PROPERTIES
 # The chain-preset group constructs a full Engine and drives real devices through
 # the registry (plugin.load, plugin.param_set, chain.save/apply), so it wants a
 # real Qt platform plugin even though nothing opens a window.
+# SessionPlaybackTest is a QTEST_MAIN (a QApplication), so it needs a platform like every other one:
+# hosted build.yml linux-x86_64 (run 36747963198) aborted it on "could not connect to display",
+# where quality-gates.yml passes it only because that job exports QT_QPA_PLATFORM itself.
+set_tests_properties(SessionPlaybackTest PROPERTIES
+	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(ControlChainPresetTest PROPERTIES
 	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 # The project-asset reference group constructs a full Engine (the relink's
