@@ -1563,9 +1563,12 @@ all structural and all measurable through the socket:
   pattern's automation is re-read against the pattern's own tick grid and has no single block timeline;
 * a transport **jump** (loop wrap or seek) that lands inside a block is read with the ramp built for that
   block's start, so the rest of that one block follows the old position's curve; the next block is exact;
-* the mode is **off by default**, per clip, and a project that never turns it on renders byte-identically
-  (`buildAutomationRamps()` returns at its first type test) — which also means an automation clip that was
-  never opted in still carries the whole-block lag it always had.
+* *(Updated 2026-09-30, R1.2.)* The mode is **on by default for a clip carrying a curve** (Linear or
+  CubicHermite progression) and off for a Discrete one, whose step has no curve inside a block; an explicit
+  `automation.ramp_set` wins either way. Only an explicit setting is saved, so every project file keeps its
+  bytes — but an OLD project's curve clips now render at sample precision where they used to carry the
+  whole-block lag. Clips written through `automation.add_point` are Discrete, so they are unaffected until
+  their progression is changed.
 
 **UI absence — one line: the mode is settable through the socket, not from the interface** —
 `grep -rniI 'sampleAccurate\|sample_accurate\|ramp_set\|AutomationRamp' src/gui/` returns **0** hits, there

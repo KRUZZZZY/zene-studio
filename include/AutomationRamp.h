@@ -75,6 +75,11 @@ public:
 	 *  of the model. A block denser than that is refused a knot at a time and
 	 *  counted, never allocated for. */
 	static constexpr int MaxKnots = 32;
+	/*! R1.2 made the ramp the default, so the cap must hold for every block the engine can
+	 *  render, not only for the clips that asked: at most DEFAULT_BUFFER_SIZE (256) frames,
+	 *  at most 999 BPM, 48 ticks per beat, a rate of at least 22 050 Hz - 27.6 frames per
+	 *  tick, so at most 10 tick boundaries, 22 knots with the two ends. Checked where the
+	 *  constants meet (AutomationClip.cpp). */
 
 	//! One knot: a frame offset inside the block and the value there.
 	struct Knot
