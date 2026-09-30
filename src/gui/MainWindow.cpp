@@ -1465,24 +1465,24 @@ void MainWindow::updateViewMenu()
 	// which CI's -DUSE_WERROR turns into a hard error.
 	auto detachAllAction = m_viewMenu->addAction(embed::getIconPixmap("detach"),
 		tr("Detach all subwindows"),
-		QKeySequence{Qt::CTRL | Qt::SHIFT | Qt::Key_D},
+		keySequence(Qt::CTRL, Qt::SHIFT, Qt::Key_D),
 		this, [](){ dispatchShellCommand(QStringLiteral("window.detach_all")); }
 	);
 	auto attachAllAction = m_viewMenu->addAction(embed::getIconPixmap("detach"),
 		tr("Attach all subwindows"),
-		QKeySequence{Qt::CTRL | Qt::ALT | Qt::SHIFT | Qt::Key_D},
+		keySequence(Qt::CTRL, Qt::ALT, Qt::SHIFT, Qt::Key_D),
 		this, [](){ dispatchShellCommand(QStringLiteral("window.attach_all")); }
 	);
 #else
 	auto detachAllAction = m_viewMenu->addAction(embed::getIconPixmap("detach"),
 		tr("Detach all subwindows"),
 		this, [](){ dispatchShellCommand(QStringLiteral("window.detach_all")); },
-		QKeySequence{Qt::CTRL | Qt::SHIFT | Qt::Key_D}
+		keySequence(Qt::CTRL, Qt::SHIFT, Qt::Key_D)
 	);
 	auto attachAllAction = m_viewMenu->addAction(embed::getIconPixmap("detach"),
 		tr("Attach all subwindows"),
 		this, [](){ dispatchShellCommand(QStringLiteral("window.attach_all")); },
-		QKeySequence{Qt::CTRL | Qt::ALT | Qt::SHIFT | Qt::Key_D}
+		keySequence(Qt::CTRL, Qt::ALT, Qt::SHIFT, Qt::Key_D)
 	);
 #endif
 
