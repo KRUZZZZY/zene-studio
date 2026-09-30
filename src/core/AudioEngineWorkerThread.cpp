@@ -33,6 +33,7 @@
 
 #include "AudioEngine.h"
 #include "Hardware.h"
+#include "RealtimeScope.h"
 #include "ThreadableJob.h"
 
 
@@ -113,6 +114,8 @@ void AudioEngineWorkerThread::JobQueue::run()
 			ThreadableJob * job = m_items[i].exchange(nullptr);
 			if( job )
 			{
+				// R7.2: a job is audio-thread work on whichever thread takes it.
+				const RealtimeScope realtime;
 				job->process();
 				processedJob = true;
 				++m_itemsDone;

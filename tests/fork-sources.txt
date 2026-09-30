@@ -626,6 +626,7 @@ include/RackMacros.h
 include/RackMenu.h
 include/RackNodes.h
 include/RackZones.h
+include/RealtimeScope.h
 include/RecordRingBuffer.h
 include/RecordingJournal.h
 include/RecordingRecoveryMenu.h

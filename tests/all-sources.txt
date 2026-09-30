@@ -426,6 +426,7 @@ include/RackMenu.h
 include/RackNodes.h
 include/RackZones.h
 include/RaiiHelpers.h
+include/RealtimeScope.h
 include/RecentProjectsMenu.h
 include/RecordRingBuffer.h
 include/RecordingJournal.h
