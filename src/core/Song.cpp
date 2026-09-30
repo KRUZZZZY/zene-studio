@@ -115,6 +115,13 @@ Song::Song() :
 	// the last frame as raw pointers, and the hook needs a song it can reach.
 	s_automationCacheSong = this;
 
+	// R7.2 (RealtimeSanitizer, hosted run 36789477810): MidiClock is a lazily built singleton, and the
+	// first processNextBuffer() used to build it - a `new` on the audio thread. It is built here, on
+	// the thread that builds the song. m_periodTracks is the per-period track list's storage, reserved
+	// once so a period reuses it instead of allocating a copy of tracks().
+	MidiClock::instance();
+	m_periodTracks.reserve(256);
+
 	connect( &m_tempoModel, SIGNAL(dataChanged()),
 			this, SLOT(setTempo()), Qt::DirectConnection );
 	connect( &m_tempoModel, SIGNAL(dataUnchanged()),
@@ -332,14 +339,17 @@ void Song::processNextBuffer()
 		EnvelopeAndLfoParameters::instances()->reset();
 	}
 
-	TrackList trackList;
+	// Reused storage (see the constructor): clear() and assign keep the capacity, so a period does
+	// not allocate and free a copy of the track list (RealtimeSanitizer finding, R7.2).
+	TrackList& trackList = m_periodTracks;
+	trackList.clear();
 	int clipNum = -1; // The number of the clip that will be played
 
 	// Determine the list of tracks to play and the clip number
 	switch (m_playMode)
 	{
 		case PlayMode::Song:
-			trackList = tracks();
+			trackList.assign(tracks().begin(), tracks().end());
 			break;
 
 		case PlayMode::Pattern:
