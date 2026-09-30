@@ -3802,7 +3802,8 @@ endif()
 # running. This is this lane's own block, appended as a whole: the named
 # insertion anchor for this file (the ScriptEngineTest entry in set(LMMS_TESTS)
 # above) cannot hold an add_test() call.
-if(PYTHON3_EXECUTABLE)
+# AF_UNIX clients: registered where the control suite is (see CONTROL_SUITE_AVAILABLE).
+if(PYTHON3_EXECUTABLE AND CONTROL_SUITE_AVAILABLE)
 	add_test(NAME ControlLivecodeCommands
 		COMMAND ${PYTHON3_EXECUTABLE}
 			${CMAKE_CURRENT_SOURCE_DIR}/control-livecode-commands.py
@@ -3840,7 +3841,8 @@ endif()
 # It needs no plugin module (every refusal under test happens before a device is
 # touched), and it starts the REAL binary, so nothing it writes escapes the
 # instance's own temp HOME. This is this lane's own block, appended as a whole.
-if(PYTHON3_EXECUTABLE)
+# AF_UNIX clients: registered where the control suite is (see CONTROL_SUITE_AVAILABLE).
+if(PYTHON3_EXECUTABLE AND CONTROL_SUITE_AVAILABLE)
 	add_test(NAME ControlSurfaceHardening
 		COMMAND ${PYTHON3_EXECUTABLE}
 			${CMAKE_CURRENT_SOURCE_DIR}/control-surface-hardening.py
