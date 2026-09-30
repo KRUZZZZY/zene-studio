@@ -32,6 +32,7 @@
 class QLabel;
 class QListWidget;
 class QPushButton;
+class QSpinBox;
 
 namespace lmms::gui
 {
@@ -42,7 +43,9 @@ namespace lmms::gui
  *  and the record control.transactions keeps, newest first. That record lists the edits made
  *  through the command registry (agents, scripts, the palette, every registry-first menu item);
  *  an edit made directly in an editor is undone by Undo but is not in the list, and the panel
- *  says so rather than let the list read as the whole history. */
+ *  says so rather than let the list read as the whole history. Its Limits row sets the two caps
+ *  (control.set_undo_depth: steps, and a byte budget in MB) and the drag-merging window
+ *  (control.set_undo_coalescing, in milliseconds; 0 turns merging off). */
 class LMMS_EXPORT UndoHistoryPanel : public QDialog
 {
 public:
@@ -58,6 +61,9 @@ private:
 	QListWidget* m_list = nullptr;
 	QPushButton* m_undo = nullptr;
 	QPushButton* m_redo = nullptr;
+	QSpinBox* m_steps = nullptr;
+	QSpinBox* m_megabytes = nullptr;
+	QSpinBox* m_coalesce = nullptr;
 };
 
 } // namespace lmms::gui

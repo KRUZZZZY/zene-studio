@@ -122,6 +122,7 @@ include/BasicFilters.h
 include/BounceInPlace.h
 include/BrowserCatalog.h
 include/BrowserPeakCache.h
+include/BrowserTagMenu.h
 include/BufferManager.h
 include/CPULoadWidget.h
 include/CaptionMenu.h
@@ -1500,6 +1501,7 @@ src/gui/AudioAlsaSetupWidget.cpp
 src/gui/AudioDeviceSetupWidget.cpp
 src/gui/AutomatableModelView.cpp
 src/gui/AutomationModeMenu.cpp
+src/gui/BrowserTagMenu.cpp
 src/gui/CommandPalette.cpp
 src/gui/ControlCommandsShell.cpp
 src/gui/ControlCommandsWindow.cpp
@@ -1870,6 +1872,7 @@ tests/src/core/WriteRefusalGateTest.cpp
 tests/src/gui/AccessibilityHelperTest.cpp
 tests/src/gui/AccessibilityWalkTest.cpp
 tests/src/gui/AutomationModeMenuTest.cpp
+tests/src/gui/BrowserTagMenuTest.cpp
 tests/src/gui/CommandPaletteTest.cpp
 tests/src/gui/ExportQualityControlsTest.cpp
 tests/src/gui/FocusDeskActionsTest.cpp
