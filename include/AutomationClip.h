@@ -27,6 +27,8 @@
 #ifndef LMMS_AUTOMATION_CLIP_H
 #define LMMS_AUTOMATION_CLIP_H
 
+#include <cstdint>
+
 #include <QMap>
 #include <QPointer>
 
@@ -175,19 +177,34 @@ public:
 	//
 	// A clip's curve is stored as nodes on integer ticks and is linear in ticks
 	// between two nodes, so inside one audio block the curve has no more shape
-	// than one straight line per tick. OFF by default (a project that never
-	// asked for it renders byte-identically to before); when ON, the automation
+	// than one straight line per tick. ON by default for a clip with a curve since R1.2
+	// (see RampSetting below); when ON, the automation
 	// evaluation writes the curve into an AutomationRamp at the start of every
 	// audio block and the parameters this clip drives read their per-sample
 	// buffer from that ramp instead of from the previous block's value.
 	// -----------------------------------------------------------------------
 
-	//! Is this clip rendered at sample precision inside a block?
-	bool sampleAccurate() const { return m_sampleAccurate; }
-	//! Turn it on or off. Journalled like any other clip edit (the flag is
-	//! serialized, and loadSettings resets it on absence, so a checkpoint
+	/*! R1.2: the ramp is the DEFAULT for a clip carrying a curve. The flag is three-valued:
+	 *  explicitly on, explicitly off, or not set - and not set resolves to ON for a Linear
+	 *  or CubicHermite clip and OFF for a Discrete one (a step has no curve inside a block
+	 *  to follow). Only an explicit setting is saved ("1" as before, "0" for off), so every
+	 *  project file keeps its bytes; what changes is that an old file's curves now render
+	 *  at sample precision. */
+	enum class RampSetting : std::uint8_t { Default, On, Off };
+
+	//! Is this clip rendered at sample precision inside a block? (The resolved setting.)
+	bool sampleAccurate() const
+	{
+		return m_rampSetting == RampSetting::Default ? m_progressionType != ProgressionType::Discrete
+			: m_rampSetting == RampSetting::On;
+	}
+	RampSetting rampSetting() const { return m_rampSetting; }
+	//! Turn it explicitly on or off. Journalled like any other clip edit (the setting is
+	//! serialized, and loadSettings resets it to Default on absence, so a checkpoint
 	//! taken before the first edit takes it back).
 	void setSampleAccurate( bool on );
+	//! The three-valued form (Default included), for the loader's reset and the tests.
+	void setRampSetting( RampSetting setting );
 
 	/*! Write this clip's curve into @a ramp for the block of @a frames frames
 	 *  whose first sample sits at global tick @a blockStart + @a frameOffsetInTick
@@ -285,7 +302,7 @@ private:
 	//! Sample-accurate rendering of this clip's curve (feature-list row 9).
 	//! Serialized only when it is ON, so a project that never asked for it
 	//! saves the bytes it always saved; loadSettings resets it on absence.
-	bool m_sampleAccurate = false;
+	RampSetting m_rampSetting = RampSetting::Default;
 
 	bool m_dragging;
 	bool m_dragKeepOutValue; // Should we keep the current dragged node's outValue?

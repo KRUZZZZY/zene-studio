@@ -81,7 +81,8 @@ bool resolveRampTarget(const QJsonObject& args, ControlTarget* target,
 	return true;
 }
 
-//! The mode name the wire uses. "block" is what every project has always had.
+//! The mode name the wire uses. "block" was every clip's mode before R1.2 made "sample" the
+//! default for a clip carrying a curve.
 QString modeName(bool sampleAccurate)
 {
 	return sampleAccurate ? QStringLiteral("sample") : QStringLiteral("block");
@@ -106,6 +107,9 @@ QJsonObject rampStateJson(const QString& targetId, const AutomationParameter& pa
 	entry.insert(QStringLiteral("clip"), clip->name());
 	entry.insert(QStringLiteral("clip_type"), clip->nodeName());
 	entry.insert(QStringLiteral("mode"), modeName(clip->sampleAccurate()));
+	// R1.2: whether the mode was set on this clip or is the default for its progression.
+	entry.insert(QStringLiteral("mode_source"), clip->rampSetting() == AutomationClip::RampSetting::Default
+		? QStringLiteral("default") : QStringLiteral("explicit"));
 	entry.insert(QStringLiteral("ramp_live"), ramp != nullptr);
 	entry.insert(QStringLiteral("knots"), ramp != nullptr ? ramp->knotCount() : 0);
 	entry.insert(QStringLiteral("frames"), ramp != nullptr ? static_cast<qint64>(ramp->frames()) : 0);
@@ -279,8 +283,9 @@ void registerAutomationRampCommands(ControlRegistry& registry)
 		cmd.group = QStringLiteral("automation");
 		cmd.verb = QStringLiteral("ramp_set");
 		cmd.description = QStringLiteral("Render one automation clip at SAMPLE precision "
-			"inside each audio block ('sample'), or leave it block-quantised ('block', the "
-			"behaviour every project has always had). In 'sample' mode the parameter's "
+			"inside each audio block ('sample'), or block-quantised ('block'). With neither set "
+			"(ramp_get's mode_source 'default') a clip carrying a curve is 'sample' and a Discrete "
+			"(stepped) one 'block' - the default since R1.2. In 'sample' mode the parameter's "
 			"per-sample buffer - what the mixer, the fx chain and the tracks multiply their "
 			"samples with - carries the curve at every frame instead of one value smeared "
 			"over the whole block. Reversible through the ProjectJournal.");

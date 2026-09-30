@@ -30,6 +30,8 @@
 #include "AutomationRamp.h"
 #include "AutomationClip.h"
 
+#include "AudioEngine.h"
+
 #include "AutomationNode.h"
 #include "AutomationClipView.h"
 #include "AutomationTrack.h"
@@ -676,10 +678,20 @@ float AutomationClip::valueAt( timeMap::const_iterator v, int offset ) const
  *  is a cubic: the row's own limitation line says so, and the surface reports
  *  the progression type rather than implying an exactness it does not have.
  */
+// R1.2: the knot cap holds for the densest block the engine renders (AutomationRamp.h).
+static_assert( 2 * ( ( DEFAULT_BUFFER_SIZE * 999 * 48 ) / ( 22050 * 60 ) + 1 ) + 2 <= AutomationRamp::MaxKnots,
+	"a 256-frame block at 999 BPM and 22.05 kHz must fit the automation ramp" );
+
 void AutomationClip::setSampleAccurate( bool on )
 {
+	setRampSetting( on ? RampSetting::On : RampSetting::Off );
+}
+
+
+void AutomationClip::setRampSetting( RampSetting setting )
+{
 	QMutexLocker m(&m_clipMutex);
-	m_sampleAccurate = on;
+	m_rampSetting = setting;
 }
 
 
@@ -930,13 +942,14 @@ void AutomationClip::saveSettings( QDomDocument & _doc, QDomElement & _this )
 	_this.setAttribute( "mute", QString::number( isMuted() ) );
 	_this.setAttribute("off", startTimeOffset());
 	_this.setAttribute("autoresize", QString::number(getAutoResize()));
-	// Sample-accurate automation (feature row 9): written ONLY when it is on,
-	// so a clip that never asked for it serialises exactly what it always did.
-	// loadSettings resets the flag on absence, which is what lets a journal
-	// checkpoint taken before the first edit take it back.
-	if( m_sampleAccurate )
+	// Sample-accurate automation (feature row 9, R1.2): written ONLY when it was set
+	// explicitly - "1" exactly as before, "0" for an explicit off - so a clip that never
+	// asked serialises exactly what it always did. loadSettings resets it to the default
+	// on absence, which is what lets a journal checkpoint taken before the first edit
+	// take it back.
+	if( m_rampSetting != RampSetting::Default )
 	{
-		_this.setAttribute( "sample_accurate", QString::number( 1 ) );
+		_this.setAttribute( "sample_accurate", QString::number( m_rampSetting == RampSetting::On ? 1 : 0 ) );
 	}
 
 	if (const auto& c = color())
@@ -994,7 +1007,8 @@ void AutomationClip::loadSettings( const QDomElement & _this )
 	// it was: the flag is written only when it is on, so a checkpoint's saved
 	// state (which omits it) has to be able to turn it back off. Without this
 	// line control.undo could not take the first automation.ramp_set back.
-	setSampleAccurate(_this.attribute("sample_accurate").toInt() != 0);
+	setRampSetting( !_this.hasAttribute( "sample_accurate" ) ? RampSetting::Default
+		: _this.attribute( "sample_accurate" ).toInt() != 0 ? RampSetting::On : RampSetting::Off );
 
 	for( QDomNode node = _this.firstChild(); !node.isNull();
 						node = node.nextSibling() )

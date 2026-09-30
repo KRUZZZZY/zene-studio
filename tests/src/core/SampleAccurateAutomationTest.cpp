@@ -46,6 +46,7 @@
 #include <cstdio>
 #include <vector>
 
+#include <QDomDocument>
 #include <QJsonObject>
 #include <QString>
 
@@ -651,6 +652,47 @@ private slots:
 	//! The surface half: the ids exist with their schemas, the mode round-trips
 	//! through the registry, and SPEC A16's inverse is tested FOR REAL - set,
 	//! control.undo, read the state back.
+	/*! R1.2: the ramp is the DEFAULT for a clip carrying a curve. With no setting on it, a
+	 *  Linear clip resolves to sample-accurate and the audio path follows the curve inside
+	 *  the block; a Discrete one (a step has no curve) stays stepped. Only an explicit
+	 *  setting is saved - "1" exactly as before, "0" for off - and absence loads as the
+	 *  default, so every existing file keeps its bytes. */
+	void theRampIsTheDefaultForACurveClip()
+	{
+		control::AutomationParameter gain;
+		QString why;
+		QVERIFY2(channelGainParameter(&gain, &why), qPrintable(why));
+		QVERIFY2(writeCurveThroughTheSurface(gain.id(), &why), qPrintable(why));
+		AutomationClip* clip = control::existingAutomationClip(gain.model);
+		QVERIFY(clip != nullptr);
+		clip->setRampSetting(AutomationClip::RampSetting::Default);
+		clip->setProgressionType(AutomationClip::ProgressionType::Discrete);
+		QVERIFY2(!clip->sampleAccurate(), "a step clip resolved to the ramp by default");
+		clip->setProgressionType(AutomationClip::ProgressionType::Linear);
+		QVERIFY2(clip->sampleAccurate(), "a curve clip did not resolve to the ramp by default");
+
+		const Measurement linear = measureRender(Engine::getSong(), clip, gain.model, 8, false, kTolerance);
+		evidence("default-linear", describe("default", linear));
+		QVERIFY2(linear.maxDeviation <= kTolerance && linear.firstMoveFrame > 0,
+			qPrintable(QStringLiteral("the default did not ramp: ") + describe("default", linear)));
+
+		QDomDocument doc;
+		QDomElement unset = doc.createElement(QStringLiteral("clip"));
+		clip->saveSettings(doc, unset);
+		QVERIFY2(!unset.hasAttribute(QStringLiteral("sample_accurate")), "the default was written");
+		clip->setSampleAccurate(false);
+		QDomElement off = doc.createElement(QStringLiteral("clip"));
+		clip->saveSettings(doc, off);
+		QCOMPARE(off.attribute(QStringLiteral("sample_accurate")), QStringLiteral("0"));
+		clip->loadSettings(unset);
+		QCOMPARE(clip->rampSetting(), AutomationClip::RampSetting::Default);
+		clip->loadSettings(off);
+		QCOMPARE(clip->rampSetting(), AutomationClip::RampSetting::Off);
+		QVERIFY(!clip->sampleAccurate());
+		clip->setRampSetting(AutomationClip::RampSetting::Default);
+		clip->setProgressionType(AutomationClip::ProgressionType::Discrete);
+	}
+
 	void theSurfaceDrivesAndReversesTheMode()
 	{
 		control::AutomationParameter gain;
