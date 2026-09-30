@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-09-30T18:36:54Z",
+  "captured_at": "2026-09-30T20:31:11Z",
   "commands": [
     {
       "args_schema": {
@@ -21016,6 +21016,32 @@
     {
       "args_schema": {
         "additionalProperties": false,
+        "properties": {},
+        "required": [],
+        "type": "object"
+      },
+      "description": "Open Edit > Modulators (non-modally): the modulation layer's modulators as modulator.get_state reports them, Add LFO / Remove, the selected one's shape and rate, the parameters it drives and a Bind row over a mixer channel's effects, each running the modulator.* command it names. `rows` is how many modulators it lists.",
+      "group": "window",
+      "id": "window.modulators",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "rows": {
+            "type": "integer"
+          },
+          "shown": {
+            "type": "boolean"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
         "properties": {
           "path": {
             "type": "string"
@@ -21229,7 +21255,7 @@
       }
     }
   ],
-  "count": 390,
+  "count": 391,
   "instance": {
     "binary": null,
     "binary_bytes": null,
@@ -21237,15 +21263,15 @@
     "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-survey/tools/zene-pa-agentctl",
     "lane_head": null,
     "proto": 1,
-    "source_socket": "/tmp/zctl-run-l7he5588/zene.sock",
-    "version": "0.3.0-alpha.289+1b1ed2a"
+    "source_socket": "/tmp/zctl-run-9otixbio/zene.sock",
+    "version": "0.3.0-alpha.296+87d33d7"
   },
   "kind": "zene-control-command-list",
   "proto": 1,
   "schema": 1,
   "surface": {
     "group_count": 58,
-    "id_count": 390,
-    "ids_sha256": "dd228b802a3b5314d5d8b2d4ae52a0b3276d7568b9dfb92877af6e81d6d9e366"
+    "id_count": 391,
+    "ids_sha256": "3e75e7d5e64f706e6c79b66bf38715a15f3624594b7932e6e37b2094b6f80af6"
   }
 }
