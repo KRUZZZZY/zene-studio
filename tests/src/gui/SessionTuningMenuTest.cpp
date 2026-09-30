@@ -100,7 +100,8 @@ private slots:
 		setSessionTuningPicker([scl](const QString& filter) { return filter.contains(QStringLiteral("scl")) ? scl : QString(); });
 		item(menu, QStringLiteral("Load Scala Scale..."))->trigger();
 		QVERIFY(tuning().value(QStringLiteral("active")).toBool());
-		QVERIFY(menu->actions().first()->text().startsWith(QStringLiteral("Scale ji3.scl")));
+		// The line carries the scale's own description line, as mts.get_state reports it.
+		QCOMPARE(menu->actions().first()->text(), QStringLiteral("Scale: 3-note just scale"));
 
 		item(menu, QStringLiteral("Reset to 12-TET"))->trigger();
 		QVERIFY(!tuning().value(QStringLiteral("active")).toBool());

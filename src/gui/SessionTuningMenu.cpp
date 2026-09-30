@@ -27,13 +27,13 @@
 #include <QAction>
 #include <QApplication>
 #include <QFileDialog>
-#include <QFileInfo>
 #include <QJsonObject>
 #include <QMenu>
 #include <QMessageBox>
 #include <QSignalBlocker>
 
 #include "ControlRegistry.h"
+#include "Keymap.h"
 #include "UnattendedRun.h"
 
 namespace lmms::gui
@@ -93,11 +93,13 @@ void setSessionTuningPicker(std::function<QString(const QString&)> picker) { s_p
 QString sessionTuningStatusText(const QJsonObject& state)
 {
 	if (!state.value(QStringLiteral("active")).toBool()) { return QMenu::tr("12-TET (no session table)"); }
-	const QString scale = QFileInfo(state.value(QStringLiteral("scale")).toString()).fileName();
-	const QString keymap = QFileInfo(state.value(QStringLiteral("keymap")).toString()).fileName();
+	// mts.get_state reports the Scala files' own description lines, not their paths.
+	const QString scale = state.value(QStringLiteral("scale")).toString();
+	const QString keymap = state.value(QStringLiteral("keymap")).toString();
 	QString text = scale.isEmpty() ? QMenu::tr("Session table active (%1)").arg(state.value(QStringLiteral("source")).toString())
-		: QMenu::tr("Scale %1").arg(scale);
-	if (!keymap.isEmpty()) { text += QMenu::tr(", keymap %1").arg(keymap); }
+		: QMenu::tr("Scale: %1").arg(scale);
+	// A default Keymap (the identity mapping) describes itself as "empty" (translated): not worth a word.
+	if (!keymap.isEmpty() && keymap != Keymap().getDescription()) { text += QMenu::tr(", keymap: %1").arg(keymap); }
 	if (state.value(QStringLiteral("mts_master")).toBool()) { text += QMenu::tr(", published over MTS-ESP"); }
 	return text;
 }
