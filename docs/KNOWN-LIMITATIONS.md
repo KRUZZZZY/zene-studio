@@ -263,7 +263,8 @@ that is this page's fault — report it and it gets added.
   makes one, every track's menu has a Folder submenu (Move to folder / No folder; on a folder,
   Collapsed, Pinned and Route children through the folder), all through the same `track.*` commands,
   and a collapsed folder's children leave the track list - from the menu or the socket
-  (`TrackFolderMenuTest`). Still missing: an indent or drawn relation for a child, a pinned folder
+  (`TrackFolderMenuTest`), and a child's row is indented one step per folder level (its settings column
+  keeping its width) with the membership as its accessible description. Still missing: a pinned folder
   staying on screen while the list scrolls (the flag is set and saved; nothing reads it yet), and a
   visibility-set switcher. The paragraph below is the pre-M3 record.
   **Folder tracks, their two modes, pinning and the named visibility sets are drivable through the

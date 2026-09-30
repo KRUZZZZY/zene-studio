@@ -100,6 +100,11 @@ public:
 
 	virtual void update();
 
+	/*! M3 folders: indents the row's settings column one step per folder above the track (the
+	 *  column keeps its width, so the timeline stays aligned) and describes the membership to
+	 *  assistive technology. Called by TrackContainerView::realignTracks. */
+	void updateFolderIndent();
+
 	// Create a menu for assigning/creating channels for this track
 	// Currently instrument track and sample track supports it
 	virtual QMenu * createMixerMenu(QString title, QString newMixerLabel);

@@ -25,6 +25,8 @@
 
 #include "TrackView.h"
 
+#include "TrackFolder.h"
+
 #include <QApplication>
 #include <QHBoxLayout>
 #include <QMouseEvent>
@@ -123,6 +125,21 @@ TrackView::TrackView( Track * track, TrackContainerView * tcv ) :
 
 
 
+
+
+void TrackView::updateFolderIndent()
+{
+	constexpr int IndentPerLevel = 10;
+	int depth = 0;
+	QString path;
+	for (const TrackFolder* folder = getTrack()->parentFolder(); folder != nullptr; folder = folder->parentFolder())
+	{
+		++depth;
+		path = path.isEmpty() ? folder->name() : folder->name() + QStringLiteral(" / ") + path;
+	}
+	m_trackSettingsWidget.setContentsMargins(depth * IndentPerLevel, 0, 0, 0);
+	m_trackSettingsWidget.setAccessibleDescription(depth == 0 ? QString() : tr("In folder %1").arg(path));
+}
 
 
 /*! \brief Resize this track View.
