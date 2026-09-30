@@ -23,6 +23,7 @@
  */
 
 #include "TrackContainerView.h"
+#include "TrackFolder.h"
 
 
 #include <QLayout>
@@ -171,6 +172,10 @@ void TrackContainerView::loadSettings( const QDomElement & _this )
 TrackView * TrackContainerView::addTrackView( TrackView * _tv )
 {
 	m_trackViews.push_back( _tv );
+	if (auto* folder = dynamic_cast<TrackFolder*>(_tv->getTrack()))
+	{
+		connect(folder, &TrackFolder::stateChanged, this, &TrackContainerView::realignTracks, Qt::QueuedConnection);
+	}
 	m_scrollLayout->addWidget( _tv );
 	connect(this, &TrackContainerView::positionChanged,
 		_tv->getTrackContentWidget(), &TrackContentWidget::changePosition);
@@ -270,11 +275,23 @@ void TrackContainerView::scrollToTrackView( TrackView * _tv )
 
 
 
+//! True when a folder above @a track, at any depth, is collapsed: its row is not shown.
+static bool hiddenByFolder(const Track* track)
+{
+	for (const TrackFolder* folder = track->parentFolder(); folder != nullptr; folder = folder->parentFolder())
+	{
+		if (folder->isCollapsed()) { return true; }
+	}
+	return false;
+}
+
 void TrackContainerView::realignTracks()
 {
 	for (const auto& trackView : m_trackViews)
 	{
-		trackView->show();
+		// A collapsed folder's children leave the list (M3: the folder's collapse flag had no
+		// affordance reading it); the folder's own row stays.
+		trackView->setVisible(!hiddenByFolder(trackView->getTrack()));
 		trackView->update();
 	}
 

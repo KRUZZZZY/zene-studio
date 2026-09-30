@@ -523,6 +523,7 @@ include/TrackContainer.h
 include/TrackContainerView.h
 include/TrackContentWidget.h
 include/TrackFolder.h
+include/TrackFolderMenu.h
 include/TrackGrip.h
 include/TrackLabelButton.h
 include/TrackOperationsWidget.h
@@ -1549,6 +1550,7 @@ src/gui/SubWindow.cpp
 src/gui/TakeLanesPanel.cpp
 src/gui/TelemetryConsentDialog.cpp
 src/gui/ToolPluginView.cpp
+src/gui/TrackFolderMenu.cpp
 src/gui/VcaStripView.cpp
 src/gui/clips/AutomationClipView.cpp
 src/gui/clips/ClipView.cpp
@@ -1870,6 +1872,7 @@ tests/src/gui/ShortcutsPageTest.cpp
 tests/src/gui/StartHubTest.cpp
 tests/src/gui/TakeLanesPanelTest.cpp
 tests/src/gui/ThemeContrastTest.cpp
+tests/src/gui/TrackFolderMenuTest.cpp
 tests/src/gui/VcaStripLifetimeTest.cpp
 tests/src/gui/VcaStripViewTest.cpp
 tests/src/gui/WcagContrastTest.cpp

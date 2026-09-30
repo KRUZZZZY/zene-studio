@@ -635,6 +635,8 @@ set(LMMS_TESTS
 	src/gui/AutomationModeMenuTest.cpp
 	# BUGS_FOUND 11.12: a removed VCA group's strip never paints its freed fader model.
 	src/gui/VcaStripLifetimeTest.cpp
+	# M3: folders from the interface - make one, move a track in, collapse, pin, take it out.
+	src/gui/TrackFolderMenuTest.cpp
 	src/gui/FocusDeskTest.cpp
 	# M3.4: the command palette - what it lists, how it ranks, what it runs.
 	src/gui/CommandPaletteTest.cpp
@@ -1108,6 +1110,7 @@ set_tests_properties(AccessibilityWalkTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFO
 set_tests_properties(KnobKeyboardTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(AutomationModeMenuTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(VcaStripLifetimeTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+set_tests_properties(TrackFolderMenuTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 # ThemeContrastTest reads the themes from the source tree; guiless like WcagContrastTest.
 target_compile_definitions(ThemeContrastTest PRIVATE
 	ZENE_THEMES_DIR="${CMAKE_SOURCE_DIR}/data/themes")
