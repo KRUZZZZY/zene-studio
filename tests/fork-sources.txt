@@ -675,6 +675,7 @@ include/TempoMapPanel.h
 include/TrackFolder.h
 include/TrackFolderMenu.h
 include/TrackRecorder.h
+include/TrackRenderMenu.h
 include/UnattendedRun.h
 include/UnclaimedElements.h
 include/UndoHistoryPanel.h
@@ -1140,6 +1141,7 @@ src/gui/TakeLanesPanel.cpp
 src/gui/TelemetryConsentDialog.cpp
 src/gui/TempoMapPanel.cpp
 src/gui/TrackFolderMenu.cpp
+src/gui/TrackRenderMenu.cpp
 src/gui/UndoHistoryPanel.cpp
 src/gui/VcaStripView.cpp
 src/gui/VisibilitySetMenu.cpp

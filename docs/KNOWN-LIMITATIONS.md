@@ -651,6 +651,8 @@ Dither (off / TPDF / noise-shaped) and Resampling (linear / sinc fastest, medium
   the pre-existing note export, neither changed by nor wired to these ids. `docs/SMF-INTERCHANGE.md` records
   the tick/PPQ and time-signature convention and the stated limits — events are steps, so no tempo curve is
   written, and only the conductor track is (no notes, clips or automation).
+- *(Updated 2026-09-30.)* **File ▸ Import DAWproject... / Export DAWproject...** now run `dawproject.import` /
+  `dawproject.export` through a file dialog. The bullet below is the pre-menu record.
 - **DAWproject import / export has no interface — added 2026-09-15.** Tracks, clips, notes, the tempo map
   and mixer strips can be written as a DAWproject container another DAW reads, and a file can be read back
   and imported, through `--control-socket` (`dawproject.convention` / `dawproject.export` / `dawproject.read` /
@@ -675,6 +677,9 @@ Dither (off / TPDF / noise-shaped) and Resampling (linear / sinc fastest, medium
   stops another instance's transport (`link.set_start_stop_sync` is announced and reported, never acted on),
   and the play head is not moved onto the session grid — the shared phase and this engine's phase are
   reported together, with the error between them, and `docs/LINK-SYNC.md` §5 lists every stated limit.
+- *(Updated 2026-09-30.)* **An instrument or sample track's menu now has Freeze track / Unfreeze track and
+  Bounce in place** (`freeze.track`, `freeze.unfreeze`, `bounce.in_place`; `TrackRenderMenuTest`). Freezing a
+  region (`freeze.region`) is still socket-only. The bullet below is the pre-menu record.
 - **Freeze and bounce-in-place have no interface — added 2026-09-13.** A track's own output (its devices,
   fader, pan and sends) can be rendered to a WAV and the track made to play that render instead of its clips —
   drivable through `--control-socket` (`bounce.in_place`, `freeze.track`, `freeze.region`, `freeze.unfreeze`),

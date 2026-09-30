@@ -70,6 +70,7 @@
 #include "SessionGridView.h"
 #include "MidiLearnGui.h"
 #include "MpeInputAction.h"
+#include "TrackRenderMenu.h"
 #include "ControllerTemplateMenu.h"
 #include "PatternEditor.h"
 #include "PianoRoll.h"
@@ -421,6 +422,8 @@ void MainWindow::finalize()
 
 	declares(addAction(project_menu, "midi_file", tr("Export &MIDI..."),
 		keySequence(Qt::CTRL, Qt::Key_M), &MainWindow::onExportProjectMidi), "project.export_midi");
+	// DAWproject interchange, through dawproject.import / dawproject.export.
+	addDawProjectActions(project_menu);
 
 	project_menu->addSeparator();
 

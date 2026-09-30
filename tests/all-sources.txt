@@ -537,6 +537,7 @@ include/TrackLabelButton.h
 include/TrackOperationsWidget.h
 include/TrackRecorder.h
 include/TrackRenameLineEdit.h
+include/TrackRenderMenu.h
 include/TrackView.h
 include/UnattendedRun.h
 include/UnclaimedElements.h
@@ -1569,6 +1570,7 @@ src/gui/TelemetryConsentDialog.cpp
 src/gui/TempoMapPanel.cpp
 src/gui/ToolPluginView.cpp
 src/gui/TrackFolderMenu.cpp
+src/gui/TrackRenderMenu.cpp
 src/gui/UndoHistoryPanel.cpp
 src/gui/VcaStripView.cpp
 src/gui/VisibilitySetMenu.cpp
@@ -1902,6 +1904,7 @@ tests/src/gui/TakeLanesPanelTest.cpp
 tests/src/gui/TempoMapPanelTest.cpp
 tests/src/gui/ThemeContrastTest.cpp
 tests/src/gui/TrackFolderMenuTest.cpp
+tests/src/gui/TrackRenderMenuTest.cpp
 tests/src/gui/UndoHistoryPanelTest.cpp
 tests/src/gui/VcaStripLifetimeTest.cpp
 tests/src/gui/VcaStripViewTest.cpp

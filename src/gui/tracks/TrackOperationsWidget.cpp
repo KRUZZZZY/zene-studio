@@ -53,6 +53,7 @@
 #include "TakeLanesPanel.h"
 #include "Track.h"
 #include "TrackFolderMenu.h"
+#include "TrackRenderMenu.h"
 #include "TrackContainerView.h"
 #include "TrackGrip.h"
 #include "TrackView.h"
@@ -329,6 +330,8 @@ void TrackOperationsWidget::updateMenu()
 
 	// Folder membership, and on a folder its collapse/pin/routing, through the track.* commands.
 	addTrackFolderMenu(toMenu, m_trackView->getTrack());
+	// Freeze / Unfreeze and Bounce in place (freeze.* / bounce.in_place).
+	addTrackRenderActions(toMenu, m_trackView->getTrack());
 
 	toMenu->addSeparator();
 
