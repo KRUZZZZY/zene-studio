@@ -57,6 +57,7 @@ SET(LMMS_SRCS
 	gui/ShortcutsPage.cpp
 	gui/StartHub.cpp
 	gui/TakeLanesPanel.cpp
+	gui/ModulatorPanel.cpp
 	gui/TempoMapPanel.cpp
 	gui/TrackFolderMenu.cpp
 	gui/TrackRenderMenu.cpp

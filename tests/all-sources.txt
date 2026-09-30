@@ -358,6 +358,7 @@ include/Model.h
 include/ModelView.h
 include/ModelVisitor.h
 include/ModulationLayer.h
+include/ModulatorPanel.h
 include/MonitorMode.h
 include/MpeExpression.h
 include/MpeInputAction.h
@@ -1564,6 +1565,7 @@ src/gui/MidiSetupWidget.cpp
 src/gui/MixerChannelView.cpp
 src/gui/MixerView.cpp
 src/gui/ModelView.cpp
+src/gui/ModulatorPanel.cpp
 src/gui/MpeInputAction.cpp
 src/gui/NoteTransformActions.cpp
 src/gui/PeakControllerDialog.cpp
@@ -1925,6 +1927,7 @@ tests/src/gui/MidiControllerMenuTest.cpp
 tests/src/gui/MidiLearnGuiTest.cpp
 tests/src/gui/MidiReconnectActionTest.cpp
 tests/src/gui/MixerLatencyTextTest.cpp
+tests/src/gui/ModulatorPanelTest.cpp
 tests/src/gui/MpeInputActionTest.cpp
 tests/src/gui/NoteTransformActionsTest.cpp
 tests/src/gui/PianoRollBenchmarkTest.cpp

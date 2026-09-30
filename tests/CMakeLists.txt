@@ -672,6 +672,8 @@ set(LMMS_TESTS
 	src/gui/ChainPresetMenuTest.cpp
 	# A mixer channel's Rack menu (rack.* chains, routing and macros).
 	src/gui/RackMenuTest.cpp
+	# Edit > Modulators (window.modulators; modulator.*), against one real effect on a mixer channel.
+	src/gui/ModulatorPanelTest.cpp
 	# File > Recover Recordings (record.recovery_*), over two journalled WAV takes.
 	src/gui/RecordingRecoveryMenuTest.cpp
 	# File > Render Presets (export.preset_* / render.render), over a throwaway preset store.
@@ -877,6 +879,8 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 		OR LMMS_TEST_NAME STREQUAL "ControlChainPresetTest"
 		# The track menu's chain presets save and apply a chain holding one real effect.
 		OR LMMS_TEST_NAME STREQUAL "ChainPresetMenuTest"
+		# The modulators panel binds a parameter of one real effect.
+		OR LMMS_TEST_NAME STREQUAL "ModulatorPanelTest"
 		# Board card #712: SessionTuningTest's proof slot needs tracks with a
 		# REAL instrument (revtest::addInstrumentTrack -> plugin.load) so both
 		# sounding notes go through the engine's own render path - the same
@@ -1180,6 +1184,7 @@ set_tests_properties(GrooveMenuTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offs
 set_tests_properties(ClipEditsMenuTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(ChainPresetMenuTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(RackMenuTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+set_tests_properties(ModulatorPanelTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(RecordingRecoveryMenuTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(RenderPresetMenuTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(PluginQuarantineMenuTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")

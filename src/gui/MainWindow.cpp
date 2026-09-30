@@ -463,6 +463,8 @@ void MainWindow::finalize()
 	m_redoAction->setShortcutContext(Qt::ApplicationShortcut);
 	declares(edit_menu->addAction(embed::getIconPixmap("clock"), tr("Tempo Map..."),
 		this, [](){ dispatchShellCommand(QStringLiteral("window.tempo_map")); }), "window.tempo_map");
+	declares(edit_menu->addAction(embed::getIconPixmap("automation"), tr("Modulators..."),
+		this, [](){ dispatchShellCommand(QStringLiteral("window.modulators")); }), "window.modulators");
 	declares(edit_menu->addAction(embed::getIconPixmap("edit_undo"), tr("Undo History..."),
 		this, [](){ dispatchShellCommand(QStringLiteral("window.undo_history")); }), "window.undo_history");
 

@@ -352,6 +352,13 @@ that is this page's fault — report it and it gets added.
   flatten** (the destructive bounce a comp can end in). *(2026-09-29, R3.2: `clip.consolidate` is that flatten for
   a region of a sample track - every lane through the composite's gate, one clip back, one undo restores. A clip
   crossing the region's edge is refused rather than cut, and a MIDI region is not consolidated.)**
+- *(Updated 2026-09-30.)* **Edit ▸ Modulators...** (`window.modulators`, new) lists the layer's modulators,
+  adds an LFO and removes one (`modulator.create` / `modulator.remove`), sets the selected one's shape and rate
+  (`modulator.rate_set`), shows the parameters it drives with their depth, binds one from pickers over a mixer
+  channel's effects and parameters (`modulator.target_set`) and unbinds it (`modulator.target_remove`)
+  (`ModulatorPanelTest`). Still socket-only: the per-sample switch and editing a bound route's depth in place
+  (`modulator.depth_set`); the layer still reaches mixer-channel racks only. The bullet below is the pre-panel
+  record.
 - **The modulation layer is in the engine and on the socket, and there is no interface for it.**
   Modulators (`modulator.*`, ten ids with `note.expression.*`) drive device parameters in a mixer channel's rack
   chains by a relative depth, on the audio path, once per block — `include/ModulationLayer.h`,

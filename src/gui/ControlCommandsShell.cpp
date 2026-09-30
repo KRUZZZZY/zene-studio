@@ -42,6 +42,7 @@
 #include "ConfigManager.h"
 #include "ShortcutsPage.h"
 #include "StartHub.h"
+#include "ModulatorPanel.h"
 #include "TempoMapPanel.h"
 #include "UndoHistoryPanel.h"
 #include "ControlRegistry.h"
@@ -282,6 +283,29 @@ void registerTempoMapPanel(ControlRegistry& registry)
 	registry.registerCommand(cmd);
 }
 
+void registerModulatorPanel(ControlRegistry& registry)
+{
+	ControlCommand cmd = command("window", "modulators");
+	cmd.description = QStringLiteral("Open Edit > Modulators (non-modally): the modulation layer's "
+		"modulators as modulator.get_state reports them, Add LFO / Remove, the selected one's shape and "
+		"rate, the parameters it drives and a Bind row over a mixer channel's effects, each running the "
+		"modulator.* command it names. `rows` is how many modulators it lists.");
+	cmd.argsSchema = objectSchema({});
+	cmd.resultSchema = objectSchema({{QStringLiteral("shown"), booleanProperty()},
+		{QStringLiteral("rows"), integerProperty()}});
+	cmd.handler = [](const QJsonObject&) {
+		gui::MainWindow* window = mainWindow();
+		if (window == nullptr) { return noInterface(QStringLiteral("window.modulators")); }
+		auto* panel = new gui::ModulatorPanel(window);
+		panel->setAttribute(Qt::WA_DeleteOnClose);
+		panel->setModal(false);
+		panel->show();
+		return ControlResult::success(QJsonObject{{QStringLiteral("shown"), true},
+			{QStringLiteral("rows"), panel->modulatorCount()}});
+	};
+	registry.registerCommand(cmd);
+}
+
 void registerStartHub(ControlRegistry& registry)
 {
 	ControlCommand cmd = command("window", "start_hub");
@@ -397,6 +421,7 @@ void registerShellCommands(ControlRegistry& registry)
 	registerShortcuts(registry);
 	registerUndoHistory(registry);
 	registerTempoMapPanel(registry);
+	registerModulatorPanel(registry);
 	registerStartHub(registry);
 	registerScreenshot(registry);
 	registerSaveVersion(registry);
