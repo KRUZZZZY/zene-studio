@@ -91,7 +91,17 @@ private slots:
 		QCOMPARE(engine->recordingLatencyFrames(), kOutputLatency + kInputLatency + 2 * engine->framesPerPeriod());
 	}
 
-	void aTakeRecordedThroughTheLoopbackLandsOnThePlayedTransient()
+	void aTakeRecordedThroughTheLoopbackLandsOnThePlayedTransient() { recordAndCompare(TimePos(0)); }
+
+	//! A clip that starts on a tick inside an engine period is handed its play handle with a
+	//! frame offset (SampleTrack::play -> setOffset). The take must begin at that offset too:
+	//! it used to record the whole period from frame 0 and came out late by the offset
+	//! (measured +139 - tick 1 is frame 394 at 44.1 kHz and the default 140 BPM, 138 frames
+	//! into the second 256-frame period). BUGS_FOUND 11.17.
+	void aTakeStartingInsideAPeriodLandsOnThePlayedTransient() { recordAndCompare(TimePos(1)); }
+
+private:
+	void recordAndCompare(const TimePos& at)
 	{
 		Song* song = Engine::getSong();
 		const int rate = static_cast<int>(Engine::audioEngine()->outputSampleRate());
@@ -101,9 +111,9 @@ private slots:
 
 		std::vector<SampleFrame> data(static_cast<std::size_t>(rate), SampleFrame(0.0f, 0.0f));
 		data[kImpulseAt] = SampleFrame(1.0f, 1.0f);
-		auto* played = dynamic_cast<SampleClip*>(player->createClip(TimePos(0)));
+		auto* played = dynamic_cast<SampleClip*>(player->createClip(at));
 		played->setSampleBuffer(std::make_shared<SampleBuffer>(data.data(), data.size(), rate));
-		auto* take = dynamic_cast<SampleClip*>(recorder->createClip(TimePos(0)));
+		auto* take = dynamic_cast<SampleClip*>(recorder->createClip(at));
 		take->changeLength(played->length());
 		take->setAutoResize(false);
 		take->setRecord(true);
@@ -112,11 +122,14 @@ private slots:
 		QTest::qWait(700);
 		song->stop();
 		QTRY_VERIFY_WITH_TIMEOUT(!take->isRecord(), 3000);
+		// Out of the next case's loopback: a muted track schedules none of its clips.
+		player->setMuted(true);
+		recorder->setMuted(true);
 
 		const long long playedAt = firstTransient(played);
 		const long long recordedAt = firstTransient(take);
-		std::printf("LATENCY_EVIDENCE played %lld, recorded %lld, round trip %d\n", playedAt, recordedAt,
-			static_cast<int>(Engine::audioEngine()->recordingLatencyFrames()));
+		std::printf("LATENCY_EVIDENCE at tick %d: played %lld, recorded %lld, round trip %d\n", at.getTicks(),
+			playedAt, recordedAt, static_cast<int>(Engine::audioEngine()->recordingLatencyFrames()));
 		QCOMPARE(playedAt, static_cast<long long>(kImpulseAt));
 		QVERIFY2(recordedAt >= 0, "the take recorded no transient");
 		QVERIFY2(std::llabs(recordedAt - playedAt) <= 1,

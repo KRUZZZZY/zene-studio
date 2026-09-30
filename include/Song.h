@@ -592,6 +592,8 @@ private slots:
 
 
 private:
+	//! playSong() and playAndRecord(): the transport starts under the model lock (BUGS_FOUND 11.17).
+	void startSongPlayback( bool recording );
 	Song();
 	Song( const Song & );
 	~Song() override;

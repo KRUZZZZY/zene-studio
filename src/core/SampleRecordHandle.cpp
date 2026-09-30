@@ -51,7 +51,8 @@ SampleRecordHandle::SampleRecordHandle( SampleClip* clip ) :
 	// R2.2: the round trip this take lags the playback by - dropped from its head, so the
 	// take lines up with what was playing when it was performed. A cached atomic: this
 	// constructor runs on the audio thread (SampleTrack::play).
-	m_compensationFrames( Engine::audioEngine() != nullptr ? Engine::audioEngine()->recordingLatencyFrames() : 0 )
+	m_compensationFrames( Engine::audioEngine() != nullptr ? Engine::audioEngine()->recordingLatencyFrames() : 0 ),
+	m_offsetApplied( false )
 {
 	// AudioEngine::addPlayHandle registers every handle with its bus, and this one had none:
 	// the first record-armed clip that reached the engine dereferenced a null bus (BUGS_FOUND
@@ -83,6 +84,16 @@ void SampleRecordHandle::play( std::span<SampleFrame> /*buffer*/ )
 {
 	const SampleFrame* recbuf = Engine::audioEngine()->inputBuffer();
 	f_cnt_t frames = Engine::audioEngine()->inputBufferFrames();
+	// The clip started m_offset frames into this period (SampleTrack::play -> setOffset),
+	// so the input before that point was performed before the take began: drop it with
+	// the round trip, as SamplePlayHandle leaves the same frames silent on the way out.
+	// It used to be recorded, and a take that started on a tick inside a period came out
+	// late by the offset (BUGS_FOUND 11.17, RecordingLatencyTest).
+	if( !m_offsetApplied )
+	{
+		m_compensationFrames += offset();
+		m_offsetApplied = true;
+	}
 	const f_cnt_t skipped = std::min( frames, m_compensationFrames );
 	m_compensationFrames -= skipped;
 	recbuf += skipped;
