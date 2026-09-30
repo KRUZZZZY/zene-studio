@@ -330,6 +330,15 @@ class Instance:
                     handle.close()
                 except (OSError, ValueError):
                     pass
+        # Evidence on request (BUGS_FOUND 11.15): with ZENE_HARNESS_KEEP_DIR set, the instance's
+        # directory - its renders among it - is copied there before it is removed. Unset, nothing
+        # is kept, as before.
+        keep = os.environ.get("ZENE_HARNESS_KEEP_DIR")
+        if keep:
+            try:
+                shutil.copytree(self.tmp, os.path.join(keep, os.path.basename(self.tmp)))
+            except OSError as error:
+                print("harness: could not keep %s: %s" % (self.tmp, error), file=sys.stderr)
         shutil.rmtree(self.tmp, ignore_errors=True)
 
     def __enter__(self):

@@ -128,6 +128,24 @@ jobs:
         run: cmake --build build -j4
       - name: Gate 1 - ctest (must run from build/tests)
         run: cd build/tests && QT_QPA_PLATFORM=offscreen ctest --output-on-failure
+      # BUGS_FOUND 11.15: the golden fixture's renders differ on this runner only. On a failure,
+      # render it again keeping the instances' directories, so the WAVs can be compared by hand.
+      - name: Keep the golden-audio renders (on failure)
+        if: failure()
+        continue-on-error: true
+        run: |
+          mkdir -p /tmp/golden-keep
+          cd build/tests && ZENE_HARNESS_KEEP_DIR=/tmp/golden-keep QT_QPA_PLATFORM=offscreen \
+            ctest -R '^ControlGoldenAudio$' --output-on-failure || true
+          find /tmp/golden-keep -name '*.wav' | head -40
+      - name: Upload the golden-audio renders (on failure)
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: golden-audio-renders-debug
+          path: /tmp/golden-keep/**/*.wav
+          # Evidence, not a package; a missing file must not hide the real failure.
+          if-no-files-found: warn
       # Gate 5 reuses the build above; the sweep is ~3 min (30 mutants, one TU).
       - name: Gate 5 - mutation testing (scoped harness, src/core/RoutingGraph.cpp)
         run: bash tests/mutation-gate.sh
