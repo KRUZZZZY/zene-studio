@@ -798,3 +798,4 @@ src/gui/instrument/InstrumentTrackWindow.cpp	040/m3-a11y-windows (2026-09-30, BU
 src/gui/SampleTrackWindow.cpp	040/m3-a11y-windows (2026-09-30, R8.5): the track-name field is named. Names only: no layout, signal or behaviour changes. Held by tests/src/gui/AccessibilityWalkTest.cpp.
 src/gui/widgets/LeftRightNav.cpp	040/m3-a11y-windows (2026-09-30, R8.5): the Previous / Next arrow buttons are named. Names only: no layout, signal or behaviour changes. Held by tests/src/gui/AccessibilityWalkTest.cpp.
 src/gui/widgets/TabBar.cpp	040/m3-a11y-windows (2026-09-30, R8.5): every tab button's accessible name is its text (icon tabs kept it only as a tooltip). Names only: no layout, signal or behaviour changes. Held by tests/src/gui/AccessibilityWalkTest.cpp.
+src/gui/FileBrowser.cpp	040/m3-undo-settings (2026-09-30): a file's context menu gains the Tags submenu (addBrowserTagMenu, browser.tag.add / browser.tag.remove) after Send to active instrument-track

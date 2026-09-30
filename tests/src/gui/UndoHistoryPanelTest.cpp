@@ -28,7 +28,9 @@
 
 #include <QtTest>
 
+#include <QJsonObject>
 #include <QPushButton>
+#include <QSpinBox>
 
 #include "ControlRegistry.h"
 #include "Engine.h"
@@ -89,6 +91,32 @@ private slots:
 
 		QTest::mouseClick(redo, Qt::LeftButton);
 		QCOMPARE(static_cast<int>(Engine::getSong()->tracks().size()), tracksBefore + 1);
+	}
+
+	void theLimitsRowSetsTheCapsAndTheMergeWindow()
+	{
+		UndoHistoryPanel panel;
+		QSpinBox* steps = nullptr;
+		QSpinBox* coalesce = nullptr;
+		for (QSpinBox* box : panel.findChildren<QSpinBox*>())
+		{
+			if (box->accessibleName() == QLatin1String("Undo steps kept")) { steps = box; }
+			if (box->accessibleName() == QLatin1String("Merge repeated edits within")) { coalesce = box; }
+		}
+		QVERIFY(steps != nullptr && coalesce != nullptr);
+		const auto depth = [] { return ControlRegistry::instance()->invoke(QStringLiteral("control.undo_depth"), QJsonObject{}).result; };
+		QCOMPARE(steps->value(), depth().value(QStringLiteral("cap_steps")).toInt());
+		const int oldSteps = steps->value();
+		const int oldWindow = coalesce->value();
+
+		steps->setValue(77);
+		QCOMPARE(depth().value(QStringLiteral("cap_steps")).toInt(), 77);
+		coalesce->setValue(0);
+		QCOMPARE(depth().value(QStringLiteral("coalescing")).toObject().value(QStringLiteral("window_ms")).toInt(), 0);
+
+		steps->setValue(oldSteps);
+		coalesce->setValue(oldWindow);
+		QCOMPARE(depth().value(QStringLiteral("cap_steps")).toInt(), oldSteps);
 	}
 };
 

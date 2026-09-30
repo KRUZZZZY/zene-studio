@@ -417,8 +417,9 @@ that is this page's fault — report it and it gets added.
   `UndoHistoryPanel`): depth, redo depth, the two caps, the bytes kept and the evicted count from
   `control.undo_depth`, Undo/Redo buttons through `control.undo`/`control.redo`, and the command record
   newest first. The record lists edits made through the registry only - an edit made directly in an
-  editor is undone by Undo but not listed, and the panel says so. The caps and the coalescing window are
-  still set only through the socket. The bullet below is the pre-panel record.
+  editor is undone by Undo but not listed, and the panel says so. Its Limits row sets the two caps and
+  the drag-merging window (`control.set_undo_depth`, `control.set_undo_coalescing`). The bullet below is
+  the pre-panel record.
 - **There is no undo-history UI — added 2026-09-13.** The undo stack is now bounded and its drags are
   grouped: `control.undo_depth` reports the depth, the count cap and the byte budget it is kept within,
   the bytes it retains and how many steps a bound has evicted, `control.set_undo_depth` sets the two
@@ -612,6 +613,10 @@ that is this page's fault — report it and it gets added.
 Dither (off / TPDF / noise-shaped) and Resampling (linear / sinc fastest, medium, best) - set through
 `export.set_dither` / `export.set_src_quality`; `ExportQualityControlsTest`.)* No RPDF, by decision.
 
+- *(Updated 2026-09-30.)* **A file's context menu in the browser now has a Tags submenu**: every tag the
+  library knows, the file's own checked - check to add (`browser.tag.add`), uncheck to remove
+  (`browser.tag.remove`) - and New tag... (`BrowserTagMenuTest`). Searching by tag or by metadata, and
+  the peak cache, are still socket-only. The bullet below is the pre-menu record.
 - **Browser tag/metadata search and the waveform peak cache have no interface — added 2026-09-13.**
   The browser's items can be queried by name, by tag and by what the audio file itself says it is (sample
   rate, channels, length and the embedded title/artist/album/comment/genre tags), and a file's waveform

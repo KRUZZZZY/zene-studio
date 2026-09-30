@@ -27,6 +27,7 @@ SET(LMMS_SRCS
 	gui/AudioDeviceSetupWidget.cpp
 	gui/AutomatableModelView.cpp
 	gui/AutomationModeMenu.cpp
+	gui/BrowserTagMenu.cpp
 	gui/ControlLayout.cpp
 	gui/ControllerDialog.cpp
 	gui/ControllerRackView.cpp

@@ -43,6 +43,7 @@
 #include <cassert>
 
 #include "AudioEngine.h"
+#include "BrowserTagMenu.h"
 #include "ConfigManager.h"
 #include "DataFile.h"
 #include "DeprecationHelper.h"
@@ -662,6 +663,9 @@ void FileBrowserTreeWidget::contextMenuEvent(QContextMenuEvent* e)
 		{
 			contextMenu.addAction(tr("Send to active instrument-track"), [&] { sendToActiveInstrumentTrack(file); });
 		}
+
+		// The file's tags, through browser.tag.add / browser.tag.remove.
+		addBrowserTagMenu(&contextMenu, path);
 
 		addActionsGroup(tr("Song Editor"), getContextActions(file, true));
 		addActionsGroup(tr("Pattern Editor"), getContextActions(file, false));
