@@ -37,6 +37,7 @@
 #include <QMenuBar>
 #include <QSignalSpy>
 
+#include "DeprecationHelper.h"
 #include "CommandPalette.h"
 #include "ControlRegistry.h"
 
@@ -94,7 +95,7 @@ private slots:
 		registerFakes();
 		QMenu* file = m_bar.addMenu(QStringLiteral("&File"));
 		m_save = file->addAction(QStringLiteral("&Save"));
-		m_save->setShortcut(QKeySequence(Qt::CTRL | Qt::Key_S));
+		m_save->setShortcut(keySequence(Qt::CTRL, Qt::Key_S));
 		m_save->setProperty("controlCommand", QStringLiteral("project.save"));
 		file->addAction(QStringLiteral("Save &As..."));
 		file->addSeparator();

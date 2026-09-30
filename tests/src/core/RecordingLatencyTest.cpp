@@ -74,8 +74,8 @@ private slots:
 	void initTestCase()
 	{
 		qputenv("LMMS_DUMMY_LOOPBACK", "1");
-		qputenv("LMMS_DUMMY_OUTPUT_LATENCY", QByteArray::number(kOutputLatency));
-		qputenv("LMMS_DUMMY_INPUT_LATENCY", QByteArray::number(kInputLatency));
+		qputenv("LMMS_DUMMY_OUTPUT_LATENCY", QByteArray::number(static_cast<qulonglong>(kOutputLatency)));
+		qputenv("LMMS_DUMMY_INPUT_LATENCY", QByteArray::number(static_cast<qulonglong>(kInputLatency)));
 		Engine::init(true);
 	}
 
