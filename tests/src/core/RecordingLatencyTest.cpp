@@ -100,8 +100,19 @@ private slots:
 	//! into the second 256-frame period). BUGS_FOUND 11.17.
 	void aTakeStartingInsideAPeriodLandsOnThePlayedTransient() { recordAndCompare(TimePos(1)); }
 
+	//! A take armed on the device's FIRST period: the capture has delivered nothing yet,
+	//! so that period's input is absent, not late. Under load the other cases land here by
+	//! chance (the Dummy thread had rendered nothing when recording began) and came out one
+	//! period early - "-255 frames" on hosted macos-x86_64 and locally 2 of 15 under CPU
+	//! load. Here the device is stopped, the take armed, and the device started: every run
+	//! is that case. BUGS_FOUND 11.29.
+	void aTakeArmedOnTheDevicesFirstPeriodLandsOnThePlayedTransient()
+	{
+		recordAndCompare(TimePos(0), true);
+	}
+
 private:
-	void recordAndCompare(const TimePos& at)
+	void recordAndCompare(const TimePos& at, bool fromDeviceStart = false)
 	{
 		Song* song = Engine::getSong();
 		const int rate = static_cast<int>(Engine::audioEngine()->outputSampleRate());
@@ -118,7 +129,17 @@ private:
 		take->setAutoResize(false);
 		take->setRecord(true);
 
-		song->playAndRecord();
+		if (fromDeviceStart)
+		{
+			Engine::audioEngine()->audioDev()->stopProcessing();
+			// The stopped device's last fed-back block is still staged; one render with
+			// the song stopped drains it, so the started device's first period has no
+			// input at all - exactly the engine's very first period after Engine::init.
+			Engine::audioEngine()->renderNextPeriod();
+			song->playAndRecord();
+			Engine::audioEngine()->audioDev()->startProcessing();
+		}
+		else { song->playAndRecord(); }
 		QTest::qWait(700);
 		song->stop();
 		QTRY_VERIFY_WITH_TIMEOUT(!take->isRecord(), 3000);
