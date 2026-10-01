@@ -32,6 +32,9 @@
 // '__rtsan_realtime_enter'"). Declared here, with the runtime's C linkage.
 extern "C" void __rtsan_realtime_enter();
 extern "C" void __rtsan_realtime_exit();
+// The runtime's own switch for a call that is known not to block; declared the same way.
+extern "C" void __rtsan_disable();
+extern "C" void __rtsan_enable();
 #endif
 
 namespace lmms
@@ -63,6 +66,30 @@ public:
 	}
 	RealtimeScope(const RealtimeScope&) = delete;
 	RealtimeScope& operator=(const RealtimeScope&) = delete;
+};
+
+/*! A call inside a RealtimeScope that RealtimeSanitizer flags but that cannot block, exempted by
+ *  name. Each use must say why the call is realtime-safe; there is exactly one today -
+ *  AudioEngineWorkerThread::wakeWorkers()'s notify_all, a FUTEX_WAKE (or the platform's
+ *  wait-on-address wake), which wakes sleepers and returns without waiting on anything.
+ *  RTSan reports it only because it is a syscall (hosted run 36802800273). */
+class RealtimeExemption
+{
+public:
+	RealtimeExemption() noexcept
+	{
+#ifdef LMMS_RTSAN
+		__rtsan_disable();
+#endif
+	}
+	~RealtimeExemption() noexcept
+	{
+#ifdef LMMS_RTSAN
+		__rtsan_enable();
+#endif
+	}
+	RealtimeExemption(const RealtimeExemption&) = delete;
+	RealtimeExemption& operator=(const RealtimeExemption&) = delete;
 };
 
 } // namespace lmms
