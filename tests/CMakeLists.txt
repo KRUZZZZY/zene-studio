@@ -798,6 +798,12 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 
 	add_executable(${LMMS_TEST_NAME} ${LMMS_TEST_SRC})
 	add_test(NAME ${LMMS_TEST_NAME} COMMAND ${LMMS_TEST_NAME})
+	# BUGS_FOUND 11.23: on the hosted msvc-x64 runner the 300+ test executables' linker PDBs filled the
+	# build drive (run 36802800273: LNK1201 writing SessionSceneFollowTest.pdb). Tests link without a
+	# PDB under MSVC; zene.exe and the plugins keep theirs, so packages and crash symbols are unchanged.
+	if(MSVC)
+		target_link_options(${LMMS_TEST_NAME} PRIVATE /DEBUG:NONE)
+	endif()
 	# Every in-process command test holds each reply to its declared resultSchema too
 	# (include/ControlResultCheck.h): they call the registry directly, so the socket
 	# harness's setting never reached them. ENVIRONMENT_MODIFICATION leaves each test's
