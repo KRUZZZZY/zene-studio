@@ -1156,6 +1156,7 @@ void Mixer::deleteChannel( int index )
 	}
 
 	Engine::audioEngine()->doneChangeInModel();
+	if (!m_clearing) { emit channelDeleted(); }
 }
 
 
@@ -2028,10 +2029,14 @@ void Mixer::clear()
 	// the index bookkeeping has nothing left to chase.
 	clearVcaGroups();
 
+	const bool deleted = m_mixerChannels.size() > 1;
+	m_clearing = true;
 	while( m_mixerChannels.size() > 1 )
 	{
 		deleteChannel(1);
 	}
+	m_clearing = false;
+	if (deleted) { emit channelDeleted(); }
 
 	clearChannel(0);
 }

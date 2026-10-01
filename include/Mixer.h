@@ -619,9 +619,18 @@ public:
 	MixerRouteVector m_mixerRoutes;
 	MixerSidechainRouteVector m_mixerSidechainRoutes;
 
+signals:
+	//! A channel left the list (deleteChannel(), once per clear()). Emitted after the
+	//! channel is gone, on the deleting thread, so a view that still shows it can drop
+	//! it before it is painted: a strip outliving its channel walks freed models
+	//! (BUGS_FOUND 11.27).
+	void channelDeleted();
+
 private:
 	// the mixer channels in the mixer. index 0 is always master.
 	std::vector<MixerChannel*> m_mixerChannels;
+	//! clear() deletes channel after channel; it announces the result once.
+	bool m_clearing = false;
 
 	// make sure we have at least num channels
 	void allocateChannelsTo(int num);

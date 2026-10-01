@@ -34,7 +34,14 @@ What it drives, in order:
                                      nothing about it can silence anything;
   8. refusals                       a non-folder target, a self-parent, an empty
                                      routing folder, an unknown set - all typed;
-  9. `control.transactions`         the A16 record every edit left.
+  9. `control.transactions`         the A16 record every edit left;
+ 10. a released channel is never     with the mixer ON SCREEN, routing is switched
+     painted                         on and off (and a channel added and removed
+                                     over the socket) round after round, and the
+                                     window is rendered after every switch: a
+                                     strip outliving its deleted channel walks
+                                     freed models when painted (BUGS_FOUND 11.27,
+                                     a SIGSEGV on macOS CI and locally).
 
 The instance is started with the documented headless recipe through the shared
 harness (tests/control_socket_harness.py) and the level measurements come from
@@ -57,6 +64,7 @@ from freeze_bounce_evidence import SILENT_DBFS, Recorder, Session, load_audible_
 CLIP_TICKS = 768              # one bar
 AUDIBLE_MARGIN_DB = 12.0     # above this a render counts as "there is audio to sum"
 SUM_TOLERANCE_DB = 3.0       # the sum re-associates: this is a bound, not identity
+PAINT_ROUNDS = 40            # delete-then-paint rounds; the unfixed build died within 40
 FOLDER_IDS = ("track.set_folder", "track.folder_set_collapsed", "track.set_routing",
               "track.set_pinned", "track.visibility_set_save", "track.visibility_set_apply",
               "track.visibility_set_remove")
@@ -249,6 +257,46 @@ def check_refusals(session, recorder, fixture):
                    bool(unknown_track.get("message")), "%r" % unknown_track)
 
 
+def show_the_mixer(session):
+    """window.toggle hides the FOCUSED editor, so a second toggle may be needed."""
+    for _ in range(2):
+        if session.result("window.toggle", {"editor": "mixer"}).get("visible"):
+            return True
+    return False
+
+
+def check_released_channel_is_never_painted(session, recorder, fixture, outdir):
+    """Every engine-side channel delete, with the mixer painted right after it.
+
+    The mixer view used to learn about a delete it did not make only from its
+    500 ms poll; a paint inside that window read the deleted channel. A grab
+    paints the whole window synchronously, so every round puts a paint exactly
+    where the crash was (measured red before the fix: a SIGSEGV within 40 rounds).
+    """
+    folder = fixture["folder"]
+    was_routing = folder_state(session, folder).get("routing") is True
+    shown = show_the_mixer(session)
+    shot = os.path.join(outdir, "mixer-after-delete.png")
+    rounds = 0
+    for _ in range(PAINT_ROUNDS):
+        session.result("track.set_routing", {"track": folder, "routing": True})
+        session.result("window.screenshot", {"path": shot})
+        session.result("track.set_routing", {"track": folder, "routing": False})
+        session.result("window.screenshot", {"path": shot})
+        added = session.result("mixer.add_channel").get("channel")
+        session.result("window.screenshot", {"path": shot})
+        session.result("mixer.remove_channel", {"channel": added})
+        session.result("window.screenshot", {"path": shot})
+        rounds += 1
+    session.result("track.set_routing", {"track": folder, "routing": was_routing})
+    recorder.check("the mixer is on screen for the delete-and-paint rounds", shown,
+                   "window.toggle never reported the mixer visible")
+    recorder.check("a deleted channel's strip is never painted (%d rounds, the instance "
+                   "still answers)" % PAINT_ROUNDS,
+                   rounds == PAINT_ROUNDS and session.result("control.ping") is not None,
+                   "rounds=%d" % rounds)
+
+
 def move_the_model_away(session, fixture):
     """Undo everything the file carries, so only the FILE can bring it back."""
     session.result("track.set_folder", {"track": fixture["first"], "folder": ""})
@@ -403,6 +451,7 @@ def run_checks(session, instance, recorder, transcript, outdir):
     check_visibility_sets(session, recorder, fixture)
     check_refusals(session, recorder, fixture)
     check_transactions(session, recorder)
+    check_released_channel_is_never_painted(session, recorder, fixture, outdir)
     check_save_and_reopen(session, recorder, fixture, outdir)
     check_routing_sums(session, recorder, fixture, outdir)
     check_quit(session, instance, recorder)

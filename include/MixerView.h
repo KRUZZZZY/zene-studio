@@ -106,6 +106,13 @@ public:
 	 *  500 ms on the GUI thread; the check is a count and a short signature. */
 	void syncWithMixer();
 
+	/*! The mixer deleted a channel. When this view did not delete it itself, the
+	 *  display is rebuilt NOW rather than at the next 500 ms sync: until then a strip
+	 *  outlives its channel, and painting it walks freed models - measured as a
+	 *  SIGSEGV in MixerChannelView::paintEvent after a folder released its routing
+	 *  channel with the mixer on screen (BUGS_FOUND 11.27). */
+	void engineDeletedChannel();
+
 public slots:
 	int addNewChannel();
 
@@ -127,6 +134,8 @@ private:
 	QVector<MixerChannelView*> m_mixerChannelViews;
 
 	MixerChannelView* m_currentMixerChannel;
+	//! deleteChannel() is between its mixer call and removing the view itself.
+	bool m_deletingOwnChannel = false;
 
 	QScrollArea* channelArea;
 	QHBoxLayout* chLayout;
