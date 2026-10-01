@@ -175,6 +175,13 @@ void AudioEngineWorkerThread::quit()
 
 
 
+void AudioEngineWorkerThread::wakeWorkers()
+{
+	// A futex / wait-on-address post, not a mutex and a condition variable (BUGS_FOUND 11.22 a).
+	s_wakeGeneration.fetch_add(1, std::memory_order_release);
+	s_wakeGeneration.notify_all();
+}
+
 void AudioEngineWorkerThread::startAndWaitForJobs()
 {
 	if (deterministicProcessing())
@@ -194,9 +201,7 @@ void AudioEngineWorkerThread::startAndWaitForJobs()
 		return;
 	}
 
-	// A futex / wait-on-address post, not a mutex and a condition variable (BUGS_FOUND 11.22 a).
-	s_wakeGeneration.fetch_add(1, std::memory_order_release);
-	s_wakeGeneration.notify_all();
+	wakeWorkers();
 	// The last worker-thread is never started. Instead it's processed "inline"
 	// i.e. within the global AudioEngine thread. This way we can reduce latencies
 	// that otherwise would be caused by synchronizing with another thread.

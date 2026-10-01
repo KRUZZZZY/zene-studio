@@ -32,8 +32,8 @@
 //
 // The cases are deterministic by construction, including `inlineModeNeverLetsThePoolTakeAJob`,
 // which starts a real worker thread, gives it a real opportunity to steal work, and then
-// holds the render open for longer than that worker's bounded re-check interval
-// (AudioEngineWorkerThread::run()'s kQuitRecheckMs, 100 ms) so a worker that ignores the
+// wakes that worker every 5 ms for as long as the render is open (the workers sleep until
+// woken; they used to re-check every 100 ms on their own) so a worker that ignores the
 // switch takes a job *with certainty* rather than by luck - which is what the macOS jobs
 // caught when this case was paced at 4 ms a job and the worker happened to win the race.
 // The case therefore pins the switch end to end: every job runs exactly once, and every one
@@ -273,11 +273,9 @@ private slots:
 	//! let the pool take the work would process some job on another thread - which is
 	//! exactly the variability the export switch exists to remove.
 	//!
-	//! The jobs are paced so that the drain is *longer* than the worker's bounded re-check
-	//! (kQuitRecheckMs, 100 ms in AudioEngineWorkerThread::run(), which the worker re-arms
-	//! every time it goes back to sleep): 16 jobs x 25 ms is 400 ms, so at least three of
-	//! those wake-ups land inside the render whatever phase the worker happens to be in,
-	//! and a worker that drains the queue when it wakes takes a job every time. That makes
+	//! The jobs are paced so that the drain lasts 400 ms (16 jobs x 25 ms) while a waker
+	//! thread wakes the pool every 5 ms, so dozens of wake-ups land inside the render and a
+	//! worker that drains the queue when it wakes takes a job every time. That makes
 	//! the case red-with-certainty for a build that ignores the switch, instead of red only
 	//! when a 4 ms-per-job drain happens to overlap a 100 ms wake-up - which is how it
 	//! behaved before, and why the loaded macOS runners redded a release over it.
@@ -293,7 +291,17 @@ private slots:
 		const auto jobs = makeJobs(total, 16, std::chrono::milliseconds{25}, &pointers);
 
 		AudioEngineWorkerThread::fillJobQueue(pointers);
+		// Wake the pool every 5 ms for the whole render (a waker thread, since the render drains
+		// on this one): a worker that drained the queue when woken would take a job with
+		// certainty inside the 400 ms drain. Workers used to give themselves this opportunity
+		// with a 100 ms idle re-check; they sleep until woken since BUGS_FOUND 11.22 a.
+		std::atomic<bool> rendering{true};
+		std::thread waker([&rendering] {
+			while (rendering.load()) { AudioEngineWorkerThread::wakeWorkers(); std::this_thread::sleep_for(std::chrono::milliseconds{5}); }
+		});
 		AudioEngineWorkerThread::startAndWaitForJobs();
+		rendering.store(false);
+		waker.join();
 
 		// Join before asserting: `expectAllRanOn` below can return early on a failed
 		// comparison, and a return from this scope destroys `poolWorker` - whose thread
@@ -311,9 +319,7 @@ private slots:
 	}
 
 	//! The same invariant, with the one thing the case above cannot control: WHEN the
-	//! pool would take the work. A pool worker is parked in a BOUNDED wait
-	//! (AudioEngineWorkerThread.cpp: kQuitRecheckMs = 100 ms) and re-drains the queue
-	//! on every wake, so with the export switch on it used to take anything queued
+	//! pool would take the work. A pool worker re-drains the queue on every wake, so with the export switch on it used to take anything queued
 	//! between addJob() and the caller's own drain - the case above races that window
 	//! and loses on a loaded runner, which is how it failed on both macOS jobs (three
 	//! concurrent ctest tests, three cores). Waiting for many ticks instead of racing
@@ -334,10 +340,15 @@ private slots:
 			AudioEngineWorkerThread::JobQueue::OperationMode::Dynamic);
 		AudioEngineWorkerThread::fillJobQueue(pointers);
 
-		// Six times the worker's own re-check bound: a worker that may drain in
-		// deterministic mode ticks five times or more inside this window and takes
-		// all eight. This is the assertion that fails before the guard exists.
-		QTest::qWait(600);
+		// Thirty wakes over 600 ms: a worker that may drain in deterministic mode is woken
+		// thirty times inside this window and takes all eight. This is the assertion that
+		// fails before the guard exists. (The worker used to tick on its own every 100 ms;
+		// it sleeps until woken since BUGS_FOUND 11.22 a, so the test wakes it.)
+		for (int wake = 0; wake < 30; ++wake)
+		{
+			AudioEngineWorkerThread::wakeWorkers();
+			QTest::qWait(20);
+		}
 
 		// Now drain the way a render does, so the join below (stopWorker switches the
 		// flag OFF, and its startAndWaitForJobs() would then drain for real) has

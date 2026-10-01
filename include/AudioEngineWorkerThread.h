@@ -108,6 +108,10 @@ public:
 	}
 
 	static void startAndWaitForJobs();
+	//! Wake every idle pool worker to drain the queue, without running it here (what
+	//! startAndWaitForJobs() does before it takes its own share). A worker sleeps until woken -
+	//! there is no idle poll - so a caller that queues work for the pool alone uses this.
+	static void wakeWorkers();
 
 	/**
 	 * @brief Process every job on the calling thread instead of handing it to the pool.

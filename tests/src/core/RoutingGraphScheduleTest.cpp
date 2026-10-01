@@ -411,8 +411,10 @@ private slots:
 		WorkerProbeJob job{&chain->routingGraph(), &block};
 		AudioEngineWorkerThread::addJob(&job);
 
-		// The test thread never drains the queue; workers re-check it every
-		// 100 ms (kQuitRecheckMs), so whoever runs this job is a pool worker.
+		// The test thread never drains the queue: it wakes the pool and waits, so whoever runs
+		// this job is a pool worker. (Workers used to re-check the queue every 100 ms on their own;
+		// they sleep until woken since the wake became an atomic generation, BUGS_FOUND 11.22 a.)
+		AudioEngineWorkerThread::wakeWorkers();
 		QTRY_VERIFY_WITH_TIMEOUT(job.finished(), 5000);
 
 		auto* worker = dynamic_cast<AudioEngineWorkerThread*>(job.runner());
