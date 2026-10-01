@@ -354,6 +354,11 @@ that is this page's fault — report it and it gets added.
   flatten** (the destructive bounce a comp can end in). *(2026-09-29, R3.2: `clip.consolidate` is that flatten for
   a region of a sample track - every lane through the composite's gate, one clip back, one undo restores. A clip
   crossing the region's edge is refused rather than cut, and a MIDI region is not consolidated.)**
+- **The Linux aarch64 build has no Rubber Band stretch mode — added 2026-10-01.** Ubuntu's aarch64
+  librubberband allocates on the audio thread (`SampleClipRubberBandTest`: 16185 allocations in 32 periods
+  on every hosted linux-arm64 run, 0 on x86_64 and on macOS arm64), which the realtime rule does not allow,
+  so that one platform is built with `-DWANT_RUBBERBAND=OFF`: a warp there uses WSOLA, the default stretcher,
+  and choosing Rubber Band is refused as unavailable (BUGS_FOUND 11.20 b).
 - *(Updated 2026-09-30.)* **Edit ▸ Modulators...** (`window.modulators`, new) lists the layer's modulators,
   adds an LFO and removes one (`modulator.create` / `modulator.remove`), sets the selected one's shape and rate
   (`modulator.rate_set`), shows the parameters it drives with their depth, binds one from pickers over a mixer

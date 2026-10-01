@@ -76,8 +76,9 @@ New in the interface in this release, each over its registered commands:
 
 ## Known issues
 
-- **linux-arm64 renders run far slower than on x86_64**, and Rubber Band allocates on the audio thread
-  there (BUGS_FOUND 11.20, open).
+- **The Linux aarch64 package has no Rubber Band stretch mode**: Ubuntu's aarch64 librubberband allocates
+  on the audio thread, so that build uses WSOLA only (BUGS_FOUND 11.20 b). (The aarch64 slowdown that
+  11.20 also recorded - FFTW benchmarking its plans at every start-up - is fixed.)
 - **Golden-audio comparisons differ on some hosted Debug runners** (BUGS_FOUND 11.15, open; the check is
   not loosened).
 - Still reachable only through the control socket: rack key/velocity zones (the engine does not route by

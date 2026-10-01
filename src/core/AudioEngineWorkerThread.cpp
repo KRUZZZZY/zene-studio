@@ -187,8 +187,20 @@ namespace
 #if defined(__APPLE__) && defined(__ENVIRONMENT_MAC_OS_X_VERSION_MIN_REQUIRED__) \
 	&& __ENVIRONMENT_MAC_OS_X_VERSION_MIN_REQUIRED__ < 110000
 #define LMMS_WORKER_WAKE_CONDVAR 1
-std::mutex s_wakeMutex;
-std::condition_variable s_wakeCond;
+// Built once and never destroyed, as the QWaitCondition it replaces was: a worker can still be
+// parked in wait() when the process exits, and a static mutex / condition variable torn down under it
+// makes libc++ abort - hosted macos-x86_64 (run 36829602079) ended ControlChainPresets with code -6
+// after control.quit.
+std::mutex& wakeMutex()
+{
+	static auto* mutex = new std::mutex;
+	return *mutex;
+}
+std::condition_variable& wakeCond()
+{
+	static auto* cond = new std::condition_variable;
+	return *cond;
+}
 #endif
 
 } // namespace
@@ -196,8 +208,8 @@ std::condition_variable s_wakeCond;
 void AudioEngineWorkerThread::notifyWorkers()
 {
 #ifdef LMMS_WORKER_WAKE_CONDVAR
-	const std::lock_guard<std::mutex> lock(s_wakeMutex);
-	s_wakeCond.notify_all();
+	const std::lock_guard<std::mutex> lock(wakeMutex());
+	wakeCond().notify_all();
 #else
 	// FUTEX_WAKE does not block; RealtimeSanitizer flags it only as a syscall (RealtimeExemption).
 	const RealtimeExemption wakeCannotBlock;
@@ -208,8 +220,8 @@ void AudioEngineWorkerThread::notifyWorkers()
 void AudioEngineWorkerThread::waitForWake(std::uint32_t seen)
 {
 #ifdef LMMS_WORKER_WAKE_CONDVAR
-	std::unique_lock<std::mutex> lock(s_wakeMutex);
-	s_wakeCond.wait(lock, [seen] { return s_wakeGeneration.load(std::memory_order_acquire) != seen; });
+	std::unique_lock<std::mutex> lock(wakeMutex());
+	wakeCond().wait(lock, [seen] { return s_wakeGeneration.load(std::memory_order_acquire) != seen; });
 #else
 	s_wakeGeneration.wait(seen, std::memory_order_acquire);
 #endif
