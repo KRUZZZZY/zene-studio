@@ -34,6 +34,7 @@
 #include "ConfigManager.h"
 #include "FocusDesk.h"
 #include "FocusDeskPane.h"
+#include "MainWindow.h"
 #include "SubWindow.h"
 
 using namespace lmms;
@@ -463,6 +464,26 @@ private slots:
 		QVERIFY(!second.deskActive());     // no turn applies it...
 		QVERIFY(second.applyConfiguredState());   // ...only the seam does
 		QVERIFY(second.deskActive());
+	}
+
+	//! BUGS_FOUND 11.30: behind the desk the workspace viewport is a few pixels, and a
+	//! window restored from a project was clamped into it with qBound(min, v, max) where
+	//! max < min - a Q_ASSERT abort on reopen in a Debug build. Too small to hold the grab
+	//! sliver means no clamp; a real area still clamps, and still rescues a lost window.
+	void aRestoredWindowIsNotClampedIntoAHiddenWorkspace()
+	{
+		using lmms::gui::MainWindow;
+		const QRect saved(300, 200, 400, 300);
+		QCOMPARE(MainWindow::clampToVisibleArea(saved, QRect(0, 0, 70, 22)), saved);
+		QCOMPARE(MainWindow::clampToVisibleArea(saved, QRect(0, 0, 48, 600)), saved);
+		QCOMPARE(MainWindow::clampToVisibleArea(saved, QRect(0, 0, 600, 48)), saved);
+
+		const QRect area(0, 0, 800, 600);
+		QCOMPARE(MainWindow::clampToVisibleArea(saved, area), saved);   // inside: untouched
+		const QRect pastRight = MainWindow::clampToVisibleArea(QRect(790, 100, 400, 300), area);
+		QCOMPARE(pastRight.left(), area.right() - 48);                     // a sliver stays grabbable
+		const QRect lost = MainWindow::clampToVisibleArea(QRect(5000, 5000, 400, 300), area);
+		QCOMPARE(lost.topLeft(), QPoint(24, 24));                          // a lost window comes back
 	}
 
 private:

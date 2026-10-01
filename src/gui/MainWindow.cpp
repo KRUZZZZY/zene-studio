@@ -1018,16 +1018,22 @@ static QRect visibleMdiRegion(QMdiArea* workspace)
 
 //! Keep a grabbable sliver (48px of the title bar) inside \a area; a window
 //! entirely outside jumps back to the area's origin + cascade margin.
-static QRect clampToVisibleArea(QRect geometry, const QRect& area)
+QRect MainWindow::clampToVisibleArea(QRect geometry, const QRect& area)
 {
-	if (area.isEmpty()) { return geometry; }
+	// An area that cannot hold the sliver is no place to clamp into: with the Focus Desk
+	// on, the MDI workspace is hidden and its viewport a few pixels, so `right() - 48`
+	// fell below `left()` - qBound's precondition, a Q_ASSERT abort on every project
+	// reopen in a Debug build (BUGS_FOUND 11.30) and a window shoved to a meaningless
+	// spot in a release one. The saved geometry is kept for when the workspace returns.
+	constexpr int sliver = 48;
+	if (area.isEmpty() || area.width() <= sliver || area.height() <= sliver) { return geometry; }
 	if (!geometry.intersects(area))
 	{
 		geometry.moveTopLeft(area.topLeft() + QPoint(24, 24));
 		return geometry;
 	}
-	geometry.setLeft(qBound(area.left(), geometry.left(), area.right() - 48));
-	geometry.setTop(qBound(area.top(), geometry.top(), area.bottom() - 48));
+	geometry.setLeft(qBound(area.left(), geometry.left(), area.right() - sliver));
+	geometry.setTop(qBound(area.top(), geometry.top(), area.bottom() - sliver));
 	return geometry;
 }
 

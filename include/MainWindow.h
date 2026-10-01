@@ -140,6 +140,10 @@ public:
 
 	static void saveWidgetState( QWidget * _w, QDomElement & _de );
 	static void restoreWidgetState( QWidget * _w, const QDomElement & _de );
+	//! Keeps a grabbable 48 px sliver of a restored window inside \a area. An area too
+	//! small to hold that sliver - the hidden workspace behind the Focus Desk - leaves
+	//! the geometry as saved (BUGS_FOUND 11.30).
+	static QRect clampToVisibleArea(QRect geometry, const QRect& area);
 	void setAllSubWindowsDetached(bool detached);
 
 	bool eventFilter(QObject* watched, QEvent* event) override;
