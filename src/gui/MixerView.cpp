@@ -33,6 +33,12 @@
  * model is painted later and walks it (measured: SIGSEGV in
  * Fader::calculateKnobPosYFromModel). A SHORTER list needs nothing, every view-side
  * lookup already being `i < views.size()`.
+ * Those bounds cover the LOOKUPS; they cannot cover a PAINT. A strip resolves its
+ * channel by index when it is painted and its faders hold the dead channel's models,
+ * so a surplus strip left for the 500 ms sync is painted against freed memory
+ * (measured: SIGSEGV in MixerChannelView::paintEvent, a folder releasing its routing
+ * channel with the mixer on screen - BUGS_FOUND 11.27). The mixer therefore announces
+ * every delete (Mixer::channelDeleted) and the view rebuilds before it can paint.
  * --------------------------------------------------------------------------- */
 
 #include <QHBoxLayout>
@@ -181,6 +187,7 @@ MixerView::MixerView(Mixer* mixer) :
 	auto* syncTimer = new QTimer(this);
 	connect(syncTimer, &QTimer::timeout, this, &MixerView::syncWithMixer);
 	syncTimer->start(500);
+	connect(mixer, &Mixer::channelDeleted, this, &MixerView::engineDeletedChannel);
 
 	updateGeometry();
 
@@ -279,6 +286,12 @@ QString vcaSignatureOf(const Mixer* mixer)
 }
 
 } // namespace
+
+void MixerView::engineDeletedChannel()
+{
+	if (m_deletingOwnChannel) { return; }
+	if (m_mixerChannelViews.size() != static_cast<int>(getMixer()->numChannels())) { refreshDisplay(); }
+}
 
 void MixerView::syncWithMixer()
 {
@@ -474,7 +487,9 @@ void MixerView::deleteChannel(int index)
 	mixer->clearChannel(index);
 
 	// delete the real channel
+	m_deletingOwnChannel = true;
 	mixer->deleteChannel(index);
+	m_deletingOwnChannel = false;
 
 	chLayout->removeWidget(m_mixerChannelViews[index]);
 	m_racksLayout->removeWidget(m_mixerChannelViews[index]);
