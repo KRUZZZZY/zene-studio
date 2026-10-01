@@ -409,28 +409,35 @@ jobs:
       # reply bound), with the same code and library versions. Best-effort evidence, never a verdict:
       # one headless render of a shipped project, timed, with a few sampled stacks of its threads.
       - name: Render profile (BUGS_FOUND 11.20)
+        # Run 36789477810 measured the RENDER itself at 0.33 s (the engine's PERFLOG line) inside a
+        # 34.6 s command: the time is spent around the render, in start-up or shut-down. This step
+        # times a bare `--version` (start-up and exit only), timestamps every line of a render, and
+        # samples the process's threads through sudo gdb (a plain attach is refused by ptrace_scope).
         if: always()
         continue-on-error: true
         run: |
           sudo apt-get install -y --no-install-recommends gdb >/dev/null 2>&1 || true
+          stamp() { while IFS= read -r line; do printf '%s %s\n' "$(date +%s.%N | cut -c1-14)" "$line"; done; }
+          start=$(date +%s.%N)
+          QT_QPA_PLATFORM=offscreen timeout 300 build/zene --version 2>&1 | stamp | tail -3
+          echo "--version took $(awk -v a="$start" -v b="$(date +%s.%N)" "BEGIN{print b - a}") s"
           project=data/projects/shorties/Root84-TrancyLoop.mmpz
           out=$RUNNER_TEMP/profile.wav
           start=$(date +%s.%N)
-          QT_QPA_PLATFORM=offscreen timeout 600 build/zene render "$project" -o "$out" > $RUNNER_TEMP/render.log 2>&1 &
-          pid=$!
-          for i in 1 2 3 4 5; do
-            sleep 4
-            kill -0 "$pid" 2>/dev/null || break
-            child=$(pgrep -n -f "zene render" || echo "$pid")
-            echo "=== sample $i (pid $child) ==="
-            timeout 60 gdb -p "$child" -batch -ex "thread apply all bt 12" 2>/dev/null \
-              | grep -E "^Thread|^#[0-9]" | head -80 || true
+          (QT_QPA_PLATFORM=offscreen timeout 600 build/zene render "$project" -o "$out" 2>&1 | stamp \
+            > "$RUNNER_TEMP/render.log") &
+          for i in 1 2 3 4 5 6; do
+            sleep 5
+            pid=$(pgrep -n -f "build/zene render" || true)
+            [ -n "$pid" ] || break
+            echo "=== sample $i (pid $pid, t=$(awk -v a="$start" -v b="$(date +%s.%N)" "BEGIN{print b - a}") s) ==="
+            sudo timeout 60 gdb -p "$pid" -batch -ex "thread apply all bt 10" 2>/dev/null \
+              | grep -E "^Thread|^#[0-9]" | head -60 || true
           done
-          wait "$pid"; code=$?
-          end=$(date +%s.%N)
-          echo "render exit $code in $(awk -v a="$start" -v b="$end" "BEGIN{print b - a}") s"
-          tail -5 "$RUNNER_TEMP/render.log"
-          lscpu | grep -E "Model name|Flags" | cut -c1-300
+          wait
+          echo "render took $(awk -v a="$start" -v b="$(date +%s.%N)" "BEGIN{print b - a}") s"
+          cat "$RUNNER_TEMP/render.log"
+          lscpu | grep -E "Model name" | cut -c1-120
       - name: Signal-death backtrace (a SIGSEGV must name its frame)
         # QtTest's own handler prints an EMPTY stack on a runner - "Received signal at function
         # time: 0ms ... dumping stack" then "End of stack trace" with nothing between - so the
