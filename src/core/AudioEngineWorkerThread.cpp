@@ -169,6 +169,8 @@ void AudioEngineWorkerThread::quit()
 	resetJobQueue();
 	// Release a worker parked in run(): the generation moves, so its wait returns.
 	s_wakeGeneration.fetch_add(1, std::memory_order_release);
+	// FUTEX_WAKE does not block; RealtimeSanitizer flags it only as a syscall (RealtimeExemption).
+	const RealtimeExemption wakeCannotBlock;
 	s_wakeGeneration.notify_all();
 }
 
