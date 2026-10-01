@@ -223,8 +223,13 @@ std::array<float, OscillatorConstants::WAVETABLE_LENGTH> Oscillator::s_sampleBuf
 void Oscillator::createFFTPlans()
 {
 	Oscillator::s_specBuf = ( fftwf_complex * ) fftwf_malloc( ( OscillatorConstants::WAVETABLE_LENGTH * 2 + 1 ) * sizeof( fftwf_complex ) );
-	Oscillator::s_fftPlan = fftwf_plan_dft_r2c_1d(OscillatorConstants::WAVETABLE_LENGTH, s_sampleBuffer.data(), s_specBuf, FFTW_MEASURE );
-	Oscillator::s_ifftPlan = fftwf_plan_dft_c2r_1d(OscillatorConstants::WAVETABLE_LENGTH, s_specBuf, s_sampleBuffer.data(), FFTW_MEASURE);
+	// FFTW_ESTIMATE, not FFTW_MEASURE (BUGS_FOUND 11.20): MEASURE times candidate algorithms on the
+	// running machine at every start-up - 38 s on the hosted linux-arm64 runner's Neoverse-N2, where
+	// a sampled profile of `zene render` sat in fftwf_measure_execution_time while the render itself
+	// took 0.34 s - and it lets the chosen plan, and so the wavetables' last bits, depend on the CPU.
+	// ESTIMATE plans from the size and flags alone: immediate and the same on every machine.
+	Oscillator::s_fftPlan = fftwf_plan_dft_r2c_1d(OscillatorConstants::WAVETABLE_LENGTH, s_sampleBuffer.data(), s_specBuf, FFTW_ESTIMATE );
+	Oscillator::s_ifftPlan = fftwf_plan_dft_c2r_1d(OscillatorConstants::WAVETABLE_LENGTH, s_specBuf, s_sampleBuffer.data(), FFTW_ESTIMATE);
 	// initialize s_specBuf content to zero, since the values are used in a condition inside generateFromFFT()
 	for (int i = 0; i < OscillatorConstants::WAVETABLE_LENGTH * 2 + 1; i++)
 	{

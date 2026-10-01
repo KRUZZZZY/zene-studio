@@ -68,8 +68,8 @@ SaProcessor::SaProcessor(const SaControls *controls) :
 	m_filteredBufferR.resize(m_fftBlockSize, 0);
 	m_spectrumL = (fftwf_complex *) fftwf_malloc(binCount() * sizeof (fftwf_complex));
 	m_spectrumR = (fftwf_complex *) fftwf_malloc(binCount() * sizeof (fftwf_complex));
-	m_fftPlanL = fftwf_plan_dft_r2c_1d(m_fftBlockSize, m_filteredBufferL.data(), m_spectrumL, FFTW_MEASURE);
-	m_fftPlanR = fftwf_plan_dft_r2c_1d(m_fftBlockSize, m_filteredBufferR.data(), m_spectrumR, FFTW_MEASURE);
+	m_fftPlanL = fftwf_plan_dft_r2c_1d(m_fftBlockSize, m_filteredBufferL.data(), m_spectrumL, FFTW_ESTIMATE);
+	m_fftPlanR = fftwf_plan_dft_r2c_1d(m_fftBlockSize, m_filteredBufferR.data(), m_spectrumR, FFTW_ESTIMATE);
 
 	m_absSpectrumL.resize(binCount(), 0);
 	m_absSpectrumR.resize(binCount(), 0);
@@ -404,8 +404,8 @@ void SaProcessor::reallocateBuffers()
 	m_filteredBufferR.resize(new_fft_size, 0);
 	m_spectrumL = (fftwf_complex *) fftwf_malloc(new_bins * sizeof (fftwf_complex));
 	m_spectrumR = (fftwf_complex *) fftwf_malloc(new_bins * sizeof (fftwf_complex));
-	m_fftPlanL = fftwf_plan_dft_r2c_1d(new_fft_size, m_filteredBufferL.data(), m_spectrumL, FFTW_MEASURE);
-	m_fftPlanR = fftwf_plan_dft_r2c_1d(new_fft_size, m_filteredBufferR.data(), m_spectrumR, FFTW_MEASURE);
+	m_fftPlanL = fftwf_plan_dft_r2c_1d(new_fft_size, m_filteredBufferL.data(), m_spectrumL, FFTW_ESTIMATE);
+	m_fftPlanR = fftwf_plan_dft_r2c_1d(new_fft_size, m_filteredBufferR.data(), m_spectrumR, FFTW_ESTIMATE);
 
 	if (m_fftPlanL == nullptr || m_fftPlanR == nullptr)
 	{

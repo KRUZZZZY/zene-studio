@@ -46,7 +46,7 @@ EqAnalyser::EqAnalyser() :
 	using namespace std::numbers;
 	m_inProgress=false;
 	m_specBuf = ( fftwf_complex * ) fftwf_malloc( ( FFT_BUFFER_SIZE + 1 ) * sizeof( fftwf_complex ) );
-	m_fftPlan = fftwf_plan_dft_r2c_1d( FFT_BUFFER_SIZE*2, m_buffer, m_specBuf, FFTW_MEASURE );
+	m_fftPlan = fftwf_plan_dft_r2c_1d( FFT_BUFFER_SIZE*2, m_buffer, m_specBuf, FFTW_ESTIMATE );
 
 	//initialize Blackman-Harris window, constants taken from
 	//https://en.wikipedia.org/wiki/Window_function#A_list_of_window_functions
