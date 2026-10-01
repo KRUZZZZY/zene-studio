@@ -300,7 +300,13 @@ jobs:
     name: linux-arm64
     runs-on: ubuntu-24.04-arm
     env:
+      # -DWANT_RUBBERBAND=OFF (BUGS_FOUND 11.20 b): Ubuntu's aarch64 librubberband allocates on the
+      # audio thread - SampleClipRubberBandTest measured 16185 allocations in 32 periods on every
+      # hosted run, against 0 on x86_64 and on macos-arm64 with the same 3.3.0 API - so this platform's
+      # build ships without the optional stretcher (owner decision 12: WSOLA stays the default), and
+      # the test reports it as absent rather than passing.
       CMAKE_OPTS: >-
+        -DWANT_RUBBERBAND=OFF
         -DUSE_WERROR=ON
         -DCMAKE_BUILD_TYPE=RelWithDebInfo
         -DTARGET_UARCH=official
