@@ -135,6 +135,9 @@ public:
 
 private:
 	void run() override;
+	//! The platform half of the wake (see the .cpp): post, and wait for the generation to move.
+	static void notifyWorkers();
+	static void waitForWake(std::uint32_t seen);
 
 	static JobQueue globalJobQueue;
 	//! The wake (R7.2, BUGS_FOUND 11.22 a): startAndWaitForJobs() and quit() bump it and

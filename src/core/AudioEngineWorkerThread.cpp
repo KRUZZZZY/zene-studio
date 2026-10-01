@@ -27,7 +27,9 @@
 #include <QDebug>
 
 #include <atomic>
+#include <condition_variable>
 #include <cstdint>
+#include <mutex>
 
 #include "AudioEngine.h"
 #include "Hardware.h"
@@ -168,20 +170,55 @@ void AudioEngineWorkerThread::quit()
 	m_quit.store( true, std::memory_order_release );
 	resetJobQueue();
 	// Release a worker parked in run(): the generation moves, so its wait returns.
-	s_wakeGeneration.fetch_add(1, std::memory_order_release);
-	// FUTEX_WAKE does not block; RealtimeSanitizer flags it only as a syscall (RealtimeExemption).
-	const RealtimeExemption wakeCannotBlock;
-	s_wakeGeneration.notify_all();
+	wakeWorkers();
 }
 
 
 
 
+namespace
+{
+
+// libc++ marks std::atomic::wait / notify_all unavailable below macOS 11 (hosted run
+// 36802800273, macos-x86_64: "'notify_all' is unavailable: introduced in macOS 11.0"). There the
+// wake is a mutex and a condition variable - with the generation checked and the wait entered
+// under the mutex the notifier takes, so a wake still cannot be lost. Everywhere else it is the
+// atomic's own futex / wait-on-address, which takes no lock (BUGS_FOUND 11.22 a).
+#if defined(__APPLE__) && defined(__ENVIRONMENT_MAC_OS_X_VERSION_MIN_REQUIRED__) \
+	&& __ENVIRONMENT_MAC_OS_X_VERSION_MIN_REQUIRED__ < 110000
+#define LMMS_WORKER_WAKE_CONDVAR 1
+std::mutex s_wakeMutex;
+std::condition_variable s_wakeCond;
+#endif
+
+} // namespace
+
+void AudioEngineWorkerThread::notifyWorkers()
+{
+#ifdef LMMS_WORKER_WAKE_CONDVAR
+	const std::lock_guard<std::mutex> lock(s_wakeMutex);
+	s_wakeCond.notify_all();
+#else
+	// FUTEX_WAKE does not block; RealtimeSanitizer flags it only as a syscall (RealtimeExemption).
+	const RealtimeExemption wakeCannotBlock;
+	s_wakeGeneration.notify_all();
+#endif
+}
+
+void AudioEngineWorkerThread::waitForWake(std::uint32_t seen)
+{
+#ifdef LMMS_WORKER_WAKE_CONDVAR
+	std::unique_lock<std::mutex> lock(s_wakeMutex);
+	s_wakeCond.wait(lock, [seen] { return s_wakeGeneration.load(std::memory_order_acquire) != seen; });
+#else
+	s_wakeGeneration.wait(seen, std::memory_order_acquire);
+#endif
+}
+
 void AudioEngineWorkerThread::wakeWorkers()
 {
-	// A futex / wait-on-address post, not a mutex and a condition variable (BUGS_FOUND 11.22 a).
 	s_wakeGeneration.fetch_add(1, std::memory_order_release);
-	s_wakeGeneration.notify_all();
+	notifyWorkers();
 }
 
 void AudioEngineWorkerThread::startAndWaitForJobs()
@@ -227,7 +264,7 @@ void AudioEngineWorkerThread::run()
 		// one worker of 19 stranded) and outlived its QThread - qFatal at Engine::destroy().
 		// A wait on a value cannot miss a wake: if the generation moved after `seen` was read,
 		// wait() returns at once. quit() moves it too.
-		s_wakeGeneration.wait(seen, std::memory_order_acquire);
+		waitForWake(seen);
 		seen = s_wakeGeneration.load(std::memory_order_acquire);
 		if( m_quit.load( std::memory_order_acquire ) ) { break; }
 
