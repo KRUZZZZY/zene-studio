@@ -83,4 +83,7 @@ New in the interface in this release, each over its registered commands:
   not loosened).
 - Still reachable only through the control socket: rack key/velocity zones (the engine does not route by
   zone yet), the telemetry transport policy, the control-server shutdown hook, and the per-note tuning edits.
+- **Cue mixes (R2.5) are not in this release**, although the plan placed them here (owner decision
+  2026-09-28, 11): they need output buses routed to more than the stereo device pair and a spec written
+  against the reference they imitate, which was never re-read. They move to the next release.
 - Everything else missing is in `docs/KNOWN-LIMITATIONS.md`.
