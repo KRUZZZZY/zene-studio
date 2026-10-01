@@ -335,11 +335,21 @@ private slots:
 			while (!release.load()) { std::this_thread::sleep_for(std::chrono::milliseconds(2)); }
 			return true;
 		});
+		// Released on every way out of this slot: a failed comparison returns early, and a fake
+		// provisioner still spinning would keep the worker - and ~StemJobManager, which joins it -
+		// alive until QtTest's 300 s watchdog (hosted linux-arm64, run 36789477810).
+		struct Release
+		{
+			std::atomic<bool>& flag;
+			~Release() { flag.store(true); }
+		} releaseOnExit{release};
 		QSignalSpy finishedSpy(&manager, &StemJobManager::jobFinished);
 		const int id = manager.submit(makeMix(), StemModelSampleRate, 1024);
 
 		QTRY_VERIFY_WITH_TIMEOUT(manager.fetchingModel(id), 5000);
-		QCOMPARE(manager.downloadProgress(id), 0.5f);
+		// The job raises fetchingModel BEFORE the provisioner reports its first fraction, so the
+		// progress is waited for, not read the instant the flag is up (that read raced: 0 on arm64).
+		QTRY_COMPARE_WITH_TIMEOUT(manager.downloadProgress(id), 0.5f, 5000);
 		QCOMPARE(manager.progress(id), 0.0f); // separation has not begun
 		release.store(true);
 		QTRY_VERIFY_WITH_TIMEOUT(finishedSpy.count() == 1, 10000);
