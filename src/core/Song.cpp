@@ -154,7 +154,14 @@ Song::Song() :
 			if (m_playing && m_playMode == playMode) { emit playbackPositionJumped(); }
 		};
 
-		connect(&m_timelines[i], &Timeline::positionJumped, this, onPositionJumped);
+		// DIRECT, on the thread that moved the timeline (BUGS_FOUND 11.28). The timeline
+		// jumps on the RENDER thread too, and the default connection QUEUED this lambda to
+		// the Song's thread: it then ran at an arbitrary later moment - mid-export, under
+		// load - and every SampleClip's handler removed its track's play handles there, so
+		// a clip restarted at whichever period the GUI thread happened to reach and an
+		// offline render was not reproducible (MasteringTest, hosted macos-x86_64 run 13).
+		// Every listener of playbackPositionJumped already connects to it directly.
+		connect(&m_timelines[i], &Timeline::positionJumped, this, onPositionJumped, Qt::DirectConnection);
 	}
 
 	// R2.4: the song timeline's punch region, published to the render thread's

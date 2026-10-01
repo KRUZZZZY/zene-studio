@@ -31,6 +31,7 @@
 #include <QtTest>
 
 #include <QDir>
+#include <QElapsedTimer>
 #include <QEventLoop>
 #include <QFile>
 #include <QFileInfo>
@@ -39,6 +40,7 @@
 #include <QJsonObject>
 #include <QTemporaryDir>
 
+#include <algorithm>
 #include <cmath>
 #include <cstdio>
 #include <memory>
@@ -362,6 +364,34 @@ private slots:
 		QVERIFY2(floorDb <= 0.5, "the ordinary render is not stable enough to compare");
 	}
 
+	//! BUGS_FOUND 11.28: a render does not depend on WHEN the GUI thread gets to its
+	//! events. The timeline jumps on the render thread at the start of an export; that
+	//! jump used to be QUEUED to the GUI thread, which then removed every sample track's
+	//! play handles at whatever moment it processed it - so a busy GUI thread restarted
+	//! the clips mid-export and the file came out different. Here the GUI thread is held
+	//! off its events for half a render, deterministically, and the two files must be the
+	//! SAME BYTES: the deterministic render (ProjectRenderer's single-threaded scope) has
+	//! nothing else that may vary between two renders of one project in one process.
+	void aRenderDoesNotDependOnWhenTheGuiThreadRuns()
+	{
+		std::vector<SampleFrame> prompt;
+		std::vector<SampleFrame> late;
+		sample_rate_t rate = 0;
+		QElapsedTimer timer;
+		timer.start();
+		QVERIFY(renderPlainly(QStringLiteral("gui-prompt.wav"), prompt, rate));
+		const qint64 renderMs = std::max<qint64>(timer.elapsed(), 4);
+		QVERIFY(renderPlainly(QStringLiteral("gui-late.wav"), late, rate, renderMs / 2));
+
+		QCOMPARE(prompt.size(), late.size());
+		const std::uint32_t delta = maxAbsDeltaLsb(prompt, late);
+		std::printf("MASTERING_EVIDENCE GUI thread held off for %lld ms of a %lld ms render: "
+			"max|delta| %u LSB\n", static_cast<long long>(renderMs / 2),
+			static_cast<long long>(renderMs), delta);
+		std::fflush(stdout);
+		QCOMPARE(delta, std::uint32_t{0});
+	}
+
 	//! The report document the SURFACE reads is this run's own numbers.
 	//!
 	//! `mastering.run` reads the document a child process writes (`zene master
@@ -431,7 +461,10 @@ private slots:
 private:
 	//! Renders the project the ordinary way - RenderManager, no candidates - and
 	//! reads the file back.
-	bool renderPlainly(const QString& name, std::vector<SampleFrame>& frames, sample_rate_t& rate)
+	//! \a holdOffMs keeps this (the GUI) thread away from its event loop for that long
+	//! once the render has started - a busy GUI thread, made deterministic.
+	bool renderPlainly(const QString& name, std::vector<SampleFrame>& frames, sample_rate_t& rate,
+		qint64 holdOffMs = 0)
 	{
 		const QString path = m_dir.filePath(name);
 		{
@@ -439,6 +472,7 @@ private:
 			QEventLoop loop;
 			QObject::connect(&manager, &RenderManager::finished, &loop, &QEventLoop::quit);
 			manager.renderProject();
+			if (holdOffMs > 0) { QThread::msleep(static_cast<unsigned long>(holdOffMs)); }
 			loop.exec();
 		}
 		QString error;
