@@ -180,7 +180,7 @@ void SlicerT::findSlices()
 	std::vector<float> fftIn(windowSize, 0);
 	std::array<fftwf_complex, windowSize> fftOut;
 
-	fftwf_plan fftPlan = fftwf_plan_dft_r2c_1d(windowSize, fftIn.data(), fftOut.data(), FFTW_MEASURE);
+	fftwf_plan fftPlan = fftwf_plan_dft_r2c_1d(windowSize, fftIn.data(), fftOut.data(), FFTW_ESTIMATE);
 
 	int lastPoint = -minDist - 1; // to always store 0 first
 	float spectralFlux = 0;
