@@ -592,6 +592,8 @@ private slots:
 
 
 private:
+	//! The track list one period plays, kept to reuse its capacity (processNextBuffer; R7.2).
+	TrackList m_periodTracks;
 	//! playSong() and playAndRecord(): the transport starts under the model lock (BUGS_FOUND 11.17).
 	void startSongPlayback( bool recording );
 	Song();

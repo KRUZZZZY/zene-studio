@@ -28,8 +28,8 @@
 #include <QThread>
 
 #include <atomic>
+#include <cstdint>
 
-class QWaitCondition;
 
 namespace lmms
 {
@@ -108,6 +108,10 @@ public:
 	}
 
 	static void startAndWaitForJobs();
+	//! Wake every idle pool worker to drain the queue, without running it here (what
+	//! startAndWaitForJobs() does before it takes its own share). A worker sleeps until woken -
+	//! there is no idle poll - so a caller that queues work for the pool alone uses this.
+	static void wakeWorkers();
 
 	/**
 	 * @brief Process every job on the calling thread instead of handing it to the pool.
@@ -133,7 +137,11 @@ private:
 	void run() override;
 
 	static JobQueue globalJobQueue;
-	static QWaitCondition * queueReadyWaitCond;
+	//! The wake (R7.2, BUGS_FOUND 11.22 a): startAndWaitForJobs() and quit() bump it and
+	//! notify; a worker waits for it to move. Replaces a QWaitCondition, whose wakeAll() took a
+	//! mutex on the render thread every period. A wait on a value that has already moved returns
+	//! at once, so no wake can be lost between reading m_quit and sleeping.
+	static std::atomic<std::uint32_t> s_wakeGeneration;
 	static QList<AudioEngineWorkerThread *> workerThreads;
 
 	//! Atomic, not volatile: quit() writes it while run() reads it on the worker (10.9a).
