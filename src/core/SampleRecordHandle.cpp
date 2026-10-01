@@ -94,6 +94,16 @@ void SampleRecordHandle::play( std::span<SampleFrame> /*buffer*/ )
 		m_compensationFrames += offset();
 		m_offsetApplied = true;
 	}
+	// A period before the device's capture has delivered anything: the time passes and
+	// there is no input, so the round trip's staging block this period stands for is one
+	// the take never sees - count it as skipped. It used to be skipped again from the
+	// first REAL input, and a take armed on the device's first period came out one period
+	// early (-255 frames; BUGS_FOUND 11.29, RecordingLatencyTest under load).
+	if( frames == 0 && !Engine::audioEngine()->inputStreamStarted() )
+	{
+		m_compensationFrames -= std::min( m_compensationFrames,
+			static_cast<f_cnt_t>( Engine::audioEngine()->framesPerPeriod() ) );
+	}
 	const f_cnt_t skipped = std::min( frames, m_compensationFrames );
 	m_compensationFrames -= skipped;
 	recbuf += skipped;

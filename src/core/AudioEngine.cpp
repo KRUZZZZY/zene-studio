@@ -264,6 +264,7 @@ void AudioEngine::drainInputStage() noexcept
 		static_cast<std::size_t>( m_inputBufferSize[ m_inputBufferRead ] ) );
 	m_inputStage->read( m_inputBuffer[ m_inputBufferRead ], frames );
 	m_inputBufferFrames[ m_inputBufferRead ] = static_cast<f_cnt_t>( frames );
+	if( frames > 0 ) { m_inputStreamStarted.store( true, std::memory_order_relaxed ); }
 }
 
 

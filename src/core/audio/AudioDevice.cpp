@@ -101,6 +101,8 @@ f_cnt_t AudioDevice::captureBlockFrames() const
 
 void AudioDevice::startProcessing()
 {
+	// The capture of a device that is (re)starting has delivered nothing yet (BUGS_FOUND 11.29).
+	if (m_audioEngine != nullptr) { m_audioEngine->resetInputStream(); }
 	m_running.test_and_set(std::memory_order_acquire);
 	startProcessingImpl();
 }

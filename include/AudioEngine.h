@@ -353,6 +353,14 @@ public:
 	 *  performed against. 0 with no device. */
 	f_cnt_t recordingLatencyFrames() const { return m_recordingLatency.load(std::memory_order_relaxed); }
 
+	/*! BUGS_FOUND 11.29: false from a device start until its capture first delivers frames.
+	 *  A period rendered before that has no input to read, and that is not "input that lags":
+	 *  the round trip's capture-staging term (recordingLatencyFrames) is a block the stream
+	 *  never held, so a take that starts there must not skip it. Read on the render thread;
+	 *  every device start (AudioDevice::startProcessing) resets it. */
+	bool inputStreamStarted() const { return m_inputStreamStarted.load(std::memory_order_relaxed); }
+	void resetInputStream() { m_inputStreamStarted.store(false, std::memory_order_relaxed); }
+
 	/**
 	 * @brief Renders the next audio period.
 	 *
@@ -478,6 +486,7 @@ private:
 	f_cnt_t m_framesPerAudioBuffer;
 	//! R2.2: the cached round trip; the audio thread reads it when a take starts.
 	std::atomic<f_cnt_t> m_recordingLatency{0};
+	std::atomic<bool> m_inputStreamStarted{false};
 	f_cnt_t m_framesPerPeriod;
 	sample_rate_t m_baseSampleRate;
 
