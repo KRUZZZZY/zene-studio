@@ -810,6 +810,7 @@ set(LMMS_SRCS
 	core/RoutingNodes.cpp
 	core/Sample.cpp
 	core/SampleBuffer.cpp
+	core/SampleBufferResample.cpp
 	core/SampleClip.cpp
 	core/SampleDecoder.cpp
 	core/SamplePlayHandle.cpp

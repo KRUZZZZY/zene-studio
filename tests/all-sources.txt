@@ -466,6 +466,7 @@ include/Rubberband.h
 include/SafeStart.h
 include/Sample.h
 include/SampleBuffer.h
+include/SampleBufferResample.h
 include/SampleClip.h
 include/SampleClipView.h
 include/SampleDecoder.h
@@ -1442,6 +1443,7 @@ src/core/RubberBandStretch.cpp
 src/core/SafeStart.cpp
 src/core/Sample.cpp
 src/core/SampleBuffer.cpp
+src/core/SampleBufferResample.cpp
 src/core/SampleClip.cpp
 src/core/SampleDecoder.cpp
 src/core/SampleOperators.cpp
@@ -1910,6 +1912,7 @@ tests/src/core/RoutingGraphTest.cpp
 tests/src/core/SafeStartLoadPathTest.cpp
 tests/src/core/SafeStartTest.cpp
 tests/src/core/SampleAccurateAutomationTest.cpp
+tests/src/core/SampleBufferResampleTest.cpp
 tests/src/core/ScenesUpconvertTest.cpp
 tests/src/core/ScriptBindingsTest.cpp
 tests/src/core/ScriptClockTest.cpp

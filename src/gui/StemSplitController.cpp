@@ -22,6 +22,7 @@
  */
 
 #include "StemSplitController.h"
+#include "SampleBufferResample.h"
 
 #include <memory>
 
@@ -149,20 +150,14 @@ void StemSplitController::splitClipToStems(SampleClip* clip)
 	bool fetching = false;
 	if (!ensureBackendReady(&fetching)) { return; }
 
-	const auto buffer = clip->sample().buffer();
-	if (!buffer || buffer->empty())
+	const auto source = clip->sample().buffer();
+	if (!source || source->empty())
 	{
 		QMessageBox::warning(m_parent, tr("Split to stems"), tr("This clip has no audio."));
 		return;
 	}
-	if (buffer->sampleRate() != StemModelSampleRate)
-	{
-		QMessageBox::warning(m_parent, tr("Split to stems"),
-			tr("Stem separation needs %1 Hz audio; this clip is %2 Hz. "
-				"Resampling is not implemented yet.")
-				.arg(StemModelSampleRate).arg(buffer->sampleRate()));
-		return;
-	}
+	// E27: a clip at another rate is resampled to the model's 44.1 kHz first, not refused.
+	const auto buffer = resampleBuffer(source, StemModelSampleRate);
 
 	m_clip = clip;
 	m_jobId = m_manager.submit(buffer, buffer->sampleRate(), HTDemucsSegmentFrames);

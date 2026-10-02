@@ -658,6 +658,7 @@ include/RoutingNode.h
 include/RoutingNodes.h
 include/RubberBandStretch.h
 include/SafeStart.h
+include/SampleBufferResample.h
 include/SampleFrameRingBuffer.h
 include/SampleRecordAccumulator.h
 include/SampleWindow.h
@@ -1119,6 +1120,7 @@ src/core/RoutingNode.cpp
 src/core/RoutingNodes.cpp
 src/core/RubberBandStretch.cpp
 src/core/SafeStart.cpp
+src/core/SampleBufferResample.cpp
 src/core/SampleOperators.cpp
 src/core/SampleOperators.h
 src/core/ScriptApiVersion.cpp
@@ -1407,6 +1409,7 @@ tests/src/core/ReversibilityContractTest.cpp
 tests/src/core/ReversibilityTestSupport.h
 tests/src/core/ReversibilityUndoTest.cpp
 tests/src/core/RoutingGraphScheduleTest.cpp
+tests/src/core/SampleBufferResampleTest.cpp
 tests/src/core/ScriptCommandBridgeTest.cpp
 tests/src/core/ScriptDawBindingTest.cpp
 tests/src/core/SessionModelTest.cpp

@@ -24,6 +24,7 @@
  */
 
 #include "ControlStemSupport.h"
+#include "SampleBufferResample.h"
 
 #include <algorithm>
 #include <atomic>
@@ -221,16 +222,9 @@ public:
 				.arg(source);
 			return false;
 		}
-		// No resampler, by decision, and the refusal says which value is wrong
-		// (SPEC-stem-split.md OQ-1, the same refusal
-		// ExternalProcessStemSeparator::separate makes):
-		if (mix->sampleRate() != StemModelSampleRate)
-		{
-			*error = QStringLiteral("'%1' is %2 Hz; stem separation needs %3 Hz and resampling is "
-				"not implemented yet (SPEC-stem-split.md OQ-1)")
-				.arg(source).arg(mix->sampleRate()).arg(StemModelSampleRate);
-			return false;
-		}
+		// 0.5.0 (engine audit E27): a source at another rate is resampled to the model's own,
+		// offline, instead of refused (SPEC-stem-split.md OQ-1 is answered by this).
+		mix = resampleBuffer(mix, StemModelSampleRate);
 		JobRecord record;
 		record.source = source;
 		record.sampleRate = StemModelSampleRate;
