@@ -144,6 +144,10 @@ public:
 	//! GUI thread: the plug-in's processing latency in samples (IAudioProcessor::
 	//! getLatencySamples), 0 while not prepared. BUGS 11.34.
 	auto latency() const -> std::uint32_t;
+	//! Audio thread, after process(): the notes the plug-in wrote to its output event list during
+	//! that request, as MIDI with block frame offsets (engine audit E7).
+	auto outputEventCount() const -> int;
+	auto outputEvent(int index) const -> const MidiEventIn&;
 	//! GUI thread: @a callback runs when the plug-in reports kLatencyChanged.
 	void setLatencyChangedCallback(std::function<void()> callback);
 

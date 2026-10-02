@@ -131,6 +131,8 @@ private slots:
 	void poll();
 
 private:
+	//! Audio thread: hand the notes the plug-in wrote this block to the track's MIDI output.
+	void forwardOutputEvents();
 	vst3::HostedPlugin m_plugin;
 	gui::PluginNativeEditor m_editor;
 	std::vector<Vst3ParamModel*> m_paramModels;

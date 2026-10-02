@@ -27,6 +27,7 @@
 #include <functional>
 
 #include <algorithm>
+#include <array>
 #include <atomic>
 #include <cstdint>
 #include <cstring>
@@ -35,6 +36,7 @@
 #include <QDebug>
 
 #include "PluginHostChunking.h"
+#include "Vst3ComponentHandler.h"
 #include "Vst3EditorSession.h"
 #include "Vst3MidiEvent.h"
 #include "pluginterfaces/vst/ivstaudioprocessor.h"
@@ -91,76 +93,6 @@ auto hostContext() -> IPtr<FUnknown>
 	}();
 	return application;
 }
-
-/**
- * Minimal IComponentHandler. performEdit() only mirrors the plug-in's own
- * parameter changes into the lock free parameter array of the host, using a
- * binary search over the pre-sorted parameter index: no allocation, no lock.
- */
-class Vst3ComponentHandler : public IComponentHandler
-{
-public:
-	// `release()` deletes through `this`, so the destructor must be virtual to
-	// keep the polymorphic delete well defined (-Wdelete-non-virtual-dtor).
-	virtual ~Vst3ComponentHandler() = default;
-
-	Vst3ComponentHandler(std::atomic<float>* values,
-			const std::vector<std::pair<std::uint32_t, std::size_t>>* indexById,
-			const std::function<void()>* onLatencyChanged) :
-		m_values{values},
-		m_indexById{indexById},
-		m_onLatencyChanged{onLatencyChanged}
-	{
-	}
-
-	tresult PLUGIN_API beginEdit(ParamID) SMTG_OVERRIDE { return kResultOk; }
-
-	tresult PLUGIN_API performEdit(ParamID id, ParamValue valueNormalized) SMTG_OVERRIDE
-	{
-		const auto it = std::lower_bound(m_indexById->begin(), m_indexById->end(),
-			std::make_pair(static_cast<std::uint32_t>(id), std::size_t{0}));
-		if (it != m_indexById->end() && it->first == static_cast<std::uint32_t>(id))
-		{
-			m_values[it->second].store(static_cast<float>(valueNormalized),
-				std::memory_order_relaxed);
-		}
-		return kResultOk;
-	}
-
-	tresult PLUGIN_API endEdit(ParamID) SMTG_OVERRIDE { return kResultOk; }
-
-	//! BUGS 11.34: a plug-in whose latency changed says so here (UI thread, per the VST3 SDK);
-	//! the host re-reads it and the owning chain re-aligns its paths.
-	tresult PLUGIN_API restartComponent(int32 flags) SMTG_OVERRIDE
-	{
-		if ((flags & kLatencyChanged) != 0 && m_onLatencyChanged != nullptr && *m_onLatencyChanged)
-		{
-			(*m_onLatencyChanged)();
-		}
-		return kResultOk;
-	}
-
-	tresult PLUGIN_API queryInterface(const TUID, void** obj) SMTG_OVERRIDE
-	{
-		if (obj) { *obj = nullptr; }
-		return kNoInterface;
-	}
-
-	uint32 PLUGIN_API addRef() SMTG_OVERRIDE { return ++m_refCount; }
-
-	uint32 PLUGIN_API release() SMTG_OVERRIDE
-	{
-		const auto count = --m_refCount;
-		if (count == 0) { delete this; }
-		return count;
-	}
-
-private:
-	std::atomic<float>* m_values;
-	const std::vector<std::pair<std::uint32_t, std::size_t>>* m_indexById;
-	const std::function<void()>* m_onLatencyChanged = nullptr;
-	std::atomic<uint32> m_refCount{1};
-};
 
 auto writeToStream(MemoryStream& stream, const QByteArray& data) -> bool
 {
@@ -225,6 +157,10 @@ struct HostedPlugin::Impl
 	//! its sample offsets rebased to that chunk's start. Sized once, in its
 	//! constructor: process() never allocates (see runChunk()).
 	EventList chunkEvents{kMaxMidiEventsPerBlock};
+	//! ProcessData::outputEvents (E7), and what the whole request's chunks wrote, as MIDI
+	EventList outputEvents{kMaxMidiEventsPerBlock};
+	std::array<MidiEventIn, kMaxMidiEventsPerBlock> blockOutput{};
+	int blockOutputCount = 0;
 	//! Audio thread scratch for ordering the drained events by sample offset
 	std::vector<MidiEventIn> midiEvents;
 
@@ -712,6 +648,13 @@ void HostedPlugin::setLatencyChangedCallback(std::function<void()> callback)
 	m_impl->onLatencyChanged = std::move(callback);
 }
 
+auto HostedPlugin::outputEventCount() const -> int { return m_impl->blockOutputCount; }
+
+auto HostedPlugin::outputEvent(int index) const -> const MidiEventIn&
+{
+	return m_impl->blockOutput[static_cast<std::size_t>(index)];
+}
+
 auto HostedPlugin::preparedSampleRate() const -> double
 {
 	return m_impl->sampleRate;
@@ -735,6 +678,7 @@ void HostedPlugin::process(const float* const* inputs, float* const* outputs,
 	int numInputs, int numOutputs, int frames)
 {
 	auto& d = *m_impl;
+	d.blockOutputCount = 0;
 	if (!d.prepared || !d.processor || frames <= 0) { return; }
 
 	// Chunking counters, in the CORE (include/PluginHostChunking.h): the audio
@@ -871,7 +815,15 @@ void HostedPlugin::Impl::runChunk(const float* const* inputs, float* const* outp
 	context.projectTimeSamples = continuousSamples;
 	continuousSamples += chunk;
 
+	outputEvents.clear();
+	processData.outputEvents = &outputEvents;
 	processor->process(processData);
+	Event event{};
+	for (int32 i = 0; i < outputEvents.getEventCount() && blockOutputCount < kMaxMidiEventsPerBlock; ++i)
+	{
+		if (outputEvents.getEvent(i, event) == kResultOk
+			&& vst3EventToMidi(event, offset, &blockOutput[static_cast<std::size_t>(blockOutputCount)])) { ++blockOutputCount; }
+	}
 }
 
 auto HostedPlugin::paramDisplayValue(std::uint32_t id, float normalized) const -> QString

@@ -75,6 +75,14 @@ auto midiToVst3Event(const MidiEventIn& midi, Steinberg::int32 busIndex,
 auto drainMidiIntoEventList(MidiQueue& queue, std::vector<MidiEventIn>& scratch,
 	Steinberg::Vst::EventList& events, Steinberg::int32 busIndex, int frames) -> int;
 
+/**
+ * The inverse of midiToVst3Event for what a plug-in WRITES to ProcessData::outputEvents: note-on,
+ * note-off and polyphonic pressure become MIDI, rebased by @a chunkOffset to the block. @returns
+ * false for an event this host does not carry (engine audit E7: before this the list was never
+ * handed to the plug-in at all, so an arpeggiator's or a sequencer's notes were lost).
+ */
+auto vst3EventToMidi(const Steinberg::Vst::Event& event, int chunkOffset, MidiEventIn* midi) -> bool;
+
 } // namespace lmms::vst3
 
 #endif // LMMS_VST3_MIDI_EVENT_H

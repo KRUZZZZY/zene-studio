@@ -23,6 +23,8 @@
  */
 
 #include "Vst3Instrument.h"
+#include "InstrumentTrack.h"
+#include "MidiPort.h"
 
 #include <algorithm>
 #include <cmath>
@@ -288,8 +290,24 @@ auto Vst3Instrument::processImpl(PlanarBufferView<const float, DynamicChannelCou
 	const auto frames = static_cast<int>(out.frames());
 	m_plugin.process(in.data(), out.data(),
 		static_cast<int>(in.channels()), static_cast<int>(out.channels()), frames);
+	forwardOutputEvents();
 
 	return lmms::ProcessStatus::Continue;
+}
+
+void Vst3Instrument::forwardOutputEvents()
+{
+	// Engine audit E7: the notes the plug-in generates (an arpeggiator, a sequencer) leave on the
+	// track's MIDI OUTPUT port - straight to the port, not through InstrumentTrack::processOutEvent,
+	// which would feed them back into the plug-in. Audio thread; MidiPort::processOutEvent is the
+	// call a NotePlayHandle makes from here too.
+	InstrumentTrack* track = instrumentTrack();
+	if (track == nullptr || m_plugin.outputEventCount() == 0) { return; }
+	for (int i = 0; i < m_plugin.outputEventCount(); ++i)
+	{
+		const vst3::MidiEventIn& e = m_plugin.outputEvent(i);
+		track->midiPort()->processOutEvent(MidiEvent(static_cast<MidiEventTypes>(e.type), e.channel, e.data0, e.data1));
+	}
 }
 
 void Vst3Instrument::saveSettings(QDomDocument& doc, QDomElement& element)

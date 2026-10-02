@@ -763,6 +763,7 @@ plugins/RnnoiseDenoiser/RnnoiseDenoiserEffect.h
 plugins/RnnoiseDenoiser/testdata/rnn_harness.c
 plugins/Vst3Effect/Vst3BusMap.cpp
 plugins/Vst3Effect/Vst3BusMap.h
+plugins/Vst3Effect/Vst3ComponentHandler.h
 plugins/Vst3Effect/Vst3EditorSession.cpp
 plugins/Vst3Effect/Vst3EditorSession.h
 plugins/Vst3Effect/Vst3Effect.cpp

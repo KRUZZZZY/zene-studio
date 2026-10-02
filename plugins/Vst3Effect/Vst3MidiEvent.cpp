@@ -155,4 +155,28 @@ auto drainMidiIntoEventList(MidiQueue& queue, std::vector<MidiEventIn>& scratch,
 	return static_cast<int>(count);
 }
 
+auto vst3EventToMidi(const Event& event, int chunkOffset, MidiEventIn* midi) -> bool
+{
+	const auto velocity = [](float v) { return static_cast<std::uint8_t>(std::clamp(v, 0.f, 1.f) * 127.f + 0.5f); };
+	switch (event.type)
+	{
+	case Event::kNoteOnEvent:
+		*midi = {0x90, static_cast<std::uint8_t>(event.noteOn.channel & 0x0f),
+			static_cast<std::uint8_t>(event.noteOn.pitch & 0x7f), velocity(event.noteOn.velocity), 0};
+		break;
+	case Event::kNoteOffEvent:
+		*midi = {0x80, static_cast<std::uint8_t>(event.noteOff.channel & 0x0f),
+			static_cast<std::uint8_t>(event.noteOff.pitch & 0x7f), velocity(event.noteOff.velocity), 0};
+		break;
+	case Event::kPolyPressureEvent:
+		*midi = {0xa0, static_cast<std::uint8_t>(event.polyPressure.channel & 0x0f),
+			static_cast<std::uint8_t>(event.polyPressure.pitch & 0x7f), velocity(event.polyPressure.pressure), 0};
+		break;
+	default:
+		return false;
+	}
+	midi->frameOffset = event.sampleOffset + chunkOffset;
+	return true;
+}
+
 } // namespace lmms::vst3
