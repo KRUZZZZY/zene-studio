@@ -30,6 +30,7 @@
 #include "public.sdk/source/vst/hosting/eventlist.h"
 #include "pluginterfaces/vst/ivstcomponent.h"
 #include "pluginterfaces/vst/ivstevents.h"
+#include "pluginterfaces/vst/ivstparameterchanges.h"
 
 #include "Vst3MidiQueue.h"
 
@@ -73,7 +74,9 @@ auto midiToVst3Event(const MidiEventIn& midi, Steinberg::int32 busIndex,
  * @returns how many events were added to \a events
  */
 auto drainMidiIntoEventList(MidiQueue& queue, std::vector<MidiEventIn>& scratch,
-	Steinberg::Vst::EventList& events, Steinberg::int32 busIndex, int frames) -> int;
+	Steinberg::Vst::EventList& events, Steinberg::int32 busIndex, int frames,
+	const class MidiControllerMap* controllers = nullptr,
+	Steinberg::Vst::IParameterChanges* changes = nullptr) -> int;
 
 /**
  * The inverse of midiToVst3Event for what a plug-in WRITES to ProcessData::outputEvents: note-on,

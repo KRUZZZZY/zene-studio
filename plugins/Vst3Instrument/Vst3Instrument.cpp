@@ -254,11 +254,22 @@ bool Vst3Instrument::handleMidiEvent(const MidiEvent& event, const TimePos&,
 			midi.data1 = event.controllerValue();
 			break;
 
+		// E10: channel pressure and pitch bend are queued too; the host maps them (and CCs) to
+		// the plug-in's parameters through its IMidiMapping - how MPE pressure and pitch arrive.
+		case MidiChannelPressure:
+			midi.type = static_cast<std::uint8_t>(MidiChannelPressure);
+			midi.data0 = event.channelPressure();
+			break;
+
+		case MidiPitchBend:
+			midi.type = static_cast<std::uint8_t>(MidiPitchBend);
+			midi.data0 = static_cast<std::uint8_t>(event.pitchBend() & 0x7f);
+			midi.data1 = static_cast<std::uint8_t>((event.pitchBend() >> 7) & 0x7f);
+			break;
+
 		default:
-			// Not carried by this slice: SysEx, program change, channel
-			// pressure and pitch bend. Reported as handled so the track does
-			// not warn on every message it does not understand. The list is
-			// in docs/VST3-INSTRUMENT-HOSTING.md.
+			// Not carried: SysEx and program change. Reported as handled so the track does not
+			// warn on every message it does not understand (docs/VST3-INSTRUMENT-HOSTING.md).
 			return true;
 	}
 

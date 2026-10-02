@@ -39,6 +39,7 @@
 #include "Vst3ComponentHandler.h"
 #include "Vst3EditorSession.h"
 #include "Vst3MidiEvent.h"
+#include "Vst3MidiMapping.h"
 #include "pluginterfaces/vst/ivstaudioprocessor.h"
 #include "pluginterfaces/vst/ivstcomponent.h"
 #include "pluginterfaces/vst/ivsteditcontroller.h"
@@ -182,6 +183,7 @@ struct HostedPlugin::Impl
 	std::vector<float> scratchOutput;
 
 	ParameterChanges inputParamChanges;
+	MidiControllerMap controllerMap;  //!< E10, built in prepare()
 	ProcessData processData{};
 	ProcessContext context{};
 
@@ -588,6 +590,7 @@ auto HostedPlugin::prepare(double sampleRate, int maxBlockSize, QString* error) 
 	d.processData.outputs = d.outputBuses.empty() ? nullptr : d.outputBuses.data();
 	d.processData.numOutputs = static_cast<int32>(d.outputBuses.size());
 	d.processData.inputParameterChanges = &d.inputParamChanges;
+	d.controllerMap.build(d.controller, d.eventInputBusIndex);
 	// Instruments with an input event bus get one; effects keep nullptr, which
 	// is what every effect has always been given.
 	d.processData.inputEvents = d.midiEnabled ? &d.inputEvents : nullptr;
@@ -720,7 +723,7 @@ void HostedPlugin::process(const float* const* inputs, float* const* outputs,
 	{
 		d.inputEvents.clear();
 		drainMidiIntoEventList(d.midiQueue, d.midiEvents, d.inputEvents,
-			d.eventInputBusIndex, frames);
+			d.eventInputBusIndex, frames, &d.controllerMap, &d.inputParamChanges);
 	}
 
 	// 2. chunks: every chunk but the last is exactly maxBlockSize long and the

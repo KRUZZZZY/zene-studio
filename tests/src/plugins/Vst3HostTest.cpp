@@ -29,7 +29,12 @@
 #include <cmath>
 #include <vector>
 
+#include "Midi.h"
 #include "Vst3Host.h"
+#include "Vst3MidiMapping.h"
+#include "pluginterfaces/vst/ivsteditcontroller.h"
+#include "pluginterfaces/vst/ivstmidicontrollers.h"
+#include "public.sdk/source/vst/hosting/parameterchanges.h"
 
 #ifndef VST3_TEST_PLUGIN_PATH
 #define VST3_TEST_PLUGIN_PATH ""
@@ -61,6 +66,48 @@ auto rms(const std::vector<float>& data) -> double
 	}
 	return data.empty() ? 0.0 : std::sqrt(sum / static_cast<double>(data.size()));
 }
+//! An edit controller whose IMidiMapping maps CC74 on channel 3 to parameter 74 and channel
+//! pressure on channel 3 to parameter 128 - the two MPE axes on one member channel.
+class MappingController : public Steinberg::Vst::IEditController, public Steinberg::Vst::IMidiMapping
+{
+public:
+	virtual ~MappingController() = default;
+	Steinberg::tresult PLUGIN_API getMidiControllerAssignment(Steinberg::int32, Steinberg::int16 channel,
+		Steinberg::Vst::CtrlNumber number, Steinberg::Vst::ParamID& id) override
+	{
+		if (channel != 3 || (number != 74 && number != Steinberg::Vst::kAfterTouch)) { return Steinberg::kResultFalse; }
+		id = static_cast<Steinberg::Vst::ParamID>(number);
+		return Steinberg::kResultTrue;
+	}
+	Steinberg::tresult PLUGIN_API queryInterface(const Steinberg::TUID iid, void** obj) override
+	{
+		if (Steinberg::FUnknownPrivate::iidEqual(iid, Steinberg::Vst::IMidiMapping::iid))
+		{
+			*obj = static_cast<Steinberg::Vst::IMidiMapping*>(this);
+			return Steinberg::kResultOk;
+		}
+		*obj = nullptr;
+		return Steinberg::kNoInterface;
+	}
+	Steinberg::uint32 PLUGIN_API addRef() override { return 1; }
+	Steinberg::uint32 PLUGIN_API release() override { return 1; }
+	Steinberg::tresult PLUGIN_API initialize(Steinberg::FUnknown*) override { return Steinberg::kResultOk; }
+	Steinberg::tresult PLUGIN_API terminate() override { return Steinberg::kResultOk; }
+	Steinberg::tresult PLUGIN_API setComponentState(Steinberg::IBStream*) override { return Steinberg::kResultOk; }
+	Steinberg::tresult PLUGIN_API setState(Steinberg::IBStream*) override { return Steinberg::kResultOk; }
+	Steinberg::tresult PLUGIN_API getState(Steinberg::IBStream*) override { return Steinberg::kResultOk; }
+	Steinberg::int32 PLUGIN_API getParameterCount() override { return 0; }
+	Steinberg::tresult PLUGIN_API getParameterInfo(Steinberg::int32, Steinberg::Vst::ParameterInfo&) override { return Steinberg::kResultFalse; }
+	Steinberg::tresult PLUGIN_API getParamStringByValue(Steinberg::Vst::ParamID, Steinberg::Vst::ParamValue, Steinberg::Vst::String128) override { return Steinberg::kResultFalse; }
+	Steinberg::tresult PLUGIN_API getParamValueByString(Steinberg::Vst::ParamID, Steinberg::Vst::TChar*, Steinberg::Vst::ParamValue&) override { return Steinberg::kResultFalse; }
+	Steinberg::Vst::ParamValue PLUGIN_API normalizedParamToPlain(Steinberg::Vst::ParamID, Steinberg::Vst::ParamValue v) override { return v; }
+	Steinberg::Vst::ParamValue PLUGIN_API plainParamToNormalized(Steinberg::Vst::ParamID, Steinberg::Vst::ParamValue v) override { return v; }
+	Steinberg::Vst::ParamValue PLUGIN_API getParamNormalized(Steinberg::Vst::ParamID) override { return 0.0; }
+	Steinberg::tresult PLUGIN_API setParamNormalized(Steinberg::Vst::ParamID, Steinberg::Vst::ParamValue) override { return Steinberg::kResultOk; }
+	Steinberg::tresult PLUGIN_API setComponentHandler(Steinberg::Vst::IComponentHandler*) override { return Steinberg::kResultOk; }
+	Steinberg::IPlugView* PLUGIN_API createView(Steinberg::FIDString) override { return nullptr; }
+};
+
 } // namespace
 
 class Vst3HostTest : public QObject
@@ -76,6 +123,7 @@ private slots:
 	void testAudioGain();
 	void testAudioSilenceWhenGainIsZero();
 	void testChannelPartition();
+	void testMidiControllersReachMappedParameters();
 
 private:
 	void process(HostedPlugin& plugin, const std::vector<std::vector<float>>& inputs,
@@ -245,6 +293,37 @@ void Vst3HostTest::process(HostedPlugin& plugin, const std::vector<std::vector<f
 
 	plugin.process(inputPointers.data(), outputPointers.data(),
 		static_cast<int>(inputPointers.size()), static_cast<int>(outputPointers.size()), frames);
+}
+
+} // namespace lmms::vst3
+
+namespace lmms::vst3
+{
+
+/*! Engine audit E10: an MPE member channel's timbre (CC74) and pressure become parameter changes
+ *  for the parameters the plug-in's IMidiMapping names; an unmapped controller is left alone. */
+void Vst3HostTest::testMidiControllersReachMappedParameters()
+{
+	MappingController controller;
+	MidiControllerMap map;
+	map.build(&controller, 0);
+	QCOMPARE(map.mappedCount(), 2);
+	Steinberg::Vst::ParameterChanges changes(4);
+	MidiEventIn timbre{static_cast<std::uint8_t>(MidiControlChange), 3, 74, 127, 0};
+	MidiEventIn pressure{static_cast<std::uint8_t>(MidiChannelPressure), 3, 64, 0, 0};
+	MidiEventIn elsewhere{static_cast<std::uint8_t>(MidiControlChange), 2, 74, 127, 0};
+	QVERIFY(map.apply(timbre, &changes));
+	QVERIFY(map.apply(pressure, &changes));
+	QVERIFY(!map.apply(elsewhere, &changes));
+	QCOMPARE(changes.getParameterCount(), 2);
+	Steinberg::int32 offset = 0;
+	Steinberg::Vst::ParamValue value = 0.0;
+	changes.getParameterData(0)->getPoint(0, offset, value);
+	QCOMPARE(changes.getParameterData(0)->getParameterId(), Steinberg::Vst::ParamID{74});
+	QCOMPARE(value, 1.0);
+	changes.getParameterData(1)->getPoint(0, offset, value);
+	QCOMPARE(changes.getParameterData(1)->getParameterId(), Steinberg::Vst::ParamID{Steinberg::Vst::kAfterTouch});
+	QVERIFY(std::abs(value - 64.0 / 127.0) < 1e-9);
 }
 
 } // namespace lmms::vst3

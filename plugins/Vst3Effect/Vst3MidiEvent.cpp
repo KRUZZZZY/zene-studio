@@ -23,6 +23,7 @@
  */
 
 #include "Vst3MidiEvent.h"
+#include "Vst3MidiMapping.h"
 
 #include <algorithm>
 
@@ -126,7 +127,8 @@ auto midiToVst3Event(const MidiEventIn& midi, int32 busIndex, Event* event) -> b
 }
 
 auto drainMidiIntoEventList(MidiQueue& queue, std::vector<MidiEventIn>& scratch,
-	EventList& events, int32 busIndex, int frames) -> int
+	EventList& events, int32 busIndex, int frames, const MidiControllerMap* controllers,
+	IParameterChanges* changes) -> int
 {
 	const auto capacity = scratch.size();
 	std::size_t count = 0;
@@ -147,6 +149,8 @@ auto drainMidiIntoEventList(MidiQueue& queue, std::vector<MidiEventIn>& scratch,
 	}
 	for (std::size_t i = 0; i < count; ++i)
 	{
+		// E10: a controller the plug-in mapped to a parameter becomes a parameter change.
+		if (controllers != nullptr && controllers->apply(scratch[i], changes)) { continue; }
 		Event event{};
 		if (!midiToVst3Event(scratch[i], busIndex, &event)) { continue; }
 		event.sampleOffset = std::clamp(scratch[i].frameOffset, 0, frames);

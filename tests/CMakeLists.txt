@@ -2023,6 +2023,7 @@ if(TARGET lmms_vst3_sdk)
 		${LMMS_VST3_EFFECT_DIR}/Vst3EditorSession.cpp
 		${CMAKE_SOURCE_DIR}/src/core/PluginEditorHost.cpp
 		${LMMS_VST3_EFFECT_DIR}/Vst3MidiEvent.cpp
+		${LMMS_VST3_EFFECT_DIR}/Vst3MidiMapping.cpp
 		# the host path's chunking counters (CODE-4), core-owned
 		${CMAKE_SOURCE_DIR}/src/core/PluginHostChunking.cpp
 	)
@@ -2065,6 +2066,7 @@ if(TARGET lmms_vst3_sdk)
 		${LMMS_VST3_EFFECT_DIR}/Vst3EditorSession.cpp
 		${CMAKE_SOURCE_DIR}/src/core/PluginEditorHost.cpp
 		${LMMS_VST3_EFFECT_DIR}/Vst3MidiEvent.cpp
+		${LMMS_VST3_EFFECT_DIR}/Vst3MidiMapping.cpp
 		# the host path's chunking counters (CODE-4), core-owned
 		${CMAKE_SOURCE_DIR}/src/core/PluginHostChunking.cpp
 	)
@@ -2105,6 +2107,7 @@ if(TARGET lmms_vst3_sdk)
 		# R4.2: the editor session the host owns (the R4.1 run loop comes with lmmsobjs)
 		${LMMS_VST3_EFFECT_DIR}/Vst3EditorSession.cpp
 		${LMMS_VST3_EFFECT_DIR}/Vst3MidiEvent.cpp
+		${LMMS_VST3_EFFECT_DIR}/Vst3MidiMapping.cpp
 		${LMMS_VST3_EFFECT_DIR}/Vst3Parameter.cpp
 		${LMMS_VST3_EFFECT_DIR}/Vst3SubPluginFeatures.cpp
 	)
@@ -2284,6 +2287,7 @@ if(TARGET lmms_vst3_sdk)
 			${CMAKE_SOURCE_DIR}/plugins/Vst3Effect/Vst3EditorSession.cpp
 			${CMAKE_SOURCE_DIR}/src/core/PluginEditorHost.cpp
 			${CMAKE_SOURCE_DIR}/plugins/Vst3Effect/Vst3MidiEvent.cpp
+			${CMAKE_SOURCE_DIR}/plugins/Vst3Effect/Vst3MidiMapping.cpp
 			# the host path's chunking counters (CODE-4), core-owned
 			${CMAKE_SOURCE_DIR}/src/core/PluginHostChunking.cpp
 		)

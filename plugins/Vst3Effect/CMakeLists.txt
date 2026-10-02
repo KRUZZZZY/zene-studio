@@ -21,6 +21,7 @@ SET(LMMS_VST3_EFFECT_SOURCES
 	Vst3BusMap.cpp
 	Vst3Effect.cpp
 	Vst3MidiEvent.cpp
+	Vst3MidiMapping.cpp
 	Vst3EffectControlDialog.cpp
 	Vst3EffectControls.cpp
 	Vst3Host.cpp
