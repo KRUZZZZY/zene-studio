@@ -24,6 +24,8 @@
 
 #include "ClapEffect.h"
 
+#include "EffectChain.h"
+
 #include <algorithm>
 
 #include <QDebug>
@@ -83,6 +85,7 @@ ClapEffect::ClapEffect(Model* parent, const Descriptor::SubPluginFeatures::Key* 
 		{
 			m_plugin.prepare(engine->outputSampleRate(), engine->framesPerPeriod(), &error);
 		}
+		cacheLatency();
 	}
 
 	// The controls must exist even for a failed load: the effect chain and the
@@ -124,6 +127,13 @@ void ClapEffect::reprepare()
 		}
 	}
 	m_needsReprepare.store(false, std::memory_order_relaxed);
+	cacheLatency();
+}
+
+void ClapEffect::cacheLatency()
+{
+	m_latencyFrames.store(m_plugin.isPrepared() ? static_cast<int>(m_plugin.latency()) : 0, std::memory_order_relaxed);
+	if (EffectChain* chain = effectChain()) { chain->refreshLatency(); }
 }
 
 auto ClapEffect::processImpl(PlanarBufferView<const float, DynamicChannelCount> in,

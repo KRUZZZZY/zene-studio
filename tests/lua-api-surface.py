@@ -34,6 +34,7 @@ SOURCES = [
     "src/core/ScriptDawBindings.cpp",
     "src/core/ScriptDawEffects.cpp",
     "src/core/ScriptDawEdit.cpp",
+    "src/core/ScriptCommandBridge.cpp",
 ]
 
 CLASS_BEGIN = re.compile(r'\.beginClass<[^>]+>\(\s*"([^"]+)"\s*\)')

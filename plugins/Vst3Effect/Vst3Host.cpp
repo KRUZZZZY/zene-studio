@@ -24,6 +24,8 @@
 
 #include "Vst3Host.h"
 
+#include <functional>
+
 #include <algorithm>
 #include <atomic>
 #include <cstdint>
@@ -103,9 +105,11 @@ public:
 	virtual ~Vst3ComponentHandler() = default;
 
 	Vst3ComponentHandler(std::atomic<float>* values,
-			const std::vector<std::pair<std::uint32_t, std::size_t>>* indexById) :
+			const std::vector<std::pair<std::uint32_t, std::size_t>>* indexById,
+			const std::function<void()>* onLatencyChanged) :
 		m_values{values},
-		m_indexById{indexById}
+		m_indexById{indexById},
+		m_onLatencyChanged{onLatencyChanged}
 	{
 	}
 
@@ -125,7 +129,16 @@ public:
 
 	tresult PLUGIN_API endEdit(ParamID) SMTG_OVERRIDE { return kResultOk; }
 
-	tresult PLUGIN_API restartComponent(int32) SMTG_OVERRIDE { return kResultOk; }
+	//! BUGS 11.34: a plug-in whose latency changed says so here (UI thread, per the VST3 SDK);
+	//! the host re-reads it and the owning chain re-aligns its paths.
+	tresult PLUGIN_API restartComponent(int32 flags) SMTG_OVERRIDE
+	{
+		if ((flags & kLatencyChanged) != 0 && m_onLatencyChanged != nullptr && *m_onLatencyChanged)
+		{
+			(*m_onLatencyChanged)();
+		}
+		return kResultOk;
+	}
 
 	tresult PLUGIN_API queryInterface(const TUID, void** obj) SMTG_OVERRIDE
 	{
@@ -145,6 +158,7 @@ public:
 private:
 	std::atomic<float>* m_values;
 	const std::vector<std::pair<std::uint32_t, std::size_t>>* m_indexById;
+	const std::function<void()>* m_onLatencyChanged = nullptr;
 	std::atomic<uint32> m_refCount{1};
 };
 
@@ -187,6 +201,8 @@ struct HostedPlugin::Impl
 	IPtr<IAudioProcessor> processor;
 	IPtr<IEditController> controller;
 	IPtr<IComponentHandler> handler;
+	//! Called when the plug-in reports kLatencyChanged (set by the effect that hosts it).
+	std::function<void()> onLatencyChanged;
 	bool singleComponent = false;
 
 	QString className;
@@ -413,7 +429,7 @@ auto HostedPlugin::load(const QString& modulePath, const QString& classId, QStri
 		}
 	}
 
-	d.handler = owned(new Vst3ComponentHandler(d.paramValues.get(), &d.indexById));
+	d.handler = owned(new Vst3ComponentHandler(d.paramValues.get(), &d.indexById, &d.onLatencyChanged));
 	if (d.controller) { d.controller->setComponentHandler(d.handler); }
 
 	return true;
@@ -683,6 +699,17 @@ void HostedPlugin::release()
 auto HostedPlugin::isPrepared() const -> bool
 {
 	return m_impl->prepared;
+}
+
+auto HostedPlugin::latency() const -> std::uint32_t
+{
+	const auto& d = *m_impl;
+	return d.prepared && d.processor ? d.processor->getLatencySamples() : 0;
+}
+
+void HostedPlugin::setLatencyChangedCallback(std::function<void()> callback)
+{
+	m_impl->onLatencyChanged = std::move(callback);
 }
 
 auto HostedPlugin::preparedSampleRate() const -> double

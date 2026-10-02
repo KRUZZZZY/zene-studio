@@ -88,7 +88,9 @@ SET(ZENE_LUA_API_VERSION_MAJOR "0")
 # zene.apiSurface(). Policy section 2: an addition bumps MINOR, so a script
 # that declares `--! zene-api 0.2` cannot be run by a build that predates them
 # (the gate refuses minor > build minor) while every 0.1 script keeps running.
-SET(ZENE_LUA_API_VERSION_MINOR "2")
+# 0.3 (0.5.0, the scripting spine): zene.command(id, args) and zene.commands() - every
+# registered control command, through the same registry the socket and MCP use.
+SET(ZENE_LUA_API_VERSION_MINOR "3")
 SET(ZENE_LUA_API_VERSION_PATCH "0")
 
 # Override version information for non-base builds

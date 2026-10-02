@@ -24,6 +24,8 @@
 
 #include "Vst3Effect.h"
 
+#include "EffectChain.h"
+
 #include <algorithm>
 
 #include <QDebug>
@@ -84,6 +86,8 @@ Vst3Effect::Vst3Effect(Model* parent, const Descriptor::SubPluginFeatures::Key* 
 		{
 			m_plugin.prepare(engine->outputSampleRate(), engine->framesPerPeriod(), &error);
 		}
+		cacheLatency();
+		m_plugin.setLatencyChangedCallback([this] { cacheLatency(); });
 	}
 
 	// The controls must exist even for a failed load: the effect chain and the
@@ -124,6 +128,13 @@ void Vst3Effect::reprepare()
 		}
 	}
 	m_needsReprepare.store(false, std::memory_order_relaxed);
+	cacheLatency();
+}
+
+void Vst3Effect::cacheLatency()
+{
+	m_latencyFrames.store(m_plugin.isPrepared() ? static_cast<int>(m_plugin.latency()) : 0, std::memory_order_relaxed);
+	if (EffectChain* chain = effectChain()) { chain->refreshLatency(); }
 }
 
 auto Vst3Effect::processImpl(PlanarBufferView<const float, DynamicChannelCount> in,

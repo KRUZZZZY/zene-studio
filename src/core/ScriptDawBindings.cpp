@@ -48,6 +48,7 @@
 #include "Engine.h"
 #include "Mixer.h"
 #include "ScriptApiVersion.h"
+#include "ScriptCommandBridge.h"
 #include "ScriptEngine.h"
 // Stack<QString>/Stack<QStringList>. WITHOUT this include every function here
 // that returns a QString instantiates LuaBridge's GENERIC Stack and raises
@@ -248,6 +249,7 @@ LuaMixer& mixerView()
 
 void registerAll(lua_State* L)
 {
+	ScriptCommandBridge::registerAll(L);
 	luabridge::getGlobalNamespace(L)
 		.beginNamespace("zene")
 			.addFunction("mixer", +[]() -> LuaMixer& { return mixerView(); })

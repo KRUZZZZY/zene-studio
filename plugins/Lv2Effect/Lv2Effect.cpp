@@ -24,6 +24,8 @@
 
 #include "Lv2Effect.h"
 
+#include "EffectChain.h"
+
 #include <QDebug>
 
 #include "Lv2SubPluginFeatures.h"
@@ -63,6 +65,22 @@ Lv2Effect::Lv2Effect(Model* parent, const Descriptor::SubPluginFeatures::Key *ke
 	m_controls(this, key->attributes["uri"]),
 	m_tmpOutputSmps(Engine::audioEngine()->framesPerPeriod())
 {
+	m_latencyPoll.setInterval(500);
+	connect(&m_latencyPoll, &QTimer::timeout, this, &Lv2Effect::checkLatency);
+	m_latencyPoll.start();
+}
+
+int Lv2Effect::latencyFrames() const
+{
+	return m_controls.Lv2ControlBase::latencyFrames();
+}
+
+void Lv2Effect::checkLatency()
+{
+	const int frames = latencyFrames();
+	if (frames == m_reportedLatency) { return; }
+	m_reportedLatency = frames;
+	if (EffectChain* chain = effectChain()) { chain->refreshLatency(); }
 }
 
 

@@ -723,7 +723,29 @@ void Lv2Proc::createPort(std::size_t portNum)
 	port->m_port = lilvPort;
 	port->m_plugin = m_plugin;
 
+	// BUGS 11.34: the output control port the plug-in reports its latency on (lv2:reportsLatency,
+	// or the lv2:latency designation), so the effect can hand it to delay compensation.
+	if (meta.m_type == Lv2Ports::Type::Control && meta.m_flow == Lv2Ports::Flow::Output
+		&& (lilv_port_has_property(m_plugin, lilvPort, uri(LV2_CORE__reportsLatency).get())
+			|| isLatencyDesignation(lilvPort)))
+	{
+		m_latencyPort = static_cast<Lv2Ports::Control*>(port);
+	}
+
 	m_ports[portNum].reset(port);
+}
+
+bool Lv2Proc::isLatencyDesignation(const LilvPort* port) const
+{
+	AutoLilvNode designation(lilv_port_get(m_plugin, port, uri(LV2_CORE__designation).get()));
+	return designation && lilv_node_equals(designation.get(), uri(LV2_CORE__latency).get());
+}
+
+int Lv2Proc::latencyFrames() const
+{
+	// Written by the plug-in in run() on the audio thread, read here on the control thread: a
+	// single aligned float, read once; a value one block stale only delays the re-alignment.
+	return m_latencyPort != nullptr ? std::max(0, static_cast<int>(m_latencyPort->m_val)) : 0;
 }
 
 

@@ -545,6 +545,8 @@ set(LMMS_TESTS
 	# The Dummy device keeps real time (it drifted far below it on macOS: sleep overshoot was lost).
 	src/core/DummyPacingTest.cpp
 	src/core/ScriptBindingsTest.cpp
+	# 0.5.0 scripting spine: zene.command reaches every registered command and keeps the sandbox.
+	src/core/ScriptCommandBridgeTest.cpp
 	# Feature row 50 (0.3.0): the Lua API's DAW-control half - the mixer channel
 	# and effect-chain bindings. Drives a REAL mixer channel and the chain the
 	# control surface addresses from Lua, reads the engine back (not the script's

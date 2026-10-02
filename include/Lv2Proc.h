@@ -56,6 +56,7 @@ namespace Lv2Ports
 {
 	struct Audio;
 	struct PortBase;
+	struct Control;
 	struct AtomSeq;
 }
 
@@ -111,6 +112,10 @@ public:
 
 	//! Debug function to print ports to stdout
 	void dumpPorts();
+
+	//! The latency the plug-in reports on its latency output port, in frames; 0 when it has
+	//! none (BUGS 11.34). Control thread.
+	int latencyFrames() const;
 
 	/*
 		utils for the run thread
@@ -185,6 +190,8 @@ private:
 	// quick reference to specific, unique ports
 	StereoPortRef m_inPorts, m_outPorts;
 	Lv2Ports::AtomSeq *m_midiIn = nullptr, *m_midiOut = nullptr;
+	//! the output control port the plug-in reports its latency on, if any
+	Lv2Ports::Control* m_latencyPort = nullptr;
 
 	// MIDI
 	// many things here may be moved into the `Instrument` class
@@ -219,6 +226,7 @@ private:
 
 	void dumpPort(std::size_t num);
 
+	bool isLatencyDesignation(const LilvPort* port) const;
 	static bool portIsSideChain(const LilvPlugin* plugin, const LilvPort *port);
 	static bool portIsOptional(const LilvPlugin* plugin, const LilvPort *port);
 	static AutoLilvNode uri(const char* uriStr);

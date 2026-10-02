@@ -4,10 +4,10 @@
 # which re-derives this file and fails on any drift). Enforcement and policy:
 # docs/LUA-COMPATIBILITY-POLICY.md section 2.
 #
-# The surface is derived from the registration sources: src/core/ScriptBindings.cpp, src/core/ScriptDawBindings.cpp, src/core/ScriptDawEffects.cpp, src/core/ScriptDawEdit.cpp.
+# The surface is derived from the registration sources: src/core/ScriptBindings.cpp, src/core/ScriptDawBindings.cpp, src/core/ScriptDawEffects.cpp, src/core/ScriptDawEdit.cpp, src/core/ScriptCommandBridge.cpp.
 # Entries: '<namespace>: <function>' for a namespace function, 'class <Name>: <method>'
 # for a class member.
-api 0.2
+api 0.3
 class BoolModel: isValid
 class BoolModel: name
 class BoolModel: setValue
@@ -167,6 +167,8 @@ zene: apiSurface
 zene: apiVersion
 zene: apiVersionMajor
 zene: apiVersionMinor
+zene: command
+zene: commands
 zene: instructionBudget
 zene: log
 zene: midiIn

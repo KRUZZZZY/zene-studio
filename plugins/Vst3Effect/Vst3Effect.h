@@ -66,6 +66,10 @@ public:
 	//! change. Not real-time safe, never call from the audio thread.
 	void reprepare();
 
+	//! BUGS 11.34: the latency the plug-in reported after its last successful prepare, so the
+	//! effect chain's delay compensation sees it (read on the control thread).
+	int latencyFrames() const override { return m_latencyFrames.load(std::memory_order_relaxed); }
+
 	//! Set from the audio thread when the plug-in is not prepared, polled by
 	//! Vst3EffectControls on the GUI thread.
 	auto needsReprepare() const -> bool
@@ -84,6 +88,10 @@ private:
 	//! Set from the audio thread when the plug-in is not prepared, polled by
 	//! Vst3EffectControls on the GUI thread which then calls reprepare().
 	std::atomic<bool> m_needsReprepare{false};
+	std::atomic<int> m_latencyFrames{0};
+
+	//! GUI thread: read the plug-in's latency and let the owning chain re-align.
+	void cacheLatency();
 };
 
 } // namespace lmms

@@ -88,6 +88,10 @@ public:
 	bool hasGui() const { return m_hasGUI; }
 	void setHasGui(bool val) { m_hasGUI = val; }
 
+	//! The largest latency any of this plug-in's instances reports on its latency port, in
+	//! frames (BUGS 11.34). Control thread.
+	int latencyFrames() const;
+
 protected:
 	/*
 		ctor/dtor

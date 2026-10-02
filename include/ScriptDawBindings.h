@@ -196,6 +196,7 @@ enum class Op : std::int32_t
 	RemoveEffect,      //!< object0 = EffectChain*, i1 = effect index
 	SetEffectEnabled,  //!< object0 = Effect*, i1 = 0/1
 	SetChannelName,    //!< object0 = MixerChannel*, text = the new name
+	RegistryCall,      //!< object0 = ScriptCommandBridge::Request* (zene.command)
 };
 
 //! Register every DAW-control class on \a L and extend the `zene` namespace.

@@ -196,6 +196,13 @@ void Lv2ControlBase::loadFile(const QString &file)
 
 
 
+int Lv2ControlBase::latencyFrames() const
+{
+	int frames = 0;
+	for (const auto& proc : m_procs) { frames = std::max(frames, proc->latencyFrames()); }
+	return frames;
+}
+
 std::size_t Lv2ControlBase::controlCount() const {
 	std::size_t res = 0;
 	for (const auto& c : m_procs) { res += c->controlCount(); }

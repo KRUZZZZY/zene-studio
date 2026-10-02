@@ -25,7 +25,10 @@
 #ifndef LV2_EFFECT_H
 #define LV2_EFFECT_H
 
+#include <QTimer>
+
 #include "AudioPlugin.h"
+
 #include "Lv2FxControls.h"
 
 namespace lmms
@@ -48,11 +51,21 @@ public:
 	Lv2FxControls* lv2Controls() { return &m_controls; }
 	const Lv2FxControls* lv2Controls() const { return &m_controls; }
 
+	//! BUGS 11.34: the latency the plug-in reports on its latency port (the largest of its
+	//! instances), so the effect chain's delay compensation sees it.
+	int latencyFrames() const override;
+
 private:
+	//! GUI thread: the latency port is written by the plug-in as it runs, so a change is
+	//! noticed by polling and handed to the chain, which re-aligns its paths.
+	void checkLatency();
+
 	ProcessStatus processImpl(InterleavedBufferView<float, 2> inOut) override;
 
 	Lv2FxControls m_controls;
 	std::vector<SampleFrame> m_tmpOutputSmps;
+	QTimer m_latencyPoll;
+	int m_reportedLatency = 0;
 };
 
 

@@ -48,6 +48,7 @@
 #include "EffectChain.h"
 #include "Engine.h"
 #include "Mixer.h"
+#include "ScriptCommandBridge.h"
 #include "ScriptEngine.h"
 
 #include <QString>
@@ -267,6 +268,9 @@ void applyDawEdit(const ScriptCommand& command)
 	case ScriptDawBindings::Op::SetChannelName:
 		applySetChannelName(static_cast<MixerChannel*>(command.object0),
 			QString::fromUtf8(command.text));
+		return;
+	case ScriptDawBindings::Op::RegistryCall:
+		ScriptCommandBridge::applyRequest(static_cast<ScriptCommandBridge::Request*>(command.object0));
 		return;
 	}
 }

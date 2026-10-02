@@ -819,6 +819,7 @@ set(LMMS_SRCS
 	# board card #708: the schedule clock - the Lua engine's idle/transport
 	# hooks (bar, beat, transport edges) and the bounded fire behind livecode.*.
 	core/ScriptClock.cpp
+	core/ScriptCommandBridge.cpp
 	core/ScriptConsole.cpp
 	core/ScriptDawBindings.cpp
 	core/ScriptDawEdit.cpp
