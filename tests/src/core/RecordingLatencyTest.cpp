@@ -43,6 +43,7 @@
 #include "SampleClip.h"
 #include "SampleTrack.h"
 #include "Song.h"
+#include "Timeline.h"
 
 using namespace lmms;
 
@@ -111,7 +112,45 @@ private slots:
 		recordAndCompare(TimePos(0), true);
 	}
 
+	//! Engine audit E3: an armed punch region that starts after the played transient keeps it
+	//! out of the take - the take records silence outside the region - and disarming the region
+	//! records it again.
+	void anArmedPunchRegionKeepsWhatIsOutsideItOutOfTheTake()
+	{
+		Timeline& timeline = Engine::getSong()->getTimeline(Song::PlayMode::Song);
+		timeline.setPunchRange(96, 192);  // half a bar on: the impulse (tick ~11) is before it
+		timeline.setPunchEnabled(true);
+		SampleClip* take = nullptr;
+		recordTake(TimePos(0), &take);
+		timeline.setPunchEnabled(false);
+		QVERIFY(take != nullptr);
+		QCOMPARE(firstTransient(take), -1LL);
+	}
+
 private:
+	void recordTake(const TimePos& at, SampleClip** out)
+	{
+		Song* song = Engine::getSong();
+		const int rate = static_cast<int>(Engine::audioEngine()->outputSampleRate());
+		auto* player = dynamic_cast<SampleTrack*>(Track::create(Track::Type::Sample, song));
+		auto* recorder = dynamic_cast<SampleTrack*>(Track::create(Track::Type::Sample, song));
+		std::vector<SampleFrame> data(static_cast<std::size_t>(rate), SampleFrame(0.0f, 0.0f));
+		data[kImpulseAt] = SampleFrame(1.0f, 1.0f);
+		auto* played = dynamic_cast<SampleClip*>(player->createClip(at));
+		played->setSampleBuffer(std::make_shared<SampleBuffer>(data.data(), data.size(), rate));
+		auto* take = dynamic_cast<SampleClip*>(recorder->createClip(at));
+		take->changeLength(played->length());
+		take->setAutoResize(false);
+		take->setRecord(true);
+		song->playAndRecord();
+		QTest::qWait(700);
+		song->stop();
+		QTRY_VERIFY_WITH_TIMEOUT(!take->isRecord(), 3000);
+		player->setMuted(true);
+		recorder->setMuted(true);
+		*out = take;
+	}
+
 	void recordAndCompare(const TimePos& at, bool fromDeviceStart = false)
 	{
 		Song* song = Engine::getSong();

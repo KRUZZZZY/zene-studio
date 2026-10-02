@@ -90,11 +90,11 @@ public:
 	 *  written with the timeline and survives a save/load - and
 	 *  punchCapturesAt() is the one predicate the capture path consults.
 	 *
-	 *  The audio-side gate itself is NOT wired in 0.3.0: no command reaches
-	 *  the recorder's input path, ALSA has no capture path in this build and
-	 *  nothing exercises it. The range, its arm flag and the predicate are
-	 *  real and drivable (transport.punch_set / punch_clear / punch_get_state);
-	 *  docs/KNOWN-LIMITATIONS.md carries the one-line statement. */
+	 *  0.5.0 (engine audit E3): the gate is wired - SampleRecordHandle records
+	 *  silence for a period outside the armed region (kept in place, so the
+	 *  take stays aligned to its clip) and the piano roll records no note
+	 *  started outside it. Drivable through transport.punch_set / punch_clear /
+	 *  punch_get_state. */
 	auto punchBegin() const -> tick_t { return m_punchBegin; }
 	auto punchEnd() const -> tick_t { return m_punchEnd; }
 	auto punchEnabled() const -> bool { return m_punchEnabled; }

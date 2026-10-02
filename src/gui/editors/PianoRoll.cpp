@@ -25,6 +25,7 @@
  */
 
 #include "PianoRoll.h"
+#include "Timeline.h"
 
 #include <QtMath>  // IWYU pragma: keep
 #include <QApplication>
@@ -4493,6 +4494,13 @@ void PianoRoll::stop()
 
 void PianoRoll::startRecordNote(const Note & n )
 {
+	// Engine audit E3: an armed punch region gates MIDI recording as it gates audio - a note
+	// played outside [punch begin, punch end) is not recorded.
+	const Timeline& punch = Engine::getSong()->getTimeline(Song::PlayMode::Song);
+	if (punch.punchEnabled() && !punch.punchCapturesAt(Engine::getSong()->getPlayPos(Song::PlayMode::Song).getTicks()))
+	{
+		return;
+	}
 	if(hasValidMidiClip())
 	{
 		if( m_recording &&

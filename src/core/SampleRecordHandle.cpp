@@ -26,6 +26,7 @@
 #include "SampleRecordHandle.h"
 
 #include <algorithm>
+#include <array>
 #include "AudioEngine.h"
 #include "Engine.h"
 #include "PatternTrack.h"
@@ -33,6 +34,8 @@
 #include "SampleClip.h"
 #include "SampleTrack.h"
 #include "SampleRecordAccumulator.h"
+#include "Song.h"
+#include "Timeline.h"
 
 
 namespace lmms
@@ -80,6 +83,26 @@ SampleRecordHandle::~SampleRecordHandle()
 
 
 
+namespace
+{
+
+//! What a take records outside an armed punch region: silence the length of the longest period,
+//! made once at start-up, so the audio thread never allocates for it.
+const std::array<SampleFrame, MAXIMUM_BUFFER_SIZE> s_punchSilence{};
+
+//! Engine audit E3: whether the punch region (Timeline::punchCapturesAt, transport.punch_set)
+//! keeps this period out of the take. With no armed region every period is captured.
+bool punchedOut()
+{
+	const Song* song = Engine::getSong();
+	if (song == nullptr) { return false; }
+	const Timeline& timeline = song->getTimeline(Song::PlayMode::Song);
+	return timeline.punchEnabled()
+		&& !timeline.punchCapturesAt(song->getPlayPos(Song::PlayMode::Song).getTicks());
+}
+
+} // namespace
+
 void SampleRecordHandle::play( std::span<SampleFrame> /*buffer*/ )
 {
 	const SampleFrame* recbuf = Engine::audioEngine()->inputBuffer();
@@ -108,6 +131,12 @@ void SampleRecordHandle::play( std::span<SampleFrame> /*buffer*/ )
 	m_compensationFrames -= skipped;
 	recbuf += skipped;
 	frames -= skipped;
+	// Outside an armed punch region the take records silence for the period - kept in place,
+	// so what is captured inside the region stays aligned to the clip (E3).
+	if( punchedOut() && frames <= static_cast<f_cnt_t>( s_punchSilence.size() ) )
+	{
+		recbuf = s_punchSilence.data();
+	}
 	writeBuffer( recbuf, frames );
 	m_framesRecorded += frames;
 
