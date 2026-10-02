@@ -48,6 +48,7 @@
 #include "BounceInPlace.h"
 #include "Clip.h"
 #include "ControlEdit.h"
+#include "ControlBounceSupport.h"
 #include "ControlRegistry.h"
 #include "Engine.h"
 #include "Song.h"
@@ -69,85 +70,6 @@ const QString ClauseFrozenTake = QStringLiteral("ProjectJournal (Track checkpoin
 //! The tick range a mutating verb must be given, or an empty Range with
 //! \a problem filled. `start` and `end` are both required for a region; a
 //! whole-track verb passes neither.
-QString checkRangeArgs(const QJsonObject& args, bool required)
-{
-	const bool hasStart = args.contains(QStringLiteral("start"));
-	const bool hasEnd = args.contains(QStringLiteral("end"));
-	if (hasStart != hasEnd)
-	{
-		return QStringLiteral("'start' and 'end' go together: give both, or neither for the "
-			"whole track");
-	}
-	if (required && !hasStart)
-	{
-		return QStringLiteral("a region needs both 'start' and 'end' (ticks)");
-	}
-	return QString();
-}
-
-QString parseRange(const QJsonObject& args, bool required, BounceInPlace::Range* range)
-{
-	const QString problem = checkRangeArgs(args, required);
-	if (!problem.isEmpty()) { return problem; }
-	if (!args.contains(QStringLiteral("start"))) { return QString(); }
-
-	if (!args.value(QStringLiteral("start")).isDouble()
-		|| !args.value(QStringLiteral("end")).isDouble())
-	{
-		return QStringLiteral("'start' and 'end' are tick positions, in integers");
-	}
-	range->start = static_cast<tick_t>(args.value(QStringLiteral("start")).toDouble());
-	range->end = static_cast<tick_t>(args.value(QStringLiteral("end")).toDouble());
-	if (range->start < 0) { return QStringLiteral("'start' must not be negative"); }
-	if (range->end <= range->start) { return QStringLiteral("'end' must be past 'start'"); }
-	if (range->end > MaxSongLength)
-	{
-		return QStringLiteral("'end' is past the end of the timeline");
-	}
-	return QString();
-}
-
-//! Where a bounce lands when the caller does not say: beside the project, in a
-//! "<project>-bounces" directory, named after the track's stable id and the verb
-//! (and the tick range, for a region), so two bounces never overwrite each
-//! other and a reader can tell what produced the file.
-QString defaultBouncePath(Track* track, const QString& verb, const BounceInPlace::Range& range)
-{
-	const QString project = Engine::getSong()->projectFileName();
-	const QDir base = project.isEmpty() ? QDir(QDir::tempPath()) : QFileInfo(project).dir();
-	const QString name = project.isEmpty()
-		? QStringLiteral("untitled")
-		: QFileInfo(project).completeBaseName();
-	const QDir directory(base.filePath(name + QStringLiteral("-bounces")));
-
-	QString file = QStringLiteral("%1-%2").arg(control::trackIdOf(track), verb);
-	if (!range.coversWholeTrack())
-	{
-		file += QStringLiteral("-%1-%2").arg(range.start).arg(range.end);
-	}
-	return directory.filePath(file + QStringLiteral(".wav"));
-}
-
-QString resolveOutPath(const QJsonObject& args, Track* track, const QString& verb,
-		const BounceInPlace::Range& range)
-{
-	const QString requested = args.value(QStringLiteral("out")).toString();
-	return requested.isEmpty() ? defaultBouncePath(track, verb, range) : requested;
-}
-
-//! The render facts every verb of this file reports.
-QJsonObject renderJson(const BounceInPlace::Result& rendered)
-{
-	QJsonObject result;
-	result.insert(QStringLiteral("path"), rendered.path);
-	result.insert(QStringLiteral("sample_rate"), rendered.sampleRate);
-	result.insert(QStringLiteral("frames"), rendered.frames);
-	result.insert(QStringLiteral("bytes"), rendered.bytes);
-	result.insert(QStringLiteral("sha256"), rendered.sha256);
-	result.insert(QStringLiteral("start_ticks"), static_cast<qint64>(rendered.range.start));
-	result.insert(QStringLiteral("end_ticks"), static_cast<qint64>(rendered.range.end));
-	return result;
-}
 
 //! The take the track carries right now - which is what a caller needs to see
 //! after any freeze verb, and what `track.get_state` reports as well.
@@ -356,7 +278,8 @@ void registerBounceInPlace(ControlRegistry& registry)
 		"its sha256. With 'start' and 'end' (ticks) the file covers that region instead of the "
 		"whole track. The session is NOT modified: the render runs in a child process against a "
 		"serialised copy with every other track muted, so nothing in this instance changes and "
-		"nothing is journalled. There is no interface for this (docs/KNOWN-LIMITATIONS.md).");
+		"nothing is journalled. The track menu's Bounce in place runs it; bounce.land is the verb "
+		"that also puts the render on a new audio track.");
 	cmd.argsSchema = objectSchema({
 		{QStringLiteral("track"), stringProperty()},
 		{QStringLiteral("out"), stringProperty()},

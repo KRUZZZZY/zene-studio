@@ -90,6 +90,11 @@ const ReversibilityRow kRows[] = {
 		"reset on absence by Track::loadTrack",
 		"ProjectJournal (Track checkpoint)",
 		""),
+	R("bounce.land", RC::TrueInverse, true,
+		"it creates an audio track holding the render and mutes the source; nothing else in "
+		"the project changes",
+		"recorded action step (removes the created track, restores the source's mute)",
+		""),
 	R("track.set_mixer_channel", RC::TrueInverse, true,
 		"the track's mixer channel is an IntModel, i.e. a JournallingObject of its own",
 		"ProjectJournal (the track's mixer-channel IntModel checkpoint)",

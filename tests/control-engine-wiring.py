@@ -15,7 +15,9 @@ is wired in:
      back;
   5. `session.set_scene {tempo_override: false}` switches a scene's tempo override off again
      (E37: it used to be one-way);
-  6. the Lua scripting spine: `script.run` with `zene.command(...)` drives the registry and
+  6. `bounce.land` renders a track onto a new audio track and mutes the source; one undo
+     removes it again;
+  7. the Lua scripting spine: `script.run` with `zene.command(...)` drives the registry and
      answers a table; a sandbox-leaving command is refused inside the script.
 
 Usage:  QT_QPA_PLATFORM=offscreen python3 tests/control-engine-wiring.py <zene>
@@ -107,6 +109,23 @@ def check_detected_key_refusal(session, recorder):
                    (refused.get("error") or {}).get("kind") == "not_found", "reply=%r" % refused)
 
 
+def check_bounce_land(session, recorder, devices):
+    track = session.result("track.add", {"type": "instrument", "name": "To bounce"}).get("track")
+    clip = session.result("clip.add", {"track": track, "position": 0}).get("clip")
+    session.result("note.add", {"clip": clip, "key": 60, "position": 0, "length": 96, "velocity": 100})
+    landed = session.call("bounce.land", {"track": track, "start": 0, "end": 192})
+    res = landed.get("result") or {}
+    state = session.result("track.get_state", {"track": track})
+    recorder.check("bounce.land puts the render on a new track and mutes the source",
+                   landed.get("ok") and res.get("landed_track", "").startswith("trk-") and state.get("muted") is True,
+                   "reply=%r state=%r" % (landed, state))
+    session.result("control.undo")
+    after = session.result("track.get_state", {"track": track})
+    gone = session.call("track.get_state", {"track": res.get("landed_track")})
+    recorder.check("one undo removes the landed track and unmutes the source",
+                   after.get("muted") is False and not gone.get("ok"), "after=%r gone=%r" % (after, gone))
+
+
 def check_lua_spine(session, recorder):
     source = ("local r, err = zene.command('track.add', {type = 'instrument', name = 'Lua spine'})\n"
               "print('added ' .. tostring(err == nil) .. ' ' .. string.sub(r.track, 1, 4))\n"
@@ -147,6 +166,7 @@ def main(argv):
         check_track_channel(session, recorder, track)
         check_scene_override(session, recorder)
         check_detected_key_refusal(session, recorder)
+        check_bounce_land(session, recorder, devices)
         check_lua_spine(session, recorder)
     report_results(recorder)
     if recorder.problems:

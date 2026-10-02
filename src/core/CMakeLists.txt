@@ -163,6 +163,8 @@ set(LMMS_SRCS
 	core/ControlCommandsConsolidate.cpp
 	core/ControlCommandsMonitor.cpp
 	core/ControlCommandsPluginEditor.cpp
+	core/ControlBounceSupport.cpp
+	core/ControlCommandsBounceLand.cpp
 	core/ControlCommandsClipEdits.cpp
 	core/ControlCommandsCollectMedia.cpp
 	# clip.trim / clip.slip (0.3.0 verb wave): the clip group's edge-editing verbs.

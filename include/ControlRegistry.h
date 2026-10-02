@@ -419,6 +419,8 @@ LMMS_EXPORT void registerNoteEditCommands(ControlRegistry& registry);
 LMMS_EXPORT void registerTrackChannelCommands(ControlRegistry& registry);
 //! project.collect_media - a project's media copied beside it, references made relative (L01 E28).
 LMMS_EXPORT void registerCollectMediaCommand(ControlRegistry& registry);
+//! bounce.land - a track rendered onto a new audio track, the source muted (L01).
+LMMS_EXPORT void registerBounceLandCommand(ControlRegistry& registry);
 //! render.stems - per-track stem export through the shipped `exportstems` CLI
 //! (docs/STEM-EXPORT.md).
 LMMS_EXPORT void registerRenderStemsCommands(ControlRegistry& registry);

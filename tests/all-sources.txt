@@ -146,6 +146,7 @@ include/ComboBoxModel.h
 include/CommandPalette.h
 include/ConfigManager.h
 include/ControlAutomationSupport.h
+include/ControlBounceSupport.h
 include/ControlBrowserSupport.h
 include/ControlChainPresetSupport.h
 include/ControlChordSupport.h
@@ -1090,6 +1091,7 @@ src/core/Clipboard.cpp
 src/core/ComboBoxModel.cpp
 src/core/ConfigManager.cpp
 src/core/ControlAutomationSupport.cpp
+src/core/ControlBounceSupport.cpp
 src/core/ControlBrowserSupport.cpp
 src/core/ControlChainPresetSupport.cpp
 src/core/ControlChordSupport.cpp
@@ -1098,6 +1100,7 @@ src/core/ControlCommandsArrangementState.cpp
 src/core/ControlCommandsAutomation.cpp
 src/core/ControlCommandsAutomationEdit.cpp
 src/core/ControlCommandsAutomationRamp.cpp
+src/core/ControlCommandsBounceLand.cpp
 src/core/ControlCommandsBrowser.cpp
 src/core/ControlCommandsBrowserTags.cpp
 src/core/ControlCommandsBus.cpp
