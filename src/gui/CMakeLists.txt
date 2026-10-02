@@ -85,6 +85,7 @@ SET(LMMS_SRCS
 	gui/noteeditor/NoteLanes.cpp
 	gui/shell/BrowserPanel.cpp
 	gui/shell/DesignTokens.cpp
+	gui/shell/DeviceCard.cpp
 	gui/shell/DevicePanel.cpp
 	gui/shell/InspectorPanel.cpp
 	gui/shell/ModulatorCard.cpp

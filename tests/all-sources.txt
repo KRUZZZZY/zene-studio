@@ -997,6 +997,8 @@ plugins/Vst3Effect/Vst3EffectControls.cpp
 plugins/Vst3Effect/Vst3EffectControls.h
 plugins/Vst3Effect/Vst3Host.cpp
 plugins/Vst3Effect/Vst3Host.h
+plugins/Vst3Effect/Vst3HostInternals.h
+plugins/Vst3Effect/Vst3HostReports.cpp
 plugins/Vst3Effect/Vst3MidiEvent.cpp
 plugins/Vst3Effect/Vst3MidiEvent.h
 plugins/Vst3Effect/Vst3MidiMapping.cpp
@@ -1672,6 +1674,7 @@ src/gui/noteeditor/NoteGrid.cpp
 src/gui/noteeditor/NoteLanes.cpp
 src/gui/shell/BrowserPanel.cpp
 src/gui/shell/DesignTokens.cpp
+src/gui/shell/DeviceCard.cpp
 src/gui/shell/DevicePanel.cpp
 src/gui/shell/InspectorPanel.cpp
 src/gui/shell/ModulatorCard.cpp

@@ -71,6 +71,7 @@ const std::map<QString, QString>& shellTable()
 	{"new", "file-plus"},
 	{"open", "folder-open"},
 	{"pattern", "grid-3x3"},
+	{"pins", "plug"},
 	{"play", "play"},
 	{"plus", "plus"},
 	{"power", "power"},

@@ -2019,6 +2019,7 @@ if(TARGET lmms_vst3_sdk)
 		src/plugins/Vst3HostTest.cpp
 		${LMMS_VST3_EFFECT_DIR}/Vst3BusMap.cpp
 		${LMMS_VST3_EFFECT_DIR}/Vst3Host.cpp
+		${LMMS_VST3_EFFECT_DIR}/Vst3HostReports.cpp
 		# R4.2: the editor session the host owns, and the R4.1 run loop it answers IRunLoop with
 		${LMMS_VST3_EFFECT_DIR}/Vst3EditorSession.cpp
 		${CMAKE_SOURCE_DIR}/src/core/PluginEditorHost.cpp
@@ -2062,6 +2063,7 @@ if(TARGET lmms_vst3_sdk)
 		src/plugins/Vst3ChunkProbeTest.cpp
 		${LMMS_VST3_EFFECT_DIR}/Vst3BusMap.cpp
 		${LMMS_VST3_EFFECT_DIR}/Vst3Host.cpp
+		${LMMS_VST3_EFFECT_DIR}/Vst3HostReports.cpp
 		# R4.2: the editor session the host owns, and the R4.1 run loop it answers IRunLoop with
 		${LMMS_VST3_EFFECT_DIR}/Vst3EditorSession.cpp
 		${CMAKE_SOURCE_DIR}/src/core/PluginEditorHost.cpp
@@ -2104,6 +2106,7 @@ if(TARGET lmms_vst3_sdk)
 		${LMMS_VST3_EFFECT_DIR}/Vst3EffectControlDialog.cpp
 		${LMMS_VST3_EFFECT_DIR}/Vst3EffectControls.cpp
 		${LMMS_VST3_EFFECT_DIR}/Vst3Host.cpp
+		${LMMS_VST3_EFFECT_DIR}/Vst3HostReports.cpp
 		# R4.2: the editor session the host owns (the R4.1 run loop comes with lmmsobjs)
 		${LMMS_VST3_EFFECT_DIR}/Vst3EditorSession.cpp
 		${LMMS_VST3_EFFECT_DIR}/Vst3MidiEvent.cpp
@@ -2284,6 +2287,7 @@ if(TARGET lmms_vst3_sdk)
 			src/plugins/Vst3InstrumentTest.cpp
 			${CMAKE_SOURCE_DIR}/plugins/Vst3Effect/Vst3BusMap.cpp
 			${CMAKE_SOURCE_DIR}/plugins/Vst3Effect/Vst3Host.cpp
+			${CMAKE_SOURCE_DIR}/plugins/Vst3Effect/Vst3HostReports.cpp
 			${CMAKE_SOURCE_DIR}/plugins/Vst3Effect/Vst3EditorSession.cpp
 			${CMAKE_SOURCE_DIR}/src/core/PluginEditorHost.cpp
 			${CMAKE_SOURCE_DIR}/plugins/Vst3Effect/Vst3MidiEvent.cpp

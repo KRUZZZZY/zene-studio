@@ -78,6 +78,8 @@ public:
 
 	//! Parameters drawn on one card; the rest are in the device's own editor, one click away.
 	static constexpr int MaxParameters = 16;
+	//! The width of one parameter cell (a knob and its caption).
+	static constexpr int CellWidth = 76;
 
 	DeviceCard(const Spec& spec, const QList<AutomatableModel*>& parameters, QWidget* parent = nullptr);
 	~DeviceCard() override;
@@ -93,11 +95,15 @@ private:
 	QWidget* buildParameters(const QList<AutomatableModel*>& parameters);
 	void openEditor();
 	void openEffectDialog();
+	//! Engine audit E18: the device's pin connector - which track channels feed which plug-in
+	//! ports - in its own window (the view existed, nothing opened it).
+	void openPins();
 
 	Spec m_spec;
 	int m_shown = 0;
 	int m_total = 0;
 	QPointer<SubWindow> m_editor;
+	QPointer<SubWindow> m_pins;
 };
 
 //! A modulator, placed right after the device it modulates: its shape, rate (drag or type -

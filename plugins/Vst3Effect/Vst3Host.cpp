@@ -36,7 +36,7 @@
 #include <QDebug>
 
 #include "PluginHostChunking.h"
-#include "Vst3ComponentHandler.h"
+#include "Vst3HostInternals.h"
 #include "Vst3EditorSession.h"
 #include "Vst3MidiEvent.h"
 #include "Vst3MidiMapping.h"
@@ -126,83 +126,6 @@ auto readFromStream(IBStream* stream) -> QByteArray
 
 } // namespace
 
-struct HostedPlugin::Impl
-{
-	VST3::Hosting::Module::Ptr module;
-	std::unique_ptr<PlugProvider> provider;
-	IPtr<IComponent> component;
-	IPtr<IAudioProcessor> processor;
-	IPtr<IEditController> controller;
-	IPtr<IComponentHandler> handler;
-	//! Called when the plug-in reports kLatencyChanged (set by the effect that hosts it).
-	std::function<void()> onLatencyChanged;
-	//! The handler `handler` holds, to clear its callback at teardown (non-owning).
-	Vst3ComponentHandler* handlerImpl = nullptr;
-	bool singleComponent = false;
-
-	QString className;
-	QString vendor;
-	bool instrument = false;
-
-	//! The input event bus this host drives, or -1. Only ever set for an
-	//! instrument: an effect's event buses are left exactly as they were.
-	int32 eventInputBusIndex = -1;
-	//! true when MIDI pushed into midiQueue reaches the plug-in
-	bool midiEnabled = false;
-	//! MIDI path -> audio thread. Bounded, lock free, never grows.
-	MidiQueue midiQueue;
-	//! Events dropped because midiQueue was full
-	std::uint64_t droppedMidi = 0;
-	//! The event list handed to the plug-in as ProcessData::inputEvents.
-	//! Sized once, in its constructor; cleared and refilled per block.
-	EventList inputEvents{kMaxMidiEventsPerBlock};
-	//! The slice of inputEvents that belongs to the chunk being processed, with
-	//! its sample offsets rebased to that chunk's start. Sized once, in its
-	//! constructor: process() never allocates (see runChunk()).
-	EventList chunkEvents{kMaxMidiEventsPerBlock};
-	//! ProcessData::outputEvents (E7), and what the whole request's chunks wrote, as MIDI
-	EventList outputEvents{kMaxMidiEventsPerBlock};
-	std::array<MidiEventIn, kMaxMidiEventsPerBlock> blockOutput{};
-	int blockOutputCount = 0;
-	//! Audio thread scratch for ordering the drained events by sample offset
-	std::vector<MidiEventIn> midiEvents;
-
-	std::vector<Vst3ParamDescriptor> params;
-	std::vector<std::pair<std::uint32_t, std::size_t>> indexById; // sorted by id
-	std::unique_ptr<std::atomic<float>[]> paramValues;
-	std::vector<float> lastParamValues;
-
-	BusLayout layout;
-	std::vector<BusDescriptor> inputBusDescs;
-	std::vector<BusDescriptor> outputBusDescs;
-
-	// audio thread scratch, all allocated in prepare()
-	std::vector<AudioBusBuffers> inputBuses;
-	std::vector<AudioBusBuffers> outputBuses;
-	std::vector<std::vector<float*>> inputChannelPtrs;
-	std::vector<std::vector<float*>> outputChannelPtrs;
-	std::vector<float> silence;
-	std::vector<float> scratchOutput;
-
-	ParameterChanges inputParamChanges;
-	MidiControllerMap controllerMap;  //!< E10, built in prepare()
-	ProcessData processData{};
-	ProcessContext context{};
-
-	//! One chunk of one process() request: the pointer mapping, the parameter
-	//! and event delivery and the processor call for [offset, offset + chunk).
-	//! `chunk` is never larger than maxBlockSize, `lastChunk` is true for the
-	//! chunk the request ends in (see the event boundary rule there). See the
-	//! over-run and tail rule documented on HostedPlugin::process() in
-	//! Vst3Host.h.
-	void runChunk(const float* const* inputs, float* const* outputs, int numInputs,
-		int numOutputs, int offset, int chunk, bool firstChunk, bool lastChunk);
-
-	double sampleRate = 0.0;
-	int maxBlockSize = 0;
-	bool prepared = false;
-	std::int64_t continuousSamples = 0;
-};
 
 HostedPlugin::HostedPlugin() :
 	m_impl{std::make_unique<Impl>()}
@@ -646,33 +569,6 @@ void HostedPlugin::release()
 auto HostedPlugin::isPrepared() const -> bool
 {
 	return m_impl->prepared;
-}
-
-auto HostedPlugin::latency() const -> std::uint32_t
-{
-	const auto& d = *m_impl;
-	return d.prepared && d.processor ? d.processor->getLatencySamples() : 0;
-}
-
-auto HostedPlugin::tail() const -> int
-{
-	const auto& d = *m_impl;
-	if (!d.prepared || !d.processor) { return 0; }
-	const uint32 frames = d.processor->getTailSamples();
-	return frames == kInfiniteTail ? -1 : static_cast<int>(std::min<uint32>(frames, INT32_MAX));
-}
-
-void HostedPlugin::setLatencyChangedCallback(std::function<void()> callback)
-{
-	m_impl->onLatencyChanged = std::move(callback);
-	if (m_impl->handlerImpl != nullptr) { m_impl->handlerImpl->setOnLatencyChanged(m_impl->onLatencyChanged); }
-}
-
-auto HostedPlugin::outputEventCount() const -> int { return m_impl->blockOutputCount; }
-
-auto HostedPlugin::outputEvent(int index) const -> const MidiEventIn&
-{
-	return m_impl->blockOutput[static_cast<std::size_t>(index)];
 }
 
 auto HostedPlugin::preparedSampleRate() const -> double
