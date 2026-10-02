@@ -33,6 +33,7 @@
 #include "GuiApplication.h"
 #include "MainWindow.h"
 #include "MicrotunerConfig.h"
+#include "PianoRoll.h"
 #include "ProjectNotes.h"
 #include "Shell.h"
 
@@ -70,6 +71,9 @@ const EditorEntry kEditors[] = {
 	{"microtuner", nullptr, [](gui::GuiApplication* g) -> QWidget* { return g->getMicrotunerConfig(); },
 		&gui::MainWindow::toggleMicrotunerWin},
 	{"clip_launcher", "launcher", nullptr, nullptr},
+	// 0.5.0: the classic piano roll, a floating window beside the note editor (NOTE-EDITOR.md §7).
+	{"classic_piano_roll", nullptr, [](gui::GuiApplication* g) -> QWidget* { return g->pianoRoll(); },
+		&gui::MainWindow::toggleClassicPianoRollWin},
 	// 0.5.0: every shell panel by its own id.
 	{"arranger", "arranger", nullptr, nullptr},
 	{"launcher", "launcher", nullptr, nullptr},
@@ -150,6 +154,7 @@ ControlResult getState(const QJsonObject&)
 	for (const EditorEntry& entry : kEditors) { editors.append(editorState(g, entry)); }
 	QJsonObject state = g->mainWindow()->shell()->state();
 	state.insert(QStringLiteral("editors"), editors);
+	state.insert(QStringLiteral("note_editor"), noteEditorState());
 	return ControlResult::success(state);
 }
 
@@ -193,7 +198,7 @@ void registerWindowCommands(ControlRegistry& registry)
 			"Scales and keymaps dispatch exactly this. `editor` is a panel id (arranger, launcher, "
 			"detail, devices, inspector, browser, mixer, automation, pattern), a 0.4.0 editor name "
 			"(song = arranger, piano_roll = detail, clip_launcher = launcher), or a floating window "
-			"(controller_rack, project_notes, microtuner). A panel shares its region with others, so "
+			"(controller_rack, project_notes, microtuner, classic_piano_roll). A panel shares its region with others, so "
 			"showing it hides the region's previous panel; a view's main panel cannot be hidden (it "
 			"stays visible); a panel the current view does not offer is revealed by switching to the "
 			"Arrange view. `visible` is the state afterwards, `panel` the panel id (empty for a "
@@ -214,12 +219,13 @@ void registerWindowCommands(ControlRegistry& registry)
 			"one {id, title, region, visible, available, shortcut, mounted} per panel, where region is "
 			"left, center, bottom or right and available says whether the current view offers it; "
 			"`focused`, the panel that last took keyboard focus; `launcher`, whether the clip launcher "
-			"sits beside the view's main panel; and `editors`, one {editor, visible, panel} entry per "
-			"window.toggle name. Read-only. Refused `requires` in a process with no interface.");
+			"sits beside the view's main panel; `editors`, one {editor, visible, panel} entry per "
+			"window.toggle name; and `note_editor`, the note editor's view (window.note_editor_set's reply). Read-only. Refused `requires` in a process with no interface.");
 		cmd.argsSchema = objectSchema({});
 		cmd.resultSchema = objectSchema({{QStringLiteral("editors"), arrayProperty()},
 			{QStringLiteral("view"), stringProperty()}, {QStringLiteral("panels"), arrayProperty()},
-			{QStringLiteral("focused"), stringProperty()}, {QStringLiteral("launcher"), booleanProperty()}});
+			{QStringLiteral("focused"), stringProperty()}, {QStringLiteral("launcher"), booleanProperty()},
+			{QStringLiteral("note_editor"), objectProperty()}});
 		cmd.handler = getState;
 		registry.registerCommand(cmd);
 	}
@@ -239,6 +245,7 @@ void registerWindowCommands(ControlRegistry& registry)
 		cmd.handler = setView;
 		registry.registerCommand(cmd);
 	}
+	registerNoteEditorWindowCommands(registry);
 }
 
 } // namespace lmms

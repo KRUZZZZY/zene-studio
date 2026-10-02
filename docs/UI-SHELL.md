@@ -46,7 +46,7 @@ The panels (`ShellLayout::panels()`):
 | `arranger` | Arranger | centre (Arrange only) | Ctrl+1 | the song editor |
 | `launcher` | Clip Launcher | beside the centre (Arrange, Mix) | Alt+L | `SessionGridView` |
 | `mixer` | Mixer | bottom (centre in Mix) | Alt+M, Ctrl+5 | `MixerView` |
-| `detail` | Note Editor | bottom (centre in Edit) | Alt+N, Ctrl+3 | the piano roll; the reworked note editor replaces it (lane `050/note-editor`) |
+| `detail` | Note Editor | bottom (centre in Edit) | Alt+N, Ctrl+3 | `NoteEditor`, the reworked piano roll (`docs/NOTE-EDITOR.md`); the classic piano roll floats (`classic_piano_roll`) |
 | `devices` | Devices | bottom | Alt+D | a placeholder note until lane `050/ui-panels` |
 | `automation` | Automation | bottom | Alt+A, Ctrl+4 | the automation editor |
 | `pattern` | Pattern Editor | bottom | Alt+P, Ctrl+2 | the pattern editor |
@@ -121,8 +121,6 @@ and it declares that command in its `controlCommand` property for the agent-surf
 ## 6. What is not done yet, stated
 
 - **Inspector and Device panel:** placeholder notes only, until lane `050/ui-panels`.
-- **Note editor:** the old piano roll is mounted in the panel. The rework is lane
-  `050/note-editor`.
 - **Header readouts:** tempo, time and meter are still the song editor's legacy LCD widgets
   in the header strip. They will be replaced with token-painted readouts.
 - **Arranger toolbar:** the arranger keeps its own toolbar, which duplicates Play and Stop.

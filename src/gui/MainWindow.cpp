@@ -79,6 +79,7 @@
 #include "TrackRenderMenu.h"
 #include "ControllerTemplateMenu.h"
 #include "PatternEditor.h"
+#include "NoteEditor.h"
 #include "PianoRoll.h"
 #include "PianoView.h"
 #include "PluginFactory.h"
@@ -232,6 +233,7 @@ MainWindow::~MainWindow()
 	// dependencies are such that the editors must be destroyed BEFORE Song is deletect in Engine::destroy
 	//   see issue #2015 on github
 	delete getGUI()->automationEditor();
+	delete getGUI()->noteEditor();
 	delete getGUI()->pianoRoll();
 	delete getGUI()->songEditor();
 	// destroy engine which will do further cleanups etc.
@@ -588,7 +590,11 @@ void MainWindow::finalize()
 	// region shows it, per view, and the footer and View menu switch it.
 	GuiApplication* gui = getGUI();
 	m_shell->mount(QStringLiteral("arranger"), gui->songEditor());
-	m_shell->mount(QStringLiteral("detail"), gui->pianoRoll());
+	m_shell->mount(QStringLiteral("detail"), gui->noteEditor());
+	// The classic piano roll stays, as a floating window, for what the note editor does not do
+	// yet - MIDI recording, step input, chord stamping (docs/NOTE-EDITOR.md §7).
+	addWindowedWidget(gui->pianoRoll());
+	gui->pianoRoll()->parentWidget()->hide();
 	m_shell->mount(QStringLiteral("automation"), gui->automationEditor());
 	m_shell->mount(QStringLiteral("pattern"), gui->patternEditor());
 	m_shell->mount(QStringLiteral("mixer"), gui->mixerView());
@@ -1193,6 +1199,8 @@ void MainWindow::toggleProjectNotesWin() { toggleWindow( getGUI()->getProjectNot
 
 void MainWindow::togglePianoRollWin() { togglePanel(QStringLiteral("detail")); }
 
+void MainWindow::toggleClassicPianoRollWin() { toggleWindow( getGUI()->pianoRoll() ); }
+
 void MainWindow::toggleAutomationEditorWin() { togglePanel(QStringLiteral("automation")); }
 
 void MainWindow::toggleMixerWin() { togglePanel(QStringLiteral("mixer")); }
@@ -1218,6 +1226,7 @@ const QList<QAction*>& MainWindow::floatingWindowActions()
 		{"controller", tr("Controller Rack"), "controller_rack", keySequence(Qt::CTRL, Qt::Key_6)},
 		{"project_notes", tr("Project Notes"), "project_notes", keySequence(Qt::CTRL, Qt::Key_7)},
 		{"microtuner", tr("Scales and Keymaps"), "microtuner", QKeySequence()},
+		{"piano", tr("Classic Piano Roll"), "classic_piano_roll", QKeySequence()},
 	};
 	for (const Row& row : rows)
 	{

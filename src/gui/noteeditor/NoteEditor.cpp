@@ -1,0 +1,314 @@
+/*
+ * NoteEditor.cpp - the 0.5.0 note editor: the reworked piano roll in the shell's detail panel
+ *
+ * Copyright (c) 2026 Zene Studio contributors
+ *
+ * This file is part of LMMS - https://lmms.io
+ *
+ * This program is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU General Public
+ * License as published by the Free Software Foundation; either
+ * version 2 of the License, or (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public
+ * License along with this program (see COPYING); if not, write to the
+ * Free Software Foundation, Inc., 51 Franklin Street, Fifth Floor,
+ * Boston, MA 02110-1301 USA.
+ *
+ */
+
+#include "NoteEditor.h"
+
+#include <algorithm>
+#include <cstdio>
+
+#include <QAction>
+#include <QActionGroup>
+#include <QComboBox>
+#include <QGridLayout>
+#include <QKeyEvent>
+#include <QLabel>
+#include <QScrollBar>
+#include <QVBoxLayout>
+
+#include "ControlRegistry.h"
+#include "ControlVocabulary.h"
+#include "DesignTokens.h"
+#include "InstrumentTrack.h"
+#include "MidiClip.h"
+#include "Note.h"
+#include "NoteCanvas.h"
+#include "NoteEditorParts.h"
+#include "Piano.h"
+
+namespace lmms::gui
+{
+
+NoteEditor::NoteEditor(QWidget* parent)
+	: QWidget(parent)
+{
+	setObjectName(QStringLiteral("noteEditor"));
+	setFocusPolicy(Qt::StrongFocus);
+	auto* outer = new QVBoxLayout(this);
+	outer->setContentsMargins(0, 0, 0, 0);
+	outer->setSpacing(0);
+	outer->addWidget(buildToolbar());
+	buildBody();
+	connect(this, &NoteEditor::stateChanged, this, [this]() {
+		syncScrollBars();
+		for (QWidget* part : {static_cast<QWidget*>(m_ruler), static_cast<QWidget*>(m_keyboard),
+			static_cast<QWidget*>(m_canvas), static_cast<QWidget*>(m_lanes)})
+		{
+			part->update();
+		}
+	});
+	setClip(nullptr);
+}
+
+NoteEditor::~NoteEditor() = default;
+
+void NoteEditor::buildBody()
+{
+	auto* body = new QWidget(this);
+	auto* grid = new QGridLayout(body);
+	grid->setContentsMargins(0, 0, 0, 0);
+	grid->setSpacing(0);
+	m_ruler = new NoteRuler(this);
+	m_keyboard = new NoteKeyboardView(this);
+	m_canvas = new NoteCanvas(this);
+	m_lanes = new NoteLaneView(this);
+	m_hScroll = new QScrollBar(Qt::Horizontal, this);
+	m_vScroll = new QScrollBar(Qt::Vertical, this);
+	m_hScroll->setAccessibleName(tr("Scroll in time"));
+	m_vScroll->setAccessibleName(tr("Scroll in pitch"));
+	grid->addWidget(m_ruler, 0, 1);
+	grid->addWidget(m_keyboard, 1, 0);
+	grid->addWidget(m_canvas, 1, 1);
+	grid->addWidget(m_vScroll, 1, 2);
+	grid->addWidget(m_laneBox, 2, 0, 1, 1, Qt::AlignTop);
+	grid->addWidget(m_lanes, 2, 1);
+	grid->addWidget(m_hScroll, 3, 1);
+	grid->setColumnStretch(1, 1);
+	grid->setRowStretch(1, 1);
+	m_keyboard->setFixedWidth(m_keyboard->sizeHint().width());
+	m_ruler->setFixedHeight(m_ruler->sizeHint().height());
+	m_lanes->setFixedHeight(m_lanes->sizeHint().height());
+	layout()->addWidget(body);
+	connect(m_hScroll, &QScrollBar::valueChanged, this, [this](int v) {
+		if (m_syncing) { return; }
+		m_state.grid.setScrollTicks(v);
+		emit stateChanged();
+	});
+	connect(m_vScroll, &QScrollBar::valueChanged, this, [this](int v) {
+		if (m_syncing) { return; }
+		m_state.grid.setScrollY(v);
+		emit stateChanged();
+	});
+}
+
+QString NoteEditor::clipId() const { return control::clipIdOf(m_state.clip.data()); }
+
+void NoteEditor::setClip(MidiClip* clip)
+{
+	if (m_state.clip != nullptr) { disconnect(m_state.clip, nullptr, this, nullptr); }
+	m_state.clip = clip;
+	if (clip != nullptr)
+	{
+		// The clip's own change signal - which every note command and every piano-roll edit
+		// emits - repaints the editor, so an agent's edit on the socket shows at once.
+		connect(clip, &MidiClip::dataChanged, this, &NoteEditor::refresh);
+		connect(clip, &QObject::destroyed, this, &NoteEditor::onClipDestroyed);
+	}
+	m_clipLabel->setText(clip != nullptr ? clip->name().isEmpty() ? tr("Untitled clip") : clip->name() : tr("No clip"));
+	readScale();
+	refresh();
+	// Fit the clip once the note area has its real size: a panel that is parked or not yet laid
+	// out has none, and a fit computed then scrolls to the wrong keys.
+	m_pendingFit = clip != nullptr;
+	fitIfPending();
+	emit clipChanged();
+}
+
+void NoteEditor::onClipDestroyed()
+{
+	// The QPointer is already null; drop everything that read the clip.
+	m_state.clip = nullptr;
+	m_clipLabel->setText(tr("No clip"));
+	refresh();
+	emit clipChanged();
+}
+
+void NoteEditor::refresh()
+{
+	std::vector<int> used;
+	if (m_state.clip != nullptr)
+	{
+		for (const Note* note : m_state.clip->notes()) { used.push_back(note->key()); }
+	}
+	m_state.grid.setUsedKeys(used);
+	m_canvas->clipChanged();
+	emit stateChanged();
+}
+
+QJsonObject NoteEditor::run(const QString& command, const QJsonObject& args)
+{
+	const ControlResult result = ControlRegistry::instance()->invoke(command, args);
+	if (!result.ok)
+	{
+		std::fprintf(stderr, "NoteEditor: %s refused: %s\n", command.toUtf8().constData(),
+			result.errorMessage.toUtf8().constData());
+		return {};
+	}
+	return result.result;
+}
+
+void NoteEditor::setTool(NoteTool tool)
+{
+	m_state.tool = tool;
+	const QList<QAction*> actions = m_tools->actions();
+	const int index = static_cast<int>(tool);
+	if (index < actions.size()) { actions.at(index)->setChecked(true); }
+	emit stateChanged();
+}
+
+void NoteEditor::setGridTicks(int ticks)
+{
+	m_state.gridTicks = std::max(1, ticks);
+	const int index = m_gridBox->findData(m_state.gridTicks);
+	if (index >= 0 && index != m_gridBox->currentIndex()) { m_gridBox->setCurrentIndex(index); }
+	emit stateChanged();
+}
+
+void NoteEditor::setFold(NoteFold fold)
+{
+	m_state.grid.setFold(fold);
+	const QList<QAction*> actions = m_folds->actions();
+	for (QAction* a : actions) { a->setChecked(a->data().toInt() == static_cast<int>(fold)); }
+	emit stateChanged();
+}
+
+void NoteEditor::setLane(NoteLane lane)
+{
+	m_state.lane = lane;
+	const int index = m_laneBox->findData(static_cast<int>(lane));
+	if (index >= 0 && index != m_laneBox->currentIndex()) { m_laneBox->setCurrentIndex(index); }
+	emit stateChanged();
+}
+
+void NoteEditor::setGhosts(bool on)
+{
+	m_state.ghosts = on;
+	emit stateChanged();
+}
+
+void NoteEditor::setZoom(double pixelsPerTick)
+{
+	m_pendingFit = false;  // an explicit zoom wins over the deferred fit
+	m_state.grid.setPixelsPerTick(pixelsPerTick);
+	emit stateChanged();
+}
+
+void NoteEditor::zoomToFit()
+{
+	if (m_state.clip == nullptr) { return; }
+	const int length = std::max<int>(DefaultTicksPerBar, m_state.clip->length().getTicks());
+	m_state.grid.setPixelsPerTick(std::max(1, m_canvas->width() - 16) / static_cast<double>(length));
+	m_state.grid.setScrollTicks(0);
+	int lowest = 127;
+	int highest = 0;
+	for (const Note* note : m_state.clip->notes())
+	{
+		lowest = std::min(lowest, note->key());
+		highest = std::max(highest, note->key());
+	}
+	m_state.grid.centreOnKey(lowest <= highest ? (lowest + highest) / 2 : DefaultKey);
+	emit stateChanged();
+}
+
+void NoteEditor::syncScrollBars()
+{
+	m_syncing = true;
+	const NoteGrid& g = m_state.grid;
+	const int clipTicks = m_state.clip != nullptr ? static_cast<int>(m_state.clip->length().getTicks()) : 0;
+	const int pageTicks = static_cast<int>(g.lastVisibleTick() - g.firstVisibleTick());
+	m_hScroll->setRange(0, std::max(clipTicks + DefaultTicksPerBar * 4, static_cast<int>(g.scrollTicks())));
+	m_hScroll->setPageStep(std::max(1, pageTicks));
+	m_hScroll->setValue(static_cast<int>(g.scrollTicks()));
+	m_vScroll->setRange(0, std::max(0, g.contentHeight() - g.viewportHeight()));
+	m_vScroll->setPageStep(std::max(1, g.viewportHeight()));
+	m_vScroll->setValue(g.scrollY());
+	m_syncing = false;
+}
+
+void NoteEditor::auditionPress(int key, int velocity)
+{
+	if (m_state.clip == nullptr || m_state.clip->instrumentTrack() == nullptr || key < 0) { return; }
+	// The piano model's key press is the path a MIDI keyboard takes into the instrument: a
+	// queued, thread-safe note-on, never a direct touch of the audio thread's state.
+	const int midiVelocity = std::clamp(velocity * 127 / 200, 1, 127);
+	m_state.clip->instrumentTrack()->pianoModel()->handleKeyPress(key, midiVelocity);
+	m_auditionKey = key;
+}
+
+void NoteEditor::auditionRelease(int key)
+{
+	if (m_state.clip == nullptr || m_state.clip->instrumentTrack() == nullptr || key < 0) { return; }
+	m_state.clip->instrumentTrack()->pianoModel()->handleKeyRelease(key);
+	if (m_auditionKey == key) { m_auditionKey = -1; }
+}
+
+void NoteEditor::keyPressEvent(QKeyEvent* event)
+{
+	if (event->modifiers() == Qt::NoModifier && event->key() >= Qt::Key_1 && event->key() <= Qt::Key_5)
+	{
+		setTool(static_cast<NoteTool>(event->key() - Qt::Key_1));
+		event->accept();
+		return;
+	}
+	QWidget::keyPressEvent(event);
+}
+
+void NoteEditor::resizeEvent(QResizeEvent* event)
+{
+	QWidget::resizeEvent(event);
+	fitIfPending();
+	emit stateChanged();
+}
+
+void NoteEditor::fitIfPending()
+{
+	if (!m_pendingFit || m_canvas->height() < 60 || m_canvas->width() < 60) { return; }
+	m_pendingFit = false;
+	m_state.grid.setViewport(m_canvas->width(), m_canvas->height());
+	zoomToFit();
+}
+
+QJsonObject NoteEditor::describe() const
+{
+	static const char* const tools[] = {"draw", "select", "slice", "erase", "audition"};
+	static const char* const folds[] = {"none", "scale", "used"};
+	const NoteGrid& g = m_state.grid;
+	return QJsonObject{
+		{QStringLiteral("clip"), clipId()},
+		{QStringLiteral("tool"), QLatin1String(tools[static_cast<int>(m_state.tool)])},
+		{QStringLiteral("grid"), m_state.gridTicks},
+		{QStringLiteral("fold"), QLatin1String(folds[static_cast<int>(g.fold())])},
+		{QStringLiteral("rows"), g.rowCount()},
+		{QStringLiteral("lane"), notelanes::spec(m_state.lane).id},
+		{QStringLiteral("ghosts"), m_state.ghosts},
+		{QStringLiteral("scale_highlight"), m_state.highlightScale},
+		{QStringLiteral("scale"), m_state.scaleName},
+		{QStringLiteral("zoom"), g.pixelsPerTick()},
+		{QStringLiteral("scroll_ticks"), g.scrollTicks()},
+		{QStringLiteral("scroll_y"), g.scrollY()},
+		{QStringLiteral("top_key"), g.keyAtY(0)},
+		{QStringLiteral("visible_notes"), m_canvas->visibleRange().second - m_canvas->visibleRange().first},
+	};
+}
+
+} // namespace lmms::gui

@@ -27,6 +27,22 @@ notes on screen. A successor editor (R8.8) that allows a wider zoom will have to
 at it; this one has none. The test finds the zoom through the toolbar's own combo box (the
 model is private to the editor), so it drives what a user drives.
 
+## The 0.5.0 note editor (R8.8's successor)
+
+The same test now also times `NoteEditor`, the reworked piano roll in the shell's detail
+panel, over the same clips. It does so at its default zoom and at its widest zoom
+(`NoteGrid::minPixelsPerTick`). At the widest zoom the editor puts up to 6 259 of these notes on
+screen at once. That is the case the classic roll's 12.5 % floor could not show, and the case
+the paragraph above asked a successor to be measured at.
+
+On this box the editor draws a default frame in 2.7-3.3 ms (classic: 4.2-4.5 ms). At the widest
+zoom it draws 1 000 on-screen notes in 4.0-4.3 ms (classic, at 12.5 %: 13.1 ms) and 6 259 in
+9.2-9.4 ms. The full table is in `docs/NOTE-EDITOR.md` §6.
+
+The test asserts one comparison, `ne:1000@widest <= classic 1000@12.5%`, because it holds on any
+machine. Everything else goes through the opt-in gate below, with keys `ne:<n>` and
+`ne:<n>@widest`.
+
 ## Engine render (R7.4)
 
 `tests/src/core/EngineRenderBenchmarkTest.cpp` times `AudioEngine::renderNextPeriod()` itself,

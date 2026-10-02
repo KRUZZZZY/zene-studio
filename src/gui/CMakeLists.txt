@@ -46,6 +46,8 @@ SET(LMMS_SRCS
 	# The window.* command group: the editors' windows as registered commands
 	# (include/ControlWindowCommands.h).
 	gui/ControlCommandsWindow.cpp
+	# window.note_editor_set: the note editor's view (docs/NOTE-EDITOR.md).
+	gui/ControlCommandsNoteEditor.cpp
 	# M3.2: the main window's own verbs (fullscreen, dialogs, save as new version).
 	gui/ControlCommandsShell.cpp
 	# M3.4: the command palette (menu actions + argument-free commands, searchable).
@@ -70,6 +72,16 @@ SET(LMMS_SRCS
 	# panel/region/view rules (testable without a display), Shell renders them, ShellChrome
 	# is the header/footer/button, ShellPanel a panel's frame, BrowserPanel the Browser.
 	# It replaced the Focus Desk and the MDI workspace as the main surface.
+	# The 0.5.0 note editor (docs/NOTE-EDITOR.md): NoteGrid and NoteLanes are widget-free (the
+	# geometry and the lane table, NoteGridTest), NoteCanvas paints and edits the notes, the parts
+	# are the key column, ruler and expression lane, NoteEditor the container and its header.
+	gui/noteeditor/NoteCanvas.cpp
+	gui/noteeditor/NoteCanvasInput.cpp
+	gui/noteeditor/NoteEditor.cpp
+	gui/noteeditor/NoteEditorParts.cpp
+	gui/noteeditor/NoteEditorToolbar.cpp
+	gui/noteeditor/NoteGrid.cpp
+	gui/noteeditor/NoteLanes.cpp
 	gui/shell/BrowserPanel.cpp
 	gui/shell/DesignTokens.cpp
 	gui/shell/Shell.cpp

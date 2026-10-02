@@ -112,6 +112,7 @@ void registerControlCommands(ControlRegistry& registry)
 	registerSampleEditCommands(registry);
 	registerNoteCommands(registry);
 	registerNoteProbabilityCommands(registry);
+	registerNoteEditCommands(registry);
 	registerRenderStemsCommands(registry);
 	registerPluginCommands(registry);
 	registerDspCommands(registry);

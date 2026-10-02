@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-10-02T11:27:58Z",
+  "captured_at": "2026-10-02T13:05:44Z",
   "commands": [
     {
       "args_schema": {
@@ -9807,6 +9807,47 @@
           },
           "velocity": {
             "type": "number"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "clip": {
+            "type": "string"
+          },
+          "edits": {
+            "type": "array"
+          }
+        },
+        "required": [
+          "clip",
+          "edits"
+        ],
+        "type": "object"
+      },
+      "description": "Change several notes of one clip as ONE edit and ONE undo step - what the note editor sends for a drag, a multi-note resize or a lane gesture. 'edits' is a list of {note, position?, key?, length?, velocity?, pan?, probability?}: position and length in ticks, key 0..127, velocity 0..200 (the engine's note volume), pan -100..100, probability 0..1; a field left out keeps its value. The whole batch is validated first - one bad entry (an unknown note, a value out of range, an entry naming no field) refuses it and changes nothing. The note ids do not change. Reversible through the ProjectJournal (one MidiClip checkpoint); the inverse is note.edit with the previous values.",
+      "group": "note",
+      "id": "note.edit",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "clip": {
+            "type": "string"
+          },
+          "edited": {
+            "maximum": 1919808,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "notes": {
+            "type": "array"
           }
         },
         "required": [],
@@ -20997,7 +21038,7 @@
         "required": [],
         "type": "object"
       },
-      "description": "The shell's layout: `view` (arrange, mix or edit); `panels`, one {id, title, region, visible, available, shortcut, mounted} per panel, where region is left, center, bottom or right and available says whether the current view offers it; `focused`, the panel that last took keyboard focus; `launcher`, whether the clip launcher sits beside the view's main panel; and `editors`, one {editor, visible, panel} entry per window.toggle name. Read-only. Refused `requires` in a process with no interface.",
+      "description": "The shell's layout: `view` (arrange, mix or edit); `panels`, one {id, title, region, visible, available, shortcut, mounted} per panel, where region is left, center, bottom or right and available says whether the current view offers it; `focused`, the panel that last took keyboard focus; `launcher`, whether the clip launcher sits beside the view's main panel; `editors`, one {editor, visible, panel} entry per window.toggle name; and `note_editor`, the note editor's view (window.note_editor_set's reply). Read-only. Refused `requires` in a process with no interface.",
       "group": "window",
       "id": "window.get_state",
       "mutating": false,
@@ -21013,6 +21054,9 @@
           },
           "launcher": {
             "type": "boolean"
+          },
+          "note_editor": {
+            "type": "object"
           },
           "panels": {
             "type": "array"
@@ -21045,6 +21089,115 @@
           },
           "shown": {
             "type": "boolean"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "clip": {
+            "type": "string"
+          },
+          "fold": {
+            "enum": [
+              "none",
+              "scale",
+              "used"
+            ],
+            "type": "string"
+          },
+          "ghosts": {
+            "type": "boolean"
+          },
+          "grid": {
+            "maximum": 768,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "lane": {
+            "enum": [
+              "velocity",
+              "pan",
+              "chance",
+              "timbre",
+              "pressure",
+              "pitch"
+            ],
+            "type": "string"
+          },
+          "reveal": {
+            "type": "boolean"
+          },
+          "tool": {
+            "enum": [
+              "draw",
+              "select",
+              "slice",
+              "erase",
+              "audition"
+            ],
+            "type": "string"
+          },
+          "zoom": {
+            "type": "number"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "description": "Drive the note editor's VIEW - what the editor's header and keys set - and answer its state (the same object window.get_state reports as `note_editor`). Every field is optional: `clip` opens that MIDI clip in the editor (what double-clicking it does); `tool` is draw, select, slice, erase or audition; `grid` the snap in ticks (1 = off); `fold` none, scale or used; `lane` the expression lane (velocity, pan, chance, timbre, pressure, pitch); `ghosts` shows the track's other clips; `zoom` is pixels per tick; `reveal` (default true) brings the note editor panel into view. Interface state, not project state: nothing is journalled - the notes themselves are edited through note.*. Refused `requires` in a process with no interface.",
+      "group": "window",
+      "id": "window.note_editor_set",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "clip": {
+            "type": "string"
+          },
+          "fold": {
+            "type": "string"
+          },
+          "ghosts": {
+            "type": "boolean"
+          },
+          "grid": {
+            "maximum": 768,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "lane": {
+            "type": "string"
+          },
+          "rows": {
+            "maximum": 128,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "scale": {
+            "type": "string"
+          },
+          "scale_highlight": {
+            "type": "boolean"
+          },
+          "scroll_ticks": {
+            "type": "number"
+          },
+          "tool": {
+            "type": "string"
+          },
+          "visible_notes": {
+            "maximum": 1919808,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "zoom": {
+            "type": "number"
           }
         },
         "required": [],
@@ -21249,6 +21402,7 @@
               "project_notes",
               "microtuner",
               "clip_launcher",
+              "classic_piano_roll",
               "arranger",
               "launcher",
               "detail",
@@ -21264,7 +21418,7 @@
         ],
         "type": "object"
       },
-      "description": "Show or hide one shell panel or floating window - the View menu, the footer's panel buttons, Alt+I/B/D/N/M/A/P/L, the MDI-era Ctrl+1..7 and Edit > Scales and keymaps dispatch exactly this. `editor` is a panel id (arranger, launcher, detail, devices, inspector, browser, mixer, automation, pattern), a 0.4.0 editor name (song = arranger, piano_roll = detail, clip_launcher = launcher), or a floating window (controller_rack, project_notes, microtuner). A panel shares its region with others, so showing it hides the region's previous panel; a view's main panel cannot be hidden (it stays visible); a panel the current view does not offer is revealed by switching to the Arrange view. `visible` is the state afterwards, `panel` the panel id (empty for a window), `view` the view afterwards. Interface state, not project state: nothing is journalled. Refused `requires` in a process with no interface.",
+      "description": "Show or hide one shell panel or floating window - the View menu, the footer's panel buttons, Alt+I/B/D/N/M/A/P/L, the MDI-era Ctrl+1..7 and Edit > Scales and keymaps dispatch exactly this. `editor` is a panel id (arranger, launcher, detail, devices, inspector, browser, mixer, automation, pattern), a 0.4.0 editor name (song = arranger, piano_roll = detail, clip_launcher = launcher), or a floating window (controller_rack, project_notes, microtuner, classic_piano_roll). A panel shares its region with others, so showing it hides the region's previous panel; a view's main panel cannot be hidden (it stays visible); a panel the current view does not offer is revealed by switching to the Arrange view. `visible` is the state afterwards, `panel` the panel id (empty for a window), `view` the view afterwards. Interface state, not project state: nothing is journalled. Refused `requires` in a process with no interface.",
       "group": "window",
       "id": "window.toggle",
       "mutating": false,
@@ -21316,7 +21470,7 @@
       }
     }
   ],
-  "count": 392,
+  "count": 394,
   "instance": {
     "binary": null,
     "binary_bytes": null,
@@ -21324,15 +21478,15 @@
     "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-survey/tools/zene-pa-agentctl",
     "lane_head": null,
     "proto": 1,
-    "source_socket": "/tmp/zctl-run-xa3lyiui/zene.sock",
-    "version": "0.4.0-alpha"
+    "source_socket": "/tmp/zctl-run-ekrepv8e/zene.sock",
+    "version": "0.4.0-alpha.2+ede3407"
   },
   "kind": "zene-control-command-list",
   "proto": 1,
   "schema": 1,
   "surface": {
     "group_count": 58,
-    "id_count": 392,
-    "ids_sha256": "aacb6c695367d6f823142d839f2f113eaac37713355ac46091c023e1682366ea"
+    "id_count": 394,
+    "ids_sha256": "ebd1f9d36bb6d1aaaccf1c820a463f8a0baa96768738e7785bd070fbb3c0ebcf"
   }
 }

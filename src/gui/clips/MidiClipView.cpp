@@ -38,6 +38,7 @@
 #include "DeprecationHelper.h"
 #include "GuiApplication.h"
 #include "MainWindow.h"
+#include "NoteEditor.h"
 #include "InstrumentTrackView.h"
 #include "MidiClip.h"
 #include "PianoRoll.h"
@@ -94,6 +95,9 @@ void MidiClipView::openInPianoRoll()
 {
 	auto pRoll = getGUI()->pianoRoll();
 	pRoll->setCurrentMidiClip(m_clip);
+	// The note editor is the detail panel's editor; the classic piano roll keeps the clip too,
+	// for recording and step input (docs/NOTE-EDITOR.md §7).
+	if (getGUI()->noteEditor() != nullptr) { getGUI()->noteEditor()->setClip(m_clip); }
 	getGUI()->mainWindow()->revealPanel(QStringLiteral("detail"));
 }
 

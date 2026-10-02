@@ -138,11 +138,20 @@ std::vector<ContrastPair> contrastPairs()
 
 QColor velocityColor(int velocity)
 {
-	static const QColor quiet(0x2b, 0x4f, 0xa8);
-	static const QColor middle(0x2f, 0xc9, 0xb5);
-	static const QColor loud(0xf5, 0xd5, 0x47);
-	const double t = std::clamp(velocity, 0, 200) / 200.0;
-	return t < 0.5 ? mix(quiet, middle, t * 2.0) : mix(middle, loud, (t - 0.5) * 2.0);
+	// The ramp is read once per note per frame, so it is computed once: a 201-entry table.
+	static const std::array<QColor, 201> ramp = [] {
+		const QColor quiet(0x2b, 0x4f, 0xa8);
+		const QColor middle(0x2f, 0xc9, 0xb5);
+		const QColor loud(0xf5, 0xd5, 0x47);
+		std::array<QColor, 201> table;
+		for (int v = 0; v <= 200; ++v)
+		{
+			const double t = v / 200.0;
+			table[static_cast<std::size_t>(v)] = t < 0.5 ? mix(quiet, middle, t * 2.0) : mix(middle, loud, (t - 0.5) * 2.0);
+		}
+		return table;
+	}();
+	return ramp[static_cast<std::size_t>(std::clamp(velocity, 0, 200))];
 }
 
 int trackColorCount() { return 16; }
