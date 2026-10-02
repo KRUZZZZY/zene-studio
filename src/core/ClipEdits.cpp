@@ -21,6 +21,8 @@
  * Boston, MA 02110-1301 USA.
  */
 
+#include <QStringList>
+
 #include "ClipEdits.h"
 
 #include <algorithm>
@@ -87,6 +89,48 @@ float gainLinearToDb(float linear)
 {
 	if (!(linear > 0.0f)) { return -1000.0f; } // -inf on the wire is not JSON
 	return static_cast<float>(20.0 * std::log10(static_cast<double>(linear)));
+}
+
+float envelopeGainAt(const ClipEdits& edits, double tick)
+{
+	const int count = edits.envelopeCount;
+	if (count <= 0) { return 1.0f; }
+	const auto& points = edits.envelope;
+	if (tick <= points[0].tick) { return gainDbToLinear(points[0].gainDb); }
+	for (int i = 1; i < count; ++i)
+	{
+		if (tick > points[i].tick) { continue; }
+		const GainPoint& a = points[i - 1];
+		const GainPoint& b = points[i];
+		const double span = std::max(1, b.tick - a.tick);
+		const double t = (tick - a.tick) / span;
+		return gainDbToLinear(static_cast<float>(a.gainDb + (b.gainDb - a.gainDb) * t));
+	}
+	return gainDbToLinear(points[count - 1].gainDb);
+}
+
+QString envelopeToText(const ClipEdits& edits)
+{
+	QStringList parts;
+	for (int i = 0; i < edits.envelopeCount; ++i)
+	{
+		parts.append(QStringLiteral("%1:%2").arg(edits.envelope[i].tick).arg(static_cast<double>(edits.envelope[i].gainDb), 0, 'f', 3));
+	}
+	return parts.join(QLatin1Char(';'));
+}
+
+void envelopeFromText(const QString& text, ClipEdits* edits)
+{
+	edits->envelopeCount = 0;
+	for (const QString& part : text.split(QLatin1Char(';'), Qt::SkipEmptyParts))
+	{
+		if (edits->envelopeCount >= MaxGainPoints) { break; }
+		const int colon = part.indexOf(QLatin1Char(':'));
+		if (colon <= 0) { continue; }
+		edits->envelope[edits->envelopeCount++] = {std::max(0, part.left(colon).toInt()), part.mid(colon + 1).toFloat()};
+	}
+	std::sort(edits->envelope.begin(), edits->envelope.begin() + edits->envelopeCount,
+		[](const GainPoint& a, const GainPoint& b) { return a.tick < b.tick; });
 }
 
 float clipFadeGainAt(f_cnt_t frame, f_cnt_t clipFrames,

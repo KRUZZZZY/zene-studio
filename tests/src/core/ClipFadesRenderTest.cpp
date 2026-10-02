@@ -351,6 +351,29 @@ private slots:
 		}
 	}
 
+	//! ED-042 (0.5.0): the gain envelope - 0 dB at the clip's start falling to -6 dB at its middle,
+	//! then held - renders unity at the start, about -3 dB at a quarter, and -6 dB past the middle.
+	void aGainEnvelopeShapesTheClipAtBlockRate()
+	{
+		const int ticks = clipTicksForOneSecond();
+		buildSong(ticks);
+		ClipEdits edits = ClipEdits{};
+		edits.envelope[0] = {0, 0.f};
+		edits.envelope[1] = {ticks / 2, -6.f};
+		edits.envelopeCount = 2;
+		clip()->setClipEdits(edits);
+
+		const QByteArray wav = render();
+		const int audio = clipAudioFrames(ticks);
+		const auto near = [&wav](int at, float expected) {
+			const float measured = wavLeft(wav, at);
+			return std::fabs(measured - expected) < 0.01f;
+		};
+		QVERIFY2(near(64, kLevel), "the envelope's start is not unity");
+		QVERIFY2(near(audio / 4, kLevel * 0.7079458f), "a quarter in is not -3 dB");   // 10^(-3/20)
+		QVERIFY2(near(audio - 512, kLevel * 0.5011872f), "past the middle is not held at -6 dB");
+	}
+
 	//! I8: the envelope allocates nothing per period, with both ramps and a gain
 	//! live. The handle is constructed OUTSIDE the probe - what allocates on this
 	//! path is the handle, not the render loop (the boundary

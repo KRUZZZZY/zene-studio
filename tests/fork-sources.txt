@@ -859,6 +859,7 @@ src/core/ControlCommandsChordEdit.cpp
 src/core/ControlCommandsChordWrite.cpp
 src/core/ControlCommandsClip.cpp
 src/core/ControlCommandsClipEdits.cpp
+src/core/ControlCommandsClipEnvelope.cpp
 src/core/ControlCommandsClipLink.cpp
 src/core/ControlCommandsClipLinkState.cpp
 src/core/ControlCommandsClipTrim.cpp
@@ -1385,6 +1386,7 @@ tests/session_api_proof_rows.py
 tests/src/core/AudioResamplerRatioTest.cpp
 tests/src/core/BrowserCatalogTest.cpp
 tests/src/core/BrowserTestSupport.h
+tests/src/core/ClipGainEnvelopeTest.cpp
 tests/src/core/ClipSerialisationTest.cpp
 tests/src/core/ControlAutomationScriptTest.cpp
 tests/src/core/ControlBrowserCommandsTest.cpp

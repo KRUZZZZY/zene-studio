@@ -191,6 +191,7 @@ void SamplePlayHandle::snapshotClipEdits(const SampleClip* clip, const SampleWin
 		return static_cast<f_cnt_t>(std::llround(static_cast<double>(ticks) * outputFramesPerTick));
 	};
 	m_clipFrames = framesFor(clipTicks);
+	m_outputFramesPerTick = outputFramesPerTick;
 	m_fadeInFrames = framesFor(m_edits.fadeInTicks);
 	m_fadeOutFrames = framesFor(m_edits.fadeOutTicks);
 
@@ -290,11 +291,17 @@ void SamplePlayHandle::applyComp(SampleFrame* buffer, f_cnt_t frames) const
 void SamplePlayHandle::applyClipEdits(SampleFrame* buffer, f_cnt_t frames) const
 {
 	const f_cnt_t base = m_envelopeStart + m_frame;
+	// ED-042: the gain envelope at block rate - its value at this block's first and last frame,
+	// ramped linearly across it (two lookups per block, never one per frame).
+	const double perTick = std::max(1e-9, m_outputFramesPerTick);
+	const float from = envelopeGainAt(m_edits, base / perTick);
+	const float to = envelopeGainAt(m_edits, (base + frames) / perTick);
+	const float step = frames > 0 ? (to - from) / static_cast<float>(frames) : 0.f;
 	for (f_cnt_t f = 0; f < frames; ++f)
 	{
 		const float envelope = clipFadeGainAt(base + f, m_clipFrames,
 			m_fadeInFrames, m_fadeOutFrames, m_edits.fadeInShape, m_edits.fadeOutShape);
-		const float gain = m_edits.gain * envelope;
+		const float gain = m_edits.gain * envelope * (from + step * static_cast<float>(f));
 		buffer[f][0] *= gain;
 		buffer[f][1] *= gain;
 	}

@@ -24,6 +24,8 @@
 #ifndef LMMS_CLIP_EDITS_H
 #define LMMS_CLIP_EDITS_H
 
+#include <algorithm>
+#include <array>
 #include <cmath>
 
 #include <QString>
@@ -79,6 +81,19 @@ LMMS_EXPORT float gainLinearToDb(float linear);
  *  Applying them to audio is the play handle's job (`SamplePlayHandle`), and
  *  this release applies them to sample clips only - see
  *  docs/KNOWN-LIMITATIONS.md. */
+//! ED-042 (0.5.0): one breakpoint of a clip's gain envelope - a tick from the clip's start and a
+//! gain in dB. Between two points the gain moves linearly in dB; before the first and after the
+//! last it holds.
+struct GainPoint
+{
+	int tick = 0;
+	float gainDb = 0.f;
+	bool operator==(const GainPoint& other) const { return tick == other.tick && gainDb == other.gainDb; }
+};
+
+//! The envelope's bound: a fixed array, so copying ClipEdits onto the audio path never allocates.
+constexpr int MaxGainPoints = 32;
+
 struct ClipEdits
 {
 	float gain = 1.0f;      //!< linear amplitude multiplier; persisted as dB
@@ -86,20 +101,34 @@ struct ClipEdits
 	int fadeOutTicks = 0;   //!< the ramp down to the clip's last tick
 	FadeShape fadeInShape = FadeShape::Linear;
 	FadeShape fadeOutShape = FadeShape::Linear;
+	//! ED-042: the gain envelope, `envelopeCount` points in tick order.
+	std::array<GainPoint, MaxGainPoints> envelope{};
+	int envelopeCount = 0;
 
 	//! True when this clip contributes nothing to the audio it would not
 	//! contribute without any edits at all.
-	bool isNeutral() const { return gain == 1.0f && !hasFade(); }
+	bool isNeutral() const { return gain == 1.0f && !hasFade() && !hasEnvelope(); }
 	bool hasFade() const { return fadeInTicks > 0 || fadeOutTicks > 0; }
+	bool hasEnvelope() const { return envelopeCount > 0; }
 
 	bool operator==(const ClipEdits& other) const
 	{
 		return gain == other.gain
 			&& fadeInTicks == other.fadeInTicks && fadeOutTicks == other.fadeOutTicks
-			&& fadeInShape == other.fadeInShape && fadeOutShape == other.fadeOutShape;
+			&& fadeInShape == other.fadeInShape && fadeOutShape == other.fadeOutShape
+			&& envelopeCount == other.envelopeCount
+			&& std::equal(envelope.begin(), envelope.begin() + envelopeCount, other.envelope.begin());
 	}
 	bool operator!=(const ClipEdits& other) const { return !(*this == other); }
 };
+
+/*! ED-042: the gain envelope's LINEAR gain at @a tick (from the clip's start); 1.0 with no
+ *  envelope. Realtime-safe: a bounded scan of a fixed array, no allocation. */
+LMMS_EXPORT float envelopeGainAt(const ClipEdits& edits, double tick);
+
+//! The envelope as the project file stores it ("tick:dB;tick:dB"), and back (bounded, sorted).
+LMMS_EXPORT QString envelopeToText(const ClipEdits& edits);
+LMMS_EXPORT void envelopeFromText(const QString& text, ClipEdits* edits);
 
 /*! The fade envelope at one output frame of a clip's rendered span.
  *

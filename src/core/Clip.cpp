@@ -443,6 +443,11 @@ void Clip::saveClipEdits(QDomElement& element) const
 	{
 		element.setAttribute("fadeoutshape", static_cast<int>(m_edits.fadeOutShape));
 	}
+	// ED-042: the gain envelope, written only when there is one (I9, additive).
+	if (m_edits.hasEnvelope())
+	{
+		element.setAttribute("gainenv", envelopeToText(m_edits));
+	}
 }
 
 
@@ -576,6 +581,7 @@ void Clip::loadClipEdits(const QDomElement& element)
 	};
 	edits.fadeInShape = shapeFromIndex(element.attribute("fadeinshape", "0").toInt());
 	edits.fadeOutShape = shapeFromIndex(element.attribute("fadeoutshape", "0").toInt());
+	envelopeFromText(element.attribute("gainenv"), &edits);
 
 	m_edits = edits;
 	// Reset-on-absence for `lane` and `link`: both defaults live once in

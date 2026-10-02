@@ -907,6 +907,7 @@ set(LMMS_SRCS
 	core/McuProtocol.cpp
 	core/McuSurface.cpp
 	core/ArrangementEdits.cpp
+	core/ControlCommandsClipEnvelope.cpp
 	core/ControlCommandsMarkers.cpp
 	core/ControlCommandsRange.cpp
 	core/ProjectMarkers.cpp

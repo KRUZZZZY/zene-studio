@@ -66,6 +66,10 @@ const ReversibilityRow kArrangerRows[] = {
 		"Track checkpoints: every covered track was checkpointed before the edit, as one step", ""),
 	R("range.duplicate", RC::TrueInverse, true, "it creates clips after the range on the covered tracks",
 		"Track checkpoints: every covered track was checkpointed before the edit, as one step", ""),
+	R("clip.gain_envelope_get", RC::NotMutating, false, "it reads a clip's gain envelope. Nothing is written", "no write", ""),
+	R("clip.gain_envelope_set", RC::TrueInverse, true,
+		"the envelope is part of the clip's edits, which Clip::saveClipEdits writes onto the clip's element",
+		"Clip journal checkpoint: undo restores the clip's previous edits", ""),
 };
 
 #undef R

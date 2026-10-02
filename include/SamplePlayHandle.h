@@ -139,6 +139,7 @@ private:
 	//! `m_frame`, because a pass that begins in the middle of a clip has to
 	//! continue the ramp it interrupted rather than restart it.
 	f_cnt_t m_clipFrames = 0;
+	double m_outputFramesPerTick = 1.0;  //!< ED-042: frames per tick, for the gain envelope
 	f_cnt_t m_envelopeStart = 0;
 	//! The two fade lengths in output frames, derived once from their tick
 	//! lengths so the audio path never divides by a clip length.

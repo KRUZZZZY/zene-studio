@@ -24,6 +24,8 @@
  
 #include "SampleClipView.h"
 
+#include "ClipEdits.h"
+
 #include <QApplication>
 #include <QMenu>
 #include <QPainter>
@@ -49,6 +51,34 @@
 
 namespace lmms::gui
 {
+
+namespace
+{
+
+/*! ED-042: the clip's gain envelope as a line over the waveform, dB mapped -60..+24 from the
+ *  bottom to the top, held flat before the first point and after the last. */
+void paintGainEnvelope(QPainter& p, const ClipEdits& edits, float pixelsPerTick, int xOrigin, int width,
+	int top, int height, const QColor& colour)
+{
+	if (!edits.hasEnvelope()) { return; }
+	const auto yOf = [top, height](float db) { return top + static_cast<int>((1.f - (db + 60.f) / 84.f) * height); };
+	const auto xOf = [xOrigin, pixelsPerTick](int tick) { return xOrigin + static_cast<int>(tick * pixelsPerTick); };
+	QPolygon line;
+	line << QPoint(xOrigin, yOf(edits.envelope[0].gainDb));
+	for (int i = 0; i < edits.envelopeCount; ++i) { line << QPoint(xOf(edits.envelope[i].tick), yOf(edits.envelope[i].gainDb)); }
+	line << QPoint(xOrigin + width, yOf(edits.envelope[edits.envelopeCount - 1].gainDb));
+	p.setRenderHint(QPainter::Antialiasing, true);
+	p.setPen(QPen(colour, 1.5));
+	p.drawPolyline(line);
+	p.setBrush(colour);
+	for (int i = 0; i < edits.envelopeCount; ++i)
+	{
+		p.drawEllipse(QPoint(xOf(edits.envelope[i].tick), yOf(edits.envelope[i].gainDb)), 2, 2);
+	}
+	p.setBrush(Qt::NoBrush);
+}
+
+} // namespace
 
 
 SampleClipView::SampleClipView( SampleClip * _clip, TrackView * _tv ) :
@@ -329,6 +359,8 @@ void SampleClipView::paintEvent( QPaintEvent * pe )
 
 		m_sampleThumbnail.visualize(param, p);
 	}
+	paintGainEnvelope(p, m_clip->clipEdits(), ppb / ticksPerBar, -m_paintPixmapXPosition, rect().width(), spacing,
+		height() - 2 * spacing, textColor());
 
 	QString name = PathUtil::cleanName(m_clip->m_sample.sampleFile());
 	paintTextLabel(name, p);
