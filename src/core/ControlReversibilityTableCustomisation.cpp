@@ -80,6 +80,15 @@ const ReversibilityRow kCustomisationRows[] = {
 		"nothing of its own to reverse: undo each step, as its own record says", ""),
 	R("session.pattern_list", RC::NotMutating, false, "it reads the patterns' numbers and names. Nothing is written",
 		"no write", ""),
+	R("surface.mcu_ports", RC::NotMutating, false, "it reads the MIDI client's ports. Nothing is written", "no write", ""),
+	R("surface.mcu_connect", RC::NotMutating, false,
+		"it connects a control surface: device state, not project state. What the surface then does records as the "
+		"commands it runs", "no write to the project (surface.mcu_disconnect)", ""),
+	R("surface.mcu_disconnect", RC::NotMutating, false, "it disconnects the control surface: device state",
+		"no write to the project (surface.mcu_connect)", ""),
+	R("surface.mcu_state", RC::NotMutating, false, "it reads the surface's state. Nothing is written", "no write", ""),
+	R("surface.mcu_bank", RC::NotMutating, false, "it chooses which tracks the surface's strips show: device state",
+		"no write to the project (set the previous bank)", ""),
 	R("arrangement.zoom", RC::NotMutating, false,
 		"it zooms and scrolls the arranger. Interface state (the zoom is kept in the ui/songeditorzoom setting): "
 		"no project data is written", "no write to the project (arrangement.zoom_back restores)", ""),

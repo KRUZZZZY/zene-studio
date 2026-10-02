@@ -26,6 +26,7 @@
 #include "Engine.h"
 #include "AudioEngine.h"
 #include "ConfigManager.h"
+#include "McuSurface.h"
 #include "Mixer.h"
 #include "Ladspa2LMMS.h"
 #include "Lv2Manager.h"
@@ -94,6 +95,9 @@ void Engine::init( bool renderOnly )
 
 void Engine::destroy()
 {
+	// 0.5.0 WF-126: a connected control surface owns a MIDI port on the audio engine's client;
+	// it goes first, while that client still exists.
+	McuSurface::disconnect();
 	s_projectJournal->stopAllJournalling();
 	s_audioEngine->stopProcessing();
 

@@ -245,6 +245,11 @@ void populateCustomise(QMenu* menu)
 	}
 	apply->setEnabled(!names.isEmpty());
 	remove->setEnabled(!names.isEmpty());
+	QMenu* surface = menu->addMenu(tr("Control Surface (Mackie Control)"));
+	add(surface, "Connect...", "surface.mcu_connect", {}, true);
+	add(surface, "Ports", "surface.mcu_ports", {}, false, {}, true);
+	add(surface, "State", "surface.mcu_state", {}, false, {}, true);
+	add(surface, "Disconnect", "surface.mcu_disconnect", {}, false);
 	QMenu* pop = menu->addMenu(tr("Pop Out Panel"));
 	for (const ShellPanelSpec& spec : ShellLayout::panels())
 	{

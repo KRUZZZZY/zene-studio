@@ -321,6 +321,8 @@ include/MasterLoudnessTap.h
 include/MasteringChain.h
 include/MasteringJob.h
 include/MasteringReport.h
+include/McuProtocol.h
+include/McuSurface.h
 include/MenuBarExtras.h
 include/MeterDialog.h
 include/MeterModel.h
@@ -576,6 +578,7 @@ include/TrackFolder.h
 include/TrackFolderMenu.h
 include/TrackGrip.h
 include/TrackLabelButton.h
+include/TrackMixModels.h
 include/TrackOperationsWidget.h
 include/TrackRecorder.h
 include/TrackRenameLineEdit.h
@@ -1385,6 +1388,8 @@ src/core/MasterLoudnessTap.cpp
 src/core/MasteringChain.cpp
 src/core/MasteringJob.cpp
 src/core/MasteringReport.cpp
+src/core/McuProtocol.cpp
+src/core/McuSurface.cpp
 src/core/MeterModel.cpp
 src/core/Metronome.cpp
 src/core/MicroTimer.cpp
@@ -1508,6 +1513,7 @@ src/core/ToolPlugin.cpp
 src/core/Track.cpp
 src/core/TrackContainer.cpp
 src/core/TrackContainerFolders.cpp
+src/core/TrackMixModels.cpp
 src/core/UnattendedRun.cpp
 src/core/UnclaimedElements.cpp
 src/core/UpgradeExtendedNoteRange.cpp
@@ -1868,6 +1874,7 @@ tests/src/core/Lv2StateTest.cpp
 tests/src/core/MasteringTest.cpp
 tests/src/core/MasteringTestSupport.h
 tests/src/core/MathTest.cpp
+tests/src/core/McuSurfaceTest.cpp
 tests/src/core/MeterTapTest.cpp
 tests/src/core/MidiClockTest.cpp
 tests/src/core/MidiLearnTest.cpp

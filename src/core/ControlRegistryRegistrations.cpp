@@ -160,6 +160,7 @@ void registerControlCommands(ControlRegistry& registry)
 	registerSessionFollowCommands(registry);
 	registerSessionSceneFollowCommands(registry);
 	registerSessionPatternCommands(registry);
+	registerSurfaceCommands(registry);
 	registerSessionRecordCommands(registry);
 	registerExportCommands(registry);
 	// The render/export presets (feature row 70) - the saved store and the

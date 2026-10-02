@@ -54,6 +54,7 @@
 #include "ShellCommandMenus.h"
 #include "ShellSelection.h"
 #include "Song.h"
+#include "TrackMixModels.h"
 #include "TransportReadouts.h"
 
 namespace lmms::gui
@@ -157,20 +158,6 @@ Knob* knob(FloatModel* model, const QString& label, QWidget* parent)
 	knob->setModel(model);
 	knob->setHintText(label + QLatin1Char(':'), QString());
 	return knob;
-}
-
-FloatModel* volumeOf(Track* track)
-{
-	if (auto* instrument = dynamic_cast<InstrumentTrack*>(track)) { return instrument->volumeModel(); }
-	if (auto* sample = dynamic_cast<SampleTrack*>(track)) { return sample->volumeModel(); }
-	return nullptr;
-}
-
-FloatModel* panningOf(Track* track)
-{
-	if (auto* instrument = dynamic_cast<InstrumentTrack*>(track)) { return instrument->panningModel(); }
-	if (auto* sample = dynamic_cast<SampleTrack*>(track)) { return sample->panningModel(); }
-	return nullptr;
 }
 
 QString channelLabel(int index)
@@ -344,8 +331,8 @@ QWidget* InspectorPanel::trackControls(Track* track, QWidget* parent)
 	column->addLayout(toggles);
 	auto* mix = new QHBoxLayout;
 	mix->setSpacing(tokens::space::lg);
-	if (FloatModel* volume = volumeOf(track)) { mix->addWidget(knob(volume, tr("Volume"), box)); }
-	if (FloatModel* panning = panningOf(track)) { mix->addWidget(knob(panning, tr("Pan"), box)); }
+	if (FloatModel* volume = trackVolumeModel(track)) { mix->addWidget(knob(volume, tr("Volume"), box)); }
+	if (FloatModel* panning = trackPanningModel(track)) { mix->addWidget(knob(panning, tr("Pan"), box)); }
 	if (track->mixerChannelModel() != nullptr) { mix->addWidget(mixerChannelMenu(track, box)); }
 	mix->addStretch(1);
 	column->addLayout(mix);

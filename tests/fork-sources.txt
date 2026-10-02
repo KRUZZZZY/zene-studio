@@ -597,6 +597,8 @@ include/MasterLoudnessTap.h
 include/MasteringChain.h
 include/MasteringJob.h
 include/MasteringReport.h
+include/McuProtocol.h
+include/McuSurface.h
 include/MenuBarExtras.h
 include/MidiClock.h
 include/MidiClockMenu.h
@@ -720,6 +722,7 @@ include/TempoMap.h
 include/TempoMapPanel.h
 include/TrackFolder.h
 include/TrackFolderMenu.h
+include/TrackMixModels.h
 include/TrackRecorder.h
 include/TrackRenderMenu.h
 include/TransportReadouts.h
@@ -1092,6 +1095,8 @@ src/core/MasterLoudnessTap.cpp
 src/core/MasteringChain.cpp
 src/core/MasteringJob.cpp
 src/core/MasteringReport.cpp
+src/core/McuProtocol.cpp
+src/core/McuSurface.cpp
 src/core/MidiClock.cpp
 src/core/MidiClockState.cpp
 src/core/MidiClockTracker.cpp
@@ -1170,6 +1175,7 @@ src/core/Telemetry.cpp
 src/core/TelemetryNetworkTransport.cpp
 src/core/TempoMap.cpp
 src/core/TrackContainerFolders.cpp
+src/core/TrackMixModels.cpp
 src/core/UnattendedRun.cpp
 src/core/UnclaimedElements.cpp
 src/core/VcaGroup.cpp
@@ -1396,6 +1402,7 @@ tests/src/core/ExportWavDitherTest.cpp
 tests/src/core/ImportDetectionTest.cpp
 tests/src/core/LufsMeterTest.cpp
 tests/src/core/Lv2StateTest.cpp
+tests/src/core/McuSurfaceTest.cpp
 tests/src/core/MidiClockTest.cpp
 tests/src/core/MidiLearnTest.cpp
 tests/src/core/MidiOutQueueTest.cpp

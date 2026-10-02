@@ -555,6 +555,8 @@ set(LMMS_TESTS
 	src/core/MpscQueueTest.cpp
 	# 0.5.0 engine wiring E27: stem separation resamples instead of refusing.
 	src/core/SampleBufferResampleTest.cpp
+	# 0.5.0 L13 WF-126: the Mackie Control protocol and a surface driving real tracks.
+	src/core/McuSurfaceTest.cpp
 	# Feature row 50 (0.3.0): the Lua API's DAW-control half - the mixer channel
 	# and effect-chain bindings. Drives a REAL mixer channel and the chain the
 	# control surface addresses from Lua, reads the engine back (not the script's

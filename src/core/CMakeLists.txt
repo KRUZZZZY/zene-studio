@@ -89,7 +89,7 @@ SET(LMMS_SESSION_SRCS
 		# with the data layer since ARCH-4 S10 removed WANT_SESSION_VIEW.
 		core/ControlCommandsSession.cpp
 		core/ControlCommandsSessionLaunch.cpp
-	core/ControlCommandsSessionPatterns.cpp
+		core/ControlCommandsSessionPatterns.cpp
 		# The Session View's completion halves (board task #641): Follow Actions
 		# and Arrangement Record, each half in its own TU because the file-length
 		# ratchet measures a file as a unit (the record group measured 518 lines
@@ -901,7 +901,11 @@ set(LMMS_SRCS
 	core/ModulationLayerPublisher.cpp
 	core/TempoSyncKnobModel.cpp
 	core/ThreadPool.cpp
+	core/ControlCommandsSurface.cpp
+	core/McuProtocol.cpp
+	core/McuSurface.cpp
 	core/Timeline.cpp
+	core/TrackMixModels.cpp
 	core/TimePos.cpp
 	core/TakeLane.cpp
 	core/ToolPlugin.cpp
