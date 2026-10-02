@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-09-30T22:22:16Z",
+  "captured_at": "2026-10-02T11:27:58Z",
   "commands": [
     {
       "args_schema": {
@@ -20895,7 +20895,7 @@
         "required": [],
         "type": "object"
       },
-      "description": "Attach every detached editor window back into the main window's workspace - View > Attach all subwindows dispatches this. Interface state only.",
+      "description": "Since 0.5.0 a no-op kept for compatibility: there is no workspace to attach a window to (secondary windows float; the editors are shell panels). `detached` answers true - the state that holds. Interface state only.",
       "group": "window",
       "id": "window.attach_all",
       "mutating": false,
@@ -20944,7 +20944,7 @@
         "required": [],
         "type": "object"
       },
-      "description": "Detach every editor sub-window into its own top-level window - View > Detach all subwindows dispatches this. Interface state only. While the Focus Desk holds the editors there are no sub-windows, and `detached` answers false.",
+      "description": "Since 0.5.0 a no-op kept for compatibility: every secondary window already floats as its own top-level window, and the editors are shell panels, not windows. `detached` is always true. Interface state only.",
       "group": "window",
       "id": "window.detach_all",
       "mutating": false,
@@ -20997,7 +20997,7 @@
         "required": [],
         "type": "object"
       },
-      "description": "Which editors' windows are showing: `editors` is one {editor, visible} entry per window.toggle editor, in the menu's Ctrl+1..7 order. Read-only. Refused `requires` in a process with no interface.",
+      "description": "The shell's layout: `view` (arrange, mix or edit); `panels`, one {id, title, region, visible, available, shortcut, mounted} per panel, where region is left, center, bottom or right and available says whether the current view offers it; `focused`, the panel that last took keyboard focus; `launcher`, whether the clip launcher sits beside the view's main panel; and `editors`, one {editor, visible, panel} entry per window.toggle name. Read-only. Refused `requires` in a process with no interface.",
       "group": "window",
       "id": "window.get_state",
       "mutating": false,
@@ -21007,6 +21007,18 @@
         "properties": {
           "editors": {
             "type": "array"
+          },
+          "focused": {
+            "type": "string"
+          },
+          "launcher": {
+            "type": "boolean"
+          },
+          "panels": {
+            "type": "array"
+          },
+          "view": {
+            "type": "string"
           }
         },
         "required": [],
@@ -21075,6 +21087,43 @@
           },
           "width": {
             "type": "integer"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "view": {
+            "enum": [
+              "arrange",
+              "mix",
+              "edit"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "view"
+        ],
+        "type": "object"
+      },
+      "description": "Switch the shell's view - the footer's view words, View > Arrange/Mix/Edit and Alt+1/2/3 dispatch exactly this. `view` is arrange (the arranger timeline in the centre), mix (the mixer) or edit (the note editor); each view keeps its own side panels. `changed` is false when the view was already showing. Interface state, not project state: nothing is journalled. Refused `requires` in a process with no interface.",
+      "group": "window",
+      "id": "window.set_view",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "changed": {
+            "type": "boolean"
+          },
+          "view": {
+            "type": "string"
           }
         },
         "required": [],
@@ -21199,7 +21248,13 @@
               "controller_rack",
               "project_notes",
               "microtuner",
-              "clip_launcher"
+              "clip_launcher",
+              "arranger",
+              "launcher",
+              "detail",
+              "devices",
+              "inspector",
+              "browser"
             ],
             "type": "string"
           }
@@ -21209,7 +21264,7 @@
         ],
         "type": "object"
       },
-      "description": "Show or hide one editor's window - the View menu's Ctrl+1..7 items, Edit > Scales and keymaps and the window toolbar dispatch exactly this. `editor` is one of song, pattern, piano_roll, automation, mixer, controller_rack, project_notes, microtuner, clip_launcher. A hidden or unfocused editor is brought forward (and back into view if it was off screen); the focused one is hidden. `visible` is the editor's state afterwards. Interface state, not project state: nothing is journalled. Refused `requires` in a process with no interface.",
+      "description": "Show or hide one shell panel or floating window - the View menu, the footer's panel buttons, Alt+I/B/D/N/M/A/P/L, the MDI-era Ctrl+1..7 and Edit > Scales and keymaps dispatch exactly this. `editor` is a panel id (arranger, launcher, detail, devices, inspector, browser, mixer, automation, pattern), a 0.4.0 editor name (song = arranger, piano_roll = detail, clip_launcher = launcher), or a floating window (controller_rack, project_notes, microtuner). A panel shares its region with others, so showing it hides the region's previous panel; a view's main panel cannot be hidden (it stays visible); a panel the current view does not offer is revealed by switching to the Arrange view. `visible` is the state afterwards, `panel` the panel id (empty for a window), `view` the view afterwards. Interface state, not project state: nothing is journalled. Refused `requires` in a process with no interface.",
       "group": "window",
       "id": "window.toggle",
       "mutating": false,
@@ -21218,6 +21273,12 @@
         "additionalProperties": false,
         "properties": {
           "editor": {
+            "type": "string"
+          },
+          "panel": {
+            "type": "string"
+          },
+          "view": {
             "type": "string"
           },
           "visible": {
@@ -21255,7 +21316,7 @@
       }
     }
   ],
-  "count": 391,
+  "count": 392,
   "instance": {
     "binary": null,
     "binary_bytes": null,
@@ -21263,15 +21324,15 @@
     "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-survey/tools/zene-pa-agentctl",
     "lane_head": null,
     "proto": 1,
-    "source_socket": "/tmp/zctl-run-_zu3bdab/zene.sock",
-    "version": "0.3.0-alpha.301+b9de58b"
+    "source_socket": "/tmp/zctl-run-xa3lyiui/zene.sock",
+    "version": "0.4.0-alpha"
   },
   "kind": "zene-control-command-list",
   "proto": 1,
   "schema": 1,
   "surface": {
     "group_count": 58,
-    "id_count": 391,
-    "ids_sha256": "3e75e7d5e64f706e6c79b66bf38715a15f3624594b7932e6e37b2094b6f80af6"
+    "id_count": 392,
+    "ids_sha256": "aacb6c695367d6f823142d839f2f113eaac37713355ac46091c023e1682366ea"
   }
 }

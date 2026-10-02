@@ -37,6 +37,7 @@
 #     tests/mmpz-v2-container-refusal.py ; \
 #   git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/control-livecode-commands.py ; \
 #   git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/control-surface-hardening.py ; \
+#   git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/control-shell.py ; \
 #   git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/control-dry-run-journal.py tests/control-feedback-commands.py tests/control-import-lifetime.py tests/control-mastering-quit.py tests/control-mastering-run-bound.py tests/control-render-format-capability.py tests/control-save-state.py tests/control-tempo-map-persistence.py tests/src/core/DocumentIndexTest.cpp tests/src/core/DocumentSectionsTest.cpp tests/src/core/MidiOutQueueTest.cpp tests/src/core/MidiRetroCaptureTest.cpp tests/src/core/NamespaceRegistryTest.cpp tests/src/core/PartialLoadTest.cpp tests/src/core/ProjectContainerEntriesTest.cpp tests/src/core/ProjectContainerTest.cpp tests/src/core/ProvenanceSectionTest.cpp tests/src/core/RetroMidiRingTest.cpp tests/src/core/SessionPlaybackRenderTest.cpp tests/src/core/SessionPlaybackTest.cpp tests/src/core/StemJobManagerTest.cpp tests/src/core/UnclaimedElementsTest.cpp tests/src/core/UnclaimedTrackTypeTest.cpp ; \
 #   } | LC_ALL=C sort -u
 # Verify it - this must print REPRODUCES and nothing else:
@@ -67,6 +68,7 @@
 #     tests/src/core/OutOfProcessHostSupport.h tests/zene-api-boundary.py ; \
 # git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/control-livecode-commands.py ; \
 # git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/control-surface-hardening.py ; \
+# git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/control-shell.py ; \
 # git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/control-tempo-map-persistence.py ; \
 #        git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/control-dry-run-journal.py tests/control-feedback-commands.py tests/control-import-lifetime.py tests/control-mastering-quit.py tests/control-mastering-run-bound.py tests/control-render-format-capability.py tests/control-save-state.py tests/control-tempo-map-persistence.py tests/src/core/DocumentIndexTest.cpp tests/src/core/DocumentSectionsTest.cpp tests/src/core/MidiOutQueueTest.cpp tests/src/core/MidiRetroCaptureTest.cpp tests/src/core/NamespaceRegistryTest.cpp tests/src/core/PartialLoadTest.cpp tests/src/core/ProjectContainerEntriesTest.cpp tests/src/core/ProjectContainerTest.cpp tests/src/core/ProvenanceSectionTest.cpp tests/src/core/RetroMidiRingTest.cpp tests/src/core/SessionPlaybackRenderTest.cpp tests/src/core/SessionPlaybackTest.cpp tests/src/core/StemJobManagerTest.cpp tests/src/core/UnclaimedElementsTest.cpp tests/src/core/UnclaimedTrackTypeTest.cpp tests/mmpz-v2-container-refusal.py ; \
 #        } | LC_ALL=C sort -u) && echo REPRODUCES
@@ -507,6 +509,7 @@ include/AutomationModeMenu.h
 include/AutomationRamp.h
 include/BounceInPlace.h
 include/BrowserCatalog.h
+include/BrowserPanel.h
 include/BrowserPeakCache.h
 include/BrowserTagMenu.h
 include/ChainPresetMenu.h
@@ -557,6 +560,7 @@ include/CrashReportMenu.h
 include/CrashReporter.h
 include/CrashReporterFormat.h
 include/DawProjectInterchange.h
+include/DesignTokens.h
 include/DocumentIndex.h
 include/DpiHelper.h
 include/EffectHostingMenu.h
@@ -566,11 +570,6 @@ include/ExportNoiseShaper.h
 include/ExportQualityControls.h
 include/ExportRenderSettings.h
 include/FeedbackModeAction.h
-include/FocusDesk.h
-include/FocusDeskActions.h
-include/FocusDeskModules.h
-include/FocusDeskPane.h
-include/FocusDeskWorkspaces.h
 include/GrooveMenu.h
 include/GroovePool.h
 include/GrooveTemplate.h
@@ -671,6 +670,11 @@ include/SessionSyncAction.h
 include/SessionTransportBar.h
 include/SessionTuning.h
 include/SessionTuningMenu.h
+include/Shell.h
+include/ShellChrome.h
+include/ShellIcons.h
+include/ShellLayout.h
+include/ShellPanel.h
 include/ShortcutsPage.h
 include/SmfInterchange.h
 include/SrcQuality.h
@@ -1143,12 +1147,6 @@ src/gui/CrashReportMenu.cpp
 src/gui/EffectHostingMenu.cpp
 src/gui/ExportQualityControls.cpp
 src/gui/FeedbackModeAction.cpp
-src/gui/FocusDesk.cpp
-src/gui/FocusDeskActions.cpp
-src/gui/FocusDeskModules.cpp
-src/gui/FocusDeskPane.cpp
-src/gui/FocusDeskPlacement.cpp
-src/gui/FocusDeskWorkspaces.cpp
 src/gui/GrooveMenu.cpp
 src/gui/MidiClockMenu.cpp
 src/gui/MidiControllerMenu.cpp
@@ -1179,6 +1177,13 @@ src/gui/TrackRenderMenu.cpp
 src/gui/UndoHistoryPanel.cpp
 src/gui/VcaStripView.cpp
 src/gui/VisibilitySetMenu.cpp
+src/gui/shell/BrowserPanel.cpp
+src/gui/shell/DesignTokens.cpp
+src/gui/shell/Shell.cpp
+src/gui/shell/ShellChrome.cpp
+src/gui/shell/ShellIcons.cpp
+src/gui/shell/ShellLayout.cpp
+src/gui/shell/ShellPanel.cpp
 src/tracks/TrackFolder.cpp
 src/wasm/WasmAbi.h
 src/wasm/WasmOfflineRender.cpp
@@ -1236,6 +1241,7 @@ tests/control-save-state.py
 tests/control-session-api-proof.py
 tests/control-session-lifecycle-transcript.py
 tests/control-session-m1.py
+tests/control-shell.py
 tests/control-shutdown.py
 tests/control-socket-path-safety.py
 tests/control-stable-ids-slice2.py

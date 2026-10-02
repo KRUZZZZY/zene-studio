@@ -1198,12 +1198,8 @@ void SongEditorWindow::lostFocus()
 
 void SongEditorWindow::adjustUiAfterProjectLoad()
 {
-	// make sure to bring us to front as the song editor is the central
-	// widget in a song and when just opening a song in order to listen to
-	// it, it's very annoying to manually bring up the song editor each time
-	getGUI()->mainWindow()->workspace()->setActiveSubWindow(
-			qobject_cast<QMdiSubWindow *>( parentWidget() ) );
-	connect( qobject_cast<SubWindow *>( parentWidget() ), SIGNAL(focusLost()), this, SLOT(lostFocus()));
+	// The arranger is a shell panel, always on screen in the Arrange view; a project load
+	// does not switch the user's view.
 	m_editor->scrolled(0);
 }
 

@@ -67,8 +67,9 @@ private slots:
 	{
 		MixerView* mixer = getGUI()->mixerView();
 		getGUI()->mainWindow()->show();
-		mixer->parentWidget()->show();
-		mixer->show();
+		// The mixer is a shell panel since 0.5.0 (docs/UI-SHELL.md): bring it on screen the way
+		// the interface does, not by showing a sub-window it no longer has.
+		getGUI()->mainWindow()->revealPanel(QStringLiteral("mixer"));
 		const ControlResult created = ControlRegistry::instance()->invoke(QStringLiteral("vca.create"),
 			{{QStringLiteral("name"), QStringLiteral("Drums")}});
 		QVERIFY2(created.ok, qPrintable(created.errorMessage));

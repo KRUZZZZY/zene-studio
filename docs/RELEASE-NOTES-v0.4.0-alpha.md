@@ -28,7 +28,7 @@ is an alpha, and what is known to be missing is written down in `docs/KNOWN-LIMI
   (`lmms::RealtimeScope` marks the render thread's work and each worker job).
 - An engine CPU benchmark tracked as a number (R7.4), and a zoomed-out piano-roll frame benchmark.
 - One published figure for the command surface, kept honest by `tests/doc-figures-gate.py`:
-  **<!-- canary -->391 ids / 58 groups<!-- /canary -->**.
+  **391 ids / 58 groups (as released)**.
 
 ## M2 — engine completions
 

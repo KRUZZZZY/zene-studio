@@ -52,6 +52,10 @@ public:
 		return m_title;
 	}
 
+	//! 0.5.0 shell: drawn inside a Browser panel, which has its own header - no title band,
+	//! no close button, the contents filling the widget.
+	void setChromeless(bool chromeless);
+
 signals:
 	void closeButtonClicked();
 
@@ -84,6 +88,7 @@ private:
 	QPixmap m_icon;
 	QPushButton * m_closeBtn;
 	const QSize m_buttonSize;
+	bool m_chromeless = false;
 
 } ;
 

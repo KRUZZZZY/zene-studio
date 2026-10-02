@@ -35,7 +35,6 @@
 
 class QAction;
 class QDomElement;
-class QGridLayout;
 
 namespace lmms
 {
@@ -43,19 +42,27 @@ namespace lmms
 namespace gui
 {
 
-class FocusDeskPane;
 class SessionGridView;
 class PluginView;
+class Shell;
+class ShellButton;
 class SubWindow;
-class ToolButton;
 
 
 class MainWindow : public QMainWindow
 {
 	Q_OBJECT
 public:
-	//! True while the Focus Desk holds the editors (it has claimed them out of their sub-windows).
-	bool focusDeskActive() const;
+	//! The single-window shell (docs/UI-SHELL.md): its panels, views and layout.
+	Shell* shell() const { return m_shell; }
+	//! Show or hide a shell panel by id (ShellLayout::panels()); the visibility afterwards.
+	bool togglePanel(const QString& id);
+	//! Bring a panel into view - switching view if the current one does not offer it - and
+	//! give its editor focus: what opening a clip in the note editor does.
+	void revealPanel(const QString& id);
+
+	//! The never-shown parent of the floating secondary windows. Kept so that widgets created
+	//! with it as their parent (dialogs, plugin views) keep a valid owner.
 	QMdiArea* workspace()
 	{
 		return static_cast<QMdiArea*>(m_workspace);
@@ -69,7 +76,7 @@ public:
 	int addWidgetToToolBar( QWidget * _w, int _row = -1, int _col = -1 );
 	void addSpacingToToolBar( int _size );
 
-	// wrap the widget with a window decoration and add it to the workspace
+	// wrap the widget in a SubWindow, which floats as its own window when shown
 	LMMS_EXPORT SubWindow* addWindowedWidget(QWidget *w, Qt::WindowFlags windowFlags = QFlag(0));
 
 
@@ -141,8 +148,8 @@ public:
 	static void saveWidgetState( QWidget * _w, QDomElement & _de );
 	static void restoreWidgetState( QWidget * _w, const QDomElement & _de );
 	//! Keeps a grabbable 48 px sliver of a restored window inside \a area. An area too
-	//! small to hold that sliver - the hidden workspace behind the Focus Desk - leaves
-	//! the geometry as saved (BUGS_FOUND 11.30).
+	//! small to hold that sliver - the never-shown workspace - leaves the geometry as saved
+	//! (BUGS_FOUND 11.30).
 	static QRect clampToVisibleArea(QRect geometry, const QRect& area);
 	void setAllSubWindowsDetached(bool detached);
 
@@ -205,7 +212,7 @@ protected:
 
 
 public:
-	//! R5.3: the clip-launch grid's widget, created (in a hidden sub-window) on first use.
+	//! R5.3: the clip-launch grid's widget, the launcher panel's content.
 	SessionGridView* clipLauncher();
 
 private:
@@ -217,6 +224,9 @@ private:
 	void finalize();
 
 	void toggleWindow( QWidget *window, bool forceShow = false );
+	//! View-menu actions for the floating windows (controller rack Ctrl+6, project notes
+	//! Ctrl+7, scales and keymaps), created once and owned by this window.
+	const QList<QAction*>& floatingWindowActions();
 
 	void exportProject(bool multiExport = false);
 	void handleSaveResult(QString const & filename, bool songSavedSuccessfully);
@@ -241,7 +251,6 @@ private:
 	MovableQMdiArea * m_workspace;
 
 	QWidget * m_toolBar;
-	QGridLayout * m_toolBarLayout;
 
 	struct keyModifiers
 	{
@@ -273,10 +282,10 @@ private:
 
 	QMenu * m_viewMenu;
 
-	//! The Focus Desk page (UI plan §9.4), or null until the layout is built.
-	FocusDeskPane * m_focusDeskPane = nullptr;
+	Shell * m_shell = nullptr;
+	QList<QAction*> m_floatingWindowActions;
 
-	ToolButton * m_metronomeToggle;
+	ShellButton * m_metronomeToggle;
 
 	SessionState m_session;
 	

@@ -663,7 +663,10 @@ void MicrotunerConfig::saveSettings(QDomDocument &document, QDomElement &element
 
 void MicrotunerConfig::loadSettings(const QDomElement &element)
 {
-	MainWindow::restoreWidgetState(this, element);
+	// 0.5.0 shell (docs/UI-SHELL.md §5): a tool window floats and opens when the user opens it.
+	// A project's MDI-era placement and visibility for it are ignored; saveSettings still
+	// writes them, so an older build reading the file finds what it expects.
+	Q_UNUSED(element)
 }
 
 

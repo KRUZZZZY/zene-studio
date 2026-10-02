@@ -80,12 +80,14 @@ const ReversibilityRow kShellRows[] = {
 		"no write (call again to restore)",
 		""),
 	R("window.detach_all", RC::NotMutating, false,
-		"window placement is interface state; nothing in the project changes",
-		"no write (window.attach_all restores)",
+		"since 0.5.0 it changes nothing at all: every secondary window already floats and the "
+		"editors are shell panels; it only reports that state",
+		"no write",
 		""),
 	R("window.attach_all", RC::NotMutating, false,
-		"window placement is interface state; nothing in the project changes",
-		"no write (window.detach_all restores)",
+		"since 0.5.0 it changes nothing at all: there is no workspace to attach to; it only reports "
+		"that every secondary window floats",
+		"no write",
 		""),
 	R("window.settings", RC::NotMutating, false,
 		"it only SHOWS the Settings dialog; what the dialog writes on OK is settings.set's own "

@@ -25,21 +25,16 @@
 
 #include <QJsonArray>
 #include <QJsonObject>
-#include <QMdiSubWindow>
 #include <QWidget>
 
-#include "AutomationEditor.h"
 #include "ControllerRackView.h"
 #include "ControlRegistry.h"
+#include "ControlVocabulary.h"
 #include "GuiApplication.h"
 #include "MainWindow.h"
 #include "MicrotunerConfig.h"
-#include "MixerView.h"
-#include "PatternEditor.h"
-#include "PianoRoll.h"
 #include "ProjectNotes.h"
-#include "SessionGridView.h"
-#include "SongEditor.h"
+#include "Shell.h"
 
 namespace lmms
 {
@@ -49,40 +44,39 @@ using namespace control;
 namespace
 {
 
-//! One editor: its wire name, its widget, and the MainWindow slot that toggles
-//! it (the one implementation the menu, the toolbar and the socket share).
+//! One `editor` value: either a shell panel (docs/UI-SHELL.md) or a floating window. The MDI
+//! era's names stay valid and resolve to the panel each editor became - song is the
+//! arranger, piano_roll the note editor ("detail"), clip_launcher the launcher - so a driver
+//! written against 0.4.0 still works.
 struct EditorEntry
 {
 	const char* name;
-	QWidget* (*widget)(gui::GuiApplication*);
+	const char* panel;                         //!< shell panel id, or nullptr for a window
+	QWidget* (*window)(gui::GuiApplication*);  //!< the floating window, when not a panel
 	void (gui::MainWindow::*toggle)();
 };
 
-void togglePatternEditor(gui::MainWindow* window) { window->togglePatternEditorWin(); }
-
 const EditorEntry kEditors[] = {
-	{"song", [](gui::GuiApplication* g) -> QWidget* { return g->songEditor(); },
-		&gui::MainWindow::toggleSongEditorWin},
-	// togglePatternEditorWin takes a defaulted bool, so it is called through
-	// the wrapper below rather than as a member pointer.
-	{"pattern", [](gui::GuiApplication* g) -> QWidget* { return g->patternEditor(); }, nullptr},
-	{"piano_roll", [](gui::GuiApplication* g) -> QWidget* { return g->pianoRoll(); },
-		&gui::MainWindow::togglePianoRollWin},
-	{"automation", [](gui::GuiApplication* g) -> QWidget* { return g->automationEditor(); },
-		&gui::MainWindow::toggleAutomationEditorWin},
-	{"mixer", [](gui::GuiApplication* g) -> QWidget* { return g->mixerView(); },
-		&gui::MainWindow::toggleMixerWin},
-	{"controller_rack", [](gui::GuiApplication* g) -> QWidget* { return g->getControllerRackView(); },
+	{"song", "arranger", nullptr, nullptr},
+	{"pattern", "pattern", nullptr, nullptr},
+	{"piano_roll", "detail", nullptr, nullptr},
+	{"automation", "automation", nullptr, nullptr},
+	{"mixer", "mixer", nullptr, nullptr},
+	{"controller_rack", nullptr, [](gui::GuiApplication* g) -> QWidget* { return g->getControllerRackView(); },
 		&gui::MainWindow::toggleControllerRack},
-	{"project_notes", [](gui::GuiApplication* g) -> QWidget* { return g->getProjectNotes(); },
+	{"project_notes", nullptr, [](gui::GuiApplication* g) -> QWidget* { return g->getProjectNotes(); },
 		&gui::MainWindow::toggleProjectNotesWin},
 	// M3.2: Edit > Scales and keymaps dispatches this editor too.
-	{"microtuner", [](gui::GuiApplication* g) -> QWidget* { return g->getMicrotunerConfig(); },
+	{"microtuner", nullptr, [](gui::GuiApplication* g) -> QWidget* { return g->getMicrotunerConfig(); },
 		&gui::MainWindow::toggleMicrotunerWin},
-	// R5.3: the clip-launch grid (SessionGridView), created by its first toggle.
-	{"clip_launcher", [](gui::GuiApplication* g) -> QWidget* {
-		return g->mainWindow() != nullptr ? g->mainWindow()->clipLauncher() : nullptr; },
-		&gui::MainWindow::toggleClipLauncherWin},
+	{"clip_launcher", "launcher", nullptr, nullptr},
+	// 0.5.0: every shell panel by its own id.
+	{"arranger", "arranger", nullptr, nullptr},
+	{"launcher", "launcher", nullptr, nullptr},
+	{"detail", "detail", nullptr, nullptr},
+	{"devices", "devices", nullptr, nullptr},
+	{"inspector", "inspector", nullptr, nullptr},
+	{"browser", "browser", nullptr, nullptr},
 };
 
 const EditorEntry* findEditor(const QString& name)
@@ -94,25 +88,28 @@ const EditorEntry* findEditor(const QString& name)
 	return nullptr;
 }
 
-//! Showing = the editor's sub-window is not hidden. An editor Focus Desk has
-//! mounted lives outside its sub-window; it is showing while it is visible.
-bool isShowing(QWidget* widget)
-{
-	if (widget == nullptr) { return false; }
-	if (auto* sub = qobject_cast<QMdiSubWindow*>(widget->parentWidget())) { return !sub->isHidden(); }
-	return widget->isVisible();
-}
-
 ControlResult noInterface(const QString& id)
 {
 	return ControlResult::failure(ControlErrorKind::Requires,
 		QStringLiteral("command '%1' requires an interface: this instance has no main window").arg(id));
 }
 
+bool isShowing(gui::GuiApplication* g, const EditorEntry& entry)
+{
+	if (entry.panel != nullptr)
+	{
+		return g->mainWindow()->shell()->model().isVisible(QLatin1String(entry.panel));
+	}
+	// A floating window is its own top level: it is showing while it is visible.
+	QWidget* widget = entry.window(g);
+	return widget != nullptr && widget->isVisible();
+}
+
 QJsonObject editorState(gui::GuiApplication* g, const EditorEntry& entry)
 {
 	return QJsonObject{{QStringLiteral("editor"), QLatin1String(entry.name)},
-		{QStringLiteral("visible"), isShowing(entry.widget(g))}};
+		{QStringLiteral("visible"), isShowing(g, entry)},
+		{QStringLiteral("panel"), entry.panel != nullptr ? QLatin1String(entry.panel) : QLatin1String("")}};
 }
 
 ControlCommand command(const char* verb)
@@ -124,6 +121,52 @@ ControlCommand command(const char* verb)
 	cmd.mutating = false;
 	cmd.requiresEngine = false;
 	return cmd;
+}
+
+gui::GuiApplication* interfaceOrNull()
+{
+	gui::GuiApplication* g = gui::getGUI();
+	return g != nullptr && g->mainWindow() != nullptr && g->mainWindow()->shell() != nullptr ? g : nullptr;
+}
+
+ControlResult toggle(const QJsonObject& args)
+{
+	gui::GuiApplication* g = interfaceOrNull();
+	if (g == nullptr) { return noInterface(QStringLiteral("window.toggle")); }
+	const EditorEntry* entry = findEditor(args.value(QStringLiteral("editor")).toString());
+	if (entry == nullptr) { return ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("unknown editor")); }
+	if (entry->panel != nullptr) { g->mainWindow()->togglePanel(QLatin1String(entry->panel)); }
+	else { (g->mainWindow()->*entry->toggle)(); }
+	QJsonObject state = editorState(g, *entry);
+	state.insert(QStringLiteral("view"), gui::ShellLayout::viewName(g->mainWindow()->shell()->model().view()));
+	return ControlResult::success(state);
+}
+
+ControlResult getState(const QJsonObject&)
+{
+	gui::GuiApplication* g = interfaceOrNull();
+	if (g == nullptr) { return noInterface(QStringLiteral("window.get_state")); }
+	QJsonArray editors;
+	for (const EditorEntry& entry : kEditors) { editors.append(editorState(g, entry)); }
+	QJsonObject state = g->mainWindow()->shell()->state();
+	state.insert(QStringLiteral("editors"), editors);
+	return ControlResult::success(state);
+}
+
+ControlResult setView(const QJsonObject& args)
+{
+	gui::GuiApplication* g = interfaceOrNull();
+	if (g == nullptr) { return noInterface(QStringLiteral("window.set_view")); }
+	gui::ShellView view = gui::ShellView::Arrange;
+	if (!gui::ShellLayout::viewFromName(args.value(QStringLiteral("view")).toString(), view))
+	{
+		return ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("unknown view"));
+	}
+	gui::Shell* shell = g->mainWindow()->shell();
+	const bool changed = shell->model().view() != view;
+	shell->setView(view);
+	return ControlResult::success(QJsonObject{
+		{QStringLiteral("view"), gui::ShellLayout::viewName(view)}, {QStringLiteral("changed"), changed}});
 }
 
 } // namespace
@@ -145,47 +188,55 @@ void registerWindowCommands(ControlRegistry& registry)
 {
 	{
 		ControlCommand cmd = command("toggle");
-		cmd.description = QStringLiteral("Show or hide one editor's window - the View menu's "
-			"Ctrl+1..7 items, Edit > Scales and keymaps and the window toolbar dispatch exactly this. "
-			"`editor` is one of song, pattern, piano_roll, automation, mixer, controller_rack, "
-			"project_notes, microtuner, clip_launcher. A "
-			"hidden or unfocused editor is brought forward (and back into view if it was off "
-			"screen); the focused one is hidden. `visible` is the editor's state afterwards. "
-			"Interface state, not project state: nothing is journalled. Refused `requires` in a "
-			"process with no interface.");
+		cmd.description = QStringLiteral("Show or hide one shell panel or floating window - the View "
+			"menu, the footer's panel buttons, Alt+I/B/D/N/M/A/P/L, the MDI-era Ctrl+1..7 and Edit > "
+			"Scales and keymaps dispatch exactly this. `editor` is a panel id (arranger, launcher, "
+			"detail, devices, inspector, browser, mixer, automation, pattern), a 0.4.0 editor name "
+			"(song = arranger, piano_roll = detail, clip_launcher = launcher), or a floating window "
+			"(controller_rack, project_notes, microtuner). A panel shares its region with others, so "
+			"showing it hides the region's previous panel; a view's main panel cannot be hidden (it "
+			"stays visible); a panel the current view does not offer is revealed by switching to the "
+			"Arrange view. `visible` is the state afterwards, `panel` the panel id (empty for a "
+			"window), `view` the view afterwards. Interface state, not project state: nothing is "
+			"journalled. Refused `requires` in a process with no interface.");
 		cmd.argsSchema = objectSchema({{QStringLiteral("editor"), enumProperty(windowEditorNames())}},
 			QJsonArray{QStringLiteral("editor")});
 		cmd.resultSchema = objectSchema({{QStringLiteral("editor"), stringProperty()},
-			{QStringLiteral("visible"), booleanProperty()}});
-		cmd.handler = [](const QJsonObject& args) {
-			gui::GuiApplication* g = gui::getGUI();
-			if (g == nullptr || g->mainWindow() == nullptr) { return noInterface(QStringLiteral("window.toggle")); }
-			const EditorEntry* entry = findEditor(args.value(QStringLiteral("editor")).toString());
-			if (entry == nullptr)
-			{
-				return ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("unknown editor"));
-			}
-			if (entry->toggle != nullptr) { (g->mainWindow()->*entry->toggle)(); }
-			else { togglePatternEditor(g->mainWindow()); }
-			return ControlResult::success(editorState(g, *entry));
-		};
+			{QStringLiteral("visible"), booleanProperty()}, {QStringLiteral("panel"), stringProperty()},
+			{QStringLiteral("view"), stringProperty()}});
+		cmd.handler = toggle;
 		registry.registerCommand(cmd);
 	}
 
 	{
 		ControlCommand cmd = command("get_state");
-		cmd.description = QStringLiteral("Which editors' windows are showing: `editors` is one "
-			"{editor, visible} entry per window.toggle editor, in the menu's Ctrl+1..7 order. "
-			"Read-only. Refused `requires` in a process with no interface.");
+		cmd.description = QStringLiteral("The shell's layout: `view` (arrange, mix or edit); `panels`, "
+			"one {id, title, region, visible, available, shortcut, mounted} per panel, where region is "
+			"left, center, bottom or right and available says whether the current view offers it; "
+			"`focused`, the panel that last took keyboard focus; `launcher`, whether the clip launcher "
+			"sits beside the view's main panel; and `editors`, one {editor, visible, panel} entry per "
+			"window.toggle name. Read-only. Refused `requires` in a process with no interface.");
 		cmd.argsSchema = objectSchema({});
-		cmd.resultSchema = objectSchema({{QStringLiteral("editors"), arrayProperty()}});
-		cmd.handler = [](const QJsonObject&) {
-			gui::GuiApplication* g = gui::getGUI();
-			if (g == nullptr || g->mainWindow() == nullptr) { return noInterface(QStringLiteral("window.get_state")); }
-			QJsonArray editors;
-			for (const EditorEntry& entry : kEditors) { editors.append(editorState(g, entry)); }
-			return ControlResult::success(QJsonObject{{QStringLiteral("editors"), editors}});
-		};
+		cmd.resultSchema = objectSchema({{QStringLiteral("editors"), arrayProperty()},
+			{QStringLiteral("view"), stringProperty()}, {QStringLiteral("panels"), arrayProperty()},
+			{QStringLiteral("focused"), stringProperty()}, {QStringLiteral("launcher"), booleanProperty()}});
+		cmd.handler = getState;
+		registry.registerCommand(cmd);
+	}
+
+	{
+		ControlCommand cmd = command("set_view");
+		cmd.description = QStringLiteral("Switch the shell's view - the footer's view words, View > "
+			"Arrange/Mix/Edit and Alt+1/2/3 dispatch exactly this. `view` is arrange (the arranger "
+			"timeline in the centre), mix (the mixer) or edit (the note editor); each view keeps its "
+			"own side panels. `changed` is false when the view was already showing. Interface state, "
+			"not project state: nothing is journalled. Refused `requires` in a process with no "
+			"interface.");
+		cmd.argsSchema = objectSchema({{QStringLiteral("view"), enumProperty(gui::ShellLayout::viewNames())}},
+			QJsonArray{QStringLiteral("view")});
+		cmd.resultSchema = objectSchema({{QStringLiteral("view"), stringProperty()},
+			{QStringLiteral("changed"), booleanProperty()}});
+		cmd.handler = setView;
 		registry.registerCommand(cmd);
 	}
 }

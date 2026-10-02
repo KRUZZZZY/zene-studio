@@ -32,6 +32,7 @@
 #include "FileDialog.h"
 #include "FontHelper.h"
 #include "GuiApplication.h"
+#include "MainWindow.h"
 #include "AutomationEditor.h"
 #include "embed.h"
 #include "PathUtil.h"
@@ -398,9 +399,7 @@ void SampleClipView::setAutomationGhost()
 {
 	auto aEditor = gui::getGUI()->automationEditor();
 	aEditor->setGhostSample(m_clip);
-	aEditor->parentWidget()->show();
-	aEditor->show();
-	aEditor->setFocus();
+	gui::getGUI()->mainWindow()->revealPanel(QStringLiteral("automation"));
 }
 
 } // namespace lmms::gui

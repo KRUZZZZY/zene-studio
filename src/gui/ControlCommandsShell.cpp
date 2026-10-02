@@ -114,27 +114,25 @@ void registerFullscreen(ControlRegistry& registry)
 void registerDetachAll(ControlRegistry& registry, const char* verb, bool detached)
 {
 	ControlCommand cmd = command("window", verb);
+	// 0.5.0 (docs/UI-SHELL.md): the MDI workspace is gone from the screen. Every secondary
+	// window - instrument and effect dialogs, the controller rack, project notes - floats as its
+	// own top-level window whenever it is shown, and the editors are shell panels, which are not
+	// windows at all. So there is nothing left to detach or to attach: both verbs answer the
+	// state that holds (`detached: true`) and change nothing. They stay registered so 0.4.0
+	// drivers keep working; their removal goes with the MDI code (docs/UI-SHELL.md §6).
 	cmd.description = detached
-		? QStringLiteral("Detach every editor sub-window into its own top-level window - View > "
-			"Detach all subwindows dispatches this. Interface state only. While the Focus Desk holds "
-			"the editors there are no sub-windows, and `detached` answers false.")
-		: QStringLiteral("Attach every detached editor window back into the main window's "
-			"workspace - View > Attach all subwindows dispatches this. Interface state only.");
+		? QStringLiteral("Since 0.5.0 a no-op kept for compatibility: every secondary window already "
+			"floats as its own top-level window, and the editors are shell panels, not windows. "
+			"`detached` is always true. Interface state only.")
+		: QStringLiteral("Since 0.5.0 a no-op kept for compatibility: there is no workspace to attach "
+			"a window to (secondary windows float; the editors are shell panels). `detached` answers "
+			"true - the state that holds. Interface state only.");
 	cmd.argsSchema = objectSchema({});
 	cmd.resultSchema = objectSchema({{QStringLiteral("detached"), booleanProperty()}});
 	const QString id = cmd.id;
-	cmd.handler = [detached, id](const QJsonObject&) {
-		gui::MainWindow* window = mainWindow();
-		if (window == nullptr) { return noInterface(id); }
-		// While the Focus Desk holds the editors (it mounts them in its own panes) there are no
-		// sub-windows to detach: the call detaches nothing and says so (`detached: false`). It used
-		// to reach SubWindow::detach with the claimed window's null widget and kill the process.
-		if (detached && window->focusDeskActive())
-		{
-			return ControlResult::success(QJsonObject{{QStringLiteral("detached"), false}});
-		}
-		window->setAllSubWindowsDetached(detached);
-		return ControlResult::success(QJsonObject{{QStringLiteral("detached"), detached}});
+	cmd.handler = [id](const QJsonObject&) {
+		if (mainWindow() == nullptr) { return noInterface(id); }
+		return ControlResult::success(QJsonObject{{QStringLiteral("detached"), true}});
 	};
 	registry.registerCommand(cmd);
 }

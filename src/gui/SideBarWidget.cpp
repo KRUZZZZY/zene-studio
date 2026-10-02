@@ -56,8 +56,20 @@ SideBarWidget::SideBarWidget( const QString & _title, const QPixmap & _icon,
 
 
 
+void SideBarWidget::setChromeless(bool chromeless)
+{
+	m_chromeless = chromeless;
+	m_closeBtn->setVisible(!chromeless);
+	resizeEvent(nullptr);
+	update();
+}
+
+
+
+
 void SideBarWidget::paintEvent( QPaintEvent * )
 {
+	if (m_chromeless) { return; }
 	QPainter p( this );
 	p.fillRect( 0, 0, width(), 27, palette().highlight().color() );
 
@@ -81,6 +93,11 @@ void SideBarWidget::paintEvent( QPaintEvent * )
 
 void SideBarWidget::resizeEvent( QResizeEvent * )
 {
+	if (m_chromeless)
+	{
+		m_contents->setGeometry(rect().adjusted(4, 4, -4, -4));
+		return;
+	}
 	const int MARGIN = 6;
 	m_contents->setGeometry( MARGIN, 40 + MARGIN, width() - MARGIN * 2,
 						height() - MARGIN * 2 - 40 );
