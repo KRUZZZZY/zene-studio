@@ -41,12 +41,13 @@ auto mapBuses(const std::vector<BusDescriptor>& buses) -> BusLayout
 
 		if (bus.direction == BusDescriptor::Direction::Input)
 		{
-			layout.inputBusChannels.push_back(bus.channelCount);
-			layout.inputs += bus.channelCount;
-			if (seenInputBus || bus.type == BusDescriptor::Type::Aux)
+			if ((seenInputBus || bus.type == BusDescriptor::Type::Aux) && !layout.hasSideChain)
 			{
 				layout.hasSideChain = true;
+				layout.sideChainChannel = layout.inputs;
 			}
+			layout.inputBusChannels.push_back(bus.channelCount);
+			layout.inputs += bus.channelCount;
 			seenInputBus = true;
 		}
 		else

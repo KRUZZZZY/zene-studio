@@ -69,13 +69,16 @@ struct BusLayout
 	int outputs = 0;
 	//! true if there is an active auxiliary input bus (e.g. a side-chain)
 	bool hasSideChain = false;
+	//! flattened index of the side-chain bus's first channel, or -1 (E9: where the mixer's
+	//! sidechain signal is fed)
+	int sideChainChannel = -1;
 
 	auto operator==(const BusLayout& other) const -> bool
 	{
 		return inputBusChannels == other.inputBusChannels
 			&& outputBusChannels == other.outputBusChannels
 			&& inputs == other.inputs && outputs == other.outputs
-			&& hasSideChain == other.hasSideChain;
+			&& hasSideChain == other.hasSideChain && sideChainChannel == other.sideChainChannel;
 	}
 };
 

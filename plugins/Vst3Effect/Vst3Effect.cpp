@@ -25,6 +25,7 @@
 #include "Vst3Effect.h"
 
 #include "EffectChain.h"
+#include "SidechainInputs.h"
 
 #include <algorithm>
 
@@ -156,7 +157,11 @@ auto Vst3Effect::processImpl(PlanarBufferView<const float, DynamicChannelCount> 
 	}
 
 	const auto frames = static_cast<int>(std::min(in.frames(), out.frames()));
-	m_plugin.process(in.data(), out.data(),
+	// E9: the plug-in's sidechain bus hears the mixer's sidechain send, when this channel has one.
+	std::array<const float*, MaxHostedInputChannels> inputs{};
+	const float* const* fed = sidechainInputs(in.data(), static_cast<int>(in.channels()), sidechainBuffer(),
+		m_plugin.busLayout().sideChainChannel, inputs);
+	m_plugin.process(fed, out.data(),
 		static_cast<int>(in.channels()), static_cast<int>(out.channels()), frames);
 
 	// AudioPlugin's contract: processImpl is responsible for the wet/dry mix.

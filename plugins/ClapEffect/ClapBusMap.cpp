@@ -59,6 +59,7 @@ auto mapPorts(const std::vector<PortDescriptor>& ports) -> PortLayout
 	}
 
 	layout.hasSideChain = layout.inputPortChannels.size() > 1;
+	layout.sideChainChannel = layout.hasSideChain ? layout.inputPortChannels[0] : -1;
 	return layout;
 }
 

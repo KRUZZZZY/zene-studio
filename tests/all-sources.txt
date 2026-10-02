@@ -513,6 +513,7 @@ include/ShellSelection.h
 include/ShortcutsPage.h
 include/SideBar.h
 include/SideBarWidget.h
+include/SidechainInputs.h
 include/SimpleTextFloat.h
 include/SmfInterchange.h
 include/Song.h
@@ -1919,6 +1920,7 @@ tests/src/core/SessionSceneFollowTest.cpp
 tests/src/core/SessionSchedulerRenderTest.cpp
 tests/src/core/SessionSchedulerTest.cpp
 tests/src/core/SessionTuningTest.cpp
+tests/src/core/SidechainInputsTest.cpp
 tests/src/core/SlideNotesTest.cpp
 tests/src/core/SmfInterchangeRoundTripTest.cpp
 tests/src/core/SmfInterchangeTest.cpp

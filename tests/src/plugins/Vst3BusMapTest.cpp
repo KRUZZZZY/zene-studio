@@ -97,6 +97,9 @@ void Vst3BusMapTest::testSideChain()
 	QCOMPARE(layout.hasSideChain, true);
 	QCOMPARE(layout.inputBusChannels.size(), std::size_t{2});
 	QCOMPARE(layout.inputBusChannels[1], 2);
+	// E9: the mixer's sidechain is fed from flattened channel 2, where the aux bus starts.
+	QCOMPARE(layout.sideChainChannel, 2);
+	QCOMPARE(mapBuses({bus(Input, Main, 2), bus(Output, Main, 2)}).sideChainChannel, -1);
 }
 
 void Vst3BusMapTest::testSecondInputBusIsSideChain()

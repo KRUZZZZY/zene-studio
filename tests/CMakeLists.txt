@@ -549,6 +549,8 @@ set(LMMS_TESTS
 	src/core/ScriptCommandBridgeTest.cpp
 	# 0.5.0 engine wiring E13: an LV2 plug-in's own state survives a save and a load.
 	src/core/Lv2StateTest.cpp
+	# 0.5.0 engine wiring E9: a hosted plug-in's sidechain bus is fed the mixer's sidechain.
+	src/core/SidechainInputsTest.cpp
 	# Feature row 50 (0.3.0): the Lua API's DAW-control half - the mixer channel
 	# and effect-chain bindings. Drives a REAL mixer channel and the chain the
 	# control surface addresses from Lua, reads the engine back (not the script's

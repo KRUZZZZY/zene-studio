@@ -98,6 +98,7 @@ void ClapBusMapTest::testSideChain()
 	QCOMPARE(layout.inputs, 3);
 	QCOMPARE(layout.outputs, 2);
 	QCOMPARE(layout.hasSideChain, true);
+	QCOMPARE(layout.sideChainChannel, 2);  // E9: the second port starts after the main pair
 	QCOMPARE(layout.inputPortChannels, (std::vector<int>{2, 1}));
 }
 

@@ -67,6 +67,8 @@ struct PortLayout
 	int outputs = 0;
 	//! a second input port is treated as a side-chain
 	bool hasSideChain = false;
+	//! flattened index of the side-chain port's first channel, or -1 (E9)
+	int sideChainChannel = -1;
 	std::vector<int> inputPortChannels;
 	std::vector<int> outputPortChannels;
 
