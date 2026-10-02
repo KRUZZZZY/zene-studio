@@ -128,7 +128,8 @@ ControlResult deleteRange(const QJsonObject& args)
 	ControlResult error;
 	if (!beginEdit(&tracks, &error)) { return error; }
 	const ArrangerRange& range = ArrangerRange::instance();
-	const bool ripple = args.value(QStringLiteral("ripple")).toBool();
+	// Without 'ripple' the arranger's ripple mode decides (ED-043).
+	const bool ripple = args.value(QStringLiteral("ripple")).toBool(arrangement::modes().ripple != arrangement::Ripple::Off);
 	int removed = 0;
 	for (Track* track : tracks) { removed += arrangement::deleteRange(track, range.start(), range.end(), ripple); }
 	return finishEdit(QStringLiteral("range.delete"), {{QStringLiteral("removed"), removed}, {QStringLiteral("ripple"), ripple}});
@@ -242,6 +243,36 @@ ControlResult consolidateRange(const QJsonObject&)
 	return ControlResult::success({{QStringLiteral("consolidated"), done}, {QStringLiteral("refused"), refused}});
 }
 
+const QStringList& rippleNames()
+{
+	static const QStringList names{QStringLiteral("off"), QStringLiteral("track"), QStringLiteral("all")};
+	return names;
+}
+
+const QStringList& overlapNames()
+{
+	static const QStringList names{QStringLiteral("free"), QStringLiteral("trim"), QStringLiteral("crossfade")};
+	return names;
+}
+
+QJsonObject modesJson()
+{
+	const arrangement::Modes current = arrangement::modes();
+	return {{QStringLiteral("ripple"), rippleNames().at(static_cast<int>(current.ripple))},
+		{QStringLiteral("overlap"), overlapNames().at(static_cast<int>(current.overlap))},
+		{QStringLiteral("snap_to_edges"), current.snapToEdges}};
+}
+
+ControlResult setModes(const QJsonObject& args)
+{
+	arrangement::Modes next = arrangement::modes();
+	if (args.contains(QStringLiteral("ripple"))) { next.ripple = static_cast<arrangement::Ripple>(rippleNames().indexOf(args.value(QStringLiteral("ripple")).toString())); }
+	if (args.contains(QStringLiteral("overlap"))) { next.overlap = static_cast<arrangement::Overlap>(overlapNames().indexOf(args.value(QStringLiteral("overlap")).toString())); }
+	if (args.contains(QStringLiteral("snap_to_edges"))) { next.snapToEdges = args.value(QStringLiteral("snap_to_edges")).toBool(); }
+	arrangement::setModes(next);
+	return ControlResult::success(modesJson());
+}
+
 void add(ControlRegistry& registry, const char* verb, const QString& description, const QJsonObject& args,
 	bool mutating, ControlResult (*handler)(const QJsonObject&))
 {
@@ -261,6 +292,22 @@ void add(ControlRegistry& registry, const char* verb, const QString& description
 
 void registerRangeCommands(ControlRegistry& registry)
 {
+	ControlCommand modes;
+	modes.id = QStringLiteral("arrangement.modes");
+	modes.group = QStringLiteral("arrangement");
+	modes.verb = QStringLiteral("modes");
+	modes.description = QStringLiteral("The arranger's editing modes, set and answered: 'ripple' (off, track, all - a deletion "
+		"closes its gap on the clip's track or on every track), 'overlap' (free, trim, crossfade - what a clip moved onto "
+		"others does to them) and 'snap_to_edges' (moving a clip also snaps to other clips' edges and to markers). The "
+		"arranger's gestures and clip.move / clip.delete / range.delete follow them. An editing preference kept in the "
+		"config file, not project state.");
+	modes.argsSchema = objectSchema({{QStringLiteral("ripple"), enumProperty(rippleNames())},
+		{QStringLiteral("overlap"), enumProperty(overlapNames())}, {QStringLiteral("snap_to_edges"), booleanProperty()}});
+	modes.resultSchema = objectSchema({{QStringLiteral("ripple"), stringProperty()}, {QStringLiteral("overlap"), stringProperty()},
+		{QStringLiteral("snap_to_edges"), booleanProperty()}});
+	modes.handler = setModes;
+	registry.registerCommand(modes);
+
 	const QString oneStep = QStringLiteral(" One undo step (every covered track is checkpointed).");
 	add(registry, "set", QStringLiteral("Select a time range from 'start' to 'end' (ticks) over 'tracks' (trk ids), or "
 		"over every track ('all', the default with no tracks). Interface state, drawn in the arranger."),

@@ -63,6 +63,51 @@ LMMS_EXPORT int deleteRange(Track* track, tick_t start, tick_t end, bool ripple)
 //! Keep only [@a start, @a end) of @a track: split at both edges and delete what is outside.
 LMMS_EXPORT int cropToRange(Track* track, tick_t start, tick_t end);
 
+//! ED-043: how a deletion closes its gap - not at all, on the clip's track, or on every track.
+enum class Ripple { Off, Track, All };
+//! ED-044: what a clip moved onto others does to them - nothing, trims them away under it, or
+//! crossfades with them over the overlap.
+enum class Overlap { Free, Trim, Crossfade };
+
+/*! The arranger's editing modes (interface preferences, kept in the config file): the ripple and
+ *  overlap modes, and whether moving or resizing a clip snaps to other clips' edges and to markers
+ *  (ED-020) as well as to the grid. Read by the arranger's own gestures and by the clip.* / range.*
+ *  commands, so the mouse and an agent edit the same way. */
+struct Modes
+{
+	Ripple ripple = Ripple::Off;
+	Overlap overlap = Overlap::Free;
+	bool snapToEdges = true;
+};
+LMMS_EXPORT Modes modes();
+LMMS_EXPORT void setModes(const Modes& modes);
+
+//! The tracks a ripple from @a track touches under @a mode (none, the one, or every song track).
+LMMS_EXPORT QVector<Track*> rippleTracks(Track* track, Ripple mode);
+
+//! The undo checkpoint a deletion from @a track takes under @a mode: the track's, or every
+//! track's at once (Ripple::All) - one step either way. clip.delete and the arranger's delete.
+LMMS_EXPORT void checkpointForDelete(Track* track, Ripple mode);
+
+//! What the arranger does after the user drops @a moved: the overlap mode, as one more undo step
+//! (the track's checkpoint), when it is not Free.
+LMMS_EXPORT void afterUserMove(Clip* moved);
+
+//! The tolerance edge snapping uses, in pixels (converted to ticks at the current zoom).
+constexpr int SnapEdgePixels = 8;
+
+//! Close the gap a deletion of [@a start, @a start + @a length) left, per @a mode.
+LMMS_EXPORT int rippleAfterDelete(Track* track, tick_t start, tick_t length, Ripple mode);
+
+//! Apply @a mode to the clips under @a moved on its track: trim them away under it, or crossfade
+//! with the ones it overlaps (fades over the overlap). How many clips were changed.
+LMMS_EXPORT int applyOverlap(Clip* moved, Overlap mode);
+
+/*! ED-020: @a proposed (the grid-snapped start of a clip of @a length being moved) moved onto
+ *  the nearest other clip edge or marker within @a tolerance ticks - its start or its end may land
+ *  there; @a proposed unchanged when nothing is that close. @a moving is left out. */
+LMMS_EXPORT tick_t snapToEdges(tick_t proposed, tick_t length, const Clip* moving, tick_t tolerance);
+
 } // namespace arrangement
 
 /*! ED-011: the arranger's time-range selection - a start and an end on the timeline over a set

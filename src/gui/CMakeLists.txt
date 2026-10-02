@@ -162,6 +162,7 @@ SET(LMMS_SRCS
 
 	gui/clips/AutomationClipView.cpp
 	gui/clips/ClipView.cpp
+	gui/clips/ClipViewTheme.cpp
 	gui/clips/MidiClipView.cpp
 	gui/clips/PatternClipView.cpp
 	gui/clips/SampleClipView.cpp

@@ -85,6 +85,9 @@ const ReversibilityRow kArrangerRows[] = {
 		"it runs clip.move on the selected clip, which records itself; nothing of its own is written",
 		"nothing of its own: clip.move's Clip checkpoint", ""),
 	R("arrangement.select_clip", RC::NotMutating, false, "it selects the next or previous clip: interface state", "no write", ""),
+	R("arrangement.modes", RC::NotMutating, false,
+		"it sets the arranger's editing preferences (ripple, overlap, snap to edges), kept in the config file - not "
+		"project state", "no write to the project (set the previous modes)", ""),
 };
 
 #undef R

@@ -1253,6 +1253,7 @@ src/gui/UiConfigStore.cpp
 src/gui/UndoHistoryPanel.cpp
 src/gui/VcaStripView.cpp
 src/gui/VisibilitySetMenu.cpp
+src/gui/clips/ClipViewTheme.cpp
 src/gui/noteeditor/NoteCanvas.cpp
 src/gui/noteeditor/NoteCanvasInput.cpp
 src/gui/noteeditor/NoteEditor.cpp
@@ -1386,6 +1387,7 @@ tests/rt_safety_source.py
 
 tests/session_api_proof_lib.py
 tests/session_api_proof_rows.py
+tests/src/core/ArrangementModesTest.cpp
 tests/src/core/AudioResamplerRatioTest.cpp
 tests/src/core/BrowserCatalogTest.cpp
 tests/src/core/BrowserTestSupport.h

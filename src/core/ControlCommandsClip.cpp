@@ -27,6 +27,7 @@
 #include "ArrangementEdits.h"
 #include "Clip.h"
 #include "ControlEdit.h"
+#include "ControlReversibility.h"
 #include "ControlRegistry.h"
 #include "Engine.h"
 #include "Song.h"
@@ -176,9 +177,14 @@ void registerClipMove(ControlRegistry& registry)
 			return error;
 		}
 		const tick_t previous = ref.clip->startPosition().getTicks();
-		ref.clip->addJournalCheckPoint();
+		// ED-044: a move that trims or crossfades the clips under it changes them too, so the
+		// track's checkpoint (which carries every clip) is taken instead of the clip's.
+		const arrangement::Overlap overlap = arrangement::modes().overlap;
+		if (overlap == arrangement::Overlap::Free) { ref.clip->addJournalCheckPoint(); }
+		else { ref.track->addJournalCheckPoint(); }
 		ref.clip->movePosition(TimePos(static_cast<tick_t>(
 			args.value(QStringLiteral("position")).toDouble())));
+		arrangement::applyOverlap(ref.clip, overlap);
 
 		QJsonObject result;
 		result.insert(QStringLiteral("clip"), control::clipId(ref.id));
@@ -358,10 +364,16 @@ void registerClipDelete(ControlRegistry& registry)
 
 		Track* track = ref.track;
 		const QString trackIdText = control::trackIdOf(ref.track);
-		// ClipView::remove: checkpoint the track, detach, delete.
-		track->addJournalCheckPoint();
+		// ED-043: in a ripple mode the gap closes - on this track, or on every track (each
+		// checkpointed then, as one step).
+		const arrangement::Ripple ripple = arrangement::modes().ripple;
+		const tick_t start = ref.clip->startPosition().getTicks();
+		const tick_t length = ref.clip->length().getTicks();
+		// ClipView::remove: checkpoint the track (every track for a ripple over all), detach, delete.
+		arrangement::checkpointForDelete(track, ripple);
 		track->removeClip(ref.clip);
 		delete ref.clip;
+		arrangement::rippleAfterDelete(track, start, length, ripple);
 
 		QJsonObject result;
 		result.insert(QStringLiteral("deleted"), control::clipId(ref.id));

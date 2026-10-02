@@ -24,6 +24,8 @@
 
 #include "ClipView.h"
 
+#include "ArrangementEdits.h"
+
 #include <set>
 #include <cassert>
 
@@ -189,72 +191,8 @@ bool ClipView::fixedClips()
 
 
 
-// qproperty access functions, to be inherited & used by Clipviews
-//! \brief CSS theming qproperty access method
-QColor ClipView::mutedColor() const
-{ return m_mutedColor; }
-
-QColor ClipView::mutedBackgroundColor() const
-{ return m_mutedBackgroundColor; }
-
-QColor ClipView::selectedColor() const
-{ return m_selectedColor; }
-
-QColor ClipView::textColor() const
-{ return m_textColor; }
-
-QColor ClipView::textBackgroundColor() const
-{
-	return m_textBackgroundColor;
-}
-
-QColor ClipView::textShadowColor() const
-{ return m_textShadowColor; }
-
-QColor ClipView::patternClipBackground() const
-{ return m_patternClipBackground; }
-
-bool ClipView::gradient() const
-{ return m_gradient; }
-
-QColor ClipView::markerColor() const
-{ return m_markerColor; }
-
-//! \brief CSS theming qproperty access method
-void ClipView::setMutedColor( const QColor & c )
-{ m_mutedColor = QColor( c ); }
-
-void ClipView::setMutedBackgroundColor( const QColor & c )
-{ m_mutedBackgroundColor = QColor( c ); }
-
-void ClipView::setSelectedColor( const QColor & c )
-{ m_selectedColor = QColor( c ); }
-
-void ClipView::setTextColor( const QColor & c )
-{ m_textColor = QColor( c ); }
-
-void ClipView::setTextBackgroundColor( const QColor & c )
-{
-	m_textBackgroundColor = c;
-}
-
-void ClipView::setTextShadowColor( const QColor & c )
-{ m_textShadowColor = QColor( c ); }
-
-void ClipView::setPatternClipBackground( const QColor & c )
-{ m_patternClipBackground = QColor( c ); }
-
-void ClipView::setGradient( const bool & b )
-{ m_gradient = b; }
-
-void ClipView::setMarkerColor(const QColor & c)
-{ m_markerColor = QColor(c); }
-
-// access needsUpdate member variable
-bool ClipView::needsUpdate()
-{ return m_needsUpdate; }
-void ClipView::setNeedsUpdate( bool b )
-{ m_needsUpdate = b; }
+// The CSS theming qproperty accessors and needsUpdate live in ClipViewTheme.cpp (0.5.0, moved for
+// the file-length ratchet; unchanged).
 
 /*! \brief Close a ClipView
  *
@@ -281,7 +219,12 @@ bool ClipView::close()
  */
 void ClipView::remove()
 {
-	m_trackView->getTrack()->addJournalCheckPoint();
+	// 0.5.0 ED-043: in a ripple mode the gap the clip leaves closes (arrangement::Modes).
+	Track* track = m_trackView->getTrack();
+	const auto ripple = arrangement::modes().ripple;
+	const tick_t start = m_clip->startPosition().getTicks();
+	const tick_t length = m_clip->length().getTicks();
+	arrangement::checkpointForDelete(track, ripple);
 
 	// delete ourself
 	close();
@@ -297,6 +240,7 @@ void ClipView::remove()
 	// as actually deleting the Clip with the deleteLater function. That being said, it shouldn't
 	// be possible to make a Clip without a Track (i.e., Clip::getTrack is never nullptr).
 	m_clip->deleteLater();
+	arrangement::rippleAfterDelete(track, start, length, ripple);
 
 	m_trackView->update();
 }
@@ -1033,6 +977,8 @@ void ClipView::mouseReleaseEvent( QMouseEvent * me )
 	{
 		// TODO: Fix m_clip->setJournalling() consistency
 		m_clip->setJournalling( true );
+		// 0.5.0 ED-044: a clip dropped onto others trims or crossfades them, per the overlap mode.
+		if (m_action == Action::Move) { arrangement::afterUserMove(m_clip); }
 	}
 	else if( m_action == Action::Split )
 	{
@@ -1355,6 +1301,12 @@ TimePos ClipView::draggedClipPos( QMouseEvent * me )
 	else
 	{	// Otherwise, quantize moved distance (preserves user offsets)
 		newPos = m_initialClipPos + offset.quantize( getGUI()->songEditor()->m_editor->getSnapSize() );
+	}
+	// 0.5.0 ED-020: other clips' edges and markers are snap targets too, unless snapping is held off.
+	if (!unquantizedModHeld(me) && arrangement::modes().snapToEdges)
+	{
+		newPos = arrangement::snapToEdges(newPos.getTicks(), m_clip->length().getTicks(), m_clip,
+			static_cast<tick_t>(arrangement::SnapEdgePixels * TimePos::ticksPerBar() / ppb));
 	}
 	return newPos;
 }
