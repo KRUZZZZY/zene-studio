@@ -270,6 +270,13 @@ void AudioEngine::drainInputStage() noexcept
 
 
 
+PunchFrames AudioEngine::punchWindow(f_cnt_t frames) const noexcept
+{
+	return punchFramesForPeriod(m_punchArmed.load(std::memory_order_relaxed), m_periodSongPlaying,
+		m_periodStartFrame, Engine::framesPerTick(), frames, m_punchBegin.load(std::memory_order_relaxed),
+		m_punchEnd.load(std::memory_order_relaxed));
+}
+
 void AudioEngine::setPunchWindow(bool armed, tick_t begin, tick_t end) noexcept
 {
 	// Begin and end first, the armed flag last: a render thread that sees the
@@ -540,12 +547,7 @@ std::span<const SampleFrame> AudioEngine::renderNextPeriod()
 	// recorders - frame-accurately, so a region that starts mid-period starts
 	// mid-period. No armed region: every frame, the pre-gate behaviour. Pure
 	// arithmetic on atomics (include/PunchWindow.h): no lock, no allocation.
-	const bool punchArmed = m_punchArmed.load(std::memory_order_relaxed);
-	const auto gate = [&](f_cnt_t frames) {
-		return punchFramesForPeriod(punchArmed, m_periodSongPlaying, m_periodStartFrame,
-			Engine::framesPerTick(), frames, m_punchBegin.load(std::memory_order_relaxed),
-			m_punchEnd.load(std::memory_order_relaxed));
-	};
+	const auto gate = [this](f_cnt_t frames) { return punchWindow(frames); };
 	if (m_wideInputStage != nullptr && m_wideInputStage->frames() > 0
 		&& m_wideInputStage->channels() > 0)
 	{

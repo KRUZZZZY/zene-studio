@@ -90,23 +90,34 @@ namespace
 //! made once at start-up, so the audio thread never allocates for it.
 const std::array<SampleFrame, MAXIMUM_BUFFER_SIZE> s_punchSilence{};
 
-//! Engine audit E3: whether the punch region (Timeline::punchCapturesAt, transport.punch_set)
-//! keeps this period out of the take. With no armed region every period is captured.
-bool punchedOut()
-{
-	const Song* song = Engine::getSong();
-	if (song == nullptr) { return false; }
-	const Timeline& timeline = song->getTimeline(Song::PlayMode::Song);
-	return timeline.punchEnabled()
-		&& !timeline.punchCapturesAt(song->getPlayPos(Song::PlayMode::Song).getTicks());
-}
 
 } // namespace
+
+void SampleRecordHandle::writePunched( const SampleFrame* period, f_cnt_t from, f_cnt_t to, const PunchFrames& punch )
+{
+	const auto silence = [this]( f_cnt_t count ) {
+		for( ; count > 0; )
+		{
+			const f_cnt_t n = std::min( count, static_cast<f_cnt_t>( s_punchSilence.size() ) );
+			writeBuffer( s_punchSilence.data(), n );
+			count -= n;
+		}
+	};
+	const f_cnt_t liveFrom = std::clamp( punch.begin, from, to );
+	const f_cnt_t liveTo = std::clamp( punch.end, liveFrom, to );
+	silence( liveFrom - from );
+	if( liveTo > liveFrom ) { writeBuffer( period + liveFrom, liveTo - liveFrom ); }
+	silence( to - liveTo );
+}
 
 void SampleRecordHandle::play( std::span<SampleFrame> /*buffer*/ )
 {
 	const SampleFrame* recbuf = Engine::audioEngine()->inputBuffer();
 	f_cnt_t frames = Engine::audioEngine()->inputBufferFrames();
+	// E3: the same frame-accurate punch gate the record routes get (AudioEngine::punchWindow),
+	// in the period's own frame indices - taken before the head of the period is skipped.
+	const PunchFrames punch = Engine::audioEngine()->punchWindow( frames );
+	const f_cnt_t periodFrames = frames;
 	// The clip started m_offset frames into this period (SampleTrack::play -> setOffset),
 	// so the input before that point was performed before the take began: drop it with
 	// the round trip, as SamplePlayHandle leaves the same frames silent on the way out.
@@ -131,13 +142,9 @@ void SampleRecordHandle::play( std::span<SampleFrame> /*buffer*/ )
 	m_compensationFrames -= skipped;
 	recbuf += skipped;
 	frames -= skipped;
-	// Outside an armed punch region the take records silence for the period - kept in place,
-	// so what is captured inside the region stays aligned to the clip (E3).
-	if( punchedOut() && frames <= static_cast<f_cnt_t>( s_punchSilence.size() ) )
-	{
-		recbuf = s_punchSilence.data();
-	}
-	writeBuffer( recbuf, frames );
+	// Outside the punch window the take records silence, kept in place, so what is captured
+	// inside the region stays aligned to the clip.
+	writePunched( recbuf - skipped, skipped, periodFrames, punch );
 	m_framesRecorded += frames;
 
 	TimePos len = (tick_t)( m_framesRecorded / Engine::framesPerTick() );

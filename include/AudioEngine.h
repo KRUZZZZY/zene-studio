@@ -40,6 +40,7 @@
 #include "LocklessList.h"
 #include "AudioEngineProfiler.h"
 #include "MasterLoudnessTap.h"
+#include "PunchWindow.h"
 #include "PlayHandle.h"
 #include "AudioWideInputStage.h"
 #include "MultiTrackRecorder.h"
@@ -304,6 +305,10 @@ public:
 	 *  Song whenever its timeline's punch changes; plain atomics, so the audio
 	 *  thread never reads the Timeline's own fields. */
 	void setPunchWindow(bool armed, tick_t begin, tick_t end) noexcept;
+	//! Render thread, inside a period: the frames of this period's @a frames the punch region
+	//! lets a recorder take - the one gate the record routes and the record-armed clips share
+	//! (0.5.0, engine audit E3). Every frame when no region is armed.
+	PunchFrames punchWindow(f_cnt_t frames) const noexcept;
 
 	// -----------------------------------------------------------------------
 	// The N-CHANNEL capture IN path (0.3.0, feature row 64 "Arbitrary input

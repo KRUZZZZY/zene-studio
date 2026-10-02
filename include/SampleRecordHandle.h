@@ -28,6 +28,7 @@
 #include <memory>
 
 #include "PlayHandle.h"
+#include "PunchWindow.h"
 #include "TimePos.h"
 
 namespace lmms
@@ -58,6 +59,9 @@ public:
 private:
 	virtual void writeBuffer( const SampleFrame* _ab,
 						const f_cnt_t _frames );
+	//! Period frames [from, to) into the take: live input inside the punch window, silence
+	//! outside it (E3). No armed region: the window is the whole period.
+	void writePunched( const SampleFrame* period, f_cnt_t from, f_cnt_t to, const PunchFrames& punch );
 
 	// D9c (audit grade-B-recording.md): the take is staged into a fixed
 	// pre-allocated ring and assembled on the accumulator's own thread, so the
