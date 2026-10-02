@@ -101,7 +101,15 @@ def unscope_classname(stylesheet, cname):
 
 for theme in sorted([d for d in Path('data/themes').iterdir() if d.is_dir()]):
     classes_in_sheet = set()
+    # A theme is a style.css (the inherited themes) or, for the 0.5.0 token theme, the
+    # template named after its directory (data/themes/zene/zene.qss); its class names are
+    # checked against the source exactly the same way. A theme directory with neither fails.
     stylesheet = theme / 'style.css'
+    if not stylesheet.is_file():
+        stylesheet = theme / f'{theme.name}.qss'
+    if not stylesheet.is_file():
+        error(theme.as_posix(), 'Theme directory has no style.css and no <theme>.qss')
+        continue
     rules = tinycss2.parse_stylesheet(Path(stylesheet).read_text(errors='replace'))
     for rule in rules:
         if rule.type == 'qualified-rule':

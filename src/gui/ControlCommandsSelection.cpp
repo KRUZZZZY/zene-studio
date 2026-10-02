@@ -63,6 +63,33 @@ QJsonObject selectionState(gui::GuiApplication* g)
 	return out;
 }
 
+//! Apply @a args' selection - `clip` first, then `channel`, then `track` (empty clears); false
+//! (with @a error) for an id that names nothing, the selection then left as it was.
+bool applySelection(const QJsonObject& args, ControlResult* error)
+{
+	gui::ShellSelection* selection = gui::ShellSelection::instance();
+	if (args.contains(QStringLiteral("clip")))
+	{
+		ClipRef ref;
+		if (!resolveClip(args.value(QStringLiteral("clip")).toString(), &ref, error)) { return false; }
+		selection->setClip(ref.clip);
+		return true;
+	}
+	if (args.contains(QStringLiteral("channel")))
+	{
+		const QString id = args.value(QStringLiteral("channel")).toString();
+		if (resolveMixerChannel(id, error) == nullptr) { return false; }
+		selection->setChannel(id);
+		return true;
+	}
+	if (!args.contains(QStringLiteral("track"))) { return true; }
+	const QString id = args.value(QStringLiteral("track")).toString();
+	Track* track = id.isEmpty() ? nullptr : resolveTrack(id, error);
+	if (!id.isEmpty() && track == nullptr) { return false; }
+	selection->setTrack(track);
+	return true;
+}
+
 ControlResult select(const QJsonObject& args)
 {
 	gui::GuiApplication* g = gui::getGUI();
@@ -74,25 +101,7 @@ ControlResult select(const QJsonObject& args)
 	gui::ShellSelection* selection = gui::ShellSelection::instance();
 	const auto before = std::make_tuple(selection->track(), selection->clip(), selection->channel());
 	ControlResult error;
-	if (args.contains(QStringLiteral("clip")))
-	{
-		ClipRef ref;
-		if (!resolveClip(args.value(QStringLiteral("clip")).toString(), &ref, &error)) { return error; }
-		gui::ShellSelection::instance()->setClip(ref.clip);
-	}
-	else if (args.contains(QStringLiteral("channel")))
-	{
-		const QString id = args.value(QStringLiteral("channel")).toString();
-		if (resolveMixerChannel(id, &error) == nullptr) { return error; }
-		selection->setChannel(id);
-	}
-	else if (args.contains(QStringLiteral("track")))
-	{
-		const QString id = args.value(QStringLiteral("track")).toString();
-		Track* track = id.isEmpty() ? nullptr : resolveTrack(id, &error);
-		if (!id.isEmpty() && track == nullptr) { return error; }
-		gui::ShellSelection::instance()->setTrack(track);
-	}
+	if (!applySelection(args, &error)) { return error; }
 	// A changed selection queues the panels' redraw for the next event-loop turn; draw them now,
 	// so the reply describes what they show.
 	if (before != std::make_tuple(selection->track(), selection->clip(), selection->channel()))

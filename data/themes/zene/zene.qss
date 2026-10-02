@@ -1050,14 +1050,14 @@ lmms--gui--FileBrowser QCheckBox {
 	padding: 0 4px;
 }
 
-#deviceAdd {
+QToolButton#deviceAdd {
 	border: 1px dashed @separator;
 	border-radius: 6px;
 	padding: 6px 10px;
 	color: @textMuted;
 }
 
-#deviceAdd:hover {
+QToolButton#deviceAdd:hover {
 	color: @text;
 	border-color: @accent;
 }
@@ -1067,17 +1067,17 @@ lmms--gui--FileBrowser QCheckBox {
 	font-weight: 600;
 }
 
-#inspectorToggle {
+QToolButton#inspectorToggle {
 	background-color: @control;
 	border: 1px solid @separator;
 	font-weight: 600;
 }
 
-#inspectorToggle:hover {
+QToolButton#inspectorToggle:hover {
 	background-color: @controlHover;
 }
 
-#inspectorToggle:checked {
+QToolButton#inspectorToggle:checked {
 	background-color: @accent;
 	border-color: @accent;
 	color: @textOnAccent;
