@@ -24,6 +24,8 @@
 
 #include "MixerChannelView.h"
 
+#include "DesignTokens.h"
+
 #include <QCheckBox>
 #include <QFont>
 #include <QGraphicsProxyWidget>
@@ -104,26 +106,18 @@ MixerChannelView::MixerChannelView(QWidget* parent, MixerView* mixerView, int ch
 	setToolTip(mixerName);
 	setAccessibleName(mixerName); // R8.5 (kept in step with the tooltip on rename)
 
-	m_renameLineEdit = new QLineEdit{mixerName, nullptr};
-	m_renameLineEdit->setFixedWidth(65);
-	m_renameLineEdit->setFont(adjustedToPixelSize(font(), LARGE_FONT_SIZE));
+	// 0.5.0 (docs/UI-SHELL.md §1): the channel's name reads horizontally, centred above the
+	// strip's controls, as modern mixers show it - in place of the rotated label drawn through a
+	// QGraphicsView. It is the same line edit, read-only until a rename starts.
+	m_renameLineEdit = new QLineEdit{mixerName, this};
+	m_renameLineEdit->setObjectName(QStringLiteral("mixerChannelName"));
+	m_renameLineEdit->setFixedWidth(56);
+	m_renameLineEdit->setAlignment(Qt::AlignCenter);
 	m_renameLineEdit->setReadOnly(true);
+	m_renameLineEdit->setFocusPolicy(Qt::NoFocus);
 	m_renameLineEdit->installEventFilter(this);
-
-	auto renameLineEditScene = new QGraphicsScene{};
-	m_renameLineEditView = new QGraphicsView{};
-	m_renameLineEditView->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
-	m_renameLineEditView->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
-	m_renameLineEditView->setAttribute(Qt::WA_TransparentForMouseEvents, true);
-	// R8.5: the rotated name is a picture of the channel's name, not a control - Tab must not stop
-	// on it (it was announced as nothing). Renaming stays on the channel's own double-click/menu.
-	m_renameLineEditView->setFocusPolicy(Qt::NoFocus);
-	m_renameLineEditView->viewport()->setFocusPolicy(Qt::NoFocus);
-	m_renameLineEditView->setScene(renameLineEditScene);
-
-	auto renameLineEditProxy = renameLineEditScene->addWidget(m_renameLineEdit);
-	renameLineEditProxy->setRotation(-90);
-	m_renameLineEditView->setFixedSize(m_renameLineEdit->height() + 5, m_renameLineEdit->width() + 5);
+	m_renameLineEditView = nullptr;
+	m_renameLineEdit->setText(elideName(mixerName));
 
 	m_muteButton = new AutomatableButton(this, tr("Mute"));
 	m_muteButton->setObjectName("btn-mute");
@@ -165,7 +159,7 @@ MixerChannelView::MixerChannelView(QWidget* parent, MixerView* mixerView, int ch
 	mainLayout->addWidget(m_sendKnob, 0, Qt::AlignHCenter);
 	mainLayout->addWidget(m_sendArrow, 0, Qt::AlignHCenter);
 	mainLayout->addWidget(m_channelNumberLcd, 0, Qt::AlignHCenter);
-	mainLayout->addWidget(m_renameLineEditView, 0, Qt::AlignHCenter);
+	mainLayout->addWidget(m_renameLineEdit, 0, Qt::AlignHCenter);
 	mainLayout->addLayout(soloMuteLayout);
 	mainLayout->addWidget(m_panKnob, 0, Qt::AlignHCenter);
 	mainLayout->addWidget(m_peakIndicator);
@@ -225,28 +219,26 @@ void MixerChannelView::contextMenuEvent(QContextMenuEvent*)
 
 void MixerChannelView::paintEvent(QPaintEvent*)
 {
-	static constexpr auto innerBorderSize = 3;
-	static constexpr auto outerBorderSize = 1;
-
+	// 0.5.0 (docs/UI-SHELL.md §1): a flat strip - the raised surface when selected, the channel's
+	// colour as a slim bar along the top (dimmed when muted), a hairline seam to the next strip -
+	// in place of the double bevelled border and the darkened full-strip tint.
+	const tokens::Palette& pal = tokens::palette();
 	const auto channel = mixerChannel();
 	const auto isActive = m_mixerView->currentMixerChannel() == this;
-	const auto width = rect().width();
-	const auto height = rect().height();
 	auto painter = QPainter{this};
-
-	if (channel->color().has_value() && !channel->m_muteModel.value())
+	painter.fillRect(rect(), isActive ? pal.raised : pal.panel);
+	if (channel->color().has_value())
 	{
-		painter.fillRect(rect(), channel->color()->darker(isActive ? 120 : 150));
+		QColor bar = *channel->color();
+		if (channel->m_muteModel.value()) { bar.setAlpha(80); }
+		painter.fillRect(QRect(0, 0, width(), 3), bar);
 	}
-	else { painter.fillRect(rect(), isActive ? backgroundActive().color() : painter.background().color()); }
-
-	// inner border
-	painter.setPen(isActive ? strokeInnerActive() : strokeInnerInactive());
-	painter.drawRect(1, 1, width - innerBorderSize, height - innerBorderSize);
-
-	// outer border
-	painter.setPen(isActive ? strokeOuterActive() : strokeOuterInactive());
-	painter.drawRect(0, 0, width - outerBorderSize, height - outerBorderSize);
+	painter.fillRect(QRect(width() - 1, 0, 1, height()), pal.base);
+	if (isActive)
+	{
+		painter.setPen(QPen(pal.accent, 1));
+		painter.drawRect(QRectF(rect()).adjusted(0.5, 0.5, -1.5, -0.5));
+	}
 }
 
 void MixerChannelView::mousePressEvent(QMouseEvent*)
@@ -290,7 +282,7 @@ void MixerChannelView::renameChannel()
 	m_renameLineEdit->setFixedWidth(m_renameLineEdit->width());
 	m_renameLineEdit->setText(mixerChannel()->m_name);
 
-	m_renameLineEditView->setFocus();
+	m_renameLineEdit->setFocusPolicy(Qt::StrongFocus);
 	m_renameLineEdit->selectAll();
 	m_renameLineEdit->setFocus();
 }
@@ -301,6 +293,7 @@ void MixerChannelView::renameFinished()
 
 	m_renameLineEdit->deselect();
 	m_renameLineEdit->setReadOnly(true);
+	m_renameLineEdit->setFocusPolicy(Qt::NoFocus);
 	m_renameLineEdit->setFixedWidth(m_renameLineEdit->width());
 	m_channelNumberLcd->show();
 

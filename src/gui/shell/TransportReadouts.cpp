@@ -35,6 +35,7 @@
 
 #include "Accessibility.h"
 #include "AudioEngine.h"
+#include "ControlRegistry.h"
 #include "DesignTokens.h"
 #include "Engine.h"
 #include "MeterModel.h"
@@ -257,6 +258,16 @@ void TransportReadouts::bindToSong(Song* song)
 		const int sixteenth = std::max(1, ticksPerBeat / 4);
 		return QStringLiteral("%1.%2.%3").arg(pos.getBar() + 1).arg(song->getBeat() + 1)
 			.arg(song->getBeatTicks() / sixteenth + 1);
+	}, [song](const QString& typed) {
+		// "bar" or "bar.beat": jump there (transport.seek), as typing a position does in any DAW.
+		const QStringList parts = typed.split(QLatin1Char('.'));
+		bool okBar = false;
+		const int bar = parts.value(0).toInt(&okBar);
+		const int beat = parts.size() > 1 ? parts.value(1).toInt() : 1;
+		if (!okBar || bar < 1) { return false; }
+		const int ticksPerBeat = song->ticksPerBar() / std::max(1, song->getTimeSigModel().getNumerator());
+		const int ticks = (bar - 1) * song->ticksPerBar() + std::max(0, beat - 1) * ticksPerBeat;
+		return ControlRegistry::instance()->invoke(QStringLiteral("transport.seek"), {{QStringLiteral("ticks"), ticks}}).ok;
 	});
 	m_time->bindText([song]() {
 		const int ms = song->getMilliseconds();

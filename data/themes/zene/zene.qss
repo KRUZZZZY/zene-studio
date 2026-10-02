@@ -725,13 +725,26 @@ lmms--gui--ClipView {
 }
 
 lmms--gui--MidiClipView {
+	background-color: @clipMidi;
+	color: @textOnAccent;
 	qproperty-noteFillColor: @base/200;
 	qproperty-noteBorderColor: @base/0;
 	qproperty-mutedNoteFillColor: @textDisabled;
 	qproperty-mutedNoteBorderColor: @base/0;
 }
 
+lmms--gui--SampleClipView {
+	background-color: @clipSample;
+	color: @base/190;
+}
+
+lmms--gui--AutomationClipView {
+	background-color: @clipAutomation;
+	color: @base/150;
+}
+
 lmms--gui--PatternClipView {
+	background-color: @clipPattern;
 	qproperty-emptyTrackHeightRatio: 0.5;
 	qproperty-verticalPadding: 0.15;
 	qproperty-noteVerticalSpacing: 0.2;
@@ -747,6 +760,19 @@ lmms--gui--MixerChannelView {
 	qproperty-strokeOuterInactive: @base;
 	qproperty-strokeInnerActive: @base;
 	qproperty-strokeInnerInactive: @base;
+}
+
+QLineEdit#mixerChannelName {
+	background: transparent;
+	border: none;
+	padding: 0;
+	color: @text;
+	font-size: 11px;
+}
+
+QLineEdit#mixerChannelName:!read-only {
+	background-color: @base;
+	border: 1px solid @focusRing;
 }
 
 lmms--gui--MixerChannelView QGraphicsView {

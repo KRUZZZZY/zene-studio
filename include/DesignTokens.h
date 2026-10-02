@@ -82,6 +82,11 @@ struct Palette
 	QColor keyBlackRow;  //!< piano-roll row of a black key
 	QColor scaleRow;     //!< piano-roll row of an in-scale key when a scale is highlighted
 	QColor playhead;
+
+	QColor clipMidi;      //!< arranger clip bodies, by kind; their content draws dark on top
+	QColor clipSample;
+	QColor clipAutomation;
+	QColor clipPattern;
 };
 
 //! The palette of the shipped dark theme.

@@ -75,6 +75,10 @@ Palette makePalette()
 	p.keyBlackRow = QColor(0x16, 0x18, 0x1b);
 	p.scaleRow = QColor(0x1d, 0x2b, 0x2a);
 	p.playhead = QColor(0xf2, 0xf4, 0xf7);
+	p.clipMidi = QColor(0x2f, 0xc9, 0xb5);
+	p.clipSample = QColor(0x4a, 0x90, 0xe2);
+	p.clipAutomation = QColor(0x9a, 0x7a, 0xea);
+	p.clipPattern = QColor(0xe6, 0xb3, 0x4a);
 	return p;
 }
 
@@ -152,6 +156,10 @@ std::vector<ContrastPair> contrastPairs()
 		{"play on raised", p.play, p.raised, 3.0},
 		{"playhead on white-key row", p.playhead, p.keyWhiteRow, 3.0},
 		{"bar line on white-key row", p.gridBar, p.keyWhiteRow, 1.5},
+		{"clip name on a MIDI clip", p.textOnAccent, p.clipMidi, 4.5},
+		{"clip name on a sample clip", p.textOnAccent, p.clipSample, 4.5},
+		{"clip name on an automation clip", p.textOnAccent, p.clipAutomation, 4.5},
+		{"clip name on a pattern clip", p.textOnAccent, p.clipPattern, 4.5},
 	};
 }
 
@@ -196,7 +204,9 @@ QColor tokenColor(const QString& name, bool* known)
 		{"record", &Palette::record}, {"warning", &Palette::warning}, {"meterLow", &Palette::meterLow},
 		{"meterMid", &Palette::meterMid}, {"meterHigh", &Palette::meterHigh}, {"gridBar", &Palette::gridBar},
 		{"gridBeat", &Palette::gridBeat}, {"gridStep", &Palette::gridStep}, {"keyWhiteRow", &Palette::keyWhiteRow},
-		{"keyBlackRow", &Palette::keyBlackRow}, {"scaleRow", &Palette::scaleRow}, {"playhead", &Palette::playhead}};
+		{"keyBlackRow", &Palette::keyBlackRow}, {"scaleRow", &Palette::scaleRow}, {"playhead", &Palette::playhead},
+		{"clipMidi", &Palette::clipMidi}, {"clipSample", &Palette::clipSample},
+		{"clipAutomation", &Palette::clipAutomation}, {"clipPattern", &Palette::clipPattern}};
 	const auto it = roles.find(name);
 	if (known != nullptr) { *known = it != roles.end(); }
 	return it != roles.end() ? p.*(it->second) : QColor();

@@ -128,6 +128,7 @@ private:
 	void wheelEvent(QWheelEvent* ev) override;
 	void paintEvent(QPaintEvent* ev) override;
 
+	void paintHandle(QPainter& painter);
 	void paintLevels(QPaintEvent* ev, QPainter& painter, bool linear = false);
 	void paintFaderTicks(QPainter& painter);
 
