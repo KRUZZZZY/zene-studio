@@ -271,7 +271,7 @@ QWidget* InspectorPanel::trackControls(Track* track, QWidget* parent)
 		invoke(QStringLiteral("track.set_mute"), {{QStringLiteral("track"), id}, {QStringLiteral("muted"), on}});
 	});
 	connect(m_solo, &QToolButton::clicked, this, [id](bool on) {
-		invoke(QStringLiteral("track.set_solo"), {{QStringLiteral("track"), id}, {QStringLiteral("soloed"), on}});
+		invoke(QStringLiteral("track.set_solo"), {{QStringLiteral("track"), id}, {QStringLiteral("solo"), on}});
 	});
 	auto* toggles = new QHBoxLayout;
 	toggles->setSpacing(tokens::space::sm);

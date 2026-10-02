@@ -161,6 +161,15 @@ private slots:
 		QVERIFY(track->isMuted());
 		QVERIFY(run(QStringLiteral("control.undo")).ok);
 		QVERIFY(!track->isMuted());
+
+		// Solo is track.set_solo with its `solo` argument (the Inspector once sent `soloed`, which
+		// the schema refuses: every click did nothing).
+		auto* solo = childNamed<QToolButton>(&inspector, QStringLiteral("Solo the track"));
+		QVERIFY(solo != nullptr);
+		solo->click();
+		QVERIFY(track->isSolo());
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
+		QVERIFY(!track->isSolo());
 		QVERIFY(run(QStringLiteral("control.undo")).ok);
 		QCOMPARE(track->name(), QStringLiteral("Lead"));
 		ShellSelection::instance()->setTrack(nullptr);
