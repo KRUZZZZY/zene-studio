@@ -45,6 +45,7 @@
 #include "NoteCanvas.h"
 #include "NoteEditorParts.h"
 #include "Piano.h"
+#include "ShellSelection.h"
 #include "Engine.h"
 #include "Song.h"
 #include <QTimer>
@@ -143,6 +144,8 @@ void NoteEditor::setClip(MidiClip* clip)
 		// emits - repaints the editor, so an agent's edit on the socket shows at once.
 		connect(clip, &MidiClip::dataChanged, this, &NoteEditor::refresh);
 		connect(clip, &QObject::destroyed, this, &NoteEditor::onClipDestroyed);
+		// The clip being edited is the clip the Inspector and the Device panel follow.
+		ShellSelection::instance()->setClip(clip);
 	}
 	m_clipLabel->setText(clip != nullptr ? clip->name().isEmpty() ? tr("Untitled clip") : clip->name() : tr("No clip"));
 	readScale();

@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-10-02T13:05:44Z",
+  "captured_at": "2026-10-02T15:32:38Z",
   "commands": [
     {
       "args_schema": {
@@ -21038,7 +21038,7 @@
         "required": [],
         "type": "object"
       },
-      "description": "The shell's layout: `view` (arrange, mix or edit); `panels`, one {id, title, region, visible, available, shortcut, mounted} per panel, where region is left, center, bottom or right and available says whether the current view offers it; `focused`, the panel that last took keyboard focus; `launcher`, whether the clip launcher sits beside the view's main panel; `editors`, one {editor, visible, panel} entry per window.toggle name; and `note_editor`, the note editor's view (window.note_editor_set's reply). Read-only. Refused `requires` in a process with no interface.",
+      "description": "The shell's layout: `view` (arrange, mix or edit); `panels`, one {id, title, region, visible, available, shortcut, mounted} per panel, where region is left, center, bottom or right and available says whether the current view offers it; `focused`, the panel that last took keyboard focus; `launcher`, whether the clip launcher sits beside the view's main panel; `editors`, one {editor, visible, panel} entry per window.toggle name; `note_editor`, the note editor's view (window.note_editor_set's reply); and `selection`, what the Inspector and the Device panel show (window.select's reply). Read-only. Refused `requires` in a process with no interface.",
       "group": "window",
       "id": "window.get_state",
       "mutating": false,
@@ -21060,6 +21060,9 @@
           },
           "panels": {
             "type": "array"
+          },
+          "selection": {
+            "type": "object"
           },
           "view": {
             "type": "string"
@@ -21101,6 +21104,9 @@
         "properties": {
           "clip": {
             "type": "string"
+          },
+          "fit": {
+            "type": "boolean"
           },
           "fold": {
             "enum": [
@@ -21149,7 +21155,7 @@
         "required": [],
         "type": "object"
       },
-      "description": "Drive the note editor's VIEW - what the editor's header and keys set - and answer its state (the same object window.get_state reports as `note_editor`). Every field is optional: `clip` opens that MIDI clip in the editor (what double-clicking it does); `tool` is draw, select, slice, erase or audition; `grid` the snap in ticks (1 = off); `fold` none, scale or used; `lane` the expression lane (velocity, pan, chance, timbre, pressure, pitch); `ghosts` shows the track's other clips; `zoom` is pixels per tick; `reveal` (default true) brings the note editor panel into view. Interface state, not project state: nothing is journalled - the notes themselves are edited through note.*. Refused `requires` in a process with no interface.",
+      "description": "Drive the note editor's VIEW - what the editor's header and keys set - and answer its state (the same object window.get_state reports as `note_editor`). Every field is optional: `clip` opens that MIDI clip in the editor (what double-clicking it does); `tool` is draw, select, slice, erase or audition; `grid` the snap in ticks (1 = off); `fold` none, scale or used; `lane` the expression lane (velocity, pan, chance, timbre, pressure, pitch); `ghosts` shows the track's other clips; `zoom` is pixels per tick; `fit` zooms to the clip and centres its notes (after the panel is shown); `reveal` (default true) brings the note editor panel into view. Interface state, not project state: nothing is journalled - the notes themselves are edited through note.*. Refused `requires` in a process with no interface.",
       "group": "window",
       "id": "window.note_editor_set",
       "mutating": false,
@@ -21188,8 +21194,18 @@
           "scroll_ticks": {
             "type": "number"
           },
+          "scroll_y": {
+            "maximum": 1048576,
+            "minimum": 0,
+            "type": "integer"
+          },
           "tool": {
             "type": "string"
+          },
+          "top_key": {
+            "maximum": 127,
+            "minimum": -1,
+            "type": "integer"
           },
           "visible_notes": {
             "maximum": 1919808,
@@ -21240,6 +21256,51 @@
           },
           "width": {
             "type": "integer"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "channel": {
+            "type": "string"
+          },
+          "clip": {
+            "type": "string"
+          },
+          "track": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "description": "Select what the Inspector and the Device panel show - what clicking a track header, a clip or a mixer strip does. `clip` (clip-<n>) selects that clip and its track; otherwise `channel` (ch-<n>) selects a mixer channel on its own; otherwise `track` (trk-<n>) selects a track, and an empty `track` clears the selection; no argument just answers. The reply is {track, clip, channel, inspector, devices}: the Inspector's {track, clip, channel, name, muted, soloed} and the Device panel's {track, channel, cards: [{target, plugin, name, enabled, parameters, shown}], modulators} - a track's own mixer channel (not the master) is drawn after its devices, with the modulators beside the inserts they drive. Interface state, not project state: nothing is journalled. Refused `requires` in a process with no interface.",
+      "group": "window",
+      "id": "window.select",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "channel": {
+            "type": "string"
+          },
+          "clip": {
+            "type": "string"
+          },
+          "devices": {
+            "type": "object"
+          },
+          "inspector": {
+            "type": "object"
+          },
+          "track": {
+            "type": "string"
           }
         },
         "required": [],
@@ -21470,7 +21531,7 @@
       }
     }
   ],
-  "count": 394,
+  "count": 395,
   "instance": {
     "binary": null,
     "binary_bytes": null,
@@ -21478,15 +21539,15 @@
     "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-survey/tools/zene-pa-agentctl",
     "lane_head": null,
     "proto": 1,
-    "source_socket": "/tmp/zctl-run-ekrepv8e/zene.sock",
-    "version": "0.4.0-alpha.2+ede3407"
+    "source_socket": "/tmp/zctl-run-a9rd62az/zene.sock",
+    "version": "0.4.0-alpha.6+90f343f"
   },
   "kind": "zene-control-command-list",
   "proto": 1,
   "schema": 1,
   "surface": {
     "group_count": 58,
-    "id_count": 394,
-    "ids_sha256": "ebd1f9d36bb6d1aaaccf1c820a463f8a0baa96768738e7785bd070fbb3c0ebcf"
+    "id_count": 395,
+    "ids_sha256": "0d09b891a96446b2834434b65459ab62f2307842880318f8529e6d90ddf22ff2"
   }
 }

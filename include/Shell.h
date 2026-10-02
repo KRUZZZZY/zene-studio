@@ -130,9 +130,6 @@ private:
 	bool m_shownOnce = false;
 };
 
-//! A quiet sentence in a panel that has no editor yet - honest about what will be there.
-LMMS_EXPORT QWidget* createPanelNote(const QString& text, QWidget* parent);
-
 } // namespace lmms::gui
 
 #endif // LMMS_GUI_SHELL_H

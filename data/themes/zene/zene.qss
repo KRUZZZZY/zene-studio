@@ -1003,3 +1003,82 @@ lmms--gui--FileBrowser QCheckBox {
 	font-size: 11px;
 	color: @textMuted;
 }
+
+/* --- Device panel and Inspector (0.5.0) --- */
+
+#devicePanel, #devicePanel QScrollArea, #devicePanel QScrollArea > QWidget > QWidget,
+#inspectorPanel {
+	background-color: @panel;
+}
+
+#deviceCard {
+	background-color: @raised;
+	border: 1px solid @separator;
+	border-radius: 6px;
+}
+
+#deviceCardHeader {
+	background-color: @control;
+	border-top-left-radius: 6px;
+	border-top-right-radius: 6px;
+	border-bottom: 1px solid @separator;
+}
+
+#modulatorCard {
+	background-color: @raised;
+	border: 1px solid @accent/110;
+	border-left: 3px solid @accent;
+	border-radius: 6px;
+}
+
+#deviceCardTitle {
+	color: @text;
+	font-size: 12px;
+	font-weight: 600;
+}
+
+#deviceCaption {
+	color: @textMuted;
+	font-size: 11px;
+}
+
+#deviceSection {
+	color: @textMuted;
+	font-size: 10px;
+	font-weight: 600;
+	letter-spacing: 1px;
+	padding: 0 4px;
+}
+
+#deviceAdd {
+	border: 1px dashed @separator;
+	border-radius: 6px;
+	padding: 6px 10px;
+	color: @textMuted;
+}
+
+#deviceAdd:hover {
+	color: @text;
+	border-color: @accent;
+}
+
+#inspectorName {
+	font-size: 14px;
+	font-weight: 600;
+}
+
+#inspectorToggle {
+	background-color: @control;
+	border: 1px solid @separator;
+	font-weight: 600;
+}
+
+#inspectorToggle:hover {
+	background-color: @controlHover;
+}
+
+#inspectorToggle:checked {
+	background-color: @accent;
+	border-color: @accent;
+	color: @textOnAccent;
+}
