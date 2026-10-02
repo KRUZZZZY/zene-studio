@@ -101,7 +101,7 @@ ArrangerRangeOverlay::ArrangerRangeOverlay(SongEditor* editor) :
 {
 	setObjectName(QStringLiteral("arrangerRangeOverlay"));
 	setAttribute(Qt::WA_NoSystemBackground);
-	setToolActive(false);
+	setTool(Tool::None);
 	QWidget* viewport = editor->contentWidget()->viewport();
 	setGeometry(viewport->rect());
 	viewport->installEventFilter(this);
@@ -111,11 +111,18 @@ ArrangerRangeOverlay::ArrangerRangeOverlay(SongEditor* editor) :
 	raise();
 }
 
-void ArrangerRangeOverlay::setToolActive(bool active)
+void ArrangerRangeOverlay::setTool(Tool tool)
 {
-	m_tool = active;
-	setAttribute(Qt::WA_TransparentForMouseEvents, !active);
-	setCursor(active ? Qt::IBeamCursor : Qt::ArrowCursor);
+	m_tool = tool;
+	setAttribute(Qt::WA_TransparentForMouseEvents, !toolActive());
+	setCursor(tool == Tool::Zoom ? Qt::CrossCursor : tool == Tool::Audition ? Qt::PointingHandCursor : Qt::IBeamCursor);
+}
+
+void ArrangerRangeOverlay::beginRangeFrom(const QPoint& globalPos)
+{
+	m_dragging = true;
+	m_from = mapFromGlobal(globalPos);
+	grabMouse();
 }
 
 bool ArrangerRangeOverlay::eventFilter(QObject* watched, QEvent* event)
@@ -187,18 +194,42 @@ void ArrangerRangeOverlay::mousePressEvent(QMouseEvent* event)
 	if (event->button() != Qt::LeftButton) { return QWidget::mousePressEvent(event); }
 	m_dragging = true;
 	m_from = event->pos();
+	if (m_tool == Tool::Audition)
+	{
+		Track* track = trackAt(m_from.y());
+		QJsonObject args{{QStringLiteral("position"), tickAt(m_from.x())}};
+		if (track != nullptr) { args.insert(QStringLiteral("track"), control::trackIdOf(track)); }
+		ControlRegistry::instance()->invoke(QStringLiteral("transport.audition_start"), args);
+	}
 }
 
 void ArrangerRangeOverlay::mouseMoveEvent(QMouseEvent* event)
 {
-	if (m_dragging) { dispatchRange(event->pos()); }
+	if (m_dragging && (m_tool == Tool::Range || m_tool == Tool::Smart)) { dispatchRange(event->pos()); }
 }
 
 void ArrangerRangeOverlay::mouseReleaseEvent(QMouseEvent* event)
 {
 	if (!m_dragging) { return; }
 	m_dragging = false;
-	dispatchRange(event->pos());
+	if (QWidget::mouseGrabber() == this) { releaseMouse(); }
+	finishGesture(event->pos());
+}
+
+void ArrangerRangeOverlay::finishGesture(const QPoint& to)
+{
+	switch (m_tool)
+	{
+	case Tool::Audition: ControlRegistry::instance()->invoke(QStringLiteral("transport.audition_stop")); break;
+	case Tool::Zoom:
+		if (std::abs(to.x() - m_from.x()) > 4)
+		{
+			ControlRegistry::instance()->invoke(QStringLiteral("arrangement.zoom"),
+				{{QStringLiteral("start"), std::min(tickAt(m_from.x()), tickAt(to.x()))}, {QStringLiteral("end"), std::max(tickAt(m_from.x()), tickAt(to.x()))}});
+		}
+		break;
+	default: dispatchRange(to); break;
+	}
 }
 
 void ArrangerRangeOverlay::dispatchRange(const QPoint& to)

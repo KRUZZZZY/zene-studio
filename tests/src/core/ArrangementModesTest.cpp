@@ -162,6 +162,25 @@ private slots:
 		run(QStringLiteral("arrangement.modes"), {{QStringLiteral("overlap"), QStringLiteral("free")}});
 	}
 
+	//! ED-009: an audition silences the other tracks while it lasts and puts everything back -
+	//! without a single undo step.
+	void anAuditionSilencesTheOthersAndRestoresEverything()
+	{
+		Track* other = Track::create(Track::Type::Instrument, Engine::getSong());
+		Track* alreadyMuted = Track::create(Track::Type::Instrument, Engine::getSong());
+		alreadyMuted->setMuted(true);
+		const int depth = run(QStringLiteral("control.undo_depth")).result.value(QStringLiteral("depth")).toInt();
+		const ControlResult started = run(QStringLiteral("transport.audition_start"),
+			{{QStringLiteral("position"), Bar}, {QStringLiteral("track"), control::trackIdOf(m_track)}});
+		QVERIFY2(started.ok, qPrintable(started.errorMessage));
+		QVERIFY(other->isMuted());
+		QVERIFY(!m_track->isMuted());
+		QVERIFY(run(QStringLiteral("transport.audition_stop")).ok);
+		QVERIFY(!other->isMuted());
+		QVERIFY2(alreadyMuted->isMuted(), "a track muted before the audition came back unmuted");
+		QCOMPARE(run(QStringLiteral("control.undo_depth")).result.value(QStringLiteral("depth")).toInt(), depth);
+	}
+
 private:
 	Track* m_track = nullptr;
 };

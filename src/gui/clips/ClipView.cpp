@@ -25,6 +25,7 @@
 #include "ClipView.h"
 
 #include "ArrangementEdits.h"
+#include "ArrangerOverlays.h"
 
 #include <set>
 #include <cassert>
@@ -564,6 +565,14 @@ void ClipView::paintTextLabel(QString const & text, QPainter & painter)
  */
 void ClipView::mousePressEvent( QMouseEvent * me )
 {
+	// 0.5.0 ED-010: with the arranger's smart tool, a press in a clip's upper half draws a range.
+	auto* overlay = m_trackView->trackContainerView()->findChild<ArrangerRangeOverlay*>();
+	if (overlay != nullptr && overlay->tool() == ArrangerRangeOverlay::Tool::Smart && me->button() == Qt::LeftButton
+		&& position(me).y() < height() / 2)
+	{
+		overlay->beginRangeFrom(mapToGlobal(position(me)));
+		return;
+	}
 	const auto pos = position(me);
 
 	// Right now, active is only used on right/mid clicks actions, so we use a ternary operator

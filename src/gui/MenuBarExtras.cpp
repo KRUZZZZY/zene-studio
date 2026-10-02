@@ -74,7 +74,19 @@ QMenu* installNavigateMenu(QMenuBar* bar)
 	markers->setProperty("controlCommand", QStringLiteral("marker.list"));
 	QObject::connect(markers, &QAction::triggered, menu, [menu] { showCommandList(menu->parentWidget(), CommandLists::markers()); });
 	menu->addSeparator();
-	run(QObject::tr("Range Tool"), QStringLiteral("arrangement.set_tool"), {{QStringLiteral("tool"), QStringLiteral("range")}});
+	const auto onTools = [menu](const QString& label, const QString& id, const QString& key, const QJsonObject& fixed) {
+		addCommandChoices(menu, label, id, key, [id, fixed] { return CommandCall{id, fixed, {}, QString(), false}; });
+	};
+	onTools(QObject::tr("Arranger Tool"), QStringLiteral("arrangement.set_tool"), QStringLiteral("tool"), {});
+	onTools(QObject::tr("Ripple"), QStringLiteral("arrangement.modes"), QStringLiteral("ripple"), {});
+	onTools(QObject::tr("Overlap"), QStringLiteral("arrangement.modes"), QStringLiteral("overlap"), {});
+	onTools(QObject::tr("Snap to Clip Edges and Markers"), QStringLiteral("arrangement.modes"), QStringLiteral("snap_to_edges"), {});
+	QMenu* presets = menu->addMenu(QObject::tr("Zoom Presets"));
+	for (const int ppb : {16, 32, 64, 128, 256})
+	{
+		addCommandAction(presets, QObject::tr("%1 px per bar").arg(ppb), QStringLiteral("arrangement.zoom"),
+			[ppb] { return CommandCall{QStringLiteral("arrangement.zoom"), {{QStringLiteral("pixels_per_bar"), ppb}}, {}, QString(), false}; });
+	}
 	QMenu* range = menu->addMenu(QObject::tr("Range"));
 	const auto onRange = [range](const QString& label, const QString& id, const QJsonObject& args) {
 		addCommandAction(range, label, id, [id, args] { return CommandCall{id, args, {}, QString(), false}; });

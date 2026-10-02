@@ -41,6 +41,8 @@
 #include "Song.h"
 #include "Track.h"
 
+#include <QPointer>
+
 namespace lmms
 {
 
@@ -243,6 +245,61 @@ ControlResult consolidateRange(const QJsonObject&)
 	return ControlResult::success({{QStringLiteral("consolidated"), done}, {QStringLiteral("refused"), refused}});
 }
 
+/*! ED-009: an audition - play from a point, the other tracks silenced, everything put back on
+ *  stop. Not a project edit: the mutes are set with journalling off and restored exactly. */
+struct Audition
+{
+	bool active = false;
+	bool wasPlaying = false;
+	tick_t returnTo = 0;
+	QVector<QPair<QPointer<Track>, bool>> muted;  //!< each silenced track and its own mute before
+};
+Audition g_audition;
+
+ControlResult auditionStop(const QJsonObject&);
+
+ControlResult auditionStart(const QJsonObject& args)
+{
+	if (g_audition.active) { auditionStop({}); }
+	Song* song = Engine::getSong();
+	ControlResult error;
+	Track* solo = args.contains(QStringLiteral("track")) ? resolveTrack(args.value(QStringLiteral("track")).toString(), &error) : nullptr;
+	if (args.contains(QStringLiteral("track")) && solo == nullptr) { return error; }
+	g_audition = {true, song->isPlaying(), song->getPlayPos().getTicks(), {}};
+	for (Track* track : song->tracks())
+	{
+		if (solo == nullptr || track == solo) { continue; }
+		g_audition.muted.append({track, track->isMuted()});
+		BoolModel* mute = track->getMutedModel();
+		const bool journalling = mute->isJournalling();
+		mute->setJournalling(false);
+		mute->setValue(true);
+		mute->setJournalling(journalling);
+	}
+	song->setPlayPos(args.value(QStringLiteral("position")).toInt(), Song::PlayMode::Song);
+	if (!song->isPlaying()) { song->playSong(); }
+	return ControlResult::success({{QStringLiteral("auditioning"), true}, {QStringLiteral("silenced"), g_audition.muted.size()}});
+}
+
+ControlResult auditionStop(const QJsonObject&)
+{
+	if (!g_audition.active) { return ControlResult::success({{QStringLiteral("auditioning"), false}}); }
+	Song* song = Engine::getSong();
+	if (!g_audition.wasPlaying) { song->stop(); }
+	for (const auto& [track, wasMuted] : g_audition.muted)
+	{
+		if (track.isNull()) { continue; }
+		BoolModel* mute = track->getMutedModel();
+		const bool journalling = mute->isJournalling();
+		mute->setJournalling(false);
+		mute->setValue(wasMuted);
+		mute->setJournalling(journalling);
+	}
+	if (!g_audition.wasPlaying) { song->setPlayPos(g_audition.returnTo, Song::PlayMode::Song); }
+	g_audition = {};
+	return ControlResult::success({{QStringLiteral("auditioning"), false}});
+}
+
 const QStringList& rippleNames()
 {
 	static const QStringList names{QStringLiteral("off"), QStringLiteral("track"), QStringLiteral("all")};
@@ -307,6 +364,30 @@ void registerRangeCommands(ControlRegistry& registry)
 		{QStringLiteral("snap_to_edges"), booleanProperty()}});
 	modes.handler = setModes;
 	registry.registerCommand(modes);
+
+	ControlCommand start;
+	start.id = QStringLiteral("transport.audition_start");
+	start.group = QStringLiteral("transport");
+	start.verb = QStringLiteral("audition_start");
+	start.description = QStringLiteral("Audition: play from 'position' (ticks), with every track but 'track' silenced when one "
+		"is given - the arranger's audition tool while the button is held. transport.audition_stop puts the mutes, the "
+		"transport and the play position back exactly. Not a project edit: nothing is recorded.");
+	start.argsSchema = objectSchema({{QStringLiteral("position"), tickProperty()}, {QStringLiteral("track"), stringProperty()}},
+		{QStringLiteral("position")});
+	start.resultSchema = objectProperty();
+	start.handler = auditionStart;
+	registry.registerCommand(start);
+
+	ControlCommand stop;
+	stop.id = QStringLiteral("transport.audition_stop");
+	stop.group = QStringLiteral("transport");
+	stop.verb = QStringLiteral("audition_stop");
+	stop.description = QStringLiteral("End an audition: the silenced tracks' own mutes, the transport and the play position "
+		"come back as they were.");
+	stop.argsSchema = objectSchema({});
+	stop.resultSchema = objectProperty();
+	stop.handler = auditionStop;
+	registry.registerCommand(stop);
 
 	const QString oneStep = QStringLiteral(" One undo step (every covered track is checkpointed).");
 	add(registry, "set", QStringLiteral("Select a time range from 'start' to 'end' (ticks) over 'tracks' (trk ids), or "

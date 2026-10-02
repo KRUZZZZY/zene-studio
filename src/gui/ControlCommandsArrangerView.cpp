@@ -117,13 +117,29 @@ bool fitRange(gui::SongEditor* editor, const QString& fit, tick_t* begin, tick_t
 	return *end > *begin;
 }
 
+//! Zoom and scroll so [@a begin, @a end) fills the arranger's width.
+void fitSpan(gui::SongEditor* editor, tick_t begin, tick_t end)
+{
+	const int width = editor->timeLine()->width() - editor->timeLine()->markerX(editor->currentPosition());
+	const double bars = static_cast<double>(end - begin) / TimePos::ticksPerBar();
+	editor->zoomingModel()->setValue(editor->zoomValueFor(static_cast<int>(std::max(1.0, std::floor(std::max(width, 1) / bars)))));
+	editor->horizontalScroll()->setValue(static_cast<int>(begin));
+}
+
 ControlResult zoom(const QJsonObject& args)
 {
 	gui::SongEditor* editor = arranger();
 	if (editor == nullptr) { return noArranger(QStringLiteral("arrangement.zoom")); }
 	IntModel* model = editor->zoomingModel();
 	const int before = model->value();
-	if (args.contains(QStringLiteral("fit")))
+	if (args.contains(QStringLiteral("start")) && args.contains(QStringLiteral("end")))
+	{
+		// ED-008: the zoom tool's span fills the width.
+		const tick_t begin = args.value(QStringLiteral("start")).toInt();
+		const tick_t end = std::max(begin + 1, args.value(QStringLiteral("end")).toInt());
+		fitSpan(editor, begin, end);
+	}
+	else if (args.contains(QStringLiteral("fit")))
 	{
 		tick_t begin = 0;
 		tick_t end = 0;
@@ -132,10 +148,7 @@ ControlResult zoom(const QJsonObject& args)
 		{
 			return ControlResult::failure(ControlErrorKind::Refused, error);
 		}
-		const int width = editor->timeLine()->width() - editor->timeLine()->markerX(editor->currentPosition());
-		const double bars = static_cast<double>(end - begin) / TimePos::ticksPerBar();
-		model->setValue(editor->zoomValueFor(static_cast<int>(std::max(1.0, std::floor(std::max(width, 1) / bars)))));
-		editor->horizontalScroll()->setValue(static_cast<int>(begin));
+		fitSpan(editor, begin, end);
 	}
 	else if (args.contains(QStringLiteral("pixels_per_bar")))
 	{
@@ -205,23 +218,31 @@ ControlResult fitTracks(const QJsonObject& args)
 	return ControlResult::success(result);
 }
 
-//! The song editor's own modes, in EditMode order, then the range tool (ArrangerRangeOverlay).
+//! The song editor's own modes, in EditMode order, then the overlay's tools (ArrangerRangeOverlay):
+//! range, audition, zoom, smart - in ArrangerRangeOverlay::Tool order after None.
 const QStringList& toolNames()
 {
-	static const QStringList names{QStringLiteral("draw"), QStringLiteral("knife"), QStringLiteral("select"), QStringLiteral("range")};
+	static const QStringList names{QStringLiteral("draw"), QStringLiteral("knife"), QStringLiteral("select"),
+		QStringLiteral("range"), QStringLiteral("audition"), QStringLiteral("zoom"), QStringLiteral("smart")};
 	return names;
 }
+
+constexpr int EditorModeCount = 3;
 
 ControlResult setTool(const QJsonObject& args)
 {
 	gui::SongEditor* editor = arranger();
 	if (editor == nullptr) { return noArranger(QStringLiteral("arrangement.set_tool")); }
 	const QString tool = args.value(QStringLiteral("tool")).toString();
-	const bool range = tool == QStringLiteral("range");
-	// The range tool draws ranges on the overlay; under it the editor selects.
-	editor->setEditMode(range ? gui::SongEditor::EditMode::Select : static_cast<gui::SongEditor::EditMode>(toolNames().indexOf(tool)));
-	if (auto* overlay = editor->findChild<gui::ArrangerRangeOverlay*>()) { overlay->setToolActive(range); }
-	return ControlResult::success({{QStringLiteral("tool"), range ? tool : toolNames().at(static_cast<int>(editor->editMode()))}});
+	const int index = static_cast<int>(toolNames().indexOf(tool));
+	const bool overlayTool = index >= EditorModeCount;
+	// The overlay's tools work over the song editor in select mode (smart moves clips as select does).
+	editor->setEditMode(overlayTool ? gui::SongEditor::EditMode::Select : static_cast<gui::SongEditor::EditMode>(index));
+	if (auto* overlay = editor->findChild<gui::ArrangerRangeOverlay*>())
+	{
+		overlay->setTool(overlayTool ? static_cast<gui::ArrangerRangeOverlay::Tool>(index - EditorModeCount + 1) : gui::ArrangerRangeOverlay::Tool::None);
+	}
+	return ControlResult::success({{QStringLiteral("tool"), overlayTool ? tool : toolNames().at(static_cast<int>(editor->editMode()))}});
 }
 
 //! The tools the menu at the pointer offers: the arranger's, then the note editor's.
@@ -322,9 +343,11 @@ void registerArrangerViewCommands(ControlRegistry& registry)
 		{QStringLiteral("zoom"), integerProperty()}, {QStringLiteral("history"), integerProperty()},
 		{QStringLiteral("previous_zoom"), integerProperty()}});
 	add(registry, "arrangement", "zoom", QStringLiteral("Zoom the arranger: to 'pixels_per_bar', by 'step' zoom steps "
-		"(negative zooms out), or to 'fit' the song, the loop or the selected clips across its width (scrolled to "
+		"(negative zooms out), to the span 'start'..'end' (the zoom tool's drag), or to 'fit' the song, the loop or the "
+		"selected clips across its width (scrolled to "
 		"their start). The previous zoom joins the history arrangement.zoom_back walks. Interface state."),
 		objectSchema({{QStringLiteral("pixels_per_bar"), numberProperty()}, {QStringLiteral("step"), integerProperty()},
+			{QStringLiteral("start"), tickProperty()}, {QStringLiteral("end"), tickProperty()},
 			{QStringLiteral("fit"), enumProperty({QStringLiteral("song"), QStringLiteral("loop"), QStringLiteral("selection")})}}),
 		zoomResult, false, zoom);
 	add(registry, "arrangement", "zoom_back", QStringLiteral("Go back to the previous zoom. It swaps the current zoom "
@@ -335,8 +358,10 @@ void registerArrangerViewCommands(ControlRegistry& registry)
 		"saved with the project, so this is one undo step."),
 		objectSchema({{QStringLiteral("heights"), arrayProperty()}}),
 		objectSchema({{QStringLiteral("heights"), arrayProperty()}, {QStringLiteral("tracks"), integerProperty()}}), true, fitTracks);
-	add(registry, "arrangement", "set_tool", QStringLiteral("Choose the arranger's tool: draw, knife, select or range. "
-		"The range tool draws time ranges (range.set) across tracks. Interface state."),
+	add(registry, "arrangement", "set_tool", QStringLiteral("Choose the arranger's tool: draw, knife, select, range, audition, zoom or smart. "
+		"Beyond the song editor's draw / knife / select: range (draws time ranges, range.set), audition (plays from the "
+		"pressed point while held, the pressed track alone), zoom (the dragged span fills the width) and smart (a clip's "
+		"upper half draws a range, its lower half moves). Interface state."),
 		objectSchema({{QStringLiteral("tool"), enumProperty(toolNames())}}, {QStringLiteral("tool")}),
 		objectSchema({{QStringLiteral("tool"), stringProperty()}}), false, setTool);
 	add(registry, "arrangement", "nudge", QStringLiteral("Move the selected clip left or right by 'amount' ticks "

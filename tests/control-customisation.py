@@ -180,8 +180,13 @@ def check_arranger_view(session, recorder):
     tool = session.result("arrangement.set_tool", {"tool": "select"})
     menu = session.result("window.tool_menu")
     recorder.check("set_tool and the tool menu",
-                   tool.get("tool") == "select" and menu.get("shown") is False and len(menu.get("entries") or []) == 9,
+                   tool.get("tool") == "select" and menu.get("shown") is False and len(menu.get("entries") or []) == 12,
                    "tool=%r menu=%r" % (tool, menu))
+    tools = [session.result("arrangement.set_tool", {"tool": t}).get("tool") for t in ("audition", "zoom", "smart", "range")]
+    recorder.check("the overlay's tools are chosen like the editor's (ED-008/009/010/011)",
+                   tools == ["audition", "zoom", "smart", "range"], "tools=%r" % tools)
+    zoomed_span = session.result("arrangement.zoom", {"start": 0, "end": 768})
+    recorder.check("the zoom tool's span fills the width", zoomed_span.get("pixels_per_bar", 0) > 0, "reply=%r" % zoomed_span)
     session.result("arrangement.set_tool", {"tool": "draw"})
 
 

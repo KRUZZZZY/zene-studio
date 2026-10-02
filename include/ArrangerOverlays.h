@@ -63,18 +63,26 @@ private:
 	QList<int> m_drawn;
 };
 
-/*! ED-011: the time range (ArrangerRange) drawn over the tracks it covers, and - while the range
- *  tool is active (arrangement.set_tool {tool: "range"}) - the gesture that draws one: press, drag
- *  across time and tracks, release, and range.set is dispatched (snapped to the arranger's snap).
- *  Transparent to the mouse otherwise, so every clip gesture is the song editor's. */
+/*! ED-011: the time range (ArrangerRange) drawn over the tracks it covers, and the arranger's own
+ *  tools beyond the song editor's: RANGE (press, drag across time and tracks, release: range.set,
+ *  snapped), AUDITION (ED-009: transport.audition_start while held, from the pressed point, the
+ *  pressed track alone), ZOOM (ED-008: the dragged span fills the width - arrangement.zoom) and
+ *  SMART (ED-010: a clip's upper half draws a range, its lower half moves and trims as ever - the
+ *  clip hands the press over, ClipView::mousePressEvent). Transparent to the mouse except while a
+ *  tool of its own is chosen, so every clip gesture is the song editor's. */
 class LMMS_EXPORT ArrangerRangeOverlay : public QWidget
 {
 	Q_OBJECT
 public:
+	enum class Tool { None, Range, Audition, Zoom, Smart };
+
 	explicit ArrangerRangeOverlay(SongEditor* editor);
 
-	void setToolActive(bool active);
-	bool toolActive() const { return m_tool; }
+	void setTool(Tool tool);
+	Tool tool() const { return m_tool; }
+	bool toolActive() const { return m_tool == Tool::Range || m_tool == Tool::Audition || m_tool == Tool::Zoom; }
+	//! SMART: a clip hands a press in its upper half over; the overlay takes the drag from there.
+	void beginRangeFrom(const QPoint& globalPos);
 	//! The viewport rectangle the range covers, empty with no range (a test's view of it).
 	QRect rangeRect() const;
 	//! The tick and the track at a viewport point (the gesture's mapping; public for tests).
@@ -91,9 +99,10 @@ protected:
 private:
 	int contentLeft() const;
 	void dispatchRange(const QPoint& to);
+	void finishGesture(const QPoint& to);
 
 	QPointer<SongEditor> m_editor;
-	bool m_tool = false;
+	Tool m_tool = Tool::None;
 	bool m_dragging = false;
 	QPoint m_from;
 };

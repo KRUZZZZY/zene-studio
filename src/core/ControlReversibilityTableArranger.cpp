@@ -88,6 +88,10 @@ const ReversibilityRow kArrangerRows[] = {
 	R("arrangement.modes", RC::NotMutating, false,
 		"it sets the arranger's editing preferences (ripple, overlap, snap to edges), kept in the config file - not "
 		"project state", "no write to the project (set the previous modes)", ""),
+	R("transport.audition_start", RC::NotMutating, false,
+		"it plays from a point with the other tracks silenced; the mutes are set with journalling off and are put back "
+		"by audition_stop - engine run state, not project state", "no write to the project (transport.audition_stop)", ""),
+	R("transport.audition_stop", RC::NotMutating, false, "it ends an audition, restoring what it changed", "no write", ""),
 };
 
 #undef R
