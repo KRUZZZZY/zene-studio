@@ -69,6 +69,20 @@ QMenu* installNavigateMenu(QMenuBar* bar)
 	markers->setProperty("controlCommand", QStringLiteral("marker.list"));
 	QObject::connect(markers, &QAction::triggered, menu, [menu] { showCommandList(menu->parentWidget(), CommandLists::markers()); });
 	menu->addSeparator();
+	run(QObject::tr("Range Tool"), QStringLiteral("arrangement.set_tool"), {{QStringLiteral("tool"), QStringLiteral("range")}});
+	QMenu* range = menu->addMenu(QObject::tr("Range"));
+	const auto onRange = [range](const QString& label, const QString& id, const QJsonObject& args) {
+		addCommandAction(range, label, id, [id, args] { return CommandCall{id, args, {}, QString(), false}; });
+	};
+	onRange(QObject::tr("Split at Edges"), QStringLiteral("range.split"), {});
+	onRange(QObject::tr("Delete"), QStringLiteral("range.delete"), {});
+	onRange(QObject::tr("Delete and Close Gap"), QStringLiteral("range.delete"), {{QStringLiteral("ripple"), true}});
+	onRange(QObject::tr("Crop"), QStringLiteral("range.crop"), {});
+	onRange(QObject::tr("Insert Time"), QStringLiteral("range.insert_time"), {});
+	onRange(QObject::tr("Copy"), QStringLiteral("range.copy"), {});
+	onRange(QObject::tr("Paste"), QStringLiteral("range.paste"), {});
+	onRange(QObject::tr("Duplicate"), QStringLiteral("range.duplicate"), {});
+	onRange(QObject::tr("Clear Range"), QStringLiteral("range.clear"), {});
 	run(QObject::tr("Tool Menu at Pointer"), QStringLiteral("window.tool_menu"), {});
 	return menu;
 }

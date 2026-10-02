@@ -37,6 +37,7 @@
 #include <QScrollArea>
 #include <QScrollBar>
 
+#include "ArrangerOverlays.h"
 #include "ClipView.h"
 #include "ControlReversibility.h"
 #include "ControlEdit.h"
@@ -203,9 +204,10 @@ ControlResult fitTracks(const QJsonObject& args)
 	return ControlResult::success(result);
 }
 
+//! The song editor's own modes, in EditMode order, then the range tool (ArrangerRangeOverlay).
 const QStringList& toolNames()
 {
-	static const QStringList names{QStringLiteral("draw"), QStringLiteral("knife"), QStringLiteral("select")};
+	static const QStringList names{QStringLiteral("draw"), QStringLiteral("knife"), QStringLiteral("select"), QStringLiteral("range")};
 	return names;
 }
 
@@ -213,9 +215,12 @@ ControlResult setTool(const QJsonObject& args)
 {
 	gui::SongEditor* editor = arranger();
 	if (editor == nullptr) { return noArranger(QStringLiteral("arrangement.set_tool")); }
-	const int index = static_cast<int>(toolNames().indexOf(args.value(QStringLiteral("tool")).toString()));
-	editor->setEditMode(static_cast<gui::SongEditor::EditMode>(index));
-	return ControlResult::success({{QStringLiteral("tool"), toolNames().at(static_cast<int>(editor->editMode()))}});
+	const QString tool = args.value(QStringLiteral("tool")).toString();
+	const bool range = tool == QStringLiteral("range");
+	// The range tool draws ranges on the overlay; under it the editor selects.
+	editor->setEditMode(range ? gui::SongEditor::EditMode::Select : static_cast<gui::SongEditor::EditMode>(toolNames().indexOf(tool)));
+	if (auto* overlay = editor->findChild<gui::ArrangerRangeOverlay*>()) { overlay->setToolActive(range); }
+	return ControlResult::success({{QStringLiteral("tool"), range ? tool : toolNames().at(static_cast<int>(editor->editMode()))}});
 }
 
 //! The tools the menu at the pointer offers: the arranger's, then the note editor's.
@@ -295,8 +300,9 @@ void registerArrangerViewCommands(ControlRegistry& registry)
 		"saved with the project, so this is one undo step."),
 		objectSchema({{QStringLiteral("heights"), arrayProperty()}}),
 		objectSchema({{QStringLiteral("heights"), arrayProperty()}, {QStringLiteral("tracks"), integerProperty()}}), true, fitTracks);
-	add(registry, "arrangement", "set_tool", QStringLiteral("Choose the arranger's tool: draw, knife or select. "
-		"Interface state."), objectSchema({{QStringLiteral("tool"), enumProperty(toolNames())}}, {QStringLiteral("tool")}),
+	add(registry, "arrangement", "set_tool", QStringLiteral("Choose the arranger's tool: draw, knife, select or range. "
+		"The range tool draws time ranges (range.set) across tracks. Interface state."),
+		objectSchema({{QStringLiteral("tool"), enumProperty(toolNames())}}, {QStringLiteral("tool")}),
 		objectSchema({{QStringLiteral("tool"), stringProperty()}}), false, setTool);
 	add(registry, "window", "tool_menu", QStringLiteral("Open the tool menu at the pointer: the arranger's tools and "
 		"the note editor's, each running arrangement.set_tool or window.note_editor_set. Headless, nothing is shown "

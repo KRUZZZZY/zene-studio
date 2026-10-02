@@ -906,7 +906,9 @@ set(LMMS_SRCS
 	core/ControlCommandsSurface.cpp
 	core/McuProtocol.cpp
 	core/McuSurface.cpp
+	core/ArrangementEdits.cpp
 	core/ControlCommandsMarkers.cpp
+	core/ControlCommandsRange.cpp
 	core/ProjectMarkers.cpp
 	core/Timeline.cpp
 	core/TrackMixModels.cpp

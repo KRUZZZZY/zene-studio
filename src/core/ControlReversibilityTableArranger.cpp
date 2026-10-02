@@ -50,6 +50,22 @@ const ReversibilityRow kArrangerRows[] = {
 		"action checkpoint: the recorded undo step puts the previous marker list back", ""),
 	R("marker.remove", RC::TrueInverse, true, "the same bounded marker list",
 		"action checkpoint: the recorded undo step puts the previous marker list back", ""),
+	R("range.set", RC::NotMutating, false, "it selects a time range: interface state, not saved", "no write", ""),
+	R("range.get", RC::NotMutating, false, "it reads the range. Nothing is written", "no write", ""),
+	R("range.clear", RC::NotMutating, false, "it clears the range: interface state", "no write", ""),
+	R("range.copy", RC::NotMutating, false, "it copies clips to the range clipboard; the project does not change", "no write", ""),
+	R("range.split", RC::TrueInverse, true, "it splits clips on every track the range covers",
+		"Track checkpoints: every covered track was checkpointed before the edit, as one step", ""),
+	R("range.delete", RC::TrueInverse, true, "it removes clips (and with ripple moves later ones) on every covered track",
+		"Track checkpoints: every covered track was checkpointed before the edit, as one step", ""),
+	R("range.crop", RC::TrueInverse, true, "it removes clips outside the range on every covered track",
+		"Track checkpoints: every covered track was checkpointed before the edit, as one step", ""),
+	R("range.insert_time", RC::TrueInverse, true, "it moves clips later on every covered track",
+		"Track checkpoints: every covered track was checkpointed before the edit, as one step", ""),
+	R("range.paste", RC::TrueInverse, true, "it creates clips on the covered tracks",
+		"Track checkpoints: every covered track was checkpointed before the edit, as one step", ""),
+	R("range.duplicate", RC::TrueInverse, true, "it creates clips after the range on the covered tracks",
+		"Track checkpoints: every covered track was checkpointed before the edit, as one step", ""),
 };
 
 #undef R

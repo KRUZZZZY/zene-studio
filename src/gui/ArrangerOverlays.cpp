@@ -24,14 +24,25 @@
 
 #include "ArrangerOverlays.h"
 
+#include <algorithm>
+#include <cmath>
+
 #include <QEvent>
+#include <QJsonArray>
+#include <QMouseEvent>
+#include <QScrollArea>
 #include <QPainter>
 #include <QPainterPath>
 
+#include "ArrangementEdits.h"
+#include "ControlRegistry.h"
+#include "ControlVocabulary.h"
 #include "DesignTokens.h"
 #include "ProjectMarkers.h"
 #include "SongEditor.h"
 #include "TimeLineWidget.h"
+#include "TrackContentWidget.h"
+#include "TrackView.h"
 
 namespace lmms::gui
 {
@@ -84,10 +95,134 @@ void MarkerRulerOverlay::paintEvent(QPaintEvent*)
 	}
 }
 
+ArrangerRangeOverlay::ArrangerRangeOverlay(SongEditor* editor) :
+	QWidget(editor->contentWidget()->viewport()),
+	m_editor(editor)
+{
+	setObjectName(QStringLiteral("arrangerRangeOverlay"));
+	setAttribute(Qt::WA_NoSystemBackground);
+	setToolActive(false);
+	QWidget* viewport = editor->contentWidget()->viewport();
+	setGeometry(viewport->rect());
+	viewport->installEventFilter(this);
+	connect(&ArrangerRange::instance(), &ArrangerRange::changed, this, qOverload<>(&QWidget::update));
+	connect(editor, &SongEditor::pixelsPerBarChanged, this, qOverload<>(&QWidget::update));
+	show();
+	raise();
+}
+
+void ArrangerRangeOverlay::setToolActive(bool active)
+{
+	m_tool = active;
+	setAttribute(Qt::WA_TransparentForMouseEvents, !active);
+	setCursor(active ? Qt::IBeamCursor : Qt::ArrowCursor);
+}
+
+bool ArrangerRangeOverlay::eventFilter(QObject* watched, QEvent* event)
+{
+	if (event->type() == QEvent::Resize) { setGeometry(static_cast<QWidget*>(watched)->rect()); }
+	if (event->type() == QEvent::Paint) { update(); }
+	return QWidget::eventFilter(watched, event);
+}
+
+int ArrangerRangeOverlay::contentLeft() const
+{
+	const QList<TrackView*>& views = m_editor->trackViews();
+	if (views.isEmpty() || views.first()->getTrackContentWidget() == nullptr) { return 0; }
+	return views.first()->getTrackContentWidget()->mapTo(parentWidget(), QPoint(0, 0)).x();
+}
+
+tick_t ArrangerRangeOverlay::tickAt(int x) const
+{
+	const float ppb = std::max(1.f, m_editor->pixelsPerBar());
+	const double ticks = m_editor->currentPosition().getTicks() + (x - contentLeft()) * TimePos::ticksPerBar() / ppb;
+	const double snap = std::max(1.0, static_cast<double>(m_editor->getSnapSize()) * TimePos::ticksPerBar());
+	return static_cast<tick_t>(std::max(0.0, std::round(ticks / snap) * snap));
+}
+
+Track* ArrangerRangeOverlay::trackAt(int y) const
+{
+	for (TrackView* view : m_editor->trackViews())
+	{
+		const QRect area(view->mapTo(parentWidget(), QPoint(0, 0)), view->size());
+		if (y >= area.top() && y <= area.bottom()) { return view->getTrack(); }
+	}
+	return nullptr;
+}
+
+QRect ArrangerRangeOverlay::rangeRect() const
+{
+	const ArrangerRange& range = ArrangerRange::instance();
+	if (!range.active() || m_editor.isNull()) { return {}; }
+	const float ppb = std::max(1.f, m_editor->pixelsPerBar());
+	const auto xOf = [&](tick_t tick) {
+		return contentLeft() + static_cast<int>((tick - m_editor->currentPosition().getTicks()) * ppb / TimePos::ticksPerBar());
+	};
+	QRect area;
+	const QVector<Track*> covered = range.tracks();
+	for (TrackView* view : m_editor->trackViews())
+	{
+		if (!covered.contains(view->getTrack())) { continue; }
+		const QPoint top = view->mapTo(parentWidget(), QPoint(0, 0));
+		area = area.united(QRect(xOf(range.start()), top.y(), xOf(range.end()) - xOf(range.start()), view->height()));
+	}
+	return area;
+}
+
+void ArrangerRangeOverlay::paintEvent(QPaintEvent*)
+{
+	const QRect area = rangeRect();
+	if (area.isEmpty()) { return; }
+	QColor fill = tokens::palette().accent;
+	fill.setAlpha(48);
+	QPainter p(this);
+	p.fillRect(area, fill);
+	p.setPen(QPen(tokens::palette().accent, 1));
+	p.drawLine(area.topLeft(), area.bottomLeft());
+	p.drawLine(area.topRight(), area.bottomRight());
+}
+
+void ArrangerRangeOverlay::mousePressEvent(QMouseEvent* event)
+{
+	if (event->button() != Qt::LeftButton) { return QWidget::mousePressEvent(event); }
+	m_dragging = true;
+	m_from = event->pos();
+}
+
+void ArrangerRangeOverlay::mouseMoveEvent(QMouseEvent* event)
+{
+	if (m_dragging) { dispatchRange(event->pos()); }
+}
+
+void ArrangerRangeOverlay::mouseReleaseEvent(QMouseEvent* event)
+{
+	if (!m_dragging) { return; }
+	m_dragging = false;
+	dispatchRange(event->pos());
+}
+
+void ArrangerRangeOverlay::dispatchRange(const QPoint& to)
+{
+	// The tracks between the two rows, in the arranger's order.
+	QJsonArray tracks;
+	bool inside = false;
+	Track* first = trackAt(m_from.y());
+	Track* last = trackAt(to.y());
+	for (TrackView* view : m_editor->trackViews())
+	{
+		const bool edge = view->getTrack() == first || view->getTrack() == last;
+		if (edge || inside) { tracks.append(control::trackIdOf(view->getTrack())); }
+		if (edge && first != last) { inside = !inside; }
+	}
+	ControlRegistry::instance()->invoke(QStringLiteral("range.set"), {{QStringLiteral("start"), tickAt(m_from.x())},
+		{QStringLiteral("end"), tickAt(to.x())}, {QStringLiteral("tracks"), tracks}});
+}
+
 void installArrangerOverlays(SongEditor* editor)
 {
 	if (editor == nullptr || editor->timeLine() == nullptr) { return; }
 	if (editor->timeLine()->findChild<MarkerRulerOverlay*>() == nullptr) { new MarkerRulerOverlay(editor->timeLine()); }
+	if (editor->findChild<ArrangerRangeOverlay*>() == nullptr) { new ArrangerRangeOverlay(editor); }
 }
 
 } // namespace lmms::gui

@@ -28,7 +28,13 @@
 #include <QPointer>
 #include <QWidget>
 
+#include "LmmsTypes.h"
 #include "lmms_export.h"
+
+namespace lmms
+{
+class Track;
+}
 
 namespace lmms::gui
 {
@@ -55,6 +61,41 @@ protected:
 private:
 	QPointer<TimeLineWidget> m_ruler;
 	QList<int> m_drawn;
+};
+
+/*! ED-011: the time range (ArrangerRange) drawn over the tracks it covers, and - while the range
+ *  tool is active (arrangement.set_tool {tool: "range"}) - the gesture that draws one: press, drag
+ *  across time and tracks, release, and range.set is dispatched (snapped to the arranger's snap).
+ *  Transparent to the mouse otherwise, so every clip gesture is the song editor's. */
+class LMMS_EXPORT ArrangerRangeOverlay : public QWidget
+{
+	Q_OBJECT
+public:
+	explicit ArrangerRangeOverlay(SongEditor* editor);
+
+	void setToolActive(bool active);
+	bool toolActive() const { return m_tool; }
+	//! The viewport rectangle the range covers, empty with no range (a test's view of it).
+	QRect rangeRect() const;
+	//! The tick and the track at a viewport point (the gesture's mapping; public for tests).
+	tick_t tickAt(int x) const;
+	lmms::Track* trackAt(int y) const;
+
+protected:
+	void paintEvent(QPaintEvent* event) override;
+	void mousePressEvent(QMouseEvent* event) override;
+	void mouseMoveEvent(QMouseEvent* event) override;
+	void mouseReleaseEvent(QMouseEvent* event) override;
+	bool eventFilter(QObject* watched, QEvent* event) override;
+
+private:
+	int contentLeft() const;
+	void dispatchRange(const QPoint& to);
+
+	QPointer<SongEditor> m_editor;
+	bool m_tool = false;
+	bool m_dragging = false;
+	QPoint m_from;
 };
 
 //! Put the arranger's overlays on the song editor once (the shell calls it at start-up).

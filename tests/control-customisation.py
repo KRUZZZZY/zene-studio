@@ -180,7 +180,7 @@ def check_arranger_view(session, recorder):
     tool = session.result("arrangement.set_tool", {"tool": "select"})
     menu = session.result("window.tool_menu")
     recorder.check("set_tool and the tool menu",
-                   tool.get("tool") == "select" and menu.get("shown") is False and len(menu.get("entries") or []) == 8,
+                   tool.get("tool") == "select" and menu.get("shown") is False and len(menu.get("entries") or []) == 9,
                    "tool=%r menu=%r" % (tool, menu))
     session.result("arrangement.set_tool", {"tool": "draw"})
 

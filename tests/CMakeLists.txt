@@ -559,6 +559,8 @@ set(LMMS_TESTS
 	src/core/McuSurfaceTest.cpp
 	# 0.5.0 L04 ED-048: markers - commands, undo, jump, and the project file.
 	src/core/ProjectMarkersTest.cpp
+	# 0.5.0 L04 ED-011/012: the time range and the edits over it.
+	src/core/RangeEditsTest.cpp
 	# Feature row 50 (0.3.0): the Lua API's DAW-control half - the mixer channel
 	# and effect-chain bindings. Drives a REAL mixer channel and the chain the
 	# control surface addresses from Lua, reads the engine back (not the script's

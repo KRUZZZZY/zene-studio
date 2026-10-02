@@ -24,6 +24,7 @@
 #include <QJsonArray>
 #include <QJsonObject>
 
+#include "ArrangementEdits.h"
 #include "Clip.h"
 #include "ControlEdit.h"
 #include "ControlRegistry.h"
@@ -284,19 +285,10 @@ void registerClipSplit(ControlRegistry& registry)
 		before.insert(QStringLiteral("position"), start);
 		before.insert(QStringLiteral("length"), end - start);
 
-		// ClipView::splitClip: checkpoint the track, stop the new clip from
-		// journalling itself, clone, then resize both halves.
-		Track* track = ref.track;
-		track->addJournalCheckPoint();
-		track->saveJournallingState(false);
-		Clip* right = ref.clip->clone();
-		ref.clip->changeLength(TimePos(splitPos - start));
-		ref.clip->setAutoResize(false);
-		right->movePosition(TimePos(splitPos));
-		right->changeLength(TimePos(end - splitPos));
-		right->setStartTimeOffset(ref.clip->startTimeOffset() - ref.clip->length());
-		right->setAutoResize(false);
-		track->restoreJournallingState();
+		// ClipView::splitClip: checkpoint the track, then the one split recipe the range edits
+		// share (arrangement::splitClipAt).
+		ref.track->addJournalCheckPoint();
+		Clip* right = arrangement::splitClipAt(ref.clip, splitPos);
 
 		const int rightOrdinal = ordinalOf(right);
 		QJsonObject result;
