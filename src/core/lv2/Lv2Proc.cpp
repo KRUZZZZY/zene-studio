@@ -31,6 +31,7 @@
 #include <lv2/atom/atom.h>
 #include <lv2/resize-port/resize-port.h>
 #include <lv2/worker/worker.h>
+#include <lv2/state/state.h>
 #include <QDebug>
 #include <QtGlobal>
 
@@ -739,6 +740,37 @@ bool Lv2Proc::isLatencyDesignation(const LilvPort* port) const
 {
 	AutoLilvNode designation(lilv_port_get(m_plugin, port, uri(LV2_CORE__designation).get()));
 	return designation && lilv_node_equals(designation.get(), uri(LV2_CORE__latency).get());
+}
+
+QString Lv2Proc::saveState() const
+{
+	if (m_instance == nullptr
+		|| !lilv_plugin_has_extension_data(m_plugin, uri(LV2_STATE__interface).get())) { return QString(); }
+	UridMap& urids = Engine::getLv2Manager()->uridMap();
+	LilvState* state = lilv_state_new_from_instance(m_plugin, m_instance, urids.mapFeature(), nullptr, nullptr,
+		nullptr, nullptr, nullptr, nullptr, LV2_STATE_IS_POD | LV2_STATE_IS_PORTABLE, m_features.featurePointers());
+	if (state == nullptr) { return QString(); }
+	char* text = lilv_state_to_string(Engine::getLv2Manager()->world(), urids.mapFeature(), urids.unmapFeature(),
+		state, "urn:zene:lv2-state", nullptr);
+	const QString document = text != nullptr ? QString::fromUtf8(text) : QString();
+	lilv_free(text);
+	lilv_state_free(state);
+	return document;
+}
+
+bool Lv2Proc::restoreState(const QString& document)
+{
+	if (m_instance == nullptr || document.isEmpty()) { return false; }
+	UridMap& urids = Engine::getLv2Manager()->uridMap();
+	LilvState* state = lilv_state_new_from_string(Engine::getLv2Manager()->world(), urids.mapFeature(),
+		document.toUtf8().constData());
+	if (state == nullptr) { return false; }
+	// The plug-in's run() and its state restore must not overlap (LV2 State threading rules).
+	Engine::audioEngine()->requestChangeInModel();
+	lilv_state_restore(state, m_instance, nullptr, nullptr, 0, m_features.featurePointers());
+	Engine::audioEngine()->doneChangeInModel();
+	lilv_state_free(state);
+	return true;
 }
 
 int Lv2Proc::latencyFrames() const

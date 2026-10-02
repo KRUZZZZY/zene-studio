@@ -547,6 +547,8 @@ set(LMMS_TESTS
 	src/core/ScriptBindingsTest.cpp
 	# 0.5.0 scripting spine: zene.command reaches every registered command and keeps the sandbox.
 	src/core/ScriptCommandBridgeTest.cpp
+	# 0.5.0 engine wiring E13: an LV2 plug-in's own state survives a save and a load.
+	src/core/Lv2StateTest.cpp
 	# Feature row 50 (0.3.0): the Lua API's DAW-control half - the mixer channel
 	# and effect-chain bindings. Drives a REAL mixer channel and the chain the
 	# control surface addresses from Lua, reads the engine back (not the script's
@@ -904,6 +906,8 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 		OR LMMS_TEST_NAME STREQUAL "ModulatorPanelTest"
 		# The Device panel draws one real effect's card and the modulator driving it.
 		OR LMMS_TEST_NAME STREQUAL "DevicePanelTest"
+		# The LV2 state round trip loads the host's real LV2 effects.
+		OR LMMS_TEST_NAME STREQUAL "Lv2StateTest"
 		# The rack menu binds a macro to a parameter of one real effect.
 		OR LMMS_TEST_NAME STREQUAL "RackMenuTest"
 		# The effect Hosting submenu reads a real effect's oop.get_state entry.

@@ -113,6 +113,14 @@ public:
 	//! Debug function to print ports to stdout
 	void dumpPorts();
 
+	//! The plug-in's own state (LV2 State interface) as a Turtle document - what a sampler keeps
+	//! beyond its control ports, such as the file it loaded; empty when the plug-in has no state
+	//! interface (engine audit E13). Main thread.
+	QString saveState() const;
+	//! Restore a document saveState() wrote; false when it cannot be parsed. Main thread; the
+	//! audio thread is held off for the restore.
+	bool restoreState(const QString& document);
+
 	//! The latency the plug-in reports on its latency output port, in frames; 0 when it has
 	//! none (BUGS 11.34). Control thread.
 	int latencyFrames() const;

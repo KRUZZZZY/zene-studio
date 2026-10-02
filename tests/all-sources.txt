@@ -1823,6 +1823,7 @@ tests/src/core/InputMonitorTest.cpp
 tests/src/core/LanesUpconvertTest.cpp
 tests/src/core/LoudnessReportTest.cpp
 tests/src/core/LufsMeterTest.cpp
+tests/src/core/Lv2StateTest.cpp
 tests/src/core/MasteringTest.cpp
 tests/src/core/MasteringTestSupport.h
 tests/src/core/MathTest.cpp

@@ -122,6 +122,8 @@ public:
 	Iterator end() { return m_lv2InfoMap.end(); }
 
 	UridMap& uridMap() { return m_uridMap; }
+	//! The lilv world, for lilv calls outside the manager (the plug-in state, 0.5.0 E13)
+	LilvWorld* world() { return m_world; }
 	const Lv2UridCache& uridCache() const { return m_uridCache; }
 	const std::set<std::string_view>& supportedFeatureURIs() const
 	{

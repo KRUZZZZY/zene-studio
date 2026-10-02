@@ -24,6 +24,9 @@
 
 #include "Lv2ControlBase.h"
 
+#include <QDomDocument>
+#include <QDomElement>
+
 #ifdef LMMS_HAVE_LV2
 
 #include <algorithm>
@@ -171,8 +174,18 @@ void Lv2ControlBase::run(f_cnt_t frames) {
 void Lv2ControlBase::saveSettings(QDomDocument &doc, QDomElement &that)
 {
 	LinkedModelGroups::saveSettings(doc, that);
-	
-	// TODO: save state if supported by plugin
+
+	// 0.5.0 (engine audit E13): the plug-in's own state, one element per instance, beside the
+	// control ports - an older build ignores the element and keeps the ports.
+	for (std::size_t i = 0; i < m_procs.size(); ++i)
+	{
+		const QString state = m_procs[i]->saveState();
+		if (state.isEmpty()) { continue; }
+		QDomElement element = doc.createElement(QStringLiteral("lv2state"));
+		element.setAttribute(QStringLiteral("instance"), static_cast<int>(i));
+		element.appendChild(doc.createCDATASection(state));
+		that.appendChild(element);
+	}
 }
 
 
@@ -181,8 +194,16 @@ void Lv2ControlBase::saveSettings(QDomDocument &doc, QDomElement &that)
 void Lv2ControlBase::loadSettings(const QDomElement &that)
 {
 	LinkedModelGroups::loadSettings(that);
-	
-	// TODO: load state if supported by plugin
+
+	for (QDomElement element = that.firstChildElement(QStringLiteral("lv2state")); !element.isNull();
+		element = element.nextSiblingElement(QStringLiteral("lv2state")))
+	{
+		const int instance = element.attribute(QStringLiteral("instance")).toInt();
+		if (instance >= 0 && static_cast<std::size_t>(instance) < m_procs.size())
+		{
+			m_procs[static_cast<std::size_t>(instance)]->restoreState(element.text());
+		}
+	}
 }
 
 
