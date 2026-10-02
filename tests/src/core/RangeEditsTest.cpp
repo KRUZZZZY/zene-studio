@@ -32,6 +32,9 @@
 
 #include "ArrangementEdits.h"
 #include "Clip.h"
+#include "MidiClip.h"
+#include "SampleClip.h"
+#include "SampleTrack.h"
 #include "ControlRegistry.h"
 #include "ControlVocabulary.h"
 #include "Engine.h"
@@ -139,6 +142,50 @@ private slots:
 		QVERIFY(run(QStringLiteral("range.clear")).ok);
 		QCOMPARE(run(QStringLiteral("range.delete")).errorKind, ControlErrorKind::Refused);
 		QCOMPARE(run(QStringLiteral("range.copy")).errorKind, ControlErrorKind::Refused);
+	}
+
+	//! ED-030: repeat puts copies back to back; one undo removes them all.
+	void repeatPutsCopiesBackToBack()
+	{
+		Clip* clip = m_track->getClips().front();
+		const ControlResult repeated = run(QStringLiteral("clip.repeat"), {{QStringLiteral("clip"), control::clipIdOf(clip)}, {QStringLiteral("count"), 2}});
+		QVERIFY2(repeated.ok, qPrintable(repeated.errorMessage));
+		QCOMPARE(spans(m_track), (QList<QPair<int, int>>{{0, 3 * Bar}, {3 * Bar, 6 * Bar}, {6 * Bar, 9 * Bar}}));
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
+		QCOMPARE(spans(m_track).size(), 1);
+	}
+
+	//! ED-032: a MIDI clip's notes scale with it; a sample clip leads with a scaled source tempo.
+	void timeScaleMovesNotesOrLeadsTheSample()
+	{
+		auto* midi = dynamic_cast<MidiClip*>(m_track->getClips().front());
+		midi->addNote(Note(TimePos(48), TimePos(96), 60), false);
+		const QString id = control::clipIdOf(midi);
+		QVERIFY(run(QStringLiteral("clip.time_scale"), {{QStringLiteral("clip"), id}, {QStringLiteral("factor"), 2.0}}).ok);
+		QCOMPARE(midi->notes().front()->pos().getTicks(), 192);
+		QCOMPARE(midi->notes().front()->length().getTicks(), 96);
+		QCOMPARE(midi->length().getTicks(), 6 * Bar);
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
+		QCOMPARE(midi->notes().front()->pos().getTicks(), 96);
+		QCOMPARE(run(QStringLiteral("clip.time_scale"), {{QStringLiteral("clip"), id}, {QStringLiteral("factor"), 20.0}}).errorKind,
+			ControlErrorKind::InvalidArgs);
+
+		auto* sampleTrack = new SampleTrack(Engine::getSong());
+		auto* sample = dynamic_cast<SampleClip*>(sampleTrack->createClip(TimePos(0)));
+		sample->changeLength(TimePos(Bar));
+		QVERIFY(run(QStringLiteral("clip.time_scale"), {{QStringLiteral("clip"), control::clipIdOf(sample)}, {QStringLiteral("factor"), 2.0}}).ok);
+		QCOMPARE(sample->warpTempoMode(), WarpTempoMode::SourceTempo);
+		QVERIFY(qFuzzyCompare(sample->sourceTempo(), static_cast<float>(Engine::getSong()->getTempo() * 2)));
+		QCOMPARE(sample->length().getTicks(), 2 * Bar);
+	}
+
+	//! ED-031: range.consolidate runs clip.consolidate on the covered SAMPLE tracks only.
+	void rangeConsolidateSkipsInstrumentTracks()
+	{
+		const ControlResult ran = run(QStringLiteral("range.consolidate"));
+		QVERIFY2(ran.ok, qPrintable(ran.errorMessage));
+		QVERIFY(ran.result.value(QStringLiteral("consolidated")).toArray().isEmpty());
+		QVERIFY(ran.result.value(QStringLiteral("refused")).toArray().isEmpty());
 	}
 
 	void splitClipAtRefusesTheEdges()

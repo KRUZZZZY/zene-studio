@@ -1128,6 +1128,7 @@ src/core/ControlCommandsChord.cpp
 src/core/ControlCommandsChordEdit.cpp
 src/core/ControlCommandsChordWrite.cpp
 src/core/ControlCommandsClip.cpp
+src/core/ControlCommandsClipArrange.cpp
 src/core/ControlCommandsClipEdits.cpp
 src/core/ControlCommandsClipEnvelope.cpp
 src/core/ControlCommandsClipLink.cpp

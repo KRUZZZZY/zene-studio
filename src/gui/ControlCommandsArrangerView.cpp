@@ -46,6 +46,7 @@
 #include "ControlWindowCommands.h"
 #include "GuiApplication.h"
 #include "MainWindow.h"
+#include "ShellSelection.h"
 #include "Song.h"
 #include "SongEditor.h"
 #include "TimeLineWidget.h"
@@ -267,6 +268,40 @@ ControlResult toolMenu(const QJsonObject&)
 	return ControlResult::success({{QStringLiteral("shown"), shown}, {QStringLiteral("entries"), entries}});
 }
 
+//! ED-024: move the selected clip by @a direction x amount (default: the arranger's snap) - clip.move.
+ControlResult nudge(const QJsonObject& args)
+{
+	gui::SongEditor* editor = arranger();
+	Clip* clip = gui::ShellSelection::instance()->clip();
+	if (editor == nullptr) { return noArranger(QStringLiteral("arrangement.nudge")); }
+	if (clip == nullptr) { return ControlResult::failure(ControlErrorKind::NotFound, QStringLiteral("no clip is selected")); }
+	const int snap = std::max(1, static_cast<int>(std::lround(editor->getSnapSize() * TimePos::ticksPerBar())));
+	const int amount = args.value(QStringLiteral("amount")).toInt(snap);
+	const int sign = args.value(QStringLiteral("direction")).toString() == QStringLiteral("left") ? -1 : 1;
+	const int position = std::max(0, clip->startPosition().getTicks() + sign * amount);
+	return ControlRegistry::instance()->invoke(QStringLiteral("clip.move"),
+		{{QStringLiteral("clip"), control::clipIdOf(clip)}, {QStringLiteral("position"), position}});
+}
+
+//! ED-024: select the next / previous clip on the selected clip's track (window.select).
+ControlResult selectClip(const QJsonObject& args)
+{
+	Clip* current = gui::ShellSelection::instance()->clip();
+	if (current == nullptr) { return ControlResult::failure(ControlErrorKind::NotFound, QStringLiteral("no clip is selected")); }
+	const bool next = args.value(QStringLiteral("direction")).toString() != QStringLiteral("previous");
+	const tick_t at = current->startPosition().getTicks();
+	Clip* best = nullptr;
+	for (Clip* clip : current->getTrack()->getClips())
+	{
+		const tick_t start = clip->startPosition().getTicks();
+		const bool after = next ? start > at : start < at;
+		const bool closer = best == nullptr || (next ? start < best->startPosition().getTicks() : start > best->startPosition().getTicks());
+		if (clip != current && after && closer) { best = clip; }
+	}
+	if (best == nullptr) { return ControlResult::failure(ControlErrorKind::NotFound, QStringLiteral("no clip that way")); }
+	return ControlRegistry::instance()->invoke(QStringLiteral("window.select"), {{QStringLiteral("clip"), control::clipIdOf(best)}});
+}
+
 void add(ControlRegistry& registry, const char* group, const char* verb, const QString& description,
 	const QJsonObject& args, const QJsonObject& result, bool mutating, ControlResult (*handler)(const QJsonObject&))
 {
@@ -304,6 +339,14 @@ void registerArrangerViewCommands(ControlRegistry& registry)
 		"The range tool draws time ranges (range.set) across tracks. Interface state."),
 		objectSchema({{QStringLiteral("tool"), enumProperty(toolNames())}}, {QStringLiteral("tool")}),
 		objectSchema({{QStringLiteral("tool"), stringProperty()}}), false, setTool);
+	add(registry, "arrangement", "nudge", QStringLiteral("Move the selected clip left or right by 'amount' ticks "
+		"(default: the arranger's snap) - clip.move, which records itself."),
+		objectSchema({{QStringLiteral("direction"), enumProperty({QStringLiteral("left"), QStringLiteral("right")})},
+			{QStringLiteral("amount"), integerProperty(1, 1 << 20)}}, {QStringLiteral("direction")}), objectProperty(), false, nudge);
+	add(registry, "arrangement", "select_clip", QStringLiteral("Select the next or previous clip on the selected clip's "
+		"track (window.select). Interface state."),
+		objectSchema({{QStringLiteral("direction"), enumProperty({QStringLiteral("next"), QStringLiteral("previous")})}},
+			{QStringLiteral("direction")}), objectProperty(), false, selectClip);
 	add(registry, "window", "tool_menu", QStringLiteral("Open the tool menu at the pointer: the arranger's tools and "
 		"the note editor's, each running arrangement.set_tool or window.note_editor_set. Headless, nothing is shown "
 		"and the entries are answered."), objectSchema({}),

@@ -224,6 +224,24 @@ ControlResult duplicateRange(const QJsonObject&)
 	return finishEdit(QStringLiteral("range.duplicate"), {{QStringLiteral("pasted"), pasted}});
 }
 
+//! ED-031: clip.consolidate over the range on each covered sample track (it renders and records itself).
+ControlResult consolidateRange(const QJsonObject&)
+{
+	const ArrangerRange& range = ArrangerRange::instance();
+	if (!range.active()) { return ControlResult::failure(ControlErrorKind::Refused, QStringLiteral("no range is selected (range.set)")); }
+	QJsonArray done;
+	QJsonArray refused;
+	for (Track* track : range.tracks())
+	{
+		if (track->type() != Track::Type::Sample) { continue; }
+		const ControlResult ran = ControlRegistry::instance()->invoke(QStringLiteral("clip.consolidate"),
+			{{QStringLiteral("track"), trackIdOf(track)}, {QStringLiteral("start"), range.start()}, {QStringLiteral("end"), range.end()}});
+		(ran.ok ? done : refused).append(QJsonObject{{QStringLiteral("track"), trackIdOf(track)},
+			{QStringLiteral("detail"), ran.ok ? QString() : ran.errorMessage}});
+	}
+	return ControlResult::success({{QStringLiteral("consolidated"), done}, {QStringLiteral("refused"), refused}});
+}
+
 void add(ControlRegistry& registry, const char* verb, const QString& description, const QJsonObject& args,
 	bool mutating, ControlResult (*handler)(const QJsonObject&))
 {
@@ -270,6 +288,9 @@ void registerRangeCommands(ControlRegistry& registry)
 	add(registry, "paste", QStringLiteral("Paste the copied clips at 'position' (default the range's start) onto the "
 		"range's tracks, in the order they were copied from.") + oneStep,
 		objectSchema({{QStringLiteral("position"), tickProperty()}}), true, pasteRange);
+	add(registry, "consolidate", QStringLiteral("Render each covered sample track's clips inside the range into ONE clip "
+		"(clip.consolidate per track - clips crossing an edge are refused: range.split first). Each track records "
+		"and undoes as its own consolidation."), objectSchema({}), false, consolidateRange);
 	add(registry, "duplicate", QStringLiteral("Copy what is inside the range and paste it right after it; the range moves "
 		"onto the copy, so repeating it repeats the pattern.") + oneStep, objectSchema({}), true, duplicateRange);
 }

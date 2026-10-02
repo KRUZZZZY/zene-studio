@@ -62,6 +62,11 @@ QMenu* installNavigateMenu(QMenuBar* bar)
 	run(QObject::tr("Fit Selection"), QStringLiteral("arrangement.zoom"), {{QStringLiteral("fit"), QStringLiteral("selection")}});
 	run(QObject::tr("Fit Tracks"), QStringLiteral("arrangement.fit_tracks"), {});
 	menu->addSeparator();
+	run(QObject::tr("Nudge Clip Left"), QStringLiteral("arrangement.nudge"), {{QStringLiteral("direction"), QStringLiteral("left")}});
+	run(QObject::tr("Nudge Clip Right"), QStringLiteral("arrangement.nudge"), {{QStringLiteral("direction"), QStringLiteral("right")}});
+	run(QObject::tr("Next Clip"), QStringLiteral("arrangement.select_clip"), {{QStringLiteral("direction"), QStringLiteral("next")}});
+	run(QObject::tr("Previous Clip"), QStringLiteral("arrangement.select_clip"), {{QStringLiteral("direction"), QStringLiteral("previous")}});
+	menu->addSeparator();
 	run(QObject::tr("Add Marker at Play Position"), QStringLiteral("marker.add"), {});
 	run(QObject::tr("Next Marker"), QStringLiteral("marker.jump"), {{QStringLiteral("direction"), QStringLiteral("next")}});
 	run(QObject::tr("Previous Marker"), QStringLiteral("marker.jump"), {{QStringLiteral("direction"), QStringLiteral("previous")}});
@@ -82,6 +87,7 @@ QMenu* installNavigateMenu(QMenuBar* bar)
 	onRange(QObject::tr("Copy"), QStringLiteral("range.copy"), {});
 	onRange(QObject::tr("Paste"), QStringLiteral("range.paste"), {});
 	onRange(QObject::tr("Duplicate"), QStringLiteral("range.duplicate"), {});
+	onRange(QObject::tr("Consolidate"), QStringLiteral("range.consolidate"), {});
 	onRange(QObject::tr("Clear Range"), QStringLiteral("range.clear"), {});
 	run(QObject::tr("Tool Menu at Pointer"), QStringLiteral("window.tool_menu"), {});
 	return menu;

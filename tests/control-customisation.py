@@ -185,6 +185,19 @@ def check_arranger_view(session, recorder):
     session.result("arrangement.set_tool", {"tool": "draw"})
 
 
+def check_nudge_and_navigation(session, recorder):
+    track = session.result("track.add", {"type": "instrument", "name": "nudge"}).get("track")
+    first = session.result("clip.add", {"track": track, "position": 0}).get("clip")
+    second = session.result("clip.add", {"track": track, "position": 768}).get("clip")
+    session.result("window.select", {"clip": first})
+    nudged = session.result("arrangement.nudge", {"direction": "right", "amount": 48})
+    selected = session.result("arrangement.select_clip", {"direction": "next"})
+    state = session.result("window.select")
+    recorder.check("nudge moves the selected clip, next clip selects the one after it (ED-024)",
+                   nudged.get("position") == 48 and state.get("clip") == second,
+                   "nudge=%r select=%r state=%r" % (nudged, selected, state))
+
+
 def check_patterns(session, recorder):
     listed = session.call("session.pattern_list")
     recorder.check("session.pattern_list answers the patterns",
@@ -221,6 +234,7 @@ def main(argv):
         check_macros(session, recorder)
         check_arranger_view(session, recorder)
         check_patterns(session, recorder)
+        check_nudge_and_navigation(session, recorder)
         check_lua_refuses(session, recorder)
     report_results(recorder)
     if recorder.problems:

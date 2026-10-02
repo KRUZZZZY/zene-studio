@@ -73,6 +73,18 @@ const ReversibilityRow kArrangerRows[] = {
 	R("clip.set_transpose", RC::TrueInverse, true,
 		"the transpose is part of the clip's edits (and, for a sample clip, its stretch mode), both on the clip's element",
 		"Clip journal checkpoint: undo restores the clip's previous edits and stretch mode", ""),
+	R("clip.repeat", RC::TrueInverse, true, "it adds copies of a clip on its track",
+		"Track journal checkpoint: undo removes every copy", ""),
+	R("clip.time_scale", RC::TrueInverse, true, "it rewrites a clip's notes (or its warp) and its length",
+		"Clip journal checkpoint: undo restores the clip's notes (or warp) and length", ""),
+	R("range.consolidate", RC::NotMutating, false,
+		"it runs clip.consolidate over the range on each covered sample track; each of those records - and undoes - "
+		"as itself (the macro.run precedent), so this command records nothing of its own",
+		"nothing of its own: undo each track's clip.consolidate", ""),
+	R("arrangement.nudge", RC::NotMutating, false,
+		"it runs clip.move on the selected clip, which records itself; nothing of its own is written",
+		"nothing of its own: clip.move's Clip checkpoint", ""),
+	R("arrangement.select_clip", RC::NotMutating, false, "it selects the next or previous clip: interface state", "no write", ""),
 };
 
 #undef R

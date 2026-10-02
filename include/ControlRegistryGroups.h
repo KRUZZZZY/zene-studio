@@ -753,6 +753,8 @@ LMMS_EXPORT void registerMarkerCommands(ControlRegistry& registry);
 LMMS_EXPORT void registerRangeCommands(ControlRegistry& registry);
 //! 0.5.0 L04 (ED-042): clip.gain_envelope_set / get (ControlCommandsClipEnvelope.cpp).
 LMMS_EXPORT void registerClipEnvelopeCommands(ControlRegistry& registry);
+//! 0.5.0 L04 (ED-030/032): clip.repeat, clip.time_scale (ControlCommandsClipArrange.cpp).
+LMMS_EXPORT void registerClipArrangeCommands(ControlRegistry& registry);
 } // namespace lmms
 
 #endif // LMMS_CONTROL_REGISTRY_GROUPS_H

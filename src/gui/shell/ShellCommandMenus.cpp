@@ -184,6 +184,17 @@ void populateClip(QMenu* menu, Clip* clip)
 	const QJsonObject self{{QStringLiteral("clip"), control::clipIdOf(clip)}};
 	const QJsonObject at{{QStringLiteral("position"), static_cast<int>(clip->startPosition())}};
 	add(menu, "Move to Position...", "clip.move", self, true, at);
+	add(menu, "Duplicate", "clip.repeat", self, false);
+	add(menu, "Repeat...", "clip.repeat", self, true, {{QStringLiteral("count"), 4}});
+	QMenu* scale = menu->addMenu(tr("Time Scale"));
+	add(scale, "Double", "clip.time_scale", with(self, "factor", 2.0), false);
+	add(scale, "Halve", "clip.time_scale", with(self, "factor", 0.5), false);
+	add(scale, "Time Scale...", "clip.time_scale", self, true, {{QStringLiteral("factor"), 1.0}});
+	if (dynamic_cast<SampleClip*>(clip) != nullptr)
+	{
+		add(menu, "Consolidate", "clip.consolidate", {{QStringLiteral("track"), control::trackIdOf(clip->getTrack())},
+			{QStringLiteral("start"), static_cast<int>(clip->startPosition())}, {QStringLiteral("end"), static_cast<int>(clip->endPosition())}}, false);
+	}
 	add(menu, "Move With Edit Group...", "vca.edit_move", self, true, at);
 	const int transpose = clip->clipEdits().transpose;
 	QMenu* pitch = menu->addMenu(tr("Transpose"));
