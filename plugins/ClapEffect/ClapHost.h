@@ -193,6 +193,11 @@ public:
 	void setNoteOff(std::uint8_t channel, std::int16_t key, std::int32_t frameOffset = 0);
 	//! A note choke: silence `key` without a release stage (clap_event_note's
 	//! CLAP_EVENT_NOTE_CHOKE). Ignored in velocity terms.
+	//! A note expression (clap.note-expression: pressure, brightness, ...) for @a key on
+	//! @a channel, or for every note on the channel when @a key is -1 - how an MPE member
+	//! channel's pressure and CC74 reach a CLAP instrument (engine audit E11).
+	void setNoteExpression(std::uint8_t channel, std::int16_t key, std::uint8_t expressionId, double value,
+		std::int32_t frameOffset);
 	void setNoteChoke(std::uint8_t channel, std::int16_t key, std::int32_t frameOffset = 0);
 
 	/*!

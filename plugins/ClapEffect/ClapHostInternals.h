@@ -87,12 +87,22 @@ auto describe(const clap_plugin_descriptor_t& descriptor) -> ClassInfo;
 //! the events the host generates) and notes after them, so a plug-in that
 //! reads `size()`/`get()` in order sees every event of the block. Both counts
 //! are zero outside a process() call.
+//! One input event of the note path: a note or (E11) a note expression, so both reach the
+//! plug-in in one list, in time order.
+union NoteOrExpression
+{
+	clap_event_header_t header;
+	clap_event_note_t note;
+	clap_event_note_expression_t expression;
+};
+
 struct EventListState
 {
 	const clap_event_param_value_t* events = nullptr;
 	std::uint32_t count = 0;
-	//! The note events of this block (feature row 79), served after `events`.
-	const clap_event_note_t* notes = nullptr;
+	//! The note and note-expression events of this block (feature row 79, E11), served after
+	//! `events`, sorted by time.
+	const NoteOrExpression* notes = nullptr;
 	std::uint32_t noteCount = 0;
 };
 
@@ -132,7 +142,7 @@ struct HostedPlugin::Impl
 	//! The notes this block carries, sized once in prepare() and filled from
 	//! noteQueue by drainNoteQueue(); eventState.notes/noteCount hand them to
 	//! the plug-in after the parameter events.
-	std::vector<clap_event_note_t> noteEvents;
+	std::vector<NoteOrExpression> noteEvents;
 	NoteQueue noteQueue;
 	std::atomic<std::uint32_t> notesPushed{0};
 	std::atomic<std::uint32_t> notesDropped{0};

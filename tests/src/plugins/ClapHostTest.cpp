@@ -132,11 +132,15 @@ struct InstrumentState
 	std::int32_t lastPortIndex;
 	std::int32_t firstNoteTime;
 	std::int32_t lastNoteTime;
+	std::uint32_t expressionCount;
+	std::int32_t lastExpressionId;
+	std::uint32_t lastExpressionMilli;
+	std::int32_t lastExpressionKey;
 };
-static_assert(sizeof(InstrumentState) == 96, "the fixture's state layout changed");
+static_assert(sizeof(InstrumentState) == 112, "the fixture's state layout changed");
 
 constexpr std::uint32_t InstrumentStateMagic = 0x4C4D494Eu; // "LMIN"
-constexpr std::uint32_t InstrumentStateVersion = 1u;
+constexpr std::uint32_t InstrumentStateVersion = 2u;
 
 //! Saves the instrument fixture's state and decodes it.
 auto readInstrumentState(const HostedPlugin& plugin, InstrumentState* state) -> bool
@@ -626,6 +630,15 @@ void ClapHostTest::testInstrumentNotePath()
 		qPrintable(QStringLiteral("a sounding note wrote %1 instead of 0.25")
 			.arg(rms(outputs[0]))));
 	QCOMPARE(rms(outputs[1]), rms(outputs[0])); // both output channels
+
+	// --- E11: an MPE member channel's pressure arrives as a note expression for the channel ---
+	plugin.setNoteExpression(0, -1, CLAP_NOTE_EXPRESSION_PRESSURE, 0.5, 3);
+	process(plugin, noInputs, outputs, TestFrames);
+	QVERIFY2(readInstrumentState(plugin, &state), "the fixture saved an unexpected state layout");
+	QCOMPARE(state.expressionCount, std::uint32_t{1});
+	QCOMPARE(state.lastExpressionId, static_cast<std::int32_t>(CLAP_NOTE_EXPRESSION_PRESSURE));
+	QCOMPARE(state.lastExpressionMilli, std::uint32_t{500});
+	QCOMPARE(state.lastExpressionKey, std::int32_t{-1});
 
 	// --- a parameter change travels in the same input list ----------------
 	plugin.setParamPlain(InstrumentGainParamId, 0.5);

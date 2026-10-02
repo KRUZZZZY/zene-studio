@@ -70,7 +70,7 @@ auto HostedPlugin::prepare(double sampleRate, int maxBlockSize, QString* error) 
 	impl.silence.assign(static_cast<std::size_t>(maxBlockSize), 0.0f);
 	impl.outputScratch.assign(static_cast<std::size_t>(impl.layout.outputs) * maxBlockSize, 0.0f);
 	impl.paramEvents.assign(impl.params.size(), clap_event_param_value_t{});
-	impl.noteEvents.assign(static_cast<std::size_t>(kMaxNoteEventsPerBlock), clap_event_note_t{});
+	impl.noteEvents.assign(static_cast<std::size_t>(kMaxNoteEventsPerBlock), NoteOrExpression{});
 	impl.lastSeenRevision.assign(impl.params.size(), 0);
 	// The note queue is emptied here: prepare() is main-thread and the audio
 	// thread cannot be popping yet (the transport setup calls it before the

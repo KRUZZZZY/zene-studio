@@ -35,7 +35,7 @@
 #define TEST_INSTRUMENT_MAGIC 0x4C4D494Eu /* "LMIN" */
 /* Bump when the state layout below changes; the host stores the bytes
    opaquely. The test mirrors this struct and static_asserts its size. */
-#define TEST_INSTRUMENT_STATE_VERSION 1u
+#define TEST_INSTRUMENT_STATE_VERSION 2u
 /* How long a note takes to fade after its note-off, in frames. */
 #define TEST_INSTRUMENT_RELEASE 256u
 /* The level one sounding voice writes, before the gain parameter. */
@@ -77,6 +77,11 @@ typedef struct instrument_state
 	int32_t last_port_index;      /* clap_event_note_t::port_index as received */
 	int32_t first_note_time;      /* header.time of the first note-on, -1 if none */
 	int32_t last_note_time;       /* header.time of the most recent note */
+	/* version 2 (engine audit E11): the note expressions received */
+	uint32_t expression_count;
+	int32_t last_expression_id;
+	uint32_t last_expression_milli; /* value * 1000 */
+	int32_t last_expression_key;
 } instrument_state_t;
 
 typedef struct instrument_plugin
@@ -103,6 +108,10 @@ typedef struct instrument_plugin
 	int32_t last_port_index;
 	int32_t first_note_time;
 	int32_t last_note_time;
+	uint32_t expression_count;
+	int32_t last_expression_id;
+	uint32_t last_expression_milli;
+	int32_t last_expression_key;
 	/* the sounding voice */
 	int sounding;          /* a note-on has arrived and no note-off yet */
 	uint32_t release_left; /* frames left of the release, 0 when silent */
@@ -285,6 +294,10 @@ static bool instrument_state_save(const clap_plugin_t* plugin,
 	state.last_port_index = self->last_port_index;
 	state.first_note_time = self->first_note_time;
 	state.last_note_time = self->last_note_time;
+	state.expression_count = self->expression_count;
+	state.last_expression_id = self->last_expression_id;
+	state.last_expression_milli = self->last_expression_milli;
+	state.last_expression_key = self->last_expression_key;
 	return stream->write(stream, &state, (int64_t)sizeof(state)) == (int64_t)sizeof(state);
 }
 
@@ -379,6 +392,15 @@ static clap_process_status instrument_process(const clap_plugin_t* plugin,
 			case CLAP_EVENT_NOTE_CHOKE:
 				instrument_note_event(self, (const clap_event_note_t*)header);
 				break;
+			case CLAP_EVENT_NOTE_EXPRESSION:
+			{
+				const clap_event_note_expression_t* event = (const clap_event_note_expression_t*)header;
+				++self->expression_count;
+				self->last_expression_id = (int32_t)event->expression_id;
+				self->last_expression_milli = (uint32_t)(event->value * 1000.0 + 0.5);
+				self->last_expression_key = (int32_t)event->key;
+				break;
+			}
 			case CLAP_EVENT_PARAM_VALUE:
 			{
 				const clap_event_param_value_t* event = (const clap_event_param_value_t*)header;
@@ -492,6 +514,8 @@ static const clap_plugin_t* instrument_create(const clap_host_t* host)
 	self->gain = 1.0;
 	self->first_note_time = -1;
 	self->last_note_time = -1;
+	self->last_expression_id = -1;
+	self->last_expression_key = -2;
 	self->last_key = -1;
 	self->last_channel = -1;
 	self->last_port_index = -1;

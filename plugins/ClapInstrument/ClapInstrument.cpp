@@ -248,14 +248,28 @@ bool ClapInstrument::handleMidiEvent(const MidiEvent& event, const TimePos&,
 				frameOffset);
 			break;
 
+		// E11: MPE's per-note axes as CLAP note expressions - pressure from channel or key
+		// pressure, timbre (CC74) as brightness; key -1 is every note on that channel, which is
+		// what an MPE member channel means.
+		case MidiChannelPressure:
+			m_plugin.setNoteExpression(channel, -1, CLAP_NOTE_EXPRESSION_PRESSURE, event.channelPressure() / 127.0, frameOffset);
+			break;
+
 		case MidiKeyPressure:
+			m_plugin.setNoteExpression(channel, static_cast<std::int16_t>(event.key()), CLAP_NOTE_EXPRESSION_PRESSURE,
+				event.velocity() / 127.0, frameOffset);
+			break;
+
+		case MidiControlChange:
+			if (event.controllerNumber() == 74)
+			{
+				m_plugin.setNoteExpression(channel, -1, CLAP_NOTE_EXPRESSION_BRIGHTNESS, event.controllerValue() / 127.0, frameOffset);
+			}
+			break;
+
 		default:
-			// Not carried by this slice: key pressure, control change, pitch
-			// bend, program change, channel pressure and SysEx.
-			// clap.note-ports describes notes; a MIDI-dialect port would need
-			// clap_event_midi, which this host does not build yet. Reported as
-			// handled so the track does not warn on every message it does not
-			// understand; the list is in docs/KNOWN-LIMITATIONS.md.
+			// Not carried: pitch bend, program change, SysEx (docs/KNOWN-LIMITATIONS.md). Reported
+			// as handled so the track does not warn on every message.
 			return true;
 	}
 

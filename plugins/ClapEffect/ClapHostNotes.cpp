@@ -185,6 +185,56 @@ void HostedPlugin::Impl::scanNotePorts()
 		static_cast<std::uint32_t>(std::max(0, layout.outputs)));
 }
 
+namespace
+{
+
+//! One queued event as the CLAP event the plug-in receives: a note, or a note expression (E11).
+NoteOrExpression toClapEvent(const NoteEventIn& queued, std::int16_t portIndex)
+{
+	NoteOrExpression out{};
+	// The frame offset is where LMMS' own MIDI route put the event, in frames from the start of
+	// this request; the plug-in applies it at that frame of the chunk it is handed.
+	out.header.time = static_cast<std::uint32_t>(std::max(queued.frameOffset, 0));
+	out.header.space_id = CLAP_CORE_EVENT_SPACE_ID;
+	out.header.type = queued.type;
+	if (queued.type == CLAP_EVENT_NOTE_EXPRESSION)
+	{
+		out.header.size = sizeof(clap_event_note_expression_t);
+		out.expression.expression_id = queued.expressionId;
+		out.expression.note_id = -1;
+		out.expression.port_index = portIndex;
+		out.expression.channel = static_cast<std::int16_t>(queued.channel);
+		out.expression.key = queued.key;
+		out.expression.value = queued.value;
+		return out;
+	}
+	out.header.size = sizeof(clap_event_note_t);
+	out.note.note_id = -1; // this host carries no per-note id
+	// The plug-in's OWN port index: clap_event_note_t::port_index is an index into the plug-in's
+	// note input ports, not a port id.
+	out.note.port_index = portIndex;
+	out.note.channel = static_cast<std::int16_t>(queued.channel);
+	out.note.key = queued.key;
+	out.note.velocity = queued.type == CLAP_EVENT_NOTE_ON ? static_cast<double>(queued.velocity) / 127.0 : 0.0;
+	return out;
+}
+
+} // namespace
+
+void HostedPlugin::setNoteExpression(std::uint8_t channel, std::int16_t key, std::uint8_t expressionId,
+	double value, std::int32_t frameOffset)
+{
+	// Audio thread or the MIDI thread, like setNoteOn: one bounded push, no allocation.
+	NoteEventIn event;
+	event.type = CLAP_EVENT_NOTE_EXPRESSION;
+	event.channel = static_cast<std::uint8_t>(std::min<int>(channel, 15));
+	event.key = key;
+	event.expressionId = expressionId;
+	event.value = value;
+	event.frameOffset = frameOffset;
+	pushNote(event);
+}
+
 void HostedPlugin::Impl::drainNoteQueue()
 {
 	// Real-time safe: bounded pops from a fixed ring into an array sized in
@@ -195,26 +245,17 @@ void HostedPlugin::Impl::drainNoteQueue()
 	while (count < static_cast<std::uint32_t>(kMaxNoteEventsPerBlock) &&
 		noteQueue.pop(&queued))
 	{
-		auto& event = noteEvents[count];
-		event = {};
-		event.header.size = sizeof(clap_event_note_t);
-		// The frame offset is where LMMS' own MIDI route put the event, in
-		// frames from the start of this request; the plug-in applies it at
-		// that frame of the chunk it is handed.
-		event.header.time = static_cast<std::uint32_t>(std::max(queued.frameOffset, 0));
-		event.header.space_id = CLAP_CORE_EVENT_SPACE_ID;
-		event.header.type = queued.type;
-		event.header.flags = 0;
-		event.note_id = -1; // this host carries no per-note id
-		// The plug-in's OWN port index: clap_event_note_t::port_index is an
-		// index into the plug-in's note input ports, not a port id.
-		event.port_index = static_cast<std::int16_t>(notePortIndex);
-		event.channel = static_cast<std::int16_t>(queued.channel);
-		event.key = queued.key;
-		event.velocity = queued.type == CLAP_EVENT_NOTE_ON
-			? static_cast<double>(queued.velocity) / 127.0
-			: 0.0;
+		noteEvents[count] = toClapEvent(queued, static_cast<std::int16_t>(notePortIndex));
 		++count;
+	}
+	// The queue is filled from more than one thread (a clip's notes and live input), so its order
+	// is not time order; CLAP requires the list sorted by time (bounded insertion sort, stable).
+	for (std::uint32_t i = 1; i < count; ++i)
+	{
+		const NoteOrExpression moving = noteEvents[i];
+		std::uint32_t j = i;
+		for (; j > 0 && noteEvents[j - 1].header.time > moving.header.time; --j) { noteEvents[j] = noteEvents[j - 1]; }
+		noteEvents[j] = moving;
 	}
 	eventState.noteCount = count;
 	notesDelivered.fetch_add(count, std::memory_order_relaxed);
