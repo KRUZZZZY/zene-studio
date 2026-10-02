@@ -191,6 +191,11 @@ const ReversibilityRow kRows[] = {
 		"note volume is part of the clip's saved note list",
 		"ProjectJournal (Clip checkpoint)",
 		""),
+	R("note.edit", RC::TrueInverse, true,
+		"every field it writes (position, key, length, volume, panning, probability) is part of the "
+		"clip's saved note list, and the whole batch is one checkpoint",
+		"ProjectJournal (one MidiClip checkpoint for the batch); inverse: note.edit with the previous values",
+		""),
 	RC("mixer.set_volume", RC::TrueInverse, true,
 		"the fader is a FloatModel, i.e. a JournallingObject",
 		"ProjectJournal (MixerChannel volume model checkpoint)",

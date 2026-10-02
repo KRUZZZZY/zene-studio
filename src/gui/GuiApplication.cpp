@@ -36,6 +36,7 @@
 #include "MainWindow.h"
 #include "MicrotunerConfig.h"
 #include "PatternEditor.h"
+#include "NoteEditor.h"
 #include "PianoRoll.h"
 #include "ProjectNotes.h"
 #include "SongEditor.h"
@@ -240,6 +241,10 @@ GuiApplication::GuiApplication()
 	m_pianoRoll = new PianoRollWindow();
 	connect(m_pianoRoll, SIGNAL(destroyed(QObject*)), this, SLOT(childDestroyed(QObject*)));
 
+	displayInitProgress(tr("Preparing note editor"));
+	m_noteEditor = new NoteEditor;
+	connect(m_noteEditor, SIGNAL(destroyed(QObject*)), this, SLOT(childDestroyed(QObject*)));
+
 	displayInitProgress(tr("Preparing automation editor"));
 	m_automationEditor = new AutomationEditorWindow;
 	connect(m_automationEditor, SIGNAL(destroyed(QObject*)), this, SLOT(childDestroyed(QObject*)));
@@ -293,6 +298,10 @@ void GuiApplication::childDestroyed(QObject *obj)
 	else if (obj == m_pianoRoll)
 	{
 		m_pianoRoll = nullptr;
+	}
+	else if (obj == m_noteEditor)
+	{
+		m_noteEditor = nullptr;
 	}
 	else if (obj == m_projectNotes)
 	{

@@ -412,6 +412,13 @@ void registerNoteVelocitySet(ControlRegistry& registry)
 	registry.registerCommand(cmd);
 }
 
+//! The notes' own selection flags, set to exactly @a positions (BUGS_FOUND 11.33).
+void markSelected(MidiClip* clip, const QVector<int>& positions)
+{
+	for (Note* note : clip->notes()) { note->setSelected(false); }
+	for (int position : positions) { clip->notes()[position]->setSelected(true); }
+}
+
 void registerNoteSelect(ControlRegistry& registry)
 {
 	ControlCommand cmd;
@@ -455,6 +462,11 @@ void registerNoteSelect(ControlRegistry& registry)
 			wanted.append(position);
 		}
 		control::selectNotes(clipText, static_cast<int>(clip->notes().size()), wanted);
+		// The view state the comment above names: the notes' own selection flags, which the
+		// note editor and the classic piano roll draw and act on. Before 0.5.0 only the index
+		// store above was written, so a selection made over the socket never reached the
+		// editors (BUGS_FOUND 11.33). The flags travel with the note objects through a re-sort.
+		markSelected(clip, wanted);
 		clip->dataChanged();
 
 		// The selection is reported as the IDS of the notes at the stored

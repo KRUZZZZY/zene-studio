@@ -412,6 +412,9 @@ LMMS_EXPORT void registerPluginEditorCommands(ControlRegistry& registry);
 LMMS_EXPORT void registerClipTrimCommands(ControlRegistry& registry);
 //! note.probability_set - the MIDI-depth probability verb (docs/MIDI-DEPTH.md).
 LMMS_EXPORT void registerNoteProbabilityCommands(ControlRegistry& registry);
+//! note.edit - several notes' position/key/length/velocity/pan/probability as one edit and
+//! one undo step (the 0.5.0 note editor's gestures; docs/NOTE-EDITOR.md).
+LMMS_EXPORT void registerNoteEditCommands(ControlRegistry& registry);
 //! render.stems - per-track stem export through the shipped `exportstems` CLI
 //! (docs/STEM-EXPORT.md).
 LMMS_EXPORT void registerRenderStemsCommands(ControlRegistry& registry);

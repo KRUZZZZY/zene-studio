@@ -278,6 +278,8 @@ set(LMMS_SRCS
 	# note.probability_set (0.3.0 verb wave): the MIDI-depth probability verb the
 	# engine has carried since docs/MIDI-DEPTH.md and never got an id for.
 	core/ControlCommandsNoteProbability.cpp
+	# note.edit (0.5.0 note editor): a batch of note edits as one journal checkpoint.
+	core/ControlCommandsNoteEdit.cpp
 	# The 0.3.0 note/scale/device wave (board task #648; feature-list rows 11, 66 and
 	# 81): the note randomisation verbs (note.random_seed_get/_set, note.randomize),
 	# the slide verbs (note.slide_set / note.slide_clear), the three note transforms,

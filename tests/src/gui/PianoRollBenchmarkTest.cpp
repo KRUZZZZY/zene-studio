@@ -47,10 +47,13 @@
 
 #include "../core/BenchmarkBaseline.h"
 #include "ComboBox.h"
+#include "ControlRegistry.h"
+#include "NoteCanvas.h"
 #include "Engine.h"
 #include "InstrumentTrack.h"
 #include "MidiClip.h"
 #include "Note.h"
+#include "NoteEditor.h"
 #include "PianoRoll.h"
 #include "Song.h"
 
@@ -81,7 +84,8 @@ ComboBoxModel* zoomOf(PianoRollWindow& window)
 	return nullptr;
 }
 
-double medianFrameMs(PianoRollWindow& window)
+template <typename Window>
+double medianFrameMs(Window& window)
 {
 	window.grab();  // warm-up: caches, first layout
 	std::vector<double> frames;
@@ -103,7 +107,11 @@ class PianoRollBenchmarkTest : public QObject
 	Q_OBJECT
 
 private slots:
-	void initTestCase() { Engine::init(true); }
+	void initTestCase()
+	{
+		Engine::init(true);
+		ControlRegistry::setReady(true);  // the note editor reads the scale context through scale.get_state
+	}
 	void cleanupTestCase() { Engine::destroy(); }
 
 	void frameTimeAtFourSizes()
@@ -138,6 +146,37 @@ private slots:
 			QVERIFY2(ms < 5000.0 && outMs < 5000.0,
 				qPrintable(QStringLiteral("a %1-note frame took %2 ms (%3 zoomed out)").arg(notes).arg(ms).arg(outMs)));
 			window.hide();
+
+			// The 0.5.0 note editor (docs/NOTE-EDITOR.md) over the same clip, at its default zoom
+			// and at its widest - which is wide enough that a long clip puts thousands of notes on
+			// screen at once, the case the classic roll's 12.5% floor could not show.
+			NoteEditor editor;
+			editor.resize(1600, 900);
+			editor.setClip(clip);
+			editor.show();
+			QVERIFY(QTest::qWaitForWindowExposed(&editor));
+			editor.setZoom(0.25);
+			const double neMs = medianFrameMs(editor);
+			editor.setZoom(NoteGrid::minPixelsPerTick);
+			const auto [first, last] = editor.canvas()->visibleRange();
+			const double neOutMs = medianFrameMs(editor);
+			measured.insert(QStringLiteral("ne:%1").arg(notes), neMs);
+			measured.insert(QStringLiteral("ne:%1@widest").arg(notes), neOutMs);
+			std::printf("NOTEEDITOR_BENCH notes=%d frame_ms=%.2f widest_ms=%.2f on_screen_widest=%d\n",
+				notes, neMs, neOutMs, last - first);
+			// The successor's own bar, and the one comparison that holds on any machine: with the
+			// same ~1 000 notes on screen (the classic roll's widest view of this fill), the note
+			// editor's frame is no slower than the classic roll's. Measured on the development
+			// box: 4.0 ms against 13.1 ms (docs/PIANO-ROLL-BENCHMARK.md).
+			if (notes == 1000)
+			{
+				QVERIFY2(neOutMs <= outMs, qPrintable(QStringLiteral("the note editor drew 1000 on-screen notes in "
+					"%1 ms, the classic roll in %2 ms").arg(neOutMs).arg(outMs)));
+			}
+			QVERIFY2(neMs < 5000.0 && neOutMs < 5000.0,
+				qPrintable(QStringLiteral("a %1-note note-editor frame took %2 ms (%3 widest)").arg(notes).arg(neMs).arg(neOutMs)));
+			editor.hide();
+			editor.setClip(nullptr);
 			delete track;
 		}
 		benchtest::compareOrWriteBaseline(measured);

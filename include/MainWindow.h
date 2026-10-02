@@ -180,6 +180,8 @@ public slots:
 	void toggleClipLauncherWin();
 	void toggleMixerWin();
 	void togglePianoRollWin();
+	//! The classic piano roll, a floating window beside the note editor (docs/NOTE-EDITOR.md §7).
+	void toggleClassicPianoRollWin();
 	void toggleControllerRack();
 	void toggleFullscreen();
 

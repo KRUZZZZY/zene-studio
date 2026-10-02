@@ -59,6 +59,12 @@ const ReversibilityRow kWindowRows[] = {
 		"written",
 		"no write",
 		""),
+	R("window.note_editor_set", RC::NotMutating, false,
+		"it sets the note editor's view - the clip it shows, its tool, grid, fold, lane, ghosts and "
+		"zoom. That is interface state: the notes are edited through note.*, and nothing in the "
+		"project changes",
+		"no write to the project (interface state only)",
+		""),
 	R("window.set_view", RC::NotMutating, false,
 		"it switches the shell between its Arrange, Mix and Edit views. A view is interface state, "
 		"kept in the ui/shell.layout setting: no model, clip, track or project data is written",

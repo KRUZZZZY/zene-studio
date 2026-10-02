@@ -42,6 +42,7 @@ class MixerView;
 class MainWindow;
 class MicrotunerConfig;
 class PatternEditorWindow;
+class NoteEditor;
 class PianoRollWindow;
 class ProjectNotes;
 class SongEditorWindow;
@@ -67,6 +68,8 @@ public:
 	SongEditorWindow* songEditor() { return m_songEditor; }
 	PatternEditorWindow* patternEditor() { return m_patternEditor; }
 	PianoRollWindow* pianoRoll() { return m_pianoRoll; }
+	//! The 0.5.0 note editor (docs/NOTE-EDITOR.md), the shell's detail panel.
+	NoteEditor* noteEditor() { return m_noteEditor; }
 	ProjectNotes* getProjectNotes() { return m_projectNotes; }
 	MicrotunerConfig* getMicrotunerConfig() { return m_microtunerConfig; }
 	AutomationEditorWindow* automationEditor() { return m_automationEditor; }
@@ -91,6 +94,7 @@ private:
 	AutomationEditorWindow* m_automationEditor;
 	PatternEditorWindow* m_patternEditor;
 	PianoRollWindow* m_pianoRoll;
+	NoteEditor* m_noteEditor = nullptr;
 	ProjectNotes* m_projectNotes;
 	MicrotunerConfig* m_microtunerConfig;
 	ControllerRackView* m_controllerRackView;

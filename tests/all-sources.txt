@@ -366,6 +366,11 @@ include/NStateButton.h
 include/NamespaceRegistry.h
 include/NoCopyNoMove.h
 include/Note.h
+include/NoteCanvas.h
+include/NoteEditor.h
+include/NoteEditorParts.h
+include/NoteGrid.h
+include/NoteLanes.h
 include/NotePlayHandle.h
 include/NoteRandom.h
 include/NoteTransform.h
@@ -1133,6 +1138,7 @@ src/core/ControlCommandsModulator.cpp
 src/core/ControlCommandsModulatorRoutes.cpp
 src/core/ControlCommandsMonitor.cpp
 src/core/ControlCommandsMts.cpp
+src/core/ControlCommandsNoteEdit.cpp
 src/core/ControlCommandsNoteExpression.cpp
 src/core/ControlCommandsNoteProbability.cpp
 src/core/ControlCommandsNoteRandom.cpp
@@ -1529,6 +1535,7 @@ src/gui/BrowserTagMenu.cpp
 src/gui/ChainPresetMenu.cpp
 src/gui/ClipEditsMenu.cpp
 src/gui/CommandPalette.cpp
+src/gui/ControlCommandsNoteEditor.cpp
 src/gui/ControlCommandsShell.cpp
 src/gui/ControlCommandsWindow.cpp
 src/gui/ControlLayout.cpp
@@ -1642,6 +1649,13 @@ src/gui/modals/FileDialog.cpp
 src/gui/modals/RenameDialog.cpp
 src/gui/modals/SetupDialog.cpp
 src/gui/modals/VersionedSaveDialog.cpp
+src/gui/noteeditor/NoteCanvas.cpp
+src/gui/noteeditor/NoteCanvasInput.cpp
+src/gui/noteeditor/NoteEditor.cpp
+src/gui/noteeditor/NoteEditorParts.cpp
+src/gui/noteeditor/NoteEditorToolbar.cpp
+src/gui/noteeditor/NoteGrid.cpp
+src/gui/noteeditor/NoteLanes.cpp
 src/gui/shell/BrowserPanel.cpp
 src/gui/shell/DesignTokens.cpp
 src/gui/shell/Shell.cpp
@@ -1939,6 +1953,8 @@ tests/src/gui/MidiReconnectActionTest.cpp
 tests/src/gui/MixerLatencyTextTest.cpp
 tests/src/gui/ModulatorPanelTest.cpp
 tests/src/gui/MpeInputActionTest.cpp
+tests/src/gui/NoteEditorTest.cpp
+tests/src/gui/NoteGridTest.cpp
 tests/src/gui/NoteTransformActionsTest.cpp
 tests/src/gui/PianoRollBenchmarkTest.cpp
 tests/src/gui/PluginQuarantineMenuTest.cpp

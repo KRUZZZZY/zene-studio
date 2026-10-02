@@ -5723,7 +5723,9 @@ void PianoRollWindow::loadSettings( const QDomElement & de )
 {
 	m_editor->loadGhostNotes( de.firstChildElement("ghostnotes") );
 
-	MainWindow::restoreWidgetState( this, de );
+	// 0.5.0 (docs/NOTE-EDITOR.md §7): the classic piano roll is a floating window the user opens;
+	// a project's MDI-era placement and visibility for it are ignored, so an old project that was
+	// saved with it open does not pop a window up. saveSettings still writes them.
 
 	Engine::getSong()->getTimeline(Song::PlayMode::MidiClip).setStopBehaviour(
 		static_cast<Timeline::StopBehaviour>(de.attribute("stopbehaviour").toInt()));

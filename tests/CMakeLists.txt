@@ -619,6 +619,11 @@ set(LMMS_TESTS
 	# The design tokens: every declared text/surface pair AA, the generated stylesheet AA, the
 	# velocity ramp ordered in lightness, every icon a path that paints at the screen's scale.
 	src/gui/DesignTokensTest.cpp
+	# The 0.5.0 note editor (docs/NOTE-EDITOR.md): its geometry, folding, snapping and lane table
+	# without a display, then the editor's tools driven by mouse and keys - each gesture one
+	# command and one undo step - and note.edit's whole-batch validation.
+	src/gui/NoteGridTest.cpp
+	src/gui/NoteEditorTest.cpp
 	# UI precondition #1 (040/ui-precond): include/WcagContrast.h at the AA
 	# boundary, and include/Accessibility.h on the shell surface the owner
 	# manual-tests - the helper, then the footer switches, the chrome bands and
@@ -1164,6 +1169,7 @@ set_tests_properties(ClipLinkTest ClipLinkPersistenceTest ImportDetectionTest
 # from aborting.
 set_tests_properties(ShellTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(DesignTokensTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+set_tests_properties(NoteEditorTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(CommandPaletteTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(VcaStripViewTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(SessionGridViewTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
@@ -2632,6 +2638,17 @@ if(PYTHON3_EXECUTABLE AND CONTROL_SUITE_AVAILABLE)
 			${CMAKE_CURRENT_SOURCE_DIR}/control-shell.py
 			$<TARGET_FILE:zene>)
 	set_tests_properties(ControlShell PROPERTIES
+		ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+		TIMEOUT 300
+	)
+	# The note editor over the socket: window.note_editor_set opens a clip and sets the view,
+	# note.edit's batch and its single undo, its whole-batch refusal, the lanes' commands, and
+	# the Edit view rendered with the editor in the centre (docs/NOTE-EDITOR.md).
+	add_test(NAME ControlNoteEditor
+		COMMAND ${PYTHON3_EXECUTABLE}
+			${CMAKE_CURRENT_SOURCE_DIR}/control-note-editor.py
+			$<TARGET_FILE:zene>)
+	set_tests_properties(ControlNoteEditor PROPERTIES
 		ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
 		TIMEOUT 300
 	)

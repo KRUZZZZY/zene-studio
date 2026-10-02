@@ -61,6 +61,12 @@ LMMS_EXPORT void dispatchShellCommand(const QString& id, const QJsonObject& args
 //! The `editor` values window.toggle accepts, in the menu's Ctrl+1..7 order.
 LMMS_EXPORT QStringList windowEditorNames();
 
+//! window.note_editor_set - the note editor's view over the socket
+//! (src/gui/ControlCommandsNoteEditor.cpp); registered by registerWindowCommands.
+LMMS_EXPORT void registerNoteEditorWindowCommands(ControlRegistry& registry);
+//! The note editor's state (NoteEditor::describe), or {} with no interface.
+LMMS_EXPORT QJsonObject noteEditorState();
+
 //! What a View-menu item or toolbar button does: window.toggle through the
 //! registry, exactly as an agent on the socket would.
 LMMS_EXPORT void dispatchWindowToggle(const QString& editor);
