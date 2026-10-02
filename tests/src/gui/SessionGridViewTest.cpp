@@ -32,10 +32,12 @@
 
 #include <QJsonArray>
 #include <QJsonObject>
+#include <QMenu>
 #include <QToolButton>
 
 #include "ControlRegistry.h"
 #include "Engine.h"
+#include "MenuTestSupport.h"
 #include "SessionGridView.h"
 
 using namespace lmms;
@@ -65,7 +67,25 @@ int playingScene(int track)
 	return -1;
 }
 
+QJsonObject slotState(int track, int scene)
+{
+	for (const QJsonValue& value : run(QStringLiteral("session.get_state")).result.value(QStringLiteral("slots")).toArray())
+	{
+		const QJsonObject slot = value.toObject();
+		if (slot.value(QStringLiteral("track")).toInt() == track && slot.value(QStringLiteral("scene")).toInt() == scene) { return slot; }
+	}
+	return {};
+}
+
+QJsonObject sceneState(int scene)
+{
+	return run(QStringLiteral("session.get_state")).result.value(QStringLiteral("scenes")).toArray().at(scene).toObject();
+}
+
 } // namespace
+
+using lmms::test::leafActions;
+using lmms::test::menuAction;
 
 class SessionGridViewTest : public QObject
 {
@@ -154,6 +174,57 @@ private slots:
 		QTRY_COMPARE_WITH_TIMEOUT(playingScene(0), -1, 3000);
 		QTRY_COMPARE_WITH_TIMEOUT(playingScene(1), -1, 3000);
 		QTRY_VERIFY_WITH_TIMEOUT(!view.cellButton(0, 0)->isChecked(), 3000);
+	}
+
+	/*! 0.5.0 W1 (WF-054/058/059/062): the right-click menus edit the launcher through the
+	 *  session.* commands - every entry names a registered command, a pick from a list writes
+	 *  what session.get_state then reports, and an entry with nothing to act on is disabled. */
+	void theMenusEditTheLauncherThroughTheRegistry()
+	{
+		SessionGridView view;
+		view.refresh();
+		for (QToolButton* button : {view.cellButton(0, 0), view.sceneButton(0), static_cast<QToolButton*>(nullptr)})
+		{
+			QMenu menu;
+			view.populateMenu(&menu, button);
+			QVERIFY(!leafActions(&menu).isEmpty());
+			for (QAction* action : leafActions(&menu))
+			{
+				const QString id = action->property("controlCommand").toString();
+				QVERIFY2(ControlRegistry::instance()->hasCommand(id), qPrintable(action->text() + QStringLiteral(" -> ") + id));
+			}
+		}
+
+		QMenu cell;
+		view.populateMenu(&cell, view.cellButton(0, 0));
+		menuAction(&cell, {QStringLiteral("Launch Mode"), QStringLiteral("gate")})->trigger();
+		QCOMPARE(slotState(0, 0).value(QStringLiteral("mode")).toString(), QStringLiteral("gate"));
+		menuAction(&cell, {QStringLiteral("Launch Mode"), QStringLiteral("trigger")})->trigger();
+		QCOMPARE(slotState(0, 0).value(QStringLiteral("mode")).toString(), QStringLiteral("trigger"));
+		QVERIFY(menuAction(&cell, {QStringLiteral("Clear Cell")})->isEnabled());
+		QMenu empty;
+		view.populateMenu(&empty, view.cellButton(1, 1));
+		QVERIFY2(!menuAction(&empty, {QStringLiteral("Clear Cell")})->isEnabled(), "an empty cell offered Clear");
+
+		QMenu scene;
+		view.populateMenu(&scene, view.sceneButton(1));
+		QVERIFY(!menuAction(&scene, {QStringLiteral("Tempo Override Off")})->isEnabled());
+		QVERIFY(run(QStringLiteral("session.set_scene"), {{QStringLiteral("scene"), 1}, {QStringLiteral("tempo"), 150}}).ok);
+		view.refresh();
+		QMenu overridden;
+		view.populateMenu(&overridden, view.sceneButton(1));
+		QAction* off = menuAction(&overridden, {QStringLiteral("Tempo Override Off")});
+		QVERIFY(off->isEnabled());
+		off->trigger();
+		QCOMPARE(sceneState(1).value(QStringLiteral("tempo_enabled")).toBool(), false);
+
+		QMenu grid;
+		view.populateMenu(&grid, nullptr);
+		menuAction(&grid, {QStringLiteral("Launch Quantisation"), QStringLiteral("bar")})->trigger();
+		QCOMPARE(run(QStringLiteral("session.get_state")).result.value(QStringLiteral("quantisation")).toString(), QStringLiteral("bar"));
+		menuAction(&grid, {QStringLiteral("Launch Quantisation"), QStringLiteral("none")})->trigger();
+		QCOMPARE(run(QStringLiteral("session.get_state")).result.value(QStringLiteral("quantisation")).toString(), QStringLiteral("none"));
+		QCOMPARE(view.gridButton()->text(), QStringLiteral("Grid..."));
 	}
 };
 

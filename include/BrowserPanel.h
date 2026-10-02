@@ -54,10 +54,13 @@ public:
 	QString currentSource() const;
 	//! Select a source by its title; false when there is none by that title.
 	bool selectSource(const QString& title);
+	//! The selected sample's waveform under the list (WF-010).
+	class WaveformPreview* waveform() const { return m_wave; }
 
 private:
 	QComboBox* m_selector;
 	QStackedWidget* m_stack;
+	class WaveformPreview* m_wave = nullptr;
 };
 
 //! The browser with the product's standard sources, as MainWindow's sidebar had them.

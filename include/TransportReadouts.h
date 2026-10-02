@@ -105,6 +105,7 @@ public:
 	void tick();
 
 	ReadoutField* tempo() const { return m_tempo; }
+	ReadoutField* loudness() const { return m_loudness; }
 
 private:
 	void bindToSong(Song* song);
@@ -116,6 +117,8 @@ private:
 	ReadoutField* m_volume;
 	ReadoutField* m_pitch;
 	ReadoutField* m_load;
+	ReadoutField* m_loudness;
+	int m_ticks = 0;
 };
 
 } // namespace lmms::gui

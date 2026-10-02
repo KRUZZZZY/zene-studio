@@ -36,6 +36,8 @@
 
 class QGridLayout;
 class QLabel;
+class QMenu;
+class QPoint;
 class QToolButton;
 
 namespace lmms::gui
@@ -67,6 +69,12 @@ public:
 	QToolButton* sceneButton(int scene) const;
 	QToolButton* stopButton(int track) const;
 	QToolButton* stopAllButton() const { return m_stopAll; }
+	QToolButton* gridButton() const { return m_gridButton; }
+
+	/*! What a right-click on @a button offers (a cell, a scene button; nullptr = the grid):
+	 *  SessionGridMenus' entries, every one a session.* command. Public so a test can read
+	 *  and trigger the menu without a modal exec. */
+	void populateMenu(QMenu* menu, QToolButton* button) const;
 
 protected:
 	bool eventFilter(QObject* watched, QEvent* event) override;
@@ -81,10 +89,15 @@ private:
 	void paintCell(int track, int scene, const QString& name);
 	void paintScenes(const QJsonArray& sceneStates);
 	QWidget* neighbour(QToolButton* button, int key) const;
+	void showMenu(QToolButton* button, const QPoint& global);
+	QJsonObject slotAt(int track, int scene) const;
 
 	QGridLayout* m_grid = nullptr;
 	QLabel* m_status = nullptr;
 	QToolButton* m_stopAll = nullptr;
+	QToolButton* m_gridButton = nullptr;
+	QJsonArray m_slots;        //!< session.get_state's slots, from the last refresh
+	QJsonArray m_sceneStates;  //!< and its scenes
 	std::vector<QToolButton*> m_cells;
 	std::vector<QToolButton*> m_sceneButtons;
 	std::vector<QToolButton*> m_stopButtons;

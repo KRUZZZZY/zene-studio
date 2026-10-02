@@ -47,6 +47,7 @@
 #include "lmms_math.h"
 #include "MainWindow.h"
 #include "SampleTrackView.h"
+#include "ShellCommandMenus.h"
 #include "Song.h"
 #include "StringPairDrag.h"
 #include "SubWindow.h"
@@ -328,6 +329,8 @@ void TrackOperationsWidget::updateMenu()
 		toMenu->addAction( tr( "Turn all recording on" ), this, SLOT(recordingOn()));
 		toMenu->addAction( tr( "Turn all recording off" ), this, SLOT(recordingOff()));
 	}
+	// 0.5.0 W1: recording, takes and rendering - the same menu as the Inspector's (registry commands).
+	ShellCommandMenus::populateTrack(toMenu->addMenu(tr("More")), m_trackView->getTrack());
 
 	// Folder membership, and on a folder its collapse/pin/routing, through the track.* commands.
 	addTrackFolderMenu(toMenu, m_trackView->getTrack());

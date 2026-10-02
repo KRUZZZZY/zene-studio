@@ -146,6 +146,37 @@ void registerTransportCommands(ControlRegistry& registry)
 
 	{
 		ControlCommand cmd;
+		cmd.id = QStringLiteral("transport.record");
+		cmd.group = QStringLiteral("transport");
+		cmd.verb = QStringLiteral("record");
+		cmd.description = QStringLiteral("Start playback in record mode - the header's Record button "
+			"dispatches this: sample tracks with recording enabled capture, and automation clips "
+			"armed for recording write, while it plays (Song::playAndRecord). Starting from a "
+			"stopped transport only: while the song is already playing the record mode cannot be "
+			"switched on mid-run, so this is refused, typed - stop first. transport.stop ends it. "
+			"Audio capture on a record route is armed per track (track.set_arm) and runs on its own.");
+		cmd.requiresDecl = QStringList{QStringLiteral("device")};
+		cmd.argsSchema = objectSchema({});
+		cmd.resultSchema = objectSchema({
+			{QStringLiteral("playing"), booleanProperty()},
+			{QStringLiteral("recording"), booleanProperty()},
+		});
+		cmd.handler = [](const QJsonObject&) {
+			Song* song = Engine::getSong();
+			if (song->isPlaying())
+			{
+				return ControlResult::failure(ControlErrorKind::Refused,
+					QStringLiteral("the song is already playing; stop it before recording"));
+			}
+			song->playAndRecord();
+			return ControlResult::success(QJsonObject{{QStringLiteral("playing"), song->isPlaying()},
+				{QStringLiteral("recording"), song->isRecording()}});
+		};
+		registry.registerCommand(cmd);
+	}
+
+	{
+		ControlCommand cmd;
 		cmd.id = QStringLiteral("transport.stop");
 		cmd.group = QStringLiteral("transport");
 		cmd.verb = QStringLiteral("stop");

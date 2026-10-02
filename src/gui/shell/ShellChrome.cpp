@@ -27,6 +27,7 @@
 #include <QAction>
 #include <QHBoxLayout>
 #include <QLabel>
+#include <QMenu>
 #include <QPainter>
 #include <QStyleOptionToolButton>
 
@@ -34,6 +35,7 @@
 #include "ControlWindowCommands.h"
 #include "DesignTokens.h"
 #include "Engine.h"
+#include "ShellCommandMenus.h"
 #include "ShellIcons.h"
 #include "TransportReadouts.h"
 #include "Song.h"
@@ -157,6 +159,9 @@ ShellHeader::ShellHeader(QWidget* parent)
 	m_play = addCommandButton(QStringLiteral("play"), tr("Play"), QStringLiteral("transport.play"));
 	m_play->setCheckable(true);
 	addCommandButton(QStringLiteral("stop"), tr("Stop"), QStringLiteral("transport.stop"));
+	m_record = addCommandButton(QStringLiteral("record"), tr("Record"), QStringLiteral("transport.record"));
+	m_record->setCheckable(true);
+	connect(m_record, &QToolButton::clicked, this, &ShellHeader::syncTransport, Qt::QueuedConnection);
 	connect(Engine::getSong(), &Song::playbackStateChanged, this, &ShellHeader::syncTransport);
 	// A checkable button toggles itself on click; the song's state is the truth, so re-read it.
 	connect(m_play, &QToolButton::clicked, this, &ShellHeader::syncTransport, Qt::QueuedConnection);
@@ -167,6 +172,17 @@ ShellHeader::ShellHeader(QWidget* parent)
 	// goes before this stretch; addButton() puts the project buttons after it, on the right.
 	m_stripLayout->addStretch(1);
 	m_stretchIndex = m_stripLayout->count() - 1;
+	// The project's own surfaces (revisions, files, plug-ins, groups, mastering, safe start):
+	// the first button right of the stretch, before the project buttons MainWindow adds.
+	ShellButton* tools = addButton(QStringLiteral("project_tools"), tr("Project tools"));
+	tools->setObjectName(QStringLiteral("projectTools"));
+	tools->setPopupMode(QToolButton::InstantPopup);
+	auto* toolsMenu = new QMenu(tools);
+	connect(toolsMenu, &QMenu::aboutToShow, toolsMenu, [toolsMenu] {
+		toolsMenu->clear();
+		ShellCommandMenus::populateProject(toolsMenu);
+	});
+	tools->setMenu(toolsMenu);
 	syncTransport();
 }
 
@@ -202,6 +218,7 @@ void ShellHeader::syncTransport()
 {
 	const Song* song = Engine::getSong();
 	m_play->setChecked(song != nullptr && song->isPlaying());
+	m_record->setChecked(song != nullptr && song->isPlaying() && song->isRecording());
 }
 
 void ShellHeader::paintEvent(QPaintEvent*)

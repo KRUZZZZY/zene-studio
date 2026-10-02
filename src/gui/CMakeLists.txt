@@ -52,8 +52,12 @@ SET(LMMS_SRCS
 	# M3.2: the main window's own verbs (fullscreen, dialogs, save as new version).
 	gui/ControlCommandsShell.cpp
 	# M3.4: the command palette (menu actions + argument-free commands, searchable).
+	gui/CommandForm.cpp
+	gui/CommandListDialog.cpp
+	gui/CommandLists.cpp
 	gui/CommandPalette.cpp
 	gui/PluginNativeEditor.cpp
+	gui/SessionGridMenus.cpp
 	gui/SessionGridView.cpp
 	gui/SessionSyncAction.cpp
 	gui/SessionTransportBar.cpp
@@ -91,11 +95,13 @@ SET(LMMS_SRCS
 	gui/shell/ModulatorCard.cpp
 	gui/shell/Shell.cpp
 	gui/shell/ShellChrome.cpp
+	gui/shell/ShellCommandMenus.cpp
 	gui/shell/ShellIcons.cpp
 	gui/shell/ShellLayout.cpp
 	gui/shell/ShellPanel.cpp
 	gui/shell/ShellSelection.cpp
 	gui/shell/TransportReadouts.cpp
+	gui/shell/WaveformPreview.cpp
 	gui/GuiApplication.cpp
 	gui/LadspaControlView.cpp
 	gui/LfoControllerDialog.cpp

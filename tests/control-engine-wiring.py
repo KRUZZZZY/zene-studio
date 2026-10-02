@@ -17,7 +17,9 @@ is wired in:
      (E37: it used to be one-way);
   6. `bounce.land` renders a track onto a new audio track and mutes the source; one undo
      removes it again;
-  7. the Lua scripting spine: `script.run` with `zene.command(...)` drives the registry and
+  7. `transport.record` (the header's Record button, 0.5.0 W1) starts playback in record mode,
+     or - with no audio device, as transport.play does - is refused, typed 'requires';
+  8. the Lua scripting spine: `script.run` with `zene.command(...)` drives the registry and
      answers a table; a sandbox-leaving command is refused inside the script.
 
 Usage:  QT_QPA_PLATFORM=offscreen python3 tests/control-engine-wiring.py <zene>
@@ -126,6 +128,19 @@ def check_bounce_land(session, recorder, devices):
                    after.get("muted") is False and not gone.get("ok"), "after=%r gone=%r" % (after, gone))
 
 
+def check_transport_record(session, recorder):
+    reply = session.call("transport.record")
+    started = reply.get("ok") and (reply.get("result") or {}).get("recording") is True
+    refused = (reply.get("error") or {}).get("kind") == "requires"
+    recorder.check("transport.record records, or needs a device exactly as transport.play does",
+                   started or refused, "reply=%r" % reply)
+    if started:
+        again = session.call("transport.record")
+        recorder.check("transport.record while playing is refused, typed",
+                       (again.get("error") or {}).get("kind") == "refused", "reply=%r" % again)
+        session.result("transport.stop")
+
+
 def check_lua_spine(session, recorder):
     source = ("local r, err = zene.command('track.add', {type = 'instrument', name = 'Lua spine'})\n"
               "print('added ' .. tostring(err == nil) .. ' ' .. string.sub(r.track, 1, 4))\n"
@@ -167,6 +182,7 @@ def main(argv):
         check_scene_override(session, recorder)
         check_detected_key_refusal(session, recorder)
         check_bounce_land(session, recorder, devices)
+        check_transport_record(session, recorder)
         check_lua_spine(session, recorder)
     report_results(recorder)
     if recorder.problems:

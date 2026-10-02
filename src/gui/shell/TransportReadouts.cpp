@@ -27,6 +27,7 @@
 #include <cmath>
 
 #include <QHBoxLayout>
+#include <QJsonObject>
 #include <QKeyEvent>
 #include <QLineEdit>
 #include <QMouseEvent>
@@ -215,6 +216,24 @@ void ReadoutField::commitTyped()
 	setFocus();
 }
 
+namespace
+{
+
+//! "-14.2 / -1.0" (short-term LUFS / true peak dBTP) while the meter runs; "off" otherwise.
+QString loudnessText()
+{
+	const ControlResult state = ControlRegistry::instance()->invoke(QStringLiteral("meter.get_state"));
+	if (!state.ok || !state.result.value(QStringLiteral("armed")).toBool()) { return QObject::tr("off"); }
+	const QJsonObject live = state.result.value(QStringLiteral("live")).toObject();
+	const auto reading = [&live](const char* key) {
+		const QJsonValue value = live.value(QLatin1String(key));
+		return value.isDouble() ? QString::number(value.toDouble(), 'f', 1) : QStringLiteral("-");
+	};
+	return QStringLiteral("%1 / %2").arg(reading("short_term_lufs"), reading("true_peak_dbtp"));
+}
+
+} // namespace
+
 TransportReadouts::TransportReadouts(QWidget* parent)
 	: QWidget(parent)
 {
@@ -230,7 +249,8 @@ TransportReadouts::TransportReadouts(QWidget* parent)
 	m_volume = new ReadoutField(tr("Master"), this);
 	m_pitch = new ReadoutField(tr("Transpose"), this);
 	m_load = new ReadoutField(tr("CPU"), this);
-	for (ReadoutField* f : {m_tempo, m_meter, m_position, m_time, m_volume, m_pitch, m_load}) { row->addWidget(f); }
+	m_loudness = new ReadoutField(tr("LUFS"), this);
+	for (ReadoutField* f : {m_tempo, m_meter, m_position, m_time, m_volume, m_pitch, m_load, m_loudness}) { row->addWidget(f); }
 	// A shell built without an engine (a widget test) shows the readouts inert.
 	if (song != nullptr) { bindToSong(song); }
 }
@@ -277,6 +297,14 @@ void TransportReadouts::bindToSong(Song* song)
 	m_volume->bind(&song->masterVolumeModel(), [](int v) { return QStringLiteral("%1%").arg(v); }, 2);
 	m_pitch->bind(&song->masterPitchModel(), [](int v) { return signedValue(v); }, 8);
 	m_load->bindText([]() { return QStringLiteral("%1%").arg(Engine::audioEngine()->cpuLoad()); });
+	// MX-132: the master's loudness (meter.get_state) - short-term LUFS and true peak while the
+	// meter is armed; typing "on" or "off" arms or disarms it (meter.arm).
+	m_loudness->bindText(loudnessText, [](const QString& typed) {
+		const QString word = typed.trimmed().toLower();
+		if (word != QStringLiteral("on") && word != QStringLiteral("off")) { return false; }
+		return ControlRegistry::instance()->invoke(QStringLiteral("meter.arm"),
+			{{QStringLiteral("enabled"), word == QStringLiteral("on")}}).ok;
+	});
 }
 
 void TransportReadouts::tick()
@@ -285,6 +313,10 @@ void TransportReadouts::tick()
 	m_position->refresh();
 	m_time->refresh();
 	m_load->refresh();
+	// The loudness reading changes at the meter's own 100 ms block rate; 60 Hz would only
+	// re-ask the registry for the same numbers.
+	constexpr int LoudnessEvery = 15;
+	if (++m_ticks % LoudnessEvery == 0) { m_loudness->refresh(); }
 }
 
 } // namespace lmms::gui

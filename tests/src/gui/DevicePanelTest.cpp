@@ -39,6 +39,7 @@
 #include <QJsonArray>
 #include <QJsonObject>
 #include <QLineEdit>
+#include <QMenu>
 #include <QToolButton>
 
 #include "ControlRegistry.h"
@@ -50,7 +51,10 @@
 #include "InspectorPanel.h"
 #include "InstrumentTrack.h"
 #include "MidiClip.h"
+#include "MenuTestSupport.h"
 #include "Mixer.h"
+#include "SampleTrack.h"
+#include "ShellCommandMenus.h"
 #include "ShellSelection.h"
 #include "Song.h"
 
@@ -90,7 +94,20 @@ T* childNamed(QWidget* parent, const QString& accessibleName)
 	return nullptr;
 }
 
+//! Every leaf entry of @a menu names a registered command (a renamed command fails here).
+bool allDeclareRegisteredCommands(QMenu* menu, QString* stray)
+{
+	for (QAction* action : lmms::test::leafActions(menu))
+	{
+		const QString id = action->property("controlCommand").toString();
+		if (!ControlRegistry::instance()->hasCommand(id)) { *stray = action->text() + QStringLiteral(" -> ") + id; return false; }
+	}
+	return true;
+}
+
 } // namespace
+
+using lmms::test::menuAction;
 
 class DevicePanelTest : public QObject
 {
@@ -174,6 +191,66 @@ private slots:
 		QCOMPARE(track->name(), QStringLiteral("Lead"));
 		ShellSelection::instance()->setTrack(nullptr);
 		delete track;
+	}
+
+	/*! 0.5.0 W1: the track, clip, channel and project menus (the Inspector's More buttons, the
+	 *  track header's and the mixer strip's More submenus) offer the socket-only capabilities
+	 *  where they belong, every entry a registered command. */
+	void theSectionMenusOfferTheW1Commands()
+	{
+		auto* instrument = Track::create(Track::Type::Instrument, Engine::getSong());
+		auto* sample = Track::create(Track::Type::Sample, Engine::getSong());
+		Clip* midiClip = instrument->createClip(TimePos(0));
+		Clip* sampleClip = sample->createClip(TimePos(0));
+		const QString channel = run(QStringLiteral("mixer.add_channel")).result.value(QStringLiteral("channel")).toString();
+		QString stray;
+
+		QMenu track;
+		ShellCommandMenus::populateTrack(&track, instrument);
+		QVERIFY2(allDeclareRegisteredCommands(&track, &stray), qPrintable(stray));
+		QVERIFY(menuAction(&track, {QStringLiteral("Record"), QStringLiteral("Arm")}) != nullptr);
+		QVERIFY(menuAction(&track, {QStringLiteral("Retrospective Capture"), QStringLiteral("Last MIDI to a New Clip")}) != nullptr);
+		QVERIFY(menuAction(&track, {QStringLiteral("Render"), QStringLiteral("Freeze")}) != nullptr);
+		QVERIFY2(menuAction(&track, {QStringLiteral("Insert Test Signal...")}) == nullptr, "an instrument track offered a test signal clip");
+		QMenu sampleTrack;
+		ShellCommandMenus::populateTrack(&sampleTrack, sample);
+		QVERIFY(menuAction(&sampleTrack, {QStringLiteral("Insert Test Signal...")}) != nullptr);
+
+		QMenu midi;
+		ShellCommandMenus::populateClip(&midi, midiClip);
+		QVERIFY2(allDeclareRegisteredCommands(&midi, &stray), qPrintable(stray));
+		QVERIFY(menuAction(&midi, {QStringLiteral("Scale and Chords"), QStringLiteral("Detect Chords")}) != nullptr);
+		QVERIFY(menuAction(&midi, {QStringLiteral("Groove"), QStringLiteral("Random Seed...")}) != nullptr);
+		QMenu audio;
+		ShellCommandMenus::populateClip(&audio, sampleClip);
+		QVERIFY2(allDeclareRegisteredCommands(&audio, &stray), qPrintable(stray));
+		QVERIFY(menuAction(&audio, {QStringLiteral("Process"), QStringLiteral("Reverse")}) != nullptr);
+		QVERIFY(menuAction(&audio, {QStringLiteral("Tempo and Warp"), QStringLiteral("Stretch Algorithm"), QStringLiteral("preserve_pitch")}) != nullptr);
+		QVERIFY2(!menuAction(&audio, {QStringLiteral("Crossfade Into Next Clip...")})->isEnabled(), "the last clip offered a crossfade");
+
+		QMenu strip;
+		ShellCommandMenus::populateChannel(&strip, channel);
+		QVERIFY2(allDeclareRegisteredCommands(&strip, &stray), qPrintable(stray));
+		menuAction(&strip, {QStringLiteral("Loudness Meter"), QStringLiteral("On")})->trigger();
+		QVERIFY(run(QStringLiteral("meter.get_state")).result.value(QStringLiteral("armed")).toBool());
+		menuAction(&strip, {QStringLiteral("Loudness Meter"), QStringLiteral("Off")})->trigger();
+		QVERIFY(!run(QStringLiteral("meter.get_state")).result.value(QStringLiteral("armed")).toBool());
+
+		QMenu project;
+		ShellCommandMenus::populateProject(&project);
+		QVERIFY2(allDeclareRegisteredCommands(&project, &stray), qPrintable(stray));
+
+		// The Inspector's clip section carries the same menu behind its More button.
+		InspectorPanel inspector;
+		ShellSelection::instance()->setClip(midiClip);
+		inspector.rebuild();
+		auto* more = childNamed<QToolButton>(&inspector, QStringLiteral("More clip actions"));
+		QVERIFY(more != nullptr && more->menu() != nullptr);
+		emit more->menu()->aboutToShow();
+		QVERIFY(menuAction(more->menu(), {QStringLiteral("Scale and Chords"), QStringLiteral("Detect Chords")}) != nullptr);
+		ShellSelection::instance()->setTrack(nullptr);
+		delete instrument;
+		delete sample;
 	}
 
 	void theDevicePanelDrawsTheChainAndTheModulatorBesideIt()

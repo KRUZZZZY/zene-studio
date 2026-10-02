@@ -27,6 +27,7 @@
 #include <QComboBox>
 #include <QDir>
 #include <QStackedWidget>
+#include <QTreeWidget>
 #include <QVBoxLayout>
 
 #include "Accessibility.h"
@@ -35,6 +36,7 @@
 #include "embed.h"
 #include "FileBrowser.h"
 #include "PluginBrowser.h"
+#include "WaveformPreview.h"
 
 namespace lmms::gui
 {
@@ -55,6 +57,8 @@ BrowserPanel::BrowserPanel(QWidget* parent)
 
 	m_stack = new QStackedWidget(this);
 	box->addWidget(m_stack, 1);
+	m_wave = new WaveformPreview(this);
+	box->addWidget(m_wave);
 	connect(m_selector, qOverload<int>(&QComboBox::currentIndexChanged), m_stack, &QStackedWidget::setCurrentIndex);
 }
 
@@ -62,6 +66,14 @@ void BrowserPanel::addSource(SideBarWidget* source)
 {
 	source->setChromeless(true);
 	m_stack->addWidget(source);
+	// WF-010: a sample selected in any file list shows its waveform (browser.peaks) below.
+	for (auto* tree : source->findChildren<QTreeWidget*>())
+	{
+		connect(tree, &QTreeWidget::currentItemChanged, this, [this](QTreeWidgetItem* item) {
+			const auto* file = dynamic_cast<FileItem*>(item);
+			m_wave->setPath(file != nullptr && file->type() == FileItem::FileType::Sample ? file->fullName() : QString());
+		});
+	}
 	m_selector->addItem(source->title());
 }
 

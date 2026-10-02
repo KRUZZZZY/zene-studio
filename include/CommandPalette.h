@@ -55,6 +55,10 @@ struct PaletteEntry
 	QString command;   //!< the registered id it declares or is, or empty
 	QString detail;    //!< a registry entry's first sentence of description
 	QPointer<QAction> action;  //!< null for a registry entry
+	//! A registry entry whose command takes required arguments: running it opens the
+	//! command's form (CommandForm), pre-filled from the shell selection, instead of
+	//! dispatching it bare.
+	bool form = false;
 };
 
 /*! Every enabled, visible, non-separator action under @a bar, recursively, with its menu
@@ -65,16 +69,23 @@ LMMS_EXPORT QList<PaletteEntry> paletteMenuEntries(QMenuBar* bar);
  *  not already one of @a menuEntries' declared commands. */
 LMMS_EXPORT QList<PaletteEntry> paletteRegistryEntries(const QList<PaletteEntry>& menuEntries);
 
+/*! The registry's commands that DO take required arguments (and declare no `requires` and no
+ *  menu carries): each runs through its form, so every command is reachable from the palette.
+ *  Their path is "Command…". */
+LMMS_EXPORT QList<PaletteEntry> paletteFormEntries(const QList<PaletteEntry>& menuEntries);
+
 /*! @a entries that match @a query, best first. A match is every query character in order
  *  (case-insensitive) in the label, then in "path label"; a prefix beats a word start beats
  *  a substring beats a scattered match, and the label beats the path. An empty query
  *  keeps every entry in its given order. */
 LMMS_EXPORT QList<PaletteEntry> paletteMatches(const QList<PaletteEntry>& entries, const QString& query);
 
-/*! Runs @a entry: triggers its action, or dispatches its command with no arguments.
+/*! Runs @a entry: triggers its action, dispatches its command with no arguments, or - for a
+ *  form entry - opens the command's form, parented to @a formParent, with the selection's ids
+ *  filled in.
  *  Returns the one-line outcome the palette shows (empty for an action, which shows its
  *  own result). */
-LMMS_EXPORT QString paletteActivate(const PaletteEntry& entry);
+LMMS_EXPORT QString paletteActivate(const PaletteEntry& entry, QWidget* formParent = nullptr);
 
 //! The palette window: a filter line over the list, Enter runs, Escape closes.
 class LMMS_EXPORT CommandPalette : public QDialog

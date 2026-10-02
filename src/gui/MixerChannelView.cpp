@@ -42,6 +42,7 @@
 #include "CaptionMenu.h"
 #include "ColorChooser.h"
 #include "ConfigManager.h"
+#include "ControlVocabulary.h"
 #include "EffectRackView.h"
 #include "Fader.h"
 #include "FeedbackModeAction.h"
@@ -56,6 +57,7 @@
 #include "PeakIndicator.h"
 #include "RackMenu.h"
 #include "SendButtonIndicator.h"
+#include "ShellCommandMenus.h"
 #include "Song.h"
 
 namespace lmms::gui {
@@ -213,6 +215,8 @@ void MixerChannelView::contextMenuEvent(QContextMenuEvent*)
 		for (int i = 0; i < static_cast<int>(Engine::mixer()->numChannels()); ++i) { view->updateMixerChannel(i); }
 	});
 
+	// 0.5.0 W1: sends (pre/post), sidechain, rack zones and wiring - the Inspector's channel menu.
+	ShellCommandMenus::populateChannel(contextMenu->addMenu(tr("More")), control::channelIdOf(mixerChannel()));
 	contextMenu->exec(QCursor::pos());
 	delete contextMenu;
 }

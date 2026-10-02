@@ -30,10 +30,12 @@
 #include <QJsonArray>
 #include <QKeyEvent>
 #include <QLabel>
+#include <QMenu>
 #include <QToolButton>
 #include <QVBoxLayout>
 
 #include "ControlRegistry.h"
+#include "SessionGridMenus.h"
 #include "SessionTransportBar.h"
 
 namespace lmms::gui
@@ -68,6 +70,15 @@ SessionGridView::SessionGridView(QWidget* parent) :
 	m_grid->setSpacing(2);
 	outer->addWidget(gridHost);
 	outer->addStretch();
+	// The grid's own menu (size, launch quantisation, follow actions): a right-click anywhere
+	// that is not a cell or a scene, and the Grid button, which an empty grid needs.
+	setContextMenuPolicy(Qt::CustomContextMenu);
+	connect(this, &QWidget::customContextMenuRequested, this, [this](const QPoint& at) { showMenu(nullptr, mapToGlobal(at)); });
+	m_gridButton = new QToolButton(this);
+	m_gridButton->setText(tr("Grid..."));
+	m_gridButton->setAccessibleName(tr("Launcher grid settings"));
+	connect(m_gridButton, &QToolButton::clicked, this, [this] { showMenu(nullptr, m_gridButton->mapToGlobal(QPoint(0, m_gridButton->height()))); });
+	outer->insertWidget(1, m_gridButton, 0, Qt::AlignLeft);
 	m_stopAll = makeButton(QStringLiteral("session.stop_all"));
 	m_stopAll->setText(tr("Stop all"));
 	m_stopAll->setAccessibleName(tr("Stop all clips"));
@@ -85,6 +96,9 @@ QToolButton* SessionGridView::makeButton(const QString& command)
 	button->setFocusPolicy(Qt::StrongFocus);
 	button->setMinimumSize(72, 26);
 	button->installEventFilter(this);
+	button->setContextMenuPolicy(Qt::CustomContextMenu);
+	connect(button, &QWidget::customContextMenuRequested, this,
+		[this, button](const QPoint& at) { showMenu(button, button->mapToGlobal(at)); });
 	return button;
 }
 
@@ -171,10 +185,12 @@ void SessionGridView::refresh()
 	const int scenes = grid.value(QStringLiteral("scenes")).toInt();
 	if (tracks != m_tracks || scenes != m_scenes) { rebuild(tracks, scenes); }
 	m_status->setText(tracks == 0 || scenes == 0
-		? tr("The session grid is empty: session.set_grid sizes it.")
+		? tr("The session grid is empty: Grid... (session.set_grid) sizes it.")
 		: tr("%1 tracks, %2 scenes").arg(tracks).arg(scenes));
 	readColumns(state.result.value(QStringLiteral("columns")).toArray());
-	const std::vector<QString> names = cellNames(state.result.value(QStringLiteral("slots")).toArray());
+	m_slots = state.result.value(QStringLiteral("slots")).toArray();
+	m_sceneStates = state.result.value(QStringLiteral("scenes")).toArray();
+	const std::vector<QString> names = cellNames(m_slots);
 	for (int track = 0; track < tracks; ++track)
 	{
 		for (int scene = 0; scene < scenes; ++scene)
@@ -281,6 +297,50 @@ bool SessionGridView::eventFilter(QObject* watched, QEvent* event)
 	if (next == nullptr) { return QWidget::eventFilter(watched, event); }
 	next->setFocus(Qt::TabFocusReason);
 	return true;
+}
+
+
+void SessionGridView::showMenu(QToolButton* button, const QPoint& global)
+{
+	QMenu menu(this);
+	populateMenu(&menu, button);
+	if (!menu.isEmpty()) { menu.exec(global); }
+	refresh();
+}
+
+
+void SessionGridView::populateMenu(QMenu* menu, QToolButton* button) const
+{
+	const auto cell = std::find(m_cells.begin(), m_cells.end(), button);
+	const auto scene = std::find(m_sceneButtons.begin(), m_sceneButtons.end(), button);
+	if (button != nullptr && cell != m_cells.end())
+	{
+		const int index = static_cast<int>(cell - m_cells.begin());
+		const int track = index / m_scenes;
+		const int row = index % m_scenes;
+		SessionGridMenus::populateCell(menu, track, row, slotAt(track, row));
+	}
+	else if (button != nullptr && scene != m_sceneButtons.end())
+	{
+		const int row = static_cast<int>(scene - m_sceneButtons.begin());
+		SessionGridMenus::populateScene(menu, row, m_sceneStates.at(row).toObject());
+	}
+	else { SessionGridMenus::populateGrid(menu, m_tracks, m_scenes); }
+}
+
+
+QJsonObject SessionGridView::slotAt(int track, int scene) const
+{
+	for (const QJsonValue& value : m_slots)
+	{
+		const QJsonObject slot = value.toObject();
+		if (slot.value(QStringLiteral("track")).toInt() == track && slot.value(QStringLiteral("scene")).toInt() == scene
+			&& slot.value(QStringLiteral("type")).toString() != QStringLiteral("empty"))
+		{
+			return slot;
+		}
+	}
+	return {};
 }
 
 

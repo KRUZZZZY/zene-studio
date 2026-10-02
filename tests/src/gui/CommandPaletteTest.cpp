@@ -38,6 +38,7 @@
 #include <QSignalSpy>
 
 #include "DeprecationHelper.h"
+#include "CommandForm.h"
 #include "CommandPalette.h"
 #include "ControlRegistry.h"
 
@@ -137,6 +138,22 @@ private slots:
 		QVERIFY2(!hasLabel(entries, QStringLiteral("palettetest.needs_arg")), "a command with a required argument was listed");
 		QVERIFY2(!hasLabel(entries, QStringLiteral("palettetest.needs_human")), "a command that requires a human was listed");
 		QVERIFY2(!hasLabel(entries, QStringLiteral("palettetest.in_a_menu")), "a command a menu already carries was listed twice");
+	}
+
+	//! 0.5.0 W1: a command that takes required arguments is listed too, and runs through its form.
+	void aCommandWithRequiredArgumentsOpensItsForm()
+	{
+		const QList<PaletteEntry> forms = paletteFormEntries(paletteMenuEntries(&m_bar));
+		QVERIFY(hasLabel(forms, QStringLiteral("palettetest.needs_arg")));
+		QVERIFY2(!hasLabel(forms, QStringLiteral("palettetest.noop")), "an argument-free command was listed as a form");
+		const auto entry = std::find_if(forms.begin(), forms.end(),
+			[](const PaletteEntry& e) { return e.label == QStringLiteral("palettetest.needs_arg"); });
+		QVERIFY(entry->form);
+		QWidget host;
+		QVERIFY(paletteActivate(*entry, &host).contains(QStringLiteral("form")));
+		auto* form = host.findChild<CommandForm*>();
+		QVERIFY(form != nullptr);
+		QCOMPARE(form->fields(), QStringList{QStringLiteral("x")});
 	}
 
 	void aPrefixRanksFirstAndNothingMatchesNothing()

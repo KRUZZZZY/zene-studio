@@ -24,12 +24,15 @@
 
 #include "InspectorPanel.h"
 
+#include <functional>
+
 #include <QGridLayout>
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QLineEdit>
 #include <QMenu>
 #include <QPainter>
+#include <QPointer>
 #include <QPushButton>
 #include <QToolButton>
 #include <QVBoxLayout>
@@ -48,6 +51,7 @@
 #include "MidiClip.h"
 #include "SampleClip.h"
 #include "SampleTrack.h"
+#include "ShellCommandMenus.h"
 #include "ShellSelection.h"
 #include "Song.h"
 #include "TransportReadouts.h"
@@ -75,6 +79,28 @@ QLabel* sectionTitle(const QString& text, QWidget* parent)
 	auto* label = new QLabel(text.toUpper(), parent);
 	label->setObjectName(QStringLiteral("deviceSection"));
 	return label;
+}
+
+/*! A section's title with its "More" button: a menu @a populate fills each time it opens
+ *  (ShellCommandMenus - the W1 capabilities), so it always offers the current object's commands. */
+QWidget* titleBar(const QString& text, QWidget* parent, const std::function<void(QMenu*)>& populate)
+{
+	auto* bar = new QWidget(parent);
+	auto* row = new QHBoxLayout(bar);
+	row->setContentsMargins(0, 0, 0, 0);
+	row->addWidget(sectionTitle(text, bar));
+	row->addStretch(1);
+	auto* more = new QToolButton(bar);
+	more->setText(QStringLiteral("⋯"));
+	more->setObjectName(QStringLiteral("inspectorMore"));
+	more->setAccessibleName(QObject::tr("More %1 actions").arg(text.toLower()));
+	more->setToolTip(more->accessibleName());
+	more->setPopupMode(QToolButton::InstantPopup);
+	auto* menu = new QMenu(more);
+	QObject::connect(menu, &QMenu::aboutToShow, menu, [menu, populate] { menu->clear(); populate(menu); });
+	more->setMenu(menu);
+	row->addWidget(more);
+	return bar;
 }
 
 //! "bar.beat" for a position, as the header's position readout writes it.
@@ -276,7 +302,9 @@ QWidget* InspectorPanel::trackSection(Track* track)
 	auto* column = new QVBoxLayout(section);
 	column->setContentsMargins(0, 0, 0, 0);
 	column->setSpacing(tokens::space::md);
-	column->addWidget(sectionTitle(tr("Track"), section));
+	column->addWidget(titleBar(tr("Track"), section, [track = QPointer<Track>(track)](QMenu* menu) {
+		ShellCommandMenus::populateTrack(menu, track.data());
+	}));
 	auto* nameRow = new QHBoxLayout;
 	nameRow->setSpacing(tokens::space::sm);
 	nameRow->addWidget(new Swatch(track->color().value_or(tokens::palette().clipMidi), section));
@@ -331,7 +359,9 @@ QWidget* InspectorPanel::clipSection(Clip* clip)
 	grid->setContentsMargins(0, 0, 0, 0);
 	grid->setHorizontalSpacing(tokens::space::lg);
 	grid->setVerticalSpacing(tokens::space::sm);
-	grid->addWidget(sectionTitle(tr("Clip"), section), 0, 0, 1, 2);
+	grid->addWidget(titleBar(tr("Clip"), section, [clip = QPointer<Clip>(clip)](QMenu* menu) {
+		ShellCommandMenus::populateClip(menu, clip.data());
+	}), 0, 0, 1, 2);
 	addRow(grid, tr("Name"), new QLabel(clip->name().isEmpty() ? tr("(untitled)") : clip->name(), section));
 	addRow(grid, tr("Start"), new QLabel(barBeat(clip->startPosition()), section));
 	addRow(grid, tr("Length"), new QLabel(lengthText(clip->length()), section));
@@ -370,7 +400,7 @@ QWidget* InspectorPanel::channelSection(MixerChannel* channel, const QString& id
 	auto* column = new QVBoxLayout(section);
 	column->setContentsMargins(0, 0, 0, 0);
 	column->setSpacing(tokens::space::md);
-	column->addWidget(sectionTitle(tr("Mixer channel"), section));
+	column->addWidget(titleBar(tr("Mixer channel"), section, [id](QMenu* menu) { ShellCommandMenus::populateChannel(menu, id); }));
 	auto* name = new QLabel(channel->m_name.isEmpty() ? id : channel->m_name, section);
 	name->setObjectName(QStringLiteral("inspectorName"));
 	column->addWidget(name);

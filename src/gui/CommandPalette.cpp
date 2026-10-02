@@ -24,6 +24,7 @@
 #include "CommandPalette.h"
 
 #include <algorithm>
+#include <functional>
 
 #include <QAction>
 #include <QEvent>
@@ -38,6 +39,7 @@
 #include <QSet>
 #include <QVBoxLayout>
 
+#include "CommandForm.h"
 #include "ControlRegistry.h"
 
 namespace lmms::gui
@@ -116,7 +118,12 @@ QList<PaletteEntry> paletteMenuEntries(QMenuBar* bar)
 	return out;
 }
 
-QList<PaletteEntry> paletteRegistryEntries(const QList<PaletteEntry>& menuEntries)
+namespace
+{
+
+//! The registry entries for which @a wanted holds: no `requires`, not carried by a menu.
+QList<PaletteEntry> registryEntries(const QList<PaletteEntry>& menuEntries,
+	const std::function<bool(const ControlCommand&)>& wanted, const QString& path, bool form)
 {
 	QSet<QString> covered;
 	for (const PaletteEntry& entry : menuEntries)
@@ -129,16 +136,35 @@ QList<PaletteEntry> paletteRegistryEntries(const QList<PaletteEntry>& menuEntrie
 	{
 		const ControlCommand* command = registry->command(id);
 		if (command == nullptr || covered.contains(id) || !command->requiresDecl.isEmpty()) { continue; }
-		if (!command->argsSchema.value(QStringLiteral("required")).toArray().isEmpty()) { continue; }
+		if (!wanted(*command)) { continue; }
 		PaletteEntry entry;
 		entry.label = id;
-		entry.path = QStringLiteral("Command");
+		entry.path = path;
 		entry.command = id;
+		entry.form = form;
 		const int stop = command->description.indexOf(QStringLiteral(". "));
 		entry.detail = stop > 0 ? command->description.left(stop + 1) : command->description;
 		out.append(entry);
 	}
 	return out;
+}
+
+bool takesRequired(const ControlCommand& command)
+{
+	return !command.argsSchema.value(QStringLiteral("required")).toArray().isEmpty();
+}
+
+} // namespace
+
+QList<PaletteEntry> paletteRegistryEntries(const QList<PaletteEntry>& menuEntries)
+{
+	return registryEntries(menuEntries, [](const ControlCommand& c) { return !takesRequired(c); },
+		QStringLiteral("Command"), false);
+}
+
+QList<PaletteEntry> paletteFormEntries(const QList<PaletteEntry>& menuEntries)
+{
+	return registryEntries(menuEntries, takesRequired, QStringLiteral("Command…"), true);
 }
 
 QList<PaletteEntry> paletteMatches(const QList<PaletteEntry>& entries, const QString& query)
@@ -162,7 +188,7 @@ QList<PaletteEntry> paletteMatches(const QList<PaletteEntry>& entries, const QSt
 	return out;
 }
 
-QString paletteActivate(const PaletteEntry& entry)
+QString paletteActivate(const PaletteEntry& entry, QWidget* formParent)
 {
 	if (!entry.action.isNull())
 	{
@@ -170,6 +196,14 @@ QString paletteActivate(const PaletteEntry& entry)
 		return QString();
 	}
 	if (entry.command.isEmpty()) { return QString(); }
+	if (entry.form)
+	{
+		const CommandCall call{entry.command, {}, selectionContext(entry.command), entry.label, true};
+		const ControlResult opened = runCommand(formParent, call);
+		if (opened.errorKind == ControlErrorKind::Busy) { return QObject::tr("%1: fill in its form").arg(entry.command); }
+		return opened.ok ? QObject::tr("%1: done").arg(entry.command)
+			: QObject::tr("%1: %2").arg(entry.command, opened.errorMessage);
+	}
 	const ControlResult result = ControlRegistry::instance()->invoke(entry.command);
 	return result.ok ? QObject::tr("%1: done").arg(entry.command)
 		: QObject::tr("%1: %2").arg(entry.command, result.errorMessage);
@@ -185,7 +219,9 @@ CommandPalette::CommandPalette(QMenuBar* bar, QWidget* parent) :
 	setAccessibleName(tr("Command Palette"));
 	setAccessibleDescription(tr("Type to find any menu item or command; Enter runs the highlighted one."));
 	m_entries = paletteMenuEntries(bar);
-	m_entries.append(paletteRegistryEntries(m_entries));
+	const QList<PaletteEntry> menus = m_entries;
+	m_entries.append(paletteRegistryEntries(menus));
+	m_entries.append(paletteFormEntries(menus));
 
 	m_filter = new QLineEdit(this);
 	m_filter->setPlaceholderText(tr("Type a command or a menu item..."));
@@ -235,10 +271,12 @@ bool CommandPalette::activateRow(int row)
 	const PaletteEntry entry = m_shown.at(row);
 	// A menu action closes the palette first, so a dialog it opens is not
 	// stacked under it; a command stays open to report its result.
-	if (!entry.action.isNull()) { hide(); }
-	const QString outcome = paletteActivate(entry);
+	// A form entry closes it too: the form, not the palette, is where the work is.
+	const bool leaves = !entry.action.isNull() || entry.form;
+	if (leaves) { hide(); }
+	const QString outcome = paletteActivate(entry, parentWidget());
 	m_status->setText(outcome);
-	if (!entry.action.isNull()) { close(); }
+	if (leaves) { close(); }
 	return true;
 }
 

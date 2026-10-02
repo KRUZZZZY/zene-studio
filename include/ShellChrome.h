@@ -90,6 +90,7 @@ private:
 	QHBoxLayout* m_stripLayout;
 	int m_stretchIndex = -1;  //!< the stretch's position until it exists: append
 	ShellButton* m_play = nullptr;
+	ShellButton* m_record = nullptr;
 	class TransportReadouts* m_readouts = nullptr;
 };
 

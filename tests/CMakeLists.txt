@@ -713,6 +713,8 @@ set(LMMS_TESTS
 	src/gui/MixerLatencyTextTest.cpp
 	# M3.4: the command palette - what it lists, how it ranks, what it runs.
 	src/gui/CommandPaletteTest.cpp
+	# 0.5.0 W1: the schema-built command form, its dispatcher, choice menus and the list dialog.
+	src/gui/CommandFormTest.cpp
 	# M3.7: the mixer's VCA strip and the channel's VCA menu.
 	src/gui/VcaStripViewTest.cpp
 	# R5.3: the clip-launch grid - launch, stop and scene-launch from the grid produce the
@@ -1189,6 +1191,7 @@ set_tests_properties(DesignTokensTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=of
 set_tests_properties(NoteEditorTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(DevicePanelTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(CommandPaletteTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+set_tests_properties(CommandFormTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(VcaStripViewTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(SessionGridViewTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(SessionTransportBarTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")

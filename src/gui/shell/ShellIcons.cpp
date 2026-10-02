@@ -75,6 +75,7 @@ const std::map<QString, QString>& shellTable()
 	{"play", "play"},
 	{"plus", "plus"},
 	{"power", "power"},
+	{"project_tools", "wrench"},
 	{"quantize", "magnet"},
 	{"record", "circle-dot"},
 	{"save", "save"},

@@ -128,6 +128,13 @@ const ReversibilityRow kRecordingRows[] = {
 		"no write happens, so no transaction is recorded",
 		""),
 
+	R("transport.record", RC::NotMutating, false,
+		"starts the transport in record mode: the run state is engine state, not "
+		"project state (the transport.play precedent). What it RECORDS is written by "
+		"the recording tracks and clips themselves, each through its own journalled path",
+		"nothing to reverse: transport.stop is the operation a client calls",
+		""),
+
 	R("record.retro_capture_arm", RC::NotMutating, false,
 		"arms or disarms the retrospective AUDIO window. Mode state, never project "
 		"state: nothing about the song changes, and the window is not serialized with "

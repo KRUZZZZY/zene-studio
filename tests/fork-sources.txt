@@ -523,6 +523,9 @@ include/ClipConsolidate.h
 include/ClipEdits.h
 include/ClipEditsMenu.h
 include/ClipLinks.h
+include/CommandForm.h
+include/CommandListDialog.h
+include/CommandLists.h
 include/CommandPalette.h
 include/ControlAutomationSupport.h
 include/ControlBounceSupport.h
@@ -676,6 +679,7 @@ include/ScriptMemoryBudget.h
 include/ScriptPackage.h
 include/SessionArrangementRecorder.h
 include/SessionFollow.h
+include/SessionGridMenus.h
 include/SessionGridView.h
 include/SessionModel.h
 include/SessionPlayback.h
@@ -686,6 +690,7 @@ include/SessionTuning.h
 include/SessionTuningMenu.h
 include/Shell.h
 include/ShellChrome.h
+include/ShellCommandMenus.h
 include/ShellIcons.h
 include/ShellLayout.h
 include/ShellPanel.h
@@ -722,6 +727,7 @@ include/VcaGroup.h
 include/VcaStripView.h
 include/VisibilitySetMenu.h
 include/WarpMarkers.h
+include/WaveformPreview.h
 include/WcagContrast.h
 include/XmlDepthGuard.h
 include/zene/api/ControlApi.h
@@ -1169,6 +1175,9 @@ src/gui/AutomationModeMenu.cpp
 src/gui/BrowserTagMenu.cpp
 src/gui/ChainPresetMenu.cpp
 src/gui/ClipEditsMenu.cpp
+src/gui/CommandForm.cpp
+src/gui/CommandListDialog.cpp
+src/gui/CommandLists.cpp
 src/gui/CommandPalette.cpp
 src/gui/ControlCommandsNoteEditor.cpp
 src/gui/ControlCommandsSelection.cpp
@@ -1194,6 +1203,7 @@ src/gui/RackMenu.cpp
 src/gui/RecordingRecoveryMenu.cpp
 src/gui/RenderPresetMenu.cpp
 src/gui/ScriptBudgetAction.cpp
+src/gui/SessionGridMenus.cpp
 src/gui/SessionGridView.cpp
 src/gui/SessionSyncAction.cpp
 src/gui/SessionTransportBar.cpp
@@ -1224,11 +1234,13 @@ src/gui/shell/InspectorPanel.cpp
 src/gui/shell/ModulatorCard.cpp
 src/gui/shell/Shell.cpp
 src/gui/shell/ShellChrome.cpp
+src/gui/shell/ShellCommandMenus.cpp
 src/gui/shell/ShellIcons.cpp
 src/gui/shell/ShellLayout.cpp
 src/gui/shell/ShellPanel.cpp
 src/gui/shell/ShellSelection.cpp
 src/gui/shell/TransportReadouts.cpp
+src/gui/shell/WaveformPreview.cpp
 src/tracks/TrackFolder.cpp
 src/wasm/WasmAbi.h
 src/wasm/WasmOfflineRender.cpp
