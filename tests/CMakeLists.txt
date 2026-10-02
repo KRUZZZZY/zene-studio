@@ -563,6 +563,8 @@ set(LMMS_TESTS
 	src/core/RangeEditsTest.cpp
 	# 0.5.0 L04 ED-042: a sample clip's gain envelope - the curve, the file, the commands.
 	src/core/ClipGainEnvelopeTest.cpp
+	# 0.5.0 L04 ED-038: a clip's non-destructive transpose - command, file, played pitch.
+	src/core/ClipTransposeTest.cpp
 	# Feature row 50 (0.3.0): the Lua API's DAW-control half - the mixer channel
 	# and effect-chain bindings. Drives a REAL mixer channel and the chain the
 	# control surface addresses from Lua, reads the engine back (not the script's

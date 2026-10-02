@@ -114,8 +114,11 @@ SamplePlayHandle::SamplePlayHandle( SampleClip* clip, const SampleWindow& window
 	 *  once here (a table fill, no allocation) and its analysis cursor starts
 	 *  at the head of the window, in window-relative frames. */
 	const WarpStretchMode stretchMode = clip->warpStretchMode();
-	m_preservePitch = (stretchMode == WarpStretchMode::PreservePitch
-		|| stretchMode == WarpStretchMode::RubberBand) && !m_rendersLinearly;
+	m_preservePitch = ((stretchMode == WarpStretchMode::PreservePitch
+		|| stretchMode == WarpStretchMode::RubberBand) && !m_rendersLinearly)
+		// ED-038: a transposed Rubber Band clip goes through the stretcher even at a linear rate -
+		// the pitch scale is the change it renders.
+		|| (clip->clipEdits().transpose != 0 && stretchMode == WarpStretchMode::RubberBand);
 
 	/*! Owner decision 12: a RubberBand clip claims one of its pool's voices -
 	 *  a lock-free compare-and-swap, the voice already built and reset off this
@@ -129,8 +132,11 @@ SamplePlayHandle::SamplePlayHandle( SampleClip* clip, const SampleWindow& window
 		m_rubberBand = clip->rubberBandPool()->claim();
 		if (m_rubberBand != nullptr)
 		{
+			// ED-038: the clip's transpose is a pitch scale on top of the rate correction; Rubber
+			// Band keeps the timing.
 			m_rubberBand->begin(static_cast<double>(m_sample->sampleRate())
-				/ static_cast<double>(Engine::audioEngine()->outputSampleRate()));
+				/ static_cast<double>(Engine::audioEngine()->outputSampleRate())
+				* std::exp2(clip->clipEdits().transpose / 12.0));
 		}
 	}
 	if (m_preservePitch && m_rubberBand == nullptr)

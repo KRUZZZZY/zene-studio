@@ -956,31 +956,9 @@ bool InstrumentTrack::play( const TimePos & _start, const f_cnt_t _frames,
 
 			NotePlayHandle* notePlayHandle = NotePlayHandleManager::acquire(this, _offset, noteFrames, *currentNote);
 			notePlayHandle->setPatternTrack(pattern_track);
-
-			// MIDI depth: velocity jitter. Applied to the play handle's own
-			// copy of the note, never to the persisted one, and only when the
-			// note asks for it.
-			if( currentNote->velocityJitter() > 0.f )
-			{
-				const float factor = NoteRandom::velocityFactor( currentNote->velocityJitter(), midiSeed,
-						currentNote->key(), currentNote->pos(), currentNote->length() );
-				notePlayHandle->setVolume( static_cast<volume_t>( std::clamp(
-					currentNote->getVolume() * factor,
-					static_cast<float>( MinVolume ), static_cast<float>( MaxVolume ) ) ) );
-			}
-			// Slide notes glide from the nearest preceding note in this clip
-			// (SPEC-slide-notes D-2; no preceding note -> no glide)
-			if( currentNote->slide() && nit != notes.begin() )
-			{
-				notePlayHandle->setSlideSourceKey( ( *( nit - 1 ) )->key() );
-			}
-			// are we playing global song?
-			if( _clip_num < 0 )
-			{
-				// then set song-global offset of clip in order to
-				// properly perform the note detuning
-				notePlayHandle->setSongGlobalParentOffset( c->startPosition() + c->startTimeOffset());
-			}
+			// Velocity jitter, the slide source, the song-global offset and the clip's transpose
+			// (InstrumentTrackNotes.cpp).
+			decorateNoteHandle(notePlayHandle, c, nit, notes.begin(), _clip_num < 0, midiSeed);
 
 			Engine::audioEngine()->addPlayHandle( notePlayHandle );
 			played_a_note = true;

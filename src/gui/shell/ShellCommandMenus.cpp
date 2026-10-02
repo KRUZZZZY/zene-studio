@@ -24,12 +24,15 @@
 
 #include "ShellCommandMenus.h"
 
+#include <algorithm>
+
 #include <QJsonArray>
 #include <QMenu>
 
 #include "CommandForm.h"
 #include "CommandLists.h"
 #include "ControlRegistry.h"
+#include "ClipEdits.h"
 #include "ControlVocabulary.h"
 #include "Engine.h"
 #include "InstrumentTrack.h"
@@ -182,6 +185,15 @@ void populateClip(QMenu* menu, Clip* clip)
 	const QJsonObject at{{QStringLiteral("position"), static_cast<int>(clip->startPosition())}};
 	add(menu, "Move to Position...", "clip.move", self, true, at);
 	add(menu, "Move With Edit Group...", "vca.edit_move", self, true, at);
+	const int transpose = clip->clipEdits().transpose;
+	QMenu* pitch = menu->addMenu(tr("Transpose"));
+	for (const int step : {12, 1, -1, -12})
+	{
+		addCommandAction(pitch, QStringLiteral("%1%2").arg(step > 0 ? QStringLiteral("+") : QString()).arg(step), QStringLiteral("clip.set_transpose"),
+			[self, transpose, step] { return CommandCall{QStringLiteral("clip.set_transpose"), with(self, "semitones", std::clamp(transpose + step, -48, 48)), {}, QString(), false}; });
+	}
+	add(pitch, "Reset", "clip.set_transpose", with(self, "semitones", 0), false);
+	add(pitch, "Transpose...", "clip.set_transpose", self, true, {{QStringLiteral("semitones"), transpose}});
 	QMenu* links = menu->addMenu(tr("Linked Clips"));
 	add(links, "Link With Clips...", "clip.link_create", self, true);
 	add(links, "Make Unique", "clip.link_remove", self, false);

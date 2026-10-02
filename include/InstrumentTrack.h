@@ -167,6 +167,10 @@ public:
 	//! R3.3: whether a note of @a clip at @a songTick plays under the track's
 	//! composite (and audition). True for every note of a track with neither.
 	bool compPlays(const MidiClip* clip, int songTick) const;
+	//! What play() applies to a fresh note play handle beyond the note itself: velocity jitter,
+	//! the slide source, the song-global offset and the clip's transpose (InstrumentTrackNotes.cpp).
+	void decorateNoteHandle(NotePlayHandle* handle, const MidiClip* clip, NoteVector::const_iterator note,
+		NoteVector::const_iterator first, bool songGlobal, uint32_t midiSeed) const;
 	// create new view for me
 	gui::TrackView* createView( gui::TrackContainerView* tcv ) override;
 

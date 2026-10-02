@@ -101,6 +101,9 @@ struct ClipEdits
 	int fadeOutTicks = 0;   //!< the ramp down to the clip's last tick
 	FadeShape fadeInShape = FadeShape::Linear;
 	FadeShape fadeOutShape = FadeShape::Linear;
+	//! ED-038: the clip's non-destructive transpose in semitones (-48..+48): a MIDI clip's notes
+	//! play transposed, a sample clip is pitch-shifted (Rubber Band) with its timing kept.
+	int transpose = 0;
 	//! ED-042: the gain envelope, `envelopeCount` points in tick order.
 	std::array<GainPoint, MaxGainPoints> envelope{};
 	int envelopeCount = 0;
@@ -116,7 +119,7 @@ struct ClipEdits
 		return gain == other.gain
 			&& fadeInTicks == other.fadeInTicks && fadeOutTicks == other.fadeOutTicks
 			&& fadeInShape == other.fadeInShape && fadeOutShape == other.fadeOutShape
-			&& envelopeCount == other.envelopeCount
+			&& transpose == other.transpose && envelopeCount == other.envelopeCount
 			&& std::equal(envelope.begin(), envelope.begin() + envelopeCount, other.envelope.begin());
 	}
 	bool operator!=(const ClipEdits& other) const { return !(*this == other); }

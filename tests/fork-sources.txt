@@ -1275,6 +1275,7 @@ src/gui/shell/ShellPanel.cpp
 src/gui/shell/ShellSelection.cpp
 src/gui/shell/TransportReadouts.cpp
 src/gui/shell/WaveformPreview.cpp
+src/tracks/InstrumentTrackNotes.cpp
 src/tracks/TrackFolder.cpp
 src/wasm/WasmAbi.h
 src/wasm/WasmOfflineRender.cpp
@@ -1388,6 +1389,7 @@ tests/src/core/BrowserCatalogTest.cpp
 tests/src/core/BrowserTestSupport.h
 tests/src/core/ClipGainEnvelopeTest.cpp
 tests/src/core/ClipSerialisationTest.cpp
+tests/src/core/ClipTransposeTest.cpp
 tests/src/core/ControlAutomationScriptTest.cpp
 tests/src/core/ControlBrowserCommandsTest.cpp
 

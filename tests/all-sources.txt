@@ -1782,6 +1782,7 @@ src/gui/widgets/TimeDisplayWidget.cpp
 src/gui/widgets/ToolButton.cpp
 src/tracks/AutomationTrack.cpp
 src/tracks/InstrumentTrack.cpp
+src/tracks/InstrumentTrackNotes.cpp
 src/tracks/MidiClip.cpp
 src/tracks/PatternTrack.cpp
 src/tracks/SampleTrack.cpp
@@ -1834,6 +1835,7 @@ tests/src/core/ClipLinkPersistenceTest.cpp
 tests/src/core/ClipLinkTest.cpp
 tests/src/core/ClipLinkTestSupport.h
 tests/src/core/ClipSerialisationTest.cpp
+tests/src/core/ClipTransposeTest.cpp
 tests/src/core/ClipWarpPersistenceTest.cpp
 tests/src/core/ConfigMigrationTest.cpp
 tests/src/core/ControlAutomationModesTest.cpp

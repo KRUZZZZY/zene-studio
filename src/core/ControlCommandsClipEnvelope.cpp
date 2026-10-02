@@ -33,6 +33,7 @@
 #include "ControlRegistry.h"
 #include "ControlRegistryGroups.h"
 #include "ControlVocabulary.h"
+#include "RubberBandStretch.h"
 #include "SampleClip.h"
 
 namespace lmms
@@ -118,10 +119,53 @@ ControlResult getEnvelope(const QJsonObject& args)
 		{QStringLiteral("max_points"), MaxGainPoints}});
 }
 
+ControlResult setTranspose(const QJsonObject& args)
+{
+	ClipRef ref;
+	ControlResult error;
+	if (!resolveClip(args.value(QStringLiteral("clip")).toString(), &ref, &error)) { return error; }
+	const int semitones = args.value(QStringLiteral("semitones")).toInt();
+	auto* sample = dynamic_cast<SampleClip*>(ref.clip);
+	if (sample != nullptr && semitones != 0 && !RubberBandPool::available())
+	{
+		return ControlResult::failure(ControlErrorKind::Requires,
+			QStringLiteral("transposing a sample clip keeps its timing through Rubber Band, which this build does not have"));
+	}
+	const ClipEdits before = ref.clip->clipEdits();
+	ClipEdits after = before;
+	after.transpose = semitones;
+	// One checkpoint covers both: the edits and the warp element (the stretch mode) are the clip's.
+	ref.clip->addJournalCheckPoint();
+	ref.clip->setClipEdits(after);
+	if (sample != nullptr && semitones != 0) { sample->setWarpStretchMode(WarpStretchMode::RubberBand); }
+	QJsonObject result{{QStringLiteral("clip"), clipId(ref.id)}, {QStringLiteral("semitones"), semitones},
+		{QStringLiteral("previous"), before.transpose}};
+	result.insert(QStringLiteral("__transaction"), transactionPayload({{QStringLiteral("semitones"), before.transpose}},
+		QStringLiteral("clip.set_transpose"), {{QStringLiteral("clip"), clipId(ref.id)}, {QStringLiteral("semitones"), before.transpose}},
+		true, QStringLiteral("Clip journal checkpoint: undo restores the clip's previous edits and stretch mode")));
+	return ControlResult::success(result);
+}
+
 } // namespace
 
 void registerClipEnvelopeCommands(ControlRegistry& registry)
 {
+	ControlCommand transpose;
+	transpose.id = QStringLiteral("clip.set_transpose");
+	transpose.group = QStringLiteral("clip");
+	transpose.verb = QStringLiteral("set_transpose");
+	transpose.description = QStringLiteral("Transpose a clip by 'semitones' (-48..+48, 0 resets), non-destructively: a "
+		"MIDI clip's notes play transposed and keep their keys; a sample clip is pitch-shifted with its timing kept "
+		"(its stretch mode becomes Rubber Band; refused, typed, in a build without it). Saved with the clip. "
+		"Reversible through the ProjectJournal (Clip checkpoint).");
+	transpose.argsSchema = objectSchema({{QStringLiteral("clip"), stringProperty()}, {QStringLiteral("semitones"), integerProperty(-48, 48)}},
+		{QStringLiteral("clip"), QStringLiteral("semitones")});
+	transpose.resultSchema = objectSchema({{QStringLiteral("clip"), stringProperty()}, {QStringLiteral("semitones"), integerProperty()},
+		{QStringLiteral("previous"), integerProperty()}});
+	transpose.mutating = true;
+	transpose.handler = setTranspose;
+	registry.registerCommand(transpose);
+
 	ControlCommand set;
 	set.id = QStringLiteral("clip.gain_envelope_set");
 	set.group = QStringLiteral("clip");

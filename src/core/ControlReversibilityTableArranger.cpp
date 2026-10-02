@@ -70,6 +70,9 @@ const ReversibilityRow kArrangerRows[] = {
 	R("clip.gain_envelope_set", RC::TrueInverse, true,
 		"the envelope is part of the clip's edits, which Clip::saveClipEdits writes onto the clip's element",
 		"Clip journal checkpoint: undo restores the clip's previous edits", ""),
+	R("clip.set_transpose", RC::TrueInverse, true,
+		"the transpose is part of the clip's edits (and, for a sample clip, its stretch mode), both on the clip's element",
+		"Clip journal checkpoint: undo restores the clip's previous edits and stretch mode", ""),
 };
 
 #undef R
