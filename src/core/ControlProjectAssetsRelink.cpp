@@ -179,7 +179,8 @@ bool controlRelinkAddressOk(const QString& from, const QString& to, ControlResul
 }
 
 bool controlRelinkProjectAsset(const QString& projectPath, const QString& from, const QString& to,
-	const QString& expectSha256, bool dryRun, ProjectAssetRelink* out, ControlResult* error)
+	const QString& expectSha256, bool dryRun, ProjectAssetRelink* out, ControlResult* error,
+	const QString& storedValue)
 {
 	out->replaced = 0;
 	out->before.clear();
@@ -198,7 +199,7 @@ bool controlRelinkProjectAsset(const QString& projectPath, const QString& from, 
 
 	const QString projectDir = QFileInfo(projectPath).absolutePath();
 	collectReferencesAndRewrite(document.documentElement(), QString(), projectDir, from,
-		forwardPath(from), controlProjectAssetStoredPath(target), out);
+		forwardPath(from), storedValue.isEmpty() ? controlProjectAssetStoredPath(target) : storedValue, out);
 	if (out->replaced == 0)
 	{
 		*error = ControlResult::failure(ControlErrorKind::NotFound,

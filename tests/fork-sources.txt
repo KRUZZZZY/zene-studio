@@ -842,6 +842,7 @@ src/core/ControlCommandsClipLink.cpp
 src/core/ControlCommandsClipLinkState.cpp
 src/core/ControlCommandsClipTrim.cpp
 src/core/ControlCommandsClock.cpp
+src/core/ControlCommandsCollectMedia.cpp
 src/core/ControlCommandsComp.cpp
 src/core/ControlCommandsCompEdits.cpp
 src/core/ControlCommandsConsolidate.cpp

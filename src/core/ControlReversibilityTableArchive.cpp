@@ -78,6 +78,11 @@ const ReversibilityRow kArchiveRows[] = {
 		"error, and the aggregated digest covers the reference set, not the "
 		"session",
 		""),
+	R("project.collect_media", RC::TrueInverse, true,
+		"it rewrites the project FILE's media references to copies it makes beside it; the "
+		"recorded action step writes the file's previous bytes back (the copies stay on disk)",
+		"recorded action checkpoint (the project file's previous bytes)",
+		""),
 	R("project.relink", RC::TrueInverse, true,
 		"rewrites the reference values of ONE project file so they point at the "
 		"file that was found. The file is outside the project's own journal, "

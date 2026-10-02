@@ -417,6 +417,8 @@ LMMS_EXPORT void registerNoteProbabilityCommands(ControlRegistry& registry);
 LMMS_EXPORT void registerNoteEditCommands(ControlRegistry& registry);
 //! track.set_mixer_channel - which mixer channel a track plays into (0.5.0 L01).
 LMMS_EXPORT void registerTrackChannelCommands(ControlRegistry& registry);
+//! project.collect_media - a project's media copied beside it, references made relative (L01 E28).
+LMMS_EXPORT void registerCollectMediaCommand(ControlRegistry& registry);
 //! render.stems - per-track stem export through the shipped `exportstems` CLI
 //! (docs/STEM-EXPORT.md).
 LMMS_EXPORT void registerRenderStemsCommands(ControlRegistry& registry);

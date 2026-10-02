@@ -177,7 +177,10 @@ LMMS_EXPORT bool controlHashProjectAssets(const QString& projectPath, ProjectAss
  */
 LMMS_EXPORT bool controlRelinkProjectAsset(const QString& projectPath, const QString& from,
 	const QString& to, const QString& expectSha256, bool dryRun, ProjectAssetRelink* out,
-	ControlResult* error);
+	ControlResult* error, const QString& storedValue = QString());
+
+//! (\a storedValue, when given, is written instead of controlProjectAssetStoredPath(\a to) - how
+//! project.collect_media stores a project-relative `local:` path, so the folder can move.)
 
 /*! The relink ADDRESS arguments - `from` and `to`, both non-empty - checked
  *  before anything reads the project file. The command layer needs the same

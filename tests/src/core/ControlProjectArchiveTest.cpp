@@ -354,6 +354,46 @@ private slots:
 	//! The relink's inverse, for real: the file is rewritten (the reference
 	//! resolves again, and a rescan says so), then ONE control.undo puts back the
 	//! bytes that were there before - compared whole, not attribute by attribute.
+	/*! project.collect_media (engine audit E28): media referenced from outside the project's
+	 *  folder is copied into media/ beside it and each reference becomes a project-relative
+	 *  local: path that still resolves; the missing reference is reported, not invented; one
+	 *  control.undo puts the project file's bytes back. */
+	void collectMediaCopiesBesideTheProjectAndUndoRestoresTheFile()
+	{
+		QTemporaryDir dir;
+		QVERIFY(dir.isValid());
+		const QString outside = dir.path() + QStringLiteral("/library");
+		QVERIFY(QDir().mkpath(outside));
+		for (const QString& name : {QStringLiteral("sample.wav"), QStringLiteral("clip.wav"),
+			QStringLiteral("sound.sf2"), QStringLiteral("slot.wav")})
+		{
+			QVERIFY(writeBytes(outside + QLatin1Char('/') + name, fakeWave(32)));
+		}
+		const QString projectDir = dir.path() + QStringLiteral("/song");
+		QVERIFY(QDir().mkpath(projectDir));
+		const QString project = projectDir + QStringLiteral("/song.mmp");
+		QVERIFY(writeBytes(project, fixtureDocument(outside)));
+		const QByteArray before = readBytes(project);
+
+		const ControlResult collected = run(QStringLiteral("project.collect_media"),
+			QJsonObject{{QStringLiteral("project"), project}});
+		QVERIFY2(collected.ok, qPrintable(collected.errorMessage));
+		QCOMPARE(collected.result.value(QStringLiteral("copied")).toArray().size(), 4);
+		QCOMPARE(collected.result.value(QStringLiteral("missing")).toInt(), 1);  // gone.wav
+		QVERIFY(QFileInfo::exists(projectDir + QStringLiteral("/media/clip.wav")));
+
+		const ControlResult rescan = run(QStringLiteral("project.missing_assets"),
+			QJsonObject{{QStringLiteral("project"), project}});
+		QVERIFY(rescan.ok);
+		QCOMPARE(rescan.result.value(QStringLiteral("missing_count")).toInt(), 1);
+		const QJsonObject clip = referenceWithRaw(rescan.result.value(QStringLiteral("references")).toArray(),
+			QStringLiteral("local:media/clip.wav"));
+		QVERIFY2(!clip.isEmpty(), "the clip's reference is the project-relative copy");
+
+		REV_UNDO_OR_FAIL();
+		QCOMPARE(readBytes(project), before);
+	}
+
 	void relinkRepointsTheReferenceAndUndoRestoresTheFile()
 	{
 		QTemporaryDir dir;

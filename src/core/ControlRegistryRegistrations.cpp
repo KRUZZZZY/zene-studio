@@ -114,6 +114,7 @@ void registerControlCommands(ControlRegistry& registry)
 	registerNoteProbabilityCommands(registry);
 	registerNoteEditCommands(registry);
 	registerTrackChannelCommands(registry);
+	registerCollectMediaCommand(registry);
 	registerRenderStemsCommands(registry);
 	registerPluginCommands(registry);
 	registerDspCommands(registry);

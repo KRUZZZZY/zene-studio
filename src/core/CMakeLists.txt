@@ -164,6 +164,7 @@ set(LMMS_SRCS
 	core/ControlCommandsMonitor.cpp
 	core/ControlCommandsPluginEditor.cpp
 	core/ControlCommandsClipEdits.cpp
+	core/ControlCommandsCollectMedia.cpp
 	# clip.trim / clip.slip (0.3.0 verb wave): the clip group's edge-editing verbs.
 	# Split into its own TU because ControlCommandsClipEdits.cpp is at the file
 	# ratchet; see the header of the file for the design rule both verbs follow.
