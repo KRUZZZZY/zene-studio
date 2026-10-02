@@ -24,6 +24,8 @@
 
 #include "MidiJack.h"
 
+#include <algorithm>
+
 #ifdef LMMS_HAVE_JACK
 
 #include <QMessageBox>
@@ -94,15 +96,11 @@ MidiJack::MidiJack() :
 
 	if(jackClient())
 	{
-		/* jack midi out not implemented
-		   JackMidiWrite and sendByte needs to be functional
-		   before enabling this
-		   If you enable this, also enable the
-		   corresponding jack_port_unregister line below
+		// 0.5.0 (engine audit E25): MIDI out - the messages processOutEvent() queues are
+		// written to this port by JackMidiWrite() in the JACK process callback.
 		m_output_port = jack_port_register(
 				jackClient(), "MIDI out", JACK_DEFAULT_MIDI_TYPE,
 				JackPortIsOutput, 0);
-		*/
 
 		m_input_port = jack_port_register(
 				jackClient(), "MIDI in", JACK_DEFAULT_MIDI_TYPE,
@@ -129,11 +127,9 @@ MidiJack::~MidiJack()
 			printf("Failed to unregister jack midi input\n");
 		}
 
-		/* Unused yet, see the corresponding jack_port_register call
-		if( jack_port_unregister( jackClient(), m_output_port) != 0){
+		if( m_output_port != nullptr && jack_port_unregister( jackClient(), m_output_port) != 0){
 			printf("Failed to unregister jack midi output\n");
 		}
-		*/
 
 		if(m_jackClient)
 		{
@@ -210,20 +206,50 @@ void MidiJack::JackMidiRead(jack_nframes_t nframes)
 	}
 }
 
-/* jack midi out is not implemented
-   sending plain bytes to jack midi outputs doesn't work
-   once working the output port needs to be enabled in the constructor
- */
+namespace
+{
+
+//! The message processOutEvent() is assembling on this thread (MidiClientRaw writes it byte by
+//! byte through sendByte()); per thread, so concurrent senders never interleave.
+thread_local uint8_t t_outBytes[3];
+thread_local uint8_t t_outLength = 0;
+
+} // namespace
+
+void MidiJack::processOutEvent( const MidiEvent& event, const TimePos& time, const MidiPort* port )
+{
+	t_outLength = 0;
+	MidiClientRaw::processOutEvent( event, time, port );
+	if( t_outLength == 0 ) { return; }
+	OutMessage message{};
+	std::copy( t_outBytes, t_outBytes + t_outLength, message.bytes );
+	message.length = t_outLength;
+	t_outLength = 0;
+	if( !m_outQueue.push( message ) ) { m_outDropped.fetch_add( 1, std::memory_order_relaxed ); }
+}
 
 void MidiJack::sendByte( const unsigned char c )
 {
-	//m_midiDev.putChar( c );
+	// Collected into this thread's message; longer messages (SysEx) are not carried by this port.
+	if( t_outLength < sizeof( t_outBytes ) ) { t_outBytes[t_outLength++] = c; }
 }
 
 // we write data to jack
 void MidiJack::JackMidiWrite(jack_nframes_t nframes)
 {
-	// TODO: write midi data to jack port
+	// The JACK process callback (realtime): every queued message goes out at the start of this
+	// cycle. jack_midi_event_write copies into the port buffer; nothing allocates or locks.
+	if( m_output_port == nullptr ) { return; }
+	void* buffer = jack_port_get_buffer( m_output_port, nframes );
+	jack_midi_clear_buffer( buffer );
+	OutMessage message;
+	while( m_outQueue.pop( &message ) )
+	{
+		if( jack_midi_event_write( buffer, 0, message.bytes, message.length ) != 0 )
+		{
+			m_outDropped.fetch_add( 1, std::memory_order_relaxed );
+		}
+	}
 }
 
 void MidiJack::run()

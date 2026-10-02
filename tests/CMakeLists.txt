@@ -551,6 +551,8 @@ set(LMMS_TESTS
 	src/core/Lv2StateTest.cpp
 	# 0.5.0 engine wiring E9: a hosted plug-in's sidechain bus is fed the mixer's sidechain.
 	src/core/SidechainInputsTest.cpp
+	# 0.5.0 engine wiring E25: the lock-free MPSC queue JACK MIDI out is fed through.
+	src/core/MpscQueueTest.cpp
 	# Feature row 50 (0.3.0): the Lua API's DAW-control half - the mixer channel
 	# and effect-chain bindings. Drives a REAL mixer channel and the chain the
 	# control surface addresses from Lua, reads the engine back (not the script's

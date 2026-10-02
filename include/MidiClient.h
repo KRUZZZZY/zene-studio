@@ -206,11 +206,14 @@ protected:
 	// to be implemented by actual client-implementation
 	virtual void sendByte( const unsigned char c ) = 0;
 
+	// the raw encoder: one event as its bytes through sendByte(). Protected (0.5.0) so a client
+	// can wrap it - MidiJack assembles the bytes into whole messages for its JACK output port.
+	void processOutEvent( const MidiEvent& event, const TimePos& time, const MidiPort* port ) override;
+
 
 private:
 	// this does MIDI-event-process
 	void processParsedEvent();
-	void processOutEvent( const MidiEvent& event, const TimePos& time, const MidiPort* port ) override;
 
 	// small helper function returning length of a certain event - this
 	// is necessary for parsing raw-MIDI-data

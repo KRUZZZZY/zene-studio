@@ -37,7 +37,11 @@
 
 #include <QThread>
 
+#include <atomic>
+#include <cstdint>
+
 #include "MidiClient.h"
+#include "MpscQueue.h"
 
 
 namespace lmms
@@ -76,6 +80,9 @@ public:
 
 protected:
 	void sendByte( const unsigned char c ) override;
+	//! Encodes the event with MidiClientRaw's own encoder into this thread's buffer, then queues
+	//! the whole message, so two senders never interleave bytes.
+	void processOutEvent( const MidiEvent& event, const TimePos& time, const MidiPort* port ) override;
 	void run() override;
 
 
@@ -85,6 +92,16 @@ private:
 	jack_port_t *m_input_port;
 	jack_port_t *m_output_port;
 	uint8_t m_jack_buffer[JACK_MIDI_BUFFER_MAX * 4];
+
+	//! 0.5.0 (engine audit E25): one short MIDI message on its way to the JACK output port.
+	struct OutMessage
+	{
+		uint8_t bytes[3];
+		uint8_t length;
+	};
+	//! Senders (the audio thread, the GUI) -> the JACK process callback. Bounded, lock-free.
+	MpscQueue<OutMessage, 1024> m_outQueue;
+	std::atomic<std::uint64_t> m_outDropped{0};
 
 	void JackMidiOutEvent(uint8_t *buf, uint8_t len);
 	void lock();
