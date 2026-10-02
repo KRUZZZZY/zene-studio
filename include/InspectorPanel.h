@@ -41,6 +41,7 @@ class QVBoxLayout;
 namespace lmms
 {
 class Clip;
+class MidiClip;
 class MixerChannel;
 class Track;
 }
@@ -78,6 +79,11 @@ private:
 	QWidget* clipSection(Clip* clip);
 	QWidget* channelSection(MixerChannel* channel, const QString& id);
 	void addRow(QGridLayout* grid, const QString& caption, QWidget* value);
+	//! ED-015: the clip's Start / Length / Offset as fields that run clip.move / clip.resize /
+	//! clip.slip (InspectorClipFields.cpp).
+	void addClipFields(QGridLayout* grid, Clip* clip, const QString& id, QWidget* parent);
+	//! ED-016: the selected notes' Key / Start / Length / Velocity as fields that run note.*.
+	QWidget* notesSection(MidiClip* clip, const QString& id, QWidget* parent);
 	void syncToggles();
 
 	QPointer<Track> m_track;
@@ -88,6 +94,7 @@ private:
 	QToolButton* m_mute = nullptr;
 	QToolButton* m_solo = nullptr;
 	QTimer m_sync;
+	QList<QPointer<class ReadoutField>> m_liveFields;  //!< refreshed by syncToggles
 	//! The redraw a change queues for the next event-loop turn; rebuild() cancels it.
 	QTimer m_pending;
 };

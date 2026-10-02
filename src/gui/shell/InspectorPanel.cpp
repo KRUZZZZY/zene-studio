@@ -104,20 +104,6 @@ QWidget* titleBar(const QString& text, QWidget* parent, const std::function<void
 	return bar;
 }
 
-//! "bar.beat" for a position, as the header's position readout writes it.
-QString barBeat(const TimePos& pos)
-{
-	Song* song = Engine::getSong();
-	const int perBar = std::max(1, song->ticksPerBar());
-	const int perBeat = std::max(1, perBar / std::max(1, song->getTimeSigModel().getNumerator()));
-	return QStringLiteral("%1.%2").arg(pos.getTicks() / perBar + 1).arg((pos.getTicks() % perBar) / perBeat + 1);
-}
-
-QString lengthText(const TimePos& length)
-{
-	const double bars = static_cast<double>(length.getTicks()) / std::max(1, Engine::getSong()->ticksPerBar());
-	return QObject::tr("%1 bars").arg(bars, 0, 'g', 4);
-}
 
 //! The track's colour, as a square swatch before its name.
 class Swatch : public QWidget
@@ -350,9 +336,8 @@ QWidget* InspectorPanel::clipSection(Clip* clip)
 		ShellCommandMenus::populateClip(menu, clip.data());
 	}), 0, 0, 1, 2);
 	addRow(grid, tr("Name"), new QLabel(clip->name().isEmpty() ? tr("(untitled)") : clip->name(), section));
-	addRow(grid, tr("Start"), new QLabel(barBeat(clip->startPosition()), section));
-	addRow(grid, tr("Length"), new QLabel(lengthText(clip->length()), section));
 	const QString id = control::clipIdOf(clip);
+	addClipFields(grid, clip, id, section);
 	if (auto* midi = dynamic_cast<MidiClip*>(clip))
 	{
 		addRow(grid, tr("Notes"), new QLabel(QString::number(midi->notes().size()), section));
@@ -362,6 +347,7 @@ QWidget* InspectorPanel::clipSection(Clip* clip)
 			invoke(QStringLiteral("window.note_editor_set"), {{QStringLiteral("clip"), id}, {QStringLiteral("fit"), true}});
 		});
 		grid->addWidget(edit, grid->rowCount(), 0, 1, 2);
+		grid->addWidget(notesSection(midi, id, section), grid->rowCount(), 0, 1, 2);
 	}
 	else if (auto* sample = dynamic_cast<SampleClip*>(clip))
 	{
@@ -408,6 +394,11 @@ QWidget* InspectorPanel::channelSection(MixerChannel* channel, const QString& id
 
 void InspectorPanel::syncToggles()
 {
+	// The live fields (clip and note values) follow edits made elsewhere - the arranger, the note editor.
+	for (const QPointer<ReadoutField>& field : m_liveFields)
+	{
+		if (!field.isNull() && !field->hasFocus()) { field->refresh(); }
+	}
 	if (m_track.isNull() || m_mute == nullptr) { return; }
 	m_mute->setChecked(m_track->isMuted());
 	m_solo->setChecked(m_track->isSolo());

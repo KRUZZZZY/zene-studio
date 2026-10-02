@@ -101,6 +101,7 @@ SET(LMMS_SRCS
 	gui/shell/DesignTokens.cpp
 	gui/shell/DeviceCard.cpp
 	gui/shell/DevicePanel.cpp
+	gui/shell/InspectorClipFields.cpp
 	gui/shell/InspectorPanel.cpp
 	gui/shell/ModulatorCard.cpp
 	gui/shell/Shell.cpp

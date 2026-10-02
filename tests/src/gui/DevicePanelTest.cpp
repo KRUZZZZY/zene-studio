@@ -57,6 +57,7 @@
 #include "CommandLists.h"
 #include "ShellCommandMenus.h"
 #include "ShellSelection.h"
+#include "TransportReadouts.h"
 #include "Song.h"
 
 using namespace lmms;
@@ -267,6 +268,47 @@ private slots:
 		ShellSelection::instance()->setTrack(nullptr);
 		delete instrument;
 		delete sample;
+	}
+
+	/*! ED-015/016 (0.5.0 L04): the Inspector's clip and note fields edit through the registry -
+	 *  typed the way a person types into them (double-click, text, Enter). */
+	void theInspectorsNumericFieldsEditTheClipAndItsNotes()
+	{
+		auto* track = Track::create(Track::Type::Instrument, Engine::getSong());
+		auto* clip = dynamic_cast<MidiClip*>(track->createClip(TimePos(0)));
+		Note* note = clip->addNote(Note(TimePos(48), TimePos(0), 60, 100), false);
+		note->setSelected(true);
+		InspectorPanel inspector;
+		inspector.show();
+		ShellSelection::instance()->setClip(clip);
+		inspector.rebuild();
+		QCoreApplication::processEvents();
+		const auto type = [&inspector](const QString& caption, const QString& text, int nth = 0) {
+			QList<ReadoutField*> matches;
+			for (ReadoutField* field : inspector.findChildren<ReadoutField*>())
+			{
+				if (field->accessibleName().contains(caption) && field->isVisibleTo(&inspector)) { matches.append(field); }
+			}
+			if (nth >= matches.size()) { return false; }
+			QTest::mouseDClick(matches.at(nth), Qt::LeftButton);
+			auto* editor = matches.at(nth)->findChild<QLineEdit*>();
+			if (editor == nullptr) { return false; }
+			editor->setText(text);
+			emit editor->editingFinished();
+			return true;
+		};
+		QVERIFY(type(QStringLiteral("Start"), QStringLiteral("2.1")));
+		QCOMPARE(clip->startPosition().getTicks(), Engine::getSong()->ticksPerBar());
+		QVERIFY(type(QStringLiteral("Length"), QStringLiteral("2")));
+		QCOMPARE(clip->length().getTicks(), 2 * Engine::getSong()->ticksPerBar());
+		QVERIFY(type(QStringLiteral("Offset"), QStringLiteral("48")));
+		QCOMPARE(clip->startTimeOffset().getTicks(), 48);
+		QVERIFY(type(QStringLiteral("Key"), QStringLiteral("62")));
+		QCOMPARE(clip->notes().front()->key(), 62);
+		QVERIFY(type(QStringLiteral("Velocity"), QStringLiteral("64")));
+		QCOMPARE(static_cast<int>(clip->notes().front()->getVolume()), 64);  // the 0..200 note volume scale
+		ShellSelection::instance()->setTrack(nullptr);
+		delete track;
 	}
 
 	void theDevicePanelDrawsTheChainAndTheModulatorBesideIt()

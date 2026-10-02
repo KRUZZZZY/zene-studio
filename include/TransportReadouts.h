@@ -91,6 +91,12 @@ private:
 	QLineEdit* m_editor = nullptr;
 };
 
+//! "bar.beat" (both 1-based) of a tick position under the song's meter - what the header, the
+//! Inspector and the note inspector show.
+LMMS_EXPORT QString barBeatText(int ticks);
+//! The tick position of "bar" or "bar.beat"; false when @a text is neither.
+LMMS_EXPORT bool ticksFromBarBeat(const QString& text, int* ticks);
+
 //! The header's readouts, laid out in the strip: tempo, meter, position and time, master
 //! level and transposition, and the engine load. Replaces the song editor's LCD boxes,
 //! sliders and scope (docs/UI-SHELL.md §1).

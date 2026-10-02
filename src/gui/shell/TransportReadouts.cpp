@@ -234,6 +234,28 @@ QString loudnessText()
 
 } // namespace
 
+QString barBeatText(int ticks)
+{
+	Song* song = Engine::getSong();
+	const int perBar = std::max(1, song->ticksPerBar());
+	const int perBeat = std::max(1, perBar / std::max(1, song->getTimeSigModel().getNumerator()));
+	return QStringLiteral("%1.%2").arg(ticks / perBar + 1).arg((ticks % perBar) / perBeat + 1);
+}
+
+bool ticksFromBarBeat(const QString& text, int* ticks)
+{
+	Song* song = Engine::getSong();
+	const QStringList parts = text.trimmed().split(QLatin1Char('.'));
+	bool okBar = false;
+	const int bar = parts.value(0).toInt(&okBar);
+	bool okBeat = true;
+	const int beat = parts.size() > 1 ? parts.value(1).toInt(&okBeat) : 1;
+	if (!okBar || !okBeat || bar < 1 || beat < 1) { return false; }
+	const int perBeat = song->ticksPerBar() / std::max(1, song->getTimeSigModel().getNumerator());
+	*ticks = (bar - 1) * song->ticksPerBar() + (beat - 1) * perBeat;
+	return true;
+}
+
 TransportReadouts::TransportReadouts(QWidget* parent)
 	: QWidget(parent)
 {
@@ -278,16 +300,11 @@ void TransportReadouts::bindToSong(Song* song)
 		const int sixteenth = std::max(1, ticksPerBeat / 4);
 		return QStringLiteral("%1.%2.%3").arg(pos.getBar() + 1).arg(song->getBeat() + 1)
 			.arg(song->getBeatTicks() / sixteenth + 1);
-	}, [song](const QString& typed) {
+	}, [](const QString& typed) {
 		// "bar" or "bar.beat": jump there (transport.seek), as typing a position does in any DAW.
-		const QStringList parts = typed.split(QLatin1Char('.'));
-		bool okBar = false;
-		const int bar = parts.value(0).toInt(&okBar);
-		const int beat = parts.size() > 1 ? parts.value(1).toInt() : 1;
-		if (!okBar || bar < 1) { return false; }
-		const int ticksPerBeat = song->ticksPerBar() / std::max(1, song->getTimeSigModel().getNumerator());
-		const int ticks = (bar - 1) * song->ticksPerBar() + std::max(0, beat - 1) * ticksPerBeat;
-		return ControlRegistry::instance()->invoke(QStringLiteral("transport.seek"), {{QStringLiteral("ticks"), ticks}}).ok;
+		int ticks = 0;
+		return ticksFromBarBeat(typed, &ticks)
+			&& ControlRegistry::instance()->invoke(QStringLiteral("transport.seek"), {{QStringLiteral("ticks"), ticks}}).ok;
 	});
 	m_time->bindText([song]() {
 		const int ms = song->getMilliseconds();

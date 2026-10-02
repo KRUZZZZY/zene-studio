@@ -1726,6 +1726,7 @@ src/gui/shell/BrowserPanel.cpp
 src/gui/shell/DesignTokens.cpp
 src/gui/shell/DeviceCard.cpp
 src/gui/shell/DevicePanel.cpp
+src/gui/shell/InspectorClipFields.cpp
 src/gui/shell/InspectorPanel.cpp
 src/gui/shell/ModulatorCard.cpp
 src/gui/shell/Shell.cpp
