@@ -23,6 +23,7 @@
  */
 
 #include <QApplication>
+#include <QFile>
 #include <QRegularExpression>
 #include <QSet>
 #include <QtTest>
@@ -122,18 +123,65 @@ private slots:
 		}
 	}
 
-	void everyIconIsAPathInsideItsGrid()
+	void everyIconIsAnSvgThatPaints()
 	{
 		const QStringList ids = shellicons::ids();
 		QVERIFY(ids.size() >= 25);
-		const QRectF grid(0, 0, 16, 16);
 		for (const QString& id : ids)
 		{
-			const QPainterPath path = shellicons::glyph(id);
-			QVERIFY2(!path.isEmpty(), qPrintable(id));
-			QVERIFY2(grid.adjusted(-1, -1, 1, 1).contains(path.boundingRect()), qPrintable(id));
+			QVERIFY2(!shellicons::svg(id).isEmpty(), qPrintable(id));
+			const QImage image = shellicons::icon(id).pixmap(QSize(24, 24), 1.0).toImage();
+			bool inked = false;
+			for (int y = 0; y < image.height() && !inked; ++y)
+			{
+				for (int x = 0; x < image.width() && !inked; ++x) { inked = qAlpha(image.pixel(x, y)) > 0; }
+			}
+			QVERIFY2(inked, qPrintable(id + QStringLiteral(" paints nothing")));
 		}
-		QVERIFY(shellicons::glyph(QStringLiteral("no-such-icon")).isEmpty());
+		QVERIFY(shellicons::svg(QStringLiteral("no-such-icon")).isEmpty());
+	}
+
+	void everyInheritedIconNameHasAModernIcon()
+	{
+		// The legacy map is the guarantee that no old bitmap icon is drawn: each entry must name
+		// an icon the binary actually carries.
+		const QStringList names = shellicons::legacyNames();
+		QVERIFY(names.size() >= 150);
+		for (const QString& name : names)
+		{
+			QVERIFY2(!shellicons::legacyPixmap(name, 16, 16).isNull(), qPrintable(name));
+		}
+		QCOMPARE(shellicons::lucideForLegacy(QStringLiteral("tripleoscillator/logo")), QStringLiteral("audio-waveform"));
+		QVERIFY(shellicons::lucideForLegacy(QStringLiteral("lcd_19green")).isEmpty());  // artwork, not an icon
+	}
+
+	void theThemeGlyphsUseTheTokenColours()
+	{
+		// The few SVGs the stylesheet references by url() cannot take a token at run time, so
+		// their fixed colours are held to the tokens here.
+		const auto colourIn = [](const QString& file) {
+			QFile f(QStringLiteral(":/zene/") + file);
+			return f.open(QIODevice::ReadOnly) ? QString::fromUtf8(f.readAll()) : QString();
+		};
+		for (const char* muted : {"chevron-down.svg", "chevron-up.svg", "chevron-right.svg", "chevron-left.svg",
+			"gear.svg", "speaker.svg", "headphones.svg"})
+		{
+			QVERIFY2(colourIn(QString::fromLatin1(muted)).contains(tokens::palette().textMuted.name()), muted);
+		}
+		for (const char* onAccent : {"check.svg", "speaker-off.svg", "headphones-on.svg"})
+		{
+			QVERIFY2(colourIn(QString::fromLatin1(onAccent)).contains(tokens::palette().textOnAccent.name()), onAccent);
+		}
+	}
+
+	void theStylesheetTemplateResolvesEveryToken()
+	{
+		const QString templ = tokens::styleSheetTemplate();
+		QVERIFY2(templ.size() > 5000, "the compiled-in zene.qss is missing");
+		QStringList unknown;
+		const QString resolved = tokens::resolveStyleSheet(templ, &unknown);
+		QVERIFY2(unknown.isEmpty(), qPrintable(unknown.join(QStringLiteral(", "))));
+		QVERIFY(!resolved.contains(QLatin1Char('@')));
 	}
 
 #if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)

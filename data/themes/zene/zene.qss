@@ -1,0 +1,1084 @@
+/*
+ * zene.qss - the 0.5.0 interface's stylesheet (docs/UI-SHELL.md, docs/adr/ADR-0001-UI-TOOLKIT.md)
+ *
+ * A TEMPLATE: every colour is a design token - an at-sign and a palette role name, optionally
+ * followed by a slash and an alpha 0..255 (see any rule below) - and
+ * resolved from include/DesignTokens.h when the stylesheet is applied - so this file and the
+ * C++ painting can never disagree about a colour. DesignTokensTest resolves it and holds every
+ * text/background pair to WCAG AA. The theme replaces data/themes/default/style.css for the
+ * default theme; a user-chosen theme directory with its own style.css still wins.
+ */
+
+/* ---------------------------------------------------------------- base surfaces and text */
+
+QMainWindow, QDialog, QMessageBox, QFileDialog, QWizard {
+	background-color: @panel;
+	color: @text;
+}
+
+QLabel, QCheckBox, QRadioButton, QGroupBox {
+	color: @text;
+	background: transparent;
+}
+
+QLabel:disabled, QCheckBox:disabled, QRadioButton:disabled {
+	color: @textDisabled;
+}
+
+QSplashScreen QLabel {
+	color: @text;
+}
+
+QToolTip {
+	background-color: @control;
+	color: @text;
+	border: 1px solid @separator;
+	border-radius: 4px;
+	padding: 5px 8px;
+	font-size: 12px;
+}
+
+lmms--gui--TextFloat, lmms--gui--SimpleTextFloat {
+	background-color: @control;
+	color: @text;
+	border: 1px solid @separator;
+	border-radius: 4px;
+}
+
+/* ---------------------------------------------------------------- menus */
+
+QMenuBar {
+	background-color: @raised;
+	color: @textMuted;
+	border: none;
+	padding: 2px 6px;
+	font-size: 12px;
+}
+
+QMenuBar::item {
+	background: transparent;
+	padding: 5px 10px;
+	border-radius: 4px;
+}
+
+QMenuBar::item:selected, QMenuBar::item:pressed {
+	background-color: @controlHover;
+	color: @text;
+}
+
+QMenu {
+	background-color: @raised;
+	color: @text;
+	border: 1px solid @separator;
+	border-radius: 8px;
+	padding: 6px;
+	font-size: 12px;
+}
+
+QMenu::item {
+	background: transparent;
+	padding: 6px 28px 6px 12px;
+	border-radius: 5px;
+	min-height: 18px;
+}
+
+QMenu::item:selected {
+	background-color: @accent;
+	color: @textOnAccent;
+}
+
+QMenu::item:disabled {
+	color: @textDisabled;
+	background: transparent;
+}
+
+QMenu::separator {
+	height: 1px;
+	background-color: @separator;
+	margin: 6px 8px;
+}
+
+QMenu::icon {
+	padding-left: 8px;
+}
+
+QMenu::indicator {
+	width: 14px;
+	height: 14px;
+	margin-left: 6px;
+	border-radius: 3px;
+	border: 1px solid @textMuted;
+	background: transparent;
+}
+
+QMenu::indicator:checked {
+	background-color: @accent;
+	border-color: @accent;
+	image: url(:/zene/check.svg);
+}
+
+/* ---------------------------------------------------------------- buttons */
+
+QPushButton {
+	background-color: @control;
+	color: @text;
+	border: 1px solid @separator;
+	border-radius: 5px;
+	padding: 5px 14px;
+	min-height: 18px;
+	font-size: 12px;
+}
+
+QPushButton:hover {
+	background-color: @controlHover;
+}
+
+QPushButton:pressed {
+	background-color: @selected;
+}
+
+QPushButton:checked {
+	background-color: @accent;
+	border-color: @accent;
+	color: @textOnAccent;
+}
+
+QPushButton:default {
+	border-color: @accent;
+}
+
+QPushButton:disabled {
+	color: @textDisabled;
+	background-color: @raised;
+}
+
+QPushButton:focus, QToolButton:focus {
+	border-color: @focusRing;
+}
+
+QToolButton {
+	background: transparent;
+	color: @text;
+	border: 1px solid transparent;
+	border-radius: 5px;
+	padding: 3px;
+}
+
+QToolButton:hover {
+	background-color: @controlHover;
+}
+
+QToolButton:pressed {
+	background-color: @selected;
+}
+
+QToolButton:checked {
+	background-color: @control;
+	border-color: @accent;
+}
+
+QToolButton:disabled {
+	color: @textDisabled;
+}
+
+QToolButton[popupMode="1"] {
+	padding-right: 14px;
+}
+
+QToolButton::menu-button {
+	border: none;
+	width: 12px;
+}
+
+QToolButton::menu-indicator, QToolButton::menu-arrow, QPushButton::menu-indicator {
+	image: url(:/zene/chevron-down.svg);
+	subcontrol-origin: padding;
+	subcontrol-position: center right;
+	width: 10px;
+	height: 10px;
+}
+
+QToolBar {
+	background-color: @panel;
+	border: none;
+	spacing: 2px;
+	padding: 3px 6px;
+}
+
+QToolBar::separator {
+	background-color: @separator;
+	width: 1px;
+	margin: 4px 6px;
+}
+
+QWidget#mainToolbar {
+	background: transparent;
+}
+
+/* ---------------------------------------------------------------- check boxes and radios */
+
+QCheckBox, QRadioButton {
+	spacing: 8px;
+	font-size: 12px;
+}
+
+QCheckBox::indicator, QRadioButton::indicator {
+	width: 16px;
+	height: 16px;
+	border: 1px solid @textMuted;
+	background-color: @base;
+}
+
+QCheckBox::indicator {
+	border-radius: 4px;
+}
+
+QRadioButton::indicator {
+	border-radius: 8px;
+}
+
+QCheckBox::indicator:hover, QRadioButton::indicator:hover {
+	border-color: @text;
+}
+
+QCheckBox::indicator:checked {
+	background-color: @accent;
+	border-color: @accent;
+	image: url(:/zene/check.svg);
+}
+
+QRadioButton::indicator:checked {
+	background-color: @accent;
+	border: 4px solid @base;
+	outline: 1px solid @accent;
+}
+
+QCheckBox::indicator:disabled, QRadioButton::indicator:disabled {
+	border-color: @textDisabled;
+	background-color: @raised;
+}
+
+/* ---------------------------------------------------------------- text fields and combos */
+
+QLineEdit, QSpinBox, QDoubleSpinBox, QTextEdit, QPlainTextEdit, QComboBox, QDateTimeEdit {
+	background-color: @base;
+	color: @text;
+	border: 1px solid @separator;
+	border-radius: 5px;
+	padding: 4px 8px;
+	selection-background-color: @accent;
+	selection-color: @textOnAccent;
+	font-size: 12px;
+}
+
+QLineEdit:hover, QSpinBox:hover, QDoubleSpinBox:hover, QComboBox:hover {
+	border-color: @selected;
+}
+
+QLineEdit:focus, QSpinBox:focus, QDoubleSpinBox:focus, QTextEdit:focus, QPlainTextEdit:focus, QComboBox:focus {
+	border-color: @focusRing;
+}
+
+QLineEdit:read-only {
+	color: @textMuted;
+	background-color: @raised;
+}
+
+QLineEdit:disabled, QSpinBox:disabled, QDoubleSpinBox:disabled, QComboBox:disabled {
+	color: @textDisabled;
+	background-color: @raised;
+}
+
+QComboBox {
+	padding-right: 24px;
+}
+
+QComboBox::drop-down {
+	subcontrol-origin: padding;
+	subcontrol-position: center right;
+	width: 22px;
+	border: none;
+}
+
+QComboBox::down-arrow {
+	image: url(:/zene/chevron-down.svg);
+	width: 10px;
+	height: 10px;
+}
+
+QComboBox QAbstractItemView {
+	background-color: @raised;
+	color: @text;
+	border: 1px solid @separator;
+	border-radius: 6px;
+	padding: 4px;
+	outline: none;
+	selection-background-color: @accent;
+	selection-color: @textOnAccent;
+}
+
+QSpinBox::up-button, QSpinBox::down-button, QDoubleSpinBox::up-button, QDoubleSpinBox::down-button {
+	width: 16px;
+	border: none;
+	background: transparent;
+}
+
+QSpinBox::up-arrow, QDoubleSpinBox::up-arrow {
+	image: url(:/zene/chevron-up.svg);
+	width: 8px;
+	height: 8px;
+}
+
+QSpinBox::down-arrow, QDoubleSpinBox::down-arrow {
+	image: url(:/zene/chevron-down.svg);
+	width: 8px;
+	height: 8px;
+}
+
+/* ---------------------------------------------------------------- lists, trees and tables */
+
+QTreeView, QListView, QTableView, QTreeWidget, QListWidget, QTableWidget {
+	background-color: @panel;
+	alternate-background-color: @raised;
+	color: @text;
+	border: none;
+	outline: none;
+	selection-background-color: @accent;
+	selection-color: @textOnAccent;
+	font-size: 12px;
+}
+
+QTreeView::item, QListView::item, QTableView::item {
+	padding: 3px 4px;
+	border-radius: 4px;
+}
+
+QTreeView::item:hover, QListView::item:hover, QTableView::item:hover, QTreeView::branch:hover {
+	background-color: @controlHover;
+}
+
+QTreeView::item:selected, QListView::item:selected, QTableView::item:selected, QTreeView::branch:selected {
+	background-color: @accent;
+	color: @textOnAccent;
+}
+
+QTreeView::branch:has-children:closed {
+	image: url(:/zene/chevron-right.svg);
+}
+
+QTreeView::branch:has-children:open {
+	image: url(:/zene/chevron-down.svg);
+}
+
+QHeaderView::section {
+	background-color: @raised;
+	color: @textMuted;
+	border: none;
+	border-bottom: 1px solid @separator;
+	padding: 5px 8px;
+	font-size: 11px;
+}
+
+QTableCornerButton::section {
+	background-color: @raised;
+	border: none;
+}
+
+/* ---------------------------------------------------------------- scroll bars: thin, no arrows */
+
+QScrollBar:vertical {
+	background: transparent;
+	width: 10px;
+	margin: 0;
+}
+
+QScrollBar:horizontal {
+	background: transparent;
+	height: 10px;
+	margin: 0;
+}
+
+QScrollBar::handle:vertical {
+	background-color: @selected;
+	min-height: 28px;
+	border-radius: 4px;
+	margin: 2px;
+}
+
+QScrollBar::handle:horizontal {
+	background-color: @selected;
+	min-width: 28px;
+	border-radius: 4px;
+	margin: 2px;
+}
+
+QScrollBar::handle:hover {
+	background-color: @textDisabled;
+}
+
+QScrollBar::handle:pressed {
+	background-color: @textMuted;
+}
+
+QScrollBar::add-line, QScrollBar::sub-line {
+	width: 0;
+	height: 0;
+	border: none;
+	background: none;
+}
+
+QScrollBar::add-page, QScrollBar::sub-page {
+	background: none;
+}
+
+/* ---------------------------------------------------------------- sliders, progress, tabs, groups */
+
+QSlider::groove:horizontal {
+	height: 4px;
+	background-color: @control;
+	border-radius: 2px;
+}
+
+QSlider::groove:vertical {
+	width: 4px;
+	background-color: @control;
+	border-radius: 2px;
+}
+
+QSlider::sub-page:horizontal {
+	background-color: @accent;
+	border-radius: 2px;
+}
+
+QSlider::handle:horizontal, QSlider::handle:vertical {
+	background-color: @text;
+	width: 12px;
+	height: 12px;
+	margin: -4px;
+	border-radius: 6px;
+}
+
+QProgressBar {
+	background-color: @control;
+	color: @text;
+	border: none;
+	border-radius: 4px;
+	text-align: center;
+	font-size: 11px;
+}
+
+QProgressBar::chunk {
+	background-color: @accent;
+	border-radius: 4px;
+}
+
+QTabWidget::pane {
+	border: none;
+	border-top: 1px solid @separator;
+}
+
+QTabBar::tab {
+	background: transparent;
+	color: @textMuted;
+	padding: 7px 14px;
+	border: none;
+	border-bottom: 2px solid transparent;
+	font-size: 12px;
+}
+
+QTabBar::tab:hover {
+	color: @text;
+}
+
+QTabBar::tab:selected {
+	color: @text;
+	border-bottom-color: @accent;
+}
+
+QGroupBox {
+	border: 1px solid @separator;
+	border-radius: 6px;
+	margin-top: 14px;
+	padding: 10px 8px 8px 8px;
+	font-size: 12px;
+}
+
+QGroupBox::title {
+	subcontrol-origin: margin;
+	subcontrol-position: top left;
+	left: 10px;
+	padding: 0 4px;
+	color: @textMuted;
+}
+
+QSplitter::handle {
+	background-color: @base;
+}
+
+QScrollArea {
+	background: transparent;
+	border: none;
+}
+
+QMdiArea {
+	background-color: @base;
+}
+
+QStatusBar {
+	background-color: @raised;
+	color: @textMuted;
+}
+
+/* ---------------------------------------------------------------- the shell's own chrome */
+
+lmms--gui--ShellPanel {
+	background-color: @panel;
+}
+
+lmms--gui--ShellFooter, lmms--gui--ShellHeader {
+	background-color: @raised;
+	color: @text;
+}
+
+/* ---------------------------------------------------------------- the inherited editors' colours */
+
+lmms--gui--LmmsPalette {
+	qproperty-background: @panel;
+	qproperty-windowText: @text;
+	qproperty-base: @base;
+	qproperty-text: @text;
+	qproperty-button: @control;
+	qproperty-shadow: @base;
+	qproperty-buttonText: @text;
+	qproperty-brightText: @text;
+	qproperty-highlight: @accent;
+	qproperty-highlightedText: @textOnAccent;
+}
+
+lmms--gui--Knob {
+	qproperty-lineInactiveColor: @textDisabled;
+	qproperty-arcInactiveColor: @control;
+	qproperty-lineActiveColor: @text;
+	qproperty-arcActiveColor: @accent;
+}
+
+lmms--gui--PositionLine {
+	qproperty-tailGradient: false;
+	qproperty-lineColor: @playhead;
+	qproperty-recordingColor: @record;
+}
+
+lmms--gui--TimeLineWidget {
+	background-color: @raised;
+	color: @textMuted;
+	font-size: 11px;
+	qproperty-inactiveLoopColor: @control;
+	qproperty-inactiveLoopBrush: @control;
+	qproperty-inactiveLoopInnerColor: @control;
+	qproperty-inactiveLoopHandleColor: @textMuted/120;
+	qproperty-activeLoopColor: @accent/160;
+	qproperty-activeLoopBrush: @accent/160;
+	qproperty-activeLoopInnerColor: @accent/160;
+	qproperty-activeLoopHandleColor: @text/200;
+	qproperty-loopRectangleVerticalPadding: 2;
+	qproperty-loopHandleWidth: 6;
+	qproperty-barLineColor: @gridBar;
+	qproperty-barNumberColor: @textMuted;
+}
+
+lmms--gui--TrackContainerView QFrame {
+	background-color: @base;
+}
+
+lmms--gui--TrackContainerView QLabel {
+	background: transparent;
+	color: @textMuted;
+}
+
+lmms--gui--TrackView > QWidget {
+	background-color: @panel;
+}
+
+lmms--gui--TrackContentWidget {
+	qproperty-darkerColor: @keyBlackRow;
+	qproperty-lighterColor: @keyWhiteRow;
+	qproperty-coarseGridColor: @gridBar;
+	qproperty-fineGridColor: @gridStep;
+	qproperty-horizontalColor: @base;
+	qproperty-embossColor: @base/0;
+	qproperty-coarseGridWidth: 1;
+	qproperty-fineGridWidth: 1;
+	qproperty-horizontalWidth: 1;
+	qproperty-embossWidth: 0;
+	qproperty-embossOffset: 0;
+}
+
+/* The track header's buttons: 20 px squares, flat, a glyph each. */
+QPushButton#btn-mute, QPushButton#btn-mute-inv, QPushButton#btn-solo,
+QPushButton#btn-stepper-down, QPushButton#btn-stepper-left, QPushButton#btn-stepper-right,
+lmms--gui--TrackOperationsWidget QPushButton {
+	background: transparent;
+	border: none;
+	border-radius: 4px;
+	padding: 3px;
+	min-width: 14px;
+	max-width: 14px;
+	min-height: 14px;
+	max-height: 14px;
+}
+
+QPushButton#btn-mute:hover, QPushButton#btn-solo:hover, QPushButton#btn-stepper-down:hover,
+QPushButton#btn-stepper-left:hover, QPushButton#btn-stepper-right:hover,
+lmms--gui--TrackOperationsWidget QPushButton:hover {
+	background-color: @controlHover;
+}
+
+lmms--gui--TrackOperationsWidget QPushButton:pressed {
+	background-color: @selected;
+}
+
+lmms--gui--TrackOperationsWidget QPushButton {
+	image: url(:/zene/gear.svg);
+}
+
+lmms--gui--TrackOperationsWidget QPushButton::menu-indicator, QPushButton#btn-stepper-down::menu-indicator,
+QPushButton#btn-stepper-left::menu-indicator, QPushButton#btn-stepper-right::menu-indicator {
+	image: none;
+}
+
+QPushButton#btn-mute, QPushButton#btn-mute-inv:checked {
+	image: url(:/zene/speaker.svg);
+}
+
+QPushButton#btn-mute:checked, QPushButton#btn-mute-inv {
+	image: url(:/zene/speaker-off.svg);
+	background-color: @warning;
+}
+
+QPushButton#btn-solo {
+	image: url(:/zene/headphones.svg);
+}
+
+QPushButton#btn-solo:checked {
+	image: url(:/zene/headphones-on.svg);
+	background-color: @accent;
+}
+
+QPushButton#btn-stepper-left {
+	image: url(:/zene/chevron-left.svg);
+}
+
+QPushButton#btn-stepper-right {
+	image: url(:/zene/chevron-right.svg);
+}
+
+QPushButton#btn-stepper-down {
+	image: url(:/zene/chevron-down.svg);
+}
+
+QPushButton#btn {
+	background-color: @control;
+	color: @text;
+	border: none;
+	border-radius: 4px;
+	padding: 2px 6px;
+}
+
+QPushButton#btn:hover {
+	background-color: @controlHover;
+}
+
+QPushButton#btn:checked, QPushButton#btn:pressed {
+	background-color: @accent;
+	color: @textOnAccent;
+}
+
+lmms--gui--TrackLabelButton {
+	background-color: transparent;
+	color: @text;
+	border: none;
+	border-radius: 4px;
+	padding: 2px 6px;
+	font-size: 12px;
+	text-align: left;
+}
+
+lmms--gui--TrackLabelButton:hover {
+	background-color: @controlHover;
+}
+
+lmms--gui--TrackLabelButton:pressed, lmms--gui--TrackLabelButton:checked {
+	background-color: @selected;
+}
+
+lmms--gui--ClipView {
+	qproperty-mutedColor: @textDisabled;
+	qproperty-mutedBackgroundColor: @control;
+	qproperty-selectedColor: @accent;
+	qproperty-patternClipBackground: @control;
+	qproperty-textColor: @textOnAccent;
+	qproperty-textBackgroundColor: @base/0;
+	qproperty-textShadowColor: @base/0;
+	qproperty-gradient: false;
+	qproperty-markerColor: @base;
+	font-size: 11px;
+}
+
+lmms--gui--MidiClipView {
+	background-color: @clipMidi;
+	color: @textOnAccent;
+	qproperty-noteFillColor: @base/200;
+	qproperty-noteBorderColor: @base/0;
+	qproperty-mutedNoteFillColor: @textDisabled;
+	qproperty-mutedNoteBorderColor: @base/0;
+}
+
+lmms--gui--SampleClipView {
+	background-color: @clipSample;
+	color: @base/190;
+}
+
+lmms--gui--AutomationClipView {
+	background-color: @clipAutomation;
+	color: @base/150;
+}
+
+lmms--gui--PatternClipView {
+	background-color: @clipPattern;
+	qproperty-emptyTrackHeightRatio: 0.5;
+	qproperty-verticalPadding: 0.15;
+	qproperty-noteVerticalSpacing: 0.2;
+	qproperty-noteHorizontalSpacing: 0.2;
+	qproperty-noteColor: @base/200;
+}
+
+lmms--gui--MixerChannelView {
+	background-color: @panel;
+	color: @text;
+	qproperty-backgroundActive: @raised;
+	qproperty-strokeOuterActive: @accent;
+	qproperty-strokeOuterInactive: @base;
+	qproperty-strokeInnerActive: @base;
+	qproperty-strokeInnerInactive: @base;
+}
+
+QLineEdit#mixerChannelName {
+	background: transparent;
+	border: none;
+	padding: 0;
+	color: @text;
+	font-size: 11px;
+}
+
+QLineEdit#mixerChannelName:!read-only {
+	background-color: @base;
+	border: 1px solid @focusRing;
+}
+
+lmms--gui--MixerChannelView QGraphicsView {
+	background: transparent;
+	border: none;
+}
+
+lmms--gui--Fader {
+	qproperty-peakOk: @meterLow;
+	qproperty-peakWarn: @meterMid;
+	qproperty-peakClip: @meterHigh;
+}
+
+lmms--gui--AutomationEditor {
+	color: @text;
+	background-color: @base;
+	qproperty-backgroundShade: @text/10;
+	qproperty-nodeInValueColor: @accent/170;
+	qproperty-nodeOutValueColor: @record/150;
+	qproperty-nodeTangentLineColor: @textMuted;
+	qproperty-crossColor: @text/120;
+	qproperty-lineColor: @gridStep;
+	qproperty-beatLineColor: @gridBeat;
+	qproperty-barLineColor: @gridBar;
+	qproperty-graphColor: @accent/140;
+	qproperty-scaleColor: @raised;
+	qproperty-ghostNoteColor: @textMuted/90;
+	qproperty-detuningNoteColor: @record/120;
+	qproperty-ghostSampleColor: @textMuted/90;
+}
+
+lmms--gui--PianoRoll {
+	background-color: @base;
+	qproperty-backgroundShade: @text/8;
+	qproperty-noteModeColor: @accent;
+	qproperty-noteColor: @accent;
+	qproperty-stepNoteColor: @record;
+	qproperty-currentStepNoteColor: @warning;
+	qproperty-noteTextColor: @textOnAccent;
+	qproperty-noteOpacity: 220;
+	qproperty-noteBorders: false;
+	qproperty-selectedNoteColor: @text;
+	qproperty-ghostNoteColor: @textMuted;
+	qproperty-ghostNoteTextColor: @text;
+	qproperty-ghostNoteOpacity: 60;
+	qproperty-ghostNoteBorders: false;
+	qproperty-barColor: @accent;
+	qproperty-markedSemitoneColor: @accent/40;
+	qproperty-knifeCutLine: @record;
+	qproperty-whiteKeyWidth: 64;
+	qproperty-whiteKeyActiveTextColor: @textOnAccent;
+	qproperty-whiteKeyActiveTextShadow: @base/0;
+	qproperty-whiteKeyActiveBackground: @accent;
+	qproperty-whiteKeyInactiveTextColor: @textMuted;
+	qproperty-whiteKeyInactiveTextShadow: @base/0;
+	qproperty-whiteKeyInactiveBackground: @control;
+	qproperty-whiteKeyDisabledBackground: @raised;
+	qproperty-blackKeyWidth: 48;
+	qproperty-blackKeyActiveBackground: @accent;
+	qproperty-blackKeyInactiveBackground: @base;
+	qproperty-blackKeyDisabledBackground: @raised;
+	qproperty-lineColor: @gridStep;
+	qproperty-beatLineColor: @gridBeat;
+	qproperty-barLineColor: @gridBar;
+	qproperty-textColor: @text;
+	qproperty-textColorLight: @accent;
+	qproperty-textShadow: @base/0;
+}
+
+lmms--gui--TabWidget {
+	background-color: @panel;
+	qproperty-tabText: @textMuted;
+	qproperty-tabTitleText: @text;
+	qproperty-tabSelected: @control;
+	qproperty-tabTextSelected: @text;
+	qproperty-tabBackground: @raised;
+	qproperty-tabBorder: @raised;
+}
+
+lmms--gui--GroupBox {
+	background-color: @panel;
+	color: @text;
+}
+
+lmms--gui--Oscilloscope {
+	background: none;
+	border: none;
+	qproperty-leftChannelColor: @meterLow;
+	qproperty-rightChannelColor: @accent;
+	qproperty-otherChannelsColor: @focusRing;
+	qproperty-clippingColor: @meterHigh;
+}
+
+lmms--gui--CPULoadWidget {
+	border: none;
+	background: none;
+	qproperty-stepSize: 1;
+}
+
+lmms--gui--SideBar {
+	background-color: @raised;
+}
+
+lmms--gui--PluginDescWidget {
+	background-color: @control;
+	color: @text;
+	border: none;
+	border-radius: 5px;
+	font-size: 12px;
+}
+
+lmms--gui--PluginDescWidget:hover {
+	background-color: @controlHover;
+}
+
+lmms--gui--PianoView {
+	background-color: @base;
+}
+
+lmms--gui--MixerView QPushButton, lmms--gui--EffectRackView QPushButton, lmms--gui--ControllerRackView QPushButton {
+	font-size: 11px;
+}
+
+lmms--gui--EffectControlDialog QGroupBox {
+	background-color: @raised;
+	border: 1px solid @separator;
+}
+
+lmms--gui--EffectControlDialog QGroupBox::title {
+	color: @textMuted;
+}
+
+lmms--gui--EffectSelectDialog QScrollArea, lmms--gui--SetupDialog QScrollArea {
+	background: transparent;
+}
+
+lmms--gui--AutomatableSlider::groove:horizontal {
+	height: 4px;
+	background-color: @control;
+	border-radius: 2px;
+}
+
+lmms--gui--AutomatableSlider::groove:vertical {
+	width: 4px;
+	background-color: @control;
+	border-radius: 2px;
+}
+
+lmms--gui--AutomatableSlider::handle:horizontal, lmms--gui--AutomatableSlider::handle:vertical {
+	background-color: @text;
+	width: 12px;
+	height: 12px;
+	margin: -4px;
+	border-radius: 6px;
+}
+
+lmms--gui--SubWindow {
+	color: @text;
+	qproperty-activeColor: @raised;
+	qproperty-textShadowColor: @base/0;
+	qproperty-borderColor: @separator;
+}
+
+lmms--gui--SubWindow > QLabel {
+	color: @text;
+	font-size: 12px;
+}
+
+lmms--gui--SubWindow > QPushButton {
+	background: transparent;
+	border: none;
+}
+
+lmms--gui--SubWindow > QPushButton:hover {
+	background-color: @controlHover;
+}
+
+lmms--gui--EnvelopeGraph {
+	background-color: @base;
+	qproperty-noAmountColor: @textDisabled;
+	qproperty-fullAmountColor: @accent;
+	qproperty-markerFillColor: @focusRing;
+	qproperty-markerOutlineColor: @base;
+}
+
+lmms--gui--LfoGraph {
+	background-color: @base;
+	qproperty-noAmountColor: @textDisabled;
+	qproperty-fullAmountColor: @accent;
+}
+
+lmms--gui--BarModelEditor {
+	qproperty-backgroundBrush: @control;
+	qproperty-barBrush: @accent;
+}
+
+lmms--gui--CompressorControlDialog {
+	qproperty-inVolAreaColor: @text/17;
+	qproperty-inVolColor: @text/100;
+	qproperty-outVolAreaColor: @text/30;
+	qproperty-outVolColor: @text/240;
+	qproperty-gainReductionColor: @record/210;
+	qproperty-kneeColor: @accent;
+	qproperty-kneeColor2: @focusRing;
+	qproperty-threshColor: @accent/100;
+	qproperty-textColor: @text/90;
+	qproperty-graphColor: @text/50;
+	qproperty-resetColor: @warning/200;
+	qproperty-backgroundColor: @base;
+}
+
+lmms--gui--OscilloscopeGraph {
+	qproperty-monoColor: @text;
+	qproperty-leftColor: @focusRing;
+	qproperty-rightColor: @record;
+	qproperty-minorLineColor: @gridBeat;
+	qproperty-clippingLineColor: @warning;
+	qproperty-backgroundColor: @base;
+}
+
+lmms--gui--VectorView {
+	qproperty-colorTrace: @accent;
+	qproperty-colorGrid: @gridBeat;
+	qproperty-colorLabels: @textMuted;
+}
+
+lmms--gui--FileBrowser QCheckBox {
+	font-size: 11px;
+	color: @textMuted;
+}
+
+/* --- Device panel and Inspector (0.5.0) --- */
+
+#devicePanel, #devicePanel QScrollArea, #devicePanel QScrollArea > QWidget > QWidget,
+#inspectorPanel {
+	background-color: @panel;
+}
+
+#deviceCard {
+	background-color: @raised;
+	border: 1px solid @separator;
+	border-radius: 6px;
+}
+
+#deviceCardHeader {
+	background-color: @control;
+	border-top-left-radius: 6px;
+	border-top-right-radius: 6px;
+	border-bottom: 1px solid @separator;
+}
+
+#modulatorCard {
+	background-color: @raised;
+	border: 1px solid @accent/110;
+	border-left: 3px solid @accent;
+	border-radius: 6px;
+}
+
+#deviceCardTitle {
+	color: @text;
+	font-size: 12px;
+	font-weight: 600;
+}
+
+#deviceCaption {
+	color: @textMuted;
+	font-size: 11px;
+}
+
+#deviceSection {
+	color: @textMuted;
+	font-size: 10px;
+	font-weight: 600;
+	letter-spacing: 1px;
+	padding: 0 4px;
+}
+
+QToolButton#deviceAdd {
+	border: 1px dashed @separator;
+	border-radius: 6px;
+	padding: 6px 10px;
+	color: @textMuted;
+}
+
+QToolButton#deviceAdd:hover {
+	color: @text;
+	border-color: @accent;
+}
+
+#inspectorName {
+	font-size: 14px;
+	font-weight: 600;
+}
+
+QToolButton#inspectorToggle {
+	background-color: @control;
+	border: 1px solid @separator;
+	font-weight: 600;
+}
+
+QToolButton#inspectorToggle:hover {
+	background-color: @controlHover;
+}
+
+QToolButton#inspectorToggle:checked {
+	background-color: @accent;
+	border-color: @accent;
+	color: @textOnAccent;
+}

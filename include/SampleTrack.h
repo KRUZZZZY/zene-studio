@@ -69,6 +69,10 @@ public:
 		return &m_audioBusHandle;
 	}
 
+	//! The track's volume and panning, for the 0.5.0 Inspector's knobs.
+	FloatModel* volumeModel() { return &m_volumeModel; }
+	FloatModel* panningModel() { return &m_panningModel; }
+
 	QString nodeName() const override
 	{
 		return "sampletrack";

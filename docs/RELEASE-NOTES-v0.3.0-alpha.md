@@ -919,8 +919,11 @@ are `not_mutating` (+10).
 each a `true_inverse` composite checkpoint like vca.edit_move (+4); R3.1's comp.audition is `not_mutating`
 monitoring state (+1).
 
+**0.5.0 lane 3 (Inspector and Device panel)** added window.select, `not_mutating` interface state
+- which track, clip or mixer channel the two panels show (+1).
+
 <!-- A16-HISTOGRAM-BEGIN
-     measured: rows=402 true_inverse=176 snapshot=39 irreversible=17 not_mutating=170
+     measured: rows=403 true_inverse=176 snapshot=39 irreversible=17 not_mutating=171
      configuration: telemetry.status wasm.load session.get_state stem.get_state
      option telemetry.status rows=2 not_mutating=2
      option wasm.load rows=8 snapshot=3 not_mutating=5

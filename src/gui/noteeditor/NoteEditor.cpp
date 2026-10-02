@@ -45,6 +45,10 @@
 #include "NoteCanvas.h"
 #include "NoteEditorParts.h"
 #include "Piano.h"
+#include "ShellSelection.h"
+#include "Engine.h"
+#include "Song.h"
+#include <QTimer>
 
 namespace lmms::gui
 {
@@ -68,6 +72,23 @@ NoteEditor::NoteEditor(QWidget* parent)
 		}
 	});
 	setClip(nullptr);
+	// The playhead: the song position inside the clip, refreshed at 30 Hz while the song plays.
+	m_playheadTimer = new QTimer(this);
+	m_playheadTimer->setInterval(33);
+	connect(m_playheadTimer, &QTimer::timeout, this, [this]() { updatePlayhead(false); });
+	m_playheadTimer->start();
+}
+
+void NoteEditor::updatePlayhead(bool always)
+{
+	const Song* song = Engine::getSong();
+	if (m_state.clip == nullptr || song == nullptr || (!always && !song->isPlaying()))
+	{
+		if (!always) { m_canvas->setPlayhead(-1); }
+		return;
+	}
+	const int tick = song->getPlayPos(Song::PlayMode::Song).getTicks() - m_state.clip->startPosition().getTicks();
+	m_canvas->setPlayhead(tick >= 0 && tick <= m_state.clip->length().getTicks() ? tick : -1);
 }
 
 NoteEditor::~NoteEditor() = default;
@@ -123,6 +144,8 @@ void NoteEditor::setClip(MidiClip* clip)
 		// emits - repaints the editor, so an agent's edit on the socket shows at once.
 		connect(clip, &MidiClip::dataChanged, this, &NoteEditor::refresh);
 		connect(clip, &QObject::destroyed, this, &NoteEditor::onClipDestroyed);
+		// The clip being edited is the clip the Inspector and the Device panel follow.
+		ShellSelection::instance()->setClip(clip);
 	}
 	m_clipLabel->setText(clip != nullptr ? clip->name().isEmpty() ? tr("Untitled clip") : clip->name() : tr("No clip"));
 	readScale();

@@ -70,6 +70,36 @@ ADD_GEN_QRC(LMMS_RCC_OUT lmms.qrc
 	"${CMAKE_SOURCE_DIR}/LICENSE.txt"
 	"${CONTRIBUTORS}"
 )
+# The 0.5.0 interface's typeface (docs/UI-SHELL.md §1, docs/adr/ADR-0001-UI-TOOLKIT.md): Inter,
+# SIL Open Font License 1.1 (data/fonts/OFL.txt), compiled in so every platform, package and
+# test binary renders the same type. GuiApplication registers it before any widget exists.
+ADD_GEN_QRC(ZENE_FONTS_RCC_OUT zenefonts.qrc PREFIX /fonts
+	"${CMAKE_SOURCE_DIR}/data/fonts/Inter-Regular.ttf"
+	"${CMAKE_SOURCE_DIR}/data/fonts/Inter-Medium.ttf"
+	"${CMAKE_SOURCE_DIR}/data/fonts/Inter-SemiBold.ttf"
+	"${CMAKE_SOURCE_DIR}/data/fonts/OFL.txt"
+)
+# The 0.5.0 stylesheet template and the vector glyphs it references (data/themes/zene/,
+# resolved against DesignTokens by LmmsStyle).
+ADD_GEN_QRC(ZENE_THEME_RCC_OUT zenetheme.qrc PREFIX /zene
+	"${CMAKE_SOURCE_DIR}/data/themes/zene/zene.qss"
+	"${CMAKE_SOURCE_DIR}/data/themes/zene/check.svg"
+	"${CMAKE_SOURCE_DIR}/data/themes/zene/chevron-down.svg"
+	"${CMAKE_SOURCE_DIR}/data/themes/zene/chevron-up.svg"
+	"${CMAKE_SOURCE_DIR}/data/themes/zene/chevron-right.svg"
+	"${CMAKE_SOURCE_DIR}/data/themes/zene/chevron-left.svg"
+	"${CMAKE_SOURCE_DIR}/data/themes/zene/gear.svg"
+	"${CMAKE_SOURCE_DIR}/data/themes/zene/speaker.svg"
+	"${CMAKE_SOURCE_DIR}/data/themes/zene/speaker-off.svg"
+	"${CMAKE_SOURCE_DIR}/data/themes/zene/headphones.svg"
+	"${CMAKE_SOURCE_DIR}/data/themes/zene/headphones-on.svg"
+)
+# The one icon set (Lucide, ISC: data/themes/zene/icons/LICENSE.txt) - the shell's icons and every
+# inherited bitmap icon name mapped onto it (ShellIcons.cpp).
+ADD_GEN_QRC(ZENE_ICONS_RCC_OUT zeneicons.qrc PREFIX /zene/icons
+	GLOB "${CMAKE_SOURCE_DIR}/data/themes/zene/icons/*.svg"
+	"${CMAKE_SOURCE_DIR}/data/themes/zene/icons/LICENSE.txt"
+)
 
 # Paths relative to the zene executable
 FILE(RELATIVE_PATH LIB_DIR_RELATIVE "/${BIN_DIR}" "/${LIB_DIR}")
@@ -108,6 +138,9 @@ ADD_LIBRARY(lmmsobjs OBJECT
 	${LMMS_SRCS}
 	${LMMS_INCLUDES}
 	${LMMS_RCC_OUT}
+	${ZENE_FONTS_RCC_OUT}
+	${ZENE_THEME_RCC_OUT}
+	${ZENE_ICONS_RCC_OUT}
 )
 
 IF(NOT LMMS_HAVE_STEM_SPLIT)

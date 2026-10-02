@@ -37,6 +37,8 @@
 #include <QScreen>
 #include <QSvgRenderer>
 
+#include "ShellIcons.h"
+
 namespace lmms::embed {
 
 namespace {
@@ -87,6 +89,13 @@ auto loadSvgPixmap(const QString& resourceName, int width, int height) -> QPixma
 auto loadPixmap(const QString& name, int width, int height, const char* const* xpm) -> QPixmap
 {
 	if (xpm) { return QPixmap{xpm}; }
+
+	// 0.5.0 (docs/UI-SHELL.md §1): every inherited icon name the one modern icon set covers is
+	// drawn from it - vector, HiDPI, in a token colour - instead of the old bitmap.
+	if (!QDir::isAbsolutePath(name))
+	{
+		if (QPixmap modern = gui::shellicons::legacyPixmap(name, width, height); !modern.isNull()) { return modern; }
+	}
 
 	const auto resourceName = QDir::isAbsolutePath(name) ? name : "artwork:" + name;
 	auto reader = QImageReader{resourceName};

@@ -196,6 +196,7 @@ include/Delay.h
 include/DeprecationHelper.h
 include/DesignTokens.h
 include/DetuningHelper.h
+include/DevicePanel.h
 include/DocumentIndex.h
 include/DpiHelper.h
 include/Draggable.h
@@ -248,6 +249,7 @@ include/ImportFilter.h
 include/InlineAutomation.h
 include/InputChannelRing.h
 include/InputMonitor.h
+include/InspectorPanel.h
 include/Instrument.h
 include/InstrumentFunctionViews.h
 include/InstrumentFunctions.h
@@ -505,6 +507,7 @@ include/ShellChrome.h
 include/ShellIcons.h
 include/ShellLayout.h
 include/ShellPanel.h
+include/ShellSelection.h
 include/ShortcutsPage.h
 include/SideBar.h
 include/SideBarWidget.h
@@ -564,6 +567,7 @@ include/TrackRecorder.h
 include/TrackRenameLineEdit.h
 include/TrackRenderMenu.h
 include/TrackView.h
+include/TransportReadouts.h
 include/UnattendedRun.h
 include/UnclaimedElements.h
 include/UndoHistoryPanel.h
@@ -1536,6 +1540,7 @@ src/gui/ChainPresetMenu.cpp
 src/gui/ClipEditsMenu.cpp
 src/gui/CommandPalette.cpp
 src/gui/ControlCommandsNoteEditor.cpp
+src/gui/ControlCommandsSelection.cpp
 src/gui/ControlCommandsShell.cpp
 src/gui/ControlCommandsWindow.cpp
 src/gui/ControlLayout.cpp
@@ -1658,11 +1663,16 @@ src/gui/noteeditor/NoteGrid.cpp
 src/gui/noteeditor/NoteLanes.cpp
 src/gui/shell/BrowserPanel.cpp
 src/gui/shell/DesignTokens.cpp
+src/gui/shell/DevicePanel.cpp
+src/gui/shell/InspectorPanel.cpp
+src/gui/shell/ModulatorCard.cpp
 src/gui/shell/Shell.cpp
 src/gui/shell/ShellChrome.cpp
 src/gui/shell/ShellIcons.cpp
 src/gui/shell/ShellLayout.cpp
 src/gui/shell/ShellPanel.cpp
+src/gui/shell/ShellSelection.cpp
+src/gui/shell/TransportReadouts.cpp
 src/gui/tracks/AutomationTrackView.cpp
 src/gui/tracks/FadeButton.cpp
 src/gui/tracks/InstrumentTrackView.cpp
@@ -1940,6 +1950,7 @@ tests/src/gui/CommandPaletteTest.cpp
 tests/src/gui/ControllerTemplateMenuTest.cpp
 tests/src/gui/CrashReportMenuTest.cpp
 tests/src/gui/DesignTokensTest.cpp
+tests/src/gui/DevicePanelTest.cpp
 tests/src/gui/EffectHostingMenuTest.cpp
 tests/src/gui/ExportQualityControlsTest.cpp
 tests/src/gui/FeedbackModeActionTest.cpp

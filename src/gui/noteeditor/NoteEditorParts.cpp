@@ -177,9 +177,19 @@ void NoteRuler::paintEvent(QPaintEvent*)
 
 void NoteRuler::mousePressEvent(QMouseEvent* event)
 {
-	if (m_state.clip == nullptr || std::abs(event->pos().x() - loopEndX()) > 6) { return; }
-	m_dragging = true;
-	m_dragX = event->pos().x();
+	if (m_state.clip == nullptr) { return; }
+	if (std::abs(event->pos().x() - loopEndX()) <= 6)
+	{
+		m_dragging = true;
+		m_dragX = event->pos().x();
+		return;
+	}
+	// Anywhere else on the ruler moves the song position there (transport.seek), snapped to the
+	// grid - the arrangement position of that point of the clip.
+	const int tick = std::max(0, NoteGrid::snapDown(static_cast<int>(m_state.grid.tickAtX(event->pos().x())), m_state.gridTicks));
+	m_editor->run(QStringLiteral("transport.seek"),
+		{{QStringLiteral("ticks"), static_cast<int>(m_state.clip->startPosition().getTicks()) + tick}});
+	m_editor->updatePlayhead(true);
 }
 
 void NoteRuler::mouseMoveEvent(QMouseEvent* event)

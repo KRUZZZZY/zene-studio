@@ -73,6 +73,7 @@ public:
 	void addToStrip(QWidget* widget);
 	void addStripSpacing(int pixels);
 	int stripCount() const;
+	class TransportReadouts* readouts() const { return m_readouts; }
 
 	//! A flat icon button in the strip, accessible by @a text; the caller connects it.
 	ShellButton* addButton(const QString& icon, const QString& text);
@@ -89,6 +90,7 @@ private:
 	QHBoxLayout* m_stripLayout;
 	int m_stretchIndex = -1;  //!< the stretch's position until it exists: append
 	ShellButton* m_play = nullptr;
+	class TransportReadouts* m_readouts = nullptr;
 };
 
 //! The bottom band: one button per panel, grouped by the region it opens in (the groups are

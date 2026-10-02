@@ -67,6 +67,12 @@ LMMS_EXPORT void registerNoteEditorWindowCommands(ControlRegistry& registry);
 //! The note editor's state (NoteEditor::describe), or {} with no interface.
 LMMS_EXPORT QJsonObject noteEditorState();
 
+//! window.select - the selection the Inspector and the Device panel follow
+//! (src/gui/ControlCommandsSelection.cpp); registered by registerWindowCommands.
+LMMS_EXPORT void registerSelectionWindowCommands(ControlRegistry& registry);
+//! The selection and what the two panels show (window.select's reply), or {} with no interface.
+LMMS_EXPORT QJsonObject shellSelectionState();
+
 //! What a View-menu item or toolbar button does: window.toggle through the
 //! registry, exactly as an agent on the socket would.
 LMMS_EXPORT void dispatchWindowToggle(const QString& editor);

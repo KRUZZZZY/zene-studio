@@ -46,6 +46,8 @@
 
 #include "Fader.h"
 
+#include "DesignTokens.h"
+
 #include <QInputDialog>
 #include <QMouseEvent>
 #include <QPainter>
@@ -573,8 +575,23 @@ void Fader::paintEvent(QPaintEvent* ev)
 		paintFaderTicks(painter);
 	}
 
-	// Draw the knob
-	painter.drawPixmap((width() - m_knobSize.width()) / 2, calculateKnobPosYFromModel() - m_knobSize.height(), m_knob);
+	// The handle: 0.5.0 (docs/UI-SHELL.md §1) draws it flat from the design tokens - a rounded
+	// cap with a centre line - in place of the knob bitmap, whose size it keeps.
+	paintHandle(painter);
+}
+
+void Fader::paintHandle(QPainter& painter)
+{
+	const tokens::Palette& pal = tokens::palette();
+	const QRectF handle((width() - m_knobSize.width()) / 2.0 + 1.0, calculateKnobPosYFromModel() - m_knobSize.height() + 1.0,
+		m_knobSize.width() - 2.0, m_knobSize.height() - 2.0);
+	painter.setRenderHint(QPainter::Antialiasing);
+	painter.setPen(QPen(pal.base, 1));
+	painter.setBrush(isEnabled() ? pal.text : pal.textDisabled);
+	painter.drawRoundedRect(handle, tokens::radius::sm + 1, tokens::radius::sm + 1);
+	painter.setPen(QPen(pal.base, 1.5));
+	const qreal y = handle.center().y();
+	painter.drawLine(QPointF(handle.left() + 3, y), QPointF(handle.right() - 3, y));
 }
 
 void Fader::paintLevels(QPaintEvent* ev, QPainter& painter, bool linear)

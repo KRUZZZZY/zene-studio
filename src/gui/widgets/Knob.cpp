@@ -24,6 +24,8 @@
 
 #include "Knob.h"
 
+#include "DesignTokens.h"
+
 #include <QInputDialog>
 #include <QPainter>
 
@@ -379,9 +381,13 @@ bool Knob::updateAngle()
 
 void Knob::drawKnob( QPainter * _p )
 {
-	bool enabled = this->isEnabled();
-	QColor currentArcColor = enabled ? m_arcActiveColor : m_arcInactiveColor;
-	QColor currentLineColor = enabled ? m_lineActiveColor : m_lineInactiveColor;
+	if( m_knobNum != KnobType::Styled )
+	{
+		// Flat knobs are vector-drawn straight onto the widget (HiDPI-sharp); no cache image.
+		updateAngle();
+		drawFlatKnob( _p );
+		return;
+	}
 
 	if( updateAngle() == false && !m_cache.isNull() )
 	{
@@ -426,61 +432,39 @@ void Knob::drawKnob( QPainter * _p )
 	}
 
 
-	// Old-skool knobs
-	const float radius = m_knobPixmap->width() / 2.0f - 1;
-	mid = QPoint( width() / 2, m_knobPixmap->height() / 2 );
-
-	p.drawPixmap( static_cast<int>(
-				width() / 2 - m_knobPixmap->width() / 2 ), 0,
-				*m_knobPixmap );
-
-	p.setRenderHint( QPainter::Antialiasing );
-
-	const int centerAngle = angleFromValue( model()->inverseScaledValue( model()->centerValue() ), model()->minValue(), model()->maxValue(), m_totalAngle );
-
-	const int arcLineWidth = 2;
-	const int arcRectSize = m_knobPixmap->width() - arcLineWidth;
-
-	p.setPen(QPen(currentArcColor, 2));
-	p.drawArc( mid.x() - arcRectSize/2, 1, arcRectSize, arcRectSize, 315*16, 16*m_totalAngle );
-
-	p.setPen(QPen(currentLineColor, 2));
-	switch( m_knobNum )
-	{
-		case KnobType::Small17:
-		{
-			p.drawLine( calculateLine( mid, radius-2 ) );
-			break;
-		}
-		case KnobType::Bright26:
-		{
-			p.drawLine( calculateLine( mid, radius-5 ) );
-			break;
-		}
-		case KnobType::Dark28:
-		{
-			const float rb = qMax<float>( ( radius - 10 ) / 3.0,
-									0.0 );
-			const float re = qMax<float>( ( radius - 4 ), 0.0 );
-			QLineF ln = calculateLine( mid, re, rb );
-			ln.translate( 1, 1 );
-			p.drawLine( ln );
-			break;
-		}
-		case KnobType::Vintage32:
-		{
-			p.drawLine( calculateLine( mid, radius-2, 2 ) );
-			break;
-		}
-		case KnobType::Styled:
-			break;
-	}
-
-	p.drawArc( mid.x() - arcRectSize/2, 1, arcRectSize, arcRectSize, (90-centerAngle)*16, -16*(m_angle-centerAngle) );
-
+	// 0.5.0 (docs/UI-SHELL.md §1): every pixmap knob type is drawn flat from the design tokens -
+	// a track arc, the value arc in the accent from the parameter's centre value, a raised body
+	// and a pointer. The old bitmap is kept only for its size, so no layout moves.
 	p.end();
+	drawFlatKnob(_p);
+}
 
-	_p->drawImage( 0, 0, m_cache );
+void Knob::drawFlatKnob(QPainter* painter)
+{
+	const tokens::Palette& pal = tokens::palette();
+	const bool enabled = isEnabled();
+	const qreal side = std::min<qreal>(m_knobPixmap->width(), m_knobPixmap->height());
+	const QRectF square((width() - side) / 2.0, 0, side, side);
+	const qreal stroke = std::max<qreal>(2.0, side / 9.0);
+	const QRectF arcRect = square.adjusted(stroke / 2 + 0.5, stroke / 2 + 0.5, -stroke / 2 - 0.5, -stroke / 2 - 0.5);
+	const int centerAngle = angleFromValue(model()->inverseScaledValue(model()->centerValue()),
+		model()->minValue(), model()->maxValue(), m_totalAngle);
+
+	painter->save();
+	painter->setRenderHint(QPainter::Antialiasing);
+	painter->setPen(QPen(pal.control, stroke, Qt::SolidLine, Qt::FlatCap));
+	painter->drawArc(arcRect, 315 * 16, static_cast<int>(16 * m_totalAngle));
+	painter->setPen(QPen(enabled ? pal.accent : pal.textDisabled, stroke, Qt::SolidLine, Qt::FlatCap));
+	painter->drawArc(arcRect, (90 - centerAngle) * 16, -16 * (m_angle - centerAngle));
+
+	const qreal bodyRadius = side / 2.0 - stroke - 1.5;
+	const QPointF mid = square.center();
+	painter->setPen(Qt::NoPen);
+	painter->setBrush(pal.selected);
+	painter->drawEllipse(mid, bodyRadius, bodyRadius);
+	painter->setPen(QPen(enabled ? pal.text : pal.textDisabled, std::max<qreal>(1.5, side / 14.0), Qt::SolidLine, Qt::RoundCap));
+	painter->drawLine(calculateLine(mid, bodyRadius - 1.0, bodyRadius * 0.25));
+	painter->restore();
 }
 
 void Knob::drawLabel(QPainter& p)

@@ -140,103 +140,18 @@ SongEditor::SongEditor( Song * song ) :
 		[this]() { m_timeLine->setSnapSize(getSnapSize()); });
 
 
-	// add some essential widgets to global tool-bar
-	QWidget * tb = getGUI()->mainWindow()->toolBar();
+	// 0.5.0 (docs/UI-SHELL.md §1): the tempo, time, meter, master level/transposition and load
+	// readouts are the shell header's own (TransportReadouts), bound to the same Song models;
+	// the LCD boxes, sliders and scope this editor used to add to the toolbar are gone. The
+	// master gain follows its model in Song itself (Song.cpp's masterVolumeChanged), so nothing
+	// here has to forward it.
+	m_tempoSpinBox = nullptr;
+	m_timeSigDisplay = nullptr;
+	m_masterVolumeSlider = nullptr;
+	m_masterPitchSlider = nullptr;
+	m_mvsStatus = nullptr;
+	m_mpsStatus = nullptr;
 
-	getGUI()->mainWindow()->addSpacingToToolBar( 40 );
-
-	m_tempoSpinBox = new LcdSpinBox( 3, tb, tr( "Tempo" ) );
-	m_tempoSpinBox->setModel( &m_song->m_tempoModel );
-	m_tempoSpinBox->setLabel( tr( "TEMPO" ) );
-	m_tempoSpinBox->setToolTip(tr("Tempo in BPM"));
-
-	int tempoSpinBoxCol = getGUI()->mainWindow()->addWidgetToToolBar( m_tempoSpinBox, 0 );
-
-	getGUI()->mainWindow()->addWidgetToToolBar( new TimeDisplayWidget, 1, tempoSpinBoxCol );
-
-	getGUI()->mainWindow()->addSpacingToToolBar( 10 );
-
-	m_timeSigDisplay = new MeterDialog( this, true );
-	m_timeSigDisplay->setModel( &m_song->m_timeSigModel );
-	getGUI()->mainWindow()->addWidgetToToolBar( m_timeSigDisplay );
-
-	getGUI()->mainWindow()->addSpacingToToolBar( 10 );
-
-	auto master_vol_lbl = new QLabel(tb);
-	master_vol_lbl->setPixmap( embed::getIconPixmap( "master_volume" ) );
-
-	m_masterVolumeSlider = new AutomatableSlider( tb,
-							tr( "Master volume" ) );
-	m_masterVolumeSlider->setModel( &m_song->m_masterVolumeModel );
-	m_masterVolumeSlider->setOrientation( Qt::Vertical );
-	m_masterVolumeSlider->setPageStep( 1 );
-	m_masterVolumeSlider->setTickPosition( QSlider::TicksLeft );
-	m_masterVolumeSlider->setFixedSize(scaledPixels(26), scaledPixels(60));
-	m_masterVolumeSlider->setTickInterval( 50 );
-	m_masterVolumeSlider->setToolTip(tr("Master volume"));
-
-	connect( m_masterVolumeSlider, SIGNAL(logicValueChanged(int)), this,
-			SLOT(setMasterVolume(int)));
-	connect( m_masterVolumeSlider, SIGNAL(sliderPressed()), this,
-			SLOT(showMasterVolumeFloat()));
-	connect( m_masterVolumeSlider, SIGNAL(logicSliderMoved(int)), this,
-			SLOT(updateMasterVolumeFloat(int)));
-	connect( m_masterVolumeSlider, SIGNAL(sliderReleased()), this,
-			SLOT(hideMasterVolumeFloat()));
-
-	m_mvsStatus = new TextFloat;
-	m_mvsStatus->setTitle(tr("Master volume"));
-	m_mvsStatus->setPixmap(embed::getIconPixmap("master_volume"));
-
-	getGUI()->mainWindow()->addWidgetToToolBar( master_vol_lbl );
-	getGUI()->mainWindow()->addWidgetToToolBar( m_masterVolumeSlider );
-
-
-	getGUI()->mainWindow()->addSpacingToToolBar( 10 );
-
-	auto master_pitch_lbl = new QLabel(tb);
-	master_pitch_lbl->setPixmap( embed::getIconPixmap( "master_pitch" ) );
-	master_pitch_lbl->setFixedHeight(scaledPixels(64));
-
-	m_masterPitchSlider = new AutomatableSlider( tb, tr( "Global transposition" ) );
-	m_masterPitchSlider->setModel( &m_song->m_masterPitchModel );
-	m_masterPitchSlider->setOrientation( Qt::Vertical );
-	m_masterPitchSlider->setPageStep( 1 );
-	m_masterPitchSlider->setTickPosition( QSlider::TicksLeft );
-	m_masterPitchSlider->setFixedSize(scaledPixels(26), scaledPixels(60));
-	m_masterPitchSlider->setTickInterval( 12 );
-	m_masterPitchSlider->setToolTip(tr("Global transposition"));
-	connect( m_masterPitchSlider, SIGNAL(logicValueChanged(int)), this,
-			SLOT(setMasterPitch(int)));
-	connect( m_masterPitchSlider, SIGNAL(sliderPressed()), this,
-			SLOT(showMasterPitchFloat()));
-	connect( m_masterPitchSlider, SIGNAL(logicSliderMoved(int)), this,
-			SLOT(updateMasterPitchFloat(int)));
-	connect( m_masterPitchSlider, SIGNAL(sliderReleased()), this,
-			SLOT(hideMasterPitchFloat()));
-
-	m_mpsStatus = new TextFloat;
-	m_mpsStatus->setTitle( tr( "Global transposition" ) );
-	m_mpsStatus->setPixmap( embed::getIconPixmap( "master_pitch" ) );
-
-	getGUI()->mainWindow()->addWidgetToToolBar( master_pitch_lbl );
-	getGUI()->mainWindow()->addWidgetToToolBar( m_masterPitchSlider );
-
-	getGUI()->mainWindow()->addSpacingToToolBar( 10 );
-
-	// create widget for oscilloscope- and cpu-load-widget
-	auto vc_w = new QWidget(tb);
-	auto vcw_layout = new QVBoxLayout(vc_w);
-	vcw_layout->setContentsMargins(0, 0, 0, 0);
-	vcw_layout->setSpacing( 0 );
-
-	vcw_layout->addStretch();
-	vcw_layout->addWidget( new Oscilloscope( vc_w ) );
-
-	vcw_layout->addWidget( new CPULoadWidget( vc_w ) );
-	vcw_layout->addStretch();
-
-	getGUI()->mainWindow()->addWidgetToToolBar( vc_w );
 
 	static_cast<QVBoxLayout *>( layout() )->insertWidget( 0, m_timeLine );
 
@@ -642,6 +557,7 @@ void SongEditor::mouseReleaseEvent(QMouseEvent *me)
 
 void SongEditor::setMasterVolume( int new_val )
 {
+	if (m_mvsStatus == nullptr) { return; }  // the header readouts replaced the slider
 	updateMasterVolumeFloat( new_val );
 
 	if (!m_mvsStatus->isVisible() && !m_song->m_loadingProject
@@ -659,6 +575,7 @@ void SongEditor::setMasterVolume( int new_val )
 
 void SongEditor::showMasterVolumeFloat( void )
 {
+	if (m_mvsStatus == nullptr) { return; }  // the header readouts replaced the slider
 	m_mvsStatus->moveGlobal(m_masterVolumeSlider,
 			QPoint( m_masterVolumeSlider->width() + 2, -2 ) );
 	m_mvsStatus->show();
@@ -670,6 +587,7 @@ void SongEditor::showMasterVolumeFloat( void )
 
 void SongEditor::updateMasterVolumeFloat( int new_val )
 {
+	if (m_mvsStatus == nullptr) { return; }  // the header readouts replaced the slider
 	m_mvsStatus->setText(tr("Value: %1%").arg(new_val));
 }
 
@@ -678,6 +596,7 @@ void SongEditor::updateMasterVolumeFloat( int new_val )
 
 void SongEditor::hideMasterVolumeFloat( void )
 {
+	if (m_mvsStatus == nullptr) { return; }  // the header readouts replaced the slider
 	m_mvsStatus->hide();
 }
 
@@ -686,6 +605,7 @@ void SongEditor::hideMasterVolumeFloat( void )
 
 void SongEditor::setMasterPitch( int new_val )
 {
+	if (m_mpsStatus == nullptr) { return; }  // the header readouts replaced the slider
 	updateMasterPitchFloat( new_val );
 	if( m_mpsStatus->isVisible() == false && m_song->m_loadingProject == false
 					&& m_masterPitchSlider->showStatus() )
@@ -701,6 +621,7 @@ void SongEditor::setMasterPitch( int new_val )
 
 void SongEditor::showMasterPitchFloat( void )
 {
+	if (m_mpsStatus == nullptr) { return; }  // the header readouts replaced the slider
 	m_mpsStatus->moveGlobal( m_masterPitchSlider,
 			QPoint( m_masterPitchSlider->width() + 2, -2 ) );
 	m_mpsStatus->show();
@@ -712,6 +633,7 @@ void SongEditor::showMasterPitchFloat( void )
 
 void SongEditor::updateMasterPitchFloat( int new_val )
 {
+	if (m_mpsStatus == nullptr) { return; }  // the header readouts replaced the slider
 	m_mpsStatus->setText( tr( "Value: %1 keys").arg( new_val ) );
 
 }
@@ -721,6 +643,7 @@ void SongEditor::updateMasterPitchFloat( int new_val )
 
 void SongEditor::hideMasterPitchFloat( void )
 {
+	if (m_mpsStatus == nullptr) { return; }  // the header readouts replaced the slider
 	m_mpsStatus->hide();
 }
 

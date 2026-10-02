@@ -26,7 +26,8 @@
 #define LMMS_GUI_SHELL_ICONS_H
 
 #include <QIcon>
-#include <QPainterPath>
+#include <QByteArray>
+#include <QPixmap>
 #include <QString>
 #include <QStringList>
 
@@ -35,22 +36,30 @@
 namespace lmms::gui
 {
 
-//! The shell's icon set. Every glyph is a path in a 16 x 16 design grid, scaled at paint
-//! time, so it is sharp at any size and any device-pixel ratio - no bitmap is shipped. The
-//! glyphs are this project's own drawings (docs/adr/ADR-0001-UI-TOOLKIT.md: no third-party
-//! artwork).
+//! The interface's one icon set: Lucide (https://lucide.dev, ISC licence - the notice is
+//! data/themes/zene/icons/LICENSE.txt), compiled in as SVG and rendered at paint time, so every
+//! icon is sharp at any size and any device-pixel ratio and drawn in a token colour. The shell
+//! names its icons by id; the inherited interface's bitmap icon names are mapped onto the same
+//! set (legacyPixmap), so no old bitmap icon is drawn anywhere embed::getIconPixmap is used.
 namespace shellicons
 {
 
-//! Every id icon() knows, for the test that paints each one.
+//! Every id icon() knows, for the test that renders each one.
 LMMS_EXPORT QStringList ids();
-
-//! The glyph for @a id in the 16-unit grid; empty for an unknown id.
-LMMS_EXPORT QPainterPath glyph(const QString& id);
-
-//! A QIcon that paints @a id: the muted text colour normally, the accent when the button is
-//! checked (QIcon::On), the disabled text colour when disabled.
+//! The SVG for @a id; empty for an unknown id.
+LMMS_EXPORT QByteArray svg(const QString& id);
+//! A QIcon that paints @a id: the text colour normally, the accent when the button is checked
+//! (QIcon::On), the disabled text colour when disabled.
 LMMS_EXPORT QIcon icon(const QString& id);
+
+//! The inherited icon names the table maps.
+LMMS_EXPORT QStringList legacyNames();
+//! The Lucide icon an inherited name is drawn with; empty when it is not mapped (artwork, not
+//! an icon: knob faces, LCD digits, waveform buttons - widgets that are repainted instead).
+LMMS_EXPORT QString lucideForLegacy(const QString& name);
+//! The modern pixmap for an inherited icon name at @a width x @a height (the old bitmap's own
+//! size when either is <= 0), or a null pixmap when the name is not mapped.
+LMMS_EXPORT QPixmap legacyPixmap(const QString& name, int width, int height);
 
 } // namespace shellicons
 

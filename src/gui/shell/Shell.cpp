@@ -29,7 +29,6 @@
 #include <QApplication>
 #include <QJsonArray>
 #include <QJsonDocument>
-#include <QLabel>
 #include <QSet>
 #include <QSplitter>
 #include <QTimer>
@@ -404,19 +403,6 @@ void Shell::restoreConfiguredLayout()
 	applySizes(m_centre, doc.value(QStringLiteral("centre")).toArray());
 	m_restoring = false;
 	apply();
-}
-
-QWidget* createPanelNote(const QString& text, QWidget* parent)
-{
-	auto* note = new QLabel(text, parent);
-	note->setWordWrap(true);
-	note->setAlignment(Qt::AlignTop | Qt::AlignLeft);
-	note->setMargin(tokens::space::lg);
-	note->setFont(tokens::font(tokens::TextRole::Body));
-	QPalette pal = note->palette();
-	pal.setColor(QPalette::WindowText, tokens::palette().textMuted);
-	note->setPalette(pal);
-	return note;
 }
 
 } // namespace lmms::gui

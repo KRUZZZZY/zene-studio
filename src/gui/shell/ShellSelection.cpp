@@ -1,0 +1,107 @@
+/*
+ * ShellSelection.cpp - the track and clip the shell's Inspector and Device panel follow
+ *
+ * Copyright (c) 2026 Zene Studio contributors
+ *
+ * This file is part of LMMS - https://lmms.io
+ *
+ * This program is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU General Public
+ * License as published by the Free Software Foundation; either
+ * version 2 of the License, or (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public
+ * License along with this program (see COPYING); if not, write to the
+ * Free Software Foundation, Inc., 51 Franklin Street, Fifth Floor,
+ * Boston, MA 02110-1301 USA.
+ *
+ */
+
+#include "ShellSelection.h"
+
+#include <QApplication>
+#include <QEvent>
+#include <QWidget>
+
+#include "ClipView.h"
+#include "ControlVocabulary.h"
+#include "Engine.h"
+#include "Mixer.h"
+#include "MixerChannelView.h"
+#include "TrackView.h"
+
+namespace lmms::gui
+{
+
+ShellSelection* ShellSelection::instance()
+{
+	static ShellSelection* selection = new ShellSelection;
+	return selection;
+}
+
+void ShellSelection::setTrack(Track* track)
+{
+	const bool clipStays = m_clip != nullptr && m_clip->getTrack() == track;
+	if (m_track == track && (clipStays || m_clip == nullptr) && m_channel.isEmpty()) { return; }
+	m_track = track;
+	m_channel.clear();
+	if (!clipStays) { m_clip = nullptr; }
+	emit changed();
+}
+
+void ShellSelection::setClip(Clip* clip)
+{
+	if (m_clip == clip && (clip == nullptr || m_track == clip->getTrack()) && m_channel.isEmpty()) { return; }
+	m_clip = clip;
+	m_channel.clear();
+	if (clip != nullptr) { m_track = clip->getTrack(); }
+	emit changed();
+}
+
+void ShellSelection::setChannel(const QString& id)
+{
+	if (m_channel == id && m_track == nullptr) { return; }
+	m_track = nullptr;
+	m_clip = nullptr;
+	m_channel = id;
+	emit changed();
+}
+
+void ShellSelection::trackClicks()
+{
+	static bool installed = false;
+	if (installed || qApp == nullptr) { return; }
+	qApp->installEventFilter(this);
+	installed = true;
+}
+
+bool ShellSelection::eventFilter(QObject* watched, QEvent* event)
+{
+	if (event->type() != QEvent::MouseButtonPress || !watched->isWidgetType()) { return false; }
+	for (auto* widget = static_cast<QWidget*>(watched); widget != nullptr; widget = widget->parentWidget())
+	{
+		if (auto* clipView = dynamic_cast<ClipView*>(widget))
+		{
+			setClip(clipView->getClip());
+			break;
+		}
+		if (auto* trackView = dynamic_cast<TrackView*>(widget))
+		{
+			setTrack(trackView->getTrack());
+			break;
+		}
+		if (auto* strip = dynamic_cast<MixerChannelView*>(widget))
+		{
+			setChannel(control::channelIdOf(Engine::mixer()->mixerChannel(strip->channelIndex())));
+			break;
+		}
+	}
+	return false;
+}
+
+} // namespace lmms::gui

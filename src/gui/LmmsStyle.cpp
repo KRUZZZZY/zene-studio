@@ -26,6 +26,7 @@
 #include <array>
 
 #include <QApplication>
+#include <QDir>
 #include <QFile>
 #include <QFileInfo>
 #include <QPainter>
@@ -33,6 +34,7 @@
 #include <QStyleFactory>
 #include <QStyleOption>
 
+#include "ConfigManager.h"
 #include "DesignTokens.h"
 #include "embed.h"
 #include "LmmsStyle.h"
@@ -137,11 +139,24 @@ void drawPath( QPainter *p, const QPainterPath &path,
 LmmsStyle::LmmsStyle() :
 	QProxyStyle()
 {
-	QFile file( "resources:style.css" );
+	// 0.5.0 (docs/UI-SHELL.md §1): the default theme is the design tokens' stylesheet
+	// (data/themes/zene/zene.qss, every colour a token). A theme directory the user chose that
+	// carries its own style.css still wins - and keeps the hot reload below.
+	ConfigManager* conf = ConfigManager::inst();
+	const QString customCss = QDir(conf->themeDir()).filePath(QStringLiteral("style.css"));
+	const bool customTheme = !conf->themeDir().isEmpty()
+		&& QDir(conf->themeDir()).canonicalPath() != QDir(conf->defaultThemeDir()).canonicalPath()
+		&& QFile::exists(customCss);
+	if( !customTheme )
+	{
+		qApp->setStyleSheet( tokens::applicationStyleSheet() );
+		if( s_palette != nullptr ) { qApp->setPalette( *s_palette ); }
+		setBaseStyle( QStyleFactory::create( "Fusion" ) );
+		return;
+	}
+	QFile file( customCss );
 	file.open( QIODevice::ReadOnly );
-	// The theme's style.css, then the 0.5.0 design tokens' generated rules (DesignTokens.h),
-	// which take precedence for the stock widgets and the shell's chrome.
-	qApp->setStyleSheet( QString::fromUtf8( file.readAll() ) + tokens::applicationStyleSheet() );
+	qApp->setStyleSheet( QString::fromUtf8( file.readAll() ) );
 
 	m_styleReloader.addPath(QFileInfo{file}.absoluteFilePath());
 	connect(&m_styleReloader, &QFileSystemWatcher::fileChanged, this,
@@ -150,7 +165,7 @@ LmmsStyle::LmmsStyle() :
 			if (auto file = QFile{path}; file.exists())
 			{
 				file.open(QIODevice::ReadOnly);
-				qApp->setStyleSheet(QString::fromUtf8(file.readAll()) + tokens::applicationStyleSheet());
+				qApp->setStyleSheet(QString::fromUtf8(file.readAll()));
 				TextFloat::displayMessage(
 					tr("Theme updated"),
 					tr("Zene Studio theme file %1 has been reloaded.").arg(file.fileName()),

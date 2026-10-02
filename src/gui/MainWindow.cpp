@@ -46,6 +46,7 @@
 #include "AudioEngine.h"
 #include "AutomationEditor.h"
 #include "BrowserPanel.h"
+#include "DevicePanel.h"
 #include "AudioEngine.h"
 #include "ControlRegistry.h"
 #include "ControlWindowCommands.h"
@@ -64,6 +65,7 @@
 #include "ImportFilter.h"
 #include "InstrumentTrackView.h"
 #include "InstrumentTrackWindow.h"
+#include "InspectorPanel.h"
 #include "MicrotunerConfig.h"
 #include "SessionGridView.h"
 #include "MidiLearnGui.h"
@@ -95,6 +97,8 @@
 #include "Shell.h"
 #include "ShellChrome.h"
 #include "ShellPanel.h"
+#include "ShellSelection.h"
+#include "TransportReadouts.h"
 #include "SongEditor.h"
 #include "SubWindow.h"
 #include "TemplatesMenu.h"
@@ -147,6 +151,7 @@ MainWindow::MainWindow() :
 	// dialogs, the controller rack, project notes), which float as top-level windows.
 	m_shell = new Shell( this );
 	setCentralWidget( m_shell );
+	connect( this, &MainWindow::periodicUpdate, m_shell->header()->readouts(), &TransportReadouts::tick );
 	m_toolBar = m_shell->toolStrip();
 	m_workspace = new MovableQMdiArea( this );
 	m_workspace->hide();
@@ -599,11 +604,9 @@ void MainWindow::finalize()
 	m_shell->mount(QStringLiteral("pattern"), gui->patternEditor());
 	m_shell->mount(QStringLiteral("mixer"), gui->mixerView());
 	m_shell->mount(QStringLiteral("launcher"), clipLauncher());
-	m_shell->mount(QStringLiteral("inspector"), createPanelNote(tr("The Inspector shows the properties of the "
-		"selected track, clip or note. It arrives with lane 050/ui-panels."), m_shell));
-	m_shell->mount(QStringLiteral("devices"), createPanelNote(tr("The Device panel shows the selected track's "
-		"device chain as cards, with modulators beside the device they modulate. It arrives with lane "
-		"050/ui-panels."), m_shell));
+	m_shell->mount(QStringLiteral("inspector"), new InspectorPanel(m_shell));
+	m_shell->mount(QStringLiteral("devices"), new DevicePanel(m_shell));
+	ShellSelection::instance()->trackClicks();
 	// The MDI era's Ctrl+1..5 editor keys, kept as second shortcuts on the panels they became.
 	const std::pair<const char*, QKeySequence> legacyKeys[] = {
 		{"arranger", keySequence(Qt::CTRL, Qt::Key_1)}, {"pattern", keySequence(Qt::CTRL, Qt::Key_2)},

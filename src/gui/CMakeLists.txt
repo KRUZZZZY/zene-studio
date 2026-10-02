@@ -48,6 +48,7 @@ SET(LMMS_SRCS
 	gui/ControlCommandsWindow.cpp
 	# window.note_editor_set: the note editor's view (docs/NOTE-EDITOR.md).
 	gui/ControlCommandsNoteEditor.cpp
+	gui/ControlCommandsSelection.cpp
 	# M3.2: the main window's own verbs (fullscreen, dialogs, save as new version).
 	gui/ControlCommandsShell.cpp
 	# M3.4: the command palette (menu actions + argument-free commands, searchable).
@@ -84,11 +85,16 @@ SET(LMMS_SRCS
 	gui/noteeditor/NoteLanes.cpp
 	gui/shell/BrowserPanel.cpp
 	gui/shell/DesignTokens.cpp
+	gui/shell/DevicePanel.cpp
+	gui/shell/InspectorPanel.cpp
+	gui/shell/ModulatorCard.cpp
 	gui/shell/Shell.cpp
 	gui/shell/ShellChrome.cpp
 	gui/shell/ShellIcons.cpp
 	gui/shell/ShellLayout.cpp
 	gui/shell/ShellPanel.cpp
+	gui/shell/ShellSelection.cpp
+	gui/shell/TransportReadouts.cpp
 	gui/GuiApplication.cpp
 	gui/LadspaControlView.cpp
 	gui/LfoControllerDialog.cpp

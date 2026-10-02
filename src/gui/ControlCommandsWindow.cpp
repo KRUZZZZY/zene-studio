@@ -155,6 +155,7 @@ ControlResult getState(const QJsonObject&)
 	QJsonObject state = g->mainWindow()->shell()->state();
 	state.insert(QStringLiteral("editors"), editors);
 	state.insert(QStringLiteral("note_editor"), noteEditorState());
+	state.insert(QStringLiteral("selection"), shellSelectionState());
 	return ControlResult::success(state);
 }
 
@@ -220,12 +221,13 @@ void registerWindowCommands(ControlRegistry& registry)
 			"left, center, bottom or right and available says whether the current view offers it; "
 			"`focused`, the panel that last took keyboard focus; `launcher`, whether the clip launcher "
 			"sits beside the view's main panel; `editors`, one {editor, visible, panel} entry per "
-			"window.toggle name; and `note_editor`, the note editor's view (window.note_editor_set's reply). Read-only. Refused `requires` in a process with no interface.");
+			"window.toggle name; `note_editor`, the note editor's view (window.note_editor_set's reply); and "
+			"`selection`, what the Inspector and the Device panel show (window.select's reply). Read-only. Refused `requires` in a process with no interface.");
 		cmd.argsSchema = objectSchema({});
 		cmd.resultSchema = objectSchema({{QStringLiteral("editors"), arrayProperty()},
 			{QStringLiteral("view"), stringProperty()}, {QStringLiteral("panels"), arrayProperty()},
 			{QStringLiteral("focused"), stringProperty()}, {QStringLiteral("launcher"), booleanProperty()},
-			{QStringLiteral("note_editor"), objectProperty()}});
+			{QStringLiteral("note_editor"), objectProperty()}, {QStringLiteral("selection"), objectProperty()}});
 		cmd.handler = getState;
 		registry.registerCommand(cmd);
 	}
@@ -246,6 +248,7 @@ void registerWindowCommands(ControlRegistry& registry)
 		registry.registerCommand(cmd);
 	}
 	registerNoteEditorWindowCommands(registry);
+	registerSelectionWindowCommands(registry);
 }
 
 } // namespace lmms

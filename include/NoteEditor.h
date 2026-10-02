@@ -125,6 +125,10 @@ public:
 	//! window.get_state-style description of the editor, for note.editor_get_state.
 	QJsonObject describe() const;
 
+	//! Show the song position inside the clip on the note area (and follow it while playing);
+	//! @a always shows it even when stopped (after a seek).
+	void updatePlayhead(bool always = false);
+
 	//! Audition: press and release a key through the clip's instrument (GUI thread only).
 	void auditionPress(int key, int velocity);
 	void auditionRelease(int key);
@@ -168,6 +172,7 @@ private:
 	int m_auditionKey = -1;
 	bool m_syncing = false;
 	bool m_pendingFit = false;
+	class QTimer* m_playheadTimer = nullptr;
 };
 
 } // namespace lmms::gui

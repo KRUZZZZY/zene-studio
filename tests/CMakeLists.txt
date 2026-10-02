@@ -624,6 +624,9 @@ set(LMMS_TESTS
 	# command and one undo step - and note.edit's whole-batch validation.
 	src/gui/NoteGridTest.cpp
 	src/gui/NoteEditorTest.cpp
+	# 0.5.0 lane 3: the shell selection, the Inspector and the Device panel's cards and
+	# modulators over a real engine (the build's plugin modules).
+	src/gui/DevicePanelTest.cpp
 	# UI precondition #1 (040/ui-precond): include/WcagContrast.h at the AA
 	# boundary, and include/Accessibility.h on the shell surface the owner
 	# manual-tests - the helper, then the footer switches, the chrome bands and
@@ -897,6 +900,8 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 		OR LMMS_TEST_NAME STREQUAL "ChainPresetMenuTest"
 		# The modulators panel binds a parameter of one real effect.
 		OR LMMS_TEST_NAME STREQUAL "ModulatorPanelTest"
+		# The Device panel draws one real effect's card and the modulator driving it.
+		OR LMMS_TEST_NAME STREQUAL "DevicePanelTest"
 		# The rack menu binds a macro to a parameter of one real effect.
 		OR LMMS_TEST_NAME STREQUAL "RackMenuTest"
 		# The effect Hosting submenu reads a real effect's oop.get_state entry.
@@ -1170,6 +1175,7 @@ set_tests_properties(ClipLinkTest ClipLinkPersistenceTest ImportDetectionTest
 set_tests_properties(ShellTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(DesignTokensTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(NoteEditorTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+set_tests_properties(DevicePanelTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(CommandPaletteTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(VcaStripViewTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(SessionGridViewTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
@@ -2649,6 +2655,18 @@ if(PYTHON3_EXECUTABLE AND CONTROL_SUITE_AVAILABLE)
 			${CMAKE_CURRENT_SOURCE_DIR}/control-note-editor.py
 			$<TARGET_FILE:zene>)
 	set_tests_properties(ControlNoteEditor PROPERTIES
+		ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+		TIMEOUT 300
+	)
+	# The Inspector and the Device panel over the socket: window.select selects a track, a clip or
+	# a mixer channel; the reply is what the two panels draw - the track's devices in chain order,
+	# a channel's inserts with the modulator beside the one it drives - and the panel follows a
+	# device removed and restored over the socket (docs/UI-SHELL.md §8).
+	add_test(NAME ControlDevices
+		COMMAND ${PYTHON3_EXECUTABLE}
+			${CMAKE_CURRENT_SOURCE_DIR}/control-devices.py
+			$<TARGET_FILE:zene>)
+	set_tests_properties(ControlDevices PROPERTIES
 		ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
 		TIMEOUT 300
 	)
