@@ -70,6 +70,7 @@
 include/AboutDialog.h
 include/Accessibility.h
 include/ActionGroup.h
+include/ArrangementEdits.h
 include/ArrangerOverlays.h
 include/ArrayVector.h
 include/AudioAlsa.h
@@ -1073,6 +1074,7 @@ plugins/ZynAddSubFx/ZynAddSubFx.h
 src/common/RemotePluginBase.cpp
 src/common/SharedMemory.cpp
 src/common/SystemSemaphore.cpp
+src/core/ArrangementEdits.cpp
 src/core/AudioBuffer.cpp
 src/core/AudioBus.cpp
 src/core/AudioBusHandle.cpp
@@ -1206,6 +1208,7 @@ src/core/ControlCommandsPunch.cpp
 src/core/ControlCommandsRack.cpp
 src/core/ControlCommandsRackMacros.cpp
 src/core/ControlCommandsRackZones.cpp
+src/core/ControlCommandsRange.cpp
 src/core/ControlCommandsRecording.cpp
 src/core/ControlCommandsRecordingInput.cpp
 src/core/ControlCommandsRecordingRecovery.cpp
@@ -1938,6 +1941,7 @@ tests/src/core/RackMacrosTest.cpp
 tests/src/core/RackTest.cpp
 tests/src/core/RackTestSupport.h
 tests/src/core/RackZonesTest.cpp
+tests/src/core/RangeEditsTest.cpp
 tests/src/core/RecordClipTest.cpp
 tests/src/core/RecordRingBufferTest.cpp
 tests/src/core/RecordingInputPathTest.cpp
