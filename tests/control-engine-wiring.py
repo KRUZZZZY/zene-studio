@@ -13,7 +13,9 @@ is wired in:
   3. `chain.save` / `chain.apply {chain}` capture and restore a rack chain (E17);
   4. `track.set_mixer_channel` routes a track into a channel, and one control.undo routes it
      back;
-  5. the Lua scripting spine: `script.run` with `zene.command(...)` drives the registry and
+  5. `session.set_scene {tempo_override: false}` switches a scene's tempo override off again
+     (E37: it used to be one-way);
+  6. the Lua scripting spine: `script.run` with `zene.command(...)` drives the registry and
      answers a table; a sandbox-leaving command is refused inside the script.
 
 Usage:  QT_QPA_PLATFORM=offscreen python3 tests/control-engine-wiring.py <zene>
@@ -90,6 +92,15 @@ def check_track_channel(session, recorder, track):
                    again.get("previous") == reply.get("previous"), "after undo=%r" % again)
 
 
+def check_scene_override(session, recorder):
+    session.call("session.set_grid", {"tracks": 1, "scenes": 1})
+    on = session.result("session.set_scene", {"scene": 0, "tempo": 150}).get("scene") or {}
+    off = session.result("session.set_scene", {"scene": 0, "tempo_override": False}).get("scene") or {}
+    recorder.check("a scene's tempo override can be switched off again (E37)",
+                   on.get("tempo_enabled") is True and off.get("tempo_enabled") is False and off.get("tempo") == 150,
+                   "on=%r off=%r" % (on, off))
+
+
 def check_lua_spine(session, recorder):
     source = ("local r, err = zene.command('track.add', {type = 'instrument', name = 'Lua spine'})\n"
               "print('added ' .. tostring(err == nil) .. ' ' .. string.sub(r.track, 1, 4))\n"
@@ -123,6 +134,7 @@ def main(argv):
         track = check_rack_chain(session, recorder, devices, channel)
         check_chain_presets(session, recorder, channel)
         check_track_channel(session, recorder, track)
+        check_scene_override(session, recorder)
         check_lua_spine(session, recorder)
     report_results(recorder)
     if recorder.problems:

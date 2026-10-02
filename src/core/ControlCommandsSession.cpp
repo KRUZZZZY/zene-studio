@@ -203,6 +203,38 @@ void applySlotShape(ClipSlot& slot, const QJsonObject& args)
 // the commands
 // ---------------------------------------------------------------------------
 
+//! session.set_scene's tempo and time-signature fields: a value switches its override on; the
+//! `*_override` flags (engine audit E37) switch it on or off, applied last.
+void applySceneOverrides(Scene& sceneModel, const QJsonObject& args)
+{
+	if (args.contains(QStringLiteral("tempo")))
+	{
+		sceneModel.setTempo(args.value(QStringLiteral("tempo")).toDouble());
+		sceneModel.setTempoEnabled(true);
+	}
+	if (args.contains(QStringLiteral("timesig_numerator")))
+	{
+		sceneModel.setTimeSigNumerator(args.value(QStringLiteral("timesig_numerator")).toInt());
+		sceneModel.setTimeSigEnabled(true);
+	}
+	if (args.contains(QStringLiteral("timesig_denominator")))
+	{
+		sceneModel.setTimeSigDenominator(args.value(QStringLiteral("timesig_denominator")).toInt());
+		sceneModel.setTimeSigEnabled(true);
+	}
+	// Engine audit E37: an override, once set, can be switched off again (it used to be
+	// one-way: only `true` was ever written). Applied last, so {tempo, tempo_override:false}
+	// stores the value and leaves it inactive.
+	if (args.contains(QStringLiteral("tempo_override")))
+	{
+		sceneModel.setTempoEnabled(args.value(QStringLiteral("tempo_override")).toBool());
+	}
+	if (args.contains(QStringLiteral("timesig_override")))
+	{
+		sceneModel.setTimeSigEnabled(args.value(QStringLiteral("timesig_override")).toBool());
+	}
+}
+
 void registerSessionGetState(ControlRegistry& registry)
 {
 	ControlCommand state;
@@ -338,7 +370,8 @@ void registerSessionSetScene(ControlRegistry& registry)
 	scene.verb = QStringLiteral("set_scene");
 	scene.description = QStringLiteral("Set one scene's name and/or its tempo and time-signature "
 		"overrides; a field that is supplied is written and its override switched on, a field that "
-		"is not is left alone. `follow_actions` replaces the scene's own Follow Action chain ([] "
+		"is not is left alone; `tempo_override` / `timesig_override` switch an override on or off "
+		"(false keeps the stored value, inactive). `follow_actions` replaces the scene's own Follow Action chain ([] "
 		"clears it); session.scene_follow_set arms it. Reversible through the ProjectJournal "
 		"(action checkpoint).");
 	scene.argsSchema = objectSchema({
@@ -347,6 +380,8 @@ void registerSessionSetScene(ControlRegistry& registry)
 		{QStringLiteral("tempo"), numberProperty()},
 		{QStringLiteral("timesig_numerator"), integerProperty(1, 64)},
 		{QStringLiteral("timesig_denominator"), integerProperty(1, 64)},
+		{QStringLiteral("tempo_override"), booleanProperty()},
+		{QStringLiteral("timesig_override"), booleanProperty()},
 		{QStringLiteral("follow_actions"), arrayProperty()},
 	}, {QStringLiteral("scene")});
 	scene.resultSchema = objectSchema({
@@ -374,21 +409,7 @@ void registerSessionSetScene(ControlRegistry& registry)
 		{
 			sceneModel.setName(args.value(QStringLiteral("name")).toString());
 		}
-		if (args.contains(QStringLiteral("tempo")))
-		{
-			sceneModel.setTempo(args.value(QStringLiteral("tempo")).toDouble());
-			sceneModel.setTempoEnabled(true);
-		}
-		if (args.contains(QStringLiteral("timesig_numerator")))
-		{
-			sceneModel.setTimeSigNumerator(args.value(QStringLiteral("timesig_numerator")).toInt());
-			sceneModel.setTimeSigEnabled(true);
-		}
-		if (args.contains(QStringLiteral("timesig_denominator")))
-		{
-			sceneModel.setTimeSigDenominator(args.value(QStringLiteral("timesig_denominator")).toInt());
-			sceneModel.setTimeSigEnabled(true);
-		}
+		applySceneOverrides(sceneModel, args);
 		QJsonObject result;
 		result.insert(QStringLiteral("scene"), sceneState(index, sceneModel));
 		result.insert(QStringLiteral("__transaction"),
