@@ -455,6 +455,9 @@ static bool gain_activate(const clap_plugin_t* plugin, double sample_rate, uint3
 	self->oversized_calls = 0;
 	self->recorded_count = 0;
 	memset(self->recorded, 0, sizeof(self->recorded));
+	/* With CLAP_TEST_GAIN_MAIN_THREAD set, the plug-in asks for a main-thread call, the path the
+	   host services in HostedPlugin::serviceMainThread() (engine audit E8). */
+	if (getenv("CLAP_TEST_GAIN_MAIN_THREAD") != NULL) { self->host->request_callback(self->host); }
 	return true;
 }
 
@@ -535,7 +538,18 @@ static const void* gain_get_extension(const clap_plugin_t* plugin, const char* i
 	return NULL;
 }
 
-static void gain_on_main_thread(const clap_plugin_t* plugin) { (void)plugin; }
+/* On the main-thread call: change a value behind the host's back, ask it to re-read the values,
+   and mark the state dirty - three requests a host must honour. */
+static void gain_on_main_thread(const clap_plugin_t* plugin)
+{
+	gain_plugin_t* self = (gain_plugin_t*)plugin->plugin_data;
+	if (getenv("CLAP_TEST_GAIN_MAIN_THREAD") == NULL) { return; }
+	self->gain = 0.25;
+	const clap_host_params_t* params = (const clap_host_params_t*)self->host->get_extension(self->host, CLAP_EXT_PARAMS);
+	if (params != NULL) { params->rescan(self->host, CLAP_PARAM_RESCAN_VALUES); }
+	const clap_host_state_t* state = (const clap_host_state_t*)self->host->get_extension(self->host, CLAP_EXT_STATE);
+	if (state != NULL) { state->mark_dirty(self->host); }
+}
 
 /* -------------------------------------------------------------- factory --- */
 

@@ -188,6 +188,10 @@ struct HostedPlugin::Impl
 
 	std::atomic<bool> needsReprepare{false};
 	std::atomic<bool> callbackRequested{false};
+	//! E8: what the plug-in asked of the host, serviced on the main thread (serviceMainThread)
+	std::atomic<std::uint32_t> rescanFlags{0};
+	std::atomic<bool> flushRequested{false};
+	std::atomic<bool> stateDirty{false};
 	std::atomic<double> tempo{120.0};
 	std::atomic<bool> playing{false};
 
@@ -328,15 +332,43 @@ struct HostedPlugin::Impl
 		static_cast<Impl*>(host->host_data)->callbackRequested.store(true, std::memory_order_relaxed);
 	}
 
-	static void CLAP_ABI paramsRescan(const clap_host_t*, clap_param_rescan_flags) {}
+	static void CLAP_ABI paramsRescan(const clap_host_t* host, clap_param_rescan_flags flags)
+	{
+		static_cast<Impl*>(host->host_data)->rescanFlags.fetch_or(flags, std::memory_order_relaxed);
+	}
 
+	//! The host keeps no per-parameter references beyond the plug-in's own list (automation
+	//! reaches a parameter through its model, which the next rescan re-reads), so there is
+	//! nothing to drop.
 	static void CLAP_ABI paramsClear(const clap_host_t*, clap_id, clap_param_clear_flags) {}
 
-	static void CLAP_ABI paramsRequestFlush(const clap_host_t*) {}
+	static void CLAP_ABI paramsRequestFlush(const clap_host_t* host)
+	{
+		static_cast<Impl*>(host->host_data)->flushRequested.store(true, std::memory_order_relaxed);
+	}
 
-	static void CLAP_ABI audioPortsRescan(const clap_host_t*, std::uint32_t) {}
+	//! A changed port layout needs a new processing setup: the next main-thread poll re-prepares.
+	static void CLAP_ABI audioPortsRescan(const clap_host_t* host, std::uint32_t)
+	{
+		static_cast<Impl*>(host->host_data)->needsReprepare.store(true, std::memory_order_relaxed);
+	}
 
-	static void CLAP_ABI stateMarkDirty(const clap_host_t*) {}
+	static void CLAP_ABI stateMarkDirty(const clap_host_t* host)
+	{
+		static_cast<Impl*>(host->host_data)->stateDirty.store(true, std::memory_order_relaxed);
+	}
+
+	//! Main thread: mirror the plug-in's current parameter values into the lock-free slots,
+	//! without bumping the revisions (that would echo them back).
+	void mirrorParamValues()
+	{
+		if (paramsExt == nullptr) { return; }
+		for (std::size_t i = 0; i < params.size(); ++i)
+		{
+			double value = params[i].defaultValue;
+			if (paramsExt->get_value(plugin, params[i].id, &value)) { paramSlots[i].value.store(value, std::memory_order_relaxed); }
+		}
+	}
 
 	static void CLAP_ABI latencyChanged(const clap_host_t*) {}
 

@@ -136,20 +136,35 @@ auto HostedPlugin::loadState(const QByteArray& state) -> bool
 	};
 	if (!impl.stateExt->load(impl.plugin, &stream)) { return false; }
 
-	// The plug-in restored its own values; mirror them into the lock-free paramSlots
-	// without bumping the revisions (that would echo the values back).
-	if (impl.paramsExt)
-	{
-		for (std::size_t i = 0; i < impl.params.size(); ++i)
-		{
-			double value = impl.params[i].defaultValue;
-			if (impl.paramsExt->get_value(impl.plugin, impl.params[i].id, &value))
-			{
-				impl.paramSlots[i].value.store(value, std::memory_order_relaxed);
-			}
-		}
-	}
+	// The plug-in restored its own values.
+	impl.mirrorParamValues();
 	return true;
+}
+
+auto HostedPlugin::serviceMainThread() -> bool
+{
+	auto& impl = *m_impl;
+	if (impl.plugin == nullptr) { return false; }
+	// The plug-in asked for a main-thread call (clap_host.request_callback): it gets it now.
+	if (impl.callbackRequested.exchange(false, std::memory_order_relaxed) && impl.plugin->on_main_thread)
+	{
+		impl.plugin->on_main_thread(impl.plugin);
+	}
+	// A rescan of values or text re-reads them; a rescan of the list itself takes a new
+	// processing setup (the CLAP rule: the plug-in is deactivated for it).
+	const auto flags = impl.rescanFlags.exchange(0, std::memory_order_relaxed);
+	if ((flags & (CLAP_PARAM_RESCAN_VALUES | CLAP_PARAM_RESCAN_TEXT | CLAP_PARAM_RESCAN_INFO)) != 0) { impl.mirrorParamValues(); }
+	if ((flags & CLAP_PARAM_RESCAN_ALL) != 0) { impl.needsReprepare.store(true, std::memory_order_relaxed); }
+	// A flush asked for while the plug-in is not processing (inactive) is run here; an active
+	// plug-in's next process() call carries it.
+	if (impl.flushRequested.exchange(false, std::memory_order_relaxed) && !impl.prepared
+		&& impl.paramsExt != nullptr && impl.paramsExt->flush != nullptr)
+	{
+		static const clap_input_events_t empty{nullptr, [](const clap_input_events_t*) -> std::uint32_t { return 0; },
+			[](const clap_input_events_t*, std::uint32_t) -> const clap_event_header_t* { return nullptr; }};
+		impl.paramsExt->flush(impl.plugin, &empty, &impl.outEvents);
+	}
+	return impl.stateDirty.exchange(false, std::memory_order_relaxed);
 }
 
 } // namespace lmms::clap

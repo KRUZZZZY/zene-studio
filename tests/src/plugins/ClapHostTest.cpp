@@ -184,6 +184,7 @@ private slots:
 	void testInstrumentNotePath();
 	void testTimerSupportRunsThePluginsTimer();
 	void testTheEditorEmbedsResizesAndCloses();
+	void testMainThreadRequestsAreServiced();
 
 private:
 	void process(HostedPlugin& plugin, const std::vector<std::vector<float>>& inputs,
@@ -751,6 +752,26 @@ void lmms::clap::ClapHostTest::testTheEditorEmbedsResizesAndCloses()
 	m_plugin.closeEditor();
 	QVERIFY2(!m_plugin.openEditor(nullptr, &error), "an editor attached to no window");
 	QVERIFY(!m_plugin.editorOpen());
+}
+
+/*! Engine audit E8: a plug-in's main-thread call is made, its value rescan is honoured and its
+ *  dirty state is reported - before, all three were dropped (empty callbacks, and the callback
+ *  request taken and discarded). */
+void ClapHostTest::testMainThreadRequestsAreServiced()
+{
+	qputenv("CLAP_TEST_GAIN_MAIN_THREAD", "1");
+	HostedPlugin plugin;
+	QString error;
+	QVERIFY2(plugin.load(QStringLiteral(CLAP_TEST_PLUGIN_PATH), QString::fromLatin1(TestPluginId), &error),
+		qPrintable(error));
+	QVERIFY2(plugin.prepare(TestSampleRate, TestBlockSize, &error), qPrintable(error));
+	QCOMPARE(plugin.paramPlain(GainParamId), 1.0);
+	// One service call makes the main-thread call, which rescans and marks dirty; the same call
+	// then honours both.
+	QVERIFY(plugin.serviceMainThread());
+	QCOMPARE(plugin.paramPlain(GainParamId), 0.25);
+	QVERIFY(!plugin.serviceMainThread());
+	qunsetenv("CLAP_TEST_GAIN_MAIN_THREAD");
 }
 
 QTEST_GUILESS_MAIN(lmms::clap::ClapHostTest)

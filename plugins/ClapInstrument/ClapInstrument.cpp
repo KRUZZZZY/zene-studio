@@ -320,8 +320,10 @@ void ClapInstrument::poll()
 {
 	if (!m_plugin.isLoaded()) { return; }
 
-	if (needsReprepare())
+	if (m_plugin.serviceMainThread() && Engine::getSong() != nullptr) { Engine::getSong()->setModified(); }
+	if (needsReprepare() || m_plugin.needsReprepare())
 	{
+		m_plugin.clearNeedsReprepare();
 		reprepare();
 	}
 

@@ -23,6 +23,8 @@
  */
 
 #include "ClapEffectControls.h"
+#include "Song.h"
+#include "Engine.h"
 
 #include <cmath>
 
@@ -83,7 +85,7 @@ void ClapEffectControls::poll()
 		plugin->clearNeedsReprepare();
 		m_effect->reprepare();
 	}
-	plugin->takeCallbackRequest();
+	if (plugin->serviceMainThread() && Engine::getSong() != nullptr) { Engine::getSong()->setModified(); }
 
 	if (m_syncing) { return; }
 	m_syncing = true;

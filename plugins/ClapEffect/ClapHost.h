@@ -146,6 +146,10 @@ public:
 	void clearNeedsReprepare();
 	//! The plug-in asked to be called on the main thread; poll from the GUI.
 	auto takeCallbackRequest() -> bool;
+	//! Main thread, from the owner's poll: everything the plug-in asked of the host since the last
+	//! call - its main-thread callback, parameter rescans, a flush while inactive (engine audit
+	//! E8). True when the plug-in marked its state dirty, so the project counts as modified.
+	auto serviceMainThread() -> bool;
 	//! R4.1: timers the plug-in registered through clap.timer-support, and the on_timer
 	//! calls the host has delivered to it (the Qt loop runs them).
 	auto editorTimerCount() const -> int;
