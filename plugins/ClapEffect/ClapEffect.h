@@ -93,6 +93,10 @@ private:
 	std::atomic<int> m_latencyFrames{0};
 	std::atomic<int> m_tailFrames{0};
 
+	//! The plug-in's port layout as this effect's channel counts; remembers the revision applied.
+	void applyLayout();
+	std::uint32_t m_appliedLayout = 0;
+
 	//! GUI thread: read the plug-in's latency and tail, and let the owning chain re-align.
 	void cacheLatency();
 };

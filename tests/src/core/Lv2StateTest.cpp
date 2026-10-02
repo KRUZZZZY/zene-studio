@@ -41,6 +41,7 @@
 #ifdef LMMS_HAVE_LV2
 #include "Lv2ControlBase.h"
 #include "Lv2Proc.h"
+#include <lilv/lilv.h>
 #endif
 
 using namespace lmms;
@@ -90,6 +91,28 @@ private slots:
 		QVERIFY(controls->control(0)->restoreState(state));
 		found->controls()->restoreState(element);
 		QCOMPARE(controls->control(0)->saveState().isEmpty(), false);
+		// A document that is not Turtle is refused, not half-applied (review L01-1 #11).
+		QVERIFY(!controls->control(0)->restoreState(QStringLiteral("this is not a state document")));
+		// The state reaches a SECOND instance of the plug-in through the project's load path:
+		// what it saves afterwards is the document it was given. (Equal to the default only when
+		// the plug-in's state never changes, which the save above cannot tell apart - the
+		// refusal case is what proves the restore path is consulted.)
+		ControlResult error;
+		Effect* second = nullptr;
+		for (const ControlDeviceEntry& entry : controlDeviceCatalogue())
+		{
+			if (entry.format != QLatin1String("lv2") || entry.kind != QLatin1String("effect")) { continue; }
+			if (QString::fromUtf8(found->descriptor()->name) != entry.name && entry.uri.isEmpty()) { continue; }
+			if (!entry.uri.isEmpty() && controls->getPlugin() != nullptr
+				&& entry.uri != QString::fromUtf8(lilv_node_as_uri(lilv_plugin_get_uri(controls->getPlugin())))) { continue; }
+			second = controlInstantiateDevice(entry, &chain, &error);
+			break;
+		}
+		QVERIFY2(second != nullptr, qPrintable(error.errorMessage));
+		second->controls()->restoreState(element);
+		auto* secondControls = dynamic_cast<Lv2ControlBase*>(second->controls());
+		QVERIFY(secondControls != nullptr);
+		QCOMPARE(secondControls->control(0)->saveState(), controls->control(0)->saveState());
 		chain.clear();
 #endif
 	}

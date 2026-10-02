@@ -26,6 +26,7 @@
 
 #include <algorithm>
 
+#include <QHash>
 #include <QJsonArray>
 #include <QRegularExpression>
 #include <QStringList>
@@ -60,14 +61,29 @@ const QStringList& refusedPrefixes()
 const QStringList& refusedIds()
 {
 	static const QStringList ids{QStringLiteral("control.quit"), QStringLiteral("settings.set"),
-		QStringLiteral("audio.device_set")};
+		QStringLiteral("audio.device_set"), QStringLiteral("stem.model_download")};
 	return ids;
+}
+
+//! Arguments that are paths under a name the key rule below does not recognise, per command
+//! (taken from the registry's own schemas and descriptions; review L01-1 #1).
+const QHash<QString, QStringList>& commandPathArgs()
+{
+	static const QHash<QString, QStringList> table{
+		{QStringLiteral("project.diff"), {QStringLiteral("a"), QStringLiteral("b")}},
+		{QStringLiteral("project.audible_diff"), {QStringLiteral("a"), QStringLiteral("b")}},
+		{QStringLiteral("project.merge"), {QStringLiteral("base"), QStringLiteral("ours"), QStringLiteral("theirs"), QStringLiteral("report")}},
+		{QStringLiteral("project.relink"), {QStringLiteral("to")}},
+		{QStringLiteral("rack.zone_add"), {QStringLiteral("sample")}},
+		{QStringLiteral("stem.job_start"), {QStringLiteral("source")}},
+	};
+	return table;
 }
 
 bool isPathKey(const QString& key)
 {
 	static const QRegularExpression pathKey(
-		QStringLiteral("(^|_)(path|file|dir|folder|directory|out|output|destination)$"));
+		QStringLiteral("(^|_)(path|file|dir|folder|directory|out|output|destination|project|root|template)$"));
 	return pathKey.match(key).hasMatch();
 }
 
@@ -177,36 +193,36 @@ int pushFailure(lua_State* L, const QString& message, const QString& kind)
 	return 3;
 }
 
-bool sandboxValue(const QString& key, QJsonValue& value, QString* error);
+bool sandboxValue(const QString& id, const QString& key, QJsonValue& value, QString* error);
 
-bool sandboxArray(const QString& key, QJsonArray& array, QString* error)
+bool sandboxArray(const QString& id, const QString& key, QJsonArray& array, QString* error)
 {
 	for (int i = 0; i < array.size(); ++i)
 	{
 		QJsonValue item = array.at(i);
-		if (!sandboxValue(key, item, error)) { return false; }
+		if (!sandboxValue(id, key, item, error)) { return false; }
 		array.replace(i, item);
 	}
 	return true;
 }
 
-bool sandboxValue(const QString& key, QJsonValue& value, QString* error)
+bool sandboxValue(const QString& id, const QString& key, QJsonValue& value, QString* error)
 {
 	if (value.isObject())
 	{
 		QJsonObject object = value.toObject();
-		if (!sandboxPaths(object, error)) { return false; }
+		if (!sandboxPaths(id, object, error)) { return false; }
 		value = object;
 		return true;
 	}
 	if (value.isArray())
 	{
 		QJsonArray array = value.toArray();
-		if (!sandboxArray(key, array, error)) { return false; }
+		if (!sandboxArray(id, key, array, error)) { return false; }
 		value = array;
 		return true;
 	}
-	if (!value.isString() || !isPathKey(key)) { return true; }
+	if (!value.isString() || !(isPathKey(key) || commandPathArgs().value(id).contains(key))) { return true; }
 	const QString resolved = ScriptEngine::instance()->resolveProjectPath(value.toString(), true, error);
 	if (resolved.isEmpty()) { return false; }
 	value = resolved;
@@ -220,7 +236,7 @@ int luaCommand(lua_State* L)
 	QJsonObject args = lua_istable(L, 2) ? luaToJson(L, 2, 0).toObject() : QJsonObject();
 	if (const QString why = refusalFor(id); !why.isEmpty()) { return pushFailure(L, why, QStringLiteral("refused")); }
 	QString error;
-	if (!sandboxPaths(args, &error)) { return pushFailure(L, error, QStringLiteral("refused")); }
+	if (!sandboxPaths(id, args, &error)) { return pushFailure(L, error, QStringLiteral("refused")); }
 	Request request{id, args};
 	ScriptCommand command;
 	command.type = ScriptCommand::Type::DawEdit;
@@ -263,12 +279,12 @@ QString refusalFor(const QString& id)
 		"(docs/LUA-COMPATIBILITY-POLICY.md section 5)").arg(id);
 }
 
-bool sandboxPaths(QJsonObject& args, QString* error)
+bool sandboxPaths(const QString& id, QJsonObject& args, QString* error)
 {
 	for (auto it = args.begin(); it != args.end(); ++it)
 	{
 		QJsonValue value = it.value();
-		if (!sandboxValue(it.key(), value, error)) { return false; }
+		if (!sandboxValue(id, it.key(), value, error)) { return false; }
 		it.value() = value;
 	}
 	return true;

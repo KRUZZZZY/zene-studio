@@ -747,8 +747,12 @@ QString Lv2Proc::saveState() const
 	if (m_instance == nullptr
 		|| !lilv_plugin_has_extension_data(m_plugin, uri(LV2_STATE__interface).get())) { return QString(); }
 	UridMap& urids = Engine::getLv2Manager()->uridMap();
+	// The plug-in's state save must not overlap its run() any more than the restore may (review
+	// L01-1 #6): this host passes no thread-safe-state feature, so the audio thread is held off.
+	Engine::audioEngine()->requestChangeInModel();
 	LilvState* state = lilv_state_new_from_instance(m_plugin, m_instance, urids.mapFeature(), nullptr, nullptr,
 		nullptr, nullptr, nullptr, nullptr, LV2_STATE_IS_POD | LV2_STATE_IS_PORTABLE, m_features.featurePointers());
+	Engine::audioEngine()->doneChangeInModel();
 	if (state == nullptr) { return QString(); }
 	char* text = lilv_state_to_string(Engine::getLv2Manager()->world(), urids.mapFeature(), urids.unmapFeature(),
 		state, "urn:zene:lv2-state", nullptr);

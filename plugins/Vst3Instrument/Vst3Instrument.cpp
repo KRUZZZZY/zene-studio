@@ -317,7 +317,10 @@ void Vst3Instrument::forwardOutputEvents()
 	for (int i = 0; i < m_plugin.outputEventCount(); ++i)
 	{
 		const vst3::MidiEventIn& e = m_plugin.outputEvent(i);
-		track->midiPort()->processOutEvent(MidiEvent(static_cast<MidiEventTypes>(e.type), e.channel, e.data0, e.data1));
+		// Its frame offset in the block travels as the event's time, as a NotePlayHandle's does
+		// (review L01-1 #4: it was computed and then dropped, so a period's notes left at once).
+		track->midiPort()->processOutEvent(MidiEvent(static_cast<MidiEventTypes>(e.type), e.channel, e.data0, e.data1),
+			TimePos::fromFrames(static_cast<f_cnt_t>(std::max(0, e.frameOffset)), Engine::framesPerTick()));
 	}
 }
 

@@ -104,6 +104,34 @@ auto HostedPlugin::ports() const -> const std::vector<PortDescriptor>& { return 
 
 auto HostedPlugin::busLayout() const -> const PortLayout& { return m_impl->layout; }
 
+void HostedPlugin::Impl::scanAudioPorts()
+{
+	// Main thread, the plug-in deactivated (load, or a prepare after the plug-in asked for a
+	// rescan): re-read clap.audio-ports into the descriptor list and the flat layout.
+	ports.clear();
+	for (const auto isInput : {true, false})
+	{
+		const auto portCount = audioPortsExt->count(plugin, isInput);
+		for (std::uint32_t i = 0; i < portCount; ++i)
+		{
+			clap_audio_port_info_t portInfo{};
+			if (!audioPortsExt->get(plugin, i, isInput, &portInfo)) { continue; }
+			PortDescriptor port;
+			port.id = portInfo.id;
+			port.direction = isInput ? PortDirection::Input : PortDirection::Output;
+			port.name = QString::fromUtf8(portInfo.name);
+			port.portType = QString::fromUtf8(portInfo.port_type ? portInfo.port_type : "");
+			port.channelCount = static_cast<int>(portInfo.channel_count);
+			port.isMain = (portInfo.flags & CLAP_AUDIO_PORT_IS_MAIN) != 0;
+			ports.push_back(port);
+		}
+	}
+	layout = mapPorts(ports);
+	++layoutRevision;
+}
+
+auto HostedPlugin::layoutRevision() const -> std::uint32_t { return m_impl->layoutRevision; }
+
 auto HostedPlugin::tail() const -> int
 {
 	const auto& impl = *m_impl;
@@ -145,10 +173,6 @@ auto HostedPlugin::timerDeliveries() const -> std::uint32_t
 	return m_impl->timerDeliveries.load(std::memory_order_relaxed);
 }
 
-auto HostedPlugin::takeCallbackRequest() -> bool
-{
-	return m_impl->callbackRequested.exchange(false, std::memory_order_relaxed);
-}
 
 auto HostedPlugin::isPrepared() const -> bool { return m_impl->prepared; }
 auto HostedPlugin::load(const QString& modulePath, const QString& pluginId, QString* error) -> bool
@@ -229,24 +253,7 @@ auto HostedPlugin::load(const QString& modulePath, const QString& pluginId, QStr
 		unload();
 		return false;
 	}
-	for (const auto isInput : {true, false})
-	{
-		const auto portCount = impl.audioPortsExt->count(impl.plugin, isInput);
-		for (std::uint32_t i = 0; i < portCount; ++i)
-		{
-			clap_audio_port_info_t portInfo{};
-			if (!impl.audioPortsExt->get(impl.plugin, i, isInput, &portInfo)) { continue; }
-			PortDescriptor port;
-			port.id = portInfo.id;
-			port.direction = isInput ? PortDirection::Input : PortDirection::Output;
-			port.name = QString::fromUtf8(portInfo.name);
-			port.portType = QString::fromUtf8(portInfo.port_type ? portInfo.port_type : "");
-			port.channelCount = static_cast<int>(portInfo.channel_count);
-			port.isMain = (portInfo.flags & CLAP_AUDIO_PORT_IS_MAIN) != 0;
-			impl.ports.push_back(port);
-		}
-	}
-	impl.layout = mapPorts(impl.ports);
+	impl.scanAudioPorts();
 	// A GENERATOR is output-only: an instrument that produces its audio from
 	// notes declares no audio input port, so PortLayout::isValid()'s
 	// "both directions" rule is the EFFECT rule and cannot be the gate here
@@ -354,6 +361,8 @@ auto HostedPlugin::process(const float* const* inputs, float* const* outputs, in
 	if (!impl.prepared || !impl.plugin) { return false; }
 	if (frames <= 0) { return true; }
 	t_isAudioThread = true;
+	// A process call is the flush CLAP lets a host answer request_flush with (review L01-1 #9).
+	impl.flushRequested.store(false, std::memory_order_relaxed);
 
 	// Chunking counters, in the CORE (include/PluginHostChunking.h): the audio
 	// path increments, the control surface reads through `plugin.host_chunking`.

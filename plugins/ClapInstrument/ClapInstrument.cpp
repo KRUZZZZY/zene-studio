@@ -201,12 +201,16 @@ void ClapInstrument::reprepare()
 {
 	if (auto* engine = Engine::audioEngine())
 	{
+		// Held off the audio thread: the plug-in can ask for this while it is processing
+		// (review L01-1 #3).
+		engine->requestChangeInModel();
 		QString error;
 		if (!m_plugin.prepare(engine->outputSampleRate(), engine->framesPerPeriod(),
 				&error))
 		{
 			qWarning() << "CLAP: re-prepare failed:" << error;
 		}
+		engine->doneChangeInModel();
 	}
 	m_needsReprepare.store(false, std::memory_order_relaxed);
 }

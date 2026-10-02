@@ -51,9 +51,9 @@ namespace lmms
  *
  *  The sandbox holds (docs/LUA-COMPATIBILITY-POLICY.md §5): a command that would leave it is
  *  refused - running or scheduling a script (re-entry), quitting, the crash and telemetry
- *  uploads, writing settings or the audio device - and every path-like argument (a key named
- *  path, file, dir, folder, directory, out, output or destination) is resolved inside the
- *  project directory with the same symlink and `..` rule as zene.projectFile(), or refused. */
+ *  uploads, writing settings or the audio device, a network download - and every path argument
+ *  (sandboxPaths) is resolved inside the project directory with the same symlink and `..` rule
+ *  as zene.projectFile(), or refused. */
 namespace ScriptCommandBridge
 {
 
@@ -75,9 +75,12 @@ LMMS_EXPORT void applyRequest(Request* request);
 //! Why @a id may not be called from a script, or empty when it may.
 LMMS_EXPORT QString refusalFor(const QString& id);
 
-//! Resolve every path-like string in @a args inside the project directory, in place; false
-//! (with @a error) when one escapes it.
-LMMS_EXPORT bool sandboxPaths(QJsonObject& args, QString* error);
+//! Resolve every path argument of command @a id in @a args inside the project directory, in
+//! place; false (with @a error) when one escapes it. A path argument is one whose key names a
+//! path (path, file, dir, folder, directory, out, output, destination, project, root, template,
+//! or `_<one of those>`) or one the command takes as a path under another name (a per-command
+//! table: project.diff's a/b, project.merge's base/ours/theirs/report, ...).
+LMMS_EXPORT bool sandboxPaths(const QString& id, QJsonObject& args, QString* error);
 
 } // namespace ScriptCommandBridge
 

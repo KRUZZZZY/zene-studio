@@ -141,9 +141,21 @@ private slots:
 
 		QJsonObject nested{{QStringLiteral("options"), QJsonObject{{QStringLiteral("out_dir"), outside.path()}}}};
 		QString error;
-		QVERIFY(!ScriptCommandBridge::sandboxPaths(nested, &error));
+		QVERIFY(!ScriptCommandBridge::sandboxPaths(QStringLiteral("render.render"), nested, &error));
+		// Paths under names the key rule does not know (review L01-1 #1): browser.query's root,
+		// project.diff's a/b, stem.job_start's source.
+		QJsonObject root{{QStringLiteral("root"), QStringLiteral("/")}};
+		QVERIFY(!ScriptCommandBridge::sandboxPaths(QStringLiteral("browser.query"), root, &error));
+		QJsonObject diff{{QStringLiteral("a"), QStringLiteral("/etc/hosts")}, {QStringLiteral("b"), QStringLiteral("x.mmp")}};
+		QVERIFY(!ScriptCommandBridge::sandboxPaths(QStringLiteral("project.diff"), diff, &error));
+		QJsonObject stem{{QStringLiteral("source"), outside.path()}};
+		QVERIFY(!ScriptCommandBridge::sandboxPaths(QStringLiteral("stem.job_start"), stem, &error));
+		// ...while `a` is not a path for a command that does not take one there.
+		QJsonObject other{{QStringLiteral("a"), QStringLiteral("/not-a-path")}};
+		QVERIFY(ScriptCommandBridge::sandboxPaths(QStringLiteral("revisions.compare"), other, &error));
+		QVERIFY(!ScriptCommandBridge::refusalFor(QStringLiteral("stem.model_download")).isEmpty());
 		QJsonObject inside{{QStringLiteral("path"), QStringLiteral("song.mmp")}};
-		QVERIFY2(ScriptCommandBridge::sandboxPaths(inside, &error), qPrintable(error));
+		QVERIFY2(ScriptCommandBridge::sandboxPaths(QStringLiteral("project.save"), inside, &error), qPrintable(error));
 		QVERIFY(inside.value(QStringLiteral("path")).toString().startsWith(QDir(m_projectDir.path()).canonicalPath()));
 	}
 

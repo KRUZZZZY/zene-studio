@@ -57,6 +57,11 @@ auto HostedPlugin::prepare(double sampleRate, int maxBlockSize, QString* error) 
 		return false;
 	}
 	release();
+	// Deactivated now, which is when CLAP lets a host re-read a changed port layout.
+	if (impl.portsChanged.exchange(false, std::memory_order_relaxed) && impl.audioPortsExt != nullptr)
+	{
+		impl.scanAudioPorts();
+	}
 
 	impl.sampleRate = sampleRate;
 	impl.maxFrames = maxBlockSize;

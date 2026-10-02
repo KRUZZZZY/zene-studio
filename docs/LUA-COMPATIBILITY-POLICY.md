@@ -107,10 +107,13 @@ These are implemented, not aspirational. Each is proved by a test in
    `zene.command(id, args)` (API 0.3) reaches every registered control command and keeps
    this sandbox: a command that would leave it is refused (`script.*` and `livecode.*`
    re-entry, `control.quit`, `crash.*`, `telemetry.*`, `feedback.*`, `settings.set`,
-   `audio.device_set`), and every path-like argument - a key named `path`, `file`, `dir`,
-   `folder`, `directory`, `out`, `output` or `destination`, or ending `_<one of those>`, at
-   any depth - is resolved inside the project directory by the same rule, or the call is
-   refused. (`ScriptCommandBridgeTest`.)
+   `audio.device_set`, `stem.model_download`), and every path argument - a key named `path`,
+   `file`, `dir`, `folder`, `directory`, `out`, `output`, `destination`, `project`, `root` or
+   `template`, or ending `_<one of those>`, at any depth, plus the arguments a command takes
+   as paths under other names (`project.diff`/`audible_diff` `a`/`b`, `project.merge`
+   `base`/`ours`/`theirs`/`report`, `project.relink` `to`, `rack.zone_add` `sample`,
+   `stem.job_start` `source`) - is resolved inside the project directory by the same rule, or
+   the call is refused. (`ScriptCommandBridgeTest`.)
 6. **A failed script does not take the DAW down.** A Lua error (including a call
    to a name that does not exist) is reported as `RunResult::ScriptError`, the
    DAW survives, and the engine is usable for the next run.

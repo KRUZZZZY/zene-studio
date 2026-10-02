@@ -136,6 +136,8 @@ struct HostedPlugin::Impl
 	IPtr<IComponentHandler> handler;
 	//! Called when the plug-in reports kLatencyChanged (set by the effect that hosts it).
 	std::function<void()> onLatencyChanged;
+	//! The handler `handler` holds, to clear its callback at teardown (non-owning).
+	Vst3ComponentHandler* handlerImpl = nullptr;
 	bool singleComponent = false;
 
 	QString className;
@@ -211,6 +213,8 @@ HostedPlugin::~HostedPlugin()
 {
 	auto& d = *m_impl;
 	m_editor.reset();  // R4.2: the editor goes before the controller does
+	if (d.handlerImpl != nullptr) { d.handlerImpl->setOnLatencyChanged({}); }
+	d.handlerImpl = nullptr;
 	release();
 	d.handler = nullptr;
 	d.processor = nullptr;
@@ -367,7 +371,11 @@ auto HostedPlugin::load(const QString& modulePath, const QString& classId, QStri
 		}
 	}
 
-	d.handler = owned(new Vst3ComponentHandler(d.paramValues.get(), &d.indexById, &d.onLatencyChanged));
+	if (d.handlerImpl != nullptr) { d.handlerImpl->setOnLatencyChanged({}); }
+	auto* handler = new Vst3ComponentHandler(d.paramValues.get(), &d.indexById);
+	handler->setOnLatencyChanged(d.onLatencyChanged);
+	d.handlerImpl = handler;
+	d.handler = owned(handler);
 	if (d.controller) { d.controller->setComponentHandler(d.handler); }
 
 	return true;
@@ -657,6 +665,7 @@ auto HostedPlugin::tail() const -> int
 void HostedPlugin::setLatencyChangedCallback(std::function<void()> callback)
 {
 	m_impl->onLatencyChanged = std::move(callback);
+	if (m_impl->handlerImpl != nullptr) { m_impl->handlerImpl->setOnLatencyChanged(m_impl->onLatencyChanged); }
 }
 
 auto HostedPlugin::outputEventCount() const -> int { return m_impl->blockOutputCount; }

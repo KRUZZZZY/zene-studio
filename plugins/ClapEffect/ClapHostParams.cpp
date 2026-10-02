@@ -155,9 +155,10 @@ auto HostedPlugin::serviceMainThread() -> bool
 	const auto flags = impl.rescanFlags.exchange(0, std::memory_order_relaxed);
 	if ((flags & (CLAP_PARAM_RESCAN_VALUES | CLAP_PARAM_RESCAN_TEXT | CLAP_PARAM_RESCAN_INFO)) != 0) { impl.mirrorParamValues(); }
 	if ((flags & CLAP_PARAM_RESCAN_ALL) != 0) { impl.needsReprepare.store(true, std::memory_order_relaxed); }
-	// A flush asked for while the plug-in is not processing (inactive) is run here; an active
-	// plug-in's next process() call carries it.
-	if (impl.flushRequested.exchange(false, std::memory_order_relaxed) && !impl.prepared
+	// A flush asked for while the plug-in is inactive is run here. While it is active the
+	// request stays raised until process() delivers the parameters, which clears it (review
+	// L01-1 #9: it used to be consumed here and lost when the chain was asleep).
+	if (!impl.prepared && impl.flushRequested.exchange(false, std::memory_order_relaxed)
 		&& impl.paramsExt != nullptr && impl.paramsExt->flush != nullptr)
 	{
 		static const clap_input_events_t empty{nullptr, [](const clap_input_events_t*) -> std::uint32_t { return 0; },

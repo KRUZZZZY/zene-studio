@@ -203,6 +203,9 @@ struct HostedPlugin::Impl
 	std::atomic<std::uint32_t> rescanFlags{0};
 	std::atomic<bool> flushRequested{false};
 	std::atomic<bool> stateDirty{false};
+	//! review L01-1 #2: the plug-in changed its ports; the next prepare() re-reads them
+	std::atomic<bool> portsChanged{false};
+	std::uint32_t layoutRevision = 0;
 	std::atomic<double> tempo{120.0};
 	std::atomic<bool> playing{false};
 
@@ -361,8 +364,13 @@ struct HostedPlugin::Impl
 	//! A changed port layout needs a new processing setup: the next main-thread poll re-prepares.
 	static void CLAP_ABI audioPortsRescan(const clap_host_t* host, std::uint32_t)
 	{
-		static_cast<Impl*>(host->host_data)->needsReprepare.store(true, std::memory_order_relaxed);
+		auto* self = static_cast<Impl*>(host->host_data);
+		self->portsChanged.store(true, std::memory_order_relaxed);
+		self->needsReprepare.store(true, std::memory_order_relaxed);
 	}
+
+	//! Re-read clap.audio-ports (main thread, deactivated).
+	void scanAudioPorts();
 
 	static void CLAP_ABI stateMarkDirty(const clap_host_t* host)
 	{

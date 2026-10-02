@@ -4494,13 +4494,6 @@ void PianoRoll::stop()
 
 void PianoRoll::startRecordNote(const Note & n )
 {
-	// Engine audit E3: an armed punch region gates MIDI recording as it gates audio - a note
-	// played outside [punch begin, punch end) is not recorded.
-	const Timeline& punch = Engine::getSong()->getTimeline(Song::PlayMode::Song);
-	if (punch.punchEnabled() && !punch.punchCapturesAt(Engine::getSong()->getPlayPos(Song::PlayMode::Song).getTicks()))
-	{
-		return;
-	}
 	if(hasValidMidiClip())
 	{
 		if( m_recording &&
@@ -4508,6 +4501,12 @@ void PianoRoll::startRecordNote(const Note & n )
 			(Engine::getSong()->playMode() == desiredPlayModeForAccompany() ||
 			Engine::getSong()->playMode() == Song::PlayMode::MidiClip ))
 		{
+			// Engine audit E3: an armed punch region gates MIDI recording as it gates audio - a
+			// note started outside [punch begin, punch end) of the timeline being recorded is
+			// not recorded. Step recording and a stopped transport are not gated (review L01-1 #7).
+			const Song* song = Engine::getSong();
+			const Timeline& punch = song->getTimeline(song->playMode());
+			if (punch.punchEnabled() && !punch.punchCapturesAt(song->getPlayPos(song->playMode()).getTicks())) { return; }
 			TimePos sub;
 			if( Engine::getSong()->playMode() == Song::PlayMode::Song )
 			{

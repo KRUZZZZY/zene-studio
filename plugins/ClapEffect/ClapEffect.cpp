@@ -73,14 +73,7 @@ ClapEffect::ClapEffect(Model* parent, const Descriptor::SubPluginFeatures::Key* 
 	}
 	else
 	{
-		const auto& layout = m_plugin.busLayout();
-		// The transport is dynamic, but starting with the plug-in's own channel
-		// counts means the common case never needs a re-configuration.
-		const auto mainInputs = std::max<ch_cnt_t>(1, static_cast<ch_cnt_t>(layout.inputs));
-		const auto mainOutputs = std::max<ch_cnt_t>(1, static_cast<ch_cnt_t>(layout.outputs));
-		audioPorts().setAllChannelCounts(
-			std::max<ch_cnt_t>(ch_cnt_t{2}, std::max(mainInputs, mainOutputs)),
-			mainInputs, mainOutputs);
+		applyLayout();
 
 		if (auto* engine = Engine::audioEngine())
 		{
@@ -117,15 +110,34 @@ ClapEffect::~ClapEffect() = default;
 
 auto ClapEffect::controls() -> EffectControls* { return m_controls.get(); }
 
+void ClapEffect::applyLayout()
+{
+	const auto& layout = m_plugin.busLayout();
+	// The transport is dynamic, but starting with the plug-in's own channel
+	// counts means the common case never needs a re-configuration.
+	const auto mainInputs = std::max<ch_cnt_t>(1, static_cast<ch_cnt_t>(layout.inputs));
+	const auto mainOutputs = std::max<ch_cnt_t>(1, static_cast<ch_cnt_t>(layout.outputs));
+	audioPorts().setAllChannelCounts(
+		std::max<ch_cnt_t>(ch_cnt_t{2}, std::max(mainInputs, mainOutputs)),
+		mainInputs, mainOutputs);
+	m_appliedLayout = m_plugin.layoutRevision();
+}
+
 void ClapEffect::reprepare()
 {
 	if (auto* engine = Engine::audioEngine())
 	{
+		// The plug-in may be active and the chain running (a rescan or restart request from the
+		// plug-in itself): the audio thread is held off while its buffers are rebuilt (review
+		// L01-1 #3).
+		engine->requestChangeInModel();
 		QString error;
 		if (!m_plugin.prepare(engine->outputSampleRate(), engine->framesPerPeriod(), &error))
 		{
 			qWarning() << "CLAP: re-prepare failed:" << error;
 		}
+		if (m_plugin.layoutRevision() != m_appliedLayout) { applyLayout(); }
+		engine->doneChangeInModel();
 	}
 	m_needsReprepare.store(false, std::memory_order_relaxed);
 	cacheLatency();

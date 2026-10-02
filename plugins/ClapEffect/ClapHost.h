@@ -110,6 +110,8 @@ public:
 	auto parameters() const -> const std::vector<ParamDescriptor>&;
 	auto ports() const -> const std::vector<PortDescriptor>&;
 	auto busLayout() const -> const PortLayout&;
+	//! Counts layout (re)scans: the owner re-applies its channel counts when it moves.
+	auto layoutRevision() const -> std::uint32_t;
 	auto latency() const -> std::uint32_t;
 	//! Main thread, prepared: the plug-in's tail in frames (clap.tail), -1 for infinite (E6).
 	auto tail() const -> int;
@@ -146,8 +148,6 @@ public:
 	//! The plug-in asked for a restart (block size/sample rate change).
 	auto needsReprepare() const -> bool;
 	void clearNeedsReprepare();
-	//! The plug-in asked to be called on the main thread; poll from the GUI.
-	auto takeCallbackRequest() -> bool;
 	//! Main thread, from the owner's poll: everything the plug-in asked of the host since the last
 	//! call - its main-thread callback, parameter rescans, a flush while inactive (engine audit
 	//! E8). True when the plug-in marked its state dirty, so the project counts as modified.

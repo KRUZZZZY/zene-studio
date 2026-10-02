@@ -60,11 +60,9 @@ public:
 	virtual ~Vst3ComponentHandler() = default;
 
 	Vst3ComponentHandler(std::atomic<float>* values,
-			const std::vector<std::pair<std::uint32_t, std::size_t>>* indexById,
-			const std::function<void()>* onLatencyChanged) :
+			const std::vector<std::pair<std::uint32_t, std::size_t>>* indexById) :
 		m_values{values},
-		m_indexById{indexById},
-		m_onLatencyChanged{onLatencyChanged}
+		m_indexById{indexById}
 	{
 	}
 
@@ -88,12 +86,13 @@ public:
 	//! the host re-reads it and the owning chain re-aligns its paths.
 	tresult PLUGIN_API restartComponent(int32 flags) SMTG_OVERRIDE
 	{
-		if ((flags & kLatencyChanged) != 0 && m_onLatencyChanged != nullptr && *m_onLatencyChanged)
-		{
-			(*m_onLatencyChanged)();
-		}
+		if ((flags & kLatencyChanged) != 0 && m_onLatencyChanged) { m_onLatencyChanged(); }
 		return kResultOk;
 	}
+
+	//! GUI thread. The handler owns its callback (the plug-in may keep the handler alive past the
+	//! host's own teardown, which clears this first: review L01-1 #5).
+	void setOnLatencyChanged(std::function<void()> callback) { m_onLatencyChanged = std::move(callback); }
 
 	tresult PLUGIN_API queryInterface(const TUID, void** obj) SMTG_OVERRIDE
 	{
@@ -113,7 +112,7 @@ public:
 private:
 	std::atomic<float>* m_values;
 	const std::vector<std::pair<std::uint32_t, std::size_t>>* m_indexById;
-	const std::function<void()>* m_onLatencyChanged = nullptr;
+	std::function<void()> m_onLatencyChanged;
 	std::atomic<uint32> m_refCount{1};
 };
 

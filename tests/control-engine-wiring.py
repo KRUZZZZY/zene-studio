@@ -127,9 +127,14 @@ def main(argv):
         H.wait_ready(instance, client, transcript)
         session = Session(client, transcript)
         devices = builtin_effects(session)
+        # Every build carries the built-in effects (amplifier, bass booster, ...): fewer than two
+        # means the catalogue or this filter broke, which is a failure, not a skip (review L01-1 #12).
+        recorder.check("the catalogue lists at least two loadable built-in effects", len(devices) >= 2,
+                       "devices=%r" % devices)
         if len(devices) < 2:
-            H.ok("engine wiring driver: SKIPPED (this host loads fewer than two built-in effects)")
-            return 0
+            report_results(recorder)
+            recorder.problems.report("engine wiring control-surface driver")
+            return 1
         channel = check_position(session, recorder, devices)
         track = check_rack_chain(session, recorder, devices, channel)
         check_chain_presets(session, recorder, channel)
