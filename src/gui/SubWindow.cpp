@@ -50,6 +50,12 @@ namespace lmms::gui
 {
 
 
+bool SubWindow::s_floatOutside = false;
+
+void SubWindow::setFloatOutsideWorkspace(bool on) { s_floatOutside = on; }
+
+bool SubWindow::floatsOutsideWorkspace() { return s_floatOutside; }
+
 SubWindow::SubWindow(QWidget* parent, Qt::WindowFlags windowFlags)
 	: QMdiSubWindow{parent, windowFlags}
 	, m_buttonSize{17, 17}
@@ -169,6 +175,7 @@ void SubWindow::changeEvent( QEvent *event )
 
 void SubWindow::setVisible(bool visible)
 {
+	if (visible && s_floatOutside && widget() != nullptr && !isDetached()) { floatOut(); }
 	if (isDetached() || (visible && widget() != nullptr))
 	{
 		// When detached, top-level window is the child widget itself. (This is janky and is best changed at some point.)
@@ -336,8 +343,26 @@ void SubWindow::detach()
 	widget()->move(pos);
 }
 
+void SubWindow::floatOut()
+{
+	QWidget* content = widget();
+	const QSize size = content->size().isEmpty() ? content->sizeHint() : content->size();
+	auto flags = windowFlags();
+	flags |= Qt::Window;
+	flags &= ~Qt::SubWindow;
+	flags |= Qt::WindowMinimizeButtonHint;
+	QMdiSubWindow::setVisible(false);
+	content->setWindowFlags(flags);
+	content->resize(size.expandedTo(QSize(160, 120)));
+	if (const QWidget* top = window(); top != nullptr && top != content)
+	{
+		content->move(top->geometry().center() - QPoint(content->width() / 2, content->height() / 2));
+	}
+}
+
 void SubWindow::attach()
 {
+	if (s_floatOutside) { return; }  // nothing to attach to: the workspace is off screen
 	if (!isDetached()) { return; }  // also covers a claimed window: isDetached() needs a widget
 
 	const bool shown = widget()->isVisible();
@@ -618,7 +643,8 @@ bool SubWindow::eventFilter(QObject* obj, QEvent* event)
 		case QEvent::Close:
 			if (isDetached())
 			{
-				QString detachBehavior = ConfigManager::inst()->value("ui", "detachbehavior", "show");
+				const QString detachBehavior = s_floatOutside ? QStringLiteral("detached")
+					: ConfigManager::inst()->value("ui", "detachbehavior", "show");
 				if (detachBehavior == "show")
 				{
 					attach();

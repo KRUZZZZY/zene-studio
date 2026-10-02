@@ -391,7 +391,9 @@ void ProjectNotes::saveSettings( QDomDocument & _doc, QDomElement & _this )
 
 void ProjectNotes::loadSettings( const QDomElement & _this )
 {
-	MainWindow::restoreWidgetState( this, _this );
+	// 0.5.0 shell (docs/UI-SHELL.md §5): a tool window floats and opens when the user opens it.
+	// A project's MDI-era placement and visibility for it are ignored; saveSettings still
+	// writes them, so an older build reading the file finds what it expects.
 	m_edit->setHtml( _this.text() );
 }
 

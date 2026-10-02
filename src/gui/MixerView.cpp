@@ -198,11 +198,7 @@ MixerView::MixerView(Mixer* mixer) :
 
 	layout()->setSizeConstraint(QLayout::SetMinimumSize);
 
-	// add ourself to workspace
-	mainWindow->addWindowedWidget(this);
-
-	parentWidget()->setAttribute(Qt::WA_DeleteOnClose, false);
-	parentWidget()->move(5, 310);
+	// The shell mounts the mixer as a panel (MainWindow::finalize); it is not a window.
 
 	// we want to receive dataChanged-signals in order to update
 	setModel(mixer);

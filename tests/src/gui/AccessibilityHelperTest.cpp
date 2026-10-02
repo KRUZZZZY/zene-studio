@@ -27,16 +27,19 @@
 #include <QtTest>
 
 #include "Accessibility.h"
-#include "FocusDesk.h"
+#include "ShellChrome.h"
+#include "Shell.h"
+#include "ShellPanel.h"
+#include <QAction>
 
 using namespace lmms::gui;
 
 //! include/Accessibility.h's two calls on their own, then the same calls as
-//! the Focus Desk surface actually leaves them: every chip announced with its
-//! module's title (never the glyph), every chip and the density control
-//! Tab-focusable, and a mounted card's promote button named for the module it
-//! promotes. This is the owner's manual-test surface, so it is where the
-//! sweep's pattern is held to its own promise (SPEC-zene-ui-v0 §5 item 1).
+//! the 0.5.0 shell leaves them: every panel switch and view word announced with
+//! its title (never a mnemonic marker), every one Tab-focusable, and every panel
+//! frame and chrome band named. The shell replaced the Focus Desk (docs/UI-SHELL.md);
+//! these three checks are the Focus Desk's chip, strip and promote-button checks
+//! restated for the surface that took its place (SPEC-zene-ui-v0 §5 item 1).
 class AccessibilityHelperTest : public QObject
 {
 	Q_OBJECT
@@ -71,59 +74,56 @@ private slots:
 		lmms::a11y::describe(nullptr, QStringLiteral("description"));
 	}
 
-	void everyChipIsAnnouncedWithItsModuleTitle()
+	void everyPanelSwitchIsAnnouncedWithItsTitle()
 	{
-		FocusDesk desk;
-		const auto rows = desk.registerRows();
-		QVERIFY(!rows.isEmpty());
-		for (const FocusModule& row : rows)
+		Shell shell;
+		const auto buttons = shell.findChildren<ShellButton*>();
+		QVERIFY(!buttons.isEmpty());
+		int switches = 0;
+		for (QAction* action : shell.panelActions() + shell.viewActions())
 		{
-			auto* chip = desk.findChild<QToolButton*>(focusActionCommandId(row.id));
-			QVERIFY2(chip != nullptr, qPrintable(row.id));
-			// The visible text carries the glyph; the announced name must not.
-			QCOMPARE(chip->accessibleName(), row.title);
-			QVERIFY(!chip->accessibleDescription().isEmpty());
-			QCOMPARE(chip->focusPolicy(), Qt::TabFocus);
+			for (ShellButton* button : buttons)
+			{
+				if (button->defaultAction() != action) { continue; }
+				++switches;
+				QCOMPARE(button->accessibleName(), action->text().remove(QLatin1Char('&')));
+				QVERIFY2(!button->accessibleDescription().isEmpty(), qPrintable(action->text()));
+				QCOMPARE(button->focusPolicy(), Qt::TabFocus);
+			}
+		}
+		// Every panel but the arranger (a view, not a footer switch) and every view word.
+		QCOMPARE(switches, shell.panelActions().size() - 1 + shell.viewActions().size());
+	}
+
+	void theShellChromeIsNamed()
+	{
+		Shell shell;
+		for (const char* name : {"shellHeader", "shellFooter", "mainToolbar"})
+		{
+			auto* band = shell.findChild<QWidget*>(QString::fromLatin1(name));
+			QVERIFY2(band != nullptr, name);
+			QVERIFY2(!band->accessibleName().isEmpty(), name);
+			QVERIFY2(!band->accessibleDescription().isEmpty(), name);
 		}
 	}
 
-	void stripControlsAreReachableAndAnnounced()
+	void everyPanelFrameIsNamedForItsPanel()
 	{
-		FocusDesk desk;
-		QCOMPARE(desk.accessibleName(), QStringLiteral("Focus Desk"));
-
-		auto* density = desk.findChild<QToolButton*>(QStringLiteral("focusDeskDensity"));
-		QVERIFY(density != nullptr);
-		QCOMPARE(density->focusPolicy(), Qt::TabFocus);
-		// The name tracks the text: the current preset is the state.
-		QCOMPARE(density->accessibleName(), density->text());
-		QVERIFY(!density->accessibleDescription().isEmpty());
-	}
-
-	void aMountedCardsPromoteButtonNamesTheModule()
-	{
-		QWidget host;
-		FocusDesk desk;
-		QVERIFY(desk.mountModule(QStringLiteral("arrangement"), new QWidget(&host)));
-		auto* promote = desk.findChild<QToolButton*>(
-			QStringLiteral("focusDeskPromote_arrangement"));
-		QVERIFY(promote != nullptr);
-		QString title;
-		for (const FocusModule& row : desk.registerRows())
+		Shell shell;
+		for (const ShellPanelSpec& spec : ShellLayout::panels())
 		{
-			if (row.id == QStringLiteral("arrangement")) { title = row.title; }
+			ShellPanel* frame = shell.panel(spec.id);
+			QVERIFY2(frame != nullptr, qPrintable(spec.id));
+			QCOMPARE(frame->accessibleName(), spec.title);
+			QVERIFY(!frame->accessibleDescription().isEmpty());
 		}
-		QVERIFY(!title.isEmpty());
-		QCOMPARE(promote->accessibleName(), QStringLiteral("Show %1 on stage").arg(title));
-		QCOMPARE(promote->focusPolicy(), Qt::TabFocus);
-		QVERIFY(!promote->accessibleDescription().isEmpty());
 	}
 };
 
 // The platform plugin has to be chosen before the QApplication exists; the gate
 // runner exports QT_QPA_PLATFORM=offscreen and CI does not, so default to
 // offscreen when nothing else is configured and no display is attached (the
-// same guard FocusDeskTest uses).
+// same guard MidiLearnGuiTest uses).
 int main(int argc, char** argv)
 {
 	if (qEnvironmentVariableIsEmpty("QT_QPA_PLATFORM")

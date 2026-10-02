@@ -45,6 +45,7 @@
 #include "AboutDialog.h"
 #include "AudioEngine.h"
 #include "AutomationEditor.h"
+#include "BrowserPanel.h"
 #include "AudioEngine.h"
 #include "ControlRegistry.h"
 #include "ControlWindowCommands.h"
@@ -56,10 +57,7 @@
 #include "embed.h"
 #include "Engine.h"
 #include "ExportProjectDialog.h"
-#include "FileBrowser.h"
 #include "FileDialog.h"
-#include "FocusDeskActions.h"
-#include "FocusDeskPane.h"
 #include "Metronome.h"
 #include "MixerView.h"
 #include "GuiApplication.h"
@@ -83,7 +81,6 @@
 #include "PatternEditor.h"
 #include "PianoRoll.h"
 #include "PianoView.h"
-#include "PluginBrowser.h"
 #include "PluginFactory.h"
 #include "PluginView.h"
 #include "ProjectJournal.h"
@@ -94,12 +91,13 @@
 #include "RemotePluginBase.h"
 #include "ScriptEngine.h"
 #include "SetupDialog.h"
-#include "SideBar.h"
+#include "Shell.h"
+#include "ShellChrome.h"
+#include "ShellPanel.h"
 #include "SongEditor.h"
 #include "SubWindow.h"
 #include "TemplatesMenu.h"
 #include "TextFloat.h"
-#include "ToolButton.h"
 #include "ToolPlugin.h"
 #include "VersionedSaveDialog.h"
 
@@ -111,17 +109,6 @@ namespace lmms::gui
 
 namespace
 {
-
-// The editor toggles (View menu Ctrl+1..7, the window toolbar) dispatch the
-// registered window.toggle command instead of calling the slot directly, so the
-// interface, the palette-to-be and an agent on the socket share one path; the
-// `controlCommand` property is the agent-surface gate's declaration channel.
-void dispatchesWindowToggle(ToolButton* button, const char* editor)
-{
-	button->setProperty("controlCommand", QStringLiteral("window.toggle"));
-	const QString name = QString::fromLatin1(editor);
-	QObject::connect(button, &QToolButton::clicked, button, [name]() { dispatchWindowToggle(name); });
-}
 
 //! M3.2 (registry-first actions): the agent-surface gate's declaration - the
 //! registered command this action or button implements (SPEC A15).
@@ -153,128 +140,23 @@ MainWindow::MainWindow() :
 {
 	setAttribute( Qt::WA_DeleteOnClose );
 
-	auto main_widget = new QWidget(this);
-	auto vbox = new QVBoxLayout(main_widget);
-	vbox->setSpacing( 0 );
-	vbox->setContentsMargins(0, 0, 0, 0);
+	// The 0.5.0 shell (docs/UI-SHELL.md, docs/adr/ADR-0001-UI-TOOLKIT.md): one page of fixed
+	// regions replaces the sidebar, the MDI workspace and the Focus Desk. The workspace object
+	// stays, never shown, as the parent of the secondary windows (instrument and effect
+	// dialogs, the controller rack, project notes), which float as top-level windows.
+	m_shell = new Shell( this );
+	setCentralWidget( m_shell );
+	m_toolBar = m_shell->toolStrip();
+	m_workspace = new MovableQMdiArea( this );
+	m_workspace->hide();
+	SubWindow::setFloatOutsideWorkspace( true );
 
-	auto w = new QWidget(main_widget);
-	auto hbox = new QHBoxLayout(w);
-	hbox->setSpacing( 0 );
-	hbox->setContentsMargins(0, 0, 0, 0);
-
-	auto sideBar = new SideBar(Qt::Vertical, w);
-
-	auto splitter = new QSplitter(Qt::Horizontal, w);
-	splitter->setChildrenCollapsible( false );
-
-	ConfigManager* confMgr = ConfigManager::inst();
-	bool sideBarOnRight = confMgr->value("ui", "sidebaronright").toInt();
-
-	emit initProgress(tr("Preparing plugin browser"));
-	sideBar->appendTab( new PluginBrowser( splitter ) );
-	emit initProgress(tr("Preparing file browsers"));
-
-	sideBar->appendTab(new FileBrowser(FileBrowser::Type::Favorites, ConfigManager::inst()->favoriteItems().join("*"), FileItem::defaultFilters(), "My Favorites",
-		embed::getIconPixmap("star").transformed(QTransform().rotate(90)), splitter, false, "", ""));
-
-	sideBar->appendTab(new FileBrowser(FileBrowser::Type::Normal,
-		confMgr->userProjectsDir() + "*" + confMgr->factoryProjectsDir(), "*.mmp *.mmpz *.xml *.mid *.mpt",
-		tr("My Projects"), embed::getIconPixmap("project_file").transformed(QTransform().rotate(90)), splitter, false,
-		confMgr->userProjectsDir(), confMgr->factoryProjectsDir()));
-
-	sideBar->appendTab(new FileBrowser(FileBrowser::Type::Normal,
-		confMgr->userSamplesDir() + "*" + confMgr->factorySamplesDir(), FileItem::defaultFilters(), tr("My Samples"),
-		embed::getIconPixmap("sample_file").transformed(QTransform().rotate(90)), splitter, false,
-		confMgr->userSamplesDir(), confMgr->factorySamplesDir()));
-
-	sideBar->appendTab(new FileBrowser(FileBrowser::Type::Normal,
-		confMgr->userPresetsDir() + "*" + confMgr->factoryPresetsDir(), "*.xpf *.cs.xml *.xiz *.lv2", tr("My Presets"),
-		embed::getIconPixmap("preset_file").transformed(QTransform().rotate(90)), splitter, false,
-		confMgr->userPresetsDir(), confMgr->factoryPresetsDir()));
-
-	sideBar->appendTab(new FileBrowser(FileBrowser::Type::Normal, QDir::homePath(), FileItem::defaultFilters(),
-		tr("My Home"), embed::getIconPixmap("home").transformed(QTransform().rotate(90)), splitter, false));
-
-	QStringList root_paths;
-	QString title = tr("Root Directory");
-	bool dirs_as_items = false;
-
-#ifdef LMMS_BUILD_APPLE
-	title = tr( "Volumes" );
-	root_paths += "/Volumes";
-#elif defined(LMMS_BUILD_WIN32)
-	title = tr( "My Computer" );
-	dirs_as_items = true;
-#endif
-
-#if ! defined(LMMS_BUILD_APPLE)
-	QFileInfoList drives = QDir::drives();
-	for( const QFileInfo & drive : drives )
-	{
-		root_paths += drive.absolutePath();
-	}
-#endif
-
-	sideBar->appendTab(new FileBrowser(FileBrowser::Type::Normal, root_paths.join("*"), FileItem::defaultFilters(), title,
-		embed::getIconPixmap("computer").transformed(QTransform().rotate(90)), splitter, dirs_as_items));
-
-	m_workspace = new MovableQMdiArea(splitter);
-
-	// Load background
-	emit initProgress(tr("Loading background picture"));
-	QString backgroundPicFile = ConfigManager::inst()->backgroundPicFile();
-	QImage backgroundPic;
-	if( !backgroundPicFile.isEmpty() )
-	{
-		backgroundPic = QImage( backgroundPicFile );
-	}
-	if( !backgroundPicFile.isNull() )
-	{
-		m_workspace->setBackground( backgroundPic );
-	}
-	else
-	{
-		m_workspace->setBackground( Qt::NoBrush );
-	}
-
-	m_workspace->setOption( QMdiArea::DontMaximizeSubWindowOnActivation );
-	m_workspace->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
-	m_workspace->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
-
-	hbox->addWidget(sideBar);
-	hbox->addWidget(splitter);
-	// If the user wants the sidebar on the right, we move the workspace and
-	// the splitter to the "left" side, or the first widgets in their list
-	if (sideBarOnRight)
-	{
-		splitter->insertWidget(0, m_workspace);
-		hbox->insertWidget(0, splitter);
-	}
-
-	// create global-toolbar at the top of our window
-	m_toolBar = new QWidget( main_widget );
-	m_toolBar->setObjectName( "mainToolbar" );
-	// The toolbar is a plain QWidget around icon-only ToolButtons: unnamed, it
-	// is a region a screen reader cannot even indicate (spec §5 item 1). The
-	// buttons inside it are named in ToolButton's constructor.
-	a11y::announce(m_toolBar, tr("Main toolbar"),
-		tr("Project actions, the metronome toggle and the editor window toggles."));
-	m_toolBar->setFixedHeight(scaledPixels(64));
-	m_toolBar->move( 0, 0 );
-
-	// add layout for organizing quite complex toolbar-layouting
-	m_toolBarLayout = new QGridLayout( m_toolBar/*, 2, 1*/ );
-	m_toolBarLayout->setContentsMargins(0, 0, 0, 0);
-	m_toolBarLayout->setSpacing( 0 );
-
-	vbox->addWidget( m_toolBar );
-	vbox->addWidget( w );
-	setCentralWidget( main_widget );
-
-	// The Focus Desk (UI plan §9.4) is a page of this window, not a window of
-	// its own: it takes w's place in vbox while it is active.
-	m_focusDeskPane = new FocusDeskPane( workspace(), w, vbox, this );
+	emit initProgress(tr("Preparing browser"));
+	m_shell->mount( QStringLiteral( "browser" ), createStandardBrowser( m_shell ) );
+	// A single window holds every editor now, so it opens at a working size: 1600 x 1000, or
+	// the screen's available area when that is smaller (Qt clamps a new window to it; the
+	// shell's first show handles the offscreen platform, Shell::showEvent).
+	resize( 1600, 1000 );
 
 	m_updateTimer.start( 1000 / 60, this );  // 60 fps
 
@@ -613,99 +495,27 @@ void MainWindow::finalize()
 	} );
 #endif
 
-	// create tool-buttons
-	auto project_new = new ToolButton(
-		embed::getIconPixmap("project_new"), tr("Create new project"), this, SLOT(createNewProject()), m_toolBar);
-
-	auto project_new_from_template = new ToolButton(embed::getIconPixmap("project_new_from_template"),
-		tr("Create new project from template"), this, SLOT(emptySlot()), m_toolBar);
-	project_new_from_template->setMenu( templates_menu );
-	project_new_from_template->setPopupMode( ToolButton::InstantPopup );
-
-	auto project_open = new ToolButton(
-		embed::getIconPixmap("project_open"), tr("Open existing project"), this, SLOT(openProject()), m_toolBar);
-
-	auto project_open_recent = new ToolButton(embed::getIconPixmap("project_open_recent"),
-		tr("Recently opened projects"), this, SLOT(emptySlot()), m_toolBar);
-	project_open_recent->setMenu( new RecentProjectsMenu(this) );
-	project_open_recent->setPopupMode( ToolButton::InstantPopup );
-
-	auto project_save = new ToolButton(
-		embed::getIconPixmap("project_save"), tr("Save current project"), this, SLOT(saveProject()), m_toolBar);
-
-	auto project_export = new ToolButton(
-		embed::getIconPixmap("project_export"), tr("Export current project"), this, SLOT(onExportProject()), m_toolBar);
-
-	m_metronomeToggle = new ToolButton(
-				embed::getIconPixmap( "metronome" ),
-				tr( "Metronome" ),
-				this, SLOT(onToggleMetronome()),
-							m_toolBar );
+	// The header's project and metronome buttons. Each names the command it implements
+	// (M3.2), and the window switches that used to sit beside them are the footer's now.
+	ShellHeader* header = m_shell->header();
+	auto projectButton = [this, header](const char* icon, const QString& text, auto slot,
+		const char* commandId) {
+		ShellButton* button = header->addButton(QString::fromLatin1(icon), text);
+		button->setProperty("controlCommand", QString::fromLatin1(commandId));
+		connect(button, &QToolButton::clicked, this, slot);
+		return button;
+	};
+	projectButton("new", tr("Create new project"), &MainWindow::createNewProject, "project.new");
+	ShellButton* recent = projectButton("open", tr("Open existing project"), &MainWindow::openProject, "project.open");
+	recent->setMenu(new RecentProjectsMenu(this));
+	recent->setPopupMode(QToolButton::MenuButtonPopup);
+	projectButton("save", tr("Save current project"), &MainWindow::saveProject, "project.save");
+	projectButton("export", tr("Export current project"), &MainWindow::onExportProject, "render.render");
+	m_metronomeToggle = header->addButton(QStringLiteral("metronome"), tr("Metronome"));
+	m_metronomeToggle->setProperty("controlCommand", QStringLiteral("transport.set_metronome"));
 	m_metronomeToggle->setCheckable(true);
 	m_metronomeToggle->setChecked(Engine::getSong()->metronome().active());
-
-	// M3.2: every main-toolbar button names the command it implements.
-	declares(project_new, "project.new");
-	declares(project_new_from_template, "project.new");
-	declares(project_open, "project.open");
-	declares(project_open_recent, "project.open");
-	declares(project_save, "project.save");
-	declares(project_export, "render.render");
-	declares(m_metronomeToggle, "transport.set_metronome");
-
-	m_toolBarLayout->setColumnMinimumWidth( 0, 5 );
-	m_toolBarLayout->addWidget( project_new, 0, 1 );
-	m_toolBarLayout->addWidget( project_new_from_template, 0, 2 );
-	m_toolBarLayout->addWidget( project_open, 0, 3 );
-	m_toolBarLayout->addWidget( project_open_recent, 0, 4 );
-	m_toolBarLayout->addWidget( project_save, 0, 5 );
-	m_toolBarLayout->addWidget( project_export, 0, 6 );
-	m_toolBarLayout->addWidget( m_metronomeToggle, 0, 7 );
-
-
-	// window-toolbar
-	auto song_editor_window = new ToolButton(embed::getIconPixmap("songeditor"), tr("Song Editor") + " (Ctrl+1)", nullptr, nullptr, m_toolBar);
-	dispatchesWindowToggle(song_editor_window, "song");
-	song_editor_window->setShortcut(keySequence(Qt::CTRL, Qt::Key_1));
-
-	auto pattern_editor_window = new ToolButton(embed::getIconPixmap("pattern_track_btn"),
-		tr("Pattern Editor") + " (Ctrl+2)", nullptr, nullptr, m_toolBar);
-	dispatchesWindowToggle(pattern_editor_window, "pattern");
-	pattern_editor_window->setShortcut(keySequence(Qt::CTRL, Qt::Key_2));
-
-	auto piano_roll_window = new ToolButton(
-		embed::getIconPixmap("piano"), tr("Piano Roll") + " (Ctrl+3)", nullptr, nullptr, m_toolBar);
-	dispatchesWindowToggle(piano_roll_window, "piano_roll");
-	piano_roll_window->setShortcut(keySequence(Qt::CTRL, Qt::Key_3));
-
-	auto automation_editor_window = new ToolButton(embed::getIconPixmap("automation"),
-		tr("Automation Editor") + " (Ctrl+4)", nullptr, nullptr, m_toolBar);
-	dispatchesWindowToggle(automation_editor_window, "automation");
-	automation_editor_window->setShortcut(keySequence(Qt::CTRL, Qt::Key_4));
-
-	auto mixer_window = new ToolButton(
-		embed::getIconPixmap("mixer"), tr("Mixer") + " (Ctrl+5)", nullptr, nullptr, m_toolBar);
-	dispatchesWindowToggle(mixer_window, "mixer");
-	mixer_window->setShortcut(keySequence(Qt::CTRL, Qt::Key_5));
-
-	auto controllers_window = new ToolButton(embed::getIconPixmap("controller"),
-		tr("Show/hide controller rack") + " (Ctrl+6)", nullptr, nullptr, m_toolBar);
-	dispatchesWindowToggle(controllers_window, "controller_rack");
-	controllers_window->setShortcut(keySequence(Qt::CTRL, Qt::Key_6));
-
-	auto project_notes_window = new ToolButton(embed::getIconPixmap("project_notes"),
-		tr("Show/hide project notes") + " (Ctrl+7)", nullptr, nullptr, m_toolBar);
-	dispatchesWindowToggle(project_notes_window, "project_notes");
-	project_notes_window->setShortcut(keySequence(Qt::CTRL, Qt::Key_7));
-
-	m_toolBarLayout->addWidget( song_editor_window, 1, 1 );
-	m_toolBarLayout->addWidget( pattern_editor_window, 1, 2 );
-	m_toolBarLayout->addWidget( piano_roll_window, 1, 3 );
-	m_toolBarLayout->addWidget( automation_editor_window, 1, 4 );
-	m_toolBarLayout->addWidget( mixer_window, 1, 5 );
-	m_toolBarLayout->addWidget( controllers_window, 1, 6 );
-	m_toolBarLayout->addWidget( project_notes_window, 1, 7 );
-	m_toolBarLayout->setColumnStretch( 100, 1 );
+	connect(m_metronomeToggle, &QToolButton::clicked, this, &MainWindow::onToggleMetronome);
 
 	// setup-dialog opened before?
 	//
@@ -774,43 +584,44 @@ void MainWindow::finalize()
 		}
 	}
 
-	// Add editor subwindows
-	addWindowedWidget(getGUI()->automationEditor());
-	addWindowedWidget(getGUI()->patternEditor());
-	addWindowedWidget(getGUI()->pianoRoll());
-	addWindowedWidget(getGUI()->songEditor());
-
-	getGUI()->automationEditor()->parentWidget()->hide();
-	getGUI()->patternEditor()->parentWidget()->move(610, 5);
-	getGUI()->patternEditor()->parentWidget()->hide();
-	getGUI()->pianoRoll()->parentWidget()->move(5, 5);
-	getGUI()->pianoRoll()->parentWidget()->hide();
-	getGUI()->songEditor()->parentWidget()->move(5, 5);
-	getGUI()->songEditor()->parentWidget()->show();
-
-	// reset window title every time we change the state of a subwindow to show the correct title
-	for( const QMdiSubWindow * subWindow : workspace()->subWindowList() )
+	// Every editor is a panel's content now (docs/UI-SHELL.md §3): the shell decides which
+	// region shows it, per view, and the footer and View menu switch it.
+	GuiApplication* gui = getGUI();
+	m_shell->mount(QStringLiteral("arranger"), gui->songEditor());
+	m_shell->mount(QStringLiteral("detail"), gui->pianoRoll());
+	m_shell->mount(QStringLiteral("automation"), gui->automationEditor());
+	m_shell->mount(QStringLiteral("pattern"), gui->patternEditor());
+	m_shell->mount(QStringLiteral("mixer"), gui->mixerView());
+	m_shell->mount(QStringLiteral("launcher"), clipLauncher());
+	m_shell->mount(QStringLiteral("inspector"), createPanelNote(tr("The Inspector shows the properties of the "
+		"selected track, clip or note. It arrives with lane 050/ui-panels."), m_shell));
+	m_shell->mount(QStringLiteral("devices"), createPanelNote(tr("The Device panel shows the selected track's "
+		"device chain as cards, with modulators beside the device they modulate. It arrives with lane "
+		"050/ui-panels."), m_shell));
+	// The MDI era's Ctrl+1..5 editor keys, kept as second shortcuts on the panels they became.
+	const std::pair<const char*, QKeySequence> legacyKeys[] = {
+		{"arranger", keySequence(Qt::CTRL, Qt::Key_1)}, {"pattern", keySequence(Qt::CTRL, Qt::Key_2)},
+		{"detail", keySequence(Qt::CTRL, Qt::Key_3)}, {"automation", keySequence(Qt::CTRL, Qt::Key_4)},
+		{"mixer", keySequence(Qt::CTRL, Qt::Key_5)}};
+	for (const auto& [id, key] : legacyKeys)
 	{
-		connect( subWindow, SIGNAL(windowStateChanged(Qt::WindowStates,Qt::WindowStates)), this, SLOT(resetWindowTitle()));
+		if (QAction* action = m_shell->panelAction(QString::fromLatin1(id)))
+		{
+			action->setShortcuts({action->shortcut(), key});
+		}
 	}
-
-	// Every editor exists and is wrapped now, which is all claim() needs.
-	m_focusDeskPane->applyConfiguredState();
+	m_shell->restoreConfiguredLayout();
 }
 
 
 int MainWindow::addWidgetToToolBar( QWidget * _w, int _row, int _col )
 {
-	int col = ( _col == -1 ) ? m_toolBarLayout->columnCount() + 7 : _col;
-	if( _w->height() > 32 || _row == -1 )
-	{
-		m_toolBarLayout->addWidget( _w, 0, col, 2, 1 );
-	}
-	else
-	{
-		m_toolBarLayout->addWidget( _w, _row, col );
-	}
-	return( col );
+	// The header is one row: the song editor's tempo, time, meter and master controls follow
+	// one another in the order they are added. The returned index keeps the old signature.
+	Q_UNUSED(_row)
+	Q_UNUSED(_col)
+	m_shell->header()->addToStrip( _w );
+	return m_shell->header()->stripCount();
 }
 
 
@@ -818,11 +629,8 @@ int MainWindow::addWidgetToToolBar( QWidget * _w, int _row, int _col )
 
 void MainWindow::addSpacingToToolBar( int _size )
 {
-	m_toolBarLayout->setColumnMinimumWidth( m_toolBarLayout->columnCount() +
-								7, _size );
+	m_shell->header()->addStripSpacing( _size );
 }
-
-
 
 
 SubWindow* MainWindow::addWindowedWidget(QWidget *w, Qt::WindowFlags windowFlags)
@@ -850,12 +658,6 @@ SubWindow* MainWindow::addWindowedWidget(QWidget *w, Qt::WindowFlags windowFlags
 	return win;
 }
 
-
-
-bool MainWindow::focusDeskActive() const
-{
-	return m_focusDeskPane != nullptr && m_focusDeskPane->deskActive();
-}
 
 
 void MainWindow::setAllSubWindowsDetached(bool detached)
@@ -1313,28 +1115,33 @@ void MainWindow::help()
 
 void MainWindow::toggleWindow( QWidget *window, bool forceShow )
 {
-	// All "windows" should be inside a SubWindow, because the use of activeSubWindow() depends on it
+	// Only the secondary windows come here - the controller rack, project notes, the
+	// microtuner - and they float (SubWindow::setFloatOutsideWorkspace): showing one shows and
+	// raises its top-level window, toggling a visible one hides it.
 	auto parent = dynamic_cast<QMdiSubWindow*>(window->parentWidget());
 	if (parent == nullptr) { return; }
-
-	if( forceShow ||
-		m_workspace->activeSubWindow() != parent ||
-		parent->isHidden() )
+	if (forceShow || !window->isVisible() || !window->isActiveWindow())
 	{
-		// Re-showing is the "get it back" path: an off-screen window must come
-		// back INTO view (owner bug: the song editor was lost off screen with no
-		// way to recover it).
-		parent->setGeometry(clampToVisibleArea(parent->geometry(), visibleMdiRegion(m_workspace)));
 		parent->show();
 		window->show();
-		if (window->isEnabled()) { window->setFocus(); }
-		else { m_workspace->setActiveSubWindow(parent); }
+		window->raise();
+		window->activateWindow();
 	}
 	else
 	{
-		parent->hide();
+		window->hide();
 		refocus();
 	}
+}
+
+bool MainWindow::togglePanel(const QString& id)
+{
+	return m_shell->togglePanel(id);
+}
+
+void MainWindow::revealPanel(const QString& id)
+{
+	m_shell->revealPanel(id);
 }
 
 
@@ -1361,20 +1168,13 @@ void MainWindow::toggleFullscreen()
  */
 void MainWindow::refocus()
 {
-	const auto gui = getGUI();
-
-	// Attempt to set the focus on the first of these editors that is not hidden...
-	for (auto editorParent : { gui->songEditor()->parentWidget(), gui->patternEditor()->parentWidget(),
-		gui->pianoRoll()->parentWidget(), gui->automationEditor()->parentWidget() })
+	// The panel that last had focus gets it back, else the window.
+	const QString focused = m_shell->model().focused();
+	if (ShellPanel* frame = m_shell->panel(focused); frame != nullptr && frame->isVisible() && frame->content() != nullptr)
 	{
-		if (!editorParent->isHidden())
-		{
-			editorParent->setFocus();
-			return;
-		}
+		frame->content()->setFocus();
+		return;
 	}
-
-	// ... otherwise set the focus on the main window.
 	this->setFocus();
 }
 
@@ -1383,98 +1183,67 @@ void MainWindow::refocus()
 
 void MainWindow::togglePatternEditorWin( bool forceShow )
 {
-	toggleWindow( getGUI()->patternEditor(), forceShow );
+	if (forceShow) { revealPanel(QStringLiteral("pattern")); }
+	else { togglePanel(QStringLiteral("pattern")); }
 }
 
+void MainWindow::toggleSongEditorWin() { togglePanel(QStringLiteral("arranger")); }
 
+void MainWindow::toggleProjectNotesWin() { toggleWindow( getGUI()->getProjectNotes() ); }
 
+void MainWindow::togglePianoRollWin() { togglePanel(QStringLiteral("detail")); }
 
-void MainWindow::toggleSongEditorWin()
-{
-	toggleWindow( getGUI()->songEditor() );
-}
+void MainWindow::toggleAutomationEditorWin() { togglePanel(QStringLiteral("automation")); }
 
+void MainWindow::toggleMixerWin() { togglePanel(QStringLiteral("mixer")); }
 
-
-
-void MainWindow::toggleProjectNotesWin()
-{
-	toggleWindow( getGUI()->getProjectNotes() );
-}
-
-
-
-
-void MainWindow::togglePianoRollWin()
-{
-	toggleWindow( getGUI()->pianoRoll() );
-}
-
-
-
-
-void MainWindow::toggleAutomationEditorWin()
-{
-	toggleWindow( getGUI()->automationEditor() );
-}
-
-
-
-
-void MainWindow::toggleMixerWin()
-{
-	toggleWindow( getGUI()->mixerView() );
-}
-
-
-
-void MainWindow::toggleMicrotunerWin()
-{
-	toggleWindow( getGUI()->getMicrotunerConfig() );
-}
-
-
-
+void MainWindow::toggleMicrotunerWin() { toggleWindow( getGUI()->getMicrotunerConfig() ); }
 
 SessionGridView* MainWindow::clipLauncher()
 {
-	if( m_clipLauncher == nullptr )
-	{
-		m_clipLauncher = new SessionGridView;
-		addWindowedWidget( m_clipLauncher );
-		m_clipLauncher->parentWidget()->hide();
-	}
+	if( m_clipLauncher == nullptr ) { m_clipLauncher = new SessionGridView; }
 	return m_clipLauncher;
 }
 
+void MainWindow::toggleClipLauncherWin() { togglePanel(QStringLiteral("launcher")); }
 
 
 
-void MainWindow::toggleClipLauncherWin()
+
+const QList<QAction*>& MainWindow::floatingWindowActions()
 {
-	toggleWindow( clipLauncher() );
+	if (!m_floatingWindowActions.isEmpty()) { return m_floatingWindowActions; }
+	struct Row { const char* icon; QString text; const char* editor; QKeySequence key; };
+	const Row rows[] = {
+		{"controller", tr("Controller Rack"), "controller_rack", keySequence(Qt::CTRL, Qt::Key_6)},
+		{"project_notes", tr("Project Notes"), "project_notes", keySequence(Qt::CTRL, Qt::Key_7)},
+		{"microtuner", tr("Scales and Keymaps"), "microtuner", QKeySequence()},
+	};
+	for (const Row& row : rows)
+	{
+		const QString name = QString::fromLatin1(row.editor);
+		auto* action = new QAction(embed::getIconPixmap(row.icon), row.text, this);
+		action->setShortcut(row.key);
+		action->setProperty("controlCommand", QStringLiteral("window.toggle"));
+		connect(action, &QAction::triggered, this, [name]() { dispatchWindowToggle(name); });
+		addAction(action);
+		m_floatingWindowActions << action;
+	}
+	return m_floatingWindowActions;
 }
-
-
-
 
 void MainWindow::updateViewMenu()
 {
 	m_viewMenu->clear();
-	// TODO: get current visibility for these and indicate in menu?
-	// Not that it's straight visible <-> invisible, more like
-	// not on top -> top <-> invisible
-	windowToggleAction(m_viewMenu, embed::getIconPixmap( "songeditor" ), tr( "Song Editor" ) + "\tCtrl+1", "song");
-	windowToggleAction(m_viewMenu, embed::getIconPixmap("pattern_track"), tr("Pattern Editor") + "\tCtrl+2", "pattern");
-	windowToggleAction(m_viewMenu, embed::getIconPixmap( "piano" ), tr( "Piano Roll" ) + "\tCtrl+3", "piano_roll");
-	windowToggleAction(m_viewMenu, embed::getIconPixmap( "automation" ), tr( "Automation Editor" ) + "\tCtrl+4", "automation");
-	windowToggleAction(m_viewMenu, embed::getIconPixmap( "mixer" ), tr( "Mixer" ) + "\tCtrl+5", "mixer");
-	windowToggleAction(m_viewMenu, embed::getIconPixmap( "controller" ), tr( "Controller Rack" ) + "\tCtrl+6", "controller_rack");
-	windowToggleAction(m_viewMenu, embed::getIconPixmap( "project_notes" ), tr( "Project Notes" ) + "\tCtrl+7", "project_notes");
-	windowToggleAction(m_viewMenu, embed::getIconPixmap( "pattern_track" ), tr( "Clip Launcher" ), "clip_launcher");
-
+	// The shell's own actions (views Alt+1..3, panels Alt+letter): the same QAction objects the
+	// footer's buttons show, so the menu, the footer and the shortcut cannot disagree.
+	for (QAction* action : m_shell->viewActions()) { m_viewMenu->addAction(action); }
 	m_viewMenu->addSeparator();
-	
+	for (QAction* action : m_shell->panelActions()) { m_viewMenu->addAction(action); }
+	m_viewMenu->addSeparator();
+	for (QAction* action : floatingWindowActions()) { m_viewMenu->addAction(action); }
+	m_viewMenu->addSeparator();
+
 	declares(m_viewMenu->addAction(embed::getIconPixmap( "fullscreen" ),
 				tr( "Fullscreen" ) + "\tF11",
 				this, [](){ dispatchShellCommand(QStringLiteral("window.fullscreen")); }
@@ -1482,49 +1251,6 @@ void MainWindow::updateViewMenu()
 	declares(m_viewMenu->addAction(embed::getIconPixmap("tool"), tr("Command Palette...") + "\tCtrl+Shift+P",
 		this, [](){ dispatchShellCommand(QStringLiteral("window.command_palette")); }),
 		"window.command_palette");
-	// The Focus Desk joins the same group: it is a layout mode, not an editor.
-	addFocusDeskToggle( m_viewMenu, m_focusDeskPane );
-
-	m_viewMenu->addSeparator();
-	// Work-list row 5: the register rendered as menu entries - module
-	// visibility reachable from a menu (acceptance #6), each entry the `mod:`
-	// action through FocusDesk::dispatchAction, greyed with the register's own
-	// reason when this build cannot show the row (X4).
-	addModulesMenu(m_viewMenu,
-		m_focusDeskPane != nullptr ? m_focusDeskPane->desk() : nullptr);
-
-#if (QT_VERSION >= QT_VERSION_CHECK(6, 3, 0))
-	// Qt 6.3 deprecated addAction(icon, text, receiver, slot, shortcut) in favour
-	// of this argument order; the old order trips -Wdeprecated-declarations,
-	// which CI's -DUSE_WERROR turns into a hard error.
-	auto detachAllAction = m_viewMenu->addAction(embed::getIconPixmap("detach"),
-		tr("Detach all subwindows"),
-		keySequence(Qt::CTRL, Qt::SHIFT, Qt::Key_D),
-		this, [](){ dispatchShellCommand(QStringLiteral("window.detach_all")); }
-	);
-	auto attachAllAction = m_viewMenu->addAction(embed::getIconPixmap("detach"),
-		tr("Attach all subwindows"),
-		keySequence(Qt::CTRL, Qt::ALT, Qt::SHIFT, Qt::Key_D),
-		this, [](){ dispatchShellCommand(QStringLiteral("window.attach_all")); }
-	);
-#else
-	auto detachAllAction = m_viewMenu->addAction(embed::getIconPixmap("detach"),
-		tr("Detach all subwindows"),
-		this, [](){ dispatchShellCommand(QStringLiteral("window.detach_all")); },
-		keySequence(Qt::CTRL, Qt::SHIFT, Qt::Key_D)
-	);
-	auto attachAllAction = m_viewMenu->addAction(embed::getIconPixmap("detach"),
-		tr("Attach all subwindows"),
-		this, [](){ dispatchShellCommand(QStringLiteral("window.attach_all")); },
-		keySequence(Qt::CTRL, Qt::ALT, Qt::SHIFT, Qt::Key_D)
-	);
-#endif
-
-	detachAllAction->setShortcutContext(Qt::ApplicationShortcut);
-	attachAllAction->setShortcutContext(Qt::ApplicationShortcut);
-	declares(detachAllAction, "window.detach_all");
-	declares(attachAllAction, "window.attach_all");
-
 	m_viewMenu->addSeparator();
 
 	// Here we should put all look&feel -stuff from configmanager

@@ -48,14 +48,21 @@ using RC = ReversibilityClass;
 
 const ReversibilityRow kWindowRows[] = {
 	R("window.toggle", RC::NotMutating, false,
-		"it shows or hides one editor's sub-window through the main window's own toggle slot. A "
-		"window's visibility is interface state: no model, clip, track or setting is written, and "
-		"the project file does not change",
-		"no write (interface state only; toggle again to restore)",
+		"it shows or hides one shell panel (switching view when the current one does not offer "
+		"the panel) or one floating window. Panel and window visibility is interface state, kept "
+		"in the ui/shell.layout setting: no model, clip, track or project data is written, and the "
+		"project file does not change",
+		"no write to the project (interface state only; toggle again to restore)",
 		""),
 	R("window.get_state", RC::NotMutating, false,
-		"it reads whether each editor's sub-window is hidden. Nothing is written",
+		"it reads the shell's view and every panel's and floating window's visibility. Nothing is "
+		"written",
 		"no write",
+		""),
+	R("window.set_view", RC::NotMutating, false,
+		"it switches the shell between its Arrange, Mix and Edit views. A view is interface state, "
+		"kept in the ui/shell.layout setting: no model, clip, track or project data is written",
+		"no write to the project (interface state only; set the previous view to restore)",
 		""),
 };
 

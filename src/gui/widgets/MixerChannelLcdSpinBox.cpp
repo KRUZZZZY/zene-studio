@@ -30,6 +30,7 @@
 #include "CaptionMenu.h"
 #include "MixerView.h"
 #include "GuiApplication.h"
+#include "MainWindow.h"
 #include "TrackView.h"
 
 namespace lmms::gui
@@ -52,9 +53,7 @@ void MixerChannelLcdSpinBox::mouseDoubleClickEvent(QMouseEvent* event)
 
 	getGUI()->mixerView()->setCurrentMixerChannel(model()->value());
 
-	getGUI()->mixerView()->parentWidget()->show();
-	getGUI()->mixerView()->show();// show Mixer window
-	getGUI()->mixerView()->setFocus();// set focus to Mixer window
+	getGUI()->mainWindow()->revealPanel(QStringLiteral("mixer"));
 	//engine::getMixerView()->raise();
 }
 

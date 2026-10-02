@@ -2270,9 +2270,7 @@ void AutomationEditorWindow::dragEnterEvent( QDragEnterEvent *_dee )
 void AutomationEditorWindow::open(AutomationClip* clip)
 {
 	setCurrentClip(clip);
-	parentWidget()->show();
-	show();
-	setFocus();
+	getGUI()->mainWindow()->revealPanel(QStringLiteral("automation"));
 }
 
 QSize AutomationEditorWindow::sizeHint() const

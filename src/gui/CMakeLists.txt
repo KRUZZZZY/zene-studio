@@ -65,20 +65,18 @@ SET(LMMS_SRCS
 	gui/VisibilitySetMenu.cpp
 	# M3.7: VCA group strips in the mixer + the channel's VCA menu.
 	gui/VcaStripView.cpp
-	# Focus Desk - the Direction B shell (UI plan §9.4). FocusDeskModules is the
-	# module register (§4.2) and is deliberately widget-free so its rules are
-	# testable without a QApplication; FocusDeskPlacement holds the card/density
-	# machinery (the file-length ratchet is why the shell is now four
-	# translation units, not one): FocusDeskActions is §10 rows 4/5's command
-	# record, generated menus and mod: seam, FocusDeskWorkspaces row 7's
-	# workspace data and switcher. The Q_OBJECT header lives in include/, which
-	# the top-level glob feeds to AUTOMOC.
-	gui/FocusDesk.cpp
-	gui/FocusDeskActions.cpp
-	gui/FocusDeskModules.cpp
-	gui/FocusDeskPane.cpp
-	gui/FocusDeskPlacement.cpp
-	gui/FocusDeskWorkspaces.cpp
+	# The 0.5.0 single-window shell (docs/UI-SHELL.md, docs/adr/ADR-0001-UI-TOOLKIT.md):
+	# DesignTokens is the one source of colour/spacing/type, ShellLayout the widget-free
+	# panel/region/view rules (testable without a display), Shell renders them, ShellChrome
+	# is the header/footer/button, ShellPanel a panel's frame, BrowserPanel the Browser.
+	# It replaced the Focus Desk and the MDI workspace as the main surface.
+	gui/shell/BrowserPanel.cpp
+	gui/shell/DesignTokens.cpp
+	gui/shell/Shell.cpp
+	gui/shell/ShellChrome.cpp
+	gui/shell/ShellIcons.cpp
+	gui/shell/ShellLayout.cpp
+	gui/shell/ShellPanel.cpp
 	gui/GuiApplication.cpp
 	gui/LadspaControlView.cpp
 	gui/LfoControllerDialog.cpp

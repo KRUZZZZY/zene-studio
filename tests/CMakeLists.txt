@@ -610,21 +610,19 @@ set(LMMS_TESTS
 	src/core/TrackFolderTest.cpp
 	src/core/TwoTrackRecordingHarness.cpp
 	src/core/WarpMarkersTest.cpp
-	# The Focus Desk shell (UI plan §9.4, Direction B): the module
-	# register's rules on their own, then the shell that reads them - the
-	# strip's greyed-with-a-reason rule (X4), promotion to the stage, the
-	# return-to-home rule, releaseAll(), density, and the layout round trip.
-	src/gui/FocusDeskPaneTest.cpp
-	# UI plan §10 rows 3-7 (040/ui-precond wave 2): the command record and
-	# generated menus with the mod: dispatch seam, then §6.1 workspaces as
-	# declarative data plus their application on the desk. Both construct the
-	# desk, so both take the offscreen platform registration below.
-	src/gui/FocusDeskActionsTest.cpp
-	src/gui/FocusDeskWorkspacesTest.cpp
+	# The 0.5.0 shell (docs/UI-SHELL.md): its region/view/refusal rules without a display,
+	# then the rendered shell - editors moved between regions without being lost, the footer
+	# following the layout, the layout surviving a restart, MDI-era geometry ignored safely,
+	# and BUGS_FOUND 11.30's clamp guarantee (carried over from the retired Focus Desk tests).
+	src/gui/ShellLayoutTest.cpp
+	src/gui/ShellTest.cpp
+	# The design tokens: every declared text/surface pair AA, the generated stylesheet AA, the
+	# velocity ramp ordered in lightness, every icon a path that paints at the screen's scale.
+	src/gui/DesignTokensTest.cpp
 	# UI precondition #1 (040/ui-precond): include/WcagContrast.h at the AA
-	# boundary, and include/Accessibility.h on the Focus Desk surface the owner
-	# manual-tests - the helper, then the chips, density control and promote
-	# button as the sweep leaves them.
+	# boundary, and include/Accessibility.h on the shell surface the owner
+	# manual-tests - the helper, then the footer switches, the chrome bands and
+	# the panel frames as the sweep leaves them.
 	src/gui/WcagContrastTest.cpp
 	# The shipped themes' declared text/background pairs against AA (4.5:1), as a ratchet.
 	src/gui/ThemeContrastTest.cpp
@@ -695,7 +693,6 @@ set(LMMS_TESTS
 	# Edit > MIDI Controller Reconnect (midi.reconnect_arm / _status), over a throwaway config.
 	src/gui/MidiReconnectActionTest.cpp
 	src/gui/MixerLatencyTextTest.cpp
-	src/gui/FocusDeskTest.cpp
 	# M3.4: the command palette - what it lists, how it ranks, what it runs.
 	src/gui/CommandPaletteTest.cpp
 	# M3.7: the mixer's VCA strip and the channel's VCA menu.
@@ -1160,12 +1157,13 @@ set_tests_properties(ClipLinkTest ClipLinkPersistenceTest ImportDetectionTest
 	PROPERTIES
 	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 
-# The Focus Desk test builds widgets, so it needs a Qt platform plugin. Its own
+# The shell tests build widgets, so they need a Qt platform plugin. Their own
 # main() defaults QT_QPA_PLATFORM to offscreen when no display is attached (the
 # same guard MidiLearnGuiTest uses); registering it here is what makes a runner
-# run it in the headless state the product is told about, not what keeps it from
-# aborting.
-set_tests_properties(FocusDeskTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+# run them in the headless state the product is told about, not what keeps them
+# from aborting.
+set_tests_properties(ShellTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+set_tests_properties(DesignTokensTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(CommandPaletteTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(VcaStripViewTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(SessionGridViewTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
@@ -1174,10 +1172,7 @@ set_tests_properties(TakeLanesPanelTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=
 set_tests_properties(ShortcutsPageTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(StartHubTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(PianoRollBenchmarkTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
-set_tests_properties(FocusDeskPaneTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
-set_tests_properties(FocusDeskActionsTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
-set_tests_properties(FocusDeskWorkspacesTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
-# AccessibilityHelperTest constructs the Focus Desk, so it takes the same
+# AccessibilityHelperTest constructs the shell, so it takes the same
 # platform registration (040/ui-precond). WcagContrastTest is guiless and needs
 # none: QColor loads no platform plugin.
 set_tests_properties(AccessibilityHelperTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
@@ -2628,6 +2623,17 @@ if(PYTHON3_EXECUTABLE AND CONTROL_SUITE_AVAILABLE)
 		ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
 		TIMEOUT 900
 		SKIP_RETURN_CODE 77
+	)
+	# The 0.5.0 shell (docs/UI-SHELL.md) driven over the socket: window.get_state / set_view /
+	# toggle / screenshot - views, the region rule, the unhideable centre, reveal-by-view-switch,
+	# the 0.4.0 editor names, a floating window, and three distinct rendered views.
+	add_test(NAME ControlShell
+		COMMAND ${PYTHON3_EXECUTABLE}
+			${CMAKE_CURRENT_SOURCE_DIR}/control-shell.py
+			$<TARGET_FILE:zene>)
+	set_tests_properties(ControlShell PROPERTIES
+		ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+		TIMEOUT 300
 	)
 	# Structural undo (0.3.0, feature row 75 / task #664): track add / remove /
 	# move and effect add / remove are journalled, and ONE control.undo restores

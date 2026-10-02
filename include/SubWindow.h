@@ -74,6 +74,12 @@ public:
 	bool isDetached() const;
 	void setDetached(bool on);
 
+	//! 0.5.0 shell (docs/UI-SHELL.md): the MDI workspace is no longer on screen, so every
+	//! sub-window floats as its own top-level window the moment it is shown, closes the way
+	//! the "detached" detach behaviour always closed, and is never re-attached.
+	static void setFloatOutsideWorkspace(bool on);
+	static bool floatsOutsideWorkspace();
+
 	// TODO Needed to update the title bar when replacing instruments.
 	// Update works automatically if QMdiSubWindows are used.
 	void updateTitleBar();
@@ -114,6 +120,10 @@ private:
 
 	static void elideText( QLabel *label, QString text );
 	void adjustTitleBar();
+	//! Make the widget a top-level window centred over the main window.
+	void floatOut();
+
+	static bool s_floatOutside;
 
 private slots:
 	void focusChanged( QMdiSubWindow * subWindow );

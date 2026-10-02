@@ -1,0 +1,422 @@
+/*
+ * Shell.cpp - the 0.5.0 single-window shell: header, four-region body, footer
+ *
+ * Copyright (c) 2026 Zene Studio contributors
+ *
+ * This file is part of LMMS - https://lmms.io
+ *
+ * This program is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU General Public
+ * License as published by the Free Software Foundation; either
+ * version 2 of the License, or (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public
+ * License along with this program (see COPYING); if not, write to the
+ * Free Software Foundation, Inc., 51 Franklin Street, Fifth Floor,
+ * Boston, MA 02110-1301 USA.
+ *
+ */
+
+#include "Shell.h"
+
+#include <QAction>
+#include <QActionGroup>
+#include <QApplication>
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <QLabel>
+#include <QSet>
+#include <QSplitter>
+#include <QTimer>
+#include <QVBoxLayout>
+
+#include "ConfigManager.h"
+#include "ControlWindowCommands.h"
+#include "DesignTokens.h"
+#include "ShellChrome.h"
+#include "ShellIcons.h"
+#include "ShellPanel.h"
+
+namespace lmms::gui
+{
+
+namespace
+{
+
+const QString kConfigKey = QStringLiteral("shell.layout");
+const QString kLauncher = QStringLiteral("launcher");
+
+QString regionWord(ShellRegion region)
+{
+	switch (region)
+	{
+	case ShellRegion::Left: return QStringLiteral("left");
+	case ShellRegion::Center: return QStringLiteral("center");
+	case ShellRegion::Bottom: return QStringLiteral("bottom");
+	case ShellRegion::Right: return QStringLiteral("right");
+	}
+	return {};
+}
+
+QWidget* makeHost(QWidget* parent, const QString& name)
+{
+	auto* host = new QWidget(parent);
+	host->setObjectName(name);
+	auto* box = new QVBoxLayout(host);
+	box->setContentsMargins(0, 0, 0, 0);
+	box->setSpacing(0);
+	return host;
+}
+
+QJsonArray sizesOf(const QSplitter* splitter)
+{
+	QJsonArray out;
+	for (int s : splitter->sizes()) { out.append(s); }
+	return out;
+}
+
+void applySizes(QSplitter* splitter, const QJsonArray& sizes)
+{
+	if (sizes.size() != splitter->count()) { return; }
+	QList<int> list;
+	for (const QJsonValue& v : sizes) { list << std::max(0, v.toInt()); }
+	splitter->setSizes(list);
+}
+
+} // namespace
+
+Shell::Shell(QWidget* parent)
+	: QWidget(parent)
+{
+	setObjectName(QStringLiteral("shell"));
+	auto* outer = new QVBoxLayout(this);
+	outer->setContentsMargins(0, 0, 0, 0);
+	outer->setSpacing(0);
+
+	m_header = new ShellHeader(this);
+	outer->addWidget(m_header);
+	buildBody();
+	outer->addWidget(m_columns, 1);
+	buildActions();
+	m_footer = new ShellFooter(viewActions(), panelActions(), this);
+	outer->addWidget(m_footer);
+
+	connect(qApp, &QApplication::focusChanged, this, [this](QWidget*, QWidget* now) { onFocusChanged(now); });
+	apply();
+}
+
+Shell::~Shell() = default;
+
+void Shell::showEvent(QShowEvent* event)
+{
+	QWidget::showEvent(event);
+	if (m_shownOnce) { return; }
+	m_shownOnce = true;
+	// The offscreen platform's nominal screen is 800 x 800, and the window opens maximized onto
+	// it (main.cpp), but window.screenshot there is how an agent sees the interface: give the
+	// window the working size once it exists. A real screen keeps the user's window state.
+	if (QGuiApplication::platformName() == QLatin1String("offscreen") && window() != this)
+	{
+		QWidget* top = window();
+		QTimer::singleShot(0, top, [top]() {
+			top->showNormal();
+			top->resize(top->size().expandedTo(QSize(1600, 1000)));
+		});
+	}
+}
+
+void Shell::buildBody()
+{
+	m_columns = new QSplitter(Qt::Horizontal, this);
+	m_rows = new QSplitter(Qt::Vertical, m_columns);
+	m_centre = new QSplitter(Qt::Horizontal, m_rows);
+	for (QSplitter* s : {m_columns, m_rows, m_centre})
+	{
+		s->setChildrenCollapsible(false);
+		s->setHandleWidth(2);
+	}
+
+	m_hosts.insert(static_cast<int>(ShellRegion::Left), makeHost(m_columns, QStringLiteral("shellLeft")));
+	m_columns->addWidget(m_hosts.value(static_cast<int>(ShellRegion::Left)));
+	m_columns->addWidget(m_rows);
+	m_hosts.insert(static_cast<int>(ShellRegion::Right), makeHost(m_columns, QStringLiteral("shellRight")));
+	m_columns->addWidget(m_hosts.value(static_cast<int>(ShellRegion::Right)));
+
+	m_launcherHost = makeHost(m_centre, QStringLiteral("shellLauncher"));
+	m_centre->addWidget(m_launcherHost);
+	m_hosts.insert(static_cast<int>(ShellRegion::Center), makeHost(m_centre, QStringLiteral("shellCenter")));
+	m_centre->addWidget(m_hosts.value(static_cast<int>(ShellRegion::Center)));
+	m_rows->addWidget(m_centre);
+	m_hosts.insert(static_cast<int>(ShellRegion::Bottom), makeHost(m_rows, QStringLiteral("shellBottom")));
+	m_rows->addWidget(m_hosts.value(static_cast<int>(ShellRegion::Bottom)));
+
+	m_hosts.value(static_cast<int>(ShellRegion::Left))->setMinimumWidth(200);
+	m_hosts.value(static_cast<int>(ShellRegion::Right))->setMinimumWidth(220);
+	m_hosts.value(static_cast<int>(ShellRegion::Bottom))->setMinimumHeight(120);
+	m_columns->setStretchFactor(1, 1);
+	m_rows->setStretchFactor(0, 1);
+	m_centre->setStretchFactor(1, 1);
+	m_columns->setSizes({tokens::size::inspectorWidth, 1000, tokens::size::browserWidth});
+	m_rows->setSizes({600, tokens::size::bottomHeight});
+	m_centre->setSizes({360, 1000});
+
+	m_parking = new QWidget(this);
+	m_parking->setObjectName(QStringLiteral("shellParking"));
+	m_parking->hide();
+	for (const ShellPanelSpec& spec : ShellLayout::panels())
+	{
+		auto* frame = new ShellPanel(spec.id, spec.title, m_parking);
+		m_panels.insert(spec.id, frame);
+	}
+	for (QSplitter* s : {m_columns, m_rows, m_centre})
+	{
+		connect(s, &QSplitter::splitterMoved, this, [this]() { persist(); });
+	}
+}
+
+void Shell::buildActions()
+{
+	m_viewGroup = new QActionGroup(this);
+	m_viewGroup->setExclusive(true);
+	const QStringList titles{tr("&Arrange"), tr("Mi&x"), tr("&Edit")};
+	int index = 0;
+	for (ShellView v : {ShellView::Arrange, ShellView::Mix, ShellView::Edit})
+	{
+		auto* action = new QAction(titles.at(index), this);
+		action->setCheckable(true);
+		action->setShortcut(QKeySequence(QStringLiteral("Alt+%1").arg(index + 1)));
+		action->setToolTip(tr("%1 view (Alt+%2)").arg(QString(titles.at(index)).remove(QLatin1Char('&'))).arg(index + 1));
+		action->setProperty("controlCommand", QStringLiteral("window.set_view"));
+		const QString name = ShellLayout::viewName(v);
+		connect(action, &QAction::triggered, this, [name]() {
+			dispatchShellCommand(QStringLiteral("window.set_view"), QJsonObject{{QStringLiteral("view"), name}});
+		});
+		m_viewGroup->addAction(action);
+		addAction(action);
+		m_viewActions.insert(static_cast<int>(v), action);
+		++index;
+	}
+
+	for (const ShellPanelSpec& spec : ShellLayout::panels())
+	{
+		auto* action = new QAction(shellicons::icon(spec.id), spec.title, this);
+		action->setCheckable(true);
+		if (!spec.shortcut.isEmpty()) { action->setShortcut(QKeySequence(spec.shortcut)); }
+		action->setToolTip(spec.shortcut.isEmpty() ? spec.title
+			: tr("%1 (%2)").arg(spec.title, spec.shortcut));
+		action->setProperty("controlCommand", QStringLiteral("window.toggle"));
+		// The footer groups its buttons by this; the arranger is a view, not a footer switch.
+		const bool inFooter = spec.id != QStringLiteral("arranger");
+		action->setProperty("shellRegion", inFooter ? regionWord(spec.home) : QString());
+		const QString id = spec.id;
+		connect(action, &QAction::triggered, this, [id]() { dispatchWindowToggle(id); });
+		addAction(action);
+		m_panelActions.insert(spec.id, action);
+	}
+}
+
+QList<QAction*> Shell::viewActions() const
+{
+	return {m_viewActions.value(0), m_viewActions.value(1), m_viewActions.value(2)};
+}
+
+QList<QAction*> Shell::panelActions() const
+{
+	QList<QAction*> out;
+	for (const ShellPanelSpec& spec : ShellLayout::panels()) { out << m_panelActions.value(spec.id); }
+	return out;
+}
+
+QWidget* Shell::toolStrip() const { return m_header->strip(); }
+
+void Shell::mount(const QString& id, QWidget* content)
+{
+	if (ShellPanel* frame = m_panels.value(id)) { frame->setContent(content); }
+}
+
+void Shell::placeInto(QWidget* host, ShellPanel* frame)
+{
+	if (frame->parentWidget() != host)
+	{
+		frame->setParent(host);
+		host->layout()->addWidget(frame);
+	}
+	frame->show();
+}
+
+QWidget* Shell::hostFor(const ShellPanelSpec& spec) const
+{
+	if (spec.id == ShellLayout::centerOf(m_layout.view())) { return m_hosts.value(static_cast<int>(ShellRegion::Center)); }
+	if (spec.id == kLauncher) { return m_layout.launcherBesideCenter() ? m_launcherHost : nullptr; }
+	return m_layout.isVisible(spec.id) ? m_hosts.value(static_cast<int>(spec.home)) : nullptr;
+}
+
+void Shell::apply()
+{
+	QHash<QString, QWidget*> target;
+	for (const ShellPanelSpec& spec : ShellLayout::panels()) { target.insert(spec.id, hostFor(spec)); }
+	// Park first, so a region never holds its old panel and its new one at once.
+	for (auto it = m_panels.cbegin(); it != m_panels.cend(); ++it)
+	{
+		if (target.value(it.key()) == nullptr && it.value()->parentWidget() != m_parking)
+		{
+			it.value()->hide();
+			it.value()->setParent(m_parking);
+		}
+	}
+	QSet<QWidget*> used;
+	for (auto it = target.cbegin(); it != target.cend(); ++it)
+	{
+		if (it.value() == nullptr) { continue; }
+		placeInto(it.value(), m_panels.value(it.key()));
+		used.insert(it.value());
+	}
+	for (QWidget* host : {m_hosts.value(static_cast<int>(ShellRegion::Left)), m_hosts.value(static_cast<int>(ShellRegion::Right)),
+		m_hosts.value(static_cast<int>(ShellRegion::Bottom)), m_launcherHost})
+	{
+		host->setVisible(used.contains(host));
+	}
+	syncActions();
+	persist();
+	emit layoutChanged();
+}
+
+void Shell::syncActions()
+{
+	for (auto it = m_viewActions.cbegin(); it != m_viewActions.cend(); ++it)
+	{
+		it.value()->setChecked(it.key() == static_cast<int>(m_layout.view()));
+	}
+	for (auto it = m_panelActions.cbegin(); it != m_panelActions.cend(); ++it)
+	{
+		it.value()->setChecked(m_layout.isVisible(it.key()));
+	}
+}
+
+ShellView Shell::viewOffering(const QString& id)
+{
+	// Only the arranger and the launcher are missing from some view, and Arrange offers both.
+	Q_UNUSED(id)
+	return ShellView::Arrange;
+}
+
+void Shell::setView(ShellView view)
+{
+	m_layout.setView(view);
+	apply();
+}
+
+bool Shell::togglePanel(const QString& id, QString* reason)
+{
+	if (!ShellLayout::isPanel(id))
+	{
+		if (reason != nullptr) { *reason = tr("there is no panel called \"%1\"").arg(id); }
+		return false;
+	}
+	if (!ShellLayout::offers(m_layout.view(), id)) { return revealPanel(id); }
+	const bool visible = m_layout.toggle(id, nullptr);
+	apply();
+	return visible;
+}
+
+bool Shell::revealPanel(const QString& id)
+{
+	if (!ShellLayout::isPanel(id)) { return false; }
+	if (!ShellLayout::offers(m_layout.view(), id)) { m_layout.setView(viewOffering(id)); }
+	m_layout.open(id, nullptr);
+	apply();
+	if (ShellPanel* frame = m_panels.value(id); frame != nullptr && frame->content() != nullptr)
+	{
+		frame->content()->setFocus();
+	}
+	return m_layout.isVisible(id);
+}
+
+QJsonObject Shell::state() const
+{
+	QJsonArray panels;
+	for (const ShellPanelSpec& spec : ShellLayout::panels())
+	{
+		panels.append(QJsonObject{
+			{QStringLiteral("id"), spec.id},
+			{QStringLiteral("title"), spec.title},
+			{QStringLiteral("region"), regionWord(m_layout.regionOf(spec.id))},
+			{QStringLiteral("visible"), m_layout.isVisible(spec.id)},
+			{QStringLiteral("available"), ShellLayout::offers(m_layout.view(), spec.id)},
+			{QStringLiteral("shortcut"), spec.shortcut},
+			{QStringLiteral("mounted"), m_panels.value(spec.id)->content() != nullptr}});
+	}
+	return QJsonObject{
+		{QStringLiteral("view"), ShellLayout::viewName(m_layout.view())},
+		{QStringLiteral("panels"), panels},
+		{QStringLiteral("focused"), m_layout.focused()},
+		{QStringLiteral("launcher"), m_layout.launcherBesideCenter()}};
+}
+
+void Shell::onFocusChanged(QWidget* now)
+{
+	QString id;
+	for (QWidget* w = now; w != nullptr && w != this; w = w->parentWidget())
+	{
+		if (auto* frame = qobject_cast<ShellPanel*>(w))
+		{
+			id = frame->id();
+			break;
+		}
+	}
+	if (id.isEmpty()) { return; }
+	m_layout.setFocused(id);
+	for (ShellPanel* frame : m_panels) { frame->setFocusedPanel(frame->id() == id); }
+}
+
+void Shell::persist() const
+{
+	// Nothing is written until the saved layout has been read: the first apply() in the
+	// constructor would otherwise overwrite the user's layout with the default.
+	if (m_restoring || !m_restoreAttempted) { return; }
+	QJsonObject doc = QJsonObject::fromVariantMap(m_layout.save());
+	doc.insert(QStringLiteral("columns"), sizesOf(m_columns));
+	doc.insert(QStringLiteral("rows"), sizesOf(m_rows));
+	doc.insert(QStringLiteral("centre"), sizesOf(m_centre));
+	ConfigManager::inst()->setValue(QStringLiteral("ui"), kConfigKey,
+		QString::fromUtf8(QJsonDocument(doc).toJson(QJsonDocument::Compact)));
+}
+
+void Shell::restoreConfiguredLayout()
+{
+	m_restoreAttempted = true;
+	const QString text = ConfigManager::inst()->value(QStringLiteral("ui"), kConfigKey);
+	const QJsonObject doc = QJsonDocument::fromJson(text.toUtf8()).object();
+	if (doc.isEmpty())
+	{
+		persist();
+		return;
+	}
+	m_restoring = true;
+	m_layout.restore(doc.toVariantMap());
+	applySizes(m_columns, doc.value(QStringLiteral("columns")).toArray());
+	applySizes(m_rows, doc.value(QStringLiteral("rows")).toArray());
+	applySizes(m_centre, doc.value(QStringLiteral("centre")).toArray());
+	m_restoring = false;
+	apply();
+}
+
+QWidget* createPanelNote(const QString& text, QWidget* parent)
+{
+	auto* note = new QLabel(text, parent);
+	note->setWordWrap(true);
+	note->setAlignment(Qt::AlignTop | Qt::AlignLeft);
+	note->setMargin(tokens::space::lg);
+	note->setFont(tokens::font(tokens::TextRole::Body));
+	QPalette pal = note->palette();
+	pal.setColor(QPalette::WindowText, tokens::palette().textMuted);
+	note->setPalette(pal);
+	return note;
+}
+
+} // namespace lmms::gui

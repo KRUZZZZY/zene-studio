@@ -37,6 +37,7 @@
 #include "ConfigManager.h"
 #include "DeprecationHelper.h"
 #include "GuiApplication.h"
+#include "MainWindow.h"
 #include "InstrumentTrackView.h"
 #include "MidiClip.h"
 #include "PianoRoll.h"
@@ -93,9 +94,7 @@ void MidiClipView::openInPianoRoll()
 {
 	auto pRoll = getGUI()->pianoRoll();
 	pRoll->setCurrentMidiClip(m_clip);
-	pRoll->parentWidget()->show();
-	pRoll->show();
-	pRoll->setFocus();
+	getGUI()->mainWindow()->revealPanel(QStringLiteral("detail"));
 }
 
 
@@ -106,18 +105,14 @@ void MidiClipView::setGhostInPianoRoll()
 {
 	auto pRoll = getGUI()->pianoRoll();
 	pRoll->setGhostMidiClip(m_clip);
-	pRoll->parentWidget()->show();
-	pRoll->show();
-	pRoll->setFocus();
+	getGUI()->mainWindow()->revealPanel(QStringLiteral("detail"));
 }
 
 void MidiClipView::setGhostInAutomationEditor()
 {
 	auto aEditor = getGUI()->automationEditor();
 	aEditor->setGhostMidiClip(m_clip);
-	aEditor->parentWidget()->show();
-	aEditor->show();
-	aEditor->setFocus();
+	getGUI()->mainWindow()->revealPanel(QStringLiteral("automation"));
 }
 
 void MidiClipView::resetName() { m_clip->setName(""); }
