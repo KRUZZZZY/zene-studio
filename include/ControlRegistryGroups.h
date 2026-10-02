@@ -747,6 +747,8 @@ LMMS_EXPORT void registerSessionRecordLandCommands(ControlRegistry& registry);
 LMMS_EXPORT void registerSessionPatternCommands(ControlRegistry& registry);
 //! 0.5.0 (WF-126): surface.mcu_* - a Mackie Control surface (ControlCommandsSurface.cpp).
 LMMS_EXPORT void registerSurfaceCommands(ControlRegistry& registry);
+//! 0.5.0 L04 (ED-048): marker.* (ControlCommandsMarkers.cpp).
+LMMS_EXPORT void registerMarkerCommands(ControlRegistry& registry);
 } // namespace lmms
 
 #endif // LMMS_CONTROL_REGISTRY_GROUPS_H

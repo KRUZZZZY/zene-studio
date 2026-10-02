@@ -70,6 +70,7 @@
 include/AboutDialog.h
 include/Accessibility.h
 include/ActionGroup.h
+include/ArrangerOverlays.h
 include/ArrayVector.h
 include/AudioAlsa.h
 include/AudioAlsaSetupWidget.h
@@ -429,10 +430,12 @@ include/ProjectContainer.h
 include/ProjectIds.h
 include/ProjectJournal.h
 include/ProjectKey.h
+include/ProjectMarkers.h
 include/ProjectNotes.h
 include/ProjectRecovery.h
 include/ProjectRenderer.h
 include/ProjectRevisions.h
+include/ProjectSection.h
 include/ProjectVersion.h
 include/ProvenanceSection.h
 include/PunchWindow.h
@@ -1155,6 +1158,7 @@ src/core/ControlCommandsIdContract.cpp
 src/core/ControlCommandsInterchange.cpp
 src/core/ControlCommandsLink.cpp
 src/core/ControlCommandsLivecode.cpp
+src/core/ControlCommandsMarkers.cpp
 src/core/ControlCommandsMastering.cpp
 src/core/ControlCommandsMasteringRun.cpp
 src/core/ControlCommandsMeter.cpp
@@ -1278,6 +1282,7 @@ src/core/ControlReversibility.cpp
 src/core/ControlReversibilityTable.cpp
 src/core/ControlReversibilityTableAction.cpp
 src/core/ControlReversibilityTableArchive.cpp
+src/core/ControlReversibilityTableArranger.cpp
 src/core/ControlReversibilityTableAutomationModes.cpp
 src/core/ControlReversibilityTableAutomationRamp.cpp
 src/core/ControlReversibilityTableChain.cpp
@@ -1435,6 +1440,7 @@ src/core/ProjectJournal.cpp
 src/core/ProjectJournalBounds.cpp
 src/core/ProjectJournalStructural.cpp
 src/core/ProjectKey.cpp
+src/core/ProjectMarkers.cpp
 src/core/ProjectRecovery.cpp
 src/core/ProjectRenderer.cpp
 src/core/ProjectRevisions.cpp
@@ -1497,6 +1503,7 @@ src/core/SessionTuningScala.cpp
 src/core/SmfInterchange.cpp
 src/core/SmfInterchangeReader.cpp
 src/core/Song.cpp
+src/core/SongSections.cpp
 src/core/StemJobManager.cpp
 src/core/StemModelStore.cpp
 src/core/StemTrackBuilder.cpp
@@ -1567,6 +1574,7 @@ src/core/midi/MidiSndio.cpp
 src/core/midi/MidiWinMM.cpp
 src/core/midi/MpeExpression.cpp
 src/gui/ActionGroup.cpp
+src/gui/ArrangerOverlays.cpp
 src/gui/AudioAlsaSetupWidget.cpp
 src/gui/AudioDeviceSetupWidget.cpp
 src/gui/AutomatableModelView.cpp
@@ -1919,6 +1927,7 @@ tests/src/core/PluginLogoResourceTest.cpp
 tests/src/core/PluginScanCacheTest.cpp
 tests/src/core/ProjectContainerEntriesTest.cpp
 tests/src/core/ProjectContainerTest.cpp
+tests/src/core/ProjectMarkersTest.cpp
 tests/src/core/ProjectOpenIntegrityTest.cpp
 tests/src/core/ProjectRecoveryTest.cpp
 tests/src/core/ProjectRevIdsTest.cpp

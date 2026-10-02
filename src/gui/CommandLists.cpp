@@ -238,4 +238,15 @@ ListSpec mappingTemplates()
 	return out;
 }
 
+ListSpec markers()
+{
+	ListSpec out = spec("Markers", "marker.list", "markers", {QStringLiteral("marker"), QStringLiteral("tick"),
+		QStringLiteral("name"), QStringLiteral("color")});
+	const QHash<QString, QString> marker{{QStringLiteral("marker"), QStringLiteral("marker")}};
+	out.actions = {act("Jump", "marker.jump", marker), act("Edit...", "marker.set", marker, {}, true),
+		act("Remove", "marker.remove", marker)};
+	out.extras = {extra("Add at Play Position", "marker.add", {}, false), extra("Add...", "marker.add")};
+	return out;
+}
+
 } // namespace lmms::gui::CommandLists

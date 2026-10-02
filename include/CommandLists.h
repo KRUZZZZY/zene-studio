@@ -64,6 +64,8 @@ LMMS_EXPORT ListSpec macros();
 //! mapping templates.
 LMMS_EXPORT ListSpec controllerMappings();
 LMMS_EXPORT ListSpec mappingTemplates();
+//! ED-048: the project's markers - jump, rename/move/recolour, remove, add at the play position.
+LMMS_EXPORT ListSpec markers();
 
 } // namespace CommandLists
 

@@ -58,6 +58,7 @@ namespace lmms
 {
 
 class AutomationTrack;
+class DataFile;
 class Keymap;
 class MidiClip;
 class Scale;
@@ -645,6 +646,8 @@ private:
 	 *  renaming a private helper that every branch in this line also edits
 	 *  would buy no behaviour. */
 	bool restorePublisherBackedSection(const QDomNode &node);
+	//! The song-state sections beside the track container, and every ProjectSection (SongSections.cpp).
+	void saveProjectSections( DataFile & dataFile );
 
 	/*! SPEC-ARCH-4 1.6.1: the named sections of <song> this build does read.
 	 *  Restores whichever \a element is and answers true when it was one of

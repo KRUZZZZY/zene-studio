@@ -499,6 +499,7 @@
 # recipe's pathspec does not cover - the FocusDesk tests sit the same way, registered in
 # tests/CMakeLists.txt and listed in tests/all-sources.txt.
 include/Accessibility.h
+include/ArrangerOverlays.h
 include/AudioBus.h
 include/AudioInputPath.h
 include/AudioPlugin.h
@@ -638,8 +639,10 @@ include/PluginScanCache.h
 include/ProjectContainer.h
 include/ProjectIds.h
 include/ProjectKey.h
+include/ProjectMarkers.h
 include/ProjectRecovery.h
 include/ProjectRevisions.h
+include/ProjectSection.h
 include/ProvenanceSection.h
 include/PunchWindow.h
 include/Rack.h
@@ -885,6 +888,7 @@ src/core/ControlCommandsIdContract.cpp
 src/core/ControlCommandsInterchange.cpp
 src/core/ControlCommandsLink.cpp
 src/core/ControlCommandsLivecode.cpp
+src/core/ControlCommandsMarkers.cpp
 src/core/ControlCommandsMastering.cpp
 src/core/ControlCommandsMasteringRun.cpp
 src/core/ControlCommandsMeter.cpp
@@ -1008,6 +1012,7 @@ src/core/ControlReversibility.cpp
 src/core/ControlReversibilityTable.cpp
 src/core/ControlReversibilityTableAction.cpp
 src/core/ControlReversibilityTableArchive.cpp
+src/core/ControlReversibilityTableArranger.cpp
 src/core/ControlReversibilityTableAutomationModes.cpp
 src/core/ControlReversibilityTableAutomationRamp.cpp
 src/core/ControlReversibilityTableChain.cpp
@@ -1119,6 +1124,7 @@ src/core/ProjectIds.cpp
 src/core/ProjectJournalBounds.cpp
 src/core/ProjectJournalStructural.cpp
 src/core/ProjectKey.cpp
+src/core/ProjectMarkers.cpp
 src/core/ProjectRecovery.cpp
 src/core/ProjectRevisions.cpp
 src/core/ProvenanceSection.cpp
@@ -1167,6 +1173,7 @@ src/core/SessionTuningMtsEsp.cpp
 src/core/SessionTuningScala.cpp
 src/core/SmfInterchange.cpp
 src/core/SmfInterchangeReader.cpp
+src/core/SongSections.cpp
 src/core/StemJobManager.cpp
 src/core/StemModelStore.cpp
 src/core/StemTrackBuilder.cpp
@@ -1183,6 +1190,7 @@ src/core/audio/MultiTrackRecorder.cpp
 src/core/audio/TrackRecorder.cpp
 src/core/midi/MidiReconnect.cpp
 src/core/midi/MpeExpression.cpp
+src/gui/ArrangerOverlays.cpp
 src/gui/AutomationModeMenu.cpp
 src/gui/BrowserTagMenu.cpp
 src/gui/ChainPresetMenu.cpp
@@ -1417,6 +1425,7 @@ tests/src/core/OutOfProcessHostTest.cpp
 tests/src/core/PartialLoadTest.cpp
 tests/src/core/ProjectContainerEntriesTest.cpp
 tests/src/core/ProjectContainerTest.cpp
+tests/src/core/ProjectMarkersTest.cpp
 tests/src/core/ProjectOpenIntegrityTest.cpp
 tests/src/core/ProjectRevIdsTest.cpp
 

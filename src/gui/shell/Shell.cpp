@@ -40,7 +40,10 @@
 #include "DesignTokens.h"
 #include "ShellChrome.h"
 #include "ShellIcons.h"
+#include "ArrangerOverlays.h"
+#include "GuiApplication.h"
 #include "MacroMenu.h"
+#include "SongEditor.h"
 #include "MenuBarExtras.h"
 #include "ShellPanel.h"
 #include "ShortcutMap.h"
@@ -127,6 +130,7 @@ void Shell::showEvent(QShowEvent* event)
 		if (auto* main = qobject_cast<QMainWindow*>(window()))
 		{
 			installNavigateMenu(main->menuBar());
+			if (getGUI() != nullptr && getGUI()->songEditor() != nullptr) { installArrangerOverlays(getGUI()->songEditor()->m_editor); }
 			MacroMenu::install(main->menuBar());
 			ShortcutMap::apply(main->menuBar());
 		}

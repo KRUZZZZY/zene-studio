@@ -28,6 +28,7 @@
 #include <QMenuBar>
 
 #include "CommandForm.h"
+#include "CommandLists.h"
 
 namespace lmms::gui
 {
@@ -60,6 +61,13 @@ QMenu* installNavigateMenu(QMenuBar* bar)
 	run(QObject::tr("Fit Loop"), QStringLiteral("arrangement.zoom"), {{QStringLiteral("fit"), QStringLiteral("loop")}});
 	run(QObject::tr("Fit Selection"), QStringLiteral("arrangement.zoom"), {{QStringLiteral("fit"), QStringLiteral("selection")}});
 	run(QObject::tr("Fit Tracks"), QStringLiteral("arrangement.fit_tracks"), {});
+	menu->addSeparator();
+	run(QObject::tr("Add Marker at Play Position"), QStringLiteral("marker.add"), {});
+	run(QObject::tr("Next Marker"), QStringLiteral("marker.jump"), {{QStringLiteral("direction"), QStringLiteral("next")}});
+	run(QObject::tr("Previous Marker"), QStringLiteral("marker.jump"), {{QStringLiteral("direction"), QStringLiteral("previous")}});
+	QAction* markers = menu->addAction(QObject::tr("Markers..."));
+	markers->setProperty("controlCommand", QStringLiteral("marker.list"));
+	QObject::connect(markers, &QAction::triggered, menu, [menu] { showCommandList(menu->parentWidget(), CommandLists::markers()); });
 	menu->addSeparator();
 	run(QObject::tr("Tool Menu at Pointer"), QStringLiteral("window.tool_menu"), {});
 	return menu;

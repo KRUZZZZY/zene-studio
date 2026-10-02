@@ -668,6 +668,7 @@ set(LMMS_SRCS
 	# The window.* group's rows (040/survey-fixes); the group itself is src/gui.
 	core/ControlReversibilityTableWindow.cpp
 	core/ControlReversibilityTableCustomisation.cpp
+	core/ControlReversibilityTableArranger.cpp
 	core/ControlReversibilityTableShell.cpp
 	${CMAKE_SOURCE_DIR}/thirdparty/mts-esp/libMTSClient.cpp
 	${CMAKE_SOURCE_DIR}/thirdparty/mts-esp/libMTSMaster.cpp
@@ -837,6 +838,7 @@ set(LMMS_SRCS
 	core/LmmsSemaphore.cpp
 	core/SerializingObject.cpp
 	core/Song.cpp
+	core/SongSections.cpp
 	core/TempoMap.cpp
 	# The Standard MIDI File conductor track (feature row 33): the encoder and
 	# the bounds-checked reader behind the interchange.* group. Hand-written
@@ -904,6 +906,8 @@ set(LMMS_SRCS
 	core/ControlCommandsSurface.cpp
 	core/McuProtocol.cpp
 	core/McuSurface.cpp
+	core/ControlCommandsMarkers.cpp
+	core/ProjectMarkers.cpp
 	core/Timeline.cpp
 	core/TrackMixModels.cpp
 	core/TimePos.cpp
@@ -1057,6 +1061,7 @@ SET(ZENE_API_SRCS
 	core/ControlReversibilityTableWasmRender.cpp
 	core/ControlReversibilityTableWindow.cpp
 	core/ControlReversibilityTableCustomisation.cpp
+	core/ControlReversibilityTableArranger.cpp
 	core/ControlReversibilityTableShell.cpp
 )
 
