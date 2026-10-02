@@ -30,6 +30,7 @@
 #include "LmmsPalette.h"
 
 #include "AutomationEditor.h"
+#include "DesignTokens.h"
 #include "ConfigManager.h"
 #include "ControllerRackView.h"
 #include "MixerView.h"
@@ -141,6 +142,9 @@ GuiApplication::GuiApplication()
 	QDir::addSearchPath("artwork", ConfigManager::inst()->themeDir());
 	QDir::addSearchPath("artwork", ConfigManager::inst()->defaultThemeDir());
 	QDir::addSearchPath("artwork", ":/artwork");
+
+	// One typeface for the whole interface, set before any widget exists (DesignTokens.h).
+	QApplication::setFont(tokens::font(tokens::TextRole::Body));
 
 	auto lmmsstyle = new LmmsStyle();
 	QApplication::setStyle(lmmsstyle);

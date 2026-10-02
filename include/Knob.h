@@ -199,6 +199,8 @@ private:
 						float _innerRadius = 1) const;
 
 	void drawKnob( QPainter * _p );
+	//! 0.5.0: the flat, token-coloured knob every pixmap knob type is drawn as.
+	void drawFlatKnob( QPainter * painter );
 	void drawLabel(QPainter& p);
 	bool updateAngle();
 

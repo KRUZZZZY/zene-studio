@@ -35,6 +35,7 @@
 #include "DesignTokens.h"
 #include "Engine.h"
 #include "ShellIcons.h"
+#include "TransportReadouts.h"
 #include "Song.h"
 
 namespace lmms::gui
@@ -160,6 +161,8 @@ ShellHeader::ShellHeader(QWidget* parent)
 	// A checkable button toggles itself on click; the song's state is the truth, so re-read it.
 	connect(m_play, &QToolButton::clicked, this, &ShellHeader::syncTransport, Qt::QueuedConnection);
 	m_stripLayout->addWidget(separator(m_strip));
+	m_readouts = new TransportReadouts(m_strip);
+	m_stripLayout->addWidget(m_readouts);
 	// Everything addToStrip() adds (the song editor's tempo, time, meter and master controls)
 	// goes before this stretch; addButton() puts the project buttons after it, on the right.
 	m_stripLayout->addStretch(1);

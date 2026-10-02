@@ -26,6 +26,10 @@
 
 #include "ComboBox.h"
 
+#include <QPainterPath>
+
+#include "DesignTokens.h"
+
 #include <QMouseEvent>
 #include <QPainter>
 #include <QStyleOptionFrame>
@@ -55,6 +59,7 @@ ComboBox::ComboBox( QWidget * _parent, const QString & _name ) :
 				this, SLOT(setItem(QAction*)));
 
 	setWindowTitle( _name );
+	setAttribute( Qt::WA_Hover, true );
 	doConnections();
 }
 
@@ -153,57 +158,44 @@ void ComboBox::mousePressEvent( QMouseEvent* event )
 
 
 
-void ComboBox::paintEvent( QPaintEvent * _pe )
+void ComboBox::paintEvent( QPaintEvent * )
 {
+	// 0.5.0 (docs/UI-SHELL.md §1): a flat dropdown painted from the design tokens - rounded field,
+	// the current item in the interface's typeface, a vector chevron - in place of the bevelled
+	// frame, the shadowed text and the arrow bitmap.
+	const tokens::Palette& pal = tokens::palette();
 	QPainter p( this );
+	p.setRenderHint( QPainter::Antialiasing );
+	const QRectF field = QRectF( rect() ).adjusted( 0.5, 0.5, -0.5, -0.5 );
+	p.setPen( QPen( hasFocus() ? pal.focusRing : pal.separator, 1 ) );
+	p.setBrush( m_pressed ? pal.selected : underMouse() ? pal.controlHover : pal.control );
+	p.drawRoundedRect( field, tokens::radius::md, tokens::radius::md );
 
-	p.fillRect(2, 2, width() - 2, height() - 4, m_background);
+	const qreal cx = width() - CB_ARROW_BTN_WIDTH / 2.0;
+	const qreal cy = height() / 2.0;
+	QPainterPath chevron;
+	chevron.moveTo( cx - 3.5, cy - 1.5 );
+	chevron.lineTo( cx, cy + 2.0 );
+	chevron.lineTo( cx + 3.5, cy - 1.5 );
+	p.setPen( QPen( isEnabled() ? pal.textMuted : pal.textDisabled, 1.5, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin ) );
+	p.setBrush( Qt::NoBrush );
+	p.drawPath( chevron );
 
-	QColor shadow = palette().shadow().color();
-	QColor highlight = palette().highlight().color();
-
-	shadow.setAlpha( 124 );
-	highlight.setAlpha( 124 );
-
-	// button-separator
-	p.setPen( shadow );
-	p.drawLine( width() - CB_ARROW_BTN_WIDTH - 1, 1, width() - CB_ARROW_BTN_WIDTH - 1, height() - 3 );
-
-	p.setPen( highlight );
-	p.drawLine( width() - CB_ARROW_BTN_WIDTH, 1, width() - CB_ARROW_BTN_WIDTH, height() - 3 );
-
-	// Border
-	QStyleOptionFrame opt;
-	opt.initFrom( this );
-	opt.state = QStyle::StateFlag::State_None;
-
-	style()->drawPrimitive( QStyle::PE_Frame, &opt, &p, this );
-
-	auto arrow = m_pressed ? m_arrowSelected : m_arrow;
-
-	p.drawPixmap(width() - CB_ARROW_BTN_WIDTH + 3, 4, arrow);
-
-	if( model() && model()->size() > 0 )
+	if( model() == nullptr || model()->size() <= 0 ) { return; }
+	p.setClipRect( QRect( 4, 1, width() - CB_ARROW_BTN_WIDTH - 6, height() - 2 ) );
+	QPixmap pm = model()->currentData() ? model()->currentData()->pixmap() : QPixmap();
+	int tx = 7;
+	if( !pm.isNull() )
 	{
-		p.setFont( font() );
-		p.setClipRect( QRect( 4, 2, width() - CB_ARROW_BTN_WIDTH - 8, height() - 2 ) );
-		QPixmap pm = model()->currentData() ?  model()->currentData()->pixmap() : QPixmap();
-		int tx = 5;
-		if( !pm.isNull() )
-		{
-			if( pm.height() > 16 )
-			{
-				pm = pm.scaledToHeight( 16, Qt::SmoothTransformation );
-			}
-			p.drawPixmap( tx, 3, pm );
-			tx += pm.width() + 3;
-		}
-		const int y = ( height()+p.fontMetrics().height() ) /2;
-		p.setPen( QColor( 64, 64, 64 ) );
-		p.drawText( tx+1, y-3, model()->currentText() );
-		p.setPen( QColor( 224, 224, 224 ) );
-		p.drawText( tx, y-4, model()->currentText() );
+		pm = pm.scaledToHeight( std::min( 14, pm.height() ), Qt::SmoothTransformation );
+		p.drawPixmap( tx, ( height() - pm.height() ) / 2, pm );
+		tx += pm.width() + 4;
 	}
+	QFont f = tokens::font( tokens::TextRole::Small );
+	p.setFont( f );
+	p.setPen( isEnabled() ? pal.text : pal.textDisabled );
+	p.drawText( QRect( tx, 0, width() - tx - CB_ARROW_BTN_WIDTH, height() ), Qt::AlignVCenter | Qt::AlignLeft,
+		model()->currentText() );
 }
 
 

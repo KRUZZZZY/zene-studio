@@ -29,6 +29,8 @@
 #include <QPainter>
 
 #include "LcdWidget.h"
+
+#include "DesignTokens.h"
 #include "DeprecationHelper.h"
 #include "embed.h"
 #include "FontHelper.h"
@@ -136,90 +138,37 @@ void LcdWidget::setTextShadowColor( const QColor & c )
 
 void LcdWidget::paintEvent( QPaintEvent* )
 {
+	// 0.5.0 (docs/UI-SHELL.md §1): a flat number field painted from the design tokens - the
+	// value in the interface's typeface on a dark rounded field, the label as a caption below -
+	// in place of the seven-segment bitmap. The cell geometry the bitmap defined is kept, so no
+	// layout moves; seamless edges (LcdFloatSpinBox's halves) are drawn square.
+	const tokens::Palette& pal = tokens::palette();
 	QPainter p( this );
+	p.setRenderHint( QPainter::Antialiasing );
+	const int marginX1 = m_seamlessLeft ? 0 : 1 + m_marginWidth;
+	const int marginX2 = m_seamlessRight ? 0 : 1 + m_marginWidth;
+	const QRectF field( 0.5, 0.5, m_cellWidth * m_numDigits + marginX1 + marginX2 - 1.0, m_cellHeight + 1.0 );
+	const qreal radius = m_seamlessLeft || m_seamlessRight ? 0.0 : tokens::radius::md;
+	p.setPen( m_seamlessLeft || m_seamlessRight ? Qt::NoPen : QPen( pal.separator, 1 ) );
+	p.setBrush( pal.base );
+	p.drawRoundedRect( field, radius, radius );
 
-	QSize cellSize( m_cellWidth, m_cellHeight );
+	QFont digits = tokens::font( tokens::TextRole::Body );
+	digits.setPixelSize( std::max( 9, static_cast<int>( m_cellHeight * 0.78 ) ) );
+	digits.setWeight( QFont::Medium );
+	p.setFont( digits );
+	p.setPen( isEnabled() ? pal.text : pal.textDisabled );
+	const Qt::Alignment align = m_seamlessRight ? ( Qt::AlignRight | Qt::AlignVCenter )
+		: m_seamlessLeft ? ( Qt::AlignLeft | Qt::AlignVCenter ) : Qt::AlignCenter;
+	p.drawText( field.adjusted( m_seamlessLeft ? 1 : 3, 0, m_seamlessRight ? -1 : -3, 0 ), align, m_display );
 
-	QRect cellRect( 0, 0, m_cellWidth, m_cellHeight );
-
-	int margin = 1;  // QStyle::PM_DefaultFrameWidth;
-	//int lcdWidth = m_cellWidth * m_numDigits + (margin*m_marginWidth)*2;
-
-//	p.translate( width() / 2 - lcdWidth / 2, 0 ); 
-	p.save();
-
-	// Don't skip any space and don't draw margin on the left side in seamless mode
-	if (m_seamlessLeft)
-	{
-		p.translate(0, margin);
-	}
-	else
-	{
-		p.translate(margin, margin);
-		// Left Margin
-		p.drawPixmap(cellRect, m_lcdPixmap,
-			QRect(QPoint(charsPerPixmap * m_cellWidth, isEnabled() ? 0 : m_cellHeight), cellSize));
-
-		p.translate(m_marginWidth, 0);
-	}
-
-	// Padding
-	for( int i=0; i < m_numDigits - m_display.length(); i++ ) 
-	{
-		p.drawPixmap(cellRect, m_lcdPixmap, QRect(QPoint(10 * m_cellWidth, isEnabled() ? 0 : m_cellHeight), cellSize));
-		p.translate( m_cellWidth, 0 );
-	}
-
-	// Digits
-	for (const auto& digit : m_display)
-	{
-		int val = digit.digitValue();
-		if( val < 0 ) 
-		{
-			if (digit == '-') val = 11;
-			else
-				val = 10;
-		}
-		p.drawPixmap(cellRect, m_lcdPixmap, QRect(QPoint(val * m_cellWidth, isEnabled() ? 0 : m_cellHeight), cellSize));
-		p.translate( m_cellWidth, 0 );
-	}
-
-	// Right Margin
-	p.drawPixmap(QRect(0, 0, m_seamlessRight ? 0 : m_marginWidth - 1, m_cellHeight), m_lcdPixmap,
-		QRect(charsPerPixmap * m_cellWidth, isEnabled() ? 0 : m_cellHeight, m_cellWidth / 2, m_cellHeight));
-
-	p.restore();
-
-	// Border
-	// When either the left or right edge is seamless, the border drawing must be done
-	// by the encapsulating class (usually LcdFloatSpinBox).
-	if (!m_seamlessLeft && !m_seamlessRight)
-	{
-		QStyleOptionFrame opt;
-		opt.initFrom(this);
-		opt.state = QStyle::State_Sunken;
-		opt.rect = QRect(0, 0, m_cellWidth * m_numDigits + (margin + m_marginWidth) * 2 - 1,
-			m_cellHeight + (margin * 2));
-
-		style()->drawPrimitive(QStyle::PE_Frame, &opt, &p, this);
-	}
-
-	p.resetTransform();
-
-	// Label
 	if( !m_label.isEmpty() )
 	{
-		p.setFont(adjustedToPixelSize(p.font(), DEFAULT_FONT_SIZE));
-		p.setPen( textShadowColor() );
-		p.drawText(width() / 2 -
-				p.fontMetrics().horizontalAdvance(m_label) / 2 + 1,
-						height(), m_label);
-		p.setPen( textColor() );
-		p.drawText(width() / 2 -
-				p.fontMetrics().horizontalAdvance(m_label) / 2,
-						height() - 1, m_label);
+		p.setFont( tokens::font( tokens::TextRole::Caption ) );
+		p.setPen( pal.textMuted );
+		p.drawText( QRect( 0, static_cast<int>( field.bottom() ), width(), height() - static_cast<int>( field.bottom() ) ),
+			Qt::AlignHCenter | Qt::AlignBottom, m_label );
 	}
-
 }
 
 

@@ -30,6 +30,8 @@
 
 
 
+class QPainter;
+
 namespace lmms::gui
 {
 
@@ -77,6 +79,7 @@ private:
 	
 
 	void onTextUpdated(); //!< to be called when you updated @a m_text
+	void paintIndicator(QPainter& p, const QRect& box) const;
 	void paintLegacy(QPaintEvent * p);
 	void paintNonLegacy(QPaintEvent * p);
 

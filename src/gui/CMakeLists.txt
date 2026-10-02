@@ -89,6 +89,7 @@ SET(LMMS_SRCS
 	gui/shell/ShellIcons.cpp
 	gui/shell/ShellLayout.cpp
 	gui/shell/ShellPanel.cpp
+	gui/shell/TransportReadouts.cpp
 	gui/GuiApplication.cpp
 	gui/LadspaControlView.cpp
 	gui/LfoControllerDialog.cpp

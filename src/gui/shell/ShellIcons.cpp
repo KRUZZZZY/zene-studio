@@ -1,5 +1,5 @@
 /*
- * ShellIcons.cpp - resolution-independent icons for the 0.5.0 shell, painted from paths
+ * ShellIcons.cpp - the interface's one icon set (Lucide, ISC licence), rendered from SVG
  *
  * Copyright (c) 2026 Zene Studio contributors
  *
@@ -24,13 +24,16 @@
 
 #include "ShellIcons.h"
 
-#include <functional>
 #include <map>
 
+#include <QFile>
+#include <QGuiApplication>
 #include <QIconEngine>
+#include <QImageReader>
 #include <QPainter>
-#include <QPainterPathStroker>
 #include <QPixmap>
+#include <QScreen>
+#include <QSvgRenderer>
 
 #include "DesignTokens.h"
 
@@ -40,282 +43,238 @@ namespace lmms::gui::shellicons
 namespace
 {
 
-//! A stroke of width @a w turned into a fillable outline, so every glyph paints one way.
-QPainterPath stroked(const QPainterPath& path, qreal w = 1.5)
+//! The shell's own icon ids -> Lucide icon names.
+const std::map<QString, QString>& shellTable()
 {
-	QPainterPathStroker stroker;
-	stroker.setWidth(w);
-	stroker.setCapStyle(Qt::RoundCap);
-	stroker.setJoinStyle(Qt::RoundJoin);
-	return stroker.createStroke(path);
-}
-
-QPainterPath line(qreal x1, qreal y1, qreal x2, qreal y2, qreal w = 1.5)
-{
-	QPainterPath p;
-	p.moveTo(x1, y1);
-	p.lineTo(x2, y2);
-	return stroked(p, w);
-}
-
-QPainterPath box(qreal x, qreal y, qreal w, qreal h, qreal r = 1.5)
-{
-	QPainterPath p;
-	p.addRoundedRect(QRectF(x, y, w, h), r, r);
-	return p;
-}
-
-QPainterPath outline(qreal x, qreal y, qreal w, qreal h, qreal r = 1.5)
-{
-	return stroked(box(x, y, w, h, r), 1.4);
-}
-
-QPainterPath polygon(std::initializer_list<QPointF> points)
-{
-	QPainterPath p;
-	p.addPolygon(QPolygonF(QVector<QPointF>(points)));
-	p.closeSubpath();
-	return p;
-}
-
-QPainterPath inspector()
-{
-	QPainterPath p = outline(2, 2, 12, 12, 2.5);
-	p.addEllipse(QPointF(8, 5.2), 1.1, 1.1);
-	return p.united(line(8, 7.6, 8, 11.2, 1.7));
-}
-
-QPainterPath browser()
-{
-	QPainterPath p = outline(2, 4, 12, 9, 1.5);
-	return p.united(stroked(polygon({{2, 4}, {2, 2.8}, {6.5, 2.8}, {7.5, 4}}), 1.2));
-}
-
-QPainterPath devices()
-{
-	QPainterPath p = outline(1.5, 3.5, 6, 9, 1.5);
-	p = p.united(outline(8.5, 3.5, 6, 9, 1.5));
-	p.addEllipse(QPointF(4.5, 7), 1.2, 1.2);
-	p.addEllipse(QPointF(11.5, 7), 1.2, 1.2);
-	return p;
-}
-
-QPainterPath detail()
-{
-	QPainterPath p = box(2, 3, 5, 2, 0.8);
-	p.addPath(box(6, 7, 6, 2, 0.8));
-	p.addPath(box(9, 11, 5, 2, 0.8));
-	return p;
-}
-
-QPainterPath mixer()
-{
-	QPainterPath p = line(4, 2.5, 4, 13.5, 1.2);
-	p = p.united(line(8, 2.5, 8, 13.5, 1.2)).united(line(12, 2.5, 12, 13.5, 1.2));
-	p.addPath(box(2.5, 9, 3, 2, 0.6));
-	p.addPath(box(6.5, 4.5, 3, 2, 0.6));
-	p.addPath(box(10.5, 7, 3, 2, 0.6));
-	return p;
-}
-
-QPainterPath automation()
-{
-	QPainterPath curve;
-	curve.moveTo(2, 12);
-	curve.lineTo(6, 5);
-	curve.lineTo(10, 9);
-	curve.lineTo(14, 3);
-	QPainterPath p = stroked(curve, 1.3);
-	for (const QPointF& at : {QPointF(2, 12), QPointF(6, 5), QPointF(10, 9), QPointF(14, 3)})
-	{
-		p.addEllipse(at, 1.5, 1.5);
-	}
-	return p;
-}
-
-QPainterPath pattern()
-{
-	QPainterPath p;
-	for (int row = 0; row < 3; ++row)
-	{
-		for (int col = 0; col < 4; ++col)
-		{
-			const bool on = (row + col) % 2 == 0;
-			p.addPath(on ? box(1.5 + col * 3.4, 3 + row * 3.6, 2.6, 2.6, 0.6)
-				: outline(1.5 + col * 3.4, 3 + row * 3.6, 2.6, 2.6, 0.6));
-		}
-	}
-	return p;
-}
-
-QPainterPath launcher()
-{
-	QPainterPath p;
-	for (int row = 0; row < 3; ++row)
-	{
-		for (int col = 0; col < 3; ++col) { p.addPath(box(2 + col * 4.3, 2 + row * 4.3, 3.2, 3.2, 0.7)); }
-	}
-	return p;
-}
-
-QPainterPath arranger()
-{
-	QPainterPath p = box(1.5, 3, 6, 2.6, 0.8);
-	p.addPath(box(8.5, 3, 6, 2.6, 0.8));
-	p.addPath(box(4, 7, 8, 2.6, 0.8));
-	p.addPath(box(1.5, 11, 4, 2.6, 0.8));
-	p.addPath(box(9, 11, 5.5, 2.6, 0.8));
-	return p;
-}
-
-QPainterPath play() { return polygon({{4, 2.5}, {13.5, 8}, {4, 13.5}}); }
-QPainterPath stop() { return box(3.5, 3.5, 9, 9, 1.2); }
-
-QPainterPath record()
-{
-	QPainterPath p;
-	p.addEllipse(QPointF(8, 8), 5, 5);
-	return p;
-}
-
-QPainterPath loop()
-{
-	QPainterPath arc;
-	arc.arcMoveTo(QRectF(2.5, 3.5, 11, 9), 30);
-	arc.arcTo(QRectF(2.5, 3.5, 11, 9), 30, 300);
-	QPainterPath p = stroked(arc, 1.5);
-	return p.united(polygon({{13.8, 2.8}, {14.2, 7.2}, {10.2, 6.0}}));
-}
-
-QPainterPath metronome()
-{
-	QPainterPath p = stroked(polygon({{5, 14}, {11, 14}, {9.4, 2.5}, {6.6, 2.5}}), 1.3);
-	return p.united(line(8, 11, 12.5, 4.5, 1.3));
-}
-
-QPainterPath draw()
-{
-	QPainterPath p = polygon({{3, 13}, {3.6, 10.2}, {11, 2.8}, {13.2, 5}, {5.8, 12.4}});
-	return p;
-}
-
-QPainterPath selectTool()
-{
-	return polygon({{3, 2}, {12.5, 9.2}, {8.4, 9.6}, {10.8, 13.8}, {9.2, 14.6}, {6.8, 10.4}, {3.8, 13}});
-}
-
-QPainterPath slice()
-{
-	QPainterPath p = polygon({{9.5, 1.5}, {11.5, 1.5}, {7.5, 14.5}, {5.8, 14.5}});
-	return p.united(line(2, 8, 14, 8, 1.0));
-}
-
-QPainterPath erase()
-{
-	QPainterPath p = polygon({{2, 10}, {8.5, 3.5}, {13.5, 8.5}, {9, 13}, {4.5, 13}});
-	return p.subtracted(polygon({{4.2, 10}, {6.6, 7.6}, {10, 11}, {8.4, 11.8}, {5.4, 11.8}}));
-}
-
-QPainterPath audition()
-{
-	QPainterPath p = polygon({{2, 6}, {5, 6}, {9, 2.5}, {9, 13.5}, {5, 10}, {2, 10}});
-	QPainterPath wave;
-	wave.arcMoveTo(QRectF(6, 4, 7, 8), -50);
-	wave.arcTo(QRectF(6, 4, 7, 8), -50, 100);
-	return p.united(stroked(wave, 1.3));
-}
-
-QPainterPath fold()
-{
-	QPainterPath p = line(2, 3, 14, 3, 1.4).united(line(2, 13, 14, 13, 1.4));
-	p = p.united(polygon({{8, 5}, {11, 7.5}, {5, 7.5}})).united(polygon({{8, 11}, {11, 8.5}, {5, 8.5}}));
-	return p;
-}
-
-QPainterPath ghost()
-{
-	QPainterPath p = outline(1.5, 3, 7, 3, 0.8);
-	p.addPath(box(7.5, 9, 7, 3, 0.8));
-	return p;
-}
-
-QPainterPath scale()
-{
-	QPainterPath p;
-	const int keys[] = {0, 2, 4, 5, 7, 9, 11};
-	for (int i = 0; i < 7; ++i) { p.addPath(box(1.2 + keys[i] * 1.15, 13 - i * 1.6, 1.4, 1.4 + i * 1.6, 0.4)); }
-	return p;
-}
-
-QPainterPath plus() { return line(8, 3, 8, 13, 1.7).united(line(3, 8, 13, 8, 1.7)); }
-
-QPainterPath quantize()
-{
-	QPainterPath p = line(3, 2, 3, 14, 1.0).united(line(8, 2, 8, 14, 1.0)).united(line(13, 2, 13, 14, 1.0));
-	p.addPath(box(3, 6.5, 5, 3, 0.8));
-	return p;
-}
-
-QPainterPath follow()
-{
-	QPainterPath p = line(8, 2, 8, 14, 1.4);
-	return p.united(polygon({{10, 5}, {14, 8}, {10, 11}}));
-}
-
-QPainterPath chevron()
-{
-	QPainterPath p;
-	p.moveTo(4, 6);
-	p.lineTo(8, 10);
-	p.lineTo(12, 6);
-	return stroked(p, 1.6);
-}
-
-QPainterPath newProject()
-{
-	QPainterPath p = stroked(polygon({{3.5, 1.8}, {9.5, 1.8}, {12.5, 4.8}, {12.5, 14.2}, {3.5, 14.2}}), 1.3);
-	return p.united(line(8, 7, 8, 12, 1.4)).united(line(5.5, 9.5, 10.5, 9.5, 1.4));
-}
-
-QPainterPath openProject()
-{
-	QPainterPath p = stroked(polygon({{1.8, 3.5}, {6, 3.5}, {7.2, 5}, {13, 5}, {13, 7}}), 1.3);
-	return p.united(polygon({{1.8, 13.5}, {4.2, 7.5}, {15, 7.5}, {12.6, 13.5}}));
-}
-
-QPainterPath saveProject()
-{
-	QPainterPath p = stroked(polygon({{2.5, 2.5}, {11.5, 2.5}, {13.5, 4.5}, {13.5, 13.5}, {2.5, 13.5}}), 1.3);
-	p.addPath(box(5, 2.5, 5, 3.5, 0.5));
-	return p.united(outline(4.8, 8.5, 6.4, 5, 0.8));
-}
-
-QPainterPath exportProject()
-{
-	QPainterPath p = stroked(polygon({{6, 4}, {2.5, 4}, {2.5, 13.5}, {13.5, 13.5}, {13.5, 10}}), 1.3);
-	p = p.united(line(7, 9, 13, 3, 1.4));
-	return p.united(polygon({{9, 2.2}, {13.8, 2.2}, {13.8, 7}}));
-}
-
-using Maker = std::function<QPainterPath()>;
-
-const std::map<QString, Maker>& makers()
-{
-	static const std::map<QString, Maker> table{
-		{"inspector", inspector}, {"browser", browser}, {"devices", devices}, {"detail", detail},
-		{"mixer", mixer}, {"automation", automation}, {"pattern", pattern}, {"launcher", launcher},
-		{"arranger", arranger}, {"play", play}, {"stop", stop}, {"record", record}, {"loop", loop},
-		{"metronome", metronome}, {"draw", draw}, {"select", selectTool}, {"slice", slice}, {"erase", erase},
-		{"audition", audition}, {"fold", fold}, {"ghost", ghost}, {"scale", scale}, {"plus", plus},
-		{"quantize", quantize}, {"follow", follow}, {"chevron", chevron}, {"new", newProject},
-		{"open", openProject}, {"save", saveProject}, {"export", exportProject}};
+	static const std::map<QString, QString> table{
+	{"arranger", "rows-3"},
+	{"audition", "volume-2"},
+	{"automation", "chart-spline"},
+	{"browser", "library"},
+	{"chevron", "chevron-down"},
+	{"detail", "piano"},
+	{"devices", "boxes"},
+	{"draw", "pencil"},
+	{"erase", "eraser"},
+	{"export", "upload"},
+	{"fold", "fold-vertical"},
+	{"follow", "scan"},
+	{"ghost", "ghost"},
+	{"inspector", "info"},
+	{"launcher", "layout-grid"},
+	{"loop", "repeat"},
+	{"metronome", "timer"},
+	{"mixer", "sliders-vertical"},
+	{"new", "file-plus"},
+	{"open", "folder-open"},
+	{"pattern", "grid-3x3"},
+	{"play", "play"},
+	{"plus", "plus"},
+	{"quantize", "magnet"},
+	{"record", "circle-dot"},
+	{"save", "save"},
+	{"scale", "music"},
+	{"select", "mouse-pointer-2"},
+	{"slice", "scissors"},
+	{"stop", "square"}
+	};
 	return table;
 }
 
-class GlyphEngine : public QIconEngine
+//! The inherited interface's icon names (embed::getIconPixmap) -> Lucide icon names: every
+//! bitmap icon the old interface drew is drawn from the one modern set instead.
+const std::map<QString, QString>& legacyTable()
+{
+	static const std::map<QString, QString> table{
+	{"add", "plus"},
+	{"add_automation", "chart-spline"},
+	{"add_folder", "folder-plus"},
+	{"add_pattern_track", "grid-3x3"},
+	{"add_sample_track", "audio-waveform"},
+	{"analysis", "activity"},
+	{"apply", "check"},
+	{"apply-selected", "check-check"},
+	{"arp_down", "arrow-down"},
+	{"arp_down_on", "arrow-down"},
+	{"arp_free", "shuffle"},
+	{"arp_up", "arrow-up"},
+	{"arp_up_on", "arrow-up"},
+	{"auto_resize", "move-horizontal"},
+	{"auto_resize_disable", "lock"},
+	{"automation", "chart-spline"},
+	{"automation_ghost_note", "ghost"},
+	{"automation_track", "chart-spline"},
+	{"autoscroll_continuous_on", "arrow-right"},
+	{"autoscroll_off", "pause"},
+	{"autoscroll_stepped_on", "chevrons-right"},
+	{"back_to_start", "skip-back"},
+	{"back_to_zero", "rewind"},
+	{"cancel", "x"},
+	{"chord", "layers"},
+	{"clear_ghost_note", "ghost"},
+	{"clear_notes_out_of_bounds", "eraser"},
+	{"clock", "clock"},
+	{"clone_pattern_track_clip", "copy-plus"},
+	{"close", "x"},
+	{"colorize", "palette"},
+	{"computer", "monitor"},
+	{"controller", "sliders-horizontal"},
+	{"cursor_select_left", "chevrons-left"},
+	{"cursor_select_right", "chevrons-right"},
+	{"cut_overlaps", "scissors-line-dashed"},
+	{"detach", "external-link"},
+	{"discard", "trash-2"},
+	{"dont_know", "circle-question-mark"},
+	{"edit_copy", "copy"},
+	{"edit_cut", "scissors"},
+	{"edit_draw", "pencil"},
+	{"edit_draw_outvalue", "pen-line"},
+	{"edit_draw_small", "pencil"},
+	{"edit_erase", "eraser"},
+	{"edit_knife", "scissors"},
+	{"edit_merge", "merge"},
+	{"edit_move", "move"},
+	{"edit_paste", "clipboard-paste"},
+	{"edit_redo", "redo-2"},
+	{"edit_rename", "text-cursor-input"},
+	{"edit_select", "square-dashed-mouse-pointer"},
+	{"edit_tangent", "spline"},
+	{"edit_undo", "undo-2"},
+	{"edit_unlink", "unlink"},
+	{"effect_plugin", "wand-sparkles"},
+	{"error", "circle-alert"},
+	{"exit", "log-out"},
+	{"file", "file"},
+	{"fill", "paint-bucket"},
+	{"flip_x", "flip-horizontal-2"},
+	{"flip_y", "flip-vertical-2"},
+	{"folder", "folder"},
+	{"folder_locked", "folder-lock"},
+	{"folder_opened", "folder-open"},
+	{"fullscreen", "maximize"},
+	{"ghost_note", "ghost"},
+	{"glue", "combine"},
+	{"gridmode", "grid-2x2"},
+	{"help", "circle-question-mark"},
+	{"hint", "lightbulb"},
+	{"home", "house"},
+	{"icon", "audio-waveform"},
+	{"icon_small", "audio-waveform"},
+	{"insert_bar", "square-plus"},
+	{"instrument_track", "piano"},
+	{"keep_stop_position", "map-pin"},
+	{"loop_points_off", "repeat"},
+	{"loop_points_on", "repeat"},
+	{"master_pitch", "arrow-up-down"},
+	{"master_volume", "volume-2"},
+	{"max_length", "maximize-2"},
+	{"maximize", "maximize-2"},
+	{"metronome", "timer"},
+	{"microtuner", "audio-lines"},
+	{"midi_cc_rack", "sliders-horizontal"},
+	{"midi_file", "file-music"},
+	{"min_length", "minimize-2"},
+	{"mixer", "sliders-vertical"},
+	{"muted", "volume-x"},
+	{"new_channel", "square-plus"},
+	{"note", "music-2"},
+	{"note_double_whole", "music-2"},
+	{"note_eighth", "music-2"},
+	{"note_half", "music-2"},
+	{"note_none", "music-2"},
+	{"note_quarter", "music-2"},
+	{"note_sixteenth", "music-2"},
+	{"note_thirtysecond", "music-2"},
+	{"note_triplet", "music-2"},
+	{"note_whole", "music-2"},
+	{"pattern_track", "grid-3x3"},
+	{"pattern_track_btn", "grid-3x3"},
+	{"pause", "pause"},
+	{"piano", "piano"},
+	{"play", "play"},
+	{"plugins", "plug"},
+	{"preset_file", "file-cog"},
+	{"progression_cubic_hermite", "chart-spline"},
+	{"progression_discrete", "chart-column"},
+	{"progression_linear", "trending-up"},
+	{"project_export", "upload"},
+	{"project_file", "file-music"},
+	{"project_import", "download"},
+	{"project_new", "file-plus"},
+	{"project_new_from_template", "file-plus-2"},
+	{"project_notes", "notebook-pen"},
+	{"project_open", "folder-open"},
+	{"project_open_recent", "history"},
+	{"project_save", "save"},
+	{"proportional_snap", "ruler"},
+	{"quantize", "magnet"},
+	{"record", "circle-dot"},
+	{"record_accompany", "disc-3"},
+	{"record_step_off", "footprints"},
+	{"record_step_on", "footprints"},
+	{"recover", "life-buoy"},
+	{"reload", "refresh-cw"},
+	{"remove_bar", "square-minus"},
+	{"restore", "minimize-2"},
+	{"sample_file", "file-audio"},
+	{"sample_track", "audio-waveform"},
+	{"sample_track_btn", "audio-waveform"},
+	{"scale", "music"},
+	{"setup_audio", "speaker"},
+	{"setup_directories", "folder-cog"},
+	{"setup_general", "settings"},
+	{"setup_midi", "keyboard-music"},
+	{"setup_performance", "gauge"},
+	{"songeditor", "rows-3"},
+	{"soundfont_file", "file-audio-2"},
+	{"star", "star"},
+	{"stop", "square"},
+	{"tempo_sync", "clock"},
+	{"tool", "wrench"},
+	{"unknown_file", "file-question-mark"},
+	{"vst_plugin_file", "plug"},
+	{"whatsthis", "circle-question-mark"},
+	{"zoom", "zoom-in"},
+	{"zoom_x", "move-horizontal"},
+	{"zoom_y", "move-vertical"}
+	};
+	return table;
+}
+
+QByteArray lucide(const QString& name)
+{
+	if (name.isEmpty()) { return {}; }
+	QFile file(QStringLiteral(":/zene/icons/%1.svg").arg(name));
+	return file.open(QIODevice::ReadOnly) ? file.readAll() : QByteArray();
+}
+
+//! Render @a svg into @a rect of @a painter, its strokes and fills in @a colour.
+void renderSvg(QPainter& painter, const QByteArray& svg, const QRectF& rect, const QColor& colour)
+{
+	QByteArray coloured = svg;
+	coloured.replace("currentColor", colour.name(QColor::HexRgb).toLatin1());
+	QSvgRenderer renderer(coloured);
+	if (renderer.isValid()) { renderer.render(&painter, rect); }
+}
+
+QPixmap renderPixmap(const QByteArray& svg, const QSize& size, const QColor& colour, qreal dpr)
+{
+	QPixmap pm(size * dpr);
+	pm.fill(Qt::transparent);
+	{
+		QPainter p(&pm);
+		p.setRenderHint(QPainter::Antialiasing);
+		const qreal side = std::min(pm.width(), pm.height());
+		renderSvg(p, svg, QRectF((pm.width() - side) / 2.0, (pm.height() - side) / 2.0, side, side), colour);
+	}
+	pm.setDevicePixelRatio(dpr);
+	return pm;
+}
+
+class SvgIconEngine : public QIconEngine
 {
 public:
-	explicit GlyphEngine(QString id) : m_id(std::move(id)) {}
+	explicit SvgIconEngine(QByteArray svg) : m_svg(std::move(svg)) {}
 
 	void paint(QPainter* painter, const QRect& rect, QIcon::Mode mode, QIcon::State state) override
 	{
@@ -325,11 +284,8 @@ public:
 		const qreal side = std::min(rect.width(), rect.height());
 		painter->save();
 		painter->setRenderHint(QPainter::Antialiasing);
-		painter->translate(rect.x() + (rect.width() - side) / 2.0, rect.y() + (rect.height() - side) / 2.0);
-		painter->scale(side / 16.0, side / 16.0);
-		painter->setPen(Qt::NoPen);
-		painter->setBrush(colour);
-		painter->drawPath(glyph(m_id));
+		renderSvg(*painter, m_svg, QRectF(rect.x() + (rect.width() - side) / 2.0, rect.y() + (rect.height() - side) / 2.0,
+			side, side), colour);
 		painter->restore();
 	}
 
@@ -342,14 +298,10 @@ public:
 		return pm;
 	}
 
-	// No scaledPixmap() override: QIcon asks the engine for the DEVICE-pixel size and sets the
-	// pixmap's device-pixel ratio itself, so pixmap() above paints the path at the screen's
-	// resolution (DesignTokensTest::iconsPaintAtTheScreensScale holds this).
-
-	QIconEngine* clone() const override { return new GlyphEngine(m_id); }
+	QIconEngine* clone() const override { return new SvgIconEngine(m_svg); }
 
 private:
-	QString m_id;
+	QByteArray m_svg;
 };
 
 } // namespace
@@ -357,16 +309,47 @@ private:
 QStringList ids()
 {
 	QStringList list;
-	for (const auto& entry : makers()) { list << entry.first; }
+	for (const auto& entry : shellTable()) { list << entry.first; }
 	return list;
 }
 
-QPainterPath glyph(const QString& id)
+QByteArray svg(const QString& id)
 {
-	const auto it = makers().find(id);
-	return it == makers().end() ? QPainterPath() : it->second();
+	const auto it = shellTable().find(id);
+	return it == shellTable().end() ? QByteArray() : lucide(it->second);
 }
 
-QIcon icon(const QString& id) { return QIcon(new GlyphEngine(id)); }
+QIcon icon(const QString& id) { return QIcon(new SvgIconEngine(svg(id))); }
+
+QStringList legacyNames()
+{
+	QStringList list;
+	for (const auto& entry : legacyTable()) { list << entry.first; }
+	return list;
+}
+
+QString lucideForLegacy(const QString& name)
+{
+	const auto it = legacyTable().find(name);
+	if (it != legacyTable().end()) { return it->second; }
+	// A plugin's own logo ("tripleoscillator/logo") becomes the one device glyph: devices are
+	// told apart by name, not by a bitmap each.
+	return name.endsWith(QStringLiteral("/logo")) ? QStringLiteral("audio-waveform") : QString();
+}
+
+QPixmap legacyPixmap(const QString& name, int width, int height)
+{
+	const QByteArray data = lucide(lucideForLegacy(name));
+	if (data.isEmpty()) { return {}; }
+	QSize size(width, height);
+	if (width <= 0 || height <= 0)
+	{
+		// Keep the inherited layout: the old bitmap's own size, read from its header only.
+		size = QImageReader(QStringLiteral("artwork:") + name).size();
+		if (!size.isValid() || size.isEmpty()) { size = QSize(16, 16); }
+	}
+	const qreal dpr = QGuiApplication::primaryScreen() != nullptr ? QGuiApplication::primaryScreen()->devicePixelRatio() : 1.0;
+	return renderPixmap(data, size, tokens::palette().text, dpr);
+}
 
 } // namespace lmms::gui::shellicons

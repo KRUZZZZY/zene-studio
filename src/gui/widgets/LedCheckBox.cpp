@@ -29,6 +29,7 @@
 #include <array>
 
 #include "DeprecationHelper.h"
+#include "DesignTokens.h"
 #include "embed.h"
 #include "FontHelper.h"
 
@@ -111,31 +112,44 @@ void LedCheckBox::onTextUpdated()
 	setFixedSize(width, height);
 }
 
-void LedCheckBox::paintLegacy(QPaintEvent * pe)
+void LedCheckBox::paintIndicator(QPainter& p, const QRect& box) const
 {
-	QPainter p( this );
-	p.setFont(adjustedToPixelSize(font(), DEFAULT_FONT_SIZE));
-
-	p.drawPixmap(0, 0, model()->value() ? m_ledOnPixmap : m_ledOffPixmap);
-
-	p.setPen( QColor( 64, 64, 64 ) );
-	p.drawText(m_ledOffPixmap.width() + 4, 11, text());
-	p.setPen( QColor( 255, 255, 255 ) );
-	p.drawText(m_ledOffPixmap.width() + 3, 10, text());
+	// 0.5.0 (docs/UI-SHELL.md §1): a flat indicator in place of the LED bitmaps - the accent dot
+	// when on, a muted ring when off - centred in the box the old LED occupied.
+	const tokens::Palette& pal = tokens::palette();
+	const qreal d = std::min(box.width(), box.height()) * 0.7;
+	const QRectF dot(box.center().x() - d / 2.0 + 0.5, box.center().y() - d / 2.0 + 0.5, d, d);
+	p.setRenderHint(QPainter::Antialiasing);
+	if (model() != nullptr && model()->value())
+	{
+		p.setPen(Qt::NoPen);
+		p.setBrush(isEnabled() ? pal.accent : pal.textDisabled);
+	}
+	else
+	{
+		p.setPen(QPen(isEnabled() ? pal.textMuted : pal.textDisabled, 1.4));
+		p.setBrush(Qt::NoBrush);
+	}
+	p.drawEllipse(dot);
 }
 
-void LedCheckBox::paintNonLegacy(QPaintEvent * pe)
+void LedCheckBox::paintLegacy(QPaintEvent*)
 {
 	QPainter p(this);
-
-	auto drawnPixmap = model()->value() ? m_ledOnPixmap : m_ledOffPixmap;
-
-	p.drawPixmap(0, rect().height() / 2 - drawnPixmap.height() / 2, drawnPixmap);
-
-	QRect r = rect();
-	r -= QMargins(m_ledOffPixmap.width() + 5, 0, 0, 0);
-	p.drawText(r, text());
+	paintIndicator(p, QRect(QPoint(0, 0), m_ledOffPixmap.size()));
+	p.setFont(tokens::font(tokens::TextRole::Caption));
+	p.setPen(isEnabled() ? tokens::palette().text : tokens::palette().textDisabled);
+	p.drawText(QRect(m_ledOffPixmap.width() + 3, 0, width(), m_ledOffPixmap.height()), Qt::AlignVCenter | Qt::AlignLeft, text());
 }
 
+void LedCheckBox::paintNonLegacy(QPaintEvent*)
+{
+	QPainter p(this);
+	paintIndicator(p, QRect(0, rect().height() / 2 - m_ledOffPixmap.height() / 2, m_ledOffPixmap.width(), m_ledOffPixmap.height()));
+	QRect r = rect();
+	r -= QMargins(m_ledOffPixmap.width() + 5, 0, 0, 0);
+	p.setPen(isEnabled() ? tokens::palette().text : tokens::palette().textDisabled);
+	p.drawText(r, Qt::AlignVCenter | Qt::AlignLeft, text());
+}
 
 } // namespace lmms::gui

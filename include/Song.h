@@ -451,6 +451,11 @@ public:
 		return m_tempoModel;
 	}
 
+	//! 0.5.0: the master level and transposition, for the shell header's readouts
+	//! (TransportReadouts) - the song editor reached them as a friend.
+	IntModel& masterVolumeModel() { return m_masterVolumeModel; }
+	IntModel& masterPitchModel() { return m_masterPitchModel; }
+
 	/*! The tempo map: the ordered tempo and time-signature events the timeline
 	 *  obeys (docs/TEMPO-MAP.md). The control thread edits it through the
 	 *  transport.tempo_map_* commands; the audio thread reads it through the

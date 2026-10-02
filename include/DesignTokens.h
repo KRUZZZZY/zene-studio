@@ -30,6 +30,7 @@
 #include <QColor>
 #include <QFont>
 #include <QString>
+#include <QStringList>
 
 #include "lmms_export.h"
 
@@ -129,6 +130,9 @@ enum class TextRole
 	Display
 };
 LMMS_EXPORT QFont font(TextRole role);
+//! The interface's one typeface (Inter, SIL OFL 1.1, compiled in - data/fonts/OFL.txt); its
+//! faces are registered on first use. "sans-serif" if the resource could not be read.
+LMMS_EXPORT QString family();
 
 //! One text/surface pair the theme uses, and the contrast it must reach (4.5 for text,
 //! 3.0 for large text and for non-text components).
@@ -151,9 +155,16 @@ LMMS_EXPORT QColor velocityColor(int velocity);
 LMMS_EXPORT QColor trackColor(int index);
 LMMS_EXPORT int trackColorCount();
 
-//! The stylesheet for stock Qt widgets, generated from palette(). Appended after the legacy
-//! theme's style.css, so stock widgets everywhere take the new surfaces.
+//! The interface's stylesheet: data/themes/zene/zene.qss (compiled in as :/zene/zene.qss) with
+//! every @token resolved from palette(). It replaces the inherited theme's style.css for the
+//! default theme, covering the stock Qt widgets and every inherited editor's colour properties.
 LMMS_EXPORT QString applicationStyleSheet();
+//! The unresolved template, and the resolver (exposed for DesignTokensTest).
+LMMS_EXPORT QString styleSheetTemplate();
+//! @a unknown collects any @name that is not a palette role.
+LMMS_EXPORT QString resolveStyleSheet(const QString& templ, QStringList* unknown);
+//! A palette role by its name in the template ("panel", "textMuted"); invalid if unknown.
+LMMS_EXPORT QColor tokenColor(const QString& name, bool* known = nullptr);
 
 //! A hairline rectangle aligned to the device pixel grid, whatever the screen's scale factor:
 //! a 1-device-pixel line drawn at a fractional logical coordinate blurs across two pixels.

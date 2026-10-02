@@ -27,7 +27,11 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <map>
 
+#include <QFile>
+#include <QFontDatabase>
+#include <QRegularExpression>
 #include <QPainter>
 #include <QRectF>
 
@@ -93,18 +97,33 @@ const Palette& palette()
 	return p;
 }
 
+QString family()
+{
+	// Registered once, on first use, from the binary's own resources (src/CMakeLists.txt,
+	// zenefonts.qrc): the same faces on every platform, in every package and test binary.
+	static const QString name = [] {
+		QString found;
+		for (const char* face : {":/fonts/Inter-Regular.ttf", ":/fonts/Inter-Medium.ttf", ":/fonts/Inter-SemiBold.ttf"})
+		{
+			const int id = QFontDatabase::addApplicationFont(QString::fromLatin1(face));
+			const QStringList families = id >= 0 ? QFontDatabase::applicationFontFamilies(id) : QStringList();
+			if (found.isEmpty() && !families.isEmpty()) { found = families.first(); }
+		}
+		return found.isEmpty() ? QStringLiteral("sans-serif") : found;
+	}();
+	return name;
+}
+
 QFont font(TextRole role)
 {
-	static constexpr std::array<int, 5> pixels{10, 11, 12, 14, 22};
-	QFont f;
+	static constexpr std::array<int, 5> pixels{10, 11, 12, 14, 20};
+	QFont f(family());
 	f.setPixelSize(pixels[static_cast<std::size_t>(role)]);
+	f.setHintingPreference(QFont::PreferNoHinting);
+	f.setStyleStrategy(QFont::PreferAntialias);
 	if (role == TextRole::Title) { f.setWeight(QFont::DemiBold); }
-	if (role == TextRole::Display)
-	{
-		f.setWeight(QFont::Medium);
-		f.setStyleHint(QFont::Monospace);
-		f.setFamily(QStringLiteral("monospace"));
-	}
+	if (role == TextRole::Display) { f.setWeight(QFont::Medium); }
+	if (role == TextRole::Caption) { f.setWeight(QFont::Medium); }
 	return f;
 }
 
@@ -165,26 +184,61 @@ QColor trackColor(int index)
 	return QColor::fromRgb(colours[static_cast<std::size_t>(((index % n) + n) % n)]);
 }
 
-QString applicationStyleSheet()
+QColor tokenColor(const QString& name, bool* known)
 {
 	const Palette& p = palette();
-	QString css;
-	css += QStringLiteral(
-		"QMenuBar { background-color: %1; color: %2; }\n"
-		"QMenuBar::item:selected { background-color: %3; color: %2; }\n"
-		"QMenu { background-color: %4; color: %2; border: 1px solid %5; }\n"
-		"QMenu::item:selected { background-color: %6; color: %7; }\n"
-		"QMenu::item:disabled { color: %8; }\n"
-		"QMenu::separator { height: 1px; background-color: %5; }\n")
-		.arg(hex(p.raised), hex(p.text), hex(p.controlHover), hex(p.panel), hex(p.separator),
-			hex(p.accent), hex(p.textOnAccent), hex(p.textDisabled));
-	css += QStringLiteral(
-		"QToolTip { background-color: %1; color: %2; border: 1px solid %3; padding: 4px; }\n"
-		"QSplitter::handle { background-color: %4; }\n"
-		"lmms--gui--ShellPanel { background-color: %5; }\n"
-		"lmms--gui--ShellFooter, lmms--gui--ShellHeader { background-color: %6; color: %2; }\n")
-		.arg(hex(p.control), hex(p.text), hex(p.separator), hex(p.base), hex(p.panel), hex(p.raised));
-	return css;
+	static const std::map<QString, QColor Palette::*> roles{
+		{"base", &Palette::base}, {"panel", &Palette::panel}, {"raised", &Palette::raised},
+		{"control", &Palette::control}, {"controlHover", &Palette::controlHover}, {"selected", &Palette::selected},
+		{"separator", &Palette::separator}, {"text", &Palette::text}, {"textMuted", &Palette::textMuted},
+		{"textDisabled", &Palette::textDisabled}, {"textOnAccent", &Palette::textOnAccent}, {"accent", &Palette::accent},
+		{"accentHover", &Palette::accentHover}, {"focusRing", &Palette::focusRing}, {"play", &Palette::play},
+		{"record", &Palette::record}, {"warning", &Palette::warning}, {"meterLow", &Palette::meterLow},
+		{"meterMid", &Palette::meterMid}, {"meterHigh", &Palette::meterHigh}, {"gridBar", &Palette::gridBar},
+		{"gridBeat", &Palette::gridBeat}, {"gridStep", &Palette::gridStep}, {"keyWhiteRow", &Palette::keyWhiteRow},
+		{"keyBlackRow", &Palette::keyBlackRow}, {"scaleRow", &Palette::scaleRow}, {"playhead", &Palette::playhead}};
+	const auto it = roles.find(name);
+	if (known != nullptr) { *known = it != roles.end(); }
+	return it != roles.end() ? p.*(it->second) : QColor();
+}
+
+QString resolveStyleSheet(const QString& templ, QStringList* unknown)
+{
+	// @name -> #rrggbb, @name/alpha -> rgba(r, g, b, alpha). An unknown name is left as written
+	// (Qt then ignores the declaration) and reported, so a typo fails DesignTokensTest.
+	static const QRegularExpression token(QStringLiteral("@([A-Za-z]+)(?:/(\\d{1,3}))?"));
+	QString out;
+	out.reserve(templ.size());
+	int last = 0;
+	for (auto it = token.globalMatch(templ); it.hasNext();)
+	{
+		const QRegularExpressionMatch m = it.next();
+		out += templ.mid(last, m.capturedStart() - last);
+		last = m.capturedEnd();
+		bool known = false;
+		const QColor c = tokenColor(m.captured(1), &known);
+		if (!known)
+		{
+			if (unknown != nullptr) { unknown->append(m.captured(1)); }
+			out += m.captured(0);
+			continue;
+		}
+		out += m.captured(2).isEmpty() ? hex(c)
+			: QStringLiteral("rgba(%1, %2, %3, %4)").arg(c.red()).arg(c.green()).arg(c.blue()).arg(m.captured(2));
+	}
+	out += templ.mid(last);
+	return out;
+}
+
+QString styleSheetTemplate()
+{
+	QFile file(QStringLiteral(":/zene/zene.qss"));
+	return file.open(QIODevice::ReadOnly) ? QString::fromUtf8(file.readAll()) : QString();
+}
+
+QString applicationStyleSheet()
+{
+	return resolveStyleSheet(styleSheetTemplate(), nullptr);
 }
 
 void strokeCrisp(QPainter& painter, const QRectF& rect, const QColor& colour)

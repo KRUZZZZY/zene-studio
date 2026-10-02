@@ -95,6 +95,7 @@
 #include "Shell.h"
 #include "ShellChrome.h"
 #include "ShellPanel.h"
+#include "TransportReadouts.h"
 #include "SongEditor.h"
 #include "SubWindow.h"
 #include "TemplatesMenu.h"
@@ -147,6 +148,7 @@ MainWindow::MainWindow() :
 	// dialogs, the controller rack, project notes), which float as top-level windows.
 	m_shell = new Shell( this );
 	setCentralWidget( m_shell );
+	connect( this, &MainWindow::periodicUpdate, m_shell->header()->readouts(), &TransportReadouts::tick );
 	m_toolBar = m_shell->toolStrip();
 	m_workspace = new MovableQMdiArea( this );
 	m_workspace->hide();
