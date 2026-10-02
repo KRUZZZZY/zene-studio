@@ -2661,7 +2661,7 @@ if(PYTHON3_EXECUTABLE AND CONTROL_SUITE_AVAILABLE)
 	# The Inspector and the Device panel over the socket: window.select selects a track, a clip or
 	# a mixer channel; the reply is what the two panels draw - the track's devices in chain order,
 	# a channel's inserts with the modulator beside the one it drives - and the panel follows a
-	# device removed and restored over the socket (docs/UI-SHELL.md §5).
+	# device removed and restored over the socket (docs/UI-SHELL.md §8).
 	add_test(NAME ControlDevices
 		COMMAND ${PYTHON3_EXECUTABLE}
 			${CMAKE_CURRENT_SOURCE_DIR}/control-devices.py

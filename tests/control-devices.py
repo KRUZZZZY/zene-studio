@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """The Inspector and the Device panel, driven end to end over the control socket.
 
-The shell's Inspector and Device panel (docs/UI-SHELL.md §5) follow one selection: a track, a
+The shell's Inspector and Device panel (docs/UI-SHELL.md §8) follow one selection: a track, a
 clip on it, or a mixer channel. `window.select` is the agent's click, and its reply is what the
 two panels draw. This driver starts the REAL `zene` binary headless and proves:
 

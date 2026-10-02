@@ -13,7 +13,7 @@ The main window holds one page, `Shell` (`include/Shell.h`), laid out top to bot
 | Band | What it holds | Code |
 |---|---|---|
 | Menu bar | File, Edit, View, Tools, Help. Unchanged: every action still declares its command. | `MainWindow::finalize` |
-| Header | The product mark, then Play and Stop (`transport.play` / `transport.stop`), then the song editor's tempo, time, meter and master controls. A stretch follows, then New, Open (with recent projects), Save, Export and the metronome toggle. The strip is `objectName "mainToolbar"`, which the agent-surface gate walks. | `ShellHeader` (`src/gui/shell/ShellChrome.cpp`) |
+| Header | The product mark, then Play and Stop (`transport.play` / `transport.stop`), then the readouts - tempo, meter, position, time, master level, transposition and engine load - each a caption over a value that drags, scrolls or takes typing (`TransportReadouts`; typing a position is `transport.seek`). A stretch follows, then New, Open (with recent projects), Save, Export and the metronome toggle. The strip is `objectName "mainToolbar"`, which the agent-surface gate walks. | `ShellHeader` (`src/gui/shell/ShellChrome.cpp`) |
 | Body | Four regions (§2). | `Shell::buildBody` |
 | Footer | One switch per panel, grouped by the region the panel opens in, then the view words ARRANGE · MIX · EDIT, then the Browser switch on the far right. | `ShellFooter` |
 
@@ -47,10 +47,10 @@ The panels (`ShellLayout::panels()`):
 | `launcher` | Clip Launcher | beside the centre (Arrange, Mix) | Alt+L | `SessionGridView` |
 | `mixer` | Mixer | bottom (centre in Mix) | Alt+M, Ctrl+5 | `MixerView` |
 | `detail` | Note Editor | bottom (centre in Edit) | Alt+N, Ctrl+3 | `NoteEditor`, the reworked piano roll (`docs/NOTE-EDITOR.md`); the classic piano roll floats (`classic_piano_roll`) |
-| `devices` | Devices | bottom | Alt+D | a placeholder note until lane `050/ui-panels` |
+| `devices` | Devices | bottom | Alt+D | `DevicePanel`: the selected track's devices as cards, then its mixer channel's inserts with their modulators (§8) |
 | `automation` | Automation | bottom | Alt+A, Ctrl+4 | the automation editor |
 | `pattern` | Pattern Editor | bottom | Alt+P, Ctrl+2 | the pattern editor |
-| `inspector` | Inspector | left | Alt+I | a placeholder note until lane `050/ui-panels` |
+| `inspector` | Inspector | left | Alt+I | `InspectorPanel`: the selected track's, clip's or mixer channel's properties (§8) |
 | `browser` | Browser | right | Alt+B | `BrowserPanel`: the plugin and file browsers behind one source selector |
 
 The views switch with **Alt+1** (Arrange), **Alt+2** (Mix) and **Alt+3** (Edit). Alt+letter
@@ -74,6 +74,7 @@ and it declares that command in its `controlCommand` property for the agent-surf
 
 - **`window.get_state`** returns:
   - `view`
+  - `selection`: what the Inspector and the Device panel show (`window.select`'s reply, §8)
   - `panels`: `{id, title, region, visible, available, shortcut, mounted}` for each panel
   - `focused`: the panel that last took keyboard focus
   - `launcher`: whether the launcher is beside the centre
@@ -120,9 +121,12 @@ and it declares that command in its `controlCommand` property for the agent-surf
 
 ## 6. What is not done yet, stated
 
-- **Inspector and Device panel:** placeholder notes only, until lane `050/ui-panels`.
-- **Header readouts:** tempo, time and meter are still the song editor's legacy LCD widgets
-  in the header strip. They will be replaced with token-painted readouts.
+- **Device cards draw at most 16 parameters** (`DeviceCard::MaxParameters`); the rest are
+  in the device's own editor, one click away. A built-in effect's own control dialog, opened
+  from a card, still shows that plugin's inherited artwork.
+- **No command assigns a track to a mixer channel.** The Inspector's Mixer readout edits the
+  track's own channel model (journalled, as the track header's control is), but an agent has
+  no `track.*` verb for it.
 - **Arranger toolbar:** the arranger keeps its own toolbar, which duplicates Play and Stop.
 - **Dead MDI code:** `SubWindow`, `MainWindow::workspace()`, the MDI geometry clamp and the two
   detach verbs are still present. The 30 `addWindowedWidget` callers need a `FloatingWindow`
@@ -144,6 +148,8 @@ and it declares that command in its `controlCommand` property for the agent-surf
 | `DesignTokensTest` | every declared text/surface pair meets AA; the generated stylesheet meets AA; the velocity ramp is ordered by lightness; icons are paths that paint at the screen's scale |
 | `AccessibilityHelperTest` | every footer switch and view word is named and Tab-focusable; the chrome bands and panel frames are named |
 | `ControlShell` | the socket proof (§4) and three distinct rendered views |
+| `DevicePanelTest` | the selection's rules; the Inspector edits through `track.rename` / `track.set_mute` and undoes; the Device panel draws a channel's inserts and the modulator beside the one it drives, its power button is `plugin.bypass`, and a device removed over the socket takes its card at once |
+| `ControlDevices` | `window.select` over the socket (§8): a track's devices in chain order, a clip and its track, a channel with its insert and modulator, the panel following a removal and its undo, a typed refusal |
 
 The Focus Desk's four test files (`FocusDeskTest`, `FocusDeskPaneTest`, `FocusDeskActionsTest`,
 `FocusDeskWorkspacesTest`) were retired with the Focus Desk. Each guarantee they carried that
@@ -158,3 +164,35 @@ still applies is restated above:
   `ShellLayoutTest::aViewRefusesWhatItDoesNotOffer`.
 
 Screenshots taken under offscreen: `docs/ui-logs/050-ui-shell/`.
+
+## 8. The Inspector and the Device panel
+
+Both panels follow one selection, `ShellSelection` (`include/ShellSelection.h`): a track, a clip
+on it, or a mixer channel on its own. A press on a track header selects the track, a press on a
+clip selects the clip and its track, a press on a mixer strip selects that channel, and opening a
+clip in the note editor selects it. One application-wide event filter reads those presses and
+never consumes one. `window.select {track | clip | channel}` is the agent's click; its reply is
+what the two panels draw.
+
+**The Inspector** (`InspectorPanel`) shows the track's colour and name (typing a name is
+`track.rename`), Mute and Solo (`track.set_mute` / `track.set_solo`), volume and pan knobs and the
+mixer channel it plays into; then the clip's name, start, length and, by kind, its note count with
+**Edit notes** (`window.note_editor_set {clip, fit}`) or its gain (`clip.set_gain`). A selected
+mixer channel shows its name, mute, solo, volume and pan.
+
+**The Device panel** (`DevicePanel`) draws, left to right: the track's instrument, the devices on
+the track's chain, then - when the track plays into a channel of its own, not the master - that
+channel's inserts, with each modulator's card placed right after the device it drives. A card
+(`DeviceCard`) is built from the device's own parameter models, in the order and with the names
+`dsp.get_state` reports, so a user and an agent read the same list: a flat knob per number, a
+toggle per switch, a menu per choice, a readout per integer. The header's power button is
+`plugin.bypass`, the close button `plugin.unload`, and the editor button opens the plug-in's own
+window (`plugin.editor_open`) or, for a built-in effect, its control dialog. **Add device** lists
+the built-in effects (`plugin.load`).
+
+A chain edited from anywhere - a rack, the socket, an undo - redraws the panel. The chain's own
+signals drop the cards *before* a device is deleted, so no control ever paints a deleted
+parameter; a 2 Hz check while the panel is visible catches what sends no signal (a modulator
+added over the socket).
+
+Screenshots: `docs/ui-logs/050-visual-overhaul/`.

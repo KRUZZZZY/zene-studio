@@ -563,6 +563,7 @@ include/CrashReporter.h
 include/CrashReporterFormat.h
 include/DawProjectInterchange.h
 include/DesignTokens.h
+include/DevicePanel.h
 include/DocumentIndex.h
 include/DpiHelper.h
 include/EffectHostingMenu.h
@@ -579,6 +580,7 @@ include/ImportDetection.h
 include/ImportDetectionDsp.h
 include/InputChannelRing.h
 include/InputMonitor.h
+include/InspectorPanel.h
 include/LatencyCompensation.h
 include/LinkPeerTransport.h
 include/LinkSync.h
@@ -682,6 +684,7 @@ include/ShellChrome.h
 include/ShellIcons.h
 include/ShellLayout.h
 include/ShellPanel.h
+include/ShellSelection.h
 include/ShortcutsPage.h
 include/SmfInterchange.h
 include/SrcQuality.h
@@ -705,6 +708,7 @@ include/TrackFolder.h
 include/TrackFolderMenu.h
 include/TrackRecorder.h
 include/TrackRenderMenu.h
+include/TransportReadouts.h
 include/UnattendedRun.h
 include/UnclaimedElements.h
 include/UndoHistoryPanel.h
@@ -1149,6 +1153,7 @@ src/gui/ChainPresetMenu.cpp
 src/gui/ClipEditsMenu.cpp
 src/gui/CommandPalette.cpp
 src/gui/ControlCommandsNoteEditor.cpp
+src/gui/ControlCommandsSelection.cpp
 src/gui/ControlCommandsShell.cpp
 src/gui/ControlCommandsWindow.cpp
 src/gui/ControllerTemplateMenu.cpp
@@ -1195,11 +1200,16 @@ src/gui/noteeditor/NoteGrid.cpp
 src/gui/noteeditor/NoteLanes.cpp
 src/gui/shell/BrowserPanel.cpp
 src/gui/shell/DesignTokens.cpp
+src/gui/shell/DevicePanel.cpp
+src/gui/shell/InspectorPanel.cpp
+src/gui/shell/ModulatorCard.cpp
 src/gui/shell/Shell.cpp
 src/gui/shell/ShellChrome.cpp
 src/gui/shell/ShellIcons.cpp
 src/gui/shell/ShellLayout.cpp
 src/gui/shell/ShellPanel.cpp
+src/gui/shell/ShellSelection.cpp
+src/gui/shell/TransportReadouts.cpp
 src/tracks/TrackFolder.cpp
 src/wasm/WasmAbi.h
 src/wasm/WasmOfflineRender.cpp

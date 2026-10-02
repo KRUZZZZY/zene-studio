@@ -46,6 +46,14 @@ built from a stock widget toolkit.
 - **Resolution independence.** Icons are painted vectors (`QPainterPath`, or SVG through
   QtSvg, which is already a dependency). Geometry is in device-independent pixels. Hairlines
   are drawn at a physical pixel on HiDPI screens.
+- **One typeface, one icon set** (added 2026-10-02, lane 3, after the owner's review of the
+  first screenshots: mixed fonts and old bitmap icons read as "antiquated"). The interface
+  draws **Inter** (SIL OFL 1.1, `data/fonts/`, compiled in) at five pixel sizes, and every icon
+  is **Lucide** (ISC licence, `data/themes/zene/icons/`, compiled in as SVG and painted in a
+  token colour by `ShellIcons`). The inherited code's bitmap icon names are mapped onto the
+  same set inside `embed::getIconPixmap`, so no old bitmap icon is drawn where one is mapped,
+  and the inherited knob, LED, LCD, fader and combo widgets paint flat from the tokens. Both
+  are permissive licences compatible with GPLv2-or-later; both notices ship beside the files.
 - **Bitwig's layout logic, not its trade dress.** A fixed frame of header, body and footer.
   The body has left (Inspector), centre, bottom and right (Browser) regions. Each region holds
   one panel at a time, chosen by a radio group of footer buttons. Views (Arrange, Mix, Edit)
