@@ -757,7 +757,7 @@ void lmms::clap::ClapHostTest::testTheEditorEmbedsResizesAndCloses()
 /*! Engine audit E8: a plug-in's main-thread call is made, its value rescan is honoured and its
  *  dirty state is reported - before, all three were dropped (empty callbacks, and the callback
  *  request taken and discarded). */
-void ClapHostTest::testMainThreadRequestsAreServiced()
+void lmms::clap::ClapHostTest::testMainThreadRequestsAreServiced()
 {
 	qputenv("CLAP_TEST_GAIN_MAIN_THREAD", "1");
 	HostedPlugin plugin;
