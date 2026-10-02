@@ -243,7 +243,8 @@ public:
 	bool followActionsEnabled() const noexcept;
 
 	//! Publishes what a cell holds so a launched slot renders it (#597); one queue push.
-	bool publishSlotContent( int track, int scene, int patternId, tick_t loopLengthTicks ) noexcept;
+	bool publishSlotContent( int track, int scene, int patternId, tick_t loopLengthTicks,
+		bool legato = false ) noexcept;
 
 	//! What this column should render this period (#597). Audio thread.
 	SessionSlotPlayback playbackForColumn( int track ) const noexcept;
@@ -440,6 +441,11 @@ private:
 		//! has been initialised for the playback running now. Audio thread.
 		bool followScheduled = false;
 		tick_t followNextTick = 0;
+		//! E1: the tick this playback's phase counts from, valid for the start at
+		//! phaseOriginFor - a legato launch inherits the outgoing clip's origin; any
+		//! other start (or a start this was not set for) counts from startedTick.
+		tick_t phaseOrigin = 0;
+		tick_t phaseOriginFor = -1;
 	};
 
 	/*! One installed plan. A separate fixed table rather than a member of
@@ -481,6 +487,10 @@ private:
 	/*! Everything the launch state machine's events imply for this task: the launch
 	 *  counters and the start-line publication, the slot's schedule, and the Arrangement
 	 *  Record's ring. One place, so they cannot disagree about what happened here. */
+	//! E1: the phase origin a just-started slot plays from (legato inheritance).
+	tick_t legatoOriginFor( const ActiveSlot& slot ) const noexcept;
+	//! A started clip stops every other clip playing on its column.
+	void takeColumnOver( const ActiveSlot& slot ) noexcept;
 	void afterLaunchEvents( ActiveSlot& slot, const SessionClockContext& ctx,
 		LaunchEvent event ) noexcept;
 	//! Publishes a fire for the model thread. Audio thread; body in SessionFollow.cpp.

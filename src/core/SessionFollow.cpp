@@ -159,6 +159,36 @@ const FollowPlan* SessionScheduler::planFor( int track, int scene ) const noexce
 }
 
 
+tick_t SessionScheduler::legatoOriginFor( const ActiveSlot& slot ) const noexcept
+{
+	// A legato cell launched over another clip on its column continues that clip's phase; with
+	// nothing playing there (or no legato), it counts from its own start. Audio thread.
+	const SessionSlotContent* content = m_slotContent.find( slot.track, slot.scene );
+	if( content == nullptr || !content->legato ) { return slot.state.startedTick; }
+	for( const auto& other : m_active )
+	{
+		if( &other == &slot || other.track != slot.track ) { continue; }
+		if( other.state.phase != SlotPhase::Playing && other.state.phase != SlotPhase::StopPending ) { continue; }
+		return other.phaseOriginFor == other.state.startedTick ? other.phaseOrigin : other.state.startedTick;
+	}
+	return slot.state.startedTick;
+}
+
+void SessionScheduler::takeColumnOver( const ActiveSlot& slot ) noexcept
+{
+	// A column plays one clip at a time: a clip that starts stops whatever else was playing on
+	// its track, at its own start tick (0.5.0: before, both stayed "playing" and the column
+	// rendered whichever came first in the table). Audio thread, fixed storage.
+	for( auto& other : m_active )
+	{
+		if( &other == &slot || other.track != slot.track ) { continue; }
+		if( other.state.phase != SlotPhase::Playing && other.state.phase != SlotPhase::StopPending ) { continue; }
+		other.state.phase = SlotPhase::Idle;
+		other.state.held = false;
+		m_recorder.recordStop( other.track, other.scene, slot.state.startedTick );
+	}
+}
+
 void SessionScheduler::afterLaunchEvents( ActiveSlot& slot, const SessionClockContext& ctx,
 	LaunchEvent event ) noexcept
 {
@@ -174,6 +204,9 @@ void SessionScheduler::afterLaunchEvents( ActiveSlot& slot, const SessionClockCo
 		// earlier playback would fire the chain early.
 		slot.followScheduled = false;
 		slot.followNextTick = 0;
+		slot.phaseOrigin = legatoOriginFor( slot );
+		slot.phaseOriginFor = slot.state.startedTick;
+		if( event == LaunchEvent::Started ) { takeColumnOver( slot ); }
 		m_recorder.recordStart( slot.track, slot.scene, slot.state.startedTick );
 		return;
 	}

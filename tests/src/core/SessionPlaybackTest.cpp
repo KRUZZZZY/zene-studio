@@ -98,6 +98,38 @@ private slots:
 		QCOMPARE( silent.patternId, -1 );
 	}
 
+	//! A clip launched on a column takes it over - the clip that was playing stops - and a
+	//! legato cell continues the outgoing clip's phase instead of starting from its top
+	//! (engine audit E1).
+	void aLegatoLaunchContinuesThePhaseOfTheClipItTakesOver()
+	{
+		SessionScheduler scheduler;
+		QVERIFY( scheduler.publishSlotContent( 0, 0, 7, 0 ) );
+		QVERIFY( scheduler.publishSlotContent( 0, 1, 8, 0, true ) );
+		QVERIFY( scheduler.requestLaunch( 0, 0, LaunchMode::Trigger, LaunchQuantisation::Bar ) );
+		scheduler.processAudio( clock( 0 ), kFramesPerPeriod );
+		QVERIFY( scheduler.requestLaunch( 0, 1, LaunchMode::Trigger, LaunchQuantisation::Bar ) );
+		scheduler.processAudio( clock( 100 ), kFramesPerPeriod );  // still the first clip
+		QCOMPARE( scheduler.playbackForColumn( 0 ).patternId, 7 );
+		scheduler.processAudio( clock( kTicksPerBar + 50 ), kFramesPerPeriod );
+		const SessionSlotPlayback played = scheduler.playbackForColumn( 0 );
+		QCOMPARE( played.patternId, 8 );
+		QCOMPARE( int( played.positionTicks ), int( kTicksPerBar + 50 ) );  // not 50: the phase went on
+		QCOMPARE( scheduler.slotPhase( 0, 0 ), SlotPhase::Idle );
+	}
+
+	void aNonLegatoLaunchStartsFromItsTop()
+	{
+		SessionScheduler scheduler;
+		QVERIFY( scheduler.publishSlotContent( 0, 0, 7, 0 ) );
+		QVERIFY( scheduler.publishSlotContent( 0, 1, 8, 0 ) );
+		QVERIFY( scheduler.requestLaunch( 0, 0, LaunchMode::Trigger, LaunchQuantisation::Bar ) );
+		scheduler.processAudio( clock( 0 ), kFramesPerPeriod );
+		QVERIFY( scheduler.requestLaunch( 0, 1, LaunchMode::Trigger, LaunchQuantisation::Bar ) );
+		scheduler.processAudio( clock( kTicksPerBar + 50 ), kFramesPerPeriod );
+		QCOMPARE( int( scheduler.playbackForColumn( 0 ).positionTicks ), 50 );
+	}
+
 	//! Re-publishing a cell replaces its content; it does not take a second
 	//! entry (the table installs in place for a cell it already knows).
 	void republishingACellReplacesItsContent()

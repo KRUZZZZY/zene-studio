@@ -18,7 +18,7 @@ namespace lmms
 {
 
 bool SessionSlotContentTable::install( int track, int scene, int patternId,
-	tick_t loopLengthTicks ) noexcept
+	tick_t loopLengthTicks, bool legato ) noexcept
 {
 	// Replace in place when the cell is already known: re-publishing a cell is
 	// the ordinary case (the model edits a slot), and it must not consume a
@@ -29,6 +29,7 @@ bool SessionSlotContentTable::install( int track, int scene, int patternId,
 		{
 			m_entries[i].patternId = patternId;
 			m_entries[i].loopLengthTicks = loopLengthTicks;
+			m_entries[i].legato = legato;
 			return true;
 		}
 	}
@@ -40,6 +41,7 @@ bool SessionSlotContentTable::install( int track, int scene, int patternId,
 	m_entries[m_count].scene = scene;
 	m_entries[m_count].patternId = patternId;
 	m_entries[m_count].loopLengthTicks = loopLengthTicks;
+	m_entries[m_count].legato = legato;
 	++m_count;
 	return true;
 }
@@ -69,7 +71,7 @@ void SessionSlotContentTable::clear() noexcept
 
 
 bool SessionScheduler::publishSlotContent( int track, int scene, int patternId,
-	tick_t loopLengthTicks ) noexcept
+	tick_t loopLengthTicks, bool legato ) noexcept
 {
 	// One queue push, exactly like requestLaunch/installFollowPlan: no
 	// allocation, no lock, no syscall. The audio thread applies it into the
@@ -78,7 +80,7 @@ bool SessionScheduler::publishSlotContent( int track, int scene, int patternId,
 	command.track = track;
 	command.scene = scene;
 	command.type = LaunchCommandType::Content;
-	command.content = SessionSlotContent{ track, scene, patternId, loopLengthTicks };
+	command.content = SessionSlotContent{ track, scene, patternId, loopLengthTicks, legato };
 	return enqueue( command );
 }
 
@@ -91,7 +93,7 @@ bool SessionScheduler::applySlotContent( const SessionSlotContent& content ) noe
 	// pre-#597 behaviour for that slot: it takes its column over and renders
 	// nothing, which is observable rather than a crash or a clamp.
 	return m_slotContent.install( content.track, content.scene, content.patternId,
-		content.loopLengthTicks );
+		content.loopLengthTicks, content.legato );
 }
 
 
@@ -125,10 +127,11 @@ SessionSlotPlayback SessionScheduler::playbackForColumn( int track ) const noexc
 		}
 
 		// Where in the clip this period starts: the session clock minus the
-		// launch the slot is currently playing, wrapped by the clip's own length
-		// when the model published one. A launch that inherited the outgoing
-		// clip's phase (legato) is not carried yet - see the slice's bounds.
-		tick_t position = m_positionTicks - slot.state.startedTick;
+		// launch the slot is currently playing - or, for a legato launch, minus
+		// the phase origin it inherited from the clip it took over (E1) - wrapped
+		// by the clip's own length when the model published one.
+		const tick_t origin = slot.phaseOriginFor == slot.state.startedTick ? slot.phaseOrigin : slot.state.startedTick;
+		tick_t position = m_positionTicks - origin;
 		if( position < 0 )
 		{
 			position = 0;
@@ -164,7 +167,7 @@ int publishSessionSlotContent( SessionScheduler& scheduler, const SessionModel& 
 			// by the pattern's own length (src/core/PatternStore.cpp:56), so the
 			// render is correct without the model computing one, and a length
 			// published here would be a second source of truth for it.
-			if( scheduler.publishSlotContent( track, scene, patternId, 0 ) )
+			if( scheduler.publishSlotContent( track, scene, patternId, 0, slot.legato() ) )
 			{
 				++published;
 			}

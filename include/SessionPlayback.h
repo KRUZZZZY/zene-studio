@@ -45,6 +45,9 @@ struct SessionSlotContent
 	/*! The clip's loop length in ticks, or 0 when the model did not publish one
 	 *  (the render then leaves the wrapping to the pattern store). */
 	tick_t loopLengthTicks = 0;
+	/*! Legato (engine audit E1): launching this cell while another clip plays on its column
+	 *  continues that clip's phase instead of starting the new one from its top. */
+	bool legato = false;
 };
 
 
@@ -66,7 +69,7 @@ public:
 	/*! Stores one cell's content, REPLACING any previous entry for that cell.
 	 *  Model thread (called via the scheduler's queue). No allocation, no lock.
 	 *  False when the table has no free entry - the caller counts it. */
-	bool install( int track, int scene, int patternId, tick_t loopLengthTicks ) noexcept;
+	bool install( int track, int scene, int patternId, tick_t loopLengthTicks, bool legato = false ) noexcept;
 
 	/*! The content stored for a cell, or nullptr. AUDIO THREAD: a bounded walk
 	 *  over fixed storage, so it allocates nothing and locks nothing. */
