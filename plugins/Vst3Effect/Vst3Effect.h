@@ -69,6 +69,8 @@ public:
 	//! BUGS 11.34: the latency the plug-in reported after its last successful prepare, so the
 	//! effect chain's delay compensation sees it (read on the control thread).
 	int latencyFrames() const override { return m_latencyFrames.load(std::memory_order_relaxed); }
+	//! E6: the tail the plug-in declared after its last prepare, so silence does not cut it.
+	int tailFrames() const override { return m_tailFrames.load(std::memory_order_relaxed); }
 
 	//! Set from the audio thread when the plug-in is not prepared, polled by
 	//! Vst3EffectControls on the GUI thread.
@@ -89,8 +91,9 @@ private:
 	//! Vst3EffectControls on the GUI thread which then calls reprepare().
 	std::atomic<bool> m_needsReprepare{false};
 	std::atomic<int> m_latencyFrames{0};
+	std::atomic<int> m_tailFrames{0};
 
-	//! GUI thread: read the plug-in's latency and let the owning chain re-align.
+	//! GUI thread: read the plug-in's latency and tail, and let the owning chain re-align.
 	void cacheLatency();
 };
 

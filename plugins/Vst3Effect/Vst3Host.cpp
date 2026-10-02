@@ -643,6 +643,14 @@ auto HostedPlugin::latency() const -> std::uint32_t
 	return d.prepared && d.processor ? d.processor->getLatencySamples() : 0;
 }
 
+auto HostedPlugin::tail() const -> int
+{
+	const auto& d = *m_impl;
+	if (!d.prepared || !d.processor) { return 0; }
+	const uint32 frames = d.processor->getTailSamples();
+	return frames == kInfiniteTail ? -1 : static_cast<int>(std::min<uint32>(frames, INT32_MAX));
+}
+
 void HostedPlugin::setLatencyChangedCallback(std::function<void()> callback)
 {
 	m_impl->onLatencyChanged = std::move(callback);

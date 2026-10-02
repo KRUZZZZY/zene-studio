@@ -284,6 +284,18 @@ static uint32_t gain_latency_get(const clap_plugin_t* plugin)
 	return frames != NULL ? (uint32_t)strtoul(frames, NULL, 10) : 0u;
 }
 
+/* clap.tail: 0 unless CLAP_TEST_GAIN_TAIL names a frame count (engine audit E6). */
+static uint32_t gain_tail_get(const clap_plugin_t* plugin)
+{
+	(void)plugin;
+	const char* frames = getenv("CLAP_TEST_GAIN_TAIL");
+	return frames != NULL ? (uint32_t)strtoul(frames, NULL, 10) : 0u;
+}
+
+static const clap_plugin_tail_t s_tail = {
+	.get = gain_tail_get,
+};
+
 static const clap_plugin_latency_t s_latency = {
 	.get = gain_latency_get,
 };
@@ -533,6 +545,7 @@ static const void* gain_get_extension(const clap_plugin_t* plugin, const char* i
 	if (strcmp(id, CLAP_EXT_AUDIO_PORTS) == 0) { return &s_audio_ports; }
 	if (strcmp(id, CLAP_EXT_STATE) == 0) { return &s_state; }
 	if (strcmp(id, CLAP_EXT_LATENCY) == 0) { return &s_latency; }
+	if (strcmp(id, CLAP_EXT_TAIL) == 0) { return &s_tail; }
 	if (strcmp(id, CLAP_EXT_TIMER_SUPPORT) == 0) { return &s_timer; }
 	if (strcmp(id, CLAP_EXT_GUI) == 0) { return &s_gui; }
 	return NULL;

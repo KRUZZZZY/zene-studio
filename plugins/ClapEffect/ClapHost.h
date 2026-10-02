@@ -111,6 +111,8 @@ public:
 	auto ports() const -> const std::vector<PortDescriptor>&;
 	auto busLayout() const -> const PortLayout&;
 	auto latency() const -> std::uint32_t;
+	//! Main thread, prepared: the plug-in's tail in frames (clap.tail), -1 for infinite (E6).
+	auto tail() const -> int;
 
 	//! The plug-in's note INPUT ports (clap.note-ports), in the plug-in's own
 	//! index order. Empty for a plug-in that does not implement the extension

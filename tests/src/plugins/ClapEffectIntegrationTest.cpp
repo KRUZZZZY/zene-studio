@@ -72,6 +72,7 @@ private slots:
 	void testTheEffectsOwnEditorOpensInItsOwnWindow();
 	void testTheControlDialogsButtonOpensTheEditor();
 	void testThePluginsLatencyReachesTheChain();
+	void testThePluginsTailKeepsItRunning();
 
 private:
 	auto makeKey() const -> Plugin::Descriptor::SubPluginFeatures::Key;
@@ -501,6 +502,23 @@ void lmms::ClapEffectIntegrationTest::testThePluginsLatencyReachesTheChain()
 	qunsetenv("CLAP_TEST_GAIN_LATENCY");
 	QCOMPARE(effect->latencyFrames(), 123);
 	QCOMPARE(chain.latencyFrames(), 123);
+	chain.clear();
+}
+
+/*! Engine audit E6: a plug-in's declared tail lengthens the silence an effect waits through
+ *  before it stops processing, so a reverb's tail is not cut by the Decay setting. */
+void lmms::ClapEffectIntegrationTest::testThePluginsTailKeepsItRunning()
+{
+	BufferManager::init(48);
+	qputenv("CLAP_TEST_GAIN_TAIL", "96000");
+	EffectChain chain{nullptr};
+	const auto key = makeKey();
+	auto* effect = new ClapEffect{&chain, &key};
+	chain.appendEffect(effect);
+	qunsetenv("CLAP_TEST_GAIN_TAIL");
+	QCOMPARE(effect->tailFrames(), 96000);
+	const auto periods = static_cast<f_cnt_t>(96000 / Engine::audioEngine()->framesPerPeriod());
+	QVERIFY2(effect->timeout() > periods, "the auto-quit wait covers the declared tail");
 	chain.clear();
 }
 

@@ -144,6 +144,7 @@ struct HostedPlugin::Impl
 	const clap_plugin_note_ports_t* notePortsExt = nullptr;
 	const clap_plugin_state_t* stateExt = nullptr;
 	const clap_plugin_latency_t* latencyExt = nullptr;
+	const clap_plugin_tail_t* tailExt = nullptr;
 
 	// --- processing configuration ----------------------------------------
 	bool prepared = false;

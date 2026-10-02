@@ -144,6 +144,8 @@ public:
 	//! GUI thread: the plug-in's processing latency in samples (IAudioProcessor::
 	//! getLatencySamples), 0 while not prepared. BUGS 11.34.
 	auto latency() const -> std::uint32_t;
+	//! GUI thread: the plug-in's tail in frames (getTailSamples), -1 for infinite (E6).
+	auto tail() const -> int;
 	//! Audio thread, after process(): the notes the plug-in wrote to its output event list during
 	//! that request, as MIDI with block frame offsets (engine audit E7).
 	auto outputEventCount() const -> int;

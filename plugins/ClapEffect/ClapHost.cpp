@@ -104,6 +104,14 @@ auto HostedPlugin::ports() const -> const std::vector<PortDescriptor>& { return 
 
 auto HostedPlugin::busLayout() const -> const PortLayout& { return m_impl->layout; }
 
+auto HostedPlugin::tail() const -> int
+{
+	const auto& impl = *m_impl;
+	if (impl.tailExt == nullptr || !impl.prepared) { return 0; }
+	const std::uint32_t frames = impl.tailExt->get(impl.plugin);
+	return frames >= static_cast<std::uint32_t>(INT32_MAX) ? -1 : static_cast<int>(frames);
+}
+
 auto HostedPlugin::latency() const -> std::uint32_t
 {
 	const auto& impl = *m_impl;
@@ -211,6 +219,7 @@ auto HostedPlugin::load(const QString& modulePath, const QString& pluginId, QStr
 		static_cast<const clap_plugin_state_t*>(impl.plugin->get_extension(impl.plugin, CLAP_EXT_STATE));
 	impl.latencyExt =
 		static_cast<const clap_plugin_latency_t*>(impl.plugin->get_extension(impl.plugin, CLAP_EXT_LATENCY));
+	impl.tailExt = static_cast<const clap_plugin_tail_t*>(impl.plugin->get_extension(impl.plugin, CLAP_EXT_TAIL));
 
 	if (!impl.audioPortsExt)
 	{
@@ -324,6 +333,7 @@ void HostedPlugin::unload()
 	impl.notePortsExt = nullptr;
 	impl.stateExt = nullptr;
 	impl.latencyExt = nullptr;
+	impl.tailExt = nullptr;
 	impl.params.clear();
 	impl.paramIds.clear();
 	impl.paramCookies.clear();

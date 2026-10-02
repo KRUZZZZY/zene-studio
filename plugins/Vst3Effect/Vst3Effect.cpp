@@ -134,6 +134,7 @@ void Vst3Effect::reprepare()
 void Vst3Effect::cacheLatency()
 {
 	m_latencyFrames.store(m_plugin.isPrepared() ? static_cast<int>(m_plugin.latency()) : 0, std::memory_order_relaxed);
+	m_tailFrames.store(m_plugin.isPrepared() ? m_plugin.tail() : 0, std::memory_order_relaxed);
 	if (EffectChain* chain = effectChain()) { chain->refreshLatency(); }
 }
 

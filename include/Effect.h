@@ -26,6 +26,8 @@
 #ifndef LMMS_EFFECT_H
 #define LMMS_EFFECT_H
 
+#include <algorithm>
+#include <limits>
 #include <span>
 
 #include "AudioEngine.h"
@@ -130,7 +132,20 @@ public:
 	inline f_cnt_t timeout() const
 	{
 		const float samples = Engine::audioEngine()->outputSampleRate() * m_autoQuitModel.value() / 1000.0f;
-		return 1 + ( static_cast<int>( samples ) / Engine::audioEngine()->framesPerPeriod() );
+		// 0.5.0 (engine audit E6): a device that declares its own tail - a reverb, a delay -
+		// keeps running at least that long after its input falls silent, and one with an
+		// infinite tail never stops on silence; before, the Decay setting alone cut the tail.
+		const int tail = tailFrames();
+		if (tail < 0) { return std::numeric_limits<f_cnt_t>::max(); }
+		return 1 + ( std::max( static_cast<int>( samples ), tail ) / Engine::audioEngine()->framesPerPeriod() );
+	}
+
+	//! Frames the device keeps sounding after its input stops, as the device itself declares
+	//! it (a hosted plug-in's tail); -1 for an infinite tail. Read on the audio thread, so an
+	//! override returns a cached value.
+	virtual int tailFrames() const
+	{
+		return 0;
 	}
 
 	inline float wetLevel() const
