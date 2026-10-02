@@ -33,6 +33,8 @@
 #include <QLabel>
 #include <QMessageBox>
 #include <QPushButton>
+
+#include "CommandForm.h"
 #include <QSignalBlocker>
 #include <QTableWidget>
 #include <QVBoxLayout>
@@ -81,6 +83,18 @@ TempoMapPanel::TempoMapPanel(QWidget* parent) :
 
 	auto* add = commandButton(tr("Add at playhead"), "transport.tempo_map_add", this);
 	auto* remove = commandButton(tr("Remove"), "transport.tempo_map_remove", this);
+	// ED-050: any event, typed (tick, tempo, metre, ramp), and a ramp to the next event toggled on a row.
+	auto* addForm = commandButton(tr("Add..."), "transport.tempo_map_add", this);
+	auto* ramp = commandButton(tr("Ramp to Next"), "transport.tempo_map_add", this);
+	connect(addForm, &QPushButton::clicked, this, [this] {
+		Song* song = Engine::getSong();
+		CommandForm* form = nullptr;
+		runCommand(this, CommandCall{QStringLiteral("transport.tempo_map_add"), {},
+			{{QStringLiteral("tick"), static_cast<int>(song->getPlayPos().getTicks())}, {QStringLiteral("bpm"), song->getTempo()}},
+			tr("Add Tempo Event"), true}, &form);
+		if (form != nullptr) { connect(form, &CommandForm::ran, this, [this] { refresh(); }); }
+	});
+	connect(ramp, &QPushButton::clicked, this, [this] { toggleRamp(m_table->currentRow()); });
 	auto* clear = commandButton(tr("Clear"), "transport.tempo_map_clear", this);
 	auto* exportMidi = commandButton(tr("Export MIDI..."), "interchange.smf_export", this);
 	auto* importMidi = commandButton(tr("Import MIDI..."), "interchange.smf_import", this);
@@ -116,6 +130,8 @@ TempoMapPanel::TempoMapPanel(QWidget* parent) :
 
 	auto* buttons = new QHBoxLayout;
 	buttons->addWidget(add);
+	buttons->addWidget(addForm);
+	buttons->addWidget(ramp);
 	buttons->addWidget(remove);
 	buttons->addStretch();
 	buttons->addWidget(importMidi);
@@ -150,7 +166,8 @@ void TempoMapPanel::refresh()
 		const int tick = event.value(QStringLiteral("tick")).toInt();
 		const int numerator = event.value(QStringLiteral("numerator")).toInt();
 		const QStringList cells{QString::number(tick / std::max(1, ticksPerBar) + 1), QString::number(tick),
-			cell(event.value(QStringLiteral("bpm")).toInt()),
+			cell(event.value(QStringLiteral("bpm")).toInt())
+				+ (event.value(QStringLiteral("ramp")).toBool() ? QStringLiteral("  \u2197 ramp") : QString()),
 			numerator > 0 ? QStringLiteral("%1/%2").arg(numerator).arg(event.value(QStringLiteral("denominator")).toInt())
 				: QStringLiteral("-")};
 		for (int column = 0; column < cells.size(); ++column)
@@ -173,6 +190,19 @@ bool TempoMapPanel::addEvent(int tick, int bpm)
 		{QStringLiteral("numerator"), song->getTimeSigModel().getNumerator()},
 		{QStringLiteral("denominator"), song->getTimeSigModel().getDenominator()}});
 	if (!added.ok) { m_summary->setText(added.errorMessage); return false; }
+	refresh();
+	return true;
+}
+
+bool TempoMapPanel::toggleRamp(int row)
+{
+	const QJsonArray events = run("transport.tempo_map_get").result.value(QStringLiteral("events")).toArray();
+	if (row < 0 || row >= events.size()) { return false; }
+	const QJsonObject event = events.at(row).toObject();
+	if (!event.value(QStringLiteral("has_tempo")).toBool()) { return false; }
+	const ControlResult set = run("transport.tempo_map_add", {{QStringLiteral("tick"), event.value(QStringLiteral("tick"))},
+		{QStringLiteral("bpm"), event.value(QStringLiteral("bpm"))}, {QStringLiteral("ramp"), !event.value(QStringLiteral("ramp")).toBool()}});
+	if (!set.ok) { m_summary->setText(set.errorMessage); return false; }
 	refresh();
 	return true;
 }

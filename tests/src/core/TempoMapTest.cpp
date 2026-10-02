@@ -46,6 +46,8 @@
 
 #include <QtTest>
 
+#include <QDomDocument>
+
 #include <array>
 #include <cmath>
 
@@ -493,6 +495,50 @@ private slots:
 		QVERIFY(!populated.set(duplicated));
 		QCOMPARE(populated.size(), 2);
 		QCOMPARE(populated.tempoAtTick(100, kGlobalTempo()), 140);
+	}
+
+	//! ED-050 (0.5.0): a ramp moves the tempo along a line to the next tempo event; time across it
+	//! is the integral (a logarithm), its inverse lands back on every tick, it serialises as
+	//! `ramp="1"` only when set, and frames-per-tick follows the line inside it.
+	void aRampMovesTheTempoAlongALine()
+	{
+		TempoMap map;
+		map.setActive(true);
+		TempoMapEvent from;
+		from.tick = 0;
+		from.hasTempo = true;
+		from.tempo = 100;
+		from.ramp = true;
+		TempoMapEvent to;
+		to.tick = 192;
+		to.hasTempo = true;
+		to.tempo = 200;
+		QVERIFY(map.addEvent(from));
+		QVERIFY(map.addEvent(to));
+		QCOMPARE(map.exactTempoAtTick(96, kGlobalTempo()), 150.0);
+		QCOMPARE(map.tempoAtTick(96, kGlobalTempo()), 150);
+		QCOMPARE(map.tempoAtTick(500, kGlobalTempo()), 200);  // past the last event it holds
+
+		const double perTickAtOneBpm = TimePos::ticksToMilliseconds(1, 1) / 1000.0;
+		const double slope = 100.0 / 192.0;
+		const double expected = perTickAtOneBpm / slope * std::log(200.0 / 100.0);
+		QVERIFY2(std::abs(map.secondsAtTick(192, kGlobalTempo()) - expected) < 1e-9,
+			qPrintable(QStringLiteral("seconds across the ramp %1, the integral says %2").arg(map.secondsAtTick(192, kGlobalTempo())).arg(expected)));
+		for (const tick_t tick : {1, 48, 95, 96, 150, 191, 192, 300})
+		{
+			QCOMPARE(map.tickAtSeconds(map.secondsAtTick(tick, kGlobalTempo()), kGlobalTempo()), tick);
+		}
+		QVERIFY(map.framesPerTickAtTick(96, 48000, kGlobalTempo()) < map.framesPerTickAtTick(0, 48000, kGlobalTempo()));
+
+		QDomDocument doc;
+		QDomElement root = doc.createElement(QStringLiteral("root"));
+		map.saveSettings(doc, root);
+		const QDomElement first = root.firstChildElement().firstChildElement(QStringLiteral("event"));
+		QCOMPARE(first.attribute(QStringLiteral("ramp")), QStringLiteral("1"));
+		QVERIFY(!first.nextSiblingElement(QStringLiteral("event")).hasAttribute(QStringLiteral("ramp")));
+		TempoMap loaded;
+		QVERIFY(loaded.loadSettings(root.firstChildElement()));
+		QVERIFY(loaded == map);
 	}
 };
 

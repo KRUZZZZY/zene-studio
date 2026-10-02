@@ -90,6 +90,9 @@ struct TempoMapEvent
 	bool hasTimeSignature = false;
 	int numerator = 4;
 	int denominator = 4;
+	//! 0.5.0 ED-050: a tempo event that RAMPS - its tempo moves linearly (per tick) to the next
+	//! tempo event's, instead of holding until it. Ignored on the last tempo event.
+	bool ramp = false;
 
 	/*! Equal when the two events MEAN the same thing: the same tick, the same
 	 *  halves, and each PRESENT half's value.
@@ -113,7 +116,7 @@ struct TempoMapEvent
 		{
 			return false;
 		}
-		if (hasTempo && tempo != other.tempo) { return false; }
+		if (hasTempo && (tempo != other.tempo || ramp != other.ramp)) { return false; }
 		return !hasTimeSignature
 			|| (numerator == other.numerator && denominator == other.denominator);
 	}
@@ -203,6 +206,8 @@ public:
 	bool set(std::span<const TempoMapEvent> events);
 
 	int tempoAtTick(tick_t tick, int globalTempo) const;
+	//! The tempo at @a tick unrounded: inside a ramp, the point on the line (ED-050).
+	double exactTempoAtTick(tick_t tick, int globalTempo) const;
 	TempoMapTimeSignature timeSignatureAtTick(tick_t tick,
 		const TempoMapTimeSignature& global) const;
 
@@ -250,11 +255,13 @@ private:
 	int lastTimeSigIndexAtOrBefore(tick_t tick) const;
 	//! The index of the event at exactly \a tick, or -1.
 	int indexOfTick(tick_t tick) const;
+	//! The tempo change per tick from tempo event @a index to the next one: 0 unless it ramps.
+	double rampSlope(int index) const;
 	/*! The tempo segment that CONTAINS \a seconds: walks the tempo events and
 	 *  leaves the segment's first tick, the seconds elapsed at it and its tempo
 	 *  in \a cursor / \a elapsed / \a bpm (which start as the global segment). */
 	void segmentForSeconds(double seconds, int globalTempo, tick_t* cursor,
-		double* elapsed, int* bpm) const;
+		double* elapsed, double* bpm, double* slope) const;
 
 	std::array<TempoMapEvent, MaxEvents> m_events{};
 	int m_count = 0;

@@ -95,6 +95,7 @@ QJsonObject eventState(const TempoMapEvent& event)
 	entry.insert(QStringLiteral("tick"), static_cast<qint64>(event.tick));
 	entry.insert(QStringLiteral("has_tempo"), event.hasTempo);
 	entry.insert(QStringLiteral("bpm"), event.hasTempo ? event.tempo : 0);
+	entry.insert(QStringLiteral("ramp"), event.hasTempo && event.ramp);
 	entry.insert(QStringLiteral("has_time_signature"), event.hasTimeSignature);
 	entry.insert(QStringLiteral("numerator"), event.hasTimeSignature ? event.numerator : 0);
 	entry.insert(QStringLiteral("denominator"), event.hasTimeSignature ? event.denominator : 0);
@@ -170,6 +171,7 @@ bool eventFromArgs(const QJsonObject& args, TempoMapEvent* event)
 	{
 		event->hasTempo = true;
 		event->tempo = static_cast<int>(args.value(QStringLiteral("bpm")).toDouble());
+		event->ramp = args.value(QStringLiteral("ramp")).toBool();  // ED-050
 	}
 	if (args.contains(QStringLiteral("numerator")) || args.contains(QStringLiteral("denominator")))
 	{
@@ -272,10 +274,12 @@ void registerAddCommand(ControlRegistry& registry)
 		"replace the half it names at that tick (the other half is kept). Adding an event "
 		"brings the map into force unless `active` is passed false: an event no timeline read "
 		"would obey is a trap. Refused, typed, when the event fails the engine's own bounds "
-		"or carries neither half, and a refusal writes nothing.");
+		"or carries neither half, and a refusal writes nothing. With `ramp` (0.5.0) the tempo moves "
+		"linearly from this event to the next tempo event instead of holding.");
 	cmd.argsSchema = objectSchema({
 		{QStringLiteral("tick"), tickProperty()},
 		{QStringLiteral("bpm"), integerProperty(MinTempo, MaxTempo)},
+		{QStringLiteral("ramp"), booleanProperty()},
 		{QStringLiteral("numerator"), integerProperty(TempoMapMinNumerator, TempoMapMaxNumerator)},
 		{QStringLiteral("denominator"), integerProperty(1, TempoMapLargestDenominator)},
 		{QStringLiteral("active"), booleanProperty()},

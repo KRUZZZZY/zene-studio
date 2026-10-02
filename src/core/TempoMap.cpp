@@ -29,6 +29,9 @@
 
 #include "TempoMap.h"
 
+#include <algorithm>
+#include <cmath>
+
 #include <QDomDocument>
 #include <QDomElement>
 #include <QDomNodeList>
@@ -70,6 +73,23 @@ bool isSupportedTimeSignature(int numerator, int denominator)
 	return numerator >= TempoMapMinNumerator && numerator <= TempoMapMaxNumerator
 		&& denominator <= TempoMapLargestDenominator
 		&& isSupportedTempoMapDenominator(denominator);
+}
+
+//! Seconds over @a ticks starting at @a bpm, the tempo moving by @a slope per tick: the integral of
+//! secondsPerTick along the line - a logarithm for a ramp, the plain product when it holds (ED-050).
+double segmentSeconds(double bpm, double slope, double ticks)
+{
+	const double perTickAtOneBpm = secondsPerTick(1);
+	if (std::abs(slope) < 1e-12) { return ticks * perTickAtOneBpm / bpm; }
+	return perTickAtOneBpm / slope * std::log((bpm + slope * ticks) / bpm);
+}
+
+//! The inverse: how many ticks @a seconds lasts from @a bpm along @a slope.
+double segmentTicks(double bpm, double slope, double seconds)
+{
+	const double perTickAtOneBpm = secondsPerTick(1);
+	if (std::abs(slope) < 1e-12) { return seconds * bpm / perTickAtOneBpm; }
+	return bpm * (std::exp(seconds * slope / perTickAtOneBpm) - 1.0) / slope;
 }
 
 } // namespace
@@ -126,6 +146,7 @@ bool TempoMap::addEvent(const TempoMapEvent& event)
 		{
 			merged.hasTempo = true;
 			merged.tempo = event.tempo;
+			merged.ramp = event.ramp;  // ED-050: the ramp belongs to the tempo half
 		}
 		if (event.hasTimeSignature)
 		{
@@ -188,11 +209,30 @@ int TempoMap::tempoAtTick(tick_t tick, int globalTempo) const
 	// An inactive or empty map is never consulted: EVERY tick answers the global
 	// tempo, which is the value the engine used before a tempo map existed.
 	if (!m_active || m_count == 0) { return globalTempo; }
+	return static_cast<int>(std::lround(exactTempoAtTick(tick, globalTempo)));
+}
+
+double TempoMap::exactTempoAtTick(tick_t tick, int globalTempo) const
+{
+	if (!m_active || m_count == 0) { return globalTempo; }
 	const int index = lastTempoIndexAtOrBefore(tick);
 	if (index < 0) { return globalTempo; }  // before the first event: global
-	// On and after an event: its tempo, held until the next one; past the last
-	// event the last one holds indefinitely.
-	return m_events[static_cast<std::size_t>(index)].tempo;
+	// On and after an event: its tempo, held until the next one - or, for a ramp (ED-050),
+	// moving along the line to it; past the last event the last one holds indefinitely.
+	const TempoMapEvent& event = m_events[static_cast<std::size_t>(index)];
+	return event.tempo + rampSlope(index) * static_cast<double>(tick - event.tick);
+}
+
+double TempoMap::rampSlope(int index) const
+{
+	const TempoMapEvent& from = m_events[static_cast<std::size_t>(index)];
+	if (!from.ramp) { return 0.0; }
+	for (int next = index + 1; next < m_count; ++next)
+	{
+		const TempoMapEvent& to = m_events[static_cast<std::size_t>(next)];
+		if (to.hasTempo) { return static_cast<double>(to.tempo - from.tempo) / static_cast<double>(std::max<tick_t>(1, to.tick - from.tick)); }
+	}
+	return 0.0;
 }
 
 TempoMapTimeSignature TempoMap::timeSignatureAtTick(tick_t tick,
@@ -215,7 +255,8 @@ double TempoMap::secondsAtTick(tick_t tick, int globalTempo) const
 
 	double seconds = 0.0;
 	tick_t cursor = 0;
-	int bpm = globalTempo;  // before the first tempo event: the global tempo
+	double bpm = globalTempo;  // before the first tempo event: the global tempo
+	double slope = 0.0;
 	for (int i = 0; i < m_count; ++i)
 	{
 		const TempoMapEvent& event = m_events[static_cast<std::size_t>(i)];
@@ -224,29 +265,29 @@ double TempoMap::secondsAtTick(tick_t tick, int globalTempo) const
 		// what makes this function continuous at every event.
 		if (event.tick >= tick) { break; }
 		if (!event.hasTempo) { continue; }
-		seconds += static_cast<double>(event.tick - cursor) * secondsPerTick(bpm);
+		seconds += segmentSeconds(bpm, slope, static_cast<double>(event.tick - cursor));
 		cursor = event.tick;
 		bpm = event.tempo;
+		slope = rampSlope(i);
 	}
-	return seconds + static_cast<double>(tick - cursor) * secondsPerTick(bpm);
+	return seconds + segmentSeconds(bpm, slope, static_cast<double>(tick - cursor));
 }
 
 void TempoMap::segmentForSeconds(double seconds, int globalTempo, tick_t* cursor,
-	double* elapsed, int* bpm) const
+	double* elapsed, double* bpm, double* slope) const
 {
 	(void)globalTempo;
 	if (!m_active || m_count == 0) { return; }  // the global segment, unchanged
-	int index = 0;
-	while (index < m_count)
+	for (int index = 0; index < m_count; ++index)
 	{
 		const TempoMapEvent& event = m_events[static_cast<std::size_t>(index)];
-		++index;
 		if (!event.hasTempo) { continue; }
-		const double segment = static_cast<double>(event.tick - *cursor) * secondsPerTick(*bpm);
+		const double segment = segmentSeconds(*bpm, *slope, static_cast<double>(event.tick - *cursor));
 		if (*elapsed + segment > seconds) { return; }
 		*elapsed += segment;
 		*cursor = event.tick;
 		*bpm = event.tempo;
+		*slope = rampSlope(index);
 	}
 }
 
@@ -255,13 +296,14 @@ tick_t TempoMap::tickAtSeconds(double seconds, int globalTempo) const
 	if (seconds <= 0.0) { return 0; }
 	tick_t cursor = 0;
 	double elapsed = 0.0;
-	int bpm = globalTempo;
-	segmentForSeconds(seconds, globalTempo, &cursor, &elapsed, &bpm);
+	double bpm = globalTempo;
+	double slope = 0.0;
+	segmentForSeconds(seconds, globalTempo, &cursor, &elapsed, &bpm, &slope);
 
 	// The closed form can be one tick out at a segment boundary (a division and
 	// a truncation), so it is corrected against the exact forward function
 	// instead of being trusted. At most ONE step either way.
-	const tick_t estimate = cursor + static_cast<tick_t>((seconds - elapsed) / secondsPerTick(bpm));
+	const tick_t estimate = cursor + static_cast<tick_t>(segmentTicks(bpm, slope, seconds - elapsed));
 	if (estimate > 0 && secondsAtTick(estimate, globalTempo) > seconds) { return estimate - 1; }
 	if (secondsAtTick(estimate + 1, globalTempo) <= seconds) { return estimate + 1; }
 	return estimate;
@@ -269,6 +311,13 @@ tick_t TempoMap::tickAtSeconds(double seconds, int globalTempo) const
 
 float TempoMap::framesPerTickAtTick(tick_t tick, sample_rate_t sampleRate, int globalTempo) const
 {
+	// Inside a ramp (ED-050) the rate follows the line, at the resolution of the block the
+	// engine asks for; everywhere else the integer path below, bit for bit.
+	const int index = m_active && m_count > 0 ? lastTempoIndexAtOrBefore(tick) : -1;
+	if (index >= 0 && rampSlope(index) != 0.0)
+	{
+		return static_cast<float>(sampleRate * 60.0 * 4 / DefaultTicksPerBar / exactTempoAtTick(tick, globalTempo));
+	}
 	const int bpm = tempoAtTick(tick, globalTempo);
 	// ENGINE-EXACT: this is Engine::updateFramesPerTick()'s expression verbatim,
 	// so an empty (or inactive) map evaluates to the engine's own scalar
@@ -301,6 +350,8 @@ void TempoMap::saveSettings(QDomDocument& doc, QDomElement& parent) const
 		if (event.hasTempo)
 		{
 			eventElement.setAttribute(QStringLiteral("bpm"), event.tempo);
+			// ED-050: written only for a ramp, so a map without one serialises as it always did.
+			if (event.ramp) { eventElement.setAttribute(QStringLiteral("ramp"), 1); }
 		}
 		if (event.hasTimeSignature)
 		{
@@ -331,6 +382,7 @@ bool TempoMap::loadSettings(const QDomElement& element)
 		{
 			event.hasTempo = true;
 			event.tempo = node.attribute(QStringLiteral("bpm")).toInt();
+			event.ramp = node.attribute(QStringLiteral("ramp"), QStringLiteral("0")).toInt() != 0;
 		}
 		if (node.hasAttribute(QStringLiteral("numerator"))
 			&& node.hasAttribute(QStringLiteral("denominator")))

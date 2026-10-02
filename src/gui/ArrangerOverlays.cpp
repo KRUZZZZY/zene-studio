@@ -38,6 +38,9 @@
 #include "ControlRegistry.h"
 #include "ControlVocabulary.h"
 #include "DesignTokens.h"
+#include "Engine.h"
+#include "Song.h"
+#include "TempoMap.h"
 #include "ProjectMarkers.h"
 #include "SongEditor.h"
 #include "TimeLineWidget.h"
@@ -68,6 +71,34 @@ bool MarkerRulerOverlay::eventFilter(QObject* watched, QEvent* event)
 	return QWidget::eventFilter(watched, event);
 }
 
+void MarkerRulerOverlay::paintTempo(QPainter& p)
+{
+	// ED-050: an active tempo map as a curve along the ruler's lower edge - holds flat, ramps
+	// slope - so a ramp or a jump is visible where it happens.
+	const TempoMap& map = Engine::getSong()->tempoMap().map();
+	if (!map.active() || map.empty()) { return; }
+	const int global = Engine::getSong()->getTempo();
+	int low = global;
+	int high = global;
+	for (const TempoMapEvent& event : map.all())
+	{
+		if (event.hasTempo) { low = std::min(low, event.tempo); high = std::max(high, event.tempo); }
+	}
+	const double x0 = m_ruler->markerX(TimePos(0));
+	const double perTick = (m_ruler->markerX(TimePos(TimePos::ticksPerBar())) - x0) / TimePos::ticksPerBar();
+	if (perTick <= 0.0) { return; }
+	constexpr int Band = 8;
+	QPolygonF curve;
+	for (int x = 0; x <= width(); x += 2)
+	{
+		const double tempo = map.exactTempoAtTick(static_cast<tick_t>(std::max(0.0, (x - x0) / perTick)), global);
+		const double y = height() - 1 - (high > low ? (tempo - low) / (high - low) : 0.5) * Band;
+		curve << QPointF(x, y);
+	}
+	p.setPen(QPen(tokens::palette().play, 1.25));
+	p.drawPolyline(curve);
+}
+
 void MarkerRulerOverlay::paintEvent(QPaintEvent*)
 {
 	m_drawn.clear();
@@ -75,6 +106,7 @@ void MarkerRulerOverlay::paintEvent(QPaintEvent*)
 	const tokens::Palette& pal = tokens::palette();
 	QPainter p(this);
 	p.setRenderHint(QPainter::Antialiasing);
+	paintTempo(p);
 	p.setFont(tokens::font(tokens::TextRole::Small));
 	for (const Marker& marker : ProjectMarkers::instance().markers())
 	{

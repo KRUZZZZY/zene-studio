@@ -31,6 +31,8 @@
 #include "LmmsTypes.h"
 #include "lmms_export.h"
 
+class QPainter;
+
 namespace lmms
 {
 class Track;
@@ -59,6 +61,8 @@ protected:
 	bool eventFilter(QObject* watched, QEvent* event) override;
 
 private:
+	void paintTempo(QPainter& p);
+
 	QPointer<TimeLineWidget> m_ruler;
 	QList<int> m_drawn;
 };
