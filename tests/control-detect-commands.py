@@ -259,6 +259,13 @@ def _check_key_half_alone(session, recorder, major_path, names):
         "and it did not touch the tempo map, which no tempo was asked for",
         tempo_map_of(session.result("detect.get_state")).get("event_count") == 0,
         "tempo_map=%r" % (tempo_map_of(session.result("detect.get_state")),))
+    # Engine audit E24: the stored key sets the scale context (its one consumer); undone first,
+    # so the detect.apply undo below still finds its own step on top.
+    scale = session.result("scale.from_detected_key")
+    recorder.check(
+        "scale.from_detected_key makes the detected key the scale context (root A)",
+        scale.get("root") == 9 and scale.get("scale") == key_state.get("scale"), "scale=%r" % (scale,))
+    session.result("control.undo")
     session.result("control.undo")
     state = session.result("detect.get_state")
     recorder.check(

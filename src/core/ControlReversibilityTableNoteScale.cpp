@@ -156,6 +156,11 @@ const ReversibilityRow kNoteScaleRows[] = {
 		"root and scale back and the redo half re-applies the requested pair (the "
 		"clock.master_set shape, for the same reason)",
 		""),
+	R("scale.from_detected_key", RC::TrueInverse, true,
+		"it sets the scale context's root and scale (process state, like scale.set) from the "
+		"project's detected key; a recorded action step restores both",
+		"recorded action step (the previous root and scale)",
+		""),
 	R("scale.set", RC::TrueInverse, true,
 		"the scale name is part of the same non-serialized context: it lives in "
 		"memory for the life of the instance and is not project state",

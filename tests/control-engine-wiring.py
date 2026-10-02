@@ -101,6 +101,12 @@ def check_scene_override(session, recorder):
                    "on=%r off=%r" % (on, off))
 
 
+def check_detected_key_refusal(session, recorder):
+    refused = session.call("scale.from_detected_key")
+    recorder.check("scale.from_detected_key with no detected key is refused not_found (E24)",
+                   (refused.get("error") or {}).get("kind") == "not_found", "reply=%r" % refused)
+
+
 def check_lua_spine(session, recorder):
     source = ("local r, err = zene.command('track.add', {type = 'instrument', name = 'Lua spine'})\n"
               "print('added ' .. tostring(err == nil) .. ' ' .. string.sub(r.track, 1, 4))\n"
@@ -140,6 +146,7 @@ def main(argv):
         check_chain_presets(session, recorder, channel)
         check_track_channel(session, recorder, track)
         check_scene_override(session, recorder)
+        check_detected_key_refusal(session, recorder)
         check_lua_spine(session, recorder)
     report_results(recorder)
     if recorder.problems:

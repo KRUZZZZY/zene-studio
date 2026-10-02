@@ -64,7 +64,10 @@
 #include "ControlReversibility.h"
 #include "ControlScaleShared.h"
 #include "InstrumentFunctions.h"
+#include "Engine.h"
 #include "MidiClip.h"
+#include "ProjectKey.h"
+#include "Song.h"
 #include "NoteTransform.h"
 
 namespace lmms
@@ -236,6 +239,32 @@ ControlResult scaleSet(const QJsonObject& args)
 	return ControlResult::success(result);
 }
 
+//! scale.from_detected_key (engine audit E24): the key detect.apply stored in the project becomes
+//! the context's root and scale - the one consumer that field lacked.
+ControlResult fromDetectedKey(const QJsonObject&)
+{
+	const ProjectKey& key = Engine::getSong()->projectKey();
+	if (key.empty() || key.tonicPitchClass() == ProjectKey::UnknownPitchClass)
+	{
+		return ControlResult::failure(ControlErrorKind::NotFound,
+			QStringLiteral("the project holds no detected key: detect.apply with `key` writes one"));
+	}
+	ControlResult error;
+	QString scale;
+	if (!readScaleName(QJsonObject{{QStringLiteral("scale"), key.scaleName()}}, &scale, &error)) { return error; }
+	const int previousRoot = scaleContext().root;
+	const QString previousScale = scaleContext().scale;
+	scaleContext().root = key.tonicPitchClass();
+	scaleContext().scale = scale;
+	QJsonObject result = scaleContextState();
+	result.insert(QStringLiteral("previous_root"), previousRoot);
+	result.insert(QStringLiteral("previous_scale"), previousScale);
+	result.insert(QStringLiteral("__transaction"),
+		contextTransaction(QStringLiteral("scale.from_detected_key"), previousRoot, previousScale,
+			key.tonicPitchClass(), scale));
+	return ControlResult::success(result);
+}
+
 //! The context block's own result keys, declared once: every read and every write
 //! of this group publishes exactly this shape (scaleContextState() builds it), and a
 //! schema that drifted from the result would be a lie an agent plans against.
@@ -366,6 +395,25 @@ void registerScaleCommands(ControlRegistry& registry)
 		insertContextSchema(&cmd.resultSchema);
 		cmd.mutating = true;
 		cmd.handler = [](const QJsonObject& args) { return scaleSet(args); };
+		registry.registerCommand(cmd);
+	}
+	{
+		ControlCommand cmd;
+		cmd.id = QStringLiteral("scale.from_detected_key");
+		cmd.group = QStringLiteral("scale");
+		cmd.verb = QStringLiteral("from_detected_key");
+		cmd.description = QStringLiteral("Set the CONTEXT's root and scale from the key detect.apply "
+			"stored in the project (`<detected-key>`): the detected tonic becomes the root and its "
+			"scale the scale. Refused NotFound when no key has been detected. Reversible: a "
+			"recorded action step restores the previous root and scale.");
+		cmd.argsSchema = objectSchema({});
+		cmd.resultSchema = objectSchema({
+			{QStringLiteral("previous_root"), integerProperty(0, 11)},
+			{QStringLiteral("previous_scale"), stringProperty()},
+		});
+		insertContextSchema(&cmd.resultSchema);
+		cmd.mutating = true;
+		cmd.handler = fromDetectedKey;
 		registry.registerCommand(cmd);
 	}
 }
