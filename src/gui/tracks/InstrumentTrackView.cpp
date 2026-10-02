@@ -142,8 +142,10 @@ InstrumentTrackView::InstrumentTrackView( InstrumentTrack * _it, TrackContainerV
 	auto masterLayout = new QVBoxLayout(getTrackSettingsWidget());
 	masterLayout->setContentsMargins(0, 1, 0, 0);
 	auto layout = new QHBoxLayout();
-	layout->setContentsMargins(0, 0, 0, 0);
-	layout->setSpacing(0);
+	// 0.5.0 (docs/UI-SHELL.md §1): a gap between the header's controls, so the knobs' captions
+	// no longer run together ("VOLPAN") and the row reads as separate controls.
+	layout->setContentsMargins(0, 0, 4, 0);
+	layout->setSpacing(4);
 	layout->addWidget(m_tlb);
 	layout->addWidget(m_mixerChannelNumber);
 	layout->addWidget(m_activityIndicator);

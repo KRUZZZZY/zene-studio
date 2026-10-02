@@ -90,7 +90,8 @@ SampleTrackView::SampleTrackView( SampleTrack * _t, TrackContainerView* tcv ) :
 	// track.set_monitor and shows what the track reports back, so an agent and a person
 	// change the same state through the same verb.
 	m_monitorButton = new QToolButton(getTrackSettingsWidget());
-	m_monitorButton->setFixedSize(24, 28);
+	// 0.5.0: wide enough for its longest word (AUT) in the interface's typeface.
+	m_monitorButton->setFixedSize(34, 22);
 	m_monitorButton->setProperty("controlCommand", QStringLiteral("track.set_monitor"));
 	m_monitorButton->setAccessibleName(tr("Input monitoring"));
 	connect(m_monitorButton, &QToolButton::clicked, this, &SampleTrackView::cycleMonitor);
@@ -99,8 +100,10 @@ SampleTrackView::SampleTrackView( SampleTrack * _t, TrackContainerView* tcv ) :
 	auto masterLayout = new QVBoxLayout(getTrackSettingsWidget());
 	masterLayout->setContentsMargins(0, 1, 0, 0);
 	auto layout = new QHBoxLayout();
-	layout->setContentsMargins(0, 0, 0, 0);
-	layout->setSpacing(0);
+	// 0.5.0 (docs/UI-SHELL.md §1): a gap between the header's controls, so the knobs' captions
+	// no longer run together ("VOLPAN") and the row reads as separate controls.
+	layout->setContentsMargins(0, 0, 4, 0);
+	layout->setSpacing(4);
 	layout->addWidget(m_tlb);
 	layout->addWidget(m_mixerChannelNumber);
 	layout->addWidget(m_activityIndicator);
