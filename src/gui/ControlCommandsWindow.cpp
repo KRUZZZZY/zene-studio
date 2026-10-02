@@ -92,12 +92,6 @@ const EditorEntry* findEditor(const QString& name)
 	return nullptr;
 }
 
-ControlResult noInterface(const QString& id)
-{
-	return ControlResult::failure(ControlErrorKind::Requires,
-		QStringLiteral("command '%1' requires an interface: this instance has no main window").arg(id));
-}
-
 bool isShowing(gui::GuiApplication* g, const EditorEntry& entry)
 {
 	if (entry.panel != nullptr)
@@ -118,13 +112,7 @@ QJsonObject editorState(gui::GuiApplication* g, const EditorEntry& entry)
 
 ControlCommand command(const char* verb)
 {
-	ControlCommand cmd;
-	cmd.group = QStringLiteral("window");
-	cmd.verb = QLatin1String(verb);
-	cmd.id = cmd.group + QLatin1Char('.') + cmd.verb;
-	cmd.mutating = false;
-	cmd.requiresEngine = false;
-	return cmd;
+	return guiCommand("window", verb);
 }
 
 gui::GuiApplication* interfaceOrNull()
@@ -249,6 +237,10 @@ void registerWindowCommands(ControlRegistry& registry)
 	}
 	registerNoteEditorWindowCommands(registry);
 	registerSelectionWindowCommands(registry);
+	registerShortcutCommands(registry);
+	registerLayoutCommands(registry);
+	registerMacroCommands(registry);
+	registerArrangerViewCommands(registry);
 }
 
 } // namespace lmms

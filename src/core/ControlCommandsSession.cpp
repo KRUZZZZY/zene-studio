@@ -39,6 +39,7 @@
 
 #include <QDomDocument>
 #include <QDomElement>
+#include <QColor>
 #include <QJsonArray>
 #include <QJsonObject>
 #include <QString>
@@ -371,7 +372,7 @@ void registerSessionSetScene(ControlRegistry& registry)
 	scene.description = QStringLiteral("Set one scene's name and/or its tempo and time-signature "
 		"overrides; a field that is supplied is written and its override switched on, a field that "
 		"is not is left alone; `tempo_override` / `timesig_override` switch an override on or off "
-		"(false keeps the stored value, inactive). `follow_actions` replaces the scene's own Follow Action chain ([] "
+		"(false keeps the stored value, inactive); `color` (\"#rrggbb\", empty clears it) colours the scene. `follow_actions` replaces the scene's own Follow Action chain ([] "
 		"clears it); session.scene_follow_set arms it. Reversible through the ProjectJournal "
 		"(action checkpoint).");
 	scene.argsSchema = objectSchema({
@@ -383,6 +384,7 @@ void registerSessionSetScene(ControlRegistry& registry)
 		{QStringLiteral("tempo_override"), booleanProperty()},
 		{QStringLiteral("timesig_override"), booleanProperty()},
 		{QStringLiteral("follow_actions"), arrayProperty()},
+		{QStringLiteral("color"), stringProperty()},
 	}, {QStringLiteral("scene")});
 	scene.resultSchema = objectSchema({
 		{QStringLiteral("scene"), objectProperty()},
@@ -401,6 +403,11 @@ void registerSessionSetScene(ControlRegistry& registry)
 		}
 		std::optional<std::vector<FollowAction>> chain;
 		if (!followActionsArg(args, model->sceneCount(), &chain, &error)) { return error; }
+		const QString color = args.value(QStringLiteral("color")).toString();
+		if (!color.isEmpty() && !QColor::isValidColorName(color))
+		{
+			return ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("'%1' is not a colour (\"#rrggbb\")").arg(color));
+		}
 		const QString captured = captureSession(*model);
 		const QJsonObject before = gridState(*model, clipSlots(*model));
 		Scene& sceneModel = model->scene(index);
@@ -410,6 +417,7 @@ void registerSessionSetScene(ControlRegistry& registry)
 			sceneModel.setName(args.value(QStringLiteral("name")).toString());
 		}
 		applySceneOverrides(sceneModel, args);
+		if (args.contains(QStringLiteral("color"))) { sceneModel.setColor(color.isEmpty() ? color : QColor(color).name()); }
 		QJsonObject result;
 		result.insert(QStringLiteral("scene"), sceneState(index, sceneModel));
 		result.insert(QStringLiteral("__transaction"),

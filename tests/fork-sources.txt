@@ -592,10 +592,12 @@ include/LinkSync.h
 include/LmmsPolyfill.h
 include/LoudnessReport.h
 include/LufsMeter.h
+include/MacroMenu.h
 include/MasterLoudnessTap.h
 include/MasteringChain.h
 include/MasteringJob.h
 include/MasteringReport.h
+include/MenuBarExtras.h
 include/MidiClock.h
 include/MidiClockMenu.h
 include/MidiControllerMenu.h
@@ -695,6 +697,7 @@ include/ShellIcons.h
 include/ShellLayout.h
 include/ShellPanel.h
 include/ShellSelection.h
+include/ShortcutMap.h
 include/ShortcutsPage.h
 include/SidechainInputs.h
 include/SmfInterchange.h
@@ -720,6 +723,7 @@ include/TrackFolderMenu.h
 include/TrackRecorder.h
 include/TrackRenderMenu.h
 include/TransportReadouts.h
+include/UiConfigStore.h
 include/UnattendedRun.h
 include/UnclaimedElements.h
 include/UndoHistoryPanel.h
@@ -944,6 +948,7 @@ src/core/ControlCommandsScript.cpp
 src/core/ControlCommandsSession.cpp
 src/core/ControlCommandsSessionFollow.cpp
 src/core/ControlCommandsSessionLaunch.cpp
+src/core/ControlCommandsSessionPatterns.cpp
 src/core/ControlCommandsSessionRecord.cpp
 src/core/ControlCommandsSessionRecordInternal.h
 src/core/ControlCommandsSessionRecordLand.cpp
@@ -1006,6 +1011,7 @@ src/core/ControlReversibilityTableChain.cpp
 src/core/ControlReversibilityTableChord.cpp
 src/core/ControlReversibilityTableClapInstrument.cpp
 src/core/ControlReversibilityTableController.cpp
+src/core/ControlReversibilityTableCustomisation.cpp
 src/core/ControlReversibilityTableDawProject.cpp
 src/core/ControlReversibilityTableDetect.cpp
 src/core/ControlReversibilityTableExportPresets.cpp
@@ -1179,16 +1185,23 @@ src/gui/CommandForm.cpp
 src/gui/CommandListDialog.cpp
 src/gui/CommandLists.cpp
 src/gui/CommandPalette.cpp
+src/gui/ControlCommandsArrangerView.cpp
+src/gui/ControlCommandsLayouts.cpp
+src/gui/ControlCommandsMacros.cpp
 src/gui/ControlCommandsNoteEditor.cpp
 src/gui/ControlCommandsSelection.cpp
 src/gui/ControlCommandsShell.cpp
+src/gui/ControlCommandsShortcuts.cpp
 src/gui/ControlCommandsWindow.cpp
+src/gui/ControlGuiSupport.cpp
 src/gui/ControllerTemplateMenu.cpp
 src/gui/CrashReportMenu.cpp
 src/gui/EffectHostingMenu.cpp
 src/gui/ExportQualityControls.cpp
 src/gui/FeedbackModeAction.cpp
 src/gui/GrooveMenu.cpp
+src/gui/MacroMenu.cpp
+src/gui/MenuBarExtras.cpp
 src/gui/MidiClockMenu.cpp
 src/gui/MidiControllerMenu.cpp
 src/gui/MidiLearnGui.cpp
@@ -1208,6 +1221,7 @@ src/gui/SessionGridView.cpp
 src/gui/SessionSyncAction.cpp
 src/gui/SessionTransportBar.cpp
 src/gui/SessionTuningMenu.cpp
+src/gui/ShortcutMap.cpp
 src/gui/ShortcutsPage.cpp
 src/gui/StartHub.cpp
 src/gui/StemSplitController.cpp
@@ -1216,6 +1230,7 @@ src/gui/TelemetryConsentDialog.cpp
 src/gui/TempoMapPanel.cpp
 src/gui/TrackFolderMenu.cpp
 src/gui/TrackRenderMenu.cpp
+src/gui/UiConfigStore.cpp
 src/gui/UndoHistoryPanel.cpp
 src/gui/VcaStripView.cpp
 src/gui/VisibilitySetMenu.cpp
@@ -1235,6 +1250,7 @@ src/gui/shell/ModulatorCard.cpp
 src/gui/shell/Shell.cpp
 src/gui/shell/ShellChrome.cpp
 src/gui/shell/ShellCommandMenus.cpp
+src/gui/shell/ShellFloating.cpp
 src/gui/shell/ShellIcons.cpp
 src/gui/shell/ShellLayout.cpp
 src/gui/shell/ShellPanel.cpp

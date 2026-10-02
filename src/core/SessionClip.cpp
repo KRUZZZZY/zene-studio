@@ -194,6 +194,10 @@ void Scene::saveState( QDomDocument& doc, QDomElement& element ) const
 		element.setAttribute( QStringLiteral( "timesig_numerator" ), m_timeSigNumerator );
 		element.setAttribute( QStringLiteral( "timesig_denominator" ), m_timeSigDenominator );
 	}
+	if( !m_color.isEmpty() )
+	{
+		element.setAttribute( QStringLiteral( "color" ), m_color );
+	}
 	// R5.2: the cell's own vocabulary, so one reader serves both.
 	saveFollowChain( doc, element, m_followActions );
 }
@@ -219,6 +223,7 @@ void Scene::restoreState( const QDomElement& element )
 			QStringLiteral( "4" ) ).toInt();
 	}
 	m_followActions = restoreFollowChain( element );
+	m_color = element.attribute( QStringLiteral( "color" ) );
 }
 
 } // namespace lmms

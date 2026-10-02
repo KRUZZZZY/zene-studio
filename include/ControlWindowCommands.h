@@ -47,6 +47,20 @@ namespace lmms
 {
 
 class ControlRegistry;
+struct ControlCommand;
+struct ControlResult;
+
+namespace gui
+{
+class MainWindow;
+}
+
+//! The interface commands' shared scaffolding (src/gui/ControlGuiSupport.cpp): a command of
+//! @a group.@a verb that needs no engine and records nothing (a mutating one sets the flag);
+//! the typed `requires` refusal of a process without a main window; that main window.
+LMMS_EXPORT ControlCommand guiCommand(const char* group, const char* verb);
+LMMS_EXPORT ControlResult noInterface(const QString& id);
+LMMS_EXPORT gui::MainWindow* controlMainWindow();
 
 LMMS_EXPORT void registerWindowCommands(ControlRegistry& registry);
 
@@ -72,6 +86,16 @@ LMMS_EXPORT QJsonObject noteEditorState();
 LMMS_EXPORT void registerSelectionWindowCommands(ControlRegistry& registry);
 //! The selection and what the two panels show (window.select's reply), or {} with no interface.
 LMMS_EXPORT QJsonObject shellSelectionState();
+
+//! 0.5.0 L13 customisation (registered by registerWindowCommands): shortcuts.* (rebindable
+//! keys, src/gui/ControlCommandsShortcuts.cpp), window.layout_* / detach / attach / header_*
+//! (src/gui/ControlCommandsLayouts.cpp) and macro.* (src/gui/ControlCommandsMacros.cpp).
+LMMS_EXPORT void registerShortcutCommands(ControlRegistry& registry);
+LMMS_EXPORT void registerLayoutCommands(ControlRegistry& registry);
+LMMS_EXPORT void registerMacroCommands(ControlRegistry& registry);
+//! arrangement.zoom / zoom_back / fit_tracks / set_tool and window.tool_menu
+//! (src/gui/ControlCommandsArrangerView.cpp).
+LMMS_EXPORT void registerArrangerViewCommands(ControlRegistry& registry);
 
 //! What a View-menu item or toolbar button does: window.toggle through the
 //! registry, exactly as an agent on the socket would.

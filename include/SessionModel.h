@@ -224,6 +224,10 @@ public:
 	int timeSigDenominator() const { return m_timeSigDenominator; }
 	void setTimeSigDenominator( int denominator ) { m_timeSigDenominator = denominator; }
 
+	//! 0.5.0 (WF-062): the scene's colour, "#rrggbb", or empty for none.
+	const QString& color() const { return m_color; }
+	void setColor( const QString& color ) { m_color = color; }
+
 	/*! R5.2: the scene's own Follow Action chain. When the scene is LAUNCHED as a row its
 	 *  chain moves the whole row at the action time, and it takes precedence over the
 	 *  chains of the cells it launched (SessionScheduler::evaluateSceneFollow). */
@@ -233,7 +237,7 @@ public:
 	//! True when the scene carries anything beyond its (empty) defaults.
 	bool isModified() const
 	{
-		return !m_name.isEmpty() || m_tempoEnabled || m_timeSigEnabled || !m_followActions.empty();
+		return !m_name.isEmpty() || m_tempoEnabled || m_timeSigEnabled || !m_followActions.empty() || !m_color.isEmpty();
 	}
 
 	void saveState( QDomDocument& doc, QDomElement& element ) const;
@@ -247,6 +251,7 @@ private:
 	int m_timeSigNumerator = 4;
 	int m_timeSigDenominator = 4;
 	std::vector<FollowAction> m_followActions;
+	QString m_color;
 };
 
 class LMMS_EXPORT SessionModel

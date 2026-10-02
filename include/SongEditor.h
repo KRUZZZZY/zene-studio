@@ -77,6 +77,14 @@ public:
 	TimeLineWidget* timeLine() const { return m_timeLine; }
 	PositionLine* positionLine() const { return m_positionLine; }
 
+	//! 0.5.0 L13 (arrangement.zoom / zoom_back / fit_tracks / set_tool, ControlCommandsArrangerView.cpp):
+	//! the zoom model, the horizontal scroll bar, the edit mode, and the zoom value that gives
+	//! @a pixelsPerBar.
+	IntModel* zoomingModel() const { return m_zoomingModel; }
+	QScrollBar* horizontalScroll() const { return m_leftRightScroll; }
+	EditMode editMode() const { return m_mode; }
+	int zoomValueFor(int pixelsPerBar) const { return calculateZoomSliderValue(pixelsPerBar); }
+
 public slots:
 	void scrolled( int new_pos );
 	void selectRegionFromPixels(int xStart, int xEnd);

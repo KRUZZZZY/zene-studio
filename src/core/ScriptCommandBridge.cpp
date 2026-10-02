@@ -53,15 +53,19 @@ constexpr int MaxDepth = 16;
 
 const QStringList& refusedPrefixes()
 {
+	// shortcuts.* and macro.* (0.5.0 L13) write the user's own configuration, as settings.set
+	// does; a macro is also a run of commands the sandbox has not looked at.
 	static const QStringList prefixes{QStringLiteral("script."), QStringLiteral("livecode."),
-		QStringLiteral("crash."), QStringLiteral("telemetry."), QStringLiteral("feedback.")};
+		QStringLiteral("crash."), QStringLiteral("telemetry."), QStringLiteral("feedback."),
+		QStringLiteral("shortcuts."), QStringLiteral("macro.")};
 	return prefixes;
 }
 
 const QStringList& refusedIds()
 {
 	static const QStringList ids{QStringLiteral("control.quit"), QStringLiteral("settings.set"),
-		QStringLiteral("audio.device_set"), QStringLiteral("stem.model_download")};
+		QStringLiteral("audio.device_set"), QStringLiteral("stem.model_download"),
+		QStringLiteral("window.header_set"), QStringLiteral("window.layout_save"), QStringLiteral("window.layout_remove")};
 	return ids;
 }
 
@@ -75,6 +79,7 @@ const QHash<QString, QStringList>& commandPathArgs()
 		{QStringLiteral("project.merge"), {QStringLiteral("base"), QStringLiteral("ours"), QStringLiteral("theirs"), QStringLiteral("report")}},
 		{QStringLiteral("project.relink"), {QStringLiteral("to")}},
 		{QStringLiteral("rack.zone_add"), {QStringLiteral("sample")}},
+		{QStringLiteral("session.set_slot"), {QStringLiteral("source")}},
 		{QStringLiteral("stem.job_start"), {QStringLiteral("source")}},
 	};
 	return table;
@@ -222,7 +227,7 @@ bool sandboxValue(const QString& id, const QString& key, QJsonValue& value, QStr
 		value = array;
 		return true;
 	}
-	if (!value.isString() || !(isPathKey(key) || commandPathArgs().value(id).contains(key))) { return true; }
+	if (!value.isString() || !isPathArgument(id, key)) { return true; }
 	const QString resolved = ScriptEngine::instance()->resolveProjectPath(value.toString(), true, error);
 	if (resolved.isEmpty()) { return false; }
 	value = resolved;
@@ -277,6 +282,11 @@ QString refusalFor(const QString& id)
 	if (!prefixed && !refusedIds().contains(id)) { return QString(); }
 	return QStringLiteral("'%1' is not available to scripts: it would leave the script sandbox "
 		"(docs/LUA-COMPATIBILITY-POLICY.md section 5)").arg(id);
+}
+
+bool isPathArgument(const QString& id, const QString& key)
+{
+	return isPathKey(key) || commandPathArgs().value(id).contains(key);
 }
 
 bool sandboxPaths(const QString& id, QJsonObject& args, QString* error)

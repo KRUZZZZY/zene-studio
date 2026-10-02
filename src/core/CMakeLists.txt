@@ -89,6 +89,7 @@ SET(LMMS_SESSION_SRCS
 		# with the data layer since ARCH-4 S10 removed WANT_SESSION_VIEW.
 		core/ControlCommandsSession.cpp
 		core/ControlCommandsSessionLaunch.cpp
+	core/ControlCommandsSessionPatterns.cpp
 		# The Session View's completion halves (board task #641): Follow Actions
 		# and Arrangement Record, each half in its own TU because the file-length
 		# ratchet measures a file as a unit (the record group measured 518 lines
@@ -666,6 +667,7 @@ set(LMMS_SRCS
 	core/ControlReversibilityTableMts.cpp
 	# The window.* group's rows (040/survey-fixes); the group itself is src/gui.
 	core/ControlReversibilityTableWindow.cpp
+	core/ControlReversibilityTableCustomisation.cpp
 	core/ControlReversibilityTableShell.cpp
 	${CMAKE_SOURCE_DIR}/thirdparty/mts-esp/libMTSClient.cpp
 	${CMAKE_SOURCE_DIR}/thirdparty/mts-esp/libMTSMaster.cpp
@@ -1050,6 +1052,7 @@ SET(ZENE_API_SRCS
 	core/ControlReversibilityTableVerbs.cpp
 	core/ControlReversibilityTableWasmRender.cpp
 	core/ControlReversibilityTableWindow.cpp
+	core/ControlReversibilityTableCustomisation.cpp
 	core/ControlReversibilityTableShell.cpp
 )
 

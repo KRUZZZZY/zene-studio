@@ -334,6 +334,7 @@ inline QJsonObject sceneState(int index, const Scene& scene)
 	state.insert(QStringLiteral("timesig_enabled"), scene.timeSigEnabled());
 	state.insert(QStringLiteral("numerator"), scene.timeSigNumerator());
 	state.insert(QStringLiteral("denominator"), scene.timeSigDenominator());
+	state.insert(QStringLiteral("color"), scene.color());
 	QJsonArray follow;
 	for (const FollowAction& action : scene.followActions()) { follow.append(followActionState(action)); }
 	state.insert(QStringLiteral("follow_actions"), follow);

@@ -258,6 +258,10 @@ void SessionGridView::paintScenes(const QJsonArray& sceneStates)
 		const QString name = sceneStates.at(scene).toObject().value(QStringLiteral("name")).toString();
 		const QString label = name.isEmpty() ? tr("Scene %1").arg(scene + 1) : name;
 		m_sceneButtons[static_cast<std::size_t>(scene)]->setText(QStringLiteral("\u25B6 ") + label);
+		// WF-062: the scene's colour as a bar along the button's left edge.
+		const QString color = sceneStates.at(scene).toObject().value(QStringLiteral("color")).toString();
+		m_sceneButtons[static_cast<std::size_t>(scene)]->setStyleSheet(color.isEmpty() ? QString()
+			: QStringLiteral("QToolButton { border-left: 4px solid %1; }").arg(color));
 		m_sceneButtons[static_cast<std::size_t>(scene)]->setAccessibleName(tr("Launch %1").arg(label));
 	}
 }

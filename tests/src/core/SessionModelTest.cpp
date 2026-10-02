@@ -108,6 +108,7 @@ private slots:
 		model.scene( 1 ).setTimeSigEnabled( true );
 		model.scene( 1 ).setTimeSigNumerator( 7 );
 		model.scene( 1 ).setTimeSigDenominator( 8 );
+		model.scene( 1 ).setColor( QStringLiteral( "#ff8800" ) );  // 0.5.0 WF-062
 
 		ClipSlot& midi = model.slot( 0, 0 );
 		midi.setPatternReference( 11 );
@@ -194,6 +195,8 @@ private slots:
 
 		QCOMPARE( loaded.scene( 0 ).name(), QStringLiteral( "Verse" ) );
 		QCOMPARE( loaded.scene( 1 ).name(), QStringLiteral( "Drop" ) );
+		QCOMPARE( loaded.scene( 1 ).color(), QStringLiteral( "#ff8800" ) );
+		QVERIFY2( loaded.scene( 0 ).color().isEmpty(), "a scene without a colour came back with one" );
 		QVERIFY( loaded.scene( 1 ).tempoEnabled() );
 		QVERIFY( loaded.scene( 1 ).tempo() == 174.0 );
 		QVERIFY( loaded.scene( 1 ).timeSigEnabled() );

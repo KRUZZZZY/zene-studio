@@ -226,6 +226,36 @@ private slots:
 		QCOMPARE(run(QStringLiteral("session.get_state")).result.value(QStringLiteral("quantisation")).toString(), QStringLiteral("none"));
 		QCOMPARE(view.gridButton()->text(), QStringLiteral("Grid..."));
 	}
+
+	//! WF-062 / WF-054 (review W1-1 #5, #8): a scene has a colour the grid paints, and a cell
+	//! takes a pattern by name from the Play Pattern menu.
+	void aSceneColourIsPaintedAndACellTakesAPatternByName()
+	{
+		const ControlResult coloured = run(QStringLiteral("session.set_scene"),
+			{{QStringLiteral("scene"), 0}, {QStringLiteral("color"), QStringLiteral("#00aaff")}});
+		QVERIFY2(coloured.ok, qPrintable(coloured.errorMessage));
+		QCOMPARE(sceneState(0).value(QStringLiteral("color")).toString(), QStringLiteral("#00aaff"));
+		QCOMPARE(run(QStringLiteral("session.set_scene"), {{QStringLiteral("scene"), 0}, {QStringLiteral("color"), QStringLiteral("nope")}}).errorKind,
+			ControlErrorKind::InvalidArgs);
+		SessionGridView view;
+		view.refresh();
+		QVERIFY(view.sceneButton(0)->styleSheet().contains(QStringLiteral("#00aaff")));
+		QVERIFY(run(QStringLiteral("session.set_scene"), {{QStringLiteral("scene"), 0}, {QStringLiteral("color"), QString()}}).ok);
+		view.refresh();
+		QVERIFY(view.sceneButton(0)->styleSheet().isEmpty());
+
+		const QJsonArray patterns = run(QStringLiteral("session.pattern_list")).result.value(QStringLiteral("patterns")).toArray();
+		QMenu cell;
+		view.populateMenu(&cell, view.cellButton(1, 1));
+		QAction* picker = menuAction(&cell, {QStringLiteral("Play Pattern")});
+		QVERIFY(picker != nullptr);
+		QCOMPARE(picker->menu()->actions().size(), patterns.size());
+		if (patterns.isEmpty()) { return; }  // a project with no pattern: the menu is empty and disabled
+		picker->menu()->actions().first()->trigger();
+		QCOMPARE(slotState(1, 1).value(QStringLiteral("type")).toString(), QStringLiteral("midi"));
+		QCOMPARE(slotState(1, 1).value(QStringLiteral("pattern")).toInt(), patterns.first().toObject().value(QStringLiteral("pattern")).toInt());
+		QVERIFY(run(QStringLiteral("session.clear_slot"), {{QStringLiteral("track"), 1}, {QStringLiteral("scene"), 1}}).ok);
+	}
 };
 
 QTEST_MAIN(SessionGridViewTest)

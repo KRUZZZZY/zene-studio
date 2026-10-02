@@ -88,7 +88,7 @@ ListSpec missingFiles(const QString& project)
 	out.summaryKeys = {QStringLiteral("file"), QStringLiteral("missing_count"), QStringLiteral("present_count"),
 		QStringLiteral("reference_count")};
 	out.actions = {act("Relink...", "project.relink", {{QStringLiteral("from"), QStringLiteral("raw")}}, where, true)};
-	out.extras = {extra("Collect Media...", "project.collect_media")};
+	out.extras = {extra("Collect Media...", "project.collect_media", where)};
 	return out;
 }
 
@@ -99,7 +99,12 @@ ListSpec vcaGroups()
 	const QHash<QString, QString> group{{QStringLiteral("group"), QStringLiteral("id")}};
 	RowAction remove = act("Remove", "vca.remove", group);
 	remove.confirm = true;
-	out.actions = {act("Rename...", "vca.rename", group, {}, true), remove};
+	// ED-034: the group's edit set - the tracks whose clips move together (vca.edit_move).
+	out.actions = {act("Rename...", "vca.rename", group, {}, true), remove,
+		act("Add Track to Edit Set...", "vca.track_add", group, {}, true),
+		act("Remove Track from Edit Set...", "vca.track_remove", group, {}, true),
+		act("Phase Lock On", "vca.set_phase_lock", group, {{QStringLiteral("locked"), true}}),
+		act("Phase Lock Off", "vca.set_phase_lock", group, {{QStringLiteral("locked"), false}})};
 	out.extras = {extra("New Group...", "vca.create")};
 	return out;
 }
@@ -133,7 +138,7 @@ ListSpec pluginsInProject()
 {
 	ListSpec out = spec("Plug-ins in Project", "oop.get_state", "chains", {QStringLiteral("label"),
 		QStringLiteral("kind"), QStringLiteral("target"), QStringLiteral("device"), QStringLiteral("plugin")});
-	out.nestedKey = QStringLiteral("devices");
+	out.nestedKeys = {QStringLiteral("instrument"), QStringLiteral("devices")};
 	out.summaryKeys = {QStringLiteral("separate_process_count"), QStringLiteral("refused_count")};
 	const QHash<QString, QString> device{{QStringLiteral("target"), QStringLiteral("target")},
 		{QStringLiteral("plugin"), QStringLiteral("device")}};
@@ -148,9 +153,10 @@ ListSpec pluginsInProject()
 ListSpec takeLanes(const QString& track)
 {
 	const QJsonObject where{{QStringLiteral("track"), track}};
-	ListSpec out = spec("Take Lanes", "comp.lane_list", "tracks", {QStringLiteral("index"), QStringLiteral("name")}, where);
-	out.nestedKey = QStringLiteral("lanes");
-	out.actions = {act("Remove", "comp.lane_remove", {{QStringLiteral("lane"), QStringLiteral("index")}}, where)};
+	ListSpec out = spec("Take Lanes", "comp.lane_list", "tracks", {QStringLiteral("lane"), QStringLiteral("name"),
+		QStringLiteral("take_count")}, where);
+	out.nestedKeys = {QStringLiteral("lanes")};
+	out.actions = {act("Remove", "comp.lane_remove", {{QStringLiteral("lane"), QStringLiteral("lane")}}, where)};
 	out.extras = {extra("Add Lane...", "comp.lane_add", where), extra("Comp a Range...", "comp.select", where)};
 	return out;
 }
@@ -176,6 +182,59 @@ ListSpec safeStart()
 		extra("Skip Plug-ins Next Start", "safestart.set_skip", {{QStringLiteral("enabled"), true}}, false),
 		extra("Load Plug-ins Next Start", "safestart.set_skip", {{QStringLiteral("enabled"), false}}, false),
 		extra("Clear", "safestart.clear", {}, false)};
+	return out;
+}
+
+ListSpec shortcuts()
+{
+	ListSpec out = spec("Keyboard Shortcuts", "shortcuts.list", "bindings", {QStringLiteral("id"), QStringLiteral("keys"),
+		QStringLiteral("default"), QStringLiteral("overridden"), QStringLiteral("command")});
+	out.summaryKeys = {QStringLiteral("count"), QStringLiteral("overridden_count")};
+	const QHash<QString, QString> id{{QStringLiteral("id"), QStringLiteral("id")}};
+	out.actions = {act("Set Keys...", "shortcuts.set", id, {}, true), act("Unbind", "shortcuts.set", id,
+		{{QStringLiteral("keys"), QString()}}), act("Reset", "shortcuts.reset", id)};
+	out.extras = {extra("Export...", "shortcuts.export"), extra("Import...", "shortcuts.import"),
+		extra("Reset All", "shortcuts.reset", {}, false)};
+	return out;
+}
+
+ListSpec macros()
+{
+	ListSpec out = spec("Macros", "macro.list", "macros", {QStringLiteral("name"), QStringLiteral("step_count"),
+		QStringLiteral("steps")});
+	out.summaryKeys = {QStringLiteral("count"), QStringLiteral("max_macros")};
+	const QHash<QString, QString> name{{QStringLiteral("name"), QStringLiteral("name")}};
+	RowAction remove = act("Remove", "macro.remove", name);
+	remove.confirm = true;
+	out.actions = {act("Run", "macro.run", name), remove};
+	out.extras = {extra("New Macro...", "macro.save")};
+	return out;
+}
+
+ListSpec controllerMappings()
+{
+	ListSpec out = spec("MIDI Mappings", "controller.surface_state", "controls", {QStringLiteral("control"),
+		QStringLiteral("channel"), QStringLiteral("controller"), QStringLiteral("soft_takeover"), QStringLiteral("feedback"),
+		QStringLiteral("value")});
+	out.summaryKeys = {QStringLiteral("count")};
+	const QHash<QString, QString> control{{QStringLiteral("control"), QStringLiteral("control")}};
+	out.actions = {act("Soft Takeover On", "controller.soft_takeover", control, {{QStringLiteral("enabled"), true}}),
+		act("Soft Takeover Off", "controller.soft_takeover", control, {{QStringLiteral("enabled"), false}}),
+		act("Feedback On", "controller.feedback", control, {{QStringLiteral("enabled"), true}}),
+		act("Feedback Off", "controller.feedback", control, {{QStringLiteral("enabled"), false}})};
+	out.extras = {extra("Save as Template...", "controller.template_save")};
+	return out;
+}
+
+ListSpec mappingTemplates()
+{
+	ListSpec out = spec("Mapping Templates", "controller.template_list", "templates", {QStringLiteral("name"),
+		QStringLiteral("bindings")});
+	const QHash<QString, QString> name{{QStringLiteral("name"), QStringLiteral("name")}};
+	RowAction remove = act("Delete", "controller.template_delete", name);
+	remove.confirm = true;
+	out.actions = {act("Apply", "controller.template_apply", name), remove};
+	out.extras = {extra("Save Current...", "controller.template_save")};
 	return out;
 }
 

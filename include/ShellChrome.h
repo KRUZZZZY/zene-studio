@@ -25,6 +25,9 @@
 #ifndef LMMS_GUI_SHELL_CHROME_H
 #define LMMS_GUI_SHELL_CHROME_H
 
+#include <QJsonArray>
+#include <QJsonObject>
+#include <QList>
 #include <QToolButton>
 #include <QWidget>
 
@@ -80,8 +83,16 @@ public:
 	//! A flat icon button in the strip that runs @a commandId through the registry when clicked.
 	ShellButton* addCommandButton(const QString& icon, const QString& text, const QString& commandId);
 
+	/*! WF-116: the header the user chose (window.header_set, kept in ui/header): every button
+	 *  named in @a doc's `hidden` is hidden, every other shown, and each `extra` entry
+	 *  ({command, label}) is a button of its own that runs that registry command. */
+	void customise(const QJsonObject& doc);
+	//! Each button: its name (the icon it was added with), text, command and whether it shows.
+	QJsonArray buttons() const;
+
 protected:
 	void paintEvent(QPaintEvent* event) override;
+	void contextMenuEvent(QContextMenuEvent* event) override;
 
 private:
 	void syncTransport();
@@ -92,6 +103,7 @@ private:
 	ShellButton* m_play = nullptr;
 	ShellButton* m_record = nullptr;
 	class TransportReadouts* m_readouts = nullptr;
+	QList<ShellButton*> m_extra;  //!< the user's own command buttons (customise)
 };
 
 //! The bottom band: one button per panel, grouped by the region it opens in (the groups are

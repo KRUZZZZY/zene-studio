@@ -62,16 +62,16 @@ struct ListExtra
 /*! What a CommandListDialog shows: `listId` run with `listArgs`, the array `arrayKey` of its
  *  result as rows, the row fields `columns` as columns (every field of the first row when
  *  empty), and `summaryKeys` - top-level result fields - as a line above the table.
- *  With `nestedKey` the rows are one level down: every item's `nestedKey` array, each row
- *  carrying its parent's `parentFields` (as `parent_<field>`), for a list grouped by owner -
- *  every chain's devices, every track's take lanes. */
+ *  With `nestedKeys` the rows are one level down: under each item, every key's array (or single
+ *  object), each row carrying its parent's `parentFields` (as `parent_<field>`), for a list
+ *  grouped by owner - every chain's devices and its instrument, every track's take lanes. */
 struct ListSpec
 {
 	QString title;
 	QString listId;
 	QJsonObject listArgs;
 	QString arrayKey;
-	QString nestedKey;
+	QStringList nestedKeys;
 	QStringList parentFields;
 	QStringList columns;
 	QStringList summaryKeys;

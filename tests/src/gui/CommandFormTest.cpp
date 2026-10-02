@@ -35,12 +35,15 @@
 
 #include <QJsonArray>
 #include <QJsonObject>
+#include <QKeySequenceEdit>
 #include <QMenu>
+#include <QToolButton>
 
 #include "CommandForm.h"
 #include "CommandListDialog.h"
 #include "ControlRegistry.h"
 #include "MenuTestSupport.h"
+#include "ShortcutMap.h"
 
 using namespace lmms;
 using namespace lmms::gui;
@@ -100,6 +103,11 @@ void registerFakes()
 			{QStringLiteral("items"), QJsonArray{QJsonObject{{QStringLiteral("k"), 1}}, QJsonObject{{QStringLiteral("k"), 2}}}}}};
 		return ControlResult::success({{QStringLiteral("rows"), rows}, {QStringLiteral("groups"), groups}, {QStringLiteral("total"), 2}});
 	});
+	QJsonObject keys = prop("string");
+	keys.insert(QStringLiteral("format"), QStringLiteral("keys"));
+	add("formtest.editors", {{QStringLiteral("keys"), keys}, {QStringLiteral("file"), prop("string")},
+		{QStringLiteral("out_dir"), prop("string")}, {QStringLiteral("color"), prop("string")}}, {},
+		[](const QJsonObject& args) { g_lastArgs = args; return ControlResult::success(); });
 	add("formtest.take", {{QStringLiteral("item"), prop("string")}}, {QStringLiteral("item")}, [](const QJsonObject& args) {
 		g_lastArgs = args;
 		return ControlResult::success();
@@ -234,6 +242,32 @@ private slots:
 		QVERIFY(selectionContext(QStringLiteral("formtest.echo")).isEmpty());
 	}
 
+	//! L13: a `format: keys` field captures a shortcut; a path or colour field has a picker.
+	void keysPathsAndColoursGetTheirOwnEditors()
+	{
+		CommandForm form(CommandCall{QStringLiteral("formtest.editors"), {}, {}, QString(), true});
+		QVERIFY(qobject_cast<QKeySequenceEdit*>(form.findChild<QWidget*>(QStringLiteral("field:keys"))) != nullptr);
+		QVERIFY(form.setField(QStringLiteral("keys"), QStringLiteral("Ctrl+Shift+K")));
+		QJsonObject args;
+		QString error;
+		QVERIFY2(form.collect(&args, &error), qPrintable(error));
+		QCOMPARE(args.value(QStringLiteral("keys")).toString(), QStringLiteral("Ctrl+Shift+K"));
+		for (const char* key : {"file", "out_dir", "color"})
+		{
+			QWidget* field = form.findChild<QWidget*>(QStringLiteral("field:") + QLatin1String(key));
+			QVERIFY2(field != nullptr && field->parentWidget()->findChild<QToolButton*>() != nullptr,
+				qPrintable(QStringLiteral("no picker beside ") + QLatin1String(key)));
+		}
+		QCOMPARE(ShortcutMap::portable(QStringLiteral("ctrl+k")), QStringLiteral("Ctrl+K"));
+		ShortcutMap::Binding a;
+		a.id = QStringLiteral("A");
+		a.keys = QStringLiteral("Ctrl+K");
+		ShortcutMap::Binding b;
+		b.id = QStringLiteral("B");
+		QCOMPARE(ShortcutMap::conflicts({a, b}, QStringLiteral("Ctrl+K"), QStringLiteral("B")), QStringList{QStringLiteral("A")});
+		QVERIFY(ShortcutMap::conflicts({a, b}, QStringLiteral("Ctrl+K"), QStringLiteral("A")).isEmpty());
+	}
+
 	void theListDialogMapsARowOntoAnotherCommand()
 	{
 		ListSpec spec;
@@ -256,7 +290,7 @@ private slots:
 		QCOMPARE(dialog.runAction(5, 0).errorKind, ControlErrorKind::InvalidArgs);
 
 		spec.arrayKey = QStringLiteral("groups");
-		spec.nestedKey = QStringLiteral("items");
+		spec.nestedKeys = {QStringLiteral("items")};
 		spec.parentFields = {QStringLiteral("id")};
 		const QJsonArray rows = listRows(spec, dialog.listResult());
 		QCOMPARE(rows.size(), 2);

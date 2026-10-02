@@ -29,6 +29,7 @@
 #include <QApplication>
 #include <QJsonArray>
 #include <QJsonDocument>
+#include <QMainWindow>
 #include <QSet>
 #include <QSplitter>
 #include <QTimer>
@@ -39,7 +40,11 @@
 #include "DesignTokens.h"
 #include "ShellChrome.h"
 #include "ShellIcons.h"
+#include "MacroMenu.h"
+#include "MenuBarExtras.h"
 #include "ShellPanel.h"
+#include "ShortcutMap.h"
+#include "UiConfigStore.h"
 
 namespace lmms::gui
 {
@@ -116,6 +121,17 @@ void Shell::showEvent(QShowEvent* event)
 	QWidget::showEvent(event);
 	if (m_shownOnce) { return; }
 	m_shownOnce = true;
+	// The user's customisations, once the menus and the header exist: the shortcut overrides
+	// (ShortcutMap) and the header's buttons (ui/header).
+	QTimer::singleShot(0, this, [this]() {
+		if (auto* main = qobject_cast<QMainWindow*>(window()))
+		{
+			installNavigateMenu(main->menuBar());
+			MacroMenu::install(main->menuBar());
+			ShortcutMap::apply(main->menuBar());
+		}
+		m_header->customise(uistore::read(QStringLiteral("header")));
+	});
 	// The offscreen platform's nominal screen is 800 x 800, and the window opens maximized onto
 	// it (main.cpp), but window.screenshot there is how an agent sees the interface: give the
 	// window the working size once it exists. A real screen keeps the user's window state.
@@ -171,6 +187,7 @@ void Shell::buildBody()
 	{
 		auto* frame = new ShellPanel(spec.id, spec.title, m_parking);
 		m_panels.insert(spec.id, frame);
+		addFloatButton(frame);
 	}
 	for (QSplitter* s : {m_columns, m_rows, m_centre})
 	{
@@ -262,6 +279,8 @@ void Shell::apply()
 	// Park first, so a region never holds its old panel and its new one at once.
 	for (auto it = m_panels.cbegin(); it != m_panels.cend(); ++it)
 	{
+		// A panel in its own window (detachPanel) stays there whatever the layout says.
+		if (m_floating.contains(it.key())) { continue; }
 		if (target.value(it.key()) == nullptr && it.value()->parentWidget() != m_parking)
 		{
 			it.value()->hide();
@@ -271,7 +290,7 @@ void Shell::apply()
 	QSet<QWidget*> used;
 	for (auto it = target.cbegin(); it != target.cend(); ++it)
 	{
-		if (it.value() == nullptr) { continue; }
+		if (it.value() == nullptr || m_floating.contains(it.key())) { continue; }
 		placeInto(it.value(), m_panels.value(it.key()));
 		used.insert(it.value());
 	}
@@ -348,7 +367,8 @@ QJsonObject Shell::state() const
 			{QStringLiteral("visible"), m_layout.isVisible(spec.id)},
 			{QStringLiteral("available"), ShellLayout::offers(m_layout.view(), spec.id)},
 			{QStringLiteral("shortcut"), spec.shortcut},
-			{QStringLiteral("mounted"), m_panels.value(spec.id)->content() != nullptr}});
+			{QStringLiteral("mounted"), m_panels.value(spec.id)->content() != nullptr},
+			{QStringLiteral("floating"), isDetached(spec.id)}});
 	}
 	return QJsonObject{
 		{QStringLiteral("view"), ShellLayout::viewName(m_layout.view())},
@@ -373,17 +393,33 @@ void Shell::onFocusChanged(QWidget* now)
 	for (ShellPanel* frame : m_panels) { frame->setFocusedPanel(frame->id() == id); }
 }
 
+QJsonObject Shell::snapshot() const
+{
+	QJsonObject doc = QJsonObject::fromVariantMap(m_layout.save());
+	doc.insert(QStringLiteral("columns"), sizesOf(m_columns));
+	doc.insert(QStringLiteral("rows"), sizesOf(m_rows));
+	doc.insert(QStringLiteral("centre"), sizesOf(m_centre));
+	return doc;
+}
+
+void Shell::restoreSnapshot(const QJsonObject& doc)
+{
+	m_restoring = true;
+	m_layout.restore(doc.toVariantMap());
+	applySizes(m_columns, doc.value(QStringLiteral("columns")).toArray());
+	applySizes(m_rows, doc.value(QStringLiteral("rows")).toArray());
+	applySizes(m_centre, doc.value(QStringLiteral("centre")).toArray());
+	m_restoring = false;
+	apply();
+}
+
 void Shell::persist() const
 {
 	// Nothing is written until the saved layout has been read: the first apply() in the
 	// constructor would otherwise overwrite the user's layout with the default.
 	if (m_restoring || !m_restoreAttempted) { return; }
-	QJsonObject doc = QJsonObject::fromVariantMap(m_layout.save());
-	doc.insert(QStringLiteral("columns"), sizesOf(m_columns));
-	doc.insert(QStringLiteral("rows"), sizesOf(m_rows));
-	doc.insert(QStringLiteral("centre"), sizesOf(m_centre));
 	ConfigManager::inst()->setValue(QStringLiteral("ui"), kConfigKey,
-		QString::fromUtf8(QJsonDocument(doc).toJson(QJsonDocument::Compact)));
+		QString::fromUtf8(QJsonDocument(snapshot()).toJson(QJsonDocument::Compact)));
 }
 
 void Shell::restoreConfiguredLayout()
@@ -396,13 +432,7 @@ void Shell::restoreConfiguredLayout()
 		persist();
 		return;
 	}
-	m_restoring = true;
-	m_layout.restore(doc.toVariantMap());
-	applySizes(m_columns, doc.value(QStringLiteral("columns")).toArray());
-	applySizes(m_rows, doc.value(QStringLiteral("rows")).toArray());
-	applySizes(m_centre, doc.value(QStringLiteral("centre")).toArray());
-	m_restoring = false;
-	apply();
+	restoreSnapshot(doc);
 }
 
 } // namespace lmms::gui

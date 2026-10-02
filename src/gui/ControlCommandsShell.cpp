@@ -66,27 +66,14 @@ namespace
 //! The documentation the Help menu has always pointed at.
 const char* const kHelpUrl = "https://lmms.io/documentation/";
 
-ControlResult noInterface(const QString& id)
-{
-	return ControlResult::failure(ControlErrorKind::Requires,
-		QStringLiteral("command '%1' requires an interface: this instance has no main window").arg(id));
-}
-
 gui::MainWindow* mainWindow()
 {
-	gui::GuiApplication* g = gui::getGUI();
-	return g != nullptr ? g->mainWindow() : nullptr;
+	return controlMainWindow();
 }
 
 ControlCommand command(const char* group, const char* verb)
 {
-	ControlCommand cmd;
-	cmd.group = QLatin1String(group);
-	cmd.verb = QLatin1String(verb);
-	cmd.id = cmd.group + QLatin1Char('.') + cmd.verb;
-	cmd.mutating = false;
-	cmd.requiresEngine = false;
-	return cmd;
+	return guiCommand(group, verb);
 }
 
 void registerFullscreen(ControlRegistry& registry)

@@ -54,6 +54,7 @@
 #include "MenuTestSupport.h"
 #include "Mixer.h"
 #include "SampleTrack.h"
+#include "CommandLists.h"
 #include "ShellCommandMenus.h"
 #include "ShellSelection.h"
 #include "Song.h"
@@ -235,6 +236,21 @@ private slots:
 		QVERIFY(run(QStringLiteral("meter.get_state")).result.value(QStringLiteral("armed")).toBool());
 		menuAction(&strip, {QStringLiteral("Loudness Meter"), QStringLiteral("Off")})->trigger();
 		QVERIFY(!run(QStringLiteral("meter.get_state")).result.value(QStringLiteral("armed")).toBool());
+
+		// Review W1-1 #1/#2: Take Lanes maps the rows' `lane`, and Plug-ins in Project lists an
+		// instrument (a chain's `instrument`) as well as its effects.
+		const QString trackId = control::trackIdOf(instrument);
+		QVERIFY(run(QStringLiteral("comp.lane_add"), {{QStringLiteral("track"), trackId}}).ok);
+		CommandListDialog lanes(CommandLists::takeLanes(trackId));
+		QVERIFY(lanes.rowCount() >= 1);
+		QVERIFY2(lanes.runAction(lanes.rowCount() - 1, 0).ok, qPrintable(lanes.statusText()));
+		CommandListDialog plugins(CommandLists::pluginsInProject());
+		bool listsInstrument = false;
+		for (int row = 0; row < plugins.rowCount(); ++row)
+		{
+			listsInstrument = listsInstrument || plugins.row(row).value(QStringLiteral("kind")).toString() == QStringLiteral("instrument");
+		}
+		QVERIFY2(listsInstrument, "Plug-ins in Project left the instrument out");
 
 		QMenu project;
 		ShellCommandMenus::populateProject(&project);

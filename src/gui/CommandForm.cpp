@@ -25,21 +25,29 @@
 #include "CommandForm.h"
 
 #include <QAction>
+#include <QColorDialog>
 #include <QComboBox>
 #include <QDialogButtonBox>
 #include <QDoubleValidator>
+#include <QFileDialog>
 #include <QFormLayout>
+#include <QHBoxLayout>
 #include <QIntValidator>
 #include <QJsonArray>
 #include <QJsonDocument>
+#include <QKeySequenceEdit>
 #include <QLabel>
 #include <QLineEdit>
 #include <QMenu>
 #include <QPushButton>
+#include <QRegularExpression>
+#include <QToolButton>
 #include <QVBoxLayout>
 
 #include "ControlVocabulary.h"
+#include "ScriptCommandBridge.h"
 #include "ShellSelection.h"
+#include "GuiApplication.h"
 #include "TextFloat.h"
 
 namespace lmms::gui
@@ -120,6 +128,35 @@ bool parseText(const QString& text, const QString& type, QJsonValue* value)
 	else if (type == QStringLiteral("array") || type == QStringLiteral("object")) { ok = parseJson(text, type, value); }
 	else { *value = text; }
 	return ok;
+}
+
+//! What a field's editor holds, as text (a captured shortcut in its portable spelling).
+QString editorText(const QWidget* editor)
+{
+	if (const auto* box = qobject_cast<const QComboBox*>(editor)) { return box->currentText(); }
+	if (const auto* keys = qobject_cast<const QKeySequenceEdit*>(editor))
+	{
+		return keys->keySequence().toString(QKeySequence::PortableText);
+	}
+	return static_cast<const QLineEdit*>(editor)->text().trimmed();
+}
+
+//! Put @a text into a field's editor; false when a choice does not offer it.
+bool setEditorText(QWidget* editor, const QString& text)
+{
+	if (auto* box = qobject_cast<QComboBox*>(editor))
+	{
+		const int index = box->findText(text);
+		if (index >= 0) { box->setCurrentIndex(index); }
+		return index >= 0;
+	}
+	if (auto* keys = qobject_cast<QKeySequenceEdit*>(editor))
+	{
+		keys->setKeySequence(QKeySequence::fromString(text, QKeySequence::PortableText));
+		return true;
+	}
+	static_cast<QLineEdit*>(editor)->setText(text);
+	return true;
 }
 
 //! The widget a menu belongs to: a form or message must outlive the menu (often a stack
@@ -215,23 +252,39 @@ void CommandForm::addField(QFormLayout* form, const QString& key, const QJsonObj
 	field.key = key;
 	field.spec = spec;
 	field.required = required;
-	field.editor = makeEditor(spec, required);
+	QWidget* row = makeEditor(key, spec, required, &field.editor);
 	field.editor->setObjectName(QStringLiteral("field:") + key);
 	field.editor->setAccessibleName(labelFor(key));
-	form->addRow(required ? labelFor(key) + QStringLiteral(" *") : labelFor(key), field.editor);
+	form->addRow(required ? labelFor(key) + QStringLiteral(" *") : labelFor(key), row);
 	m_fields.append(field);
 }
 
-QWidget* CommandForm::makeEditor(const QJsonObject& spec, bool required)
+QWidget* CommandForm::makeEditor(const QString& key, const QJsonObject& spec, bool required, QWidget** editor)
 {
 	if (isChoice(spec))
 	{
 		auto* box = new QComboBox(this);
 		if (!required) { box->addItem(QString()); }
 		box->addItems(choicesFor(spec));
+		*editor = box;
 		return box;
 	}
+	if (spec.value(QStringLiteral("format")).toString() == QStringLiteral("keys"))
+	{
+		// A shortcut is captured by pressing it, not typed as text.
+		*editor = new QKeySequenceEdit(this);
+		return *editor;
+	}
 	auto* edit = new QLineEdit(this);
+	*editor = edit;
+	constrain(edit, spec);
+	static const QRegularExpression colour(QStringLiteral("(^|_)colou?r$"));
+	const bool picks = ScriptCommandBridge::isPathArgument(m_call.id, key) || colour.match(key).hasMatch();
+	return picks ? withBrowse(edit, key) : edit;
+}
+
+void CommandForm::constrain(QLineEdit* edit, const QJsonObject& spec)
+{
 	const QString type = schemaType(spec);
 	const QJsonValue low = spec.value(QStringLiteral("minimum"));
 	const QJsonValue high = spec.value(QStringLiteral("maximum"));
@@ -251,7 +304,38 @@ QWidget* CommandForm::makeEditor(const QJsonObject& spec, bool required)
 	{
 		edit->setPlaceholderText(type == QStringLiteral("array") ? QStringLiteral("[ ... ]") : QStringLiteral("{ ... }"));
 	}
-	return edit;
+}
+
+QWidget* CommandForm::withBrowse(QLineEdit* edit, const QString& key)
+{
+	// A path argument (the sandbox's own rule, ScriptCommandBridge::isPathArgument) gets a
+	// file or folder picker beside its text: a folder for dir/folder/directory, else a file
+	// that may or may not exist yet. A colour argument gets the colour chooser.
+	static const QRegularExpression folder(QStringLiteral("(^|_)(dir|folder|directory)$"));
+	static const QRegularExpression colour(QStringLiteral("(^|_)colou?r$"));
+	const bool wantsFolder = folder.match(key).hasMatch();
+	const bool wantsColour = colour.match(key).hasMatch();
+	auto* row = new QWidget(this);
+	auto* box = new QHBoxLayout(row);
+	box->setContentsMargins(0, 0, 0, 0);
+	box->addWidget(edit, 1);
+	auto* browse = new QToolButton(row);
+	browse->setText(QStringLiteral("..."));
+	browse->setAccessibleName(tr("Choose %1").arg(labelFor(key).toLower()));
+	connect(browse, &QToolButton::clicked, edit, [this, edit, wantsFolder, wantsColour] {
+		if (wantsColour)
+		{
+			const QColor picked = QColorDialog::getColor(QColor(edit->text()), this, windowTitle());
+			if (picked.isValid()) { edit->setText(picked.name()); }
+			return;
+		}
+		const QString chosen = wantsFolder ? QFileDialog::getExistingDirectory(this, windowTitle(), edit->text())
+			: QFileDialog::getSaveFileName(this, windowTitle(), edit->text(), QString(), nullptr,
+				QFileDialog::DontConfirmOverwrite);
+		if (!chosen.isEmpty()) { edit->setText(chosen); }
+	});
+	box->addWidget(browse);
+	return row;
 }
 
 QStringList CommandForm::fields() const
@@ -266,15 +350,7 @@ bool CommandForm::setField(const QString& key, const QJsonValue& value)
 	for (const Field& field : m_fields)
 	{
 		if (field.key != key) { continue; }
-		const QString text = renderValue(value);
-		if (auto* box = qobject_cast<QComboBox*>(field.editor))
-		{
-			const int index = box->findText(text);
-			if (index >= 0) { box->setCurrentIndex(index); }
-			return index >= 0;
-		}
-		static_cast<QLineEdit*>(field.editor)->setText(text);
-		return true;
+		return setEditorText(field.editor, renderValue(value));
 	}
 	return false;
 }
@@ -282,7 +358,7 @@ bool CommandForm::setField(const QString& key, const QJsonValue& value)
 bool CommandForm::readField(const Field& field, QJsonValue* value, QString* error) const
 {
 	const auto* box = qobject_cast<const QComboBox*>(field.editor);
-	const QString text = box != nullptr ? box->currentText() : static_cast<const QLineEdit*>(field.editor)->text().trimmed();
+	const QString text = editorText(field.editor);
 	if (text.isEmpty())
 	{
 		if (field.required) { *error = tr("%1 is required").arg(labelFor(field.key)); }
@@ -339,7 +415,8 @@ void CommandForm::accept()
 
 void announce(QWidget* parent, const CommandCall& call, const ControlResult& result)
 {
-	if (ControlRegistry::instance()->isHeadless() || (result.ok && !call.showResult)) { return; }
+	// No interface to float a message over (a tool embedding the registry): nothing to show.
+	if (ControlRegistry::instance()->isHeadless() || getGUI() == nullptr || (result.ok && !call.showResult)) { return; }
 	constexpr int MaxChars = 400;
 	QString text = result.ok ? QString::fromUtf8(QJsonDocument(result.result).toJson(QJsonDocument::Indented))
 		: result.errorMessage;

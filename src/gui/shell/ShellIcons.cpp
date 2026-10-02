@@ -59,6 +59,7 @@ const std::map<QString, QString>& shellTable()
 	{"editor", "maximize-2"},
 	{"erase", "eraser"},
 	{"export", "upload"},
+	{"float", "external-link"},
 	{"fold", "fold-vertical"},
 	{"follow", "scan"},
 	{"ghost", "ghost"},

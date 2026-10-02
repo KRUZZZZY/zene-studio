@@ -28,7 +28,10 @@
 
 #include <QMenu>
 
+#include <QJsonArray>
+
 #include "CommandForm.h"
+#include "ControlRegistry.h"
 
 namespace lmms::gui::SessionGridMenus
 {
@@ -46,6 +49,26 @@ CommandCall call(const QString& id, const QJsonObject& fixed, const QString& tit
 	return CommandCall{id, fixed, {}, title, ask};
 }
 
+//! WF-054: put a pattern into the cell by name (session.pattern_list), not by its number.
+void addPatternPicker(QMenu* menu, const QJsonObject& where, const QString& title)
+{
+	QMenu* patterns = menu->addMenu(QObject::tr("Play Pattern"));
+	const QJsonArray listed = ControlRegistry::instance()->invoke(QStringLiteral("session.pattern_list")).result
+		.value(QStringLiteral("patterns")).toArray();
+	for (const QJsonValue& value : listed)
+	{
+		const QJsonObject pattern = value.toObject();
+		const QString name = pattern.value(QStringLiteral("name")).toString();
+		QJsonObject args = where;
+		args.insert(QStringLiteral("type"), QStringLiteral("midi"));
+		args.insert(QStringLiteral("pattern"), pattern.value(QStringLiteral("pattern")));
+		args.insert(QStringLiteral("name"), name);
+		addCommandAction(patterns, name.isEmpty() ? QObject::tr("Pattern %1").arg(pattern.value(QStringLiteral("pattern")).toInt() + 1) : name,
+			QStringLiteral("session.set_slot"), [args, title] { return call(QStringLiteral("session.set_slot"), args, title, false); });
+	}
+	patterns->setEnabled(!listed.isEmpty());
+}
+
 } // namespace
 
 void populateCell(QMenu* menu, int track, int scene, const QJsonObject& slot)
@@ -60,6 +83,12 @@ void populateCell(QMenu* menu, int track, int scene, const QJsonObject& slot)
 			if (slot.contains(name)) { edit.defaults.insert(name, slot.value(name)); }
 		}
 		return edit;
+	});
+	addPatternPicker(menu, where, title);
+	addCommandAction(menu, QObject::tr("Audio File..."), QStringLiteral("session.set_slot"), [where, title] {
+		QJsonObject audio = where;
+		audio.insert(QStringLiteral("type"), QStringLiteral("audio"));
+		return call(QStringLiteral("session.set_slot"), audio, title);
 	});
 	const auto set = [where, title] { return call(QStringLiteral("session.set_slot"), where, title); };
 	addCommandChoices(menu, QObject::tr("Launch Mode"), QStringLiteral("session.set_slot"), QStringLiteral("mode"), set);
@@ -81,6 +110,7 @@ void populateScene(QMenu* menu, int scene, const QJsonObject& sceneState)
 	addCommandAction(menu, QObject::tr("Edit Scene..."), QStringLiteral("session.set_scene"), [where, sceneState, title] {
 		CommandCall edit = call(QStringLiteral("session.set_scene"), where, title);
 		edit.defaults.insert(QStringLiteral("name"), sceneState.value(QStringLiteral("name")));
+		edit.defaults.insert(QStringLiteral("color"), sceneState.value(QStringLiteral("color")));
 		// A supplied tempo or metre switches its override ON: pre-fill one only while it is
 		// already on, so editing the name alone never turns an override back on.
 		if (sceneState.value(QStringLiteral("tempo_enabled")).toBool())

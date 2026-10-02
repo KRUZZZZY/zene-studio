@@ -107,6 +107,10 @@ LMMS_EXPORT const ReversibilityRow* reversibilityWindowRowTable(int* rowCount);
 // ControlReversibilityTableShell.cpp.
 LMMS_EXPORT const ReversibilityRow* reversibilityShellRowTable(int* rowCount);
 
+// 0.5.0 L13: shortcuts.*, window.layout_* / detach / attach / header_*, macro.* -
+// ControlReversibilityTableCustomisation.cpp.
+LMMS_EXPORT const ReversibilityRow* reversibilityCustomisationRowTable(int* rowCount);
+
 /*! The true_inverse block, in its SIX files JOINED: the LIVE-checkpoint rows
  *  (ControlReversibilityTableLive.cpp, this train's move - see that file's own
  *  header), then the recorded-ACTION rows (ControlReversibilityTableAction.cpp),
@@ -139,7 +143,8 @@ const ReversibilityRow* reversibilityRowTable(int* rowCount)
 				reversibilityAutomationRampRowTable, reversibilitySessionViewRowTable,
 				reversibilityClapInstrumentRowTable, reversibilityOutOfProcessRowTable,
 				reversibilitySampleRowTable, reversibilityLivecodeRowTable,
-				reversibilityMtsRowTable, reversibilityWindowRowTable, reversibilityShellRowTable})
+				reversibilityMtsRowTable, reversibilityWindowRowTable, reversibilityShellRowTable,
+				reversibilityCustomisationRowTable})
 		{
 			int count = 0;
 			const ReversibilityRow* rows = rowsFor(&count);

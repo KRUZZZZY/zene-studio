@@ -38,6 +38,7 @@
 class QAction;
 class QFormLayout;
 class QLabel;
+class QLineEdit;
 class QMenu;
 
 namespace lmms::gui
@@ -67,6 +68,8 @@ LMMS_EXPORT QJsonObject selectionContext(const QString& id);
 /*! A form for one command, built from its argsSchema (the JSON-schema subset the registry
  *  validates): a field per property, typed - an enum or a boolean is a choice, an integer or a
  *  number an edit with the schema's bounds, a string an edit, an array or object JSON text.
+ *  A path argument (ScriptCommandBridge::isPathArgument) gets a file or folder picker, and a
+ *  property with `"format": "keys"` captures a shortcut by being pressed.
  *  A field left empty is not sent, so an optional argument keeps the command's own default.
  *  Accepting runs the command through the registry - the same path the socket and Lua take
  *  (SPEC A11) - and a refusal keeps the form open with the reason; success closes it.
@@ -106,7 +109,10 @@ private:
 	};
 
 	void addField(QFormLayout* form, const QString& key, const QJsonObject& spec, bool required);
-	QWidget* makeEditor(const QJsonObject& spec, bool required);
+	//! The row widget for a field; @a editor receives the widget that holds its value.
+	QWidget* makeEditor(const QString& key, const QJsonObject& spec, bool required, QWidget** editor);
+	static void constrain(QLineEdit* edit, const QJsonObject& spec);
+	QWidget* withBrowse(QLineEdit* edit, const QString& key);
 	bool readField(const Field& field, QJsonValue* value, QString* error) const;
 
 	CommandCall m_call;
@@ -133,8 +139,9 @@ LMMS_EXPORT QAction* addCommandAction(QMenu* menu, const QString& label, const Q
 LMMS_EXPORT QMenu* addCommandChoices(QMenu* menu, const QString& label, const QString& id, const QString& key,
 	std::function<CommandCall()> make);
 
-//! The floating message a call's outcome warrants: a failure always, a success when the call
-//! asks for its result. Nothing when headless.
+//! The floating message a call's outcome warrants: a failure (one the form shows itself is not
+//! announced again), and a success when the call asks for its result. Nothing when headless or
+//! without an interface.
 LMMS_EXPORT void announce(QWidget* parent, const CommandCall& call, const ControlResult& result);
 
 //! The JSON type a property spec names (its first non-null type for a nullable one).

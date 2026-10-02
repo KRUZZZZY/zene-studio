@@ -51,7 +51,8 @@ namespace lmms
  *
  *  The sandbox holds (docs/LUA-COMPATIBILITY-POLICY.md §5): a command that would leave it is
  *  refused - running or scheduling a script (re-entry), quitting, the crash and telemetry
- *  uploads, writing settings or the audio device, a network download - and every path argument
+ *  uploads, writing settings or the audio device, a network download, writing the user's
+ *  customisations (shortcuts, header, saved layouts, macros) or running a macro - and every path argument
  *  (sandboxPaths) is resolved inside the project directory with the same symlink and `..` rule
  *  as zene.projectFile(), or refused. */
 namespace ScriptCommandBridge
@@ -81,6 +82,11 @@ LMMS_EXPORT QString refusalFor(const QString& id);
 //! or `_<one of those>`) or one the command takes as a path under another name (a per-command
 //! table: project.diff's a/b, project.merge's base/ours/theirs/report, ...).
 LMMS_EXPORT bool sandboxPaths(const QString& id, QJsonObject& args, QString* error);
+
+//! Whether argument @a key of command @a id is a path, by the rule sandboxPaths applies (the
+//! key's name, or the per-command table). The interface's command form uses the same rule to
+//! give such an argument a file picker.
+LMMS_EXPORT bool isPathArgument(const QString& id, const QString& key);
 
 } // namespace ScriptCommandBridge
 

@@ -24,16 +24,19 @@
 
 #include "ShellCommandMenus.h"
 
+#include <QJsonArray>
 #include <QMenu>
 
 #include "CommandForm.h"
 #include "CommandLists.h"
+#include "ControlRegistry.h"
 #include "ControlVocabulary.h"
 #include "Engine.h"
 #include "InstrumentTrack.h"
 #include "MidiClip.h"
 #include "SampleClip.h"
 #include "SampleTrack.h"
+#include "ShellLayout.h"
 #include "Song.h"
 
 namespace lmms::gui::ShellCommandMenus
@@ -217,6 +220,38 @@ void populateProject(QMenu* menu)
 	add(menu, "Disarm All Tracks", "record.disarm_all", {}, false);
 	menu->addSeparator();
 	list(menu, "Safe Start...", [] { return CommandLists::safeStart(); });
+	populateCustomise(menu->addMenu(tr("Customise")));
+}
+
+void populateCustomise(QMenu* menu)
+{
+	list(menu, "Keyboard Shortcuts...", [] { return CommandLists::shortcuts(); });
+	list(menu, "Macros...", [] { return CommandLists::macros(); });
+	list(menu, "MIDI Mappings...", [] { return CommandLists::controllerMappings(); });
+	list(menu, "Mapping Templates...", [] { return CommandLists::mappingTemplates(); });
+	QMenu* layouts = menu->addMenu(tr("Window Layouts"));
+	add(layouts, "Save Layout...", "window.layout_save", {}, true);
+	const QJsonArray names = ControlRegistry::instance()->invoke(QStringLiteral("window.layout_list")).result
+		.value(QStringLiteral("layouts")).toArray();
+	QMenu* apply = layouts->addMenu(tr("Apply"));
+	QMenu* remove = layouts->addMenu(tr("Remove"));
+	for (const QJsonValue& name : names)
+	{
+		const QJsonObject named{{QStringLiteral("name"), name}};
+		addCommandAction(apply, name.toString(), QStringLiteral("window.layout_apply"),
+			[named] { return CommandCall{QStringLiteral("window.layout_apply"), named, {}, QString(), false}; });
+		addCommandAction(remove, name.toString(), QStringLiteral("window.layout_remove"),
+			[named] { return CommandCall{QStringLiteral("window.layout_remove"), named, {}, QString(), false}; });
+	}
+	apply->setEnabled(!names.isEmpty());
+	remove->setEnabled(!names.isEmpty());
+	QMenu* pop = menu->addMenu(tr("Pop Out Panel"));
+	for (const ShellPanelSpec& spec : ShellLayout::panels())
+	{
+		const QJsonObject panel{{QStringLiteral("panel"), spec.id}};
+		addCommandAction(pop, spec.title, QStringLiteral("window.detach"),
+			[panel] { return CommandCall{QStringLiteral("window.detach"), panel, {}, QString(), false}; });
+	}
 }
 
 } // namespace lmms::gui::ShellCommandMenus

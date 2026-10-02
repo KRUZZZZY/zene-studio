@@ -2681,13 +2681,9 @@ if(PYTHON3_EXECUTABLE AND CONTROL_SUITE_AVAILABLE)
 		ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
 		TIMEOUT 300
 	)
-	# The Inspector and the Device panel over the socket: window.select selects a track, a clip or
-	# a mixer channel; the reply is what the two panels draw - the track's devices in chain order,
-	# a channel's inserts with the modulator beside the one it drives - and the panel follows a
-	# device removed and restored over the socket (docs/UI-SHELL.md §8).
 	# The 0.5.0 engine wiring (L01, research/daw-ui-specs/synthesis/engine-audit.md): devices at a
-	# slot and on rack chains, chain presets on rack chains, track.set_mixer_channel, and the Lua
-	# scripting spine (zene.command) - each proven over the socket.
+	# slot and on rack chains, chain presets on rack chains, track.set_mixer_channel, the header's
+	# transport.record, and the Lua scripting spine (zene.command) - each proven over the socket.
 	add_test(NAME ControlEngineWiring
 		COMMAND ${PYTHON3_EXECUTABLE}
 			${CMAKE_CURRENT_SOURCE_DIR}/control-engine-wiring.py
@@ -2696,6 +2692,20 @@ if(PYTHON3_EXECUTABLE AND CONTROL_SUITE_AVAILABLE)
 		ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
 		TIMEOUT 300
 	)
+	# The 0.5.0 L13 customisation surface: shortcuts, layouts, floating panels, the header,
+	# macros, arranger zoom/fit/tool and the pattern list - over the socket, on a throwaway config.
+	add_test(NAME ControlCustomisation
+		COMMAND ${PYTHON3_EXECUTABLE}
+			${CMAKE_CURRENT_SOURCE_DIR}/control-customisation.py
+			$<TARGET_FILE:zene>)
+	set_tests_properties(ControlCustomisation PROPERTIES
+		ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+		TIMEOUT 300
+	)
+	# The Inspector and the Device panel over the socket: window.select selects a track, a clip or
+	# a mixer channel; the reply is what the two panels draw - the track's devices in chain order,
+	# a channel's inserts with the modulator beside the one it drives - and the panel follows a
+	# device removed and restored over the socket (docs/UI-SHELL.md §8).
 	add_test(NAME ControlDevices
 		COMMAND ${PYTHON3_EXECUTABLE}
 			${CMAKE_CURRENT_SOURCE_DIR}/control-devices.py

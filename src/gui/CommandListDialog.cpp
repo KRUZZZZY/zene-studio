@@ -159,7 +159,8 @@ ControlResult CommandListDialog::runAction(int index, int action)
 	}
 	const RowAction& spec = m_spec.actions.at(action);
 	const QJsonObject item = row(index);
-	CommandCall call{spec.id, spec.fixed, {}, spec.label, spec.ask, spec.showResult};
+	// A form asking for a track or a clip starts from the selected one.
+	CommandCall call{spec.id, spec.fixed, selectionContext(spec.id), spec.label, spec.ask, spec.showResult};
 	for (auto it = spec.fromRow.begin(); it != spec.fromRow.end(); ++it) { call.fixed.insert(it.key(), item.value(it.value())); }
 	if (spec.confirm && !ControlRegistry::instance()->isHeadless()
 		&& QMessageBox::question(this, spec.label, tr("%1 - are you sure?").arg(spec.label)) != QMessageBox::Yes)
@@ -206,16 +207,21 @@ QString CommandListDialog::statusText() const
 QJsonArray listRows(const ListSpec& spec, const QJsonObject& listed)
 {
 	const QJsonArray top = listed.value(spec.arrayKey).toArray();
-	if (spec.nestedKey.isEmpty()) { return top; }
+	if (spec.nestedKeys.isEmpty()) { return top; }
 	QJsonArray rows;
 	for (const QJsonValue& parentValue : top)
 	{
 		const QJsonObject parent = parentValue.toObject();
-		for (const QJsonValue& childValue : parent.value(spec.nestedKey).toArray())
+		for (const QString& key : spec.nestedKeys)
 		{
-			QJsonObject child = childValue.toObject();
-			for (const QString& field : spec.parentFields) { child.insert(QStringLiteral("parent_") + field, parent.value(field)); }
-			rows.append(child);
+			const QJsonValue nested = parent.value(key);
+			const QJsonArray children = nested.isObject() ? QJsonArray{nested} : nested.toArray();
+			for (const QJsonValue& childValue : children)
+			{
+				QJsonObject child = childValue.toObject();
+				for (const QString& field : spec.parentFields) { child.insert(QStringLiteral("parent_") + field, parent.value(field)); }
+				rows.append(child);
+			}
 		}
 	}
 	return rows;

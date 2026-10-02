@@ -27,11 +27,13 @@
 #include <QAction>
 #include <QHBoxLayout>
 #include <QLabel>
+#include <QContextMenuEvent>
 #include <QMenu>
 #include <QPainter>
 #include <QStyleOptionToolButton>
 
 #include "Accessibility.h"
+#include "ControlRegistry.h"
 #include "ControlWindowCommands.h"
 #include "DesignTokens.h"
 #include "Engine.h"
@@ -175,7 +177,6 @@ ShellHeader::ShellHeader(QWidget* parent)
 	// The project's own surfaces (revisions, files, plug-ins, groups, mastering, safe start):
 	// the first button right of the stretch, before the project buttons MainWindow adds.
 	ShellButton* tools = addButton(QStringLiteral("project_tools"), tr("Project tools"));
-	tools->setObjectName(QStringLiteral("projectTools"));
 	tools->setPopupMode(QToolButton::InstantPopup);
 	auto* toolsMenu = new QMenu(tools);
 	connect(toolsMenu, &QMenu::aboutToShow, toolsMenu, [toolsMenu] {
@@ -189,6 +190,7 @@ ShellHeader::ShellHeader(QWidget* parent)
 ShellButton* ShellHeader::addButton(const QString& icon, const QString& text)
 {
 	auto* button = new ShellButton(m_strip);
+	button->setObjectName(QStringLiteral("header_") + icon);
 	button->setIcon(shellicons::icon(icon));
 	button->setToolTip(text);
 	a11y::announce(button, text);
@@ -213,6 +215,67 @@ void ShellHeader::addToStrip(QWidget* widget)
 void ShellHeader::addStripSpacing(int pixels) { m_stripLayout->insertSpacing(m_stretchIndex++, pixels); }
 
 int ShellHeader::stripCount() const { return m_stripLayout->count(); }
+
+void ShellHeader::customise(const QJsonObject& doc)
+{
+	qDeleteAll(m_extra);
+	m_extra.clear();
+	for (const QJsonValue& value : doc.value(QStringLiteral("extra")).toArray())
+	{
+		const QJsonObject extra = value.toObject();
+		const QString command = extra.value(QStringLiteral("command")).toString();
+		const QString label = extra.value(QStringLiteral("label")).toString();
+		m_extra.append(addCommandButton(QStringLiteral("plus"), label.isEmpty() ? command : label, command));
+		m_extra.last()->setObjectName(QStringLiteral("header_extra_") + command);
+	}
+	QStringList hidden;
+	for (const QJsonValue& name : doc.value(QStringLiteral("hidden")).toArray()) { hidden.append(name.toString()); }
+	for (auto* button : m_strip->findChildren<ShellButton*>(QString(), Qt::FindDirectChildrenOnly))
+	{
+		button->setVisible(!hidden.contains(button->objectName().mid(7)));  // "header_" + name
+	}
+}
+
+void ShellHeader::contextMenuEvent(QContextMenuEvent* event)
+{
+	// WF-116: right-click the header to choose its buttons (window.header_set, one undo step).
+	QMenu menu(this);
+	QStringList hidden;
+	const QJsonArray all = buttons();
+	for (const QJsonValue& value : all)
+	{
+		if (!value.toObject().value(QStringLiteral("visible")).toBool()) { hidden.append(value.toObject().value(QStringLiteral("name")).toString()); }
+	}
+	for (const QJsonValue& value : all)
+	{
+		const QJsonObject button = value.toObject();
+		const QString name = button.value(QStringLiteral("name")).toString();
+		if (name.startsWith(QStringLiteral("extra_"))) { continue; }
+		QAction* action = menu.addAction(button.value(QStringLiteral("text")).toString());
+		action->setCheckable(true);
+		action->setChecked(!hidden.contains(name));
+		action->setProperty("controlCommand", QStringLiteral("window.header_set"));
+		connect(action, &QAction::toggled, this, [hidden, name](bool shown) {
+			QStringList next = hidden;
+			if (shown) { next.removeAll(name); } else { next.append(name); }
+			ControlRegistry::instance()->invoke(QStringLiteral("window.header_set"),
+				{{QStringLiteral("hidden"), QJsonArray::fromStringList(next)}});
+		});
+	}
+	menu.exec(event->globalPos());
+}
+
+QJsonArray ShellHeader::buttons() const
+{
+	QJsonArray out;
+	for (const auto* button : m_strip->findChildren<ShellButton*>(QString(), Qt::FindDirectChildrenOnly))
+	{
+		out.append(QJsonObject{{QStringLiteral("name"), button->objectName().mid(7)},
+			{QStringLiteral("text"), button->toolTip()}, {QStringLiteral("command"), button->property("controlCommand").toString()},
+			{QStringLiteral("visible"), !button->isHidden()}});
+	}
+	return out;
+}
 
 void ShellHeader::syncTransport()
 {

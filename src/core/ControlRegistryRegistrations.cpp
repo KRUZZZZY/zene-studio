@@ -159,6 +159,7 @@ void registerControlCommands(ControlRegistry& registry)
 	// register under the same unconditional rule as the two above.
 	registerSessionFollowCommands(registry);
 	registerSessionSceneFollowCommands(registry);
+	registerSessionPatternCommands(registry);
 	registerSessionRecordCommands(registry);
 	registerExportCommands(registry);
 	// The render/export presets (feature row 70) - the saved store and the

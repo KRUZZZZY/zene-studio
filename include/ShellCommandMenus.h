@@ -66,6 +66,10 @@ LMMS_EXPORT void populateChannel(QMenu* menu, const QString& channel);
 //! the loudness meter, safe start.
 LMMS_EXPORT void populateProject(QMenu* menu);
 
+//! The user's own interface (0.5.0 L13): shortcuts, macros, MIDI mappings and templates, saved
+//! window layouts, a panel in its own window. Part of populateProject's menu.
+LMMS_EXPORT void populateCustomise(QMenu* menu);
+
 } // namespace ShellCommandMenus
 
 } // namespace lmms::gui

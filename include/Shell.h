@@ -90,6 +90,18 @@ public:
 	QList<QAction*> panelActions() const;
 	QAction* panelAction(const QString& id) const { return m_panelActions.value(id); }
 
+	//! The layout as it is persisted - the model's state and the splitter sizes: what a saved
+	//! layout (window.layout_save) holds.
+	QJsonObject snapshot() const;
+	//! Put @a doc back; what it does not recognise is ignored (ShellLayout::restore's rule).
+	void restoreSnapshot(const QJsonObject& doc);
+
+	//! WF-092: panel @a id in a window of its own - movable to a second monitor - or back in
+	//! the shell. A detached panel stays in its window whatever view or layout is applied.
+	bool detachPanel(const QString& id, QString* reason = nullptr);
+	bool attachPanel(const QString& id);
+	bool isDetached(const QString& id) const { return m_floating.contains(id); }
+
 	//! Restore the persisted layout (config ui/shell.layout); safe to call once at start-up.
 	//! Until it has been called the shell writes nothing to the config.
 	void restoreConfiguredLayout();
@@ -111,6 +123,8 @@ private:
 	void syncActions();
 	void onFocusChanged(QWidget* now);
 	static ShellView viewOffering(const QString& id);
+	//! The panel header's pop-out button (window.detach / window.attach, ShellFloating.cpp).
+	void addFloatButton(ShellPanel* frame);
 
 	ShellLayout m_layout;
 	QHash<QString, ShellPanel*> m_panels;
@@ -128,6 +142,7 @@ private:
 	bool m_restoring = false;
 	bool m_restoreAttempted = false;
 	bool m_shownOnce = false;
+	QHash<QString, QPointer<QWidget>> m_floating;  // panel id -> its own window
 };
 
 } // namespace lmms::gui
