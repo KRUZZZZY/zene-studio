@@ -2664,6 +2664,17 @@ if(PYTHON3_EXECUTABLE AND CONTROL_SUITE_AVAILABLE)
 	# a mixer channel; the reply is what the two panels draw - the track's devices in chain order,
 	# a channel's inserts with the modulator beside the one it drives - and the panel follows a
 	# device removed and restored over the socket (docs/UI-SHELL.md §8).
+	# The 0.5.0 engine wiring (L01, research/daw-ui-specs/synthesis/engine-audit.md): devices at a
+	# slot and on rack chains, chain presets on rack chains, track.set_mixer_channel, and the Lua
+	# scripting spine (zene.command) - each proven over the socket.
+	add_test(NAME ControlEngineWiring
+		COMMAND ${PYTHON3_EXECUTABLE}
+			${CMAKE_CURRENT_SOURCE_DIR}/control-engine-wiring.py
+			$<TARGET_FILE:zene>)
+	set_tests_properties(ControlEngineWiring PROPERTIES
+		ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+		TIMEOUT 300
+	)
 	add_test(NAME ControlDevices
 		COMMAND ${PYTHON3_EXECUTABLE}
 			${CMAKE_CURRENT_SOURCE_DIR}/control-devices.py

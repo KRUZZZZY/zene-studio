@@ -27,6 +27,7 @@
 #include <QJsonArray>
 #include <QJsonObject>
 
+#include "ControlDevicePlacement.h"
 #include "ControlDeviceSupport.h"
 
 #include "ControlVocabulary.h"
@@ -139,19 +140,21 @@ void registerPluginList(ControlRegistry& registry)
 
 //! Appends \a entry to the target's chain and describes the new instance.
 ControlResult loadEffect(const ControlTarget& target, const ControlDeviceEntry& entry,
-	int deviceIndex)
+	int deviceIndex, const QJsonObject& args)
 {
 	ControlResult error;
-	Effect* effect = controlInstantiateDevice(entry, target.chain, &error);
+	EffectChain* chain = resolveDeviceChain(target, args, &error);
+	if (chain == nullptr) { return error; }
+	Effect* effect = controlInstantiateDevice(entry, chain, &error);
 	if (effect == nullptr) { return error; }
-	const int index = static_cast<int>(target.chain->effects().size()) - 1;
+	const int position = args.contains(QStringLiteral("position")) ? args.value(QStringLiteral("position")).toInt() : -1;
+	const int index = placeEffect(chain, effect, position);
 
 	// SPEC A16: an APPENDED effect carries only defaults, so the inverse is the
 	// OPERATION and it is exact - ONE action step unloads the instance it
 	// created, and its redo instantiates the same catalogue entry again. (An
 	// instrument REPLACEMENT has no such inverse: see loadInstrument.)
 	auto holder = std::make_shared<Effect*>(effect);
-	EffectChain* chain = target.chain;
 	control::addUndoStep(
 		[holder, chain]() {
 			if (*holder != nullptr)
@@ -161,9 +164,10 @@ ControlResult loadEffect(const ControlTarget& target, const ControlDeviceEntry& 
 				*holder = nullptr;
 			}
 		},
-		[holder, chain, entry]() {
+		[holder, chain, entry, index]() {
 			ControlResult ignored;
 			*holder = controlInstantiateDevice(entry, chain, &ignored);
+			if (*holder != nullptr) { placeEffect(chain, *holder, index); }
 		});
 
 	QJsonObject result;
@@ -171,6 +175,7 @@ ControlResult loadEffect(const ControlTarget& target, const ControlDeviceEntry& 
 	result.insert(QStringLiteral("kind"), QStringLiteral("effect"));
 	result.insert(QStringLiteral("id"), control::effectIdOf(effect));
 	result.insert(QStringLiteral("index"), index);
+	result.insert(QStringLiteral("chain"), args.value(QStringLiteral("chain")).toInt(0));
 	result.insert(QStringLiteral("device"), control::deviceId(deviceIndex));
 	result.insert(QStringLiteral("plugin"), QString::fromUtf8(effect->descriptor()->name));
 	result.insert(QStringLiteral("display_name"),
@@ -264,10 +269,15 @@ void registerPluginLoad(ControlRegistry& registry)
 		"Returns the new instance id (fx-<n>, or inst for an instrument). Headless-safe: it "
 		"declares no 'requires' at all, because no editor is created here - neither a built-in "
 		"plugin view nor an LV2 UI. An LV2 device whose bundle ships a GUI loads and is fully "
-		"parametrisable through plugin.param_get / plugin.param_set on a display-less instance.");
+		"parametrisable through plugin.param_get / plugin.param_set on a display-less instance. "
+		"Optional for an effect: `chain` (default 0) puts it on parallel chain n of a mixer "
+		"channel's rack (rack.add_chain), and `position` (0 = first) inserts it at that slot "
+		"instead of appending; the reply's `index` is the slot it landed in.");
 	cmd.argsSchema = objectSchema(
 		{{QStringLiteral("target"), stringProperty()},
-			{QStringLiteral("device"), stringProperty()}},
+			{QStringLiteral("device"), stringProperty()},
+			{QStringLiteral("chain"), integerProperty(0, 64)},
+			{QStringLiteral("position"), integerProperty(0, 1024)}},
 		{QStringLiteral("target"), QStringLiteral("device")});
 	cmd.resultSchema = objectSchema({
 		{QStringLiteral("target"), stringProperty()},
@@ -277,6 +287,7 @@ void registerPluginLoad(ControlRegistry& registry)
 		{QStringLiteral("device"), stringProperty()},
 		{QStringLiteral("display_name"), stringProperty()},
 		{QStringLiteral("index"), numberProperty()},
+		{QStringLiteral("chain"), integerProperty()},
 		{QStringLiteral("previous_plugin"), stringProperty()},
 	});
 	cmd.mutating = true;
@@ -294,11 +305,13 @@ void registerPluginLoad(ControlRegistry& registry)
 		{
 			return error;
 		}
-		if (entry.kind == QLatin1String("instrument"))
+		if (entry.kind != QLatin1String("instrument")) { return loadEffect(target, entry, deviceIndex, args); }
+		if (args.contains(QStringLiteral("chain")) || args.contains(QStringLiteral("position")))
 		{
-			return loadInstrument(target, entry, deviceIndex);
+			return ControlResult::failure(ControlErrorKind::InvalidArgs,
+				QStringLiteral("`chain` and `position` place an effect; an instrument replaces the track's instrument"));
 		}
-		return loadEffect(target, entry, deviceIndex);
+		return loadInstrument(target, entry, deviceIndex);
 	};
 	registry.registerCommand(cmd);
 }

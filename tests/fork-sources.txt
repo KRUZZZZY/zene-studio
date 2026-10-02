@@ -531,6 +531,7 @@ include/ControlChordSupport.h
 include/ControlClipLinkSupport.h
 include/ControlCompSupport.h
 include/ControlDetectSupport.h
+include/ControlDevicePlacement.h
 include/ControlDeviceSupport.h
 include/ControlEdit.h
 include/ControlExportPresetSupport.h
@@ -936,6 +937,7 @@ src/core/ControlCommandsStems.cpp
 src/core/ControlCommandsStructure.cpp
 src/core/ControlCommandsSurface.cpp
 src/core/ControlCommandsTelemetry.cpp
+src/core/ControlCommandsTrackChannel.cpp
 src/core/ControlCommandsTrackFolder.cpp
 src/core/ControlCommandsTrackFolderSets.cpp
 src/core/ControlCommandsTrackFolderShared.h
@@ -958,6 +960,7 @@ src/core/ControlDetectSupport.cpp
 src/core/ControlDeviceCatalogue.cpp
 src/core/ControlDeviceClap.cpp
 src/core/ControlDeviceHosted.cpp
+src/core/ControlDevicePlacement.cpp
 src/core/ControlDeviceState.cpp
 src/core/ControlDeviceSupport.cpp
 src/core/ControlDeviceVst3.cpp

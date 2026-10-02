@@ -113,6 +113,7 @@ void registerControlCommands(ControlRegistry& registry)
 	registerNoteCommands(registry);
 	registerNoteProbabilityCommands(registry);
 	registerNoteEditCommands(registry);
+	registerTrackChannelCommands(registry);
 	registerRenderStemsCommands(registry);
 	registerPluginCommands(registry);
 	registerDspCommands(registry);

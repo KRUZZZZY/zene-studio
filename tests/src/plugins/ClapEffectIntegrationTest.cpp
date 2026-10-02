@@ -71,6 +71,7 @@ private slots:
 	void testLegacyAudioBufferPathRoutesPlanarPorts();
 	void testTheEffectsOwnEditorOpensInItsOwnWindow();
 	void testTheControlDialogsButtonOpensTheEditor();
+	void testThePluginsLatencyReachesTheChain();
 
 private:
 	auto makeKey() const -> Plugin::Descriptor::SubPluginFeatures::Key;
@@ -484,6 +485,23 @@ void lmms::ClapEffectIntegrationTest::testTheControlDialogsButtonOpensTheEditor(
 	master.removeEffect(effect);
 	delete effect;
 	QVERIFY2(opened, "the dialog's button did not open the editor");
+}
+
+/*! BUGS 11.34: the latency a CLAP plug-in declares (clap.latency) is what the effect reports
+ *  and what its chain adds up for delay compensation - before the fix every hosted plug-in
+ *  read as zero-latency. */
+void lmms::ClapEffectIntegrationTest::testThePluginsLatencyReachesTheChain()
+{
+	BufferManager::init(48);
+	qputenv("CLAP_TEST_GAIN_LATENCY", "123");
+	EffectChain chain{nullptr};
+	const auto key = makeKey();
+	auto* effect = new ClapEffect{&chain, &key};
+	chain.appendEffect(effect);
+	qunsetenv("CLAP_TEST_GAIN_LATENCY");
+	QCOMPARE(effect->latencyFrames(), 123);
+	QCOMPARE(chain.latencyFrames(), 123);
+	chain.clear();
 }
 
 QTEST_MAIN(lmms::ClapEffectIntegrationTest)

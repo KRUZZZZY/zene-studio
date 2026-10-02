@@ -57,6 +57,7 @@
 #include "ControlChainPresetSupport.h"
 #include "ControlDeviceSupport.h"
 #include "ControlEdit.h"
+#include "ControlDevicePlacement.h"
 #include "ControlRegistry.h"
 #include "ControlReversibility.h"
 #include "ControlVocabulary.h"
@@ -288,12 +289,13 @@ void registerChainSave(ControlRegistry& registry)
 		"(chainpresets/<name>.zcp), outside the project, so the preset can be applied to a "
 		"track in another project, and so project.save/project.open cannot lose it. An existing "
 		"preset of that name is refused unless \"overwrite\":true. 'target' is a trk-<n> or "
-		"ch-<n> id. Reversible through a recorded action checkpoint that puts the file - or the "
+		"ch-<n> id; 'chain' (default 0) captures parallel chain n of a channel's rack instead. Reversible through a recorded action checkpoint that puts the file - or the "
 		"revision it replaced - back.");
 	cmd.argsSchema = objectSchema({
 		{QStringLiteral("target"), stringProperty()},
 		{QStringLiteral("name"), stringProperty()},
 		{QStringLiteral("overwrite"), booleanProperty()},
+		{QStringLiteral("chain"), integerProperty(0, 64)},
 	}, {QStringLiteral("target"), QStringLiteral("name")});
 	cmd.resultSchema = objectSchema({
 		{QStringLiteral("name"), stringProperty()},
@@ -310,10 +312,7 @@ void registerChainSave(ControlRegistry& registry)
 	cmd.handler = [](const QJsonObject& args) {
 		ControlTarget target;
 		ControlResult error;
-		if (!resolveControlTarget(args.value(QStringLiteral("target")).toString(), &target, &error))
-		{
-			return error;
-		}
+		if (!resolveChainTarget(args, &target, &error)) { return error; }
 		if (target.chain->effects().empty())
 		{
 			return ControlResult::failure(ControlErrorKind::InvalidArgs,

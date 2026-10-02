@@ -49,6 +49,7 @@
 #include "ControlChainPresetSupport.h"
 #include "ControlDeviceSupport.h"
 #include "ControlEdit.h"
+#include "ControlDevicePlacement.h"
 #include "ControlRegistry.h"
 #include "ControlReversibility.h"
 #include "ControlVocabulary.h"
@@ -152,10 +153,12 @@ void registerChainApply(ControlRegistry& registry)
 		"own state document, so the parameters are the values the chain was captured with. The "
 		"target's existing devices are removed (the plugin.unload lifetime). A preset naming a "
 		"device this build cannot load is refused and the target's chain is left untouched. "
-		"Reversible: one control.undo puts the previous chain back, devices and settings.");
+		"Reversible: one control.undo puts the previous chain back, devices and settings. "
+		"'chain' (default 0) applies it to parallel chain n of a channel's rack instead.");
 	cmd.argsSchema = objectSchema({
 		{QStringLiteral("name"), stringProperty()},
 		{QStringLiteral("target"), stringProperty()},
+		{QStringLiteral("chain"), integerProperty(0, 64)},
 	}, {QStringLiteral("name"), QStringLiteral("target")});
 	cmd.resultSchema = objectSchema({
 		{QStringLiteral("target"), stringProperty()},
@@ -174,10 +177,7 @@ void registerChainApply(ControlRegistry& registry)
 			return error;
 		}
 		ControlTarget target;
-		if (!resolveControlTarget(args.value(QStringLiteral("target")).toString(), &target, &error))
-		{
-			return error;
-		}
+		if (!resolveChainTarget(args, &target, &error)) { return error; }
 		return applyPreset(target, preset);
 	};
 	registry.registerCommand(cmd);

@@ -124,9 +124,6 @@ and it declares that command in its `controlCommand` property for the agent-surf
 - **Device cards draw at most 16 parameters** (`DeviceCard::MaxParameters`); the rest are
   in the device's own editor, one click away. A built-in effect's own control dialog, opened
   from a card, still shows that plugin's inherited artwork.
-- **No command assigns a track to a mixer channel.** The Inspector's Mixer readout edits the
-  track's own channel model (journalled, as the track header's control is), but an agent has
-  no `track.*` verb for it.
 - **Arranger toolbar:** the arranger keeps its own toolbar, which duplicates Play and Stop.
 - **Dead MDI code:** `SubWindow`, `MainWindow::workspace()`, the MDI geometry clamp and the two
   detach verbs are still present. The 30 `addWindowedWidget` callers need a `FloatingWindow`
@@ -175,8 +172,8 @@ never consumes one. `window.select {track | clip | channel}` is the agent's clic
 what the two panels draw.
 
 **The Inspector** (`InspectorPanel`) shows the track's colour and name (typing a name is
-`track.rename`), Mute and Solo (`track.set_mute` / `track.set_solo`), volume and pan knobs and the
-mixer channel it plays into; then the clip's name, start, length and, by kind, its note count with
+`track.rename`), Mute and Solo (`track.set_mute` / `track.set_solo`), volume and pan knobs and a menu of the
+mixer channel it plays into (`track.set_mixer_channel`); then the clip's name, start, length and, by kind, its note count with
 **Edit notes** (`window.note_editor_set {clip, fit}`) or its gain (`clip.set_gain`). A selected
 mixer channel shows its name, mute, solo, volume and pan.
 

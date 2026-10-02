@@ -275,10 +275,13 @@ static const clap_plugin_state_t s_state = {
 
 /* --------------------------------------------------------------- latency -- */
 
+/* 0 unless CLAP_TEST_GAIN_LATENCY names a frame count: the host's PDC wiring (BUGS 11.34) is
+ * proven against a plug-in that declares a known latency, and every other test keeps 0. */
 static uint32_t gain_latency_get(const clap_plugin_t* plugin)
 {
 	(void)plugin;
-	return 0;
+	const char* frames = getenv("CLAP_TEST_GAIN_LATENCY");
+	return frames != NULL ? (uint32_t)strtoul(frames, NULL, 10) : 0u;
 }
 
 static const clap_plugin_latency_t s_latency = {

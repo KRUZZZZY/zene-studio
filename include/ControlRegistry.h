@@ -415,6 +415,8 @@ LMMS_EXPORT void registerNoteProbabilityCommands(ControlRegistry& registry);
 //! note.edit - several notes' position/key/length/velocity/pan/probability as one edit and
 //! one undo step (the 0.5.0 note editor's gestures; docs/NOTE-EDITOR.md).
 LMMS_EXPORT void registerNoteEditCommands(ControlRegistry& registry);
+//! track.set_mixer_channel - which mixer channel a track plays into (0.5.0 L01).
+LMMS_EXPORT void registerTrackChannelCommands(ControlRegistry& registry);
 //! render.stems - per-track stem export through the shipped `exportstems` CLI
 //! (docs/STEM-EXPORT.md).
 LMMS_EXPORT void registerRenderStemsCommands(ControlRegistry& registry);

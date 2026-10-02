@@ -28,6 +28,7 @@
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QLineEdit>
+#include <QMenu>
 #include <QPainter>
 #include <QPushButton>
 #include <QToolButton>
@@ -144,6 +145,41 @@ FloatModel* panningOf(Track* track)
 	if (auto* instrument = dynamic_cast<InstrumentTrack*>(track)) { return instrument->panningModel(); }
 	if (auto* sample = dynamic_cast<SampleTrack*>(track)) { return sample->panningModel(); }
 	return nullptr;
+}
+
+QString channelLabel(int index)
+{
+	MixerChannel* channel = index >= 0 && index < static_cast<int>(Engine::mixer()->numChannels())
+		? Engine::mixer()->mixerChannel(index) : nullptr;
+	if (channel == nullptr) { return QString::number(index); }
+	return channel->m_name.isEmpty() ? (index == 0 ? QObject::tr("Master") : QString::number(index)) : channel->m_name;
+}
+
+//! The channel the track plays into, as a menu of every channel: choosing one is
+//! track.set_mixer_channel (engine audit / L01), so a script and a click take one path.
+QToolButton* mixerChannelMenu(Track* track, QWidget* parent)
+{
+	auto* button = new QToolButton(parent);
+	button->setObjectName(QStringLiteral("inspectorChannel"));
+	button->setPopupMode(QToolButton::InstantPopup);
+	button->setToolButtonStyle(Qt::ToolButtonTextOnly);
+	button->setAccessibleName(QObject::tr("Mixer channel"));
+	button->setToolTip(QObject::tr("The mixer channel this track plays into"));
+	button->setText(channelLabel(track->mixerChannelModel()->value()));
+	auto* menu = new QMenu(button);
+	QObject::connect(menu, &QMenu::aboutToShow, menu, [menu, button, id = control::trackIdOf(track)] {
+		menu->clear();
+		for (int i = 0; i < static_cast<int>(Engine::mixer()->numChannels()); ++i)
+		{
+			const QString channel = control::channelIdOf(Engine::mixer()->mixerChannel(i));
+			menu->addAction(channelLabel(i), button, [button, id, channel, i] {
+				if (invoke(QStringLiteral("track.set_mixer_channel"), {{QStringLiteral("track"), id},
+					{QStringLiteral("channel"), channel}}).ok) { button->setText(channelLabel(i)); }
+			});
+		}
+	});
+	button->setMenu(menu);
+	return button;
 }
 
 } // namespace
@@ -282,12 +318,7 @@ QWidget* InspectorPanel::trackControls(Track* track, QWidget* parent)
 	mix->setSpacing(tokens::space::lg);
 	if (FloatModel* volume = volumeOf(track)) { mix->addWidget(knob(volume, tr("Volume"), box)); }
 	if (FloatModel* panning = panningOf(track)) { mix->addWidget(knob(panning, tr("Pan"), box)); }
-	if (IntModel* channel = track->mixerChannelModel())
-	{
-		auto* field = new ReadoutField(tr("Mixer"), box);
-		field->bind(channel, [](int v) { return v == 0 ? tr("Master") : QString::number(v); }, 8);
-		mix->addWidget(field);
-	}
+	if (track->mixerChannelModel() != nullptr) { mix->addWidget(mixerChannelMenu(track, box)); }
 	mix->addStretch(1);
 	column->addLayout(mix);
 	return box;

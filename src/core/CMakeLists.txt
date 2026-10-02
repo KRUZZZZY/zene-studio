@@ -399,6 +399,7 @@ set(LMMS_SRCS
 	core/ControlCommandsStructure.cpp
 	${LMMS_TELEMETRY_COMMAND_SRCS}
 	core/ControlCommandsTransport.cpp
+	core/ControlCommandsTrackChannel.cpp
 	core/ControlCommandsTrackFolder.cpp
 	core/ControlCommandsTrackFolderSets.cpp
 	# VCA / mix-and-edit groups (OWNER-31 item 11): the group+entity half, the
@@ -450,6 +451,7 @@ set(LMMS_SRCS
 	core/ControlDeviceCatalogue.cpp
 	core/ControlDeviceHosted.cpp
 	core/ControlDeviceState.cpp
+	core/ControlDevicePlacement.cpp
 	core/ControlDeviceSupport.cpp
 	# The VST3 half of the device catalogue (feature row 78, board task #668):
 	# plugin.list enumerates the VST3 host's own classes and plugin.load loads
