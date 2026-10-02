@@ -121,6 +121,8 @@ private:// slots:
 
 
 private:
+	//! Any thread (CoreMIDI's notification callback): re-scan the devices on this object's thread.
+	void queueDeviceListUpdate();
 	void openDevices();
 	void closeDevices();
 	void openMidiReference( MIDIEndpointRef reference, QString refName,bool isIn );

@@ -537,6 +537,14 @@ MIDIClientRef MidiApple::getMidiClientRef()
 
 
 
+void MidiApple::queueDeviceListUpdate()
+{
+	// CoreMIDI notifies on its own run-loop thread: the re-scan runs on this object's thread.
+	QMetaObject::invokeMethod( this, [this] { updateDeviceList(); }, Qt::QueuedConnection );
+}
+
+
+
 void MidiApple::notifyMidiPortList( MidiPortList l, MidiEvent event )
 {
 	for( MidiPortList::ConstIterator it = l.begin(); it != l.end(); ++it )
@@ -571,6 +579,7 @@ void MidiApple::NotifyCallback( const MIDINotification *message, void *refCon )
 				// Here your code to save the new destination ref
 				// and update your internal "clients"
 			}
+			midiApple->queueDeviceListUpdate();  // E26: a device plugged in appears in the lists
 			break;
 		}
 		case kMIDIMsgObjectRemoved:
@@ -589,11 +598,13 @@ void MidiApple::NotifyCallback( const MIDINotification *message, void *refCon )
 				// Here your code to remove the destination ref
 				// and update your internal "clients"
 				qDebug("kMIDIMsgObjectRemoved destination '%s'",fullName);			}
+			midiApple->queueDeviceListUpdate();  // E26: a device that went away leaves the lists
 			break;
 		}
 		case kMIDIMsgPropertyChanged:
-			// Currently ignored
-			qDebug("kMIDIMsgPropertyChanged");
+			// 0.5.0 (engine audit E26): a renamed or re-described device is re-listed, so the
+			// port menus show its current name.
+			midiApple->queueDeviceListUpdate();
 			break;
 		case kMIDIMsgThruConnectionsChanged:
 			// Currently ignored

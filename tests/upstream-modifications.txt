@@ -999,3 +999,5 @@ src/core/lv2/Lv2ControlBase.cpp	0.5.0 L01 engine wiring (050/engine-wiring, 2026
 plugins/Lv2Effect/Lv2Effect.h	0.5.0 L01 engine wiring (050/engine-wiring, 2026-10-02, BUGS 11.34): latencyFrames() override and a 500 ms GUI-thread poll that tells the chain when the reported latency changes
 include/Lv2Manager.h	0.5.0 L01 engine audit E13: world() accessor for the lilv world (the plug-in state calls)
 include/MidiJack.h	0.5.0 L01 engine audit E25: the output queue and the processOutEvent override
+src/core/midi/MidiApple.cpp	0.5.0 L01 engine audit E26: device added/removed/property-changed notifications queue the existing updateDeviceList() re-scan on the object's thread (were logged and ignored). macOS-only code: not compiled on the Linux workstation that wrote it - the hosted macOS build is its first compile
+include/MidiApple.h	0.5.0 L01 engine audit E26: queueDeviceListUpdate()
