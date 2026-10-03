@@ -249,4 +249,18 @@ ListSpec markers()
 	return out;
 }
 
+ListSpec noteEvents(const QString& clip)
+{
+	const QJsonObject where{{QStringLiteral("clip"), clip}};
+	ListSpec out = spec("MIDI Event List", "note.list", "notes", {QStringLiteral("key"), QStringLiteral("position"),
+		QStringLiteral("length"), QStringLiteral("velocity"), QStringLiteral("pan"), QStringLiteral("probability")}, where);
+	out.summaryKeys = {QStringLiteral("count")};
+	const QHash<QString, QString> note{{QStringLiteral("note"), QStringLiteral("note")}};
+	out.actions = {act("Velocity...", "note.velocity_set", note, where, true), act("Move...", "note.move", note, where, true),
+		act("Length...", "note.resize", note, where, true), act("Probability...", "note.probability_set", note, where, true),
+		act("Remove", "note.remove", note, where)};
+	out.extras = {extra("Add Note...", "note.add", where)};
+	return out;
+}
+
 } // namespace lmms::gui::CommandLists

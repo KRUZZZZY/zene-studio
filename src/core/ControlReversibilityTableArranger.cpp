@@ -106,6 +106,17 @@ const ReversibilityRow kArrangerRows[] = {
 		"AutomationClip journal checkpoint", ""),
 	R("automation.last_touched", RC::NotMutating, false, "it reads which parameter was last changed. Nothing is written",
 		"no write", ""),
+	R("note.scale", RC::TrueInverse, true, "it moves and resizes notes", "MidiClip journal checkpoint", ""),
+	R("note.ratchet", RC::TrueInverse, true, "it splits notes into repeats", "MidiClip journal checkpoint", ""),
+	R("note.add_many", RC::TrueInverse, true, "it adds notes to a clip", "MidiClip journal checkpoint", ""),
+	R("note.list", RC::NotMutating, false, "it reads a clip's notes. Nothing is written", "no write", ""),
+	R("note.transform_where", RC::TrueInverse, true, "it changes, selects or removes the matching notes",
+		"MidiClip journal checkpoint", ""),
+	R("key_names.get", RC::NotMutating, false, "it reads a track's key names. Nothing is written", "no write", ""),
+	R("key_names.set", RC::TrueInverse, true, "key names are saved with the project; the map is bounded (128 keys a track)",
+		"action checkpoint: the recorded undo step puts the track's previous key names back", ""),
+	R("key_names.preset", RC::TrueInverse, true, "the same per-track key-name map",
+		"action checkpoint: the recorded undo step puts the track's previous key names back", ""),
 };
 
 #undef R

@@ -97,7 +97,9 @@ private:
 		Resize,
 		Band,
 		Erase,
-		Audition
+		Audition,
+		Paint,
+		Velocity
 	};
 
 	// painting (NoteCanvas.cpp)
@@ -116,6 +118,8 @@ private:
 
 	// gestures (NoteCanvasInput.cpp)
 	void beginPress(QMouseEvent* event);
+	void pressDrawOrSelect(Note* note, QMouseEvent* event);
+	void commitDrag(Drag drag, bool shift);  //!< the one command a released gesture sends
 	void pressAudition(const Note* note);
 	void pressErase(const Note* note);
 	bool nudgeForKey(int key, bool shift);
@@ -138,6 +142,19 @@ private:
 	int dragKeys() const;
 	int keyMovedBy(int key, int rows) const;
 
+	// paint tool, velocity drag, note colour (NoteCanvasGestures.cpp)
+	int scaleKey(int key) const;  //!< @a key, moved into the scale when keep-in-scale is on
+	void pressPaint();
+	void extendPaint(const QPoint& pos);
+	void commitPaint();
+	void pressVelocity(Note* note);
+	int velocityDelta() const;
+	void commitVelocity();
+	void paintPaintPreview(QPainter& p) const;
+	void paintVelocityPreview(QPainter& p) const;
+	QColor noteFill(const Note& note) const;
+	QString noteLabel(const Note& note) const;
+
 	NoteEditor* m_editor;
 	NoteEditorState& m_state;
 	int m_longest = 0;
@@ -155,6 +172,7 @@ private:
 	int m_anchorId = -1;                 //!< the note a move/resize was started on
 	std::vector<int> m_erasedIds;        //!< notes the eraser has crossed, removed on release
 	int m_auditionKey = -1;
+	std::vector<std::pair<int, int>> m_painted;  //!< the paint tool's cells so far: key, start tick
 };
 
 } // namespace lmms::gui

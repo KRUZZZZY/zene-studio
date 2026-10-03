@@ -569,6 +569,8 @@ set(LMMS_TESTS
 	src/core/ArrangementModesTest.cpp
 	# 0.5.0 L06: automation lanes, trim, shapes, transform, thinning, curves, last touched.
 	src/core/AutomationLanesTest.cpp
+	# 0.5.0 L07: the note editor's commands - scale, ratchet, add_many, list, find and change, swing, key names.
+	src/core/NoteEditingCommandsTest.cpp
 	# Feature row 50 (0.3.0): the Lua API's DAW-control half - the mixer channel
 	# and effect-chain bindings. Drives a REAL mixer channel and the chain the
 	# control surface addresses from Lua, reads the engine back (not the script's

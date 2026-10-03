@@ -41,7 +41,8 @@ enum class NoteFold
 {
 	None,  //!< all 128 keys
 	Scale, //!< only the keys whose pitch class is in the context's scale
-	Used   //!< only the keys the clip has notes on (plus the ones being drawn)
+	Used,  //!< only the keys the clip has notes on (plus the ones being drawn)
+	Drums  //!< the keys the track names (key_names.*) and the used ones: the drum lane view
 };
 
 //! The note editor's coordinate system, with no widget: everything a paint or a mouse handler
@@ -86,6 +87,10 @@ public:
 
 	//! The keys that carry notes, for NoteFold::Used.
 	void setUsedKeys(const std::vector<int>& keys);
+	//! The keys the track names, for NoteFold::Drums.
+	void setNamedKeys(const std::vector<int>& keys);
+	//! @a key, or - when it is outside the scale and a scale is set - the nearest key inside it.
+	int nearestInScale(int key) const;
 	//! Keeps the key at the centre of the view centred (or the nearest shown key).
 	void setFold(NoteFold fold);
 	//! Scroll so @a key's row - or the nearest shown row - is in the middle of the view.
@@ -124,6 +129,7 @@ public:
 
 private:
 	void rebuildRows();
+	bool shows(int key) const;  //!< whether the fold keeps @a key's row
 	void clampScrollY();
 
 	double m_pixelsPerTick = 0.25;  // 48 px per beat, 192 px per bar at 4/4
@@ -136,6 +142,7 @@ private:
 	std::array<bool, 12> m_scaleMask{};
 	int m_scaleRoot = 0;
 	std::array<bool, 128> m_used{};
+	std::array<bool, 128> m_named{};
 	std::vector<int> m_rows;
 	std::array<int, 128> m_rowOfKey{};
 };

@@ -88,13 +88,18 @@ void NoteKeyboardView::paintEvent(QPaintEvent*)
 		if (key == m_pressed) { face = pal.accent; }
 		p.fillRect(r.adjusted(black ? width() / 3 : 0, 0, 0, 0), face);
 		if (m_state.highlightScale && g.inScale(key)) { p.fillRect(QRect(0, r.top(), 3, r.height()), pal.accent); }
-		if (key % 12 == 0 || rowH >= 16)
-		{
-			p.setPen(key % 12 == 0 ? pal.text : pal.textMuted);
-			p.drawText(r.adjusted(6, 0, -4, 0), Qt::AlignVCenter | Qt::AlignLeft, NoteGrid::keyName(key));
-		}
+		paintLabel(p, r, key);
 	}
 	p.fillRect(QRect(width() - 1, 0, 1, height()), pal.base);
+}
+
+void NoteKeyboardView::paintLabel(QPainter& p, const QRect& row, int key) const
+{
+	const QString name = m_editor->keyLabel(key);
+	const bool c = key % 12 == 0;
+	if (name.isEmpty() && !c && m_state.grid.rowHeight() < 16) { return; }
+	p.setPen(!name.isEmpty() || c ? tokens::palette().text : tokens::palette().textMuted);
+	p.drawText(row.adjusted(6, 0, -4, 0), Qt::AlignVCenter | Qt::AlignLeft, name.isEmpty() ? NoteGrid::keyName(key) : name);
 }
 
 void NoteKeyboardView::mousePressEvent(QMouseEvent* event)

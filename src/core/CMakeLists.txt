@@ -911,10 +911,13 @@ set(LMMS_SRCS
 	core/ControlCommandsAutomationLanes.cpp
 	core/ControlCommandsClipArrange.cpp
 	core/ControlCommandsClipEnvelope.cpp
+	core/ControlCommandsKeyNames.cpp
 	core/ControlCommandsMarkers.cpp
+	core/ControlCommandsNoteShape.cpp
 	core/ControlCommandsRange.cpp
 	core/ProjectMarkers.cpp
 	core/Timeline.cpp
+	core/TrackKeyNames.cpp
 	core/TrackMixModels.cpp
 	core/TimePos.cpp
 	core/TakeLane.cpp

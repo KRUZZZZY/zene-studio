@@ -101,7 +101,28 @@ void NoteGrid::setUsedKeys(const std::vector<int>& keys)
 	{
 		if (key >= 0 && key < kKeys) { m_used[static_cast<std::size_t>(key)] = true; }
 	}
-	if (m_fold == NoteFold::Used) { rebuildRows(); }
+	if (m_fold == NoteFold::Used || m_fold == NoteFold::Drums) { rebuildRows(); }
+}
+
+void NoteGrid::setNamedKeys(const std::vector<int>& keys)
+{
+	m_named.fill(false);
+	for (int key : keys)
+	{
+		if (key >= 0 && key < kKeys) { m_named[static_cast<std::size_t>(key)] = true; }
+	}
+	if (m_fold == NoteFold::Drums) { rebuildRows(); }
+}
+
+int NoteGrid::nearestInScale(int key) const
+{
+	if (inScale(key) || std::none_of(m_scaleMask.begin(), m_scaleMask.end(), [](bool b) { return b; })) { return key; }
+	for (int d = 1; d < 12; ++d)
+	{
+		if (key - d >= 0 && inScale(key - d)) { return key - d; }
+		if (key + d < kKeys && inScale(key + d)) { return key + d; }
+	}
+	return key;
 }
 
 void NoteGrid::setFold(NoteFold fold)
@@ -128,16 +149,26 @@ void NoteGrid::centreOnKey(int key)
 	if (nearest >= 0) { setScrollY(nearest * m_rowHeight + m_rowHeight / 2 - m_height / 2); }
 }
 
+bool NoteGrid::shows(int key) const
+{
+	const auto k = static_cast<std::size_t>(key);
+	switch (m_fold)
+	{
+	case NoteFold::None: return true;
+	case NoteFold::Scale: return inScale(key);
+	case NoteFold::Used: return m_used[k];
+	case NoteFold::Drums: return m_used[k] || m_named[k];
+	}
+	return true;
+}
+
 void NoteGrid::rebuildRows()
 {
 	m_rows.clear();
 	m_rowOfKey.fill(-1);
 	for (int key = kKeys - 1; key >= 0; --key)
 	{
-		const bool shown = m_fold == NoteFold::None
-			|| (m_fold == NoteFold::Scale && inScale(key))
-			|| (m_fold == NoteFold::Used && m_used[static_cast<std::size_t>(key)]);
-		if (!shown) { continue; }
+		if (!shows(key)) { continue; }
 		m_rowOfKey[static_cast<std::size_t>(key)] = static_cast<int>(m_rows.size());
 		m_rows.push_back(key);
 	}

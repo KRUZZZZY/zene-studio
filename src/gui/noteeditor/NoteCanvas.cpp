@@ -252,7 +252,7 @@ void NoteCanvas::paintNotes(QPainter& p) const
 void NoteCanvas::paintNote(QPainter& p, const Note& note, const QRect& r) const
 {
 	const tokens::Palette& pal = tokens::palette();
-	QColor fill = tokens::velocityColor(static_cast<int>(note.getVolume()));
+	QColor fill = noteFill(note);
 	// A note that may not play (chance below 100 %) is drawn fainter in proportion.
 	fill.setAlphaF(0.45f + 0.55f * note.probability());
 	p.fillRect(r, fill);
@@ -275,7 +275,7 @@ void NoteCanvas::paintNote(QPainter& p, const Note& note, const QRect& r) const
 	{
 		p.setFont(tokens::font(tokens::TextRole::Caption));
 		p.setPen(pal.textOnAccent);
-		p.drawText(r.adjusted(4, 0, -2, 0), Qt::AlignVCenter | Qt::AlignLeft, NoteGrid::keyName(note.key()));
+		p.drawText(r.adjusted(4, 0, -2, 0), Qt::AlignVCenter | Qt::AlignLeft, noteLabel(note));
 	}
 	if (note.slide()) { p.fillRect(QRect(r.right() - 3, r.top(), 3, r.height()), pal.text); }
 }

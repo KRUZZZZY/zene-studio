@@ -62,7 +62,16 @@ enum class NoteTool
 	Select,
 	Slice,
 	Erase,
-	Audition
+	Audition,
+	Paint  //!< drag to lay a note on every grid cell crossed
+};
+
+//! What a note's colour shows.
+enum class NoteColor
+{
+	Velocity,
+	Pitch,  //!< a hue per pitch class
+	Track   //!< the clip's (or its track's) colour
 };
 
 //! What every part of the editor reads: the clip, the geometry and the user's choices. One
@@ -79,6 +88,8 @@ struct NoteEditorState
 	bool highlightScale = true;
 	NoteLane lane = NoteLane::Velocity;
 	QString scaleName;            //!< from scale.get_state, for the header label
+	NoteColor colorMode = NoteColor::Velocity;
+	bool keepInScale = false;     //!< drawn and moved notes land on the nearest key of the scale
 };
 
 //! The reworked piano roll (owner direction 2026-10-02, Bitwig-style). Every edit it makes is a
@@ -107,6 +118,10 @@ public:
 	void setFold(NoteFold fold);
 	void setLane(NoteLane lane);
 	void setGhosts(bool on);
+	void setColorMode(NoteColor mode);
+	void setKeepInScale(bool on);
+	//! The clip track's name for @a key (key_names.*), or empty.
+	QString keyLabel(int key) const;
 	//! Horizontal zoom, pixels per tick (NoteGrid clamps it).
 	void setZoom(double pixelsPerTick);
 	//! Fit the clip's length to the view and centre its notes vertically.
@@ -148,6 +163,12 @@ private:
 	void addFoldControls(QWidget* bar, QHBoxLayout* row);
 	void addScaleButton(QWidget* bar, QHBoxLayout* row);
 	void addViewButtons(QWidget* bar, QHBoxLayout* row);
+	void addNotesMenu(QWidget* bar, QHBoxLayout* row);
+	void fillNotesMenu(QMenu* menu);
+	void fillVelocityMenu(QMenu* menu, const QJsonObject& scoped);
+	void fillTimingMenu(QMenu* menu, const QJsonObject& scoped);
+	//! "selection" when the clip has selected notes, else "clip" - the scope the Notes menu acts on.
+	QString noteScope() const;
 	void buildLaneChooser();
 	void fillScaleMenu(QMenu* menu);
 	void buildBody();

@@ -108,9 +108,9 @@ int NoteCanvas::keyMovedBy(int key, int rows) const
 {
 	const NoteGrid& g = m_state.grid;
 	const int row = g.rowOfKey(key);
-	if (row < 0) { return std::clamp(key - rows, 0, 127); }
+	if (row < 0) { return scaleKey(std::clamp(key - rows, 0, 127)); }
 	const int target = std::clamp(row + rows, 0, g.rowCount() - 1);
-	return g.rows()[static_cast<std::size_t>(target)];
+	return scaleKey(g.rows()[static_cast<std::size_t>(target)]);
 }
 
 void NoteCanvas::mousePressEvent(QMouseEvent* event)
@@ -136,15 +136,20 @@ void NoteCanvas::beginPress(QMouseEvent* event)
 	{
 	case NoteTool::Audition: pressAudition(note); return;
 	case NoteTool::Erase: pressErase(note); return;
+	case NoteTool::Paint: pressPaint(); return;
 	case NoteTool::Slice:
 		if (note != nullptr) { sliceAt(note, event->pos()); }
 		return;
 	case NoteTool::Draw:
-	case NoteTool::Select:
-		if (note != nullptr) { pressOnNote(note, event); }
-		else { pressOnEmpty(event); }
-		return;
+	case NoteTool::Select: pressDrawOrSelect(note, event); return;
 	}
+}
+
+void NoteCanvas::pressDrawOrSelect(Note* note, QMouseEvent* event)
+{
+	if (note == nullptr) { pressOnEmpty(event); }
+	else if (event->modifiers().testFlag(Qt::AltModifier)) { pressVelocity(note); }
+	else { pressOnNote(note, event); }
 }
 
 void NoteCanvas::pressAudition(const Note* note)
@@ -206,6 +211,7 @@ void NoteCanvas::mouseMoveEvent(QMouseEvent* event)
 			m_erasedIds.push_back(note->id());
 		}
 	}
+	if (m_drag == Drag::Paint) { extendPaint(event->pos()); }
 	if (m_drag == Drag::None)
 	{
 		Note* note = noteAt(event->pos());
@@ -218,23 +224,29 @@ void NoteCanvas::mouseMoveEvent(QMouseEvent* event)
 
 void NoteCanvas::mouseReleaseEvent(QMouseEvent* event)
 {
-	const Drag drag = m_drag;
 	m_currentPos = event->pos();
-	switch (drag)
-	{
-	case Drag::Draw: commitDraw(); break;
-	case Drag::Move: commitMove(); break;
-	case Drag::Resize: commitResize(); break;
-	case Drag::Band: commitBand(event->modifiers().testFlag(Qt::ShiftModifier)); break;
-	case Drag::Erase: commitErase(); break;
-	case Drag::Audition:
-	case Drag::None: break;
-	}
+	commitDrag(m_drag, event->modifiers().testFlag(Qt::ShiftModifier));
 	if (m_auditionKey >= 0) { m_editor->auditionRelease(m_auditionKey); }
 	m_auditionKey = -1;
 	m_drag = Drag::None;
 	m_anchorId = -1;
 	update();
+}
+
+void NoteCanvas::commitDrag(Drag drag, bool shift)
+{
+	switch (drag)
+	{
+	case Drag::Draw: commitDraw(); break;
+	case Drag::Move: commitMove(); break;
+	case Drag::Resize: commitResize(); break;
+	case Drag::Band: commitBand(shift); break;
+	case Drag::Erase: commitErase(); break;
+	case Drag::Paint: commitPaint(); break;
+	case Drag::Velocity: commitVelocity(); break;
+	case Drag::Audition:
+	case Drag::None: break;
+	}
 }
 
 void NoteCanvas::mouseDoubleClickEvent(QMouseEvent* event)
@@ -267,7 +279,7 @@ void NoteCanvas::commitDraw()
 	const auto [start, length] = drawSpan();
 	m_state.lastLength = length;
 	m_editor->run(QStringLiteral("note.add"), {{QStringLiteral("clip"), m_editor->clipId()},
-		{QStringLiteral("key"), m_pressKey}, {QStringLiteral("position"), start},
+		{QStringLiteral("key"), scaleKey(m_pressKey)}, {QStringLiteral("position"), start},
 		{QStringLiteral("length"), m_state.lastLength}, {QStringLiteral("velocity"), m_state.lastVelocity}});
 }
 
@@ -430,6 +442,8 @@ void NoteCanvas::paintDragPreview(QPainter& p) const
 	{
 	case Drag::Draw: paintDrawPreview(p); break;
 	case Drag::Erase: paintErasePreview(p); break;
+	case Drag::Paint: paintPaintPreview(p); break;
+	case Drag::Velocity: paintVelocityPreview(p); break;
 	case Drag::Move:
 	case Drag::Resize: paintMovePreview(p); break;
 	default: break;
@@ -442,7 +456,7 @@ void NoteCanvas::paintDrawPreview(QPainter& p) const
 	const auto [start, length] = drawSpan();
 	QColor fill = tokens::velocityColor(m_state.lastVelocity);
 	fill.setAlpha(170);
-	p.fillRect(rectFor(m_pressKey, start, start + length), fill);
+	p.fillRect(rectFor(scaleKey(m_pressKey), start, start + length), fill);
 }
 
 void NoteCanvas::paintErasePreview(QPainter& p) const

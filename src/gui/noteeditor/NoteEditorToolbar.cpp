@@ -94,6 +94,7 @@ QWidget* NoteEditor::buildToolbar()
 	addGridControls(bar, row);
 	addFoldControls(bar, row);
 	addScaleButton(bar, row);
+	addNotesMenu(bar, row);
 	addViewButtons(bar, row);
 	buildLaneChooser();
 	return bar;
@@ -105,8 +106,8 @@ void NoteEditor::addToolButtons(QWidget* bar, QHBoxLayout* row)
 	m_tools = new QActionGroup(this);
 	const struct { const char* icon; QString text; } tools[] = {
 		{"draw", tr("Draw")}, {"select", tr("Select")}, {"slice", tr("Slice")}, {"erase", tr("Erase")},
-		{"audition", tr("Audition")}};
-	for (int i = 0; i < 5; ++i)
+		{"audition", tr("Audition")}, {"paint", tr("Paint")}};
+	for (int i = 0; i < 6; ++i)
 	{
 		QAction* action = checkable(m_tools, QString::fromLatin1(tools[i].icon), tools[i].text,
 			tr("%1 tool (%2)").arg(tools[i].text).arg(i + 1));
@@ -150,11 +151,15 @@ void NoteEditor::addFoldControls(QWidget* bar, QHBoxLayout* row)
 	QAction* foldUsed = checkable(m_folds, QStringLiteral("fold"), tr("Fold to used keys"),
 		tr("Show only the keys the clip uses"));
 	foldUsed->setData(static_cast<int>(NoteFold::Used));
-	for (QAction* action : {foldScale, foldUsed})
+	QAction* foldDrums = checkable(m_folds, QStringLiteral("drums"), tr("Drum view"),
+		tr("Show only the keys the track names (Notes > Key Names) and the keys in use, by name"));
+	foldDrums->setData(static_cast<int>(NoteFold::Drums));
+	for (QAction* action : {foldScale, foldUsed, foldDrums})
 	{
 		m_folds->addAction(action);
-		connect(action, &QAction::toggled, this, [this]() {
+		connect(action, &QAction::toggled, this, [this, foldDrums]() {
 			QAction* on = m_folds->checkedAction();
+			if (on == foldDrums) { refresh(); }
 			m_state.grid.setFold(on != nullptr ? static_cast<NoteFold>(on->data().toInt()) : NoteFold::None);
 			emit stateChanged();
 		});

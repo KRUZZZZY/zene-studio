@@ -581,6 +581,7 @@ include/TrackContentWidget.h
 include/TrackFolder.h
 include/TrackFolderMenu.h
 include/TrackGrip.h
+include/TrackKeyNames.h
 include/TrackLabelButton.h
 include/TrackMixModels.h
 include/TrackOperationsWidget.h
@@ -1162,6 +1163,7 @@ src/core/ControlCommandsHostChunking.cpp
 src/core/ControlCommandsHostNotes.cpp
 src/core/ControlCommandsIdContract.cpp
 src/core/ControlCommandsInterchange.cpp
+src/core/ControlCommandsKeyNames.cpp
 src/core/ControlCommandsLink.cpp
 src/core/ControlCommandsLivecode.cpp
 src/core/ControlCommandsMarkers.cpp
@@ -1184,6 +1186,7 @@ src/core/ControlCommandsNoteEdit.cpp
 src/core/ControlCommandsNoteExpression.cpp
 src/core/ControlCommandsNoteProbability.cpp
 src/core/ControlCommandsNoteRandom.cpp
+src/core/ControlCommandsNoteShape.cpp
 src/core/ControlCommandsNoteSlide.cpp
 src/core/ControlCommandsNoteTransform.cpp
 src/core/ControlCommandsNotes.cpp
@@ -1528,6 +1531,7 @@ src/core/ToolPlugin.cpp
 src/core/Track.cpp
 src/core/TrackContainer.cpp
 src/core/TrackContainerFolders.cpp
+src/core/TrackKeyNames.cpp
 src/core/TrackMixModels.cpp
 src/core/UnattendedRun.cpp
 src/core/UnclaimedElements.cpp
@@ -1721,8 +1725,10 @@ src/gui/modals/RenameDialog.cpp
 src/gui/modals/SetupDialog.cpp
 src/gui/modals/VersionedSaveDialog.cpp
 src/gui/noteeditor/NoteCanvas.cpp
+src/gui/noteeditor/NoteCanvasGestures.cpp
 src/gui/noteeditor/NoteCanvasInput.cpp
 src/gui/noteeditor/NoteEditor.cpp
+src/gui/noteeditor/NoteEditorMenus.cpp
 src/gui/noteeditor/NoteEditorParts.cpp
 src/gui/noteeditor/NoteEditorToolbar.cpp
 src/gui/noteeditor/NoteGrid.cpp
@@ -1923,6 +1929,7 @@ tests/src/core/MpePlaybackTest.cpp
 tests/src/core/MpscQueueTest.cpp
 tests/src/core/MultiTrackRecorderTest.cpp
 tests/src/core/NamespaceRegistryTest.cpp
+tests/src/core/NoteEditingCommandsTest.cpp
 tests/src/core/NoteRandomTest.cpp
 tests/src/core/NoteTransformTest.cpp
 tests/src/core/OnnxRuntimeStemSeparatorTest.cpp

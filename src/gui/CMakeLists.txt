@@ -91,9 +91,11 @@ SET(LMMS_SRCS
 	# geometry and the lane table, NoteGridTest), NoteCanvas paints and edits the notes, the parts
 	# are the key column, ruler and expression lane, NoteEditor the container and its header.
 	gui/noteeditor/NoteCanvas.cpp
+	gui/noteeditor/NoteCanvasGestures.cpp
 	gui/noteeditor/NoteCanvasInput.cpp
 	gui/noteeditor/NoteEditor.cpp
 	gui/noteeditor/NoteEditorParts.cpp
+	gui/noteeditor/NoteEditorMenus.cpp
 	gui/noteeditor/NoteEditorToolbar.cpp
 	gui/noteeditor/NoteGrid.cpp
 	gui/noteeditor/NoteLanes.cpp

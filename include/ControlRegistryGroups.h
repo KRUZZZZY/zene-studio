@@ -758,6 +758,10 @@ LMMS_EXPORT void registerClipArrangeCommands(ControlRegistry& registry);
 //! 0.5.0 L06: automation.lane_add / add_trim / draw_shape / transform / thin / set_curve /
 //! last_touched (ControlCommandsAutomationLanes.cpp).
 LMMS_EXPORT void registerAutomationLaneCommands(ControlRegistry& registry);
+//! 0.5.0 L07: note.scale / ratchet / list / transform_where (ControlCommandsNoteShape.cpp) and
+//! key_names.* (ControlCommandsKeyNames.cpp).
+LMMS_EXPORT void registerNoteShapeCommands(ControlRegistry& registry);
+LMMS_EXPORT void registerKeyNameCommands(ControlRegistry& registry);
 } // namespace lmms
 
 #endif // LMMS_CONTROL_REGISTRY_GROUPS_H

@@ -77,6 +77,10 @@ struct Filter
 	tick_t minPos = 0;
 	tick_t maxPos = std::numeric_limits<tick_t>::max();
 
+	bool useLengthRange = false;
+	tick_t minLength = 0;
+	tick_t maxLength = std::numeric_limits<tick_t>::max();
+
 	ScaleMatch scaleMatch = ScaleMatch::Ignore;
 	//! Pitch classes (0..11; a degree outside that range is taken modulo 12).
 	std::vector<int> scaleDegrees;

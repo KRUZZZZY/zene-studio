@@ -66,6 +66,8 @@ LMMS_EXPORT ListSpec controllerMappings();
 LMMS_EXPORT ListSpec mappingTemplates();
 //! ED-048: the project's markers - jump, rename/move/recolour, remove, add at the play position.
 LMMS_EXPORT ListSpec markers();
+//! L07 MIDI event list: every note of a clip as a row - edit its velocity, position, length, probability.
+LMMS_EXPORT ListSpec noteEvents(const QString& clip);
 
 } // namespace CommandLists
 

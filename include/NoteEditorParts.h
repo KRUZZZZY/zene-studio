@@ -31,6 +31,8 @@
 
 #include "lmms_export.h"
 
+class QPainter;
+
 namespace lmms
 {
 class Note;
@@ -59,6 +61,10 @@ protected:
 	void wheelEvent(QWheelEvent* event) override;
 
 private:
+	//! A row's label: the track's name for @a key (key_names.*) at any row height, else the
+	//! key's note name on every C and wherever the rows are tall enough.
+	void paintLabel(QPainter& p, const QRect& row, int key) const;
+
 	NoteEditor* m_editor;
 	NoteEditorState& m_state;
 	int m_pressed = -1;

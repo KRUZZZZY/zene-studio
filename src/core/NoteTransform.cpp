@@ -69,17 +69,16 @@ inline bool degreeInScale( const std::vector<int>& degrees, int key ) noexcept
 	return false;
 }
 
-//! The key, velocity and position clauses of `f`.
+//! The key, velocity, position and length clauses of `f`.
 inline bool rangeAccepts( const Note& note, const Filter& f )
 {
-	if( f.useKeyRange && ( note.key() < f.minKey || note.key() > f.maxKey ) ) { return false; }
-	if( f.useVelocityRange
-		&& ( note.getVolume() < f.minVelocity || note.getVolume() > f.maxVelocity ) )
-	{
-		return false;
-	}
-	if( f.usePositionRange && ( note.pos() < f.minPos || note.pos() > f.maxPos ) ) { return false; }
-	return true;
+	const auto inside = []( bool use, auto value, auto low, auto high ) {
+		return !use || ( value >= low && value <= high );
+	};
+	return inside( f.useKeyRange, note.key(), f.minKey, f.maxKey )
+		&& inside( f.useVelocityRange, note.getVolume(), f.minVelocity, f.maxVelocity )
+		&& inside( f.usePositionRange, static_cast<tick_t>( note.pos() ), f.minPos, f.maxPos )
+		&& inside( f.useLengthRange, static_cast<tick_t>( note.length() ), f.minLength, f.maxLength );
 }
 
 /*! The pitch-class clause of `f`. An inactive clause accepts everything; an

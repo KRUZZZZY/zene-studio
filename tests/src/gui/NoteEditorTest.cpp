@@ -26,6 +26,7 @@
 
 #include <QComboBox>
 #include <QJsonArray>
+#include <QToolButton>
 
 #include "ControlRegistry.h"
 #include "ControlVocabulary.h"
@@ -37,7 +38,9 @@
 #include "NoteEditor.h"
 #include "NoteEditorParts.h"
 #include "NotePlayHandle.h"
+#include "MenuTestSupport.h"
 #include "Song.h"
+#include "TrackKeyNames.h"
 
 using namespace lmms;
 using namespace lmms::gui;
@@ -268,6 +271,108 @@ private slots:
 		QCOMPARE(m_editor->describe().value(QStringLiteral("clip")).toString(), QString());
 	}
 
+	// --- 0.5.0 L07 ------------------------------------------------------------------------
+
+	void thePaintToolLaysANoteOnEveryCellItCrossesAsOneEdit()
+	{
+		m_editor->setTool(NoteTool::Paint);
+		// x = tick + 2 at 1 px per tick: the press, the midpoint and the release land in the 1/16 cells
+		// starting at 300, 324 and 348.
+		drag(point(300, 62), point(347, 62));
+		QCOMPARE(m_clip->notes().size(), std::size_t{5});
+		for (int at : {300, 324, 348})
+		{
+			const Note* note = noteAt(m_clip, at, 62);
+			QVERIFY2(note != nullptr, qPrintable(QStringLiteral("no painted note at %1").arg(at)));
+			QCOMPARE(static_cast<int>(note->length().getTicks()), 12);
+		}
+		QVERIFY(undo());
+		QCOMPARE(m_clip->notes().size(), std::size_t{2});
+	}
+
+	void altDragChangesTheSelectionsVelocityAsOneEdit()
+	{
+		select({m_clip->notes()[0], m_clip->notes()[1]});
+		m_editor->setTool(NoteTool::Select);
+		const QPoint from = m_editor->canvas()->noteRect(*m_clip->notes()[0]).center();
+		drag(from, from - QPoint(0, 30), Qt::AltModifier);
+		QCOMPARE(static_cast<int>(noteAt(m_clip, 0, 60)->getVolume()), 130);
+		QCOMPARE(static_cast<int>(noteAt(m_clip, 192, 64)->getVolume()), 130);
+		QVERIFY2(noteAt(m_clip, 0, 60) != nullptr, "a velocity drag does not move the note");
+		QCOMPARE(m_editor->state().lastVelocity, 130);
+		QVERIFY(undo());
+		QCOMPARE(static_cast<int>(noteAt(m_clip, 0, 60)->getVolume()), 100);
+	}
+
+	void keepInScaleDrawsOnTheNearestScaleKey()
+	{
+		QVERIFY(invoke(QStringLiteral("scale.root_set"), {{QStringLiteral("root"), 0}}).ok);
+		QVERIFY(invoke(QStringLiteral("scale.set"), {{QStringLiteral("scale"), QStringLiteral("Major")}}).ok);
+		m_editor->setClip(m_clip);  // reads the scale
+		m_editor->setTool(NoteTool::Draw);
+		m_editor->setKeepInScale(true);
+		QTest::mouseClick(m_editor->canvas(), Qt::LeftButton, Qt::NoModifier, point(100, 61));
+		QVERIFY2(noteAt(m_clip, 96, 60) != nullptr && noteAt(m_clip, 96, 61) == nullptr, "C# is drawn as C in C major");
+		m_editor->setKeepInScale(false);
+		QTest::mouseClick(m_editor->canvas(), Qt::LeftButton, Qt::NoModifier, point(148, 61));
+		QVERIFY(noteAt(m_clip, 144, 61) != nullptr);
+		QVERIFY(invoke(QStringLiteral("scale.set"), {{QStringLiteral("scale"), QString()}}).ok);
+	}
+
+	void theDrumViewShowsTheNamedKeysByName()
+	{
+		const QString track = control::trackIdOf(m_track);
+		QVERIFY(invoke(QStringLiteral("key_names.preset"), {{QStringLiteral("track"), track}, {QStringLiteral("preset"), QStringLiteral("gm_drums")}}).ok);
+		m_editor->setFold(NoteFold::Drums);
+		// GM 35..81 is keys 23..69, and both of the clip's keys (60, 64) are among them.
+		QCOMPARE(m_editor->state().grid.rowCount(), 47);
+		QCOMPARE(m_editor->keyLabel(24), QStringLiteral("Bass Drum 1"));
+		QCOMPARE(m_editor->describe().value(QStringLiteral("fold")).toString(), QStringLiteral("drums"));
+		QVERIFY(invoke(QStringLiteral("key_names.preset"), {{QStringLiteral("track"), track}, {QStringLiteral("preset"), QStringLiteral("none")}}).ok);
+		m_editor->setFold(NoteFold::Drums);
+		QCOMPARE(m_editor->state().grid.rowCount(), 2);  // no names: only the used keys
+		QVERIFY(m_editor->keyLabel(24).isEmpty());
+	}
+
+	void theNotesMenuOffersEveryNoteCommand()
+	{
+		QMenu* menu = notesMenu();
+		QVERIFY(menu != nullptr);
+		QStringList ids;
+		for (QAction* action : test::leafActions(menu)) { ids << action->property("controlCommand").toString(); }
+		for (const char* id : {"groove.quantize", "note.velocity_scale", "note.velocity_offset", "note.randomize", "note.scale",
+			"note.ratchet", "note.transpose", "groove.apply", "groove.extract", "note.list", "note.transform_where",
+			"key_names.preset", "window.note_editor_set", "script.run"})
+		{
+			QVERIFY2(ids.contains(QLatin1String(id)), id);
+		}
+		QAction* twice = test::menuAction(menu, {QStringLiteral("Timing"), QStringLiteral("Double Time (x2)")});
+		QVERIFY(twice != nullptr);
+		twice->trigger();
+		QVERIFY2(noteAt(m_clip, 0, 60) != nullptr && noteAt(m_clip, 384, 64) != nullptr, "x2 doubles the positions");
+		QCOMPARE(static_cast<int>(noteAt(m_clip, 384, 64)->length().getTicks()), 96);
+		QVERIFY(undo());
+		QVERIFY(noteAt(m_clip, 192, 64) != nullptr);
+	}
+
+	void theNewViewFieldsAreDrivableOverTheSocket()
+	{
+		// window.note_editor_set needs the main window; the same fields go through the editor's setters.
+		m_editor->setColorMode(NoteColor::Pitch);
+		m_editor->setKeepInScale(true);
+		m_editor->setTool(NoteTool::Paint);
+		const QJsonObject state = m_editor->describe();
+		QCOMPARE(state.value(QStringLiteral("color_mode")).toString(), QStringLiteral("pitch"));
+		QCOMPARE(state.value(QStringLiteral("keep_in_scale")).toBool(), true);
+		QCOMPARE(state.value(QStringLiteral("tool")).toString(), QStringLiteral("paint"));
+		const ControlCommand* set = ControlRegistry::instance()->command(QStringLiteral("window.note_editor_set"));
+		QVERIFY(set != nullptr);
+		const QJsonObject props = set->argsSchema.value(QStringLiteral("properties")).toObject();
+		QVERIFY(props.contains(QStringLiteral("color_mode")) && props.contains(QStringLiteral("keep_in_scale")));
+		QTest::keyClick(m_editor, Qt::Key_6);
+		QCOMPARE(m_editor->state().tool, NoteTool::Paint);
+	}
+
 private:
 	QPoint point(int tick, int key) const
 	{
@@ -275,13 +380,22 @@ private:
 		return QPoint(static_cast<int>(g.xOfTick(tick)) + 2, g.yOfKey(key) + g.rowHeight() / 2);
 	}
 
-	void drag(const QPoint& from, const QPoint& to)
+	void drag(const QPoint& from, const QPoint& to, Qt::KeyboardModifiers mods = Qt::NoModifier)
 	{
 		QWidget* canvas = m_editor->canvas();
-		QTest::mousePress(canvas, Qt::LeftButton, Qt::NoModifier, from);
+		QTest::mousePress(canvas, Qt::LeftButton, mods, from);
 		QTest::mouseMove(canvas, (from + to) / 2);
 		QTest::mouseMove(canvas, to);
-		QTest::mouseRelease(canvas, Qt::LeftButton, Qt::NoModifier, to);
+		QTest::mouseRelease(canvas, Qt::LeftButton, mods, to);
+	}
+
+	//! The Notes menu, filled as it is when it opens.
+	QMenu* notesMenu() const
+	{
+		auto* button = m_editor->findChild<QToolButton*>(QStringLiteral("noteEditorNotesMenu"));
+		if (button == nullptr || button->menu() == nullptr) { return nullptr; }
+		emit button->menu()->aboutToShow();
+		return button->menu();
 	}
 
 	void select(const std::vector<Note*>& notes)

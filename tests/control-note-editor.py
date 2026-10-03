@@ -13,7 +13,12 @@ a user does. This driver starts the REAL `zene` binary headless and proves:
      edit, and ONE `control.undo` restores every one of them;
   4. a batch with one bad entry changes nothing (validated before anything is written);
   5. the MPE lanes write through `note.expression_set`, and the chance lane through note.edit;
-  6. `window.screenshot` renders the Edit view with the editor in the centre.
+  6. `window.screenshot` renders the Edit view with the editor in the centre;
+  7. (0.5.0 L07) note.add_many adds a batch as one undo step and note.list answers every note;
+     note.scale, note.ratchet and note.transform_where change exactly the notes they name;
+     groove.quantize takes 'swing'; key_names.* name a track's keys (one undo restores);
+     window.note_editor_set drives the paint tool, the drum view, the colour mode and
+     keep-in-scale; a Lua script adds notes through zene.command.
 
 Usage:  QT_QPA_PLATFORM=offscreen python3 tests/control-note-editor.py <zene> [<screenshot dir>]
 Exit 0 only when every check held.
@@ -125,6 +130,77 @@ def check_screenshot(session, recorder, outdir, clip):
                    (shot.get("width") or 0) >= 1600 and os.path.exists(path), "reply=%r" % shot)
 
 
+def shape(session, clip):
+    rows = session.result("note.list", {"clip": clip}).get("notes") or []
+    return ["%d@%d+%d" % (r["key"], r["position"], r["length"]) for r in rows]
+
+
+def new_clip(session, name):
+    track = session.result("track.add", {"type": "instrument", "name": name}).get("track")
+    return track, session.result("clip.add", {"track": track, "position": 0}).get("clip")
+
+
+def check_note_shapes(session, recorder):
+    _, clip = new_clip(session, "Shapes")
+    start = ["60@0+48", "61@48+12", "67@96+12"]
+    added = session.result("note.add_many", {"clip": clip, "notes": [
+        {"key": 60, "position": 0, "length": 48}, {"key": 61, "position": 48, "length": 12, "velocity": 40},
+        {"key": 67, "position": 96, "length": 12, "velocity": 160}]})
+    recorder.check("note.add_many adds the batch, note.list answers it",
+                   added.get("added") == 3 and shape(session, clip) == start, "notes=%r" % shape(session, clip))
+    bad = session.call("note.add_many", {"clip": clip, "notes": [{"key": 200, "position": 0, "length": 1}]})
+    recorder.check("a bad note batch is refused, typed", (bad.get("error") or {}).get("kind") == "invalid_args", "reply=%r" % bad)
+    session.result("note.scale", {"clip": clip, "time_factor": 2.0, "length_factor": 1.0})
+    recorder.check("note.scale x2 doubles the positions", shape(session, clip) == ["60@0+48", "61@96+12", "67@192+12"],
+                   "notes=%r" % shape(session, clip))
+    session.result("control.undo")
+    session.result("note.transform_where", {"clip": clip, "filter": {"length_max": 12}, "action": "remove"})
+    recorder.check("find and change removes the short notes", shape(session, clip) == ["60@0+48"], "notes=%r" % shape(session, clip))
+    session.result("note.ratchet", {"clip": clip, "count": 4})
+    recorder.check("a ratchet splits the note in four", shape(session, clip) == ["60@0+12", "60@12+12", "60@24+12", "60@36+12"],
+                   "notes=%r" % shape(session, clip))
+    session.result("control.undo")
+    session.result("control.undo")
+    recorder.check("each note edit is one undo step", shape(session, clip) == start, "notes=%r" % shape(session, clip))
+    _, swung = new_clip(session, "Swing")
+    session.result("note.add_many", {"clip": swung, "notes": [{"key": 60, "position": 1, "length": 12},
+                                                              {"key": 62, "position": 25, "length": 12}]})
+    session.result("groove.quantize", {"clip": swung, "grid": 24, "swing": 0.5})
+    recorder.check("quantise with swing delays the off step", shape(session, swung) == ["60@0+12", "62@30+12"],
+                   "notes=%r" % shape(session, swung))
+
+
+def key_names(session, track):
+    return {n["key"]: n["name"] for n in session.result("key_names.get", {"track": track}).get("names") or []}
+
+
+def check_drum_view(session, recorder):
+    track, clip = new_clip(session, "Drums")
+    session.result("key_names.preset", {"track": track, "preset": "gm_drums"})
+    names = key_names(session, track)
+    recorder.check("the GM drum preset names the keys", names.get(24) == "Bass Drum 1" and len(names) == 47,
+                   "names=%d key24=%r" % (len(names), names.get(24)))
+    session.result("key_names.set", {"track": track, "key": 24, "name": "Kick"})
+    session.result("control.undo")
+    recorder.check("one undo restores a renamed key", key_names(session, track).get(24) == "Bass Drum 1",
+                   "key24=%r" % key_names(session, track).get(24))
+    reply = session.call("window.note_editor_set", {"clip": clip, "tool": "paint", "fold": "drums",
+                                                    "color_mode": "pitch", "keep_in_scale": True})
+    state = reply.get("result") or {}
+    recorder.check("window.note_editor_set drives paint, drum view, colour and keep-in-scale",
+                   reply.get("ok") and state.get("tool") == "paint" and state.get("fold") == "drums"
+                   and state.get("color_mode") == "pitch" and state.get("keep_in_scale") is True
+                   and state.get("rows") == 47, "reply=%r" % reply)
+    session.call("window.note_editor_set", {"tool": "draw", "fold": "none", "color_mode": "velocity", "keep_in_scale": False})
+    source = ("local r, err = zene.command('note.add_many', {clip = '%s', notes = {{key = 24, position = 0, length = 6}, "
+              "{key = 26, position = 6, length = 6}}})\n"
+              "print('added ' .. tostring(err == nil and r.added))\n" % clip)
+    ran = session.result("script.run", {"source": source})
+    lines = ran.get("log") or ran.get("lines") or ran.get("output") or []
+    text = "\n".join(lines) if isinstance(lines, list) else str(lines)
+    recorder.check("a Lua script adds notes through zene.command", "added 2" in text, "log=%r" % ran)
+
+
 def main(argv):
     if len(argv) < 2:
         print(__doc__)
@@ -145,6 +221,8 @@ def main(argv):
         check_atomic(session, recorder, clip, notes)
         check_lanes(session, recorder, clip, notes)
         check_screenshot(session, recorder, outdir, clip)
+        check_note_shapes(session, recorder)
+        check_drum_view(session, recorder)
     report_results(recorder)
     if recorder.problems:
         transcript.dump()

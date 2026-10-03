@@ -42,8 +42,9 @@ namespace
 {
 
 const QStringList kTools{QStringLiteral("draw"), QStringLiteral("select"), QStringLiteral("slice"),
-	QStringLiteral("erase"), QStringLiteral("audition")};
-const QStringList kFolds{QStringLiteral("none"), QStringLiteral("scale"), QStringLiteral("used")};
+	QStringLiteral("erase"), QStringLiteral("audition"), QStringLiteral("paint")};
+const QStringList kFolds{QStringLiteral("none"), QStringLiteral("scale"), QStringLiteral("used"), QStringLiteral("drums")};
+const QStringList kColors{QStringLiteral("velocity"), QStringLiteral("pitch"), QStringLiteral("track")};
 
 QStringList laneIds()
 {
@@ -78,6 +79,8 @@ void applyChoices(gui::NoteEditor* editor, const QJsonObject& args)
 	if (gui::notelanes::fromId(args.value(QStringLiteral("lane")).toString(), lane)) { editor->setLane(lane); }
 	if (args.contains(QStringLiteral("grid"))) { editor->setGridTicks(args.value(QStringLiteral("grid")).toInt()); }
 	if (args.contains(QStringLiteral("ghosts"))) { editor->setGhosts(args.value(QStringLiteral("ghosts")).toBool()); }
+	if (const int color = choice(args, "color_mode", kColors); color >= 0) { editor->setColorMode(static_cast<gui::NoteColor>(color)); }
+	if (args.contains(QStringLiteral("keep_in_scale"))) { editor->setKeepInScale(args.value(QStringLiteral("keep_in_scale")).toBool()); }
 	if (args.contains(QStringLiteral("zoom"))) { editor->setZoom(args.value(QStringLiteral("zoom")).toDouble()); }
 	if (args.value(QStringLiteral("fit")).toBool()) { editor->zoomToFit(); }
 }
@@ -117,9 +120,11 @@ void registerNoteEditorWindowCommands(ControlRegistry& registry)
 	cmd.description = QStringLiteral("Drive the note editor's VIEW - what the editor's header and keys set - "
 		"and answer its state (the same object window.get_state reports as `note_editor`). Every field is "
 		"optional: `clip` opens that MIDI clip in the editor (what double-clicking it does); `tool` is draw, "
-		"select, slice, erase or audition; `grid` the snap in ticks (1 = off); `fold` none, scale or used; "
+		"select, slice, erase, audition or paint (drag to lay a note on every grid cell); `grid` the snap in ticks "
+		"(1 = off); `fold` none, scale, used or drums (the keys the track names - key_names.* - and the used ones); "
 		"`lane` the expression lane (velocity, pan, chance, timbre, pressure, pitch); `ghosts` shows the "
-		"track's other clips; `zoom` is pixels per tick; `fit` zooms to the clip and centres its notes "
+		"track's other clips; `color_mode` colours notes by velocity, pitch or track; `keep_in_scale` moves "
+		"drawn and dragged notes to the nearest key of the scale; `zoom` is pixels per tick; `fit` zooms to the clip and centres its notes "
 		"(after the panel is shown); `reveal` (default true) brings the note editor "
 		"panel into view. Interface state, not project state: nothing is journalled - the notes themselves "
 		"are edited through note.*. Refused `requires` in a process with no interface.");
@@ -130,6 +135,8 @@ void registerNoteEditorWindowCommands(ControlRegistry& registry)
 		{QStringLiteral("fold"), enumProperty(kFolds)},
 		{QStringLiteral("lane"), enumProperty(laneIds())},
 		{QStringLiteral("ghosts"), booleanProperty()},
+		{QStringLiteral("color_mode"), enumProperty(kColors)},
+		{QStringLiteral("keep_in_scale"), booleanProperty()},
 		{QStringLiteral("zoom"), numberProperty()},
 		{QStringLiteral("reveal"), booleanProperty()},
 		{QStringLiteral("fit"), booleanProperty()},
@@ -140,6 +147,7 @@ void registerNoteEditorWindowCommands(ControlRegistry& registry)
 		{QStringLiteral("rows"), integerProperty(0, 128)}, {QStringLiteral("lane"), stringProperty()},
 		{QStringLiteral("ghosts"), booleanProperty()}, {QStringLiteral("scale_highlight"), booleanProperty()},
 		{QStringLiteral("scale"), stringProperty()}, {QStringLiteral("zoom"), numberProperty()},
+		{QStringLiteral("color_mode"), stringProperty()}, {QStringLiteral("keep_in_scale"), booleanProperty()},
 		{QStringLiteral("scroll_ticks"), numberProperty()}, {QStringLiteral("scroll_y"), integerProperty(0, 1 << 20)},
 		{QStringLiteral("top_key"), integerProperty(-1, 127)}, {QStringLiteral("visible_notes"), integerProperty(0, 1919808)},
 	});

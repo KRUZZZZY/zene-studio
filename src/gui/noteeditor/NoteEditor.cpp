@@ -48,6 +48,7 @@
 #include "ShellSelection.h"
 #include "Engine.h"
 #include "Song.h"
+#include "TrackKeyNames.h"
 #include <QTimer>
 
 namespace lmms::gui
@@ -174,6 +175,12 @@ void NoteEditor::refresh()
 		for (const Note* note : m_state.clip->notes()) { used.push_back(note->key()); }
 	}
 	m_state.grid.setUsedKeys(used);
+	std::vector<int> named;
+	if (m_state.clip != nullptr && m_state.clip->getTrack() != nullptr)
+	{
+		for (const int key : TrackKeyNames::instance().names(m_state.clip->getTrack()->id()).keys()) { named.push_back(key); }
+	}
+	m_state.grid.setNamedKeys(named);
 	m_canvas->clipChanged();
 	emit stateChanged();
 }
@@ -209,6 +216,7 @@ void NoteEditor::setGridTicks(int ticks)
 
 void NoteEditor::setFold(NoteFold fold)
 {
+	if (fold == NoteFold::Drums) { refresh(); }  // the track's names may have changed since the clip did
 	m_state.grid.setFold(fold);
 	const QList<QAction*> actions = m_folds->actions();
 	for (QAction* a : actions) { a->setChecked(a->data().toInt() == static_cast<int>(fold)); }
@@ -227,6 +235,24 @@ void NoteEditor::setGhosts(bool on)
 {
 	m_state.ghosts = on;
 	emit stateChanged();
+}
+
+void NoteEditor::setColorMode(NoteColor mode)
+{
+	m_state.colorMode = mode;
+	emit stateChanged();
+}
+
+void NoteEditor::setKeepInScale(bool on)
+{
+	m_state.keepInScale = on;
+	emit stateChanged();
+}
+
+QString NoteEditor::keyLabel(int key) const
+{
+	const Track* track = m_state.clip != nullptr ? m_state.clip->getTrack() : nullptr;
+	return track != nullptr ? TrackKeyNames::instance().name(track->id(), key) : QString();
 }
 
 void NoteEditor::setZoom(double pixelsPerTick)
@@ -287,7 +313,7 @@ void NoteEditor::auditionRelease(int key)
 
 void NoteEditor::keyPressEvent(QKeyEvent* event)
 {
-	if (event->modifiers() == Qt::NoModifier && event->key() >= Qt::Key_1 && event->key() <= Qt::Key_5)
+	if (event->modifiers() == Qt::NoModifier && event->key() >= Qt::Key_1 && event->key() <= Qt::Key_6)
 	{
 		setTool(static_cast<NoteTool>(event->key() - Qt::Key_1));
 		event->accept();
@@ -313,8 +339,9 @@ void NoteEditor::fitIfPending()
 
 QJsonObject NoteEditor::describe() const
 {
-	static const char* const tools[] = {"draw", "select", "slice", "erase", "audition"};
-	static const char* const folds[] = {"none", "scale", "used"};
+	static const char* const tools[] = {"draw", "select", "slice", "erase", "audition", "paint"};
+	static const char* const folds[] = {"none", "scale", "used", "drums"};
+	static const char* const colors[] = {"velocity", "pitch", "track"};
 	const NoteGrid& g = m_state.grid;
 	return QJsonObject{
 		{QStringLiteral("clip"), clipId()},
@@ -326,6 +353,8 @@ QJsonObject NoteEditor::describe() const
 		{QStringLiteral("ghosts"), m_state.ghosts},
 		{QStringLiteral("scale_highlight"), m_state.highlightScale},
 		{QStringLiteral("scale"), m_state.scaleName},
+		{QStringLiteral("color_mode"), QLatin1String(colors[static_cast<int>(m_state.colorMode)])},
+		{QStringLiteral("keep_in_scale"), m_state.keepInScale},
 		{QStringLiteral("zoom"), g.pixelsPerTick()},
 		{QStringLiteral("scroll_ticks"), g.scrollTicks()},
 		{QStringLiteral("scroll_y"), g.scrollY()},

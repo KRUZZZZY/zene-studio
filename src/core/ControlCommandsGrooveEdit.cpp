@@ -38,6 +38,8 @@
  * Boston, MA 02110-1301 USA.
  */
 
+#include <limits>
+#include <cmath>
 #include <QJsonObject>
 #include <QString>
 
@@ -268,6 +270,36 @@ ControlResult grooveApply(const QJsonObject& args)
 }
 
 
+/*! 0.5.0 L07 quantise options: the notes a quantise moves - every note, or the selection
+ *  ('scope'), and only those starting in 'start'..'end' when given. */
+NoteVector quantizeTargets(const MidiClip& clip, const QJsonObject& args)
+{
+	const bool selection = args.value(QStringLiteral("scope")).toString() == QStringLiteral("selection");
+	const int start = args.value(QStringLiteral("start")).toInt(0);
+	const int end = args.value(QStringLiteral("end")).toInt(std::numeric_limits<int>::max());
+	NoteVector out;
+	for (Note* note : clip.notes())
+	{
+		const int pos = note->pos().getTicks();
+		if ((!selection || note->selected()) && pos >= start && pos < end) { out.push_back(note); }
+	}
+	return out;
+}
+
+//! Swing (0..1): a note on an odd grid step is delayed by swing x half a step - 0 straight, 1 the
+//! off-beat halfway to the next step. Applied after the quantise put it on the grid.
+void applySwing(const NoteVector& notes, tick_t grid, double swing)
+{
+	if (swing <= 0.0 || grid <= 1) { return; }
+	for (Note* note : notes)
+	{
+		// The step the quantise took the note to (it may sit off it by the strength or the humanise).
+		const tick_t pos = note->pos().getTicks();
+		const long step = std::lround(static_cast<double>(pos) / grid);
+		if (step % 2 == 1) { note->setPos(TimePos(pos + static_cast<tick_t>(std::lround(std::min(swing, 1.0) * grid / 2.0)))); }
+	}
+}
+
 ControlResult grooveQuantize(const QJsonObject& args)
 {
 	ControlResult error;
@@ -287,7 +319,9 @@ ControlResult grooveQuantize(const QJsonObject& args)
 	const NoteSnapshot before = snapshotNotes(*clip);
 	const QJsonObject beforeState = grooveClipBefore(ref, *clip);
 	clip->addJournalCheckPoint();
-	NoteTransform::quantizeNotes(clip->notes(), options);
+	const NoteVector targets = quantizeTargets(*clip, args);
+	NoteTransform::quantizeNotes(targets, options);
+	applySwing(targets, options.grid, args.value(QStringLiteral("swing")).toDouble(0.0));
 	clip->rearrangeAllNotes();
 	clip->dataChanged();
 
@@ -366,10 +400,16 @@ void registerGrooveQuantize(ControlRegistry& registry)
 		"(default), 'floor' or 'ceil'. The jitter is a pure function of 'seed' (default 0) and "
 		"each note's own identity, so the SAME call on the same notes reproduces the same "
 		"take; and it is a jitter, so applying it again on top of itself rolls again rather "
-		"than being a no-op. Reversible through the ProjectJournal (MidiClip checkpoint).");
+		"than being a no-op. 0.5.0: 'swing' (0..1) delays the notes on odd grid steps by up to half "
+		"a step; 'scope' (clip or selection) and 'start'/'end' (ticks) limit which notes move. "
+		"Reversible through the ProjectJournal (MidiClip checkpoint).");
 	cmd.argsSchema = objectSchema({
 		{QStringLiteral("clip"), stringProperty()},
 		{QStringLiteral("grid"), integerProperty(1, kMaxSchemaInteger)},
+		{QStringLiteral("swing"), numberProperty()},
+		{QStringLiteral("scope"), enumProperty({QStringLiteral("clip"), QStringLiteral("selection")})},
+		{QStringLiteral("start"), tickProperty()},
+		{QStringLiteral("end"), tickProperty()},
 		{QStringLiteral("strength"), numberProperty()},
 		{QStringLiteral("humanise_ticks"), integerProperty(0, kMaxSchemaInteger)},
 		{QStringLiteral("humanise_velocity"), integerProperty(0, static_cast<int>(MaxVolume))},
