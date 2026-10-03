@@ -169,6 +169,43 @@ ControlResult runMacro(const QJsonObject& args)
 		{QStringLiteral("poll"), QStringLiteral("macro.status")}});
 }
 
+//! ED-056: the macro being recorded - the commands the user (or an agent) runs until macro.record_stop.
+struct Recording
+{
+	bool on = false;
+	QString name;
+	QJsonArray steps;
+};
+
+Recording& recording()
+{
+	static Recording value;
+	return value;
+}
+
+ControlResult recordStart(const QJsonObject& args)
+{
+	const QString name = args.value(QStringLiteral("name")).toString().trimmed();
+	if (name.isEmpty()) { return ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("a macro needs a name")); }
+	recording() = Recording{true, name, {}};
+	ControlRegistry::instance()->setCommandObserver([](const QString& command, const QJsonObject& stepArgs) {
+		// Undo, redo and the macro commands themselves are not steps; the step count is the macro's own bound.
+		if (command.startsWith(QStringLiteral("macro.")) || command.startsWith(QStringLiteral("control.")) || recording().steps.size() >= MaxSteps) { return; }
+		recording().steps.append(QJsonObject{{QStringLiteral("command"), command}, {QStringLiteral("args"), stepArgs}});
+	});
+	return ControlResult::success({{QStringLiteral("name"), name}, {QStringLiteral("recording"), true}});
+}
+
+ControlResult recordStop(const QJsonObject&)
+{
+	ControlRegistry::instance()->setCommandObserver({});
+	const Recording taken = recording();
+	recording() = Recording{};
+	if (!taken.on) { return ControlResult::failure(ControlErrorKind::Refused, QStringLiteral("no macro is being recorded")); }
+	if (taken.steps.isEmpty()) { return ControlResult::failure(ControlErrorKind::NotFound, QStringLiteral("nothing was done while recording")); }
+	return saveMacro({{QStringLiteral("name"), taken.name}, {QStringLiteral("steps"), taken.steps}});
+}
+
 ControlResult macroStatus(const QJsonObject&)
 {
 	QJsonObject out = g_lastRun;
@@ -211,6 +248,11 @@ void registerMacroCommands(ControlRegistry& registry)
 	add(registry, "list", QStringLiteral("The saved macros with their steps."), objectSchema({}),
 		objectSchema({{QStringLiteral("macros"), arrayProperty()}, {QStringLiteral("count"), integerProperty()},
 			{QStringLiteral("max_macros"), integerProperty()}, {QStringLiteral("max_steps"), integerProperty()}}), false, listMacros);
+	add(registry, "record_start", QStringLiteral("Start recording macro 'name': every command that changes something from now on "
+		"(not undo, redo or the macro commands) becomes one of its steps, with its arguments, until macro.record_stop."),
+		named, objectProperty(), false, recordStart);
+	add(registry, "record_stop", QStringLiteral("Stop recording and save the macro as macro.save would (refused when nothing "
+		"was done). One undo step."), objectSchema({}), objectProperty(), true, recordStop);
 	add(registry, "remove", QStringLiteral("Forget macro 'name'. One undo step."), named,
 		objectSchema({{QStringLiteral("name"), stringProperty()}, {QStringLiteral("count"), integerProperty()}}), true, removeMacro);
 }

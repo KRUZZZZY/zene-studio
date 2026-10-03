@@ -24,6 +24,7 @@
 #include "MixerViewOptions.h"
 
 #include <algorithm>
+#include <cmath>
 
 #include <QJsonDocument>
 #include <QLabel>
@@ -239,8 +240,18 @@ void applyToStrip(MixerChannelView* view, MixerChannel* channel)
 	fader->setProperty("levelsDisplayedInDBFS", o.meterScale != QLatin1String("linear"));
 }
 
+//! MX-133: the strip's readings as a line of text - peak, RMS, gain reduction, correlation.
+QString meterReadout(const MixerChannel* channel)
+{
+	const auto db = [](float v) { return v > 0.f ? QString::number(20.0 * std::log10(v), 'f', 1) : QStringLiteral("-inf"); };
+	return QObject::tr("Peak %1 / %2 dB   RMS %3 / %4 dB   GR %5 dB   Correlation %6")
+		.arg(db(channel->m_prePeakLeft.get()), db(channel->m_prePeakRight.get()), db(channel->m_rmsLeft.get()), db(channel->m_rmsRight.get()))
+		.arg(channel->m_gainReduction.get(), 0, 'f', 1).arg(channel->m_correlation.get(), 0, 'f', 2);
+}
+
 bool feedMeter(Fader* fader, MixerChannel* channel)
 {
+	if (fader->underMouse()) { fader->setToolTip(meterReadout(channel)); }  // only while someone is looking
 	const QString& mode = options().meterMode;
 	if (mode == QLatin1String("peak")) { return false; }
 	float left = 0.f;

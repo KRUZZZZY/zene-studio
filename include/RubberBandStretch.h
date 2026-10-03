@@ -76,8 +76,9 @@ public:
 	 *  output rate correction, 1.0 when they agree. Audio thread, allocation-
 	 *  free. The first render() then sets the ratio, feeds the preferred start
 	 *  pad of silence and discards the start delay, so output frame 0 is
-	 *  source frame 0. */
-	void begin(double pitchScale) noexcept;
+	 *  source frame 0. \a formantScale (0.5.0 ED-153): 0 lets the formants follow the pitch; any other
+	 *  value keeps them, scaled by it (1 = where they were). */
+	void begin(double pitchScale, double formantScale = 0.0) noexcept;
 
 	/*! Emits \a dstFrames output frames into \a dst, reading the source span
 	 *  \a src (frames [0, srcFrames)) at \a speed source frames per output
@@ -112,6 +113,7 @@ private:
 	std::array<float, MaxBlock> m_outRight{};
 	double m_timeRatio = 1.0;
 	double m_pitchScale = 1.0;
+	double m_formantScale = 0.0;
 	bool m_started = false;
 	double m_sourcePos = 0.0;
 	std::int64_t m_feedPos = 0;

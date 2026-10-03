@@ -11,7 +11,7 @@ Starts the REAL `zene` binary headless (its own throwaway config) and proves:
   3. window.detach / attach: a panel floats in its own window and comes back (WF-092);
   4. window.header_*: a header button hides, a command button is added, undo restores (WF-116);
   5. macro.*: a macro saves, runs (acknowledged, then polled) and adds what its steps add; a
-     step naming no command or a macro is refused (WF-114);
+     step naming no command or a macro is refused (WF-114); a macro is recorded from what is done (ED-056);
   6. arrangement.zoom / zoom_back / fit_tracks / set_tool and window.tool_menu (WF-094/095/108);
   7. session.pattern_list names the patterns a launcher cell can play (WF-054);
   8. the Lua sandbox refuses the customisation writers (they change the user's own config).
@@ -167,6 +167,19 @@ def check_macros(session, recorder):
     session.result("macro.remove", {"name": "two tracks"})
     recorder.check("macro.list lists it and macro.remove forgets it",
                    "two tracks" in listed and not session.result("macro.list").get("macros"), "listed=%r" % listed)
+    # 0.5.0 ED-056: what is done while recording becomes the macro's steps (not the undo in between).
+    session.result("macro.record_start", {"name": "recorded"})
+    session.result("track.add", {"type": "instrument", "name": "recorded one"})
+    session.result("control.undo")
+    session.result("track.add", {"type": "sample", "name": "recorded two"})
+    stopped = session.call("macro.record_stop")
+    recorded = [m for m in session.result("macro.list").get("macros") or [] if m.get("name") == "recorded"]
+    steps = recorded[0].get("steps") if recorded else []
+    empty = session.call("macro.record_stop")
+    recorder.check("a recorded macro keeps what was done, not the undo",
+                   stopped.get("ok") and len(steps) == 2 and all(s.get("command") == "track.add" for s in steps)
+                   and kind(empty) == "refused", "stop=%r steps=%r empty=%r" % (stopped, steps, empty))
+    session.result("macro.remove", {"name": "recorded"})
 
 
 def check_arranger_view(session, recorder):

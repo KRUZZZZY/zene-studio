@@ -144,6 +144,7 @@ struct StripSettings
 	bool soloSafe = false;
 	QString note;
 	bool swap = false;  // MX-033
+	bool inputMono = false;  // MX-059
 };
 
 const QStringList& panModeNames()
@@ -156,7 +157,7 @@ StripSettings settingsOf(const MixerChannel* c)
 {
 	return {c->m_trimModel.value(), c->m_polarityLeftModel.value(), c->m_polarityRightModel.value(), c->m_monoModel.value(),
 		c->m_panModeModel.value(), c->m_panModel.value(), c->m_panRightModel.value(), c->m_widthModel.value(),
-		c->m_soloSafeModel.value(), c->m_note, c->m_swapModel.value()};
+		c->m_soloSafeModel.value(), c->m_note, c->m_swapModel.value(), c->m_inputMonoModel.value()};
 }
 
 void applySettings(int id, const StripSettings& s)
@@ -174,6 +175,7 @@ void applySettings(int id, const StripSettings& s)
 	c->m_soloSafeModel.setValue(s.soloSafe);
 	c->m_note = s.note;
 	c->m_swapModel.setValue(s.swap);
+	c->m_inputMonoModel.setValue(s.inputMono);
 }
 
 //! @a args over @a s; switching into dual pan from two centred pans spreads them hard left and right.
@@ -184,6 +186,7 @@ StripSettings merged(StripSettings s, const QJsonObject& args)
 	s.polarityRight = args.value(QStringLiteral("polarity_right")).toBool(s.polarityRight);
 	s.mono = args.value(QStringLiteral("mono")).toBool(s.mono);
 	s.swap = args.value(QStringLiteral("swap")).toBool(s.swap);
+	s.inputMono = args.value(QStringLiteral("input_mono")).toBool(s.inputMono);
 	if (args.contains(QStringLiteral("pan_mode")))
 	{
 		const int mode = panModeNames().indexOf(args.value(QStringLiteral("pan_mode")).toString());
@@ -210,7 +213,8 @@ QJsonObject stripJson(const MixerChannel* c)
 			{QStringLiteral("pre_peak_right"), static_cast<double>(c->m_prePeakRight.get())},
 			{QStringLiteral("rms_left"), static_cast<double>(c->m_rmsLeft.get())}, {QStringLiteral("rms_right"), static_cast<double>(c->m_rmsRight.get())},
 			{QStringLiteral("clipped"), c->m_clipped.load(std::memory_order_relaxed)},
-			{QStringLiteral("gain_reduction_db"), static_cast<double>(c->m_gainReduction.get())}}}};
+			{QStringLiteral("gain_reduction_db"), static_cast<double>(c->m_gainReduction.get())},
+			{QStringLiteral("correlation"), static_cast<double>(c->m_correlation.get())}}}, {QStringLiteral("input_mono"), s.inputMono}};
 }
 
 ControlResult setStrip(const QJsonObject& args)
@@ -289,14 +293,15 @@ void add(ControlRegistry& registry, const char* verb, const QString& description
 void registerMixerStripCommands(ControlRegistry& registry)
 {
 	add(registry, "set_strip", QStringLiteral("A channel's own settings: 'trim_db' (-24..24, an input gain before the inserts), "
-		"'polarity_left' / 'polarity_right', 'mono', 'swap' (left and right exchanged), 'pan_mode' (balance - the classic pan -, dual - 'pan' places the left "
+		"'polarity_left' / 'polarity_right', 'mono', 'swap' (left and right exchanged), 'input_mono' (a mono source, summed "
+		"before the inserts), 'pan_mode' (balance - the classic pan -, dual - 'pan' places the left "
 		"side and 'pan_right' the right, so both centred sum the sides to mono; entering dual from centred pans spreads "
 		"them hard left and right -, width - 'width' 0..2 scales the stereo side, then 'pan' balances), 'solo_safe' "
 		"(soloing another channel never mutes this one) and 'note' (free text, shown as the strip's tooltip). A field left "
 		"out keeps its value. Saved with the project; one undo step."),
 		objectSchema({{QStringLiteral("channel"), stringProperty()}, {QStringLiteral("trim_db"), numberProperty()},
 			{QStringLiteral("polarity_left"), booleanProperty()}, {QStringLiteral("polarity_right"), booleanProperty()},
-			{QStringLiteral("mono"), booleanProperty()}, {QStringLiteral("swap"), booleanProperty()},
+			{QStringLiteral("mono"), booleanProperty()}, {QStringLiteral("swap"), booleanProperty()}, {QStringLiteral("input_mono"), booleanProperty()},
 			{QStringLiteral("pan_mode"), enumProperty(panModeNames())},
 			{QStringLiteral("pan"), numberProperty()}, {QStringLiteral("pan_right"), numberProperty()},
 			{QStringLiteral("width"), numberProperty()}, {QStringLiteral("solo_safe"), booleanProperty()},

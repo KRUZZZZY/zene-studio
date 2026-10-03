@@ -292,7 +292,9 @@ ControlResult ControlRegistry::runHandler(
 	const int mark = journal != nullptr ? journal->undoDepth() : -1;
 	const quint64 serialBefore = journal != nullptr ? journal->topStepSerial() : 0;
 
+	++m_depth;
 	ControlResult result = handler(args);
+	--m_depth;
 
 	bool coalesced = false;
 	quint64 step = 0;
@@ -324,6 +326,7 @@ ControlResult ControlRegistry::runHandler(
 		recordTransactionOf(commandId, &result, coalesced, step);
 	}
 	control::finishResult(commandId, m_commands.value(commandId).resultSchema, &result);
+	notifyObserver(commandId, args, mutating, result.ok && !dryRunPreview);
 	return result;
 }
 

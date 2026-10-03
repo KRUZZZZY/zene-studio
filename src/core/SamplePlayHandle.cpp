@@ -145,9 +145,10 @@ SamplePlayHandle::SamplePlayHandle( SampleClip* clip, const SampleWindow& window
 		{
 			// ED-038: the clip's transpose is a pitch scale on top of the rate correction; Rubber
 			// Band keeps the timing.
+			const ClipEdits& edits = clip->clipEdits();
 			m_rubberBand->begin(static_cast<double>(m_sample->sampleRate())
 				/ static_cast<double>(Engine::audioEngine()->outputSampleRate())
-				* std::exp2(clip->clipEdits().transpose / 12.0));
+				* std::exp2(edits.transpose / 12.0), edits.keepFormants || edits.formant != 0 ? std::exp2(edits.formant / 12.0) : 0.0);
 		}
 	}
 	if (m_preservePitch && m_rubberBand == nullptr)

@@ -222,6 +222,12 @@ public:
 	 *  forced exit 1 (measured by the agent-surface sweep, 2026-09-29). */
 	static void setPreQuitHook(std::function<void()> hook);
 
+	/*! 0.5.0 L04 (ED-056): told of every top-level mutating command that succeeded, with its arguments -
+	 *  what the macro recorder listens to. One observer at a time; an empty function removes it. A command
+	 *  another command runs inside itself is not reported (it is part of the outer one). */
+	using CommandObserver = std::function<void(const QString& command, const QJsonObject& args)>;
+	void setCommandObserver(CommandObserver observer) { m_observer = std::move(observer); }
+
 	//! Milliseconds the last-resort shutdown guard waits before forcing an exit.
 	//! Kept deliberately long: it must never fire on a healthy shutdown.
 	static constexpr int ShutdownGuardMs = 10000;
@@ -279,6 +285,13 @@ private:
 	 *  and the bookkeeping (the complexity ratchet). */
 	ControlResult runHandler(const std::function<ControlResult(const QJsonObject&)>& handler,
 		const QString& commandId, bool mutating, const QJsonObject& args);
+	//! ED-056: the observer hears a command that changed something, when no other command is running it.
+	void notifyObserver(const QString& commandId, const QJsonObject& args, bool mutating, bool ok) const
+	{
+		if (m_observer && mutating && ok && m_depth == 0) { m_observer(commandId, args); }
+	}
+	CommandObserver m_observer;
+	int m_depth = 0;  //!< how many handlers are running (UI thread)
 	//! Stamps \a tx with the contract table's class for its command and refuses
 	//! to let a handler claim an inverse the contract says does not exist.
 	void stampContract(const QString& commandId, Transaction* tx) const;

@@ -342,6 +342,11 @@ void populateClip(QMenu* menu, Clip* clip)
 	}
 	add(pitch, "Reset", "clip.set_transpose", with(self, "semitones", 0), false);
 	add(pitch, "Transpose...", "clip.set_transpose", self, true, {{QStringLiteral("semitones"), transpose}});
+	if (dynamic_cast<SampleClip*>(clip) != nullptr)  // ED-153
+	{
+		choices(pitch, "Keep the Formants", "clip.set_formant", "keep", self);
+		add(pitch, "Shift the Formants...", "clip.set_formant", self, true, {{QStringLiteral("semitones"), clip->clipEdits().formant}});
+	}
 	selectedClipsMenu(menu);
 	QMenu* links = menu->addMenu(tr("Linked Clips"));
 	add(links, "Link With Clips...", "clip.link_create", self, true);
@@ -451,6 +456,8 @@ void populateChannel(QMenu* menu, const QString& channel)
 	choices(strip, "Polarity Right", "mixer.set_strip", "polarity_right", self);
 	choices(strip, "Mono", "mixer.set_strip", "mono", self);
 	choices(strip, "Swap Left and Right", "mixer.set_strip", "swap", self);  // MX-033
+	choices(strip, "Mono Input", "mixer.set_strip", "input_mono", self);  // MX-059
+	add(strip, "EQ...", "mixer.channel_eq", self, true);  // MX-085
 	choices(strip, "Pan Mode", "mixer.set_strip", "pan_mode", self);
 	choices(strip, "Solo Safe", "mixer.set_strip", "solo_safe", self);
 	add(strip, "Trim, Width and Note...", "mixer.set_strip", self, true);

@@ -139,9 +139,10 @@ RubberBandVoice::RubberBandVoice(int sourceRate)
 
 RubberBandVoice::~RubberBandVoice() = default;
 
-void RubberBandVoice::begin(double pitchScale) noexcept
+void RubberBandVoice::begin(double pitchScale, double formantScale) noexcept
 {
 	m_pitchScale = pitchScale > 0.0 ? pitchScale : 1.0;
+	m_formantScale = formantScale > 0.0 ? formantScale : 0.0;
 	m_started = false;
 	m_sourcePos = 0.0;
 	m_feedPos = 0;
@@ -152,6 +153,10 @@ void RubberBandVoice::start(double timeRatio) noexcept
 {
 #ifdef LMMS_HAVE_RUBBERBAND
 	m_stretcher->setPitchScale(m_pitchScale);
+	// ED-153: formants kept (and scaled), or following the pitch as before.
+	m_stretcher->setFormantOption(m_formantScale > 0.0 ? RubberBand::RubberBandStretcher::OptionFormantPreserved
+		: RubberBand::RubberBandStretcher::OptionFormantShifted);
+	m_stretcher->setFormantScale(m_formantScale);
 	m_stretcher->setTimeRatio(timeRatio);
 	m_timeRatio = timeRatio;
 	// The documented real-time start: the preferred pad of silence goes in, and

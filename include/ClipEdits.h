@@ -106,6 +106,10 @@ struct ClipEdits
 	//! ED-038: the clip's non-destructive transpose in semitones (-48..+48): a MIDI clip's notes
 	//! play transposed, a sample clip is pitch-shifted (Rubber Band) with its timing kept.
 	int transpose = 0;
+	//! 0.5.0 ED-153: a sample clip's formants under Rubber Band - kept where they were while the pitch
+	//! moves (`keepFormants`) and shifted `formant` semitones (-24..24); both off is the plain shift.
+	bool keepFormants = false;
+	int formant = 0;
 	//! ED-042: the gain envelope, `envelopeCount` points in tick order.
 	std::array<GainPoint, MaxGainPoints> envelope{};
 	int envelopeCount = 0;
@@ -121,7 +125,8 @@ struct ClipEdits
 		return gain == other.gain
 			&& fadeInTicks == other.fadeInTicks && fadeOutTicks == other.fadeOutTicks
 			&& fadeInShape == other.fadeInShape && fadeOutShape == other.fadeOutShape
-			&& transpose == other.transpose && envelopeCount == other.envelopeCount
+			&& transpose == other.transpose && keepFormants == other.keepFormants && formant == other.formant
+			&& envelopeCount == other.envelopeCount
 			&& std::equal(envelope.begin(), envelope.begin() + envelopeCount, other.envelope.begin());
 	}
 	bool operator!=(const ClipEdits& other) const { return !(*this == other); }

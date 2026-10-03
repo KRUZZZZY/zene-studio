@@ -32,6 +32,8 @@
 
 #include "ConfigManager.h"
 #include "Effect.h"
+#include "AudioEngine.h"
+#include "Engine.h"
 #include "Mixer.h"
 #include "MixerOptions.h"
 #include "SampleFrame.h"
@@ -42,6 +44,10 @@ namespace lmms::mixerstrip
 
 void applyInput(MixerChannel& channel, f_cnt_t frames)
 {
+	if (channel.m_inputMonoModel.value())  // MX-059: a mono source, both sides alike before the inserts
+	{
+		for (f_cnt_t f = 0; f < frames; ++f) { channel.m_buffer[f][0] = channel.m_buffer[f][1] = 0.5f * (channel.m_buffer[f][0] + channel.m_buffer[f][1]); }
+	}
 	const float db = channel.m_trimModel.value();
 	if (db == 0.f) { return; }
 	const float gain = std::pow(10.f, db / 20.f);
@@ -52,8 +58,71 @@ void applyInput(MixerChannel& channel, f_cnt_t frames)
 	}
 }
 
+namespace
+{
+
+//! One RBJ biquad's coefficients, normalised (a0 = 1).
+struct Biquad
+{
+	float b0 = 1.f, b1 = 0.f, b2 = 0.f, a1 = 0.f, a2 = 0.f;
+};
+
+//! A shelf (@a high or low) or, with @a bell, a peaking band at @a hz, @a db gain, Q 0.7 (RBJ's cookbook).
+Biquad band(double hz, double db, double rate, bool bell, bool high)
+{
+	const double a = std::pow(10.0, db / 40.0);
+	const double w = 2.0 * 3.14159265358979 * hz / rate;
+	const double cw = std::cos(w);
+	const double alpha = std::sin(w) / (2.0 * 0.7);
+	double b0, b1, b2, a0, a1, a2;
+	if (bell)
+	{
+		b0 = 1 + alpha * a; b1 = -2 * cw; b2 = 1 - alpha * a; a0 = 1 + alpha / a; a1 = -2 * cw; a2 = 1 - alpha / a;
+	}
+	else
+	{
+		const double s = high ? -1.0 : 1.0;  // the high shelf is the low one mirrored
+		const double root = 2 * std::sqrt(a) * alpha;
+		b0 = a * ((a + 1) - s * (a - 1) * cw + root); b1 = 2 * s * a * ((a - 1) - s * (a + 1) * cw); b2 = a * ((a + 1) - s * (a - 1) * cw - root);
+		a0 = (a + 1) + s * (a - 1) * cw + root; a1 = -2 * s * ((a - 1) + s * (a + 1) * cw); a2 = (a + 1) + s * (a - 1) * cw - root;
+	}
+	return {static_cast<float>(b0 / a0), static_cast<float>(b1 / a0), static_cast<float>(b2 / a0), static_cast<float>(a1 / a0), static_cast<float>(a2 / a0)};
+}
+
+//! Run @a q over both sides of @a channel's buffer, with the band's memories at @a state (8 floats).
+void runBand(MixerChannel& channel, const Biquad& q, float* state, f_cnt_t frames)
+{
+	for (int side = 0; side < 2; ++side)
+	{
+		float* m = state + side * 4;  // x1, x2, y1, y2
+		for (f_cnt_t f = 0; f < frames; ++f)
+		{
+			const float x = channel.m_buffer[f][side];
+			const float y = q.b0 * x + q.b1 * m[0] + q.b2 * m[1] - q.a1 * m[2] - q.a2 * m[3];
+			m[1] = m[0]; m[0] = x; m[3] = m[2]; m[2] = y;
+			channel.m_buffer[f][side] = y;
+		}
+	}
+}
+
+} // namespace
+
+void applyChannelEq(MixerChannel& channel, f_cnt_t frames)
+{
+	const float gains[3] = {channel.m_eqLowModel.value(), channel.m_eqMidModel.value(), channel.m_eqHighModel.value()};
+	if (gains[0] == 0.f && gains[1] == 0.f && gains[2] == 0.f) { return; }
+	const double rate = Engine::audioEngine()->outputSampleRate();
+	const double freqs[3] = {100.0, channel.m_eqMidFreqModel.value(), 8000.0};
+	for (int b = 0; b < 3; ++b)
+	{
+		if (gains[b] == 0.f) { continue; }
+		runBand(channel, band(freqs[b], gains[b], rate, b == 1, b == 2), channel.m_eqState.data() + b * 8, frames);
+	}
+}
+
 void applyOutput(MixerChannel& channel, f_cnt_t frames)
 {
+	applyChannelEq(channel, frames);  // MX-085: the strip's EQ, after the inserts
 	const float left = channel.m_polarityLeftModel.value() ? -1.f : 1.f;
 	const float right = channel.m_polarityRightModel.value() ? -1.f : 1.f;
 	const bool mono = channel.m_monoModel.value();
@@ -130,13 +199,17 @@ void updateMeters(MixerChannel& channel, const SampleFrame* buffer, float volume
 	float peakR = 0.f;
 	double sumL = 0.0;
 	double sumR = 0.0;
+	double sumLR = 0.0;
 	for (f_cnt_t f = 0; f < frames; ++f)
 	{
 		peakL = std::max(peakL, std::abs(buffer[f][0]));
 		peakR = std::max(peakR, std::abs(buffer[f][1]));
 		sumL += static_cast<double>(buffer[f][0]) * buffer[f][0];
 		sumR += static_cast<double>(buffer[f][1]) * buffer[f][1];
+		sumLR += static_cast<double>(buffer[f][0]) * buffer[f][1];
 	}
+	// MX-137: the phase correlation, +1 in phase (mono), 0 unrelated, -1 out of phase; 1 for silence.
+	channel.m_correlation.set(sumL > 1e-12 && sumR > 1e-12 ? static_cast<float>(sumLR / std::sqrt(sumL * sumR)) : 1.f);
 	channel.m_prePeakLeft.raise(peakL);
 	channel.m_prePeakRight.raise(peakR);
 	channel.m_preMeterLeft.raise(peakL);
@@ -158,6 +231,14 @@ void save(const MixerChannel& c, QDomElement& e)
 	flag(c.m_polarityRightModel, "polarityr");
 	flag(c.m_monoModel, "mono");
 	flag(c.m_swapModel, "swap");
+	flag(c.m_inputMonoModel, "inputmono");
+	const auto level = [&e](const FloatModel& model, const char* name, float neutral) {
+		if (model.value() != neutral) { e.setAttribute(QLatin1String(name), static_cast<double>(model.value())); }
+	};
+	level(c.m_eqLowModel, "eqlow", 0.f);
+	level(c.m_eqMidModel, "eqmid", 0.f);
+	level(c.m_eqMidFreqModel, "eqmidf", 1000.f);
+	level(c.m_eqHighModel, "eqhigh", 0.f);
 	if (c.m_panModeModel.value() != 0) { e.setAttribute(QStringLiteral("panmode"), c.m_panModeModel.value()); }
 	if (c.m_panRightModel.value() != 0.f) { e.setAttribute(QStringLiteral("panright"), static_cast<double>(c.m_panRightModel.value())); }
 	if (c.m_widthModel.value() != 1.f) { e.setAttribute(QStringLiteral("width"), static_cast<double>(c.m_widthModel.value())); }
@@ -172,6 +253,11 @@ void load(MixerChannel& c, const QDomElement& e)
 	c.m_polarityRightModel.setValue(e.attribute(QStringLiteral("polarityr")).toInt() != 0);
 	c.m_monoModel.setValue(e.attribute(QStringLiteral("mono")).toInt() != 0);
 	c.m_swapModel.setValue(e.attribute(QStringLiteral("swap")).toInt() != 0);
+	c.m_inputMonoModel.setValue(e.attribute(QStringLiteral("inputmono")).toInt() != 0);
+	c.m_eqLowModel.setValue(e.attribute(QStringLiteral("eqlow"), QStringLiteral("0")).toFloat());
+	c.m_eqMidModel.setValue(e.attribute(QStringLiteral("eqmid"), QStringLiteral("0")).toFloat());
+	c.m_eqMidFreqModel.setValue(e.attribute(QStringLiteral("eqmidf"), QStringLiteral("1000")).toFloat());
+	c.m_eqHighModel.setValue(e.attribute(QStringLiteral("eqhigh"), QStringLiteral("0")).toFloat());
 	c.m_panModeModel.setValue(e.attribute(QStringLiteral("panmode"), QStringLiteral("0")).toInt());
 	c.m_panRightModel.setValue(e.attribute(QStringLiteral("panright"), QStringLiteral("0")).toFloat());
 	c.m_widthModel.setValue(e.attribute(QStringLiteral("width"), QStringLiteral("1")).toFloat());

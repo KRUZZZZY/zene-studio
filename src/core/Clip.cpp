@@ -448,6 +448,9 @@ void Clip::saveClipEdits(QDomElement& element) const
 	{
 		element.setAttribute("transpose", m_edits.transpose);
 	}
+	// ED-153: the formant handling, each written only when set (I9, additive).
+	if (m_edits.keepFormants) { element.setAttribute("formantkeep", 1); }
+	if (m_edits.formant != 0) { element.setAttribute("formant", m_edits.formant); }
 	// ED-042: the gain envelope, written only when there is one (I9, additive).
 	if (m_edits.hasEnvelope())
 	{
@@ -590,6 +593,8 @@ void Clip::loadClipEdits(const QDomElement& element)
 	edits.fadeOutShape = shapeFromIndex(element.attribute("fadeoutshape", "0").toInt());
 	envelopeFromText(element.attribute("gainenv"), &edits);
 	edits.transpose = std::clamp(element.attribute("transpose", "0").toInt(), -48, 48);
+	edits.keepFormants = element.attribute("formantkeep", "0").toInt() != 0;
+	edits.formant = std::clamp(element.attribute("formant", "0").toInt(), -24, 24);
 
 	m_edits = edits;
 	// Reset-on-absence for `lane` and `link`: both defaults live once in

@@ -70,6 +70,8 @@ enum class PanMode
 
 //! Trim, before the inserts.
 LMMS_EXPORT void applyInput(MixerChannel& channel, f_cnt_t frames);
+//! MX-085: the strip's three-band EQ (a low shelf at 100 Hz, a bell, a high shelf at 8 kHz); skipped while flat.
+LMMS_EXPORT void applyChannelEq(MixerChannel& channel, f_cnt_t frames);
 //! Polarity and mono, after the inserts.
 LMMS_EXPORT void applyOutput(MixerChannel& channel, f_cnt_t frames);
 //! The pan in its mode; false for balance (the inherited stage does it).

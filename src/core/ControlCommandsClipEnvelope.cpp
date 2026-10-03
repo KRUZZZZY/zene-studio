@@ -146,10 +146,45 @@ ControlResult setTranspose(const QJsonObject& args)
 	return ControlResult::success(result);
 }
 
+//! 0.5.0 ED-153: a sample clip's formants - kept while it is transposed, and shifted on their own.
+ControlResult setFormant(const QJsonObject& args)
+{
+	ClipRef ref;
+	ControlResult error;
+	if (!resolveSample(args, &ref, &error)) { return error; }
+	if (!RubberBandPool::available())
+	{
+		return ControlResult::failure(ControlErrorKind::Requires, QStringLiteral("formants are handled by Rubber Band, which this build does not have"));
+	}
+	ClipEdits after = ref.clip->clipEdits();
+	after.keepFormants = args.value(QStringLiteral("keep")).toBool(after.keepFormants);
+	after.formant = args.value(QStringLiteral("semitones")).toInt(after.formant);
+	ref.clip->addJournalCheckPoint();
+	ref.clip->setClipEdits(after);
+	if (after.keepFormants || after.formant != 0) { static_cast<SampleClip*>(ref.clip)->setWarpStretchMode(WarpStretchMode::RubberBand); }
+	return ControlResult::success({{QStringLiteral("clip"), clipId(ref.id)}, {QStringLiteral("keep"), after.keepFormants},
+		{QStringLiteral("semitones"), after.formant}});
+}
+
 } // namespace
 
 void registerClipEnvelopeCommands(ControlRegistry& registry)
 {
+	ControlCommand formant;
+	formant.id = QStringLiteral("clip.set_formant");
+	formant.group = QStringLiteral("clip");
+	formant.verb = QStringLiteral("set_formant");
+	formant.description = QStringLiteral("A sample clip's formants (Rubber Band): 'keep' holds them where they were while the clip "
+		"is transposed (a voice stays a voice), 'semitones' (-24..24) shifts them on their own. Both off is the plain pitch "
+		"shift. The clip's stretch mode becomes Rubber Band; refused, typed, in a build without it. Saved with the clip. "
+		"Reversible through the ProjectJournal (Clip checkpoint).");
+	formant.argsSchema = objectSchema({{QStringLiteral("clip"), stringProperty()}, {QStringLiteral("keep"), booleanProperty()},
+		{QStringLiteral("semitones"), integerProperty(-24, 24)}}, {QStringLiteral("clip")});
+	formant.resultSchema = objectProperty();
+	formant.mutating = true;
+	formant.handler = setFormant;
+	registry.registerCommand(formant);
+
 	ControlCommand transpose;
 	transpose.id = QStringLiteral("clip.set_transpose");
 	transpose.group = QStringLiteral("clip");

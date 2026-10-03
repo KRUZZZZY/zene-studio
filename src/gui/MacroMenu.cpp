@@ -53,6 +53,11 @@ void MacroMenu::refresh()
 		});
 	}
 	if (!macros.isEmpty()) { addSeparator(); }
+	// 0.5.0 ED-056: record what you do as a macro.
+	addCommandAction(this, tr("Record a Macro..."), QStringLiteral("macro.record_start"),
+		[] { return CommandCall{QStringLiteral("macro.record_start"), {}, {{QStringLiteral("name"), QStringLiteral("My macro")}}, tr("Record a Macro"), true}; });
+	addCommandAction(this, tr("Stop Recording the Macro"), QStringLiteral("macro.record_stop"),
+		[] { return CommandCall{QStringLiteral("macro.record_stop"), {}, {}, QString(), false}; });
 	QAction* edit = addAction(tr("Edit Macros..."));
 	edit->setProperty("controlCommand", QStringLiteral("macro.list"));
 	connect(edit, &QAction::triggered, this, [this] { showCommandList(parentWidget(), CommandLists::macros()); });

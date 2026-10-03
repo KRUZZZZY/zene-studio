@@ -245,6 +245,49 @@ ControlResult orderByTracks(const QJsonObject&)
 	return ControlResult::success({{QStringLiteral("moved"), after != before}});
 }
 
+//! MX-085: the strip EQ's four values, read from and written to a channel found by its persistent id.
+struct EqValues
+{
+	float low = 0.f;
+	float mid = 0.f;
+	float midFreq = 1000.f;
+	float high = 0.f;
+};
+
+EqValues eqOf(const MixerChannel* channel)
+{
+	return {channel->m_eqLowModel.value(), channel->m_eqMidModel.value(), channel->m_eqMidFreqModel.value(), channel->m_eqHighModel.value()};
+}
+
+void setEq(int id, const EqValues& eq)
+{
+	MixerChannel* channel = channelWithId(id);
+	if (channel == nullptr) { return; }
+	channel->m_eqLowModel.setValue(eq.low);
+	channel->m_eqMidModel.setValue(eq.mid);
+	channel->m_eqMidFreqModel.setValue(eq.midFreq);
+	channel->m_eqHighModel.setValue(eq.high);
+}
+
+ControlResult channelEq(const QJsonObject& args)
+{
+	ControlResult error;
+	MixerChannel* channel = resolveMixerChannel(args.value(QStringLiteral("channel")).toString(), &error);
+	if (channel == nullptr) { return error; }
+	const EqValues before = eqOf(channel);
+	const EqValues after{static_cast<float>(std::clamp(args.value(QStringLiteral("low")).toDouble(before.low), -18.0, 18.0)),
+		static_cast<float>(std::clamp(args.value(QStringLiteral("mid")).toDouble(before.mid), -18.0, 18.0)),
+		static_cast<float>(std::clamp(args.value(QStringLiteral("mid_freq")).toDouble(before.midFreq), 100.0, 10000.0)),
+		static_cast<float>(std::clamp(args.value(QStringLiteral("high")).toDouble(before.high), -18.0, 18.0))};
+	const int id = channel->id();
+	setEq(id, after);
+	addUndoStep([id, before]() { setEq(id, before); }, [id, after]() { setEq(id, after); });
+	Engine::getSong()->setModified();
+	return ControlResult::success({{QStringLiteral("channel"), channelIdOf(channel)}, {QStringLiteral("low"), static_cast<double>(after.low)},
+		{QStringLiteral("mid"), static_cast<double>(after.mid)}, {QStringLiteral("mid_freq"), static_cast<double>(after.midFreq)},
+		{QStringLiteral("high"), static_cast<double>(after.high)}});
+}
+
 ControlResult colorMembers(const QJsonObject& args)
 {
 	VcaGroup* group = mixer()->vcaGroup(args.value(QStringLiteral("group")).toInt(-1));
@@ -352,6 +395,11 @@ void registerMixerToolCommands(ControlRegistry& registry)
 		"step removes both."),
 		{{QStringLiteral("channel"), stringProperty()}, {QStringLiteral("name"), stringProperty()}, {QStringLiteral("amount"), numberProperty()},
 			{QStringLiteral("pre_fader"), booleanProperty()}}, {QStringLiteral("channel")}, true, createReturn);
+	add(registry, "mixer.channel_eq", QStringLiteral("A channel's own three-band EQ, after its inserts: 'low' (a shelf at 100 Hz), "
+		"'mid' (a bell at 'mid_freq', 100..10000 Hz) and 'high' (a shelf at 8 kHz), each -18..18 dB; flat skips it. Saved with "
+		"the project. With only 'channel' it reports it. One undo step."),
+		{{QStringLiteral("channel"), stringProperty()}, {QStringLiteral("low"), numberProperty()}, {QStringLiteral("mid"), numberProperty()},
+			{QStringLiteral("mid_freq"), numberProperty()}, {QStringLiteral("high"), numberProperty()}}, {QStringLiteral("channel")}, true, channelEq);
 	add(registry, "mixer.find", QStringLiteral("The channels whose name holds 'text' (any case): id, name and position."),
 		{{QStringLiteral("text"), stringProperty()}}, {QStringLiteral("text")}, false, find);
 	add(registry, "mixer.adjust", QStringLiteral("Move several channels together: every one of 'channels' is turned up or down by "

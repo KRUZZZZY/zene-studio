@@ -35,6 +35,7 @@
 #include "Rack.h"
 #include "ThreadableJob.h"
 
+#include <array>
 #include <atomic>
 #include <cstddef>
 #include <cstdint>
@@ -106,6 +107,13 @@ public:
 	BoolModel m_polarityRightModel{false};
 	BoolModel m_monoModel{false};
 	BoolModel m_swapModel{false};  // 0.5.0 L08 (MX-033): left and right exchanged
+	BoolModel m_inputMonoModel{false};  // 0.5.0 L08 (MX-059): the input summed to mono before the inserts
+	// 0.5.0 L08 (MX-085): the strip's own three-band EQ, after the inserts (MixerStrip.cpp), skipped while flat.
+	FloatModel m_eqLowModel{0.f, -18.f, 18.f, 0.1f};
+	FloatModel m_eqMidModel{0.f, -18.f, 18.f, 0.1f};
+	FloatModel m_eqMidFreqModel{1000.f, 100.f, 10000.f, 1.f};
+	FloatModel m_eqHighModel{0.f, -18.f, 18.f, 0.1f};
+	std::array<float, 24> m_eqState{};  //!< the bands' filter memories, two a side each way (mixer worker only)
 	IntModel m_panModeModel{0, 0, 2};
 	FloatModel m_panRightModel{0.f, -1.f, 1.f, 0.001f};
 	FloatModel m_widthModel{1.f, 0.f, 2.f, 0.01f};
@@ -122,6 +130,7 @@ public:
 	MeterValue m_preMeterRight;
 	std::atomic<bool> m_clipped{false};
 	MeterValue m_gainReduction;
+	MeterValue m_correlation;  //!< 0.5.0 L08 (MX-137): the pre-fader phase correlation, -1..1
 	QString m_name;
 	QMutex m_lock;
 	bool m_queued; // are we queued up for rendering yet?

@@ -175,6 +175,32 @@ private slots:
 		QCOMPARE(channel(3)->id(), third);
 	}
 
+	//! MX-085 / MX-059 / MX-137: the strip EQ is skipped while flat and changes the signal when not;
+	//! a mono input sums the sides before the inserts; the correlation reads in phase and out of phase.
+	void theStripsEqMonoInputAndCorrelation()
+	{
+		fill(4, 0.5f, 0.5f);
+		mixerstrip::applyChannelEq(*channel(4), 8);
+		QCOMPARE(channel(4)->m_buffer[3][0], 0.5f);  // flat: untouched
+		QVERIFY(run(QStringLiteral("mixer.channel_eq"), {{QStringLiteral("channel"), ch(4)}, {QStringLiteral("low"), 12.0}}).ok);
+		fill(4, 0.5f, 0.5f);
+		mixerstrip::applyChannelEq(*channel(4), 8);
+		QVERIFY(channel(4)->m_buffer[3][0] != 0.5f);  // a DC-ish step through a +12 dB low shelf grows
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
+		QCOMPARE(channel(4)->m_eqLowModel.value(), 0.f);
+		QVERIFY(run(QStringLiteral("mixer.set_strip"), {{QStringLiteral("channel"), ch(4)}, {QStringLiteral("input_mono"), true}}).ok);
+		fill(4, 1.f, 0.f);
+		mixerstrip::applyInput(*channel(4), 8);
+		QCOMPARE(channel(4)->m_buffer[0][1], 0.5f);
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
+		fill(4, 0.5f, 0.5f);
+		mixerstrip::updateMeters(*channel(4), channel(4)->m_buffer, 1.f, 8);
+		QCOMPARE(channel(4)->m_correlation.get(), 1.f);
+		fill(4, 0.5f, -0.5f);
+		mixerstrip::updateMeters(*channel(4), channel(4)->m_buffer, 1.f, 8);
+		QCOMPARE(channel(4)->m_correlation.get(), -1.f);
+	}
+
 	void aGroupColoursItsMembers()
 	{
 		VcaGroup* group = Engine::mixer()->createVcaGroup(QStringLiteral("Drums"));

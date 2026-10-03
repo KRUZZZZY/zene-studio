@@ -137,6 +137,26 @@ private slots:
 		QCOMPARE(out->clipEdits().fadeOutShape, FadeShape::EqualPower);
 	}
 
+	void formantsAreKeptAndSaved()
+	{
+		SampleClip* clip = aClip(m_track, 11520);
+		const ControlResult set = run(QStringLiteral("clip.set_formant"), {{QStringLiteral("clip"), control::clipIdOf(clip)},
+			{QStringLiteral("keep"), true}, {QStringLiteral("semitones"), -3}});
+		if (!set.ok)
+		{
+			QCOMPARE(set.errorKind, ControlErrorKind::Requires);  // a build without Rubber Band says so
+			return;
+		}
+		QVERIFY(clip->clipEdits().keepFormants);
+		QCOMPARE(clip->clipEdits().formant, -3);
+		QDomDocument doc;
+		QDomElement root = doc.createElement(QStringLiteral("track"));
+		const QDomElement saved = clip->saveState(doc, root);
+		QCOMPARE(saved.attribute(QStringLiteral("formant")), QStringLiteral("-3"));
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
+		QVERIFY(!dynamic_cast<SampleClip*>(m_track->getClips().back())->clipEdits().keepFormants);
+	}
+
 	void theAutomationSwitches()
 	{
 		AutomationSwitches& switches = AutomationSwitches::instance();

@@ -24,6 +24,7 @@
 #include "InspectorChannelRouting.h"
 
 #include <QCheckBox>
+#include <QComboBox>
 #include <QGridLayout>
 #include <QLabel>
 #include <QPushButton>
@@ -34,6 +35,7 @@
 #include "ControlRegistry.h"
 #include "ControlVocabulary.h"
 #include "DesignTokens.h"
+#include "Engine.h"
 #include "Effect.h"
 #include "Knob.h"
 #include "LedCheckBox.h"
@@ -143,10 +145,18 @@ void addStrip(QVBoxLayout* column, MixerChannel* channel, QWidget* parent)
 	knobs->addWidget(smallKnob(&channel->m_widthModel, QObject::tr("Width"), parent));
 	knobs->addStretch(1);
 	column->addLayout(knobs);
+	auto* eq = new QHBoxLayout;  // MX-085
+	eq->addWidget(smallKnob(&channel->m_eqLowModel, QObject::tr("Low (dB)"), parent));
+	eq->addWidget(smallKnob(&channel->m_eqMidModel, QObject::tr("Mid (dB)"), parent));
+	eq->addWidget(smallKnob(&channel->m_eqMidFreqModel, QObject::tr("Mid (Hz)"), parent));
+	eq->addWidget(smallKnob(&channel->m_eqHighModel, QObject::tr("High (dB)"), parent));
+	eq->addStretch(1);
+	column->addLayout(eq);
 	auto* flags = new QGridLayout;
 	const std::pair<BoolModel*, QString> boxes[] = {{&channel->m_polarityLeftModel, QObject::tr("Invert L")},
 		{&channel->m_polarityRightModel, QObject::tr("Invert R")}, {&channel->m_monoModel, QObject::tr("Mono")},
-		{&channel->m_soloSafeModel, QObject::tr("Solo safe")}};
+		{&channel->m_soloSafeModel, QObject::tr("Solo safe")}, {&channel->m_swapModel, QObject::tr("Swap L/R")},
+		{&channel->m_inputMonoModel, QObject::tr("Mono input")}};
 	int i = 0;
 	for (const auto& [model, text] : boxes)
 	{
@@ -156,6 +166,30 @@ void addStrip(QVBoxLayout* column, MixerChannel* channel, QWidget* parent)
 		++i;
 	}
 	column->addLayout(flags);
+}
+
+//! MX-064: where the channel's output goes - any channel after it, through mixer.route_to.
+void addOutput(QVBoxLayout* column, MixerChannel* channel, const QString& id, QWidget* parent, const std::function<void()>& rebuild)
+{
+	if (channel->index() == 0) { return; }  // the master's output is the audio device
+	auto* output = new QComboBox(parent);
+	output->setProperty("controlCommand", QStringLiteral("mixer.route_to"));
+	output->setAccessibleName(QObject::tr("Output"));
+	output->addItem(QObject::tr("Route the output to..."), QString());
+	for (int i = 0; i < Engine::mixer()->numChannels(); ++i)
+	{
+		const MixerChannel* to = Engine::mixer()->mixerChannel(i);
+		if (to == channel) { continue; }
+		output->addItem(i == 0 ? QObject::tr("Master") : to->m_name, control::channelIdOf(to));
+	}
+	QObject::connect(output, qOverload<int>(&QComboBox::activated), parent, [output, id, parent, rebuild](int index) {
+		const QString to = output->itemData(index).toString();
+		if (to.isEmpty()) { return; }
+		runCommand(parent, CommandCall{QStringLiteral("mixer.route_to"), {{QStringLiteral("channel"), id}, {QStringLiteral("to"), to}}, {}, {}, false});
+		rebuild();
+	});
+	column->addWidget(heading(QObject::tr("Output"), parent));
+	column->addWidget(output);
 }
 
 } // namespace
@@ -169,6 +203,7 @@ QWidget* routingSection(MixerChannel* channel, const QString& id, QWidget* paren
 	addInserts(column, channel, id, section, rebuild);
 	addSends(column, channel, id, section, rebuild);
 	addStrip(column, channel, section);
+	addOutput(column, channel, id, section, rebuild);
 	return section;
 }
 

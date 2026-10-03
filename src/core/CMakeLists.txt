@@ -973,6 +973,7 @@ set(LMMS_SRCS
 	core/ControlCommandsAudioAnalysis.cpp
 	core/ControlTrackCreation.cpp
 	core/PitchTrack.cpp
+	core/ControlCommandsSampleRange.cpp
 	core/MarkerActions.cpp
 	core/MixerOptions.cpp
 	core/ArticulationMap.cpp

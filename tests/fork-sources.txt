@@ -1053,6 +1053,7 @@ src/core/ControlCommandsSafeStartEdit.cpp
 src/core/ControlCommandsSafeStartShared.h
 src/core/ControlCommandsSample.cpp
 src/core/ControlCommandsSampleEdit.cpp
+src/core/ControlCommandsSampleRange.cpp
 src/core/ControlCommandsSampleTools.cpp
 src/core/ControlCommandsScale.cpp
 src/core/ControlCommandsScaleEdit.cpp
