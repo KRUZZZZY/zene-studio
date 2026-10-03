@@ -40,16 +40,24 @@ namespace lmms::appearance
  *    file beside it in the home folder (~/.zenestudio-scale; ZENE_UI_SCALE_FILE names another) that
  *    main() reads first - QT_SCALE_FACTOR, when set, still wins;
  *  - 'font_scale' (0.75..2): the text size the design tokens draw with;
- *  - 'palette': dark (the default) or high_contrast (text 7:1 on every surface, a bright focus ring).
+ *  - 'palette': dark (the default), high_contrast (text 7:1 on every surface, a bright focus ring) or
+ *    light (dark text on light surfaces, every pair held to AA - 0.5.0 W3 WF-118);
+ *  - 'density' (0.5.0 W3 WF-134 / WF-133): standard (the default), comfortable (more room around every
+ *    control, fewer on screen) or touch (targets large enough for a finger) - the stylesheet's paddings and
+ *    minimum sizes and the shell's buttons are scaled by densityFactor().
  *  Each applies from the next start. */
 struct Options
 {
 	double scale = 1.0;
 	double fontScale = 1.0;
 	QString palette = QStringLiteral("dark");
+	QString density = QStringLiteral("standard");
 };
 
 LMMS_EXPORT const QStringList& paletteNames();
+LMMS_EXPORT const QStringList& densityNames();
+//! How much larger than standard the metrics of density @a name are: 1 standard, 1.35 comfortable, 1.8 touch.
+LMMS_EXPORT double densityFactor(const QString& name);
 LMMS_EXPORT Options options();
 LMMS_EXPORT void setOptions(const Options& next);
 LMMS_EXPORT QJsonObject toJson(const Options& options);

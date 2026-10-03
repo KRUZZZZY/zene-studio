@@ -24,52 +24,10 @@
 
 #include "CommandLists.h"
 
+#include "CommandListBuild.h"
+
 namespace lmms::gui::CommandLists
 {
-
-namespace
-{
-
-QString tr(const char* text)
-{
-	return QObject::tr(text);
-}
-
-//! A row action: @a id with the row fields @a fromRow mapped onto its arguments.
-RowAction act(const char* label, const char* id, QHash<QString, QString> fromRow, QJsonObject fixed = {}, bool ask = false)
-{
-	RowAction action;
-	action.label = tr(label);
-	action.id = QLatin1String(id);
-	action.fromRow = std::move(fromRow);
-	action.fixed = std::move(fixed);
-	action.ask = ask;
-	return action;
-}
-
-ListExtra extra(const char* label, const char* id, QJsonObject fixed = {}, bool ask = true)
-{
-	return ListExtra{tr(label), CommandCall{QLatin1String(id), std::move(fixed), {}, tr(label), ask}};
-}
-
-//! An extra that reads something and shows the answer (a floating message).
-ListExtra readExtra(const char* label, const char* id)
-{
-	return ListExtra{tr(label), CommandCall{QLatin1String(id), {}, {}, tr(label), false, true}};
-}
-
-ListSpec spec(const char* title, const char* listId, const char* arrayKey, QStringList columns, QJsonObject args = {})
-{
-	ListSpec out;
-	out.title = tr(title);
-	out.listId = QLatin1String(listId);
-	out.arrayKey = QLatin1String(arrayKey);
-	out.columns = std::move(columns);
-	out.listArgs = std::move(args);
-	return out;
-}
-
-} // namespace
 
 ListSpec revisions()
 {

@@ -25,6 +25,7 @@
 #include "DesignTokens.h"
 
 #include "Appearance.h"
+#include "UiConfigStore.h"
 
 #include <algorithm>
 #include <array>
@@ -64,6 +65,44 @@ Palette makeHighContrast(Palette p)
 	p.gridBeat = QColor(0x60, 0x60, 0x6a);
 	p.gridStep = QColor(0x34, 0x34, 0x3c);
 	p.playhead = QColor(0xff, 0xff, 0xff);
+	return p;
+}
+
+//! 0.5.0 W3 (WF-118): the light palette - dark text on light surfaces, a deep teal accent with white text
+//! on it, and every declared pair at AA (DesignTokensTest measures it).
+Palette makeLight(Palette p)
+{
+	p.base = QColor(0xd9, 0xdd, 0xe2);
+	p.panel = QColor(0xf3, 0xf4, 0xf6);
+	p.raised = QColor(0xe7, 0xe9, 0xec);
+	p.control = QColor(0xff, 0xff, 0xff);
+	p.controlHover = QColor(0xec, 0xef, 0xf3);
+	p.selected = QColor(0xd3, 0xe2, 0xf4);
+	p.separator = QColor(0xc3, 0xc8, 0xcf);
+	p.text = QColor(0x15, 0x17, 0x1b);
+	p.textMuted = QColor(0x4a, 0x52, 0x5d);
+	p.textDisabled = QColor(0x8f, 0x96, 0x9f);
+	p.textOnAccent = QColor(0xff, 0xff, 0xff);
+	p.accent = QColor(0x0b, 0x70, 0x64);
+	p.accentHover = QColor(0x09, 0x5c, 0x52);
+	p.focusRing = QColor(0x1d, 0x5c, 0xcc);
+	p.play = QColor(0x16, 0x79, 0x3f);
+	p.record = QColor(0xc0, 0x22, 0x36);
+	p.warning = QColor(0x8a, 0x5a, 0x00);
+	p.meterLow = QColor(0x2f, 0xa8, 0x64);
+	p.meterMid = QColor(0xd9, 0xa2, 0x1b);
+	p.meterHigh = QColor(0xd9, 0x3a, 0x4f);
+	p.gridBar = QColor(0x8f, 0x97, 0xa2);
+	p.gridBeat = QColor(0xc3, 0xc8, 0xce);
+	p.gridStep = QColor(0xdd, 0xe0, 0xe4);
+	p.keyWhiteRow = QColor(0xfb, 0xfb, 0xfc);
+	p.keyBlackRow = QColor(0xec, 0xee, 0xf1);
+	p.scaleRow = QColor(0xdc, 0xef, 0xeb);
+	p.playhead = QColor(0x1a, 0x1c, 0x20);
+	p.clipMidi = QColor(0x0b, 0x70, 0x64);
+	p.clipSample = QColor(0x2a, 0x5f, 0xb4);
+	p.clipAutomation = QColor(0x64, 0x46, 0xbd);
+	p.clipPattern = QColor(0x8a, 0x5a, 0x00);
 	return p;
 }
 
@@ -119,17 +158,115 @@ QColor mix(const QColor& a, const QColor& b, double t)
 
 QString hex(const QColor& c) { return c.name(QColor::HexRgb); }
 
+//! Every colour role by the name the stylesheet template and theme.set_token use.
+const std::map<QString, QColor Palette::*>& roles()
+{
+	static const std::map<QString, QColor Palette::*> table{
+		{"base", &Palette::base}, {"panel", &Palette::panel}, {"raised", &Palette::raised},
+		{"control", &Palette::control}, {"controlHover", &Palette::controlHover}, {"selected", &Palette::selected},
+		{"separator", &Palette::separator}, {"text", &Palette::text}, {"textMuted", &Palette::textMuted},
+		{"textDisabled", &Palette::textDisabled}, {"textOnAccent", &Palette::textOnAccent}, {"accent", &Palette::accent},
+		{"accentHover", &Palette::accentHover}, {"focusRing", &Palette::focusRing}, {"play", &Palette::play},
+		{"record", &Palette::record}, {"warning", &Palette::warning}, {"meterLow", &Palette::meterLow},
+		{"meterMid", &Palette::meterMid}, {"meterHigh", &Palette::meterHigh}, {"gridBar", &Palette::gridBar},
+		{"gridBeat", &Palette::gridBeat}, {"gridStep", &Palette::gridStep}, {"keyWhiteRow", &Palette::keyWhiteRow},
+		{"keyBlackRow", &Palette::keyBlackRow}, {"scaleRow", &Palette::scaleRow}, {"playhead", &Palette::playhead},
+		{"clipMidi", &Palette::clipMidi}, {"clipSample", &Palette::clipSample},
+		{"clipAutomation", &Palette::clipAutomation}, {"clipPattern", &Palette::clipPattern}};
+	return table;
+}
+
+//! Every "<n>px" of @a value times @a factor.
+QString scaleLengths(const QString& value, double factor)
+{
+	static const QRegularExpression length(QStringLiteral("(\\d+)px"));
+	QString scaled;
+	int at = 0;
+	for (auto px = length.globalMatch(value); px.hasNext();)
+	{
+		const QRegularExpressionMatch n = px.next();
+		scaled += value.mid(at, n.capturedStart() - at) + QStringLiteral("%1px").arg(std::lround(n.captured(1).toInt() * factor));
+		at = n.capturedEnd();
+	}
+	return scaled + value.mid(at);
+}
+
 } // namespace
 
 Palette paletteNamed(const QString& name)
 {
-	return name == QLatin1String("high_contrast") ? makeHighContrast(makePalette()) : makePalette();
+	if (name == QLatin1String("high_contrast")) { return makeHighContrast(makePalette()); }
+	return name == QLatin1String("light") ? makeLight(makePalette()) : makePalette();
 }
 
 const Palette& palette()
 {
-	static const Palette p = paletteNamed(appearance::options().palette);  // read once, at the first draw
+	// Read once, at the first draw: the chosen palette with the user's overrides on it.
+	static const Palette p = withOverrides(paletteNamed(appearance::options().palette), themeOverrides());
 	return p;
+}
+
+QStringList tokenNames()
+{
+	QStringList names;
+	for (const auto& role : roles()) { names.append(role.first); }
+	return names;
+}
+
+QColor roleColor(const Palette& p, const QString& name, bool* known)
+{
+	const auto it = roles().find(name);
+	if (known != nullptr) { *known = it != roles().end(); }
+	return it != roles().end() ? p.*(it->second) : QColor();
+}
+
+Palette withOverrides(Palette base, const QJsonObject& colors, QStringList* rejected)
+{
+	for (auto it = colors.begin(); it != colors.end(); ++it)
+	{
+		const auto role = roles().find(it.key());
+		const QColor colour(it.value().toString());
+		if (role == roles().end() || !colour.isValid())
+		{
+			if (rejected != nullptr) { rejected->append(it.key()); }
+			continue;
+		}
+		base.*(role->second) = colour;
+	}
+	return base;
+}
+
+QJsonObject themeOverrides()
+{
+	return uistore::read(QStringLiteral("theme")).value(QStringLiteral("colors")).toObject();
+}
+
+double densityFactor()
+{
+	static const double factor = appearance::densityFactor(appearance::options().density);  // read once
+	return factor;
+}
+
+int targetSize()
+{
+	return std::max(size::target, static_cast<int>(std::lround(size::target * densityFactor())));
+}
+
+QString scaleMetrics(const QString& css, double factor)
+{
+	if (factor == 1.0) { return css; }
+	static const QRegularExpression declaration(QStringLiteral("((?:padding(?:-left|-right|-top|-bottom)?|min-height|min-width)\\s*:)([^;}]*)"));
+	QString out;
+	out.reserve(css.size());
+	int last = 0;
+	for (auto it = declaration.globalMatch(css); it.hasNext();)
+	{
+		const QRegularExpressionMatch m = it.next();
+		out += css.mid(last, m.capturedStart(2) - last) + scaleLengths(m.captured(2), factor);
+		last = m.capturedEnd(2);
+	}
+	out += css.mid(last);
+	return out;
 }
 
 QString family()
@@ -230,22 +367,7 @@ QColor trackColor(int index)
 
 QColor tokenColor(const QString& name, bool* known)
 {
-	const Palette& p = palette();
-	static const std::map<QString, QColor Palette::*> roles{
-		{"base", &Palette::base}, {"panel", &Palette::panel}, {"raised", &Palette::raised},
-		{"control", &Palette::control}, {"controlHover", &Palette::controlHover}, {"selected", &Palette::selected},
-		{"separator", &Palette::separator}, {"text", &Palette::text}, {"textMuted", &Palette::textMuted},
-		{"textDisabled", &Palette::textDisabled}, {"textOnAccent", &Palette::textOnAccent}, {"accent", &Palette::accent},
-		{"accentHover", &Palette::accentHover}, {"focusRing", &Palette::focusRing}, {"play", &Palette::play},
-		{"record", &Palette::record}, {"warning", &Palette::warning}, {"meterLow", &Palette::meterLow},
-		{"meterMid", &Palette::meterMid}, {"meterHigh", &Palette::meterHigh}, {"gridBar", &Palette::gridBar},
-		{"gridBeat", &Palette::gridBeat}, {"gridStep", &Palette::gridStep}, {"keyWhiteRow", &Palette::keyWhiteRow},
-		{"keyBlackRow", &Palette::keyBlackRow}, {"scaleRow", &Palette::scaleRow}, {"playhead", &Palette::playhead},
-		{"clipMidi", &Palette::clipMidi}, {"clipSample", &Palette::clipSample},
-		{"clipAutomation", &Palette::clipAutomation}, {"clipPattern", &Palette::clipPattern}};
-	const auto it = roles.find(name);
-	if (known != nullptr) { *known = it != roles.end(); }
-	return it != roles.end() ? p.*(it->second) : QColor();
+	return roleColor(palette(), name, known);
 }
 
 QString resolveStyleSheet(const QString& templ, QStringList* unknown)
@@ -284,7 +406,7 @@ QString styleSheetTemplate()
 
 QString applicationStyleSheet()
 {
-	return resolveStyleSheet(styleSheetTemplate(), nullptr);
+	return scaleMetrics(resolveStyleSheet(styleSheetTemplate(), nullptr), densityFactor());
 }
 
 void strokeCrisp(QPainter& painter, const QRectF& rect, const QColor& colour)

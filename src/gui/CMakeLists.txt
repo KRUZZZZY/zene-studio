@@ -57,6 +57,10 @@ SET(LMMS_SRCS
 	gui/ControlCommandsMixerView.cpp
 	gui/ControlCommandsHelp.cpp
 	gui/ControlCommandsMacros.cpp
+	# 0.5.0 W3 L13 / L14: customisation and access.
+	gui/ControlCommandsTheme.cpp
+	gui/CommandListsCustom.cpp
+	gui/WorkspaceMenus.cpp
 	gui/ControlGuiSupport.cpp
 	# M3.4: the command palette (menu actions + argument-free commands, searchable).
 	gui/ArrangerOverlays.cpp

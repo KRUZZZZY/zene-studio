@@ -50,8 +50,20 @@ double configDouble(const char* key, double fallback)
 
 const QStringList& paletteNames()
 {
-	static const QStringList names{QStringLiteral("dark"), QStringLiteral("high_contrast")};
+	static const QStringList names{QStringLiteral("dark"), QStringLiteral("high_contrast"), QStringLiteral("light")};
 	return names;
+}
+
+const QStringList& densityNames()
+{
+	static const QStringList names{QStringLiteral("standard"), QStringLiteral("comfortable"), QStringLiteral("touch")};
+	return names;
+}
+
+double densityFactor(const QString& name)
+{
+	if (name == QLatin1String("touch")) { return 1.8; }
+	return name == QLatin1String("comfortable") ? 1.35 : 1.0;
 }
 
 Options options()
@@ -61,6 +73,8 @@ Options options()
 	out.fontScale = std::clamp(configDouble("fontscale", 1.0), 0.75, 2.0);
 	const QString palette = ConfigManager::inst()->value(kSection, QStringLiteral("palette"), QStringLiteral("dark"));
 	out.palette = paletteNames().contains(palette) ? palette : QStringLiteral("dark");
+	const QString density = ConfigManager::inst()->value(kSection, QStringLiteral("density"), QStringLiteral("standard"));
+	out.density = densityNames().contains(density) ? density : QStringLiteral("standard");
 	return out;
 }
 
@@ -69,6 +83,7 @@ void setOptions(const Options& next)
 	ConfigManager::inst()->setValue(kSection, QStringLiteral("scale"), QString::number(std::clamp(next.scale, 0.5, 3.0)));
 	ConfigManager::inst()->setValue(kSection, QStringLiteral("fontscale"), QString::number(std::clamp(next.fontScale, 0.75, 2.0)));
 	ConfigManager::inst()->setValue(kSection, QStringLiteral("palette"), next.palette);
+	ConfigManager::inst()->setValue(kSection, QStringLiteral("density"), next.density);
 	QSaveFile file(scaleFilePath());
 	if (file.open(QIODevice::WriteOnly))
 	{
@@ -80,7 +95,7 @@ void setOptions(const Options& next)
 QJsonObject toJson(const Options& o)
 {
 	return {{QStringLiteral("scale"), o.scale}, {QStringLiteral("font_scale"), o.fontScale}, {QStringLiteral("palette"), o.palette},
-		{QStringLiteral("applies"), QStringLiteral("next_start")}};
+		{QStringLiteral("density"), o.density}, {QStringLiteral("applies"), QStringLiteral("next_start")}};
 }
 
 QString scaleFilePath()

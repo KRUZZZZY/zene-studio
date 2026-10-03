@@ -77,6 +77,10 @@ LMMS_EXPORT ListSpec sections();
 //! L07 MIDI event list: every note of a clip as a row - edit its velocity, position, length, probability.
 LMMS_EXPORT ListSpec noteEvents(const QString& clip);
 
+//! 0.5.0 W3 L13/L14 (CommandListsCustom.cpp): the theme's colour roles - change one, put the palette's back,
+//! reset, export, import (WF-117).
+LMMS_EXPORT ListSpec themeColors();
+
 } // namespace CommandLists
 
 } // namespace lmms::gui

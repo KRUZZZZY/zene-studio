@@ -29,6 +29,7 @@
 
 #include <QColor>
 #include <QFont>
+#include <QJsonObject>
 #include <QString>
 #include <QStringList>
 
@@ -135,8 +136,28 @@ enum class TextRole
 	Display
 };
 LMMS_EXPORT QFont font(TextRole role);
-//! 0.5.0 L14 (WF-130): the palette by name - dark or high_contrast (Appearance.h); palette() is the chosen one.
+//! 0.5.0 L14 (WF-130): the palette by name - dark, high_contrast or light (Appearance.h); palette() is the
+//! chosen one with the user's theme overrides (themeOverrides()) put on it.
 LMMS_EXPORT Palette paletteNamed(const QString& name);
+
+//! 0.5.0 W3 (WF-117 theme editing): the colour roles' names - the stylesheet's @tokens, theme.set_token's names.
+LMMS_EXPORT QStringList tokenNames();
+//! A role of @a palette by name; invalid (and *known false) when @a name is not a role.
+LMMS_EXPORT QColor roleColor(const Palette& palette, const QString& name, bool* known = nullptr);
+//! @a base with every {role: "#rrggbb"} of @a colors put on it; @a rejected collects the names that are not
+//! roles or whose colour does not parse (they are skipped).
+LMMS_EXPORT Palette withOverrides(Palette base, const QJsonObject& colors, QStringList* rejected = nullptr);
+//! The user's colour overrides, {role: "#rrggbb"} (config ui/theme, written by theme.set_token / theme.import).
+LMMS_EXPORT QJsonObject themeOverrides();
+
+//! 0.5.0 W3 (WF-134 / WF-133): the layout density's factor (Appearance.h) - 1 standard, 1.35 comfortable,
+//! 1.8 touch - read once, like the palette.
+LMMS_EXPORT double densityFactor();
+//! A clickable target's side at that density: size::target scaled, never below it.
+LMMS_EXPORT int targetSize();
+//! @a css with every length of its padding, min-height and min-width declarations scaled by @a factor
+//! (the density's stylesheet; exposed for the test).
+LMMS_EXPORT QString scaleMetrics(const QString& css, double factor);
 //! The interface's one typeface (Inter, SIL OFL 1.1, compiled in - data/fonts/OFL.txt); its
 //! faces are registered on first use. "sans-serif" if the resource could not be read.
 LMMS_EXPORT QString family();

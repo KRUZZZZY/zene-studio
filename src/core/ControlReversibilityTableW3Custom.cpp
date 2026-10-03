@@ -1,0 +1,66 @@
+/*
+ * ControlReversibilityTableW3Custom.cpp - the 0.5.0 W3 L13 / L14 commands' rows of the SPEC A16 table
+ *
+ * Copyright (c) 2026 Zene Studio contributors
+ *
+ * This file is part of LMMS - https://lmms.io
+ *
+ * This program is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU General Public
+ * License as published by the Free Software Foundation; either
+ * version 2 of the License, or (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public
+ * License along with this program (see COPYING); if not, write to the
+ * Free Software Foundation, Inc., 51 Franklin Street, Fifth Floor,
+ * Boston, MA 02110-1301 USA.
+ *
+ */
+#include "ControlReversibility.h"
+
+namespace lmms
+{
+namespace control
+{
+
+namespace
+{
+
+using RC = ReversibilityClass;
+
+//! A literal row: R(id, class, reversible, reason, mechanism, fallback).
+#define R(id, cls, rev, reason, mechanism, fallback) \
+	{ id, cls, reason, mechanism, fallback, rev, nullptr }
+
+const ReversibilityRow kW3CustomRows[] = {
+	// WF-117: theme editing (config ui/theme through UiConfigStore).
+	R("theme.get", RC::NotMutating, false, "it reads the theme's colours. Nothing is written", "no write", ""),
+	R("theme.set_token", RC::TrueInverse, true, "it writes one colour override in the config file (ui/theme) - the user's "
+		"interface, not the project", "action checkpoint: the recorded undo step writes the previous ui/theme object back", ""),
+	R("theme.reset", RC::TrueInverse, true, "it drops the colour overrides (config file, ui/theme)",
+		"action checkpoint: the recorded undo step writes the previous ui/theme object back", ""),
+	R("theme.export", RC::NotMutating, false, "it writes a theme file and nothing else: the project and the config are unchanged",
+		"no write to the project (delete the file)", ""),
+	R("theme.import", RC::TrueInverse, true, "it writes colour overrides read from a file (config file, ui/theme)",
+		"action checkpoint: the recorded undo step writes the previous ui/theme object back", ""),
+};
+
+#undef R
+
+constexpr int kW3CustomRowCount = static_cast<int>(sizeof(kW3CustomRows) / sizeof(kW3CustomRows[0]));
+
+} // namespace
+
+const ReversibilityRow* reversibilityW3CustomRowTable(int* rowCount)
+{
+	if (rowCount != nullptr) { *rowCount = kW3CustomRowCount; }
+	return kW3CustomRows;
+}
+
+} // namespace control
+} // namespace lmms

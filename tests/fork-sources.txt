@@ -534,6 +534,7 @@ include/ClipEditsMenu.h
 include/ClipLinks.h
 include/ClipTransients.h
 include/CommandForm.h
+include/CommandListBuild.h
 include/CommandListDialog.h
 include/CommandLists.h
 include/CommandPalette.h
@@ -606,6 +607,7 @@ include/InputChannelRing.h
 include/InputMonitor.h
 include/InspectorChannelRouting.h
 include/InspectorPanel.h
+include/JsonFile.h
 include/LatencyCompensation.h
 include/LaunchBindings.h
 include/LinkPeerTransport.h
@@ -783,6 +785,7 @@ include/VisibilitySetMenu.h
 include/WarpMarkers.h
 include/WaveformPreview.h
 include/WcagContrast.h
+include/WorkspaceMenus.h
 include/XmlDepthGuard.h
 include/XyPad.h
 include/zene/api/ControlApi.h
@@ -1163,6 +1166,7 @@ src/core/ControlReversibilityTableStructure.cpp
 src/core/ControlReversibilityTableTrackFolder.cpp
 src/core/ControlReversibilityTableVca.cpp
 src/core/ControlReversibilityTableVerbs.cpp
+src/core/ControlReversibilityTableW3Custom.cpp
 src/core/ControlReversibilityTableWasmRender.cpp
 src/core/ControlReversibilityTableWindow.cpp
 src/core/ControlScaleSupport.cpp
@@ -1205,6 +1209,7 @@ src/core/ImportDetectionKey.cpp
 src/core/ImportDetectionSpectrum.cpp
 src/core/ImportDetectionSpectrum.h
 src/core/InputMonitor.cpp
+src/core/JsonFile.cpp
 src/core/LatencyCompensation.cpp
 src/core/LaunchBindings.cpp
 src/core/LinkSync.cpp
@@ -1333,6 +1338,7 @@ src/gui/ClipEditsMenu.cpp
 src/gui/CommandForm.cpp
 src/gui/CommandListDialog.cpp
 src/gui/CommandLists.cpp
+src/gui/CommandListsCustom.cpp
 src/gui/CommandPalette.cpp
 src/gui/CompSwipeStrip.cpp
 src/gui/ContextHelp.cpp
@@ -1345,6 +1351,7 @@ src/gui/ControlCommandsNoteEditor.cpp
 src/gui/ControlCommandsSelection.cpp
 src/gui/ControlCommandsShell.cpp
 src/gui/ControlCommandsShortcuts.cpp
+src/gui/ControlCommandsTheme.cpp
 src/gui/ControlCommandsWindow.cpp
 src/gui/ControlGuiSupport.cpp
 src/gui/ControllerTemplateMenu.cpp
@@ -1394,6 +1401,7 @@ src/gui/UiConfigStore.cpp
 src/gui/UndoHistoryPanel.cpp
 src/gui/VcaStripView.cpp
 src/gui/VisibilitySetMenu.cpp
+src/gui/WorkspaceMenus.cpp
 src/gui/XyPad.cpp
 src/gui/clips/ClipViewTheme.cpp
 src/gui/clips/SampleClipOverlays.cpp
