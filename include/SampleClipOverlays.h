@@ -73,6 +73,9 @@ LMMS_EXPORT int fadeTicksAt(FadeHandle handle, int x, int clipTicks, const ClipO
 //! ED-150: thin marks at the top edge where the clip's audio has a transient (ticks from its start).
 LMMS_EXPORT void paintTransients(QPainter& p, const std::vector<int>& ticks, const ClipOverlayFrame& frame, const QColor& colour);
 
+//! ED-022: the clip's snap point, a dotted line with a small flag at the bottom; nothing when it has none.
+LMMS_EXPORT void paintSnapPoint(QPainter& p, const ClipEdits& edits, const ClipOverlayFrame& frame, const QColor& colour);
+
 } // namespace lmms::gui
 
 #endif // LMMS_GUI_SAMPLE_CLIP_OVERLAYS_H

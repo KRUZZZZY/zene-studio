@@ -33,6 +33,7 @@
 #include <algorithm>
 #include <cmath>
 
+#include "ControlRoom.h"
 #include "AutomationRamp.h"
 #include "AutomationSwitches.h"
 #include "AutomationTrack.h"
@@ -980,6 +981,7 @@ void Song::startExport()
 	stop();
 
 	m_exporting = true;
+	controlroom::setExporting(true);  // 0.5.0 L09 (MX-038): the monitor section never reaches a render
 	updateLength();
 
 	auto& timeline = getTimeline(PlayMode::Song);
@@ -1036,6 +1038,7 @@ void Song::stopExport()
 {
 	stop();
 	m_exporting = false;
+	controlroom::setExporting(false);
 
 	m_vstSyncController.setPlaybackState( m_playing );
 }

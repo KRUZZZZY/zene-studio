@@ -222,9 +222,7 @@ ControlResult fitTracks(const QJsonObject& args)
 //! range, audition, zoom, smart - in ArrangerRangeOverlay::Tool order after None.
 const QStringList& toolNames()
 {
-	static const QStringList names{QStringLiteral("draw"), QStringLiteral("knife"), QStringLiteral("select"),
-		QStringLiteral("range"), QStringLiteral("audition"), QStringLiteral("zoom"), QStringLiteral("smart")};
-	return names;
+	return gui::arrangerToolNames();
 }
 
 constexpr int EditorModeCount = 3;

@@ -78,6 +78,7 @@ void fillRecord(QMenu* menu)
 	run(menu, QObject::tr("Metronome Sound and Level..."), QStringLiteral("transport.metronome_options"), {}, true);  // WF-081
 	addCommandAction(menu, QObject::tr("Input Level"), QStringLiteral("meter.input"),  // MX-134
 		[] { return CommandCall{QStringLiteral("meter.input"), {}, {}, QString(), false, true}; });
+	run(menu, QObject::tr("Record From the Master or a Channel..."), QStringLiteral("record.route_source"), {}, true);  // WF-072/086
 	run(menu, QObject::tr("Punch In Here"), QStringLiteral("transport.punch_here"), {{QStringLiteral("edge"), QStringLiteral("in")}});  // WF-079
 	run(menu, QObject::tr("Punch Out Here"), QStringLiteral("transport.punch_here"), {{QStringLiteral("edge"), QStringLiteral("out")}});
 	addCommandChoices(menu, QObject::tr("Record Mode"), QStringLiteral("transport.record_options"), QStringLiteral("mode"),

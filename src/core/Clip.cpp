@@ -406,6 +406,28 @@ void Clip::setStartTimeOffset( const TimePos &startTimeOffset )
  *  itself is byte-identical to what it always wrote - an older build reading
  *  the same index is exactly the point.
  */
+namespace
+{
+
+//! ED-152 / ED-179: the speed ramp and the speed fades, each written only when set (I9, additive).
+void saveSpeed(const ClipEdits& edits, QDomElement& element)
+{
+	if (edits.speedFrom != 100) { element.setAttribute("speedfrom", edits.speedFrom); }
+	if (edits.speedTo != 100) { element.setAttribute("speedto", edits.speedTo); }
+	if (edits.speedInTicks > 0) { element.setAttribute("speedin", edits.speedInTicks); }
+	if (edits.speedOutTicks > 0) { element.setAttribute("speedout", edits.speedOutTicks); }
+}
+
+void loadSpeed(const QDomElement& element, ClipEdits* edits)
+{
+	edits->speedFrom = std::clamp(element.attribute("speedfrom", "100").toInt(), 25, 400);
+	edits->speedTo = std::clamp(element.attribute("speedto", "100").toInt(), 25, 400);
+	edits->speedInTicks = std::max(0, element.attribute("speedin", "0").toInt());
+	edits->speedOutTicks = std::max(0, element.attribute("speedout", "0").toInt());
+}
+
+} // namespace
+
 void Clip::saveClipEdits(QDomElement& element) const
 {
 	// The design's own attribute name for a clip's take lane (§2.6): since
@@ -452,6 +474,8 @@ void Clip::saveClipEdits(QDomElement& element) const
 	if (m_edits.keepFormants) { element.setAttribute("formantkeep", 1); }
 	if (m_edits.formant != 0) { element.setAttribute("formant", m_edits.formant); }
 	if (m_edits.loopTicks > 0) { element.setAttribute("loop", m_edits.loopTicks); }  // ED-029
+	if (m_edits.snapTicks > 0) { element.setAttribute("snappoint", m_edits.snapTicks); }  // ED-022
+	saveSpeed(m_edits, element);  // ED-152 / ED-179
 	// ED-042: the gain envelope, written only when there is one (I9, additive).
 	if (m_edits.hasEnvelope())
 	{
@@ -597,6 +621,8 @@ void Clip::loadClipEdits(const QDomElement& element)
 	edits.keepFormants = element.attribute("formantkeep", "0").toInt() != 0;
 	edits.formant = std::clamp(element.attribute("formant", "0").toInt(), -24, 24);
 	edits.loopTicks = std::max(0, element.attribute("loop", "0").toInt());
+	edits.snapTicks = std::max(0, element.attribute("snappoint", "0").toInt());
+	loadSpeed(element, &edits);
 
 	m_edits = edits;
 	// Reset-on-absence for `lane` and `link`: both defaults live once in

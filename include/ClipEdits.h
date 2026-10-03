@@ -113,6 +113,17 @@ struct ClipEdits
 	int formant = 0;
 	//! 0.5.0 ED-029: a MIDI clip's content repeats every `loopTicks` across the clip's length (0: no loop).
 	int loopTicks = 0;
+	//! 0.5.0 ED-022: a point inside the clip, `snapTicks` from its start, that lands on the grid when the clip is
+	//! dragged (0: the clip's start, as always).
+	int snapTicks = 0;
+	//! 0.5.0 ED-152: a sample clip's speed ramps from `speedFrom` to `speedTo` percent (25..400) across the clip - a
+	//! fixed varispeed when the two match; 100 and 100 is plain playback.
+	int speedFrom = 100;
+	int speedTo = 100;
+	//! 0.5.0 ED-179: speed fades - the speed rises from nothing over the first `speedInTicks` (a tape start) and falls
+	//! to nothing over the last `speedOutTicks` (a tape stop); 0 for none.
+	int speedInTicks = 0;
+	int speedOutTicks = 0;
 	//! ED-042: the gain envelope, `envelopeCount` points in tick order.
 	std::array<GainPoint, MaxGainPoints> envelope{};
 	int envelopeCount = 0;
@@ -121,12 +132,14 @@ struct ClipEdits
 	//! contribute without any edits at all.
 	bool isNeutral() const { return gain == 1.0f && !hasFade() && !hasEnvelope(); }
 	bool hasFade() const { return fadeInTicks > 0 || fadeOutTicks > 0; }
+	bool hasSpeed() const { return speedFrom != 100 || speedTo != 100 || speedInTicks > 0 || speedOutTicks > 0; }
 	bool hasEnvelope() const { return envelopeCount > 0; }
 
 	//! Every field but the envelope's points, for comparing (one tuple, so a new field is one more name here).
 	auto scalars() const
 	{
-		return std::tie(gain, fadeInTicks, fadeOutTicks, fadeInShape, fadeOutShape, transpose, keepFormants, formant, loopTicks, envelopeCount);
+		return std::tie(gain, fadeInTicks, fadeOutTicks, fadeInShape, fadeOutShape, transpose, keepFormants, formant, loopTicks, snapTicks, speedFrom, speedTo, speedInTicks,
+			speedOutTicks, envelopeCount);
 	}
 	bool operator==(const ClipEdits& other) const
 	{
@@ -156,6 +169,11 @@ LMMS_EXPORT void envelopeFromText(const QString& text, ClipEdits* edits);
  *  An overlap longer than the clip is clamped by the caller, never here.
  *
  *  Allocation-free; no division by a length the caller has not bounded. */
+/*! ED-152 / ED-179: the playback speed (1 is natural) at output frame @a frame of a clip @a clipFrames long, with the
+ *  speed fades @a speedInFrames and @a speedOutFrames long (output frames): the ramp from speedFrom to speedTo times
+ *  the two fades. Never below 1/32, so the resampler's ratio stays bounded. Allocation-free. */
+LMMS_EXPORT float clipSpeedAt(const ClipEdits& edits, f_cnt_t frame, f_cnt_t clipFrames, f_cnt_t speedInFrames, f_cnt_t speedOutFrames);
+
 LMMS_EXPORT float clipFadeGainAt(f_cnt_t frame, f_cnt_t clipFrames,
 	f_cnt_t fadeInFrames, f_cnt_t fadeOutFrames,
 	FadeShape fadeInShape, FadeShape fadeOutShape);

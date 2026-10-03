@@ -23,6 +23,8 @@
  */
 
 #include "ShellSelection.h"
+#include "Song.h"
+#include "ConfigManager.h"
 
 #include <QApplication>
 #include <QEvent>
@@ -65,6 +67,19 @@ void followRemoteControls(const ShellSelection* selection)
 
 } // namespace
 
+Track* ShellSelection::followedTrack(const QString& channelId)
+{
+	if (ConfigManager::inst()->value(QStringLiteral("ui"), QStringLiteral("followchannel")).toInt() == 0) { return nullptr; }
+	ControlResult ignored;
+	const MixerChannel* channel = control::resolveMixerChannel(channelId, &ignored);
+	if (channel == nullptr || channel->index() == 0) { return nullptr; }
+	for (Track* track : Engine::getSong()->tracks())
+	{
+		if (IntModel* model = track->mixerChannelModel(); model != nullptr && model->value() == channel->index()) { return track; }
+	}
+	return nullptr;
+}
+
 ShellSelection* ShellSelection::instance()
 {
 	static ShellSelection* selection = [] {
@@ -96,6 +111,8 @@ void ShellSelection::setClip(Clip* clip)
 
 void ShellSelection::setChannel(const QString& id)
 {
+	// 0.5.0 L08 (MX-021): with following on (config ui/followchannel), the channel's track is selected instead.
+	if (Track* owner = followedTrack(id)) { setTrack(owner); return; }
 	if (m_channel == id && m_track == nullptr) { return; }
 	m_track = nullptr;
 	m_clip = nullptr;

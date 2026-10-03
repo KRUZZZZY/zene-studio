@@ -1311,6 +1311,13 @@ TimePos ClipView::draggedClipPos( QMouseEvent * me )
 	{	// Otherwise, quantize moved distance (preserves user offsets)
 		newPos = m_initialClipPos + offset.quantize( getGUI()->songEditor()->m_editor->getSnapSize() );
 	}
+	// 0.5.0 ED-022: a clip with a snap point inside it lands that point on the grid instead of its start.
+	const int snapPoint = m_clip->clipEdits().snapTicks;
+	if (snapPoint > 0 && me->button() == Qt::NoButton && !unquantizedModHeld(me))
+	{
+		newPos = TimePos(m_initialClipPos.getTicks() + offset.getTicks() + snapPoint)
+			.quantize(getGUI()->songEditor()->m_editor->getSnapSize()) - TimePos(snapPoint);
+	}
 	// 0.5.0 ED-020: other clips' edges and markers are snap targets too, unless snapping is held off.
 	if (!unquantizedModHeld(me) && arrangement::modes().snapToEdges)
 	{

@@ -202,7 +202,9 @@ ControlResult rotate(const QJsonObject& args)
 	ControlResult error;
 	MidiClip* clip = scopedNotes(args, &ref, &notes, &error);
 	if (clip == nullptr) { return error; }
-	const tick_t length = std::max<tick_t>(1, clip->length().getTicks());
+	// The span the clip plays: a clip trimmed on the left plays only up to length - startTimeOffset, so a wrap past
+	// it would park notes where they never sound (review W3-batchB #3).
+	const tick_t length = std::max<tick_t>(1, clip->length().getTicks() - clip->startTimeOffset().getTicks());
 	const tick_t amount = args.value(QStringLiteral("amount")).toInt();
 	if (amount % length == 0) { return ControlResult::success({{QStringLiteral("clip"), clipId(ref.id)}, {QStringLiteral("rotated"), 0}}); }
 	clip->addJournalCheckPoint();

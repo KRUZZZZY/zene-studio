@@ -407,6 +407,7 @@ void SampleClipView::paintEvent( QPaintEvent * pe )
 	paintGainEnvelope(p, shownEdits(), frame, textColor());
 	paintFades(p, shownEdits(), m_clip->length().getTicks(), frame, textColor());
 	if (arrangement::modes().showTransients) { paintTransients(p, transientTicks(), frame, textColor()); }
+	paintSnapPoint(p, shownEdits(), frame, textColor());  // ED-022
 
 	QString name = PathUtil::cleanName(m_clip->m_sample.sampleFile());
 	paintTextLabel(name, p);

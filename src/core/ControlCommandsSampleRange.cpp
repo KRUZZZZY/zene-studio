@@ -75,6 +75,22 @@ std::vector<SampleFrame> applied(std::vector<SampleFrame> frames, const QString&
 	return frames;
 }
 
+/*! The window the clip plays after @a op over [@a from, @a to): unchanged when the length is, the frames left after
+ *  a delete closed up around it (review W3-batchB #2: a delete must not retarget the clip to the whole source), the
+ *  whole kept range after a crop. */
+SampleWindow windowAfter(const SampleWindow& window, const QString& op, std::size_t from, std::size_t to, f_cnt_t frames)
+{
+	if (op == QLatin1String("crop")) { return SampleWindow::full(frames); }
+	if (op != QLatin1String("delete")) { return window; }
+	const auto cut = static_cast<f_cnt_t>(to - from);
+	const auto shifted = [from, to, cut](f_cnt_t at) {
+		if (at <= static_cast<f_cnt_t>(from)) { return at; }
+		return at >= static_cast<f_cnt_t>(to) ? at - cut : static_cast<f_cnt_t>(from);
+	};
+	const SampleWindow kept = SampleWindow::clamped(shifted(window.sourceIn), shifted(window.sourceOut), frames);
+	return kept.empty() ? SampleWindow::full(frames) : kept;
+}
+
 ControlResult editRange(const QJsonObject& args)
 {
 	ClipRef ref;
@@ -96,9 +112,10 @@ ControlResult editRange(const QJsonObject& args)
 	clip->addJournalCheckPoint();
 	clip->setSampleBuffer(std::make_shared<SampleBuffer>(std::move(result), rate));
 	// Same length: the clip keeps playing the window it played; a new length plays the whole new source.
-	clip->setSampleWindow(static_cast<std::size_t>(frames) == size ? window : SampleWindow::full(frames));
+	clip->setSampleWindow(windowAfter(window, op, from, to, frames));
 	Engine::getSong()->setModified();
-	return ControlResult::success({{QStringLiteral("clip"), clipId(ref.id)}, {QStringLiteral("op"), op}, {QStringLiteral("frames"), static_cast<double>(frames)}});
+	return ControlResult::success({{QStringLiteral("clip"), clipId(ref.id)}, {QStringLiteral("op"), op}, {QStringLiteral("frames"), static_cast<double>(frames)},
+		{QStringLiteral("window"), QJsonArray{static_cast<double>(clip->sampleWindow().sourceIn), static_cast<double>(clip->sampleWindow().sourceOut)}}});
 }
 
 } // namespace

@@ -25,14 +25,20 @@
  *  - comp.move_edge (ED-169): the boundary between two takes nearest a tick moves to another tick -
  *    the take on the side that grows keeps its alignment, so the music stays in time;
  *  - comp.select_group (ED-172): one comp choice over several tracks at once - a drum kit's tracks,
- *    named directly or by a VCA group's edit set - as one undo step. */
+ *    named directly or by a VCA group's edit set - as one undo step;
+ *  - comp.split_passes (ED-167): a take recorded across loop wraps cut into one piece a pass, each on its
+ *    own take lane at the loop's start, the last pass comped in - loop recording into takes. */
 
+#include <algorithm>
 #include <cmath>
 #include <cstdlib>
 #include <vector>
 
 #include <QJsonArray>
 
+#include "ArrangementEdits.h"
+#include "Clip.h"
+#include "Timeline.h"
 #include "ControlEdit.h"
 #include "ControlRegistry.h"
 #include "ControlRegistryGroups.h"
@@ -158,6 +164,40 @@ ControlResult selectGroup(const QJsonObject& args)
 		{QStringLiteral("end"), end}});
 }
 
+ControlResult splitPasses(const QJsonObject& args)
+{
+	ClipRef ref;
+	ControlResult error;
+	if (!resolveClip(args.value(QStringLiteral("clip")).toString(), &ref, &error)) { return error; }
+	const Timeline& timeline = Engine::getSong()->getTimeline(Song::PlayMode::Song);
+	const tick_t begin = timeline.loopBegin().getTicks();
+	const tick_t loop = timeline.loopEnd().getTicks() - begin;
+	const tick_t start = ref.clip->startPosition().getTicks();
+	const tick_t length = ref.clip->length().getTicks();
+	if (loop <= 0 || start != begin || length <= loop)
+	{
+		return ControlResult::failure(ControlErrorKind::Refused, QStringLiteral("the clip starts at the loop's start and runs past its end, or there is nothing to split"));
+	}
+	const int passes = static_cast<int>(std::min<tick_t>(32, (length + loop - 1) / loop));
+	ref.track->addJournalCheckPoint();
+	std::vector<Clip*> pieces{ref.clip};
+	for (int k = passes - 1; k >= 1; --k)
+	{
+		if (Clip* piece = arrangement::splitClipAt(ref.clip, begin + k * loop)) { pieces.insert(pieces.begin() + 1, piece); }
+	}
+	TakeLaneModel& model = ref.track->takeLanes();
+	int lane = 0;
+	for (std::size_t k = 0; k < pieces.size(); ++k)
+	{
+		lane = model.addLane(QStringLiteral("Pass %1").arg(k + 1));
+		pieces[k]->setLaneIndex(lane);
+		pieces[k]->movePosition(TimePos(begin));
+	}
+	model.selectSegment(static_cast<int>(begin), static_cast<int>(begin + loop), lane, 0);
+	Engine::getSong()->setModified();
+	return ControlResult::success({{QStringLiteral("track"), trackIdOf(ref.track)}, {QStringLiteral("passes"), static_cast<int>(pieces.size())}});
+}
+
 void add(ControlRegistry& registry, const char* id, const QString& description, const QJsonObject& args, const QStringList& required,
 	ControlResult (*handler)(const QJsonObject&))
 {
@@ -183,6 +223,10 @@ void registerCompGroupCommands(ControlRegistry& registry)
 		"Reversible through the ProjectJournal (Track checkpoint)."),
 		{{QStringLiteral("track"), stringProperty()}, {QStringLiteral("tick"), tickProperty()}, {QStringLiteral("to"), tickProperty()}},
 		{QStringLiteral("track"), QStringLiteral("tick"), QStringLiteral("to")}, moveEdge);
+	add(registry, "comp.split_passes", QStringLiteral("Turn a take recorded across loop wraps into takes: the clip (starting at the "
+		"loop's start, longer than the loop) is cut at each wrap, every pass goes on its own take lane at the loop's start, and "
+		"the last pass is comped in. Reversible through the ProjectJournal (Track checkpoint)."),
+		{{QStringLiteral("clip"), stringProperty()}}, {QStringLiteral("clip")}, splitPasses);
 	add(registry, "comp.select_group", QStringLiteral("comp.select on several tracks at once - 'tracks', or the edit set of VCA "
 		"group 'group' (a kit recorded across tracks): lane 'lane' supplies [begin, end) on every one, slipped 'srcpos'. "
 		"Refused, with nothing changed, when any track cannot take it. One undo step for all of them."),

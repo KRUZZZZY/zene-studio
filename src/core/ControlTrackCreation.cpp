@@ -28,7 +28,9 @@
 #include <QDomDocument>
 
 #include "ControlEdit.h"
+#include "ControlRegistry.h"
 #include "ControlReversibility.h"
+#include "ControlVocabulary.h"
 #include "Engine.h"
 #include "Song.h"
 #include "Track.h"
@@ -43,13 +45,21 @@ void recordCreatedTrack(Track* track)
 	doc.appendChild(root);
 	track->saveState(doc, root);
 	const QString saved = doc.toString();
-	auto holder = std::make_shared<Track*>(track);
-	addUndoStep([holder]() { if (*holder != nullptr) { removeTrack(*holder); *holder = nullptr; } },
-		[holder, saved]() {
+	// The id, not the pointer: another step (track.remove, then its undo) can free this track and build an
+	// equal one, and the redo below may build it under a new id, which it writes back (review W3-batchB #1).
+	auto id = std::make_shared<int>(track->id());
+	addUndoStep([id]() { if (Track* live = trackWithId(*id)) { removeTrack(live); } },
+		[id, saved]() {
 			QDomDocument again;
 			again.setContent(saved);
-			*holder = Track::create(again.documentElement().firstChildElement(), Engine::getSong());
+			if (Track* made = Track::create(again.documentElement().firstChildElement(), Engine::getSong())) { *id = made->id(); }
 		});
+}
+
+Track* trackWithId(int id)
+{
+	ControlResult ignored;
+	return id >= 0 ? resolveTrack(trackId(id), &ignored) : nullptr;
 }
 
 } // namespace lmms::control

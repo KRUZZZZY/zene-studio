@@ -36,6 +36,7 @@
 #include <QSpacerItem>
 #include <QVBoxLayout>
 
+#include "LevelBar.h"
 #include "AudioEngine.h"
 #include "ConfigManager.h"
 #include "Engine.h"
@@ -151,6 +152,7 @@ InstrumentTrackView::InstrumentTrackView( InstrumentTrack * _it, TrackContainerV
 	layout->addWidget(m_activityIndicator);
 	layout->addWidget(m_volumeKnob);
 	layout->addWidget(m_panningKnob);
+	layout->addWidget(trackLevelBar(getTrack(), getTrackSettingsWidget()));  // 0.5.0 L08 (MX-011)
 	masterLayout->addLayout(layout);
 	masterLayout->addSpacerItem(new QSpacerItem(0, 0, QSizePolicy::Minimum, QSizePolicy::Expanding));
 

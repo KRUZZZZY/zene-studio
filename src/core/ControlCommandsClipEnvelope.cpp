@@ -29,10 +29,12 @@
 #include <QJsonArray>
 
 #include "ClipEdits.h"
+#include "ControlCommandDef.h"
 #include "ControlEdit.h"
 #include "ControlRegistry.h"
 #include "ControlRegistryGroups.h"
 #include "ControlVocabulary.h"
+#include "MidiClip.h"
 #include "RubberBandStretch.h"
 #include "SampleClip.h"
 
@@ -152,12 +154,30 @@ ControlResult setLoop(const QJsonObject& args)
 	ClipRef ref;
 	ControlResult error;
 	if (!resolveClip(args.value(QStringLiteral("clip")).toString(), &ref, &error)) { return error; }
-	if (dynamic_cast<SampleClip*>(ref.clip) != nullptr) { return ControlResult::failure(ControlErrorKind::Refused, QStringLiteral("looped content belongs to MIDI clips")); }
+	if (dynamic_cast<MidiClip*>(ref.clip) == nullptr) { return ControlResult::failure(ControlErrorKind::Refused, QStringLiteral("looped content belongs to MIDI clips")); }
 	ClipEdits after = ref.clip->clipEdits();
 	after.loopTicks = args.value(QStringLiteral("length")).toInt();
 	ref.clip->addJournalCheckPoint();
 	ref.clip->setClipEdits(after);
 	return ControlResult::success({{QStringLiteral("clip"), clipId(ref.id)}, {QStringLiteral("length"), after.loopTicks}});
+}
+
+//! 0.5.0 ED-022: the point inside a clip that lands on the grid when it is dragged.
+ControlResult setSnapPoint(const QJsonObject& args)
+{
+	ClipRef ref;
+	ControlResult error;
+	if (!resolveClip(args.value(QStringLiteral("clip")).toString(), &ref, &error)) { return error; }
+	const int ticks = args.value(QStringLiteral("ticks")).toInt();
+	if (ticks < 0 || ticks >= ref.clip->length().getTicks())
+	{
+		return ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("the snap point must be inside the clip"));
+	}
+	ClipEdits after = ref.clip->clipEdits();
+	after.snapTicks = ticks;
+	ref.clip->addJournalCheckPoint();
+	ref.clip->setClipEdits(after);
+	return ControlResult::success({{QStringLiteral("clip"), clipId(ref.id)}, {QStringLiteral("ticks"), ticks}});
 }
 
 //! 0.5.0 ED-153: a sample clip's formants - kept while it is transposed, and shifted on their own.
@@ -196,6 +216,12 @@ void registerClipEnvelopeCommands(ControlRegistry& registry)
 	loop.mutating = true;
 	loop.handler = setLoop;
 	registry.registerCommand(loop);
+
+	defineCommand(registry, QStringLiteral("clip.set_snap_point"), QStringLiteral("Set the point inside a clip, 'ticks' from its "
+		"start, that lands on the grid when the clip is dragged - a sample's downbeat after a pickup (0 snaps by the start, as "
+		"before). Saved with the clip. Reversible through the ProjectJournal (Clip checkpoint)."),
+		{{QStringLiteral("clip"), stringProperty()}, {QStringLiteral("ticks"), integerProperty()}}, {QStringLiteral("clip"), QStringLiteral("ticks")},
+		true, setSnapPoint);
 
 	ControlCommand formant;
 	formant.id = QStringLiteral("clip.set_formant");

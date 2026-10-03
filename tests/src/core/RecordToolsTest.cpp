@@ -30,10 +30,12 @@
 
 #include <QJsonArray>
 
+#include "Clip.h"
 #include "ControlRegistry.h"
 #include "ControlVocabulary.h"
 #include "Engine.h"
 #include "MetronomeOptions.h"
+#include "RecorderTaps.h"
 #include "SampleTrack.h"
 #include "Song.h"
 #include "TakeLane.h"
@@ -111,6 +113,22 @@ private slots:
 			{QStringLiteral("end"), 384}, {QStringLiteral("lane"), 5}}).errorKind, ControlErrorKind::Refused);
 	}
 
+	void aLoopedTakeBecomesPasses()
+	{
+		auto* track = dynamic_cast<SampleTrack*>(Track::create(Track::Type::Sample, Engine::getSong()));
+		Clip* take = track->createClip(TimePos(192));
+		take->changeLength(TimePos(192 * 3));  // three passes of a one-bar loop
+		Engine::getSong()->getTimeline(Song::PlayMode::Song).setLoopPoints(TimePos(192), TimePos(384));
+		const ControlResult split = run(QStringLiteral("comp.split_passes"), {{QStringLiteral("clip"), control::clipIdOf(take)}});
+		QVERIFY2(split.ok, qPrintable(split.errorMessage));
+		QCOMPARE(split.result.value(QStringLiteral("passes")).toInt(), 3);
+		QCOMPARE(track->getClips().size(), std::size_t{3});
+		for (const Clip* clip : track->getClips()) { QCOMPARE(clip->startPosition().getTicks(), tick_t{192}); }
+		QCOMPARE(track->takeLanes().laneCount(), 3);
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
+		QCOMPARE(track->getClips().size(), std::size_t{1});
+	}
+
 	void theMetronomesOptions()
 	{
 		QVERIFY(run(QStringLiteral("transport.metronome_options"), {{QStringLiteral("level"), 0.5}, {QStringLiteral("sound"), QStringLiteral("rim")},
@@ -138,6 +156,22 @@ private slots:
 		QCOMPARE(punch.value(QStringLiteral("punch_end")).toInt(), 768);
 		QVERIFY(run(QStringLiteral("control.undo")).ok);
 		QCOMPARE(run(QStringLiteral("transport.punch_get_state")).result.value(QStringLiteral("punch_begin")).toInt(), 384);
+	}
+
+	void aRouteTakesTheMasterOrAChannel()
+	{
+		QVERIFY(run(QStringLiteral("record.route_source"), {{QStringLiteral("route"), 0}, {QStringLiteral("source"), QStringLiteral("master")},
+			{QStringLiteral("side"), QStringLiteral("right")}}).ok);
+		QVERIFY(recordertaps::tapped(0));
+		QCOMPARE(run(QStringLiteral("record.route_source"), {{QStringLiteral("route"), 0}}).result.value(QStringLiteral("side")).toString(), QStringLiteral("right"));
+		QVERIFY(run(QStringLiteral("record.route_source"), {{QStringLiteral("route"), 0}, {QStringLiteral("source"), QStringLiteral("channel")},
+			{QStringLiteral("channel"), QStringLiteral("ch-0")}, {QStringLiteral("tap"), QStringLiteral("pre_fader")}}).ok);
+		QCOMPARE(recordertaps::get(0).source, recordertaps::Source::Channel);
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
+		QCOMPARE(recordertaps::get(0).source, recordertaps::Source::Master);
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
+		QVERIFY(!recordertaps::tapped(0));  // back on the input
+		QCOMPARE(run(QStringLiteral("record.route_source"), {{QStringLiteral("route"), 999}}).errorKind, ControlErrorKind::InvalidArgs);
 	}
 
 	void theRemainingRecordTime()

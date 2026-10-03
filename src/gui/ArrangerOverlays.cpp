@@ -305,6 +305,23 @@ void ArrangerRangeOverlay::dispatchRange(const QPoint& to)
 		{QStringLiteral("end"), tickAt(to.x())}, {QStringLiteral("tracks"), tracks}});
 }
 
+const QStringList& arrangerToolNames()
+{
+	static const QStringList names{QStringLiteral("draw"), QStringLiteral("knife"), QStringLiteral("select"),
+		QStringLiteral("range"), QStringLiteral("audition"), QStringLiteral("zoom"), QStringLiteral("smart")};
+	return names;
+}
+
+QString currentArrangerTool(SongEditor* editor)
+{
+	const auto* overlay = editor->findChild<ArrangerRangeOverlay*>();
+	if (overlay != nullptr && overlay->tool() != ArrangerRangeOverlay::Tool::None)
+	{
+		return arrangerToolNames().at(2 + static_cast<int>(overlay->tool()));  // after the three editor modes, None skipped
+	}
+	return arrangerToolNames().at(static_cast<int>(editor->editMode()));
+}
+
 void installArrangerOverlays(SongEditor* editor)
 {
 	if (editor == nullptr || editor->timeLine() == nullptr) { return; }

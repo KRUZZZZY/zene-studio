@@ -88,6 +88,10 @@ public:
 	const MpeExpression& mpeExpression() const { return m_mpeExpression; }
 	//! 0.5.0 L07 (ED-145): what this track does to live MIDI input (MidiInputTransform.h).
 	MidiInputTransform& inputTransform() { return m_inputTransform; }
+	//! 0.5.0 L09 (MX-035): every note of the track started this many milliseconds later (0..500) - a
+	//! manual offset for a slow instrument or to sit a part behind the beat. Saved only when set.
+	int delayMs() const { return m_delayMs.load(std::memory_order_relaxed); }
+	void setDelayMs(int ms) { m_delayMs.store(std::clamp(ms, 0, 500), std::memory_order_relaxed); }
 	//! 0.5.0 L07 (ED-121): the track's articulations (ArticulationMap.h); write with the track locked.
 	ArticulationMap& articulations() { return m_articulations; }
 	const ArticulationMap& articulations() const { return m_articulations; }
@@ -361,6 +365,7 @@ private:
 	MpeExpression m_mpeExpression;
 	MidiInputTransform m_inputTransform;
 	ArticulationMap m_articulations;
+	std::atomic<int> m_delayMs{0};
 
 	NotePlayHandle* m_notes[NumKeys];
 	NotePlayHandleList m_sustainedNotes;

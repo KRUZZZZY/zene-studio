@@ -26,6 +26,7 @@
 #define LMMS_GUI_ARRANGER_OVERLAYS_H
 
 #include <QPointer>
+#include <QStringList>
 #include <QWidget>
 
 #include "LmmsTypes.h"
@@ -110,6 +111,12 @@ private:
 	bool m_dragging = false;
 	QPoint m_from;
 };
+
+//! The arranger's tools by name: the song editor's modes in EditMode order (draw, knife, select), then the overlay's in
+//! Tool order after None (range, audition, zoom, smart).
+LMMS_EXPORT const QStringList& arrangerToolNames();
+//! The tool @a editor is in, by name.
+LMMS_EXPORT QString currentArrangerTool(SongEditor* editor);
 
 //! Put the arranger's overlays on the song editor once (the shell calls it at start-up).
 LMMS_EXPORT void installArrangerOverlays(SongEditor* editor);

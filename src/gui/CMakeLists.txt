@@ -102,6 +102,9 @@ SET(LMMS_SRCS
 	gui/FollowActionEditor.cpp
 	gui/SampleEditorDialog.cpp
 	gui/MixerWindows.cpp
+	gui/ArrangerNavigator.cpp
+	gui/LevelBar.cpp
+	gui/ModifierTools.cpp
 	gui/noteeditor/NoteCanvas.cpp
 	gui/noteeditor/NoteCanvasGestures.cpp
 	gui/noteeditor/NoteCanvasInput.cpp
@@ -122,6 +125,8 @@ SET(LMMS_SRCS
 	gui/shell/Shell.cpp
 	gui/shell/ShellChrome.cpp
 	gui/shell/ShellCommandMenus.cpp
+	gui/shell/ShellMenuParts.cpp
+	gui/shell/ShellMenuEntries.cpp
 	gui/shell/ShellFloating.cpp
 	gui/shell/ShellIcons.cpp
 	gui/shell/ShellLayout.cpp

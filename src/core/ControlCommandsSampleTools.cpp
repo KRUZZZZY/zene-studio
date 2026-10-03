@@ -44,6 +44,7 @@
 #include "Engine.h"
 #include "SampleBuffer.h"
 #include "SampleClip.h"
+#include "WarpMarkers.h"
 #include "Song.h"
 
 namespace lmms
@@ -119,6 +120,30 @@ ControlResult fadeCurve(const QJsonObject& args)
 	return ControlResult::success({{QStringLiteral("clip"), clipId(ref.id)}, {QStringLiteral("curve"), curve}});
 }
 
+//! ED-152 / ED-179: a sample clip's speed ramp and its tape-start and tape-stop speed fades.
+ControlResult speed(const QJsonObject& args)
+{
+	ClipRef ref;
+	ControlResult error;
+	if (!resolveClip(args.value(QStringLiteral("clip")).toString(), &ref, &error)) { return error; }
+	auto* clip = dynamic_cast<SampleClip*>(ref.clip);
+	if (clip == nullptr) { return ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("'clip' is an audio clip")); }
+	if (clip->warpStretchMode() != WarpStretchMode::Resample)
+	{
+		return ControlResult::failure(ControlErrorKind::Refused, QStringLiteral("a clip that keeps its pitch while stretched cannot change speed: set its stretch mode to resample"));
+	}
+	ClipEdits after = clip->clipEdits();
+	after.speedFrom = std::clamp(args.value(QStringLiteral("from")).toInt(after.speedFrom), 25, 400);
+	after.speedTo = std::clamp(args.value(QStringLiteral("to")).toInt(args.contains(QStringLiteral("from")) ? after.speedFrom : after.speedTo), 25, 400);
+	after.speedInTicks = std::clamp(args.value(QStringLiteral("fade_in")).toInt(after.speedInTicks), 0, clip->length().getTicks());
+	after.speedOutTicks = std::clamp(args.value(QStringLiteral("fade_out")).toInt(after.speedOutTicks), 0, clip->length().getTicks());
+	clip->addJournalCheckPoint();
+	clip->setClipEdits(after);
+	Engine::getSong()->setModified();
+	return ControlResult::success({{QStringLiteral("clip"), clipId(ref.id)}, {QStringLiteral("from"), after.speedFrom}, {QStringLiteral("to"), after.speedTo},
+		{QStringLiteral("fade_in"), after.speedInTicks}, {QStringLiteral("fade_out"), after.speedOutTicks}});
+}
+
 void add(ControlRegistry& registry, const char* id, const QString& description, const QJsonObject& args, bool mutating,
 	ControlResult (*handler)(const QJsonObject&))
 {
@@ -145,6 +170,13 @@ void registerSampleToolCommands(ControlRegistry& registry)
 		"shares. One undo step (Clip checkpoint)."), clip, true, crop);
 	add(registry, "sample.make_unique", QStringLiteral("Give an audio clip its own copy of its source, so a later bake of a duplicate "
 		"that shares it cannot change this one. One undo step (Clip checkpoint)."), clip, true, makeUnique);
+	QJsonObject speedArgs = clip;
+	for (const char* key : {"from", "to", "fade_in", "fade_out"}) { speedArgs.insert(QLatin1String(key), integerProperty()); }
+	add(registry, "clip.speed", QStringLiteral("An audio clip's speed, the pitch going with it (a tape): it ramps from 'from' to 'to' "
+		"percent (25..400; 'to' follows 'from' when only 'from' is given - a fixed varispeed) across the clip, rises from "
+		"nothing over the first 'fade_in' ticks (a tape start) and falls to nothing over the last 'fade_out' ticks (a tape "
+		"stop). The clip keeps its length; a slower clip plays less of its audio. Refused for a clip that keeps its pitch "
+		"while stretched. Saved with the clip. One undo step (Clip checkpoint)."), speedArgs, true, speed);
 	QJsonObject curve = clip;
 	curve.insert(QStringLiteral("points"), integerProperty(2, 1024));
 	add(registry, "clip.fade_curve", QStringLiteral("A clip's fades, gain envelope and gain as one gain curve, 'points' samples over "

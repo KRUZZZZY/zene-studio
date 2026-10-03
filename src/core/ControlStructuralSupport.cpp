@@ -69,6 +69,7 @@
 #include "ControlEdit.h"
 #include "ControlReversibility.h"
 #include "ControlStructuralSupport.h"
+#include "ControlTrackCreation.h"
 #include "Effect.h"
 #include "EffectChain.h"
 #include "Engine.h"
@@ -190,13 +191,14 @@ bool journalTrackMove(Track* track, int fromIndex, int toIndex)
 	Song* song = Engine::getSong();
 	if (song == nullptr || track == nullptr || fromIndex < 0 || toIndex < 0) { return false; }
 
-	auto holder = std::make_shared<Track*>(track);
+	// By id, never by pointer: a later removal and its undo rebuild the track as a new object (review W3-batchB #1).
+	const int id = track->id();
 	addStructuralUndoStep(
-		[holder, fromIndex]() {
-			if (*holder != nullptr) { moveTrackToIndex(*holder, fromIndex); }
+		[id, fromIndex]() {
+			if (Track* live = trackWithId(id)) { moveTrackToIndex(live, fromIndex); }
 		},
-		[holder, toIndex]() {
-			if (*holder != nullptr) { moveTrackToIndex(*holder, toIndex); }
+		[id, toIndex]() {
+			if (Track* live = trackWithId(id)) { moveTrackToIndex(live, toIndex); }
 		},
 		0);
 	return true;
@@ -215,16 +217,19 @@ bool journalTrackRemoval(Track* track)
 	// no document would make control.undo take back an OLDER edit instead.
 	if (xml.isEmpty()) { return false; }
 
-	auto holder = std::make_shared<Track*>(track);
+	// The restored track's id, not its pointer (review W3-batchB #1): the redo finds it by id when it runs.
+	auto id = std::make_shared<int>(-1);
 	addStructuralUndoStep(
-		[song, xml, index, holder]() {
-			*holder = restoreTrackFromXml(xml, song);
+		[song, xml, index, id]() {
+			Track* restored = restoreTrackFromXml(xml, song);
+			*id = restored != nullptr ? restored->id() : -1;
 			// ... and where it was, not at the end: the restore path appends,
 			// the same way the project loader does when it builds a song.
-			if (*holder != nullptr) { moveTrackToIndex(*holder, index); }
+			if (restored != nullptr) { moveTrackToIndex(restored, index); }
 		},
-		[holder]() {
-			if (*holder != nullptr) { removeTrack(*holder); *holder = nullptr; }
+		[id]() {
+			if (Track* live = trackWithId(*id)) { removeTrack(live); }
+			*id = -1;
 		},
 		xml.size());
 	return true;

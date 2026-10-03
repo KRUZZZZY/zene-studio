@@ -29,6 +29,9 @@
 
 #include <QtTest>
 
+#include <array>
+#include <cmath>
+
 #include <QDomDocument>
 #include <QJsonArray>
 
@@ -40,6 +43,11 @@
 #include "Mixer.h"
 #include "MixerOptions.h"
 #include "MixerStrip.h"
+#include "AudioBusHandle.h"
+#include "PreviewOutput.h"
+#include "ControlRoom.h"
+#include "Sample.h"
+#include "SamplePlayHandle.h"
 #include "SampleFrame.h"
 #include "Song.h"
 #include "VcaGroup.h"
@@ -206,6 +214,78 @@ private slots:
 		const QJsonArray channels = run(QStringLiteral("routing.matrix")).result.value(QStringLiteral("channels")).toArray();
 		QCOMPARE(channels.size(), Engine::mixer()->numChannels());
 		QCOMPARE(channels.first().toObject().value(QStringLiteral("name")).toString(), QStringLiteral("Master"));
+	}
+
+	void sendMetersAndEqCompare()
+	{
+		QVERIFY(run(QStringLiteral("mixer.send_to"), {{QStringLiteral("channel"), ch(3)}, {QStringLiteral("to"), ch(4)},
+			{QStringLiteral("amount"), 0.5}, {QStringLiteral("pre_fader"), true}}).ok);
+		fill(3, 0.8f, 0.4f);
+		mixerstrip::updateMeters(*channel(3), channel(3)->m_buffer, 1.f, 8);
+		const std::array<float, 2> level = mixerstrip::sendLevel(*control::findMixerRoute(3, 4));
+		QCOMPARE(level[0], 0.4f);
+		QCOMPARE(level[1], 0.2f);
+		const QJsonArray sends = run(QStringLiteral("mixer.send_meters"), {{QStringLiteral("channel"), ch(3)}}).result.value(QStringLiteral("sends")).toArray();
+		QCOMPARE(sends.size(), 1);
+		QVERIFY(qAbs(sends.first().toObject().value(QStringLiteral("left_db")).toDouble() - 20.0 * std::log10(0.4)) < 1e-3);
+		QVERIFY(run(QStringLiteral("mixer.channel_eq"), {{QStringLiteral("channel"), ch(4)}, {QStringLiteral("high"), 6.0}}).ok);
+		const QJsonObject compare = run(QStringLiteral("mixer.eq_compare"), {{QStringLiteral("a"), ch(3)}, {QStringLiteral("b"), ch(4)}}).result;
+		QCOMPARE(compare.value(QStringLiteral("difference")).toObject().value(QStringLiteral("high")).toDouble(), 6.0);
+		const QJsonArray curve = compare.value(QStringLiteral("curve")).toArray();
+		QCOMPARE(curve.size(), 31);
+		QVERIFY(qAbs(curve.first().toObject().value(QStringLiteral("a_db")).toDouble()) < 1e-6);  // A is flat
+		QVERIFY(curve.last().toObject().value(QStringLiteral("b_db")).toDouble() > 4.0);  // B's high shelf near 20 kHz
+		QCOMPARE(run(QStringLiteral("mixer.eq_compare"), {{QStringLiteral("a"), ch(3)}, {QStringLiteral("b"), QStringLiteral("nope")}}).ok, false);
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
+		QCOMPARE(channel(4)->m_eqHighModel.value(), 0.f);
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
+	}
+
+	void previewsPlayIntoTheChosenChannel()
+	{
+		QVERIFY(run(QStringLiteral("browser.preview_output"), {{QStringLiteral("channel"), ch(2)}}).ok);
+		auto* handle = new SamplePlayHandle(new Sample());
+		previewoutput::route(handle);
+		QCOMPARE(static_cast<int>(handle->audioBusHandle()->nextMixerChannel()), 2);
+		delete handle;
+		QCOMPARE(run(QStringLiteral("browser.preview_output"), {{QStringLiteral("channel"), QStringLiteral("nope")}}).ok, false);
+		previewoutput::setChannel(0);
+		QCOMPARE(run(QStringLiteral("browser.preview_output")).result.value(QStringLiteral("channel")).toString(), ch(0));
+	}
+
+	void anInstrumentTracksMidiGoesOut()
+	{
+		auto* track = dynamic_cast<InstrumentTrack*>(Track::create(Track::Type::Instrument, Engine::getSong()));
+		const QString id = control::trackIdOf(track);
+		QVERIFY(!track->midiPort()->isWritable());
+		QVERIFY(run(QStringLiteral("track.midi_out"), {{QStringLiteral("track"), id}, {QStringLiteral("channel"), 3}}).ok);
+		QVERIFY(track->midiPort()->isWritable());
+		QCOMPARE(track->midiPort()->outputChannel(), 3);
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
+		QVERIFY(!track->midiPort()->isWritable());
+		QCOMPARE(run(QStringLiteral("track.midi_out"), {{QStringLiteral("track"), id}, {QStringLiteral("port"), QStringLiteral("no such port")}}).errorKind,
+			ControlErrorKind::NotFound);
+		QCOMPARE(run(QStringLiteral("track.midi_out"), {{QStringLiteral("track"), id}}).result.value(QStringLiteral("enabled")).toBool(), false);
+	}
+
+	void theControlRoomTouchesOnlyWhatIsHeard()
+	{
+		QVERIFY(run(QStringLiteral("monitor.control_room"), {{QStringLiteral("mono"), true}, {QStringLiteral("dim"), true}}).ok);
+		std::array<SampleFrame, 4> heard;
+		heard.fill(SampleFrame(1.f, 0.f));
+		controlroom::apply(heard.data(), 4);
+		QVERIFY(qAbs(heard[2][0] - 0.05f) < 1e-4f);  // mono halves it, the dim takes 20 dB
+		QCOMPARE(heard[2][0], heard[2][1]);
+		controlroom::setExporting(true);
+		heard.fill(SampleFrame(1.f, 0.f));
+		controlroom::apply(heard.data(), 4);
+		QCOMPARE(heard[1][0], 1.f);  // a render never gets it
+		controlroom::setExporting(false);
+		QCOMPARE(run(QStringLiteral("monitor.control_room"), {{QStringLiteral("speaker"), QStringLiteral("D")}}).errorKind, ControlErrorKind::InvalidArgs);
+		QVERIFY(run(QStringLiteral("monitor.control_room"), {{QStringLiteral("mono"), false}, {QStringLiteral("dim"), false}}).ok);
+		heard.fill(SampleFrame(1.f, 0.f));
+		controlroom::apply(heard.data(), 4);
+		QCOMPARE(heard[3][1], 0.f);  // neutral again: untouched
 	}
 
 	void aGroupColoursItsMembers()

@@ -23,10 +23,14 @@
  */
 #include "InspectorChannelRouting.h"
 
+#include <algorithm>
+#include <array>
+
 #include <QCheckBox>
 #include <QComboBox>
 #include <QGridLayout>
 #include <QLabel>
+#include <QPointer>
 #include <QPushButton>
 #include <QToolButton>
 #include <QVBoxLayout>
@@ -38,8 +42,10 @@
 #include "Engine.h"
 #include "Effect.h"
 #include "Knob.h"
+#include "LevelBar.h"
 #include "LedCheckBox.h"
 #include "Mixer.h"
+#include "MixerStrip.h"
 
 namespace lmms::gui::inspectorrouting
 {
@@ -127,9 +133,17 @@ void addSends(QVBoxLayout* column, MixerChannel* channel, const QString& id, QWi
 			rebuild();
 		});
 		grid->addWidget(name, row, 0);
-		grid->addWidget(amount, row, 1);
-		grid->addWidget(pan, row, 2);
-		grid->addWidget(remove, row, 3);
+		const QPointer<MixerRoute> watched(route);  // MX-053: the level the send carries
+		auto* meter = new LevelBar([watched] {
+			if (watched.isNull()) { return 0.f; }
+			const std::array<float, 2> level = mixerstrip::sendLevel(*watched);
+			return std::max(level[0], level[1]);
+		}, QObject::tr("The level this send carries"), parent);
+		meter->setProperty("controlCommand", QStringLiteral("mixer.send_meters"));
+		grid->addWidget(meter, row, 1);
+		grid->addWidget(amount, row, 2);
+		grid->addWidget(pan, row, 3);
+		grid->addWidget(remove, row, 4);
 	}
 	grid->setColumnStretch(0, 1);
 	column->addLayout(grid);

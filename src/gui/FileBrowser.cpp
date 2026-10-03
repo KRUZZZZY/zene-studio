@@ -60,6 +60,7 @@
 #include "PatternStore.h"
 #include "Plugin.h"
 #include "PluginFactory.h"
+#include "PreviewOutput.h"
 #include "PresetPreviewPlayHandle.h"
 #include "Sample.h"
 #include "SampleClip.h"
@@ -850,6 +851,7 @@ void FileBrowserTreeWidget::previewFileItem(FileItem* file)
 
 	if (newPPH != nullptr)
 	{
+		previewoutput::route(newPPH);  // 0.5.0 L09 (MX-042): the preview channel, the master unless one is chosen
 		if (Engine::audioEngine()->addPlayHandle(newPPH))
 		{
 			m_previewPlayHandle = newPPH;

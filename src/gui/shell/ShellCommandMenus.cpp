@@ -52,54 +52,16 @@
 #include "SongEditor.h"
 #include "TrackFolder.h"
 #include "ShellLayout.h"
+#include "ShellMenuParts.h"
 #include "Song.h"
 
 namespace lmms::gui::ShellCommandMenus
 {
 
+using namespace menuparts;
+
 namespace
 {
-
-QString tr(const char* text)
-{
-	return QObject::tr(text);
-}
-
-//! An entry running @a id with @a fixed - through its form when @a ask, with @a defaults.
-QAction* add(QMenu* menu, const char* label, const char* id, const QJsonObject& fixed, bool ask,
-	const QJsonObject& defaults = {}, bool showResult = false)
-{
-	const QString title = tr(label).remove(QStringLiteral("..."));
-	return addCommandAction(menu, tr(label), QLatin1String(id), [id, fixed, ask, defaults, showResult, title] {
-		return CommandCall{QLatin1String(id), fixed, defaults, title, ask, showResult};
-	});
-}
-
-//! A submenu of @a id's values for @a key (enum or On/Off), each run at once with @a fixed.
-void choices(QMenu* menu, const char* label, const char* id, const char* key, const QJsonObject& fixed)
-{
-	addCommandChoices(menu, tr(label), QLatin1String(id), QLatin1String(key),
-		[id, fixed] { return CommandCall{QLatin1String(id), fixed, {}, QString(), false}; });
-}
-
-//! An entry opening the list surface @a make builds.
-void list(QMenu* menu, const char* label, std::function<ListSpec()> make)
-{
-	QAction* action = menu->addAction(tr(label));
-	// The list command it reads is what the entry declares (SPEC A11's agent-surface sweep).
-	action->setProperty("controlCommand", make().listId);
-	QObject::connect(action, &QAction::triggered, menu, [menu, make = std::move(make)] {
-		QWidget* host = menu;
-		while (qobject_cast<QMenu*>(host) != nullptr) { host = host->parentWidget(); }
-		showCommandList(host, make());
-	});
-}
-
-QJsonObject with(QJsonObject base, const char* key, const QJsonValue& value)
-{
-	base.insert(QLatin1String(key), value);
-	return base;
-}
 
 //! The clip after @a clip on its track, by start position; nullptr when it is the last.
 Clip* nextClip(Clip* clip)
@@ -291,6 +253,8 @@ void populateTrack(QMenu* menu, Track* track)
 			{{QStringLiteral("articulations"), dynamic_cast<InstrumentTrack*>(track)->articulations().toJson()}});
 	}
 	automationMenu(menu, id);
+	trackMidiOutEntries(menu, track, self);  // MX-062
+	trackVersionEntries(menu, track, self);  // ED-049
 	QMenu* takes = menu->addMenu(tr("Takes and Comping"));
 	list(takes, "Take Lanes...", [id] { return CommandLists::takeLanes(id); });
 	add(takes, "Add Take Lane...", "comp.lane_add", self, true);
@@ -317,6 +281,7 @@ void populateClip(QMenu* menu, Clip* clip)
 	const QJsonObject self{{QStringLiteral("clip"), control::clipIdOf(clip)}};
 	const QJsonObject at{{QStringLiteral("position"), static_cast<int>(clip->startPosition())}};
 	add(menu, "Move to Position...", "clip.move", self, true, at);
+	clipPlacementEntries(menu, clip, self);  // ED-022
 	add(menu, "Duplicate", "clip.repeat", self, false);
 	add(menu, "Repeat...", "clip.repeat", self, true, {{QStringLiteral("count"), 4}});
 	QMenu* scale = menu->addMenu(tr("Time Scale"));
@@ -329,12 +294,14 @@ void populateClip(QMenu* menu, Clip* clip)
 			{QStringLiteral("start"), static_cast<int>(clip->startPosition())}, {QStringLiteral("end"), static_cast<int>(clip->endPosition())}}, false);
 		add(menu, "Remove Silence...", "clip.remove_silence", self, true, {{QStringLiteral("threshold_db"), -50.0}});  // ED-040
 		add(menu, "Crop the Sample", "sample.crop", self, false);  // ED-155
+		add(menu, "Split into Loop Passes", "comp.split_passes", self, false);  // ED-167
 		add(menu, "Convert to MIDI Notes", "clip.audio_to_midi", self, false);  // ED-160
 		QAction* editor = menu->addAction(tr("Sample Editor..."));  // ED-156
 		editor->setProperty("controlCommand", QStringLiteral("sample.edit_range"));
 		const QPointer<SampleClip> sample = static_cast<SampleClip*>(clip);
 		QObject::connect(editor, &QAction::triggered, menu, [sample, menu] { if (sample) { (new SampleEditorDialog(sample, menu->parentWidget()))->show(); } });
 		add(menu, "Make the Sample Unique", "sample.make_unique", self, false);
+		clipSpeedEntries(menu, clip, self);  // ED-152 / ED-179
 		add(menu, "Split at the Play Position", "clip.split_at", with(with(self, "at", QStringLiteral("positions")), "positions",  // ED-005
 			QJsonArray{static_cast<int>(Engine::getSong()->getPlayPos().getTicks())}), false);
 	}
@@ -348,7 +315,7 @@ void populateClip(QMenu* menu, Clip* clip)
 	}
 	add(pitch, "Reset", "clip.set_transpose", with(self, "semitones", 0), false);
 	add(pitch, "Transpose...", "clip.set_transpose", self, true, {{QStringLiteral("semitones"), transpose}});
-	if (dynamic_cast<SampleClip*>(clip) == nullptr) { add(menu, "Loop the Content...", "clip.set_loop", self, true, {{QStringLiteral("length"), 192}}); }  // ED-029
+	if (dynamic_cast<MidiClip*>(clip) != nullptr) { add(menu, "Loop the Content...", "clip.set_loop", self, true, {{QStringLiteral("length"), 192}}); }  // ED-029
 	if (dynamic_cast<SampleClip*>(clip) != nullptr)  // ED-153
 	{
 		choices(pitch, "Keep the Formants", "clip.set_formant", "keep", self);
@@ -417,6 +384,7 @@ void populateChannel(QMenu* menu, const QString& channel)
 	add(menu, "Pan a Send...", "mixer.send_pan", self, true, {{QStringLiteral("pan"), 0.0}});  // MX-048
 	add(menu, "Switch a Send Off or On...", "mixer.send_enable", self, true, {{QStringLiteral("enabled"), false}});  // MX-047
 	add(menu, "Create a Return...", "mixer.create_return", self, true, {{QStringLiteral("name"), QStringLiteral("Return")}});  // MX-051
+	add(menu, "Play Previews Here", "browser.preview_output", self, false);  // MX-042
 	QAction* gang = menu->addAction(tr("Adjust Channels Together..."));  // MX-028
 	gang->setProperty("controlCommand", QStringLiteral("mixer.adjust"));
 	QObject::connect(gang, &QAction::triggered, menu, [channel, menu] {
@@ -504,7 +472,7 @@ void populateProject(QMenu* menu)
 	choices(menu, "Automation Read", "automation.switches", "read", {});  // L06 (ED-200)
 	choices(menu, "Automation Write", "automation.switches", "write", {});
 	choices(menu, "Punched Automation Writes", "automation.switches", "punched_writes", {});  // ED-201
-	choices(menu, "Mono Check", "mixer.set_strip", "mono", {{QStringLiteral("channel"), control::channelIdOf(Engine::mixer()->mixerChannel(0))}});  // MX-039
+	controlRoomEntries(menu);  // MX-038 / MX-039: the monitor section, never a render
 	add(menu, "Order the Mixer by Tracks", "mixer.order_by_tracks", {}, false);  // MX-018
 	add(menu, "Find a Channel...", "mixer.find", {}, true, {}, true);  // MX-009
 	add(menu, "Colour a Group's Channels...", "vca.color_members", {}, true);  // MX-067

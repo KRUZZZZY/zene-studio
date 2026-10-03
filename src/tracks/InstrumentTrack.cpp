@@ -984,6 +984,7 @@ void InstrumentTrack::saveTrackSpecificSettings(QDomDocument& doc, QDomElement& 
 	m_pitchRangeModel.saveSettings( doc, thisElement, "pitchrange" );
 	if (!presetMode) { m_inputTransform.save(thisElement); }  // 0.5.0 L07: an attribute, only when set
 	m_articulations.save(thisElement);  // 0.5.0 L07 (ED-121): an attribute, only when there is one
+	if (delayMs() > 0) { thisElement.setAttribute("delayms", delayMs()); }  // 0.5.0 L09 (MX-035)
 
 	m_mixerChannelModel.saveSettings( doc, thisElement, "mixch" );
 	m_baseNoteModel.saveSettings( doc, thisElement, "basenote" );
@@ -1074,6 +1075,7 @@ void InstrumentTrack::loadTrackSpecificSettings( const QDomElement & thisElement
 
 	m_inputTransform.load(thisElement);  // 0.5.0 L07 (absent: left as it is)
 	m_articulations.load(thisElement);  // 0.5.0 L07 (ED-121; absent: none)
+	setDelayMs(thisElement.attribute("delayms", "0").toInt());  // 0.5.0 L09 (MX-035; absent: none)
 
 	QDomNode node = thisElement.firstChild();
 	while( !node.isNull() )

@@ -251,7 +251,7 @@ QString meterReadout(const MixerChannel* channel)
 
 bool feedMeter(Fader* fader, MixerChannel* channel)
 {
-	if (fader->underMouse()) { fader->setToolTip(meterReadout(channel)); }  // only while someone is looking
+	if (fader->underMouse()) { fader->setToolTip(meterReadout(channel)); }  // only while someone is looking (MX-133)
 	const QString& mode = options().meterMode;
 	if (mode == QLatin1String("peak")) { return false; }
 	float left = 0.f;

@@ -40,7 +40,9 @@
 #include "DesignTokens.h"
 #include "ShellChrome.h"
 #include "ShellIcons.h"
+#include "ArrangerNavigator.h"
 #include "ArrangerOverlays.h"
+#include "ModifierTools.h"
 #include "GuiApplication.h"
 #include "MacroMenu.h"
 #include "SongEditor.h"
@@ -136,7 +138,12 @@ void Shell::showEvent(QShowEvent* event)
 			installRecordLaunchMenus(main->menuBar());  // 0.5.0 L03 / L02
 			installHelpEntries(main->menuBar());  // 0.5.0 L14: What's This?, the manual, tours, appearance
 			ContextHelp::install();
-			if (getGUI() != nullptr && getGUI()->songEditor() != nullptr) { installArrangerOverlays(getGUI()->songEditor()->m_editor); }
+			if (getGUI() != nullptr && getGUI()->songEditor() != nullptr)
+			{
+				installArrangerOverlays(getGUI()->songEditor()->m_editor);
+				installArrangerNavigator(getGUI()->songEditor());  // 0.5.0 L04 (ED-053)
+				modifiertools::install();  // 0.5.0 L04 (ED-014)
+			}
 			MacroMenu::install(main->menuBar());
 			ShortcutMap::apply(main->menuBar());
 		}

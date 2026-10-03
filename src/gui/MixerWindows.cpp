@@ -26,10 +26,13 @@
 #include <algorithm>
 #include <cmath>
 
+#include <QComboBox>
 #include <QDialog>
+#include <QHBoxLayout>
 #include <QHeaderView>
 #include <QJsonArray>
 #include <QJsonObject>
+#include <QLabel>
 #include <QMenu>
 #include <QPainter>
 #include <QTableWidget>
@@ -164,6 +167,97 @@ private:
 	QStringList m_ids;
 };
 
+//! MX-140: the two responses mixer.eq_compare reports, -18..18 dB over 20 Hz..20 kHz; A in the accent colour.
+class EqCurves : public QWidget
+{
+public:
+	using QWidget::QWidget;
+	void setCurve(const QJsonArray& curve) { m_curve = curve; update(); }
+
+protected:
+	void paintEvent(QPaintEvent*) override
+	{
+		const tokens::Palette& pal = tokens::palette();
+		QPainter p(this);
+		p.fillRect(rect(), pal.control);
+		p.setPen(pal.separator);
+		p.drawLine(0, height() / 2, width(), height() / 2);
+		drawCurve(p, QStringLiteral("a_db"), pal.accent);
+		drawCurve(p, QStringLiteral("b_db"), pal.meterMid);
+	}
+
+private:
+	void drawCurve(QPainter& p, const QString& key, const QColor& color)
+	{
+		if (m_curve.size() < 2) { return; }
+		QPolygonF line;
+		for (int i = 0; i < m_curve.size(); ++i)
+		{
+			const double db = std::clamp(m_curve.at(i).toObject().value(key).toDouble(), -18.0, 18.0);
+			line << QPointF(width() * i / (m_curve.size() - 1.0), height() * (0.5 - db / 36.0));
+		}
+		p.setPen(QPen(color, 2));
+		p.drawPolyline(line);
+	}
+
+	QJsonArray m_curve;
+};
+
+class EqCompare : public QDialog
+{
+public:
+	explicit EqCompare(QWidget* parent) :
+		QDialog(parent),
+		m_a(new QComboBox(this)),
+		m_b(new QComboBox(this)),
+		m_curves(new EqCurves(this)),
+		m_summary(new QLabel(this))
+	{
+		setWindowTitle(QObject::tr("Compare Channel EQ"));
+		setAttribute(Qt::WA_DeleteOnClose);
+		setProperty("controlCommand", QStringLiteral("mixer.eq_compare"));
+		const QJsonArray channels = ControlRegistry::instance()->invoke(QStringLiteral("routing.matrix")).result.value(QStringLiteral("channels")).toArray();
+		for (const QJsonValue& value : channels)
+		{
+			m_a->addItem(value.toObject().value(QStringLiteral("name")).toString(), value.toObject().value(QStringLiteral("channel")).toString());
+			m_b->addItem(m_a->itemText(m_a->count() - 1), m_a->itemData(m_a->count() - 1));
+		}
+		m_b->setCurrentIndex(std::min(1, m_b->count() - 1));
+		m_a->setAccessibleName(QObject::tr("Channel A"));
+		m_b->setAccessibleName(QObject::tr("Channel B"));
+		auto* row = new QHBoxLayout;
+		row->addWidget(new QLabel(QObject::tr("A"), this));
+		row->addWidget(m_a, 1);
+		row->addWidget(new QLabel(QObject::tr("B"), this));
+		row->addWidget(m_b, 1);
+		auto* layout = new QVBoxLayout(this);
+		layout->addLayout(row);
+		layout->addWidget(m_curves, 1);
+		layout->addWidget(m_summary);
+		connect(m_a, &QComboBox::currentIndexChanged, this, [this] { compare(); });
+		connect(m_b, &QComboBox::currentIndexChanged, this, [this] { compare(); });
+		resize(520, 320);
+		compare();
+	}
+
+private:
+	void compare()
+	{
+		const QJsonObject result = ControlRegistry::instance()->invoke(QStringLiteral("mixer.eq_compare"),
+			{{QStringLiteral("a"), m_a->currentData().toString()}, {QStringLiteral("b"), m_b->currentData().toString()}, {QStringLiteral("points"), 64}}).result;
+		m_curves->setCurve(result.value(QStringLiteral("curve")).toArray());
+		const QJsonObject d = result.value(QStringLiteral("difference")).toObject();
+		m_summary->setText(QObject::tr("B - A: low %1 dB, mid %2 dB at %3 Hz, high %4 dB")
+			.arg(d.value(QStringLiteral("low")).toDouble(), 0, 'f', 1).arg(d.value(QStringLiteral("mid")).toDouble(), 0, 'f', 1)
+			.arg(d.value(QStringLiteral("mid_freq")).toDouble(), 0, 'f', 0).arg(d.value(QStringLiteral("high")).toDouble(), 0, 'f', 1));
+	}
+
+	QComboBox* m_a;
+	QComboBox* m_b;
+	EqCurves* m_curves;
+	QLabel* m_summary;
+};
+
 } // namespace
 
 void addMixerWindows(QMenu* menu)
@@ -174,6 +268,9 @@ void addMixerWindows(QMenu* menu)
 	QAction* matrix = menu->addAction(QObject::tr("Routing Matrix..."));
 	matrix->setProperty("controlCommand", QStringLiteral("routing.matrix"));
 	QObject::connect(matrix, &QAction::triggered, menu, [menu] { (new RoutingMatrix(menu->parentWidget()))->show(); });
+	QAction* eq = menu->addAction(QObject::tr("Compare Channel EQ..."));
+	eq->setProperty("controlCommand", QStringLiteral("mixer.eq_compare"));
+	QObject::connect(eq, &QAction::triggered, menu, [menu] { (new EqCompare(menu->parentWidget()))->show(); });
 }
 
 } // namespace lmms::gui

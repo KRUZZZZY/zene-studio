@@ -69,12 +69,14 @@ int sectionIndex(const QJsonObject& args)
 ControlResult recorded(const std::function<ControlResult()>& edit)
 {
 	const QVector<ArrangementSection> before = ArrangementSections::instance().sections();
+	const QJsonArray beforeJson = listJson();
 	ControlResult result = edit();
 	if (!result.ok) { return result; }
 	const QVector<ArrangementSection> after = ArrangementSections::instance().sections();
+	result.result.insert(QStringLiteral("sections"), listJson());
+	if (listJson() == beforeJson) { return result; }  // nothing changed: no undo step (review W3-batchB #4)
 	addUndoStep([before] { ArrangementSections::instance().restore(before); }, [after] { ArrangementSections::instance().restore(after); });
 	Engine::getSong()->setModified();
-	result.result.insert(QStringLiteral("sections"), listJson());
 	return result;
 }
 

@@ -98,6 +98,9 @@ ControlResult trimSet(const QJsonObject& args)
 	// Runtime state, as the mode is (not saved): the step puts the previous offset back by the same id.
 	const QJsonObject where{{QStringLiteral("track"), target.id}, {QStringLiteral("parameter"), parameter.id()}};
 	const float before = parameter.model->trimOffset();
+	const QJsonObject reply{{QStringLiteral("track"), target.id}, {QStringLiteral("parameter"), parameter.id()},
+		{QStringLiteral("offset"), static_cast<double>(offset)}};
+	if (before == offset) { return ControlResult::success(reply); }  // nothing changed: no undo step (review W3-batchB #4)
 	parameter.model->setTrimOffset(offset);
 	const auto apply = [where](float value) {
 		ControlTarget t;
@@ -106,8 +109,7 @@ ControlResult trimSet(const QJsonObject& args)
 		if (resolveAutomationParameter(where, &t, &p, &e)) { p.model->setTrimOffset(value); }
 	};
 	addUndoStep([apply, before]() { apply(before); }, [apply, offset]() { apply(offset); });
-	return ControlResult::success({{QStringLiteral("track"), target.id}, {QStringLiteral("parameter"), parameter.id()},
-		{QStringLiteral("offset"), static_cast<double>(offset)}});
+	return ControlResult::success(reply);
 }
 
 ControlResult movePoint(const QJsonObject& args)

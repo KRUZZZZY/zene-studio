@@ -243,6 +243,8 @@ void registerWindowCommands(ControlRegistry& registry)
 	registerLayoutCommands(registry);
 	registerMacroCommands(registry);
 	registerArrangerViewCommands(registry);
+	registerArrangerNavigatorCommands(registry);
+	registerModifierToolCommands(registry);
 }
 
 } // namespace lmms

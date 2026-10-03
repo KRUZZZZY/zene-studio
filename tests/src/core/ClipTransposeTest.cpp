@@ -141,6 +141,58 @@ private slots:
 		QCOMPARE(loaded->clipEdits().transpose, -5);
 	}
 
+	void aClipKeepsItsSnapPoint()
+	{
+		Song* song = Engine::getSong();
+		song->clearProject();
+		auto* track = Track::create(Track::Type::Instrument, song);
+		Clip* clip = track->createClip(TimePos(0));
+		clip->changeLength(TimePos(192));
+		const QString id = control::clipIdOf(clip);
+		QVERIFY(run(QStringLiteral("clip.set_snap_point"), {{QStringLiteral("clip"), id}, {QStringLiteral("ticks"), 48}}).ok);
+		QCOMPARE(clip->clipEdits().snapTicks, 48);
+		QDomDocument doc;
+		QDomElement root = doc.createElement(QStringLiteral("root"));
+		const QDomElement saved = clip->saveState(doc, root);
+		QCOMPARE(saved.attribute(QStringLiteral("snappoint")).toInt(), 48);
+		Clip* loaded = track->createClip(TimePos(0));
+		loaded->restoreState(saved);
+		QCOMPARE(loaded->clipEdits().snapTicks, 48);
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
+		QCOMPARE(clip->clipEdits().snapTicks, 0);
+		QVERIFY(!clip->saveState(doc, root).hasAttribute(QStringLiteral("snappoint")));
+		QCOMPARE(run(QStringLiteral("clip.set_snap_point"), {{QStringLiteral("clip"), id}, {QStringLiteral("ticks"), 192}}).errorKind,
+			ControlErrorKind::InvalidArgs);
+	}
+
+	void anAudioClipChangesSpeed()
+	{
+		ClipEdits edits;
+		QCOMPARE(clipSpeedAt(edits, 50, 100, 0, 0), 1.f);  // untouched: natural speed everywhere
+		edits.speedFrom = 50;
+		edits.speedTo = 150;
+		QCOMPARE(clipSpeedAt(edits, 50, 100, 0, 0), 1.f);  // the ramp's middle
+		edits = ClipEdits{};
+		QCOMPARE(clipSpeedAt(edits, 90, 100, 0, 20), 0.5f);  // half-way down a tape stop
+		QCOMPARE(clipSpeedAt(edits, 5, 100, 10, 0), 0.5f);  // half-way up a tape start
+		QCOMPARE(clipSpeedAt(edits, 100, 100, 0, 20), 1.f / 32.f);  // never stopped dead
+		Song* song = Engine::getSong();
+		song->clearProject();
+		auto* track = new SampleTrack(song);
+		auto* clip = dynamic_cast<SampleClip*>(track->createClip(TimePos(0)));
+		clip->changeLength(TimePos(192));
+		const QString id = control::clipIdOf(clip);
+		QVERIFY(run(QStringLiteral("clip.speed"), {{QStringLiteral("clip"), id}, {QStringLiteral("from"), 80}, {QStringLiteral("fade_out"), 48}}).ok);
+		QCOMPARE(clip->clipEdits().speedTo, 80);  // 'to' follows 'from'
+		QDomDocument doc;
+		QDomElement root = doc.createElement(QStringLiteral("root"));
+		const QDomElement saved = clip->saveState(doc, root);
+		QCOMPARE(saved.attribute(QStringLiteral("speedout")).toInt(), 48);
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
+		QVERIFY(!clip->clipEdits().hasSpeed());
+		QVERIFY(!clip->saveState(doc, root).hasAttribute(QStringLiteral("speedfrom")));
+	}
+
 	void aSampleClipIsShiftedThroughRubberBandOrRefused()
 	{
 		Song* song = Engine::getSong();

@@ -187,6 +187,8 @@ void InstrumentTrack::triggerNote(const NoteTrigger& trigger, f_cnt_t offset, f_
 		offset += MidiPlayback::instance().delayFrames(clipStart + note.pos().getTicks(), Engine::framesPerTick(),
 			Engine::audioEngine()->outputSampleRate());
 	}
+	// MX-035: the track's own delay, on top (a chased note too: the whole track sits later).
+	offset += static_cast<f_cnt_t>(std::lround(delayMs() * Engine::audioEngine()->outputSampleRate() / 1000.0));
 	sendArticulation(note.conditions().articulation, offset);
 	// 0.5.0 ED-133: the note's repeats - that many more hits, evenly spaced inside it (not a step note's).
 	const int hits = frames > 0 ? static_cast<int>(std::min<f_cnt_t>(note.conditions().repeats + 1, frames)) : 1;

@@ -149,4 +149,17 @@ void paintTransients(QPainter& p, const std::vector<int>& ticks, const ClipOverl
 	}
 }
 
+void paintSnapPoint(QPainter& p, const ClipEdits& edits, const ClipOverlayFrame& frame, const QColor& colour)
+{
+	if (edits.snapTicks <= 0) { return; }
+	const int x = xOfTick(frame, edits.snapTicks);
+	const int bottom = frame.top + frame.height;
+	p.setRenderHint(QPainter::Antialiasing, false);
+	p.setPen(QPen(colour, 1, Qt::DotLine));
+	p.drawLine(x, frame.top, x, bottom);
+	p.setPen(Qt::NoPen);
+	p.setBrush(colour);
+	p.drawPolygon(QPolygon({QPoint(x, bottom - 7), QPoint(x + 6, bottom - 4), QPoint(x, bottom - 1)}));
+}
+
 } // namespace lmms::gui

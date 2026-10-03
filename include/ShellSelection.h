@@ -76,6 +76,8 @@ private:
 	QPointer<Track> m_track;
 	QPointer<Clip> m_clip;
 	QString m_channel;
+	//! MX-021: the track playing into channel @a channelId when following is on, else nullptr.
+	static Track* followedTrack(const QString& channelId);
 };
 
 } // namespace lmms::gui

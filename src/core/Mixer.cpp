@@ -23,6 +23,7 @@
  */
 
 #include "Mixer.h"
+#include "RecorderTaps.h"
 
 #include <algorithm>
 #include <limits>
@@ -663,6 +664,7 @@ void MixerChannel::doProcessing()
 		// Phase D: pre-FX sidechain tap, taken from the raw channel buffer
 		// before the FX chain runs (spec 4.3).
 		writeSidechainTaps(SidechainTapPoint::PreFx, fpp);
+		recordertaps::channelAt(*this, SidechainTapPoint::PreFx, fpp);  // 0.5.0 WF-086: a record route tapping here
 
 		// Phase D: fold the per-sender sidechain intermediates of this period
 		// into m_sidechainBuffer before our own FX chain reads it.
@@ -755,6 +757,8 @@ void MixerChannel::doProcessing()
 		// post-fader = post-volume).
 		writeSidechainTaps(SidechainTapPoint::PreFader, fpp);
 		writeSidechainTaps(SidechainTapPoint::PostFader, fpp);
+		recordertaps::channelAt(*this, SidechainTapPoint::PreFader, fpp);  // 0.5.0 WF-086
+		recordertaps::channelAt(*this, SidechainTapPoint::PostFader, fpp);
 		writeSidechainTaps(SidechainTapPoint::PostFaderNoGain, fpp);
 
 		SampleFrame peakSamples = getAbsPeakValues(m_buffer, fpp);
@@ -2036,6 +2040,7 @@ void Mixer::masterMix( SampleFrame* _buf )
 		? 1.0f
 		: m_mixerChannels[0]->m_volumeModel.value();
 	MixHelpers::addMultiplied( _buf, m_mixerChannels[0]->m_buffer, v, fpp );
+	recordertaps::master( _buf, fpp );  // 0.5.0 WF-072: a record route resampling the master
 	// 0.5.0 L09 (MX-037): a channel listened to (AFL / PFL) replaces the mix on the output.
 	mixerlisten::replaceOutput( _buf, *this, fpp );
 

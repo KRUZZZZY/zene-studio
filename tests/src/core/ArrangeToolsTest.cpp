@@ -45,6 +45,7 @@
 #include "SampleClip.h"
 #include "SampleTrack.h"
 #include "Song.h"
+#include "TrackVersions.h"
 
 using namespace lmms;
 
@@ -97,6 +98,32 @@ private slots:
 		QCOMPARE(found.size(), 1);
 		QCOMPARE(found.first().toObject().value(QStringLiteral("clip")).toString(), control::clipIdOf(verse));
 		QCOMPARE(run(QStringLiteral("clip.list"), {{QStringLiteral("track"), control::trackIdOf(track)}}).result.value(QStringLiteral("count")).toInt(), 2);
+	}
+
+	void aTrackSwitchesBetweenVersions()
+	{
+		auto* track = dynamic_cast<InstrumentTrack*>(Track::create(Track::Type::Instrument, Engine::getSong()));
+		const QString id = control::trackIdOf(track);
+		track->createClip(TimePos(0))->setName(QStringLiteral("old bass"));
+		QVERIFY(run(QStringLiteral("track.version_save"), {{QStringLiteral("track"), id}, {QStringLiteral("name"), QStringLiteral("A")}}).ok);
+		track->deleteClips();
+		track->createClip(TimePos(192))->setName(QStringLiteral("new bass"));
+		track->createClip(TimePos(384));
+		QVERIFY(run(QStringLiteral("track.version_save"), {{QStringLiteral("track"), id}, {QStringLiteral("name"), QStringLiteral("B")}}).ok);
+		QVERIFY(run(QStringLiteral("track.version_switch"), {{QStringLiteral("track"), id}, {QStringLiteral("name"), QStringLiteral("A")}}).ok);
+		QCOMPARE(track->getClips().size(), std::size_t{1});
+		QCOMPARE(track->getClips().front()->name(), QStringLiteral("old bass"));
+		QVERIFY(run(QStringLiteral("control.undo")).ok);  // back on B, both clips
+		QCOMPARE(track->getClips().size(), std::size_t{2});
+		QCOMPARE(TrackVersions::instance().of(track->id()).active, QStringLiteral("B"));
+		QDomDocument doc;
+		QDomElement root = doc.createElement(QStringLiteral("root"));
+		TrackVersions::instance().save(doc, root);
+		QCOMPARE(root.firstChildElement().firstChildElement().elementsByTagName(QStringLiteral("version")).size(), 2);
+		QCOMPARE(run(QStringLiteral("track.version_switch"), {{QStringLiteral("track"), id}, {QStringLiteral("name"), QStringLiteral("C")}}).errorKind,
+			ControlErrorKind::NotFound);
+		QCOMPARE(run(QStringLiteral("track.version_save"), {{QStringLiteral("track"), id}, {QStringLiteral("name"), QStringLiteral(" ")}}).errorKind,
+			ControlErrorKind::InvalidArgs);
 	}
 
 	void sectionsAreSpansWithUndo()

@@ -974,7 +974,15 @@ set(LMMS_SRCS
 	core/ControlTrackCreation.cpp
 	core/PitchTrack.cpp
 	core/ControlCommandsSampleRange.cpp
+	core/ControlCommandDef.cpp
+	core/ControlCommandsMixerMeters.cpp
+	core/PreviewOutput.cpp
+	core/ControlRoom.cpp
+	core/ControlCommandsTrackMidiOut.cpp
+	core/TrackVersions.cpp
+	core/ControlCommandsTrackVersions.cpp
 	core/InputMeter.cpp
+	core/RecorderTaps.cpp
 	core/MarkerActions.cpp
 	core/MixerOptions.cpp
 	core/ArticulationMap.cpp

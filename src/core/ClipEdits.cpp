@@ -139,6 +139,16 @@ void envelopeFromText(const QString& text, ClipEdits* edits)
 		[](const GainPoint& a, const GainPoint& b) { return a.tick < b.tick; });
 }
 
+float clipSpeedAt(const ClipEdits& edits, f_cnt_t frame, f_cnt_t clipFrames, f_cnt_t speedInFrames, f_cnt_t speedOutFrames)
+{
+	const double along = clipFrames > 0 ? std::clamp(static_cast<double>(frame) / static_cast<double>(clipFrames), 0.0, 1.0) : 0.0;
+	double speed = (edits.speedFrom + (edits.speedTo - edits.speedFrom) * along) / 100.0;
+	if (speedInFrames > 0 && frame < speedInFrames) { speed *= static_cast<double>(std::max<f_cnt_t>(frame, 0)) / static_cast<double>(speedInFrames); }
+	const f_cnt_t left = clipFrames - frame;
+	if (speedOutFrames > 0 && left < speedOutFrames) { speed *= static_cast<double>(std::max<f_cnt_t>(left, 0)) / static_cast<double>(speedOutFrames); }
+	return static_cast<float>(std::max(speed, 1.0 / 32.0));
+}
+
 float clipFadeGainAt(f_cnt_t frame, f_cnt_t clipFrames,
 	f_cnt_t fadeInFrames, f_cnt_t fadeOutFrames,
 	FadeShape fadeInShape, FadeShape fadeOutShape)

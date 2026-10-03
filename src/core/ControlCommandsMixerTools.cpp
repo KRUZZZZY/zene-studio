@@ -52,6 +52,7 @@
 #include "Effect.h"
 #include "EffectChain.h"
 #include "Engine.h"
+#include "InstrumentTrack.h"
 #include "InputMeter.h"
 #include "Mixer.h"
 #include "MixerOptions.h"
@@ -332,6 +333,49 @@ ControlResult inputLevel(const QJsonObject&)
 		{QStringLiteral("clipped"), left >= 1.f || right >= 1.f}});
 }
 
+void setDelayOf(const QString& id, int ms)
+{
+	ControlResult ignored;
+	if (auto* track = dynamic_cast<InstrumentTrack*>(resolveTrack(id, &ignored))) { track->setDelayMs(ms); }
+}
+
+ControlResult trackDelay(const QJsonObject& args)
+{
+	ControlResult error;
+	auto* track = dynamic_cast<InstrumentTrack*>(resolveTrack(args.value(QStringLiteral("track")).toString(), &error));
+	if (track == nullptr) { return error.errorMessage.isEmpty() ? ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("'track' is an instrument track")) : error; }
+	const QString id = trackIdOf(track);
+	const int before = track->delayMs();
+	const int ms = args.value(QStringLiteral("delay_ms")).toInt(before);
+	if (ms != before)
+	{
+		track->setDelayMs(ms);
+		addUndoStep([id, before]() { setDelayOf(id, before); }, [id, ms]() { setDelayOf(id, ms); });
+		Engine::getSong()->setModified();
+	}
+	return ControlResult::success({{QStringLiteral("track"), id}, {QStringLiteral("delay_ms"), track->delayMs()}});
+}
+
+//! MX-017: what feeds a channel and where it goes.
+ControlResult routingUsage(const QJsonObject& args)
+{
+	ControlResult error;
+	MixerChannel* channel = resolveMixerChannel(args.value(QStringLiteral("channel")).toString(), &error);
+	if (channel == nullptr) { return error; }
+	QJsonArray tracks;
+	for (Track* track : Engine::getSong()->tracks())
+	{
+		IntModel* model = track->mixerChannelModel();
+		if (model != nullptr && model->value() == channel->index()) { tracks.append(trackIdOf(track)); }
+	}
+	QJsonArray from;
+	for (const MixerRoute* route : channel->m_receives) { from.append(channelIdOf(route->sender())); }
+	QJsonArray to;
+	for (const MixerRoute* route : channel->m_sends) { to.append(channelIdOf(route->receiver())); }
+	return ControlResult::success({{QStringLiteral("channel"), channelIdOf(channel)}, {QStringLiteral("tracks"), tracks},
+		{QStringLiteral("receives_from"), from}, {QStringLiteral("sends_to"), to}});
+}
+
 ControlResult colorMembers(const QJsonObject& args)
 {
 	VcaGroup* group = mixer()->vcaGroup(args.value(QStringLiteral("group")).toInt(-1));
@@ -449,6 +493,11 @@ void registerMixerToolCommands(ControlRegistry& registry)
 		"in 'target'. With no arguments it reports it. One undo step."), {{QStringLiteral("dbfs"), numberProperty()}}, {}, true, meterReference);
 	add(registry, "meter.input", QStringLiteral("How loud the audio input is: the peak of each side since the last call, in dB "
 		"(-120 for silence), and whether it reached full scale - the level to set a microphone by. Read only."), {}, {}, false, inputLevel);
+	add(registry, "track.set_delay", QStringLiteral("Start every note of instrument track 'track' 'delay_ms' (0..500) milliseconds later - "
+		"a slow instrument lined up, or a part sat behind the beat. Saved with the track. With only 'track' it reports it. One undo step."),
+		{{QStringLiteral("track"), stringProperty()}, {QStringLiteral("delay_ms"), integerProperty(0, 500)}}, {QStringLiteral("track")}, true, trackDelay);
+	add(registry, "routing.usage", QStringLiteral("What uses a channel: the tracks playing into it, the channels sending into it and "
+		"the channels it sends to. Read only."), {{QStringLiteral("channel"), stringProperty()}}, {QStringLiteral("channel")}, false, routingUsage);
 	add(registry, "routing.matrix", QStringLiteral("The routing matrix: every channel (id, name, position) with its sends - to, amount, "
 		"pre-fader, on or off. Read only."), {}, {}, false, routingMatrix);
 	add(registry, "mixer.find", QStringLiteral("The channels whose name holds 'text' (any case): id, name and position."),

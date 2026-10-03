@@ -88,6 +88,13 @@ const ReversibilityRow kArrangerRows[] = {
 		"it runs clip.move on the selected clip, which records itself; nothing of its own is written",
 		"nothing of its own: clip.move's Clip checkpoint", ""),
 	R("arrangement.select_clip", RC::NotMutating, false, "it selects the next or previous clip: interface state", "no write", ""),
+	R("track.version_list", RC::NotMutating, false, "it reads a track's versions. Nothing is written", "no write", ""),
+	R("track.version_save", RC::TrueInverse, true, "it keeps a track's clips as a named version", "closure: the previous versions put back", ""),
+	R("track.version_switch", RC::TrueInverse, true, "it swaps a track's clips for a stored version's", "Track journal checkpoint plus the previous versions put back", ""),
+	R("track.version_remove", RC::TrueInverse, true, "it forgets a stored version", "closure: the previous versions put back", ""),
+	R("arrangement.scroll", RC::NotMutating, false, "it scrolls the arranger: interface state", "no write", ""),
+	R("arrangement.modifier_tools", RC::NotMutating, false, "it binds tools to modifier keys, a preference in the config file", "no write", ""),
+	R("arrangement.navigator", RC::NotMutating, false, "it shows or hides the navigator, a preference in the config file", "no write", ""),
 	R("arrangement.modes", RC::NotMutating, false,
 		"it sets the arranger's editing preferences (ripple, overlap, snap to edges), kept in the config file - not "
 		"project state", "no write to the project (set the previous modes)", ""),

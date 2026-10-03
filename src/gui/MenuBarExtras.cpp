@@ -88,6 +88,10 @@ QMenu* installNavigateMenu(QMenuBar* bar)
 	onTools(QObject::tr("Overlap"), QStringLiteral("arrangement.modes"), QStringLiteral("overlap"), {});
 	onTools(QObject::tr("Snap to Clip Edges and Markers"), QStringLiteral("arrangement.modes"), QStringLiteral("snap_to_edges"), {});
 	onTools(QObject::tr("Show Transients"), QStringLiteral("arrangement.modes"), QStringLiteral("show_transients"), {});
+	onTools(QObject::tr("Show Navigator"), QStringLiteral("arrangement.navigator"), QStringLiteral("visible"), {});  // ED-053
+	addCommandAction(menu, QObject::tr("Second Tool on a Modifier Key..."), QStringLiteral("arrangement.modifier_tools"), [] {  // ED-014
+		return CommandCall{QStringLiteral("arrangement.modifier_tools"), {}, {}, QObject::tr("Second Tool on a Modifier Key"), true};
+	});
 	QMenu* autoFade = menu->addMenu(QObject::tr("Automatic Fades"));
 	for (const int ms : {0, 2, 5, 10, 20})
 	{

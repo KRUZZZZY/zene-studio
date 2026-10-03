@@ -41,6 +41,9 @@
 #include "Engine.h"
 #include "MetronomeOptions.h"
 #include "MultiTrackRecorder.h"
+#include "ControlMixerSupport.h"
+#include "Mixer.h"
+#include "RecorderTaps.h"
 #include "Song.h"
 #include "TrackRecorder.h"
 
@@ -112,6 +115,51 @@ ControlResult remaining(const QJsonObject&)
 		{QStringLiteral("free_bytes"), static_cast<double>(storage.bytesAvailable())}, {QStringLiteral("directory"), dir}});
 }
 
+const QStringList& sourceNames() { static const QStringList names{QStringLiteral("input"), QStringLiteral("master"), QStringLiteral("channel")}; return names; }
+const QStringList& tapNames() { static const QStringList names{QStringLiteral("post_fader"), QStringLiteral("pre_fx"), QStringLiteral("pre_fader")}; return names; }
+
+QJsonObject tapJson(int route, const recordertaps::Tap& tap)
+{
+	QJsonObject out{{QStringLiteral("route"), route}, {QStringLiteral("source"), sourceNames().value(static_cast<int>(tap.source))},
+		{QStringLiteral("side"), tap.side == 0 ? QStringLiteral("left") : QStringLiteral("right")}};
+	if (tap.source == recordertaps::Source::Channel)
+	{
+		MixerChannel* channel = nullptr;
+		for (int i = 0; i < Engine::mixer()->numChannels() && channel == nullptr; ++i)
+		{
+			if (Engine::mixer()->mixerChannel(i)->id() == tap.channelId) { channel = Engine::mixer()->mixerChannel(i); }
+		}
+		out.insert(QStringLiteral("channel"), channel != nullptr ? channelIdOf(channel) : QString());
+		out.insert(QStringLiteral("tap"), tapNames().value(tap.point));
+	}
+	return out;
+}
+
+ControlResult routeSource(const QJsonObject& args)
+{
+	const int route = args.value(QStringLiteral("route")).toInt(-1);
+	if (route < 0 || route >= Engine::audioEngine()->recorder().trackCount())
+	{
+		return ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("'route' is a record route (record.get_state lists them)"));
+	}
+	const recordertaps::Tap before = recordertaps::get(route);
+	if (!args.contains(QStringLiteral("source"))) { return ControlResult::success(tapJson(route, before)); }
+	recordertaps::Tap tap;
+	tap.source = static_cast<recordertaps::Source>(std::max(0, static_cast<int>(sourceNames().indexOf(args.value(QStringLiteral("source")).toString()))));
+	tap.side = args.value(QStringLiteral("side")).toString() == QLatin1String("right") ? 1 : 0;
+	tap.point = std::max(0, static_cast<int>(tapNames().indexOf(args.value(QStringLiteral("tap")).toString(QStringLiteral("post_fader")))));
+	if (tap.source == recordertaps::Source::Channel)
+	{
+		ControlResult error;
+		MixerChannel* channel = resolveMixerChannel(args.value(QStringLiteral("channel")).toString(), &error);
+		if (channel == nullptr) { return error; }
+		tap.channelId = channel->id();
+	}
+	recordertaps::set(route, tap);
+	addUndoStep([route, before]() { recordertaps::set(route, before); }, [route, tap]() { recordertaps::set(route, tap); });
+	return ControlResult::success(tapJson(route, tap));
+}
+
 void add(ControlRegistry& registry, const char* id, const QString& description, const QJsonObject& args, bool mutating,
 	ControlResult (*handler)(const QJsonObject&))
 {
@@ -143,6 +191,13 @@ void registerRecordToolCommands(ControlRegistry& registry)
 	add(registry, "transport.punch_here", QStringLiteral("Punch at the play position, one action while a pass runs: 'edge' in starts "
 		"the punch region here (to the song's end), out ends it here. Through transport.punch_set, so it is that command's undo "
 		"step."), {{QStringLiteral("edge"), enumProperty({QStringLiteral("in"), QStringLiteral("out")})}}, true, punchHere);
+	add(registry, "record.route_source", QStringLiteral("Where record route 'route' takes its audio from: 'source' input (the "
+		"engine's input, its input channel - the default), master (the mix, resampling) or channel (mixer channel 'channel' at "
+		"'tap' pre_fx, pre_fader or post_fader); 'side' left or right (a route records one channel). Interface state, not saved "
+		"with the project. With only 'route' it reports it. One undo step."),
+		{{QStringLiteral("route"), integerProperty(0, 1024)}, {QStringLiteral("source"), enumProperty(sourceNames())},
+			{QStringLiteral("channel"), stringProperty()}, {QStringLiteral("tap"), enumProperty(tapNames())},
+			{QStringLiteral("side"), enumProperty({QStringLiteral("left"), QStringLiteral("right")})}}, true, routeSource);
 	add(registry, "record.remaining", QStringLiteral("How long recording can go on: the free space where takes are written, at the "
 		"rate the armed routes write (24-bit, one channel a route; one route when none is armed), in seconds."), {}, false, remaining);
 }

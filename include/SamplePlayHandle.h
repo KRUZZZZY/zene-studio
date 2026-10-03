@@ -145,6 +145,10 @@ private:
 	//! lengths so the audio path never divides by a clip length.
 	f_cnt_t m_fadeInFrames = 0;
 	f_cnt_t m_fadeOutFrames = 0;
+	//! ED-152 / ED-179: the speed fades in output frames, and whether the clip changes speed at all.
+	f_cnt_t m_speedInFrames = 0;
+	f_cnt_t m_speedOutFrames = 0;
+	bool m_speeds = false;
 	f_cnt_t m_frame = 0;
 	Sample* m_sample = nullptr;
 	Track* m_track = nullptr;
@@ -157,6 +161,8 @@ private:
 	//! warp rate at the source frame this period starts on, over the natural
 	//! rate. Exactly 1.0 for every clip with no markers and no source tempo.
 	float warpRatio() const;
+	//! ED-152 / ED-179: the clip's speed this period (clipSpeedAt); exactly 1 for a clip that keeps its speed.
+	float speedHere() const;
 
 	/*! Renders \a frames output frames of a clip whose rate change is
 	 *  pitch-preserving (row 30), reading the clip's window through

@@ -216,6 +216,9 @@ void SamplePlayHandle::snapshotClipEdits(const SampleClip* clip, const SampleWin
 	m_fadeInFrames = std::max(framesFor(m_edits.fadeInTicks), autoFade);
 	m_fadeOutFrames = std::max(framesFor(m_edits.fadeOutTicks), autoFade);
 	m_autoFaded = autoFade > 0;
+	m_speedInFrames = std::min(framesFor(m_edits.speedInTicks), m_clipFrames);  // ED-152 / ED-179
+	m_speedOutFrames = std::min(framesFor(m_edits.speedOutTicks), m_clipFrames);
+	m_speeds = m_edits.hasSpeed() && !m_preservePitch;
 
 	// Where this pass starts inside the clip's span. For a linear clip the source
 	// frame offset scales by the output/source rate, which is exactly
@@ -310,7 +313,12 @@ void SamplePlayHandle::applyComp(SampleFrame* buffer, f_cnt_t frames) const
 	}
 }
 
-bool SamplePlayHandle::editsOrAutoFade(int autoFadeMs) const { return !m_edits.isNeutral() || autoFadeMs > 0; }
+bool SamplePlayHandle::editsOrAutoFade(int autoFadeMs) const { return !m_edits.isNeutral() || m_edits.hasSpeed() || autoFadeMs > 0; }
+
+float SamplePlayHandle::speedHere() const
+{
+	return m_speeds ? clipSpeedAt(m_edits, m_envelopeStart + m_frame, m_clipFrames, m_speedInFrames, m_speedOutFrames) : 1.0f;
+}
 
 bool SamplePlayHandle::needsClipEdits() const { return !m_edits.isNeutral() || m_autoFaded; }
 
@@ -391,7 +399,7 @@ void SamplePlayHandle::play( std::span<SampleFrame> buffer )
 		{
 			renderPreservingPitch(workingBuffer, frames);
 		}
-		else if (!m_sample->play(workingBuffer, &m_state, frames, Sample::Loop::Off, warpRatio()))
+		else if (!m_sample->play(workingBuffer, &m_state, frames, Sample::Loop::Off, warpRatio() / speedHere()))
 		{
 			zeroSampleFrames(workingBuffer, frames);
 		}

@@ -284,6 +284,20 @@ ControlResult ControlRegistry::invoke(const QString& id, const QJsonObject& args
  *  non-automated write, so a command that writes N models would otherwise cost
  *  N undos.
  */
+namespace
+{
+
+//! A true-inverse command leaves a journal step whenever it changes something, so one that left none changed nothing
+//! (a report-only call, a value it already had) and is no macro step (review W3-batchB #4).
+bool changedNothing(bool journalled, quint64 step, const QString& commandId)
+{
+	if (!journalled || step != 0) { return false; }
+	const control::ReversibilityEntry* row = control::ReversibilityTable::instance().lookup(commandId);
+	return row != nullptr && row->cls == control::ReversibilityClass::TrueInverse;
+}
+
+} // namespace
+
 ControlResult ControlRegistry::runHandler(
 	const std::function<ControlResult(const QJsonObject&)>& handler, const QString& commandId,
 	bool mutating, const QJsonObject& args)
@@ -326,7 +340,7 @@ ControlResult ControlRegistry::runHandler(
 		recordTransactionOf(commandId, &result, coalesced, step);
 	}
 	control::finishResult(commandId, m_commands.value(commandId).resultSchema, &result);
-	notifyObserver(commandId, args, mutating, result.ok && !dryRunPreview);
+	notifyObserver(commandId, args, mutating, result.ok && !dryRunPreview && !changedNothing(journal != nullptr, step, commandId));
 	return result;
 }
 

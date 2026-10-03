@@ -26,6 +26,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <complex>
 #include <vector>
 
 #include <QDomElement>
@@ -120,6 +121,31 @@ void applyChannelEq(MixerChannel& channel, f_cnt_t frames)
 	}
 }
 
+float eqResponseDb(const MixerChannel& channel, double hz, double rate)
+{
+	const float gains[3] = {channel.m_eqLowModel.value(), channel.m_eqMidModel.value(), channel.m_eqHighModel.value()};
+	const double freqs[3] = {100.0, channel.m_eqMidFreqModel.value(), 8000.0};
+	const std::complex<double> z1 = std::polar(1.0, -2.0 * 3.14159265358979 * hz / rate);  // e^-jw
+	double db = 0.0;
+	for (int b = 0; b < 3; ++b)
+	{
+		if (gains[b] == 0.f) { continue; }
+		const Biquad q = band(freqs[b], gains[b], rate, b == 1, b == 2);
+		const double b0 = q.b0, b1 = q.b1, b2 = q.b2, a1 = q.a1, a2 = q.a2;
+		const std::complex<double> h = (b0 + z1 * (b1 + z1 * b2)) / (1.0 + z1 * (a1 + z1 * a2));
+		db += 20.0 * std::log10(std::max(std::abs(h), 1e-9));
+	}
+	return static_cast<float>(db);
+}
+
+std::array<float, 2> sendLevel(MixerRoute& route)
+{
+	const MixerChannel* from = route.sender();
+	if (!route.enabled() || from->m_muted.load(std::memory_order_relaxed)) { return {0.f, 0.f}; }
+	const float gain = route.amount()->value() * (route.preFader() ? 1.f : from->m_volumeModel.value());
+	return {from->m_livePeakLeft.get() * gain, from->m_livePeakRight.get() * gain};
+}
+
 void applyOutput(MixerChannel& channel, f_cnt_t frames)
 {
 	applyChannelEq(channel, frames);  // MX-085: the strip's EQ, after the inserts
@@ -210,6 +236,8 @@ void updateMeters(MixerChannel& channel, const SampleFrame* buffer, float volume
 	}
 	// MX-137: the phase correlation, +1 in phase (mono), 0 unrelated, -1 out of phase; 1 for silence.
 	channel.m_correlation.set(sumL > 1e-12 && sumR > 1e-12 ? static_cast<float>(sumLR / std::sqrt(sumL * sumR)) : 1.f);
+	channel.m_livePeakLeft.set(peakL);  // MX-053: what the send meters read
+	channel.m_livePeakRight.set(peakR);
 	channel.m_prePeakLeft.raise(peakL);
 	channel.m_prePeakRight.raise(peakR);
 	channel.m_preMeterLeft.raise(peakL);

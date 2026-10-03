@@ -73,6 +73,7 @@ include/ActionGroup.h
 include/Appearance.h
 include/ArrangementEdits.h
 include/ArrangementSections.h
+include/ArrangerNavigator.h
 include/ArrangerOverlays.h
 include/ArrayVector.h
 include/ArticulationMap.h
@@ -166,6 +167,7 @@ include/ControlBrowserSupport.h
 include/ControlChainPresetSupport.h
 include/ControlChordSupport.h
 include/ControlClipLinkSupport.h
+include/ControlCommandDef.h
 include/ControlCompSupport.h
 include/ControlDetectSupport.h
 include/ControlDeviceMoves.h
@@ -187,6 +189,7 @@ include/ControlRegistry.h
 include/ControlRegistryGroups.h
 include/ControlResultCheck.h
 include/ControlReversibility.h
+include/ControlRoom.h
 include/ControlScaleShared.h
 include/ControlServer.h
 include/ControlStemSupport.h
@@ -305,6 +308,7 @@ include/LcdSpinBox.h
 include/LcdWidget.h
 include/LedCheckBox.h
 include/LeftRightNav.h
+include/LevelBar.h
 include/LfoController.h
 include/LfoGraph.h
 include/LinkPeerTransport.h
@@ -404,6 +408,7 @@ include/MixerWindows.h
 include/Model.h
 include/ModelView.h
 include/ModelVisitor.h
+include/ModifierTools.h
 include/ModulationLayer.h
 include/ModulatorPanel.h
 include/MonitorMode.h
@@ -467,6 +472,7 @@ include/PluginScanCache.h
 include/PluginView.h
 include/PositionLine.h
 include/PresetPreviewPlayHandle.h
+include/PreviewOutput.h
 include/ProjectContainer.h
 include/ProjectIds.h
 include/ProjectJournal.h
@@ -492,6 +498,7 @@ include/RecentProjectsMenu.h
 include/RecordLaunchMenus.h
 include/RecordOptions.h
 include/RecordRingBuffer.h
+include/RecorderTaps.h
 include/RecordingJournal.h
 include/RecordingRecoveryMenu.h
 include/RemoteControls.h
@@ -569,6 +576,7 @@ include/ShellChrome.h
 include/ShellCommandMenus.h
 include/ShellIcons.h
 include/ShellLayout.h
+include/ShellMenuParts.h
 include/ShellPanel.h
 include/ShellSelection.h
 include/ShortcutMap.h
@@ -633,6 +641,7 @@ include/TrackOperationsWidget.h
 include/TrackRecorder.h
 include/TrackRenameLineEdit.h
 include/TrackRenderMenu.h
+include/TrackVersions.h
 include/TrackView.h
 include/TransportReadouts.h
 include/UiConfigStore.h
@@ -1179,6 +1188,7 @@ src/core/ControlBounceSupport.cpp
 src/core/ControlBrowserSupport.cpp
 src/core/ControlChainPresetSupport.cpp
 src/core/ControlChordSupport.cpp
+src/core/ControlCommandDef.cpp
 src/core/ControlCommandsArrangeTools.cpp
 src/core/ControlCommandsArrangement.cpp
 src/core/ControlCommandsArrangementState.cpp
@@ -1257,6 +1267,7 @@ src/core/ControlCommandsMidiReconnectEdit.cpp
 src/core/ControlCommandsMidiReconnectShared.h
 src/core/ControlCommandsMixer.cpp
 src/core/ControlCommandsMixerListen.cpp
+src/core/ControlCommandsMixerMeters.cpp
 src/core/ControlCommandsMixerRoutes.cpp
 src/core/ControlCommandsMixerStrip.cpp
 src/core/ControlCommandsMixerTools.cpp
@@ -1353,7 +1364,9 @@ src/core/ControlCommandsTrackChannel.cpp
 src/core/ControlCommandsTrackFolder.cpp
 src/core/ControlCommandsTrackFolderSets.cpp
 src/core/ControlCommandsTrackFolderShared.h
+src/core/ControlCommandsTrackMidiOut.cpp
 src/core/ControlCommandsTrackPresets.cpp
+src/core/ControlCommandsTrackVersions.cpp
 src/core/ControlCommandsTransport.cpp
 src/core/ControlCommandsTransportMap.cpp
 src/core/ControlCommandsUndo.cpp
@@ -1439,6 +1452,7 @@ src/core/ControlReversibilityTableVca.cpp
 src/core/ControlReversibilityTableVerbs.cpp
 src/core/ControlReversibilityTableWasmRender.cpp
 src/core/ControlReversibilityTableWindow.cpp
+src/core/ControlRoom.cpp
 src/core/ControlScaleSupport.cpp
 src/core/ControlSchema.cpp
 src/core/ControlServer.cpp
@@ -1568,6 +1582,7 @@ src/core/PluginOrganiser.cpp
 src/core/PluginPaths.cpp
 src/core/PluginScanCache.cpp
 src/core/PresetPreviewPlayHandle.cpp
+src/core/PreviewOutput.cpp
 src/core/ProjectContainer.cpp
 src/core/ProjectContainerEntries.cpp
 src/core/ProjectIds.cpp
@@ -1586,6 +1601,7 @@ src/core/RackMacros.cpp
 src/core/RackNodes.cpp
 src/core/RackZones.cpp
 src/core/RecordOptions.cpp
+src/core/RecorderTaps.cpp
 src/core/RecordingJournal.cpp
 src/core/RemoteControls.cpp
 src/core/RemotePlugin.cpp
@@ -1659,6 +1675,7 @@ src/core/TrackContainer.cpp
 src/core/TrackContainerFolders.cpp
 src/core/TrackKeyNames.cpp
 src/core/TrackMixModels.cpp
+src/core/TrackVersions.cpp
 src/core/UnattendedRun.cpp
 src/core/UnclaimedElements.cpp
 src/core/UpgradeExtendedNoteRange.cpp
@@ -1712,6 +1729,7 @@ src/core/midi/MidiSndio.cpp
 src/core/midi/MidiWinMM.cpp
 src/core/midi/MpeExpression.cpp
 src/gui/ActionGroup.cpp
+src/gui/ArrangerNavigator.cpp
 src/gui/ArrangerOverlays.cpp
 src/gui/AudioAlsaSetupWidget.cpp
 src/gui/AudioDeviceSetupWidget.cpp
@@ -1761,6 +1779,7 @@ src/gui/GrooveMenu.cpp
 src/gui/GuiApplication.cpp
 src/gui/HelpCenter.cpp
 src/gui/LadspaControlView.cpp
+src/gui/LevelBar.cpp
 src/gui/LfoControllerDialog.cpp
 src/gui/LinkedModelGroupViews.cpp
 src/gui/LmmsPalette.cpp
@@ -1784,6 +1803,7 @@ src/gui/MixerView.cpp
 src/gui/MixerViewOptions.cpp
 src/gui/MixerWindows.cpp
 src/gui/ModelView.cpp
+src/gui/ModifierTools.cpp
 src/gui/ModulatorPanel.cpp
 src/gui/MpeInputAction.cpp
 src/gui/NoteTransformActions.cpp
@@ -1893,6 +1913,8 @@ src/gui/shell/ShellCommandMenus.cpp
 src/gui/shell/ShellFloating.cpp
 src/gui/shell/ShellIcons.cpp
 src/gui/shell/ShellLayout.cpp
+src/gui/shell/ShellMenuEntries.cpp
+src/gui/shell/ShellMenuParts.cpp
 src/gui/shell/ShellPanel.cpp
 src/gui/shell/ShellSelection.cpp
 src/gui/shell/TransportReadouts.cpp

@@ -25,6 +25,7 @@
 #ifndef LMMS_MIXER_STRIP_H
 #define LMMS_MIXER_STRIP_H
 
+#include <array>
 #include <atomic>
 
 #include "LmmsTypes.h"
@@ -36,6 +37,7 @@ namespace lmms
 {
 
 class MixerChannel;
+class MixerRoute;
 class SampleFrame;
 
 /*! One meter reading the mixer worker writes and the interface reads - and may reset - each period:
@@ -72,6 +74,12 @@ enum class PanMode
 LMMS_EXPORT void applyInput(MixerChannel& channel, f_cnt_t frames);
 //! MX-085: the strip's three-band EQ (a low shelf at 100 Hz, a bell, a high shelf at 8 kHz); skipped while flat.
 LMMS_EXPORT void applyChannelEq(MixerChannel& channel, f_cnt_t frames);
+//! MX-140: the strip EQ's response at @a hz (dB, the three bands summed) at sample rate @a rate.
+LMMS_EXPORT float eqResponseDb(const MixerChannel& channel, double hz, double rate);
+//! MX-053: the level @a route carries this period, left and right (linear): the sender's live peak times the send
+//! (and the sender's fader for a post-fader send); a switched-off send or a muted sender carries nothing. The send's
+//! own pan is not included. Interface thread.
+LMMS_EXPORT std::array<float, 2> sendLevel(MixerRoute& route);
 //! Polarity and mono, after the inserts.
 LMMS_EXPORT void applyOutput(MixerChannel& channel, f_cnt_t frames);
 //! The pan in its mode; false for balance (the inherited stage does it).

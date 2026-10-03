@@ -32,6 +32,7 @@
 #include <QToolButton>
 #include <QVBoxLayout>
 
+#include "LevelBar.h"
 #include "ConfigManager.h"
 #include "ControlRegistry.h"
 #include "ControlVocabulary.h"
@@ -110,6 +111,7 @@ SampleTrackView::SampleTrackView( SampleTrack * _t, TrackContainerView* tcv ) :
 	layout->addWidget(m_monitorButton);
 	layout->addWidget(m_volumeKnob);
 	layout->addWidget(m_panningKnob);
+	layout->addWidget(trackLevelBar(getTrack(), getTrackSettingsWidget()));  // 0.5.0 L08 (MX-011)
 	masterLayout->addLayout(layout);
 	masterLayout->addSpacerItem(new QSpacerItem(0, 0, QSizePolicy::Minimum, QSizePolicy::Expanding));
 

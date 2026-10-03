@@ -845,6 +845,13 @@ LMMS_EXPORT void registerAutomationToolCommands(ControlRegistry& registry);
 LMMS_EXPORT void registerAudioAnalysisCommands(ControlRegistry& registry);
 //! 0.5.0 L05 (ED-156): sample.edit_range (ControlCommandsSampleRange.cpp).
 LMMS_EXPORT void registerSampleRangeCommands(ControlRegistry& registry);
+//! 0.5.0 L09 (MX-053, MX-140, MX-042): mixer.send_meters, mixer.eq_compare, browser.preview_output, monitor.control_room
+//! (ControlCommandsMixerMeters.cpp).
+LMMS_EXPORT void registerMixerMeterCommands(ControlRegistry& registry);
+//! 0.5.0 L09 (MX-062): track.midi_out (ControlCommandsTrackMidiOut.cpp).
+LMMS_EXPORT void registerTrackMidiOutCommands(ControlRegistry& registry);
+//! 0.5.0 L04 (ED-049): track.version_list / save / switch / remove (ControlCommandsTrackVersions.cpp).
+LMMS_EXPORT void registerTrackVersionCommands(ControlRegistry& registry);
 } // namespace lmms
 
 #endif // LMMS_CONTROL_REGISTRY_GROUPS_H

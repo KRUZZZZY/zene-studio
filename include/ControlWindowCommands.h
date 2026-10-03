@@ -100,6 +100,10 @@ LMMS_EXPORT void registerMacroCommands(ControlRegistry& registry);
 //! arrangement.zoom / zoom_back / fit_tracks / set_tool and window.tool_menu
 //! (src/gui/ControlCommandsArrangerView.cpp).
 LMMS_EXPORT void registerArrangerViewCommands(ControlRegistry& registry);
+//! 0.5.0 L04 (ED-053): arrangement.scroll / arrangement.navigator (src/gui/ArrangerNavigator.cpp).
+LMMS_EXPORT void registerArrangerNavigatorCommands(ControlRegistry& registry);
+//! 0.5.0 L04 (ED-014): arrangement.modifier_tools (src/gui/ModifierTools.cpp).
+LMMS_EXPORT void registerModifierToolCommands(ControlRegistry& registry);
 
 //! What a View-menu item or toolbar button does: window.toggle through the
 //! registry, exactly as an agent on the socket would.

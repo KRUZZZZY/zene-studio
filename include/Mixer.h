@@ -131,6 +131,8 @@ public:
 	std::atomic<bool> m_clipped{false};
 	MeterValue m_gainReduction;
 	MeterValue m_correlation;  //!< 0.5.0 L08 (MX-137): the pre-fader phase correlation, -1..1
+	MeterValue m_livePeakLeft;  //!< 0.5.0 L09 (MX-053): this period's peak after the inserts, before the fader; no reader resets it
+	MeterValue m_livePeakRight;
 	QString m_name;
 	QMutex m_lock;
 	bool m_queued; // are we queued up for rendering yet?
