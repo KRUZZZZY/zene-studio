@@ -26,9 +26,11 @@
 #include "DevicePanel.h"
 
 #include <QComboBox>
+#include <QContextMenuEvent>
 #include <QGridLayout>
 #include <QHBoxLayout>
 #include <QLabel>
+#include <QMenu>
 #include <QToolButton>
 #include <QVBoxLayout>
 
@@ -39,6 +41,7 @@
 #include "Effect.h"
 #include "EffectControlDialog.h"
 #include "EffectControls.h"
+#include "EffectDeviceMenu.h"
 #include "GuiApplication.h"
 #include "InstrumentTrack.h"
 #include "InstrumentTrackView.h"
@@ -100,10 +103,10 @@ QWidget* comboCell(ComboBoxModel* model, const QString& name, QWidget* parent)
 	return cell;
 }
 
-//! The flat control for one parameter model; nullptr for a kind the card does not draw.
-QWidget* parameterWidget(AutomatableModel* model, QWidget* parent)
+//! The flat control for one parameter model, captioned @a name (its alias when it has one, MX-097);
+//! nullptr for a kind the card does not draw.
+QWidget* parameterWidget(AutomatableModel* model, const QString& name, QWidget* parent)
 {
-	const QString name = model->displayName();
 	QWidget* widget = nullptr;
 	if (auto* boolean = qobject_cast<BoolModel*>(model))
 	{
@@ -128,7 +131,8 @@ QWidget* parameterWidget(AutomatableModel* model, QWidget* parent)
 	}
 	if (widget != nullptr)
 	{
-		widget->setToolTip(name);
+		const QString own = model->displayName();
+		widget->setToolTip(name == own ? own : QStringLiteral("%1 (%2)").arg(name, own));
 		widget->setAccessibleName(name);
 	}
 	return widget;
@@ -173,8 +177,11 @@ DeviceCard::DeviceCard(const Spec& spec, const QList<AutomatableModel*>& paramet
 	column->setContentsMargins(0, 0, 0, tokens::space::md);
 	column->setSpacing(tokens::space::sm);
 	column->addWidget(buildHeader());
-	column->addWidget(buildParameters(parameters));
+	m_body = buildParameters(parameters);
+	column->addWidget(m_body);
 	column->addStretch(1);
+	// MX-113: a folded device shows its header only.
+	m_body->setVisible(spec.effect == nullptr || !spec.effect->deviceOptions().folded);
 	setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Expanding);
 }
 
@@ -218,6 +225,20 @@ QWidget* DeviceCard::buildHeader()
 		connect(pins, &QToolButton::clicked, this, &DeviceCard::openPins);
 		row->addWidget(pins);
 	}
+	if (m_spec.effect != nullptr)
+	{
+		QToolButton* fold = headerButton(QStringLiteral("fold"), tr("Fold or open %1").arg(m_spec.title), header);
+		fold->setCheckable(true);
+		fold->setChecked(m_spec.effect->deviceOptions().folded);
+		connect(fold, &QToolButton::clicked, this, [this, fold](bool folded) {
+			const QJsonObject args{{QStringLiteral("target"), m_spec.target}, {QStringLiteral("plugin"), m_spec.plugin},
+				{QStringLiteral("folded"), folded}};
+			// A rack chain's card is not redrawn by its chain's signal, so the card folds itself too.
+			if (invoke(QStringLiteral("plugin.fold"), args).ok) { m_body->setVisible(!folded); }
+			else { fold->setChecked(!folded); }
+		});
+		row->addWidget(fold);
+	}
 	QToolButton* editor = headerButton(QStringLiteral("editor"), tr("Open %1's own editor").arg(m_spec.title), header);
 	connect(editor, &QToolButton::clicked, this, &DeviceCard::openEditor);
 	row->addWidget(editor);
@@ -248,7 +269,9 @@ QWidget* DeviceCard::buildParameters(const QList<AutomatableModel*>& parameters)
 	{
 		if (isChainBookkeeping(model, m_spec.effect)) { continue; }
 		++m_total;
-		QWidget* widget = m_shown < MaxParameters ? parameterWidget(model, body) : nullptr;
+		const QString name = m_spec.effect != nullptr ? m_spec.effect->deviceOptions().shownName(model->displayName())
+			: model->displayName();
+		QWidget* widget = m_shown < MaxParameters ? parameterWidget(model, name, body) : nullptr;
 		if (widget == nullptr) { continue; }
 		++m_shown;
 		// Numbers fill a two-row grid of knobs, column by column; switches and menus sit below.
@@ -268,6 +291,16 @@ QWidget* DeviceCard::buildParameters(const QList<AutomatableModel*>& parameters)
 		column->addWidget(note);
 	}
 	return body;
+}
+
+void DeviceCard::contextMenuEvent(QContextMenuEvent* event)
+{
+	// 0.5.0 L10 (W3): the device's menu on its card - insert, replace, copy, A/B, and the parameter
+	// and option entries - the same one the rack's effect entries offer.
+	if (m_spec.effect == nullptr) { QFrame::contextMenuEvent(event); return; }
+	QMenu menu(this);
+	addEffectDeviceMenus(&menu, m_spec.effect);
+	menu.exec(event->globalPos());
 }
 
 void DeviceCard::openEditor()

@@ -33,6 +33,7 @@
 #include "ControlDeviceSupport.h"
 #include "ControlRegistry.h"
 #include "ControlVocabulary.h"
+#include "DeviceOptions.h"
 #include "Effect.h"
 #include "EffectChain.h"
 #include "EffectPickerOrganiser.h"
@@ -109,6 +110,42 @@ QAction* entry(QMenu* menu, const QString& text, const char* id, std::function<v
 	return action;
 }
 
+CommandCall deviceCall(const char* id, const QJsonObject& fixed, bool ask, const QJsonObject& defaults = {})
+{
+	return CommandCall{QLatin1String(id), fixed, defaults, QString(), ask};
+}
+
+//! 0.5.0 L10 (W3): find, rename and randomise parameters (MX-089 / MX-097 / MX-093), fold the card
+//! (MX-113), compatibility and editor options (MX-099 / MX-094). These commands name a device by
+//! 'target' and its fx-<n> alone - a rack chain's device is found on its channel by its id.
+void addParameterEntries(QMenu* menu, QWidget* parent, const Effect* effect, const QJsonObject& device)
+{
+	const QJsonObject self{{QStringLiteral("target"), device.value(QStringLiteral("target"))},
+		{QStringLiteral("plugin"), device.value(QStringLiteral("plugin"))}};
+	QMenu* parameters = menu->addMenu(QObject::tr("Parameters"));
+	entry(parameters, QObject::tr("Find Parameter..."), "plugin.param_search", [parent, self] {
+		CommandCall find = deviceCall("plugin.param_search", {{QStringLiteral("target"), self.value(QStringLiteral("target"))}}, true);
+		find.showResult = true;
+		runCommand(parent, find);
+	});
+	entry(parameters, QObject::tr("Rename Parameter..."), "plugin.param_rename", [parent, self] {
+		runCommand(parent, deviceCall("plugin.param_rename", self, true));
+	});
+	entry(parameters, QObject::tr("Randomise"), "plugin.randomise", [parent, self] { runCommand(parent, deviceCall("plugin.randomise", self, false)); });
+	entry(parameters, QObject::tr("Randomise by..."), "plugin.randomise", [parent, self] {
+		runCommand(parent, deviceCall("plugin.randomise", self, true, {{QStringLiteral("amount"), 0.25}}));
+	});
+	const bool folded = effect->deviceOptions().folded;
+	entry(menu, folded ? QObject::tr("Unfold") : QObject::tr("Fold"), "plugin.fold", [parent, self, folded] {
+		QJsonObject args = self;
+		args.insert(QStringLiteral("folded"), !folded);
+		runCommand(parent, deviceCall("plugin.fold", args, false));
+	});
+	entry(menu, QObject::tr("Compatibility and Editor..."), "plugin.options", [parent, self] {
+		runCommand(parent, deviceCall("plugin.options", self, true));
+	});
+}
+
 } // namespace
 
 QJsonObject chainAddress(const EffectChain* chain)
@@ -161,6 +198,12 @@ void addEffectDeviceMenus(QMenu* menu, Effect* effect)
 		const CommandCall call = abCall(action, slot);
 		entry(ab, text, "plugin.ab", [parent, call] { runCommand(parent, call); });
 	}
+	entry(ab, QObject::tr("Blend A and B..."), "plugin.blend", [parent, device] {
+		const QJsonObject self{{QStringLiteral("target"), device.value(QStringLiteral("target"))},
+			{QStringLiteral("plugin"), device.value(QStringLiteral("plugin"))}};
+		runCommand(parent, deviceCall("plugin.blend", self, true, {{QStringLiteral("amount"), 0.5}}));
+	});
+	addParameterEntries(menu, parent, effect, device);
 }
 
 } // namespace lmms::gui

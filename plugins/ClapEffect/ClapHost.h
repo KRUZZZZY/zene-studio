@@ -158,6 +158,8 @@ public:
 	auto timerDeliveries() const -> std::uint32_t;
 
 	// ---- R4.3: the plug-in's own editor, embedded (ClapHostGui.cpp) ---------------------
+	//! 0.5.0 L10 (MX-094): the zoom the next openEditor() asks for (1 = the plug-in's own size).
+	void setEditorScale(double scale);
 	//! Main thread: create the plug-in's X11 gui and embed it in @a parentWindow.
 	auto openEditor(void* parentWindow, QString* error) -> bool;
 	void closeEditor();

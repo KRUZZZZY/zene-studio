@@ -31,6 +31,7 @@
 
 #include "ControlRackSupport.h"
 
+#include <algorithm>
 #include <cstddef>
 
 #include <QJsonArray>
@@ -197,6 +198,19 @@ void writeMacroAssignments(const MacroRestore& restore)
 	}
 }
 
+QJsonObject rackSplitJson(const Rack& rack)
+{
+	const RackSplit& split = rack.split();
+	QJsonArray crossovers;
+	if (split.mode == RackSplitMode::Bands)
+	{
+		const int bands = std::min(rack.chainCount(), RackSplit::MaxBands);
+		for (int k = 0; k + 1 < bands; ++k) { crossovers.append(static_cast<double>(split.crossover(k, bands))); }
+	}
+	return {{QStringLiteral("mode"), RackSplit::modeName(split.mode)}, {QStringLiteral("crossovers"), crossovers},
+		{QStringLiteral("applies"), split.active() && rack.selectedChain() == Rack::Parallel && rack.chainCount() > 1}};
+}
+
 QJsonObject rackState(MixerChannel* channel, Rack& rack)
 {
 	QJsonObject out;
@@ -237,6 +251,7 @@ QJsonObject rackState(MixerChannel* channel, Rack& rack)
 	}
 	out.insert(QStringLiteral("zones"), zones);
 	out.insert(QStringLiteral("zone_count"), zones.size());
+	out.insert(QStringLiteral("split"), rackSplitJson(rack));
 	return out;
 }
 

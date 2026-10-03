@@ -124,10 +124,18 @@ void Rack::rebuildRoutingGraph()
 	// number of connections (RoutingGraph::connect only rejects duplicates and
 	// cycles). Chains the selection leaves out are not added to the graph at
 	// all, so the plan never runs them.
+	// MX-108: a parallel rack divides its input between the chains when a split is set; a
+	// selected chain always gets the whole signal.
+	const RackSplit split = m_selectedChain == Parallel ? m_split : RackSplit{};
+	const float sampleRate = static_cast<float>(engine->outputSampleRate());
+	int position = 0;
 	for (const int index : routed)
 	{
 		auto node = std::make_unique<RackChainNode>(chain(index));
 		RackChainNode* const raw = node.get();
+		RackSplitFilter filter;
+		filter.configure(split, position++, static_cast<int>(routed.size()), sampleRate);
+		raw->setSplit(filter);
 		const int id = m_graph->addNode(std::move(node));
 		m_chainNodes.push_back(raw);
 
@@ -203,6 +211,18 @@ void Rack::clear()
 
 	m_parallelChains.clear();
 	m_selectedChain = Parallel;
+	m_split = RackSplit{};
+	rebuildRoutingGraph();
+
+	if (engine != nullptr) { engine->doneChangeInModel(); }
+}
+
+void Rack::setSplit(const RackSplit& split)
+{
+	auto* engine = Engine::audioEngine();
+	if (engine != nullptr) { engine->requestChangeInModel(); }
+
+	m_split = split;
 	rebuildRoutingGraph();
 
 	if (engine != nullptr) { engine->doneChangeInModel(); }
@@ -317,6 +337,7 @@ void Rack::saveSettings(QDomDocument& doc, QDomElement& parent) const
 	QDomElement rack = doc.createElement(QString::fromLatin1(RACK_ELEMENT));
 	rack.setAttribute(QStringLiteral("version"), RACK_VERSION);
 	rack.setAttribute(QStringLiteral("selected"), m_selectedChain);
+	m_split.save(rack);  // MX-108: attributes only for an active split
 
 	for (std::size_t i = 0; i < m_parallelChains.size(); ++i)
 	{
@@ -356,6 +377,7 @@ void Rack::loadSettings(const QDomElement& element)
 	}
 
 	m_selectedChain = rack.attribute(QStringLiteral("selected"), QString::number(Parallel)).toInt();
+	m_split.load(rack);
 	// Additive since 0.3.0: a version-1 element has no <macro> or <zone>
 	// children and both load empty, which is what a rack with neither already
 	// is. Both clear themselves first, so a reload never accumulates.

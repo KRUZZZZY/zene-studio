@@ -33,6 +33,7 @@
 
 #include "lmms_export.h"
 
+class QContextMenuEvent;
 class QHBoxLayout;
 class QLabel;
 class QScrollArea;
@@ -92,6 +93,9 @@ public:
 	//! 0.5.0 L10 (MX-095): light the header's dot while the device processes audio.
 	void refreshActivity();
 
+protected:
+	void contextMenuEvent(QContextMenuEvent* event) override;
+
 private:
 	QWidget* buildHeader();
 	QWidget* buildParameters(const QList<AutomatableModel*>& parameters);
@@ -107,6 +111,7 @@ private:
 	QPointer<SubWindow> m_editor;
 	QPointer<SubWindow> m_pins;
 	QLabel* m_activity = nullptr;
+	QWidget* m_body = nullptr;  //!< the parameters, hidden while the device is folded (MX-113)
 };
 
 //! A modulator, placed right after the device it modulates: its shape, rate (drag or type -

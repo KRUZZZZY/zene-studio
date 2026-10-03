@@ -32,6 +32,7 @@
 
 #include "AudioEngine.h"
 #include "AutomatableModel.h"
+#include "DeviceOptions.h"
 #include "Engine.h"
 #include "Plugin.h"
 #include "TempoSyncKnobModel.h"
@@ -219,6 +220,17 @@ public:
 		return 0;
 	}
 
+	//! 0.5.0 L10 (W3): the options a user set on this device - parameter aliases, folding, editor
+	//! scale, compatibility (include/DeviceOptions.h). Saved with the device, only when set.
+	DeviceOptions& deviceOptions() { return m_deviceOptions; }
+	const DeviceOptions& deviceOptions() const { return m_deviceOptions; }
+	//! MX-099: the latency delay compensation counts for this device - the user's override when one
+	//! is set, else the device's own latencyFrames().
+	int compensatedLatencyFrames() const
+	{
+		return m_deviceOptions.latencyOverride >= 0 ? m_deviceOptions.latencyOverride : latencyFrames();
+	}
+
 	static Effect * instantiate( const QString & _plugin_name,
 				Model * _parent,
 				Descriptor::SubPluginFeatures::Key * _key );
@@ -295,6 +307,8 @@ private:
 	TempoSyncKnobModel m_autoQuitModel;
 
 	bool m_autoQuitEnabled = false;
+
+	DeviceOptions m_deviceOptions;
 
 	friend class gui::EffectView;
 	friend class EffectChain;

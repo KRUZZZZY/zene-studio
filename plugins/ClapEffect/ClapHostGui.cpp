@@ -59,7 +59,8 @@ auto HostedPlugin::openEditor(void* parentWindow, QString* error) -> bool
 	}
 	impl.guiCreated = true;
 	impl.guiClosedByPlugin = false;
-	gui->set_scale(impl.plugin, 1.0);
+	// MX-094: the device's zoom; a plug-in that cannot scale refuses it and keeps its own size.
+	gui->set_scale(impl.plugin, impl.editorScale);
 	clap_window_t window{};
 	window.api = CLAP_WINDOW_API_X11;
 	window.x11 = static_cast<clap_xwnd>(reinterpret_cast<std::uintptr_t>(parentWindow));
@@ -70,6 +71,11 @@ auto HostedPlugin::openEditor(void* parentWindow, QString* error) -> bool
 		return false;
 	}
 	return true;
+}
+
+void HostedPlugin::setEditorScale(double scale)
+{
+	m_impl->editorScale = scale > 0.0 ? scale : 1.0;
 }
 
 void HostedPlugin::closeEditor()

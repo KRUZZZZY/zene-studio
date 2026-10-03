@@ -91,6 +91,8 @@ void RackChainNode::process(f_cnt_t frames)
 			interleaved[2 * f] = left[f];
 			interleaved[2 * f + 1] = right[f];
 		}
+		// MX-108: a split rack feeds this chain its part only (in place, allocation-free).
+		m_split.process(interleaved, count);
 	}
 	m_bus->quietChannels().set(0, !inputLive);
 	m_bus->quietChannels().set(1, !inputLive);

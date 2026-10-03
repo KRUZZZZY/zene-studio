@@ -583,6 +583,7 @@ include/CrashReporter.h
 include/CrashReporterFormat.h
 include/DawProjectInterchange.h
 include/DesignTokens.h
+include/DeviceOptions.h
 include/DevicePanel.h
 include/DocumentIndex.h
 include/DpiHelper.h
@@ -688,6 +689,7 @@ include/Rack.h
 include/RackMacros.h
 include/RackMenu.h
 include/RackNodes.h
+include/RackSplit.h
 include/RackZones.h
 include/RealtimeScope.h
 include/RecordLaunchMenus.h
@@ -951,6 +953,8 @@ src/core/ControlCommandsDetect.cpp
 src/core/ControlCommandsDetectApply.cpp
 src/core/ControlCommandsDevice.cpp
 src/core/ControlCommandsDeviceCopy.cpp
+src/core/ControlCommandsDeviceParams.cpp
+src/core/ControlCommandsDeviceTools.cpp
 src/core/ControlCommandsDrumRack.cpp
 src/core/ControlCommandsDsp.cpp
 src/core/ControlCommandsExport.cpp
@@ -1105,6 +1109,7 @@ src/core/ControlDeviceMoves.cpp
 src/core/ControlDevicePlacement.cpp
 src/core/ControlDeviceState.cpp
 src/core/ControlDeviceSupport.cpp
+src/core/ControlDeviceTools.h
 src/core/ControlDeviceVst3.cpp
 src/core/ControlEditSupport.cpp
 src/core/ControlExportPresetSupport.cpp
@@ -1163,6 +1168,7 @@ src/core/ControlReversibilityTableStructure.cpp
 src/core/ControlReversibilityTableTrackFolder.cpp
 src/core/ControlReversibilityTableVca.cpp
 src/core/ControlReversibilityTableVerbs.cpp
+src/core/ControlReversibilityTableW3Devices.cpp
 src/core/ControlReversibilityTableWasmRender.cpp
 src/core/ControlReversibilityTableWindow.cpp
 src/core/ControlScaleSupport.cpp
@@ -1191,6 +1197,7 @@ src/core/DawProjectReadTracks.cpp
 src/core/DawProjectSession.cpp
 src/core/DawProjectWrite.cpp
 src/core/DawProjectZip.cpp
+src/core/DeviceOptions.cpp
 src/core/DocumentIndex.cpp
 src/core/EffectChainPatcher.cpp
 src/core/ExportDither.cpp
@@ -1261,6 +1268,7 @@ src/core/ProvenanceSection.cpp
 src/core/Rack.cpp
 src/core/RackMacros.cpp
 src/core/RackNodes.cpp
+src/core/RackSplit.cpp
 src/core/RackZones.cpp
 src/core/RecordOptions.cpp
 src/core/RecordingJournal.cpp
@@ -1571,6 +1579,7 @@ tests/src/core/ControlVerbInverseTest.cpp
 tests/src/core/ControlWarpCommandsTest.cpp
 tests/src/core/DataFileSaveIntegrityTest.cpp
 tests/src/core/DeviceCopyTest.cpp
+tests/src/core/DeviceToolsTest.cpp
 tests/src/core/DocumentIndexTest.cpp
 tests/src/core/DocumentSectionsTest.cpp
 tests/src/core/ExportDitherTest.cpp

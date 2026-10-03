@@ -1,0 +1,345 @@
+/*
+ * DeviceToolsTest.cpp - rack splits, parameter search, aliases, randomise and blend, folding and device options
+ *
+ * Copyright (c) 2026 Zene Studio contributors
+ *
+ * This file is part of LMMS - https://lmms.io
+ *
+ * This program is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU General Public
+ * License as published by the Free Software Foundation; either
+ * version 2 of the License, or (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public
+ * License along with this program (see COPYING); if not, write to the
+ * Free Software Foundation, Inc., 51 Franklin Street, Fifth Floor,
+ * Boston, MA 02110-1301 USA.
+ *
+ */
+/*! 0.5.0 L10 (W3): a parallel rack splits its input by band, mid / side or left / right and the
+ *  sum puts it back together (MX-108); parameters are found by name or alias (MX-089) and renamed
+ *  without changing their address (MX-097); new settings are randomised or blended from A/B
+ *  (MX-093); a device folds (MX-113) and carries compatibility options (MX-099 / MX-094) - each
+ *  saved only when set and undone in one step. */
+
+#include <QtTest>
+
+#include <QDomDocument>
+#include <QJsonArray>
+
+#include <cmath>
+#include <vector>
+
+#include "AudioBus.h"
+#include "AudioEngine.h"
+#include "ControlRegistry.h"
+#include "ControlVocabulary.h"
+#include "DeviceOptions.h"
+#include "Effect.h"
+#include "EffectChain.h"
+#include "Engine.h"
+#include "Mixer.h"
+#include "Rack.h"
+#include "RackSplit.h"
+#include "SampleFrame.h"
+#include "Song.h"
+
+using namespace lmms;
+
+namespace
+{
+
+constexpr float kRate = 44100.f;
+constexpr double kTwoPi = 6.283185307179586;
+
+ControlResult run(const QString& id, const QJsonObject& args = {})
+{
+	return ControlRegistry::instance()->invoke(id, args);
+}
+
+MixerChannel* channel(int index) { return Engine::mixer()->mixerChannel(index); }
+
+QString ch(int index) { return control::channelIdOf(channel(index)); }
+
+//! Load the built-in device named @a name onto @a target: its fx-<n>, or empty.
+QString loadByName(const QString& target, const QString& name)
+{
+	for (const QJsonValue& device : run(QStringLiteral("plugin.list"), {{QStringLiteral("kind"), QStringLiteral("effect")}})
+		.result.value(QStringLiteral("devices")).toArray())
+	{
+		if (device.toObject().value(QStringLiteral("name")).toString() != name) { continue; }
+		return run(QStringLiteral("plugin.load"), {{QStringLiteral("target"), target},
+			{QStringLiteral("device"), device.toObject().value(QStringLiteral("id")).toString()}}).result.value(QStringLiteral("id")).toString();
+	}
+	return QString();
+}
+
+double parameterValue(const QString& target, const QString& plugin, const QString& name)
+{
+	for (const QJsonValue& value : run(QStringLiteral("plugin.param_get"), {{QStringLiteral("target"), target},
+		{QStringLiteral("plugin"), plugin}}).result.value(QStringLiteral("parameters")).toArray())
+	{
+		if (value.toObject().value(QStringLiteral("name")).toString() == name) { return value.toObject().value(QStringLiteral("value")).toDouble(); }
+	}
+	return -1e9;
+}
+
+bool setParameter(const QString& target, const QString& plugin, const QString& name, double value)
+{
+	return run(QStringLiteral("plugin.param_set"), {{QStringLiteral("target"), target}, {QStringLiteral("plugin"), plugin},
+		{QStringLiteral("name"), name}, {QStringLiteral("value"), value}}).ok;
+}
+
+//! The peak of the last half of @a frames of a @a hz sine through @a filter (one channel read).
+float bandPeak(RackSplitFilter& filter, double hz, int frames)
+{
+	std::vector<float> block(static_cast<std::size_t>(frames) * 2);
+	for (int f = 0; f < frames; ++f)
+	{
+		const auto x = static_cast<float>(std::sin(kTwoPi * hz * f / kRate));
+		block[2 * f] = x;
+		block[2 * f + 1] = x;
+	}
+	filter.process(block.data(), frames);
+	float peak = 0.f;
+	for (int f = frames / 2; f < frames; ++f) { peak = std::max(peak, std::abs(block[2 * f])); }
+	return peak;
+}
+
+RackSplit bandsAt(float hz)
+{
+	RackSplit split;
+	split.mode = RackSplitMode::Bands;
+	split.crossovers[0] = hz;
+	split.crossoverCount = 1;
+	return split;
+}
+
+Effect* effectOn(int index)
+{
+	const std::vector<Effect*>& effects = channel(index)->m_fxChain.effects();
+	return effects.empty() ? nullptr : effects.back();
+}
+
+} // namespace
+
+class DeviceToolsTest : public QObject
+{
+	Q_OBJECT
+
+private slots:
+	void initTestCase()
+	{
+#ifdef LMMS_TEST_PLUGIN_DIR
+		qputenv("LMMS_PLUGIN_DIR", LMMS_TEST_PLUGIN_DIR);
+#endif
+		Engine::init(true);
+		while (Engine::mixer()->numChannels() <= 3) { Engine::mixer()->createChannel(); }
+		ControlRegistry::setReady(true);
+	}
+
+	void cleanupTestCase()
+	{
+		ControlRegistry::setReady(false);
+		Engine::destroy();
+	}
+
+	//! MX-108: each band keeps its own frequencies, and two bands sum flat in level.
+	void bandsSplitAndSumFlat()
+	{
+		RackSplitFilter low;
+		RackSplitFilter high;
+		low.configure(bandsAt(1000.f), 0, 2, kRate);
+		high.configure(bandsAt(1000.f), 1, 2, kRate);
+		QVERIFY(low.active() && high.active());
+		QVERIFY(bandPeak(low, 100.0, 8820) > 0.95f);
+		QVERIFY(bandPeak(low, 10000.0, 8820) < 0.02f);   // 24 dB / octave: about -80 dB a decade up
+		QVERIFY(bandPeak(high, 10000.0, 8820) > 0.95f);
+		QVERIFY(bandPeak(high, 100.0, 8820) < 0.02f);
+		// Low plus high at the crossover itself: an all-pass, so the level is the input's.
+		RackSplitFilter a;
+		RackSplitFilter b;
+		a.configure(bandsAt(1000.f), 0, 2, kRate);
+		b.configure(bandsAt(1000.f), 1, 2, kRate);
+		const int frames = 8820;
+		std::vector<float> one(static_cast<std::size_t>(frames) * 2);
+		for (int f = 0; f < frames; ++f) { one[2 * f] = one[2 * f + 1] = static_cast<float>(std::sin(kTwoPi * 1000.0 * f / kRate)); }
+		std::vector<float> two = one;
+		a.process(one.data(), frames);
+		b.process(two.data(), frames);
+		float peak = 0.f;
+		for (int f = frames / 2; f < frames; ++f) { peak = std::max(peak, std::abs(one[2 * f] + two[2 * f])); }
+		QVERIFY2(std::abs(peak - 1.f) < 0.02f, qPrintable(QString::number(peak)));
+	}
+
+	//! MX-108: mid / side and left / right parts add back to the input exactly.
+	void midSideAndLeftRightAddBack()
+	{
+		RackSplit split;
+		split.mode = RackSplitMode::MidSide;
+		RackSplitFilter mid;
+		RackSplitFilter side;
+		RackSplitFilter third;
+		mid.configure(split, 0, 3, kRate);
+		side.configure(split, 1, 3, kRate);
+		third.configure(split, 2, 3, kRate);
+		float m[2] = {1.f, 0.5f};
+		float s[2] = {1.f, 0.5f};
+		float t[2] = {1.f, 0.5f};
+		mid.process(m, 1);
+		side.process(s, 1);
+		third.process(t, 1);
+		QCOMPARE(m[0], 0.75f);
+		QCOMPARE(s[1], -0.25f);
+		QCOMPARE(m[0] + s[0], 1.f);
+		QCOMPARE(m[1] + s[1], 0.5f);
+		QCOMPARE(t[0], 0.f);  // a third chain gets silence
+		split.mode = RackSplitMode::LeftRight;
+		RackSplitFilter right;
+		right.configure(split, 1, 2, kRate);
+		float r[2] = {1.f, 0.5f};
+		right.process(r, 1);
+		QCOMPARE(r[0], 0.f);
+		QCOMPARE(r[1], 0.5f);
+	}
+
+	//! MX-108: rack.split needs two chains, renders through the rack, is saved and is undone.
+	void aRackSplitIsSetSavedAndUndone()
+	{
+		const QJsonObject bands{{QStringLiteral("channel"), ch(2)}, {QStringLiteral("mode"), QStringLiteral("mid_side")}};
+		QCOMPARE(run(QStringLiteral("rack.split"), bands).errorKind, ControlErrorKind::Refused);  // one chain
+		QVERIFY(run(QStringLiteral("rack.add_chain"), {{QStringLiteral("channel"), ch(2)}}).ok);
+		const ControlResult made = run(QStringLiteral("rack.split"), bands);
+		QVERIFY2(made.ok, qPrintable(made.errorMessage));
+		QVERIFY(made.result.value(QStringLiteral("applies")).toBool());
+		Rack& rack = channel(2)->m_rack;
+		QCOMPARE(rack.split().mode, RackSplitMode::MidSide);
+		// Two empty chains fed the mid and the side sum to the input.
+		const auto frames = static_cast<f_cnt_t>(Engine::audioEngine()->framesPerPeriod());
+		std::vector<SampleFrame> block(frames, SampleFrame(0.8f, -0.2f));
+		SampleFrame* data[1] = {block.data()};
+		AudioBus bus{data, 1, frames};
+		bus.quietChannels().set(0, false);
+		bus.quietChannels().set(1, false);
+		rack.processAudioBuffer(bus);
+		QVERIFY(std::abs(block[frames / 2][0] - 0.8f) < 1e-5f);
+		QVERIFY(std::abs(block[frames / 2][1] + 0.2f) < 1e-5f);
+		QDomDocument doc;
+		QDomElement element = doc.createElement(QStringLiteral("mixerchannel"));
+		rack.saveSettings(doc, element);
+		QCOMPARE(element.firstChildElement(QStringLiteral("rack")).attribute(QStringLiteral("split")), QStringLiteral("mid_side"));
+		QVERIFY(run(QStringLiteral("rack.split"), {{QStringLiteral("channel"), ch(2)}, {QStringLiteral("mode"), QStringLiteral("bands")},
+			{QStringLiteral("crossovers"), QJsonArray{25000}}}).errorKind == ControlErrorKind::InvalidArgs);
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
+		QCOMPARE(rack.split().mode, RackSplitMode::None);
+		QDomElement plain = doc.createElement(QStringLiteral("mixerchannel"));
+		rack.saveSettings(doc, plain);
+		QVERIFY(!plain.firstChildElement(QStringLiteral("rack")).hasAttribute(QStringLiteral("split")));
+	}
+
+	//! MX-089 / MX-097: a parameter is found by its name, renamed, found by its alias, keeps its own name
+	//! as its address, saves the alias only when set, and the rename undoes.
+	void aParameterIsFoundAndRenamed()
+	{
+		const QString amp = loadByName(ch(1), QStringLiteral("amplifier"));
+		if (amp.isEmpty()) { QSKIP("this build has no amplifier module"); }
+		const QJsonObject device{{QStringLiteral("target"), ch(1)}, {QStringLiteral("plugin"), amp}};
+		QJsonObject rename = device;
+		rename.insert(QStringLiteral("name"), QStringLiteral("Volume"));
+		rename.insert(QStringLiteral("alias"), QStringLiteral("Drive"));
+		QVERIFY(run(QStringLiteral("plugin.param_rename"), rename).ok);
+		Effect* effect = effectOn(1);
+		QCOMPARE(effect->deviceOptions().alias(QStringLiteral("Volume")), QStringLiteral("Drive"));
+		const ControlResult found = run(QStringLiteral("plugin.param_search"), {{QStringLiteral("query"), QStringLiteral("driv")},
+			{QStringLiteral("target"), ch(1)}});
+		QCOMPARE(found.result.value(QStringLiteral("count")).toInt(), 1);
+		QCOMPARE(found.result.value(QStringLiteral("parameters")).toArray().first().toObject().value(QStringLiteral("name")).toString(),
+			QStringLiteral("Volume"));
+		QVERIFY(setParameter(ch(1), amp, QStringLiteral("Volume"), 120.0));  // still addressed by its own name
+		QDomDocument doc;
+		QDomElement element = doc.createElement(QStringLiteral("effect"));
+		effect->saveSettings(doc, element);
+		QVERIFY(element.attribute(QStringLiteral("aliases")).contains(QStringLiteral("Drive")));
+		QVERIFY(!element.hasAttribute(QStringLiteral("folded")));
+		DeviceOptions back;
+		back.load(element);
+		QCOMPARE(back.shownName(QStringLiteral("Volume")), QStringLiteral("Drive"));
+		QVERIFY(run(QStringLiteral("control.undo")).ok);  // the parameter write
+		QVERIFY(run(QStringLiteral("control.undo")).ok);  // the rename
+		QVERIFY(effect->deviceOptions().aliases().isEmpty());
+		rename.insert(QStringLiteral("name"), QStringLiteral("No such knob"));
+		QCOMPARE(run(QStringLiteral("plugin.param_rename"), rename).errorKind, ControlErrorKind::NotFound);
+	}
+
+	//! MX-093: randomise moves every setting inside its range; blend sets the A/B midpoint; both undo.
+	void settingsAreRandomisedAndBlended()
+	{
+		Effect* effect = effectOn(1);
+		if (effect == nullptr) { QSKIP("this build has no amplifier module"); }
+		const QString amp = control::effectIdOf(effect);
+		const QJsonObject device{{QStringLiteral("target"), ch(1)}, {QStringLiteral("plugin"), amp}};
+		QVERIFY(setParameter(ch(1), amp, QStringLiteral("Volume"), 100.0));
+		QCOMPARE(run(QStringLiteral("plugin.blend"), device).errorKind, ControlErrorKind::Refused);  // nothing stored
+		QJsonObject random = device;
+		random.insert(QStringLiteral("amount"), 1.0);
+		random.insert(QStringLiteral("seed"), 7);
+		const ControlResult shaken = run(QStringLiteral("plugin.randomise"), random);
+		QVERIFY2(shaken.ok, qPrintable(shaken.errorMessage));
+		const double volume = parameterValue(ch(1), amp, QStringLiteral("Volume"));
+		QVERIFY(volume >= 0.0 && volume <= 200.0 && std::abs(volume - 100.0) > 1e-3);
+		QVERIFY(effect->isEnabled());  // the device's own switch stays
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
+		QCOMPARE(parameterValue(ch(1), amp, QStringLiteral("Volume")), 100.0);
+		QJsonObject store = device;
+		store.insert(QStringLiteral("action"), QStringLiteral("store"));
+		store.insert(QStringLiteral("slot"), QStringLiteral("a"));
+		QVERIFY(run(QStringLiteral("plugin.ab"), store).ok);
+		QVERIFY(setParameter(ch(1), amp, QStringLiteral("Volume"), 50.0));
+		store.insert(QStringLiteral("slot"), QStringLiteral("b"));
+		QVERIFY(run(QStringLiteral("plugin.ab"), store).ok);
+		QJsonObject half = device;
+		half.insert(QStringLiteral("amount"), 0.5);
+		QVERIFY(run(QStringLiteral("plugin.blend"), half).ok);
+		QVERIFY(std::abs(parameterValue(ch(1), amp, QStringLiteral("Volume")) - 75.0) < 1e-3);
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
+		QVERIFY(std::abs(parameterValue(ch(1), amp, QStringLiteral("Volume")) - 50.0) < 1e-3);
+	}
+
+	//! MX-113 / MX-099: folding and the options are carried by the device, a latency override reaches
+	//! the chain's delay compensation, the generic editor refuses the plug-in's own window, and both undo.
+	void foldingAndOptionsAreKeptAndUndone()
+	{
+		Effect* effect = effectOn(1);
+		if (effect == nullptr) { QSKIP("this build has no amplifier module"); }
+		const QJsonObject device{{QStringLiteral("target"), ch(1)}, {QStringLiteral("plugin"), control::effectIdOf(effect)}};
+		QVERIFY(run(QStringLiteral("plugin.fold"), device).ok);  // toggles
+		QVERIFY(effect->deviceOptions().folded);
+		QJsonObject options = device;
+		options.insert(QStringLiteral("latency_override"), 512);
+		options.insert(QStringLiteral("keep_running"), true);
+		options.insert(QStringLiteral("generic_editor"), true);
+		QVERIFY(run(QStringLiteral("plugin.options"), options).ok);
+		QCOMPARE(channel(1)->m_fxChain.latencyFrames(), 512);
+		QVERIFY(effect->deviceOptions().keepRunning);
+		const ControlResult editor = run(QStringLiteral("plugin.editor_open"), device);
+		QVERIFY(!editor.ok);  // a headless run refuses it before the device is asked: requires a display
+		if (editor.errorKind != ControlErrorKind::Requires) { QVERIFY(editor.errorMessage.contains(QStringLiteral("generic editor"))); }
+		QJsonObject badScale = device;
+		badScale.insert(QStringLiteral("editor_scale"), 9.0);
+		QCOMPARE(run(QStringLiteral("plugin.options"), badScale).errorKind, ControlErrorKind::InvalidArgs);
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
+		QCOMPARE(channel(1)->m_fxChain.latencyFrames(), 0);
+		QVERIFY(!effect->deviceOptions().keepRunning);
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
+		QVERIFY(!effect->deviceOptions().folded);
+		QVERIFY(effect->deviceOptions().isDefault());
+	}
+};
+
+QTEST_MAIN(DeviceToolsTest)
+#include "DeviceToolsTest.moc"

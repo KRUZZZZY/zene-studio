@@ -88,7 +88,8 @@ void EffectChain::refreshLatency()
 		{
 			if (effect->isEnabled() && effect->isOkay() && !effect->dontRun())
 			{
-				frames += std::max(0, effect->latencyFrames());
+				// 0.5.0 L10 (MX-099): a user's latency override replaces what the device reports.
+				frames += std::max(0, effect->compensatedLatencyFrames());
 			}
 		}
 	}

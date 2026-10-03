@@ -24,11 +24,14 @@
 
 #include "RackMenu.h"
 
+#include <utility>
+
 #include <QActionGroup>
 #include <QApplication>
 #include <QInputDialog>
 #include <QJsonArray>
 #include <QJsonObject>
+#include <QLineEdit>
 #include <QMenu>
 #include <QMessageBox>
 
@@ -93,6 +96,42 @@ void addRouting(QMenu* rack, const QString& channel, int chains, int selected)
 			run(channel, QStringLiteral("rack.set_selected"), {{QStringLiteral("chain"), chain}});
 		});
 	}
+}
+
+//! 0.5.0 L10 (MX-108): "Split the input" > what each chain of a parallel rack is fed (rack.split).
+void addSplit(QMenu* rack, const QString& channel, const QJsonObject& split, int chains)
+{
+	QMenu* menu = rack->addMenu(QMenu::tr("Split the input"));
+	const QString current = split.value(QStringLiteral("mode")).toString();
+	auto* group = new QActionGroup(menu);
+	const std::pair<QString, QString> modes[] = {{QStringLiteral("none"), QMenu::tr("Whole signal to every chain")},
+		{QStringLiteral("bands"), QMenu::tr("By frequency band (chain 0 lowest)")},
+		{QStringLiteral("mid_side"), QMenu::tr("Mid to chain 0, side to chain 1")},
+		{QStringLiteral("left_right"), QMenu::tr("Left to chain 0, right to chain 1")}};
+	for (const auto& [mode, text] : modes)
+	{
+		QAction* action = commandItem(menu, text, "rack.split");
+		action->setCheckable(true);
+		action->setChecked(mode == current);
+		action->setEnabled(chains > 1 || mode == QLatin1String("none"));
+		group->addAction(action);
+		QObject::connect(action, &QAction::triggered, menu, [channel, mode = mode] {
+			run(channel, QStringLiteral("rack.split"), {{QStringLiteral("mode"), mode}});
+		});
+	}
+	QStringList now;
+	for (const QJsonValue& hz : split.value(QStringLiteral("crossovers")).toArray()) { now << QString::number(hz.toDouble(), 'f', 0); }
+	QAction* edit = commandItem(menu, QMenu::tr("Crossovers (%1 Hz)...").arg(now.join(QStringLiteral(", "))), "rack.split");
+	edit->setEnabled(current == QLatin1String("bands"));
+	QObject::connect(edit, &QAction::triggered, menu, [channel, now] {
+		bool ok = false;
+		const QString text = QInputDialog::getText(QApplication::activeWindow(), QMenu::tr("Crossovers"),
+			QMenu::tr("Frequencies in Hz, separated by commas:"), QLineEdit::Normal, now.join(QStringLiteral(", ")), &ok);
+		if (!ok) { return; }
+		QJsonArray crossovers;
+		for (const QString& part : text.split(QLatin1Char(','), Qt::SkipEmptyParts)) { crossovers.append(part.trimmed().toDouble()); }
+		run(channel, QStringLiteral("rack.split"), {{QStringLiteral("mode"), QStringLiteral("bands")}, {QStringLiteral("crossovers"), crossovers}});
+	});
 }
 
 //! The devices of the channel's own chain (chain 0), as dsp.get_state reports them.
@@ -212,6 +251,7 @@ void addRackMenu(QMenu* menu, const MixerChannel* channel)
 	const int chains = state.result.value(QStringLiteral("chain_count")).toInt();
 	rack->addSeparator();
 	addRouting(rack, id, chains, state.result.value(QStringLiteral("selected")).toInt());
+	addSplit(rack, id, state.result.value(QStringLiteral("split")).toObject(), chains);
 	QAction* addChain = commandItem(rack, QMenu::tr("Add parallel chain"), "rack.add_chain");
 	QObject::connect(addChain, &QAction::triggered, rack, [id] { run(id, QStringLiteral("rack.add_chain")); });
 	if (chains > 1)

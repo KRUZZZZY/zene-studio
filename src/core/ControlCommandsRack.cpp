@@ -123,6 +123,7 @@ void registerRackGetState(ControlRegistry& registry)
 		{QStringLiteral("macro_count"), integerProperty()},
 		{QStringLiteral("zones"), arrayProperty()},
 		{QStringLiteral("zone_count"), integerProperty()},
+		{QStringLiteral("split"), objectProperty()},
 	});
 	cmd.mutating = false;
 	cmd.handler = [](const QJsonObject& args) {
