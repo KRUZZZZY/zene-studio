@@ -91,6 +91,22 @@ MidiEvent controllerEvent(const ControllerLane& lane, int value)
 
 } // namespace
 
+bool InstrumentTrack::handleInputTransform(const MidiEvent& event, const TimePos& time, f_cnt_t offset)
+{
+	// MIDI input thread. The transformed event re-enters processInEvent once; the flag keeps it from
+	// being transformed twice (a thread's own re-entry, so a thread-local).
+	thread_local bool inside = false;
+	if (inside || event.source() != MidiEvent::Source::External || !m_inputTransform.active()) { return false; }
+	MidiEvent transformed = event;
+	if (m_inputTransform.apply(&transformed))
+	{
+		inside = true;
+		processInEvent(transformed, time, offset);
+		inside = false;
+	}
+	return true;
+}
+
 void InstrumentTrack::playClipControllers(const MidiClip* clip, tick_t tick, f_cnt_t offset)
 {
 	// Audio thread, under play()'s tryLock: reads the lanes, writes only their own lastSent/lastTick,

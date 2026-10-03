@@ -350,6 +350,7 @@ include/MidiDummy.h
 include/MidiEvent.h
 include/MidiEventProcessor.h
 include/MidiEventToByteSeq.h
+include/MidiInputTransform.h
 include/MidiJack.h
 include/MidiLearn.h
 include/MidiLearnGui.h
@@ -1165,6 +1166,7 @@ src/core/ControlCommandsGroovePool.cpp
 src/core/ControlCommandsHostChunking.cpp
 src/core/ControlCommandsHostNotes.cpp
 src/core/ControlCommandsIdContract.cpp
+src/core/ControlCommandsInputTransform.cpp
 src/core/ControlCommandsInterchange.cpp
 src/core/ControlCommandsKeyNames.cpp
 src/core/ControlCommandsLink.cpp
@@ -1417,6 +1419,7 @@ src/core/MidiClipControllers.cpp
 src/core/MidiClock.cpp
 src/core/MidiClockState.cpp
 src/core/MidiClockTracker.cpp
+src/core/MidiInputTransform.cpp
 src/core/MidiLearn.cpp
 src/core/MixHelpers.cpp
 src/core/Mixer.cpp
@@ -1911,6 +1914,7 @@ tests/src/core/MathTest.cpp
 tests/src/core/McuSurfaceTest.cpp
 tests/src/core/MeterTapTest.cpp
 tests/src/core/MidiClockTest.cpp
+tests/src/core/MidiInputTransformTest.cpp
 tests/src/core/MidiLearnTest.cpp
 tests/src/core/MidiLearnThreadTest.cpp
 tests/src/core/MidiOutQueueTest.cpp

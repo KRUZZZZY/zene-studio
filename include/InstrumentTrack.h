@@ -33,6 +33,7 @@
 #include "Microtuner.h"
 #include "Midi.h"
 #include "MidiEventProcessor.h"
+#include "MidiInputTransform.h"
 #include "MidiPort.h"
 #include "MpeExpression.h"
 #include "NotePlayHandle.h"
@@ -84,6 +85,8 @@ public:
 	 *  the input path behaves exactly as before. */
 	MpeExpression& mpeExpression() { return m_mpeExpression; }
 	const MpeExpression& mpeExpression() const { return m_mpeExpression; }
+	//! 0.5.0 L07 (ED-145): what this track does to live MIDI input (MidiInputTransform.h).
+	MidiInputTransform& inputTransform() { return m_inputTransform; }
 
 	/*! The live note handle playing \a key, or nullptr. Readback for the
 	 *  captured expression (and what a piano-roll expression editor would
@@ -325,11 +328,15 @@ private:
 	// MPE capture (task #601). Both run on the MIDI-input thread and only
 	// touch fixed arrays plus plain int writes on live note handles.
 	bool trackMpeInputEvent( const MidiEvent& event );
+	//! Live input through the track's MIDI input transform (InstrumentTrackNotes.cpp): true when
+	//! the event was handled here - transformed and played, or dropped.
+	bool handleInputTransform( const MidiEvent& event, const TimePos& time, f_cnt_t offset );
 	void loadMpeExpressionOntoChannelNotes( int channel );
 
 	MidiPort m_midiPort;
 
 	MpeExpression m_mpeExpression;
+	MidiInputTransform m_inputTransform;
 
 	NotePlayHandle* m_notes[NumKeys];
 	NotePlayHandleList m_sustainedNotes;

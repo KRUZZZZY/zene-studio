@@ -571,6 +571,8 @@ set(LMMS_TESTS
 	src/core/AutomationLanesTest.cpp
 	# 0.5.0 L07: the note editor's commands - scale, ratchet, add_many, list, find and change, swing, key names.
 	src/core/NoteEditingCommandsTest.cpp
+	# 0.5.0 L07 ED-145/113: a track's MIDI input transform - rules, commands, file, live input.
+	src/core/MidiInputTransformTest.cpp
 	# Feature row 50 (0.3.0): the Lua API's DAW-control half - the mixer channel
 	# and effect-chain bindings. Drives a REAL mixer channel and the chain the
 	# control surface addresses from Lua, reads the engine back (not the script's

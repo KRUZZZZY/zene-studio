@@ -607,6 +607,7 @@ include/MidiClipControllers.h
 include/MidiClock.h
 include/MidiClockMenu.h
 include/MidiControllerMenu.h
+include/MidiInputTransform.h
 include/MidiLearn.h
 include/MidiLearnGui.h
 include/MidiOutQueue.h
@@ -895,6 +896,7 @@ src/core/ControlCommandsGroovePool.cpp
 src/core/ControlCommandsHostChunking.cpp
 src/core/ControlCommandsHostNotes.cpp
 src/core/ControlCommandsIdContract.cpp
+src/core/ControlCommandsInputTransform.cpp
 src/core/ControlCommandsInterchange.cpp
 src/core/ControlCommandsKeyNames.cpp
 src/core/ControlCommandsLink.cpp
@@ -1120,6 +1122,7 @@ src/core/MidiClipControllers.cpp
 src/core/MidiClock.cpp
 src/core/MidiClockState.cpp
 src/core/MidiClockTracker.cpp
+src/core/MidiInputTransform.cpp
 src/core/MidiLearn.cpp
 src/core/ModulationLayer.cpp
 src/core/ModulationLayerPublisher.cpp
@@ -1438,6 +1441,7 @@ tests/src/core/LufsMeterTest.cpp
 tests/src/core/Lv2StateTest.cpp
 tests/src/core/McuSurfaceTest.cpp
 tests/src/core/MidiClockTest.cpp
+tests/src/core/MidiInputTransformTest.cpp
 tests/src/core/MidiLearnTest.cpp
 tests/src/core/MidiOutQueueTest.cpp
 tests/src/core/MidiRetroCaptureTest.cpp

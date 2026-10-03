@@ -19,7 +19,8 @@ a user does. This driver starts the REAL `zene` binary headless and proves:
      groove.quantize takes 'swing'; key_names.* name a track's keys (one undo restores);
      window.note_editor_set drives the paint tool, the drum view, the colour mode and
      keep-in-scale; a Lua script adds notes through zene.command; clip.controllers_set / get
-     write and read a clip's CC lane (one undo step) and the editor shows it as its controller lane.
+     write and read a clip's CC lane (one undo step) and the editor shows it as its controller lane;
+     track.input_transform_set / get change what a track does to live MIDI (one undo step).
 
 Usage:  QT_QPA_PLATFORM=offscreen python3 tests/control-note-editor.py <zene> [<screenshot dir>]
 Exit 0 only when every check held.
@@ -229,6 +230,17 @@ def check_controller_lanes(session, recorder):
     session.call("window.note_editor_set", {"controller_lane": ""})
 
 
+def check_input_transform(session, recorder):
+    track, _ = new_clip(session, "Live")
+    session.result("track.input_transform_set", {"track": track, "transpose": 12, "velocity_scale": 80})
+    got = session.result("track.input_transform_get", {"track": track}).get("transform") or {}
+    recorder.check("track.input_transform_set changes the live-input transform",
+                   got.get("transpose") == 12 and got.get("velocity_scale") == 80 and got.get("active") is True, "transform=%r" % got)
+    session.result("control.undo")
+    got = session.result("track.input_transform_get", {"track": track}).get("transform") or {}
+    recorder.check("one undo puts the identity back", got.get("active") is False, "transform=%r" % got)
+
+
 def main(argv):
     if len(argv) < 2:
         print(__doc__)
@@ -252,6 +264,7 @@ def main(argv):
         check_note_shapes(session, recorder)
         check_drum_view(session, recorder)
         check_controller_lanes(session, recorder)
+        check_input_transform(session, recorder)
     report_results(recorder)
     if recorder.problems:
         transcript.dump()

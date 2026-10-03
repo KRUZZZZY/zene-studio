@@ -266,6 +266,7 @@ set(LMMS_SRCS
 	# as, and read back from, a format-1 conductor track another DAW can read.
 	# Its own translation unit for the reason the automation and warp groups are
 	# split - gate 7 measures a file, not a group.
+	core/ControlCommandsInputTransform.cpp
 	core/ControlCommandsInterchange.cpp
 	# DAWproject import / export (feature row 37, docs/DAWPROJECT-INTERCHANGE.md):
 	# the four dawproject.* ids. Its own translation unit for the same reason -
@@ -754,6 +755,7 @@ set(LMMS_SRCS
 	core/Microtuner.cpp
 	core/MidiLearn.cpp
 	core/MidiClipControllers.cpp
+	core/MidiInputTransform.cpp
 	core/MidiClock.cpp
 	core/MidiClockState.cpp
 	core/MidiClockTracker.cpp

@@ -409,6 +409,8 @@ void InstrumentTrack::processInEvent( const MidiEvent& event, const TimePos& tim
 	{
 		return;
 	}
+	// 0.5.0 L07 (ED-145): live input through the track's MIDI input transform.
+	if (handleInputTransform(event, time, offset)) { return; }
 	// R2.1: monitoring Off keeps live notes out of the instrument. Only the NOTE-ON is
 	// dropped - a note-off still reaches a note that sounded before the mode changed.
 	if (event.type() == MidiNoteOn && event.source() == MidiEvent::Source::External
@@ -999,6 +1001,7 @@ void InstrumentTrack::saveTrackSpecificSettings(QDomDocument& doc, QDomElement& 
 	m_panningModel.saveSettings( doc, thisElement, "pan" );
 	m_pitchModel.saveSettings( doc, thisElement, "pitch" );
 	m_pitchRangeModel.saveSettings( doc, thisElement, "pitchrange" );
+	if (!presetMode) { m_inputTransform.save(thisElement); }  // 0.5.0 L07: an attribute, only when set
 
 	m_mixerChannelModel.saveSettings( doc, thisElement, "mixch" );
 	m_baseNoteModel.saveSettings( doc, thisElement, "basenote" );
@@ -1086,6 +1089,8 @@ void InstrumentTrack::loadTrackSpecificSettings( const QDomElement & thisElement
 	// We set MIDI CC enable to false so the knobs don't trigger MIDI CC events while
 	// they are being loaded. After all knobs are loaded we load the right value of m_midiCCEnable.
 	m_midiCCEnable->setValue(false);
+
+	m_inputTransform.load(thisElement);  // 0.5.0 L07 (absent: left as it is)
 
 	QDomNode node = thisElement.firstChild();
 	while( !node.isNull() )

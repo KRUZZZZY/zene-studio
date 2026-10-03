@@ -166,6 +166,15 @@ void recordMenu(QMenu* menu, const QJsonObject& self, bool instrument)
 	add(retro, "Save Last Audio as a Take...", "record.retro_capture_to_take", {}, true, {}, true);
 }
 
+//! 0.5.0 L07 (ED-145/113): what an instrument track does to live MIDI input.
+void inputTransformMenu(QMenu* menu, const QJsonObject& self)
+{
+	QMenu* input = menu->addMenu(tr("MIDI Input Transform"));
+	add(input, "Transform...", "track.input_transform_set", self, true);
+	choices(input, "Snap to Scale", "track.input_transform_set", "scale_snap", self);
+	add(input, "Reset", "track.input_transform_set", with(self, "reset", true), false);
+}
+
 void sampleClipMenus(QMenu* menu, Clip* clip, const QJsonObject& self)
 {
 	const auto* sample = static_cast<SampleClip*>(clip);
@@ -214,6 +223,7 @@ void populateTrack(QMenu* menu, Track* track)
 	const QString id = control::trackIdOf(track);
 	const QJsonObject self{{QStringLiteral("track"), id}};
 	recordMenu(menu, self, dynamic_cast<InstrumentTrack*>(track) != nullptr);
+	if (dynamic_cast<InstrumentTrack*>(track) != nullptr) { inputTransformMenu(menu, self); }
 	automationMenu(menu, id);
 	QMenu* takes = menu->addMenu(tr("Takes and Comping"));
 	list(takes, "Take Lanes...", [id] { return CommandLists::takeLanes(id); });

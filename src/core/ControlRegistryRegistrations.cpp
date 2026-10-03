@@ -93,6 +93,7 @@ void registerControlCommands(ControlRegistry& registry)
 	registerRangeCommands(registry);
 	registerClipEnvelopeCommands(registry);
 	registerClipControllerCommands(registry);
+	registerInputTransformCommands(registry);
 	registerClipArrangeCommands(registry);
 	registerAutomationLaneCommands(registry);
 	registerNoteShapeCommands(registry);
