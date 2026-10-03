@@ -499,10 +499,12 @@
 # recipe's pathspec does not cover - the FocusDesk tests sit the same way, registered in
 # tests/CMakeLists.txt and listed in tests/all-sources.txt.
 include/Accessibility.h
+include/AccessibilityAudit.h
 include/Appearance.h
 include/ArrangementEdits.h
 include/ArrangementSections.h
 include/ArrangerNavigator.h
+include/ArrangerAids.h
 include/ArrangerOverlays.h
 include/ArticulationMap.h
 include/AudioBus.h
@@ -535,6 +537,7 @@ include/ClipEditsMenu.h
 include/ClipLinks.h
 include/ClipTransients.h
 include/CommandForm.h
+include/CommandListBuild.h
 include/CommandListDialog.h
 include/CommandLists.h
 include/CommandPalette.h
@@ -589,6 +592,7 @@ include/DesignTokens.h
 include/DevicePanel.h
 include/DocumentIndex.h
 include/DpiHelper.h
+include/DspLoadProbe.h
 include/EffectDeviceMenu.h
 include/EffectHostingMenu.h
 include/EffectPickerOrganiser.h
@@ -610,6 +614,7 @@ include/InputMeter.h
 include/InputMonitor.h
 include/InspectorChannelRouting.h
 include/InspectorPanel.h
+include/JsonFile.h
 include/LatencyCompensation.h
 include/LaunchBindings.h
 include/LevelBar.h
@@ -780,22 +785,28 @@ include/TempoMap.h
 include/TempoMapPanel.h
 include/TrackFolder.h
 include/TrackFolderMenu.h
+include/TrackIcons.h
 include/TrackKeyNames.h
+include/TrackLooks.h
 include/TrackMixModels.h
 include/TrackRecorder.h
 include/TrackRenderMenu.h
 include/TrackVersions.h
 include/TransportReadouts.h
+include/TunerTap.h
 include/UiConfigStore.h
 include/UnattendedRun.h
 include/UnclaimedElements.h
 include/UndoHistoryPanel.h
 include/VcaGroup.h
 include/VcaStripView.h
+include/ViewMemory.h
 include/VisibilitySetMenu.h
 include/WarpMarkers.h
 include/WaveformPreview.h
 include/WcagContrast.h
+include/WorkspaceMenus.h
+include/WorkspaceWindows.h
 include/XmlDepthGuard.h
 include/XyPad.h
 include/zene/api/ControlApi.h
@@ -923,6 +934,7 @@ src/core/ControlCommandDef.cpp
 src/core/ControlCommandsArrangeTools.cpp
 src/core/ControlCommandsArrangement.cpp
 src/core/ControlCommandsArrangementState.cpp
+src/core/ControlCommandsAssistant.cpp
 src/core/ControlCommandsAudioAnalysis.cpp
 src/core/ControlCommandsAudioSlice.cpp
 src/core/ControlCommandsAutomation.cpp
@@ -975,6 +987,7 @@ src/core/ControlCommandsGroove.cpp
 src/core/ControlCommandsGrooveEdit.cpp
 src/core/ControlCommandsGroovePool.cpp
 src/core/ControlCommandsHandoff.cpp
+src/core/ControlCommandsHistoryJump.cpp
 src/core/ControlCommandsHostChunking.cpp
 src/core/ControlCommandsHostNotes.cpp
 src/core/ControlCommandsIdContract.cpp
@@ -1086,6 +1099,7 @@ src/core/ControlCommandsSessionRecordLand.cpp
 src/core/ControlCommandsSessionSceneFollow.cpp
 src/core/ControlCommandsSessionShared.h
 src/core/ControlCommandsSettings.cpp
+src/core/ControlCommandsSettingsPresets.cpp
 src/core/ControlCommandsStemModel.cpp
 src/core/ControlCommandsStems.cpp
 src/core/ControlCommandsStructure.cpp
@@ -1096,10 +1110,12 @@ src/core/ControlCommandsTrackFolder.cpp
 src/core/ControlCommandsTrackFolderSets.cpp
 src/core/ControlCommandsTrackFolderShared.h
 src/core/ControlCommandsTrackMidiOut.cpp
+src/core/ControlCommandsTrackLooks.cpp
 src/core/ControlCommandsTrackPresets.cpp
 src/core/ControlCommandsTrackVersions.cpp
 src/core/ControlCommandsTransport.cpp
 src/core/ControlCommandsTransportMap.cpp
+src/core/ControlCommandsTuner.cpp
 src/core/ControlCommandsUndo.cpp
 src/core/ControlCommandsVca.cpp
 src/core/ControlCommandsVcaEdit.cpp
@@ -1181,6 +1197,7 @@ src/core/ControlReversibilityTableStructure.cpp
 src/core/ControlReversibilityTableTrackFolder.cpp
 src/core/ControlReversibilityTableVca.cpp
 src/core/ControlReversibilityTableVerbs.cpp
+src/core/ControlReversibilityTableW3Custom.cpp
 src/core/ControlReversibilityTableWasmRender.cpp
 src/core/ControlReversibilityTableWindow.cpp
 src/core/ControlRoom.cpp
@@ -1225,6 +1242,7 @@ src/core/ImportDetectionSpectrum.cpp
 src/core/ImportDetectionSpectrum.h
 src/core/InputMeter.cpp
 src/core/InputMonitor.cpp
+src/core/JsonFile.cpp
 src/core/LatencyCompensation.cpp
 src/core/LaunchBindings.cpp
 src/core/LinkSync.cpp
@@ -1338,16 +1356,21 @@ src/core/TelemetryNetworkTransport.cpp
 src/core/TempoMap.cpp
 src/core/TrackContainerFolders.cpp
 src/core/TrackKeyNames.cpp
+src/core/TrackLooks.cpp
 src/core/TrackMixModels.cpp
 src/core/TrackVersions.cpp
+src/core/TunerTap.cpp
 src/core/UnattendedRun.cpp
 src/core/UnclaimedElements.cpp
 src/core/VcaGroup.cpp
+src/core/ViewMemory.cpp
 src/core/audio/MultiTrackRecorder.cpp
 src/core/audio/TrackRecorder.cpp
 src/core/midi/MidiReconnect.cpp
 src/core/midi/MpeExpression.cpp
 src/gui/ArrangerNavigator.cpp
+src/gui/AccessibilityAudit.cpp
+src/gui/ArrangerAids.cpp
 src/gui/ArrangerOverlays.cpp
 src/gui/AutomationModeMenu.cpp
 src/gui/BrowserSearchView.cpp
@@ -1358,6 +1381,7 @@ src/gui/ClipEditsMenu.cpp
 src/gui/CommandForm.cpp
 src/gui/CommandListDialog.cpp
 src/gui/CommandLists.cpp
+src/gui/CommandListsCustom.cpp
 src/gui/CommandPalette.cpp
 src/gui/CompSwipeStrip.cpp
 src/gui/ContextHelp.cpp
@@ -1370,7 +1394,10 @@ src/gui/ControlCommandsNoteEditor.cpp
 src/gui/ControlCommandsSelection.cpp
 src/gui/ControlCommandsShell.cpp
 src/gui/ControlCommandsShortcuts.cpp
+src/gui/ControlCommandsTheme.cpp
+src/gui/ControlCommandsViewMemory.cpp
 src/gui/ControlCommandsWindow.cpp
+src/gui/ControlCommandsWorkspace.cpp
 src/gui/ControlGuiSupport.cpp
 src/gui/ControllerTemplateMenu.cpp
 src/gui/CrashReportMenu.cpp
@@ -1418,11 +1445,14 @@ src/gui/TakeLanesPanel.cpp
 src/gui/TelemetryConsentDialog.cpp
 src/gui/TempoMapPanel.cpp
 src/gui/TrackFolderMenu.cpp
+src/gui/TrackIcons.cpp
 src/gui/TrackRenderMenu.cpp
 src/gui/UiConfigStore.cpp
 src/gui/UndoHistoryPanel.cpp
 src/gui/VcaStripView.cpp
 src/gui/VisibilitySetMenu.cpp
+src/gui/WorkspaceMenus.cpp
+src/gui/WorkspaceWindows.cpp
 src/gui/XyPad.cpp
 src/gui/clips/ClipViewTheme.cpp
 src/gui/clips/SampleClipOverlays.cpp
@@ -1600,6 +1630,7 @@ tests/src/core/ControlRegistryTest.cpp
 tests/src/core/ControlSurfaceReferenceTest.cpp
 tests/src/core/ControlVerbInverseTest.cpp
 tests/src/core/ControlWarpCommandsTest.cpp
+tests/src/core/CustomAccessTest.cpp
 tests/src/core/DataFileSaveIntegrityTest.cpp
 tests/src/core/DeviceCopyTest.cpp
 tests/src/core/DocumentIndexTest.cpp

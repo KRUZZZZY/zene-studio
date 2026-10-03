@@ -852,6 +852,27 @@ LMMS_EXPORT void registerMixerMeterCommands(ControlRegistry& registry);
 LMMS_EXPORT void registerTrackMidiOutCommands(ControlRegistry& registry);
 //! 0.5.0 L04 (ED-049): track.version_list / save / switch / remove (ControlCommandsTrackVersions.cpp).
 LMMS_EXPORT void registerTrackVersionCommands(ControlRegistry& registry);
+//! 0.5.0 W3 L13 / L14 (customisation, help and access). Interface-side groups, defined in src/gui:
+//! theme.* (ControlCommandsTheme.cpp).
+LMMS_EXPORT void registerThemeCommands(ControlRegistry& registry);
+//! track.overview / set_color / set_visible / set_icon, mixer.cpu_load (src/core/ControlCommandsTrackLooks.cpp).
+LMMS_EXPORT void registerTrackLookCommands(ControlRegistry& registry);
+//! app.ask / app.whats_new (src/core/ControlCommandsAssistant.cpp), and what window.whats_new calls once the
+//! notes are on screen: this version's notes count as shown.
+LMMS_EXPORT void registerAssistantCommands(ControlRegistry& registry);
+LMMS_EXPORT void markWhatsNewSeen();
+//! window.stay_on_top / tidy / large_clock / tuner / ask / whats_new / focus_panel / accessibility_report and
+//! view.crosshair (src/gui/ControlCommandsWorkspace.cpp).
+LMMS_EXPORT void registerWorkspaceCommands(ControlRegistry& registry);
+//! location.* / selection.* (src/gui/ControlCommandsViewMemory.cpp); control.history_jump
+//! (src/core/ControlCommandsHistoryJump.cpp).
+LMMS_EXPORT void registerViewMemoryCommands(ControlRegistry& registry);
+LMMS_EXPORT void registerHistoryJumpCommand(ControlRegistry& registry);
+//! settings.search / export / import / preset_save / preset_apply / preset_list / preset_remove
+//! (src/core/ControlCommandsSettingsPresets.cpp).
+LMMS_EXPORT void registerSettingsPresetCommands(ControlRegistry& registry);
+//! tuner.set / tuner.get_state (src/core/ControlCommandsTuner.cpp).
+LMMS_EXPORT void registerTunerCommands(ControlRegistry& registry);
 } // namespace lmms
 
 #endif // LMMS_CONTROL_REGISTRY_GROUPS_H

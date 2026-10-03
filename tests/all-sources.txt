@@ -69,11 +69,13 @@
 # beside the registry headers it re-exports.
 include/AboutDialog.h
 include/Accessibility.h
+include/AccessibilityAudit.h
 include/ActionGroup.h
 include/Appearance.h
 include/ArrangementEdits.h
 include/ArrangementSections.h
 include/ArrangerNavigator.h
+include/ArrangerAids.h
 include/ArrangerOverlays.h
 include/ArrayVector.h
 include/ArticulationMap.h
@@ -155,6 +157,7 @@ include/ColorHelper.h
 include/ComboBox.h
 include/ComboBoxModel.h
 include/CommandForm.h
+include/CommandListBuild.h
 include/CommandListDialog.h
 include/CommandLists.h
 include/CommandPalette.h
@@ -225,6 +228,7 @@ include/DpiHelper.h
 include/Draggable.h
 include/DrumSynth.h
 include/DspEffectLibrary.h
+include/DspLoadProbe.h
 include/DummyEffect.h
 include/DummyInstrument.h
 include/DummyPlugin.h
@@ -293,6 +297,7 @@ include/InstrumentTuningView.h
 include/InstrumentView.h
 include/IoHelper.h
 include/JournallingObject.h
+include/JsonFile.h
 include/KeyboardShortcuts.h
 include/Keymap.h
 include/Knob.h
@@ -635,8 +640,10 @@ include/TrackContentWidget.h
 include/TrackFolder.h
 include/TrackFolderMenu.h
 include/TrackGrip.h
+include/TrackIcons.h
 include/TrackKeyNames.h
 include/TrackLabelButton.h
+include/TrackLooks.h
 include/TrackMixModels.h
 include/TrackOperationsWidget.h
 include/TrackRecorder.h
@@ -645,6 +652,7 @@ include/TrackRenderMenu.h
 include/TrackVersions.h
 include/TrackView.h
 include/TransportReadouts.h
+include/TunerTap.h
 include/UiConfigStore.h
 include/UnattendedRun.h
 include/UnclaimedElements.h
@@ -653,12 +661,15 @@ include/ValueBuffer.h
 include/VcaGroup.h
 include/VcaStripView.h
 include/VersionedSaveDialog.h
+include/ViewMemory.h
 include/VisibilitySetMenu.h
 include/VstSyncController.h
 include/VstSyncData.h
 include/WarpMarkers.h
 include/WaveformPreview.h
 include/WcagContrast.h
+include/WorkspaceMenus.h
+include/WorkspaceWindows.h
 include/XmlDepthGuard.h
 include/XyPad.h
 include/aeffectx.h
@@ -1193,6 +1204,7 @@ src/core/ControlCommandDef.cpp
 src/core/ControlCommandsArrangeTools.cpp
 src/core/ControlCommandsArrangement.cpp
 src/core/ControlCommandsArrangementState.cpp
+src/core/ControlCommandsAssistant.cpp
 src/core/ControlCommandsAudioAnalysis.cpp
 src/core/ControlCommandsAudioSlice.cpp
 src/core/ControlCommandsAutomation.cpp
@@ -1245,6 +1257,7 @@ src/core/ControlCommandsGroove.cpp
 src/core/ControlCommandsGrooveEdit.cpp
 src/core/ControlCommandsGroovePool.cpp
 src/core/ControlCommandsHandoff.cpp
+src/core/ControlCommandsHistoryJump.cpp
 src/core/ControlCommandsHostChunking.cpp
 src/core/ControlCommandsHostNotes.cpp
 src/core/ControlCommandsIdContract.cpp
@@ -1356,6 +1369,7 @@ src/core/ControlCommandsSessionRecordLand.cpp
 src/core/ControlCommandsSessionSceneFollow.cpp
 src/core/ControlCommandsSessionShared.h
 src/core/ControlCommandsSettings.cpp
+src/core/ControlCommandsSettingsPresets.cpp
 src/core/ControlCommandsStemModel.cpp
 src/core/ControlCommandsStems.cpp
 src/core/ControlCommandsStructure.cpp
@@ -1366,10 +1380,12 @@ src/core/ControlCommandsTrackFolder.cpp
 src/core/ControlCommandsTrackFolderSets.cpp
 src/core/ControlCommandsTrackFolderShared.h
 src/core/ControlCommandsTrackMidiOut.cpp
+src/core/ControlCommandsTrackLooks.cpp
 src/core/ControlCommandsTrackPresets.cpp
 src/core/ControlCommandsTrackVersions.cpp
 src/core/ControlCommandsTransport.cpp
 src/core/ControlCommandsTransportMap.cpp
+src/core/ControlCommandsTuner.cpp
 src/core/ControlCommandsUndo.cpp
 src/core/ControlCommandsVca.cpp
 src/core/ControlCommandsVcaEdit.cpp
@@ -1451,6 +1467,7 @@ src/core/ControlReversibilityTableStructure.cpp
 src/core/ControlReversibilityTableTrackFolder.cpp
 src/core/ControlReversibilityTableVca.cpp
 src/core/ControlReversibilityTableVerbs.cpp
+src/core/ControlReversibilityTableW3Custom.cpp
 src/core/ControlReversibilityTableWasmRender.cpp
 src/core/ControlReversibilityTableWindow.cpp
 src/core/ControlRoom.cpp
@@ -1510,6 +1527,7 @@ src/core/InstrumentFunctions.cpp
 src/core/InstrumentPlayHandle.cpp
 src/core/InstrumentSoundShaping.cpp
 src/core/JournallingObject.cpp
+src/core/JsonFile.cpp
 src/core/Keymap.cpp
 src/core/Ladspa2LMMS.cpp
 src/core/LadspaControl.cpp
@@ -1676,14 +1694,17 @@ src/core/Track.cpp
 src/core/TrackContainer.cpp
 src/core/TrackContainerFolders.cpp
 src/core/TrackKeyNames.cpp
+src/core/TrackLooks.cpp
 src/core/TrackMixModels.cpp
 src/core/TrackVersions.cpp
+src/core/TunerTap.cpp
 src/core/UnattendedRun.cpp
 src/core/UnclaimedElements.cpp
 src/core/UpgradeExtendedNoteRange.cpp
 src/core/UpgradeExtendedNoteRange.h
 src/core/ValueBuffer.cpp
 src/core/VcaGroup.cpp
+src/core/ViewMemory.cpp
 src/core/VstSyncController.cpp
 src/core/audio/AudioAlsa.cpp
 src/core/audio/AudioDevice.cpp
@@ -1730,8 +1751,10 @@ src/core/midi/MidiReconnect.cpp
 src/core/midi/MidiSndio.cpp
 src/core/midi/MidiWinMM.cpp
 src/core/midi/MpeExpression.cpp
+src/gui/AccessibilityAudit.cpp
 src/gui/ActionGroup.cpp
 src/gui/ArrangerNavigator.cpp
+src/gui/ArrangerAids.cpp
 src/gui/ArrangerOverlays.cpp
 src/gui/AudioAlsaSetupWidget.cpp
 src/gui/AudioDeviceSetupWidget.cpp
@@ -1745,6 +1768,7 @@ src/gui/ClipEditsMenu.cpp
 src/gui/CommandForm.cpp
 src/gui/CommandListDialog.cpp
 src/gui/CommandLists.cpp
+src/gui/CommandListsCustom.cpp
 src/gui/CommandPalette.cpp
 src/gui/CompSwipeStrip.cpp
 src/gui/ContextHelp.cpp
@@ -1757,7 +1781,10 @@ src/gui/ControlCommandsNoteEditor.cpp
 src/gui/ControlCommandsSelection.cpp
 src/gui/ControlCommandsShell.cpp
 src/gui/ControlCommandsShortcuts.cpp
+src/gui/ControlCommandsTheme.cpp
+src/gui/ControlCommandsViewMemory.cpp
 src/gui/ControlCommandsWindow.cpp
+src/gui/ControlCommandsWorkspace.cpp
 src/gui/ControlGuiSupport.cpp
 src/gui/ControlLayout.cpp
 src/gui/ControllerDialog.cpp
@@ -1843,11 +1870,14 @@ src/gui/TelemetryConsentDialog.cpp
 src/gui/TempoMapPanel.cpp
 src/gui/ToolPluginView.cpp
 src/gui/TrackFolderMenu.cpp
+src/gui/TrackIcons.cpp
 src/gui/TrackRenderMenu.cpp
 src/gui/UiConfigStore.cpp
 src/gui/UndoHistoryPanel.cpp
 src/gui/VcaStripView.cpp
 src/gui/VisibilitySetMenu.cpp
+src/gui/WorkspaceMenus.cpp
+src/gui/WorkspaceWindows.cpp
 src/gui/XyPad.cpp
 src/gui/clips/AutomationClipView.cpp
 src/gui/clips/ClipView.cpp
@@ -2059,6 +2089,7 @@ tests/src/core/ControlWarpCommandsTest.cpp
 tests/src/core/ControllerSurfaceTest.cpp
 tests/src/core/CrashReporterArmTest.cpp
 tests/src/core/CrashReporterTest.cpp
+tests/src/core/CustomAccessTest.cpp
 tests/src/core/DataFileFormatTest.cpp
 tests/src/core/DataFileSaveIntegrityTest.cpp
 tests/src/core/DawProjectInterchangeRoundTripTest.cpp
@@ -2276,6 +2307,7 @@ tests/src/gui/VcaStripLifetimeTest.cpp
 tests/src/gui/VcaStripViewTest.cpp
 tests/src/gui/VisibilitySetMenuTest.cpp
 tests/src/gui/WcagContrastTest.cpp
+tests/src/gui/WorkspaceAccessTest.cpp
 tests/src/plugins/AudioPluginTest.cpp
 tests/src/plugins/ClapBusMapTest.cpp
 tests/src/plugins/ClapEffectIntegrationTest.cpp

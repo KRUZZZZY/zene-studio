@@ -77,6 +77,21 @@ LMMS_EXPORT ListSpec sections();
 //! L07 MIDI event list: every note of a clip as a row - edit its velocity, position, length, probability.
 LMMS_EXPORT ListSpec noteEvents(const QString& clip);
 
+//! 0.5.0 W3 L13/L14 (CommandListsCustom.cpp): the theme's colour roles - change one, put the palette's back,
+//! reset, export, import (WF-117).
+LMMS_EXPORT ListSpec themeColors();
+//! WF-097: every track in one list - mute, solo, show or hide, rename, colour, icon (WF-120), move, remove -
+//! with its channel's processing load (WF-104).
+LMMS_EXPORT ListSpec trackManager();
+//! WF-098: the memory locations - go to one, remove it, save the current place.
+LMMS_EXPORT ListSpec memoryLocations();
+//! WF-106: the saved selections - select one again, remove it, save the current selection.
+LMMS_EXPORT ListSpec savedSelections();
+//! WF-122: every setting that travels, with its value - change one, search, back up, restore; and the
+//! settings presets - apply, remove, save the current settings as one.
+LMMS_EXPORT ListSpec settingsCatalogue();
+LMMS_EXPORT ListSpec settingsPresets();
+
 } // namespace CommandLists
 
 } // namespace lmms::gui

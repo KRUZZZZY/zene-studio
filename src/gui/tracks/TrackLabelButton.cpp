@@ -34,6 +34,7 @@
 #include "Instrument.h"
 #include "InstrumentTrack.h"
 #include "RenameDialog.h"
+#include "TrackIcons.h"
 #include "TrackRenameLineEdit.h"
 #include "TrackView.h"
 #include "Track.h"
@@ -194,6 +195,12 @@ void TrackLabelButton::mouseReleaseEvent( QMouseEvent *_me )
 
 void TrackLabelButton::paintEvent(QPaintEvent* pe)
 {
+	// 0.5.0 W3 (WF-120): an icon the user chose for the track (track.set_icon) wins over the type's.
+	if (applyTrackIcon(this, m_trackView->getTrack(), &m_iconName))
+	{
+		QToolButton::paintEvent(pe);
+		return;
+	}
 	if (m_trackView->getTrack()->type() == Track::Type::Instrument)
 	{
 		auto it = dynamic_cast<InstrumentTrack*>(m_trackView->getTrack());

@@ -24,8 +24,9 @@
 /*! 0.5.0 L14: help and access on the spine.
  *  - app.help (WF-136) opens the manual - at a topic - or the command reference (HelpCenter.h);
  *  - app.tours / app.tour (WF-140) list the guided tours and start one;
- *  - window.appearance (WF-130 / WF-131) sets the interface scale, the text size and the palette
- *    (Appearance.h), from the next start; a change is one undo step, as settings.set's. */
+ *  - window.appearance (WF-130 / WF-131, W3 WF-118 / WF-134) sets the interface scale, the text size, the
+ *    palette and the layout density (Appearance.h), from the next start; a change is one undo step, as
+ *    settings.set's. */
 
 #include <QJsonArray>
 
@@ -70,7 +71,9 @@ ControlResult appearanceCommand(const QJsonObject& args)
 	after.scale = args.value(QStringLiteral("scale")).toDouble(after.scale);
 	after.fontScale = args.value(QStringLiteral("font_scale")).toDouble(after.fontScale);
 	after.palette = args.value(QStringLiteral("palette")).toString(after.palette);
-	const bool changed = after.scale != before.scale || after.fontScale != before.fontScale || after.palette != before.palette;
+	after.density = args.value(QStringLiteral("density")).toString(after.density);
+	const bool changed = after.scale != before.scale || after.fontScale != before.fontScale || after.palette != before.palette
+		|| after.density != before.density;
 	if (changed)
 	{
 		appearance::setOptions(after);
@@ -102,7 +105,7 @@ void add(ControlRegistry& registry, const char* id, const QString& description, 
 void registerHelpCommands(ControlRegistry& registry)
 {
 	add(registry, "app.help", QStringLiteral("Open the manual inside the application - at 'topic' (window, arrange, notes, mix, "
-		"devices, record, launch, projects, agents, access) - or, with 'reference', the command reference: every command with "
+		"devices, record, launch, projects, agents, customise, access) - or, with 'reference', the command reference: every command with "
 		"its description and arguments, built from the registry. Interface state."),
 		objectSchema({{QStringLiteral("topic"), stringProperty()}, {QStringLiteral("reference"), booleanProperty()}}), false, true, help);
 	add(registry, "app.tours", QStringLiteral("The guided tours there are: each one's name, title and step count."),
@@ -111,11 +114,13 @@ void registerHelpCommands(ControlRegistry& registry)
 		"window - showing its panel first when it is hidden - with Back, Next and Close. Interface state."),
 		objectSchema({{QStringLiteral("name"), stringProperty()}}, {QStringLiteral("name")}), false, true, tour);
 	add(registry, "window.appearance", QStringLiteral("How the interface looks, from the next start: 'scale' (0.5..3, the whole "
-		"interface; an explicit QT_SCALE_FACTOR still wins), 'font_scale' (0.75..2, the text size) and 'palette' (dark or "
-		"high_contrast - text at 7:1 on every surface). A field left out keeps its value; none reads them. A preference "
-		"in the config file; a change is one undo step."),
+		"interface; an explicit QT_SCALE_FACTOR still wins), 'font_scale' (0.75..2, the text size), 'palette' (dark, "
+		"high_contrast - text at 7:1 on every surface - or light) and 'density' (standard, comfortable - more room around "
+		"every control, fewer on screen - or touch, targets large enough for a finger). A field left out keeps its value; "
+		"none reads them. A preference in the config file; a change is one undo step."),
 		objectSchema({{QStringLiteral("scale"), numberProperty()}, {QStringLiteral("font_scale"), numberProperty()},
-			{QStringLiteral("palette"), enumProperty(appearance::paletteNames())}}), true, false, appearanceCommand);
+			{QStringLiteral("palette"), enumProperty(appearance::paletteNames())},
+			{QStringLiteral("density"), enumProperty(appearance::densityNames())}}), true, false, appearanceCommand);
 }
 
 } // namespace lmms

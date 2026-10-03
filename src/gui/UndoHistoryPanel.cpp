@@ -110,7 +110,8 @@ UndoHistoryPanel::UndoHistoryPanel(QWidget* parent) :
 	m_list->setAccessibleName(tr("Recorded commands, newest first"));
 	auto* note = new QLabel(tr("The list shows edits made through commands - agents, scripts, the "
 		"command palette and the menu items that run one. An edit made directly in an editor is "
-		"undone by Undo too, but it is not listed here."), this);
+		"undone by Undo too, but it is not listed here. Double-click a command to undo it and every "
+		"step after it (control.history_jump)."), this);
 	note->setWordWrap(true);
 
 	m_undo = commandButton(tr("Undo"), QStringLiteral("control.undo"), this);
@@ -124,6 +125,12 @@ UndoHistoryPanel::UndoHistoryPanel(QWidget* parent) :
 		});
 	}
 	connect(again, &QPushButton::clicked, this, [this] { refresh(); });
+	// 0.5.0 W3 (WF-102): back to a point in the history in one go - the row and every newer one.
+	m_list->setProperty("controlCommand", QStringLiteral("control.history_jump"));
+	connect(m_list, &QListWidget::itemDoubleClicked, this, [this](QListWidgetItem* item) {
+		ControlRegistry::instance()->invoke(QStringLiteral("control.history_jump"), {{QStringLiteral("steps"), -(m_list->row(item) + 1)}});
+		refresh();
+	});
 
 	const auto reread = [this] { refresh(); };
 	m_steps = limitBox(1, ProjectJournal::MaxUndoStateLimit, tr(" steps"), "control.set_undo_depth", "steps", 1,

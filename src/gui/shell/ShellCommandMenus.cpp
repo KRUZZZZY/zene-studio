@@ -54,6 +54,7 @@
 #include "ShellLayout.h"
 #include "ShellMenuParts.h"
 #include "Song.h"
+#include "WorkspaceMenus.h"
 
 namespace lmms::gui::ShellCommandMenus
 {
@@ -529,6 +530,7 @@ void populateCustomise(QMenu* menu)
 		addCommandAction(pop, spec.title, QStringLiteral("window.detach"),
 			[panel] { return CommandCall{QStringLiteral("window.detach"), panel, {}, QString(), false}; });
 	}
+	populateCustomiseExtras(menu);  // 0.5.0 W3: theme, density, settings (WorkspaceMenus.cpp)
 }
 
 } // namespace lmms::gui::ShellCommandMenus

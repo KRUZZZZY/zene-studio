@@ -33,6 +33,7 @@
 #include "AudioBusHandle.h"
 #include "AudioEngine.h"
 #include "AudioEngineWorkerThread.h"
+#include "DspLoadProbe.h"
 #include "Mixer.h"
 #include "Song.h"
 #include "VcaGroup.h"
@@ -675,6 +676,10 @@ void MixerChannel::doProcessing()
 		// Phase D: fold the per-sender sidechain intermediates of this period
 		// into m_sidechainBuffer before our own FX chain reads it.
 		sumSidechainInputs(fpp);
+
+		// 0.5.0 W3 (WF-104): time the devices and the strip stages below, to the end of
+		// this block (two clock reads and one relaxed store; DspLoadProbe.h).
+		const DspLoadProbe dspLoad( m_dspLoad, fpp, Engine::audioEngine()->baseSampleRate() );
 
 		// #599: a channel with a rack (two or more chains) renders this period
 		// through the rack's RoutingGraph; with no rack configured the

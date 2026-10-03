@@ -24,6 +24,8 @@
 
 #include "ShellChrome.h"
 
+#include <algorithm>
+
 #include <QAction>
 #include <QHBoxLayout>
 #include <QLabel>
@@ -81,9 +83,10 @@ QSize ShellButton::sizeHint() const
 	{
 		const QFontMetrics fm(tokens::font(tokens::TextRole::Small));
 		const int w = fm.horizontalAdvance(wordOf(text())) + 2 * tokens::space::md;
-		return {std::max(w, tokens::size::target), tokens::size::target};
+		return {std::max(w, tokens::targetSize()), tokens::targetSize()};
 	}
-	return {tokens::size::target + tokens::space::xs, tokens::size::target};
+	// 0.5.0 W3 (WF-134 / WF-133): the target grows with the layout density (size::target at standard).
+	return {tokens::targetSize() + tokens::space::xs, tokens::targetSize()};
 }
 
 QColor ShellButton::fillColour() const
@@ -326,7 +329,8 @@ ShellFooter::ShellFooter(const QList<QAction*>& viewActions, const QList<QAction
 	: QWidget(parent)
 {
 	setObjectName(QStringLiteral("shellFooter"));
-	setFixedHeight(tokens::size::footerHeight);
+	// The footer holds a row of buttons, so it grows with them at a lower density (WF-134).
+	setFixedHeight(std::max(tokens::size::footerHeight, tokens::targetSize() + tokens::space::sm));
 	a11y::announce(this, tr("Footer"), tr("Panel switches, grouped by where each panel opens, and the views."));
 
 	auto* row = new QHBoxLayout(this);

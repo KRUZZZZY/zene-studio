@@ -53,6 +53,7 @@
 #include "ShellPanel.h"
 #include "ShortcutMap.h"
 #include "UiConfigStore.h"
+#include "WorkspaceMenus.h"
 
 namespace lmms::gui
 {
@@ -137,6 +138,7 @@ void Shell::showEvent(QShowEvent* event)
 			installNavigateMenu(main->menuBar());
 			installRecordLaunchMenus(main->menuBar());  // 0.5.0 L03 / L02
 			installHelpEntries(main->menuBar());  // 0.5.0 L14: What's This?, the manual, tours, appearance
+			installWorkspaceMenus(main->menuBar());  // 0.5.0 W3 L13 / L14: the Window menu, What's New, Ask
 			ContextHelp::install();
 			if (getGUI() != nullptr && getGUI()->songEditor() != nullptr)
 			{

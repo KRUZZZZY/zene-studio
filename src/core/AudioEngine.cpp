@@ -37,6 +37,7 @@
 #include "Hardware.h"
 #include "Mixer.h"
 #include "Song.h"
+#include "TunerTap.h"
 #include "EnvelopeAndLfoParameters.h"
 #include "NotePlayHandle.h"
 #include "RealtimeScope.h"
@@ -505,6 +506,8 @@ void AudioEngine::renderStageMix()
 	{
 		m_masterLoudness->feed( m_outputBufferWrite.get(), m_framesPerPeriod );
 	}
+	// 0.5.0 W3 (WF-147): the tuner's tap on the master - one relaxed load unless it listens here (TunerTap.h).
+	TunerTap::instance().push( TunerTap::Source::Master, m_outputBufferWrite.get(), m_framesPerPeriod );
 
 	emit nextAudioBuffer(m_outputBufferRead.get());
 
@@ -578,6 +581,8 @@ std::span<const SampleFrame> AudioEngine::renderNextPeriod()
 	inputmeter::measure(m_inputBuffer[m_inputBufferRead], m_inputBufferFrames[m_inputBufferRead]);  // 0.5.0 L08 (MX-134)
 	// 0.5.0 L09 (MX-038): the control room on what is heard - skipped while exporting and while neutral.
 	controlroom::apply(m_outputBufferRead.get(), m_framesPerPeriod);
+	// 0.5.0 W3 (WF-147): the tuner's tap on the input bus - one relaxed load unless it listens here.
+	TunerTap::instance().push(TunerTap::Source::Input, m_inputBuffer[m_inputBufferRead], m_inputBufferFrames[m_inputBufferRead]);
 
 	s_renderingThread = false;
 	m_profiler.finishPeriod(outputSampleRate(), m_framesPerPeriod);

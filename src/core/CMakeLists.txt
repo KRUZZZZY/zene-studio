@@ -696,6 +696,7 @@ set(LMMS_SRCS
 	core/ControlReversibilityTableCustomisation.cpp
 	core/ControlReversibilityTableMixing.cpp
 	core/ControlReversibilityTableDevices.cpp
+	core/ControlReversibilityTableW3Custom.cpp
 	core/ControlReversibilityTableArranger.cpp
 	core/ControlReversibilityTableShell.cpp
 	${CMAKE_SOURCE_DIR}/thirdparty/mts-esp/libMTSClient.cpp
@@ -971,6 +972,16 @@ set(LMMS_SRCS
 	core/ControlCommandsAutomationTools.cpp
 	core/AutomationSwitches.cpp
 	core/ControlCommandsAudioAnalysis.cpp
+	# 0.5.0 W3 L13 / L14: customisation and access.
+	core/JsonFile.cpp
+	core/TrackLooks.cpp
+	core/ControlCommandsTrackLooks.cpp
+	core/ControlCommandsAssistant.cpp
+	core/ControlCommandsHistoryJump.cpp
+	core/ViewMemory.cpp
+	core/ControlCommandsSettingsPresets.cpp
+	core/TunerTap.cpp
+	core/ControlCommandsTuner.cpp
 	core/ControlTrackCreation.cpp
 	core/PitchTrack.cpp
 	core/ControlCommandsSampleRange.cpp
@@ -1148,6 +1159,7 @@ SET(ZENE_API_SRCS
 	core/ControlReversibilityTableCustomisation.cpp
 	core/ControlReversibilityTableMixing.cpp
 	core/ControlReversibilityTableDevices.cpp
+	core/ControlReversibilityTableW3Custom.cpp
 	core/ControlReversibilityTableArranger.cpp
 	core/ControlReversibilityTableShell.cpp
 )
