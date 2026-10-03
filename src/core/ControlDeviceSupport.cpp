@@ -271,7 +271,7 @@ Effect* resolveControlEffect(const ControlTarget& target, const QString& pluginI
 	// on a parallel chain is found by its id - a caller edits it through effect->effectChain().
 	if (Effect* onRack = rackChainEffect(target, id)) { return onRack; }
 	*error = ControlResult::failure(ControlErrorKind::NotFound,
-		QStringLiteral("no device %1 on %2 (it carries %3)")
+		QStringLiteral("no device %1 on %2 (its own chain carries %3)")
 			.arg(pluginId, target.id).arg(effects.size()));
 	return nullptr;
 }

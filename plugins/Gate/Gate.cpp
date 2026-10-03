@@ -91,9 +91,11 @@ float GateEffect::targetGain(int mode, float levelDb, float thresholdDb, float r
 
 float GateEffect::held(float target, int mode, f_cnt_t hold)
 {
-	// Hold: a gate that has just been open stays open for the hold time before it closes.
+	// Hold: a gate or expander that has just been open stays open for the hold time before it closes. A ducker
+	// has no hold, and keeps none for a later switch back to gate to start with.
+	if (mode == static_cast<int>(GateControls::Mode::Duck)) { m_holdLeft = 0; return target; }
 	if (target >= 1.f) { m_holdLeft = hold; return target; }
-	if (m_holdLeft > 0 && mode != static_cast<int>(GateControls::Mode::Duck)) { --m_holdLeft; return 1.f; }
+	if (m_holdLeft > 0) { --m_holdLeft; return 1.f; }
 	return target;
 }
 

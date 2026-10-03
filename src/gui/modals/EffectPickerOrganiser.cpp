@@ -23,6 +23,8 @@
  */
 #include "EffectPickerOrganiser.h"
 
+#include <algorithm>
+
 #include <QAbstractItemModel>
 #include <QSet>
 
@@ -143,8 +145,10 @@ void fillKeyMenu(QMenu* menu, const QString& key, QWidget* parent, const std::fu
 	move->setProperty("controlCommand", QStringLiteral("plugin.organise"));
 	QObject::connect(move, &QAction::triggered, menu, [key, folder, parent, changed] {
 		bool ok = false;
+		const QStringList folders = pluginorganiser::folders();
+		// The plug-in's own folder is the one offered first, so Return alone moves nothing.
 		const QString chosen = QInputDialog::getItem(parent, QObject::tr("Move to Folder"), QObject::tr("Folder:"),
-			pluginorganiser::folders(), 0, true, &ok);
+			folders, std::max(0, static_cast<int>(folders.indexOf(folder))), true, &ok);
 		if (ok && !chosen.trimmed().isEmpty()) { organise(parent, key, {{QStringLiteral("folder"), chosen.trimmed()}}); changed(); }
 	});
 	if (!folder.isEmpty()) { act(QObject::tr("Remove from Folder"), {{QStringLiteral("folder"), QString()}}); }

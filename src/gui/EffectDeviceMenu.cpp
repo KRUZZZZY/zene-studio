@@ -28,6 +28,7 @@
 #include <QFileInfo>
 #include <QJsonArray>
 #include <QMenu>
+#include <QPointer>
 
 #include "ChannelPickDialog.h"
 #include "CommandForm.h"
@@ -86,13 +87,16 @@ QString pickDevice(QWidget* parent)
 	return device;
 }
 
-void insertBeside(QWidget* parent, Effect* effect, bool after)
+void insertBeside(QWidget* parent, const QPointer<Effect>& effect, bool after)
 {
 	const QString device = pickDevice(parent);
-	if (device.isEmpty()) { return; }
+	// The picker is modal: the device may have been unloaded (or its chain removed) while it was open.
+	if (device.isEmpty() || effect.isNull() || effect->effectChain() == nullptr) { return; }
+	const int slot = slotOf(effect);
+	if (slot >= static_cast<int>(effect->effectChain()->effects().size())) { return; }  // taken off its chain meanwhile
 	QJsonObject args = chainAddress(effect->effectChain());
 	args.insert(QStringLiteral("device"), device);
-	args.insert(QStringLiteral("position"), slotOf(effect) + (after ? 1 : 0));
+	args.insert(QStringLiteral("position"), slot + (after ? 1 : 0));
 	runCommand(parent, CommandCall{QStringLiteral("plugin.load"), args, {}, QString(), false});
 }
 
@@ -220,8 +224,12 @@ void addEffectDeviceMenus(QMenu* menu, Effect* effect)
 	QJsonObject self = chainAddress(effect->effectChain());
 	if (self.isEmpty()) { return; }
 	QWidget* parent = menu->parentWidget();
-	entry(menu, QObject::tr("Insert Effect Before..."), "plugin.load", [parent, effect] { insertBeside(parent, effect, false); });
-	entry(menu, QObject::tr("Insert Effect After..."), "plugin.load", [parent, effect] { insertBeside(parent, effect, true); });
+	entry(menu, QObject::tr("Insert Effect Before..."), "plugin.load", [parent, guarded = QPointer<Effect>(effect)] {
+		insertBeside(parent, guarded, false);
+	});
+	entry(menu, QObject::tr("Insert Effect After..."), "plugin.load", [parent, guarded = QPointer<Effect>(effect)] {
+		insertBeside(parent, guarded, true);
+	});
 	QJsonObject device = self;
 	device.insert(QStringLiteral("plugin"), control::effectIdOf(effect));
 	entry(menu, QObject::tr("Replace With..."), "plugin.replace", [parent, device] { replaceWith(parent, device); });

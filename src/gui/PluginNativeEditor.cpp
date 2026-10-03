@@ -39,6 +39,8 @@
 #include "SampleTrack.h"
 #include "Song.h"
 
+#include <utility>
+
 #include <QCloseEvent>
 #include <QHBoxLayout>
 #include <QJsonObject>
@@ -169,7 +171,8 @@ public:
 protected:
 	void closeEvent(QCloseEvent* event) override
 	{
-		if (m_onClose) { m_onClose(); }
+		// Once: the window is on its way out, and the editor that owns the callback may go before it does.
+		if (std::function<void()> onClose = std::exchange(m_onClose, {})) { onClose(); }
 		QWidget::closeEvent(event);
 	}
 
@@ -197,7 +200,10 @@ bool PluginNativeEditor::open(Hooks hooks, const QString& title, QString* error,
 	auto* window = new EditorWindow([this] {
 		if (m_hooks.detach) { m_hooks.detach(); }
 		m_hooks = Hooks{};
+		// Closed now, deleted once control returns to the event loop: isOpen() is false at once, so an open()
+		// in between builds a new window instead of raising this one.
 		if (m_window != nullptr) { m_window->deleteLater(); }
+		m_window = nullptr;
 	});
 	window->setWindowTitle(title);
 	// 0.5.0 L10 (MX-091): the host's header above the plug-in's own view, which attaches to a native

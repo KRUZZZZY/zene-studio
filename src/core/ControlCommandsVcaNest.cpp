@@ -154,7 +154,7 @@ void add(ControlRegistry& registry, const char* verb, const QString& description
 
 void registerVcaNestCommands(ControlRegistry& registry)
 {
-	add(registry, "set_parent", QStringLiteral("Put a group inside another ('parent', a vca-<n>; empty takes it out): the "
+	add(registry, "set_parent", QStringLiteral("Put a group inside another ('parent', a vca-<n>; empty or left out takes it out): the "
 		"parent's gain - and every group's above it - scales this group's members too. A loop, or nesting deeper than "
 		"8, is refused. One undo step."), control::objectSchema({{QStringLiteral("group"), control::stringProperty()},
 		{QStringLiteral("parent"), control::stringProperty()}}, {QStringLiteral("group")}), setParent);

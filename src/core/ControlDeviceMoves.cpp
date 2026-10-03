@@ -67,10 +67,14 @@ void recordRecreation(const std::function<EffectChain*()>& chainOf, const Made& 
 			}
 		},
 		[made, chainOf, states, places]() {
+			// As recreateDevices itself: the first device that cannot be recreated stops the rest, so a redo never
+			// leaves a later device without an earlier one (and no slot keeps a pointer from before the undo).
 			EffectChain* chain = chainOf();
-			for (std::size_t i = 0; i < made->size() && chain != nullptr; ++i)
+			bool stopped = chain == nullptr;
+			for (std::size_t i = 0; i < made->size(); ++i)
 			{
-				(*made)[i] = recreateEffectFromState(chain, states.at(static_cast<int>(i)), places[i]);
+				(*made)[i] = stopped ? nullptr : recreateEffectFromState(chain, states.at(static_cast<int>(i)), places[i]);
+				stopped = (*made)[i] == nullptr;
 			}
 		},
 		bytesOf(states));

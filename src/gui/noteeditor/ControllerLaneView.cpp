@@ -147,7 +147,9 @@ void ControllerLaneView::cancelDrag()
 
 void ControllerLaneView::mousePressEvent(QMouseEvent* event)
 {
-	if (m_state.clip == nullptr || m_state.controllerLane.isEmpty()) { return; }
+	// Only the left button draws and the right one erases: a middle or side button leaves the curve alone.
+	const bool drawButton = event->button() == Qt::LeftButton || event->button() == Qt::RightButton;
+	if (m_state.clip == nullptr || m_state.controllerLane.isEmpty() || !drawButton) { return; }
 	m_drawing = true;
 	m_erasing = event->button() == Qt::RightButton || event->modifiers().testFlag(Qt::AltModifier);
 	m_drawn.clear();

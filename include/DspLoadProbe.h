@@ -39,6 +39,8 @@ namespace lmms
  *  takes no lock and makes no blocking call. The reader (mixer.cpu_load) does a relaxed load. */
 class DspLoadProbe
 {
+	static_assert(std::atomic<float>::is_always_lock_free, "the audio thread's load figure must be a lock-free atomic");
+
 public:
 	DspLoadProbe(std::atomic<float>& load, f_cnt_t frames, sample_rate_t rate) noexcept :
 		m_load(load),

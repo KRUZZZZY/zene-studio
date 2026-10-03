@@ -171,10 +171,21 @@ QJsonArray GuidedTour::tours()
 	return out;
 }
 
+namespace
+{
+
+//! Whether @a name is a plain tour file name - no directory part, so it names a file in the tours folder only.
+bool isTourName(const QString& name)
+{
+	return !name.isEmpty() && QFileInfo(name).fileName() == name && !name.contains(QLatin1Char('\\'));
+}
+
+} // namespace
+
 GuidedTour* GuidedTour::start(const QString& name, QWidget* window, QString* error)
 {
 	QFile in(QDir(dataPath(QStringLiteral("tours"))).filePath(name + QStringLiteral(".json")));
-	const bool found = in.open(QIODevice::ReadOnly);
+	const bool found = isTourName(name) && in.open(QIODevice::ReadOnly);
 	const QJsonArray steps = found ? QJsonDocument::fromJson(in.readAll()).object().value(QStringLiteral("steps")).toArray() : QJsonArray();
 	if (steps.isEmpty() || window == nullptr)
 	{
@@ -183,7 +194,11 @@ GuidedTour* GuidedTour::start(const QString& name, QWidget* window, QString* err
 			: tr("there is no tour '%1'").arg(name);
 		return nullptr;
 	}
-	for (auto* old : window->findChildren<GuidedTour*>()) { old->deleteLater(); }
+	for (auto* old : window->findChildren<GuidedTour*>())
+	{
+		old->hide();  // gone from the screen now, deleted once control returns to the event loop
+		old->deleteLater();
+	}
 	auto* tour = new GuidedTour(steps, window);
 	tour->showStep(0);
 	return tour;
@@ -221,6 +236,13 @@ GuidedTour::GuidedTour(const QJsonArray& steps, QWidget* window) :
 		showStep(m_step + 1);
 	});
 	connect(close, &QPushButton::clicked, this, &QObject::deleteLater);
+	window->installEventFilter(this);  // the overlay follows the window's size
+}
+
+bool GuidedTour::eventFilter(QObject* watched, QEvent* event)
+{
+	if (watched == parentWidget() && event->type() == QEvent::Resize) { place(); }
+	return QWidget::eventFilter(watched, event);
 }
 
 QWidget* GuidedTour::targetOf(int index) const
@@ -233,15 +255,12 @@ void GuidedTour::showStep(int index)
 {
 	m_step = std::clamp(index, 0, stepCount() - 1);
 	const QJsonObject step = m_steps.at(m_step).toObject();
-	QWidget* target = targetOf(m_step);
+	const QWidget* target = targetOf(m_step);  // place() finds it again once its panel is shown
 	const QString panel = step.value(QStringLiteral("panel")).toString();
 	if ((target == nullptr || !target->isVisible()) && !panel.isEmpty())
 	{
 		ControlRegistry::instance()->invoke(QStringLiteral("window.toggle"), {{QStringLiteral("editor"), panel}});
-		target = targetOf(m_step);
 	}
-	setGeometry(parentWidget()->rect());
-	m_hole = target != nullptr && target->isVisible() ? QRect(target->mapTo(parentWidget(), QPoint(0, 0)), target->size()) : QRect();
 	m_title->setText(QStringLiteral("<b>%1</b>  <small>(%2/%3)</small>").arg(step.value(QStringLiteral("title")).toString().toHtmlEscaped())
 		.arg(m_step + 1).arg(stepCount()));
 	m_text->setText(step.value(QStringLiteral("text")).toString());
@@ -249,13 +268,21 @@ void GuidedTour::showStep(int index)
 	m_bubble->setAccessibleName(tr("Tour step %1 of %2: %3").arg(m_step + 1).arg(stepCount()).arg(step.value(QStringLiteral("title")).toString()));
 	m_bubble->setAccessibleDescription(m_text->text());
 	m_back->setEnabled(m_step > 0);
+	place();
+	show();
+	raise();
+	m_next->setFocus();
+}
+
+void GuidedTour::place()
+{
+	setGeometry(parentWidget()->rect());
+	const QWidget* target = targetOf(m_step);
+	m_hole = target != nullptr && target->isVisible() ? QRect(target->mapTo(parentWidget(), QPoint(0, 0)), target->size()) : QRect();
 	m_bubble->adjustSize();
 	const QPoint beside = bubbleAt(m_hole, m_bubble->size(), size());
 	m_bubble->move(std::clamp(beside.x(), 8, std::max(8, width() - m_bubble->width() - 8)),
 		std::clamp(beside.y(), 8, std::max(8, height() - m_bubble->height() - 8)));
-	show();
-	raise();
-	m_next->setFocus();
 	update();
 }
 

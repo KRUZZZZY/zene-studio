@@ -361,7 +361,12 @@ void DevicePanel::poll()
 	const QString target = track != nullptr ? control::trackIdOf(track) : control::channelIdOf(selectedChannel());
 	if (target != m_target || signature() != m_signature) { rebuild(); return; }
 	for (MacroKnobs* macros : m_row->findChildren<MacroKnobs*>()) { macros->refresh(); }  // values set elsewhere
-	for (DeviceCard* card : m_row->findChildren<DeviceCard*>()) { card->refreshActivity(); }  // MX-095
+	// MX-095. Only the cards in the row: a dropped card stays a child until its deferred delete, and the device it
+	// points at may be gone already.
+	for (int i = 0; i < m_cards->count(); ++i)
+	{
+		if (auto* card = qobject_cast<DeviceCard*>(m_cards->itemAt(i)->widget())) { card->refreshActivity(); }
+	}
 }
 
 QJsonObject DevicePanel::describe() const

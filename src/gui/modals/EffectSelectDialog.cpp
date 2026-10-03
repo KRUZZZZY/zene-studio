@@ -274,7 +274,10 @@ void EffectSelectDialog::refreshOrganisation()
 	m_folderBox->addItem(tr("All folders"));
 	m_folderBox->addItems(pluginorganiser::folders());
 	m_folderBox->setCurrentIndex(std::max(0, m_folderBox->findText(current)));
-	m_model.setOrganiserFilter(m_model.organiserFilter());
+	// A folder that is gone (its last plug-in moved out) falls back to All folders - the filter too, not only the box.
+	pickerorganiser::Filter filter = m_model.organiserFilter();
+	if (m_folderBox->currentIndex() == 0) { filter.folder.clear(); }
+	m_model.setOrganiserFilter(filter);
 }
 
 void EffectSelectDialog::acceptSelection()

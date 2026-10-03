@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-10-03T17:09:26Z",
+  "captured_at": "2026-10-03T20:59:45Z",
   "commands": [
     {
       "args_schema": {
@@ -29037,7 +29037,7 @@
         ],
         "type": "object"
       },
-      "description": "Put a group inside another ('parent', a vca-<n>; empty takes it out): the parent's gain - and every group's above it - scales this group's members too. A loop, or nesting deeper than 8, is refused. One undo step.",
+      "description": "Put a group inside another ('parent', a vca-<n>; empty or left out takes it out): the parent's gain - and every group's above it - scales this group's members too. A loop, or nesting deeper than 8, is refused. One undo step.",
       "group": "vca",
       "id": "vca.set_parent",
       "mutating": true,
@@ -31189,7 +31189,7 @@
     "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-survey/tools/zene-pa-agentctl",
     "lane_head": null,
     "proto": 1,
-    "source_socket": "/tmp/zctl-run-3m6tb7b2/zene.sock",
+    "source_socket": "/tmp/zctl-run-8x9nb9jz/zene.sock",
     "version": "0.4.0-alpha.104+2408224"
   },
   "kind": "zene-control-command-list",

@@ -29,9 +29,40 @@
 
 #include <QDomDocument>
 #include <QDomElement>
+#include <QSet>
 
 namespace lmms
 {
+
+namespace
+{
+
+//! A <marker>'s id, or -1 when it has none a marker can carry (absent, unreadable or negative).
+int savedId(const QDomElement& element)
+{
+	bool ok = false;
+	const int id = element.attribute(QStringLiteral("id")).toInt(&ok);
+	return ok && id >= 0 ? id : -1;
+}
+
+//! A hand-edited file's ids made unique: one that is missing or already taken gets a fresh one after the rest,
+//! so find, replace and remove each address exactly one marker.
+void makeIdsUnique(QVector<Marker>& markers)
+{
+	int next = 1;
+	for (const Marker& marker : markers)
+	{
+		if (marker.id >= 0 && marker.id < std::numeric_limits<int>::max()) { next = std::max(next, marker.id + 1); }
+	}
+	QSet<int> taken;
+	for (Marker& marker : markers)
+	{
+		if ((marker.id < 0 || taken.contains(marker.id)) && next < std::numeric_limits<int>::max()) { marker.id = next++; }
+		taken.insert(marker.id);
+	}
+}
+
+} // namespace
 
 ProjectMarkers& ProjectMarkers::instance()
 {
@@ -132,10 +163,12 @@ void ProjectMarkers::load(const QDomElement& element)
 	for (QDomElement child = element.firstChildElement(QStringLiteral("marker")); !child.isNull() && loaded.size() < MaxMarkers;
 		child = child.nextSiblingElement(QStringLiteral("marker")))
 	{
-		loaded.append(Marker{child.attribute(QStringLiteral("id")).toInt(), child.attribute(QStringLiteral("tick")).toInt(),
+		// A negative tick is clamped as add() and replace() clamp it.
+		loaded.append(Marker{savedId(child), std::max(0, child.attribute(QStringLiteral("tick")).toInt()),
 			child.attribute(QStringLiteral("name")), child.attribute(QStringLiteral("color")), child.attribute(QStringLiteral("action")),
 			child.attribute(QStringLiteral("args"))});
 	}
+	makeIdsUnique(loaded);
 	m_nextId = 1;
 	restore(loaded);
 }

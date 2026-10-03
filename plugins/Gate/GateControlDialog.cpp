@@ -23,6 +23,8 @@
  */
 #include "GateControlDialog.h"
 
+#include <tuple>
+
 #include <QGridLayout>
 
 #include "ComboBox.h"
