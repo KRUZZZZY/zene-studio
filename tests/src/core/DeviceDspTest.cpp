@@ -325,6 +325,8 @@ private slots:
 		set(ch(1), console, "Drive", 0.0);
 		long at = 0;
 		QVERIFY(std::abs(runBlocks(chainOf(1), sine(1000.0, 0.05f), 60, &at)[0] - 0.05f) < 0.002f);
+		set(ch(1), console, "Oversampling", 2.0);  // MX-100: 4x, still transparent when quiet
+		QVERIFY(std::abs(runBlocks(chainOf(1), sine(1000.0, 0.05f), 60, &at)[0] - 0.05f) < 0.003f);
 		chainOf(1).clear();
 		const int channels = Engine::mixer()->numChannels();
 		const ControlResult applied = run(QStringLiteral("mixer.console_apply"), {{QStringLiteral("drive"), 50.0},

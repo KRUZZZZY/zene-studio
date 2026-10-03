@@ -24,6 +24,7 @@
 
 #include "Console.h"
 
+#include <algorithm>
 #include <cmath>
 
 #include "AudioEngine.h"
@@ -65,14 +66,19 @@ ConsoleControls::ConsoleControls(ConsoleEffect* effect) :
 	ParameterControls(effect, QStringLiteral("ConsoleControls")),
 	m_characterModel(this, tr("Character")),
 	m_driveModel(30.f, 0.f, 100.f, 0.1f, this, tr("Drive")),
-	m_outputModel(0.f, -12.f, 12.f, 0.1f, this, tr("Output"))
+	m_outputModel(0.f, -12.f, 12.f, 0.1f, this, tr("Output")),
+	m_oversamplingModel(this, tr("Oversampling"))
 {
+	m_oversamplingModel.addItem(tr("No oversampling"));
+	m_oversamplingModel.addItem(tr("2x oversampling"));
+	m_oversamplingModel.addItem(tr("4x oversampling"));
 	m_characterModel.addItem(tr("Clean"));
 	m_characterModel.addItem(tr("Warm"));
 	m_characterModel.addItem(tr("Bright"));
 	addParameter(&m_characterModel, QStringLiteral("character"));
 	addParameter(&m_driveModel, QStringLiteral("drive"));
 	addParameter(&m_outputModel, QStringLiteral("output"));
+	addParameter(&m_oversamplingModel, QStringLiteral("oversampling"));
 }
 
 ConsoleEffect::ConsoleEffect(Model* parent, const Descriptor::SubPluginFeatures::Key* key) :
@@ -91,6 +97,17 @@ float ConsoleEffect::saturate(float x, float drive)
 
 void ConsoleEffect::design(Character character, float rate)
 {
+	const int stages = std::clamp(m_controls.m_oversamplingModel.value(), 0, MaxStages);
+	if (stages != m_stages || rate != m_rate)
+	{
+		// Plain arithmetic on fixed members (the half-band coefficients), as SlewDistortion does.
+		for (int c = 0; c < 2; ++c)
+		{
+			m_upsampler[static_cast<std::size_t>(c)].setup(stages, rate);
+			m_downsampler[static_cast<std::size_t>(c)].setup(stages, rate);
+		}
+		m_stages = stages;
+	}
 	if (static_cast<int>(character) == m_character && rate == m_rate) { return; }
 	m_dcBlock.set(designBiquad(BiquadShape::HighPass, 10.0, 0.7071, rate));
 	const double lowDb = character == Character::Warm ? 1.0 : 0.0;
@@ -99,6 +116,15 @@ void ConsoleEffect::design(Character character, float rate)
 	m_high.set(designBiquad(BiquadShape::HighShelf, character == Character::Warm ? 9000.0 : 10000.0, 0.7071, rate, highDb));
 	m_character = static_cast<int>(character);
 	m_rate = rate;
+}
+
+float ConsoleEffect::saturated(int c, float x, float drive)
+{
+	if (m_stages == 0) { return saturate(x, drive); }
+	auto& over = m_over[static_cast<std::size_t>(c)];
+	m_upsampler[static_cast<std::size_t>(c)].processSample(over.data(), x);
+	for (int i = 0; i < (1 << m_stages); ++i) { over[static_cast<std::size_t>(i)] = saturate(over[static_cast<std::size_t>(i)], drive); }
+	return m_downsampler[static_cast<std::size_t>(c)].processSample(over.data());
 }
 
 ProcessStatus ConsoleEffect::processImpl(InterleavedBufferView<float, 2> inOut)
@@ -115,8 +141,8 @@ ProcessStatus ConsoleEffect::processImpl(InterleavedBufferView<float, 2> inOut)
 		SampleFrame shaped;
 		for (int c = 0; c < 2; ++c)
 		{
-			const float saturated = m_dcBlock.run(saturate(frame[c], drive), c);
-			shaped[c] = m_high.run(m_low.run(saturated, c), c) * output;
+			const float driven = m_dcBlock.run(saturated(c, frame[c], drive), c);
+			shaped[c] = m_high.run(m_low.run(driven, c), c) * output;
 		}
 		frame = frame * d + shaped * w;
 	}
