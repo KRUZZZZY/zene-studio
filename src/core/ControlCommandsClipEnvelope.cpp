@@ -146,6 +146,20 @@ ControlResult setTranspose(const QJsonObject& args)
 	return ControlResult::success(result);
 }
 
+//! 0.5.0 ED-029: a MIDI clip's content repeating every 'length' ticks across the clip (0 stops it).
+ControlResult setLoop(const QJsonObject& args)
+{
+	ClipRef ref;
+	ControlResult error;
+	if (!resolveClip(args.value(QStringLiteral("clip")).toString(), &ref, &error)) { return error; }
+	if (dynamic_cast<SampleClip*>(ref.clip) != nullptr) { return ControlResult::failure(ControlErrorKind::Refused, QStringLiteral("looped content belongs to MIDI clips")); }
+	ClipEdits after = ref.clip->clipEdits();
+	after.loopTicks = args.value(QStringLiteral("length")).toInt();
+	ref.clip->addJournalCheckPoint();
+	ref.clip->setClipEdits(after);
+	return ControlResult::success({{QStringLiteral("clip"), clipId(ref.id)}, {QStringLiteral("length"), after.loopTicks}});
+}
+
 //! 0.5.0 ED-153: a sample clip's formants - kept while it is transposed, and shifted on their own.
 ControlResult setFormant(const QJsonObject& args)
 {
@@ -170,6 +184,19 @@ ControlResult setFormant(const QJsonObject& args)
 
 void registerClipEnvelopeCommands(ControlRegistry& registry)
 {
+	ControlCommand loop;
+	loop.id = QStringLiteral("clip.set_loop");
+	loop.group = QStringLiteral("clip");
+	loop.verb = QStringLiteral("set_loop");
+	loop.description = QStringLiteral("Loop a MIDI clip's content: its notes from the start to 'length' ticks repeat across the whole "
+		"clip, however long it is drawn (0 stops the loop). Saved with the clip. Reversible through the ProjectJournal (Clip checkpoint).");
+	loop.argsSchema = objectSchema({{QStringLiteral("clip"), stringProperty()}, {QStringLiteral("length"), integerProperty(0, 192 * 256)}},
+		{QStringLiteral("clip"), QStringLiteral("length")});
+	loop.resultSchema = objectProperty();
+	loop.mutating = true;
+	loop.handler = setLoop;
+	registry.registerCommand(loop);
+
 	ControlCommand formant;
 	formant.id = QStringLiteral("clip.set_formant");
 	formant.group = QStringLiteral("clip");

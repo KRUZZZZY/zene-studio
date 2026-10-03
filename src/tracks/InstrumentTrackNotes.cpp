@@ -201,4 +201,10 @@ void InstrumentTrack::triggerNote(const NoteTrigger& trigger, f_cnt_t offset, f_
 	}
 }
 
+TimePos InstrumentTrack::loopedPosition(const MidiClip* clip, const TimePos& position)
+{
+	const int loop = clip->clipEdits().loopTicks;
+	return loop > 0 && position >= 0 ? TimePos(position.getTicks() % loop) : position;
+}
+
 } // namespace lmms

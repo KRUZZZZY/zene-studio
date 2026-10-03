@@ -23,6 +23,7 @@
  */
 
 #include "AudioEngine.h"
+#include "InputMeter.h"
 #include "PunchWindow.h"
 
 #include "MixHelpers.h"
@@ -573,6 +574,7 @@ std::span<const SampleFrame> AudioEngine::renderNextPeriod()
 	// the ENGINE'S STEREO INPUT BUS - the same frames STAGE 1's play handles
 	// read - and while it is disarmed this is one relaxed atomic load. Realtime-safe.
 	m_retroCapture.push(m_inputBuffer[m_inputBufferRead], m_inputBufferFrames[m_inputBufferRead]);
+	inputmeter::measure(m_inputBuffer[m_inputBufferRead], m_inputBufferFrames[m_inputBufferRead]);  // 0.5.0 L08 (MX-134)
 
 	s_renderingThread = false;
 	m_profiler.finishPeriod(outputSampleRate(), m_framesPerPeriod);

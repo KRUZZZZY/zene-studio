@@ -198,6 +198,8 @@ public:
 	//! Start the note: its articulation, its handle and its repeats, delayed by swing and the MIDI offset.
 	void triggerNote(const NoteTrigger& trigger, f_cnt_t offset, f_cnt_t frames, const TimePos& curStart);
 	void sendArticulation(int index, f_cnt_t offset);
+	//! 0.5.0 ED-029: @a position (clip time) folded into the clip's loop, when it has one.
+	static TimePos loopedPosition(const MidiClip* clip, const TimePos& position);
 	// create new view for me
 	gui::TrackView* createView( gui::TrackContainerView* tcv ) override;
 

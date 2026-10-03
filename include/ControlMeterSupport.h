@@ -87,6 +87,10 @@ LMMS_EXPORT QJsonObject meterReadingsJson(float integratedLufs, float momentaryL
  *  LoudnessReport's own constants, never restated.
  */
 LMMS_EXPORT QJsonObject meterTargetJson();
+//! 0.5.0 L09 (MX-043): the studio's calibration reference - the dBFS that reads 0 on the meters' reference
+//! scale (-18 by default: 0 VU = -18 dBFS). A preference (config file); reported in meterTargetJson().
+LMMS_EXPORT double meterReferenceDbfs();
+LMMS_EXPORT void setMeterReferenceDbfs(double dbfs);
 
 /*! The FILE half: measure the rendered file at \a path NOW, from its own bytes,
  *  with the same BS.1770-4 meter the render path feeds (`LoudnessReport`, which

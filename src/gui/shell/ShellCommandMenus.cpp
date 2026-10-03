@@ -45,7 +45,9 @@
 #include "XyPad.h"
 #include "MidiClip.h"
 #include "Mixer.h"
+#include "MixerWindows.h"
 #include "SampleClip.h"
+#include "SampleEditorDialog.h"
 #include "SampleTrack.h"
 #include "SongEditor.h"
 #include "TrackFolder.h"
@@ -328,6 +330,10 @@ void populateClip(QMenu* menu, Clip* clip)
 		add(menu, "Remove Silence...", "clip.remove_silence", self, true, {{QStringLiteral("threshold_db"), -50.0}});  // ED-040
 		add(menu, "Crop the Sample", "sample.crop", self, false);  // ED-155
 		add(menu, "Convert to MIDI Notes", "clip.audio_to_midi", self, false);  // ED-160
+		QAction* editor = menu->addAction(tr("Sample Editor..."));  // ED-156
+		editor->setProperty("controlCommand", QStringLiteral("sample.edit_range"));
+		const QPointer<SampleClip> sample = static_cast<SampleClip*>(clip);
+		QObject::connect(editor, &QAction::triggered, menu, [sample, menu] { if (sample) { (new SampleEditorDialog(sample, menu->parentWidget()))->show(); } });
 		add(menu, "Make the Sample Unique", "sample.make_unique", self, false);
 		add(menu, "Split at the Play Position", "clip.split_at", with(with(self, "at", QStringLiteral("positions")), "positions",  // ED-005
 			QJsonArray{static_cast<int>(Engine::getSong()->getPlayPos().getTicks())}), false);
@@ -342,6 +348,7 @@ void populateClip(QMenu* menu, Clip* clip)
 	}
 	add(pitch, "Reset", "clip.set_transpose", with(self, "semitones", 0), false);
 	add(pitch, "Transpose...", "clip.set_transpose", self, true, {{QStringLiteral("semitones"), transpose}});
+	if (dynamic_cast<SampleClip*>(clip) == nullptr) { add(menu, "Loop the Content...", "clip.set_loop", self, true, {{QStringLiteral("length"), 192}}); }  // ED-029
 	if (dynamic_cast<SampleClip*>(clip) != nullptr)  // ED-153
 	{
 		choices(pitch, "Keep the Formants", "clip.set_formant", "keep", self);
@@ -385,6 +392,7 @@ void mixerViewMenu(QMenu* menu, const QString& channel)
 void viewOptionsMenu(QMenu* menu)
 {
 	QMenu* view = menu->addMenu(tr("Mixer View"));
+	addMixerWindows(view);  // L08/L09 (MX-131, MX-055)
 	choices(view, "Show Sends", "window.mixer_view", "show_sends", {});
 	choices(view, "Show Pan", "window.mixer_view", "show_pan", {});
 	choices(view, "Show Channel Numbers", "window.mixer_view", "show_number", {});

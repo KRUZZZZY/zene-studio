@@ -180,6 +180,18 @@ private slots:
 		QVERIFY(m_track->articulations().empty());
 	}
 
+	void aLoopedClipPlaysItsStartAgain()
+	{
+		Note* note = oneNote(60, 24);
+		m_clip->changeLength(TimePos(384));
+		QVERIFY(playFrom(96).isEmpty());  // no loop: nothing starts at 96
+		QVERIFY(run(QStringLiteral("clip.set_loop"), {{QStringLiteral("clip"), control::clipIdOf(m_clip)}, {QStringLiteral("length"), 96}}).ok);
+		QCOMPARE(playFrom(96), (QList<int>{60}));  // 96 folds to 0, where the note is
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
+		QCOMPARE(m_clip->clipEdits().loopTicks, 0);
+		(void) note;
+	}
+
 	void chaseSoundsANotePlaybackStartsInside()
 	{
 		oneNote();

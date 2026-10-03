@@ -887,7 +887,7 @@ bool InstrumentTrack::play( const TimePos & _start, const f_cnt_t _frames,
 		TimePos cur_start = _start;
 		if( _clip_num < 0 )
 		{
-			cur_start -= c->startPosition() + c->startTimeOffset();
+			cur_start = loopedPosition(c, cur_start - (c->startPosition() + c->startTimeOffset()));  // 0.5.0 ED-029: a looped clip
 		}
 		// 0.5.0 L07: the clip's CC / pitch-bend / aftertouch lanes (InstrumentTrackNotes.cpp).
 		if (!c->controllers().empty()) { playClipControllers(c, cur_start.getTicks(), _offset); }

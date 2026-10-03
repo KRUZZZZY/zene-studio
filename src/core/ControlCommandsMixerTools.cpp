@@ -43,6 +43,7 @@
 #include "ControlDevicePlacement.h"
 #include "ControlDeviceSupport.h"
 #include "ControlEdit.h"
+#include "ControlMeterSupport.h"
 #include "ControlMixerSupport.h"
 #include "ControlRegistry.h"
 #include "ControlRegistryGroups.h"
@@ -51,6 +52,7 @@
 #include "Effect.h"
 #include "EffectChain.h"
 #include "Engine.h"
+#include "InputMeter.h"
 #include "Mixer.h"
 #include "MixerOptions.h"
 #include "Song.h"
@@ -288,6 +290,48 @@ ControlResult channelEq(const QJsonObject& args)
 		{QStringLiteral("high"), static_cast<double>(after.high)}});
 }
 
+//! MX-055: every channel with its sends - the routing matrix's rows.
+ControlResult routingMatrix(const QJsonObject&)
+{
+	QJsonArray channels;
+	for (int i = 0; i < mixer()->numChannels(); ++i)
+	{
+		MixerChannel* channel = mixer()->mixerChannel(i);
+		QJsonArray sends;
+		for (MixerRoute* route : channel->m_sends)
+		{
+			sends.append(QJsonObject{{QStringLiteral("to"), channelIdOf(route->receiver())}, {QStringLiteral("amount"), static_cast<double>(route->amount()->value())},
+				{QStringLiteral("pre_fader"), route->preFader()}, {QStringLiteral("enabled"), route->enabled()}});
+		}
+		channels.append(QJsonObject{{QStringLiteral("channel"), channelIdOf(channel)}, {QStringLiteral("name"), i == 0 ? QStringLiteral("Master") : channel->m_name},
+			{QStringLiteral("index"), i}, {QStringLiteral("sends"), sends}});
+	}
+	return ControlResult::success({{QStringLiteral("channels"), channels}});
+}
+
+ControlResult meterReference(const QJsonObject& args)
+{
+	const double before = meterReferenceDbfs();
+	const double dbfs = args.value(QStringLiteral("dbfs")).toDouble(before);
+	if (dbfs < -30.0 || dbfs > 0.0) { return ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("'dbfs' is -30..0")); }
+	if (dbfs != before)
+	{
+		setMeterReferenceDbfs(dbfs);
+		addUndoStep([before]() { setMeterReferenceDbfs(before); }, [dbfs]() { setMeterReferenceDbfs(dbfs); });
+	}
+	return ControlResult::success({{QStringLiteral("reference_dbfs"), dbfs}});
+}
+
+ControlResult inputLevel(const QJsonObject&)
+{
+	float left = 0.f;
+	float right = 0.f;
+	inputmeter::take(&left, &right);
+	const auto db = [](float v) { return v > 0.f ? 20.0 * std::log10(v) : -120.0; };
+	return ControlResult::success({{QStringLiteral("peak_left_db"), db(left)}, {QStringLiteral("peak_right_db"), db(right)},
+		{QStringLiteral("clipped"), left >= 1.f || right >= 1.f}});
+}
+
 ControlResult colorMembers(const QJsonObject& args)
 {
 	VcaGroup* group = mixer()->vcaGroup(args.value(QStringLiteral("group")).toInt(-1));
@@ -400,6 +444,13 @@ void registerMixerToolCommands(ControlRegistry& registry)
 		"the project. With only 'channel' it reports it. One undo step."),
 		{{QStringLiteral("channel"), stringProperty()}, {QStringLiteral("low"), numberProperty()}, {QStringLiteral("mid"), numberProperty()},
 			{QStringLiteral("mid_freq"), numberProperty()}, {QStringLiteral("high"), numberProperty()}}, {QStringLiteral("channel")}, true, channelEq);
+	add(registry, "meter.set_reference", QStringLiteral("The studio's calibration reference: the dBFS that reads 0 on the reference "
+		"scale (-18 by default, 0 VU = -18 dBFS; -30..0). A preference, kept in the config file; meter.get_state reports it "
+		"in 'target'. With no arguments it reports it. One undo step."), {{QStringLiteral("dbfs"), numberProperty()}}, {}, true, meterReference);
+	add(registry, "meter.input", QStringLiteral("How loud the audio input is: the peak of each side since the last call, in dB "
+		"(-120 for silence), and whether it reached full scale - the level to set a microphone by. Read only."), {}, {}, false, inputLevel);
+	add(registry, "routing.matrix", QStringLiteral("The routing matrix: every channel (id, name, position) with its sends - to, amount, "
+		"pre-fader, on or off. Read only."), {}, {}, false, routingMatrix);
 	add(registry, "mixer.find", QStringLiteral("The channels whose name holds 'text' (any case): id, name and position."),
 		{{QStringLiteral("text"), stringProperty()}}, {QStringLiteral("text")}, false, find);
 	add(registry, "mixer.adjust", QStringLiteral("Move several channels together: every one of 'channels' is turned up or down by "

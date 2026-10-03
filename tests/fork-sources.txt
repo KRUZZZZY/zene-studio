@@ -603,6 +603,7 @@ include/HelpCenter.h
 include/ImportDetection.h
 include/ImportDetectionDsp.h
 include/InputChannelRing.h
+include/InputMeter.h
 include/InputMonitor.h
 include/InspectorChannelRouting.h
 include/InspectorPanel.h
@@ -644,6 +645,7 @@ include/MixerOverlays.h
 include/MixerSendPan.h
 include/MixerStrip.h
 include/MixerViewOptions.h
+include/MixerWindows.h
 include/ModulationLayer.h
 include/ModulatorPanel.h
 include/MonitorMode.h
@@ -713,6 +715,7 @@ include/RubberBandStretch.h
 include/SafeStart.h
 include/SampleBufferResample.h
 include/SampleClipOverlays.h
+include/SampleEditorDialog.h
 include/SampleFrameRingBuffer.h
 include/SampleRecordAccumulator.h
 include/SampleWindow.h
@@ -1205,6 +1208,7 @@ src/core/ImportDetectionDsp.cpp
 src/core/ImportDetectionKey.cpp
 src/core/ImportDetectionSpectrum.cpp
 src/core/ImportDetectionSpectrum.h
+src/core/InputMeter.cpp
 src/core/InputMonitor.cpp
 src/core/LatencyCompensation.cpp
 src/core/LaunchBindings.cpp
@@ -1366,6 +1370,7 @@ src/gui/MidiLearnGui.cpp
 src/gui/MidiReconnectAction.cpp
 src/gui/MixerOverlays.cpp
 src/gui/MixerViewOptions.cpp
+src/gui/MixerWindows.cpp
 src/gui/ModulatorPanel.cpp
 src/gui/MpeInputAction.cpp
 src/gui/NoteTransformActions.cpp
@@ -1376,6 +1381,7 @@ src/gui/RackMenu.cpp
 src/gui/RecordLaunchMenus.cpp
 src/gui/RecordingRecoveryMenu.cpp
 src/gui/RenderPresetMenu.cpp
+src/gui/SampleEditorDialog.cpp
 src/gui/ScriptBudgetAction.cpp
 src/gui/SessionGridMenus.cpp
 src/gui/SessionGridView.cpp

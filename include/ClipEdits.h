@@ -27,6 +27,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <tuple>
 
 #include <QString>
 
@@ -110,6 +111,8 @@ struct ClipEdits
 	//! moves (`keepFormants`) and shifted `formant` semitones (-24..24); both off is the plain shift.
 	bool keepFormants = false;
 	int formant = 0;
+	//! 0.5.0 ED-029: a MIDI clip's content repeats every `loopTicks` across the clip's length (0: no loop).
+	int loopTicks = 0;
 	//! ED-042: the gain envelope, `envelopeCount` points in tick order.
 	std::array<GainPoint, MaxGainPoints> envelope{};
 	int envelopeCount = 0;
@@ -120,14 +123,14 @@ struct ClipEdits
 	bool hasFade() const { return fadeInTicks > 0 || fadeOutTicks > 0; }
 	bool hasEnvelope() const { return envelopeCount > 0; }
 
+	//! Every field but the envelope's points, for comparing (one tuple, so a new field is one more name here).
+	auto scalars() const
+	{
+		return std::tie(gain, fadeInTicks, fadeOutTicks, fadeInShape, fadeOutShape, transpose, keepFormants, formant, loopTicks, envelopeCount);
+	}
 	bool operator==(const ClipEdits& other) const
 	{
-		return gain == other.gain
-			&& fadeInTicks == other.fadeInTicks && fadeOutTicks == other.fadeOutTicks
-			&& fadeInShape == other.fadeInShape && fadeOutShape == other.fadeOutShape
-			&& transpose == other.transpose && keepFormants == other.keepFormants && formant == other.formant
-			&& envelopeCount == other.envelopeCount
-			&& std::equal(envelope.begin(), envelope.begin() + envelopeCount, other.envelope.begin());
+		return scalars() == other.scalars() && std::equal(envelope.begin(), envelope.begin() + envelopeCount, other.envelope.begin());
 	}
 	bool operator!=(const ClipEdits& other) const { return !(*this == other); }
 };

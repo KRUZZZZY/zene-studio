@@ -201,6 +201,13 @@ private slots:
 		QCOMPARE(channel(4)->m_correlation.get(), -1.f);
 	}
 
+	void theRoutingMatrix()
+	{
+		const QJsonArray channels = run(QStringLiteral("routing.matrix")).result.value(QStringLiteral("channels")).toArray();
+		QCOMPARE(channels.size(), Engine::mixer()->numChannels());
+		QCOMPARE(channels.first().toObject().value(QStringLiteral("name")).toString(), QStringLiteral("Master"));
+	}
+
 	void aGroupColoursItsMembers()
 	{
 		VcaGroup* group = Engine::mixer()->createVcaGroup(QStringLiteral("Drums"));

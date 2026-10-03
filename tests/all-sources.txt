@@ -272,6 +272,7 @@ include/ImportDetectionDsp.h
 include/ImportFilter.h
 include/InlineAutomation.h
 include/InputChannelRing.h
+include/InputMeter.h
 include/InputMonitor.h
 include/InspectorChannelRouting.h
 include/InspectorPanel.h
@@ -399,6 +400,7 @@ include/MixerSendPan.h
 include/MixerStrip.h
 include/MixerView.h
 include/MixerViewOptions.h
+include/MixerWindows.h
 include/Model.h
 include/ModelView.h
 include/ModelVisitor.h
@@ -524,6 +526,7 @@ include/SampleClip.h
 include/SampleClipOverlays.h
 include/SampleClipView.h
 include/SampleDecoder.h
+include/SampleEditorDialog.h
 include/SampleFrame.h
 include/SampleFrameRingBuffer.h
 include/SamplePlayHandle.h
@@ -1485,6 +1488,7 @@ src/core/ImportDetectionSpectrum.cpp
 src/core/ImportDetectionSpectrum.h
 src/core/ImportFilter.cpp
 src/core/InlineAutomation.cpp
+src/core/InputMeter.cpp
 src/core/InputMonitor.cpp
 src/core/Instrument.cpp
 src/core/InstrumentFunctions.cpp
@@ -1778,6 +1782,7 @@ src/gui/MixerChannelView.cpp
 src/gui/MixerOverlays.cpp
 src/gui/MixerView.cpp
 src/gui/MixerViewOptions.cpp
+src/gui/MixerWindows.cpp
 src/gui/ModelView.cpp
 src/gui/ModulatorPanel.cpp
 src/gui/MpeInputAction.cpp
@@ -1793,6 +1798,7 @@ src/gui/RecordLaunchMenus.cpp
 src/gui/RecordingRecoveryMenu.cpp
 src/gui/RenderPresetMenu.cpp
 src/gui/RowTableView.cpp
+src/gui/SampleEditorDialog.cpp
 src/gui/SampleThumbnail.cpp
 src/gui/SampleTrackWindow.cpp
 src/gui/ScriptBudgetAction.cpp

@@ -60,6 +60,7 @@
 #include <QJsonValue>
 #include <QString>
 
+#include "ConfigManager.h"
 #include "ControlMeterSupport.h"
 
 #include "ControlMasteringSupport.h"
@@ -122,7 +123,18 @@ QJsonObject meterTargetJson()
 		static_cast<double>(LoudnessReport::EbuR128TruePeakCeilingDbtp));
 	out.insert(QStringLiteral("streaming_reference_lufs"),
 		static_cast<double>(LoudnessReport::StreamingReferenceLufs));
+	out.insert(QStringLiteral("reference_dbfs"), meterReferenceDbfs());
 	return out;
+}
+
+double meterReferenceDbfs()
+{
+	return ConfigManager::inst()->value(QStringLiteral("meter"), QStringLiteral("referencedbfs"), QStringLiteral("-18")).toDouble();
+}
+
+void setMeterReferenceDbfs(double dbfs)
+{
+	ConfigManager::inst()->setValue(QStringLiteral("meter"), QStringLiteral("referencedbfs"), QString::number(dbfs));
 }
 
 ControlResult meterMeasureFile(const QString& path)
