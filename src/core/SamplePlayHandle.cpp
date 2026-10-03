@@ -163,6 +163,7 @@ SamplePlayHandle::SamplePlayHandle( SampleClip* clip, const SampleWindow& window
 	// neutral, and play() then skips the envelope entirely.
 	snapshotClipEdits(clip, window);
 	snapshotComp(clip);
+	snapshotPreFades(clip, window);  // 0.5.0 ED-179: a no-op for a clip without pre-fades
 }
 
 
@@ -324,6 +325,7 @@ bool SamplePlayHandle::needsClipEdits() const { return !m_edits.isNeutral() || m
 
 void SamplePlayHandle::applyClipEdits(SampleFrame* buffer, f_cnt_t frames) const
 {
+	if (m_preFaded) { applyPreFaded(buffer, frames); return; }  // 0.5.0 ED-179 (ClipPreFades.cpp)
 	const f_cnt_t base = m_envelopeStart + m_frame;
 	// ED-042: the gain envelope at block rate - its value at this block's first and last frame,
 	// ramped linearly across it (two lookups per block, never one per frame).

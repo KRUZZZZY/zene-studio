@@ -699,6 +699,7 @@ set(LMMS_SRCS
 	core/ControlReversibilityTableW3Custom.cpp
 	core/ControlReversibilityTableW3Library.cpp
 	core/ControlReversibilityTableW3Devices.cpp
+	core/ControlReversibilityTableW3Engine.cpp
 	core/ControlReversibilityTableArranger.cpp
 	core/ControlReversibilityTableShell.cpp
 	${CMAKE_SOURCE_DIR}/thirdparty/mts-esp/libMTSClient.cpp
@@ -1015,6 +1016,10 @@ set(LMMS_SRCS
 	core/TrackVersions.cpp
 	core/ControlCommandsTrackVersions.cpp
 	core/ProjectSectionRegistry.cpp
+	core/AutomationLatency.cpp
+	core/MixerPostInserts.cpp
+	core/ClipPreFades.cpp
+	core/ControlCommandsW3Engine.cpp
 	core/InputMeter.cpp
 	core/RecorderTaps.cpp
 	core/ControlCommandsDeviceTools.cpp
@@ -1195,6 +1200,7 @@ SET(ZENE_API_SRCS
 	core/ControlReversibilityTableW3Custom.cpp
 	core/ControlReversibilityTableW3Library.cpp
 	core/ControlReversibilityTableW3Devices.cpp
+	core/ControlReversibilityTableW3Engine.cpp
 	core/ControlReversibilityTableArranger.cpp
 	core/ControlReversibilityTableShell.cpp
 )

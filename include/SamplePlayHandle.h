@@ -28,6 +28,8 @@
 
 #include "Sample.h"
 #include <array>
+#include <cstdint>
+#include <optional>
 #include <utility>
 
 #include "AudioStretcher.h"
@@ -203,6 +205,17 @@ private:
 	bool m_autoFaded = false;
 	int m_compSpanCount = 0;
 	std::array<std::pair<f_cnt_t, f_cnt_t>, MaxCompSpans> m_compSpans{};
+
+	/*! 0.5.0 W3 (ED-179): a clip with pre-fades (include/ClipPreFades.h) plays a copy of its Sample whose window
+	 *  reaches past the clip's own, and its envelope is measured from the clip's first frame with the frames before
+	 *  it negative. Snapshotted at construction; a clip without pre-fades leaves m_preFaded false and takes the old
+	 *  arithmetic. Defined in src/core/ClipPreFades.cpp. */
+	void snapshotPreFades(const SampleClip* clip, const SampleWindow& window);
+	void applyPreFaded(SampleFrame* buffer, f_cnt_t frames) const;
+	std::optional<Sample> m_preFadeSample;
+	PreFadeSpan m_preFadeSpan;
+	std::int64_t m_preRollFrames = 0;  //!< the frames this pass plays before the clip's first frame
+	bool m_preFaded = false;
 } ;
 
 

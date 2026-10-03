@@ -582,7 +582,8 @@ void MixerChannel::doProcessing()
 			{
 				// figure out if we're getting sample-exact input
 				ValueBuffer * sendBuf = sendModel->valueBuffer();
-				ValueBuffer * volBuf = sender->m_volumeModel.valueBuffer();
+				// 0.5.0 MX-082: a sender whose post-fader inserts baked its fader is read at unity.
+				ValueBuffer * volBuf = postinserts::faderBuffer( *sender, senderRoute );
 
 				// Delay the sender's block to this channel's alignment point.
 				// A zero delay returns the sender's buffer unchanged. A
@@ -591,7 +592,7 @@ void MixerChannel::doProcessing()
 				// the loop, #709).
 				const SampleFrame* ch_buf = feedback
 					? senderRoute->feedbackCommitted()
-					: senderRoute->compensatedBuffer(sender->m_buffer, fpp);
+					: senderRoute->compensatedBuffer(postinserts::sendSource(*sender, *senderRoute), fpp);
 
 				if( senderRoute->pan()->value() != 0.0f )
 				{
@@ -618,7 +619,7 @@ void MixerChannel::doProcessing()
 				// use sample-exact mixing if sample-exact values are available
 				else if( ! volBuf && ! sendBuf ) // neither volume nor send has sample-exact data...
 				{
-					const float v = sender->m_volumeModel.value() * sendModel->value();
+					const float v = postinserts::faderValue( *sender, senderRoute ) * sendModel->value();
 					MixHelpers::addMultiplied( m_buffer, ch_buf, v, fpp );
 				}
 				else if( volBuf && sendBuf ) // both volume and send have sample-exact data
@@ -632,7 +633,7 @@ void MixerChannel::doProcessing()
 				}
 				else // vice versa
 				{
-					const float v = sender->m_volumeModel.value();
+					const float v = postinserts::faderValue( *sender, senderRoute );
 					MixHelpers::addMultipliedByBuffer( m_buffer, ch_buf, v, sendBuf, fpp );
 				}
 				if( ! compensate && ! feedback )
@@ -772,10 +773,13 @@ void MixerChannel::doProcessing()
 		recordertaps::channelAt(*this, SidechainTapPoint::PostFader, fpp);
 		writeSidechainTaps(SidechainTapPoint::PostFaderNoGain, fpp);
 
+		// 0.5.0 MX-082: the post-fader inserts (skipped while empty: the meters then apply v as before).
+		const float meterGain = m_postInserts.process( *this, v, fpp );
+
 		SampleFrame peakSamples = getAbsPeakValues(m_buffer, fpp);
-		m_peakLeft = std::max(m_peakLeft, peakSamples[0] * v);
-		m_peakRight = std::max(m_peakRight, peakSamples[1] * v);
-		mixerstrip::updateMeters( *this, m_buffer, v, fpp );  // 0.5.0 L08
+		m_peakLeft = std::max(m_peakLeft, peakSamples[0] * meterGain);
+		m_peakRight = std::max(m_peakRight, peakSamples[1] * meterGain);
+		mixerstrip::updateMeters( *this, m_buffer, meterGain, fpp );  // 0.5.0 L08
 	}
 	// A muted channel never reaches this function: Mixer::masterMix handles
 	// muted channels directly (dependency bookkeeping plus the incoming delay
@@ -1817,7 +1821,8 @@ int Mixer::resolveLatency(std::size_t index)
 
 	m_latencyInputScratch[index] = input;
 	m_latencyOutputScratch[index] =
-		input + std::max(0, channel->m_fxChain.latencyFrames());
+		input + std::max(0, channel->m_fxChain.latencyFrames())
+		+ std::max(0, channel->m_postInserts.chain().latencyFrames());  // 0.5.0 MX-082 (0 while empty)
 	m_latencyVisitScratch[index] = 2;
 	return m_latencyOutputScratch[index];
 }
@@ -1923,7 +1928,8 @@ void Mixer::updateLatencyCompensation()
 	}
 
 	const int masterChain =
-		std::max(0, m_mixerChannels[0]->m_fxChain.latencyFrames());
+		std::max(0, m_mixerChannels[0]->m_fxChain.latencyFrames())
+		+ std::max(0, m_mixerChannels[0]->m_postInserts.chain().latencyFrames());  // 0.5.0 MX-082
 	const int alignment = m_latencyInputScratch[0];
 	// The alignment point is realised by delaying the earlier paths; no path
 	// can be delayed by more than the ring capacity, so a clamped alignment
@@ -2036,7 +2042,7 @@ void Mixer::masterMix( SampleFrame* _buf )
 	}
 
 	// handle sample-exact data in master volume fader
-	ValueBuffer * volBuf = m_mixerChannels[0]->m_volumeModel.valueBuffer();
+	ValueBuffer * volBuf = postinserts::faderBuffer( *m_mixerChannels[0], nullptr );  // 0.5.0 MX-082
 
 	if( volBuf )
 	{
@@ -2049,7 +2055,7 @@ void Mixer::masterMix( SampleFrame* _buf )
 
 	const float v = volBuf
 		? 1.0f
-		: m_mixerChannels[0]->m_volumeModel.value();
+		: postinserts::faderValue( *m_mixerChannels[0], nullptr );
 	MixHelpers::addMultiplied( _buf, m_mixerChannels[0]->m_buffer, v, fpp );
 	recordertaps::master( _buf, fpp );  // 0.5.0 WF-072: a record route resampling the master
 	// 0.5.0 L09 (MX-037): a channel listened to (AFL / PFL) replaces the mix on the output.
@@ -2101,6 +2107,7 @@ void Mixer::clearChannel(mix_ch_t index)
 	ch->m_fxChain.clear();
 	// #599: a cleared channel has no rack (no parallel chains, no selector).
 	ch->m_rack.clear();
+	ch->m_postInserts.clear();  // 0.5.0 MX-082
 	ch->m_volumeModel.setValue( 1.0f );
 	ch->m_panModel.setValue( 0.0f );
 	ch->m_muteModel.setValue( false );
@@ -2159,6 +2166,7 @@ void Mixer::saveSettings( QDomDocument & _doc, QDomElement & _this )
 		// #599: the rack's parallel chains and the chain selector; a channel
 		// with no rack writes no element at all.
 		ch->m_rack.saveSettings( _doc, mixch );
+		ch->m_postInserts.save( _doc, mixch );  // 0.5.0 MX-082: only while it holds devices
 		ch->m_volumeModel.saveSettings( _doc, mixch, "volume" );
 		// Written only when it says something: a centred, unautomated pan
 		// writes nothing, so a project that never panned a channel saves
@@ -2400,6 +2408,7 @@ void Mixer::loadSettings( const QDomElement & _this )
 		// #599: the channel's rack, if the project has one. A project with no
 		// <rack> element loads an empty rack, which is off the signal path.
 		m_mixerChannels[num]->m_rack.loadSettings( mixch );
+		m_mixerChannels[num]->m_postInserts.load( mixch );  // 0.5.0 MX-082: absent empties it
 
 		// mixer sends
 		QDomNodeList chData = mixch.childNodes();

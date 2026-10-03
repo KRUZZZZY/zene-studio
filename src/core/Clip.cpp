@@ -409,13 +409,15 @@ void Clip::setStartTimeOffset( const TimePos &startTimeOffset )
 namespace
 {
 
-//! ED-152 / ED-179: the speed ramp and the speed fades, each written only when set (I9, additive).
+//! ED-152 / ED-179: the speed ramp, the speed fades and the pre-fades, each written only when set (I9, additive).
 void saveSpeed(const ClipEdits& edits, QDomElement& element)
 {
 	if (edits.speedFrom != 100) { element.setAttribute("speedfrom", edits.speedFrom); }
 	if (edits.speedTo != 100) { element.setAttribute("speedto", edits.speedTo); }
 	if (edits.speedInTicks > 0) { element.setAttribute("speedin", edits.speedInTicks); }
 	if (edits.speedOutTicks > 0) { element.setAttribute("speedout", edits.speedOutTicks); }
+	if (edits.preFadeInTicks > 0) { element.setAttribute("prefadein", edits.preFadeInTicks); }  // 0.5.0 ED-179
+	if (edits.preFadeOutTicks > 0) { element.setAttribute("prefadeout", edits.preFadeOutTicks); }
 }
 
 void loadSpeed(const QDomElement& element, ClipEdits* edits)
@@ -424,6 +426,8 @@ void loadSpeed(const QDomElement& element, ClipEdits* edits)
 	edits->speedTo = std::clamp(element.attribute("speedto", "100").toInt(), 25, 400);
 	edits->speedInTicks = std::max(0, element.attribute("speedin", "0").toInt());
 	edits->speedOutTicks = std::max(0, element.attribute("speedout", "0").toInt());
+	edits->preFadeInTicks = std::max(0, element.attribute("prefadein", "0").toInt());  // 0.5.0 ED-179: absent is none
+	edits->preFadeOutTicks = std::max(0, element.attribute("prefadeout", "0").toInt());
 }
 
 } // namespace

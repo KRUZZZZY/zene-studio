@@ -27,6 +27,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <cstdint>
 #include <tuple>
 
 #include <QString>
@@ -124,22 +125,28 @@ struct ClipEdits
 	//! to nothing over the last `speedOutTicks` (a tape stop); 0 for none.
 	int speedInTicks = 0;
 	int speedOutTicks = 0;
+	//! 0.5.0 W3 (ED-179): pre-fades - the fade-in starts `preFadeInTicks` BEFORE the clip's start and the fade-out ends
+	//! `preFadeOutTicks` AFTER its end: the clip sounds its hidden source audio there (each ramp is one ramp with the
+	//! in-clip fade, if any). 0 for none; saved only when set.
+	int preFadeInTicks = 0;
+	int preFadeOutTicks = 0;
 	//! ED-042: the gain envelope, `envelopeCount` points in tick order.
 	std::array<GainPoint, MaxGainPoints> envelope{};
 	int envelopeCount = 0;
 
 	//! True when this clip contributes nothing to the audio it would not
 	//! contribute without any edits at all.
-	bool isNeutral() const { return gain == 1.0f && !hasFade() && !hasEnvelope(); }
+	bool isNeutral() const { return gain == 1.0f && !hasFade() && !hasEnvelope() && !hasPreFade(); }
 	bool hasFade() const { return fadeInTicks > 0 || fadeOutTicks > 0; }
 	bool hasSpeed() const { return speedFrom != 100 || speedTo != 100 || speedInTicks > 0 || speedOutTicks > 0; }
 	bool hasEnvelope() const { return envelopeCount > 0; }
+	bool hasPreFade() const { return preFadeInTicks > 0 || preFadeOutTicks > 0; }
 
 	//! Every field but the envelope's points, for comparing (one tuple, so a new field is one more name here).
 	auto scalars() const
 	{
 		return std::tie(gain, fadeInTicks, fadeOutTicks, fadeInShape, fadeOutShape, transpose, keepFormants, formant, loopTicks, snapTicks, speedFrom, speedTo, speedInTicks,
-			speedOutTicks, envelopeCount);
+			speedOutTicks, preFadeInTicks, preFadeOutTicks, envelopeCount);
 	}
 	bool operator==(const ClipEdits& other) const
 	{
@@ -177,6 +184,22 @@ LMMS_EXPORT float clipSpeedAt(const ClipEdits& edits, f_cnt_t frame, f_cnt_t cli
 LMMS_EXPORT float clipFadeGainAt(f_cnt_t frame, f_cnt_t clipFrames,
 	f_cnt_t fadeInFrames, f_cnt_t fadeOutFrames,
 	FadeShape fadeInShape, FadeShape fadeOutShape);
+
+//! ED-179: a pre-faded clip's span in output frames - the clip, its pre-fades outside it and its fades inside it.
+struct PreFadeSpan
+{
+	std::int64_t clipFrames = 0;
+	std::int64_t preInFrames = 0;   //!< the fade-in's part before the clip's first frame
+	std::int64_t preOutFrames = 0;  //!< the fade-out's part after the clip's last frame
+	std::int64_t fadeInFrames = 0;  //!< the fade-in's part inside the clip
+	std::int64_t fadeOutFrames = 0; //!< the fade-out's part inside the clip
+};
+
+/*! ED-179: the fade envelope of a pre-faded clip at @a clipPos output frames from its first frame (negative before
+ *  it, past @a span.clipFrames after it). The fade-in is ONE ramp from preIn frames before the clip to fadeIn frames
+ *  into it, the fade-out one ramp from fadeOut frames before its end to preOut frames after it; 0 outside both.
+ *  Only the pre-faded path calls it (a clip without pre-fades keeps clipFadeGainAt). Allocation-free. */
+LMMS_EXPORT float preFadedGainAt(const PreFadeSpan& span, std::int64_t clipPos, FadeShape fadeInShape, FadeShape fadeOutShape);
 
 } // namespace lmms
 

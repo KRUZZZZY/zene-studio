@@ -515,6 +515,7 @@ include/AudioPortsModel.h
 include/AudioPortsSettings.h
 include/AudioStretcher.h
 include/AudioWideInputStage.h
+include/AutomationLatency.h
 include/AutomationModeMenu.h
 include/AutomationRamp.h
 include/AutomationSwitches.h
@@ -538,6 +539,7 @@ include/ClipConsolidate.h
 include/ClipEdits.h
 include/ClipEditsMenu.h
 include/ClipLinks.h
+include/ClipPreFades.h
 include/ClipTransients.h
 include/CommandForm.h
 include/CommandListBuild.h
@@ -658,6 +660,7 @@ include/MixerLatencyText.h
 include/MixerListen.h
 include/MixerOptions.h
 include/MixerOverlays.h
+include/MixerPostInserts.h
 include/MixerSendPan.h
 include/MixerSnapshots.h
 include/MixerStrip.h
@@ -882,6 +885,12 @@ plugins/NeuralAmp/NeuralAmpControls.cpp
 plugins/NeuralAmp/NeuralAmpControls.h
 plugins/NeuralAmp/NeuralAmpEffect.cpp
 plugins/NeuralAmp/NeuralAmpEffect.h
+plugins/Receiver/Receiver.cpp
+plugins/Receiver/Receiver.h
+plugins/Receiver/ReceiverControlDialog.cpp
+plugins/Receiver/ReceiverControlDialog.h
+plugins/Receiver/ReceiverControls.cpp
+plugins/Receiver/ReceiverControls.h
 plugins/RnnoiseDenoiser/RnnoiseDenoiserControlDialog.cpp
 plugins/RnnoiseDenoiser/RnnoiseDenoiserControlDialog.h
 plugins/RnnoiseDenoiser/RnnoiseDenoiserControls.cpp
@@ -940,6 +949,7 @@ src/core/AudioPortsModel.cpp
 src/core/AudioStretcher.cpp
 src/core/AudioWideInputStage.cpp
 src/core/AutomationClipTransforms.cpp
+src/core/AutomationLatency.cpp
 src/core/AutomationRamp.cpp
 src/core/AutomationSwitches.cpp
 src/core/BounceInPlace.cpp
@@ -957,6 +967,7 @@ src/core/ChordVocabulary.cpp
 src/core/ClipConsolidate.cpp
 src/core/ClipEdits.cpp
 src/core/ClipLinks.cpp
+src/core/ClipPreFades.cpp
 src/core/ClipTransients.cpp
 src/core/ControlAutomationSupport.cpp
 src/core/ControlBounceSupport.cpp
@@ -1172,6 +1183,7 @@ src/core/ControlCommandsVcaEditSet.cpp
 src/core/ControlCommandsVcaMix.cpp
 src/core/ControlCommandsVcaNest.cpp
 src/core/ControlCommandsVcaShared.h
+src/core/ControlCommandsW3Engine.cpp
 src/core/ControlCommandsWarp.cpp
 src/core/ControlCommandsWarpEdit.cpp
 src/core/ControlCommandsWarpQuantize.cpp
@@ -1249,6 +1261,7 @@ src/core/ControlReversibilityTableVerbs.cpp
 src/core/ControlReversibilityTableW3Custom.cpp
 src/core/ControlReversibilityTableW3Library.cpp
 src/core/ControlReversibilityTableW3Devices.cpp
+src/core/ControlReversibilityTableW3Engine.cpp
 src/core/ControlReversibilityTableWasmRender.cpp
 src/core/ControlReversibilityTableWindow.cpp
 src/core/ControlRoom.cpp
@@ -1322,6 +1335,7 @@ src/core/MidiPlayback.cpp
 src/core/MixerGroups.cpp
 src/core/MixerListen.cpp
 src/core/MixerOptions.cpp
+src/core/MixerPostInserts.cpp
 src/core/MixerSendPan.cpp
 src/core/MixerSnapshots.cpp
 src/core/MixerStrip.cpp
@@ -1801,6 +1815,7 @@ tests/src/core/StemJobManagerTest.cpp
 tests/src/core/UnclaimedElementsTest.cpp
 tests/src/core/UnclaimedTrackTypeTest.cpp
 tests/src/core/UndoBoundsTest.cpp
+tests/src/core/W3EngineTest.cpp
 tests/src/core/WarpQuantizeTest.cpp
 tests/src/core/WriteRefusalGateTest.cpp
 tests/src/tracks/SampleClipWindowTest.cpp

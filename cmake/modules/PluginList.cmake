@@ -68,6 +68,7 @@ SET(LMMS_PLUGIN_LIST
 	FreeBoy
 	Patman
 	PeakControllerEffect
+	Receiver
 	GigPlayer
 	ReverbSC
 	RnnoiseDenoiser

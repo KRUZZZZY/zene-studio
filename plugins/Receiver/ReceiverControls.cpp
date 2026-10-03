@@ -1,0 +1,51 @@
+/*
+ * ReceiverControls.cpp - the Receiver device's level and replace switch (0.5.0 MX-063)
+ *
+ * Copyright (c) 2026 Zene Studio contributors
+ *
+ * This file is part of LMMS - https://lmms.io
+ *
+ * This program is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU General Public
+ * License as published by the Free Software Foundation; either
+ * version 2 of the License, or (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public
+ * License along with this program (see COPYING); if not, write to the
+ * Free Software Foundation, Inc., 51 Franklin Street, Fifth Floor,
+ * Boston, MA 02110-1301 USA.
+ *
+ */
+#include "ReceiverControls.h"
+
+#include "Receiver.h"
+
+namespace lmms
+{
+
+ReceiverControls::ReceiverControls(ReceiverEffect* effect) :
+	EffectControls(effect),
+	m_effect(effect),
+	m_levelModel(1.f, 0.f, 2.f, 0.01f, this, tr("Level")),
+	m_replaceModel(false, this, tr("Replace"))
+{
+}
+
+void ReceiverControls::loadSettings(const QDomElement& parent)
+{
+	m_levelModel.loadSettings(parent, "level");
+	m_replaceModel.loadSettings(parent, "replace");
+}
+
+void ReceiverControls::saveSettings(QDomDocument& doc, QDomElement& parent)
+{
+	m_levelModel.saveSettings(doc, parent, "level");
+	m_replaceModel.saveSettings(doc, parent, "replace");
+}
+
+} // namespace lmms

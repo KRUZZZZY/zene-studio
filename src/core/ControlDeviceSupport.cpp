@@ -211,8 +211,27 @@ bool controlPluginIsInstantiable(const QString& name, ControlResult* error)
 	return true;
 }
 
+namespace
+{
+
+//! 0.5.0 MX-082: "ch-<n>/post" - channel n's post-fader inserts, addressed like its own chain.
+bool resolvePostInsertsTarget(const QString& id, ControlTarget* target, ControlResult* error)
+{
+	if (!resolveChannelTarget(postinserts::channelOf(id), target, error)) { return false; }
+	for (int i = 0; i < Engine::mixer()->numChannels(); ++i)
+	{
+		MixerChannel* channel = Engine::mixer()->mixerChannel(i);
+		if (&channel->m_fxChain == target->chain) { target->chain = &channel->m_postInserts.chain(); }
+	}
+	target->id = id;
+	return true;
+}
+
+} // namespace
+
 bool resolveControlTarget(const QString& id, ControlTarget* target, ControlResult* error)
 {
+	if (postinserts::isTarget(id)) { return resolvePostInsertsTarget(id, target, error); }
 	if (id.startsWith(QLatin1String("trk-"))) { return resolveTrackTarget(id, target, error); }
 	if (id.startsWith(QLatin1String("ch-"))) { return resolveChannelTarget(id, target, error); }
 	*error = ControlResult::failure(ControlErrorKind::InvalidArgs,
@@ -273,6 +292,11 @@ Effect* rackChainEffect(const ControlTarget& target, int id)
 			{
 				if (effect->id() == id) { return effect; }
 			}
+		}
+		// 0.5.0 MX-082: and so are its post-fader inserts.
+		for (Effect* effect : channel->m_postInserts.chain().effects())
+		{
+			if (effect->id() == id) { return effect; }
 		}
 	}
 	return nullptr;

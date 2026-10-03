@@ -24,6 +24,7 @@
 #include "ProjectSectionRegistry.h"
 
 #include "ArrangementSections.h"
+#include "AutomationLatency.h"
 #include "AutomationSwitches.h"
 #include "EditLocks.h"
 #include "MetronomeOptions.h"
@@ -54,6 +55,7 @@ void registerAll()
 	ProjectInfo::instance();
 	TrackLooks::instance();  // W3 L13
 	ViewMemory::instance();
+	AutomationLatency::instance();  // W3 engine: read by the audio thread's automation ramps
 	registerAlternatives();
 	registerSubprojects();
 	metronomeoptions::options();  // reads the config file here, not on the audio thread at the first click

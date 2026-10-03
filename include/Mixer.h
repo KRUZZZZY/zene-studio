@@ -30,6 +30,7 @@
 #include "EffectChain.h"
 #include "JournallingObject.h"
 #include "LatencyCompensation.h"
+#include "MixerPostInserts.h"
 #include "MixerStrip.h"
 #include "Model.h"
 #include "Rack.h"
@@ -79,6 +80,9 @@ public:
 	 * exactly as it did before racks existed (@see Rack).
 	 */
 	Rack m_rack;
+
+	//! 0.5.0 MX-082: the inserts after the fader; empty (and skipped) unless a project adds devices.
+	PostFaderInserts m_postInserts;
 
 	// set to true if any effect in the channel is enabled and running
 	bool m_stillRunning;

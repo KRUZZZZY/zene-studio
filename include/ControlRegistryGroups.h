@@ -902,6 +902,9 @@ LMMS_EXPORT void registerModulatorToolCommands(ControlRegistry& registry);
 LMMS_EXPORT void registerRecorderCommands(ControlRegistry& registry);
 //! 0.5.0 L10 (W3): clip.process (ControlCommandsClipProcess.cpp).
 LMMS_EXPORT void registerClipProcessCommand(ControlRegistry& registry);
+//! 0.5.0 W3 engine (MX-160, MX-082, MX-063, ED-179): automation.latency_compensation, mixer.post_inserts, chain.receive,
+//! clip.pre_fade (ControlCommandsW3Engine.cpp).
+LMMS_EXPORT void registerW3EngineCommands(ControlRegistry& registry);
 } // namespace lmms
 
 #endif // LMMS_CONTROL_REGISTRY_GROUPS_H

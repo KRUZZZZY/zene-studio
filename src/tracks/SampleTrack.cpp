@@ -29,6 +29,7 @@
 
 #include <vector>
 
+#include "ClipPreFades.h"
 #include "EffectChain.h"
 #include "Mixer.h"
 #include "panning.h"
@@ -156,13 +157,17 @@ bool SampleTrack::play( const TimePos & _start, const f_cnt_t _frames,
 			Clip * clip = getClip( i );
 			auto sClip = dynamic_cast<SampleClip*>(clip);
 
-			if( _start >= sClip->startPosition() && _start < sClip->endPosition() )
+			// 0.5.0 ED-179: a clip with pre-fades sounds from before its start to after its end; every
+			// other clip's span, and the window below, are exactly its own (ClipPreFades.h).
+			const TimePos spanStart = prefades::spanStart( *sClip );
+			if( _start >= spanStart && _start < prefades::spanEnd( *sClip ) )
 			{
-				if( sClip->isPlaying() == false && _start >= (sClip->startPosition() + sClip->startTimeOffset()) )
+				if( sClip->isPlaying() == false && _start >= (spanStart + sClip->startTimeOffset()) )
 				{
 					// where this pass begins and ends inside the clip's window
-					const auto windowStart = sClip->sourceFrameAt( _start );
-					const auto windowEnd = sClip->sourceFrameAt( sClip->endPosition() );
+					const SampleWindow window = prefades::window( *sClip, _start );
+					const auto windowStart = window.sourceIn;
+					const auto windowEnd = window.sourceOut;
 					//we only play within the clip's window - except a clip armed to RECORD, which
 					//holds no sample yet (its window is empty) and is exactly the clip that must
 					//start: #611 Slice 0 added the window test and silently stopped clip

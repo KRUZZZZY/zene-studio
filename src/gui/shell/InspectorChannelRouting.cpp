@@ -87,10 +87,12 @@ QPushButton* commandButton(const QString& text, const CommandCall& call, QWidget
 	return button;
 }
 
-void addInserts(QVBoxLayout* column, MixerChannel* channel, const QString& id, QWidget* parent, const std::function<void()>& rebuild)
+//! One chain's devices under @a title, each with its on/off switch, and an add button: @a id is the chain's target.
+void addChain(QVBoxLayout* column, const QString& title, const EffectChain& chain, const QString& id, QWidget* parent,
+	const std::function<void()>& rebuild)
 {
-	column->addWidget(heading(QObject::tr("Inserts"), parent));
-	for (Effect* effect : channel->m_fxChain.effects())
+	column->addWidget(heading(title, parent));
+	for (Effect* effect : chain.effects())
 	{
 		auto* on = new QCheckBox(effect->displayName(), parent);
 		on->setChecked(effect->isEnabled());
@@ -104,6 +106,13 @@ void addInserts(QVBoxLayout* column, MixerChannel* channel, const QString& id, Q
 	}
 	column->addWidget(commandButton(QObject::tr("Add Insert..."), CommandCall{QStringLiteral("plugin.load"),
 		{{QStringLiteral("target"), id}}, {}, QObject::tr("Add an insert"), true}, parent, rebuild));
+}
+
+//! The inserts before the fader, then (0.5.0 MX-082) those after it, addressed as "ch-<n>/post".
+void addInserts(QVBoxLayout* column, MixerChannel* channel, const QString& id, QWidget* parent, const std::function<void()>& rebuild)
+{
+	addChain(column, QObject::tr("Inserts"), channel->m_fxChain, id, parent, rebuild);
+	addChain(column, QObject::tr("Post-Fader Inserts"), channel->m_postInserts.chain(), postinserts::targetOf(id), parent, rebuild);
 }
 
 void addSends(QVBoxLayout* column, MixerChannel* channel, const QString& id, QWidget* parent, const std::function<void()>& rebuild)
