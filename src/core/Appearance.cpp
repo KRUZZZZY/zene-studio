@@ -98,4 +98,10 @@ double storedScale()
 	return ok && scale >= 0.5 && scale <= 3.0 ? scale : 0.0;
 }
 
+void applyStoredScale()
+{
+	if (!qEnvironmentVariableIsEmpty("QT_SCALE_FACTOR")) { return; }
+	if (const double scale = storedScale(); scale > 0.0 && scale != 1.0) { qputenv("QT_SCALE_FACTOR", QByteArray::number(scale)); }
+}
+
 } // namespace lmms::appearance

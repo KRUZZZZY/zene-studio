@@ -39,6 +39,7 @@ namespace
 const QString PitchBendId = QStringLiteral("pitchbend");
 const QString PressureId = QStringLiteral("aftertouch");
 const QString CcPrefix = QStringLiteral("cc:");
+const QString ProgramId = QStringLiteral("program");
 
 } // namespace
 
@@ -48,6 +49,7 @@ QString ControllerLane::id() const
 	{
 	case ControllerKind::PitchBend: return PitchBendId;
 	case ControllerKind::ChannelPressure: return PressureId;
+	case ControllerKind::ProgramChange: return ProgramId;
 	case ControllerKind::ControlChange: break;
 	}
 	return CcPrefix + QString::number(controller);
@@ -64,7 +66,7 @@ int ControllerLane::valueAt(tick_t tick) const
 	const auto after = std::upper_bound(points.begin(), points.end(), tick,
 		[](tick_t t, const ControllerPoint& p) { return t < p.tick; });
 	if (after == points.begin()) { return points.front().value; }
-	if (after == points.end()) { return points.back().value; }
+	if (after == points.end() || kind == ControllerKind::ProgramChange) { return std::prev(after)->value; }
 	const ControllerPoint& a = *std::prev(after);
 	const ControllerPoint& b = *after;
 	const double t = static_cast<double>(tick - a.tick) / (b.tick - a.tick);
@@ -76,6 +78,7 @@ bool ControllerLane::fromId(const QString& id, ControllerKind* kind, int* contro
 	*controller = 0;
 	if (id == PitchBendId) { *kind = ControllerKind::PitchBend; return true; }
 	if (id == PressureId) { *kind = ControllerKind::ChannelPressure; return true; }
+	if (id == ProgramId) { *kind = ControllerKind::ProgramChange; return true; }
 	if (!id.startsWith(CcPrefix)) { return false; }
 	bool ok = false;
 	const int number = id.mid(CcPrefix.size()).toInt(&ok);

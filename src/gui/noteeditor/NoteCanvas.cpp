@@ -137,6 +137,10 @@ void NoteCanvas::paintEvent(QPaintEvent* event)
 	const QRect area = event->rect();
 	paintRows(p, area);
 	paintGrid(p, area);
+	if (m_state.clip != nullptr && !m_state.audioBehind.isEmpty())
+	{
+		m_audioBehind.paint(p, m_state.grid, *m_state.clip, NoteBackgroundAudio::resolve(m_state.audioBehind, *m_state.clip), area);
+	}
 	paintClipBounds(p);
 	if (m_state.ghosts) { paintGhosts(p); }
 	paintNotes(p);

@@ -958,6 +958,10 @@ set(LMMS_SRCS
 	core/ControlCommandsNoteTools.cpp
 	core/ControlCommandsNoteMoves.cpp
 	core/ControlCommandsNoteHarmony.cpp
+	core/ControlCommandsNotePlayback.cpp
+	core/ArticulationMap.cpp
+	core/MidiPlayback.cpp
+	core/NoteConditions.cpp
 	core/ControlCommandsRange.cpp
 	core/ProjectMarkers.cpp
 	core/Timeline.cpp

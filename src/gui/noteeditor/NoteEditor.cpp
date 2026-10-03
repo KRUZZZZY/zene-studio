@@ -242,6 +242,19 @@ void NoteEditor::setGhosts(bool on)
 	emit stateChanged();
 }
 
+void NoteEditor::setNewNote(int length, int velocity)
+{
+	m_state.newLength = std::max(0, length);
+	m_state.lastVelocity = std::clamp(velocity, 1, 200);
+	emit stateChanged();
+}
+
+void NoteEditor::setAudioBehind(const QString& choice)
+{
+	m_state.audioBehind = choice;
+	emit stateChanged();
+}
+
 void NoteEditor::setControllerLane(const QString& id)
 {
 	m_state.controllerLane = id;
@@ -375,6 +388,9 @@ QJsonObject NoteEditor::describe() const
 		{QStringLiteral("color_mode"), QLatin1String(colors[static_cast<int>(m_state.colorMode)])},
 		{QStringLiteral("keep_in_scale"), m_state.keepInScale},
 		{QStringLiteral("controller_lane"), m_state.controllerLane},
+		{QStringLiteral("new_length"), m_state.newLength},
+		{QStringLiteral("new_velocity"), m_state.lastVelocity},
+		{QStringLiteral("audio_behind"), m_state.audioBehind},
 		{QStringLiteral("zoom"), g.pixelsPerTick()},
 		{QStringLiteral("scroll_ticks"), g.scrollTicks()},
 		{QStringLiteral("scroll_y"), g.scrollY()},

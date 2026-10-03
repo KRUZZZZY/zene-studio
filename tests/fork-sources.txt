@@ -502,6 +502,7 @@ include/Accessibility.h
 include/Appearance.h
 include/ArrangementEdits.h
 include/ArrangerOverlays.h
+include/ArticulationMap.h
 include/AudioBus.h
 include/AudioInputPath.h
 include/AudioPlugin.h
@@ -625,6 +626,7 @@ include/MidiInputTransform.h
 include/MidiLearn.h
 include/MidiLearnGui.h
 include/MidiOutQueue.h
+include/MidiPlayback.h
 include/MidiReconnect.h
 include/MidiReconnectAction.h
 include/MidiSurfaceInput.h
@@ -643,7 +645,9 @@ include/MpeInputAction.h
 include/MpscQueue.h
 include/MultiTrackRecorder.h
 include/NamespaceRegistry.h
+include/NoteBackgroundAudio.h
 include/NoteCanvas.h
+include/NoteConditions.h
 include/NoteEditor.h
 include/NoteEditorParts.h
 include/NoteGrid.h
@@ -864,6 +868,7 @@ plugins/WasmEffect/WasmEffectControls.h
 scripts/capabilities-dump.py
 src/core/Appearance.cpp
 src/core/ArrangementEdits.cpp
+src/core/ArticulationMap.cpp
 src/core/AudioBus.cpp
 src/core/AudioInputPath.cpp
 src/core/AudioPortsModel.cpp
@@ -976,6 +981,7 @@ src/core/ControlCommandsNoteEdit.cpp
 src/core/ControlCommandsNoteExpression.cpp
 src/core/ControlCommandsNoteHarmony.cpp
 src/core/ControlCommandsNoteMoves.cpp
+src/core/ControlCommandsNotePlayback.cpp
 src/core/ControlCommandsNoteProbability.cpp
 src/core/ControlCommandsNoteRandom.cpp
 src/core/ControlCommandsNoteShape.cpp
@@ -1197,6 +1203,7 @@ src/core/MidiClockState.cpp
 src/core/MidiClockTracker.cpp
 src/core/MidiInputTransform.cpp
 src/core/MidiLearn.cpp
+src/core/MidiPlayback.cpp
 src/core/MixerGroups.cpp
 src/core/MixerListen.cpp
 src/core/MixerSendPan.cpp
@@ -1204,6 +1211,7 @@ src/core/MixerStrip.cpp
 src/core/ModulationLayer.cpp
 src/core/ModulationLayerPublisher.cpp
 src/core/NamespaceRegistry.cpp
+src/core/NoteConditions.cpp
 src/core/NoteRandom.cpp
 src/core/NoteTransform.cpp
 src/core/OnnxRuntimeStemSeparator.cpp
@@ -1364,6 +1372,7 @@ src/gui/clips/ClipViewTheme.cpp
 src/gui/clips/SampleClipOverlays.cpp
 src/gui/modals/EffectPickerOrganiser.cpp
 src/gui/noteeditor/ControllerLaneView.cpp
+src/gui/noteeditor/NoteBackgroundAudio.cpp
 src/gui/noteeditor/NoteCanvas.cpp
 src/gui/noteeditor/NoteCanvasGestures.cpp
 src/gui/noteeditor/NoteCanvasInput.cpp
@@ -1555,6 +1564,7 @@ tests/src/core/MpscQueueTest.cpp
 tests/src/core/NamespaceRegistryTest.cpp
 tests/src/core/NoteCurvesAcrossTest.cpp
 tests/src/core/NoteEditingCommandsTest.cpp
+tests/src/core/NotePlaybackTest.cpp
 tests/src/core/NoteToolsTest.cpp
 tests/src/core/OutOfProcessHostClientLoopTest.cpp
 tests/src/core/OutOfProcessHostSupport.h

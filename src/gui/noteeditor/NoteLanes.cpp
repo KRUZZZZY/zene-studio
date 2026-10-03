@@ -59,6 +59,8 @@ QList<NoteLaneSpec> all()
 		{NoteLane::Pressure, QStringLiteral("pressure"), tr("Pressure"), 0, 127, 0, 127, QStringLiteral("")},
 		{NoteLane::Pitch, QStringLiteral("pitch"), tr("Micro-pitch"), -4800, 4800, 0, 400, QStringLiteral("ct")},
 		{NoteLane::Release, QStringLiteral("release"), tr("Release velocity"), 0, 200, 0, 200, QStringLiteral("")},
+		{NoteLane::Spread, QStringLiteral("spread"), tr("Velocity spread"), 0, 100, 0, 100, QStringLiteral("%")},
+		{NoteLane::Repeats, QStringLiteral("repeats"), tr("Repeats"), 0, 16, 0, 16, QStringLiteral("")},
 	};
 }
 
@@ -95,6 +97,8 @@ int valueOf(const Note& note, NoteLane lane)
 	case NoteLane::Pressure: return note.mpePressure();
 	case NoteLane::Pitch: return note.mpePitchCents();
 	case NoteLane::Release: return std::max(0, note.releaseVelocity());
+	case NoteLane::Spread: return static_cast<int>(std::lround(note.velocityJitter() * 100.f));
+	case NoteLane::Repeats: return note.conditions().repeats;
 	}
 	return 0;
 }
@@ -115,6 +119,8 @@ Write writeFor(NoteLane lane, const QString& clipId, const QString& noteId, int 
 	case NoteLane::Pan: return noteEdit(args, noteId, QStringLiteral("pan"), v);
 	case NoteLane::Chance: return noteEdit(args, noteId, QStringLiteral("probability"), v / 100.0);
 	case NoteLane::Release: return noteEdit(args, noteId, QStringLiteral("release_velocity"), v);
+	case NoteLane::Spread: return noteEdit(args, noteId, QStringLiteral("velocity_spread"), v / 100.0);
+	case NoteLane::Repeats: return noteEdit(args, noteId, QStringLiteral("repeats"), v);
 	case NoteLane::Timbre: args.insert(QStringLiteral("timbre"), v); break;
 	case NoteLane::Pressure: args.insert(QStringLiteral("pressure"), v); break;
 	case NoteLane::Pitch: args.insert(QStringLiteral("pitch"), v); break;

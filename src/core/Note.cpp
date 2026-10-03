@@ -94,7 +94,8 @@ Note::Note( const Note & note ) :
 	m_muted(note.m_muted),
 	m_releaseVelocity(note.m_releaseVelocity),
 	m_unquantisedPos(note.m_unquantisedPos),
-	m_unquantisedLength(note.m_unquantisedLength)
+	m_unquantisedLength(note.m_unquantisedLength),
+	m_conditions(note.m_conditions)
 {
 }
 
@@ -123,6 +124,7 @@ Note& Note::operator=(const Note& note)
 	m_releaseVelocity = note.m_releaseVelocity;
 	m_unquantisedPos = note.m_unquantisedPos;
 	m_unquantisedLength = note.m_unquantisedLength;
+	m_conditions = note.m_conditions;
 
 	return *this;
 }
@@ -378,6 +380,7 @@ void Note::saveSettings( QDomDocument & doc, QDomElement & parent )
 		parent.setAttribute( "qpos", static_cast<int>( m_unquantisedPos ) );
 		parent.setAttribute( "qlen", static_cast<int>( m_unquantisedLength ) );
 	}
+	m_conditions.save( parent );
 
 	// MPE per-note expression (task #601) - likewise optional, so a note with
 	// no expression serializes exactly as it did before the feature existed,
@@ -455,6 +458,7 @@ void Note::loadSettings( const QDomElement & _this )
 	setReleaseVelocity( _this.attribute( "relvel", "-1" ).toInt() );
 	m_unquantisedPos = _this.hasAttribute( "qpos" ) ? std::max( 0, _this.attribute( "qpos" ).toInt() ) : -1;
 	m_unquantisedLength = m_unquantisedPos >= 0 ? std::max( 1, _this.attribute( "qlen", "1" ).toInt() ) : -1;
+	m_conditions.load( _this );
 
 	// MPE per-note expression (task #601): an old project has none of these, and
 	// then the note carries no expression at all. Presence of any one attribute

@@ -128,6 +128,16 @@ const ReversibilityRow kDeviceRows[] = {
 	R("scale.detect", RC::NotMutating, false, "it reads a clip's notes. Nothing is written", "no write", ""),
 	R("scale.custom", RC::NotMutating, false, "it lists the custom scales. Nothing is written", "no write", ""),
 	R("transport.panic", RC::NotMutating, false, "it stops sounding notes: playback state, not project state", "no write", ""),
+	R("note.lyrics", RC::TrueInverse, true, "it sets the notes' lyrics", "MidiClip journal checkpoint", ""),
+	R("note.group", RC::TrueInverse, true, "it puts notes in a group", "MidiClip journal checkpoint", ""),
+	R("note.ungroup", RC::TrueInverse, true, "it takes notes out of their groups", "MidiClip journal checkpoint", ""),
+	R("track.articulations_set", RC::TrueInverse, true, "it replaces a track's articulations",
+		"action checkpoint: the recorded undo step writes the previous map back", ""),
+	R("track.articulations", RC::NotMutating, false, "it reads a track's articulations. Nothing is written", "no write", ""),
+	R("transport.groove", RC::TrueInverse, true, "it sets the global swing (project state, two bounded values)",
+		"action checkpoint: the recorded undo step writes the previous swing back", ""),
+	R("transport.midi_options", RC::TrueInverse, true, "it writes the chase and MIDI offset preferences (config file)",
+		"action checkpoint: the recorded undo step writes the previous preferences back", ""),
 };
 
 #undef R

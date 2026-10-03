@@ -29,10 +29,14 @@
 
 #include <algorithm>
 
+#include "AudioEngine.h"
+#include "Engine.h"
 #include "InstrumentTrack.h"
 #include "MidiClip.h"
 #include "MidiEvent.h"
+#include "MidiPlayback.h"
 #include "NoteRandom.h"
+#include "PatternTrack.h"
 
 namespace lmms
 {
@@ -84,6 +88,7 @@ MidiEvent controllerEvent(const ControllerLane& lane, int value)
 	{
 	case ControllerKind::PitchBend: return MidiEvent(MidiPitchBend, 0, static_cast<int16_t>(value));
 	case ControllerKind::ChannelPressure: return MidiEvent(MidiChannelPressure, 0, static_cast<int16_t>(value));
+	case ControllerKind::ProgramChange: return MidiEvent(MidiProgramChange, 0, static_cast<int16_t>(value));
 	case ControllerKind::ControlChange: break;
 	}
 	return MidiEvent(MidiControlChange, 0, static_cast<int16_t>(lane.controller), static_cast<int16_t>(value));
@@ -119,6 +124,75 @@ void InstrumentTrack::playClipControllers(const MidiClip* clip, tick_t tick, f_c
 		if (!jumped && value == lane.lastSent) { continue; }
 		lane.lastSent = value;
 		processOutEvent(controllerEvent(lane, value), TimePos(tick), offset);
+	}
+}
+
+bool InstrumentTrack::noteStartsNow(const Note& note, const TimePos& curStart, const MidiClip* clip) const
+{
+	if (note.pos() == curStart) { return true; }
+	if (!(note.pos() < curStart && note.endPos() > curStart)) { return false; }
+	// A note under the clip's own start (a clip trimmed from the left) always sounds from there; one
+	// under a start, a jump or a loop does when chase is on (0.5.0 ED-075, MidiPlayback.h).
+	const MidiPlayback& playback = MidiPlayback::instance();
+	return curStart == -clip->startTimeOffset() || (playback.chase() && playback.chasingNow());
+}
+
+bool InstrumentTrack::notePlaysNow(const Note& note, uint32_t midiSeed) const
+{
+	// MIDI depth: note probability. The decision is taken here, once per note trigger at scheduling
+	// time - never in the per-frame loop - and it is a pure function of the project seed and the
+	// note's identity, so it neither allocates nor locks on the audio thread. A note that keeps the
+	// default probability of 1 returns before the roll is even computed, which is what keeps a
+	// project that does not use this feature bit-identical to before.
+	//
+	// Consequence of the stateless roll, stated deliberately: the result is stable across passes, so
+	// a 50% note either plays in every repeat of the clip or in none of them; the seed is what
+	// re-rolls the take. A note's recurrence (0.5.0 ED-133) is what varies it by pass.
+	return !note.muted() && note.recursOnPass(MidiPlayback::instance().pass())
+		&& NoteRandom::passesProbability(note.probability(), midiSeed, note.key(), note.pos(), note.length());
+}
+
+void InstrumentTrack::sendArticulation(int index, f_cnt_t offset)
+{
+	// 0.5.0 ED-121: what the note's articulation sends before it - read under play()'s lock, no allocation.
+	const Articulation* articulation = m_articulations.at(index);
+	if (articulation == nullptr) { return; }
+	const TimePos time = TimePos::fromFrames(offset, Engine::framesPerTick());
+	if (articulation->program >= 0) { processOutEvent(MidiEvent(MidiProgramChange, 0, static_cast<int16_t>(articulation->program)), time, offset); }
+	if (articulation->controller >= 0)
+	{
+		processOutEvent(MidiEvent(MidiControlChange, 0, static_cast<int16_t>(articulation->controller),
+			static_cast<int16_t>(articulation->value)), time, offset);
+	}
+	if (articulation->keyswitch >= 0)
+	{
+		const Note key(TimePos(1), TimePos(0), articulation->keyswitch);
+		Engine::audioEngine()->addPlayHandle(NotePlayHandleManager::acquire(this, offset,
+			static_cast<f_cnt_t>(Engine::framesPerTick()), key));
+	}
+}
+
+void InstrumentTrack::triggerNote(const NoteTrigger& trigger, f_cnt_t offset, f_cnt_t frames, const TimePos& curStart)
+{
+	const Note& note = **trigger.note;
+	// Swing and the MIDI offset (0.5.0 ED-142 / ED-076) delay a note that starts here - not one chased.
+	if (note.pos() == curStart)
+	{
+		const tick_t clipStart = trigger.songGlobal ? trigger.clip->startPosition().getTicks() + trigger.clip->startTimeOffset().getTicks() : 0;
+		offset += MidiPlayback::instance().delayFrames(clipStart + note.pos().getTicks(), Engine::framesPerTick(),
+			Engine::audioEngine()->outputSampleRate());
+	}
+	sendArticulation(note.conditions().articulation, offset);
+	// 0.5.0 ED-133: the note's repeats - that many more hits, evenly spaced inside it (not a step note's).
+	const int hits = frames > 0 ? note.conditions().repeats + 1 : 1;
+	const f_cnt_t each = frames / hits;
+	for (int hit = 0; hit < hits; ++hit)
+	{
+		NotePlayHandle* handle = NotePlayHandleManager::acquire(this, offset + hit * each, hits > 1 ? each : frames, note);
+		handle->setPatternTrack(trigger.patternTrack);
+		// Velocity jitter, the slide source, the song-global offset and the clip's transpose.
+		decorateNoteHandle(handle, trigger.clip, trigger.note, trigger.first, trigger.songGlobal, trigger.midiSeed);
+		Engine::audioEngine()->addPlayHandle(handle);
 	}
 }
 

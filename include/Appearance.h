@@ -57,6 +57,8 @@ LMMS_EXPORT QJsonObject toJson(const Options& options);
 LMMS_EXPORT QString scaleFilePath();
 //! main(), before the application object: the stored scale, or 0 when none.
 LMMS_EXPORT double storedScale();
+//! main(), before the application object: hand the stored scale to Qt (an explicit QT_SCALE_FACTOR wins).
+LMMS_EXPORT void applyStoredScale();
 
 } // namespace lmms::appearance
 

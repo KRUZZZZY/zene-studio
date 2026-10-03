@@ -52,6 +52,7 @@
 #include "NotePlayHandle.h"
 #include "NoteRandom.h"
 #include "MidiClip.h"
+#include "MidiPlayback.h"
 #include "MidiClock.h"
 #include "PatternEditor.h"
 #include "PatternStore.h"
@@ -477,6 +478,7 @@ void Song::processNextBuffer()
 		if (static_cast<f_cnt_t>(frameOffsetInTick) == 0)
 		{
 			// First frame of tick: process automation and play tracks
+			MidiPlayback::instance().tickPlayed(getPlayPos().getTicks());  // 0.5.0 L07: chase and the loop pass
 			processAutomations(trackList, getPlayPos(), framesToPlay);
 			processMetronome(frameOffsetInPeriod);
 
@@ -888,6 +890,7 @@ void Song::stop()
 		return;
 	}
 	recordoptions::endPass(this);  // 0.5.0 L03: the timeline's own punch region back on the gate
+	MidiPlayback::instance().stopped();  // 0.5.0 L07: the next tick is a start
 
 	using gui::TimeLineWidget;
 

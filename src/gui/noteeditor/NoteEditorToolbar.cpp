@@ -210,7 +210,7 @@ void NoteEditor::buildLaneChooser()
 	m_laneBox->insertSeparator(m_laneBox->count());
 	const struct { const char* title; const char* id; } controllers[] = {{"Mod wheel (CC 1)", "cc:1"},
 		{"Breath (CC 2)", "cc:2"}, {"Volume (CC 7)", "cc:7"}, {"Expression (CC 11)", "cc:11"}, {"Sustain (CC 64)", "cc:64"},
-		{"Pitch bend", "pitchbend"}, {"Aftertouch", "aftertouch"}};
+		{"Pitch bend", "pitchbend"}, {"Aftertouch", "aftertouch"}, {"Program change", "program"}};
 	for (const auto& c : controllers) { m_laneBox->addItem(tr(c.title), QString::fromLatin1(c.id)); }
 	a11y::announce(m_laneBox, tr("Expression lane"), tr("Which per-note value, or which controller curve of the clip, the lane below the notes edits."));
 	m_laneBox->setFixedWidth(84);

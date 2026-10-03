@@ -34,6 +34,8 @@
 #include "CommandLists.h"
 #include "ControlVocabulary.h"
 #include "DesignTokens.h"
+#include "InstrumentTrack.h"
+#include "MidiClip.h"
 #include "Note.h"
 #include "NoteEditor.h"
 #include "ShellChrome.h"
@@ -48,6 +50,17 @@ QJsonObject merged(QJsonObject base, const QJsonObject& extra)
 {
 	for (auto it = extra.begin(); it != extra.end(); ++it) { base.insert(it.key(), it.value()); }
 	return base;
+}
+
+//! The notes a menu acts on: the selection, or every note when @a selection is false.
+std::vector<Note*> notesInScope(const MidiClip* clip, bool selection)
+{
+	std::vector<Note*> notes;
+	for (Note* note : clip->notes())
+	{
+		if (!selection || note->selected()) { notes.push_back(note); }
+	}
+	return notes;
 }
 
 //! A note.edit setting 'muted' on @a notes.
@@ -85,6 +98,69 @@ void fillToolsMenu(QMenu* menu, const QJsonObject& scoped, const QJsonObject& wh
 	addCommandAction(menu, tr("Detect the Key"), QStringLiteral("scale.detect"),
 		[where]() { return CommandCall{QStringLiteral("scale.detect"), where, {}, {}, false, true}; });
 	addCommandAction(menu, tr("Define a Scale..."), QStringLiteral("scale.define"), run("scale.define", {}, true));
+	menu->addSeparator();
+	addCommandAction(menu, tr("Group"), QStringLiteral("note.group"), run("note.group", scoped, false));
+	addCommandAction(menu, tr("Ungroup"), QStringLiteral("note.ungroup"), run("note.ungroup", scoped, false));
+	addCommandAction(menu, tr("Lyrics..."), QStringLiteral("note.lyrics"), run("note.lyrics", scoped, true));
+}
+
+//! One note.edit setting @a values on every note of @a notes - one undo step.
+QJsonObject editAll(const QString& clip, const std::vector<Note*>& notes, const QJsonObject& values)
+{
+	QJsonArray edits;
+	for (const Note* note : notes)
+	{
+		QJsonObject entry = values;
+		entry.insert(QStringLiteral("note"), control::noteIdOf(note));
+		edits.append(entry);
+	}
+	return {{QStringLiteral("clip"), clip}, {QStringLiteral("edits"), edits}};
+}
+
+//! 0.5.0 L07: which passes the notes play on (ED-133) and the articulation they ask for (ED-121).
+void fillPlayMenus(QMenu* passes, QMenu* articulations, const QString& clip, const std::vector<Note*>& notes, const InstrumentTrack* track)
+{
+	const auto entry = [clip, &notes](QMenu* menu, const QString& label, const QJsonObject& values) {
+		const QJsonObject args = editAll(clip, notes, values);
+		addCommandAction(menu, label, QStringLiteral("note.edit"), [args]() { return CommandCall{QStringLiteral("note.edit"), args, {}, {}, false}; })
+			->setEnabled(!notes.empty());
+	};
+	const auto tr = [](const char* text) { return NoteEditor::tr(text); };
+	const struct { const char* label; int length; int mask; } patterns[] = {{"Every Pass", 0, 0}, {"First of Two", 2, 1},
+		{"Second of Two", 2, 2}, {"First of Four", 4, 1}, {"Last of Four", 4, 8}, {"Not the First of Four", 4, 14}};
+	for (const auto& pattern : patterns)
+	{
+		entry(passes, tr(pattern.label), {{QStringLiteral("recur_length"), pattern.length}, {QStringLiteral("recur_mask"), pattern.mask}});
+	}
+	entry(articulations, tr("None"), {{QStringLiteral("articulation"), 0}});
+	const std::vector<Articulation>& map = track != nullptr ? track->articulations().entries() : std::vector<Articulation>{};
+	for (std::size_t i = 0; i < map.size(); ++i) { entry(articulations, map[i].name, {{QStringLiteral("articulation"), static_cast<int>(i) + 1}}); }
+	if (map.empty()) { articulations->addAction(tr("(Track > Articulations... defines them)"))->setEnabled(false); }
+}
+
+//! 0.5.0 L07: a clicked note's length (ED-073) and the audio drawn behind the notes (ED-081).
+void fillNewNoteMenu(QMenu* menu, const NoteEditorState& state)
+{
+	const auto set = [](const QJsonObject& values) {
+		QJsonObject args = values;
+		args.insert(QStringLiteral("reveal"), false);
+		return [args]() { return CommandCall{QStringLiteral("window.note_editor_set"), args, {}, {}, false}; };
+	};
+	const auto tr = [](const char* text) { return NoteEditor::tr(text); };
+	const struct { const char* label; int ticks; } lengths[] = {{"Last Drawn", 0}, {"1/32", 6}, {"1/16", 12}, {"1/8", 24},
+		{"1/4", 48}, {"1/2", 96}, {"1 Bar", 192}};
+	QMenu* length = menu->addMenu(tr("New Note Length"));
+	for (const auto& choice : lengths)
+	{
+		QAction* action = addCommandAction(length, tr(choice.label), QStringLiteral("window.note_editor_set"),
+			set({{QStringLiteral("new_length"), choice.ticks}}));
+		action->setCheckable(true);
+		action->setChecked(state.newLength == choice.ticks);
+	}
+	QAction* behind = addCommandAction(menu, tr("Audio Behind the Notes"), QStringLiteral("window.note_editor_set"),
+		set({{QStringLiteral("audio_behind"), state.audioBehind.isEmpty() ? QStringLiteral("auto") : QString()}}));
+	behind->setCheckable(true);
+	behind->setChecked(!state.audioBehind.isEmpty());
 }
 
 } // namespace
@@ -136,6 +212,11 @@ void NoteEditor::fillNotesMenu(QMenu* menu)
 	fillVelocityMenu(menu->addMenu(tr("Velocity")), scoped);
 	fillTimingMenu(menu->addMenu(tr("Timing")), scoped);
 	fillToolsMenu(menu->addMenu(tr("Tools")), scoped, where);
+	QMenu* passes = menu->addMenu(tr("Play On"));
+	QMenu* articulations = menu->addMenu(tr("Articulation"));
+	fillPlayMenus(passes, articulations, clip, notesInScope(m_state.clip, noteScope() == QStringLiteral("selection")),
+		dynamic_cast<const InstrumentTrack*>(m_state.clip->getTrack()));
+	fillNewNoteMenu(menu, m_state);
 	fillMuteMenu(menu->addMenu(tr("Mute")));
 	fillPitchCurveMenu(menu->addMenu(tr("Pitch Curve")));
 	QMenu* groove = menu->addMenu(tr("Groove"));
@@ -252,12 +333,7 @@ void NoteEditor::fillTimingMenu(QMenu* menu, const QJsonObject& scoped)
 void NoteEditor::fillMuteMenu(QMenu* menu)
 {
 	// The selection, or every note when nothing is selected - one note.edit, one undo step.
-	std::vector<Note*> notes;
-	const bool selection = noteScope() == QStringLiteral("selection");
-	for (Note* note : m_state.clip->notes())
-	{
-		if (!selection || note->selected()) { notes.push_back(note); }
-	}
+	const std::vector<Note*> notes = notesInScope(m_state.clip, noteScope() == QStringLiteral("selection"));
 	const QString clip = clipId();
 	for (const bool mute : {true, false})
 	{

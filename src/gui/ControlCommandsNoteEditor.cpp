@@ -91,6 +91,12 @@ void applyView(gui::NoteEditor* editor, const QJsonObject& args)
 	if (args.contains(QStringLiteral("ghosts"))) { editor->setGhosts(args.value(QStringLiteral("ghosts")).toBool()); }
 	if (args.contains(QStringLiteral("keep_in_scale"))) { editor->setKeepInScale(args.value(QStringLiteral("keep_in_scale")).toBool()); }
 	if (args.contains(QStringLiteral("controller_lane"))) { editor->setControllerLane(args.value(QStringLiteral("controller_lane")).toString()); }
+	if (args.contains(QStringLiteral("new_length")) || args.contains(QStringLiteral("new_velocity")))
+	{
+		editor->setNewNote(args.value(QStringLiteral("new_length")).toInt(editor->state().newLength),
+			args.value(QStringLiteral("new_velocity")).toInt(editor->state().lastVelocity));
+	}
+	if (args.contains(QStringLiteral("audio_behind"))) { editor->setAudioBehind(args.value(QStringLiteral("audio_behind")).toString()); }
 	if (args.contains(QStringLiteral("zoom"))) { editor->setZoom(args.value(QStringLiteral("zoom")).toDouble()); }
 	if (args.value(QStringLiteral("fit")).toBool()) { editor->zoomToFit(); }
 }
@@ -111,7 +117,7 @@ ControlResult noteEditorSet(const QJsonObject& args)
 	if (!controllerLane.isEmpty() && !ControllerLane::fromId(controllerLane, &kind, &controller))
 	{
 		return ControlResult::failure(ControlErrorKind::InvalidArgs,
-			QStringLiteral("'controller_lane' is cc:<0..127>, pitchbend, aftertouch or empty, got '%1'").arg(controllerLane));
+			QStringLiteral("'controller_lane' is cc:<0..127>, pitchbend, aftertouch, program or empty, got '%1'").arg(controllerLane));
 	}
 	if (!applyClip(editor, args, &error)) { return error; }
 	if (args.value(QStringLiteral("reveal")).toBool(true)) { g->mainWindow()->revealPanel(QStringLiteral("detail")); }
@@ -141,10 +147,12 @@ void registerNoteEditorWindowCommands(ControlRegistry& registry)
 		"optional: `clip` opens that MIDI clip in the editor (what double-clicking it does); `tool` is draw, "
 		"select, slice, erase, audition, paint (drag to lay a note on every grid cell) or mute; `grid` the snap in ticks "
 		"(1 = off); `fold` none, scale, used or drums (the keys the track names - key_names.* - and the used ones); "
-		"`lane` the expression lane (velocity, pan, chance, timbre, pressure, pitch); `ghosts` shows the "
+		"`lane` the expression lane (velocity, pan, chance, timbre, pressure, pitch, release, spread, repeats); `ghosts` shows the "
 		"track's other clips; `color_mode` colours notes by velocity, pitch or track; `keep_in_scale` moves "
-		"drawn and dragged notes to the nearest key of the scale; `controller_lane` (cc:<n>, pitchbend, aftertouch; empty "
-		"for the note lane) shows that controller curve of the clip under the notes (clip.controllers_set edits it); `zoom` is pixels per tick; `fit` zooms to the clip and centres its notes "
+		"drawn and dragged notes to the nearest key of the scale; `controller_lane` (cc:<n>, pitchbend, aftertouch, program; empty "
+		"for the note lane) shows that controller curve of the clip under the notes (clip.controllers_set edits it); `new_length` (ticks; 0 the last drawn) and `new_velocity` are what a clicked note "
+		"gets; `audio_behind` draws an audio clip's waveform behind the notes (a clip id, auto - the first one sounding with the "
+		"clip - or empty); `zoom` is pixels per tick; `fit` zooms to the clip and centres its notes "
 		"(after the panel is shown); `reveal` (default true) brings the note editor "
 		"panel into view. Interface state, not project state: nothing is journalled - the notes themselves "
 		"are edited through note.*. Refused `requires` in a process with no interface.");
@@ -158,6 +166,9 @@ void registerNoteEditorWindowCommands(ControlRegistry& registry)
 		{QStringLiteral("color_mode"), enumProperty(kColors)},
 		{QStringLiteral("keep_in_scale"), booleanProperty()},
 		{QStringLiteral("controller_lane"), stringProperty()},
+		{QStringLiteral("new_length"), integerProperty(0, 192 * 16)},
+		{QStringLiteral("new_velocity"), integerProperty(1, 200)},
+		{QStringLiteral("audio_behind"), stringProperty()},
 		{QStringLiteral("zoom"), numberProperty()},
 		{QStringLiteral("reveal"), booleanProperty()},
 		{QStringLiteral("fit"), booleanProperty()},
@@ -170,6 +181,8 @@ void registerNoteEditorWindowCommands(ControlRegistry& registry)
 		{QStringLiteral("scale"), stringProperty()}, {QStringLiteral("zoom"), numberProperty()},
 		{QStringLiteral("color_mode"), stringProperty()}, {QStringLiteral("keep_in_scale"), booleanProperty()},
 		{QStringLiteral("controller_lane"), stringProperty()},
+		{QStringLiteral("new_length"), integerProperty(0, 192 * 16)}, {QStringLiteral("new_velocity"), integerProperty(1, 200)},
+		{QStringLiteral("audio_behind"), stringProperty()},
 		{QStringLiteral("scroll_ticks"), numberProperty()}, {QStringLiteral("scroll_y"), integerProperty(0, 1 << 20)},
 		{QStringLiteral("top_key"), integerProperty(-1, 127)}, {QStringLiteral("visible_notes"), integerProperty(0, 1919808)},
 	});

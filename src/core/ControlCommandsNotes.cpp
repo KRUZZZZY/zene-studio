@@ -419,14 +419,26 @@ void markSelected(MidiClip* clip, const QVector<int>& positions)
 	for (int position : positions) { clip->notes()[position]->setSelected(true); }
 }
 
+//! 0.5.0 L07 (ED-069): @a positions with every note that shares a group with one of them.
+void withGroupMates(const MidiClip* clip, QVector<int>* positions)
+{
+	QVector<int> groups;
+	for (int position : *positions) { if (const int g = clip->notes()[position]->conditions().group; g > 0) { groups.append(g); } }
+	if (groups.isEmpty()) { return; }
+	for (int i = 0; i < static_cast<int>(clip->notes().size()); ++i)
+	{
+		if (groups.contains(clip->notes()[i]->conditions().group) && !positions->contains(i)) { positions->append(i); }
+	}
+}
+
 void registerNoteSelect(ControlRegistry& registry)
 {
 	ControlCommand cmd;
 	cmd.id = QStringLiteral("note.select");
 	cmd.group = QStringLiteral("note");
 	cmd.verb = QStringLiteral("select");
-	cmd.description = QStringLiteral("Select notes in a clip (an empty list clears the selection). "
-		"Control-surface state, not project state.");
+	cmd.description = QStringLiteral("Select notes in a clip (an empty list clears the selection); a note of a group "
+		"(note.group) brings the rest of its group. Control-surface state, not project state.");
 	cmd.argsSchema = control::objectSchema({
 		{QStringLiteral("clip"), control::stringProperty()},
 		{QStringLiteral("notes"), QJsonObject{{QStringLiteral("type"), QStringLiteral("array")},
@@ -461,6 +473,7 @@ void registerNoteSelect(ControlRegistry& registry)
 			if (note == nullptr) { return error; }
 			wanted.append(position);
 		}
+		withGroupMates(clip, &wanted);
 		control::selectNotes(clipText, static_cast<int>(clip->notes().size()), wanted);
 		// The view state the comment above names: the notes' own selection flags, which the
 		// note editor and the classic piano roll draw and act on. Before 0.5.0 only the index

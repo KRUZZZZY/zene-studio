@@ -56,7 +56,7 @@ QJsonArray pointsJson(const std::vector<ControllerPoint>& points)
 
 QJsonObject laneJson(const ControllerLane& lane)
 {
-	static const char* const kinds[] = {"cc", "pitchbend", "aftertouch"};
+	static const char* const kinds[] = {"cc", "pitchbend", "aftertouch", "program"};
 	return {{QStringLiteral("lane"), lane.id()}, {QStringLiteral("kind"), QLatin1String(kinds[static_cast<int>(lane.kind)])},
 		{QStringLiteral("controller"), lane.controller}, {QStringLiteral("maximum"), lane.maximum()},
 		{QStringLiteral("points"), pointsJson(lane.points)}};
@@ -107,7 +107,7 @@ ControlResult setControllers(const QJsonObject& args)
 	ControllerLane probe;
 	if (!ControllerLane::fromId(id, &probe.kind, &probe.controller))
 	{
-		return ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("'lane' is cc:<0..127>, pitchbend or aftertouch, got '%1'").arg(id));
+		return ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("'lane' is cc:<0..127>, pitchbend, aftertouch or program, got '%1'").arg(id));
 	}
 	std::vector<ControllerPoint> points;
 	if (!readPoints(args.value(QStringLiteral("points")).toArray(), probe.maximum(), &points, &error)) { return error; }
@@ -148,8 +148,8 @@ void registerClipControllerCommands(ControlRegistry& registry)
 		"16383 for pitch bend), points [{tick, value}]}]."), objectSchema({{QStringLiteral("clip"), stringProperty()}},
 		{QStringLiteral("clip")}), false, getControllers);
 	add(registry, "controllers_set", QStringLiteral("Replace one controller lane of a MIDI clip: 'lane' is cc:<0..127>, "
-		"pitchbend (0..16383, 8192 centre) or aftertouch; 'points' [{tick (clip time), value}] - linear between "
-		"points, held before the first and after the last; no points removes the lane. Played to the instrument "
+		"pitchbend (0..16383, 8192 centre), aftertouch or program (a program change, held from each point to the next); "
+		"'points' [{tick (clip time), value}] - linear between points, held before the first and after the last; no points removes the lane. Played to the instrument "
 		"(and the track's MIDI out) as the clip plays. One undo step (MidiClip checkpoint)."),
 		objectSchema({{QStringLiteral("clip"), stringProperty()}, {QStringLiteral("lane"), stringProperty()},
 			{QStringLiteral("points"), arrayProperty()}}, {QStringLiteral("clip"), QStringLiteral("lane"), QStringLiteral("points")}),

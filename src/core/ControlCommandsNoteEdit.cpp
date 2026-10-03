@@ -41,6 +41,7 @@
 #include "ControlRegistry.h"
 #include "MidiClip.h"
 #include "Note.h"
+#include "NoteConditions.h"
 #include "Song.h"
 
 namespace lmms
@@ -73,6 +74,12 @@ constexpr Field kFields[] = {
 	{"probability", 0, 1},
 	{"muted", 0, 1},              // 0.5.0 L07: 1 mutes (the note stays, unplayed)
 	{"release_velocity", -1, 200}, // 0.5.0 L07: the note-off velocity, -1 none
+	{"velocity_spread", 0, 1},     // 0.5.0 L07 (ED-127): the velocity varies by up to this share each playback
+	{"repeats", 0, NoteConditions::MaxRepeats},       // ED-133: extra hits inside the note
+	{"recur_length", 0, NoteConditions::MaxRecurLength}, // ED-133: the pass pattern's length, 0 every pass
+	{"recur_mask", 0, 65535},      // ED-133: bit n - the note plays on pass n of the pattern
+	{"articulation", 0, NoteConditions::MaxArticulations}, // ED-121: the track's articulation, 1-based, 0 none
+	{"group", 0, 1 << 30},         // ED-069: the note's group, 0 none
 };
 
 //! One resolved edit: the note and the values it is to take.
@@ -103,7 +110,8 @@ bool checkEditValues(const QJsonObject& entry, int index, ControlResult* error)
 	{
 		*error = ControlResult::failure(ControlErrorKind::InvalidArgs,
 			QStringLiteral("edits[%1] changes nothing: name at least one of position, key, length, "
-				"velocity, pan, probability, muted, release_velocity").arg(index));
+				"velocity, pan, probability, muted, release_velocity, velocity_spread, repeats, recur_length, recur_mask, "
+				"articulation, group").arg(index));
 		return false;
 	}
 	return true;
@@ -144,7 +152,30 @@ QJsonObject previousValues(const Note* note, const QJsonObject& values)
 	keep("probability", static_cast<double>(note->probability()));
 	keep("muted", note->muted() ? 1 : 0);
 	keep("release_velocity", note->releaseVelocity());
+	keep("velocity_spread", static_cast<double>(note->velocityJitter()));
+	const NoteConditions& c = note->conditions();
+	keep("repeats", c.repeats);
+	keep("recur_length", c.recurLength);
+	keep("recur_mask", c.recurMask);
+	keep("articulation", c.articulation);
+	keep("group", c.group);
 	return before;
+}
+
+//! The W3 fields of one edit (repeats, recurrence, articulation, group); a mask is cut to its pattern.
+void applyConditions(Note* note, const QJsonObject& v)
+{
+	NoteConditions c = note->conditions();
+	const auto take = [&v](const char* name, int* field) {
+		if (v.contains(QLatin1String(name))) { *field = v.value(QLatin1String(name)).toInt(); }
+	};
+	take("repeats", &c.repeats);
+	take("recur_length", &c.recurLength);
+	take("recur_mask", &c.recurMask);
+	take("articulation", &c.articulation);
+	take("group", &c.group);
+	c.recurMask = c.recurLength > 0 ? c.recurMask & ((1 << c.recurLength) - 1) : 0;
+	note->setConditions(c);
 }
 
 void applyEdit(Note* note, const QJsonObject& v)
@@ -159,6 +190,8 @@ void applyEdit(Note* note, const QJsonObject& v)
 	if (has("probability")) { note->setProbability(static_cast<float>(num("probability"))); }
 	if (has("muted")) { note->setMuted(num("muted") != 0); }
 	if (has("release_velocity")) { note->setReleaseVelocity(static_cast<int>(num("release_velocity"))); }
+	if (has("velocity_spread")) { note->setVelocityJitter(static_cast<float>(num("velocity_spread"))); }
+	applyConditions(note, v);
 }
 
 ControlResult editNotes(const QJsonObject& args)
@@ -207,7 +240,11 @@ void registerNoteEditCommands(ControlRegistry& registry)
 		"list of {note, position?, key?, length?, velocity?, pan?, probability?, muted?, release_velocity?}: "
 		"position and length in ticks, key 0..127, velocity 0..200 (the engine's note volume), pan -100..100, "
 		"probability 0..1, muted 0/1 (a muted note stays in the clip, unplayed), release_velocity -1..200 (the "
-		"note-off velocity on the volume scale; -1 none, a note-off of 0); a field left out keeps its value. The whole batch is validated first - one bad entry "
+		"note-off velocity on the volume scale; -1 none, a note-off of 0), velocity_spread 0..1 (the velocity varies "
+		"by up to that share each playback), repeats 0..16 (extra hits evenly inside the note), recur_length 0..16 and "
+		"recur_mask (over that many passes of the loop the note plays on the passes whose bit is set: length 2, mask 1 "
+		"is the first of every two), articulation (the track's articulation, track.articulations, 1-based; 0 none), "
+		"group (0 none; note.group makes one); a field left out keeps its value. The whole batch is validated first - one bad entry "
 		"(an unknown note, a value out of range, an entry naming no field) refuses it and changes "
 		"nothing. The note ids do not change. Reversible through the ProjectJournal (one MidiClip "
 		"checkpoint); the inverse is note.edit with the previous values.");

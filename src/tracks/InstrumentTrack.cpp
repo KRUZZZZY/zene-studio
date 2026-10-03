@@ -912,9 +912,8 @@ bool InstrumentTrack::play( const TimePos & _start, const f_cnt_t _frames,
 		while (nit != notes.end() && (*nit)->pos() < c->length() - c->startTimeOffset())
 		{
 			const auto currentNote = *nit;
-			// Skip any notes note at the current time pos or not overlapping with the start.
-			if (!(currentNote->pos() == cur_start
-				|| (cur_start == -c->startTimeOffset() && (*nit)->pos() < cur_start && (*nit)->endPos() > cur_start)))
+			// Skip any notes not at the current time pos, not under the clip's start and not chased.
+			if (!noteStartsNow(*currentNote, cur_start, c))
 			{
 				++nit;
 				continue;
@@ -939,33 +938,15 @@ bool InstrumentTrack::play( const TimePos & _start, const f_cnt_t _frames,
 				? 0
 				: (currentNote->endPos() - cur_start - noteOverlap) * frames_per_tick;
 
-			// MIDI depth: note probability. The decision is taken here, once
-			// per note trigger at scheduling time - never in the per-frame
-			// loop - and it is a pure function of the project seed and the
-			// note's identity, so it neither allocates nor locks on the audio
-			// thread. A note that keeps the default probability of 1 returns
-			// before the roll is even computed, which is what keeps a project
-			// that does not use this feature bit-identical to before.
-			//
-			// Consequence of the stateless roll, stated deliberately: the
-			// result is stable across passes, so a 50% note either plays in
-			// every repeat of the clip or in none of them; the seed is what
-			// re-rolls the take.
+			// Muted, recurrence and the stateless chance roll (InstrumentTrackNotes.cpp).
 			const uint32_t midiSeed = Engine::getSong()->midiSeed();
-			if( currentNote->muted() || !NoteRandom::passesProbability( currentNote->probability(), midiSeed,
-					currentNote->key(), currentNote->pos(), currentNote->length() ) )
+			if (!notePlaysNow(*currentNote, midiSeed))
 			{
 				++nit;
 				continue;
 			}
-
-			NotePlayHandle* notePlayHandle = NotePlayHandleManager::acquire(this, _offset, noteFrames, *currentNote);
-			notePlayHandle->setPatternTrack(pattern_track);
-			// Velocity jitter, the slide source, the song-global offset and the clip's transpose
-			// (InstrumentTrackNotes.cpp).
-			decorateNoteHandle(notePlayHandle, c, nit, notes.begin(), _clip_num < 0, midiSeed);
-
-			Engine::audioEngine()->addPlayHandle( notePlayHandle );
+			// The handle with its decorations, repeats, articulation and delay (InstrumentTrackNotes.cpp).
+			triggerNote({c, nit, notes.begin(), _clip_num < 0, midiSeed, pattern_track}, _offset, noteFrames, cur_start);
 			played_a_note = true;
 			++nit;
 		}
@@ -1002,6 +983,7 @@ void InstrumentTrack::saveTrackSpecificSettings(QDomDocument& doc, QDomElement& 
 	m_pitchModel.saveSettings( doc, thisElement, "pitch" );
 	m_pitchRangeModel.saveSettings( doc, thisElement, "pitchrange" );
 	if (!presetMode) { m_inputTransform.save(thisElement); }  // 0.5.0 L07: an attribute, only when set
+	m_articulations.save(thisElement);  // 0.5.0 L07 (ED-121): an attribute, only when there is one
 
 	m_mixerChannelModel.saveSettings( doc, thisElement, "mixch" );
 	m_baseNoteModel.saveSettings( doc, thisElement, "basenote" );
@@ -1091,6 +1073,7 @@ void InstrumentTrack::loadTrackSpecificSettings( const QDomElement & thisElement
 	m_midiCCEnable->setValue(false);
 
 	m_inputTransform.load(thisElement);  // 0.5.0 L07 (absent: left as it is)
+	m_articulations.load(thisElement);  // 0.5.0 L07 (ED-121; absent: none)
 
 	QDomNode node = thisElement.firstChild();
 	while( !node.isNull() )

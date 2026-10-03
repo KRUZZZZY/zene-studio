@@ -283,6 +283,9 @@ void populateTrack(QMenu* menu, Track* track)
 	{
 		inputTransformMenu(menu, self);
 		acrossMenu(menu->addMenu(tr("Edit All Clips")), {{QStringLiteral("tracks"), QJsonArray{id}}});
+		// L07 (ED-121): the expression map, its current entries filled in.
+		add(menu, "Articulations...", "track.articulations_set", self, true,
+			{{QStringLiteral("articulations"), dynamic_cast<InstrumentTrack*>(track)->articulations().toJson()}});
 	}
 	automationMenu(menu, id);
 	QMenu* takes = menu->addMenu(tr("Takes and Comping"));
@@ -451,6 +454,9 @@ void populateProject(QMenu* menu)
 	add(menu, "Hand Off...", "project.handoff", {}, true);
 	add(menu, "Bounce the Range to a New Track", "range.bounce", {}, false);
 	choices(menu, "Low-Latency Monitoring", "transport.low_latency", "enabled", {});  // L01 (MX-159)
+	add(menu, "Global Swing...", "transport.groove", {}, true);  // L07 (ED-142)
+	choices(menu, "Chase Notes", "transport.midi_options", "chase", {});  // L07 (ED-075)
+	add(menu, "MIDI Playback Offset...", "transport.midi_options", {}, true);  // L07 (ED-076)
 	list(menu, "Plug-ins in Project...", [] { return CommandLists::pluginsInProject(); });
 	list(menu, "Plug-in Manager...", [] { return CommandLists::pluginManager(); });  // L10 (MX-164)
 	list(menu, "Plug-in Modules...", [] { return CommandLists::pluginModules(); });

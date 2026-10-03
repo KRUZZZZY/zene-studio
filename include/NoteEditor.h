@@ -86,6 +86,8 @@ struct NoteEditorState
 	int gridTicks = 12;           //!< snap: 1/16 at 192 ticks per bar
 	int lastLength = 12;          //!< the length a drawn note takes
 	int lastVelocity = 100;
+	int newLength = 0;            //!< a clicked note's length in ticks; 0: the last drawn or resized (ED-073)
+	QString audioBehind;          //!< the audio clip drawn behind the notes: "", "auto" or a clip id (ED-081)
 	bool ghosts = true;           //!< draw the other clips of the track
 	bool highlightScale = true;
 	NoteLane lane = NoteLane::Velocity;
@@ -121,6 +123,9 @@ public:
 	void setFold(NoteFold fold);
 	void setLane(NoteLane lane);
 	void setGhosts(bool on);
+	//! 0.5.0 L07: a clicked note's length (0: the last one) and velocity (ED-073); the audio behind (ED-081).
+	void setNewNote(int length, int velocity);
+	void setAudioBehind(const QString& choice);
 	void setColorMode(NoteColor mode);
 	void setKeepInScale(bool on);
 	//! Show the clip's controller lane @a id (cc:<n>, pitchbend, aftertouch) under the notes; empty

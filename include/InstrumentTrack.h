@@ -27,6 +27,7 @@
 #define LMMS_INSTRUMENT_TRACK_H
 
 
+#include "ArticulationMap.h"
 #include "AudioBusHandle.h"
 #include "InstrumentFunctions.h"
 #include "InstrumentSoundShaping.h"
@@ -87,6 +88,9 @@ public:
 	const MpeExpression& mpeExpression() const { return m_mpeExpression; }
 	//! 0.5.0 L07 (ED-145): what this track does to live MIDI input (MidiInputTransform.h).
 	MidiInputTransform& inputTransform() { return m_inputTransform; }
+	//! 0.5.0 L07 (ED-121): the track's articulations (ArticulationMap.h); write with the track locked.
+	ArticulationMap& articulations() { return m_articulations; }
+	const ArticulationMap& articulations() const { return m_articulations; }
 
 	/*! The live note handle playing \a key, or nullptr. Readback for the
 	 *  captured expression (and what a piano-roll expression editor would
@@ -177,6 +181,23 @@ public:
 	//! 0.5.0 L07 (ED-130): the clip's controller lanes at @a tick (clip time), each sent to the
 	//! instrument when its value changed or the playback jumped (InstrumentTrackNotes.cpp).
 	void playClipControllers(const MidiClip* clip, tick_t tick, f_cnt_t offset);
+	//! One note play() starts: its clip and place in it, and how it is played.
+	struct NoteTrigger
+	{
+		const MidiClip* clip;
+		NoteVector::const_iterator note;
+		NoteVector::const_iterator first;
+		bool songGlobal;
+		uint32_t midiSeed;
+		class PatternTrack* patternTrack;
+	};
+	//! Whether a note starts at @a curStart: on it, under the clip's own start, or chased (InstrumentTrackNotes.cpp).
+	bool noteStartsNow(const Note& note, const TimePos& curStart, const MidiClip* clip) const;
+	//! Whether the note plays this time: not muted, on this pass, past its chance roll (InstrumentTrackNotes.cpp).
+	bool notePlaysNow(const Note& note, uint32_t midiSeed) const;
+	//! Start the note: its articulation, its handle and its repeats, delayed by swing and the MIDI offset.
+	void triggerNote(const NoteTrigger& trigger, f_cnt_t offset, f_cnt_t frames, const TimePos& curStart);
+	void sendArticulation(int index, f_cnt_t offset);
 	// create new view for me
 	gui::TrackView* createView( gui::TrackContainerView* tcv ) override;
 
@@ -337,6 +358,7 @@ private:
 
 	MpeExpression m_mpeExpression;
 	MidiInputTransform m_inputTransform;
+	ArticulationMap m_articulations;
 
 	NotePlayHandle* m_notes[NumKeys];
 	NotePlayHandleList m_sustainedNotes;

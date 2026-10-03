@@ -601,15 +601,8 @@ int main( int argc, char * * argv )
 	QCoreApplication::setAttribute(Qt::AA_EnableHighDpiScaling);
 #endif
 
-	// 0.5.0 L14 (WF-131): the interface scale the user chose (window.appearance); Qt reads it only
-	// before the application object exists. An explicit QT_SCALE_FACTOR still wins.
-	if (!coreOnly && qEnvironmentVariableIsEmpty("QT_SCALE_FACTOR"))
-	{
-		if (const double scale = lmms::appearance::storedScale(); scale > 0.0 && scale != 1.0)
-		{
-			qputenv("QT_SCALE_FACTOR", QByteArray::number(scale));
-		}
-	}
+	// 0.5.0 L14 (WF-131): the interface scale the user chose; Qt reads it only before the application exists.
+	if (!coreOnly) { lmms::appearance::applyStoredScale(); }
 
 	QCoreApplication * app = coreOnly ?
 			new QCoreApplication( argc, argv ) :

@@ -74,6 +74,7 @@ include/Appearance.h
 include/ArrangementEdits.h
 include/ArrangerOverlays.h
 include/ArrayVector.h
+include/ArticulationMap.h
 include/AudioAlsa.h
 include/AudioAlsaSetupWidget.h
 include/AudioBuffer.h
@@ -370,6 +371,7 @@ include/MidiLearn.h
 include/MidiLearnGui.h
 include/MidiOss.h
 include/MidiOutQueue.h
+include/MidiPlayback.h
 include/MidiPort.h
 include/MidiPortMenu.h
 include/MidiReconnect.h
@@ -404,7 +406,9 @@ include/NStateButton.h
 include/NamespaceRegistry.h
 include/NoCopyNoMove.h
 include/Note.h
+include/NoteBackgroundAudio.h
 include/NoteCanvas.h
+include/NoteConditions.h
 include/NoteEditor.h
 include/NoteEditorParts.h
 include/NoteGrid.h
@@ -1119,6 +1123,7 @@ src/common/SharedMemory.cpp
 src/common/SystemSemaphore.cpp
 src/core/Appearance.cpp
 src/core/ArrangementEdits.cpp
+src/core/ArticulationMap.cpp
 src/core/AudioBuffer.cpp
 src/core/AudioBus.cpp
 src/core/AudioBusHandle.cpp
@@ -1246,6 +1251,7 @@ src/core/ControlCommandsNoteEdit.cpp
 src/core/ControlCommandsNoteExpression.cpp
 src/core/ControlCommandsNoteHarmony.cpp
 src/core/ControlCommandsNoteMoves.cpp
+src/core/ControlCommandsNotePlayback.cpp
 src/core/ControlCommandsNoteProbability.cpp
 src/core/ControlCommandsNoteRandom.cpp
 src/core/ControlCommandsNoteShape.cpp
@@ -1494,6 +1500,7 @@ src/core/MidiClockState.cpp
 src/core/MidiClockTracker.cpp
 src/core/MidiInputTransform.cpp
 src/core/MidiLearn.cpp
+src/core/MidiPlayback.cpp
 src/core/MixHelpers.cpp
 src/core/Mixer.cpp
 src/core/MixerGroups.cpp
@@ -1506,6 +1513,7 @@ src/core/ModulationLayer.cpp
 src/core/ModulationLayerPublisher.cpp
 src/core/NamespaceRegistry.cpp
 src/core/Note.cpp
+src/core/NoteConditions.cpp
 src/core/NotePlayHandle.cpp
 src/core/NoteRandom.cpp
 src/core/NoteTransform.cpp
@@ -1827,6 +1835,7 @@ src/gui/modals/RenameDialog.cpp
 src/gui/modals/SetupDialog.cpp
 src/gui/modals/VersionedSaveDialog.cpp
 src/gui/noteeditor/ControllerLaneView.cpp
+src/gui/noteeditor/NoteBackgroundAudio.cpp
 src/gui/noteeditor/NoteCanvas.cpp
 src/gui/noteeditor/NoteCanvasGestures.cpp
 src/gui/noteeditor/NoteCanvasInput.cpp
@@ -2044,6 +2053,7 @@ tests/src/core/MultiTrackRecorderTest.cpp
 tests/src/core/NamespaceRegistryTest.cpp
 tests/src/core/NoteCurvesAcrossTest.cpp
 tests/src/core/NoteEditingCommandsTest.cpp
+tests/src/core/NotePlaybackTest.cpp
 tests/src/core/NoteRandomTest.cpp
 tests/src/core/NoteToolsTest.cpp
 tests/src/core/NoteTransformTest.cpp

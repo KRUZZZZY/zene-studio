@@ -34,6 +34,7 @@
 #include "panning.h"
 #include "MpeExpression.h"
 #include "SerializingObject.h"
+#include "NoteConditions.h"
 #include "TimePos.h"
 
 
@@ -177,6 +178,12 @@ public:
 	/*! The note-off velocity, 0..200 on the note volume's scale, or -1 - the
 	 *  default - for none: the note-off then carries velocity 0, exactly as
 	 *  before this existed ("relvel" attribute, written only when set). */
+	/*! 0.5.0 L07 (W3): repeats, recurrence, articulation, group and lyric (NoteConditions.h),
+	 *  written only when set ("rep", "recl"/"recm", "art", "grp", "lyr"). */
+	const NoteConditions& conditions() const { return m_conditions; }
+	void setConditions(const NoteConditions& conditions) { m_conditions = conditions; }
+	bool recursOnPass(int pass) const { return m_conditions.recursOnPass(pass); }
+
 	int releaseVelocity() const { return m_releaseVelocity; }
 	void setReleaseVelocity( int velocity );
 	int midiReleaseVelocity( int midiBaseVelocity ) const;
@@ -404,6 +411,7 @@ private:
 	int m_releaseVelocity = -1;
 	tick_t m_unquantisedPos = -1;
 	tick_t m_unquantisedLength = -1;
+	NoteConditions m_conditions;
 };
 
 using NoteVector = std::vector<Note*>;

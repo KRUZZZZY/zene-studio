@@ -50,12 +50,13 @@ enum class ControllerKind
 {
 	ControlChange,   //!< CC 0..127, value 0..127
 	PitchBend,       //!< 0..16383, 8192 centre
-	ChannelPressure  //!< aftertouch 0..127
+	ChannelPressure, //!< aftertouch 0..127
+	ProgramChange    //!< 0.5.0 L07 (ED-131): program 0..127, held from each point to the next (stepped)
 };
 
 /*! 0.5.0 L07 (ED-130): one curve the clip plays to its instrument as MIDI - linear between the
  *  points, held before the first and after the last. Its id names it: "cc:<n>", "pitchbend",
- *  "aftertouch". */
+ *  "aftertouch", "program" (stepped, not linear). */
 struct LMMS_EXPORT ControllerLane
 {
 	ControllerKind kind = ControllerKind::ControlChange;

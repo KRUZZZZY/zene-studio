@@ -32,6 +32,7 @@
 #include <QRect>
 #include <QWidget>
 
+#include "NoteBackgroundAudio.h"
 #include "lmms_export.h"
 
 namespace lmms
@@ -157,6 +158,7 @@ private:
 	QString noteLabel(const Note& note) const;
 
 	NoteEditor* m_editor;
+	NoteBackgroundAudio m_audioBehind;  //!< 0.5.0 ED-081
 	NoteEditorState& m_state;
 	int m_longest = 0;
 	int m_playhead = -1;

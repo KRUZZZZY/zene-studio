@@ -49,7 +49,9 @@ enum class NoteLane
 	Timbre,    //!< MPE timbre (CC74) 0..127 - note.expression_set
 	Pressure,  //!< MPE pressure 0..127 - note.expression_set
 	Pitch,     //!< micro-pitch offset in cents -4800..4800 (drawn +-200) - note.expression_set
-	Release    //!< note-off velocity 0..200 (unset reads 0) - note.edit release_velocity (0.5.0 L07)
+	Release,   //!< note-off velocity 0..200 (unset reads 0) - note.edit release_velocity (0.5.0 L07)
+	Spread,    //!< velocity spread 0..100 % per playback - note.edit velocity_spread (0.5.0 ED-127)
+	Repeats    //!< extra hits inside the note 0..16 - note.edit repeats (0.5.0 ED-133)
 };
 
 struct NoteLaneSpec

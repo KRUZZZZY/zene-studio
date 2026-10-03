@@ -164,6 +164,8 @@ QColor NoteCanvas::noteFill(const Note& note) const
 
 QString NoteCanvas::noteLabel(const Note& note) const
 {
+	// 0.5.0 ED-088: a sung note shows its syllable.
+	if (const QString lyric = lyricText(note.conditions().lyric); !lyric.isEmpty()) { return lyric; }
 	const QString name = m_editor->keyLabel(note.key());
 	return name.isEmpty() ? NoteGrid::keyName(note.key()) : name;
 }

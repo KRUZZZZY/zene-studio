@@ -271,7 +271,8 @@ std::pair<int, int> NoteCanvas::drawSpan() const
 	// A click draws a note of the last length; a drag right of half a grid cell sets the length.
 	const int start = std::max(0, NoteGrid::snapDown(m_pressTick, m_state.gridTicks));
 	const int end = NoteGrid::snap(static_cast<int>(m_state.grid.tickAtX(m_currentPos.x())), m_state.gridTicks);
-	const int length = end > start + std::max(1, m_state.gridTicks) / 2 ? end - start : m_state.lastLength;
+	const int clicked = m_state.newLength > 0 ? m_state.newLength : m_state.lastLength;
+	const int length = end > start + std::max(1, m_state.gridTicks) / 2 ? end - start : clicked;
 	return {start, std::max(1, length)};
 }
 

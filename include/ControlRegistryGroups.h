@@ -820,6 +820,9 @@ LMMS_EXPORT void registerNoteToolCommands(ControlRegistry& registry);
 LMMS_EXPORT void registerNoteMoveCommands(ControlRegistry& registry);
 //! 0.5.0 L07 (W3): note.follow_chords, clip.quantize, scale.define / custom (ControlCommandsNoteHarmony.cpp).
 LMMS_EXPORT void registerNoteHarmonyCommands(ControlRegistry& registry);
+//! 0.5.0 L07 (W3): note.lyrics / group / ungroup, track.articulations(_set), transport.groove /
+//! midi_options (ControlCommandsNotePlayback.cpp).
+LMMS_EXPORT void registerNotePlaybackCommands(ControlRegistry& registry);
 } // namespace lmms
 
 #endif // LMMS_CONTROL_REGISTRY_GROUPS_H
