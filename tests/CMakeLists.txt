@@ -608,6 +608,12 @@ set(LMMS_TESTS
 	# 0.5.0 W3 L13 / L14: the light palette, theme editing, density and the other interface commands.
 	src/gui/WorkspaceAccessTest.cpp
 	src/core/CustomAccessTest.cpp
+	# 0.5.0 L12 (W3): mixer snapshots, project settings and metadata, the document type, edit locks.
+	src/core/ProjectStateTest.cpp
+	# 0.5.0 L11 (W3): a clip into the library, the index and similar sounds, thumbnails, the matched preview, history.
+	src/core/LibraryBrowserTest.cpp
+	# 0.5.0 L12 (W3): the render queue, batch conversion, the task list, flattening, tracks copied between projects.
+	src/core/ProjectToolsTest.cpp
 	# 0.5.0 L05: fade shapes and handles, automatic and range fades, splits, slices, beat mapping.
 	src/core/AudioEditingTest.cpp
 	# 0.5.0 W2 gaps (audit-rows-1): clip.join, ripple on move and insert, controller.map / unmap.
@@ -694,6 +700,8 @@ set(LMMS_TESTS
 	# 0.5.0 lane 3: the shell selection, the Inspector and the Device panel's cards and
 	# modulators over a real engine (the build's plugin modules).
 	src/gui/DevicePanelTest.cpp
+	# 0.5.0 L11 / L12 (W3): the project menu's new entries, a track's lock, the gallery, the browser's remembered sources.
+	src/gui/LibraryMenusTest.cpp
 	# UI precondition #1 (040/ui-precond): include/WcagContrast.h at the AA
 	# boundary, and include/Accessibility.h on the shell surface the owner
 	# manual-tests - the helper, then the footer switches, the chrome bands and
@@ -1253,6 +1261,7 @@ set_tests_properties(ShellTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen
 set_tests_properties(DesignTokensTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(NoteEditorTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(DevicePanelTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+set_tests_properties(LibraryMenusTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(CommandPaletteTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(CommandFormTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(VcaStripViewTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")

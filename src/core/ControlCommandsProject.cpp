@@ -295,18 +295,7 @@ QString parseRenderRange(const QJsonObject& args, int* begin, int* end)
 bool runCliRender(const QString& projectPath, const QString& out, const QString& formatName,
 	const ControlExportPreset& settings, int rangeBegin, int rangeEnd, int* exitCode)
 {
-	QStringList arguments{QStringLiteral("render"), projectPath, QStringLiteral("-o"), out,
-		QStringLiteral("-f"), formatName};
-	arguments += controlExportPresetRenderArgs(settings);
-	if (rangeBegin >= 0)
-	{
-		arguments << QStringLiteral("--range-start") << QString::number(rangeBegin)
-			<< QStringLiteral("--range-end") << QString::number(rangeEnd);
-	}
-	if (ExportRenderSettings::loudnessReport())
-	{
-		arguments << QStringLiteral("--loudness-report");
-	}
+	const QStringList arguments = controlRenderCliArguments(projectPath, out, formatName, settings, rangeBegin, rangeEnd);
 
 	QProcess renderer;
 	renderer.setStandardOutputFile(QProcess::nullDevice());
@@ -445,6 +434,36 @@ void registerRenderRender(ControlRegistry& registry)
 }
 
 } // namespace
+
+QStringList controlRenderCliArguments(const QString& project, const QString& out, const QString& format,
+	const ControlExportPreset& settings, int rangeBegin, int rangeEnd)
+{
+	QStringList arguments{QStringLiteral("render"), project, QStringLiteral("-o"), out, QStringLiteral("-f"), format};
+	arguments += controlExportPresetRenderArgs(settings);
+	if (rangeBegin >= 0)
+	{
+		arguments << QStringLiteral("--range-start") << QString::number(rangeBegin)
+			<< QStringLiteral("--range-end") << QString::number(rangeEnd);
+	}
+	if (ExportRenderSettings::loudnessReport())
+	{
+		arguments << QStringLiteral("--loudness-report");
+	}
+	return arguments;
+}
+
+bool controlRenderProjectFile(const QString& project, const QString& out, int* exitCode)
+{
+	const bool finished = runCliRender(project, out, QStringLiteral("wav"), ControlExportPresetSettings::effective(), -1, -1, exitCode);
+	return finished && *exitCode == 0 && QFileInfo(out).size() > 0;
+}
+
+QStringList controlRenderableFormats()
+{
+	QStringList names;
+	for (const QJsonValue& name : renderableFormatNames()) { names << name.toString(); }
+	return names;
+}
 
 void registerProjectCommands(ControlRegistry& registry)
 {

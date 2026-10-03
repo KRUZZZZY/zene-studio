@@ -697,6 +697,7 @@ set(LMMS_SRCS
 	core/ControlReversibilityTableMixing.cpp
 	core/ControlReversibilityTableDevices.cpp
 	core/ControlReversibilityTableW3Custom.cpp
+	core/ControlReversibilityTableW3Library.cpp
 	core/ControlReversibilityTableArranger.cpp
 	core/ControlReversibilityTableShell.cpp
 	${CMAKE_SOURCE_DIR}/thirdparty/mts-esp/libMTSClient.cpp
@@ -982,6 +983,26 @@ set(LMMS_SRCS
 	core/ControlCommandsSettingsPresets.cpp
 	core/TunerTap.cpp
 	core/ControlCommandsTuner.cpp
+	# 0.5.0 L11 / L12 (W3): mixer snapshots, project settings / metadata / document type, edit locks.
+	core/ControlCommandsMixerSnapshots.cpp
+	core/ControlCommandsProjectInfo.cpp
+	core/MixerSnapshots.cpp
+	core/ProjectInfo.cpp
+	core/EditLocks.cpp
+	# 0.5.0 L11 (W3): a clip into the library, the library index and similar sounds, thumbnails and the
+	# matched preview, the browser's history and remembered sources.
+	core/ControlCommandsLibraryClips.cpp
+	core/ControlCommandsBrowserIndex.cpp
+	core/ControlCommandsBrowserMedia.cpp
+	core/ControlCommandsBrowserNavigation.cpp
+	core/BrowserIndex.cpp
+	core/BrowserFeatures.cpp
+	# 0.5.0 L12 (W3): the render queue, batch conversion and the task list; flattening a track.
+	core/ControlCommandsRenderQueue.cpp
+	core/ControlCommandsTrackFlatten.cpp
+	core/RenderQueue.cpp
+	core/ControlCommandsSubprojects.cpp
+	core/ControlCommandsAlternatives.cpp
 	core/ControlTrackCreation.cpp
 	core/PitchTrack.cpp
 	core/ControlCommandsSampleRange.cpp
@@ -1160,6 +1181,7 @@ SET(ZENE_API_SRCS
 	core/ControlReversibilityTableMixing.cpp
 	core/ControlReversibilityTableDevices.cpp
 	core/ControlReversibilityTableW3Custom.cpp
+	core/ControlReversibilityTableW3Library.cpp
 	core/ControlReversibilityTableArranger.cpp
 	core/ControlReversibilityTableShell.cpp
 )

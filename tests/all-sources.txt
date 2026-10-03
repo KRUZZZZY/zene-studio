@@ -130,6 +130,7 @@ include/BarModelEditor.h
 include/BasicFilters.h
 include/BounceInPlace.h
 include/BrowserCatalog.h
+include/BrowserIndex.h
 include/BrowserPanel.h
 include/BrowserPeakCache.h
 include/BrowserSearch.h
@@ -232,6 +233,7 @@ include/DspLoadProbe.h
 include/DummyEffect.h
 include/DummyInstrument.h
 include/DummyPlugin.h
+include/EditLocks.h
 include/Editor.h
 include/Effect.h
 include/EffectChain.h
@@ -316,6 +318,7 @@ include/LeftRightNav.h
 include/LevelBar.h
 include/LfoController.h
 include/LfoGraph.h
+include/LibraryCommandMenus.h
 include/LinkPeerTransport.h
 include/LinkSync.h
 include/LinkedModelGroupViews.h
@@ -406,6 +409,7 @@ include/MixerListen.h
 include/MixerOptions.h
 include/MixerOverlays.h
 include/MixerSendPan.h
+include/MixerSnapshots.h
 include/MixerStrip.h
 include/MixerView.h
 include/MixerViewOptions.h
@@ -480,6 +484,7 @@ include/PresetPreviewPlayHandle.h
 include/PreviewOutput.h
 include/ProjectContainer.h
 include/ProjectIds.h
+include/ProjectInfo.h
 include/ProjectJournal.h
 include/ProjectKey.h
 include/ProjectMarkers.h
@@ -515,6 +520,7 @@ include/RemotePluginClient.h
 include/RenameDialog.h
 include/RenderManager.h
 include/RenderPresetMenu.h
+include/RenderQueue.h
 include/RetroAudioCapture.h
 include/RetroAudioRing.h
 include/RetroMidiCapture.h
@@ -1178,6 +1184,8 @@ src/core/AutomationSwitches.cpp
 src/core/BandLimitedWave.cpp
 src/core/BounceInPlace.cpp
 src/core/BrowserCatalog.cpp
+src/core/BrowserFeatures.cpp
+src/core/BrowserIndex.cpp
 src/core/BrowserMetadata.cpp
 src/core/BrowserPeakCache.cpp
 src/core/BrowserSearch.cpp
@@ -1201,6 +1209,7 @@ src/core/ControlBrowserSupport.cpp
 src/core/ControlChainPresetSupport.cpp
 src/core/ControlChordSupport.cpp
 src/core/ControlCommandDef.cpp
+src/core/ControlCommandsAlternatives.cpp
 src/core/ControlCommandsArrangeTools.cpp
 src/core/ControlCommandsArrangement.cpp
 src/core/ControlCommandsArrangementState.cpp
@@ -1215,6 +1224,9 @@ src/core/ControlCommandsAutomationTools.cpp
 src/core/ControlCommandsBounceLand.cpp
 src/core/ControlCommandsBrowser.cpp
 src/core/ControlCommandsBrowserCollections.cpp
+src/core/ControlCommandsBrowserIndex.cpp
+src/core/ControlCommandsBrowserMedia.cpp
+src/core/ControlCommandsBrowserNavigation.cpp
 src/core/ControlCommandsBrowserTags.cpp
 src/core/ControlCommandsBus.cpp
 src/core/ControlCommandsChain.cpp
@@ -1266,6 +1278,7 @@ src/core/ControlCommandsInputTransform.cpp
 src/core/ControlCommandsInterchange.cpp
 src/core/ControlCommandsKeyNames.cpp
 src/core/ControlCommandsLaunchBindings.cpp
+src/core/ControlCommandsLibraryClips.cpp
 src/core/ControlCommandsLink.cpp
 src/core/ControlCommandsLivecode.cpp
 src/core/ControlCommandsLowLatency.cpp
@@ -1283,6 +1296,7 @@ src/core/ControlCommandsMixer.cpp
 src/core/ControlCommandsMixerListen.cpp
 src/core/ControlCommandsMixerMeters.cpp
 src/core/ControlCommandsMixerRoutes.cpp
+src/core/ControlCommandsMixerSnapshots.cpp
 src/core/ControlCommandsMixerStrip.cpp
 src/core/ControlCommandsMixerTools.cpp
 src/core/ControlCommandsModulator.cpp
@@ -1326,6 +1340,7 @@ src/core/ControlCommandsPorts.cpp
 src/core/ControlCommandsProject.cpp
 src/core/ControlCommandsProjectArchive.cpp
 src/core/ControlCommandsProjectFiles.cpp
+src/core/ControlCommandsProjectInfo.cpp
 src/core/ControlCommandsProjectLifecycle.cpp
 src/core/ControlCommandsProjectMmpzGit.cpp
 src/core/ControlCommandsPunch.cpp
@@ -1343,6 +1358,7 @@ src/core/ControlCommandsRecordingRecovery.cpp
 src/core/ControlCommandsRecordingRetro.cpp
 src/core/ControlCommandsRecordingRoutes.cpp
 src/core/ControlCommandsRemote.cpp
+src/core/ControlCommandsRenderQueue.cpp
 src/core/ControlCommandsRenderStems.cpp
 src/core/ControlCommandsRevisions.cpp
 src/core/ControlCommandsRouting.cpp
@@ -1373,9 +1389,11 @@ src/core/ControlCommandsSettingsPresets.cpp
 src/core/ControlCommandsStemModel.cpp
 src/core/ControlCommandsStems.cpp
 src/core/ControlCommandsStructure.cpp
+src/core/ControlCommandsSubprojects.cpp
 src/core/ControlCommandsSurface.cpp
 src/core/ControlCommandsTelemetry.cpp
 src/core/ControlCommandsTrackChannel.cpp
+src/core/ControlCommandsTrackFlatten.cpp
 src/core/ControlCommandsTrackFolder.cpp
 src/core/ControlCommandsTrackFolderSets.cpp
 src/core/ControlCommandsTrackFolderShared.h
@@ -1468,6 +1486,7 @@ src/core/ControlReversibilityTableTrackFolder.cpp
 src/core/ControlReversibilityTableVca.cpp
 src/core/ControlReversibilityTableVerbs.cpp
 src/core/ControlReversibilityTableW3Custom.cpp
+src/core/ControlReversibilityTableW3Library.cpp
 src/core/ControlReversibilityTableWasmRender.cpp
 src/core/ControlReversibilityTableWindow.cpp
 src/core/ControlRoom.cpp
@@ -1502,6 +1521,7 @@ src/core/DawProjectWrite.cpp
 src/core/DawProjectZip.cpp
 src/core/DocumentIndex.cpp
 src/core/DrumSynth.cpp
+src/core/EditLocks.cpp
 src/core/Effect.cpp
 src/core/EffectChain.cpp
 src/core/EffectChainPatcher.cpp
@@ -1568,6 +1588,7 @@ src/core/MixerGroups.cpp
 src/core/MixerListen.cpp
 src/core/MixerOptions.cpp
 src/core/MixerSendPan.cpp
+src/core/MixerSnapshots.cpp
 src/core/MixerStrip.cpp
 src/core/Model.cpp
 src/core/ModelVisitor.cpp
@@ -1605,6 +1626,7 @@ src/core/PreviewOutput.cpp
 src/core/ProjectContainer.cpp
 src/core/ProjectContainerEntries.cpp
 src/core/ProjectIds.cpp
+src/core/ProjectInfo.cpp
 src/core/ProjectJournal.cpp
 src/core/ProjectJournalBounds.cpp
 src/core/ProjectJournalStructural.cpp
@@ -1626,6 +1648,7 @@ src/core/RecordingJournal.cpp
 src/core/RemoteControls.cpp
 src/core/RemotePlugin.cpp
 src/core/RenderManager.cpp
+src/core/RenderQueue.cpp
 src/core/RetroAudioCapture.cpp
 src/core/RetroMidiCapture.cpp
 src/core/RetroMidiCaptureSettings.cpp
@@ -1810,6 +1833,7 @@ src/gui/HelpCenter.cpp
 src/gui/LadspaControlView.cpp
 src/gui/LevelBar.cpp
 src/gui/LfoControllerDialog.cpp
+src/gui/LibraryCommandMenus.cpp
 src/gui/LinkedModelGroupViews.cpp
 src/gui/LmmsPalette.cpp
 src/gui/LmmsStyle.cpp
@@ -2106,6 +2130,7 @@ tests/src/core/GrooveTestSupport.h
 tests/src/core/ImportDetectionTest.cpp
 tests/src/core/InputMonitorTest.cpp
 tests/src/core/LanesUpconvertTest.cpp
+tests/src/core/LibraryBrowserTest.cpp
 tests/src/core/LibraryProjectsTest.cpp
 tests/src/core/LoudnessReportTest.cpp
 tests/src/core/LufsMeterTest.cpp
@@ -2171,6 +2196,8 @@ tests/src/core/ProjectMarkersTest.cpp
 tests/src/core/ProjectOpenIntegrityTest.cpp
 tests/src/core/ProjectRecoveryTest.cpp
 tests/src/core/ProjectRevIdsTest.cpp
+tests/src/core/ProjectStateTest.cpp
+tests/src/core/ProjectToolsTest.cpp
 tests/src/core/ProjectVersionTest.cpp
 tests/src/core/ProvenanceSectionTest.cpp
 tests/src/core/PunchWindowTest.cpp
@@ -2272,6 +2299,7 @@ tests/src/gui/GrooveMenuTest.cpp
 tests/src/gui/GuiTestApplication.h
 tests/src/gui/HelpAccessTest.cpp
 tests/src/gui/KnobKeyboardTest.cpp
+tests/src/gui/LibraryMenusTest.cpp
 tests/src/gui/MenuTestSupport.h
 tests/src/gui/MidiClockMenuTest.cpp
 tests/src/gui/MidiControllerMenuTest.cpp

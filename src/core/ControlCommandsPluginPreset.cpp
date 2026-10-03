@@ -23,6 +23,7 @@
  */
 
 #include <QDir>
+#include <QFile>
 #include <QFileInfo>
 #include <QJsonArray>
 #include <QJsonObject>
@@ -307,6 +308,83 @@ void registerPresetLoad(ControlRegistry& registry)
 	registry.registerCommand(cmd);
 }
 
+//! 0.5.0 L11 (WF-025): the user preset @a args names, for removing or renaming it - factory presets are
+//! read-only. False with @a error set when the device or the preset cannot be found.
+bool userPreset(const QJsonObject& args, QString* path, ControlResult* error)
+{
+	ControlTarget target;
+	ControlDeviceHandle handle;
+	if (!resolveDeviceArg(args, &target, &handle, error)) { return false; }
+	const QString name = args.value(QStringLiteral("name")).toString();
+	if (!controlSafePresetName(name, error)) { return false; }
+	*path = controlUserPresetDir(handle) + controlPresetFileName(name);
+	if (QFileInfo::exists(*path)) { return true; }
+	*error = ControlResult::failure(findPreset(handle, controlPresetFileName(name)).isEmpty() ? ControlErrorKind::NotFound
+		: ControlErrorKind::Refused, QStringLiteral("no user preset '%1' for '%2' (factory presets are read-only)").arg(name, handle.pluginName));
+	return false;
+}
+
+ControlResult removePreset(const QJsonObject& args)
+{
+	QString path;
+	ControlResult error;
+	if (!userPreset(args, &path, &error)) { return error; }
+	QByteArray bytes;
+	if (!controlReadFileBytes(path, &bytes, &error)) { return error; }
+	if (!QFile::remove(path)) { return ControlResult::failure(ControlErrorKind::Refused, QStringLiteral("cannot remove %1").arg(path)); }
+	// The file comes back with its bytes; the step counts them against the undo budget.
+	control::addStructuralUndoStep([path, bytes]() { ControlResult ignored; controlWriteFileBytes(path, bytes, true, &ignored); },
+		[path]() { QFile::remove(path); }, bytes.size());
+	return ControlResult::success({{QStringLiteral("removed"), path}, {QStringLiteral("bytes"), bytes.size()}});
+}
+
+ControlResult renamePreset(const QJsonObject& args)
+{
+	QString path;
+	ControlResult error;
+	if (!userPreset(args, &path, &error)) { return error; }
+	const QString newName = args.value(QStringLiteral("new_name")).toString();
+	if (!controlSafePresetName(newName, &error)) { return error; }
+	const QString renamed = QFileInfo(path).absolutePath() + QLatin1Char('/') + controlPresetFileName(newName);
+	if (QFileInfo::exists(renamed))
+	{
+		return ControlResult::failure(ControlErrorKind::Refused, QStringLiteral("a preset named '%1' exists already").arg(newName));
+	}
+	if (!QFile::rename(path, renamed)) { return ControlResult::failure(ControlErrorKind::Refused, QStringLiteral("cannot rename %1").arg(path)); }
+	control::addUndoStep([path, renamed]() { QFile::rename(renamed, path); }, [path, renamed]() { QFile::rename(path, renamed); });
+	return ControlResult::success({{QStringLiteral("path"), renamed}, {QStringLiteral("name"), controlPresetFileName(newName)}});
+}
+
+void registerPresetFileEdits(ControlRegistry& registry)
+{
+	const QJsonObject device{{QStringLiteral("target"), stringProperty()}, {QStringLiteral("plugin"), stringProperty()},
+		{QStringLiteral("name"), stringProperty()}};
+	const QJsonArray required{QStringLiteral("target"), QStringLiteral("plugin"), QStringLiteral("name")};
+	ControlCommand remove;
+	remove.id = QStringLiteral("plugin.preset_remove");
+	remove.group = QStringLiteral("plugin");
+	remove.verb = QStringLiteral("preset_remove");
+	remove.description = QStringLiteral("Delete one of the device's user presets ('name'); factory presets are read-only. One undo "
+		"step writes the file back.");
+	remove.argsSchema = objectSchema(device, required);
+	remove.resultSchema = objectProperty();
+	remove.mutating = true;
+	remove.handler = removePreset;
+	registry.registerCommand(remove);
+	ControlCommand rename = remove;
+	rename.id = QStringLiteral("plugin.preset_rename");
+	rename.verb = QStringLiteral("preset_rename");
+	rename.description = QStringLiteral("Rename one of the device's user presets from 'name' to 'new_name' (refused when that name "
+		"is taken). One undo step.");
+	QJsonObject renameArgs = device;
+	renameArgs.insert(QStringLiteral("new_name"), stringProperty());
+	QJsonArray renameRequired = required;
+	renameRequired.append(QStringLiteral("new_name"));
+	rename.argsSchema = objectSchema(renameArgs, renameRequired);
+	rename.handler = renamePreset;
+	registry.registerCommand(rename);
+}
+
 } // namespace
 
 void registerPluginPresetCommands(ControlRegistry& registry)
@@ -314,6 +392,7 @@ void registerPluginPresetCommands(ControlRegistry& registry)
 	registerPresetList(registry);
 	registerPresetSave(registry);
 	registerPresetLoad(registry);
+	registerPresetFileEdits(registry);
 }
 
 } // namespace lmms

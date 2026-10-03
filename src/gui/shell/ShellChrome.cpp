@@ -40,6 +40,7 @@
 #include "ControlWindowCommands.h"
 #include "DesignTokens.h"
 #include "Engine.h"
+#include "LibraryCommandMenus.h"
 #include "ShellCommandMenus.h"
 #include "ShellIcons.h"
 #include "TransportReadouts.h"
@@ -188,6 +189,7 @@ ShellHeader::ShellHeader(QWidget* parent)
 		ShellCommandMenus::populateProject(toolsMenu);
 	});
 	tools->setMenu(toolsMenu);
+	LibraryCommandMenus::install();  // 0.5.0 L12 (WF-048): a project opens in its document type's view
 	syncTransport();
 }
 

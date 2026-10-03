@@ -145,6 +145,16 @@ void registerControlCommands(ControlRegistry& registry)
 	registerHistoryJumpCommand(registry);
 	registerSettingsPresetCommands(registry);
 	registerTunerCommands(registry);
+	registerMixerSnapshotCommands(registry);
+	registerProjectInfoCommands(registry);
+	registerLibraryClipCommands(registry);
+	registerBrowserIndexCommands(registry);
+	registerBrowserMediaCommands(registry);
+	registerBrowserNavigationCommands(registry);
+	registerRenderQueueCommands(registry);
+	registerTrackFlattenCommands(registry);
+	registerSubprojectCommands(registry);
+	registerAlternativeCommands(registry);
 #ifdef ZENE_TELEMETRY_ENABLED
 	// The telemetry.* group travels with the client. -DZENE_TELEMETRY=OFF
 	// removes the client, so the registry must not carry ids that would

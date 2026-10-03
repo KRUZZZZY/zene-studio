@@ -54,6 +54,11 @@ public:
 	QString currentSource() const;
 	//! Select a source by its title; false when there is none by that title.
 	bool selectSource(const QString& title);
+	//! 0.5.0 L11 (WF-023): the view the browser is shown in (arrange, mix, edit). The source remembered
+	//! for it (browser.sources) is selected, and a source the user picks is remembered for it
+	//! (browser.remember_source).
+	void setContext(const QString& context);
+	QString context() const { return m_context; }
 	//! The selected sample's waveform under the list (WF-010).
 	class WaveformPreview* waveform() const { return m_wave; }
 
@@ -61,6 +66,8 @@ private:
 	QComboBox* m_selector;
 	QStackedWidget* m_stack;
 	class WaveformPreview* m_wave = nullptr;
+	QString m_context;
+	bool m_restoring = false;
 };
 
 //! The browser with the product's standard sources, as MainWindow's sidebar had them.

@@ -76,6 +76,22 @@ LMMS_EXPORT ListSpec clips();
 LMMS_EXPORT ListSpec sections();
 //! L07 MIDI event list: every note of a clip as a row - edit its velocity, position, length, probability.
 LMMS_EXPORT ListSpec noteEvents(const QString& clip);
+//! L12 (MX-170): the project's mixer snapshots - recall all of one or only its faders, remove, store a new one.
+LMMS_EXPORT ListSpec mixerSnapshots();
+//! L12 (WF-044): the tracks and the clips locked against editing - unlock one.
+LMMS_EXPORT ListSpec lockedTracks();
+LMMS_EXPORT ListSpec lockedClips();
+//! L11 (WF-025): a device's presets (user and factory) - load, rename, remove; save the device's state as a new one.
+//! @a device is the device's address ({target, plugin}).
+LMMS_EXPORT ListSpec devicePresets(const QJsonObject& device);
+//! L12 (WF-040): the render queue - each job's state and report; cancel, report; queue a render, convert files, clear.
+LMMS_EXPORT ListSpec renderQueue();
+//! L12 (WF-046): every background task (renders, the library scan, stem separation, mastering) - cancel one.
+LMMS_EXPORT ListSpec backgroundTasks();
+//! L12 (WF-045): the project's subprojects - render one again, open its file; add one.
+LMMS_EXPORT ListSpec subprojects();
+//! L12 (WF-032): the project's alternatives - switch to one, remove one; keep the session as a new one.
+LMMS_EXPORT ListSpec alternatives();
 
 //! 0.5.0 W3 L13/L14 (CommandListsCustom.cpp): the theme's colour roles - change one, put the palette's back,
 //! reset, export, import (WF-117).

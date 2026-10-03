@@ -25,6 +25,7 @@
 #include "PluginNativeEditor.h"
 
 #include "CommandForm.h"
+#include "CommandLists.h"
 #include "ControlRegistry.h"
 #include "ControlVocabulary.h"
 #include "Effect.h"
@@ -113,6 +114,12 @@ QWidget* hostHeader(QWidget* parent, const PluginNativeEditor::Owner& owner)
 	row->addStretch(1);
 	row->addWidget(headerButton(header, QObject::tr("Save Preset..."), "plugin.preset_save", owner, {}, true));
 	row->addWidget(headerButton(header, QObject::tr("Load Preset..."), "plugin.preset_load", owner, {}, true));
+	// 0.5.0 L11 (WF-025): every preset of the device - load, rename, remove, save.
+	auto* presets = new QToolButton(header);
+	presets->setText(QObject::tr("Presets..."));
+	presets->setProperty("controlCommand", QStringLiteral("plugin.preset_list"));
+	QObject::connect(presets, &QToolButton::clicked, header, [header, owner] { showCommandList(header, CommandLists::devicePresets(ownerAddress(owner))); });
+	row->addWidget(presets);
 	return header;
 }
 

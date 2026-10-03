@@ -873,6 +873,25 @@ LMMS_EXPORT void registerHistoryJumpCommand(ControlRegistry& registry);
 LMMS_EXPORT void registerSettingsPresetCommands(ControlRegistry& registry);
 //! tuner.set / tuner.get_state (src/core/ControlCommandsTuner.cpp).
 LMMS_EXPORT void registerTunerCommands(ControlRegistry& registry);
+//! 0.5.0 L12 (W3): mixer.snapshot_store / recall / list / remove (ControlCommandsMixerSnapshots.cpp); project.settings /
+//! metadata / locks, track.set_locked, clip.set_locked (ControlCommandsProjectInfo.cpp).
+LMMS_EXPORT void registerMixerSnapshotCommands(ControlRegistry& registry);
+LMMS_EXPORT void registerProjectInfoCommands(ControlRegistry& registry);
+//! 0.5.0 L11 (W3): browser.save_clip (ControlCommandsLibraryClips.cpp); browser.reindex / index_status / index_query /
+//! similar (ControlCommandsBrowserIndex.cpp); browser.thumbnail / preview / preview_stop (ControlCommandsBrowserMedia.cpp);
+//! browser.browse / history / history_go / sources / remember_source (ControlCommandsBrowserNavigation.cpp).
+LMMS_EXPORT void registerLibraryClipCommands(ControlRegistry& registry);
+LMMS_EXPORT void registerBrowserIndexCommands(ControlRegistry& registry);
+LMMS_EXPORT void registerBrowserMediaCommands(ControlRegistry& registry);
+LMMS_EXPORT void registerBrowserNavigationCommands(ControlRegistry& registry);
+//! 0.5.0 L12 (W3): render.queue_add / convert / queue_list / queue_cancel / queue_clear / queue_report, app.tasks /
+//! task_cancel (ControlCommandsRenderQueue.cpp); track.flatten (ControlCommandsTrackFlatten.cpp).
+LMMS_EXPORT void registerRenderQueueCommands(ControlRegistry& registry);
+LMMS_EXPORT void registerTrackFlattenCommands(ControlRegistry& registry);
+//! 0.5.0 L12 (W3): project.subproject_add / subprojects / subproject_refresh (ControlCommandsSubprojects.cpp);
+//! project.alternative_save / alternatives / alternative_switch / alternative_remove (ControlCommandsAlternatives.cpp).
+LMMS_EXPORT void registerSubprojectCommands(ControlRegistry& registry);
+LMMS_EXPORT void registerAlternativeCommands(ControlRegistry& registry);
 } // namespace lmms
 
 #endif // LMMS_CONTROL_REGISTRY_GROUPS_H

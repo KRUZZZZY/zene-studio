@@ -33,6 +33,7 @@
 #include "Clipboard.h"
 #include "DataFile.h"
 #include "DeprecationHelper.h"
+#include "EditLocks.h"
 #include "Engine.h"
 #include "GuiApplication.h"
 #include "PatternEditor.h"
@@ -570,7 +571,8 @@ void TrackContentWidget::mousePressEvent( QMouseEvent * me )
 	}
 	// For an unmodified click, create a new Clip
 	else if( me->button() == Qt::LeftButton &&
-			!m_trackView->trackContainerView()->fixedClips() )
+			!m_trackView->trackContainerView()->fixedClips() &&
+			!EditLocks::instance().trackLocked(getTrack()->id()) )  // 0.5.0 L12 (WF-044)
 	{
 		QVector<selectableObject*> so =  m_trackView->trackContainerView()->rubberBand()->selectedObjects();
 		for( int i = 0; i < so.count(); ++i )

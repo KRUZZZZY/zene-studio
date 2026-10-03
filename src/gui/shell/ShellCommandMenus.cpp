@@ -42,6 +42,7 @@
 #include "Engine.h"
 #include "GuiApplication.h"
 #include "InstrumentTrack.h"
+#include "LibraryCommandMenus.h"
 #include "XyPad.h"
 #include "MidiClip.h"
 #include "Mixer.h"
@@ -269,6 +270,7 @@ void populateTrack(QMenu* menu, Track* track)
 	QMenu* presets = menu->addMenu(tr("Track Preset"));  // L11 (WF-024)
 	add(presets, "Save Preset...", "track.preset_save", self, true);
 	add(presets, "Load Preset...", "track.preset_load", self, true);
+	LibraryCommandMenus::populateTrack(menu, track);  // L12 (WF-044)
 	if (dynamic_cast<SampleTrack*>(track) != nullptr)
 	{
 		add(menu, "Insert Test Signal...", "sample.generate", self, true,
@@ -331,6 +333,7 @@ void populateClip(QMenu* menu, Clip* clip)
 	if (dynamic_cast<SampleClip*>(clip) != nullptr) { sampleClipMenus(menu, clip, self); }
 	if (dynamic_cast<MidiClip*>(clip) != nullptr) { midiClipMenus(menu, self); }
 	automationClipMenus(menu, clip);
+	LibraryCommandMenus::populateClip(menu, clip);  // L12 (WF-044)
 }
 
 namespace
@@ -493,6 +496,7 @@ void populateProject(QMenu* menu)
 	add(menu, "Disarm All Tracks", "record.disarm_all", {}, false);
 	menu->addSeparator();
 	list(menu, "Safe Start...", [] { return CommandLists::safeStart(); });
+	LibraryCommandMenus::populateProject(menu);  // L11 / L12 (W3)
 	populateCustomise(menu->addMenu(tr("Customise")));
 }
 

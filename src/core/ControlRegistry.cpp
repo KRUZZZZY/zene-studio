@@ -26,6 +26,7 @@
 #include "UnattendedRun.h"
 
 #include "ControlReversibility.h"
+#include "EditLocks.h"
 #include "ProjectJournal.h"
 #include "ProvenanceSection.h"
 
@@ -296,12 +297,23 @@ bool changedNothing(bool journalled, quint64 step, const QString& commandId)
 	return row != nullptr && row->cls == control::ReversibilityClass::TrueInverse;
 }
 
+//! WF-044: whether a mutating call would edit a locked track or clip (EditLocks), with the reason in @a why.
+bool lockedOut(bool mutating, const QString& commandId, const QJsonObject& args, QString* why)
+{
+	return mutating && EditLocks::refuses(commandId, args, why);
+}
+
 } // namespace
 
 ControlResult ControlRegistry::runHandler(
 	const std::function<ControlResult(const QJsonObject&)>& handler, const QString& commandId,
 	bool mutating, const QJsonObject& args)
 {
+	// 0.5.0 L12 (WF-044): a mutating command that would edit a locked track or clip is refused before
+	// its handler runs, so a lock holds for every client - socket, Lua, menus - alike.
+	QString locked;
+	if (lockedOut(mutating, commandId, args, &locked)) { return ControlResult::failure(ControlErrorKind::Refused, locked); }
+
 	ProjectJournal* journal = Engine::projectJournal();
 	const int mark = journal != nullptr ? journal->undoDepth() : -1;
 	const quint64 serialBefore = journal != nullptr ? journal->topStepSerial() : 0;

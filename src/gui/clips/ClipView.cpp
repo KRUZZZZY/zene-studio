@@ -39,6 +39,7 @@
 #include "ColorChooser.h"
 #include "DataFile.h"
 #include "DeprecationHelper.h"
+#include "EditLocks.h"
 #include "Engine.h"
 #include "embed.h"
 #include "GuiApplication.h"
@@ -573,6 +574,8 @@ void ClipView::mousePressEvent( QMouseEvent * me )
 		overlay->beginRangeFrom(mapToGlobal(position(me)));
 		return;
 	}
+	// 0.5.0 L12 (WF-044): a locked clip (or a clip of a locked track) is not moved, resized or deleted by the mouse.
+	if (EditLocks::instance().locks(m_clip) && me->button() != Qt::RightButton) { return; }
 	const auto pos = position(me);
 
 	// Right now, active is only used on right/mid clicks actions, so we use a ternary operator
@@ -1037,7 +1040,7 @@ void ClipView::contextMenuEvent( QContextMenuEvent * cme )
 
 	QMenu contextMenu( this );
 
-	if( fixedClips() == false )
+	if( fixedClips() == false && !EditLocks::instance().locks(m_clip) )
 	{
 		contextMenu.addAction(
 			embed::getIconPixmap( "cancel" ),

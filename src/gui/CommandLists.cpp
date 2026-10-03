@@ -277,4 +277,96 @@ ListSpec noteEvents(const QString& clip)
 	return out;
 }
 
+ListSpec mixerSnapshots()
+{
+	ListSpec out = spec("Mixer Snapshots", "mixer.snapshot_list", "snapshots", {QStringLiteral("name"), QStringLiteral("channels")});
+	out.summaryKeys = QStringList{QStringLiteral("count"), QStringLiteral("limit")};
+	const QHash<QString, QString> named{{QStringLiteral("name"), QStringLiteral("name")}};
+	RowAction remove = act("Remove", "mixer.snapshot_remove", named);
+	remove.confirm = true;
+	out.actions = {act("Recall", "mixer.snapshot_recall", named),
+		act("Recall Faders Only", "mixer.snapshot_recall", named, {{QStringLiteral("parts"), QJsonArray{QStringLiteral("volume")}}}),
+		act("Recall Parts...", "mixer.snapshot_recall", named, {}, true), remove};
+	out.extras = {extra("Store...", "mixer.snapshot_store")};
+	return out;
+}
+
+ListSpec lockedTracks()
+{
+	ListSpec out = spec("Locked Tracks", "project.locks", "tracks", {QStringLiteral("name"), QStringLiteral("track")});
+	out.actions = {act("Unlock", "track.set_locked", {{QStringLiteral("track"), QStringLiteral("track")}}, {{QStringLiteral("locked"), false}})};
+	return out;
+}
+
+ListSpec lockedClips()
+{
+	ListSpec out = spec("Locked Clips", "project.locks", "clips", {QStringLiteral("clip"), QStringLiteral("track")});
+	out.actions = {act("Unlock", "clip.set_locked", {{QStringLiteral("clip"), QStringLiteral("clip")}}, {{QStringLiteral("locked"), false}})};
+	return out;
+}
+
+ListSpec devicePresets(const QJsonObject& device)
+{
+	ListSpec out = spec("Device Presets", "plugin.preset_list", "presets", {QStringLiteral("name"), QStringLiteral("factory"),
+		QStringLiteral("bytes")}, device);
+	out.summaryKeys = QStringList{QStringLiteral("plugin"), QStringLiteral("count"), QStringLiteral("dir")};
+	const QHash<QString, QString> named{{QStringLiteral("name"), QStringLiteral("name")}};
+	RowAction remove = act("Remove", "plugin.preset_remove", named, device);
+	remove.confirm = true;
+	out.actions = {act("Load", "plugin.preset_load", named, device), act("Rename...", "plugin.preset_rename", named, device, true), remove};
+	out.extras = {extra("Save Current as Preset...", "plugin.preset_save", device)};
+	return out;
+}
+
+ListSpec renderQueue()
+{
+	ListSpec out = spec("Render Queue", "render.queue_list", "jobs", {QStringLiteral("job"), QStringLiteral("kind"), QStringLiteral("state"),
+		QStringLiteral("out"), QStringLiteral("error")});
+	out.summaryKeys = QStringList{QStringLiteral("open"), QStringLiteral("running"), QStringLiteral("limit")};
+	const QHash<QString, QString> job{{QStringLiteral("job"), QStringLiteral("job")}};
+	RowAction report = act("Report", "render.queue_report", job);
+	report.showResult = true;
+	out.actions = {act("Cancel", "render.queue_cancel", job), report};
+	out.extras = {extra("Queue a Render...", "render.queue_add"), extra("Convert Files...", "render.convert"),
+		extra("Clear Finished", "render.queue_clear", {}, false)};
+	return out;
+}
+
+ListSpec backgroundTasks()
+{
+	ListSpec out = spec("Background Tasks", "app.tasks", "tasks", {QStringLiteral("kind"), QStringLiteral("state"), QStringLiteral("label"),
+		QStringLiteral("progress")});
+	out.summaryKeys = QStringList{QStringLiteral("count")};
+	out.actions = {act("Cancel", "app.task_cancel", {{QStringLiteral("id"), QStringLiteral("id")}})};
+	return out;
+}
+
+ListSpec subprojects()
+{
+	ListSpec out = spec("Subprojects", "project.subprojects", "subprojects", {QStringLiteral("track"), QStringLiteral("path"),
+		QStringLiteral("stale"), QStringLiteral("exists")});
+	out.summaryKeys = QStringList{QStringLiteral("count")};
+	RowAction open = act("Open Its Project", "project.open", {{QStringLiteral("path"), QStringLiteral("path")}});
+	open.confirm = true;
+	out.actions = {act("Render Again", "project.subproject_refresh", {{QStringLiteral("track"), QStringLiteral("track")}}), open};
+	out.extras = {extra("Add Subproject...", "project.subproject_add")};
+	return out;
+}
+
+ListSpec alternatives()
+{
+	ListSpec out = spec("Alternatives", "project.alternatives", "alternatives", {QStringLiteral("name"), QStringLiteral("active"),
+		QStringLiteral("exists"), QStringLiteral("file")});
+	out.summaryKeys = QStringList{QStringLiteral("main"), QStringLiteral("active")};
+	const QHash<QString, QString> named{{QStringLiteral("name"), QStringLiteral("name")}};
+	RowAction switchTo = act("Switch To", "project.alternative_switch", named);
+	switchTo.confirm = true;
+	RowAction remove = act("Remove From List", "project.alternative_remove", named);
+	remove.confirm = true;
+	out.actions = {switchTo, remove};
+	out.extras = {extra("Keep the Session as an Alternative...", "project.alternative_save"),
+		extra("Back to the Main File", "project.alternative_switch", {{QStringLiteral("name"), QStringLiteral("main")}}, false)};
+	return out;
+}
+
 } // namespace lmms::gui::CommandLists
