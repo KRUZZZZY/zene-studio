@@ -106,8 +106,8 @@ void NoteEditor::addToolButtons(QWidget* bar, QHBoxLayout* row)
 	m_tools = new QActionGroup(this);
 	const struct { const char* icon; QString text; } tools[] = {
 		{"draw", tr("Draw")}, {"select", tr("Select")}, {"slice", tr("Slice")}, {"erase", tr("Erase")},
-		{"audition", tr("Audition")}, {"paint", tr("Paint")}};
-	for (int i = 0; i < 6; ++i)
+		{"audition", tr("Audition")}, {"paint", tr("Paint")}, {"mute", tr("Mute")}};
+	for (int i = 0; i < 7; ++i)
 	{
 		QAction* action = checkable(m_tools, QString::fromLatin1(tools[i].icon), tools[i].text,
 			tr("%1 tool (%2)").arg(tools[i].text).arg(i + 1));

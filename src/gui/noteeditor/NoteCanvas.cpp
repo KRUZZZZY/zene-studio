@@ -254,7 +254,7 @@ void NoteCanvas::paintNote(QPainter& p, const Note& note, const QRect& r) const
 	const tokens::Palette& pal = tokens::palette();
 	QColor fill = noteFill(note);
 	// A note that may not play (chance below 100 %) is drawn fainter in proportion.
-	fill.setAlphaF(0.45f + 0.55f * note.probability());
+	fill.setAlphaF(note.muted() ? 0.35f : 0.45f + 0.55f * note.probability());
 	p.fillRect(r, fill);
 	// Zoomed far out a note is a sliver a few pixels wide: the edge band, the label and the slide
 	// mark cannot be seen there, so they are not drawn (the widest-zoom frame's cost, measured in

@@ -222,6 +222,7 @@ int quantizePositions( const NoteVector& notes, int grid, QuantizeMode mode )
 		}
 		if( target != pos )
 		{
+			note->rememberTiming();  // what note.restore_timing puts back (0.5.0 L07)
 			note->setPos( TimePos( target ) );
 			++changed;
 		}
@@ -285,7 +286,11 @@ int quantizeNotes( const NoteVector& notes, const QuantizeOptions& options )
 			options.seed, *note, target, HumaniseVelocitySalt ), static_cast<int>( MinVolume ),
 			static_cast<int>( MaxVolume ) );
 
-		if( moved != pos ) { note->setPos( TimePos( moved ) ); }
+		if( moved != pos )
+		{
+			note->rememberTiming();  // what note.restore_timing puts back (0.5.0 L07)
+			note->setPos( TimePos( moved ) );
+		}
 		if( newVelocity != velocity ) { note->setVolume( static_cast<volume_t>( newVelocity ) ); }
 		if( moved != pos || newVelocity != velocity ) { ++changed; }
 	}

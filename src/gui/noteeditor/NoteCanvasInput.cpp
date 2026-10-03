@@ -137,6 +137,7 @@ void NoteCanvas::beginPress(QMouseEvent* event)
 	case NoteTool::Audition: pressAudition(note); return;
 	case NoteTool::Erase: pressErase(note); return;
 	case NoteTool::Paint: pressPaint(); return;
+	case NoteTool::Mute: pressMute(note); return;
 	case NoteTool::Slice:
 		if (note != nullptr) { sliceAt(note, event->pos()); }
 		return;

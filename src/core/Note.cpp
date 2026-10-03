@@ -90,7 +90,11 @@ Note::Note( const Note & note ) :
 	m_mpeCaptured(note.m_mpeCaptured),
 	m_mpePitchCents(note.m_mpePitchCents),
 	m_mpePressure(note.m_mpePressure),
-	m_mpeTimbre(note.m_mpeTimbre)
+	m_mpeTimbre(note.m_mpeTimbre),
+	m_muted(note.m_muted),
+	m_releaseVelocity(note.m_releaseVelocity),
+	m_unquantisedPos(note.m_unquantisedPos),
+	m_unquantisedLength(note.m_unquantisedLength)
 {
 }
 
@@ -115,8 +119,38 @@ Note& Note::operator=(const Note& note)
 	m_mpePitchCents = note.m_mpePitchCents;
 	m_mpePressure = note.m_mpePressure;
 	m_mpeTimbre = note.m_mpeTimbre;
+	m_muted = note.m_muted;
+	m_releaseVelocity = note.m_releaseVelocity;
+	m_unquantisedPos = note.m_unquantisedPos;
+	m_unquantisedLength = note.m_unquantisedLength;
 
 	return *this;
+}
+
+void Note::setReleaseVelocity( int velocity )
+{
+	m_releaseVelocity = velocity < 0 ? -1 : std::min( velocity, static_cast<int>( MaxVolume ) );
+}
+
+int Note::midiReleaseVelocity( int midiBaseVelocity ) const
+{
+	return m_releaseVelocity < 0 ? 0 : std::min( MidiMaxVelocity, m_releaseVelocity * midiBaseVelocity / DefaultVolume );
+}
+
+void Note::rememberTiming()
+{
+	if( hasUnquantisedTiming() ) { return; }
+	m_unquantisedPos = m_pos.getTicks();
+	m_unquantisedLength = m_length.getTicks();
+}
+
+bool Note::restoreTiming()
+{
+	if( !hasUnquantisedTiming() ) { return false; }
+	m_pos = TimePos( m_unquantisedPos );
+	m_length = TimePos( m_unquantisedLength );
+	forgetTiming();
+	return true;
 }
 
 
@@ -336,6 +370,14 @@ void Note::saveSettings( QDomDocument & doc, QDomElement & parent )
 	{
 		parent.setAttribute( "veljit", QString::number( m_velocityJitter, 'g', 9 ) );
 	}
+	// 0.5.0 L07, each optional in the same way.
+	if( m_muted ) { parent.setAttribute( "mute", "1" ); }
+	if( m_releaseVelocity >= 0 ) { parent.setAttribute( "relvel", m_releaseVelocity ); }
+	if( hasUnquantisedTiming() )
+	{
+		parent.setAttribute( "qpos", static_cast<int>( m_unquantisedPos ) );
+		parent.setAttribute( "qlen", static_cast<int>( m_unquantisedLength ) );
+	}
 
 	// MPE per-note expression (task #601) - likewise optional, so a note with
 	// no expression serializes exactly as it did before the feature existed,
@@ -409,6 +451,10 @@ void Note::loadSettings( const QDomElement & _this )
 	// before this existed expects.
 	m_probability = std::clamp( _this.attribute( "prob", "1" ).toFloat(), 0.f, 1.f );
 	m_velocityJitter = std::clamp( _this.attribute( "veljit", "0" ).toFloat(), 0.f, 1.f );
+	m_muted = _this.attribute( "mute" ).toInt() != 0;
+	setReleaseVelocity( _this.attribute( "relvel", "-1" ).toInt() );
+	m_unquantisedPos = _this.hasAttribute( "qpos" ) ? std::max( 0, _this.attribute( "qpos" ).toInt() ) : -1;
+	m_unquantisedLength = m_unquantisedPos >= 0 ? std::max( 1, _this.attribute( "qlen", "1" ).toInt() ) : -1;
 
 	// MPE per-note expression (task #601): an old project has none of these, and
 	// then the note carries no expression at all. Presence of any one attribute

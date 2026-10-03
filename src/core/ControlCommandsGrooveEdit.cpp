@@ -296,7 +296,11 @@ void applySwing(const NoteVector& notes, tick_t grid, double swing)
 		// The step the quantise took the note to (it may sit off it by the strength or the humanise).
 		const tick_t pos = note->pos().getTicks();
 		const long step = std::lround(static_cast<double>(pos) / grid);
-		if (step % 2 == 1) { note->setPos(TimePos(pos + static_cast<tick_t>(std::lround(std::min(swing, 1.0) * grid / 2.0)))); }
+		if (step % 2 == 1)
+		{
+			note->rememberTiming();
+			note->setPos(TimePos(pos + static_cast<tick_t>(std::lround(std::min(swing, 1.0) * grid / 2.0))));
+		}
 	}
 }
 

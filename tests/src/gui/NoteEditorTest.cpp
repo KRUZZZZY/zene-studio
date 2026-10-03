@@ -355,6 +355,27 @@ private slots:
 		QVERIFY(noteAt(m_clip, 192, 64) != nullptr);
 	}
 
+	void theMuteToolTogglesTheNoteAndItsSelection()
+	{
+		m_editor->setTool(NoteTool::Mute);
+		QTest::mouseClick(m_editor->canvas(), Qt::LeftButton, Qt::NoModifier, point(10, 60));
+		QVERIFY(noteAt(m_clip, 0, 60)->muted());
+		QVERIFY2(!noteAt(m_clip, 192, 64)->muted(), "an unselected note elsewhere is left alone");
+		QTest::mouseClick(m_editor->canvas(), Qt::LeftButton, Qt::NoModifier, point(10, 60));
+		QVERIFY(!noteAt(m_clip, 0, 60)->muted());
+		select({m_clip->notes()[0], m_clip->notes()[1]});
+		QTest::mouseClick(m_editor->canvas(), Qt::LeftButton, Qt::NoModifier, point(10, 60));
+		QVERIFY(noteAt(m_clip, 0, 60)->muted() && noteAt(m_clip, 192, 64)->muted());
+		QVERIFY(undo());  // the selection was one edit
+		QVERIFY(!noteAt(m_clip, 0, 60)->muted() && !noteAt(m_clip, 192, 64)->muted());
+		NoteLane release = NoteLane::Velocity;
+		QVERIFY(notelanes::fromId(QStringLiteral("release"), release));
+		const notelanes::Write write = notelanes::writeFor(release, control::clipIdOf(m_clip), control::noteIdOf(m_clip->notes()[0]), 80);
+		QVERIFY(invoke(write.command, write.args).ok);
+		QCOMPARE(m_clip->notes()[0]->releaseVelocity(), 80);
+		QCOMPARE(notelanes::valueOf(*m_clip->notes()[0], release), 80);
+	}
+
 	void theNewViewFieldsAreDrivableOverTheSocket()
 	{
 		// window.note_editor_set needs the main window; the same fields go through the editor's setters.

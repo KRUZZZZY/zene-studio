@@ -313,7 +313,7 @@ void NoteEditor::auditionRelease(int key)
 
 void NoteEditor::keyPressEvent(QKeyEvent* event)
 {
-	if (event->modifiers() == Qt::NoModifier && event->key() >= Qt::Key_1 && event->key() <= Qt::Key_6)
+	if (event->modifiers() == Qt::NoModifier && event->key() >= Qt::Key_1 && event->key() <= Qt::Key_7)
 	{
 		setTool(static_cast<NoteTool>(event->key() - Qt::Key_1));
 		event->accept();
@@ -339,7 +339,7 @@ void NoteEditor::fitIfPending()
 
 QJsonObject NoteEditor::describe() const
 {
-	static const char* const tools[] = {"draw", "select", "slice", "erase", "audition", "paint"};
+	static const char* const tools[] = {"draw", "select", "slice", "erase", "audition", "paint", "mute"};
 	static const char* const folds[] = {"none", "scale", "used", "drums"};
 	static const char* const colors[] = {"velocity", "pitch", "track"};
 	const NoteGrid& g = m_state.grid;

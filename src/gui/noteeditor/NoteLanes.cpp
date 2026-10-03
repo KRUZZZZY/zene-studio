@@ -40,6 +40,13 @@ namespace
 
 QString tr(const char* text) { return QCoreApplication::translate("NoteLanes", text); }
 
+//! A one-note note.edit setting @a field.
+Write noteEdit(QJsonObject args, const QString& noteId, const QString& field, double value)
+{
+	args.insert(QStringLiteral("edits"), QJsonArray{QJsonObject{{QStringLiteral("note"), noteId}, {field, value}}});
+	return {QStringLiteral("note.edit"), args};
+}
+
 } // namespace
 
 QList<NoteLaneSpec> all()
@@ -51,6 +58,7 @@ QList<NoteLaneSpec> all()
 		{NoteLane::Timbre, QStringLiteral("timbre"), tr("Timbre"), 0, 127, 0, 127, QStringLiteral("")},
 		{NoteLane::Pressure, QStringLiteral("pressure"), tr("Pressure"), 0, 127, 0, 127, QStringLiteral("")},
 		{NoteLane::Pitch, QStringLiteral("pitch"), tr("Micro-pitch"), -4800, 4800, 0, 400, QStringLiteral("ct")},
+		{NoteLane::Release, QStringLiteral("release"), tr("Release velocity"), 0, 200, 0, 200, QStringLiteral("")},
 	};
 }
 
@@ -86,6 +94,7 @@ int valueOf(const Note& note, NoteLane lane)
 	case NoteLane::Timbre: return note.mpeTimbre();
 	case NoteLane::Pressure: return note.mpePressure();
 	case NoteLane::Pitch: return note.mpePitchCents();
+	case NoteLane::Release: return std::max(0, note.releaseVelocity());
 	}
 	return 0;
 }
@@ -102,17 +111,10 @@ Write writeFor(NoteLane lane, const QString& clipId, const QString& noteId, int 
 	QJsonObject args{{QStringLiteral("clip"), clipId}};
 	switch (lane)
 	{
-	case NoteLane::Velocity:
-	case NoteLane::Pan:
-	case NoteLane::Chance:
-	{
-		QJsonObject edit{{QStringLiteral("note"), noteId}};
-		if (lane == NoteLane::Velocity) { edit.insert(QStringLiteral("velocity"), v); }
-		if (lane == NoteLane::Pan) { edit.insert(QStringLiteral("pan"), v); }
-		if (lane == NoteLane::Chance) { edit.insert(QStringLiteral("probability"), v / 100.0); }
-		args.insert(QStringLiteral("edits"), QJsonArray{edit});
-		return {QStringLiteral("note.edit"), args};
-	}
+	case NoteLane::Velocity: return noteEdit(args, noteId, QStringLiteral("velocity"), v);
+	case NoteLane::Pan: return noteEdit(args, noteId, QStringLiteral("pan"), v);
+	case NoteLane::Chance: return noteEdit(args, noteId, QStringLiteral("probability"), v / 100.0);
+	case NoteLane::Release: return noteEdit(args, noteId, QStringLiteral("release_velocity"), v);
 	case NoteLane::Timbre: args.insert(QStringLiteral("timbre"), v); break;
 	case NoteLane::Pressure: args.insert(QStringLiteral("pressure"), v); break;
 	case NoteLane::Pitch: args.insert(QStringLiteral("pitch"), v); break;

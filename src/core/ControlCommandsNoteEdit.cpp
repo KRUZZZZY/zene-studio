@@ -71,6 +71,8 @@ constexpr Field kFields[] = {
 	{"velocity", 0, 200},
 	{"pan", -100, 100},
 	{"probability", 0, 1},
+	{"muted", 0, 1},              // 0.5.0 L07: 1 mutes (the note stays, unplayed)
+	{"release_velocity", -1, 200}, // 0.5.0 L07: the note-off velocity, -1 none
 };
 
 //! One resolved edit: the note and the values it is to take.
@@ -101,7 +103,7 @@ bool checkEditValues(const QJsonObject& entry, int index, ControlResult* error)
 	{
 		*error = ControlResult::failure(ControlErrorKind::InvalidArgs,
 			QStringLiteral("edits[%1] changes nothing: name at least one of position, key, length, "
-				"velocity, pan, probability").arg(index));
+				"velocity, pan, probability, muted, release_velocity").arg(index));
 		return false;
 	}
 	return true;
@@ -117,7 +119,9 @@ bool resolveEdits(MidiClip* clip, const QJsonArray& edits, std::vector<Edit>* ou
 	}
 	for (int i = 0; i < edits.size(); ++i)
 	{
-		const QJsonObject entry = edits.at(i).toObject();
+		QJsonObject entry = edits.at(i).toObject();
+		// 'muted' may be a boolean too; it is stored and checked as 0 / 1 like every other field.
+		if (entry.value(QStringLiteral("muted")).isBool()) { entry.insert(QStringLiteral("muted"), entry.value(QStringLiteral("muted")).toBool() ? 1 : 0); }
 		int index = -1;
 		Note* note = resolveNote(clip, entry.value(QStringLiteral("note")).toString(), &index, error);
 		if (note == nullptr || !checkEditValues(entry, i, error)) { return false; }
@@ -138,6 +142,8 @@ QJsonObject previousValues(const Note* note, const QJsonObject& values)
 	keep("velocity", note->getVolume());
 	keep("pan", note->getPanning());
 	keep("probability", static_cast<double>(note->probability()));
+	keep("muted", note->muted() ? 1 : 0);
+	keep("release_velocity", note->releaseVelocity());
 	return before;
 }
 
@@ -151,6 +157,8 @@ void applyEdit(Note* note, const QJsonObject& v)
 	if (has("velocity")) { note->setVolume(static_cast<volume_t>(num("velocity"))); }
 	if (has("pan")) { note->setPanning(static_cast<panning_t>(num("pan"))); }
 	if (has("probability")) { note->setProbability(static_cast<float>(num("probability"))); }
+	if (has("muted")) { note->setMuted(num("muted") != 0); }
+	if (has("release_velocity")) { note->setReleaseVelocity(static_cast<int>(num("release_velocity"))); }
 }
 
 ControlResult editNotes(const QJsonObject& args)
@@ -196,9 +204,10 @@ void registerNoteEditCommands(ControlRegistry& registry)
 	cmd.verb = QStringLiteral("edit");
 	cmd.description = QStringLiteral("Change several notes of one clip as ONE edit and ONE undo step - "
 		"what the note editor sends for a drag, a multi-note resize or a lane gesture. 'edits' is a "
-		"list of {note, position?, key?, length?, velocity?, pan?, probability?}: position and length "
-		"in ticks, key 0..127, velocity 0..200 (the engine's note volume), pan -100..100, probability "
-		"0..1; a field left out keeps its value. The whole batch is validated first - one bad entry "
+		"list of {note, position?, key?, length?, velocity?, pan?, probability?, muted?, release_velocity?}: "
+		"position and length in ticks, key 0..127, velocity 0..200 (the engine's note volume), pan -100..100, "
+		"probability 0..1, muted 0/1 (a muted note stays in the clip, unplayed), release_velocity -1..200 (the "
+		"note-off velocity on the volume scale; -1 none, a note-off of 0); a field left out keeps its value. The whole batch is validated first - one bad entry "
 		"(an unknown note, a value out of range, an entry naming no field) refuses it and changes "
 		"nothing. The note ids do not change. Reversible through the ProjectJournal (one MidiClip "
 		"checkpoint); the inverse is note.edit with the previous values.");

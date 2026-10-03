@@ -71,7 +71,9 @@ QJsonObject noteJson(const Note* note)
 	return {{QStringLiteral("note"), noteIdOf(note)}, {QStringLiteral("key"), note->key()},
 		{QStringLiteral("position"), note->pos().getTicks()}, {QStringLiteral("length"), note->length().getTicks()},
 		{QStringLiteral("velocity"), static_cast<int>(note->getVolume())}, {QStringLiteral("pan"), static_cast<int>(note->getPanning())},
-		{QStringLiteral("probability"), static_cast<double>(note->probability())}, {QStringLiteral("selected"), note->selected()}};
+		{QStringLiteral("probability"), static_cast<double>(note->probability())}, {QStringLiteral("selected"), note->selected()},
+		{QStringLiteral("muted"), note->muted()}, {QStringLiteral("release_velocity"), note->releaseVelocity()},
+		{QStringLiteral("quantised"), note->hasUnquantisedTiming()}};
 }
 
 QJsonObject finish(const ClipRef& ref, MidiClip* clip, const QString& command, QJsonObject result)
@@ -188,6 +190,26 @@ ControlResult addNotes(const QJsonObject& args)
 		{{QStringLiteral("added"), ids.size()}, {QStringLiteral("notes"), ids}}));
 }
 
+ControlResult restoreTiming(const QJsonObject& args)
+{
+	ClipRef ref;
+	ControlResult error;
+	MidiClip* clip = resolveMidiClip(args.value(QStringLiteral("clip")).toString(), &ref, &error);
+	if (clip == nullptr) { return error; }
+	const bool freeze = args.value(QStringLiteral("freeze")).toBool();
+	clip->addJournalCheckPoint();
+	int count = 0;
+	for (Note* note : scoped(clip, args.value(QStringLiteral("scope")).toString()))
+	{
+		if (!note->hasUnquantisedTiming()) { continue; }
+		if (freeze) { note->forgetTiming(); }
+		else { note->restoreTiming(); }
+		++count;
+	}
+	return ControlResult::success(finish(ref, clip, QStringLiteral("note.restore_timing"),
+		{{freeze ? QStringLiteral("frozen") : QStringLiteral("restored"), count}}));
+}
+
 //! The `filter` object as a NoteTransform::Filter: {key,velocity,position,length}_{min,max} (an absent
 //! bound is open), `scale` "in" / "out" (the scale context's pitch classes) and `invert`.
 bool filterFrom(const QJsonObject& json, NoteTransform::Filter* f, ControlResult* error)
@@ -225,6 +247,10 @@ NoteVector act(const NoteVector& hits, const QString& action, int amount)
 	if (action == QStringLiteral("remove")) { return hits; }
 	if (action == QStringLiteral("transpose")) { NoteTransform::transpose(hits, amount); }
 	else if (action == QStringLiteral("velocity_offset")) { NoteTransform::offsetVelocity(hits, amount); }
+	else if (action == QStringLiteral("mute") || action == QStringLiteral("unmute"))
+	{
+		for (Note* note : hits) { note->setMuted(action == QStringLiteral("mute")); }
+	}
 	else if (action == QStringLiteral("velocity_set"))
 	{
 		for (Note* note : hits) { note->setVolume(static_cast<volume_t>(std::clamp(amount, int{MinVolume}, int{MaxVolume}))); }
@@ -288,16 +314,22 @@ void registerNoteShapeCommands(ControlRegistry& registry)
 		"The whole list is checked first; one bad entry refuses it and adds nothing.") + step,
 		objectSchema({{QStringLiteral("clip"), stringProperty()}, {QStringLiteral("notes"), arrayProperty()}},
 		{QStringLiteral("clip"), QStringLiteral("notes")}), true, addNotes);
+	add(registry, "restore_timing", QStringLiteral("Put back the timing the notes in 'scope' had before their first "
+		"quantise (every quantise keeps it, and it survives other edits and a save) - or, with 'freeze', keep the "
+		"quantised timing and forget the original.") + step, objectSchema({{QStringLiteral("clip"), stringProperty()},
+		{QStringLiteral("scope"), scope}, {QStringLiteral("freeze"), booleanProperty()}}, {QStringLiteral("clip")}), true, restoreTiming);
 	add(registry, "list", QStringLiteral("Every note of a clip as a row: id, key, position, length, velocity (0..200), "
-		"pan, probability, selected - the MIDI event list."), objectSchema({{QStringLiteral("clip"), stringProperty()}},
+		"pan, probability, selected, muted, release_velocity (-1 none), quantised (an original timing is kept) - the MIDI "
+		"event list."), objectSchema({{QStringLiteral("clip"), stringProperty()}},
 		{QStringLiteral("clip")}), false, listNotes);
 	add(registry, "transform_where", QStringLiteral("Find and change: the notes whose key / velocity / position / length lie "
 		"inside 'filter's bounds ({key_min, key_max, velocity_min, ..., length_max}; absent bounds pass; 'scale' in / out "
 		"of the scale context; 'invert') are selected (and the others "
 		"deselected), removed, transposed by 'amount', or given velocity 'amount' (velocity_set) or +'amount' "
-		"(velocity_offset).") + step, objectSchema({{QStringLiteral("clip"), stringProperty()},
+		"(velocity_offset), or muted / unmuted.") + step, objectSchema({{QStringLiteral("clip"), stringProperty()},
 		{QStringLiteral("filter"), objectProperty()}, {QStringLiteral("action"), enumProperty({QStringLiteral("select"),
-			QStringLiteral("remove"), QStringLiteral("transpose"), QStringLiteral("velocity_set"), QStringLiteral("velocity_offset")})},
+			QStringLiteral("remove"), QStringLiteral("transpose"), QStringLiteral("velocity_set"), QStringLiteral("velocity_offset"),
+			QStringLiteral("mute"), QStringLiteral("unmute")})},
 		{QStringLiteral("amount"), integerProperty()}}, {QStringLiteral("clip"), QStringLiteral("action")}), true, transformWhere);
 }
 

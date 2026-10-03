@@ -26,19 +26,25 @@
  *  note.scale (x2, x0.5, a refused factor), note.ratchet, note.add_many (one undo step; a bad
  *  entry adds nothing), note.list, note.transform_where through NoteTransform's filter (ranges,
  *  length, scale membership, invert, each action), groove.quantize's swing / scope / range, and
- *  key_names.* (the GM drum preset, one undo step, the project file both ways). */
+ *  key_names.* (the GM drum preset, one undo step, the project file both ways); and the Note
+ *  fields - mute (kept, drawn, not played), release velocity (the note-off's), the pre-quantise
+ *  timing note.restore_timing puts back - each optional in the file. */
 
 #include <QtTest>
 
+#include <QDomDocument>
 #include <QJsonArray>
 #include <QTemporaryDir>
 
+#include "AudioDevice.h"
+#include "AudioEngine.h"
 #include "ControlRegistry.h"
 #include "ControlVocabulary.h"
 #include "Engine.h"
 #include "InstrumentTrack.h"
 #include "MidiClip.h"
 #include "Note.h"
+#include "NotePlayHandle.h"
 #include "Song.h"
 #include "TrackKeyNames.h"
 
@@ -67,6 +73,17 @@ QStringList shape(const MidiClip* clip)
 		out << QStringLiteral("%1@%2+%3").arg(note->key()).arg(note->pos().getTicks()).arg(note->length().getTicks());
 	}
 	return out;
+}
+
+//! Whether any note of @a track is playing (the render pipeline started one).
+bool anyNotePlaying(const InstrumentTrack* track)
+{
+	for (PlayHandle* handle : Engine::audioEngine()->playHandles())
+	{
+		auto* note = dynamic_cast<NotePlayHandle*>(handle);
+		if (note != nullptr && note->instrumentTrack() == track) { return true; }
+	}
+	return false;
 }
 
 QList<int> velocities(const MidiClip* clip)
@@ -109,6 +126,8 @@ private slots:
 	void initTestCase()
 	{
 		Engine::init(true);
+		Engine::audioEngine()->audioDev()->stopProcessing();
+		NotePlayHandleManager::init();
 		ControlRegistry::setReady(true);
 	}
 
@@ -236,6 +255,98 @@ private slots:
 		ok(QStringLiteral("groove.quantize"), {{QStringLiteral("clip"), clip()}, {QStringLiteral("grid"), 24},
 			{QStringLiteral("scope"), QStringLiteral("selection")}});
 		QCOMPARE(shape(m_clip), (QStringList{QStringLiteral("60@5+12"), QStringLiteral("62@24+12"), QStringLiteral("64@48+12")}));
+	}
+
+	void aMutedNoteIsKeptButNotPlayed()
+	{
+		freshClip({Note(TimePos(96), TimePos(0), 60)});
+		const QString note = control::noteIdOf(m_clip->notes().front());
+		ok(QStringLiteral("note.edit"), {{QStringLiteral("clip"), clip()}, {QStringLiteral("edits"),
+			QJsonArray{QJsonObject{{QStringLiteral("note"), note}, {QStringLiteral("muted"), true}}}}});
+		QVERIFY(m_clip->notes().front()->muted());
+		QVERIFY(ok(QStringLiteral("note.list"), {{QStringLiteral("clip"), clip()}}).value(QStringLiteral("notes")).toArray()
+			.first().toObject().value(QStringLiteral("muted")).toBool());
+		Song* song = Engine::getSong();
+		song->playSong();
+		bool played = false;
+		for (int period = 0; period < 32 && !played; ++period)
+		{
+			Engine::audioEngine()->renderNextPeriod();
+			played = anyNotePlaying(m_track);
+		}
+		song->stop();
+		Engine::audioEngine()->renderNextPeriod();
+		QVERIFY2(!played, "a muted note was played");
+		// The same render with the note unmuted does play it - the check above can fail.
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
+		QVERIFY(!m_clip->notes().front()->muted());
+		song->playSong();
+		for (int period = 0; period < 32 && !played; ++period)
+		{
+			Engine::audioEngine()->renderNextPeriod();
+			played = anyNotePlaying(m_track);
+		}
+		song->stop();
+		Engine::audioEngine()->renderNextPeriod();
+		QVERIFY2(played, "the unmuted note never started");
+		ok(QStringLiteral("note.transform_where"), {{QStringLiteral("clip"), clip()}, {QStringLiteral("filter"), QJsonObject{}},
+			{QStringLiteral("action"), QStringLiteral("mute")}});
+		QVERIFY(m_clip->notes().front()->muted());
+	}
+
+	void releaseVelocityIsTheNoteOffsAndOptional()
+	{
+		Note plain(TimePos(48), TimePos(0), 60);
+		QCOMPARE(plain.releaseVelocity(), -1);
+		QCOMPARE(plain.midiReleaseVelocity(64), 0);  // as before: a note-off of velocity 0
+		freshClip({plain});
+		const QString note = control::noteIdOf(m_clip->notes().front());
+		ok(QStringLiteral("note.edit"), {{QStringLiteral("clip"), clip()}, {QStringLiteral("edits"),
+			QJsonArray{QJsonObject{{QStringLiteral("note"), note}, {QStringLiteral("release_velocity"), 150}}}}});
+		const Note* edited = m_clip->notes().front();
+		QCOMPARE(edited->releaseVelocity(), 150);
+		QCOMPARE(edited->midiReleaseVelocity(64), 96);
+		QCOMPARE(run(QStringLiteral("note.edit"), {{QStringLiteral("clip"), clip()}, {QStringLiteral("edits"),
+			QJsonArray{QJsonObject{{QStringLiteral("note"), note}, {QStringLiteral("release_velocity"), 201}}}}}).errorKind,
+			ControlErrorKind::InvalidArgs);
+
+		QDomDocument doc;
+		QDomElement root = doc.createElement(QStringLiteral("root"));
+		const QDomElement bare = plain.saveState(doc, root);
+		for (const char* name : {"mute", "relvel", "qpos", "qlen"})
+		{
+			QVERIFY2(!bare.hasAttribute(QLatin1String(name)), name);  // a plain note saves exactly as before
+		}
+		Note full(TimePos(48), TimePos(24), 60);
+		full.setMuted(true);
+		full.setReleaseVelocity(30);
+		full.rememberTiming();
+		full.setPos(TimePos(0));
+		const QDomElement element = full.saveState(doc, root);
+		Note loaded;
+		loaded.restoreState(element);
+		QVERIFY(loaded.muted());
+		QCOMPARE(loaded.releaseVelocity(), 30);
+		QVERIFY(loaded.restoreTiming());
+		QCOMPARE(static_cast<int>(loaded.pos().getTicks()), 24);
+	}
+
+	void restoreTimingPutsBackTheFirstQuantisesTiming()
+	{
+		freshClip({Note(TimePos(12), TimePos(5), 60), Note(TimePos(12), TimePos(29), 62)});
+		ok(QStringLiteral("groove.quantize"), {{QStringLiteral("clip"), clip()}, {QStringLiteral("grid"), 24}});
+		ok(QStringLiteral("groove.quantize"), {{QStringLiteral("clip"), clip()}, {QStringLiteral("grid"), 48}});
+		QCOMPARE(shape(m_clip), (QStringList{QStringLiteral("60@0+12"), QStringLiteral("62@48+12")}));
+		const QJsonObject restored = ok(QStringLiteral("note.restore_timing"), {{QStringLiteral("clip"), clip()}});
+		QCOMPARE(restored.value(QStringLiteral("restored")).toInt(), 2);
+		QCOMPARE(shape(m_clip), (QStringList{QStringLiteral("60@5+12"), QStringLiteral("62@29+12")}));
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
+		QCOMPARE(shape(m_clip), (QStringList{QStringLiteral("60@0+12"), QStringLiteral("62@48+12")}));
+		const QJsonObject frozen = ok(QStringLiteral("note.restore_timing"), {{QStringLiteral("clip"), clip()}, {QStringLiteral("freeze"), true}});
+		QCOMPARE(frozen.value(QStringLiteral("frozen")).toInt(), 2);
+		QCOMPARE(shape(m_clip), (QStringList{QStringLiteral("60@0+12"), QStringLiteral("62@48+12")}));
+		QVERIFY(!m_clip->notes().front()->hasUnquantisedTiming());
+		QCOMPARE(ok(QStringLiteral("note.restore_timing"), {{QStringLiteral("clip"), clip()}}).value(QStringLiteral("restored")).toInt(), 0);
 	}
 
 	void keyNamesPresetUndoAndProjectFile()

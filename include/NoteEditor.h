@@ -63,7 +63,8 @@ enum class NoteTool
 	Slice,
 	Erase,
 	Audition,
-	Paint  //!< drag to lay a note on every grid cell crossed
+	Paint, //!< drag to lay a note on every grid cell crossed
+	Mute   //!< click a note (or the selection under it) to mute or unmute it
 };
 
 //! What a note's colour shows.
@@ -167,6 +168,7 @@ private:
 	void fillNotesMenu(QMenu* menu);
 	void fillVelocityMenu(QMenu* menu, const QJsonObject& scoped);
 	void fillTimingMenu(QMenu* menu, const QJsonObject& scoped);
+	void fillMuteMenu(QMenu* menu);
 	//! "selection" when the clip has selected notes, else "clip" - the scope the Notes menu acts on.
 	QString noteScope() const;
 	void buildLaneChooser();

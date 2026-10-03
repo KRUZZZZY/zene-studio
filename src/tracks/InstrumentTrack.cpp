@@ -618,7 +618,8 @@ void InstrumentTrack::processOutEvent( const MidiEvent& event, const TimePos& ti
 
 			if( key >= 0 && key < NumKeys && --m_runningMidiNotes[key] <= 0 )
 			{
-				m_instrument->handleMidiEvent( MidiEvent( MidiNoteOff, handleEventOutputChannel, key, 0 ), time, offset );
+				// The note-off velocity (0 unless the note has a release velocity, 0.5.0 L07).
+				m_instrument->handleMidiEvent( MidiEvent( MidiNoteOff, handleEventOutputChannel, key, event.velocity() ), time, offset );
 			}
 			m_midiNotesMutex.unlock();
 			emit endNote();
@@ -947,7 +948,7 @@ bool InstrumentTrack::play( const TimePos & _start, const f_cnt_t _frames,
 			// every repeat of the clip or in none of them; the seed is what
 			// re-rolls the take.
 			const uint32_t midiSeed = Engine::getSong()->midiSeed();
-			if( !NoteRandom::passesProbability( currentNote->probability(), midiSeed,
+			if( currentNote->muted() || !NoteRandom::passesProbability( currentNote->probability(), midiSeed,
 					currentNote->key(), currentNote->pos(), currentNote->length() ) )
 			{
 				++nit;

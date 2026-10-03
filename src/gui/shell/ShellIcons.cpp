@@ -70,6 +70,7 @@ const std::map<QString, QString>& shellTable()
 	{"metronome", "timer"},
 	{"mixer", "sliders-vertical"},
 	{"modulator", "activity"},
+	{"mute", "volume-x"},
 	{"new", "file-plus"},
 	{"open", "folder-open"},
 	{"paint", "paintbrush"},

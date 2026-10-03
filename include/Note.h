@@ -169,6 +169,28 @@ public:
 	float velocityJitter() const { return m_velocityJitter; }
 	void setVelocityJitter( float jitter );
 
+	/*! 0.5.0 L07. A muted note stays in the clip and is drawn, but is not played
+	 *  ("mute" attribute, written only when set). */
+	bool muted() const { return m_muted; }
+	void setMuted( bool muted ) { m_muted = muted; }
+
+	/*! The note-off velocity, 0..200 on the note volume's scale, or -1 - the
+	 *  default - for none: the note-off then carries velocity 0, exactly as
+	 *  before this existed ("relvel" attribute, written only when set). */
+	int releaseVelocity() const { return m_releaseVelocity; }
+	void setReleaseVelocity( int velocity );
+	int midiReleaseVelocity( int midiBaseVelocity ) const;
+
+	/*! The timing the note had before its first quantise, kept until it is
+	 *  restored or frozen (note.restore_timing) - Cubase's "undo quantize" that
+	 *  survives other edits and a save ("qpos"/"qlen", written only when kept). */
+	bool hasUnquantisedTiming() const { return m_unquantisedPos >= 0; }
+	//! Keep the current timing as the unquantised one, unless one is kept already.
+	void rememberTiming();
+	//! Put the kept timing back and forget it; false when none was kept.
+	bool restoreTiming();
+	void forgetTiming() { m_unquantisedPos = m_unquantisedLength = -1; }
+
 	/*! MPE per-note expression (task #601): the pitch bend / channel pressure /
 	 *  CC74 an MPE controller sent on *this note's own* MIDI channel.
 	 *
@@ -374,6 +396,12 @@ private:
 	int m_mpePitchCents = 0;
 	int m_mpePressure = 0;
 	int m_mpeTimbre = 0;
+
+	// 0.5.0 L07: mute, release velocity, the pre-quantise timing (-1 = none).
+	bool m_muted = false;
+	int m_releaseVelocity = -1;
+	tick_t m_unquantisedPos = -1;
+	tick_t m_unquantisedLength = -1;
 };
 
 using NoteVector = std::vector<Note*>;

@@ -145,6 +145,7 @@ private:
 	// paint tool, velocity drag, note colour (NoteCanvasGestures.cpp)
 	int scaleKey(int key) const;  //!< @a key, moved into the scale when keep-in-scale is on
 	void pressPaint();
+	void pressMute(const Note* note);
 	void extendPaint(const QPoint& pos);
 	void commitPaint();
 	void pressVelocity(Note* note);

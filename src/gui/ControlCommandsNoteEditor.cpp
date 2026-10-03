@@ -42,7 +42,7 @@ namespace
 {
 
 const QStringList kTools{QStringLiteral("draw"), QStringLiteral("select"), QStringLiteral("slice"),
-	QStringLiteral("erase"), QStringLiteral("audition"), QStringLiteral("paint")};
+	QStringLiteral("erase"), QStringLiteral("audition"), QStringLiteral("paint"), QStringLiteral("mute")};
 const QStringList kFolds{QStringLiteral("none"), QStringLiteral("scale"), QStringLiteral("used"), QStringLiteral("drums")};
 const QStringList kColors{QStringLiteral("velocity"), QStringLiteral("pitch"), QStringLiteral("track")};
 
@@ -120,7 +120,7 @@ void registerNoteEditorWindowCommands(ControlRegistry& registry)
 	cmd.description = QStringLiteral("Drive the note editor's VIEW - what the editor's header and keys set - "
 		"and answer its state (the same object window.get_state reports as `note_editor`). Every field is "
 		"optional: `clip` opens that MIDI clip in the editor (what double-clicking it does); `tool` is draw, "
-		"select, slice, erase, audition or paint (drag to lay a note on every grid cell); `grid` the snap in ticks "
+		"select, slice, erase, audition, paint (drag to lay a note on every grid cell) or mute; `grid` the snap in ticks "
 		"(1 = off); `fold` none, scale, used or drums (the keys the track names - key_names.* - and the used ones); "
 		"`lane` the expression lane (velocity, pan, chance, timbre, pressure, pitch); `ghosts` shows the "
 		"track's other clips; `color_mode` colours notes by velocity, pitch or track; `keep_in_scale` moves "

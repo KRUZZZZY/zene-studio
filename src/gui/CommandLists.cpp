@@ -253,7 +253,8 @@ ListSpec noteEvents(const QString& clip)
 {
 	const QJsonObject where{{QStringLiteral("clip"), clip}};
 	ListSpec out = spec("MIDI Event List", "note.list", "notes", {QStringLiteral("key"), QStringLiteral("position"),
-		QStringLiteral("length"), QStringLiteral("velocity"), QStringLiteral("pan"), QStringLiteral("probability")}, where);
+		QStringLiteral("length"), QStringLiteral("velocity"), QStringLiteral("pan"), QStringLiteral("probability"),
+		QStringLiteral("muted"), QStringLiteral("release_velocity"), QStringLiteral("quantised")}, where);
 	out.summaryKeys = {QStringLiteral("count")};
 	const QHash<QString, QString> note{{QStringLiteral("note"), QStringLiteral("note")}};
 	out.actions = {act("Velocity...", "note.velocity_set", note, where, true), act("Move...", "note.move", note, where, true),

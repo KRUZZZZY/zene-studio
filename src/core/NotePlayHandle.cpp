@@ -428,7 +428,8 @@ void NotePlayHandle::noteOff( const f_cnt_t _s )
 
 		// send MidiNoteOff event
 		m_instrumentTrack->processOutEvent(
-				MidiEvent( MidiNoteOff, midiChannel(), midiKey(), 0 ),
+				MidiEvent( MidiNoteOff, midiChannel(), midiKey(),
+					midiReleaseVelocity( m_instrumentTrack->midiPort()->baseVelocity() ) ),
 				TimePos::fromFrames( _s, Engine::framesPerTick() ),
 				_s );
 	}

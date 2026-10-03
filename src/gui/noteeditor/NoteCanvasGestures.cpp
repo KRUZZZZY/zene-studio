@@ -78,6 +78,22 @@ void NoteCanvas::commitPaint()
 	m_editor->run(QStringLiteral("note.add_many"), {{QStringLiteral("clip"), m_editor->clipId()}, {QStringLiteral("notes"), notes}});
 }
 
+void NoteCanvas::pressMute(const Note* note)
+{
+	// The note clicked takes the opposite of its state; so does the rest of the selection when it
+	// is part of one (one note.edit, one undo step).
+	if (note == nullptr) { return; }
+	const bool mute = !note->muted();
+	std::vector<Note*> targets = note->selected() ? selectedNotes() : std::vector<Note*>{};
+	if (targets.empty()) { targets.push_back(noteById(note->id())); }
+	QJsonArray edits;
+	for (const Note* target : targets)
+	{
+		if (target != nullptr) { edits.append(QJsonObject{{QStringLiteral("note"), control::noteIdOf(target)}, {QStringLiteral("muted"), mute ? 1 : 0}}); }
+	}
+	m_editor->run(QStringLiteral("note.edit"), {{QStringLiteral("clip"), m_editor->clipId()}, {QStringLiteral("edits"), edits}});
+}
+
 void NoteCanvas::pressVelocity(Note* note)
 {
 	// Alt-drag on a note: up louder, down softer, for every selected note at once.
@@ -127,6 +143,7 @@ void NoteCanvas::paintVelocityPreview(QPainter& p) const
 
 QColor NoteCanvas::noteFill(const Note& note) const
 {
+	if (note.muted()) { return tokens::palette().textMuted; }  // a muted note is grey whatever the mode
 	switch (m_state.colorMode)
 	{
 	case NoteColor::Pitch: return QColor::fromHsv((note.key() % 12) * 30, 150, 220);

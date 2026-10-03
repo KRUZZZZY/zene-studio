@@ -22,8 +22,11 @@
  *
  */
 
+#include <vector>
+
 #include <QAction>
 #include <QHBoxLayout>
+#include <QJsonArray>
 #include <QMenu>
 
 #include "Accessibility.h"
@@ -31,6 +34,7 @@
 #include "CommandLists.h"
 #include "ControlVocabulary.h"
 #include "DesignTokens.h"
+#include "Note.h"
 #include "NoteEditor.h"
 #include "ShellChrome.h"
 
@@ -44,6 +48,17 @@ QJsonObject merged(QJsonObject base, const QJsonObject& extra)
 {
 	for (auto it = extra.begin(); it != extra.end(); ++it) { base.insert(it.key(), it.value()); }
 	return base;
+}
+
+//! A note.edit setting 'muted' on @a notes.
+QJsonArray muteEdits(const std::vector<Note*>& notes, bool mute)
+{
+	QJsonArray edits;
+	for (const Note* note : notes)
+	{
+		edits.append(QJsonObject{{QStringLiteral("note"), control::noteIdOf(note)}, {QStringLiteral("muted"), mute ? 1 : 0}});
+	}
+	return edits;
 }
 
 } // namespace
@@ -94,6 +109,7 @@ void NoteEditor::fillNotesMenu(QMenu* menu)
 		where, {{QStringLiteral("grid"), std::max(1, m_state.gridTicks)}, {QStringLiteral("scope"), noteScope()}}));
 	fillVelocityMenu(menu->addMenu(tr("Velocity")), scoped);
 	fillTimingMenu(menu->addMenu(tr("Timing")), scoped);
+	fillMuteMenu(menu->addMenu(tr("Mute")));
 	QMenu* groove = menu->addMenu(tr("Groove"));
 	addCommandAction(groove, tr("Apply Groove..."), QStringLiteral("groove.apply"), call(QStringLiteral("groove.apply"), where));
 	addCommandAction(groove, tr("Extract Groove..."), QStringLiteral("groove.extract"), call(QStringLiteral("groove.extract"),
@@ -150,6 +166,29 @@ void NoteEditor::fillTimingMenu(QMenu* menu, const QJsonObject& scoped)
 	addCommandAction(menu, tr("Ratchet..."), QStringLiteral("note.ratchet"), run("note.ratchet", {}, true));
 	menu->addSeparator();
 	addCommandAction(menu, tr("Transpose..."), QStringLiteral("note.transpose"), run("note.transpose", {}, true));
+	menu->addSeparator();
+	addCommandAction(menu, tr("Restore Original Timing"), QStringLiteral("note.restore_timing"), run("note.restore_timing"));
+	addCommandAction(menu, tr("Freeze Quantise"), QStringLiteral("note.restore_timing"),
+		run("note.restore_timing", {{QStringLiteral("freeze"), true}}));
+}
+
+void NoteEditor::fillMuteMenu(QMenu* menu)
+{
+	// The selection, or every note when nothing is selected - one note.edit, one undo step.
+	std::vector<Note*> notes;
+	const bool selection = noteScope() == QStringLiteral("selection");
+	for (Note* note : m_state.clip->notes())
+	{
+		if (!selection || note->selected()) { notes.push_back(note); }
+	}
+	const QString clip = clipId();
+	for (const bool mute : {true, false})
+	{
+		const QJsonObject fixed{{QStringLiteral("clip"), clip}, {QStringLiteral("edits"), muteEdits(notes, mute)}};
+		QAction* action = addCommandAction(menu, mute ? tr("Mute Notes") : tr("Unmute Notes"), QStringLiteral("note.edit"),
+			[fixed]() { return CommandCall{QStringLiteral("note.edit"), fixed, {}, {}, false}; });
+		action->setEnabled(!notes.empty());
+	}
 }
 
 } // namespace lmms::gui
