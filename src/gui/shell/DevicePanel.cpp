@@ -54,6 +54,7 @@
 #include "Knob.h"
 #include "PinConnector.h"
 #include "LedCheckBox.h"
+#include "MacroKnobs.h"
 #include "MainWindow.h"
 #include "MeterModel.h"
 #include "Mixer.h"
@@ -310,6 +311,9 @@ void DevicePanel::rebuild()
 	const QJsonArray modulators = invoke(QStringLiteral("modulator.get_state"), {}).result
 		.value(QStringLiteral("modulators")).toArray();
 	addSection(tr("Mixer %1 - %2").arg(m_channel, channel->m_name));
+	// 0.5.0 L10 (MX-104): the rack's macros as knobs, before the devices they drive.
+	auto* macros = new MacroKnobs(m_channel, 8, false, m_row);
+	m_cards->insertWidget(m_cards->indexOf(m_add), macros);
 	addChain(&channel->m_fxChain, m_channel, modulators);
 }
 
@@ -333,7 +337,8 @@ void DevicePanel::poll()
 	// The selection itself is compared too: a deleted channel or a renumbered one reads differently.
 	const Track* track = ShellSelection::instance()->track();
 	const QString target = track != nullptr ? control::trackIdOf(track) : control::channelIdOf(selectedChannel());
-	if (target != m_target || signature() != m_signature) { rebuild(); }
+	if (target != m_target || signature() != m_signature) { rebuild(); return; }
+	for (MacroKnobs* macros : m_row->findChildren<MacroKnobs*>()) { macros->refresh(); }  // values set elsewhere
 }
 
 QJsonObject DevicePanel::describe() const

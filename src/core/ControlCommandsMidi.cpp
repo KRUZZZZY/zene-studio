@@ -484,6 +484,19 @@ void registerMidiRetroCaptureToClip(ControlRegistry& registry)
 
 } // namespace
 
+bool readRetroWindow(std::vector<RetroMidiEvent>* events, tick_t* start, tick_t* end, ControlResult* error)
+{
+	RetroMidiCapture* capture = liveCapture();
+	if (capture == nullptr) { *error = noCapture(); return false; }
+	WindowSnapshot snapshot = snapshotWindow(*capture);
+	if (snapshot.events.empty()) { *error = emptyWindowFailure(snapshot); return false; }
+	windowBounds(snapshot.events, start, end);
+	*start = std::max<tick_t>(0, *start);
+	*end = std::max(*start, *end);
+	*events = std::move(snapshot.events);
+	return true;
+}
+
 
 void registerMidiRetroCaptureCommands(ControlRegistry& registry)
 {

@@ -1,0 +1,111 @@
+/*
+ * EffectPickerOrganiser.cpp - favourites, folders and hidden entries in the effect picker
+ *
+ * Copyright (c) 2026 Zene Studio contributors
+ *
+ * This file is part of LMMS - https://lmms.io
+ *
+ * This program is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU General Public
+ * License as published by the Free Software Foundation; either
+ * version 2 of the License, or (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public
+ * License along with this program (see COPYING); if not, write to the
+ * Free Software Foundation, Inc., 51 Franklin Street, Fifth Floor,
+ * Boston, MA 02110-1301 USA.
+ *
+ */
+#include "EffectPickerOrganiser.h"
+
+#include <QInputDialog>
+#include <QJsonObject>
+#include <QMenu>
+#include <QStandardItemModel>
+
+#include "ControlRegistry.h"
+#include "PluginOrganiser.h"
+
+namespace lmms::gui::pickerorganiser
+{
+
+namespace
+{
+
+constexpr auto Star = u"★ ";
+
+void organise(const QString& key, const QJsonObject& change)
+{
+	QJsonObject args = change;
+	args.insert(QStringLiteral("key"), key);
+	ControlRegistry::instance()->invoke(QStringLiteral("plugin.organise"), args);
+}
+
+} // namespace
+
+QString keyOf(const EffectKey& key)
+{
+	if (key.desc == nullptr) { return {}; }
+	const QString module = QString::fromUtf8(key.desc->name);
+	return pluginorganiser::keyOf(module, key.desc->subPluginFeatures != nullptr ? key.attributes : QMap<QString, QString>{});
+}
+
+void markRow(QStandardItemModel& model, int row, const EffectKey& key)
+{
+	QStandardItem* name = model.item(row, 0);
+	if (name == nullptr) { return; }
+	const QString organiserKey = keyOf(key);
+	const pluginorganiser::Entry entry = pluginorganiser::entry(organiserKey);
+	QString text = name->data(Qt::DisplayRole).toString();
+	if (text.startsWith(QString::fromUtf16(Star))) { text = text.mid(2); }
+	name->setData(entry.favourite ? QString::fromUtf16(Star) + text : text, Qt::DisplayRole);
+	name->setData(organiserKey, KeyRole);
+	name->setData(entry.favourite, FavouriteRole);
+	name->setData(entry.hidden, HiddenRole);
+	name->setData(entry.folder, FolderRole);
+	name->setToolTip(entry.folder.isEmpty() ? QString() : QObject::tr("Folder: %1").arg(entry.folder));
+}
+
+bool accepts(const QModelIndex& nameIndex, const Filter& filter)
+{
+	if (!filter.showHidden && nameIndex.data(HiddenRole).toBool()) { return false; }
+	if (filter.favouritesOnly && !nameIndex.data(FavouriteRole).toBool()) { return false; }
+	return filter.folder.isEmpty() || nameIndex.data(FolderRole).toString() == filter.folder;
+}
+
+void fillRowMenu(QMenu* menu, const QModelIndex& nameIndex, QWidget* parent, const std::function<void()>& changed)
+{
+	fillKeyMenu(menu, nameIndex.data(KeyRole).toString(), parent, changed);
+}
+
+void fillKeyMenu(QMenu* menu, const QString& key, QWidget* parent, const std::function<void()>& changed)
+{
+	if (key.isEmpty()) { return; }
+	const pluginorganiser::Entry stored = pluginorganiser::entry(key);
+	const bool favourite = stored.favourite;
+	const bool hidden = stored.hidden;
+	const QString folder = stored.folder;
+	const auto act = [menu, key, changed](const QString& text, const QJsonObject& change) {
+		QAction* action = menu->addAction(text);
+		action->setProperty("controlCommand", QStringLiteral("plugin.organise"));
+		QObject::connect(action, &QAction::triggered, menu, [key, change, changed] { organise(key, change); changed(); });
+	};
+	act(favourite ? QObject::tr("Remove from Favourites") : QObject::tr("Add to Favourites"), {{QStringLiteral("favourite"), !favourite}});
+	act(hidden ? QObject::tr("Show in the List") : QObject::tr("Hide"), {{QStringLiteral("hidden"), !hidden}});
+	QAction* move = menu->addAction(QObject::tr("Move to Folder..."));
+	move->setProperty("controlCommand", QStringLiteral("plugin.organise"));
+	QObject::connect(move, &QAction::triggered, menu, [key, folder, parent, changed] {
+		bool ok = false;
+		const QString chosen = QInputDialog::getItem(parent, QObject::tr("Move to Folder"), QObject::tr("Folder:"),
+			pluginorganiser::folders(), 0, true, &ok);
+		if (ok && !chosen.trimmed().isEmpty()) { organise(key, {{QStringLiteral("folder"), chosen.trimmed()}}); changed(); }
+	});
+	if (!folder.isEmpty()) { act(QObject::tr("Remove from Folder"), {{QStringLiteral("folder"), QString()}}); }
+}
+
+} // namespace lmms::gui::pickerorganiser

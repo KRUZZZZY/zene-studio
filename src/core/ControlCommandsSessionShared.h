@@ -47,6 +47,7 @@
 #ifndef LMMS_CONTROL_COMMANDS_SESSION_SHARED_H
 #define LMMS_CONTROL_COMMANDS_SESSION_SHARED_H
 
+#include <QDomDocument>
 #include <QJsonObject>
 #include <QString>
 #include <QStringList>
@@ -405,6 +406,25 @@ inline QJsonObject launchState(Song& song, const SessionScheduler& scheduler)
 	launch.insert(QStringLiteral("start_observed"),
 		static_cast<int>(scheduler.lastStartObservedTick()));
 	return launch;
+}
+
+//! The whole <session> block as text, for a command that is about to edit it (its undo restores it).
+inline QString sessionBlockXml(const SessionModel& model)
+{
+	QDomDocument document;
+	QDomElement holder = document.createElement(QStringLiteral("session-snapshot"));
+	document.appendChild(holder);
+	model.saveState(document, holder);
+	return document.toString();
+}
+
+//! Put a block captured by sessionBlockXml() back.
+inline void restoreSessionBlock(SessionModel& model, const QString& xml)
+{
+	QDomDocument document;
+	if (!document.setContent(xml, false)) { return; }
+	const QDomElement block = document.documentElement().firstChildElement(QStringLiteral("session"));
+	if (!block.isNull()) { model.restoreState(block); }
 }
 
 } // namespace sessioncontrol

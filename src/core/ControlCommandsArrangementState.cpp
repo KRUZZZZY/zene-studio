@@ -319,4 +319,17 @@ void registerArrangementStateCommands(ControlRegistry& registry)
 	registerArrangementGetState(registry);
 }
 
+namespace control
+{
+
+bool trackRecordArmed(const Track* track)
+{
+	AudioEngine* engine = Engine::audioEngine();
+	const int route = trackRouteOf(track);
+	if (engine == nullptr || route < 0 || route >= engine->recorder().trackCount()) { return false; }
+	return engine->recorder().track(route).isArmed();
+}
+
+} // namespace control
+
 } // namespace lmms

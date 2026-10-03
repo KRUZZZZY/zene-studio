@@ -217,29 +217,8 @@ bool MidiLearn::applyPendingBinding()
 
 
 
-bool MidiLearn::bindFocusedControl(int channel, int controllerNum)
+MidiController* bindMidiController(AutomatableModel* target, int channel, int controllerNum)
 {
-	// GUI thread only. Everything below touches GUI-thread state: the focused
-	// model, the Song, the MidiPorts, and the model's connection pointer.
-	//
-	// Lifetime: the target is resolved *here*, on the owning thread, and held as
-	// a QPointer. There is no window in which another thread has been told to
-	// touch it: the MIDI input thread never received the pointer in the first
-	// place. If the project, track or plugin went away between the CC and this
-	// call, the QPointer is already null and the request is dropped - the
-	// request is data, so dropping it is safe.
-	AutomatableModel* target = m_focusTarget;
-	if (target == nullptr)
-	{
-		return false;
-	}
-
-	Song* song = Engine::getSong();
-	if (song == nullptr)
-	{
-		return false;
-	}
-
 	// The controller is deliberately parentless. It is created here, on the GUI
 	// thread, so parenting it would no longer splice a QObject into the Song's
 	// child graph from the wrong thread - but it stays parentless because
@@ -264,6 +243,33 @@ bool MidiLearn::bindFocusedControl(int channel, int controllerNum)
 
 	auto* connection = new ControllerConnection(controller);
 	target->setControllerConnection(connection);
+	return controller;
+}
+
+bool MidiLearn::bindFocusedControl(int channel, int controllerNum)
+{
+	// GUI thread only. Everything below touches GUI-thread state: the focused
+	// model, the Song, the MidiPorts, and the model's connection pointer.
+	//
+	// Lifetime: the target is resolved *here*, on the owning thread, and held as
+	// a QPointer. There is no window in which another thread has been told to
+	// touch it: the MIDI input thread never received the pointer in the first
+	// place. If the project, track or plugin went away between the CC and this
+	// call, the QPointer is already null and the request is dropped - the
+	// request is data, so dropping it is safe.
+	AutomatableModel* target = m_focusTarget;
+	if (target == nullptr)
+	{
+		return false;
+	}
+
+	Song* song = Engine::getSong();
+	if (song == nullptr)
+	{
+		return false;
+	}
+
+	bindMidiController(target, channel, controllerNum);
 
 	// The seam a test asserts on: the thread that ran the write above.
 	m_lastBindingThreadId.store(QThread::currentThreadId(), std::memory_order_release);

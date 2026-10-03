@@ -43,6 +43,8 @@ QString shapeName(FadeShape shape)
 	{
 	case FadeShape::Exponential: return QStringLiteral("exponential");
 	case FadeShape::EqualPower: return QStringLiteral("equal_power");
+	case FadeShape::Logarithmic: return QStringLiteral("logarithmic");
+	case FadeShape::SCurve: return QStringLiteral("s_curve");
 	case FadeShape::Linear: break;
 	}
 	return QStringLiteral("linear");
@@ -61,6 +63,8 @@ bool fadeShapeFromName(const QString& name, FadeShape* shape)
 	if (name == QLatin1String("linear")) { *shape = FadeShape::Linear; return true; }
 	if (name == QLatin1String("exponential")) { *shape = FadeShape::Exponential; return true; }
 	if (name == QLatin1String("equal_power")) { *shape = FadeShape::EqualPower; return true; }
+	if (name == QLatin1String("logarithmic")) { *shape = FadeShape::Logarithmic; return true; }
+	if (name == QLatin1String("s_curve")) { *shape = FadeShape::SCurve; return true; }
 	return false;
 }
 
@@ -75,6 +79,8 @@ float fadeShapeGain(FadeShape shape, double x)
 	// sin(t * pi/2): at t = 0.5 this is sqrt(2)/2, so two of these meeting over
 	// one range are sin^2 + cos^2 = 1 in power. The crossfade contract.
 	case FadeShape::EqualPower: return static_cast<float>(std::sin(t * kHalfPi));
+	case FadeShape::Logarithmic: return static_cast<float>(1.0 - (1.0 - t) * (1.0 - t));
+	case FadeShape::SCurve: return static_cast<float>(t * t * (3.0 - 2.0 * t));
 	case FadeShape::Linear: break;
 	}
 	return static_cast<float>(t);

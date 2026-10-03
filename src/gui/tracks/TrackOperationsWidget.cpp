@@ -31,12 +31,15 @@
 #include <QMouseEvent>
 #include <QPainter>
 #include <QPushButton>
+#include <QToolButton>
 
 #include "AutomatableButton.h"
 #include "AutomationClip.h"
 #include "AutomationTrackView.h"
 #include "ColorChooser.h"
 #include "ConfigManager.h"
+#include "ControlEdit.h"
+#include "ControlRegistry.h"
 #include "ControlStructuralSupport.h"
 #include "ControlVocabulary.h"
 #include "embed.h"
@@ -116,6 +119,26 @@ TrackOperationsWidget::TrackOperationsWidget( TrackView * parent ) :
 	operationsLayout->addWidget(m_muteBtn);
 	operationsLayout->addWidget(m_soloBtn);
 
+	// 0.5.0 L03 (WF-074): a record-arm button on the tracks that record (track.set_arm).
+	const Track::Type type = m_trackView->getTrack()->type();
+	if (type == Track::Type::Sample || type == Track::Type::Instrument)
+	{
+		m_armBtn = new QToolButton(operationsWidget);
+		m_armBtn->setObjectName(QStringLiteral("btn-arm"));
+		m_armBtn->setText(QStringLiteral("\u25CF"));
+		m_armBtn->setCheckable(true);
+		m_armBtn->setToolTip(tr("Arm for recording"));
+		m_armBtn->setAccessibleName(tr("Arm the track for recording"));
+		m_armBtn->setProperty("controlCommand", QStringLiteral("track.set_arm"));
+		connect(m_armBtn, &QToolButton::clicked, this, [this](bool armed) {
+			const ControlResult result = ControlRegistry::instance()->invoke(QStringLiteral("track.set_arm"),
+				{{QStringLiteral("track"), control::trackIdOf(m_trackView->getTrack())}, {QStringLiteral("armed"), armed}});
+			if (!result.ok) { m_armBtn->setToolTip(result.errorMessage); }
+			m_armBtn->setChecked(control::trackRecordArmed(m_trackView->getTrack()));
+		});
+		operationsLayout->addWidget(m_armBtn);
+	}
+
 	layout->addWidget(operationsWidget, 0, Qt::AlignTop | Qt::AlignLeading);
 
 	connect( this, SIGNAL(trackRemovalScheduled(lmms::gui::TrackView*)),
@@ -139,6 +162,8 @@ TrackOperationsWidget::TrackOperationsWidget( TrackView * parent ) :
  */
 void TrackOperationsWidget::paintEvent(QPaintEvent*)
 {
+	// The arm state can change elsewhere (a script, the Record menu): shown as it is on each repaint.
+	if (m_armBtn != nullptr) { m_armBtn->setChecked(control::trackRecordArmed(m_trackView->getTrack())); }
 	QPainter p( this );
 
 	p.fillRect(rect(), palette().brush(QPalette::Window));

@@ -175,6 +175,8 @@ private:
 	 *  just rendered. Never called for a neutral clip, so the default path pays
 	 *  nothing at all for this feature - not a branch, not a multiply. */
 	void applyClipEdits(SampleFrame* buffer, f_cnt_t frames) const;
+	bool editsOrAutoFade(int autoFadeMs) const;
+	bool needsClipEdits() const;
 	//! Derives m_clipFrames / m_envelopeStart / the two fade lengths from the
 	//! clip and the window this handle renders (construction time only).
 	void snapshotClipEdits(const SampleClip* clip, const SampleWindow& window);
@@ -191,6 +193,8 @@ private:
 	static constexpr int MaxCompSpans = 32;
 	static constexpr f_cnt_t CompRampFrames = 64;
 	bool m_comped = false;
+	//! 0.5.0 L05 (ED-177): an automatic fade applies to this neutral clip.
+	bool m_autoFaded = false;
 	int m_compSpanCount = 0;
 	std::array<std::pair<f_cnt_t, f_cnt_t>, MaxCompSpans> m_compSpans{};
 } ;

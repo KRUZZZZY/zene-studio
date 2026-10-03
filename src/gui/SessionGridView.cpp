@@ -28,15 +28,20 @@
 
 #include <QGridLayout>
 #include <QJsonArray>
+#include <QDragEnterEvent>
+#include <QDropEvent>
 #include <QKeyEvent>
 #include <QLabel>
+#include <QMimeData>
 #include <QMenu>
 #include <QToolButton>
+#include <QUrl>
 #include <QVBoxLayout>
 
 #include "ControlRegistry.h"
 #include "SessionGridMenus.h"
 #include "SessionTransportBar.h"
+#include "StringPairDrag.h"
 
 namespace lmms::gui
 {
@@ -147,6 +152,7 @@ void SessionGridView::rebuild(int tracks, int scenes)
 		for (int scene = 0; scene < scenes; ++scene)
 		{
 			QToolButton* cell = makeButton(QStringLiteral("session.launch_slot"));
+			cell->setAcceptDrops(true);  // WF-053: an audio file dropped here fills the cell
 			connect(cell, &QToolButton::clicked, this, [this, track, scene] { launchCell(track, scene); });
 			m_grid->addWidget(cell, scene, track);
 			m_cells.push_back(cell);
@@ -287,9 +293,45 @@ void SessionGridView::stopColumn(int track)
 }
 
 
+namespace
+{
+
+//! The audio file a drag carries: the browser's sample file, or a local file dropped from outside.
+QString droppedFile(QDropEvent* event)
+{
+	if (StringPairDrag::decodeKey(event) == QLatin1String("samplefile")) { return StringPairDrag::decodeValue(event); }
+	const QList<QUrl> urls = event->mimeData()->urls();
+	return !urls.isEmpty() && urls.first().isLocalFile() ? urls.first().toLocalFile() : QString();
+}
+
+} // namespace
+
+
+bool SessionGridView::dropOnCell(QToolButton* cell, QEvent* event)
+{
+	const auto at = std::find(m_cells.begin(), m_cells.end(), cell);
+	if (at == m_cells.end() || m_scenes <= 0) { return false; }
+	if (event->type() == QEvent::DragEnter)
+	{
+		auto* enter = static_cast<QDragEnterEvent*>(event);
+		if (StringPairDrag::decodeKey(enter) == QLatin1String("samplefile") || enter->mimeData()->hasUrls()) { enter->acceptProposedAction(); }
+		return true;
+	}
+	if (event->type() != QEvent::Drop) { return false; }
+	const QString file = droppedFile(static_cast<QDropEvent*>(event));
+	if (file.isEmpty()) { return true; }
+	const int index = static_cast<int>(at - m_cells.begin());
+	run(QStringLiteral("session.set_slot"), {{QStringLiteral("track"), index / m_scenes}, {QStringLiteral("scene"), index % m_scenes},
+		{QStringLiteral("type"), QStringLiteral("audio")}, {QStringLiteral("source"), file}});
+	refresh();
+	return true;
+}
+
+
 bool SessionGridView::eventFilter(QObject* watched, QEvent* event)
 {
 	auto* button = qobject_cast<QToolButton*>(watched);
+	if (button != nullptr && dropOnCell(button, event)) { return true; }
 	if (event->type() != QEvent::KeyPress || button == nullptr) { return QWidget::eventFilter(watched, event); }
 	const auto key = static_cast<QKeyEvent*>(event)->key();
 	if (key == Qt::Key_Return || key == Qt::Key_Enter)

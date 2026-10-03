@@ -30,6 +30,7 @@
 #include "EffectChain.h"
 #include "JournallingObject.h"
 #include "LatencyCompensation.h"
+#include "MixerStrip.h"
 #include "Model.h"
 #include "Rack.h"
 #include "ThreadableJob.h"
@@ -99,6 +100,27 @@ public:
 	 *  is not touched at all (doProcessing skips the stage) and every project
 	 *  saved before this model existed renders and saves byte-identically. */
 	FloatModel m_panModel;
+	// 0.5.0 L08: the strip's own stages and settings (MixerStrip.h); each skipped at its default.
+	FloatModel m_trimModel{0.f, -24.f, 24.f, 0.1f};
+	BoolModel m_polarityLeftModel{false};
+	BoolModel m_polarityRightModel{false};
+	BoolModel m_monoModel{false};
+	IntModel m_panModeModel{0, 0, 2};
+	FloatModel m_panRightModel{0.f, -1.f, 1.f, 0.001f};
+	FloatModel m_widthModel{1.f, 0.f, 2.f, 0.01f};
+	BoolModel m_soloSafeModel{false};
+	QString m_note;
+	// The meters beyond the post-fader peak (written by the mixer worker, read by the interface,
+	// like m_peakLeft): pre-fader peak (held), RMS after the fader, a latched clip light, the
+	// deepest gain reduction (dB) an insert reported this period.
+	MeterValue m_prePeakLeft;
+	MeterValue m_prePeakRight;
+	MeterValue m_rmsLeft;
+	MeterValue m_rmsRight;
+	MeterValue m_preMeterLeft;  // the pre-fader peak since the interface last read it (its meter mode)
+	MeterValue m_preMeterRight;
+	std::atomic<bool> m_clipped{false};
+	MeterValue m_gainReduction;
 	QString m_name;
 	QMutex m_lock;
 	bool m_queued; // are we queued up for rendering yet?
@@ -268,6 +290,13 @@ public:
 		return m_preFader;
 	}
 
+	//! 0.5.0 L09 (MX-048): the send's own pan, a balance on top of the channel's (0 = follow the
+	//! channel pan, which the sent signal already carries).
+	FloatModel * pan()
+	{
+		return &m_pan;
+	}
+
 	void setPreFader(bool preFader)
 	{
 		m_preFader = preFader;
@@ -323,6 +352,7 @@ public:
 		MixerChannel * m_from;
 		MixerChannel * m_to;
 		FloatModel m_amount;
+		FloatModel m_pan;
 		bool m_preFader;
 		//! PDC delay line (#605); touched only by the receiver's worker.
 		LatencyCompensation m_compensation;
@@ -566,6 +596,8 @@ public:
 	void toggledSolo();
 	void activateSolo();
 	void deactivateSolo();
+	//! 0.5.0 L08 (MX-029): additive solo - every soloed channel is heard (MixerStrip.cpp).
+	void applyAdditiveSolo();
 
 	// ---- VCA / mix-and-edit groups (#622) ----
 

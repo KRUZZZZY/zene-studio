@@ -300,6 +300,20 @@ inline bool checkLockable(VcaGroup* group, const control::ClipRef& anchor, Contr
 	return true;
 }
 
+//! Another group already holds the channel at @a index: a typed refusal naming it. 0.5.0 L09
+//! (MX-070): 'also' asks for multiple membership, so another group holding it is fine then.
+inline bool heldElsewhere(const QJsonObject& args, VcaGroup* group, mix_ch_t index, const QString& id, ControlResult* error)
+{
+	if (group == nullptr || group->contains(index) || args.value(QStringLiteral("also")).toBool()) { return false; }
+	VcaGroup* holder = Engine::mixer()->vcaGroupForChannel(index);
+	if (holder == nullptr) { return false; }
+	*error = ControlResult::failure(ControlErrorKind::Refused,
+		QStringLiteral("%1 already belongs to %2; a channel is in at most one group, "
+			"so unassign it there first")
+			.arg(id, vcaGroupId(holder->id())));
+	return true;
+}
+
 /*! Resolve the `channel` argument of vca.assign / vca.unassign.
  *
  *  `ch-<n>` is the mixer's own grammar and the number in it is the channel's
@@ -363,18 +377,7 @@ inline MixerChannel* memberChannel(const QJsonObject& args, VcaGroup* group, Con
 	// channel INDEX (VcaGroup::members() is a list of mix_ch_t positions, and
 	// Mixer::refreshGroups walks the channels by position).
 	const mix_ch_t channelIndex = static_cast<mix_ch_t>(channel->index());
-	if (group != nullptr && !group->contains(channelIndex))
-	{
-		if (VcaGroup* holder = mixer->vcaGroupForChannel(channelIndex))
-		{
-			*error = ControlResult::failure(ControlErrorKind::Refused,
-				QStringLiteral("%1 already belongs to %2; a channel is in at most one group, "
-					"so unassign it there first")
-					.arg(id, vcaGroupId(holder->id())));
-			return nullptr;
-		}
-	}
-	return channel;
+	return heldElsewhere(args, group, channelIndex, id, error) ? nullptr : channel;
 }
 
 //! The result schema of every command that replies with groupState() plus a

@@ -141,6 +141,11 @@ LMMS_EXPORT AutomatableModel* controlResolveParameterIn(const QList<AutomatableM
 LMMS_EXPORT AutomatableModel* controlResolveParameter(Effect* effect, const QString& name,
 	int index, bool hasIndex, ControlResult* error);
 
+//! The parameters of the device \a pluginId names on \a target ("inst" a track's instrument, else an
+//! fx-<n>), plus the device's plugin name - what plugin.param_get lists. False and *error otherwise.
+LMMS_EXPORT bool controlDeviceParameters(const ControlTarget& target, const QString& pluginId,
+	QList<AutomatableModel*>* models, QString* pluginName, ControlResult* error);
+
 //! The effect as dsp.get_state reports it, addressing it as "fx-<index>".
 LMMS_EXPORT QJsonObject controlEffectJson(Effect* effect, int index);
 

@@ -234,6 +234,7 @@ ControlResult assignChannel(const QJsonObject& args)
 	const int id = group->id();
 	auto mixerRef = Engine::mixer();
 	const mix_ch_t member = static_cast<mix_ch_t>(index);
+	const bool also = args.value(QStringLiteral("also")).toBool();
 	// The membership is a list of channel indices on the group; a MixerChannel
 	// has no back-reference a checkpoint could restore, so the inverse is the
 	// recorded OPERATION that removes the member this call adds - and the
@@ -244,11 +245,11 @@ ControlResult assignChannel(const QJsonObject& args)
 		{
 			if (VcaGroup* g = mixerRef->vcaGroup(id)) { g->removeMember(member); }
 		},
-		[mixerRef, id, member]()
+		[mixerRef, id, member, also]()
 		{
-			if (VcaGroup* g = mixerRef->vcaGroup(id)) { g->addMember(member); }
+			if (VcaGroup* g = mixerRef->vcaGroup(id)) { g->addMember(member, also); }
 		});
-	group->addMember(member);
+	group->addMember(member, also);
 
 	QJsonObject result = groupState(group);
 	result.insert(QStringLiteral("assigned"), control::channelIdOf(channel));
@@ -406,11 +407,13 @@ void registerVcaAssign(ControlRegistry& registry)
 	cmd.description = QStringLiteral("Put a mixer channel into a group, so the group's fader "
 		"scales it. Refused, typed, for ch-0 (master), for a channel already in this group, and "
 		"for a channel that belongs to ANOTHER group - a channel is in at most one, which is "
-		"what keeps 'soloing a member' single-valued; the refusal names the group holding it. "
+		"what keeps 'soloing a member' single-valued; the refusal names the group holding it. With "
+		"'also' (0.5.0) the channel joins this group as well, and the groups' gains multiply. "
 		"Reversible through the ProjectJournal (a recorded undo step).");
 	cmd.argsSchema = control::objectSchema({
 		{QStringLiteral("group"), control::stringProperty()},
 		{QStringLiteral("channel"), control::stringProperty()},
+		{QStringLiteral("also"), control::booleanProperty()},
 	}, {QStringLiteral("group"), QStringLiteral("channel")});
 	cmd.resultSchema = vcacontrol::groupStateSchema({
 		{QStringLiteral("assigned"), control::stringProperty()},

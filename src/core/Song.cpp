@@ -61,6 +61,7 @@
 #include "ProjectIds.h"
 #include "ProjectNotes.h"
 #include "ProvenanceSection.h"
+#include "RecordOptions.h"
 #include "RetroMidiCapture.h"
 #include "ProjectSection.h"
 #include "Scale.h"
@@ -666,7 +667,9 @@ void Song::processMetronome(size_t bufferOffset)
 		|| currentPlayMode == PlayMode::Pattern;
 
 	if (!supported || m_exporting) { return; } 
-	m_metronome.processTick(currentTick(), ticksPerBar(), m_timeSigModel.getNumerator(), bufferOffset);
+	// 0.5.0 L03 (WF-080): the count-in clicks whether the metronome is on or not.
+	m_metronome.processTick(currentTick(), ticksPerBar(), m_timeSigModel.getNumerator(), bufferOffset,
+		recordoptions::countingIn(currentTick()));
 }
 
 void Song::setModified(bool value)
@@ -766,6 +769,8 @@ void Song::record()
 
 void Song::playAndRecord()
 {
+	// 0.5.0 L03 (WF-080): a count-in or pre-roll starts the pass early, captured from here.
+	recordoptions::beginPass(this);
 	startSongPlayback( true );
 }
 
@@ -880,6 +885,7 @@ void Song::stop()
 	{
 		return;
 	}
+	recordoptions::endPass(this);  // 0.5.0 L03: the timeline's own punch region back on the gate
 
 	using gui::TimeLineWidget;
 

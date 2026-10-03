@@ -55,6 +55,7 @@
  */
 
 #include <QJsonArray>
+#include <QVector>
 #include <QJsonObject>
 
 #include "ControlEdit.h"
@@ -307,8 +308,64 @@ ControlResult handleRouteRemove(const QJsonObject& args)
 
 } // namespace
 
+//! MX-050 (0.5.0 L09): the same send (or routing) from many channels to one, as ONE undo step - each
+//! channel's write goes through handleRouteWrite, whose action steps the registry merges.
+ControlResult handleSendMany(const QJsonObject& args)
+{
+	const QJsonArray channels = args.value(QStringLiteral("channels")).toArray();
+	if (channels.isEmpty() || channels.size() > 128)
+	{
+		return ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("'channels' names 1..128 channels"));
+	}
+	QVector<QJsonObject> calls;
+	for (const QJsonValue& channel : channels)
+	{
+		QJsonObject one = args;
+		one.remove(QStringLiteral("channels"));
+		one.remove(QStringLiteral("route"));
+		one.insert(QStringLiteral("channel"), channel);
+		ControlResult error;
+		RoutingEnds ends;
+		if (!resolveRoutingEnds(one, &ends, &error)) { return error; }  // every end checked before anything is written
+		calls.append(one);
+	}
+	const bool route = args.value(QStringLiteral("route")).toBool();
+	QJsonArray results;
+	int made = 0;
+	for (const QJsonObject& call : calls)
+	{
+		const ControlResult done = handleRouteWrite(call, !route);
+		QJsonObject row{{QStringLiteral("channel"), call.value(QStringLiteral("channel"))}, {QStringLiteral("ok"), done.ok}};
+		if (done.ok) { ++made; } else { row.insert(QStringLiteral("error"), done.errorMessage); }
+		results.append(row);
+	}
+	if (made == 0) { return ControlResult::failure(ControlErrorKind::Refused, QStringLiteral("no send could be made")); }
+	QJsonObject result{{QStringLiteral("to"), args.value(QStringLiteral("to"))}, {QStringLiteral("made"), made},
+		{QStringLiteral("channels"), results}};
+	result.insert(QStringLiteral("__transaction"), transactionPayload({{QStringLiteral("channels"), channels}}, QStringLiteral("control.undo"),
+		{}, true, QStringLiteral("each send's action step, merged by the registry into one")));
+	return ControlResult::success(result);
+}
+
 void registerMixerRouteCommands(ControlRegistry& registry)
 {
+	{
+		ControlCommand cmd;
+		cmd.id = QStringLiteral("mixer.send_many");
+		cmd.group = QStringLiteral("mixer");
+		cmd.verb = QStringLiteral("send_many");
+		cmd.description = QStringLiteral("Send several channels ('channels', ch-<n> ids) to one ('to') at once - an "
+			"auxiliary send with 'amount' and 'pre_fader' as mixer.send_to takes them, or with 'route' their routing as "
+			"mixer.route_to makes it. Every end is checked first; 'channels' in the reply says which were made. ONE undo step.");
+		cmd.argsSchema = objectSchema({{QStringLiteral("channels"), arrayProperty()}, {QStringLiteral("to"), stringProperty()},
+			{QStringLiteral("amount"), numberProperty()}, {QStringLiteral("pre_fader"), booleanProperty()},
+			{QStringLiteral("route"), booleanProperty()}}, {QStringLiteral("channels"), QStringLiteral("to")});
+		cmd.resultSchema = objectProperty();
+		cmd.mutating = true;
+		cmd.handler = handleSendMany;
+		registry.registerCommand(cmd);
+	}
+
 	{
 		ControlCommand cmd;
 		cmd.id = QStringLiteral("mixer.route_to");

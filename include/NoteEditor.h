@@ -174,6 +174,8 @@ private:
 	void fillVelocityMenu(QMenu* menu, const QJsonObject& scoped);
 	void fillTimingMenu(QMenu* menu, const QJsonObject& scoped);
 	void fillMuteMenu(QMenu* menu);
+	void fillScriptsMenu(QMenu* menu, const QString& clip);
+	void fillPitchCurveMenu(QMenu* menu);
 	//! "selection" when the clip has selected notes, else "clip" - the scope the Notes menu acts on.
 	QString noteScope() const;
 	void buildLaneChooser();

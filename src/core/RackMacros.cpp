@@ -25,6 +25,7 @@
 #include "RackMacros.h"
 
 #include <algorithm>
+#include <cmath>
 #include <cstddef>
 
 #include <QDomDocument>
@@ -83,6 +84,12 @@ Effect* effectOfTarget(Rack& rack, const RackMacroTarget& target, QString* why)
 
 } // namespace
 
+float shapeMacroValue(float value, float curve)
+{
+	if (curve == 0.0f) { return value; }
+	return std::pow(std::clamp(value, 0.0f, 1.0f), std::pow(4.0f, -curve));
+}
+
 bool isValidMacroTarget(const RackMacroTarget& target)
 {
 	if (target.chain < 0) { return false; }
@@ -91,6 +98,7 @@ bool isValidMacroTarget(const RackMacroTarget& target)
 	// The window is a fraction pair: a driver that could leave its own 0..1
 	// span would be unrepresentable in the persisted form.
 	if (target.low < 0.0f || target.low > 1.0f) { return false; }
+	if (target.curve < -1.0f || target.curve > 1.0f) { return false; }
 	return target.high >= 0.0f && target.high <= 1.0f;
 }
 
@@ -210,7 +218,7 @@ auto RackMacros::apply(int index, Rack& rack) -> std::vector<RackMacroWrite>
 
 		const float minimum = model->minValue<float>();
 		const float maximum = model->maxValue<float>();
-		const float fraction = std::clamp(target.low + entry->value * (target.high - target.low),
+		const float fraction = std::clamp(target.low + shapeMacroValue(entry->value, target.curve) * (target.high - target.low),
 			0.0f, 1.0f);
 		const float written = minimum + fraction * (maximum - minimum);
 
@@ -250,6 +258,7 @@ void RackMacros::saveSettings(QDomDocument& doc, QDomElement& rackElement) const
 			targetElement.setAttribute(QStringLiteral("parameter"), target.parameter);
 			targetElement.setAttribute(QStringLiteral("low"), static_cast<double>(target.low));
 			targetElement.setAttribute(QStringLiteral("high"), static_cast<double>(target.high));
+			if (target.curve != 0.0f) { targetElement.setAttribute(QStringLiteral("curve"), static_cast<double>(target.curve)); }
 			macroElement.appendChild(targetElement);
 		}
 
@@ -283,6 +292,7 @@ void RackMacros::loadSettings(const QDomElement& rackElement)
 				targetElement.attribute(QStringLiteral("low"), QStringLiteral("0")).toFloat();
 			target.high =
 				targetElement.attribute(QStringLiteral("high"), QStringLiteral("1")).toFloat();
+			target.curve = targetElement.attribute(QStringLiteral("curve"), QStringLiteral("0")).toFloat();
 			entry.targets.push_back(target);
 		}
 

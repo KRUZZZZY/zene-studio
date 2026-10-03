@@ -119,7 +119,7 @@ bool shapeArg(const QJsonObject& args, const QString& key, FadeShape* shape, Con
 	const QString name = args.value(key).toString();
 	if (fadeShapeFromName(name, shape)) { return true; }
 	*error = ControlResult::failure(ControlErrorKind::InvalidArgs,
-		QStringLiteral("'%1' is not a fade shape; use linear, exponential or equal_power").arg(name));
+		QStringLiteral("'%1' is not a fade shape; use linear, exponential, logarithmic, s_curve or equal_power").arg(name));
 	return false;
 }
 
@@ -203,7 +203,7 @@ void registerClipSetFade(ControlRegistry& registry)
 	cmd.group = QStringLiteral("clip");
 	cmd.verb = QStringLiteral("set_fade");
 	cmd.description = QStringLiteral("Set a clip's fade-in and/or fade-out in ticks, with a shape "
-		"each (linear, exponential, equal_power). An omitted argument keeps its current value; "
+		"each (linear, exponential, logarithmic, s_curve, equal_power). An omitted argument keeps its current value; "
 		"fade_in + fade_out must fit inside the clip. Reversible through the ProjectJournal "
 		"(Clip checkpoint).");
 	cmd.argsSchema = control::objectSchema({

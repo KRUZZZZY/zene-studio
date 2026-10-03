@@ -82,6 +82,9 @@ protected:
 private:
 	void rebuild(int tracks, int scenes);
 	void launchCell(int track, int scene);
+	//! 0.5.0 L02 (WF-053): an audio file dropped on a cell (from the browser or the desktop) becomes its
+	//! clip - session.set_slot - and true when @a event was a drag or drop this handled.
+	bool dropOnCell(QToolButton* cell, QEvent* event);
 	void stopColumn(int track);
 	QToolButton* makeButton(const QString& command);
 	void readColumns(const QJsonArray& columns);

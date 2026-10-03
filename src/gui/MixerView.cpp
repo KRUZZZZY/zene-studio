@@ -46,6 +46,7 @@
 #include <QLayout>
 #include <QLineEdit>
 #include <QPushButton>
+#include <QVBoxLayout>
 #include <QScrollArea>
 #include <QStyle>
 #include <QKeyEvent>
@@ -60,6 +61,9 @@
 #include "Knob.h"
 #include "InstrumentTrack.h"
 #include "MainWindow.h"
+#include "ControlRegistry.h"
+#include "MixerOverlays.h"
+#include "MixerViewOptions.h"
 #include "Mixer.h"
 #include "MixerChannelView.h"
 #include "PatternStore.h"
@@ -175,7 +179,24 @@ MixerView::MixerView(Mixer* mixer) :
 	newChannelBtn->setFixedWidth(mixerChannelSize.width());
 	newChannelBtn->setFocusPolicy(Qt::NoFocus);
 	connect(newChannelBtn, SIGNAL(clicked()), this, SLOT(addNewChannel()));
-	ml->addWidget(newChannelBtn, 0);
+	// 0.5.0 L09 (MX-045): a return channel beside it - a bus that sends land on before its fader.
+	auto* addColumn = new QWidget(this);
+	auto* addLayout = new QVBoxLayout(addColumn);
+	addLayout->setContentsMargins(0, 0, 0, 0);
+	addLayout->setSpacing(2);
+	addLayout->addWidget(newChannelBtn, 1);
+	auto* newReturnBtn = new QPushButton(tr("Return"), addColumn);
+	newReturnBtn->setObjectName(QStringLiteral("newReturnBtn"));
+	newReturnBtn->setToolTip(tr("New return channel (bus.create): sends into it are pre-fader"));
+	newReturnBtn->setFixedWidth(mixerChannelSize.width());
+	newReturnBtn->setFocusPolicy(Qt::NoFocus);
+	newReturnBtn->setProperty("controlCommand", QStringLiteral("bus.create"));
+	connect(newReturnBtn, &QPushButton::clicked, this, [this] {
+		ControlRegistry::instance()->invoke(QStringLiteral("bus.create"));
+		syncWithMixer();
+	});
+	addLayout->addWidget(newReturnBtn, 0);
+	ml->addWidget(addColumn, 0);
 
 
 	// add the stacked layout for the effect racks of mixer channels
@@ -297,14 +318,25 @@ void MixerView::syncWithMixer()
 		return;
 	}
 	if (vcaSignatureOf(getMixer()) != m_vcaSignature) { refreshVcaStrips(); }
+	// 0.5.0 L09 (MX-066, MX-049): folded folders' strips hidden, faders on one send (MixerOverlays.cpp).
+	mixeroverlays::apply(m_mixerChannelViews);
+	// 0.5.0 L08: the view options (MixerViewOptions.cpp); a change re-lays the send rows.
+	if (m_viewOptionsGeneration != mixerviewoptions::generation())
+	{
+		m_viewOptionsGeneration = mixerviewoptions::generation();
+		for (int i = 0; i < m_mixerChannelViews.size(); ++i) { updateMixerChannel(i); }
+	}
 	// Delay compensation, readable where the strip is (the same figures pdc.report gives).
 	const int rate = static_cast<int>(Engine::audioEngine()->outputSampleRate());
 	for (int i = 0; i < m_mixerChannelViews.size(); ++i)
 	{
 		MixerChannel* channel = getMixer()->mixerChannel(i);
 		if (channel == nullptr || m_mixerChannelViews[i] == nullptr) { continue; }
-		m_mixerChannelViews[i]->setToolTip(mixerLatencyText(channel->m_name, channel->m_fxChain.latencyFrames(),
-			channel->inputLatencyFrames(), i == 0 ? getMixer()->totalLatencyFrames() : -1, rate));
+		const QString latency = mixerLatencyText(channel->m_name, channel->m_fxChain.latencyFrames(),
+			channel->inputLatencyFrames(), i == 0 ? getMixer()->totalLatencyFrames() : -1, rate);
+		// MX-016: the channel's note under it.
+		m_mixerChannelViews[i]->setToolTip(channel->m_note.isEmpty() ? latency : latency + QLatin1Char('\n') + channel->m_note);
+		mixerviewoptions::applyToStrip(m_mixerChannelViews[i], channel);
 	}
 }
 
@@ -365,8 +397,7 @@ void MixerView::loadSettings(const QDomElement& domElement)
 
 void MixerView::toggledSolo()
 {
-	getMixer()->toggledSolo();
-
+	// 0.5.0 L08: the mixer applies the solo itself (Mixer::createChannel connects it); the view repaints.
 	updateAllMixerChannels();
 }
 
@@ -459,6 +490,7 @@ void MixerView::updateMixerChannel(int index)
 		thisLine->m_receiveArrowOrSendButton->setCurrentIndex(thisLine->m_sendButtonStackedIndex);
 	}
 
+	if (!mixerviewoptions::options().sends) { thisLine->hideSends(); }  // 0.5.0 L08 (MX-003)
 	thisLine->m_sendButton->updateLightStatus();
 	thisLine->m_renameLineEdit->setText(thisLine->elideName(thisLine->mixerChannel()->m_name));
 	thisLine->update();
@@ -647,6 +679,8 @@ void MixerView::updateFaders()
 
 	for (int i = 0; i < m_mixerChannelViews.size() && i < static_cast<int>(m->numChannels()); ++i)
 	{
+		// 0.5.0 L08 (MX-127 / MX-129): the RMS or pre-fader meter instead (MixerViewOptions.cpp).
+		if (mixerviewoptions::feedMeter(m_mixerChannelViews[i]->m_fader, m->mixerChannel(i))) { continue; }
 		const float opl = m_mixerChannelViews[i]->m_fader->getPeak_L();
 		const float opr = m_mixerChannelViews[i]->m_fader->getPeak_R();
 		const float fallOff = 1.25;

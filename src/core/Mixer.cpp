@@ -38,6 +38,10 @@
 
 #include "InstrumentTrack.h"
 #include "MixHelpers.h"
+#include "MixerListen.h"
+#include "MixerGroups.h"
+#include "MixerSendPan.h"
+#include "MixerStrip.h"
 #include "PatternStore.h"
 #include "ProjectIds.h"
 #include "SampleTrack.h"
@@ -53,6 +57,8 @@ MixerRoute::MixerRoute( MixerChannel * from, MixerChannel * to, float amount,
 	m_to( to ),
 	m_amount(amount, 0, 1, 0.001f, nullptr,
 			tr("Amount to send from channel %1 to channel %2").arg(m_from->index()).arg(m_to->index())),
+	m_pan(0.f, -1.f, 1.f, 0.01f, nullptr,
+			tr("Pan of the send from channel %1 to channel %2").arg(m_from->index()).arg(m_to->index())),
 	m_preFader( preFader )
 {
 	//qDebug( "created: %d to %d", m_from->m_channelIndex, m_to->m_channelIndex );
@@ -580,7 +586,14 @@ void MixerChannel::doProcessing()
 					? senderRoute->feedbackCommitted()
 					: senderRoute->compensatedBuffer(sender->m_buffer, fpp);
 
-				if( senderRoute->preFader() )
+				if( senderRoute->pan()->value() != 0.0f )
+				{
+					// 0.5.0 L09 (MX-048): a send with its own pan (MixerSendPan.cpp). A
+					// centred send - every send of every older project - takes the
+					// branches below unchanged.
+					addPannedSend( m_buffer, ch_buf, *senderRoute, *sender, fpp );
+				}
+				else if( senderRoute->preFader() )
 				{
 					// Phase D pre-fader send: the sender's post-FX, pre-volume
 					// signal scaled only by the send amount. The sender fader
@@ -638,6 +651,9 @@ void MixerChannel::doProcessing()
 				m_hasInput = true;
 			}
 		}
+
+		// 0.5.0 L08: the strip's trim, before the inserts (MixerStrip.cpp).
+		mixerstrip::applyInput( *this, fpp );
 
 		// Phase D: pre-FX sidechain tap, taken from the raw channel buffer
 		// before the FX chain runs (spec 4.3).
@@ -697,9 +713,12 @@ void MixerChannel::doProcessing()
 		// arithmetic is the pre-pan arithmetic, bit for bit. No allocation, no
 		// lock: the model's value and its sample-exact buffer are the same reads
 		// the volume fader makes on this thread.
+		// 0.5.0 L08: polarity and mono, then the pan in its mode (balance falls through to the stage below).
+		mixerstrip::applyOutput( *this, fpp );
+		const bool panned = mixerstrip::applyPanMode( *this, fpp );
 		const ValueBuffer* panBuf = m_panModel.valueBuffer();
 		const float pan = m_panModel.value();
-		if (panBuf != nullptr || pan != 0.0f)
+		if (!panned && (panBuf != nullptr || pan != 0.0f))
 		{
 			for (f_cnt_t f = 0; f < fpp; ++f)
 			{
@@ -736,6 +755,7 @@ void MixerChannel::doProcessing()
 		SampleFrame peakSamples = getAbsPeakValues(m_buffer, fpp);
 		m_peakLeft = std::max(m_peakLeft, peakSamples[0] * v);
 		m_peakRight = std::max(m_peakRight, peakSamples[1] * v);
+		mixerstrip::updateMeters( *this, m_buffer, v, fpp );  // 0.5.0 L08
 	}
 	// A muted channel never reaches this function: Mixer::masterMix handles
 	// muted channels directly (dependency bookkeeping plus the incoming delay
@@ -801,6 +821,9 @@ int Mixer::createChannel()
 	const int index = m_mixerChannels.size();
 	// create new channel
 	m_mixerChannels.push_back( new MixerChannel( index, this ) );
+	// 0.5.0 L08 (review L05-L09-L08-1 #1): the engine applies a solo itself - it used to be applied
+	// only through MixerView's connection, so a headless or socket-only instance never muted anything.
+	connect(&m_mixerChannels.back()->m_soloModel, &BoolModel::dataChanged, this, &Mixer::toggledSolo, Qt::DirectConnection);
 	// PDC (#605): the latency scratch follows the channel count.
 	resizeLatencyScratch( m_mixerChannels.size() );
 
@@ -824,7 +847,8 @@ void Mixer::activateSolo()
 	for (auto i = std::size_t{1}; i < m_mixerChannels.size(); ++i)
 	{
 		m_mixerChannels[i]->m_muteBeforeSolo = m_mixerChannels[i]->m_muteModel.value();
-		m_mixerChannels[i]->m_muteModel.setValue( true );
+		// 0.5.0 L08 (MX-031): a solo-safe channel keeps playing through another's solo.
+		if (!m_mixerChannels[i]->m_soloSafeModel.value()) { m_mixerChannels[i]->m_muteModel.setValue( true ); }
 	}
 }
 
@@ -840,6 +864,8 @@ void Mixer::toggledSolo()
 {
 	int soloedChan = -1;
 	bool resetSolo = m_lastSoloed != -1;
+	// 0.5.0 L08 (MX-029): additive solo keeps the earlier solos (MixerStrip.cpp).
+	if (mixerstrip::additiveSolo()) { applyAdditiveSolo(); return; }
 	//untoggle if lastsoloed is entered
 	if (resetSolo)
 	{
@@ -985,13 +1011,14 @@ void Mixer::refreshGroups()
 	// the two stores (a VCA at -20 dB playing a block at 0 dB). The later group
 	// wins, as it did when groups were applied in order.
 	// (A member id is a mix_ch_t, so a channel past its range is in no group.)
+	// 0.5.0 L09 (MX-070): a channel in several groups takes the product of their gains, and each
+	// group's gain is scaled by the groups it sits in (vcaGroupGain, MixerGroups.cpp).
 	for (std::size_t ch = 0; ch < m_mixerChannels.size(); ++ch)
 	{
 		float gain = 1.0f;
-		for (auto it = m_vcaGroups.rbegin();
-			ch <= std::numeric_limits<mix_ch_t>::max() && it != m_vcaGroups.rend(); ++it)
+		for (const VcaGroup* group : m_vcaGroups)
 		{
-			if ((*it)->contains(static_cast<mix_ch_t>(ch))) { gain = (*it)->gain(); break; }
+			if (ch <= std::numeric_limits<mix_ch_t>::max() && group->contains(static_cast<mix_ch_t>(ch))) { gain *= vcaGroupGain(*this, *group); }
 		}
 		m_mixerChannels[ch]->setVcaGain(gain);
 	}
@@ -1001,7 +1028,8 @@ void Mixer::refreshGroups()
 
 void Mixer::applyGroupSolo(VcaGroup* group, bool soloed)
 {
-	if (group == nullptr)
+	// 0.5.0 L09 (MX-071): a group whose solo link is off - or that is suspended - does not solo its members.
+	if (group == nullptr || !group->linksSolo() || group->isSuspended())
 	{
 		return;
 	}
@@ -1043,6 +1071,7 @@ void Mixer::deleteChannel( int index )
 {
 	// channel deletion is performed between mixer rounds
 	Engine::audioEngine()->requestChangeInModel();
+	mixerlisten::clear();  // 0.5.0 L09: the indices move, so no listen flag survives
 
 	// VCA groups (#622): drop the deleted channel and shift the members whose
 	// index moves down, the same bookkeeping the tracks below get. Done before
@@ -2002,6 +2031,8 @@ void Mixer::masterMix( SampleFrame* _buf )
 		? 1.0f
 		: m_mixerChannels[0]->m_volumeModel.value();
 	MixHelpers::addMultiplied( _buf, m_mixerChannels[0]->m_buffer, v, fpp );
+	// 0.5.0 L09 (MX-037): a channel listened to (AFL / PFL) replaces the mix on the output.
+	mixerlisten::replaceOutput( _buf, *this, fpp );
 
 	// clear all channel buffers and
 	// reset channel process state
@@ -2117,6 +2148,7 @@ void Mixer::saveSettings( QDomDocument & _doc, QDomElement & _this )
 		}
 		ch->m_muteModel.saveSettings( _doc, mixch, "muted" );
 		ch->m_soloModel.saveSettings( _doc, mixch, "soloed" );
+		mixerstrip::save( *ch, mixch );  // 0.5.0 L08: only what differs from the defaults
 		mixch.setAttribute("num", static_cast<qulonglong>(i));
 		// SPEC-stable-ids.md 3.1/3.2, slice 2: the channel's stable id as an
 		// ATTRIBUTE on the channel's own element, BESIDE `num` - which keeps
@@ -2176,6 +2208,8 @@ void Mixer::saveSettings( QDomDocument & _doc, QDomElement & _this )
 			// are unchanged.
 			if (send->feedback()) { sendsDom.setAttribute("feedback", "1"); }
 			send->amount()->saveSettings(_doc, sendsDom, "amount");
+			// 0.5.0 L09 (MX-048): a send's own pan, only when it has one.
+			if (send->pan()->value() != 0.f || send->pan()->isAutomated()) { send->pan()->saveSettings(_doc, sendsDom, "pan"); }
 		}
 
 		// Phase D: sidechain sends. Legacy LMMS ignores these elements, so
@@ -2216,6 +2250,14 @@ void Mixer::saveSettings( QDomDocument & _doc, QDomElement & _this )
 		// both exactly as it skips a <vcagroup>, so the grouping still degrades
 		// to "no groups" in an older LMMS.
 		groupDom.setAttribute("locked", group->isPhaseLocked() ? 1 : 0);
+		// 0.5.0 L09 (MX-070 / MX-071): nesting and the chosen links, written only when not the default.
+		if (group->parentId() != 0) { groupDom.setAttribute("parent", group->parentId()); }
+		if (!group->linksGain() || !group->linksMute() || !group->linksSolo())
+		{
+			groupDom.setAttribute("links", QStringLiteral("%1%2%3").arg(group->linksGain() ? "g" : "").arg(group->linksMute() ? "m" : "")
+				.arg(group->linksSolo() ? "s" : ""));
+		}
+		if (group->isSuspended()) { groupDom.setAttribute("suspended", 1); }
 
 		for (mix_ch_t member : group->members())
 		{
@@ -2323,6 +2365,7 @@ void Mixer::loadSettings( const QDomElement & _this )
 		}
 		m_mixerChannels[num]->m_muteModel.loadSettings( mixch, "muted" );
 		m_mixerChannels[num]->m_soloModel.loadSettings( mixch, "soloed" );
+		mixerstrip::load( *m_mixerChannels[num], mixch );  // absent: the defaults
 		m_mixerChannels[num]->m_name = mixch.attribute( "name" );
 		if (mixch.hasAttribute("color"))
 		{
@@ -2349,6 +2392,7 @@ void Mixer::loadSettings( const QDomElement & _this )
 					chDataItem.attribute( "prefader" ).toInt() != 0;
 				MixerRoute * mxr = createChannelSend( num, sendTo, 1.0f, preFader );
 				if( mxr ) mxr->amount()->loadSettings( chDataItem, "amount" );
+				if( mxr && chDataItem.hasAttribute( "pan" ) ) { mxr->pan()->loadSettings( chDataItem, "pan" ); }
 				// board card #709: a cycle-permitted send carries its own
 				// flag, and loading one turns the submode on WITH it (the
 				// mode is derived from the flags - it is not saved itself).
@@ -2408,6 +2452,10 @@ void Mixer::loadSettings( const QDomElement & _this )
 		// with a default of 1, so a <vcagroup> written before the edit half
 		// existed loads as the locked group it was.
 		group->setPhaseLocked( groupDom.attribute( "locked", "1" ) != QString( "0" ) );
+		group->setParentId( groupDom.attribute( "parent", "0" ).toInt() );
+		const QString links = groupDom.attribute( "links", "gms" );
+		group->setLinks( links.contains( 'g' ), links.contains( 'm' ), links.contains( 's' ) );
+		group->setSuspended( groupDom.attribute( "suspended", "0" ).toInt() != 0 );
 
 		for( QDomNode memberNode = groupDom.firstChild(); ! memberNode.isNull();
 				memberNode = memberNode.nextSibling() )

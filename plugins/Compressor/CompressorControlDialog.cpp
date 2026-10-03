@@ -158,6 +158,16 @@ CompressorControlDialog::CompressorControlDialog(CompressorControls* controls) :
 	m_tiltFreqKnob->setModel(&controls->m_tiltFreqModel);
 	m_tiltFreqKnob->setToolTip(tr("Center frequency of sidechain tilt filter"));
 
+	// 0.5.0 L09 (MX-057): the key filter beside the tilt.
+	m_keyHpKnob = new Knob(KnobType::Styled, this);
+	makeSmallKnob(m_keyHpKnob, tr("Key High-pass:"), " Hz");
+	m_keyHpKnob->setModel(&controls->m_keyHpModel);
+	m_keyHpKnob->setToolTip(tr("High-pass on the detector (sidechain) signal, so lows do not drive the compression; 20 Hz is off"));
+	m_keyLpKnob = new Knob(KnobType::Styled, this);
+	makeSmallKnob(m_keyLpKnob, tr("Key Low-pass:"), " Hz");
+	m_keyLpKnob->setModel(&controls->m_keyLpModel);
+	m_keyLpKnob->setToolTip(tr("Low-pass on the detector (sidechain) signal; 20 kHz is off"));
+
 	m_mixKnob = new Knob(KnobType::Styled, this);
 	makeSmallKnob(m_mixKnob, tr("Mix:") , "%");
 	m_mixKnob->setModel(&controls->m_mixModel);
@@ -735,6 +745,8 @@ void CompressorControlDialog::setGuiVisibility(bool isVisible)
 	m_stereoBalanceKnob->setVisible(isVisible);
 	m_tiltKnob->setVisible(isVisible);
 	m_tiltFreqKnob->setVisible(isVisible);
+	m_keyHpKnob->setVisible(isVisible);
+	m_keyLpKnob->setVisible(isVisible);
 	m_mixKnob->setVisible(isVisible);
 	m_autoAttackKnob->setVisible(isVisible);
 	m_autoReleaseKnob->setVisible(isVisible);
@@ -811,6 +823,8 @@ void CompressorControlDialog::resetCompressorView()
 	m_blendKnob->move(m_controlsBoxX + 587, m_controlsBoxY + 197);
 	m_tiltKnob->move(m_controlsBoxX + 364, m_controlsBoxY + 138);
 	m_tiltFreqKnob->move(m_controlsBoxX + 415, m_controlsBoxY + 138);
+	m_keyHpKnob->move(m_controlsBoxX + 364, m_controlsBoxY + 85);
+	m_keyLpKnob->move(m_controlsBoxX + 415, m_controlsBoxY + 85);
 	m_mixKnob->move(m_controlsBoxX + 27, m_controlsBoxY + 13);
 
 	m_outFader->move(m_controlsBoxX + 666, m_controlsBoxY + 91);

@@ -158,8 +158,10 @@ void registerClipMove(ControlRegistry& registry)
 	cmd.id = QStringLiteral("clip.move");
 	cmd.group = QStringLiteral("clip");
 	cmd.verb = QStringLiteral("move");
-	cmd.description = QStringLiteral("Move a clip to an absolute tick position. Reversible through the "
-		"ProjectJournal (Clip checkpoint).");
+	cmd.description = QStringLiteral("Move a clip to an absolute tick position. The arranger's modes apply "
+		"(arrangement.modes): overlap trims or crossfades what it lands on, ripple moves the clips after its old end "
+		"by the same distance, following automation lanes carry their points. One undo step through the "
+		"ProjectJournal (Clip checkpoint, or the track's when the move touches other clips).");
 	cmd.argsSchema = control::objectSchema({
 		{QStringLiteral("clip"), control::stringProperty()},
 		{QStringLiteral("position"), control::integerProperty(0, MaxSongLength)},
@@ -179,11 +181,14 @@ void registerClipMove(ControlRegistry& registry)
 		const tick_t previous = ref.clip->startPosition().getTicks();
 		// ED-044: a move that trims or crossfades the clips under it changes them too, so the
 		// track's checkpoint (which carries every clip) is taken instead of the clip's.
+		// ED-043: so does a ripple, which moves the clips after it.
 		const arrangement::Overlap overlap = arrangement::modes().overlap;
-		if (overlap == arrangement::Overlap::Free) { ref.clip->addJournalCheckPoint(); }
+		const bool ripple = arrangement::modes().ripple != arrangement::Ripple::Off;
+		if (overlap == arrangement::Overlap::Free && !ripple) { ref.clip->addJournalCheckPoint(); }
 		else { ref.track->addJournalCheckPoint(); }
 		ref.clip->movePosition(TimePos(static_cast<tick_t>(
 			args.value(QStringLiteral("position")).toDouble())));
+		arrangement::rippleAfterMove(ref.clip, previous, ripple);
 		arrangement::applyOverlap(ref.clip, overlap);
 		// ED-190: the automation lanes following this track carry their points with the clip.
 		arrangement::moveFollowingAutomation(ref.track, previous, ref.clip->length().getTicks(),

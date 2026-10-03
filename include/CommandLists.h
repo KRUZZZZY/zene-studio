@@ -49,6 +49,11 @@ LMMS_EXPORT ListSpec rackZones(const QString& channel);
 //! MX-168: every device in the project with its track and hosting state - bypass, enable,
 //! open its editor, restart its host, remove it.
 LMMS_EXPORT ListSpec pluginsInProject();
+//! MX-164: every device this build can load, with its format and whether it loads - favourite,
+//! hide, file in a folder; rescan, the folders scanned (MX-163), the module scan's records.
+LMMS_EXPORT ListSpec pluginManager();
+//! MX-164: the plug-in modules the scan cache remembers, their status - quarantine one, release it.
+LMMS_EXPORT ListSpec pluginModules();
 //! ED-171: a track's take lanes - remove, add, comp a range.
 LMMS_EXPORT ListSpec takeLanes(const QString& track);
 //! ED-141: the groove pool - rename, remove.

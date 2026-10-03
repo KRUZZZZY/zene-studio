@@ -25,6 +25,7 @@
 #include "ArrangementEdits.h"
 
 #include <algorithm>
+#include <atomic>
 #include <cstdlib>
 
 #include "AutomationClip.h"
@@ -45,17 +46,11 @@ namespace lmms
 namespace arrangement
 {
 
-namespace
-{
-
-//! clip.delete's recipe: detach from the track, then delete.
-void removeClip(Track* track, Clip* clip)
+void deleteClip(Track* track, Clip* clip)
 {
 	track->removeClip(clip);
 	delete clip;
 }
-
-} // namespace
 
 Clip* splitClipAt(Clip* clip, tick_t position)
 {
@@ -116,7 +111,7 @@ int deleteRange(Track* track, tick_t start, tick_t end, bool ripple)
 	splitTrackAt(track, start);
 	splitTrackAt(track, end);
 	const QVector<Clip*> inside = clipsWithin(track, start, end);
-	for (Clip* clip : inside) { removeClip(track, clip); }
+	for (Clip* clip : inside) { deleteClip(track, clip); }
 	if (ripple) { shiftClipsFrom(track, end, start - end); }
 	return static_cast<int>(inside.size());
 }
@@ -130,7 +125,7 @@ int cropToRange(Track* track, tick_t start, tick_t end)
 	for (Clip* clip : clips)
 	{
 		if (clip->startPosition().getTicks() >= start && clip->endPosition().getTicks() <= end) { continue; }
-		removeClip(track, clip);
+		deleteClip(track, clip);
 		++removed;
 	}
 	return removed;
@@ -144,8 +139,21 @@ Modes modes()
 	out.overlap = static_cast<Overlap>(std::clamp(config->value(QStringLiteral("arrangement"), QStringLiteral("overlap"), QStringLiteral("0")).toInt(), 0, 2));
 	out.snapToEdges = config->value(QStringLiteral("arrangement"), QStringLiteral("snapedges"), QStringLiteral("1")).toInt() != 0;
 	out.automationFollowsClips = config->value(QStringLiteral("arrangement"), QStringLiteral("followauto"), QStringLiteral("1")).toInt() != 0;
+	out.autoFadeMs = std::clamp(config->value(QStringLiteral("arrangement"), QStringLiteral("autofade"), QStringLiteral("0")).toInt(), 0, MaxAutoFadeMs);
+	out.showTransients = config->value(QStringLiteral("arrangement"), QStringLiteral("showtransients"), QStringLiteral("0")).toInt() != 0;
 	return out;
 }
+
+namespace
+{
+
+std::atomic<int> s_autoFadeMs{0};
+
+} // namespace
+
+int autoFadeMs() { return s_autoFadeMs.load(std::memory_order_relaxed); }
+
+void loadModes() { s_autoFadeMs.store(modes().autoFadeMs, std::memory_order_relaxed); }
 
 void setModes(const Modes& modes)
 {
@@ -154,6 +162,10 @@ void setModes(const Modes& modes)
 	config->setValue(QStringLiteral("arrangement"), QStringLiteral("overlap"), QString::number(static_cast<int>(modes.overlap)));
 	config->setValue(QStringLiteral("arrangement"), QStringLiteral("snapedges"), modes.snapToEdges ? QStringLiteral("1") : QStringLiteral("0"));
 	config->setValue(QStringLiteral("arrangement"), QStringLiteral("followauto"), modes.automationFollowsClips ? QStringLiteral("1") : QStringLiteral("0"));
+	config->setValue(QStringLiteral("arrangement"), QStringLiteral("showtransients"), modes.showTransients ? QStringLiteral("1") : QStringLiteral("0"));
+	const int autoFade = std::clamp(modes.autoFadeMs, 0, MaxAutoFadeMs);
+	config->setValue(QStringLiteral("arrangement"), QStringLiteral("autofade"), QString::number(autoFade));
+	s_autoFadeMs.store(autoFade, std::memory_order_relaxed);
 }
 
 QVector<Track*> rippleTracks(Track* track, Ripple mode)
@@ -182,13 +194,54 @@ void mergeFrom(ProjectJournal* journal, int mark)
 
 } // namespace
 
+void checkpointRipple(Track* track)
+{
+	for (Track* each : rippleTracks(track, modes().ripple))
+	{
+		if (each != track) { each->addJournalCheckPoint(); }
+	}
+}
+
+int rippleShift(Track* track, tick_t from, tick_t delta, const Clip* keep)
+{
+	int moved = 0;
+	if (delta == 0) { return moved; }
+	for (Track* each : rippleTracks(track, modes().ripple))
+	{
+		for (Clip* clip : each->getClips())
+		{
+			const tick_t start = clip->startPosition().getTicks();
+			if (clip == keep || start < from) { continue; }
+			clip->movePosition(TimePos(std::max<tick_t>(0, start + delta)));
+			++moved;
+		}
+	}
+	return moved;
+}
+
+void rippleAfterMove(Clip* moved, tick_t oldStart, bool ripple)
+{
+	// ED-043: the clips after the moved clip's old end follow it by the same distance (a shuffle).
+	if (!ripple) { return; }
+	checkpointRipple(moved->getTrack());
+	rippleShift(moved->getTrack(), oldStart + moved->length().getTicks(), moved->startPosition().getTicks() - oldStart, moved);
+}
+
+namespace
+{
+
+bool movedOnATrack(const Clip* moved, tick_t oldStart) { return moved != nullptr && moved->getTrack() != nullptr && oldStart >= 0; }
+
+} // namespace
+
 void afterUserMove(Clip* moved, tick_t oldStart)
 {
-	if (moved == nullptr || moved->getTrack() == nullptr || oldStart < 0) { return; }
+	if (!movedOnATrack(moved, oldStart)) { return; }
 	const tick_t newStart = moved->startPosition().getTicks();
 	const Overlap mode = modes().overlap;
 	const bool follow = newStart != oldStart && modes().automationFollowsClips;
-	if (mode == Overlap::Free && !follow) { return; }
+	const bool ripple = newStart != oldStart && modes().ripple != Ripple::Off;
+	if (mode == Overlap::Free && !follow && !ripple) { return; }
 	// ONE undo step for the whole gesture (review W2a-1 #3): the track's checkpoint is taken at the
 	// PRE-drag position - the clip is put back for it - and merged with the clip checkpoint the
 	// press took, so Ctrl+Z returns to before the drag, never to "moved but not yet trimmed".
@@ -198,6 +251,7 @@ void afterUserMove(Clip* moved, tick_t oldStart)
 	moved->movePosition(TimePos(oldStart));
 	track->addJournalCheckPoint();
 	moved->movePosition(TimePos(newStart));
+	rippleAfterMove(moved, oldStart, ripple);
 	if (follow) { moveFollowingAutomation(track, oldStart, moved->length().getTicks(), newStart - oldStart, true); }
 	applyOverlap(moved, mode);
 	mergeFrom(journal, mark);
@@ -266,7 +320,7 @@ void overlapOne(Clip* moved, Clip* other, Overlap mode, tick_t start, tick_t end
 	splitClipAt(other, end);
 	Clip* inside = splitClipAt(other, start);
 	Clip* under = inside != nullptr ? inside : other;
-	if (under->startPosition().getTicks() >= start && under->endPosition().getTicks() <= end) { removeClip(moved->getTrack(), under); }
+	if (under->startPosition().getTicks() >= start && under->endPosition().getTicks() <= end) { deleteClip(moved->getTrack(), under); }
 }
 
 } // namespace

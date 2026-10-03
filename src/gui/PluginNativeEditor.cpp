@@ -24,9 +24,11 @@
 
 #include "PluginNativeEditor.h"
 
+#include "CommandForm.h"
 #include "ControlRegistry.h"
 #include "ControlVocabulary.h"
 #include "Effect.h"
+#include "EffectDeviceMenu.h"
 #include "EffectChain.h"
 #include "Engine.h"
 #include "Instrument.h"
@@ -37,6 +39,7 @@
 #include "Song.h"
 
 #include <QCloseEvent>
+#include <QHBoxLayout>
 #include <QJsonObject>
 #include <QLabel>
 #include <QToolButton>
@@ -48,6 +51,81 @@ namespace lmms::gui
 
 namespace
 {
+
+//! The device a header's commands name: the effect's chain owner and fx-<n>, or a track's instrument.
+QJsonObject ownerAddress(const PluginNativeEditor::Owner& owner)
+{
+	if (owner.effect != nullptr)
+	{
+		QJsonObject address = chainAddress(owner.effect->effectChain());
+		address.insert(QStringLiteral("plugin"), control::effectIdOf(owner.effect));
+		return address;
+	}
+	if (owner.instrument != nullptr && owner.instrument->instrumentTrack() != nullptr)
+	{
+		return {{QStringLiteral("target"), control::trackIdOf(owner.instrument->instrumentTrack())}, {QStringLiteral("plugin"), QStringLiteral("inst")}};
+	}
+	return {};
+}
+
+//! A header button running @a id with the device's address (read when clicked) and @a extra; a form when @a ask.
+QToolButton* headerButton(QWidget* parent, const QString& text, const char* id, const PluginNativeEditor::Owner& owner,
+	const QJsonObject& extra = {}, bool ask = false)
+{
+	auto* button = new QToolButton(parent);
+	button->setText(text);
+	button->setProperty("controlCommand", QLatin1String(id));
+	QObject::connect(button, &QToolButton::clicked, parent, [parent, id, owner, extra, ask] {
+		QJsonObject args = ownerAddress(owner);
+		for (auto it = extra.begin(); it != extra.end(); ++it) { args.insert(it.key(), it.value()); }
+		runCommand(parent, CommandCall{QLatin1String(id), args, {}, QString(), ask});
+	});
+	return button;
+}
+
+//! The host's row above a plug-in's own view: bypass and A/B for an effect, presets for both.
+QWidget* hostHeader(QWidget* parent, const PluginNativeEditor::Owner& owner)
+{
+	if (owner.effect == nullptr && owner.instrument == nullptr) { return nullptr; }
+	auto* header = new QWidget(parent);
+	header->setObjectName(QStringLiteral("pluginHostHeader"));
+	auto* row = new QHBoxLayout(header);
+	row->setContentsMargins(6, 3, 6, 3);
+	if (owner.effect != nullptr)
+	{
+		auto* bypass = new QToolButton(header);
+		bypass->setText(QObject::tr("Bypass"));
+		bypass->setCheckable(true);
+		bypass->setChecked(!owner.effect->isEnabled());
+		bypass->setProperty("controlCommand", QStringLiteral("plugin.bypass"));
+		QObject::connect(bypass, &QToolButton::toggled, header, [owner](bool on) {
+			QJsonObject args = ownerAddress(owner);
+			args.insert(QStringLiteral("bypass"), on);
+			ControlRegistry::instance()->invoke(QStringLiteral("plugin.bypass"), args);
+		});
+		row->addWidget(bypass);
+		row->addWidget(headerButton(header, QObject::tr("Store A"), "plugin.ab", owner,
+			{{QStringLiteral("action"), QStringLiteral("store")}, {QStringLiteral("slot"), QStringLiteral("a")}}));
+		row->addWidget(headerButton(header, QObject::tr("Store B"), "plugin.ab", owner,
+			{{QStringLiteral("action"), QStringLiteral("store")}, {QStringLiteral("slot"), QStringLiteral("b")}}));
+		row->addWidget(headerButton(header, QObject::tr("A/B"), "plugin.ab", owner, {{QStringLiteral("action"), QStringLiteral("toggle")}}));
+	}
+	row->addStretch(1);
+	row->addWidget(headerButton(header, QObject::tr("Save Preset..."), "plugin.preset_save", owner, {}, true));
+	row->addWidget(headerButton(header, QObject::tr("Load Preset..."), "plugin.preset_load", owner, {}, true));
+	return header;
+}
+
+//! The window sized to the plug-in's view plus the host header above it.
+void sizeToView(QWidget* window, QWidget* view, const QWidget* header, const PluginNativeEditor::Hooks& hooks)
+{
+	int width = 0;
+	int height = 0;
+	if (hooks.size) { hooks.size(&width, &height); }
+	if (width <= 0 || height <= 0) { return; }
+	view->setMinimumSize(width, height);
+	window->resize(width, height + (header != nullptr ? header->sizeHint().height() : 0));
+}
 
 //! The window: a close from the window manager detaches the editor first.
 class EditorWindow : public QWidget
@@ -75,7 +153,7 @@ PluginNativeEditor::~PluginNativeEditor()
 }
 
 
-bool PluginNativeEditor::open(Hooks hooks, const QString& title, QString* error)
+bool PluginNativeEditor::open(Hooks hooks, const QString& title, QString* error, Owner owner)
 {
 	if (isOpen())
 	{
@@ -89,17 +167,23 @@ bool PluginNativeEditor::open(Hooks hooks, const QString& title, QString* error)
 		if (m_window != nullptr) { m_window->deleteLater(); }
 	});
 	window->setWindowTitle(title);
-	window->setAttribute(Qt::WA_NativeWindow);
-	const WId id = window->winId();
+	// 0.5.0 L10 (MX-091): the host's header above the plug-in's own view, which attaches to a native
+	// child window below it.
+	auto* column = new QVBoxLayout(window);
+	column->setContentsMargins(0, 0, 0, 0);
+	column->setSpacing(0);
+	QWidget* header = hostHeader(window, owner);
+	if (header != nullptr) { column->addWidget(header); }
+	auto* view = new QWidget(window);
+	view->setAttribute(Qt::WA_NativeWindow);
+	column->addWidget(view, 1);
+	const WId id = view->winId();
 	if (!hooks.attach || !hooks.attach(reinterpret_cast<void*>(id), error))
 	{
 		delete window;
 		return false;
 	}
-	int width = 0;
-	int height = 0;
-	if (hooks.size) { hooks.size(&width, &height); }
-	if (width > 0 && height > 0) { window->resize(width, height); }
+	sizeToView(window, view, header, hooks);
 	m_hooks = std::move(hooks);
 	m_window = window;
 	window->show();

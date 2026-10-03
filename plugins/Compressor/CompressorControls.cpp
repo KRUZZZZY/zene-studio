@@ -60,6 +60,8 @@ CompressorControls::CompressorControls(CompressorEffect* effect) :
 	m_lookaheadModel(false, this, tr("Lookahead")),
 	m_tiltModel(0.0f, -6.0f, 6.0f, 0.0001f, this, tr("Tilt")),
 	m_tiltFreqModel(150.0f, 20.0f, 20000.0f, 0.1f, this, tr("Tilt Frequency")),
+	m_keyHpModel(20.0f, 20.0f, 2000.0f, 0.1f, this, tr("Key High-pass")),
+	m_keyLpModel(20000.0f, 200.0f, 20000.0f, 1.0f, this, tr("Key Low-pass")),
 	m_stereoLinkModel(1.0f, 0.0f, 4.0f, this, tr("Stereo Link")),
 	m_mixModel(100.0f, 0.f, 100.0f, 0.01f, this, tr("Mix"))
 {
@@ -73,6 +75,8 @@ CompressorControls::CompressorControls(CompressorEffect* effect) :
 	m_rmsModel.setScaleLogarithmic(true);
 	m_kneeModel.setScaleLogarithmic(true);
 	m_tiltFreqModel.setScaleLogarithmic(true);
+	m_keyHpModel.setScaleLogarithmic(true);
+	m_keyLpModel.setScaleLogarithmic(true);
 	m_rangeModel.setScaleLogarithmic(true);
 }
 
@@ -105,6 +109,8 @@ void CompressorControls::saveSettings(QDomDocument& doc, QDomElement& _this)
 	m_lookaheadModel.saveSettings(doc, _this, "lookahead");
 	m_tiltModel.saveSettings(doc, _this, "tilt");
 	m_tiltFreqModel.saveSettings(doc, _this, "tiltFreq");
+	m_keyHpModel.saveSettings(doc, _this, "keyHp");
+	m_keyLpModel.saveSettings(doc, _this, "keyLp");
 	m_stereoLinkModel.saveSettings(doc, _this, "stereoLink");
 	m_mixModel.saveSettings(doc, _this, "mix");
 }
@@ -139,6 +145,8 @@ void CompressorControls::loadSettings(const QDomElement& _this)
 	m_lookaheadModel.loadSettings(_this, "lookahead");
 	m_tiltModel.loadSettings(_this, "tilt");
 	m_tiltFreqModel.loadSettings(_this, "tiltFreq");
+	m_keyHpModel.loadSettings(_this, "keyHp");  // absent (an older project): off
+	m_keyLpModel.loadSettings(_this, "keyLp");
 	m_stereoLinkModel.loadSettings(_this, "stereoLink");
 	m_mixModel.loadSettings(_this, "mix");
 }

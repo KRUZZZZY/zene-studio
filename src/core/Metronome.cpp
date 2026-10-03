@@ -28,10 +28,10 @@
 #include "SamplePlayHandle.h"
 
 namespace lmms {
-void Metronome::processTick(int currentTick, int ticksPerBar, int beatsPerBar, size_t bufferOffset)
+void Metronome::processTick(int currentTick, int ticksPerBar, int beatsPerBar, size_t bufferOffset, bool force)
 {
 	const auto ticksPerBeat = ticksPerBar / beatsPerBar;
-	if (currentTick % ticksPerBeat != 0 || !m_active) { return; }
+	if (currentTick % ticksPerBeat != 0 || (!m_active && !force)) { return; }
 
 	const auto handle = currentTick % ticksPerBar == 0 ? new SamplePlayHandle("misc/metronome02.ogg")
 													   : new SamplePlayHandle("misc/metronome01.ogg");

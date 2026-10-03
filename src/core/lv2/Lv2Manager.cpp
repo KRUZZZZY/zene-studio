@@ -33,6 +33,7 @@
 #include <lv2/options/options.h>
 #include <lv2/worker/worker.h>
 #include <QDebug>
+#include <QDir>
 #include <QElapsedTimer>
 
 #include "AudioEngine.h"
@@ -42,6 +43,7 @@
 #include "Lv2ControlBase.h"
 #include "Lv2Options.h"
 #include "PluginIssue.h"
+#include "PluginPaths.h"
 
 
 namespace lmms
@@ -172,6 +174,15 @@ Lv2Manager::Lv2Manager() :
 	m_debug = (dbgStr && *dbgStr);
 
 	m_world = lilv_world_new();
+	// 0.5.0 L10 (MX-163): folders of your own (plugin.paths_set) are searched before the usual ones.
+	// With none set, lilv reads LV2_PATH or its defaults exactly as before.
+	if (!pluginpaths::configured(pluginpaths::Format::Lv2).isEmpty())
+	{
+		const QByteArray path = pluginpaths::searchDirs(pluginpaths::Format::Lv2).join(QDir::listSeparator()).toLocal8Bit();
+		LilvNode* node = lilv_new_string(m_world, path.constData());
+		lilv_world_set_option(m_world, LILV_OPTION_LV2_PATH, node);
+		lilv_node_free(node);
+	}
 	lilv_world_load_all(m_world);
 
 	m_supportedFeatureURIs.insert(LV2_URID__map);

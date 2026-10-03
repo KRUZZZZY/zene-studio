@@ -25,6 +25,8 @@
  */
 
 #include "PianoRoll.h"
+
+#include "RecordOptions.h"
 #include "Timeline.h"
 
 #include <QtMath>  // IWYU pragma: keep
@@ -4404,6 +4406,7 @@ void PianoRoll::record()
 
 	m_midiClip->addJournalCheckPoint();
 	m_recording = true;
+	notePassStart();
 
 	Engine::getSong()->playMidiClip( m_midiClip, false );
 
@@ -4427,6 +4430,7 @@ void PianoRoll::recordAccompany()
 
 	m_midiClip->addJournalCheckPoint();
 	m_recording = true;
+	notePassStart();
 
 	if( m_midiClip->getTrack()->trackContainer() == Engine::getSong() )
 	{
@@ -4564,6 +4568,7 @@ void PianoRoll::finishRecordNote(const Note & n )
 						n1.quantizePos(quantization());
 					}
 					n1.setLength(std::max(n1.length(), TimePos(1)));
+					replaceOverlapped(n1);  // 0.5.0 L03: replace mode
 					m_midiClip->addNote(n1, false);
 					update();
 					m_recordingNotes.erase( it );
@@ -4575,6 +4580,29 @@ void PianoRoll::finishRecordNote(const Note & n )
 		{
 			m_stepRecorder.noteReleased(n);
 		}
+	}
+}
+
+
+
+
+void PianoRoll::notePassStart()
+{
+	m_notesBeforePass.assign(m_midiClip->notes().begin(), m_midiClip->notes().end());
+}
+
+
+
+
+void PianoRoll::replaceOverlapped(const Note& recorded)
+{
+	if (recordoptions::options().mode != recordoptions::Mode::Replace) { return; }
+	const NoteVector existing = m_midiClip->notes();  // a copy: removing changes the clip's list
+	for (Note* note : existing)
+	{
+		const bool before = std::find(m_notesBeforePass.begin(), m_notesBeforePass.end(), note) != m_notesBeforePass.end();
+		const bool overlaps = note->pos() < recorded.endPos() && recorded.pos() < note->endPos();
+		if (before && overlaps) { m_midiClip->removeNote(note); }
 	}
 }
 

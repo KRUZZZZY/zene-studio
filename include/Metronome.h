@@ -33,7 +33,8 @@ class Metronome
 public:
 	bool active() const { return m_active; }
 	void setActive(bool active) { m_active = active; }
-	void processTick(int currentTick, int ticksPerBar, int beatsPerBar, size_t bufferOffset);
+	//! @a force clicks while the metronome is off (0.5.0 L03: a recording pass's count-in).
+	void processTick(int currentTick, int ticksPerBar, int beatsPerBar, size_t bufferOffset, bool force = false);
 
 private:
 	bool m_active = false;

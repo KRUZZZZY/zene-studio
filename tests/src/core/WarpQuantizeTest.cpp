@@ -32,6 +32,7 @@
 #include <memory>
 #include <vector>
 
+#include "AudioBurstSupport.h"
 #include "AudioEngine.h"
 #include "ControlRegistry.h"
 #include "ControlVocabulary.h"
@@ -54,36 +55,9 @@ ControlResult run(const QString& id, const QJsonObject& args = {})
 	return ControlRegistry::instance()->invoke(id, args);
 }
 
-//! Silence with a short decaying noise burst at each of BurstTicks (or none: @a bursts false).
-std::vector<SampleFrame> clicks(int rate, bool bursts)
+std::vector<SampleFrame> clicks(bool bursts)
 {
-	const double framesPerTick = Engine::framesPerTick();
-	std::vector<SampleFrame> data(static_cast<std::size_t>(200 * framesPerTick), SampleFrame(0.f, 0.f));
-	if (!bursts) { return data; }
-	unsigned seed = 7;
-	for (const int tick : BurstTicks)
-	{
-		const auto start = static_cast<std::size_t>(tick * framesPerTick);
-		for (std::size_t i = 0; i < 1024 && start + i < data.size(); ++i)
-		{
-			seed = seed * 1103515245u + 12345u;
-			const float noise = (static_cast<float>((seed >> 8) & 0xFFFF) / 32768.f - 1.f) * std::exp(-static_cast<float>(i) / 200.f);
-			data[start + i] = SampleFrame(noise, noise);
-		}
-	}
-	Q_UNUSED(rate)
-	return data;
-}
-
-SampleClip* clipOf(const std::vector<SampleFrame>& data)
-{
-	Song* song = Engine::getSong();
-	song->clearProject();
-	auto* track = dynamic_cast<SampleTrack*>(Track::create(Track::Type::Sample, song));
-	auto* clip = dynamic_cast<SampleClip*>(track->createClip(TimePos(0)));
-	const int rate = static_cast<int>(Engine::audioEngine()->outputSampleRate());
-	clip->setSampleBuffer(std::make_shared<SampleBuffer>(data.data(), data.size(), rate));
-	return clip;
+	return test::burstAudio(200, bursts ? std::initializer_list<int>{10, 58, 106, 154} : std::initializer_list<int>{});
 }
 
 } // namespace
@@ -109,7 +83,7 @@ private slots:
 	void theDetectorFindsEveryBurst()
 	{
 		const int rate = static_cast<int>(Engine::audioEngine()->outputSampleRate());
-		const std::vector<SampleFrame> data = clicks(rate, true);
+		const std::vector<SampleFrame> data = clicks(true);
 		std::vector<float> mono;
 		for (const SampleFrame& frame : data) { mono.push_back(frame.left()); }
 		const std::vector<std::int64_t> onsets = detection::detectOnsetFrames(mono.data(), mono.size(), rate);
@@ -124,8 +98,7 @@ private slots:
 
 	void theTransientsLandOnTheGrid()
 	{
-		const int rate = static_cast<int>(Engine::audioEngine()->outputSampleRate());
-		SampleClip* clip = clipOf(clicks(rate, true));
+		SampleClip* clip = test::sampleClipOf(clicks(true));
 		const QString id = control::clipIdOf(clip);
 		const ControlResult done = run(QStringLiteral("warp.quantize"), {{QStringLiteral("clip"), id}, {QStringLiteral("grid"), 48}});
 		QVERIFY2(done.ok, qPrintable(done.errorMessage));
@@ -148,8 +121,7 @@ private slots:
 
 	void silenceIsRefused()
 	{
-		const int rate = static_cast<int>(Engine::audioEngine()->outputSampleRate());
-		SampleClip* clip = clipOf(clicks(rate, false));
+		SampleClip* clip = test::sampleClipOf(clicks(false));
 		QCOMPARE(run(QStringLiteral("warp.quantize"), {{QStringLiteral("clip"), control::clipIdOf(clip)}}).errorKind,
 			ControlErrorKind::NotFound);
 		QVERIFY(clip->warpMarkers().empty());

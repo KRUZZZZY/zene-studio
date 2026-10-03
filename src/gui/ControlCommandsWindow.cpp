@@ -238,6 +238,7 @@ void registerWindowCommands(ControlRegistry& registry)
 	registerNoteEditorWindowCommands(registry);
 	registerSelectionWindowCommands(registry);
 	registerShortcutCommands(registry);
+	registerMixerViewCommands(registry);
 	registerLayoutCommands(registry);
 	registerMacroCommands(registry);
 	registerArrangerViewCommands(registry);

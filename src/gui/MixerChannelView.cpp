@@ -31,6 +31,7 @@
 #include <QGraphicsProxyWidget>
 #include <QGraphicsScene>
 #include <QGraphicsView>
+#include <QLabel>
 #include <QLineEdit>
 #include <QMenu>
 #include <QMessageBox>
@@ -41,6 +42,7 @@
 #include "AutomatableButton.h"
 #include "CaptionMenu.h"
 #include "ColorChooser.h"
+#include "CommandForm.h"
 #include "ConfigManager.h"
 #include "ControlVocabulary.h"
 #include "EffectRackView.h"
@@ -51,6 +53,7 @@
 #include "Knob.h"
 #include "VcaStripView.h"
 #include "LcdWidget.h"
+#include "MacroKnobs.h"
 #include "lmms_math.h"
 #include "Mixer.h"
 #include "MixerView.h"
@@ -120,6 +123,13 @@ MixerChannelView::MixerChannelView(QWidget* parent, MixerView* mixerView, int ch
 	m_renameLineEdit->installEventFilter(this);
 	m_renameLineEditView = nullptr;
 	m_renameLineEdit->setText(elideName(mixerName));
+	// 0.5.0 L09 (MX-045): a return channel (a bus) reads as one - its own name style and tooltip.
+	if (mixerChannel->isBus())
+	{
+		m_renameLineEdit->setProperty("returnChannel", true);
+		m_renameLineEdit->setStyleSheet(QStringLiteral("font-style: italic;"));
+		setToolTip(tr("%1 (return - sends into it are pre-fader)").arg(mixerName));
+	}
 
 	m_muteButton = new AutomatableButton(this, tr("Mute"));
 	m_muteButton->setObjectName("btn-mute");
@@ -164,12 +174,37 @@ MixerChannelView::MixerChannelView(QWidget* parent, MixerView* mixerView, int ch
 	mainLayout->addWidget(m_renameLineEdit, 0, Qt::AlignHCenter);
 	mainLayout->addLayout(soloMuteLayout);
 	mainLayout->addWidget(m_panKnob, 0, Qt::AlignHCenter);
+	// 0.5.0 L10: the rack's first four macros (MX-090) and the inserts by name (MX-073); MixerViewOptions shows them.
+	m_macroKnobs = new MacroKnobs(control::channelIdOf(mixerChannel), 4, true, this);
+	mainLayout->addWidget(m_macroKnobs, 0, Qt::AlignHCenter);
+	m_insertList = new QLabel{this};
+	m_insertList->setObjectName(QStringLiteral("mixerInsertList"));
+	m_insertList->setAlignment(Qt::AlignHCenter);
+	m_insertList->setWordWrap(true);
+	mainLayout->addWidget(m_insertList);
 	mainLayout->addWidget(m_peakIndicator);
 	mainLayout->addWidget(m_fader, 1, Qt::AlignHCenter);
+
+	// 0.5.0 L08 (MX-126 / MX-130): the meter line - gain reduction, and a clip light a click clears.
+	m_meterInfo = new QLabel{this};
+	m_meterInfo->setObjectName(QStringLiteral("mixerMeterInfo"));
+	m_meterInfo->setTextFormat(Qt::RichText);
+	m_meterInfo->setToolTip(tr("Gain reduction (dB) and the clip light - click CLIP to clear the lights"));
+	connect(m_meterInfo, &QLabel::linkActivated, this, [this] {
+		runCommand(this, CommandCall{QStringLiteral("mixer.clear_clips"), {}, {}, QString(), false});
+	});
+	mainLayout->addWidget(m_meterInfo, 0, Qt::AlignHCenter);
 
 	connect(m_renameLineEdit, &QLineEdit::editingFinished, this, &MixerChannelView::renameFinished);
 
 	setFocusPolicy(Qt::StrongFocus);
+}
+
+void MixerChannelView::hideSends()
+{
+	m_receiveArrowOrSendButton->setVisible(false);
+	m_sendKnob->setVisible(false);
+	m_sendArrow->setVisible(false);
 }
 
 void MixerChannelView::contextMenuEvent(QContextMenuEvent*)

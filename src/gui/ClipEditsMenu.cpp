@@ -29,6 +29,7 @@
 #include <QActionGroup>
 #include <QApplication>
 #include <QInputDialog>
+#include <QJsonArray>
 #include <QJsonObject>
 #include <QMenu>
 #include <QMessageBox>
@@ -38,6 +39,8 @@
 #include "ControlRegistry.h"
 #include "ControlVocabulary.h"
 #include "Engine.h"
+#include "MidiClip.h"
+#include "Note.h"
 #include "SampleClip.h"
 #include "Song.h"
 #include "TimePos.h"
@@ -176,7 +179,8 @@ void addClipEditsMenu(QMenu* menu, Clip* clip)
 	QMenu* shape = sub->addMenu(QMenu::tr("Fade shape"));
 	auto* group = new QActionGroup(shape);
 	const std::pair<QString, FadeShape> shapes[] = {{QMenu::tr("Linear"), FadeShape::Linear},
-		{QMenu::tr("Exponential"), FadeShape::Exponential}, {QMenu::tr("Equal power"), FadeShape::EqualPower}};
+		{QMenu::tr("Exponential"), FadeShape::Exponential}, {QMenu::tr("Logarithmic"), FadeShape::Logarithmic},
+		{QMenu::tr("S-curve"), FadeShape::SCurve}, {QMenu::tr("Equal power"), FadeShape::EqualPower}};
 	for (const auto& [text, value] : shapes)
 	{
 		QAction* action = shape->addAction(text);
@@ -188,6 +192,34 @@ void addClipEditsMenu(QMenu* menu, Clip* clip)
 		QObject::connect(action, &QAction::triggered, shape, [clip, name] {
 			run(clip, QStringLiteral("clip.set_fade"),
 				{{QStringLiteral("fade_in_shape"), name}, {QStringLiteral("fade_out_shape"), name}});
+		});
+	}
+}
+
+void addStepEditsMenu(QMenu* menu, MidiClip* clip, int step)
+{
+	const Note* note = clip != nullptr ? clip->noteAtStep(step) : nullptr;
+	if (note == nullptr) { return; }
+	const QString id = control::noteIdOf(note);
+	QMenu* chance = menu->addMenu(QMenu::tr("Step %1 Chance").arg(step + 1));
+	for (const int percent : {100, 75, 50, 25})
+	{
+		QAction* action = chance->addAction(QStringLiteral("%1 %").arg(percent));
+		action->setCheckable(true);
+		action->setChecked(std::lround(note->probability() * 100.f) == percent);
+		action->setData(QStringLiteral("note.probability_set"));
+		QObject::connect(action, &QAction::triggered, chance, [clip, id, percent] {
+			run(clip, QStringLiteral("note.probability_set"), {{QStringLiteral("note"), id}, {QStringLiteral("probability"), percent / 100.0}});
+		});
+	}
+	QMenu* ratchet = menu->addMenu(QMenu::tr("Step %1 Ratchet").arg(step + 1));
+	for (const int count : {2, 3, 4})
+	{
+		QAction* action = ratchet->addAction(QStringLiteral("x%1").arg(count));
+		action->setData(QStringLiteral("note.ratchet"));
+		QObject::connect(action, &QAction::triggered, ratchet, [clip, id, count] {
+			run(clip, QStringLiteral("note.select"), {{QStringLiteral("notes"), QJsonArray{id}}});
+			run(clip, QStringLiteral("note.ratchet"), {{QStringLiteral("scope"), QStringLiteral("selection")}, {QStringLiteral("count"), count}});
 		});
 	}
 }

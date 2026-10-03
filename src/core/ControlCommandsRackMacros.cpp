@@ -75,6 +75,7 @@ RackMacroTarget targetFromArgs(const QJsonObject& args)
 	target.parameter = args.value(QStringLiteral("parameter")).toString();
 	target.low = static_cast<float>(args.value(QStringLiteral("low")).toDouble(0.0));
 	target.high = static_cast<float>(args.value(QStringLiteral("high")).toDouble(1.0));
+	target.curve = static_cast<float>(args.value(QStringLiteral("curve")).toDouble(0.0));
 	return target;
 }
 
@@ -222,7 +223,7 @@ void registerMacroTargetAdd(ControlRegistry& registry)
 	cmd.description = QStringLiteral("Bind an existing parameter to a macro: 'chain' and 'effect' "
 		"address a device in the rack's chains (fx-<n> order), 'parameter' is its display name as "
 		"plugin.param_get reports it, and 'low'/'high' are the window as a fraction (0..1) of the "
-		"parameter's own range. Refused when the parameter does not resolve, so a macro never "
+		"parameter's own range, 'curve' (-1..1, 0 linear) the response across it. Refused when the parameter does not resolve, so a macro never "
 		"carries a target that can only fail. Reversible through the ProjectJournal.");
 	cmd.argsSchema = objectSchema({
 		{QStringLiteral("channel"), stringProperty()},
@@ -232,6 +233,7 @@ void registerMacroTargetAdd(ControlRegistry& registry)
 		{QStringLiteral("parameter"), stringProperty()},
 		{QStringLiteral("low"), unitProperty()},
 		{QStringLiteral("high"), unitProperty()},
+		{QStringLiteral("curve"), numberProperty()},
 	}, {QStringLiteral("channel"), QStringLiteral("macro"), QStringLiteral("chain"),
 		QStringLiteral("effect"), QStringLiteral("parameter")});
 	cmd.resultSchema = objectSchema({
@@ -256,7 +258,7 @@ void registerMacroTargetAdd(ControlRegistry& registry)
 		if (!isValidMacroTarget(target))
 		{
 			return ControlResult::failure(ControlErrorKind::InvalidArgs,
-				QStringLiteral("the window %1..%2 is not a fraction pair inside 0..1")
+				QStringLiteral("the window %1..%2 is not a fraction pair inside 0..1 (or 'curve' is outside -1..1)")
 					.arg(static_cast<double>(target.low))
 					.arg(static_cast<double>(target.high)));
 		}

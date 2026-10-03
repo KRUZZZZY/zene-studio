@@ -91,6 +91,8 @@ LMMS_EXPORT QJsonObject shellSelectionState();
 //! keys, src/gui/ControlCommandsShortcuts.cpp), window.layout_* / detach / attach / header_*
 //! (src/gui/ControlCommandsLayouts.cpp) and macro.* (src/gui/ControlCommandsMacros.cpp).
 LMMS_EXPORT void registerShortcutCommands(ControlRegistry& registry);
+//! 0.5.0 L09 (MX-049/066): window.mixer_view (src/gui/ControlCommandsMixerView.cpp).
+LMMS_EXPORT void registerMixerViewCommands(ControlRegistry& registry);
 LMMS_EXPORT void registerLayoutCommands(ControlRegistry& registry);
 LMMS_EXPORT void registerMacroCommands(ControlRegistry& registry);
 //! arrangement.zoom / zoom_back / fit_tracks / set_tool and window.tool_menu

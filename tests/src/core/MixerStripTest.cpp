@@ -1,0 +1,216 @@
+/*
+ * MixerStripTest.cpp - the strip's own stages and meters, and muting or soloing many channels at once
+ *
+ * Copyright (c) 2026 Zene Studio contributors
+ *
+ * This file is part of LMMS - https://lmms.io
+ *
+ * This program is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU General Public
+ * License as published by the Free Software Foundation; either
+ * version 2 of the License, or (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public
+ * License along with this program (see COPYING); if not, write to the
+ * Free Software Foundation, Inc., 51 Franklin Street, Fifth Floor,
+ * Boston, MA 02110-1301 USA.
+ *
+ */
+
+/*! 0.5.0 L08: trim, polarity, mono and the pan modes change exactly the samples they should and
+ *  nothing at their defaults (MixerStrip.cpp, driven directly); the meters hold a pre-fader peak, an
+ *  RMS and a latched clip light that mixer.clear_clips clears; mixer.set_strip is one undo step and
+ *  is saved only when set; solo safe keeps a channel playing through another's solo; mixer.set_many
+ *  unmutes every channel in one step; mixer.solo_mode's additive solo keeps every soloed channel on
+ *  (MX-029); the pre-fader meter mode's peak ignores the fader (MX-129). */
+
+#include <QtTest>
+
+#include <QDomDocument>
+#include <QJsonArray>
+
+#include <vector>
+
+#include "ControlRegistry.h"
+#include "ControlVocabulary.h"
+#include "Engine.h"
+#include "Mixer.h"
+#include "MixerStrip.h"
+#include "SampleFrame.h"
+
+using namespace lmms;
+
+namespace
+{
+
+ControlResult run(const QString& id, const QJsonObject& args = {})
+{
+	return ControlRegistry::instance()->invoke(id, args);
+}
+
+MixerChannel* channel(int index) { return Engine::mixer()->mixerChannel(index); }
+
+QString ch(int index) { return control::channelIdOf(channel(index)); }
+
+//! Channel @a index's buffer filled with (left, right), @a frames frames.
+void fill(int index, float left, float right, int frames = 8)
+{
+	for (int f = 0; f < frames; ++f) { channel(index)->m_buffer[f] = SampleFrame(left, right); }
+}
+
+} // namespace
+
+class MixerStripTest : public QObject
+{
+	Q_OBJECT
+
+private slots:
+	void initTestCase()
+	{
+		Engine::init(true);
+		while (Engine::mixer()->numChannels() <= 3) { Engine::mixer()->createChannel(); }
+		ControlRegistry::setReady(true);
+	}
+
+	void cleanupTestCase()
+	{
+		ControlRegistry::setReady(false);
+		Engine::destroy();
+	}
+
+	void theDefaultsChangeNothing()
+	{
+		fill(1, 0.3f, -0.2f);
+		mixerstrip::applyInput(*channel(1), 8);
+		mixerstrip::applyOutput(*channel(1), 8);
+		QVERIFY(!mixerstrip::applyPanMode(*channel(1), 8));  // balance: the inherited stage pans
+		QCOMPARE(channel(1)->m_buffer[0][0], 0.3f);
+		QCOMPARE(channel(1)->m_buffer[0][1], -0.2f);
+	}
+
+	void trimPolarityAndMono()
+	{
+		QVERIFY(run(QStringLiteral("mixer.set_strip"), {{QStringLiteral("channel"), ch(1)}, {QStringLiteral("trim_db"), -6.0206},
+			{QStringLiteral("polarity_right"), true}}).ok);
+		fill(1, 0.4f, 0.4f);
+		mixerstrip::applyInput(*channel(1), 8);
+		QVERIFY(std::abs(channel(1)->m_buffer[0][0] - 0.2f) < 1e-4f);  // -6 dB halves
+		mixerstrip::applyOutput(*channel(1), 8);
+		QVERIFY(std::abs(channel(1)->m_buffer[0][1] + 0.2f) < 1e-4f);  // the right side inverted
+		QVERIFY(run(QStringLiteral("mixer.set_strip"), {{QStringLiteral("channel"), ch(1)}, {QStringLiteral("mono"), true},
+			{QStringLiteral("polarity_right"), false}}).ok);
+		fill(1, 1.f, 0.f);
+		mixerstrip::applyOutput(*channel(1), 8);
+		QCOMPARE(channel(1)->m_buffer[0][0], 0.5f);
+		QCOMPARE(channel(1)->m_buffer[0][1], 0.5f);
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
+		QVERIFY(!channel(1)->m_monoModel.value());
+		QVERIFY(channel(1)->m_polarityRightModel.value());
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
+		QCOMPARE(channel(1)->m_trimModel.value(), 0.f);
+	}
+
+	void thePanModes()
+	{
+		QVERIFY(run(QStringLiteral("mixer.set_strip"), {{QStringLiteral("channel"), ch(2)}, {QStringLiteral("pan_mode"), QStringLiteral("dual")}}).ok);
+		QCOMPARE(channel(2)->m_panModel.value(), -1.f);  // dual from centred pans: hard left and hard right
+		QCOMPARE(channel(2)->m_panRightModel.value(), 1.f);
+		fill(2, 0.6f, 0.2f);
+		QVERIFY(mixerstrip::applyPanMode(*channel(2), 8));
+		QVERIFY(std::abs(channel(2)->m_buffer[0][0] - 0.6f) < 1e-5f && std::abs(channel(2)->m_buffer[0][1] - 0.2f) < 1e-5f);
+		QVERIFY(run(QStringLiteral("mixer.set_strip"), {{QStringLiteral("channel"), ch(2)}, {QStringLiteral("pan_mode"), QStringLiteral("width")},
+			{QStringLiteral("width"), 0.0}, {QStringLiteral("pan"), 0.0}}).ok);
+		fill(2, 0.6f, 0.2f);
+		mixerstrip::applyPanMode(*channel(2), 8);
+		QVERIFY(std::abs(channel(2)->m_buffer[0][0] - 0.4f) < 1e-5f && std::abs(channel(2)->m_buffer[0][1] - 0.4f) < 1e-5f);  // width 0: mono
+		QCOMPARE(run(QStringLiteral("mixer.set_strip"), {{QStringLiteral("channel"), ch(2)}, {QStringLiteral("width"), 3.0}}).errorKind,
+			ControlErrorKind::InvalidArgs);
+		run(QStringLiteral("mixer.set_strip"), {{QStringLiteral("channel"), ch(2)}, {QStringLiteral("pan_mode"), QStringLiteral("balance")},
+			{QStringLiteral("width"), 1.0}, {QStringLiteral("pan"), 0.0}, {QStringLiteral("pan_right"), 0.0}});
+	}
+
+	void theMetersAndTheClipLight()
+	{
+		fill(3, 0.5f, -0.9f, 4);
+		mixerstrip::updateMeters(*channel(3), channel(3)->m_buffer, 2.f, 4);
+		QCOMPARE(channel(3)->m_prePeakRight.get(), 0.9f);           // before the fader
+		QVERIFY(std::abs(channel(3)->m_rmsLeft.get() - 1.f) < 1e-5f); // after it: 0.5 x 2
+		QVERIFY(channel(3)->m_clipped.load());                 // 0.9 x 2 is over full scale
+		const QJsonObject meters = run(QStringLiteral("mixer.strip_get"), {{QStringLiteral("channel"), ch(3)}}).result.value(QStringLiteral("meters")).toObject();
+		QVERIFY(meters.value(QStringLiteral("clipped")).toBool());
+		QVERIFY(run(QStringLiteral("mixer.clear_clips")).ok);
+		QVERIFY(!channel(3)->m_clipped.load());
+	}
+
+	void stripSettingsAreSavedOnlyWhenSet()
+	{
+		QDomDocument doc;
+		QDomElement root = doc.createElement(QStringLiteral("root"));
+		Engine::mixer()->saveState(doc, root);
+		QVERIFY(!doc.toString().contains(QStringLiteral("solosafe")));
+		QVERIFY(run(QStringLiteral("mixer.set_strip"), {{QStringLiteral("channel"), ch(3)}, {QStringLiteral("solo_safe"), true},
+			{QStringLiteral("note"), QStringLiteral("lead vox")}}).ok);
+		QDomDocument second;
+		QDomElement root2 = second.createElement(QStringLiteral("root"));
+		const QDomElement saved = Engine::mixer()->saveState(second, root2);
+		QVERIFY(second.toString().contains(QStringLiteral("lead vox")));
+		channel(3)->m_note.clear();
+		channel(3)->m_soloSafeModel.setValue(false);
+		Engine::mixer()->restoreState(saved);
+		QCOMPARE(channel(3)->m_note, QStringLiteral("lead vox"));
+		QVERIFY(channel(3)->m_soloSafeModel.value());
+	}
+
+	void soloSafeAndSetMany()
+	{
+		channel(3)->m_soloSafeModel.setValue(true);
+		channel(1)->m_soloModel.setValue(true);  // soloing channel 1 mutes the others - but not the safe one
+		QVERIFY(!channel(3)->m_muteModel.value());
+		QVERIFY(channel(2)->m_muteModel.value());
+		QVERIFY(run(QStringLiteral("mixer.set_many"), {{QStringLiteral("all"), true}, {QStringLiteral("soloed"), false}}).ok);
+		QVERIFY(run(QStringLiteral("mixer.set_many"), {{QStringLiteral("all"), true}, {QStringLiteral("muted"), false}}).ok);
+		for (int i = 1; i <= 3; ++i) { QVERIFY(!channel(i)->m_muteModel.value() && !channel(i)->m_soloModel.value()); }
+		QVERIFY(run(QStringLiteral("control.undo")).ok);  // the unmute is one step
+		QVERIFY(run(QStringLiteral("mixer.set_many"), {{QStringLiteral("channels"), QJsonArray{ch(1), ch(2)}}, {QStringLiteral("muted"), true}}).ok);
+		QVERIFY(channel(1)->m_muteModel.value() && channel(2)->m_muteModel.value());
+		run(QStringLiteral("mixer.set_many"), {{QStringLiteral("all"), true}, {QStringLiteral("muted"), false}});
+		channel(3)->m_soloSafeModel.setValue(false);
+	}
+
+	void additiveSoloAddsToTheOthers()
+	{
+		QCOMPARE(run(QStringLiteral("mixer.solo_mode")).result.value(QStringLiteral("mode")).toString(), QStringLiteral("exclusive"));
+		QVERIFY(run(QStringLiteral("mixer.solo_mode"), {{QStringLiteral("mode"), QStringLiteral("additive")}}).ok);
+		QVERIFY(mixerstrip::additiveSolo());
+		channel(1)->m_soloModel.setValue(true);
+		channel(2)->m_soloModel.setValue(true);
+		QVERIFY(channel(1)->m_soloModel.value());  // additive: the first solo stays on
+		QVERIFY(!channel(1)->m_muteModel.value() && !channel(2)->m_muteModel.value());
+		QVERIFY(channel(3)->m_muteModel.value());   // the channel nobody soloed is muted
+		run(QStringLiteral("mixer.set_many"), {{QStringLiteral("all"), true}, {QStringLiteral("soloed"), false}});
+		QVERIFY(!channel(3)->m_muteModel.value());  // the last solo off unmutes everyone
+		QVERIFY(run(QStringLiteral("control.undo")).ok);  // the clear
+		QVERIFY(run(QStringLiteral("control.undo")).ok);  // the mode change
+		QVERIFY(!mixerstrip::additiveSolo());
+		QCOMPARE(run(QStringLiteral("mixer.solo_mode"), {{QStringLiteral("mode"), QStringLiteral("loud")}}).errorKind,
+			ControlErrorKind::InvalidArgs);
+		run(QStringLiteral("mixer.set_many"), {{QStringLiteral("all"), true}, {QStringLiteral("soloed"), false}, {QStringLiteral("muted"), false}});
+	}
+
+	void thePreFaderMeterIsReadOnce()
+	{
+		channel(3)->m_preMeterLeft.set(0.f);
+		fill(3, 0.25f, 0.f, 4);
+		mixerstrip::updateMeters(*channel(3), channel(3)->m_buffer, 0.5f, 4);
+		QCOMPARE(channel(3)->m_preMeterLeft.get(), 0.25f);  // the fader does not touch it
+		QCOMPARE(channel(3)->m_peakLeft >= 0.f, true);
+	}
+};
+
+QTEST_MAIN(MixerStripTest)
+#include "MixerStripTest.moc"

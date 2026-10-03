@@ -29,18 +29,49 @@
 #include <QWidget>
 
 #include "ClipView.h"
+#include "ControlMixerSupport.h"
 #include "ControlVocabulary.h"
+#include "Effect.h"
 #include "Engine.h"
 #include "Mixer.h"
 #include "MixerChannelView.h"
+#include "RemoteControls.h"
 #include "TrackView.h"
 
 namespace lmms::gui
 {
 
+namespace
+{
+
+//! 0.5.0 L10 (MX-106): connected remote-control knobs follow the selection - a track's instrument, or
+//! the first device of the selected channel.
+void followRemoteControls(const ShellSelection* selection)
+{
+	RemoteControls* remote = RemoteControls::instance();
+	if (remote == nullptr) { return; }
+	if (Track* track = selection->track())
+	{
+		remote->followSelection(control::trackIdOf(track), QStringLiteral("inst"));
+		return;
+	}
+	ControlResult ignored;
+	MixerChannel* channel = control::resolveMixerChannel(selection->channel(), &ignored);
+	if (channel != nullptr && !channel->m_fxChain.effects().empty())
+	{
+		remote->followSelection(selection->channel(), control::effectIdOf(channel->m_fxChain.effects().front()));
+	}
+}
+
+} // namespace
+
 ShellSelection* ShellSelection::instance()
 {
-	static ShellSelection* selection = new ShellSelection;
+	static ShellSelection* selection = [] {
+		auto* made = new ShellSelection;
+		QObject::connect(made, &ShellSelection::changed, made, [made] { followRemoteControls(made); });
+		return made;
+	}();
 	return selection;
 }
 

@@ -67,23 +67,7 @@ namespace
 // the reversibility mechanism for a <session> block edit
 // ---------------------------------------------------------------------------
 
-QString sessionBlockXml(const SessionModel& model)
-{
-	QDomDocument document;
-	QDomElement holder = document.createElement(QStringLiteral("session-snapshot"));
-	document.appendChild(holder);
-	model.saveState(document, holder);
-	return document.toString();
-}
-
-void restoreSessionBlock(SessionModel& model, const QString& xml)
-{
-	QDomDocument document;
-	if (!document.setContent(xml, false)) { return; }
-	const QDomElement block =
-		document.documentElement().firstChildElement(QStringLiteral("session"));
-	if (!block.isNull()) { model.restoreState(block); }
-}
+// sessionBlockXml / restoreSessionBlock live in ControlCommandsSessionShared.h (0.5.0 L02: capture_to_slot uses them too).
 
 /*! Records the edit as ONE action checkpoint on the engine's own ProjectJournal
  *  and returns the A16 transaction payload for the command's result. The step is

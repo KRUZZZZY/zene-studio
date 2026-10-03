@@ -502,6 +502,16 @@ set(LMMS_TESTS
 	src/core/VcaGroupTest.cpp
 	# Mixer channel pan (MixerChannel::m_panModel): the render, the file and the command.
 	src/core/MixerChannelPanTest.cpp
+	# 0.5.0 L09 MX-037: the listen bus (AFL / PFL).
+	src/core/MixerListenTest.cpp
+	# 0.5.0 L09: send pan, sends from many channels, nested / linked / shared VCA groups, mixer view modes.
+	src/core/MixingRoutingTest.cpp
+	# 0.5.0 L08: the strip stages (trim, polarity, mono, pan modes), meters, solo safe, mute / solo many.
+	src/core/MixerStripTest.cpp
+	# 0.5.0 L10: plugin.copy / chain.copy / plugin.ab, the plug-in organiser and folders.
+	src/core/DeviceCopyTest.cpp
+	# 0.5.0 L03 / L02: count-in, pre-roll, the record mode, cycling takes, the launcher's bindings.
+	src/core/RecordingPassTest.cpp
 	# R2.4: the punch region's frame-accurate audio gate (include/PunchWindow.h).
 	src/core/PunchWindowTest.cpp
 	# Mixer::refreshGroups publishes each channel's VCA gain with ONE store, so a
@@ -575,6 +585,12 @@ set(LMMS_TESTS
 	src/core/MidiInputTransformTest.cpp
 	# 0.5.0 L07 ED-137: quantise audio - transients become warp markers on the grid.
 	src/core/WarpQuantizeTest.cpp
+	# 0.5.0 L07 ED-122/078: a note's pitch curve; one note edit over several clips.
+	src/core/NoteCurvesAcrossTest.cpp
+	# 0.5.0 L05: fade shapes and handles, automatic and range fades, splits, slices, beat mapping.
+	src/core/AudioEditingTest.cpp
+	# 0.5.0 W2 gaps (audit-rows-1): clip.join, ripple on move and insert, controller.map / unmap.
+	src/core/ClipJoinRippleTest.cpp
 	# Feature row 50 (0.3.0): the Lua API's DAW-control half - the mixer channel
 	# and effect-chain bindings. Drives a REAL mixer channel and the chain the
 	# control surface addresses from Lua, reads the engine back (not the script's
@@ -954,7 +970,11 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 		# real plugin keys (and, where they exist, the ZynAddSubFx module and its
 		# client - see the OUTOFPROC_ZYN_* definitions below).
 		OR LMMS_TEST_NAME STREQUAL "OutOfProcessHostTest"
-		OR LMMS_TEST_NAME STREQUAL "OutOfProcessHostClientLoopTest")
+		OR LMMS_TEST_NAME STREQUAL "OutOfProcessHostClientLoopTest"
+		# 0.5.0 L05: slicing to a sampler track loads the build's SlicerT module.
+		OR LMMS_TEST_NAME STREQUAL "AudioEditingTest"
+		# 0.5.0 L10: copying and comparing devices loads the build's effect modules.
+		OR LMMS_TEST_NAME STREQUAL "DeviceCopyTest")
 		set_target_properties(${LMMS_TEST_NAME} PROPERTIES ENABLE_EXPORTS ON)
 		target_compile_definitions(${LMMS_TEST_NAME} PRIVATE
 			LMMS_TEST_PLUGIN_DIR="${CMAKE_BINARY_DIR}/plugins")
@@ -1258,6 +1278,9 @@ set_tests_properties(MidiReconnectActionTest PROPERTIES ENVIRONMENT "QT_QPA_PLAT
 # ThemeContrastTest reads the themes from the source tree; guiless like WcagContrastTest.
 target_compile_definitions(ThemeContrastTest PRIVATE
 	ZENE_THEMES_DIR="${CMAKE_SOURCE_DIR}/data/themes")
+# 0.5.0 L10: DeviceCopyTest builds a drum rack from the shipped drum samples.
+target_compile_definitions(DeviceCopyTest PRIVATE
+	ZENE_DRUM_SAMPLES_DIR="${CMAKE_SOURCE_DIR}/data/samples/drums")
 
 # MasteringTest drives a real Engine and the project render path, so it needs a
 # Qt platform plugin even though the test itself is guiless (same reason as
@@ -2719,6 +2742,26 @@ if(PYTHON3_EXECUTABLE AND CONTROL_SUITE_AVAILABLE)
 			${CMAKE_CURRENT_SOURCE_DIR}/control-customisation.py
 			$<TARGET_FILE:zene>)
 	set_tests_properties(ControlCustomisation PROPERTIES
+		ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+		TIMEOUT 300
+	)
+	# The 0.5.0 L05 audio edits over the socket: range fades, automatic fades and transient marks,
+	# splits at beats, a fade shape, transients, and slicing to a SlicerT track.
+	add_test(NAME ControlAudioEditing
+		COMMAND ${PYTHON3_EXECUTABLE}
+			${CMAKE_CURRENT_SOURCE_DIR}/control-audio-editing.py
+			$<TARGET_FILE:zene>)
+	set_tests_properties(ControlAudioEditing PROPERTIES
+		ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+		TIMEOUT 300
+	)
+	# The 0.5.0 L09 routing surface over the socket: the listen bus, sends from many channels, send pan,
+	# nested and linked VCA groups, the mixer view's sends-on-faders mode.
+	add_test(NAME ControlMixingRouting
+		COMMAND ${PYTHON3_EXECUTABLE}
+			${CMAKE_CURRENT_SOURCE_DIR}/control-mixing-routing.py
+			$<TARGET_FILE:zene>)
+	set_tests_properties(ControlMixingRouting PROPERTIES
 		ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
 		TIMEOUT 300
 	)

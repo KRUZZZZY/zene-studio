@@ -36,7 +36,14 @@ namespace lmms
 {
 
 class AutomatableModel;
+class MidiController;
 class MidiEvent;
+
+/*! Bind @a target to MIDI control-change @a controllerNum on @a channel (1..16): a parentless
+ *  MidiController listening on every readable port, owned by the ControllerConnection the target now
+ *  holds (MIDI learn, a controller template and controller.map all bind this way). UI thread.
+ *  Returns the controller, for the caller to set soft takeover or feedback on. */
+MidiController* bindMidiController(AutomatableModel* target, int channel, int controllerNum);
 
 //! Global, one-shot MIDI-learn state.
 //

@@ -43,6 +43,8 @@ class QVBoxLayout;
 namespace lmms::gui
 {
 
+class CompSwipeStrip;
+
 /*! One track's take lanes (relief plan M3 item 6, the R3.1/R3.2 surface): its lanes with the
  *  takes on each, the composite, and the three comping gestures - audition a lane whole, paint
  *  a lane over a tick range (comp.select), and consolidate the comped region into one clip
@@ -86,6 +88,7 @@ private:
 	QToolButton* m_addLane = nullptr;
 	QToolButton* m_comp = nullptr;
 	QToolButton* m_consolidate = nullptr;
+	CompSwipeStrip* m_strip = nullptr;  //!< 0.5.0 L03 (ED-165): comp by swiping
 	std::vector<QToolButton*> m_auditions;
 	std::vector<int> m_laneIndices;
 	int m_auditioning = -1;

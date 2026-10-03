@@ -87,6 +87,9 @@ private:
 	BoolModel m_lookaheadModel;
 	FloatModel m_tiltModel;
 	FloatModel m_tiltFreqModel;
+	//! 0.5.0 L09 (MX-057): the key (detector) filter - a high-pass (20 Hz = off) and a low-pass (20 kHz = off).
+	FloatModel m_keyHpModel;
+	FloatModel m_keyLpModel;
 	IntModel m_stereoLinkModel;
 	FloatModel m_mixModel;
 

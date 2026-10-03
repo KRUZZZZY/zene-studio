@@ -29,18 +29,25 @@
 #include <QJsonArray>
 #include <QMenu>
 
+#include "ChannelPickDialog.h"
 #include "CommandForm.h"
 #include "AutomationClip.h"
 #include "CommandLists.h"
 #include "ControlAutomationSupport.h"
+#include "ControlMixerSupport.h"
 #include "ControlRegistry.h"
 #include "ClipEdits.h"
+#include "ClipView.h"
 #include "ControlVocabulary.h"
 #include "Engine.h"
+#include "GuiApplication.h"
 #include "InstrumentTrack.h"
 #include "MidiClip.h"
+#include "Mixer.h"
 #include "SampleClip.h"
 #include "SampleTrack.h"
+#include "SongEditor.h"
+#include "TrackFolder.h"
 #include "ShellLayout.h"
 #include "Song.h"
 
@@ -166,6 +173,49 @@ void recordMenu(QMenu* menu, const QJsonObject& self, bool instrument)
 	add(retro, "Save Last Audio as a Take...", "record.retro_capture_to_take", {}, true, {}, true);
 }
 
+//! The MIDI clips selected in the arranger, by id.
+QJsonArray selectedMidiClips()
+{
+	QJsonArray ids;
+	GuiApplication* app = getGUI();
+	if (app == nullptr || app->songEditor() == nullptr) { return ids; }
+	for (selectableObject* object : app->songEditor()->m_editor->selectedObjects())
+	{
+		auto* view = dynamic_cast<ClipView*>(object);
+		if (view != nullptr && dynamic_cast<MidiClip*>(view->getClip()) != nullptr) { ids.append(control::clipIdOf(view->getClip())); }
+	}
+	return ids;
+}
+
+//! 0.5.0 L07 (ED-078): edits applied to several clips at once (note.across) - @a target names them
+//! ({clips: [...]} or {tracks: [...]}).
+void acrossMenu(QMenu* across, const QJsonObject& target)
+{
+	const auto each = [across, &target](const char* label, const char* command, const QJsonObject& args) {
+		QJsonObject fixed = target;
+		fixed.insert(QStringLiteral("command"), QLatin1String(command));
+		fixed.insert(QStringLiteral("args"), args);
+		add(across, label, "note.across", fixed, false);
+	};
+	each("Transpose +1", "note.transpose", {{QStringLiteral("semitones"), 1}});
+	each("Transpose -1", "note.transpose", {{QStringLiteral("semitones"), -1}});
+	each("Octave Up", "note.transpose", {{QStringLiteral("semitones"), 12}});
+	each("Octave Down", "note.transpose", {{QStringLiteral("semitones"), -12}});
+	each("Quantise to 1/16", "groove.quantize", {{QStringLiteral("grid"), 12}});
+	each("Softer (x0.8)", "note.velocity_scale", {{QStringLiteral("factor"), 0.8}});
+	each("Louder (x1.25)", "note.velocity_scale", {{QStringLiteral("factor"), 1.25}});
+	each("Restore Original Timing", "note.restore_timing", {});
+	add(across, "Other...", "note.across", target, true);
+}
+
+void selectedClipsMenu(QMenu* menu)
+{
+	const QJsonArray clips = selectedMidiClips();
+	if (clips.size() < 2) { return; }
+	acrossMenu(menu->addMenu(tr("Edit %1 Selected Clips").arg(clips.size())), {{QStringLiteral("clips"), clips}});
+	add(menu, "Join Selected Clips", "clip.join", {{QStringLiteral("clips"), clips}}, false);
+}
+
 //! 0.5.0 L07 (ED-145/113): what an instrument track does to live MIDI input.
 void inputTransformMenu(QMenu* menu, const QJsonObject& self)
 {
@@ -184,6 +234,11 @@ void sampleClipMenus(QMenu* menu, Clip* clip, const QJsonObject& self)
 	choices(warp, "Stretch Algorithm", "warp.stretch", "mode", self);
 	add(warp, "Add Warp Marker...", "warp.add", self, true);
 	add(warp, "Quantise Audio...", "warp.quantize", self, true);
+	add(warp, "Tempo Map From This Audio", "transport.tempo_map_from_clip", self, false);
+	QMenu* slice = menu->addMenu(tr("Slice"));
+	choices(slice, "Split At", "clip.split_at", "at", self);
+	add(slice, "Slice to Sampler Track", "clip.slice_to_instrument", self, false);
+	add(slice, "Slice Every Beat to Sampler Track", "clip.slice_to_instrument", with(self, "at", QStringLiteral("beats")), false);
 	list(warp, "Warp Markers...", [id] { return CommandLists::warpMarkers(id); });
 	const QJsonObject file{{QStringLiteral("path"), sample->sampleFile()}};
 	add(warp, "Detect Tempo and Key", "detect.analyze", file, false, {}, true);
@@ -224,7 +279,11 @@ void populateTrack(QMenu* menu, Track* track)
 	const QString id = control::trackIdOf(track);
 	const QJsonObject self{{QStringLiteral("track"), id}};
 	recordMenu(menu, self, dynamic_cast<InstrumentTrack*>(track) != nullptr);
-	if (dynamic_cast<InstrumentTrack*>(track) != nullptr) { inputTransformMenu(menu, self); }
+	if (dynamic_cast<InstrumentTrack*>(track) != nullptr)
+	{
+		inputTransformMenu(menu, self);
+		acrossMenu(menu->addMenu(tr("Edit All Clips")), {{QStringLiteral("tracks"), QJsonArray{id}}});
+	}
 	automationMenu(menu, id);
 	QMenu* takes = menu->addMenu(tr("Takes and Comping"));
 	list(takes, "Take Lanes...", [id] { return CommandLists::takeLanes(id); });
@@ -268,6 +327,7 @@ void populateClip(QMenu* menu, Clip* clip)
 	}
 	add(pitch, "Reset", "clip.set_transpose", with(self, "semitones", 0), false);
 	add(pitch, "Transpose...", "clip.set_transpose", self, true, {{QStringLiteral("semitones"), transpose}});
+	selectedClipsMenu(menu);
 	QMenu* links = menu->addMenu(tr("Linked Clips"));
 	add(links, "Link With Clips...", "clip.link_create", self, true);
 	add(links, "Make Unique", "clip.link_remove", self, false);
@@ -278,6 +338,47 @@ void populateClip(QMenu* menu, Clip* clip)
 	automationClipMenus(menu, clip);
 }
 
+namespace
+{
+
+//! MX-049 / MX-066: on a return, its sends on every fader; on a folder's channel, fold its children's strips.
+void mixerViewMenu(QMenu* menu, const QString& channel)
+{
+	ControlResult ignored;
+	const MixerChannel* resolved = control::resolveMixerChannel(channel, &ignored);
+	if (resolved == nullptr) { return; }
+	if (resolved->isBus())
+	{
+		add(menu, "Show Sends to Here on Faders", "window.mixer_view", {{QStringLiteral("sends_on_faders"), channel}}, false);
+		add(menu, "Channel Faders", "window.mixer_view", {{QStringLiteral("sends_on_faders"), QString()}}, false);
+	}
+	for (Track* track : Engine::getSong()->tracks())
+	{
+		const auto* folder = dynamic_cast<const TrackFolder*>(track);
+		if (folder == nullptr || folder->mixerChannel() != resolved->index()) { continue; }
+		add(menu, folder->isCollapsed() ? "Unfold Folder" : "Fold Folder", "track.folder_set_collapsed",
+			{{QStringLiteral("track"), control::trackIdOf(track)}, {QStringLiteral("collapsed"), !folder->isCollapsed()}}, false);
+	}
+}
+
+//! L08 (MX-003 / MX-004 / MX-005 / MX-127 / MX-128 / MX-129): the mixer view's options.
+void viewOptionsMenu(QMenu* menu)
+{
+	QMenu* view = menu->addMenu(tr("Mixer View"));
+	choices(view, "Show Sends", "window.mixer_view", "show_sends", {});
+	choices(view, "Show Pan", "window.mixer_view", "show_pan", {});
+	choices(view, "Show Channel Numbers", "window.mixer_view", "show_number", {});
+	choices(view, "Show Meter Line", "window.mixer_view", "show_meter_info", {});
+	choices(view, "Show Inserts", "window.mixer_view", "show_inserts", {});
+	choices(view, "Show Macro Knobs", "window.mixer_view", "show_macros", {});
+	choices(view, "Strip Width", "window.mixer_view", "strip_width", {});
+	choices(view, "Show Channels", "window.mixer_view", "filter", {});
+	choices(view, "Meter", "window.mixer_view", "meter_mode", {});
+	choices(view, "Meter Scale", "window.mixer_view", "meter_scale", {});
+}
+
+} // namespace
+
 void populateChannel(QMenu* menu, const QString& channel)
 {
 	if (channel.isEmpty()) { return; }
@@ -285,12 +386,54 @@ void populateChannel(QMenu* menu, const QString& channel)
 	add(menu, "Send To...", "mixer.send_to", self, true, {{QStringLiteral("pre_fader"), false}});
 	add(menu, "Pre-Fader Send To...", "mixer.send_to", with(self, "pre_fader", true), true);
 	add(menu, "Sidechain To...", "mixer.sidechain_to", self, true);
+	add(menu, "Pan a Send...", "mixer.send_pan", self, true, {{QStringLiteral("pan"), 0.0}});  // MX-048
+	// MX-050: several channels into this one, as one undo step (mixer.send_many).
+	for (const bool route : {false, true})
+	{
+		QAction* many = menu->addAction(route ? tr("Route Channels Here...") : tr("Send Channels Here..."));
+		many->setProperty("controlCommand", QStringLiteral("mixer.send_many"));
+		QObject::connect(many, &QAction::triggered, menu, [channel, route, menu] {
+			const QStringList picked = pickChannels(menu->parentWidget(), route ? tr("Route Channels Here") : tr("Send Channels Here"), channel);
+			if (picked.isEmpty()) { return; }
+			runCommand(menu->parentWidget(), CommandCall{QStringLiteral("mixer.send_many"), {{QStringLiteral("channels"),
+				QJsonArray::fromStringList(picked)}, {QStringLiteral("to"), channel}, {QStringLiteral("route"), route}}, {}, {}, false});
+		});
+	}
 	QMenu* rack = menu->addMenu(tr("Rack"));
 	list(rack, "Zones...", [channel] { return CommandLists::rackZones(channel); });
 	add(rack, "Add Zone...", "rack.zone_add", self, true);
 	add(rack, "Wire the Chain...", "patcher.set_wiring", {{QStringLiteral("target"), channel}}, true);
 	add(rack, "Chain Wiring", "patcher.get_state", {{QStringLiteral("target"), channel}}, false, {}, true);
 	choices(menu, "Loudness Meter", "meter.arm", "enabled", {});
+	// MX-045: a return channel can be deleted as one.
+	ControlResult ignored;
+	if (const MixerChannel* resolved = control::resolveMixerChannel(channel, &ignored); resolved != nullptr && resolved->isBus())
+	{
+		add(menu, "Delete Return", "bus.remove", self, false);
+	}
+	mixerViewMenu(menu, channel);
+	viewOptionsMenu(menu);
+	// L08: the strip's own settings (mixer.set_strip).
+	QMenu* strip = menu->addMenu(tr("Strip"));
+	choices(strip, "Polarity Left", "mixer.set_strip", "polarity_left", self);
+	choices(strip, "Polarity Right", "mixer.set_strip", "polarity_right", self);
+	choices(strip, "Mono", "mixer.set_strip", "mono", self);
+	choices(strip, "Pan Mode", "mixer.set_strip", "pan_mode", self);
+	choices(strip, "Solo Safe", "mixer.set_strip", "solo_safe", self);
+	add(strip, "Trim, Width and Note...", "mixer.set_strip", self, true);
+	add(strip, "Meters", "mixer.strip_get", self, false, {}, true);
+	add(strip, "Clear All Clip Lights", "mixer.clear_clips", {}, false);
+	// MX-027: every channel at once.
+	add(menu, "Unmute All Channels", "mixer.set_many", {{QStringLiteral("all"), true}, {QStringLiteral("muted"), false}}, false);
+	add(menu, "Clear All Solos", "mixer.set_many", {{QStringLiteral("all"), true}, {QStringLiteral("soloed"), false}}, false);
+	choices(menu, "Solo Mode", "mixer.solo_mode", "mode", {});  // MX-029
+	// MX-037: the listen bus.
+	QMenu* listen = menu->addMenu(tr("Listen"));
+	add(listen, "Listen to This Channel", "mixer.listen", with(self, "exclusive", true), false);
+	add(listen, "Add to the Listen Bus", "mixer.listen", self, false);
+	add(listen, "Stop Listening", "mixer.listen", with(self, "on", false), false);
+	choices(listen, "Listen Point", "mixer.listen_mode", "mode", {});
+	add(listen, "Clear the Listen Bus", "mixer.listen_mode", {{QStringLiteral("clear"), true}}, false);
 }
 
 void populateProject(QMenu* menu)
@@ -299,6 +442,8 @@ void populateProject(QMenu* menu)
 	list(menu, "Project Files...", [] { return CommandLists::missingFiles(Engine::getSong()->projectFileName()); });
 	add(menu, "Collect Media...", "project.collect_media", {}, true);
 	list(menu, "Plug-ins in Project...", [] { return CommandLists::pluginsInProject(); });
+	list(menu, "Plug-in Manager...", [] { return CommandLists::pluginManager(); });  // L10 (MX-164)
+	list(menu, "Plug-in Modules...", [] { return CommandLists::pluginModules(); });
 	list(menu, "Groups...", [] { return CommandLists::vcaGroups(); });
 	list(menu, "Grooves...", [] { return CommandLists::grooves(); });
 	menu->addSeparator();

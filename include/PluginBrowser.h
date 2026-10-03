@@ -73,6 +73,10 @@ public:
 	QString name() const;
 	void openInNewInstrumentTrack(QString value);
 
+signals:
+	//! 0.5.0 L10 (MX-166): the plug-in was marked a favourite, hidden or filed (the browser redraws).
+	void organised();
+
 protected:
 #if (QT_VERSION >= QT_VERSION_CHECK(6, 0, 0))
 	void enterEvent(QEnterEvent* event) override;

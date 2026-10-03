@@ -24,6 +24,7 @@
 
 #include "Compressor.h"
 
+#include <algorithm>
 #include <cmath>
 #include <numbers>
 
@@ -34,6 +35,14 @@
 
 namespace lmms
 {
+
+
+float CompressorEffect::gainReductionDb() const
+{
+	const float gain = std::min(m_gainResult[0], m_gainResult[1]);
+	return gain > 0.f && gain < 1.f ? -20.f * std::log10(gain) : 0.f;
+}
+
 
 
 extern "C"
@@ -79,6 +88,8 @@ CompressorEffect::CompressorEffect(Model* parent, const Descriptor::SubPluginFea
 	connect(&m_compressorControls.m_inGainModel, SIGNAL(dataChanged()), this, SLOT(calcInGain()), Qt::DirectConnection);
 	connect(&m_compressorControls.m_tiltModel, SIGNAL(dataChanged()), this, SLOT(calcTiltCoeffs()), Qt::DirectConnection);
 	connect(&m_compressorControls.m_tiltFreqModel, SIGNAL(dataChanged()), this, SLOT(calcTiltCoeffs()), Qt::DirectConnection);
+	connect(&m_compressorControls.m_keyHpModel, SIGNAL(dataChanged()), this, SLOT(calcKeyFilter()), Qt::DirectConnection);
+	connect(&m_compressorControls.m_keyLpModel, SIGNAL(dataChanged()), this, SLOT(calcKeyFilter()), Qt::DirectConnection);
 	connect(&m_compressorControls.m_limiterModel, SIGNAL(dataChanged()), this, SLOT(redrawKnee()), Qt::DirectConnection);
 	connect(&m_compressorControls.m_mixModel, SIGNAL(dataChanged()), this, SLOT(calcMix()), Qt::DirectConnection);
 
@@ -230,6 +241,34 @@ void CompressorEffect::calcTiltCoeffs()
 	m_b1 = (m_sampleRate * 3 - omega) * n;
 }
 
+void CompressorEffect::calcKeyFilter()
+{
+	// RBJ high-pass and low-pass at Q = 1/sqrt(2); a cutoff at the end of its range switches that half off.
+	using namespace std::numbers;
+	const auto design = [this](KeyBiquad& filter, float hz, bool highPass) {
+		const float w = 2.f * pi_v<float> * hz / m_sampleRate;
+		const float alpha = std::sin(w) / sqrt2_v<float>;  // sin(w) / (2Q), Q = 1/sqrt(2)
+		const float cosw = std::cos(w);
+		const float a0 = 1.f + alpha;
+		const float k = highPass ? (1.f + cosw) / 2.f : (1.f - cosw) / 2.f;
+		filter.b0 = k / a0;
+		filter.b1 = (highPass ? -2.f * k : 2.f * k) / a0;
+		filter.b2 = k / a0;
+		filter.a1 = -2.f * cosw / a0;
+		filter.a2 = (1.f - alpha) / a0;
+	};
+	const float hp = m_compressorControls.m_keyHpModel.value();
+	const float lp = m_compressorControls.m_keyLpModel.value();
+	// A half switched on starts from rest (its state froze while it was off), designed before it is used.
+	const auto update = [&design](KeyBiquad& filter, bool on, float hz, bool highPass) {
+		if (on && !filter.on) { filter.z1[0] = filter.z1[1] = filter.z2[0] = filter.z2[1] = 0.f; }
+		if (on) { design(filter, hz, highPass); }
+		filter.on = on;
+	};
+	update(m_keyHp, hp > 20.5f, hp, true);
+	update(m_keyLp, lp < 19999.f && lp < m_sampleRate * 0.45f, lp, false);
+}
+
 void CompressorEffect::calcMix()
 {
 	m_mixVal = m_compressorControls.m_mixModel.value() * 0.01;
@@ -310,6 +349,7 @@ ProcessStatus CompressorEffect::processImpl(InterleavedBufferView<float, 2> inOu
 			{
 				inputValue = (feedback && !lookahead) ? m_prevOut[i] : s[i];
 			}
+			inputValue = keyFilter(inputValue, i);  // 0.5.0 L09 (MX-057)
 
 			// Calculate the crest factor of the audio by diving the peak by the RMS
 			m_crestPeakVal[i] = qMax(qMax(COMP_NOISE_FLOOR, inputValue * inputValue), m_crestTimeConst * m_crestPeakVal[i] + (1 - m_crestTimeConst) * (inputValue * inputValue));
@@ -592,6 +632,7 @@ void CompressorEffect::changeSampleRate()
 	calcOutGain();
 	calcInGain();
 	calcTiltCoeffs();
+	calcKeyFilter();
 	calcMix();
 
 	calcAutoAttack();

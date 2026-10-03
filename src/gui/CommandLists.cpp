@@ -52,6 +52,12 @@ ListExtra extra(const char* label, const char* id, QJsonObject fixed = {}, bool 
 	return ListExtra{tr(label), CommandCall{QLatin1String(id), std::move(fixed), {}, tr(label), ask}};
 }
 
+//! An extra that reads something and shows the answer (a floating message).
+ListExtra readExtra(const char* label, const char* id)
+{
+	return ListExtra{tr(label), CommandCall{QLatin1String(id), {}, {}, tr(label), false, true}};
+}
+
 ListSpec spec(const char* title, const char* listId, const char* arrayKey, QStringList columns, QJsonObject args = {})
 {
 	ListSpec out;
@@ -150,6 +156,33 @@ ListSpec pluginsInProject()
 	return out;
 }
 
+ListSpec pluginManager()
+{
+	ListSpec out = spec("Plug-in Manager", "plugin.list", "devices", {QStringLiteral("display_name"), QStringLiteral("format"),
+		QStringLiteral("kind"), QStringLiteral("loadable"), QStringLiteral("id")});
+	const QHash<QString, QString> device{{QStringLiteral("device"), QStringLiteral("id")}};
+	out.actions = {act("Add to Favourites", "plugin.organise", device, {{QStringLiteral("favourite"), true}}),
+		act("Remove from Favourites", "plugin.organise", device, {{QStringLiteral("favourite"), false}}),
+		act("Hide", "plugin.organise", device, {{QStringLiteral("hidden"), true}}),
+		act("Show", "plugin.organise", device, {{QStringLiteral("hidden"), false}}),
+		act("Move to Folder...", "plugin.organise", device, {}, true)};
+	out.extras = {extra("Rescan", "plugin.rescan", {}, false), readExtra("Plug-in Folders", "plugin.paths_get"),
+		extra("Set Folders...", "plugin.paths_set"), readExtra("Organised Plug-ins", "plugin.organisation")};
+	return out;
+}
+
+ListSpec pluginModules()
+{
+	ListSpec out = spec("Plug-in Modules", "plugin.scan_cache_list", "entries", {QStringLiteral("path"), QStringLiteral("status"),
+		QStringLiteral("name"), QStringLiteral("error")});
+	const QHash<QString, QString> path{{QStringLiteral("path"), QStringLiteral("path")}};
+	out.actions = {act("Quarantine...", "plugin.scan_cache_quarantine_add", path, {}, true),
+		act("Release", "plugin.scan_cache_quarantine_remove", path)};
+	out.summaryKeys = {QStringLiteral("count"), QStringLiteral("load_failed_count")};
+	out.extras = {extra("Rescan", "plugin.rescan", {}, false)};
+	return out;
+}
+
 ListSpec takeLanes(const QString& track)
 {
 	const QJsonObject where{{QStringLiteral("track"), track}};
@@ -221,8 +254,9 @@ ListSpec controllerMappings()
 	out.actions = {act("Soft Takeover On", "controller.soft_takeover", control, {{QStringLiteral("enabled"), true}}),
 		act("Soft Takeover Off", "controller.soft_takeover", control, {{QStringLiteral("enabled"), false}}),
 		act("Feedback On", "controller.feedback", control, {{QStringLiteral("enabled"), true}}),
-		act("Feedback Off", "controller.feedback", control, {{QStringLiteral("enabled"), false}})};
-	out.extras = {extra("Save as Template...", "controller.template_save")};
+		act("Feedback Off", "controller.feedback", control, {{QStringLiteral("enabled"), false}}),
+		act("Remove Mapping", "controller.unmap", {{QStringLiteral("target"), QStringLiteral("control")}})};
+	out.extras = {extra("Map a Parameter...", "controller.map"), extra("Save as Template...", "controller.template_save")};
 	return out;
 }
 

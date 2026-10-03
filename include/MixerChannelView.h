@@ -42,6 +42,7 @@ class EffectRackView;
 class Fader;
 class Knob;
 class LcdWidget;
+class MacroKnobs;
 class MixerView;
 class PeakIndicator;
 class SendButtonIndicator;
@@ -84,6 +85,14 @@ public:
 	void setStrokeInnerInactive(const QColor& c) { m_strokeInnerInactive = c; }
 
 	Fader* fader() const { return m_fader; }
+	// 0.5.0 L08: what MixerViewOptions shows and hides on a strip.
+	Knob* panKnob() const { return m_panKnob; }
+	LcdWidget* numberLcd() const { return m_channelNumberLcd; }
+	QLineEdit* nameEdit() const { return m_renameLineEdit; }
+	QLabel* meterInfo() const { return m_meterInfo; }
+	QLabel* insertList() const { return m_insertList; }
+	MacroKnobs* macroKnobs() const { return m_macroKnobs; }
+	void hideSends();
 
 public slots:
 	void renameChannel();
@@ -119,6 +128,9 @@ private:
 	AutomatableButton* m_muteButton;
 	AutomatableButton* m_soloButton;
 	PeakIndicator* m_peakIndicator = nullptr;
+	QLabel* m_meterInfo = nullptr;  // 0.5.0 L08: the clip light and the gain reduction
+	QLabel* m_insertList = nullptr;  // 0.5.0 L10 (MX-073): the inserts, by name
+	MacroKnobs* m_macroKnobs = nullptr;  // 0.5.0 L10 (MX-090): the rack's first macros
 	Knob* m_panKnob;
 	Fader* m_fader;
 	EffectRackView* m_effectRackView;

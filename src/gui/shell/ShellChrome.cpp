@@ -33,6 +33,7 @@
 #include <QStyleOptionToolButton>
 
 #include "Accessibility.h"
+#include "CommandForm.h"
 #include "ControlRegistry.h"
 #include "ControlWindowCommands.h"
 #include "DesignTokens.h"
@@ -236,6 +237,35 @@ void ShellHeader::customise(const QJsonObject& doc)
 	}
 }
 
+namespace
+{
+
+//! The header menu's command-button section: add one (window.header_set's form, the current list
+//! filled in) and remove each added one - every change one window.header_set, one undo step.
+void addExtrasSection(QMenu& menu)
+{
+	const QJsonArray extras = ControlRegistry::instance()->invoke(QStringLiteral("window.header_get")).result
+		.value(QStringLiteral("extra")).toArray();
+	menu.addSeparator();
+	addCommandAction(&menu, ShellHeader::tr("Add Command Button..."), QStringLiteral("window.header_set"), [extras]() {
+		return CommandCall{QStringLiteral("window.header_set"), {}, {{QStringLiteral("extra"), extras}}};
+	});
+	if (extras.isEmpty()) { return; }
+	QMenu* remove = menu.addMenu(ShellHeader::tr("Remove Command Button"));
+	for (int i = 0; i < extras.size(); ++i)
+	{
+		const QJsonObject extra = extras.at(i).toObject();
+		QJsonArray rest = extras;
+		rest.removeAt(i);
+		const QString label = extra.value(QStringLiteral("label")).toString(extra.value(QStringLiteral("command")).toString());
+		addCommandAction(remove, label, QStringLiteral("window.header_set"), [rest]() {
+			return CommandCall{QStringLiteral("window.header_set"), {{QStringLiteral("extra"), rest}}, {}, {}, false};
+		});
+	}
+}
+
+} // namespace
+
 void ShellHeader::contextMenuEvent(QContextMenuEvent* event)
 {
 	// WF-116: right-click the header to choose its buttons (window.header_set, one undo step).
@@ -262,6 +292,7 @@ void ShellHeader::contextMenuEvent(QContextMenuEvent* event)
 				{{QStringLiteral("hidden"), QJsonArray::fromStringList(next)}});
 		});
 	}
+	addExtrasSection(menu);
 	menu.exec(event->globalPos());
 }
 

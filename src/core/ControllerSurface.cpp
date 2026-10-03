@@ -32,6 +32,7 @@
 #include "ControllerConnection.h"
 #include "Engine.h"
 #include "MidiController.h"
+#include "MidiLearn.h"
 #include "Song.h"
 
 namespace lmms
@@ -175,21 +176,7 @@ int ControllerSurface::applyTemplate(const QString& name)
 			continue;
 		}
 
-		auto* controller = new MidiController(nullptr);
-		controller->midiPort().setInputChannel(b.channel);
-		controller->midiPort().setInputController(b.controller);
-
-		MidiPort::Map ports = controller->midiPort().readablePorts();
-		for (auto it = ports.begin(); it != ports.end(); ++it)
-		{
-			it.value() = true;
-		}
-		controller->subscribeReadablePorts(ports);
-		controller->updateName();
-		controller->midiPort().setName(target->fullDisplayName());
-
-		auto* connection = new ControllerConnection(controller);
-		target->setControllerConnection(connection);
+		MidiController* controller = bindMidiController(target, b.channel, b.controller);
 
 		// The two surface flags, in the order that matters: soft-takeover first,
 		// because setSoftTakeoverTarget() derives its target from the model the

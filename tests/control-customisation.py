@@ -130,6 +130,14 @@ def check_header(session, recorder):
                    hidden and extra and restored, "hidden=%r extra=%r restored=%r" % (hidden, extra, restored))
     bad = session.call("window.header_set", {"extra": [{"command": "no.such_command"}]})
     recorder.check("a header button for no command is not_found", kind(bad) == "not_found", "reply=%r" % bad)
+    # WF-116: the header menu's Remove Command Button sends the list without that button.
+    two = [{"command": "transport.stop", "label": "Halt"}, {"command": "transport.play", "label": "Go"}]
+    session.result("window.header_set", {"extra": two})
+    session.result("window.header_set", {"extra": two[1:]})
+    removed = not header_button(session, "extra_transport.stop") and bool(header_button(session, "extra_transport.play"))
+    recorder.check("an added header button is removed again", removed,
+                   "buttons=%r" % session.result("window.header_get").get("buttons"))
+    session.result("window.header_set", {"extra": []})
 
 
 def track_count(session):

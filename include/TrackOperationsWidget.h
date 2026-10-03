@@ -28,6 +28,7 @@
 #include <QWidget>
 
 class QPushButton;
+class QToolButton;
 
 namespace lmms::gui
 {
@@ -70,6 +71,7 @@ private:
 	QPushButton * m_trackOps;
 	AutomatableButton* m_muteBtn;
 	AutomatableButton* m_soloBtn;
+	QToolButton* m_armBtn = nullptr;  //!< 0.5.0 L03 (WF-074): record arm, track.set_arm
 
 	friend class TrackView;
 

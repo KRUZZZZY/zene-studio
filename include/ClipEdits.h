@@ -49,9 +49,11 @@ enum class FadeShape
 	Linear = 0,      //!< x - amplitude-linear; a pair sums to unity AMPLITUDE
 	Exponential = 1, //!< x^2 - a slow start, the DAW's "logarithmic" ramp
 	EqualPower = 2,  //!< sin(x * pi/2) - a pair sums to unity POWER
+	Logarithmic = 3, //!< 1 - (1 - x)^2 - a fast start (0.5.0 L07/L05 ED-174)
+	SCurve = 4,      //!< 3x^2 - 2x^3 - slow at both ends
 };
 
-//! The wire name of \p shape ("linear", "exponential", "equal_power").
+//! The wire name of \p shape ("linear", "exponential", "equal_power", "logarithmic", "s_curve").
 LMMS_EXPORT QString fadeShapeName(FadeShape shape);
 //! Parses fadeShapeName(). False leaves \p shape alone.
 LMMS_EXPORT bool fadeShapeFromName(const QString& name, FadeShape* shape);

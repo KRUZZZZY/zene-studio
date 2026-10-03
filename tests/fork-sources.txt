@@ -517,6 +517,7 @@ include/BrowserPanel.h
 include/BrowserPeakCache.h
 include/BrowserTagMenu.h
 include/ChainPresetMenu.h
+include/ChannelPickDialog.h
 include/ChordDetect.h
 include/ChordProgression.h
 include/ChordTrack.h
@@ -525,10 +526,12 @@ include/ClipConsolidate.h
 include/ClipEdits.h
 include/ClipEditsMenu.h
 include/ClipLinks.h
+include/ClipTransients.h
 include/CommandForm.h
 include/CommandListDialog.h
 include/CommandLists.h
 include/CommandPalette.h
+include/CompSwipeStrip.h
 include/ControlAutomationSupport.h
 include/ControlBounceSupport.h
 include/ControlBrowserSupport.h
@@ -537,6 +540,7 @@ include/ControlChordSupport.h
 include/ControlClipLinkSupport.h
 include/ControlCompSupport.h
 include/ControlDetectSupport.h
+include/ControlDeviceMoves.h
 include/ControlDevicePlacement.h
 include/ControlDeviceSupport.h
 include/ControlEdit.h
@@ -574,7 +578,9 @@ include/DesignTokens.h
 include/DevicePanel.h
 include/DocumentIndex.h
 include/DpiHelper.h
+include/EffectDeviceMenu.h
 include/EffectHostingMenu.h
+include/EffectPickerOrganiser.h
 include/ExportDither.h
 include/ExportDitherMode.h
 include/ExportNoiseShaper.h
@@ -588,13 +594,16 @@ include/ImportDetection.h
 include/ImportDetectionDsp.h
 include/InputChannelRing.h
 include/InputMonitor.h
+include/InspectorChannelRouting.h
 include/InspectorPanel.h
 include/LatencyCompensation.h
+include/LaunchBindings.h
 include/LinkPeerTransport.h
 include/LinkSync.h
 include/LmmsPolyfill.h
 include/LoudnessReport.h
 include/LufsMeter.h
+include/MacroKnobs.h
 include/MacroMenu.h
 include/MasterLoudnessTap.h
 include/MasteringChain.h
@@ -613,7 +622,14 @@ include/MidiLearnGui.h
 include/MidiOutQueue.h
 include/MidiReconnect.h
 include/MidiReconnectAction.h
+include/MidiSurfaceInput.h
+include/MixerGroups.h
 include/MixerLatencyText.h
+include/MixerListen.h
+include/MixerOverlays.h
+include/MixerSendPan.h
+include/MixerStrip.h
+include/MixerViewOptions.h
 include/ModulationLayer.h
 include/ModulatorPanel.h
 include/MonitorMode.h
@@ -638,6 +654,8 @@ include/PluginEditorHost.h
 include/PluginHostChunking.h
 include/PluginHostNotes.h
 include/PluginNativeEditor.h
+include/PluginOrganiser.h
+include/PluginPaths.h
 include/PluginQuarantineMenu.h
 include/PluginScanCache.h
 include/ProjectContainer.h
@@ -655,9 +673,12 @@ include/RackMenu.h
 include/RackNodes.h
 include/RackZones.h
 include/RealtimeScope.h
+include/RecordLaunchMenus.h
+include/RecordOptions.h
 include/RecordRingBuffer.h
 include/RecordingJournal.h
 include/RecordingRecoveryMenu.h
+include/RemoteControls.h
 include/RemotePluginAudioPorts.h
 include/RenderPresetMenu.h
 include/RetroAudioCapture.h
@@ -674,6 +695,7 @@ include/RoutingNodes.h
 include/RubberBandStretch.h
 include/SafeStart.h
 include/SampleBufferResample.h
+include/SampleClipOverlays.h
 include/SampleFrameRingBuffer.h
 include/SampleRecordAccumulator.h
 include/SampleWindow.h
@@ -773,6 +795,18 @@ plugins/ClapInstrument/ClapInstrument.cpp
 plugins/ClapInstrument/ClapInstrument.h
 plugins/ClapInstrument/ClapInstrumentView.cpp
 plugins/ClapInstrument/ClapInstrumentView.h
+plugins/Gate/Gate.cpp
+plugins/Gate/Gate.h
+plugins/Gate/GateControlDialog.cpp
+plugins/Gate/GateControlDialog.h
+plugins/Gate/GateControls.cpp
+plugins/Gate/GateControls.h
+plugins/Modulation/Modulation.cpp
+plugins/Modulation/Modulation.h
+plugins/Modulation/ModulationControlDialog.cpp
+plugins/Modulation/ModulationControlDialog.h
+plugins/Modulation/ModulationControls.cpp
+plugins/Modulation/ModulationControls.h
 plugins/NeuralAmp/NeuralAmpControlDialog.cpp
 plugins/NeuralAmp/NeuralAmpControlDialog.h
 plugins/NeuralAmp/NeuralAmpControls.cpp
@@ -843,6 +877,7 @@ src/core/ChordVocabulary.cpp
 src/core/ClipConsolidate.cpp
 src/core/ClipEdits.cpp
 src/core/ClipLinks.cpp
+src/core/ClipTransients.cpp
 src/core/ControlAutomationSupport.cpp
 src/core/ControlBounceSupport.cpp
 src/core/ControlBrowserSupport.cpp
@@ -850,6 +885,7 @@ src/core/ControlChainPresetSupport.cpp
 src/core/ControlChordSupport.cpp
 src/core/ControlCommandsArrangement.cpp
 src/core/ControlCommandsArrangementState.cpp
+src/core/ControlCommandsAudioSlice.cpp
 src/core/ControlCommandsAutomation.cpp
 src/core/ControlCommandsAutomationEdit.cpp
 src/core/ControlCommandsAutomationLanes.cpp
@@ -878,6 +914,7 @@ src/core/ControlCommandsCompEdits.cpp
 src/core/ControlCommandsConsolidate.cpp
 src/core/ControlCommandsControl.cpp
 src/core/ControlCommandsController.cpp
+src/core/ControlCommandsControllerMap.cpp
 src/core/ControlCommandsControllerTemplates.cpp
 src/core/ControlCommandsCrash.cpp
 src/core/ControlCommandsCrashControl.cpp
@@ -885,6 +922,8 @@ src/core/ControlCommandsDawProject.cpp
 src/core/ControlCommandsDetect.cpp
 src/core/ControlCommandsDetectApply.cpp
 src/core/ControlCommandsDevice.cpp
+src/core/ControlCommandsDeviceCopy.cpp
+src/core/ControlCommandsDrumRack.cpp
 src/core/ControlCommandsDsp.cpp
 src/core/ControlCommandsExport.cpp
 src/core/ControlCommandsExportPresets.cpp
@@ -899,6 +938,7 @@ src/core/ControlCommandsIdContract.cpp
 src/core/ControlCommandsInputTransform.cpp
 src/core/ControlCommandsInterchange.cpp
 src/core/ControlCommandsKeyNames.cpp
+src/core/ControlCommandsLaunchBindings.cpp
 src/core/ControlCommandsLink.cpp
 src/core/ControlCommandsLivecode.cpp
 src/core/ControlCommandsMarkers.cpp
@@ -912,11 +952,15 @@ src/core/ControlCommandsMidiReconnect.cpp
 src/core/ControlCommandsMidiReconnectEdit.cpp
 src/core/ControlCommandsMidiReconnectShared.h
 src/core/ControlCommandsMixer.cpp
+src/core/ControlCommandsMixerListen.cpp
 src/core/ControlCommandsMixerRoutes.cpp
+src/core/ControlCommandsMixerStrip.cpp
 src/core/ControlCommandsModulator.cpp
 src/core/ControlCommandsModulatorRoutes.cpp
 src/core/ControlCommandsMonitor.cpp
 src/core/ControlCommandsMts.cpp
+src/core/ControlCommandsNoteAcross.cpp
+src/core/ControlCommandsNoteCurves.cpp
 src/core/ControlCommandsNoteEdit.cpp
 src/core/ControlCommandsNoteExpression.cpp
 src/core/ControlCommandsNoteProbability.cpp
@@ -935,7 +979,9 @@ src/core/ControlCommandsPatcherShared.h
 src/core/ControlCommandsPdc.cpp
 src/core/ControlCommandsPlugin.cpp
 src/core/ControlCommandsPluginEditor.cpp
+src/core/ControlCommandsPluginOrganise.cpp
 src/core/ControlCommandsPluginParams.cpp
+src/core/ControlCommandsPluginPaths.cpp
 src/core/ControlCommandsPluginPreset.cpp
 src/core/ControlCommandsPluginScan.cpp
 src/core/ControlCommandsPluginScanEdit.cpp
@@ -950,13 +996,16 @@ src/core/ControlCommandsProjectMmpzGit.cpp
 src/core/ControlCommandsPunch.cpp
 src/core/ControlCommandsRack.cpp
 src/core/ControlCommandsRackMacros.cpp
+src/core/ControlCommandsRackWrap.cpp
 src/core/ControlCommandsRackZones.cpp
 src/core/ControlCommandsRange.cpp
 src/core/ControlCommandsRecording.cpp
 src/core/ControlCommandsRecordingInput.cpp
+src/core/ControlCommandsRecordingPass.cpp
 src/core/ControlCommandsRecordingRecovery.cpp
 src/core/ControlCommandsRecordingRetro.cpp
 src/core/ControlCommandsRecordingRoutes.cpp
+src/core/ControlCommandsRemote.cpp
 src/core/ControlCommandsRenderStems.cpp
 src/core/ControlCommandsRevisions.cpp
 src/core/ControlCommandsRouting.cpp
@@ -969,6 +1018,7 @@ src/core/ControlCommandsScale.cpp
 src/core/ControlCommandsScaleEdit.cpp
 src/core/ControlCommandsScript.cpp
 src/core/ControlCommandsSession.cpp
+src/core/ControlCommandsSessionCapture.cpp
 src/core/ControlCommandsSessionFollow.cpp
 src/core/ControlCommandsSessionLaunch.cpp
 src/core/ControlCommandsSessionPatterns.cpp
@@ -995,6 +1045,7 @@ src/core/ControlCommandsVcaEdit.cpp
 src/core/ControlCommandsVcaEditMore.cpp
 src/core/ControlCommandsVcaEditSet.cpp
 src/core/ControlCommandsVcaMix.cpp
+src/core/ControlCommandsVcaNest.cpp
 src/core/ControlCommandsVcaShared.h
 src/core/ControlCommandsWarp.cpp
 src/core/ControlCommandsWarpEdit.cpp
@@ -1007,6 +1058,7 @@ src/core/ControlDetectSupport.cpp
 src/core/ControlDeviceCatalogue.cpp
 src/core/ControlDeviceClap.cpp
 src/core/ControlDeviceHosted.cpp
+src/core/ControlDeviceMoves.cpp
 src/core/ControlDevicePlacement.cpp
 src/core/ControlDeviceState.cpp
 src/core/ControlDeviceSupport.cpp
@@ -1039,6 +1091,7 @@ src/core/ControlReversibilityTableController.cpp
 src/core/ControlReversibilityTableCustomisation.cpp
 src/core/ControlReversibilityTableDawProject.cpp
 src/core/ControlReversibilityTableDetect.cpp
+src/core/ControlReversibilityTableDevices.cpp
 src/core/ControlReversibilityTableExportPresets.cpp
 src/core/ControlReversibilityTableHostChunking.cpp
 src/core/ControlReversibilityTableInterchange.cpp
@@ -1047,6 +1100,7 @@ src/core/ControlReversibilityTableLivecode.cpp
 src/core/ControlReversibilityTableMastering.cpp
 src/core/ControlReversibilityTableMeter.cpp
 src/core/ControlReversibilityTableMidiReconnect.cpp
+src/core/ControlReversibilityTableMixing.cpp
 src/core/ControlReversibilityTableMmpzGit.cpp
 src/core/ControlReversibilityTableMts.cpp
 src/core/ControlReversibilityTableNoteScale.cpp
@@ -1108,6 +1162,7 @@ src/core/ImportDetectionSpectrum.cpp
 src/core/ImportDetectionSpectrum.h
 src/core/InputMonitor.cpp
 src/core/LatencyCompensation.cpp
+src/core/LaunchBindings.cpp
 src/core/LinkSync.cpp
 src/core/LinkSyncWire.cpp
 src/core/LinkUdpTransport.cpp
@@ -1125,6 +1180,10 @@ src/core/MidiClockState.cpp
 src/core/MidiClockTracker.cpp
 src/core/MidiInputTransform.cpp
 src/core/MidiLearn.cpp
+src/core/MixerGroups.cpp
+src/core/MixerListen.cpp
+src/core/MixerSendPan.cpp
+src/core/MixerStrip.cpp
 src/core/ModulationLayer.cpp
 src/core/ModulationLayerPublisher.cpp
 src/core/NamespaceRegistry.cpp
@@ -1136,6 +1195,8 @@ src/core/PatchWiring.cpp
 src/core/PluginEditorHost.cpp
 src/core/PluginHostChunking.cpp
 src/core/PluginHostNotes.cpp
+src/core/PluginOrganiser.cpp
+src/core/PluginPaths.cpp
 src/core/PluginScanCache.cpp
 src/core/ProjectContainer.cpp
 src/core/ProjectContainerEntries.cpp
@@ -1151,7 +1212,9 @@ src/core/Rack.cpp
 src/core/RackMacros.cpp
 src/core/RackNodes.cpp
 src/core/RackZones.cpp
+src/core/RecordOptions.cpp
 src/core/RecordingJournal.cpp
+src/core/RemoteControls.cpp
 src/core/RetroAudioCapture.cpp
 src/core/RetroMidiCapture.cpp
 src/core/RetroMidiCaptureSettings.cpp
@@ -1214,14 +1277,17 @@ src/gui/ArrangerOverlays.cpp
 src/gui/AutomationModeMenu.cpp
 src/gui/BrowserTagMenu.cpp
 src/gui/ChainPresetMenu.cpp
+src/gui/ChannelPickDialog.cpp
 src/gui/ClipEditsMenu.cpp
 src/gui/CommandForm.cpp
 src/gui/CommandListDialog.cpp
 src/gui/CommandLists.cpp
 src/gui/CommandPalette.cpp
+src/gui/CompSwipeStrip.cpp
 src/gui/ControlCommandsArrangerView.cpp
 src/gui/ControlCommandsLayouts.cpp
 src/gui/ControlCommandsMacros.cpp
+src/gui/ControlCommandsMixerView.cpp
 src/gui/ControlCommandsNoteEditor.cpp
 src/gui/ControlCommandsSelection.cpp
 src/gui/ControlCommandsShell.cpp
@@ -1230,16 +1296,20 @@ src/gui/ControlCommandsWindow.cpp
 src/gui/ControlGuiSupport.cpp
 src/gui/ControllerTemplateMenu.cpp
 src/gui/CrashReportMenu.cpp
+src/gui/EffectDeviceMenu.cpp
 src/gui/EffectHostingMenu.cpp
 src/gui/ExportQualityControls.cpp
 src/gui/FeedbackModeAction.cpp
 src/gui/GrooveMenu.cpp
+src/gui/MacroKnobs.cpp
 src/gui/MacroMenu.cpp
 src/gui/MenuBarExtras.cpp
 src/gui/MidiClockMenu.cpp
 src/gui/MidiControllerMenu.cpp
 src/gui/MidiLearnGui.cpp
 src/gui/MidiReconnectAction.cpp
+src/gui/MixerOverlays.cpp
+src/gui/MixerViewOptions.cpp
 src/gui/ModulatorPanel.cpp
 src/gui/MpeInputAction.cpp
 src/gui/NoteTransformActions.cpp
@@ -1247,6 +1317,7 @@ src/gui/PinConnector.cpp
 src/gui/PluginNativeEditor.cpp
 src/gui/PluginQuarantineMenu.cpp
 src/gui/RackMenu.cpp
+src/gui/RecordLaunchMenus.cpp
 src/gui/RecordingRecoveryMenu.cpp
 src/gui/RenderPresetMenu.cpp
 src/gui/ScriptBudgetAction.cpp
@@ -1269,6 +1340,8 @@ src/gui/UndoHistoryPanel.cpp
 src/gui/VcaStripView.cpp
 src/gui/VisibilitySetMenu.cpp
 src/gui/clips/ClipViewTheme.cpp
+src/gui/clips/SampleClipOverlays.cpp
+src/gui/modals/EffectPickerOrganiser.cpp
 src/gui/noteeditor/ControllerLaneView.cpp
 src/gui/noteeditor/NoteCanvas.cpp
 src/gui/noteeditor/NoteCanvasGestures.cpp
@@ -1283,6 +1356,7 @@ src/gui/shell/BrowserPanel.cpp
 src/gui/shell/DesignTokens.cpp
 src/gui/shell/DeviceCard.cpp
 src/gui/shell/DevicePanel.cpp
+src/gui/shell/InspectorChannelRouting.cpp
 src/gui/shell/InspectorClipFields.cpp
 src/gui/shell/InspectorPanel.cpp
 src/gui/shell/ModulatorCard.cpp
@@ -1406,11 +1480,14 @@ tests/rt_safety_source.py
 tests/session_api_proof_lib.py
 tests/session_api_proof_rows.py
 tests/src/core/ArrangementModesTest.cpp
+tests/src/core/AudioBurstSupport.h
+tests/src/core/AudioEditingTest.cpp
 tests/src/core/AudioResamplerRatioTest.cpp
 tests/src/core/AutomationLanesTest.cpp
 tests/src/core/BrowserCatalogTest.cpp
 tests/src/core/BrowserTestSupport.h
 tests/src/core/ClipGainEnvelopeTest.cpp
+tests/src/core/ClipJoinRippleTest.cpp
 tests/src/core/ClipSerialisationTest.cpp
 tests/src/core/ClipTransposeTest.cpp
 tests/src/core/ControlAutomationScriptTest.cpp
@@ -1433,6 +1510,7 @@ tests/src/core/ControlSurfaceReferenceTest.cpp
 tests/src/core/ControlVerbInverseTest.cpp
 tests/src/core/ControlWarpCommandsTest.cpp
 tests/src/core/DataFileSaveIntegrityTest.cpp
+tests/src/core/DeviceCopyTest.cpp
 tests/src/core/DocumentIndexTest.cpp
 tests/src/core/DocumentSectionsTest.cpp
 tests/src/core/ExportDitherTest.cpp
@@ -1447,9 +1525,13 @@ tests/src/core/MidiLearnTest.cpp
 tests/src/core/MidiOutQueueTest.cpp
 tests/src/core/MidiRetroCaptureTest.cpp
 tests/src/core/MixerConcurrencyTest.cpp
+tests/src/core/MixerListenTest.cpp
+tests/src/core/MixerStripTest.cpp
+tests/src/core/MixingRoutingTest.cpp
 tests/src/core/ModulationLayerProjectRoundTripTest.cpp
 tests/src/core/MpscQueueTest.cpp
 tests/src/core/NamespaceRegistryTest.cpp
+tests/src/core/NoteCurvesAcrossTest.cpp
 tests/src/core/NoteEditingCommandsTest.cpp
 tests/src/core/OutOfProcessHostClientLoopTest.cpp
 tests/src/core/OutOfProcessHostSupport.h
@@ -1475,6 +1557,7 @@ tests/src/core/RackMacrosTest.cpp
 tests/src/core/RackTestSupport.h
 tests/src/core/RackZonesTest.cpp
 tests/src/core/RangeEditsTest.cpp
+tests/src/core/RecordingPassTest.cpp
 
 # git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/agent-surface-gate.py tests/agent_surface_lib.py tests/control-absent-socket.py tests/control-export-settings.py tests/control-freeze-commands-transcript.py tests/control-headless-no-audio-device.py tests/freeze_bounce_evidence.py tests/control-headless-project-open.py tests/control-headless-working-directory.py tests/control-negative-control.py tests/control-no-audio-device.py tests/control-readiness.py tests/control-reversibility-transcript.py tests/control-session-lifecycle-transcript.py tests/control-session-m1.py tests/control-shutdown.py tests/control-socket-path-safety.py tests/control-stable-ids.py tests/control-warp-commands-transcript.py tests/control_instance_diagnosis.py tests/control_socket_diagnosis.py tests/control_socket_flows.py tests/control_socket_harness.py tests/render-software-tag.py tests/control-punch-transcript.py tests/control-recording-recovery.py tests/control-track-folder.py tests/control-retro-capture.py tests/control-chain-presets.py tests/control-render-presets.py tests/control-vca-commands.py tests/control-pdc-commands.py tests/control-routing-commands.py tests/control-bus-commands.py tests/control-ports-commands.py tests/control-stem-export-verb.py tests/control-plugin-scan-commands.py tests/control-crash-reporter.py tests/control-mastering-commands.py tests/mastering_probe_lib.py tests/control-stem-commands.py tests/stem_commands_lib.py tests/control-pitch-stretch-transcript.py tests/control-session-api-proof.py ; \
 # git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/agent-surface-gate.py tests/agent_surface_lib.py tests/control-headless-no-audio-device.py tests/control-headless-project-open.py tests/control-headless-working-directory.py tests/control-negative-control.py tests/control-no-audio-device.py tests/control-readiness.py tests/control-reversibility-transcript.py tests/control-session-lifecycle-transcript.py tests/control-session-m1.py tests/control-shutdown.py tests/control-socket-path-safety.py tests/control-stable-ids.py tests/control-warp-commands-transcript.py tests/control_socket_diagnosis.py tests/control_socket_flows.py tests/control_socket_harness.py tests/control-export-settings.py tests/control-commands-snapshot.py tests/control-wasm-sandbox.py tests/control-punch-transcript.py tests/control-recording-recovery.py tests/control-retro-capture.py tests/control-clock-commands.py tests/control-chain-presets.py tests/control-render-presets.py tests/control-vca-commands.py tests/control-pdc-commands.py tests/control-routing-commands.py tests/control-bus-commands.py tests/control-ports-commands.py tests/control-stem-export-verb.py tests/control-plugin-scan-commands.py tests/control-crash-reporter.py tests/control-mastering-commands.py tests/mastering_probe_lib.py tests/control-stem-commands.py tests/stem_commands_lib.py tests/control-pitch-stretch-transcript.py tests/control-session-api-proof.py ; \

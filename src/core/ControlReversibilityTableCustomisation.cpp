@@ -48,6 +48,10 @@ using RC = ReversibilityClass;
 	"the config file and re-applies it to the interface, exactly as the command does"
 
 const ReversibilityRow kCustomisationRows[] = {
+	R("controller.map", RC::TrueInverse, true, "it binds a parameter to a MIDI controller (saved in the project)",
+		"action checkpoint: the recorded undo step puts the previous binding back", ""),
+	R("controller.unmap", RC::TrueInverse, true, "it removes a parameter's MIDI binding",
+		"action checkpoint: the recorded undo step binds the parameter again", ""),
 	R("shortcuts.list", RC::NotMutating, false, "it reads the menu actions' shortcuts. Nothing is written", "no write", ""),
 	R("shortcuts.set", RC::TrueInverse, true, CONFIG_WRITE_REASON("one shortcut override"), CONFIG_WRITE_MECHANISM, ""),
 	R("shortcuts.reset", RC::TrueInverse, true, CONFIG_WRITE_REASON("the shortcut overrides"), CONFIG_WRITE_MECHANISM, ""),

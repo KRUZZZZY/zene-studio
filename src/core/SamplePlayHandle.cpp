@@ -29,6 +29,7 @@
 #include <algorithm>
 #include <cmath>
 
+#include "ArrangementEdits.h"
 #include "AudioEngine.h"
 #include "AudioBusHandle.h"
 #include "Engine.h"
@@ -76,6 +77,20 @@ SamplePlayHandle::SamplePlayHandle( SampleClip* clip ) :
 
 
 
+namespace
+{
+
+//! Whether a clip's audio goes through the pitch-keeping stretcher: a preserve-pitch or Rubber Band
+//! clip whose rate varies, or (ED-038) a transposed Rubber Band clip even at a linear rate - the
+//! pitch scale is the change it renders.
+bool rendersThroughStretcher(WarpStretchMode mode, bool rendersLinearly, int transpose)
+{
+	const bool keepsPitch = mode == WarpStretchMode::PreservePitch || mode == WarpStretchMode::RubberBand;
+	return (keepsPitch && !rendersLinearly) || (transpose != 0 && mode == WarpStretchMode::RubberBand);
+}
+
+} // namespace
+
 SamplePlayHandle::SamplePlayHandle( SampleClip* clip, const SampleWindow& window ) :
 	SamplePlayHandle(&clip->sample(), false)
 {
@@ -114,11 +129,7 @@ SamplePlayHandle::SamplePlayHandle( SampleClip* clip, const SampleWindow& window
 	 *  once here (a table fill, no allocation) and its analysis cursor starts
 	 *  at the head of the window, in window-relative frames. */
 	const WarpStretchMode stretchMode = clip->warpStretchMode();
-	m_preservePitch = ((stretchMode == WarpStretchMode::PreservePitch
-		|| stretchMode == WarpStretchMode::RubberBand) && !m_rendersLinearly)
-		// ED-038: a transposed Rubber Band clip goes through the stretcher even at a linear rate -
-		// the pitch scale is the change it renders.
-		|| (clip->clipEdits().transpose != 0 && stretchMode == WarpStretchMode::RubberBand);
+	m_preservePitch = rendersThroughStretcher(stretchMode, m_rendersLinearly, clip->clipEdits().transpose);
 
 	/*! Owner decision 12: a RubberBand clip claims one of its pool's voices -
 	 *  a lock-free compare-and-swap, the voice already built and reset off this
@@ -185,7 +196,9 @@ void SamplePlayHandle::snapshotClipEdits(const SampleClip* clip, const SampleWin
 	// for a comped clip too; a clip with neither stays on the early return.
 	const Track* owner = clip->getTrack();
 	const bool comped = owner != nullptr && !owner->takeLanes().segments().empty();
-	if (m_edits.isNeutral() && !comped) { return; }
+	// ED-177: the automatic fade (a relaxed atomic, set from the UI) applies to unedited clips too.
+	const int autoFadeMs = arrangement::autoFadeMs();
+	if (!comped && !editsOrAutoFade(autoFadeMs)) { return; }
 
 	const auto outputRate = Engine::audioEngine()->outputSampleRate();
 	const double outputFramesPerTick = Engine::framesPerTick(outputRate);
@@ -198,8 +211,10 @@ void SamplePlayHandle::snapshotClipEdits(const SampleClip* clip, const SampleWin
 	};
 	m_clipFrames = framesFor(clipTicks);
 	m_outputFramesPerTick = outputFramesPerTick;
-	m_fadeInFrames = framesFor(m_edits.fadeInTicks);
-	m_fadeOutFrames = framesFor(m_edits.fadeOutTicks);
+	const auto autoFade = static_cast<f_cnt_t>(static_cast<double>(autoFadeMs) * outputRate / 1000.0);
+	m_fadeInFrames = std::max(framesFor(m_edits.fadeInTicks), autoFade);
+	m_fadeOutFrames = std::max(framesFor(m_edits.fadeOutTicks), autoFade);
+	m_autoFaded = autoFade > 0;
 
 	// Where this pass starts inside the clip's span. For a linear clip the source
 	// frame offset scales by the output/source rate, which is exactly
@@ -294,6 +309,10 @@ void SamplePlayHandle::applyComp(SampleFrame* buffer, f_cnt_t frames) const
 	}
 }
 
+bool SamplePlayHandle::editsOrAutoFade(int autoFadeMs) const { return !m_edits.isNeutral() || autoFadeMs > 0; }
+
+bool SamplePlayHandle::needsClipEdits() const { return !m_edits.isNeutral() || m_autoFaded; }
+
 void SamplePlayHandle::applyClipEdits(SampleFrame* buffer, f_cnt_t frames) const
 {
 	const f_cnt_t base = m_envelopeStart + m_frame;
@@ -386,7 +405,7 @@ void SamplePlayHandle::play( std::span<SampleFrame> buffer )
 		 *  default render nothing at all and leaves its output bit for bit what it
 		 *  was before the feature existed.
 		 */
-		if (!m_edits.isNeutral())
+		if (needsClipEdits())
 		{
 			applyClipEdits(workingBuffer, frames);
 		}

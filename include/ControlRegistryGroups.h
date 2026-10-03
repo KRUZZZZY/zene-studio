@@ -759,6 +759,38 @@ LMMS_EXPORT void registerClipControllerCommands(ControlRegistry& registry);
 LMMS_EXPORT void registerInputTransformCommands(ControlRegistry& registry);
 //! 0.5.0 L07 (ED-137): warp.quantize - quantise audio (ControlCommandsWarpQuantize.cpp).
 LMMS_EXPORT void registerWarpQuantizeCommand(ControlRegistry& registry);
+//! 0.5.0 L07 (ED-122): note.pitch_curve_get / set (ControlCommandsNoteCurves.cpp).
+LMMS_EXPORT void registerNoteCurveCommands(ControlRegistry& registry);
+//! 0.5.0 L07 (ED-078): note.across - one note edit over several clips (ControlCommandsNoteAcross.cpp).
+LMMS_EXPORT void registerNoteAcrossCommand(ControlRegistry& registry);
+//! 0.5.0 L05 (ED-150/162/163): clip.transients / split_at / slice_to_instrument (ControlCommandsAudioSlice.cpp).
+LMMS_EXPORT void registerAudioSliceCommands(ControlRegistry& registry);
+//! 0.5.0 L13 (WF-124): controller.map / unmap (ControlCommandsControllerMap.cpp).
+LMMS_EXPORT void registerControllerMapCommands(ControlRegistry& registry);
+//! 0.5.0 L09 (MX-037): mixer.listen / listen_mode (ControlCommandsMixerListen.cpp).
+LMMS_EXPORT void registerMixerListenCommands(ControlRegistry& registry);
+//! 0.5.0 L09 (MX-070/071): vca.set_parent / set_links (ControlCommandsVcaNest.cpp, registered by registerVcaCommands).
+LMMS_EXPORT void registerVcaNestCommands(ControlRegistry& registry);
+//! 0.5.0 L08: mixer.set_many and the strip settings (ControlCommandsMixerStrip.cpp).
+LMMS_EXPORT void registerMixerStripCommands(ControlRegistry& registry);
+//! 0.5.0 L10 (MX-076/092): plugin.copy, chain.copy, plugin.ab (ControlCommandsDeviceCopy.cpp).
+LMMS_EXPORT void registerDeviceCopyCommands(ControlRegistry& registry);
+//! 0.5.0 L10 (MX-166): plugin.organise / plugin.organisation (ControlCommandsPluginOrganise.cpp).
+LMMS_EXPORT void registerPluginOrganiseCommands(ControlRegistry& registry);
+//! 0.5.0 L10 (MX-163): plugin.paths_get / plugin.paths_set (ControlCommandsPluginPaths.cpp).
+LMMS_EXPORT void registerPluginPathsCommands(ControlRegistry& registry);
+//! 0.5.0 L10 (MX-103): rack.wrap (ControlCommandsRackWrap.cpp).
+LMMS_EXPORT void registerRackWrapCommand(ControlRegistry& registry);
+//! 0.5.0 L10 (MX-106): remote.connect / disconnect / target / page / state (ControlCommandsRemote.cpp).
+LMMS_EXPORT void registerRemoteCommands(ControlRegistry& registry);
+//! 0.5.0 L10 (MX-111): track.drum_rack (ControlCommandsDrumRack.cpp).
+LMMS_EXPORT void registerDrumRackCommand(ControlRegistry& registry);
+//! 0.5.0 L03 (WF-080 / WF-082 / ED-168): transport.record_options, comp.cycle (ControlCommandsRecordingPass.cpp).
+LMMS_EXPORT void registerRecordingPassCommands(ControlRegistry& registry);
+//! 0.5.0 L02 (WF-069): session.bindings_connect / bind / bind_learn / unbind / bindings (ControlCommandsLaunchBindings.cpp).
+LMMS_EXPORT void registerLaunchBindingCommands(ControlRegistry& registry);
+//! 0.5.0 L02 (WF-055): session.capture_to_slot (ControlCommandsSessionCapture.cpp).
+LMMS_EXPORT void registerSessionCaptureCommand(ControlRegistry& registry);
 //! 0.5.0 L04 (ED-030/032): clip.repeat, clip.time_scale (ControlCommandsClipArrange.cpp).
 LMMS_EXPORT void registerClipArrangeCommands(ControlRegistry& registry);
 //! 0.5.0 L06: automation.lane_add / add_trim / draw_shape / transform / thin / set_curve /

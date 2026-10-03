@@ -44,6 +44,7 @@
 #include "ControlVocabulary.h"
 #include "DesignTokens.h"
 #include "Engine.h"
+#include "InspectorChannelRouting.h"
 #include "InstrumentTrack.h"
 #include "Knob.h"
 #include "LedCheckBox.h"
@@ -54,6 +55,7 @@
 #include "ShellCommandMenus.h"
 #include "ShellSelection.h"
 #include "Song.h"
+#include "TakeLanesPanel.h"
 #include "TrackMixModels.h"
 #include "TransportReadouts.h"
 
@@ -292,6 +294,8 @@ QWidget* InspectorPanel::trackSection(Track* track)
 	column->addLayout(nameRow);
 	column->addWidget(caption(tr("%1 track - %2").arg(control::trackTypeNameOf(track->type()), control::trackIdOf(track)), section));
 	column->addWidget(trackControls(track, section));
+	// 0.5.0 L03 (ED-164): a track with take lanes shows them here, beside the track, not in a window.
+	if (!track->takeLanes().isEmpty()) { column->addWidget(new TakeLanesPanel(control::trackIdOf(track), section)); }
 	return section;
 }
 
@@ -389,6 +393,8 @@ QWidget* InspectorPanel::channelSection(MixerChannel* channel, const QString& id
 	for (QWidget* w : std::initializer_list<QWidget*>{mute, solo, volume, pan}) { row->addWidget(w); }
 	row->addStretch(1);
 	column->addLayout(row);
+	// MX-012 (0.5.0 L08): the inserts, sends and strip settings beside the fader.
+	column->addWidget(inspectorrouting::routingSection(channel, id, section, [this] { scheduleRebuild(); }));
 	return section;
 }
 

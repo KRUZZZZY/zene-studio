@@ -27,15 +27,18 @@
 #define LMMS_GUI_EFFECT_SELECT_DIALOG_H
 
 #include "Effect.h"
+#include "EffectPickerOrganiser.h"
 
 #include <QDialog>
 #include <QRegularExpression>
 #include <QSortFilterProxyModel>
 #include <QStandardItemModel>
 
+class QComboBox;
 class QScrollArea;
 class QTableView;
 class QLineEdit;
+class QVBoxLayout;
 
 namespace lmms::gui
 {
@@ -54,6 +57,14 @@ public:
 		invalidateFilter();
 	}
 
+	//! 0.5.0 L10 (MX-166): favourites, one folder, hidden entries (EffectPickerOrganiser.h).
+	void setOrganiserFilter(const pickerorganiser::Filter& filter)
+	{
+		m_organiserFilter = filter;
+		invalidateFilter();
+	}
+	const pickerorganiser::Filter& organiserFilter() const { return m_organiserFilter; }
+
 protected:
 	bool filterAcceptsRow(int source_row, const QModelIndex& source_parent) const override
 	{
@@ -70,11 +81,12 @@ protected:
 
 		bool typeFilterPassed = type.contains(m_effectTypeFilter, Qt::CaseInsensitive);
 
-		return nameFilterPassed && typeFilterPassed;
+		return nameFilterPassed && typeFilterPassed && pickerorganiser::accepts(nameIndex, m_organiserFilter);
 	}
 
 private:
 	QString m_effectTypeFilter;
+	pickerorganiser::Filter m_organiserFilter;
 };
 
 
@@ -85,6 +97,8 @@ public:
 	EffectSelectDialog(QWidget* parent);
 
 	Effect* instantiateSelectedPlugin(EffectChain* parent);
+	//! 0.5.0 L10: the entry chosen, for a caller that loads it through the registry (plugin.load).
+	const EffectKey& selectedKey() const { return m_currentSelection; }
 
 protected slots:
 	void acceptSelection();
@@ -103,6 +117,10 @@ private:
 	QTableView* m_pluginList;
 	QScrollArea* m_scrollArea;
 	QLineEdit* m_filterEdit;
+	// 0.5.0 L10 (MX-166): the organiser's controls, and the rows' entries refreshed after a change.
+	QComboBox* m_folderBox = nullptr;
+	void addOrganiserControls(QVBoxLayout* rightSection);
+	void refreshOrganisation();
 };
 
 } // namespace lmms::gui

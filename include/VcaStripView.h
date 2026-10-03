@@ -61,6 +61,11 @@ public:
 	AutomatableButton* muteButton() const { return m_mute; }
 	AutomatableButton* soloButton() const { return m_solo; }
 	QString caption() const;
+	//! 0.5.0 L09 (MX-070 / MX-071): the strip's right-click menu - its links and the group it sits in.
+	void fillMenu(QMenu* menu);
+
+protected:
+	void contextMenuEvent(QContextMenuEvent* event) override;
 
 private:
 	int m_groupId;

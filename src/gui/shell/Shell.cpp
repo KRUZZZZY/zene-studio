@@ -45,6 +45,7 @@
 #include "MacroMenu.h"
 #include "SongEditor.h"
 #include "MenuBarExtras.h"
+#include "RecordLaunchMenus.h"
 #include "ShellPanel.h"
 #include "ShortcutMap.h"
 #include "UiConfigStore.h"
@@ -130,6 +131,7 @@ void Shell::showEvent(QShowEvent* event)
 		if (auto* main = qobject_cast<QMainWindow*>(window()))
 		{
 			installNavigateMenu(main->menuBar());
+			installRecordLaunchMenus(main->menuBar());  // 0.5.0 L03 / L02
 			if (getGUI() != nullptr && getGUI()->songEditor() != nullptr) { installArrangerOverlays(getGUI()->songEditor()->m_editor); }
 			MacroMenu::install(main->menuBar());
 			ShortcutMap::apply(main->menuBar());

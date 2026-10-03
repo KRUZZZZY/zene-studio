@@ -31,6 +31,7 @@
 
 #include "EffectView.h"
 #include "DummyEffect.h"
+#include "EffectDeviceMenu.h"
 #include "EffectHostingMenu.h"
 #include "CaptionMenu.h"
 #include "embed.h"
@@ -176,6 +177,9 @@ void EffectView::contextMenuEvent( QContextMenuEvent * )
 	contextMenu->addSeparator();
 	// In-process or a separate process, and restart (oop.set_mode / oop.restart).
 	addEffectHostingMenu(contextMenu, effect());
+	// 0.5.0 L10: insert beside it, copy it or its chain, A/B (EffectDeviceMenu.cpp).
+	contextMenu->addSeparator();
+	addEffectDeviceMenus(contextMenu, effect());
 	contextMenu->exec( QCursor::pos() );
 	delete contextMenu;
 }

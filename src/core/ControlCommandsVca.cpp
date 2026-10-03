@@ -477,6 +477,7 @@ void registerVcaCommands(ControlRegistry& registry)
 	// then the phase-locked edit half.
 	registerVcaMixCommands(registry);
 	registerVcaEditCommands(registry);
+	registerVcaNestCommands(registry);
 }
 
 } // namespace lmms

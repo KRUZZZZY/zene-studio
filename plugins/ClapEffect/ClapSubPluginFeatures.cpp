@@ -30,7 +30,7 @@
 #include <QVBoxLayout>
 
 #include "ClapHost.h"
-#include "ConfigManager.h"
+#include "PluginPaths.h"
 
 namespace lmms
 {
@@ -87,8 +87,10 @@ void ClapSubPluginFeatures::collectModules(const QString& dir, QStringList& resu
 void ClapSubPluginFeatures::listSubPluginKeys(const Plugin::Descriptor* descriptor,
 	KeyList& result) const
 {
+	// 0.5.0 L10 (MX-163): every folder the format scans - your own first, then the usual places.
 	QStringList modules;
-	collectModules(ConfigManager::inst()->vstDir(), modules, 0);
+	for (const QString& dir : pluginpaths::searchDirs(pluginpaths::Format::Clap)) { collectModules(dir, modules, 0); }
+	modules.removeDuplicates();
 
 	const bool wantInstrument = m_type == Plugin::Type::Instrument;
 	for (const auto& path : modules)

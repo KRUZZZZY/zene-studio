@@ -48,12 +48,14 @@
 #include <QJsonObject>
 #include <QString>
 
+#include "ClipTransients.h"
 #include "ControlEdit.h"
 #include "ControlRegistry.h"
 
 #include "ControlReversibility.h"
 #include "ControlVocabulary.h"
 #include "Engine.h"
+#include "SampleClip.h"
 #include "Song.h"
 #include "TimePos.h"
 #include "TempoMap.h"
@@ -477,8 +479,77 @@ void registerSetActiveCommand(ControlRegistry& registry)
 
 } // namespace
 
+//! ED-151 (0.5.0 L05): a tempo event per hit of a free performance - each kept transient is 'beats'
+//! beats after the one before, so the map's bars land on the playing. Hits closer than a 300 BPM
+//! sixteenth are taken as one.
+std::vector<TempoMapEvent> beatMapEvents(SampleClip& clip, int beats)
+{
+	const double rate = std::max(1, clip.sample().sampleRate());
+	std::vector<f_cnt_t> hits;
+	for (const f_cnt_t frame : clipTransientFrames(clip))
+	{
+		if (hits.empty() || (frame - hits.back()) / rate >= 0.05) { hits.push_back(frame); }
+	}
+	std::vector<TempoMapEvent> events;
+	if (hits.size() < 2) { return events; }
+	const tick_t first = clip.timelinePosAt(hits.front()).getTicks();
+	const int beatTicks = DefaultTicksPerBar / std::max(1, Engine::getSong()->getTimeSigModel().getDenominator());
+	for (std::size_t i = 0; i + 1 < hits.size() && events.size() + 1 < static_cast<std::size_t>(TempoMap::MaxEvents); ++i)
+	{
+		const double seconds = (hits[i + 1] - hits[i]) / rate;
+		TempoMapEvent event;
+		event.tick = first + static_cast<tick_t>(i) * beats * beatTicks;
+		event.hasTempo = true;
+		event.tempo = std::clamp(static_cast<int>(std::lround(60.0 * beats / seconds)), TempoMapMinTempo, TempoMapMaxTempo);
+		events.push_back(event);
+	}
+	return events;
+}
+
+void registerFromClipCommand(ControlRegistry& registry)
+{
+	ControlCommand cmd;
+	cmd.id = QStringLiteral("transport.tempo_map_from_clip");
+	cmd.group = QStringLiteral("transport");
+	cmd.verb = QStringLiteral("tempo_map_from_clip");
+	cmd.description = QStringLiteral("Beat mapping: make the tempo map follow a free performance. Each transient of the "
+		"sample clip is taken as 'beats' (default 1) beats after the one before, and a tempo event is written at every "
+		"one from the first hit on, so the grid's beats land on the playing (the audio itself is not changed). Events "
+		"before the first hit stay; the map is switched on. One undo step.");
+	cmd.argsSchema = objectSchema({{QStringLiteral("clip"), stringProperty()}, {QStringLiteral("beats"), integerProperty(1, 16)}},
+		{QStringLiteral("clip")});
+	cmd.resultSchema = objectProperty();
+	cmd.mutating = true;
+	cmd.handler = [](const QJsonObject& args) {
+		ClipRef ref;
+		ControlResult error;
+		if (!control::resolveClip(args.value(QStringLiteral("clip")).toString(), &ref, &error)) { return error; }
+		auto* sample = dynamic_cast<SampleClip*>(ref.clip);
+		if (sample == nullptr) { return ControlResult::failure(ControlErrorKind::Refused, QStringLiteral("beat mapping reads a sample clip")); }
+		const std::vector<TempoMapEvent> events = beatMapEvents(*sample, args.value(QStringLiteral("beats")).toInt(1));
+		if (events.empty()) { return ControlResult::failure(ControlErrorKind::NotFound, QStringLiteral("fewer than two hits in the clip's audio")); }
+		Song* song = Engine::getSong();
+		const TempoMap before = song->tempoMap().map();
+		const bool ok = editMapWithUndo(song, before, [&events](TempoMap& map) {
+			std::vector<TempoMapEvent> kept;
+			for (const TempoMapEvent& event : map.all()) { if (event.tick < events.front().tick) { kept.push_back(event); } }
+			kept.insert(kept.end(), events.begin(), events.end());
+			TempoMap candidate = map;
+			candidate.setActive(true);
+			if (!candidate.set(kept)) { return false; }
+			map = candidate;
+			return true;
+		});
+		if (!ok) { return mapRefusal(); }
+		return mutationResult(song, before, {{QStringLiteral("events"), static_cast<int>(events.size())},
+			{QStringLiteral("first_tick"), static_cast<qint64>(events.front().tick)}}, QString(), QJsonObject());
+	};
+	registry.registerCommand(cmd);
+}
+
 void registerTransportTempoMapCommands(ControlRegistry& registry)
 {
+	registerFromClipCommand(registry);
 	registerGetCommand(registry);
 	registerAddCommand(registry);
 	registerRemoveCommand(registry);

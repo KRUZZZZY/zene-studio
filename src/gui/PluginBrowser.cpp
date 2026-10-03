@@ -24,6 +24,9 @@
 
 #include "PluginBrowser.h"
 
+#include <algorithm>
+
+#include <QHash>
 #include <QHeaderView>
 #include <QLabel>
 #include <QLineEdit>
@@ -32,8 +35,11 @@
 #include <QPainter>
 #include <QShowEvent>
 #include <QStyleOption>
+#include <QTimer>
 #include <QTreeWidget>
 
+#include "EffectPickerOrganiser.h"
+#include "PluginOrganiser.h"
 #include "embed.h"
 #include "Engine.h"
 #include "InstrumentTrack.h"
@@ -162,11 +168,31 @@ void PluginBrowser::addPlugins()
 	};
 
 	// Add the plugin identified by `key` to the tree under the root node `root`
-	const auto addPlugin = [this](const auto& key, auto root)
+	const auto addOne = [this](const auto& key, auto root)
 	{
 		const auto item = new QTreeWidgetItem();
 		root->addChild(item);
-		m_descTree->setItemWidget(item, 0, new PluginDescWidget(key, m_descTree));
+		auto* widget = new PluginDescWidget(key, m_descTree);
+		m_descTree->setItemWidget(item, 0, widget);
+		// The tree is rebuilt once the menu that changed it has closed (it belongs to this row).
+		connect(widget, &PluginDescWidget::organised, this, [this] { QTimer::singleShot(0, this, [this] { addPlugins(); }); });
+	};
+
+	// 0.5.0 L10 (MX-166): hidden plug-ins are left out; a favourite is listed under Favourites too,
+	// and a filed one under its folder.
+	QTreeWidgetItem* favourites = nullptr;
+	QHash<QString, QTreeWidgetItem*> folders;
+	const auto addPlugin = [&](const auto& key, auto root)
+	{
+		const pluginorganiser::Entry entry = pluginorganiser::entry(pickerorganiser::keyOf(key));
+		if (entry.hidden) { return; }
+		addOne(key, root);
+		if (entry.favourite && favourites != nullptr) { addOne(key, favourites); }
+		if (!entry.folder.isEmpty())
+		{
+			if (!folders.contains(entry.folder)) { folders.insert(entry.folder, addRoot(entry.folder)); }
+			addOne(key, folders.value(entry.folder));
+		}
 	};
 
 	// Remove any existing plugins from the tree
@@ -182,6 +208,13 @@ void PluginBrowser::addPlugins()
 	);
 
 	// Add a root node to the tree for native plugins
+	// Favourites first, when there are any (the tree's widgets cannot be moved once placed).
+	const QMap<QString, pluginorganiser::Entry> organised = pluginorganiser::entries();
+	if (std::any_of(organised.begin(), organised.end(), [](const pluginorganiser::Entry& e) { return e.favourite && !e.hidden; }))
+	{
+		favourites = addRoot(tr("Favourites"));
+		favourites->setExpanded(true);
+	}
 	const auto nativeRoot = addRoot("Zene Studio");
 	nativeRoot->setExpanded(true);
 
@@ -312,6 +345,8 @@ void PluginDescWidget::contextMenuEvent(QContextMenuEvent* e)
 		tr("Send to new instrument track"),
 		[=, this]{ openInNewInstrumentTrack(m_pluginKey.desc->name); }
 	);
+	contextMenu.addSeparator();
+	pickerorganiser::fillKeyMenu(&contextMenu, pickerorganiser::keyOf(m_pluginKey), this, [this] { emit organised(); });
 	contextMenu.exec(e->globalPos());
 }
 

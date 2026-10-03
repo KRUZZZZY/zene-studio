@@ -54,6 +54,7 @@ SET(LMMS_SRCS
 	gui/ControlCommandsShortcuts.cpp
 	gui/ControlCommandsArrangerView.cpp
 	gui/ControlCommandsLayouts.cpp
+	gui/ControlCommandsMixerView.cpp
 	gui/ControlCommandsMacros.cpp
 	gui/ControlGuiSupport.cpp
 	# M3.4: the command palette (menu actions + argument-free commands, searchable).
@@ -61,9 +62,12 @@ SET(LMMS_SRCS
 	gui/CommandForm.cpp
 	gui/CommandListDialog.cpp
 	gui/CommandLists.cpp
+	gui/CompSwipeStrip.cpp
 	gui/CommandPalette.cpp
 	gui/MacroMenu.cpp
+	gui/MacroKnobs.cpp
 	gui/MenuBarExtras.cpp
+	gui/RecordLaunchMenus.cpp
 	gui/ShortcutMap.cpp
 	gui/UiConfigStore.cpp
 	gui/PluginNativeEditor.cpp
@@ -105,6 +109,7 @@ SET(LMMS_SRCS
 	gui/shell/DeviceCard.cpp
 	gui/shell/DevicePanel.cpp
 	gui/shell/InspectorClipFields.cpp
+	gui/shell/InspectorChannelRouting.cpp
 	gui/shell/InspectorPanel.cpp
 	gui/shell/ModulatorCard.cpp
 	gui/shell/Shell.cpp
@@ -131,8 +136,10 @@ SET(LMMS_SRCS
 	gui/MidiLearnGui.cpp
 	gui/MidiControllerMenu.cpp
 	gui/ChainPresetMenu.cpp
+	gui/ChannelPickDialog.cpp
 	gui/ClipEditsMenu.cpp
 	gui/CrashReportMenu.cpp
+	gui/EffectDeviceMenu.cpp
 	gui/EffectHostingMenu.cpp
 	gui/FeedbackModeAction.cpp
 	gui/MidiClockMenu.cpp
@@ -147,6 +154,8 @@ SET(LMMS_SRCS
 	gui/MpeInputAction.cpp
 	gui/NoteTransformActions.cpp
 	gui/MixerChannelView.cpp
+	gui/MixerOverlays.cpp
+	gui/MixerViewOptions.cpp
 	gui/MixerView.cpp
 	gui/ModelView.cpp
 	gui/PeakControllerDialog.cpp
@@ -168,6 +177,7 @@ SET(LMMS_SRCS
 	gui/clips/ClipViewTheme.cpp
 	gui/clips/MidiClipView.cpp
 	gui/clips/PatternClipView.cpp
+	gui/clips/SampleClipOverlays.cpp
 	gui/clips/SampleClipView.cpp
 
 	gui/editors/AutomationEditor.cpp
@@ -199,6 +209,7 @@ SET(LMMS_SRCS
 	gui/modals/AboutDialog.cpp
 	gui/modals/ColorChooser.cpp
 	gui/modals/ControllerConnectionDialog.cpp
+	gui/modals/EffectPickerOrganiser.cpp
 	gui/modals/EffectSelectDialog.cpp
 	gui/modals/ExportProjectDialog.cpp
 	gui/modals/FileDialog.cpp

@@ -111,7 +111,8 @@ public:
 	//! that already belongs to another group -- a channel is in at most one
 	//! group, so "soloing a member" has exactly one meaning. Returns true when
 	//! the membership changed.
-	bool addMember(mix_ch_t channel);
+	//! @a alongsideOthers (0.5.0 L09, MX-070) lets a channel already in another group join this one too.
+	bool addMember(mix_ch_t channel, bool alongsideOthers = false);
 
 	//! Remove a channel; a no-op for a channel that is not a member. The
 	//! channel plays at unity again afterwards.
@@ -145,6 +146,18 @@ public:
 	bool isPhaseLocked() const { return m_phaseLocked; }
 	void setPhaseLocked(bool locked) { m_phaseLocked = locked; }
 
+	//! 0.5.0 L09 (MX-070): the group this one sits in (0 = none) - its gain scales this group's too.
+	int parentId() const { return m_parentId; }
+	void setParentId(int id) { m_parentId = id; }
+	//! 0.5.0 L09 (MX-071): which of the group's attributes reach its members - level (the VCA gain),
+	//! mute and solo, each on by default - and a suspend switch that turns the whole link off.
+	bool linksGain() const { return m_linkGain; }
+	bool linksMute() const { return m_linkMute; }
+	bool linksSolo() const { return m_linkSolo; }
+	bool isSuspended() const { return m_suspended; }
+	void setLinks(bool gain, bool mute, bool solo) { m_linkGain = gain; m_linkMute = mute; m_linkSolo = solo; }
+	void setSuspended(bool suspended) { m_suspended = suspended; }
+
 	//! The gain this group publishes to its members right now: the fader value,
 	//! or 0 when the group is muted. Mute is folded into the same factor as the
 	//! fader (a VCA at zero gain *is* a mute), so muting never writes a member's
@@ -170,6 +183,11 @@ private:
 	//! The phase lock. ON by default: the feature IS the lock, and a group with
 	//! no edit tracks never reads it.
 	bool m_phaseLocked = true;
+	int m_parentId = 0;
+	bool m_linkGain = true;
+	bool m_linkMute = true;
+	bool m_linkSolo = true;
+	bool m_suspended = false;
 };
 
 } // namespace lmms

@@ -32,6 +32,7 @@
 #include <QToolButton>
 #include <QVBoxLayout>
 
+#include "CompSwipeStrip.h"
 #include "ControlRegistry.h"
 #include "Song.h"
 
@@ -58,6 +59,14 @@ TakeLanesPanel::TakeLanesPanel(const QString& trackId, QWidget* parent) :
 	m_addLane = makeButton(QStringLiteral("comp.lane_add"), tr("Add lane"));
 	connect(m_addLane, &QToolButton::clicked, this, [this] { run(QStringLiteral("comp.lane_add"), {{QStringLiteral("track"), m_trackId}}); });
 	outer->addWidget(m_addLane);
+
+	// 0.5.0 L03 (ED-165 / ED-168): drag along a lane to comp that range, double-click to cycle the take.
+	m_strip = new CompSwipeStrip(m_trackId, this);
+	connect(m_strip, &CompSwipeStrip::ran, this, [this](const QString& status) {
+		m_status->setText(status);
+		refresh();
+	});
+	outer->addWidget(m_strip);
 
 	m_composite = new QLabel(this);
 	m_composite->setAccessibleName(tr("Composite"));
@@ -169,6 +178,7 @@ void TakeLanesPanel::refresh()
 		return;
 	}
 	const QJsonArray lanes = state.result.value(QStringLiteral("lanes")).toArray();
+	m_strip->setState(state.result);
 	showLanes(lanes);
 	showComposite(state.result.value(QStringLiteral("composite")).toObject(), !lanes.isEmpty());
 }

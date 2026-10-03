@@ -147,6 +147,7 @@ private:
 	QHBoxLayout* m_vcaLayout = nullptr;
 	//! What the VCA strips were last built from (id, name, member count per group).
 	QString m_vcaSignature;
+	int m_viewOptionsGeneration = -1;  // 0.5.0 L08: MixerViewOptions::generation() last applied
 	Mixer* m_mixer;
 
 	void updateMaxChannelSelector();

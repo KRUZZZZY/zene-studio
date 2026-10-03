@@ -44,6 +44,14 @@ class Instrument;
 namespace lmms::gui
 {
 
+//! 0.5.0 L10 (MX-091): the device an editor window shows, for the host header above the plug-in's
+//! view - bypass and A/B for an effect, presets for both. Neither set: no header.
+struct PluginEditorOwner
+{
+	Effect* effect = nullptr;
+	Instrument* instrument = nullptr;
+};
+
 /*! One plug-in's editor WINDOW, for every format: a native top-level window whose id the
  *  plug-in's view is attached to, sized to the view. The format supplies three hooks - attach
  *  to a parent window id, detach, report the view's size (VST3: Vst3EditorSession; CLAP: the
@@ -59,8 +67,10 @@ public:
 		std::function<void(int* width, int* height)> size;
 	};
 
+	using Owner = PluginEditorOwner;
+
 	~PluginNativeEditor();
-	bool open(Hooks hooks, const QString& title, QString* error);
+	bool open(Hooks hooks, const QString& title, QString* error, Owner owner = {});
 	void close();
 	bool isOpen() const { return !m_window.isNull(); }
 

@@ -237,6 +237,12 @@ private slots:
 		QVERIFY(run(QStringLiteral("meter.get_state")).result.value(QStringLiteral("armed")).toBool());
 		menuAction(&strip, {QStringLiteral("Loudness Meter"), QStringLiteral("Off")})->trigger();
 		QVERIFY(!run(QStringLiteral("meter.get_state")).result.value(QStringLiteral("armed")).toBool());
+		// L08: the mixer view's options and the solo mode are a click away on every channel.
+		menuAction(&strip, {QStringLiteral("Mixer View"), QStringLiteral("Strip Width"), QStringLiteral("wide")})->trigger();
+		QCOMPARE(run(QStringLiteral("window.mixer_view")).result.value(QStringLiteral("strip_width")).toString(), QStringLiteral("wide"));
+		menuAction(&strip, {QStringLiteral("Mixer View"), QStringLiteral("Strip Width"), QStringLiteral("normal")})->trigger();
+		QVERIFY(menuAction(&strip, {QStringLiteral("Solo Mode"), QStringLiteral("additive")}) != nullptr);
+		QVERIFY(menuAction(&strip, {QStringLiteral("Strip"), QStringLiteral("Pan Mode"), QStringLiteral("dual")}) != nullptr);
 
 		// Review W1-1 #1/#2: Take Lanes maps the rows' `lane`, and Plug-ins in Project lists an
 		// instrument (a chain's `instrument`) as well as its effects.
@@ -309,6 +315,35 @@ private slots:
 		QCOMPARE(static_cast<int>(clip->notes().front()->getVolume()), 64);  // the 0..200 note volume scale
 		ShellSelection::instance()->setTrack(nullptr);
 		delete track;
+	}
+
+	void theInspectorShowsAChannelsSendsAndStrip()
+	{
+		// MX-012 (0.5.0 L08): the channel's sends, with their removal, and its strip settings.
+		Mixer* mixer = Engine::mixer();
+		while (mixer->numChannels() <= 3) { mixer->createChannel(); }
+		const QString from = control::channelIdOf(mixer->mixerChannel(2));
+		const QString to = control::channelIdOf(mixer->mixerChannel(3));
+		QVERIFY(run(QStringLiteral("mixer.send_to"), {{QStringLiteral("channel"), from}, {QStringLiteral("to"), to}}).ok);
+		InspectorPanel inspector;
+		inspector.show();
+		ShellSelection::instance()->setChannel(from);
+		inspector.rebuild();
+		QCoreApplication::processEvents();
+		QVERIFY(childNamed<QWidget>(&inspector, QStringLiteral("Trim (dB)")) != nullptr);
+		QToolButton* remove = nullptr;
+		for (auto* button : inspector.findChildren<QToolButton*>())
+		{
+			if (button->property("controlCommand").toString() == QLatin1String("mixer.route_remove")
+				&& button->toolTip().contains(mixer->mixerChannel(3)->m_name)) { remove = button; }
+		}
+		QVERIFY2(remove != nullptr, "no removal for the send");
+		remove->click();
+		QVERIFY(run(QStringLiteral("mixer.send_pan"), {{QStringLiteral("channel"), from}, {QStringLiteral("to"), to},
+			{QStringLiteral("pan"), 0.0}}).errorKind == ControlErrorKind::NotFound);  // the send is gone
+		QVERIFY(run(QStringLiteral("control.undo")).ok);  // and back, with the section rebuilt around it
+		QCoreApplication::processEvents();
+		ShellSelection::instance()->setTrack(nullptr);
 	}
 
 	void theDevicePanelDrawsTheChainAndTheModulatorBesideIt()

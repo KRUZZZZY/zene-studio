@@ -67,7 +67,13 @@ struct RackMacroTarget
 	float low = 0.0f;
 	//! Window end, same units.
 	float high = 1.0f;
+	//! 0.5.0 L10 (MX-105): the response across the window, -1..1 - 0 is linear, above 0 rises
+	//! early (a log-like response), below 0 rises late (exponential). shapeMacroValue() applies it.
+	float curve = 0.0f;
 };
+
+//! @a value (0..1) through @a curve (-1..1): value ^ 4^-curve, so 0 leaves it as it is.
+LMMS_EXPORT float shapeMacroValue(float value, float curve);
 
 //! A named, persisted scalar and the parameters it drives.
 struct RackMacro

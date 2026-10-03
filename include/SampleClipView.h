@@ -27,6 +27,7 @@
 
 #include "ClipView.h"
 
+#include "SampleClipOverlays.h"
 #include "SampleThumbnail.h"
 
 namespace lmms
@@ -60,6 +61,7 @@ protected:
 	void constructContextMenu(QMenu* cm) override;
 	void mousePressEvent( QMouseEvent * _me ) override;
 	void mouseReleaseEvent( QMouseEvent * _me ) override;
+	void mouseMoveEvent( QMouseEvent * _me ) override;
 	void dragEnterEvent( QDragEnterEvent * _dee ) override;
 	void dropEvent( QDropEvent * _de ) override;
 	void mouseDoubleClickEvent( QMouseEvent * ) override;
@@ -71,6 +73,18 @@ private:
 	SampleThumbnail m_sampleThumbnail;
 	QPixmap m_paintPixmap;
 	long m_paintPixmapXPosition;
+	// 0.5.0 L05 (ED-173): the fade handle being dragged and the length it shows.
+	FadeHandle m_fadeDrag = FadeHandle::None;
+	int m_fadeDragTicks = 0;
+	float pixelsPerTickNow();
+	ClipOverlayFrame overlayFrame(int xOrigin);
+	//! The clip's edits as drawn: a fade drag in progress shown before it is sent.
+	ClipEdits shownEdits() const;
+	bool startFadeDrag(QMouseEvent* me);
+	// ED-150: the transients drawn when arrangement.modes show_transients is on, analysed once per audio.
+	const std::vector<int>& transientTicks();
+	std::vector<int> m_transientTicks;
+	QString m_transientKey;
 } ;
 
 

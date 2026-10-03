@@ -185,6 +185,8 @@ private:
 	Knob * m_blendKnob;
 	Knob * m_tiltKnob;
 	Knob * m_tiltFreqKnob;
+	Knob * m_keyHpKnob;
+	Knob * m_keyLpKnob;
 	Knob * m_mixKnob;
 
 	Knob * m_autoAttackKnob;

@@ -27,6 +27,7 @@
 #define LMMS_RETRO_MIDI_CLIP_WRITER_H
 
 #include <cstddef>
+#include <vector>
 
 #include "LmmsTypes.h"      // tick_t
 #include "RetroMidiRing.h"  // RetroMidiEvent
@@ -34,6 +35,8 @@
 
 namespace lmms
 {
+
+struct ControlResult;
 
 class MidiClip;
 
@@ -87,6 +90,12 @@ struct RetroMidiClipWrite
  */
 LMMS_EXPORT RetroMidiClipWrite writeWindowToClip(MidiClip* clip, const RetroMidiEvent* events,
 	std::size_t count, tick_t windowStartTick);
+
+/*! 0.5.0 L02 (WF-055): the capture window as midi.retro_capture_to_clip reads it - the live
+ *  capture's events, oldest first, and the first and last tick (from 0 on). False with @a error
+ *  (refused: no MIDI client; not_found / busy: nothing readable). Defined beside that command
+ *  (ControlCommandsMidi.cpp); session.capture_to_slot reads it too. UI thread. */
+LMMS_EXPORT bool readRetroWindow(std::vector<RetroMidiEvent>* events, tick_t* start, tick_t* end, ControlResult* error);
 
 
 } // namespace lmms

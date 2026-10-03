@@ -14,7 +14,10 @@ two panels draw. This driver starts the REAL `zene` binary headless and proves:
      panel follows the chain;
   5. an unknown id is refused, typed, and leaves the selection as it was;
   6. `window.get_state` reports the same selection as `selection`;
-  7. `window.screenshot` renders the Arrange view with the Device panel shown.
+  7. `window.screenshot` renders the Arrange view with the Device panel shown;
+  8. 0.5.0 L10: plugin.copy copies a device to another channel and chain.copy a chain, plugin.ab
+     stores and toggles, plugin.organise marks a device and plugin.organisation lists it,
+     plugin.paths_get answers the folders, rack.wrap wraps a chain, remote.* answers.
 
 Usage:  QT_QPA_PLATFORM=offscreen python3 tests/control-devices.py <zene> [<screenshot dir>]
 Exit 0 only when every check held.
@@ -108,6 +111,34 @@ def check_refusal(session, recorder, track):
                    "selection=%r" % state)
 
 
+def check_devices_l10(session, recorder, devices):
+    a = session.result("mixer.add_channel").get("channel")
+    b = session.result("mixer.add_channel").get("channel")
+    fx = load(session, a, devices)
+    if fx is None:
+        recorder.check("an effect loads for the L10 checks", False, "no loadable effect")
+        return
+    copied = session.result("plugin.copy", {"target": a, "plugin": fx, "to": b})
+    recorder.check("plugin.copy puts the device on another channel", len(copied.get("plugins") or []) == 1, "reply=%r" % copied)
+    chained = session.result("chain.copy", {"target": a, "to": b, "replace": True})
+    recorder.check("chain.copy replaces the destination's chain", chained.get("count") == 1, "reply=%r" % chained)
+    session.result("plugin.ab", {"target": a, "plugin": fx, "action": "store", "slot": "a"})
+    toggled = session.result("plugin.ab", {"target": a, "plugin": fx, "action": "toggle"})
+    recorder.check("plugin.ab toggles between A and B", toggled.get("has_a") and toggled.get("has_b"), "reply=%r" % toggled)
+    marked = session.result("plugin.organise", {"device": devices[0], "favourite": True, "folder": "Driver"})
+    listed = session.result("plugin.organisation", {"folder": "Driver"})
+    recorder.check("plugin.organise files a device and plugin.organisation lists it",
+                   marked.get("favourite") and len(listed.get("entries") or []) == 1, "reply=%r" % listed)
+    session.result("control.undo")
+    paths = session.result("plugin.paths_get")
+    recorder.check("plugin.paths_get answers every format", len(paths.get("formats") or []) == 3, "reply=%r" % paths)
+    wrapped = session.result("rack.wrap", {"channel": a})
+    recorder.check("rack.wrap moves the chain into a rack chain", wrapped.get("chain", 0) >= 1, "reply=%r" % wrapped)
+    session.result("control.undo")
+    remote = session.result("remote.state")
+    recorder.check("remote.state answers with nothing connected", remote.get("connected") is False, "reply=%r" % remote)
+
+
 def check_screenshot(session, recorder, outdir):
     session.result("window.set_view", {"view": "arrange"})
     panels = {p.get("id"): p for p in session.result("window.get_state").get("panels") or []}
@@ -142,6 +173,7 @@ def main(argv):
         check_channel(session, recorder, devices)
         check_follow(session, recorder, track, first)
         check_refusal(session, recorder, track)
+        check_devices_l10(session, recorder, devices)
         check_screenshot(session, recorder, outdir)
     report_results(recorder)
     if recorder.problems:

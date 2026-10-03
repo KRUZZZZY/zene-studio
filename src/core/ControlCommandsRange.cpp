@@ -38,6 +38,7 @@
 #include "ControlReversibility.h"
 #include "ControlVocabulary.h"
 #include "Engine.h"
+#include "SampleClip.h"
 #include "Song.h"
 #include "Track.h"
 
@@ -122,6 +123,65 @@ ControlResult splitRange(const QJsonObject&)
 	int split = 0;
 	for (Track* track : tracks) { split += arrangement::splitTrackAt(track, range.start()) + arrangement::splitTrackAt(track, range.end()); }
 	return finishEdit(QStringLiteral("range.split"), {{QStringLiteral("split"), split}});
+}
+
+//! The fades a range from @a from to @a to sets on a clip spanning @a start..@a end: in over the part
+//! at its start, out over the part at its end. False for a clip wholly inside the range - it has no
+//! edge at either end of it, so nothing is faded (review L05-L09-L08-1 #11: both rules used to fire
+//! and the clamp dropped the fade-out).
+bool rangeFades(ClipEdits* edits, tick_t start, tick_t end, tick_t from, tick_t to)
+{
+	if (start >= from && end <= to) { return false; }
+	if (start >= from && start < to) { edits->fadeInTicks = static_cast<int>(std::min(to, end) - start); }
+	if (end > from && end <= to) { edits->fadeOutTicks = static_cast<int>(end - std::max(from, start)); }
+	return true;
+}
+
+//! ED-178: the fades a range sets on one sample clip - fixed lengths when @a args name them (batch
+//! fades), else in over the part of the range at the clip's start and out over the part at its end.
+void fadeFromRange(SampleClip* clip, tick_t from, tick_t to, const QJsonObject& args, const FadeShape* shape)
+{
+	ClipEdits edits = clip->clipEdits();
+	const tick_t start = clip->startPosition().getTicks();
+	const tick_t end = clip->endPosition().getTicks();
+	const int length = static_cast<int>(end - start);
+	const bool fixed = args.contains(QStringLiteral("fade_in")) || args.contains(QStringLiteral("fade_out"));
+	if (fixed)
+	{
+		edits.fadeInTicks = args.value(QStringLiteral("fade_in")).toInt(edits.fadeInTicks);
+		edits.fadeOutTicks = args.value(QStringLiteral("fade_out")).toInt(edits.fadeOutTicks);
+	}
+	else if (!rangeFades(&edits, start, end, from, to)) { return; }
+	if (shape != nullptr) { edits.fadeInShape = edits.fadeOutShape = *shape; }
+	edits.fadeInTicks = std::clamp(edits.fadeInTicks, 0, length);
+	edits.fadeOutTicks = std::clamp(edits.fadeOutTicks, 0, length - edits.fadeInTicks);
+	clip->setClipEdits(edits);
+}
+
+ControlResult fadeRange(const QJsonObject& args)
+{
+	FadeShape shape = FadeShape::Linear;
+	const bool hasShape = args.contains(QStringLiteral("shape"));
+	if (hasShape && !fadeShapeFromName(args.value(QStringLiteral("shape")).toString(), &shape))
+	{
+		return ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("'shape' is linear, exponential, logarithmic, s_curve or equal_power"));
+	}
+	QVector<Track*> tracks;
+	ControlResult error;
+	if (!beginEdit(&tracks, &error)) { return error; }
+	const ArrangerRange& range = ArrangerRange::instance();
+	int faded = 0;
+	for (Track* track : tracks)
+	{
+		for (Clip* clip : track->getClips())
+		{
+			auto* sample = dynamic_cast<SampleClip*>(clip);
+			if (sample == nullptr || clip->endPosition().getTicks() <= range.start() || clip->startPosition().getTicks() >= range.end()) { continue; }
+			fadeFromRange(sample, range.start(), range.end(), args, hasShape ? &shape : nullptr);
+			++faded;
+		}
+	}
+	return finishEdit(QStringLiteral("range.fade"), {{QStringLiteral("faded"), faded}});
 }
 
 ControlResult deleteRange(const QJsonObject& args)
@@ -318,7 +378,8 @@ QJsonObject modesJson()
 	return {{QStringLiteral("ripple"), rippleNames().at(static_cast<int>(current.ripple))},
 		{QStringLiteral("overlap"), overlapNames().at(static_cast<int>(current.overlap))},
 		{QStringLiteral("snap_to_edges"), current.snapToEdges},
-		{QStringLiteral("automation_follows_clips"), current.automationFollowsClips}};
+		{QStringLiteral("automation_follows_clips"), current.automationFollowsClips}, {QStringLiteral("auto_fade_ms"), current.autoFadeMs},
+		{QStringLiteral("show_transients"), current.showTransients}};
 }
 
 ControlResult setModes(const QJsonObject& args)
@@ -328,6 +389,8 @@ ControlResult setModes(const QJsonObject& args)
 	if (args.contains(QStringLiteral("overlap"))) { next.overlap = static_cast<arrangement::Overlap>(overlapNames().indexOf(args.value(QStringLiteral("overlap")).toString())); }
 	if (args.contains(QStringLiteral("snap_to_edges"))) { next.snapToEdges = args.value(QStringLiteral("snap_to_edges")).toBool(); }
 	if (args.contains(QStringLiteral("automation_follows_clips"))) { next.automationFollowsClips = args.value(QStringLiteral("automation_follows_clips")).toBool(); }
+	if (args.contains(QStringLiteral("auto_fade_ms"))) { next.autoFadeMs = args.value(QStringLiteral("auto_fade_ms")).toInt(); }
+	if (args.contains(QStringLiteral("show_transients"))) { next.showTransients = args.value(QStringLiteral("show_transients")).toBool(); }
 	arrangement::setModes(next);
 	return ControlResult::success(modesJson());
 }
@@ -351,6 +414,7 @@ void add(ControlRegistry& registry, const char* verb, const QString& description
 
 void registerRangeCommands(ControlRegistry& registry)
 {
+	arrangement::loadModes();  // the audio thread's copy of the automatic fade
 	ControlCommand modes;
 	modes.id = QStringLiteral("arrangement.modes");
 	modes.group = QStringLiteral("arrangement");
@@ -358,14 +422,18 @@ void registerRangeCommands(ControlRegistry& registry)
 	modes.description = QStringLiteral("The arranger's editing modes, set and answered: 'ripple' (off, track, all - a deletion "
 		"closes its gap on the clip's track or on every track), 'overlap' (free, trim, crossfade - what a clip moved onto "
 		"others does to them), 'snap_to_edges' (moving a clip also snaps to other clips' edges and to markers) and "
-		"'automation_follows_clips' (a clip's move carries the points of the automation lanes following its track). The "
+		"'automation_follows_clips' (a clip's move carries the points of the automation lanes following its track) and "
+		"'auto_fade_ms' (0..50: every sample clip fades in and out over at least that long, so no edit clicks; 0 off) and "
+		"'show_transients' (sample clips mark their audio's hits). The "
 		"arranger's gestures and clip.move / clip.delete / range.delete follow them. An editing preference kept in the "
 		"config file, not project state.");
 	modes.argsSchema = objectSchema({{QStringLiteral("ripple"), enumProperty(rippleNames())},
 		{QStringLiteral("overlap"), enumProperty(overlapNames())}, {QStringLiteral("snap_to_edges"), booleanProperty()},
-		{QStringLiteral("automation_follows_clips"), booleanProperty()}});
+		{QStringLiteral("automation_follows_clips"), booleanProperty()}, {QStringLiteral("auto_fade_ms"), integerProperty(0, arrangement::MaxAutoFadeMs)},
+		{QStringLiteral("show_transients"), booleanProperty()}});
 	modes.resultSchema = objectSchema({{QStringLiteral("ripple"), stringProperty()}, {QStringLiteral("overlap"), stringProperty()},
-		{QStringLiteral("snap_to_edges"), booleanProperty()}, {QStringLiteral("automation_follows_clips"), booleanProperty()}});
+		{QStringLiteral("snap_to_edges"), booleanProperty()}, {QStringLiteral("automation_follows_clips"), booleanProperty()},
+		{QStringLiteral("auto_fade_ms"), integerProperty(0, arrangement::MaxAutoFadeMs)}, {QStringLiteral("show_transients"), booleanProperty()}});
 	modes.handler = setModes;
 	registry.registerCommand(modes);
 
@@ -410,6 +478,12 @@ void registerRangeCommands(ControlRegistry& registry)
 	add(registry, "delete", QStringLiteral("Remove what is inside the range on its tracks (clips crossing an edge are "
 		"split there first); with 'ripple', later clips move left to close the gap.") + oneStep,
 		objectSchema({{QStringLiteral("ripple"), booleanProperty()}}), true, deleteRange);
+	add(registry, "fade", QStringLiteral("Fade the sample clips the range touches: a clip whose start is inside the range "
+		"fades in over the part of the range it covers, one whose end is inside fades out - across a cut between two "
+		"clips that is a crossfade. With 'fade_in' / 'fade_out' (ticks) every clip in the range gets those lengths "
+		"instead (batch fades); 'shape' sets both shapes.") + oneStep,
+		objectSchema({{QStringLiteral("fade_in"), integerProperty(0, MaxSongLength)}, {QStringLiteral("fade_out"),
+			integerProperty(0, MaxSongLength)}, {QStringLiteral("shape"), stringProperty()}}), true, fadeRange);
 	add(registry, "crop", QStringLiteral("Keep only what is inside the range on its tracks.") + oneStep,
 		objectSchema({}), true, cropRange);
 	add(registry, "insert_time", QStringLiteral("Insert empty time at the range's start on its tracks - 'length' ticks, "

@@ -110,6 +110,7 @@ void NoteEditor::fillNotesMenu(QMenu* menu)
 	fillVelocityMenu(menu->addMenu(tr("Velocity")), scoped);
 	fillTimingMenu(menu->addMenu(tr("Timing")), scoped);
 	fillMuteMenu(menu->addMenu(tr("Mute")));
+	fillPitchCurveMenu(menu->addMenu(tr("Pitch Curve")));
 	QMenu* groove = menu->addMenu(tr("Groove"));
 	addCommandAction(groove, tr("Apply Groove..."), QStringLiteral("groove.apply"), call(QStringLiteral("groove.apply"), where));
 	addCommandAction(groove, tr("Extract Groove..."), QStringLiteral("groove.extract"), call(QStringLiteral("groove.extract"),
@@ -131,8 +132,55 @@ void NoteEditor::fillNotesMenu(QMenu* menu)
 	addCommandChoices(menu, tr("Keep in Scale"), QStringLiteral("window.note_editor_set"), QStringLiteral("keep_in_scale"),
 		call(QStringLiteral("window.note_editor_set"), view, {}, false));
 	menu->addSeparator();
-	addCommandAction(menu, tr("Run Script on Notes..."), QStringLiteral("script.run"), call(QStringLiteral("script.run"), {},
-		{{QStringLiteral("source"), QStringLiteral("-- the open clip is %1\nlocal clip = \"%1\"\n").arg(clip)}}));
+	fillScriptsMenu(menu->addMenu(tr("Scripts")), clip);
+}
+
+void NoteEditor::fillPitchCurveMenu(QMenu* menu)
+{
+	// ED-122: shapes for the notes' own pitch curves, relative to each note's length - the selection,
+	// or every note when nothing is selected; one note.pitch_curve_set, one undo step.
+	QJsonArray notes;
+	const bool selection = noteScope() == QStringLiteral("selection");
+	for (const Note* note : m_state.clip->notes())
+	{
+		if (!selection || note->selected()) { notes.append(control::noteIdOf(note)); }
+	}
+	const auto point = [](double at, double semitones) {
+		return QJsonObject{{QStringLiteral("tick"), at}, {QStringLiteral("semitones"), semitones}};
+	};
+	QJsonArray vibrato;
+	for (int i = 0; i <= 16; ++i) { vibrato.append(point(i / 16.0, i % 2 == 0 ? 0.0 : (i % 4 == 1 ? 0.3 : -0.3))); }
+	const std::pair<QString, QJsonArray> shapes[] = {
+		{tr("Bend Up a Tone"), {point(0, 0), point(1, 2)}}, {tr("Bend Down a Tone"), {point(0, 0), point(1, -2)}},
+		{tr("Scoop In"), {point(0, -2), point(0.25, 0)}}, {tr("Fall Off"), {point(0, 0), point(0.6, 0), point(1, -5)}},
+		{tr("Vibrato"), vibrato}, {tr("Clear"), {}}};
+	const QString clip = clipId();
+	for (const auto& [label, points] : shapes)
+	{
+		const QJsonObject fixed{{QStringLiteral("clip"), clip}, {QStringLiteral("notes"), notes}, {QStringLiteral("relative"), true},
+			{QStringLiteral("points"), points}};
+		addCommandAction(menu, label, QStringLiteral("note.pitch_curve_set"),
+			[fixed]() { return CommandCall{QStringLiteral("note.pitch_curve_set"), fixed, {}, {}, false}; })->setEnabled(!notes.isEmpty());
+	}
+}
+
+void NoteEditor::fillScriptsMenu(QMenu* menu, const QString& clip)
+{
+	// The user's saved scripts (script.list); a script finds the open clip in window.get_state's
+	// note_editor, or is written here with it filled in (ED-091).
+	const QJsonArray scripts = run(QStringLiteral("script.list"), {}).value(QStringLiteral("scripts")).toArray();
+	for (const QJsonValue& value : scripts)
+	{
+		const QJsonObject script = value.toObject();
+		const QJsonObject fixed{{QStringLiteral("path"), script.value(QStringLiteral("path"))}};
+		addCommandAction(menu, script.value(QStringLiteral("name")).toString(), QStringLiteral("script.run"),
+			[fixed]() { return CommandCall{QStringLiteral("script.run"), fixed, {}, {}, false, true}; });
+	}
+	if (!scripts.isEmpty()) { menu->addSeparator(); }
+	addCommandAction(menu, tr("Run Script on Notes..."), QStringLiteral("script.run"), [clip]() {
+		return CommandCall{QStringLiteral("script.run"), {},
+			{{QStringLiteral("source"), QStringLiteral("-- the open clip is %1\nlocal clip = \"%1\"\n").arg(clip)}}, {}, true, true};
+	});
 }
 
 void NoteEditor::fillVelocityMenu(QMenu* menu, const QJsonObject& scoped)

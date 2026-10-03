@@ -29,7 +29,7 @@
 #include <QLabel>
 #include <QVBoxLayout>
 
-#include "ConfigManager.h"
+#include "PluginPaths.h"
 #include "Vst3Host.h"
 
 namespace lmms
@@ -93,8 +93,10 @@ void Vst3SubPluginFeatures::collectModules(const QString& dir, QStringList& resu
 void Vst3SubPluginFeatures::listSubPluginKeys(const Plugin::Descriptor* descriptor,
 	KeyList& result) const
 {
+	// 0.5.0 L10 (MX-163): every folder the format scans - your own first, then the usual places.
 	QStringList modules;
-	collectModules(ConfigManager::inst()->vstDir(), modules, 0);
+	for (const QString& dir : pluginpaths::searchDirs(pluginpaths::Format::Vst3)) { collectModules(dir, modules, 0); }
+	modules.removeDuplicates();
 
 	const bool wantInstrument = m_type == Plugin::Type::Instrument;
 	for (const auto& path : modules)

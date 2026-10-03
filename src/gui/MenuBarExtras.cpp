@@ -24,6 +24,7 @@
 
 #include "MenuBarExtras.h"
 
+#include <QKeySequence>
 #include <QMenu>
 #include <QMenuBar>
 
@@ -51,7 +52,7 @@ QMenu* installNavigateMenu(QMenuBar* bar)
 	menu->setObjectName(QStringLiteral("navigateMenu"));
 	if (QMenu* existing = insertBeforeHelp(bar, menu); existing != menu) { return existing; }
 	const auto run = [menu](const QString& label, const QString& id, const QJsonObject& args) {
-		addCommandAction(menu, label, id, [id, args] { return CommandCall{id, args, {}, QString(), false}; });
+		return addCommandAction(menu, label, id, [id, args] { return CommandCall{id, args, {}, QString(), false}; });
 	};
 	run(QObject::tr("Zoom Back"), QStringLiteral("arrangement.zoom_back"), {});
 	run(QObject::tr("Zoom In"), QStringLiteral("arrangement.zoom"), {{QStringLiteral("step"), 4}});
@@ -62,10 +63,15 @@ QMenu* installNavigateMenu(QMenuBar* bar)
 	run(QObject::tr("Fit Selection"), QStringLiteral("arrangement.zoom"), {{QStringLiteral("fit"), QStringLiteral("selection")}});
 	run(QObject::tr("Fit Tracks"), QStringLiteral("arrangement.fit_tracks"), {});
 	menu->addSeparator();
-	run(QObject::tr("Nudge Clip Left"), QStringLiteral("arrangement.nudge"), {{QStringLiteral("direction"), QStringLiteral("left")}});
-	run(QObject::tr("Nudge Clip Right"), QStringLiteral("arrangement.nudge"), {{QStringLiteral("direction"), QStringLiteral("right")}});
-	run(QObject::tr("Next Clip"), QStringLiteral("arrangement.select_clip"), {{QStringLiteral("direction"), QStringLiteral("next")}});
-	run(QObject::tr("Previous Clip"), QStringLiteral("arrangement.select_clip"), {{QStringLiteral("direction"), QStringLiteral("previous")}});
+	// ED-024: bound to keys by default (rebindable with shortcuts.set, like every menu action).
+	run(QObject::tr("Nudge Clip Left"), QStringLiteral("arrangement.nudge"), {{QStringLiteral("direction"), QStringLiteral("left")}})
+		->setShortcut(QKeySequence(Qt::ALT | Qt::Key_Left));
+	run(QObject::tr("Nudge Clip Right"), QStringLiteral("arrangement.nudge"), {{QStringLiteral("direction"), QStringLiteral("right")}})
+		->setShortcut(QKeySequence(Qt::ALT | Qt::Key_Right));
+	run(QObject::tr("Next Clip"), QStringLiteral("arrangement.select_clip"), {{QStringLiteral("direction"), QStringLiteral("next")}})
+		->setShortcut(QKeySequence(Qt::ALT | Qt::Key_Down));
+	run(QObject::tr("Previous Clip"), QStringLiteral("arrangement.select_clip"), {{QStringLiteral("direction"), QStringLiteral("previous")}})
+		->setShortcut(QKeySequence(Qt::ALT | Qt::Key_Up));
 	menu->addSeparator();
 	run(QObject::tr("Add Marker at Play Position"), QStringLiteral("marker.add"), {});
 	run(QObject::tr("Next Marker"), QStringLiteral("marker.jump"), {{QStringLiteral("direction"), QStringLiteral("next")}});
@@ -81,6 +87,13 @@ QMenu* installNavigateMenu(QMenuBar* bar)
 	onTools(QObject::tr("Ripple"), QStringLiteral("arrangement.modes"), QStringLiteral("ripple"), {});
 	onTools(QObject::tr("Overlap"), QStringLiteral("arrangement.modes"), QStringLiteral("overlap"), {});
 	onTools(QObject::tr("Snap to Clip Edges and Markers"), QStringLiteral("arrangement.modes"), QStringLiteral("snap_to_edges"), {});
+	onTools(QObject::tr("Show Transients"), QStringLiteral("arrangement.modes"), QStringLiteral("show_transients"), {});
+	QMenu* autoFade = menu->addMenu(QObject::tr("Automatic Fades"));
+	for (const int ms : {0, 2, 5, 10, 20})
+	{
+		addCommandAction(autoFade, ms == 0 ? QObject::tr("Off") : QObject::tr("%1 ms").arg(ms), QStringLiteral("arrangement.modes"),
+			[ms] { return CommandCall{QStringLiteral("arrangement.modes"), {{QStringLiteral("auto_fade_ms"), ms}}, {}, QString(), false}; });
+	}
 	QMenu* presets = menu->addMenu(QObject::tr("Zoom Presets"));
 	for (const int ppb : {16, 32, 64, 128, 256})
 	{
@@ -93,6 +106,7 @@ QMenu* installNavigateMenu(QMenuBar* bar)
 	};
 	onRange(QObject::tr("Split at Edges"), QStringLiteral("range.split"), {});
 	onRange(QObject::tr("Delete"), QStringLiteral("range.delete"), {});
+	onRange(QObject::tr("Fade From Range"), QStringLiteral("range.fade"), {});
 	onRange(QObject::tr("Delete and Close Gap"), QStringLiteral("range.delete"), {{QStringLiteral("ripple"), true}});
 	onRange(QObject::tr("Crop"), QStringLiteral("range.crop"), {});
 	onRange(QObject::tr("Insert Time"), QStringLiteral("range.insert_time"), {});

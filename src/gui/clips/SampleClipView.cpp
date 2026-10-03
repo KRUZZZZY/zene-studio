@@ -30,7 +30,11 @@
 #include <QMenu>
 #include <QPainter>
 
+#include "ArrangementEdits.h"
 #include "ClipEditsMenu.h"
+#include "ClipTransients.h"
+#include "ControlRegistry.h"
+#include "ControlVocabulary.h"
 #include "FileDialog.h"
 #include "FontHelper.h"
 #include "GuiApplication.h"
@@ -52,33 +56,6 @@
 namespace lmms::gui
 {
 
-namespace
-{
-
-/*! ED-042: the clip's gain envelope as a line over the waveform, dB mapped -60..+24 from the
- *  bottom to the top, held flat before the first point and after the last. */
-void paintGainEnvelope(QPainter& p, const ClipEdits& edits, float pixelsPerTick, int xOrigin, int width,
-	int top, int height, const QColor& colour)
-{
-	if (!edits.hasEnvelope()) { return; }
-	const auto yOf = [top, height](float db) { return top + static_cast<int>((1.f - (db + 60.f) / 84.f) * height); };
-	const auto xOf = [xOrigin, pixelsPerTick](int tick) { return xOrigin + static_cast<int>(tick * pixelsPerTick); };
-	QPolygon line;
-	line << QPoint(xOrigin, yOf(edits.envelope[0].gainDb));
-	for (int i = 0; i < edits.envelopeCount; ++i) { line << QPoint(xOf(edits.envelope[i].tick), yOf(edits.envelope[i].gainDb)); }
-	line << QPoint(xOrigin + width, yOf(edits.envelope[edits.envelopeCount - 1].gainDb));
-	p.setRenderHint(QPainter::Antialiasing, true);
-	p.setPen(QPen(colour, 1.5));
-	p.drawPolyline(line);
-	p.setBrush(colour);
-	for (int i = 0; i < edits.envelopeCount; ++i)
-	{
-		p.drawEllipse(QPoint(xOf(edits.envelope[i].tick), yOf(edits.envelope[i].gainDb)), 2, 2);
-	}
-	p.setBrush(Qt::NoBrush);
-}
-
-} // namespace
 
 
 SampleClipView::SampleClipView( SampleClip * _clip, TrackView * _tv ) :
@@ -205,8 +182,64 @@ void SampleClipView::dropEvent( QDropEvent * _de )
 
 
 
+float SampleClipView::pixelsPerTickNow()
+{
+	const float ppb = fixedClips() ? (parentWidget()->width() - 2 * BORDER_WIDTH) / (float) m_clip->length().getBar() : pixelsPerBar();
+	const float nom = Engine::getSong()->getTimeSigModel().getNumerator();
+	const float den = Engine::getSong()->getTimeSigModel().getDenominator();
+	return ppb / (DefaultTicksPerBar * nom / den);
+}
+
+ClipOverlayFrame SampleClipView::overlayFrame(int xOrigin)
+{
+	const int spacing = BORDER_WIDTH + 1;
+	return {pixelsPerTickNow(), xOrigin, rect().width(), spacing, height() - 2 * spacing};
+}
+
+const std::vector<int>& SampleClipView::transientTicks()
+{
+	// The analysis runs once per audio, window and placement - not once per paint.
+	const SampleWindow window = m_clip->sampleWindow();
+	const QString key = QStringLiteral("%1:%2:%3:%4:%5").arg(reinterpret_cast<quintptr>(m_clip->sample().data()))
+		.arg(window.sourceIn).arg(window.sourceOut).arg(m_clip->length().getTicks()).arg(Engine::getSong()->getTempo());
+	if (key != m_transientKey)
+	{
+		m_transientTicks = clipTransientTicks(*m_clip);
+		m_transientKey = key;
+	}
+	return m_transientTicks;
+}
+
+ClipEdits SampleClipView::shownEdits() const
+{
+	ClipEdits edits = m_clip->clipEdits();
+	if (m_fadeDrag == FadeHandle::In) { edits.fadeInTicks = m_fadeDragTicks; }
+	if (m_fadeDrag == FadeHandle::Out) { edits.fadeOutTicks = m_fadeDragTicks; }
+	return edits;
+}
+
+bool SampleClipView::startFadeDrag(QMouseEvent* me)
+{
+	// 0.5.0 L05 (ED-173): a plain press on a fade handle drags that fade (clip.set_fade on release).
+	if (me->button() != Qt::LeftButton || me->modifiers() != Qt::NoModifier) { return false; }
+	const FadeHandle handle = fadeHandleAt(m_clip->clipEdits(), m_clip->length().getTicks(), overlayFrame(0), me->pos());
+	if (handle == FadeHandle::None) { return false; }
+	m_fadeDrag = handle;
+	m_fadeDragTicks = handle == FadeHandle::In ? m_clip->clipEdits().fadeInTicks : m_clip->clipEdits().fadeOutTicks;
+	return true;
+}
+
+void SampleClipView::mouseMoveEvent(QMouseEvent* me)
+{
+	if (m_fadeDrag == FadeHandle::None) { ClipView::mouseMoveEvent(me); return; }
+	m_fadeDragTicks = fadeTicksAt(m_fadeDrag, me->pos().x(), m_clip->length().getTicks(), overlayFrame(0));
+	setNeedsUpdate(true);
+	update();
+}
+
 void SampleClipView::mousePressEvent( QMouseEvent * _me )
 {
+	if (startFadeDrag(_me)) { return; }
 	if( _me->button() == Qt::LeftButton &&
 		_me->modifiers() & Qt::ControlModifier &&
 		_me->modifiers() & Qt::ShiftModifier )
@@ -232,6 +265,16 @@ void SampleClipView::mousePressEvent( QMouseEvent * _me )
 
 void SampleClipView::mouseReleaseEvent(QMouseEvent *_me)
 {
+	if (m_fadeDrag != FadeHandle::None)
+	{
+		const QString key = m_fadeDrag == FadeHandle::In ? QStringLiteral("fade_in") : QStringLiteral("fade_out");
+		m_fadeDrag = FadeHandle::None;
+		ControlRegistry::instance()->invoke(QStringLiteral("clip.set_fade"), {{QStringLiteral("clip"), control::clipIdOf(m_clip)},
+			{key, m_fadeDragTicks}});
+		setNeedsUpdate(true);
+		update();
+		return;
+	}
 	if( _me->button() == Qt::MiddleButton && !_me->modifiers() )
 	{
 		auto sClip = dynamic_cast<SampleClip*>(getClip());
@@ -359,8 +402,11 @@ void SampleClipView::paintEvent( QPaintEvent * pe )
 
 		m_sampleThumbnail.visualize(param, p);
 	}
-	paintGainEnvelope(p, m_clip->clipEdits(), ppb / ticksPerBar, -m_paintPixmapXPosition, rect().width(), spacing,
-		height() - 2 * spacing, textColor());
+	// The gain envelope, the fades and their handles (SampleClipOverlays.cpp).
+	const ClipOverlayFrame frame = overlayFrame(static_cast<int>(-m_paintPixmapXPosition));
+	paintGainEnvelope(p, shownEdits(), frame, textColor());
+	paintFades(p, shownEdits(), m_clip->length().getTicks(), frame, textColor());
+	if (arrangement::modes().showTransients) { paintTransients(p, transientTicks(), frame, textColor()); }
 
 	QString name = PathUtil::cleanName(m_clip->m_sample.sampleFile());
 	paintTextLabel(name, p);

@@ -148,6 +148,14 @@ public:
 		return 0;
 	}
 
+	//! 0.5.0 L08 (MX-130): how far the device is turning its signal down right now, in dB (0 for a
+	//! device that does not compress). Read on the audio thread after processing; a dynamics device
+	//! overrides it with the value its own meter shows.
+	virtual float gainReductionDb() const
+	{
+		return 0.f;
+	}
+
 	inline float wetLevel() const
 	{
 		return m_wetDryModel.value();

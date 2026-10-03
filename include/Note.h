@@ -353,6 +353,8 @@ public:
 	bool withinRange(int tickStart, int tickEnd) const;
 
 	void createDetuning();
+	//! 0.5.0 L07: drop this note's detuning curve (a copy of the note may share it), so a new one starts empty.
+	void clearDetuning() { m_detuning.reset(); }
 
 
 protected:

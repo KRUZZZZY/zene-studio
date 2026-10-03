@@ -87,7 +87,10 @@ void VcaGroup::setName(const QString& name)
 
 float VcaGroup::gain() const
 {
-	return m_muteModel.value() ? 0.0f : m_vcaModel.value();
+	// 0.5.0 L09 (MX-071): a suspended group, or one whose level/mute link is off, leaves that part out.
+	if (m_suspended) { return 1.0f; }
+	if (m_linkMute && m_muteModel.value()) { return 0.0f; }
+	return m_linkGain ? m_vcaModel.value() : 1.0f;
 }
 
 
@@ -99,13 +102,14 @@ bool VcaGroup::contains(mix_ch_t channel) const
 
 
 
-bool VcaGroup::addMember(mix_ch_t channel)
+bool VcaGroup::addMember(mix_ch_t channel, bool alongsideOthers)
 {
 	// Master is the mix bus itself, never a member; a channel already in this
 	// group is a no-op; a channel in another group is refused so that solo
-	// linking stays single-valued.
+	// linking stays single-valued - unless the caller asks for multiple
+	// membership (0.5.0 L09, MX-070), where the gains multiply.
 	if (m_mixer == nullptr || channel == 0 || contains(channel)
-		|| m_mixer->vcaGroupForChannel(channel) != nullptr)
+		|| (!alongsideOthers && m_mixer->vcaGroupForChannel(channel) != nullptr))
 	{
 		return false;
 	}

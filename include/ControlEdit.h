@@ -151,6 +151,9 @@ LMMS_EXPORT QJsonObject trackEditState(Track* track, int index);
 //! instance has no view and deletes the track.
 LMMS_EXPORT void removeTrack(Track* track);
 
+//! 0.5.0 L03 (WF-074): whether @a track's record route is armed (track.set_arm), for the header's arm button.
+LMMS_EXPORT bool trackRecordArmed(const Track* track);
+
 //! Captures \a track's own serialized state as XML, for the inverse of
 //! track.remove. False when the XML would exceed \a maxChars: a TRUNCATED
 //! track is a corrupt track, so the caller must refuse rather than record a

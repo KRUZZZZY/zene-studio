@@ -41,6 +41,7 @@ SET(LMMS_PLUGIN_LIST
 	Eq
 	Flanger
 	FrequencyShifter
+	Gate
 	GranularPitchShifter
 	HydrogenImport
 	LadspaBrowser
@@ -51,6 +52,7 @@ SET(LMMS_PLUGIN_LIST
 	Lb302
 	MidiImport
 	MidiExport
+	Modulation
 	MultitapEcho
 	Monstro
 	Nes

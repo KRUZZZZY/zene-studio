@@ -404,6 +404,11 @@ private:
 	bool m_recording;
 	bool m_doAutoQuantization{false};
 	QList<Note> m_recordingNotes;
+	//! 0.5.0 L03 (WF-082): the clip's notes when the pass began - in replace mode a recorded note
+	//! removes those it overlaps (compared by pointer, never dereferenced from here).
+	std::vector<const Note*> m_notesBeforePass;
+	void notePassStart();
+	void replaceOverlapped(const Note& recorded);
 
 	Note * m_currentNote;
 	Action m_action;

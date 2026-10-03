@@ -32,6 +32,7 @@
 
 #include <QJsonArray>
 
+#include "ArrangementEdits.h"
 #include "Clip.h"
 #include "ControlEdit.h"
 #include "ControlRegistry.h"
@@ -65,6 +66,12 @@ ControlResult repeatClip(const QJsonObject& args)
 	QJsonArray copies;
 	tick_t next = ref.clip->endPosition().getTicks();
 	const tick_t length = ref.clip->length().getTicks();
+	// ED-043: with ripple on, what follows the clip moves later to make room for the copies.
+	if (arrangement::modes().ripple != arrangement::Ripple::Off)
+	{
+		arrangement::checkpointRipple(ref.track);
+		arrangement::rippleShift(ref.track, next, count * length);
+	}
 	for (int i = 0; i < count; ++i)
 	{
 		Clip* copy = ref.clip->clone();
@@ -122,16 +129,90 @@ ControlResult timeScale(const QJsonObject& args)
 	return ControlResult::success(result);
 }
 
+//! The MIDI clips 'clips' names, all on one track, earliest first; false (with @a error) otherwise.
+bool joinable(const QJsonArray& ids, QVector<MidiClip*>* clips, Track** track, ControlResult* error)
+{
+	for (const QJsonValue& id : ids)
+	{
+		ClipRef ref;
+		MidiClip* clip = resolveMidiClip(id.toString(), &ref, error);
+		if (clip == nullptr) { return false; }
+		if (*track != nullptr && ref.track != *track)
+		{
+			*error = ControlResult::failure(ControlErrorKind::Refused, QStringLiteral("the clips to join must be on one track"));
+			return false;
+		}
+		*track = ref.track;
+		if (!clips->contains(clip)) { clips->append(clip); }
+	}
+	if (clips->size() < 2)
+	{
+		*error = ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("'clips' names at least two MIDI clips"));
+		return false;
+	}
+	std::sort(clips->begin(), clips->end(), [](const MidiClip* a, const MidiClip* b) { return a->startPosition() < b->startPosition(); });
+	return true;
+}
+
+//! ED-031 (0.5.0 L05): glue MIDI clips into the first - their notes move in at their song positions,
+//! the others go, and the first spans to the last one's end.
+ControlResult joinClips(const QJsonObject& args)
+{
+	ControlResult error;
+	QVector<MidiClip*> clips;
+	Track* track = nullptr;
+	if (!joinable(args.value(QStringLiteral("clips")).toArray(), &clips, &track, &error)) { return error; }
+	addUndoStep(QVector<JournallingObject*>{track});
+	MidiClip* first = clips.front();
+	const tick_t origin = first->startPosition().getTicks() + first->startTimeOffset().getTicks();
+	tick_t end = first->endPosition().getTicks();
+	for (int i = 1; i < clips.size(); ++i)
+	{
+		MidiClip* other = clips.at(i);
+		const tick_t from = other->startPosition().getTicks() + other->startTimeOffset().getTicks();
+		for (const Note* note : other->notes())
+		{
+			Note moved = *note;
+			moved.setPos(TimePos(from + note->pos().getTicks() - origin));
+			first->addNote(moved, false);
+		}
+		end = std::max(end, other->endPosition().getTicks());
+		arrangement::deleteClip(track, other);
+	}
+	first->rearrangeAllNotes();
+	first->setAutoResize(false);
+	first->changeLength(TimePos(end - first->startPosition().getTicks()));
+	Engine::getSong()->setModified();
+	QJsonObject result{{QStringLiteral("clip"), clipIdOf(first)}, {QStringLiteral("joined"), clips.size()}};
+	result.insert(QStringLiteral("__transaction"), transactionPayload({{QStringLiteral("clip"), clipIdOf(first)}}, QStringLiteral("control.undo"), {},
+		true, QStringLiteral("Track checkpoint: undo puts the separate clips back")));
+	return ControlResult::success(result);
+}
+
 } // namespace
 
 void registerClipArrangeCommands(ControlRegistry& registry)
 {
+	ControlCommand join;
+	join.id = QStringLiteral("clip.join");
+	join.group = QStringLiteral("clip");
+	join.verb = QStringLiteral("join");
+	join.description = QStringLiteral("Glue MIDI clips on one track into one: the earliest keeps its id and spans to the "
+		"last one's end, the others' notes move into it at their song positions and the others are removed (sample clips "
+		"are joined by clip.consolidate). One undo step (Track checkpoint).");
+	join.argsSchema = objectSchema({{QStringLiteral("clips"), arrayProperty()}}, {QStringLiteral("clips")});
+	join.resultSchema = objectProperty();
+	join.mutating = true;
+	join.handler = joinClips;
+	registry.registerCommand(join);
+
 	ControlCommand repeat;
 	repeat.id = QStringLiteral("clip.repeat");
 	repeat.group = QStringLiteral("clip");
 	repeat.verb = QStringLiteral("repeat");
 	repeat.description = QStringLiteral("Put 'count' copies of a clip (1..64, default 1 - Duplicate) right after it, back "
-		"to back on its track; answers the copies' ids. Reversible through the ProjectJournal (Track checkpoint).");
+		"to back on its track; answers the copies' ids. With ripple on (arrangement.modes) what follows moves later to make "
+		"room. Reversible through the ProjectJournal (Track checkpoint).");
 	repeat.argsSchema = objectSchema({{QStringLiteral("clip"), stringProperty()}, {QStringLiteral("count"), integerProperty(1, MaxRepeats)}},
 		{QStringLiteral("clip")});
 	repeat.resultSchema = objectSchema({{QStringLiteral("clip"), stringProperty()}, {QStringLiteral("copies"), arrayProperty()}});

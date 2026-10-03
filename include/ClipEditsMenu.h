@@ -35,6 +35,7 @@ class QMenu;
 namespace lmms
 {
 class Clip;
+class MidiClip;
 }
 
 namespace lmms::gui
@@ -57,6 +58,11 @@ LMMS_EXPORT void addClipRecordAction(QMenu* menu, Clip* clip);
  *  playhead is inside the clip) and Slip content -1 beat / +1 beat (clip.slip, the content moves inside
  *  a clip that stays put). Each is one control.undo step. */
 LMMS_EXPORT void addClipTrimActions(QMenu* menu, Clip* clip);
+
+/*! ED-085 (0.5.0 L07): on a step clip, the step under the menu - Step Chance (100/75/50/25 %,
+ *  note.probability_set) and Step Ratchet (x2, x3, x4: the step selected, then note.ratchet on the
+ *  selection). Nothing when that step is empty. Each is one control.undo step. */
+LMMS_EXPORT void addStepEditsMenu(QMenu* menu, MidiClip* clip, int step);
 
 //! Tests replace the gain prompt (default: a number input seeded with @a currentDb; nullopt
 //! cancels). Passing an empty function restores the default.

@@ -1,0 +1,103 @@
+/*
+ * ControlReversibilityTableDevices.cpp - the 0.5.0 L10 device commands' rows (and L03 / L02's) of the SPEC A16 table
+ *
+ * Copyright (c) 2026 Zene Studio contributors
+ *
+ * This file is part of LMMS - https://lmms.io
+ *
+ * This program is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU General Public
+ * License as published by the Free Software Foundation; either
+ * version 2 of the License, or (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public
+ * License along with this program (see COPYING); if not, write to the
+ * Free Software Foundation, Inc., 51 Franklin Street, Fifth Floor,
+ * Boston, MA 02110-1301 USA.
+ *
+ */
+#include "ControlReversibility.h"
+
+namespace lmms
+{
+namespace control
+{
+
+namespace
+{
+
+using RC = ReversibilityClass;
+
+//! A literal row: R(id, class, reversible, reason, mechanism, fallback).
+#define R(id, cls, rev, reason, mechanism, fallback) \
+	{ id, cls, reason, mechanism, fallback, rev, nullptr }
+
+const ReversibilityRow kDeviceRows[] = {
+	R("plugin.copy", RC::TrueInverse, true, "it adds a copy of a device, with its settings, to a chain",
+		"action checkpoint: the recorded undo step takes the copy out; its redo recreates it from the same settings document", ""),
+	R("chain.copy", RC::TrueInverse, true, "it adds copies of a chain's devices to another chain (or replaces that chain's devices)",
+		"action checkpoint: the recorded undo step takes the copies out and recreates any replaced device at its slot", ""),
+	R("plugin.ab", RC::TrueInverse, true,
+		"a recall or toggle puts stored settings on a device; storing writes only the session's A/B slots",
+		"action checkpoint: the recorded undo step puts the device's previous settings document back", ""),
+	R("plugin.organise", RC::TrueInverse, true,
+		"it writes one plug-in's favourite / hidden / folder entry in the config file (plugins/organiser) - the user's "
+		"interface, not the project; the previous entry is one bounded object",
+		"action checkpoint: the recorded undo step writes the previous entry back", ""),
+	R("plugin.organisation", RC::NotMutating, false, "it reads the organised plug-ins. Nothing is written", "no write", ""),
+	R("plugin.paths_get", RC::NotMutating, false, "it reads the plug-in folders. Nothing is written", "no write", ""),
+	R("plugin.paths_set", RC::TrueInverse, true,
+		"it writes one format's plug-in folders in the config file (paths/<format>dirs) - a bounded list",
+		"action checkpoint: the recorded undo step writes the previous folders back", ""),
+	R("rack.wrap", RC::TrueInverse, true, "it moves devices of a channel's chain into a new rack chain and selects it",
+		"action checkpoints: the recorded undo steps take the moved devices out of the new chain, recreate them in the "
+		"channel's chain at their slots, then remove the chain and restore the selection", ""),
+	R("remote.connect", RC::NotMutating, false, "it binds a MIDI controller's knobs: session state, not the project; what the "
+		"knobs then move are the parameters themselves, as any MIDI controller moves them", "no write (remote.disconnect)", ""),
+	R("remote.disconnect", RC::NotMutating, false, "it releases the knobs: session state", "no write (remote.connect)", ""),
+	R("remote.target", RC::NotMutating, false, "it chooses the device the knobs drive: session state",
+		"no write (set the previous target)", ""),
+	R("remote.page", RC::NotMutating, false, "it chooses the page the knobs show: session state", "no write", ""),
+	R("remote.state", RC::NotMutating, false, "it reads what the knobs drive. Nothing is written", "no write", ""),
+	R("track.drum_rack", RC::TrueInverse, true, "it adds a folder of pad tracks, a channel per pad and a bus channel",
+		"action checkpoint: the recorded undo step removes the rack's tracks and channels; its redo builds it again from "
+		"the same pads", ""),
+	// 0.5.0 L03 / L02, beside the device rows (one table for the W2 lanes after L09).
+	R("transport.record_options", RC::TrueInverse, true,
+		"it writes the count-in, pre-roll and record mode, a preference in the config file - three bounded scalars",
+		"action checkpoint: the recorded undo step writes the previous options back, as settings.set does", ""),
+	R("comp.cycle", RC::TrueInverse, true, "it switches the take a comp segment plays (the track's take lanes)",
+		"ProjectJournal (Track checkpoint): the track carries its take lanes", ""),
+	R("session.bindings_connect", RC::NotMutating, false, "it opens a MIDI controller for the launcher: device state, not "
+		"the project; what its notes launch records as the launch commands do", "no write", ""),
+	R("session.bind", RC::TrueInverse, true, "it writes one launcher binding in the config file - a bounded list",
+		"action checkpoint: the recorded undo step writes the previous bindings back", ""),
+	R("session.bind_learn", RC::NotMutating, false, "it waits for the next note; the binding it makes is written then",
+		"no write until the note (session.unbind removes it)", ""),
+	R("session.unbind", RC::TrueInverse, true, "it removes one launcher binding from the config file",
+		"action checkpoint: the recorded undo step writes the previous bindings back", ""),
+	R("session.bindings", RC::NotMutating, false, "it reads the launcher's bindings. Nothing is written", "no write", ""),
+	R("session.capture_to_slot", RC::TrueInverse, true,
+		"it adds a pattern holding what was played and points a launcher cell at it",
+		"action checkpoint: the recorded undo step restores the <session> block and removes the pattern track it made", ""),
+};
+
+#undef R
+
+constexpr int kDeviceRowCount = static_cast<int>(sizeof(kDeviceRows) / sizeof(kDeviceRows[0]));
+
+} // namespace
+
+const ReversibilityRow* reversibilityDeviceRowTable(int* rowCount)
+{
+	if (rowCount != nullptr) { *rowCount = kDeviceRowCount; }
+	return kDeviceRows;
+}
+
+} // namespace control
+} // namespace lmms

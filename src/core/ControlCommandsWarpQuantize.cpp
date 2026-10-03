@@ -30,12 +30,12 @@
 
 #include <cmath>
 
+#include "ClipTransients.h"
 #include "ControlEdit.h"
 #include "ControlRegistry.h"
 #include "ControlRegistryGroups.h"
 #include "ControlVocabulary.h"
 #include "ControlWarpSupport.h"
-#include "ImportDetection.h"
 #include "SampleClip.h"
 
 namespace lmms
@@ -45,22 +45,6 @@ using namespace control;
 
 namespace
 {
-
-//! The transients of @a clip's window, as source frames.
-std::vector<f_cnt_t> transientsOf(SampleClip& clip)
-{
-	const SampleWindow window = clip.sampleWindow();
-	const Sample& sample = clip.sample();
-	std::vector<f_cnt_t> out;
-	if (sample.data() == nullptr || window.sourceOut <= window.sourceIn
-		|| static_cast<std::size_t>(window.sourceOut) > sample.sampleSize()) { return out; }
-	const std::vector<float> mono = monoMix(sample.data() + window.sourceIn, static_cast<std::size_t>(window.sourceOut - window.sourceIn));
-	for (const std::int64_t frame : detection::detectOnsetFrames(mono.data(), mono.size(), sample.sampleRate()))
-	{
-		out.push_back(window.sourceIn + static_cast<f_cnt_t>(frame));
-	}
-	return out;
-}
 
 //! Each transient at the tick it plays at now, moved toward the grid; increasing ticks only, so the
 //! marker set stays monotonic (a transient that would land on or before the previous one is left out).
@@ -94,7 +78,7 @@ ControlResult quantizeAudio(const QJsonObject& args)
 	{
 		return ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("'grid' is >= 1 tick and 'strength' 0..1"));
 	}
-	const std::vector<f_cnt_t> transients = transientsOf(*clip);
+	const std::vector<f_cnt_t> transients = clipTransientFrames(*clip);
 	MarkerArray markers{};
 	const int count = quantisedMarkers(*clip, transients, grid, strength, &markers);
 	if (count == 0) { return ControlResult::failure(ControlErrorKind::NotFound, QStringLiteral("no transient found in the clip's audio")); }

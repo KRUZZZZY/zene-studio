@@ -24,6 +24,7 @@
 #include "VcaStripView.h"
 
 #include <QAction>
+#include <QContextMenuEvent>
 #include <QJsonObject>
 #include <QLabel>
 #include <QMenu>
@@ -96,6 +97,50 @@ VcaStripView::VcaStripView(VcaGroup* group, QWidget* parent) :
 QString VcaStripView::caption() const
 {
 	return m_name->text();
+}
+
+void VcaStripView::fillMenu(QMenu* menu)
+{
+	Mixer* mixer = Engine::mixer();
+	VcaGroup* group = mixer->vcaGroup(m_groupId);
+	if (group == nullptr) { return; }
+	const QString id = QStringLiteral("vca-%1").arg(m_groupId);
+	QMenu* links = menu->addMenu(tr("Links"));
+	const struct { QString text; const char* key; bool on; } options[] = {{tr("Level"), "gain", group->linksGain()},
+		{tr("Mute"), "mute", group->linksMute()}, {tr("Solo"), "solo", group->linksSolo()}, {tr("Suspend All"), "suspended", group->isSuspended()}};
+	for (const auto& option : options)
+	{
+		QAction* action = links->addAction(option.text);
+		action->setCheckable(true);
+		action->setChecked(option.on);
+		action->setData(QStringLiteral("vca.set_links"));
+		const QString key = QLatin1String(option.key);
+		connect(action, &QAction::toggled, this, [id, key](bool on) {
+			ControlRegistry::instance()->invoke(QStringLiteral("vca.set_links"), {{QStringLiteral("group"), id}, {key, on}});
+		});
+	}
+	QMenu* inside = menu->addMenu(tr("Put Inside"));
+	const auto putIn = [this, id, inside](const QString& text, const QString& parent, bool checked) {
+		QAction* action = inside->addAction(text);
+		action->setCheckable(true);
+		action->setChecked(checked);
+		action->setData(QStringLiteral("vca.set_parent"));
+		connect(action, &QAction::triggered, this, [id, parent] {
+			ControlRegistry::instance()->invoke(QStringLiteral("vca.set_parent"), {{QStringLiteral("group"), id}, {QStringLiteral("parent"), parent}});
+		});
+	};
+	putIn(tr("No Group"), QString(), group->parentId() == 0);
+	for (const VcaGroup* other : mixer->vcaGroups())
+	{
+		if (other->id() != m_groupId) { putIn(other->name(), QStringLiteral("vca-%1").arg(other->id()), group->parentId() == other->id()); }
+	}
+}
+
+void VcaStripView::contextMenuEvent(QContextMenuEvent* event)
+{
+	QMenu menu(this);
+	fillMenu(&menu);
+	menu.exec(event->globalPos());
 }
 
 

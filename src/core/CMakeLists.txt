@@ -161,6 +161,7 @@ set(LMMS_SRCS
 	# main.cpp.
 	core/SafeStart.cpp
 	core/ControlCommandsArrangement.cpp
+	core/ControlCommandsAudioSlice.cpp
 	core/ControlCommandsClip.cpp
 	core/ControlCommandsConsolidate.cpp
 	core/ControlCommandsMonitor.cpp
@@ -212,6 +213,18 @@ set(LMMS_SRCS
 	core/ControlCommandsDsp.cpp
 	core/ControlCommandsIdContract.cpp
 	core/ControlCommandsMixer.cpp
+	core/ControlCommandsMixerListen.cpp
+	core/ControlCommandsMixerStrip.cpp
+	core/ControlCommandsDeviceCopy.cpp
+	core/ControlCommandsDrumRack.cpp
+	core/ControlCommandsLaunchBindings.cpp
+	core/ControlCommandsPluginOrganise.cpp
+	core/ControlCommandsPluginPaths.cpp
+	core/ControlCommandsRackWrap.cpp
+	core/ControlCommandsRecordingPass.cpp
+	core/ControlCommandsSessionCapture.cpp
+	core/ControlCommandsRemote.cpp
+	core/ControlDeviceMoves.cpp
 	# The mixer group's routing verbs (mixer.route_to / send_to / sidechain_to /
 	# route_remove) and the PDC / routing / bus / port groups - feature rows
 	# 27-29 of docs/FEATURE-LIST-0.3.0.md. Separate translation units for the
@@ -414,6 +427,7 @@ set(LMMS_SRCS
 	# automation groups' split, for the file-length ratchet).
 	core/ControlCommandsVca.cpp
 	core/ControlCommandsVcaMix.cpp
+	core/ControlCommandsVcaNest.cpp
 	core/ControlCommandsVcaEdit.cpp
 	# R3.5: the phase-locked split, trim, slip and fade.
 	core/ControlCommandsVcaEditMore.cpp
@@ -647,6 +661,7 @@ set(LMMS_SRCS
 	core/ControlCommandsController.cpp
 	# ... and its four FILE verbs (template save/list/apply/delete), split off at
 	# the 500-line ratchet so both files stay under it.
+	core/ControlCommandsControllerMap.cpp
 	core/ControlCommandsControllerTemplates.cpp
 	# The controller.* rows (feature row 19, board task #651): the MIDI controller
 	# surface's soft-takeover, LED feedback and mapping templates. Two
@@ -671,6 +686,8 @@ set(LMMS_SRCS
 	# The window.* group's rows (040/survey-fixes); the group itself is src/gui.
 	core/ControlReversibilityTableWindow.cpp
 	core/ControlReversibilityTableCustomisation.cpp
+	core/ControlReversibilityTableMixing.cpp
+	core/ControlReversibilityTableDevices.cpp
 	core/ControlReversibilityTableArranger.cpp
 	core/ControlReversibilityTableShell.cpp
 	${CMAKE_SOURCE_DIR}/thirdparty/mts-esp/libMTSClient.cpp
@@ -747,6 +764,7 @@ set(LMMS_SRCS
 	# ratchet may not grow).
 	core/MasteringReport.cpp
 	core/LadspaManager.cpp
+	core/LaunchBindings.cpp
 	core/LfoController.cpp
 	core/LinkedModelGroups.cpp
 	core/LocklessAllocator.cpp
@@ -761,6 +779,10 @@ set(LMMS_SRCS
 	core/MidiClockState.cpp
 	core/MidiClockTracker.cpp
 	core/MixHelpers.cpp
+	core/MixerGroups.cpp
+	core/MixerListen.cpp
+	core/MixerSendPan.cpp
+	core/MixerStrip.cpp
 	core/Model.cpp
 	core/ModelVisitor.cpp
 	# ARCH-4 S1a: the document format's namespace table and the resolver that
@@ -787,6 +809,8 @@ set(LMMS_SRCS
 	core/PluginIssue.cpp
 	core/PluginEditorHost.cpp
 	core/PluginFactory.cpp
+	core/PluginOrganiser.cpp
+	core/PluginPaths.cpp
 	core/PluginScanCache.cpp
 	core/PresetPreviewPlayHandle.cpp
 	core/ProjectJournal.cpp
@@ -805,6 +829,8 @@ set(LMMS_SRCS
 	core/ProjectRenderer.cpp
 	core/ProjectRevisions.cpp
 	core/ProjectVersion.cpp
+	core/RecordOptions.cpp
+	core/RemoteControls.cpp
 	core/RemotePlugin.cpp
 	core/Rack.cpp
 	core/RackMacros.cpp
@@ -918,6 +944,8 @@ set(LMMS_SRCS
 	core/ControlCommandsClipEnvelope.cpp
 	core/ControlCommandsKeyNames.cpp
 	core/ControlCommandsMarkers.cpp
+	core/ControlCommandsNoteAcross.cpp
+	core/ControlCommandsNoteCurves.cpp
 	core/ControlCommandsNoteShape.cpp
 	core/ControlCommandsRange.cpp
 	core/ProjectMarkers.cpp
@@ -934,6 +962,7 @@ set(LMMS_SRCS
 	core/UpgradeExtendedNoteRange.cpp
 	core/UnclaimedElements.cpp
 	core/Clip.cpp
+	core/ClipTransients.cpp
 	core/ValueBuffer.cpp
 	core/VstSyncController.cpp
 	core/StepRecorder.cpp
@@ -1075,6 +1104,8 @@ SET(ZENE_API_SRCS
 	core/ControlReversibilityTableWasmRender.cpp
 	core/ControlReversibilityTableWindow.cpp
 	core/ControlReversibilityTableCustomisation.cpp
+	core/ControlReversibilityTableMixing.cpp
+	core/ControlReversibilityTableDevices.cpp
 	core/ControlReversibilityTableArranger.cpp
 	core/ControlReversibilityTableShell.cpp
 )

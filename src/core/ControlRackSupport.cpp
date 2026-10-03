@@ -113,6 +113,7 @@ QJsonObject macroTargetJson(const RackMacroTarget& target, int index)
 	out.insert(QStringLiteral("parameter"), target.parameter);
 	out.insert(QStringLiteral("low"), static_cast<double>(target.low));
 	out.insert(QStringLiteral("high"), static_cast<double>(target.high));
+	out.insert(QStringLiteral("curve"), static_cast<double>(target.curve));
 	return out;
 }
 

@@ -43,6 +43,7 @@
 #include <QJsonObject>
 #include <QString>
 
+#include <cmath>
 #include <cstdint>
 #include <vector>
 
@@ -142,6 +143,35 @@ private slots:
 		QVERIFY(macros.setValue(gainMacro, 0.5f));
 		macros.apply(gainMacro, rackUnderTest());
 		QCOMPARE(macros.macroCount(), 1);
+	}
+
+	//! 0.5.0 L10 (MX-105): a target's curve shapes the response across its window, and is saved
+	//! only when it is not linear.
+	void aCurveShapesTheResponse()
+	{
+		QCOMPARE(shapeMacroValue(0.5f, 0.0f), 0.5f);
+		QVERIFY(std::abs(shapeMacroValue(0.5f, 1.0f) - std::pow(0.5f, 0.25f)) < 1e-5f);  // rises early
+		QVERIFY(std::abs(shapeMacroValue(0.5f, -1.0f) - 0.0625f) < 1e-5f);              // rises late
+		QCOMPARE(shapeMacroValue(1.0f, -1.0f), 1.0f);  // the ends stay where they are
+		RackMacroTarget bent = targetOf(kGainName, 0.0f, 1.0f);
+		bent.curve = -1.0f;
+		QVERIFY(isValidMacroTarget(bent));
+		RackMacros& macros = rackUnderTest().macros();
+		const int curved = macros.addMacro(QStringLiteral("Curved"), 0.5f);
+		QCOMPARE(macros.addTarget(curved, bent), 0);
+		macros.apply(curved, rackUnderTest());
+		QVERIFY(std::abs(gainModel()->value() - 6.25f) < 1e-3f);  // 0.5^4 of 0..100
+		QDomDocument doc;
+		QDomElement rack = doc.createElement(QStringLiteral("rack"));
+		macros.saveSettings(doc, rack);
+		QVERIFY(doc.toString().contains(QStringLiteral("curve=\"-1\"")));
+		RackMacros reloaded;
+		reloaded.loadSettings(rack);
+		QCOMPARE(reloaded.macro(curved)->targets.front().curve, -1.0f);
+		bent.curve = 1.5f;
+		QVERIFY(!isValidMacroTarget(bent));
+		QVERIFY(macros.removeMacro(curved));
+		macros.apply(0, rackUnderTest());
 	}
 
 	//! A target whose chain, effect or parameter is gone is SKIPPED, and the

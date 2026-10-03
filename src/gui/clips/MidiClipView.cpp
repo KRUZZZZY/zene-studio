@@ -28,12 +28,14 @@
 
 #include <algorithm>
 #include <QApplication>
+#include <QCursor>
 #include <QInputDialog>
 #include <QMenu>
 #include <QPainter>
 #include <set>
 
 #include "AutomationEditor.h"
+#include "ClipEditsMenu.h"
 #include "ConfigManager.h"
 #include "DeprecationHelper.h"
 #include "GuiApplication.h"
@@ -231,6 +233,12 @@ void MidiClipView::constructContextMenu( QMenu * _cm )
 	if (!isBeat)
 	{
 		_cm->addAction(embed::getIconPixmap("scale"), tr("Transpose"), this, &MidiClipView::transposeSelection);
+	}
+	else
+	{
+		// 0.5.0 L07 (ED-085): the chance and ratchet of the step under the menu (ClipEditsMenu.cpp).
+		const QPoint at = mapFromGlobal(QCursor::pos());
+		addStepEditsMenu(_cm, m_clip, (at.x() - BORDER_WIDTH) * m_clip->m_steps / std::max(1, width() - BORDER_WIDTH * 2));
 	}
 	_cm->addSeparator();
 

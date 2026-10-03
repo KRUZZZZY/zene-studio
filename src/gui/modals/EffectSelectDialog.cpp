@@ -24,12 +24,16 @@
  */
 
 #include "EffectSelectDialog.h"
+
 #include "DummyEffect.h"
 #include "EffectChain.h"
 #include "embed.h"
 #include "PluginFactory.h"
+#include "PluginOrganiser.h"
 
 #include <QApplication>
+#include <QCheckBox>
+#include <QComboBox>
 #include <QDialogButtonBox>
 #include <QHBoxLayout>
 #include <QHeaderView>
@@ -37,6 +41,7 @@
 #include <QKeyEvent>
 #include <QLabel>
 #include <QLineEdit>
+#include <QMenu>
 #include <QPushButton>
 #include <QRegularExpression>
 #include <QScrollArea>
@@ -97,6 +102,7 @@ EffectSelectDialog::EffectSelectDialog(QWidget* parent) :
 		}
 		m_sourceModel.setItem(row, 0, new QStandardItem(name));
 		m_sourceModel.setItem(row, 1, new QStandardItem(type));
+		pickerorganiser::markRow(m_sourceModel, row, *it);  // 0.5.0 L10 (MX-166)
 		++row;
 	}
 
@@ -110,6 +116,19 @@ EffectSelectDialog::EffectSelectDialog(QWidget* parent) :
 
 	QStringList buttonLabels = { tr("All"), "Zene Studio", "LADSPA", "LV2", "VST" };
 	QStringList buttonSearchString = { "", "Zene Studio", "LADSPA", "LV2", "VST" };
+
+	// 0.5.0 L10 (MX-166): Favourites, beside the formats.
+	auto* favourites = new QPushButton(QStringLiteral("\u2605"), this);
+	favourites->setToolTip(tr("Favourites"));
+	favourites->setFixedSize(50, 50);
+	favourites->setFocusPolicy(Qt::NoFocus);
+	leftSectionLayout->addWidget(favourites);
+	connect(favourites, &QPushButton::clicked, this, [this] {
+		pickerorganiser::Filter filter = m_model.organiserFilter();
+		filter.favouritesOnly = !filter.favouritesOnly;
+		m_model.setOrganiserFilter(filter);
+		updateSelection();
+	});
 
 	for (int i = 0; i < buttonLabels.size(); ++i)
 	{
@@ -170,6 +189,7 @@ EffectSelectDialog::EffectSelectDialog(QWidget* parent) :
 
 	QVBoxLayout* rightSectionLayout = new QVBoxLayout();
 	rightSectionLayout->addWidget(m_filterEdit);
+	addOrganiserControls(rightSectionLayout);
 	rightSectionLayout->addWidget(m_pluginList);
 	rightSectionLayout->addWidget(m_scrollArea);
 	rightSectionLayout->addWidget(buttonBox);
@@ -205,6 +225,54 @@ Effect* EffectSelectDialog::instantiateSelectedPlugin(EffectChain* parent)
 		result = new DummyEffect(parent, QDomElement());
 	}
 	return result;
+}
+
+void EffectSelectDialog::addOrganiserControls(QVBoxLayout* rightSection)
+{
+	// 0.5.0 L10 (MX-166): a folder to show, hidden entries on or off, and each row's own menu.
+	auto* row = new QHBoxLayout;
+	m_folderBox = new QComboBox(this);
+	m_folderBox->setAccessibleName(tr("Plug-in folder"));
+	auto* showHidden = new QCheckBox(tr("Show hidden"), this);
+	row->addWidget(m_folderBox, 1);
+	row->addWidget(showHidden);
+	rightSection->addLayout(row);
+	connect(m_folderBox, &QComboBox::currentIndexChanged, this, [this] {
+		pickerorganiser::Filter filter = m_model.organiserFilter();
+		filter.folder = m_folderBox->currentIndex() > 0 ? m_folderBox->currentText() : QString();
+		m_model.setOrganiserFilter(filter);
+		updateSelection();
+	});
+	connect(showHidden, &QCheckBox::toggled, this, [this](bool on) {
+		pickerorganiser::Filter filter = m_model.organiserFilter();
+		filter.showHidden = on;
+		m_model.setOrganiserFilter(filter);
+		updateSelection();
+	});
+	m_pluginList->setContextMenuPolicy(Qt::CustomContextMenu);
+	connect(m_pluginList, &QTableView::customContextMenuRequested, this, [this](const QPoint& at) {
+		const QModelIndex index = m_model.mapToSource(m_pluginList->indexAt(at));
+		if (!index.isValid()) { return; }
+		QMenu menu(this);
+		pickerorganiser::fillRowMenu(&menu, m_sourceModel.index(index.row(), 0), this, [this] { refreshOrganisation(); });
+		menu.exec(m_pluginList->viewport()->mapToGlobal(at));
+	});
+	refreshOrganisation();
+}
+
+void EffectSelectDialog::refreshOrganisation()
+{
+	for (int row = 0; row < m_effectKeys.size() && row < m_sourceModel.rowCount(); ++row)
+	{
+		pickerorganiser::markRow(m_sourceModel, row, m_effectKeys[row]);
+	}
+	const QString current = m_folderBox->currentIndex() > 0 ? m_folderBox->currentText() : QString();
+	const QSignalBlocker blocker(m_folderBox);
+	m_folderBox->clear();
+	m_folderBox->addItem(tr("All folders"));
+	m_folderBox->addItems(pluginorganiser::folders());
+	m_folderBox->setCurrentIndex(std::max(0, m_folderBox->findText(current)));
+	m_model.setOrganiserFilter(m_model.organiserFilter());
 }
 
 void EffectSelectDialog::acceptSelection()

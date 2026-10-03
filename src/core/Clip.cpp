@@ -581,6 +581,8 @@ void Clip::loadClipEdits(const QDomElement& element)
 		{
 		case static_cast<int>(FadeShape::Exponential): return FadeShape::Exponential;
 		case static_cast<int>(FadeShape::EqualPower): return FadeShape::EqualPower;
+		case static_cast<int>(FadeShape::Logarithmic): return FadeShape::Logarithmic;
+		case static_cast<int>(FadeShape::SCurve): return FadeShape::SCurve;
 		default: return FadeShape::Linear;
 		}
 	};

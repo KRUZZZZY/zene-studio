@@ -41,26 +41,8 @@ namespace lmms
 
 using namespace control;  // the shared vocabulary lives in ControlVocabulary.h
 
-namespace
-{
-
-QJsonObject parameterSchema()
-{
-	return objectSchema({
-		{QStringLiteral("index"), integerProperty()},
-		{QStringLiteral("name"), stringProperty()},
-		{QStringLiteral("value"), numberProperty()},
-		{QStringLiteral("min"), numberProperty()},
-		{QStringLiteral("max"), numberProperty()},
-		{QStringLiteral("type"), stringProperty()},
-		{QStringLiteral("step"), numberProperty()},
-	});
-}
-
-//! The parameters of the device \a pluginId names on \a target, plus the
-//! device's plugin name. "inst" is an instrument; everything else is an
-//! effect instance id.
-bool deviceParameters(const ControlTarget& target, const QString& pluginId,
+// Declared in ControlDeviceSupport.h (0.5.0 L10: remote-control pages read the same list).
+bool controlDeviceParameters(const ControlTarget& target, const QString& pluginId,
 	QList<AutomatableModel*>* models, QString* pluginName, ControlResult* error)
 {
 	if (pluginId == QLatin1String("inst"))
@@ -82,6 +64,22 @@ bool deviceParameters(const ControlTarget& target, const QString& pluginId,
 	*models = controlEffectParameters(effect);
 	*pluginName = QString::fromUtf8(effect->descriptor()->name);
 	return true;
+}
+
+namespace
+{
+
+QJsonObject parameterSchema()
+{
+	return objectSchema({
+		{QStringLiteral("index"), integerProperty()},
+		{QStringLiteral("name"), stringProperty()},
+		{QStringLiteral("value"), numberProperty()},
+		{QStringLiteral("min"), numberProperty()},
+		{QStringLiteral("max"), numberProperty()},
+		{QStringLiteral("type"), stringProperty()},
+		{QStringLiteral("step"), numberProperty()},
+	});
 }
 
 //! Index of a model within a list of non-const models, from a const view of it.
@@ -147,7 +145,7 @@ void registerParamGet(ControlRegistry& registry)
 		const QString pluginId = args.value(QStringLiteral("plugin")).toString();
 		QList<AutomatableModel*> models;
 		QString pluginName;
-		if (!deviceParameters(target, pluginId, &models, &pluginName, &error)) { return error; }
+		if (!controlDeviceParameters(target, pluginId, &models, &pluginName, &error)) { return error; }
 
 		const bool hasIndex = args.contains(QStringLiteral("index"));
 		AutomatableModel* model = controlResolveParameterIn(models,
@@ -220,7 +218,7 @@ void registerParamSet(ControlRegistry& registry)
 		const QString pluginId = args.value(QStringLiteral("plugin")).toString();
 		QList<AutomatableModel*> models;
 		QString pluginName;
-		if (!deviceParameters(target, pluginId, &models, &pluginName, &error)) { return error; }
+		if (!controlDeviceParameters(target, pluginId, &models, &pluginName, &error)) { return error; }
 
 		const bool hasIndex = args.contains(QStringLiteral("index"));
 		AutomatableModel* model = controlResolveParameterIn(models,
