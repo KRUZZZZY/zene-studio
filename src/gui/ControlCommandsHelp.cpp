@@ -105,7 +105,7 @@ void add(ControlRegistry& registry, const char* id, const QString& description, 
 void registerHelpCommands(ControlRegistry& registry)
 {
 	add(registry, "app.help", QStringLiteral("Open the manual inside the application - at 'topic' (window, arrange, notes, mix, "
-		"devices, record, launch, projects, agents, access) - or, with 'reference', the command reference: every command with "
+		"devices, record, launch, projects, agents, customise, access) - or, with 'reference', the command reference: every command with "
 		"its description and arguments, built from the registry. Interface state."),
 		objectSchema({{QStringLiteral("topic"), stringProperty()}, {QStringLiteral("reference"), booleanProperty()}}), false, true, help);
 	add(registry, "app.tours", QStringLiteral("The guided tours there are: each one's name, title and step count."),
