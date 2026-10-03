@@ -46,9 +46,10 @@ void addPannedSend(SampleFrame* dst, const SampleFrame* src, MixerRoute& route, 
 	float right = 1.f;
 	balanceGains(route.pan()->value(), &left, &right);
 	const ValueBuffer* sendBuf = route.amount()->valueBuffer();
-	const ValueBuffer* volBuf = route.preFader() ? nullptr : sender.m_volumeModel.valueBuffer();
+	// 0.5.0 MX-082: a sender whose post-fader inserts baked its fader is read at unity.
+	const ValueBuffer* volBuf = route.preFader() ? nullptr : postinserts::faderBuffer(sender, &route);
 	const float send = route.amount()->value();
-	const float volume = route.preFader() ? 1.f : sender.m_volumeModel.value();
+	const float volume = route.preFader() ? 1.f : postinserts::faderValue(sender, &route);
 	for (f_cnt_t f = 0; f < frames; ++f)
 	{
 		const float gain = (sendBuf != nullptr ? sendBuf->values()[f] : send) * (volBuf != nullptr ? volBuf->values()[f] : volume);

@@ -30,6 +30,7 @@
 #include <QWriteLocker>
 
 #include "AutomationClip.h"
+#include "AutomationLatency.h"
 #include "embed.h"
 #include "Engine.h"
 #include "TrackContainer.h"
@@ -447,7 +448,10 @@ AutomatedValueMap TrackContainer::automatedValuesFromTracks(const TrackList &tra
 
 	for(Clip* clip : clips)
 	{
-		if (clip->isMuted() || clip->startPosition() > time) {
+		// 0.5.0 MX-160: an automation clip is read where the latent audio is - `time` itself unless
+		// the project turned latency-compensated automation on.
+		const TimePos readTime = AutomationLatency::instance().readTime(clip, time);
+		if (clip->isMuted() || clip->startPosition() > readTime) {
 			continue;
 		}
 
@@ -457,7 +461,7 @@ AutomatedValueMap TrackContainer::automatedValuesFromTracks(const TrackList &tra
 			if (! p->hasAutomation() || p->isRelative()) {
 				continue;
 			}
-			TimePos relTime = time - p->startPosition() - p->startTimeOffset();
+			TimePos relTime = readTime - p->startPosition() - p->startTimeOffset();
 			if (!p->isInPattern()) {
 				relTime = std::min(static_cast<int>(relTime), p->length() - p->startTimeOffset());
 			}

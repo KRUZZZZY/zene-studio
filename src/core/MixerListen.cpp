@@ -91,7 +91,7 @@ void replaceOutput(SampleFrame* out, Mixer& mixer, f_cnt_t frames)
 		// A muted channel is not processed, so its buffer still holds its last block: it is heard as silence.
 		if (channel->m_muted.load(Relaxed)) { continue; }
 		// The channel's buffer is its post-insert, pre-fader signal; AFL takes the fader too.
-		const float gain = afterFader ? channel->m_volumeModel.value() : 1.f;
+		const float gain = afterFader ? postinserts::faderValue(*channel, nullptr) : 1.f;  // MX-082: baked -> 1
 		for (f_cnt_t f = 0; f < frames; ++f)
 		{
 			out[f][0] += channel->m_buffer[f][0] * gain;

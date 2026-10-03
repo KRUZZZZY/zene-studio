@@ -117,6 +117,7 @@ include/AutomatableSlider.h
 include/AutomationClip.h
 include/AutomationClipView.h
 include/AutomationEditor.h
+include/AutomationLatency.h
 include/AutomationModeMenu.h
 include/AutomationNode.h
 include/AutomationRamp.h
@@ -400,6 +401,7 @@ include/MixerLatencyText.h
 include/MixerListen.h
 include/MixerOptions.h
 include/MixerOverlays.h
+include/MixerPostInserts.h
 include/MixerSendPan.h
 include/MixerStrip.h
 include/MixerView.h
@@ -983,6 +985,12 @@ plugins/PeakControllerEffect/PeakControllerEffectControlDialog.cpp
 plugins/PeakControllerEffect/PeakControllerEffectControlDialog.h
 plugins/PeakControllerEffect/PeakControllerEffectControls.cpp
 plugins/PeakControllerEffect/PeakControllerEffectControls.h
+plugins/Receiver/Receiver.cpp
+plugins/Receiver/Receiver.h
+plugins/Receiver/ReceiverControlDialog.cpp
+plugins/Receiver/ReceiverControlDialog.h
+plugins/Receiver/ReceiverControls.cpp
+plugins/Receiver/ReceiverControls.h
 plugins/ReverbSC/ReverbSC.cpp
 plugins/ReverbSC/ReverbSC.h
 plugins/ReverbSC/ReverbSCControlDialog.cpp
@@ -1160,6 +1168,7 @@ src/core/AudioWideInputStage.cpp
 src/core/AutomatableModel.cpp
 src/core/AutomationClip.cpp
 src/core/AutomationClipTransforms.cpp
+src/core/AutomationLatency.cpp
 src/core/AutomationNode.cpp
 src/core/AutomationRamp.cpp
 src/core/AutomationSwitches.cpp
@@ -1377,6 +1386,7 @@ src/core/ControlCommandsVcaEditSet.cpp
 src/core/ControlCommandsVcaMix.cpp
 src/core/ControlCommandsVcaNest.cpp
 src/core/ControlCommandsVcaShared.h
+src/core/ControlCommandsW3Engine.cpp
 src/core/ControlCommandsWarp.cpp
 src/core/ControlCommandsWarpEdit.cpp
 src/core/ControlCommandsWarpQuantize.cpp
@@ -1450,6 +1460,7 @@ src/core/ControlReversibilityTableStructure.cpp
 src/core/ControlReversibilityTableTrackFolder.cpp
 src/core/ControlReversibilityTableVca.cpp
 src/core/ControlReversibilityTableVerbs.cpp
+src/core/ControlReversibilityTableW3Engine.cpp
 src/core/ControlReversibilityTableWasmRender.cpp
 src/core/ControlReversibilityTableWindow.cpp
 src/core/ControlRoom.cpp
@@ -1548,6 +1559,7 @@ src/core/Mixer.cpp
 src/core/MixerGroups.cpp
 src/core/MixerListen.cpp
 src/core/MixerOptions.cpp
+src/core/MixerPostInserts.cpp
 src/core/MixerSendPan.cpp
 src/core/MixerStrip.cpp
 src/core/Model.cpp
@@ -2216,6 +2228,7 @@ tests/src/core/UnclaimedTrackTypeTest.cpp
 tests/src/core/UndoBoundsTest.cpp
 tests/src/core/VcaGroupTest.cpp
 tests/src/core/VcaRefreshAtomicityTest.cpp
+tests/src/core/W3EngineTest.cpp
 tests/src/core/WarpMarkersTest.cpp
 tests/src/core/WarpQuantizeTest.cpp
 tests/src/core/WriteRefusalGateTest.cpp

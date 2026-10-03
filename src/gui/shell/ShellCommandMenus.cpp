@@ -384,6 +384,8 @@ void populateChannel(QMenu* menu, const QString& channel)
 	add(menu, "Pan a Send...", "mixer.send_pan", self, true, {{QStringLiteral("pan"), 0.0}});  // MX-048
 	add(menu, "Switch a Send Off or On...", "mixer.send_enable", self, true, {{QStringLiteral("enabled"), false}});  // MX-047
 	add(menu, "Create a Return...", "mixer.create_return", self, true, {{QStringLiteral("name"), QStringLiteral("Return")}});  // MX-051
+	add(menu, "Receive a Channel Here...", "chain.receive", {{QStringLiteral("target"), channel}}, true);  // W3 (MX-063)
+	add(menu, "Post-Fader Inserts", "mixer.post_inserts", self, false, {}, true);  // W3 (MX-082)
 	add(menu, "Play Previews Here", "browser.preview_output", self, false);  // MX-042
 	QAction* gang = menu->addAction(tr("Adjust Channels Together..."));  // MX-028
 	gang->setProperty("controlCommand", QStringLiteral("mixer.adjust"));
@@ -472,6 +474,7 @@ void populateProject(QMenu* menu)
 	choices(menu, "Automation Read", "automation.switches", "read", {});  // L06 (ED-200)
 	choices(menu, "Automation Write", "automation.switches", "write", {});
 	choices(menu, "Punched Automation Writes", "automation.switches", "punched_writes", {});  // ED-201
+	choices(menu, "Latency-Compensated Automation", "automation.latency_compensation", "enabled", {});  // W3 (MX-160)
 	controlRoomEntries(menu);  // MX-038 / MX-039: the monitor section, never a render
 	add(menu, "Order the Mixer by Tracks", "mixer.order_by_tracks", {}, false);  // MX-018
 	add(menu, "Find a Channel...", "mixer.find", {}, true, {}, true);  // MX-009

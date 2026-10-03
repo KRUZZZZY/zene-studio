@@ -1,0 +1,248 @@
+/*
+ * W3EngineTest.cpp - latency-compensated automation, post-fader inserts, receives, pre-fades
+ *
+ * Copyright (c) 2026 Zene Studio contributors
+ *
+ * This file is part of LMMS - https://lmms.io
+ *
+ * This program is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU General Public
+ * License as published by the Free Software Foundation; either
+ * version 2 of the License, or (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public
+ * License along with this program (see COPYING); if not, write to the
+ * Free Software Foundation, Inc., 51 Franklin Street, Fifth Floor,
+ * Boston, MA 02110-1301 USA.
+ *
+ */
+/*! 0.5.0 W3 engine lane: the offset arithmetic of latency-compensated automation and a curve read where the
+ *  latent audio is, opt-in and undoable (MX-160); post-fader inserts skipped while empty, baking the fader
+ *  when not, addressed as ch-<n>/post and saved only when they hold devices (MX-082); chain.receive's
+ *  refusals, and the send and device it makes, undone in one step (MX-063). */
+
+#include <QtTest>
+
+#include <QDomDocument>
+#include <QJsonArray>
+
+#include "AutomationClip.h"
+#include "AutomationLatency.h"
+#include "AutomationTrack.h"
+#include "ControlRegistry.h"
+#include "ControlVocabulary.h"
+#include "Engine.h"
+#include "Mixer.h"
+#include "MixerPostInserts.h"
+#include "PhaseDMixerTestSupport.h"
+#include "Song.h"
+
+using namespace lmms;
+
+namespace
+{
+
+ControlResult run(const QString& id, const QJsonObject& args = {})
+{
+	return ControlRegistry::instance()->invoke(id, args);
+}
+
+MixerChannel* channel(int index) { return Engine::mixer()->mixerChannel(index); }
+
+QString ch(int index) { return control::channelIdOf(channel(index)); }
+
+//! The value the per-tick read gives @a model at song tick @a tick.
+float readAt(const AutomatableModel* model, int tick)
+{
+	return Engine::getSong()->automatedValuesAt(TimePos(tick)).value(const_cast<AutomatableModel*>(model), -1.f);
+}
+
+//! The built-in effect named @a name loaded onto @a target through plugin.load: its fx-<n>, or empty.
+QString loadBuiltin(const QString& target, const QString& name)
+{
+	for (const QJsonValue& device : run(QStringLiteral("plugin.list"), {{QStringLiteral("kind"), QStringLiteral("effect")}})
+			.result.value(QStringLiteral("devices")).toArray())
+	{
+		const QJsonObject entry = device.toObject();
+		if (entry.value(QStringLiteral("name")).toString() != name || !entry.value(QStringLiteral("loadable")).toBool()) { continue; }
+		return run(QStringLiteral("plugin.load"), {{QStringLiteral("target"), target}, {QStringLiteral("plugin"), entry.value(QStringLiteral("id"))}})
+			.result.value(QStringLiteral("id")).toString();
+	}
+	return QString();
+}
+
+} // namespace
+
+class W3EngineTest : public QObject
+{
+	Q_OBJECT
+
+private slots:
+	void initTestCase()
+	{
+#ifdef LMMS_TEST_PLUGIN_DIR
+		qputenv("LMMS_PLUGIN_DIR", LMMS_TEST_PLUGIN_DIR);
+#endif
+		partd::initEngine();  // the device stopped: the test sets and reads the PDC values itself
+		while (Engine::mixer()->numChannels() <= 3) { Engine::mixer()->createChannel(); }
+		ControlRegistry::setReady(true);
+	}
+
+	void cleanupTestCase()
+	{
+		ControlRegistry::setReady(false);
+		partd::destroyEngine();
+	}
+
+	void theOffsetArithmetic()
+	{
+		QCOMPARE(AutomationLatency::ticksFor(0, 100.0), 0);
+		QCOMPARE(AutomationLatency::ticksFor(449, 100.0), 4);
+		QCOMPARE(AutomationLatency::ticksFor(451, 100.0), 5);
+		TimePos start(20);
+		int inTick = 30;
+		QVERIFY(AutomationLatency::shiftFrames(1000, 100.0, &start, &inTick));  // 2030 - 1000 = 1030 frames
+		QCOMPARE(start.getTicks(), tick_t{10});
+		QCOMPARE(inTick, 30);
+		start = TimePos(3);
+		inTick = 0;
+		QVERIFY(!AutomationLatency::shiftFrames(400, 100.0, &start, &inTick));  // before the song's start
+		start = TimePos(50);
+		inTick = 7;
+		QVERIFY(AutomationLatency::shiftFrames(0, 100.0, &start, &inTick));  // no latency: untouched
+		QCOMPARE(start.getTicks(), tick_t{50});
+		QCOMPARE(inTick, 7);
+		start = TimePos(100);
+		inTick = 12;
+		QVERIFY(AutomationLatency::shiftFrames(777, 91.875, &start, &inTick));  // a fractional tick keeps the frame
+		const double moved = start.getTicks() * 91.875 + inTick;
+		QVERIFY2(std::abs(moved - (100 * 91.875 + 12 - 777)) < 1.0, qPrintable(QString::number(moved)));
+	}
+
+	void automationReadsWhereTheLatentAudioIs()
+	{
+		EffectChain& chain = channel(1)->m_fxChain;
+		auto* latent = new partd::LatentDelayEffect(&chain, 4000);
+		auto* after = new partd::FixedGainEffect(&chain, 1.f, 1.f);
+		chain.appendEffect(latent);
+		chain.appendEffect(after);
+		channel(1)->setInputLatencyFrames(100);
+		auto* probe = new FloatModel(0.f, 0.f, 1.f, 0.001f, after, QStringLiteral("Probe"));
+		QCOMPARE(AutomationLatency::upstreamFrames(probe), 4100);  // the channel's alignment plus the device before
+		QCOMPARE(AutomationLatency::upstreamFrames(&channel(1)->m_volumeModel), 4100);  // the fader: after both devices
+
+		auto* track = Track::create(Track::Type::Automation, Engine::getSong());
+		auto* clip = dynamic_cast<AutomationClip*>(track->createClip(TimePos(0)));
+		clip->addObject(probe);
+		clip->setProgressionType(AutomationClip::ProgressionType::Linear);
+		clip->putValue(TimePos(0), 0.f, false);
+		clip->putValue(TimePos(192), 1.f, false);
+		const float drawn = readAt(probe, 96);
+
+		QVERIFY(!AutomationLatency::instance().shouldPersist());
+		const ControlResult on = run(QStringLiteral("automation.latency_compensation"), {{QStringLiteral("enabled"), true}});
+		QVERIFY2(on.ok, qPrintable(on.errorMessage));
+		QCOMPARE(clip->latencyFrames(), 4100);
+		QVERIFY(on.result.value(QStringLiteral("compensated_clips")).toInt() >= 1);
+		const int lag = AutomationLatency::ticksFor(4100, Engine::framesPerTick());
+		QVERIFY(lag >= 1);
+		const float heard = readAt(probe, 96);
+		QVERIFY(AutomationLatency::instance().shouldPersist());
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
+		QVERIFY(!AutomationLatency::instance().enabled());
+		QCOMPARE(readAt(probe, 96), drawn);  // off: read where it is drawn, as before
+		QCOMPARE(heard, readAt(probe, 96 - lag));  // on: the curve as it was lag ticks earlier
+
+		delete track;
+		chain.removeEffect(latent);
+		chain.removeEffect(after);
+		delete latent;
+		delete after;  // and the probe with it
+		channel(1)->setInputLatencyFrames(0);
+	}
+
+	void postFaderInsertsBakeTheFaderOnlyWhenTheyHoldDevices()
+	{
+		MixerChannel* strip = channel(2);
+		const f_cnt_t frames = partd::periodFrames();
+		for (f_cnt_t f = 0; f < frames; ++f) { strip->m_buffer[f] = SampleFrame(1.f, 1.f); }
+		strip->updatePostFaderBuffer(0.5f, frames);
+		QCOMPARE(strip->m_postInserts.process(*strip, 0.5f, frames), 0.5f);  // empty: skipped
+		QVERIFY(!strip->m_postInserts.baked());
+		QCOMPARE(strip->m_buffer[3][0], 1.f);
+		QCOMPARE(postinserts::faderValue(*strip, nullptr), strip->m_volumeModel.value());
+		QDomDocument doc;
+		QDomElement element = doc.createElement(QStringLiteral("mixerchannel"));
+		strip->m_postInserts.save(doc, element);
+		QVERIFY(element.firstChildElement(QStringLiteral("postinserts")).isNull());
+
+		auto* half = new partd::FixedGainEffect(&strip->m_postInserts.chain(), 0.5f, 0.5f);
+		strip->m_postInserts.chain().appendEffect(half);
+		QCOMPARE(strip->m_postInserts.process(*strip, 0.5f, frames), 1.f);  // the meters now read the baked buffer
+		QVERIFY(strip->m_postInserts.baked());
+		QCOMPARE(strip->m_buffer[3][0], 0.25f);  // 1 x fader 0.5 x the post-fader device 0.5
+		QCOMPARE(strip->m_postInserts.preFader()[3][0], 1.f);  // the pre-fader sends keep the pre-fader signal
+		QCOMPARE(postinserts::faderValue(*strip, nullptr), 1.f);
+		QVERIFY(postinserts::faderBuffer(*strip, nullptr) == nullptr);
+		strip->m_postInserts.chain().removeEffect(half);
+		delete half;
+		strip->m_postInserts.process(*strip, 0.5f, frames);
+		QVERIFY(!strip->m_postInserts.baked());
+	}
+
+	void postFaderInsertsAreAddressedAndSavedWithTheChannel()
+	{
+		QCOMPARE(run(QStringLiteral("mixer.post_inserts"), {{QStringLiteral("channel"), QStringLiteral("ch-9999")}}).errorKind,
+			ControlErrorKind::NotFound);
+		const ControlResult empty = run(QStringLiteral("mixer.post_inserts"), {{QStringLiteral("channel"), ch(2)}});
+		QVERIFY2(empty.ok, qPrintable(empty.errorMessage));
+		const QString target = empty.result.value(QStringLiteral("target")).toString();
+		QCOMPARE(target, ch(2) + QStringLiteral("/post"));
+		const QString plugin = loadBuiltin(target, QStringLiteral("amplifier"));
+		if (plugin.isEmpty()) { QSKIP("this build loads no amplifier module"); }
+		QCOMPARE(channel(2)->m_postInserts.chain().effects().size(), std::size_t{1});
+		QVERIFY(channel(2)->m_fxChain.effects().empty());
+		QCOMPARE(run(QStringLiteral("mixer.post_inserts"), {{QStringLiteral("channel"), ch(2)}}).result
+			.value(QStringLiteral("devices")).toArray().size(), 1);
+		QVERIFY(run(QStringLiteral("plugin.bypass"), {{QStringLiteral("target"), target}, {QStringLiteral("plugin"), plugin},
+			{QStringLiteral("bypass"), true}}).ok);
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
+		QDomDocument doc;
+		QDomElement element = doc.createElement(QStringLiteral("mixerchannel"));
+		channel(2)->m_postInserts.save(doc, element);
+		QVERIFY(!element.firstChildElement(QStringLiteral("postinserts")).isNull());
+		channel(3)->m_postInserts.load(element);
+		QCOMPARE(channel(3)->m_postInserts.chain().effects().size(), std::size_t{1});
+		channel(3)->m_postInserts.load(doc.createElement(QStringLiteral("mixerchannel")));  // absent: emptied
+		QVERIFY(channel(3)->m_postInserts.chain().effects().empty());
+		QVERIFY(run(QStringLiteral("control.undo")).ok);  // the plugin.load (the bypass was undone above)
+		QVERIFY(channel(2)->m_postInserts.chain().effects().empty());
+	}
+
+	void aChannelReceivesAnotherInsideItsChain()
+	{
+		QCOMPARE(run(QStringLiteral("chain.receive"), {{QStringLiteral("target"), ch(1)}, {QStringLiteral("from"), ch(1)}}).errorKind,
+			ControlErrorKind::InvalidArgs);
+		QCOMPARE(run(QStringLiteral("chain.receive"), {{QStringLiteral("target"), QStringLiteral("trk-1")}, {QStringLiteral("from"), ch(1)}}).errorKind,
+			ControlErrorKind::InvalidArgs);
+		const std::size_t devices = channel(3)->m_fxChain.effects().size();
+		const ControlResult made = run(QStringLiteral("chain.receive"), {{QStringLiteral("target"), ch(3)}, {QStringLiteral("from"), ch(1)},
+			{QStringLiteral("level"), 0.5}});
+		if (!made.ok && made.errorKind == ControlErrorKind::NotFound) { QSKIP("this build has no Receiver module"); }
+		QVERIFY2(made.ok, qPrintable(made.errorMessage));
+		QVERIFY(made.result.value(QStringLiteral("send_created")).toBool());
+		QVERIFY(Engine::mixer()->channelSidechainSend(1, 3) != nullptr);
+		QCOMPARE(channel(3)->m_fxChain.effects().size(), devices + 1);
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
+		QVERIFY(Engine::mixer()->channelSidechainSend(1, 3) == nullptr);
+		QCOMPARE(channel(3)->m_fxChain.effects().size(), devices);
+	}
+};
+
+QTEST_MAIN(W3EngineTest)
+#include "W3EngineTest.moc"

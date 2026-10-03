@@ -34,6 +34,7 @@
 #include <cmath>
 
 #include "ControlRoom.h"
+#include "AutomationLatency.h"
 #include "AutomationRamp.h"
 #include "AutomationSwitches.h"
 #include "AutomationTrack.h"
@@ -1225,15 +1226,20 @@ void Song::buildAutomationRamps( const TrackList & trackList, const TimePos & bl
 		for( Clip* clip : track->getClips() )
 		{
 			auto* automationClip = dynamic_cast<AutomationClip*>( clip );
+			// 0.5.0 MX-160: the block as the latent audio sees it - the same start unless the project
+			// turned latency-compensated automation on (moved before the song's start, it reads nothing).
+			TimePos readStart = blockStart;
+			int readOffsetInTick = frameOffsetInTick;
+			AutomationLatency::instance().shiftBlock( automationClip, framesPerTick, &readStart, &readOffsetInTick );
 			if( automationClip == nullptr || !automationClip->sampleAccurate()
 				|| !automationClip->hasAutomation() || automationClip->isMuted()
-				|| automationClip->startPosition() > blockStart )
+				|| automationClip->startPosition() > readStart )
 			{
 				continue;
 			}
 
 			AutomationRamp ramp;
-			automationClip->writeBlockRamp( ramp, blockStart, frames, framesPerTick, frameOffsetInTick );
+			automationClip->writeBlockRamp( ramp, readStart, frames, framesPerTick, readOffsetInTick );
 			for( const QPointer<AutomatableModel>& model : automationClip->objects() )
 			{
 				// Automation modes: a control in Off IGNORES its written

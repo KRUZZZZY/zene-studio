@@ -27,6 +27,7 @@
 #ifndef LMMS_AUTOMATION_CLIP_H
 #define LMMS_AUTOMATION_CLIP_H
 
+#include <atomic>
 #include <cstdint>
 
 #include <QMap>
@@ -224,6 +225,12 @@ public:
 	void writeBlockRamp( AutomationRamp & ramp, const TimePos & blockStart, f_cnt_t frames,
 		double framesPerTick, int frameOffsetInTick ) const;
 
+	//! 0.5.0 MX-160: the latency (frames) upstream of the parameter this clip drives, which the
+	//! clip's reading lags by while latency-compensated automation is on (AutomationLatency).
+	//! Written by the control thread, read by the audio thread; never saved (it is derived).
+	int latencyFrames() const { return m_latencyFrames.load( std::memory_order_relaxed ); }
+	void setLatencyFrames( int frames ) { m_latencyFrames.store( frames, std::memory_order_relaxed ); }
+
 	QString name() const;
 
 	// settings-management
@@ -327,6 +334,8 @@ private:
 	//! Serialized only when it is ON, so a project that never asked for it
 	//! saves the bytes it always saved; loadSettings resets it on absence.
 	RampSetting m_rampSetting = RampSetting::Default;
+	//! 0.5.0 MX-160: see latencyFrames(); a copy starts at 0 and the next refresh sets it.
+	std::atomic<int> m_latencyFrames{ 0 };
 
 	bool m_dragging;
 	bool m_dragKeepOutValue; // Should we keep the current dragged node's outValue?

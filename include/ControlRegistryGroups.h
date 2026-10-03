@@ -852,6 +852,9 @@ LMMS_EXPORT void registerMixerMeterCommands(ControlRegistry& registry);
 LMMS_EXPORT void registerTrackMidiOutCommands(ControlRegistry& registry);
 //! 0.5.0 L04 (ED-049): track.version_list / save / switch / remove (ControlCommandsTrackVersions.cpp).
 LMMS_EXPORT void registerTrackVersionCommands(ControlRegistry& registry);
+//! 0.5.0 W3 engine (MX-160, MX-082, MX-063, ED-179): automation.latency_compensation, mixer.post_inserts, chain.receive,
+//! clip.pre_fade (ControlCommandsW3Engine.cpp).
+LMMS_EXPORT void registerW3EngineCommands(ControlRegistry& registry);
 } // namespace lmms
 
 #endif // LMMS_CONTROL_REGISTRY_GROUPS_H
