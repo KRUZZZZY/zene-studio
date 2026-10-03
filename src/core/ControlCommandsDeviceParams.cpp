@@ -192,7 +192,7 @@ struct SearchScope
 void searchModels(const SearchScope& scope, const QString& targetId, const QString& pluginId, const QString& device,
 	const QList<AutomatableModel*>& models, const DeviceOptions* options)
 {
-	for (int i = 0; i < models.size() && scope.hits->size() < kMaxSearchHits; ++i)
+	for (int i = 0; i < models.size() && scope.hits->size() <= kMaxSearchHits; ++i)  // one past the cap tells "there are more"
 	{
 		const QString name = models.at(i)->displayName();
 		const QString alias = options != nullptr ? options->alias(name) : QString();
@@ -246,8 +246,11 @@ ControlResult paramSearch(const QJsonObject& args)
 		for (const Track* track : Engine::getSong()->tracks()) { searchTarget(scope, trackIdOf(track)); }
 		for (int i = 0; i < Engine::mixer()->numChannels(); ++i) { searchTarget(scope, channelIdOf(Engine::mixer()->mixerChannel(i))); }
 	}
+	// The scan collects one past the cap, so 'truncated' means more matches exist (review W3-agent-devices #3).
+	const bool truncated = hits.size() > kMaxSearchHits;
+	if (truncated) { hits.removeLast(); }
 	return ControlResult::success({{QStringLiteral("query"), query}, {QStringLiteral("parameters"), hits},
-		{QStringLiteral("count"), hits.size()}, {QStringLiteral("truncated"), hits.size() >= kMaxSearchHits}});
+		{QStringLiteral("count"), hits.size()}, {QStringLiteral("truncated"), truncated}});
 }
 
 // ---------------------------------------------------------------------------

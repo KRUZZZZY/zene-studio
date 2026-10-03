@@ -288,6 +288,23 @@ private slots:
 		QCOMPARE(heard[3][1], 0.f);  // neutral again: untouched
 	}
 
+	void theCrossfaderFadesItsSidesOnly()
+	{
+		QVERIFY(run(QStringLiteral("mixer.crossfader"), {{QStringLiteral("channel"), ch(2)}, {QStringLiteral("side"), QStringLiteral("A")}}).ok);
+		QVERIFY(run(QStringLiteral("mixer.crossfader"), {{QStringLiteral("position"), 0.5}}).ok);
+		fill(2, 1.f, 1.f);
+		fill(3, 1.f, 1.f);
+		mixerstrip::applyOutput(*channel(2), 8);
+		mixerstrip::applyOutput(*channel(3), 8);
+		QCOMPARE(channel(2)->m_buffer[4][0], 0.5f);  // side A, half way to B
+		QCOMPARE(channel(3)->m_buffer[4][0], 1.f);   // on no side: untouched
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
+		QCOMPARE(MixerOptions::instance().crossfader(), 0.f);
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
+		QCOMPARE(channel(2)->m_crossfadeSideModel.value(), 0);
+		QCOMPARE(run(QStringLiteral("mixer.crossfader"), {{QStringLiteral("channel"), ch(2)}, {QStringLiteral("side"), QStringLiteral("C")}}).ok, false);
+	}
+
 	void aGroupColoursItsMembers()
 	{
 		VcaGroup* group = Engine::mixer()->createVcaGroup(QStringLiteral("Drums"));

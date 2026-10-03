@@ -23,6 +23,7 @@
  */
 #include "ShellMenuParts.h"
 
+#include <QFileDialog>
 #include <QMenu>
 
 #include "AudioEngine.h"
@@ -98,6 +99,24 @@ void controlRoomEntries(QMenu* menu)
 	choices(room, "Dim", "monitor.control_room", "dim", {});
 	choices(room, "Mono Check", "monitor.control_room", "mono", {});
 	choices(room, "Cut", "monitor.control_room", "cut", {});
+}
+
+void clipScoreEntries(QMenu* menu, const QJsonObject& self)
+{
+	QAction* score = menu->addAction(tr("Export as MusicXML..."));
+	score->setProperty("controlCommand", QStringLiteral("clip.export_musicxml"));
+	QObject::connect(score, &QAction::triggered, menu, [menu, self] {
+		const QString path = QFileDialog::getSaveFileName(menu->parentWidget(), tr("Export as MusicXML"), QString(), tr("MusicXML (*.musicxml)"));
+		if (path.isEmpty()) { return; }
+		runCommand(menu->parentWidget(), CommandCall{QStringLiteral("clip.export_musicxml"),
+			with(self, "path", path.endsWith(QLatin1String(".musicxml")) ? path : path + QStringLiteral(".musicxml")), {}, QString(), false});
+	});
+}
+
+void crossfaderEntries(QMenu* menu, const QJsonObject& channel)
+{
+	choices(menu, "Crossfader Side", "mixer.crossfader", "side", channel);
+	add(menu, "Crossfader Position...", "mixer.crossfader", {}, true, {{QStringLiteral("position"), 0.0}});
 }
 
 void trackMidiOutEntries(QMenu* menu, Track* track, const QJsonObject& self)

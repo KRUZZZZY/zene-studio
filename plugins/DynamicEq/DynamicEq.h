@@ -91,6 +91,7 @@ private:
 		float appliedDb = 1e9f;
 		float hz = -1.f;
 		float q = -1.f;
+		float rate = -1.f;  //!< the rate the sections were designed at (review W3-agent-devices #1)
 	};
 
 	ProcessStatus processImpl(InterleavedBufferView<float, 2> inOut) override;

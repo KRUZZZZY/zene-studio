@@ -240,6 +240,7 @@ void midiClipMenus(QMenu* menu, const QJsonObject& self)
 	add(groove, "Extract Groove...", "groove.extract", self, true);
 	list(groove, "Grooves...", [] { return CommandLists::grooves(); });
 	add(groove, "Random Seed...", "note.random_seed_set", {}, true);
+	clipScoreEntries(menu, self);  // ED-086
 }
 
 } // namespace
@@ -395,6 +396,7 @@ void populateChannel(QMenu* menu, const QString& channel)
 	add(menu, "Receive a Channel Here...", "chain.receive", {{QStringLiteral("target"), channel}}, true);  // W3 (MX-063)
 	add(menu, "Post-Fader Inserts", "mixer.post_inserts", self, false, {}, true);  // W3 (MX-082)
 	add(menu, "Play Previews Here", "browser.preview_output", self, false);  // MX-042
+	crossfaderEntries(menu, self);  // MX-172
 	QAction* gang = menu->addAction(tr("Adjust Channels Together..."));  // MX-028
 	gang->setProperty("controlCommand", QStringLiteral("mixer.adjust"));
 	QObject::connect(gang, &QAction::triggered, menu, [channel, menu] {

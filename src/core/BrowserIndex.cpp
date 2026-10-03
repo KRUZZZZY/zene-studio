@@ -152,17 +152,18 @@ bool BrowserIndex::start(const QStringList& dirs, bool features)
 	return true;
 }
 
-void BrowserIndex::scanNow(const QStringList& dirs, bool features, int maxAnalysed)
+bool BrowserIndex::scanNow(const QStringList& dirs, bool features, int maxAnalysed)
 {
 	{
 		QMutexLocker lock(&m_mutex);
 		loadLocked();
-		if (m_status.running) { return; }
+		if (m_status.running) { return false; }
 		m_status.running = true;
 		m_status.dirs = dirs;
 	}
 	m_cancel.store(false);
 	scan(dirs, features, maxAnalysed);
+	return true;
 }
 
 void BrowserIndex::scan(const QStringList& dirs, bool features, int maxAnalysed)

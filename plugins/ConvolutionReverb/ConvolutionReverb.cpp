@@ -146,6 +146,9 @@ ConvolutionReverbEffect::ConvolutionReverbEffect(Model* parent, const Descriptor
 	const auto longest = static_cast<std::size_t>(MaxPredelayMs * 0.001f * kMaxRate) + 1;
 	for (std::vector<float>& line : m_predelay) { line.assign(longest, 0.f); }
 	loadImpulse(QString());
+	// The kernel is resampled to the engine's rate when it is built; a new rate (another device, an export at another
+	// rate) builds it again, on this side, under the engine's change lock (review W3-agent-devices #2).
+	connect(Engine::audioEngine(), &AudioEngine::sampleRateChanged, this, [this] { loadImpulse(m_impulsePath); });
 }
 
 ConvolutionReverbEffect::~ConvolutionReverbEffect() = default;

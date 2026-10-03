@@ -157,6 +157,10 @@ ControlResult setIcon(const QJsonObject& args)
 	{
 		return ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("an icon name is at most %1 characters").arg(MaxIconLength));
 	}
+	if (!TrackLooks::instance().knowsIcon(after))
+	{
+		return ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("there is no icon called '%1'").arg(after));
+	}
 	const int id = track->id();
 	const QString before = TrackLooks::instance().icon(id);
 	TrackLooks::instance().setIcon(id, after);

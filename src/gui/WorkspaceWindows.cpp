@@ -145,7 +145,9 @@ WhatsNewDialog::WhatsNewDialog(const QJsonObject& whatsNew, QWidget* parent) :
 	m_notes->setAccessibleName(tr("Release notes"));
 	m_notes->setOpenExternalLinks(false);
 	QString html;
-	for (const QJsonValue& value : whatsNew.value(QStringLiteral("all")).toArray())
+	// This version's notes, as window.whats_new promises (review W3-agent-custom #4).
+	const QJsonObject thisVersion = whatsNew.value(QStringLiteral("notes")).toObject();
+	for (const QJsonValue& value : thisVersion.isEmpty() ? QJsonArray{} : QJsonArray{thisVersion})
 	{
 		const QJsonObject version = value.toObject();
 		html += QStringLiteral("<h2>%1</h2><ul>").arg(version.value(QStringLiteral("title")).toString().toHtmlEscaped());

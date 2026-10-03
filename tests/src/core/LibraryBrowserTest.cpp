@@ -162,6 +162,7 @@ private slots:
 			{QStringLiteral("match"), QStringLiteral("key")}, {QStringLiteral("key"), 0}});
 		QVERIFY2(played.ok, qPrintable(played.errorMessage));
 		QVERIFY(played.result.value(QStringLiteral("seconds")).toDouble() > 0.0);
+		QVERIFY(played.result.value(QStringLiteral("playing")).toBool());  // a handle reached the engine (review W3-agent-library #5)
 		const int semitones = played.result.value(QStringLiteral("semitones")).toInt();
 		QVERIFY(semitones >= -6 && semitones <= 5);
 		QVERIFY(run(QStringLiteral("browser.preview_stop")).ok);

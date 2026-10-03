@@ -852,6 +852,8 @@ LMMS_EXPORT void registerMixerMeterCommands(ControlRegistry& registry);
 LMMS_EXPORT void registerTrackMidiOutCommands(ControlRegistry& registry);
 //! 0.5.0 L04 (ED-049): track.version_list / save / switch / remove (ControlCommandsTrackVersions.cpp).
 LMMS_EXPORT void registerTrackVersionCommands(ControlRegistry& registry);
+//! 0.5.0 L07 (ED-086): clip.export_musicxml (ControlCommandsScoreExport.cpp).
+LMMS_EXPORT void registerScoreExportCommands(ControlRegistry& registry);
 //! 0.5.0 W3 L13 / L14 (customisation, help and access). Interface-side groups, defined in src/gui:
 //! theme.* (ControlCommandsTheme.cpp).
 LMMS_EXPORT void registerThemeCommands(ControlRegistry& registry);

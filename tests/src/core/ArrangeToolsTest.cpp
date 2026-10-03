@@ -44,6 +44,7 @@
 #include "SampleBuffer.h"
 #include "SampleClip.h"
 #include "SampleTrack.h"
+#include "ScoreExport.h"
 #include "Song.h"
 #include "TrackVersions.h"
 
@@ -163,6 +164,23 @@ private slots:
 	{
 		Engine::getSong()->setPlayPos(5000, Song::PlayMode::Song);
 		QCOMPARE(run(QStringLiteral("arrangement.next_transient")).errorKind, ControlErrorKind::NotFound);
+	}
+
+	void aClipBecomesAScore()
+	{
+		auto* track = dynamic_cast<InstrumentTrack*>(Track::create(Track::Type::Instrument, Engine::getSong()));
+		auto* clip = dynamic_cast<MidiClip*>(track->createClip(TimePos(0)));
+		clip->addNote(Note(TimePos(48), TimePos(0), 60), false);    // C4, a quarter
+		clip->addNote(Note(TimePos(48), TimePos(0), 64), false);    // E4 with it: a chord
+		clip->addNote(Note(TimePos(240), TimePos(96), 69), false);  // A4 from beat 3, across the bar line
+		const QString xml = musicXmlOf(*clip, 4, 4, QStringLiteral("Test"));
+		QVERIFY(xml.contains(QStringLiteral("<step>C</step>")));
+		QVERIFY(xml.contains(QStringLiteral("<octave>4</octave>")));
+		QVERIFY(xml.contains(QStringLiteral("<chord/>")));
+		QVERIFY(xml.contains(QStringLiteral("<tie type=\"start\"/>")));  // the A is tied into bar 2
+		QCOMPARE(xml.count(QStringLiteral("<measure ")), 2);
+		QCOMPARE(run(QStringLiteral("clip.export_musicxml"), {{QStringLiteral("clip"), control::clipIdOf(clip)}, {QStringLiteral("path"), QStringLiteral("/tmp/x.mid")}}).errorKind,
+			ControlErrorKind::InvalidArgs);
 	}
 
 	void notesRotateInsideTheClip()

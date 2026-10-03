@@ -70,13 +70,15 @@ void MixerOptions::gains(PanLaw law, float pan, float* left, float* right)
 void MixerOptions::save(QDomDocument& doc, QDomElement& parent) const
 {
 	QDomElement element = doc.createElement(elementName());
-	element.setAttribute(QStringLiteral("panlaw"), panLawNames().value(static_cast<int>(panLaw())));
+	if (panLaw() != PanLaw::Balance) { element.setAttribute(QStringLiteral("panlaw"), panLawNames().value(static_cast<int>(panLaw()))); }
+	if (crossfader() != 0.f) { element.setAttribute(QStringLiteral("crossfader"), static_cast<double>(crossfader())); }
 	parent.appendChild(element);
 }
 
 void MixerOptions::load(const QDomElement& element)
 {
 	setPanLaw(static_cast<PanLaw>(std::max(0, static_cast<int>(panLawNames().indexOf(element.attribute(QStringLiteral("panlaw")))))));
+	setCrossfader(element.attribute(QStringLiteral("crossfader"), QStringLiteral("0")).toFloat());
 }
 
 } // namespace lmms

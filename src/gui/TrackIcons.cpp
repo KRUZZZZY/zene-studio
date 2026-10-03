@@ -59,7 +59,8 @@ const char* typeIconName(Track::Type type)
 bool applyTrackIcon(QToolButton* button, const Track* track, std::string* shown)
 {
 	const QString chosen = TrackLooks::instance().icon(track->id());
-	if (!chosen.isEmpty())
+	// An unknown name (an older file, another version's icon set) shows the type glyph, never a blank header.
+	if (!chosen.isEmpty() && !shellicons::svg(chosen).isEmpty())
 	{
 		const std::string name = ChosenPrefix + chosen.toStdString();
 		if (*shown != name)

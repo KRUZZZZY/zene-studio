@@ -24,6 +24,7 @@
 #ifndef LMMS_MIXER_OPTIONS_H
 #define LMMS_MIXER_OPTIONS_H
 
+#include <algorithm>
 #include <atomic>
 
 #include <QStringList>
@@ -59,14 +60,19 @@ public:
 	static void gains(PanLaw law, float pan, float* left, float* right);
 
 	QString elementName() const override { return QStringLiteral("mixer-options"); }
-	bool shouldPersist() const override { return panLaw() != PanLaw::Balance; }
+	//! 0.5.0 L08 (MX-172): the crossfader, -1 (all side A) .. 1 (all side B); both sides full at 0, the default.
+	float crossfader() const { return m_crossfader.load(std::memory_order_relaxed); }
+	void setCrossfader(float position) { m_crossfader.store(std::clamp(position, -1.f, 1.f), std::memory_order_relaxed); }
+
+	bool shouldPersist() const override { return panLaw() != PanLaw::Balance || crossfader() != 0.f; }
 	void save(QDomDocument& doc, QDomElement& parent) const override;
 	void load(const QDomElement& element) override;
-	void clear() override { setPanLaw(PanLaw::Balance); }
+	void clear() override { setPanLaw(PanLaw::Balance); setCrossfader(0.f); }
 
 private:
 	MixerOptions() = default;
 	std::atomic<int> m_panLaw{0};
+	std::atomic<float> m_crossfader{0.f};
 };
 
 } // namespace lmms

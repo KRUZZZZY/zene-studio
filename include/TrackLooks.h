@@ -52,6 +52,10 @@ public:
 	void setIcon(int trackId, const QString& icon);
 	//! What runs after every change - the interface repaints the track headers. One hook.
 	void setOnChange(std::function<void()> hook) { m_onChange = std::move(hook); }
+	//! Review W3-agent-custom #1: the interface's own test of an icon name (whether it can draw it), installed at
+	//! start-up; without an interface every name is accepted, since nothing is drawn.
+	void setIconCheck(std::function<bool(const QString&)> check) { m_iconCheck = std::move(check); }
+	bool knowsIcon(const QString& name) const { return name.isEmpty() || !m_iconCheck || m_iconCheck(name); }
 
 	QString elementName() const override;
 	bool shouldPersist() const override;
@@ -65,6 +69,7 @@ private:
 
 	QHash<int, QString> m_icons;
 	std::function<void()> m_onChange;
+	std::function<bool(const QString&)> m_iconCheck;
 };
 
 } // namespace lmms

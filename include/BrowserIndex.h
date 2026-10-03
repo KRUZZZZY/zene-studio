@@ -102,7 +102,8 @@ public:
 	//! Scan @a dirs on a worker thread, measuring audio files when @a features; false when a scan runs.
 	bool start(const QStringList& dirs, bool features);
 	//! Scan @a dirs here, now, measuring at most @a maxAnalysed files (a caller that waits for it).
-	void scanNow(const QStringList& dirs, bool features, int maxAnalysed);
+	//! False, scanning nothing, when another scan is already running (review W3-agent-library #4).
+	bool scanNow(const QStringList& dirs, bool features, int maxAnalysed);
 	//! Ask a running scan to stop after the file it is on (its partial result is dropped).
 	void cancel() { m_cancel.store(true); }
 	Status status() const;

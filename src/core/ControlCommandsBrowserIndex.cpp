@@ -95,7 +95,10 @@ ControlResult reindex(const QJsonObject& args)
 	const bool features = args.value(QStringLiteral("features")).toBool(true);
 	if (args.value(QStringLiteral("wait")).toBool(false))
 	{
-		BrowserIndex::instance().scanNow(dirs, features, WaitAnalysed);
+		if (!BrowserIndex::instance().scanNow(dirs, features, WaitAnalysed))
+		{
+			return ControlResult::failure(ControlErrorKind::Refused, QStringLiteral("a scan is already running (browser.index_status follows it)"));
+		}
 		return ControlResult::success(statusJson());
 	}
 	QJsonObject result = statusJson();

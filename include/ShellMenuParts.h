@@ -76,6 +76,12 @@ LMMS_EXPORT void trackVersionEntries(QMenu* menu, Track* track, const QJsonObjec
 //! 0.5.0 L09 (MX-038 / MX-039): the control room - speakers, dim, mono check, cut (ShellMenuEntries.cpp).
 LMMS_EXPORT void controlRoomEntries(QMenu* menu);
 
+//! 0.5.0 L07 (ED-086): a MIDI clip's "Export as MusicXML..." - a file dialog, then clip.export_musicxml (ShellMenuEntries.cpp).
+LMMS_EXPORT void clipScoreEntries(QMenu* menu, const QJsonObject& self);
+
+//! 0.5.0 L08 (MX-172): a channel's crossfader side, and the crossfader itself (ShellMenuEntries.cpp).
+LMMS_EXPORT void crossfaderEntries(QMenu* menu, const QJsonObject& channel);
+
 //! 0.5.0 L09 (MX-062): an instrument track's MIDI output - a submenu of the MIDI output ports (ShellMenuEntries.cpp).
 LMMS_EXPORT void trackMidiOutEntries(QMenu* menu, Track* track, const QJsonObject& self);
 

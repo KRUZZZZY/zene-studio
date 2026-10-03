@@ -120,6 +120,12 @@ ControlResult queueAdd(const QJsonObject& args)
 	return queued(job, args.value(QStringLiteral("start")).toBool(true));
 }
 
+//! Only what the writer makes: 16, 24, or 32 float in a WAV (review W3-agent-library #1).
+bool writableDepth(int bits, const QString& format)
+{
+	return bits == 16 || bits == 24 || (bits == 32 && format == QLatin1String("wav"));
+}
+
 ControlResult convertFiles(const QJsonObject& args)
 {
 	const QString dir = args.value(QStringLiteral("out_dir")).toString();
@@ -129,6 +135,10 @@ ControlResult convertFiles(const QJsonObject& args)
 	job.format = args.value(QStringLiteral("format")).toString(QStringLiteral("wav"));
 	job.sampleRate = args.value(QStringLiteral("sample_rate")).toInt(0);
 	job.bitDepth = args.value(QStringLiteral("bit_depth")).toInt(24);
+	if (!writableDepth(job.bitDepth, job.format))
+	{
+		return ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("'bit_depth' is 16, 24, or 32 (wav only)"));
+	}
 	QJsonArray jobs;
 	for (const QJsonValue& value : args.value(QStringLiteral("files")).toArray())
 	{
@@ -228,6 +238,10 @@ ControlResult taskCancel(const QJsonObject& args)
 	if (id.startsWith(QStringLiteral("render-"))) { return queueCancel({{QStringLiteral("job"), id.mid(7).toInt()}}); }
 	if (id == QLatin1String("library-scan"))
 	{
+		if (!BrowserIndex::instance().status().running)  // review W3-agent-library #3
+		{
+			return ControlResult::failure(ControlErrorKind::NotFound, QStringLiteral("no library scan is running"));
+		}
 		BrowserIndex::instance().cancel();
 		return ControlResult::success({{QStringLiteral("cancelled"), id}});
 	}

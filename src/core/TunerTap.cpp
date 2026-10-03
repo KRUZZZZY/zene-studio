@@ -50,7 +50,7 @@ TunerTap& TunerTap::instance()
 void TunerTap::push(Source from, const SampleFrame* frames, f_cnt_t count) noexcept
 {
 	if (m_source.load(std::memory_order_relaxed) != static_cast<int>(from) || frames == nullptr || count == 0) { return; }
-	const std::uint64_t head = m_head.load(std::memory_order_relaxed);
+	const std::uint64_t head = m_resetPending.exchange(false, std::memory_order_acq_rel) ? 0 : m_head.load(std::memory_order_relaxed);
 	const f_cnt_t first = count > Capacity ? count - Capacity : 0;
 	for (f_cnt_t i = first; i < count; ++i)
 	{
@@ -61,7 +61,7 @@ void TunerTap::push(Source from, const SampleFrame* frames, f_cnt_t count) noexc
 
 bool TunerTap::latest(float* out, std::size_t count) const noexcept
 {
-	if (out == nullptr || count == 0 || count > Capacity) { return false; }
+	if (out == nullptr || count == 0 || count > Capacity || m_resetPending.load(std::memory_order_acquire)) { return false; }
 	const std::uint64_t head = m_head.load(std::memory_order_acquire);
 	if (head < count) { return false; }
 	const std::uint64_t start = head - count;

@@ -32,10 +32,13 @@
 #include "ControlMixerSupport.h"
 #include "ControlRegistry.h"
 #include "ControlRegistryGroups.h"
+#include "Song.h"
+#include "ControlReversibility.h"
 #include "ControlVocabulary.h"
 #include "Engine.h"
 #include "AudioEngine.h"
 #include "Mixer.h"
+#include "MixerOptions.h"
 #include "MixerStrip.h"
 #include "PreviewOutput.h"
 
@@ -118,6 +121,36 @@ ControlResult eqCompare(const QJsonObject& args)
 		{QStringLiteral("curve"), curve}});
 }
 
+const QStringList& crossfadeSides()
+{
+	static const QStringList sides{QStringLiteral("none"), QStringLiteral("A"), QStringLiteral("B")};
+	return sides;
+}
+
+//! MX-172: the crossfader's position, and which side a channel is on. One undo step.
+ControlResult crossfader(const QJsonObject& args)
+{
+	ControlResult error;
+	MixerChannel* channel = nullptr;
+	if (args.contains(QStringLiteral("channel")) && (channel = resolveMixerChannel(args.value(QStringLiteral("channel")).toString(), &error)) == nullptr) { return error; }
+	const float before = MixerOptions::instance().crossfader();
+	if (args.contains(QStringLiteral("position")))
+	{
+		const auto after = static_cast<float>(std::clamp(args.value(QStringLiteral("position")).toDouble(), -1.0, 1.0));
+		MixerOptions::instance().setCrossfader(after);
+		addUndoStep([before]() { MixerOptions::instance().setCrossfader(before); }, [after]() { MixerOptions::instance().setCrossfader(after); });
+	}
+	if (channel != nullptr && args.contains(QStringLiteral("side")))
+	{
+		addUndoStep(QVector<JournallingObject*>{&channel->m_crossfadeSideModel});
+		channel->m_crossfadeSideModel.setValue(static_cast<int>(crossfadeSides().indexOf(args.value(QStringLiteral("side")).toString())));
+	}
+	Engine::getSong()->setModified();
+	QJsonObject result{{QStringLiteral("position"), static_cast<double>(MixerOptions::instance().crossfader())}};
+	if (channel != nullptr) { result.insert(QStringLiteral("side"), crossfadeSides().value(channel->m_crossfadeSideModel.value())); }
+	return ControlResult::success(result);
+}
+
 //! MX-042: the channel the browser's previews play into.
 ControlResult previewOutput(const QJsonObject& args)
 {
@@ -177,6 +210,11 @@ void registerMixerMeterCommands(ControlRegistry& registry)
 		{{QStringLiteral("speaker"), stringProperty()}, {QStringLiteral("trim_db"), numberProperty()}, {QStringLiteral("dim"), booleanProperty()},
 			{QStringLiteral("dim_db"), numberProperty()}, {QStringLiteral("mono"), booleanProperty()}, {QStringLiteral("cut"), booleanProperty()}},
 		{}, false, controlRoom);
+	defineCommand(registry, QStringLiteral("mixer.crossfader"), QStringLiteral("The crossfader: 'position' -1 (side A only) .. 1 (side "
+		"B only), both sides full at 0; 'channel' with 'side' (A, B or none) puts a channel on a side. Channels on no side are "
+		"untouched. Saved with the project. One undo step."),
+		{{QStringLiteral("position"), numberProperty()}, {QStringLiteral("channel"), stringProperty()}, {QStringLiteral("side"), enumProperty(crossfadeSides())}},
+		{}, true, crossfader);
 	defineCommand(registry, QStringLiteral("browser.preview_output"), QStringLiteral("The mixer channel the browser's previews (a sample, "
 		"a preset) play into - a cue bus, say, instead of the main mix. The master by default. A preference kept in the config "
 		"file; with no arguments it reports it."), {{QStringLiteral("channel"), stringProperty()}}, {}, false, previewOutput);

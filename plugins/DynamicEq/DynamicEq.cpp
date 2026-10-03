@@ -115,9 +115,11 @@ void DynamicEqEffect::update(int b, float rate)
 	const float q = m_controls.m_q[k]->value();
 	const float level = ampToDbfs(std::max(band.envelope, 1e-6f));
 	const float db = dynamicGainDb(m_controls.m_gain[k]->value(), m_controls.m_dynamic[k]->value(), level, m_controls.m_threshold[k]->value());
-	if (std::abs(db - band.appliedDb) < 0.05f && hz == band.hz && q == band.q) { return; }
+	const bool sameBand = hz == band.hz && q == band.q && rate == band.rate;  // a new engine rate redesigns both sections
+	if (std::abs(db - band.appliedDb) < 0.05f && sameBand) { return; }
 	band.filter.set(designBiquad(shapeOf(b), hz, q, rate, db));
-	if (hz != band.hz || q != band.q) { band.detector.set(designBiquad(BiquadShape::BandPass, hz, q, rate)); }
+	if (!sameBand) { band.detector.set(designBiquad(BiquadShape::BandPass, hz, q, rate)); }
+	band.rate = rate;
 	band.appliedDb = db;
 	band.hz = hz;
 	band.q = q;

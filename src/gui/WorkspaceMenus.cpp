@@ -37,6 +37,7 @@
 #include "MenuBarExtras.h"
 #include "SongEditor.h"
 #include "TrackIcons.h"
+#include "ShellIcons.h"
 #include "TrackLooks.h"
 #include "UiConfigStore.h"
 #include "UnattendedRun.h"
@@ -135,6 +136,7 @@ void installWorkspaceMenus(QMenuBar* bar)
 {
 	if (bar == nullptr || bar->actions().isEmpty()) { return; }
 	TrackLooks::instance().setOnChange(repaintTrackHeaders);  // WF-120: a chosen icon shows at once
+	TrackLooks::instance().setIconCheck([](const QString& name) { return !shellicons::svg(name).isEmpty(); });
 	auto* menu = new QMenu(QObject::tr("&Window"), bar->window());
 	menu->setObjectName(QStringLiteral("workspaceMenu"));
 	if (insertBeforeHelp(bar, menu) != menu) { return; }

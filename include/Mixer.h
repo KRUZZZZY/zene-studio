@@ -119,6 +119,7 @@ public:
 	FloatModel m_eqHighModel{0.f, -18.f, 18.f, 0.1f};
 	std::array<float, 24> m_eqState{};  //!< the bands' filter memories, two a side each way (mixer worker only)
 	IntModel m_panModeModel{0, 0, 2};
+	IntModel m_crossfadeSideModel{0, 0, 2};  // 0.5.0 L08 (MX-172): 0 not on the crossfader, 1 side A, 2 side B
 	FloatModel m_panRightModel{0.f, -1.f, 1.f, 0.001f};
 	FloatModel m_widthModel{1.f, 0.f, 2.f, 0.01f};
 	BoolModel m_soloSafeModel{false};

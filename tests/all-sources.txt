@@ -74,8 +74,8 @@ include/ActionGroup.h
 include/Appearance.h
 include/ArrangementEdits.h
 include/ArrangementSections.h
-include/ArrangerNavigator.h
 include/ArrangerAids.h
+include/ArrangerNavigator.h
 include/ArrangerOverlays.h
 include/ArrayVector.h
 include/ArticulationMap.h
@@ -568,6 +568,7 @@ include/SampleTrackView.h
 include/SampleTrackWindow.h
 include/SampleWindow.h
 include/Scale.h
+include/ScoreExport.h
 include/ScriptApiVersion.h
 include/ScriptBindings.h
 include/ScriptBudgetAction.h
@@ -1412,6 +1413,7 @@ src/core/ControlCommandsSampleRange.cpp
 src/core/ControlCommandsSampleTools.cpp
 src/core/ControlCommandsScale.cpp
 src/core/ControlCommandsScaleEdit.cpp
+src/core/ControlCommandsScoreExport.cpp
 src/core/ControlCommandsScript.cpp
 src/core/ControlCommandsSections.cpp
 src/core/ControlCommandsSession.cpp
@@ -1438,8 +1440,8 @@ src/core/ControlCommandsTrackFlatten.cpp
 src/core/ControlCommandsTrackFolder.cpp
 src/core/ControlCommandsTrackFolderSets.cpp
 src/core/ControlCommandsTrackFolderShared.h
-src/core/ControlCommandsTrackMidiOut.cpp
 src/core/ControlCommandsTrackLooks.cpp
+src/core/ControlCommandsTrackMidiOut.cpp
 src/core/ControlCommandsTrackPresets.cpp
 src/core/ControlCommandsTrackVersions.cpp
 src/core/ControlCommandsTransport.cpp
@@ -1529,9 +1531,9 @@ src/core/ControlReversibilityTableTrackFolder.cpp
 src/core/ControlReversibilityTableVca.cpp
 src/core/ControlReversibilityTableVerbs.cpp
 src/core/ControlReversibilityTableW3Custom.cpp
-src/core/ControlReversibilityTableW3Library.cpp
 src/core/ControlReversibilityTableW3Devices.cpp
 src/core/ControlReversibilityTableW3Engine.cpp
+src/core/ControlReversibilityTableW3Library.cpp
 src/core/ControlReversibilityTableWasmRender.cpp
 src/core/ControlReversibilityTableWindow.cpp
 src/core/ControlRoom.cpp
@@ -1725,6 +1727,7 @@ src/core/SampleOperators.h
 src/core/SamplePlayHandle.cpp
 src/core/SampleRecordHandle.cpp
 src/core/Scale.cpp
+src/core/ScoreExport.cpp
 src/core/ScriptApiVersion.cpp
 src/core/ScriptBindings.cpp
 src/core/ScriptClock.cpp
@@ -1828,8 +1831,8 @@ src/core/midi/MidiWinMM.cpp
 src/core/midi/MpeExpression.cpp
 src/gui/AccessibilityAudit.cpp
 src/gui/ActionGroup.cpp
-src/gui/ArrangerNavigator.cpp
 src/gui/ArrangerAids.cpp
+src/gui/ArrangerNavigator.cpp
 src/gui/ArrangerOverlays.cpp
 src/gui/AudioAlsaSetupWidget.cpp
 src/gui/AudioDeviceSetupWidget.cpp

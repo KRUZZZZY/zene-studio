@@ -118,6 +118,8 @@ ControlResult setToken(const QJsonObject& args)
 
 ControlResult resetTheme(const QJsonObject&)
 {
+	// Nothing overridden: nothing to put back, so no undo step (review W3-agent-custom #2).
+	if (gui::tokens::themeOverrides().isEmpty()) { return ControlResult::success({{QStringLiteral("overrides"), QJsonObject{}}, {QStringLiteral("changed"), false}}); }
 	return storeOverrides({});
 }
 

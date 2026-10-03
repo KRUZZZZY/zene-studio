@@ -72,11 +72,14 @@ public:
 	bool latest(float* out, std::size_t count) const noexcept;
 
 	//! Forget what came in (choosing a source does this, so a reading never mixes two sources).
-	void reset() noexcept { m_head.store(0, std::memory_order_release); }
+	//! A request the audio thread takes at its next push, so a push in flight cannot overwrite it (review
+	//! W3-agent-custom #3); until then latest() reports nothing.
+	void reset() noexcept { m_resetPending.store(true, std::memory_order_release); }
 
 private:
 	std::array<std::atomic<float>, Capacity> m_ring{};
 	std::atomic<std::uint64_t> m_head{0};
+	std::atomic<bool> m_resetPending{false};
 	std::atomic<int> m_source{0};
 };
 

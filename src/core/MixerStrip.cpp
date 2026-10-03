@@ -146,9 +146,28 @@ std::array<float, 2> sendLevel(MixerRoute& route)
 	return {from->m_livePeakLeft.get() * gain, from->m_livePeakRight.get() * gain};
 }
 
+//! MX-172: a channel on the crossfader takes its side's gain (MixerOptions' balance gains of the position); skipped
+//! while it is on neither side, or at full gain.
+void applyCrossfade(MixerChannel& channel, f_cnt_t frames)
+{
+	const int side = channel.m_crossfadeSideModel.value();
+	if (side == 0) { return; }
+	float a = 1.f;
+	float b = 1.f;
+	MixerOptions::gains(PanLaw::Balance, MixerOptions::instance().crossfader(), &a, &b);
+	const float gain = side == 1 ? a : b;
+	if (gain == 1.f) { return; }
+	for (f_cnt_t f = 0; f < frames; ++f)
+	{
+		channel.m_buffer[f][0] *= gain;
+		channel.m_buffer[f][1] *= gain;
+	}
+}
+
 void applyOutput(MixerChannel& channel, f_cnt_t frames)
 {
 	applyChannelEq(channel, frames);  // MX-085: the strip's EQ, after the inserts
+	applyCrossfade(channel, frames);  // MX-172
 	const float left = channel.m_polarityLeftModel.value() ? -1.f : 1.f;
 	const float right = channel.m_polarityRightModel.value() ? -1.f : 1.f;
 	const bool mono = channel.m_monoModel.value();
@@ -260,6 +279,7 @@ void save(const MixerChannel& c, QDomElement& e)
 	flag(c.m_monoModel, "mono");
 	flag(c.m_swapModel, "swap");
 	flag(c.m_inputMonoModel, "inputmono");
+	if (c.m_crossfadeSideModel.value() != 0) { e.setAttribute(QStringLiteral("xfade"), c.m_crossfadeSideModel.value()); }
 	const auto level = [&e](const FloatModel& model, const char* name, float neutral) {
 		if (model.value() != neutral) { e.setAttribute(QLatin1String(name), static_cast<double>(model.value())); }
 	};
@@ -282,6 +302,7 @@ void load(MixerChannel& c, const QDomElement& e)
 	c.m_monoModel.setValue(e.attribute(QStringLiteral("mono")).toInt() != 0);
 	c.m_swapModel.setValue(e.attribute(QStringLiteral("swap")).toInt() != 0);
 	c.m_inputMonoModel.setValue(e.attribute(QStringLiteral("inputmono")).toInt() != 0);
+	c.m_crossfadeSideModel.setValue(e.attribute(QStringLiteral("xfade"), QStringLiteral("0")).toInt());
 	c.m_eqLowModel.setValue(e.attribute(QStringLiteral("eqlow"), QStringLiteral("0")).toFloat());
 	c.m_eqMidModel.setValue(e.attribute(QStringLiteral("eqmid"), QStringLiteral("0")).toFloat());
 	c.m_eqMidFreqModel.setValue(e.attribute(QStringLiteral("eqmidf"), QStringLiteral("1000")).toFloat());

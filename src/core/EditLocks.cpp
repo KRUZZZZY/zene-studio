@@ -46,7 +46,9 @@ bool editsContent(const QString& command)
 {
 	static const QStringList groups{QStringLiteral("clip"), QStringLiteral("note"), QStringLiteral("sample"), QStringLiteral("warp"),
 		QStringLiteral("comp"), QStringLiteral("groove"), QStringLiteral("chord"), QStringLiteral("range")};
-	static const QStringList commands{QStringLiteral("track.remove"), QStringLiteral("vca.edit_move"), QStringLiteral("scale.snap_notes"),
+	static const QStringList commands{QStringLiteral("track.remove"), QStringLiteral("vca.edit_move"), QStringLiteral("vca.edit_trim"),
+		QStringLiteral("vca.edit_split"), QStringLiteral("vca.edit_slip"), QStringLiteral("vca.edit_fade"), QStringLiteral("freeze.track"),
+		QStringLiteral("freeze.region"), QStringLiteral("scale.snap_notes"),
 		QStringLiteral("bounce.in_place"), QStringLiteral("track.flatten"), QStringLiteral("project.subproject_refresh")};
 	return groups.contains(command.section(QLatin1Char('.'), 0, 0)) || commands.contains(command);
 }

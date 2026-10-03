@@ -137,6 +137,7 @@ void registerControlCommands(ControlRegistry& registry)
 	registerMixerMeterCommands(registry);
 	registerTrackMidiOutCommands(registry);
 	registerTrackVersionCommands(registry);
+	registerScoreExportCommands(registry);
 	registerThemeCommands(registry);
 	registerTrackLookCommands(registry);
 	registerAssistantCommands(registry);

@@ -749,6 +749,7 @@ include/SampleEditorDialog.h
 include/SampleFrameRingBuffer.h
 include/SampleRecordAccumulator.h
 include/SampleWindow.h
+include/ScoreExport.h
 include/ScriptApiVersion.h
 include/ScriptBindings.h
 include/ScriptBudgetAction.h
@@ -1142,6 +1143,7 @@ src/core/ControlCommandsSampleRange.cpp
 src/core/ControlCommandsSampleTools.cpp
 src/core/ControlCommandsScale.cpp
 src/core/ControlCommandsScaleEdit.cpp
+src/core/ControlCommandsScoreExport.cpp
 src/core/ControlCommandsScript.cpp
 src/core/ControlCommandsSections.cpp
 src/core/ControlCommandsSession.cpp
@@ -1397,6 +1399,7 @@ src/core/SafeStart.cpp
 src/core/SampleBufferResample.cpp
 src/core/SampleOperators.cpp
 src/core/SampleOperators.h
+src/core/ScoreExport.cpp
 src/core/ScriptApiVersion.cpp
 src/core/ScriptBindings.cpp
 src/core/ScriptClock.cpp

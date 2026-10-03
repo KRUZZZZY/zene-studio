@@ -1016,6 +1016,8 @@ set(LMMS_SRCS
 	core/TrackVersions.cpp
 	core/ControlCommandsTrackVersions.cpp
 	core/ProjectSectionRegistry.cpp
+	core/ScoreExport.cpp
+	core/ControlCommandsScoreExport.cpp
 	core/AutomationLatency.cpp
 	core/MixerPostInserts.cpp
 	core/ClipPreFades.cpp

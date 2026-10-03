@@ -1016,7 +1016,7 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 		OR LMMS_TEST_NAME STREQUAL "DeviceCopyTest"
 		# 0.5.0 L10 (W3): the device tools load the build's amplifier module.
 		OR LMMS_TEST_NAME STREQUAL "DeviceToolsTest"
-		OR LMMS_TEST_NAME STREQUAL "DeviceDspTest")
+		OR LMMS_TEST_NAME STREQUAL "DeviceDspTest"
 		# 0.5.0 W3 engine: post-fader inserts and chain.receive load the build's amplifier and receiver modules.
 		OR LMMS_TEST_NAME STREQUAL "W3EngineTest")
 		set_target_properties(${LMMS_TEST_NAME} PROPERTIES ENABLE_EXPORTS ON)
