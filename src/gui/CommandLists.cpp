@@ -347,4 +347,17 @@ ListSpec lockedClips()
 	return out;
 }
 
+ListSpec devicePresets(const QJsonObject& device)
+{
+	ListSpec out = spec("Device Presets", "plugin.preset_list", "presets", {QStringLiteral("name"), QStringLiteral("factory"),
+		QStringLiteral("bytes")}, device);
+	out.summaryKeys = {QStringLiteral("plugin"), QStringLiteral("count"), QStringLiteral("dir")};
+	const QHash<QString, QString> named{{QStringLiteral("name"), QStringLiteral("name")}};
+	RowAction remove = act("Remove", "plugin.preset_remove", named, device);
+	remove.confirm = true;
+	out.actions = {act("Load", "plugin.preset_load", named, device), act("Rename...", "plugin.preset_rename", named, device, true), remove};
+	out.extras = {extra("Save Current as Preset...", "plugin.preset_save", device)};
+	return out;
+}
+
 } // namespace lmms::gui::CommandLists

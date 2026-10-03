@@ -50,7 +50,7 @@ namespace LibraryCommandMenus
 LMMS_EXPORT void populateProject(QMenu* menu);
 //! A track's lock.
 LMMS_EXPORT void populateTrack(QMenu* menu, Track* track);
-//! A clip's lock.
+//! A clip's lock, and saving it into the library.
 LMMS_EXPORT void populateClip(QMenu* menu, Clip* clip);
 //! The view a document type opens in (WF-048): production the arranger, mastering the mixer, live the
 //! arranger with the launcher showing.

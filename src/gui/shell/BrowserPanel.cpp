@@ -33,10 +33,13 @@
 #include "Accessibility.h"
 #include "BrowserSearchView.h"
 #include "ConfigManager.h"
+#include "ControlRegistry.h"
 #include "DesignTokens.h"
 #include "embed.h"
 #include "FileBrowser.h"
 #include "PluginBrowser.h"
+#include "Shell.h"
+#include "ShellLayout.h"
 #include "WaveformPreview.h"
 
 namespace lmms::gui
@@ -61,6 +64,22 @@ BrowserPanel::BrowserPanel(QWidget* parent)
 	m_wave = new WaveformPreview(this);
 	box->addWidget(m_wave);
 	connect(m_selector, qOverload<int>(&QComboBox::currentIndexChanged), m_stack, &QStackedWidget::setCurrentIndex);
+	connect(m_selector, qOverload<int>(&QComboBox::currentIndexChanged), this, [this] {
+		if (m_restoring || m_context.isEmpty()) { return; }
+		ControlRegistry::instance()->invoke(QStringLiteral("browser.remember_source"),
+			{{QStringLiteral("context"), m_context}, {QStringLiteral("source"), currentSource()}});
+	});
+}
+
+void BrowserPanel::setContext(const QString& context)
+{
+	if (context == m_context) { return; }
+	m_context = context;
+	const QString remembered = ControlRegistry::instance()->invoke(QStringLiteral("browser.sources")).result
+		.value(QStringLiteral("sources")).toObject().value(context).toString();
+	m_restoring = true;
+	if (!remembered.isEmpty()) { selectSource(remembered); }
+	m_restoring = false;
 }
 
 void BrowserPanel::addSource(SideBarWidget* source)
@@ -127,6 +146,13 @@ BrowserPanel* createStandardBrowser(QWidget* parent)
 #endif
 	panel->addSource(new FileBrowser(FileBrowser::Type::Normal, roots.join("*"), FileItem::defaultFilters(), title,
 		icon("computer"), panel, dirsAsItems));
+	// WF-023: the browser follows the shell's view, showing the source remembered for it.
+	if (auto* shell = qobject_cast<Shell*>(parent))
+	{
+		const auto follow = [panel, shell] { panel->setContext(ShellLayout::viewName(shell->model().view())); };
+		QObject::connect(shell, &Shell::layoutChanged, panel, follow);
+		follow();
+	}
 	return panel;
 }
 

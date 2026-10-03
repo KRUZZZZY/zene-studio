@@ -21,8 +21,10 @@
  * Boston, MA 02110-1301 USA.
  *
  */
+
 #include "BrowserSearchView.h"
 
+#include <QCheckBox>
 #include <QComboBox>
 #include <QDateTime>
 #include <QFileInfo>
@@ -31,11 +33,13 @@
 #include <QHeaderView>
 #include <QInputDialog>
 #include <QJsonArray>
+#include <QLabel>
 #include <QLineEdit>
 #include <QListWidget>
 #include <QMenu>
 #include <QMouseEvent>
 #include <QPushButton>
+#include <QTimer>
 #include <QTreeWidget>
 #include <QVBoxLayout>
 
@@ -54,6 +58,9 @@ namespace
 
 enum Column { Name, Kind, Size, Modified, Tags };
 
+//! Thumbnails one gallery view draws; the rest show their kind's icon (a thumbnail decodes the file once).
+constexpr int MaxThumbnails = 60;
+
 ControlResult run(const QString& id, const QJsonObject& args = {})
 {
 	return ControlRegistry::instance()->invoke(id, args);
@@ -66,6 +73,13 @@ QString dragKey(const QString& kind)
 	if (kind == QLatin1String("project")) { return QStringLiteral("projectfile"); }
 	if (kind == QLatin1String("midi")) { return QStringLiteral("importedproject"); }
 	return QStringLiteral("samplefile");
+}
+
+QPixmap kindIcon(const QString& kind)
+{
+	if (kind == QLatin1String("preset")) { return embed::getIconPixmap("preset_file"); }
+	if (kind == QLatin1String("project")) { return embed::getIconPixmap("project_file"); }
+	return embed::getIconPixmap("sample_file");
 }
 
 //! A result row; the size and date sort as numbers (their data), not as text.
@@ -82,6 +96,27 @@ QTreeWidgetItem* rowOf(const QJsonObject& item)
 	row->setData(Name, Qt::UserRole, item.value(QStringLiteral("path")).toString());
 	row->setToolTip(Name, item.value(QStringLiteral("path")).toString());
 	return row;
+}
+
+//! A gallery tile: the file's waveform thumbnail when @a thumbnail, else its kind's icon.
+QListWidgetItem* tileOf(const QJsonObject& item, bool thumbnail)
+{
+	const QString path = item.value(QStringLiteral("path")).toString();
+	const QString kind = item.value(QStringLiteral("kind")).toString();
+	auto* tile = new QListWidgetItem(item.value(QStringLiteral("name")).toString());
+	const ControlResult drawn = thumbnail ? run(QStringLiteral("browser.thumbnail"), {{QStringLiteral("path"), path}}) : ControlResult();
+	tile->setIcon(drawn.ok && thumbnail ? QIcon(drawn.result.value(QStringLiteral("image")).toString()) : QIcon(kindIcon(kind)));
+	tile->setData(Qt::UserRole, path);
+	tile->setData(Qt::UserRole + 1, kind);
+	tile->setToolTip(path);
+	return tile;
+}
+
+QPushButton* button(QWidget* parent, const QString& text, const char* command)
+{
+	auto* made = new QPushButton(text, parent);
+	made->setProperty("controlCommand", QLatin1String(command));
+	return made;
 }
 
 } // namespace
@@ -107,20 +142,18 @@ BrowserSearchView::BrowserSearchView(QWidget* parent) :
 		m_root->addItem(root.toObject().value(QStringLiteral("label")).toString(root.toObject().value(QStringLiteral("id")).toString()),
 			root.toObject().value(QStringLiteral("id")).toString());
 	}
+	m_indexed = new QCheckBox(tr("Whole library"), contentParent());  // WF-012
+	m_indexed->setToolTip(tr("Search the library index instead of walking the folders"));
+	m_indexed->setProperty("controlCommand", QStringLiteral("browser.index_query"));
 	top->addWidget(m_search, 1);
 	top->addWidget(m_kind);
 	top->addWidget(m_root);
+	top->addWidget(m_indexed);
 	addContentLayout(top);
 
-	auto* actions = new QHBoxLayout;
-	auto* save = new QPushButton(tr("Save as Collection..."), contentParent());
-	save->setProperty("controlCommand", QStringLiteral("browser.collection_save"));
-	auto* media = new QPushButton(tr("Project Media"), contentParent());
-	media->setProperty("controlCommand", QStringLiteral("project.missing_assets"));
-	actions->addWidget(save);
-	actions->addWidget(media);
-	actions->addStretch(1);
-	addContentLayout(actions);
+	buildActionRow();
+	m_status = new QLabel(contentParent());
+	addContentWidget(m_status);
 
 	m_collections = new QListWidget(contentParent());
 	m_collections->setAccessibleName(tr("Smart collections"));
@@ -136,11 +169,51 @@ BrowserSearchView::BrowserSearchView(QWidget* parent) :
 	m_results->header()->setSectionResizeMode(Name, QHeaderView::Stretch);
 	addContentWidget(m_results);
 
+	m_gallery = new QListWidget(contentParent());
+	m_gallery->setAccessibleName(tr("Results as thumbnails"));
+	m_gallery->setViewMode(QListView::IconMode);
+	m_gallery->setIconSize(QSize(160, 48));
+	m_gallery->setResizeMode(QListView::Adjust);
+	m_gallery->setMovement(QListView::Static);
+	m_gallery->setContextMenuPolicy(Qt::CustomContextMenu);
+	m_gallery->hide();
+	addContentWidget(m_gallery);
+
 	connect(m_search, &QLineEdit::returnPressed, this, &BrowserSearchView::runSearch);
 	connect(m_kind, &QComboBox::currentIndexChanged, this, &BrowserSearchView::runSearch);
 	connect(m_root, &QComboBox::currentIndexChanged, this, &BrowserSearchView::runSearch);
+	connect(m_indexed, &QCheckBox::toggled, this, &BrowserSearchView::runSearch);
+	connectLists();
+	refreshCollections();
+	refreshIndexStatus();
+}
+
+void BrowserSearchView::buildActionRow()
+{
+	auto* actions = new QHBoxLayout;
+	auto* back = button(contentParent(), tr("Back"), "browser.history_go");  // WF-014
+	auto* forward = button(contentParent(), tr("Forward"), "browser.history_go");
+	auto* save = button(contentParent(), tr("Save as Collection..."), "browser.collection_save");
+	auto* media = button(contentParent(), tr("Project Media"), "project.missing_assets");
+	auto* rescan = button(contentParent(), tr("Rescan Library"), "browser.reindex");
+	auto* gallery = button(contentParent(), tr("Gallery"), "browser.thumbnail");  // WF-018
+	gallery->setCheckable(true);
+	for (QPushButton* each : {back, forward, save, media, rescan, gallery}) { actions->addWidget(each); }
+	actions->addStretch(1);
+	addContentLayout(actions);
+	connect(back, &QPushButton::clicked, this, [this] { goHistory(-1); });
+	connect(forward, &QPushButton::clicked, this, [this] { goHistory(1); });
 	connect(save, &QPushButton::clicked, this, &BrowserSearchView::saveCollection);
 	connect(media, &QPushButton::clicked, this, &BrowserSearchView::showProjectMedia);
+	connect(rescan, &QPushButton::clicked, this, [this] {
+		run(QStringLiteral("browser.reindex"), {{QStringLiteral("features"), true}});
+		refreshIndexStatus();
+	});
+	connect(gallery, &QPushButton::toggled, this, &BrowserSearchView::setGallery);
+}
+
+void BrowserSearchView::connectLists()
+{
 	connect(m_collections, &QListWidget::itemActivated, this, [this](QListWidgetItem* item) { runCollection(item->text()); });
 	connect(m_collections, &QListWidget::itemClicked, this, [this](QListWidgetItem* item) { runCollection(item->text()); });
 	connect(m_collections, &QWidget::customContextMenuRequested, this, [this](const QPoint& at) {
@@ -155,31 +228,73 @@ BrowserSearchView::BrowserSearchView(QWidget* parent) :
 			refreshCollections();
 		}
 	});
-	connect(m_results, &QWidget::customContextMenuRequested, this, &BrowserSearchView::showRowMenu);
+	connect(m_results, &QWidget::customContextMenuRequested, this, [this](const QPoint& at) {
+		if (QTreeWidgetItem* item = m_results->itemAt(at))
+		{
+			showRowMenu(m_results, at, item->data(Name, Qt::UserRole).toString(), item->text(Kind));
+		}
+	});
+	connect(m_gallery, &QWidget::customContextMenuRequested, this, [this](const QPoint& at) {
+		if (QListWidgetItem* tile = m_gallery->itemAt(at))
+		{
+			showRowMenu(m_gallery, at, tile->data(Qt::UserRole).toString(), tile->data(Qt::UserRole + 1).toString());
+		}
+	});
 	connect(m_results, &QTreeWidget::itemPressed, this, [this](QTreeWidgetItem* item) {
 		if (item == nullptr || !(QGuiApplication::mouseButtons() & Qt::LeftButton)) { return; }
 		new StringPairDrag(dragKey(item->text(Kind)), item->data(Name, Qt::UserRole).toString(), embed::getIconPixmap("sample_file"), this);
 	});
-	refreshCollections();
+	connect(m_gallery, &QListWidget::itemPressed, this, [this](QListWidgetItem* tile) {
+		if (tile == nullptr || !(QGuiApplication::mouseButtons() & Qt::LeftButton)) { return; }
+		new StringPairDrag(dragKey(tile->data(Qt::UserRole + 1).toString()), tile->data(Qt::UserRole).toString(), tile->icon().pixmap(48), this);
+	});
 }
 
 QJsonObject BrowserSearchView::queryArgs() const
 {
 	QJsonObject args{{QStringLiteral("text"), m_search->text()}, {QStringLiteral("limit"), 500}};
 	if (m_kind->currentIndex() > 0) { args.insert(QStringLiteral("kind"), m_kind->currentText()); }
-	if (!m_root->currentData().toString().isEmpty()) { args.insert(QStringLiteral("root"), m_root->currentData().toString()); }
+	if (!m_indexed->isChecked() && !m_root->currentData().toString().isEmpty())
+	{
+		args.insert(QStringLiteral("root"), m_root->currentData().toString());
+	}
 	return args;
+}
+
+void BrowserSearchView::browse(const QString& command, const QJsonObject& args, const QString& label)
+{
+	const ControlResult shown = run(QStringLiteral("browser.browse"), {{QStringLiteral("command"), command}, {QStringLiteral("args"), args},
+		{QStringLiteral("label"), label}});
+	showItems(shown.result.value(QStringLiteral("items")).toArray());
 }
 
 void BrowserSearchView::runSearch()
 {
-	showItems(run(QStringLiteral("browser.query"), queryArgs()).result.value(QStringLiteral("items")).toArray());
+	browse(m_indexed->isChecked() ? QStringLiteral("browser.index_query") : QStringLiteral("browser.query"), queryArgs(), m_search->text());
 }
 
 void BrowserSearchView::runCollection(const QString& name)
 {
-	showItems(run(QStringLiteral("browser.collection_run"), {{QStringLiteral("name"), name}, {QStringLiteral("limit"), 500}})
-		.result.value(QStringLiteral("items")).toArray());
+	browse(QStringLiteral("browser.collection_run"), {{QStringLiteral("name"), name}, {QStringLiteral("limit"), 500}}, name);
+}
+
+void BrowserSearchView::findSimilar(const QString& path)
+{
+	const ControlResult found = run(QStringLiteral("browser.browse"), {{QStringLiteral("command"), QStringLiteral("browser.similar")},
+		{QStringLiteral("args"), QJsonObject{{QStringLiteral("path"), path}, {QStringLiteral("limit"), 50}}},
+		{QStringLiteral("label"), tr("Like %1").arg(QFileInfo(path).fileName())}});
+	if (!found.ok)
+	{
+		m_status->setText(found.errorMessage);
+		return;
+	}
+	showItems(found.result.value(QStringLiteral("items")).toArray());
+}
+
+void BrowserSearchView::goHistory(int step)
+{
+	const ControlResult shown = run(QStringLiteral("browser.history_go"), {{QStringLiteral("step"), step}});
+	if (shown.ok) { showItems(shown.result.value(QStringLiteral("items")).toArray()); }
 }
 
 void BrowserSearchView::showProjectMedia()
@@ -200,10 +315,31 @@ void BrowserSearchView::showProjectMedia()
 
 void BrowserSearchView::showItems(const QJsonArray& items)
 {
+	m_items = items;
 	m_results->setSortingEnabled(false);
 	m_results->clear();
 	for (const QJsonValue& item : items) { m_results->addTopLevelItem(rowOf(item.toObject())); }
 	m_results->setSortingEnabled(true);
+	if (m_gallery->isVisible()) { fillGallery(items); }
+}
+
+void BrowserSearchView::fillGallery(const QJsonArray& items)
+{
+	m_gallery->clear();
+	int thumbnails = 0;
+	for (const QJsonValue& value : items)
+	{
+		const bool audio = value.toObject().value(QStringLiteral("kind")).toString() == QLatin1String("audio");
+		m_gallery->addItem(tileOf(value.toObject(), audio && thumbnails < MaxThumbnails));
+		thumbnails += audio ? 1 : 0;
+	}
+}
+
+void BrowserSearchView::setGallery(bool on)
+{
+	m_results->setVisible(!on);
+	m_gallery->setVisible(on);
+	if (on) { fillGallery(m_items); }
 }
 
 int BrowserSearchView::resultCount() const { return m_results->topLevelItemCount(); }
@@ -218,6 +354,22 @@ void BrowserSearchView::refreshCollections()
 	m_collections->setVisible(m_collections->count() > 0);
 }
 
+void BrowserSearchView::refreshIndexStatus()
+{
+	const QJsonObject status = run(QStringLiteral("browser.index_status")).result;
+	const int entries = status.value(QStringLiteral("entries")).toInt();
+	if (status.value(QStringLiteral("running")).toBool())
+	{
+		m_status->setText(tr("Scanning the library: %1 files, %2 measured").arg(status.value(QStringLiteral("scanned")).toInt())
+			.arg(status.value(QStringLiteral("analysed")).toInt()));
+		QTimer::singleShot(1000, this, &BrowserSearchView::refreshIndexStatus);
+		return;
+	}
+	const QDateTime built = QDateTime::fromMSecsSinceEpoch(static_cast<qint64>(status.value(QStringLiteral("built_ms")).toDouble()));
+	m_status->setText(entries > 0 ? tr("Library index: %1 files, built %2").arg(entries).arg(built.toString(Qt::ISODate))
+		: tr("No library index yet - Rescan Library builds it"));
+}
+
 void BrowserSearchView::saveCollection()
 {
 	bool ok = false;
@@ -230,14 +382,39 @@ void BrowserSearchView::saveCollection()
 	refreshCollections();
 }
 
-void BrowserSearchView::showRowMenu(const QPoint& at)
+void BrowserSearchView::addPreviewEntries(QMenu* menu, const QString& path)
 {
-	QTreeWidgetItem* item = m_results->itemAt(at);
-	if (item == nullptr) { return; }
+	QMenu* preview = menu->addMenu(tr("Preview"));  // WF-009
+	const std::pair<QString, const char*> modes[] = {{tr("As It Is"), "none"}, {tr("At the Song's Tempo"), "tempo"},
+		{tr("In the Song's Key"), "key"}, {tr("Matched to Tempo and Key"), "both"}};
+	for (const auto& [label, match] : modes)
+	{
+		QAction* action = preview->addAction(label);
+		action->setProperty("controlCommand", QStringLiteral("browser.preview"));
+		connect(action, &QAction::triggered, this, [path, match = QLatin1String(match)] {
+			run(QStringLiteral("browser.preview"), {{QStringLiteral("path"), path}, {QStringLiteral("match"), match}});
+		});
+	}
+	QAction* stop = preview->addAction(tr("Stop"));
+	stop->setProperty("controlCommand", QStringLiteral("browser.preview_stop"));
+	connect(stop, &QAction::triggered, this, [] { run(QStringLiteral("browser.preview_stop")); });
+}
+
+void BrowserSearchView::showRowMenu(QWidget* view, const QPoint& at, const QString& path, const QString& kind)
+{
 	QMenu menu(this);
-	addBrowserTagMenu(&menu, item->data(Name, Qt::UserRole).toString());
-	menu.exec(m_results->viewport()->mapToGlobal(at));
-	runSearch();
+	if (kind == QLatin1String("audio"))
+	{
+		addPreviewEntries(&menu, path);
+		QAction* similar = menu.addAction(tr("Find Similar Sounds"));  // WF-020
+		similar->setProperty("controlCommand", QStringLiteral("browser.similar"));
+		connect(similar, &QAction::triggered, this, [this, path] { findSimilar(path); });
+		menu.addSeparator();
+	}
+	addBrowserTagMenu(&menu, path);
+	const QAction* chosen = menu.exec(view->mapToGlobal(at));
+	// A tag edit: the list is shown again as it stands (the current history entry, not a new one).
+	if (chosen != nullptr && chosen->data().toString().startsWith(QLatin1String("browser.tag"))) { goHistory(0); }
 }
 
 } // namespace lmms::gui

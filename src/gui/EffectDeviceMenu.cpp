@@ -30,6 +30,7 @@
 
 #include "ChannelPickDialog.h"
 #include "CommandForm.h"
+#include "CommandLists.h"
 #include "ControlDeviceSupport.h"
 #include "ControlRegistry.h"
 #include "ControlVocabulary.h"
@@ -146,6 +147,9 @@ void addEffectDeviceMenus(QMenu* menu, Effect* effect)
 	});
 	entry(menu, QObject::tr("Copy Chain to Channels..."), "chain.copy", [parent, self] {
 		copyTo(parent, self, "chain.copy", QObject::tr("Copy the chain to"));
+	});
+	entry(menu, QObject::tr("Presets..."), "plugin.preset_list", [parent, device] {  // L11 (WF-025)
+		showCommandList(parent, CommandLists::devicePresets(device));
 	});
 	QMenu* ab = menu->addMenu(QObject::tr("A/B"));
 	const auto abCall = [device](const QString& action, const QString& slot) {

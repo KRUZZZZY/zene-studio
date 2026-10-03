@@ -40,7 +40,7 @@ class Clip;
 /*! 0.5.0 L12 (WF-044): tracks and clips locked against editing, by their persistent ids (trk-<n>,
  *  clip-<n>), so a lock follows the object through moves, saves and loads. A locked clip - or any clip
  *  of a locked track - cannot be moved, resized, deleted or edited: the arranger's clip views ignore
- *  the mouse on it, and the control surface refuses every mutating command that names it (refuses()
+ *  the mouse on it, and the control surface refuses every mutating edit command that names it (refuses()
  *  below, asked by the registry before a handler runs). Mute, solo, arm, the mixer and automation stay
  *  open on a locked track - a lock protects the edit, not the mix.
  *  Saved as <edit-locks> only when something is locked, so a project that never locked anything

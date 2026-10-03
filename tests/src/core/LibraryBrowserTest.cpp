@@ -1,0 +1,204 @@
+/*
+ * LibraryBrowserTest.cpp - clips into the library, the library index, similar sounds, thumbnails, preview, history
+ *
+ * Copyright (c) 2026 Zene Studio contributors
+ *
+ * This file is part of LMMS - https://lmms.io
+ *
+ * This program is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU General Public
+ * License as published by the Free Software Foundation; either
+ * version 2 of the License, or (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public
+ * License along with this program (see COPYING); if not, write to the
+ * Free Software Foundation, Inc., 51 Franklin Street, Fifth Floor,
+ * Boston, MA 02110-1301 USA.
+ *
+ */
+/*! 0.5.0 L11 (W3): a MIDI clip saved into the library is a Standard MIDI File and one undo deletes it
+ *  (WF-022); a preset that is not there is refused (WF-025); a folder scanned into the index answers an
+ *  indexed search without a walk (WF-012) and ranks the closest tone first (WF-020); a thumbnail is a
+ *  picture of the requested size (WF-018); a matched preview plays and stops (WF-009); the browser's
+ *  history steps back and refuses past its start (WF-014); a remembered source reads back (WF-023). */
+
+#include <QtTest>
+
+#include <QDir>
+#include <QImage>
+#include <QJsonArray>
+#include <QTemporaryDir>
+
+#include "BrowserIndex.h"
+#include "ControlRegistry.h"
+#include "ControlVocabulary.h"
+#include "Engine.h"
+#include "InstrumentTrack.h"
+#include "MidiClip.h"
+#include "Note.h"
+#include "Song.h"
+#include "TakeLaneTestSupport.h"
+
+using namespace lmms;
+
+namespace
+{
+
+ControlResult run(const QString& id, const QJsonObject& args = {})
+{
+	return ControlRegistry::instance()->invoke(id, args);
+}
+
+} // namespace
+
+class LibraryBrowserTest : public QObject
+{
+	Q_OBJECT
+
+private slots:
+	void initTestCase()
+	{
+		QVERIFY(m_dir.isValid());
+		qputenv("ZENE_BROWSER_INDEX", QDir(m_dir.path()).filePath(QStringLiteral("index.json")).toUtf8());
+		Engine::init(true);
+		ControlRegistry::setReady(true);
+		BrowserIndex::instance().reload();
+		QDir(m_dir.path()).mkpath(QStringLiteral("tones"));
+		for (const double hz : {440.0, 470.0, 5000.0})
+		{
+			QVERIFY(!taketest::writeToneWav(tones(QStringLiteral("tone-%1.wav").arg(static_cast<int>(hz))), hz).isEmpty());
+		}
+	}
+
+	void cleanupTestCase()
+	{
+		ControlRegistry::setReady(false);
+		Engine::destroy();
+	}
+
+	void aMidiClipIsSavedIntoTheLibrary()
+	{
+		auto* track = dynamic_cast<InstrumentTrack*>(Track::create(Track::Type::Instrument, Engine::getSong()));
+		auto* clip = dynamic_cast<MidiClip*>(track->createClip(TimePos(0)));
+		clip->addNote(Note(TimePos(48), TimePos(0), 60), false);
+		clip->addNote(Note(TimePos(48), TimePos(48), 64), false);
+		const QJsonObject args{{QStringLiteral("clip"), control::clipIdOf(clip)}, {QStringLiteral("dir"), m_dir.path()},
+			{QStringLiteral("name"), QStringLiteral("riff")}};
+		const ControlResult saved = run(QStringLiteral("browser.save_clip"), args);
+		QVERIFY2(saved.ok, qPrintable(saved.errorMessage));
+		const QString path = saved.result.value(QStringLiteral("path")).toString();
+		QCOMPARE(QFileInfo(path).fileName(), QStringLiteral("riff.mid"));
+		QFile file(path);
+		QVERIFY(file.open(QIODevice::ReadOnly));
+		const QByteArray bytes = file.readAll();
+		QVERIFY(bytes.startsWith("MThd"));
+		QVERIFY(bytes.contains("MTrk"));
+		QCOMPARE(saved.result.value(QStringLiteral("kind")).toString(), QStringLiteral("midi"));
+		QCOMPARE(run(QStringLiteral("browser.save_clip"), args).errorKind, ControlErrorKind::Refused);  // it exists
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
+		QVERIFY(!QFileInfo::exists(path));
+		QJsonObject relative = args;
+		relative.insert(QStringLiteral("dir"), QStringLiteral("not/absolute"));
+		QCOMPARE(run(QStringLiteral("browser.save_clip"), relative).errorKind, ControlErrorKind::InvalidArgs);
+	}
+
+	void aMissingPresetIsRefused()
+	{
+		auto* track = Track::create(Track::Type::Instrument, Engine::getSong());
+		QVERIFY(!run(QStringLiteral("plugin.preset_remove"), {{QStringLiteral("target"), control::trackIdOf(track)},
+			{QStringLiteral("plugin"), QStringLiteral("fx-999999")}, {QStringLiteral("name"), QStringLiteral("nothing")}}).ok);
+		QCOMPARE(run(QStringLiteral("plugin.preset_rename"), {{QStringLiteral("target"), control::trackIdOf(track)},
+			{QStringLiteral("plugin"), QStringLiteral("fx-999999")}, {QStringLiteral("name"), QStringLiteral("a")}}).errorKind,
+			ControlErrorKind::InvalidArgs);  // no new_name
+	}
+
+	void theIndexAnswersWithoutAWalk()
+	{
+		const ControlResult scanned = run(QStringLiteral("browser.reindex"), {{QStringLiteral("path"), tones(QString())},
+			{QStringLiteral("wait"), true}});
+		QVERIFY2(scanned.ok, qPrintable(scanned.errorMessage));
+		QCOMPARE(scanned.result.value(QStringLiteral("entries")).toInt(), 3);
+		QCOMPARE(scanned.result.value(QStringLiteral("analysed")).toInt(), 3);
+		const ControlResult found = run(QStringLiteral("browser.index_query"), {{QStringLiteral("text"), QStringLiteral("tone-4")}});
+		QCOMPARE(found.result.value(QStringLiteral("matched")).toInt(), 2);  // tone-440 and tone-470
+		BrowserIndex::instance().reload();  // read back from the store file
+		QCOMPARE(BrowserIndex::instance().entries().size(), std::size_t{3});
+		QVERIFY(BrowserIndex::instance().entries().front().features.valid);
+		QCOMPARE(run(QStringLiteral("browser.reindex"), {{QStringLiteral("path"), QStringLiteral("/no/such/folder")}}).errorKind,
+			ControlErrorKind::NotFound);
+	}
+
+	void theClosestToneComesFirst()
+	{
+		const ControlResult similar = run(QStringLiteral("browser.similar"), {{QStringLiteral("path"), tones(QStringLiteral("tone-440.wav"))}});
+		QVERIFY2(similar.ok, qPrintable(similar.errorMessage));
+		const QJsonArray items = similar.result.value(QStringLiteral("items")).toArray();
+		QCOMPARE(items.size(), 2);  // not the file itself
+		QCOMPARE(QFileInfo(items.at(0).toObject().value(QStringLiteral("path")).toString()).fileName(), QStringLiteral("tone-470.wav"));
+		QVERIFY(items.at(0).toObject().value(QStringLiteral("distance")).toDouble() < items.at(1).toObject().value(QStringLiteral("distance")).toDouble());
+		const double centroid = similar.result.value(QStringLiteral("features")).toObject().value(QStringLiteral("centroid_hz")).toDouble();
+		QVERIFY2(centroid > 300.0 && centroid < 700.0, qPrintable(QString::number(centroid)));
+	}
+
+	void aThumbnailIsAPicture()
+	{
+		const QString out = QDir(m_dir.path()).filePath(QStringLiteral("thumb.png"));
+		const ControlResult drawn = run(QStringLiteral("browser.thumbnail"), {{QStringLiteral("path"), tones(QStringLiteral("tone-440.wav"))},
+			{QStringLiteral("width"), 120}, {QStringLiteral("height"), 40}, {QStringLiteral("out"), out}});
+		QVERIFY2(drawn.ok, qPrintable(drawn.errorMessage));
+		const QImage image(out);
+		QCOMPARE(image.width(), 120);
+		QCOMPARE(image.height(), 40);
+	}
+
+	void aMatchedPreviewPlaysAndStops()
+	{
+		const ControlResult played = run(QStringLiteral("browser.preview"), {{QStringLiteral("path"), tones(QStringLiteral("tone-440.wav"))},
+			{QStringLiteral("match"), QStringLiteral("key")}, {QStringLiteral("key"), 0}});
+		QVERIFY2(played.ok, qPrintable(played.errorMessage));
+		QVERIFY(played.result.value(QStringLiteral("seconds")).toDouble() > 0.0);
+		const int semitones = played.result.value(QStringLiteral("semitones")).toInt();
+		QVERIFY(semitones >= -6 && semitones <= 5);
+		QVERIFY(run(QStringLiteral("browser.preview_stop")).ok);
+		QCOMPARE(run(QStringLiteral("browser.preview"), {{QStringLiteral("path"), QStringLiteral("relative.wav")}}).errorKind,
+			ControlErrorKind::InvalidArgs);
+	}
+
+	void theHistoryStepsBack()
+	{
+		const auto browse = [](const QString& text) {
+			return run(QStringLiteral("browser.browse"), {{QStringLiteral("command"), QStringLiteral("browser.index_query")},
+				{QStringLiteral("args"), QJsonObject{{QStringLiteral("text"), text}}}, {QStringLiteral("label"), text}});
+		};
+		QVERIFY(browse(QStringLiteral("tone-5")).ok);
+		QVERIFY(browse(QStringLiteral("tone")).ok);
+		const ControlResult back = run(QStringLiteral("browser.history_go"), {{QStringLiteral("step"), -1}});
+		QVERIFY2(back.ok, qPrintable(back.errorMessage));
+		QCOMPARE(back.result.value(QStringLiteral("entry")).toObject().value(QStringLiteral("label")).toString(), QStringLiteral("tone-5"));
+		QCOMPARE(back.result.value(QStringLiteral("matched")).toInt(), 1);
+		QCOMPARE(run(QStringLiteral("browser.history_go"), {{QStringLiteral("step"), -1}}).errorKind, ControlErrorKind::Refused);
+	}
+
+	void aSourceIsRememberedPerView()
+	{
+		QVERIFY(run(QStringLiteral("browser.remember_source"), {{QStringLiteral("context"), QStringLiteral("mix")},
+			{QStringLiteral("source"), QStringLiteral("Samples")}}).ok);
+		QCOMPARE(run(QStringLiteral("browser.sources")).result.value(QStringLiteral("sources")).toObject().value(QStringLiteral("mix")).toString(),
+			QStringLiteral("Samples"));
+		QCOMPARE(run(QStringLiteral("browser.remember_source"), {{QStringLiteral("context"), QStringLiteral("kitchen")},
+			{QStringLiteral("source"), QStringLiteral("Samples")}}).errorKind, ControlErrorKind::InvalidArgs);
+	}
+
+private:
+	QString tones(const QString& name) const { return QDir(m_dir.path()).filePath(QStringLiteral("tones/") + name); }
+
+	QTemporaryDir m_dir;
+};
+
+QTEST_MAIN(LibraryBrowserTest)
+#include "LibraryBrowserTest.moc"

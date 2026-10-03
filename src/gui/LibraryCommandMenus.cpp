@@ -144,9 +144,12 @@ void populateTrack(QMenu* menu, Track* track)
 void populateClip(QMenu* menu, Clip* clip)
 {
 	if (clip == nullptr) { return; }
+	const QString id = control::clipIdOf(clip);
 	const bool locked = EditLocks::instance().clipLocked(clip->id());
-	entry(menu, locked ? "Unlock Clip" : "Lock Clip", "clip.set_locked",
-		{{QStringLiteral("clip"), control::clipIdOf(clip)}, {QStringLiteral("locked"), !locked}}, false);
+	entry(menu, locked ? "Unlock Clip" : "Lock Clip", "clip.set_locked", {{QStringLiteral("clip"), id}, {QStringLiteral("locked"), !locked}}, false);
+	const QString name = clip->name();
+	entry(menu, "Save to Library...", "browser.save_clip", {{QStringLiteral("clip"), id}}, true,  // WF-022
+		[name] { return QJsonObject{{QStringLiteral("name"), name}}; }, true);
 }
 
 void applyDocumentType(const QString& type)

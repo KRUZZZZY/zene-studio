@@ -29,8 +29,11 @@
 #include "SideBarWidget.h"
 #include "lmms_export.h"
 
+class QCheckBox;
 class QComboBox;
+class QLabel;
 class QLineEdit;
+class QMenu;
 class QListWidget;
 class QTreeWidget;
 class QTreeWidgetItem;
@@ -48,6 +51,12 @@ namespace lmms::gui
  *    a row's menu edits its tags (the Tags submenu the file lists use);
  *  - WF-019: Project Media lists every file the project uses (project.missing_assets), the same
  *    columns, found or missing.
+ *  - WF-012: "Whole library" searches the library index (browser.index_query) instead of walking, and
+ *    Rescan rebuilds it in the background (browser.reindex), its progress on the status line;
+ *  - WF-014: Back and Forward step through what the view has shown (browser.browse / history_go);
+ *  - WF-018: Gallery shows the results as waveform thumbnails (browser.thumbnail) instead of columns;
+ *  - WF-020 / WF-009: a row's menu finds similar sounds (browser.similar) and previews the file as it is
+ *    or matched to the song's tempo and key (browser.preview).
  *  A row drags out as the file lists' rows do, so a sample drops on a track or a launcher cell. */
 class LMMS_EXPORT BrowserSearchView : public SideBarWidget
 {
@@ -59,23 +68,41 @@ public:
 	void runSearch();
 	//! Run the saved collection @a name.
 	void runCollection(const QString& name);
+	//! The indexed sounds most like the file at @a path.
+	void findSimilar(const QString& path);
 	//! List the project's media.
 	void showProjectMedia();
+	//! Step @a step entries back (negative) or forward through the view's history.
+	void goHistory(int step);
+	//! Thumbnails instead of columns.
+	void setGallery(bool on);
 	int resultCount() const;
 	QTreeWidget* results() const { return m_results; }
+	QListWidget* galleryView() const { return m_gallery; }
 
 private:
+	void buildActionRow();
+	void connectLists();
 	QJsonObject queryArgs() const;
+	//! Run a list command through browser.browse (so it joins the history) and show its items.
+	void browse(const QString& command, const QJsonObject& args, const QString& label);
 	void showItems(const QJsonArray& items);
+	void fillGallery(const QJsonArray& items);
 	void refreshCollections();
+	void refreshIndexStatus();
 	void saveCollection();
-	void showRowMenu(const QPoint& at);
+	void showRowMenu(QWidget* view, const QPoint& at, const QString& path, const QString& kind);
+	void addPreviewEntries(QMenu* menu, const QString& path);
 
 	QLineEdit* m_search = nullptr;
 	QComboBox* m_kind = nullptr;
 	QComboBox* m_root = nullptr;
+	QCheckBox* m_indexed = nullptr;
+	QLabel* m_status = nullptr;
 	QListWidget* m_collections = nullptr;
 	QTreeWidget* m_results = nullptr;
+	QListWidget* m_gallery = nullptr;
+	QJsonArray m_items;
 };
 
 } // namespace lmms::gui

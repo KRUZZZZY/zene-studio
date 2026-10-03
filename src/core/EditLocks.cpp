@@ -40,12 +40,15 @@ namespace lmms
 namespace
 {
 
-//! The groups whose commands edit a track's clips or what is in them: a locked track refuses these.
+//! The commands that edit a track's clips or what is in them - every command of these groups and a few
+//! more: what a lock refuses. Reading a clip, or copying it out (browser.save_clip), is not an edit.
 bool editsContent(const QString& command)
 {
 	static const QStringList groups{QStringLiteral("clip"), QStringLiteral("note"), QStringLiteral("sample"), QStringLiteral("warp"),
 		QStringLiteral("comp"), QStringLiteral("groove"), QStringLiteral("chord"), QStringLiteral("range")};
-	return groups.contains(command.section(QLatin1Char('.'), 0, 0)) || command == QLatin1String("track.remove");
+	static const QStringList commands{QStringLiteral("track.remove"), QStringLiteral("vca.edit_move"), QStringLiteral("scale.snap_notes"),
+		QStringLiteral("bounce.in_place")};
+	return groups.contains(command.section(QLatin1Char('.'), 0, 0)) || commands.contains(command);
 }
 
 //! The string ids under @a key: the value itself, or every string of an array.
@@ -129,12 +132,11 @@ void EditLocks::setClipLocked(int clipId, bool locked)
 
 bool EditLocks::refuses(const QString& command, const QJsonObject& args, QString* why)
 {
-	if (instance().isEmpty() || command.endsWith(QLatin1String(".set_locked"))) { return false; }
+	if (instance().isEmpty() || !editsContent(command) || command.endsWith(QLatin1String(".set_locked"))) { return false; }
 	for (const QString& clip : idsUnder(args, "clip") + idsUnder(args, "clips"))
 	{
 		if (clipRefused(clip, why)) { return true; }
 	}
-	if (!editsContent(command)) { return false; }
 	const QStringList tracks = idsUnder(args, "track") + idsUnder(args, "tracks");
 	return std::any_of(tracks.begin(), tracks.end(), [why](const QString& track) { return trackRefused(track, why); });
 }

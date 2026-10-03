@@ -81,6 +81,9 @@ LMMS_EXPORT ListSpec mixerSnapshots();
 //! L12 (WF-044): the tracks and the clips locked against editing - unlock one.
 LMMS_EXPORT ListSpec lockedTracks();
 LMMS_EXPORT ListSpec lockedClips();
+//! L11 (WF-025): a device's presets (user and factory) - load, rename, remove; save the device's state as a new one.
+//! @a device is the device's address ({target, plugin}).
+LMMS_EXPORT ListSpec devicePresets(const QJsonObject& device);
 
 } // namespace CommandLists
 

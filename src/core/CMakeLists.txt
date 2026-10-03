@@ -978,6 +978,14 @@ set(LMMS_SRCS
 	core/MixerSnapshots.cpp
 	core/ProjectInfo.cpp
 	core/EditLocks.cpp
+	# 0.5.0 L11 (W3): a clip into the library, the library index and similar sounds, thumbnails and the
+	# matched preview, the browser's history and remembered sources.
+	core/ControlCommandsLibraryClips.cpp
+	core/ControlCommandsBrowserIndex.cpp
+	core/ControlCommandsBrowserMedia.cpp
+	core/ControlCommandsBrowserNavigation.cpp
+	core/BrowserIndex.cpp
+	core/BrowserFeatures.cpp
 	core/ControlTrackCreation.cpp
 	core/PitchTrack.cpp
 	core/MarkerActions.cpp

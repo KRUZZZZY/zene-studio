@@ -127,6 +127,7 @@ include/BarModelEditor.h
 include/BasicFilters.h
 include/BounceInPlace.h
 include/BrowserCatalog.h
+include/BrowserIndex.h
 include/BrowserPanel.h
 include/BrowserPeakCache.h
 include/BrowserSearch.h
@@ -1158,6 +1159,8 @@ src/core/AutomationSwitches.cpp
 src/core/BandLimitedWave.cpp
 src/core/BounceInPlace.cpp
 src/core/BrowserCatalog.cpp
+src/core/BrowserFeatures.cpp
+src/core/BrowserIndex.cpp
 src/core/BrowserMetadata.cpp
 src/core/BrowserPeakCache.cpp
 src/core/BrowserSearch.cpp
@@ -1193,6 +1196,9 @@ src/core/ControlCommandsAutomationTools.cpp
 src/core/ControlCommandsBounceLand.cpp
 src/core/ControlCommandsBrowser.cpp
 src/core/ControlCommandsBrowserCollections.cpp
+src/core/ControlCommandsBrowserIndex.cpp
+src/core/ControlCommandsBrowserMedia.cpp
+src/core/ControlCommandsBrowserNavigation.cpp
 src/core/ControlCommandsBrowserTags.cpp
 src/core/ControlCommandsBus.cpp
 src/core/ControlCommandsChain.cpp
@@ -1243,6 +1249,7 @@ src/core/ControlCommandsInputTransform.cpp
 src/core/ControlCommandsInterchange.cpp
 src/core/ControlCommandsKeyNames.cpp
 src/core/ControlCommandsLaunchBindings.cpp
+src/core/ControlCommandsLibraryClips.cpp
 src/core/ControlCommandsLink.cpp
 src/core/ControlCommandsLivecode.cpp
 src/core/ControlCommandsLowLatency.cpp
@@ -2055,6 +2062,7 @@ tests/src/core/GrooveTestSupport.h
 tests/src/core/ImportDetectionTest.cpp
 tests/src/core/InputMonitorTest.cpp
 tests/src/core/LanesUpconvertTest.cpp
+tests/src/core/LibraryBrowserTest.cpp
 tests/src/core/LibraryProjectsTest.cpp
 tests/src/core/LoudnessReportTest.cpp
 tests/src/core/LufsMeterTest.cpp

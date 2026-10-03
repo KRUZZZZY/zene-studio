@@ -57,6 +57,29 @@ const ReversibilityRow kW3LibraryRows[] = {
 	R("clip.set_locked", RC::TrueInverse, true, "it locks or unlocks a clip against editing (<edit-locks>)",
 		"action checkpoint: the recorded undo step puts the previous lock back", ""),
 	R("project.locks", RC::NotMutating, false, "it reads the locked tracks and clips. Nothing is written", "no write", ""),
+	// L11 (WF-025 / WF-022): device presets and clips in the library - files outside the project.
+	R("plugin.preset_remove", RC::TrueInverse, true, "it deletes one of a device's user preset files (outside the project)",
+		"structural step: the recorded undo step writes the file's bytes back (counted against the undo byte budget)", ""),
+	R("plugin.preset_rename", RC::TrueInverse, true, "it renames one of a device's user preset files (outside the project)",
+		"action checkpoint: the recorded undo step renames it back", ""),
+	R("browser.save_clip", RC::TrueInverse, true, "it writes a clip as an audio or MIDI file into the library (outside the project) "
+		"and tags it", "action checkpoint: the recorded undo step removes the tags it added and deletes the file", ""),
+	// L11 (WF-012 / WF-020 / WF-018 / WF-009 / WF-014 / WF-023): the library index, thumbnails, preview, navigation.
+	R("browser.reindex", RC::NotMutating, false, "it rebuilds the library index - a cache in the config directory, not the "
+		"project or the library itself", "no write to the project (rebuild the cache again)", ""),
+	R("browser.index_status", RC::NotMutating, false, "it reads the library index's state. Nothing is written", "no write", ""),
+	R("browser.index_query", RC::NotMutating, false, "it searches the library index. Nothing is written", "no write", ""),
+	R("browser.similar", RC::NotMutating, false, "it ranks indexed sounds by their features. Nothing is written", "no write", ""),
+	R("browser.thumbnail", RC::NotMutating, false, "it draws a waveform picture into the thumbnail cache (config directory) - "
+		"not the project", "no write to the project", ""),
+	R("browser.preview", RC::NotMutating, false, "it plays a file to hear it: session audio, not the project", "no write (browser.preview_stop)", ""),
+	R("browser.preview_stop", RC::NotMutating, false, "it stops the preview: session audio", "no write", ""),
+	R("browser.browse", RC::NotMutating, false, "it runs a browser list and remembers it in the session's history", "no write", ""),
+	R("browser.history", RC::NotMutating, false, "it reads the browser's history. Nothing is written", "no write", ""),
+	R("browser.history_go", RC::NotMutating, false, "it steps through the browser's history (session state)", "no write", ""),
+	R("browser.sources", RC::NotMutating, false, "it reads the source remembered for each view. Nothing is written", "no write", ""),
+	R("browser.remember_source", RC::NotMutating, false, "it remembers the browser's source for a view: an interface preference "
+		"in the config file, as window.set_view's view is", "no write to the project", ""),
 };
 
 #undef R
