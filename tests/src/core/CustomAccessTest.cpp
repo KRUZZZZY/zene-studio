@@ -170,7 +170,11 @@ private slots:
 		QVERIFY2(load.ok, qPrintable(load.errorMessage));
 		const QJsonArray channels = load.result.value(QStringLiteral("channels")).toArray();
 		QCOMPARE(static_cast<int>(channels.size()), static_cast<int>(Engine::mixer()->numChannels()));
-		for (const QJsonValue& channel : channels) { QVERIFY(channel.toObject().value(QStringLiteral("cpu_percent")).toDouble() >= 0.0); }
+		for (const QJsonValue& channel : channels)
+		{
+			QVERIFY(channel.toObject().value(QStringLiteral("cpu_percent")).toDouble() >= 0.0);
+			QVERIFY(channel.toObject().value(QStringLiteral("devices")).isArray());
+		}
 		QVERIFY(load.result.value(QStringLiteral("total_percent")).toDouble() >= 0.0);
 	}
 

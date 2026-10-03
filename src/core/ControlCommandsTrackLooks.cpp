@@ -27,8 +27,8 @@
  *    mixer channel, devices and that channel's processing load;
  *  - track.set_color / track.set_visible: a track's colour and whether the arranger shows it;
  *  - track.set_icon (WF-120): the icon its header shows (TrackLooks.h);
- *  - mixer.cpu_load (WF-104): every mixer channel's share of the period, measured on the audio thread
- *    with relaxed atomics (DspLoadProbe.h). An instrument's own synthesis runs before the mixer and is
+ *  - mixer.cpu_load (WF-104): every mixer channel's share of the period, and each device's, measured on the
+ *    audio thread with relaxed atomics (DspLoadProbe.h). An instrument's own synthesis runs before the mixer and is
  *    not in a channel's figure. Each edit is one undo step whose closures name the track by id. */
 
 #include <optional>
@@ -42,6 +42,7 @@
 #include "ControlRegistryGroups.h"
 #include "ControlReversibility.h"
 #include "ControlVocabulary.h"
+#include "Effect.h"
 #include "Engine.h"
 #include "InstrumentTrack.h"
 #include "Mixer.h"
@@ -164,6 +165,18 @@ ControlResult setIcon(const QJsonObject& args)
 	return ControlResult::success({{QStringLiteral("track"), trackIdOf(track)}, {QStringLiteral("icon"), after}});
 }
 
+//! Each device of @a channel's chain with its own share of the period.
+QJsonArray deviceLoads(const MixerChannel* channel)
+{
+	QJsonArray out;
+	for (const Effect* effect : channel->m_fxChain.effects())
+	{
+		out.append(QJsonObject{{QStringLiteral("device"), effectIdOf(effect)}, {QStringLiteral("name"), effect->displayName()},
+			{QStringLiteral("cpu_percent"), static_cast<double>(effect->dspLoad())}});
+	}
+	return out;
+}
+
 ControlResult cpuLoad(const QJsonObject&)
 {
 	QJsonArray channels;
@@ -174,7 +187,7 @@ ControlResult cpuLoad(const QJsonObject&)
 		const double percent = channel->dspLoad();
 		total += percent;
 		channels.append(QJsonObject{{QStringLiteral("channel"), channelIdOf(channel)}, {QStringLiteral("name"), channel->m_name},
-			{QStringLiteral("cpu_percent"), percent}});
+			{QStringLiteral("cpu_percent"), percent}, {QStringLiteral("devices"), deviceLoads(channel)}});
 	}
 	return ControlResult::success({{QStringLiteral("channels"), channels}, {QStringLiteral("total_percent"), total},
 		{QStringLiteral("engine_percent"), static_cast<double>(Engine::audioEngine()->cpuLoad())}});
@@ -218,8 +231,9 @@ void registerTrackLookCommands(ControlRegistry& registry)
 		objectSchema({{QStringLiteral("track"), stringProperty()}, {QStringLiteral("icon"), stringProperty()}},
 			{QStringLiteral("track"), QStringLiteral("icon")}), true, setIcon);
 	add(registry, "mixer.cpu_load", QStringLiteral("How much of each audio period every mixer channel's devices and strip take, "
-		"in percent of the period (smoothed over the last few dozen periods), their sum, and the engine's whole load. "
-		"An instrument's own synthesis runs before the mixer and is in engine_percent, not in its channel's figure. Read-only."),
+		"in percent of the period (smoothed over the last few dozen periods), each of its devices' own share ('devices': "
+		"device id, name, cpu_percent), their sum, and the engine's whole load. An instrument's own synthesis runs before "
+		"the mixer and is in engine_percent, not in its channel's figure. Read-only."),
 		objectSchema({}), false, cpuLoad);
 }
 

@@ -30,6 +30,7 @@
 #include "AudioBuffer.h"
 #include "AudioBus.h"
 #include "ConfigManager.h"
+#include "DspLoadProbe.h"
 #include "EffectChain.h"
 #include "EffectControls.h"
 #include "EffectView.h"
@@ -186,6 +187,8 @@ const AudioBuffer* Effect::sidechainBuffer() const
 
 bool Effect::processAudioBuffer(AudioBuffer& inOut)
 {
+	// 0.5.0 W3 (WF-104): this device's share of the period (two clock reads, one relaxed store).
+	const DspLoadProbe dspLoad(m_dspLoad, inOut.frames(), Engine::audioEngine()->baseSampleRate());
 	if (!isAwake())
 	{
 		if (!inOut.hasSignal(0b11))
@@ -240,6 +243,7 @@ bool Effect::processAudioBuffer(AudioBuffer& inOut)
 
 bool Effect::processAudioBuffer(AudioBus& inOut)
 {
+	const DspLoadProbe dspLoad(m_dspLoad, inOut.frames(), Engine::audioEngine()->baseSampleRate());  // 0.5.0 W3 (WF-104)
 	const auto* apm = audioPortsModel();
 
 	if (!isAwake())

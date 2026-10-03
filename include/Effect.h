@@ -108,6 +108,9 @@ public:
 
 	//! @returns true if the processing outputted corrupted audio (infs/nans).
 	bool isCorrupted() const { return m_corrupted.load(std::memory_order_relaxed); }
+	//! 0.5.0 W3 (WF-104): the share of a period this device took, in percent, smoothed (DspLoadProbe.h);
+	//! written by the audio thread with a relaxed store, read by mixer.cpu_load.
+	float dspLoad() const { return m_dspLoad.load(std::memory_order_relaxed); }
 
 	//! "Awake" means the effect has not been put to sleep by auto-quit
 	bool isAwake() const
@@ -286,6 +289,7 @@ private:
 	bool m_noRun;
 	bool m_awake;
 	std::atomic<bool> m_corrupted = false;
+	std::atomic<float> m_dspLoad{0.0f};
 
 	//! The number of consecutive periods where output buffers remain below the silence threshold
 	f_cnt_t m_quietBufferCount = 0;
