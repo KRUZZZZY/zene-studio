@@ -181,4 +181,22 @@ float clipFadeGainAt(f_cnt_t frame, f_cnt_t clipFrames,
 	return static_cast<float>(value);
 }
 
+float preFadedGainAt(const PreFadeSpan& span, std::int64_t clipPos, FadeShape fadeInShape, FadeShape fadeOutShape)
+{
+	double value = 1.0;
+	const std::int64_t inLength = span.preInFrames + span.fadeInFrames;
+	const std::int64_t intoIn = clipPos + span.preInFrames;  // frames since the fade-in began
+	if (inLength > 0 && intoIn < inLength)
+	{
+		value *= intoIn <= 0 ? 0.0 : fadeShapeGain(fadeInShape, static_cast<double>(intoIn) / static_cast<double>(inLength));
+	}
+	const std::int64_t outLength = span.fadeOutFrames + span.preOutFrames;
+	const std::int64_t left = span.clipFrames + span.preOutFrames - clipPos;  // frames until the fade-out ends
+	if (outLength > 0 && left < outLength)
+	{
+		value *= left <= 0 ? 0.0 : fadeShapeGain(fadeOutShape, static_cast<double>(left) / static_cast<double>(outLength));
+	}
+	return static_cast<float>(value);
+}
+
 } // namespace lmms

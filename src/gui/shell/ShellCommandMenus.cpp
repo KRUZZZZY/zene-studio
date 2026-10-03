@@ -215,6 +215,7 @@ void sampleClipMenus(QMenu* menu, Clip* clip, const QJsonObject& self)
 	choices(process, "Fade", "sample.fade", "direction", self);
 	add(process, "Gain Envelope...", "clip.gain_envelope_set", self, true);
 	add(process, "Clear Gain Envelope", "clip.gain_envelope_set", with(self, "points", QJsonArray()), false);
+	add(process, "Pre-Fades...", "clip.pre_fade", self, true);  // W3 (ED-179)
 	Clip* next = nextClip(clip);
 	QAction* fade = add(menu, "Crossfade Into Next Clip...", "clip.crossfade",
 		{{QStringLiteral("out"), id}, {QStringLiteral("in"), next != nullptr ? control::clipIdOf(next) : QString()}}, true);

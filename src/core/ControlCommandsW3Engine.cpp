@@ -26,7 +26,8 @@
  *  - mixer.post_inserts (MX-082): a channel's post-fader devices and the target ("ch-<n>/post") that plugin.* and
  *    chain.* address them through (MixerPostInserts.h);
  *  - chain.receive (MX-063): another channel's audio mixed in at a slot of a channel's chain - a sidechain send
- *    plus a Receiver device, one undo step. */
+ *    plus a Receiver device, one undo step;
+ *  - clip.pre_fade (ED-179): an audio clip's fade-in starting before it and fade-out ending after it (ClipPreFades.h). */
 
 #include <algorithm>
 #include <memory>
@@ -34,9 +35,11 @@
 #include <QJsonArray>
 
 #include "AutomationLatency.h"
+#include "ClipPreFades.h"
 #include "ControlCommandDef.h"
 #include "ControlDevicePlacement.h"
 #include "ControlDeviceSupport.h"
+#include "ControlEdit.h"
 #include "ControlMixerSupport.h"
 #include "ControlRegistry.h"
 #include "ControlRegistryGroups.h"
@@ -46,6 +49,7 @@
 #include "EffectChain.h"
 #include "Engine.h"
 #include "Mixer.h"
+#include "SampleClip.h"
 #include "Song.h"
 
 namespace lmms
@@ -215,6 +219,44 @@ ControlResult chainReceive(const QJsonObject& args)
 		{QStringLiteral("send_created"), !receive.routeExisted}});
 }
 
+//! The longest pre-fade a command sets: twenty bars of 4/4.
+constexpr int MaxPreFadeTicks = 3840;
+
+//! Why @a clip cannot play pre-fades, or empty (prefades::engaged's conditions a command can name).
+QString preFadeRefusal(const SampleClip* clip)
+{
+	if (clip == nullptr) { return QStringLiteral("'clip' is an audio clip"); }
+	if (!clip->rendersLinearly()) { return QStringLiteral("a warped clip (markers or its own tempo) has no pre-fades"); }
+	if (clip->clipEdits().hasSpeed() || clip->clipEdits().transpose != 0)
+	{
+		return QStringLiteral("a clip with a speed change or a transpose has no pre-fades");
+	}
+	return QString();
+}
+
+ControlResult preFade(const QJsonObject& args)
+{
+	ClipRef ref;
+	ControlResult error;
+	if (!resolveClip(args.value(QStringLiteral("clip")).toString(), &ref, &error)) { return error; }
+	auto* clip = dynamic_cast<SampleClip*>(ref.clip);
+	if (const QString why = preFadeRefusal(clip); !why.isEmpty())
+	{
+		return ControlResult::failure(clip == nullptr ? ControlErrorKind::InvalidArgs : ControlErrorKind::Refused, why);
+	}
+	ClipEdits after = clip->clipEdits();
+	after.preFadeInTicks = std::clamp(args.value(QStringLiteral("fade_in")).toInt(after.preFadeInTicks), 0, MaxPreFadeTicks);
+	after.preFadeOutTicks = std::clamp(args.value(QStringLiteral("fade_out")).toInt(after.preFadeOutTicks), 0, MaxPreFadeTicks);
+	if (after != clip->clipEdits())
+	{
+		clip->addJournalCheckPoint();
+		clip->setClipEdits(after);
+		Engine::getSong()->setModified();
+	}
+	return ControlResult::success({{QStringLiteral("clip"), clipId(ref.id)}, {QStringLiteral("fade_in"), after.preFadeInTicks},
+		{QStringLiteral("fade_out"), after.preFadeOutTicks}, {QStringLiteral("lead_ticks"), prefades::leadTicks(*clip)}});
+}
+
 } // namespace
 
 void registerW3EngineCommands(ControlRegistry& registry)
@@ -240,6 +282,14 @@ void registerW3EngineCommands(ControlRegistry& registry)
 			{QStringLiteral("tap_point"), enumProperty(sidechainTapPointNames())}, {QStringLiteral("position"), integerProperty(0, 64)},
 			{QStringLiteral("level"), numberProperty()}},
 		{QStringLiteral("target"), QStringLiteral("from")}, true, chainReceive);
+	defineCommand(registry, QStringLiteral("clip.pre_fade"), QStringLiteral("An audio clip's pre-fades: its fade-in starts "
+		"'fade_in' ticks BEFORE the clip and its fade-out ends 'fade_out' ticks AFTER it (0..3840 each, 0 for none; each is "
+		"one ramp with the clip's own fade, in the same shape), and the clip plays the source audio its trim hides there - "
+		"lead_ticks reports how much hidden audio the fade-in finds before the in-point. A warped, sped-up or transposed "
+		"clip has none; a reversed clip or one on a comped track keeps its own span. Saved only when set. One undo step."),
+		{{QStringLiteral("clip"), stringProperty()}, {QStringLiteral("fade_in"), integerProperty(0, MaxPreFadeTicks)},
+			{QStringLiteral("fade_out"), integerProperty(0, MaxPreFadeTicks)}},
+		{QStringLiteral("clip")}, true, preFade);
 }
 
 } // namespace lmms

@@ -45,6 +45,8 @@ const ReversibilityRow kW3EngineRows[] = {
 	R("chain.receive", RC::TrueInverse, true, "it adds a sidechain send (unless one was there) and a Receiver device to a "
 		"channel's chain",
 		"action checkpoint: the recorded undo step removes the device and the send it made; its redo makes both again", ""),
+	R("clip.pre_fade", RC::TrueInverse, true, "it sets an audio clip's pre-fades (two clip edits)",
+		"ProjectJournal (Clip checkpoint): Clip::saveClipEdits writes them onto the clip's element", ""),
 };
 
 #undef R

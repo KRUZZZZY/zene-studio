@@ -148,6 +148,7 @@ include/ClipConsolidate.h
 include/ClipEdits.h
 include/ClipEditsMenu.h
 include/ClipLinks.h
+include/ClipPreFades.h
 include/ClipTransients.h
 include/ClipView.h
 include/Clipboard.h
@@ -1188,6 +1189,7 @@ src/core/Clip.cpp
 src/core/ClipConsolidate.cpp
 src/core/ClipEdits.cpp
 src/core/ClipLinks.cpp
+src/core/ClipPreFades.cpp
 src/core/ClipTransients.cpp
 src/core/Clipboard.cpp
 src/core/ComboBoxModel.cpp

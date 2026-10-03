@@ -24,22 +24,32 @@
 /*! 0.5.0 W3 engine lane: the offset arithmetic of latency-compensated automation and a curve read where the
  *  latent audio is, opt-in and undoable (MX-160); post-fader inserts skipped while empty, baking the fader
  *  when not, addressed as ch-<n>/post and saved only when they hold devices (MX-082); chain.receive's
- *  refusals, and the send and device it makes, undone in one step (MX-063). */
+ *  refusals, and the send and device it makes, undone in one step (MX-063); the pre-fade envelope, and a trimmed
+ *  clip that starts sounding its hidden audio before its start, one undo step (ED-179). */
 
 #include <QtTest>
 
 #include <QDomDocument>
 #include <QJsonArray>
 
+#include <cmath>
+#include <vector>
+
 #include "AutomationClip.h"
 #include "AutomationLatency.h"
 #include "AutomationTrack.h"
+#include "ClipEdits.h"
+#include "ClipPreFades.h"
 #include "ControlRegistry.h"
 #include "ControlVocabulary.h"
 #include "Engine.h"
 #include "Mixer.h"
 #include "MixerPostInserts.h"
 #include "PhaseDMixerTestSupport.h"
+#include "SampleBuffer.h"
+#include "SampleClip.h"
+#include "SamplePlayHandle.h"
+#include "SampleTrack.h"
 #include "Song.h"
 
 using namespace lmms;
@@ -74,6 +84,22 @@ QString loadBuiltin(const QString& target, const QString& name)
 			.result.value(QStringLiteral("id")).toString();
 	}
 	return QString();
+}
+
+//! A one-second 440 Hz tone on @a track at tick @a at.
+SampleClip* toneClip(Track* track, tick_t at)
+{
+	const int rate = static_cast<int>(Engine::audioEngine()->outputSampleRate());
+	std::vector<SampleFrame> frames;
+	for (int i = 0; i < rate; ++i)
+	{
+		const auto v = 0.5f * static_cast<float>(std::sin(2.0 * M_PI * 440.0 * i / rate));
+		frames.emplace_back(v, v);
+	}
+	auto* clip = dynamic_cast<SampleClip*>(track->createClip(TimePos(at)));
+	clip->setSampleBuffer(std::make_shared<SampleBuffer>(frames.data(), frames.size(), rate));
+	clip->movePosition(TimePos(at));
+	return clip;
 }
 
 } // namespace
@@ -241,6 +267,56 @@ private slots:
 		QVERIFY(run(QStringLiteral("control.undo")).ok);
 		QVERIFY(Engine::mixer()->channelSidechainSend(1, 3) == nullptr);
 		QCOMPARE(channel(3)->m_fxChain.effects().size(), devices);
+	}
+
+	void thePreFadeEnvelope()
+	{
+		const PreFadeSpan span{1000, 100, 200, 0, 0};
+		const auto gain = [](const PreFadeSpan& s, std::int64_t at) { return preFadedGainAt(s, at, FadeShape::Linear, FadeShape::Linear); };
+		QVERIFY(gain(span, -100) == 0.f);  // the ramp's first frame, before the clip
+		QCOMPARE(gain(span, -50), 0.5f);
+		QCOMPARE(gain(span, 0), 1.f);  // a pre-fade alone ends on the clip's first frame
+		QCOMPARE(gain(span, 999), 1.f);
+		QCOMPARE(gain(span, 1100), 0.5f);  // after the clip's end
+		QVERIFY(gain(span, 1200) == 0.f);
+		const PreFadeSpan across{1000, 100, 0, 100, 0};
+		QCOMPARE(gain(across, 0), 0.5f);  // with the clip's own fade-in: one ramp across its start
+	}
+
+	void aTrimmedClipSoundsItsHiddenAudioBeforeItsStart()
+	{
+		auto* track = dynamic_cast<SampleTrack*>(Track::create(Track::Type::Sample, Engine::getSong()));
+		SampleClip* clip = toneClip(track, 1920);
+		const auto half = static_cast<f_cnt_t>(clip->sample().sampleSize() / 2);
+		clip->setSampleWindow(SampleWindow(half, clip->sample().sampleSize()));  // the first half second hidden
+		QVERIFY(prefades::spanStart(*clip) == clip->startPosition());  // no pre-fade: the clip's own span and window
+		QCOMPARE(prefades::window(*clip, clip->startPosition()).sourceIn, clip->sourceFrameAt(clip->startPosition()));
+		const QString id = control::clipIdOf(clip);
+		const ControlResult set = run(QStringLiteral("clip.pre_fade"), {{QStringLiteral("clip"), id}, {QStringLiteral("fade_in"), 24},
+			{QStringLiteral("fade_out"), 24}});
+		QVERIFY2(set.ok, qPrintable(set.errorMessage));
+		QCOMPARE(set.result.value(QStringLiteral("lead_ticks")).toInt(), 24);
+		QCOMPARE(prefades::spanStart(*clip).getTicks(), clip->startPosition().getTicks() - 24);
+		const SampleWindow early = prefades::window(*clip, prefades::spanStart(*clip));
+		QVERIFY(early.sourceIn < half);
+		{
+			SamplePlayHandle handle(clip, early);
+			std::vector<SampleFrame> out(partd::periodFrames());
+			handle.play(out);
+			QVERIFY(out[0][0] == 0.f);  // the fade-in's first frame
+			bool sounds = false;
+			for (std::size_t f = out.size() / 2; f < out.size(); ++f) { sounds = sounds || out[f][0] != 0.f; }
+			QVERIFY2(sounds, "the hidden audio before the clip's start did not sound");
+		}
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
+		QCOMPARE(clip->clipEdits().preFadeInTicks, 0);
+		QVERIFY(prefades::spanStart(*clip) == clip->startPosition());
+		auto* instrument = Track::create(Track::Type::Instrument, Engine::getSong());
+		Clip* midi = instrument->createClip(TimePos(0));
+		QCOMPARE(run(QStringLiteral("clip.pre_fade"), {{QStringLiteral("clip"), control::clipIdOf(midi)}, {QStringLiteral("fade_in"), 24}}).errorKind,
+			ControlErrorKind::InvalidArgs);
+		delete instrument;
+		delete track;
 	}
 };
 

@@ -984,6 +984,7 @@ set(LMMS_SRCS
 	core/ControlCommandsTrackVersions.cpp
 	core/AutomationLatency.cpp
 	core/MixerPostInserts.cpp
+	core/ClipPreFades.cpp
 	core/ControlCommandsW3Engine.cpp
 	core/InputMeter.cpp
 	core/RecorderTaps.cpp
