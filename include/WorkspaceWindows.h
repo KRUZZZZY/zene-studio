@@ -32,6 +32,7 @@
 
 class QLabel;
 class QLineEdit;
+class QSlider;
 class QTextBrowser;
 class QTimer;
 
@@ -95,7 +96,7 @@ public:
 private:
 	QLabel* m_note;
 	QLabel* m_detail;
-	class QSlider* m_needle;
+	QSlider* m_needle;
 	QTimer* m_timer;
 };
 

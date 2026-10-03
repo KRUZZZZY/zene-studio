@@ -27,7 +27,7 @@
  *    customisations), found by any words of their name, page or description, with their values;
  *  - settings.export / settings.import: a backup of them in a file, and putting one back;
  *  - settings.preset_save / _apply / _list / _remove: named sets of them kept in the config file.
- *  Only the catalogue's keys travel - never a folder path (paths/*), never a device's name - so a preset or
+ *  Only the catalogue's keys travel - never a folder path (the paths class), never a device's name - so a preset or
  *  a backup moves between machines without carrying anything private. Every write is ONE undo step that
  *  puts each key's previous value back (or deletes a key that did not exist), as settings.set does. */
 
