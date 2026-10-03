@@ -854,6 +854,10 @@ LMMS_EXPORT void registerLibraryClipCommands(ControlRegistry& registry);
 LMMS_EXPORT void registerBrowserIndexCommands(ControlRegistry& registry);
 LMMS_EXPORT void registerBrowserMediaCommands(ControlRegistry& registry);
 LMMS_EXPORT void registerBrowserNavigationCommands(ControlRegistry& registry);
+//! 0.5.0 L12 (W3): render.queue_add / convert / queue_list / queue_cancel / queue_clear / queue_report, app.tasks /
+//! task_cancel (ControlCommandsRenderQueue.cpp); track.flatten (ControlCommandsTrackFlatten.cpp).
+LMMS_EXPORT void registerRenderQueueCommands(ControlRegistry& registry);
+LMMS_EXPORT void registerTrackFlattenCommands(ControlRegistry& registry);
 } // namespace lmms
 
 #endif // LMMS_CONTROL_REGISTRY_GROUPS_H

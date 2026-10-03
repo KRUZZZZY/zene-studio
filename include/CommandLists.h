@@ -84,6 +84,10 @@ LMMS_EXPORT ListSpec lockedClips();
 //! L11 (WF-025): a device's presets (user and factory) - load, rename, remove; save the device's state as a new one.
 //! @a device is the device's address ({target, plugin}).
 LMMS_EXPORT ListSpec devicePresets(const QJsonObject& device);
+//! L12 (WF-040): the render queue - each job's state and report; cancel, report; queue a render, convert files, clear.
+LMMS_EXPORT ListSpec renderQueue();
+//! L12 (WF-046): every background task (renders, the library scan, stem separation, mastering) - cancel one.
+LMMS_EXPORT ListSpec backgroundTasks();
 
 } // namespace CommandLists
 

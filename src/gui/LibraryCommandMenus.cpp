@@ -117,6 +117,23 @@ void snapshotMenu(QMenu* menu)
 	list(snapshots, "Snapshots...", [] { return CommandLists::mixerSnapshots(); });
 }
 
+//! WF-051: syncing with other apps and machines - the Link-style session and MIDI clock.
+void syncMenu(QMenu* menu)
+{
+	QMenu* sync = menu->addMenu(tr("Sync"));
+	addCommandChoices(sync, tr("Link Session"), QStringLiteral("link.set_enabled"), QStringLiteral("enabled"),
+		[] { return CommandCall{QStringLiteral("link.set_enabled"), {}, {}, QString(), false}; });
+	addCommandChoices(sync, tr("Share Start and Stop"), QStringLiteral("link.set_start_stop_sync"), QStringLiteral("enabled"),
+		[] { return CommandCall{QStringLiteral("link.set_start_stop_sync"), {}, {}, QString(), false}; });
+	entry(sync, "Session Tempo...", "link.set_session_tempo", {}, true);
+	entry(sync, "Quantum...", "link.set_quantum", {}, true);
+	entry(sync, "Session Status", "link.get_state", {}, false, {}, true);
+	sync->addSeparator();
+	entry(sync, "Send MIDI Clock...", "clock.master_set", {}, true);
+	entry(sync, "Follow MIDI Clock...", "clock.slave_set", {}, true);
+	entry(sync, "Clock Status", "clock.get_state", {}, false, {}, true);
+}
+
 } // namespace
 
 void populateProject(QMenu* menu)
@@ -131,14 +148,20 @@ void populateProject(QMenu* menu)
 	QMenu* locks = menu->addMenu(tr("Locks"));  // WF-044
 	list(locks, "Locked Tracks...", [] { return CommandLists::lockedTracks(); });
 	list(locks, "Locked Clips...", [] { return CommandLists::lockedClips(); });
+	list(menu, "Render Queue...", [] { return CommandLists::renderQueue(); });  // WF-040
+	list(menu, "Background Tasks...", [] { return CommandLists::backgroundTasks(); });  // WF-046
+	entry(menu, "Paste Tracks From Another Project", "project.paste_tracks", {}, false);  // WF-042
+	syncMenu(menu);  // WF-051
 }
 
 void populateTrack(QMenu* menu, Track* track)
 {
 	if (track == nullptr) { return; }
+	const QString id = control::trackIdOf(track);
 	const bool locked = EditLocks::instance().trackLocked(track->id());
-	entry(menu, locked ? "Unlock Track" : "Lock Track", "track.set_locked",
-		{{QStringLiteral("track"), control::trackIdOf(track)}, {QStringLiteral("locked"), !locked}}, false);
+	entry(menu, locked ? "Unlock Track" : "Lock Track", "track.set_locked", {{QStringLiteral("track"), id}, {QStringLiteral("locked"), !locked}}, false);
+	entry(menu, "Flatten Track (Replace With Its Audio)", "track.flatten", {{QStringLiteral("track"), id}}, false);  // ED-207
+	entry(menu, "Copy to Another Project", "project.copy_tracks", {{QStringLiteral("tracks"), QJsonArray{id}}}, false);  // WF-042
 }
 
 void populateClip(QMenu* menu, Clip* clip)

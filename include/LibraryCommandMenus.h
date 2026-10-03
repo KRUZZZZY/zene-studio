@@ -46,9 +46,10 @@ namespace lmms::gui
 namespace LibraryCommandMenus
 {
 
-//! The Project Tools menu's project entries: settings, metadata, document type, mixer snapshots, locks.
+//! The Project Tools menu's project entries: settings, metadata, document type, mixer snapshots, locks,
+//! the render queue, background tasks, pasting tracks from another project, sync.
 LMMS_EXPORT void populateProject(QMenu* menu);
-//! A track's lock.
+//! A track's lock, flattening it, copying it to another project.
 LMMS_EXPORT void populateTrack(QMenu* menu, Track* track);
 //! A clip's lock, and saving it into the library.
 LMMS_EXPORT void populateClip(QMenu* menu, Clip* clip);

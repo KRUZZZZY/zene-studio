@@ -140,6 +140,15 @@ LMMS_EXPORT QJsonObject controlExportPresetJson(const ControlExportPreset& prese
  */
 LMMS_EXPORT QStringList controlExportPresetRenderArgs(const ControlExportPreset& settings);
 
+/*! 0.5.0 L12 (WF-040): the whole command line of the render child - `render <project> -o <out>
+ *  -f <format>`, the preset's arguments above, the range (both ends, or neither: -1) and the loudness
+ *  report flag when it is selected. ONE definition: render.render and the render queue start the child
+ *  with exactly this (ControlCommandsProject.cpp). */
+LMMS_EXPORT QStringList controlRenderCliArguments(const QString& project, const QString& out, const QString& format,
+	const ControlExportPreset& settings, int rangeBegin, int rangeEnd);
+//! The formats this build can render (render.render's schema enum), as a list.
+LMMS_EXPORT QStringList controlRenderableFormats();
+
 /*! The render settings the NEXT render asks for: the applied preset, or the
  *  CLI's own defaults when none has been applied.
  *

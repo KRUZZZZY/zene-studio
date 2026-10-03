@@ -78,6 +78,23 @@ const ReversibilityRow kW3LibraryRows[] = {
 	R("browser.history", RC::NotMutating, false, "it reads the browser's history. Nothing is written", "no write", ""),
 	R("browser.history_go", RC::NotMutating, false, "it steps through the browser's history (session state)", "no write", ""),
 	R("browser.sources", RC::NotMutating, false, "it reads the source remembered for each view. Nothing is written", "no write", ""),
+	// L12 (WF-040 / WF-046 / ED-207 / WF-042): the render queue, the task list, flattening, copying between projects.
+	R("render.queue_add", RC::NotMutating, false, "it queues a render: the job writes an OUTPUT ARTEFACT from a snapshot of the "
+		"session (or another file), as render.render does; the session is not modified", "no write to the project", ""),
+	R("render.convert", RC::NotMutating, false, "it queues conversions of audio files into new files; the sources and the "
+		"project are not modified", "no write to the project", ""),
+	R("render.queue_list", RC::NotMutating, false, "it reads the render queue. Nothing is written", "no write", ""),
+	R("render.queue_cancel", RC::NotMutating, false, "it cancels queued or running jobs: session state", "no write", ""),
+	R("render.queue_clear", RC::NotMutating, false, "it forgets ended jobs: session state", "no write", ""),
+	R("render.queue_report", RC::NotMutating, false, "it reads one job's report. Nothing is written", "no write", ""),
+	R("app.tasks", RC::NotMutating, false, "it reads the background tasks. Nothing is written", "no write", ""),
+	R("app.task_cancel", RC::NotMutating, false, "it cancels a background task: session state, not the project", "no write", ""),
+	R("track.flatten", RC::TrueInverse, true, "it replaces a track with an audio track playing its rendered output",
+		"structural step: the recorded undo step removes the audio track and recreates the source track from the document "
+		"captured before (bounded; a track too large to capture is refused)", ""),
+	R("project.copy_tracks", RC::NotMutating, false, "it writes tracks to the system clipboard, not the project", "no write", ""),
+	R("project.paste_tracks", RC::TrueInverse, true, "it adds the clipboard's tracks to the project",
+		"action checkpoint: the recorded undo step removes the pasted tracks; its redo pastes them again", ""),
 	R("browser.remember_source", RC::NotMutating, false, "it remembers the browser's source for a view: an interface preference "
 		"in the config file, as window.set_view's view is", "no write to the project", ""),
 };

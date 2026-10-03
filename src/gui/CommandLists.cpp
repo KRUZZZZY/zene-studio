@@ -360,4 +360,27 @@ ListSpec devicePresets(const QJsonObject& device)
 	return out;
 }
 
+ListSpec renderQueue()
+{
+	ListSpec out = spec("Render Queue", "render.queue_list", "jobs", {QStringLiteral("job"), QStringLiteral("kind"), QStringLiteral("state"),
+		QStringLiteral("out"), QStringLiteral("error")});
+	out.summaryKeys = {QStringLiteral("open"), QStringLiteral("running"), QStringLiteral("limit")};
+	const QHash<QString, QString> job{{QStringLiteral("job"), QStringLiteral("job")}};
+	RowAction report = act("Report", "render.queue_report", job);
+	report.showResult = true;
+	out.actions = {act("Cancel", "render.queue_cancel", job), report};
+	out.extras = {extra("Queue a Render...", "render.queue_add"), extra("Convert Files...", "render.convert"),
+		extra("Clear Finished", "render.queue_clear", {}, false)};
+	return out;
+}
+
+ListSpec backgroundTasks()
+{
+	ListSpec out = spec("Background Tasks", "app.tasks", "tasks", {QStringLiteral("kind"), QStringLiteral("state"), QStringLiteral("label"),
+		QStringLiteral("progress")});
+	out.summaryKeys = {QStringLiteral("count")};
+	out.actions = {act("Cancel", "app.task_cancel", {{QStringLiteral("id"), QStringLiteral("id")}})};
+	return out;
+}
+
 } // namespace lmms::gui::CommandLists

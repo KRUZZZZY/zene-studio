@@ -505,6 +505,7 @@ include/RemotePluginClient.h
 include/RenameDialog.h
 include/RenderManager.h
 include/RenderPresetMenu.h
+include/RenderQueue.h
 include/RetroAudioCapture.h
 include/RetroAudioRing.h
 include/RetroMidiCapture.h
@@ -1328,6 +1329,7 @@ src/core/ControlCommandsRecordingRecovery.cpp
 src/core/ControlCommandsRecordingRetro.cpp
 src/core/ControlCommandsRecordingRoutes.cpp
 src/core/ControlCommandsRemote.cpp
+src/core/ControlCommandsRenderQueue.cpp
 src/core/ControlCommandsRenderStems.cpp
 src/core/ControlCommandsRevisions.cpp
 src/core/ControlCommandsRouting.cpp
@@ -1359,6 +1361,7 @@ src/core/ControlCommandsStructure.cpp
 src/core/ControlCommandsSurface.cpp
 src/core/ControlCommandsTelemetry.cpp
 src/core/ControlCommandsTrackChannel.cpp
+src/core/ControlCommandsTrackFlatten.cpp
 src/core/ControlCommandsTrackFolder.cpp
 src/core/ControlCommandsTrackFolderSets.cpp
 src/core/ControlCommandsTrackFolderShared.h
@@ -1602,6 +1605,7 @@ src/core/RecordingJournal.cpp
 src/core/RemoteControls.cpp
 src/core/RemotePlugin.cpp
 src/core/RenderManager.cpp
+src/core/RenderQueue.cpp
 src/core/RetroAudioCapture.cpp
 src/core/RetroMidiCapture.cpp
 src/core/RetroMidiCaptureSettings.cpp
@@ -2129,6 +2133,7 @@ tests/src/core/ProjectOpenIntegrityTest.cpp
 tests/src/core/ProjectRecoveryTest.cpp
 tests/src/core/ProjectRevIdsTest.cpp
 tests/src/core/ProjectStateTest.cpp
+tests/src/core/ProjectToolsTest.cpp
 tests/src/core/ProjectVersionTest.cpp
 tests/src/core/ProvenanceSectionTest.cpp
 tests/src/core/PunchWindowTest.cpp
