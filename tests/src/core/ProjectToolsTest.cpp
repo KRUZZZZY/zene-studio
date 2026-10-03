@@ -25,11 +25,13 @@
  *  report, at the rate it was asked for (WF-040); a queued render can be cancelled and cleared, and the
  *  task list shows the queue's jobs (WF-046); track.flatten refuses a half range before rendering
  *  anything (ED-207); tracks copied to the clipboard paste into a project as new tracks, one undo step
- *  (WF-042). */
+ *  (WF-042); a project cannot be its own subproject (WF-045); an alternative is kept beside the project,
+ *  undone off the list, switched to and back with the list carried (WF-032). */
 
 #include <QtTest>
 
 #include <QDir>
+#include <QFileInfo>
 #include <QJsonArray>
 #include <QTemporaryDir>
 
@@ -150,6 +152,41 @@ private slots:
 		QVERIFY(run(QStringLiteral("control.undo")).ok);
 		QCOMPARE(Engine::getSong()->tracks().size(), before);
 		QCOMPARE(run(QStringLiteral("project.copy_tracks"), {{QStringLiteral("tracks"), QJsonArray{QStringLiteral("trk-999999")}}}).errorKind,
+			ControlErrorKind::NotFound);
+	}
+
+	void subprojectsRefuseThemselves()
+	{
+		const QString main = QDir(m_dir.path()).filePath(QStringLiteral("song.mmp"));
+		QVERIFY(Engine::getSong()->guiSaveProjectAs(main));
+		QCOMPARE(run(QStringLiteral("project.subproject_add"), {{QStringLiteral("path"), main}}).errorKind, ControlErrorKind::Refused);
+		QCOMPARE(run(QStringLiteral("project.subproject_add"), {{QStringLiteral("path"), QStringLiteral("/no/such.mmp")}}).errorKind,
+			ControlErrorKind::NotFound);
+		QCOMPARE(run(QStringLiteral("project.subprojects")).result.value(QStringLiteral("count")).toInt(), 0);
+	}
+
+	void alternativesSwitchAndCarryTheList()
+	{
+		Song* song = Engine::getSong();
+		QCOMPARE(run(QStringLiteral("project.alternative_save"), {{QStringLiteral("name"), QStringLiteral("main")}}).errorKind,
+			ControlErrorKind::InvalidArgs);
+		const ControlResult saved = run(QStringLiteral("project.alternative_save"), {{QStringLiteral("name"), QStringLiteral("radio")}});
+		QVERIFY2(saved.ok, qPrintable(saved.errorMessage));
+		const QString radio = saved.result.value(QStringLiteral("file")).toString();
+		QVERIFY(QFileInfo::exists(radio));
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
+		QCOMPARE(run(QStringLiteral("project.alternatives")).result.value(QStringLiteral("alternatives")).toArray().size(), 0);
+		QVERIFY(run(QStringLiteral("project.alternative_save"), {{QStringLiteral("name"), QStringLiteral("radio")}}).ok);
+		const ControlResult switched = run(QStringLiteral("project.alternative_switch"), {{QStringLiteral("name"), QStringLiteral("radio")}});
+		QVERIFY2(switched.ok, qPrintable(switched.errorMessage));
+		QCOMPARE(QFileInfo(song->projectFileName()).canonicalFilePath(), QFileInfo(radio).canonicalFilePath());
+		const ControlResult listed = run(QStringLiteral("project.alternatives"));
+		QCOMPARE(listed.result.value(QStringLiteral("active")).toString(), QStringLiteral("radio"));
+		QCOMPARE(QFileInfo(listed.result.value(QStringLiteral("main")).toString()).fileName(), QStringLiteral("song.mmp"));
+		QVERIFY(run(QStringLiteral("project.alternative_switch"), {{QStringLiteral("name"), QStringLiteral("main")}}).ok);
+		QCOMPARE(QFileInfo(song->projectFileName()).fileName(), QStringLiteral("song.mmp"));
+		QCOMPARE(run(QStringLiteral("project.alternatives")).result.value(QStringLiteral("alternatives")).toArray().size(), 1);
+		QCOMPARE(run(QStringLiteral("project.alternative_switch"), {{QStringLiteral("name"), QStringLiteral("nope")}}).errorKind,
 			ControlErrorKind::NotFound);
 	}
 

@@ -49,19 +49,18 @@ namespace lmms
 
 using namespace control;
 
-namespace
-{
-
-//! An audio track named @a name at @a index in the song, playing @a path from @a at.
-Track* landAt(const QString& name, const QString& path, tick_t at, int index)
+Track* control::landAudioTrack(const QString& name, const QString& path, tick_t at, int index)
 {
 	Track* track = Track::create(Track::Type::Sample, Engine::getSong());
 	if (track == nullptr) { return nullptr; }
 	track->setName(name);
 	if (auto* clip = dynamic_cast<SampleClip*>(track->createClip(TimePos(at)))) { clip->setSampleFile(path); }
-	moveTrackToIndex(track, index);
+	if (index >= 0) { moveTrackToIndex(track, index); }
 	return track;
 }
+
+namespace
+{
 
 ControlResult flatten(const QJsonObject& args)
 {
@@ -98,11 +97,11 @@ ControlResult flatten(const QJsonObject& args)
 		},
 		[landed, restored, name, path, at, index]() {
 			if (*restored != nullptr) { removeTrack(*restored); *restored = nullptr; }
-			*landed = landAt(name, path, at, index);
+			*landed = landAudioTrack(name, path, at, index);
 		},
 		xml.size());
 	removeTrack(source);
-	*landed = landAt(name, path, at, index);
+	*landed = landAudioTrack(name, path, at, index);
 
 	QJsonObject result = renderJson(rendered);
 	result.insert(QStringLiteral("flattened"), sourceId);

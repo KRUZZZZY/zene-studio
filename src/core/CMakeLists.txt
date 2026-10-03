@@ -990,6 +990,8 @@ set(LMMS_SRCS
 	core/ControlCommandsRenderQueue.cpp
 	core/ControlCommandsTrackFlatten.cpp
 	core/RenderQueue.cpp
+	core/ControlCommandsSubprojects.cpp
+	core/ControlCommandsAlternatives.cpp
 	core/ControlTrackCreation.cpp
 	core/PitchTrack.cpp
 	core/MarkerActions.cpp

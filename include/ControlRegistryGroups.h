@@ -858,6 +858,10 @@ LMMS_EXPORT void registerBrowserNavigationCommands(ControlRegistry& registry);
 //! task_cancel (ControlCommandsRenderQueue.cpp); track.flatten (ControlCommandsTrackFlatten.cpp).
 LMMS_EXPORT void registerRenderQueueCommands(ControlRegistry& registry);
 LMMS_EXPORT void registerTrackFlattenCommands(ControlRegistry& registry);
+//! 0.5.0 L12 (W3): project.subproject_add / subprojects / subproject_refresh (ControlCommandsSubprojects.cpp);
+//! project.alternative_save / alternatives / alternative_switch / alternative_remove (ControlCommandsAlternatives.cpp).
+LMMS_EXPORT void registerSubprojectCommands(ControlRegistry& registry);
+LMMS_EXPORT void registerAlternativeCommands(ControlRegistry& registry);
 } // namespace lmms
 
 #endif // LMMS_CONTROL_REGISTRY_GROUPS_H

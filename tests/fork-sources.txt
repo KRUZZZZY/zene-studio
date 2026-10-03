@@ -914,6 +914,7 @@ src/core/ControlBounceSupport.cpp
 src/core/ControlBrowserSupport.cpp
 src/core/ControlChainPresetSupport.cpp
 src/core/ControlChordSupport.cpp
+src/core/ControlCommandsAlternatives.cpp
 src/core/ControlCommandsArrangeTools.cpp
 src/core/ControlCommandsArrangement.cpp
 src/core/ControlCommandsArrangementState.cpp
@@ -1088,6 +1089,7 @@ src/core/ControlCommandsSettings.cpp
 src/core/ControlCommandsStemModel.cpp
 src/core/ControlCommandsStems.cpp
 src/core/ControlCommandsStructure.cpp
+src/core/ControlCommandsSubprojects.cpp
 src/core/ControlCommandsSurface.cpp
 src/core/ControlCommandsTelemetry.cpp
 src/core/ControlCommandsTrackChannel.cpp

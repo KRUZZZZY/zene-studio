@@ -88,6 +88,10 @@ LMMS_EXPORT ListSpec devicePresets(const QJsonObject& device);
 LMMS_EXPORT ListSpec renderQueue();
 //! L12 (WF-046): every background task (renders, the library scan, stem separation, mastering) - cancel one.
 LMMS_EXPORT ListSpec backgroundTasks();
+//! L12 (WF-045): the project's subprojects - render one again, open its file; add one.
+LMMS_EXPORT ListSpec subprojects();
+//! L12 (WF-032): the project's alternatives - switch to one, remove one; keep the session as a new one.
+LMMS_EXPORT ListSpec alternatives();
 
 } // namespace CommandLists
 

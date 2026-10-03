@@ -47,6 +47,10 @@ LMMS_EXPORT QString resolveOutPath(const QJsonObject& args, Track* track, const 
 	const BounceInPlace::Range& range);
 //! A render's reply fields (path, rate, frames, bytes, sha256, the ticks it covers).
 LMMS_EXPORT QJsonObject renderJson(const BounceInPlace::Result& rendered);
+//! 0.5.0 L12 (ED-207, WF-045): a new audio track named @a name playing the file @a path from tick @a at,
+//! moved to @a index in the song's list (left at the end when @a index is negative); nullptr when it
+//! could not be made (ControlCommandsTrackFlatten.cpp).
+LMMS_EXPORT Track* landAudioTrack(const QString& name, const QString& path, tick_t at, int index);
 
 } // namespace control
 

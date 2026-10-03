@@ -95,6 +95,21 @@ const ReversibilityRow kW3LibraryRows[] = {
 	R("project.copy_tracks", RC::NotMutating, false, "it writes tracks to the system clipboard, not the project", "no write", ""),
 	R("project.paste_tracks", RC::TrueInverse, true, "it adds the clipboard's tracks to the project",
 		"action checkpoint: the recorded undo step removes the pasted tracks; its redo pastes them again", ""),
+	// L12 (WF-045 / WF-032): subprojects and alternatives.
+	R("project.subproject_add", RC::TrueInverse, true, "it renders another project file and adds a track playing it, linked "
+		"in <subprojects>", "action checkpoint: the recorded undo step removes the track and the link", ""),
+	R("project.subprojects", RC::NotMutating, false, "it reads the subproject links. Nothing is written", "no write", ""),
+	R("project.subproject_refresh", RC::TrueInverse, true, "it renders a subproject again and points its track's clips at the "
+		"new file", "action checkpoint: the recorded undo step points the clips and the link back at the previous file", ""),
+	R("project.alternative_save", RC::TrueInverse, true, "it writes the session to an alternative's file beside the project and "
+		"lists it in <alternatives>", "action checkpoint: the recorded undo step puts the previous list back (the file stays)", ""),
+	R("project.alternatives", RC::NotMutating, false, "it reads the project's alternatives. Nothing is written", "no write", ""),
+	R("project.alternative_switch", RC::Irreversible, false,
+		"it opens another file of the project's family - a project.open, which replaces the session",
+		"none: the session is saved to its own file first (unless save_current was false), so nothing is lost",
+		"switch back with project.alternative_switch to the alternative the session was (main for the main file)"),
+	R("project.alternative_remove", RC::TrueInverse, true, "it takes an alternative off the list (its file stays)",
+		"action checkpoint: the recorded undo step puts the previous list back", ""),
 	R("browser.remember_source", RC::NotMutating, false, "it remembers the browser's source for a view: an interface preference "
 		"in the config file, as window.set_view's view is", "no write to the project", ""),
 };

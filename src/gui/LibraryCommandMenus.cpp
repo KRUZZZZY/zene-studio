@@ -151,6 +151,11 @@ void populateProject(QMenu* menu)
 	list(menu, "Render Queue...", [] { return CommandLists::renderQueue(); });  // WF-040
 	list(menu, "Background Tasks...", [] { return CommandLists::backgroundTasks(); });  // WF-046
 	entry(menu, "Paste Tracks From Another Project", "project.paste_tracks", {}, false);  // WF-042
+	QMenu* family = menu->addMenu(tr("Alternatives and Subprojects"));
+	entry(family, "Keep as an Alternative...", "project.alternative_save", {}, true);  // WF-032
+	list(family, "Alternatives...", [] { return CommandLists::alternatives(); });
+	entry(family, "Add Subproject...", "project.subproject_add", {}, true);  // WF-045
+	list(family, "Subprojects...", [] { return CommandLists::subprojects(); });
 	syncMenu(menu);  // WF-051
 }
 

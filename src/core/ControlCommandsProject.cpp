@@ -452,6 +452,12 @@ QStringList controlRenderCliArguments(const QString& project, const QString& out
 	return arguments;
 }
 
+bool controlRenderProjectFile(const QString& project, const QString& out, int* exitCode)
+{
+	const bool finished = runCliRender(project, out, QStringLiteral("wav"), ControlExportPresetSettings::effective(), -1, -1, exitCode);
+	return finished && *exitCode == 0 && QFileInfo(out).size() > 0;
+}
+
 QStringList controlRenderableFormats()
 {
 	QStringList names;

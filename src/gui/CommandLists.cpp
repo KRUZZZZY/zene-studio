@@ -383,4 +383,32 @@ ListSpec backgroundTasks()
 	return out;
 }
 
+ListSpec subprojects()
+{
+	ListSpec out = spec("Subprojects", "project.subprojects", "subprojects", {QStringLiteral("track"), QStringLiteral("path"),
+		QStringLiteral("stale"), QStringLiteral("exists")});
+	out.summaryKeys = {QStringLiteral("count")};
+	RowAction open = act("Open Its Project", "project.open", {{QStringLiteral("path"), QStringLiteral("path")}});
+	open.confirm = true;
+	out.actions = {act("Render Again", "project.subproject_refresh", {{QStringLiteral("track"), QStringLiteral("track")}}), open};
+	out.extras = {extra("Add Subproject...", "project.subproject_add")};
+	return out;
+}
+
+ListSpec alternatives()
+{
+	ListSpec out = spec("Alternatives", "project.alternatives", "alternatives", {QStringLiteral("name"), QStringLiteral("active"),
+		QStringLiteral("exists"), QStringLiteral("file")});
+	out.summaryKeys = {QStringLiteral("main"), QStringLiteral("active")};
+	const QHash<QString, QString> named{{QStringLiteral("name"), QStringLiteral("name")}};
+	RowAction switchTo = act("Switch To", "project.alternative_switch", named);
+	switchTo.confirm = true;
+	RowAction remove = act("Remove From List", "project.alternative_remove", named);
+	remove.confirm = true;
+	out.actions = {switchTo, remove};
+	out.extras = {extra("Keep the Session as an Alternative...", "project.alternative_save"),
+		extra("Back to the Main File", "project.alternative_switch", {{QStringLiteral("name"), QStringLiteral("main")}}, false)};
+	return out;
+}
+
 } // namespace lmms::gui::CommandLists
