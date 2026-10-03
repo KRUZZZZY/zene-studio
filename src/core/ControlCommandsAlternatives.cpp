@@ -38,6 +38,7 @@
 #include <QFileInfo>
 #include <QJsonArray>
 
+#include "ControlCommandDef.h"
 #include "ControlRegistry.h"
 #include "ProjectSectionRegistry.h"
 #include "ControlRegistryGroups.h"
@@ -224,16 +225,7 @@ ControlResult removeAlternative(const QJsonObject& args)
 void add(ControlRegistry& registry, const char* verb, const QString& description, const QJsonObject& args, const QStringList& required,
 	bool mutating, ControlResult (*handler)(const QJsonObject&))
 {
-	ControlCommand cmd;
-	cmd.group = QStringLiteral("project");
-	cmd.verb = QLatin1String(verb);
-	cmd.id = cmd.group + QLatin1Char('.') + cmd.verb;
-	cmd.description = description;
-	cmd.argsSchema = objectSchema(args, QJsonArray::fromStringList(required));
-	cmd.resultSchema = objectProperty();
-	cmd.mutating = mutating;
-	cmd.handler = handler;
-	registry.registerCommand(cmd);
+	control::defineCommandWithSchema(registry, QStringLiteral("project.") + QLatin1String(verb), description, objectSchema(args, QJsonArray::fromStringList(required)), mutating, handler);
 }
 
 } // namespace

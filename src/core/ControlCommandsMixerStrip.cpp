@@ -35,6 +35,7 @@
 #include <QJsonArray>
 #include <QVector>
 
+#include "ControlCommandDef.h"
 #include "ControlEdit.h"
 #include "ControlMixerSupport.h"
 #include "ControlRegistry.h"
@@ -276,16 +277,7 @@ ControlResult soloMode(const QJsonObject& args)
 void add(ControlRegistry& registry, const char* verb, const QString& description, const QJsonObject& args,
 	ControlResult (*handler)(const QJsonObject&), bool mutating)
 {
-	ControlCommand cmd;
-	cmd.group = QStringLiteral("mixer");
-	cmd.verb = QLatin1String(verb);
-	cmd.id = cmd.group + QLatin1Char('.') + cmd.verb;
-	cmd.description = description;
-	cmd.argsSchema = args;
-	cmd.resultSchema = objectProperty();
-	cmd.mutating = mutating;
-	cmd.handler = handler;
-	registry.registerCommand(cmd);
+	control::defineCommandWithSchema(registry, QStringLiteral("mixer.") + QLatin1String(verb), description, args, mutating, handler);
 }
 
 } // namespace

@@ -30,6 +30,7 @@
 
 #include "ControlAutomationSupport.h"
 #include "ControlDeviceSupport.h"
+#include "ControlCommandDef.h"
 #include "ControlEdit.h"
 #include "ControlRegistry.h"
 #include "ControlRegistryGroups.h"
@@ -131,16 +132,7 @@ ControlResult unmapControl(const QJsonObject& args)
 void add(ControlRegistry& registry, const char* verb, const QString& description, const QJsonObject& args,
 	ControlResult (*handler)(const QJsonObject&))
 {
-	ControlCommand cmd;
-	cmd.group = QStringLiteral("controller");
-	cmd.verb = QLatin1String(verb);
-	cmd.id = cmd.group + QLatin1Char('.') + cmd.verb;
-	cmd.description = description;
-	cmd.argsSchema = args;
-	cmd.resultSchema = objectProperty();
-	cmd.mutating = true;
-	cmd.handler = handler;
-	registry.registerCommand(cmd);
+	control::defineCommandWithSchema(registry, QStringLiteral("controller.") + QLatin1String(verb), description, args, true, handler);
 }
 
 } // namespace

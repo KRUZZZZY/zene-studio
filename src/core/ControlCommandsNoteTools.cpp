@@ -37,6 +37,7 @@
 #include <random>
 
 #include "ControlCommandsNoteShared.h"
+#include "ControlCommandDef.h"
 #include "ControlRegistry.h"
 #include "ControlRegistryGroups.h"
 #include "ControlScaleShared.h"
@@ -264,17 +265,9 @@ ControlResult generate(const QJsonObject& args)
 
 void add(ControlRegistry& registry, const char* verb, const QString& description, QJsonObject args, ControlResult (*handler)(const QJsonObject&))
 {
-	ControlCommand cmd;
-	cmd.group = QStringLiteral("note");
-	cmd.verb = QLatin1String(verb);
-	cmd.id = cmd.group + QLatin1Char('.') + cmd.verb;
-	cmd.description = description;
 	args.insert(QStringLiteral("clip"), stringProperty());
-	cmd.argsSchema = objectSchema(args, QJsonArray{QStringLiteral("clip")});
-	cmd.resultSchema = objectProperty();
-	cmd.mutating = true;
-	cmd.handler = handler;
-	registry.registerCommand(cmd);
+	control::defineCommandWithSchema(registry, QStringLiteral("note.") + QLatin1String(verb), description,
+		objectSchema(args, QJsonArray{QStringLiteral("clip")}), true, handler);
 }
 
 } // namespace

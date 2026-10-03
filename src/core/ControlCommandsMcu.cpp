@@ -30,6 +30,7 @@
 #include <QJsonArray>
 
 #include "AudioEngine.h"
+#include "ControlCommandDef.h"
 #include "ControlRegistry.h"
 #include "ControlRegistryGroups.h"
 #include "ControlVocabulary.h"
@@ -97,15 +98,7 @@ ControlResult setBank(const QJsonObject& args)
 void add(ControlRegistry& registry, const char* verb, const QString& description, const QJsonObject& args,
 	ControlResult (*handler)(const QJsonObject&))
 {
-	ControlCommand cmd;
-	cmd.group = QStringLiteral("surface");
-	cmd.verb = QLatin1String(verb);
-	cmd.id = cmd.group + QLatin1Char('.') + cmd.verb;
-	cmd.description = description;
-	cmd.argsSchema = args;
-	cmd.resultSchema = objectProperty();
-	cmd.handler = handler;
-	registry.registerCommand(cmd);
+	control::defineCommandWithSchema(registry, QStringLiteral("surface.") + QLatin1String(verb), description, args, false, handler);
 }
 
 } // namespace

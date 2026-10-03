@@ -27,6 +27,7 @@
  *  session.bindings lists them. The bindings are a preference in the config file; a change is one
  *  undo step. */
 
+#include "ControlCommandDef.h"
 #include "ControlEdit.h"
 #include "ControlRegistry.h"
 #include "ControlRegistryGroups.h"
@@ -143,17 +144,7 @@ ControlResult listBindings(const QJsonObject&)
 void add(ControlRegistry& registry, const char* verb, const QString& description, const QJsonObject& args,
 	ControlResult (*handler)(const QJsonObject&), bool mutating)
 {
-	ControlCommand cmd;
-	cmd.group = QStringLiteral("session");
-	cmd.verb = QLatin1String(verb);
-	cmd.id = cmd.group + QLatin1Char('.') + cmd.verb;
-	cmd.description = description;
-	cmd.argsSchema = args;
-	cmd.resultSchema = objectProperty();
-	cmd.mutating = mutating;
-	cmd.requiresEngine = false;
-	cmd.handler = handler;
-	registry.registerCommand(cmd);
+	control::defineCommandWithSchema(registry, QStringLiteral("session.") + QLatin1String(verb), description, args, mutating, handler, false);
 }
 
 } // namespace

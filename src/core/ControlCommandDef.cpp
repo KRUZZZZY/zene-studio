@@ -30,8 +30,8 @@
 namespace lmms::control
 {
 
-void defineCommand(ControlRegistry& registry, const QString& id, const QString& description,
-	const QJsonObject& args, const QStringList& required, bool mutating, PlainHandler handler)
+void defineCommandWithSchema(ControlRegistry& registry, const QString& id, const QString& description,
+	const QJsonObject& argsSchema, bool mutating, std::function<ControlResult(const QJsonObject&)> handler, bool requiresEngine)
 {
 	ControlCommand cmd;
 	cmd.id = id;
@@ -39,11 +39,18 @@ void defineCommand(ControlRegistry& registry, const QString& id, const QString& 
 	cmd.group = id.left(dot);
 	cmd.verb = id.mid(dot + 1);
 	cmd.description = description;
-	cmd.argsSchema = objectSchema(args, QJsonArray::fromStringList(required));
+	cmd.argsSchema = argsSchema;
 	cmd.resultSchema = objectProperty();
 	cmd.mutating = mutating;
-	cmd.handler = handler;
+	cmd.requiresEngine = requiresEngine;
+	cmd.handler = std::move(handler);
 	registry.registerCommand(cmd);
+}
+
+void defineCommand(ControlRegistry& registry, const QString& id, const QString& description,
+	const QJsonObject& args, const QStringList& required, bool mutating, PlainHandler handler)
+{
+	defineCommandWithSchema(registry, id, description, objectSchema(args, QJsonArray::fromStringList(required)), mutating, handler);
 }
 
 } // namespace lmms::control

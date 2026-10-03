@@ -26,6 +26,7 @@
  *  channel filter, key range, transpose, snap to the scale context, velocity scale / offset / fixed.
  *  A change is one undo step (an action step holding the whole previous transform). */
 
+#include "ControlCommandDef.h"
 #include "ControlEdit.h"
 #include "ControlRegistry.h"
 #include "ControlRegistryGroups.h"
@@ -136,16 +137,7 @@ ControlResult getTransform(const QJsonObject& args)
 void add(ControlRegistry& registry, const char* verb, const QString& description, const QJsonObject& args,
 	bool mutating, ControlResult (*handler)(const QJsonObject&))
 {
-	ControlCommand cmd;
-	cmd.group = QStringLiteral("track");
-	cmd.verb = QLatin1String(verb);
-	cmd.id = cmd.group + QLatin1Char('.') + cmd.verb;
-	cmd.description = description;
-	cmd.argsSchema = args;
-	cmd.resultSchema = objectProperty();
-	cmd.mutating = mutating;
-	cmd.handler = handler;
-	registry.registerCommand(cmd);
+	control::defineCommandWithSchema(registry, QStringLiteral("track.") + QLatin1String(verb), description, args, mutating, handler);
 }
 
 } // namespace

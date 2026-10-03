@@ -39,6 +39,7 @@
 
 #include "Appearance.h"
 #include "ConfigManager.h"
+#include "ControlCommandDef.h"
 #include "ControlRegistry.h"
 #include "ControlRegistryGroups.h"
 #include "ControlReversibility.h"
@@ -289,17 +290,8 @@ ControlResult presetRemove(const QJsonObject& args)
 void add(ControlRegistry& registry, const char* verb, const QString& description, const QJsonObject& args, bool mutating,
 	ControlResult (*handler)(const QJsonObject&))
 {
-	ControlCommand cmd;
-	cmd.group = QStringLiteral("settings");
-	cmd.verb = QLatin1String(verb);
-	cmd.id = cmd.group + QLatin1Char('.') + cmd.verb;
-	cmd.description = description;
-	cmd.argsSchema = args;
-	cmd.resultSchema = objectProperty();
-	cmd.mutating = mutating;
-	cmd.requiresEngine = false;  // ConfigManager only, as settings.get / settings.set
-	cmd.handler = handler;
-	registry.registerCommand(cmd);
+	// requiresEngine false: ConfigManager only, as settings.get / settings.set.
+	control::defineCommandWithSchema(registry, QStringLiteral("settings.") + QLatin1String(verb), description, args, mutating, handler, false);
 }
 
 } // namespace

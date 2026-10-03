@@ -28,6 +28,7 @@
  *  step (an action step holding the previous values); the members' gains are republished at once. */
 
 #include "ControlCommandsVcaShared.h"
+#include "ControlCommandDef.h"
 #include "ControlRegistry.h"
 #include "ControlReversibility.h"
 #include "ControlVocabulary.h"
@@ -125,16 +126,7 @@ ControlResult setLinks(const QJsonObject& args)
 void add(ControlRegistry& registry, const char* verb, const QString& description, const QJsonObject& args,
 	ControlResult (*handler)(const QJsonObject&))
 {
-	ControlCommand cmd;
-	cmd.group = QStringLiteral("vca");
-	cmd.verb = QLatin1String(verb);
-	cmd.id = cmd.group + QLatin1Char('.') + cmd.verb;
-	cmd.description = description;
-	cmd.argsSchema = args;
-	cmd.resultSchema = control::objectProperty();
-	cmd.mutating = true;
-	cmd.handler = handler;
-	registry.registerCommand(cmd);
+	control::defineCommandWithSchema(registry, QStringLiteral("vca.") + QLatin1String(verb), description, args, true, handler);
 }
 
 } // namespace

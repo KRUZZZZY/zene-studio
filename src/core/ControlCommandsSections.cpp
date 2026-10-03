@@ -29,6 +29,7 @@
 #include <QJsonArray>
 
 #include "ArrangementSections.h"
+#include "ControlCommandDef.h"
 #include "ControlRegistry.h"
 #include "ControlRegistryGroups.h"
 #include "ControlReversibility.h"
@@ -139,16 +140,7 @@ ControlResult selectSection(const QJsonObject& args)
 void add(ControlRegistry& registry, const char* verb, const QString& description, const QJsonObject& args, const QStringList& required,
 	bool mutating, ControlResult (*handler)(const QJsonObject&))
 {
-	ControlCommand cmd;
-	cmd.group = QStringLiteral("section");
-	cmd.verb = QLatin1String(verb);
-	cmd.id = cmd.group + QLatin1Char('.') + cmd.verb;
-	cmd.description = description;
-	cmd.argsSchema = objectSchema(args, QJsonArray::fromStringList(required));
-	cmd.resultSchema = objectProperty();
-	cmd.mutating = mutating;
-	cmd.handler = handler;
-	registry.registerCommand(cmd);
+	control::defineCommandWithSchema(registry, QStringLiteral("section.") + QLatin1String(verb), description, objectSchema(args, QJsonArray::fromStringList(required)), mutating, handler);
 }
 
 } // namespace

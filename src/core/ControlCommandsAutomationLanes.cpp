@@ -37,6 +37,7 @@
 #include "AutomationTrack.h"
 #include "ControlAutomationSupport.h"
 #include "ControlDeviceSupport.h"
+#include "ControlCommandDef.h"
 #include "ControlEdit.h"
 #include "ControlRegistry.h"
 #include "ControlRegistryGroups.h"
@@ -220,16 +221,7 @@ ControlResult lastTouched(const QJsonObject&)
 void add(ControlRegistry& registry, const char* verb, const QString& description, const QJsonObject& args,
 	bool mutating, std::function<ControlResult(const QJsonObject&)> handler)
 {
-	ControlCommand cmd;
-	cmd.group = QStringLiteral("automation");
-	cmd.verb = QLatin1String(verb);
-	cmd.id = cmd.group + QLatin1Char('.') + cmd.verb;
-	cmd.description = description;
-	cmd.argsSchema = args;
-	cmd.resultSchema = objectProperty();
-	cmd.mutating = mutating;
-	cmd.handler = std::move(handler);
-	registry.registerCommand(cmd);
+	control::defineCommandWithSchema(registry, QStringLiteral("automation.") + QLatin1String(verb), description, args, mutating, handler);
 }
 
 QJsonObject withParameter(QJsonObject properties, const QJsonArray& required = {})

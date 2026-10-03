@@ -33,6 +33,7 @@
 
 #include "ArrangementEdits.h"
 #include "ClipTransients.h"
+#include "ControlCommandDef.h"
 #include "ControlEdit.h"
 #include "ControlTrackCreation.h"
 #include "ControlRegistry.h"
@@ -236,16 +237,7 @@ ControlResult sliceToInstrument(const QJsonObject& args)
 void add(ControlRegistry& registry, const char* verb, const QString& description, const QJsonObject& args,
 	bool mutating, ControlResult (*handler)(const QJsonObject&))
 {
-	ControlCommand cmd;
-	cmd.group = QStringLiteral("clip");
-	cmd.verb = QLatin1String(verb);
-	cmd.id = cmd.group + QLatin1Char('.') + cmd.verb;
-	cmd.description = description;
-	cmd.argsSchema = args;
-	cmd.resultSchema = objectProperty();
-	cmd.mutating = mutating;
-	cmd.handler = handler;
-	registry.registerCommand(cmd);
+	control::defineCommandWithSchema(registry, QStringLiteral("clip.") + QLatin1String(verb), description, args, mutating, handler);
 }
 
 } // namespace

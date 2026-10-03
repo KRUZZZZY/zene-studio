@@ -40,6 +40,7 @@
 #include <QPointer>
 
 #include "ControlCommandsNoteShared.h"
+#include "ControlCommandDef.h"
 #include "ControlRegistry.h"
 #include "ControlRegistryGroups.h"
 #include "ControlScaleShared.h"
@@ -180,17 +181,7 @@ ControlResult panic(const QJsonObject&)
 void add(ControlRegistry& registry, const char* id, const QString& description, const QJsonObject& args, const QStringList& required,
 	bool mutating, ControlResult (*handler)(const QJsonObject&))
 {
-	ControlCommand cmd;
-	cmd.id = QLatin1String(id);
-	const int dot = cmd.id.indexOf(QLatin1Char('.'));
-	cmd.group = cmd.id.left(dot);
-	cmd.verb = cmd.id.mid(dot + 1);
-	cmd.description = description;
-	cmd.argsSchema = objectSchema(args, QJsonArray::fromStringList(required));
-	cmd.resultSchema = objectProperty();
-	cmd.mutating = mutating;
-	cmd.handler = handler;
-	registry.registerCommand(cmd);
+	control::defineCommandWithSchema(registry, QLatin1String(id), description, objectSchema(args, QJsonArray::fromStringList(required)), mutating, handler);
 }
 
 } // namespace

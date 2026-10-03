@@ -39,6 +39,7 @@
 #include "BrowserIndex.h"
 #include "BrowserSearch.h"
 #include "ControlBrowserSupport.h"
+#include "ControlCommandDef.h"
 #include "ControlRegistry.h"
 #include "ControlRegistryGroups.h"
 #include "ControlVocabulary.h"
@@ -202,17 +203,7 @@ ControlResult similar(const QJsonObject& args)
 void add(ControlRegistry& registry, const char* verb, const QString& description, const QJsonObject& args,
 	const QStringList& required, ControlResult (*handler)(const QJsonObject&))
 {
-	ControlCommand cmd;
-	cmd.group = QStringLiteral("browser");
-	cmd.verb = QLatin1String(verb);
-	cmd.id = cmd.group + QLatin1Char('.') + cmd.verb;
-	cmd.description = description;
-	cmd.argsSchema = objectSchema(args, QJsonArray::fromStringList(required));
-	cmd.resultSchema = objectProperty();
-	cmd.mutating = false;
-	cmd.requiresEngine = false;
-	cmd.handler = handler;
-	registry.registerCommand(cmd);
+	control::defineCommandWithSchema(registry, QStringLiteral("browser.") + QLatin1String(verb), description, objectSchema(args, QJsonArray::fromStringList(required)), false, handler, false);
 }
 
 } // namespace

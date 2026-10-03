@@ -24,6 +24,8 @@
 #ifndef LMMS_CONTROL_COMMAND_DEF_H
 #define LMMS_CONTROL_COMMAND_DEF_H
 
+#include <functional>
+
 #include <QJsonObject>
 #include <QString>
 #include <QStringList>
@@ -43,6 +45,12 @@ using PlainHandler = ControlResult (*)(const QJsonObject&);
  *  carry its own copy of. */
 LMMS_EXPORT void defineCommand(ControlRegistry& registry, const QString& id, const QString& description,
 	const QJsonObject& args, const QStringList& required, bool mutating, PlainHandler handler);
+
+/*! The same with the argument schema already built (@a argsSchema used as given), any handler, and @a requiresEngine
+ *  false for a command that answers before the engine runs. What every command file's own add() helper calls. */
+LMMS_EXPORT void defineCommandWithSchema(ControlRegistry& registry, const QString& id, const QString& description,
+	const QJsonObject& argsSchema, bool mutating, std::function<ControlResult(const QJsonObject&)> handler,
+	bool requiresEngine = true);
 
 } // namespace lmms::control
 
