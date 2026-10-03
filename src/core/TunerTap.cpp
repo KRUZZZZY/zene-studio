@@ -50,7 +50,14 @@ TunerTap& TunerTap::instance()
 void TunerTap::push(Source from, const SampleFrame* frames, f_cnt_t count) noexcept
 {
 	if (m_source.load(std::memory_order_relaxed) != static_cast<int>(from) || frames == nullptr || count == 0) { return; }
-	const std::uint64_t head = m_resetPending.exchange(false, std::memory_order_acq_rel) ? 0 : m_head.load(std::memory_order_relaxed);
+	const bool fresh = m_resetPending.exchange(false, std::memory_order_acq_rel);
+	// A push of the old source still in flight when setSource() ran leaves the new source's reset for it.
+	if (fresh && m_source.load(std::memory_order_relaxed) != static_cast<int>(from))
+	{
+		m_resetPending.store(true, std::memory_order_release);
+		return;
+	}
+	const std::uint64_t head = fresh ? 0 : m_head.load(std::memory_order_relaxed);
 	const f_cnt_t first = count > Capacity ? count - Capacity : 0;
 	for (f_cnt_t i = first; i < count; ++i)
 	{

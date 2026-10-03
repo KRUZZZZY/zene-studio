@@ -59,6 +59,18 @@ int ccValueOf(const AutomatableModel* model)
 	return std::clamp(static_cast<int>(std::lround((model->value<float>() - model->minValue<float>()) / span * 127.f)), 0, 127);
 }
 
+int pagesOf(const QList<AutomatableModel*>& models)
+{
+	return std::max(1, (static_cast<int>(models.size()) + RemoteControls::Knobs - 1) / RemoteControls::Knobs);
+}
+
+//! The page the knobs are on, within the device's pages now: another instrument in the same slot keeps the
+//! target but can have fewer parameters, and the page would otherwise sit past the end, every knob dead.
+int pageWithin(int page, const QList<AutomatableModel*>& models)
+{
+	return std::clamp(page, 0, pagesOf(models) - 1);
+}
+
 } // namespace
 
 RemoteControls::RemoteControls() = default;
@@ -72,11 +84,16 @@ RemoteControls* RemoteControls::instance() { return s_remote.get(); }
 
 RemoteControls* RemoteControls::connect(const QString& input, const QString& output, int channel, int firstCc)
 {
+	// The device the knobs drive carries over; the old port closes BEFORE the new one opens, so a
+	// reconnect to the same controller never has two ports subscribed to it at once.
+	const QString target = s_remote != nullptr ? s_remote->m_target : QString();
+	const QString plugin = s_remote != nullptr ? s_remote->m_plugin : QString();
+	s_remote.reset();
 	auto remote = std::make_unique<RemoteControls>();
 	remote->m_channel = channel;
 	remote->m_firstCc = std::clamp(firstCc, 0, 127 - Knobs + 1);
 	remote->open(QStringLiteral("Remote Controls"), input, output);
-	if (s_remote != nullptr) { remote->setTarget(s_remote->m_target, s_remote->m_plugin); }
+	remote->setTarget(target, plugin);
 	s_remote = std::move(remote);
 	return s_remote.get();
 }
@@ -99,7 +116,7 @@ void RemoteControls::followSelection(const QString& target, const QString& plugi
 
 int RemoteControls::pageCount() const
 {
-	return std::max(1, (static_cast<int>(parametersOf(m_target, m_plugin).size()) + Knobs - 1) / Knobs);
+	return pagesOf(parametersOf(m_target, m_plugin));
 }
 
 void RemoteControls::setPage(int page)
@@ -111,7 +128,7 @@ void RemoteControls::setPage(int page)
 bool RemoteControls::applyKnob(int knob, int value)
 {
 	const QList<AutomatableModel*> models = parametersOf(m_target, m_plugin);
-	const int index = m_page * Knobs + knob;
+	const int index = pageWithin(m_page, models) * Knobs + knob;
 	if (knob < 0 || knob >= Knobs || index >= models.size()) { return false; }
 	AutomatableModel* model = models.at(index);
 	const float lo = model->minValue<float>();
@@ -135,9 +152,10 @@ void RemoteControls::sendPage()
 {
 	if (!isOpen() || output().isEmpty()) { return; }
 	const QList<AutomatableModel*> models = parametersOf(m_target, m_plugin);
+	const int first = pageWithin(m_page, models) * Knobs;
 	for (int knob = 0; knob < Knobs; ++knob)
 	{
-		const int index = m_page * Knobs + knob;
+		const int index = first + knob;
 		const int value = index < models.size() ? ccValueOf(models.at(index)) : 0;
 		send(MidiEvent(MidiControlChange, static_cast<int8_t>(std::max(0, m_channel)),
 			static_cast<int16_t>(m_firstCc + knob), static_cast<int16_t>(value)));
@@ -147,10 +165,11 @@ void RemoteControls::sendPage()
 QJsonObject RemoteControls::state() const
 {
 	const QList<AutomatableModel*> models = parametersOf(m_target, m_plugin);
+	const int shown = pageWithin(m_page, models);
 	QJsonArray page;
 	for (int knob = 0; knob < Knobs; ++knob)
 	{
-		const int index = m_page * Knobs + knob;
+		const int index = shown * Knobs + knob;
 		if (index >= models.size()) { break; }
 		page.append(QJsonObject{{QStringLiteral("knob"), knob}, {QStringLiteral("name"), models.at(index)->displayName()},
 			{QStringLiteral("value"), static_cast<double>(models.at(index)->value<float>())}});
@@ -158,7 +177,7 @@ QJsonObject RemoteControls::state() const
 	return {{QStringLiteral("connected"), isOpen()}, {QStringLiteral("subscribed"), subscribed()}, {QStringLiteral("input"), input()},
 		{QStringLiteral("output"), output()},
 		{QStringLiteral("channel"), m_channel}, {QStringLiteral("first_cc"), m_firstCc}, {QStringLiteral("target"), m_target},
-		{QStringLiteral("plugin"), m_plugin}, {QStringLiteral("follow"), m_follow}, {QStringLiteral("page"), m_page},
+		{QStringLiteral("plugin"), m_plugin}, {QStringLiteral("follow"), m_follow}, {QStringLiteral("page"), shown},
 		{QStringLiteral("pages"), pageCount()}, {QStringLiteral("parameters"), page},
 		{QStringLiteral("events_in"), eventsIn()}};
 }

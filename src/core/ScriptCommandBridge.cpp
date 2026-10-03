@@ -25,6 +25,7 @@
 #include "ScriptCommandBridge.h"
 
 #include <algorithm>
+#include <cmath>
 
 #include <QHash>
 #include <QJsonArray>
@@ -79,6 +80,7 @@ const QHash<QString, QStringList>& commandPathArgs()
 		{QStringLiteral("project.merge"), {QStringLiteral("base"), QStringLiteral("ours"), QStringLiteral("theirs"), QStringLiteral("report")}},
 		{QStringLiteral("project.relink"), {QStringLiteral("to")}},
 		{QStringLiteral("rack.zone_add"), {QStringLiteral("sample")}},
+		{QStringLiteral("render.convert"), {QStringLiteral("files")}},  // the queue's sources: a script reads none outside
 		{QStringLiteral("session.set_slot"), {QStringLiteral("source")}},
 		{QStringLiteral("stem.job_start"), {QStringLiteral("source")}},
 	};
@@ -170,19 +172,21 @@ void pushObject(lua_State* L, const QJsonObject& object)
 	}
 }
 
+//! A whole number in lua_Integer's range as an integer, anything else as a number. The range is tested
+//! BEFORE the cast: converting a double outside it (1e300) is undefined behaviour.
+void pushNumber(lua_State* L, double d)
+{
+	constexpr double TwoTo63 = 9223372036854775808.0;
+	if (d >= -TwoTo63 && d < TwoTo63 && std::trunc(d) == d) { lua_pushinteger(L, static_cast<lua_Integer>(d)); }
+	else { lua_pushnumber(L, d); }
+}
+
 void pushJson(lua_State* L, const QJsonValue& value)
 {
 	switch (value.type())
 	{
 	case QJsonValue::Bool: lua_pushboolean(L, value.toBool()); return;
-	case QJsonValue::Double:
-	{
-		const double d = value.toDouble();
-		const auto asInt = static_cast<lua_Integer>(d);
-		if (static_cast<double>(asInt) == d) { lua_pushinteger(L, asInt); }
-		else { lua_pushnumber(L, d); }
-		return;
-	}
+	case QJsonValue::Double: pushNumber(L, value.toDouble()); return;
 	case QJsonValue::String: lua_pushstring(L, value.toString().toUtf8().constData()); return;
 	case QJsonValue::Array: pushArray(L, value.toArray()); return;
 	case QJsonValue::Object: pushObject(L, value.toObject()); return;

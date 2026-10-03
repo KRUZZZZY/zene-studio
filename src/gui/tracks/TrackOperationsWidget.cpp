@@ -136,6 +136,15 @@ TrackOperationsWidget::TrackOperationsWidget( TrackView * parent ) :
 			if (!result.ok) { m_armBtn->setToolTip(result.errorMessage); }
 			m_armBtn->setChecked(control::trackRecordArmed(m_trackView->getTrack()));
 		});
+		// The arm state lives in the engine's recorder, which signals nothing: a script, an agent or the Record
+		// menu arming the track shows here on the next GUI tick, not only when this header happens to repaint.
+		// A hidden header is skipped: a closed track view (its track deleted, the view not yet) is hidden too.
+		if (getGUI() != nullptr && getGUI()->mainWindow() != nullptr)
+		{
+			connect(getGUI()->mainWindow(), &MainWindow::periodicUpdate, m_armBtn, [this]() {
+				if (m_armBtn->isVisible()) { m_armBtn->setChecked(control::trackRecordArmed(m_trackView->getTrack())); }
+			});
+		}
 		operationsLayout->addWidget(m_armBtn);
 	}
 

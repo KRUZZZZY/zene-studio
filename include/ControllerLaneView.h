@@ -56,6 +56,8 @@ class LMMS_EXPORT ControllerLaneView : public QWidget
 public:
 	explicit ControllerLaneView(NoteEditor* editor);
 	QSize sizeHint() const override;
+	//! Drop a stroke in progress, uncommitted: the clip it was drawn on changed or went away.
+	void cancelDrag();
 
 protected:
 	void paintEvent(QPaintEvent* event) override;

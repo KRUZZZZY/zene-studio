@@ -44,6 +44,7 @@ class QScrollBar;
 namespace lmms
 {
 class Note;
+class Piano;
 }
 
 namespace lmms::gui
@@ -191,6 +192,9 @@ private:
 	//! readScale() when the scale context changed since it last ran (a change made elsewhere).
 	void followScale();
 	void onClipDestroyed();
+	//! The clip changed or went: every gesture in flight is dropped (none commits to another clip)
+	//! and a held audition key is released on the instrument it sounds on.
+	void cancelGestures();
 	void fitIfPending();
 
 	NoteEditorState m_state;
@@ -208,6 +212,7 @@ private:
 	QActionGroup* m_tools = nullptr;
 	QActionGroup* m_folds = nullptr;
 	int m_auditionKey = -1;
+	QPointer<Piano> m_auditionPiano;  //!< the instrument the held audition key sounds on, whatever clip is open now
 	int m_scaleRoot = -1;     //!< the scale context readScale() last read
 	QString m_scaleSeen;
 	bool m_syncing = false;

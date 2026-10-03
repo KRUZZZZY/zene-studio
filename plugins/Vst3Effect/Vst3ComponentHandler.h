@@ -70,6 +70,7 @@ public:
 
 	tresult PLUGIN_API performEdit(ParamID id, ParamValue valueNormalized) SMTG_OVERRIDE
 	{
+		if (m_values == nullptr || m_indexById == nullptr) { return kResultOk; }  // detached: the host is gone
 		const auto it = std::lower_bound(m_indexById->begin(), m_indexById->end(),
 			std::make_pair(static_cast<std::uint32_t>(id), std::size_t{0}));
 		if (it != m_indexById->end() && it->first == static_cast<std::uint32_t>(id))
@@ -93,6 +94,15 @@ public:
 	//! GUI thread. The handler owns its callback (the plug-in may keep the handler alive past the
 	//! host's own teardown, which clears this first: review L01-1 #5).
 	void setOnLatencyChanged(std::function<void()> callback) { m_onLatencyChanged = std::move(callback); }
+
+	//! GUI thread, at the host's teardown: forget the host's parameter array and index and its callback, so a
+	//! plug-in that keeps the handler past them edits nothing freed (review r4 L20 #11).
+	void detach()
+	{
+		m_values = nullptr;
+		m_indexById = nullptr;
+		m_onLatencyChanged = nullptr;
+	}
 
 	tresult PLUGIN_API queryInterface(const TUID, void** obj) SMTG_OVERRIDE
 	{

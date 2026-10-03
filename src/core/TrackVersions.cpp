@@ -27,11 +27,23 @@
 #include <QDomElement>
 
 #include "Clip.h"
+#include "Engine.h"
+#include "Song.h"
 #include "TimePos.h"
 #include "Track.h"
 
 namespace lmms
 {
+
+namespace
+{
+
+bool songHasTrack(int id)
+{
+	return Engine::getSong() != nullptr && Engine::getSong()->findTrackById(id) != nullptr;
+}
+
+} // namespace
 
 TrackVersions& TrackVersions::instance()
 {
@@ -77,11 +89,21 @@ bool TrackVersions::replaceClips(Track* track, const QString& xml)
 	return true;
 }
 
+bool TrackVersions::shouldPersist() const
+{
+	for (auto set = m_sets.constBegin(); set != m_sets.constEnd(); ++set)
+	{
+		if (songHasTrack(set.key())) { return true; }
+	}
+	return false;
+}
+
 void TrackVersions::save(QDomDocument& doc, QDomElement& parent) const
 {
 	QDomElement element = doc.createElement(elementName());
 	for (auto set = m_sets.constBegin(); set != m_sets.constEnd(); ++set)
 	{
+		if (!songHasTrack(set.key())) { continue; }  // a deleted track's versions are not written (review r4 L19 #6)
 		QDomElement track = doc.createElement(QStringLiteral("track"));
 		track.setAttribute(QStringLiteral("id"), set.key());
 		track.setAttribute(QStringLiteral("active"), set.value().active);

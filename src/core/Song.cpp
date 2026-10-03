@@ -787,6 +787,12 @@ void Song::record()
 
 void Song::playAndRecord()
 {
+	// A running transport stops first: startSongPlayback's own stop() would end the pass begun below (its
+	// count-in, its punch gate) and move the play position off the pre-roll (review r4 L19 #22).
+	if( isStopped() == false )
+	{
+		stop();
+	}
 	// 0.5.0 L03 (WF-080): a count-in or pre-roll starts the pass early, captured from here.
 	const tick_t start = recordoptions::beginPass(this);
 	startSongPlayback( true );
@@ -1220,7 +1226,9 @@ void Song::buildAutomationRamps( const TrackList & trackList, const TimePos & bl
 	 *     nothing grows with tempo or block size.
 	 */
 	const double framesPerTick = Engine::framesPerTick();
-	if( frames == 0 || framesPerTick <= 0.0 )
+	// The song-wide read switch (ED-200) gates the ramp exactly as it gates the per-tick apply in
+	// processAutomations(): with reads off, every control keeps its manual value, so nothing is published.
+	if( frames == 0 || framesPerTick <= 0.0 || !AutomationSwitches::instance().reads() )
 	{
 		return;
 	}

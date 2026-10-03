@@ -78,6 +78,9 @@ public:
 
 	//! The playhead, in ticks inside the clip, or -1 when the clip is not playing.
 	void setPlayhead(int tick);
+	//! Drop the gesture in flight (the clip changed or went): its release commits nothing to whichever
+	//! clip is open then. The editor releases a held audition key itself.
+	void cancelGesture();
 
 protected:
 	void paintEvent(QPaintEvent* event) override;
@@ -154,6 +157,8 @@ private:
 	void pressPaint();
 	void pressMute(const Note* note);
 	void extendPaint(const QPoint& pos);
+	//! The eraser's path from @a from to @a to: every note on it is marked, not only the one at its end.
+	void eraseAlong(const QPoint& from, const QPoint& to);
 	void commitPaint();
 	void pressVelocity(Note* note);
 	int velocityDelta() const;

@@ -118,6 +118,16 @@ void NoteCanvas::setPlayhead(int tick)
 	update();
 }
 
+void NoteCanvas::cancelGesture()
+{
+	m_drag = Drag::None;
+	m_anchorId = -1;
+	m_auditionKey = -1;
+	m_erasedIds.clear();
+	m_painted.clear();
+	update();
+}
+
 NoteRange NoteCanvas::visibleRange() const
 {
 	if (m_state.clip == nullptr) { return {0, 0}; }

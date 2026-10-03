@@ -178,6 +178,8 @@ void TakeLanesPanel::refresh()
 {
 	const ControlResult state = ControlRegistry::instance()->invoke(QStringLiteral("comp.get_state"),
 		{{QStringLiteral("track"), m_trackId}});
+	// A strip whose state could not be read (the track is gone) takes no swipes on the lanes it last showed.
+	m_strip->setEnabled(state.ok);
 	if (!state.ok)
 	{
 		m_status->setText(state.errorMessage);

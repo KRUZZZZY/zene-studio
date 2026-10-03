@@ -31,6 +31,7 @@
 #include <QObject>
 #include <QString>
 
+#include "ControlExportPresetSupport.h"
 #include "lmms_export.h"
 
 class QProcess;
@@ -54,6 +55,9 @@ struct LMMS_EXPORT RenderJob
 	int rangeEnd = -1;
 	int sampleRate = 0;  //!< a conversion's rate (0 keeps the file's own)
 	int bitDepth = 24;   //!< a conversion's sample format: 16, 24 or 32 (float)
+	//! A render's export settings as in force when it was queued (RenderQueue::add): a preset applied while
+	//! it waits is the next job's, not this one's.
+	ControlExportPreset settings;
 	State state = State::Queued;
 	int exitCode = 0;
 	QString error;

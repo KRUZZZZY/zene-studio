@@ -86,6 +86,9 @@ LMMS_EXPORT void applyOutput(MixerChannel& channel, f_cnt_t frames);
 LMMS_EXPORT bool applyPanMode(MixerChannel& channel, f_cnt_t frames);
 //! The meters, from the pre-fader block @a buffer and the fader @a volume.
 LMMS_EXPORT void updateMeters(MixerChannel& channel, const SampleFrame* buffer, float volume, f_cnt_t frames);
+//! A muted channel's period (Mixer::masterMix skips its processing): the live readings - RMS, the send
+//! meters' peak, correlation, gain reduction - fall to silence; the held peaks and the clip light keep theirs.
+LMMS_EXPORT void silenceMeters(MixerChannel& channel);
 
 //! The strip's settings as attributes of the channel's element - only those off their defaults.
 LMMS_EXPORT void save(const MixerChannel& channel, QDomElement& element);

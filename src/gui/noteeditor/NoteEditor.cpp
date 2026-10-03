@@ -121,7 +121,10 @@ void NoteEditor::followScale()
 	if (context.root != m_scaleRoot || context.scale != m_scaleSeen) { readScale(); }
 }
 
-NoteEditor::~NoteEditor() = default;
+NoteEditor::~NoteEditor()
+{
+	auditionRelease(m_auditionKey);  // closing the editor mid-audition must not leave the note sounding
+}
 
 void NoteEditor::buildBody()
 {
@@ -170,6 +173,7 @@ QString NoteEditor::clipId() const { return control::clipIdOf(m_state.clip.data(
 
 void NoteEditor::setClip(MidiClip* clip)
 {
+	if (clip != m_state.clip) { cancelGestures(); }
 	if (m_state.clip != nullptr) { disconnect(m_state.clip, nullptr, this, nullptr); }
 	m_state.clip = clip;
 	if (clip != nullptr)
@@ -193,9 +197,19 @@ void NoteEditor::setClip(MidiClip* clip)
 void NoteEditor::onClipDestroyed()
 {
 	// The QPointer is already null; drop everything that read the clip.
+	cancelGestures();
 	m_state.clip = nullptr;
 	refresh();
 	emit clipChanged();
+}
+
+void NoteEditor::cancelGestures()
+{
+	auditionRelease(m_auditionKey);
+	m_canvas->cancelGesture();
+	m_ruler->cancelDrag();
+	m_lanes->cancelDrag();
+	m_ccLane->cancelDrag();
 }
 
 void NoteEditor::refresh()
@@ -360,15 +374,18 @@ void NoteEditor::auditionPress(int key, int velocity)
 	// The piano model's key press is the path a MIDI keyboard takes into the instrument: a
 	// queued, thread-safe note-on, never a direct touch of the audio thread's state.
 	const int midiVelocity = std::clamp(velocity * 127 / 200, 1, 127);
-	m_state.clip->instrumentTrack()->pianoModel()->handleKeyPress(key, midiVelocity);
+	m_auditionPiano = m_state.clip->instrumentTrack()->pianoModel();
+	m_auditionPiano->handleKeyPress(key, midiVelocity);
 	m_auditionKey = key;
 }
 
 void NoteEditor::auditionRelease(int key)
 {
-	if (m_state.clip == nullptr || m_state.clip->instrumentTrack() == nullptr || key < 0) { return; }
-	m_state.clip->instrumentTrack()->pianoModel()->handleKeyRelease(key);
-	if (m_auditionKey == key) { m_auditionKey = -1; }
+	// The release goes to the instrument the press went to: the clip may have changed or gone since
+	// (a null piano is a track that went with it, and its notes with it).
+	if (key < 0 || m_auditionPiano == nullptr) { return; }
+	m_auditionPiano->handleKeyRelease(key);
+	if (m_auditionKey == key) { m_auditionKey = -1; m_auditionPiano = nullptr; }
 }
 
 void NoteEditor::keyPressEvent(QKeyEvent* event)

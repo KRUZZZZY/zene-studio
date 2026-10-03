@@ -122,12 +122,22 @@ QJsonObject reportOf(const RenderJob& job)
 	return report;
 }
 
+//! Whether the job wrote its output: a render's file must be newer than the job (in whole seconds, for a
+//! file system that keeps no finer times), so a file already there and a process that exited 0 without
+//! writing is not reported as this render. A conversion's output is its own committed staged file.
+bool writtenByJob(const RenderJob& job)
+{
+	const QFileInfo out(job.out);
+	return out.size() > 0
+		&& (job.kind == RenderJob::Kind::Convert || out.lastModified().toMSecsSinceEpoch() >= job.startedMs / 1000 * 1000);
+}
+
 //! A running job's end: done when it wrote a file (with its report), failed otherwise.
 void conclude(RenderJob* job, bool ok, int exitCode, const QString& error)
 {
 	job->finishedMs = now();
 	job->exitCode = exitCode;
-	const bool written = ok && QFileInfo(job->out).size() > 0;
+	const bool written = ok && writtenByJob(*job);
 	job->state = written ? RenderJob::State::Done : RenderJob::State::Failed;
 	job->error = written ? QString() : (!error.isEmpty() ? error : QStringLiteral("no file was written (exit %1)").arg(exitCode));
 	if (written) { job->report = reportOf(*job); }
@@ -182,6 +192,7 @@ int RenderQueue::add(RenderJob job)
 	job.id = m_nextId++;
 	job.state = RenderJob::State::Queued;
 	job.queuedMs = now();
+	if (job.kind == RenderJob::Kind::Render) { job.settings = ControlExportPresetSettings::effective(); }
 	m_jobs.push_back(job);
 	return job.id;
 }
@@ -228,7 +239,7 @@ void RenderQueue::runRender(RenderJob& job)
 		if (error == QProcess::FailedToStart) { finish(id, false, -1, QStringLiteral("the render process could not be started")); }
 	});
 	m_process->start(QCoreApplication::applicationFilePath(), controlRenderCliArguments(job.source, job.out, job.format,
-		ControlExportPresetSettings::effective(), job.rangeBegin, job.rangeEnd));
+		job.settings, job.rangeBegin, job.rangeEnd));
 }
 
 void RenderQueue::runConvert(RenderJob& job)

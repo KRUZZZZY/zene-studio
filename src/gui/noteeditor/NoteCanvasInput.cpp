@@ -213,8 +213,9 @@ void NoteCanvas::pressOnEmpty(QMouseEvent* event)
 
 void NoteCanvas::mouseMoveEvent(QMouseEvent* event)
 {
+	const QPoint from = m_currentPos;
 	m_currentPos = event->pos();
-	if (m_drag == Drag::Erase) { markErased(noteAt(event->pos())); }
+	if (m_drag == Drag::Erase) { eraseAlong(from, event->pos()); }
 	if (m_drag == Drag::Paint) { extendPaint(event->pos()); }
 	if (m_drag == Drag::None)
 	{

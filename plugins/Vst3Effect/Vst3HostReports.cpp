@@ -52,6 +52,8 @@ void HostedPlugin::setLatencyChangedCallback(std::function<void()> callback)
 
 auto HostedPlugin::outputEventCount() const -> int { return m_impl->blockOutputCount; }
 
+auto HostedPlugin::droppedOutputEvents() const -> std::uint64_t { return m_impl->droppedOutput; }
+
 auto HostedPlugin::outputEvent(int index) const -> const MidiEventIn&
 {
 	return m_impl->blockOutput[static_cast<std::size_t>(index)];

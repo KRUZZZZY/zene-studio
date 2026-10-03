@@ -59,6 +59,25 @@ enum class ControllerKind
  *  "aftertouch", "program" (stepped, not linear). */
 struct LMMS_EXPORT ControllerLane
 {
+	ControllerLane() = default;
+	//! A copy (a duplicated or pasted clip's lane) is new to the audio thread: it takes the curve, not
+	//! what the source last sent - and never reads those two fields, which the audio thread may be
+	//! writing while the source plays. A move (the lane list growing or shrinking) keeps them.
+	ControllerLane(const ControllerLane& other) : kind{other.kind}, controller{other.controller}, points{other.points} {}
+	ControllerLane& operator=(const ControllerLane& other)
+	{
+		if (this == &other) { return *this; }
+		kind = other.kind;
+		controller = other.controller;
+		points = other.points;
+		lastSent = -1;
+		lastTick = -2;
+		return *this;
+	}
+	ControllerLane(ControllerLane&&) noexcept = default;
+	ControllerLane& operator=(ControllerLane&&) noexcept = default;
+	~ControllerLane() = default;
+
 	ControllerKind kind = ControllerKind::ControlChange;
 	int controller = 0;                   //!< the CC number (ControlChange only)
 	std::vector<ControllerPoint> points;  //!< sorted by tick, one point per tick

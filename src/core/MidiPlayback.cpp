@@ -61,17 +61,18 @@ void MidiPlayback::setPreferences(bool chase, int offsetMs)
 	m_chase.store(chase, std::memory_order_relaxed);
 	m_offsetMs.store(std::clamp(offsetMs, 0, MaxOffsetMs), std::memory_order_relaxed);
 	ConfigManager::inst()->setValue(QStringLiteral("midi"), QStringLiteral("chase"), chase ? QStringLiteral("1") : QStringLiteral("0"));
-	ConfigManager::inst()->setValue(QStringLiteral("midi"), QStringLiteral("playbackoffset"), QString::number(offsetMs));
+	ConfigManager::inst()->setValue(QStringLiteral("midi"), QStringLiteral("playbackoffset"), QString::number(this->offsetMs()));  // as clamped
 }
 
 void MidiPlayback::tickPlayed(tick_t tick)
 {
-	if (m_restart.exchange(false, std::memory_order_relaxed))
+	const bool restarted = m_restart.exchange(false, std::memory_order_relaxed);
+	if (restarted)
 	{
-		m_lastTick = -2;  // so the first tick is a start, whatever tick it is
+		m_lastTick = -2;  // no pass to count back from
 		m_pass.store(0, std::memory_order_relaxed);
 	}
-	m_chasingNow = tick != m_lastTick + 1;
+	m_chasingNow = restarted || tick != m_lastTick + 1;  // the first tick is a start, whatever tick it is (-1 too)
 	if (m_lastTick >= 0 && tick < m_lastTick) { m_pass.fetch_add(1, std::memory_order_relaxed); }
 	m_lastTick = tick;
 }

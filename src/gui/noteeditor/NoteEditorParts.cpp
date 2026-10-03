@@ -186,9 +186,16 @@ void NoteRuler::paintEvent(QPaintEvent*)
 	p.fillRect(QRect(0, height() - 1, width(), 1), pal.base);
 }
 
+void NoteRuler::cancelDrag()
+{
+	m_dragging = false;
+	update();
+}
+
 void NoteRuler::mousePressEvent(QMouseEvent* event)
 {
-	if (m_state.clip == nullptr) { return; }
+	// The left button only: a right or middle click must neither seek nor start a resize.
+	if (m_state.clip == nullptr || event->button() != Qt::LeftButton) { return; }
 	if (overLoopEnd(event->pos().x()))
 	{
 		m_dragging = true;
@@ -286,6 +293,13 @@ void NoteLaneView::paintEvent(QPaintEvent*)
 		p.setBrush(colour);
 		p.drawEllipse(QPointF(x + 1, y), 3.5, 3.5);
 	}
+}
+
+void NoteLaneView::cancelDrag()
+{
+	m_drawing = false;
+	m_pending.clear();
+	update();
 }
 
 void NoteLaneView::mousePressEvent(QMouseEvent* event)

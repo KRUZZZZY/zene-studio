@@ -79,6 +79,8 @@ class LMMS_EXPORT NoteRuler : public QWidget
 public:
 	explicit NoteRuler(NoteEditor* editor);
 	QSize sizeHint() const override;
+	//! Drop a clip-end drag in flight (the clip changed or went): the release resizes nothing.
+	void cancelDrag();
 
 protected:
 	void paintEvent(QPaintEvent* event) override;
@@ -111,6 +113,8 @@ public:
 	QSize sizeHint() const override;
 	//! The value a note shows, including an uncommitted drag's.
 	int shownValue(const Note& note) const;
+	//! Drop a stroke in flight (the clip changed or went): the release writes nothing.
+	void cancelDrag();
 
 protected:
 	void paintEvent(QPaintEvent* event) override;

@@ -40,7 +40,7 @@ namespace lmms
 template <typename T, std::size_t Capacity>
 class MpscQueue
 {
-	static_assert((Capacity & (Capacity - 1)) == 0, "Capacity must be a power of two");
+	static_assert(Capacity > 0 && (Capacity & (Capacity - 1)) == 0, "Capacity must be a power of two");  // 0 passed the mask test
 	static_assert(std::is_trivially_copyable_v<T>, "T is copied into fixed storage");
 
 public:

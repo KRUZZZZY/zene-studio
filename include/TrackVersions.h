@@ -62,7 +62,9 @@ public:
 	static bool replaceClips(Track* track, const QString& xml);
 
 	QString elementName() const override { return QStringLiteral("track-versions"); }
-	bool shouldPersist() const override { return !m_sets.isEmpty(); }
+	//! Only for tracks the song still holds: a deleted track's versions stay in memory for an undo of the
+	//! delete, but are not written, so a later track that reuses the id cannot inherit them.
+	bool shouldPersist() const override;
 	void save(QDomDocument& doc, QDomElement& parent) const override;
 	void load(const QDomElement& element) override;
 	void clear() override { m_sets.clear(); }

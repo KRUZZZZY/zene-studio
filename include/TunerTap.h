@@ -61,7 +61,12 @@ public:
 
 	static TunerTap& instance();
 
-	void setSource(Source source) noexcept { m_source.store(static_cast<int>(source), std::memory_order_relaxed); }
+	//! Choosing a source forgets what came in (reset()), so a reading never mixes the old source with the new.
+	void setSource(Source source) noexcept
+	{
+		m_source.store(static_cast<int>(source), std::memory_order_relaxed);
+		reset();  // after the store: a push that takes this reset is ordered after it, and sees the new source
+	}
 	Source source() const noexcept { return static_cast<Source>(m_source.load(std::memory_order_relaxed)); }
 
 	//! AUDIO THREAD: keep @a count frames of @a frames when @a from is the chosen source.

@@ -48,7 +48,8 @@ class Track;
 /*! WF-126: one Mackie Control surface (McuProtocol) bound to the song. Its eight strips are a
  *  bank of the song's instrument and sample tracks: a fader sets the track's volume, a V-pot its
  *  pan, mute / solo / rec / select run track.set_mute / track.set_solo / track.set_arm /
- *  window.select through the registry, and the transport buttons run transport.*. What the
+ *  window.select through the registry, and the transport buttons run transport.* (the jog wheel
+ *  seeks a beat per detent). What the
  *  surface does is therefore what a click or an agent does - recorded and undone the same way -
  *  except the faders and pots, which move their models directly as a MIDI controller does.
  *
@@ -94,7 +95,7 @@ private:
 	bool applyMix(const mcu::Input& input);
 	bool applyBank(mcu::Kind kind);
 	void applyStripButton(const mcu::Input& input, Track* track);
-	void applyTransport(mcu::Kind kind);
+	void applyTransport(const mcu::Input& input);
 
 	std::unique_ptr<MidiPort> m_port;
 	QString m_input;

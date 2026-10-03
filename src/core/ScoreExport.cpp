@@ -58,10 +58,13 @@ std::vector<Event> voiceOf(const MidiClip& clip)
 	for (const Note* note : clip.notes())
 	{
 		if (note->muted()) { continue; }
+		// The start and the END are snapped, the length taken between them: two separately rounded
+		// values could move the note's end a 64th off its own nearest grid line.
 		const int start = snapped(static_cast<int>(note->pos().getTicks()));
+		const int end = snapped(static_cast<int>(note->endPos().getTicks()));
 		Event& chord = chords[start];
 		chord.start = start;
-		chord.length = std::max(chord.length, std::max(Grid, snapped(static_cast<int>(note->length().getTicks()))));
+		chord.length = std::max(chord.length, std::max(Grid, end - start));
 		chord.keys.push_back(note->key());
 	}
 	std::vector<Event> voice;

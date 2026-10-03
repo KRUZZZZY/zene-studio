@@ -135,6 +135,16 @@ void ControllerLaneView::paintStroke(QPainter& p) const
 	for (const auto& [tick, value] : m_drawn) { p.drawEllipse(QPointF(m_state.grid.xOfTick(tick), yOfValue(value)), 2.5, 2.5); }
 }
 
+void ControllerLaneView::cancelDrag()
+{
+	m_drawing = false;
+	m_erasing = false;
+	m_drawn.clear();
+	m_firstTick = -1;
+	m_lastTick = -1;
+	update();
+}
+
 void ControllerLaneView::mousePressEvent(QMouseEvent* event)
 {
 	if (m_state.clip == nullptr || m_state.controllerLane.isEmpty()) { return; }

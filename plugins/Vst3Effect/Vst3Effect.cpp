@@ -134,7 +134,10 @@ void Vst3Effect::reprepare()
 
 void Vst3Effect::cacheLatency()
 {
-	m_latencyFrames.store(m_plugin.isPrepared() ? static_cast<int>(m_plugin.latency()) : 0, std::memory_order_relaxed);
+	// The plug-in's unsigned report, bounded as an override is (DeviceOptions), so a garbage value can never wrap
+	// into a negative delay (review r4 L20 #14).
+	const auto latency = std::min<std::uint32_t>(m_plugin.latency(), DeviceOptions::MaxLatencyOverride);
+	m_latencyFrames.store(m_plugin.isPrepared() ? static_cast<int>(latency) : 0, std::memory_order_relaxed);
 	m_tailFrames.store(m_plugin.isPrepared() ? m_plugin.tail() : 0, std::memory_order_relaxed);
 	if (EffectChain* chain = effectChain()) { chain->refreshLatency(); }
 }

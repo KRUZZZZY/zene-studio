@@ -25,8 +25,12 @@
 
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QPointer>
 #include <QTimer>
 #include <QVector>
+#include <atomic>
+#include <limits>
+#include <utility>
 
 #include "ControlRegistry.h"
 #include "Engine.h"
@@ -39,34 +43,62 @@ namespace lmms::markeractions
 namespace
 {
 
+//! The mark while the watcher is not following a pass (below every tick, so a start at 0 can sit before it).
+constexpr tick_t Unwatched = std::numeric_limits<tick_t>::min();
+
 tick_t& lastSeen()
 {
-	static tick_t value = -1;
+	static tick_t value = Unwatched;
 	return value;
 }
 
-//! Where the song's playback started, when that is where it really played from up to @a now; -1 when
-//! not (an enforced loop moved it, or a count-in began the pass before the recorded start).
-tick_t playedFrom(const Song& song, tick_t now)
+//! Counts the playing song's position jumps (a seek, a loop wrap). Bumped on whichever thread moved the
+//! timeline - the render thread for a loop - so it is only an atomic counter, nothing else.
+std::atomic<unsigned>& jumps()
+{
+	static std::atomic<unsigned> value{0};
+	return value;
+}
+
+//! The mark a fresh start takes: one tick before where the song's playback started, so a marker ON the
+//! start tick runs too, when that is where it really played from up to @a now; Unwatched when not (an
+//! enforced loop moved it, or a count-in began the pass before the recorded start).
+tick_t startMark(const Song& song, tick_t now)
 {
 	const Timeline& timeline = song.getTimeline(Song::PlayMode::Song);
 	const tick_t from = timeline.playStartPosition().getTicks();
-	if (from < 0 || from > now) { return -1; }
+	if (from < 0 || from > now) { return Unwatched; }
 	const bool outsideLoop = from < timeline.loopBegin().getTicks() || from >= timeline.loopEnd().getTicks();
-	return timeline.loopEnabled() && outsideLoop ? -1 : from;
+	return timeline.loopEnabled() && outsideLoop ? Unwatched : from - 1;
 }
 
 //! One look of the timer. Only the arrangement's playback crosses markers (a pattern or a clip played
 //! alone has its own ticks). A fresh start takes its mark from where playback started, so a marker
-//! crossed before this first look still runs; a resume from pause is not a fresh start.
+//! crossed before this first look still runs; a resume from pause is not a fresh start. A position jump
+//! (a seek, a loop wrap) only moves the mark: a forward seek must not run the markers it skipped.
 void watch(Song& song)
 {
 	static bool paused = false;
+	static unsigned seenJumps = 0;
+	const unsigned jumpsBefore = jumps().load(std::memory_order_acquire);
 	const bool playing = song.isPlaying() && song.playMode() == Song::PlayMode::Song;
 	const tick_t now = song.getPlayPos().getTicks();
+	if (jumps().load(std::memory_order_acquire) != jumpsBefore) { return; }  // raced a jump: the next look
+	const bool jumped = std::exchange(seenJumps, jumpsBefore) != jumpsBefore;
 	if (!playing) { paused = song.isPaused(); }
-	else if (lastSeen() < 0 && !paused) { lastSeen() = playedFrom(song, now); }
+	else if (jumped) { lastSeen() = now; }
+	else if (lastSeen() == Unwatched && !paused) { lastSeen() = startMark(song, now); }
 	advance(now, playing);
+}
+
+//! Follows @a song's position jumps (once per song; the watcher may start before the song exists).
+void followJumps(Song* song)
+{
+	static QPointer<Song> followed;  // a QPointer: a new song at a gone one's address is followed too
+	if (song == followed) { return; }
+	followed = song;
+	QObject::connect(song, &Song::playbackPositionJumped, song,
+		[] { jumps().fetch_add(1, std::memory_order_release); }, Qt::DirectConnection);
 }
 
 } // namespace
@@ -74,9 +106,9 @@ void watch(Song& song)
 int advance(tick_t tick, bool playing)
 {
 	tick_t& last = lastSeen();
-	if (!playing || last < 0 || tick < last)
+	if (!playing || last == Unwatched || tick < last)
 	{
-		last = playing ? tick : -1;
+		last = playing ? tick : Unwatched;
 		return 0;
 	}
 	// Copied first: an action may edit the markers themselves.
@@ -101,7 +133,9 @@ void start()
 	timer->setInterval(15);
 	QObject::connect(timer, &QTimer::timeout, [] {
 		Song* song = Engine::getSong();
-		if (song != nullptr) { watch(*song); }
+		if (song == nullptr) { return; }
+		followJumps(song);
+		watch(*song);
 	});
 	timer->start();
 }

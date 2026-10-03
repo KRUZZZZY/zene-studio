@@ -403,9 +403,10 @@ void applyRelativeClips(const Track::clipVector& clips, TimePos time, AutomatedV
 		for (AutomatableModel* model : p->objects())
 		{
 			if (model == nullptr) { continue; }
-			// The map holds inverse-scaled values (Song applies scaledValue); so must the base.
+			// The map holds inverse-scaled values (Song applies scaledValue); so must the base and the bounds.
 			const float base = valueMap.contains(model) ? valueMap[model] : model->inverseScaledValue(model->trimBase(run));
-			valueMap[model] = std::clamp(base + offset, model->minValue<float>(), model->maxValue<float>());
+			valueMap[model] = std::clamp(base + offset, model->inverseScaledValue(model->minValue<float>()),
+				model->inverseScaledValue(model->maxValue<float>()));
 		}
 	}
 }

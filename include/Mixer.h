@@ -704,6 +704,10 @@ private:
 	void updateLatencyCompensation();
 	//! Memoised longest-path helper for updateLatencyCompensation().
 	int resolveLatency(std::size_t channelIndex);
+	//! The latency (of a resolved sender) a send / a sidechain tap carries: a pre-fader send and every
+	//! sidechain tap read the sender AHEAD of its post-fader inserts, so their latency is not in it.
+	int sendTapLatency(const MixerRoute& route) const;
+	int sidechainTapLatency(const MixerSidechainRoute& route) const;
 	//! Grow the latency scratch (control thread only).
 	void resizeLatencyScratch(std::size_t channels);
 

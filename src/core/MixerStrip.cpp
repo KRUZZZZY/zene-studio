@@ -241,12 +241,24 @@ bool applyPanMode(MixerChannel& channel, f_cnt_t frames)
 namespace
 {
 
-//! The strip's gain-reduction reading: the most any device reports, in either insert chain.
+float chainReductionDb(const EffectChain& chain, float reduction)
+{
+	for (const Effect* effect : chain.effects()) { reduction = std::max(reduction, effect->gainReductionDb()); }
+	return reduction;
+}
+
+//! The strip's gain-reduction reading: the most any device reports, in either insert chain or in a rack
+//! chain that runs (every one in parallel, else the selected one; chain 0 is m_fxChain). A rack's chain
+//! list only changes while no period is processed (Rack.h), so this read is as safe as its process().
 float reductionDb(const MixerChannel& channel)
 {
-	float reduction = 0.f;
-	for (const Effect* effect : channel.m_fxChain.effects()) { reduction = std::max(reduction, effect->gainReductionDb()); }
-	for (const Effect* effect : channel.m_postInserts.chain().effects()) { reduction = std::max(reduction, effect->gainReductionDb()); }
+	float reduction = chainReductionDb(channel.m_postInserts.chain(), chainReductionDb(channel.m_fxChain, 0.f));
+	const int selected = channel.m_rack.selectedChain();
+	for (int i = 1; i < channel.m_rack.chainCount(); ++i)
+	{
+		const EffectChain* chain = channel.m_rack.chain(i);
+		if (chain != nullptr && (selected == Rack::Parallel || selected == i)) { reduction = chainReductionDb(*chain, reduction); }
+	}
 	return reduction;
 }
 
@@ -284,6 +296,16 @@ void updateMeters(MixerChannel& channel, const SampleFrame* buffer, float volume
 	channel.m_rmsRight.set(std::sqrt(static_cast<float>(sumR) / n) * volume);
 	if (peakL * volume >= 1.f || peakR * volume >= 1.f) { channel.m_clipped.store(true, std::memory_order_relaxed); }
 	channel.m_gainReduction.set(reductionDb(channel));
+}
+
+void silenceMeters(MixerChannel& channel)
+{
+	channel.m_rmsLeft.set(0.f);
+	channel.m_rmsRight.set(0.f);
+	channel.m_livePeakLeft.set(0.f);
+	channel.m_livePeakRight.set(0.f);
+	channel.m_correlation.set(1.f);  // what silence reads (updateMeters)
+	channel.m_gainReduction.set(0.f);
 }
 
 void save(const MixerChannel& c, QDomElement& e)

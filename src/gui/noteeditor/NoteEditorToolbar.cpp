@@ -201,6 +201,12 @@ void NoteEditor::addViewButtons(QWidget* bar, QHBoxLayout* row)
 	QAction* ghosts = checkable(this, QStringLiteral("ghost"), tr("Ghost notes"), tr("Show the track's other clips"));
 	ghosts->setChecked(m_state.ghosts);
 	connect(ghosts, &QAction::toggled, this, &NoteEditor::setGhosts);
+	// window.note_editor_set can change it too: the button follows the state, not only its own clicks.
+	connect(this, &NoteEditor::stateChanged, ghosts, [this, ghosts]() {
+		if (ghosts->isChecked() == m_state.ghosts) { return; }
+		const QSignalBlocker quiet(ghosts);
+		ghosts->setChecked(m_state.ghosts);
+	});
 	row->addWidget(toolButton(bar, ghosts));
 	auto* fit = new QAction(shellicons::icon(QStringLiteral("follow")), tr("Zoom to fit"), this);
 	fit->setToolTip(tr("Fit the clip's length in view and centre its notes"));

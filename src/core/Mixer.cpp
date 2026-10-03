@@ -1800,7 +1800,8 @@ int Mixer::resolveLatency(std::size_t index)
 			// is what keeps the solve acyclic (every cycle has one of these).
 			continue;
 		}
-		input = std::max(input, resolveLatency(route->senderIndex()));
+		resolveLatency(route->senderIndex());
+		input = std::max(input, sendTapLatency(*route));
 	}
 	for (const MixerSidechainRoute* route : channel->m_sidechainReceives)
 	{
@@ -1811,12 +1812,8 @@ int Mixer::resolveLatency(std::size_t index)
 			// receiver's alignment point.
 			continue;
 		}
-		const std::size_t sender = route->senderIndex();
-		const int senderOut = resolveLatency(sender);
-		const int tap = route->mode() == SidechainTapPoint::PreFx
-			? m_latencyInputScratch[sender]
-			: senderOut;
-		input = std::max(input, tap);
+		resolveLatency(route->senderIndex());
+		input = std::max(input, sidechainTapLatency(*route));
 	}
 
 	m_latencyInputScratch[index] = input;
@@ -1825,6 +1822,27 @@ int Mixer::resolveLatency(std::size_t index)
 		+ std::max(0, channel->m_postInserts.chain().latencyFrames());  // 0.5.0 MX-082 (0 while empty)
 	m_latencyVisitScratch[index] = 2;
 	return m_latencyOutputScratch[index];
+}
+
+
+
+int Mixer::sendTapLatency(const MixerRoute& route) const
+{
+	// The source postinserts::sendSource() hands the send: the post-insert output for a post-fader
+	// send, the kept pre-fader copy (ahead of the post chain) for a pre-fader one (0.5.0 MX-082).
+	const std::size_t sender = route.senderIndex();
+	const int out = m_latencyOutputScratch[sender];
+	return route.preFader() ? out - std::max(0, m_mixerChannels[sender]->m_postInserts.chain().latencyFrames()) : out;
+}
+
+
+
+int Mixer::sidechainTapLatency(const MixerSidechainRoute& route) const
+{
+	// Every tap is written before the post-fader inserts run (MixerChannel::doProcessing).
+	const std::size_t sender = route.senderIndex();
+	if (route.mode() == SidechainTapPoint::PreFx) { return m_latencyInputScratch[sender]; }
+	return m_latencyOutputScratch[sender] - std::max(0, m_mixerChannels[sender]->m_postInserts.chain().latencyFrames());
 }
 
 
@@ -1893,8 +1911,7 @@ void Mixer::updateLatencyCompensation()
 			route->setCompensationFrames(0);
 			continue;
 		}
-		const int delay = m_latencyInputScratch[route->receiverIndex()]
-			- m_latencyOutputScratch[route->senderIndex()];
+		const int delay = m_latencyInputScratch[route->receiverIndex()] - sendTapLatency(*route);
 		clamped = clamped || delay > cap;
 		route->setCompensationFrames(std::max(delay, 0));
 	}
@@ -1902,11 +1919,7 @@ void Mixer::updateLatencyCompensation()
 	// Sidechain sends: the tap point decides the latency the receiver sees.
 	for (MixerSidechainRoute* route : m_mixerSidechainRoutes)
 	{
-		const std::size_t sender = route->senderIndex();
-		const int tap = route->mode() == SidechainTapPoint::PreFx
-			? m_latencyInputScratch[sender]
-			: m_latencyOutputScratch[sender];
-		const int delay = m_latencyInputScratch[route->receiverIndex()] - tap;
+		const int delay = m_latencyInputScratch[route->receiverIndex()] - sidechainTapLatency(*route);
 		clamped = clamped || delay > cap;
 		route->setCompensationFrames(std::max(delay, 0));
 	}
@@ -2012,6 +2025,7 @@ void Mixer::masterMix( SampleFrame* _buf )
 					route->clearFeedback();
 				}
 			}
+			mixerstrip::silenceMeters( *ch );  // its live meters must not hold the last unmuted period
 			ch->processed();
 			ch->done();
 		}

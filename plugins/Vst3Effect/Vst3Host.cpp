@@ -136,7 +136,7 @@ HostedPlugin::~HostedPlugin()
 {
 	auto& d = *m_impl;
 	m_editor.reset();  // R4.2: the editor goes before the controller does
-	if (d.handlerImpl != nullptr) { d.handlerImpl->setOnLatencyChanged({}); }
+	if (d.handlerImpl != nullptr) { d.handlerImpl->detach(); }
 	d.handlerImpl = nullptr;
 	release();
 	d.handler = nullptr;
@@ -293,7 +293,7 @@ auto HostedPlugin::load(const QString& modulePath, const QString& classId, QStri
 		}
 	}
 
-	if (d.handlerImpl != nullptr) { d.handlerImpl->setOnLatencyChanged({}); }
+	if (d.handlerImpl != nullptr) { d.handlerImpl->detach(); }
 	auto* handler = new Vst3ComponentHandler(d.paramValues.get(), &d.indexById);
 	handler->setOnLatencyChanged(d.onLatencyChanged);
 	d.handlerImpl = handler;
@@ -510,6 +510,7 @@ auto HostedPlugin::prepare(double sampleRate, int maxBlockSize, QString* error) 
 	d.midiEnabled = d.eventInputBusIndex >= 0;
 	d.midiQueue.reset();
 	d.droppedMidi = 0;
+	d.droppedOutput = 0;
 	d.midiEvents.assign(static_cast<std::size_t>(kMaxMidiEventsPerBlock), MidiEventIn{});
 
 	d.processData = ProcessData{};
@@ -749,10 +750,14 @@ void HostedPlugin::Impl::mapBuses(const float* const* inputs, float* const* outp
 void HostedPlugin::Impl::collectOutputEvents(int offset)
 {
 	Event event{};
-	for (int32 i = 0; i < outputEvents.getEventCount() && blockOutputCount < kMaxMidiEventsPerBlock; ++i)
+	MidiEventIn spare{};
+	for (int32 i = 0; i < outputEvents.getEventCount(); ++i)
 	{
-		if (outputEvents.getEvent(i, event) == kResultOk
-			&& vst3EventToMidi(event, offset, &blockOutput[static_cast<std::size_t>(blockOutputCount)])) { ++blockOutputCount; }
+		// Bounded (no growth on the audio thread); a note past the bound is counted, not lost unseen (review r4 L20 #15).
+		const bool room = blockOutputCount < kMaxMidiEventsPerBlock;
+		MidiEventIn* out = room ? &blockOutput[static_cast<std::size_t>(blockOutputCount)] : &spare;
+		if (outputEvents.getEvent(i, event) != kResultOk || !vst3EventToMidi(event, offset, out)) { continue; }
+		if (room) { ++blockOutputCount; } else { ++droppedOutput; }
 	}
 }
 

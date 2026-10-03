@@ -86,6 +86,14 @@ void saveRoute(QDomDocument& doc, QDomElement& modulatorElement, const Modulatio
 	modulatorElement.appendChild(routeElement);
 }
 
+//! @a text as a value in @a low..1; @a fallback for one that is not a finite number ("nan" reads as one,
+//! and std::clamp keeps a NaN, which the audio thread would then write into a parameter).
+float boundedValue(const QString& text, float low, float fallback)
+{
+	const float value = text.toFloat();
+	return std::isfinite(value) ? std::clamp(value, low, 1.f) : fallback;
+}
+
 ModulatorSource readSource(const QDomElement& element)
 {
 	ModulatorSource source;
@@ -97,8 +105,8 @@ ModulatorSource readSource(const QDomElement& element)
 	source.active = element.attribute(QStringLiteral("active"), QStringLiteral("1")).toInt() != 0;
 	const QStringList values = element.attribute(QStringLiteral("steps")).split(QLatin1Char(','), Qt::SkipEmptyParts);
 	source.stepCount = static_cast<int>(std::min<qsizetype>(values.size(), ModulatorSource::MaxSteps));
-	for (int i = 0; i < source.stepCount; ++i) { source.steps[static_cast<std::size_t>(i)] = std::clamp(values[i].toFloat(), -1.f, 1.f); }
-	source.attack = std::clamp(element.attribute(QStringLiteral("attack"), QStringLiteral("0.1")).toFloat(), 0.f, 1.f);
+	for (int i = 0; i < source.stepCount; ++i) { source.steps[static_cast<std::size_t>(i)] = boundedValue(values[i], -1.f, 0.f); }
+	source.attack = boundedValue(element.attribute(QStringLiteral("attack"), QStringLiteral("0.1")), 0.f, 0.1f);
 	source.triggerTrack = std::max(-1, element.attribute(QStringLiteral("trigger"), QStringLiteral("-1")).toInt());
 	return source;
 }

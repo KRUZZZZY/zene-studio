@@ -67,6 +67,7 @@ bool WaveformPreview::setPath(const QString& path)
 	m_peaks.clear();
 	m_message.clear();
 	m_seconds = 0;
+	setAccessibleDescription(QString());  // never the previous sample's name and length (review r4 L20 #5)
 	setVisible(!path.isEmpty());
 	if (path.isEmpty()) { return false; }
 	const ControlResult read = ControlRegistry::instance()->invoke(QStringLiteral("browser.peaks"),
@@ -74,6 +75,7 @@ bool WaveformPreview::setPath(const QString& path)
 	if (!read.ok)
 	{
 		m_message = read.errorMessage;
+		setAccessibleDescription(m_message);
 		update();
 		return false;
 	}

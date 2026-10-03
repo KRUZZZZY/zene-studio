@@ -121,6 +121,8 @@ public:
 	void pushMidiEvent(const MidiEventIn& event);
 	//! MIDI events dropped because the queue was full. Diagnostics only.
 	auto droppedMidiEvents() const -> std::uint64_t;
+	//! Output notes dropped because one request wrote more than kMaxMidiEventsPerBlock. Diagnostics only.
+	auto droppedOutputEvents() const -> std::uint64_t;
 
 	//! Lock free, any thread
 	void setParamNormalized(std::uint32_t id, float normalized);

@@ -33,6 +33,7 @@
 #include <QLineEdit>
 #include <QMouseEvent>
 #include <QPainter>
+#include <QToolTip>
 #include <QWheelEvent>
 
 #include "Accessibility.h"
@@ -43,6 +44,7 @@
 #include "MeterModel.h"
 #include "ProjectJournal.h"
 #include "Song.h"
+#include "TempoMap.h"
 
 namespace lmms::gui
 {
@@ -204,12 +206,12 @@ void ReadoutField::commitTyped()
 	if (m_editor == nullptr || !m_editor->isVisible()) { return; }
 	const QString text = m_editor->text().trimmed();
 	m_editor->hide();
-	if (m_typed) { m_typed(text); }
+	bool accepted = false;
+	if (m_typed) { accepted = m_typed(text); }
 	else if (m_model != nullptr)
 	{
-		bool ok = false;
-		const int v = text.toInt(&ok);
-		if (ok)
+		const int v = text.toInt(&accepted);
+		if (accepted)
 		{
 			m_model->addJournalCheckPoint();
 			m_model->setValue(static_cast<float>(v));
@@ -217,6 +219,11 @@ void ReadoutField::commitTyped()
 	}
 	refresh();
 	setFocus();
+	// Typed text the readout refuses says so, rather than the old value quietly coming back (review r4 L19 #15).
+	if (!accepted && m_editor->isModified())
+	{
+		QToolTip::showText(mapToGlobal(QPoint(0, height())), tr("%1: \"%2\" was not accepted").arg(m_caption, text), this);
+	}
 }
 
 namespace
@@ -235,7 +242,9 @@ QString loudnessText()
 	return QStringLiteral("%1 / %2").arg(reading("short_term_lufs"), reading("true_peak_dbtp"));
 }
 
-//! Typed "n/d" into the meter: both halves as ONE undo step, not one per half (review L19 #5).
+//! Typed "n/d" into the meter: both halves as ONE undo step, not one per half (review L19 #5). A meter the
+//! tempo map and the control surface would refuse (a numerator past 32, a denominator not a power of two up
+//! to 32) is refused here too, rather than clamped by the models into some other meter (review r4 L19 #15).
 bool setMeterTyped(MeterModel* meter, const QString& typed)
 {
 	const QStringList parts = typed.split(QLatin1Char('/'));
@@ -243,7 +252,8 @@ bool setMeterTyped(MeterModel* meter, const QString& typed)
 	bool okD = false;
 	const int n = parts.value(0).toInt(&okN);
 	const int d = parts.value(1).toInt(&okD);
-	if (!okN || !okD || n < 1 || d < 1) { return false; }
+	if (parts.size() != 2 || !okN || !okD || n < TempoMapMinNumerator || n > TempoMapMaxNumerator
+		|| !isSupportedTempoMapDenominator(d)) { return false; }
 	IntModel& numerator = meter->numeratorModel();
 	IntModel& denominator = meter->denominatorModel();
 	if (numerator.value() == n && denominator.value() == d) { return true; }
@@ -263,8 +273,11 @@ QString barBeatText(int ticks)
 {
 	Song* song = Engine::getSong();
 	const int perBar = std::max(1, song->ticksPerBar());
-	const int perBeat = std::max(1, perBar / std::max(1, song->getTimeSigModel().getNumerator()));
-	return QStringLiteral("%1.%2").arg(ticks / perBar + 1).arg((ticks % perBar) / perBeat + 1);
+	const int numerator = std::max(1, song->getTimeSigModel().getNumerator());
+	const int perBeat = std::max(1, perBar / numerator);
+	// A denominator that does not divide 192 (5/7) leaves a bar a tick or two longer than its whole beats:
+	// those ticks belong to the last beat, never to a beat past the meter (review r4 L19 #13).
+	return QStringLiteral("%1.%2").arg(ticks / perBar + 1).arg(std::min(numerator, (ticks % perBar) / perBeat + 1));
 }
 
 namespace

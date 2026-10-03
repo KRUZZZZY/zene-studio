@@ -33,7 +33,8 @@ namespace lmms::markeractions
 /*! 0.5.0 L02 (WF-073): a marker's action runs when playback crosses it. A main-thread watcher reads
  *  the play position a few times a period and runs each crossed marker's command through the
  *  registry - the same call an agent makes, on the thread commands run on; the audio thread is
- *  never involved. A jump backwards (a loop, a seek) only moves the watcher's mark. */
+ *  never involved. A position jump (a loop, a seek either way) only moves the watcher's mark, and a
+ *  marker on the tick playback starts from runs. */
 LMMS_EXPORT void start();
 
 //! One step of the watcher: the markers crossed between the last position seen and @a tick run

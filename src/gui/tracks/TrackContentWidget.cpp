@@ -403,6 +403,11 @@ bool TrackContentWidget::canPasteSelection( TimePos clipPos, const QMimeData* md
 		{
 			return false;
 		}
+		// 0.5.0 L12 (WF-044): a locked track takes no new clips - not by a click, a drop or a paste.
+		if (EditLocks::instance().trackLocked(endTrack->id()))
+		{
+			return false;
+		}
 	}
 
 	return true;

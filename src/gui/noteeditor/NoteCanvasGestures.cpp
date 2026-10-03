@@ -77,6 +77,15 @@ void NoteCanvas::extendPaint(const QPoint& pos)
 	if (!taken) { m_painted.emplace_back(key, start); }
 }
 
+void NoteCanvas::eraseAlong(const QPoint& from, const QPoint& to)
+{
+	// Qt coalesces a fast drag into sparse events: every note the eraser's path crosses goes, not
+	// only the one under each event (a 2-pixel step, finer than a note can be drawn).
+	const QPoint path = to - from;
+	const int steps = std::max(1, std::max(std::abs(path.x()), std::abs(path.y())) / 2);
+	for (int i = 1; i <= steps; ++i) { markErased(noteAt(from + path * i / steps)); }
+}
+
 void NoteCanvas::commitPaint()
 {
 	if (m_painted.empty()) { return; }

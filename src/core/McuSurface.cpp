@@ -78,6 +78,14 @@ bool routeArmed(const Track* track)
 	return found != tracks.end() && route < recorder.trackCount() && recorder.track(route).isArmed();
 }
 
+//! How far a transport input moves the play position: a bar for rewind / forward, a beat per jog detent.
+int seekStep(const mcu::Input& input, Song& song)
+{
+	const int bar = song.ticksPerBar();
+	if (input.kind == mcu::Kind::Jog) { return input.value * bar / std::max(1, song.getTimeSigModel().getNumerator()); }
+	return input.kind == mcu::Kind::Forward ? bar : -bar;
+}
+
 } // namespace
 
 McuSurface::McuSurface()
@@ -86,7 +94,12 @@ McuSurface::McuSurface()
 	QObject::connect(&m_feedback, &QTimer::timeout, this, &McuSurface::sendFeedback);
 }
 
-McuSurface::~McuSurface() = default;
+McuSurface::~McuSurface()
+{
+	// The port first: members go in reverse declaration order, so by default the inbox and the event
+	// count were gone while the still-registered port could hand the MIDI thread's next event in.
+	m_port.reset();
+}
 
 McuSurface* McuSurface::instance()
 {
@@ -147,7 +160,7 @@ void McuSurface::apply(const mcu::Input& input)
 {
 	if (applyMix(input) || applyBank(input.kind)) { return; }
 	if (Track* track = stripTrack(input.strip)) { applyStripButton(input, track); }
-	else { applyTransport(input.kind); }
+	else { applyTransport(input); }
 }
 
 bool McuSurface::applyMix(const mcu::Input& input)
@@ -200,20 +213,20 @@ void McuSurface::applyStripButton(const mcu::Input& input, Track* track)
 	}
 }
 
-void McuSurface::applyTransport(mcu::Kind kind)
+void McuSurface::applyTransport(const mcu::Input& input)
 {
 	Song* song = Engine::getSong();
-	switch (kind)
+	switch (input.kind)
 	{
 	case mcu::Kind::Play: run(QStringLiteral("transport.play")); break;
 	case mcu::Kind::Stop: run(QStringLiteral("transport.stop")); break;
 	case mcu::Kind::Record: run(QStringLiteral("transport.record")); break;
 	case mcu::Kind::Rewind:
 	case mcu::Kind::Forward:
+	case mcu::Kind::Jog:
 	{
-		const int bar = song->ticksPerBar();
 		const int now = song->getPlayPos().getTicks();
-		run(QStringLiteral("transport.seek"), {{QStringLiteral("ticks"), std::max(0, now + (kind == mcu::Kind::Forward ? bar : -bar))}});
+		run(QStringLiteral("transport.seek"), {{QStringLiteral("ticks"), std::max(0, now + seekStep(input, *song))}});
 		break;
 	}
 	default: break;
