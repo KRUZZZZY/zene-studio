@@ -315,7 +315,8 @@ bool transientPeaks(const std::vector<double>& novelty, const float* mono, std::
 OnsetAnalysis analyseOnsets(const float* mono, std::size_t frames, int sampleRate, double maxSeconds)
 {
 	OnsetAnalysis out;
-	if (mono == nullptr || frames == 0 || sampleRate <= 0) { return out; }
+	// !(maxSeconds > 0) also refuses NaN: a negative or NaN span must not become a huge unsigned limit.
+	if (mono == nullptr || frames == 0 || sampleRate <= 0 || !(maxSeconds > 0.0)) { return out; }
 	const std::size_t limit = static_cast<std::size_t>(
 		std::min<double>(static_cast<double>(frames), maxSeconds * sampleRate));
 	const std::size_t frameCount = frameCountFor(limit, TempoFrameSize, TempoHopSize);

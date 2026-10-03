@@ -74,6 +74,13 @@ void follow(const QUrl& url)
 	HelpCenter::showHelp(QString(), true)->filterReference(target);
 }
 
+//! The tuner source @a id ("input", "master") as its button names it.
+QString sourceLabel(const QString& id)
+{
+	if (id == QLatin1String("input")) { return TunerWindow::tr("Input"); }
+	return id == QLatin1String("master") ? TunerWindow::tr("Master") : id;
+}
+
 QLabel* bigLabel(int pixels, QWidget* parent)
 {
 	auto* label = new QLabel(parent);
@@ -216,10 +223,15 @@ TunerWindow::TunerWindow(QWidget* parent) :
 	m_needle->setEnabled(false);
 	m_needle->setAccessibleName(tr("Cents off the note"));
 	auto* sources = new QHBoxLayout;
-	for (const auto& [label, source] : {std::pair{tr("Input"), QStringLiteral("input")}, std::pair{tr("Master"), QStringLiteral("master")}})
+	for (const QString& source : {QStringLiteral("input"), QStringLiteral("master")})
 	{
-		auto* button = new QPushButton(label, this);
+		auto* button = new QPushButton(sourceLabel(source), this);
 		button->setProperty("controlCommand", QStringLiteral("tuner.set"));
+		button->setProperty("tunerSource", source);
+		// The source listened to shows pressed, not only in the status line. refresh() sets both buttons from
+		// tuner.get_state (not auto-exclusive: with the tuner off neither is pressed).
+		button->setCheckable(true);
+		m_sources.append(button);
 		connect(button, &QPushButton::clicked, this, [source = source] {
 			ControlRegistry::instance()->invoke(QStringLiteral("tuner.set"), {{QStringLiteral("source"), source}});
 		});
@@ -252,9 +264,11 @@ QString TunerWindow::refresh()
 	const double cents = state.value(QStringLiteral("cents")).toDouble();
 	m_note->setText(clear ? state.value(QStringLiteral("note")).toString() : QStringLiteral("-"));
 	m_needle->setValue(clear ? static_cast<int>(std::lround(cents)) : 0);
+	const QString source = state.value(QStringLiteral("source")).toString();
+	for (QPushButton* button : m_sources) { button->setChecked(button->property("tunerSource").toString() == source); }
 	m_detail->setText(clear ? tr("%1 cents   %2 Hz   (A4 = %3 Hz, %4)").arg(cents, 0, 'f', 1).arg(state.value(QStringLiteral("hz")).toDouble(), 0, 'f', 1)
-		.arg(state.value(QStringLiteral("reference_hz")).toDouble()).arg(state.value(QStringLiteral("source")).toString())
-		: tr("Listening to the %1 - play a single note").arg(state.value(QStringLiteral("source")).toString()));
+		.arg(state.value(QStringLiteral("reference_hz")).toDouble()).arg(sourceLabel(source))
+		: tr("Listening to %1 - play a single note").arg(sourceLabel(source)));
 	return m_note->text();
 }
 

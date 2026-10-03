@@ -33,6 +33,8 @@
 #include "CommandForm.h"
 #include "FollowActionEditor.h"
 #include "ControlRegistry.h"
+#include "GuiApplication.h"
+#include "MainWindow.h"
 #include "Song.h"
 #include "Engine.h"
 
@@ -52,10 +54,11 @@ CommandCall call(const QString& id, const QJsonObject& fixed, const QString& tit
 	return CommandCall{id, fixed, {}, title, ask};
 }
 
-//! WF-054: put a pattern into the cell by name (session.pattern_list), not by its number.
+//! WF-054: put a pattern into the cell by name (session.pattern_list), not by its number. It sets the cell's
+//! clip and launches nothing, so the entry says Set, not Play.
 void addPatternPicker(QMenu* menu, const QJsonObject& where, const QString& title)
 {
-	QMenu* patterns = menu->addMenu(QObject::tr("Play Pattern"));
+	QMenu* patterns = menu->addMenu(QObject::tr("Set Pattern"));
 	const QJsonArray listed = ControlRegistry::instance()->invoke(QStringLiteral("session.pattern_list")).result
 		.value(QStringLiteral("patterns")).toArray();
 	for (const QJsonValue& value : listed)
@@ -70,6 +73,23 @@ void addPatternPicker(QMenu* menu, const QJsonObject& where, const QString& titl
 			QStringLiteral("session.set_slot"), [args, title] { return call(QStringLiteral("session.set_slot"), args, title, false); });
 	}
 	patterns->setEnabled(!listed.isEmpty());
+}
+
+//! WF-071: a step through the setlist. It opens another project, so unsaved work is asked about first, as every
+//! other way of opening a project asks (MainWindow::mayChangeProject); session.setlist_go itself has nobody to ask.
+void addSongStep(QMenu* menu, const QString& label, const QString& to)
+{
+	QAction* step = menu->addAction(label);
+	step->setProperty("controlCommand", QStringLiteral("session.setlist_go"));
+	step->setEnabled(ControlRegistry::instance()->hasCommand(QStringLiteral("session.setlist_go")));
+	QObject::connect(step, &QAction::triggered, menu, [menu, to] {
+		MainWindow* window = getGUI() != nullptr ? getGUI()->mainWindow() : nullptr;
+		if (window != nullptr && !window->mayChangeProject(true)) { return; }
+		// Parented past every QMenu, as addCommandAction does: a message must outlive the menu.
+		QWidget* host = menu;
+		while (qobject_cast<QMenu*>(host) != nullptr) { host = host->parentWidget(); }
+		runCommand(host, call(QStringLiteral("session.setlist_go"), {{QStringLiteral("to"), to}}, QString(), false));
+	});
 }
 
 } // namespace
@@ -183,10 +203,8 @@ void populateGrid(QMenu* menu, int tracks, int scenes)
 	// WF-071: the setlist - projects to play through.
 	addCommandAction(menu, QObject::tr("Setlist..."), QStringLiteral("session.setlist"),
 		[] { return call(QStringLiteral("session.setlist"), {}, QObject::tr("Setlist")); });
-	addCommandAction(menu, QObject::tr("Next Song"), QStringLiteral("session.setlist_go"),
-		[] { return call(QStringLiteral("session.setlist_go"), {{QStringLiteral("to"), QStringLiteral("next")}}, QString(), false); });
-	addCommandAction(menu, QObject::tr("Previous Song"), QStringLiteral("session.setlist_go"),
-		[] { return call(QStringLiteral("session.setlist_go"), {{QStringLiteral("to"), QStringLiteral("previous")}}, QString(), false); });
+	addSongStep(menu, QObject::tr("Next Song"), QStringLiteral("next"));
+	addSongStep(menu, QObject::tr("Previous Song"), QStringLiteral("previous"));
 }
 
 } // namespace lmms::gui::SessionGridMenus

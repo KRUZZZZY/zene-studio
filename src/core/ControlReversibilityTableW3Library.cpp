@@ -106,7 +106,8 @@ const ReversibilityRow kW3LibraryRows[] = {
 	R("project.alternatives", RC::NotMutating, false, "it reads the project's alternatives. Nothing is written", "no write", ""),
 	R("project.alternative_switch", RC::Irreversible, false,
 		"it opens another file of the project's family - a project.open, which replaces the session",
-		"none: the session is saved to its own file first (unless save_current was false), so nothing is lost",
+		"none: the session is saved to its own file first, so nothing is lost - unless save_current was false or the session "
+		"was never saved, when its unsaved changes are discarded",
 		"switch back with project.alternative_switch to the alternative the session was (main for the main file)"),
 	R("project.alternative_remove", RC::TrueInverse, true, "it takes an alternative off the list (its file stays)",
 		"action checkpoint: the recorded undo step puts the previous list back", ""),

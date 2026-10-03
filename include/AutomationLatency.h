@@ -53,7 +53,7 @@ class LMMS_EXPORT AutomationLatency : public ProjectSection
 public:
 	static AutomationLatency& instance();
 
-	bool enabled() const { return m_enabled.load(std::memory_order_relaxed); }
+	bool enabled() const { return m_enabled.load(std::memory_order_acquire); }
 	//! Control thread: switch it on (every clip's latency is computed now, then kept current) or off.
 	void setEnabled(bool on);
 	//! Control thread: recompute every automation clip's upstream latency (0 for every clip while off).
@@ -89,8 +89,10 @@ private:
 	AutomationLatency() = default;
 	//! Control thread: start or stop the poll that keeps the clips' latencies current.
 	void poll(bool on);
-	//! Control thread: walk every clip now (refresh() without its mid-load guard).
-	void refreshClips();
+	//! Control thread: refresh() as though compensation were @a on (setEnabled publishes the switch after it).
+	void refreshAs(bool on);
+	//! Control thread: walk every clip now, as though compensation were @a on (refreshAs() without its mid-load guard).
+	void refreshClips(bool on);
 	//! Control thread: walk them once the project being loaded has resolved its clips (Song::projectLoaded).
 	void refreshOnceLoaded();
 

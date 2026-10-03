@@ -43,6 +43,9 @@
 #include <QHBoxLayout>
 #include <QJsonObject>
 #include <QLabel>
+#include <QPointer>
+#include <QSignalBlocker>
+#include <QTimer>
 #include <QToolButton>
 #include <QVBoxLayout>
 #include <QWidget>
@@ -70,11 +73,12 @@ QJsonObject ownerAddress(const PluginNativeEditor::Owner& owner)
 }
 
 //! A header button running @a id with the device's address (read when clicked) and @a extra; a form when @a ask.
-QToolButton* headerButton(QWidget* parent, const QString& text, const char* id, const PluginNativeEditor::Owner& owner,
-	const QJsonObject& extra = {}, bool ask = false)
+QToolButton* headerButton(QWidget* parent, const QString& text, const QString& tip, const char* id,
+	const PluginNativeEditor::Owner& owner, const QJsonObject& extra = {}, bool ask = false)
 {
 	auto* button = new QToolButton(parent);
 	button->setText(text);
+	button->setToolTip(tip);
 	button->setProperty("controlCommand", QLatin1String(id));
 	QObject::connect(button, &QToolButton::clicked, parent, [parent, id, owner, extra, ask] {
 		QJsonObject args = ownerAddress(owner);
@@ -82,6 +86,33 @@ QToolButton* headerButton(QWidget* parent, const QString& text, const char* id, 
 		runCommand(parent, CommandCall{QLatin1String(id), args, {}, QString(), ask});
 	});
 	return button;
+}
+
+//! The effect's Bypass toggle (plugin.bypass). A refusal is shown and puts the button back, and the
+//! button follows the effect's own switch when something else (the rack's LED, an agent) flips it.
+QToolButton* bypassButton(QWidget* header, const PluginNativeEditor::Owner& owner)
+{
+	auto* bypass = new QToolButton(header);
+	bypass->setText(QObject::tr("Bypass"));
+	bypass->setToolTip(QObject::tr("Switch this effect off: its input passes through unprocessed"));
+	bypass->setCheckable(true);
+	bypass->setChecked(!owner.effect->isEnabled());
+	bypass->setProperty("controlCommand", QStringLiteral("plugin.bypass"));
+	const QPointer<Effect> effect = owner.effect;
+	const auto follow = [bypass, effect] {
+		if (effect.isNull() || bypass->isChecked() == !effect->isEnabled()) { return; }
+		const QSignalBlocker block(bypass);
+		bypass->setChecked(!effect->isEnabled());
+	};
+	QObject::connect(bypass, &QToolButton::toggled, header, [header, owner, follow](bool on) {
+		QJsonObject args = ownerAddress(owner);
+		args.insert(QStringLiteral("bypass"), on);
+		if (!runCommand(header, CommandCall{QStringLiteral("plugin.bypass"), args, {}, QString(), false}).ok) { follow(); }
+	});
+	auto* poll = new QTimer(bypass);
+	QObject::connect(poll, &QTimer::timeout, bypass, follow);
+	poll->start(500);
+	return bypass;
 }
 
 //! The host's row above a plug-in's own view: bypass and A/B for an effect, presets for both.
@@ -94,29 +125,24 @@ QWidget* hostHeader(QWidget* parent, const PluginNativeEditor::Owner& owner)
 	row->setContentsMargins(6, 3, 6, 3);
 	if (owner.effect != nullptr)
 	{
-		auto* bypass = new QToolButton(header);
-		bypass->setText(QObject::tr("Bypass"));
-		bypass->setCheckable(true);
-		bypass->setChecked(!owner.effect->isEnabled());
-		bypass->setProperty("controlCommand", QStringLiteral("plugin.bypass"));
-		QObject::connect(bypass, &QToolButton::toggled, header, [owner](bool on) {
-			QJsonObject args = ownerAddress(owner);
-			args.insert(QStringLiteral("bypass"), on);
-			ControlRegistry::instance()->invoke(QStringLiteral("plugin.bypass"), args);
-		});
-		row->addWidget(bypass);
-		row->addWidget(headerButton(header, QObject::tr("Store A"), "plugin.ab", owner,
-			{{QStringLiteral("action"), QStringLiteral("store")}, {QStringLiteral("slot"), QStringLiteral("a")}}));
-		row->addWidget(headerButton(header, QObject::tr("Store B"), "plugin.ab", owner,
-			{{QStringLiteral("action"), QStringLiteral("store")}, {QStringLiteral("slot"), QStringLiteral("b")}}));
-		row->addWidget(headerButton(header, QObject::tr("A/B"), "plugin.ab", owner, {{QStringLiteral("action"), QStringLiteral("toggle")}}));
+		row->addWidget(bypassButton(header, owner));
+		row->addWidget(headerButton(header, QObject::tr("Store A"), QObject::tr("Keep the current settings in slot A"), "plugin.ab",
+			owner, {{QStringLiteral("action"), QStringLiteral("store")}, {QStringLiteral("slot"), QStringLiteral("a")}}));
+		row->addWidget(headerButton(header, QObject::tr("Store B"), QObject::tr("Keep the current settings in slot B"), "plugin.ab",
+			owner, {{QStringLiteral("action"), QStringLiteral("store")}, {QStringLiteral("slot"), QStringLiteral("b")}}));
+		row->addWidget(headerButton(header, QObject::tr("A/B"),
+			QObject::tr("Compare: keep the current settings in the slot you hear and switch to the other one"), "plugin.ab",
+			owner, {{QStringLiteral("action"), QStringLiteral("toggle")}}));
 	}
 	row->addStretch(1);
-	row->addWidget(headerButton(header, QObject::tr("Save Preset..."), "plugin.preset_save", owner, {}, true));
-	row->addWidget(headerButton(header, QObject::tr("Load Preset..."), "plugin.preset_load", owner, {}, true));
+	row->addWidget(headerButton(header, QObject::tr("Save Preset..."), QObject::tr("Save the current settings as a preset"),
+		"plugin.preset_save", owner, {}, true));
+	row->addWidget(headerButton(header, QObject::tr("Load Preset..."), QObject::tr("Load a preset onto this device"),
+		"plugin.preset_load", owner, {}, true));
 	// 0.5.0 L11 (WF-025): every preset of the device - load, rename, remove, save.
 	auto* presets = new QToolButton(header);
 	presets->setText(QObject::tr("Presets..."));
+	presets->setToolTip(QObject::tr("Every preset of this device: load, rename, remove or save one"));
 	presets->setProperty("controlCommand", QStringLiteral("plugin.preset_list"));
 	QObject::connect(presets, &QToolButton::clicked, header, [header, owner] { showCommandList(header, CommandLists::devicePresets(ownerAddress(owner))); });
 	row->addWidget(presets);

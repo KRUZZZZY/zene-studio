@@ -165,7 +165,11 @@ QJsonObject previousValues(const Note* note, const QJsonObject& values)
 	const NoteConditions& c = note->conditions();
 	keep("repeats", c.repeats);
 	keep("recur_length", c.recurLength);
-	keep("recur_mask", c.recurMask);
+	// A new recur_length cuts the mask to its pattern (applyConditions), so the mask comes back with the length.
+	if (values.contains(QStringLiteral("recur_mask")) || values.contains(QStringLiteral("recur_length")))
+	{
+		before.insert(QStringLiteral("recur_mask"), c.recurMask);
+	}
 	keep("articulation", c.articulation);
 	keep("group", c.group);
 	return before;

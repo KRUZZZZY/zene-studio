@@ -24,7 +24,9 @@
 #include "ArrangementSections.h"
 
 #include <algorithm>
+#include <limits>
 
+#include <QColor>
 #include <QDomElement>
 
 namespace lmms
@@ -111,18 +113,43 @@ void ArrangementSections::save(QDomDocument& doc, QDomElement& parent) const
 	parent.appendChild(list);
 }
 
+namespace
+{
+
+//! One <section> as read, its colour dropped when it is not a colour (a hand-edited file).
+ArrangementSection sectionOf(const QDomElement& child)
+{
+	ArrangementSection section{child.attribute(QStringLiteral("id")).toInt(), child.attribute(QStringLiteral("start")).toInt(),
+		child.attribute(QStringLiteral("end")).toInt(), child.attribute(QStringLiteral("name")), child.attribute(QStringLiteral("color"))};
+	if (!section.color.isEmpty() && !QColor::isValidColorName(section.color)) { section.color.clear(); }
+	return section;
+}
+
+//! Whether a loaded section may keep @a id: positive, not taken in @a loaded, and low enough that the
+//! ids handed out after it cannot overflow.
+bool keepsId(int id, const QVector<ArrangementSection>& loaded)
+{
+	if (id <= 0 || id > std::numeric_limits<int>::max() - 2 * ArrangementSections::MaxSections) { return false; }
+	return std::none_of(loaded.begin(), loaded.end(), [id](const ArrangementSection& s) { return s.id == id; });
+}
+
+} // namespace
+
 void ArrangementSections::load(const QDomElement& element)
 {
 	QVector<ArrangementSection> loaded;
-	for (QDomElement child = element.firstChildElement(QStringLiteral("section")); !child.isNull() && loaded.size() < MaxSections;
-		child = child.nextSiblingElement(QStringLiteral("section")))
+	QVector<ArrangementSection> renumbered;  // a missing, repeated or unusable id gets a new one
+	for (QDomElement child = element.firstChildElement(QStringLiteral("section"));
+		!child.isNull() && loaded.size() + renumbered.size() < MaxSections; child = child.nextSiblingElement(QStringLiteral("section")))
 	{
-		const ArrangementSection section{child.attribute(QStringLiteral("id")).toInt(), child.attribute(QStringLiteral("start")).toInt(),
-			child.attribute(QStringLiteral("end")).toInt(), child.attribute(QStringLiteral("name")), child.attribute(QStringLiteral("color"))};
-		if (section.end > section.start) { loaded.append(section); }
+		const ArrangementSection section = sectionOf(child);
+		if (section.start < 0 || section.end <= section.start) { continue; }
+		(keepsId(section.id, loaded) ? loaded : renumbered).append(section);
 	}
 	m_nextId = 1;
 	restore(loaded);
+	for (ArrangementSection& each : renumbered) { each.id = m_nextId++; }
+	restore(m_sections + renumbered);
 }
 
 void ArrangementSections::clear()

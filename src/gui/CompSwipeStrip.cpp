@@ -29,12 +29,37 @@
 #include <QMouseEvent>
 #include <QPainter>
 
+#include "Clip.h"
+#include "ControlEdit.h"
 #include "ControlRegistry.h"
 #include "DesignTokens.h"
 #include "TimePos.h"
+#include "Track.h"
 
 namespace lmms::gui
 {
+
+namespace
+{
+
+//! The span the takes on @a lanes cover on @a trackId's track; false when there are none.
+bool takeSpan(const QString& trackId, const std::vector<int>& lanes, int* begin, int* end)
+{
+	ControlResult error;
+	const Track* track = control::resolveTrack(trackId, &error);
+	if (track == nullptr) { return false; }
+	bool found = false;
+	for (const Clip* clip : track->getClips())
+	{
+		if (std::find(lanes.begin(), lanes.end(), clip->laneIndex()) == lanes.end()) { continue; }
+		*begin = found ? std::min<int>(*begin, clip->startPosition().getTicks()) : clip->startPosition().getTicks();
+		*end = found ? std::max<int>(*end, clip->endPosition().getTicks()) : clip->endPosition().getTicks();
+		found = true;
+	}
+	return found;
+}
+
+} // namespace
 
 CompSwipeStrip::CompSwipeStrip(const QString& trackId, QWidget* parent) :
 	QWidget(parent),
@@ -57,10 +82,15 @@ void CompSwipeStrip::setState(const QJsonObject& state)
 		const QJsonObject s = value.toObject();
 		m_segments.push_back({s.value(QStringLiteral("begin")).toInt(), s.value(QStringLiteral("end")).toInt(), s.value(QStringLiteral("lane")).toInt()});
 	}
-	// The span drawn: the comp's, else four bars from the start (a fresh lane set has no comp yet).
+	// The span drawn: the comp's, else the takes' (a fresh lane set has no comp yet, and its takes
+	// need not start at bar 1), else four bars from the start.
 	m_begin = composite.value(QStringLiteral("begin")).toInt();
 	m_end = composite.value(QStringLiteral("end")).toInt();
-	if (m_end <= m_begin) { m_begin = 0; m_end = 4 * TimePos::ticksPerBar(); }
+	if (m_end <= m_begin && (!takeSpan(m_trackId, m_lanes, &m_begin, &m_end) || m_end <= m_begin))
+	{
+		m_begin = 0;
+		m_end = 4 * TimePos::ticksPerBar();
+	}
 	setMinimumHeight(RowHeight * std::max<int>(1, static_cast<int>(m_lanes.size())));
 	updateGeometry();
 	update();

@@ -101,6 +101,16 @@ void applySizes(QSplitter* splitter, const QJsonArray& sizes)
 	splitter->setSizes(list);
 }
 
+//! The shell panel @a w sits in (looking no higher than @a stop), or nullptr.
+ShellPanel* panelOf(QWidget* w, const QWidget* stop)
+{
+	for (; w != nullptr && w != stop; w = w->parentWidget())
+	{
+		if (auto* frame = qobject_cast<ShellPanel*>(w)) { return frame; }
+	}
+	return nullptr;
+}
+
 } // namespace
 
 Shell::Shell(QWidget* parent)
@@ -228,8 +238,10 @@ void Shell::buildActions()
 		action->setToolTip(tr("%1 view (Alt+%2)").arg(QString(titles.at(index)).remove(QLatin1Char('&'))).arg(index + 1));
 		action->setProperty("controlCommand", QStringLiteral("window.set_view"));
 		const QString name = ShellLayout::viewName(v);
-		connect(action, &QAction::triggered, this, [name]() {
+		// The checks follow the layout, not the click: a refused command leaves them as they were (review ux08 #101).
+		connect(action, &QAction::triggered, this, [this, name]() {
 			dispatchShellCommand(QStringLiteral("window.set_view"), QJsonObject{{QStringLiteral("view"), name}});
+			syncActions();
 		});
 		m_viewGroup->addAction(action);
 		addAction(action);
@@ -249,7 +261,10 @@ void Shell::buildActions()
 		const bool inFooter = spec.id != QStringLiteral("arranger");
 		action->setProperty("shellRegion", inFooter ? regionWord(spec.home) : QString());
 		const QString id = spec.id;
-		connect(action, &QAction::triggered, this, [id]() { dispatchWindowToggle(id); });
+		connect(action, &QAction::triggered, this, [this, id]() {
+			dispatchWindowToggle(id);
+			syncActions();
+		});
 		addAction(action);
 		m_panelActions.insert(spec.id, action);
 	}
@@ -295,17 +310,9 @@ void Shell::apply()
 {
 	QHash<QString, QWidget*> target;
 	for (const ShellPanelSpec& spec : ShellLayout::panels()) { target.insert(spec.id, hostFor(spec)); }
+	const ShellPanel* hadFocus = panelOf(QApplication::focusWidget(), this);
 	// Park first, so a region never holds its old panel and its new one at once.
-	for (auto it = m_panels.cbegin(); it != m_panels.cend(); ++it)
-	{
-		// A panel in its own window (detachPanel) stays there whatever the layout says.
-		if (m_floating.contains(it.key())) { continue; }
-		if (target.value(it.key()) == nullptr && it.value()->parentWidget() != m_parking)
-		{
-			it.value()->hide();
-			it.value()->setParent(m_parking);
-		}
-	}
+	parkUnused(target);
 	QSet<QWidget*> used;
 	for (auto it = target.cbegin(); it != target.cend(); ++it)
 	{
@@ -318,9 +325,34 @@ void Shell::apply()
 	{
 		host->setVisible(used.contains(host));
 	}
+	// A view switch that parked the focused panel hands the keys to the new centre, not to whatever
+	// widget Qt's focus chain finds next (review ux08 #100).
+	if (hadFocus != nullptr && hadFocus->parentWidget() == m_parking) { focusPanel(ShellLayout::centerOf(m_layout.view())); }
 	syncActions();
 	persist();
 	emit layoutChanged();
+}
+
+void Shell::parkUnused(const QHash<QString, QWidget*>& target)
+{
+	for (auto it = m_panels.cbegin(); it != m_panels.cend(); ++it)
+	{
+		// A panel in its own window (detachPanel) stays there whatever the layout says.
+		if (m_floating.contains(it.key())) { continue; }
+		if (target.value(it.key()) == nullptr && it.value()->parentWidget() != m_parking)
+		{
+			it.value()->hide();
+			it.value()->setParent(m_parking);
+		}
+	}
+}
+
+void Shell::focusPanel(const QString& id)
+{
+	if (ShellPanel* frame = m_panels.value(id); frame != nullptr && frame->content() != nullptr)
+	{
+		frame->content()->setFocus();
+	}
 }
 
 void Shell::syncActions()
@@ -375,10 +407,7 @@ bool Shell::revealPanel(const QString& id)
 	if (!ShellLayout::offers(m_layout.view(), id)) { m_layout.setView(viewOffering(id)); }
 	m_layout.open(id, nullptr);
 	apply();
-	if (ShellPanel* frame = m_panels.value(id); frame != nullptr && frame->content() != nullptr)
-	{
-		frame->content()->setFocus();
-	}
+	focusPanel(id);
 	return m_layout.isVisible(id);
 }
 
@@ -407,16 +436,9 @@ QJsonObject Shell::state() const
 
 void Shell::onFocusChanged(QWidget* now)
 {
-	QString id;
-	for (QWidget* w = now; w != nullptr && w != this; w = w->parentWidget())
-	{
-		if (auto* frame = qobject_cast<ShellPanel*>(w))
-		{
-			id = frame->id();
-			break;
-		}
-	}
-	if (id.isEmpty()) { return; }
+	const ShellPanel* focused = panelOf(now, this);
+	if (focused == nullptr) { return; }
+	const QString id = focused->id();
 	m_layout.setFocused(id);
 	for (ShellPanel* frame : m_panels) { frame->setFocusedPanel(frame->id() == id); }
 }

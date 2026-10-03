@@ -43,15 +43,14 @@ AutomationSwitches& AutomationSwitches::instance()
 
 void AutomationSwitches::set(bool reads, bool writes, bool punchedWrites)
 {
-	m_reads.store(reads, std::memory_order_relaxed);
-	m_writes.store(writes, std::memory_order_relaxed);
-	m_punched.store(punchedWrites, std::memory_order_relaxed);
+	m_bits.store((reads ? Reads : 0u) | (writes ? Writes : 0u) | (punchedWrites ? Punched : 0u), std::memory_order_relaxed);
 }
 
 bool AutomationSwitches::writesAt(tick_t tick) const
 {
-	if (!writes()) { return false; }
-	return !punchedWrites() || Engine::audioEngine()->punchCapturesTick(tick);
+	const unsigned bits = m_bits.load(std::memory_order_relaxed);  // one snapshot of both switches
+	if ((bits & Writes) == 0) { return false; }
+	return (bits & Punched) == 0 || Engine::audioEngine()->punchCapturesTick(tick);
 }
 
 void AutomationSwitches::save(QDomDocument& doc, QDomElement& parent) const

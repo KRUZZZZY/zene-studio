@@ -244,7 +244,10 @@ CommandForm::CommandForm(const CommandCall& call, QWidget* parent) :
 	connect(buttons, &QDialogButtonBox::rejected, this, &CommandForm::reject);
 	layout->addWidget(buttons);
 
-	for (auto it = call.defaults.begin(); it != call.defaults.end(); ++it) { setField(it.key(), it.value()); }
+	for (auto it = call.defaults.begin(); it != call.defaults.end(); ++it)
+	{
+		if (!setField(it.key(), it.value())) { qWarning("%s: default '%s' fits no field", qPrintable(call.id), qPrintable(it.key())); }
+	}
 }
 
 void CommandForm::addField(QFormLayout* form, const QString& key, const QJsonObject& spec, bool required)
@@ -255,7 +258,7 @@ void CommandForm::addField(QFormLayout* form, const QString& key, const QJsonObj
 	field.required = required;
 	QWidget* row = makeEditor(key, spec, required, &field.editor);
 	field.editor->setObjectName(QStringLiteral("field:") + key);
-	field.editor->setAccessibleName(labelFor(key));
+	field.editor->setAccessibleName(required ? tr("%1 (required)").arg(labelFor(key)) : labelFor(key));
 	form->addRow(required ? labelFor(key) + QStringLiteral(" *") : labelFor(key), row);
 	m_fields.append(field);
 }
@@ -329,6 +332,7 @@ QWidget* CommandForm::withBrowse(QLineEdit* edit, const QString& key)
 	auto* browse = new QToolButton(row);
 	browse->setText(QStringLiteral("..."));
 	browse->setAccessibleName(tr("Choose %1").arg(labelFor(key).toLower()));
+	browse->setToolTip(browse->accessibleName());
 	connect(browse, &QToolButton::clicked, edit, [this, edit, wantsFolder, wantsColour] {
 		if (wantsColour)
 		{
@@ -378,14 +382,14 @@ bool CommandForm::readField(const Field& field, QJsonValue* value, QString* erro
 	return false;
 }
 
-bool CommandForm::collect(QJsonObject* args, QString* error) const
+bool CommandForm::collect(QJsonObject* args, QString* error, QWidget** invalid) const
 {
 	QJsonObject out = m_call.fixed;
 	for (const Field& field : m_fields)
 	{
 		// Undefined until a field is read: a default QJsonValue is Null, which sent every empty optional field as null.
 		QJsonValue value(QJsonValue::Undefined);
-		if (!readField(field, &value, error)) { return false; }
+		if (!readField(field, &value, error)) { if (invalid != nullptr) { *invalid = field.editor; } return false; }
 		if (!value.isUndefined()) { out.insert(field.key, value); }
 	}
 	*args = out;
@@ -401,10 +405,14 @@ void CommandForm::accept()
 {
 	QJsonObject args;
 	QString error;
-	if (!collect(&args, &error))
+	QWidget* invalid = nullptr;
+	for (const Field& field : m_fields) { field.editor->setAccessibleDescription(QString()); }
+	if (!collect(&args, &error, &invalid))
 	{
 		m_error->setText(error);
 		m_error->show();
+		invalid->setAccessibleDescription(error);
+		invalid->setFocus(Qt::OtherFocusReason);
 		return;
 	}
 	m_result = ControlRegistry::instance()->invoke(m_call.id, args);

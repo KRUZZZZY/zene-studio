@@ -68,10 +68,10 @@ SampleClip* NoteBackgroundAudio::overlapping(const MidiClip& midiClip)
 void NoteBackgroundAudio::paint(QPainter& p, const NoteGrid& grid, const MidiClip& midiClip, SampleClip* clip, const QRect& area) const
 {
 	if (clip == nullptr || clip->sample().sampleSize() == 0) { return; }
-	if (m_clip != clip || m_file != clip->sample().sampleFile())
+	if (m_clip != clip || m_buffer != clip->sample().buffer().get())
 	{
 		m_clip = clip;
-		m_file = clip->sample().sampleFile();
+		m_buffer = clip->sample().buffer().get();
 		m_thumbnail = SampleThumbnail(clip->sample());
 	}
 	// Ticks relative to the MIDI clip: where the sample begins (a clip trimmed from the left starts

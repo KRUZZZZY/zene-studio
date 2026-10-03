@@ -4588,7 +4588,8 @@ void PianoRoll::finishRecordNote(const Note & n )
 
 void PianoRoll::notePassStart()
 {
-	m_notesBeforePass.assign(m_midiClip->notes().begin(), m_midiClip->notes().end());
+	m_notesBeforePass.clear();
+	for (const Note* note : m_midiClip->notes()) { m_notesBeforePass.push_back(note->id()); }
 }
 
 
@@ -4600,7 +4601,7 @@ void PianoRoll::replaceOverlapped(const Note& recorded)
 	const NoteVector existing = m_midiClip->notes();  // a copy: removing changes the clip's list
 	for (Note* note : existing)
 	{
-		const bool before = std::find(m_notesBeforePass.begin(), m_notesBeforePass.end(), note) != m_notesBeforePass.end();
+		const bool before = std::find(m_notesBeforePass.begin(), m_notesBeforePass.end(), note->id()) != m_notesBeforePass.end();
 		const bool overlaps = note->pos() < recorded.endPos() && recorded.pos() < note->endPos();
 		if (before && overlaps) { m_midiClip->removeNote(note); }
 	}

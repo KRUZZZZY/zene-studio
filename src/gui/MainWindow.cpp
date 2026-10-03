@@ -124,6 +124,18 @@ Object* declares(Object* object, const char* commandId)
 	return object;
 }
 
+//! The floating window a View-menu entry toggles, by its window.toggle editor name.
+QWidget* floatingWindow(const QString& editor)
+{
+	GuiApplication* gui = getGUI();
+	if (gui == nullptr) { return nullptr; }
+	if (editor == QLatin1String("controller_rack")) { return gui->getControllerRackView(); }
+	if (editor == QLatin1String("project_notes")) { return gui->getProjectNotes(); }
+	if (editor == QLatin1String("microtuner")) { return gui->getMicrotunerConfig(); }
+	if (editor == QLatin1String("classic_piano_roll")) { return gui->pianoRoll(); }
+	return nullptr;
+}
+
 QAction* windowToggleAction(QMenu* menu, const QPixmap& icon, const QString& text, const char* editor)
 {
 	const QString name = QString::fromLatin1(editor);
@@ -1126,10 +1138,12 @@ void MainWindow::toggleWindow( QWidget *window, bool forceShow )
 {
 	// Only the secondary windows come here - the controller rack, project notes, the
 	// microtuner - and they float (SubWindow::setFloatOutsideWorkspace): showing one shows and
-	// raises its top-level window, toggling a visible one hides it.
+	// raises its top-level window, toggling a visible one hides it. Visibility alone decides:
+	// a floating window is never the active one while the View menu or the main window's
+	// shortcut is used, so an "or inactive" test made the toggle unable to hide it.
 	auto parent = dynamic_cast<QMdiSubWindow*>(window->parentWidget());
 	if (parent == nullptr) { return; }
-	if (forceShow || !window->isVisible() || !window->isActiveWindow())
+	if (forceShow || !window->isVisible())
 	{
 		parent->show();
 		window->show();
@@ -1236,7 +1250,9 @@ const QList<QAction*>& MainWindow::floatingWindowActions()
 		const QString name = QString::fromLatin1(row.editor);
 		auto* action = new QAction(embed::getIconPixmap(row.icon), row.text, this);
 		action->setShortcut(row.key);
+		action->setCheckable(true);  // checked while the window is open (updateViewMenu)
 		action->setProperty("controlCommand", QStringLiteral("window.toggle"));
+		action->setProperty("floatingWindow", name);
 		connect(action, &QAction::triggered, this, [name]() { dispatchWindowToggle(name); });
 		addAction(action);
 		m_floatingWindowActions << action;
@@ -1253,7 +1269,12 @@ void MainWindow::updateViewMenu()
 	m_viewMenu->addSeparator();
 	for (QAction* action : m_shell->panelActions()) { m_viewMenu->addAction(action); }
 	m_viewMenu->addSeparator();
-	for (QAction* action : floatingWindowActions()) { m_viewMenu->addAction(action); }
+	for (QAction* action : floatingWindowActions())
+	{
+		const QWidget* window = floatingWindow(action->property("floatingWindow").toString());
+		action->setChecked(window != nullptr && window->isVisible());
+		m_viewMenu->addAction(action);
+	}
 	m_viewMenu->addSeparator();
 
 	declares(m_viewMenu->addAction(embed::getIconPixmap( "fullscreen" ),

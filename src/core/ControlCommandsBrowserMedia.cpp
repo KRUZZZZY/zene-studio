@@ -117,7 +117,8 @@ ControlResult thumbnail(const QJsonObject& args)
 	const int height = args.value(QStringLiteral("height")).toInt(48);
 	const QString out = args.value(QStringLiteral("out")).toString(thumbnailPath(key, width, height));
 	if (!QFileInfo(out).isAbsolute()) { return ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("'out' must be absolute")); }
-	const bool cached = !args.contains(QStringLiteral("out")) && QFileInfo::exists(out);
+	// A cached file counts only if it decodes: an interrupted save must not stand in for the thumbnail for good.
+	const bool cached = !args.contains(QStringLiteral("out")) && !QImage(out).isNull();
 	if (!cached)
 	{
 		BrowserPeakCache::Answer answer;

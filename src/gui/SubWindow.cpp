@@ -39,6 +39,7 @@
 #include <QMoveEvent>
 #include <QPainter>
 #include <QPushButton>
+#include <QScreen>
 #include <QStyleOption>
 #include <QStyleOptionTitleBar>
 #include <QWindow>
@@ -49,6 +50,26 @@
 namespace lmms::gui
 {
 
+
+namespace
+{
+
+//! The screen area @a top is on, or an empty rect when there is none (no screen, or no window).
+QRect availableArea(const QWidget* top)
+{
+	const QScreen* screen = top != nullptr ? top->screen() : nullptr;
+	return screen != nullptr ? screen->availableGeometry() : QRect();
+}
+
+//! @a frame's top-left moved as little as it takes for the frame to sit inside @a area (unchanged for an empty area).
+QPoint keptInside(const QRect& frame, const QRect& area)
+{
+	if (area.isEmpty()) { return frame.topLeft(); }
+	return {std::clamp(frame.left(), area.left(), std::max(area.left(), area.right() + 1 - frame.width())),
+		std::clamp(frame.top(), area.top(), std::max(area.top(), area.bottom() + 1 - frame.height()))};
+}
+
+} // namespace
 
 bool SubWindow::s_floatOutside = false;
 
@@ -353,10 +374,17 @@ void SubWindow::floatOut()
 	flags |= Qt::WindowMinimizeButtonHint;
 	QMdiSubWindow::setVisible(false);
 	content->setWindowFlags(flags);
-	content->resize(size.expandedTo(QSize(160, 120)));
-	if (const QWidget* top = window(); top != nullptr && top != content)
+	// Fitted to the main window's screen, so a large editor never opens with its title bar or its
+	// controls off screen (review ux05 #87).
+	const QWidget* top = window();
+	const QRect area = availableArea(top);
+	const QSize wanted = size.expandedTo(QSize(160, 120));
+	content->resize(area.isEmpty() ? wanted : wanted.boundedTo(area.size()));
+	if (top != nullptr && top != content)
 	{
-		content->move(top->geometry().center() - QPoint(content->width() / 2, content->height() / 2));
+		QRect frame(QPoint(), content->size());
+		frame.moveCenter(top->geometry().center());
+		content->move(keptInside(frame, area));
 	}
 }
 

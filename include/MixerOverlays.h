@@ -44,7 +44,8 @@ class MixerChannelView;
 namespace mixeroverlays
 {
 
-//! The return channel (index) the faders show sends to, or -1 for the channel faders.
+//! The return channel (index) the faders show sends to, or -1 for the channel faders. It is kept by the
+//! channel's stable id, so it follows that channel as others are added, deleted or moved, and ends with it.
 LMMS_EXPORT int sendsOnFaders();
 LMMS_EXPORT void setSendsOnFaders(int returnIndex);
 //! The channel indices a collapsed folder hides.

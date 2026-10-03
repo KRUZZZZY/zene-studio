@@ -88,6 +88,7 @@ protected:
 
 private:
 	int loopEndX() const;
+	bool overLoopEnd(int x) const;  //!< whether x is on the clip end's drag target
 	int draggedLength(int x) const;
 
 	NoteEditor* m_editor;
@@ -97,8 +98,9 @@ private:
 };
 
 //! The expression lane below the notes: one bar per visible note for the chosen lane
-//! (velocity, pan, chance, timbre, pressure, micro-pitch). Dragging across notes draws values;
-//! on release they are written as one note.edit (velocity, pan, chance) or one
+//! (velocity, pan, chance, timbre, pressure, micro-pitch, release velocity, velocity spread,
+//! repeats). Dragging across notes draws values; on release they are written as one note.edit
+//! (velocity, pan, chance, release velocity, spread, repeats) or one
 //! note.expression_set per note (the MPE axes, which note.edit does not carry).
 class LMMS_EXPORT NoteLaneView : public QWidget
 {
@@ -125,6 +127,7 @@ private:
 	NoteEditor* m_editor;
 	NoteEditorState& m_state;
 	std::map<int, int> m_pending;  //!< Note::id() -> value drawn but not yet written
+	int m_lastValue = 0;           //!< the value the stroke drew last: the new notes' velocity on the Velocity lane
 	bool m_drawing = false;
 };
 

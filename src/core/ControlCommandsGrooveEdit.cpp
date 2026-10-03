@@ -50,6 +50,7 @@
 #include "ControlRegistry.h"
 #include "MidiClip.h"
 #include "NoteTransform.h"
+#include "Song.h" // MaxSongLength
 
 namespace lmms
 {
@@ -330,7 +331,8 @@ ControlResult grooveQuantize(const QJsonObject& args)
 	if (clip == nullptr) { return error; }
 
 	NoteTransform::QuantizeOptions options;
-	if (!readTicks(args, QStringLiteral("grid"), 1, kMaxSchemaInteger, &options.grid, &error))
+	// No grid is longer than a song: the bound keeps the rounding (position + grid) inside tick_t.
+	if (!readTicks(args, QStringLiteral("grid"), 1, MaxSongLength, &options.grid, &error))
 	{
 		return error;
 	}

@@ -36,6 +36,7 @@ class QRect;
 namespace lmms
 {
 class MidiClip;
+class SampleBuffer;
 class SampleClip;
 }
 
@@ -59,9 +60,11 @@ public:
 	void paint(QPainter& p, const NoteGrid& grid, const MidiClip& midiClip, SampleClip* clip, const QRect& area) const;
 
 private:
-	// Rebuilt when the clip or its file changes - building a thumbnail reads the whole sample.
+	// Rebuilt when the clip or its sample buffer changes (a new file, or the same path reloaded) -
+	// building a thumbnail reads the whole sample. The thumbnail holds the buffer it was built
+	// from, so m_buffer cannot dangle into a later buffer at the same address.
 	mutable QPointer<SampleClip> m_clip;
-	mutable QString m_file;
+	mutable const SampleBuffer* m_buffer = nullptr;
 	mutable SampleThumbnail m_thumbnail;
 };
 

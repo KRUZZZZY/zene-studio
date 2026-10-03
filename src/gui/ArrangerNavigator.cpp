@@ -121,14 +121,24 @@ protected:
 		p.drawRect(QRect(left + 1, 1, shown - 2, height() - 2));
 	}
 
-	void mousePressEvent(QMouseEvent* event) override { scrollTo(event->position().x()); }
+	void mousePressEvent(QMouseEvent* event) override
+	{
+		if (event->button() == Qt::LeftButton) { scrollTo(event->position().x()); }
+	}
 	void mouseMoveEvent(QMouseEvent* event) override
 	{
 		if (event->buttons() & Qt::LeftButton) { scrollTo(event->position().x()); }
 	}
 	void wheelEvent(QWheelEvent* event) override
 	{
-		ControlRegistry::instance()->invoke(QStringLiteral("arrangement.zoom"), {{QStringLiteral("step"), event->angleDelta().y() > 0 ? 1 : -1}});
+		// The vertical wheel zooms; a sideways (or empty) turn is not a zoom out - it goes on to the parent.
+		const int turn = event->angleDelta().y();
+		if (turn == 0)
+		{
+			event->ignore();
+			return;
+		}
+		ControlRegistry::instance()->invoke(QStringLiteral("arrangement.zoom"), {{QStringLiteral("step"), turn > 0 ? 1 : -1}});
 	}
 
 private:

@@ -35,12 +35,13 @@ class QWidget;
 namespace lmms::gui
 {
 
-/*! 0.5.0 W3 L14 (WF-129): a walk over the controls under @a root - buttons, sliders, knobs, faders, fields,
+/*! 0.5.0 W3 L14 (WF-129): a walk over @a root and the controls under it - buttons, sliders, knobs, faders, fields,
  *  lists, anything that takes the keyboard - counting those a screen reader would announce with no name.
  *  With @a fill, each nameless one is given the name it already carries elsewhere: its parameter's name (a
  *  knob, a fader, a LED button), its tooltip or its text; a control with none stays in the report.
  *  Answers {checked, named, filled, implied (nameless, with a name to give when 'fill' is not set),
- *  unnamed: [{class, object, parent}] - nothing to name them by, at most 50 listed}. */
+ *  unnamed: [{class, object, parent}] - nothing to name them by, at most 50 listed - and unnamed_count, how many
+ *  there are in all}. */
 LMMS_EXPORT QJsonObject auditAccessibility(QWidget* root, bool fill);
 
 //! The name @a widget could be announced by when it has none: its parameter's, its tooltip or its text.

@@ -885,9 +885,12 @@ bool InstrumentTrack::play( const TimePos & _start, const f_cnt_t _frames,
 			continue;
 		}
 		TimePos cur_start = _start;
+		tick_t passBase = 0;  // where the pass of a looped clip playing now starts, in the clip's own time
 		if( _clip_num < 0 )
 		{
-			cur_start = loopedPosition(c, cur_start - (c->startPosition() + c->startTimeOffset()));  // 0.5.0 ED-029: a looped clip
+			const TimePos unfolded = cur_start - (c->startPosition() + c->startTimeOffset());
+			cur_start = loopedPosition(c, unfolded);  // 0.5.0 ED-029: a looped clip
+			passBase = unfolded - cur_start;
 		}
 		// 0.5.0 L07: the clip's CC / pitch-bend / aftertouch lanes (InstrumentTrackNotes.cpp).
 		if (!c->controllers().empty()) { playClipControllers(c, cur_start.getTicks(), _offset); }
@@ -930,8 +933,8 @@ bool InstrumentTrack::play( const TimePos & _start, const f_cnt_t _frames,
 				continue;
 			}
 
-			// Calculate the overlap of the note over the clip end.
-			const auto noteOverlap = std::max(0, currentNote->endPos() - (c->length() - c->startTimeOffset()));
+			// Calculate the overlap of the note over the clip end (on a looped clip, over the end of this pass).
+			const auto noteOverlap = std::max(0, currentNote->endPos() - passEnd(c, passBase, _clip_num < 0));
 			// If the note is a Step Note, frames will be 0 so the NotePlayHandle
 			// plays for the whole length of the sample
 			const auto noteFrames = currentNote->type() == Note::Type::Step

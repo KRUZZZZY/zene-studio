@@ -228,11 +228,15 @@ ControlResult setStrip(const QJsonObject& args)
 	ControlResult error;
 	MixerChannel* channel = resolveMixerChannel(args.value(QStringLiteral("channel")).toString(), &error);
 	if (channel == nullptr) { return error; }
+	// Only 'channel': nothing to set, so no undo step (mixer.strip_get is the report).
+	if (args.size() == 1) { return ControlResult::success(stripJson(channel)); }
 	const StripSettings before = settingsOf(channel);
 	const StripSettings after = merged(before, args);
-	if (std::abs(after.trim) > 24.f || after.panMode < 0 || after.width < 0.f || after.width > 2.f)
+	if (std::abs(after.trim) > 24.f || after.panMode < 0 || after.width < 0.f || after.width > 2.f || std::abs(after.panLeft) > 1.f
+		|| std::abs(after.panRight) > 1.f)
 	{
-		return ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("'trim_db' is -24..24, 'pan_mode' balance / dual / width, 'width' 0..2"));
+		return ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("'trim_db' is -24..24, 'pan_mode' balance / dual / width, "
+			"'width' 0..2, 'pan' and 'pan_right' -1..1"));
 	}
 	const int id = channel->id();
 	addUndoStep([id, before]() { applySettings(id, before); }, [id, after]() { applySettings(id, after); });

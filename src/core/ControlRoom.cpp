@@ -45,6 +45,15 @@ State g_state;  // the interface thread's copy; the audio thread never reads it
 
 float linear(float db) { return std::pow(10.f, db / 20.f); }
 
+//! A trim as the config file holds it, kept to the range monitor.control_room takes (-24..12 dB): an edited or
+//! unreadable value cannot reach the live output as an infinite or absurd gain.
+float storedTrim(const QString& text)
+{
+	bool ok = false;
+	const float db = text.toFloat(&ok);
+	return ok && std::isfinite(db) ? std::clamp(db, -24.f, 12.f) : 0.f;
+}
+
 void publish(const State& state)
 {
 	const float gain = state.cut ? 0.f : linear(state.trimsDb[state.speaker] + (state.dim ? state.dimDb : 0.f));
@@ -69,7 +78,7 @@ void setState(const State& state)
 void loadPreferences()
 {
 	const QStringList trims = ConfigManager::inst()->value(QStringLiteral("controlroom"), QStringLiteral("trims")).split(QLatin1Char(';'));
-	for (int i = 0; i < 3 && i < trims.size(); ++i) { g_state.trimsDb[i] = trims[i].toFloat(); }
+	for (int i = 0; i < 3 && i < trims.size(); ++i) { g_state.trimsDb[i] = storedTrim(trims[i]); }
 	g_state.speaker = std::clamp(ConfigManager::inst()->value(QStringLiteral("controlroom"), QStringLiteral("speaker")).toInt(), 0, 2);
 	publish(g_state);
 }

@@ -33,6 +33,7 @@
 #include <QMenu>
 #include <QMouseEvent>
 #include <QPainter>
+#include <QScrollBar>
 #include <QShowEvent>
 #include <QStyleOption>
 #include <QTimer>
@@ -50,6 +51,23 @@
 
 namespace lmms::gui
 {
+
+namespace
+{
+
+//! The organiser's folders that hold a listed (not hidden) plug-in, by name as the plug-ins are sorted.
+QStringList listedFolders(const QMap<QString, pluginorganiser::Entry>& organised)
+{
+	QStringList names;
+	for (const pluginorganiser::Entry& entry : organised)
+	{
+		if (!entry.hidden && !entry.folder.isEmpty() && !names.contains(entry.folder)) { names << entry.folder; }
+	}
+	std::sort(names.begin(), names.end(), [](const QString& l, const QString& r) { return QString::compare(l, r, Qt::CaseInsensitive) < 0; });
+	return names;
+}
+
+} // namespace
 
 
 PluginBrowser::PluginBrowser( QWidget * _parent ) :
@@ -157,6 +175,28 @@ void PluginBrowser::onFilterChanged( const QString & filter )
 }
 
 
+void PluginBrowser::rebuildKeepingView()
+{
+	QHash<QString, bool> expanded;
+	for (int rootIndex = 0; rootIndex < m_descTree->topLevelItemCount(); ++rootIndex)
+	{
+		const QTreeWidgetItem* root = m_descTree->topLevelItem(rootIndex);
+		expanded.insert(root->text(0), root->isExpanded());
+	}
+	const int scroll = m_descTree->verticalScrollBar()->value();
+	addPlugins();
+	updateRootVisibilities();
+	onFilterChanged(m_filter);
+	for (int rootIndex = 0; rootIndex < m_descTree->topLevelItemCount(); ++rootIndex)
+	{
+		QTreeWidgetItem* root = m_descTree->topLevelItem(rootIndex);
+		root->setExpanded(expanded.value(root->text(0), root->isExpanded()));
+	}
+	m_descTree->doItemsLayout();
+	m_descTree->verticalScrollBar()->setValue(scroll);
+}
+
+
 void PluginBrowser::addPlugins()
 {
 	// Add a root node to the plugin tree with the specified `label` and return it
@@ -174,10 +214,11 @@ void PluginBrowser::addPlugins()
 		const auto item = new QTreeWidgetItem();
 		root->addChild(item);
 		auto* widget = new PluginDescWidget(key, m_descTree);
+		item->setData(0, Qt::AccessibleTextRole, widget->name());
 		m_descTree->setItemWidget(item, 0, widget);
-		// The tree is rebuilt once the menu that changed it has closed (it belongs to this row), the search kept.
+		// The tree is rebuilt once the menu that changed it has closed (it belongs to this row), the view kept.
 		connect(widget, &PluginDescWidget::organised, this, [this] {
-			QTimer::singleShot(0, this, [this] { addPlugins(); onFilterChanged(m_filter); });
+			QTimer::singleShot(0, this, [this] { rebuildKeepingView(); });
 		});
 	};
 
@@ -191,11 +232,7 @@ void PluginBrowser::addPlugins()
 		if (entry.hidden) { return; }
 		addOne(key, root);
 		if (entry.favourite && favourites != nullptr) { addOne(key, favourites); }
-		if (!entry.folder.isEmpty())
-		{
-			if (!folders.contains(entry.folder)) { folders.insert(entry.folder, addRoot(entry.folder)); }
-			addOne(key, folders.value(entry.folder));
-		}
+		if (QTreeWidgetItem* folder = folders.value(entry.folder)) { addOne(key, folder); }
 	};
 
 	// Remove any existing plugins from the tree
@@ -220,6 +257,8 @@ void PluginBrowser::addPlugins()
 	}
 	const auto nativeRoot = addRoot("Zene Studio");
 	nativeRoot->setExpanded(true);
+	// The folders next, sorted by name (a root cannot be moved once its plug-ins' widgets are placed).
+	for (const QString& folder : listedFolders(organised)) { folders.insert(folder, addRoot(folder)); }
 
 	// Add all of the descriptors to the tree
 	for (const auto desc : descs)
@@ -260,6 +299,7 @@ PluginDescWidget::PluginDescWidget(const PluginKey &_pk,
 	setFixedHeight( DEFAULT_HEIGHT );
 	setMouseTracking( true );
 	setCursor( Qt::PointingHandCursor );
+	setAccessibleName(_pk.displayName());
 	setToolTip(_pk.desc->subPluginFeatures
 		? _pk.description()
 		: tr(_pk.desc->description));

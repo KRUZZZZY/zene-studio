@@ -37,6 +37,7 @@
 #include "InstrumentTrack.h"
 #include "LedCheckBox.h"
 #include "MainWindow.h"
+#include "MicrotunerConfig.h"
 #include "PixmapButton.h"
 
 
@@ -89,7 +90,12 @@ InstrumentTuningView::InstrumentTuningView(InstrumentTrack *it, QWidget *parent)
 	editPixButton->setInactiveGraphic(editPixmap);
 	editPixButton->setActiveGraphic(editPixmap);
 	editPixButton->setFixedSize(16, 16);
-	connect(editPixButton, SIGNAL(clicked()), getGUI()->mainWindow(), SLOT(toggleMicrotunerWin()));
+	// Opens the microtuner, or brings it forward when it is open: the window menu's toggle would hide it.
+	connect(editPixButton, &PixmapButton::clicked, this, [] {
+		QWidget* tuner = getGUI()->getMicrotunerConfig();
+		if (tuner->isVisible()) { tuner->raise(); tuner->activateWindow(); }
+		else { getGUI()->mainWindow()->toggleMicrotunerWin(); }
+	});
 
 	scaleEditLayout->addWidget(editPixButton);
 

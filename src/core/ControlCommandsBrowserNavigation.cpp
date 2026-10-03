@@ -124,8 +124,11 @@ ControlResult historyGo(const QJsonObject& args)
 	{
 		return ControlResult::failure(ControlErrorKind::Refused, QStringLiteral("the browser history has no entry there"));
 	}
-	h.position = target;
-	return runEntry(h.entries[static_cast<std::size_t>(target)]);
+	const int was = h.position;
+	h.position = target;  // before running: the reply reports where the history stands
+	ControlResult result = runEntry(h.entries[static_cast<std::size_t>(target)]);
+	if (!result.ok) { h.position = was; }  // as browse(): a list that could not be shown is not where the history is
+	return result;
 }
 
 QString sourceKey(const QString& context) { return QStringLiteral("source_") + context; }

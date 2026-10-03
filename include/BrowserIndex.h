@@ -101,7 +101,7 @@ public:
 
 	//! Scan @a dirs on a worker thread, measuring audio files when @a features; false when a scan runs.
 	bool start(const QStringList& dirs, bool features);
-	//! Scan @a dirs here, now, measuring at most @a maxAnalysed files (a caller that waits for it).
+	//! Scan @a dirs here, now, measuring at most @a maxAnalysed files, never more than MaxAnalysed (a caller that waits for it).
 	//! False, scanning nothing, when another scan is already running (review W3-agent-library #4).
 	bool scanNow(const QStringList& dirs, bool features, int maxAnalysed);
 	//! Ask a running scan to stop after the file it is on (its partial result is dropped).
@@ -114,6 +114,8 @@ public:
 
 private:
 	BrowserIndex() = default;
+	//! Publish a scan of @a dirs as running, its progress zeroed; false when one already runs.
+	bool claim(const QStringList& dirs);
 	void scan(const QStringList& dirs, bool features, int maxAnalysed);
 	void loadLocked() const;
 	bool save(const std::vector<BrowserIndexEntry>& entries, const Status& status) const;

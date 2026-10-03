@@ -34,10 +34,12 @@
 #include <QPushButton>
 #include <QSignalBlocker>
 #include <QSpinBox>
+#include <QTimer>
 #include <QVBoxLayout>
 
 #include "ControlRegistry.h"
 #include "ControlReversibility.h"
+#include "Engine.h"
 #include "ProjectJournal.h"
 
 namespace lmms::gui
@@ -90,6 +92,21 @@ QSpinBox* limitBox(int min, int max, const QString& suffix, const char* command,
 	return box;
 }
 
+//! Why a step the panel ran did not go all the way: the refusal, or where a history jump stopped; empty when it did.
+QString problemOf(const ControlResult& result)
+{
+	if (!result.ok) { return result.errorMessage; }
+	return result.result.value(QStringLiteral("stopped")).toString();
+}
+
+//! What the journal holds, in brief: it changes whenever any client - an agent, a script, an editor - adds or takes a step.
+QString journalMark()
+{
+	const ProjectJournal* journal = Engine::projectJournal();
+	if (journal == nullptr) { return QString(); }
+	return QStringLiteral("%1/%2/%3").arg(journal->undoDepth()).arg(journal->redoDepth()).arg(journal->topStepSerial());
+}
+
 QPushButton* commandButton(const QString& label, const QString& command, QWidget* parent)
 {
 	auto* button = new QPushButton(label, parent);
@@ -110,27 +127,44 @@ UndoHistoryPanel::UndoHistoryPanel(QWidget* parent) :
 	m_list->setAccessibleName(tr("Recorded commands, newest first"));
 	auto* note = new QLabel(tr("The list shows edits made through commands - agents, scripts, the "
 		"command palette and the menu items that run one. An edit made directly in an editor is "
-		"undone by Undo too, but it is not listed here. Double-click a command to undo it and every "
-		"step after it (control.history_jump)."), this);
+		"undone by Undo too, but it is not listed here. Double-click a command, or select it and press "
+		"Undo to Here, to undo it and every step after it (control.history_jump); Redo brings them back."), this);
 	note->setWordWrap(true);
 
 	m_undo = commandButton(tr("Undo"), QStringLiteral("control.undo"), this);
 	m_redo = commandButton(tr("Redo"), QStringLiteral("control.redo"), this);
+	auto* back = commandButton(tr("Undo to Here"), QStringLiteral("control.history_jump"), this);
+	back->setToolTip(tr("Undo the selected command and every step after it"));
+	back->setEnabled(false);
 	auto* again = new QPushButton(tr("Refresh"), this);
+	// A refusal, or a jump an irreversible step stopped short, is shown under the summary - not dropped.
+	const auto report = [this](const ControlResult& result) {
+		refresh();
+		const QString why = problemOf(result);
+		if (!why.isEmpty()) { m_summary->setText(m_summary->text() + QLatin1Char('\n') + tr("Not done: %1").arg(why)); }
+	};
 	for (auto [button, command] : {std::pair{m_undo, "control.undo"}, std::pair{m_redo, "control.redo"}})
 	{
-		connect(button, &QPushButton::clicked, this, [this, command = command] {
-			ControlRegistry::instance()->invoke(QString::fromLatin1(command), QJsonObject{});
-			refresh();
+		connect(button, &QPushButton::clicked, this, [report, command = command] {
+			report(ControlRegistry::instance()->invoke(QString::fromLatin1(command), QJsonObject{}));
 		});
 	}
 	connect(again, &QPushButton::clicked, this, [this] { refresh(); });
 	// 0.5.0 W3 (WF-102): back to a point in the history in one go - the row and every newer one.
 	m_list->setProperty("controlCommand", QStringLiteral("control.history_jump"));
-	connect(m_list, &QListWidget::itemDoubleClicked, this, [this](QListWidgetItem* item) {
-		ControlRegistry::instance()->invoke(QStringLiteral("control.history_jump"), {{QStringLiteral("steps"), -(m_list->row(item) + 1)}});
-		refresh();
+	const auto jump = [this, report] {
+		const int row = m_list->currentRow();
+		if (row >= 0) { report(ControlRegistry::instance()->invoke(QStringLiteral("control.history_jump"), {{QStringLiteral("steps"), -(row + 1)}})); }
+	};
+	connect(m_list, &QListWidget::itemDoubleClicked, this, jump);
+	connect(back, &QPushButton::clicked, this, jump);
+	connect(m_list, &QListWidget::currentRowChanged, back, [back](int row) { back->setEnabled(row >= 0); });
+	// The record changes under other clients too (agents, scripts, editors): re-read when the journal moved.
+	auto* watch = new QTimer(this);
+	connect(watch, &QTimer::timeout, this, [this] {
+		if (isVisible() && journalMark() != m_list->property("journalMark").toString()) { refresh(); }
 	});
+	watch->start(500);
 
 	const auto reread = [this] { refresh(); };
 	m_steps = limitBox(1, ProjectJournal::MaxUndoStateLimit, tr(" steps"), "control.set_undo_depth", "steps", 1,
@@ -152,6 +186,7 @@ UndoHistoryPanel::UndoHistoryPanel(QWidget* parent) :
 	auto* buttons = new QHBoxLayout;
 	buttons->addWidget(m_undo);
 	buttons->addWidget(m_redo);
+	buttons->addWidget(back);
 	buttons->addStretch();
 	buttons->addWidget(again);
 	auto* layout = new QVBoxLayout(this);
@@ -177,6 +212,7 @@ void UndoHistoryPanel::refresh()
 		m_coalesce->setValue(depth.value(QStringLiteral("coalescing")).toObject().value(QStringLiteral("window_ms")).toInt());
 	}
 	m_list->clear();
+	m_list->setProperty("journalMark", journalMark());  // what the list was read at (the panel's watch compares it)
 	const QJsonArray transactions = read("control.transactions").value(QStringLiteral("transactions")).toArray();
 	for (qsizetype i = transactions.size() - 1; i >= 0; --i)
 	{

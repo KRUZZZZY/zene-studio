@@ -64,6 +64,38 @@ QPushButton* commandButton(const QString& label, const char* command, QWidget* p
 
 QJsonArray modulators() { return run("modulator.get_state").result.value(QStringLiteral("modulators")).toArray(); }
 
+//! The modulator @a id as modulator.get_state reports it, or an empty object.
+QJsonObject modulatorById(const QString& id)
+{
+	for (const QJsonValue& value : modulators())
+	{
+		if (value.toObject().value(QStringLiteral("id")).toString() == id) { return value.toObject(); }
+	}
+	return {};
+}
+
+//! The Steps and Envelope form's starting values: the modulator's own steps and attack when it has
+//! them (modulator.get_state reports each for its own shape only), else an example of each.
+QJsonObject shapeValueDefaults(const QJsonObject& source)
+{
+	QJsonObject defaults;
+	if (source.contains(QStringLiteral("steps"))) { defaults.insert(QStringLiteral("steps"), source.value(QStringLiteral("steps"))); }
+	if (source.contains(QStringLiteral("attack"))) { defaults.insert(QStringLiteral("attack"), source.value(QStringLiteral("attack"))); }
+	if (defaults.isEmpty())
+	{
+		defaults = {{QStringLiteral("steps"), QJsonArray{1.0, -1.0, 0.5, -0.5}}, {QStringLiteral("attack"), 0.1}};
+	}
+	return defaults;
+}
+
+//! A button that acts on the selected modulator: ModulatorPanel::showSelected enables it only while one is.
+QPushButton* selectionButton(const QString& label, const char* command, QWidget* parent)
+{
+	QPushButton* button = commandButton(label, command, parent);
+	button->setProperty("needsModulator", true);
+	return button;
+}
+
 //! The mixer channels' chains from dsp.get_state (the modulation layer addresses channel racks only).
 QJsonArray channelChains()
 {
@@ -110,11 +142,19 @@ ModulatorPanel::ModulatorPanel(QWidget* parent) :
 	m_depth->setRange(-1.0, 1.0);
 	m_depth->setSingleStep(0.05);
 	m_depth->setValue(0.25);
+	m_channel->setAccessibleName(tr("Mixer channel to modulate"));
+	m_channel->setToolTip(m_channel->accessibleName());
+	m_effect->setAccessibleName(tr("Effect to modulate"));
+	m_effect->setToolTip(m_effect->accessibleName());
+	m_parameter->setAccessibleName(tr("Parameter to modulate"));
+	m_parameter->setToolTip(m_parameter->accessibleName());
+	m_depth->setAccessibleName(tr("Modulation depth"));
+	m_depth->setToolTip(tr("Modulation depth, -1 to 1"));
 
 	auto* add = commandButton(tr("Add LFO"), "modulator.create", this);
-	auto* remove = commandButton(tr("Remove"), "modulator.remove", this);
-	auto* bindButton = commandButton(tr("Bind"), "modulator.target_set", this);
-	auto* unbind = commandButton(tr("Unbind"), "modulator.target_remove", this);
+	auto* remove = selectionButton(tr("Remove"), "modulator.remove", this);
+	auto* bindButton = selectionButton(tr("Bind"), "modulator.target_set", this);
+	auto* unbind = selectionButton(tr("Unbind"), "modulator.target_remove", this);
 	connect(add, &QPushButton::clicked, this, [this] { addModulator(m_shape->currentText(), m_rate->value()); });
 	connect(remove, &QPushButton::clicked, this, [this] { removeSelected(); });
 	connect(bindButton, &QPushButton::clicked, this, [this] {
@@ -136,21 +176,24 @@ ModulatorPanel::ModulatorPanel(QWidget* parent) :
 	source->addRow(tr("Shape:"), m_shape);
 	source->addRow(tr("Rate:"), m_rate);
 	// MX-117: the step values and the envelope's attack, through the command's own form.
-	auto* shapeValues = commandButton(tr("Steps and Envelope..."), "modulator.rate_set", this);
+	// The form starts from the modulator's own values, so accepting it unchanged keeps them.
+	auto* shapeValues = selectionButton(tr("Steps and Envelope..."), "modulator.rate_set", this);
 	connect(shapeValues, &QPushButton::clicked, this, [this] {
 		if (selectedId().isEmpty()) { return; }
+		const QJsonObject source = modulatorById(selectedId()).value(QStringLiteral("source")).toObject();
 		runCommand(this, CommandCall{QStringLiteral("modulator.rate_set"), {{QStringLiteral("modulator"), selectedId()}},
-			{{QStringLiteral("steps"), QJsonArray{1.0, -1.0, 0.5, -0.5}}, {QStringLiteral("attack"), 0.1}}, {}, true});
+			shapeValueDefaults(source), {}, true});
 	});
 	source->addRow(QString(), shapeValues);
 	// 0.5.0 L10 (MX-118 / MX-121): a formula of the modulator's own, and restarting it on a track's notes.
-	auto* formula = commandButton(tr("Formula..."), "modulator.formula_set", this);
+	auto* formula = selectionButton(tr("Formula..."), "modulator.formula_set", this);
 	connect(formula, &QPushButton::clicked, this, [this] {
 		if (selectedId().isEmpty()) { return; }
+		const QString own = modulatorById(selectedId()).value(QStringLiteral("formula")).toString();
 		runCommand(this, CommandCall{QStringLiteral("modulator.formula_set"), {{QStringLiteral("modulator"), selectedId()}},
-			{{QStringLiteral("formula"), QStringLiteral("sin(2*pi*t)")}}, {}, true});
+			{{QStringLiteral("formula"), own.isEmpty() ? QStringLiteral("sin(2*pi*t)") : own}}, {}, true});
 	});
-	auto* follow = commandButton(tr("Restart on a Track's Notes..."), "modulator.trigger_set", this);
+	auto* follow = selectionButton(tr("Restart on a Track's Notes..."), "modulator.trigger_set", this);
 	connect(follow, &QPushButton::clicked, this, [this] {
 		if (selectedId().isEmpty()) { return; }
 		runCommand(this, CommandCall{QStringLiteral("modulator.trigger_set"), {{QStringLiteral("modulator"), selectedId()}},
@@ -199,10 +242,13 @@ void ModulatorPanel::showSelected()
 {
 	m_targets->setRowCount(0);
 	const QString id = selectedId();
-	for (const QJsonValue& value : modulators())
+	for (QPushButton* button : findChildren<QPushButton*>())
 	{
-		const QJsonObject modulator = value.toObject();
-		if (modulator.value(QStringLiteral("id")).toString() != id) { continue; }
+		if (button->property("needsModulator").toBool()) { button->setEnabled(!id.isEmpty()); }
+	}
+	const QJsonObject modulator = modulatorById(id);
+	if (!modulator.isEmpty())
+	{
 		const QJsonObject source = modulator.value(QStringLiteral("source")).toObject();
 		const QSignalBlocker blockShape(m_shape);
 		const QSignalBlocker blockRate(m_rate);

@@ -196,7 +196,7 @@ void registerWindowCommands(ControlRegistry& registry)
 	{
 		ControlCommand cmd = command("toggle");
 		cmd.description = QStringLiteral("Show or hide one shell panel or floating window - the View "
-			"menu, the footer's panel buttons, Alt+I/B/D/N/M/A/P/L, the MDI-era Ctrl+1..7 and Edit > "
+			"menu, the footer's panel buttons, Alt+I/B/D/E/M/A/P/L, the MDI-era Ctrl+1..7 and Edit > "
 			"Scales and keymaps dispatch exactly this. `editor` is a panel id (arranger, launcher, "
 			"detail, devices, inspector, browser, mixer, automation, pattern), a 0.4.0 editor name "
 			"(song = arranger, piano_roll = detail, clip_launcher = launcher), or a floating window "
@@ -252,7 +252,8 @@ void registerWindowCommands(ControlRegistry& registry)
 		ControlCommand cmd = command("pin");
 		cmd.description = QStringLiteral("Pin a side panel ('panel': browser, inspector, devices, mixer, detail...) open in every view "
 			"that offers it, or unpin it ('pinned' false) - the pin button in the panel's header. Kept with the layout (a "
-			"preference, not project state). Refused for a view's main panel and the launcher.");
+			"preference, not project state). Refused for the arranger (always a main panel) and the launcher; a pinned mixer or "
+			"note editor is still the main panel of its own view.");
 		cmd.argsSchema = objectSchema({{QStringLiteral("panel"), stringProperty()}, {QStringLiteral("pinned"), booleanProperty()}},
 			QJsonArray{QStringLiteral("panel")});
 		cmd.resultSchema = objectProperty();

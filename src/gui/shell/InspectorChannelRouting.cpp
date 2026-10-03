@@ -25,6 +25,8 @@
 
 #include <algorithm>
 #include <array>
+#include <utility>
+#include <vector>
 
 #include <QCheckBox>
 #include <QComboBox>
@@ -32,6 +34,8 @@
 #include <QLabel>
 #include <QPointer>
 #include <QPushButton>
+#include <QSignalBlocker>
+#include <QTimer>
 #include <QToolButton>
 #include <QVBoxLayout>
 
@@ -77,6 +81,12 @@ QString channelName(const MixerChannel* channel)
 	return channel->index() == 0 ? QObject::tr("Master") : QString::number(channel->index());
 }
 
+//! Runs @a id with @a args at once; a refusal is shown to the user as a floating message (runCommand).
+ControlResult runNow(QWidget* parent, const QString& id, const QJsonObject& args)
+{
+	return runCommand(parent->window(), CommandCall{id, args, {}, {}, false});
+}
+
 //! A button that runs @a call (a form when it asks) and then rebuilds the section.
 QPushButton* commandButton(const QString& text, const CommandCall& call, QWidget* parent, const std::function<void()>& rebuild)
 {
@@ -88,6 +98,25 @@ QPushButton* commandButton(const QString& text, const CommandCall& call, QWidget
 	return button;
 }
 
+using DeviceSwitch = std::pair<QPointer<QCheckBox>, QPointer<Effect>>;
+
+//! plugin.bypass from elsewhere (an undo, the rack's switch, a script) emits no chain signal, so each switch
+//! follows its device on the Inspector's own 250 ms beat; setChecked under a blocker runs no command.
+void followDevices(QWidget* parent, const std::vector<DeviceSwitch>& switches)
+{
+	if (switches.empty()) { return; }
+	auto* timer = new QTimer(parent);
+	QObject::connect(timer, &QTimer::timeout, parent, [switches] {
+		for (const auto& [box, effect] : switches)
+		{
+			if (box.isNull() || effect.isNull() || box->isChecked() == effect->isEnabled()) { continue; }
+			const QSignalBlocker quiet(box.data());
+			box->setChecked(effect->isEnabled());
+		}
+	});
+	timer->start(250);
+}
+
 //! One chain's devices under @a title, each with its on/off switch, and an add button: @a id is the chain's target.
 void addChain(QVBoxLayout* column, const QString& title, const EffectChain& chain, const QString& id, QWidget* parent,
 	const std::function<void()>& rebuild)
@@ -97,18 +126,23 @@ void addChain(QVBoxLayout* column, const QString& title, const EffectChain& chai
 	// left behind would switch a device that is gone.
 	QObject::connect(&chain, &EffectChain::dataChanged, parent, rebuild);
 	QObject::connect(&chain, &EffectChain::aboutToClear, parent, rebuild);
+	std::vector<DeviceSwitch> switches;
 	for (Effect* effect : chain.effects())
 	{
 		auto* on = new QCheckBox(effect->displayName(), parent);
+		switches.emplace_back(on, effect);
 		on->setChecked(effect->isEnabled());
 		on->setProperty("controlCommand", QStringLiteral("plugin.bypass"));
 		const QString plugin = control::effectIdOf(effect);
-		QObject::connect(on, &QCheckBox::toggled, parent, [id, plugin](bool enabled) {
-			ControlRegistry::instance()->invoke(QStringLiteral("plugin.bypass"),
-				{{QStringLiteral("target"), id}, {QStringLiteral("plugin"), plugin}, {QStringLiteral("bypass"), !enabled}});
+		QObject::connect(on, &QCheckBox::toggled, parent, [on, id, plugin](bool enabled) {
+			if (runNow(on, QStringLiteral("plugin.bypass"),
+				{{QStringLiteral("target"), id}, {QStringLiteral("plugin"), plugin}, {QStringLiteral("bypass"), !enabled}}).ok) { return; }
+			const QSignalBlocker quiet(on);  // refused: the box goes back to what the device is
+			on->setChecked(!enabled);
 		});
 		column->addWidget(on);
 	}
+	followDevices(parent, switches);
 	column->addWidget(commandButton(QObject::tr("Add Insert..."), CommandCall{QStringLiteral("plugin.load"),
 		{{QStringLiteral("target"), id}}, {}, QObject::tr("Add an insert"), true}, parent, rebuild));
 }
@@ -129,16 +163,19 @@ void addSends(QVBoxLayout* column, MixerChannel* channel, const QString& id, QWi
 	{
 		const int row = grid->rowCount();
 		const QString to = control::channelIdOf(route->receiver());
-		auto* name = new QLabel(channelName(route->receiver()) + (route->preFader() ? QObject::tr(" (pre)") : QString()), parent);
+		const QString toName = channelName(route->receiver());
+		auto* name = new QLabel(toName + (route->preFader() ? QObject::tr(" (pre)") : QString()), parent);
 		Knob* amount = smallKnob(route->amount(), QObject::tr("Send"), parent);
+		amount->setAccessibleName(QObject::tr("Send level to %1").arg(toName));  // every row's knobs read apart
 		Knob* pan = smallKnob(route->pan(), QObject::tr("Send pan"), parent);
+		pan->setAccessibleName(QObject::tr("Send pan to %1").arg(toName));
 		auto* remove = new QToolButton(parent);
 		remove->setText(QStringLiteral("×"));
-		remove->setToolTip(QObject::tr("Remove the send to %1").arg(channelName(route->receiver())));
+		remove->setToolTip(QObject::tr("Remove the send to %1").arg(toName));
+		remove->setAccessibleName(remove->toolTip());
 		remove->setProperty("controlCommand", QStringLiteral("mixer.route_remove"));
-		QObject::connect(remove, &QToolButton::clicked, parent, [id, to, rebuild] {
-			ControlRegistry::instance()->invoke(QStringLiteral("mixer.route_remove"), {{QStringLiteral("channel"), id}, {QStringLiteral("to"), to}});
-			rebuild();
+		QObject::connect(remove, &QToolButton::clicked, parent, [remove, id, to, rebuild] {
+			if (runNow(remove, QStringLiteral("mixer.route_remove"), {{QStringLiteral("channel"), id}, {QStringLiteral("to"), to}}).ok) { rebuild(); }
 		});
 		// The route's models go with it (an undo, a script): hide the row at once, then rebuild.
 		QObject::connect(route->amount(), &QObject::destroyed, parent, [amount, pan, rebuild] {
@@ -196,24 +233,27 @@ void addStrip(QVBoxLayout* column, MixerChannel* channel, QWidget* parent)
 	column->addLayout(flags);
 }
 
-//! MX-064: where the channel's output goes - any channel after it, through mixer.route_to.
+//! MX-064: where the channel's output goes - any other channel a route to would not close a loop through (the
+//! engine refuses those unless feedback mode is on), through mixer.route_to.
 void addOutput(QVBoxLayout* column, MixerChannel* channel, const QString& id, QWidget* parent, const std::function<void()>& rebuild)
 {
 	if (channel->index() == 0) { return; }  // the master's output is the audio device
 	auto* output = new QComboBox(parent);
 	output->setProperty("controlCommand", QStringLiteral("mixer.route_to"));
 	output->setAccessibleName(QObject::tr("Output"));
+	output->setToolTip(QObject::tr("Add a route from this channel to another one"));
 	output->addItem(QObject::tr("Route the output to..."), QString());
-	for (int i = 0; i < Engine::mixer()->numChannels(); ++i)
+	Mixer* mixer = Engine::mixer();
+	for (int i = 0; i < mixer->numChannels(); ++i)
 	{
-		const MixerChannel* to = Engine::mixer()->mixerChannel(i);
-		if (to == channel) { continue; }
-		output->addItem(i == 0 ? QObject::tr("Master") : to->m_name, control::channelIdOf(to));
+		const MixerChannel* to = mixer->mixerChannel(i);
+		if (to == channel || (!mixer->feedbackMode() && mixer->isInfiniteLoop(channel->index(), i))) { continue; }
+		output->addItem(channelName(to), control::channelIdOf(to));
 	}
 	QObject::connect(output, qOverload<int>(&QComboBox::activated), parent, [output, id, parent, rebuild](int index) {
 		const QString to = output->itemData(index).toString();
 		if (to.isEmpty()) { return; }
-		runCommand(parent, CommandCall{QStringLiteral("mixer.route_to"), {{QStringLiteral("channel"), id}, {QStringLiteral("to"), to}}, {}, {}, false});
+		runNow(parent, QStringLiteral("mixer.route_to"), {{QStringLiteral("channel"), id}, {QStringLiteral("to"), to}});
 		rebuild();
 	});
 	column->addWidget(heading(QObject::tr("Output"), parent));

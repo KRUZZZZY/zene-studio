@@ -33,6 +33,7 @@
 #include <QJsonArray>
 
 #include "AutomationClip.h"
+#include "ClipLinks.h"
 #include "ControlCommandDef.h"
 #include "ControlEdit.h"
 #include "ControlRegistry.h"
@@ -141,6 +142,7 @@ ControlResult setCurve(const QJsonObject& args)
 	clip->addJournalCheckPoint();
 	for (Note* note : notes) { putCurve(note, points, relative); }
 	emit clip->dataChanged();
+	if (clip->linkId() > 0) { ClipLinks::mirrorContent(clip); }  // a linked copy carries the same notes, curves included
 	Engine::getSong()->setModified();
 	QJsonObject result{{QStringLiteral("clip"), clipId(ref.id)}, {QStringLiteral("note"), noteIdOf(notes.front())},
 		{QStringLiteral("notes"), static_cast<int>(notes.size())}, {QStringLiteral("points"), curveJson(notes.front())}};

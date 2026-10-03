@@ -123,7 +123,8 @@ ProcessStatus DeEsserEffect::processImpl(InterleavedBufferView<float, 2> inOut)
 		const float target = dbfsToAmp(-reductionDb(ampToDbfs(std::max(m_envelope, 1e-6f)), threshold, range));
 		m_gain = target + (target < m_gain ? attack : release) * (m_gain - target);
 		deepest = std::min(deepest, m_gain);
-		frame = frame * d + shaped(frame, mode, listen) * w;
+		// Listen is a monitor: the band alone, whatever the device's dry/wet mix says.
+		frame = listen ? shaped(frame, mode, true) : frame * d + shaped(frame, mode, false) * w;
 	}
 	m_reductionDb.store(deepest < 1.f ? -ampToDbfs(std::max(deepest, 1e-6f)) : 0.f, std::memory_order_relaxed);
 	return ProcessStatus::ContinueIfNotQuiet;

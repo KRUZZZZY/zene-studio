@@ -80,9 +80,14 @@ private:
 	ClipOverlayFrame overlayFrame(int xOrigin);
 	//! The clip's edits as drawn: a fade drag in progress shown before it is sent.
 	ClipEdits shownEdits() const;
+	//! The fade handle at @a pos, or None - always None on a locked clip.
+	FadeHandle fadeHandleUnder(const QPoint& pos);
 	bool startFadeDrag(QMouseEvent* me);
-	// ED-150: the transients drawn when arrangement.modes show_transients is on, analysed once per audio.
+	// ED-150: the transients drawn when arrangement.modes show_transients is on, analysed once per audio
+	// and window (m_transientFrames) and placed as ticks again when the clip's timing changes.
 	const std::vector<int>& transientTicks();
+	std::vector<f_cnt_t> m_transientFrames;
+	QString m_transientAudioKey;
 	std::vector<int> m_transientTicks;
 	QString m_transientKey;
 } ;

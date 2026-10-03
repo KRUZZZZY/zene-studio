@@ -235,9 +235,19 @@ void storeSetlist(const QJsonObject& state)
 		QString::fromUtf8(QJsonDocument(state).toJson(QJsonDocument::Compact)));
 }
 
+//! Whether every setlist entry is a project path: session.setlist_go opens it as one.
+bool allPaths(const QJsonArray& items)
+{
+	return std::all_of(items.begin(), items.end(), [](const QJsonValue& item) { return item.isString() && !item.toString().isEmpty(); });
+}
+
 ControlResult setlist(const QJsonObject& args)
 {
 	QJsonObject state = setlistState();
+	if (args.contains(QStringLiteral("items")) && !allPaths(args.value(QStringLiteral("items")).toArray()))
+	{
+		return ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("'items' are project file paths (strings)"));
+	}
 	if (args.contains(QStringLiteral("items")))
 	{
 		const QJsonObject before = state;

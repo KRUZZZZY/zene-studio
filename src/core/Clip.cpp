@@ -420,10 +420,18 @@ void saveSpeed(const ClipEdits& edits, QDomElement& element)
 	if (edits.preFadeOutTicks > 0) { element.setAttribute("prefadeout", edits.preFadeOutTicks); }
 }
 
+//! A speed percent attribute, 25..400; absent or unreadable is plain playback (100), never the slowest speed.
+int speedPercentOf(const QDomElement& element, const QString& name)
+{
+	bool ok = false;
+	const int percent = element.attribute(name).toInt(&ok);
+	return ok ? std::clamp(percent, 25, 400) : 100;
+}
+
 void loadSpeed(const QDomElement& element, ClipEdits* edits)
 {
-	edits->speedFrom = std::clamp(element.attribute("speedfrom", "100").toInt(), 25, 400);
-	edits->speedTo = std::clamp(element.attribute("speedto", "100").toInt(), 25, 400);
+	edits->speedFrom = speedPercentOf(element, QStringLiteral("speedfrom"));
+	edits->speedTo = speedPercentOf(element, QStringLiteral("speedto"));
 	edits->speedInTicks = std::max(0, element.attribute("speedin", "0").toInt());
 	edits->speedOutTicks = std::max(0, element.attribute("speedout", "0").toInt());
 	edits->preFadeInTicks = std::max(0, element.attribute("prefadein", "0").toInt());  // 0.5.0 ED-179: absent is none

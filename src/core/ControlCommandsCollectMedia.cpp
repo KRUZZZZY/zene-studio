@@ -154,15 +154,14 @@ ControlResult collectMedia(const QJsonObject& args)
 	QByteArray written;
 	// Read back for the undo step: one that cannot be read is reported, not recorded as an empty file a redo would write.
 	if (!controlReadFileBytes(project, &written, &error)) { return error; }
-	if (written != previous)
-	{
-		addUndoStep(
-			[project, previous]() { ControlResult ignored; controlWriteFileBytes(project, previous, true, &ignored); },
-			[project, written]() { ControlResult ignored; controlWriteFileBytes(project, written, true, &ignored); });
-	}
 	QJsonObject result{{QStringLiteral("project"), project}, {QStringLiteral("dir"), folder.absolutePath()},
 		{QStringLiteral("copied"), copied}, {QStringLiteral("failed"), failed},
 		{QStringLiteral("missing"), scan.missingCount()}};
+	// An unchanged project file records no step, and so no transaction claims one (the registry records nothing).
+	if (written == previous) { return ControlResult::success(result); }
+	addUndoStep(
+		[project, previous]() { ControlResult ignored; controlWriteFileBytes(project, previous, true, &ignored); },
+		[project, written]() { ControlResult ignored; controlWriteFileBytes(project, written, true, &ignored); });
 	result.insert(QStringLiteral("__transaction"),
 		transactionPayload(QJsonObject{{QStringLiteral("project"), project}, {QStringLiteral("bytes"), previous.size()}},
 			QStringLiteral("recorded action step: the project file's previous bytes"), QJsonObject(), true,

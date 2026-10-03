@@ -25,6 +25,7 @@
 #include "ShellChrome.h"
 
 #include <algorithm>
+#include <cmath>
 
 #include <QAction>
 #include <QHBoxLayout>
@@ -35,6 +36,7 @@
 #include <QStyleOptionToolButton>
 
 #include "Accessibility.h"
+#include "Appearance.h"
 #include "CommandForm.h"
 #include "ControlRegistry.h"
 #include "ControlWindowCommands.h"
@@ -58,6 +60,13 @@ QFrame* separator(QWidget* parent)
 	line->setFixedSize(1, tokens::size::target);
 	line->setStyleSheet(QStringLiteral("background-color: %1;").arg(tokens::palette().separator.name()));
 	return line;
+}
+
+//! The header's height: the token's at the standard text size, and taller with a larger one (WF-131), so the
+//! readouts' value and caption are not cut off (review ux08 #106).
+int headerHeight()
+{
+	return static_cast<int>(std::lround(tokens::size::headerHeight * std::max(1.0, appearance::options().fontScale)));
 }
 
 //! A view word as the footer shows it: upper case, no mnemonic marker, no shortcut suffix.
@@ -137,7 +146,7 @@ ShellHeader::ShellHeader(QWidget* parent)
 	: QWidget(parent)
 {
 	setObjectName(QStringLiteral("shellHeader"));
-	setFixedHeight(tokens::size::headerHeight);
+	setFixedHeight(headerHeight());
 	a11y::announce(this, tr("Header"), tr("Project and transport controls, tempo, time and meter."));
 
 	auto* row = new QHBoxLayout(this);

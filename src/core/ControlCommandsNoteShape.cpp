@@ -192,9 +192,15 @@ ControlResult restoreTiming(const QJsonObject& args)
 	MidiClip* clip = resolveMidiClip(args.value(QStringLiteral("clip")).toString(), &ref, &error);
 	if (clip == nullptr) { return error; }
 	const bool freeze = args.value(QStringLiteral("freeze")).toBool();
+	const QVector<Note*> notes = scoped(clip, args.value(QStringLiteral("scope")).toString());
+	if (std::none_of(notes.begin(), notes.end(), [](const Note* note) { return note->hasUnquantisedTiming(); }))
+	{
+		// No note keeps an original timing: nothing changes, so no undo step and the project stays as it was.
+		return ControlResult::success({{QStringLiteral("clip"), clipId(ref.id)}, {freeze ? QStringLiteral("frozen") : QStringLiteral("restored"), 0}});
+	}
 	clip->addJournalCheckPoint();
 	int count = 0;
-	for (Note* note : scoped(clip, args.value(QStringLiteral("scope")).toString()))
+	for (Note* note : notes)
 	{
 		if (!note->hasUnquantisedTiming()) { continue; }
 		if (freeze) { note->forgetTiming(); }
@@ -206,11 +212,12 @@ ControlResult restoreTiming(const QJsonObject& args)
 }
 
 //! One filter bound into @a out, held to what its type carries; false for a value that is not a whole number
-//! (QJsonValue::toInt would read 60.5 as 0, an open bound where a tight one was meant).
+//! (QJsonValue::toInt would read 60.5 as 0, an open bound where a tight one was meant) - a string "60" too.
 template <typename T>
 bool readBound(const QJsonValue& value, T* out)
 {
-	if (!value.isDouble()) { return true; }
+	if (value.isUndefined() || value.isNull()) { return true; }  // absent: the bound is open
+	if (!value.isDouble()) { return false; }
 	const double v = value.toDouble();
 	if (v != std::floor(v)) { return false; }
 	*out = static_cast<T>(std::clamp(v, static_cast<double>(std::numeric_limits<T>::lowest()), static_cast<double>(std::numeric_limits<T>::max())));
@@ -236,7 +243,7 @@ bool filterFrom(const QJsonObject& json, NoteTransform::Filter* f, ControlResult
 {
 	if (!readRanges(json, f))
 	{
-		*error = ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("a filter bound is a whole number"));
+		*error = ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("a filter bound is a whole number (a JSON number)"));
 		return false;
 	}
 	f->invert = json.value(QStringLiteral("invert")).toBool();
@@ -300,6 +307,12 @@ ControlResult selectWhere(const QJsonObject& args)
 		{QStringLiteral("selected"), selected}, {QStringLiteral("previous"), previous}});
 }
 
+//! The actions that use 'amount': without it, velocity_set would set every match to velocity 0.
+bool needsAmount(const QString& action)
+{
+	return action == QLatin1String("transpose") || action == QLatin1String("velocity_set") || action == QLatin1String("velocity_offset");
+}
+
 ControlResult transformWhere(const QJsonObject& args)
 {
 	ClipRef ref;
@@ -309,6 +322,10 @@ ControlResult transformWhere(const QJsonObject& args)
 	NoteTransform::Filter filter;
 	if (!filterFrom(args.value(QStringLiteral("filter")).toObject(), &filter, &error)) { return error; }
 	const QString action = args.value(QStringLiteral("action")).toString();
+	if (needsAmount(action) && !args.contains(QStringLiteral("amount")))
+	{
+		return ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("'%1' needs an 'amount'").arg(action));
+	}
 	const NoteVector hits = NoteTransform::select(clip->notes(), filter);
 	if (hits.empty())  // nothing to change: no undo step, the project not modified
 	{

@@ -27,6 +27,7 @@
 #include <QDialog>
 #include <QDialogButtonBox>
 #include <QListWidget>
+#include <QPushButton>
 #include <QVBoxLayout>
 
 #include "ControlVocabulary.h"
@@ -42,6 +43,8 @@ QStringList pickChannels(QWidget* parent, const QString& title, const QString& e
 	dialog.setWindowTitle(title);
 	auto* layout = new QVBoxLayout(&dialog);
 	auto* list = new QListWidget(&dialog);
+	list->setAccessibleName(QObject::tr("Channels"));
+	list->setAccessibleDescription(QObject::tr("Tick the channels to include"));
 	Mixer* mixer = Engine::mixer();
 	for (int i = 1; i < mixer->numChannels(); ++i)
 	{
@@ -56,6 +59,14 @@ QStringList pickChannels(QWidget* parent, const QString& title, const QString& e
 	auto* buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dialog);
 	QObject::connect(buttons, &QDialogButtonBox::accepted, &dialog, &QDialog::accept);
 	QObject::connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
+	// OK needs a ticked channel: with none it would do nothing, as Cancel does.
+	QPushButton* ok = buttons->button(QDialogButtonBox::Ok);
+	ok->setEnabled(false);
+	QObject::connect(list, &QListWidget::itemChanged, ok, [list, ok] {
+		bool any = false;
+		for (int i = 0; i < list->count() && !any; ++i) { any = list->item(i)->checkState() == Qt::Checked; }
+		ok->setEnabled(any);
+	});
 	layout->addWidget(buttons);
 	QStringList picked;
 	if (dialog.exec() != QDialog::Accepted) { return picked; }

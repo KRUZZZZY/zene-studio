@@ -34,6 +34,7 @@
 #include <QFile>
 #include <QFileInfo>
 #include <QPixmap>
+#include <QPointer>
 #include <QJsonObject>
 #include <QUrl>
 
@@ -64,7 +65,7 @@ namespace
 {
 
 //! The documentation the Help menu has always pointed at.
-const char* const kHelpUrl = "https://lmms.io/documentation/";
+const char* const kHelpUrl = "https://github.com/KRUZZZZY/zene-studio";  // the product's own page, as About names it
 
 gui::MainWindow* mainWindow()
 {
@@ -134,10 +135,17 @@ void registerSettingsDialog(ControlRegistry& registry)
 	cmd.resultSchema = objectSchema({{QStringLiteral("shown"), booleanProperty()}});
 	cmd.handler = [](const QJsonObject&) {
 		if (mainWindow() == nullptr) { return noInterface(QStringLiteral("window.settings")); }
-		auto* dialog = new gui::SetupDialog();
-		dialog->setAttribute(Qt::WA_DeleteOnClose);
-		dialog->setModal(false);
+		// One dialog: asked again while it is open, it comes to the front instead of a second copy opening.
+		static QPointer<gui::SetupDialog> dialog;
+		if (dialog.isNull())
+		{
+			dialog = new gui::SetupDialog();
+			dialog->setAttribute(Qt::WA_DeleteOnClose);
+			dialog->setModal(false);
+		}
 		dialog->show();
+		dialog->raise();
+		dialog->activateWindow();
 		return ControlResult::success(QJsonObject{{QStringLiteral("shown"), true}});
 	};
 	registry.registerCommand(cmd);

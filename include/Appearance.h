@@ -59,12 +59,14 @@ LMMS_EXPORT const QStringList& densityNames();
 //! How much larger than standard the metrics of density @a name are: 1 standard, 1.35 comfortable, 1.8 touch.
 LMMS_EXPORT double densityFactor(const QString& name);
 LMMS_EXPORT Options options();
-LMMS_EXPORT void setOptions(const Options& next);
+//! False when the scale file main() reads could not be written (the config values are set either way).
+LMMS_EXPORT bool setOptions(const Options& next);
 LMMS_EXPORT QJsonObject toJson(const Options& options);
 //! The file main() reads the scale from.
 LMMS_EXPORT QString scaleFilePath();
-//! Write the configured scale to that file (after the config's ui/scale was written some other way).
-LMMS_EXPORT void syncScaleFile();
+//! Write the configured scale to that file (after the config's ui/scale was written some other way);
+//! false when the file could not be written in full and committed.
+LMMS_EXPORT bool syncScaleFile();
 //! main(), before the application object: the stored scale, or 0 when none.
 LMMS_EXPORT double storedScale();
 //! main(), before the application object: hand the stored scale to Qt (an explicit QT_SCALE_FACTOR wins).

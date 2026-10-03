@@ -97,6 +97,12 @@ ControlResult audioToMidi(const QJsonObject& args)
 		const auto velocity = static_cast<volume_t>(std::clamp(std::lround(note.level * 400.f), 10L, 200L));
 		notes->addNote(Note(TimePos(to - from), TimePos(from), std::clamp(note.key, 0, NumKeys - 1), velocity), false);
 	}
+	if (notes->notes().empty())
+	{
+		// Every note found lay outside the clip's span: no empty track is left behind as a success.
+		removeTrack(track);
+		return ControlResult::failure(ControlErrorKind::NotFound, QStringLiteral("no pitched note falls inside the clip"));
+	}
 	notes->rearrangeAllNotes();
 	notes->updateLength();
 	recordCreatedTrack(track);

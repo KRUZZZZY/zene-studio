@@ -40,6 +40,11 @@ class QListWidget;
 class QTreeWidget;
 class QTreeWidgetItem;
 
+namespace lmms
+{
+struct ControlResult;
+}
+
 namespace lmms::gui
 {
 
@@ -90,6 +95,10 @@ private:
 	QJsonObject queryArgs() const;
 	//! Run a list command through browser.browse (so it joins the history) and show its items.
 	void browse(const QString& command, const QJsonObject& args, const QString& label);
+	//! A browse or history step's answer: its items and their count on the status line, or its error there.
+	void showBrowsed(const ControlResult& shown);
+	//! Put the search a history entry ran back in the field and filters (a collection or similar sounds leaves them).
+	void restoreQuery(const QJsonObject& entry);
 	void showItems(const QJsonArray& items);
 	void fillGallery(const QJsonArray& items);
 	void refreshCollections();

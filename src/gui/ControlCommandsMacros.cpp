@@ -175,6 +175,7 @@ struct Recording
 	bool on = false;
 	QString name;
 	QJsonArray steps;
+	int dropped = 0;  //!< commands run after the steps were full: record_stop says how many
 };
 
 Recording& recording()
@@ -193,23 +194,41 @@ ControlResult recordStart(const QJsonObject& args)
 		return ControlResult::failure(ControlErrorKind::Refused, QStringLiteral("macro '%1' is being recorded; macro.record_stop it first")
 			.arg(recording().name));
 	}
-	recording() = Recording{true, name, {}};
+	recording() = Recording{true, name, {}, 0};
 	ControlRegistry::instance()->setCommandObserver([](const QString& command, const QJsonObject& stepArgs) {
 		// Undo, redo and the macro commands themselves are not steps; the step count is the macro's own bound.
-		if (command.startsWith(QStringLiteral("macro.")) || command.startsWith(QStringLiteral("control.")) || recording().steps.size() >= MaxSteps) { return; }
+		if (command.startsWith(QStringLiteral("macro.")) || command.startsWith(QStringLiteral("control."))) { return; }
+		if (recording().steps.size() >= MaxSteps) { ++recording().dropped; return; }
 		recording().steps.append(QJsonObject{{QStringLiteral("command"), command}, {QStringLiteral("args"), stepArgs}});
 	});
 	return ControlResult::success({{QStringLiteral("name"), name}, {QStringLiteral("recording"), true}});
 }
 
-ControlResult recordStop(const QJsonObject&)
+void stopRecording()
 {
 	ControlRegistry::instance()->setCommandObserver({});
-	const Recording taken = recording();
 	recording() = Recording{};
+}
+
+ControlResult recordStop(const QJsonObject&)
+{
+	const Recording taken = recording();
 	if (!taken.on) { return ControlResult::failure(ControlErrorKind::Refused, QStringLiteral("no macro is being recorded")); }
-	if (taken.steps.isEmpty()) { return ControlResult::failure(ControlErrorKind::NotFound, QStringLiteral("nothing was done while recording")); }
-	return saveMacro({{QStringLiteral("name"), taken.name}, {QStringLiteral("steps"), taken.steps}});
+	if (taken.steps.isEmpty())
+	{
+		stopRecording();
+		return ControlResult::failure(ControlErrorKind::NotFound, QStringLiteral("nothing was done while recording"));
+	}
+	ControlResult saved = saveMacro({{QStringLiteral("name"), taken.name}, {QStringLiteral("steps"), taken.steps}});
+	if (!saved.ok)
+	{
+		// A refused save (the macro limit) keeps the recording, so the steps are not lost: make room and stop again.
+		saved.errorMessage += QStringLiteral(" - still recording '%1', its %2 steps kept").arg(taken.name).arg(taken.steps.size());
+		return saved;
+	}
+	stopRecording();
+	if (taken.dropped > 0) { saved.result.insert(QStringLiteral("dropped"), taken.dropped); }
+	return saved;
 }
 
 ControlResult macroStatus(const QJsonObject&)
@@ -258,7 +277,8 @@ void registerMacroCommands(ControlRegistry& registry)
 		"(not undo, redo or the macro commands) becomes one of its steps, with its arguments, until macro.record_stop. Refused while another is being recorded."),
 		named, objectProperty(), false, recordStart);
 	add(registry, "record_stop", QStringLiteral("Stop recording and save the macro as macro.save would (refused when nothing "
-		"was done). One undo step."), objectSchema({}), objectProperty(), true, recordStop);
+		"was done; a refused save keeps recording, nothing lost). Commands past the 64th step are not kept: 'dropped' counts them. "
+		"One undo step."), objectSchema({}), objectProperty(), true, recordStop);
 	add(registry, "remove", QStringLiteral("Forget macro 'name'. One undo step."), named,
 		objectSchema({{QStringLiteral("name"), stringProperty()}, {QStringLiteral("count"), integerProperty()}}), true, removeMacro);
 }

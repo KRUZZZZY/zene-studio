@@ -24,6 +24,8 @@
 
 #include "BrowserSearchView.h"
 
+#include <algorithm>
+
 #include <QAbstractScrollArea>
 #include <QCheckBox>
 #include <QComboBox>
@@ -40,6 +42,7 @@
 #include <QMenu>
 #include <QMouseEvent>
 #include <QPushButton>
+#include <QSignalBlocker>
 #include <QStyleHints>
 #include <QTimer>
 #include <QTreeWidget>
@@ -82,6 +85,26 @@ QPixmap kindIcon(const QString& kind)
 	if (kind == QLatin1String("preset")) { return embed::getIconPixmap("preset_file"); }
 	if (kind == QLatin1String("project")) { return embed::getIconPixmap("project_file"); }
 	return embed::getIconPixmap("sample_file");
+}
+
+//! A left press on a row of @a kind drags its file out, as the file lists' rows do; a missing project file has nothing to drop.
+void dragOut(QWidget* from, const QString& kind, const QString& path, const QPixmap& icon)
+{
+	if (!(QGuiApplication::mouseButtons() & Qt::LeftButton) || kind == BrowserSearchView::tr("missing")) { return; }
+	new StringPairDrag(dragKey(kind), path, icon, from);
+}
+
+//! The status line for a list just shown: how many, and whether there is more than it shows.
+QString countText(const QJsonObject& result)
+{
+	const int shown = result.value(QStringLiteral("items")).toArray().size();
+	const int matched = result.value(QStringLiteral("matched")).toInt(shown);
+	if (matched > shown) { return BrowserSearchView::tr("Showing the first %1 of %2 results").arg(shown).arg(matched); }
+	if (result.value(QStringLiteral("truncated")).toBool())
+	{
+		return BrowserSearchView::tr("Showing the first %1 results - the search stopped early, so narrow it to see the rest").arg(shown);
+	}
+	return shown > 0 ? BrowserSearchView::tr("Results: %1").arg(shown) : BrowserSearchView::tr("No results");
 }
 
 //! A result row; the size and date sort as numbers (their data), not as text.
@@ -158,12 +181,13 @@ BrowserSearchView::BrowserSearchView(QWidget* parent) :
 	addContentWidget(m_status);
 
 	m_collections = new QListWidget(contentParent());
-	m_collections->setAccessibleName(tr("Smart collections"));
+	m_collections->setAccessibleName(tr("Collections"));
 	m_collections->setMaximumHeight(90);
 	m_collections->setContextMenuPolicy(Qt::CustomContextMenu);
 	addContentWidget(m_collections);
 
 	m_results = new QTreeWidget(contentParent());
+	m_results->setAccessibleName(tr("Results"));
 	m_results->setHeaderLabels({tr("Name"), tr("Kind"), tr("Size (KB)"), tr("Modified"), tr("Tags")});
 	m_results->setSortingEnabled(true);
 	m_results->setRootIsDecorated(false);
@@ -209,8 +233,9 @@ void BrowserSearchView::buildActionRow()
 	connect(save, &QPushButton::clicked, this, &BrowserSearchView::saveCollection);
 	connect(media, &QPushButton::clicked, this, &BrowserSearchView::showProjectMedia);
 	connect(rescan, &QPushButton::clicked, this, [this] {
-		run(QStringLiteral("browser.reindex"), {{QStringLiteral("features"), true}});
-		refreshIndexStatus();
+		const ControlResult started = run(QStringLiteral("browser.reindex"), {{QStringLiteral("features"), true}});
+		if (started.ok) { refreshIndexStatus(); }
+		else { m_status->setText(started.errorMessage); }
 	});
 	connect(gallery, &QPushButton::toggled, this, &BrowserSearchView::setGallery);
 }
@@ -244,12 +269,10 @@ void BrowserSearchView::connectLists()
 		}
 	});
 	connect(m_results, &QTreeWidget::itemPressed, this, [this](QTreeWidgetItem* item) {
-		if (item == nullptr || !(QGuiApplication::mouseButtons() & Qt::LeftButton)) { return; }
-		new StringPairDrag(dragKey(item->text(Kind)), item->data(Name, Qt::UserRole).toString(), embed::getIconPixmap("sample_file"), this);
+		if (item != nullptr) { dragOut(this, item->text(Kind), item->data(Name, Qt::UserRole).toString(), kindIcon(item->text(Kind))); }
 	});
 	connect(m_gallery, &QListWidget::itemPressed, this, [this](QListWidgetItem* tile) {
-		if (tile == nullptr || !(QGuiApplication::mouseButtons() & Qt::LeftButton)) { return; }
-		new StringPairDrag(dragKey(tile->data(Qt::UserRole + 1).toString()), tile->data(Qt::UserRole).toString(), tile->icon().pixmap(48), this);
+		if (tile != nullptr) { dragOut(this, tile->data(Qt::UserRole + 1).toString(), tile->data(Qt::UserRole).toString(), tile->icon().pixmap(48)); }
 	});
 }
 
@@ -277,10 +300,35 @@ QJsonObject BrowserSearchView::queryArgs() const
 
 void BrowserSearchView::browse(const QString& command, const QJsonObject& args, const QString& label)
 {
-	const ControlResult shown = run(QStringLiteral("browser.browse"), {{QStringLiteral("command"), command}, {QStringLiteral("args"), args},
-		{QStringLiteral("label"), label}});
+	showBrowsed(run(QStringLiteral("browser.browse"), {{QStringLiteral("command"), command}, {QStringLiteral("args"), args},
+		{QStringLiteral("label"), label}}));
+}
+
+void BrowserSearchView::showBrowsed(const ControlResult& shown)
+{
+	if (!shown.ok)
+	{
+		m_status->setText(shown.errorMessage);  // the list on show stays: a failed one replaces nothing
+		return;
+	}
 	m_showingMedia = false;
 	showItems(shown.result.value(QStringLiteral("items")).toArray());
+	m_status->setText(countText(shown.result));
+	restoreQuery(shown.result.value(QStringLiteral("entry")).toObject());
+}
+
+void BrowserSearchView::restoreQuery(const QJsonObject& entry)
+{
+	const QString command = entry.value(QStringLiteral("command")).toString();
+	const bool indexed = command == QLatin1String("browser.index_query");
+	if (!indexed && command != QLatin1String("browser.query")) { return; }  // a collection or similar sounds: no search of its own
+	const QJsonObject args = entry.value(QStringLiteral("args")).toObject();
+	const QSignalBlocker kind(m_kind), root(m_root), index(m_indexed);  // shown already: no search again
+	m_search->setText(args.value(QStringLiteral("text")).toString());
+	m_kind->setCurrentIndex(std::max(0, m_kind->findText(args.value(QStringLiteral("kind")).toString())));
+	m_root->setCurrentIndex(std::max(0, m_root->findData(args.value(QStringLiteral("root")).toString())));
+	m_indexed->setChecked(indexed);
+	m_root->setDisabled(indexed);
 }
 
 void BrowserSearchView::runSearch()
@@ -295,41 +343,41 @@ void BrowserSearchView::runCollection(const QString& name)
 
 void BrowserSearchView::findSimilar(const QString& path)
 {
-	const ControlResult found = run(QStringLiteral("browser.browse"), {{QStringLiteral("command"), QStringLiteral("browser.similar")},
-		{QStringLiteral("args"), QJsonObject{{QStringLiteral("path"), path}, {QStringLiteral("limit"), 50}}},
-		{QStringLiteral("label"), tr("Like %1").arg(QFileInfo(path).fileName())}});
-	if (!found.ok)
-	{
-		m_status->setText(found.errorMessage);
-		return;
-	}
-	m_showingMedia = false;
-	showItems(found.result.value(QStringLiteral("items")).toArray());
+	browse(QStringLiteral("browser.similar"), {{QStringLiteral("path"), path}, {QStringLiteral("limit"), 50}},
+		tr("Like %1").arg(QFileInfo(path).fileName()));
 }
 
 void BrowserSearchView::goHistory(int step)
 {
-	const ControlResult shown = run(QStringLiteral("browser.history_go"), {{QStringLiteral("step"), step}});
-	if (!shown.ok) { return; }
-	m_showingMedia = false;
-	showItems(shown.result.value(QStringLiteral("items")).toArray());
+	showBrowsed(run(QStringLiteral("browser.history_go"), {{QStringLiteral("step"), step}}));
 }
 
 void BrowserSearchView::showProjectMedia()
 {
 	const ControlResult listed = run(QStringLiteral("project.missing_assets"), {{QStringLiteral("project"), Engine::getSong()->projectFileName()}});
+	if (!listed.ok)
+	{
+		m_status->setText(listed.errorMessage);
+		return;
+	}
 	QJsonArray items;
+	int missing = 0;
 	for (const QJsonValue& value : listed.result.value(QStringLiteral("references")).toArray())
 	{
 		const QJsonObject ref = value.toObject();
-		const QString path = ref.value(QStringLiteral("resolved")).toString(ref.value(QStringLiteral("raw")).toString());
+		const bool gone = ref.value(QStringLiteral("missing")).toBool();
+		missing += gone ? 1 : 0;
+		// 'path' is where the reference resolves (against the project file's folder); 'resolved' is only a flag.
+		const QString resolved = ref.value(QStringLiteral("path")).toString();
+		const QString path = resolved.isEmpty() ? ref.value(QStringLiteral("raw")).toString() : resolved;
 		items.append(QJsonObject{{QStringLiteral("name"), QFileInfo(path).fileName()}, {QStringLiteral("path"), path},
-			{QStringLiteral("kind"), ref.value(QStringLiteral("missing")).toBool() ? tr("missing") : QStringLiteral("audio")},
+			{QStringLiteral("kind"), gone ? tr("missing") : QStringLiteral("audio")},
 			{QStringLiteral("size_bytes"), QFileInfo(path).size()}, {QStringLiteral("modified_ms"), QFileInfo(path).lastModified().toMSecsSinceEpoch()},
 			{QStringLiteral("tags"), QJsonArray{ref.value(QStringLiteral("tag")).toString()}}});
 	}
 	m_showingMedia = true;
 	showItems(items);
+	m_status->setText(tr("Project Media: %1 files, %2 missing").arg(items.size()).arg(missing));
 }
 
 void BrowserSearchView::showItems(const QJsonArray& items)
@@ -397,7 +445,8 @@ void BrowserSearchView::saveCollection()
 	QJsonObject args = queryArgs();
 	args.remove(QStringLiteral("limit"));
 	args.insert(QStringLiteral("name"), name.trimmed());
-	run(QStringLiteral("browser.collection_save"), args);
+	const ControlResult saved = run(QStringLiteral("browser.collection_save"), args);
+	if (!saved.ok) { m_status->setText(saved.errorMessage); }
 	refreshCollections();
 }
 
@@ -410,8 +459,9 @@ void BrowserSearchView::addPreviewEntries(QMenu* menu, const QString& path)
 	{
 		QAction* action = preview->addAction(label);
 		action->setProperty("controlCommand", QStringLiteral("browser.preview"));
-		connect(action, &QAction::triggered, this, [path, match = QLatin1String(match)] {
-			run(QStringLiteral("browser.preview"), {{QStringLiteral("path"), path}, {QStringLiteral("match"), match}});
+		connect(action, &QAction::triggered, this, [this, path, match = QLatin1String(match)] {
+			const ControlResult played = run(QStringLiteral("browser.preview"), {{QStringLiteral("path"), path}, {QStringLiteral("match"), match}});
+			if (!played.ok) { m_status->setText(played.errorMessage); }  // as Find Similar Sounds reports its error
 		});
 	}
 	QAction* stop = preview->addAction(tr("Stop"));

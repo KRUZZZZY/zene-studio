@@ -44,6 +44,8 @@ SampleSelectionView::SampleSelectionView(QWidget* parent) :
 {
 	setMinimumHeight(120);
 	setAccessibleName(QObject::tr("Waveform - drag to select"));
+	setToolTip(QObject::tr("Drag across the waveform to select a range: each button below edits the clip's audio over it, "
+		"one undo step per edit."));
 }
 
 void SampleSelectionView::setClip(SampleClip* clip)
@@ -56,6 +58,7 @@ void SampleSelectionView::setClip(SampleClip* clip)
 	m_frames = frames;
 	m_thumbnail = clip != nullptr ? SampleThumbnail(clip->sample()) : SampleThumbnail();
 	update();
+	emit selectionChanged();
 }
 
 int SampleSelectionView::frameAt(int x) const
@@ -80,8 +83,10 @@ void SampleSelectionView::paintEvent(QPaintEvent*)
 
 void SampleSelectionView::mousePressEvent(QMouseEvent* event)
 {
+	if (event->button() != Qt::LeftButton) { return; }  // as the drag: only the left button selects
 	m_anchor = m_end = frameAt(event->pos().x());
 	update();
+	emit selectionChanged();
 }
 
 void SampleSelectionView::mouseMoveEvent(QMouseEvent* event)
@@ -89,6 +94,7 @@ void SampleSelectionView::mouseMoveEvent(QMouseEvent* event)
 	if (!(event->buttons() & Qt::LeftButton)) { return; }
 	m_end = frameAt(event->pos().x());
 	update();
+	emit selectionChanged();
 }
 
 SampleEditorDialog::SampleEditorDialog(SampleClip* clip, QWidget* parent) :
@@ -99,20 +105,31 @@ SampleEditorDialog::SampleEditorDialog(SampleClip* clip, QWidget* parent) :
 	setWindowTitle(QObject::tr("Sample Editor - %1").arg(clip->name().isEmpty() ? QObject::tr("audio") : clip->name()));
 	setAttribute(Qt::WA_DeleteOnClose);
 	setProperty("controlCommand", QStringLiteral("sample.edit_range"));
-	m_view->setClip(clip);
 	auto* buttons = new QHBoxLayout;
-	const struct { const char* label; const char* op; double gain; } actions[] = {{"-3 dB", "gain", -3.0}, {"+3 dB", "gain", 3.0},
-		{"Silence", "silence", 0.0}, {"Delete", "delete", 0.0}, {"Reverse", "reverse", 0.0}, {"Fade In", "fade_in", 0.0},
-		{"Fade Out", "fade_out", 0.0}, {"Crop", "crop", 0.0}};
+	// Each button says in its tooltip that it edits only the selected range, and what it does there.
+	const struct { const char* label; const char* op; double gain; const char* tip; } actions[] = {
+		{"-3 dB", "gain", -3.0, "Lower the selected range by 3 dB"}, {"+3 dB", "gain", 3.0, "Raise the selected range by 3 dB"},
+		{"Silence", "silence", 0.0, "Silence the selected range"},
+		{"Delete", "delete", 0.0, "Delete the selected range from the audio; what follows it closes up"},
+		{"Reverse", "reverse", 0.0, "Reverse the selected range"}, {"Fade In", "fade_in", 0.0, "Fade the selected range in (linear)"},
+		{"Fade Out", "fade_out", 0.0, "Fade the selected range out (linear)"},
+		{"Crop", "crop", 0.0, "Keep only the selected range of the audio"}};
 	for (const auto& action : actions)
 	{
 		auto* button = new QPushButton(QObject::tr(action.label), this);
+		button->setToolTip(QObject::tr(action.tip));
 		button->setProperty("controlCommand", QStringLiteral("sample.edit_range"));
 		const QString op = QLatin1String(action.op);
 		const double gain = action.gain;
 		connect(button, &QPushButton::clicked, this, [this, op, gain] { apply(op, gain); });
 		buttons->addWidget(button);
+		m_actions.push_back(button);
 	}
+	// A button with no selection to edit would do nothing: it is enabled only while there is one.
+	connect(m_view, &SampleSelectionView::selectionChanged, this, [this] {
+		for (QPushButton* button : m_actions) { button->setEnabled(m_view->to() > m_view->from()); }
+	});
+	m_view->setClip(clip);
 	auto* layout = new QVBoxLayout(this);
 	layout->addWidget(m_view, 1);
 	layout->addLayout(buttons);

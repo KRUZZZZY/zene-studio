@@ -26,6 +26,7 @@
 #include <algorithm>
 #include <cmath>
 
+#include <QEvent>
 #include <QPainter>
 #include <QPointer>
 #include <QTimer>
@@ -39,19 +40,54 @@
 namespace lmms::gui
 {
 
+namespace
+{
+
+//! A linear level in dB, floored at the meter's -60.
+double levelDb(float level)
+{
+	return level > 0.f ? std::max(-60.0, 20.0 * std::log10(level)) : -60.0;
+}
+
+} // namespace
+
 LevelBar::LevelBar(std::function<float()> level, const QString& name, QWidget* parent) :
 	QWidget(parent),
-	m_source(std::move(level))
+	m_source(std::move(level)),
+	m_name(name),
+	m_timer(new QTimer(this))
 {
 	setFixedSize(6, 22);
 	setToolTip(name);
 	setAccessibleName(name);
-	auto* timer = new QTimer(this);
-	connect(timer, &QTimer::timeout, this, [this] {
+	connect(m_timer, &QTimer::timeout, this, [this] {
 		m_level = std::max(m_source(), m_level * 0.85f);
 		update();
 	});
-	timer->start(50);
+	m_timer->setInterval(50);  // started while shown (showEvent): a hidden meter wakes nothing
+}
+
+bool LevelBar::event(QEvent* event)
+{
+	// The tooltip carries the reading at the moment it opens.
+	if (event->type() == QEvent::ToolTip)
+	{
+		const double db = levelDb(m_level);
+		setToolTip(tr("%1: %2 dB").arg(m_name, db > -60.0 ? QString::number(db, 'f', 1) : QStringLiteral("< -60")));
+	}
+	return QWidget::event(event);
+}
+
+void LevelBar::showEvent(QShowEvent* event)
+{
+	QWidget::showEvent(event);
+	m_timer->start();
+}
+
+void LevelBar::hideEvent(QHideEvent* event)
+{
+	QWidget::hideEvent(event);
+	m_timer->stop();
 }
 
 void LevelBar::paintEvent(QPaintEvent*)
@@ -59,7 +95,7 @@ void LevelBar::paintEvent(QPaintEvent*)
 	const tokens::Palette& pal = tokens::palette();
 	QPainter p(this);
 	p.fillRect(rect(), pal.control);
-	const double db = m_level > 0.f ? 20.0 * std::log10(m_level) : -60.0;
+	const double db = levelDb(m_level);
 	const int h = static_cast<int>(std::clamp((db + 60.0) / 60.0, 0.0, 1.0) * height());
 	p.fillRect(QRect(0, height() - h, width(), h), db > -6.0 ? pal.meterHigh : db > -18.0 ? pal.meterMid : pal.meterLow);
 }

@@ -36,6 +36,7 @@
 #include "AudioBusHandle.h"
 #include "ChannelLevelMeter.h"
 #include "ComboBox.h"
+#include "CommandForm.h"
 #include "ControlDeviceSupport.h"
 #include "ControlMixerSupport.h"
 #include "ControlRegistry.h"
@@ -114,12 +115,12 @@ DevicePanel::DevicePanel(QWidget* parent)
 	m_scroll = new QScrollArea(this);
 	m_scroll->setFrameShape(QFrame::NoFrame);
 	m_scroll->setWidgetResizable(true);
-	m_scroll->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+	m_scroll->setVerticalScrollBarPolicy(Qt::ScrollBarAsNeeded);  // a tall card stays reachable
 	m_row = new QWidget(m_scroll);
 	m_cards = new QHBoxLayout(m_row);
 	m_cards->setContentsMargins(tokens::space::md, tokens::space::md, tokens::space::md, tokens::space::md);
 	m_cards->setSpacing(tokens::space::md);
-	m_empty = new QLabel(tr("Select a track to see its devices."), m_row);
+	m_empty = new QLabel(tr("Select a track or a mixer channel to see its devices."), m_row);
 	m_empty->setObjectName(QStringLiteral("deviceCaption"));
 	m_add = buildAddButton();
 	m_cards->addWidget(m_empty);
@@ -144,7 +145,7 @@ QWidget* DevicePanel::buildAddButton()
 	add->setText(tr("Add device"));
 	add->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
 	add->setPopupMode(QToolButton::InstantPopup);
-	add->setAccessibleName(tr("Add a device to the selected track"));
+	add->setAccessibleName(tr("Add a built-in effect to the selected track or channel"));
 	auto* menu = new QMenu(add);
 	connect(menu, &QMenu::aboutToShow, menu, [this, menu] {
 		menu->clear();
@@ -154,8 +155,9 @@ QWidget* DevicePanel::buildAddButton()
 			const ControlDeviceEntry& entry = catalogue.at(i);
 			if (entry.kind != QLatin1String("effect") || !entry.loadable || entry.format != QLatin1String("builtin")) { continue; }
 			menu->addAction(entry.displayName, this, [this, id = control::deviceId(i)] {
-				invoke(QStringLiteral("plugin.load"), {{QStringLiteral("target"), m_target},
-					{QStringLiteral("device"), id}});
+				// runCommand: a refused load is shown, not swallowed.
+				runCommand(this, CommandCall{QStringLiteral("plugin.load"), {{QStringLiteral("target"), m_target},
+					{QStringLiteral("device"), id}}, {}, QString(), false});
 			});
 		}
 	});
@@ -211,7 +213,12 @@ void DevicePanel::watch(Track* track, MixerChannel* channel)
 	for (const QMetaObject::Connection& c : m_watch) { disconnect(c); }
 	m_watch.clear();
 	m_track = track;
-	if (channel != nullptr) { watchChain(&channel->m_fxChain); }
+	if (channel != nullptr)
+	{
+		watchChain(&channel->m_fxChain);
+		// The rack's parallel chains too: an alias or option set on one of their devices redraws its card.
+		for (int c = 1; c < channel->m_rack.chainCount(); ++c) { watchChain(channel->m_rack.chain(c)); }
+	}
 	if (track == nullptr) { return; }
 	m_watch << connect(track, &QObject::destroyed, this, &DevicePanel::scheduleRebuild);
 	watchChain(trackChain(track));
@@ -253,7 +260,7 @@ void DevicePanel::addInstrumentCard(InstrumentTrack* track)
 	m_cards->insertWidget(m_cards->indexOf(m_add), card);
 }
 
-void DevicePanel::addModulators(const QJsonArray& modulators, const QString& target, int effectIndex)
+void DevicePanel::addModulators(const QJsonArray& modulators, const QString& target, int chainIndex, int effectIndex)
 {
 	for (const QJsonValue& value : modulators)
 	{
@@ -263,7 +270,7 @@ void DevicePanel::addModulators(const QJsonArray& modulators, const QString& tar
 		{
 			const QJsonObject route = t.toObject();
 			drives = drives || (route.value(QStringLiteral("channel")).toString() == target
-				&& route.value(QStringLiteral("chain")).toInt() == 0 && route.value(QStringLiteral("effect")).toInt() == effectIndex);
+				&& route.value(QStringLiteral("chain")).toInt() == chainIndex && route.value(QStringLiteral("effect")).toInt() == effectIndex);
 		}
 		const QString id = modulator.value(QStringLiteral("id")).toString();
 		if (!drives || m_modulators.contains(id)) { continue; }
@@ -272,7 +279,7 @@ void DevicePanel::addModulators(const QJsonArray& modulators, const QString& tar
 	}
 }
 
-void DevicePanel::addChain(EffectChain* chain, const QString& target, const QJsonArray& modulators)
+void DevicePanel::addChain(EffectChain* chain, const QString& target, const QJsonArray& modulators, int chainIndex)
 {
 	if (chain == nullptr) { return; }
 	const std::vector<Effect*>& effects = chain->effects();
@@ -287,7 +294,7 @@ void DevicePanel::addChain(EffectChain* chain, const QString& target, const QJso
 		spec.enabled = effect->isEnabled();
 		spec.effect = effect;
 		m_cards->insertWidget(m_cards->indexOf(m_add), new DeviceCard(spec, controlEffectParameters(effect), m_row));
-		addModulators(modulators, target, i);
+		addModulators(modulators, target, chainIndex, i);
 	}
 }
 
@@ -323,7 +330,7 @@ void DevicePanel::rebuild()
 	for (int c = 1; c < channel->m_rack.chainCount(); ++c)
 	{
 		addSection(tr("Parallel chain %1").arg(c));
-		addChain(channel->m_rack.chain(c), m_channel, {});
+		addChain(channel->m_rack.chain(c), m_channel, modulators, c);  // a modulator can drive a rack chain's device
 	}
 }
 

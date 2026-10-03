@@ -35,6 +35,7 @@ class QFrame;
 class QLabel;
 class QLineEdit;
 class QMenuBar;
+class QPushButton;
 class QTabWidget;
 class QTextBrowser;
 
@@ -65,7 +66,7 @@ private:
 /*! 0.5.0 L14 (WF-140): a guided tour - steps (data/tours/<name>.json: target, panel, title, text)
  *  shown one at a time in a frame beside the widget each points at (found by object name), the rest of
  *  the window dimmed. A step whose target is hidden shows its panel first (window.toggle). Back,
- *  Next and Close; Close or the last Next ends it. */
+ *  Next and Close; Close, Escape or the last Next ends it. */
 class LMMS_EXPORT GuidedTour : public QWidget
 {
 	Q_OBJECT
@@ -80,6 +81,8 @@ public:
 
 protected:
 	void paintEvent(QPaintEvent* event) override;
+	//! Escape ends the tour.
+	void keyPressEvent(QKeyEvent* event) override;
 
 private:
 	GuidedTour(const QJsonArray& steps, QWidget* window);
@@ -91,6 +94,8 @@ private:
 	QFrame* m_bubble;
 	QLabel* m_title;
 	QLabel* m_text;
+	QPushButton* m_back = nullptr;
+	QPushButton* m_next = nullptr;
 };
 
 //! Help menu entries: What's This?, Manual, Command Reference, Tours, Appearance.

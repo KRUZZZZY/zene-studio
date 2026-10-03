@@ -105,8 +105,13 @@ void LedCheckBox::setLedColor(LedColor color)
 void LedCheckBox::onTextUpdated()
 {
 	QFontMetrics const fm = fontMetrics();
+	// Legacy mode paints its text in the caption token (paintLegacy), which follows the interface's text size:
+	// wide enough for that too, so a larger text size does not cut the label off.
+	int const advance = m_legacyMode
+		? std::max(fm.horizontalAdvance(text()), QFontMetrics(tokens::font(tokens::TextRole::Caption)).horizontalAdvance(text()))
+		: fm.horizontalAdvance(text());
 
-	int const width = m_ledOffPixmap.width() + 5 + fm.horizontalAdvance(text());
+	int const width = m_ledOffPixmap.width() + 5 + advance;
 	int const height = m_legacyMode ? m_ledOffPixmap.height() : qMax(m_ledOffPixmap.height(), fm.height());
 
 	setFixedSize(width, height);

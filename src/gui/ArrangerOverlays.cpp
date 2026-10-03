@@ -220,7 +220,7 @@ Track* ArrangerRangeOverlay::nearestTrackAt(int y) const
 	return y < views.first()->mapTo(parentWidget(), QPoint(0, 0)).y() ? views.first()->getTrack() : views.last()->getTrack();
 }
 
-QRect ArrangerRangeOverlay::rangeRect() const
+QVector<QRect> ArrangerRangeOverlay::rangeRows() const
 {
 	const ArrangerRange& range = ArrangerRange::instance();
 	if (!range.active() || m_editor.isNull()) { return {}; }
@@ -228,28 +228,52 @@ QRect ArrangerRangeOverlay::rangeRect() const
 	const auto xOf = [&](tick_t tick) {
 		return contentLeft() + static_cast<int>((tick - m_editor->currentPosition().getTicks()) * ppb / TimePos::ticksPerBar());
 	};
-	QRect area;
+	QVector<QRect> rows;
 	const QVector<Track*> covered = range.tracks();
 	for (TrackView* view : m_editor->trackViews())
 	{
 		if (!covered.contains(view->getTrack())) { continue; }
 		const QPoint top = view->mapTo(parentWidget(), QPoint(0, 0));
-		area = area.united(QRect(xOf(range.start()), top.y(), xOf(range.end()) - xOf(range.start()), view->height()));
+		rows.append(QRect(xOf(range.start()), top.y(), xOf(range.end()) - xOf(range.start()), view->height()));
 	}
+	return rows;
+}
+
+QRect ArrangerRangeOverlay::rangeRect() const
+{
+	QRect area;
+	for (const QRect& row : rangeRows()) { area = area.united(row); }
 	return area;
 }
 
 void ArrangerRangeOverlay::paintEvent(QPaintEvent*)
 {
-	const QRect area = rangeRect();
-	if (area.isEmpty()) { return; }
+	// Row by row: a range over tracks that are not adjacent leaves the rows between them unmarked.
 	QColor fill = tokens::palette().accent;
 	fill.setAlpha(48);
 	QPainter p(this);
-	p.fillRect(area, fill);
 	p.setPen(QPen(tokens::palette().accent, 1));
-	p.drawLine(area.topLeft(), area.bottomLeft());
-	p.drawLine(area.topRight(), area.bottomRight());
+	for (const QRect& row : rangeRows())
+	{
+		if (row.isEmpty()) { continue; }
+		p.fillRect(row, fill);
+		p.drawLine(row.topLeft(), row.bottomLeft());
+		p.drawLine(row.topRight(), row.bottomRight());
+	}
+}
+
+bool ArrangerRangeOverlay::event(QEvent* event)
+{
+	// A held audition ends however the gesture is cut short - the window losing focus, the grab taken
+	// away, the overlay hidden - not only on a release that may never come.
+	const QEvent::Type type = event->type();
+	if (m_dragging && m_tool == Tool::Audition
+		&& (type == QEvent::WindowDeactivate || type == QEvent::UngrabMouse || type == QEvent::Hide))
+	{
+		m_dragging = false;
+		ControlRegistry::instance()->invoke(QStringLiteral("transport.audition_stop"));
+	}
+	return QWidget::event(event);
 }
 
 void ArrangerRangeOverlay::mousePressEvent(QMouseEvent* event)

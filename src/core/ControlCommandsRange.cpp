@@ -267,11 +267,16 @@ ControlResult cropRange(const QJsonObject&)
 
 ControlResult insertTime(const QJsonObject& args)
 {
+	const ArrangerRange& range = ArrangerRange::instance();
+	const tick_t length = args.value(QStringLiteral("length")).toInt(range.end() - range.start());
+	// No time to insert: refused before the edge split, which would cut clips for nothing.
+	if (args.contains(QStringLiteral("length")) && length < 1)
+	{
+		return ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("'length' is at least one tick"));
+	}
 	QVector<Track*> tracks;
 	ControlResult error;
 	if (!beginEdit(&tracks, &error)) { return error; }
-	const ArrangerRange& range = ArrangerRange::instance();
-	const tick_t length = args.value(QStringLiteral("length")).toInt(range.end() - range.start());
 	int moved = 0;
 	for (Track* track : tracks)
 	{
@@ -401,11 +406,11 @@ int silenceAllBut(Track* solo)
 
 ControlResult auditionStart(const QJsonObject& args)
 {
-	if (g_audition.active) { auditionStop({}); }
 	Song* song = Engine::getSong();
 	ControlResult error;
 	Track* solo = args.contains(QStringLiteral("track")) ? resolveTrack(args.value(QStringLiteral("track")).toString(), &error) : nullptr;
 	if (args.contains(QStringLiteral("track")) && solo == nullptr) { return error; }
+	if (g_audition.active) { auditionStop({}); }  // only once the new one is known to start
 	g_audition = {true, song->isPlaying(), song->getPlayPos().getTicks(), {}};
 	const int silenced = solo != nullptr ? silenceAllBut(solo) : 0;
 	song->setPlayPos(args.value(QStringLiteral("position")).toInt(), Song::PlayMode::Song);

@@ -32,6 +32,7 @@
 
 #include "CommandForm.h"
 
+class QBoxLayout;
 class QLabel;
 class QPushButton;
 class QTableWidget;
@@ -48,8 +49,9 @@ struct RowAction
 	QHash<QString, QString> fromRow;  //!< argument key -> row field
 	QJsonObject fixed;
 	bool ask = false;      //!< through the command's form (the row's fields fixed)
-	bool confirm = false;  //!< ask "are you sure" first (on a screen; never headless)
+	bool confirm = false;  //!< ask "are you sure" first, naming the row (on a screen; never headless)
 	bool showResult = false;  //!< show the reply (a comparison, an analysis)
+	QString caution;  //!< what the "are you sure" question adds (what is lost)
 };
 
 //! A button under the list that is not about one row (Add, Collect, Refresh...).
@@ -57,6 +59,7 @@ struct ListExtra
 {
 	QString label;
 	CommandCall call;
+	bool confirm = false;  //!< ask "are you sure" first (on a screen; never headless)
 };
 
 /*! What a CommandListDialog shows: `listId` run with `listArgs`, the array `arrayKey` of its
@@ -64,12 +67,16 @@ struct ListExtra
  *  empty), and `summaryKeys` - top-level result fields - as a line above the table.
  *  With `nestedKeys` the rows are one level down: under each item, every key's array (or single
  *  object), each row carrying its parent's `parentFields` (as `parent_<field>`), for a list
- *  grouped by owner - every chain's devices and its instrument, every track's take lanes. */
+ *  grouped by owner - every chain's devices and its instrument, every track's take lanes.
+ *  With `filterArg` a find field (named `filterLabel`) above the table sets that list argument
+ *  and re-reads the list as it is typed in - the clip list's name, the settings' words. */
 struct ListSpec
 {
 	QString title;
 	QString listId;
 	QJsonObject listArgs;
+	QString filterArg;
+	QString filterLabel;
 	QString arrayKey;
 	QStringList nestedKeys;
 	QStringList parentFields;
@@ -105,8 +112,12 @@ public:
 private:
 	//! Show m_rows; the row @a kept (the selected one before a refresh) stays selected where it still is.
 	void fill(const QJsonValue& kept);
+	//! The find field m_spec.filterArg asks for, added to @a layout.
+	void addFilter(QBoxLayout* layout);
 	void syncButtons();
 	void report(const QString& label, const ControlResult& result);
+	//! A declined "are you sure": reported, and answered Refused.
+	ControlResult cancelled(const QString& label);
 	ControlResult dispatch(const QString& label, const CommandCall& call);
 
 	ListSpec m_spec;

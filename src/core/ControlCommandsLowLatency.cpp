@@ -25,7 +25,7 @@
  *  latency is over 'max_ms' stops processing (Effect::setDontRun - the bypass delay compensation
  *  already leaves out, not the On/Off switch, so nothing is journalled or saved) on the chains that
  *  matter for playing in: with 'scope' armed (the default) the chains of record-armed tracks, the
- *  mixer channels they play into and the master; with 'scope' all, every chain. Turning it off puts
+ *  mixer channels they play into (and those send on to) and the master; with 'scope' all, every chain. Turning it off puts
  *  back exactly the devices it took out (a device another feature had stopped is left alone).
  *  Session state, not project state. */
 
@@ -77,13 +77,16 @@ EffectChain* trackChain(Track* track)
 	return nullptr;
 }
 
-//! Channel @a index's chains: its own and its rack's.
+//! Channel @a index's chains - its own and its rack's - and those of every channel it sends into: a
+//! device on a channel downstream delays the monitored signal as much as one on the channel itself.
 void addChannel(int index, QSet<EffectChain*>* out)
 {
 	if (index < 0 || index >= Engine::mixer()->numChannels()) { return; }
 	MixerChannel* channel = Engine::mixer()->mixerChannel(index);
+	if (out->contains(&channel->m_fxChain)) { return; }  // reached already (the mixer refuses send loops besides)
 	out->insert(&channel->m_fxChain);
 	for (int c = 1; c < channel->m_rack.chainCount(); ++c) { out->insert(channel->m_rack.chain(c)); }
+	for (const MixerRoute* send : channel->m_sends) { addChannel(send->receiverIndex(), out); }
 }
 
 //! The chains the scope covers.

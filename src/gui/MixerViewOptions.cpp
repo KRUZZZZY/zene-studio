@@ -33,6 +33,7 @@
 #include <QStackedWidget>
 
 #include "ConfigManager.h"
+#include "DesignTokens.h"
 #include "Engine.h"
 #include "Effect.h"
 #include "Fader.h"
@@ -96,7 +97,8 @@ QString meterText(MixerChannel* channel)
 	if (reduction >= 0.1f) { parts << QStringLiteral("GR %1").arg(static_cast<double>(reduction), 0, 'f', 1); }
 	if (channel->m_clipped.load(std::memory_order_relaxed))
 	{
-		parts << QStringLiteral("<a href=\"clear\" style=\"color:#e04040;\">CLIP</a>");
+		// The palette's record red (4.9:1 or more on a strip in every palette), not a fixed #e04040 (3.8:1 on light).
+		parts << QStringLiteral("<a href=\"clear\" style=\"color:%1;\">CLIP</a>").arg(tokens::palette().record.name());
 	}
 	return parts.isEmpty() ? QStringLiteral("&nbsp;") : parts.join(QStringLiteral(" "));
 }
@@ -240,11 +242,12 @@ void applyToStrip(MixerChannelView* view, MixerChannel* channel)
 	fader->setProperty("levelsDisplayedInDBFS", o.meterScale != QLatin1String("linear"));
 }
 
-//! MX-133: the strip's readings as a line of text - peak, RMS, gain reduction, correlation.
+//! MX-133: the strip's readings as a line of text - the pre-fader peak (whichever point the bars show), RMS,
+//! gain reduction, correlation.
 QString meterReadout(const MixerChannel* channel)
 {
 	const auto db = [](float v) { return v > 0.f ? QString::number(20.0 * std::log10(v), 'f', 1) : QStringLiteral("-inf"); };
-	return QObject::tr("Peak %1 / %2 dB   RMS %3 / %4 dB   GR %5 dB   Correlation %6")
+	return QObject::tr("Pre-fader peak %1 / %2 dB   RMS %3 / %4 dB   GR %5 dB   Correlation %6")
 		.arg(db(channel->m_prePeakLeft.get()), db(channel->m_prePeakRight.get()), db(channel->m_rmsLeft.get()), db(channel->m_rmsRight.get()))
 		.arg(channel->m_gainReduction.get(), 0, 'f', 1).arg(channel->m_correlation.get(), 0, 'f', 2);
 }

@@ -24,6 +24,7 @@
 
 #include "RackMenu.h"
 
+#include <algorithm>
 #include <utility>
 
 #include <QActionGroup>
@@ -37,6 +38,7 @@
 
 #include "ControlRegistry.h"
 #include "ControlVocabulary.h"
+#include "RackSplit.h"
 #include "UnattendedRun.h"
 
 namespace lmms::gui
@@ -63,14 +65,19 @@ std::optional<double> promptValue(double current)
 	return ok ? std::optional<double>(value) : std::nullopt;
 }
 
+//! Shows why @a command did not run (or logs it when nobody is there).
+void warn(const QString& command, const QString& reason)
+{
+	if (isUnattendedRun()) { qWarning("%s refused: %s", qPrintable(command), qPrintable(reason)); }
+	else { QMessageBox::warning(QApplication::activeWindow(), QMenu::tr("Rack"), reason); }
+}
+
 //! Runs @a command on the channel; a refusal is shown (or logged when nobody is there).
 void run(const QString& channel, const QString& command, QJsonObject args = QJsonObject{})
 {
 	args.insert(QStringLiteral("channel"), channel);
 	const ControlResult result = ControlRegistry::instance()->invoke(command, args);
-	if (result.ok) { return; }
-	if (isUnattendedRun()) { qWarning("%s refused: %s", qPrintable(command), qPrintable(result.errorMessage)); }
-	else { QMessageBox::warning(QApplication::activeWindow(), QMenu::tr("Rack"), result.errorMessage); }
+	if (!result.ok) { warn(command, result.errorMessage); }
 }
 
 QAction* commandItem(QMenu* menu, const QString& text, const char* command)
@@ -98,24 +105,51 @@ void addRouting(QMenu* rack, const QString& channel, int chains, int selected)
 	}
 }
 
+//! The "Split the input" item for @a mode on a rack of @a chains: how many bands there are, and
+//! that the chains a mode does not feed are silent (RackSplit.h).
+QString splitLabel(const QString& mode, int chains)
+{
+	if (mode == QLatin1String("none")) { return QMenu::tr("Whole signal to every chain"); }
+	const bool bands = mode == QLatin1String("bands");
+	const int fed = bands ? std::min(chains, RackSplit::MaxBands) : 2;
+	const QString silent = chains > fed ? QMenu::tr(", further chains silent") : QString();
+	if (bands && chains > 1) { return QMenu::tr("By frequency band (%1 bands, chain 0 lowest%2)").arg(fed).arg(silent); }
+	if (bands) { return QMenu::tr("By frequency band (chain 0 lowest)"); }
+	return mode == QLatin1String("mid_side") ? QMenu::tr("Mid to chain 0, side to chain 1%1").arg(silent)
+		: QMenu::tr("Left to chain 0, right to chain 1%1").arg(silent);
+}
+
+//! The crossovers typed in the dialog, in Hz; false (with the reason shown) when a part is not a number.
+bool parseCrossovers(const QString& text, QJsonArray* crossovers)
+{
+	for (const QString& part : text.split(QLatin1Char(','), Qt::SkipEmptyParts))
+	{
+		bool ok = false;
+		const double hz = part.trimmed().toDouble(&ok);
+		if (!ok)
+		{
+			warn(QStringLiteral("rack.split"), QMenu::tr("'%1' is not a frequency in Hz").arg(part.trimmed()));
+			return false;
+		}
+		crossovers->append(hz);
+	}
+	return true;
+}
+
 //! 0.5.0 L10 (MX-108): "Split the input" > what each chain of a parallel rack is fed (rack.split).
 void addSplit(QMenu* rack, const QString& channel, const QJsonObject& split, int chains)
 {
 	QMenu* menu = rack->addMenu(QMenu::tr("Split the input"));
 	const QString current = split.value(QStringLiteral("mode")).toString();
 	auto* group = new QActionGroup(menu);
-	const std::pair<QString, QString> modes[] = {{QStringLiteral("none"), QMenu::tr("Whole signal to every chain")},
-		{QStringLiteral("bands"), QMenu::tr("By frequency band (chain 0 lowest)")},
-		{QStringLiteral("mid_side"), QMenu::tr("Mid to chain 0, side to chain 1")},
-		{QStringLiteral("left_right"), QMenu::tr("Left to chain 0, right to chain 1")}};
-	for (const auto& [mode, text] : modes)
+	for (const QString& mode : RackSplit::modeNames())
 	{
-		QAction* action = commandItem(menu, text, "rack.split");
+		QAction* action = commandItem(menu, splitLabel(mode, chains), "rack.split");
 		action->setCheckable(true);
 		action->setChecked(mode == current);
 		action->setEnabled(chains > 1 || mode == QLatin1String("none"));
 		group->addAction(action);
-		QObject::connect(action, &QAction::triggered, menu, [channel, mode = mode] {
+		QObject::connect(action, &QAction::triggered, menu, [channel, mode] {
 			run(channel, QStringLiteral("rack.split"), {{QStringLiteral("mode"), mode}});
 		});
 	}
@@ -129,7 +163,7 @@ void addSplit(QMenu* rack, const QString& channel, const QJsonObject& split, int
 			QMenu::tr("Frequencies in Hz, separated by commas:"), QLineEdit::Normal, now.join(QStringLiteral(", ")), &ok);
 		if (!ok) { return; }
 		QJsonArray crossovers;
-		for (const QString& part : text.split(QLatin1Char(','), Qt::SkipEmptyParts)) { crossovers.append(part.trimmed().toDouble()); }
+		if (!parseCrossovers(text, &crossovers)) { return; }
 		run(channel, QStringLiteral("rack.split"), {{QStringLiteral("mode"), QStringLiteral("bands")}, {QStringLiteral("crossovers"), crossovers}});
 	});
 }

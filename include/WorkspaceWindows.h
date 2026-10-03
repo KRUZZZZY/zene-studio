@@ -27,11 +27,13 @@
 
 #include <QDialog>
 #include <QJsonObject>
+#include <QList>
 
 #include "lmms_export.h"
 
 class QLabel;
 class QLineEdit;
+class QPushButton;
 class QSlider;
 class QTextBrowser;
 class QTimer;
@@ -102,6 +104,7 @@ private:
 	QLabel* m_detail;
 	QSlider* m_needle;
 	QTimer* m_timer;
+	QList<QPushButton*> m_sources;  //!< Input and Master, the one listened to checked
 };
 
 } // namespace lmms::gui

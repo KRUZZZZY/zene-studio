@@ -59,7 +59,8 @@ const ReversibilityRow kW3DeviceRows[] = {
 	R("plugin.delta", RC::NotMutating, false, "it plays a device's delta instead of its output: a monitor switch, not the "
 		"project (neither saved nor journalled)", "no write (plugin.delta on:false puts it back)", ""),
 	R("plugin.record", RC::NotMutating, false, "it writes a take file from what passes a Recorder insert; the project only "
-		"learns the take's path (device state)", "no write to the project (delete the file)", ""),
+		"learns the take's path (device state)", "not journalled: the Recorder's last-take path (saved with the project) is not put "
+		"back; delete the file", ""),
 	R("plugin.recorder_land", RC::TrueInverse, true, "it adds an audio track holding a Recorder's last take",
 		"action checkpoint: the recorded undo step removes the track", ""),
 	R("clip.process", RC::TrueInverse, true, "it replaces an audio clip's source with the clip printed through a chain's devices",

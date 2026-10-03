@@ -25,6 +25,7 @@
 #include "ParameterGridDialog.h"
 
 #include <QGridLayout>
+#include <QLabel>
 
 #include "AutomatableModel.h"
 #include "ComboBox.h"
@@ -64,6 +65,7 @@ QWidget* controlFor(AutomatableModel* model, QWidget* parent)
 		auto* knob = new Knob(KnobType::Bright26, name.left(8).toUpper(), parent);
 		knob->setModel(number);
 		knob->setHintText(name + QLatin1Char(':'), QString());
+		knob->setToolTip(name);  // the caption keeps eight letters; the full name is a hover away
 		return knob;
 	}
 	return nullptr;
@@ -82,7 +84,15 @@ ParameterGridDialog::ParameterGridDialog(ParameterControls* controls) :
 	{
 		QWidget* widget = controlFor(model, this);
 		if (widget == nullptr) { continue; }
-		if (qobject_cast<ComboBoxModel*>(model) != nullptr) { grid->addWidget(widget, row++, 0, 1, kColumns); continue; }
+		if (qobject_cast<ComboBoxModel*>(model) != nullptr)
+		{
+			// A menu shows only its value, so its name stands beside it, as a knob's caption and a switch's text do.
+			auto* label = new QLabel(model->displayName(), this);
+			label->setBuddy(widget);
+			grid->addWidget(label, row, 0);
+			grid->addWidget(widget, row++, 1, 1, kColumns - 1);
+			continue;
+		}
 		(qobject_cast<BoolModel*>(model) != nullptr ? switches : knobs) << widget;
 	}
 	// The choices on top whatever order the device registered them in, then the knobs, then the switches.

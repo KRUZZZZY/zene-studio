@@ -329,6 +329,8 @@ ControlResult blend(const QJsonObject& args)
 		models << all.at(i);
 		values.push_back(static_cast<float>(a[k] + amount * (b[k] - a[k])));
 	}
+	// As randomise: nothing to change is refused, not answered with an empty "success" and no undo step.
+	if (models.isEmpty()) { return ControlResult::failure(ControlErrorKind::Refused, QStringLiteral("the device has no settings to blend")); }
 	return writeValues(models, values, {{QStringLiteral("target"), targetOf(args)}, {QStringLiteral("plugin"), pluginOf(args)},
 		{QStringLiteral("amount"), amount}});
 }

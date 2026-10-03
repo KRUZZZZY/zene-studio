@@ -36,7 +36,9 @@
 #include <QScrollBar>
 #include <QVBoxLayout>
 
+#include "CommandForm.h"
 #include "ControlRegistry.h"
+#include "ControlScaleShared.h"
 #include "ControlVocabulary.h"
 #include "ControllerLaneView.h"
 #include "DesignTokens.h"
@@ -54,6 +56,22 @@
 
 namespace lmms::gui
 {
+
+namespace
+{
+
+//! The header's title: the clip's name, elided in the middle to the label's width, with the
+//! whole name and its track in the tooltip.
+void showClipTitle(QLabel* label, const MidiClip* clip)
+{
+	const QString name = clip == nullptr ? NoteEditor::tr("No clip")
+		: clip->name().isEmpty() ? NoteEditor::tr("Untitled clip") : clip->name();
+	const Track* track = clip != nullptr ? clip->getTrack() : nullptr;
+	label->setText(label->fontMetrics().elidedText(name, Qt::ElideMiddle, label->maximumWidth()));
+	label->setToolTip(track != nullptr ? NoteEditor::tr("%1 (track %2)").arg(name, track->name()) : name);
+}
+
+} // namespace
 
 NoteEditor::NoteEditor(QWidget* parent)
 	: QWidget(parent)
@@ -75,9 +93,13 @@ NoteEditor::NoteEditor(QWidget* parent)
 	});
 	setClip(nullptr);
 	// The playhead: the song position inside the clip, refreshed at 30 Hz while the song plays.
+	// The same tick follows a scale changed elsewhere (the socket, a script, undo).
 	m_playheadTimer = new QTimer(this);
 	m_playheadTimer->setInterval(33);
-	connect(m_playheadTimer, &QTimer::timeout, this, [this]() { updatePlayhead(false); });
+	connect(m_playheadTimer, &QTimer::timeout, this, [this]() {
+		updatePlayhead(false);
+		followScale();
+	});
 	m_playheadTimer->start();
 }
 
@@ -91,6 +113,12 @@ void NoteEditor::updatePlayhead(bool always)
 	}
 	const int tick = song->getPlayPos(Song::PlayMode::Song).getTicks() - m_state.clip->startPosition().getTicks();
 	m_canvas->setPlayhead(tick >= 0 && tick <= m_state.clip->length().getTicks() ? tick : -1);
+}
+
+void NoteEditor::followScale()
+{
+	const control::ScaleContext& context = control::scaleContext();
+	if (context.root != m_scaleRoot || context.scale != m_scaleSeen) { readScale(); }
 }
 
 NoteEditor::~NoteEditor() = default;
@@ -153,7 +181,6 @@ void NoteEditor::setClip(MidiClip* clip)
 		// The clip being edited is the clip the Inspector and the Device panel follow.
 		ShellSelection::instance()->setClip(clip);
 	}
-	m_clipLabel->setText(clip != nullptr ? clip->name().isEmpty() ? tr("Untitled clip") : clip->name() : tr("No clip"));
 	readScale();
 	refresh();
 	// Fit the clip once the note area has its real size: a panel that is parked or not yet laid
@@ -167,7 +194,6 @@ void NoteEditor::onClipDestroyed()
 {
 	// The QPointer is already null; drop everything that read the clip.
 	m_state.clip = nullptr;
-	m_clipLabel->setText(tr("No clip"));
 	refresh();
 	emit clipChanged();
 }
@@ -186,6 +212,7 @@ void NoteEditor::refresh()
 		for (const int key : TrackKeyNames::instance().names(m_state.clip->getTrack()->id()).keys()) { named.push_back(key); }
 	}
 	m_state.grid.setNamedKeys(named);
+	showClipTitle(m_clipLabel, m_state.clip);  // a rename is a dataChanged too
 	m_canvas->clipChanged();
 	emit stateChanged();
 }
@@ -197,6 +224,7 @@ QJsonObject NoteEditor::run(const QString& command, const QJsonObject& args)
 	{
 		std::fprintf(stderr, "NoteEditor: %s refused: %s\n", command.toUtf8().constData(),
 			result.errorMessage.toUtf8().constData());
+		announce(this, CommandCall{command, args, {}, {}, false}, result);  // the floating message every refusal gets
 		return {};
 	}
 	return result.result;

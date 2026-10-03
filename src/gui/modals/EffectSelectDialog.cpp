@@ -119,13 +119,15 @@ EffectSelectDialog::EffectSelectDialog(QWidget* parent) :
 
 	// 0.5.0 L10 (MX-166): Favourites, beside the formats.
 	auto* favourites = new QPushButton(QStringLiteral("\u2605"), this);
-	favourites->setToolTip(tr("Favourites"));
+	favourites->setToolTip(tr("Favourites only"));
+	favourites->setAccessibleName(favourites->toolTip());  // not the star's own character name
+	favourites->setCheckable(true);  // pressed while the list shows favourites only
 	favourites->setFixedSize(50, 50);
 	favourites->setFocusPolicy(Qt::NoFocus);
 	leftSectionLayout->addWidget(favourites);
-	connect(favourites, &QPushButton::clicked, this, [this] {
+	connect(favourites, &QPushButton::toggled, this, [this](bool on) {
 		pickerorganiser::Filter filter = m_model.organiserFilter();
-		filter.favouritesOnly = !filter.favouritesOnly;
+		filter.favouritesOnly = on;
 		m_model.setOrganiserFilter(filter);
 		updateSelection();
 	});

@@ -143,6 +143,12 @@ int NoteRuler::loopEndX() const
 	return static_cast<int>(m_state.grid.xOfTick(m_state.clip->length().getTicks()));
 }
 
+bool NoteRuler::overLoopEnd(int x) const
+{
+	// The clip's end is a drag target no narrower than the design system's (tokens::targetSize).
+	return m_state.clip != nullptr && std::abs(x - loopEndX()) <= tokens::targetSize() / 2;
+}
+
 int NoteRuler::draggedLength(int x) const
 {
 	const int bar = DefaultTicksPerBar;
@@ -183,7 +189,7 @@ void NoteRuler::paintEvent(QPaintEvent*)
 void NoteRuler::mousePressEvent(QMouseEvent* event)
 {
 	if (m_state.clip == nullptr) { return; }
-	if (std::abs(event->pos().x() - loopEndX()) <= 6)
+	if (overLoopEnd(event->pos().x()))
 	{
 		m_dragging = true;
 		m_dragX = event->pos().x();
@@ -199,8 +205,7 @@ void NoteRuler::mousePressEvent(QMouseEvent* event)
 
 void NoteRuler::mouseMoveEvent(QMouseEvent* event)
 {
-	const bool overEnd = m_state.clip != nullptr && std::abs(event->pos().x() - loopEndX()) <= 6;
-	setCursor(overEnd || m_dragging ? Qt::SizeHorCursor : Qt::ArrowCursor);
+	setCursor(overLoopEnd(event->pos().x()) || m_dragging ? Qt::SizeHorCursor : Qt::ArrowCursor);
 	if (!m_dragging) { return; }
 	m_dragX = event->pos().x();
 	update();
@@ -225,7 +230,8 @@ NoteLaneView::NoteLaneView(NoteEditor* editor)
 {
 	setObjectName(QStringLiteral("noteLane"));
 	a11y::announce(this, tr("Expression lane"),
-		tr("One value per note - velocity, pan, chance, timbre, pressure or micro-pitch; drag across notes to draw."));
+		tr("One value per note - velocity, pan, chance, timbre, pressure, micro-pitch, release velocity, velocity "
+			"spread or repeats; drag across notes to draw."));
 }
 
 QSize NoteLaneView::sizeHint() const { return {200, kLaneHeight}; }
@@ -316,7 +322,11 @@ void NoteLaneView::drawAt(const QPoint& pos)
 	{
 		const Note& note = *notes[static_cast<std::size_t>(i)];
 		const int x = static_cast<int>(m_state.grid.xOfTick(note.pos().getTicks()));
-		if (std::abs(x - pos.x()) <= 4 && (!anySelected || note.selected())) { m_pending[note.id()] = value; }
+		if (std::abs(x - pos.x()) <= 4 && (!anySelected || note.selected()))
+		{
+			m_pending[note.id()] = value;
+			m_lastValue = value;
+		}
 	}
 	update();
 }
@@ -347,7 +357,7 @@ void NoteLaneView::commit()
 	{
 		m_editor->run(QStringLiteral("note.edit"), {{QStringLiteral("clip"), m_editor->clipId()}, {QStringLiteral("edits"), batched}});
 	}
-	if (m_state.lane == NoteLane::Velocity) { m_state.lastVelocity = pending.rbegin()->second; }
+	if (m_state.lane == NoteLane::Velocity) { m_state.lastVelocity = m_lastValue; }
 	update();
 }
 

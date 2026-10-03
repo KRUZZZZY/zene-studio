@@ -26,11 +26,13 @@
 
 #include <QComboBox>
 #include <QDir>
+#include <QListWidget>
 #include <QStackedWidget>
 #include <QTreeWidget>
 #include <QVBoxLayout>
 
 #include "Accessibility.h"
+#include "BrowserCatalog.h"
 #include "BrowserSearchView.h"
 #include "ConfigManager.h"
 #include "ControlRegistry.h"
@@ -44,6 +46,28 @@
 
 namespace lmms::gui
 {
+
+namespace
+{
+
+//! @a path when it names an audio file, else nothing: what the waveform shows for a search result or tile.
+QString audioOrNone(const QString& path)
+{
+	return browserKindForPath(path) == BrowserKind::Audio ? path : QString();
+}
+
+//! The sample a list row names: a file list's sample, or a search result's audio file (its path is the row's data).
+QString samplePathOf(const QTreeWidgetItem* item)
+{
+	if (item == nullptr) { return QString(); }
+	if (const auto* file = dynamic_cast<const FileItem*>(item))
+	{
+		return file->type() == FileItem::FileType::Sample ? file->fullName() : QString();
+	}
+	return audioOrNone(item->data(0, Qt::UserRole).toString());
+}
+
+} // namespace
 
 BrowserPanel::BrowserPanel(QWidget* parent)
 	: QWidget(parent)
@@ -88,12 +112,16 @@ void BrowserPanel::addSource(SideBarWidget* source)
 {
 	source->setChromeless(true);
 	m_stack->addWidget(source);
-	// WF-010: a sample selected in any file list shows its waveform (browser.peaks) below.
+	// WF-010: a sample selected in any file list - search results and gallery tiles included - shows its
+	// waveform (browser.peaks) below.
 	for (auto* tree : source->findChildren<QTreeWidget*>())
 	{
-		connect(tree, &QTreeWidget::currentItemChanged, this, [this](QTreeWidgetItem* item) {
-			const auto* file = dynamic_cast<FileItem*>(item);
-			m_wave->setPath(file != nullptr && file->type() == FileItem::FileType::Sample ? file->fullName() : QString());
+		connect(tree, &QTreeWidget::currentItemChanged, this, [this](QTreeWidgetItem* item) { m_wave->setPath(samplePathOf(item)); });
+	}
+	for (auto* tiles : source->findChildren<QListWidget*>())
+	{
+		connect(tiles, &QListWidget::currentItemChanged, this, [this](QListWidgetItem* tile) {
+			m_wave->setPath(tile != nullptr ? audioOrNone(tile->data(Qt::UserRole).toString()) : QString());
 		});
 	}
 	m_selector->addItem(source->title());

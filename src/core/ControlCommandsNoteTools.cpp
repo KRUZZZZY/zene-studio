@@ -133,6 +133,11 @@ ControlResult flam(const QJsonObject& args)
 	if (clip == nullptr) { return error; }
 	const tick_t offset = std::max(1, args.value(QStringLiteral("offset")).toInt(3));
 	const double ratio = std::clamp(args.value(QStringLiteral("velocity")).toDouble(0.6), 0.05, 1.0);
+	if (std::none_of(notes.begin(), notes.end(), [offset](const Note* note) { return note->pos().getTicks() >= offset; }))
+	{
+		// No note has room for a grace note: nothing changes, so no undo step.
+		return ControlResult::success({{QStringLiteral("clip"), clipId(ref.id)}, {QStringLiteral("added"), 0}});
+	}
 	clip->addJournalCheckPoint();
 	int made = 0;
 	for (const Note* note : notes)
@@ -174,8 +179,14 @@ ControlResult transposeInKey(const QJsonObject& args)
 	if (clip == nullptr) { return error; }
 	const int steps = args.value(QStringLiteral("steps")).toInt(1);
 	clip->addJournalCheckPoint();
-	for (Note* note : notes) { note->setKey(stepInScale(note->key(), steps, classes)); }
-	return ControlResult::success(finish(ref, clip, QStringLiteral("note.transpose_in_key"), {{QStringLiteral("moved"), notes.size()}}));
+	int moved = 0;  // a note the scale would take past key 0 or 127 stays, and is not counted
+	for (Note* note : notes)
+	{
+		const int key = stepInScale(note->key(), steps, classes);
+		moved += key != note->key() ? 1 : 0;
+		note->setKey(key);
+	}
+	return ControlResult::success(finish(ref, clip, QStringLiteral("note.transpose_in_key"), {{QStringLiteral("moved"), moved}}));
 }
 
 ControlResult repeatNotes(const QJsonObject& args)
@@ -252,6 +263,7 @@ ControlResult generate(const QJsonObject& args)
 	const tick_t step = std::max(1, args.value(QStringLiteral("step")).toInt(12));
 	const bool random = args.value(QStringLiteral("kind")).toString() == QLatin1String("random");
 	std::mt19937 rng(static_cast<unsigned>(args.value(QStringLiteral("seed")).toInt(1)));
+	if (pulses == 0) { return ControlResult::success({{QStringLiteral("clip"), clipId(ref.id)}, {QStringLiteral("added"), 0}}); }  // no step to add
 	const std::vector<bool> hits = euclid(steps, pulses, args.value(QStringLiteral("rotate")).toInt(0));
 	Note note(TimePos(step), TimePos(0), args.value(QStringLiteral("key")).toInt(DefaultKey),
 		static_cast<volume_t>(args.value(QStringLiteral("velocity")).toInt(DefaultVolume)));

@@ -35,6 +35,9 @@ namespace lmms::inputmeter
 namespace
 {
 
+// The audio thread raises these every period: they must never fall back to a lock.
+static_assert(std::atomic<float>::is_always_lock_free, "the input meter's peaks must be lock-free atomics");
+
 std::atomic<float> s_left{0.f};
 std::atomic<float> s_right{0.f};
 

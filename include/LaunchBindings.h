@@ -24,6 +24,7 @@
 #ifndef LMMS_LAUNCH_BINDINGS_H
 #define LMMS_LAUNCH_BINDINGS_H
 
+#include <QHash>
 #include <QJsonArray>
 #include <QJsonObject>
 #include <QObject>
@@ -76,6 +77,7 @@ protected:
 
 private:
 	QJsonObject m_learning;
+	QHash<int, QJsonObject> m_held;  //!< channel * 128 + key -> the binding its press launched
 };
 
 } // namespace lmms

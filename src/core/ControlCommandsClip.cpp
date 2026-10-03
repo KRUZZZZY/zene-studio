@@ -184,8 +184,8 @@ void registerClipMove(ControlRegistry& registry)
 		// ED-043: so does a ripple, which moves the clips after it.
 		const arrangement::Overlap overlap = arrangement::modes().overlap;
 		const bool ripple = arrangement::modes().ripple != arrangement::Ripple::Off;
-		if (overlap == arrangement::Overlap::Free && !ripple) { ref.clip->addJournalCheckPoint(); }
-		else { ref.track->addJournalCheckPoint(); }
+		const bool trackWide = overlap != arrangement::Overlap::Free || ripple;
+		if (trackWide) { ref.track->addJournalCheckPoint(); } else { ref.clip->addJournalCheckPoint(); }
 		ref.clip->movePosition(TimePos(static_cast<tick_t>(
 			args.value(QStringLiteral("position")).toDouble())));
 		arrangement::rippleAfterMove(ref.clip, previous, ripple);
@@ -203,9 +203,9 @@ void registerClipMove(ControlRegistry& registry)
 		QJsonObject before;
 		before.insert(QStringLiteral("clip"), control::clipId(ref.id));
 		before.insert(QStringLiteral("position"), previous);
-		result.insert(QStringLiteral("__transaction"),
-			control::transactionPayload(before, QStringLiteral("clip.move"), inverseArgs,
-				true, ClauseClipJournalled));
+		result.insert(QStringLiteral("__transaction"),  // track-wide: moving back would trim or ripple again
+			control::transactionPayload(before, trackWide ? QStringLiteral("control.undo") : QStringLiteral("clip.move"),
+				trackWide ? QJsonObject() : inverseArgs, true, trackWide ? ClauseTrackJournalled : ClauseClipJournalled));
 		return ControlResult::success(result);
 	};
 	registry.registerCommand(cmd);

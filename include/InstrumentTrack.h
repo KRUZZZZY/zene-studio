@@ -179,9 +179,10 @@ public:
 	//! composite (and audition). True for every note of a track with neither.
 	bool compPlays(const MidiClip* clip, int songTick) const;
 	//! What play() applies to a fresh note play handle beyond the note itself: velocity jitter,
-	//! the slide source, the song-global offset and the clip's transpose (InstrumentTrackNotes.cpp).
+	//! the slide source, the song-global offset (@a songOffset: the song position of the clip's own
+	//! time 0 for the pass playing) and the clip's transpose (InstrumentTrackNotes.cpp).
 	void decorateNoteHandle(NotePlayHandle* handle, const MidiClip* clip, NoteVector::const_iterator note,
-		NoteVector::const_iterator first, bool songGlobal, uint32_t midiSeed) const;
+		NoteVector::const_iterator first, bool songGlobal, const TimePos& songOffset, uint32_t midiSeed) const;
 	//! 0.5.0 L07 (ED-130): the clip's controller lanes at @a tick (clip time), each sent to the
 	//! instrument when its value changed or the playback jumped (InstrumentTrackNotes.cpp).
 	void playClipControllers(const MidiClip* clip, tick_t tick, f_cnt_t offset);
@@ -205,6 +206,9 @@ public:
 	void sendArticulation(int index, f_cnt_t offset);
 	//! 0.5.0 ED-029: @a position (clip time) folded into the clip's loop, when it has one.
 	static TimePos loopedPosition(const MidiClip* clip, const TimePos& position);
+	//! Where a note starting in the pass at @a passBase (clip time) is cut: the clip's end, and on a
+	//! @a looped clip (song playback) the end of that pass's loop (InstrumentTrackNotes.cpp).
+	static tick_t passEnd(const MidiClip* clip, tick_t passBase, bool looped);
 	// create new view for me
 	gui::TrackView* createView( gui::TrackContainerView* tcv ) override;
 

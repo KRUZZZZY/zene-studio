@@ -56,11 +56,35 @@ QString storePath()
 	return !overridden.isEmpty() ? overridden : QDir(ConfigManager::inst()->workingDir()).filePath(QStringLiteral("browser-collections.json"));
 }
 
+//! The stored collections in @a all; false when the file is there but is not a JSON object (damaged or
+//! hand-edited) - a missing or empty file is an empty store.
+bool readStore(QJsonObject* all)
+{
+	*all = {};
+	QFile file(storePath());
+	if (!file.open(QIODevice::ReadOnly)) { return !file.exists(); }
+	const QByteArray bytes = file.readAll();
+	if (bytes.trimmed().isEmpty()) { return true; }
+	QJsonParseError parsed;
+	const QJsonDocument doc = QJsonDocument::fromJson(bytes, &parsed);
+	*all = doc.object();
+	return parsed.error == QJsonParseError::NoError && doc.isObject();
+}
+
 QJsonObject readAll()
 {
-	QFile file(storePath());
-	if (!file.open(QIODevice::ReadOnly)) { return {}; }
-	return QJsonDocument::fromJson(file.readAll()).object();
+	QJsonObject all;
+	readStore(&all);
+	return all;
+}
+
+//! readStore for an edit: a damaged store is refused, never overwritten with what one edit leaves of it.
+bool readForEdit(QJsonObject* all, ControlResult* error)
+{
+	if (readStore(all)) { return true; }
+	*error = ControlResult::failure(ControlErrorKind::Refused, QStringLiteral("the collections file %1 is not a JSON object, so it "
+		"was left as it is; repair or move it, then try again").arg(storePath()));
+	return false;
 }
 
 bool writeAll(const QJsonObject& all)
@@ -96,7 +120,8 @@ ControlResult save(const QJsonObject& args)
 	BrowserQuery parsed;
 	ControlResult error;
 	if (!readBrowserQueryArguments(query, &parsed, &error)) { return error; }
-	QJsonObject all = readAll();
+	QJsonObject all;
+	if (!readForEdit(&all, &error)) { return error; }
 	all.insert(name, query);
 	return store(all, {{QStringLiteral("name"), name}, {QStringLiteral("query"), query}, {QStringLiteral("store_path"), storePath()}});
 }
@@ -104,7 +129,9 @@ ControlResult save(const QJsonObject& args)
 ControlResult remove(const QJsonObject& args)
 {
 	const QString name = args.value(QStringLiteral("name")).toString();
-	QJsonObject all = readAll();
+	QJsonObject all;
+	ControlResult error;
+	if (!readForEdit(&all, &error)) { return error; }
 	if (!all.contains(name)) { return ControlResult::failure(ControlErrorKind::NotFound, QStringLiteral("no collection '%1'").arg(name)); }
 	all.remove(name);
 	return store(all, {{QStringLiteral("removed"), name}, {QStringLiteral("count"), all.size()}});

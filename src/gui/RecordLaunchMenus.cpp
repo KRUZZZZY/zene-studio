@@ -46,28 +46,51 @@ QAction* run(QMenu* menu, const QString& label, const QString& id, const QJsonOb
 	return addCommandAction(menu, label, id, [id, args, ask] { return CommandCall{id, args, {}, QString(), ask}; });
 }
 
-//! comp.cycle on the selected track at the play position, in @a direction.
+//! comp.cycle on the selected track at the play position, in @a direction; with no track
+//! selected, the form asks which track.
 void cycleEntry(QMenu* menu, const QString& label, const QString& direction)
 {
-	addCommandAction(menu, label, QStringLiteral("comp.cycle"), [direction] {
+	addCommandAction(menu, label, QStringLiteral("comp.cycle"), [label, direction] {
 		Track* track = ShellSelection::instance()->track();
-		return CommandCall{QStringLiteral("comp.cycle"), {{QStringLiteral("track"), control::trackIdOf(track)},
-			{QStringLiteral("direction"), direction}}, {}, QString(), false};
+		CommandCall call{QStringLiteral("comp.cycle"), {{QStringLiteral("direction"), direction}}, {}, label, track == nullptr};
+		if (track != nullptr) { call.fixed.insert(QStringLiteral("track"), control::trackIdOf(track)); }
+		return call;
 	});
 }
 
-//! WF-074: arm (or disarm) every audio track, each its own track.set_arm.
+//! WF-074: arm (or disarm) every audio track, each its own track.set_arm. A track already in that
+//! state is not a failure; the others' refusals are shown together, the last one's reason with them.
 void armAllEntry(QMenu* menu, const QString& label, bool armed)
 {
 	QAction* action = menu->addAction(label);
 	action->setProperty("controlCommand", QStringLiteral("track.set_arm"));
-	QObject::connect(action, &QAction::triggered, menu, [armed] {
+	action->setEnabled(ControlRegistry::instance()->hasCommand(QStringLiteral("track.set_arm")));
+	QObject::connect(action, &QAction::triggered, menu, [menu, label, armed] {
+		int refused = 0;
+		QString reason;
 		for (Track* track : Engine::getSong()->tracks())
 		{
 			if (dynamic_cast<SampleTrack*>(track) == nullptr) { continue; }
-			ControlRegistry::instance()->invoke(QStringLiteral("track.set_arm"),
+			const ControlResult result = ControlRegistry::instance()->invoke(QStringLiteral("track.set_arm"),
 				{{QStringLiteral("track"), control::trackIdOf(track)}, {QStringLiteral("armed"), armed}});
+			if (result.ok || result.errorKind == ControlErrorKind::Busy) { continue; }
+			++refused;
+			reason = result.errorMessage;
 		}
+		if (refused == 0) { return; }
+		announce(menu->parentWidget(), CommandCall{QStringLiteral("track.set_arm"), {}, {}, label, false},
+			ControlResult::failure(ControlErrorKind::Refused,
+				QObject::tr("%n audio track(s) refused: %1", nullptr, refused).arg(reason)));
+	});
+}
+
+//! The Launch Scene items stay enabled only for the scenes the launcher's grid has.
+void followSceneCount(QMenu* menu, const QList<QAction*>& scenes)
+{
+	const bool registered = ControlRegistry::instance()->hasCommand(QStringLiteral("session.launch_scene"));
+	QObject::connect(menu, &QMenu::aboutToShow, menu, [scenes, registered] {
+		const int count = Engine::getSong()->sessionModel().sceneCount();
+		for (int scene = 0; scene < scenes.size(); ++scene) { scenes[scene]->setEnabled(registered && scene < count); }
 	});
 }
 
@@ -93,10 +116,12 @@ void fillRecord(QMenu* menu)
 
 void fillLauncher(QMenu* menu)
 {
+	QList<QAction*> scenes;
 	for (int scene = 0; scene < 8; ++scene)
 	{
-		run(menu, QObject::tr("Launch Scene %1").arg(scene + 1), QStringLiteral("session.launch_scene"), {{QStringLiteral("scene"), scene}});
+		scenes << run(menu, QObject::tr("Launch Scene %1").arg(scene + 1), QStringLiteral("session.launch_scene"), {{QStringLiteral("scene"), scene}});
 	}
+	followSceneCount(menu, scenes);
 	run(menu, QObject::tr("Stop All Clips"), QStringLiteral("session.stop_all"));
 	run(menu, QObject::tr("Record What I Played Into a Cell..."), QStringLiteral("session.capture_to_slot"), {}, true);
 	menu->addSeparator();

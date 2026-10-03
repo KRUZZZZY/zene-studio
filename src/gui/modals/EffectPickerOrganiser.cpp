@@ -31,7 +31,7 @@
 #include <QMenu>
 #include <QStandardItemModel>
 
-#include "ControlRegistry.h"
+#include "CommandForm.h"
 #include "PluginOrganiser.h"
 
 namespace lmms::gui::pickerorganiser
@@ -42,11 +42,12 @@ namespace
 
 constexpr auto Star = u"★ ";
 
-void organise(const QString& key, const QJsonObject& change)
+//! plugin.organise for @a key; a refusal is shown over @a parent (runCommand), not swallowed.
+void organise(QWidget* parent, const QString& key, const QJsonObject& change)
 {
 	QJsonObject args = change;
 	args.insert(QStringLiteral("key"), key);
-	ControlRegistry::instance()->invoke(QStringLiteral("plugin.organise"), args);
+	runCommand(parent, CommandCall{QStringLiteral("plugin.organise"), args, {}, QString(), false});
 }
 
 } // namespace
@@ -131,10 +132,10 @@ void fillKeyMenu(QMenu* menu, const QString& key, QWidget* parent, const std::fu
 	const bool favourite = stored.favourite;
 	const bool hidden = stored.hidden;
 	const QString folder = stored.folder;
-	const auto act = [menu, key, changed](const QString& text, const QJsonObject& change) {
+	const auto act = [menu, key, parent, changed](const QString& text, const QJsonObject& change) {
 		QAction* action = menu->addAction(text);
 		action->setProperty("controlCommand", QStringLiteral("plugin.organise"));
-		QObject::connect(action, &QAction::triggered, menu, [key, change, changed] { organise(key, change); changed(); });
+		QObject::connect(action, &QAction::triggered, menu, [key, parent, change, changed] { organise(parent, key, change); changed(); });
 	};
 	act(favourite ? QObject::tr("Remove from Favourites") : QObject::tr("Add to Favourites"), {{QStringLiteral("favourite"), !favourite}});
 	act(hidden ? QObject::tr("Show in the List") : QObject::tr("Hide"), {{QStringLiteral("hidden"), !hidden}});
@@ -144,7 +145,7 @@ void fillKeyMenu(QMenu* menu, const QString& key, QWidget* parent, const std::fu
 		bool ok = false;
 		const QString chosen = QInputDialog::getItem(parent, QObject::tr("Move to Folder"), QObject::tr("Folder:"),
 			pluginorganiser::folders(), 0, true, &ok);
-		if (ok && !chosen.trimmed().isEmpty()) { organise(key, {{QStringLiteral("folder"), chosen.trimmed()}}); changed(); }
+		if (ok && !chosen.trimmed().isEmpty()) { organise(parent, key, {{QStringLiteral("folder"), chosen.trimmed()}}); changed(); }
 	});
 	if (!folder.isEmpty()) { act(QObject::tr("Remove from Folder"), {{QStringLiteral("folder"), QString()}}); }
 }

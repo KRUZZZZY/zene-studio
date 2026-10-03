@@ -86,8 +86,9 @@ ControlResult badColour(const QString& color)
 	return ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("'%1' is not a colour (\"#rrggbb\")").arg(color));
 }
 
-//! Run @a edit on the markers as ONE undo step that restores the list before it.
-ControlResult recorded(const QString& command, const std::function<ControlResult()>& edit)
+//! Run @a edit on the markers as ONE undo step that restores the list before it. Its inverse is that
+//! step (control.undo): no single marker command with arguments puts a whole list back.
+ControlResult recorded(const std::function<ControlResult()>& edit)
 {
 	const QVector<Marker> before = ProjectMarkers::instance().markers();
 	ControlResult result = edit();
@@ -98,7 +99,7 @@ ControlResult recorded(const QString& command, const std::function<ControlResult
 	Engine::getSong()->setModified();
 	result.result.insert(QStringLiteral("markers"), listJson());
 	result.result.insert(QStringLiteral("__transaction"), transactionPayload({{QStringLiteral("count"), before.size()}},
-		command, {}, true, QStringLiteral("action checkpoint: the recorded undo step puts the previous marker list back")));
+		QStringLiteral("control.undo"), {}, true, QStringLiteral("action checkpoint: the recorded undo step puts the previous marker list back")));
 	return result;
 }
 
@@ -108,7 +109,7 @@ ControlResult addMarker(const QJsonObject& args)
 	if (!color.isEmpty() && !QColor::isValidColorName(color)) { return badColour(color); }
 	const tick_t tick = args.contains(QStringLiteral("tick")) ? args.value(QStringLiteral("tick")).toInt()
 		: Engine::getSong()->getPlayPos().getTicks();
-	return recorded(QStringLiteral("marker.remove"), [&] {
+	return recorded([&] {
 		const int id = ProjectMarkers::instance().add(tick, args.value(QStringLiteral("name")).toString(),
 			color.isEmpty() ? color : QColor(color).name());
 		if (id < 0)
@@ -151,7 +152,7 @@ ControlResult setMarker(const QJsonObject& args)
 	}
 	if (!readMarkerAction(args, &changed)) { return ControlResult::failure(ControlErrorKind::InvalidArgs,
 		QStringLiteral("'action' is a registered command id other than a marker command, and 'args' an object")); }
-	return recorded(QStringLiteral("marker.set"), [changed] {
+	return recorded([changed] {
 		ProjectMarkers::instance().replace(changed.id, changed);
 		return ControlResult::success(markerJson(*ProjectMarkers::instance().find(changed.id)));
 	});
@@ -164,7 +165,7 @@ ControlResult removeMarker(const QJsonObject& args)
 	{
 		return ControlResult::failure(ControlErrorKind::NotFound, QStringLiteral("no marker '%1'").arg(args.value(QStringLiteral("marker")).toString()));
 	}
-	return recorded(QStringLiteral("marker.add"), [id] {
+	return recorded([id] {
 		ProjectMarkers::instance().remove(id);
 		return ControlResult::success({{QStringLiteral("removed"), markerId(id)}});
 	});

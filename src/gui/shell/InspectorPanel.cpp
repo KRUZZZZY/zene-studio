@@ -26,6 +26,7 @@
 
 #include <functional>
 
+#include <QApplication>
 #include <QGridLayout>
 #include <QHBoxLayout>
 #include <QLabel>
@@ -34,10 +35,12 @@
 #include <QPainter>
 #include <QPointer>
 #include <QPushButton>
+#include <QScrollArea>
 #include <QToolButton>
 #include <QVBoxLayout>
 
 #include "ClipEdits.h"
+#include "CommandForm.h"
 #include "ControlEdit.h"
 #include "ControlMixerSupport.h"
 #include "ControlRegistry.h"
@@ -65,9 +68,17 @@ namespace lmms::gui
 namespace
 {
 
-ControlResult invoke(const QString& id, const QJsonObject& args)
+//! Runs @a id with @a args at once from @a from; a refusal (an edit lock, a bad name) is shown as a floating message.
+ControlResult invoke(QWidget* from, const QString& id, const QJsonObject& args)
 {
-	return ControlRegistry::instance()->invoke(id, args);
+	return runCommand(from->window(), CommandCall{id, args, {}, {}, false});
+}
+
+//! The user is typing into @a field (its editor has the focus): a refresh would not reach the text being typed.
+bool typingInto(const QWidget* field)
+{
+	const QWidget* focus = QApplication::focusWidget();
+	return focus != nullptr && focus != field && field->isAncestorOf(focus);
 }
 
 QLabel* caption(const QString& text, QWidget* parent)
@@ -99,6 +110,7 @@ QWidget* titleBar(const QString& text, QWidget* parent, const std::function<void
 	more->setAccessibleName(QObject::tr("More %1 actions").arg(text.toLower()));
 	more->setToolTip(more->accessibleName());
 	more->setPopupMode(QToolButton::InstantPopup);
+	more->setMinimumSize(tokens::size::target, tokens::size::target);  // the target size the toggles have
 	auto* menu = new QMenu(more);
 	QObject::connect(menu, &QMenu::aboutToShow, menu, [menu, populate] { menu->clear(); populate(menu); });
 	more->setMenu(menu);
@@ -166,17 +178,24 @@ QToolButton* mixerChannelMenu(Track* track, QWidget* parent)
 	button->setToolButtonStyle(Qt::ToolButtonTextOnly);
 	button->setAccessibleName(QObject::tr("Mixer channel"));
 	button->setToolTip(QObject::tr("The mixer channel this track plays into"));
-	button->setText(channelLabel(track->mixerChannelModel()->value()));
+	IntModel* assigned = track->mixerChannelModel();
+	button->setText(channelLabel(assigned->value()));
+	// An assignment made elsewhere (an undo, a script, the track header) shows here too.
+	QObject::connect(assigned, &Model::dataChanged, button, [button, assigned] { button->setText(channelLabel(assigned->value())); });
 	auto* menu = new QMenu(button);
-	QObject::connect(menu, &QMenu::aboutToShow, menu, [menu, button, id = control::trackIdOf(track)] {
+	QObject::connect(menu, &QMenu::aboutToShow, menu, [menu, button, assigned = QPointer<IntModel>(assigned), id = control::trackIdOf(track)] {
 		menu->clear();
+		if (assigned.isNull()) { return; }  // the track went; the Inspector is about to redraw
+		button->setText(channelLabel(assigned->value()));  // a channel renamed since
 		for (int i = 0; i < static_cast<int>(Engine::mixer()->numChannels()); ++i)
 		{
 			const QString channel = control::channelIdOf(Engine::mixer()->mixerChannel(i));
-			menu->addAction(channelLabel(i), button, [button, id, channel, i] {
-				if (invoke(QStringLiteral("track.set_mixer_channel"), {{QStringLiteral("track"), id},
+			QAction* action = menu->addAction(channelLabel(i), button, [button, id, channel, i] {
+				if (invoke(button, QStringLiteral("track.set_mixer_channel"), {{QStringLiteral("track"), id},
 					{QStringLiteral("channel"), channel}}).ok) { button->setText(channelLabel(i)); }
 			});
+			action->setCheckable(true);
+			action->setChecked(i == assigned->value());  // the current channel is marked
 		}
 	});
 	button->setMenu(menu);
@@ -190,7 +209,19 @@ InspectorPanel::InspectorPanel(QWidget* parent)
 {
 	setObjectName(QStringLiteral("inspectorPanel"));
 	setAccessibleName(tr("Inspector"));
-	m_column = new QVBoxLayout(this);
+	// The content scrolls: a channel's inserts, sends, strip and output can be taller than the region.
+	auto* outer = new QVBoxLayout(this);
+	outer->setContentsMargins(0, 0, 0, 0);
+	auto* scroll = new QScrollArea(this);
+	scroll->setFrameShape(QFrame::NoFrame);
+	scroll->setWidgetResizable(true);
+	scroll->setFocusPolicy(Qt::NoFocus);  // Tab and F6 go to the controls, which the area scrolls into view
+	scroll->viewport()->setAutoFillBackground(false);
+	auto* body = new QWidget(scroll);
+	body->setAutoFillBackground(false);
+	scroll->setWidget(body);
+	outer->addWidget(scroll);
+	m_column = new QVBoxLayout(body);
 	m_column->setContentsMargins(tokens::space::lg, tokens::space::lg, tokens::space::lg, tokens::space::lg);
 	m_column->setSpacing(tokens::space::lg);
 	m_column->addStretch(1);
@@ -289,7 +320,10 @@ QWidget* InspectorPanel::trackSection(Track* track)
 	m_name->setAccessibleName(tr("Track name"));
 	connect(m_name, &QLineEdit::editingFinished, this, [this, id = control::trackIdOf(track)] {
 		if (m_name == nullptr || m_track.isNull() || m_name->text() == m_track->name()) { return; }
-		invoke(QStringLiteral("track.rename"), {{QStringLiteral("track"), id}, {QStringLiteral("name"), m_name->text()}});
+		if (!invoke(m_name, QStringLiteral("track.rename"), {{QStringLiteral("track"), id}, {QStringLiteral("name"), m_name->text()}}).ok)
+		{
+			m_name->setText(m_track->name());  // refused: the field shows the name the track kept
+		}
 	});
 	nameRow->addWidget(m_name, 1);
 	column->addLayout(nameRow);
@@ -309,11 +343,12 @@ QWidget* InspectorPanel::trackControls(Track* track, QWidget* parent)
 	const QString id = control::trackIdOf(track);
 	m_mute = toggle(tr("Mute"), tr("Mute the track"), box);
 	m_solo = toggle(tr("Solo"), tr("Solo the track"), box);
-	connect(m_mute, &QToolButton::clicked, this, [id](bool on) {
-		invoke(QStringLiteral("track.set_mute"), {{QStringLiteral("track"), id}, {QStringLiteral("muted"), on}});
+	// A refused toggle springs back at once rather than at the next sync.
+	connect(m_mute, &QToolButton::clicked, this, [mute = m_mute, id](bool on) {
+		if (!invoke(mute, QStringLiteral("track.set_mute"), {{QStringLiteral("track"), id}, {QStringLiteral("muted"), on}}).ok) { mute->setChecked(!on); }
 	});
-	connect(m_solo, &QToolButton::clicked, this, [id](bool on) {
-		invoke(QStringLiteral("track.set_solo"), {{QStringLiteral("track"), id}, {QStringLiteral("solo"), on}});
+	connect(m_solo, &QToolButton::clicked, this, [solo = m_solo, id](bool on) {
+		if (!invoke(solo, QStringLiteral("track.set_solo"), {{QStringLiteral("track"), id}, {QStringLiteral("solo"), on}}).ok) { solo->setChecked(!on); }
 	});
 	auto* toggles = new QHBoxLayout;
 	toggles->setSpacing(tokens::space::sm);
@@ -348,8 +383,8 @@ QWidget* InspectorPanel::clipSection(Clip* clip)
 		addRow(grid, tr("Notes"), new QLabel(QString::number(midi->notes().size()), section));
 		auto* edit = new QPushButton(tr("Edit notes"), section);
 		edit->setAccessibleName(tr("Open the clip in the note editor"));
-		connect(edit, &QPushButton::clicked, this, [id] {
-			invoke(QStringLiteral("window.note_editor_set"), {{QStringLiteral("clip"), id}, {QStringLiteral("fit"), true}});
+		connect(edit, &QPushButton::clicked, this, [edit, id] {
+			invoke(edit, QStringLiteral("window.note_editor_set"), {{QStringLiteral("clip"), id}, {QStringLiteral("fit"), true}});
 		});
 		grid->addWidget(edit, grid->rowCount(), 0, 1, 2);
 		grid->addWidget(notesSection(midi, id, section), grid->rowCount(), 0, 1, 2);
@@ -359,12 +394,13 @@ QWidget* InspectorPanel::clipSection(Clip* clip)
 		auto* gain = new ReadoutField(tr("Gain"), section);
 		const QPointer<SampleClip> guarded(sample);  // the clip can go while its fields are still shown
 		gain->bindText([guarded] { return guarded ? QStringLiteral("%1 dB").arg(gainLinearToDb(guarded->sample().amplification()), 0, 'f', 1) : QString(); },
-			[id](const QString& typed) {
+			[gain, id](const QString& typed) {
 				bool ok = false;
 				const double db = QString(typed).remove(QStringLiteral("dB")).trimmed().toDouble(&ok);
-				return ok && invoke(QStringLiteral("clip.set_gain"), {{QStringLiteral("clip"), id}, {QStringLiteral("gain_db"), db}}).ok;
+				return ok && invoke(gain, QStringLiteral("clip.set_gain"), {{QStringLiteral("clip"), id}, {QStringLiteral("gain_db"), db}}).ok;
 			});
-		addRow(grid, tr("Gain"), gain);
+		grid->addWidget(gain, grid->rowCount(), 0, 1, 2);  // a readout field carries its own caption
+		m_liveFields.append(gain);  // a gain set elsewhere (an undo, a script) shows here too
 	}
 	grid->setColumnStretch(1, 1);
 	return section;
@@ -402,10 +438,11 @@ QWidget* InspectorPanel::channelSection(MixerChannel* channel, const QString& id
 
 void InspectorPanel::syncToggles()
 {
-	// The live fields (clip and note values) follow edits made elsewhere - the arranger, the note editor.
+	// The live fields (clip and note values) follow edits made elsewhere - the arranger, the note editor -
+	// focused or not, so Enter on a focused field opens on the current value; only one being typed into waits.
 	for (const QPointer<ReadoutField>& field : m_liveFields)
 	{
-		if (!field.isNull() && !field->hasFocus()) { field->refresh(); }
+		if (!field.isNull() && !typingInto(field)) { field->refresh(); }
 	}
 	if (m_track.isNull() || m_mute == nullptr) { return; }
 	m_mute->setChecked(m_track->isMuted());

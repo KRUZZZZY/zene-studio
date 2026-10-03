@@ -35,6 +35,7 @@
 #include "Engine.h"
 #include "Fader.h"
 #include "Mixer.h"
+#include "MixerGroups.h"
 #include "VcaGroup.h"
 
 namespace lmms::gui
@@ -106,11 +107,16 @@ void VcaStripView::fillMenu(QMenu* menu)
 	if (group == nullptr) { return; }
 	const QString id = QStringLiteral("vca-%1").arg(m_groupId);
 	QMenu* links = menu->addMenu(tr("Links"));
-	const struct { QString text; const char* key; bool on; } options[] = {{tr("Level"), "gain", group->linksGain()},
-		{tr("Mute"), "mute", group->linksMute()}, {tr("Solo"), "solo", group->linksSolo()}, {tr("Suspend All"), "suspended", group->isSuspended()}};
+	links->setToolTipsVisible(true);
+	const struct { QString text; const char* key; bool on; QString tip; } options[] = {
+		{tr("Level"), "gain", group->linksGain(), tr("This group's fader scales its members' level")},
+		{tr("Mute"), "mute", group->linksMute(), tr("This group's Mute mutes its members")},
+		{tr("Solo"), "solo", group->linksSolo(), tr("This group's Solo solos its members")},
+		{tr("Suspend All"), "suspended", group->isSuspended(), tr("Turn the level, mute and solo links off for now, keeping their choices")}};
 	for (const auto& option : options)
 	{
 		QAction* action = links->addAction(option.text);
+		action->setToolTip(option.tip);
 		action->setCheckable(true);
 		action->setChecked(option.on);
 		action->setData(QStringLiteral("vca.set_links"));
@@ -120,6 +126,7 @@ void VcaStripView::fillMenu(QMenu* menu)
 		});
 	}
 	QMenu* inside = menu->addMenu(tr("Put Inside"));
+	inside->setToolTipsVisible(true);
 	const auto putIn = [this, id, inside](const QString& text, const QString& parent, bool checked) {
 		QAction* action = inside->addAction(text);
 		action->setCheckable(true);
@@ -128,11 +135,20 @@ void VcaStripView::fillMenu(QMenu* menu)
 		connect(action, &QAction::triggered, this, [id, parent] {
 			ControlRegistry::instance()->invoke(QStringLiteral("vca.set_parent"), {{QStringLiteral("group"), id}, {QStringLiteral("parent"), parent}});
 		});
+		return action;
 	};
 	putIn(tr("No Group"), QString(), group->parentId() == VcaGroup::NoParent);  // group 0 is a group (review L20 #1)
 	for (const VcaGroup* other : mixer->vcaGroups())
 	{
-		if (other->id() != m_groupId) { putIn(other->name(), QStringLiteral("vca-%1").arg(other->id()), group->parentId() == other->id()); }
+		if (other->id() == m_groupId) { continue; }
+		QAction* action = putIn(other->name(), QStringLiteral("vca-%1").arg(other->id()), group->parentId() == other->id());
+		// vca.set_parent refuses a loop (a parent that is already inside this group) or nesting past the limit:
+		// such a parent is offered disabled, with the reason, instead of refused unseen.
+		if (wouldLoop(*mixer, m_groupId, other->id()))
+		{
+			action->setEnabled(false);
+			action->setToolTip(tr("%1 is inside this group, or nesting here goes deeper than %2 levels").arg(other->name()).arg(MaxGroupDepth));
+		}
 	}
 }
 

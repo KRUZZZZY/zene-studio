@@ -54,9 +54,9 @@ QMenu* installNavigateMenu(QMenuBar* bar)
 	const auto run = [menu](const QString& label, const QString& id, const QJsonObject& args) {
 		return addCommandAction(menu, label, id, [id, args] { return CommandCall{id, args, {}, QString(), false}; });
 	};
-	run(QObject::tr("Zoom Back"), QStringLiteral("arrangement.zoom_back"), {});
 	run(QObject::tr("Zoom In"), QStringLiteral("arrangement.zoom"), {{QStringLiteral("step"), 4}});
 	run(QObject::tr("Zoom Out"), QStringLiteral("arrangement.zoom"), {{QStringLiteral("step"), -4}});
+	run(QObject::tr("Zoom Back"), QStringLiteral("arrangement.zoom_back"), {});
 	menu->addSeparator();
 	run(QObject::tr("Fit Song"), QStringLiteral("arrangement.zoom"), {{QStringLiteral("fit"), QStringLiteral("song")}});
 	run(QObject::tr("Fit Loop"), QStringLiteral("arrangement.zoom"), {{QStringLiteral("fit"), QStringLiteral("loop")}});
@@ -118,7 +118,9 @@ QMenu* installNavigateMenu(QMenuBar* bar)
 	onRange(QObject::tr("Paste"), QStringLiteral("range.paste"), {});
 	onRange(QObject::tr("Duplicate"), QStringLiteral("range.duplicate"), {});
 	onRange(QObject::tr("Consolidate"), QStringLiteral("range.consolidate"), {});
-	onRange(QObject::tr("Clear Range"), QStringLiteral("range.clear"), {});
+	onRange(QObject::tr("Bounce to a New Track"), QStringLiteral("range.bounce"), {});  // the manual's "bounce it from Navigate > Range"
+	// range.clear only drops the selection (interface state); "Clear Range" read as erasing its contents.
+	onRange(QObject::tr("Deselect Range"), QStringLiteral("range.clear"), {});
 	run(QObject::tr("Tool Menu at Pointer"), QStringLiteral("window.tool_menu"), {});
 	return menu;
 }

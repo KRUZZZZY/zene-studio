@@ -179,13 +179,13 @@ const std::map<QString, QColor Palette::*>& roles()
 //! Every "<n>px" of @a value times @a factor.
 QString scaleLengths(const QString& value, double factor)
 {
-	static const QRegularExpression length(QStringLiteral("(\\d+)px"));
+	static const QRegularExpression length(QStringLiteral("(\\d+(?:\\.\\d+)?)px"));  // a whole length, "1.5px" too
 	QString scaled;
 	int at = 0;
 	for (auto px = length.globalMatch(value); px.hasNext();)
 	{
 		const QRegularExpressionMatch n = px.next();
-		scaled += value.mid(at, n.capturedStart() - at) + QStringLiteral("%1px").arg(std::lround(n.captured(1).toInt() * factor));
+		scaled += value.mid(at, n.capturedStart() - at) + QStringLiteral("%1px").arg(std::lround(n.captured(1).toDouble() * factor));
 		at = n.capturedEnd();
 	}
 	return scaled + value.mid(at);

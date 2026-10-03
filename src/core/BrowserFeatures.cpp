@@ -66,7 +66,8 @@ double meanCentroid(const std::vector<float>& mono, std::size_t count, int rate)
 	std::vector<float> im(CentroidFrame);
 	std::vector<float> magnitudes;
 	const std::size_t frames = std::min(MaxCentroidFrames, count / CentroidFrame);
-	const std::size_t step = (count - CentroidFrame) / std::max<std::size_t>(1, frames);
+	// The last frame ends at the last sample: the gaps between frame starts are one fewer than the frames.
+	const std::size_t step = frames > 1 ? (count - CentroidFrame) / (frames - 1) : 0;
 	double total = 0.0;
 	std::size_t used = 0;
 	for (std::size_t f = 0; f < frames; ++f)

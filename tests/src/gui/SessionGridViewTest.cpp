@@ -228,7 +228,7 @@ private slots:
 	}
 
 	//! WF-062 / WF-054 (review W1-1 #5, #8): a scene has a colour the grid paints, and a cell
-	//! takes a pattern by name from the Play Pattern menu.
+	//! takes a pattern by name from the Set Pattern menu.
 	void aSceneColourIsPaintedAndACellTakesAPatternByName()
 	{
 		const ControlResult coloured = run(QStringLiteral("session.set_scene"),
@@ -247,7 +247,7 @@ private slots:
 		const QJsonArray patterns = run(QStringLiteral("session.pattern_list")).result.value(QStringLiteral("patterns")).toArray();
 		QMenu cell;
 		view.populateMenu(&cell, view.cellButton(1, 1));
-		QAction* picker = menuAction(&cell, {QStringLiteral("Play Pattern")});
+		QAction* picker = menuAction(&cell, {QStringLiteral("Set Pattern")});
 		QVERIFY(picker != nullptr);
 		QCOMPARE(picker->menu()->actions().size(), patterns.size());
 		if (patterns.isEmpty()) { return; }  // a project with no pattern: the menu is empty and disabled

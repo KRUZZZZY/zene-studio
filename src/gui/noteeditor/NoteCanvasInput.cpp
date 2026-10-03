@@ -166,8 +166,16 @@ void NoteCanvas::pressErase(const Note* note)
 {
 	m_drag = Drag::Erase;
 	m_erasedIds.clear();
-	if (note != nullptr) { m_erasedIds.push_back(note->id()); }
+	markErased(note);
 	update();
+}
+
+void NoteCanvas::markErased(const Note* note)
+{
+	// Kept sorted, so the preview and the release look a note up in log time, not by a scan.
+	if (note == nullptr) { return; }
+	const auto it = std::lower_bound(m_erasedIds.begin(), m_erasedIds.end(), note->id());
+	if (it == m_erasedIds.end() || *it != note->id()) { m_erasedIds.insert(it, note->id()); }
 }
 
 void NoteCanvas::pressOnNote(Note* note, QMouseEvent* event)
@@ -206,14 +214,7 @@ void NoteCanvas::pressOnEmpty(QMouseEvent* event)
 void NoteCanvas::mouseMoveEvent(QMouseEvent* event)
 {
 	m_currentPos = event->pos();
-	if (m_drag == Drag::Erase)
-	{
-		Note* note = noteAt(event->pos());
-		if (note != nullptr && std::find(m_erasedIds.begin(), m_erasedIds.end(), note->id()) == m_erasedIds.end())
-		{
-			m_erasedIds.push_back(note->id());
-		}
-	}
+	if (m_drag == Drag::Erase) { markErased(noteAt(event->pos())); }
 	if (m_drag == Drag::Paint) { extendPaint(event->pos()); }
 	if (m_drag == Drag::None)
 	{
@@ -292,7 +293,7 @@ void NoteCanvas::commitMove()
 	const int dt = dragTicks();
 	const int rows = dragKeys();
 	if (dt == 0 && rows == 0) { return; }
-	const bool copy = QGuiApplication::keyboardModifiers().testFlag(Qt::ControlModifier);
+	const bool copy = copying();
 	QJsonArray edits;
 	for (Note* note : selectedNotes())
 	{
@@ -343,15 +344,21 @@ void NoteCanvas::commitBand(bool additive)
 
 void NoteCanvas::commitErase()
 {
-	for (int id : m_erasedIds)
+	// One pass over the clip collects the ids; a command may re-load the note list, so it is not
+	// walked while they run.
+	QJsonArray ids;
+	if (m_state.clip != nullptr && !m_erasedIds.empty())
 	{
-		if (Note* note = noteById(id))
+		for (const Note* note : m_state.clip->notes())
 		{
-			m_editor->run(QStringLiteral("note.remove"), {{QStringLiteral("clip"), m_editor->clipId()},
-				{QStringLiteral("note"), control::noteIdOf(note)}});
+			if (erased(*note)) { ids.append(control::noteIdOf(note)); }
 		}
 	}
 	m_erasedIds.clear();
+	for (const QJsonValue& id : ids)
+	{
+		m_editor->run(QStringLiteral("note.remove"), {{QStringLiteral("clip"), m_editor->clipId()}, {QStringLiteral("note"), id}});
+	}
 }
 
 void NoteCanvas::sliceAt(Note* note, const QPoint& pos)
@@ -384,9 +391,9 @@ void NoteCanvas::nudgeSelection(int ticks, int keys)
 
 void NoteCanvas::deleteSelection()
 {
-	std::vector<int> ids;
-	for (Note* note : selectedNotes()) { ids.push_back(note->id()); }
-	m_erasedIds = ids;
+	m_erasedIds.clear();
+	for (const Note* note : selectedNotes()) { m_erasedIds.push_back(note->id()); }
+	std::sort(m_erasedIds.begin(), m_erasedIds.end());
 	commitErase();
 }
 
@@ -461,14 +468,6 @@ void NoteCanvas::paintDrawPreview(QPainter& p) const
 	QColor fill = tokens::velocityColor(m_state.lastVelocity);
 	fill.setAlpha(170);
 	p.fillRect(rectFor(scaleKey(m_pressKey), start, start + length), fill);
-}
-
-void NoteCanvas::paintErasePreview(QPainter& p) const
-{
-	for (int id : m_erasedIds)
-	{
-		if (const Note* note = noteById(id)) { p.fillRect(noteRect(*note), tokens::palette().record); }
-	}
 }
 
 int NoteCanvas::resizeDelta() const

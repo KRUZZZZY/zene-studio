@@ -56,7 +56,7 @@ class NoteLaneView;
 class NoteRuler;
 class ShellButton;
 
-//! The editor's tools (docs/NOTE-EDITOR.md §3). Keys 1..5 pick them.
+//! The editor's tools (docs/NOTE-EDITOR.md §3). Keys 1..7 pick them.
 enum class NoteTool
 {
 	Draw,
@@ -139,7 +139,7 @@ public:
 	void zoomToFit();
 
 	//! Run a registered command as the editor's edit; the reply's result, or an empty object
-	//! (and the error on stderr) when it was refused.
+	//! (with the refusal shown as a floating message and on stderr) when it was refused.
 	QJsonObject run(const QString& command, const QJsonObject& args);
 
 	//! Re-read the clip's notes (used keys, scale) and repaint every part.
@@ -188,6 +188,8 @@ private:
 	void buildBody();
 	void syncScrollBars();
 	void readScale();
+	//! readScale() when the scale context changed since it last ran (a change made elsewhere).
+	void followScale();
 	void onClipDestroyed();
 	void fitIfPending();
 
@@ -206,6 +208,8 @@ private:
 	QActionGroup* m_tools = nullptr;
 	QActionGroup* m_folds = nullptr;
 	int m_auditionKey = -1;
+	int m_scaleRoot = -1;     //!< the scale context readScale() last read
+	QString m_scaleSeen;
 	bool m_syncing = false;
 	bool m_pendingFit = false;
 	class QTimer* m_playheadTimer = nullptr;

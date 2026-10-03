@@ -115,6 +115,12 @@ ControlResult chainCopy(const QJsonObject& args)
 	ControlResult error;
 	if (!resolveChainTarget(args, &from, &error) || !destination(args, &to, &error)) { return error; }
 	if (from.chain == to.chain) { return ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("the chain cannot be copied onto itself")); }
+	// As plugin.copy: every copy's settings must fit an undo step, checked before 'replace' takes anything out.
+	if (!devicesRecordable(from.chain->effects()))
+	{
+		return ControlResult::failure(ControlErrorKind::Refused, QStringLiteral("a device on %1 has settings too large to record for "
+			"an undo, so the chain is not copied").arg(from.id));
+	}
 	QStringList states;
 	for (Effect* effect : from.chain->effects()) { states.append(controlEffectStateXml(effect)); }
 	const bool replace = args.value(QStringLiteral("replace")).toBool();

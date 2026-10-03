@@ -32,6 +32,7 @@
 #include <QHBoxLayout>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QKeyEvent>
 #include <QLabel>
 #include <QLineEdit>
 #include <QMenu>
@@ -74,6 +75,19 @@ QString commandEntry(const ControlCommand& command)
 
 QPointer<HelpCenter> s_center;
 
+//! Where a tour step's frame (@a bubble) goes in an @a area: beside its target (@a hole) on the right,
+//! on the left when the right has no room, below when neither side has, so it does not cover what it
+//! points at; centred when the step has no target. The caller keeps it inside the area.
+QPoint bubbleAt(const QRect& hole, const QSize& bubble, const QSize& area)
+{
+	constexpr int Gap = 12;
+	constexpr int Margin = 8;
+	if (hole.isNull()) { return QRect(QPoint(), area).center() - QPoint(160, 60); }
+	if (hole.right() + Gap + bubble.width() <= area.width() - Margin) { return {hole.right() + Gap, hole.top()}; }
+	if (hole.left() - Gap - bubble.width() >= Margin) { return {hole.left() - Gap - bubble.width(), hole.top()}; }
+	return {hole.left(), hole.bottom() + Gap};
+}
+
 } // namespace
 
 HelpCenter::HelpCenter(QWidget* parent) :
@@ -88,7 +102,14 @@ HelpCenter::HelpCenter(QWidget* parent) :
 	auto* layout = new QVBoxLayout(this);
 	layout->addWidget(m_tabs);
 	m_manual->setOpenExternalLinks(true);
-	m_manual->setSource(QUrl::fromLocalFile(dataPath(QStringLiteral("manual/index.html"))));
+	const QString manual = dataPath(QStringLiteral("manual/index.html"));
+	if (QFileInfo::exists(manual)) { m_manual->setSource(QUrl::fromLocalFile(manual)); }
+	else
+	{
+		// A broken install says so instead of showing an empty page.
+		m_manual->setHtml(tr("<p>The manual was not found (%1). Reinstalling Zene Studio puts it back; the Command "
+			"Reference tab still lists every command.</p>").arg(manual.toHtmlEscaped()));
+	}
 	m_manual->setAccessibleName(tr("Manual"));
 	m_tabs->addTab(m_manual, tr("Manual"));
 	auto* reference = new QWidget(this);
@@ -153,10 +174,13 @@ QJsonArray GuidedTour::tours()
 GuidedTour* GuidedTour::start(const QString& name, QWidget* window, QString* error)
 {
 	QFile in(QDir(dataPath(QStringLiteral("tours"))).filePath(name + QStringLiteral(".json")));
-	const QJsonArray steps = in.open(QIODevice::ReadOnly) ? QJsonDocument::fromJson(in.readAll()).object().value(QStringLiteral("steps")).toArray() : QJsonArray();
+	const bool found = in.open(QIODevice::ReadOnly);
+	const QJsonArray steps = found ? QJsonDocument::fromJson(in.readAll()).object().value(QStringLiteral("steps")).toArray() : QJsonArray();
 	if (steps.isEmpty() || window == nullptr)
 	{
-		*error = window == nullptr ? tr("there is no window to show a tour in") : tr("there is no tour '%1'").arg(name);
+		*error = window == nullptr ? tr("there is no window to show a tour in")
+			: found ? tr("the tour '%1' has no steps: its file is empty or not valid JSON").arg(name)
+			: tr("there is no tour '%1'").arg(name);
 		return nullptr;
 	}
 	for (auto* old : window->findChildren<GuidedTour*>()) { old->deleteLater(); }
@@ -182,16 +206,17 @@ GuidedTour::GuidedTour(const QJsonArray& steps, QWidget* window) :
 	column->addWidget(m_title);
 	column->addWidget(m_text);
 	auto* buttons = new QHBoxLayout;
-	auto* back = new QPushButton(tr("Back"), m_bubble);
-	auto* next = new QPushButton(tr("Next"), m_bubble);
+	m_back = new QPushButton(tr("Back"), m_bubble);
+	m_next = new QPushButton(tr("Next"), m_bubble);
 	auto* close = new QPushButton(tr("Close"), m_bubble);
-	buttons->addWidget(back);
+	close->setToolTip(tr("End the tour (Escape)"));
+	buttons->addWidget(m_back);
 	buttons->addStretch(1);
 	buttons->addWidget(close);
-	buttons->addWidget(next);
+	buttons->addWidget(m_next);
 	column->addLayout(buttons);
-	connect(back, &QPushButton::clicked, this, [this] { showStep(std::max(0, m_step - 1)); });
-	connect(next, &QPushButton::clicked, this, [this] {
+	connect(m_back, &QPushButton::clicked, this, [this] { showStep(std::max(0, m_step - 1)); });
+	connect(m_next, &QPushButton::clicked, this, [this] {
 		if (m_step + 1 >= stepCount()) { deleteLater(); return; }
 		showStep(m_step + 1);
 	});
@@ -220,13 +245,24 @@ void GuidedTour::showStep(int index)
 	m_title->setText(QStringLiteral("<b>%1</b>  <small>(%2/%3)</small>").arg(step.value(QStringLiteral("title")).toString().toHtmlEscaped())
 		.arg(m_step + 1).arg(stepCount()));
 	m_text->setText(step.value(QStringLiteral("text")).toString());
+	// The step for a screen reader, and the keyboard on the tour rather than on the dimmed window.
+	m_bubble->setAccessibleName(tr("Tour step %1 of %2: %3").arg(m_step + 1).arg(stepCount()).arg(step.value(QStringLiteral("title")).toString()));
+	m_bubble->setAccessibleDescription(m_text->text());
+	m_back->setEnabled(m_step > 0);
 	m_bubble->adjustSize();
-	const QPoint beside = m_hole.isNull() ? rect().center() - QPoint(160, 60) : QPoint(m_hole.right() + 12, m_hole.top());
+	const QPoint beside = bubbleAt(m_hole, m_bubble->size(), size());
 	m_bubble->move(std::clamp(beside.x(), 8, std::max(8, width() - m_bubble->width() - 8)),
 		std::clamp(beside.y(), 8, std::max(8, height() - m_bubble->height() - 8)));
 	show();
 	raise();
+	m_next->setFocus();
 	update();
+}
+
+void GuidedTour::keyPressEvent(QKeyEvent* event)
+{
+	if (event->key() == Qt::Key_Escape) { deleteLater(); return; }
+	QWidget::keyPressEvent(event);
 }
 
 void GuidedTour::paintEvent(QPaintEvent*)
@@ -265,7 +301,9 @@ void installHelpEntries(QMenuBar* bar)
 	addCommandAction(help, HelpCenter::tr("Command Reference"), QStringLiteral("app.help"),
 		[] { return CommandCall{QStringLiteral("app.help"), {{QStringLiteral("reference"), true}}, {}, QString(), false}; });
 	QMenu* tours = help->addMenu(HelpCenter::tr("Tours"));
-	for (const QJsonValue& tour : GuidedTour::tours())
+	const QJsonArray installed = GuidedTour::tours();
+	if (installed.isEmpty()) { tours->addAction(HelpCenter::tr("No tours installed"))->setEnabled(false); }
+	for (const QJsonValue& tour : installed)
 	{
 		const QString name = tour.toObject().value(QStringLiteral("name")).toString();
 		addCommandAction(tours, tour.toObject().value(QStringLiteral("title")).toString(name), QStringLiteral("app.tour"),

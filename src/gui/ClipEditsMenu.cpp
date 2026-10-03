@@ -69,14 +69,15 @@ double gainDb(const Clip* clip)
 	return gain > 0.0f ? 20.0 * std::log10(static_cast<double>(gain)) : -96.0;
 }
 
-//! Runs @a command on @a clip; a refusal is shown (or logged when nobody is there).
-void run(const Clip* clip, const QString& command, QJsonObject args)
+//! Runs @a command on @a clip; a refusal is shown (or logged when nobody is there). True when it ran.
+bool run(const Clip* clip, const QString& command, QJsonObject args)
 {
 	args.insert(QStringLiteral("clip"), control::clipIdOf(clip));
 	const ControlResult result = ControlRegistry::instance()->invoke(command, args);
-	if (result.ok) { return; }
+	if (result.ok) { return true; }
 	if (isUnattendedRun()) { qWarning("%s refused: %s", qPrintable(command), qPrintable(result.errorMessage)); }
 	else { QMessageBox::warning(QApplication::activeWindow(), QMenu::tr("Gain and fades"), result.errorMessage); }
+	return false;
 }
 
 void addFadeMenu(QMenu* parent, Clip* clip, const QString& title, const QString& key, int current)
@@ -218,7 +219,8 @@ void addStepEditsMenu(QMenu* menu, MidiClip* clip, int step)
 		QAction* action = ratchet->addAction(QStringLiteral("x%1").arg(count));
 		action->setData(QStringLiteral("note.ratchet"));
 		QObject::connect(action, &QAction::triggered, ratchet, [clip, id, count] {
-			run(clip, QStringLiteral("note.select"), {{QStringLiteral("notes"), QJsonArray{id}}});
+			// Only this step's note: a refused select would leave the old selection for the ratchet to split.
+			if (!run(clip, QStringLiteral("note.select"), {{QStringLiteral("notes"), QJsonArray{id}}})) { return; }
 			run(clip, QStringLiteral("note.ratchet"), {{QStringLiteral("scope"), QStringLiteral("selection")}, {QStringLiteral("count"), count}});
 		});
 	}

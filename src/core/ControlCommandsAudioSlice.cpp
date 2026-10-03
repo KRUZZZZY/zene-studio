@@ -173,6 +173,9 @@ QDomElement slicerState(QDomDocument& doc, SampleClip& clip, const std::vector<f
 std::vector<f_cnt_t> sliceFrames(SampleClip& clip, const QString& at)
 {
 	if (at != QStringLiteral("beats")) { return clipTransientFrames(clip); }
+	// A clip with no audio has nothing to slice, as on the transients path (an empty result is NotFound).
+	const SampleWindow window = clip.sampleWindow();
+	if (clip.sample().sampleSize() == 0 || window.sourceOut <= window.sourceIn) { return {}; }
 	std::vector<f_cnt_t> out{clip.sourceFrameAt(clip.startPosition())};
 	const tick_t start = clip.startPosition().getTicks();
 	for (const tick_t tick : gridInside(start, clip.endPosition().getTicks(), ticksPerBeat()))
@@ -197,8 +200,10 @@ InstrumentTrack* buildSliceTrack(SampleClip& clip, const std::vector<f_cnt_t>& f
 	slicer->restoreState(slicerState(doc, clip, frames));
 	track->setName(QStringLiteral("%1 slices").arg(clip.name().isEmpty() ? QStringLiteral("Audio") : clip.name()));
 	auto* notes = dynamic_cast<MidiClip*>(track->createClip(clip.startPosition()));
-	const tick_t origin = clip.startPosition().getTicks() + clip.startTimeOffset().getTicks();
-	const tick_t end = clip.endPosition().getTicks() - clip.startPosition().getTicks();
+	// The MIDI clip starts where the audio clip does, so notes sit at song ticks less its start (timelinePosAt is
+	// already a song position - it carries the clip's time offset - so the offset is not taken off again).
+	const tick_t origin = clip.startPosition().getTicks();
+	const tick_t end = clip.endPosition().getTicks() - origin;
 	for (std::size_t i = 0; i < frames.size(); ++i)
 	{
 		const tick_t at = clip.timelinePosAt(frames[i]).getTicks() - origin;

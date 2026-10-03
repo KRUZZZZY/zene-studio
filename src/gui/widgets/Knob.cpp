@@ -441,6 +441,7 @@ void Knob::drawKnob( QPainter * _p )
 
 void Knob::drawFlatKnob(QPainter* painter)
 {
+	if (model() == nullptr) { return; }  // its model is gone (a device removed) before the view: nothing to draw
 	const tokens::Palette& pal = tokens::palette();
 	const bool enabled = isEnabled();
 	const qreal side = std::min<qreal>(m_knobPixmap->width(), m_knobPixmap->height());

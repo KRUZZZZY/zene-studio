@@ -85,8 +85,9 @@ public:
 	//! Fill field @a key; false when there is no such field or @a value does not fit it.
 	bool setField(const QString& key, const QJsonValue& value);
 	//! The arguments the form would send: fixed ones and every filled field. False (with
-	//! @a error) when a field holds text that is not its type or a required one is empty.
-	bool collect(QJsonObject* args, QString* error) const;
+	//! @a error, and the field's editor in @a invalid when given) when a field holds text that is
+	//! not its type or a required one is empty.
+	bool collect(QJsonObject* args, QString* error, QWidget** invalid = nullptr) const;
 	//! The last run's result (a failure until the command has run).
 	const ControlResult& result() const { return m_result; }
 	//! The text shown under the fields after a refusal.

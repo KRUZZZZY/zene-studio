@@ -350,8 +350,13 @@ void HostedPlugin::unload()
 	impl.layout = {};
 	impl.info = {};
 	impl.paramSlots.reset();
+	// Every request the old plug-in left pending goes with it: none is the next plug-in's.
 	impl.needsReprepare.store(false, std::memory_order_relaxed);
 	impl.callbackRequested.store(false, std::memory_order_relaxed);
+	impl.rescanFlags.store(0, std::memory_order_relaxed);
+	impl.flushRequested.store(false, std::memory_order_relaxed);
+	impl.stateDirty.store(false, std::memory_order_relaxed);
+	impl.portsChanged.store(false, std::memory_order_relaxed);
 }
 
 auto HostedPlugin::process(const float* const* inputs, float* const* outputs, int inputChannels,

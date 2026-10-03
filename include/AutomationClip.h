@@ -270,8 +270,8 @@ public slots:
 
 public:
 	//! 0.5.0 L06 (AutomationClipTransforms.cpp). ED-184: replace the points in [@a start, @a end]
-	//! with @a shape (@a cycles periods, @a low..@a high, a point every @a step ticks; @a seed makes
-	//! Random repeatable).
+	//! with @a shape (@a cycles periods, @a low..@a high, a point every @a step ticks and one at @a end;
+	//! @a seed makes Random repeatable).
 	void drawShape(int start, int end, Shape shape, int cycles, float low, float high, int step, unsigned seed = 1);
 	//! ED-186: the points in [@a start, @a end] rescaled about @a start in time (then shifted by
 	//! @a timeOffset) and about the range's middle in value (then shifted); how many moved.

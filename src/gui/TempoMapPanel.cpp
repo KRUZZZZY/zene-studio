@@ -64,6 +64,28 @@ QPushButton* commandButton(const QString& label, const char* command, QWidget* p
 
 QString cell(int value) { return value > 0 ? QString::number(value) : QStringLiteral("-"); }
 
+//! The row of the last event that carries a tempo, or -1: a ramp on it has no next tempo to reach and is
+//! ignored (TempoMap.h, TempoMapEvent::ramp).
+int lastTempoRow(const QJsonArray& events)
+{
+	for (auto row = static_cast<int>(events.size()) - 1; row >= 0; --row)
+	{
+		if (events.at(row).toObject().value(QStringLiteral("has_tempo")).toBool()) { return row; }
+	}
+	return -1;
+}
+
+//! One event's cells: bar, tick, tempo (with its ramp, when it has a later tempo to ramp to) and time signature.
+QStringList eventCells(const QJsonObject& event, int ticksPerBar, bool ramps)
+{
+	const int tick = event.value(QStringLiteral("tick")).toInt();
+	const int numerator = event.value(QStringLiteral("numerator")).toInt();
+	return {QString::number(tick / std::max(1, ticksPerBar) + 1), QString::number(tick),
+		cell(event.value(QStringLiteral("bpm")).toInt()) + (ramps ? QStringLiteral("  \u2197 ramp") : QString()),
+		numerator > 0 ? QStringLiteral("%1/%2").arg(numerator).arg(event.value(QStringLiteral("denominator")).toInt())
+			: QStringLiteral("-")};
+}
+
 } // namespace
 
 TempoMapPanel::TempoMapPanel(QWidget* parent) :
@@ -82,10 +104,19 @@ TempoMapPanel::TempoMapPanel(QWidget* parent) :
 	m_table->setAccessibleName(tr("Tempo map events"));
 
 	auto* add = commandButton(tr("Add at playhead"), "transport.tempo_map_add", this);
+	add->setToolTip(tr("Add an event at the play position with the project's tempo and time signature"));
 	auto* remove = commandButton(tr("Remove"), "transport.tempo_map_remove", this);
 	// ED-050: any event, typed (tick, tempo, metre, ramp), and a ramp to the next event toggled on a row.
 	auto* addForm = commandButton(tr("Add..."), "transport.tempo_map_add", this);
+	addForm->setToolTip(tr("Type an event's tick, tempo, time signature and ramp; an event already at that tick is changed"));
 	auto* ramp = commandButton(tr("Ramp to Next"), "transport.tempo_map_add", this);
+	ramp->setToolTip(tr("Switch the selected tempo event between holding and moving gradually to the next tempo event"));
+	// Remove and Ramp act on the selected row, so they are off while there is none (review ux05 #99).
+	const auto followRow = [this, remove, ramp] {
+		remove->setEnabled(m_table->currentRow() >= 0);
+		ramp->setEnabled(m_table->currentRow() >= 0);
+	};
+	connect(m_table, &QTableWidget::currentCellChanged, this, followRow);
 	connect(addForm, &QPushButton::clicked, this, [this] {
 		Song* song = Engine::getSong();
 		CommandForm* form = nullptr;
@@ -144,6 +175,7 @@ TempoMapPanel::TempoMapPanel(QWidget* parent) :
 	layout->addLayout(buttons);
 	resize(480, 360);
 	refresh();
+	followRow();
 }
 
 void TempoMapPanel::refresh()
@@ -153,23 +185,19 @@ void TempoMapPanel::refresh()
 		const QSignalBlocker block(m_active);
 		m_active->setChecked(map.value(QStringLiteral("active")).toBool());
 	}
-	m_summary->setText(tr("%1 of %2 events; project tempo %3 BPM")
+	m_summary->setText(tr("%1 events (the map holds at most %2); project tempo %3 BPM")
 		.arg(map.value(QStringLiteral("event_count")).toInt())
 		.arg(map.value(QStringLiteral("max_events")).toInt())
 		.arg(map.value(QStringLiteral("global_tempo")).toInt()));
 	const QJsonArray events = map.value(QStringLiteral("events")).toArray();
 	const int ticksPerBar = Engine::getSong()->ticksPerBar();
+	const int lastTempo = lastTempoRow(events);
 	m_table->setRowCount(static_cast<int>(events.size()));
 	for (int row = 0; row < events.size(); ++row)
 	{
 		const QJsonObject event = events.at(row).toObject();
-		const int tick = event.value(QStringLiteral("tick")).toInt();
-		const int numerator = event.value(QStringLiteral("numerator")).toInt();
-		const QStringList cells{QString::number(tick / std::max(1, ticksPerBar) + 1), QString::number(tick),
-			cell(event.value(QStringLiteral("bpm")).toInt())
-				+ (event.value(QStringLiteral("ramp")).toBool() ? QStringLiteral("  \u2197 ramp") : QString()),
-			numerator > 0 ? QStringLiteral("%1/%2").arg(numerator).arg(event.value(QStringLiteral("denominator")).toInt())
-				: QStringLiteral("-")};
+		const bool ramps = event.value(QStringLiteral("ramp")).toBool() && row < lastTempo;
+		const QStringList cells = eventCells(event, ticksPerBar, ramps);
 		for (int column = 0; column < cells.size(); ++column)
 		{
 			m_table->setItem(row, column, new QTableWidgetItem(cells.at(column)));
@@ -200,8 +228,15 @@ bool TempoMapPanel::toggleRamp(int row)
 	if (row < 0 || row >= events.size()) { return false; }
 	const QJsonObject event = events.at(row).toObject();
 	if (!event.value(QStringLiteral("has_tempo")).toBool()) { return false; }
+	const bool ramps = !event.value(QStringLiteral("ramp")).toBool();
+	// The last tempo event has no next tempo to ramp to: the map ignores its ramp (review ux05 #97).
+	if (ramps && row >= lastTempoRow(events))
+	{
+		m_summary->setText(tr("Ramp to Next needs a later tempo event to ramp to."));
+		return false;
+	}
 	const ControlResult set = run("transport.tempo_map_add", {{QStringLiteral("tick"), event.value(QStringLiteral("tick"))},
-		{QStringLiteral("bpm"), event.value(QStringLiteral("bpm"))}, {QStringLiteral("ramp"), !event.value(QStringLiteral("ramp")).toBool()}});
+		{QStringLiteral("bpm"), event.value(QStringLiteral("bpm"))}, {QStringLiteral("ramp"), ramps}});
 	if (!set.ok) { m_summary->setText(set.errorMessage); return false; }
 	refresh();
 	return true;

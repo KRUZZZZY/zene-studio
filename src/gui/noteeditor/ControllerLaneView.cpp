@@ -52,7 +52,8 @@ ControllerLaneView::ControllerLaneView(NoteEditor* editor)
 	, m_state(editor->state())
 {
 	setObjectName(QStringLiteral("noteControllerLane"));
-	a11y::announce(this, tr("Controller lane"), tr("The clip's curve for the chosen controller; drag to draw it, Alt-drag to erase."));
+	a11y::announce(this, tr("Controller lane"), tr("The clip's curve for the chosen controller; drag to draw it, right-drag or Alt-drag to erase."));
+	setToolTip(tr("Drag to draw the controller's curve; right-drag or Alt-drag to erase it"));
 }
 
 QSize ControllerLaneView::sizeHint() const { return {200, kLaneHeight}; }
@@ -72,7 +73,9 @@ int ControllerLaneView::maximum() const
 
 int ControllerLaneView::valueAtY(int y) const
 {
-	const double t = 1.0 - std::clamp(y, 2, height() - 3) / static_cast<double>(height());
+	// yOfValue's inverse: the top row is the maximum, the bottom row 0, so both ends can be drawn.
+	const int bottom = std::max(1, height() - 1);
+	const double t = 1.0 - std::clamp(y, 0, bottom) / static_cast<double>(bottom);
 	return std::clamp(static_cast<int>(std::lround(t * maximum())), 0, maximum());
 }
 

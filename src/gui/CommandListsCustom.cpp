@@ -36,8 +36,10 @@ ListSpec themeColors()
 	out.summaryKeys = {QStringLiteral("palette"), QStringLiteral("applies")};
 	const QHash<QString, QString> role{{QStringLiteral("name"), QStringLiteral("name")}};
 	out.actions = {act("Change...", "theme.set_token", role, {}, true),
-		act("Use the Palette's", "theme.set_token", role, {{QStringLiteral("color"), QString()}})};
-	out.extras = {extra("Reset All", "theme.reset", {}, false), extra("Export...", "theme.export"), extra("Import...", "theme.import"),
+		act("Use the Palette's Colour", "theme.set_token", role, {{QStringLiteral("color"), QString()}})};
+	ListExtra resetAll = extra("Reset All", "theme.reset", {}, false);
+	resetAll.confirm = true;  // as the shortcuts' Reset All asks
+	out.extras = {resetAll, extra("Export...", "theme.export"), extra("Import...", "theme.import"),
 		readExtra("Contrast Check", "theme.get")};
 	return out;
 }
@@ -88,10 +90,11 @@ ListSpec settingsCatalogue()
 	ListSpec out = spec("Settings", "settings.search", "settings", {QStringLiteral("page"), QStringLiteral("title"),
 		QStringLiteral("value"), QStringLiteral("key")}, {{QStringLiteral("text"), QString()}});
 	out.summaryKeys = {QStringLiteral("count")};
+	// The list command is settings.search: the find field narrows the list itself (it was a Search... button floating raw JSON).
+	out.filterArg = QStringLiteral("text");
+	out.filterLabel = tr("Find a setting by a word");
 	out.actions = {act("Change...", "settings.set", {{QStringLiteral("key"), QStringLiteral("key")}}, {}, true)};
-	ListExtra find = extra("Search...", "settings.search");
-	find.call.showResult = true;
-	out.extras = {find, extra("Back Up to a File...", "settings.export"), extra("Restore from a File...", "settings.import"),
+	out.extras = {extra("Back Up to a File...", "settings.export"), extra("Restore from a File...", "settings.import"),
 		extra("Save as Preset...", "settings.preset_save")};
 	return out;
 }

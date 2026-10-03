@@ -88,8 +88,11 @@ QJsonObject auditAccessibility(QWidget* root, bool fill)
 	int named = 0;
 	int filled = 0;
 	int implicit = 0;
+	int nameless = 0;
 	QJsonArray unnamed;
-	for (QWidget* widget : root->findChildren<QWidget*>())
+	QList<QWidget*> widgets = root->findChildren<QWidget*>();
+	widgets.prepend(root);  // the control it is given is one of those it checks
+	for (QWidget* widget : widgets)
 	{
 		if (!widget->isVisible() || !interactive(widget)) { continue; }
 		++checked;
@@ -101,10 +104,10 @@ QJsonObject auditAccessibility(QWidget* root, bool fill)
 			++(fill ? filled : implicit);
 			continue;
 		}
-		if (unnamed.size() < MaxListed) { unnamed.append(entryOf(widget)); }
+		if (++nameless <= MaxListed) { unnamed.append(entryOf(widget)); }
 	}
 	return {{QStringLiteral("checked"), checked}, {QStringLiteral("named"), named}, {QStringLiteral("filled"), filled},
-		{QStringLiteral("implied"), implicit}, {QStringLiteral("unnamed"), unnamed}};
+		{QStringLiteral("implied"), implicit}, {QStringLiteral("unnamed"), unnamed}, {QStringLiteral("unnamed_count"), nameless}};
 }
 
 } // namespace lmms::gui

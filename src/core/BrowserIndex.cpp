@@ -106,13 +106,14 @@ BrowserIndexEntry entryOf(const QFileInfo& info, const QString& path, Walk* walk
 {
 	BrowserIndexEntry entry{path, info.fileName(), browserKindForPath(info.fileName()), info.size(),
 		info.lastModified().toMSecsSinceEpoch(), {}};
-	if (!walk->features || entry.kind != BrowserKind::Audio) { return entry; }
+	if (entry.kind != BrowserKind::Audio) { return entry; }
+	// An unchanged file keeps its features in any scan; only measuring a new one waits for a features scan.
 	const auto old = walk->previous.constFind(entry.path);
 	if (old != walk->previous.constEnd() && old->features.valid && old->sizeBytes == entry.sizeBytes && old->modifiedMs == entry.modifiedMs)
 	{
 		entry.features = old->features;
 	}
-	else if (walk->status.analysed < walk->maxAnalysed)
+	else if (walk->features && walk->status.analysed < walk->maxAnalysed)
 	{
 		entry.features = BrowserFeatures::analyse(entry.path);
 		++walk->status.analysed;
@@ -149,16 +150,23 @@ QString BrowserIndex::storePath() const
 	return !overridden.isEmpty() ? overridden : QDir(ConfigManager::inst()->workingDir()).filePath(QStringLiteral("browser-index.json"));
 }
 
+bool BrowserIndex::claim(const QStringList& dirs)
+{
+	QMutexLocker lock(&m_mutex);
+	loadLocked();
+	if (m_status.running) { return false; }
+	m_cancel.store(false);  // before the scan is published: a cancel() from here on is kept
+	m_status.running = true;
+	m_status.dirs = dirs;
+	m_status.scanned = 0;  // this scan's progress, not the last one's
+	m_status.analysed = 0;
+	m_status.error.clear();
+	return true;
+}
+
 bool BrowserIndex::start(const QStringList& dirs, bool features)
 {
-	{
-		QMutexLocker lock(&m_mutex);
-		loadLocked();
-		if (m_status.running) { return false; }
-		m_cancel.store(false);  // before the scan is published: a cancel() from here on is kept
-		m_status.running = true;
-		m_status.dirs = dirs;
-	}
+	if (!claim(dirs)) { return false; }
 	candidateScales();  // the key vocabulary is built here, once, not first on the worker
 	static const bool stopsOnQuit = QCoreApplication::instance() != nullptr
 		&& QObject::connect(QCoreApplication::instance(), &QCoreApplication::aboutToQuit, [] { BrowserIndex::instance().cancel(); });
@@ -169,15 +177,8 @@ bool BrowserIndex::start(const QStringList& dirs, bool features)
 
 bool BrowserIndex::scanNow(const QStringList& dirs, bool features, int maxAnalysed)
 {
-	{
-		QMutexLocker lock(&m_mutex);
-		loadLocked();
-		if (m_status.running) { return false; }
-		m_cancel.store(false);  // before the scan is published: a cancel() from here on is kept
-		m_status.running = true;
-		m_status.dirs = dirs;
-	}
-	scan(dirs, features, maxAnalysed);
+	if (!claim(dirs)) { return false; }
+	scan(dirs, features, std::clamp(maxAnalysed, 0, MaxAnalysed));
 	return true;
 }
 
@@ -256,9 +257,16 @@ void BrowserIndex::loadLocked() const
 	QFile file(storePath());
 	if (!file.open(QIODevice::ReadOnly)) { return; }
 	const QJsonObject all = QJsonDocument::fromJson(file.readAll()).object();
-	for (const QJsonValue& value : all.value(QStringLiteral("entries")).toArray()) { m_entries.push_back(entryFrom(value.toObject())); }
-	m_status.builtMs = static_cast<qint64>(all.value(QStringLiteral("built_ms")).toDouble());
 	m_status.truncated = all.value(QStringLiteral("truncated")).toBool();
+	for (const QJsonValue& value : all.value(QStringLiteral("entries")).toArray())
+	{
+		// A damaged or hand-edited store is held to the scan's own bounds: no pathless rows, at most MaxEntries.
+		BrowserIndexEntry entry = entryFrom(value.toObject());
+		if (entry.path.isEmpty()) { continue; }
+		if (static_cast<int>(m_entries.size()) >= MaxEntries) { m_status.truncated = true; break; }
+		m_entries.push_back(std::move(entry));
+	}
+	m_status.builtMs = static_cast<qint64>(all.value(QStringLiteral("built_ms")).toDouble());
 	for (const QJsonValue& dir : all.value(QStringLiteral("dirs")).toArray()) { m_status.dirs << dir.toString(); }
 	m_status.entries = static_cast<int>(m_entries.size());
 }

@@ -185,7 +185,8 @@ bool readScaleName(const QJsonObject& args, QString* out, ControlResult* error)
 	const QString name = args.value(QStringLiteral("scale")).toString().trimmed();
 	*out = name;
 	if (name.isEmpty()) { return true; }
-	if (customScales().contains(name)) { return true; }  // 0.5.0 L07 (ED-115): one of the user's own
+	// 0.5.0 L07 (ED-115): one of the user's own - only when it has degrees, as scaleDegreesOf reads it.
+	if (!customScales().value(name).toArray().isEmpty()) { return true; }
 	const Chord& chord = ChordTable::getInstance().getScaleByName(name);
 	if (chord.isEmpty())
 	{

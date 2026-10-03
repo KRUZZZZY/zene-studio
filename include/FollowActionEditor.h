@@ -51,8 +51,15 @@ public:
 	QJsonArray chain() const;
 	void addRow(const QJsonObject& action);
 
+protected:
+	bool eventFilter(QObject* watched, QEvent* event) override;
+
 private:
 	void apply();
+	//! Name every row's controls by column and row number (again after a row goes).
+	void nameRows();
+	//! The row whose control @a widget is (or is inside), or -1.
+	int rowOf(const QWidget* widget) const;
 	QString m_command;
 	QJsonObject m_where;
 	QTableWidget* m_rows;

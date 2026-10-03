@@ -24,6 +24,7 @@
 
 #include "DevicePanel.h"
 
+#include <QHash>
 #include <QJsonArray>
 #include <QLabel>
 #include <QVBoxLayout>
@@ -34,6 +35,34 @@
 
 namespace lmms::gui
 {
+
+namespace
+{
+
+//! What a modulator is, from its source's shape: an LFO for the four waveforms, else the source's
+//! own kind (modulationShapeNames' vocabulary), and "off" while it is inactive.
+QString sourceCaption(const QJsonObject& source)
+{
+	const QString shape = source.value(QStringLiteral("shape")).toString();
+	static const QStringList waveforms{QStringLiteral("sine"), QStringLiteral("triangle"), QStringLiteral("square"),
+		QStringLiteral("saw")};
+	const QHash<QString, QString> kinds{{QStringLiteral("random"), ModulatorCard::tr("Random")},
+		{QStringLiteral("smooth_random"), ModulatorCard::tr("Smooth random")}, {QStringLiteral("steps"), ModulatorCard::tr("Step sequence")},
+		{QStringLiteral("envelope"), ModulatorCard::tr("Envelope")}, {QStringLiteral("formula"), ModulatorCard::tr("Formula")}};
+	const QString caption = waveforms.contains(shape) ? ModulatorCard::tr("LFO - %1").arg(shape) : kinds.value(shape, shape);
+	return source.value(QStringLiteral("active")).toBool(true) ? caption : ModulatorCard::tr("%1 (off)").arg(caption);
+}
+
+//! A target line's tooltip: the whole destination (channel, effect, parameter) and whether it resolves.
+QString targetTip(const QJsonObject& target)
+{
+	const QString where = ModulatorCard::tr("%1, effect %2, %3").arg(target.value(QStringLiteral("channel")).toString())
+		.arg(target.value(QStringLiteral("effect")).toInt()).arg(target.value(QStringLiteral("parameter")).toString());
+	const QString why = target.value(QStringLiteral("why")).toString();
+	return why.isEmpty() ? where : ModulatorCard::tr("%1 - not driven: %2").arg(where, why);
+}
+
+} // namespace
 
 ModulatorCard::ModulatorCard(const QJsonObject& modulator, QWidget* parent)
 	: QFrame(parent)
@@ -48,7 +77,8 @@ ModulatorCard::ModulatorCard(const QJsonObject& modulator, QWidget* parent)
 	column->setSpacing(tokens::space::sm);
 	auto* title = new QLabel(name.isEmpty() ? m_id : name, this);
 	title->setObjectName(QStringLiteral("deviceCardTitle"));
-	auto* shape = new QLabel(tr("LFO - %1").arg(source.value(QStringLiteral("shape")).toString()), this);
+	auto* shape = new QLabel(sourceCaption(source), this);
+	setAccessibleDescription(shape->text());
 	shape->setObjectName(QStringLiteral("deviceCaption"));
 	auto* rate = new ReadoutField(tr("Rate"), this);
 	rate->bindText([source] { return QStringLiteral("%1 Hz").arg(source.value(QStringLiteral("rate")).toDouble(), 0, 'g', 3); },
@@ -67,6 +97,7 @@ ModulatorCard::ModulatorCard(const QJsonObject& modulator, QWidget* parent)
 		auto* line = new QLabel(tr("\u2192 %1  %2%").arg(target.value(QStringLiteral("parameter")).toString())
 			.arg(qRound(target.value(QStringLiteral("depth")).toDouble() * 100)), this);
 		line->setObjectName(QStringLiteral("deviceCaption"));
+		line->setToolTip(targetTip(target));
 		column->addWidget(line);
 	}
 	column->addStretch(1);

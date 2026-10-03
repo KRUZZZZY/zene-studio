@@ -40,6 +40,7 @@
 
 #include "ArrangerOverlays.h"
 #include "ClipView.h"
+#include "CommandForm.h"
 #include "ControlReversibility.h"
 #include "ControlEdit.h"
 #include "ControlRegistry.h"
@@ -275,7 +276,7 @@ QJsonArray toolEntries()
 		out.append(QJsonObject{{QStringLiteral("editor"), QStringLiteral("arranger")}, {QStringLiteral("tool"), tool},
 			{QStringLiteral("command"), QStringLiteral("arrangement.set_tool")}});
 	}
-	for (const char* tool : {"draw", "select", "slice", "erase", "audition"})
+	for (const char* tool : {"draw", "select", "slice", "erase", "audition", "paint", "mute"})
 	{
 		out.append(QJsonObject{{QStringLiteral("editor"), QStringLiteral("note_editor")}, {QStringLiteral("tool"), QLatin1String(tool)},
 			{QStringLiteral("command"), QStringLiteral("window.note_editor_set")}});
@@ -302,8 +303,10 @@ ControlResult toolMenu(const QJsonObject&)
 			QAction* action = menu->addAction(entry.value(QStringLiteral("tool")).toString());
 			action->setProperty("controlCommand", entry.value(QStringLiteral("command")).toString());
 			QObject::connect(action, &QAction::triggered, menu, [entry] {
-				ControlRegistry::instance()->invoke(entry.value(QStringLiteral("command")).toString(),
-					{{QStringLiteral("tool"), entry.value(QStringLiteral("tool"))}});
+				// A refusal (no note editor to set) is shown, never dropped with the closing menu.
+				const QJsonValue tool = entry.value(QStringLiteral("tool"));
+				const gui::CommandCall call{entry.value(QStringLiteral("command")).toString(), {}, {}, tool.toString()};
+				gui::announce(controlMainWindow(), call, ControlRegistry::instance()->invoke(call.id, {{QStringLiteral("tool"), tool}}));
 			});
 		}
 		menu->popup(QCursor::pos());
@@ -322,6 +325,11 @@ ControlResult nudge(const QJsonObject& args)
 	const int amount = args.value(QStringLiteral("amount")).toInt(snap);
 	const int sign = args.value(QStringLiteral("direction")).toString() == QStringLiteral("left") ? -1 : 1;
 	const int position = std::max(0, clip->startPosition().getTicks() + sign * amount);
+	// A clip already at the song's start cannot go further left: say so rather than answer a move that did nothing.
+	if (position == clip->startPosition().getTicks())
+	{
+		return ControlResult::failure(ControlErrorKind::Refused, QStringLiteral("the clip is already at the start"));
+	}
 	return ControlRegistry::instance()->invoke(QStringLiteral("clip.move"),
 		{{QStringLiteral("clip"), control::clipIdOf(clip)}, {QStringLiteral("position"), position}});
 }
@@ -332,14 +340,19 @@ ControlResult selectClip(const QJsonObject& args)
 	Clip* current = gui::ShellSelection::instance()->clip();
 	if (current == nullptr) { return ControlResult::failure(ControlErrorKind::NotFound, QStringLiteral("no clip is selected")); }
 	const bool next = args.value(QStringLiteral("direction")).toString() != QStringLiteral("previous");
-	const tick_t at = current->startPosition().getTicks();
+	// Clips are ordered by start, then by their place on the track, so clips that start together are each reached.
+	const Track::clipVector& clips = current->getTrack()->getClips();
+	const auto keyAt = [&clips](std::size_t i) { return std::make_pair(clips[i]->startPosition().getTicks(), i); };
+	const auto at = std::make_pair(current->startPosition().getTicks(),
+		static_cast<std::size_t>(std::find(clips.begin(), clips.end(), current) - clips.begin()));
 	Clip* best = nullptr;
-	for (Clip* clip : current->getTrack()->getClips())
+	std::pair<tick_t, std::size_t> bestKey;
+	for (std::size_t i = 0; i < clips.size(); ++i)
 	{
-		const tick_t start = clip->startPosition().getTicks();
-		const bool after = next ? start > at : start < at;
-		const bool closer = best == nullptr || (next ? start < best->startPosition().getTicks() : start > best->startPosition().getTicks());
-		if (clip != current && after && closer) { best = clip; }
+		const auto key = keyAt(i);
+		const bool after = next ? key > at : key < at;
+		const bool closer = best == nullptr || (next ? key < bestKey : key > bestKey);
+		if (after && closer) { best = clips[i]; bestKey = key; }
 	}
 	if (best == nullptr) { return ControlResult::failure(ControlErrorKind::NotFound, QStringLiteral("no clip that way")); }
 	return ControlRegistry::instance()->invoke(QStringLiteral("window.select"), {{QStringLiteral("clip"), control::clipIdOf(best)}});
@@ -387,7 +400,7 @@ void registerArrangerViewCommands(ControlRegistry& registry)
 		objectSchema({{QStringLiteral("tool"), enumProperty(toolNames())}}, {QStringLiteral("tool")}),
 		objectSchema({{QStringLiteral("tool"), stringProperty()}}), false, setTool);
 	add(registry, "arrangement", "nudge", QStringLiteral("Move the selected clip left or right by 'amount' ticks "
-		"(default: the arranger's snap) - clip.move, which records itself."),
+		"(default: the arranger's snap) - clip.move, which records itself. Refused when the clip is already at the start."),
 		objectSchema({{QStringLiteral("direction"), enumProperty({QStringLiteral("left"), QStringLiteral("right")})},
 			{QStringLiteral("amount"), integerProperty(1, 1 << 20)}}, {QStringLiteral("direction")}), objectProperty(), false, nudge);
 	add(registry, "arrangement", "select_clip", QStringLiteral("Select the next or previous clip on the selected clip's "

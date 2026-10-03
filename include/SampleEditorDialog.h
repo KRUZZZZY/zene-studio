@@ -25,6 +25,7 @@
 #define LMMS_GUI_SAMPLE_EDITOR_DIALOG_H
 
 #include <algorithm>
+#include <vector>
 
 #include <QDialog>
 #include <QPointer>
@@ -39,6 +40,8 @@ namespace lmms
 class SampleClip;
 }
 
+class QPushButton;
+
 namespace lmms::gui
 {
 
@@ -52,6 +55,10 @@ public:
 	int from() const { return std::min(m_anchor, m_end); }
 	int to() const { return std::max(m_anchor, m_end); }
 	QSize sizeHint() const override { return {640, 180}; }
+
+signals:
+	//! The selection (or the clip it is over) changed.
+	void selectionChanged();
 
 protected:
 	void paintEvent(QPaintEvent* event) override;
@@ -80,6 +87,7 @@ private:
 	void apply(const QString& op, double gainDb = 0.0);
 	QPointer<SampleClip> m_clip;
 	SampleSelectionView* m_view;
+	std::vector<QPushButton*> m_actions;  //!< the edit buttons: enabled while there is a selection to edit
 };
 
 } // namespace lmms::gui

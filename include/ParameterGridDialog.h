@@ -36,7 +36,7 @@ class ParameterControls;
 namespace gui
 {
 
-//! 0.5.0 L10 (W3): the dialog of a ParameterControls device - its choices across the top, then a
+//! 0.5.0 L10 (W3): the dialog of a ParameterControls device - its named choices across the top, then a
 //! knob per number, four to a row, then its switches; each control bound to the device's own model.
 class LMMS_EXPORT ParameterGridDialog : public EffectControlDialog
 {

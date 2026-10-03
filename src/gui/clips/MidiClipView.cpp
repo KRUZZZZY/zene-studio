@@ -112,7 +112,8 @@ void MidiClipView::setGhostInPianoRoll()
 	// The ghost lives in the classic piano roll (the note editor has none), so that is what is shown.
 	auto pRoll = getGUI()->pianoRoll();
 	pRoll->setGhostMidiClip(m_clip);
-	getGUI()->mainWindow()->toggleClassicPianoRollWin();  // shows it: the song editor, not it, is active
+	if (!pRoll->isVisible()) { getGUI()->mainWindow()->toggleClassicPianoRollWin(); }
+	else { pRoll->raise(); pRoll->activateWindow(); }  // already open: bring it forward, never hide it
 }
 
 void MidiClipView::setGhostInAutomationEditor()

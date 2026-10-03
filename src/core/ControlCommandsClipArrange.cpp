@@ -82,7 +82,7 @@ ControlResult repeatClip(const QJsonObject& args)
 	Engine::getSong()->setModified();
 	QJsonObject result{{QStringLiteral("clip"), clipId(ref.id)}, {QStringLiteral("copies"), copies}};
 	result.insert(QStringLiteral("__transaction"), transactionPayload({{QStringLiteral("clip"), clipId(ref.id)}},
-		QStringLiteral("clip.delete"), {{QStringLiteral("clips"), copies}}, true,
+		QStringLiteral("control.undo"), {}, true,  // clip.delete takes one clip, and would not undo a ripple
 		QStringLiteral("Track journal checkpoint: undo removes every copy")));
 	return ControlResult::success(result);
 }
@@ -124,7 +124,8 @@ ControlResult timeScale(const QJsonObject& args)
 	QJsonObject result{{QStringLiteral("clip"), clipId(ref.id)}, {QStringLiteral("factor"), factor},
 		{QStringLiteral("length"), ref.clip->length().getTicks()}};
 	result.insert(QStringLiteral("__transaction"), transactionPayload({{QStringLiteral("length"), before}},
-		QStringLiteral("clip.time_scale"), {{QStringLiteral("clip"), clipId(ref.id)}, {QStringLiteral("factor"), 1.0 / factor}}, true,
+		// Not time_scale by 1/factor: that leaves the warp mode it set and rounds the notes twice.
+		QStringLiteral("control.undo"), {}, true,
 		QStringLiteral("Clip journal checkpoint: undo restores the clip's notes (or warp) and length")));
 	return ControlResult::success(result);
 }

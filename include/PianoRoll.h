@@ -405,8 +405,9 @@ private:
 	bool m_doAutoQuantization{false};
 	QList<Note> m_recordingNotes;
 	//! 0.5.0 L03 (WF-082): the clip's notes when the pass began - in replace mode a recorded note
-	//! removes those it overlaps (compared by pointer, never dereferenced from here).
-	std::vector<const Note*> m_notesBeforePass;
+	//! removes those it overlaps. Kept as note ids, which are never reused: a pointer could be
+	//! handed by the allocator to a note recorded later in the same pass, which then read as old.
+	std::vector<int> m_notesBeforePass;
 	void notePassStart();
 	void replaceOverlapped(const Note& recorded);
 

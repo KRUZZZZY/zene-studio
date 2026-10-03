@@ -34,11 +34,25 @@
 #include <QVBoxLayout>
 
 #include "Accessibility.h"
+#include "ControlMixerSupport.h"
 #include "ControlRegistry.h"
 #include "DesignTokens.h"
+#include "Mixer.h"
 
 namespace lmms::gui
 {
+
+namespace
+{
+
+//! The macros of @a channel's rack, as rack.get_state lists them (each with its name and value).
+QJsonArray rackMacros(const QString& channel)
+{
+	return ControlRegistry::instance()->invoke(QStringLiteral("rack.get_state"), {{QStringLiteral("channel"), channel}})
+		.result.value(QStringLiteral("macros")).toArray();
+}
+
+} // namespace
 
 XyPadArea::XyPadArea(QWidget* parent) :
 	QWidget(parent)
@@ -92,7 +106,10 @@ XyPadDialog::XyPadDialog(const QString& channel, QWidget* parent) :
 	m_y(new QComboBox(this)),
 	m_area(new XyPadArea(this))
 {
-	setWindowTitle(QObject::tr("XY Pad"));
+	ControlResult ignored;
+	const MixerChannel* target = control::resolveMixerChannel(channel, &ignored);
+	// Which channel's rack the pad plays: several pads can be open at once.
+	setWindowTitle(target != nullptr ? QObject::tr("XY Pad - %1").arg(target->m_name) : QObject::tr("XY Pad"));
 	setAttribute(Qt::WA_DeleteOnClose);
 	a11y::announce(m_x, QObject::tr("X macro"), QObject::tr("The rack macro the pad's left-right position drives."));
 	a11y::announce(m_y, QObject::tr("Y macro"), QObject::tr("The rack macro the pad's up-down position drives."));
@@ -105,12 +122,13 @@ XyPadDialog::XyPadDialog(const QString& channel, QWidget* parent) :
 	layout->addWidget(m_area, 1);
 	fillMacros();
 	m_area->moved = [this](QPointF point) { send(point); };
+	// A new choice of macro shows where that macro stands, not where the last one was.
+	for (QComboBox* axis : {m_x, m_y}) { connect(axis, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this] { syncPoint(); }); }
 }
 
 void XyPadDialog::fillMacros()
 {
-	const QJsonArray macros = ControlRegistry::instance()->invoke(QStringLiteral("rack.get_state"), {{QStringLiteral("channel"), m_channel}})
-		.result.value(QStringLiteral("macros")).toArray();
+	const QJsonArray macros = rackMacros(m_channel);
 	for (int i = 0; i < macros.size(); ++i)
 	{
 		const QString name = macros.at(i).toObject().value(QStringLiteral("name")).toString();
@@ -118,14 +136,25 @@ void XyPadDialog::fillMacros()
 		m_y->addItem(name, QStringLiteral("macro-%1").arg(i));
 	}
 	if (macros.size() > 1) { m_y->setCurrentIndex(1); }
-	const bool usable = !macros.isEmpty();
-	m_area->setEnabled(usable);
-	m_area->setToolTip(usable ? QString() : QObject::tr("This channel's rack has no macros yet (Rack > macros)."));
-	if (usable)
+	m_area->setEnabled(!macros.isEmpty());
+	syncPoint();
+}
+
+void XyPadDialog::syncPoint()
+{
+	if (m_x->count() == 0)
 	{
-		m_area->setPoint(QPointF(macros.at(0).toObject().value(QStringLiteral("value")).toDouble(0.5),
-			macros.at(std::min<qsizetype>(1, macros.size() - 1)).toObject().value(QStringLiteral("value")).toDouble(0.5)));
+		m_area->setToolTip(QObject::tr("This channel's rack has no macros yet: add one with Rack > Add macro... in the channel's menu."));
+		return;
 	}
+	const QJsonArray macros = rackMacros(m_channel);
+	const auto valueOf = [&macros](const QComboBox* axis) {
+		return macros.at(std::max(0, axis->currentIndex())).toObject().value(QStringLiteral("value")).toDouble(0.5);
+	};
+	m_area->setPoint(QPointF(valueOf(m_x), valueOf(m_y)));
+	// One macro on both axes is driven by X alone (send), and the pad says so rather than ignore Y silently.
+	m_area->setToolTip(m_x->currentIndex() == m_y->currentIndex()
+		? QObject::tr("Both axes name the same macro: only left-right moves it.") : QString());
 }
 
 void XyPadDialog::send(QPointF point)

@@ -32,6 +32,7 @@
 #include "MainWindow.h"
 #include "MidiClip.h"
 #include "NoteEditor.h"
+#include "SampleClip.h"
 
 namespace lmms
 {
@@ -62,6 +63,19 @@ bool applyClip(gui::NoteEditor* editor, const QJsonObject& args, ControlResult* 
 	if (clip == nullptr) { return false; }
 	editor->setClip(clip);
 	return true;
+}
+
+//! 'audio_behind' is empty, auto or an audio clip's id; false (with @a error) for anything else, which
+//! would draw nothing behind the notes and still be answered back as the choice.
+bool audioBehindValid(const QJsonObject& args, ControlResult* error)
+{
+	const QString choice = args.value(QStringLiteral("audio_behind")).toString();
+	if (choice.isEmpty() || choice == QLatin1String("auto")) { return true; }
+	ClipRef ref;
+	if (!resolveClip(choice, &ref, error)) { return false; }
+	if (dynamic_cast<SampleClip*>(ref.clip) != nullptr) { return true; }
+	*error = ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("'audio_behind' %1 is not an audio clip").arg(choice));
+	return false;
 }
 
 //! The index of @a args' @a key in @a names, or -1 when absent or unknown (the schema refuses
@@ -119,7 +133,7 @@ ControlResult noteEditorSet(const QJsonObject& args)
 		return ControlResult::failure(ControlErrorKind::InvalidArgs,
 			QStringLiteral("'controller_lane' is cc:<0..127>, pitchbend, aftertouch, program or empty, got '%1'").arg(controllerLane));
 	}
-	if (!applyClip(editor, args, &error)) { return error; }
+	if (!audioBehindValid(args, &error) || !applyClip(editor, args, &error)) { return error; }
 	if (args.value(QStringLiteral("reveal")).toBool(true)) { g->mainWindow()->revealPanel(QStringLiteral("detail")); }
 	applyChoices(editor, args);
 	applyView(editor, args);

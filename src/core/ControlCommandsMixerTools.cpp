@@ -148,6 +148,8 @@ ControlResult createReturn(const QJsonObject& args)
 	ControlResult error;
 	MixerChannel* from = resolveMixerChannel(args.value(QStringLiteral("channel")).toString(), &error);
 	if (from == nullptr) { return error; }
+	// The master cannot send (the mixer's rule): a return fed from it would play back into it.
+	if (from->index() == 0) { return ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("the master cannot feed a return")); }
 	const int fromId = from->id();
 	const QString name = args.value(QStringLiteral("name")).toString(QStringLiteral("Return"));
 	const double wanted = args.value(QStringLiteral("amount")).toDouble(1.0);
@@ -193,7 +195,7 @@ bool channelsOf(const QJsonArray& ids, std::vector<MixerChannel*>* out, ControlR
 	{
 		MixerChannel* channel = resolveMixerChannel(id.toString(), error);
 		if (channel == nullptr) { return false; }
-		out->push_back(channel);
+		if (std::find(out->begin(), out->end(), channel) == out->end()) { out->push_back(channel); }  // named twice moves once
 	}
 	if (out->empty()) { *error = ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("name the 'channels'")); }
 	return !out->empty();
@@ -400,8 +402,9 @@ ControlResult colorMembers(const QJsonObject& args)
 {
 	VcaGroup* group = mixer()->vcaGroup(args.value(QStringLiteral("group")).toInt(-1));
 	if (group == nullptr) { return ControlResult::failure(ControlErrorKind::NotFound, QStringLiteral("no such group")); }
-	const QColor color(args.value(QStringLiteral("color")).toString());
+	QColor color(args.value(QStringLiteral("color")).toString());
 	if (!color.isValid()) { return ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("'color' is #rrggbb")); }
+	color.setAlpha(255);  // what the project saves (#rrggbb) and the reply says
 	std::vector<std::pair<int, std::optional<QColor>>> before;
 	for (const mix_ch_t member : group->members())
 	{

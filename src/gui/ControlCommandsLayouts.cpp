@@ -79,8 +79,10 @@ ControlResult saveLayout(const QJsonObject& args)
 		return ControlResult::failure(ControlErrorKind::Refused, QStringLiteral("at most %1 layouts are kept; remove one first").arg(MaxLayouts));
 	}
 	layouts.insert(name, s->snapshot());
+	// A replaced layout comes back through the recorded step (control.undo): layout_save would save the
+	// layout on screen then, not the one replaced.
 	const gui::uistore::Inverse inverse = replaced
-		? gui::uistore::Inverse{QStringLiteral("window.layout_save"), {{QStringLiteral("name"), name}}}
+		? gui::uistore::Inverse{QStringLiteral("control.undo"), {}}
 		: gui::uistore::Inverse{QStringLiteral("window.layout_remove"), {{QStringLiteral("name"), name}}};
 	return storeLayouts(layouts, {{QStringLiteral("name"), name}, {QStringLiteral("replaced"), replaced},
 		{QStringLiteral("count"), layouts.size()}}, inverse);
@@ -112,7 +114,15 @@ ControlResult removeLayout(const QJsonObject& args)
 	if (!layouts.contains(name)) { return ControlResult::failure(ControlErrorKind::NotFound, QStringLiteral("no saved layout '%1'").arg(name)); }
 	layouts.remove(name);
 	return storeLayouts(layouts, {{QStringLiteral("name"), name}, {QStringLiteral("count"), layouts.size()}},
-		{QStringLiteral("window.layout_save"), {{QStringLiteral("name"), name}}});
+		{QStringLiteral("control.undo"), {}});  // as a replace: layout_save could not bring the removed snapshot back
+}
+
+//! The refusal of a panel id that is none, naming the ids there are (window.get_state's).
+ControlResult unknownPanel(const QString& panel)
+{
+	QStringList ids;
+	for (const gui::ShellPanelSpec& spec : gui::ShellLayout::panels()) { ids << spec.id; }
+	return ControlResult::failure(ControlErrorKind::NotFound, QStringLiteral("no panel '%1' (%2)").arg(panel, ids.join(QStringLiteral(", "))));
 }
 
 ControlResult movePanel(const QJsonObject& args, bool detach)
@@ -121,7 +131,7 @@ ControlResult movePanel(const QJsonObject& args, bool detach)
 	const QString id = detach ? QStringLiteral("window.detach") : QStringLiteral("window.attach");
 	if (s == nullptr) { return noInterface(id); }
 	const QString panel = args.value(QStringLiteral("panel")).toString();
-	if (!gui::ShellLayout::isPanel(panel)) { return ControlResult::failure(ControlErrorKind::NotFound, QStringLiteral("no panel '%1'").arg(panel)); }
+	if (!gui::ShellLayout::isPanel(panel)) { return unknownPanel(panel); }
 	QString reason;
 	const bool done = detach ? s->detachPanel(panel, &reason) : s->attachPanel(panel);
 	if (detach && !done) { return ControlResult::failure(ControlErrorKind::Refused, reason); }
@@ -145,9 +155,16 @@ ControlResult setHeader(const QJsonObject& args)
 	for (const QJsonValue& value : args.value(QStringLiteral("extra")).toArray())
 	{
 		const QString command = value.toObject().value(QStringLiteral("command")).toString();
-		if (!ControlRegistry::instance()->hasCommand(command))
+		const ControlCommand* found = ControlRegistry::instance()->command(command);
+		if (found == nullptr)
 		{
 			return ControlResult::failure(ControlErrorKind::NotFound, QStringLiteral("no command '%1' for a header button").arg(command));
+		}
+		// A click runs the command with no arguments (dispatchShellCommand), so one that needs some would only ever fail.
+		if (!found->argsSchema.value(QStringLiteral("required")).toArray().isEmpty())
+		{
+			return ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("'%1' needs arguments, and a header button "
+				"runs its command with none").arg(command));
 		}
 	}
 	const QJsonObject previous = gui::uistore::read(HeaderKey);
@@ -203,7 +220,7 @@ void registerLayoutCommands(ControlRegistry& registry)
 	add(registry, "header_get", QStringLiteral("The header's buttons - name, text, command, shown or not - and the "
 		"user's choices (hidden names, extra command buttons)."), objectSchema({}), objectProperty(), false, headerState);
 	add(registry, "header_set", QStringLiteral("Customise the header: 'hidden' lists button names to hide (the rest "
-		"show), 'extra' adds buttons that run registry commands ([{command, label}]). A field not given is kept. "
+		"show), 'extra' adds buttons that run registry commands ([{command, label}], commands that need no arguments). A field not given is kept. "
 		"Kept in the config file; one undo step."), objectSchema({{QStringLiteral("hidden"), arrayProperty()},
 		{QStringLiteral("extra"), arrayProperty()}}), objectProperty(), true, setHeader);
 }

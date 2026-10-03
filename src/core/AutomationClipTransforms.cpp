@@ -204,14 +204,15 @@ void AutomationClip::drawShape(int start, int end, Shape shape, int cycles, floa
 	std::uniform_real_distribution<float> uniform(0.f, 1.f);
 	const double span = static_cast<double>(end - start);
 	for (auto it = m_timeMap.lowerBound(start); it != m_timeMap.end() && it.key() <= end;) { it = m_timeMap.erase(it); }
-	for (long long at = start; at <= end; at += step)  // wide: a step past INT_MAX must end the loop
+	for (long long at = start;; at += step)  // wide: a step past INT_MAX must end the loop
 	{
-		const int tick = static_cast<int>(at);
+		const int tick = static_cast<int>(std::min<long long>(at, end));  // a span the step does not divide still ends on a point
 		const double x = (tick - start) / span;
 		const double phase = std::fmod(x * std::max(1, cycles), 1.0);
 		const float level = shape == Shape::Adsr ? adsrAt(x) : shapeAt(shape, phase, uniform(rng));
 		const float value = low + (high - low) * level;
 		m_timeMap[tick] = AutomationNode(this, value, tick);
+		if (tick == end) { break; }
 	}
 	generateTangents();
 	emit dataChanged();

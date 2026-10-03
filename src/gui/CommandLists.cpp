@@ -81,7 +81,9 @@ ListSpec warpMarkers(const QString& clip)
 	out.summaryKeys = {QStringLiteral("tempo_mode"), QStringLiteral("stretch"), QStringLiteral("source_tempo"),
 		QStringLiteral("marker_count")};
 	const QHash<QString, QString> marker{{QStringLiteral("source_frame"), QStringLiteral("source_frame")}};
-	out.actions = {act("Move...", "warp.move", marker, where, true), act("Remove", "warp.remove", marker, where)};
+	RowAction remove = act("Remove", "warp.remove", marker, where);
+	remove.confirm = true;
+	out.actions = {act("Move...", "warp.move", marker, where, true), remove};
 	out.extras = {extra("Add Marker...", "warp.add", where)};
 	return out;
 }
@@ -93,7 +95,9 @@ ListSpec rackZones(const QString& channel)
 		QStringLiteral("high_key"), QStringLiteral("low_velocity"), QStringLiteral("high_velocity"),
 		QStringLiteral("chain"), QStringLiteral("sample")}, where);
 	out.summaryKeys = {QStringLiteral("chain_count"), QStringLiteral("zone_count")};
-	out.actions = {act("Remove", "rack.zone_remove", {{QStringLiteral("zone"), QStringLiteral("zone")}}, where)};
+	RowAction remove = act("Remove", "rack.zone_remove", {{QStringLiteral("zone"), QStringLiteral("zone")}}, where);
+	remove.confirm = true;
+	out.actions = {remove};
 	out.extras = {extra("Add Zone...", "rack.zone_add", where)};
 	return out;
 }
@@ -109,7 +113,7 @@ ListSpec pluginsInProject()
 	RowAction remove = act("Remove", "plugin.unload", device);
 	remove.confirm = true;
 	out.actions = {act("Bypass", "plugin.bypass", device, {{QStringLiteral("bypass"), true}}),
-		act("Enable", "plugin.bypass", device, {{QStringLiteral("bypass"), false}}),
+		act("Switch On", "plugin.bypass", device, {{QStringLiteral("bypass"), false}}),
 		act("Open Editor", "plugin.editor_open", device), act("Restart Host", "oop.restart", device), remove};
 	return out;
 }
@@ -147,7 +151,9 @@ ListSpec takeLanes(const QString& track)
 	ListSpec out = spec("Take Lanes", "comp.lane_list", "tracks", {QStringLiteral("lane"), QStringLiteral("name"),
 		QStringLiteral("take_count")}, where);
 	out.nestedKeys = {QStringLiteral("lanes")};
-	out.actions = {act("Remove", "comp.lane_remove", {{QStringLiteral("lane"), QStringLiteral("lane")}}, where)};
+	RowAction remove = act("Remove", "comp.lane_remove", {{QStringLiteral("lane"), QStringLiteral("lane")}}, where);
+	remove.confirm = true;
+	out.actions = {remove};
 	out.extras = {extra("Add Lane...", "comp.lane_add", where), extra("Comp a Range...", "comp.select", where)};
 	return out;
 }
@@ -158,7 +164,9 @@ ListSpec grooves()
 		QStringLiteral("step_ticks"), QStringLiteral("slot_count")});
 	out.summaryKeys = {QStringLiteral("count"), QStringLiteral("max_grooves")};
 	const QHash<QString, QString> name{{QStringLiteral("name"), QStringLiteral("name")}};
-	out.actions = {act("Rename...", "groove.rename", name, {}, true), act("Remove", "groove.remove", name)};
+	RowAction remove = act("Remove", "groove.remove", name);
+	remove.confirm = true;
+	out.actions = {act("Rename...", "groove.rename", name, {}, true), remove};
 	out.extras = {extra("New Groove...", "groove.set")};
 	return out;
 }
@@ -169,10 +177,11 @@ ListSpec safeStart()
 		{QStringLiteral("plugin"), QStringLiteral("file"), QStringLiteral("reason")});
 	out.summaryKeys = {QStringLiteral("previous_run_exited_cleanly"), QStringLiteral("safe_start"),
 		QStringLiteral("skip_enabled"), QStringLiteral("skipped_count"), QStringLiteral("note")};
+	ListExtra clear = extra("Clear", "safestart.clear", {}, false);
+	clear.confirm = true;  // the crash marker is deleted for good (safestart.clear is irreversible)
 	out.extras = {extra("Acknowledge", "safestart.acknowledge", {}, false),
 		extra("Skip Plug-ins Next Start", "safestart.set_skip", {{QStringLiteral("enabled"), true}}, false),
-		extra("Load Plug-ins Next Start", "safestart.set_skip", {{QStringLiteral("enabled"), false}}, false),
-		extra("Clear", "safestart.clear", {}, false)};
+		extra("Load Plug-ins Next Start", "safestart.set_skip", {{QStringLiteral("enabled"), false}}, false), clear};
 	return out;
 }
 
@@ -184,8 +193,9 @@ ListSpec shortcuts()
 	const QHash<QString, QString> id{{QStringLiteral("id"), QStringLiteral("id")}};
 	out.actions = {act("Set Keys...", "shortcuts.set", id, {}, true), act("Unbind", "shortcuts.set", id,
 		{{QStringLiteral("keys"), QString()}}), act("Reset", "shortcuts.reset", id)};
-	out.extras = {extra("Export...", "shortcuts.export"), extra("Import...", "shortcuts.import"),
-		extra("Reset All", "shortcuts.reset", {}, false)};
+	ListExtra resetAll = extra("Reset All", "shortcuts.reset", {}, false);
+	resetAll.confirm = true;
+	out.extras = {extra("Export...", "shortcuts.export"), extra("Import...", "shortcuts.import"), resetAll};
 	return out;
 }
 
@@ -235,8 +245,9 @@ ListSpec markers()
 	ListSpec out = spec("Markers", "marker.list", "markers", {QStringLiteral("marker"), QStringLiteral("tick"),
 		QStringLiteral("name"), QStringLiteral("color")});
 	const QHash<QString, QString> marker{{QStringLiteral("marker"), QStringLiteral("marker")}};
-	out.actions = {act("Jump", "marker.jump", marker), act("Edit...", "marker.set", marker, {}, true),
-		act("Remove", "marker.remove", marker)};
+	RowAction remove = act("Remove", "marker.remove", marker);
+	remove.confirm = true;
+	out.actions = {act("Jump", "marker.jump", marker), act("Edit...", "marker.set", marker, {}, true), remove};
 	out.extras = {extra("Add at Play Position", "marker.add", {}, false), extra("Add...", "marker.add")};
 	return out;
 }
@@ -246,8 +257,12 @@ ListSpec clips()
 	ListSpec out = spec("Clip List", "clip.list", "clips", {QStringLiteral("name"), QStringLiteral("track_name"), QStringLiteral("start"),
 		QStringLiteral("length"), QStringLiteral("kind")});
 	out.summaryKeys = {QStringLiteral("count")};
+	out.filterArg = QStringLiteral("name");  // clip.list keeps the clips whose name holds it
+	out.filterLabel = tr("Find a clip by name");
 	const QHash<QString, QString> clip{{QStringLiteral("clip"), QStringLiteral("clip")}};
-	out.actions = {act("Select", "clip.select", clip), act("Delete", "clip.delete", clip)};
+	RowAction remove = act("Delete", "clip.delete", clip);
+	remove.confirm = true;
+	out.actions = {act("Select", "clip.select", clip), remove};
 	return out;
 }
 
@@ -256,8 +271,9 @@ ListSpec sections()
 	ListSpec out = spec("Sections", "section.list", "sections", {QStringLiteral("name"), QStringLiteral("start"), QStringLiteral("end"),
 		QStringLiteral("color")});
 	const QHash<QString, QString> section{{QStringLiteral("section"), QStringLiteral("section")}};
-	out.actions = {act("Select", "section.select", section), act("Edit...", "section.set", section, {}, true),
-		act("Remove", "section.remove", section)};
+	RowAction remove = act("Remove", "section.remove", section);
+	remove.confirm = true;
+	out.actions = {act("Select", "section.select", section), act("Edit...", "section.set", section, {}, true), remove};
 	out.extras = {extra("Add...", "section.add")};
 	return out;
 }
@@ -348,6 +364,7 @@ ListSpec subprojects()
 	out.summaryKeys = QStringList{QStringLiteral("count")};
 	RowAction open = act("Open Its Project", "project.open", {{QStringLiteral("path"), QStringLiteral("path")}});
 	open.confirm = true;
+	open.caution = tr("It replaces the open project, and its unsaved changes are lost.");  // project.open keeps no snapshot
 	out.actions = {act("Render Again", "project.subproject_refresh", {{QStringLiteral("track"), QStringLiteral("track")}}), open};
 	out.extras = {extra("Add Subproject...", "project.subproject_add")};
 	return out;

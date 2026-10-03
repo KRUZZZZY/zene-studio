@@ -238,9 +238,11 @@ void afterUserMove(Clip* moved, tick_t oldStart)
 {
 	if (!movedOnATrack(moved, oldStart)) { return; }
 	const tick_t newStart = moved->startPosition().getTicks();
+	// A press released where it started (a click, or a drag back) moved nothing onto anything.
+	if (newStart == oldStart) { return; }
 	const Overlap mode = modes().overlap;
-	const bool follow = newStart != oldStart && modes().automationFollowsClips;
-	const bool ripple = newStart != oldStart && modes().ripple != Ripple::Off;
+	const bool follow = modes().automationFollowsClips;
+	const bool ripple = modes().ripple != Ripple::Off;
 	if (mode == Overlap::Free && !follow && !ripple) { return; }
 	// ONE undo step for the whole gesture (review W2a-1 #3): the track's checkpoint is taken at the
 	// PRE-drag position - the clip is put back for it - and merged with the clip checkpoint the
@@ -269,9 +271,10 @@ int moveFollowingAutomation(Track* track, tick_t oldStart, tick_t length, tick_t
 		{
 			auto* automation = dynamic_cast<AutomationClip*>(clip);
 			if (automation == nullptr) { continue; }
-			const tick_t clipStart = clip->startPosition().getTicks();
+			// The clip's points are keyed from its start less its start offset, as playback reads them.
+			const tick_t origin = clip->startPosition().getTicks() + clip->startTimeOffset().getTicks();
 			if (checkpoint) { automation->addJournalCheckPoint(); }
-			automation->transformRange(oldStart - clipStart, oldStart + length - 1 - clipStart, 1.0, delta, 1.0, 0.0);
+			automation->transformRange(oldStart - origin, oldStart + length - 1 - origin, 1.0, delta, 1.0, 0.0);
 		}
 		++changed;
 	}

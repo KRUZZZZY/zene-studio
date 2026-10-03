@@ -275,19 +275,19 @@ void AudioEngine::drainInputStage() noexcept
 
 PunchFrames AudioEngine::punchWindow(f_cnt_t frames) const noexcept
 {
-	return punchFramesForPeriod(m_punchArmed.load(std::memory_order_relaxed), m_periodSongPlaying,
-		m_periodStartFrame, Engine::framesPerTick(), frames, m_punchBegin.load(std::memory_order_relaxed),
-		m_punchEnd.load(std::memory_order_relaxed));
+	const std::uint64_t punch = m_punch.load(std::memory_order_relaxed);
+	const tick_t begin = punchBeginOf(punch);
+	const tick_t end = punchEndOf(punch);
+	return punchFramesForPeriod(end > begin, m_periodSongPlaying, m_periodStartFrame, Engine::framesPerTick(), frames, begin, end);
 }
 
 void AudioEngine::setPunchWindow(bool armed, tick_t begin, tick_t end) noexcept
 {
-	// Begin and end first, the armed flag last: a render thread that sees the
-	// flag set sees the range it arms (each is relaxed; a period that straddles
-	// the publish gates by either the old or the new window, both valid).
-	m_punchBegin.store(begin, std::memory_order_relaxed);
-	m_punchEnd.store(end, std::memory_order_relaxed);
-	m_punchArmed.store(armed && end > begin, std::memory_order_release);
+	// One word: a render thread reads either the old or the new window whole, never
+	// the armed flag or one bound of one publish with the rest of another.
+	const bool on = armed && end > begin;
+	const std::uint64_t punch = on ? (std::uint64_t{static_cast<std::uint32_t>(begin)} << 32) | static_cast<std::uint32_t>(end) : 0;
+	m_punch.store(punch, std::memory_order_relaxed);
 }
 
 

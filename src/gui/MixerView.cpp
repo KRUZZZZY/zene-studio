@@ -61,6 +61,7 @@
 #include "Knob.h"
 #include "InstrumentTrack.h"
 #include "MainWindow.h"
+#include "CommandForm.h"
 #include "ControlRegistry.h"
 #include "MixerOverlays.h"
 #include "MixerViewOptions.h"
@@ -178,6 +179,8 @@ MixerView::MixerView(Mixer* mixer) :
 	newChannelBtn->setSizePolicy(QSizePolicy::MinimumExpanding, QSizePolicy::Expanding);
 	newChannelBtn->setFixedWidth(mixerChannelSize.width());
 	newChannelBtn->setFocusPolicy(Qt::NoFocus);
+	newChannelBtn->setToolTip(tr("New mixer channel"));
+	newChannelBtn->setAccessibleName(tr("New mixer channel"));
 	connect(newChannelBtn, SIGNAL(clicked()), this, SLOT(addNewChannel()));
 	// 0.5.0 L09 (MX-045): a return channel beside it - a bus that sends land on before its fader.
 	auto* addColumn = new QWidget(this);
@@ -192,8 +195,10 @@ MixerView::MixerView(Mixer* mixer) :
 	newReturnBtn->setFocusPolicy(Qt::NoFocus);
 	newReturnBtn->setProperty("controlCommand", QStringLiteral("bus.create"));
 	connect(newReturnBtn, &QPushButton::clicked, this, [this] {
-		ControlRegistry::instance()->invoke(QStringLiteral("bus.create"));
+		// A refusal is shown (runCommand); a new return becomes the selected strip.
+		const ControlResult created = runCommand(this, CommandCall{QStringLiteral("bus.create"), {}, {}, QString(), false});
 		syncWithMixer();
+		if (created.ok) { setCurrentMixerChannel(created.result.value(QStringLiteral("index")).toInt()); }
 	});
 	addLayout->addWidget(newReturnBtn, 0);
 	ml->addWidget(addColumn, 0);
@@ -302,6 +307,21 @@ QString vcaSignatureOf(const Mixer* mixer)
 	return signature;
 }
 
+/*! A strip's tooltip: its delay compensation (the same figures pdc.report gives), its note (MX-016)
+ *  and, on a return, what sets it apart (MX-045). Its accessible name follows the channel's name, an
+ *  agent's rename included (set only on a change: each set is announced). */
+void describeStrip(MixerChannelView* view, Mixer* mixer, int index)
+{
+	MixerChannel* channel = mixer->mixerChannel(index);
+	const int rate = static_cast<int>(Engine::audioEngine()->outputSampleRate());
+	QString tip = mixerLatencyText(channel->m_name, channel->m_fxChain.latencyFrames(),
+		channel->inputLatencyFrames(), index == 0 ? mixer->totalLatencyFrames() : -1, rate);
+	if (!channel->m_note.isEmpty()) { tip += QLatin1Char('\n') + channel->m_note; }
+	if (channel->isBus()) { tip += QLatin1Char('\n') + MixerView::tr("Return - sends into it are pre-fader"); }
+	view->setToolTip(tip);
+	if (view->accessibleName() != channel->m_name) { view->setAccessibleName(channel->m_name); }
+}
+
 } // namespace
 
 void MixerView::engineDeletedChannel()
@@ -326,16 +346,11 @@ void MixerView::syncWithMixer()
 		m_viewOptionsGeneration = mixerviewoptions::generation();
 		for (int i = 0; i < m_mixerChannelViews.size(); ++i) { updateMixerChannel(i); }
 	}
-	// Delay compensation, readable where the strip is (the same figures pdc.report gives).
-	const int rate = static_cast<int>(Engine::audioEngine()->outputSampleRate());
 	for (int i = 0; i < m_mixerChannelViews.size(); ++i)
 	{
 		MixerChannel* channel = getMixer()->mixerChannel(i);
 		if (channel == nullptr || m_mixerChannelViews[i] == nullptr) { continue; }
-		const QString latency = mixerLatencyText(channel->m_name, channel->m_fxChain.latencyFrames(),
-			channel->inputLatencyFrames(), i == 0 ? getMixer()->totalLatencyFrames() : -1, rate);
-		// MX-016: the channel's note under it.
-		m_mixerChannelViews[i]->setToolTip(channel->m_note.isEmpty() ? latency : latency + QLatin1Char('\n') + channel->m_note);
+		describeStrip(m_mixerChannelViews[i], getMixer(), i);
 		mixerviewoptions::applyToStrip(m_mixerChannelViews[i], channel);
 	}
 }
@@ -461,7 +476,7 @@ void MixerView::updateMixerChannel(int index)
 
 	const auto currentIndex = m_currentMixerChannel->channelIndex();
 	const auto thisLine = m_mixerChannelViews[index];
-	thisLine->setToolTip(getMixer()->mixerChannel(index)->m_name);
+	describeStrip(thisLine, mixer, index);
 
 	const auto sendModelCurrentToThis = mixer->channelSendModel(currentIndex, index);
 	if (sendModelCurrentToThis == nullptr)

@@ -29,6 +29,7 @@
 #include <algorithm>
 #include <atomic>
 #include <functional>
+#include <limits>
 #include <memory>
 
 #include <QDateTime>
@@ -60,6 +61,13 @@ namespace control
 namespace
 {
 
+//! Whether @a mix at the model's rate is at least one frame and still fits a job's int frame count - checked
+//! before the resampler allocates for it, so a pathological source rate cannot ask for billions of frames.
+bool fitsAtModelRate(const SampleBuffer& mix)
+{
+	const double frames = static_cast<double>(mix.size()) * StemModelSampleRate / std::max(1, static_cast<int>(mix.sampleRate()));
+	return frames >= 1.0 && frames <= static_cast<double>(std::numeric_limits<int>::max());
+}
 
 //! The fixed stem order of the model contract, as wire names
 //! (include/StemSeparation/StemTypes.h:35-46).
@@ -224,6 +232,11 @@ public:
 		}
 		// 0.5.0 (engine audit E27): a source at another rate is resampled to the model's own,
 		// offline, instead of refused (SPEC-stem-split.md OQ-1 is answered by this).
+		if (!fitsAtModelRate(*mix))
+		{
+			*error = QStringLiteral("'%1' is too long or too short to split at the model's %2 Hz").arg(source).arg(StemModelSampleRate);
+			return false;
+		}
 		mix = resampleBuffer(mix, StemModelSampleRate);
 		JobRecord record;
 		record.source = source;

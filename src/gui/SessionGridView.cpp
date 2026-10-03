@@ -26,6 +26,7 @@
 
 #include <algorithm>
 
+#include <QColor>
 #include <QGridLayout>
 #include <QJsonArray>
 #include <QDragEnterEvent>
@@ -40,6 +41,7 @@
 #include <QVBoxLayout>
 
 #include "ControlRegistry.h"
+#include "SampleDecoder.h"
 #include "SessionGridMenus.h"
 #include "SessionTransportBar.h"
 #include "StringPairDrag.h"
@@ -88,7 +90,7 @@ SessionGridView::SessionGridView(QWidget* parent) :
 	m_stopAll = makeButton(QStringLiteral("session.stop_all"));
 	m_stopAll->setText(tr("Stop all"));
 	m_stopAll->setAccessibleName(tr("Stop all clips"));
-	connect(m_stopAll, &QToolButton::clicked, this, [this] { run(QStringLiteral("session.stop_all")); refresh(); });
+	connect(m_stopAll, &QToolButton::clicked, this, [this] { report(run(QStringLiteral("session.stop_all"))); });
 	connect(&m_timer, &QTimer::timeout, this, &SessionGridView::refresh);
 	m_timer.start(RefreshMs);
 	refresh();
@@ -155,9 +157,10 @@ void SessionGridView::rebuild(int tracks, int scenes)
 			QToolButton* cell = makeButton(QStringLiteral("session.launch_slot"));
 			cell->setAcceptDrops(true);  // WF-053: an audio file dropped here fills the cell
 			connect(cell, &QToolButton::pressed, this, [this, track, scene] { launchCell(track, scene); });
-			connect(cell, &QToolButton::released, this, [track, scene] {  // WF-063: the release half
+			connect(cell, &QToolButton::released, this, [this, track, scene] {  // WF-063: the release half
 				ControlRegistry::instance()->invoke(QStringLiteral("session.release_slot"),
 					{{QStringLiteral("track"), track}, {QStringLiteral("scene"), scene}});
+				refresh();  // the click has just toggled the checkable cell: draw the session's state back at once
 			});
 			m_grid->addWidget(cell, scene, track);
 			m_cells.push_back(cell);
@@ -173,8 +176,7 @@ void SessionGridView::rebuild(int tracks, int scenes)
 	{
 		QToolButton* launch = makeButton(QStringLiteral("session.launch_scene"));
 		connect(launch, &QToolButton::clicked, this, [this, scene] {
-			run(QStringLiteral("session.launch_scene"), {{QStringLiteral("scene"), scene}});
-			refresh();
+			report(run(QStringLiteral("session.launch_scene"), {{QStringLiteral("scene"), scene}}));
 		});
 		m_grid->addWidget(launch, scene, tracks);
 		m_sceneButtons.push_back(launch);
@@ -195,9 +197,7 @@ void SessionGridView::refresh()
 	const int tracks = grid.value(QStringLiteral("tracks")).toInt();
 	const int scenes = grid.value(QStringLiteral("scenes")).toInt();
 	if (tracks != m_tracks || scenes != m_scenes) { rebuild(tracks, scenes); }
-	m_status->setText(tracks == 0 || scenes == 0
-		? tr("The session grid is empty: Grid... (session.set_grid) sizes it.")
-		: tr("%1 tracks, %2 scenes").arg(tracks).arg(scenes));
+	m_status->setText(statusText(tracks, scenes));
 	readColumns(state.result.value(QStringLiteral("columns")).toArray());
 	m_slots = state.result.value(QStringLiteral("slots")).toArray();
 	m_sceneStates = state.result.value(QStringLiteral("scenes")).toArray();
@@ -210,6 +210,21 @@ void SessionGridView::refresh()
 		}
 	}
 	paintScenes(state.result.value(QStringLiteral("scenes")).toArray());
+}
+
+
+QString SessionGridView::statusText(int tracks, int scenes) const
+{
+	if (!m_notice.isEmpty()) { return m_notice; }
+	return tracks == 0 || scenes == 0 ? tr("The session grid is empty: Grid... (session.set_grid) sizes it.")
+		: tr("%1 tracks, %2 scenes").arg(tracks).arg(scenes);
+}
+
+
+void SessionGridView::report(const ControlResult& result)
+{
+	m_notice = result.ok ? QString() : result.errorMessage;
+	refresh();
 }
 
 
@@ -270,9 +285,10 @@ void SessionGridView::paintScenes(const QJsonArray& sceneStates)
 		const QString label = name.isEmpty() ? tr("Scene %1").arg(scene + 1) : name;
 		m_sceneButtons[static_cast<std::size_t>(scene)]->setText(QStringLiteral("\u25B6 ") + label);
 		// WF-062: the scene's colour as a bar along the button's left edge.
-		const QString color = sceneStates.at(scene).toObject().value(QStringLiteral("color")).toString();
-		m_sceneButtons[static_cast<std::size_t>(scene)]->setStyleSheet(color.isEmpty() ? QString()
-			: QStringLiteral("QToolButton { border-left: 4px solid %1; }").arg(color));
+		// A project file's colour reaches here unchecked: only a valid one, as #rrggbb, goes into the style sheet.
+		const QColor color(sceneStates.at(scene).toObject().value(QStringLiteral("color")).toString());
+		m_sceneButtons[static_cast<std::size_t>(scene)]->setStyleSheet(!color.isValid() ? QString()
+			: QStringLiteral("QToolButton { border-left: 4px solid %1; }").arg(color.name()));
 		m_sceneButtons[static_cast<std::size_t>(scene)]->setAccessibleName(tr("Launch %1").arg(label));
 	}
 }
@@ -282,10 +298,9 @@ void SessionGridView::launchCell(int track, int scene)
 {
 	// An empty cell launches nothing (session.launch_slot refuses it): the press is
 	// still the grid's to answer, and a refusal is shown rather than swallowed.
-	const ControlResult launched = run(QStringLiteral("session.launch_slot"),
-		{{QStringLiteral("track"), track}, {QStringLiteral("scene"), scene}});
-	if (!launched.ok) { m_status->setText(launched.errorMessage); }
-	refresh();
+	// The refusal stays in the status line until the next action succeeds: refresh() runs every
+	// 150 ms and would otherwise replace it before anyone could read it.
+	report(run(QStringLiteral("session.launch_slot"), {{QStringLiteral("track"), track}, {QStringLiteral("scene"), scene}}));
 }
 
 
@@ -293,8 +308,7 @@ void SessionGridView::stopColumn(int track)
 {
 	const int scene = track >= 0 && track < m_tracks ? m_playingScene[static_cast<std::size_t>(track)] : -1;
 	if (scene < 0) { return; }
-	run(QStringLiteral("session.stop_slot"), {{QStringLiteral("track"), track}, {QStringLiteral("scene"), scene}});
-	refresh();
+	report(run(QStringLiteral("session.stop_slot"), {{QStringLiteral("track"), track}, {QStringLiteral("scene"), scene}}));
 }
 
 
@@ -309,6 +323,21 @@ QString droppedFile(QDropEvent* event)
 	return !urls.isEmpty() && urls.first().isLocalFile() ? urls.first().toLocalFile() : QString();
 }
 
+//! The existing audio file a drag carries, or empty: a text file or a folder is not a clip (review L10-L03-L02-1 #12).
+//! An audio file is one the engine reads - SampleDecoder's list, which the Open Audio File dialog offers too, and the
+//! compressed kinds it decodes beyond libsndfile's simple formats.
+QString droppedAudio(QDropEvent* event)
+{
+	const QFileInfo info(droppedFile(event));
+	const QString suffix = info.suffix().toLower();
+	static const QStringList decoded{QStringLiteral("wav"), QStringLiteral("ogg"), QStringLiteral("flac"), QStringLiteral("mp3"),
+		QStringLiteral("aif"), QStringLiteral("aiff"), QStringLiteral("opus")};
+	const auto& types = SampleDecoder::supportedAudioTypes();
+	const bool audio = decoded.contains(suffix) || std::any_of(types.begin(), types.end(),
+		[&suffix](const SampleDecoder::AudioType& type) { return suffix == QString::fromStdString(type.extension); });
+	return audio && info.isFile() ? info.filePath() : QString();
+}
+
 } // namespace
 
 
@@ -318,22 +347,19 @@ bool SessionGridView::dropOnCell(QToolButton* cell, QEvent* event)
 	if (at == m_cells.end() || m_scenes <= 0) { return false; }
 	if (event->type() == QEvent::DragEnter)
 	{
+		// Only a drag a cell can take is accepted, so anything else shows the no-drop cursor from the start.
 		auto* enter = static_cast<QDragEnterEvent*>(event);
-		if (StringPairDrag::decodeKey(enter) == QLatin1String("samplefile") || enter->mimeData()->hasUrls()) { enter->acceptProposedAction(); }
+		if (!droppedAudio(enter).isEmpty()) { enter->acceptProposedAction(); }
 		return true;
 	}
 	if (event->type() != QEvent::Drop) { return false; }
 	auto* drop = static_cast<QDropEvent*>(event);
-	const QString file = droppedFile(drop);
-	// An existing audio file only (review L10-L03-L02-1 #12): a text file or a folder is not a clip.
-	static const QStringList audio{QStringLiteral("wav"), QStringLiteral("ogg"), QStringLiteral("flac"), QStringLiteral("mp3"),
-		QStringLiteral("aif"), QStringLiteral("aiff"), QStringLiteral("opus")};
-	if (!QFileInfo(file).isFile() || !audio.contains(QFileInfo(file).suffix().toLower())) { return true; }
+	const QString file = droppedAudio(drop);
+	if (file.isEmpty()) { return true; }
 	drop->acceptProposedAction();  // the drag source is told the drop was taken (review L17 #11)
 	const int index = static_cast<int>(at - m_cells.begin());
-	run(QStringLiteral("session.set_slot"), {{QStringLiteral("track"), index / m_scenes}, {QStringLiteral("scene"), index % m_scenes},
-		{QStringLiteral("type"), QStringLiteral("audio")}, {QStringLiteral("source"), file}});
-	refresh();
+	report(run(QStringLiteral("session.set_slot"), {{QStringLiteral("track"), index / m_scenes}, {QStringLiteral("scene"), index % m_scenes},
+		{QStringLiteral("type"), QStringLiteral("audio")}, {QStringLiteral("source"), file}}));
 	return true;
 }
 

@@ -30,6 +30,7 @@
 
 #include "DesignTokens.h"
 
+#include <QFontMetrics>
 #include <QMouseEvent>
 #include <QPainter>
 #include <QStyleOptionFrame>
@@ -194,8 +195,10 @@ void ComboBox::paintEvent( QPaintEvent * )
 	QFont f = tokens::font( tokens::TextRole::Small );
 	p.setFont( f );
 	p.setPen( isEnabled() ? pal.text : pal.textDisabled );
-	p.drawText( QRect( tx, 0, width() - tx - CB_ARROW_BTN_WIDTH, height() ), Qt::AlignVCenter | Qt::AlignLeft,
-		model()->currentText() );
+	// A value too long for the field ends in an ellipsis (inside the clip), never a silent cut.
+	const QRect textRect( tx, 0, width() - tx - CB_ARROW_BTN_WIDTH - 2, height() );
+	p.drawText( textRect, Qt::AlignVCenter | Qt::AlignLeft,
+		QFontMetrics( f ).elidedText( model()->currentText(), Qt::ElideRight, textRect.width() ) );
 }
 
 

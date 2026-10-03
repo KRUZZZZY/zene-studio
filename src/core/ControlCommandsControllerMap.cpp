@@ -105,6 +105,13 @@ MidiBinding bindingOf(const AutomatableModel* model)
 	return {midi->midiPort().inputChannel(), midi->midiPort().inputController(), midi->softTakeoverEnabled(), midi->feedbackEnabled()};
 }
 
+//! controller.map's arguments that bind @a name as @a binding: the inverse of a change that replaced or removed it.
+QJsonObject mapArgsOf(const QString& name, const MidiBinding& binding)
+{
+	return {{QStringLiteral("target"), name}, {QStringLiteral("channel"), binding.channel}, {QStringLiteral("controller"), binding.controller},
+		{QStringLiteral("soft_takeover"), binding.softTakeover}, {QStringLiteral("feedback"), binding.feedback}};
+}
+
 ControlResult mapControl(const QJsonObject& args)
 {
 	ControlResult error;
@@ -123,8 +130,12 @@ ControlResult mapControl(const QJsonObject& args)
 	bindTo(model, binding);
 	Engine::getSong()->setModified();
 	QJsonObject result{{QStringLiteral("control"), name}, {QStringLiteral("channel"), channel}, {QStringLiteral("controller"), controller}};
-	result.insert(QStringLiteral("__transaction"), transactionPayload({{QStringLiteral("control"), name}}, QStringLiteral("controller.unmap"),
-		{{QStringLiteral("target"), name}}, true, QStringLiteral("action checkpoint: the recorded undo step puts the previous binding back")));
+	// A mapping that replaced one is undone by mapping the old one again, not by unmapping.
+	const bool replaced = old.channel >= 0;
+	result.insert(QStringLiteral("__transaction"), transactionPayload({{QStringLiteral("control"), name}},
+		replaced ? QStringLiteral("controller.map") : QStringLiteral("controller.unmap"),
+		replaced ? mapArgsOf(name, old) : QJsonObject{{QStringLiteral("target"), name}}, true,
+		QStringLiteral("action checkpoint: the recorded undo step puts the previous binding back")));
 	return ControlResult::success(result);
 }
 
@@ -134,17 +145,14 @@ ControlResult unmapControl(const QJsonObject& args)
 	AutomatableModel* model = parameterOf(args, &error);
 	if (model == nullptr) { return error; }
 	const MidiBinding old = bindingOf(model);
-	const int channel = old.channel;
-	const int controller = old.controller;
-	if (channel < 0) { return ControlResult::failure(ControlErrorKind::NotFound, QStringLiteral("that parameter has no MIDI mapping")); }
+	if (old.channel < 0) { return ControlResult::failure(ControlErrorKind::NotFound, QStringLiteral("that parameter has no MIDI mapping")); }
 	const QString name = model->fullDisplayName();
 	addUndoStep([name, old]() { bindByName(name, old); }, [name]() { unbindByName(name); });
 	model->setControllerConnection(nullptr);
 	Engine::getSong()->setModified();
 	QJsonObject result{{QStringLiteral("control"), name}};
 	result.insert(QStringLiteral("__transaction"), transactionPayload({{QStringLiteral("control"), name}}, QStringLiteral("controller.map"),
-		{{QStringLiteral("target"), name}, {QStringLiteral("channel"), channel}, {QStringLiteral("controller"), controller}}, true,
-		QStringLiteral("action checkpoint: the recorded undo step binds the parameter again")));
+		mapArgsOf(name, old), true, QStringLiteral("action checkpoint: the recorded undo step binds the parameter again")));
 	return ControlResult::success(result);
 }
 

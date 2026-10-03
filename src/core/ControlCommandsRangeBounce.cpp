@@ -80,7 +80,7 @@ void unland(Landing* l)
 	l->landed = nullptr;
 	for (std::size_t i = 0; i < l->sources.size(); ++i)
 	{
-		if (l->sources[i]) { l->sources[i]->setMuted(l->wereMuted[i]); }
+		if (l->sources[i] && l->muteSources) { l->sources[i]->setMuted(l->wereMuted[i]); }  // only the mutes land() set
 	}
 }
 

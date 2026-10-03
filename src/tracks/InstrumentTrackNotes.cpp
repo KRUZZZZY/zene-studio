@@ -42,7 +42,7 @@ namespace lmms
 {
 
 void InstrumentTrack::decorateNoteHandle(NotePlayHandle* handle, const MidiClip* clip, NoteVector::const_iterator note,
-	NoteVector::const_iterator first, bool songGlobal, uint32_t midiSeed) const
+	NoteVector::const_iterator first, bool songGlobal, const TimePos& songOffset, uint32_t midiSeed) const
 {
 	const Note* currentNote = *note;
 	// MIDI depth: velocity jitter. Applied to the play handle's own
@@ -70,13 +70,9 @@ void InstrumentTrack::decorateNoteHandle(NotePlayHandle* handle, const MidiClip*
 	{
 		handle->setSlideSourceKey( std::clamp( ( *( note - 1 ) )->key() + transpose, 0, NumKeys - 1 ) );
 	}
-	// are we playing global song?
-	if( songGlobal )
-	{
-		// then set song-global offset of clip in order to
-		// properly perform the note detuning
-		handle->setSongGlobalParentOffset( clip->startPosition() + clip->startTimeOffset());
-	}
+	// are we playing global song? then set the song-global offset of the clip (of the pass playing, on a
+	// looped clip) in order to properly perform the note detuning
+	if( songGlobal ) { handle->setSongGlobalParentOffset(songOffset); }
 }
 
 namespace
@@ -193,6 +189,8 @@ void InstrumentTrack::triggerNote(const NoteTrigger& trigger, f_cnt_t offset, f_
 	// MX-035: the track's own delay, on top (a chased note too: the whole track sits later).
 	offset += static_cast<f_cnt_t>(std::lround(delayMs() * Engine::audioEngine()->outputSampleRate() / 1000.0));
 	sendArticulation(note.conditions().articulation, offset);
+	// Where the clip's own time 0 lies in the song for the pass playing: the clip's start on its first pass.
+	const TimePos songOffset(trigger.songTick - curStart.getTicks());
 	// 0.5.0 ED-133: the note's repeats - that many more hits, evenly spaced inside it (not a step note's).
 	const int hits = frames > 0 ? static_cast<int>(std::min<f_cnt_t>(note.conditions().repeats + 1, frames)) : 1;
 	const f_cnt_t each = frames / hits;
@@ -203,9 +201,18 @@ void InstrumentTrack::triggerNote(const NoteTrigger& trigger, f_cnt_t offset, f_
 		NotePlayHandle* handle = NotePlayHandleManager::acquire(this, offset + hit * each, length, note);
 		handle->setPatternTrack(trigger.patternTrack);
 		// Velocity jitter, the slide source, the song-global offset and the clip's transpose.
-		decorateNoteHandle(handle, trigger.clip, trigger.note, trigger.first, trigger.songGlobal, trigger.midiSeed);
+		decorateNoteHandle(handle, trigger.clip, trigger.note, trigger.first, trigger.songGlobal, songOffset, trigger.midiSeed);
 		Engine::audioEngine()->addPlayHandle(handle);
 	}
+}
+
+tick_t InstrumentTrack::passEnd(const MidiClip* clip, tick_t passBase, bool looped)
+{
+	// In the clip's own time folded into its loop: a note that runs past the loop's end stops there and the
+	// next pass starts it again, rather than sounding on into it (and the last pass ends with the clip).
+	const tick_t clipEnd = clip->length() - clip->startTimeOffset() - passBase;
+	const int loop = looped ? clip->clipEdits().loopTicks : 0;
+	return loop > 0 ? std::min<tick_t>(loop, clipEnd) : clipEnd;
 }
 
 TimePos InstrumentTrack::loopedPosition(const MidiClip* clip, const TimePos& position)

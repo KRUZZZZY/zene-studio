@@ -58,12 +58,16 @@ QString idOf(const PaletteEntry& entry)
 	return entry.path.isEmpty() ? label : entry.path + QStringLiteral(" ▸ ") + label;
 }
 
-//! @a entry's action gets its override from @a chosen, or its default back.
+//! @a entry's action gets its override from @a chosen, or its default back. The default is remembered before
+//! any override replaces it, so a reset after a restart is exact; and a stored override that no longer parses
+//! (a hand-edited config) keeps the default rather than leaving the action with no key (review ux05 #76).
 void applyTo(const PaletteEntry& entry, const QJsonObject& chosen)
 {
+	const QString fallback = defaultOf(entry.action);
 	const QString id = idOf(entry);
-	const QString keys = chosen.contains(id) ? chosen.value(id).toString() : defaultOf(entry.action);
-	entry.action->setShortcut(QKeySequence::fromString(keys, QKeySequence::PortableText));
+	bool ok = false;
+	const QString keys = portable(chosen.value(id).toString(), &ok);
+	entry.action->setShortcut(QKeySequence::fromString(chosen.contains(id) && ok ? keys : fallback, QKeySequence::PortableText));
 }
 
 } // namespace

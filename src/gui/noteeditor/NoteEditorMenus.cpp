@@ -149,7 +149,7 @@ void fillNewNoteMenu(QMenu* menu, const NoteEditorState& state)
 	};
 	const auto tr = [](const char* text) { return NoteEditor::tr(text); };
 	const struct { const char* label; int ticks; } lengths[] = {{"Last Drawn", 0}, {"1/32", 6}, {"1/16", 12}, {"1/8", 24},
-		{"1/4", 48}, {"1/2", 96}, {"1 Bar", 192}};
+		{"1/4", 48}, {"1/2", 96}, {"1/1", 192}};
 	QMenu* length = menu->addMenu(tr("New Note Length"));
 	for (const auto& choice : lengths)
 	{
@@ -203,6 +203,12 @@ void NoteEditor::fillNotesMenu(QMenu* menu)
 		return;
 	}
 	const QString clip = clipId();
+	// What the scoped commands below act on: the selection, or the whole clip when nothing is selected.
+	const bool selection = noteScope() == QStringLiteral("selection");
+	const int count = static_cast<int>(notesInScope(m_state.clip, selection).size());
+	menu->addAction(selection ? tr("Acting on %n selected note(s)", nullptr, count) : tr("Acting on all %n note(s) of the clip", nullptr, count))
+		->setEnabled(false);
+	menu->addSeparator();
 	const QJsonObject where{{QStringLiteral("clip"), clip}};
 	const QJsonObject scoped{{QStringLiteral("clip"), clip}, {QStringLiteral("scope"), noteScope()}};
 	auto call = [](const QString& id, const QJsonObject& fixed, const QJsonObject& defaults = {}, bool ask = true) {

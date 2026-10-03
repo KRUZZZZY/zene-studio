@@ -48,7 +48,8 @@ void MacroMenu::refresh()
 	for (auto it = macros.begin(); it != macros.end(); ++it)
 	{
 		const QString name = it.key();
-		addCommandAction(this, name, QStringLiteral("macro.run"), [name] {
+		// A '&' in the name is shown as itself, not taken as a mnemonic (the run keeps the name as saved).
+		addCommandAction(this, QString(name).replace(QLatin1Char('&'), QStringLiteral("&&")), QStringLiteral("macro.run"), [name] {
 			return CommandCall{QStringLiteral("macro.run"), {{QStringLiteral("name"), name}}, {}, name, false};
 		});
 	}

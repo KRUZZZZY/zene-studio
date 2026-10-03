@@ -308,6 +308,8 @@ void registerClipCrossfade(ControlRegistry& registry)
 		{QStringLiteral("shape"), control::stringProperty()},
 		{QStringLiteral("out_fade_out"), control::integerProperty(0, MaxSongLength)},
 		{QStringLiteral("in_fade_in"), control::integerProperty(0, MaxSongLength)},
+		{QStringLiteral("out_shape"), control::stringProperty()},
+		{QStringLiteral("in_shape"), control::stringProperty()},
 	});
 	cmd.mutating = true;
 	cmd.handler = [](const QJsonObject& args) {
@@ -388,6 +390,9 @@ void registerClipCrossfade(ControlRegistry& registry)
 		result.insert(QStringLiteral("shape"), fadeShapeName(shape));
 		result.insert(QStringLiteral("out_fade_out"), outAfter.fadeOutTicks);
 		result.insert(QStringLiteral("in_fade_in"), inAfter.fadeInTicks);
+		// 'shape' is the shared one; the two sides say what each clip now holds (out_shape / in_shape may differ).
+		result.insert(QStringLiteral("out_shape"), fadeShapeName(outAfter.fadeOutShape));
+		result.insert(QStringLiteral("in_shape"), fadeShapeName(inAfter.fadeInShape));
 		QJsonObject inverseArgs;
 		inverseArgs.insert(QStringLiteral("out"), clipId(outRef.id));
 		inverseArgs.insert(QStringLiteral("in"), clipId(inRef.id));

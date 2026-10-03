@@ -121,7 +121,7 @@ ControlResult setTransform(const QJsonObject& args)
 	Engine::getSong()->setModified();
 	QJsonObject result{{QStringLiteral("track"), trackIdOf(track)}, {QStringLiteral("transform"), after}};
 	result.insert(QStringLiteral("__transaction"), transactionPayload({{QStringLiteral("transform"), before}},
-		QStringLiteral("track.input_transform_set"), {}, true,
+		QStringLiteral("control.undo"), {}, true,
 		QStringLiteral("action checkpoint: the recorded undo step puts the track's previous transform back")));
 	return ControlResult::success(result);
 }

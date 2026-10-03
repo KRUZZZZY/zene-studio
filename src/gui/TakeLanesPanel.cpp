@@ -33,8 +33,10 @@
 #include <QVBoxLayout>
 
 #include "CompSwipeStrip.h"
+#include "ControlEdit.h"
 #include "ControlRegistry.h"
 #include "Song.h"
+#include "Track.h"
 
 namespace lmms::gui
 {
@@ -51,7 +53,10 @@ TakeLanesPanel::TakeLanesPanel(const QString& trackId, QWidget* parent) :
 	QWidget(parent),
 	m_trackId(trackId)
 {
-	setWindowTitle(tr("Take lanes - %1").arg(trackId));
+	// The track's name, not its control id, when it has one (review ux05 #89).
+	ControlResult unknown;
+	const Track* track = control::resolveTrack(trackId, &unknown);
+	setWindowTitle(tr("Take lanes - %1").arg(track != nullptr ? track->name() : trackId));
 	setObjectName(QStringLiteral("TakeLanesPanel"));
 	auto* outer = new QVBoxLayout(this);
 	m_lanes = new QVBoxLayout;
@@ -62,6 +67,7 @@ TakeLanesPanel::TakeLanesPanel(const QString& trackId, QWidget* parent) :
 
 	// 0.5.0 L03 (ED-165 / ED-168): drag along a lane to comp that range, double-click to cycle the take.
 	m_strip = new CompSwipeStrip(m_trackId, this);
+	m_strip->setToolTip(m_strip->accessibleName());  // the gestures, on hover too (review ux05 #91)
 	connect(m_strip, &CompSwipeStrip::ran, this, [this](const QString& status) {
 		m_status->setText(status);
 		refresh();

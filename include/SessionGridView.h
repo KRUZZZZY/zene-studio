@@ -40,6 +40,11 @@ class QMenu;
 class QPoint;
 class QToolButton;
 
+namespace lmms
+{
+struct ControlResult;
+}
+
 namespace lmms::gui
 {
 
@@ -81,6 +86,10 @@ protected:
 
 private:
 	void rebuild(int tracks, int scenes);
+	//! The status line: the last refusal while it stands, else the grid's size.
+	QString statusText(int tracks, int scenes) const;
+	//! After a button's command: keep a refusal in the status line until an action succeeds, then redraw.
+	void report(const ControlResult& result);
 	void launchCell(int track, int scene);
 	//! 0.5.0 L02 (WF-053): an audio file dropped on a cell (from the browser or the desktop) becomes its
 	//! clip - session.set_slot - and true when @a event was a drag or drop this handled.
@@ -99,6 +108,7 @@ private:
 	QLabel* m_status = nullptr;
 	QToolButton* m_stopAll = nullptr;
 	QToolButton* m_gridButton = nullptr;
+	QString m_notice;          //!< the last button command's refusal, until one succeeds
 	QJsonArray m_slots;        //!< session.get_state's slots, from the last refresh
 	QJsonArray m_sceneStates;  //!< and its scenes
 	std::vector<QToolButton*> m_cells;

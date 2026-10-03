@@ -57,17 +57,22 @@ bool invoke(const QString& id, const QJsonObject& args)
 	return ControlRegistry::instance()->invoke(id, args).ok;
 }
 
+//! Four decimals, trailing zeros dropped: enough that the text typed back (or Enter on it unchanged) is the
+//! same tick length - four significant digits turned 1923 ticks into "10.02 bars", 1924 ticks on Enter.
 QString barsText(int ticks)
 {
 	const double bars = static_cast<double>(ticks) / std::max(1, Engine::getSong()->ticksPerBar());
-	return QObject::tr("%1 bars").arg(bars, 0, 'g', 4);
+	QString number = QString::number(bars, 'f', 4);
+	while (number.endsWith(QLatin1Char('0'))) { number.chop(1); }
+	if (number.endsWith(QLatin1Char('.'))) { number.chop(1); }
+	return number == QLatin1String("1") ? QObject::tr("1 bar") : QObject::tr("%1 bars").arg(number);
 }
 
-//! "2", "1.5 bars" -> ticks; false when it is not a positive number of bars.
+//! "2", "1.5 bars", "1 bar" -> ticks; false when it is not a positive number of bars.
 bool ticksFromBars(const QString& typed, int* ticks)
 {
 	bool ok = false;
-	const double bars = QString(typed).remove(QObject::tr("bars")).trimmed().toDouble(&ok);
+	const double bars = QString(typed).remove(QObject::tr("bars")).remove(QObject::tr("bar")).trimmed().toDouble(&ok);
 	*ticks = static_cast<int>(std::lround(bars * Engine::getSong()->ticksPerBar()));
 	return ok && *ticks > 0;
 }
@@ -194,9 +199,9 @@ void InspectorPanel::addClipFields(QGridLayout* grid, Clip* clip, const QString&
 			const int ticks = QString(typed).remove(tr("ticks")).trimmed().toInt(&ok);
 			return ok && invoke(QStringLiteral("clip.slip"), {{QStringLiteral("clip"), id}, {QStringLiteral("offset"), ticks}});
 		});
-	for (auto [label, field] : {std::pair{tr("Start"), start}, std::pair{tr("Length"), length}, std::pair{tr("Offset"), offset}})
+	for (ReadoutField* field : {start, length, offset})
 	{
-		addRow(grid, label, field);
+		grid->addWidget(field, grid->rowCount(), 0, 1, 2);  // a readout field carries its own caption
 		m_liveFields.append(field);
 	}
 }

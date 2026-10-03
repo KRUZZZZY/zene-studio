@@ -221,7 +221,8 @@ ControlResult importSettings(const QJsonObject& args)
 {
 	QString error;
 	const QJsonObject doc = jsonfile::read(args.value(QStringLiteral("file")).toString(), &error);
-	if (doc.value(QStringLiteral("format")).toString() != FileFormat)
+	// A backup whose 'settings' is not an object would "restore" nothing and still answer success.
+	if (doc.value(QStringLiteral("format")).toString() != FileFormat || !doc.value(QStringLiteral("settings")).isObject())
 	{
 		return ControlResult::failure(ControlErrorKind::InvalidArgs, error.isEmpty() ? QStringLiteral("the file is not a settings backup (settings.export writes one)") : error);
 	}

@@ -26,6 +26,7 @@
 
 #include <algorithm>
 
+#include <QGuiApplication>
 #include <QPainter>
 #include <QPaintEvent>
 
@@ -35,6 +36,7 @@
 #include "Note.h"
 #include "NoteEditor.h"
 #include "Track.h"
+#include "WcagContrast.h"
 
 namespace lmms::gui
 {
@@ -52,6 +54,18 @@ int firstAtOrAfter(const NoteVector& notes, int tick)
 	return static_cast<int>(it - notes.begin());
 }
 
+//! A note label's colour: whichever of the theme's two text colours reads better on the note's
+//! fill as painted (at its alpha over a row), since pitch, track and velocity fills can be light
+//! or dark whatever the theme.
+QColor labelColour(const QColor& fill, const tokens::Palette& pal)
+{
+	const qreal a = fill.alphaF();
+	const QColor& row = pal.keyWhiteRow;
+	const QColor shown = QColor::fromRgbF(fill.redF() * a + row.redF() * (1 - a),
+		fill.greenF() * a + row.greenF() * (1 - a), fill.blueF() * a + row.blueF() * (1 - a));
+	return a11y::contrastRatio(pal.textOnAccent, shown) >= a11y::contrastRatio(pal.text, shown) ? pal.textOnAccent : pal.text;
+}
+
 } // namespace
 
 NoteCanvas::NoteCanvas(NoteEditor* editor)
@@ -64,8 +78,27 @@ NoteCanvas::NoteCanvas(NoteEditor* editor)
 	setMouseTracking(true);
 	setAttribute(Qt::WA_OpaquePaintEvent, true);
 	a11y::announce(this, tr("Notes"),
-		tr("The clip's notes. Keys 1 to 5 pick draw, select, slice, erase and audition; the arrow "
-			"keys move the selection, Delete removes it."));
+		tr("The clip's notes. Keys 1 to 7 pick draw, select, slice, erase, audition, paint and mute; the "
+			"arrow keys move the selection, Delete removes it. Alt-drag on a note changes the velocity, "
+			"Ctrl-drag copies, the right button erases. The wheel scrolls; with Ctrl it zooms, with Shift it "
+			"scrolls sideways, with Alt it changes the row height."));
+}
+
+bool NoteCanvas::copying() const
+{
+	return m_drag == Drag::Move && QGuiApplication::keyboardModifiers().testFlag(Qt::ControlModifier);
+}
+
+void NoteCanvas::focusInEvent(QFocusEvent* event)
+{
+	QWidget::focusInEvent(event);
+	update();  // the focus ring (paintOverlay)
+}
+
+void NoteCanvas::focusOutEvent(QFocusEvent* event)
+{
+	QWidget::focusOutEvent(event);
+	update();
 }
 
 void NoteCanvas::clipChanged()
@@ -234,7 +267,8 @@ void NoteCanvas::paintNotes(QPainter& p) const
 	p.setRenderHint(QPainter::Antialiasing, false);
 	const NoteVector& notes = m_state.clip->notes();
 	const auto [first, last] = visibleRange();
-	const bool moving = m_drag == Drag::Move || m_drag == Drag::Resize;
+	// A copy (Ctrl held) leaves the originals where they are, so they stay drawn in full.
+	const bool moving = (m_drag == Drag::Move && !copying()) || m_drag == Drag::Resize;
 	for (int i = first; i < last; ++i)
 	{
 		const Note& note = *notes[static_cast<std::size_t>(i)];
@@ -278,10 +312,27 @@ void NoteCanvas::paintNote(QPainter& p, const Note& note, const QRect& r) const
 	if (r.width() > 28 && r.height() >= 11)
 	{
 		p.setFont(tokens::font(tokens::TextRole::Caption));
-		p.setPen(pal.textOnAccent);
+		p.setPen(labelColour(fill, pal));
 		p.drawText(r.adjusted(4, 0, -2, 0), Qt::AlignVCenter | Qt::AlignLeft, noteLabel(note));
 	}
 	if (note.slide()) { p.fillRect(QRect(r.right() - 3, r.top(), 3, r.height()), pal.text); }
+}
+
+bool NoteCanvas::erased(const Note& note) const
+{
+	return std::binary_search(m_erasedIds.begin(), m_erasedIds.end(), note.id());
+}
+
+void NoteCanvas::paintErasePreview(QPainter& p) const
+{
+	if (m_state.clip == nullptr) { return; }
+	const NoteVector& notes = m_state.clip->notes();
+	const auto [first, last] = visibleRange();
+	for (int i = first; i < last; ++i)
+	{
+		const Note& note = *notes[static_cast<std::size_t>(i)];
+		if (erased(note)) { p.fillRect(noteRect(note), tokens::palette().record); }
+	}
 }
 
 void NoteCanvas::paintOverlay(QPainter& p) const
@@ -300,11 +351,18 @@ void NoteCanvas::paintOverlay(QPainter& p) const
 		const int x = static_cast<int>(m_state.grid.xOfTick(m_playhead));
 		p.fillRect(QRect(x, 0, 1, height()), pal.playhead);
 	}
+	if (hasFocus())
+	{
+		// Where the note keys act: the shell's focus ring, as on its other focusable surfaces.
+		p.setPen(QPen(pal.focusRing, 2));
+		p.setBrush(Qt::NoBrush);
+		p.drawRect(rect().adjusted(1, 1, -1, -1));
+	}
 	if (m_state.clip == nullptr)
 	{
 		p.setPen(pal.textMuted);
 		p.setFont(tokens::font(tokens::TextRole::Body));
-		p.drawText(rect(), Qt::AlignCenter, tr("Open a clip: double-click an instrument clip in the arranger."));
+		p.drawText(rect(), Qt::AlignCenter, tr("Open a clip: double-click a MIDI clip in the arranger."));
 	}
 }
 

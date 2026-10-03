@@ -55,6 +55,8 @@ private slots:
 
 private:
 	void addPlugins();
+	//! addPlugins() again after an organiser change, keeping the search, the roots' expansion and the scroll position.
+	void rebuildKeepingView();
 	void updateRootVisibility( int index );
 	void updateRootVisibilities();
 

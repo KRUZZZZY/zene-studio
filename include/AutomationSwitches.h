@@ -42,9 +42,9 @@ class LMMS_EXPORT AutomationSwitches : public ProjectSection
 public:
 	static AutomationSwitches& instance();
 
-	bool reads() const { return m_reads.load(std::memory_order_relaxed); }
-	bool writes() const { return m_writes.load(std::memory_order_relaxed); }
-	bool punchedWrites() const { return m_punched.load(std::memory_order_relaxed); }
+	bool reads() const { return (m_bits.load(std::memory_order_relaxed) & Reads) != 0; }
+	bool writes() const { return (m_bits.load(std::memory_order_relaxed) & Writes) != 0; }
+	bool punchedWrites() const { return (m_bits.load(std::memory_order_relaxed) & Punched) != 0; }
 	void set(bool reads, bool writes, bool punchedWrites);
 
 	//! Audio thread: whether a control may record at song tick @a tick.
@@ -58,9 +58,9 @@ public:
 
 private:
 	AutomationSwitches() = default;
-	std::atomic<bool> m_reads{true};
-	std::atomic<bool> m_writes{true};
-	std::atomic<bool> m_punched{false};
+	enum Bit : unsigned { Reads = 1, Writes = 2, Punched = 4 };
+	//! The three switches in one atomic, so a reader never sees half of a set().
+	std::atomic<unsigned> m_bits{Reads | Writes};
 };
 
 } // namespace lmms

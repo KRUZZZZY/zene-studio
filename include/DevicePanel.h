@@ -163,8 +163,10 @@ private:
 	void watch(Track* track, MixerChannel* channel);
 	void watchChain(EffectChain* chain);
 	void addInstrumentCard(InstrumentTrack* track);
-	void addChain(EffectChain* chain, const QString& target, const QJsonArray& modulators);
-	void addModulators(const QJsonArray& modulators, const QString& target, int effectIndex);
+	//! @a chainIndex is the chain's index in its channel's rack (0: the channel's own inserts), as a
+	//! modulator's route names it.
+	void addChain(EffectChain* chain, const QString& target, const QJsonArray& modulators, int chainIndex = 0);
+	void addModulators(const QJsonArray& modulators, const QString& target, int chainIndex, int effectIndex);
 	void addSection(const QString& text);
 	QWidget* buildAddButton();
 	QString signature() const;

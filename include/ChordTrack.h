@@ -130,8 +130,9 @@ public:
 	int indexAt(tick_t pos) const;
 	//! The event at \a pos, or nullptr.
 	const ChordEvent* findAt(tick_t pos) const;
-	//! 0.5.0: the event SOUNDING at \a pos - the latest one starting at or before it whose effectiveLength (with
-	//! DefaultEventTicks as the fallback) reaches past it - or nullptr where the track is silent.
+	//! 0.5.0: the event SOUNDING at \a pos - the latest one starting at or before it, when its effectiveLength (with
+	//! DefaultEventTicks as the fallback) reaches past it - or nullptr where the track is silent. A chord ends the
+	//! harmony of every earlier one, so an earlier, longer event does not sound again after a later one stops.
 	const ChordEvent* soundingAt(tick_t pos) const;
 	//! The event at \a index; the caller has proved the index.
 	const ChordEvent& at(int index) const { return m_events[static_cast<std::size_t>(index)]; }

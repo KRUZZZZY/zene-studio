@@ -39,6 +39,7 @@
 
 #include <functional>
 
+#include <QJsonArray>
 #include <QJsonObject>
 
 #include "ControlEdit.h"
@@ -291,6 +292,23 @@ void registerRemove(ControlRegistry& registry)
 	registry.registerCommand(cmd);
 }
 
+//! modulator.rate_set's arguments that write @a previous back: every field it sets, the step values
+//! and the envelope's attack included (they are kept whatever the shape).
+QJsonObject rateSetInverse(int index, const ModulatorSource& previous)
+{
+	QJsonObject args{{QStringLiteral("modulator"), modulatorId(index)},
+		{QStringLiteral("shape"), modulationShapeName(previous.shape)},
+		{QStringLiteral("rate"), static_cast<double>(previous.rateHz)},
+		{QStringLiteral("phase"), static_cast<double>(previous.phase)},
+		{QStringLiteral("unipolar"), previous.unipolar},
+		{QStringLiteral("active"), previous.active},
+		{QStringLiteral("attack"), static_cast<double>(previous.attack)}};
+	QJsonArray steps;
+	for (int i = 0; i < previous.stepCount; ++i) { steps.append(static_cast<double>(previous.steps[static_cast<std::size_t>(i)])); }
+	if (!steps.isEmpty()) { args.insert(QStringLiteral("steps"), steps); }  // an empty list is no valid 'steps'
+	return args;
+}
+
 void registerRateSet(ControlRegistry& registry)
 {
 	ControlCommand cmd;
@@ -345,13 +363,7 @@ void registerRateSet(ControlRegistry& registry)
 
 		QJsonObject result = layerResult(songModulationLayer().layer(), index);
 		result.insert(QStringLiteral("__transaction"),
-			transactionPayload(before, QStringLiteral("modulator.rate_set"),
-				QJsonObject{{QStringLiteral("modulator"), modulatorId(index)},
-					{QStringLiteral("shape"), modulationShapeName(previous.shape)},
-					{QStringLiteral("rate"), static_cast<double>(previous.rateHz)},
-					{QStringLiteral("phase"), static_cast<double>(previous.phase)},
-					{QStringLiteral("unipolar"), previous.unipolar},
-					{QStringLiteral("active"), previous.active}}, true,
+			transactionPayload(before, QStringLiteral("modulator.rate_set"), rateSetInverse(index, previous), true,
 				QStringLiteral("action checkpoint: the recorded undo step writes the previous "
 					"source back and re-resolves the modulator's targets from the values they "
 					"had before it drove them")));

@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-10-03T11:59:05Z",
+  "captured_at": "2026-10-03T17:09:26Z",
   "commands": [
     {
       "args_schema": {
@@ -60,12 +60,15 @@
           },
           "topic": {
             "type": "string"
+          },
+          "whats_this": {
+            "type": "boolean"
           }
         },
         "required": [],
         "type": "object"
       },
-      "description": "Open the manual inside the application - at 'topic' (window, arrange, notes, mix, devices, record, launch, projects, agents, customise, access) - or, with 'reference', the command reference: every command with its description and arguments, built from the registry. Interface state.",
+      "description": "Open the manual inside the application - at 'topic' (window, arrange, notes, mix, devices, record, launch, projects, agents, customise, access) - or, with 'reference', the command reference: every command with its description and arguments, built from the registry - or, with 'whats_this', What's This? mode: the next click on a control shows its full description. Interface state.",
       "group": "app",
       "id": "app.help",
       "mutating": false,
@@ -467,7 +470,7 @@
         ],
         "type": "object"
       },
-      "description": "Move the selected clip left or right by 'amount' ticks (default: the arranger's snap) - clip.move, which records itself.",
+      "description": "Move the selected clip left or right by 'amount' ticks (default: the arranger's snap) - clip.move, which records itself. Refused when the clip is already at the start.",
       "group": "arrangement",
       "id": "arrangement.nudge",
       "mutating": false,
@@ -4110,6 +4113,9 @@
             "minimum": 0,
             "type": "integer"
           },
+          "in_shape": {
+            "type": "string"
+          },
           "out": {
             "type": "string"
           },
@@ -4117,6 +4123,9 @@
             "maximum": 1919808,
             "minimum": 0,
             "type": "integer"
+          },
+          "out_shape": {
+            "type": "string"
           },
           "overlap": {
             "maximum": 1919808,
@@ -6237,7 +6246,7 @@
         ],
         "type": "object"
       },
-      "description": "Turn a take recorded across loop wraps into takes: the clip (starting at the loop's start, longer than the loop) is cut at each wrap, every pass goes on its own take lane at the loop's start, and the last pass is comped in. Reversible through the ProjectJournal (Track checkpoint).",
+      "description": "Turn a take recorded across loop wraps into takes: the clip (starting at the loop's start, longer than the loop) is cut at each wrap, every pass goes on its own take lane at the loop's start, and the last pass is comped in (refused past 32 passes). Reversible through the ProjectJournal (Track checkpoint).",
       "group": "comp",
       "id": "comp.split_passes",
       "mutating": true,
@@ -10537,7 +10546,7 @@
         ],
         "type": "object"
       },
-      "description": "Save a memory location 'name': the play position (or 'tick'), the range and the arranger's zoom as they are now - replacing one of that name, at most 99. Saved with the project; one undo step.",
+      "description": "Save a memory location 'name': the play position (or 'tick'), the range and the arranger's zoom as they are now - replacing one of that name, at most 99. Saved with the project; one undo step ('changed' false, and no step, when it was already saved just so). Names are trimmed here and in every lookup.",
       "group": "location",
       "id": "location.save",
       "mutating": true,
@@ -10591,7 +10600,7 @@
         ],
         "type": "object"
       },
-      "description": "Start recording macro 'name': every command that changes something from now on (not undo, redo or the macro commands) becomes one of its steps, with its arguments, until macro.record_stop.",
+      "description": "Start recording macro 'name': every command that changes something from now on (not undo, redo or the macro commands) becomes one of its steps, with its arguments, until macro.record_stop. Refused while another is being recorded.",
       "group": "macro",
       "id": "macro.record_start",
       "mutating": false,
@@ -10607,7 +10616,7 @@
         "required": [],
         "type": "object"
       },
-      "description": "Stop recording and save the macro as macro.save would (refused when nothing was done). One undo step.",
+      "description": "Stop recording and save the macro as macro.save would (refused when nothing was done; a refused save keeps recording, nothing lost). Commands past the 64th step are not kept: 'dropped' counts them. One undo step.",
       "group": "macro",
       "id": "macro.record_stop",
       "mutating": true,
@@ -14105,7 +14114,7 @@
         ],
         "type": "object"
       },
-      "description": "Put a grace note 'offset' ticks (3 when left out) before each note in 'scope', at 'velocity' (0..1, 0.6 when left out) of it - a flam. One undo step.",
+      "description": "Put a grace note 'offset' ticks (3 when left out) before each note in 'scope', at 'velocity' (0.05..1 - a grace note always sounds -, 0.6 when left out) of it - a flam. One undo step.",
       "group": "note",
       "id": "note.flam",
       "mutating": true,
@@ -17873,7 +17882,7 @@
         ],
         "type": "object"
       },
-      "description": "Take alternative 'name' off the list (its file stays on disk). One undo step.",
+      "description": "Take alternative 'name' off the list (its file stays on disk). One undo step. Refused for the alternative the session is: switch away from it first.",
       "group": "project",
       "id": "project.alternative_remove",
       "mutating": true,
@@ -23043,7 +23052,7 @@
         ],
         "type": "object"
       },
-      "description": "Save the selection as 'name': the range and the clips selected in the arranger (or 'clips', a list of clip ids) - replacing one of that name, at most 99. Refused when nothing is selected. Saved with the project; one undo step.",
+      "description": "Save the selection as 'name': the range and the clips selected in the arranger (or 'clips', a list of clip ids; refused NotFound naming one that is not in the project) - replacing one of that name, at most 99 ('changed' false when it was already saved just so: no undo step). Refused when nothing is selected. Saved with the project; one undo step.",
       "group": "selection",
       "id": "selection.save",
       "mutating": true,
@@ -24709,7 +24718,7 @@
         "required": [],
         "type": "object"
       },
-      "description": "Apply a shortcut set: the overrides in 'file' (written by shortcuts.export) or given as 'overrides'; merged over the current ones, or replacing them with 'replace'. Ids this build's menus do not have are kept and listed in 'unknown'. One undo step.",
+      "description": "Apply a shortcut set: the overrides in 'file' (written by shortcuts.export) or given as 'overrides'; merged over the current ones, or replacing them with 'replace'. Ids this build's menus do not have are kept and listed in 'unknown'; a value that is no key sequence is left out and listed in 'invalid'; 'conflicts' lists the keys more than one action holds afterwards ({keys, ids}). One undo step.",
       "group": "shortcuts",
       "id": "shortcuts.import",
       "mutating": true,
@@ -24717,8 +24726,14 @@
       "result_schema": {
         "additionalProperties": false,
         "properties": {
+          "conflicts": {
+            "type": "array"
+          },
           "imported": {
             "type": "integer"
+          },
+          "invalid": {
+            "type": "array"
           },
           "unknown": {
             "type": "array"
@@ -29977,7 +29992,7 @@
         "required": [],
         "type": "object"
       },
-      "description": "Open Help > Ask (app.ask in a window), asking 'question' at once when given; 'answers' is how many it found. Offline.",
+      "description": "Open Help > Ask (app.ask in a window), asking 'question' at once when given; 'answers' is how many it found (an open one is raised and asked). Offline.",
       "group": "window",
       "id": "window.ask",
       "mutating": false,
@@ -30249,7 +30264,7 @@
         "required": [],
         "type": "object"
       },
-      "description": "Customise the header: 'hidden' lists button names to hide (the rest show), 'extra' adds buttons that run registry commands ([{command, label}]). A field not given is kept. Kept in the config file; one undo step.",
+      "description": "Customise the header: 'hidden' lists button names to hide (the rest show), 'extra' adds buttons that run registry commands ([{command, label}], commands that need no arguments). A field not given is kept. Kept in the config file; one undo step.",
       "group": "window",
       "id": "window.header_set",
       "mutating": true,
@@ -30265,7 +30280,7 @@
         "required": [],
         "type": "object"
       },
-      "description": "Open a large clock: the play position in bars, beats and ticks and in minutes and seconds, big enough to read across the room. A display.",
+      "description": "Open a large clock: the play position in bars, beats and ticks and in minutes and seconds, big enough to read across the room (an open one is raised instead). A display.",
       "group": "window",
       "id": "window.large_clock",
       "mutating": false,
@@ -30744,7 +30759,7 @@
         ],
         "type": "object"
       },
-      "description": "Pin a side panel ('panel': browser, inspector, devices, mixer, detail...) open in every view that offers it, or unpin it ('pinned' false) - the pin button in the panel's header. Kept with the layout (a preference, not project state). Refused for a view's main panel and the launcher.",
+      "description": "Pin a side panel ('panel': browser, inspector, devices, mixer, detail...) open in every view that offers it, or unpin it ('pinned' false) - the pin button in the panel's header. Kept with the layout (a preference, not project state). Refused for the arranger (always a main panel) and the launcher; a pinned mixer or note editor is still the main panel of its own view.",
       "group": "window",
       "id": "window.pin",
       "mutating": false,
@@ -31016,7 +31031,7 @@
         "required": [],
         "type": "object"
       },
-      "description": "Tidy the floating windows - detached panels, dialogs, plug-in windows - over the main window's screen: 'cascade' (the default: stepped from its top left corner) or 'tile' (a grid). Interface state.",
+      "description": "Tidy the floating windows - detached panels, dialogs (not a modal prompt), plug-in windows - over the main window's screen: 'cascade' (the default: stepped from its top left corner, starting again before the middle) or 'tile' (a grid). Interface state.",
       "group": "window",
       "id": "window.tidy",
       "mutating": false,
@@ -31056,7 +31071,7 @@
         ],
         "type": "object"
       },
-      "description": "Show or hide one shell panel or floating window - the View menu, the footer's panel buttons, Alt+I/B/D/N/M/A/P/L, the MDI-era Ctrl+1..7 and Edit > Scales and keymaps dispatch exactly this. `editor` is a panel id (arranger, launcher, detail, devices, inspector, browser, mixer, automation, pattern), a 0.4.0 editor name (song = arranger, piano_roll = detail, clip_launcher = launcher), or a floating window (controller_rack, project_notes, microtuner, classic_piano_roll). A panel shares its region with others, so showing it hides the region's previous panel; a view's main panel cannot be hidden (it stays visible); a panel the current view does not offer is revealed by switching to the Arrange view. `visible` is the state afterwards, `panel` the panel id (empty for a window), `view` the view afterwards. Interface state, not project state: nothing is journalled. Refused `requires` in a process with no interface.",
+      "description": "Show or hide one shell panel or floating window - the View menu, the footer's panel buttons, Alt+I/B/D/E/M/A/P/L, the MDI-era Ctrl+1..7 and Edit > Scales and keymaps dispatch exactly this. `editor` is a panel id (arranger, launcher, detail, devices, inspector, browser, mixer, automation, pattern), a 0.4.0 editor name (song = arranger, piano_roll = detail, clip_launcher = launcher), or a floating window (controller_rack, project_notes, microtuner, classic_piano_roll). A panel shares its region with others, so showing it hides the region's previous panel; a view's main panel cannot be hidden (it stays visible); a panel the current view does not offer is revealed by switching to the Arrange view. `visible` is the state afterwards, `panel` the panel id (empty for a window), `view` the view afterwards. Interface state, not project state: nothing is journalled. Refused `requires` in a process with no interface.",
       "group": "window",
       "id": "window.toggle",
       "mutating": false,
@@ -31114,7 +31129,7 @@
         "required": [],
         "type": "object"
       },
-      "description": "Open the tuner: the note nearest the pitch of its source (the input, unless tuner.set chose another), the cents off it and a needle; closing it switches the tuner off. A display.",
+      "description": "Open the tuner: the note nearest the pitch of its source (the input, unless tuner.set chose another), the cents off it and a needle (an open one is raised instead); closing it switches the tuner off. A display.",
       "group": "window",
       "id": "window.tuner",
       "mutating": false,
@@ -31174,8 +31189,8 @@
     "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-survey/tools/zene-pa-agentctl",
     "lane_head": null,
     "proto": 1,
-    "source_socket": "/tmp/zctl-run-5p5pb3x7/zene.sock",
-    "version": "0.4.0-alpha.101+5b701a4"
+    "source_socket": "/tmp/zctl-run-3m6tb7b2/zene.sock",
+    "version": "0.4.0-alpha.104+2408224"
   },
   "kind": "zene-control-command-list",
   "proto": 1,

@@ -67,8 +67,10 @@ QJsonArray contrastFailures(const gui::tokens::Palette& palette)
 		const double ratio = a11y::contrastRatio(pair.foreground, pair.background);
 		if (ratio < pair.minimum)
 		{
+			// The two colours too, so the failure can be acted on without working the palette out by hand.
 			out.append(QJsonObject{{QStringLiteral("pair"), QLatin1String(pair.name)}, {QStringLiteral("ratio"), ratio},
-				{QStringLiteral("minimum"), pair.minimum}});
+				{QStringLiteral("minimum"), pair.minimum}, {QStringLiteral("foreground"), pair.foreground.name()},
+				{QStringLiteral("background"), pair.background.name()}});
 		}
 	}
 	return out;
@@ -144,6 +146,12 @@ ControlResult exportTheme(const QJsonObject& args)
 //! The colours an import brings: the 'colors' argument, or the file's.
 bool importedColors(const QJsonObject& args, QJsonObject* out, ControlResult* error)
 {
+	if (args.contains(QStringLiteral("colors")) && args.contains(QStringLiteral("file")))
+	{
+		// One source: with both, one of them would be ignored without a word.
+		*error = ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("give 'file' or 'colors', not both"));
+		return false;
+	}
 	if (args.contains(QStringLiteral("colors"))) { *out = args.value(QStringLiteral("colors")).toObject(); return true; }
 	QString reason;
 	const QJsonObject doc = jsonfile::read(args.value(QStringLiteral("file")).toString(), &reason);

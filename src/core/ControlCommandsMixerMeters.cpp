@@ -68,11 +68,10 @@ QJsonArray sendsOf(MixerChannel* channel)
 //! fader for a post-fader send); a switched-off send or a muted sender reads silence.
 ControlResult sendMeters(const QJsonObject& args)
 {
-	const QString id = args.value(QStringLiteral("channel")).toString();
-	if (!id.isEmpty())
+	if (args.contains(QStringLiteral("channel")))  // an empty id is a bad channel, not "every channel"
 	{
 		ControlResult error;
-		MixerChannel* channel = resolveMixerChannel(id, &error);
+		MixerChannel* channel = resolveMixerChannel(args.value(QStringLiteral("channel")).toString(), &error);
 		if (channel == nullptr) { return error; }
 		return ControlResult::success({{QStringLiteral("sends"), sendsOf(channel)}});
 	}
@@ -134,7 +133,11 @@ ControlResult crossfader(const QJsonObject& args)
 	MixerChannel* channel = nullptr;
 	if (args.contains(QStringLiteral("channel")) && (channel = resolveMixerChannel(args.value(QStringLiteral("channel")).toString(), &error)) == nullptr) { return error; }
 	const float before = MixerOptions::instance().crossfader();
-	const bool sided = channel != nullptr && args.contains(QStringLiteral("side"));
+	const bool sided = args.contains(QStringLiteral("side"));
+	if (sided && channel == nullptr)
+	{
+		return ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("'side' puts a 'channel' on a side: name the channel"));
+	}
 	if (args.contains(QStringLiteral("position")))
 	{
 		const auto after = static_cast<float>(std::clamp(args.value(QStringLiteral("position")).toDouble(), -1.0, 1.0));

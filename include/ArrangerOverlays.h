@@ -27,6 +27,7 @@
 
 #include <QPointer>
 #include <QStringList>
+#include <QVector>
 #include <QWidget>
 
 #include "LmmsTypes.h"
@@ -95,6 +96,7 @@ public:
 	lmms::Track* trackAt(int y) const;
 
 protected:
+	bool event(QEvent* event) override;
 	void paintEvent(QPaintEvent* event) override;
 	void mousePressEvent(QMouseEvent* event) override;
 	void mouseMoveEvent(QMouseEvent* event) override;
@@ -103,6 +105,8 @@ protected:
 
 private:
 	int contentLeft() const;
+	//! The viewport rectangle the range covers on each track it covers, in row order (none with no range).
+	QVector<QRect> rangeRows() const;
 	//! trackAt(), or off the rows the nearest one: the first above them, the last below.
 	lmms::Track* nearestTrackAt(int y) const;
 	void dispatchRange(const QPoint& to);

@@ -143,8 +143,11 @@ AutomationLatency& AutomationLatency::instance()
 
 void AutomationLatency::setEnabled(bool on)
 {
-	m_enabled.store(on, std::memory_order_relaxed);
-	refresh();
+	// Readers see the switch go off at once, and come on only after every clip's latency is in place,
+	// so no period mixes compensated and uncompensated clips.
+	if (!on) { m_enabled.store(false, std::memory_order_release); }
+	refreshAs(on);
+	m_enabled.store(on, std::memory_order_release);
 	poll(on);
 }
 
@@ -161,17 +164,18 @@ void AutomationLatency::poll(bool on)
 	else { m_poll->stop(); }
 }
 
-void AutomationLatency::refresh()
+void AutomationLatency::refresh() { refreshAs(enabled()); }
+
+void AutomationLatency::refreshAs(bool on)
 {
 	Song* song = Engine::getSong();
 	// Mid-load the track list is still being built (a load processes events): the load's own walk catches up.
 	if (song == nullptr || song->isLoadingProject() || Engine::mixer() == nullptr || Engine::patternStore() == nullptr) { return; }
-	refreshClips();
+	refreshClips(on);
 }
 
-void AutomationLatency::refreshClips()
+void AutomationLatency::refreshClips(bool on)
 {
-	const bool on = enabled();
 	forEachAutomationClip([on](AutomationClip* clip) {
 		clip->setLatencyFrames(on && !clip->objects().empty() ? upstreamFrames(clip->firstObject()) : 0);
 	});
@@ -257,7 +261,7 @@ void AutomationLatency::refreshOnceLoaded()
 	auto connection = std::make_shared<QMetaObject::Connection>();
 	*connection = QObject::connect(song, &Song::projectLoaded, m_poll, [this, connection] {
 		QObject::disconnect(*connection);
-		refreshClips();
+		refreshClips(enabled());
 	});
 }
 

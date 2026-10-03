@@ -93,11 +93,13 @@ const ReversibilityRow kArrangerRows[] = {
 	R("track.version_switch", RC::TrueInverse, true, "it swaps a track's clips for a stored version's", "Track journal checkpoint plus the previous versions put back", ""),
 	R("track.version_remove", RC::TrueInverse, true, "it forgets a stored version", "closure: the previous versions put back", ""),
 	R("arrangement.scroll", RC::NotMutating, false, "it scrolls the arranger: interface state", "no write", ""),
-	R("arrangement.modifier_tools", RC::NotMutating, false, "it binds tools to modifier keys, a preference in the config file", "no write", ""),
-	R("arrangement.navigator", RC::NotMutating, false, "it shows or hides the navigator, a preference in the config file", "no write", ""),
+	R("arrangement.modifier_tools", RC::NotMutating, false, "it binds tools to modifier keys, a preference in the config file",
+		"no write to the project, and the config write is not journalled (set the previous bindings)", ""),
+	R("arrangement.navigator", RC::NotMutating, false, "it shows or hides the navigator, a preference in the config file",
+		"no write to the project, and the config write is not journalled (set it back)", ""),
 	R("arrangement.modes", RC::NotMutating, false,
 		"it sets the arranger's editing preferences (ripple, overlap, snap to edges), kept in the config file - not "
-		"project state", "no write to the project (set the previous modes)", ""),
+		"project state", "no write to the project, and the config write is not journalled (set the previous modes)", ""),
 	R("transport.audition_start", RC::NotMutating, false,
 		"it plays from a point with the other tracks silenced; the mutes are set with journalling off and are put back "
 		"by audition_stop - engine run state, not project state", "no write to the project (transport.audition_stop)", ""),

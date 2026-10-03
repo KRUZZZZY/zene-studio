@@ -26,6 +26,8 @@
 
 #include "ClipEdits.h"
 
+#include <algorithm>
+
 #include <QApplication>
 #include <QHashFunctions>
 #include <QMenu>
@@ -36,6 +38,7 @@
 #include "ClipTransients.h"
 #include "ControlRegistry.h"
 #include "ControlVocabulary.h"
+#include "EditLocks.h"
 #include "FileDialog.h"
 #include "FontHelper.h"
 #include "GuiApplication.h"
@@ -199,17 +202,28 @@ ClipOverlayFrame SampleClipView::overlayFrame(int xOrigin)
 
 const std::vector<int>& SampleClipView::transientTicks()
 {
-	// The analysis runs once per audio, window and placement - not once per paint. The placement includes
-	// the clip's rate and warp map: a marker edit moves every transient after it (review L17 #6).
+	// The analysis - the slow part - runs once per audio and window, not once per paint. The placement (the
+	// clip's rate, tempo and warp map) only re-maps its frames to ticks: a marker edit moves every transient
+	// after it (review L17 #6), and a tempo change no longer analyses the audio again (UX ux06 #31).
 	const SampleWindow window = m_clip->sampleWindow();
+	const QString audio = QStringLiteral("%1:%2:%3").arg(reinterpret_cast<quintptr>(m_clip->sample().data()))
+		.arg(window.sourceIn).arg(window.sourceOut);
+	if (audio != m_transientAudioKey)
+	{
+		m_transientFrames = clipTransientFrames(*m_clip);
+		m_transientAudioKey = audio;
+		m_transientKey.clear();
+	}
 	std::size_t warp = 0;
 	for (const WarpMarker& marker : m_clip->warpMarkers().all()) { warp = qHashMulti(warp, marker.sourceFrame, marker.offsetTicks); }
-	const QString key = QStringLiteral("%1:%2:%3:%4:%5:%6:%7").arg(reinterpret_cast<quintptr>(m_clip->sample().data()))
-		.arg(window.sourceIn).arg(window.sourceOut).arg(m_clip->length().getTicks()).arg(Engine::getSong()->getTempo())
+	const QString key = QStringLiteral("%1:%2:%3:%4").arg(m_clip->length().getTicks()).arg(Engine::getSong()->getTempo())
 		.arg(m_clip->clipFramesPerTick()).arg(warp);
 	if (key != m_transientKey)
 	{
-		m_transientTicks = clipTransientTicks(*m_clip);
+		// As clipTransientTicks: ticks from the clip's start, where the clip plays each frame now.
+		const tick_t origin = m_clip->startPosition().getTicks() + m_clip->startTimeOffset().getTicks();
+		m_transientTicks.clear();
+		for (const f_cnt_t frame : m_transientFrames) { m_transientTicks.push_back(m_clip->timelinePosAt(frame).getTicks() - origin); }
 		m_transientKey = key;
 	}
 	return m_transientTicks;
@@ -223,11 +237,18 @@ ClipEdits SampleClipView::shownEdits() const
 	return edits;
 }
 
+FadeHandle SampleClipView::fadeHandleUnder(const QPoint& pos)
+{
+	// A locked clip (or a clip of a locked track) has no fade to drag: clip.set_fade would refuse it (UX ux06 #25).
+	if (EditLocks::instance().locks(m_clip)) { return FadeHandle::None; }
+	return fadeHandleAt(m_clip->clipEdits(), m_clip->length().getTicks(), overlayFrame(0), pos);
+}
+
 bool SampleClipView::startFadeDrag(QMouseEvent* me)
 {
 	// 0.5.0 L05 (ED-173): a plain press on a fade handle drags that fade (clip.set_fade on release).
 	if (me->button() != Qt::LeftButton || me->modifiers() != Qt::NoModifier) { return false; }
-	const FadeHandle handle = fadeHandleAt(m_clip->clipEdits(), m_clip->length().getTicks(), overlayFrame(0), me->pos());
+	const FadeHandle handle = fadeHandleUnder(me->pos());
 	if (handle == FadeHandle::None) { return false; }
 	m_fadeDrag = handle;
 	m_fadeDragTicks = handle == FadeHandle::In ? m_clip->clipEdits().fadeInTicks : m_clip->clipEdits().fadeOutTicks;
@@ -236,8 +257,17 @@ bool SampleClipView::startFadeDrag(QMouseEvent* me)
 
 void SampleClipView::mouseMoveEvent(QMouseEvent* me)
 {
-	if (m_fadeDrag == FadeHandle::None) { ClipView::mouseMoveEvent(me); return; }
-	m_fadeDragTicks = fadeTicksAt(m_fadeDrag, me->pos().x(), m_clip->length().getTicks(), overlayFrame(0));
+	if (m_fadeDrag == FadeHandle::None)
+	{
+		ClipView::mouseMoveEvent(me);
+		// Over a fade handle the pointer shows that it drags sideways, as over a resize edge (UX ux06 #27).
+		if (!me->buttons() && fadeHandleUnder(me->pos()) != FadeHandle::None) { setCursor(Qt::SizeHorCursor); }
+		return;
+	}
+	// fade_in + fade_out must fit in the clip (clip.set_fade refuses more), so a fade stops where the other begins.
+	const int clipTicks = m_clip->length().getTicks();
+	const int other = m_fadeDrag == FadeHandle::In ? m_clip->clipEdits().fadeOutTicks : m_clip->clipEdits().fadeInTicks;
+	m_fadeDragTicks = std::max(0, std::min(fadeTicksAt(m_fadeDrag, me->pos().x(), clipTicks, overlayFrame(0)), clipTicks - other));
 	setNeedsUpdate(true);
 	update();
 }

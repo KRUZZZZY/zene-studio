@@ -22,6 +22,7 @@
  *
  */
 
+#include <QAbstractItemView>
 #include <QAction>
 #include <QActionGroup>
 #include <QComboBox>
@@ -31,6 +32,7 @@
 #include <QMenu>
 
 #include "Accessibility.h"
+#include "ControlScaleShared.h"
 #include "DesignTokens.h"
 #include "NoteEditor.h"
 #include "ShellChrome.h"
@@ -42,7 +44,8 @@ namespace lmms::gui
 namespace
 {
 
-//! The snap choices, in ticks at 192 per bar; 0 is "off".
+//! The snap choices, in ticks at 192 per whole note; 1 (the tick itself) is "off" - NoteGrid::snap
+//! leaves a tick unchanged at a grid of 1.
 struct GridChoice
 {
 	const char* label;
@@ -76,7 +79,7 @@ QWidget* NoteEditor::buildToolbar()
 {
 	auto* bar = new QWidget(this);
 	bar->setObjectName(QStringLiteral("noteEditorToolbar"));
-	bar->setFixedHeight(tokens::size::target + 2 * tokens::space::xs);
+	bar->setFixedHeight(tokens::targetSize() + 2 * tokens::space::xs);  // the buttons' height at the density
 	bar->setAutoFillBackground(true);
 	QPalette pal = bar->palette();
 	pal.setColor(QPalette::Window, tokens::palette().panel);
@@ -88,6 +91,7 @@ QWidget* NoteEditor::buildToolbar()
 	m_clipLabel = new QLabel(bar);
 	m_clipLabel->setFont(tokens::font(tokens::TextRole::Title));
 	m_clipLabel->setMinimumWidth(120);
+	m_clipLabel->setMaximumWidth(240);  // a long name is elided (showClipTitle), not let push the tools off
 	row->addWidget(m_clipLabel);
 	row->addSpacing(tokens::space::md);
 	addToolButtons(bar, row);
@@ -102,7 +106,7 @@ QWidget* NoteEditor::buildToolbar()
 
 void NoteEditor::addToolButtons(QWidget* bar, QHBoxLayout* row)
 {
-	// The tools, keys 1..5.
+	// The tools, keys 1..7.
 	m_tools = new QActionGroup(this);
 	const struct { const char* icon; QString text; } tools[] = {
 		{"draw", tr("Draw")}, {"select", tr("Select")}, {"slice", tr("Slice")}, {"erase", tr("Erase")},
@@ -130,11 +134,13 @@ void NoteEditor::addGridControls(QWidget* bar, QHBoxLayout* row)
 		[this](int index) { setGridTicks(m_gridBox->itemData(index).toInt()); });
 	row->addWidget(m_gridBox);
 	auto* quantise = new QAction(shellicons::icon(QStringLiteral("quantize")), tr("Quantise"), this);
-	quantise->setToolTip(tr("Quantise the clip's notes to the grid (groove.quantize)"));
+	quantise->setToolTip(tr("Quantise the selected notes, or every note when none is selected, to the grid (groove.quantize)"));
 	quantise->setProperty("controlCommand", QStringLiteral("groove.quantize"));
 	connect(quantise, &QAction::triggered, this, [this]() {
 		if (m_state.clip == nullptr) { return; }
-		run(QStringLiteral("groove.quantize"), {{QStringLiteral("clip"), clipId()}, {QStringLiteral("grid"), std::max(1, m_state.gridTicks)}});
+		// The same scope Notes > Quantise... acts on.
+		run(QStringLiteral("groove.quantize"), {{QStringLiteral("clip"), clipId()}, {QStringLiteral("grid"), std::max(1, m_state.gridTicks)},
+			{QStringLiteral("scope"), noteScope()}});
 	});
 	row->addWidget(toolButton(bar, quantise));
 	row->addSpacing(tokens::space::md);
@@ -180,8 +186,10 @@ void NoteEditor::addScaleButton(QWidget* bar, QHBoxLayout* row)
 	m_scaleLabel = new QLabel(bar);  // kept for describe(); the button shows the same text
 	m_scaleLabel->hide();
 	connect(this, &NoteEditor::stateChanged, scaleButton, [this, scaleButton]() {
-		scaleButton->setText(m_state.scaleName.isEmpty() ? tr("No scale") : m_state.scaleName);
-		a11y::announce(scaleButton, tr("Scale: %1").arg(scaleButton->text()), tr("Choose the scale and its root."));
+		const QString text = m_state.scaleName.isEmpty() ? tr("No scale") : m_state.scaleName;
+		if (text == scaleButton->text()) { return; }  // stateChanged also fires on every scroll and zoom
+		scaleButton->setText(text);
+		a11y::announce(scaleButton, tr("Scale: %1").arg(text), tr("Choose the scale and its root."));
 		scaleButton->updateGeometry();
 	});
 	row->addWidget(scaleButton);
@@ -195,7 +203,7 @@ void NoteEditor::addViewButtons(QWidget* bar, QHBoxLayout* row)
 	connect(ghosts, &QAction::toggled, this, &NoteEditor::setGhosts);
 	row->addWidget(toolButton(bar, ghosts));
 	auto* fit = new QAction(shellicons::icon(QStringLiteral("follow")), tr("Zoom to fit"), this);
-	fit->setToolTip(tr("Fit the clip in view"));
+	fit->setToolTip(tr("Fit the clip's length in view and centre its notes"));
 	connect(fit, &QAction::triggered, this, &NoteEditor::zoomToFit);
 	row->addWidget(toolButton(bar, fit));
 	row->addStretch(1);
@@ -215,8 +223,13 @@ void NoteEditor::buildLaneChooser()
 	a11y::announce(m_laneBox, tr("Expression lane"), tr("Which per-note value, or which controller curve of the clip, the lane below the notes edits."));
 	m_laneBox->setFixedWidth(84);
 	m_laneBox->setStyleSheet(QStringLiteral("QComboBox { padding: 2px 16px 2px 6px; }"));
+	// The box is as narrow as the keys; its list opens wide enough for every name, and the
+	// tooltip names the lane shown.
+	m_laneBox->view()->setMinimumWidth(m_laneBox->view()->sizeHintForColumn(0) + 2 * tokens::space::md);
+	m_laneBox->setToolTip(m_laneBox->currentText());
 	connect(m_laneBox, qOverload<int>(&QComboBox::currentIndexChanged), this,
 		[this](int index) {
+			m_laneBox->setToolTip(m_laneBox->itemText(index));
 			const QVariant data = m_laneBox->itemData(index);
 			if (data.typeId() == QMetaType::QString) { setControllerLane(data.toString()); return; }
 			setControllerLane(QString());
@@ -226,28 +239,40 @@ void NoteEditor::buildLaneChooser()
 
 void NoteEditor::fillScaleMenu(QMenu* menu)
 {
-	// What scale.list offers, each item the command it names (scale.root_set / scale.set).
+	// What scale.list offers, each item the command it names (scale.root_set / scale.set). The
+	// current root and scale are checked (scale.list carries the context), and No Scale clears it.
 	menu->clear();
 	const QJsonObject listed = run(QStringLiteral("scale.list"), {});
+	const bool set = listed.value(QStringLiteral("scale_set")).toBool();
 	const auto nameOf = [](const QJsonValue& v) {
 		return v.isObject() ? v.toObject().value(QStringLiteral("name")).toString() : v.toString();
+	};
+	const auto choice = [this](QMenu* into, const QString& label, bool checked, const QString& command, const QJsonObject& args) {
+		QAction* action = into->addAction(label, this, [this, command, args]() { run(command, args); readScale(); });
+		action->setCheckable(true);
+		action->setChecked(checked);
 	};
 	QMenu* roots = menu->addMenu(tr("Root"));
 	for (const QJsonValue& root : listed.value(QStringLiteral("roots")).toArray())
 	{
 		const QString name = nameOf(root);
-		roots->addAction(name, this, [this, name]() { run(QStringLiteral("scale.root_set"), {{QStringLiteral("root"), name}}); readScale(); });
+		choice(roots, name, name == listed.value(QStringLiteral("root_name")).toString(), QStringLiteral("scale.root_set"),
+			{{QStringLiteral("root"), name}});
 	}
+	choice(menu, tr("No scale"), !set, QStringLiteral("scale.set"), {{QStringLiteral("scale"), QString()}});
 	for (const QJsonValue& scale : listed.value(QStringLiteral("scales")).toArray())
 	{
 		const QString name = nameOf(scale);
-		menu->addAction(name, this, [this, name]() { run(QStringLiteral("scale.set"), {{QStringLiteral("scale"), name}}); readScale(); });
+		choice(menu, name, set && name == listed.value(QStringLiteral("scale")).toString(), QStringLiteral("scale.set"),
+			{{QStringLiteral("scale"), name}});
 	}
 }
 
 void NoteEditor::readScale()
 {
 	// The scale context (scale.get_state): the mask both highlights and folds.
+	m_scaleRoot = control::scaleContext().root;  // what followScale() compares against
+	m_scaleSeen = control::scaleContext().scale;
 	const QJsonObject state = run(QStringLiteral("scale.get_state"), {});
 	const QString mask = state.value(QStringLiteral("mask")).toString();
 	std::array<bool, 12> bits{};

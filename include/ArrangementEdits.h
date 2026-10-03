@@ -103,7 +103,7 @@ LMMS_EXPORT QVector<Track*> rippleTracks(Track* track, Ripple mode);
 LMMS_EXPORT void checkpointForDelete(Track* track, Ripple mode);
 
 //! What the arranger does after the user drops @a moved: the overlap mode, as one more undo step
-//! (the track's checkpoint), when it is not Free.
+//! (the track's checkpoint), when it is not Free. Nothing when it was dropped where it started.
 LMMS_EXPORT void afterUserMove(Clip* moved, tick_t oldStart = -1);
 
 /*! ED-190: move the points of every automation lane following @a track that lie in

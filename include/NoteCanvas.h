@@ -88,6 +88,8 @@ protected:
 	void wheelEvent(QWheelEvent* event) override;
 	void keyPressEvent(QKeyEvent* event) override;
 	void resizeEvent(QResizeEvent* event) override;
+	void focusInEvent(QFocusEvent* event) override;
+	void focusOutEvent(QFocusEvent* event) override;
 
 private:
 	enum class Drag
@@ -113,9 +115,12 @@ private:
 	void paintDragPreview(QPainter& p) const;
 	void paintDrawPreview(QPainter& p) const;
 	void paintErasePreview(QPainter& p) const;
+	bool erased(const Note& note) const;  //!< whether the eraser has crossed @a note this gesture
 	void paintMovePreview(QPainter& p) const;
 	void paintGhostClip(QPainter& p, const MidiClip& clip, int offset) const;
 	void paintOverlay(QPainter& p) const;
+	//! A move drag with Ctrl held: the release copies the selection (commitMove) instead of moving it.
+	bool copying() const;
 
 	// gestures (NoteCanvasInput.cpp)
 	void beginPress(QMouseEvent* event);
@@ -123,6 +128,7 @@ private:
 	void commitDrag(Drag drag, bool shift);  //!< the one command a released gesture sends
 	void pressAudition(const Note* note);
 	void pressErase(const Note* note);
+	void markErased(const Note* note);  //!< adds @a note (if any) to m_erasedIds, kept sorted
 	bool nudgeForKey(int key, bool shift);
 	int resizeDelta() const;  //!< the snapped length change of a resize drag (0 otherwise)
 	void pressOnNote(Note* note, QMouseEvent* event);
@@ -173,7 +179,7 @@ private:
 	// restore re-loads the list), and a held pointer would then be a freed one - BUGS 11.27's
 	// lesson, a view must not outlive its model.
 	int m_anchorId = -1;                 //!< the note a move/resize was started on
-	std::vector<int> m_erasedIds;        //!< notes the eraser has crossed, removed on release
+	std::vector<int> m_erasedIds;        //!< notes the eraser has crossed (sorted), removed on release
 	int m_auditionKey = -1;
 	std::vector<std::pair<int, int>> m_painted;  //!< the paint tool's cells so far: key, start tick
 };

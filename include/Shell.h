@@ -118,6 +118,10 @@ private:
 	void buildBody();
 	void buildActions();
 	void apply();
+	//! Park every panel @a target (panel id -> host) gives no host, unless it floats.
+	void parkUnused(const QHash<QString, QWidget*>& target);
+	//! Give the keyboard focus to panel @a id's content, when it has some.
+	void focusPanel(const QString& id);
 	//! The host a panel belongs in under the current layout; nullptr = parked.
 	QWidget* hostFor(const ShellPanelSpec& spec) const;
 	void placeInto(QWidget* host, ShellPanel* frame);

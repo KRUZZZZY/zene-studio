@@ -41,7 +41,9 @@ namespace lmms::gui::mixeroverlays
 namespace
 {
 
-int s_sendsOnFaders = -1;
+//! The return the faders show sends to, by its stable id (MixerChannel::id()), not its index: a channel
+//! deleted or moved must not leave the faders on some other channel's sends. -1: the channel faders.
+int s_sendsOnFadersId = -1;
 
 //! Every channel under @a folder: its children's current ones and, for a routing folder, the ones they
 //! had; a nested folder folds with it, so its own channel and everything under it too.
@@ -68,12 +70,13 @@ void childChannels(const TrackFolder* folder, QSet<int>* out)
 	out->unite(hidden);
 }
 
-//! The model a channel strip's fader shows in the current mode, or nullptr when it shows no fader.
-FloatModel* faderModelFor(int index)
+//! The model a channel strip's fader shows with the faders on @a target's sends (-1: the channel faders),
+//! or nullptr when it shows no fader.
+FloatModel* faderModelFor(int index, int target)
 {
 	MixerChannel* channel = Engine::mixer()->mixerChannel(index);
-	if (s_sendsOnFaders < 0 || index == s_sendsOnFaders || index == 0) { return &channel->m_volumeModel; }
-	MixerRoute* route = control::findMixerRoute(static_cast<mix_ch_t>(index), static_cast<mix_ch_t>(s_sendsOnFaders));
+	if (target < 0 || index == target || index == 0) { return &channel->m_volumeModel; }
+	MixerRoute* route = control::findMixerRoute(static_cast<mix_ch_t>(index), static_cast<mix_ch_t>(target));
 	return route != nullptr ? route->amount() : nullptr;
 }
 
@@ -95,9 +98,21 @@ void showOnFader(Fader* fader, FloatModel* model, int index)
 
 } // namespace
 
-int sendsOnFaders() { return s_sendsOnFaders < Engine::mixer()->numChannels() ? s_sendsOnFaders : -1; }
+int sendsOnFaders()
+{
+	if (s_sendsOnFadersId < 0) { return -1; }
+	for (int i = 0; i < Engine::mixer()->numChannels(); ++i)
+	{
+		if (Engine::mixer()->mixerChannel(i)->id() == s_sendsOnFadersId) { return i; }
+	}
+	return -1;
+}
 
-void setSendsOnFaders(int returnIndex) { s_sendsOnFaders = returnIndex; }
+void setSendsOnFaders(int returnIndex)
+{
+	const bool valid = returnIndex >= 0 && returnIndex < Engine::mixer()->numChannels();
+	s_sendsOnFadersId = valid ? Engine::mixer()->mixerChannel(returnIndex)->id() : -1;
+}
 
 QSet<int> foldedChannels()
 {
@@ -114,12 +129,13 @@ QSet<int> foldedChannels()
 void apply(const QVector<MixerChannelView*>& views)
 {
 	const QSet<int> folded = foldedChannels();
-	if (sendsOnFaders() < 0) { s_sendsOnFaders = -1; }
+	const int target = sendsOnFaders();
+	if (target < 0) { s_sendsOnFadersId = -1; }  // the return is gone: back to the channel faders
 	for (int i = 1; i < views.size() && i < Engine::mixer()->numChannels(); ++i)
 	{
 		MixerChannelView* view = views.at(i);
 		view->setVisible(!folded.contains(i) && mixerviewoptions::shows(i));  // L08 (MX-005): the channel filter
-		FloatModel* model = faderModelFor(i);
+		FloatModel* model = faderModelFor(i, target);
 		if (model != nullptr && view->fader()->model() != model) { showOnFader(view->fader(), model, i); }
 		view->fader()->setVisible(model != nullptr);
 	}

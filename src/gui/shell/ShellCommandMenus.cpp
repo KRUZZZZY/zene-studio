@@ -41,6 +41,7 @@
 #include "ControlVocabulary.h"
 #include "Engine.h"
 #include "GuiApplication.h"
+#include "MainWindow.h"
 #include "InstrumentTrack.h"
 #include "LibraryCommandMenus.h"
 #include "XyPad.h"
@@ -381,6 +382,13 @@ void viewOptionsMenu(QMenu* menu)
 	choices(view, "Meter Scale", "window.mixer_view", "meter_scale", {});
 }
 
+//! The window a dialog opened from a menu belongs to: the main window, since a context menu is deleted when it
+//! closes and a dialog parented under it with it.
+QWidget* dialogOwner(QWidget* fallback)
+{
+	return getGUI() != nullptr && getGUI()->mainWindow() != nullptr ? getGUI()->mainWindow() : fallback;
+}
+
 } // namespace
 
 void populateChannel(QMenu* menu, const QString& channel)
@@ -425,7 +433,7 @@ void populateChannel(QMenu* menu, const QString& channel)
 	add(rack, "Chain Wiring", "patcher.get_state", {{QStringLiteral("target"), channel}}, false, {}, true);
 	QAction* pad = rack->addAction(tr("XY Pad..."));  // MX-110
 	pad->setProperty("controlCommand", QStringLiteral("rack.macro_set"));
-	QObject::connect(pad, &QAction::triggered, menu, [channel, menu] { (new XyPadDialog(channel, menu->parentWidget()))->show(); });
+	QObject::connect(pad, &QAction::triggered, menu, [channel, menu] { (new XyPadDialog(channel, dialogOwner(menu->window())))->show(); });
 	add(rack, "Bypass Every Device", "chain.bypass_all", {{QStringLiteral("target"), channel}}, false);  // MX-078
 	add(rack, "Switch Every Device On", "chain.bypass_all", {{QStringLiteral("target"), channel}, {QStringLiteral("bypass"), false}}, false);
 	add(rack, "Remove the Bypassed Devices", "chain.clean", {{QStringLiteral("target"), channel}}, false);

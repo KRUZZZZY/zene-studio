@@ -36,6 +36,7 @@
 
 #include "AudioPortsModel.h"
 #include "ComboBox.h"
+#include "CommandForm.h"
 #include "ControlRegistry.h"
 #include "DesignTokens.h"
 #include "Effect.h"
@@ -71,6 +72,12 @@ ControlResult invoke(const QString& id, const QJsonObject& args)
 	return ControlRegistry::instance()->invoke(id, args);
 }
 
+//! A header button's command: a refusal is shown over @a parent (runCommand), not swallowed.
+ControlResult dispatch(QWidget* parent, const QString& id, const QJsonObject& args)
+{
+	return runCommand(parent, CommandCall{id, args, {}, QString(), false});
+}
+
 QString shortLabel(const QString& name)
 {
 	return QFontMetrics(tokens::font(tokens::TextRole::Small)).elidedText(name, Qt::ElideRight, kCellWidth - 4);
@@ -84,6 +91,7 @@ QToolButton* headerButton(const QString& icon, const QString& tip, QWidget* pare
 	button->setToolTip(tip);
 	button->setAccessibleName(tip);
 	button->setAutoRaise(true);
+	button->setMinimumSize(tokens::targetSize(), tokens::targetSize());  // never below the clickable target
 	return button;
 }
 
@@ -97,6 +105,8 @@ QWidget* comboCell(ComboBoxModel* model, const QString& name, QWidget* parent)
 	caption->setObjectName(QStringLiteral("deviceCaption"));
 	auto* box = new ComboBox(cell);
 	box->setModel(model);
+	box->setAccessibleName(name);  // the menu itself carries the name, not only its cell
+	caption->setBuddy(box);
 	box->setMinimumWidth(2 * kCellWidth - tokens::space::sm);
 	column->addWidget(caption);
 	column->addWidget(box);
@@ -203,11 +213,10 @@ QWidget* DeviceCard::buildHeader()
 		connect(power, &QToolButton::clicked, this, [this, power](bool on) {
 			const QJsonObject args{{QStringLiteral("target"), m_spec.target}, {QStringLiteral("plugin"), m_spec.plugin},
 				{QStringLiteral("bypass"), !on}};
-			if (!invoke(QStringLiteral("plugin.bypass"), args).ok) { power->setChecked(!on); }
+			if (!dispatch(this, QStringLiteral("plugin.bypass"), args).ok) { power->setChecked(!on); }
 		});
 		row->addWidget(power);
 		m_activity = new QLabel(QStringLiteral("\u25CF"), header);  // MX-095: lit while the device processes audio
-		m_activity->setToolTip(tr("Processing audio"));
 		row->addWidget(m_activity);
 		refreshActivity();
 	}
@@ -215,8 +224,10 @@ QWidget* DeviceCard::buildHeader()
 	titles->setSpacing(0);
 	auto* title = new QLabel(m_spec.title, header);
 	title->setObjectName(QStringLiteral("deviceCardTitle"));
+	title->setToolTip(m_spec.title);  // the whole name when the card cuts it off
 	auto* subtitle = new QLabel(m_spec.subtitle, header);
 	subtitle->setObjectName(QStringLiteral("deviceCaption"));
+	subtitle->setToolTip(m_spec.subtitle);
 	titles->addWidget(title);
 	titles->addWidget(subtitle);
 	row->addLayout(titles, 1);
@@ -236,7 +247,7 @@ QWidget* DeviceCard::buildHeader()
 			const QJsonObject args{{QStringLiteral("target"), m_spec.target}, {QStringLiteral("plugin"), m_spec.plugin},
 				{QStringLiteral("folded"), folded}};
 			// A rack chain's card is not redrawn by its chain's signal, so the card folds itself too.
-			if (invoke(QStringLiteral("plugin.fold"), args).ok) { m_body->setVisible(!folded); }
+			if (dispatch(this, QStringLiteral("plugin.fold"), args).ok) { m_body->setVisible(!folded); }
 			else { fold->setChecked(!folded); }
 		});
 		row->addWidget(fold);
@@ -246,13 +257,14 @@ QWidget* DeviceCard::buildHeader()
 		delta->setToolTip(tr("Hear only what %1 changes").arg(m_spec.title));
 		delta->setAccessibleName(delta->toolTip());
 		delta->setAutoRaise(true);
+		delta->setMinimumSize(tokens::targetSize(), tokens::targetSize());
 		delta->setCheckable(true);
 		delta->setChecked(m_spec.effect->deltaTap().enabled());
 		m_delta = delta;
 		connect(delta, &QToolButton::clicked, this, [this, delta](bool on) {
 			const QJsonObject args{{QStringLiteral("target"), m_spec.target}, {QStringLiteral("plugin"), m_spec.plugin},
 				{QStringLiteral("on"), on}};
-			if (!invoke(QStringLiteral("plugin.delta"), args).ok) { delta->setChecked(!on); }
+			if (!dispatch(this, QStringLiteral("plugin.delta"), args).ok) { delta->setChecked(!on); }
 		});
 		row->addWidget(delta);
 	}
@@ -262,8 +274,8 @@ QWidget* DeviceCard::buildHeader()
 	if (m_spec.effect != nullptr)
 	{
 		QToolButton* remove = headerButton(QStringLiteral("close"), tr("Remove %1").arg(m_spec.title), header);
-		connect(remove, &QToolButton::clicked, this, [target = m_spec.target, plugin = m_spec.plugin] {
-			invoke(QStringLiteral("plugin.unload"), {{QStringLiteral("target"), target}, {QStringLiteral("plugin"), plugin}});
+		connect(remove, &QToolButton::clicked, this, [this, target = m_spec.target, plugin = m_spec.plugin] {
+			dispatch(this, QStringLiteral("plugin.unload"), {{QStringLiteral("target"), target}, {QStringLiteral("plugin"), plugin}});
 		});
 		row->addWidget(remove);
 	}
@@ -386,6 +398,9 @@ void DeviceCard::refreshActivity()
 	const bool on = m_spec.effect->isProcessingAudio();
 	if (m_activity->property("lit").toBool() == on && m_activity->property("lit").isValid()) { return; }
 	m_activity->setProperty("lit", on);
+	// MX-095: the state in words too, not by colour alone.
+	m_activity->setToolTip(on ? tr("Processing audio") : tr("Not processing audio"));
+	m_activity->setAccessibleName(m_activity->toolTip());
 	m_activity->setStyleSheet(QStringLiteral("color: %1;").arg((on ? tokens::palette().accent : tokens::palette().textMuted).name()));
 }
 

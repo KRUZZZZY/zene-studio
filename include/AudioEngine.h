@@ -302,8 +302,9 @@ public:
 
 	/*! R2.4: the punch region the recorders are gated by, as the render thread
 	 *  reads it (include/PunchWindow.h). Published from the control thread by the
-	 *  Song whenever its timeline's punch changes; plain atomics, so the audio
-	 *  thread never reads the Timeline's own fields. */
+	 *  Song whenever its timeline's punch changes; one atomic word, so the audio
+	 *  thread never reads the Timeline's own fields, nor a begin from one publish
+	 *  with an end from another. */
 	void setPunchWindow(bool armed, tick_t begin, tick_t end) noexcept;
 	//! Render thread, inside a period: the frames of this period's @a frames the punch region
 	//! lets a recorder take - the one gate the record routes and the record-armed clips share
@@ -312,8 +313,8 @@ public:
 	//! 0.5.0 L06: whether song tick @a tick is inside the published punch region (any thread).
 	bool punchCapturesTick(tick_t tick) const noexcept
 	{
-		return m_punchArmed.load(std::memory_order_relaxed) && tick >= m_punchBegin.load(std::memory_order_relaxed)
-			&& tick < m_punchEnd.load(std::memory_order_relaxed);
+		const std::uint64_t punch = m_punch.load(std::memory_order_relaxed);  // disarmed is the empty span 0..0
+		return tick >= punchBeginOf(punch) && tick < punchEndOf(punch);
 	}
 
 	// -----------------------------------------------------------------------
@@ -526,10 +527,11 @@ private:
 	//! prototype: N-route capture (task #556; N-wide since 0.3.0)
 	MultiTrackRecorder m_recorder;
 
-	//! R2.4: the published punch window (setPunchWindow) ...
-	std::atomic<bool> m_punchArmed{false};
-	std::atomic<tick_t> m_punchBegin{0};
-	std::atomic<tick_t> m_punchEnd{0};
+	//! R2.4: the published punch window (setPunchWindow): begin in the high half, end in the low, and
+	//! armed exactly when end > begin (a disarmed window is stored as 0..0) ...
+	std::atomic<std::uint64_t> m_punch{0};
+	static tick_t punchBeginOf(std::uint64_t punch) noexcept { return static_cast<tick_t>(static_cast<std::uint32_t>(punch >> 32)); }
+	static tick_t punchEndOf(std::uint64_t punch) noexcept { return static_cast<tick_t>(static_cast<std::uint32_t>(punch)); }
 	//! ... and where the period being rendered STARTED on the song timeline,
 	//! taken by the render thread before the song advances (renderStageNoteSetup).
 	double m_periodStartFrame = 0.0;

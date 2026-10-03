@@ -27,8 +27,10 @@
 #include <QComboBox>
 #include <QDialogButtonBox>
 #include <QDoubleSpinBox>
+#include <QEvent>
 #include <QHBoxLayout>
 #include <QHeaderView>
+#include <QLabel>
 #include <QPushButton>
 #include <QSpinBox>
 #include <QTableWidget>
@@ -42,12 +44,49 @@ namespace lmms::gui
 namespace
 {
 
-const QStringList& actionNames()
+struct ActionName
 {
-	static const QStringList names{QStringLiteral("none"), QStringLiteral("stop"), QStringLiteral("play_again"), QStringLiteral("previous"),
-		QStringLiteral("next"), QStringLiteral("first"), QStringLiteral("last"), QStringLiteral("any"), QStringLiteral("other"),
-		QStringLiteral("jump")};
-	return names;
+	const char* id;  //!< the command's vocabulary (session.set_slot / set_scene 'type')
+	const char* label;
+	const char* tip;
+};
+
+//! The actions in the engine's order, each shown by a name and a one-line explanation, written by its id.
+const ActionName kActions[] = {
+	{"none", QT_TRANSLATE_NOOP("QObject", "No Action"), QT_TRANSLATE_NOOP("QObject", "Nothing happens; the clip keeps playing")},
+	{"stop", QT_TRANSLATE_NOOP("QObject", "Stop"), QT_TRANSLATE_NOOP("QObject", "Stop playing")},
+	{"play_again", QT_TRANSLATE_NOOP("QObject", "Play Again"), QT_TRANSLATE_NOOP("QObject", "Play the clip again from its start")},
+	{"previous", QT_TRANSLATE_NOOP("QObject", "Previous"), QT_TRANSLATE_NOOP("QObject", "Go to the previous scene (from the first, the last)")},
+	{"next", QT_TRANSLATE_NOOP("QObject", "Next"), QT_TRANSLATE_NOOP("QObject", "Go to the next scene (from the last, the first)")},
+	{"first", QT_TRANSLATE_NOOP("QObject", "First"), QT_TRANSLATE_NOOP("QObject", "Go to the first scene")},
+	{"last", QT_TRANSLATE_NOOP("QObject", "Last"), QT_TRANSLATE_NOOP("QObject", "Go to the last scene")},
+	{"any", QT_TRANSLATE_NOOP("QObject", "Any"), QT_TRANSLATE_NOOP("QObject", "Go to a random scene, this one included")},
+	{"other", QT_TRANSLATE_NOOP("QObject", "Other"), QT_TRANSLATE_NOOP("QObject", "Go to a random scene other than this one")},
+	{"jump", QT_TRANSLATE_NOOP("QObject", "Jump"), QT_TRANSLATE_NOOP("QObject", "Go to the scene in Jump to scene")},
+};
+
+QComboBox* actionBox(const QString& type, QWidget* parent)
+{
+	auto* box = new QComboBox(parent);
+	for (const ActionName& action : kActions)
+	{
+		box->addItem(QObject::tr(action.label), QLatin1String(action.id));
+		box->setItemData(box->count() - 1, QObject::tr(action.tip), Qt::ToolTipRole);
+	}
+	box->setCurrentIndex(box->findData(type));  // an unknown type shows blank and is refused on OK, never rewritten
+	return box;
+}
+
+//! Jump to scene only matters for a jump, Bars only when the action is not timed by the clip.
+void wireRow(QComboBox* type, QCheckBox* linked, QWidget* bars, QWidget* jump)
+{
+	const auto sync = [type, linked, bars, jump] {
+		jump->setEnabled(type->currentData().toString() == QLatin1String("jump"));
+		bars->setEnabled(!linked->isChecked());
+	};
+	QObject::connect(type, QOverload<int>::of(&QComboBox::currentIndexChanged), type, sync);
+	QObject::connect(linked, &QCheckBox::toggled, linked, sync);
+	sync();
 }
 
 enum Column { Type, Chance, Linked, Bars, Jump, ColumnCount };
@@ -85,13 +124,27 @@ FollowActionEditor::FollowActionEditor(const QString& command, const QJsonObject
 	setProperty("controlCommand", command);
 	m_rows->setHorizontalHeaderLabels({QObject::tr("Action"), QObject::tr("Chance"), QObject::tr("After the clip"),
 		QObject::tr("Bars"), QObject::tr("Jump to scene")});
+	const QStringList tips{QObject::tr("What happens when the follow action fires"),
+		QObject::tr("This row's weight, 0 to 1: one row is picked at random in proportion to the weights"),
+		QObject::tr("Fire after the clip's own length (on) or after Bars (off)"),
+		QObject::tr("With After the clip off: the bars before the action fires"), QObject::tr("The scene a Jump goes to")};
+	for (int column = 0; column < ColumnCount; ++column) { m_rows->horizontalHeaderItem(column)->setToolTip(tips.at(column)); }
 	m_rows->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);
 	m_rows->setAccessibleName(QObject::tr("Follow action chain"));
 	for (const QJsonValue& action : chain) { addRow(action.toObject()); }
+	auto* hint = new QLabel(QObject::tr("One row is picked at random, weighted by its Chance. The first row's timing "
+		"(After the clip or Bars) applies to the whole chain."), this);
+	hint->setWordWrap(true);
 	auto* add = new QPushButton(QObject::tr("Add"), this);
 	auto* remove = new QPushButton(QObject::tr("Remove"), this);
-	connect(add, &QPushButton::clicked, this, [this] { addRow({{QStringLiteral("type"), QStringLiteral("next")}}); });
-	connect(remove, &QPushButton::clicked, this, [this] { m_rows->removeRow(m_rows->currentRow()); });
+	remove->setEnabled(false);  // until a row is current
+	connect(add, &QPushButton::clicked, this, [this] {
+		addRow({{QStringLiteral("type"), QStringLiteral("next")}});
+		m_rows->setCurrentCell(m_rows->rowCount() - 1, Type);
+		m_rows->cellWidget(m_rows->rowCount() - 1, Type)->setFocus();
+	});
+	connect(remove, &QPushButton::clicked, this, [this] { m_rows->removeRow(m_rows->currentRow()); nameRows(); });
+	connect(m_rows, &QTableWidget::currentCellChanged, remove, [remove](int row) { remove->setEnabled(row >= 0); });
 	auto* buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, this);
 	connect(buttons, &QDialogButtonBox::accepted, this, [this] { apply(); });
 	connect(buttons, &QDialogButtonBox::rejected, this, &QDialog::reject);
@@ -101,6 +154,7 @@ FollowActionEditor::FollowActionEditor(const QString& command, const QJsonObject
 	rowButtons->addStretch();
 	auto* layout = new QVBoxLayout(this);
 	layout->addWidget(m_rows, 1);
+	layout->addWidget(hint);
 	layout->addLayout(rowButtons);
 	layout->addWidget(buttons);
 	resize(560, 260);
@@ -110,14 +164,13 @@ void FollowActionEditor::addRow(const QJsonObject& action)
 {
 	const int row = m_rows->rowCount();
 	m_rows->insertRow(row);
-	auto* type = new QComboBox(m_rows);
-	type->addItems(actionNames());
-	type->setCurrentText(action.value(QStringLiteral("type")).toString(QStringLiteral("next")));
+	QComboBox* type = actionBox(action.value(QStringLiteral("type")).toString(QStringLiteral("next")), m_rows);
 	QDoubleSpinBox* chance = numberBox(0.0, 1.0, action.value(QStringLiteral("chance")).toDouble(1.0), m_rows);
 	chance->setSingleStep(0.1);
 	auto* linked = new QCheckBox(m_rows);
 	linked->setChecked(action.value(QStringLiteral("linked")).toBool(true));
 	QDoubleSpinBox* bars = numberBox(0.25, 256.0, action.value(QStringLiteral("time_bars")).toDouble(1.0), m_rows);
+	bars->setSingleStep(0.25);
 	auto* jump = new QSpinBox(m_rows);
 	jump->setRange(1, 512);
 	jump->setValue(action.value(QStringLiteral("jump_to")).toInt(0) + 1);
@@ -126,6 +179,45 @@ void FollowActionEditor::addRow(const QJsonObject& action)
 	m_rows->setCellWidget(row, Linked, linked);
 	m_rows->setCellWidget(row, Bars, bars);
 	m_rows->setCellWidget(row, Jump, jump);
+	wireRow(type, linked, bars, jump);
+	for (int column = 0; column < ColumnCount; ++column) { m_rows->cellWidget(row, column)->installEventFilter(this); }
+	nameRows();
+}
+
+bool FollowActionEditor::eventFilter(QObject* watched, QEvent* event)
+{
+	// A click or Tab into a row's own controls makes that row current, so Remove takes the row being edited.
+	if (event->type() == QEvent::FocusIn)
+	{
+		if (const int row = rowOf(qobject_cast<QWidget*>(watched)); row >= 0) { m_rows->setCurrentCell(row, Type); }
+	}
+	return QDialog::eventFilter(watched, event);
+}
+
+void FollowActionEditor::nameRows()
+{
+	// Each control says which column and row it is, for a screen reader (the cells have no text of their own).
+	for (int row = 0; row < m_rows->rowCount(); ++row)
+	{
+		for (int column = 0; column < ColumnCount; ++column)
+		{
+			m_rows->cellWidget(row, column)->setAccessibleName(QObject::tr("%1, row %2")
+				.arg(m_rows->horizontalHeaderItem(column)->text()).arg(row + 1));
+		}
+	}
+}
+
+int FollowActionEditor::rowOf(const QWidget* widget) const
+{
+	for (int row = 0; widget != nullptr && row < m_rows->rowCount(); ++row)
+	{
+		for (int column = 0; column < ColumnCount; ++column)
+		{
+			const QWidget* cell = m_rows->cellWidget(row, column);
+			if (cell == widget || cell->isAncestorOf(widget)) { return row; }
+		}
+	}
+	return -1;
 }
 
 QJsonArray FollowActionEditor::chain() const
@@ -133,7 +225,7 @@ QJsonArray FollowActionEditor::chain() const
 	QJsonArray out;
 	for (int row = 0; row < m_rows->rowCount(); ++row)
 	{
-		out.append(QJsonObject{{QStringLiteral("type"), qobject_cast<QComboBox*>(m_rows->cellWidget(row, Type))->currentText()},
+		out.append(QJsonObject{{QStringLiteral("type"), qobject_cast<QComboBox*>(m_rows->cellWidget(row, Type))->currentData().toString()},
 			{QStringLiteral("chance"), valueOf(m_rows->cellWidget(row, Chance))},
 			{QStringLiteral("linked"), qobject_cast<QCheckBox*>(m_rows->cellWidget(row, Linked))->isChecked()},
 			{QStringLiteral("time_bars"), valueOf(m_rows->cellWidget(row, Bars))},

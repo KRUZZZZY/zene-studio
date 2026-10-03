@@ -59,7 +59,7 @@ QJsonArray namesJson(int trackId)
 }
 
 //! Replace track @a track's names with @a next as ONE undo step.
-ControlResult storeNames(Track* track, const QHash<int, QString>& next, const QString& command)
+ControlResult storeNames(Track* track, const QHash<int, QString>& next)
 {
 	const int id = track->id();
 	const QHash<int, QString> before = TrackKeyNames::instance().names(id);
@@ -68,7 +68,7 @@ ControlResult storeNames(Track* track, const QHash<int, QString>& next, const QS
 	TrackKeyNames::instance().setNames(id, next);
 	Engine::getSong()->setModified();
 	QJsonObject result{{QStringLiteral("track"), trackIdOf(track)}, {QStringLiteral("names"), namesJson(id)}};
-	result.insert(QStringLiteral("__transaction"), transactionPayload({}, command, {}, true,
+	result.insert(QStringLiteral("__transaction"), transactionPayload({}, QStringLiteral("control.undo"), {}, true,
 		QStringLiteral("action checkpoint: the recorded undo step puts the track's previous key names back")));
 	return ControlResult::success(result);
 }
@@ -82,7 +82,7 @@ ControlResult setName(const QJsonObject& args)
 	const int key = args.value(QStringLiteral("key")).toInt();
 	const QString name = args.value(QStringLiteral("name")).toString().trimmed();
 	if (name.isEmpty()) { next.remove(key); } else { next.insert(key, name); }
-	return storeNames(track, next, QStringLiteral("key_names.set"));
+	return storeNames(track, next);
 }
 
 ControlResult preset(const QJsonObject& args)
@@ -91,8 +91,7 @@ ControlResult preset(const QJsonObject& args)
 	Track* track = resolveTrack(args.value(QStringLiteral("track")).toString(), &error);
 	if (track == nullptr) { return error; }
 	const QString which = args.value(QStringLiteral("preset")).toString();
-	return storeNames(track, which == QStringLiteral("none") ? QHash<int, QString>() : TrackKeyNames::generalMidiDrums(),
-		QStringLiteral("key_names.preset"));
+	return storeNames(track, which == QStringLiteral("none") ? QHash<int, QString>() : TrackKeyNames::generalMidiDrums());
 }
 
 ControlResult getNames(const QJsonObject& args)

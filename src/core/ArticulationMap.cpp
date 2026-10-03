@@ -87,9 +87,12 @@ bool ArticulationMap::fromJson(const QJsonArray& array, std::vector<Articulation
 		entry.name = item.value(QStringLiteral("name")).toString().trimmed();
 		const bool numbers = midiNumber(item, "keyswitch", &entry.keyswitch) && midiNumber(item, "program", &entry.program)
 			&& midiNumber(item, "controller", &entry.controller) && midiNumber(item, "value", &entry.value);
-		if (entry.name.isEmpty() || !numbers)
+		// A 'value' is the controller's: alone it would be dropped without a word (and gone on reload).
+		const bool orphanValue = item.contains(QStringLiteral("value")) && entry.controller < 0;
+		if (entry.name.isEmpty() || !numbers || orphanValue)
 		{
-			*error = QStringLiteral("articulation %1 needs a 'name', and its keyswitch, program, controller and value are 0..127").arg(i);
+			*error = QStringLiteral("articulation %1 needs a 'name', its keyswitch, program, controller and value are 0..127, "
+				"and a 'value' needs a 'controller'").arg(i);
 			return false;
 		}
 		entry.value = std::max(0, entry.value);

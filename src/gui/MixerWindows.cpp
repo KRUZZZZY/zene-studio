@@ -35,6 +35,7 @@
 #include <QLabel>
 #include <QMenu>
 #include <QPainter>
+#include <QPointer>
 #include <QTableWidget>
 #include <QTimer>
 #include <QVBoxLayout>
@@ -43,6 +44,8 @@
 #include "ControlRegistry.h"
 #include "DesignTokens.h"
 #include "Engine.h"
+#include "GuiApplication.h"
+#include "MainWindow.h"
 #include "Mixer.h"
 
 namespace lmms::gui
@@ -61,6 +64,7 @@ public:
 		setWindowTitle(QObject::tr("Large Meters"));
 		setAttribute(Qt::WA_DeleteOnClose);
 		setAccessibleName(QObject::tr("Large Meters"));
+		setMinimumSize(160, 240);  // below it the bars' rectangles would turn negative
 		resize(260, 520);
 		auto* timer = new QTimer(this);
 		connect(timer, &QTimer::timeout, this, qOverload<>(&QWidget::update));
@@ -86,32 +90,43 @@ protected:
 			const double share = std::clamp((db + 60.0) / 60.0, 0.0, 1.0);
 			const QRect bar(20 + side * (width() / 2 - 10), 20, width() / 2 - 40, bottom - 20);
 			p.fillRect(bar, pal.control);
+			// Which side, and its level in figures, above the bar.
+			p.setPen(pal.text);
+			const QString figure = levels[side] > 0.f ? QString::number(db, 'f', 1) : QStringLiteral("-inf");
+			p.drawText(QRect(bar.left(), 0, bar.width(), 20), Qt::AlignCenter,
+				QStringLiteral("%1 %2 dB").arg(side == 0 ? QObject::tr("L") : QObject::tr("R"), figure));
 			const int top = bar.bottom() - static_cast<int>(share * bar.height());
 			p.fillRect(QRect(bar.left(), top, bar.width(), bar.bottom() - top), db > -6.0 ? pal.meterHigh : db > -18.0 ? pal.meterMid : pal.meterLow);
 		}
 		p.setPen(pal.text);
 		p.setFont(tokens::font(tokens::TextRole::Title));
 		p.drawText(QRect(0, bottom + 4, width(), 26), Qt::AlignCenter, QObject::tr("Correlation %1").arg(master->m_correlation.get(), 0, 'f', 2));
-		p.drawText(QRect(0, bottom + 30, width(), 26), Qt::AlignCenter, m_loudness);
+		p.drawText(QRect(0, bottom + 30, width(), 26), Qt::AlignCenter, p.fontMetrics().elidedText(m_loudness, Qt::ElideRight, width() - 8));
 	}
 
 private:
+	//! meter.get_state keeps its readings under "live"; a failed call says why, a disarmed meter says how to arm it.
 	void readLoudness()
 	{
-		const QJsonValue lufs = ControlRegistry::instance()->invoke(QStringLiteral("meter.get_state")).result.value(QStringLiteral("short_term_lufs"));
-		m_loudness = lufs.isDouble() ? QObject::tr("%1 LUFS (short term)").arg(lufs.toDouble(), 0, 'f', 1)
-			: QObject::tr("Loudness meter off (Strip > Loudness Meter)");
+		const ControlResult state = ControlRegistry::instance()->invoke(QStringLiteral("meter.get_state"));
+		const QJsonValue lufs = state.result.value(QStringLiteral("live")).toObject().value(QStringLiteral("short_term_lufs"));
+		if (!state.ok) { m_loudness = QObject::tr("Loudness unavailable: %1").arg(state.errorMessage); }
+		else if (!state.result.value(QStringLiteral("armed")).toBool()) { m_loudness = QObject::tr("Loudness Meter off (channel menu)"); }
+		else { m_loudness = lufs.isDouble() ? QObject::tr("%1 LUFS (short term)").arg(lufs.toDouble(), 0, 'f', 1) : QObject::tr("Loudness: no reading yet"); }
+		setToolTip(m_loudness);  // the whole line, when the window is too narrow for it
 	}
 
 	QString m_loudness;
 };
 
-//! MX-055: channels against channels; a cell shows the send's amount, double-click sends there.
+//! MX-055: channels against channels; a cell shows the send's amount, activating it (double-click or
+//! Enter) sends there, starting from the send's current amount.
 class RoutingMatrix : public QDialog
 {
 public:
 	explicit RoutingMatrix(QWidget* parent) :
 		QDialog(parent),
+		m_status(new QLabel(this)),
 		m_table(new QTableWidget(this))
 	{
 		setWindowTitle(QObject::tr("Routing Matrix"));
@@ -119,17 +134,28 @@ public:
 		m_table->setAccessibleName(QObject::tr("Routing matrix: rows send to columns"));
 		m_table->setEditTriggers(QAbstractItemView::NoEditTriggers);
 		m_table->setProperty("controlCommand", QStringLiteral("routing.matrix"));
+		m_status->setWordWrap(true);
+		m_status->hide();
 		auto* layout = new QVBoxLayout(this);
+		layout->addWidget(m_status);
 		layout->addWidget(m_table);
-		connect(m_table, &QTableWidget::cellDoubleClicked, this, [this](int row, int column) { send(row, column); });
+		connect(m_table, &QTableWidget::cellActivated, this, [this](int row, int column) { send(row, column); });
 		fill();
 		resize(640, 420);
 	}
 
 private:
+	//! A failed read says so and keeps the matrix last read, rather than showing an empty project.
 	void fill()
 	{
-		const QJsonArray channels = ControlRegistry::instance()->invoke(QStringLiteral("routing.matrix")).result.value(QStringLiteral("channels")).toArray();
+		const ControlResult matrix = ControlRegistry::instance()->invoke(QStringLiteral("routing.matrix"));
+		m_status->setVisible(!matrix.ok);
+		if (!matrix.ok)
+		{
+			m_status->setText(QObject::tr("The routing could not be read: %1").arg(matrix.errorMessage));
+			return;
+		}
+		const QJsonArray channels = matrix.result.value(QStringLiteral("channels")).toArray();
 		m_ids.clear();
 		QStringList names;
 		for (const QJsonValue& value : channels)
@@ -137,32 +163,49 @@ private:
 			m_ids << value.toObject().value(QStringLiteral("channel")).toString();
 			names << value.toObject().value(QStringLiteral("name")).toString();
 		}
+		m_table->clearContents();  // a send removed since the last read leaves no figure behind
 		m_table->setRowCount(static_cast<int>(channels.size()));
 		m_table->setColumnCount(static_cast<int>(channels.size()));
 		m_table->setVerticalHeaderLabels(names);
 		m_table->setHorizontalHeaderLabels(names);
 		for (int row = 0; row < channels.size(); ++row)
 		{
-			for (const QJsonValue& send : channels.at(row).toObject().value(QStringLiteral("sends")).toArray())
-			{
-				const QJsonObject s = send.toObject();
-				const int column = static_cast<int>(m_ids.indexOf(s.value(QStringLiteral("to")).toString()));
-				if (column < 0) { continue; }
-				QString text = QString::number(s.value(QStringLiteral("amount")).toDouble(), 'f', 2);
-				if (!s.value(QStringLiteral("enabled")).toBool(true)) { text += QObject::tr(" (off)"); }
-				m_table->setItem(row, column, new QTableWidgetItem(text));
-			}
+			placeSends(row, channels.at(row).toObject().value(QStringLiteral("sends")).toArray());
+			auto* self = new QTableWidgetItem;
+			self->setFlags(Qt::NoItemFlags);
+			self->setToolTip(QObject::tr("A channel cannot send to itself"));
+			m_table->setItem(row, row, self);
+		}
+	}
+
+	void placeSends(int row, const QJsonArray& sends)
+	{
+		for (const QJsonValue& send : sends)
+		{
+			const QJsonObject s = send.toObject();
+			const int column = static_cast<int>(m_ids.indexOf(s.value(QStringLiteral("to")).toString()));
+			if (column < 0) { continue; }
+			const double amount = s.value(QStringLiteral("amount")).toDouble();
+			QString text = QString::number(amount, 'f', 2);
+			if (!s.value(QStringLiteral("enabled")).toBool(true)) { text += QObject::tr(" (off)"); }
+			auto* item = new QTableWidgetItem(text);
+			item->setData(Qt::UserRole, amount);
+			m_table->setItem(row, column, item);
 		}
 	}
 
 	void send(int row, int column)
 	{
 		if (row == column || row >= m_ids.size() || column >= m_ids.size()) { return; }
+		const QTableWidgetItem* existing = m_table->item(row, column);
+		const QVariant current = existing != nullptr ? existing->data(Qt::UserRole) : QVariant();
+		const double amount = current.isValid() ? current.toDouble() : 1.0;
 		runCommand(this, CommandCall{QStringLiteral("mixer.send_to"), {{QStringLiteral("channel"), m_ids.at(row)}, {QStringLiteral("to"), m_ids.at(column)}},
-			{{QStringLiteral("amount"), 1.0}}, QObject::tr("Send"), true});
+			{{QStringLiteral("amount"), amount}}, QObject::tr("Send"), true});
 		QTimer::singleShot(200, this, [this] { fill(); });
 	}
 
+	QLabel* m_status;
 	QTableWidget* m_table;
 	QStringList m_ids;
 };
@@ -184,9 +227,28 @@ protected:
 		p.drawLine(0, height() / 2, width(), height() / 2);
 		drawCurve(p, QStringLiteral("a_db"), pal.accent);
 		drawCurve(p, QStringLiteral("b_db"), pal.meterMid);
+		drawAxes(p, pal);
 	}
 
 private:
+	//! The scale (gain on the right, the log frequency span along the bottom) and which colour is which channel.
+	void drawAxes(QPainter& p, const tokens::Palette& pal)
+	{
+		p.setFont(tokens::font(tokens::TextRole::Caption));
+		const QRect inner = rect().adjusted(4, 2, -4, -2);
+		p.setPen(pal.textMuted);
+		p.drawText(inner, Qt::AlignRight | Qt::AlignTop, QObject::tr("+18 dB"));
+		p.drawText(QRect(inner.left(), height() / 2 - 16, inner.width(), 16), Qt::AlignRight | Qt::AlignBottom, QObject::tr("0 dB"));
+		p.drawText(inner.adjusted(0, 0, 0, -16), Qt::AlignRight | Qt::AlignBottom, QObject::tr("-18 dB"));
+		p.drawText(inner, Qt::AlignLeft | Qt::AlignBottom, QObject::tr("20 Hz"));
+		p.drawText(inner, Qt::AlignHCenter | Qt::AlignBottom, QObject::tr("632 Hz"));
+		p.drawText(inner, Qt::AlignRight | Qt::AlignBottom, QObject::tr("20 kHz"));
+		p.setPen(pal.accent);
+		p.drawText(inner, Qt::AlignLeft | Qt::AlignTop, QObject::tr("A"));
+		p.setPen(pal.meterMid);
+		p.drawText(inner.adjusted(16, 0, 0, 0), Qt::AlignLeft | Qt::AlignTop, QObject::tr("B"));
+	}
+
 	void drawCurve(QPainter& p, const QString& key, const QColor& color)
 	{
 		if (m_curve.size() < 2) { return; }
@@ -243,8 +305,15 @@ public:
 private:
 	void compare()
 	{
-		const QJsonObject result = ControlRegistry::instance()->invoke(QStringLiteral("mixer.eq_compare"),
-			{{QStringLiteral("a"), m_a->currentData().toString()}, {QStringLiteral("b"), m_b->currentData().toString()}, {QStringLiteral("points"), 64}}).result;
+		const ControlResult compared = ControlRegistry::instance()->invoke(QStringLiteral("mixer.eq_compare"),
+			{{QStringLiteral("a"), m_a->currentData().toString()}, {QStringLiteral("b"), m_b->currentData().toString()}, {QStringLiteral("points"), 64}});
+		// A failed comparison says why and keeps the curves last drawn - never a flat "identical" 0 dB.
+		if (!compared.ok)
+		{
+			m_summary->setText(QObject::tr("Could not compare: %1").arg(compared.errorMessage));
+			return;
+		}
+		const QJsonObject& result = compared.result;
 		m_curves->setCurve(result.value(QStringLiteral("curve")).toArray());
 		const QJsonObject d = result.value(QStringLiteral("difference")).toObject();
 		m_summary->setText(QObject::tr("B - A: low %1 dB, mid %2 dB at %3 Hz, high %4 dB")
@@ -258,19 +327,34 @@ private:
 	QLabel* m_summary;
 };
 
+/*! One window of each kind, raised when asked for again. It belongs to the main window, not to the
+ *  menu: a strip's context menu is deleted as soon as it closes, and would take the window with it. */
+template<typename Window>
+void showOne(QPointer<QDialog>* open)
+{
+	if (open->isNull()) { *open = new Window(getGUI() != nullptr ? getGUI()->mainWindow() : nullptr); }
+	(*open)->show();
+	(*open)->raise();
+	(*open)->activateWindow();
+}
+
+QPointer<QDialog> s_meters;
+QPointer<QDialog> s_matrix;
+QPointer<QDialog> s_eq;
+
 } // namespace
 
 void addMixerWindows(QMenu* menu)
 {
 	QAction* meters = menu->addAction(QObject::tr("Large Meters..."));
 	meters->setProperty("controlCommand", QStringLiteral("meter.get_state"));
-	QObject::connect(meters, &QAction::triggered, menu, [menu] { (new LargeMeters(menu->parentWidget()))->show(); });
+	QObject::connect(meters, &QAction::triggered, menu, [] { showOne<LargeMeters>(&s_meters); });
 	QAction* matrix = menu->addAction(QObject::tr("Routing Matrix..."));
 	matrix->setProperty("controlCommand", QStringLiteral("routing.matrix"));
-	QObject::connect(matrix, &QAction::triggered, menu, [menu] { (new RoutingMatrix(menu->parentWidget()))->show(); });
+	QObject::connect(matrix, &QAction::triggered, menu, [] { showOne<RoutingMatrix>(&s_matrix); });
 	QAction* eq = menu->addAction(QObject::tr("Compare Channel EQ..."));
 	eq->setProperty("controlCommand", QStringLiteral("mixer.eq_compare"));
-	QObject::connect(eq, &QAction::triggered, menu, [menu] { (new EqCompare(menu->parentWidget()))->show(); });
+	QObject::connect(eq, &QAction::triggered, menu, [] { showOne<EqCompare>(&s_eq); });
 }
 
 } // namespace lmms::gui

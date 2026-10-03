@@ -79,13 +79,16 @@ bool build(Captured* c)
 	const int pattern = patternTrack->patternIndex();
 	store->createClipsForPattern(pattern);
 	auto* clip = dynamic_cast<MidiClip*>(store->tracks()[static_cast<std::size_t>(c->instrument)]->getClip(static_cast<std::size_t>(pattern)));
-	if (clip != nullptr)
+	if (clip == nullptr)
 	{
-		c->written = writeWindowToClip(clip, c->events.data(), c->events.size(), c->start).notes;
-		clip->changeLength(TimePos(c->length));
-		clip->setAutoResize(false);
-		clip->dataChanged();
+		// The store's track has no note clip (not an instrument): nothing could be recorded, so no pattern either.
+		removeTrack(patternTrack);
+		return false;
 	}
+	c->written = writeWindowToClip(clip, c->events.data(), c->events.size(), c->start).notes;
+	clip->changeLength(TimePos(c->length));
+	clip->setAutoResize(false);
+	clip->dataChanged();
 	ClipSlot& slot = song->sessionModel().slot(c->track, c->scene);
 	slot.setPatternReference(pattern);
 	slot.setName(QObject::tr("Recorded %1").arg(pattern + 1));
@@ -120,7 +123,11 @@ ControlResult captureToSlot(const QJsonObject& args)
 	const int bars = args.value(QStringLiteral("bars")).toInt(0);
 	c->length = bars > 0 ? bars * bar : ((end - c->start) / bar + 1) * bar;
 	c->session = sessionBlockXml(*model);
-	if (!build(c.get())) { return ControlResult::failure(ControlErrorKind::Refused, QStringLiteral("the pattern could not be made")); }
+	if (!build(c.get()))
+	{
+		return ControlResult::failure(ControlErrorKind::Refused, QStringLiteral("the pattern could not be made (is pattern-store "
+			"track %1 an instrument?)").arg(c->instrument));
+	}
 	addUndoStep([c]() { unbuild(c.get()); }, [c]() { build(c.get()); });
 	Engine::getSong()->setModified();
 	QJsonObject result{{QStringLiteral("slot"), clipSlotState(c->track, c->scene, model->slot(c->track, c->scene))},

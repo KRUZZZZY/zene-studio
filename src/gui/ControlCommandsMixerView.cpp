@@ -68,23 +68,22 @@ ControlResult mixerView(const QJsonObject& args)
 	{
 		return ControlResult::failure(ControlErrorKind::Busy, QStringLiteral("the engine is not up yet; poll control.ping"));
 	}
-	if (args.contains(QStringLiteral("sends_on_faders")))
+	const bool sendsGiven = args.contains(QStringLiteral("sends_on_faders"));
+	const QString id = args.value(QStringLiteral("sends_on_faders")).toString();
+	int index = -1;
+	if (!id.isEmpty())
 	{
-		const QString id = args.value(QStringLiteral("sends_on_faders")).toString();
-		int index = -1;
-		if (!id.isEmpty())
-		{
-			ControlResult error;
-			MixerChannel* channel = resolveMixerChannel(id, &error);
-			if (channel == nullptr) { return error; }
-			index = channel->index();
-		}
-		gui::mixeroverlays::setSendsOnFaders(index);
+		ControlResult error;
+		MixerChannel* channel = resolveMixerChannel(id, &error);
+		if (channel == nullptr) { return error; }
+		index = channel->index();
 	}
 	gui::mixerviewoptions::Options next = gui::mixerviewoptions::options();
 	QString error;
 	if (!gui::mixerviewoptions::merge(args, &next, &error)) { return ControlResult::failure(ControlErrorKind::InvalidArgs, error); }
-	if (args.size() > (args.contains(QStringLiteral("sends_on_faders")) ? 1 : 0)) { gui::mixerviewoptions::setOptions(next); }
+	// Everything is checked before anything is set: a refused call changes no mode.
+	if (sendsGiven) { gui::mixeroverlays::setSendsOnFaders(index); }
+	if (args.size() > (sendsGiven ? 1 : 0)) { gui::mixerviewoptions::setOptions(next); }
 	return ControlResult::success(mixerViewState());
 }
 

@@ -48,6 +48,15 @@ using namespace control;
 namespace
 {
 
+//! The manual's sections (its <h2 id>s, data/manual/index.html): the topics app.help opens it at.
+const QStringList& manualTopics()
+{
+	static const QStringList topics{QStringLiteral("window"), QStringLiteral("arrange"), QStringLiteral("notes"), QStringLiteral("mix"),
+		QStringLiteral("devices"), QStringLiteral("record"), QStringLiteral("launch"), QStringLiteral("projects"), QStringLiteral("agents"),
+		QStringLiteral("customise"), QStringLiteral("access")};
+	return topics;
+}
+
 ControlResult help(const QJsonObject& args)
 {
 	if (args.value(QStringLiteral("whats_this")).toBool())
@@ -55,7 +64,14 @@ ControlResult help(const QJsonObject& args)
 		QWhatsThis::enterWhatsThisMode();  // 0.5.0 L14: the next click on a control shows its full description
 		return ControlResult::success({{QStringLiteral("whats_this"), true}});
 	}
-	gui::HelpCenter::showHelp(args.value(QStringLiteral("topic")).toString(), args.value(QStringLiteral("reference")).toBool());
+	const QString topic = args.value(QStringLiteral("topic")).toString();
+	// A misspelt topic would open the manual at its top and still answer "open".
+	if (!topic.isEmpty() && !manualTopics().contains(topic))
+	{
+		return ControlResult::failure(ControlErrorKind::NotFound, QStringLiteral("the manual has no topic '%1' (%2)")
+			.arg(topic, manualTopics().join(QStringLiteral(", "))));
+	}
+	gui::HelpCenter::showHelp(topic, args.value(QStringLiteral("reference")).toBool());
 	return ControlResult::success({{QStringLiteral("open"), true}});
 }
 
@@ -110,10 +126,10 @@ void add(ControlRegistry& registry, const char* id, const QString& description, 
 
 void registerHelpCommands(ControlRegistry& registry)
 {
-	add(registry, "app.help", QStringLiteral("Open the manual inside the application - at 'topic' (window, arrange, notes, mix, "
-		"devices, record, launch, projects, agents, customise, access) - or, with 'reference', the command reference: every command with "
+	add(registry, "app.help", QStringLiteral("Open the manual inside the application - at 'topic' (%1) - or, with 'reference', "
+		"the command reference: every command with "
 		"its description and arguments, built from the registry - or, with 'whats_this', What's This? mode: the next click on a "
-		"control shows its full description. Interface state."),
+		"control shows its full description. Interface state.").arg(manualTopics().join(QStringLiteral(", "))),
 		objectSchema({{QStringLiteral("topic"), stringProperty()}, {QStringLiteral("reference"), booleanProperty()},
 			{QStringLiteral("whats_this"), booleanProperty()}}), false, true, help);
 	add(registry, "app.tours", QStringLiteral("The guided tours there are: each one's name, title and step count."),

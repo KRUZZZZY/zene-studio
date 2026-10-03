@@ -78,23 +78,26 @@ Options options()
 	return out;
 }
 
-void setOptions(const Options& next)
+bool setOptions(const Options& next)
 {
 	ConfigManager::inst()->setValue(kSection, QStringLiteral("scale"), QString::number(std::clamp(next.scale, 0.5, 3.0)));
 	ConfigManager::inst()->setValue(kSection, QStringLiteral("fontscale"), QString::number(std::clamp(next.fontScale, 0.75, 2.0)));
 	ConfigManager::inst()->setValue(kSection, QStringLiteral("palette"), next.palette);
 	ConfigManager::inst()->setValue(kSection, QStringLiteral("density"), next.density);
-	syncScaleFile();
+	return syncScaleFile();
 }
 
-void syncScaleFile()
+bool syncScaleFile()
 {
 	QSaveFile file(scaleFilePath());
-	if (file.open(QIODevice::WriteOnly))
+	if (!file.open(QIODevice::WriteOnly)) { return false; }
+	const QByteArray scale = QByteArray::number(options().scale);
+	if (file.write(scale) != scale.size())
 	{
-		file.write(QByteArray::number(options().scale));
-		file.commit();
+		file.cancelWriting();
+		return false;
 	}
+	return file.commit();
 }
 
 QJsonObject toJson(const Options& o)

@@ -30,6 +30,8 @@
 
 #include "lmms_export.h"
 
+class QTimer;
+
 namespace lmms
 {
 class Track;
@@ -38,9 +40,10 @@ class Track;
 namespace lmms::gui
 {
 
-/*! 0.5.0 L08/L09: a thin vertical meter, -60..0 dB, in the meter colours. Twenty times a second it asks @a level
- *  for a linear level (the interface thread; the source reads atomics the mixer worker writes) and falls back
- *  gently from its last peak. Used by the Inspector's send rows (MX-053) and the track headers (MX-011). */
+/*! 0.5.0 L08/L09: a thin vertical meter, -60..0 dB, in the meter colours. Twenty times a second while it is
+ *  shown it asks @a level for a linear level (the interface thread; the source reads atomics the mixer worker
+ *  writes) and falls back gently from its last peak; hidden, it polls nothing. Its tooltip reads the level in dB.
+ *  Used by the Inspector's send rows (MX-053) and the track headers (MX-011). */
 class LMMS_EXPORT LevelBar : public QWidget
 {
 	Q_OBJECT
@@ -48,10 +51,15 @@ public:
 	LevelBar(std::function<float()> level, const QString& name, QWidget* parent);
 
 protected:
+	bool event(QEvent* event) override;
 	void paintEvent(QPaintEvent* event) override;
+	void showEvent(QShowEvent* event) override;
+	void hideEvent(QHideEvent* event) override;
 
 private:
 	std::function<float()> m_source;
+	QString m_name;
+	QTimer* m_timer;
 	float m_level = 0.f;
 };
 

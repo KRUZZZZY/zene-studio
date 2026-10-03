@@ -39,6 +39,19 @@
 namespace lmms::gui
 {
 
+namespace
+{
+
+//! A painted note's length: New Note Length when one is set, else the last drawn length, as a
+//! click draws (drawSpan) - but never past its grid cell, so a stroke's notes do not overlap.
+int paintLength(const NoteEditorState& state)
+{
+	const int wanted = state.newLength > 0 ? state.newLength : state.lastLength;
+	return std::max(1, std::min(wanted, std::max(1, state.gridTicks)));
+}
+
+} // namespace
+
 int NoteCanvas::scaleKey(int key) const
 {
 	return m_state.keepInScale && key >= 0 ? m_state.grid.nearestInScale(key) : key;
@@ -67,7 +80,7 @@ void NoteCanvas::extendPaint(const QPoint& pos)
 void NoteCanvas::commitPaint()
 {
 	if (m_painted.empty()) { return; }
-	const int length = std::max(1, std::min(m_state.lastLength, std::max(1, m_state.gridTicks)));
+	const int length = paintLength(m_state);
 	QJsonArray notes;
 	for (const auto& [key, start] : m_painted)
 	{
@@ -123,7 +136,7 @@ void NoteCanvas::paintPaintPreview(QPainter& p) const
 {
 	QColor fill = tokens::velocityColor(m_state.lastVelocity);
 	fill.setAlpha(170);
-	const int length = std::max(1, std::min(m_state.lastLength, std::max(1, m_state.gridTicks)));
+	const int length = paintLength(m_state);
 	for (const auto& [key, start] : m_painted) { p.fillRect(rectFor(key, start, start + length), fill); }
 }
 

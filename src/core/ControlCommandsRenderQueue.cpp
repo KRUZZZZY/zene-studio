@@ -123,6 +123,10 @@ ControlResult queueAdd(const QJsonObject& args)
 	}
 	job.rangeBegin = hasStart ? args.value(QStringLiteral("start_ticks")).toInt() : -1;
 	job.rangeEnd = hasStart ? args.value(QStringLiteral("end_ticks")).toInt() : -1;
+	if (hasStart && job.rangeEnd <= job.rangeBegin)  // refused here, not by the render child after the queue took it
+	{
+		return ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("end_ticks must be after start_ticks"));
+	}
 	ControlResult error;
 	if (!renderSource(args, &job, &error)) { return error; }
 	return queued(job, args.value(QStringLiteral("start")).toBool(true));

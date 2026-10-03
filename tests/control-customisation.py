@@ -200,8 +200,9 @@ def check_arranger_view(session, recorder):
     session.result("control.undo")
     tool = session.result("arrangement.set_tool", {"tool": "select"})
     menu = session.result("window.tool_menu")
+    # The arranger's seven tools and the note editor's seven (paint and mute included since the 0.5.0 review).
     recorder.check("set_tool and the tool menu",
-                   tool.get("tool") == "select" and menu.get("shown") is False and len(menu.get("entries") or []) == 12,
+                   tool.get("tool") == "select" and menu.get("shown") is False and len(menu.get("entries") or []) == 14,
                    "tool=%r menu=%r" % (tool, menu))
     tools = [session.result("arrangement.set_tool", {"tool": t}).get("tool") for t in ("audition", "zoom", "smart", "range")]
     recorder.check("the overlay's tools are chosen like the editor's (ED-008/009/010/011)",

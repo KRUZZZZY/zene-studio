@@ -183,8 +183,8 @@ ControlResult loadEffect(const ControlTarget& target, const ControlDeviceEntry& 
 
 	QJsonObject transaction;
 	transaction.insert(QStringLiteral("before"),
-		QJsonObject{{QStringLiteral("target"), target.id},
-			{QStringLiteral("devices_on_target"), index}});
+		QJsonObject{{QStringLiteral("target"), target.id},  // the count before the new one, wherever 'position' put it
+			{QStringLiteral("devices_on_target"), static_cast<int>(chain->effects().size()) - 1}});
 	transaction.insert(QStringLiteral("inverse"),
 		QJsonObject{{QStringLiteral("op"), QStringLiteral("plugin.unload")},
 			{QStringLiteral("args"),

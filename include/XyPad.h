@@ -70,6 +70,8 @@ public:
 
 private:
 	void fillMacros();
+	//! The dot at the chosen macros' current values, and the pad's tooltip for the choice.
+	void syncPoint();
 	void send(QPointF point);
 	QString m_channel;
 	QComboBox* m_x;

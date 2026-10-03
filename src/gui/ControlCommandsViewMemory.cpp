@@ -108,6 +108,12 @@ void selectInArranger(const QJsonArray& ids)
 	}
 }
 
+//! The 'name' argument as it is stored: save, recall, apply and remove all trim it the same way.
+QString nameOf(const QJsonObject& args)
+{
+	return args.value(QStringLiteral("name")).toString().trimmed();
+}
+
 //! Replace the entries of @a kind with @a next as ONE undo step.
 void storeEntries(Kind kind, const QJsonArray& next)
 {
@@ -135,15 +141,18 @@ ControlResult saveEntry(Kind kind, const QJsonObject& entry)
 		return ControlResult::failure(ControlErrorKind::Refused, QStringLiteral("at most %1 are kept; remove one first").arg(MaxEntries));
 	}
 	if (!replaced) { next.append(entry); }
-	storeEntries(kind, next);
+	// Saving what is already saved changes nothing: no undo step, the project stays unmodified.
+	const bool changed = next != ViewMemory::instance().entries(kind);
+	if (changed) { storeEntries(kind, next); }
 	QJsonObject result = entry;
 	result.insert(QStringLiteral("replaced"), replaced);
+	result.insert(QStringLiteral("changed"), changed);
 	return ControlResult::success(result);
 }
 
 ControlResult removeEntry(Kind kind, const QJsonObject& args)
 {
-	const QString name = args.value(QStringLiteral("name")).toString();
+	const QString name = nameOf(args);
 	QJsonArray next;
 	for (const QJsonValue& value : ViewMemory::instance().entries(kind))
 	{
@@ -159,7 +168,7 @@ ControlResult removeEntry(Kind kind, const QJsonObject& args)
 
 bool namedOrRefuse(const QJsonObject& args, QString* name, ControlResult* error)
 {
-	*name = args.value(QStringLiteral("name")).toString().trimmed();
+	*name = nameOf(args);
 	if (name->isEmpty()) { *error = ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("give it a name")); }
 	return !name->isEmpty();
 }
@@ -186,7 +195,7 @@ bool restoreRange(const QJsonObject& entry)
 
 ControlResult recallLocation(const QJsonObject& args)
 {
-	const QString name = args.value(QStringLiteral("name")).toString();
+	const QString name = nameOf(args);
 	const QJsonObject entry = ViewMemory::instance().entry(Kind::Location, name);
 	if (entry.isEmpty()) { return ControlResult::failure(ControlErrorKind::NotFound, QStringLiteral("no memory location '%1'").arg(name)); }
 	const ControlResult seek = ControlRegistry::instance()->invoke(QStringLiteral("transport.seek"),
@@ -199,13 +208,30 @@ ControlResult recallLocation(const QJsonObject& args)
 		{QStringLiteral("range_restored"), range}, {QStringLiteral("zoom_restored"), zoom}});
 }
 
+//! The first of @a ids that names no clip in the project, or an empty string when every one does.
+QString firstUnknownClip(const QJsonArray& ids)
+{
+	for (const QJsonValue& id : ids)
+	{
+		ClipRef ref;
+		ControlResult missing;
+		if (!resolveClip(id.toString(), &ref, &missing)) { return id.isString() ? id.toString() : QStringLiteral("?"); }
+	}
+	return QString();
+}
+
 ControlResult saveSelection(const QJsonObject& args)
 {
 	QString name;
 	ControlResult error;
 	if (!namedOrRefuse(args, &name, &error)) { return error; }
 	const QJsonObject range = currentRange();
-	const QJsonArray clips = args.contains(QStringLiteral("clips")) ? args.value(QStringLiteral("clips")).toArray() : selectedClips();
+	const bool given = args.contains(QStringLiteral("clips"));
+	const QJsonArray clips = given ? args.value(QStringLiteral("clips")).toArray() : selectedClips();
+	if (const QString unknown = given ? firstUnknownClip(clips) : QString(); !unknown.isEmpty())
+	{
+		return ControlResult::failure(ControlErrorKind::NotFound, QStringLiteral("no clip '%1'").arg(unknown));
+	}
 	if (range.isEmpty() && clips.isEmpty())
 	{
 		return ControlResult::failure(ControlErrorKind::Refused, QStringLiteral("nothing is selected: select clips or a range first"));
@@ -217,7 +243,7 @@ ControlResult saveSelection(const QJsonObject& args)
 
 ControlResult applySelection(const QJsonObject& args)
 {
-	const QString name = args.value(QStringLiteral("name")).toString();
+	const QString name = nameOf(args);
 	const QJsonObject entry = ViewMemory::instance().entry(Kind::Selection, name);
 	if (entry.isEmpty()) { return ControlResult::failure(ControlErrorKind::NotFound, QStringLiteral("no saved selection '%1'").arg(name)); }
 	const bool range = restoreRange(entry);
@@ -266,7 +292,8 @@ void registerViewMemoryCommands(ControlRegistry& registry)
 {
 	ViewMemory::instance();  // registers the section before any project loads
 	add(registry, "location", "save", QStringLiteral("Save a memory location 'name': the play position (or 'tick'), the range "
-		"and the arranger's zoom as they are now - replacing one of that name, at most 99. Saved with the project; one undo step."),
+		"and the arranger's zoom as they are now - replacing one of that name, at most 99. Saved with the project; one undo step "
+		"('changed' false, and no step, when it was already saved just so). Names are trimmed here and in every lookup."),
 		objectSchema({{QStringLiteral("name"), stringProperty()}, {QStringLiteral("tick"), tickProperty()}}, {QStringLiteral("name")}),
 		true, saveLocation);
 	add(registry, "location", "recall", QStringLiteral("Go to memory location 'name': the play position (transport.seek), its "
@@ -274,7 +301,8 @@ void registerViewMemoryCommands(ControlRegistry& registry)
 		false, recallLocation);
 	registerKind(registry, "location", Kind::Location, QStringLiteral("memory locations"));
 	add(registry, "selection", "save", QStringLiteral("Save the selection as 'name': the range and the clips selected in the "
-		"arranger (or 'clips', a list of clip ids) - replacing one of that name, at most 99. Refused when nothing is selected. "
+		"arranger (or 'clips', a list of clip ids; refused NotFound naming one that is not in the project) - replacing one of "
+		"that name, at most 99 ('changed' false when it was already saved just so: no undo step). Refused when nothing is selected. "
 		"Saved with the project; one undo step."),
 		objectSchema({{QStringLiteral("name"), stringProperty()}, {QStringLiteral("clips"), arrayProperty()}}, {QStringLiteral("name")}),
 		true, saveSelection);

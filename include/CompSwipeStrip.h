@@ -35,8 +35,8 @@ namespace lmms::gui
 {
 
 /*! 0.5.0 L03 (ED-165): comp by swiping. The track's take lanes are drawn as rows over the comp's
- *  span, each comp segment lit on the lane it plays; a drag along a lane runs comp.select for the
- *  range dragged on that lane, and a double-click runs comp.cycle at that tick (ED-168) - the
+ *  span (the takes' span before there is a comp), each comp segment lit on the lane it plays; a
+ *  drag along a lane runs comp.select for the range dragged on that lane, and a double-click runs comp.cycle at that tick (ED-168) - the
  *  registry's commands, so each swipe is one undo step. setState() takes comp.get_state's answer. */
 class LMMS_EXPORT CompSwipeStrip : public QWidget
 {

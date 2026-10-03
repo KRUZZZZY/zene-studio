@@ -153,8 +153,14 @@ void LaunchBindings::applyNote(const LaunchNote& note)
 		m_learning = {};
 		return;
 	}
-	const QJsonObject binding = bindingFor(note);
-	if (note.on) { launch(binding); }
+	// A release goes to the binding its press launched, even when the bindings changed while the key was held.
+	const int held = note.channel * 128 + note.key;
+	const QJsonObject binding = !note.on && m_held.contains(held) ? m_held.take(held) : bindingFor(note);
+	if (note.on)
+	{
+		m_held.insert(held, binding);
+		launch(binding);
+	}
 	else if (binding.value(QStringLiteral("action")).toString() == QLatin1String("slot")) { release(binding); }
 }
 

@@ -25,6 +25,7 @@
 
 #include <algorithm>
 
+#include <QFileInfo>
 #include <QJsonArray>
 #include <QMenu>
 
@@ -44,6 +45,7 @@
 #include "PluginNativeEditor.h"
 #include "PluginOrganiser.h"
 #include "TakeRecorder.h"
+#include "TextFloat.h"
 
 namespace lmms::gui
 {
@@ -69,11 +71,24 @@ int slotOf(const Effect* effect)
 	return static_cast<int>(std::find(effects.begin(), effects.end(), effect) - effects.begin());
 }
 
-void insertBeside(QWidget* parent, Effect* effect, bool after)
+//! The picker, then the chosen device's dev-<n>; empty when cancelled, or (said so) when the device
+//! list has no entry for the choice.
+QString pickDevice(QWidget* parent)
 {
 	EffectSelectDialog picker(parent);
-	if (picker.exec() != QDialog::Accepted) { return; }
+	if (picker.exec() != QDialog::Accepted) { return QString(); }
 	const QString device = deviceIdOf(picker.selectedKey());
+	if (device.isEmpty())
+	{
+		TextFloat::displayMessage(QObject::tr("Device not available"), QObject::tr("%1 is not in the device list (plugin.list), "
+			"so it cannot be inserted from here.").arg(picker.selectedKey().displayName()), QPixmap(), 4000, parent);
+	}
+	return device;
+}
+
+void insertBeside(QWidget* parent, Effect* effect, bool after)
+{
+	const QString device = pickDevice(parent);
 	if (device.isEmpty()) { return; }
 	QJsonObject args = chainAddress(effect->effectChain());
 	args.insert(QStringLiteral("device"), device);
@@ -84,9 +99,7 @@ void insertBeside(QWidget* parent, Effect* effect, bool after)
 //! The picker, then plugin.replace: another device in this one's place (L11, WF-016).
 void replaceWith(QWidget* parent, const QJsonObject& device)
 {
-	EffectSelectDialog picker(parent);
-	if (picker.exec() != QDialog::Accepted) { return; }
-	const QString chosen = deviceIdOf(picker.selectedKey());
+	const QString chosen = pickDevice(parent);
 	if (chosen.isEmpty()) { return; }
 	QJsonObject args = device;
 	args.insert(QStringLiteral("device"), chosen);
@@ -165,9 +178,11 @@ void addParameterEntries(QMenu* menu, QWidget* parent, const Effect* effect, con
 				args.insert(QStringLiteral("on"), !recording);
 				runCommand(parent, deviceCall("plugin.record", args, false));
 			});
-		entry(menu, QObject::tr("Put the Last Take on a New Track"), "plugin.recorder_land", [parent, self] {
+		QAction* land = entry(menu, QObject::tr("Put the Last Take on a New Track"), "plugin.recorder_land", [parent, self] {
 			runCommand(parent, deviceCall("plugin.recorder_land", self, false));
 		});
+		// Only offered once there is a finished take on disk (plugin.recorder_land refuses otherwise).
+		land->setEnabled(!recording && !recorder->lastTake().isEmpty() && QFileInfo::exists(recorder->lastTake()));
 	}
 	// MX-152: a convolution reverb takes an impulse response file (the form offers a file picker).
 	if (QString::fromUtf8(effect->descriptor()->name) == QLatin1String("convolutionreverb"))

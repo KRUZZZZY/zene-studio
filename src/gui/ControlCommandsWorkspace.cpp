@@ -79,23 +79,28 @@ ControlResult stayOnTop(const QJsonObject& args)
 	return ControlResult::success({{QStringLiteral("on_top"), wanted}, {QStringLiteral("changed"), wanted != before}});
 }
 
-//! The visible top-level windows other than the main one: floating panels, dialogs, plug-in windows.
+//! The visible top-level windows other than the main one: floating panels, dialogs, plug-in windows. A modal
+//! prompt is left where it is, over the window that asked.
 QList<QWidget*> floatingWindows(const QWidget* main)
 {
 	QList<QWidget*> out;
 	for (QWidget* widget : QApplication::topLevelWidgets())
 	{
 		const bool window = widget->windowType() == Qt::Window || widget->windowType() == Qt::Dialog || widget->windowType() == Qt::Tool;
-		if (widget != main && widget->isVisible() && window && qobject_cast<QMenu*>(widget) == nullptr) { out.append(widget); }
+		const bool tidyable = window && !widget->isModal() && qobject_cast<QMenu*>(widget) == nullptr;
+		if (widget != main && widget->isVisible() && tidyable) { out.append(widget); }
 	}
 	return out;
 }
 
 void cascade(const QList<QWidget*>& windows, const QRect& area)
 {
+	// The steps start again from the top left before they reach the middle of the screen, so every
+	// window's title bar stays on it however many windows there are.
+	const int steps = std::max(1, std::min(area.width(), area.height()) / 2 / CascadeStep);
 	for (int i = 0; i < windows.size(); ++i)
 	{
-		const QPoint at = area.topLeft() + QPoint(CascadeStep, CascadeStep) * (i + 1);
+		const QPoint at = area.topLeft() + QPoint(CascadeStep, CascadeStep) * (i % steps + 1);
 		windows[i]->move(at);
 		windows[i]->raise();
 	}
@@ -125,9 +130,25 @@ ControlResult tidy(const QJsonObject& args)
 	return ControlResult::success({{QStringLiteral("mode"), mode}, {QStringLiteral("windows"), static_cast<int>(windows.size())}});
 }
 
+//! The open @a Dialog of @a window, brought to the front, or nullptr: each of these windows is opened once,
+//! and asking again raises it (two tuners would share one tap, and closing either would switch it off).
+template <typename Dialog>
+Dialog* raiseOpen(gui::MainWindow* window)
+{
+	for (Dialog* open : window->findChildren<Dialog*>(QString(), Qt::FindDirectChildrenOnly))
+	{
+		if (!open->isVisible()) { continue; }  // closed, waiting for its deferred delete
+		open->raise();
+		open->activateWindow();
+		return open;
+	}
+	return nullptr;
+}
+
 template <typename Dialog>
 Dialog* openDialog(gui::MainWindow* window)
 {
+	if (Dialog* open = raiseOpen<Dialog>(window)) { return open; }
 	auto* dialog = new Dialog(window);
 	dialog->setAttribute(Qt::WA_DeleteOnClose);
 	dialog->setModal(false);
@@ -167,22 +188,34 @@ ControlResult whatsNewWindow(const QJsonObject&)
 	if (window == nullptr) { return noInterface(QStringLiteral("window.whats_new")); }
 	const ControlResult notes = ControlRegistry::instance()->invoke(QStringLiteral("app.whats_new"));
 	if (!notes.ok) { return notes; }
-	auto* dialog = new gui::WhatsNewDialog(notes.result, window);
-	dialog->setAttribute(Qt::WA_DeleteOnClose);
-	dialog->show();
+	if (raiseOpen<gui::WhatsNewDialog>(window) == nullptr)
+	{
+		auto* dialog = new gui::WhatsNewDialog(notes.result, window);
+		dialog->setAttribute(Qt::WA_DeleteOnClose);
+		dialog->show();
+	}
 	markWhatsNewSeen();
 	return ControlResult::success({{QStringLiteral("shown"), true}, {QStringLiteral("version"), notes.result.value(QStringLiteral("version"))}});
 }
 
-//! The first widget inside @a frame that takes keyboard focus, or the frame's content itself.
-QWidget* focusTarget(gui::ShellPanel* frame)
+//! The first widget inside @a root that takes keyboard focus, or nullptr.
+QWidget* firstFocusable(QWidget* root)
 {
-	QWidget* content = frame->content() != nullptr ? frame->content() : frame;
-	for (QWidget* child : content->findChildren<QWidget*>())
+	for (QWidget* child : root->findChildren<QWidget*>())
 	{
 		if (child->isVisible() && child->isEnabled() && (child->focusPolicy() & Qt::TabFocus)) { return child; }
 	}
-	return content;
+	return nullptr;
+}
+
+//! The first widget inside @a frame's content that takes keyboard focus; when the content has none (an empty
+//! Inspector), the panel's own header button, so the focus does move into the panel and F6 goes on from it.
+QWidget* focusTarget(gui::ShellPanel* frame)
+{
+	QWidget* content = frame->content() != nullptr ? frame->content() : frame;
+	if (QWidget* inside = firstFocusable(content)) { return inside; }
+	QWidget* header = firstFocusable(frame);
+	return header != nullptr ? header : content;
 }
 
 //! The open panels, in the register's order.
@@ -205,7 +238,8 @@ QString panelToFocus(const gui::Shell* shell, const QString& panel)
 	const int at = static_cast<int>(open.indexOf(shell->model().focused()));
 	const int step = panel == QLatin1String("next") ? 1 : -1;
 	const int size = static_cast<int>(open.size());
-	return open.at(at < 0 ? 0 : ((at + step) % size + size) % size);
+	if (at < 0) { return step > 0 ? open.first() : open.last(); }  // from outside the panels: the first, or the last
+	return open.at(((at + step) % size + size) % size);
 }
 
 ControlResult focusPanel(const QJsonObject& args)
@@ -257,16 +291,18 @@ void registerWorkspaceCommands(ControlRegistry& registry)
 	add(registry, "stay_on_top", QStringLiteral("Keep the main window above other programs' windows, or not ('enabled'; "
 		"toggles when left out). Its maximised or fullscreen state is kept. Interface state."),
 		objectSchema({{QStringLiteral("enabled"), booleanProperty()}}), stayOnTop);
-	add(registry, "tidy", QStringLiteral("Tidy the floating windows - detached panels, dialogs, plug-in windows - over the "
-		"main window's screen: 'cascade' (the default: stepped from its top left corner) or 'tile' (a grid). Interface state."),
+	add(registry, "tidy", QStringLiteral("Tidy the floating windows - detached panels, dialogs (not a modal prompt), plug-in windows - over the "
+		"main window's screen: 'cascade' (the default: stepped from its top left corner, starting again before the middle) or "
+		"'tile' (a grid). Interface state."),
 		objectSchema({{QStringLiteral("mode"), enumProperty({QStringLiteral("cascade"), QStringLiteral("tile")})}}), tidy);
 	add(registry, "large_clock", QStringLiteral("Open a large clock: the play position in bars, beats and ticks and in "
-		"minutes and seconds, big enough to read across the room. A display."), objectSchema({}), largeClock);
+		"minutes and seconds, big enough to read across the room (an open one is raised instead). A display."), objectSchema({}), largeClock);
 	add(registry, "tuner", QStringLiteral("Open the tuner: the note nearest the pitch of its source (the input, unless "
-		"tuner.set chose another), the cents off it and a needle; closing it switches the tuner off. A display."),
+		"tuner.set chose another), the cents off it and a needle (an open one is raised instead); closing it switches the tuner "
+		"off. A display."),
 		objectSchema({}), tunerWindow);
 	add(registry, "ask", QStringLiteral("Open Help > Ask (app.ask in a window), asking 'question' at once when given; "
-		"'answers' is how many it found. Offline."), objectSchema({{QStringLiteral("question"), stringProperty()}}), askWindow);
+		"'answers' is how many it found (an open one is raised and asked). Offline."), objectSchema({{QStringLiteral("question"), stringProperty()}}), askWindow);
 	add(registry, "whats_new", QStringLiteral("Show this version's release notes (app.whats_new) and remember they were "
 		"shown, so the start does not show them again until the next version."), objectSchema({}), whatsNewWindow);
 	add(registry, "focus_panel", QStringLiteral("Move the keyboard focus into shell panel 'panel' (window.get_state's panel "

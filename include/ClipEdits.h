@@ -97,6 +97,9 @@ struct GainPoint
 
 //! The envelope's bound: a fixed array, so copying ClipEdits onto the audio path never allocates.
 constexpr int MaxGainPoints = 32;
+//! A point's gain range (clip.set_envelope's -60..+24 dB); a loaded point is held to it too.
+constexpr float MinGainPointDb = -60.f;
+constexpr float MaxGainPointDb = 24.f;
 
 struct ClipEdits
 {

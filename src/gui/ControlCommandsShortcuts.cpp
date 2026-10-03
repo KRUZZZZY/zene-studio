@@ -29,6 +29,7 @@
 #include <QFile>
 #include <QJsonArray>
 #include <QJsonDocument>
+#include <QMap>
 #include <QMenuBar>
 #include <QSaveFile>
 
@@ -165,8 +166,32 @@ bool importedOverrides(const QJsonObject& args, QJsonObject* out, ControlResult*
 		*error = ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("'%1' is not a shortcut set (shortcuts.export writes one)").arg(path));
 		return false;
 	}
+	if (doc.value(QStringLiteral("version")).toInt(ExportVersion) > ExportVersion)  // a newer build's set may mean other things
+	{
+		*error = ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("'%1' is a version %2 shortcut set; this build reads "
+			"version %3").arg(path).arg(doc.value(QStringLiteral("version")).toInt()).arg(ExportVersion));
+		return false;
+	}
 	*out = doc.value(QStringLiteral("overrides")).toObject();
 	return true;
+}
+
+//! The keys more than one action holds once @a overrides apply over @a all's defaults: [{keys, ids}]. Qt fires
+//! neither action of an ambiguous shortcut, so an import that makes one says so.
+QJsonArray clashesUnder(const QList<sm::Binding>& all, const QJsonObject& overrides)
+{
+	QMap<QString, QStringList> holders;
+	for (const sm::Binding& binding : all)
+	{
+		const QString keys = overrides.contains(binding.id) ? overrides.value(binding.id).toString() : binding.defaults;
+		if (!keys.isEmpty()) { holders[keys].append(binding.id); }
+	}
+	QJsonArray out;
+	for (auto it = holders.cbegin(); it != holders.cend(); ++it)
+	{
+		if (it.value().size() > 1) { out.append(QJsonObject{{QStringLiteral("keys"), it.key()}, {QStringLiteral("ids"), QJsonArray::fromStringList(it.value())}}); }
+	}
+	return out;
 }
 
 ControlResult importShortcuts(const QJsonObject& args)
@@ -177,15 +202,21 @@ ControlResult importShortcuts(const QJsonObject& args)
 	ControlResult error;
 	if (!importedOverrides(args, &incoming, &error)) { return error; }
 	QJsonObject overrides = args.value(QStringLiteral("replace")).toBool() ? QJsonObject() : sm::overrides();
+	const QList<sm::Binding> all = sm::bindings(menus);
 	QStringList known;
-	for (const sm::Binding& binding : sm::bindings(menus)) { known.append(binding.id); }
+	for (const sm::Binding& binding : all) { known.append(binding.id); }
 	QJsonArray unknown;
+	QJsonArray invalid;  // not a key sequence: left out (read as empty it would unbind the action)
 	for (auto it = incoming.begin(); it != incoming.end(); ++it)
 	{
-		overrides.insert(it.key(), sm::portable(it.value().toString()));
+		bool ok = false;
+		const QString keys = sm::portable(it.value().toString(), &ok);
+		if (!ok) { invalid.append(it.key()); continue; }
+		overrides.insert(it.key(), keys);
 		if (!known.contains(it.key())) { unknown.append(it.key()); }
 	}
-	return storeOverrides(menus, overrides, {{QStringLiteral("imported"), incoming.size()}, {QStringLiteral("unknown"), unknown}},
+	return storeOverrides(menus, overrides, {{QStringLiteral("imported"), incoming.size() - invalid.size()}, {QStringLiteral("unknown"), unknown},
+		{QStringLiteral("invalid"), invalid}, {QStringLiteral("conflicts"), clashesUnder(all, overrides)}},
 		{QStringLiteral("shortcuts.import"), {{QStringLiteral("overrides"), sm::overrides()}, {QStringLiteral("replace"), true}}});
 }
 
@@ -230,10 +261,12 @@ void registerShortcutCommands(ControlRegistry& registry)
 			{QStringLiteral("bindings"), integerProperty()}}), false, exportShortcuts);
 	add(registry, "import", QStringLiteral("Apply a shortcut set: the overrides in 'file' (written by shortcuts.export) or "
 		"given as 'overrides'; merged over the current ones, or replacing them with 'replace'. Ids this build's "
-		"menus do not have are kept and listed in 'unknown'. One undo step."),
+		"menus do not have are kept and listed in 'unknown'; a value that is no key sequence is left out and listed in "
+		"'invalid'; 'conflicts' lists the keys more than one action holds afterwards ({keys, ids}). One undo step."),
 		objectSchema({{QStringLiteral("file"), stringProperty()}, {QStringLiteral("overrides"), objectProperty()},
 			{QStringLiteral("replace"), booleanProperty()}}),
-		objectSchema({{QStringLiteral("imported"), integerProperty()}, {QStringLiteral("unknown"), arrayProperty()}}), true,
+		objectSchema({{QStringLiteral("imported"), integerProperty()}, {QStringLiteral("unknown"), arrayProperty()},
+			{QStringLiteral("invalid"), arrayProperty()}, {QStringLiteral("conflicts"), arrayProperty()}}), true,
 		importShortcuts);
 }
 

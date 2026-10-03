@@ -37,6 +37,7 @@
 #include <QMessageBox>
 #include <QPainter>
 #include <QStackedWidget>
+#include <QTimer>
 #include <QVBoxLayout>
 
 #include "AutomatableButton.h"
@@ -192,6 +193,8 @@ MixerChannelView::MixerChannelView(QWidget* parent, MixerView* mixerView, int ch
 	m_meterInfo->setToolTip(tr("Gain reduction (dB) and the clip light - click CLIP to clear the lights"));
 	connect(m_meterInfo, &QLabel::linkActivated, this, [this] {
 		runCommand(this, CommandCall{QStringLiteral("mixer.clear_clips"), {}, {}, QString(), false});
+		// The lights go out now, not at the next half-second sync (queued: a sync may rebuild this strip).
+		QTimer::singleShot(0, m_mixerView, &MixerView::syncWithMixer);
 	});
 	mainLayout->addWidget(m_meterInfo, 0, Qt::AlignHCenter);
 

@@ -141,17 +141,19 @@ void LcdWidget::paintEvent( QPaintEvent* )
 	// 0.5.0 (docs/UI-SHELL.md §1): a flat number field painted from the design tokens - the
 	// value in the interface's typeface on a dark rounded field, the label as a caption below -
 	// in place of the seven-segment bitmap. The cell geometry the bitmap defined is kept, so no
-	// layout moves; seamless edges (LcdFloatSpinBox's halves) are drawn square.
+	// layout moves; a seamless edge (LcdFloatSpinBox's halves) is drawn square and open, the other keeps its
+	// rounding and border - the field runs on past the widget on that side, where the widget clips it.
 	const tokens::Palette& pal = tokens::palette();
 	QPainter p( this );
 	p.setRenderHint( QPainter::Antialiasing );
 	const int marginX1 = m_seamlessLeft ? 0 : 1 + m_marginWidth;
 	const int marginX2 = m_seamlessRight ? 0 : 1 + m_marginWidth;
 	const QRectF field( 0.5, 0.5, m_cellWidth * m_numDigits + marginX1 + marginX2 - 1.0, m_cellHeight + 1.0 );
-	const qreal radius = m_seamlessLeft || m_seamlessRight ? 0.0 : tokens::radius::md;
-	p.setPen( m_seamlessLeft || m_seamlessRight ? Qt::NoPen : QPen( pal.separator, 1 ) );
+	const qreal radius = tokens::radius::md;
+	const QRectF body = field.adjusted( m_seamlessLeft ? -2 * radius : 0, 0, m_seamlessRight ? 2 * radius : 0, 0 );
+	p.setPen( QPen( pal.separator, 1 ) );
 	p.setBrush( pal.base );
-	p.drawRoundedRect( field, radius, radius );
+	p.drawRoundedRect( body, radius, radius );
 
 	QFont digits = tokens::font( tokens::TextRole::Body );
 	digits.setPixelSize( std::max( 9, static_cast<int>( m_cellHeight * 0.78 ) ) );
