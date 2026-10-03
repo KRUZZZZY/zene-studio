@@ -109,6 +109,7 @@ void McuSurface::setBank(int first)
 
 Track* McuSurface::stripTrack(int strip) const
 {
+	if (strip < 0 || strip >= mcu::Strips) { return nullptr; }  // 8 is the master fader, never a track
 	const QList<Track*> tracks = bankable();
 	const int index = m_bank + strip;
 	return strip >= 0 && strip < mcu::Strips && index < tracks.size() ? tracks.at(index) : nullptr;
@@ -117,10 +118,12 @@ Track* McuSurface::stripTrack(int strip) const
 void McuSurface::processInEvent(const MidiEvent& event, const TimePos&, f_cnt_t)
 {
 	// MIDI client thread: decode here, apply on the UI thread where the registry and the models live.
+	// A lock-free hand-off (review W2a-1 #6): nothing allocated on the MIDI client's thread, which
+	// is a realtime callback on some backends; the UI-thread timer drains it.
 	const mcu::Input input = mcu::decode(event);
 	if (input.kind == mcu::Kind::None) { return; }
 	m_eventsIn.fetch_add(1, std::memory_order_relaxed);
-	QMetaObject::invokeMethod(this, [this, input] { apply(input); }, Qt::QueuedConnection);
+	(void)m_inbox.push(input);
 }
 
 void McuSurface::processOutEvent(const MidiEvent&, const TimePos&, f_cnt_t)
@@ -141,14 +144,15 @@ bool McuSurface::applyMix(const mcu::Input& input)
 	switch (input.kind)
 	{
 	case mcu::Kind::Fader:
-		if (FloatModel* volume = trackVolumeModel(track))
-		{
-			volume->setValue(volume->minValue() + mcu::faderLevel(input.value) * (volume->maxValue() - volume->minValue()));
-		}
-		else if (input.strip == mcu::MasterStrip)
+		// The master fader is strip 8 whatever the bank shows (review W2a-1 #4).
+		if (input.strip == mcu::MasterStrip)
 		{
 			IntModel& master = Engine::getSong()->masterVolumeModel();
 			master.setValue(master.minValue() + mcu::faderLevel(input.value) * (master.maxValue() - master.minValue()));
+		}
+		else if (FloatModel* volume = trackVolumeModel(track))
+		{
+			volume->setValue(volume->minValue() + mcu::faderLevel(input.value) * (volume->maxValue() - volume->minValue()));
 		}
 		return true;
 	case mcu::Kind::FaderTouch: m_touched[static_cast<std::size_t>(input.strip)] = input.pressed; return true;
@@ -245,7 +249,19 @@ void McuSurface::sendStrip(int strip)
 
 void McuSurface::sendFeedback()
 {
+	mcu::Input pending;
+	while (m_inbox.pop(&pending)) { apply(pending); }
 	for (int strip = 0; strip < mcu::Strips; ++strip) { sendStrip(strip); }
+	// The master motor fader follows the master volume (review W2a-1 #5).
+	const IntModel& master = Engine::getSong()->masterVolumeModel();
+	const int position = mcu::faderPosition(static_cast<float>(master.value() - master.minValue())
+		/ std::max(1.f, static_cast<float>(master.maxValue() - master.minValue())));
+	auto& sent = m_sentFader[static_cast<std::size_t>(mcu::MasterStrip)];
+	if (!m_touched[static_cast<std::size_t>(mcu::MasterStrip)] && position != sent)
+	{
+		sent = position;
+		send(mcu::faderEvent(mcu::MasterStrip, position));
+	}
 	const Song* song = Engine::getSong();
 	sendLed(mcu::Kind::Play, -1, song->isPlaying());
 	sendLed(mcu::Kind::Record, -1, song->isPlaying() && song->isRecording());

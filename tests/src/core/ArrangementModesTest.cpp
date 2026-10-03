@@ -89,6 +89,13 @@ private slots:
 		Engine::destroy();
 	}
 
+	//! Review W2a-1 #8: the modes go back to the defaults after every case, a failing one included.
+	void cleanup()
+	{
+		run(QStringLiteral("arrangement.modes"), {{QStringLiteral("ripple"), QStringLiteral("off")},
+			{QStringLiteral("overlap"), QStringLiteral("free")}, {QStringLiteral("snap_to_edges"), true}});
+	}
+
 	void init()
 	{
 		Engine::getSong()->clearProject();

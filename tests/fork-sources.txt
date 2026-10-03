@@ -897,6 +897,7 @@ src/core/ControlCommandsLivecode.cpp
 src/core/ControlCommandsMarkers.cpp
 src/core/ControlCommandsMastering.cpp
 src/core/ControlCommandsMasteringRun.cpp
+src/core/ControlCommandsMcu.cpp
 src/core/ControlCommandsMeter.cpp
 src/core/ControlCommandsMeterFile.cpp
 src/core/ControlCommandsMidi.cpp

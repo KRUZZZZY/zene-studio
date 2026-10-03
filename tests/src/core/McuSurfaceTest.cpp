@@ -137,6 +137,25 @@ private slots:
 		QVERIFY(McuSurface::instance() == nullptr);
 		qDeleteAll(made);
 	}
+
+	//! Review W2a-1 #4/#7: with nine tracks and more, strip 8 is still the master fader.
+	void theMasterFaderIsTheMasterWhateverTheBank()
+	{
+		Song* song = Engine::getSong();
+		QList<Track*> made;
+		for (int i = 0; i < 10; ++i) { made.append(Track::create(Track::Type::Instrument, song)); }
+		McuSurface* surface = McuSurface::connect(QString(), QString());
+		QVERIFY(surface->stripTrack(mcu::MasterStrip) == nullptr);
+		FloatModel* ninth = trackVolumeModel(made.at(8));
+		const float before = ninth->value();
+		surface->apply({mcu::Kind::Fader, mcu::MasterStrip, 0, false});
+		QCOMPARE(song->masterVolumeModel().value(), song->masterVolumeModel().minValue());
+		QCOMPARE(ninth->value(), before);
+		surface->apply({mcu::Kind::Fader, mcu::MasterStrip, mcu::FaderMax, false});
+		QCOMPARE(song->masterVolumeModel().value(), song->masterVolumeModel().maxValue());
+		McuSurface::disconnect();
+		qDeleteAll(made);
+	}
 };
 
 QTEST_MAIN(McuSurfaceTest)

@@ -36,6 +36,7 @@
 #include <QTimer>
 
 #include "McuProtocol.h"
+#include "MpscQueue.h"
 #include "MidiEventProcessor.h"
 #include "lmms_export.h"
 
@@ -52,8 +53,9 @@ class Track;
  *  surface does is therefore what a click or an agent does - recorded and undone the same way -
  *  except the faders and pots, which move their models directly as a MIDI controller does.
  *
- *  THREADS. Events arrive on the MIDI client's thread; each is decoded there (no allocation
- *  beyond the queued call) and applied on the UI thread, where the registry lives. Feedback
+ *  THREADS. Events arrive on the MIDI client's thread; each is decoded there and handed over
+ *  through a lock-free queue (no allocation, no lock) that the UI-thread feedback timer drains,
+ *  where the registry lives. Feedback
  *  (motor faders, LEDs) is sent from a UI-thread timer when a strip's state changes, and never
  *  for a fader the user is touching. */
 class LMMS_EXPORT McuSurface : public QObject, public MidiEventProcessor
@@ -104,6 +106,7 @@ private:
 	QSet<QString> m_armed;     //!< tracks armed from the surface (track.set_arm has no getter)
 	QHash<int, bool> m_sentLeds;  //!< note -> lit, the LEDs last sent
 	QTimer m_feedback;
+	MpscQueue<mcu::Input, 256> m_inbox;  //!< MIDI thread -> UI thread, lock-free
 	std::atomic<int> m_eventsIn{0};  //!< counted on the MIDI thread
 	int m_eventsOut = 0;
 };

@@ -33,6 +33,7 @@
 #include "ClipEdits.h"
 #include "ConfigManager.h"
 #include "ControlReversibility.h"
+#include "ProjectJournal.h"
 #include "ProjectMarkers.h"
 #include "Engine.h"
 #include "Song.h"
@@ -173,16 +174,23 @@ void checkpointForDelete(Track* track, Ripple mode)
 
 void afterUserMove(Clip* moved, tick_t oldStart)
 {
-	if (moved == nullptr || moved->getTrack() == nullptr) { return; }
-	if (oldStart >= 0 && oldStart != moved->startPosition().getTicks())
-	{
-		moveFollowingAutomation(moved->getTrack(), oldStart, moved->length().getTicks(),
-			moved->startPosition().getTicks() - oldStart, true);
-	}
+	if (moved == nullptr || moved->getTrack() == nullptr || oldStart < 0) { return; }
+	const tick_t newStart = moved->startPosition().getTicks();
 	const Overlap mode = modes().overlap;
-	if (mode == Overlap::Free) { return; }
-	moved->getTrack()->addJournalCheckPoint();
+	const bool follow = newStart != oldStart && modes().automationFollowsClips;
+	if (mode == Overlap::Free && !follow) { return; }
+	// ONE undo step for the whole gesture (review W2a-1 #3): the track's checkpoint is taken at the
+	// PRE-drag position - the clip is put back for it - and merged with the clip checkpoint the
+	// press took, so Ctrl+Z returns to before the drag, never to "moved but not yet trimmed".
+	ProjectJournal* journal = Engine::projectJournal();
+	const int mark = journal != nullptr ? journal->undoDepth() - 1 : -1;
+	Track* track = moved->getTrack();
+	moved->movePosition(TimePos(oldStart));
+	track->addJournalCheckPoint();
+	moved->movePosition(TimePos(newStart));
+	if (follow) { moveFollowingAutomation(track, oldStart, moved->length().getTicks(), newStart - oldStart, true); }
 	applyOverlap(moved, mode);
+	if (journal != nullptr && mark >= 0) { journal->mergeCheckpointsFrom(mark); }
 }
 
 int moveFollowingAutomation(Track* track, tick_t oldStart, tick_t length, tick_t delta, bool checkpoint)

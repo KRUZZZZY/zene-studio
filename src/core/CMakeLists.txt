@@ -904,7 +904,7 @@ set(LMMS_SRCS
 	core/ModulationLayerPublisher.cpp
 	core/TempoSyncKnobModel.cpp
 	core/ThreadPool.cpp
-	core/ControlCommandsSurface.cpp
+	core/ControlCommandsMcu.cpp
 	core/McuProtocol.cpp
 	core/McuSurface.cpp
 	core/ArrangementEdits.cpp
