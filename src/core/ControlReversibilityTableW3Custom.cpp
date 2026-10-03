@@ -100,6 +100,11 @@ const ReversibilityRow kW3CustomRows[] = {
 	R("settings.preset_list", RC::NotMutating, false, "it lists the settings presets. Nothing is written", "no write", ""),
 	R("settings.preset_remove", RC::TrueInverse, true, "it removes one settings preset from the config file",
 		"action checkpoint: the recorded undo step writes the previous presets back", ""),
+	// WF-147: the tuner.
+	R("tuner.set", RC::NotMutating, false, "it chooses what the tuner listens to and its reference: session state, neither "
+		"recorded nor saved", "no write", ""),
+	R("tuner.get_state", RC::NotMutating, false, "it reads the pitch of the newest audio. Nothing is written", "no write", ""),
+	R("window.tuner", RC::NotMutating, false, "it opens the tuner: a display", "no write", ""),
 };
 
 #undef R

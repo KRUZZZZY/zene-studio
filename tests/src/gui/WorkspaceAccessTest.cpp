@@ -211,10 +211,20 @@ private slots:
 		QVERIFY2(clock.refresh().startsWith(QStringLiteral("1 . 1 . 000")), qPrintable(clock.refresh()));
 	}
 
+	void theTunerWindowListensWhileOpen()
+	{
+		{
+			TunerWindow tuner;
+			QCOMPARE(run(QStringLiteral("tuner.get_state")).result.value(QStringLiteral("source")).toString(), QStringLiteral("input"));
+			QCOMPARE(tuner.refresh(), QStringLiteral("-"));
+		}
+		QCOMPARE(run(QStringLiteral("tuner.get_state")).result.value(QStringLiteral("source")).toString(), QStringLiteral("off"));
+	}
+
 	void theWindowVerbsNeedAMainWindow()
 	{
 		for (const char* id : {"window.stay_on_top", "window.tidy", "window.large_clock", "window.ask", "window.whats_new",
-			"window.focus_panel"})
+			"window.focus_panel", "window.tuner"})
 		{
 			const ControlResult refused = run(QLatin1String(id));
 			QVERIFY2(!refused.ok, id);

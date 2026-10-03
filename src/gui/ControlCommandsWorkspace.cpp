@@ -25,7 +25,7 @@
 /*! 0.5.0 W3 L13 / L14, the window.* verbs of the lane - interface state, recorded nowhere:
  *  - window.stay_on_top / window.tidy (WF-105): the main window kept above others; the floating windows
  *    (detached panels, dialogs, plug-in windows) cascaded or tiled over the main window's screen;
- *  - window.large_clock (WF-101), window.ask (WF-142), window.whats_new (WF-141, shown once per version
+ *  - window.large_clock (WF-101), window.tuner (WF-147), window.ask (WF-142), window.whats_new (WF-141, shown once per version
  *    at start by installWorkspaceMenus);
  *  - window.focus_panel (WF-132): keyboard focus to a panel, or to the next / previous open one (F6 and
  *    Shift+F6 in the Window menu), so the whole shell is reachable without a pointer. */
@@ -138,6 +138,14 @@ ControlResult largeClock(const QJsonObject&)
 	return ControlResult::success({{QStringLiteral("shown"), true}, {QStringLiteral("position"), clock->refresh()}});
 }
 
+ControlResult tunerWindow(const QJsonObject&)
+{
+	gui::MainWindow* window = controlMainWindow();
+	if (window == nullptr) { return noInterface(QStringLiteral("window.tuner")); }
+	auto* tuner = openDialog<gui::TunerWindow>(window);
+	return ControlResult::success({{QStringLiteral("shown"), true}, {QStringLiteral("note"), tuner->refresh()}});
+}
+
 ControlResult askWindow(const QJsonObject& args)
 {
 	gui::MainWindow* window = controlMainWindow();
@@ -232,6 +240,9 @@ void registerWorkspaceCommands(ControlRegistry& registry)
 		objectSchema({{QStringLiteral("mode"), enumProperty({QStringLiteral("cascade"), QStringLiteral("tile")})}}), tidy);
 	add(registry, "large_clock", QStringLiteral("Open a large clock: the play position in bars, beats and ticks and in "
 		"minutes and seconds, big enough to read across the room. A display."), objectSchema({}), largeClock);
+	add(registry, "tuner", QStringLiteral("Open the tuner: the note nearest the pitch of its source (the input, unless "
+		"tuner.set chose another), the cents off it and a needle; closing it switches the tuner off. A display."),
+		objectSchema({}), tunerWindow);
 	add(registry, "ask", QStringLiteral("Open Help > Ask (app.ask in a window), asking 'question' at once when given; "
 		"'answers' is how many it found. Offline."), objectSchema({{QStringLiteral("question"), stringProperty()}}), askWindow);
 	add(registry, "whats_new", QStringLiteral("Show this version's release notes (app.whats_new) and remember they were "

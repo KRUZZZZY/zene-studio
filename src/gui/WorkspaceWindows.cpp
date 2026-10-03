@@ -24,11 +24,15 @@
 
 #include "WorkspaceWindows.h"
 
+#include <cmath>
+#include <utility>
+
 #include <QHBoxLayout>
 #include <QJsonArray>
 #include <QLabel>
 #include <QLineEdit>
 #include <QPushButton>
+#include <QSlider>
 #include <QTextBrowser>
 #include <QTimer>
 #include <QUrl>
@@ -39,6 +43,7 @@
 #include "Engine.h"
 #include "HelpCenter.h"
 #include "Song.h"
+#include "TunerTap.h"
 
 namespace lmms::gui
 {
@@ -191,6 +196,64 @@ QString LargeClock::refresh()
 	m_time->setText(QStringLiteral("%1:%2.%3").arg(milliseconds / 60000).arg((milliseconds / 1000) % 60, 2, 10, QLatin1Char('0'))
 		.arg((milliseconds % 1000) / 10, 2, 10, QLatin1Char('0')));
 	return m_bars->text() + QLatin1Char(' ') + m_time->text();
+}
+
+TunerWindow::TunerWindow(QWidget* parent) :
+	QDialog(parent),
+	m_note(bigLabel(96, this)),
+	m_detail(new QLabel(this)),
+	m_needle(new QSlider(Qt::Horizontal, this)),
+	m_timer(new QTimer(this))
+{
+	setWindowTitle(tr("Tuner"));
+	setAccessibleName(tr("Tuner"));
+	m_note->setAccessibleName(tr("Nearest note"));
+	m_detail->setAlignment(Qt::AlignCenter);
+	m_detail->setAccessibleName(tr("Cents off and frequency"));
+	m_needle->setRange(-50, 50);
+	m_needle->setEnabled(false);
+	m_needle->setAccessibleName(tr("Cents off the note"));
+	auto* sources = new QHBoxLayout;
+	for (const auto& [label, source] : {std::pair{tr("Input"), QStringLiteral("input")}, std::pair{tr("Master"), QStringLiteral("master")}})
+	{
+		auto* button = new QPushButton(label, this);
+		button->setProperty("controlCommand", QStringLiteral("tuner.set"));
+		connect(button, &QPushButton::clicked, this, [source = source] {
+			ControlRegistry::instance()->invoke(QStringLiteral("tuner.set"), {{QStringLiteral("source"), source}});
+		});
+		sources->addWidget(button);
+	}
+	auto* layout = new QVBoxLayout(this);
+	layout->addWidget(m_note, 1);
+	layout->addWidget(m_needle);
+	layout->addWidget(m_detail);
+	layout->addLayout(sources);
+	resize(420, 300);
+	if (TunerTap::instance().source() == TunerTap::Source::Off)
+	{
+		ControlRegistry::instance()->invoke(QStringLiteral("tuner.set"), {{QStringLiteral("source"), QStringLiteral("input")}});
+	}
+	connect(m_timer, &QTimer::timeout, this, [this] { refresh(); });
+	m_timer->start(100);
+	refresh();
+}
+
+TunerWindow::~TunerWindow()
+{
+	TunerTap::instance().setSource(TunerTap::Source::Off);  // nothing left to listen for
+}
+
+QString TunerWindow::refresh()
+{
+	const QJsonObject state = ControlRegistry::instance()->invoke(QStringLiteral("tuner.get_state")).result;
+	const bool clear = state.value(QStringLiteral("clear")).toBool();
+	const double cents = state.value(QStringLiteral("cents")).toDouble();
+	m_note->setText(clear ? state.value(QStringLiteral("note")).toString() : QStringLiteral("-"));
+	m_needle->setValue(clear ? static_cast<int>(std::lround(cents)) : 0);
+	m_detail->setText(clear ? tr("%1 cents   %2 Hz   (A4 = %3 Hz, %4)").arg(cents, 0, 'f', 1).arg(state.value(QStringLiteral("hz")).toDouble(), 0, 'f', 1)
+		.arg(state.value(QStringLiteral("reference_hz")).toDouble()).arg(state.value(QStringLiteral("source")).toString())
+		: tr("Listening to the %1 - play a single note").arg(state.value(QStringLiteral("source")).toString()));
+	return m_note->text();
 }
 
 } // namespace lmms::gui

@@ -81,6 +81,24 @@ private:
 	QTimer* m_timer;
 };
 
+/*! 0.5.0 W3 L14 (WF-147): the tuner - the note nearest the pitch of its source, how many cents off it is
+ *  and a needle, refreshed ten times a second from tuner.get_state; Input and Master choose the source
+ *  (tuner.set). Opening it listens to the input when the tuner was off; closing it switches it off. */
+class LMMS_EXPORT TunerWindow : public QDialog
+{
+public:
+	explicit TunerWindow(QWidget* parent = nullptr);
+	~TunerWindow() override;
+	//! Read the tuner and redraw; the note shown ("-" when nothing is clear).
+	QString refresh();
+
+private:
+	QLabel* m_note;
+	QLabel* m_detail;
+	class QSlider* m_needle;
+	QTimer* m_timer;
+};
+
 } // namespace lmms::gui
 
 #endif // LMMS_GUI_WORKSPACE_WINDOWS_H

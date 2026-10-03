@@ -71,6 +71,7 @@ void fillWindowMenu(QMenu* menu)
 	list(menu, QObject::tr("Track Manager..."), CommandLists::trackManager);
 	run(menu, QObject::tr("Channel Load"), QStringLiteral("mixer.cpu_load"), {}, false, true);
 	run(menu, QObject::tr("Large Clock"), QStringLiteral("window.large_clock"));
+	run(menu, QObject::tr("Tuner"), QStringLiteral("window.tuner"));
 	run(menu, QObject::tr("Undo History..."), QStringLiteral("window.undo_history"));
 	menu->addSeparator();
 	list(menu, QObject::tr("Memory Locations..."), CommandLists::memoryLocations);

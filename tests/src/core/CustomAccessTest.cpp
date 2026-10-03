@@ -27,9 +27,13 @@
  *  (WF-142); the shipped release notes and their once-per-version marker (WF-141); memory locations and saved
  *  selections, saved with the project only when there are any (WF-098 / WF-106); the undo history walked
  *  several steps at once (WF-102); the settings found by words, backed up, restored and kept as presets, each
- *  write one undo step, no folder path travelling (WF-122). */
+ *  write one undo step, no folder path travelling (WF-122); the tuner reads A4 off a 440 Hz tone on its tap,
+ *  against the reference chosen (WF-147). */
 
 #include <QtTest>
+
+#include <cmath>
+#include <vector>
 
 #include <QFile>
 #include <QJsonArray>
@@ -44,6 +48,9 @@
 #include "SampleTrack.h"
 #include "Song.h"
 #include "TrackLooks.h"
+#include "TunerTap.h"
+#include "AudioEngine.h"
+#include "SampleFrame.h"
 
 using namespace lmms;
 
@@ -297,6 +304,31 @@ private slots:
 		QVERIFY(run(QStringLiteral("settings.preset_remove"), {{QStringLiteral("name"), QStringLiteral("studio")}}).ok);
 		QCOMPARE(run(QStringLiteral("settings.preset_apply"), {{QStringLiteral("name"), QStringLiteral("studio")}}).errorKind,
 			ControlErrorKind::NotFound);
+	}
+
+	void theTunerReadsANote()
+	{
+		QVERIFY(run(QStringLiteral("tuner.set"), {{QStringLiteral("source"), QStringLiteral("master")}, {QStringLiteral("reference_hz"), 440.0}}).ok);
+		QVERIFY(!run(QStringLiteral("tuner.get_state")).result.value(QStringLiteral("clear")).toBool());
+		const double rate = Engine::audioEngine()->baseSampleRate();
+		std::vector<SampleFrame> tone(TunerTap::Capacity);
+		for (std::size_t i = 0; i < tone.size(); ++i)
+		{
+			const auto v = static_cast<float>(0.5 * std::sin(2.0 * M_PI * 440.0 * static_cast<double>(i) / rate));
+			tone[i] = SampleFrame(v, v);
+		}
+		TunerTap::instance().push(TunerTap::Source::Input, tone.data(), tone.size());  // not the chosen source: ignored
+		QVERIFY(!run(QStringLiteral("tuner.get_state")).result.value(QStringLiteral("clear")).toBool());
+		TunerTap::instance().push(TunerTap::Source::Master, tone.data(), tone.size());
+		const QJsonObject a4 = run(QStringLiteral("tuner.get_state")).result;
+		QVERIFY2(a4.value(QStringLiteral("clear")).toBool(), "no pitch in a 440 Hz tone");
+		QCOMPARE(a4.value(QStringLiteral("note")).toString(), QStringLiteral("A4"));
+		QVERIFY2(std::abs(a4.value(QStringLiteral("cents")).toDouble()) < 15.0, qPrintable(QString::number(a4.value(QStringLiteral("cents")).toDouble())));
+		QVERIFY(run(QStringLiteral("tuner.set"), {{QStringLiteral("reference_hz"), 432.0}}).ok);
+		QVERIFY(run(QStringLiteral("tuner.get_state")).result.value(QStringLiteral("cents")).toDouble() > 20.0);
+		QCOMPARE(run(QStringLiteral("tuner.set"), {{QStringLiteral("reference_hz"), 300.0}}).errorKind, ControlErrorKind::InvalidArgs);
+		QVERIFY(run(QStringLiteral("tuner.set"), {{QStringLiteral("source"), QStringLiteral("off")}, {QStringLiteral("reference_hz"), 440.0}}).ok);
+		QVERIFY(!run(QStringLiteral("tuner.get_state")).result.value(QStringLiteral("clear")).toBool());
 	}
 
 private:

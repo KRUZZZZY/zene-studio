@@ -861,6 +861,8 @@ LMMS_EXPORT void registerHistoryJumpCommand(ControlRegistry& registry);
 //! settings.search / export / import / preset_save / preset_apply / preset_list / preset_remove
 //! (src/core/ControlCommandsSettingsPresets.cpp).
 LMMS_EXPORT void registerSettingsPresetCommands(ControlRegistry& registry);
+//! tuner.set / tuner.get_state (src/core/ControlCommandsTuner.cpp).
+LMMS_EXPORT void registerTunerCommands(ControlRegistry& registry);
 } // namespace lmms
 
 #endif // LMMS_CONTROL_REGISTRY_GROUPS_H

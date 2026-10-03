@@ -637,6 +637,7 @@ include/TrackRenameLineEdit.h
 include/TrackRenderMenu.h
 include/TrackView.h
 include/TransportReadouts.h
+include/TunerTap.h
 include/UiConfigStore.h
 include/UnattendedRun.h
 include/UnclaimedElements.h
@@ -1364,6 +1365,7 @@ src/core/ControlCommandsTrackLooks.cpp
 src/core/ControlCommandsTrackPresets.cpp
 src/core/ControlCommandsTransport.cpp
 src/core/ControlCommandsTransportMap.cpp
+src/core/ControlCommandsTuner.cpp
 src/core/ControlCommandsUndo.cpp
 src/core/ControlCommandsVca.cpp
 src/core/ControlCommandsVcaEdit.cpp
@@ -1669,6 +1671,7 @@ src/core/TrackContainerFolders.cpp
 src/core/TrackKeyNames.cpp
 src/core/TrackLooks.cpp
 src/core/TrackMixModels.cpp
+src/core/TunerTap.cpp
 src/core/UnattendedRun.cpp
 src/core/UnclaimedElements.cpp
 src/core/UpgradeExtendedNoteRange.cpp
