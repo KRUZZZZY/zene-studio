@@ -104,6 +104,22 @@ QMap<QString, Entry> entries()
 	return out;
 }
 
+QString preferredFormat()
+{
+	return ConfigManager::inst()->value(QStringLiteral("plugins"), QStringLiteral("preferredformat"));
+}
+
+void setPreferredFormat(const QString& format)
+{
+	ConfigManager::inst()->setValue(QStringLiteral("plugins"), QStringLiteral("preferredformat"), format);
+}
+
+const QStringList& formatNames()
+{
+	static const QStringList names{QString(), QStringLiteral("clap"), QStringLiteral("vst3"), QStringLiteral("lv2"), QStringLiteral("ladspa")};
+	return names;
+}
+
 QStringList folders()
 {
 	QStringList out;

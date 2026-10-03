@@ -351,6 +351,7 @@ void DevicePanel::poll()
 	const QString target = track != nullptr ? control::trackIdOf(track) : control::channelIdOf(selectedChannel());
 	if (target != m_target || signature() != m_signature) { rebuild(); return; }
 	for (MacroKnobs* macros : m_row->findChildren<MacroKnobs*>()) { macros->refresh(); }  // values set elsewhere
+	for (DeviceCard* card : m_row->findChildren<DeviceCard*>()) { card->refreshActivity(); }  // MX-095
 }
 
 QJsonObject DevicePanel::describe() const
@@ -363,6 +364,7 @@ QJsonObject DevicePanel::describe() const
 		cards.append(QJsonObject{{QStringLiteral("target"), card->spec().target},
 			{QStringLiteral("plugin"), card->spec().plugin}, {QStringLiteral("name"), card->spec().title},
 			{QStringLiteral("enabled"), card->spec().effect == nullptr || card->spec().effect->isEnabled()},
+			{QStringLiteral("processing"), card->spec().effect != nullptr && card->spec().effect->isProcessingAudio()},
 			{QStringLiteral("parameters"), card->totalParameters()}, {QStringLiteral("shown"), card->shownParameters()}});
 	}
 	return {{QStringLiteral("track"), control::trackIdOf(m_track)}, {QStringLiteral("channel"), m_channel}, {QStringLiteral("cards"), cards},

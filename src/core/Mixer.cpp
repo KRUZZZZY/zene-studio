@@ -51,6 +51,12 @@ namespace lmms
 {
 
 
+bool MixerRoute::delivers(bool compensate) const
+{
+	return enabled() && (m_from->m_hasInput || m_from->m_stillRunning || compensate
+		|| (feedback() && !feedbackCommittedQuiet()));
+}
+
 MixerRoute::MixerRoute( MixerChannel * from, MixerChannel * to, float amount,
 			bool preFader ) :
 	m_from( from ),
@@ -570,8 +576,7 @@ void MixerChannel::doProcessing()
 			// not truncated - the compensate rule, for the snapshot's own
 			// quiet flag.
 			const bool feedback = senderRoute->feedback();
-			if( sender->m_hasInput || sender->m_stillRunning || compensate
-				|| (feedback && !senderRoute->feedbackCommittedQuiet()) )
+			if( senderRoute->delivers( compensate ) )
 			{
 				// figure out if we're getting sample-exact input
 				ValueBuffer * sendBuf = sendModel->valueBuffer();
@@ -2210,6 +2215,7 @@ void Mixer::saveSettings( QDomDocument & _doc, QDomElement & _this )
 			send->amount()->saveSettings(_doc, sendsDom, "amount");
 			// 0.5.0 L09 (MX-048): a send's own pan, only when it has one.
 			if (send->pan()->value() != 0.f || send->pan()->isAutomated()) { send->pan()->saveSettings(_doc, sendsDom, "pan"); }
+			if (!send->enabled()) { sendsDom.setAttribute("off", "1"); }  // 0.5.0 L08 (MX-047)
 		}
 
 		// Phase D: sidechain sends. Legacy LMMS ignores these elements, so
@@ -2393,6 +2399,7 @@ void Mixer::loadSettings( const QDomElement & _this )
 				MixerRoute * mxr = createChannelSend( num, sendTo, 1.0f, preFader );
 				if( mxr ) mxr->amount()->loadSettings( chDataItem, "amount" );
 				if( mxr && chDataItem.hasAttribute( "pan" ) ) { mxr->pan()->loadSettings( chDataItem, "pan" ); }
+				if( mxr ) { mxr->enabledModel()->setValue( chDataItem.attribute( "off" ).toInt() == 0 ); }
 				// board card #709: a cycle-permitted send carries its own
 				// flag, and loading one turns the submode on WITH it (the
 				// mode is derived from the flags - it is not saved itself).

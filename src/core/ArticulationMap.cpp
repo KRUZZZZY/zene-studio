@@ -25,6 +25,7 @@
 
 #include <algorithm>
 
+#include <QDebug>
 #include <QDomElement>
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -106,8 +107,11 @@ void ArticulationMap::save(QDomElement& trackElement) const
 void ArticulationMap::load(const QDomElement& trackElement)
 {
 	std::vector<Articulation> entries;
-	QString ignored;
-	fromJson(QJsonDocument::fromJson(trackElement.attribute(QStringLiteral("articulations")).toUtf8()).array(), &entries, &ignored);
+	QString why;
+	if (!fromJson(QJsonDocument::fromJson(trackElement.attribute(QStringLiteral("articulations")).toUtf8()).array(), &entries, &why))
+	{
+		qWarning("ArticulationMap: the track's articulations could not be read (%s); it loads with none", qUtf8Printable(why));
+	}
 	m_entries = std::move(entries);
 }
 

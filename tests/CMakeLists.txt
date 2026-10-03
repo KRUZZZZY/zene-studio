@@ -593,6 +593,8 @@ set(LMMS_TESTS
 	src/core/NoteToolsTest.cpp
 	# 0.5.0 L07 (W3): repeats, recurrence, articulations, chase, swing, the MIDI offset, lyrics and groups.
 	src/core/NotePlaybackTest.cpp
+	# 0.5.0 L08 (W3): pan law, swap, sends switched off, returns, find, gang, order, group colours.
+	src/core/MixerToolsTest.cpp
 	# 0.5.0 L05: fade shapes and handles, automatic and range fades, splits, slices, beat mapping.
 	src/core/AudioEditingTest.cpp
 	# 0.5.0 W2 gaps (audit-rows-1): clip.join, ripple on move and insert, controller.map / unmap.

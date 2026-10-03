@@ -23,6 +23,9 @@
  */
 #include "EffectPickerOrganiser.h"
 
+#include <QAbstractItemModel>
+#include <QSet>
+
 #include <QInputDialog>
 #include <QJsonObject>
 #include <QMenu>
@@ -71,9 +74,47 @@ void markRow(QStandardItemModel& model, int row, const EffectKey& key)
 	name->setToolTip(entry.folder.isEmpty() ? QString() : QObject::tr("Folder: %1").arg(entry.folder));
 }
 
+namespace
+{
+
+QString plainName(const QModelIndex& index)
+{
+	const QString text = index.data(Qt::DisplayRole).toString();
+	return (text.startsWith(QString::fromUtf16(Star)) ? text.mid(2) : text).trimmed().toLower();
+}
+
+//! MX-167: whether the row's plug-in is also listed in the preferred format (and the row is not that format).
+bool shadowed(const QModelIndex& nameIndex)
+{
+	const QString preferred = pluginorganiser::preferredFormat();
+	if (preferred.isEmpty()) { return false; }
+	const QAbstractItemModel* model = nameIndex.model();
+	const auto typeOf = [model](int row) { return model->index(row, 1).data().toString(); };
+	if (typeOf(nameIndex.row()).contains(preferred, Qt::CaseInsensitive)) { return false; }
+	// The names the preferred format provides, built once per model, format and row count.
+	static const QAbstractItemModel* cachedModel = nullptr;
+	static QString cachedFormat;
+	static int cachedRows = -1;
+	static QSet<QString> names;
+	if (model != cachedModel || preferred != cachedFormat || model->rowCount() != cachedRows)
+	{
+		names.clear();
+		for (int row = 0; row < model->rowCount(); ++row)
+		{
+			if (typeOf(row).contains(preferred, Qt::CaseInsensitive)) { names.insert(plainName(model->index(row, 0))); }
+		}
+		cachedModel = model;
+		cachedFormat = preferred;
+		cachedRows = model->rowCount();
+	}
+	return names.contains(plainName(nameIndex));
+}
+
+} // namespace
+
 bool accepts(const QModelIndex& nameIndex, const Filter& filter)
 {
-	if (!filter.showHidden && nameIndex.data(HiddenRole).toBool()) { return false; }
+	if (!filter.showHidden && (nameIndex.data(HiddenRole).toBool() || shadowed(nameIndex))) { return false; }
 	if (filter.favouritesOnly && !nameIndex.data(FavouriteRole).toBool()) { return false; }
 	return filter.folder.isEmpty() || nameIndex.data(FolderRole).toString() == filter.folder;
 }

@@ -79,6 +79,7 @@
 #include <QMetaObject>
 #include <QPointer>
 #include <QString>
+#include <QStringList>
 
 #include "LmmsTypes.h"
 #include "lmms_export.h"
@@ -95,12 +96,19 @@ enum class ModulationShape
 	Triangle,
 	Square,
 	Saw,
+	// 0.5.0 L10 (MX-117): random, smooth random, a step sequence and a retriggered envelope.
+	Random,        //!< a new random value every cycle, held (sample and hold)
+	SmoothRandom,  //!< random values every cycle, glided between
+	Steps,         //!< the source's step values, one a cycle step
+	Envelope,      //!< attack to the top over 'attack' of a cycle, then a decay - every cycle
 };
 
 //! Wire name of a shape ("sine", "triangle", "square", "saw"), and its inverse.
 LMMS_EXPORT QString modulationShapeName(ModulationShape shape);
-//! False when @a name is not one of the four (nothing is guessed).
+//! False when @a name is not one of the shapes (nothing is guessed).
 LMMS_EXPORT bool modulationShapeFromName(const QString& name, ModulationShape* shape);
+//! Every shape's wire name, in enum order - the schema's enum.
+LMMS_EXPORT const QStringList& modulationShapeNames();
 
 /*! One route: an address into a mixer channel's rack, plus a depth.
  *
@@ -137,6 +145,10 @@ struct ModulatorSource
 	float phase = 0.0f;      //!< 0..1, where in its cycle the modulator starts
 	bool unipolar = false;   //!< false: output -1..1 (bipolar); true: 0..1
 	bool active = true;      //!< an inactive modulator drives nothing
+	static constexpr int MaxSteps = 16;
+	std::array<float, MaxSteps> steps{};  //!< Steps: the values -1..1, one per step (a fixed array: copied to the audio thread)
+	int stepCount = 0;       //!< Steps: how many of them are used (0: the shape reads silence)
+	float attack = 0.1f;     //!< Envelope: the rising share of a cycle, 0..1
 };
 
 //! One named modulator: a source and the routes it drives.

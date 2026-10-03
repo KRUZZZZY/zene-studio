@@ -38,6 +38,8 @@
 #include <QTableWidget>
 #include <QVBoxLayout>
 
+#include "CommandForm.h"
+#include "ModulationLayer.h"
 #include "ControlRegistry.h"
 
 namespace lmms::gui
@@ -75,9 +77,7 @@ QJsonArray channelChains()
 
 const QStringList& shapes()
 {
-	static const QStringList names{QStringLiteral("sine"), QStringLiteral("triangle"), QStringLiteral("square"),
-		QStringLiteral("saw")};
-	return names;
+	return modulationShapeNames();
 }
 
 } // namespace
@@ -135,6 +135,14 @@ ModulatorPanel::ModulatorPanel(QWidget* parent) :
 	auto* source = new QFormLayout;
 	source->addRow(tr("Shape:"), m_shape);
 	source->addRow(tr("Rate:"), m_rate);
+	// MX-117: the step values and the envelope's attack, through the command's own form.
+	auto* shapeValues = commandButton(tr("Steps and Envelope..."), "modulator.rate_set", this);
+	connect(shapeValues, &QPushButton::clicked, this, [this] {
+		if (selectedId().isEmpty()) { return; }
+		runCommand(this, CommandCall{QStringLiteral("modulator.rate_set"), {{QStringLiteral("modulator"), selectedId()}},
+			{{QStringLiteral("steps"), QJsonArray{1.0, -1.0, 0.5, -0.5}}, {QStringLiteral("attack"), 0.1}}, {}, true});
+	});
+	source->addRow(QString(), shapeValues);
 	auto* bindRow = new QHBoxLayout;
 	for (QWidget* widget : std::initializer_list<QWidget*>{m_channel, m_effect, m_parameter, m_depth, bindButton, unbind})
 	{

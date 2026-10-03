@@ -194,15 +194,26 @@ ControlResult repeatNotes(const QJsonObject& args)
 	return ControlResult::success(finish(ref, clip, QStringLiteral("note.repeat"), {{QStringLiteral("added"), notes.size() * count}}));
 }
 
-//! Which of @a steps steps carry a pulse: Bjorklund's spread, rotated by @a rotate.
+//! Which of @a steps steps carry a pulse: Bjorklund's grouping (E(3,8) is x..x..x.), rotated by @a rotate.
 std::vector<bool> euclid(int steps, int pulses, int rotate)
 {
-	std::vector<bool> out(static_cast<std::size_t>(steps), false);
-	for (int i = 0; i < steps; ++i)
+	using Group = std::vector<bool>;
+	std::vector<Group> front(static_cast<std::size_t>(pulses), Group{true});
+	std::vector<Group> back(static_cast<std::size_t>(steps - pulses), Group{false});
+	while (back.size() > 1 && !front.empty())
 	{
-		const int at = ((i + rotate) % steps + steps) % steps;
-		out[static_cast<std::size_t>(at)] = (i * pulses) % steps < pulses;
+		const std::size_t paired = std::min(front.size(), back.size());
+		std::vector<Group> joined;
+		for (std::size_t i = 0; i < paired; ++i) { joined.push_back(front[i]); joined.back().insert(joined.back().end(), back[i].begin(), back[i].end()); }
+		std::vector<Group> rest = front.size() > paired ? std::vector<Group>(front.begin() + paired, front.end())
+			: std::vector<Group>(back.begin() + paired, back.end());
+		front = std::move(joined);
+		back = std::move(rest);
 	}
+	Group flat;
+	for (const auto* part : {&front, &back}) { for (const Group& group : *part) { flat.insert(flat.end(), group.begin(), group.end()); } }
+	std::vector<bool> out(static_cast<std::size_t>(steps), false);
+	for (int i = 0; i < steps; ++i) { out[static_cast<std::size_t>(((i + rotate) % steps + steps) % steps)] = flat[static_cast<std::size_t>(i)]; }
 	return out;
 }
 

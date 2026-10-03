@@ -633,6 +633,7 @@ include/MidiSurfaceInput.h
 include/MixerGroups.h
 include/MixerLatencyText.h
 include/MixerListen.h
+include/MixerOptions.h
 include/MixerOverlays.h
 include/MixerSendPan.h
 include/MixerStrip.h
@@ -776,6 +777,7 @@ include/WarpMarkers.h
 include/WaveformPreview.h
 include/WcagContrast.h
 include/XmlDepthGuard.h
+include/XyPad.h
 include/zene/api/ControlApi.h
 plugins/ClapEffect/ClapBusMap.cpp
 plugins/ClapEffect/ClapBusMap.h
@@ -971,6 +973,7 @@ src/core/ControlCommandsMixer.cpp
 src/core/ControlCommandsMixerListen.cpp
 src/core/ControlCommandsMixerRoutes.cpp
 src/core/ControlCommandsMixerStrip.cpp
+src/core/ControlCommandsMixerTools.cpp
 src/core/ControlCommandsModulator.cpp
 src/core/ControlCommandsModulatorRoutes.cpp
 src/core/ControlCommandsMonitor.cpp
@@ -1206,6 +1209,7 @@ src/core/MidiLearn.cpp
 src/core/MidiPlayback.cpp
 src/core/MixerGroups.cpp
 src/core/MixerListen.cpp
+src/core/MixerOptions.cpp
 src/core/MixerSendPan.cpp
 src/core/MixerStrip.cpp
 src/core/ModulationLayer.cpp
@@ -1368,6 +1372,7 @@ src/gui/UiConfigStore.cpp
 src/gui/UndoHistoryPanel.cpp
 src/gui/VcaStripView.cpp
 src/gui/VisibilitySetMenu.cpp
+src/gui/XyPad.cpp
 src/gui/clips/ClipViewTheme.cpp
 src/gui/clips/SampleClipOverlays.cpp
 src/gui/modals/EffectPickerOrganiser.cpp
@@ -1558,6 +1563,7 @@ tests/src/core/MidiRetroCaptureTest.cpp
 tests/src/core/MixerConcurrencyTest.cpp
 tests/src/core/MixerListenTest.cpp
 tests/src/core/MixerStripTest.cpp
+tests/src/core/MixerToolsTest.cpp
 tests/src/core/MixingRoutingTest.cpp
 tests/src/core/ModulationLayerProjectRoundTripTest.cpp
 tests/src/core/MpscQueueTest.cpp

@@ -144,6 +144,13 @@ QJsonObject modulationSourceJson(const ModulatorSource& source)
 	out.insert(QStringLiteral("phase"), static_cast<double>(source.phase));
 	out.insert(QStringLiteral("unipolar"), source.unipolar);
 	out.insert(QStringLiteral("active"), source.active);
+	if (source.shape == ModulationShape::Steps)
+	{
+		QJsonArray steps;
+		for (int i = 0; i < source.stepCount; ++i) { steps.append(static_cast<double>(source.steps[static_cast<std::size_t>(i)])); }
+		out.insert(QStringLiteral("steps"), steps);
+	}
+	if (source.shape == ModulationShape::Envelope) { out.insert(QStringLiteral("attack"), static_cast<double>(source.attack)); }
 	// The LFO's own bounds, published so a caller can define a rate without a
 	// round trip through a refusal.
 	out.insert(QStringLiteral("min_rate"), static_cast<double>(ModulationLayer::MinRateHz));
@@ -207,6 +214,29 @@ QJsonObject modulationLayerJson(const ModulationLayer& layer)
 	return out;
 }
 
+//! MX-117: 'steps' (1..16 values -1..1) and 'attack' (0..1); @a valid false for a value out of range.
+void readExtraSource(const QJsonObject& args, ModulatorSource* source, bool* valid)
+{
+	if (args.contains(QStringLiteral("steps")))
+	{
+		const QJsonArray steps = args.value(QStringLiteral("steps")).toArray();
+		*valid = *valid && !steps.isEmpty() && steps.size() <= ModulatorSource::MaxSteps;
+		source->stepCount = static_cast<int>(std::min<qsizetype>(steps.size(), ModulatorSource::MaxSteps));
+		for (int i = 0; i < source->stepCount; ++i)
+		{
+			const double v = steps.at(i).toDouble(2.0);
+			*valid = *valid && v >= -1.0 && v <= 1.0;
+			source->steps[static_cast<std::size_t>(i)] = static_cast<float>(std::clamp(v, -1.0, 1.0));
+		}
+	}
+	if (args.contains(QStringLiteral("attack")))
+	{
+		const double attack = args.value(QStringLiteral("attack")).toDouble(-1.0);
+		*valid = *valid && attack >= 0.0 && attack <= 1.0;
+		source->attack = static_cast<float>(std::clamp(attack, 0.0, 1.0));
+	}
+}
+
 ModulatorSource modulationSourceFromArgs(const QJsonObject& args, const ModulatorSource& current,
 	bool* shapeGiven, bool* valid)
 {
@@ -235,6 +265,7 @@ ModulatorSource modulationSourceFromArgs(const QJsonObject& args, const Modulato
 	{
 		source.active = args.value(QStringLiteral("active")).toBool();
 	}
+	readExtraSource(args, &source, valid);
 	return source;
 }
 

@@ -30,6 +30,7 @@
 #include "ControlDeviceSupport.h"
 #include "ControlEdit.h"
 #include "ControlRegistry.h"
+#include "ControlReversibility.h"
 #include "ControlRegistryGroups.h"
 #include "ControlVocabulary.h"
 #include "PluginOrganiser.h"
@@ -108,6 +109,26 @@ ControlResult organisation(const QJsonObject& args)
 
 } // namespace
 
+namespace
+{
+
+ControlResult preferFormat(const QJsonObject& args)
+{
+	const QString before = pluginorganiser::preferredFormat();
+	if (args.contains(QStringLiteral("format")))
+	{
+		const QString format = args.value(QStringLiteral("format")).toString();
+		if (format != before)
+		{
+			pluginorganiser::setPreferredFormat(format);
+			addUndoStep([before]() { pluginorganiser::setPreferredFormat(before); }, [format]() { pluginorganiser::setPreferredFormat(format); });
+		}
+	}
+	return ControlResult::success({{QStringLiteral("format"), pluginorganiser::preferredFormat()}});
+}
+
+} // namespace
+
 void registerPluginOrganiseCommands(ControlRegistry& registry)
 {
 	ControlCommand cmd;
@@ -134,6 +155,16 @@ void registerPluginOrganiseCommands(ControlRegistry& registry)
 	cmd.argsSchema = objectSchema({{QStringLiteral("folder"), stringProperty()}});
 	cmd.mutating = false;
 	cmd.handler = organisation;
+	registry.registerCommand(cmd);
+
+	cmd.id = QStringLiteral("plugin.prefer_format");
+	cmd.verb = QStringLiteral("prefer_format");
+	cmd.description = QStringLiteral("The format the pickers list when a plug-in is installed in several: clap, vst3, lv2 or "
+		"ladspa (empty lists every format). The plug-in's other formats are left out of the lists, shown again with the hidden "
+		"entries. With no arguments it reports it. Kept in the config file; one undo step.");
+	cmd.argsSchema = objectSchema({{QStringLiteral("format"), enumProperty(pluginorganiser::formatNames())}});
+	cmd.mutating = true;
+	cmd.handler = preferFormat;
 	registry.registerCommand(cmd);
 }
 

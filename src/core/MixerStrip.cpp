@@ -33,6 +33,7 @@
 #include "ConfigManager.h"
 #include "Effect.h"
 #include "Mixer.h"
+#include "MixerOptions.h"
 #include "SampleFrame.h"
 #include "ValueBuffer.h"
 
@@ -56,21 +57,40 @@ void applyOutput(MixerChannel& channel, f_cnt_t frames)
 	const float left = channel.m_polarityLeftModel.value() ? -1.f : 1.f;
 	const float right = channel.m_polarityRightModel.value() ? -1.f : 1.f;
 	const bool mono = channel.m_monoModel.value();
-	if (left == 1.f && right == 1.f && !mono) { return; }
+	const std::size_t from = channel.m_swapModel.value() ? 1 : 0;  // MX-033: the sides exchanged
+	if (left == 1.f && right == 1.f && !mono && from == 0) { return; }
 	for (f_cnt_t f = 0; f < frames; ++f)
 	{
-		float l = channel.m_buffer[f][0] * left;
-		float r = channel.m_buffer[f][1] * right;
+		float l = channel.m_buffer[f][from] * left;
+		float r = channel.m_buffer[f][1 - from] * right;
 		if (mono) { l = r = 0.5f * (l + r); }
 		channel.m_buffer[f][0] = l;
 		channel.m_buffer[f][1] = r;
 	}
 }
 
+//! MX-025: the balance pan under the project's pan law; false (the classic stage runs) for the balance law.
+bool applyPanLaw(MixerChannel& channel, f_cnt_t frames)
+{
+	const PanLaw law = MixerOptions::instance().panLaw();
+	if (law == PanLaw::Balance) { return false; }
+	const ValueBuffer* buf = channel.m_panModel.valueBuffer();
+	float left = 1.f;
+	float right = 1.f;
+	MixerOptions::gains(law, channel.m_panModel.value(), &left, &right);
+	for (f_cnt_t f = 0; f < frames; ++f)
+	{
+		if (buf != nullptr) { MixerOptions::gains(law, buf->values()[f], &left, &right); }
+		channel.m_buffer[f][0] *= left;
+		channel.m_buffer[f][1] *= right;
+	}
+	return true;
+}
+
 bool applyPanMode(MixerChannel& channel, f_cnt_t frames)
 {
 	const auto mode = static_cast<PanMode>(channel.m_panModeModel.value());
-	if (mode == PanMode::Balance) { return false; }
+	if (mode == PanMode::Balance) { return applyPanLaw(channel, frames); }
 	// An automated pan is read per frame from its sample-exact buffer, as the balance stage reads it.
 	const ValueBuffer* leftBuf = channel.m_panModel.valueBuffer();
 	const float leftPan = channel.m_panModel.value();
@@ -133,13 +153,15 @@ void updateMeters(MixerChannel& channel, const SampleFrame* buffer, float volume
 void save(const MixerChannel& c, QDomElement& e)
 {
 	if (c.m_trimModel.value() != 0.f) { e.setAttribute(QStringLiteral("trim"), static_cast<double>(c.m_trimModel.value())); }
-	if (c.m_polarityLeftModel.value()) { e.setAttribute(QStringLiteral("polarityl"), 1); }
-	if (c.m_polarityRightModel.value()) { e.setAttribute(QStringLiteral("polarityr"), 1); }
-	if (c.m_monoModel.value()) { e.setAttribute(QStringLiteral("mono"), 1); }
+	const auto flag = [&e](const BoolModel& model, const char* name) { if (model.value()) { e.setAttribute(QLatin1String(name), 1); } };
+	flag(c.m_polarityLeftModel, "polarityl");
+	flag(c.m_polarityRightModel, "polarityr");
+	flag(c.m_monoModel, "mono");
+	flag(c.m_swapModel, "swap");
 	if (c.m_panModeModel.value() != 0) { e.setAttribute(QStringLiteral("panmode"), c.m_panModeModel.value()); }
 	if (c.m_panRightModel.value() != 0.f) { e.setAttribute(QStringLiteral("panright"), static_cast<double>(c.m_panRightModel.value())); }
 	if (c.m_widthModel.value() != 1.f) { e.setAttribute(QStringLiteral("width"), static_cast<double>(c.m_widthModel.value())); }
-	if (c.m_soloSafeModel.value()) { e.setAttribute(QStringLiteral("solosafe"), 1); }
+	flag(c.m_soloSafeModel, "solosafe");
 	if (!c.m_note.isEmpty()) { e.setAttribute(QStringLiteral("note"), c.m_note); }
 }
 
@@ -149,6 +171,7 @@ void load(MixerChannel& c, const QDomElement& e)
 	c.m_polarityLeftModel.setValue(e.attribute(QStringLiteral("polarityl")).toInt() != 0);
 	c.m_polarityRightModel.setValue(e.attribute(QStringLiteral("polarityr")).toInt() != 0);
 	c.m_monoModel.setValue(e.attribute(QStringLiteral("mono")).toInt() != 0);
+	c.m_swapModel.setValue(e.attribute(QStringLiteral("swap")).toInt() != 0);
 	c.m_panModeModel.setValue(e.attribute(QStringLiteral("panmode"), QStringLiteral("0")).toInt());
 	c.m_panRightModel.setValue(e.attribute(QStringLiteral("panright"), QStringLiteral("0")).toFloat());
 	c.m_widthModel.setValue(e.attribute(QStringLiteral("width"), QStringLiteral("1")).toFloat());

@@ -137,8 +137,9 @@ QJsonObject layerSchema()
 {
 	return objectSchema({
 		{QStringLiteral("name"), stringProperty()},
-		{QStringLiteral("shape"), enumProperty({QStringLiteral("sine"), QStringLiteral("triangle"),
-			QStringLiteral("square"), QStringLiteral("saw")})},
+		{QStringLiteral("shape"), enumProperty(modulationShapeNames())},
+		{QStringLiteral("steps"), arrayProperty()},
+		{QStringLiteral("attack"), numberProperty()},
 		{QStringLiteral("rate"), numberProperty()},
 		{QStringLiteral("phase"), numberProperty()},
 		{QStringLiteral("unipolar"), booleanProperty()},
@@ -235,7 +236,8 @@ void registerCreate(ControlRegistry& registry)
 		if (!valid)
 		{
 			return ControlResult::failure(ControlErrorKind::InvalidArgs,
-				QStringLiteral("'shape' is not one of sine, triangle, square, saw"));
+				QStringLiteral("'shape' is not one of sine, triangle, square, saw, random, smooth_random, steps, envelope, "
+					"or 'steps' (1..16 values -1..1) or 'attack' (0..1) is out of range"));
 		}
 		QString why;
 		if (!layer.validSource(source, &why))
@@ -318,15 +320,16 @@ void registerRateSet(ControlRegistry& registry)
 	cmd.group = kGroup;
 	cmd.verb = QStringLiteral("rate_set");
 	cmd.description = QStringLiteral("Set a modulator's LFO. 'rate' is in Hz and 'phase' is 0..1 "
-		"where in its cycle the modulator starts; 'shape' is one of sine/triangle/square/saw and "
+		"where in its cycle the modulator starts; 'shape' is one of sine/triangle/square/saw/random/smooth_random/steps/envelope ('steps' gives the step values, -1..1, one a cycle; 'attack' the envelope's rising share of a cycle) and "
 		"'unipolar' makes the output 0..1 instead of -1..1. An argument the call omits keeps the "
 		"value it had. Switching 'active' off hands every target back to its own value. "
 		"Reversible through the ProjectJournal (the recorded undo step puts the previous source "
 		"back).");
 	cmd.argsSchema = objectSchema({
 		{QStringLiteral("modulator"), stringProperty()},
-		{QStringLiteral("shape"), enumProperty({QStringLiteral("sine"), QStringLiteral("triangle"),
-			QStringLiteral("square"), QStringLiteral("saw")})},
+		{QStringLiteral("shape"), enumProperty(modulationShapeNames())},
+		{QStringLiteral("steps"), arrayProperty()},
+		{QStringLiteral("attack"), numberProperty()},
 		{QStringLiteral("rate"), numberProperty()},
 		{QStringLiteral("phase"), numberProperty()},
 		{QStringLiteral("unipolar"), booleanProperty()},
@@ -348,7 +351,8 @@ void registerRateSet(ControlRegistry& registry)
 		if (!valid)
 		{
 			return ControlResult::failure(ControlErrorKind::InvalidArgs,
-				QStringLiteral("'shape' is not one of sine, triangle, square, saw"));
+				QStringLiteral("'shape' is not one of sine, triangle, square, saw, random, smooth_random, steps, envelope, "
+					"or 'steps' (1..16 values -1..1) or 'attack' (0..1) is out of range"));
 		}
 		QString why;
 		if (!layer.validSource(wanted, &why))

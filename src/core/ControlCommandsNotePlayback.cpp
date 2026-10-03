@@ -97,6 +97,10 @@ ControlResult lyrics(const QJsonObject& args)
 		MidiClip* clip = resolveMidiClip(args.value(QStringLiteral("clip")).toString(), &ref, &error);
 		return clip == nullptr ? error : lyricsByNote(clip, ref, args.value(QStringLiteral("lyrics")).toArray());
 	}
+	if (!args.contains(QStringLiteral("text")))
+	{
+		return ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("give the lyrics: 'text', or 'lyrics' per note"));
+	}
 	QVector<Note*> notes;
 	MidiClip* clip = clipAndNotes(args, false, &ref, &notes, &error);
 	if (clip == nullptr) { return error; }

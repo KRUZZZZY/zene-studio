@@ -157,16 +157,21 @@ void InstrumentTrack::sendArticulation(int index, f_cnt_t offset)
 	// 0.5.0 ED-121: what the note's articulation sends before it - read under play()'s lock, no allocation.
 	const Articulation* articulation = m_articulations.at(index);
 	if (articulation == nullptr) { return; }
-	const TimePos time = TimePos::fromFrames(offset, Engine::framesPerTick());
-	if (articulation->program >= 0) { processOutEvent(MidiEvent(MidiProgramChange, 0, static_cast<int16_t>(articulation->program)), time, offset); }
+	// A program change or a controller goes out in this block (a MIDI event has no carry-over to a later
+	// one), so it reaches the instrument no later than the note it prepares, however far that is delayed.
+	const f_cnt_t now = std::min(offset, Engine::audioEngine()->framesPerPeriod() - 1);
+	const TimePos time = TimePos::fromFrames(now, Engine::framesPerTick());
+	if (articulation->program >= 0) { processOutEvent(MidiEvent(MidiProgramChange, 0, static_cast<int16_t>(articulation->program)), time, now); }
 	if (articulation->controller >= 0)
 	{
 		processOutEvent(MidiEvent(MidiControlChange, 0, static_cast<int16_t>(articulation->controller),
-			static_cast<int16_t>(articulation->value)), time, offset);
+			static_cast<int16_t>(articulation->value)), time, now);
 	}
 	if (articulation->keyswitch >= 0)
 	{
-		const Note key(TimePos(1), TimePos(0), articulation->keyswitch);
+		// The keyswitch is a play handle, which waits out a delay itself; one note, made once, re-keyed.
+		static Note key(TimePos(1), TimePos(0), DefaultKey);
+		key.setKey(articulation->keyswitch);
 		Engine::audioEngine()->addPlayHandle(NotePlayHandleManager::acquire(this, offset,
 			static_cast<f_cnt_t>(Engine::framesPerTick()), key));
 	}
@@ -184,7 +189,7 @@ void InstrumentTrack::triggerNote(const NoteTrigger& trigger, f_cnt_t offset, f_
 	}
 	sendArticulation(note.conditions().articulation, offset);
 	// 0.5.0 ED-133: the note's repeats - that many more hits, evenly spaced inside it (not a step note's).
-	const int hits = frames > 0 ? note.conditions().repeats + 1 : 1;
+	const int hits = frames > 0 ? static_cast<int>(std::min<f_cnt_t>(note.conditions().repeats + 1, frames)) : 1;
 	const f_cnt_t each = frames / hits;
 	for (int hit = 0; hit < hits; ++hit)
 	{

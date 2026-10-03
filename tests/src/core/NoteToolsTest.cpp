@@ -137,6 +137,14 @@ private slots:
 		args.insert(QStringLiteral("pulses"), 3);
 		QVERIFY(run(QStringLiteral("note.generate"), args).ok);
 		QCOMPARE(clip->notes().size(), std::size_t{3});
+		// Bjorklund's own phase: E(2,5) is x.x.. - hits on steps 0 and 2 (12 ticks a step).
+		MidiClip* five = clipWith({});
+		QJsonObject e25 = self(five);
+		e25.insert(QStringLiteral("steps"), 5);
+		e25.insert(QStringLiteral("pulses"), 2);
+		QVERIFY(run(QStringLiteral("note.generate"), e25).ok);
+		QCOMPARE(five->notes().size(), std::size_t{2});
+		QCOMPARE(five->notes()[1]->pos().getTicks(), tick_t{24});
 	}
 
 	void notesMoveAndSplit()

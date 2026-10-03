@@ -42,6 +42,7 @@
 #include "Engine.h"
 #include "GuiApplication.h"
 #include "InstrumentTrack.h"
+#include "XyPad.h"
 #include "MidiClip.h"
 #include "Mixer.h"
 #include "SampleClip.h"
@@ -393,6 +394,16 @@ void populateChannel(QMenu* menu, const QString& channel)
 	add(menu, "Pre-Fader Send To...", "mixer.send_to", with(self, "pre_fader", true), true);
 	add(menu, "Sidechain To...", "mixer.sidechain_to", self, true);
 	add(menu, "Pan a Send...", "mixer.send_pan", self, true, {{QStringLiteral("pan"), 0.0}});  // MX-048
+	add(menu, "Switch a Send Off or On...", "mixer.send_enable", self, true, {{QStringLiteral("enabled"), false}});  // MX-047
+	add(menu, "Create a Return...", "mixer.create_return", self, true, {{QStringLiteral("name"), QStringLiteral("Return")}});  // MX-051
+	QAction* gang = menu->addAction(tr("Adjust Channels Together..."));  // MX-028
+	gang->setProperty("controlCommand", QStringLiteral("mixer.adjust"));
+	QObject::connect(gang, &QAction::triggered, menu, [channel, menu] {
+		const QStringList picked = pickChannels(menu->parentWidget(), tr("Adjust Channels Together"), channel);
+		if (picked.isEmpty()) { return; }
+		runCommand(menu->parentWidget(), CommandCall{QStringLiteral("mixer.adjust"), {{QStringLiteral("channels"),
+			QJsonArray::fromStringList(QStringList(picked) << channel)}}, {{QStringLiteral("volume_db"), 0.0}, {QStringLiteral("pan"), 0.0}}, {}, true});
+	});
 	// MX-050: several channels into this one, as one undo step (mixer.send_many).
 	for (const bool route : {false, true})
 	{
@@ -411,6 +422,12 @@ void populateChannel(QMenu* menu, const QString& channel)
 	add(rack, "Wire the Chain...", "patcher.set_wiring", {{QStringLiteral("target"), channel}}, true);
 	add(rack, "Wrap the Chain into a Rack Chain", "rack.wrap", self, false);  // L10 (MX-103)
 	add(rack, "Chain Wiring", "patcher.get_state", {{QStringLiteral("target"), channel}}, false, {}, true);
+	QAction* pad = rack->addAction(tr("XY Pad..."));  // MX-110
+	pad->setProperty("controlCommand", QStringLiteral("rack.macro_set"));
+	QObject::connect(pad, &QAction::triggered, menu, [channel, menu] { (new XyPadDialog(channel, menu->parentWidget()))->show(); });
+	add(rack, "Bypass Every Device", "chain.bypass_all", {{QStringLiteral("target"), channel}}, false);  // MX-078
+	add(rack, "Switch Every Device On", "chain.bypass_all", {{QStringLiteral("target"), channel}, {QStringLiteral("bypass"), false}}, false);
+	add(rack, "Remove the Bypassed Devices", "chain.clean", {{QStringLiteral("target"), channel}}, false);
 	choices(menu, "Loudness Meter", "meter.arm", "enabled", {});
 	// MX-045: a return channel can be deleted as one.
 	ControlResult ignored;
@@ -425,6 +442,7 @@ void populateChannel(QMenu* menu, const QString& channel)
 	choices(strip, "Polarity Left", "mixer.set_strip", "polarity_left", self);
 	choices(strip, "Polarity Right", "mixer.set_strip", "polarity_right", self);
 	choices(strip, "Mono", "mixer.set_strip", "mono", self);
+	choices(strip, "Swap Left and Right", "mixer.set_strip", "swap", self);  // MX-033
 	choices(strip, "Pan Mode", "mixer.set_strip", "pan_mode", self);
 	choices(strip, "Solo Safe", "mixer.set_strip", "solo_safe", self);
 	add(strip, "Trim, Width and Note...", "mixer.set_strip", self, true);
@@ -455,10 +473,16 @@ void populateProject(QMenu* menu)
 	add(menu, "Bounce the Range to a New Track", "range.bounce", {}, false);
 	choices(menu, "Low-Latency Monitoring", "transport.low_latency", "enabled", {});  // L01 (MX-159)
 	add(menu, "Global Swing...", "transport.groove", {}, true);  // L07 (ED-142)
+	choices(menu, "Pan Law", "mixer.options", "pan_law", {});  // L08 (MX-025)
+	choices(menu, "Mono Check", "mixer.set_strip", "mono", {{QStringLiteral("channel"), control::channelIdOf(Engine::mixer()->mixerChannel(0))}});  // MX-039
+	add(menu, "Order the Mixer by Tracks", "mixer.order_by_tracks", {}, false);  // MX-018
+	add(menu, "Find a Channel...", "mixer.find", {}, true, {}, true);  // MX-009
+	add(menu, "Colour a Group's Channels...", "vca.color_members", {}, true);  // MX-067
 	choices(menu, "Chase Notes", "transport.midi_options", "chase", {});  // L07 (ED-075)
 	add(menu, "MIDI Playback Offset...", "transport.midi_options", {}, true);  // L07 (ED-076)
 	list(menu, "Plug-ins in Project...", [] { return CommandLists::pluginsInProject(); });
 	list(menu, "Plug-in Manager...", [] { return CommandLists::pluginManager(); });  // L10 (MX-164)
+	choices(menu, "Preferred Plug-in Format", "plugin.prefer_format", "format", {});  // L10 (MX-167)
 	list(menu, "Plug-in Modules...", [] { return CommandLists::pluginModules(); });
 	list(menu, "Groups...", [] { return CommandLists::vcaGroups(); });
 	list(menu, "Grooves...", [] { return CommandLists::grooves(); });

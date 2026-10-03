@@ -25,12 +25,16 @@
  *  (MX-076); a chain copied with 'replace' puts the destination's devices back on undo; plugin.ab
  *  stores two settings, toggles between them and a recall is one undo step (MX-092); a macro target's
  *  curve is accepted by the command (MX-105); plugin.organise marks a device and plugin.organisation
- *  lists it, undoably (MX-166); plugin.paths_set replaces a format's folders (MX-163). */
+ *  lists it, undoably (MX-166); plugin.paths_set replaces a format's folders (MX-163); chain.bypass_all
+ *  bypasses every device and chain.clean removes the bypassed ones, each one undo step (MX-078); the
+ *  preferred plug-in format is kept and undone (MX-167). */
 
 #include <QtTest>
 
 #include <QDir>
 #include <QJsonArray>
+
+#include <vector>
 
 #include "AllocationProbe.h"
 #include "AudioBus.h"
@@ -391,6 +395,39 @@ private slots:
 		QVERIFY(pluginpaths::configured(pluginpaths::Format::Vst3).isEmpty());
 		QCOMPARE(run(QStringLiteral("plugin.paths_set"), {{QStringLiteral("format"), QStringLiteral("au")},
 			{QStringLiteral("dirs"), QJsonArray{}}}).errorKind, ControlErrorKind::InvalidArgs);
+	}
+
+	void aChainIsBypassedAndCleaned()
+	{
+		const QString target = ch(3);
+		QVERIFY(!loadAnEffect(target).isEmpty());
+		QVERIFY(!loadAnEffect(target).isEmpty());
+		const std::size_t count = chainOf(3).effects().size();
+		QVERIFY(count >= 2);
+		std::vector<bool> before;
+		for (const Effect* effect : chainOf(3).effects()) { before.push_back(effect->isEnabled()); }
+		QVERIFY(run(QStringLiteral("chain.bypass_all"), {{QStringLiteral("target"), target}}).ok);
+		for (const Effect* effect : chainOf(3).effects()) { QVERIFY(!effect->isEnabled()); }
+		const ControlResult cleaned = run(QStringLiteral("chain.clean"), {{QStringLiteral("target"), target}});
+		QVERIFY2(cleaned.ok, qPrintable(cleaned.errorMessage));
+		QCOMPARE(cleaned.result.value(QStringLiteral("removed")).toInt(), static_cast<int>(count));
+		QVERIFY(chainOf(3).effects().empty());
+		QVERIFY(run(QStringLiteral("control.undo")).ok);  // the devices back, bypassed
+		QCOMPARE(chainOf(3).effects().size(), count);
+		QVERIFY(run(QStringLiteral("control.undo")).ok);  // and each as it was
+		std::vector<bool> after;
+		for (const Effect* effect : chainOf(3).effects()) { after.push_back(effect->isEnabled()); }
+		QCOMPARE(after, before);
+	}
+
+	void aPreferredFormatIsKeptAndUndone()
+	{
+		QVERIFY(run(QStringLiteral("plugin.prefer_format"), {{QStringLiteral("format"), QStringLiteral("clap")}}).ok);
+		QCOMPARE(pluginorganiser::preferredFormat(), QStringLiteral("clap"));
+		QCOMPARE(run(QStringLiteral("plugin.prefer_format"), {{QStringLiteral("format"), QStringLiteral("au")}}).errorKind,
+			ControlErrorKind::InvalidArgs);
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
+		QVERIFY(pluginorganiser::preferredFormat().isEmpty());
 	}
 };
 

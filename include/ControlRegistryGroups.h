@@ -823,6 +823,9 @@ LMMS_EXPORT void registerNoteHarmonyCommands(ControlRegistry& registry);
 //! 0.5.0 L07 (W3): note.lyrics / group / ungroup, track.articulations(_set), transport.groove /
 //! midi_options (ControlCommandsNotePlayback.cpp).
 LMMS_EXPORT void registerNotePlaybackCommands(ControlRegistry& registry);
+//! 0.5.0 L08 (W3): mixer.options / send_enable / create_return / find / adjust / order_by_tracks,
+//! vca.color_members, chain.bypass_all / clean (ControlCommandsMixerTools.cpp).
+LMMS_EXPORT void registerMixerToolCommands(ControlRegistry& registry);
 } // namespace lmms
 
 #endif // LMMS_CONTROL_REGISTRY_GROUPS_H

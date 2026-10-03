@@ -143,6 +143,7 @@ struct StripSettings
 	float width = 1.f;
 	bool soloSafe = false;
 	QString note;
+	bool swap = false;  // MX-033
 };
 
 const QStringList& panModeNames()
@@ -155,7 +156,7 @@ StripSettings settingsOf(const MixerChannel* c)
 {
 	return {c->m_trimModel.value(), c->m_polarityLeftModel.value(), c->m_polarityRightModel.value(), c->m_monoModel.value(),
 		c->m_panModeModel.value(), c->m_panModel.value(), c->m_panRightModel.value(), c->m_widthModel.value(),
-		c->m_soloSafeModel.value(), c->m_note};
+		c->m_soloSafeModel.value(), c->m_note, c->m_swapModel.value()};
 }
 
 void applySettings(int id, const StripSettings& s)
@@ -172,6 +173,7 @@ void applySettings(int id, const StripSettings& s)
 	c->m_widthModel.setValue(s.width);
 	c->m_soloSafeModel.setValue(s.soloSafe);
 	c->m_note = s.note;
+	c->m_swapModel.setValue(s.swap);
 }
 
 //! @a args over @a s; switching into dual pan from two centred pans spreads them hard left and right.
@@ -181,6 +183,7 @@ StripSettings merged(StripSettings s, const QJsonObject& args)
 	s.polarityLeft = args.value(QStringLiteral("polarity_left")).toBool(s.polarityLeft);
 	s.polarityRight = args.value(QStringLiteral("polarity_right")).toBool(s.polarityRight);
 	s.mono = args.value(QStringLiteral("mono")).toBool(s.mono);
+	s.swap = args.value(QStringLiteral("swap")).toBool(s.swap);
 	if (args.contains(QStringLiteral("pan_mode")))
 	{
 		const int mode = panModeNames().indexOf(args.value(QStringLiteral("pan_mode")).toString());
@@ -200,7 +203,7 @@ QJsonObject stripJson(const MixerChannel* c)
 	const StripSettings s = settingsOf(c);
 	return {{QStringLiteral("channel"), channelIdOf(c)}, {QStringLiteral("trim_db"), static_cast<double>(s.trim)},
 		{QStringLiteral("polarity_left"), s.polarityLeft}, {QStringLiteral("polarity_right"), s.polarityRight},
-		{QStringLiteral("mono"), s.mono}, {QStringLiteral("pan_mode"), panModeNames().value(s.panMode)},
+		{QStringLiteral("mono"), s.mono}, {QStringLiteral("swap"), s.swap}, {QStringLiteral("pan_mode"), panModeNames().value(s.panMode)},
 		{QStringLiteral("pan"), static_cast<double>(s.panLeft)}, {QStringLiteral("pan_right"), static_cast<double>(s.panRight)},
 		{QStringLiteral("width"), static_cast<double>(s.width)}, {QStringLiteral("solo_safe"), s.soloSafe}, {QStringLiteral("note"), s.note},
 		{QStringLiteral("meters"), QJsonObject{{QStringLiteral("pre_peak_left"), static_cast<double>(c->m_prePeakLeft.get())},
@@ -286,14 +289,15 @@ void add(ControlRegistry& registry, const char* verb, const QString& description
 void registerMixerStripCommands(ControlRegistry& registry)
 {
 	add(registry, "set_strip", QStringLiteral("A channel's own settings: 'trim_db' (-24..24, an input gain before the inserts), "
-		"'polarity_left' / 'polarity_right', 'mono', 'pan_mode' (balance - the classic pan -, dual - 'pan' places the left "
+		"'polarity_left' / 'polarity_right', 'mono', 'swap' (left and right exchanged), 'pan_mode' (balance - the classic pan -, dual - 'pan' places the left "
 		"side and 'pan_right' the right, so both centred sum the sides to mono; entering dual from centred pans spreads "
 		"them hard left and right -, width - 'width' 0..2 scales the stereo side, then 'pan' balances), 'solo_safe' "
 		"(soloing another channel never mutes this one) and 'note' (free text, shown as the strip's tooltip). A field left "
 		"out keeps its value. Saved with the project; one undo step."),
 		objectSchema({{QStringLiteral("channel"), stringProperty()}, {QStringLiteral("trim_db"), numberProperty()},
 			{QStringLiteral("polarity_left"), booleanProperty()}, {QStringLiteral("polarity_right"), booleanProperty()},
-			{QStringLiteral("mono"), booleanProperty()}, {QStringLiteral("pan_mode"), enumProperty(panModeNames())},
+			{QStringLiteral("mono"), booleanProperty()}, {QStringLiteral("swap"), booleanProperty()},
+			{QStringLiteral("pan_mode"), enumProperty(panModeNames())},
 			{QStringLiteral("pan"), numberProperty()}, {QStringLiteral("pan_right"), numberProperty()},
 			{QStringLiteral("width"), numberProperty()}, {QStringLiteral("solo_safe"), booleanProperty()},
 			{QStringLiteral("note"), stringProperty()}}, {QStringLiteral("channel")}), setStrip, true);

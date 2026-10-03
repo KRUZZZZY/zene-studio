@@ -959,6 +959,8 @@ set(LMMS_SRCS
 	core/ControlCommandsNoteMoves.cpp
 	core/ControlCommandsNoteHarmony.cpp
 	core/ControlCommandsNotePlayback.cpp
+	core/ControlCommandsMixerTools.cpp
+	core/MixerOptions.cpp
 	core/ArticulationMap.cpp
 	core/MidiPlayback.cpp
 	core/NoteConditions.cpp

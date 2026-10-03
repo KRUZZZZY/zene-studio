@@ -79,16 +79,19 @@ ControlResult followChords(const QJsonObject& args)
 	if (Engine::getSong()->chordTrack().empty()) { return ControlResult::failure(ControlErrorKind::NotFound, QStringLiteral("the chord track is empty")); }
 	const QVector<Note*> notes = scoped(clip, args.value(QStringLiteral("scope")).toString());
 	const bool scale = args.value(QStringLiteral("mode")).toString() == QLatin1String("scale");
-	const tick_t start = clip->startPosition().getTicks();
-	clip->addJournalCheckPoint();
-	int moved = 0;
+	// Where the clip sounds: a clip trimmed from the left starts its notes earlier than its position.
+	const tick_t start = clip->startPosition().getTicks() + clip->startTimeOffset().getTicks();
+	std::vector<std::pair<Note*, int>> moves;
 	for (Note* note : notes)
 	{
 		const std::vector<int> classes = classesAt(start + note->pos().getTicks(), scale);
 		const int key = classes.empty() ? note->key() : nearestIn(note->key(), classes);
-		if (key != note->key()) { note->setKey(key); ++moved; }
+		if (key != note->key()) { moves.emplace_back(note, key); }
 	}
-	return ControlResult::success(finish(ref, clip, QStringLiteral("note.follow_chords"), {{QStringLiteral("moved"), moved}}));
+	if (moves.empty()) { return ControlResult::success({{QStringLiteral("clip"), clipId(ref.id)}, {QStringLiteral("moved"), 0}}); }
+	clip->addJournalCheckPoint();
+	for (const auto& [note, key] : moves) { note->setKey(key); }
+	return ControlResult::success(finish(ref, clip, QStringLiteral("note.follow_chords"), {{QStringLiteral("moved"), static_cast<int>(moves.size())}}));
 }
 
 ControlResult quantizeClips(const QJsonObject& args)
@@ -103,15 +106,18 @@ ControlResult quantizeClips(const QJsonObject& args)
 		refs.append(ref);
 	}
 	if (refs.isEmpty()) { return ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("name the 'clips'")); }
+	const auto snapped = [grid](const ClipRef& ref) { return (ref.clip->startPosition().getTicks() + grid / 2) / grid * grid; };
 	QVector<JournallingObject*> tracks;
-	for (const ClipRef& ref : refs) { if (!tracks.contains(ref.track)) { tracks.append(ref.track); } }
+	for (const ClipRef& ref : refs)
+	{
+		if (snapped(ref) != ref.clip->startPosition().getTicks() && !tracks.contains(ref.track)) { tracks.append(ref.track); }
+	}
+	if (tracks.isEmpty()) { return ControlResult::success({{QStringLiteral("moved"), 0}, {QStringLiteral("grid"), static_cast<int>(grid)}}); }
 	addUndoStep(tracks);
 	int moved = 0;
 	for (const ClipRef& ref : refs)
 	{
-		const tick_t at = ref.clip->startPosition().getTicks();
-		const tick_t snapped = (at + grid / 2) / grid * grid;
-		if (snapped != at) { ref.clip->movePosition(TimePos(snapped)); ++moved; }
+		if (snapped(ref) != ref.clip->startPosition().getTicks()) { ref.clip->movePosition(TimePos(snapped(ref))); ++moved; }
 	}
 	Engine::getSong()->setModified();
 	return ControlResult::success({{QStringLiteral("moved"), moved}, {QStringLiteral("grid"), static_cast<int>(grid)}});
@@ -136,6 +142,7 @@ ControlResult defineScale(const QJsonObject& args)
 		if (!degrees.contains(0)) { degrees.prepend(0); }  // a scale holds its root
 		all.insert(name, degrees);
 	}
+	if (all == before) { return ControlResult::success({{QStringLiteral("scales"), all}}); }
 	setCustomScales(all);
 	addUndoStep([before]() { setCustomScales(before); }, [all]() { setCustomScales(all); });
 	return ControlResult::success({{QStringLiteral("scales"), all}});

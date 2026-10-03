@@ -105,6 +105,7 @@ public:
 	BoolModel m_polarityLeftModel{false};
 	BoolModel m_polarityRightModel{false};
 	BoolModel m_monoModel{false};
+	BoolModel m_swapModel{false};  // 0.5.0 L08 (MX-033): left and right exchanged
 	IntModel m_panModeModel{0, 0, 2};
 	FloatModel m_panRightModel{0.f, -1.f, 1.f, 0.001f};
 	FloatModel m_widthModel{1.f, 0.f, 2.f, 0.01f};
@@ -302,6 +303,13 @@ public:
 		m_preFader = preFader;
 	}
 
+	//! 0.5.0 L08 (MX-047): a send switched off keeps its level; the receiver skips it.
+	BoolModel* enabledModel() { return &m_enabled; }
+	bool enabled() const { return m_enabled.value(); }
+	//! Whether the receiver mixes this send this period: switched on, and the sender has signal - or
+	//! a compensated delay line (@a compensate) or a feedback snapshot may still hold some.
+	bool delivers(bool compensate) const;
+
 	//! PDC (#605): frames of delay this send applies at the receiver so the
 	//! sender's path lands on the receiver's alignment point.
 	void setCompensationFrames(int frames) { m_compensation.setDelayFrames(frames); }
@@ -353,6 +361,7 @@ public:
 		MixerChannel * m_to;
 		FloatModel m_amount;
 		FloatModel m_pan;
+		BoolModel m_enabled{true};
 		bool m_preFader;
 		//! PDC delay line (#605); touched only by the receiver's worker.
 		LatencyCompensation m_compensation;

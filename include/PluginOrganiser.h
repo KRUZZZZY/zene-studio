@@ -70,6 +70,12 @@ LMMS_EXPORT QStringList folders();
 
 LMMS_EXPORT QJsonObject toJson(const QString& key, const Entry& value);
 
+/*! 0.5.0 L10 (MX-167): the format to list when one plug-in is installed in several ("clap", "vst3", "lv2",
+ *  "ladspa"; empty lists them all). The pickers leave out a plug-in's other formats. Config file. */
+LMMS_EXPORT QString preferredFormat();
+LMMS_EXPORT void setPreferredFormat(const QString& format);
+LMMS_EXPORT const QStringList& formatNames();
+
 } // namespace pluginorganiser
 
 } // namespace lmms

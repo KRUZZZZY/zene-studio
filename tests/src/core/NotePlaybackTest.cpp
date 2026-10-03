@@ -137,6 +137,7 @@ private slots:
 	void aRecurrenceSkipsThePassesItIsNotOn()
 	{
 		Note* note = oneNote();
+		QCOMPARE(run(QStringLiteral("note.edit"), edit(note, {{QStringLiteral("recur_mask"), 2}})).errorKind, ControlErrorKind::InvalidArgs);
 		// The second of every two passes: not on the first.
 		QVERIFY(run(QStringLiteral("note.edit"), edit(note, {{QStringLiteral("recur_length"), 2}, {QStringLiteral("recur_mask"), 2}})).ok);
 		QVERIFY(playFrom(0).isEmpty());
@@ -215,6 +216,7 @@ private slots:
 		oneNote();
 		for (int i = 1; i < 5; ++i) { m_clip->addNote(Note(TimePos(24), TimePos(i * 48), 60 + i), false); }
 		const QString clip = control::clipIdOf(m_clip);
+		QCOMPARE(run(QStringLiteral("note.lyrics"), {{QStringLiteral("clip"), clip}}).errorKind, ControlErrorKind::InvalidArgs);
 		QVERIFY(run(QStringLiteral("note.lyrics"), {{QStringLiteral("clip"), clip}, {QStringLiteral("text"), QStringLiteral("Hal-le-lu-jah sing")}}).ok);
 		QStringList sung;
 		for (const Note* note : m_clip->notes()) { sung << lyricText(note->conditions().lyric); }

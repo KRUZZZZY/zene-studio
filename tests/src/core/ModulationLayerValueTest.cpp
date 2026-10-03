@@ -130,6 +130,47 @@ private slots:
 		QVERIFY(layer.findRoute(routeOf("Panning", 0.1f)) == nullptr);
 	}
 
+	//! 0.5.0 MX-117: random holds a value a cycle and repeats it (no audio-thread state), smooth random
+	//! glides from one to the next, steps play their values a cycle each, the envelope rises over its
+	//! attack and decays; the step values and the attack are saved only for the shapes that read them.
+	void randomStepsAndEnvelope()
+	{
+		ModulatorSource random = sineAt(1.0f, 0.0f, false);
+		random.shape = ModulationShape::Random;
+		QCOMPARE(ModulationLayer::outputAt(random, 0.1), ModulationLayer::outputAt(random, 0.9));
+		QVERIFY(ModulationLayer::outputAt(random, 0.5) != ModulationLayer::outputAt(random, 1.5));
+		QCOMPARE(ModulationLayer::outputAt(random, 2.25), ModulationLayer::outputAt(random, 2.25));
+		ModulatorSource smooth = random;
+		smooth.shape = ModulationShape::SmoothRandom;
+		QCOMPARE(rounded(ModulationLayer::outputAt(smooth, 1.0)), rounded(ModulationLayer::outputAt(random, 1.0)));
+		ModulatorSource steps = random;
+		steps.shape = ModulationShape::Steps;
+		steps.stepCount = 3;
+		steps.steps = {1.f, -0.5f, 0.25f};
+		QCOMPARE(rounded(ModulationLayer::outputAt(steps, 0.5)), 1.0);
+		QCOMPARE(rounded(ModulationLayer::outputAt(steps, 1.5)), -0.5);
+		QCOMPARE(rounded(ModulationLayer::outputAt(steps, 3.5)), 1.0);  // wraps
+		ModulatorSource envelope = random;
+		envelope.shape = ModulationShape::Envelope;
+		envelope.attack = 0.5f;
+		QCOMPARE(rounded(ModulationLayer::outputAt(envelope, 0.0)), -1.0);
+		QCOMPARE(rounded(ModulationLayer::outputAt(envelope, 0.5)), 1.0);
+		QVERIFY(ModulationLayer::outputAt(envelope, 0.9) < 0.0);
+		ModulatorSource parsed;
+		QVERIFY(modulationShapeFromName(QStringLiteral("smooth_random"), &parsed.shape));
+		QCOMPARE(parsed.shape, ModulationShape::SmoothRandom);
+		QCOMPARE(modulationShapeNames().size(), 8);
+		ModulationLayer layer;
+		QCOMPARE(layer.addModulator(QStringLiteral("seq"), steps), 0);
+		QDomDocument doc;
+		QDomElement root = doc.createElement(QStringLiteral("root"));
+		QVERIFY(layer.saveSettings(doc, root));
+		ModulationLayer back;
+		back.loadSettings(root.firstChildElement());
+		QCOMPARE(back.modulator(0)->source.stepCount, 3);
+		QCOMPARE(back.modulator(0)->source.steps[1], -0.5f);
+	}
+
 };
 
 QTEST_GUILESS_MAIN(ModulationLayerValueTest)

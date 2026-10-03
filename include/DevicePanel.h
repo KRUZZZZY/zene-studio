@@ -89,6 +89,8 @@ public:
 	int totalParameters() const { return m_total; }
 	//! Close the editor window this card opened, while its device still exists.
 	void closeEditor();
+	//! 0.5.0 L10 (MX-095): light the header's dot while the device processes audio.
+	void refreshActivity();
 
 private:
 	QWidget* buildHeader();
@@ -104,6 +106,7 @@ private:
 	int m_total = 0;
 	QPointer<SubWindow> m_editor;
 	QPointer<SubWindow> m_pins;
+	QLabel* m_activity = nullptr;
 };
 
 //! A modulator, placed right after the device it modulates: its shape, rate (drag or type -

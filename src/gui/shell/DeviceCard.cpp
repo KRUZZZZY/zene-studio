@@ -198,6 +198,10 @@ QWidget* DeviceCard::buildHeader()
 			if (!invoke(QStringLiteral("plugin.bypass"), args).ok) { power->setChecked(!on); }
 		});
 		row->addWidget(power);
+		m_activity = new QLabel(QStringLiteral("\u25CF"), header);  // MX-095: lit while the device processes audio
+		m_activity->setToolTip(tr("Processing audio"));
+		row->addWidget(m_activity);
+		refreshActivity();
 	}
 	auto* titles = new QVBoxLayout;
 	titles->setSpacing(0);
@@ -313,6 +317,15 @@ void DeviceCard::closeEditor()
 {
 	if (!m_editor.isNull()) { delete m_editor.data(); }
 	if (!m_pins.isNull()) { delete m_pins.data(); }
+}
+
+void DeviceCard::refreshActivity()
+{
+	if (m_activity == nullptr || m_spec.effect == nullptr) { return; }
+	const bool on = m_spec.effect->isProcessingAudio();
+	if (m_activity->property("lit").toBool() == on && m_activity->property("lit").isValid()) { return; }
+	m_activity->setProperty("lit", on);
+	m_activity->setStyleSheet(QStringLiteral("color: %1;").arg((on ? tokens::palette().accent : tokens::palette().textMuted).name()));
 }
 
 } // namespace lmms::gui

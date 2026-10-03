@@ -68,6 +68,7 @@ ControlResult moveToTrack(const QJsonObject& args)
 	if (notes.isEmpty()) { return ControlResult::failure(ControlErrorKind::NotFound, QStringLiteral("no notes in that scope")); }
 	addUndoStep(QVector<JournallingObject*>{clip, to});
 	auto* target = dynamic_cast<MidiClip*>(to->createClip(clip->startPosition()));
+	target->setStartTimeOffset(clip->startTimeOffset());  // the notes sound where they did
 	for (Note* note : notes)
 	{
 		target->addNote(*note, false);
@@ -152,7 +153,8 @@ ControlResult detectScale(const QJsonObject& args)
 		}
 	}
 	if (clip->notes().empty()) { return ControlResult::failure(ControlErrorKind::NotFound, QStringLiteral("the clip has no notes")); }
-	std::sort(candidates.begin(), candidates.end(), [](const Candidate& a, const Candidate& b) {
+	// Stable: equal fits and tonics keep the order built above - Major before Minor, C upwards.
+	std::stable_sort(candidates.begin(), candidates.end(), [](const Candidate& a, const Candidate& b) {
 		return a.fit != b.fit ? a.fit > b.fit : a.tonic > b.tonic;
 	});
 	QJsonArray top;

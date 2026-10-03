@@ -133,6 +133,12 @@ bool resolveEdits(MidiClip* clip, const QJsonArray& edits, std::vector<Edit>* ou
 		int index = -1;
 		Note* note = resolveNote(clip, entry.value(QStringLiteral("note")).toString(), &index, error);
 		if (note == nullptr || !checkEditValues(entry, i, error)) { return false; }
+		// A pass mask means nothing without a pattern length - the note's own, or one given beside it.
+		if (entry.contains(QStringLiteral("recur_mask")) && entry.value(QStringLiteral("recur_length")).toInt(note->conditions().recurLength) == 0)
+		{
+			*error = ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("edits[%1].recur_mask needs a recur_length").arg(i));
+			return false;
+		}
 		out->push_back({note, entry});
 	}
 	return true;

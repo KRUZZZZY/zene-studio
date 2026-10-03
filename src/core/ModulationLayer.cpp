@@ -61,6 +61,14 @@ void saveSource(QDomDocument& doc, QDomElement& modulatorElement, const Modulato
 	modulatorElement.setAttribute(QStringLiteral("phase"), static_cast<double>(source.phase));
 	modulatorElement.setAttribute(QStringLiteral("unipolar"), source.unipolar ? 1 : 0);
 	modulatorElement.setAttribute(QStringLiteral("active"), source.active ? 1 : 0);
+	// MX-117: the step values and the envelope's attack, only for the shapes that read them.
+	if (source.shape == ModulationShape::Steps)
+	{
+		QStringList values;
+		for (int i = 0; i < source.stepCount; ++i) { values << QString::number(source.steps[static_cast<std::size_t>(i)], 'g', 6); }
+		modulatorElement.setAttribute(QStringLiteral("steps"), values.join(QLatin1Char(',')));
+	}
+	if (source.shape == ModulationShape::Envelope) { modulatorElement.setAttribute(QStringLiteral("attack"), static_cast<double>(source.attack)); }
 }
 
 void saveRoute(QDomDocument& doc, QDomElement& modulatorElement, const ModulationRoute& route)
@@ -85,6 +93,10 @@ ModulatorSource readSource(const QDomElement& element)
 	source.phase = static_cast<float>(element.attribute(QStringLiteral("phase")).toDouble());
 	source.unipolar = element.attribute(QStringLiteral("unipolar"), QStringLiteral("0")).toInt() != 0;
 	source.active = element.attribute(QStringLiteral("active"), QStringLiteral("1")).toInt() != 0;
+	const QStringList values = element.attribute(QStringLiteral("steps")).split(QLatin1Char(','), Qt::SkipEmptyParts);
+	source.stepCount = static_cast<int>(std::min<qsizetype>(values.size(), ModulatorSource::MaxSteps));
+	for (int i = 0; i < source.stepCount; ++i) { source.steps[static_cast<std::size_t>(i)] = std::clamp(values[i].toFloat(), -1.f, 1.f); }
+	source.attack = std::clamp(element.attribute(QStringLiteral("attack"), QStringLiteral("0.1")).toFloat(), 0.f, 1.f);
 	return source;
 }
 
@@ -181,26 +193,67 @@ void fillRuntime(const ModulationLayer& layer, ModulationRuntime* runtime)
 // the shape vocabulary
 // ---------------------------------------------------------------------------
 
+const QStringList& modulationShapeNames()
+{
+	static const QStringList names{QStringLiteral("sine"), QStringLiteral("triangle"), QStringLiteral("square"),
+		QStringLiteral("saw"), QStringLiteral("random"), QStringLiteral("smooth_random"), QStringLiteral("steps"),
+		QStringLiteral("envelope")};
+	return names;
+}
+
 QString modulationShapeName(ModulationShape shape)
 {
-	switch (shape)
-	{
-		case ModulationShape::Sine: return QStringLiteral("sine");
-		case ModulationShape::Triangle: return QStringLiteral("triangle");
-		case ModulationShape::Square: return QStringLiteral("square");
-		case ModulationShape::Saw: return QStringLiteral("saw");
-	}
-	return QString();
+	return modulationShapeNames().value(static_cast<int>(shape));
 }
 
 bool modulationShapeFromName(const QString& name, ModulationShape* shape)
 {
-	if (name == QLatin1String("sine")) { *shape = ModulationShape::Sine; return true; }
-	if (name == QLatin1String("triangle")) { *shape = ModulationShape::Triangle; return true; }
-	if (name == QLatin1String("square")) { *shape = ModulationShape::Square; return true; }
-	if (name == QLatin1String("saw")) { *shape = ModulationShape::Saw; return true; }
-	return false;
+	const int index = modulationShapeNames().indexOf(name);
+	if (index < 0) { return false; }
+	*shape = static_cast<ModulationShape>(index);
+	return true;
 }
+
+namespace
+{
+
+//! A repeatable value in -1..1 for cycle @a n (a hash, so the audio thread keeps no state).
+double randomAt(std::int64_t n)
+{
+	auto x = static_cast<std::uint64_t>(n) * 0x9E3779B97F4A7C15ULL;
+	x ^= x >> 31;
+	x *= 0xBF58476D1CE4E5B9ULL;
+	x ^= x >> 29;
+	return static_cast<double>(x >> 11) / static_cast<double>(1ULL << 53) * 2.0 - 1.0;
+}
+
+//! MX-117's shapes at @a cycles (the phase-shifted cycle count, cycles >= 0).
+double extraShape(const ModulatorSource& source, double cycles)
+{
+	const auto n = static_cast<std::int64_t>(std::floor(cycles));
+	const double phase = cycles - std::floor(cycles);
+	switch (source.shape)
+	{
+		case ModulationShape::Random: return randomAt(n);
+		case ModulationShape::SmoothRandom:
+		{
+			const double t = 0.5 - 0.5 * std::cos(phase * kTwoPi * 0.5);
+			return randomAt(n) + (randomAt(n + 1) - randomAt(n)) * t;
+		}
+		case ModulationShape::Steps:
+			return source.stepCount > 0 ? source.steps[static_cast<std::size_t>(n % source.stepCount)] : 0.0;
+		case ModulationShape::Envelope:
+		{
+			const double attack = std::clamp(static_cast<double>(source.attack), 0.0, 1.0);
+			const double level = phase < attack ? phase / std::max(attack, 1e-9) : std::exp(-5.0 * (phase - attack) / std::max(1.0 - attack, 1e-9));
+			return 2.0 * level - 1.0;
+		}
+		default: break;
+	}
+	return 0.0;
+}
+
+} // namespace
 
 // ---------------------------------------------------------------------------
 // the LFO
@@ -237,6 +290,9 @@ float ModulationLayer::outputAt(const ModulatorSource& source, double seconds)
 			break;
 		case ModulationShape::Saw:
 			value = 2.0 * phase - 1.0;
+			break;
+		default:
+			value = extraShape(source, static_cast<double>(source.phase) + std::max(0.0, seconds) * rate);
 			break;
 	}
 	if (source.unipolar) { value = (value + 1.0) * 0.5; }
