@@ -251,6 +251,9 @@ void sampleClipMenus(QMenu* menu, Clip* clip, const QJsonObject& self)
 	choices(process, "Fade", "sample.fade", "direction", self);
 	add(process, "Gain Envelope...", "clip.gain_envelope_set", self, true);
 	add(process, "Clear Gain Envelope", "clip.gain_envelope_set", with(self, "points", QJsonArray()), false);
+	// MX-083 (L10 W3): the clip printed through a chain's devices - its own track's by default.
+	add(process, "Print a Chain's Effects onto the Clip...", "clip.process", self, true,
+		{{QStringLiteral("from"), control::trackIdOf(clip->getTrack())}, {QStringLiteral("tail"), 0.0}});
 	Clip* next = nextClip(clip);
 	QAction* fade = add(menu, "Crossfade Into Next Clip...", "clip.crossfade",
 		{{QStringLiteral("out"), id}, {QStringLiteral("in"), next != nullptr ? control::clipIdOf(next) : QString()}}, true);

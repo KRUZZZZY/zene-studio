@@ -978,6 +978,7 @@ set(LMMS_SRCS
 	core/ControlCommandsDeviceParams.cpp
 	core/ControlCommandsModulatorTools.cpp
 	core/ControlCommandsRecorder.cpp
+	core/ControlCommandsClipProcess.cpp
 	core/ModulationFormula.cpp
 	core/DeltaTap.cpp
 	core/DeviceOptions.cpp

@@ -851,6 +851,8 @@ LMMS_EXPORT void registerDeviceParamCommands(ControlRegistry& registry);
 LMMS_EXPORT void registerModulatorToolCommands(ControlRegistry& registry);
 //! 0.5.0 L10 (W3): plugin.record / recorder_land (ControlCommandsRecorder.cpp).
 LMMS_EXPORT void registerRecorderCommands(ControlRegistry& registry);
+//! 0.5.0 L10 (W3): clip.process (ControlCommandsClipProcess.cpp).
+LMMS_EXPORT void registerClipProcessCommand(ControlRegistry& registry);
 } // namespace lmms
 
 #endif // LMMS_CONTROL_REGISTRY_GROUPS_H

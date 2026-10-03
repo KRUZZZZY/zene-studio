@@ -62,6 +62,8 @@ const ReversibilityRow kW3DeviceRows[] = {
 		"learns the take's path (device state)", "no write to the project (delete the file)", ""),
 	R("plugin.recorder_land", RC::TrueInverse, true, "it adds an audio track holding a Recorder's last take",
 		"action checkpoint: the recorded undo step removes the track", ""),
+	R("clip.process", RC::TrueInverse, true, "it replaces an audio clip's source with the clip printed through a chain's devices",
+		"Clip checkpoint", ""),
 	R("mixer.console_apply", RC::TrueInverse, true, "it adds the Console device to every channel, changes the ones there, or removes them",
 		"action checkpoints (each added device taken out, each removed one recreated) and model checkpoints, merged into one step", ""),
 };
