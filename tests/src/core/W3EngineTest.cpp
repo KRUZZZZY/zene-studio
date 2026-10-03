@@ -305,7 +305,11 @@ private slots:
 			handle.play(out);
 			QVERIFY(out[0][0] == 0.f);  // the fade-in's first frame
 			bool sounds = false;
-			for (std::size_t f = out.size() / 2; f < out.size(); ++f) { sounds = sounds || out[f][0] != 0.f; }
+			for (int period = 1; period < 8; ++period)  // still inside the pre-fade: the clip starts 24 ticks later
+			{
+				handle.play(out);
+				for (const SampleFrame& frame : out) { sounds = sounds || frame[0] != 0.f; }
+			}
 			QVERIFY2(sounds, "the hidden audio before the clip's start did not sound");
 		}
 		QVERIFY(run(QStringLiteral("control.undo")).ok);

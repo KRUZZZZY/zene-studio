@@ -89,6 +89,10 @@ private:
 	AutomationLatency() = default;
 	//! Control thread: start or stop the poll that keeps the clips' latencies current.
 	void poll(bool on);
+	//! Control thread: walk every clip now (refresh() without its mid-load guard).
+	void refreshClips();
+	//! Control thread: walk them once the project being loaded has resolved its clips (Song::projectLoaded).
+	void refreshOnceLoaded();
 
 	std::atomic<bool> m_enabled{false};
 	QTimer* m_poll = nullptr;

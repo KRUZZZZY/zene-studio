@@ -25,6 +25,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <memory>
 
 #include <QDomElement>
 #include <QTimer>
@@ -163,8 +164,13 @@ void AutomationLatency::poll(bool on)
 void AutomationLatency::refresh()
 {
 	Song* song = Engine::getSong();
-	// Mid-load the track list is still being built (a load processes events): the next poll catches up.
+	// Mid-load the track list is still being built (a load processes events): the load's own walk catches up.
 	if (song == nullptr || song->isLoadingProject() || Engine::mixer() == nullptr || Engine::patternStore() == nullptr) { return; }
+	refreshClips();
+}
+
+void AutomationLatency::refreshClips()
+{
 	const bool on = enabled();
 	forEachAutomationClip([on](AutomationClip* clip) {
 		clip->setLatencyFrames(on && !clip->objects().empty() ? upstreamFrames(clip->firstObject()) : 0);
@@ -238,6 +244,21 @@ void AutomationLatency::load(const QDomElement& element)
 	// The tracks may not be loaded yet: the poll computes the clips' latencies once the project is in.
 	m_enabled.store(element.attribute(QStringLiteral("enabled"), QStringLiteral("0")).toInt() != 0, std::memory_order_relaxed);
 	poll(enabled());
+	if (enabled()) { refreshOnceLoaded(); }
+}
+
+void AutomationLatency::refreshOnceLoaded()
+{
+	Song* song = Engine::getSong();
+	if (song == nullptr || m_poll == nullptr) { return; }
+	// One shot: by Song::projectLoaded the clips have resolved their parameters and the chains are in, so an
+	// offline render that starts right after the load already reads compensated (the channels' PDC alignment
+	// is published by the first audio period, and the poll takes it up).
+	auto connection = std::make_shared<QMetaObject::Connection>();
+	*connection = QObject::connect(song, &Song::projectLoaded, m_poll, [this, connection] {
+		QObject::disconnect(*connection);
+		refreshClips();
+	});
 }
 
 void AutomationLatency::clear()
