@@ -25,12 +25,17 @@
 
 #include "ArrangementSections.h"
 #include "AutomationSwitches.h"
+#include "EditLocks.h"
 #include "MetronomeOptions.h"
 #include "MidiPlayback.h"
 #include "MixerOptions.h"
+#include "MixerSnapshots.h"
+#include "ProjectInfo.h"
 #include "ProjectMarkers.h"
 #include "TrackKeyNames.h"
+#include "TrackLooks.h"
 #include "TrackVersions.h"
+#include "ViewMemory.h"
 
 namespace lmms::projectsections
 {
@@ -44,6 +49,13 @@ void registerAll()
 	ProjectMarkers::instance();
 	TrackKeyNames::instance();
 	TrackVersions::instance();
+	EditLocks::instance();  // W3 L12
+	MixerSnapshots::instance();
+	ProjectInfo::instance();
+	TrackLooks::instance();  // W3 L13
+	ViewMemory::instance();
+	registerAlternatives();
+	registerSubprojects();
 	metronomeoptions::options();  // reads the config file here, not on the audio thread at the first click
 }
 

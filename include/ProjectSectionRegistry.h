@@ -36,6 +36,10 @@ namespace lmms::projectsections
  *  itself, allocating there (review W3-batchA #1). A new section adds one line here. */
 LMMS_EXPORT void registerAll();
 
+//! The two sections that live inside their command files (project alternatives, subprojects); registerAll calls them.
+LMMS_EXPORT void registerAlternatives();
+LMMS_EXPORT void registerSubprojects();
+
 } // namespace lmms::projectsections
 
 #endif // LMMS_PROJECT_SECTION_REGISTRY_H

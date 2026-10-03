@@ -43,6 +43,7 @@
 #include "ControlEdit.h"
 #include "ControlExportPresetSupport.h"
 #include "ControlRegistry.h"
+#include "ProjectSectionRegistry.h"
 #include "ControlRegistryGroups.h"
 #include "ControlReversibility.h"
 #include "ControlVocabulary.h"
@@ -270,6 +271,11 @@ void add(ControlRegistry& registry, const char* verb, const QString& description
 }
 
 } // namespace
+
+void projectsections::registerSubprojects()
+{
+	section();
+}
 
 void registerSubprojectCommands(ControlRegistry& registry)
 {

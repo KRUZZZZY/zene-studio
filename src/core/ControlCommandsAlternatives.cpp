@@ -39,6 +39,7 @@
 #include <QJsonArray>
 
 #include "ControlRegistry.h"
+#include "ProjectSectionRegistry.h"
 #include "ControlRegistryGroups.h"
 #include "ControlReversibility.h"
 #include "ControlVocabulary.h"
@@ -236,6 +237,11 @@ void add(ControlRegistry& registry, const char* verb, const QString& description
 }
 
 } // namespace
+
+void projectsections::registerAlternatives()
+{
+	section();
+}
 
 void registerAlternativeCommands(ControlRegistry& registry)
 {
