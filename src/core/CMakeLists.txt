@@ -977,11 +977,13 @@ set(LMMS_SRCS
 	core/ControlCommandsDeviceTools.cpp
 	core/ControlCommandsDeviceParams.cpp
 	core/ControlCommandsModulatorTools.cpp
+	core/ControlCommandsRecorder.cpp
 	core/ModulationFormula.cpp
 	core/DeltaTap.cpp
 	core/DeviceOptions.cpp
 	core/ParameterControls.cpp
 	core/RackSplit.cpp
+	core/TakeRecorder.cpp
 	core/MarkerActions.cpp
 	core/MixerOptions.cpp
 	core/ArticulationMap.cpp

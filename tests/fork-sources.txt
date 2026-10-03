@@ -769,6 +769,7 @@ include/StemSeparation/StemTypes.h
 include/StemSplitController.h
 include/TakeLane.h
 include/TakeLanesPanel.h
+include/TakeRecorder.h
 include/Telemetry.h
 include/TelemetryConsentDialog.h
 include/TelemetryNetworkTransport.h
@@ -837,6 +838,8 @@ plugins/Gate/GateControlDialog.cpp
 plugins/Gate/GateControlDialog.h
 plugins/Gate/GateControls.cpp
 plugins/Gate/GateControls.h
+plugins/InsertRecorder/InsertRecorder.cpp
+plugins/InsertRecorder/InsertRecorder.h
 plugins/Modulation/Modulation.cpp
 plugins/Modulation/Modulation.h
 plugins/Modulation/ModulationControlDialog.cpp
@@ -1063,6 +1066,7 @@ src/core/ControlCommandsRackZones.cpp
 src/core/ControlCommandsRange.cpp
 src/core/ControlCommandsRangeBounce.cpp
 src/core/ControlCommandsRecordTools.cpp
+src/core/ControlCommandsRecorder.cpp
 src/core/ControlCommandsRecording.cpp
 src/core/ControlCommandsRecordingInput.cpp
 src/core/ControlCommandsRecordingPass.cpp
@@ -1342,6 +1346,7 @@ src/core/StemJobManager.cpp
 src/core/StemModelStore.cpp
 src/core/StemTrackBuilder.cpp
 src/core/TakeLane.cpp
+src/core/TakeRecorder.cpp
 src/core/Telemetry.cpp
 src/core/TelemetryNetworkTransport.cpp
 src/core/TempoMap.cpp

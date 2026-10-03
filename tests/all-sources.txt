@@ -605,6 +605,7 @@ include/TabButton.h
 include/TabWidget.h
 include/TakeLane.h
 include/TakeLanesPanel.h
+include/TakeRecorder.h
 include/Telemetry.h
 include/TelemetryConsentDialog.h
 include/TelemetryNetworkTransport.h
@@ -833,6 +834,8 @@ plugins/HydrogenImport/HydrogenImport.cpp
 plugins/HydrogenImport/HydrogenImport.h
 plugins/HydrogenImport/LocalFileMng.cpp
 plugins/HydrogenImport/LocalFileMng.h
+plugins/InsertRecorder/InsertRecorder.cpp
+plugins/InsertRecorder/InsertRecorder.h
 plugins/Kicker/Kicker.cpp
 plugins/Kicker/Kicker.h
 plugins/Kicker/KickerOsc.h
@@ -1333,6 +1336,7 @@ src/core/ControlCommandsRackZones.cpp
 src/core/ControlCommandsRange.cpp
 src/core/ControlCommandsRangeBounce.cpp
 src/core/ControlCommandsRecordTools.cpp
+src/core/ControlCommandsRecorder.cpp
 src/core/ControlCommandsRecording.cpp
 src/core/ControlCommandsRecordingInput.cpp
 src/core/ControlCommandsRecordingPass.cpp
@@ -1673,6 +1677,7 @@ src/core/StemModelStore.cpp
 src/core/StemTrackBuilder.cpp
 src/core/StepRecorder.cpp
 src/core/TakeLane.cpp
+src/core/TakeRecorder.cpp
 src/core/Telemetry.cpp
 src/core/TelemetryNetworkTransport.cpp
 src/core/TempoMap.cpp

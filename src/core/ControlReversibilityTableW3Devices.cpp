@@ -58,6 +58,10 @@ const ReversibilityRow kW3DeviceRows[] = {
 		"action checkpoint: the recorded undo step restores the device's previous settings document", ""),
 	R("plugin.delta", RC::NotMutating, false, "it plays a device's delta instead of its output: a monitor switch, not the "
 		"project (neither saved nor journalled)", "no write (plugin.delta on:false puts it back)", ""),
+	R("plugin.record", RC::NotMutating, false, "it writes a take file from what passes a Recorder insert; the project only "
+		"learns the take's path (device state)", "no write to the project (delete the file)", ""),
+	R("plugin.recorder_land", RC::TrueInverse, true, "it adds an audio track holding a Recorder's last take",
+		"action checkpoint: the recorded undo step removes the track", ""),
 	R("mixer.console_apply", RC::TrueInverse, true, "it adds the Console device to every channel, changes the ones there, or removes them",
 		"action checkpoints (each added device taken out, each removed one recreated) and model checkpoints, merged into one step", ""),
 };

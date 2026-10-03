@@ -48,6 +48,7 @@ SET(LMMS_PLUGIN_LIST
 	Gate
 	GranularPitchShifter
 	HydrogenImport
+	InsertRecorder
 	LadspaBrowser
 	LadspaEffect
 	LOMM

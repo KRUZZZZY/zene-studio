@@ -42,6 +42,7 @@
 #include "Mixer.h"
 #include "PluginNativeEditor.h"
 #include "PluginOrganiser.h"
+#include "TakeRecorder.h"
 
 namespace lmms::gui
 {
@@ -153,6 +154,20 @@ void addParameterEntries(QMenu* menu, QWidget* parent, const Effect* effect, con
 	entry(menu, QObject::tr("Compatibility and Editor..."), "plugin.options", [parent, self] {
 		runCommand(parent, deviceCall("plugin.options", self, true));
 	});
+	// MX-156: a Recorder records what passes it and lands its last take on a track.
+	if (const TakeRecorder* recorder = TakeRecorder::of(effect))
+	{
+		const bool recording = recorder->recording();
+		entry(menu, recording ? QObject::tr("Stop Recording") : QObject::tr("Record What Passes Here"), "plugin.record",
+			[parent, self, recording] {
+				QJsonObject args = self;
+				args.insert(QStringLiteral("on"), !recording);
+				runCommand(parent, deviceCall("plugin.record", args, false));
+			});
+		entry(menu, QObject::tr("Put the Last Take on a New Track"), "plugin.recorder_land", [parent, self] {
+			runCommand(parent, deviceCall("plugin.recorder_land", self, false));
+		});
+	}
 	// MX-152: a convolution reverb takes an impulse response file (the form offers a file picker).
 	if (QString::fromUtf8(effect->descriptor()->name) == QLatin1String("convolutionreverb"))
 	{

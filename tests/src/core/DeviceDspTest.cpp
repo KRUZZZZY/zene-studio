@@ -26,12 +26,14 @@
  *  vocoder sounds only while the voice does (MX-154), the console is transparent when quiet and
  *  mixer.console_apply puts it on every channel as one undo step (MX-150), the dynamic EQ cuts a
  *  band statically, dynamically and on the mid alone (MX-143), the convolution reverb plays a loaded
- *  impulse response one partition late (MX-152) - and none of them allocates while processing. */
+ *  impulse response one partition late (MX-152), the recorder writes what passes it (MX-156) - and
+ *  none of them allocates while processing. */
 
 #include <QtTest>
 
 #include <QDataStream>
 #include <QFile>
+#include <QFileInfo>
 #include <QJsonArray>
 #include <QTemporaryDir>
 
@@ -314,6 +316,43 @@ private slots:
 		QJsonObject wrong{{QStringLiteral("target"), ch(1)}, {QStringLiteral("plugin"), console}, {QStringLiteral("path"), click}};
 		QCOMPARE(run(QStringLiteral("plugin.impulse_load"), wrong).errorKind, ControlErrorKind::Refused);
 		chainOf(1).clear();
+	}
+
+	//! MX-156: the Recorder passes the sound unchanged and writes what passed to its take; the take lands
+	//! on a new audio track as one undo step; a device that is not a Recorder is refused.
+	void theRecorderRecordsWhatPassesIt()
+	{
+		const QString recorder = loadByName(ch(1), QStringLiteral("insertrecorder"));
+		if (recorder.isEmpty()) { QSKIP("this build has no recorder module"); }
+		QTemporaryDir dir;
+		const QString file = dir.filePath(QStringLiteral("take.wav"));
+		const QJsonObject device{{QStringLiteral("target"), ch(1)}, {QStringLiteral("plugin"), recorder}};
+		QJsonObject start = device;
+		start.insert(QStringLiteral("on"), true);
+		start.insert(QStringLiteral("file"), file);
+		const ControlResult started = run(QStringLiteral("plugin.record"), start);
+		QVERIFY2(started.ok, qPrintable(started.errorMessage));
+		QVERIFY(started.result.value(QStringLiteral("recording")).toBool());
+		long at = 0;
+		const int blocks = 20;
+		QVERIFY(std::abs(runBlocks(chainOf(1), sine(440.0, 0.5f), blocks, &at)[0] - 0.5f) < 0.01f);  // passes unchanged
+		QJsonObject stop = device;
+		stop.insert(QStringLiteral("on"), false);
+		const ControlResult stopped = run(QStringLiteral("plugin.record"), stop);
+		QVERIFY(stopped.ok);
+		QCOMPARE(stopped.result.value(QStringLiteral("frames")).toDouble(), static_cast<double>(blocks) * static_cast<double>(block().size()));
+		QCOMPARE(stopped.result.value(QStringLiteral("dropped")).toDouble(), 0.0);
+		QVERIFY(QFileInfo(file).size() > 44);
+		const int tracks = static_cast<int>(Engine::getSong()->tracks().size());
+		const ControlResult landed = run(QStringLiteral("plugin.recorder_land"), device);
+		QVERIFY2(landed.ok, qPrintable(landed.errorMessage));
+		QCOMPARE(static_cast<int>(Engine::getSong()->tracks().size()), tracks + 1);
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
+		QCOMPARE(static_cast<int>(Engine::getSong()->tracks().size()), tracks);
+		const QString console = loadByName(ch(1), QStringLiteral("console"));
+		QVERIFY(!console.isEmpty());
+		QCOMPARE(run(QStringLiteral("plugin.record"), {{QStringLiteral("target"), ch(1)}, {QStringLiteral("plugin"), console}}).errorKind,
+			ControlErrorKind::Refused);
 	}
 
 	//! MX-150: a quiet signal passes the console unchanged; mixer.console_apply adds one to every channel,
