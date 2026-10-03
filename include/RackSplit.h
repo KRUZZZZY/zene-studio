@@ -31,6 +31,7 @@
 #include <QString>
 #include <QStringList>
 
+#include "BiquadDesign.h"
 #include "LmmsTypes.h"
 #include "lmms_export.h"
 
@@ -108,30 +109,16 @@ private:
 		Right
 	};
 
-	//! One second-order section (transposed direct form II), one state per channel.
-	struct Biquad
-	{
-		float b0 = 1.f, b1 = 0.f, b2 = 0.f, a1 = 0.f, a2 = 0.f;
-		std::array<float, 2> z1{};
-		std::array<float, 2> z2{};
-		float run(float x, int channel) noexcept;
-	};
-	enum class Shape
-	{
-		LowPass,
-		HighPass,
-		AllPass
-	};
 	//! The most sections a band needs: (bands - 1) 4th-order filters and the all-passes, at most
 	//! 2 x 5 sections for six bands.
 	static constexpr int MaxStages = 12;
 
-	void addStage(Shape shape, float hz, float sampleRate);
+	void addStage(BiquadShape shape, float hz, float sampleRate);
 	void configureBands(const RackSplit& split, int position, int count, float sampleRate);
 	void processBand(float* samples, f_cnt_t frames) noexcept;
 
 	Kind m_kind = Kind::Pass;
-	std::array<Biquad, MaxStages> m_stages{};
+	std::array<BiquadSection<2>, MaxStages> m_stages{};
 	int m_stageCount = 0;
 };
 

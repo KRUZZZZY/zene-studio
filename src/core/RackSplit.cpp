@@ -33,7 +33,6 @@ namespace lmms
 namespace
 {
 
-constexpr double kPi = 3.14159265358979323846;
 constexpr float kLowestSpread = 120.f;
 constexpr float kHighestSpread = 6000.f;
 
@@ -93,41 +92,14 @@ void RackSplit::load(const QDomElement& rack)
 	std::sort(crossovers.begin(), crossovers.begin() + crossoverCount);
 }
 
-float RackSplitFilter::Biquad::run(float x, int channel) noexcept
-{
-	const auto c = static_cast<std::size_t>(channel);
-	const float y = b0 * x + z1[c];
-	z1[c] = b1 * x - a1 * y + z2[c];
-	z2[c] = b2 * x - a2 * y;
-	return y;
-}
-
-void RackSplitFilter::addStage(Shape shape, float hz, float sampleRate)
+void RackSplitFilter::addStage(BiquadShape shape, float hz, float sampleRate)
 {
 	if (m_stageCount >= MaxStages) { return; }
-	// The cookbook sections at Q = 1/sqrt(2): two Butterworth sections in a row make a
-	// Linkwitz-Riley 4th order, and the all-pass is what a low-pass plus high-pass pair sums to.
-	const double limited = std::min(static_cast<double>(hz), 0.45 * static_cast<double>(sampleRate));
-	const double w0 = 2.0 * kPi * limited / static_cast<double>(sampleRate);
-	const double cosw = std::cos(w0);
-	const double alpha = std::sin(w0) / std::sqrt(2.0);
-	const double a0 = 1.0 + alpha;
-	double b0 = 0.0;
-	double b1 = 0.0;
-	double b2 = 0.0;
-	switch (shape)
-	{
-	case Shape::LowPass: b0 = (1.0 - cosw) / 2.0; b1 = 1.0 - cosw; b2 = b0; break;
-	case Shape::HighPass: b0 = (1.0 + cosw) / 2.0; b1 = -(1.0 + cosw); b2 = b0; break;
-	case Shape::AllPass: b0 = 1.0 - alpha; b1 = -2.0 * cosw; b2 = 1.0 + alpha; break;
-	}
-	Biquad& stage = m_stages[static_cast<std::size_t>(m_stageCount++)];
-	stage = Biquad{};
-	stage.b0 = static_cast<float>(b0 / a0);
-	stage.b1 = static_cast<float>(b1 / a0);
-	stage.b2 = static_cast<float>(b2 / a0);
-	stage.a1 = static_cast<float>(-2.0 * cosw / a0);
-	stage.a2 = static_cast<float>((1.0 - alpha) / a0);
+	// Q = 1/sqrt(2): two Butterworth sections in a row make a Linkwitz-Riley 4th order, and the
+	// all-pass is what such a low-pass plus high-pass pair sums to.
+	BiquadSection<2>& stage = m_stages[static_cast<std::size_t>(m_stageCount++)];
+	stage.set(designBiquad(shape, hz, 1.0 / std::sqrt(2.0), sampleRate));
+	stage.reset();
 }
 
 void RackSplitFilter::configureBands(const RackSplit& split, int position, int count, float sampleRate)
@@ -140,11 +112,11 @@ void RackSplitFilter::configureBands(const RackSplit& split, int position, int c
 	// phase the higher bands carry) - so the bands sum to an all-pass, flat in level.
 	for (int k = 0; k < position; ++k)
 	{
-		addStage(Shape::HighPass, split.crossover(k, bands), sampleRate);
-		addStage(Shape::HighPass, split.crossover(k, bands), sampleRate);
+		addStage(BiquadShape::HighPass, split.crossover(k, bands), sampleRate);
+		addStage(BiquadShape::HighPass, split.crossover(k, bands), sampleRate);
 	}
-	for (int pass = 0; position < bands - 1 && pass < 2; ++pass) { addStage(Shape::LowPass, split.crossover(position, bands), sampleRate); }
-	for (int k = position + 1; k < bands - 1; ++k) { addStage(Shape::AllPass, split.crossover(k, bands), sampleRate); }
+	for (int pass = 0; position < bands - 1 && pass < 2; ++pass) { addStage(BiquadShape::LowPass, split.crossover(position, bands), sampleRate); }
+	for (int k = position + 1; k < bands - 1; ++k) { addStage(BiquadShape::AllPass, split.crossover(k, bands), sampleRate); }
 }
 
 void RackSplitFilter::configure(const RackSplit& split, int position, int count, float sampleRate)

@@ -977,6 +977,7 @@ set(LMMS_SRCS
 	core/ControlCommandsDeviceTools.cpp
 	core/ControlCommandsDeviceParams.cpp
 	core/DeviceOptions.cpp
+	core/ParameterControls.cpp
 	core/RackSplit.cpp
 	core/MarkerActions.cpp
 	core/MixerOptions.cpp

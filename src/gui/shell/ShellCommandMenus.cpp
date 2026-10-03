@@ -460,6 +460,11 @@ void populateChannel(QMenu* menu, const QString& channel)
 	add(menu, "Unmute All Channels", "mixer.set_many", {{QStringLiteral("all"), true}, {QStringLiteral("muted"), false}}, false);
 	add(menu, "Clear All Solos", "mixer.set_many", {{QStringLiteral("all"), true}, {QStringLiteral("soloed"), false}}, false);
 	choices(menu, "Solo Mode", "mixer.solo_mode", "mode", {});  // MX-029
+	// MX-150 (L10 W3): the Console device on every channel at once.
+	QMenu* console = menu->addMenu(tr("Console Across the Mix"));
+	add(console, "Apply to Every Channel...", "mixer.console_apply", {}, true,
+		{{QStringLiteral("drive"), 30.0}, {QStringLiteral("character"), QStringLiteral("warm")}});
+	add(console, "Remove from Every Channel", "mixer.console_apply", {{QStringLiteral("remove"), true}}, false);
 	// MX-037: the listen bus.
 	QMenu* listen = menu->addMenu(tr("Listen"));
 	add(listen, "Listen to This Channel", "mixer.listen", with(self, "exclusive", true), false);

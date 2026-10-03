@@ -25,19 +25,31 @@
  *  - rack.split (MX-108): what each chain of a parallel rack is fed - the whole signal, one band of
  *    an up-to-six-way Linkwitz-Riley crossover, the mid or the side, the left or the right; the
  *    rack's sum puts the parts back together (include/RackSplit.h). Saved with the rack, one undo
- *    step. */
+ *    step;
+ *  - mixer.console_apply (MX-150): the Console device on every mixer channel, all set alike - or
+ *    the settings of the ones there changed, or all of them taken out - as one undo step. */
 
 #include <algorithm>
+#include <functional>
+#include <utility>
+#include <vector>
 
 #include <QJsonArray>
 
+#include "AutomatableModel.h"
+#include "ControlDeviceMoves.h"
+#include "ControlDeviceSupport.h"
 #include "ControlDeviceTools.h"
+#include "ControlMixerSupport.h"
 #include "ControlRackSupport.h"
 #include "ControlRegistryGroups.h"
 #include "ControlReversibility.h"
 #include "ControlVocabulary.h"
+#include "Effect.h"
+#include "EffectChain.h"
 #include "Engine.h"
 #include "Mixer.h"
+#include "ParameterControls.h"
 #include "Rack.h"
 #include "RackSplit.h"
 #include "Song.h"
@@ -62,6 +74,14 @@ void addDeviceCommand(ControlRegistry& registry, const char* id, const QString& 
 	cmd.mutating = mutating;
 	cmd.handler = handler;
 	registry.registerCommand(cmd);
+}
+
+void writeModelsRecorded(const std::vector<std::pair<AutomatableModel*, float>>& writes)
+{
+	QVector<JournallingObject*> touched;
+	for (const auto& write : writes) { touched << write.first; }
+	if (!touched.isEmpty()) { addUndoStep(touched); }
+	for (const auto& [model, value] : writes) { model->setValue(std::clamp(value, model->minValue<float>(), model->maxValue<float>())); }
 }
 
 } // namespace control
@@ -133,10 +153,149 @@ ControlResult rackSplit(const QJsonObject& args)
 	return ControlResult::success(splitResult(id, rack));
 }
 
+// ---------------------------------------------------------------------------
+// the console across the mix
+// ---------------------------------------------------------------------------
+
+const QString kConsole = QStringLiteral("console");
+const QStringList& characterNames()
+{
+	static const QStringList names{QStringLiteral("clean"), QStringLiteral("warm"), QStringLiteral("bright")};
+	return names;
+}
+
+bool isConsole(const Effect* effect) { return QString::fromUtf8(effect->descriptor()->name) == kConsole; }
+
+//! The model a ParameterControls device saves under @a key, or nullptr.
+AutomatableModel* parameterByKey(Effect* effect, const QString& key)
+{
+	auto* controls = dynamic_cast<ParameterControls*>(effect->controls());
+	if (controls == nullptr) { return nullptr; }
+	for (const auto& [model, saved] : controls->parameters()) { if (saved == key) { return model; } }
+	return nullptr;
+}
+
+//! The values @a args sets on a console: (model, value) for 'drive' and 'character'.
+std::vector<std::pair<AutomatableModel*, float>> consoleWrites(Effect* effect, const QJsonObject& args)
+{
+	std::vector<std::pair<AutomatableModel*, float>> writes;
+	AutomatableModel* drive = parameterByKey(effect, QStringLiteral("drive"));
+	AutomatableModel* character = parameterByKey(effect, QStringLiteral("character"));
+	if (drive != nullptr && args.contains(QStringLiteral("drive")))
+	{
+		writes.emplace_back(drive, static_cast<float>(args.value(QStringLiteral("drive")).toDouble()));
+	}
+	if (character != nullptr && args.contains(QStringLiteral("character")))
+	{
+		writes.emplace_back(character, static_cast<float>(characterNames().indexOf(args.value(QStringLiteral("character")).toString())));
+	}
+	return writes;
+}
+
+std::function<EffectChain*()> channelChain(const QString& id)
+{
+	return [id]() -> EffectChain* {
+		ControlResult ignored;
+		MixerChannel* found = resolveMixerChannel(id, &ignored);
+		return found != nullptr ? &found->m_fxChain : nullptr;
+	};
+}
+
+bool consoleEntry(ControlDeviceEntry* entry, ControlResult* error)
+{
+	for (const ControlDeviceEntry& candidate : controlDeviceCatalogue())
+	{
+		if (candidate.name == kConsole && candidate.format == QLatin1String("builtin")) { *entry = candidate; return true; }
+	}
+	*error = ControlResult::failure(ControlErrorKind::Refused, QStringLiteral("this build has no console module"));
+	return false;
+}
+
+//! A console's settings document with @a args applied, from an instance on a scratch chain.
+bool consoleTemplate(const QJsonObject& args, QString* state, ControlResult* error)
+{
+	ControlDeviceEntry entry;
+	if (!consoleEntry(&entry, error)) { return false; }
+	EffectChain scratch(nullptr);
+	Effect* effect = controlInstantiateDevice(entry, &scratch, error);
+	if (effect == nullptr) { return false; }
+	for (const auto& [model, value] : consoleWrites(effect, args)) { model->setValue(value); }
+	*state = controlEffectStateXml(effect);
+	return true;
+}
+
+std::vector<Effect*> consolesOn(const EffectChain& chain)
+{
+	std::vector<Effect*> found;
+	for (Effect* effect : chain.effects()) { if (isConsole(effect)) { found.push_back(effect); } }
+	return found;
+}
+
+ControlResult removeConsoles()
+{
+	int removed = 0;
+	for (int i = 0; i < Engine::mixer()->numChannels(); ++i)
+	{
+		MixerChannel* channel = Engine::mixer()->mixerChannel(i);
+		const std::vector<Effect*> consoles = consolesOn(channel->m_fxChain);
+		if (consoles.empty() || !devicesRecordable(consoles)) { continue; }
+		removeDevicesRecorded(channelChain(channelIdOf(channel)), consoles);
+		removed += static_cast<int>(consoles.size());
+	}
+	Engine::getSong()->setModified();
+	return ControlResult::success({{QStringLiteral("removed"), removed}});
+}
+
+//! A console added to every channel without one (from @a state); the changes @a args makes to the
+//! ones already there gathered in @a writes. The channels a console was added to.
+int placeConsoles(const QJsonObject& args, const QString& state, std::vector<std::pair<AutomatableModel*, float>>* writes)
+{
+	int added = 0;
+	ControlResult error;
+	for (int i = 0; i < Engine::mixer()->numChannels(); ++i)
+	{
+		MixerChannel* channel = Engine::mixer()->mixerChannel(i);
+		const std::vector<Effect*> consoles = consolesOn(channel->m_fxChain);
+		for (Effect* console : consoles)
+		{
+			const auto more = consoleWrites(console, args);
+			writes->insert(writes->end(), more.begin(), more.end());
+		}
+		if (consoles.empty() && !recreateDevices(channelChain(channelIdOf(channel)), {state}, -1, &error).isEmpty()) { ++added; }
+	}
+	return added;
+}
+
+ControlResult consoleApply(const QJsonObject& args)
+{
+	const double drive = args.value(QStringLiteral("drive")).toDouble(0.0);
+	if (drive < 0.0 || drive > 100.0)
+	{
+		return ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("'drive' is 0..100 (%)"));
+	}
+	if (args.value(QStringLiteral("remove")).toBool()) { return removeConsoles(); }
+	QString state;
+	ControlResult error;
+	if (!consoleTemplate(args, &state, &error)) { return error; }
+	std::vector<std::pair<AutomatableModel*, float>> writes;
+	const int added = placeConsoles(args, state, &writes);
+	writeModelsRecorded(writes);
+	Engine::getSong()->setModified();
+	return ControlResult::success({{QStringLiteral("added"), added}, {QStringLiteral("changed"), static_cast<int>(writes.size())},
+		{QStringLiteral("channels"), Engine::mixer()->numChannels()}});
+}
+
 } // namespace
 
 void registerDeviceToolCommands(ControlRegistry& registry)
 {
+	addDeviceCommand(registry, "mixer.console_apply", QStringLiteral("Put the Console device - a console channel's saturation and "
+		"tone - at the end of every mixer channel's chain, master included, all set alike: 'drive' (0..100 %) and "
+		"'character' (clean, warm, bright); channels that have one keep it and take the new settings. 'remove' true takes "
+		"every Console out instead. One undo step."),
+		{{QStringLiteral("drive"), numberProperty()}, {QStringLiteral("character"), enumProperty(characterNames())},
+			{QStringLiteral("remove"), booleanProperty()}},
+		{}, true, consoleApply);
 	addDeviceCommand(registry, "rack.split", QStringLiteral("Feed each chain of a channel's parallel rack a part of the signal: "
 		"'mode' bands (chain k gets band k, low to high, of a split at 'crossovers' - up to five frequencies in Hz, spread "
 		"in octaves when fewer are given), mid_side (chain 0 the mid, chain 1 the side), left_right (chain 0 the left, chain 1 "

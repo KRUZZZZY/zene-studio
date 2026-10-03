@@ -36,6 +36,7 @@
 #include <functional>
 #include <iterator>
 #include <random>
+#include <utility>
 
 #include <QJsonArray>
 
@@ -258,17 +259,12 @@ bool isSetting(const AutomatableModel* model)
 	return qobject_cast<const Effect*>(model->parent()) == nullptr && qobject_cast<const MeterModel*>(model->parent()) == nullptr;
 }
 
-//! Write @a values (one per model) as one undo step: a checkpoint of every model first.
+//! Write @a values (one per model) as one undo step, and answer @a reply with the count.
 ControlResult writeValues(const QList<AutomatableModel*>& models, const std::vector<float>& values, const QJsonObject& reply)
 {
-	QVector<JournallingObject*> objects;
-	for (AutomatableModel* model : models) { objects << model; }
-	addUndoStep(objects);
-	for (int i = 0; i < models.size(); ++i)
-	{
-		AutomatableModel* model = models.at(i);
-		model->setValue(std::clamp(values[static_cast<std::size_t>(i)], model->minValue<float>(), model->maxValue<float>()));
-	}
+	std::vector<std::pair<AutomatableModel*, float>> writes;
+	for (int i = 0; i < models.size(); ++i) { writes.emplace_back(models.at(i), values[static_cast<std::size_t>(i)]); }
+	writeModelsRecorded(writes);
 	Engine::getSong()->setModified();
 	QJsonObject result = reply;
 	result.insert(QStringLiteral("changed"), static_cast<int>(models.size()));

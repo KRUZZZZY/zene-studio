@@ -50,6 +50,8 @@ const ReversibilityRow kW3DeviceRows[] = {
 		"action checkpoint: the recorded undo step puts the device's previous options back", ""),
 	R("plugin.options", RC::TrueInverse, true, "it sets a device's compatibility and editor options",
 		"action checkpoint: the recorded undo step puts the device's previous options back", ""),
+	R("mixer.console_apply", RC::TrueInverse, true, "it adds the Console device to every channel, changes the ones there, or removes them",
+		"action checkpoints (each added device taken out, each removed one recreated) and model checkpoints, merged into one step", ""),
 };
 
 #undef R

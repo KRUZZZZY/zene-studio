@@ -125,6 +125,7 @@ include/AutomationTrackView.h
 include/BandLimitedWave.h
 include/BarModelEditor.h
 include/BasicFilters.h
+include/BiquadDesign.h
 include/BounceInPlace.h
 include/BrowserCatalog.h
 include/BrowserPanel.h
@@ -431,6 +432,8 @@ include/Oscilloscope.h
 include/OutOfProcessHosting.h
 include/OutputSettings.h
 include/OversamplingHelpers.h
+include/ParameterControls.h
+include/ParameterGridDialog.h
 include/PatchWiring.h
 include/PathUtil.h
 include/PatternClip.h
@@ -730,12 +733,16 @@ plugins/Compressor/CompressorControlDialog.cpp
 plugins/Compressor/CompressorControlDialog.h
 plugins/Compressor/CompressorControls.cpp
 plugins/Compressor/CompressorControls.h
+plugins/Console/Console.cpp
+plugins/Console/Console.h
 plugins/CrossoverEQ/CrossoverEQ.cpp
 plugins/CrossoverEQ/CrossoverEQ.h
 plugins/CrossoverEQ/CrossoverEQControlDialog.cpp
 plugins/CrossoverEQ/CrossoverEQControlDialog.h
 plugins/CrossoverEQ/CrossoverEQControls.cpp
 plugins/CrossoverEQ/CrossoverEQControls.h
+plugins/DeEsser/DeEsser.cpp
+plugins/DeEsser/DeEsser.h
 plugins/Delay/DelayControls.cpp
 plugins/Delay/DelayControls.h
 plugins/Delay/DelayControlsDialog.cpp
@@ -1044,6 +1051,8 @@ plugins/TapTempo/TapTempo.cpp
 plugins/TapTempo/TapTempo.h
 plugins/TapTempo/TapTempoView.cpp
 plugins/TapTempo/TapTempoView.h
+plugins/TransientShaper/TransientShaper.cpp
+plugins/TransientShaper/TransientShaper.h
 plugins/TripleOscillator/TripleOscillator.cpp
 plugins/TripleOscillator/TripleOscillator.h
 plugins/Vectorscope/VecControls.cpp
@@ -1062,6 +1071,8 @@ plugins/Vibed/Vibed.cpp
 plugins/Vibed/Vibed.h
 plugins/Vibed/VibratingString.cpp
 plugins/Vibed/VibratingString.h
+plugins/Vocoder/Vocoder.cpp
+plugins/Vocoder/Vocoder.h
 plugins/Vst3Effect/Vst3BusMap.cpp
 plugins/Vst3Effect/Vst3BusMap.h
 plugins/Vst3Effect/Vst3ComponentHandler.h
@@ -1551,6 +1562,7 @@ src/core/NoteTransform.cpp
 src/core/OnnxRuntimeStemSeparator.cpp
 src/core/Oscillator.cpp
 src/core/OutOfProcessHosting.cpp
+src/core/ParameterControls.cpp
 src/core/PatchWiring.cpp
 src/core/PathUtil.cpp
 src/core/PatternClip.cpp
@@ -1789,6 +1801,7 @@ src/gui/ModelView.cpp
 src/gui/ModulatorPanel.cpp
 src/gui/MpeInputAction.cpp
 src/gui/NoteTransformActions.cpp
+src/gui/ParameterGridDialog.cpp
 src/gui/PeakControllerDialog.cpp
 src/gui/PinConnector.cpp
 src/gui/PluginBrowser.cpp
@@ -2040,6 +2053,7 @@ tests/src/core/DataFileFormatTest.cpp
 tests/src/core/DataFileSaveIntegrityTest.cpp
 tests/src/core/DawProjectInterchangeRoundTripTest.cpp
 tests/src/core/DeviceCopyTest.cpp
+tests/src/core/DeviceDspTest.cpp
 tests/src/core/DeviceToolsTest.cpp
 tests/src/core/DocumentIndexTest.cpp
 tests/src/core/DocumentSectionsTest.cpp

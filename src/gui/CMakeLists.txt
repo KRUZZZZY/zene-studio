@@ -99,6 +99,7 @@ SET(LMMS_SRCS
 	gui/noteeditor/ControllerLaneView.cpp
 	gui/noteeditor/NoteBackgroundAudio.cpp
 	gui/XyPad.cpp
+	gui/ParameterGridDialog.cpp
 	gui/FollowActionEditor.cpp
 	gui/noteeditor/NoteCanvas.cpp
 	gui/noteeditor/NoteCanvasGestures.cpp
