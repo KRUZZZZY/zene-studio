@@ -28,7 +28,9 @@
  *  - window.large_clock (WF-101), window.tuner (WF-147), window.ask (WF-142), window.whats_new (WF-141, shown once per version
  *    at start by installWorkspaceMenus);
  *  - window.focus_panel (WF-132): keyboard focus to a panel, or to the next / previous open one (F6 and
- *    Shift+F6 in the Window menu), so the whole shell is reachable without a pointer. */
+ *    Shift+F6 in the Window menu), so the whole shell is reachable without a pointer;
+ *  - window.accessibility_report (WF-129): the controls a screen reader cannot name, and names for them;
+ *  - view.crosshair (WF-109): the arranger's cross-hair cursor (ArrangerAids.h), a preference. */
 
 #include <algorithm>
 #include <cmath>
@@ -38,6 +40,8 @@
 #include <QMenu>
 #include <QScreen>
 
+#include "AccessibilityAudit.h"
+#include "ArrangerAids.h"
 #include "ControlRegistry.h"
 #include "ControlRegistryGroups.h"
 #include "ControlVocabulary.h"
@@ -45,6 +49,7 @@
 #include "MainWindow.h"
 #include "Shell.h"
 #include "ShellPanel.h"
+#include "UiConfigStore.h"
 #include "WorkspaceWindows.h"
 
 namespace lmms
@@ -217,10 +222,27 @@ ControlResult focusPanel(const QJsonObject& args)
 		? QString::fromLatin1(target->metaObject()->className()) : target->accessibleName()}});
 }
 
-void add(ControlRegistry& registry, const char* verb, const QString& description, const QJsonObject& args,
-	ControlResult (*handler)(const QJsonObject&))
+ControlResult crosshair(const QJsonObject& args)
 {
-	ControlCommand cmd = guiCommand("window", verb);
+	const bool before = gui::uistore::read(QStringLiteral("crosshair")).value(QStringLiteral("enabled")).toBool();
+	const bool wanted = args.contains(QStringLiteral("enabled")) ? args.value(QStringLiteral("enabled")).toBool() : !before;
+	return gui::uistore::write(QStringLiteral("crosshair"), {{QStringLiteral("enabled"), wanted}}, {{QStringLiteral("enabled"), wanted}},
+		{QStringLiteral("view.crosshair"), {{QStringLiteral("enabled"), before}}},
+		[] { gui::showCrosshair(gui::uistore::read(QStringLiteral("crosshair")).value(QStringLiteral("enabled")).toBool()); });
+}
+
+ControlResult accessibilityReport(const QJsonObject& args)
+{
+	gui::MainWindow* window = controlMainWindow();
+	if (window == nullptr) { return noInterface(QStringLiteral("window.accessibility_report")); }
+	return ControlResult::success(gui::auditAccessibility(window, args.value(QStringLiteral("fill")).toBool()));
+}
+
+void add(ControlRegistry& registry, const char* verb, const QString& description, const QJsonObject& args,
+	ControlResult (*handler)(const QJsonObject&), const char* group = "window", bool mutating = false)
+{
+	ControlCommand cmd = guiCommand(group, verb);
+	cmd.mutating = mutating;
 	cmd.description = description;
 	cmd.argsSchema = args;
 	cmd.resultSchema = objectProperty();
@@ -251,6 +273,13 @@ void registerWorkspaceCommands(ControlRegistry& registry)
 		"ids; a hidden one is shown first), or to the 'next' / 'previous' open panel from the focused one (the default "
 		"is next) - F6 and Shift+F6. Interface state."),
 		objectSchema({{QStringLiteral("panel"), stringProperty()}}), focusPanel);
+	add(registry, "accessibility_report", QStringLiteral("Walk the main window's controls and count those a screen reader "
+		"would announce with no name; with 'fill', give each the name it already carries (its parameter's, its tooltip, its "
+		"text). Lists, at most 50, the controls with nothing to name them by. The interface fills names this way once at "
+		"start. Interface state."), objectSchema({{QStringLiteral("fill"), booleanProperty()}}), accessibilityReport);
+	add(registry, "crosshair", QStringLiteral("Show a cross-hair cursor across the arranger - a vertical and a horizontal guide "
+		"through the pointer - or hide it ('enabled'; toggles when left out). A preference in the config file; one undo step."),
+		objectSchema({{QStringLiteral("enabled"), booleanProperty()}}), crosshair, "view", true);
 }
 
 } // namespace lmms

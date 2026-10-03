@@ -69,10 +69,12 @@
 # beside the registry headers it re-exports.
 include/AboutDialog.h
 include/Accessibility.h
+include/AccessibilityAudit.h
 include/ActionGroup.h
 include/Appearance.h
 include/ArrangementEdits.h
 include/ArrangementSections.h
+include/ArrangerAids.h
 include/ArrangerOverlays.h
 include/ArrayVector.h
 include/ArticulationMap.h
@@ -1725,7 +1727,9 @@ src/core/midi/MidiReconnect.cpp
 src/core/midi/MidiSndio.cpp
 src/core/midi/MidiWinMM.cpp
 src/core/midi/MpeExpression.cpp
+src/gui/AccessibilityAudit.cpp
 src/gui/ActionGroup.cpp
+src/gui/ArrangerAids.cpp
 src/gui/ArrangerOverlays.cpp
 src/gui/AudioAlsaSetupWidget.cpp
 src/gui/AudioDeviceSetupWidget.cpp

@@ -29,12 +29,16 @@
 #include <QMenuBar>
 #include <QTimer>
 
+#include "ArrangerAids.h"
 #include "CommandForm.h"
 #include "CommandLists.h"
 #include "ControlRegistry.h"
+#include "GuiApplication.h"
 #include "MenuBarExtras.h"
+#include "SongEditor.h"
 #include "TrackIcons.h"
 #include "TrackLooks.h"
+#include "UiConfigStore.h"
 #include "UnattendedRun.h"
 
 namespace lmms::gui
@@ -84,6 +88,7 @@ void fillWindowMenu(QMenu* menu)
 	run(menu, QObject::tr("Focus Previous Panel"), QStringLiteral("window.focus_panel"), {{QStringLiteral("panel"), QStringLiteral("previous")}})
 		->setShortcut(QKeySequence(Qt::SHIFT | Qt::Key_F6));
 	menu->addSeparator();
+	choices(menu, QObject::tr("Cross-Hair Cursor"), QStringLiteral("view.crosshair"), QStringLiteral("enabled"));
 	choices(menu, QObject::tr("Keep on Top"), QStringLiteral("window.stay_on_top"), QStringLiteral("enabled"));
 	run(menu, QObject::tr("Cascade Windows"), QStringLiteral("window.tidy"), {{QStringLiteral("mode"), QStringLiteral("cascade")}});
 	run(menu, QObject::tr("Tile Windows"), QStringLiteral("window.tidy"), {{QStringLiteral("mode"), QStringLiteral("tile")}});
@@ -94,6 +99,7 @@ void fillHelpMenu(QMenu* help)
 	help->addSeparator();
 	run(help, QObject::tr("Ask..."), QStringLiteral("window.ask"));
 	run(help, QObject::tr("What's New"), QStringLiteral("window.whats_new"));
+	run(help, QObject::tr("Accessibility Check"), QStringLiteral("window.accessibility_report"), {}, false, true);
 }
 
 //! WF-141: this version's release notes, once, when a person starts it (never for an agent or a test).
@@ -134,6 +140,12 @@ void installWorkspaceMenus(QMenuBar* bar)
 	if (insertBeforeHelp(bar, menu) != menu) { return; }
 	fillWindowMenu(menu);
 	if (QMenu* help = bar->actions().last()->menu()) { fillHelpMenu(help); }
+	if (getGUI() != nullptr && getGUI()->songEditor() != nullptr) { installArrangerAids(getGUI()->songEditor()->m_editor); }
+	showCrosshair(uistore::read(QStringLiteral("crosshair")).value(QStringLiteral("enabled")).toBool());
+	// WF-129: once the window is built, every nameless control takes the name it already carries.
+	QTimer::singleShot(0, bar->window(), [] {
+		ControlRegistry::instance()->invoke(QStringLiteral("window.accessibility_report"), {{QStringLiteral("fill"), true}});
+	});
 	showWhatsNewOnce(bar->window());
 }
 

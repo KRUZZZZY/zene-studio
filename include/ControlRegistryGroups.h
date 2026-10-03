@@ -852,7 +852,8 @@ LMMS_EXPORT void registerTrackLookCommands(ControlRegistry& registry);
 //! notes are on screen: this version's notes count as shown.
 LMMS_EXPORT void registerAssistantCommands(ControlRegistry& registry);
 LMMS_EXPORT void markWhatsNewSeen();
-//! window.stay_on_top / tidy / large_clock / ask / whats_new / focus_panel (src/gui/ControlCommandsWorkspace.cpp).
+//! window.stay_on_top / tidy / large_clock / tuner / ask / whats_new / focus_panel / accessibility_report and
+//! view.crosshair (src/gui/ControlCommandsWorkspace.cpp).
 LMMS_EXPORT void registerWorkspaceCommands(ControlRegistry& registry);
 //! location.* / selection.* (src/gui/ControlCommandsViewMemory.cpp); control.history_jump
 //! (src/core/ControlCommandsHistoryJump.cpp).

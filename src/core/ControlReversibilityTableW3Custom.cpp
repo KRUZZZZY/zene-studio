@@ -105,6 +105,11 @@ const ReversibilityRow kW3CustomRows[] = {
 		"recorded nor saved", "no write", ""),
 	R("tuner.get_state", RC::NotMutating, false, "it reads the pitch of the newest audio. Nothing is written", "no write", ""),
 	R("window.tuner", RC::NotMutating, false, "it opens the tuner: a display", "no write", ""),
+	// WF-129 / WF-109.
+	R("window.accessibility_report", RC::NotMutating, false, "it reads the controls' accessible names and, with 'fill', "
+		"gives nameless ones the name they carry: interface state", "no write", ""),
+	R("view.crosshair", RC::TrueInverse, true, "it writes the cross-hair preference in the config file (ui/crosshair)",
+		"action checkpoint: the recorded undo step writes the previous ui/crosshair object back", ""),
 };
 
 #undef R

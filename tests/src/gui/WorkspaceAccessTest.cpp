@@ -25,14 +25,21 @@
  *  a theme colour override is one undo step, names the pairs it breaks and round-trips through a file,
  *  and the Theme Colours list runs it (WF-117); the layout density scales the stylesheet's metrics and is
  *  a window.appearance field (WF-134); Help > Ask shows app.ask's answers (WF-142), What's New the shipped notes
- *  (WF-141), the large clock the play position (WF-101); the window verbs refuse, typed, without a main window. */
+ *  (WF-141), the large clock the play position (WF-101), the tuner listens only while open (WF-147); the
+ *  accessibility walk names nameless controls from what they carry (WF-129); the cross-hair is a preference with
+ *  one undo step and follows it on the arranger (WF-109); the window verbs refuse, typed, without a main window. */
 
 #include <QtTest>
 
 #include <QJsonArray>
+#include <QLabel>
+#include <QPushButton>
 #include <QTemporaryDir>
+#include <QToolButton>
 
+#include "AccessibilityAudit.h"
 #include "Appearance.h"
+#include "ArrangerAids.h"
 #include "CommandListDialog.h"
 #include "CommandLists.h"
 #include "ConfigManager.h"
@@ -221,10 +228,51 @@ private slots:
 		QCOMPARE(run(QStringLiteral("tuner.get_state")).result.value(QStringLiteral("source")).toString(), QStringLiteral("off"));
 	}
 
+	void namelessControlsAreNamedFromWhatTheyCarry()
+	{
+		QWidget root;
+		auto* play = new QToolButton(&root);
+		play->setToolTip(QStringLiteral("<b>Play</b> from the cursor"));
+		auto* save = new QPushButton(QStringLiteral("&Save"), &root);
+		auto* bare = new QToolButton(&root);
+		bare->setObjectName(QStringLiteral("bareButton"));
+		new QLabel(QStringLiteral("not a control"), &root);
+		root.show();
+		const QJsonObject looked = auditAccessibility(&root, false);
+		QCOMPARE(looked.value(QStringLiteral("checked")).toInt(), 3);
+		QCOMPARE(looked.value(QStringLiteral("implied")).toInt(), 2);
+		QCOMPARE(looked.value(QStringLiteral("unnamed")).toArray().first().toObject().value(QStringLiteral("object")).toString(),
+			QStringLiteral("bareButton"));
+		QVERIFY(play->accessibleName().isEmpty());
+		const QJsonObject filled = auditAccessibility(&root, true);
+		QCOMPARE(filled.value(QStringLiteral("filled")).toInt(), 2);
+		QCOMPARE(play->accessibleName(), QStringLiteral("Play from the cursor"));
+		QCOMPARE(save->accessibleName(), QStringLiteral("Save"));
+		QVERIFY(bare->accessibleName().isEmpty());
+	}
+
+	void theCrosshairIsAPreference()
+	{
+		QWidget arranger;
+		arranger.resize(400, 300);
+		arranger.show();
+		installArrangerAids(&arranger);
+		auto* overlay = arranger.findChild<QWidget*>(QStringLiteral("arrangerCrosshair"));
+		QVERIFY(overlay != nullptr);
+		const ControlResult on = run(QStringLiteral("view.crosshair"), {{QStringLiteral("enabled"), true}});
+		QVERIFY2(on.ok, qPrintable(on.errorMessage));
+		QVERIFY(crosshairShown());
+		QVERIFY(overlay->isVisible());
+		QCOMPARE(overlay->size(), arranger.size());
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
+		QVERIFY(!crosshairShown());
+		QVERIFY(!overlay->isVisible());
+	}
+
 	void theWindowVerbsNeedAMainWindow()
 	{
 		for (const char* id : {"window.stay_on_top", "window.tidy", "window.large_clock", "window.ask", "window.whats_new",
-			"window.focus_panel", "window.tuner"})
+			"window.focus_panel", "window.tuner", "window.accessibility_report"})
 		{
 			const ControlResult refused = run(QLatin1String(id));
 			QVERIFY2(!refused.ok, id);
