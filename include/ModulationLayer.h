@@ -82,6 +82,7 @@
 #include <QStringList>
 
 #include "LmmsTypes.h"
+#include "ModulationFormula.h"
 #include "lmms_export.h"
 
 namespace lmms
@@ -101,6 +102,7 @@ enum class ModulationShape
 	SmoothRandom,  //!< random values every cycle, glided between
 	Steps,         //!< the source's step values, one a cycle step
 	Envelope,      //!< attack to the top over 'attack' of a cycle, then a decay - every cycle
+	Formula,       //!< 0.5.0 L10 (MX-118): the modulator's own formula of t and x (ModulationFormula.h)
 };
 
 //! Wire name of a shape ("sine", "triangle", "square", "saw"), and its inverse.
@@ -149,6 +151,10 @@ struct ModulatorSource
 	std::array<float, MaxSteps> steps{};  //!< Steps: the values -1..1, one per step (a fixed array: copied to the audio thread)
 	int stepCount = 0;       //!< Steps: how many of them are used (0: the shape reads silence)
 	float attack = 0.1f;     //!< Envelope: the rising share of a cycle, 0..1
+	FormulaProgram formula{};  //!< Formula (MX-118): the compiled program (plain values; the text is Modulator::formula)
+	//! MX-121: the track (its persistent id) whose notes restart this modulator's cycle; -1 runs it
+	//! free on the timeline.
+	int triggerTrack = -1;
 };
 
 //! One named modulator: a source and the routes it drives.
@@ -157,6 +163,7 @@ struct Modulator
 	QString name;
 	ModulatorSource source;
 	std::vector<ModulationRoute> routes;
+	QString formula;  //!< MX-118: the formula's text, compiled into source.formula; saved with a Formula shape
 
 	int routeCount() const { return static_cast<int>(routes.size()); }
 };
@@ -347,6 +354,15 @@ public:
 			&& m_alive[static_cast<std::size_t>(slot)].load(std::memory_order_acquire) == token;
 	}
 
+	/*! 0.5.0 L10 (MX-121): a note started on track @a trackId - audio thread (any worker), atomics
+	 *  only. Every modulator that follows that track restarts its cycle at the current block. */
+	void noteStarted(int trackId) noexcept;
+	//! The seconds @a modulator has run since its last note at song time @a seconds: 0 before any
+	//! note (it waits at the start of its cycle). For a modulator that follows no track, @a seconds.
+	double sinceTrigger(int modulator, int triggerTrack, double seconds) const noexcept;
+	//! The block's song time, which a note started during it is stamped with (audio thread).
+	void setBlockSeconds(double seconds) const noexcept { m_blockSeconds.store(seconds, std::memory_order_relaxed); }
+
 	//! The audio view as of the last completed edit. Lock-free, allocation-free
 	//! and bounded; safe to call from the audio thread.
 	ModulationAudioView snapshot() const noexcept
@@ -367,6 +383,8 @@ private:
 	//! Rebuilds m_view and the liveness watches from m_runtime (control thread,
 	//! inside edit()'s write window).
 	void publishView();
+	//! MX-121: each modulator's trigger track from m_runtime (control thread, from publishView()).
+	void publishTriggers();
 
 	ModulationLayer m_layer{};
 	ModulationRuntime m_runtime{};
@@ -375,6 +393,12 @@ private:
 	std::array<QMetaObject::Connection, ModulationRuntime::MaxEntries> m_watch{};
 	std::uint32_t m_nextToken = 0;
 	std::atomic<bool> m_hasLayer{false};
+	//! MX-121: each modulator's trigger track (-1: none) as of the last edit, the song time of its
+	//! last note (-1: none yet), and the current block's song time; outside the seqlock, atomics.
+	std::array<std::atomic<int>, ModulationLayer::MaxModulators> m_triggerTrack{};
+	std::array<std::atomic<double>, ModulationLayer::MaxModulators> m_triggeredAt{};
+	mutable std::atomic<double> m_blockSeconds{0.0};
+	std::atomic<bool> m_anyTrigger{false};
 	std::atomic<unsigned> m_version{0};
 };
 

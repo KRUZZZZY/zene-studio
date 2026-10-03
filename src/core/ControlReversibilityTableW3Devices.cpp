@@ -50,6 +50,10 @@ const ReversibilityRow kW3DeviceRows[] = {
 		"action checkpoint: the recorded undo step puts the device's previous options back", ""),
 	R("plugin.options", RC::TrueInverse, true, "it sets a device's compatibility and editor options",
 		"action checkpoint: the recorded undo step puts the device's previous options back", ""),
+	R("modulator.formula_set", RC::TrueInverse, true, "it gives a modulator a formula (the modulation layer)",
+		"action checkpoint: the recorded undo step puts the whole previous modulator back", ""),
+	R("modulator.trigger_set", RC::TrueInverse, true, "it makes a modulator restart on a track's notes, or run free",
+		"action checkpoint: the recorded undo step puts the whole previous modulator back", ""),
 	R("mixer.console_apply", RC::TrueInverse, true, "it adds the Console device to every channel, changes the ones there, or removes them",
 		"action checkpoints (each added device taken out, each removed one recreated) and model checkpoints, merged into one step", ""),
 };

@@ -404,6 +404,7 @@ include/MixerViewOptions.h
 include/Model.h
 include/ModelView.h
 include/ModelVisitor.h
+include/ModulationFormula.h
 include/ModulationLayer.h
 include/ModulatorPanel.h
 include/MonitorMode.h
@@ -1274,6 +1275,7 @@ src/core/ControlCommandsMixerStrip.cpp
 src/core/ControlCommandsMixerTools.cpp
 src/core/ControlCommandsModulator.cpp
 src/core/ControlCommandsModulatorRoutes.cpp
+src/core/ControlCommandsModulatorTools.cpp
 src/core/ControlCommandsMonitor.cpp
 src/core/ControlCommandsMts.cpp
 src/core/ControlCommandsNoteAcross.cpp
@@ -1551,6 +1553,7 @@ src/core/MixerSendPan.cpp
 src/core/MixerStrip.cpp
 src/core/Model.cpp
 src/core/ModelVisitor.cpp
+src/core/ModulationFormula.cpp
 src/core/ModulationLayer.cpp
 src/core/ModulationLayerPublisher.cpp
 src/core/NamespaceRegistry.cpp
@@ -2098,6 +2101,7 @@ tests/src/core/ModulationLayerTest.cpp
 tests/src/core/ModulationLayerValueTest.cpp
 tests/src/core/ModulationRateTest.cpp
 tests/src/core/ModulationTestSupport.h
+tests/src/core/ModulatorToolsTest.cpp
 tests/src/core/MpeExpressionTest.cpp
 tests/src/core/MpeInputPathTest.cpp
 tests/src/core/MpeNoteStorageTest.cpp

@@ -847,6 +847,8 @@ LMMS_EXPORT void registerAudioAnalysisCommands(ControlRegistry& registry);
 //! blend / fold / options (ControlCommandsDeviceParams.cpp).
 LMMS_EXPORT void registerDeviceToolCommands(ControlRegistry& registry);
 LMMS_EXPORT void registerDeviceParamCommands(ControlRegistry& registry);
+//! 0.5.0 L10 (W3): modulator.formula_set / trigger_set (ControlCommandsModulatorTools.cpp).
+LMMS_EXPORT void registerModulatorToolCommands(ControlRegistry& registry);
 } // namespace lmms
 
 #endif // LMMS_CONTROL_REGISTRY_GROUPS_H

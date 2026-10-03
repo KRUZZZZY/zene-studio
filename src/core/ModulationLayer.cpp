@@ -69,6 +69,8 @@ void saveSource(QDomDocument& doc, QDomElement& modulatorElement, const Modulato
 		modulatorElement.setAttribute(QStringLiteral("steps"), values.join(QLatin1Char(',')));
 	}
 	if (source.shape == ModulationShape::Envelope) { modulatorElement.setAttribute(QStringLiteral("attack"), static_cast<double>(source.attack)); }
+	// MX-121: the track whose notes restart it, only when it follows one.
+	if (source.triggerTrack >= 0) { modulatorElement.setAttribute(QStringLiteral("trigger"), source.triggerTrack); }
 }
 
 void saveRoute(QDomDocument& doc, QDomElement& modulatorElement, const ModulationRoute& route)
@@ -97,6 +99,7 @@ ModulatorSource readSource(const QDomElement& element)
 	source.stepCount = static_cast<int>(std::min<qsizetype>(values.size(), ModulatorSource::MaxSteps));
 	for (int i = 0; i < source.stepCount; ++i) { source.steps[static_cast<std::size_t>(i)] = std::clamp(values[i].toFloat(), -1.f, 1.f); }
 	source.attack = std::clamp(element.attribute(QStringLiteral("attack"), QStringLiteral("0.1")).toFloat(), 0.f, 1.f);
+	source.triggerTrack = std::max(-1, element.attribute(QStringLiteral("trigger"), QStringLiteral("-1")).toInt());
 	return source;
 }
 
@@ -122,11 +125,15 @@ ModulationRoute readRoute(const QDomElement& element)
  */
 bool loadModulator(const QDomElement& node, ModulationLayer* layer)
 {
-	const ModulatorSource source = readSource(node);
+	ModulatorSource source = readSource(node);
 	QString why;
 	if (!layer->validSource(source, &why)) { return false; }
+	// MX-118: a formula that no longer compiles loads as an empty one (the modulator reads 0).
+	const QString formula = node.attribute(QStringLiteral("formula"));
+	if (!formula.isEmpty()) { compileFormula(formula, &source.formula, nullptr); }
 	const int index = layer->addModulator(node.attribute(QStringLiteral("name")), source);
 	if (index < 0) { return false; }
+	layer->modulator(index)->formula = formula;
 
 	const QDomNodeList routes = node.elementsByTagName(QStringLiteral("route"));
 	for (int r = 0; r < routes.count(); ++r)
@@ -197,7 +204,7 @@ const QStringList& modulationShapeNames()
 {
 	static const QStringList names{QStringLiteral("sine"), QStringLiteral("triangle"), QStringLiteral("square"),
 		QStringLiteral("saw"), QStringLiteral("random"), QStringLiteral("smooth_random"), QStringLiteral("steps"),
-		QStringLiteral("envelope")};
+		QStringLiteral("envelope"), QStringLiteral("formula")};
 	return names;
 }
 
@@ -217,16 +224,6 @@ bool modulationShapeFromName(const QString& name, ModulationShape* shape)
 namespace
 {
 
-//! A repeatable value in -1..1 for cycle @a n (a hash, so the audio thread keeps no state).
-double randomAt(std::int64_t n)
-{
-	auto x = static_cast<std::uint64_t>(n) * 0x9E3779B97F4A7C15ULL;
-	x ^= x >> 31;
-	x *= 0xBF58476D1CE4E5B9ULL;
-	x ^= x >> 29;
-	return static_cast<double>(x >> 11) / static_cast<double>(1ULL << 53) * 2.0 - 1.0;
-}
-
 //! MX-117's shapes at @a cycles (the phase-shifted cycle count, cycles >= 0).
 double extraShape(const ModulatorSource& source, double cycles)
 {
@@ -234,14 +231,15 @@ double extraShape(const ModulatorSource& source, double cycles)
 	const double phase = cycles - std::floor(cycles);
 	switch (source.shape)
 	{
-		case ModulationShape::Random: return randomAt(n);
+		case ModulationShape::Random: return modulationRandomAt(n);
 		case ModulationShape::SmoothRandom:
 		{
 			const double t = 0.5 - 0.5 * std::cos(phase * kTwoPi * 0.5);
-			return randomAt(n) + (randomAt(n + 1) - randomAt(n)) * t;
+			return modulationRandomAt(n) + (modulationRandomAt(n + 1) - modulationRandomAt(n)) * t;
 		}
 		case ModulationShape::Steps:
 			return source.stepCount > 0 ? source.steps[static_cast<std::size_t>(n % source.stepCount)] : 0.0;
+		case ModulationShape::Formula: return evaluateFormula(source.formula, phase, cycles);  // MX-118
 		case ModulationShape::Envelope:
 		{
 			const double attack = std::clamp(static_cast<double>(source.attack), 0.0, 1.0);
@@ -453,6 +451,10 @@ bool ModulationLayer::saveSettings(QDomDocument& doc, QDomElement& parent) const
 		QDomElement modulatorElement = doc.createElement(QStringLiteral("modulator"));
 		modulatorElement.setAttribute(QStringLiteral("name"), modulator.name);
 		saveSource(doc, modulatorElement, modulator.source);
+		if (modulator.source.shape == ModulationShape::Formula && !modulator.formula.isEmpty())
+		{
+			modulatorElement.setAttribute(QStringLiteral("formula"), modulator.formula);  // MX-118, only with the shape
+		}
 		for (const ModulationRoute& route : modulator.routes) { saveRoute(doc, modulatorElement, route); }
 		layerElement.appendChild(modulatorElement);
 	}

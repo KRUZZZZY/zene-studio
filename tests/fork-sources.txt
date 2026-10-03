@@ -646,6 +646,7 @@ include/MixerOverlays.h
 include/MixerSendPan.h
 include/MixerStrip.h
 include/MixerViewOptions.h
+include/ModulationFormula.h
 include/ModulationLayer.h
 include/ModulatorPanel.h
 include/MonitorMode.h
@@ -1004,6 +1005,7 @@ src/core/ControlCommandsMixerStrip.cpp
 src/core/ControlCommandsMixerTools.cpp
 src/core/ControlCommandsModulator.cpp
 src/core/ControlCommandsModulatorRoutes.cpp
+src/core/ControlCommandsModulatorTools.cpp
 src/core/ControlCommandsMonitor.cpp
 src/core/ControlCommandsMts.cpp
 src/core/ControlCommandsNoteAcross.cpp
@@ -1250,6 +1252,7 @@ src/core/MixerListen.cpp
 src/core/MixerOptions.cpp
 src/core/MixerSendPan.cpp
 src/core/MixerStrip.cpp
+src/core/ModulationFormula.cpp
 src/core/ModulationLayer.cpp
 src/core/ModulationLayerPublisher.cpp
 src/core/NamespaceRegistry.cpp
@@ -1614,6 +1617,7 @@ tests/src/core/MixerStripTest.cpp
 tests/src/core/MixerToolsTest.cpp
 tests/src/core/MixingRoutingTest.cpp
 tests/src/core/ModulationLayerProjectRoundTripTest.cpp
+tests/src/core/ModulatorToolsTest.cpp
 tests/src/core/MpscQueueTest.cpp
 tests/src/core/NamespaceRegistryTest.cpp
 tests/src/core/NoteCurvesAcrossTest.cpp

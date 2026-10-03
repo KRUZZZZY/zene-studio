@@ -135,6 +135,7 @@ void registerControlCommands(ControlRegistry& registry)
 	registerAudioAnalysisCommands(registry);
 	registerDeviceToolCommands(registry);
 	registerDeviceParamCommands(registry);
+	registerModulatorToolCommands(registry);
 #ifdef ZENE_TELEMETRY_ENABLED
 	// The telemetry.* group travels with the client. -DZENE_TELEMETRY=OFF
 	// removes the client, so the registry must not carry ids that would

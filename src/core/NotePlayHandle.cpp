@@ -119,6 +119,13 @@ NotePlayHandle::NotePlayHandle( InstrumentTrack* instrumentTrack,
 
 	setAudioBusHandle(instrumentTrack->audioBusHandle());
 
+	// 0.5.0 L10 (MX-121): a played note (not an arpeggio's or chord's sub-note) restarts the
+	// modulators that follow this track - atomics only, safe on the audio thread.
+	if (!hasParent() && Engine::getSong() != nullptr)
+	{
+		Engine::getSong()->modulationLayer().noteStarted(m_instrumentTrack->id());
+	}
+
 	unlock();
 }
 

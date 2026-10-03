@@ -609,6 +609,8 @@ set(LMMS_TESTS
 	src/core/DeviceToolsTest.cpp
 	# 0.5.0 L10 (W3): the de-esser, transient shaper, vocoder and console devices.
 	src/core/DeviceDspTest.cpp
+	# 0.5.0 L10 (W3): formula modulators and modulators restarted by a track's notes.
+	src/core/ModulatorToolsTest.cpp
 	# 0.5.0 L05: fade shapes and handles, automatic and range fades, splits, slices, beat mapping.
 	src/core/AudioEditingTest.cpp
 	# 0.5.0 W2 gaps (audit-rows-1): clip.join, ripple on move and insert, controller.map / unmap.

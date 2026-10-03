@@ -25,6 +25,8 @@
 #ifndef LMMS_CONTROL_MODULATION_SUPPORT_H
 #define LMMS_CONTROL_MODULATION_SUPPORT_H
 
+#include <functional>
+
 #include <QJsonObject>
 #include <QString>
 
@@ -64,6 +66,12 @@ LMMS_EXPORT ModulatorSource modulationSourceFromArgs(const QJsonObject& args,
 	const ModulatorSource& current, bool* shapeGiven, bool* valid);
 //! The route a target_set call describes.
 LMMS_EXPORT ModulationRoute modulationRouteFromArgs(const QJsonObject& args);
+
+/*! Every edit to the layer goes through here, and every edit restores the targets first - what
+ *  makes re-capturing a base idempotent (docs/MODULATION.md section 3): @a change edits the
+ *  authored layer, then the runtime is rebuilt from the values the models had before they were
+ *  modulated, and the result is published. Control thread. */
+LMMS_EXPORT void editModulationLayer(const std::function<void(ModulationLayer&, ModulationRuntime&)>& change);
 
 } // namespace lmms
 

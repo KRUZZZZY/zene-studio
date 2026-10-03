@@ -976,6 +976,8 @@ set(LMMS_SRCS
 	core/PitchTrack.cpp
 	core/ControlCommandsDeviceTools.cpp
 	core/ControlCommandsDeviceParams.cpp
+	core/ControlCommandsModulatorTools.cpp
+	core/ModulationFormula.cpp
 	core/DeviceOptions.cpp
 	core/ParameterControls.cpp
 	core/RackSplit.cpp
