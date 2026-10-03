@@ -656,6 +656,12 @@ void MixerChannel::doProcessing()
 				}
 				m_hasInput = true;
 			}
+			else if( compensate && ! senderRoute->enabled() )
+			{
+				// 0.5.0 L08 (review W3-batchA #3): a switched-off send's delay line keeps time, so switching it
+				// back on does not replay what it held when it went off - as a muted receiver's lines do.
+				senderRoute->advanceSilence( fpp );
+			}
 		}
 
 		// 0.5.0 L08: the strip's trim, before the inserts (MixerStrip.cpp).

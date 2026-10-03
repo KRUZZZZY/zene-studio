@@ -70,6 +70,7 @@ const ReversibilityRow kWindowRows[] = {
 		"interface state: no model, clip, track or project data is written",
 		"no write to the project (interface state only; select the previous track to restore)",
 		""),
+	R("window.pin", RC::NotMutating, false, "it pins a panel open across the views: interface state kept with the layout setting", "no write", ""),
 	R("window.set_view", RC::NotMutating, false,
 		"it switches the shell between its Arrange, Mix and Edit views. A view is interface state, "
 		"kept in the ui/shell.layout setting: no model, clip, track or project data is written",

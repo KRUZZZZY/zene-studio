@@ -198,7 +198,10 @@ bool SessionScheduler::applyJump( const Command& command ) noexcept
 	ActiveSlot* slot = findSlot( command.track, command.scene );
 	if( slot != nullptr && ( slot->state.phase == SlotPhase::Playing || slot->state.phase == SlotPhase::StopPending ) )
 	{
-		slot->phaseOrigin = m_positionTicks - std::max<tick_t>( 0, command.position );
+		// 'position' is into the clip; the rendered position adds the cell's start, so take it off here (review W3-batchA A2).
+		const SessionSlotContent* content = m_slotContent.find( command.track, command.scene );
+		const tick_t start = content != nullptr ? content->startTicks : 0;
+		slot->phaseOrigin = m_positionTicks - std::max<tick_t>( 0, command.position - start );
 		slot->phaseOriginFor = slot->state.startedTick;
 	}
 	return true;

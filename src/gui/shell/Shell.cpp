@@ -331,6 +331,7 @@ void Shell::syncActions()
 	{
 		it.value()->setChecked(m_layout.isVisible(it.key()));
 	}
+	for (ShellPanel* frame : m_panels) { frame->setPinnedMark(m_layout.isPinned(frame->id())); }
 }
 
 ShellView Shell::viewOffering(const QString& id)
@@ -359,6 +360,13 @@ bool Shell::togglePanel(const QString& id, QString* reason)
 	return visible;
 }
 
+bool Shell::setPanelPinned(const QString& id, bool pinned)
+{
+	if (!m_layout.setPinned(id, pinned)) { return false; }
+	apply();
+	return true;
+}
+
 bool Shell::revealPanel(const QString& id)
 {
 	if (!ShellLayout::isPanel(id)) { return false; }
@@ -385,7 +393,8 @@ QJsonObject Shell::state() const
 			{QStringLiteral("available"), ShellLayout::offers(m_layout.view(), spec.id)},
 			{QStringLiteral("shortcut"), spec.shortcut},
 			{QStringLiteral("mounted"), m_panels.value(spec.id)->content() != nullptr},
-			{QStringLiteral("floating"), isDetached(spec.id)}});
+			{QStringLiteral("floating"), isDetached(spec.id)},
+			{QStringLiteral("pinned"), m_layout.isPinned(spec.id)}});
 	}
 	return QJsonObject{
 		{QStringLiteral("view"), ShellLayout::viewName(m_layout.view())},

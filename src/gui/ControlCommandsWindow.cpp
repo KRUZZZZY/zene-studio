@@ -147,6 +147,19 @@ ControlResult getState(const QJsonObject&)
 	return ControlResult::success(state);
 }
 
+ControlResult pin(const QJsonObject& args)
+{
+	gui::GuiApplication* g = interfaceOrNull();
+	if (g == nullptr) { return noInterface(QStringLiteral("window.pin")); }
+	const QString panel = args.value(QStringLiteral("panel")).toString();
+	const bool pinned = args.value(QStringLiteral("pinned")).toBool(true);
+	if (!g->mainWindow()->shell()->setPanelPinned(panel, pinned))
+	{
+		return ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("'%1' is not a side panel that can be pinned").arg(panel));
+	}
+	return ControlResult::success({{QStringLiteral("panel"), panel}, {QStringLiteral("pinned"), pinned}});
+}
+
 ControlResult setView(const QJsonObject& args)
 {
 	gui::GuiApplication* g = interfaceOrNull();
@@ -233,6 +246,17 @@ void registerWindowCommands(ControlRegistry& registry)
 		cmd.resultSchema = objectSchema({{QStringLiteral("view"), stringProperty()},
 			{QStringLiteral("changed"), booleanProperty()}});
 		cmd.handler = setView;
+		registry.registerCommand(cmd);
+	}
+	{
+		ControlCommand cmd = command("pin");
+		cmd.description = QStringLiteral("Pin a side panel ('panel': browser, inspector, devices, mixer, detail...) open in every view "
+			"that offers it, or unpin it ('pinned' false) - the pin button in the panel's header. Kept with the layout (a "
+			"preference, not project state). Refused for a view's main panel and the launcher.");
+		cmd.argsSchema = objectSchema({{QStringLiteral("panel"), stringProperty()}, {QStringLiteral("pinned"), booleanProperty()}},
+			QJsonArray{QStringLiteral("panel")});
+		cmd.resultSchema = objectProperty();
+		cmd.handler = pin;
 		registry.registerCommand(cmd);
 	}
 	registerNoteEditorWindowCommands(registry);

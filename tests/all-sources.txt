@@ -483,6 +483,7 @@ include/ProjectRecovery.h
 include/ProjectRenderer.h
 include/ProjectRevisions.h
 include/ProjectSection.h
+include/ProjectSectionRegistry.h
 include/ProjectVersion.h
 include/ProvenanceSection.h
 include/PunchWindow.h
@@ -1594,6 +1595,7 @@ src/core/ProjectMarkers.cpp
 src/core/ProjectRecovery.cpp
 src/core/ProjectRenderer.cpp
 src/core/ProjectRevisions.cpp
+src/core/ProjectSectionRegistry.cpp
 src/core/ProjectVersion.cpp
 src/core/ProvenanceSection.cpp
 src/core/Rack.cpp

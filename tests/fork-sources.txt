@@ -690,6 +690,7 @@ include/ProjectMarkers.h
 include/ProjectRecovery.h
 include/ProjectRevisions.h
 include/ProjectSection.h
+include/ProjectSectionRegistry.h
 include/ProvenanceSection.h
 include/PunchWindow.h
 include/Rack.h
@@ -1277,6 +1278,7 @@ src/core/ProjectKey.cpp
 src/core/ProjectMarkers.cpp
 src/core/ProjectRecovery.cpp
 src/core/ProjectRevisions.cpp
+src/core/ProjectSectionRegistry.cpp
 src/core/ProvenanceSection.cpp
 src/core/Rack.cpp
 src/core/RackMacros.cpp

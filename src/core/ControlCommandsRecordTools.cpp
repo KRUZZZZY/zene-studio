@@ -97,7 +97,8 @@ ControlResult punchHere(const QJsonObject& args)
 			{QStringLiteral("end"), static_cast<double>(here)}, {QStringLiteral("enabled"), true}});
 	}
 	// In: from here to the end of the song (punched out later, or at the song's end).
-	const tick_t end = std::max<tick_t>(here + 1, Engine::getSong()->length() * TimePos::ticksPerBar() + TimePos::ticksPerBar());
+	const tick_t end = std::max<tick_t>(here + 1, std::min<tick_t>(MaxSongLength,
+		Engine::getSong()->length() * TimePos::ticksPerBar() + TimePos::ticksPerBar()));  // review W3-batchA A4
 	return handlerOf(QStringLiteral("transport.punch_set"), {{QStringLiteral("start"), static_cast<double>(here)},
 		{QStringLiteral("end"), static_cast<double>(end)}, {QStringLiteral("enabled"), true}});
 }

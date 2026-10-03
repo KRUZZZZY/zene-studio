@@ -981,6 +981,7 @@ set(LMMS_SRCS
 	core/ControlCommandsTrackMidiOut.cpp
 	core/TrackVersions.cpp
 	core/ControlCommandsTrackVersions.cpp
+	core/ProjectSectionRegistry.cpp
 	core/InputMeter.cpp
 	core/RecorderTaps.cpp
 	core/MarkerActions.cpp

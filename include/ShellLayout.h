@@ -112,6 +112,11 @@ public:
 	QString focused() const { return m_focused; }
 	void setFocused(const QString& id);
 
+	//! 0.5.0 L08 (MX-007): a pinned side panel stays open in every view that offers it (it opens when a view is
+	//! switched to). Only side panels pin; false for any other id. Saved with the layout (a preference).
+	bool setPinned(const QString& id, bool pinned);
+	bool isPinned(const QString& id) const { return m_pinned.contains(id); }
+
 	QVariantMap save() const;
 	//! Applies what it recognises and ignores the rest: a layout saved by a later build, or a
 	//! hand-edited config, cannot leave the shell in a state its rules forbid.
@@ -127,10 +132,14 @@ private:
 	ViewState& current() { return m_states[static_cast<int>(m_view)]; }
 	const ViewState& current() const { return m_states[static_cast<int>(m_view)]; }
 	QString refusal(const QString& id) const;
+	void reopenPinned();
+	//! Add @a id to the pinned panels without opening it; false when it is not a side panel.
+	bool setPinnedQuietly(const QString& id);
 
 	ShellView m_view = ShellView::Arrange;
 	ViewState m_states[3];
 	QString m_focused;
+	QStringList m_pinned;
 };
 
 } // namespace lmms::gui

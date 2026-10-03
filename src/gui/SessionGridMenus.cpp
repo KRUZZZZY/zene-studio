@@ -33,6 +33,8 @@
 #include "CommandForm.h"
 #include "FollowActionEditor.h"
 #include "ControlRegistry.h"
+#include "Song.h"
+#include "Engine.h"
 
 namespace lmms::gui::SessionGridMenus
 {
@@ -153,7 +155,8 @@ void populateScene(QMenu* menu, int scene, const QJsonObject& sceneState)
 	chainEntry(menu, QStringLiteral("session.set_scene"), where, sceneState.value(QStringLiteral("follow_actions")).toArray(), title);  // WF-061
 	addCommandAction(menu, QObject::tr("Play Scenes in Order..."), QStringLiteral("session.set_playlist"), [scene, title] {  // WF-067
 		CommandCall playlist = call(QStringLiteral("session.set_playlist"), {}, title);
-		playlist.defaults = {{QStringLiteral("scenes"), QJsonArray{scene, scene + 1}}, {QStringLiteral("loop"), false}};
+		const int last = std::max(0, Engine::getSong()->sessionModel().sceneCount() - 1);
+		playlist.defaults = {{QStringLiteral("scenes"), scene < last ? QJsonArray{scene, scene + 1} : QJsonArray{scene}}, {QStringLiteral("loop"), false}};
 		return playlist;
 	});
 	addCommandAction(menu, QObject::tr("Launch a Folder's Cells Here..."), QStringLiteral("session.launch_group"),  // WF-064

@@ -34,6 +34,7 @@
 #include <cmath>
 
 #include "ControlRoom.h"
+#include "ProjectSectionRegistry.h"
 #include "AutomationRamp.h"
 #include "AutomationSwitches.h"
 #include "AutomationTrack.h"
@@ -119,6 +120,11 @@ Song::Song() :
 	// s_automationCacheSong): the automation cache holds the models automated on
 	// the last frame as raw pointers, and the hook needs a song it can reach.
 	s_automationCacheSong = this;
+
+	// 0.5.0 (review W3-batchA #1): the project sections and the singletons the audio thread reads, built here, on
+	// the thread that builds the song, in every mode - not on the audio thread, and not only once the control
+	// registry happens to exist (ProjectSectionRegistry.cpp).
+	projectsections::registerAll();
 
 	// R7.2 (RealtimeSanitizer, hosted run 36789477810): MidiClock is a lazily built singleton, and the
 	// first processNextBuffer() used to build it - a `new` on the audio thread. It is built here, on

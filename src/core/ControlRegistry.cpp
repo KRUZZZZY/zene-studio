@@ -335,12 +335,14 @@ ControlResult ControlRegistry::runHandler(
 	// meant to take back stayed in place (BUG-DRYRUN-UNDO). The three preview
 	// handlers share the one `dry_run: true` result field, so the seam is here.
 	const bool dryRunPreview = result.result.value(QStringLiteral("dry_run")).toBool(false);
-	if (mutating && result.ok && !dryRunPreview)
+	// Review W3-batchA #8: a call that changed nothing (a report-only call, a value already set) records nothing.
+	const bool changed = result.ok && !dryRunPreview && !changedNothing(journal != nullptr, step, commandId);
+	if (mutating && changed)
 	{
 		recordTransactionOf(commandId, &result, coalesced, step);
 	}
 	control::finishResult(commandId, m_commands.value(commandId).resultSchema, &result);
-	notifyObserver(commandId, args, mutating, result.ok && !dryRunPreview && !changedNothing(journal != nullptr, step, commandId));
+	notifyObserver(commandId, args, mutating, changed);
 	return result;
 }
 
@@ -373,8 +375,12 @@ void ControlRegistry::recordTransactionOf(const QString& commandId, ControlResul
 		honest.command = commandId;
 		honest.step = step;
 		stampContract(commandId, &honest);
-		honest.mechanism = QStringLiteral("this command recorded no inverse or "
-			"snapshot; ") + honest.mechanism;
+		// Review W3-batchA A5: a true-inverse command whose call left an undo step on the journal is reversed by
+		// that step (control.undo), payload or not; only a call that left none is recorded without an inverse.
+		const bool journalled = step != 0 && honest.cls == QLatin1String("true_inverse");
+		honest.reversible = journalled;
+		honest.mechanism = (journalled ? QStringLiteral("the undo step this call left on the journal (control.undo reverses it); ")
+			: QStringLiteral("this command recorded no inverse or snapshot; ")) + honest.mechanism;
 		recordTransaction(honest);
 		// SPEC-ARCH-4 1.9 (ARCH-4 S6): BOTH exits below feed the document's
 		// append-only <z:provenance>, so a change reaches the file exactly

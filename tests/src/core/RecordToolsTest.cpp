@@ -146,10 +146,10 @@ private slots:
 	void punchAtThePlayPosition()
 	{
 		Song* song = Engine::getSong();
-		song->setPlayPos(384, Song::PlayMode::Song);
+		song->setPlayPos(384);  // the play head of the current mode, the one punch_here reads (review W3-batchA A1)
 		QCOMPARE(run(QStringLiteral("transport.punch_here"), {{QStringLiteral("edge"), QStringLiteral("out")}}).errorKind, ControlErrorKind::Refused);
 		QVERIFY(run(QStringLiteral("transport.punch_here"), {{QStringLiteral("edge"), QStringLiteral("in")}}).ok);
-		song->setPlayPos(768, Song::PlayMode::Song);
+		song->setPlayPos(768);
 		QVERIFY(run(QStringLiteral("transport.punch_here"), {{QStringLiteral("edge"), QStringLiteral("out")}}).ok);
 		const QJsonObject punch = run(QStringLiteral("transport.punch_get_state")).result;
 		QCOMPARE(punch.value(QStringLiteral("punch_begin")).toInt(), 384);

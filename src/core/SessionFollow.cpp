@@ -166,7 +166,7 @@ tick_t SessionScheduler::legatoOriginFor( const ActiveSlot& slot ) const noexcep
 	const SessionSlotContent* content = m_slotContent.find( slot.track, slot.scene );
 	if( content == nullptr || !content->legato ) { return slot.state.startedTick; }
 	// WF-060: relaunched while it still plays (the origin is cleared when it stops or is taken over).
-	if( slot.phaseOriginFor >= 0 ) { return slot.phaseOrigin; }
+	if( slot.phaseOriginFor == slot.state.startedTick ) { return slot.phaseOrigin; }  // review W3-batchA #14
 	for( const auto& other : m_active )
 	{
 		if( &other == &slot || other.track != slot.track ) { continue; }

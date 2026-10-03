@@ -27,9 +27,12 @@
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QPainter>
+#include <QSignalBlocker>
+#include <QToolButton>
 #include <QVBoxLayout>
 
 #include "Accessibility.h"
+#include "ControlRegistry.h"
 #include "DesignTokens.h"
 #include "ShellIcons.h"
 
@@ -71,6 +74,17 @@ ShellPanel::ShellPanel(const QString& id, const QString& title, QWidget* parent)
 	m_tools = new QHBoxLayout();
 	m_tools->setSpacing(tokens::space::xs);
 	row->addLayout(m_tools);
+	// MX-007: pin the panel open in every view that offers it - window.pin, as an agent would.
+	m_pin = new QToolButton(header);
+	m_pin->setText(tr("Pin"));
+	m_pin->setCheckable(true);
+	m_pin->setAutoRaise(true);
+	m_pin->setToolTip(tr("Keep this panel open in every view"));
+	m_pin->setProperty("controlCommand", QStringLiteral("window.pin"));
+	connect(m_pin, &QToolButton::clicked, this, [this](bool pinned) {
+		ControlRegistry::instance()->invoke(QStringLiteral("window.pin"), {{QStringLiteral("panel"), m_id}, {QStringLiteral("pinned"), pinned}});
+	});
+	row->addWidget(m_pin);
 	outer->addWidget(header);
 
 	m_body = new QVBoxLayout();
@@ -101,6 +115,12 @@ QWidget* ShellPanel::takeContent()
 	content->setParent(nullptr);
 	m_content = nullptr;
 	return content;
+}
+
+void ShellPanel::setPinnedMark(bool pinned)
+{
+	const QSignalBlocker quiet(m_pin);
+	m_pin->setChecked(pinned);
 }
 
 void ShellPanel::setFocusedPanel(bool focused)

@@ -32,6 +32,7 @@
 
 class QHBoxLayout;
 class QLabel;
+class QToolButton;
 class QVBoxLayout;
 
 namespace lmms::gui
@@ -64,6 +65,8 @@ public:
 
 	//! The panel that last took keyboard focus draws an accent line under its header.
 	void setFocusedPanel(bool focused);
+	//! 0.5.0 L08 (MX-007): the header's pin button shows whether the panel is pinned (window.pin).
+	void setPinnedMark(bool pinned);
 	bool isFocusedPanel() const { return m_focused; }
 
 protected:
@@ -73,6 +76,7 @@ private:
 	QString m_id;
 	QLabel* m_title;
 	QHBoxLayout* m_tools;
+	QToolButton* m_pin;
 	QVBoxLayout* m_body;
 	QPointer<QWidget> m_content;
 	bool m_focused = false;

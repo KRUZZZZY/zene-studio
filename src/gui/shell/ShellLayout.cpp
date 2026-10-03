@@ -162,6 +162,30 @@ void ShellLayout::setView(ShellView view)
 	{
 		if (current().openPanel.value(regionKey(r)) == centre) { current().openPanel.remove(regionKey(r)); }
 	}
+	reopenPinned();
+}
+
+void ShellLayout::reopenPinned()
+{
+	for (const QString& id : m_pinned)
+	{
+		if (offers(m_view, id) && id != centerOf(m_view)) { current().openPanel.insert(regionKey(spec(id).home), id); }
+	}
+}
+
+bool ShellLayout::setPinnedQuietly(const QString& id)
+{
+	if (!isPanel(id) || id == kLauncher || spec(id).home == ShellRegion::Center) { return false; }
+	if (!m_pinned.contains(id)) { m_pinned.append(id); }
+	return true;
+}
+
+bool ShellLayout::setPinned(const QString& id, bool pinned)
+{
+	if (!pinned) { return isPanel(id) && m_pinned.removeAll(id) >= 0; }
+	if (!setPinnedQuietly(id)) { return false; }
+	open(id, nullptr);
+	return true;
 }
 
 bool ShellLayout::isVisible(const QString& id) const
@@ -266,6 +290,7 @@ QVariantMap ShellLayout::save() const
 		entry.insert(kLauncher, s.launcher);
 		state.insert(viewName(v), entry);
 	}
+	if (!m_pinned.isEmpty()) { state.insert(QStringLiteral("pinned"), m_pinned); }
 	return state;
 }
 
@@ -286,6 +311,8 @@ void ShellLayout::restore(const QVariantMap& state)
 		current().launcher = entry.value(kLauncher, current().launcher).toBool();
 	}
 	m_view = keep;
+	m_pinned.clear();
+	for (const QString& id : state.value(QStringLiteral("pinned")).toStringList()) { setPinnedQuietly(id); }
 	ShellView named = keep;
 	if (viewFromName(state.value(QStringLiteral("view")).toString(), named)) { setView(named); }
 }

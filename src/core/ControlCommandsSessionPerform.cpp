@@ -32,6 +32,7 @@
  *  - session.setlist / setlist_go (WF-071): an ordered list of projects to play through - a
  *    preference, not part of any project. */
 
+#include <functional>
 #include <QJsonArray>
 #include <QJsonDocument>
 
@@ -100,12 +101,25 @@ ControlResult jump(const QJsonObject& args)
 }
 
 //! Record an edit of the <session> block as one undo step (the block before and after it).
-void recordBlock(const QString& before, const SessionModel& model)
+void recordBlock(const QString& before, const SessionModel& model, const std::function<void()>& rearm = {})
 {
 	const QString after = sessionBlockXml(model);
-	addUndoStep([before]() { if (Song* song = Engine::getSong()) { restoreSessionBlock(song->sessionModel(), before); } },
-		[after]() { if (Song* song = Engine::getSong()) { restoreSessionBlock(song->sessionModel(), after); } });
+	addUndoStep([before, rearm]() { if (Song* song = Engine::getSong()) { restoreSessionBlock(song->sessionModel(), before); if (rearm) { rearm(); } } },
+		[after, rearm]() { if (Song* song = Engine::getSong()) { restoreSessionBlock(song->sessionModel(), after); if (rearm) { rearm(); } } });
 	Engine::getSong()->setModified();
+}
+
+//! Arm each of @a scenes' follow chain in the scheduler when the model has one there, disarm it when not.
+void armScenes(const std::vector<int>& scenes)
+{
+	Song* song = Engine::getSong();
+	if (song == nullptr) { return; }
+	SessionModel& grid = song->sessionModel();
+	for (const int scene : scenes)
+	{
+		const bool chained = scene < grid.sceneCount() && !grid.scene(scene).followActions().empty();
+		invoke(QStringLiteral("session.scene_follow_set"), {{QStringLiteral("scene"), scene}, {QStringLiteral("enabled"), chained}});
+	}
 }
 
 ControlResult captureScene(const QJsonObject& args)
@@ -125,6 +139,8 @@ ControlResult captureScene(const QJsonObject& args)
 	const QString before = sessionBlockXml(*model);
 	const int row = model->sceneCount();
 	model->setSceneCount(row + 1);
+	// A full grid does not grow: refuse before anything lands in a scratch slot (review W3-batchA A3).
+	if (model->sceneCount() <= row) { return ControlResult::failure(ControlErrorKind::Refused, QStringLiteral("the grid holds no more scenes")); }
 	for (const auto& [track, scene] : playing) { model->slot(track, row) = model->slot(track, scene); }
 	model->scene(row).setName(args.value(QStringLiteral("name")).toString(QStringLiteral("Captured")));
 	recordBlock(before, *model);
@@ -164,9 +180,18 @@ ControlResult setPlaylist(const QJsonObject& args)
 			: std::vector<FollowAction>{playlistStep(scenes, i, args.value(QStringLiteral("loop")).toBool(false),
 				args.value(QStringLiteral("bars")).toDouble(0.0))});
 	}
-	recordBlock(before, *model);
-	for (const int scene : scenes) { invoke(QStringLiteral("session.scene_follow_set"), {{QStringLiteral("scene"), scene}}); }  // armed now
+	// Armed (or, cleared, disarmed) now, and again from whatever model an undo or redo puts back (review W3-batchA #5).
+	const auto arm = [scenes]() { armScenes(scenes); };
+	recordBlock(before, *model, arm);
+	arm();
 	return ControlResult::success({{QStringLiteral("scenes"), args.value(QStringLiteral("scenes"))}, {QStringLiteral("cleared"), clear}});
+}
+
+//! The folder track in arrangement position @a index, or nullptr.
+const TrackFolder* folderColumn(int index)
+{
+	const auto& tracks = Engine::getSong()->tracks();
+	return index >= 0 && index < static_cast<int>(tracks.size()) ? dynamic_cast<const TrackFolder*>(tracks[index]) : nullptr;
 }
 
 ControlResult launchGroup(const QJsonObject& args)
@@ -175,14 +200,14 @@ ControlResult launchGroup(const QJsonObject& args)
 	SessionModel* model = sessionModelOrNull(&error);
 	if (model == nullptr) { return error; }
 	const auto& tracks = Engine::getSong()->tracks();
-	const int folderIndex = args.value(QStringLiteral("track")).toInt(-1);
-	const auto* folder = folderIndex >= 0 && folderIndex < static_cast<int>(tracks.size()) ? dynamic_cast<const TrackFolder*>(tracks[folderIndex]) : nullptr;
+	const TrackFolder* folder = folderColumn(args.value(QStringLiteral("track")).toInt(-1));
 	if (folder == nullptr) { return ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("'track' is the column of a folder track")); }
 	const int scene = args.value(QStringLiteral("scene")).toInt();
+	if (scene < 0 || scene >= model->sceneCount()) { return ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("scene %1 is not in the grid").arg(scene)); }
 	QJsonArray launched;
 	for (int column = 0; column < std::min(model->trackCount(), static_cast<int>(tracks.size())); ++column)
 	{
-		if (!insideFolder(tracks[column], folder) || scene >= model->sceneCount() || model->slot(column, scene).isEmpty()) { continue; }
+		if (!insideFolder(tracks[column], folder) || model->slot(column, scene).isEmpty()) { continue; }
 		const ControlResult one = invoke(QStringLiteral("session.launch_slot"), {{QStringLiteral("track"), column}, {QStringLiteral("scene"), scene}});
 		if (one.ok) { launched.append(column); }
 	}
@@ -222,8 +247,10 @@ ControlResult setlistGo(const QJsonObject& args)
 	if (items.isEmpty()) { return ControlResult::failure(ControlErrorKind::NotFound, QStringLiteral("the setlist is empty (session.setlist)")); }
 	const QString to = args.value(QStringLiteral("to")).toString(QStringLiteral("next"));
 	const int current = state.value(QStringLiteral("index")).toInt(-1);
+	bool numeric = false;
+	const int named = to.toInt(&numeric);
 	const int index = to == QLatin1String("previous") ? std::max(0, current - 1)
-		: to == QLatin1String("next") ? std::min(static_cast<int>(items.size()) - 1, current + 1) : to.toInt();
+		: to == QLatin1String("next") ? std::min(static_cast<int>(items.size()) - 1, current + 1) : numeric ? named : -1;
 	if (index < 0 || index >= items.size()) { return ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("no setlist entry %1").arg(to)); }
 	// project.open's own handler: this call is the one irreversible step, not two records of it.
 	const ControlCommand* open = ControlRegistry::instance()->command(QStringLiteral("project.open"));

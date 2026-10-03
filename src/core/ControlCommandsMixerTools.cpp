@@ -34,6 +34,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <memory>
 #include <optional>
 
 #include <QColor>
@@ -148,12 +149,21 @@ ControlResult createReturn(const QJsonObject& args)
 	if (from == nullptr) { return error; }
 	const int fromId = from->id();
 	const QString name = args.value(QStringLiteral("name")).toString(QStringLiteral("Return"));
-	const auto amount = static_cast<float>(args.value(QStringLiteral("amount")).toDouble(1.0));
+	const double wanted = args.value(QStringLiteral("amount")).toDouble(1.0);
+	if (wanted < 0.0 || wanted > 1.0) { return ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("'amount' is 0..1")); }
+	const auto amount = static_cast<float>(wanted);
 	const bool preFader = args.value(QStringLiteral("pre_fader")).toBool(false);
-	const int before = mixer()->numChannels();
 	const int index = buildReturn(fromId, name, amount, preFader);
-	addUndoStep([before]() { if (mixer()->numChannels() > before) { mixer()->deleteChannel(mixer()->numChannels() - 1); } },
-		[fromId, name, amount, preFader]() { buildReturn(fromId, name, amount, preFader); });
+	// The return by its persistent id, which the redo refreshes: undo removes that channel, not whichever is last
+	// (review W3-batchA #9).
+	auto made = std::make_shared<int>(mixer()->mixerChannel(index)->id());
+	const auto removeMade = [made]() {
+		for (int i = 1; i < mixer()->numChannels(); ++i)
+		{
+			if (mixer()->mixerChannel(i)->id() == *made) { mixer()->deleteChannel(i); return; }
+		}
+	};
+	addUndoStep(removeMade, [made, fromId, name, amount, preFader]() { *made = mixer()->mixerChannel(buildReturn(fromId, name, amount, preFader))->id(); });
 	Engine::getSong()->setModified();
 	return ControlResult::success({{QStringLiteral("channel"), channelIdOf(mixer()->mixerChannel(index))},
 		{QStringLiteral("from"), channelIdOf(from)}, {QStringLiteral("name"), name}});
@@ -195,6 +205,7 @@ ControlResult adjust(const QJsonObject& args)
 	if (!channelsOf(args.value(QStringLiteral("channels")).toArray(), &channels, &error)) { return error; }
 	const double db = args.value(QStringLiteral("volume_db")).toDouble(0.0);
 	const double pan = args.value(QStringLiteral("pan")).toDouble(0.0);
+	if (db == 0.0 && pan == 0.0) { return ControlResult::success({{QStringLiteral("adjusted"), 0}}); }  // nothing to move (review W3-batchA #11)
 	QVector<JournallingObject*> models;
 	for (MixerChannel* channel : channels) { models << &channel->m_volumeModel << &channel->m_panModel; }
 	addUndoStep(models);

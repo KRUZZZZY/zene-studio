@@ -79,6 +79,8 @@ public:
 	//! arranger brings back Arrange, the launcher Arrange too), so the old window.toggle
 	//! contract - "a hidden editor is brought forward" - still holds for every name.
 	bool togglePanel(const QString& id, QString* reason = nullptr);
+	//! 0.5.0 L08 (MX-007): pin or unpin a side panel (ShellLayout::setPinned); false for anything else.
+	bool setPanelPinned(const QString& id, bool pinned);
 	//! Make @a id visible, switching view when the current one does not offer it.
 	bool revealPanel(const QString& id);
 
