@@ -83,4 +83,28 @@ ListSpec savedSelections()
 	return out;
 }
 
+ListSpec settingsCatalogue()
+{
+	ListSpec out = spec("Settings", "settings.search", "settings", {QStringLiteral("page"), QStringLiteral("title"),
+		QStringLiteral("value"), QStringLiteral("key")}, {{QStringLiteral("text"), QString()}});
+	out.summaryKeys = {QStringLiteral("count")};
+	out.actions = {act("Change...", "settings.set", {{QStringLiteral("key"), QStringLiteral("key")}}, {}, true)};
+	ListExtra find = extra("Search...", "settings.search");
+	find.call.showResult = true;
+	out.extras = {find, extra("Back Up to a File...", "settings.export"), extra("Restore from a File...", "settings.import"),
+		extra("Save as Preset...", "settings.preset_save")};
+	return out;
+}
+
+ListSpec settingsPresets()
+{
+	ListSpec out = spec("Settings Presets", "settings.preset_list", "presets", {QStringLiteral("name"), QStringLiteral("settings")});
+	const QHash<QString, QString> named{{QStringLiteral("name"), QStringLiteral("name")}};
+	RowAction apply = act("Apply", "settings.preset_apply", named);
+	apply.confirm = true;
+	out.actions = {apply, act("Remove", "settings.preset_remove", named)};
+	out.extras = {extra("Save the Current Settings...", "settings.preset_save")};
+	return out;
+}
+
 } // namespace lmms::gui::CommandLists

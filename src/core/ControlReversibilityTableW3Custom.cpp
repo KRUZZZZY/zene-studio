@@ -87,6 +87,19 @@ const ReversibilityRow kW3CustomRows[] = {
 		"action checkpoint: the recorded undo step puts the previous list back", ""),
 	R("control.history_jump", RC::NotMutating, false, "it runs control.undo or control.redo several times; each step is "
 		"theirs and it records nothing of its own", "no write of its own (control.history_jump the other way)", ""),
+	// WF-122: the settings as a whole.
+	R("settings.search", RC::NotMutating, false, "it reads the settings. Nothing is written", "no write", ""),
+	R("settings.export", RC::NotMutating, false, "it writes a backup file and nothing else: the config and the project are "
+		"unchanged", "no write to the project (delete the file)", ""),
+	R("settings.import", RC::TrueInverse, true, "it writes the settings a backup holds (config file) - a bounded set of keys",
+		"action checkpoint: the recorded undo step writes each key's previous value back, or deletes it, and saves the config", ""),
+	R("settings.preset_save", RC::TrueInverse, true, "it writes one settings preset in the config file",
+		"action checkpoint: the recorded undo step writes the previous presets back", ""),
+	R("settings.preset_apply", RC::TrueInverse, true, "it writes the settings a preset holds (config file)",
+		"action checkpoint: the recorded undo step writes each key's previous value back, or deletes it, and saves the config", ""),
+	R("settings.preset_list", RC::NotMutating, false, "it lists the settings presets. Nothing is written", "no write", ""),
+	R("settings.preset_remove", RC::TrueInverse, true, "it removes one settings preset from the config file",
+		"action checkpoint: the recorded undo step writes the previous presets back", ""),
 };
 
 #undef R

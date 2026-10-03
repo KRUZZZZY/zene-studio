@@ -87,6 +87,10 @@ LMMS_EXPORT ListSpec trackManager();
 LMMS_EXPORT ListSpec memoryLocations();
 //! WF-106: the saved selections - select one again, remove it, save the current selection.
 LMMS_EXPORT ListSpec savedSelections();
+//! WF-122: every setting that travels, with its value - change one, search, back up, restore; and the
+//! settings presets - apply, remove, save the current settings as one.
+LMMS_EXPORT ListSpec settingsCatalogue();
+LMMS_EXPORT ListSpec settingsPresets();
 
 } // namespace CommandLists
 

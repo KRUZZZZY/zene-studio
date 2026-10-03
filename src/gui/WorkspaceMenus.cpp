@@ -116,6 +116,12 @@ void populateCustomiseExtras(QMenu* menu)
 	run(theme, QObject::tr("Export Theme..."), QStringLiteral("theme.export"), {}, true);
 	run(theme, QObject::tr("Import Theme..."), QStringLiteral("theme.import"), {}, true);
 	run(theme, QObject::tr("Reset Colours"), QStringLiteral("theme.reset"));
+	QMenu* settings = menu->addMenu(QObject::tr("Settings"));
+	list(settings, QObject::tr("All Settings..."), CommandLists::settingsCatalogue);
+	run(settings, QObject::tr("Find a Setting..."), QStringLiteral("settings.search"), {}, true, true);
+	list(settings, QObject::tr("Presets..."), CommandLists::settingsPresets);
+	run(settings, QObject::tr("Back Up to a File..."), QStringLiteral("settings.export"), {}, true);
+	run(settings, QObject::tr("Restore from a File..."), QStringLiteral("settings.import"), {}, true);
 }
 
 void installWorkspaceMenus(QMenuBar* bar)

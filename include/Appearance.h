@@ -63,6 +63,8 @@ LMMS_EXPORT void setOptions(const Options& next);
 LMMS_EXPORT QJsonObject toJson(const Options& options);
 //! The file main() reads the scale from.
 LMMS_EXPORT QString scaleFilePath();
+//! Write the configured scale to that file (after the config's ui/scale was written some other way).
+LMMS_EXPORT void syncScaleFile();
 //! main(), before the application object: the stored scale, or 0 when none.
 LMMS_EXPORT double storedScale();
 //! main(), before the application object: hand the stored scale to Qt (an explicit QT_SCALE_FACTOR wins).

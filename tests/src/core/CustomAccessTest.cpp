@@ -26,7 +26,8 @@
  *  mixer channel's processing load (WF-104); a question answered from the manual and the commands, offline
  *  (WF-142); the shipped release notes and their once-per-version marker (WF-141); memory locations and saved
  *  selections, saved with the project only when there are any (WF-098 / WF-106); the undo history walked
- *  several steps at once (WF-102). */
+ *  several steps at once (WF-102); the settings found by words, backed up, restored and kept as presets, each
+ *  write one undo step, no folder path travelling (WF-122). */
 
 #include <QtTest>
 
@@ -261,6 +262,41 @@ private slots:
 		QVERIFY2(forward.ok, qPrintable(forward.errorMessage));
 		QCOMPARE(m_track->color()->name(), QStringLiteral("#222222"));
 		QCOMPARE(run(QStringLiteral("control.history_jump"), {{QStringLiteral("steps"), 0}}).errorKind, ControlErrorKind::InvalidArgs);
+	}
+
+	void theSettingsAreFoundBackedUpAndKept()
+	{
+		const auto value = [] { return ConfigManager::inst()->value(QStringLiteral("ui"), QStringLiteral("printnotelabels")); };
+		const ControlResult found = run(QStringLiteral("settings.search"), {{QStringLiteral("text"), QStringLiteral("note names")}});
+		QVERIFY2(found.ok, qPrintable(found.errorMessage));
+		QCOMPARE(found.result.value(QStringLiteral("settings")).toArray().first().toObject().value(QStringLiteral("key")).toString(),
+			QStringLiteral("ui/printnotelabels"));
+		QVERIFY(run(QStringLiteral("settings.search")).result.value(QStringLiteral("count")).toInt() > 30);
+		QVERIFY(run(QStringLiteral("settings.set"), {{QStringLiteral("key"), QStringLiteral("ui/printnotelabels")}, {QStringLiteral("value"), QStringLiteral("1")}}).ok);
+		ConfigManager::inst()->setValue(QStringLiteral("paths"), QStringLiteral("vstdir"), m_dir.path());
+		const QString backup = m_dir.filePath(QStringLiteral("settings.json"));
+		QVERIFY(run(QStringLiteral("settings.export"), {{QStringLiteral("file"), backup}}).ok);
+		QVERIFY2(!fileText(backup).contains(QStringLiteral("vstdir")), "a folder path travelled in a settings backup");
+		QVERIFY(run(QStringLiteral("settings.set"), {{QStringLiteral("key"), QStringLiteral("ui/printnotelabels")}, {QStringLiteral("value"), QStringLiteral("0")}}).ok);
+		const ControlResult restored = run(QStringLiteral("settings.import"), {{QStringLiteral("file"), backup}});
+		QVERIFY2(restored.ok, qPrintable(restored.errorMessage));
+		QVERIFY(restored.result.value(QStringLiteral("applied")).toInt() >= 1);
+		QCOMPARE(value(), QStringLiteral("1"));
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
+		QCOMPARE(value(), QStringLiteral("0"));
+		QCOMPARE(run(QStringLiteral("settings.import"), {{QStringLiteral("file"), m_dir.filePath(QStringLiteral("none.json"))}}).errorKind,
+			ControlErrorKind::InvalidArgs);
+
+		QVERIFY(run(QStringLiteral("settings.preset_save"), {{QStringLiteral("name"), QStringLiteral("studio")}}).ok);
+		QCOMPARE(static_cast<int>(run(QStringLiteral("settings.preset_list")).result.value(QStringLiteral("presets")).toArray().size()), 1);
+		QVERIFY(run(QStringLiteral("settings.set"), {{QStringLiteral("key"), QStringLiteral("ui/printnotelabels")}, {QStringLiteral("value"), QStringLiteral("1")}}).ok);
+		QVERIFY(run(QStringLiteral("settings.preset_apply"), {{QStringLiteral("name"), QStringLiteral("studio")}}).ok);
+		QCOMPARE(value(), QStringLiteral("0"));
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
+		QCOMPARE(value(), QStringLiteral("1"));
+		QVERIFY(run(QStringLiteral("settings.preset_remove"), {{QStringLiteral("name"), QStringLiteral("studio")}}).ok);
+		QCOMPARE(run(QStringLiteral("settings.preset_apply"), {{QStringLiteral("name"), QStringLiteral("studio")}}).errorKind,
+			ControlErrorKind::NotFound);
 	}
 
 private:

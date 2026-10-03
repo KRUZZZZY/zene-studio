@@ -858,6 +858,9 @@ LMMS_EXPORT void registerWorkspaceCommands(ControlRegistry& registry);
 //! (src/core/ControlCommandsHistoryJump.cpp).
 LMMS_EXPORT void registerViewMemoryCommands(ControlRegistry& registry);
 LMMS_EXPORT void registerHistoryJumpCommand(ControlRegistry& registry);
+//! settings.search / export / import / preset_save / preset_apply / preset_list / preset_remove
+//! (src/core/ControlCommandsSettingsPresets.cpp).
+LMMS_EXPORT void registerSettingsPresetCommands(ControlRegistry& registry);
 } // namespace lmms
 
 #endif // LMMS_CONTROL_REGISTRY_GROUPS_H

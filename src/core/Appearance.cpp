@@ -84,10 +84,15 @@ void setOptions(const Options& next)
 	ConfigManager::inst()->setValue(kSection, QStringLiteral("fontscale"), QString::number(std::clamp(next.fontScale, 0.75, 2.0)));
 	ConfigManager::inst()->setValue(kSection, QStringLiteral("palette"), next.palette);
 	ConfigManager::inst()->setValue(kSection, QStringLiteral("density"), next.density);
+	syncScaleFile();
+}
+
+void syncScaleFile()
+{
 	QSaveFile file(scaleFilePath());
 	if (file.open(QIODevice::WriteOnly))
 	{
-		file.write(QByteArray::number(std::clamp(next.scale, 0.5, 3.0)));
+		file.write(QByteArray::number(options().scale));
 		file.commit();
 	}
 }

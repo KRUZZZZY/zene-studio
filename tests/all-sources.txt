@@ -1350,6 +1350,7 @@ src/core/ControlCommandsSessionRecordLand.cpp
 src/core/ControlCommandsSessionSceneFollow.cpp
 src/core/ControlCommandsSessionShared.h
 src/core/ControlCommandsSettings.cpp
+src/core/ControlCommandsSettingsPresets.cpp
 src/core/ControlCommandsStemModel.cpp
 src/core/ControlCommandsStems.cpp
 src/core/ControlCommandsStructure.cpp
