@@ -61,6 +61,7 @@
 #include <QVector>
 
 #include "ImportDetectionDsp.h"
+#include "SampleFrame.h"
 #include "lmms_export.h"
 
 namespace lmms
@@ -91,6 +92,9 @@ LMMS_EXPORT const QVector<ScaleCandidate>& candidateScales();
 //! commands refuse, typed, rather than write a name the piano roll's scale combo
 //! would not recognise.
 LMMS_EXPORT bool scaleNameIsKnown(const QString& name);
+
+//! One channel of stereo audio for the analysis: 0.5 * (L + R) per frame.
+LMMS_EXPORT std::vector<float> monoMix(const SampleFrame* frames, std::size_t count);
 
 //! One analysis of one file. `ok` false means `error` says why and nothing else
 //! here is meaningful.

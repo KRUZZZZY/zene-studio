@@ -118,6 +118,8 @@ const ReversibilityRow kArrangerRows[] = {
 	R("note.transform_where", RC::TrueInverse, true, "it changes, mutes or removes the matching notes",
 		"MidiClip journal checkpoint", ""),
 	R("key_names.get", RC::NotMutating, false, "it reads a track's key names. Nothing is written", "no write", ""),
+	R("warp.quantize", RC::TrueInverse, true, "it replaces a sample clip's warp markers (the <warp> element)",
+		"Clip journal checkpoint: undo restores the previous markers", ""),
 	R("track.input_transform_get", RC::NotMutating, false, "it reads a track's MIDI input transform. Nothing is written", "no write", ""),
 	R("track.input_transform_set", RC::TrueInverse, true, "the transform is saved with the track; it is eight integers",
 		"action checkpoint: the recorded undo step puts the track's previous transform back", ""),

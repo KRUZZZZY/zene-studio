@@ -443,6 +443,7 @@ set(LMMS_SRCS
 	core/ControlCommandsRecordingRetro.cpp
 	core/ControlCommandsWarp.cpp
 	core/ControlCommandsWarpEdit.cpp
+	core/ControlCommandsWarpQuantize.cpp
 	# The groove pool and quantise surface (docs/GROOVE-POOL.md): the engine
 	# value type and its extraction/application arithmetic, the project's named
 	# pool, the group's shared helpers, its read half and its two mutating

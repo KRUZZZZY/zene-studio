@@ -94,6 +94,7 @@ void registerControlCommands(ControlRegistry& registry)
 	registerClipEnvelopeCommands(registry);
 	registerClipControllerCommands(registry);
 	registerInputTransformCommands(registry);
+	registerWarpQuantizeCommand(registry);
 	registerClipArrangeCommands(registry);
 	registerAutomationLaneCommands(registry);
 	registerNoteShapeCommands(registry);

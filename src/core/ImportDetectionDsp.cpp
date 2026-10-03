@@ -233,16 +233,21 @@ double templateScore(const std::array<double, 12>& chroma, std::uint32_t mask, i
 	return covariance / std::sqrt(chromaVariance * weightVariance);
 }
 
-TempoEstimate estimateTempo(const float* mono, std::size_t frames, int sampleRate, double maxSeconds)
+namespace
 {
-	TempoEstimate estimate;
-	if (mono == nullptr || frames == 0 || sampleRate <= 0) { return estimate; }
 
-	const std::size_t limit = static_cast<std::size_t>(
-		std::min<double>(static_cast<double>(frames), maxSeconds * sampleRate));
-	const std::size_t frameCount = frameCountFor(limit, TempoFrameSize, TempoHopSize);
-	if (frameCount < 4) { return estimate; }
+//! The onset envelope and its transients - what estimateTempo's beat analysis and detectOnsetFrames
+//! share. `ok` is false when there is too little audio or no transient above the floor.
+struct OnsetAnalysis
+{
+	bool ok = false;
+	std::vector<double> novelty;
+	std::vector<std::size_t> peaks;  //!< envelope frames of the transients, in order
+};
 
+//! The spectral flux of @a mono's first @a limit frames, one value per hop.
+std::vector<double> spectralFlux(const float* mono, std::size_t frameCount)
+{
 	const std::vector<float> window = hannWindow(TempoFrameSize);
 	std::vector<float> re(TempoFrameSize, 0.0f);
 	std::vector<float> im(TempoFrameSize, 0.0f);
@@ -264,9 +269,13 @@ TempoEstimate estimateTempo(const float* mono, std::size_t frames, int sampleRat
 		}
 		previous = current;
 	}
+	return flux;
+}
 
-	// The onset envelope: the flux with a running mean (~0.35 s) taken off it and
-	// the negative half discarded, so a slow crescendo is not a beat.
+//! The onset envelope: the flux with a running mean (~0.35 s) taken off it and the negative half
+//! discarded, so a slow crescendo is not a beat.
+std::vector<double> noveltyOf(const std::vector<double>& flux, int sampleRate)
+{
 	const int meanWindow = std::max(1, static_cast<int>(0.35 * sampleRate / TempoHopSize));
 	std::vector<double> novelty(flux.size(), 0.0);
 	for (std::size_t i = 0; i < flux.size(); ++i)
@@ -278,30 +287,75 @@ TempoEstimate estimateTempo(const float* mono, std::size_t frames, int sampleRat
 		mean /= static_cast<double>(to - from);
 		novelty[i] = std::max(0.0, flux[i] - mean);
 	}
+	return novelty;
+}
 
-	// The transients: local maxima above a declared fraction of the envelope's
-	// own maximum AND above a floor derived from the signal's own RMS, so the
-	// numerical residue of a STATIONARY signal is not reported as a beat (a
-	// steady tone measured 112 "transients" without the floor). The first one is
-	// where a clip's first hit is.
+//! The transients: local maxima above a declared fraction of the envelope's own maximum AND above a
+//! floor derived from the signal's own RMS, so the numerical residue of a STATIONARY signal is not
+//! reported as a beat (a steady tone measured 112 "transients" without the floor). False when no
+//! value of the envelope clears the floor.
+bool transientPeaks(const std::vector<double>& novelty, const float* mono, std::size_t limit, std::vector<std::size_t>* peaks)
+{
 	double rms = 0.0;
 	for (std::size_t i = 0; i < limit; ++i) { rms += static_cast<double>(mono[i]) * mono[i]; }
 	rms = std::sqrt(rms / static_cast<double>(limit));
 	const double floor = 1e-3 * rms;
 	double peak = 0.0;
 	for (const double value : novelty) { peak = std::max(peak, value); }
-	if (peak <= floor || peak <= 0.0) { return estimate; }
+	if (peak <= floor || peak <= 0.0) { return false; }
 	const double threshold = std::max(floor, 0.10 * peak);
 	for (std::size_t i = 1; i + 1 < novelty.size(); ++i)
 	{
 		if (novelty[i] <= threshold || novelty[i] < novelty[i - 1] || novelty[i] < novelty[i + 1]) { continue; }
-		++estimate.onsets;
-		if (estimate.onsets == 1)
-		{
-			const double centre = (static_cast<double>(i) * TempoHopSize) + TempoFrameSize / 2.0;
-			estimate.firstOnsetSeconds = centre / sampleRate;
-			estimate.firstOnsetFrame = static_cast<std::int64_t>(centre);
-		}
+		peaks->push_back(i);
+	}
+	return true;
+}
+
+OnsetAnalysis analyseOnsets(const float* mono, std::size_t frames, int sampleRate, double maxSeconds)
+{
+	OnsetAnalysis out;
+	if (mono == nullptr || frames == 0 || sampleRate <= 0) { return out; }
+	const std::size_t limit = static_cast<std::size_t>(
+		std::min<double>(static_cast<double>(frames), maxSeconds * sampleRate));
+	const std::size_t frameCount = frameCountFor(limit, TempoFrameSize, TempoHopSize);
+	if (frameCount < 4) { return out; }
+	out.novelty = noveltyOf(spectralFlux(mono, frameCount), sampleRate);
+	out.ok = transientPeaks(out.novelty, mono, limit, &out.peaks);
+	return out;
+}
+
+//! The source frame an envelope frame stands for: the centre of its analysis window.
+double centreOf(std::size_t envelopeFrame)
+{
+	return (static_cast<double>(envelopeFrame) * TempoHopSize) + TempoFrameSize / 2.0;
+}
+
+} // namespace
+
+std::vector<std::int64_t> detectOnsetFrames(const float* mono, std::size_t frames, int sampleRate, double maxSeconds)
+{
+	std::vector<std::int64_t> out;
+	for (const std::size_t peak : analyseOnsets(mono, frames, sampleRate, maxSeconds).peaks)
+	{
+		out.push_back(static_cast<std::int64_t>(centreOf(peak)));
+	}
+	return out;
+}
+
+TempoEstimate estimateTempo(const float* mono, std::size_t frames, int sampleRate, double maxSeconds)
+{
+	TempoEstimate estimate;
+	const OnsetAnalysis onsets = analyseOnsets(mono, frames, sampleRate, maxSeconds);
+	if (!onsets.ok) { return estimate; }
+	const std::vector<double>& novelty = onsets.novelty;
+	// The first transient is where a clip's first hit is.
+	estimate.onsets = static_cast<int>(onsets.peaks.size());
+	if (!onsets.peaks.empty())
+	{
+		const double centre = centreOf(onsets.peaks.front());
+		estimate.firstOnsetSeconds = centre / sampleRate;
+		estimate.firstOnsetFrame = static_cast<std::int64_t>(centre);
 	}
 
 	// The autocorrelation of the envelope over the declared band.

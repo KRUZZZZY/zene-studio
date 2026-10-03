@@ -51,6 +51,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <span>
+#include <vector>
 
 namespace lmms
 {
@@ -209,6 +210,11 @@ double templateScore(const std::array<double, 12>& chroma, std::uint32_t mask, i
  *  one (the realtime rule of AGENTS.md section 4). */
 TempoEstimate estimateTempo(const float* mono, std::size_t frames, int sampleRate,
 	double maxSeconds = DefaultAnalysisSeconds);
+
+/*! 0.5.0 L07 (ED-137): the source frames of every transient in \a mono's first \a maxSeconds - the same
+ *  spectral-flux onset envelope and peak rule estimateTempo counts its transients with. */
+std::vector<std::int64_t> detectOnsetFrames(const float* mono, std::size_t frames, int sampleRate,
+	double maxSeconds = MaxAnalysisSeconds);
 
 /*! The key estimate. \a candidateMasks is the caller's vocabulary: every scale
  *  template the caller is willing to name, as a 12-bit mask of pitch classes

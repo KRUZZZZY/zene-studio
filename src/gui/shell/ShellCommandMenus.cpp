@@ -183,6 +183,7 @@ void sampleClipMenus(QMenu* menu, Clip* clip, const QJsonObject& self)
 	choices(warp, "Tempo", "warp.set", "mode", self);
 	choices(warp, "Stretch Algorithm", "warp.stretch", "mode", self);
 	add(warp, "Add Warp Marker...", "warp.add", self, true);
+	add(warp, "Quantise Audio...", "warp.quantize", self, true);
 	list(warp, "Warp Markers...", [id] { return CommandLists::warpMarkers(id); });
 	const QJsonObject file{{QStringLiteral("path"), sample->sampleFile()}};
 	add(warp, "Detect Tempo and Key", "detect.analyze", file, false, {}, true);

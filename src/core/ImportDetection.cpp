@@ -84,6 +84,13 @@ QVector<ScaleCandidate> buildCandidates()
 } // namespace
 
 
+std::vector<float> monoMix(const SampleFrame* frames, std::size_t count)
+{
+	std::vector<float> mono(count, 0.0f);
+	for (std::size_t i = 0; i < count; ++i) { mono[i] = static_cast<float>(0.5 * (frames[i].left() + frames[i].right())); }
+	return mono;
+}
+
 const QVector<ScaleCandidate>& candidateScales()
 {
 	// Built on first use: the table is static data and the list never changes,
@@ -134,11 +141,7 @@ ImportDetectionResult analyseAudioFile(const QString& path, double maxSeconds)
 	// Mono: the arithmetic takes one channel, and 0.5 * (L + R) is what an
 	// import's own audition path would hand a listener's single ear.
 	const std::vector<SampleFrame>& frames = decoded->data;
-	std::vector<float> mono(frames.size(), 0.0f);
-	for (std::size_t i = 0; i < frames.size(); ++i)
-	{
-		mono[i] = static_cast<float>(0.5 * (frames[i].left() + frames[i].right()));
-	}
+	const std::vector<float> mono = monoMix(frames.data(), frames.size());
 
 	const double bound = std::clamp(maxSeconds, 1.0, MaxAnalysisSeconds);
 	result.sampleRate = sampleRate;
