@@ -116,7 +116,8 @@ CommandCall deviceCall(const char* id, const QJsonObject& fixed, bool ask, const
 }
 
 //! 0.5.0 L10 (W3): find, rename and randomise parameters (MX-089 / MX-097 / MX-093), fold the card
-//! (MX-113), compatibility and editor options (MX-099 / MX-094), a convolution reverb's impulse (MX-152). These commands name a device by
+//! (MX-113), the delta (MX-080), compatibility and editor options (MX-099 / MX-094), a convolution
+//! reverb's impulse (MX-152). These commands name a device by
 //! 'target' and its fx-<n> alone - a rack chain's device is found on its channel by its id.
 void addParameterEntries(QMenu* menu, QWidget* parent, const Effect* effect, const QJsonObject& device)
 {
@@ -141,6 +142,14 @@ void addParameterEntries(QMenu* menu, QWidget* parent, const Effect* effect, con
 		args.insert(QStringLiteral("folded"), !folded);
 		runCommand(parent, deviceCall("plugin.fold", args, false));
 	});
+	const bool listening = effect->deltaTap().enabled();
+	QAction* delta = entry(menu, QObject::tr("Hear Only What It Changes"), "plugin.delta", [parent, self, listening] {
+		QJsonObject args = self;
+		args.insert(QStringLiteral("on"), !listening);
+		runCommand(parent, deviceCall("plugin.delta", args, false));
+	});
+	delta->setCheckable(true);
+	delta->setChecked(listening);
 	entry(menu, QObject::tr("Compatibility and Editor..."), "plugin.options", [parent, self] {
 		runCommand(parent, deviceCall("plugin.options", self, true));
 	});

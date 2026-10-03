@@ -25,7 +25,7 @@
  *  sum puts it back together (MX-108); parameters are found by name or alias (MX-089) and renamed
  *  without changing their address (MX-097); new settings are randomised or blended from A/B
  *  (MX-093); a device folds (MX-113) and carries compatibility options (MX-099 / MX-094) - each
- *  saved only when set and undone in one step. */
+ *  saved only when set and undone in one step; a device's delta is what it changes (MX-080). */
 
 #include <QtTest>
 
@@ -118,6 +118,22 @@ RackSplit bandsAt(float hz)
 	split.crossovers[0] = hz;
 	split.crossoverCount = 1;
 	return split;
+}
+
+//! @a blocks periods of a steady (@a level, @a level) signal through channel @a index's chain; the
+//! last block's left peak (signed: the value of its first frame).
+float runSteady(int index, float level, int blocks)
+{
+	static std::vector<SampleFrame> block;
+	block.assign(Engine::audioEngine()->framesPerPeriod(), SampleFrame());
+	SampleFrame* data[1] = {block.data()};
+	for (int b = 0; b < blocks; ++b)
+	{
+		for (SampleFrame& frame : block) { frame = SampleFrame(level, level); }
+		AudioBus bus{data, 1, static_cast<f_cnt_t>(block.size())};
+		channel(index)->m_fxChain.processAudioBuffer(bus);
+	}
+	return block.front()[0];
 }
 
 Effect* effectOn(int index)
@@ -308,6 +324,31 @@ private slots:
 		QVERIFY(std::abs(parameterValue(ch(1), amp, QStringLiteral("Volume")) - 75.0) < 1e-3);
 		QVERIFY(run(QStringLiteral("control.undo")).ok);
 		QVERIFY(std::abs(parameterValue(ch(1), amp, QStringLiteral("Volume")) - 50.0) < 1e-3);
+	}
+
+	//! MX-080: the delta of a device that changes nothing is silence; of one that doubles the level,
+	//! the input itself; the switch toggles and is not journalled.
+	void theDeltaIsWhatTheDeviceChanges()
+	{
+		const QString amp = loadByName(ch(3), QStringLiteral("amplifier"));
+		if (amp.isEmpty()) { QSKIP("this build has no amplifier module"); }
+		const QJsonObject device{{QStringLiteral("target"), ch(3)}, {QStringLiteral("plugin"), amp}};
+		QVERIFY(setParameter(ch(3), amp, QStringLiteral("Volume"), 100.0));  // unity
+		QVERIFY(std::abs(runSteady(3, 0.4f, 4) - 0.4f) < 1e-4f);
+		const ControlResult on = run(QStringLiteral("plugin.delta"), device);  // toggles on
+		QVERIFY2(on.ok, qPrintable(on.errorMessage));
+		QVERIFY(on.result.value(QStringLiteral("on")).toBool());
+		QVERIFY(std::abs(runSteady(3, 0.4f, 4)) < 1e-4f);         // it changes nothing: silence
+		QVERIFY(setParameter(ch(3), amp, QStringLiteral("Volume"), 200.0));
+		QVERIFY(std::abs(runSteady(3, 0.4f, 4) - 0.4f) < 1e-3f);  // twice the input, minus the input
+		QJsonObject off = device;
+		off.insert(QStringLiteral("on"), false);
+		QVERIFY(run(QStringLiteral("plugin.delta"), off).ok);
+		QVERIFY(std::abs(runSteady(3, 0.4f, 4) - 0.8f) < 1e-3f);
+		QJsonObject missing = device;
+		missing.insert(QStringLiteral("plugin"), QStringLiteral("fx-999999"));
+		QCOMPARE(run(QStringLiteral("plugin.delta"), missing).errorKind, ControlErrorKind::NotFound);
+		channel(3)->m_fxChain.clear();
 	}
 
 	//! MX-113 / MX-099: folding and the options are carried by the device, a latency override reaches

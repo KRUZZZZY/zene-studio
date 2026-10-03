@@ -29,7 +29,8 @@
  *    range, by an amount - or a mix of the two settings plugin.ab stored;
  *  - plugin.fold (MX-113): the device's card drawn as its header only;
  *  - plugin.options (MX-099 / MX-094): the generic editor instead of the plug-in's own, never
- *    sleeping on silence, a latency override for delay compensation, the editor's zoom.
+ *    sleeping on silence, a latency override for delay compensation, the editor's zoom;
+ *  - plugin.delta (MX-080): an effect's output minus its input, to hear what it changes.
  *  Options are carried by the device (include/DeviceOptions.h); every write is one undo step. */
 
 #include <algorithm>
@@ -40,6 +41,7 @@
 
 #include <QJsonArray>
 
+#include "AudioEngine.h"
 #include "AutomatableModel.h"
 #include "ControlDeviceSupport.h"
 #include "ControlDeviceTools.h"
@@ -328,6 +330,21 @@ ControlResult blend(const QJsonObject& args)
 		{QStringLiteral("amount"), amount}});
 }
 
+// ---------------------------------------------------------------------------
+// the delta
+// ---------------------------------------------------------------------------
+
+ControlResult delta(const QJsonObject& args)
+{
+	ControlResult error;
+	Effect* effect = effectOf(targetOf(args), pluginOf(args), &error);
+	if (effect == nullptr) { return error; }
+	const bool on = args.value(QStringLiteral("on")).toBool(!effect->deltaTap().enabled());
+	effect->deltaTap().setEnabled(on, Engine::audioEngine()->framesPerPeriod());
+	return ControlResult::success({{QStringLiteral("target"), targetOf(args)}, {QStringLiteral("plugin"), pluginOf(args)},
+		{QStringLiteral("on"), effect->deltaTap().enabled()}});
+}
+
 } // namespace
 
 void registerDeviceParamCommands(ControlRegistry& registry)
@@ -373,6 +390,12 @@ void registerDeviceParamCommands(ControlRegistry& registry)
 		"'latency_override' is the latency in frames delay compensation uses instead of what it reports (-1: its own); "
 		"'editor_scale' is the zoom its own window opens at (0.5..3, for plug-ins that can scale). With none given it reports "
 		"them (and its aliases and fold). Saved with the device; one undo step."), options, both, true, deviceOptions);
+	QJsonObject listen = device;
+	listen.insert(QStringLiteral("on"), booleanProperty());
+	addDeviceCommand(registry, "plugin.delta", QStringLiteral("Hear only what an effect changes ('plugin' fx-<n> on 'target'): its "
+		"output minus its input - silence while it changes nothing, the part a compressor takes away (inverted), the harmonics "
+		"a saturator adds. 'on' switches it, toggling when left out. A monitor switch, like the listen bus: not saved, no undo "
+		"step."), listen, both, false, delta);
 }
 
 } // namespace lmms

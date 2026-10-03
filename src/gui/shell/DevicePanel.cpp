@@ -34,6 +34,7 @@
 #include <QVBoxLayout>
 
 #include "AudioBusHandle.h"
+#include "ChannelLevelMeter.h"
 #include "ComboBox.h"
 #include "ControlDeviceSupport.h"
 #include "ControlMixerSupport.h"
@@ -311,6 +312,8 @@ void DevicePanel::rebuild()
 	const QJsonArray modulators = invoke(QStringLiteral("modulator.get_state"), {}).result
 		.value(QStringLiteral("modulators")).toArray();
 	addSection(tr("Mixer %1 - %2").arg(m_channel, channel->m_name));
+	// 0.5.0 L10 (MX-101): the level of the channel these devices play into, beside its heading.
+	m_cards->insertWidget(m_cards->indexOf(m_add), new ChannelLevelMeter(m_channel, m_row), 0, Qt::AlignTop);
 	// 0.5.0 L10 (MX-104): the rack's macros as knobs, before the devices they drive.
 	auto* macros = new MacroKnobs(m_channel, 8, false, m_row);
 	m_cards->insertWidget(m_cards->indexOf(m_add), macros);

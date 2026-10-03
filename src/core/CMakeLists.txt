@@ -978,6 +978,7 @@ set(LMMS_SRCS
 	core/ControlCommandsDeviceParams.cpp
 	core/ControlCommandsModulatorTools.cpp
 	core/ModulationFormula.cpp
+	core/DeltaTap.cpp
 	core/DeviceOptions.cpp
 	core/ParameterControls.cpp
 	core/RackSplit.cpp

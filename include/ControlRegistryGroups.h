@@ -844,7 +844,7 @@ LMMS_EXPORT void registerAutomationToolCommands(ControlRegistry& registry);
 //! 0.5.0 L05 (W3): clip.audio_to_midi, sample.spectrogram (ControlCommandsAudioAnalysis.cpp).
 LMMS_EXPORT void registerAudioAnalysisCommands(ControlRegistry& registry);
 //! 0.5.0 L10 (W3): rack.split, mixer.console_apply, plugin.impulse_load (ControlCommandsDeviceTools.cpp); plugin.param_search / param_rename / randomise /
-//! blend / fold / options (ControlCommandsDeviceParams.cpp).
+//! blend / fold / options / delta (ControlCommandsDeviceParams.cpp).
 LMMS_EXPORT void registerDeviceToolCommands(ControlRegistry& registry);
 LMMS_EXPORT void registerDeviceParamCommands(ControlRegistry& registry);
 //! 0.5.0 L10 (W3): modulator.formula_set / trigger_set (ControlCommandsModulatorTools.cpp).

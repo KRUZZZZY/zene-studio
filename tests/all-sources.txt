@@ -137,6 +137,7 @@ include/BufferManager.h
 include/CPULoadWidget.h
 include/CaptionMenu.h
 include/ChainPresetMenu.h
+include/ChannelLevelMeter.h
 include/ChannelPickDialog.h
 include/ChordDetect.h
 include/ChordProgression.h
@@ -214,6 +215,7 @@ include/CrashReporterFormat.h
 include/DataFile.h
 include/DawProjectInterchange.h
 include/Delay.h
+include/DeltaTap.h
 include/DeprecationHelper.h
 include/DesignTokens.h
 include/DetuningHelper.h
@@ -1489,6 +1491,7 @@ src/core/DawProjectReadTracks.cpp
 src/core/DawProjectSession.cpp
 src/core/DawProjectWrite.cpp
 src/core/DawProjectZip.cpp
+src/core/DeltaTap.cpp
 src/core/DeviceOptions.cpp
 src/core/DocumentIndex.cpp
 src/core/DrumSynth.cpp
@@ -1903,6 +1906,7 @@ src/gui/noteeditor/NoteEditorToolbar.cpp
 src/gui/noteeditor/NoteGrid.cpp
 src/gui/noteeditor/NoteLanes.cpp
 src/gui/shell/BrowserPanel.cpp
+src/gui/shell/ChannelLevelMeter.cpp
 src/gui/shell/DesignTokens.cpp
 src/gui/shell/DeviceCard.cpp
 src/gui/shell/DevicePanel.cpp

@@ -56,6 +56,8 @@ const ReversibilityRow kW3DeviceRows[] = {
 		"action checkpoint: the recorded undo step puts the whole previous modulator back", ""),
 	R("plugin.impulse_load", RC::TrueInverse, true, "it loads an impulse response into a convolution reverb (device state)",
 		"action checkpoint: the recorded undo step restores the device's previous settings document", ""),
+	R("plugin.delta", RC::NotMutating, false, "it plays a device's delta instead of its output: a monitor switch, not the "
+		"project (neither saved nor journalled)", "no write (plugin.delta on:false puts it back)", ""),
 	R("mixer.console_apply", RC::TrueInverse, true, "it adds the Console device to every channel, changes the ones there, or removes them",
 		"action checkpoints (each added device taken out, each removed one recreated) and model checkpoints, merged into one step", ""),
 };

@@ -238,6 +238,20 @@ QWidget* DeviceCard::buildHeader()
 			else { fold->setChecked(!folded); }
 		});
 		row->addWidget(fold);
+		// MX-080: hear only what the device changes (plugin.delta, a monitor switch).
+		auto* delta = new QToolButton(header);
+		delta->setText(QStringLiteral("\u0394"));
+		delta->setToolTip(tr("Hear only what %1 changes").arg(m_spec.title));
+		delta->setAccessibleName(delta->toolTip());
+		delta->setAutoRaise(true);
+		delta->setCheckable(true);
+		delta->setChecked(m_spec.effect->deltaTap().enabled());
+		connect(delta, &QToolButton::clicked, this, [this, delta](bool on) {
+			const QJsonObject args{{QStringLiteral("target"), m_spec.target}, {QStringLiteral("plugin"), m_spec.plugin},
+				{QStringLiteral("on"), on}};
+			if (!invoke(QStringLiteral("plugin.delta"), args).ok) { delta->setChecked(!on); }
+		});
+		row->addWidget(delta);
 	}
 	QToolButton* editor = headerButton(QStringLiteral("editor"), tr("Open %1's own editor").arg(m_spec.title), header);
 	connect(editor, &QToolButton::clicked, this, &DeviceCard::openEditor);

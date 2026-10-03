@@ -100,6 +100,7 @@ SET(LMMS_SRCS
 	gui/noteeditor/NoteBackgroundAudio.cpp
 	gui/XyPad.cpp
 	gui/ParameterGridDialog.cpp
+	gui/shell/ChannelLevelMeter.cpp
 	gui/FollowActionEditor.cpp
 	gui/noteeditor/NoteCanvas.cpp
 	gui/noteeditor/NoteCanvasGestures.cpp
