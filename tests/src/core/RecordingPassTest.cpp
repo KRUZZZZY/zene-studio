@@ -94,7 +94,7 @@ private slots:
 		const tick_t bar = song->ticksPerBar();
 		recordoptions::setOptions({1, 1, recordoptions::Mode::Overdub});
 		song->setPlayPos(4 * bar, Song::PlayMode::Song);
-		recordoptions::beginPass(song);
+		QCOMPARE(recordoptions::beginPass(song), 4 * bar);  // where Stop returns to
 		QCOMPARE(song->getPlayPos(Song::PlayMode::Song).getTicks(), 2 * bar);  // two bars early
 		QVERIFY(recordoptions::countingIn(2 * bar));
 		QVERIFY(recordoptions::countingIn(3 * bar - 1));

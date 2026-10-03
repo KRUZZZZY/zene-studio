@@ -24,6 +24,8 @@
 #ifndef LMMS_GATE_H
 #define LMMS_GATE_H
 
+#include <atomic>
+
 #include "AudioPlugin.h"
 #include "GateControls.h"
 
@@ -45,7 +47,7 @@ public:
 	~GateEffect() override = default;
 
 	EffectControls* controls() override { return &m_controls; }
-	float gainReductionDb() const override { return m_reductionDb; }
+	float gainReductionDb() const override { return m_reductionDb.load(std::memory_order_relaxed); }
 
 	//! The gain (linear) the mode asks for at key level @a levelDb - exposed for the unit test.
 	static float targetGain(int mode, float levelDb, float thresholdDb, float rangeDb, float ratio);
@@ -59,7 +61,7 @@ private:
 	float m_envelope = 0.f;
 	float m_gain = 1.f;
 	f_cnt_t m_holdLeft = 0;
-	float m_reductionDb = 0.f;
+	std::atomic<float> m_reductionDb{0.f};  //!< written by the audio thread, read by the strip
 
 	friend class GateControls;
 };

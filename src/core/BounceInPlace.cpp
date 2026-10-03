@@ -35,6 +35,7 @@
 #include <QFile>
 #include <QFileInfo>
 #include <QProcess>
+#include <QSet>
 
 #include <sndfile.h>
 
@@ -87,10 +88,10 @@ bool carriesAudio(const QDomElement& element)
 }
 
 //! True when \a element is the track the render is for.
-bool isTheTarget(const QDomElement& element, int targetId)
+bool isTheTarget(const QDomElement& element, const QSet<int>& targetIds)
 {
 	const QString idAttribute = element.attribute(QStringLiteral("id"));
-	return !idAttribute.isEmpty() && idAttribute.toInt() == targetId;
+	return !idAttribute.isEmpty() && targetIds.contains(idAttribute.toInt());
 }
 
 /*! Mutes one track element in place - the target is forced UNMUTED - and
@@ -101,9 +102,9 @@ bool isTheTarget(const QDomElement& element, int targetId)
  *  audio to mute - so muting one would silently drop the target's automation
  *  from the render instead of silencing anything.
  */
-bool muteTrackElement(QDomElement element, int targetId)
+bool muteTrackElement(QDomElement element, const QSet<int>& targetIds)
 {
-	const bool isTarget = isTheTarget(element, targetId);
+	const bool isTarget = isTheTarget(element, targetIds);
 	if (!isTarget && !carriesAudio(element)) { return false; }
 	element.setAttribute(QStringLiteral("muted"), isTarget ? 0 : 1);
 	return isTarget;
@@ -133,7 +134,7 @@ bool writeXml(QDomDocument& document, const QString& path, QString* error)
  *  everything but the track it is about to render), and the target is forced
  *  UNMUTED so a bounce of a muted track is its audio rather than silence.
  */
-bool muteOtherTracks(const QString& source, const QString& target, int targetId, QString* error)
+bool muteOtherTracks(const QString& source, const QString& target, const QSet<int>& targetIds, QString* error)
 {
 	QFile file(source);
 	if (!file.open(QIODevice::ReadOnly))
@@ -155,7 +156,7 @@ bool muteOtherTracks(const QString& source, const QString& target, int targetId,
 	{
 		QDomElement element = tracks.at(i).toElement();
 		if (element.isNull()) { continue; }
-		found = muteTrackElement(element, targetId) || found;
+		found = muteTrackElement(element, targetIds) || found;
 	}
 	if (!found)
 	{
@@ -184,23 +185,23 @@ bool runCliRender(const QString& projectPath, const QString& out, int sampleRate
 
 //! Everything that can refuse, checked before anything is written (SPEC A16: a
 //! refusal leaves no file behind). Empty when the request is usable.
-QString validateRequest(Track* track, const QString& outPath)
+QString validateRequest(const std::vector<Track*>& tracks, const QString& outPath)
 {
-	if (track == nullptr) { return QStringLiteral("no track to render"); }
+	if (tracks.empty() || std::find(tracks.begin(), tracks.end(), nullptr) != tracks.end()) { return QStringLiteral("no track to render"); }
 	if (outPath.isEmpty() || !outPath.startsWith(QLatin1Char('/')))
 	{
 		return QStringLiteral("the output path must be absolute");
 	}
 	if (Engine::getSong() == nullptr) { return QStringLiteral("no engine to render with"); }
-	if (track->numOfClips() == 0)
+	if (std::none_of(tracks.begin(), tracks.end(), [](Track* track) { return track->numOfClips() > 0; }))
 	{
 		return QStringLiteral("the track has no clips: there is nothing to render");
 	}
 	return QString();
 }
 
-//! Serialises the session and mutes every other track in the copy.
-bool serialiseWithOnlyTrack(Track* track, TempFiles* temps, QString* error)
+//! Serialises the session and mutes every track but @a tracks in the copy.
+bool serialiseWithOnlyTracks(const std::vector<Track*>& tracks, TempFiles* temps, QString* error)
 {
 	temps->project = tempPath(QStringLiteral("mmp"));
 	if (!Engine::getSong()->saveProjectFile(temps->project))
@@ -209,7 +210,9 @@ bool serialiseWithOnlyTrack(Track* track, TempFiles* temps, QString* error)
 		return false;
 	}
 	temps->mutedProject = tempPath(QStringLiteral("mmp"));
-	return muteOtherTracks(temps->project, temps->mutedProject, track->id(), error);
+	QSet<int> ids;
+	for (const Track* track : tracks) { ids.insert(track->id()); }
+	return muteOtherTracks(temps->project, temps->mutedProject, ids, error);
 }
 
 //! Writes the range's frames out of a whole-track render.
@@ -294,7 +297,13 @@ BounceInPlace::Result BounceInPlace::renderTrack(Track* track, const QString& ou
 BounceInPlace::Result BounceInPlace::renderTrack(Track* track, const QString& outPath,
 		const Range& range, int sampleRate)
 {
-	const QString problem = validateRequest(track, outPath);
+	return renderTracks({track}, outPath, range, sampleRate);
+}
+
+BounceInPlace::Result BounceInPlace::renderTracks(const std::vector<Track*>& tracks, const QString& outPath,
+		const Range& range, int sampleRate)
+{
+	const QString problem = validateRequest(tracks, outPath);
 	if (!problem.isEmpty()) { return Result::failure(problem); }
 
 	const QString noDir = prepareOutputDir(outPath);
@@ -302,7 +311,7 @@ BounceInPlace::Result BounceInPlace::renderTrack(Track* track, const QString& ou
 
 	TempFiles temps;
 	QString error;
-	if (!serialiseWithOnlyTrack(track, &temps, &error)) { return Result::failure(error); }
+	if (!serialiseWithOnlyTracks(tracks, &temps, &error)) { return Result::failure(error); }
 
 	// A range is rendered as a trim of the track's own render: the engine's
 	// render always starts at tick 0, and the window the caller asked for is

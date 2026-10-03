@@ -281,6 +281,31 @@ private slots:
 		QCOMPARE(run(QStringLiteral("rack.wrap"), {{QStringLiteral("channel"), ch(2)}}).errorKind, ControlErrorKind::NotFound);
 	}
 
+	//! MX-102: a device on a parallel chain is addressed by its fx-<n> on the channel, like the chain's
+	//! own - bypass and unload reach it, and the unload's undo puts it back on its chain.
+	void aParallelChainsDeviceIsAddressedOnTheChannel()
+	{
+		Rack& rack = Engine::mixer()->mixerChannel(2)->m_rack;
+		const int chain = run(QStringLiteral("rack.add_chain"), {{QStringLiteral("channel"), ch(2)}}).result.value(QStringLiteral("chain")).toInt();
+		QVERIFY(chain >= 1);
+		QString loaded;
+		for (const QJsonValue& device : run(QStringLiteral("plugin.list"), {{QStringLiteral("kind"), QStringLiteral("effect")},
+			{QStringLiteral("loadable_only"), true}}).result.value(QStringLiteral("devices")).toArray())
+		{
+			const ControlResult r = run(QStringLiteral("plugin.load"), {{QStringLiteral("target"), ch(2)}, {QStringLiteral("chain"), chain},
+				{QStringLiteral("device"), device.toObject().value(QStringLiteral("id")).toString()}});
+			if (r.ok) { loaded = r.result.value(QStringLiteral("id")).toString(); break; }
+		}
+		if (loaded.isEmpty()) { QSKIP("this build loads no effect"); }
+		QVERIFY(run(QStringLiteral("plugin.bypass"), {{QStringLiteral("target"), ch(2)}, {QStringLiteral("plugin"), loaded},
+			{QStringLiteral("bypass"), true}}).ok);
+		QVERIFY(!rack.chain(chain)->effects().front()->isEnabled());
+		QVERIFY(run(QStringLiteral("plugin.unload"), {{QStringLiteral("target"), ch(2)}, {QStringLiteral("plugin"), loaded}}).ok);
+		QVERIFY(rack.chain(chain)->effects().empty());
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
+		QCOMPARE(rack.chain(chain)->effects().size(), std::size_t{1});  // back on its own chain
+	}
+
 	//! MX-106: the remote knobs drive the target device's parameters eight at a time.
 	void remoteKnobsDriveAPageOfParameters()
 	{

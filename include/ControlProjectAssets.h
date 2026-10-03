@@ -28,6 +28,7 @@
 #ifndef LMMS_CONTROL_PROJECT_ASSETS_H
 #define LMMS_CONTROL_PROJECT_ASSETS_H
 
+#include <QJsonArray>
 #include <QString>
 #include <QStringList>
 #include <QVector>
@@ -152,6 +153,12 @@ constexpr qint64 MaxProjectAssetHashBytes = 1024LL * 1024LL * 1024LL;
  *  need the project to be the open one, does not need it to be loadable, and
  *  does not need a GUI.
  */
+/*! 0.5.0 L12 (WF-049): project.collect_media's work without its undo step - every external file the
+ *  project FILE @a project names copied into @a folderName beside it, the file rewritten to name the
+ *  copies. For a copy of a project (a hand-off package), not the session's own file. */
+LMMS_EXPORT bool collectProjectMediaInto(const QString& project, const QString& folderName, QJsonArray* copied,
+	QJsonArray* failed, int* missing, ControlResult* error);
+
 LMMS_EXPORT bool controlScanProjectAssets(const QString& projectPath, ProjectAssetScan* out,
 	ControlResult* error);
 

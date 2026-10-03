@@ -1,0 +1,95 @@
+/*
+ * ContextHelp.cpp - hover and What's This help from the commands every control runs
+ *
+ * Copyright (c) 2026 Zene Studio contributors
+ *
+ * This file is part of LMMS - https://lmms.io
+ *
+ * This program is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU General Public
+ * License as published by the Free Software Foundation; either
+ * version 2 of the License, or (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public
+ * License along with this program (see COPYING); if not, write to the
+ * Free Software Foundation, Inc., 51 Franklin Street, Fifth Floor,
+ * Boston, MA 02110-1301 USA.
+ *
+ */
+#include "ContextHelp.h"
+
+#include <QAction>
+#include <QApplication>
+#include <QHelpEvent>
+#include <QMenu>
+#include <QToolTip>
+#include <QWhatsThis>
+#include <QWidget>
+
+#include "ControlRegistry.h"
+
+namespace lmms::gui
+{
+
+namespace
+{
+
+//! The command id a widget (or, for a menu, the action under the pointer) runs.
+QString commandOf(const QWidget* widget)
+{
+	for (int level = 0; widget != nullptr && level < 3; ++level, widget = widget->parentWidget())
+	{
+		const QString id = widget->property("controlCommand").toString();
+		if (!id.isEmpty()) { return id; }
+	}
+	return {};
+}
+
+QString describe(const QString& id, bool full)
+{
+	const ControlCommand* command = ControlRegistry::instance()->command(id);
+	if (command == nullptr || command->description.isEmpty()) { return {}; }
+	if (full) { return QStringLiteral("<b>%1</b><br>%2").arg(id, command->description.toHtmlEscaped()); }
+	const int stop = command->description.indexOf(QLatin1String(". "));
+	return stop > 0 ? command->description.left(stop + 1) : command->description;
+}
+
+} // namespace
+
+void ContextHelp::install()
+{
+	static ContextHelp* filter = nullptr;
+	if (filter != nullptr || qApp == nullptr) { return; }
+	filter = new ContextHelp;
+	filter->setParent(qApp);
+	qApp->installEventFilter(filter);
+}
+
+QString ContextHelp::helpFor(const QWidget* widget, bool full)
+{
+	const QString id = commandOf(widget);
+	return id.isEmpty() ? QString() : describe(id, full);
+}
+
+bool ContextHelp::eventFilter(QObject* watched, QEvent* event)
+{
+	const auto type = event->type();
+	if (type != QEvent::ToolTip && type != QEvent::WhatsThis && type != QEvent::QueryWhatsThis) { return false; }
+	auto* widget = qobject_cast<QWidget*>(watched);
+	if (widget == nullptr) { return false; }
+	if (type == QEvent::ToolTip && !widget->toolTip().isEmpty()) { return false; }  // its own tooltip wins
+	const QString text = helpFor(widget, type != QEvent::ToolTip);
+	if (text.isEmpty()) { return false; }
+	if (type == QEvent::QueryWhatsThis) { event->accept(); return true; }
+	const auto* help = static_cast<QHelpEvent*>(event);
+	if (type == QEvent::ToolTip) { QToolTip::showText(help->globalPos(), text, widget); }
+	else { QWhatsThis::showText(help->globalPos(), text, widget); }
+	return true;
+}
+
+} // namespace lmms::gui

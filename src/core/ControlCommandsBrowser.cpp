@@ -221,7 +221,9 @@ void registerBrowserCommands(ControlRegistry& registry)
 			"length, and the embedded title/artist/album/comment/genre tags). Every 'tags' "
 			"entry must be present (AND). Sorted by path, so paging with offset is stable. "
 			"The walk is bounded by scan_limit entries and the probe by probe_limit files, "
-			"and a result that hit either bound says truncated: true. Read-only.");
+			"and a result that hit either bound says truncated: true. 'text' is one substring, or an "
+			"expression: words ANDed, OR (or |) between groups, -word to exclude, \"a phrase\", and the "
+			"fields name: path: tag: kind: ext: (e.g. kind:audio tag:drums -loop OR \"bass drum\"). Read-only.");
 		cmd.argsSchema = objectSchema({
 			{QStringLiteral("text"), stringProperty()},
 			{QStringLiteral("tags"), browserStringListProperty()},
@@ -304,5 +306,12 @@ void registerBrowserCommands(ControlRegistry& registry)
 
 	registerBrowserTagCommands(registry);
 }
+
+namespace control
+{
+
+ControlResult browserQueryCommand(const QJsonObject& args) { return browserQueryHandler(args); }
+
+} // namespace control
 
 } // namespace lmms

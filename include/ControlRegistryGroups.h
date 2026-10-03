@@ -791,6 +791,18 @@ LMMS_EXPORT void registerRecordingPassCommands(ControlRegistry& registry);
 LMMS_EXPORT void registerLaunchBindingCommands(ControlRegistry& registry);
 //! 0.5.0 L02 (WF-055): session.capture_to_slot (ControlCommandsSessionCapture.cpp).
 LMMS_EXPORT void registerSessionCaptureCommand(ControlRegistry& registry);
+//! 0.5.0 L01 (MX-159): transport.low_latency (ControlCommandsLowLatency.cpp).
+LMMS_EXPORT void registerLowLatencyCommand(ControlRegistry& registry);
+//! 0.5.0 L11 (WF-006): browser.collection_save / remove / collections / collection_run.
+LMMS_EXPORT void registerBrowserCollectionCommands(ControlRegistry& registry);
+//! 0.5.0 L11 (WF-024 / WF-016): track.preset_save / preset_load, plugin.replace (ControlCommandsTrackPresets.cpp).
+LMMS_EXPORT void registerTrackPresetCommands(ControlRegistry& registry);
+//! 0.5.0 L12 (ED-205): range.bounce (ControlCommandsRangeBounce.cpp).
+LMMS_EXPORT void registerRangeBounceCommand(ControlRegistry& registry);
+//! 0.5.0 L12 (WF-036): project.import_tracks (ControlCommandsImportTracks.cpp).
+LMMS_EXPORT void registerImportTracksCommand(ControlRegistry& registry);
+//! 0.5.0 L12 (WF-049): project.handoff (ControlCommandsHandoff.cpp).
+LMMS_EXPORT void registerHandoffCommand(ControlRegistry& registry);
 //! 0.5.0 L04 (ED-030/032): clip.repeat, clip.time_scale (ControlCommandsClipArrange.cpp).
 LMMS_EXPORT void registerClipArrangeCommands(ControlRegistry& registry);
 //! 0.5.0 L06: automation.lane_add / add_trim / draw_shape / transform / thin / set_curve /
@@ -800,6 +812,14 @@ LMMS_EXPORT void registerAutomationLaneCommands(ControlRegistry& registry);
 //! key_names.* (ControlCommandsKeyNames.cpp).
 LMMS_EXPORT void registerNoteShapeCommands(ControlRegistry& registry);
 LMMS_EXPORT void registerKeyNameCommands(ControlRegistry& registry);
+//! 0.5.0 L07 (W3): note.invert / arpeggiate / flam / transpose_in_key / repeat / generate
+//! (ControlCommandsNoteTools.cpp).
+LMMS_EXPORT void registerNoteToolCommands(ControlRegistry& registry);
+//! 0.5.0 L07 (W3): note.move_to_track / split_by_pitch, scale.detect, transport.panic
+//! (ControlCommandsNoteMoves.cpp).
+LMMS_EXPORT void registerNoteMoveCommands(ControlRegistry& registry);
+//! 0.5.0 L07 (W3): note.follow_chords, clip.quantize, scale.define / custom (ControlCommandsNoteHarmony.cpp).
+LMMS_EXPORT void registerNoteHarmonyCommands(ControlRegistry& registry);
 } // namespace lmms
 
 #endif // LMMS_CONTROL_REGISTRY_GROUPS_H

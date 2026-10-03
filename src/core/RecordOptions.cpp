@@ -81,11 +81,11 @@ QJsonObject toJson(const Options& o)
 		{QStringLiteral("mode"), modeNames().at(static_cast<int>(o.mode))}};
 }
 
-void beginPass(Song* song)
+tick_t beginPass(Song* song)
 {
 	const Options o = options();
 	const int bars = o.countInBars + o.preRollBars;
-	if (bars == 0) { return; }
+	if (bars == 0) { return -1; }
 	const tick_t start = song->getPlayPos(Song::PlayMode::Song).getTicks();
 	const tick_t back = std::max<tick_t>(0, start - static_cast<tick_t>(bars) * song->ticksPerBar());
 	// Captured from the play position on: the punch gate opens there, unless a region is armed.
@@ -98,6 +98,7 @@ void beginPass(Song* song)
 	s_countInUntil.store(o.countInBars > 0 ? std::min(start, back + static_cast<tick_t>(o.countInBars) * song->ticksPerBar()) : -1,
 		std::memory_order_relaxed);
 	song->setPlayPos(back, Song::PlayMode::Song);
+	return start;
 }
 
 void endPass(Song* song)

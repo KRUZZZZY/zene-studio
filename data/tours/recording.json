@@ -1,0 +1,13 @@
+{
+	"title": "Recording",
+	"steps": [
+		{"target": "shellPanel_arranger", "panel": "arranger", "title": "Arm a track",
+		 "text": "The round button in a track's header arms it for recording. Its Record menu chooses the input."},
+		{"target": "header_record", "title": "Record",
+		 "text": "Record starts the transport and the armed tracks capture. Record > Count-In and Pre-Roll starts it a bar or more early; Record Mode chooses overdub or replace."},
+		{"target": "shellPanel_inspector", "panel": "inspector", "title": "Takes",
+		 "text": "Looped passes become take lanes, shown in the Inspector. Drag along a lane to comp that range; double-click to cycle the take there."},
+		{"target": "shellPanel_launcher", "panel": "launcher", "title": "The launcher",
+		 "text": "Cells play patterns and samples in time. With Keep Listening on, Launcher > Record What I Played Into a Cell keeps what you just played as a new pattern."}
+	]
+}

@@ -27,6 +27,7 @@
  *  wrapping some makes them a parallel layer beside what stays (the rack's parallel selection).
  *  One undo step puts the devices, the chains and the selection back. */
 
+#include <algorithm>
 #include <memory>
 
 #include <QJsonArray>
@@ -63,6 +64,16 @@ bool namedDevices(const QJsonObject& args, const ControlTarget& target, std::vec
 	{
 		Effect* effect = resolveControlEffect(target, id.toString(), error);
 		if (effect == nullptr) { return false; }
+		if (effect->effectChain() != target.chain)  // a rack chain's device is found by its id too (MX-102)
+		{
+			*error = ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("'%1' is already in a rack chain").arg(id.toString()));
+			return false;
+		}
+		if (std::find(out->begin(), out->end(), effect) != out->end())  // review #11: each device once
+		{
+			*error = ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("'%1' is named twice").arg(id.toString()));
+			return false;
+		}
 		out->push_back(effect);
 	}
 	return true;

@@ -101,7 +101,14 @@ ControlResult bind(const QJsonObject& args)
 
 ControlResult unbind(const QJsonObject& args)
 {
-	return storeBindings(without(args.value(QStringLiteral("key")).toInt(), args.value(QStringLiteral("channel")).toInt(-1)));
+	const int key = args.value(QStringLiteral("key")).toInt();
+	const int channel = args.value(QStringLiteral("channel")).toInt(-1);
+	const QJsonArray remaining = without(key, channel);
+	if (remaining.size() == LaunchBindings::bindings().size())
+	{
+		return ControlResult::failure(ControlErrorKind::NotFound, QStringLiteral("no binding on key %1, channel %2").arg(key).arg(channel));
+	}
+	return storeBindings(remaining);
 }
 
 ControlResult bindLearn(const QJsonObject& args)
@@ -121,7 +128,8 @@ ControlResult bindLearn(const QJsonObject& args)
 ControlResult connectBindings(const QJsonObject& args)
 {
 	LaunchBindings* bindings = LaunchBindings::connect(args.value(QStringLiteral("input")).toString(), args.value(QStringLiteral("output")).toString());
-	return ControlResult::success({{QStringLiteral("connected"), bindings->isOpen()}, {QStringLiteral("input"), bindings->input()},
+	return ControlResult::success({{QStringLiteral("connected"), bindings->isOpen()}, {QStringLiteral("subscribed"), bindings->subscribed()},
+		{QStringLiteral("input"), bindings->input()},
 		{QStringLiteral("bindings"), LaunchBindings::bindings()}});
 }
 
@@ -158,7 +166,8 @@ void registerLaunchBindingCommands(ControlRegistry& registry)
 	withNote.insert(QStringLiteral("key"), integerProperty(0, 127));
 	withNote.insert(QStringLiteral("channel"), integerProperty(-1, 15));
 	add(registry, "bindings_connect", QStringLiteral("Open a MIDI controller for the launcher's bindings: 'input' (a readable "
-		"port, as midi.clients_list names it), 'output' optional. Its notes then launch what they are bound to."),
+		"port, as midi.clients_list names it), 'output' optional. Its notes then launch what they are bound to. 'subscribed' "
+		"says whether the input is a port the MIDI client has (false: nothing will arrive)."),
 		objectSchema({{QStringLiteral("input"), stringProperty()}, {QStringLiteral("output"), stringProperty()}}), connectBindings, false);
 	add(registry, "bind", QStringLiteral("Bind a note ('key' 0..127, 'channel' 0..15 or -1 for any) to a launcher action: 'action' "
 		"slot (with 'track' and 'scene' - the note's release releases a Gate or Repeat cell), scene (with 'scene') or stop_all. "

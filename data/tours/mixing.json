@@ -1,0 +1,13 @@
+{
+	"title": "Mixing",
+	"steps": [
+		{"target": "shellPanel_mixer", "panel": "mixer", "title": "The mixer",
+		 "text": "Each strip is a channel: fader, pan, mute and solo, its inserts and its sends. Right-click a strip for its Strip, Listen and Mixer View menus."},
+		{"target": "newReturnBtn", "panel": "mixer", "title": "Returns",
+		 "text": "A return channel takes sends from other channels - a reverb or delay shared by many tracks. Each send has its own level and pan."},
+		{"target": "vcaArea", "panel": "mixer", "title": "Groups",
+		 "text": "VCA groups move many faders at once. Groups can sit inside other groups and choose whether their level, mute and solo reach their members."},
+		{"target": "shellPanel_devices", "panel": "devices", "title": "Devices",
+		 "text": "The selected channel's devices show here as cards, with the rack's macro knobs. Right-click a device in a rack to insert another beside it, copy it or compare two settings."}
+	]
+}

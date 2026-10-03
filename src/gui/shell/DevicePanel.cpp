@@ -315,6 +315,13 @@ void DevicePanel::rebuild()
 	auto* macros = new MacroKnobs(m_channel, 8, false, m_row);
 	m_cards->insertWidget(m_cards->indexOf(m_add), macros);
 	addChain(&channel->m_fxChain, m_channel, modulators);
+	// 0.5.0 L10 (MX-102): the rack's parallel chains, each after its own heading; their devices are
+	// addressed by fx-<n> on the channel like the chain's own.
+	for (int c = 1; c < channel->m_rack.chainCount(); ++c)
+	{
+		addSection(tr("Parallel chain %1").arg(c));
+		addChain(channel->m_rack.chain(c), m_channel, {});
+	}
 }
 
 QString DevicePanel::signature() const
@@ -326,6 +333,11 @@ QString DevicePanel::signature() const
 	if (MixerChannel* channel = m_channel.isEmpty() ? nullptr : control::resolveMixerChannel(m_channel, &error))
 	{
 		for (const Effect* effect : channel->m_fxChain.effects()) { text += control::effectIdOf(effect); }
+		for (int c = 1; c < channel->m_rack.chainCount(); ++c)
+		{
+			text += QStringLiteral("|chain%1:").arg(c);
+			for (const Effect* effect : channel->m_rack.chain(c)->effects()) { text += control::effectIdOf(effect); }
+		}
 	}
 	const QJsonObject modulators = invoke(QStringLiteral("modulator.get_state"), {}).result;
 	return text + QString::fromUtf8(QJsonDocument(modulators.value(QStringLiteral("modulators")).toArray()).toJson(QJsonDocument::Compact));

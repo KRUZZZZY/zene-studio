@@ -46,6 +46,8 @@
 #include "SongEditor.h"
 #include "MenuBarExtras.h"
 #include "RecordLaunchMenus.h"
+#include "ContextHelp.h"
+#include "HelpCenter.h"
 #include "ShellPanel.h"
 #include "ShortcutMap.h"
 #include "UiConfigStore.h"
@@ -132,6 +134,8 @@ void Shell::showEvent(QShowEvent* event)
 		{
 			installNavigateMenu(main->menuBar());
 			installRecordLaunchMenus(main->menuBar());  // 0.5.0 L03 / L02
+			installHelpEntries(main->menuBar());  // 0.5.0 L14: What's This?, the manual, tours, appearance
+			ContextHelp::install();
 			if (getGUI() != nullptr && getGUI()->songEditor() != nullptr) { installArrangerOverlays(getGUI()->songEditor()->m_editor); }
 			MacroMenu::install(main->menuBar());
 			ShortcutMap::apply(main->menuBar());

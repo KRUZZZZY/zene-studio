@@ -43,6 +43,7 @@
 #include "ControlEdit.h"
 #include "ControlRegistry.h"
 #include "ControlRegistryGroups.h"
+#include "ControlStructuralSupport.h"
 #include "ControlVocabulary.h"
 #include "Effect.h"
 #include "EffectChain.h"
@@ -91,6 +92,10 @@ ControlResult pluginCopy(const QJsonObject& args)
 	Effect* effect = resolveControlEffect(from, args.value(QStringLiteral("plugin")).toString(), &error);
 	if (effect == nullptr) { return error; }
 	const QString state = controlEffectStateXml(effect);
+	if (state.size() > StructuralSnapshotLimit)
+	{
+		return ControlResult::failure(ControlErrorKind::Refused, QStringLiteral("the device's settings are too large to record for an undo"));
+	}
 	const int position = args.contains(QStringLiteral("position")) ? args.value(QStringLiteral("position")).toInt() : -1;
 	const QJsonArray ids = recreateDevices(destinationResolver(args), {state}, position, &error);
 	if (ids.isEmpty()) { return error.errorMessage.isEmpty() ? ControlResult::failure(ControlErrorKind::Refused, QStringLiteral("the device could not be copied")) : error; }
@@ -116,7 +121,7 @@ ControlResult chainCopy(const QJsonObject& args)
 	if (replace)
 	{
 		const std::vector<Effect*> existing = to.chain->effects();  // a copy: the removal changes the chain's list
-		removeDevicesRecorded(to.chain, existing);
+		removeDevicesRecorded(destinationResolver(args), existing);
 	}
 	const QJsonArray ids = recreateDevices(destinationResolver(args), states, -1, &error);
 	QJsonObject result = copied(to, ids, QStringLiteral("action checkpoint: the recorded undo step takes the copies out and "
@@ -132,6 +137,9 @@ struct AbSlots
 	QString a;
 	QString b;
 	bool onB = false;
+	//! The device the slots belong to: ids restart with each document, so a slot found under the
+	//! id of a device it was not stored for is not its (review L10-L03-L02-1 #3).
+	QPointer<Effect> owner;
 };
 
 std::map<int, AbSlots>& abSlots()
@@ -188,6 +196,7 @@ ControlResult pluginAb(const QJsonObject& args)
 	Effect* effect = resolveControlEffect(target, args.value(QStringLiteral("plugin")).toString(), &error);
 	if (effect == nullptr) { return error; }
 	AbSlots& pair = abSlots()[effect->id()];
+	if (pair.owner != effect) { pair = AbSlots{}; pair.owner = effect; }
 	const QString action = args.value(QStringLiteral("action")).toString();
 	const bool toB = args.value(QStringLiteral("slot")).toString() == QLatin1String("b");
 	if (action == QLatin1String("recall")) { return abRecall(effect, pair, toB); }

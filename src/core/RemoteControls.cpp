@@ -155,7 +155,8 @@ QJsonObject RemoteControls::state() const
 		page.append(QJsonObject{{QStringLiteral("knob"), knob}, {QStringLiteral("name"), models.at(index)->displayName()},
 			{QStringLiteral("value"), static_cast<double>(models.at(index)->value<float>())}});
 	}
-	return {{QStringLiteral("connected"), isOpen()}, {QStringLiteral("input"), input()}, {QStringLiteral("output"), output()},
+	return {{QStringLiteral("connected"), isOpen()}, {QStringLiteral("subscribed"), subscribed()}, {QStringLiteral("input"), input()},
+		{QStringLiteral("output"), output()},
 		{QStringLiteral("channel"), m_channel}, {QStringLiteral("first_cc"), m_firstCc}, {QStringLiteral("target"), m_target},
 		{QStringLiteral("plugin"), m_plugin}, {QStringLiteral("follow"), m_follow}, {QStringLiteral("page"), m_page},
 		{QStringLiteral("pages"), pageCount()}, {QStringLiteral("parameters"), page},

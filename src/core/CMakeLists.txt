@@ -120,6 +120,7 @@ set(LMMS_SRCS
 	# The optional Rubber Band stretch (owner decision 12): always compiled, the
 	# library calls only under LMMS_HAVE_RUBBERBAND.
 	core/RubberBandStretch.cpp
+	core/Appearance.cpp
 	core/AutomatableModel.cpp
 	core/AutomationClip.cpp
 	core/AutomationClipTransforms.cpp
@@ -130,6 +131,7 @@ set(LMMS_SRCS
 	core/BrowserCatalog.cpp
 	core/BrowserMetadata.cpp
 	core/BrowserPeakCache.cpp
+	core/BrowserSearch.cpp
 	core/BrowserTagStore.cpp
 	# Import detection (feature row 34 of docs/FEATURE-LIST-0.3.0.md): the Qt-free
 	# arithmetic (a hand-rolled spectral-flux tempo estimate and a chroma key
@@ -168,6 +170,7 @@ set(LMMS_SRCS
 	core/ControlCommandsPluginEditor.cpp
 	core/ControlBounceSupport.cpp
 	core/ControlCommandsBounceLand.cpp
+	core/ControlCommandsBrowserCollections.cpp
 	core/ControlCommandsClipEdits.cpp
 	core/ControlCommandsCollectMedia.cpp
 	# clip.trim / clip.slip (0.3.0 verb wave): the clip group's edge-editing verbs.
@@ -217,12 +220,17 @@ set(LMMS_SRCS
 	core/ControlCommandsMixerStrip.cpp
 	core/ControlCommandsDeviceCopy.cpp
 	core/ControlCommandsDrumRack.cpp
+	core/ControlCommandsHandoff.cpp
+	core/ControlCommandsImportTracks.cpp
 	core/ControlCommandsLaunchBindings.cpp
+	core/ControlCommandsLowLatency.cpp
 	core/ControlCommandsPluginOrganise.cpp
 	core/ControlCommandsPluginPaths.cpp
 	core/ControlCommandsRackWrap.cpp
+	core/ControlCommandsRangeBounce.cpp
 	core/ControlCommandsRecordingPass.cpp
 	core/ControlCommandsSessionCapture.cpp
+	core/ControlCommandsTrackPresets.cpp
 	core/ControlCommandsRemote.cpp
 	core/ControlDeviceMoves.cpp
 	# The mixer group's routing verbs (mixer.route_to / send_to / sidechain_to /
@@ -947,6 +955,9 @@ set(LMMS_SRCS
 	core/ControlCommandsNoteAcross.cpp
 	core/ControlCommandsNoteCurves.cpp
 	core/ControlCommandsNoteShape.cpp
+	core/ControlCommandsNoteTools.cpp
+	core/ControlCommandsNoteMoves.cpp
+	core/ControlCommandsNoteHarmony.cpp
 	core/ControlCommandsRange.cpp
 	core/ProjectMarkers.cpp
 	core/Timeline.cpp

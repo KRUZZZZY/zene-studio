@@ -37,6 +37,8 @@
 
 #include "BrowserCatalog.h"
 
+#include "BrowserSearch.h"
+
 #include <algorithm>
 
 #include <QDateTime>
@@ -136,6 +138,7 @@ const KindNameRow kKindNames[] = {
 struct QueryContext
 {
 	const BrowserQuery* query = nullptr;
+	const BrowserSearch* search = nullptr;  //!< 0.5.0 L11 (WF-003): the text, parsed once
 	QList<BrowserItem> matched;
 	int scanned = 0;
 	int probed = 0;
@@ -160,15 +163,6 @@ bool tagsMatch(const QStringList& present, const QStringList& wanted)
 	return true;
 }
 
-bool textMatches(const QStringList& haystack, const QString& needle)
-{
-	for (const QString& text : haystack)
-	{
-		if (text.contains(needle)) { return true; }
-	}
-	return false;
-}
-
 BrowserItem makeItem(const QString& path, BrowserKind kind)
 {
 	const QFileInfo info(path);
@@ -191,8 +185,7 @@ void considerPath(const QString& path, BrowserKind kind, QueryContext* context)
 	if (!tagsMatch(item.tags, context->query->tags)) { return; }
 	++context->scanned;
 
-	const QString needle = context->query->text.trimmed().toLower();
-	if (needle.isEmpty() || textMatches(item.searchableText(), needle))
+	if (context->search->matches(item))
 	{
 		context->matched.append(item);
 		return;
@@ -202,7 +195,7 @@ void considerPath(const QString& path, BrowserKind kind, QueryContext* context)
 	item.metadata = probeAudioMetadata(item.path);
 	item.hasMetadata = true;
 	++context->probed;
-	if (item.metadata.valid && textMatches(item.metadata.searchableText(), needle))
+	if (item.metadata.valid && context->search->matches(item, item.metadata.searchableText()))
 	{
 		context->matched.append(item);
 	}
@@ -345,6 +338,8 @@ BrowserQueryResult runBrowserQuery(const BrowserQuery& query)
 	BrowserQueryResult result;
 	QueryContext context;
 	context.query = &query;
+	const BrowserSearch search(query.text);
+	context.search = &search;
 
 	BrowserKind kind = BrowserKind::Other;
 	const bool kindFiltered = browserKindFromName(query.kind, &kind);

@@ -31,6 +31,7 @@
 #include <QVBoxLayout>
 
 #include "Accessibility.h"
+#include "BrowserSearchView.h"
 #include "ConfigManager.h"
 #include "DesignTokens.h"
 #include "embed.h"
@@ -96,6 +97,7 @@ BrowserPanel* createStandardBrowser(QWidget* parent)
 	auto icon = [](const char* name) { return embed::getIconPixmap(name); };
 
 	panel->addSource(new PluginBrowser(panel));
+	panel->addSource(new BrowserSearchView(panel));  // 0.5.0 L11: search, collections, columns, project media
 	panel->addSource(new FileBrowser(FileBrowser::Type::Normal, conf->userPresetsDir() + "*" + conf->factoryPresetsDir(),
 		"*.xpf *.cs.xml *.xiz *.lv2", BrowserPanel::tr("Presets"), icon("preset_file"), panel, false,
 		conf->userPresetsDir(), conf->factoryPresetsDir()));

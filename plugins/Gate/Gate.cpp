@@ -125,7 +125,7 @@ ProcessStatus GateEffect::processImpl(InterleavedBufferView<float, 2> inOut)
 		deepest = std::min(deepest, m_gain);
 		frame = frame * d + frame * (m_gain * w);
 	}
-	m_reductionDb = deepest < 1.f ? -ampToDbfs(std::max(deepest, 1e-6f)) : 0.f;
+	m_reductionDb.store(deepest < 1.f ? -ampToDbfs(std::max(deepest, 1e-6f)) : 0.f, std::memory_order_relaxed);
 	return ProcessStatus::ContinueIfNotQuiet;
 }
 

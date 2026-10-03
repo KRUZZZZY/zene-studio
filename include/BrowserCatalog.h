@@ -167,7 +167,8 @@ constexpr int BrowserMaxProbes = 200;
 struct LMMS_EXPORT BrowserQuery
 {
 	//! Case-insensitive substring, matched against name, path, tags and (when
-	//! \a probe is set) the probed metadata. Empty matches everything.
+	//! \a probe is set) the probed metadata. Empty matches everything. 0.5.0 L11 (WF-003): or an
+	//! expression - OR, -word, "phrase", name: path: tag: kind: ext: (BrowserSearch.h).
 	QString text;
 	//! Every listed tag must be present on the item (AND, not OR).
 	QStringList tags;

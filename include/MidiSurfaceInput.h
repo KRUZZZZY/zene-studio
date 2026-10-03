@@ -32,6 +32,7 @@
 
 #include "AudioEngine.h"
 #include "Engine.h"
+#include "MidiClient.h"
 #include "MidiEventProcessor.h"
 #include "MidiPort.h"
 #include "MpscQueue.h"
@@ -81,6 +82,13 @@ public:
 	}
 
 	bool isOpen() const { return m_port != nullptr; }
+	//! Whether the input names a port the MIDI client has (review L10-L03-L02-1 #7: an empty or unknown
+	//! name opens the surface but nothing will ever arrive - said so, not hidden).
+	bool subscribed() const
+	{
+		MidiClient* client = Engine::audioEngine()->midiClient();
+		return isOpen() && !m_input.isEmpty() && client != nullptr && client->readablePorts().contains(m_input);
+	}
 	const QString& input() const { return m_input; }
 	const QString& output() const { return m_output; }
 	int eventsIn() const { return m_eventsIn.load(std::memory_order_relaxed); }

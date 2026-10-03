@@ -220,6 +220,11 @@ bool resolveControlTarget(const QString& id, ControlTarget* target, ControlResul
 	return false;
 }
 
+namespace
+{
+Effect* rackChainEffect(const ControlTarget& target, int id);
+}
+
 Effect* resolveControlEffect(const ControlTarget& target, const QString& pluginId, ControlResult* error)
 {
 	if (pluginId == QLatin1String("inst"))
@@ -243,11 +248,37 @@ Effect* resolveControlEffect(const ControlTarget& target, const QString& pluginI
 	{
 		if (effect->id() == id) { return effect; }
 	}
+	// 0.5.0 L10 (MX-102): a mixer channel's rack chains are its too, and fx-<n> is unique, so a device
+	// on a parallel chain is found by its id - a caller edits it through effect->effectChain().
+	if (Effect* onRack = rackChainEffect(target, id)) { return onRack; }
 	*error = ControlResult::failure(ControlErrorKind::NotFound,
 		QStringLiteral("no device %1 on %2 (it carries %3)")
 			.arg(pluginId, target.id).arg(effects.size()));
 	return nullptr;
 }
+
+namespace
+{
+
+Effect* rackChainEffect(const ControlTarget& target, int id)
+{
+	if (target.kind != QLatin1String("channel")) { return nullptr; }
+	for (int i = 0; i < Engine::mixer()->numChannels(); ++i)
+	{
+		const MixerChannel* channel = Engine::mixer()->mixerChannel(i);
+		if (&channel->m_fxChain != target.chain) { continue; }
+		for (int c = 1; c < channel->m_rack.chainCount(); ++c)
+		{
+			for (Effect* effect : channel->m_rack.chain(c)->effects())
+			{
+				if (effect->id() == id) { return effect; }
+			}
+		}
+	}
+	return nullptr;
+}
+
+} // namespace
 
 QList<AutomatableModel*> controlEffectParameters(Effect* effect)
 {

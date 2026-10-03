@@ -135,6 +135,8 @@ enum class TextRole
 	Display
 };
 LMMS_EXPORT QFont font(TextRole role);
+//! 0.5.0 L14 (WF-130): the palette by name - dark or high_contrast (Appearance.h); palette() is the chosen one.
+LMMS_EXPORT Palette paletteNamed(const QString& name);
 //! The interface's one typeface (Inter, SIL OFL 1.1, compiled in - data/fonts/OFL.txt); its
 //! faces are registered on first use. "sans-serif" if the resource could not be read.
 LMMS_EXPORT QString family();
@@ -149,6 +151,8 @@ struct ContrastPair
 	double minimum;
 };
 LMMS_EXPORT std::vector<ContrastPair> contrastPairs();
+//! The same pairs for @a palette (0.5.0 L14: the high-contrast palette is held to them too).
+LMMS_EXPORT std::vector<ContrastPair> contrastPairs(const Palette& palette);
 
 //! A note's colour from its velocity on the engine's 0..200 volume scale (100 = MIDI 127's
 //! neighbourhood, the default). A perceptual blue -> teal -> yellow ramp: low notes recede,

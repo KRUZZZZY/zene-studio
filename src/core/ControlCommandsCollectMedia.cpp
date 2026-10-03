@@ -171,6 +171,27 @@ ControlResult collectMedia(const QJsonObject& args)
 
 } // namespace
 
+namespace control
+{
+
+bool collectProjectMediaInto(const QString& project, const QString& folderName, QJsonArray* copied, QJsonArray* failed,
+	int* missing, ControlResult* error)
+{
+	const QDir projectDir = QFileInfo(project).absoluteDir();
+	ProjectAssetScan scan;
+	if (!controlHashProjectAssets(project, &scan, error)) { return false; }
+	if (!projectDir.mkpath(folderName))
+	{
+		*error = ControlResult::failure(ControlErrorKind::Refused, QStringLiteral("cannot create '%1'").arg(folderName));
+		return false;
+	}
+	collectAll(project, projectDir, QDir(projectDir.filePath(folderName)), scan, copied, failed);
+	*missing = scan.missingCount();
+	return true;
+}
+
+} // namespace control
+
 void registerCollectMediaCommand(ControlRegistry& registry)
 {
 	ControlCommand cmd;

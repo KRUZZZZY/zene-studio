@@ -499,6 +499,7 @@
 # recipe's pathspec does not cover - the FocusDesk tests sit the same way, registered in
 # tests/CMakeLists.txt and listed in tests/all-sources.txt.
 include/Accessibility.h
+include/Appearance.h
 include/ArrangementEdits.h
 include/ArrangerOverlays.h
 include/AudioBus.h
@@ -515,6 +516,8 @@ include/BounceInPlace.h
 include/BrowserCatalog.h
 include/BrowserPanel.h
 include/BrowserPeakCache.h
+include/BrowserSearch.h
+include/BrowserSearchView.h
 include/BrowserTagMenu.h
 include/ChainPresetMenu.h
 include/ChannelPickDialog.h
@@ -532,6 +535,7 @@ include/CommandListDialog.h
 include/CommandLists.h
 include/CommandPalette.h
 include/CompSwipeStrip.h
+include/ContextHelp.h
 include/ControlAutomationSupport.h
 include/ControlBounceSupport.h
 include/ControlBrowserSupport.h
@@ -590,6 +594,7 @@ include/FeedbackModeAction.h
 include/GrooveMenu.h
 include/GroovePool.h
 include/GrooveTemplate.h
+include/HelpCenter.h
 include/ImportDetection.h
 include/ImportDetectionDsp.h
 include/InputChannelRing.h
@@ -857,6 +862,7 @@ plugins/WasmEffect/WasmEffectControlDialog.h
 plugins/WasmEffect/WasmEffectControls.cpp
 plugins/WasmEffect/WasmEffectControls.h
 scripts/capabilities-dump.py
+src/core/Appearance.cpp
 src/core/ArrangementEdits.cpp
 src/core/AudioBus.cpp
 src/core/AudioInputPath.cpp
@@ -869,6 +875,7 @@ src/core/BounceInPlace.cpp
 src/core/BrowserCatalog.cpp
 src/core/BrowserMetadata.cpp
 src/core/BrowserPeakCache.cpp
+src/core/BrowserSearch.cpp
 src/core/BrowserTagStore.cpp
 src/core/ChordDetect.cpp
 src/core/ChordProgression.cpp
@@ -892,6 +899,7 @@ src/core/ControlCommandsAutomationLanes.cpp
 src/core/ControlCommandsAutomationRamp.cpp
 src/core/ControlCommandsBounceLand.cpp
 src/core/ControlCommandsBrowser.cpp
+src/core/ControlCommandsBrowserCollections.cpp
 src/core/ControlCommandsBrowserTags.cpp
 src/core/ControlCommandsBus.cpp
 src/core/ControlCommandsChain.cpp
@@ -932,15 +940,18 @@ src/core/ControlCommandsFreeze.cpp
 src/core/ControlCommandsGroove.cpp
 src/core/ControlCommandsGrooveEdit.cpp
 src/core/ControlCommandsGroovePool.cpp
+src/core/ControlCommandsHandoff.cpp
 src/core/ControlCommandsHostChunking.cpp
 src/core/ControlCommandsHostNotes.cpp
 src/core/ControlCommandsIdContract.cpp
+src/core/ControlCommandsImportTracks.cpp
 src/core/ControlCommandsInputTransform.cpp
 src/core/ControlCommandsInterchange.cpp
 src/core/ControlCommandsKeyNames.cpp
 src/core/ControlCommandsLaunchBindings.cpp
 src/core/ControlCommandsLink.cpp
 src/core/ControlCommandsLivecode.cpp
+src/core/ControlCommandsLowLatency.cpp
 src/core/ControlCommandsMarkers.cpp
 src/core/ControlCommandsMastering.cpp
 src/core/ControlCommandsMasteringRun.cpp
@@ -963,10 +974,14 @@ src/core/ControlCommandsNoteAcross.cpp
 src/core/ControlCommandsNoteCurves.cpp
 src/core/ControlCommandsNoteEdit.cpp
 src/core/ControlCommandsNoteExpression.cpp
+src/core/ControlCommandsNoteHarmony.cpp
+src/core/ControlCommandsNoteMoves.cpp
 src/core/ControlCommandsNoteProbability.cpp
 src/core/ControlCommandsNoteRandom.cpp
 src/core/ControlCommandsNoteShape.cpp
+src/core/ControlCommandsNoteShared.h
 src/core/ControlCommandsNoteSlide.cpp
+src/core/ControlCommandsNoteTools.cpp
 src/core/ControlCommandsNoteTransform.cpp
 src/core/ControlCommandsNotes.cpp
 src/core/ControlCommandsOutOfProcess.cpp
@@ -999,6 +1014,7 @@ src/core/ControlCommandsRackMacros.cpp
 src/core/ControlCommandsRackWrap.cpp
 src/core/ControlCommandsRackZones.cpp
 src/core/ControlCommandsRange.cpp
+src/core/ControlCommandsRangeBounce.cpp
 src/core/ControlCommandsRecording.cpp
 src/core/ControlCommandsRecordingInput.cpp
 src/core/ControlCommandsRecordingPass.cpp
@@ -1037,6 +1053,7 @@ src/core/ControlCommandsTrackChannel.cpp
 src/core/ControlCommandsTrackFolder.cpp
 src/core/ControlCommandsTrackFolderSets.cpp
 src/core/ControlCommandsTrackFolderShared.h
+src/core/ControlCommandsTrackPresets.cpp
 src/core/ControlCommandsTransport.cpp
 src/core/ControlCommandsTransportMap.cpp
 src/core/ControlCommandsUndo.cpp
@@ -1275,6 +1292,7 @@ src/core/midi/MidiReconnect.cpp
 src/core/midi/MpeExpression.cpp
 src/gui/ArrangerOverlays.cpp
 src/gui/AutomationModeMenu.cpp
+src/gui/BrowserSearchView.cpp
 src/gui/BrowserTagMenu.cpp
 src/gui/ChainPresetMenu.cpp
 src/gui/ChannelPickDialog.cpp
@@ -1284,7 +1302,9 @@ src/gui/CommandListDialog.cpp
 src/gui/CommandLists.cpp
 src/gui/CommandPalette.cpp
 src/gui/CompSwipeStrip.cpp
+src/gui/ContextHelp.cpp
 src/gui/ControlCommandsArrangerView.cpp
+src/gui/ControlCommandsHelp.cpp
 src/gui/ControlCommandsLayouts.cpp
 src/gui/ControlCommandsMacros.cpp
 src/gui/ControlCommandsMixerView.cpp
@@ -1301,6 +1321,7 @@ src/gui/EffectHostingMenu.cpp
 src/gui/ExportQualityControls.cpp
 src/gui/FeedbackModeAction.cpp
 src/gui/GrooveMenu.cpp
+src/gui/HelpCenter.cpp
 src/gui/MacroKnobs.cpp
 src/gui/MacroMenu.cpp
 src/gui/MenuBarExtras.cpp
@@ -1516,6 +1537,7 @@ tests/src/core/DocumentSectionsTest.cpp
 tests/src/core/ExportDitherTest.cpp
 tests/src/core/ExportWavDitherTest.cpp
 tests/src/core/ImportDetectionTest.cpp
+tests/src/core/LibraryProjectsTest.cpp
 tests/src/core/LufsMeterTest.cpp
 tests/src/core/Lv2StateTest.cpp
 tests/src/core/McuSurfaceTest.cpp
@@ -1533,6 +1555,7 @@ tests/src/core/MpscQueueTest.cpp
 tests/src/core/NamespaceRegistryTest.cpp
 tests/src/core/NoteCurvesAcrossTest.cpp
 tests/src/core/NoteEditingCommandsTest.cpp
+tests/src/core/NoteToolsTest.cpp
 tests/src/core/OutOfProcessHostClientLoopTest.cpp
 tests/src/core/OutOfProcessHostSupport.h
 tests/src/core/OutOfProcessHostTest.cpp

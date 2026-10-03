@@ -352,7 +352,9 @@ void registerPluginUnload(ControlRegistry& registry)
 		Effect* effect = resolveControlEffect(target, pluginId, &error);
 		if (effect == nullptr) { return error; }
 		const QString pluginName = QString::fromUtf8(effect->descriptor()->name);
-		const std::vector<Effect*>& effects = target.chain->effects();
+		// The device's own chain: a rack chain's device is found by its id too (MX-102).
+		EffectChain* chain = effect->effectChain();
+		const std::vector<Effect*>& effects = chain->effects();
 		const auto it = std::find(effects.begin(), effects.end(), effect);
 		const int index = static_cast<int>(std::distance(effects.begin(), it));
 		QJsonObject snapshot = stateSnapshot(effect);
@@ -368,8 +370,8 @@ void registerPluginUnload(ControlRegistry& registry)
 		// before.state_xml" - because a deleted Effect has no live object a
 		// checkpoint could restore. The recorded structural step RE-INSTANTIATES
 		// it, at the index it was removed from, with its settings.
-		const bool reversible = control::journalEffectRemoval(target.chain, effect, index);
-		target.chain->removeEffect(effect);
+		const bool reversible = control::journalEffectRemoval(chain, effect, index);
+		chain->removeEffect(effect);
 		// Same lifetime as the rack's own delete: the audio engine may still
 		// hold the pointer for the period in flight.
 		effect->deleteLater();
@@ -380,7 +382,7 @@ void registerPluginUnload(ControlRegistry& registry)
 		result.insert(QStringLiteral("plugin"), pluginName);
 		result.insert(QStringLiteral("index"), index);
 		result.insert(QStringLiteral("reversible"), reversible);
-		result.insert(QStringLiteral("count"), static_cast<int>(target.chain->effects().size()));
+		result.insert(QStringLiteral("count"), static_cast<int>(chain->effects().size()));
 
 		QJsonObject transaction;
 		transaction.insert(QStringLiteral("before"), snapshot);

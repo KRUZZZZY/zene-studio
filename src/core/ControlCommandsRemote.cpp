@@ -114,7 +114,8 @@ void registerRemoteCommands(ControlRegistry& registry)
 	add(registry, "connect", QStringLiteral("Bind a MIDI controller's eight knobs to remote-control pages: 'input' (a readable "
 		"port, as midi.clients_list names it), 'output' (optional - the knobs' values are sent back on a page or device change, "
 		"for motorised or LED-ring knobs), 'channel' (0-15; any when left out) and 'first_cc' (the first of eight consecutive "
-		"CCs, default 16). Replaces a connected one; follows the selection until remote.target says otherwise."),
+		"CCs, default 16). Replaces a connected one; follows the selection until remote.target says otherwise. 'subscribed' "
+		"says whether the input is a port the MIDI client has (false: nothing will arrive)."),
 		objectSchema({{QStringLiteral("input"), stringProperty()}, {QStringLiteral("output"), stringProperty()},
 			{QStringLiteral("channel"), integerProperty(0, 15)}, {QStringLiteral("first_cc"), integerProperty(0, 120)}}), remoteConnect);
 	add(registry, "disconnect", QStringLiteral("Release the remote-control knobs."), objectSchema({}), remoteDisconnect);

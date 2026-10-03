@@ -293,6 +293,9 @@ void populateTrack(QMenu* menu, Track* track)
 	add(render, "Bounce to New Track...", "bounce.land", self, true);
 	add(render, "Bounce in Place...", "bounce.in_place", self, true);
 	add(render, "Freeze", "freeze.track", self, false);
+	QMenu* presets = menu->addMenu(tr("Track Preset"));  // L11 (WF-024)
+	add(presets, "Save Preset...", "track.preset_save", self, true);
+	add(presets, "Load Preset...", "track.preset_load", self, true);
 	if (dynamic_cast<SampleTrack*>(track) != nullptr)
 	{
 		add(menu, "Insert Test Signal...", "sample.generate", self, true,
@@ -403,6 +406,7 @@ void populateChannel(QMenu* menu, const QString& channel)
 	list(rack, "Zones...", [channel] { return CommandLists::rackZones(channel); });
 	add(rack, "Add Zone...", "rack.zone_add", self, true);
 	add(rack, "Wire the Chain...", "patcher.set_wiring", {{QStringLiteral("target"), channel}}, true);
+	add(rack, "Wrap the Chain into a Rack Chain", "rack.wrap", self, false);  // L10 (MX-103)
 	add(rack, "Chain Wiring", "patcher.get_state", {{QStringLiteral("target"), channel}}, false, {}, true);
 	choices(menu, "Loudness Meter", "meter.arm", "enabled", {});
 	// MX-045: a return channel can be deleted as one.
@@ -441,6 +445,12 @@ void populateProject(QMenu* menu)
 	list(menu, "Revisions...", [] { return CommandLists::revisions(); });
 	list(menu, "Project Files...", [] { return CommandLists::missingFiles(Engine::getSong()->projectFileName()); });
 	add(menu, "Collect Media...", "project.collect_media", {}, true);
+	// L11 / L12: templates, tracks from another project, a hand-off folder, bouncing a selection.
+	add(menu, "Save as Template...", "project.save_as_template", {}, true);
+	add(menu, "Import Tracks...", "project.import_tracks", {}, true);
+	add(menu, "Hand Off...", "project.handoff", {}, true);
+	add(menu, "Bounce the Range to a New Track", "range.bounce", {}, false);
+	choices(menu, "Low-Latency Monitoring", "transport.low_latency", "enabled", {});  // L01 (MX-159)
 	list(menu, "Plug-ins in Project...", [] { return CommandLists::pluginsInProject(); });
 	list(menu, "Plug-in Manager...", [] { return CommandLists::pluginManager(); });  // L10 (MX-164)
 	list(menu, "Plug-in Modules...", [] { return CommandLists::pluginModules(); });

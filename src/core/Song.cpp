@@ -770,8 +770,10 @@ void Song::record()
 void Song::playAndRecord()
 {
 	// 0.5.0 L03 (WF-080): a count-in or pre-roll starts the pass early, captured from here.
-	recordoptions::beginPass(this);
+	const tick_t start = recordoptions::beginPass(this);
 	startSongPlayback( true );
+	// Stop goes back to where Record was pressed, not to the start of the count-in (review #4).
+	if (start >= 0) { getTimeline(PlayMode::Song).setPlayStartPosition(TimePos(start)); }
 }
 
 

@@ -92,6 +92,7 @@ void fillLauncher(QMenu* menu)
 		run(menu, QObject::tr("Launch Scene %1").arg(scene + 1), QStringLiteral("session.launch_scene"), {{QStringLiteral("scene"), scene}});
 	}
 	run(menu, QObject::tr("Stop All Clips"), QStringLiteral("session.stop_all"));
+	run(menu, QObject::tr("Record What I Played Into a Cell..."), QStringLiteral("session.capture_to_slot"), {}, true);
 	menu->addSeparator();
 	QMenu* controller = menu->addMenu(QObject::tr("Controller"));
 	run(controller, QObject::tr("Connect..."), QStringLiteral("session.bindings_connect"), {}, true);

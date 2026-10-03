@@ -24,6 +24,8 @@
 
 #include "DesignTokens.h"
 
+#include "Appearance.h"
+
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -40,6 +42,30 @@ namespace lmms::gui::tokens
 
 namespace
 {
+
+//! 0.5.0 L14 (WF-130): the high-contrast palette - the dark one with black surfaces, white text
+//! (7:1 and more on every surface), brighter lines and a yellow focus ring.
+Palette makeHighContrast(Palette p)
+{
+	p.base = QColor(0x00, 0x00, 0x00);
+	p.panel = QColor(0x08, 0x08, 0x0a);
+	p.raised = QColor(0x12, 0x12, 0x16);
+	p.control = QColor(0x1c, 0x1c, 0x22);
+	p.controlHover = QColor(0x2a, 0x2a, 0x33);
+	p.selected = QColor(0x2f, 0x34, 0x4a);
+	p.separator = QColor(0x8a, 0x8a, 0x95);
+	p.text = QColor(0xff, 0xff, 0xff);
+	p.textMuted = QColor(0xe0, 0xe0, 0xe6);
+	p.textDisabled = QColor(0xa6, 0xa6, 0xb0);
+	p.accent = QColor(0x3f, 0xf0, 0xd8);
+	p.accentHover = QColor(0x8a, 0xff, 0xee);
+	p.focusRing = QColor(0xff, 0xd4, 0x00);
+	p.gridBar = QColor(0xa0, 0xa0, 0xaa);
+	p.gridBeat = QColor(0x60, 0x60, 0x6a);
+	p.gridStep = QColor(0x34, 0x34, 0x3c);
+	p.playhead = QColor(0xff, 0xff, 0xff);
+	return p;
+}
 
 Palette makePalette()
 {
@@ -95,9 +121,14 @@ QString hex(const QColor& c) { return c.name(QColor::HexRgb); }
 
 } // namespace
 
+Palette paletteNamed(const QString& name)
+{
+	return name == QLatin1String("high_contrast") ? makeHighContrast(makePalette()) : makePalette();
+}
+
 const Palette& palette()
 {
-	static const Palette p = makePalette();
+	static const Palette p = paletteNamed(appearance::options().palette);  // read once, at the first draw
 	return p;
 }
 
@@ -122,7 +153,8 @@ QFont font(TextRole role)
 {
 	static constexpr std::array<int, 5> pixels{10, 11, 12, 14, 20};
 	QFont f(family());
-	f.setPixelSize(pixels[static_cast<std::size_t>(role)]);
+	static const double scale = appearance::options().fontScale;  // 0.5.0 L14 (WF-131), read once
+	f.setPixelSize(static_cast<int>(std::lround(pixels[static_cast<std::size_t>(role)] * scale)));
 	f.setHintingPreference(QFont::PreferNoHinting);
 	f.setStyleStrategy(QFont::PreferAntialias);
 	if (role == TextRole::Title) { f.setWeight(QFont::DemiBold); }
@@ -133,7 +165,11 @@ QFont font(TextRole role)
 
 std::vector<ContrastPair> contrastPairs()
 {
-	const Palette& p = palette();
+	return contrastPairs(palette());
+}
+
+std::vector<ContrastPair> contrastPairs(const Palette& p)
+{
 	return {
 		{"text on base", p.text, p.base, 4.5},
 		{"text on panel", p.text, p.panel, 4.5},

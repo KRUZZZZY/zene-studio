@@ -61,6 +61,32 @@ QJsonArray muteEdits(const std::vector<Note*>& notes, bool mute)
 	return edits;
 }
 
+//! 0.5.0 L07 (W3): the note tools - each one command over the scope, or over the clip.
+void fillToolsMenu(QMenu* menu, const QJsonObject& scoped, const QJsonObject& where)
+{
+	const auto run = [](const char* id, const QJsonObject& fixed, bool ask) {
+		return [id, fixed, ask]() { return CommandCall{QLatin1String(id), fixed, {}, {}, ask}; };
+	};
+	const auto tr = [](const char* text) { return NoteEditor::tr(text); };
+	addCommandAction(menu, tr("Invert"), QStringLiteral("note.invert"), run("note.invert", scoped, false));
+	addCommandAction(menu, tr("Arpeggiate..."), QStringLiteral("note.arpeggiate"), run("note.arpeggiate", scoped, true));
+	addCommandAction(menu, tr("Flam"), QStringLiteral("note.flam"), run("note.flam", scoped, false));
+	addCommandAction(menu, tr("Repeat..."), QStringLiteral("note.repeat"), run("note.repeat", scoped, true));
+	addCommandAction(menu, tr("Up a Degree in Key"), QStringLiteral("note.transpose_in_key"),
+		run("note.transpose_in_key", merged(scoped, {{QStringLiteral("steps"), 1}}), false));
+	addCommandAction(menu, tr("Down a Degree in Key"), QStringLiteral("note.transpose_in_key"),
+		run("note.transpose_in_key", merged(scoped, {{QStringLiteral("steps"), -1}}), false));
+	addCommandAction(menu, tr("Follow the Chord Track"), QStringLiteral("note.follow_chords"), run("note.follow_chords", scoped, true));
+	menu->addSeparator();
+	addCommandAction(menu, tr("Generate a Rhythm..."), QStringLiteral("note.generate"), run("note.generate", where, true));
+	addCommandAction(menu, tr("Move to Track..."), QStringLiteral("note.move_to_track"), run("note.move_to_track", scoped, true));
+	addCommandAction(menu, tr("Split by Key into Tracks"), QStringLiteral("note.split_by_pitch"), run("note.split_by_pitch", where, false));
+	menu->addSeparator();
+	addCommandAction(menu, tr("Detect the Key"), QStringLiteral("scale.detect"),
+		[where]() { return CommandCall{QStringLiteral("scale.detect"), where, {}, {}, false, true}; });
+	addCommandAction(menu, tr("Define a Scale..."), QStringLiteral("scale.define"), run("scale.define", {}, true));
+}
+
 } // namespace
 
 QString NoteEditor::noteScope() const
@@ -109,6 +135,7 @@ void NoteEditor::fillNotesMenu(QMenu* menu)
 		where, {{QStringLiteral("grid"), std::max(1, m_state.gridTicks)}, {QStringLiteral("scope"), noteScope()}}));
 	fillVelocityMenu(menu->addMenu(tr("Velocity")), scoped);
 	fillTimingMenu(menu->addMenu(tr("Timing")), scoped);
+	fillToolsMenu(menu->addMenu(tr("Tools")), scoped, where);
 	fillMuteMenu(menu->addMenu(tr("Mute")));
 	fillPitchCurveMenu(menu->addMenu(tr("Pitch Curve")));
 	QMenu* groove = menu->addMenu(tr("Groove"));

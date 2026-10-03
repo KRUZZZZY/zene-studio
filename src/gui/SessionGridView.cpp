@@ -30,6 +30,7 @@
 #include <QJsonArray>
 #include <QDragEnterEvent>
 #include <QDropEvent>
+#include <QFileInfo>
 #include <QKeyEvent>
 #include <QLabel>
 #include <QMimeData>
@@ -319,7 +320,10 @@ bool SessionGridView::dropOnCell(QToolButton* cell, QEvent* event)
 	}
 	if (event->type() != QEvent::Drop) { return false; }
 	const QString file = droppedFile(static_cast<QDropEvent*>(event));
-	if (file.isEmpty()) { return true; }
+	// An existing audio file only (review L10-L03-L02-1 #12): a text file or a folder is not a clip.
+	static const QStringList audio{QStringLiteral("wav"), QStringLiteral("ogg"), QStringLiteral("flac"), QStringLiteral("mp3"),
+		QStringLiteral("aif"), QStringLiteral("aiff"), QStringLiteral("opus")};
+	if (!QFileInfo(file).isFile() || !audio.contains(QFileInfo(file).suffix().toLower())) { return true; }
 	const int index = static_cast<int>(at - m_cells.begin());
 	run(QStringLiteral("session.set_slot"), {{QStringLiteral("track"), index / m_scenes}, {QStringLiteral("scene"), index % m_scenes},
 		{QStringLiteral("type"), QStringLiteral("audio")}, {QStringLiteral("source"), file}});

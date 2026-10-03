@@ -27,6 +27,10 @@
 
 #include "ControlScaleShared.h"
 
+#include <QJsonArray>
+#include <QJsonDocument>
+
+#include "ConfigManager.h"
 #include "ControlRegistry.h"
 #include "InstrumentFunctions.h"
 #include "MidiClip.h"
@@ -56,9 +60,28 @@ ScaleContext& scaleContext()
 	return value;
 }
 
+QJsonObject customScales()
+{
+	return QJsonDocument::fromJson(ConfigManager::inst()->value(QStringLiteral("scales"), QStringLiteral("custom")).toUtf8()).object();
+}
+
+void setCustomScales(const QJsonObject& scales)
+{
+	ConfigManager::inst()->setValue(QStringLiteral("scales"), QStringLiteral("custom"),
+		QString::fromUtf8(QJsonDocument(scales).toJson(QJsonDocument::Compact)));
+}
+
 std::vector<int> scaleDegreesOf(const QString& scale)
 {
 	if (scale.isEmpty()) { return std::vector<int>(); }
+	// 0.5.0 L07 (ED-115): a scale of the user's own, by its name, before the engine's table.
+	const QJsonArray custom = customScales().value(scale).toArray();
+	if (!custom.isEmpty())
+	{
+		std::vector<int> degrees;
+		for (const QJsonValue& degree : custom) { degrees.push_back(degree.toInt()); }
+		return degrees;
+	}
 	const Chord& chord = ChordTable::getInstance().getScaleByName(scale);
 	// getByName returns an EMPTY chord for a name it does not carry, so isEmpty()
 	// is the "not found" test - an empty vector out of a non-empty name means the
@@ -162,6 +185,7 @@ bool readScaleName(const QJsonObject& args, QString* out, ControlResult* error)
 	const QString name = args.value(QStringLiteral("scale")).toString().trimmed();
 	*out = name;
 	if (name.isEmpty()) { return true; }
+	if (customScales().contains(name)) { return true; }  // 0.5.0 L07 (ED-115): one of the user's own
 	const Chord& chord = ChordTable::getInstance().getScaleByName(name);
 	if (chord.isEmpty())
 	{

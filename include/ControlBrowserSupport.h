@@ -99,6 +99,8 @@ bool readBrowserTagArguments(const QJsonObject& args, QString* key, QString* tag
 
 //! Reads the optional query arguments into \a query; typed on a bad kind.
 bool readBrowserQueryArguments(const QJsonObject& args, BrowserQuery* query, ControlResult* error);
+//! 0.5.0 L11: browser.query's handler, for a command that runs a stored query (browser.collection_run).
+ControlResult browserQueryCommand(const QJsonObject& args);
 
 //! The tags of one file plus the store's location: the read-back both tag
 //! verbs return, so a caller never has to guess what the store became.

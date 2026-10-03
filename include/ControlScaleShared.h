@@ -77,6 +77,11 @@ ScaleContext& scaleContext();
 //! an unknown or empty name yields an empty vector.
 std::vector<int> scaleDegreesOf(const QString& scale);
 
+//! 0.5.0 L07 (ED-115): the user's own scales - name -> semitone offsets - kept in the config file
+//! (scales/custom), consulted by scaleDegreesOf() before the engine's table.
+QJsonObject customScales();
+void setCustomScales(const QJsonObject& scales);
+
 //! The pitch classes a root + degree set covers, sorted and deduplicated.
 std::vector<int> scalePitchClasses(int root, const std::vector<int>& degrees);
 

@@ -512,6 +512,8 @@ set(LMMS_TESTS
 	src/core/DeviceCopyTest.cpp
 	# 0.5.0 L03 / L02: count-in, pre-roll, the record mode, cycling takes, the launcher's bindings.
 	src/core/RecordingPassTest.cpp
+	# 0.5.0 L11 / L12: search expressions, collections, track presets, importing tracks, the hand-off folder.
+	src/core/LibraryProjectsTest.cpp
 	# R2.4: the punch region's frame-accurate audio gate (include/PunchWindow.h).
 	src/core/PunchWindowTest.cpp
 	# Mixer::refreshGroups publishes each channel's VCA gain with ONE store, so a
@@ -587,6 +589,8 @@ set(LMMS_TESTS
 	src/core/WarpQuantizeTest.cpp
 	# 0.5.0 L07 ED-122/078: a note's pitch curve; one note edit over several clips.
 	src/core/NoteCurvesAcrossTest.cpp
+	# 0.5.0 L07 (W3): the note tools - invert, arpeggiate, flam, keyed transpose, repeat, generate, move, split, detect, follow chords.
+	src/core/NoteToolsTest.cpp
 	# 0.5.0 L05: fade shapes and handles, automatic and range fades, splits, slices, beat mapping.
 	src/core/AudioEditingTest.cpp
 	# 0.5.0 W2 gaps (audit-rows-1): clip.join, ripple on move and insert, controller.map / unmap.
@@ -764,6 +768,8 @@ set(LMMS_TESTS
 	src/gui/ShortcutsPageTest.cpp
 	# M3 item 10: the start hub reopens a recent project through project.open.
 	src/gui/StartHubTest.cpp
+	# 0.5.0 L14 / L11: the manual and reference, hover help, tours, appearance, the library search view.
+	src/gui/HelpAccessTest.cpp
 	# R7.3: the piano roll's frame time at 1k/5k/10k/50k notes (an opt-in +20% gate).
 	src/gui/PianoRollBenchmarkTest.cpp
 	src/gui/MidiLearnGuiTest.cpp
@@ -1238,6 +1244,7 @@ set_tests_properties(SessionTransportBarTest PROPERTIES ENVIRONMENT "QT_QPA_PLAT
 set_tests_properties(TakeLanesPanelTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(ShortcutsPageTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(StartHubTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+set_tests_properties(HelpAccessTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(PianoRollBenchmarkTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 # AccessibilityHelperTest constructs the shell, so it takes the same
 # platform registration (040/ui-precond). WcagContrastTest is guiless and needs

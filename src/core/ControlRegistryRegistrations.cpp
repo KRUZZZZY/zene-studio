@@ -110,10 +110,19 @@ void registerControlCommands(ControlRegistry& registry)
 	registerRecordingPassCommands(registry);
 	registerLaunchBindingCommands(registry);
 	registerSessionCaptureCommand(registry);
+	registerLowLatencyCommand(registry);
+	registerBrowserCollectionCommands(registry);
+	registerTrackPresetCommands(registry);
+	registerRangeBounceCommand(registry);
+	registerImportTracksCommand(registry);
+	registerHandoffCommand(registry);
 	registerClipArrangeCommands(registry);
 	registerAutomationLaneCommands(registry);
 	registerNoteShapeCommands(registry);
 	registerKeyNameCommands(registry);
+	registerNoteToolCommands(registry);
+	registerNoteMoveCommands(registry);
+	registerNoteHarmonyCommands(registry);
 #ifdef ZENE_TELEMETRY_ENABLED
 	// The telemetry.* group travels with the client. -DZENE_TELEMETRY=OFF
 	// removes the client, so the registry must not carry ids that would

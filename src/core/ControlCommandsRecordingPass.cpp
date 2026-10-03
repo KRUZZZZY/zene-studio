@@ -57,7 +57,8 @@ ControlResult recordOptions(const QJsonObject& args)
 	{
 		after.mode = static_cast<recordoptions::Mode>(recordoptions::modeNames().indexOf(args.value(QStringLiteral("mode")).toString()));
 	}
-	if (args.size() > 0)
+	const bool changed = after.countInBars != before.countInBars || after.preRollBars != before.preRollBars || after.mode != before.mode;
+	if (changed)  // only a real change is an undo step (review #10)
 	{
 		recordoptions::setOptions(after);
 		addUndoStep([before]() { recordoptions::setOptions(before); }, [after]() { recordoptions::setOptions(after); });

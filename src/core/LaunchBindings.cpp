@@ -28,6 +28,7 @@
 #include <QJsonDocument>
 
 #include "ConfigManager.h"
+#include "ControlReversibility.h"
 #include "ControlRegistry.h"
 #include "MidiEvent.h"
 #include "SessionModel.h"
@@ -79,11 +80,14 @@ void learnNote(const QJsonObject& action, const LaunchNote& note)
 	for (const QJsonValue& value : LaunchBindings::bindings())
 	{
 		const QJsonObject old = value.toObject();
-		const bool same = old.value(QStringLiteral("key")).toInt() == note.key && old.value(QStringLiteral("channel")).toInt() == note.channel;
+		const bool same = old.value(QStringLiteral("key")).toInt() == note.key && old.value(QStringLiteral("channel")).toInt(-1) == note.channel;
 		if (!same) { list.append(old); }
 	}
 	list.append(binding);
+	// One undo step, as session.bind's (review L10-L03-L02-1 #13): the binding it made comes off again.
+	const QJsonArray before = LaunchBindings::bindings();
 	LaunchBindings::setBindings(list);
+	control::addUndoStep([before]() { LaunchBindings::setBindings(before); }, [list]() { LaunchBindings::setBindings(list); });
 }
 
 //! A pressed note's action, through the registry.

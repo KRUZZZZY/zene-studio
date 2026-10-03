@@ -78,6 +78,18 @@ void insertBeside(QWidget* parent, Effect* effect, bool after)
 	runCommand(parent, CommandCall{QStringLiteral("plugin.load"), args, {}, QString(), false});
 }
 
+//! The picker, then plugin.replace: another device in this one's place (L11, WF-016).
+void replaceWith(QWidget* parent, const QJsonObject& device)
+{
+	EffectSelectDialog picker(parent);
+	if (picker.exec() != QDialog::Accepted) { return; }
+	const QString chosen = deviceIdOf(picker.selectedKey());
+	if (chosen.isEmpty()) { return; }
+	QJsonObject args = device;
+	args.insert(QStringLiteral("device"), chosen);
+	runCommand(parent, CommandCall{QStringLiteral("plugin.replace"), args, {}, QString(), false});
+}
+
 void copyTo(QWidget* parent, const QJsonObject& self, const char* id, const QString& title)
 {
 	const QStringList channels = pickChannels(parent, title, self.value(QStringLiteral("target")).toString());
@@ -128,6 +140,7 @@ void addEffectDeviceMenus(QMenu* menu, Effect* effect)
 	entry(menu, QObject::tr("Insert Effect After..."), "plugin.load", [parent, effect] { insertBeside(parent, effect, true); });
 	QJsonObject device = self;
 	device.insert(QStringLiteral("plugin"), control::effectIdOf(effect));
+	entry(menu, QObject::tr("Replace With..."), "plugin.replace", [parent, device] { replaceWith(parent, device); });
 	entry(menu, QObject::tr("Copy to Channels..."), "plugin.copy", [parent, device] {
 		copyTo(parent, device, "plugin.copy", QObject::tr("Copy the device to"));
 	});

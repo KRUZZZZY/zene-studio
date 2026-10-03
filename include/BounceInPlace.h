@@ -26,6 +26,7 @@
 #define LMMS_BOUNCE_IN_PLACE_H
 
 #include <QString>
+#include <vector>
 
 #include "LmmsTypes.h"
 #include "lmms_export.h"
@@ -97,6 +98,12 @@ public:
 	 *  track and trims the result to the range's frame window.
 	 */
 	static Result renderTrack(Track* track, const QString& outPath, const Range& range,
+			int sampleRate = 44100);
+
+	/*! 0.5.0 L12 (ED-205): the same render with every track of @a tracks unmuted - their summed
+	 *  contribution to the mix (a selection bounced to one file). The tracks' own state decides
+	 *  their sends and pans, exactly as for one track. */
+	static Result renderTracks(const std::vector<Track*>& tracks, const QString& outPath, const Range& range,
 			int sampleRate = 44100);
 
 	//! The whole-track bounce: the same call with an empty range. Declared here

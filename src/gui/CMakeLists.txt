@@ -55,6 +55,7 @@ SET(LMMS_SRCS
 	gui/ControlCommandsArrangerView.cpp
 	gui/ControlCommandsLayouts.cpp
 	gui/ControlCommandsMixerView.cpp
+	gui/ControlCommandsHelp.cpp
 	gui/ControlCommandsMacros.cpp
 	gui/ControlGuiSupport.cpp
 	# M3.4: the command palette (menu actions + argument-free commands, searchable).
@@ -63,6 +64,7 @@ SET(LMMS_SRCS
 	gui/CommandListDialog.cpp
 	gui/CommandLists.cpp
 	gui/CompSwipeStrip.cpp
+	gui/ContextHelp.cpp
 	gui/CommandPalette.cpp
 	gui/MacroMenu.cpp
 	gui/MacroKnobs.cpp
@@ -137,10 +139,12 @@ SET(LMMS_SRCS
 	gui/MidiControllerMenu.cpp
 	gui/ChainPresetMenu.cpp
 	gui/ChannelPickDialog.cpp
+	gui/BrowserSearchView.cpp
 	gui/ClipEditsMenu.cpp
 	gui/CrashReportMenu.cpp
 	gui/EffectDeviceMenu.cpp
 	gui/EffectHostingMenu.cpp
+	gui/HelpCenter.cpp
 	gui/FeedbackModeAction.cpp
 	gui/MidiClockMenu.cpp
 	gui/MidiReconnectAction.cpp

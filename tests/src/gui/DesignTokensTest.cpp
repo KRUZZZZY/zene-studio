@@ -54,6 +54,23 @@ private slots:
 		}
 	}
 
+	//! 0.5.0 L14 (WF-130): the high-contrast palette meets every declared pair too, and its text is
+	//! 7:1 (WCAG AAA) on every surface.
+	void theHighContrastPaletteIsAAA()
+	{
+		const tokens::Palette hc = tokens::paletteNamed(QStringLiteral("high_contrast"));
+		for (const tokens::ContrastPair& pair : tokens::contrastPairs(hc))
+		{
+			const double ratio = lmms::a11y::contrastRatio(pair.foreground, pair.background);
+			QVERIFY2(ratio >= pair.minimum, qPrintable(QStringLiteral("%1: %2:1, needs %3:1")
+				.arg(QLatin1String(pair.name)).arg(ratio, 0, 'f', 2).arg(pair.minimum)));
+		}
+		for (const QColor& surface : {hc.base, hc.panel, hc.raised, hc.control, hc.controlHover, hc.selected})
+		{
+			QVERIFY(lmms::a11y::contrastRatio(hc.text, surface) >= 7.0);
+		}
+	}
+
 	void textOnEverySurfaceIsAA()
 	{
 		// Not only the pairs someone remembered to list: primary text on every surface step.

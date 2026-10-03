@@ -29,6 +29,7 @@
 #include "ControlDevicePlacement.h"
 #include "ControlDeviceSupport.h"
 #include "ControlEdit.h"
+#include "ControlReversibility.h"
 #include "ControlStructuralSupport.h"
 #include "ControlVocabulary.h"
 #include "Effect.h"
@@ -42,11 +43,19 @@ namespace
 
 using Made = std::shared_ptr<std::vector<Effect*>>;
 
+qint64 bytesOf(const QStringList& states)
+{
+	qint64 bytes = 0;
+	for (const QString& state : states) { bytes += state.size(); }
+	return bytes;
+}
+
 //! The step that takes the devices @a made out again; its redo recreates them from @a states at @a places.
+//! A structural step: its settings documents count against the undo stack's byte budget (review #9).
 void recordRecreation(const std::function<EffectChain*()>& chainOf, const Made& made, const QStringList& states,
 	const std::vector<int>& places)
 {
-	addUndoStep(
+	addStructuralUndoStep(
 		[made, chainOf]() {
 			EffectChain* chain = chainOf();
 			for (auto it = made->rbegin(); it != made->rend() && chain != nullptr; ++it)
@@ -63,7 +72,8 @@ void recordRecreation(const std::function<EffectChain*()>& chainOf, const Made& 
 			{
 				(*made)[i] = recreateEffectFromState(chain, states.at(static_cast<int>(i)), places[i]);
 			}
-		});
+		},
+		bytesOf(states));
 }
 
 } // namespace
@@ -104,12 +114,34 @@ bool devicesRecordable(const std::vector<Effect*>& effects)
 
 void removeDevicesRecorded(EffectChain* chain, const std::vector<Effect*>& effects)
 {
-	for (auto it = effects.rbegin(); it != effects.rend(); ++it)
+	removeDevicesRecorded([chain] { return chain; }, effects);
+}
+
+void removeDevicesRecorded(const std::function<EffectChain*()>& chainOf, const std::vector<Effect*>& effects)
+{
+	EffectChain* chain = chainOf();
+	for (auto it = effects.rbegin(); it != effects.rend() && chain != nullptr; ++it)
 	{
 		const std::vector<Effect*>& now = chain->effects();
 		const auto at = std::find(now.begin(), now.end(), *it);
 		if (at == now.end()) { continue; }
-		journalEffectRemoval(chain, *it, static_cast<int>(at - now.begin()));
+		const int slot = static_cast<int>(at - now.begin());
+		const QString state = controlEffectStateXml(*it);
+		// The chain is found again on every run (review L10-L03-L02-1 #2): a rack chain an undo deleted
+		// and a redo made again is a new object.
+		auto holder = std::make_shared<Effect*>(*it);
+		addStructuralUndoStep(
+			[chainOf, state, slot, holder]() {
+				if (EffectChain* current = chainOf()) { *holder = recreateEffectFromState(current, state, slot); }
+			},
+			[chainOf, holder]() {
+				EffectChain* current = chainOf();
+				if (current == nullptr || *holder == nullptr) { return; }
+				current->removeEffect(*holder);
+				(*holder)->deleteLater();
+				*holder = nullptr;
+			},
+			state.size());
 		chain->removeEffect(*it);
 		(*it)->deleteLater();
 	}

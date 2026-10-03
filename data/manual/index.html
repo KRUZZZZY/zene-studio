@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<!-- Zene Studio's manual, shown inside the application (Help > Manual, app.help). GPLv2-or-later, like the program. -->
+<html>
+<head>
+<meta charset="utf-8">
+<title>Zene Studio manual</title>
+<style>
+body { font-family: sans-serif; line-height: 1.45; margin: 12px 18px; }
+h1 { font-size: 20px; }
+h2 { font-size: 16px; margin-top: 22px; }
+code { font-family: monospace; }
+.tip { border-left: 3px solid #6a8fd8; padding-left: 8px; }
+</style>
+</head>
+<body>
+
+<h1>Zene Studio</h1>
+<p>Zene Studio is a music workstation in one window: the arrangement in the middle, the browser on the left, the
+Inspector on the right and the editors and the mixer below. Everything a click does is also a named command, so a
+script, an agent or a controller can do it too, and every edit can be undone.</p>
+<p class="tip">Hover over a control to see what it does; press <b>Shift+F1</b> (Help &gt; What's This?) and click a
+control for its full description. Help &gt; Command Reference lists every command with its arguments.</p>
+
+<h2 id="window">The window</h2>
+<ul>
+<li><b>Header</b> - transport (play, stop, record), tempo, time signature, position and the loudness readout. Right-click
+it to choose which buttons it shows.</li>
+<li><b>Browser</b> - devices, presets, samples and projects. The <i>Search</i> source finds files across the library:
+words are combined, <code>kick OR snare</code>, <code>-loop</code> excludes, <code>"bass drum"</code> is a phrase, and
+<code>tag:</code> <code>kind:</code> <code>name:</code> <code>path:</code> <code>ext:</code> narrow a word. Save a search
+as a <i>collection</i> to keep it; <i>Project Media</i> lists every file the project uses.</li>
+<li><b>Inspector</b> - the selected track, clip or mixer channel: its settings, its sends and inserts, its take lanes.</li>
+<li><b>Device panel</b> - the devices of the selected track or channel as cards, with the rack's macro knobs.</li>
+</ul>
+
+<h2 id="arrange">Arranging</h2>
+<p>Drag clips to move them; drag their edges to trim. Choose a range (drag in the ruler) to split, delete, crop, fade or
+bounce it. <b>Navigate</b> holds the zoom, markers, ripple and overlap modes; <b>Alt+arrows</b> nudge and select clips.
+Sample clips show fade handles at their top corners and, with Navigate &gt; Show Transients, their transients.</p>
+
+<h2 id="notes">Editing notes</h2>
+<p>Double-click a MIDI clip to open it in the note editor. The tools draw, paint, select, cut and mute notes; the lanes
+below edit velocity, release velocity, chance and the clip's controller curves. The Notes menu quantises, transposes,
+scales, strums and transforms; Pitch Curve draws a bend on each note. Notes &gt; Tools inverts, arpeggiates, flams,
+repeats, moves notes a degree up or down in the key, makes them follow the chord track, writes a Euclidean rhythm, moves
+notes to another track, splits a drum loop into a track per key and detects the key. Group keeps notes together when you
+select them; Lyrics lays syllables on the notes ("Hal-le-lu-jah"). Play On chooses the passes of the loop a note plays on;
+the Repeats lane plays a note several times inside its length; the Velocity Spread lane varies its velocity each time.
+Articulation picks one of the track's articulations (Track &gt; Articulations... sets the keyswitch, program or controller
+each one sends). New Note Length fixes the length a click draws; Audio Behind the Notes shows an audio clip's waveform
+under them. The controller lane can also hold program changes.</p>
+<p>Project &gt; Global Swing delays every off-beat 16th (or 8th) of the song; Chase Notes sounds a note playback starts
+in the middle of; MIDI Playback Offset starts every note a little later, to line up a slow instrument.</p>
+
+<h2 id="mix">Mixing</h2>
+<p>Each strip has its trim, polarity, mono and pan mode (balance, dual or width), sends with their own pan, inserts and a
+meter line with the clip light and the gain reduction. Right-click a strip for its Strip, Listen and Mixer View menus:
+show or hide sections, change the strip width, show only some channels, switch the meter between peak, RMS and pre-fader.
+VCA groups can be nested and choose which of level, mute and solo reach their members. Solo can be exclusive or
+additive (Mixer View &gt; Solo Mode).</p>
+
+<h2 id="devices">Devices</h2>
+<p>Add a device from the browser or the rack's menu; right-click a device to insert another before or after it, copy it
+or its whole chain to other channels, or compare two settings (A/B). Racks hold parallel chains, macros (each mapping
+with its own range and curve) and key or velocity zones; <i>Wrap into Rack</i> moves a chain into a rack chain. Plug-in
+windows have a header with bypass, A/B and presets. Favourite, hide or file plug-ins into folders from the effect
+picker or the plug-in manager (Project &gt; Plug-in Manager).</p>
+
+<h2 id="record">Recording</h2>
+<p>Arm a track with the record button in its header (or Record &gt; Arm All Audio Tracks), choose its input from its
+Record menu and press Record. Record &gt; Count-In and Pre-Roll starts the take bars early; Record Mode chooses
+overdub or replace for MIDI. Every pass of a looped take becomes a take lane: drag along a lane in the take-lanes view
+to comp that range, double-click to cycle the take (or Record &gt; Next Take Here). Retrospective capture keeps what you
+played without recording - save it as a clip or a take afterwards.</p>
+
+<h2 id="launch">The launcher</h2>
+<p>Show the launcher from the header. Each cell plays a pattern or an audio file; drop a sample on a cell to fill it.
+Cells launch on the next bar (or the cell's own quantisation) in trigger, gate, toggle or repeat mode, and scenes launch a
+row. Launcher &gt; Launch Scene 1-8 can be given keys (Settings &gt; Shortcuts); Launcher &gt; Controller binds the notes
+of a MIDI controller to cells and scenes. Launcher &gt; Record What I Played Into a Cell puts what you just played (with Keep Listening on) into a
+cell as a new pattern.</p>
+
+<h2 id="projects">Projects</h2>
+<p>Projects keep their history: Project &gt; Revisions restores or compares an earlier state. Collect Media copies every
+file a project uses beside it; Project &gt; Hand Off writes a folder someone else can open with a list of the devices
+to install first. Import Tracks copies tracks from another project; Save as Template keeps a project to start from.</p>
+
+<h2 id="agents">Scripts, agents and controllers</h2>
+<p>Every command is reachable over the control socket (JSON-RPC), from Lua scripts (<code>zene.command</code>) and from
+the MCP bridge. A controller can drive the remote-control pages (eight knobs following the selected device), a Mackie
+Control surface, or any parameter through MIDI learn.</p>
+
+<h2 id="access">Access</h2>
+<p>Settings &gt; Appearance sets the interface scale, the text size and a high-contrast palette (they take effect at the
+next start). Every control has a name for screen readers; the keyboard reaches every menu and list.</p>
+
+</body>
+</html>

@@ -82,8 +82,10 @@ ControlResult organise(const QJsonObject& args)
 	after.hidden = args.value(QStringLiteral("hidden")).toBool(after.hidden);
 	after.folder = args.value(QStringLiteral("folder")).toString(after.folder).trimmed();
 	if (!name.isEmpty()) { after.name = name; }
+	const bool changed = after.favourite != before.favourite || after.hidden != before.hidden || after.folder != before.folder;
 	pluginorganiser::setEntry(key, after);
-	addUndoStep([key, before]() { pluginorganiser::setEntry(key, before); }, [key, after]() { pluginorganiser::setEntry(key, after); });
+	// Only a real change is an undo step (review L10-L03-L02-1 #10): a no-op must not shadow the edit under it.
+	if (changed) { addUndoStep([key, before]() { pluginorganiser::setEntry(key, before); }, [key, after]() { pluginorganiser::setEntry(key, after); }); }
 	QJsonObject result = pluginorganiser::toJson(key, after);
 	result.insert(QStringLiteral("__transaction"), transactionPayload(pluginorganiser::toJson(key, before), QStringLiteral("control.undo"), {},
 		true, QStringLiteral("action checkpoint: the recorded undo step writes the device's previous entry back")));

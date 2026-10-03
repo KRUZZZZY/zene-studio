@@ -31,6 +31,8 @@
 #include <memory>
 #include <vector>
 
+#include <QPointer>
+
 #include "ControlCommandsSessionShared.h"
 #include "ControlEdit.h"
 #include "ControlRegistry.h"
@@ -62,7 +64,7 @@ struct Captured
 	tick_t start = 0;
 	tick_t length = 0;
 	QString session;  //!< the <session> block before
-	Track* pattern = nullptr;
+	QPointer<Track> pattern;  //!< null once the track is gone, whoever removed it (review L10-L03-L02-1 #1)
 	int written = 0;
 };
 
@@ -94,8 +96,8 @@ bool build(Captured* c)
 void unbuild(Captured* c)
 {
 	if (Song* song = Engine::getSong()) { restoreSessionBlock(song->sessionModel(), c->session); }
-	if (c->pattern != nullptr) { removeTrack(c->pattern); }
-	c->pattern = nullptr;
+	if (!c->pattern.isNull()) { removeTrack(c->pattern.data()); }
+	c->pattern.clear();
 }
 
 ControlResult captureToSlot(const QJsonObject& args)

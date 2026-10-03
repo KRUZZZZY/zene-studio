@@ -59,6 +59,8 @@ LMMS_EXPORT bool devicesRecordable(const std::vector<Effect*>& effects);
 
 //! Take @a effects off @a chain, last first, each removal recorded (its undo recreates it at its slot).
 LMMS_EXPORT void removeDevicesRecorded(EffectChain* chain, const std::vector<Effect*>& effects);
+//! The same for a chain an undo may delete and a redo create again, found by @a chainOf on every run.
+LMMS_EXPORT void removeDevicesRecorded(const std::function<EffectChain*()>& chainOf, const std::vector<Effect*>& effects);
 
 } // namespace control
 } // namespace lmms

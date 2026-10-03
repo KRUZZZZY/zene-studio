@@ -34,6 +34,7 @@
 #include <QJsonArray>
 
 #include "ClipLinks.h"
+#include "ControlCommandsNoteShared.h"
 #include "ControlEdit.h"
 #include "ControlRegistry.h"
 #include "ControlRegistryGroups.h"
@@ -49,45 +50,12 @@ namespace lmms
 {
 
 using namespace control;
+using namespace control::notes;
 
 namespace
 {
 
 constexpr int MaxRatchet = 16;
-
-//! The notes @a scope names in @a clip: the selection ("selection") or every note.
-QVector<Note*> scoped(const MidiClip* clip, const QString& scope)
-{
-	QVector<Note*> out;
-	for (Note* note : clip->notes())
-	{
-		if (scope != QStringLiteral("selection") || note->selected()) { out.append(note); }
-	}
-	return out;
-}
-
-QJsonObject noteJson(const Note* note)
-{
-	return {{QStringLiteral("note"), noteIdOf(note)}, {QStringLiteral("key"), note->key()},
-		{QStringLiteral("position"), note->pos().getTicks()}, {QStringLiteral("length"), note->length().getTicks()},
-		{QStringLiteral("velocity"), static_cast<int>(note->getVolume())}, {QStringLiteral("pan"), static_cast<int>(note->getPanning())},
-		{QStringLiteral("probability"), static_cast<double>(note->probability())}, {QStringLiteral("selected"), note->selected()},
-		{QStringLiteral("muted"), note->muted()}, {QStringLiteral("release_velocity"), note->releaseVelocity()},
-		{QStringLiteral("quantised"), note->hasUnquantisedTiming()}};
-}
-
-QJsonObject finish(const ClipRef& ref, MidiClip* clip, const QString& command, QJsonObject result)
-{
-	clip->rearrangeAllNotes();
-	clip->updateLength();
-	emit clip->dataChanged();
-	if (clip->linkId() > 0) { ClipLinks::mirrorContent(clip); }
-	Engine::getSong()->setModified();
-	result.insert(QStringLiteral("clip"), clipId(ref.id));
-	result.insert(QStringLiteral("__transaction"), transactionPayload({{QStringLiteral("clip"), clipId(ref.id)}}, command, {},
-		true, QStringLiteral("MidiClip journal checkpoint: undo restores every note")));
-	return result;
-}
 
 ControlResult scaleNotes(const QJsonObject& args)
 {

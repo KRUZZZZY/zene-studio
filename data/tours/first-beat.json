@@ -1,0 +1,15 @@
+{
+	"title": "Your first beat",
+	"steps": [
+		{"target": "shellPanel_browser", "panel": "browser", "title": "The browser",
+		 "text": "Instruments, presets and samples live here. Drag an instrument onto the arrangement to make a track, or a sample to make an audio clip. The Search source finds anything in your library."},
+		{"target": "shellPanel_arranger", "panel": "arranger", "title": "The arrangement",
+		 "text": "Each row is a track. Double-click in a track to add a clip, drag clips to move them and drag their edges to trim them."},
+		{"target": "shellPanel_detail", "panel": "detail", "title": "The note editor",
+		 "text": "Double-click a MIDI clip and its notes open here. Draw with the pencil, paint a run with the brush, and use the Notes menu to quantise or transform."},
+		{"target": "header_play", "title": "Play it",
+		 "text": "Space starts and stops the song. The header shows the position, tempo and loudness."},
+		{"target": "shellPanel_inspector", "panel": "inspector", "title": "The Inspector",
+		 "text": "Whatever you select - a track, a clip or a mixer channel - shows its settings here. Its More button lists everything you can do to it."}
+	]
+}

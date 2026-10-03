@@ -66,8 +66,9 @@ LMMS_EXPORT Options options();
 LMMS_EXPORT void setOptions(const Options& next);
 LMMS_EXPORT QJsonObject toJson(const Options& options);
 
-//! Before a recording pass starts: seek back and open the capture gate at the play position.
-LMMS_EXPORT void beginPass(Song* song);
+//! Before a recording pass starts: seek back and open the capture gate at the play position. Answers
+//! that position (where Stop returns to), or -1 when there is no count-in or pre-roll.
+LMMS_EXPORT tick_t beginPass(Song* song);
 //! After the transport stops: the timeline's own punch region back on the gate, the count-in over.
 LMMS_EXPORT void endPass(Song* song);
 //! Whether @a tick lies in the count-in of the pass running now (render thread; lock-free).

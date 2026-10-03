@@ -239,6 +239,7 @@ void registerWindowCommands(ControlRegistry& registry)
 	registerSelectionWindowCommands(registry);
 	registerShortcutCommands(registry);
 	registerMixerViewCommands(registry);
+	registerHelpCommands(registry);
 	registerLayoutCommands(registry);
 	registerMacroCommands(registry);
 	registerArrangerViewCommands(registry);

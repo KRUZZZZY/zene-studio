@@ -126,15 +126,22 @@ void registerProjectSaveAsTemplate(ControlRegistry& registry)
 	cmd.description = QStringLiteral("Write the session as the user's DEFAULT TEMPLATE "
 		"(<user template dir>/default.mpt) - what every later project.new starts from. File > "
 		"Save as default template dispatches this after asking before an overwrite. The session "
-		"itself is unchanged; an existing default template is REPLACED (`replaced` says so).");
-	cmd.argsSchema = objectSchema({});
+		"itself is unchanged; an existing default template is REPLACED (`replaced` says so). 0.5.0 L11 "
+		"(WF-027): with 'name' it writes a NAMED template (<user template dir>/<name>.mpt) instead, which "
+		"the start hub lists and project.new opens.");
+	cmd.argsSchema = objectSchema({{QStringLiteral("name"), stringProperty()}});
 	cmd.resultSchema = objectSchema({
 		{QStringLiteral("path"), stringProperty()},
 		{QStringLiteral("replaced"), booleanProperty()},
 	});
 	cmd.mutating = true;
-	cmd.handler = [](const QJsonObject&) {
-		const QString path = ConfigManager::inst()->userTemplateDir() + QStringLiteral("default.mpt");
+	cmd.handler = [](const QJsonObject& args) {
+		const QString name = args.value(QStringLiteral("name")).toString(QStringLiteral("default")).trimmed();
+		if (name.isEmpty() || name.contains(QLatin1Char('/')) || name.contains(QLatin1Char('\\')) || name.startsWith(QLatin1Char('.')))
+		{
+			return ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("'name' is a file name, without a folder"));
+		}
+		const QString path = ConfigManager::inst()->userTemplateDir() + name + QStringLiteral(".mpt");
 		QDir().mkpath(QFileInfo(path).absolutePath());
 		const bool replaced = QFileInfo::exists(path);
 		// saveProjectFile() writes the document and leaves the session's own
