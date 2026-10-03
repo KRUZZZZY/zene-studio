@@ -69,7 +69,8 @@ void ConvolutionKernel::transformPartitions(const std::vector<float>& impulse, s
 		const auto start = static_cast<std::size_t>(k) * Partition;
 		for (std::size_t i = 0; i < static_cast<std::size_t>(Partition) && start + i < impulse.size(); ++i) { m_timeIn[i] = impulse[start + i]; }
 		fftwf_execute(m_forward);
-		std::memcpy(spectra->data() + static_cast<std::size_t>(k) * Bins, m_spectrum, sizeof(fftwf_complex) * Bins);
+		const auto* spectrum = reinterpret_cast<const Complex*>(m_spectrum);
+		std::copy(spectrum, spectrum + Bins, spectra->data() + static_cast<std::size_t>(k) * Bins);
 	}
 }
 
@@ -81,7 +82,8 @@ void ConvolutionKernel::convolveChannel(int channel, const float* input, float* 
 	std::memcpy(m_previous[channel].data(), input, sizeof(float) * Partition);
 	fftwf_execute(m_forward);
 	Complex* history = m_history[channel].data();
-	std::memcpy(history + static_cast<std::size_t>(m_head) * Bins, m_spectrum, sizeof(fftwf_complex) * Bins);
+	const auto* spectrum = reinterpret_cast<const Complex*>(m_spectrum);
+	std::copy(spectrum, spectrum + Bins, history + static_cast<std::size_t>(m_head) * Bins);
 	// The sum over the partitions: input spectrum k blocks ago times the impulse's block k.
 	auto* sum = reinterpret_cast<Complex*>(m_sum);
 	std::fill(sum, sum + Bins, Complex{});

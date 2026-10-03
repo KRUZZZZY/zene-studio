@@ -112,7 +112,7 @@ private:
 		return false;
 	}
 
-	bool emit(Op op, float value = 0.f)
+	bool put(Op op, float value = 0.f)
 	{
 		if (m_out->count >= FormulaProgram::MaxOps) { return fail(QStringLiteral("the formula is too long")); }
 		m_depth += op <= Op::Cycle ? 1 : isBinary(op) ? -1 : 0;
@@ -133,7 +133,7 @@ private:
 			const auto found = m_pos < m_text.size() ? ops.find(m_text.at(m_pos)) : ops.end();
 			if (found == ops.end()) { return true; }
 			++m_pos;
-			if (!(this->*next)() || !emit(found->second)) { return false; }
+			if (!(this->*next)() || !put(found->second)) { return false; }
 		}
 	}
 
@@ -152,12 +152,12 @@ private:
 	bool power()
 	{
 		if (!unary()) { return false; }
-		return !accept(QLatin1Char('^')) || (power() && emit(Op::Pow));
+		return !accept(QLatin1Char('^')) || (power() && put(Op::Pow));
 	}
 
 	bool unary()
 	{
-		if (accept(QLatin1Char('-'))) { return unary() && emit(Op::Negate); }
+		if (accept(QLatin1Char('-'))) { return unary() && put(Op::Negate); }
 		accept(QLatin1Char('+'));
 		return primary();
 	}
@@ -186,7 +186,7 @@ private:
 		}
 		bool ok = false;
 		const double value = m_text.mid(start, m_pos - start).toDouble(&ok);
-		return ok ? emit(Op::Constant, static_cast<float>(value)) : fail(QStringLiteral("a malformed number"));
+		return ok ? put(Op::Constant, static_cast<float>(value)) : fail(QStringLiteral("a malformed number"));
 	}
 
 	bool call(Op op)
@@ -194,7 +194,7 @@ private:
 		if (!accept(QLatin1Char('('))) { return fail(QStringLiteral("a function needs its argument in brackets")); }
 		if (!expression()) { return false; }
 		if (isBinary(op) && (!accept(QLatin1Char(',')) || !expression())) { return fail(QStringLiteral("min and max take two arguments")); }
-		return accept(QLatin1Char(')')) ? emit(op) : fail(QStringLiteral("a missing ')'"));
+		return accept(QLatin1Char(')')) ? put(op) : fail(QStringLiteral("a missing ')'"));
 	}
 
 	bool name()
@@ -202,10 +202,10 @@ private:
 		const int start = m_pos;
 		while (m_pos < m_text.size() && m_text.at(m_pos).isLetter()) { ++m_pos; }
 		const QString word = m_text.mid(start, m_pos - start).toLower();
-		if (word == QLatin1String("t")) { return emit(Op::Phase); }
-		if (word == QLatin1String("x")) { return emit(Op::Cycle); }
-		if (word == QLatin1String("pi")) { return emit(Op::Constant, static_cast<float>(kPi)); }
-		if (word == QLatin1String("e")) { return emit(Op::Constant, static_cast<float>(std::exp(1.0))); }
+		if (word == QLatin1String("t")) { return put(Op::Phase); }
+		if (word == QLatin1String("x")) { return put(Op::Cycle); }
+		if (word == QLatin1String("pi")) { return put(Op::Constant, static_cast<float>(kPi)); }
+		if (word == QLatin1String("e")) { return put(Op::Constant, static_cast<float>(std::exp(1.0))); }
 		const auto found = functions().find(word);
 		return found != functions().end() ? call(found->second) : fail(QStringLiteral("unknown name '%1'").arg(word));
 	}
