@@ -696,6 +696,7 @@ set(LMMS_SRCS
 	core/ControlReversibilityTableCustomisation.cpp
 	core/ControlReversibilityTableMixing.cpp
 	core/ControlReversibilityTableDevices.cpp
+	core/ControlReversibilityTableW3Library.cpp
 	core/ControlReversibilityTableArranger.cpp
 	core/ControlReversibilityTableShell.cpp
 	${CMAKE_SOURCE_DIR}/thirdparty/mts-esp/libMTSClient.cpp
@@ -971,6 +972,12 @@ set(LMMS_SRCS
 	core/ControlCommandsAutomationTools.cpp
 	core/AutomationSwitches.cpp
 	core/ControlCommandsAudioAnalysis.cpp
+	# 0.5.0 L11 / L12 (W3): mixer snapshots, project settings / metadata / document type, edit locks.
+	core/ControlCommandsMixerSnapshots.cpp
+	core/ControlCommandsProjectInfo.cpp
+	core/MixerSnapshots.cpp
+	core/ProjectInfo.cpp
+	core/EditLocks.cpp
 	core/ControlTrackCreation.cpp
 	core/PitchTrack.cpp
 	core/MarkerActions.cpp
@@ -1137,6 +1144,7 @@ SET(ZENE_API_SRCS
 	core/ControlReversibilityTableCustomisation.cpp
 	core/ControlReversibilityTableMixing.cpp
 	core/ControlReversibilityTableDevices.cpp
+	core/ControlReversibilityTableW3Library.cpp
 	core/ControlReversibilityTableArranger.cpp
 	core/ControlReversibilityTableShell.cpp
 )

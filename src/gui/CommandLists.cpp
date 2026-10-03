@@ -319,4 +319,32 @@ ListSpec noteEvents(const QString& clip)
 	return out;
 }
 
+ListSpec mixerSnapshots()
+{
+	ListSpec out = spec("Mixer Snapshots", "mixer.snapshot_list", "snapshots", {QStringLiteral("name"), QStringLiteral("channels")});
+	out.summaryKeys = {QStringLiteral("count"), QStringLiteral("limit")};
+	const QHash<QString, QString> named{{QStringLiteral("name"), QStringLiteral("name")}};
+	RowAction remove = act("Remove", "mixer.snapshot_remove", named);
+	remove.confirm = true;
+	out.actions = {act("Recall", "mixer.snapshot_recall", named),
+		act("Recall Faders Only", "mixer.snapshot_recall", named, {{QStringLiteral("parts"), QJsonArray{QStringLiteral("volume")}}}),
+		act("Recall Parts...", "mixer.snapshot_recall", named, {}, true), remove};
+	out.extras = {extra("Store...", "mixer.snapshot_store")};
+	return out;
+}
+
+ListSpec lockedTracks()
+{
+	ListSpec out = spec("Locked Tracks", "project.locks", "tracks", {QStringLiteral("name"), QStringLiteral("track")});
+	out.actions = {act("Unlock", "track.set_locked", {{QStringLiteral("track"), QStringLiteral("track")}}, {{QStringLiteral("locked"), false}})};
+	return out;
+}
+
+ListSpec lockedClips()
+{
+	ListSpec out = spec("Locked Clips", "project.locks", "clips", {QStringLiteral("clip"), QStringLiteral("track")});
+	out.actions = {act("Unlock", "clip.set_locked", {{QStringLiteral("clip"), QStringLiteral("clip")}}, {{QStringLiteral("locked"), false}})};
+	return out;
+}
+
 } // namespace lmms::gui::CommandLists

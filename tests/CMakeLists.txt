@@ -605,6 +605,8 @@ set(LMMS_TESTS
 	src/core/AudioAutomationToolsTest.cpp
 	# 0.5.0 L05 (W3): the YIN pitch tracker, audio to MIDI, the spectrogram, a folder moved as one.
 	src/core/AudioAnalysisTest.cpp
+	# 0.5.0 L12 (W3): mixer snapshots, project settings and metadata, the document type, edit locks.
+	src/core/ProjectStateTest.cpp
 	# 0.5.0 L05: fade shapes and handles, automatic and range fades, splits, slices, beat mapping.
 	src/core/AudioEditingTest.cpp
 	# 0.5.0 W2 gaps (audit-rows-1): clip.join, ripple on move and insert, controller.map / unmap.

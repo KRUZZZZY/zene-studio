@@ -225,6 +225,7 @@ include/DspEffectLibrary.h
 include/DummyEffect.h
 include/DummyInstrument.h
 include/DummyPlugin.h
+include/EditLocks.h
 include/Editor.h
 include/Effect.h
 include/EffectChain.h
@@ -306,6 +307,7 @@ include/LedCheckBox.h
 include/LeftRightNav.h
 include/LfoController.h
 include/LfoGraph.h
+include/LibraryCommandMenus.h
 include/LinkPeerTransport.h
 include/LinkSync.h
 include/LinkedModelGroupViews.h
@@ -396,6 +398,7 @@ include/MixerListen.h
 include/MixerOptions.h
 include/MixerOverlays.h
 include/MixerSendPan.h
+include/MixerSnapshots.h
 include/MixerStrip.h
 include/MixerView.h
 include/MixerViewOptions.h
@@ -467,6 +470,7 @@ include/PositionLine.h
 include/PresetPreviewPlayHandle.h
 include/ProjectContainer.h
 include/ProjectIds.h
+include/ProjectInfo.h
 include/ProjectJournal.h
 include/ProjectKey.h
 include/ProjectMarkers.h
@@ -1255,6 +1259,7 @@ src/core/ControlCommandsMidiReconnectShared.h
 src/core/ControlCommandsMixer.cpp
 src/core/ControlCommandsMixerListen.cpp
 src/core/ControlCommandsMixerRoutes.cpp
+src/core/ControlCommandsMixerSnapshots.cpp
 src/core/ControlCommandsMixerStrip.cpp
 src/core/ControlCommandsMixerTools.cpp
 src/core/ControlCommandsModulator.cpp
@@ -1298,6 +1303,7 @@ src/core/ControlCommandsPorts.cpp
 src/core/ControlCommandsProject.cpp
 src/core/ControlCommandsProjectArchive.cpp
 src/core/ControlCommandsProjectFiles.cpp
+src/core/ControlCommandsProjectInfo.cpp
 src/core/ControlCommandsProjectLifecycle.cpp
 src/core/ControlCommandsProjectMmpzGit.cpp
 src/core/ControlCommandsPunch.cpp
@@ -1433,6 +1439,7 @@ src/core/ControlReversibilityTableStructure.cpp
 src/core/ControlReversibilityTableTrackFolder.cpp
 src/core/ControlReversibilityTableVca.cpp
 src/core/ControlReversibilityTableVerbs.cpp
+src/core/ControlReversibilityTableW3Library.cpp
 src/core/ControlReversibilityTableWasmRender.cpp
 src/core/ControlReversibilityTableWindow.cpp
 src/core/ControlScaleSupport.cpp
@@ -1466,6 +1473,7 @@ src/core/DawProjectWrite.cpp
 src/core/DawProjectZip.cpp
 src/core/DocumentIndex.cpp
 src/core/DrumSynth.cpp
+src/core/EditLocks.cpp
 src/core/Effect.cpp
 src/core/EffectChain.cpp
 src/core/EffectChainPatcher.cpp
@@ -1530,6 +1538,7 @@ src/core/MixerGroups.cpp
 src/core/MixerListen.cpp
 src/core/MixerOptions.cpp
 src/core/MixerSendPan.cpp
+src/core/MixerSnapshots.cpp
 src/core/MixerStrip.cpp
 src/core/Model.cpp
 src/core/ModelVisitor.cpp
@@ -1566,6 +1575,7 @@ src/core/PresetPreviewPlayHandle.cpp
 src/core/ProjectContainer.cpp
 src/core/ProjectContainerEntries.cpp
 src/core/ProjectIds.cpp
+src/core/ProjectInfo.cpp
 src/core/ProjectJournal.cpp
 src/core/ProjectJournalBounds.cpp
 src/core/ProjectJournalStructural.cpp
@@ -1757,6 +1767,7 @@ src/gui/GuiApplication.cpp
 src/gui/HelpCenter.cpp
 src/gui/LadspaControlView.cpp
 src/gui/LfoControllerDialog.cpp
+src/gui/LibraryCommandMenus.cpp
 src/gui/LinkedModelGroupViews.cpp
 src/gui/LmmsPalette.cpp
 src/gui/LmmsStyle.cpp
@@ -2109,6 +2120,7 @@ tests/src/core/ProjectMarkersTest.cpp
 tests/src/core/ProjectOpenIntegrityTest.cpp
 tests/src/core/ProjectRecoveryTest.cpp
 tests/src/core/ProjectRevIdsTest.cpp
+tests/src/core/ProjectStateTest.cpp
 tests/src/core/ProjectVersionTest.cpp
 tests/src/core/ProvenanceSectionTest.cpp
 tests/src/core/PunchWindowTest.cpp

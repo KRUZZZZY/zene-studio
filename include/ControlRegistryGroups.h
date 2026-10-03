@@ -843,6 +843,10 @@ LMMS_EXPORT void registerSampleToolCommands(ControlRegistry& registry);
 LMMS_EXPORT void registerAutomationToolCommands(ControlRegistry& registry);
 //! 0.5.0 L05 (W3): clip.audio_to_midi, sample.spectrogram (ControlCommandsAudioAnalysis.cpp).
 LMMS_EXPORT void registerAudioAnalysisCommands(ControlRegistry& registry);
+//! 0.5.0 L12 (W3): mixer.snapshot_store / recall / list / remove (ControlCommandsMixerSnapshots.cpp); project.settings /
+//! metadata / locks, track.set_locked, clip.set_locked (ControlCommandsProjectInfo.cpp).
+LMMS_EXPORT void registerMixerSnapshotCommands(ControlRegistry& registry);
+LMMS_EXPORT void registerProjectInfoCommands(ControlRegistry& registry);
 } // namespace lmms
 
 #endif // LMMS_CONTROL_REGISTRY_GROUPS_H

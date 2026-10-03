@@ -63,6 +63,7 @@ SET(LMMS_SRCS
 	gui/CommandForm.cpp
 	gui/CommandListDialog.cpp
 	gui/CommandLists.cpp
+	gui/LibraryCommandMenus.cpp
 	gui/CompSwipeStrip.cpp
 	gui/ContextHelp.cpp
 	gui/CommandPalette.cpp

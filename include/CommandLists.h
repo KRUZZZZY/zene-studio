@@ -76,6 +76,11 @@ LMMS_EXPORT ListSpec clips();
 LMMS_EXPORT ListSpec sections();
 //! L07 MIDI event list: every note of a clip as a row - edit its velocity, position, length, probability.
 LMMS_EXPORT ListSpec noteEvents(const QString& clip);
+//! L12 (MX-170): the project's mixer snapshots - recall all of one or only its faders, remove, store a new one.
+LMMS_EXPORT ListSpec mixerSnapshots();
+//! L12 (WF-044): the tracks and the clips locked against editing - unlock one.
+LMMS_EXPORT ListSpec lockedTracks();
+LMMS_EXPORT ListSpec lockedClips();
 
 } // namespace CommandLists
 
