@@ -308,7 +308,9 @@ private slots:
 
 	void theTunerReadsANote()
 	{
-		QVERIFY(run(QStringLiteral("tuner.set"), {{QStringLiteral("source"), QStringLiteral("master")}, {QStringLiteral("reference_hz"), 440.0}}).ok);
+		// The input: the Dummy device captures nothing, so only this test's frames reach the tap (the master
+		// would also take the engine's own silent periods while the test runs).
+		QVERIFY(run(QStringLiteral("tuner.set"), {{QStringLiteral("source"), QStringLiteral("input")}, {QStringLiteral("reference_hz"), 440.0}}).ok);
 		QVERIFY(!run(QStringLiteral("tuner.get_state")).result.value(QStringLiteral("clear")).toBool());
 		const double rate = Engine::audioEngine()->baseSampleRate();
 		std::vector<SampleFrame> tone(TunerTap::Capacity);
@@ -317,9 +319,9 @@ private slots:
 			const auto v = static_cast<float>(0.5 * std::sin(2.0 * M_PI * 440.0 * static_cast<double>(i) / rate));
 			tone[i] = SampleFrame(v, v);
 		}
-		TunerTap::instance().push(TunerTap::Source::Input, tone.data(), tone.size());  // not the chosen source: ignored
+		TunerTap::instance().push(TunerTap::Source::Master, tone.data(), tone.size());  // not the chosen source: ignored
 		QVERIFY(!run(QStringLiteral("tuner.get_state")).result.value(QStringLiteral("clear")).toBool());
-		TunerTap::instance().push(TunerTap::Source::Master, tone.data(), tone.size());
+		TunerTap::instance().push(TunerTap::Source::Input, tone.data(), tone.size());
 		const QJsonObject a4 = run(QStringLiteral("tuner.get_state")).result;
 		QVERIFY2(a4.value(QStringLiteral("clear")).toBool(), "no pitch in a 440 Hz tone");
 		QCOMPARE(a4.value(QStringLiteral("note")).toString(), QStringLiteral("A4"));
