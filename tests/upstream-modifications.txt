@@ -1026,3 +1026,4 @@ data/tours/first-beat.json	0.5.0 L14 (2026-10-03): a guided tour (GuidedTour, ap
 data/tours/mixing.json	0.5.0 L14 (2026-10-03): a guided tour (GuidedTour, app.tour) - the steps and the panels each one points at; a new file, no inherited file changes
 data/tours/recording.json	0.5.0 L14 (2026-10-03): a guided tour (GuidedTour, app.tour) - the steps and the panels each one points at; a new file, no inherited file changes
 src/gui/tracks/TrackLabelButton.cpp	0.5.0 W3 L13 (WF-120): paintEvent first asks applyTrackIcon (TrackIcons.cpp) for an icon the user chose with track.set_icon; with none chosen - every existing project - it falls through to the unchanged instrument-logo path
+data/whatsnew/notes.json	0.5.0 W3 L14 (WF-141, 2026-10-03): the release notes Help > What's New and app.whats_new show, shipped with the program (nothing is fetched); a new file, no inherited file changes

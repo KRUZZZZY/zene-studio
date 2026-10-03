@@ -137,6 +137,8 @@ void registerControlCommands(ControlRegistry& registry)
 	registerTrackLookCommands(registry);
 	registerAssistantCommands(registry);
 	registerWorkspaceCommands(registry);
+	registerViewMemoryCommands(registry);
+	registerHistoryJumpCommand(registry);
 #ifdef ZENE_TELEMETRY_ENABLED
 	// The telemetry.* group travels with the client. -DZENE_TELEMETRY=OFF
 	// removes the client, so the registry must not carry ids that would

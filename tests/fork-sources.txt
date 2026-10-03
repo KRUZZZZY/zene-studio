@@ -784,6 +784,7 @@ include/UnclaimedElements.h
 include/UndoHistoryPanel.h
 include/VcaGroup.h
 include/VcaStripView.h
+include/ViewMemory.h
 include/VisibilitySetMenu.h
 include/WarpMarkers.h
 include/WaveformPreview.h
@@ -969,6 +970,7 @@ src/core/ControlCommandsGroove.cpp
 src/core/ControlCommandsGrooveEdit.cpp
 src/core/ControlCommandsGroovePool.cpp
 src/core/ControlCommandsHandoff.cpp
+src/core/ControlCommandsHistoryJump.cpp
 src/core/ControlCommandsHostChunking.cpp
 src/core/ControlCommandsHostNotes.cpp
 src/core/ControlCommandsIdContract.cpp
@@ -1331,6 +1333,7 @@ src/core/TrackMixModels.cpp
 src/core/UnattendedRun.cpp
 src/core/UnclaimedElements.cpp
 src/core/VcaGroup.cpp
+src/core/ViewMemory.cpp
 src/core/audio/MultiTrackRecorder.cpp
 src/core/audio/TrackRecorder.cpp
 src/core/midi/MidiReconnect.cpp
@@ -1359,6 +1362,7 @@ src/gui/ControlCommandsSelection.cpp
 src/gui/ControlCommandsShell.cpp
 src/gui/ControlCommandsShortcuts.cpp
 src/gui/ControlCommandsTheme.cpp
+src/gui/ControlCommandsViewMemory.cpp
 src/gui/ControlCommandsWindow.cpp
 src/gui/ControlCommandsWorkspace.cpp
 src/gui/ControlGuiSupport.cpp

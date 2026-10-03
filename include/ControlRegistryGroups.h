@@ -854,6 +854,10 @@ LMMS_EXPORT void registerAssistantCommands(ControlRegistry& registry);
 LMMS_EXPORT void markWhatsNewSeen();
 //! window.stay_on_top / tidy / large_clock / ask / whats_new / focus_panel (src/gui/ControlCommandsWorkspace.cpp).
 LMMS_EXPORT void registerWorkspaceCommands(ControlRegistry& registry);
+//! location.* / selection.* (src/gui/ControlCommandsViewMemory.cpp); control.history_jump
+//! (src/core/ControlCommandsHistoryJump.cpp).
+LMMS_EXPORT void registerViewMemoryCommands(ControlRegistry& registry);
+LMMS_EXPORT void registerHistoryJumpCommand(ControlRegistry& registry);
 } // namespace lmms
 
 #endif // LMMS_CONTROL_REGISTRY_GROUPS_H

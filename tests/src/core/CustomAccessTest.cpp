@@ -24,7 +24,9 @@
 /*! 0.5.0 W3 L13 / L14, the commands that need no interface: the track manager's list and its colour,
  *  visibility and icon edits, each one undo step, the icon saved only when set (WF-097 / WF-120); every
  *  mixer channel's processing load (WF-104); a question answered from the manual and the commands, offline
- *  (WF-142); the shipped release notes and their once-per-version marker (WF-141). */
+ *  (WF-142); the shipped release notes and their once-per-version marker (WF-141); memory locations and saved
+ *  selections, saved with the project only when there are any (WF-098 / WF-106); the undo history walked
+ *  several steps at once (WF-102). */
 
 #include <QtTest>
 
@@ -197,6 +199,68 @@ private slots:
 		QVERIFY(!notes.result.value(QStringLiteral("seen")).toBool());
 		markWhatsNewSeen();
 		QVERIFY(run(QStringLiteral("app.whats_new")).result.value(QStringLiteral("seen")).toBool());
+	}
+
+	void aMemoryLocationComesBack()
+	{
+		const QString bare = m_dir.filePath(QStringLiteral("nomemory.mmp"));
+		QVERIFY(Engine::getSong()->saveProjectFile(bare));
+		QVERIFY2(!fileText(bare).contains(QStringLiteral("<view-memory")), "a project with no locations wrote <view-memory>");
+		QVERIFY(run(QStringLiteral("transport.seek"), {{QStringLiteral("ticks"), 1920}}).ok);
+		QVERIFY(run(QStringLiteral("range.set"), {{QStringLiteral("start"), 960}, {QStringLiteral("end"), 2880}}).ok);
+		const ControlResult saved = run(QStringLiteral("location.save"), {{QStringLiteral("name"), QStringLiteral("verse")}});
+		QVERIFY2(saved.ok, qPrintable(saved.errorMessage));
+		QCOMPARE(saved.result.value(QStringLiteral("tick")).toInt(), 1920);
+		QCOMPARE(run(QStringLiteral("location.list")).result.value(QStringLiteral("count")).toInt(), 1);
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
+		QCOMPARE(run(QStringLiteral("location.list")).result.value(QStringLiteral("count")).toInt(), 0);
+		QVERIFY(run(QStringLiteral("location.save"), {{QStringLiteral("name"), QStringLiteral("verse")}}).ok);
+		QVERIFY(run(QStringLiteral("transport.seek"), {{QStringLiteral("ticks"), 0}}).ok);
+		QVERIFY(run(QStringLiteral("range.set"), {{QStringLiteral("start"), 0}, {QStringLiteral("end"), 0}}).ok);
+		const ControlResult recalled = run(QStringLiteral("location.recall"), {{QStringLiteral("name"), QStringLiteral("verse")}});
+		QVERIFY2(recalled.ok, qPrintable(recalled.errorMessage));
+		QVERIFY(recalled.result.value(QStringLiteral("range_restored")).toBool());
+		QCOMPARE(run(QStringLiteral("transport.get_state")).result.value(QStringLiteral("position_ticks")).toInt(), 1920);
+		QCOMPARE(run(QStringLiteral("range.get")).result.value(QStringLiteral("range")).toObject().value(QStringLiteral("end")).toInt(), 2880);
+		QCOMPARE(run(QStringLiteral("location.recall"), {{QStringLiteral("name"), QStringLiteral("chorus")}}).errorKind, ControlErrorKind::NotFound);
+		const QString named = m_dir.filePath(QStringLiteral("memory.mmp"));
+		QVERIFY(Engine::getSong()->saveProjectFile(named));
+		QVERIFY(fileText(named).contains(QStringLiteral("<view-memory")));
+		QVERIFY(run(QStringLiteral("location.remove"), {{QStringLiteral("name"), QStringLiteral("verse")}}).ok);
+		QCOMPARE(run(QStringLiteral("location.remove"), {{QStringLiteral("name"), QStringLiteral("verse")}}).errorKind, ControlErrorKind::NotFound);
+	}
+
+	void aSavedSelectionComesBack()
+	{
+		QVERIFY(run(QStringLiteral("range.set"), {{QStringLiteral("start"), 0}, {QStringLiteral("end"), 0}}).ok);
+		QCOMPARE(run(QStringLiteral("selection.save"), {{QStringLiteral("name"), QStringLiteral("intro")}}).errorKind, ControlErrorKind::Refused);
+		QCOMPARE(run(QStringLiteral("selection.save"), {{QStringLiteral("name"), QStringLiteral("  ")}}).errorKind, ControlErrorKind::InvalidArgs);
+		QVERIFY(run(QStringLiteral("range.set"), {{QStringLiteral("start"), 0}, {QStringLiteral("end"), 3840}}).ok);
+		const ControlResult saved = run(QStringLiteral("selection.save"), {{QStringLiteral("name"), QStringLiteral("intro")}});
+		QVERIFY2(saved.ok, qPrintable(saved.errorMessage));
+		QVERIFY(run(QStringLiteral("range.set"), {{QStringLiteral("start"), 100}, {QStringLiteral("end"), 200}}).ok);
+		const ControlResult applied = run(QStringLiteral("selection.apply"), {{QStringLiteral("name"), QStringLiteral("intro")}});
+		QVERIFY2(applied.ok, qPrintable(applied.errorMessage));
+		QCOMPARE(run(QStringLiteral("range.get")).result.value(QStringLiteral("range")).toObject().value(QStringLiteral("end")).toInt(), 3840);
+		QCOMPARE(run(QStringLiteral("selection.list")).result.value(QStringLiteral("count")).toInt(), 1);
+		// range.set and clip.select are interface state: the newest undo step is still the save.
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
+		QCOMPARE(run(QStringLiteral("selection.list")).result.value(QStringLiteral("count")).toInt(), 0);
+	}
+
+	void theHistoryIsWalkedInOneGo()
+	{
+		const QString id = control::trackIdOf(m_track);
+		QVERIFY(run(QStringLiteral("track.set_color"), {{QStringLiteral("track"), id}, {QStringLiteral("color"), QStringLiteral("#111111")}}).ok);
+		QVERIFY(run(QStringLiteral("track.set_color"), {{QStringLiteral("track"), id}, {QStringLiteral("color"), QStringLiteral("#222222")}}).ok);
+		const ControlResult back = run(QStringLiteral("control.history_jump"), {{QStringLiteral("steps"), -2}});
+		QVERIFY2(back.ok, qPrintable(back.errorMessage));
+		QCOMPARE(back.result.value(QStringLiteral("steps")).toInt(), -2);
+		QVERIFY(!m_track->color().has_value());
+		const ControlResult forward = run(QStringLiteral("control.history_jump"), {{QStringLiteral("steps"), 2}});
+		QVERIFY2(forward.ok, qPrintable(forward.errorMessage));
+		QCOMPARE(m_track->color()->name(), QStringLiteral("#222222"));
+		QCOMPARE(run(QStringLiteral("control.history_jump"), {{QStringLiteral("steps"), 0}}).errorKind, ControlErrorKind::InvalidArgs);
 	}
 
 private:

@@ -977,6 +977,8 @@ set(LMMS_SRCS
 	core/TrackLooks.cpp
 	core/ControlCommandsTrackLooks.cpp
 	core/ControlCommandsAssistant.cpp
+	core/ControlCommandsHistoryJump.cpp
+	core/ViewMemory.cpp
 	core/ControlTrackCreation.cpp
 	core/PitchTrack.cpp
 	core/MarkerActions.cpp

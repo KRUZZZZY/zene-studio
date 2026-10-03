@@ -70,6 +70,23 @@ const ReversibilityRow kW3CustomRows[] = {
 	R("window.whats_new", RC::NotMutating, false, "it shows the release notes and remembers they were shown (an interface "
 		"marker in the config file, as the window layout is kept)", "no project write", ""),
 	R("window.focus_panel", RC::NotMutating, false, "it moves the keyboard focus: interface state", "no write", ""),
+	// WF-098 / WF-106: memory locations and saved selections (<view-memory>), WF-102: the history walk.
+	R("location.save", RC::TrueInverse, true, "it saves a memory location with the project",
+		"action checkpoint: the recorded undo step puts the previous list back", ""),
+	R("location.recall", RC::NotMutating, false, "it moves the play position through transport.seek and the range through "
+		"range.set, which record themselves; the zoom is interface state", "no write of its own", ""),
+	R("location.list", RC::NotMutating, false, "it lists the memory locations. Nothing is written", "no write", ""),
+	R("location.remove", RC::TrueInverse, true, "it removes a memory location from the project",
+		"action checkpoint: the recorded undo step puts the previous list back", ""),
+	R("selection.save", RC::TrueInverse, true, "it saves a selection with the project",
+		"action checkpoint: the recorded undo step puts the previous list back", ""),
+	R("selection.apply", RC::NotMutating, false, "it sets the range through range.set and selects clips: interface state",
+		"no write of its own", ""),
+	R("selection.list", RC::NotMutating, false, "it lists the saved selections. Nothing is written", "no write", ""),
+	R("selection.remove", RC::TrueInverse, true, "it removes a saved selection from the project",
+		"action checkpoint: the recorded undo step puts the previous list back", ""),
+	R("control.history_jump", RC::NotMutating, false, "it runs control.undo or control.redo several times; each step is "
+		"theirs and it records nothing of its own", "no write of its own (control.history_jump the other way)", ""),
 };
 
 #undef R

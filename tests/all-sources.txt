@@ -645,6 +645,7 @@ include/ValueBuffer.h
 include/VcaGroup.h
 include/VcaStripView.h
 include/VersionedSaveDialog.h
+include/ViewMemory.h
 include/VisibilitySetMenu.h
 include/VstSyncController.h
 include/VstSyncData.h
@@ -1239,6 +1240,7 @@ src/core/ControlCommandsGroove.cpp
 src/core/ControlCommandsGrooveEdit.cpp
 src/core/ControlCommandsGroovePool.cpp
 src/core/ControlCommandsHandoff.cpp
+src/core/ControlCommandsHistoryJump.cpp
 src/core/ControlCommandsHostChunking.cpp
 src/core/ControlCommandsHostNotes.cpp
 src/core/ControlCommandsIdContract.cpp
@@ -1672,6 +1674,7 @@ src/core/UpgradeExtendedNoteRange.cpp
 src/core/UpgradeExtendedNoteRange.h
 src/core/ValueBuffer.cpp
 src/core/VcaGroup.cpp
+src/core/ViewMemory.cpp
 src/core/VstSyncController.cpp
 src/core/audio/AudioAlsa.cpp
 src/core/audio/AudioDevice.cpp
@@ -1746,6 +1749,7 @@ src/gui/ControlCommandsSelection.cpp
 src/gui/ControlCommandsShell.cpp
 src/gui/ControlCommandsShortcuts.cpp
 src/gui/ControlCommandsTheme.cpp
+src/gui/ControlCommandsViewMemory.cpp
 src/gui/ControlCommandsWindow.cpp
 src/gui/ControlCommandsWorkspace.cpp
 src/gui/ControlGuiSupport.cpp

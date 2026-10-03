@@ -71,6 +71,12 @@ void fillWindowMenu(QMenu* menu)
 	list(menu, QObject::tr("Track Manager..."), CommandLists::trackManager);
 	run(menu, QObject::tr("Channel Load"), QStringLiteral("mixer.cpu_load"), {}, false, true);
 	run(menu, QObject::tr("Large Clock"), QStringLiteral("window.large_clock"));
+	run(menu, QObject::tr("Undo History..."), QStringLiteral("window.undo_history"));
+	menu->addSeparator();
+	list(menu, QObject::tr("Memory Locations..."), CommandLists::memoryLocations);
+	run(menu, QObject::tr("Save Memory Location..."), QStringLiteral("location.save"), {}, true);
+	list(menu, QObject::tr("Saved Selections..."), CommandLists::savedSelections);
+	run(menu, QObject::tr("Save the Selection..."), QStringLiteral("selection.save"), {}, true);
 	menu->addSeparator();
 	run(menu, QObject::tr("Focus Next Panel"), QStringLiteral("window.focus_panel"), {{QStringLiteral("panel"), QStringLiteral("next")}})
 		->setShortcut(QKeySequence(Qt::Key_F6));

@@ -63,4 +63,24 @@ ListSpec trackManager()
 	return out;
 }
 
+ListSpec memoryLocations()
+{
+	ListSpec out = spec("Memory Locations", "location.list", "locations", {QStringLiteral("name"), QStringLiteral("tick"),
+		QStringLiteral("zoom")});
+	const QHash<QString, QString> named{{QStringLiteral("name"), QStringLiteral("name")}};
+	out.actions = {act("Go", "location.recall", named), act("Remove", "location.remove", named)};
+	out.extras = {extra("Save Here...", "location.save")};
+	return out;
+}
+
+ListSpec savedSelections()
+{
+	ListSpec out = spec("Saved Selections", "selection.list", "selections", {QStringLiteral("name"), QStringLiteral("clips"),
+		QStringLiteral("range")});
+	const QHash<QString, QString> named{{QStringLiteral("name"), QStringLiteral("name")}};
+	out.actions = {act("Select", "selection.apply", named), act("Remove", "selection.remove", named)};
+	out.extras = {extra("Save the Selection...", "selection.save")};
+	return out;
+}
+
 } // namespace lmms::gui::CommandLists
