@@ -49,6 +49,7 @@ class Note;
 namespace lmms::gui
 {
 
+class ControllerLaneView;
 class NoteCanvas;
 class NoteKeyboardView;
 class NoteLaneView;
@@ -91,6 +92,7 @@ struct NoteEditorState
 	QString scaleName;            //!< from scale.get_state, for the header label
 	NoteColor colorMode = NoteColor::Velocity;
 	bool keepInScale = false;     //!< drawn and moved notes land on the nearest key of the scale
+	QString controllerLane;       //!< the controller lane shown instead of the note lane ("cc:1", ...), or empty
 };
 
 //! The reworked piano roll (owner direction 2026-10-02, Bitwig-style). Every edit it makes is a
@@ -121,6 +123,9 @@ public:
 	void setGhosts(bool on);
 	void setColorMode(NoteColor mode);
 	void setKeepInScale(bool on);
+	//! Show the clip's controller lane @a id (cc:<n>, pitchbend, aftertouch) under the notes; empty
+	//! goes back to the note lane.
+	void setControllerLane(const QString& id);
 	//! The clip track's name for @a key (key_names.*), or empty.
 	QString keyLabel(int key) const;
 	//! Horizontal zoom, pixels per tick (NoteGrid clamps it).
@@ -184,6 +189,7 @@ private:
 	NoteKeyboardView* m_keyboard = nullptr;
 	NoteCanvas* m_canvas = nullptr;
 	NoteLaneView* m_lanes = nullptr;
+	ControllerLaneView* m_ccLane = nullptr;
 	QScrollBar* m_hScroll = nullptr;
 	QScrollBar* m_vScroll = nullptr;
 	QComboBox* m_gridBox = nullptr;

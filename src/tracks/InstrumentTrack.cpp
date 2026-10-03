@@ -887,6 +887,8 @@ bool InstrumentTrack::play( const TimePos & _start, const f_cnt_t _frames,
 		{
 			cur_start -= c->startPosition() + c->startTimeOffset();
 		}
+		// 0.5.0 L07: the clip's CC / pitch-bend / aftertouch lanes (InstrumentTrackNotes.cpp).
+		if (!c->controllers().empty()) { playClipControllers(c, cur_start.getTicks(), _offset); }
 
 		// get all notes from the given clip...
 		const NoteVector & notes = c->notes();

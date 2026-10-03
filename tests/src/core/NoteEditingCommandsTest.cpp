@@ -28,9 +28,13 @@
  *  length, scale membership, invert, each action), groove.quantize's swing / scope / range, and
  *  key_names.* (the GM drum preset, one undo step, the project file both ways); and the Note
  *  fields - mute (kept, drawn, not played), release velocity (the note-off's), the pre-quantise
- *  timing note.restore_timing puts back - each optional in the file. */
+ *  timing note.restore_timing puts back - each optional in the file; and the clip's controller lanes
+ *  (ED-130): the commands, the curve, the file (a lane is not read back as a note), and the play loop
+ *  sending a value when it changes. */
 
 #include <QtTest>
+
+#include <memory>
 
 #include <QDomDocument>
 #include <QJsonArray>
@@ -357,6 +361,79 @@ private slots:
 		QCOMPARE(shape(m_clip), (QStringList{QStringLiteral("60@0+12"), QStringLiteral("62@48+12")}));
 		QVERIFY(!m_clip->notes().front()->hasUnquantisedTiming());
 		QCOMPARE(ok(QStringLiteral("note.restore_timing"), {{QStringLiteral("clip"), clip()}}).value(QStringLiteral("restored")).toInt(), 0);
+	}
+
+	void controllerLanesAreSetReadAndUndone()
+	{
+		freshClip({Note(TimePos(48), TimePos(0), 60)});
+		const QJsonArray ramp{QJsonObject{{QStringLiteral("tick"), 0}, {QStringLiteral("value"), 0}},
+			QJsonObject{{QStringLiteral("tick"), 96}, {QStringLiteral("value"), 127}}};
+		ok(QStringLiteral("clip.controllers_set"), {{QStringLiteral("clip"), clip()}, {QStringLiteral("lane"), QStringLiteral("cc:1")},
+			{QStringLiteral("points"), ramp}});
+		const ControllerLane* mod = m_clip->controllers().lane(ControllerKind::ControlChange, 1);
+		QVERIFY(mod != nullptr);
+		QCOMPARE(mod->valueAt(-10), 0);    // held before the first point
+		QCOMPARE(mod->valueAt(48), 64);    // linear between (63.5 rounds up)
+		QCOMPARE(mod->valueAt(500), 127);  // held after the last
+		const QJsonArray lanes = ok(QStringLiteral("clip.controllers_get"), {{QStringLiteral("clip"), clip()}}).value(QStringLiteral("lanes")).toArray();
+		QCOMPARE(lanes.size(), 1);
+		QCOMPARE(lanes.first().toObject().value(QStringLiteral("lane")).toString(), QStringLiteral("cc:1"));
+		QCOMPARE(lanes.first().toObject().value(QStringLiteral("points")).toArray().size(), 2);
+
+		ok(QStringLiteral("clip.controllers_set"), {{QStringLiteral("clip"), clip()}, {QStringLiteral("lane"), QStringLiteral("pitchbend")},
+			{QStringLiteral("points"), QJsonArray{QJsonObject{{QStringLiteral("tick"), 0}, {QStringLiteral("value"), 16383}}}}});
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
+		QVERIFY(m_clip->controllers().lane(ControllerKind::PitchBend, 0) == nullptr);
+		QVERIFY(m_clip->controllers().lane(ControllerKind::ControlChange, 1) != nullptr);
+		QCOMPARE(run(QStringLiteral("clip.controllers_set"), {{QStringLiteral("clip"), clip()}, {QStringLiteral("lane"), QStringLiteral("cc:1")},
+			{QStringLiteral("points"), QJsonArray{QJsonObject{{QStringLiteral("tick"), 0}, {QStringLiteral("value"), 128}}}}}).errorKind,
+			ControlErrorKind::InvalidArgs);
+		QCOMPARE(run(QStringLiteral("clip.controllers_set"), {{QStringLiteral("clip"), clip()}, {QStringLiteral("lane"), QStringLiteral("cc:200")},
+			{QStringLiteral("points"), QJsonArray{}}}).errorKind, ControlErrorKind::InvalidArgs);
+		ok(QStringLiteral("clip.controllers_set"), {{QStringLiteral("clip"), clip()}, {QStringLiteral("lane"), QStringLiteral("cc:1")},
+			{QStringLiteral("points"), QJsonArray{}}});
+		QVERIFY(m_clip->controllers().empty());  // no points removes the lane
+	}
+
+	void controllerLanesRoundTripAndAreNotReadAsNotes()
+	{
+		freshClip({Note(TimePos(48), TimePos(0), 60), Note(TimePos(48), TimePos(48), 62)});
+		QDomDocument doc;
+		QDomElement root = doc.createElement(QStringLiteral("root"));
+		QVERIFY(m_clip->saveState(doc, root).firstChildElement(QStringLiteral("controllers")).isNull());  // none: nothing written
+		m_clip->setControllerPoints(ControllerKind::ChannelPressure, 0, {{0, 10}, {48, 90}});
+		const QDomElement saved = m_clip->saveState(doc, root);
+		QCOMPARE(saved.firstChildElement(QStringLiteral("controllers")).attribute(QStringLiteral("metadata")), QStringLiteral("1"));
+		auto* copy = dynamic_cast<MidiClip*>(m_track->createClip(TimePos(384)));
+		copy->restoreState(saved);
+		QCOMPARE(copy->notes().size(), std::size_t{2});  // the lanes element is not a note
+		const ControllerLane* pressure = copy->controllers().lane(ControllerKind::ChannelPressure, 0);
+		QVERIFY(pressure != nullptr);
+		QCOMPARE(pressure->points, (std::vector<ControllerPoint>{{0, 10}, {48, 90}}));
+		const std::unique_ptr<MidiClip> duplicate(m_clip->clone());
+		QVERIFY(duplicate->controllers().lane(ControllerKind::ChannelPressure, 0) != nullptr);  // a copy keeps its lanes
+	}
+
+	void thePlayLoopSendsAControllerWhenItChanges()
+	{
+		freshClip({Note(TimePos(192), TimePos(0), 60)});
+		m_clip->setControllerPoints(ControllerKind::ControlChange, 74, {{0, 0}, {10, 100}});
+		const ControllerLane* lane = m_clip->controllers().lane(ControllerKind::ControlChange, 74);
+		m_track->playClipControllers(m_clip, 5, 0);
+		QCOMPARE(lane->lastSent, 50);
+		QCOMPARE(lane->lastTick, 5);
+		m_track->playClipControllers(m_clip, 12, 0);  // a jump: sent again, the held 100
+		QCOMPARE(lane->lastSent, 100);
+		// Through the song's own render loop: the lane is played as the clip plays.
+		m_clip->setControllerPoints(ControllerKind::ControlChange, 74, {{0, 7}});
+		lane = m_clip->controllers().lane(ControllerKind::ControlChange, 74);
+		QCOMPARE(lane->lastSent, -1);
+		Song* song = Engine::getSong();
+		song->playSong();
+		for (int period = 0; period < 16 && lane->lastSent < 0; ++period) { Engine::audioEngine()->renderNextPeriod(); }
+		song->stop();
+		Engine::audioEngine()->renderNextPeriod();
+		QCOMPARE(lane->lastSent, 7);
 	}
 
 	void keyNamesPresetUndoAndProjectFile()

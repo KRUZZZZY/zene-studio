@@ -60,7 +60,8 @@ MidiClip::MidiClip( const MidiClip& other ) :
 	Clip(other),
 	m_instrumentTrack( other.m_instrumentTrack ),
 	m_clipType( other.m_clipType ),
-	m_steps( other.m_steps )
+	m_steps( other.m_steps ),
+	m_controllers( other.m_controllers )
 {
 	for (const auto& note : other.m_notes)
 	{
@@ -475,6 +476,16 @@ void MidiClip::exportToXML(QDomDocument& doc, QDomElement& midiClipElement, bool
 			note->saveState(doc, midiClipElement);
 		}
 	}
+	// 0.5.0 L07: the controller lanes, a metadata child (skipped by every build's note loop).
+	if (!onlySelectedNotes) { m_controllers.save(doc, midiClipElement); }
+}
+
+void MidiClip::setControllerPoints(ControllerKind kind, int controller, std::vector<ControllerPoint> points)
+{
+	instrumentTrack()->lock();
+	m_controllers.setPoints(kind, controller, std::move(points));
+	instrumentTrack()->unlock();
+	emit dataChanged();
 }
 
 
@@ -549,6 +560,13 @@ void MidiClip::loadSettings( const QDomElement & _this )
 	// The non-default attributes, read back on the reset-on-absence rule: this is
 	// what rebuilds a link group from the members' own elements (row 6).
 	loadClipEdits(_this);
+
+	// 0.5.0 L07: the controller lanes (none when the element is absent), swapped in under the lock.
+	MidiClipControllers controllers;
+	controllers.load(_this);
+	instrumentTrack()->lock();
+	std::swap(m_controllers, controllers);
+	instrumentTrack()->unlock();
 
 	emit dataChanged();
 }

@@ -76,11 +76,21 @@ void applyChoices(gui::NoteEditor* editor, const QJsonObject& args)
 	if (const int tool = choice(args, "tool", kTools); tool >= 0) { editor->setTool(static_cast<gui::NoteTool>(tool)); }
 	if (const int fold = choice(args, "fold", kFolds); fold >= 0) { editor->setFold(static_cast<gui::NoteFold>(fold)); }
 	gui::NoteLane lane = gui::NoteLane::Velocity;
-	if (gui::notelanes::fromId(args.value(QStringLiteral("lane")).toString(), lane)) { editor->setLane(lane); }
+	if (gui::notelanes::fromId(args.value(QStringLiteral("lane")).toString(), lane))
+	{
+		editor->setLane(lane);
+		if (!args.contains(QStringLiteral("controller_lane"))) { editor->setControllerLane(QString()); }  // a note lane replaces a curve
+	}
+	if (const int color = choice(args, "color_mode", kColors); color >= 0) { editor->setColorMode(static_cast<gui::NoteColor>(color)); }
+}
+
+//! The view's flags and numbers: grid, ghosts, keep-in-scale, the controller lane, zoom, fit.
+void applyView(gui::NoteEditor* editor, const QJsonObject& args)
+{
 	if (args.contains(QStringLiteral("grid"))) { editor->setGridTicks(args.value(QStringLiteral("grid")).toInt()); }
 	if (args.contains(QStringLiteral("ghosts"))) { editor->setGhosts(args.value(QStringLiteral("ghosts")).toBool()); }
-	if (const int color = choice(args, "color_mode", kColors); color >= 0) { editor->setColorMode(static_cast<gui::NoteColor>(color)); }
 	if (args.contains(QStringLiteral("keep_in_scale"))) { editor->setKeepInScale(args.value(QStringLiteral("keep_in_scale")).toBool()); }
+	if (args.contains(QStringLiteral("controller_lane"))) { editor->setControllerLane(args.value(QStringLiteral("controller_lane")).toString()); }
 	if (args.contains(QStringLiteral("zoom"))) { editor->setZoom(args.value(QStringLiteral("zoom")).toDouble()); }
 	if (args.value(QStringLiteral("fit")).toBool()) { editor->zoomToFit(); }
 }
@@ -95,9 +105,18 @@ ControlResult noteEditorSet(const QJsonObject& args)
 	}
 	gui::NoteEditor* editor = g->noteEditor();
 	ControlResult error;
+	const QString controllerLane = args.value(QStringLiteral("controller_lane")).toString();
+	ControllerKind kind = ControllerKind::ControlChange;
+	int controller = 0;
+	if (!controllerLane.isEmpty() && !ControllerLane::fromId(controllerLane, &kind, &controller))
+	{
+		return ControlResult::failure(ControlErrorKind::InvalidArgs,
+			QStringLiteral("'controller_lane' is cc:<0..127>, pitchbend, aftertouch or empty, got '%1'").arg(controllerLane));
+	}
 	if (!applyClip(editor, args, &error)) { return error; }
 	if (args.value(QStringLiteral("reveal")).toBool(true)) { g->mainWindow()->revealPanel(QStringLiteral("detail")); }
 	applyChoices(editor, args);
+	applyView(editor, args);
 	return ControlResult::success(editor->describe());
 }
 
@@ -124,7 +143,8 @@ void registerNoteEditorWindowCommands(ControlRegistry& registry)
 		"(1 = off); `fold` none, scale, used or drums (the keys the track names - key_names.* - and the used ones); "
 		"`lane` the expression lane (velocity, pan, chance, timbre, pressure, pitch); `ghosts` shows the "
 		"track's other clips; `color_mode` colours notes by velocity, pitch or track; `keep_in_scale` moves "
-		"drawn and dragged notes to the nearest key of the scale; `zoom` is pixels per tick; `fit` zooms to the clip and centres its notes "
+		"drawn and dragged notes to the nearest key of the scale; `controller_lane` (cc:<n>, pitchbend, aftertouch; empty "
+		"for the note lane) shows that controller curve of the clip under the notes (clip.controllers_set edits it); `zoom` is pixels per tick; `fit` zooms to the clip and centres its notes "
 		"(after the panel is shown); `reveal` (default true) brings the note editor "
 		"panel into view. Interface state, not project state: nothing is journalled - the notes themselves "
 		"are edited through note.*. Refused `requires` in a process with no interface.");
@@ -137,6 +157,7 @@ void registerNoteEditorWindowCommands(ControlRegistry& registry)
 		{QStringLiteral("ghosts"), booleanProperty()},
 		{QStringLiteral("color_mode"), enumProperty(kColors)},
 		{QStringLiteral("keep_in_scale"), booleanProperty()},
+		{QStringLiteral("controller_lane"), stringProperty()},
 		{QStringLiteral("zoom"), numberProperty()},
 		{QStringLiteral("reveal"), booleanProperty()},
 		{QStringLiteral("fit"), booleanProperty()},
@@ -148,6 +169,7 @@ void registerNoteEditorWindowCommands(ControlRegistry& registry)
 		{QStringLiteral("ghosts"), booleanProperty()}, {QStringLiteral("scale_highlight"), booleanProperty()},
 		{QStringLiteral("scale"), stringProperty()}, {QStringLiteral("zoom"), numberProperty()},
 		{QStringLiteral("color_mode"), stringProperty()}, {QStringLiteral("keep_in_scale"), booleanProperty()},
+		{QStringLiteral("controller_lane"), stringProperty()},
 		{QStringLiteral("scroll_ticks"), numberProperty()}, {QStringLiteral("scroll_y"), integerProperty(0, 1 << 20)},
 		{QStringLiteral("top_key"), integerProperty(-1, 127)}, {QStringLiteral("visible_notes"), integerProperty(0, 1919808)},
 	});

@@ -189,6 +189,7 @@ include/Controller.h
 include/ControllerConnection.h
 include/ControllerConnectionDialog.h
 include/ControllerDialog.h
+include/ControllerLaneView.h
 include/ControllerRackView.h
 include/ControllerSurface.h
 include/ControllerTemplateMenu.h
@@ -339,6 +340,7 @@ include/MidiApple.h
 include/MidiCCRackView.h
 include/MidiClient.h
 include/MidiClip.h
+include/MidiClipControllers.h
 include/MidiClipView.h
 include/MidiClock.h
 include/MidiClockMenu.h
@@ -1132,6 +1134,7 @@ src/core/ControlCommandsChordEdit.cpp
 src/core/ControlCommandsChordWrite.cpp
 src/core/ControlCommandsClip.cpp
 src/core/ControlCommandsClipArrange.cpp
+src/core/ControlCommandsClipControllers.cpp
 src/core/ControlCommandsClipEdits.cpp
 src/core/ControlCommandsClipEnvelope.cpp
 src/core/ControlCommandsClipLink.cpp
@@ -1410,6 +1413,7 @@ src/core/MeterModel.cpp
 src/core/Metronome.cpp
 src/core/MicroTimer.cpp
 src/core/Microtuner.cpp
+src/core/MidiClipControllers.cpp
 src/core/MidiClock.cpp
 src/core/MidiClockState.cpp
 src/core/MidiClockTracker.cpp
@@ -1724,6 +1728,7 @@ src/gui/modals/FileDialog.cpp
 src/gui/modals/RenameDialog.cpp
 src/gui/modals/SetupDialog.cpp
 src/gui/modals/VersionedSaveDialog.cpp
+src/gui/noteeditor/ControllerLaneView.cpp
 src/gui/noteeditor/NoteCanvas.cpp
 src/gui/noteeditor/NoteCanvasGestures.cpp
 src/gui/noteeditor/NoteCanvasInput.cpp

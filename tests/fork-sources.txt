@@ -563,6 +563,7 @@ include/ControlVocabulary.h
 include/ControlWarpSupport.h
 include/ControlWasmSupport.h
 include/ControlWindowCommands.h
+include/ControllerLaneView.h
 include/ControllerSurface.h
 include/ControllerTemplateMenu.h
 include/CrashReportMenu.h
@@ -602,6 +603,7 @@ include/MasteringReport.h
 include/McuProtocol.h
 include/McuSurface.h
 include/MenuBarExtras.h
+include/MidiClipControllers.h
 include/MidiClock.h
 include/MidiClockMenu.h
 include/MidiControllerMenu.h
@@ -862,6 +864,7 @@ src/core/ControlCommandsChordEdit.cpp
 src/core/ControlCommandsChordWrite.cpp
 src/core/ControlCommandsClip.cpp
 src/core/ControlCommandsClipArrange.cpp
+src/core/ControlCommandsClipControllers.cpp
 src/core/ControlCommandsClipEdits.cpp
 src/core/ControlCommandsClipEnvelope.cpp
 src/core/ControlCommandsClipLink.cpp
@@ -1113,6 +1116,7 @@ src/core/MasteringJob.cpp
 src/core/MasteringReport.cpp
 src/core/McuProtocol.cpp
 src/core/McuSurface.cpp
+src/core/MidiClipControllers.cpp
 src/core/MidiClock.cpp
 src/core/MidiClockState.cpp
 src/core/MidiClockTracker.cpp
@@ -1261,6 +1265,7 @@ src/gui/UndoHistoryPanel.cpp
 src/gui/VcaStripView.cpp
 src/gui/VisibilitySetMenu.cpp
 src/gui/clips/ClipViewTheme.cpp
+src/gui/noteeditor/ControllerLaneView.cpp
 src/gui/noteeditor/NoteCanvas.cpp
 src/gui/noteeditor/NoteCanvasGestures.cpp
 src/gui/noteeditor/NoteCanvasInput.cpp

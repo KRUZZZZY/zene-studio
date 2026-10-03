@@ -31,6 +31,7 @@
 
 #include "InstrumentTrack.h"
 #include "MidiClip.h"
+#include "MidiEvent.h"
 #include "NoteRandom.h"
 
 namespace lmms
@@ -71,6 +72,37 @@ void InstrumentTrack::decorateNoteHandle(NotePlayHandle* handle, const MidiClip*
 		// then set song-global offset of clip in order to
 		// properly perform the note detuning
 		handle->setSongGlobalParentOffset( clip->startPosition() + clip->startTimeOffset());
+	}
+}
+
+namespace
+{
+
+MidiEvent controllerEvent(const ControllerLane& lane, int value)
+{
+	switch (lane.kind)
+	{
+	case ControllerKind::PitchBend: return MidiEvent(MidiPitchBend, 0, static_cast<int16_t>(value));
+	case ControllerKind::ChannelPressure: return MidiEvent(MidiChannelPressure, 0, static_cast<int16_t>(value));
+	case ControllerKind::ControlChange: break;
+	}
+	return MidiEvent(MidiControlChange, 0, static_cast<int16_t>(lane.controller), static_cast<int16_t>(value));
+}
+
+} // namespace
+
+void InstrumentTrack::playClipControllers(const MidiClip* clip, tick_t tick, f_cnt_t offset)
+{
+	// Audio thread, under play()'s tryLock: reads the lanes, writes only their own lastSent/lastTick,
+	// allocates nothing.
+	for (const ControllerLane& lane : clip->controllers().lanes())
+	{
+		const int value = lane.valueAt(tick);
+		const bool jumped = tick != lane.lastTick + 1;
+		lane.lastTick = tick;
+		if (!jumped && value == lane.lastSent) { continue; }
+		lane.lastSent = value;
+		processOutEvent(controllerEvent(lane, value), TimePos(tick), offset);
 	}
 }
 

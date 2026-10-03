@@ -753,6 +753,7 @@ set(LMMS_SRCS
 	core/MicroTimer.cpp
 	core/Microtuner.cpp
 	core/MidiLearn.cpp
+	core/MidiClipControllers.cpp
 	core/MidiClock.cpp
 	core/MidiClockState.cpp
 	core/MidiClockTracker.cpp
@@ -910,6 +911,7 @@ set(LMMS_SRCS
 	core/ArrangementEdits.cpp
 	core/ControlCommandsAutomationLanes.cpp
 	core/ControlCommandsClipArrange.cpp
+	core/ControlCommandsClipControllers.cpp
 	core/ControlCommandsClipEnvelope.cpp
 	core/ControlCommandsKeyNames.cpp
 	core/ControlCommandsMarkers.cpp

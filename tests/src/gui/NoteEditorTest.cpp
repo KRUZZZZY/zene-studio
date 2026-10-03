@@ -29,6 +29,7 @@
 #include <QToolButton>
 
 #include "ControlRegistry.h"
+#include "ControllerLaneView.h"
 #include "ControlVocabulary.h"
 #include "Engine.h"
 #include "InstrumentTrack.h"
@@ -375,6 +376,37 @@ private slots:
 		QVERIFY(invoke(write.command, write.args).ok);
 		QCOMPARE(m_clip->notes()[0]->releaseVelocity(), 80);
 		QCOMPARE(notelanes::valueOf(*m_clip->notes()[0], release), 80);
+	}
+
+	void aStrokeInTheControllerLaneIsOneEdit()
+	{
+		m_editor->setControllerLane(QStringLiteral("cc:1"));
+		QCoreApplication::processEvents();  // the lane is laid out once shown
+		auto* lane = m_editor->findChild<ControllerLaneView*>(QStringLiteral("noteControllerLane"));
+		QVERIFY(lane != nullptr && lane->isVisible());
+		QVERIFY(!m_editor->laneView()->isVisible());
+		QCOMPARE(m_editor->describe().value(QStringLiteral("controller_lane")).toString(), QStringLiteral("cc:1"));
+		// From the top at tick 0 to the bottom at tick 48: a point on every 1/16 step, falling.
+		const NoteGrid& g = m_editor->state().grid;
+		const QPoint from(static_cast<int>(g.xOfTick(0)) + 1, 3);
+		const QPoint to(static_cast<int>(g.xOfTick(48)) + 1, lane->height() - 3);
+		QTest::mousePress(lane, Qt::LeftButton, Qt::NoModifier, from);
+		QTest::mouseMove(lane, to);
+		QTest::mouseRelease(lane, Qt::LeftButton, Qt::NoModifier, to);
+		const ControllerLane* mod = m_clip->controllers().lane(ControllerKind::ControlChange, 1);
+		QVERIFY(mod != nullptr);
+		QCOMPARE(mod->points.size(), std::size_t{5});  // 0, 12, 24, 36, 48
+		QVERIFY(mod->points.front().value > 120 && mod->points.back().value < 7);
+		QVERIFY(undo());
+		QVERIFY(m_clip->controllers().empty());
+		QVERIFY(invoke(QStringLiteral("control.redo")).ok);
+		// Alt-drag erases the span it covers.
+		QTest::mousePress(lane, Qt::LeftButton, Qt::AltModifier, from);
+		QTest::mouseMove(lane, QPoint(static_cast<int>(g.xOfTick(24)) + 1, 40));
+		QTest::mouseRelease(lane, Qt::LeftButton, Qt::AltModifier, QPoint(static_cast<int>(g.xOfTick(24)) + 1, 40));
+		QCOMPARE(m_clip->controllers().lane(ControllerKind::ControlChange, 1)->points.size(), std::size_t{2});  // 36, 48 left
+		m_editor->setControllerLane(QString());
+		QVERIFY(m_editor->laneView()->isVisible());
 	}
 
 	void theNewViewFieldsAreDrivableOverTheSocket()

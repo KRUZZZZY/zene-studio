@@ -18,7 +18,8 @@ a user does. This driver starts the REAL `zene` binary headless and proves:
      note.scale, note.ratchet and note.transform_where change exactly the notes they name;
      groove.quantize takes 'swing'; key_names.* name a track's keys (one undo restores);
      window.note_editor_set drives the paint tool, the drum view, the colour mode and
-     keep-in-scale; a Lua script adds notes through zene.command.
+     keep-in-scale; a Lua script adds notes through zene.command; clip.controllers_set / get
+     write and read a clip's CC lane (one undo step) and the editor shows it as its controller lane.
 
 Usage:  QT_QPA_PLATFORM=offscreen python3 tests/control-note-editor.py <zene> [<screenshot dir>]
 Exit 0 only when every check held.
@@ -209,6 +210,25 @@ def check_lua_notes(session, recorder, clip):
     recorder.check("a Lua script adds notes through zene.command", "added 2" in text, "log=%r" % ran)
 
 
+def check_controller_lanes(session, recorder):
+    _, clip = new_clip(session, "Controllers")
+    ramp = [{"tick": 0, "value": 0}, {"tick": 96, "value": 127}]
+    session.result("clip.controllers_set", {"clip": clip, "lane": "cc:1", "points": ramp})
+    lanes = session.result("clip.controllers_get", {"clip": clip}).get("lanes") or []
+    recorder.check("clip.controllers_set writes a CC lane and _get reads it",
+                   len(lanes) == 1 and lanes[0].get("lane") == "cc:1" and lanes[0].get("points") == ramp, "lanes=%r" % lanes)
+    session.result("control.undo")
+    lanes = session.result("clip.controllers_get", {"clip": clip}).get("lanes")
+    recorder.check("one undo removes the lane again", lanes == [], "lanes=%r" % lanes)
+    bad = session.call("clip.controllers_set", {"clip": clip, "lane": "cc:1", "points": [{"tick": 0, "value": 300}]})
+    recorder.check("a value past the lane's range is refused, typed",
+                   (bad.get("error") or {}).get("kind") == "invalid_args", "reply=%r" % bad)
+    view = session.call("window.note_editor_set", {"clip": clip, "controller_lane": "pitchbend"})
+    recorder.check("the editor shows a controller lane on request",
+                   (view.get("result") or {}).get("controller_lane") == "pitchbend", "reply=%r" % view)
+    session.call("window.note_editor_set", {"controller_lane": ""})
+
+
 def main(argv):
     if len(argv) < 2:
         print(__doc__)
@@ -231,6 +251,7 @@ def main(argv):
         check_screenshot(session, recorder, outdir, clip)
         check_note_shapes(session, recorder)
         check_drum_view(session, recorder)
+        check_controller_lanes(session, recorder)
     report_results(recorder)
     if recorder.problems:
         transcript.dump()

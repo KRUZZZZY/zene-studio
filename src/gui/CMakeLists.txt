@@ -90,6 +90,7 @@ SET(LMMS_SRCS
 	# The 0.5.0 note editor (docs/NOTE-EDITOR.md): NoteGrid and NoteLanes are widget-free (the
 	# geometry and the lane table, NoteGridTest), NoteCanvas paints and edits the notes, the parts
 	# are the key column, ruler and expression lane, NoteEditor the container and its header.
+	gui/noteeditor/ControllerLaneView.cpp
 	gui/noteeditor/NoteCanvas.cpp
 	gui/noteeditor/NoteCanvasGestures.cpp
 	gui/noteeditor/NoteCanvasInput.cpp

@@ -38,6 +38,7 @@
 
 #include "ControlRegistry.h"
 #include "ControlVocabulary.h"
+#include "ControllerLaneView.h"
 #include "DesignTokens.h"
 #include "InstrumentTrack.h"
 #include "MidiClip.h"
@@ -67,7 +68,7 @@ NoteEditor::NoteEditor(QWidget* parent)
 	connect(this, &NoteEditor::stateChanged, this, [this]() {
 		syncScrollBars();
 		for (QWidget* part : {static_cast<QWidget*>(m_ruler), static_cast<QWidget*>(m_keyboard),
-			static_cast<QWidget*>(m_canvas), static_cast<QWidget*>(m_lanes)})
+			static_cast<QWidget*>(m_canvas), static_cast<QWidget*>(m_lanes), static_cast<QWidget*>(m_ccLane)})
 		{
 			part->update();
 		}
@@ -104,6 +105,8 @@ void NoteEditor::buildBody()
 	m_keyboard = new NoteKeyboardView(this);
 	m_canvas = new NoteCanvas(this);
 	m_lanes = new NoteLaneView(this);
+	m_ccLane = new ControllerLaneView(this);
+	m_ccLane->hide();
 	m_hScroll = new QScrollBar(Qt::Horizontal, this);
 	m_vScroll = new QScrollBar(Qt::Vertical, this);
 	m_hScroll->setAccessibleName(tr("Scroll in time"));
@@ -114,12 +117,14 @@ void NoteEditor::buildBody()
 	grid->addWidget(m_vScroll, 1, 2);
 	grid->addWidget(m_laneBox, 2, 0, 1, 1, Qt::AlignTop);
 	grid->addWidget(m_lanes, 2, 1);
+	grid->addWidget(m_ccLane, 2, 1);
 	grid->addWidget(m_hScroll, 3, 1);
 	grid->setColumnStretch(1, 1);
 	grid->setRowStretch(1, 1);
 	m_keyboard->setFixedWidth(m_keyboard->sizeHint().width());
 	m_ruler->setFixedHeight(m_ruler->sizeHint().height());
 	m_lanes->setFixedHeight(m_lanes->sizeHint().height());
+	m_ccLane->setFixedHeight(m_lanes->sizeHint().height());
 	layout()->addWidget(body);
 	connect(m_hScroll, &QScrollBar::valueChanged, this, [this](int v) {
 		if (m_syncing) { return; }
@@ -234,6 +239,20 @@ void NoteEditor::setLane(NoteLane lane)
 void NoteEditor::setGhosts(bool on)
 {
 	m_state.ghosts = on;
+	emit stateChanged();
+}
+
+void NoteEditor::setControllerLane(const QString& id)
+{
+	m_state.controllerLane = id;
+	m_lanes->setVisible(id.isEmpty());
+	m_ccLane->setVisible(!id.isEmpty());
+	const int index = id.isEmpty() ? m_laneBox->findData(static_cast<int>(m_state.lane)) : m_laneBox->findData(id);
+	if (index >= 0 && index != m_laneBox->currentIndex())
+	{
+		const QSignalBlocker quiet(m_laneBox);
+		m_laneBox->setCurrentIndex(index);
+	}
 	emit stateChanged();
 }
 
@@ -355,6 +374,7 @@ QJsonObject NoteEditor::describe() const
 		{QStringLiteral("scale"), m_state.scaleName},
 		{QStringLiteral("color_mode"), QLatin1String(colors[static_cast<int>(m_state.colorMode)])},
 		{QStringLiteral("keep_in_scale"), m_state.keepInScale},
+		{QStringLiteral("controller_lane"), m_state.controllerLane},
 		{QStringLiteral("zoom"), g.pixelsPerTick()},
 		{QStringLiteral("scroll_ticks"), g.scrollTicks()},
 		{QStringLiteral("scroll_y"), g.scrollY()},

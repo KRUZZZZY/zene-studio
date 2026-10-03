@@ -27,6 +27,7 @@
 #define LMMS_MIDI_CLIP_H
 
 #include "Clip.h"
+#include "MidiClipControllers.h"
 #include "Note.h"
 
 
@@ -74,6 +75,11 @@ public:
 	{
 		return m_notes;
 	}
+
+	//! 0.5.0 L07 (ED-130): the clip's CC / pitch-bend / aftertouch lanes (MidiClipControllers.h).
+	const MidiClipControllers& controllers() const { return m_controllers; }
+	//! Replace one lane's points (none removes it), with the instrument track locked.
+	void setControllerPoints(ControllerKind kind, int controller, std::vector<ControllerPoint> points);
 
 	Note * addStepNote( int step );
 	void setStep( int step, bool enabled );
@@ -155,6 +161,7 @@ private:
 	// data-stuff
 	NoteVector m_notes;
 	int m_steps;
+	MidiClipControllers m_controllers;
 
 	MidiClip * adjacentMidiClipByOffset(int offset) const;
 

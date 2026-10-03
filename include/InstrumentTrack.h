@@ -171,6 +171,9 @@ public:
 	//! the slide source, the song-global offset and the clip's transpose (InstrumentTrackNotes.cpp).
 	void decorateNoteHandle(NotePlayHandle* handle, const MidiClip* clip, NoteVector::const_iterator note,
 		NoteVector::const_iterator first, bool songGlobal, uint32_t midiSeed) const;
+	//! 0.5.0 L07 (ED-130): the clip's controller lanes at @a tick (clip time), each sent to the
+	//! instrument when its value changed or the playback jumped (InstrumentTrackNotes.cpp).
+	void playClipControllers(const MidiClip* clip, tick_t tick, f_cnt_t offset);
 	// create new view for me
 	gui::TrackView* createView( gui::TrackContainerView* tcv ) override;
 
