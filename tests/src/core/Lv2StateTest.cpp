@@ -46,6 +46,48 @@
 
 using namespace lmms;
 
+#ifdef LMMS_HAVE_LV2
+namespace
+{
+
+//! The first loadable LV2 effect whose State interface saves something, its controls and that state.
+Effect* firstStatefulLv2(EffectChain& chain, Lv2ControlBase** controls, QString* state)
+{
+	for (const ControlDeviceEntry& entry : controlDeviceCatalogue())
+	{
+		if (entry.format != QLatin1String("lv2") || entry.kind != QLatin1String("effect") || !entry.loadable) { continue; }
+		ControlResult error;
+		Effect* effect = controlInstantiateDevice(entry, &chain, &error);
+		if (effect == nullptr) { continue; }
+		*controls = dynamic_cast<Lv2ControlBase*>(effect->controls());
+		*state = *controls != nullptr ? (*controls)->control(0)->saveState() : QString();
+		if (!state->isEmpty()) { return effect; }
+	}
+	return nullptr;
+}
+
+//! Whether catalogue @a entry is the plug-in @a found (by URI when it has one, else by name).
+bool samePlugin(const ControlDeviceEntry& entry, const Effect* found, const Lv2ControlBase* controls)
+{
+	if (entry.format != QLatin1String("lv2") || entry.kind != QLatin1String("effect")) { return false; }
+	if (entry.uri.isEmpty()) { return QString::fromUtf8(found->descriptor()->name) == entry.name; }
+	return controls->getPlugin() == nullptr
+		|| entry.uri == QString::fromUtf8(lilv_node_as_uri(lilv_plugin_get_uri(controls->getPlugin())));
+}
+
+//! A second instance of the plug-in @a found is, in @a chain.
+Effect* secondInstance(EffectChain& chain, const Effect* found, const Lv2ControlBase* controls, ControlResult* error)
+{
+	for (const ControlDeviceEntry& entry : controlDeviceCatalogue())
+	{
+		if (samePlugin(entry, found, controls)) { return controlInstantiateDevice(entry, &chain, error); }
+	}
+	return nullptr;
+}
+
+} // namespace
+#endif
+
 class Lv2StateTest : public QObject
 {
 	Q_OBJECT
@@ -67,20 +109,10 @@ private slots:
 		QSKIP("this build has no LV2 host");
 #else
 		EffectChain chain{nullptr};
-		Effect* found = nullptr;
 		Lv2ControlBase* controls = nullptr;
 		QString state;
-		for (const ControlDeviceEntry& entry : controlDeviceCatalogue())
-		{
-			if (entry.format != QLatin1String("lv2") || entry.kind != QLatin1String("effect") || !entry.loadable) { continue; }
-			ControlResult error;
-			Effect* effect = controlInstantiateDevice(entry, &chain, &error);
-			if (effect == nullptr) { continue; }
-			controls = dynamic_cast<Lv2ControlBase*>(effect->controls());
-			state = controls != nullptr ? controls->control(0)->saveState() : QString();
-			if (!state.isEmpty()) { found = effect; break; }
-		}
-		if (state.isEmpty()) { QSKIP("no installed LV2 effect implements the State interface"); }
+		Effect* found = firstStatefulLv2(chain, &controls, &state);
+		if (found == nullptr) { QSKIP("no installed LV2 effect implements the State interface"); }
 
 		// Through the project's own serialisation path (the effect controls' saveState/restoreState).
 		QDomDocument doc;
@@ -98,16 +130,7 @@ private slots:
 		// the plug-in's state never changes, which the save above cannot tell apart - the
 		// refusal case is what proves the restore path is consulted.)
 		ControlResult error;
-		Effect* second = nullptr;
-		for (const ControlDeviceEntry& entry : controlDeviceCatalogue())
-		{
-			if (entry.format != QLatin1String("lv2") || entry.kind != QLatin1String("effect")) { continue; }
-			if (QString::fromUtf8(found->descriptor()->name) != entry.name && entry.uri.isEmpty()) { continue; }
-			if (!entry.uri.isEmpty() && controls->getPlugin() != nullptr
-				&& entry.uri != QString::fromUtf8(lilv_node_as_uri(lilv_plugin_get_uri(controls->getPlugin())))) { continue; }
-			second = controlInstantiateDevice(entry, &chain, &error);
-			break;
-		}
+		Effect* second = secondInstance(chain, found, controls, &error);
 		QVERIFY2(second != nullptr, qPrintable(error.errorMessage));
 		second->controls()->restoreState(element);
 		auto* secondControls = dynamic_cast<Lv2ControlBase*>(second->controls());

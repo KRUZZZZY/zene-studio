@@ -77,6 +77,65 @@ void AutomationClip::flipY()
 
 
 
+namespace
+{
+
+using TimeMap = AutomationClip::timeMap;
+
+//! flipX's body, split out unchanged for the CCN target (tests/complexity-gate.sh): the points in
+//! [start, end] mirrored in time into @a out, the others copied.
+void mirrorRange(AutomationClip* clip, const TimeMap& map, int start, int end, TimeMap& out)
+{
+	const TimeMap::const_iterator firstIterator = map.lowerBound(0);
+	for (auto it = map.begin(); it != map.end(); ++it)
+	{
+		if (POS(it) < start || POS(it) > end)
+		{
+			out[POS(it)] = *it;
+		}
+		else
+		{
+			// If the first node in the clip is not at the start, it can break things when clipping, so
+			// we have to set its in value to 0.
+			if (it == firstIterator && POS(firstIterator) > 0)
+			{
+				out[end - (POS(it) - start)] = AutomationNode(clip, OUTVAL(it), 0, end - (POS(it) - start));
+			}
+			else
+			{
+				out[end - (POS(it) - start)] = AutomationNode(clip, OUTVAL(it), INVAL(it), end - (POS(it) - start));
+			}
+		}
+	}
+}
+
+//! The two end points of a flipped range: each keeps the other end's values (or the value there).
+void flipEnds(AutomationClip* clip, const TimeMap& map, int start, int end, TimeMap& out)
+{
+	if (map.contains(start) && map.contains(end))
+	{
+		out[start] = AutomationNode(clip, map[start].getInValue(), map[end].getInValue(), start);
+		out[end] = AutomationNode(clip, map[start].getOutValue(), map[end].getOutValue(), end);
+	}
+	else if (map.contains(start))
+	{
+		out[start] = AutomationNode(clip, map[start].getInValue(), clip->valueAt(end), start);
+		out[end] = AutomationNode(clip, map[start].getOutValue(), clip->valueAt(end), end);
+	}
+	else if (map.contains(end))
+	{
+		out[start] = AutomationNode(clip, clip->valueAt(start), map[end].getInValue(), start);
+		out[end] = AutomationNode(clip, clip->valueAt(start), map[end].getOutValue(), end);
+	}
+	else
+	{
+		out[start] = AutomationNode(clip, clip->valueAt(start), clip->valueAt(end), start);
+		out[end] = AutomationNode(clip, clip->valueAt(start), clip->valueAt(end), end);
+	}
+}
+
+} // namespace
+
 void AutomationClip::flipX(int start, int end)
 {
 	QMutexLocker m(&m_clipMutex);
@@ -91,48 +150,8 @@ void AutomationClip::flipX(int start, int end)
 	// Temporary map where we will store the flipped version
 	// of our clip
 	timeMap tempMap;
-
-	for (auto it = m_timeMap.begin(); it != m_timeMap.end(); ++it)
-	{
-		if (POS(it) < start || POS(it) > end)
-		{
-			tempMap[POS(it)] = *it;
-		}
-		else
-		{
-			// If the first node in the clip is not at the start, it can break things when clipping, so
-			// we have to set its in value to 0.
-			if (it == firstIterator && POS(firstIterator) > 0)
-			{
-				tempMap[end - (POS(it) - start)] = AutomationNode(this, OUTVAL(it), 0, end - (POS(it) - start));
-			}
-			else
-			{
-				tempMap[end - (POS(it) - start)] = AutomationNode(this, OUTVAL(it), INVAL(it), end - (POS(it) - start));
-			}
-		}
-	}
-
-	if (m_timeMap.contains(start) && m_timeMap.contains(end))
-	{
-		tempMap[start] = AutomationNode(this, m_timeMap[start].getInValue(), m_timeMap[end].getInValue(), start);
-		tempMap[end] = AutomationNode(this, m_timeMap[start].getOutValue(), m_timeMap[end].getOutValue(), end);
-	}
-	else if (m_timeMap.contains(start))
-	{
-		tempMap[start] = AutomationNode(this, m_timeMap[start].getInValue(), valueAt(end), start);
-		tempMap[end] = AutomationNode(this, m_timeMap[start].getOutValue(), valueAt(end), end);
-	}
-	else if (m_timeMap.contains(end))
-	{
-		tempMap[start] = AutomationNode(this, valueAt(start), m_timeMap[end].getInValue(), start);
-		tempMap[end] = AutomationNode(this, valueAt(start), m_timeMap[end].getOutValue(), end);
-	}
-	else
-	{
-		tempMap[start] = AutomationNode(this, valueAt(start), valueAt(end), start);
-		tempMap[end] = AutomationNode(this, valueAt(start), valueAt(end), end);
-	}
+	mirrorRange(this, m_timeMap, start, end, tempMap);
+	flipEnds(this, m_timeMap, start, end, tempMap);
 
 	m_timeMap.clear();
 
@@ -214,7 +233,10 @@ int AutomationClip::transformRange(int start, int end, double timeScale, int tim
 	for (const auto& [pos, node] : moved)
 	{
 		const int tick = std::max(0, static_cast<int>(std::lround(start + (pos - start) * timeScale)) + timeOffset);
-		kept[tick] = AutomationNode(this, value(node.getInValue()), value(node.getOutValue()), tick);
+		// The point keeps its own curve and bend (review L06-L07a #1).
+		AutomationNode point(this, value(node.getInValue()), value(node.getOutValue()), tick);
+		point.setCurve(node.curve(), node.bend());
+		kept[tick] = point;
 	}
 	m_timeMap = kept;
 	generateTangents();
@@ -265,6 +287,12 @@ int AutomationClip::thin(float tolerance)
 	for (auto it = m_timeMap.begin(); it != m_timeMap.end(); ++it) { points.emplace_back(POS(it), OUTVAL(it)); }
 	std::vector<bool> keep(points.size(), false);
 	keep.front() = keep.back() = true;
+	// A step (in != out) or a point with its own curve is not on any straight line: kept (review L06-L07a #7).
+	std::size_t i = 0;
+	for (auto it = m_timeMap.begin(); it != m_timeMap.end(); ++it, ++i)
+	{
+		if (INVAL(it) != OUTVAL(it) || it.value().curve() != AutomationNode::Curve::Clip) { keep[i] = true; }
+	}
 	simplify(points, 0, points.size() - 1, tolerance, keep);
 	int removed = 0;
 	for (std::size_t i = 0; i < points.size(); ++i)

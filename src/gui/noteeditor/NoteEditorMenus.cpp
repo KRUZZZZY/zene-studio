@@ -118,6 +118,8 @@ void NoteEditor::fillNotesMenu(QMenu* menu)
 	QAction* list = menu->addAction(tr("MIDI Event List..."));
 	list->setProperty("controlCommand", QStringLiteral("note.list"));
 	connect(list, &QAction::triggered, this, [this, clip]() { showCommandList(this, CommandLists::noteEvents(clip)); });
+	addCommandAction(menu, tr("Select Matching..."), QStringLiteral("note.select_where"),
+		call(QStringLiteral("note.select_where"), where, {{QStringLiteral("filter"), QJsonObject{}}}));
 	addCommandAction(menu, tr("Find && Change..."), QStringLiteral("note.transform_where"),
 		call(QStringLiteral("note.transform_where"), where, {{QStringLiteral("filter"), QJsonObject{}}}));
 	const QString track = control::trackIdOf(m_state.clip->getTrack());

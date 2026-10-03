@@ -52,7 +52,7 @@ public:
 	static QHash<int, QString> generalMidiDrums();
 
 	QString elementName() const override;
-	bool shouldPersist() const override { return !m_names.isEmpty(); }
+	bool shouldPersist() const override;
 	void save(QDomDocument& doc, QDomElement& parent) const override;
 	void load(const QDomElement& element) override;
 	void clear() override { m_names.clear(); }

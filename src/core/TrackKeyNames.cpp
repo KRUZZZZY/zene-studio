@@ -27,8 +27,25 @@
 #include <QDomDocument>
 #include <QDomElement>
 
+#include "Engine.h"
+#include "PatternStore.h"
+#include "Song.h"
+
 namespace lmms
 {
+
+namespace
+{
+
+//! A deleted track's names stay in memory (undoing the delete brings the track back with its id),
+//! but are not written: the file carries names only for tracks it carries (review L06-L07a #11).
+bool trackExists(int id)
+{
+	return Engine::getSong()->findTrackById(id) != nullptr
+		|| (Engine::patternStore() != nullptr && Engine::patternStore()->findTrackById(id) != nullptr);
+}
+
+} // namespace
 
 TrackKeyNames& TrackKeyNames::instance()
 {
@@ -77,6 +94,15 @@ QHash<int, QString> TrackKeyNames::generalMidiDrums()
 	return out;
 }
 
+bool TrackKeyNames::shouldPersist() const
+{
+	for (auto it = m_names.begin(); it != m_names.end(); ++it)
+	{
+		if (trackExists(it.key())) { return true; }
+	}
+	return false;
+}
+
 QString TrackKeyNames::elementName() const
 {
 	return QStringLiteral("key-names");
@@ -87,6 +113,7 @@ void TrackKeyNames::save(QDomDocument& doc, QDomElement& parent) const
 	QDomElement root = doc.createElement(elementName());
 	for (auto track = m_names.begin(); track != m_names.end(); ++track)
 	{
+		if (!trackExists(track.key())) { continue; }
 		QDomElement trackElement = doc.createElement(QStringLiteral("track"));
 		trackElement.setAttribute(QStringLiteral("id"), track.key());
 		for (auto key = track.value().begin(); key != track.value().end(); ++key)

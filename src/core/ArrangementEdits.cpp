@@ -172,6 +172,16 @@ void checkpointForDelete(Track* track, Ripple mode)
 	control::addUndoStep(touched);
 }
 
+namespace
+{
+
+void mergeFrom(ProjectJournal* journal, int mark)
+{
+	if (journal != nullptr && mark >= 0) { journal->mergeCheckpointsFrom(mark); }
+}
+
+} // namespace
+
 void afterUserMove(Clip* moved, tick_t oldStart)
 {
 	if (moved == nullptr || moved->getTrack() == nullptr || oldStart < 0) { return; }
@@ -190,7 +200,7 @@ void afterUserMove(Clip* moved, tick_t oldStart)
 	moved->movePosition(TimePos(newStart));
 	if (follow) { moveFollowingAutomation(track, oldStart, moved->length().getTicks(), newStart - oldStart, true); }
 	applyOverlap(moved, mode);
-	if (journal != nullptr && mark >= 0) { journal->mergeCheckpointsFrom(mark); }
+	mergeFrom(journal, mark);
 }
 
 int moveFollowingAutomation(Track* track, tick_t oldStart, tick_t length, tick_t delta, bool checkpoint)
@@ -241,29 +251,37 @@ void crossfade(Clip* earlier, Clip* later)
 
 } // namespace
 
+namespace
+{
+
+//! What the overlap mode does to ONE clip @a other under @a moved (which spans [start, end)).
+void overlapOne(Clip* moved, Clip* other, Overlap mode, tick_t start, tick_t end)
+{
+	if (mode == Overlap::Crossfade)
+	{
+		if (other->startPosition().getTicks() < start) { crossfade(other, moved); } else { crossfade(moved, other); }
+		return;
+	}
+	// Trim: cut the other clip at the moved clip's edges and drop what lies under it.
+	splitClipAt(other, end);
+	Clip* inside = splitClipAt(other, start);
+	Clip* under = inside != nullptr ? inside : other;
+	if (under->startPosition().getTicks() >= start && under->endPosition().getTicks() <= end) { removeClip(moved->getTrack(), under); }
+}
+
+} // namespace
+
 int applyOverlap(Clip* moved, Overlap mode)
 {
 	if (mode == Overlap::Free) { return 0; }
-	Track* track = moved->getTrack();
 	const tick_t start = moved->startPosition().getTicks();
 	const tick_t end = moved->endPosition().getTicks();
 	int changed = 0;
-	const auto others = track->getClips();
+	const auto others = moved->getTrack()->getClips();
 	for (Clip* other : others)
 	{
 		if (other == moved || other->endPosition().getTicks() <= start || other->startPosition().getTicks() >= end) { continue; }
-		if (mode == Overlap::Crossfade)
-		{
-			if (other->startPosition().getTicks() < start) { crossfade(other, moved); } else { crossfade(moved, other); }
-			++changed;
-			continue;
-		}
-		// Trim: cut the other clip at the moved clip's edges and drop what lies under it.
-		Clip* right = splitClipAt(other, end);
-		Clip* inside = splitClipAt(other, start);
-		Clip* under = inside != nullptr ? inside : other;
-		if (under->startPosition().getTicks() >= start && under->endPosition().getTicks() <= end) { removeClip(track, under); }
-		Q_UNUSED(right)
+		overlapOne(moved, other, mode, start, end);
 		++changed;
 	}
 	return changed;

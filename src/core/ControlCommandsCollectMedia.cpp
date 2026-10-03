@@ -92,23 +92,53 @@ bool collectOne(const QString& project, const QDir& projectDir, const QDir& fold
 	return true;
 }
 
-ControlResult collectMedia(const QJsonObject& args)
+//! The media folder `dir` names, relative to the project's folder; false (with @a error) when it would
+//! leave it. An absolute folder is accepted when it is inside the project's folder (the Lua sandbox
+//! hands `dir` over resolved); anything else must stay beside the project.
+bool mediaFolderName(const QJsonObject& args, const QDir& projectDir, QString* out, ControlResult* error)
 {
-	const QString project = args.value(QStringLiteral("project")).toString();
-	const QDir projectDir = QFileInfo(project).absoluteDir();
 	QString folderName = args.value(QStringLiteral("dir")).toString(QStringLiteral("media"));
-	// An absolute folder is accepted when it is inside the project's folder (the Lua sandbox hands
-	// `dir` over resolved); anything else must stay beside the project.
 	if (QDir::isAbsolutePath(folderName) && insideFolder(folderName, projectDir))
 	{
 		folderName = projectDir.relativeFilePath(folderName);
 	}
 	if (folderName.isEmpty() || QDir::isAbsolutePath(folderName) || folderName.contains(QStringLiteral("..")))
 	{
-		return ControlResult::failure(ControlErrorKind::InvalidArgs,
+		*error = ControlResult::failure(ControlErrorKind::InvalidArgs,
 			QStringLiteral("'dir' is a folder inside the project's folder, got '%1'").arg(folderName));
+		return false;
 	}
+	*out = folderName;
+	return true;
+}
+
+//! Copy every external, existing reference of @a scan into @a folder once; what was copied and what failed.
+void collectAll(const QString& project, const QDir& projectDir, const QDir& folder, const ProjectAssetScan& scan,
+	QJsonArray* copied, QJsonArray* failed)
+{
+	QSet<QString> done;
+	for (const ProjectAssetReference& ref : scan.references)
+	{
+		if (ref.embedded || !ref.exists || ref.path.isEmpty() || done.contains(ref.raw)) { continue; }
+		done.insert(ref.raw);
+		if (insideFolder(ref.path, projectDir)) { continue; }  // already beside the project
+		QString to;
+		QString why;
+		if (collectOne(project, projectDir, folder, ref, &to, &why))
+		{
+			copied->append(QJsonObject{{QStringLiteral("from"), ref.raw}, {QStringLiteral("to"), to}});
+		}
+		else { failed->append(QJsonObject{{QStringLiteral("from"), ref.raw}, {QStringLiteral("why"), why}}); }
+	}
+}
+
+ControlResult collectMedia(const QJsonObject& args)
+{
+	const QString project = args.value(QStringLiteral("project")).toString();
+	const QDir projectDir = QFileInfo(project).absoluteDir();
 	ControlResult error;
+	QString folderName;
+	if (!mediaFolderName(args, projectDir, &folderName, &error)) { return error; }
 	ProjectAssetScan scan;
 	if (!controlHashProjectAssets(project, &scan, &error)) { return error; }
 	QByteArray previous;
@@ -120,20 +150,7 @@ ControlResult collectMedia(const QJsonObject& args)
 	const QDir folder(projectDir.filePath(folderName));
 	QJsonArray copied;
 	QJsonArray failed;
-	QSet<QString> done;
-	for (const ProjectAssetReference& ref : scan.references)
-	{
-		if (ref.embedded || !ref.exists || ref.path.isEmpty() || done.contains(ref.raw)) { continue; }
-		done.insert(ref.raw);
-		if (insideFolder(ref.path, projectDir)) { continue; }  // already beside the project
-		QString to;
-		QString why;
-		if (collectOne(project, projectDir, folder, ref, &to, &why))
-		{
-			copied.append(QJsonObject{{QStringLiteral("from"), ref.raw}, {QStringLiteral("to"), to}});
-		}
-		else { failed.append(QJsonObject{{QStringLiteral("from"), ref.raw}, {QStringLiteral("why"), why}}); }
-	}
+	collectAll(project, projectDir, folder, scan, &copied, &failed);
 	QByteArray written;
 	controlReadFileBytes(project, &written, &error);
 	if (written != previous)

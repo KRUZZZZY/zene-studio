@@ -29,8 +29,10 @@
 
 #include <algorithm>
 #include <cmath>
+#include <functional>
 
 #include <QGridLayout>
+#include <QJsonArray>
 #include <QLabel>
 
 #include "Clip.h"
@@ -92,6 +94,78 @@ QVector<Note*> selectedNotes(const MidiClip* clip)
 	return out;
 }
 
+//! The first selected note of @a clip (gone or none selected: nullptr).
+const Note* firstSelected(const QPointer<MidiClip>& clip)
+{
+	const QVector<Note*> notes = clip ? selectedNotes(clip) : QVector<Note*>();
+	return notes.isEmpty() ? nullptr : notes.first();
+}
+
+QString keyText(const Note* note) { return NoteGrid::keyName(note->key()); }
+// The engine's note volume scale, 0..200 - the one note.velocity_* and the note editor use.
+QString velocityText(const Note* note) { return QString::number(note->getVolume()); }
+QString startText(const Note* note) { return barBeatText(note->pos().getTicks()); }
+QString lengthText(const Note* note) { return InspectorPanel::tr("%1 ticks").arg(note->length().getTicks()); }
+
+QJsonObject selectionOf(const QString& id)
+{
+	return {{QStringLiteral("clip"), id}, {QStringLiteral("scope"), QStringLiteral("selection")}};
+}
+
+//! The typed key for the selection: transposed so the first selected note lands on it.
+bool setSelectedKey(const QPointer<MidiClip>& clip, const QString& id, const QString& typed)
+{
+	int wanted = 0;
+	const Note* note = firstSelected(clip);
+	if (note == nullptr || !keyFromText(typed, &wanted)) { return false; }
+	QJsonObject args = selectionOf(id);
+	args.insert(QStringLiteral("semitones"), wanted - note->key());
+	return invoke(QStringLiteral("note.transpose"), args);
+}
+
+//! The typed velocity: the selection offset so the first selected note has it.
+bool setSelectedVelocity(const QPointer<MidiClip>& clip, const QString& id, const QString& typed)
+{
+	bool ok = false;
+	const int wanted = typed.trimmed().toInt(&ok);
+	const Note* note = firstSelected(clip);
+	if (note == nullptr || !ok) { return false; }
+	QJsonObject args = selectionOf(id);
+	args.insert(QStringLiteral("delta"), std::clamp(wanted, 0, 200) - static_cast<int>(note->getVolume()));
+	return invoke(QStringLiteral("note.velocity_offset"), args);
+}
+
+//! One note.edit (one undo step) setting @a field on every selected note to what @a valueOf gives it.
+bool editSelected(const QPointer<MidiClip>& clip, const QString& id, const QString& field, const std::function<int(const Note*)>& valueOf)
+{
+	if (clip.isNull()) { return false; }
+	QJsonArray edits;
+	for (const Note* note : selectedNotes(clip))
+	{
+		edits.append(QJsonObject{{QStringLiteral("note"), control::noteIdOf(note)}, {field, valueOf(note)}});
+	}
+	return !edits.isEmpty() && invoke(QStringLiteral("note.edit"), {{QStringLiteral("clip"), id}, {QStringLiteral("edits"), edits}});
+}
+
+//! The typed start (bar.beat): the selection moved so the first selected note starts there.
+bool setSelectedStart(const QPointer<MidiClip>& clip, const QString& id, const QString& typed)
+{
+	int ticks = 0;
+	const Note* first = firstSelected(clip);
+	if (first == nullptr || !ticksFromBarBeat(typed, &ticks)) { return false; }
+	const int delta = ticks - first->pos().getTicks();
+	return editSelected(clip, id, QStringLiteral("position"), [delta](const Note* n) { return std::max(0, n->pos().getTicks() + delta); });
+}
+
+//! The typed length in ticks, for every selected note.
+bool setSelectedLength(const QPointer<MidiClip>& clip, const QString& id, const QString& typed)
+{
+	bool ok = false;
+	const int ticks = QString(typed).remove(InspectorPanel::tr("ticks")).trimmed().toInt(&ok);
+	if (!ok || ticks <= 0) { return false; }
+	return editSelected(clip, id, QStringLiteral("length"), [ticks](const Note*) { return ticks; });
+}
+
 } // namespace
 
 void InspectorPanel::addClipFields(QGridLayout* grid, Clip* clip, const QString& id, QWidget* parent)
@@ -129,62 +203,17 @@ QWidget* InspectorPanel::notesSection(MidiClip* clip, const QString& id, QWidget
 	auto* grid = new QGridLayout(box);
 	grid->setContentsMargins(0, 0, 0, 0);
 	const QPointer<MidiClip> guarded(clip);
-	const auto first = [guarded]() -> Note* {
-		const QVector<Note*> notes = guarded ? selectedNotes(guarded) : QVector<Note*>();
-		return notes.isEmpty() ? nullptr : notes.first();
+	const auto shown = [guarded](QString (*text)(const Note*)) {
+		return [guarded, text] { const Note* note = firstSelected(guarded); return note != nullptr ? text(note) : tr("no notes selected"); };
 	};
-	const auto shown = [first](const std::function<QString(const Note*)>& text) {
-		return [first, text] { const Note* note = first(); return note != nullptr ? text(note) : tr("no notes selected"); };
-	};
-	const QJsonObject selection{{QStringLiteral("clip"), id}, {QStringLiteral("scope"), QStringLiteral("selection")}};
-
 	auto* key = new ReadoutField(tr("Key"), box);
-	key->bindText(shown([](const Note* n) { return NoteGrid::keyName(n->key()); }), [first, selection](const QString& typed) {
-		int wanted = 0;
-		const Note* note = first();
-		if (note == nullptr || !keyFromText(typed, &wanted)) { return false; }
-		QJsonObject args = selection;
-		args.insert(QStringLiteral("semitones"), wanted - note->key());
-		return invoke(QStringLiteral("note.transpose"), args);
-	});
+	key->bindText(shown(&keyText), [guarded, id](const QString& typed) { return setSelectedKey(guarded, id, typed); });
 	auto* velocity = new ReadoutField(tr("Velocity"), box);
-	// The engine's note volume scale, 0..200 - the one note.velocity_* and the piano roll use.
-	velocity->bindText(shown([](const Note* n) { return QString::number(n->getVolume()); }), [first, selection](const QString& typed) {
-		bool ok = false;
-		const int wanted = typed.trimmed().toInt(&ok);
-		const Note* note = first();
-		if (note == nullptr || !ok) { return false; }
-		QJsonObject args = selection;
-		args.insert(QStringLiteral("delta"), std::clamp(wanted, 0, 200) - static_cast<int>(note->getVolume()));
-		return invoke(QStringLiteral("note.velocity_offset"), args);
-	});
+	velocity->bindText(shown(&velocityText), [guarded, id](const QString& typed) { return setSelectedVelocity(guarded, id, typed); });
 	auto* start = new ReadoutField(tr("Start"), box);
-	start->bindText(shown([](const Note* n) { return barBeatText(n->pos().getTicks()); }), [guarded, id](const QString& typed) {
-		int ticks = 0;
-		if (guarded.isNull() || !ticksFromBarBeat(typed, &ticks)) { return false; }
-		const QVector<Note*> notes = selectedNotes(guarded);
-		const int delta = notes.isEmpty() ? 0 : ticks - notes.first()->pos().getTicks();
-		bool all = !notes.isEmpty();
-		for (const Note* note : notes)
-		{
-			all = invoke(QStringLiteral("note.move"), {{QStringLiteral("clip"), id}, {QStringLiteral("note"), control::noteIdOf(note)},
-				{QStringLiteral("position"), std::max(0, note->pos().getTicks() + delta)}}) && all;
-		}
-		return all;
-	});
+	start->bindText(shown(&startText), [guarded, id](const QString& typed) { return setSelectedStart(guarded, id, typed); });
 	auto* length = new ReadoutField(tr("Length"), box);
-	length->bindText(shown([](const Note* n) { return tr("%1 ticks").arg(n->length().getTicks()); }), [guarded, id](const QString& typed) {
-		bool ok = false;
-		const int ticks = QString(typed).remove(tr("ticks")).trimmed().toInt(&ok);
-		if (guarded.isNull() || !ok || ticks <= 0) { return false; }
-		bool all = true;
-		for (const Note* note : selectedNotes(guarded))
-		{
-			all = invoke(QStringLiteral("note.resize"), {{QStringLiteral("clip"), id}, {QStringLiteral("note"), control::noteIdOf(note)},
-				{QStringLiteral("length"), ticks}}) && all;
-		}
-		return all;
-	});
+	length->bindText(shown(&lengthText), [guarded, id](const QString& typed) { return setSelectedLength(guarded, id, typed); });
 	grid->addWidget(new QLabel(tr("Selected notes"), box), 0, 0, 1, 2);
 	int row = 1;
 	for (ReadoutField* field : {key, start, length, velocity})

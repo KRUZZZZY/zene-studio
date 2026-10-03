@@ -33,6 +33,28 @@
 namespace lmms
 {
 
+namespace
+{
+
+//! Feed @a inFrames frames through @a resampler into @a output from @a outPos on, until the input
+//! is used up, the output is full, or the resampler takes nothing more.
+void pump(AudioResampler& resampler, const SampleFrame* in, f_cnt_t inFrames, std::vector<SampleFrame>& output, f_cnt_t& outPos)
+{
+	while (inFrames > 0 && outPos < static_cast<f_cnt_t>(output.size()))
+	{
+		const auto result = resampler.process(
+			InterleavedBufferView<const float>(reinterpret_cast<const float*>(in), 2, inFrames),
+			InterleavedBufferView<float>(reinterpret_cast<float*>(output.data() + outPos), 2,
+				static_cast<f_cnt_t>(output.size()) - outPos));
+		if (result.inputFramesUsed == 0 && result.outputFramesGenerated == 0) { break; }
+		in += result.inputFramesUsed;
+		inFrames -= result.inputFramesUsed;
+		outPos += result.outputFramesGenerated;
+	}
+}
+
+} // namespace
+
 auto resampleBuffer(const std::shared_ptr<const SampleBuffer>& input, sample_rate_t rate)
 	-> std::shared_ptr<const SampleBuffer>
 {
@@ -44,26 +66,13 @@ auto resampleBuffer(const std::shared_ptr<const SampleBuffer>& input, sample_rat
 	// Room for the filter's own delay; trimmed to `wanted` at the end.
 	std::vector<SampleFrame> output(static_cast<std::size_t>(wanted) + 8192);
 	f_cnt_t outPos = 0;
-	const auto run = [&](const SampleFrame* in, f_cnt_t inFrames) {
-		while (inFrames > 0 && outPos < static_cast<f_cnt_t>(output.size()))
-		{
-			const auto result = resampler.process(
-				InterleavedBufferView<const float>(reinterpret_cast<const float*>(in), 2, inFrames),
-				InterleavedBufferView<float>(reinterpret_cast<float*>(output.data() + outPos), 2,
-					static_cast<f_cnt_t>(output.size()) - outPos));
-			if (result.inputFramesUsed == 0 && result.outputFramesGenerated == 0) { break; }
-			in += result.inputFramesUsed;
-			inFrames -= result.inputFramesUsed;
-			outPos += result.outputFramesGenerated;
-		}
-	};
-	run(input->data(), static_cast<f_cnt_t>(input->size()));
+	pump(resampler, input->data(), static_cast<f_cnt_t>(input->size()), output, outPos);
 	// Flush the filter's delay with silence, so the end of the audio is not cut.
 	const std::vector<SampleFrame> silence(4096);
 	while (outPos < wanted)
 	{
 		const f_cnt_t before = outPos;
-		run(silence.data(), static_cast<f_cnt_t>(silence.size()));
+		pump(resampler, silence.data(), static_cast<f_cnt_t>(silence.size()), output, outPos);
 		if (outPos == before) { break; }
 	}
 	output.resize(static_cast<std::size_t>(std::min(outPos, wanted)));

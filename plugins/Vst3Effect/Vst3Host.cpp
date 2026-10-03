@@ -171,6 +171,31 @@ auto listClasses(const QString& modulePath, QString* error) -> std::vector<Vst3C
 	return result;
 }
 
+namespace
+{
+
+//! Every audio bus of @a component in @a direction, described into @a own (the input or output list)
+//! and @a all (the layout's list, inputs first).
+void describeAudioBuses(IComponent* component, BusDirection direction, std::vector<BusDescriptor>* own,
+	std::vector<BusDescriptor>* all)
+{
+	for (int32 i = 0; i < component->getBusCount(kAudio, direction); ++i)
+	{
+		BusInfo info{};
+		if (component->getBusInfo(kAudio, direction, i, info) != kResultOk) { continue; }
+		BusDescriptor bus;
+		bus.name = fromString128(info.name);
+		bus.direction = direction == kInput ? BusDescriptor::Direction::Input : BusDescriptor::Direction::Output;
+		bus.type = info.busType == kMain ? BusDescriptor::Type::Main : BusDescriptor::Type::Aux;
+		bus.channelCount = info.channelCount;
+		bus.active = (info.flags & BusInfo::kDefaultActive) != 0;
+		own->push_back(bus);
+		all->push_back(std::move(bus));
+	}
+}
+
+} // namespace
+
 auto HostedPlugin::load(const QString& modulePath, const QString& classId, QString* error) -> bool
 {
 	auto& d = *m_impl;
@@ -215,34 +240,8 @@ auto HostedPlugin::load(const QString& modulePath, const QString& classId, QStri
 	std::vector<BusDescriptor> buses;
 	if (d.component)
 	{
-		for (int32 i = 0; i < d.component->getBusCount(kAudio, kInput); ++i)
-		{
-			BusInfo info{};
-			if (d.component->getBusInfo(kAudio, kInput, i, info) != kResultOk) { continue; }
-			BusDescriptor bus;
-			bus.name = fromString128(info.name);
-			bus.direction = BusDescriptor::Direction::Input;
-			bus.type = info.busType == kMain ? BusDescriptor::Type::Main
-							 : BusDescriptor::Type::Aux;
-			bus.channelCount = info.channelCount;
-			bus.active = (info.flags & BusInfo::kDefaultActive) != 0;
-			d.inputBusDescs.push_back(bus);
-			buses.push_back(std::move(bus));
-		}
-		for (int32 i = 0; i < d.component->getBusCount(kAudio, kOutput); ++i)
-		{
-			BusInfo info{};
-			if (d.component->getBusInfo(kAudio, kOutput, i, info) != kResultOk) { continue; }
-			BusDescriptor bus;
-			bus.name = fromString128(info.name);
-			bus.direction = BusDescriptor::Direction::Output;
-			bus.type = info.busType == kMain ? BusDescriptor::Type::Main
-							 : BusDescriptor::Type::Aux;
-			bus.channelCount = info.channelCount;
-			bus.active = (info.flags & BusInfo::kDefaultActive) != 0;
-			d.outputBusDescs.push_back(bus);
-			buses.push_back(std::move(bus));
-		}
+		describeAudioBuses(d.component.get(), kInput, &d.inputBusDescs, &buses);
+		describeAudioBuses(d.component.get(), kOutput, &d.outputBusDescs, &buses);
 	}
 	d.layout = mapBuses(buses);
 
@@ -659,6 +658,23 @@ void HostedPlugin::Impl::runChunk(const float* const* inputs, float* const* outp
 		inputParamChanges.clearQueue();
 	}
 
+	sliceEvents(offset, chunk, lastChunk);
+	mapBuses(inputs, outputs, numInputs, numOutputs, offset, chunk);
+
+	// 3. the chunk itself
+	processData.numSamples = chunk;
+	context.continousTimeSamples = continuousSamples;
+	context.projectTimeSamples = continuousSamples;
+	continuousSamples += chunk;
+
+	outputEvents.clear();
+	processData.outputEvents = &outputEvents;
+	processor->process(processData);
+	collectOutputEvents(offset);
+}
+
+void HostedPlugin::Impl::sliceEvents(int offset, int chunk, bool lastChunk)
+{
 	// 1b. this chunk's slice of the drained MIDI list. An event belongs to the
 	//     chunk its sample offset falls in, rebased to that chunk's start. The
 	//     BOUNDARY RULE is the one the pre-chunking host had
@@ -689,7 +705,11 @@ void HostedPlugin::Impl::runChunk(const float* const* inputs, float* const* outp
 		}
 		processData.inputEvents = &chunkEvents;
 	}
+}
 
+void HostedPlugin::Impl::mapBuses(const float* const* inputs, float* const* outputs, int numInputs, int numOutputs,
+	int offset, int chunk)
+{
 	// 2. map the planar LMMS channels onto the plug-in's buses. Channels the
 	//    track does not provide read from a pre-allocated silence buffer and
 	//    write into a pre-allocated scratch buffer. Both are maxBlockSize long,
@@ -724,16 +744,10 @@ void HostedPlugin::Impl::runChunk(const float* const* inputs, float* const* outp
 		bus.channelBuffers32 = ptrs.data();
 		bus.silenceFlags = 0;
 	}
+}
 
-	// 3. the chunk itself
-	processData.numSamples = chunk;
-	context.continousTimeSamples = continuousSamples;
-	context.projectTimeSamples = continuousSamples;
-	continuousSamples += chunk;
-
-	outputEvents.clear();
-	processData.outputEvents = &outputEvents;
-	processor->process(processData);
+void HostedPlugin::Impl::collectOutputEvents(int offset)
+{
 	Event event{};
 	for (int32 i = 0; i < outputEvents.getEventCount() && blockOutputCount < kMaxMidiEventsPerBlock; ++i)
 	{

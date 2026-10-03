@@ -144,7 +144,8 @@ private slots:
 		trim->putValue(TimePos(0), middle + 15.f, false, true);
 		const AutomatedValueMap values = Engine::getSong()->automatedValuesAt(TimePos(10), -1);
 		QCOMPARE(values.value(volume), 95.f);
-		trim->putValue(TimePos(0), trim->getMax(), false, true);
+		absolute->putValue(TimePos(0), 150.f, false, true);
+		trim->putValue(TimePos(0), trim->getMax(), false, true);  // +100 on 150
 		QCOMPARE(Engine::getSong()->automatedValuesAt(TimePos(10), -1).value(volume), volume->maxValue());  // clamped
 
 		QDomDocument doc;
@@ -179,6 +180,7 @@ private slots:
 		QVERIFY2(laneClip->getTimeMap().contains(432), "the lane's point did not move with the clip");
 		QVERIFY(run(QStringLiteral("control.undo")).ok);
 		QVERIFY(laneClip->getTimeMap().contains(48));
+		QCOMPARE(clip->startPosition().getTicks(), 0);  // ONE undo takes back the whole move
 
 		QDomDocument doc;
 		QDomElement root = doc.createElement(QStringLiteral("root"));

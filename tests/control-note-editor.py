@@ -184,6 +184,11 @@ def check_drum_view(session, recorder):
     session.result("control.undo")
     recorder.check("one undo restores a renamed key", key_names(session, track).get(24) == "Bass Drum 1",
                    "key24=%r" % key_names(session, track).get(24))
+    check_view_fields(session, recorder, clip)
+    check_lua_notes(session, recorder, clip)
+
+
+def check_view_fields(session, recorder, clip):
     reply = session.call("window.note_editor_set", {"clip": clip, "tool": "paint", "fold": "drums",
                                                     "color_mode": "pitch", "keep_in_scale": True})
     state = reply.get("result") or {}
@@ -192,6 +197,9 @@ def check_drum_view(session, recorder):
                    and state.get("color_mode") == "pitch" and state.get("keep_in_scale") is True
                    and state.get("rows") == 47, "reply=%r" % reply)
     session.call("window.note_editor_set", {"tool": "draw", "fold": "none", "color_mode": "velocity", "keep_in_scale": False})
+
+
+def check_lua_notes(session, recorder, clip):
     source = ("local r, err = zene.command('note.add_many', {clip = '%s', notes = {{key = 24, position = 0, length = 6}, "
               "{key = 26, position = 6, length = 6}}})\n"
               "print('added ' .. tostring(err == nil and r.added))\n" % clip)

@@ -121,19 +121,28 @@ ControlResult ratchetNotes(const QJsonObject& args)
 	MidiClip* clip = resolveMidiClip(args.value(QStringLiteral("clip")).toString(), &ref, &error);
 	if (clip == nullptr) { return error; }
 	const int count = args.value(QStringLiteral("count")).toInt(2);
-	const QVector<Note*> notes = scoped(clip, args.value(QStringLiteral("scope")).toString());
+	QVector<Note*> notes;
+	for (Note* note : scoped(clip, args.value(QStringLiteral("scope")).toString()))
+	{
+		if (note->length().getTicks() >= count) { notes.append(note); }  // one tick per repeat at least
+	}
+	if (notes.isEmpty())
+	{
+		return ControlResult::failure(ControlErrorKind::NotFound, QStringLiteral("no note in that scope is long enough to split"));
+	}
 	clip->addJournalCheckPoint();
 	int made = 0;
 	for (Note* note : notes)
 	{
-		const tick_t step = note->length().getTicks() / count;
-		if (step < 1) { continue; }
+		// Equal repeats; the last one takes the remainder, so the note's span is kept.
+		const tick_t length = note->length().getTicks();
+		const tick_t step = length / count;
 		Note repeat = *note;
 		note->setLength(TimePos(step));
 		for (int i = 1; i < count; ++i)
 		{
 			repeat.setPos(TimePos(note->pos().getTicks() + i * step));
-			repeat.setLength(TimePos(step));
+			repeat.setLength(TimePos(i == count - 1 ? length - i * step : step));
 			clip->addNote(repeat, false);
 			++made;
 		}
@@ -258,6 +267,34 @@ NoteVector act(const NoteVector& hits, const QString& action, int amount)
 	return {};
 }
 
+//! Selection is view state (note.select's rule): no checkpoint, the previous selection in the reply.
+ControlResult selectWhere(const QJsonObject& args)
+{
+	ClipRef ref;
+	ControlResult error;
+	MidiClip* clip = resolveMidiClip(args.value(QStringLiteral("clip")).toString(), &ref, &error);
+	if (clip == nullptr) { return error; }
+	NoteTransform::Filter filter;
+	if (!filterFrom(args.value(QStringLiteral("filter")).toObject(), &filter, &error)) { return error; }
+	const bool additive = args.value(QStringLiteral("additive")).toBool();
+	QJsonArray previous;
+	for (Note* note : clip->notes())
+	{
+		if (note->selected()) { previous.append(noteIdOf(note)); }
+		if (!additive) { note->setSelected(false); }
+	}
+	const NoteVector hits = NoteTransform::select(clip->notes(), filter);
+	QJsonArray selected;
+	for (Note* note : hits)
+	{
+		note->setSelected(true);
+		selected.append(noteIdOf(note));
+	}
+	emit clip->dataChanged();
+	return ControlResult::success({{QStringLiteral("clip"), clipId(ref.id)}, {QStringLiteral("matched"), selected.size()},
+		{QStringLiteral("selected"), selected}, {QStringLiteral("previous"), previous}});
+}
+
 ControlResult transformWhere(const QJsonObject& args)
 {
 	ClipRef ref;
@@ -269,11 +306,6 @@ ControlResult transformWhere(const QJsonObject& args)
 	const QString action = args.value(QStringLiteral("action")).toString();
 	const NoteVector hits = NoteTransform::select(clip->notes(), filter);
 	clip->addJournalCheckPoint();
-	if (action == QStringLiteral("select"))
-	{
-		for (Note* note : clip->notes()) { note->setSelected(false); }
-		for (Note* note : hits) { note->setSelected(true); }
-	}
 	const NoteVector doomed = act(hits, action, args.value(QStringLiteral("amount")).toInt());
 	for (Note* note : doomed) { clip->removeNote(note); }
 	return ControlResult::success(finish(ref, clip, QStringLiteral("note.transform_where"),
@@ -307,13 +339,18 @@ void registerNoteShapeCommands(ControlRegistry& registry)
 		{QStringLiteral("time_factor"), numberProperty()}, {QStringLiteral("length_factor"), numberProperty()}},
 		{QStringLiteral("clip")}), true, scaleNotes);
 	add(registry, "ratchet", QStringLiteral("Split each note in 'scope' into 'count' (2..16) equal repeats of the same key "
-		"and velocity - a ratchet.") + step, objectSchema({{QStringLiteral("clip"), stringProperty()}, {QStringLiteral("scope"), scope},
+		"and velocity - a ratchet; the last repeat takes any remainder. Refused not_found when no note in scope is "
+		"'count' ticks long.") + step, objectSchema({{QStringLiteral("clip"), stringProperty()}, {QStringLiteral("scope"), scope},
 		{QStringLiteral("count"), integerProperty(2, MaxRatchet)}}, {QStringLiteral("clip")}), true, ratchetNotes);
 	add(registry, "add_many", QStringLiteral("Add several notes to a clip as ONE edit: 'notes' is a list of {key 0..127, "
 		"position (ticks), length (ticks, >= 1), velocity 0..200 (default 100)} - what the note editor's paint tool sends. "
 		"The whole list is checked first; one bad entry refuses it and adds nothing.") + step,
 		objectSchema({{QStringLiteral("clip"), stringProperty()}, {QStringLiteral("notes"), arrayProperty()}},
 		{QStringLiteral("clip"), QStringLiteral("notes")}), true, addNotes);
+	add(registry, "select_where", QStringLiteral("Select the notes 'filter' matches (the filter note.transform_where "
+		"takes) - and deselect the others unless 'additive'. View state, as note.select: no undo step; the previous "
+		"selection is in the reply."), objectSchema({{QStringLiteral("clip"), stringProperty()}, {QStringLiteral("filter"),
+		objectProperty()}, {QStringLiteral("additive"), booleanProperty()}}, {QStringLiteral("clip")}), false, selectWhere);
 	add(registry, "restore_timing", QStringLiteral("Put back the timing the notes in 'scope' had before their first "
 		"quantise (every quantise keeps it, and it survives other edits and a save) - or, with 'freeze', keep the "
 		"quantised timing and forget the original.") + step, objectSchema({{QStringLiteral("clip"), stringProperty()},
@@ -324,10 +361,9 @@ void registerNoteShapeCommands(ControlRegistry& registry)
 		{QStringLiteral("clip")}), false, listNotes);
 	add(registry, "transform_where", QStringLiteral("Find and change: the notes whose key / velocity / position / length lie "
 		"inside 'filter's bounds ({key_min, key_max, velocity_min, ..., length_max}; absent bounds pass; 'scale' in / out "
-		"of the scale context; 'invert') are selected (and the others "
-		"deselected), removed, transposed by 'amount', or given velocity 'amount' (velocity_set) or +'amount' "
+		"of the scale context; 'invert') are removed, transposed by 'amount', or given velocity 'amount' (velocity_set) or +'amount' "
 		"(velocity_offset), or muted / unmuted.") + step, objectSchema({{QStringLiteral("clip"), stringProperty()},
-		{QStringLiteral("filter"), objectProperty()}, {QStringLiteral("action"), enumProperty({QStringLiteral("select"),
+		{QStringLiteral("filter"), objectProperty()}, {QStringLiteral("action"), enumProperty({
 			QStringLiteral("remove"), QStringLiteral("transpose"), QStringLiteral("velocity_set"), QStringLiteral("velocity_offset"),
 			QStringLiteral("mute"), QStringLiteral("unmute")})},
 		{QStringLiteral("amount"), integerProperty()}}, {QStringLiteral("clip"), QStringLiteral("action")}), true, transformWhere);

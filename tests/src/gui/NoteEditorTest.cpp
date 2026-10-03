@@ -342,6 +342,7 @@ private slots:
 		for (QAction* action : test::leafActions(menu)) { ids << action->property("controlCommand").toString(); }
 		for (const char* id : {"groove.quantize", "note.velocity_scale", "note.velocity_offset", "note.randomize", "note.scale",
 			"note.ratchet", "note.transpose", "groove.apply", "groove.extract", "note.list", "note.transform_where",
+			"note.select_where", "note.restore_timing",
 			"key_names.preset", "window.note_editor_set", "script.run"})
 		{
 			QVERIFY2(ids.contains(QLatin1String(id)), id);

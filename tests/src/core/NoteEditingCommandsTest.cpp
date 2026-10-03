@@ -166,6 +166,14 @@ private slots:
 		QCOMPARE(shape(m_clip), (QStringList{QStringLiteral("60@0+96"), QStringLiteral("64@96+96")}));
 		QCOMPARE(run(QStringLiteral("note.ratchet"), {{QStringLiteral("clip"), clip()}, {QStringLiteral("count"), 17}}).errorKind,
 			ControlErrorKind::InvalidArgs);
+		// A remainder goes to the last repeat; a scope with nothing long enough is refused, no step taken.
+		freshClip({Note(TimePos(8), TimePos(0), 60), Note(TimePos(2), TimePos(48), 62)});
+		ok(QStringLiteral("note.ratchet"), {{QStringLiteral("clip"), clip()}, {QStringLiteral("count"), 3}});
+		QCOMPARE(shape(m_clip), (QStringList{QStringLiteral("60@0+2"), QStringLiteral("60@2+2"), QStringLiteral("60@4+4"),
+			QStringLiteral("62@48+2")}));
+		m_clip->notes().back()->setSelected(true);
+		QCOMPARE(run(QStringLiteral("note.ratchet"), {{QStringLiteral("clip"), clip()}, {QStringLiteral("scope"), QStringLiteral("selection")},
+			{QStringLiteral("count"), 3}}).errorKind, ControlErrorKind::NotFound);
 	}
 
 	void addManyIsOneEditAndAllOrNothing()
@@ -224,7 +232,9 @@ private slots:
 		where({{QStringLiteral("position_min"), 48}}, "velocity_set", 90);
 		QCOMPARE(velocities(m_clip), (QList<int>{100, 90, 90}));
 		fixture();
-		where({{QStringLiteral("key_max"), 61}}, "select");
+		const QJsonObject chosen = ok(QStringLiteral("note.select_where"), {{QStringLiteral("clip"), clip()},
+			{QStringLiteral("filter"), QJsonObject{{QStringLiteral("key_max"), 61}}}});
+		QCOMPARE(chosen.value(QStringLiteral("matched")).toInt(), 2);
 		QList<bool> selected;
 		for (const Note* note : m_clip->notes()) { selected << note->selected(); }
 		QCOMPARE(selected, (QList<bool>{true, true, false}));
@@ -235,7 +245,7 @@ private slots:
 		QCOMPARE(where({{QStringLiteral("scale"), QStringLiteral("out")}}, "remove").value(QStringLiteral("removed")).toInt(), 1);
 		QCOMPARE(shape(m_clip), (QStringList{QStringLiteral("60@0+48"), QStringLiteral("67@96+12")}));
 		QVERIFY(run(QStringLiteral("scale.set"), {{QStringLiteral("scale"), QString()}}).ok);
-		QCOMPARE(run(QStringLiteral("note.transform_where"), {{QStringLiteral("clip"), clip()}, {QStringLiteral("action"), QStringLiteral("select")},
+		QCOMPARE(run(QStringLiteral("note.select_where"), {{QStringLiteral("clip"), clip()},
 			{QStringLiteral("filter"), QJsonObject{{QStringLiteral("scale"), QStringLiteral("in")}}}}).errorKind, ControlErrorKind::InvalidArgs);
 	}
 

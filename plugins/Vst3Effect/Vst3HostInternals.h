@@ -130,6 +130,10 @@ struct HostedPlugin::Impl
 	//! Vst3Host.h.
 	void runChunk(const float* const* inputs, float* const* outputs, int numInputs,
 		int numOutputs, int offset, int chunk, bool firstChunk, bool lastChunk);
+	// runChunk's three steps (split for the complexity target, unchanged).
+	void sliceEvents(int offset, int chunk, bool lastChunk);
+	void mapBuses(const float* const* inputs, float* const* outputs, int numInputs, int numOutputs, int offset, int chunk);
+	void collectOutputEvents(int offset);
 
 	double sampleRate = 0.0;
 	int maxBlockSize = 0;

@@ -38,8 +38,10 @@
  * Boston, MA 02110-1301 USA.
  */
 
-#include <limits>
 #include <cmath>
+#include <limits>
+#include <vector>
+
 #include <QJsonObject>
 #include <QString>
 
@@ -286,21 +288,37 @@ NoteVector quantizeTargets(const MidiClip& clip, const QJsonObject& args)
 	return out;
 }
 
-//! Swing (0..1): a note on an odd grid step is delayed by swing x half a step - 0 straight, 1 the
-//! off-beat halfway to the next step. Applied after the quantise put it on the grid.
-void applySwing(const NoteVector& notes, tick_t grid, double swing)
+//! The grid step each note's quantise takes it to, read BEFORE the quantise moves it - the same
+//! rounding NoteTransform::quantizeNotes uses - so the swing's odd/even choice cannot be flipped by
+//! a partial strength or the humanise jitter (review L06-L07a #8).
+std::vector<tick_t> quantizeSteps(const NoteVector& notes, const NoteTransform::QuantizeOptions& options)
+{
+	std::vector<tick_t> steps;
+	const tick_t grid = std::max<tick_t>(1, options.grid);
+	for (const Note* note : notes)
+	{
+		const tick_t pos = note->pos().getTicks();
+		switch (options.mode)
+		{
+		case NoteTransform::QuantizeMode::Floor: steps.push_back(pos / grid); break;
+		case NoteTransform::QuantizeMode::Ceil: steps.push_back((pos + grid - 1) / grid); break;
+		case NoteTransform::QuantizeMode::Nearest: steps.push_back((pos + grid / 2) / grid); break;
+		}
+	}
+	return steps;
+}
+
+//! Swing (0..1): a note quantised to an odd grid step is delayed by swing x half a step - 0 straight,
+//! 1 the off-beat halfway to the next step. Applied after the quantise.
+void applySwing(const NoteVector& notes, const std::vector<tick_t>& steps, tick_t grid, double swing)
 {
 	if (swing <= 0.0 || grid <= 1) { return; }
-	for (Note* note : notes)
+	const auto delay = static_cast<tick_t>(std::lround(std::min(swing, 1.0) * grid / 2.0));
+	for (std::size_t i = 0; i < notes.size() && i < steps.size(); ++i)
 	{
-		// The step the quantise took the note to (it may sit off it by the strength or the humanise).
-		const tick_t pos = note->pos().getTicks();
-		const long step = std::lround(static_cast<double>(pos) / grid);
-		if (step % 2 == 1)
-		{
-			note->rememberTiming();
-			note->setPos(TimePos(pos + static_cast<tick_t>(std::lround(std::min(swing, 1.0) * grid / 2.0))));
-		}
+		if (steps[i] % 2 == 0) { continue; }
+		notes[i]->rememberTiming();
+		notes[i]->setPos(TimePos(notes[i]->pos().getTicks() + delay));
 	}
 }
 
@@ -324,8 +342,9 @@ ControlResult grooveQuantize(const QJsonObject& args)
 	const QJsonObject beforeState = grooveClipBefore(ref, *clip);
 	clip->addJournalCheckPoint();
 	const NoteVector targets = quantizeTargets(*clip, args);
+	const std::vector<tick_t> steps = quantizeSteps(targets, options);
 	NoteTransform::quantizeNotes(targets, options);
-	applySwing(targets, options.grid, args.value(QStringLiteral("swing")).toDouble(0.0));
+	applySwing(targets, steps, options.grid, args.value(QStringLiteral("swing")).toDouble(0.0));
 	clip->rearrangeAllNotes();
 	clip->dataChanged();
 

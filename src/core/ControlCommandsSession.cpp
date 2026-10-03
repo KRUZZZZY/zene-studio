@@ -363,6 +363,28 @@ void registerSessionSetQuantisation(ControlRegistry& registry)
 }
 
 
+//! A scene's `color` argument: empty (clears it) or a colour name; false, with @a error, otherwise.
+bool sceneColorValid(const QJsonObject& args, ControlResult* error)
+{
+	const QString color = args.value(QStringLiteral("color")).toString();
+	if (color.isEmpty() || QColor::isValidColorName(color)) { return true; }
+	*error = ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("'%1' is not a colour (\"#rrggbb\")").arg(color));
+	return false;
+}
+
+//! session.set_scene's writes: the follow chain, the name, the overrides, the colour - each only if supplied.
+void applySceneEdits(Scene& scene, const QJsonObject& args, const std::optional<std::vector<FollowAction>>& chain)
+{
+	if (chain) { scene.setFollowActions(*chain); }
+	if (args.contains(QStringLiteral("name"))) { scene.setName(args.value(QStringLiteral("name")).toString()); }
+	applySceneOverrides(scene, args);
+	if (args.contains(QStringLiteral("color")))
+	{
+		const QString color = args.value(QStringLiteral("color")).toString();
+		scene.setColor(color.isEmpty() ? color : QColor(color).name());
+	}
+}
+
 void registerSessionSetScene(ControlRegistry& registry)
 {
 	ControlCommand scene;
@@ -403,21 +425,11 @@ void registerSessionSetScene(ControlRegistry& registry)
 		}
 		std::optional<std::vector<FollowAction>> chain;
 		if (!followActionsArg(args, model->sceneCount(), &chain, &error)) { return error; }
-		const QString color = args.value(QStringLiteral("color")).toString();
-		if (!color.isEmpty() && !QColor::isValidColorName(color))
-		{
-			return ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("'%1' is not a colour (\"#rrggbb\")").arg(color));
-		}
+		if (!sceneColorValid(args, &error)) { return error; }
 		const QString captured = captureSession(*model);
 		const QJsonObject before = gridState(*model, clipSlots(*model));
 		Scene& sceneModel = model->scene(index);
-		if (chain) { sceneModel.setFollowActions(*chain); }
-		if (args.contains(QStringLiteral("name")))
-		{
-			sceneModel.setName(args.value(QStringLiteral("name")).toString());
-		}
-		applySceneOverrides(sceneModel, args);
-		if (args.contains(QStringLiteral("color"))) { sceneModel.setColor(color.isEmpty() ? color : QColor(color).name()); }
+		applySceneEdits(sceneModel, args, chain);
 		QJsonObject result;
 		result.insert(QStringLiteral("scene"), sceneState(index, sceneModel));
 		result.insert(QStringLiteral("__transaction"),
