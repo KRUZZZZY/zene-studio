@@ -80,6 +80,9 @@ LMMS_EXPORT ListSpec noteEvents(const QString& clip);
 //! 0.5.0 W3 L13/L14 (CommandListsCustom.cpp): the theme's colour roles - change one, put the palette's back,
 //! reset, export, import (WF-117).
 LMMS_EXPORT ListSpec themeColors();
+//! WF-097: every track in one list - mute, solo, show or hide, rename, colour, icon (WF-120), move, remove -
+//! with its channel's processing load (WF-104).
+LMMS_EXPORT ListSpec trackManager();
 
 } // namespace CommandLists
 

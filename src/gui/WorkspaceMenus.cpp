@@ -29,6 +29,9 @@
 
 #include "CommandForm.h"
 #include "CommandLists.h"
+#include "MenuBarExtras.h"
+#include "TrackIcons.h"
+#include "TrackLooks.h"
 
 namespace lmms::gui
 {
@@ -76,6 +79,12 @@ void populateCustomiseExtras(QMenu* menu)
 void installWorkspaceMenus(QMenuBar* bar)
 {
 	if (bar == nullptr || bar->actions().isEmpty()) { return; }
+	TrackLooks::instance().setOnChange(repaintTrackHeaders);  // WF-120: a chosen icon shows at once
+	auto* menu = new QMenu(QObject::tr("&Window"), bar->window());
+	menu->setObjectName(QStringLiteral("workspaceMenu"));
+	if (insertBeforeHelp(bar, menu) != menu) { return; }
+	list(menu, QObject::tr("Track Manager..."), CommandLists::trackManager);
+	run(menu, QObject::tr("Channel Load"), QStringLiteral("mixer.cpu_load"), {}, false, true);
 }
 
 } // namespace lmms::gui

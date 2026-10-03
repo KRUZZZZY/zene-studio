@@ -223,6 +223,7 @@ include/DpiHelper.h
 include/Draggable.h
 include/DrumSynth.h
 include/DspEffectLibrary.h
+include/DspLoadProbe.h
 include/DummyEffect.h
 include/DummyInstrument.h
 include/DummyPlugin.h
@@ -625,8 +626,10 @@ include/TrackContentWidget.h
 include/TrackFolder.h
 include/TrackFolderMenu.h
 include/TrackGrip.h
+include/TrackIcons.h
 include/TrackKeyNames.h
 include/TrackLabelButton.h
+include/TrackLooks.h
 include/TrackMixModels.h
 include/TrackOperationsWidget.h
 include/TrackRecorder.h
@@ -1352,6 +1355,7 @@ src/core/ControlCommandsTrackChannel.cpp
 src/core/ControlCommandsTrackFolder.cpp
 src/core/ControlCommandsTrackFolderSets.cpp
 src/core/ControlCommandsTrackFolderShared.h
+src/core/ControlCommandsTrackLooks.cpp
 src/core/ControlCommandsTrackPresets.cpp
 src/core/ControlCommandsTransport.cpp
 src/core/ControlCommandsTransportMap.cpp
@@ -1658,6 +1662,7 @@ src/core/Track.cpp
 src/core/TrackContainer.cpp
 src/core/TrackContainerFolders.cpp
 src/core/TrackKeyNames.cpp
+src/core/TrackLooks.cpp
 src/core/TrackMixModels.cpp
 src/core/UnattendedRun.cpp
 src/core/UnclaimedElements.cpp
@@ -1821,6 +1826,7 @@ src/gui/TelemetryConsentDialog.cpp
 src/gui/TempoMapPanel.cpp
 src/gui/ToolPluginView.cpp
 src/gui/TrackFolderMenu.cpp
+src/gui/TrackIcons.cpp
 src/gui/TrackRenderMenu.cpp
 src/gui/UiConfigStore.cpp
 src/gui/UndoHistoryPanel.cpp
@@ -2036,6 +2042,7 @@ tests/src/core/ControlWarpCommandsTest.cpp
 tests/src/core/ControllerSurfaceTest.cpp
 tests/src/core/CrashReporterArmTest.cpp
 tests/src/core/CrashReporterTest.cpp
+tests/src/core/CustomAccessTest.cpp
 tests/src/core/DataFileFormatTest.cpp
 tests/src/core/DataFileSaveIntegrityTest.cpp
 tests/src/core/DawProjectInterchangeRoundTripTest.cpp

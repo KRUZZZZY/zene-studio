@@ -61,6 +61,7 @@ SET(LMMS_SRCS
 	gui/ControlCommandsTheme.cpp
 	gui/CommandListsCustom.cpp
 	gui/WorkspaceMenus.cpp
+	gui/TrackIcons.cpp
 	gui/ControlGuiSupport.cpp
 	# M3.4: the command palette (menu actions + argument-free commands, searchable).
 	gui/ArrangerOverlays.cpp

@@ -974,6 +974,8 @@ set(LMMS_SRCS
 	core/ControlCommandsAudioAnalysis.cpp
 	# 0.5.0 W3 L13 / L14: customisation and access.
 	core/JsonFile.cpp
+	core/TrackLooks.cpp
+	core/ControlCommandsTrackLooks.cpp
 	core/ControlTrackCreation.cpp
 	core/PitchTrack.cpp
 	core/MarkerActions.cpp

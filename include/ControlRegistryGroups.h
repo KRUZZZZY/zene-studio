@@ -846,6 +846,8 @@ LMMS_EXPORT void registerAudioAnalysisCommands(ControlRegistry& registry);
 //! 0.5.0 W3 L13 / L14 (customisation, help and access). Interface-side groups, defined in src/gui:
 //! theme.* (ControlCommandsTheme.cpp).
 LMMS_EXPORT void registerThemeCommands(ControlRegistry& registry);
+//! track.overview / set_color / set_visible / set_icon, mixer.cpu_load (src/core/ControlCommandsTrackLooks.cpp).
+LMMS_EXPORT void registerTrackLookCommands(ControlRegistry& registry);
 } // namespace lmms
 
 #endif // LMMS_CONTROL_REGISTRY_GROUPS_H

@@ -48,6 +48,15 @@ const ReversibilityRow kW3CustomRows[] = {
 		"no write to the project (delete the file)", ""),
 	R("theme.import", RC::TrueInverse, true, "it writes colour overrides read from a file (config file, ui/theme)",
 		"action checkpoint: the recorded undo step writes the previous ui/theme object back", ""),
+	// WF-097 / WF-120 / WF-104: the track manager.
+	R("track.overview", RC::NotMutating, false, "it lists the tracks. Nothing is written", "no write", ""),
+	R("track.set_color", RC::TrueInverse, true, "it sets a track's colour (saved with the project)",
+		"action checkpoint: the recorded undo step puts the previous colour back", ""),
+	R("track.set_visible", RC::TrueInverse, true, "it shows or hides a track in the arranger (saved with the project; "
+		"it mutes nothing)", "action checkpoint: the recorded undo step puts the previous flag back", ""),
+	R("track.set_icon", RC::TrueInverse, true, "it sets a track's icon (the <track-looks> section of the project)",
+		"action checkpoint: the recorded undo step puts the previous icon back", ""),
+	R("mixer.cpu_load", RC::NotMutating, false, "it reads the channels' processing load. Nothing is written", "no write", ""),
 };
 
 #undef R

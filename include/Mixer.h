@@ -231,6 +231,12 @@ public:
 	float vcaGain() const { return m_vcaGain.load(std::memory_order_relaxed); }
 	void setVcaGain(float gain) { m_vcaGain.store(gain, std::memory_order_relaxed); }
 
+	//! 0.5.0 W3 (WF-104): the share of a period this channel's devices and strip took, in percent,
+	//! smoothed (DspLoadProbe.h). Written by the audio thread with a relaxed store, read by
+	//! mixer.cpu_load with a relaxed load: no lock, no allocation.
+	std::atomic<float> m_dspLoad{0.0f};
+	float dspLoad() const { return m_dspLoad.load(std::memory_order_relaxed); }
+
 	std::atomic_size_t m_dependenciesMet;
 	void incrementDeps();
 	void processed();

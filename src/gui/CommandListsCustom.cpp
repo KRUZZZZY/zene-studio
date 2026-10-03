@@ -42,4 +42,25 @@ ListSpec themeColors()
 	return out;
 }
 
+ListSpec trackManager()
+{
+	ListSpec out = spec("Track Manager", "track.overview", "tracks", {QStringLiteral("name"), QStringLiteral("type"),
+		QStringLiteral("icon"), QStringLiteral("color"), QStringLiteral("muted"), QStringLiteral("soloed"), QStringLiteral("visible"),
+		QStringLiteral("channel"), QStringLiteral("devices"), QStringLiteral("cpu_percent")});
+	out.summaryKeys = {QStringLiteral("count")};
+	const QHash<QString, QString> track{{QStringLiteral("track"), QStringLiteral("id")}};
+	RowAction remove = act("Remove", "track.remove", track);
+	remove.confirm = true;
+	out.actions = {act("Mute", "track.set_mute", track, {{QStringLiteral("muted"), true}}),
+		act("Unmute", "track.set_mute", track, {{QStringLiteral("muted"), false}}),
+		act("Solo", "track.set_solo", track, {{QStringLiteral("solo"), true}}),
+		act("Unsolo", "track.set_solo", track, {{QStringLiteral("solo"), false}}),
+		act("Hide", "track.set_visible", track, {{QStringLiteral("visible"), false}}),
+		act("Show", "track.set_visible", track, {{QStringLiteral("visible"), true}}),
+		act("Rename...", "track.rename", track, {}, true), act("Colour...", "track.set_color", track, {}, true),
+		act("Icon...", "track.set_icon", track, {}, true), act("Move...", "track.move", track, {}, true), remove};
+	out.extras = {extra("Show All", "track.visibility_show_all", {}, false), readExtra("Channel Load", "mixer.cpu_load")};
+	return out;
+}
+
 } // namespace lmms::gui::CommandLists
