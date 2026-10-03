@@ -103,13 +103,18 @@ ControlResult arpeggiate(const QJsonObject& args)
 	{
 		tick_t length = 0;
 		std::vector<int> keys;
-		for (const Note* note : chord) { length = std::max<tick_t>(length, note->length().getTicks()); keys.push_back(note->key()); }
-		Note step = *chord.front();
+		std::map<int, Note> voices;  // each key plays as its own note did: velocity, pan, probability, mute...
+		for (const Note* note : chord)
+		{
+			length = std::max<tick_t>(length, note->length().getTicks());
+			keys.push_back(note->key());
+			voices.emplace(note->key(), *note);
+		}
 		for (Note* note : chord) { clip->removeNote(note); }
 		const std::vector<int> order = runOrder(keys, args.value(QStringLiteral("pattern")).toString(QStringLiteral("up")));
 		for (tick_t at = 0, i = 0; at < length; at += rate, ++i)
 		{
-			step.setKey(order[static_cast<std::size_t>(i) % order.size()]);
+			Note& step = voices.at(order[static_cast<std::size_t>(i) % order.size()]);
 			step.setPos(TimePos(start + at));
 			step.setLength(TimePos(std::min(rate, length - at)));
 			clip->addNote(step, false);
@@ -287,7 +292,7 @@ void registerNoteToolCommands(ControlRegistry& registry)
 		with({{QStringLiteral("rate"), integerProperty(1, 3072)}, {QStringLiteral("pattern"),
 			enumProperty({QStringLiteral("up"), QStringLiteral("down"), QStringLiteral("updown")})}}), arpeggiate);
 	add(registry, "flam", QStringLiteral("Put a grace note 'offset' ticks (3 when left out) before each note in 'scope', at 'velocity' "
-		"(0..1, 0.6 when left out) of it - a flam. One undo step."),
+		"(0.05..1 - a grace note always sounds -, 0.6 when left out) of it - a flam. One undo step."),
 		with({{QStringLiteral("offset"), integerProperty(1, 96)}, {QStringLiteral("velocity"), numberProperty()}}), flam);
 	add(registry, "transpose_in_key", QStringLiteral("Move the notes in 'scope' 'steps' scale degrees (negative: down) within the scale "
 		"scale.set chose, so they stay in key. One undo step."), with({{QStringLiteral("steps"), integerProperty(-24, 24)}}), transposeInKey);

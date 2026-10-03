@@ -25,6 +25,7 @@
 #include "DeviceOptions.h"
 
 #include <algorithm>
+#include <cmath>
 
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -99,10 +100,14 @@ void DeviceOptions::load(const QDomElement& element)
 	const QJsonObject names = QJsonDocument::fromJson(element.attribute(kAliases).toUtf8()).object();
 	for (auto it = names.begin(); it != names.end(); ++it) { setAlias(it.key(), it.value().toString()); }
 	folded = flag(element, kFolded);
-	editorScale = std::clamp(element.attribute(kEditorScale, QStringLiteral("1")).toFloat(), MinEditorScale, MaxEditorScale);
+	// A value that does not read as a number is the default, not a zero clamped into range.
+	bool ok = false;
+	const float scale = element.attribute(kEditorScale).toFloat(&ok);
+	editorScale = ok && std::isfinite(scale) ? std::clamp(scale, MinEditorScale, MaxEditorScale) : 1.f;
 	genericEditor = flag(element, kGenericEditor);
 	keepRunning = flag(element, kKeepRunning);
-	latencyOverride = std::max(-1, element.attribute(kLatency, QStringLiteral("-1")).toInt());
+	const int latency = element.attribute(kLatency).toInt(&ok);
+	latencyOverride = ok ? std::clamp(latency, -1, MaxLatencyOverride) : -1;
 }
 
 } // namespace lmms

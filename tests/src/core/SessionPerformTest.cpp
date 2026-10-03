@@ -30,6 +30,7 @@
 
 #include <QJsonArray>
 #include <QJsonObject>
+#include <QTemporaryDir>
 
 #include "ControlRegistry.h"
 #include "Engine.h"
@@ -38,6 +39,8 @@
 #include "SessionModel.h"
 #include "SessionScheduler.h"
 #include "Song.h"
+#include "Track.h"
+#include "TrackFolder.h"
 
 using namespace lmms;
 
@@ -153,6 +156,45 @@ private slots:
 			{QStringLiteral("position_ticks"), 96}}).ok);
 		QCOMPARE(run(QStringLiteral("session.jump_slot"), {{QStringLiteral("track"), 7}, {QStringLiteral("scene"), 0},
 			{QStringLiteral("position_ticks"), 96}}).errorKind, ControlErrorKind::InvalidArgs);
+	}
+
+	//! WF-064: a folder's cells launch as one - the cell of the track inside it, and nothing of the folder's own column.
+	void aGroupLaunchesTogether()
+	{
+		Song* song = Engine::getSong();
+		const int column = static_cast<int>(song->tracks().size());
+		auto* folder = static_cast<TrackFolder*>(Track::create(Track::Type::Folder, song));
+		Track* inside = Track::create(Track::Type::Sample, song);
+		QVERIFY(folder != nullptr && inside != nullptr);
+		inside->setParentFolder(folder);
+		QVERIFY(run(QStringLiteral("session.set_grid"), {{QStringLiteral("tracks"), column + 2}, {QStringLiteral("scenes"), 3}}).ok);
+		QVERIFY(run(QStringLiteral("session.set_slot"), audioCell(column + 1, 2)).ok);
+		const ControlResult launched = run(QStringLiteral("session.launch_group"), {{QStringLiteral("track"), column}, {QStringLiteral("scene"), 2}});
+		QVERIFY2(launched.ok, qPrintable(launched.errorMessage));
+		const QJsonArray columns = launched.result.value(QStringLiteral("launched")).toArray();
+		QCOMPARE(columns.size(), 1);
+		QCOMPARE(columns.first().toInt(), column + 1);
+		QCOMPARE(launched.result.value(QStringLiteral("scene")).toInt(), 2);
+		QCOMPARE(run(QStringLiteral("session.launch_group"), {{QStringLiteral("track"), column + 1}, {QStringLiteral("scene"), 2}}).errorKind,
+			ControlErrorKind::InvalidArgs);  // not a folder
+		Engine::getSong()->sessionScheduler().reset();
+	}
+
+	//! WF-071: setlist_go opens the entry as project.open does and remembers where the set stands. Last: it replaces the song.
+	void theSetlistOpensItsProjects()
+	{
+		QTemporaryDir dir;
+		QVERIFY(dir.isValid());
+		const QString path = dir.filePath(QStringLiteral("first.mmp"));
+		QVERIFY(Engine::getSong()->saveProjectFile(path));
+		QVERIFY(run(QStringLiteral("session.setlist"), {{QStringLiteral("items"), QJsonArray{path}}}).ok);
+		const ControlResult went = run(QStringLiteral("session.setlist_go"));
+		QVERIFY2(went.ok, qPrintable(went.errorMessage));
+		QCOMPARE(went.result.value(QStringLiteral("index")).toInt(), 0);
+		QCOMPARE(Engine::getSong()->projectFileName(), path);
+		QCOMPARE(run(QStringLiteral("session.setlist")).result.value(QStringLiteral("index")).toInt(), 0);
+		QCOMPARE(run(QStringLiteral("session.setlist_go"), {{QStringLiteral("to"), QStringLiteral("4")}}).errorKind, ControlErrorKind::InvalidArgs);
+		QVERIFY(run(QStringLiteral("session.setlist"), {{QStringLiteral("items"), QJsonArray{}}}).ok);  // leave the preference empty
 	}
 };
 

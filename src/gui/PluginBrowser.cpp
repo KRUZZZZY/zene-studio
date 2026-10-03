@@ -133,6 +133,7 @@ void PluginBrowser::updateRootVisibilities()
 
 void PluginBrowser::onFilterChanged( const QString & filter )
 {
+	m_filter = filter;
 	int rootCount = m_descTree->topLevelItemCount();
 	for (int rootIndex = 0; rootIndex < rootCount; ++rootIndex)
 	{
@@ -174,8 +175,10 @@ void PluginBrowser::addPlugins()
 		root->addChild(item);
 		auto* widget = new PluginDescWidget(key, m_descTree);
 		m_descTree->setItemWidget(item, 0, widget);
-		// The tree is rebuilt once the menu that changed it has closed (it belongs to this row).
-		connect(widget, &PluginDescWidget::organised, this, [this] { QTimer::singleShot(0, this, [this] { addPlugins(); }); });
+		// The tree is rebuilt once the menu that changed it has closed (it belongs to this row), the search kept.
+		connect(widget, &PluginDescWidget::organised, this, [this] {
+			QTimer::singleShot(0, this, [this] { addPlugins(); onFilterChanged(m_filter); });
+		});
 	};
 
 	// 0.5.0 L10 (MX-166): hidden plug-ins are left out; a favourite is listed under Favourites too,

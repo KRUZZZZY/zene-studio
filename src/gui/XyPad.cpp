@@ -68,7 +68,10 @@ void XyPadArea::paintEvent(QPaintEvent*)
 	p.drawEllipse(at, 7.0, 7.0);
 }
 
-void XyPadArea::mousePressEvent(QMouseEvent* event) { moveTo(event->pos()); }
+void XyPadArea::mousePressEvent(QMouseEvent* event)
+{
+	if (event->button() == Qt::LeftButton) { moveTo(event->pos()); }  // as a drag is: another button sets nothing (review L20 #7)
+}
 
 void XyPadArea::mouseMoveEvent(QMouseEvent* event)
 {
@@ -77,7 +80,8 @@ void XyPadArea::mouseMoveEvent(QMouseEvent* event)
 
 void XyPadArea::moveTo(const QPoint& at)
 {
-	setPoint(QPointF(static_cast<double>(at.x()) / std::max(1, width()), 1.0 - static_cast<double>(at.y()) / std::max(1, height())));
+	// The last pixel is the end of the range: x runs 0 .. width() - 1 (review L20 #8).
+	setPoint(QPointF(static_cast<double>(at.x()) / std::max(1, width() - 1), 1.0 - static_cast<double>(at.y()) / std::max(1, height() - 1)));
 	if (moved) { moved(m_point); }
 }
 

@@ -142,6 +142,7 @@ ControlResult rememberSource(const QJsonObject& args)
 	const QString context = args.value(QStringLiteral("context")).toString();
 	const QString source = args.value(QStringLiteral("source")).toString();
 	ConfigManager::inst()->setValue(QStringLiteral("browser"), sourceKey(context), source);
+	ConfigManager::inst()->saveConfigFile();  // as the other preferences are: a crash must not forget it
 	return ControlResult::success({{QStringLiteral("context"), context}, {QStringLiteral("source"), source}});
 }
 

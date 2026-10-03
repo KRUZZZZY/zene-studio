@@ -283,8 +283,8 @@ public:
 	/*! ED-199: a RELATIVE (trim) clip does not set its parameter, it offsets it: its value's
 	 *  distance from the middle of the parameter's range is added to whatever the absolute clips
 	 *  (or, without one, the parameter's own value when playback reached it) say. */
-	bool isRelative() const { return m_relative; }
-	void setRelative(bool relative) { m_relative = relative; }
+	bool isRelative() const { return m_relative.load(std::memory_order_relaxed); }
+	void setRelative(bool relative) { m_relative.store(relative, std::memory_order_relaxed); }
 
 protected:
 	AutomationClip( const AutomationClip & _clip_to_copy );
@@ -328,7 +328,7 @@ private:
 	float m_tension;
 	bool m_hasAutomation;
 	ProgressionType m_progressionType;
-	bool m_relative = false;  //!< ED-199
+	std::atomic<bool> m_relative{false};  //!< ED-199; atomic: the audio thread reads it
 
 	//! Sample-accurate rendering of this clip's curve (feature-list row 9).
 	//! Serialized only when it is ON, so a project that never asked for it

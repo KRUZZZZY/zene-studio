@@ -63,6 +63,11 @@ int sndfileFormat(const RenderJob& job)
 	return major | (job.bitDepth == 32 && major == SF_FORMAT_WAV ? SF_FORMAT_FLOAT : SF_FORMAT_PCM_24);
 }
 
+//! Where a conversion is written first. It is moved over the destination only once complete, so a failed or
+//! cancelled conversion never costs the file already there - which can be the source itself, converted in
+//! place (review L17 #1, #4).
+QString stagedPath(const RenderJob& job) { return job.out + QStringLiteral(".part"); }
+
 QString writeFile(const RenderJob& job, const SampleBuffer& buffer)
 {
 	SF_INFO info{};
@@ -70,7 +75,8 @@ QString writeFile(const RenderJob& job, const SampleBuffer& buffer)
 	info.channels = 2;
 	info.format = sndfileFormat(job);
 	QDir().mkpath(QFileInfo(job.out).absolutePath());
-	SNDFILE* file = sf_open(job.out.toLocal8Bit().constData(), SFM_WRITE, &info);
+	const QString path = stagedPath(job);
+	SNDFILE* file = sf_open(path.toLocal8Bit().constData(), SFM_WRITE, &info);
 	if (file == nullptr) { return QStringLiteral("cannot write %1: %2").arg(job.out, QString::fromLocal8Bit(sf_strerror(nullptr))); }
 	std::vector<float> interleaved(buffer.size() * 2);
 	for (std::size_t i = 0; i < buffer.size(); ++i)
@@ -82,8 +88,27 @@ QString writeFile(const RenderJob& job, const SampleBuffer& buffer)
 	const bool written = sf_writef_float(file, interleaved.data(), frames) == frames;
 	const bool closed = sf_close(file) == 0;
 	if (written && closed) { return QString(); }
-	QFile::remove(job.out);
+	QFile::remove(path);
 	return QStringLiteral("writing %1 failed").arg(job.out);
+}
+
+//! The staged conversion moved over its destination; empty on success, else the reason.
+QString commitStaged(const RenderJob& job)
+{
+	const QString path = stagedPath(job);
+	if ((!QFile::exists(job.out) || QFile::remove(job.out)) && QFile::rename(path, job.out)) { return QString(); }
+	QFile::remove(path);
+	return QStringLiteral("writing %1 failed").arg(job.out);
+}
+
+//! Decode @a job's source and write it, staged; empty on success, else the reason.
+QString staged(const RenderJob& job)
+{
+	std::optional<SampleDecoder::Result> decoded = SampleDecoder::decode(job.source);
+	if (!decoded || decoded->data.empty() || decoded->sampleRate <= 0) { return QStringLiteral("%1 could not be read as audio").arg(job.source); }
+	std::shared_ptr<const SampleBuffer> buffer = std::make_shared<const SampleBuffer>(std::move(decoded->data), decoded->sampleRate);
+	if (job.sampleRate > 0) { buffer = resampleBuffer(buffer, static_cast<sample_rate_t>(job.sampleRate)); }
+	return writeFile(job, *buffer);
 }
 
 QJsonObject reportOf(const RenderJob& job)
@@ -106,6 +131,29 @@ void conclude(RenderJob* job, bool ok, int exitCode, const QString& error)
 	job->state = written ? RenderJob::State::Done : RenderJob::State::Failed;
 	job->error = written ? QString() : (!error.isEmpty() ? error : QStringLiteral("no file was written (exit %1)").arg(exitCode));
 	if (written) { job->report = reportOf(*job); }
+}
+
+//! A render cancelled while it ran keeps no output: what its killed process wrote since the job started,
+//! whole or in part (review L17 #2). A file older than the job is someone else's and stays.
+void discardOutput(const RenderJob& job)
+{
+	const QFileInfo out(job.out);
+	if (out.exists() && out.lastModified().toMSecsSinceEpoch() >= job.startedMs) { QFile::remove(job.out); }
+}
+
+//! A job's end once its process or worker is done: a conversion's staged file is committed when the job is
+//! still running and wrote it, dropped otherwise; a cancelled render's output is discarded.
+void endJob(RenderJob* job, bool ok, int exitCode, QString error)
+{
+	const bool running = job->state == RenderJob::State::Running;
+	if (job->kind == RenderJob::Kind::Convert)
+	{
+		if (running && ok) { error = commitStaged(*job); ok = error.isEmpty(); }
+		else { QFile::remove(stagedPath(*job)); }
+	}
+	else if (job->state == RenderJob::State::Cancelled) { discardOutput(*job); }
+	if (running) { conclude(job, ok, exitCode, error); }
+	if (job->ownsSource) { QFile::remove(job->source); }
 }
 
 } // namespace
@@ -187,7 +235,7 @@ void RenderQueue::runConvert(RenderJob& job)
 {
 	const RenderJob copy = job;
 	QThreadPool::globalInstance()->start([this, copy] {
-		const QString error = convert(copy);
+		const QString error = staged(copy);  // committed by finish(), unless the job was cancelled meanwhile
 		QMetaObject::invokeMethod(this, [this, id = copy.id, error] { finish(id, error.isEmpty(), error.isEmpty() ? 0 : 1, error); },
 			Qt::QueuedConnection);
 	});
@@ -195,18 +243,14 @@ void RenderQueue::runConvert(RenderJob& job)
 
 QString RenderQueue::convert(const RenderJob& job)
 {
-	std::optional<SampleDecoder::Result> decoded = SampleDecoder::decode(job.source);
-	if (!decoded || decoded->data.empty() || decoded->sampleRate <= 0) { return QStringLiteral("%1 could not be read as audio").arg(job.source); }
-	std::shared_ptr<const SampleBuffer> buffer = std::make_shared<const SampleBuffer>(std::move(decoded->data), decoded->sampleRate);
-	if (job.sampleRate > 0) { buffer = resampleBuffer(buffer, static_cast<sample_rate_t>(job.sampleRate)); }
-	return writeFile(job, *buffer);
+	const QString error = staged(job);
+	return error.isEmpty() ? commitStaged(job) : error;
 }
 
 void RenderQueue::finish(int id, bool ok, int exitCode, const QString& error)
 {
 	RenderJob* job = find(id);
-	if (job != nullptr && job->state == RenderJob::State::Running) { conclude(job, ok, exitCode, error); }
-	if (job != nullptr && job->ownsSource) { QFile::remove(job->source); }
+	if (job != nullptr) { endJob(job, ok, exitCode, error); }
 	if (m_process != nullptr)
 	{
 		m_process->deleteLater();
@@ -225,7 +269,8 @@ bool RenderQueue::cancel(int id)
 	job->finishedMs = now();
 	if (!running && job->ownsSource) { QFile::remove(job->source); }
 	// A running render's process is stopped: its finished signal then ends the job (finish() sees it
-	// cancelled). A running conversion completes on its worker and is then dropped the same way.
+	// cancelled and removes what it wrote). A running conversion completes on its worker and is then
+	// dropped the same way, its staged file never moved into place (review L17 #1, #2).
 	if (running && m_process != nullptr) { m_process->kill(); }
 	return true;
 }
@@ -233,8 +278,10 @@ bool RenderQueue::cancel(int id)
 int RenderQueue::clearFinished()
 {
 	const auto before = m_jobs.size();
-	m_jobs.erase(std::remove_if(m_jobs.begin(), m_jobs.end(), [](const RenderJob& j) {
-		return j.state != RenderJob::State::Queued && j.state != RenderJob::State::Running;
+	// A cancelled job whose render or conversion is still winding down stays until finish() has cleaned
+	// up after it (its snapshot, its output; review L17 #3).
+	m_jobs.erase(std::remove_if(m_jobs.begin(), m_jobs.end(), [this](const RenderJob& j) {
+		return j.state != RenderJob::State::Queued && j.state != RenderJob::State::Running && j.id != m_current;
 	}), m_jobs.end());
 	return static_cast<int>(before - m_jobs.size());
 }

@@ -63,7 +63,8 @@ float PostFaderInserts::process(MixerChannel& channel, float volume, f_cnt_t fra
 	// Claim audio (1 = quiet): a device after the fader must not sleep on a stale flag.
 	channel.m_bus.quietChannels().reset(0);
 	channel.m_bus.quietChannels().reset(1);
-	m_chain.processAudioBuffer(channel.m_bus);
+	// A device's tail (a reverb after its last input) keeps the channel delivering to its receivers.
+	if (m_chain.processAudioBuffer(channel.m_bus)) { channel.m_stillRunning = true; }
 	m_baked = true;
 	return 1.f;
 }

@@ -62,8 +62,9 @@ QJsonObject bindingFor(const LaunchNote& note)
 void release(const QJsonObject& binding)
 {
 	Song* song = Engine::getSong();
-	const int track = binding.value(QStringLiteral("track")).toInt();
-	const int scene = binding.value(QStringLiteral("scene")).toInt();
+	// A binding without its cell (a hand-edited config) releases nothing - not cell 0, 0.
+	const int track = binding.value(QStringLiteral("track")).toInt(-1);
+	const int scene = binding.value(QStringLiteral("scene")).toInt(-1);
 	const SessionModel& model = song->sessionModel();
 	if (track < 0 || scene < 0 || track >= model.trackCount() || scene >= model.sceneCount()) { return; }
 	const ClipSlot& slot = model.slot(track, scene);

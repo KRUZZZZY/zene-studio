@@ -52,6 +52,25 @@ const QStringList& actionNames()
 
 enum Column { Type, Chance, Linked, Bars, Jump, ColumnCount };
 
+//! A number box showing @a value. The box rounds what it shows to its two decimals and its range, so
+//! the value loaded is kept too and given back exactly while the box is left alone (valueOf).
+QDoubleSpinBox* numberBox(double low, double high, double value, QWidget* parent)
+{
+	auto* box = new QDoubleSpinBox(parent);
+	box->setRange(low, high);
+	box->setValue(value);
+	box->setProperty("loaded", value);
+	box->setProperty("shown", box->value());
+	return box;
+}
+
+//! What @a widget (a numberBox) holds: the value loaded while it still shows that, else what was typed.
+double valueOf(QWidget* widget)
+{
+	const auto* box = qobject_cast<QDoubleSpinBox*>(widget);
+	return box->value() == box->property("shown").toDouble() ? box->property("loaded").toDouble() : box->value();
+}
+
 } // namespace
 
 FollowActionEditor::FollowActionEditor(const QString& command, const QJsonObject& where, const QJsonArray& chain,
@@ -94,15 +113,11 @@ void FollowActionEditor::addRow(const QJsonObject& action)
 	auto* type = new QComboBox(m_rows);
 	type->addItems(actionNames());
 	type->setCurrentText(action.value(QStringLiteral("type")).toString(QStringLiteral("next")));
-	auto* chance = new QDoubleSpinBox(m_rows);
-	chance->setRange(0.0, 1.0);
+	QDoubleSpinBox* chance = numberBox(0.0, 1.0, action.value(QStringLiteral("chance")).toDouble(1.0), m_rows);
 	chance->setSingleStep(0.1);
-	chance->setValue(action.value(QStringLiteral("chance")).toDouble(1.0));
 	auto* linked = new QCheckBox(m_rows);
 	linked->setChecked(action.value(QStringLiteral("linked")).toBool(true));
-	auto* bars = new QDoubleSpinBox(m_rows);
-	bars->setRange(0.25, 256.0);
-	bars->setValue(action.value(QStringLiteral("time_bars")).toDouble(1.0));
+	QDoubleSpinBox* bars = numberBox(0.25, 256.0, action.value(QStringLiteral("time_bars")).toDouble(1.0), m_rows);
 	auto* jump = new QSpinBox(m_rows);
 	jump->setRange(1, 512);
 	jump->setValue(action.value(QStringLiteral("jump_to")).toInt(0) + 1);
@@ -119,9 +134,9 @@ QJsonArray FollowActionEditor::chain() const
 	for (int row = 0; row < m_rows->rowCount(); ++row)
 	{
 		out.append(QJsonObject{{QStringLiteral("type"), qobject_cast<QComboBox*>(m_rows->cellWidget(row, Type))->currentText()},
-			{QStringLiteral("chance"), qobject_cast<QDoubleSpinBox*>(m_rows->cellWidget(row, Chance))->value()},
+			{QStringLiteral("chance"), valueOf(m_rows->cellWidget(row, Chance))},
 			{QStringLiteral("linked"), qobject_cast<QCheckBox*>(m_rows->cellWidget(row, Linked))->isChecked()},
-			{QStringLiteral("time_bars"), qobject_cast<QDoubleSpinBox*>(m_rows->cellWidget(row, Bars))->value()},
+			{QStringLiteral("time_bars"), valueOf(m_rows->cellWidget(row, Bars))},
 			{QStringLiteral("jump_to"), qobject_cast<QSpinBox*>(m_rows->cellWidget(row, Jump))->value() - 1}});
 	}
 	return out;

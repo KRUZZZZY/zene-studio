@@ -63,10 +63,12 @@ public:
 	bool baked() const { return m_baked; }
 	//! The channel's pre-fader signal of a baked period, for its pre-fader sends.
 	const SampleFrame* preFader() const { return m_preFader.data(); }
+	SampleFrame* preFader() { return m_preFader.data(); }
 
 	/*! Audio thread (the channel's worker), after the fader snapshot and the post-fader taps: with
-	 *  devices, bake the fader and run them over @a channel's buffer. Returns the gain the channel's meters
-	 *  apply to its buffer from here on: 1 when baked, else @a volume. Allocates nothing, locks nothing. */
+	 *  devices, bake the fader and run them over @a channel's buffer (a device still running marks the
+	 *  channel still running, as its first chain does). Returns the gain the channel's meters apply to its
+	 *  buffer from here on: 1 when baked, else @a volume. Allocates nothing, locks nothing. */
 	float process(MixerChannel& channel, float volume, f_cnt_t frames);
 
 	//! Write <postinserts> under @a channelElement, only while the chain holds devices.

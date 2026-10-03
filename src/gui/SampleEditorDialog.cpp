@@ -48,10 +48,13 @@ SampleSelectionView::SampleSelectionView(QWidget* parent) :
 
 void SampleSelectionView::setClip(SampleClip* clip)
 {
+	const int frames = clip != nullptr ? static_cast<int>(clip->sample().sampleSize()) : 0;
+	// The same clip at the same length (after a gain, silence, reverse or fade) keeps its selection, so
+	// the next action applies to it too; a new clip or length starts afresh (review L17 #5).
+	if (clip != m_clip || frames != m_frames) { m_anchor = m_end = 0; }
 	m_clip = clip;
-	m_frames = clip != nullptr ? static_cast<int>(clip->sample().sampleSize()) : 0;
+	m_frames = frames;
 	m_thumbnail = clip != nullptr ? SampleThumbnail(clip->sample()) : SampleThumbnail();
-	m_anchor = m_end = 0;
 	update();
 }
 

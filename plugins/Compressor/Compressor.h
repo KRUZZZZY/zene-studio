@@ -26,6 +26,8 @@
 #ifndef COMPRESSOR_H
 #define COMPRESSOR_H
 
+#include <atomic>
+
 #include "AudioPlugin.h"
 #include "CompressorControls.h"
 
@@ -158,6 +160,8 @@ private:
 
 	float m_yL[2];
 	float m_gainResult[2];
+	//! gainReductionDb(): the lowest gain of the last block, not of its last frame (as Gate and DeEsser).
+	std::atomic<float> m_deepestGain{1.f};
 	float m_displayPeak[2];
 	float m_displayGain[2];
 

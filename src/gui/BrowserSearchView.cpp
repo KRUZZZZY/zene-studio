@@ -40,6 +40,7 @@
 #include <QMenu>
 #include <QMouseEvent>
 #include <QPushButton>
+#include <QStyleHints>
 #include <QTimer>
 #include <QTreeWidget>
 #include <QVBoxLayout>
@@ -184,6 +185,7 @@ BrowserSearchView::BrowserSearchView(QWidget* parent) :
 	connect(m_kind, &QComboBox::currentIndexChanged, this, &BrowserSearchView::runSearch);
 	connect(m_root, &QComboBox::currentIndexChanged, this, &BrowserSearchView::runSearch);
 	connect(m_indexed, &QCheckBox::toggled, this, &BrowserSearchView::runSearch);
+	connect(m_indexed, &QCheckBox::toggled, m_root, &QWidget::setDisabled);  // the index has no roots to filter by
 	connectLists();
 	refreshCollections();
 	refreshIndexStatus();
@@ -215,8 +217,8 @@ void BrowserSearchView::buildActionRow()
 
 void BrowserSearchView::connectLists()
 {
-	connect(m_collections, &QListWidget::itemActivated, this, [this](QListWidgetItem* item) { runCollection(item->text()); });
-	connect(m_collections, &QListWidget::itemClicked, this, [this](QListWidgetItem* item) { runCollection(item->text()); });
+	connect(m_collections, &QListWidget::itemActivated, this, [this](QListWidgetItem* item) { pickCollection(item->text()); });
+	connect(m_collections, &QListWidget::itemClicked, this, [this](QListWidgetItem* item) { pickCollection(item->text()); });
 	connect(m_collections, &QWidget::customContextMenuRequested, this, [this](const QPoint& at) {
 		QListWidgetItem* item = m_collections->itemAt(at);
 		if (item == nullptr) { return; }
@@ -249,6 +251,17 @@ void BrowserSearchView::connectLists()
 		if (tile == nullptr || !(QGuiApplication::mouseButtons() & Qt::LeftButton)) { return; }
 		new StringPairDrag(dragKey(tile->data(Qt::UserRole + 1).toString()), tile->data(Qt::UserRole).toString(), tile->icon().pixmap(48), this);
 	});
+}
+
+void BrowserSearchView::pickCollection(const QString& name)
+{
+	// A double-click, or a style that activates on one click, emits itemClicked AND itemActivated:
+	// the second within the double-click interval is the same gesture, not another history entry.
+	const int gesture = QGuiApplication::styleHints()->mouseDoubleClickInterval();
+	if (name == m_lastPicked && m_lastPickedAt.isValid() && m_lastPickedAt.elapsed() < gesture) { return; }
+	m_lastPicked = name;
+	m_lastPickedAt.start();
+	runCollection(name);
 }
 
 QJsonObject BrowserSearchView::queryArgs() const

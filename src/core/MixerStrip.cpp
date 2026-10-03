@@ -238,6 +238,20 @@ bool applyPanMode(MixerChannel& channel, f_cnt_t frames)
 	return true;
 }
 
+namespace
+{
+
+//! The strip's gain-reduction reading: the most any device reports, in either insert chain.
+float reductionDb(const MixerChannel& channel)
+{
+	float reduction = 0.f;
+	for (const Effect* effect : channel.m_fxChain.effects()) { reduction = std::max(reduction, effect->gainReductionDb()); }
+	for (const Effect* effect : channel.m_postInserts.chain().effects()) { reduction = std::max(reduction, effect->gainReductionDb()); }
+	return reduction;
+}
+
+} // namespace
+
 void updateMeters(MixerChannel& channel, const SampleFrame* buffer, float volume, f_cnt_t frames)
 {
 	float peakL = 0.f;
@@ -255,19 +269,21 @@ void updateMeters(MixerChannel& channel, const SampleFrame* buffer, float volume
 	}
 	// MX-137: the phase correlation, +1 in phase (mono), 0 unrelated, -1 out of phase; 1 for silence.
 	channel.m_correlation.set(sumL > 1e-12 && sumR > 1e-12 ? static_cast<float>(sumLR / std::sqrt(sumL * sumR)) : 1.f);
-	channel.m_livePeakLeft.set(peakL);  // MX-053: what the send meters read
-	channel.m_livePeakRight.set(peakR);
-	channel.m_prePeakLeft.raise(peakL);
-	channel.m_prePeakRight.raise(peakR);
-	channel.m_preMeterLeft.raise(peakL);
-	channel.m_preMeterRight.raise(peakR);
+	// MX-082: baked post-fader inserts put the fader (and their devices) into the buffer; the pre-fader
+	// readings, and the send meters that apply the fader themselves, take the copy kept before them.
+	const SampleFrame pre = channel.m_postInserts.baked() ? getAbsPeakValues(channel.m_postInserts.preFader(), frames)
+		: SampleFrame(peakL, peakR);
+	channel.m_livePeakLeft.set(pre[0]);  // MX-053: what the send meters read
+	channel.m_livePeakRight.set(pre[1]);
+	channel.m_prePeakLeft.raise(pre[0]);
+	channel.m_prePeakRight.raise(pre[1]);
+	channel.m_preMeterLeft.raise(pre[0]);
+	channel.m_preMeterRight.raise(pre[1]);
 	const float n = static_cast<float>(std::max<f_cnt_t>(1, frames));
 	channel.m_rmsLeft.set(std::sqrt(static_cast<float>(sumL) / n) * volume);
 	channel.m_rmsRight.set(std::sqrt(static_cast<float>(sumR) / n) * volume);
 	if (peakL * volume >= 1.f || peakR * volume >= 1.f) { channel.m_clipped.store(true, std::memory_order_relaxed); }
-	float reduction = 0.f;
-	for (const Effect* effect : channel.m_fxChain.effects()) { reduction = std::max(reduction, effect->gainReductionDb()); }
-	channel.m_gainReduction.set(reduction);
+	channel.m_gainReduction.set(reductionDb(channel));
 }
 
 void save(const MixerChannel& c, QDomElement& e)

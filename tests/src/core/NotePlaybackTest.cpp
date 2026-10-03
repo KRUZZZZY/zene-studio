@@ -172,6 +172,11 @@ private slots:
 			QJsonArray{QJsonObject{{QStringLiteral("name"), QStringLiteral("legato")}}, QJsonObject{{QStringLiteral("name"), QStringLiteral("staccato")},
 				{QStringLiteral("keyswitch"), 25}}}}}).ok);
 		QCOMPARE(m_track->articulations().indexOf(QStringLiteral("Staccato")), 2);
+		const ControlResult listed = run(QStringLiteral("track.articulations"), {{QStringLiteral("track"), track}});
+		QVERIFY2(listed.ok, qPrintable(listed.errorMessage));
+		const QJsonArray map = listed.result.value(QStringLiteral("articulations")).toArray();
+		QCOMPARE(map.size(), 2);  // in order: a note's 'articulation' is the 1-based index into it
+		QCOMPARE(map.at(1).toObject().value(QStringLiteral("keyswitch")).toInt(), 25);
 		QVERIFY(run(QStringLiteral("note.edit"), edit(note, {{QStringLiteral("articulation"), 2}})).ok);
 		QCOMPARE(playFrom(0, 1), (QList<int>{25, 60}));  // one period in: the one-tick keyswitch still sounds
 		// Saved with the track, and one undo takes the map away.

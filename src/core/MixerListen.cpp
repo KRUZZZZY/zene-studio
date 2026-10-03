@@ -29,6 +29,7 @@
 
 #include "Mixer.h"
 #include "SampleFrame.h"
+#include "ValueBuffer.h"
 
 namespace lmms::mixerlisten
 {
@@ -41,6 +42,22 @@ constexpr auto Relaxed = std::memory_order_relaxed;
 std::array<std::atomic<bool>, MaxChannels> s_listening{};
 std::atomic<int> s_count{0};
 std::atomic<int> s_mode{static_cast<int>(Mode::AfterFader)};
+
+//! Add @a channel's listened signal to @a out. Its buffer is its post-insert, pre-fader signal, which AFL
+//! takes through the fader (sample-exact where the fader is) - unless post-fader inserts baked the fader
+//! into it (MX-082): AFL then takes it at unity, and PFL the pre-fader copy the inserts kept.
+void addListened(SampleFrame* out, MixerChannel& channel, bool afterFader, f_cnt_t frames)
+{
+	const SampleFrame* src = !afterFader && channel.m_postInserts.baked() ? channel.m_postInserts.preFader() : channel.m_buffer;
+	const ValueBuffer* volBuf = afterFader ? postinserts::faderBuffer(channel, nullptr) : nullptr;
+	const float gain = afterFader ? postinserts::faderValue(channel, nullptr) : 1.f;
+	for (f_cnt_t f = 0; f < frames; ++f)
+	{
+		const float g = volBuf != nullptr ? volBuf->values()[f] : gain;
+		out[f][0] += src[f][0] * g;
+		out[f][1] += src[f][1] * g;
+	}
+}
 
 } // namespace
 
@@ -90,13 +107,7 @@ void replaceOutput(SampleFrame* out, Mixer& mixer, f_cnt_t frames)
 		MixerChannel* channel = mixer.mixerChannel(i);
 		// A muted channel is not processed, so its buffer still holds its last block: it is heard as silence.
 		if (channel->m_muted.load(Relaxed)) { continue; }
-		// The channel's buffer is its post-insert, pre-fader signal; AFL takes the fader too.
-		const float gain = afterFader ? postinserts::faderValue(*channel, nullptr) : 1.f;  // MX-082: baked -> 1
-		for (f_cnt_t f = 0; f < frames; ++f)
-		{
-			out[f][0] += channel->m_buffer[f][0] * gain;
-			out[f][1] += channel->m_buffer[f][1] * gain;
-		}
+		addListened(out, *channel, afterFader, frames);
 	}
 }
 

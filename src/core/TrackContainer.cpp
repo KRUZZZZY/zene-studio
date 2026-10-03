@@ -394,8 +394,10 @@ void applyRelativeClips(const Track::clipVector& clips, TimePos time, AutomatedV
 	for (Clip* clip : clips)
 	{
 		auto* p = dynamic_cast<AutomationClip*>(clip);
-		if (p == nullptr || !p->isRelative() || clip->isMuted() || clip->startPosition() > time || !p->hasAutomation()) { continue; }
-		TimePos relTime = time - p->startPosition() - p->startTimeOffset();
+		// Read where the absolute clips are read: the latent audio's time when compensation is on (review L19 #3).
+		const TimePos readTime = AutomationLatency::instance().readTime(clip, time);
+		if (p == nullptr || !p->isRelative() || clip->isMuted() || clip->startPosition() > readTime || !p->hasAutomation()) { continue; }
+		TimePos relTime = readTime - p->startPosition() - p->startTimeOffset();
 		relTime = std::min(static_cast<int>(relTime), p->length() - p->startTimeOffset());
 		const float offset = p->valueAt(relTime) - (p->getMin() + p->getMax()) / 2.f;
 		for (AutomatableModel* model : p->objects())

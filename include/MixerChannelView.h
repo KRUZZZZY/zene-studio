@@ -92,7 +92,9 @@ public:
 	QLabel* meterInfo() const { return m_meterInfo; }
 	QLabel* insertList() const { return m_insertList; }
 	MacroKnobs* macroKnobs() const { return m_macroKnobs; }
-	void hideSends();
+	//! The mixer view's "sends" option: false hides the send row and its space; true gives the space back
+	//! (which of its widgets show is the current channel's business, MixerView::updateMixerChannel).
+	void setSendsShown(bool shown);
 
 public slots:
 	void renameChannel();

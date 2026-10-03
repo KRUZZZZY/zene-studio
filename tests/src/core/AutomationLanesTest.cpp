@@ -30,7 +30,9 @@
  *  - ED-199 a relative clip offsets the absolute clip's value (automatedValuesFromTracks);
  *  - ED-181 automation.lane_add puts a following lane right under the track, one undo removes
  *    it; ED-190 clip.move carries the lane's points; the follow survives a save/load;
- *  - ED-191 automation.last_touched names the parameter a setValue last changed. */
+ *  - ED-191 automation.last_touched names the parameter a setValue last changed;
+ *  - the same edits through the surface: automation.draw_shape, thin, transform and set_curve on
+ *    the parameter's own clip (set_curve one undo step), and automation.add_trim's relative lane. */
 
 #include <QtTest>
 
@@ -40,6 +42,8 @@
 #include "AutomationClip.h"
 #include "AutomationNode.h"
 #include "AutomationTrack.h"
+#include "ControlAutomationSupport.h"
+#include "ControlDeviceSupport.h"
 #include "ControlRegistry.h"
 #include "ControlVocabulary.h"
 #include "Engine.h"
@@ -64,6 +68,36 @@ AutomationClip* freshClip(FloatModel* model)
 	clip->addObject(model);
 	clip->changeLength(TimePos(4 * 192));
 	return clip;
+}
+
+//! The first parameter automation.get_state names for @a track (the instrument's own), or empty.
+QString firstParameter(const QString& track)
+{
+	const QJsonArray parameters = run(QStringLiteral("automation.get_state"), {{QStringLiteral("track"), track}}).result
+		.value(QStringLiteral("tracks")).toArray().first().toObject().value(QStringLiteral("parameters")).toArray();
+	return parameters.isEmpty() ? QString() : parameters.first().toObject().value(QStringLiteral("id")).toString();
+}
+
+//! @a extra plus the track and parameter an automation command addresses.
+QJsonObject addressed(const QString& track, const QString& parameter, QJsonObject extra = {})
+{
+	extra.insert(QStringLiteral("track"), track);
+	extra.insert(QStringLiteral("parameter"), parameter);
+	return extra;
+}
+
+//! The model behind @a parameter of @a track, through the commands' own resolver.
+AutomatableModel* modelOf(const QString& track, const QString& parameter)
+{
+	ControlTarget target;
+	control::AutomationParameter found;
+	ControlResult error;
+	return control::resolveAutomationParameter(addressed(track, parameter), &target, &found, &error) ? found.model : nullptr;
+}
+
+QJsonObject automationOf(const ControlResult& reply)
+{
+	return reply.result.value(QStringLiteral("automation")).toObject();
 }
 
 } // namespace
@@ -162,10 +196,8 @@ private slots:
 	void aLaneFollowsTheTrackAndMovesWithItsClips()
 	{
 		const QString id = control::trackIdOf(m_track);
-		const QJsonArray parameters = run(QStringLiteral("automation.get_state"), {{QStringLiteral("track"), id}}).result
-			.value(QStringLiteral("tracks")).toArray().first().toObject().value(QStringLiteral("parameters")).toArray();
-		QVERIFY(!parameters.isEmpty());
-		const QString parameter = parameters.first().toObject().value(QStringLiteral("id")).toString();
+		const QString parameter = firstParameter(id);
+		QVERIFY(!parameter.isEmpty());
 		const int before = static_cast<int>(Engine::getSong()->tracks().size());
 		const ControlResult added = run(QStringLiteral("automation.lane_add"), {{QStringLiteral("track"), id}, {QStringLiteral("parameter"), parameter}});
 		QVERIFY2(added.ok, qPrintable(added.errorMessage));
@@ -204,6 +236,73 @@ private slots:
 		QCOMPARE(AutomatableModel::lastTouched(), volume->id());
 		// The track's own volume is not a device parameter the surface addresses: refused, typed.
 		QCOMPARE(run(QStringLiteral("automation.last_touched")).errorKind, ControlErrorKind::NotFound);
+
+		// An instrument parameter is one: named by the ids automation.lane_add takes back.
+		const QString id = control::trackIdOf(m_track);
+		const QString parameter = firstParameter(id);
+		AutomatableModel* model = modelOf(id, parameter);
+		QVERIFY(model != nullptr);
+		model->setValue(model->value<float>() == model->maxValue<float>() ? model->minValue<float>() : model->maxValue<float>());
+		const ControlResult touched = run(QStringLiteral("automation.last_touched"));
+		QVERIFY2(touched.ok, qPrintable(touched.errorMessage));
+		QCOMPARE(touched.result.value(QStringLiteral("track")).toString(), id);
+		QCOMPARE(touched.result.value(QStringLiteral("parameter")).toString(), parameter);
+	}
+
+	//! ED-184/187/186/185 through the surface: each edit is a command on the parameter's own clip.
+	void shapesThinTransformAndCurvesAreCommands()
+	{
+		const QString id = control::trackIdOf(m_track);
+		const QString parameter = firstParameter(id);
+		QVERIFY(!parameter.isEmpty());
+		const ControlResult drawn = run(QStringLiteral("automation.draw_shape"), addressed(id, parameter,
+			{{QStringLiteral("start"), 0}, {QStringLiteral("end"), 192}, {QStringLiteral("shape"), QStringLiteral("triangle")},
+				{QStringLiteral("step"), 48}}));
+		QVERIFY2(drawn.ok, qPrintable(drawn.errorMessage));
+		const QJsonArray points = automationOf(drawn).value(QStringLiteral("points")).toArray();
+		QCOMPARE(points.size(), 5);  // 0, 48, 96, 144, 192
+		QVERIFY(points.at(2).toObject().value(QStringLiteral("value")).toDouble()
+			> points.at(0).toObject().value(QStringLiteral("value")).toDouble());  // the triangle's peak
+
+		const ControlResult thinned = run(QStringLiteral("automation.thin"), addressed(id, parameter));
+		QVERIFY2(thinned.ok, qPrintable(thinned.errorMessage));
+		QCOMPARE(thinned.result.value(QStringLiteral("removed")).toInt(), 2);  // the two mid-slope points
+		QCOMPARE(automationOf(thinned).value(QStringLiteral("point_count")).toInt(), 3);
+
+		const ControlResult stretched = run(QStringLiteral("automation.transform"), addressed(id, parameter,
+			{{QStringLiteral("start"), 0}, {QStringLiteral("end"), 192}, {QStringLiteral("time_scale"), 2.0}}));
+		QVERIFY2(stretched.ok, qPrintable(stretched.errorMessage));
+		QCOMPARE(stretched.result.value(QStringLiteral("moved")).toInt(), 3);
+		QCOMPARE(automationOf(stretched).value(QStringLiteral("points")).toArray().last().toObject()
+			.value(QStringLiteral("ticks")).toInt(), 384);  // 192 scaled by 2 about 0
+
+		const ControlResult held = run(QStringLiteral("automation.set_curve"), addressed(id, parameter,
+			{{QStringLiteral("ticks"), 0}, {QStringLiteral("curve"), QStringLiteral("hold")}}));
+		QVERIFY2(held.ok, qPrintable(held.errorMessage));
+		AutomationClip* clip = control::existingAutomationClip(modelOf(id, parameter));
+		QVERIFY(clip != nullptr);
+		QCOMPARE(clip->getTimeMap().value(0).curve(), AutomationNode::Curve::Hold);
+		QVERIFY(run(QStringLiteral("control.undo")).ok);  // one undo step
+		QCOMPARE(clip->getTimeMap().value(0).curve(), AutomationNode::Curve::Clip);
+	}
+
+	//! ED-199 through the surface: automation.add_trim is a RELATIVE lane right under the track.
+	void aTrimLaneIsARelativeLaneUnderTheTrack()
+	{
+		const QString id = control::trackIdOf(m_track);
+		const QString parameter = firstParameter(id);
+		QVERIFY(!parameter.isEmpty());
+		const int before = static_cast<int>(Engine::getSong()->tracks().size());
+		const ControlResult trim = run(QStringLiteral("automation.add_trim"), addressed(id, parameter));
+		QVERIFY2(trim.ok, qPrintable(trim.errorMessage));
+		QVERIFY(trim.result.value(QStringLiteral("relative")).toBool());
+		auto* lane = dynamic_cast<AutomationTrack*>(Engine::getSong()->tracks().at(1));  // right under the instrument track
+		QVERIFY(lane != nullptr);
+		QCOMPARE(control::trackIdOf(lane), trim.result.value(QStringLiteral("lane")).toString());
+		QCOMPARE(lane->followsTrack(), m_track->id());
+		QVERIFY(dynamic_cast<AutomationClip*>(lane->getClips().front())->isRelative());
+		QVERIFY(run(QStringLiteral("control.undo")).ok);  // one undo step removes the lane
+		QCOMPARE(static_cast<int>(Engine::getSong()->tracks().size()), before);
 	}
 
 private:

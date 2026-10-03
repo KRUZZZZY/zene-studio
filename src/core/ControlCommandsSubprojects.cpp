@@ -159,6 +159,15 @@ bool render(const QString& source, QString* audio, ControlResult* error)
 	return false;
 }
 
+//! Whether the project at @a path contains this one, directly or through its own subprojects (with @a error set).
+bool containsThisProject(const QString& path, ControlResult* error)
+{
+	const QString current = Engine::getSong()->projectFileName();
+	if (current.isEmpty() || (!samePath(path, current) && !reaches(path, current, MaxDepth))) { return false; }
+	*error = ControlResult::failure(ControlErrorKind::Refused, QStringLiteral("%1 contains this project: it cannot be its subproject").arg(path));
+	return true;
+}
+
 //! The project file @a args names, refused when it is missing or would contain this project.
 bool sourceOf(const QJsonObject& args, QString* path, ControlResult* error)
 {
@@ -169,13 +178,7 @@ bool sourceOf(const QJsonObject& args, QString* path, ControlResult* error)
 		*error = ControlResult::failure(ControlErrorKind::NotFound, QStringLiteral("'path' must be an existing .mmp or .mmpz project file"));
 		return false;
 	}
-	const QString current = Engine::getSong()->projectFileName();
-	if (!current.isEmpty() && (samePath(*path, current) || reaches(*path, current, MaxDepth)))
-	{
-		*error = ControlResult::failure(ControlErrorKind::Refused, QStringLiteral("%1 contains this project: it cannot be its subproject").arg(*path));
-		return false;
-	}
-	return true;
+	return !containsThisProject(*path, error);
 }
 
 void removeEntry(int track)
@@ -195,16 +198,18 @@ ControlResult addSubproject(const QJsonObject& args)
 	auto made = std::make_shared<Subproject>(Subproject{0, path, audio, QDateTime::currentMSecsSinceEpoch()});
 	const auto place = [made, name, at]() {
 		Track* track = landAudioTrack(name, made->audio, at, -1);
-		made->track = track != nullptr ? track->id() : 0;
+		if (track == nullptr) { return track; }  // no track, no link (an id of 0 is no track's)
+		made->track = track->id();
 		section().entries.push_back(*made);
 		return track;
 	};
+	Track* track = place();
+	if (track == nullptr) { return ControlResult::failure(ControlErrorKind::Refused, QStringLiteral("no track could be made for %1").arg(path)); }
 	addUndoStep([made]() {
 		removeEntry(made->track);
 		ControlResult ignored;
-		if (Track* track = resolveTrack(trackId(made->track), &ignored)) { removeTrack(track); }
+		if (Track* landed = resolveTrack(trackId(made->track), &ignored)) { removeTrack(landed); }
 	}, [place]() { place(); });
-	Track* track = place();
 	Engine::getSong()->setModified();
 	return ControlResult::success({{QStringLiteral("track"), trackIdOf(track)}, {QStringLiteral("path"), path}, {QStringLiteral("audio"), audio}});
 }
@@ -240,7 +245,8 @@ ControlResult refreshSubproject(const QJsonObject& args)
 	auto entry = std::find_if(section().entries.begin(), section().entries.end(), [track](const Subproject& s) { return s.track == track->id(); });
 	if (entry == section().entries.end()) { return ControlResult::failure(ControlErrorKind::NotFound, QStringLiteral("that track is not a subproject")); }
 	QString audio;
-	if (!render(entry->path, &audio, &error)) { return error; }
+	// The linked file may have been edited to contain this project since it was added: asked again, as an add asks.
+	if (containsThisProject(entry->path, &error) || !render(entry->path, &audio, &error)) { return error; }
 	const Subproject before = *entry;
 	Subproject after = before;
 	after.audio = audio;

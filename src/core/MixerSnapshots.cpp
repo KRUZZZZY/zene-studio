@@ -107,10 +107,18 @@ QDomElement channelElement(QDomDocument& doc, const MixerChannelState& state)
 	return element;
 }
 
+//! A channel id attribute, or -1 (no channel's) when it is missing or not a number - never 0, a real id.
+int idAttribute(const QDomElement& element, const QString& name)
+{
+	bool ok = false;
+	const int id = element.attribute(name).toInt(&ok);
+	return ok ? id : -1;
+}
+
 MixerChannelState channelFrom(const QDomElement& element)
 {
 	MixerChannelState state;
-	state.id = element.attribute(QStringLiteral("id")).toInt();
+	state.id = idAttribute(element, QStringLiteral("id"));
 	state.volume = element.attribute(QStringLiteral("volume"), QStringLiteral("1")).toFloat();
 	state.pan = element.attribute(QStringLiteral("pan")).toFloat();
 	state.muted = element.attribute(QStringLiteral("muted")).toInt() != 0;
@@ -118,7 +126,7 @@ MixerChannelState channelFrom(const QDomElement& element)
 	for (QDomElement send = element.firstChildElement(QStringLiteral("send")); !send.isNull();
 		send = send.nextSiblingElement(QStringLiteral("send")))
 	{
-		state.sends.push_back(MixerSendState{send.attribute(QStringLiteral("to")).toInt(), send.attribute(QStringLiteral("amount"),
+		state.sends.push_back(MixerSendState{idAttribute(send, QStringLiteral("to")), send.attribute(QStringLiteral("amount"),
 			QStringLiteral("1")).toFloat(), send.attribute(QStringLiteral("pan")).toFloat(),
 			send.attribute(QStringLiteral("enabled"), QStringLiteral("1")).toInt() != 0});
 	}

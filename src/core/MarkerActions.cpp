@@ -45,6 +45,30 @@ tick_t& lastSeen()
 	return value;
 }
 
+//! Where the song's playback started, when that is where it really played from up to @a now; -1 when
+//! not (an enforced loop moved it, or a count-in began the pass before the recorded start).
+tick_t playedFrom(const Song& song, tick_t now)
+{
+	const Timeline& timeline = song.getTimeline(Song::PlayMode::Song);
+	const tick_t from = timeline.playStartPosition().getTicks();
+	if (from < 0 || from > now) { return -1; }
+	const bool outsideLoop = from < timeline.loopBegin().getTicks() || from >= timeline.loopEnd().getTicks();
+	return timeline.loopEnabled() && outsideLoop ? -1 : from;
+}
+
+//! One look of the timer. Only the arrangement's playback crosses markers (a pattern or a clip played
+//! alone has its own ticks). A fresh start takes its mark from where playback started, so a marker
+//! crossed before this first look still runs; a resume from pause is not a fresh start.
+void watch(Song& song)
+{
+	static bool paused = false;
+	const bool playing = song.isPlaying() && song.playMode() == Song::PlayMode::Song;
+	const tick_t now = song.getPlayPos().getTicks();
+	if (!playing) { paused = song.isPaused(); }
+	else if (lastSeen() < 0 && !paused) { lastSeen() = playedFrom(song, now); }
+	advance(now, playing);
+}
+
 } // namespace
 
 int advance(tick_t tick, bool playing)
@@ -77,8 +101,7 @@ void start()
 	timer->setInterval(15);
 	QObject::connect(timer, &QTimer::timeout, [] {
 		Song* song = Engine::getSong();
-		if (song == nullptr) { return; }
-		advance(song->getPlayPos().getTicks(), song->isPlaying());
+		if (song != nullptr) { watch(*song); }
 	});
 	timer->start();
 }

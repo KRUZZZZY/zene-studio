@@ -36,6 +36,8 @@
 #include <QFile>
 #include <QFileInfo>
 #include <QJsonArray>
+#include <QSet>
+#include <QVector>
 
 #include "BrowserIndex.h"
 #include "ControlExportPresetSupport.h"
@@ -90,14 +92,19 @@ bool renderSource(const QJsonObject& args, RenderJob* job, ControlResult* error)
 	return false;
 }
 
+ControlResult queueFull()
+{
+	return ControlResult::failure(ControlErrorKind::Refused, QStringLiteral("the render queue holds %1 jobs; clear finished ones first")
+		.arg(RenderQueue::MaxJobs));
+}
+
 ControlResult queued(const RenderJob& job, bool start)
 {
 	const int id = queue().add(job);
 	if (id < 0)
 	{
 		if (job.ownsSource) { QFile::remove(job.source); }
-		return ControlResult::failure(ControlErrorKind::Refused, QStringLiteral("the render queue holds %1 jobs; clear finished ones first")
-			.arg(RenderQueue::MaxJobs));
+		return queueFull();
 	}
 	if (start) { queue().start(); }
 	return ControlResult::success(jobJson(*queue().job(id)));
@@ -127,6 +134,34 @@ bool writableDepth(int bits, const QString& format)
 	return bits == 16 || bits == 24 || (bits == 32 && format == QLatin1String("wav"));
 }
 
+//! Each of @a files with the file it converts to in @a dir - all checked before any is queued: refused for a missing
+//! source, an output that is its own source, or two sources that would write one output.
+bool convertTargets(const QJsonArray& files, const QString& dir, const QString& format, QVector<QPair<QString, QString>>* out,
+	ControlResult* error)
+{
+	QSet<QString> outputs;
+	for (const QJsonValue& value : files)
+	{
+		const QFileInfo source(value.toString());
+		if (!source.isAbsolute() || !source.isFile())
+		{
+			*error = ControlResult::failure(ControlErrorKind::NotFound, QStringLiteral("%1 is not an existing absolute file").arg(value.toString()));
+			return false;
+		}
+		const QString target = QDir::cleanPath(QDir(dir).filePath(source.completeBaseName() + QLatin1Char('.') + format));
+		const bool overwritesSource = QFileInfo::exists(target) && QFileInfo(target).canonicalFilePath() == source.canonicalFilePath();
+		if (overwritesSource || outputs.contains(target))
+		{
+			*error = ControlResult::failure(ControlErrorKind::Refused, QStringLiteral("%1 would overwrite %2").arg(source.filePath(),
+				overwritesSource ? QStringLiteral("its own source") : QStringLiteral("another file's output (%1)").arg(target)));
+			return false;
+		}
+		outputs.insert(target);
+		out->append({source.filePath(), target});
+	}
+	return true;
+}
+
 ControlResult convertFiles(const QJsonObject& args)
 {
 	const QString dir = args.value(QStringLiteral("out_dir")).toString();
@@ -140,15 +175,15 @@ ControlResult convertFiles(const QJsonObject& args)
 	{
 		return ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("'bit_depth' is 16, 24, or 32 (wav only)"));
 	}
+	QVector<QPair<QString, QString>> targets;
+	ControlResult error;
+	if (!convertTargets(args.value(QStringLiteral("files")).toArray(), dir, job.format, &targets, &error)) { return error; }
+	if (static_cast<int>(queue().jobs().size()) + targets.size() > RenderQueue::MaxJobs) { return queueFull(); }  // refused whole, never half queued
 	QJsonArray jobs;
-	for (const QJsonValue& value : args.value(QStringLiteral("files")).toArray())
+	for (const auto& [source, out] : targets)
 	{
-		job.source = value.toString();
-		if (!QFileInfo(job.source).isAbsolute() || !QFileInfo(job.source).isFile())
-		{
-			return ControlResult::failure(ControlErrorKind::NotFound, QStringLiteral("%1 is not an existing absolute file").arg(job.source));
-		}
-		job.out = QDir(dir).filePath(QFileInfo(job.source).completeBaseName() + QLatin1Char('.') + job.format);
+		job.source = source;
+		job.out = out;
 		const ControlResult one = queued(job, true);
 		if (!one.ok) { return one; }
 		jobs.append(one.result);

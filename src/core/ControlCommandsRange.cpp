@@ -27,6 +27,8 @@
  *  time. Each edit checkpoints every track the range covers first, so it is ONE undo step
  *  (Track checkpoints carry their clips). The range itself is interface state. */
 
+#include <algorithm>
+
 #include <QDomDocument>
 #include <QJsonArray>
 
@@ -38,6 +40,7 @@
 #include "ControlRegistryGroups.h"
 #include "ControlReversibility.h"
 #include "ControlVocabulary.h"
+#include "EditLocks.h"
 #include "Engine.h"
 #include "SampleClip.h"
 #include "Song.h"
@@ -60,6 +63,7 @@ struct CopiedClip
 	int trackIndex;
 	tick_t offset;
 	QString xml;
+	Track::Type type;  //!< the source track's: a clip pastes only onto a track of the same kind
 };
 QVector<CopiedClip> g_clipboard;
 tick_t g_clipboardLength = 0;
@@ -74,8 +78,30 @@ QJsonObject rangeJson()
 		{QStringLiteral("tracks"), tracks}, {QStringLiteral("clipboard"), g_clipboard.size()}};
 }
 
+//! The first of @a tracks a lock keeps range edits off (the track, or a clip on it, is locked), or nullptr. The
+//! registry's lock check reads the ids a call names, and a range edit names none (WF-044).
+const Track* lockedTrack(const QVector<Track*>& tracks)
+{
+	const EditLocks& locks = EditLocks::instance();
+	for (const Track* track : tracks)
+	{
+		const auto& clips = track->getClips();
+		if (locks.trackLocked(track->id()) || std::any_of(clips.begin(), clips.end(), [&locks](const Clip* c) { return locks.locks(c); }))
+		{
+			return track;
+		}
+	}
+	return nullptr;
+}
+
+ControlResult lockedOut(const Track* track)
+{
+	return ControlResult::failure(ControlErrorKind::Refused, QStringLiteral("%1 (or a clip on it) is locked against editing "
+		"(track.set_locked / clip.set_locked unlocks it)").arg(trackIdOf(track)));
+}
+
 //! The active range's tracks, checkpointed as one undo step; false (with @a error) when there is
-//! no range.
+//! no range or a lock covers one of its tracks.
 bool beginEdit(QVector<Track*>* tracks, ControlResult* error)
 {
 	const ArrangerRange& range = ArrangerRange::instance();
@@ -85,6 +111,11 @@ bool beginEdit(QVector<Track*>* tracks, ControlResult* error)
 		return false;
 	}
 	*tracks = range.tracks();
+	if (const Track* locked = lockedTrack(*tracks))
+	{
+		*error = lockedOut(locked);
+		return false;
+	}
 	QVector<JournallingObject*> objects;
 	for (Track* track : *tracks) { objects.append(track); }
 	control::addUndoStep(objects);
@@ -140,7 +171,7 @@ bool rangeFades(ClipEdits* edits, tick_t start, tick_t end, tick_t from, tick_t 
 
 //! ED-178: the fades a range sets on one sample clip - fixed lengths when @a args name them (batch
 //! fades), else in over the part of the range at the clip's start and out over the part at its end.
-void fadeFromRange(SampleClip* clip, tick_t from, tick_t to, const QJsonObject& args, const FadeShape* shape)
+bool fadeFromRange(SampleClip* clip, tick_t from, tick_t to, const QJsonObject& args, const FadeShape* shape)
 {
 	ClipEdits edits = clip->clipEdits();
 	const tick_t start = clip->startPosition().getTicks();
@@ -152,11 +183,12 @@ void fadeFromRange(SampleClip* clip, tick_t from, tick_t to, const QJsonObject& 
 		edits.fadeInTicks = args.value(QStringLiteral("fade_in")).toInt(edits.fadeInTicks);
 		edits.fadeOutTicks = args.value(QStringLiteral("fade_out")).toInt(edits.fadeOutTicks);
 	}
-	else if (!rangeFades(&edits, start, end, from, to)) { return; }
+	else if (!rangeFades(&edits, start, end, from, to)) { return false; }
 	if (shape != nullptr) { edits.fadeInShape = edits.fadeOutShape = *shape; }
 	edits.fadeInTicks = std::clamp(edits.fadeInTicks, 0, length);
 	edits.fadeOutTicks = std::clamp(edits.fadeOutTicks, 0, length - edits.fadeInTicks);
 	clip->setClipEdits(edits);
+	return true;
 }
 
 ControlResult fadeRange(const QJsonObject& args)
@@ -178,21 +210,45 @@ ControlResult fadeRange(const QJsonObject& args)
 		{
 			auto* sample = dynamic_cast<SampleClip*>(clip);
 			if (sample == nullptr || clip->endPosition().getTicks() <= range.start() || clip->startPosition().getTicks() >= range.end()) { continue; }
-			fadeFromRange(sample, range.start(), range.end(), args, hasShape ? &shape : nullptr);
-			++faded;
+			faded += static_cast<int>(fadeFromRange(sample, range.start(), range.end(), args, hasShape ? &shape : nullptr));  // a clip wholly inside is not faded
 		}
 	}
 	return finishEdit(QStringLiteral("range.fade"), {{QStringLiteral("faded"), faded}});
 }
 
+//! Ripple 'all' (ED-043): the tracks a range delete leaves alone, which close its gap too.
+QVector<Track*> rippledOthers(const QVector<Track*>& covered)
+{
+	QVector<Track*> others;
+	if (arrangement::modes().ripple != arrangement::Ripple::All) { return others; }
+	for (Track* track : Engine::getSong()->tracks())
+	{
+		if (!covered.contains(track)) { others.append(track); }
+	}
+	return others;
+}
+
+//! Close the gap on @a others, checkpointed into the same step as the delete.
+void rippleOthers(const QVector<Track*>& others, tick_t start, tick_t end)
+{
+	if (others.isEmpty()) { return; }
+	QVector<JournallingObject*> objects;
+	for (Track* track : others) { objects.append(track); }
+	control::addUndoStep(objects);
+	for (Track* track : others) { arrangement::shiftClipsFrom(track, end, start - end); }
+}
+
 ControlResult deleteRange(const QJsonObject& args)
 {
-	QVector<Track*> tracks;
-	ControlResult error;
-	if (!beginEdit(&tracks, &error)) { return error; }
 	const ArrangerRange& range = ArrangerRange::instance();
 	// Without 'ripple' the arranger's ripple mode decides (ED-043).
 	const bool ripple = args.value(QStringLiteral("ripple")).toBool(arrangement::modes().ripple != arrangement::Ripple::Off);
+	const QVector<Track*> others = ripple ? rippledOthers(range.tracks()) : QVector<Track*>{};
+	if (const Track* locked = lockedTrack(others)) { return lockedOut(locked); }  // asked before anything is checkpointed
+	QVector<Track*> tracks;
+	ControlResult error;
+	if (!beginEdit(&tracks, &error)) { return error; }
+	rippleOthers(others, range.start(), range.end());
 	int removed = 0;
 	for (Track* track : tracks) { removed += arrangement::deleteRange(track, range.start(), range.end(), ripple); }
 	return finishEdit(QStringLiteral("range.delete"), {{QStringLiteral("removed"), removed}, {QStringLiteral("ripple"), ripple}});
@@ -239,7 +295,7 @@ ControlResult copyRange(const QJsonObject&)
 			QDomElement root = doc.createElement(QStringLiteral("clip"));
 			doc.appendChild(root);
 			clip->saveState(doc, root);
-			g_clipboard.append({i, clip->startPosition().getTicks() - range.start(), doc.toString()});
+			g_clipboard.append({i, clip->startPosition().getTicks() - range.start(), doc.toString(), tracks.at(i)->type()});
 		}
 	}
 	g_clipboardLength = range.end() - range.start();
@@ -252,7 +308,7 @@ int pasteAt(const QVector<Track*>& tracks, tick_t position)
 	int pasted = 0;
 	for (const CopiedClip& copied : g_clipboard)
 	{
-		if (copied.trackIndex >= tracks.size()) { continue; }
+		if (copied.trackIndex >= tracks.size() || tracks.at(copied.trackIndex)->type() != copied.type) { continue; }
 		QDomDocument doc;
 		doc.setContent(copied.xml);
 		Track* track = tracks.at(copied.trackIndex);
@@ -319,6 +375,30 @@ Audition g_audition;
 
 ControlResult auditionStop(const QJsonObject&);
 
+//! Set @a track's mute without an undo step (an audition is not a project edit).
+void setMuteUnrecorded(Track* track, bool muted)
+{
+	BoolModel* mute = track->getMutedModel();
+	const bool journalling = mute->isJournalling();
+	mute->setJournalling(false);
+	mute->setValue(muted);
+	mute->setJournalling(journalling);
+}
+
+//! Silence every track but @a solo, and make @a solo heard even when it was muted; how many were silenced.
+int silenceAllBut(Track* solo)
+{
+	int silenced = 0;
+	for (Track* track : Engine::getSong()->tracks())
+	{
+		if (track == solo && !track->isMuted()) { continue; }
+		g_audition.muted.append({track, track->isMuted()});
+		setMuteUnrecorded(track, track != solo);
+		silenced += track != solo ? 1 : 0;
+	}
+	return silenced;
+}
+
 ControlResult auditionStart(const QJsonObject& args)
 {
 	if (g_audition.active) { auditionStop({}); }
@@ -327,19 +407,10 @@ ControlResult auditionStart(const QJsonObject& args)
 	Track* solo = args.contains(QStringLiteral("track")) ? resolveTrack(args.value(QStringLiteral("track")).toString(), &error) : nullptr;
 	if (args.contains(QStringLiteral("track")) && solo == nullptr) { return error; }
 	g_audition = {true, song->isPlaying(), song->getPlayPos().getTicks(), {}};
-	for (Track* track : song->tracks())
-	{
-		if (solo == nullptr || track == solo) { continue; }
-		g_audition.muted.append({track, track->isMuted()});
-		BoolModel* mute = track->getMutedModel();
-		const bool journalling = mute->isJournalling();
-		mute->setJournalling(false);
-		mute->setValue(true);
-		mute->setJournalling(journalling);
-	}
+	const int silenced = solo != nullptr ? silenceAllBut(solo) : 0;
 	song->setPlayPos(args.value(QStringLiteral("position")).toInt(), Song::PlayMode::Song);
 	if (!song->isPlaying()) { song->playSong(); }
-	return ControlResult::success({{QStringLiteral("auditioning"), true}, {QStringLiteral("silenced"), g_audition.muted.size()}});
+	return ControlResult::success({{QStringLiteral("auditioning"), true}, {QStringLiteral("silenced"), silenced}});
 }
 
 ControlResult auditionStop(const QJsonObject&)
@@ -349,14 +420,10 @@ ControlResult auditionStop(const QJsonObject&)
 	if (!g_audition.wasPlaying) { song->stop(); }
 	for (const auto& [track, wasMuted] : g_audition.muted)
 	{
-		if (track.isNull()) { continue; }
-		BoolModel* mute = track->getMutedModel();
-		const bool journalling = mute->isJournalling();
-		mute->setJournalling(false);
-		mute->setValue(wasMuted);
-		mute->setJournalling(journalling);
+		if (!track.isNull()) { setMuteUnrecorded(track.data(), wasMuted); }
 	}
-	if (!g_audition.wasPlaying) { song->setPlayPos(g_audition.returnTo, Song::PlayMode::Song); }
+	// The play position comes back whether or not the transport was running (the start moved it either way).
+	song->setPlayPos(g_audition.returnTo, Song::PlayMode::Song);
 	g_audition = {};
 	return ControlResult::success({{QStringLiteral("auditioning"), false}});
 }

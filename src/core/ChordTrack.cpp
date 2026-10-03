@@ -73,7 +73,7 @@ const ChordEvent* ChordTrack::soundingAt(tick_t pos) const
 	for (int index = 0; index < size() && m_events[static_cast<std::size_t>(index)].pos <= pos; ++index) { last = index; }
 	if (last < 0) { return nullptr; }
 	const ChordEvent& event = m_events[static_cast<std::size_t>(last)];
-	return pos < event.pos + effectiveLength(last, DefaultEventTicks) ? &event : nullptr;
+	return pos - event.pos < effectiveLength(last, DefaultEventTicks) ? &event : nullptr;  // no pos + length overflow
 }
 
 

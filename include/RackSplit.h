@@ -94,6 +94,8 @@ public:
 	//! The part chain @a position of @a count routed chains gets from @a split at @a sampleRate.
 	void configure(const RackSplit& split, int position, int count, float sampleRate);
 	bool active() const { return m_kind != Kind::Pass; }
+	//! Whether its output can ring on after its input stops (a band's filters).
+	bool rings() const { return m_kind == Kind::Band; }
 	//! Replace the interleaved stereo block @a samples (2 x @a frames floats) by this chain's part.
 	void process(float* samples, f_cnt_t frames) noexcept;
 

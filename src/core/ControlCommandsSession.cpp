@@ -78,10 +78,13 @@ namespace
 QJsonObject recordSessionEdit(const QString& captured, const QJsonObject& before,
 	const QString& what)
 {
-	control::addUndoStep([captured]() {
+	// Called once the edit is made, so the block now is what a redo puts back (a step without one is a silently dropped redo).
+	const QString edited = Engine::getSong() != nullptr ? sessionBlockXml(Engine::getSong()->sessionModel()) : QString();
+	const auto restore = [](const QString& block) {
 		Song* song = Engine::getSong();
-		if (song != nullptr) { restoreSessionBlock(song->sessionModel(), captured); }
-	});
+		if (song != nullptr) { restoreSessionBlock(song->sessionModel(), block); }
+	};
+	control::addUndoStep([restore, captured]() { restore(captured); }, [restore, edited]() { restore(edited); });
 	// The inverse is NOT a command: no registered command replays a <session>
 	// block, so control.undo reaches it through the journal (it checks
 	// inverse.applies for "command" and finds none). The op text says so in as

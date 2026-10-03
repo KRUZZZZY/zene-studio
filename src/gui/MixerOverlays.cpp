@@ -43,15 +43,29 @@ namespace
 
 int s_sendsOnFaders = -1;
 
-//! @a folder's children's channels: their current ones and, for a routing folder, the ones they had.
-void childChannels(const TrackFolder* folder, QSet<int>* out)
+//! Every channel under @a folder: its children's current ones and, for a routing folder, the ones they
+//! had; a nested folder folds with it, so its own channel and everything under it too.
+void subtreeChannels(const TrackFolder* folder, QSet<int>* out)
 {
 	for (Track* child : folder->children())
 	{
 		if (IntModel* channel = child->mixerChannelModel()) { out->insert(channel->value()); }
+		const auto* nested = dynamic_cast<const TrackFolder*>(child);
+		if (nested == nullptr) { continue; }
+		if (nested->mixerChannel() >= 0) { out->insert(nested->mixerChannel()); }
+		subtreeChannels(nested, out);
 	}
 	for (const TrackFolder::ChannelBinding& binding : folder->savedChildChannels()) { out->insert(binding.channel); }
-	out->remove(folder->mixerChannel());
+}
+
+//! The channels @a folder's collapse hides: everything under it but its own strip (taken out of this
+//! folder's set alone, so another collapsed folder that holds it still hides it).
+void childChannels(const TrackFolder* folder, QSet<int>* out)
+{
+	QSet<int> hidden;
+	subtreeChannels(folder, &hidden);
+	hidden.remove(folder->mixerChannel());
+	out->unite(hidden);
 }
 
 //! The model a channel strip's fader shows in the current mode, or nullptr when it shows no fader.

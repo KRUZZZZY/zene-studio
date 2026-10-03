@@ -24,16 +24,22 @@
 /*! 0.5.0 L04 (W3): clip.list finds clips by track and name (ED-036); sections are added, changed,
  *  removed and undone, saved only when there is one, and selected as the range (ED-047); a quiet middle
  *  stretch of a sample clip is cut out, one undo step (ED-040); tab to transient refuses where there
- *  is no audio (ED-025); notes rotate inside their clip (ED-028). */
+ *  is no audio and moves the play head to the next or previous burst where there is (ED-025); a MIDI
+ *  clip is written as a MusicXML file (ED-086); track versions are listed and forgotten; notes rotate
+ *  inside their clip (ED-028). */
 
 #include <QtTest>
 
 #include <QDomDocument>
+#include <QFile>
 #include <QJsonArray>
+#include <QTemporaryDir>
 
+#include <cstdlib>
 #include <vector>
 
 #include "ArrangementSections.h"
+#include "AudioBurstSupport.h"
 #include "AudioEngine.h"
 #include "ControlRegistry.h"
 #include "ControlVocabulary.h"
@@ -127,6 +133,28 @@ private slots:
 			ControlErrorKind::InvalidArgs);
 	}
 
+	void aVersionIsListedAndForgotten()
+	{
+		auto* track = dynamic_cast<InstrumentTrack*>(Track::create(Track::Type::Instrument, Engine::getSong()));
+		const QString id = control::trackIdOf(track);
+		track->createClip(TimePos(0))->setName(QStringLiteral("take"));
+		QVERIFY(run(QStringLiteral("track.version_save"), {{QStringLiteral("track"), id}, {QStringLiteral("name"), QStringLiteral("A")}}).ok);
+		QVERIFY(run(QStringLiteral("track.version_save"), {{QStringLiteral("track"), id}, {QStringLiteral("name"), QStringLiteral("B")}}).ok);
+		const ControlResult listed = run(QStringLiteral("track.version_list"), {{QStringLiteral("track"), id}});
+		QVERIFY2(listed.ok, qPrintable(listed.errorMessage));
+		QCOMPARE(listed.result.value(QStringLiteral("active")).toString(), QStringLiteral("B"));
+		QCOMPARE(listed.result.value(QStringLiteral("versions")).toArray(), (QJsonArray{QStringLiteral("A"), QStringLiteral("B")}));
+		const ControlResult removed = run(QStringLiteral("track.version_remove"), {{QStringLiteral("track"), id}, {QStringLiteral("name"), QStringLiteral("A")}});
+		QVERIFY2(removed.ok, qPrintable(removed.errorMessage));
+		QCOMPARE(removed.result.value(QStringLiteral("versions")).toArray(), QJsonArray{QStringLiteral("B")});
+		QVERIFY(!TrackVersions::instance().of(track->id()).clips.contains(QStringLiteral("A")));
+		QCOMPARE(track->getClips().size(), std::size_t{1});  // only the stored copy goes
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
+		QVERIFY(TrackVersions::instance().of(track->id()).clips.contains(QStringLiteral("A")));
+		QCOMPARE(run(QStringLiteral("track.version_remove"), {{QStringLiteral("track"), id}, {QStringLiteral("name"), QStringLiteral("C")}}).errorKind,
+			ControlErrorKind::NotFound);
+	}
+
 	void sectionsAreSpansWithUndo()
 	{
 		QVERIFY(!ArrangementSections::instance().shouldPersist());
@@ -141,6 +169,12 @@ private slots:
 		ArrangementSections::instance().save(doc, root);
 		QCOMPARE(root.firstChildElement().firstChildElement().attribute(QStringLiteral("name")), QStringLiteral("Verse 1"));
 		QVERIFY(run(QStringLiteral("section.select"), {{QStringLiteral("section"), id}}).ok);
+		const ControlResult removed = run(QStringLiteral("section.remove"), {{QStringLiteral("section"), id}});
+		QVERIFY2(removed.ok, qPrintable(removed.errorMessage));
+		QCOMPARE(removed.result.value(QStringLiteral("removed")).toString(), id);
+		QVERIFY(ArrangementSections::instance().sections().isEmpty());
+		QVERIFY(run(QStringLiteral("control.undo")).ok);  // the remove
+		QCOMPARE(ArrangementSections::instance().at(100)->name, QStringLiteral("Verse 1"));
 		QVERIFY(run(QStringLiteral("control.undo")).ok);  // the rename
 		QCOMPARE(ArrangementSections::instance().at(100)->name, QStringLiteral("Verse"));
 		QVERIFY(run(QStringLiteral("control.undo")).ok);  // the add
@@ -166,6 +200,22 @@ private slots:
 		QCOMPARE(run(QStringLiteral("arrangement.next_transient")).errorKind, ControlErrorKind::NotFound);
 	}
 
+	void tabMovesToTheNextTransient()
+	{
+		test::sampleClipOf(test::burstAudio(200, {10, 58, 106, 154}));  // a new song: one clip of four bursts
+		Engine::getSong()->setPlayPos(30);
+		const ControlResult next = run(QStringLiteral("arrangement.next_transient"));
+		QVERIFY2(next.ok, qPrintable(next.errorMessage));
+		const int at = next.result.value(QStringLiteral("position_ticks")).toInt();
+		QVERIFY2(std::abs(at - 58) <= 6, qPrintable(QStringLiteral("next transient at %1, burst at 58").arg(at)));  // the detector's window
+		QCOMPARE(static_cast<int>(Engine::getSong()->getPlayPos().getTicks()), at);
+		const ControlResult back = run(QStringLiteral("arrangement.next_transient"), {{QStringLiteral("direction"), QStringLiteral("previous")}});
+		QVERIFY2(back.ok, qPrintable(back.errorMessage));
+		const int before = back.result.value(QStringLiteral("position_ticks")).toInt();
+		QVERIFY2(std::abs(before - 10) <= 6, qPrintable(QStringLiteral("previous transient at %1, burst at 10").arg(before)));
+		QCOMPARE(static_cast<int>(Engine::getSong()->getPlayPos().getTicks()), before);
+	}
+
 	void aClipBecomesAScore()
 	{
 		auto* track = dynamic_cast<InstrumentTrack*>(Track::create(Track::Type::Instrument, Engine::getSong()));
@@ -181,6 +231,18 @@ private slots:
 		QCOMPARE(xml.count(QStringLiteral("<measure ")), 2);
 		QCOMPARE(run(QStringLiteral("clip.export_musicxml"), {{QStringLiteral("clip"), control::clipIdOf(clip)}, {QStringLiteral("path"), QStringLiteral("/tmp/x.mid")}}).errorKind,
 			ControlErrorKind::InvalidArgs);
+		QTemporaryDir dir;
+		QVERIFY(dir.isValid());
+		const QString path = dir.filePath(QStringLiteral("score.musicxml"));
+		const ControlResult written = run(QStringLiteral("clip.export_musicxml"), {{QStringLiteral("clip"), control::clipIdOf(clip)}, {QStringLiteral("path"), path}});
+		QVERIFY2(written.ok, qPrintable(written.errorMessage));
+		QCOMPARE(written.result.value(QStringLiteral("notes")).toInt(), 3);
+		QCOMPARE(written.result.value(QStringLiteral("path")).toString(), path);
+		QFile file(path);
+		QVERIFY(file.open(QIODevice::ReadOnly));
+		const QString onDisk = QString::fromUtf8(file.readAll());
+		QVERIFY(onDisk.contains(QStringLiteral("<chord/>")));
+		QCOMPARE(onDisk.count(QStringLiteral("<measure ")), 2);  // the same score the function above builds, in 4/4
 	}
 
 	void notesRotateInsideTheClip()

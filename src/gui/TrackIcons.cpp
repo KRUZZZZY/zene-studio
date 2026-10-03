@@ -25,6 +25,7 @@
 #include "TrackIcons.h"
 
 #include <QApplication>
+#include <QIcon>
 #include <QToolButton>
 
 #include "ShellIcons.h"
@@ -73,7 +74,9 @@ bool applyTrackIcon(QToolButton* button, const Track* track, std::string* shown)
 	if (shown->rfind(ChosenPrefix, 0) == 0)
 	{
 		shown->clear();  // an instrument's logo is set again by the caller, which compares its name
-		if (const char* own = typeIconName(track->type())) { button->setIcon(embed::getIconPixmap(own)); }
+		// A type with no glyph of its own (a folder) shows none again, not the icon just removed (review L19 #12).
+		const char* own = typeIconName(track->type());
+		button->setIcon(own != nullptr ? QIcon(embed::getIconPixmap(own)) : QIcon());
 	}
 	return false;
 }

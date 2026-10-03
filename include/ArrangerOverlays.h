@@ -103,6 +103,8 @@ protected:
 
 private:
 	int contentLeft() const;
+	//! trackAt(), or off the rows the nearest one: the first above them, the last below.
+	lmms::Track* nearestTrackAt(int y) const;
 	void dispatchRange(const QPoint& to);
 	void finishGesture(const QPoint& to);
 

@@ -90,7 +90,9 @@ public:
 	int totalParameters() const { return m_total; }
 	//! Close the editor window this card opened, while its device still exists.
 	void closeEditor();
-	//! 0.5.0 L10 (MX-095): light the header's dot while the device processes audio.
+	//! 0.5.0 L10 (MX-095): light the header's dot while the device processes audio, and bring the
+	//! header's power, fold and delta switches back to the device's state (an undo, a socket command
+	//! or the card's own menu changes it without the card).
 	void refreshActivity();
 
 protected:
@@ -104,6 +106,7 @@ private:
 	//! Engine audit E18: the device's pin connector - which track channels feed which plug-in
 	//! ports - in its own window (the view existed, nothing opened it).
 	void openPins();
+	void syncHeader();
 
 	Spec m_spec;
 	int m_shown = 0;
@@ -111,6 +114,9 @@ private:
 	QPointer<SubWindow> m_editor;
 	QPointer<SubWindow> m_pins;
 	QLabel* m_activity = nullptr;
+	QToolButton* m_power = nullptr;
+	QToolButton* m_fold = nullptr;
+	QToolButton* m_delta = nullptr;
 	QWidget* m_body = nullptr;  //!< the parameters, hidden while the device is folded (MX-113)
 };
 

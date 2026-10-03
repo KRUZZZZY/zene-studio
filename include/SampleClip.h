@@ -210,6 +210,8 @@ private:
 	//! Points the window (and Sample's frame fields) at the whole buffer; called
 	//! wherever the source buffer is replaced.
 	void resetWindowToFullBuffer();
+	//! Sets m_window and points Sample's frame fields at it; the window is already well formed.
+	void installWindow(const SampleWindow& window);
 
 	friend class gui::SampleClipView;
 

@@ -103,7 +103,8 @@ public:
 	QString statusText() const;
 
 private:
-	void fill();
+	//! Show m_rows; the row @a kept (the selected one before a refresh) stays selected where it still is.
+	void fill(const QJsonValue& kept);
 	void syncButtons();
 	void report(const QString& label, const ControlResult& result);
 	ControlResult dispatch(const QString& label, const CommandCall& call);

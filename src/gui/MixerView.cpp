@@ -490,7 +490,7 @@ void MixerView::updateMixerChannel(int index)
 		thisLine->m_receiveArrowOrSendButton->setCurrentIndex(thisLine->m_sendButtonStackedIndex);
 	}
 
-	if (!mixerviewoptions::options().sends) { thisLine->hideSends(); }  // 0.5.0 L08 (MX-003)
+	thisLine->setSendsShown(mixerviewoptions::options().sends);  // 0.5.0 L08 (MX-003)
 	thisLine->m_sendButton->updateLightStatus();
 	thisLine->m_renameLineEdit->setText(thisLine->elideName(thisLine->mixerChannel()->m_name));
 	thisLine->update();

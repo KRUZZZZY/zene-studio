@@ -29,7 +29,7 @@
 
 #include <algorithm>
 #include <cmath>
-#include <type_traits>
+#include <limits>
 
 #include <QJsonArray>
 
@@ -58,6 +58,16 @@ namespace
 
 constexpr int MaxRatchet = 16;
 
+//! Whether scaling @a notes about @a pivot by @a time (positions) and @a length (lengths) keeps them inside the longest song;
+//! asked in doubles, before any tick is rounded (a huge factor would overflow the rounding).
+bool scaledFits(const QVector<Note*>& notes, tick_t pivot, double time, double length)
+{
+	const auto limit = static_cast<double>(MaxSongLength);
+	return std::all_of(notes.begin(), notes.end(), [=](const Note* note) {
+		return pivot + (note->pos().getTicks() - pivot) * time <= limit && note->length().getTicks() * length <= limit;
+	});
+}
+
 ControlResult scaleNotes(const QJsonObject& args)
 {
 	ClipRef ref;
@@ -74,6 +84,11 @@ ControlResult scaleNotes(const QJsonObject& args)
 	}
 	tick_t pivot = notes.first()->pos().getTicks();
 	for (const Note* note : notes) { pivot = std::min<tick_t>(pivot, note->pos().getTicks()); }
+	if (!scaledFits(notes, pivot, time, length))
+	{
+		return ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("those factors move notes past the longest song (%1 ticks)")
+			.arg(MaxSongLength));
+	}
 	clip->addJournalCheckPoint();
 	for (Note* note : notes)
 	{
@@ -107,6 +122,7 @@ ControlResult ratchetNotes(const QJsonObject& args)
 		const tick_t length = note->length().getTicks();
 		const tick_t step = length / count;
 		Note repeat = *note;
+		repeat.forgetTiming();  // a repeat has no timing of its own from before a quantise to go back to
 		note->setLength(TimePos(step));
 		for (int i = 1; i < count; ++i)
 		{
@@ -137,7 +153,8 @@ bool readNewNote(const QJsonObject& entry, int index, Note* out, ControlResult* 
 	const int key = entry.value(QStringLiteral("key")).toInt(-1);
 	const int position = entry.value(QStringLiteral("position")).toInt(-1);
 	const int length = entry.value(QStringLiteral("length")).toInt(0);
-	const int velocity = entry.value(QStringLiteral("velocity")).toInt(DefaultVolume);
+	// Present but not a whole number reads as -1 and is refused, not taken for the default.
+	const int velocity = entry.contains(QStringLiteral("velocity")) ? entry.value(QStringLiteral("velocity")).toInt(-1) : DefaultVolume;
 	if (key < 0 || key >= NumKeys || position < 0 || length < 1 || velocity < MinVolume || velocity > MaxVolume)
 	{
 		*error = ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("notes[%1] needs key 0..%2, position >= 0, "
@@ -188,21 +205,40 @@ ControlResult restoreTiming(const QJsonObject& args)
 		{{freeze ? QStringLiteral("frozen") : QStringLiteral("restored"), count}}));
 }
 
-//! The `filter` object as a NoteTransform::Filter: {key,velocity,position,length}_{min,max} (an absent
-//! bound is open), `scale` "in" / "out" (the scale context's pitch classes) and `invert`.
-bool filterFrom(const QJsonObject& json, NoteTransform::Filter* f, ControlResult* error)
+//! One filter bound into @a out, held to what its type carries; false for a value that is not a whole number
+//! (QJsonValue::toInt would read 60.5 as 0, an open bound where a tight one was meant).
+template <typename T>
+bool readBound(const QJsonValue& value, T* out)
+{
+	if (!value.isDouble()) { return true; }
+	const double v = value.toDouble();
+	if (v != std::floor(v)) { return false; }
+	*out = static_cast<T>(std::clamp(v, static_cast<double>(std::numeric_limits<T>::lowest()), static_cast<double>(std::numeric_limits<T>::max())));
+	return true;
+}
+
+//! The filter's {key,velocity,position,length}_{min,max} bounds (an absent bound is open); false for a fractional one.
+bool readRanges(const QJsonObject& json, NoteTransform::Filter* f)
 {
 	const auto range = [&json](const char* field, bool* use, auto* low, auto* high) {
 		const QJsonValue lo = json.value(QLatin1String(field) + QStringLiteral("_min"));
 		const QJsonValue hi = json.value(QLatin1String(field) + QStringLiteral("_max"));
 		*use = lo.isDouble() || hi.isDouble();
-		if (lo.isDouble()) { *low = static_cast<std::remove_pointer_t<decltype(low)>>(lo.toInt()); }
-		if (hi.isDouble()) { *high = static_cast<std::remove_pointer_t<decltype(high)>>(hi.toInt()); }
+		return readBound(lo, low) && readBound(hi, high);
 	};
-	range("key", &f->useKeyRange, &f->minKey, &f->maxKey);
-	range("velocity", &f->useVelocityRange, &f->minVelocity, &f->maxVelocity);
-	range("position", &f->usePositionRange, &f->minPos, &f->maxPos);
-	range("length", &f->useLengthRange, &f->minLength, &f->maxLength);
+	return range("key", &f->useKeyRange, &f->minKey, &f->maxKey) && range("velocity", &f->useVelocityRange, &f->minVelocity, &f->maxVelocity)
+		&& range("position", &f->usePositionRange, &f->minPos, &f->maxPos) && range("length", &f->useLengthRange, &f->minLength, &f->maxLength);
+}
+
+//! The `filter` object as a NoteTransform::Filter: {key,velocity,position,length}_{min,max} (an absent
+//! bound is open), `scale` "in" / "out" (the scale context's pitch classes) and `invert`.
+bool filterFrom(const QJsonObject& json, NoteTransform::Filter* f, ControlResult* error)
+{
+	if (!readRanges(json, f))
+	{
+		*error = ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("a filter bound is a whole number"));
+		return false;
+	}
 	f->invert = json.value(QStringLiteral("invert")).toBool();
 	const QString scale = json.value(QStringLiteral("scale")).toString();
 	if (scale.isEmpty()) { return true; }
@@ -274,6 +310,10 @@ ControlResult transformWhere(const QJsonObject& args)
 	if (!filterFrom(args.value(QStringLiteral("filter")).toObject(), &filter, &error)) { return error; }
 	const QString action = args.value(QStringLiteral("action")).toString();
 	const NoteVector hits = NoteTransform::select(clip->notes(), filter);
+	if (hits.empty())  // nothing to change: no undo step, the project not modified
+	{
+		return ControlResult::success({{QStringLiteral("clip"), clipId(ref.id)}, {QStringLiteral("matched"), 0}, {QStringLiteral("removed"), 0}});
+	}
 	clip->addJournalCheckPoint();
 	const NoteVector doomed = act(hits, action, args.value(QStringLiteral("amount")).toInt());
 	for (Note* note : doomed) { clip->removeNote(note); }

@@ -24,7 +24,9 @@
 #include "MetronomeOptions.h"
 
 #include <algorithm>
+#include <array>
 #include <atomic>
+#include <memory>
 
 #include "ConfigManager.h"
 #include "Sample.h"
@@ -57,6 +59,9 @@ struct State
 	std::atomic<bool> recordOnly{false};
 	std::atomic<int> sound{0};
 	std::atomic<bool> loaded{false};
+	//! Every sound's plain and accented sample, decoded once on the main thread so a click never reads a file
+	//! on the audio thread; set before 'loaded', never changed after.
+	std::array<std::shared_ptr<const SampleBuffer>, 2 * kSoundCount> buffers;
 };
 
 State& state()
@@ -79,6 +84,11 @@ void load()
 	s.accent.store(read("accent", "1").toInt() != 0);
 	s.recordOnly.store(read("recordonly", "0").toInt() != 0);
 	s.sound.store(std::clamp(static_cast<int>(soundNames().indexOf(read("sound", "classic"))), 0, kSoundCount - 1));
+	for (int i = 0; i < kSoundCount; ++i)
+	{
+		s.buffers[2 * i] = SampleBuffer::fromFile(QLatin1String(kSounds[i].plain));
+		s.buffers[2 * i + 1] = SampleBuffer::fromFile(QLatin1String(kSounds[i].accented));
+	}
 	s.loaded.store(true, std::memory_order_release);
 }
 
@@ -132,8 +142,14 @@ PlayHandle* click(bool downbeat, std::size_t offset)
 	// The handle owns the sample it is given, as it owned the one it loaded itself before; the
 	// level rides on the sample's own amplification.
 	const State& s = state();
-	const Sound& sound = kSounds[std::clamp(s.sound.load(std::memory_order_relaxed), 0, kSoundCount - 1)];
-	auto* sample = new Sample(SampleBuffer::fromFile(QLatin1String(downbeat && s.accent.load(std::memory_order_relaxed) ? sound.accented : sound.plain)));
+	const int index = std::clamp(s.sound.load(std::memory_order_relaxed), 0, kSoundCount - 1);
+	const bool accented = downbeat && s.accent.load(std::memory_order_relaxed);
+	std::shared_ptr<const SampleBuffer> buffer = s.loaded.load(std::memory_order_acquire) ? s.buffers[2 * index + (accented ? 1 : 0)] : nullptr;
+	if (!buffer)  // not loaded yet (a click before registration): read it, as every click used to
+	{
+		buffer = SampleBuffer::fromFile(QLatin1String(accented ? kSounds[index].accented : kSounds[index].plain));
+	}
+	auto* sample = new Sample(std::move(buffer));
 	sample->setAmplification(s.level.load(std::memory_order_relaxed));
 	auto* handle = new SamplePlayHandle(sample, true);
 	handle->setOffset(offset);

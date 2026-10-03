@@ -64,8 +64,9 @@ private:
  *  resampled to the engine's rate - loaded with plugin.impulse_load; without one, a generated
  *  two-second hall), then low- and high-cut. It runs one ConvolutionKernel partition late, reports
  *  that as its latency for delay compensation, and delays its dry signal by the same so the mix is
- *  coherent; its tail is the impulse response's length. Everything the audio thread touches is
- *  allocated beforehand (the pre-delay line for 192 kHz, the kernel on the control thread). */
+ *  coherent; its tail is the impulse response's length plus the pre-delay. Everything the audio
+ *  thread touches is allocated beforehand (the pre-delay line for 192 kHz, the kernel on the control
+ *  thread). */
 class ConvolutionReverbEffect : public DefaultEffect
 {
 public:
@@ -77,7 +78,8 @@ public:
 
 	EffectControls* controls() override { return &m_controls; }
 	int latencyFrames() const override { return ConvolutionKernel::Partition; }
-	int tailFrames() const override { return m_tail.load(std::memory_order_relaxed); }
+	//! The impulse response's length plus the pre-delay the input still waits in.
+	int tailFrames() const override;
 
 	//! Control thread: the impulse response in @a path (empty: the generated hall). False, keeping
 	//! the current one, when the file cannot be read.
@@ -88,6 +90,8 @@ private:
 	ProcessStatus processImpl(InterleavedBufferView<float, 2> inOut) override;
 	void install(std::unique_ptr<ConvolutionKernel> kernel);
 	void designFilters(float rate);
+	//! The pre-delay in frames at @a rate, as long as the line holds at most.
+	std::size_t predelayFrames(float rate) const;
 	//! The wet sample of channel @a c for this frame, from the block the kernel produced.
 	float wet(int c, float input, std::size_t predelay);
 

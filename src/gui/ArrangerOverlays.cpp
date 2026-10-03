@@ -213,6 +213,13 @@ Track* ArrangerRangeOverlay::trackAt(int y) const
 	return nullptr;
 }
 
+Track* ArrangerRangeOverlay::nearestTrackAt(int y) const
+{
+	const QList<TrackView*>& views = m_editor->trackViews();
+	if (Track* track = trackAt(y); track != nullptr || views.isEmpty()) { return track; }
+	return y < views.first()->mapTo(parentWidget(), QPoint(0, 0)).y() ? views.first()->getTrack() : views.last()->getTrack();
+}
+
 QRect ArrangerRangeOverlay::rangeRect() const
 {
 	const ArrangerRange& range = ArrangerRange::instance();
@@ -295,6 +302,8 @@ void ArrangerRangeOverlay::dispatchRange(const QPoint& to)
 	bool inside = false;
 	Track* first = trackAt(m_from.y());
 	Track* last = trackAt(to.y());
+	// One end off the rows (above or below them): the span runs to the nearest row, not past it.
+	if ((first == nullptr) != (last == nullptr)) { first = nearestTrackAt(m_from.y()); last = nearestTrackAt(to.y()); }
 	for (TrackView* view : m_editor->trackViews())
 	{
 		const bool edge = view->getTrack() == first || view->getTrack() == last;

@@ -199,6 +199,7 @@ QWidget* DeviceCard::buildHeader()
 		QToolButton* power = headerButton(QStringLiteral("power"), tr("Switch %1 on or off").arg(m_spec.title), header);
 		power->setCheckable(true);
 		power->setChecked(m_spec.enabled);
+		m_power = power;
 		connect(power, &QToolButton::clicked, this, [this, power](bool on) {
 			const QJsonObject args{{QStringLiteral("target"), m_spec.target}, {QStringLiteral("plugin"), m_spec.plugin},
 				{QStringLiteral("bypass"), !on}};
@@ -230,6 +231,7 @@ QWidget* DeviceCard::buildHeader()
 		QToolButton* fold = headerButton(QStringLiteral("fold"), tr("Fold or open %1").arg(m_spec.title), header);
 		fold->setCheckable(true);
 		fold->setChecked(m_spec.effect->deviceOptions().folded);
+		m_fold = fold;
 		connect(fold, &QToolButton::clicked, this, [this, fold](bool folded) {
 			const QJsonObject args{{QStringLiteral("target"), m_spec.target}, {QStringLiteral("plugin"), m_spec.plugin},
 				{QStringLiteral("folded"), folded}};
@@ -246,6 +248,7 @@ QWidget* DeviceCard::buildHeader()
 		delta->setAutoRaise(true);
 		delta->setCheckable(true);
 		delta->setChecked(m_spec.effect->deltaTap().enabled());
+		m_delta = delta;
 		connect(delta, &QToolButton::clicked, this, [this, delta](bool on) {
 			const QJsonObject args{{QStringLiteral("target"), m_spec.target}, {QStringLiteral("plugin"), m_spec.plugin},
 				{QStringLiteral("on"), on}};
@@ -366,9 +369,20 @@ void DeviceCard::closeEditor()
 	if (!m_pins.isNull()) { delete m_pins.data(); }
 }
 
+void DeviceCard::syncHeader()
+{
+	// setChecked emits no clicked(), so nothing is dispatched again; an unchanged state is a no-op.
+	const bool folded = m_spec.effect->deviceOptions().folded;
+	if (m_power != nullptr) { m_power->setChecked(m_spec.effect->isEnabled()); }
+	if (m_fold != nullptr) { m_fold->setChecked(folded); }
+	if (m_delta != nullptr) { m_delta->setChecked(m_spec.effect->deltaTap().enabled()); }
+	if (m_body != nullptr) { m_body->setVisible(!folded); }
+}
+
 void DeviceCard::refreshActivity()
 {
 	if (m_activity == nullptr || m_spec.effect == nullptr) { return; }
+	syncHeader();
 	const bool on = m_spec.effect->isProcessingAudio();
 	if (m_activity->property("lit").toBool() == on && m_activity->property("lit").isValid()) { return; }
 	m_activity->setProperty("lit", on);

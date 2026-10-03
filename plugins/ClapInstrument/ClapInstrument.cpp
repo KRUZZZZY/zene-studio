@@ -84,6 +84,29 @@ PLUGIN_EXPORT Plugin* lmms_plugin_main(Model* parent, void* data)
 
 }
 
+namespace
+{
+
+struct ChannelCounts
+{
+	ch_cnt_t total;
+	ch_cnt_t inputs;
+	ch_cnt_t outputs;
+};
+
+//! The transport's channel counts for a CLAP instrument's @a layout. A CLAP instrument generates
+//! its audio: no track channels are routed into it. The output side is the plug-in's own channel
+//! count, with a floor of two so a mono generator still gets a stereo bus. This is the
+//! AUDIO-OUTPUT CONFIGURATION half of feature row 79.
+ChannelCounts channelCountsOf(const clap::PortLayout& layout)
+{
+	const auto inputs = static_cast<ch_cnt_t>(std::max(0, layout.inputs));
+	const auto outputs = std::max<ch_cnt_t>(ch_cnt_t{2}, static_cast<ch_cnt_t>(std::max(0, layout.outputs)));
+	return {std::max(inputs, outputs), inputs, outputs};
+}
+
+} // namespace
+
 ClapInstrument::ClapInstrument(InstrumentTrack* parent,
 	const Descriptor::SubPluginFeatures::Key* key) :
 	AudioPluginExt<Instrument, ClapInstrumentAudioPortsSettings>(
@@ -110,16 +133,8 @@ ClapInstrument::ClapInstrument(InstrumentTrack* parent,
 	}
 	else
 	{
-		const auto& layout = m_plugin.busLayout();
-		// A CLAP instrument generates its audio: no track channels are routed
-		// into it. The output side is the plug-in's own channel count, with a
-		// floor of two so a mono generator still gets a stereo bus. This is
-		// the AUDIO-OUTPUT CONFIGURATION half of feature row 79.
-		const auto mainInputs = static_cast<ch_cnt_t>(std::max(0, layout.inputs));
-		const auto mainOutputs = std::max<ch_cnt_t>(ch_cnt_t{2},
-			static_cast<ch_cnt_t>(std::max(0, layout.outputs)));
-		audioPorts().setAllChannelCounts(std::max(mainInputs, mainOutputs),
-			mainInputs, mainOutputs);
+		const auto counts = channelCountsOf(m_plugin.busLayout());
+		audioPorts().setAllChannelCounts(counts.total, counts.inputs, counts.outputs);
 
 		if (auto* engine = Engine::audioEngine())
 		{
@@ -205,10 +220,17 @@ void ClapInstrument::reprepare()
 		// (review L01-1 #3).
 		engine->requestChangeInModel();
 		QString error;
+		const auto revision = m_plugin.layoutRevision();
 		if (!m_plugin.prepare(engine->outputSampleRate(), engine->framesPerPeriod(),
 				&error))
 		{
 			qWarning() << "CLAP: re-prepare failed:" << error;
+		}
+		// prepare() re-read a changed port layout: the transport follows it, as the effect host's does.
+		if (m_plugin.layoutRevision() != revision)
+		{
+			const auto counts = channelCountsOf(m_plugin.busLayout());
+			audioPorts().setAllChannelCounts(counts.total, counts.inputs, counts.outputs);
 		}
 		engine->doneChangeInModel();
 	}

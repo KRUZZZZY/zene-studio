@@ -24,6 +24,7 @@
 #ifndef LMMS_GUI_BROWSER_SEARCH_VIEW_H
 #define LMMS_GUI_BROWSER_SEARCH_VIEW_H
 
+#include <QElapsedTimer>
 #include <QJsonArray>
 #include <QJsonObject>
 
@@ -84,6 +85,8 @@ public:
 private:
 	void buildActionRow();
 	void connectLists();
+	//! A collection picked in the list: run once per gesture (a click and an activation can both come).
+	void pickCollection(const QString& name);
 	QJsonObject queryArgs() const;
 	//! Run a list command through browser.browse (so it joins the history) and show its items.
 	void browse(const QString& command, const QJsonObject& args, const QString& label);
@@ -105,6 +108,8 @@ private:
 	QListWidget* m_gallery = nullptr;
 	QJsonArray m_items;
 	bool m_showingMedia = false;  //!< the list is Project Media, not a history entry
+	QString m_lastPicked;  //!< pickCollection's last name and when, so one gesture runs it once
+	QElapsedTimer m_lastPickedAt;
 };
 
 } // namespace lmms::gui

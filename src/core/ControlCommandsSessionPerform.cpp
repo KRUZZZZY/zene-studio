@@ -32,6 +32,7 @@
  *  - session.setlist / setlist_go (WF-071): an ordered list of projects to play through - a
  *    preference, not part of any project. */
 
+#include <algorithm>
 #include <functional>
 #include <QJsonArray>
 #include <QJsonDocument>
@@ -170,6 +171,11 @@ ControlResult setPlaylist(const QJsonObject& args)
 	{
 		const int scene = value.toInt(-1);
 		if (scene < 0 || scene >= model->sceneCount()) { return ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("scene %1 is not in the grid").arg(scene)); }
+		// A step is the scene's own chain, so a scene named twice would keep only its last step.
+		if (std::find(scenes.begin(), scenes.end(), scene) != scenes.end())
+		{
+			return ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("scene %1 is named twice; a playlist plays each scene once").arg(scene));
+		}
 		scenes.push_back(scene);
 	}
 	if (scenes.empty()) { return ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("name the 'scenes', in the order they play")); }
@@ -206,13 +212,15 @@ ControlResult launchGroup(const QJsonObject& args)
 	const int scene = args.value(QStringLiteral("scene")).toInt();
 	if (scene < 0 || scene >= model->sceneCount()) { return ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("scene %1 is not in the grid").arg(scene)); }
 	QJsonArray launched;
+	QJsonArray refused;  // a cell the scheduler would not take is said, not skipped in silence
 	for (int column = 0; column < std::min(model->trackCount(), static_cast<int>(tracks.size())); ++column)
 	{
 		if (!insideFolder(tracks[column], folder) || model->slot(column, scene).isEmpty()) { continue; }
 		const ControlResult one = invoke(QStringLiteral("session.launch_slot"), {{QStringLiteral("track"), column}, {QStringLiteral("scene"), scene}});
 		if (one.ok) { launched.append(column); }
+		else { refused.append(QJsonObject{{QStringLiteral("track"), column}, {QStringLiteral("error"), one.errorMessage}}); }
 	}
-	return ControlResult::success({{QStringLiteral("launched"), launched}, {QStringLiteral("scene"), scene}});
+	return ControlResult::success({{QStringLiteral("launched"), launched}, {QStringLiteral("refused"), refused}, {QStringLiteral("scene"), scene}});
 }
 
 QJsonObject setlistState()

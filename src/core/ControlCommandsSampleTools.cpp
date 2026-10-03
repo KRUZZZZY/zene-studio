@@ -85,6 +85,13 @@ ControlResult crop(const QJsonObject& args)
 	const SampleWindow window = clip->sampleWindow();
 	const auto size = static_cast<f_cnt_t>(clip->sample().sampleSize());
 	if (window.sourceIn <= 0 && window.sourceOut >= size) { return ControlResult::failure(ControlErrorKind::Refused, QStringLiteral("the clip plays its whole source: nothing to crop")); }
+	// Warp markers pin frames of the old source: a crop from inside it, or past one of them, would leave them on the wrong audio.
+	const WarpMarkers& markers = clip->warpMarkers();
+	if (!markers.empty() && (window.sourceIn > 0 || markers[markers.size() - 1].sourceFrame > window.sourceOut))
+	{
+		return ControlResult::failure(ControlErrorKind::Refused, QStringLiteral("the clip's warp markers pin frames this crop would move or drop "
+			"(warp.remove them first)"));
+	}
 	swapIn(clip, window.sourceIn, window.sourceOut, SampleWindow::full(window.sourceOut - window.sourceIn));
 	return ControlResult::success({{QStringLiteral("clip"), clipId(ref.id)}, {QStringLiteral("frames"), static_cast<double>(window.sourceOut - window.sourceIn)},
 		{QStringLiteral("discarded"), static_cast<double>(size - (window.sourceOut - window.sourceIn))}});

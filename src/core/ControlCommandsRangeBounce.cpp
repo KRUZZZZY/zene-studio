@@ -59,7 +59,7 @@ struct Landing
 	bool muteSources = true;
 	std::vector<QPointer<Track>> sources;
 	std::vector<bool> wereMuted;
-	Track* landed = nullptr;
+	QPointer<Track> landed;  //!< null once the landed track is deleted some other way (its undo then has nothing to remove)
 };
 
 void land(Landing* l)
@@ -76,7 +76,7 @@ void land(Landing* l)
 
 void unland(Landing* l)
 {
-	if (l->landed != nullptr) { removeTrack(l->landed); }
+	if (l->landed) { removeTrack(l->landed.data()); }
 	l->landed = nullptr;
 	for (std::size_t i = 0; i < l->sources.size(); ++i)
 	{

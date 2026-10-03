@@ -25,6 +25,7 @@
 #include "TransportReadouts.h"
 
 #include <cmath>
+#include <limits>
 
 #include <QHBoxLayout>
 #include <QJsonObject>
@@ -40,6 +41,7 @@
 #include "DesignTokens.h"
 #include "Engine.h"
 #include "MeterModel.h"
+#include "ProjectJournal.h"
 #include "Song.h"
 
 namespace lmms::gui
@@ -159,7 +161,8 @@ void ReadoutField::mouseReleaseEvent(QMouseEvent*)
 
 void ReadoutField::wheelEvent(QWheelEvent* event)
 {
-	if (m_model == nullptr) { return; }
+	// A wheel event with no vertical turn (a horizontal scroll) changes nothing (review L19 #8).
+	if (m_model == nullptr || event->angleDelta().y() == 0) { return; }
 	step(event->angleDelta().y() > 0 ? 1 : -1);
 	event->accept();
 }
@@ -232,6 +235,28 @@ QString loudnessText()
 	return QStringLiteral("%1 / %2").arg(reading("short_term_lufs"), reading("true_peak_dbtp"));
 }
 
+//! Typed "n/d" into the meter: both halves as ONE undo step, not one per half (review L19 #5).
+bool setMeterTyped(MeterModel* meter, const QString& typed)
+{
+	const QStringList parts = typed.split(QLatin1Char('/'));
+	bool okN = false;
+	bool okD = false;
+	const int n = parts.value(0).toInt(&okN);
+	const int d = parts.value(1).toInt(&okD);
+	if (!okN || !okD || n < 1 || d < 1) { return false; }
+	IntModel& numerator = meter->numeratorModel();
+	IntModel& denominator = meter->denominatorModel();
+	if (numerator.value() == n && denominator.value() == d) { return true; }
+	Engine::projectJournal()->addJournalCheckPoint(QVector<JournallingObject*>{&numerator, &denominator});
+	numerator.saveJournallingState(false);
+	denominator.saveJournallingState(false);
+	numerator.setValue(static_cast<float>(n));
+	denominator.setValue(static_cast<float>(d));
+	numerator.restoreJournallingState();
+	denominator.restoreJournallingState();
+	return true;
+}
+
 } // namespace
 
 QString barBeatText(int ticks)
@@ -242,17 +267,38 @@ QString barBeatText(int ticks)
 	return QStringLiteral("%1.%2").arg(ticks / perBar + 1).arg((ticks % perBar) / perBeat + 1);
 }
 
+namespace
+{
+
+//! Part @a index of @a parts as a number in [1, @a most] into @a out; true for an absent part (@a out kept).
+bool partIn(const QStringList& parts, int index, int most, int* out)
+{
+	if (index >= parts.size()) { return true; }
+	bool ok = false;
+	const int value = parts.at(index).toInt(&ok);
+	if (!ok || value < 1 || value > most) { return false; }
+	*out = value;
+	return true;
+}
+
+} // namespace
+
 bool ticksFromBarBeat(const QString& text, int* ticks)
 {
 	Song* song = Engine::getSong();
 	const QStringList parts = text.trimmed().split(QLatin1Char('.'));
-	bool okBar = false;
-	const int bar = parts.value(0).toInt(&okBar);
-	bool okBeat = true;
-	const int beat = parts.size() > 1 ? parts.value(1).toInt(&okBeat) : 1;
-	if (!okBar || !okBeat || bar < 1 || beat < 1) { return false; }
-	const int perBeat = song->ticksPerBar() / std::max(1, song->getTimeSigModel().getNumerator());
-	*ticks = (bar - 1) * song->ticksPerBar() + (beat - 1) * perBeat;
+	const int numerator = std::max(1, song->getTimeSigModel().getNumerator());
+	const int perBar = std::max(1, song->ticksPerBar());
+	const int perBeat = std::max(1, perBar / numerator);
+	const int perSixteenth = std::max(1, perBeat / 4);
+	// A beat inside the bar, a sixteenth (as the position readout shows it) inside the beat, and a bar whose
+	// start still fits a tick count (review L19 #6, #7).
+	int bar = 0;
+	int beat = 1;
+	int sixteenth = 1;
+	if (parts.size() > 3 || !partIn(parts, 0, std::numeric_limits<int>::max() / perBar, &bar) || !partIn(parts, 1, numerator, &beat)
+		|| !partIn(parts, 2, (perBeat + perSixteenth - 1) / perSixteenth, &sixteenth)) { return false; }
+	*ticks = (bar - 1) * perBar + (beat - 1) * perBeat + (sixteenth - 1) * perSixteenth;
 	return true;
 }
 
@@ -282,17 +328,7 @@ void TransportReadouts::bindToSong(Song* song)
 	m_tempo->bind(&song->tempoModel(), [](int v) { return QStringLiteral("%1").arg(v); }, 3);
 	MeterModel* meter = &song->getTimeSigModel();
 	m_meter->bindText([meter]() { return QStringLiteral("%1/%2").arg(meter->getNumerator()).arg(meter->getDenominator()); },
-		[meter](const QString& typed) {
-			const QStringList parts = typed.split(QLatin1Char('/'));
-			bool okN = false;
-			bool okD = false;
-			const int n = parts.value(0).toInt(&okN);
-			const int d = parts.value(1).toInt(&okD);
-			if (!okN || !okD || n < 1 || d < 1) { return false; }
-			meter->numeratorModel().setValue(static_cast<float>(n));
-			meter->denominatorModel().setValue(static_cast<float>(d));
-			return true;
-		});
+		[meter](const QString& typed) { return setMeterTyped(meter, typed); });
 	connect(meter, &Model::dataChanged, m_meter, &ReadoutField::refresh);
 	m_position->bindText([song]() {
 		const TimePos pos = song->getPlayPos();

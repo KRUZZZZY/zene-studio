@@ -64,7 +64,8 @@ std::vector<SampleFrame> applied(std::vector<SampleFrame> frames, const QString&
 	if (op == QLatin1String("delete")) { frames.erase(begin, end); return frames; }
 	if (op == QLatin1String("crop")) { return std::vector<SampleFrame>(begin, end); }
 	if (op == QLatin1String("reverse")) { std::reverse(begin, end); return frames; }
-	const double span = static_cast<double>(std::max<std::size_t>(1, to - from));
+	// The last frame of the range reaches the fade's end (0 for a fade-out), as sampleops::fade does.
+	const double span = static_cast<double>(std::max<std::size_t>(1, to - from - 1));
 	for (std::size_t i = from; i < to; ++i)
 	{
 		const double t = static_cast<double>(i - from) / span;
@@ -91,6 +92,12 @@ SampleWindow windowAfter(const SampleWindow& window, const QString& op, std::siz
 	return kept.empty() ? SampleWindow::full(frames) : kept;
 }
 
+//! Whether @a op deletes every frame the clip plays (it would be left playing nothing).
+bool deletesWindow(const SampleWindow& window, const QString& op, std::size_t from, std::size_t to)
+{
+	return op == QLatin1String("delete") && window.sourceIn >= from && window.sourceOut <= to;
+}
+
 ControlResult editRange(const QJsonObject& args)
 {
 	ClipRef ref;
@@ -103,10 +110,19 @@ ControlResult editRange(const QJsonObject& args)
 	const auto to = std::min(size, static_cast<std::size_t>(std::max(0, args.value(QStringLiteral("to")).toInt())));
 	const QString op = args.value(QStringLiteral("op")).toString();
 	if (to <= from || !operations().contains(op)) { return ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("a range 'from' < 'to' inside the source, and an 'op'")); }
-	const float gain = std::pow(10.f, static_cast<float>(args.value(QStringLiteral("gain_db")).toDouble(0.0)) / 20.f);
+	const double db = args.value(QStringLiteral("gain_db")).toDouble(0.0);
+	if (db < -60.0 || db > 24.0)  // the range sample.amplify and clip.set_gain declare; far beyond it the gain overflows
+	{
+		return ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("gain_db %1 is outside -60..24 dB").arg(db));
+	}
+	const SampleWindow window = clip->sampleWindow();
+	if (deletesWindow(window, op, from, to))
+	{
+		return ControlResult::failure(ControlErrorKind::Refused, QStringLiteral("that deletes everything the clip plays (clip.delete removes the clip)"));
+	}
+	const float gain = std::pow(10.f, static_cast<float>(db) / 20.f);
 	const SampleFrame* data = clip->sample().data();
 	std::vector<SampleFrame> result = applied(std::vector<SampleFrame>(data, data + size), op, from, to, gain);
-	const SampleWindow window = clip->sampleWindow();
 	const int rate = static_cast<int>(clip->sample().sampleRate());
 	const auto frames = static_cast<f_cnt_t>(result.size());
 	clip->addJournalCheckPoint();

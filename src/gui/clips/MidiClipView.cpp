@@ -109,9 +109,10 @@ void MidiClipView::openInPianoRoll()
 
 void MidiClipView::setGhostInPianoRoll()
 {
+	// The ghost lives in the classic piano roll (the note editor has none), so that is what is shown.
 	auto pRoll = getGUI()->pianoRoll();
 	pRoll->setGhostMidiClip(m_clip);
-	getGUI()->mainWindow()->revealPanel(QStringLiteral("detail"));
+	getGUI()->mainWindow()->toggleClassicPianoRollWin();  // shows it: the song editor, not it, is active
 }
 
 void MidiClipView::setGhostInAutomationEditor()
@@ -238,7 +239,8 @@ void MidiClipView::constructContextMenu( QMenu * _cm )
 	{
 		// 0.5.0 L07 (ED-085): the chance and ratchet of the step under the menu (ClipEditsMenu.cpp).
 		const QPoint at = mapFromGlobal(QCursor::pos());
-		addStepEditsMenu(_cm, m_clip, (at.x() - BORDER_WIDTH) * m_clip->m_steps / std::max(1, width() - BORDER_WIDTH * 2));
+		const int step = (at.x() - BORDER_WIDTH) * m_clip->m_steps / std::max(1, width() - BORDER_WIDTH * 2);
+		addStepEditsMenu(_cm, m_clip, std::clamp(step, 0, std::max(0, m_clip->m_steps - 1)));
 	}
 	_cm->addSeparator();
 

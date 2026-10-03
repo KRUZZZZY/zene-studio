@@ -52,7 +52,9 @@ QJsonArray idsOf(const std::vector<Note*>& notes)
 	return ids;
 }
 
-bool snapOff(Qt::KeyboardModifiers mods) { return mods.testFlag(Qt::AltModifier); }
+//! Alt held turns the grid snap off while drawing, moving, resizing or slicing (the grid's tooltip).
+bool snapOff() { return QGuiApplication::keyboardModifiers().testFlag(Qt::AltModifier); }
+int snapped(int ticks, int grid) { return snapOff() ? ticks : NoteGrid::snap(ticks, grid); }
 
 } // namespace
 
@@ -94,7 +96,7 @@ void NoteCanvas::selectOnly(const std::vector<Note*>& notes, bool additive)
 int NoteCanvas::dragTicks() const
 {
 	const int delta = static_cast<int>(std::lround(m_state.grid.tickAtX(m_currentPos.x()) - m_pressTick));
-	return m_drag == Drag::None ? 0 : NoteGrid::snap(delta, m_state.gridTicks);
+	return m_drag == Drag::None ? 0 : snapped(delta, m_state.gridTicks);
 }
 
 int NoteCanvas::dragKeys() const
@@ -269,8 +271,8 @@ void NoteCanvas::mouseDoubleClickEvent(QMouseEvent* event)
 std::pair<int, int> NoteCanvas::drawSpan() const
 {
 	// A click draws a note of the last length; a drag right of half a grid cell sets the length.
-	const int start = std::max(0, NoteGrid::snapDown(m_pressTick, m_state.gridTicks));
-	const int end = NoteGrid::snap(static_cast<int>(m_state.grid.tickAtX(m_currentPos.x())), m_state.gridTicks);
+	const int start = std::max(0, snapOff() ? m_pressTick : NoteGrid::snapDown(m_pressTick, m_state.gridTicks));
+	const int end = snapped(static_cast<int>(m_state.grid.tickAtX(m_currentPos.x())), m_state.gridTicks);
 	const int clicked = m_state.newLength > 0 ? m_state.newLength : m_state.lastLength;
 	const int length = end > start + std::max(1, m_state.gridTicks) / 2 ? end - start : clicked;
 	return {start, std::max(1, length)};
@@ -298,18 +300,18 @@ void NoteCanvas::commitMove()
 		const int key = keyMovedBy(note->key(), rows);
 		if (copy)
 		{
-			m_editor->run(QStringLiteral("note.add"), {{QStringLiteral("clip"), m_editor->clipId()},
-				{QStringLiteral("key"), key}, {QStringLiteral("position"), position},
-				{QStringLiteral("length"), static_cast<int>(note->length().getTicks())},
-				{QStringLiteral("velocity"), static_cast<int>(note->getVolume())}});
+			edits.append(QJsonObject{{QStringLiteral("key"), key}, {QStringLiteral("position"), position},
+				{QStringLiteral("length"), static_cast<int>(note->length().getTicks())}, {QStringLiteral("velocity"), static_cast<int>(note->getVolume())}});
 			continue;
 		}
 		edits.append(QJsonObject{{QStringLiteral("note"), control::noteIdOf(note)},
 			{QStringLiteral("position"), position}, {QStringLiteral("key"), key}});
 	}
+	// The copies go in as one note.add_many, the moves as one note.edit: one undo step either way.
 	if (!edits.isEmpty())
 	{
-		m_editor->run(QStringLiteral("note.edit"), {{QStringLiteral("clip"), m_editor->clipId()}, {QStringLiteral("edits"), edits}});
+		m_editor->run(copy ? QStringLiteral("note.add_many") : QStringLiteral("note.edit"),
+			{{QStringLiteral("clip"), m_editor->clipId()}, {copy ? QStringLiteral("notes") : QStringLiteral("edits"), edits}});
 	}
 }
 
@@ -355,7 +357,7 @@ void NoteCanvas::commitErase()
 void NoteCanvas::sliceAt(Note* note, const QPoint& pos)
 {
 	const int raw = static_cast<int>(m_state.grid.tickAtX(pos.x()));
-	const int at = snapOff(QGuiApplication::keyboardModifiers()) ? raw : NoteGrid::snap(raw, m_state.gridTicks);
+	const int at = snapped(raw, m_state.gridTicks);
 	const int start = note->pos().getTicks();
 	const int end = note->endPos().getTicks();
 	if (at <= start || at >= end) { return; }
@@ -475,7 +477,7 @@ int NoteCanvas::resizeDelta() const
 	if (m_drag != Drag::Resize || anchor == nullptr) { return 0; }
 	const int end = anchor->endPos().getTicks();
 	const int raw = end + static_cast<int>(std::lround(m_state.grid.tickAtX(m_currentPos.x()) - m_pressTick));
-	return NoteGrid::snap(raw, m_state.gridTicks) - end;
+	return snapped(raw, m_state.gridTicks) - end;
 }
 
 void NoteCanvas::paintMovePreview(QPainter& p) const

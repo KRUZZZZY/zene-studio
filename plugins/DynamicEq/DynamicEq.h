@@ -59,8 +59,8 @@ public:
 
 /*! 0.5.0 L10 (MX-143): a dynamic and mid / side EQ. Each band is a cookbook shelf or bell whose
  *  gain is its own 'gain' plus up to 'dynamic' dB more (negative: a cut) as the level in the band -
- *  a band-pass detector at the band's frequency and width - rises from 'threshold' to 12 dB above
- *  it; with 'dynamic' at 0 a band is a plain static EQ band. 'Channels' runs the bands on both
+ *  a band-pass detector at the band's frequency and width, on both sides the louder side's - rises
+ *  from 'threshold' to 12 dB above it; with 'dynamic' at 0 a band is a plain static EQ band. 'Channels' runs the bands on both
  *  sides, on the mid (L+R) only or on the side (L-R) only. A band's coefficients are recomputed
  *  every 32 frames while its gain moves - plain arithmetic in fixed members, nothing allocated while
  *  processing. Linear phase is not offered (it needs a long FIR and its latency). */
@@ -86,7 +86,7 @@ private:
 	struct Band
 	{
 		BiquadSection<2> filter;
-		BiquadSection<1> detector;
+		BiquadSection<2> detector;  //!< left and right on both sides; the first only on the mid or the side
 		float envelope = 0.f;
 		float appliedDb = 1e9f;
 		float hz = -1.f;

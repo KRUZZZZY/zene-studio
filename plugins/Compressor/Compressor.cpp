@@ -39,7 +39,7 @@ namespace lmms
 
 float CompressorEffect::gainReductionDb() const
 {
-	const float gain = std::min(m_gainResult[0], m_gainResult[1]);
+	const float gain = m_deepestGain.load(std::memory_order_relaxed);
 	return gain > 0.f && gain < 1.f ? -20.f * std::log10(gain) : 0.f;
 }
 
@@ -312,6 +312,7 @@ ProcessStatus CompressorEffect::processImpl(InterleavedBufferView<float, 2> inOu
 
 	// Frame index alongside the range-for so the sidechain key can be read.
 	f_cnt_t f = 0;
+	float deepest = 1.f;  // the lowest gain any frame of the block applied (gainReductionDb)
 	for (float* frame : inOut.framesView())
 	{
 		auto drySignal = std::array{frame[0], frame[1]};
@@ -495,6 +496,8 @@ ProcessStatus CompressorEffect::processImpl(InterleavedBufferView<float, 2> inOu
 			m_gainResult[1] = 1 - ((1 - m_gainResult[1]) * (stereoBalance < 0 ? 1 + stereoBalance : 1));
 		}
 
+		deepest = std::min({deepest, m_gainResult[0], m_gainResult[1]});
+
 		// For visualizer
 		m_displayGain[0] = qMax(m_gainResult[0], m_displayGain[0]);
 		m_displayGain[1] = qMax(m_gainResult[1], m_displayGain[1]);
@@ -572,6 +575,7 @@ ProcessStatus CompressorEffect::processImpl(InterleavedBufferView<float, 2> inOu
 	m_compressorControls.m_outPeakR = rOutPeak;
 	m_compressorControls.m_inPeakL = lInPeak;
 	m_compressorControls.m_inPeakR = rInPeak;
+	m_deepestGain.store(deepest, std::memory_order_relaxed);
 
 	return ProcessStatus::ContinueIfNotQuiet;
 }
@@ -583,6 +587,7 @@ void CompressorEffect::processBypassedImpl()
 	{
 		m_yL[0] = m_yL[1] = COMP_NOISE_FLOOR;
 		m_gainResult[0] = m_gainResult[1] = 1;
+		m_deepestGain.store(1.f, std::memory_order_relaxed);
 		m_displayPeak[0] = m_displayPeak[1] = COMP_NOISE_FLOOR;
 		m_displayGain[0] = m_displayGain[1] = COMP_NOISE_FLOOR;
 		std::fill(std::begin(m_scLookBuf[0]), std::end(m_scLookBuf[0]), COMP_NOISE_FLOOR);

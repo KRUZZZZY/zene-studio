@@ -56,9 +56,10 @@ public:
 	//! By the track's saved id (Track::id), so an undo can hold the id instead of the track.
 	Set of(int trackId) const;
 	void set(int trackId, const Set& versions);
-	//! The track's clips as XML, and the track's clips replaced by @a xml's.
+	//! The track's clips as XML, and the track's clips replaced by @a xml's (false, the track untouched,
+	//! when @a xml does not parse).
 	static QString clipsOf(Track* track);
-	static void replaceClips(Track* track, const QString& xml);
+	static bool replaceClips(Track* track, const QString& xml);
 
 	QString elementName() const override { return QStringLiteral("track-versions"); }
 	bool shouldPersist() const override { return !m_sets.isEmpty(); }

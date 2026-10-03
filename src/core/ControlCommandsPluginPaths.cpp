@@ -69,8 +69,9 @@ ControlResult pathsSet(const QJsonObject& args)
 	const QStringList before = pluginpaths::configured(format);
 	pluginpaths::setConfigured(format, dirs);
 	const QStringList after = pluginpaths::configured(format);
-	addUndoStep([format, before]() { pluginpaths::setConfigured(format, before); }, [format, after]() { pluginpaths::setConfigured(format, after); });
 	QJsonObject result = formatJson(format);
+	if (after == before) { return ControlResult::success(result); }  // the folders it had: no undo step to shadow the one under it
+	addUndoStep([format, before]() { pluginpaths::setConfigured(format, before); }, [format, after]() { pluginpaths::setConfigured(format, after); });
 	result.insert(QStringLiteral("__transaction"), transactionPayload({{QStringLiteral("dirs"), QJsonArray::fromStringList(before)}},
 		QStringLiteral("control.undo"), {}, true, QStringLiteral("action checkpoint: the recorded undo step writes the previous folders back")));
 	return ControlResult::success(result);

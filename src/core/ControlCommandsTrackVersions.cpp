@@ -21,6 +21,7 @@
  * Boston, MA 02110-1301 USA.
  *
  */
+#include <QDomDocument>
 #include <QJsonArray>
 
 #include "ControlCommandDef.h"
@@ -100,10 +101,15 @@ ControlResult switchVersion(const QJsonObject& args)
 	const QString name = args.value(QStringLiteral("name")).toString();
 	if (!before.clips.contains(name)) { return ControlResult::failure(ControlErrorKind::NotFound, QStringLiteral("the track has no version '%1'").arg(name)); }
 	if (name == before.active) { return ControlResult::failure(ControlErrorKind::Refused, QStringLiteral("'%1' is the version playing").arg(name)); }
+	const QString stored = before.clips.value(name);
+	if (!QDomDocument().setContent(stored))  // review L19 #15: checked before the undo step, so nothing is recorded
+	{
+		return ControlResult::failure(ControlErrorKind::Refused, QStringLiteral("the stored version '%1' cannot be read; the track is left as it is").arg(name));
+	}
 	Set after = before;
 	if (!after.active.isEmpty()) { after.clips.insert(after.active, TrackVersions::clipsOf(track)); }  // kept as it was left
 	addUndoStep(QVector<JournallingObject*>{track});
-	TrackVersions::replaceClips(track, after.clips.value(name));
+	TrackVersions::replaceClips(track, stored);
 	after.active = name;
 	commit(track->id(), before, after);
 	return ControlResult::success(report(track, after));

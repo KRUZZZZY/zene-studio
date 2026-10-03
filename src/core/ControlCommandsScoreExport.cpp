@@ -21,8 +21,8 @@
  * Boston, MA 02110-1301 USA.
  *
  */
-#include <QFile>
 #include <QFileInfo>
+#include <QSaveFile>
 
 #include "ControlCommandDef.h"
 #include "ControlEdit.h"
@@ -59,8 +59,10 @@ ControlResult exportMusicXml(const QJsonObject& args)
 	const MeterModel& meter = Engine::getSong()->getTimeSigModel();
 	const QString title = clip->name().isEmpty() ? QFileInfo(path).completeBaseName() : clip->name();
 	const QString score = musicXmlOf(*clip, meter.getNumerator(), meter.getDenominator(), title);
-	QFile file(path);
-	if (!file.open(QIODevice::WriteOnly | QIODevice::Truncate) || file.write(score.toUtf8()) < 0)
+	// Written whole or not at all: a short write must not leave a truncated score reported as written.
+	const QByteArray bytes = score.toUtf8();
+	QSaveFile file(path);
+	if (!file.open(QIODevice::WriteOnly) || file.write(bytes) != bytes.size() || !file.commit())
 	{
 		return ControlResult::failure(ControlErrorKind::Refused, QStringLiteral("could not write %1").arg(path));
 	}

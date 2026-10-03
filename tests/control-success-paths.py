@@ -24,7 +24,11 @@ test does not have:
      come back `differ: false` - an answer, not only a success;
   3. M3.2's File menu / toolbar verbs (project.new, save_as_template, import, export_midi,
      save_version, transport.set_metronome): the instance's HOME is a sandbox, which is what
-     lets the default template be written without touching the user's.
+     lets the default template be written without touching the user's;
+  4. 0.5.0 L12's renders through the binary, for the reason (2) gives: project.subproject_add
+     and project.subproject_refresh (a project FILE rendered and placed on a track, then
+     rendered again), track.flatten (BounceInPlace's render replacing the track) and
+     range.bounce (the selection's tracks rendered together onto a new track).
 
 The instance is the shared harness's headless one, so every reply is checked against its own
 resultSchema (ZENE_CONTROL_CHECK_RESULTS) and a reply that breaks it arrives as a typed error.
@@ -117,6 +121,61 @@ def check_project_lifecycle(session, recorder, outdir):
                    and os.path.exists(version.get("file") or ""), "reply=%r" % version)
 
 
+def add_track_with_note(session, name, key):
+    """An instrument track with one clip holding one quarter note: something a render can hear."""
+    track = session.result("track.add", {"type": "instrument", "name": name}).get("track")
+    clip = session.result("clip.add", {"track": track, "position": 0}).get("clip")
+    session.result("note.add", {"clip": clip, "key": key, "position": 0, "length": 96, "velocity": 100})
+    return track
+
+
+def check_subprojects(session, recorder, outdir):
+    """0.5.0 L12 (WF-045): a saved project becomes a subproject of another and is rendered again,
+    each time through the running binary as a child process."""
+    session.result("project.new")
+    add_track_with_note(session, "Nested", 60)
+    sub = os.path.join(outdir, "sub.mmp")
+    session.result("project.save", {"path": sub})
+    # Saved again under another name, the session is no longer the subproject's own file (which
+    # would be refused as a project that contains itself).
+    session.result("project.save", {"path": os.path.join(outdir, "host.mmp")})
+    added = session.result("project.subproject_add", {"path": sub})
+    audio = added.get("audio") or ""
+    recorder.check("project.subproject_add renders the file onto a new track",
+                   str(added.get("track", "")).startswith("trk-") and os.path.isfile(audio)
+                   and os.path.getsize(audio) > 0, "reply=%r" % added)
+    refreshed = session.result("project.subproject_refresh", {"track": added.get("track")})
+    again = refreshed.get("audio") or ""
+    recorder.check("project.subproject_refresh renders it again into a new file",
+                   refreshed.get("track") == added.get("track") and again not in ("", audio)
+                   and os.path.isfile(again), "reply=%r" % refreshed)
+
+
+def check_track_flatten(session, recorder):
+    """0.5.0 L12 (ED-207): BounceInPlace's render of a track replaces it with an audio track."""
+    track = add_track_with_note(session, "Flattened", 62)
+    flattened = session.result("track.flatten", {"track": track})
+    recorder.check("track.flatten replaces the track with an audio track playing its render",
+                   flattened.get("flattened") == track and str(flattened.get("track", "")).startswith("trk-")
+                   and flattened.get("track") != track and os.path.isfile(flattened.get("path") or ""),
+                   "reply=%r" % flattened)
+
+
+def check_range_bounce(session, recorder, outdir):
+    """0.5.0 L12 (ED-205): the selection's tracks over its ticks render onto a new audio track and
+    the sources are muted, so the song sounds as before."""
+    track = add_track_with_note(session, "Selected", 64)
+    session.result("range.set", {"start": 0, "end": 192, "tracks": [track]})
+    out = os.path.join(outdir, "selection.wav")
+    bounced = session.result("range.bounce", {"out": out})
+    recorder.check("range.bounce renders the selection onto a new track",
+                   bounced.get("tracks") == 1 and str(bounced.get("landed_track", "")).startswith("trk-")
+                   and os.path.isfile(bounced.get("path") or "") and (bounced.get("bytes") or 0) > 44,
+                   "reply=%r" % bounced)
+    state = session.result("track.get_state", {"track": track})
+    recorder.check("range.bounce mutes the bounced track", state.get("muted") is True, "state=%r" % state)
+
+
 def check_window_shell(session, recorder, outdir):
     """M3.2/M3.4/M3.7: the main window's own verbs, on the harness's offscreen GUI instance.
 
@@ -163,6 +222,9 @@ def main(argv):
         check_arrangement_record_land(session, recorder)
         check_audible_diff(session, recorder, instance.tmp)
         check_project_lifecycle(session, recorder, instance.tmp)
+        check_subprojects(session, recorder, instance.tmp)
+        check_track_flatten(session, recorder)
+        check_range_bounce(session, recorder, instance.tmp)
         check_window_shell(session, recorder, instance.tmp)
         session.call("control.quit")
     report_results(recorder)

@@ -66,6 +66,14 @@ BiquadShape shapeOf(int band)
 	return band == 0 ? BiquadShape::LowShelf : band == DynamicEqControls::Bands - 1 ? BiquadShape::HighShelf : BiquadShape::Peak;
 }
 
+//! The level @a detector senses: on both sides, the louder side's (linked - a signed average would let
+//! anti-phase left and right cancel); otherwise the one signal @a a.
+float sensedLevel(BiquadSection<2>& detector, float a, float b, bool stereo)
+{
+	const float first = std::abs(detector.run(a, 0));
+	return stereo ? std::max(first, std::abs(detector.run(b, 1))) : first;
+}
+
 } // namespace
 
 DynamicEqControls::DynamicEqControls(DynamicEqEffect* effect) :
@@ -134,7 +142,7 @@ SampleFrame DynamicEqEffect::equalise(const SampleFrame& in, Channels channels, 
 	float b = channels == Channels::Stereo ? in[1] : 0.f;
 	for (Band& band : m_bands)
 	{
-		const float level = std::abs(band.detector.run(channels == Channels::Stereo ? 0.5f * (a + b) : a, 0));
+		const float level = sensedLevel(band.detector, a, b, channels == Channels::Stereo);
 		band.envelope = level + (level > band.envelope ? attack : release) * (band.envelope - level);
 		a = band.filter.run(a, 0);
 		if (channels == Channels::Stereo) { b = band.filter.run(b, 1); }

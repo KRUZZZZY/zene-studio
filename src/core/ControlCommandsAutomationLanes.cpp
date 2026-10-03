@@ -127,6 +127,17 @@ const QStringList& shapeNames()
 	return names;
 }
 
+//! False (with @a error, as automation.add_point refuses a value) when a draw's 'min' or 'max' is outside @a model's range.
+bool shapeBoundsFit(const QJsonObject& args, const AutomatableModel* model, ControlResult* error)
+{
+	for (const char* key : {"min", "max"})
+	{
+		const double value = args.value(QLatin1String(key)).toDouble(model->minValue<float>());  // left out: the range's own end
+		if (value < model->minValue<float>() || value > model->maxValue<float>()) { *error = automatableRangeRefusal(model, value); return false; }
+	}
+	return true;
+}
+
 ControlResult drawShape(const QJsonObject& args)
 {
 	if (args.value(QStringLiteral("end")).toInt() <= args.value(QStringLiteral("start")).toInt())
@@ -136,6 +147,8 @@ ControlResult drawShape(const QJsonObject& args)
 	ControlTarget target;
 	AutomationParameter parameter;
 	ControlResult error;
+	// Checked before editableClip, which may create the automation track: a refusal records nothing.
+	if (!resolveAutomationParameter(args, &target, &parameter, &error) || !shapeBoundsFit(args, parameter.model, &error)) { return error; }
 	AutomationClip* clip = editableClip(args, &target, &parameter, &error);
 	if (clip == nullptr) { return error; }
 	AutomatableModel* model = parameter.model;

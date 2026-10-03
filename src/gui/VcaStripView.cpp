@@ -129,7 +129,7 @@ void VcaStripView::fillMenu(QMenu* menu)
 			ControlRegistry::instance()->invoke(QStringLiteral("vca.set_parent"), {{QStringLiteral("group"), id}, {QStringLiteral("parent"), parent}});
 		});
 	};
-	putIn(tr("No Group"), QString(), group->parentId() == 0);
+	putIn(tr("No Group"), QString(), group->parentId() == VcaGroup::NoParent);  // group 0 is a group (review L20 #1)
 	for (const VcaGroup* other : mixer->vcaGroups())
 	{
 		if (other->id() != m_groupId) { putIn(other->name(), QStringLiteral("vca-%1").arg(other->id()), group->parentId() == other->id()); }
@@ -152,7 +152,6 @@ void populateVcaMenu(QMenu* menu, mix_ch_t channelIndex, std::function<void()> c
 	if (mixer == nullptr || channelIndex >= static_cast<mix_ch_t>(mixer->numChannels())) { return; }
 	MixerChannel* channel = mixer->mixerChannel(channelIndex);
 	const QString channelId = QStringLiteral("ch-%1").arg(channel->id());
-	const VcaGroup* current = mixer->vcaGroupForChannel(channelIndex);
 
 	auto run = [changed](const QString& id, const QJsonObject& args) {
 		const ControlResult result = ControlRegistry::instance()->invoke(id, args);
@@ -164,7 +163,7 @@ void populateVcaMenu(QMenu* menu, mix_ch_t channelIndex, std::function<void()> c
 	{
 		QAction* entry = menu->addAction(group->name());
 		entry->setCheckable(true);
-		const bool member = group == current;
+		const bool member = group->contains(channelIndex);  // a channel can be in several groups (review L20 #2)
 		entry->setChecked(member);
 		const QString groupId = QStringLiteral("vca-%1").arg(group->id());
 		QObject::connect(entry, &QAction::triggered, menu, [run, groupId, channelId, member]() {

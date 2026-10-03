@@ -26,6 +26,8 @@
  *  start, gain in dB), applied by the play handle at block rate on top of the clip's gain and
  *  fades, saved with the clip. A replace is one Clip journal checkpoint. */
 
+#include <algorithm>
+
 #include <QJsonArray>
 
 #include "ClipEdits.h"
@@ -90,7 +92,8 @@ bool readPoints(const QJsonArray& points, int clipTicks, ClipEdits* edits, Contr
 		}
 		edits->envelope[edits->envelopeCount++] = {tick, static_cast<float>(db)};
 	}
-	std::sort(edits->envelope.begin(), edits->envelope.begin() + edits->envelopeCount,
+	// Stable: two points on one tick are a jump, from the first given to the second, in the order given.
+	std::stable_sort(edits->envelope.begin(), edits->envelope.begin() + edits->envelopeCount,
 		[](const GainPoint& a, const GainPoint& b) { return a.tick < b.tick; });
 	return true;
 }

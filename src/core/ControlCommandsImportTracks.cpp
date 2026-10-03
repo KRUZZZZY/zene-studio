@@ -41,6 +41,8 @@
 #include <QMimeData>
 
 #include "ControlEdit.h"
+#include "ControlProjectAssets.h"
+#include "ControlProjectAssetsShared.h"
 #include "ControlRegistry.h"
 #include "ControlRegistryGroups.h"
 #include "ControlVocabulary.h"
@@ -81,6 +83,20 @@ void detach(QDomElement element)
 	for (QDomElement child = element.firstChildElement(); !child.isNull(); child = child.nextSiblingElement()) { detach(child); }
 }
 
+//! Point a copied subtree's media references that resolve against the source project's folder ('local:'
+//! and legacy relative paths) at their files, so they do not resolve against this project's folder instead.
+void rebaseMedia(QDomElement element, const QString& sourceDir)
+{
+	for (const projectassets::AssetElement& spec : projectassets::kAssetElements)
+	{
+		if (!projectassets::elementMatches(spec, element.tagName(), QString())) { continue; }
+		const QString attribute = QString::fromLatin1(spec.attribute);
+		const projectassets::Resolution where = projectassets::resolveAssetPath(sourceDir, element.attribute(attribute));
+		if (where.resolved && where.via != QLatin1String("absolute")) { element.setAttribute(attribute, controlProjectAssetStoredPath(where.path)); }
+	}
+	for (QDomElement child = element.firstChildElement(); !child.isNull(); child = child.nextSiblingElement()) { rebaseMedia(child, sourceDir); }
+}
+
 QJsonArray listing(const QList<QDomElement>& tracks)
 {
 	QJsonArray out;
@@ -92,12 +108,17 @@ QJsonArray listing(const QList<QDomElement>& tracks)
 	return out;
 }
 
-//! The documents of the chosen tracks ('tracks' indices; all when left out).
-bool chosen(const QJsonObject& args, const QList<QDomElement>& tracks, QStringList* out, ControlResult* error)
+//! The documents of the chosen tracks ('tracks' indices; all when left out), media rebased from @a sourceDir.
+bool chosen(const QJsonObject& args, const QList<QDomElement>& tracks, const QString& sourceDir, QStringList* out, ControlResult* error)
 {
 	std::vector<int> indices;
 	for (const QJsonValue& value : args.value(QStringLiteral("tracks")).toArray()) { indices.push_back(value.toInt(-1)); }
-	if (indices.empty()) { for (int i = 0; i < tracks.size(); ++i) { indices.push_back(i); } }
+	if (!args.contains(QStringLiteral("tracks"))) { for (int i = 0; i < tracks.size(); ++i) { indices.push_back(i); } }
+	if (indices.empty())
+	{
+		*error = ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("'tracks' names no track (leave it out to import every one)"));
+		return false;
+	}
 	for (const int index : indices)
 	{
 		if (index < 0 || index >= tracks.size())
@@ -108,6 +129,7 @@ bool chosen(const QJsonObject& args, const QList<QDomElement>& tracks, QStringLi
 		QDomDocument doc;
 		QDomElement copy = doc.importNode(tracks[index], true).toElement();
 		detach(copy);
+		rebaseMedia(copy, sourceDir);
 		doc.appendChild(copy);
 		out->append(doc.toString());
 	}
@@ -135,7 +157,7 @@ ControlResult importTracks(const QJsonObject& args)
 	if (tracks.isEmpty()) { return error; }
 	if (args.value(QStringLiteral("list")).toBool()) { return ControlResult::success({{QStringLiteral("tracks"), listing(tracks)}}); }
 	QStringList documents;
-	if (!chosen(args, tracks, &documents, &error)) { return error; }
+	if (!chosen(args, tracks, QFileInfo(path).absolutePath(), &documents, &error)) { return error; }
 	auto made = std::make_shared<std::vector<Track*>>();
 	addUndoStep([made]() { for (auto it = made->rbegin(); it != made->rend(); ++it) { removeTrack(*it); } made->clear(); },
 		[made, documents]() { build(documents, made.get()); });
@@ -173,7 +195,12 @@ ControlResult copyTracks(const QJsonObject& args)
 		if (track == nullptr) { return error; }
 		track->saveState(doc, root);
 	}
-	for (QDomElement track = root.firstChildElement(); !track.isNull(); track = track.nextSiblingElement()) { detach(track); }
+	const QString project = Engine::getSong()->projectFileName();
+	for (QDomElement track = root.firstChildElement(); !track.isNull(); track = track.nextSiblingElement())
+	{
+		detach(track);
+		if (!project.isEmpty()) { rebaseMedia(track, QFileInfo(project).absolutePath()); }
+	}
 	const QString text = doc.toString();
 	if (root.firstChildElement().isNull() || text.size() > MaxClipboardChars)
 	{
@@ -196,7 +223,10 @@ ControlResult pasteTracks(const QJsonObject&)
 		return ControlResult::failure(ControlErrorKind::NotFound, QStringLiteral("the clipboard holds no tracks (project.copy_tracks puts them there)"));
 	}
 	QDomDocument doc;
-	doc.setContent(QString::fromUtf8(data->data(TracksMime)));
+	if (!doc.setContent(QString::fromUtf8(data->data(TracksMime))) || doc.documentElement().tagName() != QLatin1String("zene-tracks"))
+	{
+		return ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("the clipboard's track data is not a project.copy_tracks document"));
+	}
 	QStringList documents;
 	for (QDomElement track = doc.documentElement().firstChildElement(QStringLiteral("track")); !track.isNull();
 		track = track.nextSiblingElement(QStringLiteral("track")))
@@ -205,6 +235,7 @@ ControlResult pasteTracks(const QJsonObject&)
 		one.appendChild(one.importNode(track, true));
 		documents.append(one.toString());
 	}
+	if (documents.isEmpty()) { return ControlResult::failure(ControlErrorKind::NotFound, QStringLiteral("the clipboard's track data holds no tracks")); }
 	auto made = std::make_shared<std::vector<Track*>>();
 	addUndoStep([made]() { for (auto it = made->rbegin(); it != made->rend(); ++it) { removeTrack(*it); } made->clear(); },
 		[made, documents]() { build(documents, made.get()); });

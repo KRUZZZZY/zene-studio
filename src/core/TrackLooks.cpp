@@ -101,7 +101,9 @@ void TrackLooks::load(const QDomElement& element)
 		track = track.nextSiblingElement(QStringLiteral("track")))
 	{
 		const QString icon = track.attribute(QStringLiteral("icon"));
-		if (!icon.isEmpty()) { m_icons.insert(track.attribute(QStringLiteral("id")).toInt(), icon); }
+		bool ok = false;
+		const int id = track.attribute(QStringLiteral("id")).toInt(&ok);
+		if (ok && !icon.isEmpty()) { m_icons.insert(id, icon); }  // no id is no track (review L19 #14)
 	}
 	changed();
 }

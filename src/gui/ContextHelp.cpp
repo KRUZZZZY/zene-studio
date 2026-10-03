@@ -39,7 +39,7 @@ namespace lmms::gui
 namespace
 {
 
-//! The command id a widget (or, for a menu, the action under the pointer) runs.
+//! The command id a widget (or one of its two nearest parents) runs; a menu's actions: helpAt().
 QString commandOf(const QWidget* widget)
 {
 	for (int level = 0; widget != nullptr && level < 3; ++level, widget = widget->parentWidget())
@@ -76,6 +76,26 @@ QString ContextHelp::helpFor(const QWidget* widget, bool full)
 	return id.isEmpty() ? QString() : describe(id, full);
 }
 
+namespace
+{
+
+//! What help event @a event over @a widget shows: over a menu, the command of the action under the pointer
+//! (addCommandAction puts it on the QAction, which receives no events of its own); else helpFor().
+QString helpAt(const QWidget* widget, const QEvent* event, bool full)
+{
+	// Only ToolTip and WhatsThis are relied on to carry a position (a QHelpEvent); the query is answered by the menu.
+	const auto* help = event->type() == QEvent::QueryWhatsThis ? nullptr : static_cast<const QHelpEvent*>(event);
+	if (const auto* menu = qobject_cast<const QMenu*>(widget); menu != nullptr && help != nullptr)
+	{
+		const QAction* action = menu->actionAt(help->pos());
+		const QString id = action != nullptr ? action->property("controlCommand").toString() : QString();
+		if (!id.isEmpty()) { return describe(id, full); }
+	}
+	return ContextHelp::helpFor(widget, full);
+}
+
+} // namespace
+
 bool ContextHelp::eventFilter(QObject* watched, QEvent* event)
 {
 	const auto type = event->type();
@@ -83,7 +103,7 @@ bool ContextHelp::eventFilter(QObject* watched, QEvent* event)
 	auto* widget = qobject_cast<QWidget*>(watched);
 	if (widget == nullptr) { return false; }
 	if (type == QEvent::ToolTip && !widget->toolTip().isEmpty()) { return false; }  // its own tooltip wins
-	const QString text = helpFor(widget, type != QEvent::ToolTip);
+	const QString text = helpAt(widget, event, type != QEvent::ToolTip);
 	if (text.isEmpty()) { return false; }
 	if (type == QEvent::QueryWhatsThis) { event->accept(); return true; }
 	const auto* help = static_cast<QHelpEvent*>(event);

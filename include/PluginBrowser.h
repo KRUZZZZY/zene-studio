@@ -61,6 +61,7 @@ private:
 	QWidget * m_view;
 	QTreeWidget * m_descTree;
 	bool m_pluginsAdded = false;
+	QString m_filter;  //!< the search text, applied again when the tree is rebuilt
 };
 
 

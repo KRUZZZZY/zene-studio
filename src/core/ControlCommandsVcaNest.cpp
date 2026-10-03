@@ -72,6 +72,26 @@ void apply(int id, const GroupLinks& links)
 	}
 }
 
+QString parentIdOf(const GroupLinks& links)
+{
+	return links.parent != VcaGroup::NoParent ? vcaGroupId(links.parent) : QString();
+}
+
+QJsonObject linksJson(const GroupLinks& links)
+{
+	return {{QStringLiteral("gain"), links.gain}, {QStringLiteral("mute"), links.mute},
+		{QStringLiteral("solo"), links.solo}, {QStringLiteral("suspended"), links.suspended}};
+}
+
+//! The arguments that make `command` put `links` back: the parent for set_parent, the four links for set_links.
+QJsonObject inverseArgs(int id, const GroupLinks& links, const QString& command)
+{
+	QJsonObject args = command == QLatin1String("vca.set_parent")
+		? QJsonObject{{QStringLiteral("parent"), parentIdOf(links)}} : linksJson(links);
+	args.insert(QStringLiteral("group"), vcaGroupId(id));
+	return args;
+}
+
 ControlResult change(VcaGroup* group, const GroupLinks& next, const QString& command)
 {
 	const int id = group->id();
@@ -80,10 +100,11 @@ ControlResult change(VcaGroup* group, const GroupLinks& next, const QString& com
 	apply(id, next);
 	Engine::getSong()->setModified();
 	QJsonObject result = groupState(group);
-	result.insert(QStringLiteral("parent"), next.parent != VcaGroup::NoParent ? vcaGroupId(next.parent) : QString());
-	result.insert(QStringLiteral("links"), QJsonObject{{QStringLiteral("gain"), next.gain}, {QStringLiteral("mute"), next.mute},
-		{QStringLiteral("solo"), next.solo}, {QStringLiteral("suspended"), next.suspended}});
-	result.insert(QStringLiteral("__transaction"), control::transactionPayload({{QStringLiteral("group"), vcaGroupId(id)}}, command, {},
+	result.insert(QStringLiteral("parent"), parentIdOf(next));
+	result.insert(QStringLiteral("links"), linksJson(next));
+	QJsonObject previous{{QStringLiteral("group"), vcaGroupId(id)}, {QStringLiteral("parent"), parentIdOf(before)},
+		{QStringLiteral("links"), linksJson(before)}};
+	result.insert(QStringLiteral("__transaction"), control::transactionPayload(previous, command, inverseArgs(id, before, command),
 		true, QStringLiteral("action checkpoint: the recorded undo step puts the group's previous nesting and links back")));
 	return ControlResult::success(result);
 }

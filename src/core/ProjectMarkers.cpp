@@ -25,6 +25,7 @@
 #include "ProjectMarkers.h"
 
 #include <algorithm>
+#include <limits>
 
 #include <QDomDocument>
 #include <QDomElement>
@@ -95,7 +96,11 @@ bool ProjectMarkers::replace(int id, const Marker& marker)
 void ProjectMarkers::restore(const QVector<Marker>& markers)
 {
 	m_markers = markers;
-	for (const Marker& marker : m_markers) { m_nextId = std::max(m_nextId, marker.id + 1); }
+	// An id a file gives as INT_MAX has no next one (the + 1 would overflow); it is kept, and skipped here.
+	for (const Marker& marker : m_markers)
+	{
+		if (marker.id < std::numeric_limits<int>::max()) { m_nextId = std::max(m_nextId, marker.id + 1); }
+	}
 	sortAndNotify();
 }
 

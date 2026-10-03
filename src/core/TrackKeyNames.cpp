@@ -134,7 +134,9 @@ void TrackKeyNames::load(const QDomElement& element)
 	for (QDomElement track = element.firstChildElement(QStringLiteral("track")); !track.isNull();
 		track = track.nextSiblingElement(QStringLiteral("track")))
 	{
-		const int id = track.attribute(QStringLiteral("id")).toInt();
+		bool ok = false;
+		const int id = track.attribute(QStringLiteral("id")).toInt(&ok);
+		if (!ok) { continue; }  // no id is no track: never track 0 by default (review L19 #14)
 		for (QDomElement key = track.firstChildElement(QStringLiteral("key")); !key.isNull(); key = key.nextSiblingElement(QStringLiteral("key")))
 		{
 			setName(id, key.attribute(QStringLiteral("key")).toInt(), key.attribute(QStringLiteral("name")));

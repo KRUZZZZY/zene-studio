@@ -163,7 +163,9 @@ auto HostedPlugin::serviceMainThread() -> bool
 	{
 		static const clap_input_events_t empty{nullptr, [](const clap_input_events_t*) -> std::uint32_t { return 0; },
 			[](const clap_input_events_t*, std::uint32_t) -> const clap_event_header_t* { return nullptr; }};
-		impl.paramsExt->flush(impl.plugin, &empty, &impl.outEvents);
+		// Its own output list: impl.outEvents is only set up by prepare(), which has not run (or failed).
+		const clap_output_events_t out{&impl, &Impl::outEventsTryPush};
+		impl.paramsExt->flush(impl.plugin, &empty, &out);
 	}
 	return impl.stateDirty.exchange(false, std::memory_order_relaxed);
 }

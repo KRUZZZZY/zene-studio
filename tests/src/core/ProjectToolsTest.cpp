@@ -26,7 +26,8 @@
  *  task list shows the queue's jobs (WF-046); track.flatten refuses a half range before rendering
  *  anything (ED-207); tracks copied to the clipboard paste into a project as new tracks, one undo step
  *  (WF-042); a project cannot be its own subproject (WF-045); an alternative is kept beside the project,
- *  undone off the list, switched to and back with the list carried (WF-032). */
+ *  undone off the list, switched to and back with the list carried, and taken off the list with its file
+ *  kept (WF-032). */
 
 #include <QtTest>
 
@@ -57,6 +58,11 @@ ControlResult run(const QString& id, const QJsonObject& args = {})
 QString stateOf(int job)
 {
 	return run(QStringLiteral("render.queue_report"), {{QStringLiteral("job"), job}}).result.value(QStringLiteral("state")).toString();
+}
+
+int alternativeCount()
+{
+	return static_cast<int>(run(QStringLiteral("project.alternatives")).result.value(QStringLiteral("alternatives")).toArray().size());
 }
 
 } // namespace
@@ -128,6 +134,25 @@ private slots:
 			ControlErrorKind::InvalidArgs);
 	}
 
+	void aQueuedJobIsCancelledByNumber()
+	{
+		const QString project = QDir(m_dir.path()).filePath(QStringLiteral("queued.mmp"));
+		Track::create(Track::Type::Instrument, Engine::getSong());
+		QVERIFY(Engine::getSong()->saveProjectFile(project));
+		const ControlResult queued = run(QStringLiteral("render.queue_add"), {{QStringLiteral("out"), QDir(m_dir.path()).filePath(QStringLiteral("q.wav"))},
+			{QStringLiteral("project"), project}, {QStringLiteral("start"), false}});
+		QVERIFY2(queued.ok, qPrintable(queued.errorMessage));
+		const int job = queued.result.value(QStringLiteral("job")).toInt();
+		const ControlResult cancelled = run(QStringLiteral("render.queue_cancel"), {{QStringLiteral("job"), job}});
+		QVERIFY2(cancelled.ok, qPrintable(cancelled.errorMessage));
+		QCOMPARE(cancelled.result.value(QStringLiteral("cancelled")).toInt(), 1);
+		QCOMPARE(stateOf(job), QStringLiteral("cancelled"));
+		QVERIFY(!QFileInfo::exists(QDir(m_dir.path()).filePath(QStringLiteral("q.wav"))));  // dropped before it ran
+		// An ended job is not open any more: cancelling it again finds nothing to cancel.
+		QCOMPARE(run(QStringLiteral("render.queue_cancel"), {{QStringLiteral("job"), job}}).errorKind, ControlErrorKind::NotFound);
+		QVERIFY(run(QStringLiteral("render.queue_clear")).result.value(QStringLiteral("removed")).toInt() >= 1);
+	}
+
 	void flattenRefusesAHalfRange()
 	{
 		Track* track = Track::create(Track::Type::Instrument, Engine::getSong());
@@ -187,6 +212,24 @@ private slots:
 		QCOMPARE(QFileInfo(song->projectFileName()).fileName(), QStringLiteral("song.mmp"));
 		QCOMPARE(run(QStringLiteral("project.alternatives")).result.value(QStringLiteral("alternatives")).toArray().size(), 1);
 		QCOMPARE(run(QStringLiteral("project.alternative_switch"), {{QStringLiteral("name"), QStringLiteral("nope")}}).errorKind,
+			ControlErrorKind::NotFound);
+	}
+
+	void anAlternativeLeavesTheListAndKeepsItsFile()
+	{
+		const int before = alternativeCount();
+		const ControlResult saved = run(QStringLiteral("project.alternative_save"), {{QStringLiteral("name"), QStringLiteral("club")}});
+		QVERIFY2(saved.ok, qPrintable(saved.errorMessage));
+		QCOMPARE(alternativeCount(), before + 1);
+		const ControlResult removed = run(QStringLiteral("project.alternative_remove"), {{QStringLiteral("name"), QStringLiteral("club")}});
+		QVERIFY2(removed.ok, qPrintable(removed.errorMessage));
+		QCOMPARE(removed.result.value(QStringLiteral("removed")).toString(), QStringLiteral("club"));
+		QCOMPARE(removed.result.value(QStringLiteral("file_kept")).toString(), saved.result.value(QStringLiteral("file")).toString());
+		QVERIFY(QFileInfo::exists(removed.result.value(QStringLiteral("file_kept")).toString()));  // off the list, still on disk
+		QCOMPARE(alternativeCount(), before);
+		QVERIFY(run(QStringLiteral("control.undo")).ok);  // the removal: back on the list
+		QCOMPARE(alternativeCount(), before + 1);
+		QCOMPARE(run(QStringLiteral("project.alternative_remove"), {{QStringLiteral("name"), QStringLiteral("nope")}}).errorKind,
 			ControlErrorKind::NotFound);
 	}
 

@@ -27,6 +27,7 @@
 #include <algorithm>
 #include <chrono>
 #include <map>
+#include <thread>
 
 #include <QDateTime>
 #include <QDir>
@@ -94,7 +95,11 @@ bool TakeRecorder::start(const QString& path, int sampleRate, QString* why)
 void TakeRecorder::stop()
 {
 	if (!m_thread.joinable()) { return; }
-	m_recording.store(false, std::memory_order_release);
+	m_recording.store(false, std::memory_order_seq_cst);
+	// A block push() was already copying when recording ended is waited for, so the writer's last drain
+	// has it (review L19 #10). Both sides are sequentially consistent: push() raises m_pushing BEFORE it
+	// reads m_recording, this reads m_pushing AFTER clearing it, so one of the two sees the other.
+	while (m_pushing.load(std::memory_order_seq_cst) != 0) { std::this_thread::yield(); }
 	m_stopping.store(true, std::memory_order_release);
 	m_thread.join();
 	sf_close(m_file);
@@ -103,7 +108,13 @@ void TakeRecorder::stop()
 
 void TakeRecorder::push(const SampleFrame* frames, f_cnt_t count) noexcept
 {
-	if (!recording()) { return; }
+	m_pushing.fetch_add(1, std::memory_order_seq_cst);
+	if (m_recording.load(std::memory_order_seq_cst)) { copyIn(frames, count); }
+	m_pushing.fetch_sub(1, std::memory_order_release);
+}
+
+void TakeRecorder::copyIn(const SampleFrame* frames, f_cnt_t count) noexcept
+{
 	const std::size_t write = m_write.load(std::memory_order_relaxed);
 	const std::size_t read = m_read.load(std::memory_order_acquire);
 	const std::size_t room = RingFrames - (write - read);
@@ -131,9 +142,12 @@ bool TakeRecorder::writeAvailable()
 		m_batch[2 * i] = m_ring[slot];
 		m_batch[2 * i + 1] = m_ring[slot + 1];
 	}
-	sf_writef_float(m_file, m_batch.data(), static_cast<sf_count_t>(n));
+	// Only what the file took counts as written; the rest (a full disk, a failed write) is dropped and
+	// counted as such, and the ring moves on so the audio side keeps its room (review L19 #9).
+	const auto taken = static_cast<std::size_t>(std::max<sf_count_t>(0, sf_writef_float(m_file, m_batch.data(), static_cast<sf_count_t>(n))));
 	m_read.store(read + n, std::memory_order_release);
-	m_written.fetch_add(n, std::memory_order_relaxed);
+	m_written.fetch_add(taken, std::memory_order_relaxed);
+	if (taken < n) { m_dropped.fetch_add(n - taken, std::memory_order_relaxed); }
 	return true;
 }
 
@@ -171,8 +185,13 @@ TakeRecorder* TakeRecorder::of(const Effect* effect)
 
 QString TakeRecorder::defaultTakePath()
 {
-	const QString folder = QDir(ConfigManager::inst()->userSamplesDir()).filePath(QStringLiteral("Recordings"));
-	return QDir(folder).filePath(QStringLiteral("Take %1.wav").arg(QDateTime::currentDateTime().toString(QStringLiteral("yyyy-MM-dd hh.mm.ss.zzz"))));
+	const QDir folder(QDir(ConfigManager::inst()->userSamplesDir()).filePath(QStringLiteral("Recordings")));
+	const QString name = QStringLiteral("Take %1").arg(QDateTime::currentDateTime().toString(QStringLiteral("yyyy-MM-dd hh.mm.ss.zzz")));
+	// Never an existing take's file: two takes started in one millisecond (two recorders, a script) would
+	// otherwise write the same one (review L19 #11).
+	QString path = folder.filePath(name + QStringLiteral(".wav"));
+	for (int n = 2; QFileInfo::exists(path); ++n) { path = folder.filePath(QStringLiteral("%1 (%2).wav").arg(name).arg(n)); }
+	return path;
 }
 
 } // namespace lmms

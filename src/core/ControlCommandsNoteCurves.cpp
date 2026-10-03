@@ -85,10 +85,11 @@ bool readCurve(const QJsonArray& json, bool relative, std::vector<CurvePoint>* p
 		const QJsonObject point = value.toObject();
 		const double at = point.value(QStringLiteral("tick")).toDouble(-1.0);
 		const double semitones = point.value(QStringLiteral("semitones")).toDouble(1e9);
-		if (at < 0.0 || (relative && at > 1.0) || std::abs(semitones) > MaxDetuning)
+		// An absolute tick past the longest song would overflow the rounding to ticks.
+		if (at < 0.0 || at > (relative ? 1.0 : static_cast<double>(MaxSongLength)) || std::abs(semitones) > MaxDetuning)
 		{
-			*error = ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("a point needs tick >= 0 from the note's "
-				"start (0..1 of its length with 'relative') and |semitones| <= %1").arg(MaxDetuning));
+			*error = ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("a point needs tick 0..%2 from the note's "
+				"start (0..1 of its length with 'relative') and |semitones| <= %1").arg(MaxDetuning).arg(MaxSongLength));
 			return false;
 		}
 		points->push_back({at, static_cast<float>(semitones)});

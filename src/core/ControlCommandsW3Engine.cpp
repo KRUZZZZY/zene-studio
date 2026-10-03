@@ -193,8 +193,10 @@ bool receiveEnds(const QJsonObject& args, Receive* receive, ControlResult* error
 		*error = ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("a channel cannot receive itself"));
 		return false;
 	}
-	receive->routeExisted = Engine::mixer()->channelSidechainSend(static_cast<mix_ch_t>(from->index()),
-		static_cast<mix_ch_t>(to->index())) != nullptr;
+	const MixerSidechainRoute* route = Engine::mixer()->channelSidechainSend(static_cast<mix_ch_t>(from->index()),
+		static_cast<mix_ch_t>(to->index()));
+	receive->routeExisted = route != nullptr;
+	if (route != nullptr) { receive->tap = route->mode(); }
 	return true;
 }
 
@@ -204,10 +206,13 @@ ControlResult chainReceive(const QJsonObject& args)
 	ControlResult error;
 	if (!receiveEnds(args, &receive, &error) || !receiverEntry(&receive.entry, &error)) { return error; }
 	const QString tapName = args.value(QStringLiteral("tap_point")).toString(QStringLiteral("post_fader"));
-	if (!sidechainTapPointFromName(tapName, &receive.tap))
+	SidechainTapPoint requested = SidechainTapPoint::PostFader;
+	if (!sidechainTapPointFromName(tapName, &requested))
 	{
 		return ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("'%1' is not a tap point").arg(tapName));
 	}
+	// An existing send is kept as it is, so the reply names the tap it really uses.
+	if (!receive.routeExisted) { receive.tap = requested; }
 	receive.position = args.value(QStringLiteral("position")).toInt(-1);
 	receive.level = std::clamp(args.value(QStringLiteral("level")).toDouble(1.0), 0.0, 2.0);
 	Effect* effect = makeReceive(receive, &error);
@@ -215,7 +220,7 @@ ControlResult chainReceive(const QJsonObject& args)
 	addUndoStep([receive]() { removeReceive(receive); }, [receive]() { ControlResult ignored; makeReceive(receive, &ignored); });
 	Engine::getSong()->setModified();
 	return ControlResult::success({{QStringLiteral("target"), receive.to}, {QStringLiteral("from"), receive.from},
-		{QStringLiteral("plugin"), effectIdOf(effect)}, {QStringLiteral("tap_point"), tapName},
+		{QStringLiteral("plugin"), effectIdOf(effect)}, {QStringLiteral("tap_point"), sidechainTapPointName(receive.tap)},
 		{QStringLiteral("send_created"), !receive.routeExisted}});
 }
 

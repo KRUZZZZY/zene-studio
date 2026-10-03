@@ -234,12 +234,28 @@ bool sandboxValue(const QString& id, const QString& key, QJsonValue& value, QStr
 	return true;
 }
 
+//! An empty Lua table is both {} and [], and tableToJson() reads it as {}: an argument @a id's schema declares
+//! an array gets [] instead, so `follow_actions = {}` clears a chain (review L17 #9).
+void emptyTablesAsArrays(const QString& id, QJsonObject& args)
+{
+	const ControlCommand* command = ControlRegistry::instance()->command(id);
+	if (command == nullptr) { return; }
+	const QJsonObject properties = command->argsSchema.value(QStringLiteral("properties")).toObject();
+	for (auto it = args.begin(); it != args.end(); ++it)
+	{
+		const bool emptyTable = it.value().isObject() && it.value().toObject().isEmpty();
+		const bool wantsArray = properties.value(it.key()).toObject().value(QStringLiteral("type")) == QLatin1String("array");
+		if (emptyTable && wantsArray) { it.value() = QJsonArray(); }
+	}
+}
+
 //! zene.command(id, args) -> reply | nil, message, kind
 int luaCommand(lua_State* L)
 {
 	const QString id = QString::fromUtf8(luaL_checkstring(L, 1));
 	QJsonObject args = lua_istable(L, 2) ? luaToJson(L, 2, 0).toObject() : QJsonObject();
 	if (const QString why = refusalFor(id); !why.isEmpty()) { return pushFailure(L, why, QStringLiteral("refused")); }
+	emptyTablesAsArrays(id, args);
 	QString error;
 	if (!sandboxPaths(id, args, &error)) { return pushFailure(L, error, QStringLiteral("refused")); }
 	Request request{id, args};

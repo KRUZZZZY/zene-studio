@@ -54,7 +54,8 @@ struct BiquadCoefficients
 };
 
 /*! The cookbook section of @a shape at @a hz (kept below 0.45 of @a sampleRate), quality @a q
- *  (shelves: the slope, 1 = the steepest without overshoot) and, for a peak or shelf, @a gainDb.
+ *  (shelves use the cookbook's Q form too: 0.7071 is slope S = 1, the steepest without
+ *  overshoot) and, for a peak or shelf, @a gainDb.
  *  Plain arithmetic: allocation-free, so an audio thread may call it when a parameter moves. */
 inline BiquadCoefficients designBiquad(BiquadShape shape, double hz, double q, double sampleRate, double gainDb = 0.0)
 {

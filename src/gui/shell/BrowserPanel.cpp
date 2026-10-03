@@ -64,6 +64,8 @@ BrowserPanel::BrowserPanel(QWidget* parent)
 	m_wave = new WaveformPreview(this);
 	box->addWidget(m_wave);
 	connect(m_selector, qOverload<int>(&QComboBox::currentIndexChanged), m_stack, &QStackedWidget::setCurrentIndex);
+	// WF-010: the waveform belongs to the source it was picked in; another source starts without one.
+	connect(m_selector, qOverload<int>(&QComboBox::currentIndexChanged), m_wave, [this] { m_wave->setPath(QString()); });
 	connect(m_selector, qOverload<int>(&QComboBox::currentIndexChanged), this, [this] {
 		if (m_restoring || m_context.isEmpty()) { return; }
 		ControlRegistry::instance()->invoke(QStringLiteral("browser.remember_source"),

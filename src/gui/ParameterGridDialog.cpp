@@ -76,18 +76,18 @@ ParameterGridDialog::ParameterGridDialog(ParameterControls* controls) :
 {
 	auto* grid = new QGridLayout(this);
 	int row = 0;
-	int knobs = 0;
+	QList<QWidget*> knobs;
 	QList<QWidget*> switches;
 	for (const auto& [model, key] : controls->parameters())
 	{
 		QWidget* widget = controlFor(model, this);
 		if (widget == nullptr) { continue; }
 		if (qobject_cast<ComboBoxModel*>(model) != nullptr) { grid->addWidget(widget, row++, 0, 1, kColumns); continue; }
-		if (qobject_cast<BoolModel*>(model) != nullptr) { switches << widget; continue; }
-		grid->addWidget(widget, row + knobs / kColumns, knobs % kColumns, Qt::AlignHCenter);
-		++knobs;
+		(qobject_cast<BoolModel*>(model) != nullptr ? switches : knobs) << widget;
 	}
-	row += (knobs + kColumns - 1) / kColumns;
+	// The choices on top whatever order the device registered them in, then the knobs, then the switches.
+	for (int i = 0; i < knobs.size(); ++i) { grid->addWidget(knobs.at(i), row + i / kColumns, i % kColumns, Qt::AlignHCenter); }
+	row += (static_cast<int>(knobs.size()) + kColumns - 1) / kColumns;
 	for (int i = 0; i < switches.size(); ++i) { grid->addWidget(switches.at(i), row + i / 2, (i % 2) * 2, 1, 2); }
 	grid->setSizeConstraint(QLayout::SetFixedSize);
 }

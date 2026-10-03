@@ -92,13 +92,14 @@ void normalise(std::vector<float>* left, std::vector<float>* right)
 	for (float& x : *right) { x *= gain; }
 }
 
-//! One channel of @a buffer resampled (linear) to @a to Hz, at most @a limit long.
+//! One channel of @a buffer resampled (linear) to @a to Hz, at most @a limit long and at least one frame
+//! (a one-frame impulse at a higher rate would otherwise truncate to nothing and load as silence).
 std::vector<float> channelAt(const SampleBuffer& buffer, int channel, double to, std::size_t limit)
 {
 	const SampleFrame* frames = buffer.data();
 	const std::size_t count = buffer.size();
 	const double step = static_cast<double>(buffer.sampleRate()) / to;
-	const auto length = std::min(limit, static_cast<std::size_t>(static_cast<double>(count) / step));
+	const auto length = std::min(limit, std::max<std::size_t>(1, static_cast<std::size_t>(static_cast<double>(count) / step)));
 	std::vector<float> out(length);
 	for (std::size_t i = 0; i < length; ++i)
 	{
@@ -187,6 +188,17 @@ bool ConvolutionReverbEffect::loadImpulse(const QString& path)
 	return true;
 }
 
+std::size_t ConvolutionReverbEffect::predelayFrames(float rate) const
+{
+	return std::min(m_predelay[0].size() - 1, static_cast<std::size_t>(m_controls.m_predelayModel.value() * 0.001f * rate));
+}
+
+int ConvolutionReverbEffect::tailFrames() const
+{
+	const auto predelay = static_cast<int>(predelayFrames(Engine::audioEngine()->outputSampleRate()));
+	return m_tail.load(std::memory_order_relaxed) + predelay;
+}
+
 void ConvolutionReverbEffect::designFilters(float rate)
 {
 	const float low = m_controls.m_lowCutModel.value();
@@ -213,8 +225,7 @@ ProcessStatus ConvolutionReverbEffect::processImpl(InterleavedBufferView<float, 
 {
 	const float rate = Engine::audioEngine()->outputSampleRate();
 	designFilters(rate);
-	const auto predelay = std::min(m_predelay[0].size() - 1,
-		static_cast<std::size_t>(m_controls.m_predelayModel.value() * 0.001f * rate));
+	const std::size_t predelay = predelayFrames(rate);
 	const float gain = dbfsToAmp(m_controls.m_outputModel.value()) * wetLevel();
 	const float d = dryLevel();
 	for (f_cnt_t f = 0; f < inOut.frames(); ++f)

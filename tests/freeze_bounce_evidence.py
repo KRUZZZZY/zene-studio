@@ -58,7 +58,8 @@ RENDER_TIMEOUT = 180.0
 
 # The commands whose cost includes a whole engine start. Named here, not at the
 # call sites, so the list and the reason cannot drift apart.
-RENDER_COMMANDS = ("render.render", "bounce.in_place", "freeze.track", "freeze.region")
+RENDER_COMMANDS = ("render.render", "bounce.in_place", "freeze.track", "freeze.region",
+                   "project.subproject_add", "project.subproject_refresh", "track.flatten", "range.bounce")
 
 # A render slower than this is printed with its wall time, so a run on a slow
 # platform says how much of its time a render's engine start is - the arm64 job's

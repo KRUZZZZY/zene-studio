@@ -182,8 +182,8 @@ void ControlServer::reapHungUpClients()
 	{
 		char byte = 0;
 		const ssize_t n = ::recv(it.key(), &byte, 1, MSG_PEEK | MSG_DONTWAIT);
-		// 0: an orderly shutdown; an error other than "nothing to read yet": a reset peer.
-		if (n == 0 || (n < 0 && errno != EAGAIN && errno != EWOULDBLOCK)) { closed.append(it.key()); }
+		// 0: an orderly shutdown; an error other than "nothing to read yet" (or a signal): a reset peer.
+		if (n == 0 || (n < 0 && errno != EAGAIN && errno != EWOULDBLOCK && errno != EINTR)) { closed.append(it.key()); }
 	}
 	for (const int fd : closed) { dropClient(fd); }
 #endif

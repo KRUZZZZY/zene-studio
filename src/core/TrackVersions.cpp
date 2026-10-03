@@ -63,16 +63,18 @@ QString TrackVersions::clipsOf(Track* track)
 	return doc.toString(-1);
 }
 
-void TrackVersions::replaceClips(Track* track, const QString& xml)
+bool TrackVersions::replaceClips(Track* track, const QString& xml)
 {
-	track->deleteClips();
 	QDomDocument doc;
-	doc.setContent(xml);
+	// Parsed before anything goes: a stored version that is not XML leaves the track as it is (review L19 #15).
+	if (!doc.setContent(xml)) { return false; }
+	track->deleteClips();
 	for (QDomElement element = doc.documentElement().firstChildElement(); !element.isNull(); element = element.nextSiblingElement())
 	{
 		Clip* clip = track->createClip(TimePos(0));
 		clip->restoreState(element);
 	}
+	return true;
 }
 
 void TrackVersions::save(QDomDocument& doc, QDomElement& parent) const
@@ -106,7 +108,9 @@ void TrackVersions::load(const QDomElement& element)
 		{
 			versions.clips.insert(node.attribute(QStringLiteral("name")), node.text());
 		}
-		if (!versions.clips.isEmpty()) { m_sets.insert(track.attribute(QStringLiteral("id")).toInt(), versions); }
+		bool ok = false;
+		const int id = track.attribute(QStringLiteral("id")).toInt(&ok);
+		if (ok && !versions.clips.isEmpty()) { m_sets.insert(id, versions); }  // no id is no track (review L19 #14)
 	}
 }
 

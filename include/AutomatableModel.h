@@ -492,7 +492,7 @@ protected:
 private:
 	static std::atomic<jo_id_t> s_lastTouched;
 	float m_trimBase = 0.f;  //!< ED-199, see trimBase()
-	quint64 m_trimRun = 0;
+	quint64 m_trimRun = ~quint64{0};  //!< no token: run 0 (stopped, an export) must read the value too
 	// dynamicCast implementation
 	template<class Target>
 	struct DCastVisitor : public ModelVisitor

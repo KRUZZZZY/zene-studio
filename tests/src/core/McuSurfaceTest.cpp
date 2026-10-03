@@ -132,8 +132,16 @@ private slots:
 		QVERIFY(surface->stripTrack(0) != first);
 		surface->apply({mcu::Kind::BankLeft, -1, 0, true});
 		QCOMPARE(surface->bank(), 0);
+		// surface.mcu_bank pages as the buttons do.
+		const ControlResult paged = ControlRegistry::instance()->invoke(QStringLiteral("surface.mcu_bank"), {{QStringLiteral("bank"), 1}});
+		QVERIFY2(paged.ok, qPrintable(paged.errorMessage));
+		QCOMPARE(paged.result.value(QStringLiteral("bank")).toInt(), 1);
+		QCOMPARE(surface->bank(), 1);
+		QVERIFY(surface->stripTrack(0) != first);
 
 		McuSurface::disconnect();
+		QCOMPARE(ControlRegistry::instance()->invoke(QStringLiteral("surface.mcu_bank"), {{QStringLiteral("bank"), 0}}).errorKind,
+			ControlErrorKind::NotFound);
 		QVERIFY(McuSurface::instance() == nullptr);
 		qDeleteAll(made);
 	}

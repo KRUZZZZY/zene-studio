@@ -225,6 +225,7 @@ void InspectorPanel::dropContent()
 	m_name = nullptr;
 	m_mute = nullptr;
 	m_solo = nullptr;
+	m_liveFields.clear();  // they were the content's; kept, the list would grow by every rebuild
 }
 
 void InspectorPanel::scheduleRebuild()
@@ -356,7 +357,8 @@ QWidget* InspectorPanel::clipSection(Clip* clip)
 	else if (auto* sample = dynamic_cast<SampleClip*>(clip))
 	{
 		auto* gain = new ReadoutField(tr("Gain"), section);
-		gain->bindText([sample] { return QStringLiteral("%1 dB").arg(gainLinearToDb(sample->sample().amplification()), 0, 'f', 1); },
+		const QPointer<SampleClip> guarded(sample);  // the clip can go while its fields are still shown
+		gain->bindText([guarded] { return guarded ? QStringLiteral("%1 dB").arg(gainLinearToDb(guarded->sample().amplification()), 0, 'f', 1) : QString(); },
 			[id](const QString& typed) {
 				bool ok = false;
 				const double db = QString(typed).remove(QStringLiteral("dB")).trimmed().toDouble(&ok);

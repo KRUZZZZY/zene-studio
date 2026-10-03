@@ -316,7 +316,8 @@ inline float modulatedValue(const ModulatorSource& source, float base, float dep
 class LMMS_EXPORT ModulationLayerPublisher
 {
 public:
-	ModulationLayerPublisher() = default;
+	//! No modulator follows a track yet, and none has been triggered.
+	ModulationLayerPublisher();
 	//! Drops the destroyed() watches; they point into this object.
 	~ModulationLayerPublisher();
 	ModulationLayerPublisher(const ModulationLayerPublisher&) = delete;

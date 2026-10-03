@@ -134,8 +134,8 @@ struct ClipEdits
 	std::array<GainPoint, MaxGainPoints> envelope{};
 	int envelopeCount = 0;
 
-	//! True when this clip contributes nothing to the audio it would not
-	//! contribute without any edits at all.
+	//! True when the gain stage has nothing to do: unity gain, no fades, no envelope, no pre-fades.
+	//! Speed (hasSpeed()), transpose, formants and loops are not gain edits; callers test them apart.
 	bool isNeutral() const { return gain == 1.0f && !hasFade() && !hasEnvelope() && !hasPreFade(); }
 	bool hasFade() const { return fadeInTicks > 0 || fadeOutTicks > 0; }
 	bool hasSpeed() const { return speedFrom != 100 || speedTo != 100 || speedInTicks > 0 || speedOutTicks > 0; }

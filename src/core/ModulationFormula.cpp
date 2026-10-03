@@ -40,6 +40,13 @@ constexpr double kPi = 3.14159265358979323846;
 
 double fraction(double a) { return a - std::floor(a); }
 
+//! rand's whole number: @a a's floor, held inside int64's range (a cast outside it is undefined), 0 when not finite.
+std::int64_t wholeNumber(double a)
+{
+	constexpr double kLimit = 9.0e18;
+	return std::isfinite(a) ? static_cast<std::int64_t>(std::clamp(std::floor(a), -kLimit, kLimit)) : 0;
+}
+
 //! The one-argument functions, in Op order from Negate.
 using Unary = double (*)(double);
 constexpr Unary kUnary[] = {
@@ -49,7 +56,7 @@ constexpr Unary kUnary[] = {
 	[](double a) { return std::fabs(a); },
 	[](double a) { return std::floor(a); },
 	[](double a) { return a < 0.0 ? 0.0 : std::sqrt(a); },
-	[](double a) { return modulationRandomAt(static_cast<std::int64_t>(std::floor(a))); },
+	[](double a) { return modulationRandomAt(wholeNumber(a)); },
 	[](double a) { return 1.0 - 4.0 * std::fabs(fraction(a) - 0.5); },
 	[](double a) { return 2.0 * fraction(a) - 1.0; },
 	[](double a) { return fraction(a) < 0.5 ? 1.0 : -1.0; },
@@ -146,20 +153,22 @@ private:
 	bool term()
 	{
 		static const std::map<QChar, Op> ops{{QLatin1Char('*'), Op::Mul}, {QLatin1Char('/'), Op::Div}, {QLatin1Char('%'), Op::Mod}};
-		return chain(&Compiler::power, ops);
-	}
-
-	bool power()
-	{
-		if (!unary()) { return false; }
-		return !accept(QLatin1Char('^')) || (power() && put(Op::Pow));
+		return chain(&Compiler::unary, ops);
 	}
 
 	bool unary()
 	{
 		if (accept(QLatin1Char('-'))) { return unary() && put(Op::Negate); }
 		accept(QLatin1Char('+'));
-		return primary();
+		return power();
+	}
+
+	//! '^' binds tighter than a unary minus before it (-2^2 is -4, as usual), takes one after it (2^-1)
+	//! and groups to the right (2^3^2 is 2^9).
+	bool power()
+	{
+		if (!primary()) { return false; }
+		return !accept(QLatin1Char('^')) || (unary() && put(Op::Pow));
 	}
 
 	//! Whether the character at @a i is a digit (or, with @a point, a decimal point).

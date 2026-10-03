@@ -152,7 +152,8 @@ ControlResult collectMedia(const QJsonObject& args)
 	QJsonArray failed;
 	collectAll(project, projectDir, folder, scan, &copied, &failed);
 	QByteArray written;
-	controlReadFileBytes(project, &written, &error);
+	// Read back for the undo step: one that cannot be read is reported, not recorded as an empty file a redo would write.
+	if (!controlReadFileBytes(project, &written, &error)) { return error; }
 	if (written != previous)
 	{
 		addUndoStep(

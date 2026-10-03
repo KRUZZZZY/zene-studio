@@ -258,6 +258,15 @@ private slots:
 		// range.set and clip.select are interface state: the newest undo step is still the save.
 		QVERIFY(run(QStringLiteral("control.undo")).ok);
 		QCOMPARE(run(QStringLiteral("selection.list")).result.value(QStringLiteral("count")).toInt(), 0);
+		// selection.remove forgets it, one undo step of its own.
+		QVERIFY(run(QStringLiteral("selection.save"), {{QStringLiteral("name"), QStringLiteral("intro")}}).ok);
+		const ControlResult removed = run(QStringLiteral("selection.remove"), {{QStringLiteral("name"), QStringLiteral("intro")}});
+		QVERIFY2(removed.ok, qPrintable(removed.errorMessage));
+		QCOMPARE(removed.result.value(QStringLiteral("count")).toInt(), 0);
+		QCOMPARE(run(QStringLiteral("selection.list")).result.value(QStringLiteral("count")).toInt(), 0);
+		QCOMPARE(run(QStringLiteral("selection.remove"), {{QStringLiteral("name"), QStringLiteral("intro")}}).errorKind, ControlErrorKind::NotFound);
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
+		QCOMPARE(run(QStringLiteral("selection.list")).result.value(QStringLiteral("count")).toInt(), 1);
 	}
 
 	void theHistoryIsWalkedInOneGo()

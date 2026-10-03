@@ -94,7 +94,8 @@ private:
 //! "bar.beat" (both 1-based) of a tick position under the song's meter - what the header, the
 //! Inspector and the note inspector show.
 LMMS_EXPORT QString barBeatText(int ticks);
-//! The tick position of "bar" or "bar.beat"; false when @a text is neither.
+//! The tick position of "bar", "bar.beat" or "bar.beat.sixteenth" (what the position readout shows); false
+//! for anything else, a beat past the meter's or a sixteenth past the beat's included.
 LMMS_EXPORT bool ticksFromBarBeat(const QString& text, int* ticks);
 
 //! The header's readouts, laid out in the strip: tempo, meter, position and time, master

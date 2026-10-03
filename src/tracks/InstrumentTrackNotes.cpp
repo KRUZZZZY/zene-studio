@@ -185,9 +185,10 @@ void InstrumentTrack::triggerNote(const NoteTrigger& trigger, f_cnt_t offset, f_
 	// Swing and the MIDI offset (0.5.0 ED-142 / ED-076) delay a note that starts here - not one chased.
 	if (note.pos() == curStart)
 	{
-		const tick_t clipStart = trigger.songGlobal ? trigger.clip->startPosition().getTicks() + trigger.clip->startTimeOffset().getTicks() : 0;
-		offset += MidiPlayback::instance().delayFrames(clipStart + note.pos().getTicks(), Engine::framesPerTick(),
-			Engine::audioEngine()->outputSampleRate());
+		// In the song the note starts at the position playing now - on a looped clip's later pass too, where
+		// the clip's start plus the folded note position would repeat the first pass's swing phase.
+		const tick_t songTick = trigger.songGlobal ? trigger.songTick : note.pos().getTicks();
+		offset += MidiPlayback::instance().delayFrames(songTick, Engine::framesPerTick(), Engine::audioEngine()->outputSampleRate());
 	}
 	// MX-035: the track's own delay, on top (a chased note too: the whole track sits later).
 	offset += static_cast<f_cnt_t>(std::lround(delayMs() * Engine::audioEngine()->outputSampleRate() / 1000.0));
@@ -197,7 +198,9 @@ void InstrumentTrack::triggerNote(const NoteTrigger& trigger, f_cnt_t offset, f_
 	const f_cnt_t each = frames / hits;
 	for (int hit = 0; hit < hits; ++hit)
 	{
-		NotePlayHandle* handle = NotePlayHandleManager::acquire(this, offset + hit * each, hits > 1 ? each : frames, note);
+		// The last hit takes what the even split leaves over, so the note still ends where it ends.
+		const f_cnt_t length = hit + 1 < hits ? each : frames - hit * each;
+		NotePlayHandle* handle = NotePlayHandleManager::acquire(this, offset + hit * each, length, note);
 		handle->setPatternTrack(trigger.patternTrack);
 		// Velocity jitter, the slide source, the song-global offset and the clip's transpose.
 		decorateNoteHandle(handle, trigger.clip, trigger.note, trigger.first, trigger.songGlobal, trigger.midiSeed);

@@ -31,6 +31,7 @@
  * Boston, MA 02110-1301 USA.
  */
 
+#include <cmath>
 #include <vector>
 
 #include <QJsonArray>
@@ -63,6 +64,7 @@ struct Field
 	const char* name;
 	double minimum;
 	double maximum;
+	bool fraction = false;  //!< only probability and velocity_spread take one; the rest are whole numbers, never truncated
 };
 
 constexpr Field kFields[] = {
@@ -71,10 +73,10 @@ constexpr Field kFields[] = {
 	{"length", 1, MaxSongLength},
 	{"velocity", 0, 200},
 	{"pan", -100, 100},
-	{"probability", 0, 1},
+	{"probability", 0, 1, true},
 	{"muted", 0, 1},              // 0.5.0 L07: 1 mutes (the note stays, unplayed)
 	{"release_velocity", -1, 200}, // 0.5.0 L07: the note-off velocity, -1 none
-	{"velocity_spread", 0, 1},     // 0.5.0 L07 (ED-127): the velocity varies by up to this share each playback
+	{"velocity_spread", 0, 1, true}, // 0.5.0 L07 (ED-127): the velocity varies by up to this share each playback
 	{"repeats", 0, NoteConditions::MaxRepeats},       // ED-133: extra hits inside the note
 	{"recur_length", 0, NoteConditions::MaxRecurLength}, // ED-133: the pass pattern's length, 0 every pass
 	{"recur_mask", 0, 65535},      // ED-133: bit n - the note plays on pass n of the pattern
@@ -98,11 +100,12 @@ bool checkEditValues(const QJsonObject& entry, int index, ControlResult* error)
 		if (value.isUndefined()) { continue; }
 		++fields;
 		const double v = value.toDouble();
-		if (!value.isDouble() || v < field.minimum || v > field.maximum)
+		if (!value.isDouble() || v < field.minimum || v > field.maximum || (!field.fraction && v != std::floor(v)))
 		{
 			*error = ControlResult::failure(ControlErrorKind::InvalidArgs,
-				QStringLiteral("edits[%1].%2 must be a number in [%3, %4]")
-					.arg(index).arg(QLatin1String(field.name)).arg(field.minimum).arg(field.maximum));
+				QStringLiteral("edits[%1].%2 must be a %5 in [%3, %4]")
+					.arg(index).arg(QLatin1String(field.name)).arg(field.minimum).arg(field.maximum)
+					.arg(field.fraction ? QStringLiteral("number") : QStringLiteral("whole number")));
 			return false;
 		}
 	}

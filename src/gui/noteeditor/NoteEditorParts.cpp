@@ -305,11 +305,12 @@ void NoteLaneView::mouseReleaseEvent(QMouseEvent*)
 void NoteLaneView::drawAt(const QPoint& pos)
 {
 	// Every visible note whose stem is within a few pixels of the pointer takes the value; with
-	// the selection non-empty only selected notes do, so a ramp can be drawn over a chord.
+	// the selection non-empty (anywhere in the clip) only selected notes do, so a ramp can be drawn
+	// over a chord. The clip can go mid-drag (deleted): nothing to draw on then.
+	if (m_state.clip == nullptr) { return; }
 	const NoteVector& notes = m_state.clip->notes();
 	const auto [first, last] = m_editor->canvas()->visibleRange();
-	bool anySelected = false;
-	for (int i = first; i < last && !anySelected; ++i) { anySelected = notes[static_cast<std::size_t>(i)]->selected(); }
+	const bool anySelected = std::any_of(notes.begin(), notes.end(), [](const Note* note) { return note->selected(); });
 	const int value = valueAtY(pos.y());
 	for (int i = first; i < last; ++i)
 	{
@@ -322,7 +323,7 @@ void NoteLaneView::drawAt(const QPoint& pos)
 
 void NoteLaneView::commit()
 {
-	if (m_pending.empty()) { return; }
+	if (m_pending.empty() || m_state.clip == nullptr) { m_pending.clear(); return; }
 	const std::map<int, int> pending = std::move(m_pending);
 	m_pending.clear();
 	// Collect every write before running any: a command may re-sort or re-load the clip's note

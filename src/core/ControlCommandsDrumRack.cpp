@@ -41,6 +41,7 @@
 #include "Instrument.h"
 #include "InstrumentTrack.h"
 #include "Mixer.h"
+#include "SampleDecoder.h"
 #include "Song.h"
 #include "TrackFolder.h"
 
@@ -142,6 +143,13 @@ bool padsOf(const QJsonArray& list, std::vector<Pad>* out, ControlResult* error)
 		if (!QFileInfo(pad.sample).isFile())
 		{
 			*error = ControlResult::failure(ControlErrorKind::NotFound, QStringLiteral("pad %1: no sample file '%2'").arg(i).arg(pad.sample));
+			return false;
+		}
+		if (!SampleDecoder::decode(pad.sample))
+		{
+			// The sampler would load nothing and the pad stay silent.
+			*error = ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("pad %1: '%2' is not an audio file this build reads")
+				.arg(i).arg(pad.sample));
 			return false;
 		}
 		if (pad.key < 0 || pad.key > 127)

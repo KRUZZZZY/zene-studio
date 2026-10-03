@@ -57,7 +57,9 @@ QString markerId(int id)
 int markerIndex(const QJsonObject& args)
 {
 	const QString text = args.value(QStringLiteral("marker")).toString();
-	return text.startsWith(QStringLiteral("mk-")) ? text.mid(3).toInt() : -1;
+	bool ok = false;
+	const int id = text.startsWith(QStringLiteral("mk-")) ? text.mid(3).toInt(&ok) : -1;
+	return ok ? id : -1;  // "mk-foo" is no marker, not mk-0
 }
 
 QJsonObject markerJson(const Marker& marker)

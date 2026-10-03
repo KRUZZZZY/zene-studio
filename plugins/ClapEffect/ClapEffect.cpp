@@ -146,7 +146,9 @@ void ClapEffect::reprepare()
 
 void ClapEffect::cacheLatency()
 {
-	m_latencyFrames.store(m_plugin.isPrepared() ? static_cast<int>(m_plugin.latency()) : 0, std::memory_order_relaxed);
+	// clap_plugin_latency reports a uint32_t: past INT32_MAX it would turn negative as an int.
+	const auto latency = std::min<std::uint32_t>(m_plugin.latency(), static_cast<std::uint32_t>(INT32_MAX));
+	m_latencyFrames.store(m_plugin.isPrepared() ? static_cast<int>(latency) : 0, std::memory_order_relaxed);
 	m_tailFrames.store(m_plugin.isPrepared() ? m_plugin.tail() : 0, std::memory_order_relaxed);
 	if (EffectChain* chain = effectChain()) { chain->refreshLatency(); }
 }

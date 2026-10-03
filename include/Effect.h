@@ -117,7 +117,7 @@ public:
 	//! "Awake" means the effect has not been put to sleep by auto-quit
 	bool isAwake() const
 	{
-		return m_awake;
+		return m_awake.load(std::memory_order_relaxed);
 	}
 
 	inline bool isEnabled() const
@@ -275,13 +275,13 @@ protected:
 	void goToSleep()
 	{
 		m_quietBufferCount = 0;
-		m_awake = false;
+		m_awake.store(false, std::memory_order_relaxed);
 	}
 
 	void wakeUp()
 	{
 		m_quietBufferCount = 0;
-		m_awake = true;
+		m_awake.store(true, std::memory_order_relaxed);
 	}
 
 	virtual void onEnabledChanged() {}
@@ -305,7 +305,7 @@ private:
 
 	bool m_okay;
 	bool m_noRun;
-	bool m_awake;
+	std::atomic<bool> m_awake;  //!< written on the audio thread, read by the device card's activity light
 	std::atomic<bool> m_corrupted = false;
 	std::atomic<float> m_dspLoad{0.0f};
 

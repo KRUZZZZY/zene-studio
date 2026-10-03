@@ -57,6 +57,8 @@ public:
 	static constexpr float MinEditorScale = 0.5f;
 	static constexpr float MaxEditorScale = 3.f;
 	static constexpr int MaxAliasLength = 64;
+	//! The largest latency override, in frames (plugin.options' bound; a file's larger value reads as this).
+	static constexpr int MaxLatencyOverride = 1 << 20;
 
 	//! The alias of parameter @a name, or empty.
 	QString alias(const QString& name) const { return m_aliases.value(name); }

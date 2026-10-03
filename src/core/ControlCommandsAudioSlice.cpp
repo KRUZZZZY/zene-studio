@@ -168,11 +168,12 @@ QDomElement slicerState(QDomDocument& doc, SampleClip& clip, const std::vector<f
 	return state;
 }
 
-//! The source frames a slice starts at: the clip's transients, or every beat of its window.
+//! The source frames a slice starts at: the clip's transients, or every beat of its window - the
+//! first at the clip's in-point, so the opening beat is a slice that plays too (gridInside starts after it).
 std::vector<f_cnt_t> sliceFrames(SampleClip& clip, const QString& at)
 {
 	if (at != QStringLiteral("beats")) { return clipTransientFrames(clip); }
-	std::vector<f_cnt_t> out;
+	std::vector<f_cnt_t> out{clip.sourceFrameAt(clip.startPosition())};
 	const tick_t start = clip.startPosition().getTicks();
 	for (const tick_t tick : gridInside(start, clip.endPosition().getTicks(), ticksPerBeat()))
 	{

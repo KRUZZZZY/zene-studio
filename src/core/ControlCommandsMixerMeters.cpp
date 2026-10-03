@@ -134,18 +134,20 @@ ControlResult crossfader(const QJsonObject& args)
 	MixerChannel* channel = nullptr;
 	if (args.contains(QStringLiteral("channel")) && (channel = resolveMixerChannel(args.value(QStringLiteral("channel")).toString(), &error)) == nullptr) { return error; }
 	const float before = MixerOptions::instance().crossfader();
+	const bool sided = channel != nullptr && args.contains(QStringLiteral("side"));
 	if (args.contains(QStringLiteral("position")))
 	{
 		const auto after = static_cast<float>(std::clamp(args.value(QStringLiteral("position")).toDouble(), -1.0, 1.0));
 		MixerOptions::instance().setCrossfader(after);
 		addUndoStep([before]() { MixerOptions::instance().setCrossfader(before); }, [after]() { MixerOptions::instance().setCrossfader(after); });
 	}
-	if (channel != nullptr && args.contains(QStringLiteral("side")))
+	if (sided)
 	{
 		addUndoStep(QVector<JournallingObject*>{&channel->m_crossfadeSideModel});
 		channel->m_crossfadeSideModel.setValue(static_cast<int>(crossfadeSides().indexOf(args.value(QStringLiteral("side")).toString())));
 	}
-	Engine::getSong()->setModified();
+	// A call with neither is a report and leaves the project as it was.
+	if (sided || args.contains(QStringLiteral("position"))) { Engine::getSong()->setModified(); }
 	QJsonObject result{{QStringLiteral("position"), static_cast<double>(MixerOptions::instance().crossfader())}};
 	if (channel != nullptr) { result.insert(QStringLiteral("side"), crossfadeSides().value(channel->m_crossfadeSideModel.value())); }
 	return ControlResult::success(result);

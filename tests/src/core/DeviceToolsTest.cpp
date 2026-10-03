@@ -26,7 +26,7 @@
  *  without changing their address (MX-097); new settings are randomised or blended from A/B
  *  (MX-093); a device folds (MX-113) and carries compatibility options (MX-099 / MX-094) - each
  *  saved only when set and undone in one step; a device's delta is what it changes (MX-080); a clip is
- *  printed through a chain's devices (MX-083). */
+ *  printed through a chain's devices (MX-083); a device is hot-swapped in its slot (WF-016). */
 
 #include <QtTest>
 
@@ -72,17 +72,24 @@ MixerChannel* channel(int index) { return Engine::mixer()->mixerChannel(index); 
 
 QString ch(int index) { return control::channelIdOf(channel(index)); }
 
-//! Load the built-in device named @a name onto @a target: its fx-<n>, or empty.
-QString loadByName(const QString& target, const QString& name)
+//! The built-in effect named @a name: its dev-<n> in plugin.list, or empty.
+QString deviceNamed(const QString& name)
 {
 	for (const QJsonValue& device : run(QStringLiteral("plugin.list"), {{QStringLiteral("kind"), QStringLiteral("effect")}})
 		.result.value(QStringLiteral("devices")).toArray())
 	{
-		if (device.toObject().value(QStringLiteral("name")).toString() != name) { continue; }
-		return run(QStringLiteral("plugin.load"), {{QStringLiteral("target"), target},
-			{QStringLiteral("device"), device.toObject().value(QStringLiteral("id")).toString()}}).result.value(QStringLiteral("id")).toString();
+		if (device.toObject().value(QStringLiteral("name")).toString() == name) { return device.toObject().value(QStringLiteral("id")).toString(); }
 	}
 	return QString();
+}
+
+//! Load the built-in device named @a name onto @a target: its fx-<n>, or empty.
+QString loadByName(const QString& target, const QString& name)
+{
+	const QString device = deviceNamed(name);
+	if (device.isEmpty()) { return QString(); }
+	return run(QStringLiteral("plugin.load"), {{QStringLiteral("target"), target}, {QStringLiteral("device"), device}})
+		.result.value(QStringLiteral("id")).toString();
 }
 
 double parameterValue(const QString& target, const QString& plugin, const QString& name)
@@ -377,6 +384,30 @@ private slots:
 		QCOMPARE(channel(3)->m_fxChain.effects().size(), std::size_t{1});  // the chain itself is untouched
 		QVERIFY(run(QStringLiteral("control.undo")).ok);
 		QVERIFY(std::abs(clip->sample().data()[2000][0] - 0.25f) < 1e-6f);
+		channel(3)->m_fxChain.clear();
+	}
+
+	//! WF-016: plugin.replace puts a fresh device at the replaced one's slot of the same chain, and one
+	//! control.undo brings the old one back with its settings.
+	void aDeviceIsReplacedInItsSlot()
+	{
+		const QString amp = loadByName(ch(3), QStringLiteral("amplifier"));
+		if (amp.isEmpty()) { QSKIP("this build has no amplifier module"); }
+		QVERIFY(setParameter(ch(3), amp, QStringLiteral("Volume"), 150.0));
+		const ControlResult swapped = run(QStringLiteral("plugin.replace"), {{QStringLiteral("target"), ch(3)},
+			{QStringLiteral("plugin"), amp}, {QStringLiteral("device"), deviceNamed(QStringLiteral("amplifier"))}});
+		QVERIFY2(swapped.ok, qPrintable(swapped.errorMessage));
+		QCOMPARE(swapped.result.value(QStringLiteral("index")).toInt(), 0);
+		const QString fresh = swapped.result.value(QStringLiteral("plugin")).toString();
+		QVERIFY(fresh != amp);
+		QCOMPARE(channel(3)->m_fxChain.effects().size(), std::size_t{1});  // in the old one's place, not beside it
+		QCOMPARE(control::effectIdOf(effectOn(3)), fresh);
+		QCOMPARE(parameterValue(ch(3), fresh, QStringLiteral("Volume")), 100.0);  // a fresh device: its own default
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
+		QCOMPARE(channel(3)->m_fxChain.effects().size(), std::size_t{1});
+		QCOMPARE(parameterValue(ch(3), control::effectIdOf(effectOn(3)), QStringLiteral("Volume")), 150.0);  // the old settings
+		QCOMPARE(run(QStringLiteral("plugin.replace"), {{QStringLiteral("target"), ch(3)}, {QStringLiteral("plugin"), QStringLiteral("fx-999999")},
+			{QStringLiteral("device"), deviceNamed(QStringLiteral("amplifier"))}}).errorKind, ControlErrorKind::NotFound);
 		channel(3)->m_fxChain.clear();
 	}
 

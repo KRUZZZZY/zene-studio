@@ -135,6 +135,8 @@ private:
 	void reopenPinned();
 	//! Add @a id to the pinned panels without opening it; false when it is not a side panel.
 	bool setPinnedQuietly(const QString& id);
+	//! A side panel: the panels setPinned() accepts.
+	static bool pinnable(const QString& id);
 
 	ShellView m_view = ShellView::Arrange;
 	ViewState m_states[3];

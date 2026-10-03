@@ -162,14 +162,15 @@ QJsonObject currentValues()
 	return out;
 }
 
-//! Write @a values (catalogue keys only; @a rejected collects the rest) as ONE undo step.
+//! Write @a values (catalogue keys with string values, as an export writes them; @a rejected collects the rest) as ONE
+//! undo step. A number or boolean is not read as a string: QJsonValue::toString would make it an empty setting.
 int applyValues(const QJsonObject& values, QStringList* rejected)
 {
 	std::vector<KeyState> before;
 	std::vector<KeyState> after;
 	for (auto it = values.begin(); it != values.end(); ++it)
 	{
-		if (!known(it.key())) { rejected->append(it.key()); continue; }
+		if (!known(it.key()) || !it.value().isString()) { rejected->append(it.key()); continue; }
 		before.push_back(stateOf(it.key()));
 		after.push_back({it.key(), it.value().toString(), true});
 	}

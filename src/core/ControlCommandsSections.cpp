@@ -63,7 +63,9 @@ QJsonArray listJson()
 int sectionIndex(const QJsonObject& args)
 {
 	const QString id = args.value(QStringLiteral("section")).toString();
-	return id.startsWith(QStringLiteral("sec-")) ? id.mid(4).toInt() : -1;
+	bool ok = false;
+	const int index = id.startsWith(QStringLiteral("sec-")) ? id.mid(4).toInt(&ok) : -1;
+	return ok ? index : -1;  // "sec-garbage" is no section, not sec-0
 }
 
 //! Run @a edit and record the list before and after it as one undo step.

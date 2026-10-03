@@ -88,6 +88,7 @@ ControlResult organise(const QJsonObject& args)
 	// Only a real change is an undo step (review L10-L03-L02-1 #10): a no-op must not shadow the edit under it.
 	if (changed) { addUndoStep([key, before]() { pluginorganiser::setEntry(key, before); }, [key, after]() { pluginorganiser::setEntry(key, after); }); }
 	QJsonObject result = pluginorganiser::toJson(key, after);
+	if (!changed) { return ControlResult::success(result); }  // the name alone is the device's own, refreshed: no edit to claim
 	result.insert(QStringLiteral("__transaction"), transactionPayload(pluginorganiser::toJson(key, before), QStringLiteral("control.undo"), {},
 		true, QStringLiteral("action checkpoint: the recorded undo step writes the device's previous entry back")));
 	return ControlResult::success(result);

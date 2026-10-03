@@ -337,6 +337,12 @@ ControlResult grooveQuantize(const QJsonObject& args)
 	if (!readStrength(args, &options.strength, &error)) { return error; }
 	if (!readQuantizeMode(args, &options.mode, &error)) { return error; }
 	if (!readHumanise(args, options.grid, &options, &error)) { return error; }
+	// Like 'strength', a value that is not a number reads as -1 and is refused rather than read as 0.
+	const double swing = args.contains(QStringLiteral("swing")) ? args.value(QStringLiteral("swing")).toDouble(-1.0) : 0.0;
+	if (swing < 0.0 || swing > 1.0)
+	{
+		return ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("'swing' is %1; it is a fraction in 0..1").arg(swing));
+	}
 
 	const NoteSnapshot before = snapshotNotes(*clip);
 	const QJsonObject beforeState = grooveClipBefore(ref, *clip);
@@ -344,7 +350,7 @@ ControlResult grooveQuantize(const QJsonObject& args)
 	const NoteVector targets = quantizeTargets(*clip, args);
 	const std::vector<tick_t> steps = quantizeSteps(targets, options);
 	NoteTransform::quantizeNotes(targets, options);
-	applySwing(targets, steps, options.grid, args.value(QStringLiteral("swing")).toDouble(0.0));
+	applySwing(targets, steps, options.grid, swing);
 	clip->rearrangeAllNotes();
 	clip->dataChanged();
 

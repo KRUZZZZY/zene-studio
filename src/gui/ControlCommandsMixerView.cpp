@@ -63,6 +63,11 @@ QJsonObject mixerViewState()
 
 ControlResult mixerView(const QJsonObject& args)
 {
+	// Interface state needs no ready engine, but its answer names mixer channels and folders.
+	if (Engine::mixer() == nullptr || Engine::getSong() == nullptr)
+	{
+		return ControlResult::failure(ControlErrorKind::Busy, QStringLiteral("the engine is not up yet; poll control.ping"));
+	}
 	if (args.contains(QStringLiteral("sends_on_faders")))
 	{
 		const QString id = args.value(QStringLiteral("sends_on_faders")).toString();

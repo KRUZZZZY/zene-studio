@@ -93,7 +93,7 @@ ModulatorPanel::ModulatorPanel(QWidget* parent) :
 	m_shape->addItems(shapes());
 	m_shape->setProperty("controlCommand", QStringLiteral("modulator.rate_set"));
 	m_rate = new QDoubleSpinBox(this);
-	m_rate->setRange(0.01, 50.0);
+	m_rate->setRange(ModulationLayer::MinRateHz, ModulationLayer::MaxRateHz);  // what modulator.rate_set accepts
 	m_rate->setDecimals(2);
 	m_rate->setSuffix(tr(" Hz"));
 	m_rate->setProperty("controlCommand", QStringLiteral("modulator.rate_set"));

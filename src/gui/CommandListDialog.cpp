@@ -52,6 +52,16 @@ QString cellText(const QJsonValue& value)
 	return text.size() > MaxCellChars ? text.left(MaxCellChars - 1) + QStringLiteral("…") : text;
 }
 
+//! Where @a row is in @a rows, or -1.
+int indexOfRow(const QJsonArray& rows, const QJsonValue& row)
+{
+	for (int i = 0; i < rows.size(); ++i)
+	{
+		if (rows.at(i) == row) { return i; }
+	}
+	return -1;
+}
+
 } // namespace
 
 CommandListDialog::CommandListDialog(const ListSpec& spec, QWidget* parent) :
@@ -108,6 +118,8 @@ CommandListDialog::CommandListDialog(const ListSpec& spec, QWidget* parent) :
 void CommandListDialog::refresh()
 {
 	const ControlResult listed = ControlRegistry::instance()->invoke(m_spec.listId, m_spec.listArgs);
+	const int was = m_table->currentRow();
+	const QJsonValue kept = was >= 0 && was < m_rows.size() ? m_rows.at(was) : QJsonValue();
 	m_listed = listed.ok ? listed.result : QJsonObject();
 	m_rows = listRows(m_spec, m_listed);
 	if (!listed.ok) { m_status->setText(listed.errorMessage); }
@@ -118,12 +130,13 @@ void CommandListDialog::refresh()
 	}
 	m_summary->setText(summary.join(QStringLiteral("   ")));
 	m_summary->setVisible(!summary.isEmpty());
-	fill();
+	fill(kept);
 }
 
-void CommandListDialog::fill()
+void CommandListDialog::fill(const QJsonValue& kept)
 {
-	const int keep = m_table->currentRow();
+	// The selection follows its row, not its index: after a Remove the next row must not slide under it.
+	const int keep = indexOfRow(m_rows, kept);
 	QStringList columns = m_spec.columns;
 	if (columns.isEmpty() && !m_rows.isEmpty()) { columns = m_rows.first().toObject().keys(); }
 	m_table->clear();
@@ -138,7 +151,8 @@ void CommandListDialog::fill()
 			m_table->setItem(r, c, new QTableWidgetItem(cellText(item.value(columns.at(c)))));
 		}
 	}
-	if (keep >= 0 && keep < m_rows.size()) { m_table->selectRow(keep); }
+	if (keep >= 0) { m_table->selectRow(keep); }
+	else { m_table->setCurrentItem(nullptr); }  // gone: nothing selected, so no action is aimed at another row
 	syncButtons();
 }
 
@@ -186,6 +200,7 @@ ControlResult CommandListDialog::dispatch(const QString& label, const CommandCal
 	if (form != nullptr)
 	{
 		connect(form, &CommandForm::ran, this, [this, label](const ControlResult& ran) { report(label, ran); refresh(); });
+		connect(form, &QDialog::rejected, this, [this, label] { m_status->setText(tr("%1: cancelled").arg(label)); });
 		m_status->setText(tr("%1: fill in the form").arg(label));
 		return result;
 	}

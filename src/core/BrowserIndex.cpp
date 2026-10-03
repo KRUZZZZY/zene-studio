@@ -37,6 +37,7 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QSaveFile>
+#include <QSet>
 #include <QThreadPool>
 
 #include "ConfigManager.h"
@@ -93,18 +94,17 @@ BrowserIndexEntry entryFrom(const QJsonObject& o)
 struct Walk
 {
 	QHash<QString, BrowserIndexEntry> previous;
+	QSet<QString> seen;  //!< the paths found so far: roots that overlap list a file once
 	bool features = false;
 	int maxAnalysed = 0;
 	std::vector<BrowserIndexEntry> found;
 	BrowserIndex::Status status;
 };
 
-//! The entry for @a info: its features kept when the file is unchanged, measured when the walk may.
-BrowserIndexEntry entryOf(const QFileInfo& info, Walk* walk)
+//! The entry for @a info at @a path: its features kept when the file is unchanged, measured when the walk may.
+BrowserIndexEntry entryOf(const QFileInfo& info, const QString& path, Walk* walk)
 {
-	// Keyed as the tag store keys a file (its canonical path), so an indexed file's tags are found.
-	const QString canonical = info.canonicalFilePath();
-	BrowserIndexEntry entry{canonical.isEmpty() ? info.absoluteFilePath() : canonical, info.fileName(), browserKindForPath(info.fileName()), info.size(),
+	BrowserIndexEntry entry{path, info.fileName(), browserKindForPath(info.fileName()), info.size(),
 		info.lastModified().toMSecsSinceEpoch(), {}};
 	if (!walk->features || entry.kind != BrowserKind::Audio) { return entry; }
 	const auto old = walk->previous.constFind(entry.path);
@@ -118,6 +118,21 @@ BrowserIndexEntry entryOf(const QFileInfo& info, Walk* walk)
 		++walk->status.analysed;
 	}
 	return entry;
+}
+
+//! Count the file @a info and add it to the walk - once, however many roots hold it - unless the walk
+//! is full: then it is truncated (a file past the limit, so exactly MaxEntries files is not truncated).
+void admit(const QFileInfo& info, Walk* walk)
+{
+	// Keyed as the tag store keys a file (its canonical path), so an indexed file's tags are found.
+	const QString canonical = info.canonicalFilePath();
+	const QString path = canonical.isEmpty() ? info.absoluteFilePath() : canonical;
+	const bool known = walk->seen.contains(path);
+	if (!known && static_cast<int>(walk->found.size()) >= BrowserIndex::MaxEntries) { walk->status.truncated = true; return; }
+	++walk->status.scanned;
+	if (known) { return; }
+	walk->seen.insert(path);
+	walk->found.push_back(entryOf(info, path, walk));
 }
 
 } // namespace
@@ -140,6 +155,7 @@ bool BrowserIndex::start(const QStringList& dirs, bool features)
 		QMutexLocker lock(&m_mutex);
 		loadLocked();
 		if (m_status.running) { return false; }
+		m_cancel.store(false);  // before the scan is published: a cancel() from here on is kept
 		m_status.running = true;
 		m_status.dirs = dirs;
 	}
@@ -147,7 +163,6 @@ bool BrowserIndex::start(const QStringList& dirs, bool features)
 	static const bool stopsOnQuit = QCoreApplication::instance() != nullptr
 		&& QObject::connect(QCoreApplication::instance(), &QCoreApplication::aboutToQuit, [] { BrowserIndex::instance().cancel(); });
 	Q_UNUSED(stopsOnQuit)
-	m_cancel.store(false);
 	QThreadPool::globalInstance()->start([this, dirs, features] { scan(dirs, features, MaxAnalysed); });
 	return true;
 }
@@ -158,10 +173,10 @@ bool BrowserIndex::scanNow(const QStringList& dirs, bool features, int maxAnalys
 		QMutexLocker lock(&m_mutex);
 		loadLocked();
 		if (m_status.running) { return false; }
+		m_cancel.store(false);  // before the scan is published: a cancel() from here on is kept
 		m_status.running = true;
 		m_status.dirs = dirs;
 	}
-	m_cancel.store(false);
 	scan(dirs, features, maxAnalysed);
 	return true;
 }
@@ -183,9 +198,8 @@ void BrowserIndex::scan(const QStringList& dirs, bool features, int maxAnalysed)
 		while (it.hasNext() && !m_cancel.load() && !walk.status.truncated)
 		{
 			it.next();
-			walk.found.push_back(entryOf(it.fileInfo(), &walk));
-			walk.status.truncated = static_cast<int>(walk.found.size()) >= MaxEntries;
-			if (++walk.status.scanned % ProgressEvery != 0) { continue; }
+			admit(it.fileInfo(), &walk);
+			if (walk.status.scanned % ProgressEvery != 0) { continue; }
 			QMutexLocker lock(&m_mutex);
 			m_status.scanned = walk.status.scanned;
 			m_status.analysed = walk.status.analysed;

@@ -30,6 +30,7 @@
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QMenuBar>
+#include <QSaveFile>
 
 #include "ControlRegistry.h"
 #include "ControlVocabulary.h"
@@ -113,8 +114,11 @@ ControlResult setShortcut(const QJsonObject& args)
 	for (const QString& other : clash) { overrides.insert(other, QString()); }
 	QJsonObject result{{QStringLiteral("id"), id}, {QStringLiteral("keys"), keys}, {QStringLiteral("previous"), found->keys},
 		{QStringLiteral("cleared"), QJsonArray::fromStringList(clash)}};
-	return storeOverrides(menus, overrides, result, {QStringLiteral("shortcuts.set"),
-		{{QStringLiteral("id"), id}, {QStringLiteral("keys"), found->keys}, {QStringLiteral("force"), true}}});
+	// A forced move also cleared other actions' keys; only the whole previous set names all of it.
+	const gui::uistore::Inverse inverse = clash.isEmpty()
+		? gui::uistore::Inverse{QStringLiteral("shortcuts.set"), {{QStringLiteral("id"), id}, {QStringLiteral("keys"), found->keys}, {QStringLiteral("force"), true}}}
+		: gui::uistore::Inverse{QStringLiteral("shortcuts.import"), {{QStringLiteral("overrides"), sm::overrides()}, {QStringLiteral("replace"), true}}};
+	return storeOverrides(menus, overrides, result, inverse);
 }
 
 ControlResult resetShortcuts(const QJsonObject& args)
@@ -138,8 +142,10 @@ ControlResult exportShortcuts(const QJsonObject& args)
 	for (const sm::Binding& binding : sm::bindings(menus)) { all.append(bindingJson(binding)); }
 	const QJsonObject doc{{QStringLiteral("format"), ExportFormat}, {QStringLiteral("version"), ExportVersion},
 		{QStringLiteral("overrides"), sm::overrides()}, {QStringLiteral("bindings"), all}};
-	QFile file(path);
-	if (!file.open(QIODevice::WriteOnly | QIODevice::Truncate) || file.write(QJsonDocument(doc).toJson()) < 0)
+	// Written whole or not at all: a short write must not leave a truncated set reported as exported.
+	const QByteArray bytes = QJsonDocument(doc).toJson();
+	QSaveFile file(path);
+	if (!file.open(QIODevice::WriteOnly) || file.write(bytes) != bytes.size() || !file.commit())
 	{
 		return ControlResult::failure(ControlErrorKind::Refused, QStringLiteral("cannot write '%1': %2").arg(path, file.errorString()));
 	}

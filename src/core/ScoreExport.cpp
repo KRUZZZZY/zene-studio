@@ -112,22 +112,36 @@ void writePitch(QXmlStreamWriter& xml, int key)
 	xml.writeEndElement();
 }
 
+//! A note's ties as @a element: <tie> (what it sounds like) or <tied> (what the score draws).
+void writeTies(QXmlStreamWriter& xml, const QString& element, bool tieIn, bool tieOut)
+{
+	for (const auto& [on, kind] : {std::pair{tieIn, "stop"}, std::pair{tieOut, "start"}})
+	{
+		if (!on) { continue; }
+		xml.writeEmptyElement(element);
+		xml.writeAttribute(QStringLiteral("type"), QLatin1String(kind));
+	}
+}
+
 //! One <note> (a chord's member after the first gets <chord/>); @a tieIn / @a tieOut join it to its neighbours.
 void writeNote(QXmlStreamWriter& xml, int key, bool chord, const Value& value, bool tieIn, bool tieOut)
 {
+	const bool tied = key >= 0 && (tieIn || tieOut);
 	xml.writeStartElement(QStringLiteral("note"));
 	if (chord) { xml.writeEmptyElement(QStringLiteral("chord")); }
 	if (key < 0) { xml.writeEmptyElement(QStringLiteral("rest")); } else { writePitch(xml, key); }
 	xml.writeTextElement(QStringLiteral("duration"), QString::number(value.ticks));
-	for (const auto& [on, kind] : {std::pair{tieIn, "stop"}, std::pair{tieOut, "start"}})
-	{
-		if (!on || key < 0) { continue; }
-		xml.writeEmptyElement(QStringLiteral("tie"));
-		xml.writeAttribute(QStringLiteral("type"), QLatin1String(kind));
-	}
+	if (tied) { writeTies(xml, QStringLiteral("tie"), tieIn, tieOut); }
 	xml.writeTextElement(QStringLiteral("voice"), QStringLiteral("1"));
 	xml.writeTextElement(QStringLiteral("type"), QLatin1String(value.type));
 	if (value.dotted) { xml.writeEmptyElement(QStringLiteral("dot")); }
+	if (tied)
+	{
+		// <tie> alone plays tied but is drawn as separate notes: the score's tie is <notations><tied> (review L17 #8).
+		xml.writeStartElement(QStringLiteral("notations"));
+		writeTies(xml, QStringLiteral("tied"), tieIn, tieOut);
+		xml.writeEndElement();
+	}
 	xml.writeEndElement();
 }
 

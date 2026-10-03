@@ -65,14 +65,13 @@ ControlResult remoteTarget(const QJsonObject& args)
 {
 	RemoteControls* remote = RemoteControls::instance();
 	if (remote == nullptr) { return notConnected(); }
+	// The target is checked before anything is applied, so a refused call changes nothing.
+	const bool targeted = args.contains(QStringLiteral("target"));
+	ControlTarget target;
+	ControlResult error;
+	if (targeted && !resolveControlTarget(args.value(QStringLiteral("target")).toString(), &target, &error)) { return error; }
 	if (args.contains(QStringLiteral("follow"))) { remote->setFollow(args.value(QStringLiteral("follow")).toBool()); }
-	if (args.contains(QStringLiteral("target")))
-	{
-		ControlTarget target;
-		ControlResult error;
-		if (!resolveControlTarget(args.value(QStringLiteral("target")).toString(), &target, &error)) { return error; }
-		remote->setTarget(target.id, args.value(QStringLiteral("plugin")).toString(QStringLiteral("inst")));
-	}
+	if (targeted) { remote->setTarget(target.id, args.value(QStringLiteral("plugin")).toString(QStringLiteral("inst"))); }
 	return ControlResult::success(remote->state());
 }
 

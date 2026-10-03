@@ -46,7 +46,7 @@ const QStringList& fieldNames()
 //! The text split into words, a quoted phrase kept whole (its quotes dropped).
 QStringList tokens(const QString& text)
 {
-	static const QRegularExpression word(QStringLiteral(R"((-?\w+:)?"[^"]*"|\S+)"));
+	static const QRegularExpression word(QStringLiteral(R"((-?\w+:|-)?"[^"]*"|\S+)"));  // -"a phrase" too
 	QStringList out;
 	for (auto it = word.globalMatch(text); it.hasNext();) { out << it.next().captured(0); }
 	return out;
@@ -67,7 +67,7 @@ bool fieldHolds(const QString& field, const QString& value, const BrowserItem& i
 	if (field == QLatin1String("name")) { return item.name.toLower().contains(value); }
 	if (field == QLatin1String("path")) { return item.path.toLower().contains(value); }
 	if (field == QLatin1String("kind")) { return browserKindName(item.kind) == value; }
-	if (field == QLatin1String("ext")) { return QFileInfo(item.path).suffix().toLower() == value; }
+	if (field == QLatin1String("ext")) { return QFileInfo(item.path).suffix().toLower() == (value.startsWith(QLatin1Char('.')) ? value.mid(1) : value); }
 	for (const QString& tag : item.tags)  // tag:
 	{
 		if (tag.toLower().contains(value)) { return true; }

@@ -274,6 +274,11 @@ EqValues eqOf(const MixerChannel* channel)
 	return {channel->m_eqLowModel.value(), channel->m_eqMidModel.value(), channel->m_eqMidFreqModel.value(), channel->m_eqHighModel.value()};
 }
 
+bool sameEq(const EqValues& a, const EqValues& b)
+{
+	return a.low == b.low && a.mid == b.mid && a.midFreq == b.midFreq && a.high == b.high;
+}
+
 void setEq(int id, const EqValues& eq)
 {
 	MixerChannel* channel = channelWithId(id);
@@ -295,9 +300,12 @@ ControlResult channelEq(const QJsonObject& args)
 		static_cast<float>(std::clamp(args.value(QStringLiteral("mid_freq")).toDouble(before.midFreq), 100.0, 10000.0)),
 		static_cast<float>(std::clamp(args.value(QStringLiteral("high")).toDouble(before.high), -18.0, 18.0))};
 	const int id = channel->id();
-	setEq(id, after);
-	addUndoStep([id, before]() { setEq(id, before); }, [id, after]() { setEq(id, after); });
-	Engine::getSong()->setModified();
+	if (!sameEq(before, after))  // with only 'channel' it is a report: no write, no step, nothing modified
+	{
+		setEq(id, after);
+		addUndoStep([id, before]() { setEq(id, before); }, [id, after]() { setEq(id, after); });
+		Engine::getSong()->setModified();
+	}
 	return ControlResult::success({{QStringLiteral("channel"), channelIdOf(channel)}, {QStringLiteral("low"), static_cast<double>(after.low)},
 		{QStringLiteral("mid"), static_cast<double>(after.mid)}, {QStringLiteral("mid_freq"), static_cast<double>(after.midFreq)},
 		{QStringLiteral("high"), static_cast<double>(after.high)}});

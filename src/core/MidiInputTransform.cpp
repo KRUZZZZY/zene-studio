@@ -50,28 +50,41 @@ MidiInputTransform::MidiInputTransform()
 
 bool MidiInputTransform::apply(MidiEvent* event)
 {
-	const int channel = m_channel.load(Relaxed);
-	if (channel > 0 && event->channel() + 1 != channel) { return false; }
 	switch (event->type())
 	{
 	case MidiNoteOn: return event->velocity() > 0 ? noteOn(event) : follow(event, true);
 	case MidiNoteOff: return follow(event, true);
 	case MidiKeyPressure: return follow(event, false);
-	default: return true;
+	default: return passesChannel(*event);
 	}
+}
+
+bool MidiInputTransform::passesChannel(const MidiEvent& event) const
+{
+	const int channel = m_channel.load(Relaxed);
+	return channel == 0 || event.channel() + 1 == channel;
+}
+
+std::atomic<int>* MidiInputTransform::heldFor(const MidiEvent& event)
+{
+	const int key = event.key();
+	const int channel = event.channel();
+	if (key < 0 || key > 127 || channel < 0 || channel > 15) { return nullptr; }
+	return &m_heldAs[static_cast<std::size_t>(channel * 128 + key)];
 }
 
 bool MidiInputTransform::noteOn(MidiEvent* event)
 {
+	std::atomic<int>* held = heldFor(*event);
+	if (held == nullptr) { return passesChannel(*event); }
 	const int key = event->key();
-	if (key < 0 || key > 127) { return true; }
-	if (key < m_keyLow.load(Relaxed) || key > m_keyHigh.load(Relaxed))
+	if (!passesChannel(*event) || key < m_keyLow.load(Relaxed) || key > m_keyHigh.load(Relaxed))
 	{
-		m_heldAs[static_cast<std::size_t>(key)].store(Dropped, Relaxed);
+		held->store(Dropped, Relaxed);
 		return false;
 	}
 	const int out = snapped(std::clamp(key + m_transpose.load(Relaxed), 0, 127));
-	m_heldAs[static_cast<std::size_t>(key)].store(out, Relaxed);
+	held->store(out, Relaxed);
 	event->setKey(static_cast<int16_t>(out));
 	event->setVelocity(static_cast<int16_t>(clampedVelocity(event->velocity())));
 	return true;
@@ -79,15 +92,15 @@ bool MidiInputTransform::noteOn(MidiEvent* event)
 
 bool MidiInputTransform::follow(MidiEvent* event, bool ends)
 {
-	// A note-off (or pressure) goes to the key its note-on was given; one whose note-on came before
-	// the transform was set passes unchanged.
-	const int key = event->key();
-	if (key < 0 || key > 127) { return true; }
-	std::atomic<int>& held = m_heldAs[static_cast<std::size_t>(key)];
-	const int as = held.load(Relaxed);
-	if (ends) { held.store(NotHeld, Relaxed); }
+	// A note-off (or pressure) goes to the key its note-on (on the same channel) was given, whatever
+	// the channel filter is now; one whose note-on came before the transform was set passes unchanged
+	// when its channel does.
+	std::atomic<int>* held = heldFor(*event);
+	const int as = held != nullptr ? held->load(Relaxed) : NotHeld;
+	if (as == NotHeld) { return passesChannel(*event); }
+	if (ends) { held->store(NotHeld, Relaxed); }
 	if (as == Dropped) { return false; }
-	if (as >= 0) { event->setKey(static_cast<int16_t>(as)); }
+	event->setKey(static_cast<int16_t>(as));
 	return true;
 }
 

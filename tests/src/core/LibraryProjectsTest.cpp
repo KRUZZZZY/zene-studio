@@ -22,7 +22,8 @@
  *
  */
 /*! 0.5.0 L11 / L12: browser.query's expressions match what they say and a plain text still matches
- *  as one substring (WF-003); a saved collection runs, follows the library and is undone (WF-006);
+ *  as one substring (WF-003); a saved collection runs, follows the library and is undone (WF-006), and
+ *  runs over its own browser root with the caller's limit;
  *  a track preset round-trips and a preset for another kind of track is refused (WF-024); a named
  *  template refuses a folder in its name (WF-027); project.import_tracks lists another project's
  *  tracks and imports them in one undo step (WF-036); project.handoff writes the copy, the media
@@ -37,6 +38,7 @@
 
 #include "BrowserCatalog.h"
 #include "BrowserSearch.h"
+#include "ConfigManager.h"
 #include "ControlRegistry.h"
 #include "ControlVocabulary.h"
 #include "Engine.h"
@@ -81,6 +83,8 @@ private slots:
 	{
 		qputenv("ZENE_BROWSER_COLLECTIONS", m_dir.filePath(QStringLiteral("collections.json")).toLocal8Bit());
 		Engine::init(true);
+		// A private working directory: the browser's "samples" root is a folder this test owns.
+		ConfigManager::inst()->setWorkingDir(m_dir.filePath(QStringLiteral("work")));
 		ControlRegistry::setReady(true);
 	}
 
@@ -133,6 +137,27 @@ private slots:
 			ControlErrorKind::NotFound);
 		QCOMPARE(run(QStringLiteral("browser.collection_save"), {{QStringLiteral("name"), QStringLiteral("Bad")},
 			{QStringLiteral("kind"), QStringLiteral("video")}}).errorKind, ControlErrorKind::InvalidArgs);
+	}
+
+	void aCollectionRunsOverItsRoot()
+	{
+		const QString samples = ConfigManager::inst()->userSamplesDir();
+		QVERIFY2(samples.startsWith(m_dir.path()), qPrintable(samples));
+		QVERIFY(QDir().mkpath(samples));
+		for (const char* name : {"hat open.wav", "hat closed.wav", "kick.wav"}) { touch(samples + QLatin1String(name)); }
+		QVERIFY(run(QStringLiteral("browser.collection_save"), {{QStringLiteral("name"), QStringLiteral("Hats")},
+			{QStringLiteral("text"), QStringLiteral("name:hat")}, {QStringLiteral("root"), QStringLiteral("samples")}}).ok);
+		const ControlResult found = run(QStringLiteral("browser.collection_run"), {{QStringLiteral("name"), QStringLiteral("Hats")},
+			{QStringLiteral("limit"), 1}});
+		QVERIFY2(found.ok, qPrintable(found.errorMessage));
+		QCOMPARE(found.result.value(QStringLiteral("collection")).toString(), QStringLiteral("Hats"));
+		QCOMPARE(found.result.value(QStringLiteral("matched")).toInt(), 2);   // both hats, not the kick
+		QCOMPARE(found.result.value(QStringLiteral("returned")).toInt(), 1);  // the run's own limit
+		const QJsonArray items = found.result.value(QStringLiteral("items")).toArray();
+		QCOMPARE(items.first().toObject().value(QStringLiteral("name")).toString(), QStringLiteral("hat closed.wav"));  // path order
+		const QJsonArray roots = found.result.value(QStringLiteral("roots")).toArray();
+		QCOMPARE(roots.size(), 1);
+		QCOMPARE(roots.first().toString(), QStringLiteral("samples"));  // the stored root, not every root
 	}
 
 	void aTrackPresetRoundTrips()

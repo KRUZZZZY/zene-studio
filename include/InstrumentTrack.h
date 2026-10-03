@@ -194,6 +194,7 @@ public:
 		bool songGlobal;
 		uint32_t midiSeed;
 		class PatternTrack* patternTrack;
+		tick_t songTick;  //!< the song position playing now: a looped clip's pass included (swing's phase)
 	};
 	//! Whether a note starts at @a curStart: on it, under the clip's own start, or chased (InstrumentTrackNotes.cpp).
 	bool noteStartsNow(const Note& note, const TimePos& curStart, const MidiClip* clip) const;

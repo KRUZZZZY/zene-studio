@@ -50,6 +50,8 @@
 #include <QStringList>
 #include <QVector>
 
+#include "AudioDevice.h"
+#include "AudioEngine.h"
 #include "ControlReversibility.h"
 #include "Engine.h"
 #include "MidiClock.h"
@@ -133,6 +135,9 @@ private slots:
 	{
 		Engine::init(true);
 		QVERIFY(Engine::getSong() != nullptr);
+		// The test drives the clock's periods itself; the Dummy device's own periods (Song.cpp's call) would
+		// interleave with them - the stray stop and continue of BUGS 10.10.
+		Engine::audioEngine()->audioDev()->stopProcessing();
 	}
 
 	void cleanupTestCase()

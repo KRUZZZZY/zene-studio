@@ -1160,6 +1160,8 @@ void ClipView::remove( QVector<ClipView *> clipvs )
 	for( auto clipv: clipvs )
 	{
 		// No need to check if it's nullptr because we check when building the QVector
+		// 0.5.0 L12 (WF-044): a locked clip in the selection stays when an unlocked one is deleted (or cut).
+		if (EditLocks::instance().locks(clipv->getClip())) { continue; }
 		clipv->remove();
 	}
 }

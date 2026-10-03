@@ -88,6 +88,8 @@ public:
 
 private:
 	void writerLoop();
+	//! push()'s copy of @a frames into the ring (what does not fit is dropped and counted).
+	void copyIn(const SampleFrame* frames, f_cnt_t count) noexcept;
 	//! Writes the ring's frames from @a read on; false when there were none.
 	bool writeAvailable();
 
@@ -97,6 +99,7 @@ private:
 	std::atomic<std::size_t> m_read{0};
 	std::atomic<bool> m_recording{false};
 	std::atomic<bool> m_stopping{false};
+	std::atomic<int> m_pushing{0};  //!< push() calls in progress; stop() waits for them
 	std::atomic<std::uint64_t> m_written{0};
 	std::atomic<std::uint64_t> m_dropped{0};
 	std::thread m_thread;

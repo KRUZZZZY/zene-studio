@@ -29,6 +29,7 @@
  *  with the project, so fit_tracks is one undo step. */
 
 #include <algorithm>
+#include <climits>
 #include <cmath>
 
 #include <QCursor>
@@ -126,10 +127,23 @@ void fitSpan(gui::SongEditor* editor, tick_t begin, tick_t end)
 	editor->horizontalScroll()->setValue(static_cast<int>(begin));
 }
 
+//! What is wrong with a zoom span: one end without the other, or the ends reversed; empty when nothing is.
+QString spanProblem(const QJsonObject& args)
+{
+	const bool start = args.contains(QStringLiteral("start"));
+	if (start != args.contains(QStringLiteral("end"))) { return QStringLiteral("'start' and 'end' come together"); }
+	if (start && args.value(QStringLiteral("end")).toInt() < args.value(QStringLiteral("start")).toInt())
+	{
+		return QStringLiteral("'end' must not be before 'start'");
+	}
+	return QString();
+}
+
 ControlResult zoom(const QJsonObject& args)
 {
 	gui::SongEditor* editor = arranger();
 	if (editor == nullptr) { return noArranger(QStringLiteral("arrangement.zoom")); }
+	if (const QString problem = spanProblem(args); !problem.isEmpty()) { return ControlResult::failure(ControlErrorKind::InvalidArgs, problem); }
 	IntModel* model = editor->zoomingModel();
 	const int before = model->value();
 	if (args.contains(QStringLiteral("start")) && args.contains(QStringLiteral("end")))
@@ -181,6 +195,14 @@ QJsonArray trackHeights(const QList<gui::TrackView*>& views)
 	return out;
 }
 
+//! Whether every entry of @a heights is a whole number of pixels (QJsonValue::toInt would read anything else as 0).
+bool wholeHeights(const QJsonArray& heights)
+{
+	return std::all_of(heights.begin(), heights.end(), [](const QJsonValue& height) {
+		return height.isDouble() && height.toDouble() == std::floor(height.toDouble()) && std::abs(height.toDouble()) <= INT_MAX;
+	});
+}
+
 void setHeights(gui::SongEditor* editor, const QJsonArray& heights)
 {
 	const QList<gui::TrackView*>& views = editor->trackViews();
@@ -201,6 +223,7 @@ ControlResult fitTracks(const QJsonObject& args)
 	if (views.isEmpty()) { return ControlResult::failure(ControlErrorKind::Refused, QStringLiteral("the arrangement has no tracks")); }
 	const QJsonArray before = trackHeights(views);
 	QJsonArray wanted = args.value(QStringLiteral("heights")).toArray();
+	if (!wholeHeights(wanted)) { return ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("'heights' holds whole pixel counts")); }
 	if (wanted.isEmpty())
 	{
 		const int each = std::clamp(editor->contentWidget()->viewport()->height() / static_cast<int>(views.size()),
@@ -262,9 +285,10 @@ QJsonArray toolEntries()
 
 ControlResult toolMenu(const QJsonObject&)
 {
-	if (controlMainWindow() == nullptr) { return noInterface(QStringLiteral("window.tool_menu")); }
 	const QJsonArray entries = toolEntries();
 	const bool shown = !ControlRegistry::instance()->isHeadless();
+	// Only a menu that is shown needs the window: headless, the entries are the answer.
+	if (shown && controlMainWindow() == nullptr) { return noInterface(QStringLiteral("window.tool_menu")); }
 	if (shown)
 	{
 		auto* menu = new QMenu(controlMainWindow());

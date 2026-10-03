@@ -36,6 +36,13 @@
 namespace lmms
 {
 
+ModulationLayerPublisher::ModulationLayerPublisher()
+{
+	// -1 for both, never the zero a bare atomic starts at: 0 is a time, and can be a track's id.
+	for (auto& track : m_triggerTrack) { track.store(-1, std::memory_order_relaxed); }
+	for (auto& at : m_triggeredAt) { at.store(-1.0, std::memory_order_relaxed); }
+}
+
 ModulationLayerPublisher::~ModulationLayerPublisher()
 {
 	for (QMetaObject::Connection& watch : m_watch) { QObject::disconnect(watch); }

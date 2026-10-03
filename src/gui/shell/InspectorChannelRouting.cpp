@@ -41,6 +41,7 @@
 #include "DesignTokens.h"
 #include "Engine.h"
 #include "Effect.h"
+#include "EffectChain.h"
 #include "Knob.h"
 #include "LevelBar.h"
 #include "LedCheckBox.h"
@@ -92,6 +93,10 @@ void addChain(QVBoxLayout* column, const QString& title, const EffectChain& chai
 	const std::function<void()>& rebuild)
 {
 	column->addWidget(heading(title, parent));
+	// A device added or removed elsewhere (an undo, another window, a command) redraws the list: a row
+	// left behind would switch a device that is gone.
+	QObject::connect(&chain, &EffectChain::dataChanged, parent, rebuild);
+	QObject::connect(&chain, &EffectChain::aboutToClear, parent, rebuild);
 	for (Effect* effect : chain.effects())
 	{
 		auto* on = new QCheckBox(effect->displayName(), parent);

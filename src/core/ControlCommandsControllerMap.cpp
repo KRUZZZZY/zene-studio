@@ -69,9 +69,26 @@ AutomatableModel* parameterOf(const QJsonObject& args, ControlResult* error)
 	return model;
 }
 
-void bindByName(const QString& name, int channel, int controller)
+//! A MIDI mapping as one undo step has to put it back: the control-change and its two options.
+struct MidiBinding
 {
-	if (AutomatableModel* model = ControllerSurface::instance().resolveTarget(name)) { bindMidiController(model, channel, controller); }
+	int channel = -1;
+	int controller = -1;
+	bool softTakeover = false;
+	bool feedback = false;
+};
+
+MidiController* bindTo(AutomatableModel* model, const MidiBinding& binding)
+{
+	MidiController* bound = bindMidiController(model, binding.channel, binding.controller);
+	bound->setSoftTakeoverEnabled(binding.softTakeover);
+	bound->setFeedbackEnabled(binding.feedback);
+	return bound;
+}
+
+void bindByName(const QString& name, const MidiBinding& binding)
+{
+	if (AutomatableModel* model = ControllerSurface::instance().resolveTarget(name)) { bindTo(model, binding); }
 }
 
 void unbindByName(const QString& name)
@@ -79,13 +96,13 @@ void unbindByName(const QString& name)
 	if (AutomatableModel* model = ControllerSurface::instance().resolveTarget(name)) { model->setControllerConnection(nullptr); }
 }
 
-//! The MIDI binding @a model has now (channel, controller), or -1s.
-std::pair<int, int> bindingOf(const AutomatableModel* model)
+//! The MIDI binding @a model has now, or a channel of -1.
+MidiBinding bindingOf(const AutomatableModel* model)
 {
 	ControllerConnection* connection = model->controllerConnection();
 	auto* midi = connection != nullptr ? dynamic_cast<MidiController*>(connection->getController()) : nullptr;
-	if (midi == nullptr) { return {-1, -1}; }
-	return {midi->midiPort().inputChannel(), midi->midiPort().inputController()};
+	if (midi == nullptr) { return {}; }
+	return {midi->midiPort().inputChannel(), midi->midiPort().inputController(), midi->softTakeoverEnabled(), midi->feedbackEnabled()};
 }
 
 ControlResult mapControl(const QJsonObject& args)
@@ -93,17 +110,17 @@ ControlResult mapControl(const QJsonObject& args)
 	ControlResult error;
 	AutomatableModel* model = parameterOf(args, &error);
 	if (model == nullptr) { return error; }
-	const int channel = args.value(QStringLiteral("channel")).toInt(1);
-	const int controller = args.value(QStringLiteral("controller")).toInt();
+	const MidiBinding binding{args.value(QStringLiteral("channel")).toInt(1), args.value(QStringLiteral("controller")).toInt(),
+		args.value(QStringLiteral("soft_takeover")).toBool(), args.value(QStringLiteral("feedback")).toBool()};
+	const int channel = binding.channel;
+	const int controller = binding.controller;
 	const QString name = model->fullDisplayName();
-	const auto [oldChannel, oldController] = bindingOf(model);
-	addUndoStep([name, oldChannel, oldController]() {
+	const MidiBinding old = bindingOf(model);
+	addUndoStep([name, old]() {
 		unbindByName(name);
-		if (oldChannel >= 0) { bindByName(name, oldChannel, oldController); }
-	}, [name, channel, controller]() { bindByName(name, channel, controller); });
-	MidiController* bound = bindMidiController(model, channel, controller);
-	bound->setSoftTakeoverEnabled(args.value(QStringLiteral("soft_takeover")).toBool());
-	bound->setFeedbackEnabled(args.value(QStringLiteral("feedback")).toBool());
+		if (old.channel >= 0) { bindByName(name, old); }
+	}, [name, binding]() { bindByName(name, binding); });
+	bindTo(model, binding);
 	Engine::getSong()->setModified();
 	QJsonObject result{{QStringLiteral("control"), name}, {QStringLiteral("channel"), channel}, {QStringLiteral("controller"), controller}};
 	result.insert(QStringLiteral("__transaction"), transactionPayload({{QStringLiteral("control"), name}}, QStringLiteral("controller.unmap"),
@@ -116,10 +133,12 @@ ControlResult unmapControl(const QJsonObject& args)
 	ControlResult error;
 	AutomatableModel* model = parameterOf(args, &error);
 	if (model == nullptr) { return error; }
-	const auto [channel, controller] = bindingOf(model);
+	const MidiBinding old = bindingOf(model);
+	const int channel = old.channel;
+	const int controller = old.controller;
 	if (channel < 0) { return ControlResult::failure(ControlErrorKind::NotFound, QStringLiteral("that parameter has no MIDI mapping")); }
 	const QString name = model->fullDisplayName();
-	addUndoStep([name, channel, controller]() { bindByName(name, channel, controller); }, [name]() { unbindByName(name); });
+	addUndoStep([name, old]() { bindByName(name, old); }, [name]() { unbindByName(name); });
 	model->setControllerConnection(nullptr);
 	Engine::getSong()->setModified();
 	QJsonObject result{{QStringLiteral("control"), name}};

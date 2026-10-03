@@ -50,6 +50,8 @@
 #include "AutomatableModel.h"
 #include "Effect.h"
 #include "EffectChain.h"
+#include "Engine.h"
+#include "Song.h"
 
 namespace lmms
 {
@@ -168,15 +170,25 @@ std::map<int, AbSlots>& abSlots()
 	return pairs;
 }
 
-//! Put @a state on @a effect as one undo step (the previous settings come back on undo).
-ControlResult recallState(Effect* effect, const QString& state)
+//! Put a recorded A/B state back on @a effect: its settings and its slots (which one is heard, what each holds).
+void restoreAb(const QPointer<Effect>& effect, const QString& state, const AbSlots& held)
+{
+	if (!effect) { return; }
+	controlRestoreEffectState(effect.data(), state.toUtf8());
+	abSlots()[effect->id()] = held;
+}
+
+//! Put @a state on @a effect as one undo step: the previous settings and slots (@a slotsBefore) come
+//! back on undo, @a slotsAfter with the settings on redo.
+ControlResult recallState(Effect* effect, const QString& state, const AbSlots& slotsBefore, const AbSlots& slotsAfter)
 {
 	const QString before = controlEffectStateXml(effect);
 	const ControlResult restored = controlRestoreEffectState(effect, state.toUtf8());
 	if (!restored.ok) { return restored; }
 	const QPointer<Effect> guarded(effect);
-	addUndoStep([guarded, before]() { if (guarded) { controlRestoreEffectState(guarded.data(), before.toUtf8()); } },
-		[guarded, state]() { if (guarded) { controlRestoreEffectState(guarded.data(), state.toUtf8()); } });
+	addUndoStep([guarded, before, slotsBefore]() { restoreAb(guarded, before, slotsBefore); },
+		[guarded, state, slotsAfter]() { restoreAb(guarded, state, slotsAfter); });
+	Engine::getSong()->setModified();
 	return restored;
 }
 
@@ -186,25 +198,29 @@ QJsonObject abJson(const AbSlots& pair)
 		{QStringLiteral("has_a"), !pair.a.isEmpty()}, {QStringLiteral("has_b"), !pair.b.isEmpty()}};
 }
 
-ControlResult abRecall(Effect* effect, AbSlots& pair, bool toB)
+//! Recall slot B (or A); @a before is the slots as they were before the command touched them.
+ControlResult abRecall(Effect* effect, AbSlots& pair, bool toB, AbSlots before)
 {
-	const QString& state = toB ? pair.b : pair.a;
+	const QString state = toB ? pair.b : pair.a;
 	if (state.isEmpty())
 	{
 		return ControlResult::failure(ControlErrorKind::NotFound, QStringLiteral("nothing is stored in %1").arg(toB ? QLatin1Char('B') : QLatin1Char('A')));
 	}
-	const ControlResult recalled = recallState(effect, state);
+	AbSlots after = pair;
+	after.onB = toB;
+	const ControlResult recalled = recallState(effect, state, before, after);
+	pair = recalled.ok ? after : before;
 	if (!recalled.ok) { return recalled; }
-	pair.onB = toB;
 	return ControlResult::success(abJson(pair));
 }
 
 //! The settings heard now become the current slot's; the other slot - a copy on the first toggle - is recalled.
 ControlResult abToggle(Effect* effect, AbSlots& pair)
 {
+	const AbSlots before = pair;
 	storeSlot(effect, pair, pair.onB);
 	if ((pair.onB ? pair.a : pair.b).isEmpty()) { storeSlot(effect, pair, !pair.onB); }
-	return abRecall(effect, pair, !pair.onB);
+	return abRecall(effect, pair, !pair.onB, before);
 }
 
 ControlResult pluginAb(const QJsonObject& args)
@@ -218,7 +234,7 @@ ControlResult pluginAb(const QJsonObject& args)
 	if (pair.owner != effect) { pair = AbSlots{}; pair.owner = effect; }
 	const QString action = args.value(QStringLiteral("action")).toString();
 	const bool toB = args.value(QStringLiteral("slot")).toString() == QLatin1String("b");
-	if (action == QLatin1String("recall")) { return abRecall(effect, pair, toB); }
+	if (action == QLatin1String("recall")) { return abRecall(effect, pair, toB, pair); }
 	if (action == QLatin1String("toggle")) { return abToggle(effect, pair); }
 	if (action == QLatin1String("store"))
 	{

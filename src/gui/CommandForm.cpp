@@ -38,6 +38,7 @@
 #include <QKeySequenceEdit>
 #include <QLabel>
 #include <QLineEdit>
+#include <QLocale>
 #include <QMenu>
 #include <QPushButton>
 #include <QRegularExpression>
@@ -288,14 +289,20 @@ void CommandForm::constrain(QLineEdit* edit, const QJsonObject& spec)
 	const QString type = schemaType(spec);
 	const QJsonValue low = spec.value(QStringLiteral("minimum"));
 	const QJsonValue high = spec.value(QStringLiteral("maximum"));
+	// The C locale, as parseText reads the text (QString::toLongLong/toDouble): a "1,5" a German
+	// locale's validator would pass is not a number there, and its "1.5" would be refused.
+	QLocale c = QLocale::c();
+	c.setNumberOptions(QLocale::RejectGroupSeparator);
 	if (type == QStringLiteral("integer"))
 	{
-		edit->setValidator(new QIntValidator(low.isDouble() ? low.toInt() : INT_MIN,
-			high.isDouble() ? high.toInt() : INT_MAX, edit));
+		auto* validator = new QIntValidator(low.isDouble() ? low.toInt() : INT_MIN, high.isDouble() ? high.toInt() : INT_MAX, edit);
+		validator->setLocale(c);
+		edit->setValidator(validator);
 	}
 	else if (type == QStringLiteral("number"))
 	{
 		auto* validator = new QDoubleValidator(edit);
+		validator->setLocale(c);
 		if (low.isDouble()) { validator->setBottom(low.toDouble()); }
 		if (high.isDouble()) { validator->setTop(high.toDouble()); }
 		edit->setValidator(validator);

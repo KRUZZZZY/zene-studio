@@ -78,8 +78,9 @@ QString parseRange(const QJsonObject& args, bool required, BounceInPlace::Range*
 
 //! Where a bounce lands when the caller does not say: beside the project, in a
 //! "<project>-bounces" directory, named after the track's stable id and the verb
-//! (and the tick range, for a region), so two bounces never overwrite each
-//! other and a reader can tell what produced the file.
+//! (and the tick range, for a region), so bounces of different tracks, verbs or
+//! ranges never overwrite each other and a reader can tell what produced the
+//! file. The same bounce made again lands on the same path and replaces it.
 static QString defaultBouncePath(Track* track, const QString& verb, const BounceInPlace::Range& range)
 {
 	const QString project = Engine::getSong()->projectFileName();

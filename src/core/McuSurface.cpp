@@ -36,6 +36,7 @@
 #include "Engine.h"
 #include "MidiClient.h"
 #include "MidiPort.h"
+#include "MultiTrackRecorder.h"
 #include "Song.h"
 #include "Track.h"
 #include "TrackMixModels.h"
@@ -64,6 +65,17 @@ QList<Track*> bankable()
 ControlResult run(const QString& id, const QJsonObject& args = {})
 {
 	return ControlRegistry::instance()->invoke(id, args);
+}
+
+//! Whether the record route @a track maps to (its place in the song, as track.set_arm maps it) is
+//! armed - however it was armed: from the surface, by a command or in the window.
+bool routeArmed(const Track* track)
+{
+	const TrackContainer::TrackList& tracks = Engine::getSong()->tracks();
+	const auto found = std::find(tracks.begin(), tracks.end(), track);
+	const auto route = static_cast<int>(found - tracks.begin());
+	const MultiTrackRecorder& recorder = Engine::audioEngine()->recorder();
+	return found != tracks.end() && route < recorder.trackCount() && recorder.track(route).isArmed();
 }
 
 } // namespace
@@ -183,15 +195,7 @@ void McuSurface::applyStripButton(const mcu::Input& input, Track* track)
 	case mcu::Kind::Mute: run(QStringLiteral("track.set_mute"), {{QStringLiteral("track"), id}, {QStringLiteral("muted"), !track->isMuted()}}); break;
 	case mcu::Kind::Solo: run(QStringLiteral("track.set_solo"), {{QStringLiteral("track"), id}, {QStringLiteral("solo"), !track->isSolo()}}); break;
 	case mcu::Kind::Select: run(QStringLiteral("window.select"), {{QStringLiteral("track"), id}}); break;
-	case mcu::Kind::Rec:
-	{
-		const bool arm = !m_armed.contains(id);
-		if (run(QStringLiteral("track.set_arm"), {{QStringLiteral("track"), id}, {QStringLiteral("armed"), arm}}).ok)
-		{
-			if (arm) { m_armed.insert(id); } else { m_armed.remove(id); }
-		}
-		break;
-	}
+	case mcu::Kind::Rec: run(QStringLiteral("track.set_arm"), {{QStringLiteral("track"), id}, {QStringLiteral("armed"), !routeArmed(track)}}); break;
 	default: break;
 	}
 }
@@ -244,7 +248,7 @@ void McuSurface::sendStrip(int strip)
 	}
 	sendLed(mcu::Kind::Mute, strip, track != nullptr && track->isMuted());
 	sendLed(mcu::Kind::Solo, strip, track != nullptr && track->isSolo());
-	sendLed(mcu::Kind::Rec, strip, track != nullptr && m_armed.contains(control::trackIdOf(track)));
+	sendLed(mcu::Kind::Rec, strip, track != nullptr && routeArmed(track));
 }
 
 void McuSurface::sendFeedback()

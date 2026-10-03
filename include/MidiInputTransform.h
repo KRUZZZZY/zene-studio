@@ -76,6 +76,9 @@ private:
 	};
 	static const std::array<Setting, 8>& settings();
 
+	bool passesChannel(const MidiEvent& event) const;
+	//! The held entry of @a event's channel and key, null when either is out of range.
+	std::atomic<int>* heldFor(const MidiEvent& event);
 	bool noteOn(MidiEvent* event);
 	bool follow(MidiEvent* event, bool ends);
 	int clampedVelocity(int velocity) const;
@@ -91,8 +94,8 @@ private:
 	std::atomic<int> m_velocityOffset{0};  //!< -127..127
 	std::atomic<int> m_fixedVelocity{0};   //!< 0 off, 1..127
 	std::atomic<bool> m_active{false};
-	//! Incoming key -> the key its note-on became: -1 dropped, -2 not held through the transform.
-	std::array<std::atomic<int>, 128> m_heldAs;
+	//! Incoming channel * 128 + key -> the key its note-on became: -1 dropped, -2 not held through the transform.
+	std::array<std::atomic<int>, 16 * 128> m_heldAs;
 };
 
 } // namespace lmms

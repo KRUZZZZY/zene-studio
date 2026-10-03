@@ -228,7 +228,7 @@ bool shows(int index)
 void applyToStrip(MixerChannelView* view, MixerChannel* channel)
 {
 	const Options& o = options();
-	if (!o.sends) { view->hideSends(); }
+	view->setSendsShown(o.sends);
 	view->panKnob()->setVisible(o.pan);
 	view->numberLcd()->setVisible(o.number);
 	view->nameEdit()->setFixedWidth(nameWidth(o.width));

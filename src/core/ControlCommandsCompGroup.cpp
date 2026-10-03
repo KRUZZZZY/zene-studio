@@ -179,7 +179,12 @@ ControlResult splitPasses(const QJsonObject& args)
 	{
 		return ControlResult::failure(ControlErrorKind::Refused, QStringLiteral("the clip starts at the loop's start and runs past its end, or there is nothing to split"));
 	}
-	const int passes = static_cast<int>(std::min<tick_t>(32, (length + loop - 1) / loop));
+	const tick_t passes = (length + loop - 1) / loop;
+	if (passes > 32)
+	{
+		// Capping the cuts would leave every pass past the 32nd merged into the last take.
+		return ControlResult::failure(ControlErrorKind::Refused, QStringLiteral("the clip spans %1 passes; at most 32 can be split").arg(passes));
+	}
 	ref.track->addJournalCheckPoint();
 	std::vector<Clip*> pieces{ref.clip};
 	for (int k = passes - 1; k >= 1; --k)
@@ -216,7 +221,7 @@ void registerCompGroupCommands(ControlRegistry& registry)
 		{QStringLiteral("track"), QStringLiteral("tick"), QStringLiteral("to")}, moveEdge);
 	add(registry, "comp.split_passes", QStringLiteral("Turn a take recorded across loop wraps into takes: the clip (starting at the "
 		"loop's start, longer than the loop) is cut at each wrap, every pass goes on its own take lane at the loop's start, and "
-		"the last pass is comped in. Reversible through the ProjectJournal (Track checkpoint)."),
+		"the last pass is comped in (refused past 32 passes). Reversible through the ProjectJournal (Track checkpoint)."),
 		{{QStringLiteral("clip"), stringProperty()}}, {QStringLiteral("clip")}, splitPasses);
 	add(registry, "comp.select_group", QStringLiteral("comp.select on several tracks at once - 'tracks', or the edit set of VCA "
 		"group 'group' (a kit recorded across tracks): lane 'lane' supplies [begin, end) on every one, slipped 'srcpos'. "

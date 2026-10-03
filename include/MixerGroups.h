@@ -38,7 +38,7 @@ constexpr int MaxGroupDepth = 8;
 
 /*! A group's gain as it reaches its members: its own (VcaGroup::gain - mute and the chosen links
  *  included) times every group above it through VcaGroup::parentId. A parent id naming no group ends
- *  the chain; a cycle cannot loop, the walk stops at MaxGroupDepth. Control thread (Mixer::refreshGroups). */
+ *  the chain; a cycle (only a project file can hold one) counts each group once, and the walk stops at MaxGroupDepth. Control thread (Mixer::refreshGroups). */
 LMMS_EXPORT float vcaGroupGain(const Mixer& mixer, const VcaGroup& group);
 
 //! Whether making @a parentId the parent of @a group would close a loop (or nest past MaxGroupDepth).

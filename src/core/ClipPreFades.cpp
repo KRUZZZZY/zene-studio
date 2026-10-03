@@ -52,6 +52,25 @@ bool comped(const SampleClip& clip)
 
 std::int64_t framesAt(double ticks, double framesPerTick) { return static_cast<std::int64_t>(std::llround(ticks * framesPerTick)); }
 
+//! The source frame under the clip's end, where its hidden tail begins.
+std::int64_t endFrame(const SampleClip& clip, double framesPerTick)
+{
+	const int origin = clip.startPosition().getTicks() + clip.startTimeOffset().getTicks();
+	return static_cast<std::int64_t>(clip.sampleWindow().sourceIn) + framesAt(clip.endPosition().getTicks() - origin, framesPerTick);
+}
+
+//! leadTicks' mirror: the pre-fade-out, no longer than the source frames after the clip's end, so the ramp
+//! reaches silence before the audio runs out (a clip longer than its audio has no hidden tail).
+int tailTicks(const SampleClip& clip)
+{
+	const double framesPerTick = clip.clipFramesPerTick();
+	if (framesPerTick <= 0.0) { return 0; }
+	const std::int64_t atEnd = endFrame(clip, framesPerTick);
+	if (atEnd > static_cast<std::int64_t>(clip.sampleWindow().sourceOut)) { return 0; }
+	const auto hidden = static_cast<double>(static_cast<std::int64_t>(sampleOf(clip).sampleSize()) - atEnd);
+	return std::clamp(clip.clipEdits().preFadeOutTicks, 0, std::max(0, static_cast<int>(std::floor(hidden / framesPerTick))));
+}
+
 } // namespace
 
 namespace prefades
@@ -79,7 +98,7 @@ TimePos spanStart(const SampleClip& clip)
 
 TimePos spanEnd(const SampleClip& clip)
 {
-	return engaged(clip) ? TimePos(clip.endPosition().getTicks() + clip.clipEdits().preFadeOutTicks) : clip.endPosition();
+	return engaged(clip) ? TimePos(clip.endPosition().getTicks() + tailTicks(clip)) : clip.endPosition();
 }
 
 SampleWindow window(const SampleClip& clip, TimePos at)
@@ -93,8 +112,8 @@ SampleWindow window(const SampleClip& clip, TimePos at)
 	const auto out = static_cast<std::int64_t>(own.sourceOut);
 	const std::int64_t from = in + framesAt(at.getTicks() - origin, framesPerTick);
 	// The hidden tail is the audio under the clip's end and after it; a clip longer than its audio has none.
-	const std::int64_t atEnd = in + framesAt(clip.endPosition().getTicks() - origin, framesPerTick);
-	const std::int64_t to = atEnd <= out ? atEnd + framesAt(clip.clipEdits().preFadeOutTicks, framesPerTick) : out;
+	const std::int64_t atEnd = endFrame(clip, framesPerTick);
+	const std::int64_t to = atEnd <= out ? atEnd + framesAt(tailTicks(clip), framesPerTick) : out;
 	return {static_cast<f_cnt_t>(std::clamp<std::int64_t>(from, 0, size)), static_cast<f_cnt_t>(std::clamp<std::int64_t>(to, 0, size))};
 }
 
@@ -103,9 +122,9 @@ SampleWindow window(const SampleClip& clip, TimePos at)
 void SamplePlayHandle::snapshotPreFades(const SampleClip* clip, const SampleWindow& window)
 {
 	if (!prefades::engaged(*clip) || m_clipFrames == 0) { return; }
-	const ClipEdits& edits = clip->clipEdits();
-	m_preFadeSpan = {static_cast<std::int64_t>(m_clipFrames), framesAt(edits.preFadeInTicks, m_outputFramesPerTick),
-		framesAt(edits.preFadeOutTicks, m_outputFramesPerTick), static_cast<std::int64_t>(m_fadeInFrames),
+	// The ramps as scheduled - the pre-fades clamped to the hidden audio there is - so each starts (or ends) silent.
+	m_preFadeSpan = {static_cast<std::int64_t>(m_clipFrames), framesAt(prefades::leadTicks(*clip), m_outputFramesPerTick),
+		framesAt(tailTicks(*clip), m_outputFramesPerTick), static_cast<std::int64_t>(m_fadeInFrames),
 		static_cast<std::int64_t>(m_fadeOutFrames)};
 	const SampleWindow own = clip->sampleWindow();
 	const double ratio = static_cast<double>(Engine::audioEngine()->outputSampleRate()) / static_cast<double>(m_sample->sampleRate());

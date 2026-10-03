@@ -175,14 +175,24 @@ void ShellLayout::reopenPinned()
 
 bool ShellLayout::setPinnedQuietly(const QString& id)
 {
-	if (!isPanel(id) || id == kLauncher || spec(id).home == ShellRegion::Center) { return false; }
+	if (!pinnable(id)) { return false; }
 	if (!m_pinned.contains(id)) { m_pinned.append(id); }
 	return true;
 }
 
+bool ShellLayout::pinnable(const QString& id)
+{
+	return isPanel(id) && id != kLauncher && spec(id).home != ShellRegion::Center;
+}
+
 bool ShellLayout::setPinned(const QString& id, bool pinned)
 {
-	if (!pinned) { return isPanel(id) && m_pinned.removeAll(id) >= 0; }
+	// Unpinning answers like pinning: only a side panel has a pin to take out (review L18 #1).
+	if (!pinned)
+	{
+		m_pinned.removeAll(id);
+		return pinnable(id);
+	}
 	if (!setPinnedQuietly(id)) { return false; }
 	open(id, nullptr);
 	return true;

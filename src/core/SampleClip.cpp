@@ -163,8 +163,20 @@ void SampleClip::setSampleBuffer(std::shared_ptr<const SampleBuffer> sb)
 
 void SampleClip::replaceSample(std::shared_ptr<const SampleBuffer> sb, const SampleWindow& window)
 {
-	setSampleBuffer(std::move(sb));
-	setSampleWindow(window);
+	{
+		// The buffer and the window played of it change under ONE guard: no audio period sees the new
+		// buffer through a full-buffer window in between (review L17 #10).
+		const auto guard = Engine::audioEngine()->requestChangesGuard();
+		m_sample = Sample(std::move(sb));
+		const auto frames = static_cast<f_cnt_t>(m_sample.sampleSize());
+		const auto clamped = SampleWindow::clamped(window.sourceIn, window.sourceOut, frames);
+		installWindow(clamped.empty() ? SampleWindow::full(frames) : clamped);
+	}
+	updateLength();
+	// A window that is not the whole buffer is a manual edit, as setSampleWindow() has it.
+	if (m_window != SampleWindow::full(static_cast<f_cnt_t>(m_sample.sampleSize()))) { setAutoResize(false); }
+	emit sampleChanged();
+	Engine::getSong()->setModified();
 }
 
 void SampleClip::setSampleFile(const QString& sf)
@@ -419,13 +431,7 @@ void SampleClip::setSampleWindow(const SampleWindow& window)
 		return;
 	}
 
-	m_window = clamped;
-
-	// Sample's frame fields are the render-time scratch they already were (OQ-1):
-	// pointing them at the window keeps Sample::render, sampleDuration() and the
-	// waveform drawing reading the window, while the authored state stays here.
-	m_sample.setStartFrame(static_cast<int>(m_window.sourceIn));
-	m_sample.setEndFrame(static_cast<int>(m_window.sourceOut));
+	installWindow(clamped);
 
 	if (m_window != SampleWindow::full(bufferFrames))
 	{
@@ -443,7 +449,19 @@ void SampleClip::setSampleWindow(const SampleWindow& window)
 
 void SampleClip::resetWindowToFullBuffer()
 {
-	m_window = SampleWindow::full(static_cast<f_cnt_t>(m_sample.sampleSize()));
+	installWindow(SampleWindow::full(static_cast<f_cnt_t>(m_sample.sampleSize())));
+}
+
+
+
+
+void SampleClip::installWindow(const SampleWindow& window)
+{
+	m_window = window;
+
+	// Sample's frame fields are the render-time scratch they already were (OQ-1):
+	// pointing them at the window keeps Sample::render, sampleDuration() and the
+	// waveform drawing reading the window, while the authored state stays here.
 	m_sample.setStartFrame(static_cast<int>(m_window.sourceIn));
 	m_sample.setEndFrame(static_cast<int>(m_window.sourceOut));
 }

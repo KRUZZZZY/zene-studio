@@ -35,6 +35,7 @@
 #include <QFile>
 #include <QFileInfo>
 #include <QJsonArray>
+#include <QSaveFile>
 
 #include "BrowserCatalog.h"
 #include "ClipConsolidate.h"
@@ -141,13 +142,14 @@ bool writeClip(Clip* clip, const QString& path, QString* error)
 		*error = rendered.error;
 		return rendered.ok;
 	}
-	QFile file(path);
-	if (!file.open(QIODevice::WriteOnly))
+	// Written whole or not at all: a short write must not leave a truncated file (or replace the old one).
+	const QByteArray smf = smfOf(static_cast<MidiClip*>(clip), Engine::getSong()->tempoModel().value());
+	QSaveFile file(path);
+	if (!file.open(QIODevice::WriteOnly) || file.write(smf) != smf.size() || !file.commit())
 	{
 		*error = QStringLiteral("cannot write %1").arg(path);
 		return false;
 	}
-	file.write(smfOf(static_cast<MidiClip*>(clip), Engine::getSong()->tempoModel().value()));
 	return true;
 }
 

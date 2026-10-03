@@ -200,11 +200,17 @@ MixerChannelView::MixerChannelView(QWidget* parent, MixerView* mixerView, int ch
 	setFocusPolicy(Qt::StrongFocus);
 }
 
-void MixerChannelView::hideSends()
+void MixerChannelView::setSendsShown(bool shown)
 {
-	m_receiveArrowOrSendButton->setVisible(false);
-	m_sendKnob->setVisible(false);
-	m_sendArrow->setVisible(false);
+	// Shown, the send row keeps its space while one of its widgets is hidden (the strips stay aligned
+	// as the current channel changes); hidden by the option, the strip closes up around it.
+	for (QWidget* widget : std::initializer_list<QWidget*>{m_receiveArrowOrSendButton, m_sendKnob, m_sendArrow})
+	{
+		QSizePolicy policy = widget->sizePolicy();
+		policy.setRetainSizeWhenHidden(shown);
+		widget->setSizePolicy(policy);
+		if (!shown) { widget->setVisible(false); }
+	}
 }
 
 void MixerChannelView::contextMenuEvent(QContextMenuEvent*)

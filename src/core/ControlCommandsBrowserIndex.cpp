@@ -102,8 +102,9 @@ ControlResult reindex(const QJsonObject& args)
 		}
 		return ControlResult::success(statusJson());
 	}
-	QJsonObject result = statusJson();
-	result.insert(QStringLiteral("started"), BrowserIndex::instance().start(dirs, features));
+	const bool started = BrowserIndex::instance().start(dirs, features);
+	QJsonObject result = statusJson();  // after the start: the scan it began (running, its folders), not the one before
+	result.insert(QStringLiteral("started"), started);
 	return ControlResult::success(result);
 }
 
@@ -176,6 +177,7 @@ ControlResult similar(const QJsonObject& args)
 	const std::vector<BrowserIndexEntry> entries = BrowserIndex::instance().entries();
 	const BrowserFeatures target = featuresOf(key, entries);
 	if (!target.valid) { return ControlResult::failure(ControlErrorKind::Refused, QStringLiteral("%1 could not be read as audio").arg(key)); }
+	BrowserTagStore::instance().load();  // as indexQuery: the items carry the tags the store holds now
 	std::vector<std::pair<double, const BrowserIndexEntry*>> ranked;
 	for (const BrowserIndexEntry& entry : entries)
 	{

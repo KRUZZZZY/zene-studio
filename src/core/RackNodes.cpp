@@ -25,6 +25,7 @@
 #include "RackNodes.h"
 
 #include <algorithm>
+#include <cmath>
 
 #include "AudioBuffer.h"
 #include "AudioBus.h"
@@ -33,6 +34,23 @@
 
 namespace lmms
 {
+
+namespace
+{
+
+//! Whether any of @a sources carries signal.
+bool anyLive(const std::vector<const AudioBuffer*>& sources)
+{
+	return std::any_of(sources.begin(), sources.end(), [](const AudioBuffer* source) { return source != nullptr && source->hasAnySignal(); });
+}
+
+//! Whether the interleaved stereo block @a samples (@a frames frames) holds anything.
+bool holdsSignal(const float* samples, f_cnt_t frames)
+{
+	return std::any_of(samples, samples + 2 * frames, [](float sample) { return std::abs(sample) > F_EPSILON; });
+}
+
+} // namespace
 
 RackChainNode::RackChainNode(EffectChain* chain) :
 	m_chain(chain)
@@ -64,15 +82,7 @@ void RackChainNode::process(f_cnt_t frames)
 	// flag already has on the channel's own path.
 	sumInputs(0, frames, out);
 
-	bool inputLive = false;
-	for (const AudioBuffer* source : inputs(0))
-	{
-		if (source != nullptr && source->hasAnySignal())
-		{
-			inputLive = true;
-			break;
-		}
-	}
+	bool inputLive = anyLive(inputs(0));
 
 	if (m_bus == nullptr || m_chain == nullptr)
 	{
@@ -93,6 +103,8 @@ void RackChainNode::process(f_cnt_t frames)
 		}
 		// MX-108: a split rack feeds this chain its part only (in place, allocation-free).
 		m_split.process(interleaved, count);
+		// A crossover's filters ring on after their input stops: that tail is audio, not a quiet block.
+		inputLive = inputLive || (m_split.rings() && holdsSignal(interleaved, count));
 	}
 	m_bus->quietChannels().set(0, !inputLive);
 	m_bus->quietChannels().set(1, !inputLive);
@@ -126,14 +138,7 @@ void RackSumNode::process(f_cnt_t frames)
 	// A block summed from live inputs is real audio; a sum of nodes that are
 	// all flagged silent stays flagged silent, so a sleeping effect downstream
 	// still auto-quits instead of being woken by a block full of zeros.
-	for (const AudioBuffer* source : inputs(0))
-	{
-		if (source != nullptr && source->hasAnySignal())
-		{
-			markOutputsNonSilent();
-			break;
-		}
-	}
+	if (anyLive(inputs(0))) { markOutputsNonSilent(); }
 }
 
 } // namespace lmms

@@ -73,6 +73,8 @@ AutomationClip::AutomationClip( const AutomationClip & _clip_to_copy ) :
 	m_objects( _clip_to_copy.m_objects ),
 	m_tension( _clip_to_copy.m_tension ),
 	m_progressionType(_clip_to_copy.m_progressionType),
+	m_relative(_clip_to_copy.isRelative()),
+	m_rampSetting(_clip_to_copy.m_rampSetting),
 	m_dragging(false),
 	m_isRecording(_clip_to_copy.m_isRecording),
 	m_lastRecordedValue(0)
@@ -842,7 +844,7 @@ void AutomationClip::saveSettings( QDomDocument & _doc, QDomElement & _this )
 	_this.setAttribute( "name", name() );
 	_this.setAttribute( "prog", QString::number( static_cast<int>(progressionType()) ) );
 	_this.setAttribute( "tens", QString::number( getTension() ) );
-	if (m_relative) { _this.setAttribute("relative", 1); }  // ED-199, only when set
+	if (isRelative()) { _this.setAttribute("relative", 1); }  // ED-199, only when set
 	_this.setAttribute( "mute", QString::number( isMuted() ) );
 	_this.setAttribute("off", startTimeOffset());
 	_this.setAttribute("autoresize", QString::number(getAutoResize()));
@@ -901,7 +903,7 @@ void AutomationClip::loadSettings( const QDomElement & _this )
 	clear();
 
 	movePosition( _this.attribute( "pos" ).toInt() );
-	m_relative = _this.attribute("relative", "0").toInt() != 0;
+	setRelative(_this.attribute("relative", "0").toInt() != 0);
 	setName( _this.attribute( "name" ) );
 	setProgressionType( static_cast<ProgressionType>( _this.attribute(
 							"prog" ).toInt() ) );

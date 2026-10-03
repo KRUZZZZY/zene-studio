@@ -133,6 +133,13 @@ Song::Song() :
 	// once so a period reuses it instead of allocating a copy of tracks().
 	MidiClock::instance();
 	m_periodTracks.reserve(256);
+	// ... and grown here, before a track past it could make a period's assign() allocate (review L19 #1): on the
+	// thread adding the track, under the changes guard the period runs under, so no period sees it move.
+	connect(this, &TrackContainer::trackAdded, this, [this] {
+		if (tracks().size() <= m_periodTracks.capacity()) { return; }
+		const auto guard = Engine::audioEngine()->requestChangesGuard();
+		m_periodTracks.reserve(2 * tracks().size());
+	}, Qt::DirectConnection);
 
 	connect( &m_tempoModel, SIGNAL(dataChanged()),
 			this, SLOT(setTempo()), Qt::DirectConnection );

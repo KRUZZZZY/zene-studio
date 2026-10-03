@@ -65,6 +65,14 @@ void addChain(const EffectChain* chain, QSet<QString>* out)
 	for (const Effect* effect : chain->effects()) { out->insert(effect->displayName()); }
 }
 
+//! A mixer channel's devices: its chain, its rack's parallel chains and its post-fader inserts.
+void addChannel(const MixerChannel* channel, QSet<QString>* out)
+{
+	addChain(&channel->m_fxChain, out);
+	for (int c = 1; c < channel->m_rack.chainCount(); ++c) { addChain(channel->m_rack.chain(c), out); }
+	addChain(&channel->m_postInserts.chain(), out);
+}
+
 //! The devices the session uses: instruments, track effects, mixer effects.
 QJsonArray devicesUsed()
 {
@@ -78,7 +86,7 @@ QJsonArray devicesUsed()
 		}
 		if (auto* sample = dynamic_cast<SampleTrack*>(track)) { addChain(sample->audioBusHandle()->effects(), &names); }
 	}
-	for (int i = 0; i < Engine::mixer()->numChannels(); ++i) { addChain(&Engine::mixer()->mixerChannel(i)->m_fxChain, &names); }
+	for (int i = 0; i < Engine::mixer()->numChannels(); ++i) { addChannel(Engine::mixer()->mixerChannel(i), &names); }
 	QStringList sorted(names.begin(), names.end());
 	sorted.sort(Qt::CaseInsensitive);
 	return QJsonArray::fromStringList(sorted);
@@ -95,14 +103,31 @@ QJsonObject manifest(const QString& file, const QJsonArray& copied, const QJsonA
 		{QStringLiteral("media"), copied}, {QStringLiteral("media_failed"), failed}, {QStringLiteral("media_missing"), missing}};
 }
 
+//! Where the copy of the session goes in @a dir: the session's own base name, as a .mmpz.
+QString copyPath(const QString& dir)
+{
+	const QString base = QFileInfo(Engine::getSong()->projectFileName()).completeBaseName();
+	return QDir(dir).filePath((base.isEmpty() ? QStringLiteral("project") : base) + QStringLiteral(".mmpz"));
+}
+
+//! Whether @a file is the session's own file (a handoff into the project's folder would overwrite it).
+bool isSessionFile(const QString& file)
+{
+	const QString own = QFileInfo(Engine::getSong()->projectFileName()).canonicalFilePath();
+	return !own.isEmpty() && QFileInfo(file).canonicalFilePath() == own;
+}
+
 ControlResult handoff(const QJsonObject& args)
 {
 	const QString dir = args.value(QStringLiteral("dir")).toString();
 	if (!QDir::isAbsolutePath(dir)) { return ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("'dir' is an absolute folder")); }
 	if (!QDir().mkpath(dir)) { return ControlResult::failure(ControlErrorKind::Refused, QStringLiteral("cannot create '%1'").arg(dir)); }
 	Song* song = Engine::getSong();
-	const QString base = QFileInfo(song->projectFileName()).completeBaseName();
-	const QString file = QDir(dir).filePath((base.isEmpty() ? QStringLiteral("project") : base) + QStringLiteral(".mmpz"));
+	const QString file = copyPath(dir);
+	if (isSessionFile(file))
+	{
+		return ControlResult::failure(ControlErrorKind::Refused, QStringLiteral("'%1' is the session's own file; hand off into another folder").arg(file));
+	}
 	if (!song->saveProjectFile(file))
 	{
 		return ControlResult::failure(ControlErrorKind::Refused, QStringLiteral("the project could not be written to '%1': %2").arg(file, song->saveRefusal()));

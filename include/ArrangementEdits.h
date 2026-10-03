@@ -108,7 +108,8 @@ LMMS_EXPORT void afterUserMove(Clip* moved, tick_t oldStart = -1);
 
 /*! ED-190: move the points of every automation lane following @a track that lie in
  *  [@a oldStart, @a oldStart + @a length) by @a delta (when the mode says so). The lanes' clips
- *  are checkpointed first when @a checkpoint. How many lanes changed. */
+ *  are checkpointed first when @a checkpoint. How many following lanes it visited (a lane with
+ *  no point in the range counts too; its checkpoint folds into the same undo step). */
 LMMS_EXPORT int moveFollowingAutomation(Track* track, tick_t oldStart, tick_t length, tick_t delta, bool checkpoint);
 
 //! The tolerance edge snapping uses, in pixels (converted to ticks at the current zoom).

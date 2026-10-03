@@ -946,7 +946,7 @@ bool InstrumentTrack::play( const TimePos & _start, const f_cnt_t _frames,
 				continue;
 			}
 			// The handle with its decorations, repeats, articulation and delay (InstrumentTrackNotes.cpp).
-			triggerNote({c, nit, notes.begin(), _clip_num < 0, midiSeed, pattern_track}, _offset, noteFrames, cur_start);
+			triggerNote({c, nit, notes.begin(), _clip_num < 0, midiSeed, pattern_track, _start.getTicks()}, _offset, noteFrames, cur_start);
 			played_a_note = true;
 			++nit;
 		}

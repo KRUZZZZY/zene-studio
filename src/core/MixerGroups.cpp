@@ -24,6 +24,9 @@
 
 #include "MixerGroups.h"
 
+#include <algorithm>
+#include <array>
+
 #include "Mixer.h"
 #include "VcaGroup.h"
 
@@ -32,12 +35,16 @@ namespace lmms
 
 float vcaGroupGain(const Mixer& mixer, const VcaGroup& group)
 {
+	// The groups already counted: a chain a project file closed into a loop counts each of them once.
+	std::array<const VcaGroup*, MaxGroupDepth + 1> seen{&group};
 	float gain = group.gain();
 	int parent = group.parentId();
 	for (int depth = 0; parent != VcaGroup::NoParent && depth < MaxGroupDepth; ++depth)
 	{
 		const VcaGroup* above = mixer.vcaGroup(parent);
-		if (above == nullptr || above == &group) { break; }
+		const auto counted = seen.begin() + depth + 1;
+		if (above == nullptr || std::find(seen.begin(), counted, above) != counted) { break; }
+		*counted = above;
 		gain *= above->gain();
 		parent = above->parentId();
 	}

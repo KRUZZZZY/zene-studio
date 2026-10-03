@@ -22,7 +22,8 @@
  *
  */
 /*! 0.5.0 L11 (W3): a MIDI clip saved into the library is a Standard MIDI File and one undo deletes it
- *  (WF-022); a preset that is not there is refused (WF-025); a folder scanned into the index answers an
+ *  (WF-022); a user preset is renamed and removed, each one undo step, and one that is not there is
+ *  refused (WF-025); a folder scanned into the index answers an
  *  indexed search without a walk (WF-012) and ranks the closest tone first (WF-020); a thumbnail is a
  *  picture of the requested size (WF-018); a matched preview plays and stops (WF-009); the browser's
  *  history steps back and refuses past its start (WF-014); a remembered source reads back (WF-023). */
@@ -35,6 +36,7 @@
 #include <QTemporaryDir>
 
 #include "BrowserIndex.h"
+#include "ConfigManager.h"
 #include "ControlRegistry.h"
 #include "ControlVocabulary.h"
 #include "Engine.h"
@@ -66,6 +68,8 @@ private slots:
 		QVERIFY(m_dir.isValid());
 		qputenv("ZENE_BROWSER_INDEX", QDir(m_dir.path()).filePath(QStringLiteral("index.json")).toUtf8());
 		Engine::init(true);
+		// A private working directory: the user presets this test writes and removes are never the developer's own.
+		ConfigManager::inst()->setWorkingDir(QDir(m_dir.path()).filePath(QStringLiteral("work")));
 		ControlRegistry::setReady(true);
 		BrowserIndex::instance().reload();
 		QDir(m_dir.path()).mkpath(QStringLiteral("tones"));
@@ -115,6 +119,40 @@ private slots:
 		QCOMPARE(run(QStringLiteral("plugin.preset_rename"), {{QStringLiteral("target"), control::trackIdOf(track)},
 			{QStringLiteral("plugin"), QStringLiteral("fx-999999")}, {QStringLiteral("name"), QStringLiteral("a")}}).errorKind,
 			ControlErrorKind::InvalidArgs);  // no new_name
+	}
+
+	void aUserPresetIsRenamedAndRemoved()
+	{
+		auto* track = dynamic_cast<InstrumentTrack*>(Track::create(Track::Type::Instrument, Engine::getSong()));
+		track->loadInstrument(QStringLiteral("tripleoscillator"));  // a placeholder instrument where the module is absent: still a device
+		const QString target = control::trackIdOf(track);
+		const QJsonObject device{{QStringLiteral("target"), target}, {QStringLiteral("plugin"), QStringLiteral("inst")}};
+		const QString dir = run(QStringLiteral("plugin.preset_list"), device).result.value(QStringLiteral("dir")).toString();
+		QVERIFY2(dir.startsWith(m_dir.path()), qPrintable(dir));
+		QVERIFY(QDir().mkpath(dir));
+		QFile file(dir + QStringLiteral("lead.xpf"));
+		QVERIFY(file.open(QIODevice::WriteOnly));
+		QCOMPARE(file.write("<preset/>"), qint64{9});
+		file.close();
+		const ControlResult renamed = run(QStringLiteral("plugin.preset_rename"), {{QStringLiteral("target"), target},
+			{QStringLiteral("plugin"), QStringLiteral("inst")}, {QStringLiteral("name"), QStringLiteral("lead")},
+			{QStringLiteral("new_name"), QStringLiteral("solo")}});
+		QVERIFY2(renamed.ok, qPrintable(renamed.errorMessage));
+		QCOMPARE(renamed.result.value(QStringLiteral("path")).toString(), dir + QStringLiteral("solo.xpf"));
+		QCOMPARE(renamed.result.value(QStringLiteral("name")).toString(), QStringLiteral("solo.xpf"));
+		QVERIFY(QFileInfo::exists(dir + QStringLiteral("solo.xpf")) && !QFileInfo::exists(dir + QStringLiteral("lead.xpf")));
+		QVERIFY(run(QStringLiteral("control.undo")).ok);  // the old name back
+		QVERIFY(QFileInfo::exists(dir + QStringLiteral("lead.xpf")) && !QFileInfo::exists(dir + QStringLiteral("solo.xpf")));
+		const ControlResult removed = run(QStringLiteral("plugin.preset_remove"), {{QStringLiteral("target"), target},
+			{QStringLiteral("plugin"), QStringLiteral("inst")}, {QStringLiteral("name"), QStringLiteral("lead")}});
+		QVERIFY2(removed.ok, qPrintable(removed.errorMessage));
+		QCOMPARE(removed.result.value(QStringLiteral("removed")).toString(), dir + QStringLiteral("lead.xpf"));
+		QCOMPARE(removed.result.value(QStringLiteral("bytes")).toInt(), 9);
+		QVERIFY(!QFileInfo::exists(dir + QStringLiteral("lead.xpf")));
+		QVERIFY(run(QStringLiteral("control.undo")).ok);  // the file written back with its bytes
+		QFile back(dir + QStringLiteral("lead.xpf"));
+		QVERIFY(back.open(QIODevice::ReadOnly));
+		QCOMPARE(back.readAll(), QByteArray("<preset/>"));
 	}
 
 	void theIndexAnswersWithoutAWalk()

@@ -27,6 +27,7 @@
 #include "ClipEdits.h"
 
 #include <QApplication>
+#include <QHashFunctions>
 #include <QMenu>
 #include <QPainter>
 
@@ -198,10 +199,14 @@ ClipOverlayFrame SampleClipView::overlayFrame(int xOrigin)
 
 const std::vector<int>& SampleClipView::transientTicks()
 {
-	// The analysis runs once per audio, window and placement - not once per paint.
+	// The analysis runs once per audio, window and placement - not once per paint. The placement includes
+	// the clip's rate and warp map: a marker edit moves every transient after it (review L17 #6).
 	const SampleWindow window = m_clip->sampleWindow();
-	const QString key = QStringLiteral("%1:%2:%3:%4:%5").arg(reinterpret_cast<quintptr>(m_clip->sample().data()))
-		.arg(window.sourceIn).arg(window.sourceOut).arg(m_clip->length().getTicks()).arg(Engine::getSong()->getTempo());
+	std::size_t warp = 0;
+	for (const WarpMarker& marker : m_clip->warpMarkers().all()) { warp = qHashMulti(warp, marker.sourceFrame, marker.offsetTicks); }
+	const QString key = QStringLiteral("%1:%2:%3:%4:%5:%6:%7").arg(reinterpret_cast<quintptr>(m_clip->sample().data()))
+		.arg(window.sourceIn).arg(window.sourceOut).arg(m_clip->length().getTicks()).arg(Engine::getSong()->getTempo())
+		.arg(m_clip->clipFramesPerTick()).arg(warp);
 	if (key != m_transientKey)
 	{
 		m_transientTicks = clipTransientTicks(*m_clip);

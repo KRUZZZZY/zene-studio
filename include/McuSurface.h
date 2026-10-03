@@ -32,7 +32,6 @@
 #include <QHash>
 #include <QJsonObject>
 #include <QObject>
-#include <QSet>
 #include <QTimer>
 
 #include "McuProtocol.h"
@@ -103,7 +102,6 @@ private:
 	int m_bank = 0;
 	std::array<bool, mcu::MasterStrip + 1> m_touched{};
 	std::array<int, mcu::MasterStrip + 1> m_sentFader{};
-	QSet<QString> m_armed;     //!< tracks armed from the surface (track.set_arm has no getter)
 	QHash<int, bool> m_sentLeds;  //!< note -> lit, the LEDs last sent
 	QTimer m_feedback;
 	MpscQueue<mcu::Input, 256> m_inbox;  //!< MIDI thread -> UI thread, lock-free

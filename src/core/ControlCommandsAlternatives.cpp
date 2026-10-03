@@ -66,6 +66,12 @@ struct Alternatives
 	bool operator==(const Alternatives&) const = default;
 };
 
+bool plainName(const QString& name)
+{
+	return !name.isEmpty() && !name.contains(QLatin1Char('/')) && !name.contains(QLatin1Char('\\')) && !name.startsWith(QLatin1Char('.'))
+		&& name != QLatin1String("main");
+}
+
 class AlternativesSection : public ProjectSection
 {
 public:
@@ -92,8 +98,11 @@ public:
 		for (QDomElement child = element.firstChildElement(QStringLiteral("alternative")); !child.isNull() && state.names.size() < MaxAlternatives;
 			child = child.nextSiblingElement(QStringLiteral("alternative")))
 		{
-			state.names << child.attribute(QStringLiteral("name"));
+			// A name is a file beside the project: one from the file (not saveAlternative) is checked as one is
+			// there, so "../x" cannot reach outside <project>-alternatives.
+			if (plainName(child.attribute(QStringLiteral("name")))) { state.names << child.attribute(QStringLiteral("name")); }
 		}
+		if (!state.names.contains(state.active)) { state.active.clear(); }
 	}
 	void clear() override { state = Alternatives{}; }
 };
@@ -118,12 +127,6 @@ QString fileOf(const QString& name)
 {
 	const QFileInfo main(mainFile());
 	return main.dir().filePath(main.completeBaseName() + QStringLiteral("-alternatives/") + name + QStringLiteral(".mmp"));
-}
-
-bool plainName(const QString& name)
-{
-	return !name.isEmpty() && !name.contains(QLatin1Char('/')) && !name.contains(QLatin1Char('\\')) && !name.startsWith(QLatin1Char('.'))
-		&& name != QLatin1String("main");
 }
 
 void record(const Alternatives& before)
@@ -207,6 +210,7 @@ ControlResult switchAlternative(const QJsonObject& args)
 	section().state = carried;
 	section().state.main = carried.main.isEmpty() ? target : carried.main;
 	section().state.active = toMain ? QString() : name;
+	Engine::getSong()->setModified();  // the carried list and the active name are not in the opened file yet
 	opened.result.insert(QStringLiteral("alternative"), toMain ? QStringLiteral("main") : name);
 	return opened;
 }
@@ -216,8 +220,12 @@ ControlResult removeAlternative(const QJsonObject& args)
 	const QString name = args.value(QStringLiteral("name")).toString();
 	const Alternatives before = section().state;
 	if (!before.names.contains(name)) { return ControlResult::failure(ControlErrorKind::NotFound, QStringLiteral("no alternative '%1'").arg(name)); }
+	// The session is that file: off the list, it would be reported as the main one while it is not.
+	if (before.active == name)
+	{
+		return ControlResult::failure(ControlErrorKind::Refused, QStringLiteral("'%1' is the session; switch to another first").arg(name));
+	}
 	section().state.names.removeAll(name);
-	if (section().state.active == name) { section().state.active.clear(); }
 	record(before);
 	return ControlResult::success({{QStringLiteral("removed"), name}, {QStringLiteral("file_kept"), fileOf(name)}});
 }
@@ -250,7 +258,8 @@ void registerAlternativeCommands(ControlRegistry& registry)
 		"saved to its own file first (unless 'save_current' is false), then the other is opened - as project.open, so this "
 		"is not undoable; switch back instead. The list of alternatives is carried across."),
 		{{QStringLiteral("name"), stringProperty()}, {QStringLiteral("save_current"), booleanProperty()}}, name, true, switchAlternative);
-	add(registry, "alternative_remove", QStringLiteral("Take alternative 'name' off the list (its file stays on disk). One undo step."),
+	add(registry, "alternative_remove", QStringLiteral("Take alternative 'name' off the list (its file stays on disk). One undo step. "
+		"Refused for the alternative the session is: switch away from it first."),
 		named, name, true, removeAlternative);
 }
 

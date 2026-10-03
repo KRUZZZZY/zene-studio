@@ -219,6 +219,39 @@ private slots:
 		QCOMPARE(channels.first().toObject().value(QStringLiteral("name")).toString(), QStringLiteral("Master"));
 	}
 
+	//! MX-017: routing.usage names the track playing into a channel, the channel sending into it and where it goes.
+	void whatUsesAChannel()
+	{
+		auto* track = dynamic_cast<InstrumentTrack*>(Track::create(Track::Type::Instrument, Engine::getSong()));
+		track->mixerChannelModel()->setValue(2);
+		QVERIFY(run(QStringLiteral("mixer.send_to"), {{QStringLiteral("channel"), ch(1)}, {QStringLiteral("to"), ch(2)},
+			{QStringLiteral("amount"), 0.5}}).ok);
+		const ControlResult usage = run(QStringLiteral("routing.usage"), {{QStringLiteral("channel"), ch(2)}});
+		QVERIFY2(usage.ok, qPrintable(usage.errorMessage));
+		QCOMPARE(usage.result.value(QStringLiteral("channel")).toString(), ch(2));
+		QVERIFY(usage.result.value(QStringLiteral("tracks")).toArray().contains(control::trackIdOf(track)));
+		QVERIFY(usage.result.value(QStringLiteral("receives_from")).toArray().contains(ch(1)));
+		QVERIFY(usage.result.value(QStringLiteral("sends_to")).toArray().contains(ch(0)));  // every channel feeds the master
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
+		QCOMPARE(run(QStringLiteral("routing.usage"), {{QStringLiteral("channel"), QStringLiteral("nope")}}).ok, false);
+	}
+
+	//! A track delay is set, reported, saved on the track and undone.
+	void anInstrumentTrackStartsLater()
+	{
+		auto* track = dynamic_cast<InstrumentTrack*>(Track::create(Track::Type::Instrument, Engine::getSong()));
+		const QString id = control::trackIdOf(track);
+		const ControlResult set = run(QStringLiteral("track.set_delay"), {{QStringLiteral("track"), id}, {QStringLiteral("delay_ms"), 120}});
+		QVERIFY2(set.ok, qPrintable(set.errorMessage));
+		QCOMPARE(set.result.value(QStringLiteral("delay_ms")).toInt(), 120);
+		QCOMPARE(track->delayMs(), 120);
+		QCOMPARE(run(QStringLiteral("track.set_delay"), {{QStringLiteral("track"), id}}).result.value(QStringLiteral("delay_ms")).toInt(), 120);
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
+		QCOMPARE(track->delayMs(), 0);
+		QCOMPARE(run(QStringLiteral("track.set_delay"), {{QStringLiteral("track"), id}, {QStringLiteral("delay_ms"), 900}}).errorKind,
+			ControlErrorKind::InvalidArgs);
+	}
+
 	void sendMetersAndEqCompare()
 	{
 		QVERIFY(run(QStringLiteral("mixer.send_to"), {{QStringLiteral("channel"), ch(3)}, {QStringLiteral("to"), ch(4)},
