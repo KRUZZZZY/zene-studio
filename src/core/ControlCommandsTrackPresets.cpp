@@ -136,9 +136,10 @@ void add(ControlRegistry& registry, const char* id, const QString& description, 
 void registerTrackPresetCommands(ControlRegistry& registry)
 {
 	const QJsonObject trackPath{{QStringLiteral("track"), stringProperty()}, {QStringLiteral("path"), stringProperty()}};
-	add(registry, "track.preset_save", QStringLiteral("Save a track as a preset ('path', an absolute file - .xpf by custom): its "
-		"device, effects and settings, without its mute and solo. Writes the file only."), trackPath,
-		{QStringLiteral("track"), QStringLiteral("path")}, presetSave);
+	// Not mutating: it writes a file and changes nothing in the session (its contract row is not_mutating).
+	control::defineCommand(registry, QStringLiteral("track.preset_save"), QStringLiteral("Save a track as a preset ('path', an absolute "
+		"file - .xpf by custom): its device, effects and settings, without its mute and solo. Writes the file only."), trackPath,
+		{QStringLiteral("track"), QStringLiteral("path")}, false, presetSave);
 	add(registry, "track.preset_load", QStringLiteral("Put a track preset ('path') on a track of the same kind: its device, effects "
 		"and settings; the track keeps its name. One undo step."), trackPath, {QStringLiteral("track"), QStringLiteral("path")}, presetLoad);
 	add(registry, "plugin.replace", QStringLiteral("Put another device ('device', plugin.list's dev-<n>) in the place of a device "
