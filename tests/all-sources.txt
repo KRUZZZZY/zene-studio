@@ -736,6 +736,10 @@ plugins/Compressor/CompressorControls.cpp
 plugins/Compressor/CompressorControls.h
 plugins/Console/Console.cpp
 plugins/Console/Console.h
+plugins/ConvolutionReverb/ConvolutionKernel.cpp
+plugins/ConvolutionReverb/ConvolutionKernel.h
+plugins/ConvolutionReverb/ConvolutionReverb.cpp
+plugins/ConvolutionReverb/ConvolutionReverb.h
 plugins/CrossoverEQ/CrossoverEQ.cpp
 plugins/CrossoverEQ/CrossoverEQ.h
 plugins/CrossoverEQ/CrossoverEQControlDialog.cpp
@@ -766,6 +770,8 @@ plugins/DualFilter/DualFilterControlDialog.cpp
 plugins/DualFilter/DualFilterControlDialog.h
 plugins/DualFilter/DualFilterControls.cpp
 plugins/DualFilter/DualFilterControls.h
+plugins/DynamicEq/DynamicEq.cpp
+plugins/DynamicEq/DynamicEq.h
 plugins/DynamicsProcessor/DynamicsProcessor.cpp
 plugins/DynamicsProcessor/DynamicsProcessor.h
 plugins/DynamicsProcessor/DynamicsProcessorControlDialog.cpp

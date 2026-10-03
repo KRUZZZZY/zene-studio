@@ -821,8 +821,14 @@ plugins/ClapInstrument/ClapInstrumentView.cpp
 plugins/ClapInstrument/ClapInstrumentView.h
 plugins/Console/Console.cpp
 plugins/Console/Console.h
+plugins/ConvolutionReverb/ConvolutionKernel.cpp
+plugins/ConvolutionReverb/ConvolutionKernel.h
+plugins/ConvolutionReverb/ConvolutionReverb.cpp
+plugins/ConvolutionReverb/ConvolutionReverb.h
 plugins/DeEsser/DeEsser.cpp
 plugins/DeEsser/DeEsser.h
+plugins/DynamicEq/DynamicEq.cpp
+plugins/DynamicEq/DynamicEq.h
 plugins/Gate/Gate.cpp
 plugins/Gate/Gate.h
 plugins/Gate/GateControlDialog.cpp

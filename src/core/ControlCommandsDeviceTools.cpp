@@ -27,13 +27,17 @@
  *    rack's sum puts the parts back together (include/RackSplit.h). Saved with the rack, one undo
  *    step;
  *  - mixer.console_apply (MX-150): the Console device on every mixer channel, all set alike - or
- *    the settings of the ones there changed, or all of them taken out - as one undo step. */
+ *    the settings of the ones there changed, or all of them taken out - as one undo step;
+ *  - plugin.impulse_load (MX-152): an impulse response file into a Convolution Reverb, through the
+ *    device's own settings document (its 'impulse' attribute), so an undo restores the previous one. */
 
 #include <algorithm>
 #include <functional>
 #include <utility>
 #include <vector>
 
+#include <QDomDocument>
+#include <QFileInfo>
 #include <QJsonArray>
 
 #include "AutomatableModel.h"
@@ -52,6 +56,7 @@
 #include "ParameterControls.h"
 #include "Rack.h"
 #include "RackSplit.h"
+#include "SampleDecoder.h"
 #include "Song.h"
 
 namespace lmms
@@ -285,10 +290,60 @@ ControlResult consoleApply(const QJsonObject& args)
 		{QStringLiteral("channels"), Engine::mixer()->numChannels()}});
 }
 
+// ---------------------------------------------------------------------------
+// the convolution reverb's impulse response
+// ---------------------------------------------------------------------------
+
+//! @a state (a device's settings document) with the controls element's 'impulse' set to @a path.
+bool withImpulse(const QString& state, const QString& path, QString* changed)
+{
+	QDomDocument doc;
+	if (!doc.setContent(state)) { return false; }
+	QDomElement controls = doc.elementsByTagName(QStringLiteral("ConvolutionReverbControls")).item(0).toElement();
+	if (controls.isNull()) { return false; }
+	controls.setAttribute(QStringLiteral("impulse"), path);
+	*changed = doc.toString();
+	return true;
+}
+
+ControlResult impulseLoad(const QJsonObject& args)
+{
+	const QString targetId = args.value(QStringLiteral("target")).toString();
+	const QString pluginId = args.value(QStringLiteral("plugin")).toString();
+	ControlTarget target;
+	ControlResult error;
+	if (!resolveControlTarget(targetId, &target, &error)) { return error; }
+	Effect* effect = resolveControlEffect(target, pluginId, &error);
+	if (effect == nullptr) { return error; }
+	const QString path = QFileInfo(args.value(QStringLiteral("path")).toString()).absoluteFilePath();
+	if (!QFileInfo::exists(path)) { return ControlResult::failure(ControlErrorKind::NotFound, QStringLiteral("no such file: %1").arg(path)); }
+	if (!SampleDecoder::decode(path))
+	{
+		return ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("%1 is not an audio file this build reads").arg(path));
+	}
+	const QString before = controlEffectStateXml(effect);
+	QString after;
+	if (!withImpulse(before, path, &after))
+	{
+		return ControlResult::failure(ControlErrorKind::Refused, QStringLiteral("%1 is not a Convolution Reverb").arg(pluginId));
+	}
+	const ControlResult restored = controlRestoreEffectState(effect, after.toUtf8());
+	if (!restored.ok) { return restored; }
+	addUndoStep([targetId, pluginId, before]() { controlRestoreCapturedState(targetId, pluginId, before.toUtf8()); },
+		[targetId, pluginId, after]() { controlRestoreCapturedState(targetId, pluginId, after.toUtf8()); });
+	Engine::getSong()->setModified();
+	return ControlResult::success({{QStringLiteral("target"), targetId}, {QStringLiteral("plugin"), pluginId}, {QStringLiteral("impulse"), path}});
+}
+
 } // namespace
 
 void registerDeviceToolCommands(ControlRegistry& registry)
 {
+	addDeviceCommand(registry, "plugin.impulse_load", QStringLiteral("Load an impulse response - an audio file (WAV, FLAC, OGG...), "
+		"stereo or mono, up to 5 seconds - into a Convolution Reverb ('plugin' fx-<n> on 'target'); it is resampled to the "
+		"engine's rate and saved with the device. One undo step puts the previous response back."),
+		{{QStringLiteral("target"), stringProperty()}, {QStringLiteral("plugin"), stringProperty()}, {QStringLiteral("path"), stringProperty()}},
+		{QStringLiteral("target"), QStringLiteral("plugin"), QStringLiteral("path")}, true, impulseLoad);
 	addDeviceCommand(registry, "mixer.console_apply", QStringLiteral("Put the Console device - a console channel's saturation and "
 		"tone - at the end of every mixer channel's chain, master included, all set alike: 'drive' (0..100 %) and "
 		"'character' (clean, warm, bright); channels that have one keep it and take the new settings. 'remove' true takes "

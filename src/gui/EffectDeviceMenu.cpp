@@ -116,7 +116,7 @@ CommandCall deviceCall(const char* id, const QJsonObject& fixed, bool ask, const
 }
 
 //! 0.5.0 L10 (W3): find, rename and randomise parameters (MX-089 / MX-097 / MX-093), fold the card
-//! (MX-113), compatibility and editor options (MX-099 / MX-094). These commands name a device by
+//! (MX-113), compatibility and editor options (MX-099 / MX-094), a convolution reverb's impulse (MX-152). These commands name a device by
 //! 'target' and its fx-<n> alone - a rack chain's device is found on its channel by its id.
 void addParameterEntries(QMenu* menu, QWidget* parent, const Effect* effect, const QJsonObject& device)
 {
@@ -144,6 +144,13 @@ void addParameterEntries(QMenu* menu, QWidget* parent, const Effect* effect, con
 	entry(menu, QObject::tr("Compatibility and Editor..."), "plugin.options", [parent, self] {
 		runCommand(parent, deviceCall("plugin.options", self, true));
 	});
+	// MX-152: a convolution reverb takes an impulse response file (the form offers a file picker).
+	if (QString::fromUtf8(effect->descriptor()->name) == QLatin1String("convolutionreverb"))
+	{
+		entry(menu, QObject::tr("Load Impulse Response..."), "plugin.impulse_load", [parent, self] {
+			runCommand(parent, deviceCall("plugin.impulse_load", self, true));
+		});
+	}
 }
 
 } // namespace

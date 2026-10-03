@@ -24,12 +24,16 @@
 /*! 0.5.0 L10 (W3): the native devices do what they say - the de-esser turns down a loud high band
  *  and leaves the lows (MX-147), the transient shaper lifts or softens an attack (MX-148), the
  *  vocoder sounds only while the voice does (MX-154), the console is transparent when quiet and
- *  mixer.console_apply puts it on every channel as one undo step (MX-150) - and none of them
- *  allocates while processing (the realtime rule). */
+ *  mixer.console_apply puts it on every channel as one undo step (MX-150), the dynamic EQ cuts a
+ *  band statically, dynamically and on the mid alone (MX-143), the convolution reverb plays a loaded
+ *  impulse response one partition late (MX-152) - and none of them allocates while processing. */
 
 #include <QtTest>
 
+#include <QDataStream>
+#include <QFile>
 #include <QJsonArray>
+#include <QTemporaryDir>
 
 #include <algorithm>
 #include <cmath>
@@ -143,6 +147,25 @@ float noise(long f, float level)
 	return level * (static_cast<float>(x >> 8) / static_cast<float>(1u << 24) * 2.f - 1.f);
 }
 
+//! A mono 16-bit WAV of @a samples at the engine's rate (so nothing is resampled) in @a path.
+bool writeWav(const QString& path, const std::vector<qint16>& samples)
+{
+	const auto hz = static_cast<quint32>(rate());
+	QFile file(path);
+	if (!file.open(QIODevice::WriteOnly)) { return false; }
+	QDataStream out(&file);
+	out.setByteOrder(QDataStream::LittleEndian);
+	const auto bytes = static_cast<quint32>(samples.size() * 2);
+	out.writeRawData("RIFF", 4);
+	out << quint32(36 + bytes);
+	out.writeRawData("WAVEfmt ", 8);
+	out << quint32(16) << quint16(1) << quint16(1) << hz << quint32(hz * 2) << quint16(2) << quint16(16);
+	out.writeRawData("data", 4);
+	out << bytes;
+	for (const qint16 sample : samples) { out << sample; }
+	return out.status() == QDataStream::Ok;
+}
+
 int consolesOn(int index)
 {
 	int count = 0;
@@ -232,6 +255,65 @@ private slots:
 		const std::uint64_t allocations = test::tlAllocationCount;
 		test::tlCountAllocations = false;
 		QCOMPARE(allocations, std::uint64_t{0});
+	}
+
+	//! MX-143: transparent at rest; a static cut; a dynamic cut that only a loud band gets; mid only.
+	void theDynamicEqCutsStaticallyDynamicallyAndOnTheMid()
+	{
+		const QString eq = loadByName(ch(1), QStringLiteral("dynamiceq"));
+		if (eq.isEmpty()) { QSKIP("this build has no dynamic EQ module"); }
+		long at = 0;
+		QVERIFY(std::abs(runBlocks(chainOf(1), sine(500.0, 0.5f), 40, &at)[0] - 0.5f) < 0.01f);
+		set(ch(1), eq, "Gain 2", -12.0);
+		QVERIFY(std::abs(runBlocks(chainOf(1), sine(500.0, 0.5f), 40, &at)[0] - 0.126f) < 0.02f);
+		set(ch(1), eq, "Gain 2", 0.0);
+		set(ch(1), eq, "Dynamic 2", -12.0);
+		set(ch(1), eq, "Threshold 2", -40.0);
+		QVERIFY(std::abs(runBlocks(chainOf(1), sine(500.0, 0.5f), 80, &at)[0] - 0.126f) < 0.02f);  // loud: cut
+		QVERIFY(std::abs(runBlocks(chainOf(1), sine(500.0, 0.001f), 200, &at)[0] - 0.001f) < 0.0002f);  // quiet: left alone
+		set(ch(1), eq, "Dynamic 2", 0.0);
+		set(ch(1), eq, "Gain 2", -12.0);
+		set(ch(1), eq, "Channels", 1.0);  // the mid only
+		const Signal sideOnly = [](long f) {
+			const auto x = static_cast<float>(0.5 * std::sin(kTwoPi * 500.0 * static_cast<double>(f) / rate()));
+			return SampleFrame(x, -x);
+		};
+		QVERIFY(std::abs(runBlocks(chainOf(1), sideOnly, 40, &at)[0] - 0.5f) < 0.01f);  // no mid: untouched
+	}
+
+	//! MX-152: an impulse response of one click plays the input back one partition late at the
+	//! input's level; a device that is not a convolution reverb, or a missing file, is refused; undo.
+	void theConvolutionReverbPlaysALoadedImpulse()
+	{
+		const QString reverb = loadByName(ch(1), QStringLiteral("convolutionreverb"));
+		if (reverb.isEmpty()) { QSKIP("this build has no convolution reverb module"); }
+		QVERIFY(chainOf(1).latencyFrames() > 0);  // reported to delay compensation
+		QTemporaryDir dir;
+		const QString click = dir.filePath(QStringLiteral("click.wav"));
+		std::vector<qint16> samples(64, 0);
+		samples[0] = 16384;
+		QVERIFY(writeWav(click, samples));
+		const QJsonObject device{{QStringLiteral("target"), ch(1)}, {QStringLiteral("plugin"), reverb}};
+		QJsonObject load = device;
+		load.insert(QStringLiteral("path"), click);
+		const ControlResult loaded = run(QStringLiteral("plugin.impulse_load"), load);
+		QVERIFY2(loaded.ok, qPrintable(loaded.errorMessage));
+		long at = 0;
+		const SampleFrame peak = runBlocks(chainOf(1), sine(1000.0, 0.5f), 80, &at);
+		QVERIFY2(std::abs(peak[0] - 0.5f) < 0.03f, qPrintable(QString::number(peak[0])));
+		test::tlCountAllocations = true;
+		test::resetAllocationCount();
+		runBlocks(chainOf(1), sine(1000.0, 0.5f), 2, &at);
+		const std::uint64_t allocations = test::tlAllocationCount;
+		test::tlCountAllocations = false;
+		QCOMPARE(allocations, std::uint64_t{0});
+		load.insert(QStringLiteral("path"), dir.filePath(QStringLiteral("missing.wav")));
+		QCOMPARE(run(QStringLiteral("plugin.impulse_load"), load).errorKind, ControlErrorKind::NotFound);
+		const QString console = loadByName(ch(1), QStringLiteral("console"));
+		QVERIFY(!console.isEmpty());
+		QJsonObject wrong{{QStringLiteral("target"), ch(1)}, {QStringLiteral("plugin"), console}, {QStringLiteral("path"), click}};
+		QCOMPARE(run(QStringLiteral("plugin.impulse_load"), wrong).errorKind, ControlErrorKind::Refused);
+		chainOf(1).clear();
 	}
 
 	//! MX-150: a quiet signal passes the console unchanged; mixer.console_apply adds one to every channel,

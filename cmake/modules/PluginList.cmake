@@ -34,11 +34,13 @@ SET(LMMS_PLUGIN_LIST
 	ClapInstrument
 	Compressor
 	Console
+	ConvolutionReverb
 	CrossoverEQ
 	DeEsser
 	Delay
 	Dispersion
 	DualFilter
+	DynamicEq
 	DynamicsProcessor
 	Eq
 	Flanger

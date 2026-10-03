@@ -1,0 +1,87 @@
+/*
+ * ConvolutionKernel.h - an impulse response cut into FFT partitions, and the frequency-domain delay line it runs on
+ *
+ * Copyright (c) 2026 Zene Studio contributors
+ *
+ * This file is part of LMMS - https://lmms.io
+ *
+ * This program is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU General Public
+ * License as published by the Free Software Foundation; either
+ * version 2 of the License, or (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public
+ * License along with this program (see COPYING); if not, write to the
+ * Free Software Foundation, Inc., 51 Franklin Street, Fifth Floor,
+ * Boston, MA 02110-1301 USA.
+ *
+ */
+
+#ifndef LMMS_CONVOLUTION_KERNEL_H
+#define LMMS_CONVOLUTION_KERNEL_H
+
+#include <complex>
+#include <vector>
+
+#include <fftw3.h>
+
+namespace lmms
+{
+
+/*! 0.5.0 L10 (MX-152): uniformly partitioned convolution (overlap-save). The impulse response is
+ *  cut into blocks of Partition samples; each block's spectrum (FftSize = 2 x Partition) is kept,
+ *  and every Partition input samples one FFT, a multiply-add against every block's spectrum over
+ *  the delay line of past input spectra, and one inverse FFT give the next Partition output samples.
+ *  The latency is one Partition.
+ *
+ *  A kernel is built whole on the control thread (every buffer and FFTW plan allocated there) and
+ *  handed to the audio thread under the engine's model-change guard; process() then allocates
+ *  nothing. A kernel's delay line starts silent, so a new impulse response starts with no tail. */
+class ConvolutionKernel
+{
+public:
+	static constexpr int Partition = 256;
+	static constexpr int FftSize = 2 * Partition;
+	static constexpr int Bins = Partition + 1;
+
+	//! The impulse response @a left / @a right (the same length; one channel each).
+	ConvolutionKernel(const std::vector<float>& left, const std::vector<float>& right);
+	~ConvolutionKernel();
+	ConvolutionKernel(const ConvolutionKernel&) = delete;
+	ConvolutionKernel& operator=(const ConvolutionKernel&) = delete;
+
+	//! The impulse response's length in frames (its tail).
+	int length() const { return m_length; }
+
+	//! One block: @a input (Partition samples per channel) in, the next @a output block out.
+	//! Audio thread: FFTW's execute on the kernel's own buffers, no allocation.
+	void process(const float* const input[2], float* const output[2]) noexcept;
+
+private:
+	using Complex = std::complex<float>;
+
+	void transformPartitions(const std::vector<float>& impulse, std::vector<Complex>* spectra);
+	void convolveChannel(int channel, const float* input, float* output) noexcept;
+
+	int m_length = 0;
+	int m_partitions = 0;
+	int m_head = 0;
+	std::vector<Complex> m_spectra[2];   //!< m_partitions x Bins per channel
+	std::vector<Complex> m_history[2];   //!< the delay line of input spectra, the same size
+	std::vector<float> m_previous[2];    //!< the last input block per channel (the overlap)
+	float* m_timeIn = nullptr;           //!< FftSize, fftwf_malloc'd
+	fftwf_complex* m_spectrum = nullptr; //!< Bins
+	fftwf_complex* m_sum = nullptr;      //!< Bins
+	float* m_timeOut = nullptr;          //!< FftSize
+	fftwf_plan m_forward = nullptr;
+	fftwf_plan m_inverse = nullptr;
+};
+
+} // namespace lmms
+
+#endif // LMMS_CONVOLUTION_KERNEL_H
