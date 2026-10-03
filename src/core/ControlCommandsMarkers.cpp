@@ -28,6 +28,7 @@
 
 #include <QColor>
 #include <QJsonArray>
+#include <QJsonDocument>
 
 #include "ControlEdit.h"
 #include "ControlRegistry.h"
@@ -35,6 +36,7 @@
 #include "ControlReversibility.h"
 #include "ControlVocabulary.h"
 #include "Engine.h"
+#include "MarkerActions.h"
 #include "ProjectMarkers.h"
 #include "Song.h"
 
@@ -59,8 +61,14 @@ int markerIndex(const QJsonObject& args)
 
 QJsonObject markerJson(const Marker& marker)
 {
-	return {{QStringLiteral("marker"), markerId(marker.id)}, {QStringLiteral("tick"), marker.tick},
+	QJsonObject out{{QStringLiteral("marker"), markerId(marker.id)}, {QStringLiteral("tick"), marker.tick},
 		{QStringLiteral("name"), marker.name}, {QStringLiteral("color"), marker.color}};
+	if (!marker.action.isEmpty())
+	{
+		out.insert(QStringLiteral("action"), marker.action);
+		out.insert(QStringLiteral("args"), QJsonDocument::fromJson(marker.args.toUtf8()).object());
+	}
+	return out;
 }
 
 QJsonArray listJson()
@@ -108,6 +116,23 @@ ControlResult addMarker(const QJsonObject& args)
 	});
 }
 
+//! WF-073: 'action' (a command; empty removes it) and 'args' onto @a marker; false for an action that is not one.
+bool readMarkerAction(const QJsonObject& args, Marker* marker)
+{
+	if (args.contains(QStringLiteral("action")))
+	{
+		const QString action = args.value(QStringLiteral("action")).toString();
+		if (!action.isEmpty() && (ControlRegistry::instance()->command(action) == nullptr || action.startsWith(QStringLiteral("marker.")))) { return false; }
+		marker->action = action;
+		if (action.isEmpty()) { marker->args.clear(); }
+	}
+	if (args.contains(QStringLiteral("args")))
+	{
+		marker->args = QString::fromUtf8(QJsonDocument(args.value(QStringLiteral("args")).toObject()).toJson(QJsonDocument::Compact));
+	}
+	return true;
+}
+
 ControlResult setMarker(const QJsonObject& args)
 {
 	const Marker* found = ProjectMarkers::instance().find(markerIndex(args));
@@ -121,6 +146,8 @@ ControlResult setMarker(const QJsonObject& args)
 		if (!color.isEmpty() && !QColor::isValidColorName(color)) { return badColour(color); }
 		changed.color = color.isEmpty() ? color : QColor(color).name();
 	}
+	if (!readMarkerAction(args, &changed)) { return ControlResult::failure(ControlErrorKind::InvalidArgs,
+		QStringLiteral("'action' is a registered command id other than a marker command, and 'args' an object")); }
 	return recorded(QStringLiteral("marker.set"), [changed] {
 		ProjectMarkers::instance().replace(changed.id, changed);
 		return ControlResult::success(markerJson(*ProjectMarkers::instance().find(changed.id)));
@@ -173,6 +200,7 @@ void add(ControlRegistry& registry, const char* verb, const QString& description
 void registerMarkerCommands(ControlRegistry& registry)
 {
 	ProjectMarkers::instance();  // registers the section before any project loads
+	markeractions::start();      // WF-073: the watcher that runs marker actions as playback crosses them
 	add(registry, "list", QStringLiteral("The project's markers, in time order: id (mk-<n>), tick, name, colour."),
 		objectSchema({}), false, [](const QJsonObject&) {
 			return ControlResult::success({{QStringLiteral("markers"), listJson()}, {QStringLiteral("max_markers"), ProjectMarkers::MaxMarkers}});
@@ -181,9 +209,11 @@ void registerMarkerCommands(ControlRegistry& registry)
 		"'name' and 'color' (\"#rrggbb\"). Saved with the project; one undo step."),
 		objectSchema({{QStringLiteral("tick"), tickProperty()}, {QStringLiteral("name"), stringProperty()},
 			{QStringLiteral("color"), stringProperty()}}), true, addMarker);
-	add(registry, "set", QStringLiteral("Move, rename or recolour marker 'marker' (only the fields given change). "
-		"One undo step."), objectSchema({{QStringLiteral("marker"), stringProperty()}, {QStringLiteral("tick"), tickProperty()},
-		{QStringLiteral("name"), stringProperty()}, {QStringLiteral("color"), stringProperty()}}, {QStringLiteral("marker")}),
+	add(registry, "set", QStringLiteral("Move, rename or recolour marker 'marker' (only the fields given change), or give it an "
+		"'action': a command run, with 'args', whenever playback crosses the marker - launch a scene, change the tempo, ... "
+		"(empty removes it). One undo step."), objectSchema({{QStringLiteral("marker"), stringProperty()}, {QStringLiteral("tick"), tickProperty()},
+		{QStringLiteral("name"), stringProperty()}, {QStringLiteral("color"), stringProperty()}, {QStringLiteral("action"), stringProperty()},
+		{QStringLiteral("args"), objectProperty()}}, {QStringLiteral("marker")}),
 		true, setMarker);
 	add(registry, "remove", QStringLiteral("Remove marker 'marker'. One undo step."),
 		objectSchema({{QStringLiteral("marker"), stringProperty()}}, {QStringLiteral("marker")}), true, removeMarker);

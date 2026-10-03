@@ -24,18 +24,18 @@
 
 #include "Metronome.h"
 
+#include "AudioEngine.h"
 #include "Engine.h"
-#include "SamplePlayHandle.h"
+#include "MetronomeOptions.h"
+#include "Song.h"
 
 namespace lmms {
 void Metronome::processTick(int currentTick, int ticksPerBar, int beatsPerBar, size_t bufferOffset, bool force)
 {
 	const auto ticksPerBeat = ticksPerBar / beatsPerBar;
 	if (currentTick % ticksPerBeat != 0 || (!m_active && !force)) { return; }
-
-	const auto handle = currentTick % ticksPerBar == 0 ? new SamplePlayHandle("misc/metronome02.ogg")
-													   : new SamplePlayHandle("misc/metronome01.ogg");
-	handle->setOffset(bufferOffset);
-	Engine::audioEngine()->addPlayHandle(handle);
+	// 0.5.0 L03 (WF-081): whether it sounds now, its sound and level (MetronomeOptions.cpp; the defaults click as before).
+	if (!metronomeoptions::sounds(force, Engine::getSong()->isRecording())) { return; }
+	Engine::audioEngine()->addPlayHandle(metronomeoptions::click(currentTick % ticksPerBar == 0, bufferOffset));
 }
 } // namespace lmms

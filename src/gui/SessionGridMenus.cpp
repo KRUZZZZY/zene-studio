@@ -31,6 +31,7 @@
 #include <QJsonArray>
 
 #include "CommandForm.h"
+#include "FollowActionEditor.h"
 #include "ControlRegistry.h"
 
 namespace lmms::gui::SessionGridMenus
@@ -71,6 +72,16 @@ void addPatternPicker(QMenu* menu, const QJsonObject& where, const QString& titl
 
 } // namespace
 
+//! WF-061: an entry opening the follow-action editor on @a chain, written back through @a command.
+void chainEntry(QMenu* menu, const QString& command, const QJsonObject& where, const QJsonArray& chain, const QString& title)
+{
+	QAction* edit = menu->addAction(QObject::tr("Follow Action Chain..."));
+	edit->setProperty("controlCommand", command);
+	QObject::connect(edit, &QAction::triggered, menu, [menu, command, where, chain, title] {
+		(new FollowActionEditor(command, where, chain, title, menu->parentWidget()))->show();
+	});
+}
+
 void populateCell(QMenu* menu, int track, int scene, const QJsonObject& slot)
 {
 	const QJsonObject where = cellArgs(track, scene);
@@ -97,6 +108,12 @@ void populateCell(QMenu* menu, int track, int scene, const QJsonObject& slot)
 	menu->addSeparator();
 	addCommandChoices(menu, QObject::tr("Follow Actions"), QStringLiteral("session.follow_set"), QStringLiteral("enabled"),
 		[where, title] { return call(QStringLiteral("session.follow_set"), where, title); });
+	chainEntry(menu, QStringLiteral("session.set_slot"), where, slot.value(QStringLiteral("follow_actions")).toArray(), title);  // WF-061
+	addCommandAction(menu, QObject::tr("Jump To..."), QStringLiteral("session.jump_slot"), [where, title] {  // WF-070
+		CommandCall jump = call(QStringLiteral("session.jump_slot"), where, title);
+		jump.defaults.insert(QStringLiteral("position_ticks"), 0);
+		return jump;
+	});
 	menu->addSeparator();
 	QAction* clear = addCommandAction(menu, QObject::tr("Clear Cell"), QStringLiteral("session.clear_slot"),
 		[where, title] { return call(QStringLiteral("session.clear_slot"), where, title, false); });
@@ -133,6 +150,14 @@ void populateScene(QMenu* menu, int scene, const QJsonObject& sceneState)
 		[off] { return off("tempo_override"); })->setEnabled(sceneState.value(QStringLiteral("tempo_enabled")).toBool());
 	addCommandAction(menu, QObject::tr("Metre Override Off"), QStringLiteral("session.set_scene"),
 		[off] { return off("timesig_override"); })->setEnabled(sceneState.value(QStringLiteral("timesig_enabled")).toBool());
+	chainEntry(menu, QStringLiteral("session.set_scene"), where, sceneState.value(QStringLiteral("follow_actions")).toArray(), title);  // WF-061
+	addCommandAction(menu, QObject::tr("Play Scenes in Order..."), QStringLiteral("session.set_playlist"), [scene, title] {  // WF-067
+		CommandCall playlist = call(QStringLiteral("session.set_playlist"), {}, title);
+		playlist.defaults = {{QStringLiteral("scenes"), QJsonArray{scene, scene + 1}}, {QStringLiteral("loop"), false}};
+		return playlist;
+	});
+	addCommandAction(menu, QObject::tr("Launch a Folder's Cells Here..."), QStringLiteral("session.launch_group"),  // WF-064
+		[where, title] { return call(QStringLiteral("session.launch_group"), where, title); });
 	menu->addSeparator();
 	addCommandAction(menu, QObject::tr("Launch Scene"), QStringLiteral("session.launch_scene"),
 		[where, title] { return call(QStringLiteral("session.launch_scene"), where, title, false); });
@@ -149,6 +174,16 @@ void populateGrid(QMenu* menu, int tracks, int scenes)
 		QStringLiteral("quantisation"), [] { return call(QStringLiteral("session.set_quantisation"), {}, QString()); });
 	addCommandChoices(menu, QObject::tr("Follow Actions"), QStringLiteral("session.set_follow_actions"),
 		QStringLiteral("enabled"), [] { return call(QStringLiteral("session.set_follow_actions"), {}, QString()); });
+	menu->addSeparator();
+	addCommandAction(menu, QObject::tr("Capture Playing Cells to a Scene"), QStringLiteral("session.capture_scene"),  // WF-068
+		[] { return call(QStringLiteral("session.capture_scene"), {}, QString(), false); });
+	// WF-071: the setlist - projects to play through.
+	addCommandAction(menu, QObject::tr("Setlist..."), QStringLiteral("session.setlist"),
+		[] { return call(QStringLiteral("session.setlist"), {}, QObject::tr("Setlist")); });
+	addCommandAction(menu, QObject::tr("Next Song"), QStringLiteral("session.setlist_go"),
+		[] { return call(QStringLiteral("session.setlist_go"), {{QStringLiteral("to"), QStringLiteral("next")}}, QString(), false); });
+	addCommandAction(menu, QObject::tr("Previous Song"), QStringLiteral("session.setlist_go"),
+		[] { return call(QStringLiteral("session.setlist_go"), {{QStringLiteral("to"), QStringLiteral("previous")}}, QString(), false); });
 }
 
 } // namespace lmms::gui::SessionGridMenus

@@ -960,6 +960,11 @@ set(LMMS_SRCS
 	core/ControlCommandsNoteHarmony.cpp
 	core/ControlCommandsNotePlayback.cpp
 	core/ControlCommandsMixerTools.cpp
+	core/ControlCommandsSessionPerform.cpp
+	core/ControlCommandsCompGroup.cpp
+	core/ControlCommandsRecordTools.cpp
+	core/MetronomeOptions.cpp
+	core/MarkerActions.cpp
 	core/MixerOptions.cpp
 	core/ArticulationMap.cpp
 	core/MidiPlayback.cpp

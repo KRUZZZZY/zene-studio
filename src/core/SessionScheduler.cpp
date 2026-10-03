@@ -316,7 +316,7 @@ void SessionScheduler::drainCommands( const SessionClockContext& ctx ) noexcept
 			}
 			continue;
 		}
-		// R5.2's two scene commands (SessionSceneFollow.cpp).
+		// R5.2's two scene commands and WF-070's jump (SessionSceneFollow.cpp).
 		if( applySceneCommand( command, ctx ) ) { continue; }
 		if( command.type == LaunchCommandType::Content )
 		{

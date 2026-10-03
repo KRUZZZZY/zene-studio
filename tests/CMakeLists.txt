@@ -595,6 +595,10 @@ set(LMMS_TESTS
 	src/core/NotePlaybackTest.cpp
 	# 0.5.0 L08 (W3): pan law, swap, sends switched off, returns, find, gang, order, group colours.
 	src/core/MixerToolsTest.cpp
+	# 0.5.0 L02 (W3): capture a scene, playlists, setlists, marker actions, release and jump.
+	src/core/SessionPerformTest.cpp
+	# 0.5.0 L03 (W3): comp edges and groups, metronome options, punch here, remaining record time.
+	src/core/RecordToolsTest.cpp
 	# 0.5.0 L05: fade shapes and handles, automatic and range fades, splits, slices, beat mapping.
 	src/core/AudioEditingTest.cpp
 	# 0.5.0 W2 gaps (audit-rows-1): clip.join, ripple on move and insert, controller.map / unmap.

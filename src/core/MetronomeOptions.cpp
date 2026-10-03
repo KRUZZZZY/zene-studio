@@ -1,0 +1,143 @@
+/*
+ * MetronomeOptions.cpp - the click's level, accent, sound and when it sounds
+ *
+ * Copyright (c) 2026 Zene Studio contributors
+ *
+ * This file is part of LMMS - https://lmms.io
+ *
+ * This program is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU General Public
+ * License as published by the Free Software Foundation; either
+ * version 2 of the License, or (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public
+ * License along with this program (see COPYING); if not, write to the
+ * Free Software Foundation, Inc., 51 Franklin Street, Fifth Floor,
+ * Boston, MA 02110-1301 USA.
+ *
+ */
+#include "MetronomeOptions.h"
+
+#include <algorithm>
+#include <atomic>
+
+#include "ConfigManager.h"
+#include "Sample.h"
+#include "SampleBuffer.h"
+#include "SamplePlayHandle.h"
+
+namespace lmms::metronomeoptions
+{
+
+namespace
+{
+
+//! The built-in sounds: the plain and the accented sample of each (factory samples, as before).
+struct Sound
+{
+	const char* name;
+	const char* plain;
+	const char* accented;
+};
+
+constexpr Sound kSounds[] = {{"classic", "misc/metronome01.ogg", "misc/metronome02.ogg"},
+	{"rim", "drums/rim01.ogg", "drums/snare_rim01.ogg"}, {"clave", "drums/clav01.ogg", "drums/clav02.ogg"},
+	{"stick", "drums/sidestick01.ogg", "drums/nasty_rim01.ogg"}};
+constexpr int kSoundCount = static_cast<int>(sizeof(kSounds) / sizeof(kSounds[0]));
+
+struct State
+{
+	std::atomic<float> level{1.f};
+	std::atomic<bool> accent{true};
+	std::atomic<bool> recordOnly{false};
+	std::atomic<int> sound{0};
+	std::atomic<bool> loaded{false};
+};
+
+State& state()
+{
+	static State value;
+	return value;
+}
+
+QString read(const char* key, const char* fallback)
+{
+	return ConfigManager::inst()->value(QStringLiteral("metronome"), QLatin1String(key), QLatin1String(fallback));
+}
+
+//! The stored options, read once (the first call is on the main thread: options() runs at registration).
+void load()
+{
+	State& s = state();
+	if (s.loaded.load(std::memory_order_acquire)) { return; }
+	s.level.store(std::clamp(read("level", "1").toFloat(), 0.f, 2.f));
+	s.accent.store(read("accent", "1").toInt() != 0);
+	s.recordOnly.store(read("recordonly", "0").toInt() != 0);
+	s.sound.store(std::clamp(static_cast<int>(soundNames().indexOf(read("sound", "classic"))), 0, kSoundCount - 1));
+	s.loaded.store(true, std::memory_order_release);
+}
+
+} // namespace
+
+const QStringList& soundNames()
+{
+	static const QStringList names = [] {
+		QStringList out;
+		for (const Sound& sound : kSounds) { out << QLatin1String(sound.name); }
+		return out;
+	}();
+	return names;
+}
+
+Options options()
+{
+	load();
+	const State& s = state();
+	return {s.level.load(), s.accent.load(), s.recordOnly.load(), s.sound.load()};
+}
+
+void setOptions(const Options& next)
+{
+	load();
+	State& s = state();
+	s.level.store(std::clamp(next.level, 0.f, 2.f));
+	s.accent.store(next.accent);
+	s.recordOnly.store(next.recordOnly);
+	s.sound.store(std::clamp(next.sound, 0, kSoundCount - 1));
+	ConfigManager* config = ConfigManager::inst();
+	config->setValue(QStringLiteral("metronome"), QStringLiteral("level"), QString::number(s.level.load()));
+	config->setValue(QStringLiteral("metronome"), QStringLiteral("accent"), next.accent ? QStringLiteral("1") : QStringLiteral("0"));
+	config->setValue(QStringLiteral("metronome"), QStringLiteral("recordonly"), next.recordOnly ? QStringLiteral("1") : QStringLiteral("0"));
+	config->setValue(QStringLiteral("metronome"), QStringLiteral("sound"), soundNames().value(s.sound.load()));
+}
+
+QJsonObject toJson(const Options& options)
+{
+	return {{QStringLiteral("level"), static_cast<double>(options.level)}, {QStringLiteral("accent"), options.accent},
+		{QStringLiteral("record_only"), options.recordOnly}, {QStringLiteral("sound"), soundNames().value(options.sound)}};
+}
+
+bool sounds(bool forced, bool recording)
+{
+	return forced || !state().recordOnly.load(std::memory_order_relaxed) || recording;
+}
+
+PlayHandle* click(bool downbeat, std::size_t offset)
+{
+	// The handle owns the sample it is given, as it owned the one it loaded itself before; the
+	// level rides on the sample's own amplification.
+	const State& s = state();
+	const Sound& sound = kSounds[std::clamp(s.sound.load(std::memory_order_relaxed), 0, kSoundCount - 1)];
+	auto* sample = new Sample(SampleBuffer::fromFile(QLatin1String(downbeat && s.accent.load(std::memory_order_relaxed) ? sound.accented : sound.plain)));
+	sample->setAmplification(s.level.load(std::memory_order_relaxed));
+	auto* handle = new SamplePlayHandle(sample, true);
+	handle->setOffset(offset);
+	return handle;
+}
+
+} // namespace lmms::metronomeoptions

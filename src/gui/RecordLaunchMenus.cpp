@@ -75,6 +75,9 @@ void fillRecord(QMenu* menu)
 {
 	run(menu, QObject::tr("Record"), QStringLiteral("transport.record"));
 	run(menu, QObject::tr("Count-In and Pre-Roll..."), QStringLiteral("transport.record_options"), {}, true);
+	run(menu, QObject::tr("Metronome Sound and Level..."), QStringLiteral("transport.metronome_options"), {}, true);  // WF-081
+	run(menu, QObject::tr("Punch In Here"), QStringLiteral("transport.punch_here"), {{QStringLiteral("edge"), QStringLiteral("in")}});  // WF-079
+	run(menu, QObject::tr("Punch Out Here"), QStringLiteral("transport.punch_here"), {{QStringLiteral("edge"), QStringLiteral("out")}});
 	addCommandChoices(menu, QObject::tr("Record Mode"), QStringLiteral("transport.record_options"), QStringLiteral("mode"),
 		[] { return CommandCall{QStringLiteral("transport.record_options"), {}, {}, QString(), false}; });
 	menu->addSeparator();

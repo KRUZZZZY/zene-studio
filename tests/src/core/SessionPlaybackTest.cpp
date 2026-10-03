@@ -12,7 +12,8 @@
  * launch engine already knew that a cell plays and since when, and nothing knew
  * what it holds. So:
  *   - content published on the model thread arrives on the audio thread on the
- *     same queue the launch does, and is what playbackForColumn() reports;
+ *     same queue the launch does, and is what playbackForColumn() reports; (0.5.0) a cell starts at its
+ *     loop start, a legato relaunch goes on, and a jump moves a playing cell;
  *   - the reported position is the session clock minus the launch, so it
  *     advances as the clock does;
  *   - a column with nothing launched is never reported as playing;
@@ -210,6 +211,38 @@ private slots:
 			}
 		}
 		QVERIFY2( refused, "the fixed table accepted 300 cells" );
+	}
+
+	//! 0.5.0 WF-060: a cell's own start inside its clip offsets where it plays, and a legato cell
+	//! relaunched while it plays goes on from where it was instead of its top.
+	void aCellStartsAtItsLoopStartAndALegatoRelaunchGoesOn()
+	{
+		SessionScheduler scheduler;
+		QVERIFY( scheduler.publishSlotContent( 0, 0, 7, 0, true, 48 ) );
+		QVERIFY( scheduler.requestLaunch( 0, 0, LaunchMode::Trigger, LaunchQuantisation::None ) );
+		scheduler.processAudio( clock( 0 ), kFramesPerPeriod );
+		scheduler.processAudio( clock( 10 ), kFramesPerPeriod );
+		QCOMPARE( int( scheduler.playbackForColumn( 0 ).positionTicks ), 58 );  // 10 in, from 48
+		QVERIFY( scheduler.requestLaunch( 0, 0, LaunchMode::Trigger, LaunchQuantisation::None ) );
+		scheduler.processAudio( clock( 100 ), kFramesPerPeriod );
+		QCOMPARE( int( scheduler.playbackForColumn( 0 ).positionTicks ), 148 );  // not 48: it went on
+	}
+
+	//! 0.5.0 WF-070: a playing cell jumps inside its clip at once; a cell that is not playing ignores it.
+	void aPlayingCellJumps()
+	{
+		SessionScheduler scheduler;
+		QVERIFY( scheduler.publishSlotContent( 1, 0, 7, 0 ) );
+		QVERIFY( scheduler.requestJump( 1, 0, 96 ) );  // not playing yet: nothing to move
+		QVERIFY( scheduler.requestLaunch( 1, 0, LaunchMode::Trigger, LaunchQuantisation::None ) );
+		scheduler.processAudio( clock( 0 ), kFramesPerPeriod );
+		scheduler.processAudio( clock( 20 ), kFramesPerPeriod );
+		QCOMPARE( int( scheduler.playbackForColumn( 1 ).positionTicks ), 20 );
+		QVERIFY( scheduler.requestJump( 1, 0, 96 ) );
+		scheduler.processAudio( clock( 30 ), kFramesPerPeriod );
+		QCOMPARE( int( scheduler.playbackForColumn( 1 ).positionTicks ), 96 );
+		scheduler.processAudio( clock( 40 ), kFramesPerPeriod );
+		QCOMPARE( int( scheduler.playbackForColumn( 1 ).positionTicks ), 106 );
 	}
 };
 

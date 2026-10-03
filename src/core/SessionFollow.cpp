@@ -165,6 +165,8 @@ tick_t SessionScheduler::legatoOriginFor( const ActiveSlot& slot ) const noexcep
 	// nothing playing there (or no legato), it counts from its own start. Audio thread.
 	const SessionSlotContent* content = m_slotContent.find( slot.track, slot.scene );
 	if( content == nullptr || !content->legato ) { return slot.state.startedTick; }
+	// WF-060: relaunched while it still plays (the origin is cleared when it stops or is taken over).
+	if( slot.phaseOriginFor >= 0 ) { return slot.phaseOrigin; }
 	for( const auto& other : m_active )
 	{
 		if( &other == &slot || other.track != slot.track ) { continue; }
@@ -185,6 +187,7 @@ void SessionScheduler::takeColumnOver( const ActiveSlot& slot ) noexcept
 		if( other.state.phase != SlotPhase::Playing && other.state.phase != SlotPhase::StopPending ) { continue; }
 		other.state.phase = SlotPhase::Idle;
 		other.state.held = false;
+		other.phaseOriginFor = -1;
 		m_recorder.recordStop( other.track, other.scene, slot.state.startedTick );
 	}
 }
@@ -204,7 +207,7 @@ void SessionScheduler::afterLaunchEvents( ActiveSlot& slot, const SessionClockCo
 		// earlier playback would fire the chain early.
 		slot.followScheduled = false;
 		slot.followNextTick = 0;
-		slot.phaseOrigin = legatoOriginFor( slot );
+		slot.phaseOrigin = event == LaunchEvent::Started ? legatoOriginFor( slot ) : slot.state.startedTick;
 		slot.phaseOriginFor = slot.state.startedTick;
 		if( event == LaunchEvent::Started ) { takeColumnOver( slot ); }
 		m_recorder.recordStart( slot.track, slot.scene, slot.state.startedTick );
@@ -213,6 +216,7 @@ void SessionScheduler::afterLaunchEvents( ActiveSlot& slot, const SessionClockCo
 
 	if( event == LaunchEvent::Stopped )
 	{
+		slot.phaseOriginFor = -1;
 		m_recorder.recordStop( slot.track, slot.scene, slot.state.pendingTick );
 		return;
 	}

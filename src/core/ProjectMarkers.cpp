@@ -114,6 +114,8 @@ void ProjectMarkers::save(QDomDocument& doc, QDomElement& parent) const
 		element.setAttribute(QStringLiteral("tick"), marker.tick);
 		element.setAttribute(QStringLiteral("name"), marker.name);
 		if (!marker.color.isEmpty()) { element.setAttribute(QStringLiteral("color"), marker.color); }
+		if (!marker.action.isEmpty()) { element.setAttribute(QStringLiteral("action"), marker.action); }
+		if (!marker.args.isEmpty()) { element.setAttribute(QStringLiteral("args"), marker.args); }
 		list.appendChild(element);
 	}
 	parent.appendChild(list);
@@ -126,7 +128,8 @@ void ProjectMarkers::load(const QDomElement& element)
 		child = child.nextSiblingElement(QStringLiteral("marker")))
 	{
 		loaded.append(Marker{child.attribute(QStringLiteral("id")).toInt(), child.attribute(QStringLiteral("tick")).toInt(),
-			child.attribute(QStringLiteral("name")), child.attribute(QStringLiteral("color"))});
+			child.attribute(QStringLiteral("name")), child.attribute(QStringLiteral("color")), child.attribute(QStringLiteral("action")),
+			child.attribute(QStringLiteral("args"))});
 	}
 	m_nextId = 1;
 	restore(loaded);

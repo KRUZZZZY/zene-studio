@@ -826,6 +826,13 @@ LMMS_EXPORT void registerNotePlaybackCommands(ControlRegistry& registry);
 //! 0.5.0 L08 (W3): mixer.options / send_enable / create_return / find / adjust / order_by_tracks,
 //! vca.color_members, chain.bypass_all / clean (ControlCommandsMixerTools.cpp).
 LMMS_EXPORT void registerMixerToolCommands(ControlRegistry& registry);
+//! 0.5.0 L02 (W3): session.release_slot / jump_slot / capture_scene / set_playlist / launch_group /
+//! setlist / setlist_go (ControlCommandsSessionPerform.cpp).
+LMMS_EXPORT void registerSessionPerformCommands(ControlRegistry& registry);
+//! 0.5.0 L03 (W3): comp.move_edge / select_group (ControlCommandsCompGroup.cpp); transport.metronome_options /
+//! punch_here, record.remaining (ControlCommandsRecordTools.cpp).
+LMMS_EXPORT void registerCompGroupCommands(ControlRegistry& registry);
+LMMS_EXPORT void registerRecordToolCommands(ControlRegistry& registry);
 } // namespace lmms
 
 #endif // LMMS_CONTROL_REGISTRY_GROUPS_H

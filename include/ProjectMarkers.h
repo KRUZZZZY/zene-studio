@@ -43,6 +43,10 @@ struct Marker
 	tick_t tick = 0;
 	QString name;
 	QString color;  //!< "#rrggbb", or empty
+	//! 0.5.0 L02 (WF-073): a command run when playback crosses the marker (empty: none), with its
+	//! arguments as compact JSON. Run on the main thread (MarkerActions.cpp), never the audio thread.
+	QString action;
+	QString args;
 };
 
 /*! ED-048 (0.5.0): the project's markers - drawn in the arranger's ruler, jumped to, snapped to,

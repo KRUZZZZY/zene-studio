@@ -131,7 +131,9 @@ enum class LaunchCommandType : std::uint8_t
 	//! R5.2: installs (or clears) a SCENE's chain - `scene` and `plan` are read.
 	SceneFollow,
 	//! R5.2: a scene row was launched - `scene` and `quantisation` are read.
-	SceneLaunch
+	SceneLaunch,
+	//! 0.5.0 L02 (WF-070): a playing slot continues from `position` ticks into its clip.
+	Jump
 };
 
 //! Where a slot is in its launch life cycle.
@@ -232,6 +234,8 @@ public:
 	//! Queues an explicit stop, in the slot's own mode.
 	bool requestStop( int track, int scene, LaunchMode mode,
 		LaunchQuantisation quantisation ) noexcept;
+	//! 0.5.0 L02 (WF-070): queues a jump - the playing slot continues from @a position ticks into its clip.
+	bool requestJump( int track, int scene, tick_t position ) noexcept;
 
 	/*! Drops every launched slot on the audio thread's next period. Used when
 	 *  the project changes under the engine. Lock-free and allocation-free:
@@ -242,9 +246,10 @@ public:
 	void setFollowActionsEnabled( bool enabled ) noexcept;
 	bool followActionsEnabled() const noexcept;
 
-	//! Publishes what a cell holds so a launched slot renders it (#597); one queue push.
+	//! Publishes what a cell holds so a launched slot renders it (#597); one queue push. @a startTicks
+	//! (WF-060): where in its clip the cell starts playing.
 	bool publishSlotContent( int track, int scene, int patternId, tick_t loopLengthTicks,
-		bool legato = false ) noexcept;
+		bool legato = false, tick_t startTicks = 0 ) noexcept;
 
 	//! What this column should render this period (#597). Audio thread.
 	SessionSlotPlayback playbackForColumn( int track ) const noexcept;
@@ -388,6 +393,8 @@ private:
 		FollowPlan plan;
 		//! Only read for Content (#597). POD, like `plan`.
 		SessionSlotContent content;
+		//! Only read for Jump (WF-070): ticks into the clip.
+		tick_t position = 0;
 	};
 
 	/*! Fixed-capacity single-producer/single-consumer queue. The model thread
@@ -511,6 +518,8 @@ private:
 	bool rowPlaying( int scene ) const noexcept;
 	//! Drains a SceneFollow or SceneLaunch command; false for any other type.
 	bool applySceneCommand( const Command& command, const SessionClockContext& ctx ) noexcept;
+	//! WF-070: apply a Jump command; false for any other command.
+	bool applyJump( const Command& command ) noexcept;
 	//! A playing cell's own enabled plan, unless its launched row's chain governs it.
 	const FollowPlan* cellPlanFor( const ActiveSlot& slot ) const noexcept;
 	const FollowPlan* scenePlanFor( int scene ) const noexcept;

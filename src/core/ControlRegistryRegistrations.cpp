@@ -125,6 +125,9 @@ void registerControlCommands(ControlRegistry& registry)
 	registerNoteHarmonyCommands(registry);
 	registerNotePlaybackCommands(registry);
 	registerMixerToolCommands(registry);
+	registerSessionPerformCommands(registry);
+	registerCompGroupCommands(registry);
+	registerRecordToolCommands(registry);
 #ifdef ZENE_TELEMETRY_ENABLED
 	// The telemetry.* group travels with the client. -DZENE_TELEMETRY=OFF
 	// removes the client, so the registry must not carry ids that would

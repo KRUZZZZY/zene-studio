@@ -78,14 +78,20 @@ be random, smooth random, a step sequence or a retriggered envelope as well as a
 Record menu and press Record. Record &gt; Count-In and Pre-Roll starts the take bars early; Record Mode chooses
 overdub or replace for MIDI. Every pass of a looped take becomes a take lane: drag along a lane in the take-lanes view
 to comp that range, double-click to cycle the take (or Record &gt; Next Take Here). Retrospective capture keeps what you
-played without recording - save it as a clip or a take afterwards.</p>
+played without recording - save it as a clip or a take afterwards. Record &gt; Punch In Here and Punch Out Here set
+the punch region at the play position while you record; Metronome Sound and Level chooses the click, its level, the
+accent and whether it clicks only while recording. Track &gt; Takes and Comping moves the edge between two takes, or comps
+several tracks (a kit) at once. record.remaining tells how much recording time the disk has left.</p>
 
 <h2 id="launch">The launcher</h2>
 <p>Show the launcher from the header. Each cell plays a pattern or an audio file; drop a sample on a cell to fill it.
 Cells launch on the next bar (or the cell's own quantisation) in trigger, gate, toggle or repeat mode, and scenes launch a
 row. Launcher &gt; Launch Scene 1-8 can be given keys (Settings &gt; Shortcuts); Launcher &gt; Controller binds the notes
 of a MIDI controller to cells and scenes. Launcher &gt; Record What I Played Into a Cell puts what you just played (with Keep Listening on) into a
-cell as a new pattern.</p>
+cell as a new pattern. A Gate cell plays while you hold it. Right-click a cell for its Follow Action Chain (the
+action after it, its chance and timing) and Jump To (move a playing cell inside its clip); right-click a scene to play
+scenes in order or launch a folder's cells together; the grid's menu captures the playing cells as a new scene and keeps
+a setlist of songs to step through. A marker can run a command when playback crosses it (marker.set 'action').</p>
 
 <h2 id="projects">Projects</h2>
 <p>Projects keep their history: Project &gt; Revisions restores or compares an earlier state. Collect Media copies every

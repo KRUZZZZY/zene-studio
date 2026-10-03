@@ -154,7 +154,11 @@ void SessionGridView::rebuild(int tracks, int scenes)
 		{
 			QToolButton* cell = makeButton(QStringLiteral("session.launch_slot"));
 			cell->setAcceptDrops(true);  // WF-053: an audio file dropped here fills the cell
-			connect(cell, &QToolButton::clicked, this, [this, track, scene] { launchCell(track, scene); });
+			connect(cell, &QToolButton::pressed, this, [this, track, scene] { launchCell(track, scene); });
+			connect(cell, &QToolButton::released, this, [track, scene] {  // WF-063: the release half
+				ControlRegistry::instance()->invoke(QStringLiteral("session.release_slot"),
+					{{QStringLiteral("track"), track}, {QStringLiteral("scene"), scene}});
+			});
 			m_grid->addWidget(cell, scene, track);
 			m_cells.push_back(cell);
 		}

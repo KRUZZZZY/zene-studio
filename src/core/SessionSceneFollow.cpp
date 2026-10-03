@@ -147,6 +147,8 @@ bool SessionScheduler::sceneOverrides( const ActiveSlot& slot ) const noexcept
 
 bool SessionScheduler::applySceneCommand( const Command& command, const SessionClockContext& ctx ) noexcept
 {
+	// 0.5.0 WF-070: the jump rides on the same "not a press, release or stop" path (SessionPlayback.cpp).
+	if( applyJump( command ) ) { return true; }
 	if( command.type == LaunchCommandType::SceneLaunch )
 	{
 		startScene( command.scene, launchTickAt( command.quantisation, ctx ) );

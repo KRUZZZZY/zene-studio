@@ -293,6 +293,8 @@ void populateTrack(QMenu* menu, Track* track)
 	list(takes, "Take Lanes...", [id] { return CommandLists::takeLanes(id); });
 	add(takes, "Add Take Lane...", "comp.lane_add", self, true);
 	add(takes, "Comp a Range...", "comp.select", self, true);
+	add(takes, "Move a Comp Edge...", "comp.move_edge", self, true);  // ED-169
+	add(takes, "Comp These Tracks Together...", "comp.select_group", {{QStringLiteral("tracks"), QJsonArray{id}}}, true);  // ED-172
 	QMenu* render = menu->addMenu(tr("Render"));
 	add(render, "Bounce to New Track...", "bounce.land", self, true);
 	add(render, "Bounce in Place...", "bounce.in_place", self, true);

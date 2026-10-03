@@ -1019,7 +1019,7 @@ plugins/Compressor/CompressorControls.h	0.5.0 L09: m_keyHpModel / m_keyLpModel
 src/core/lv2/Lv2Manager.cpp	0.5.0 L10 (MX-163): folders of your own (plugin.paths_set lv2) are given to lilv as LILV_OPTION_LV2_PATH before the world loads; with none set lilv reads LV2_PATH or its defaults exactly as before
 include/EffectSelectDialog.h	0.5.0 L10 (MX-166): the filter proxy also reads the plug-in organiser's roles (favourites, folder, hidden); the dialog gains a folder box, Show hidden, a row menu and selectedKey() (MX-074: Insert Effect Before/After loads the choice through plugin.load)
 include/Metronome.h	0.5.0 L03: processTick takes a force flag (the count-in clicks while the metronome is off), default false
-src/core/Metronome.cpp	0.5.0 L03: the force flag
+src/core/Metronome.cpp	0.5.0 L03: the force flag; 0.5.0 L03 (WF-081): processTick asks MetronomeOptions whether the click sounds now (record-only, a count-in always) and takes the click's play handle from it (its sound, accent and level); with the default options the click is the same two factory samples at the same level
 include/TrackOperationsWidget.h	0.5.0 L03 (WF-074): a record-arm button
 data/manual/index.html	0.5.0 L14 (2026-10-03): the in-application manual that Help > Manual and app.help show (HelpCenter); a new file, no inherited file changes
 data/tours/first-beat.json	0.5.0 L14 (2026-10-03): a guided tour (GuidedTour, app.tour) - the steps and the panels each one points at; a new file, no inherited file changes
