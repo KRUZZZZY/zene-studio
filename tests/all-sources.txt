@@ -2237,6 +2237,7 @@ tests/src/gui/GrooveMenuTest.cpp
 tests/src/gui/GuiTestApplication.h
 tests/src/gui/HelpAccessTest.cpp
 tests/src/gui/KnobKeyboardTest.cpp
+tests/src/gui/LibraryMenusTest.cpp
 tests/src/gui/MenuTestSupport.h
 tests/src/gui/MidiClockMenuTest.cpp
 tests/src/gui/MidiControllerMenuTest.cpp
