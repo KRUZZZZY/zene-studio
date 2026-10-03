@@ -38,6 +38,8 @@
 #include "ControlMixerSupport.h"
 #include "ControlRegistry.h"
 #include "ControlVocabulary.h"
+#include "AudioDevice.h"
+#include "AudioEngine.h"
 #include "Engine.h"
 #include "InstrumentTrack.h"
 #include "Mixer.h"
@@ -81,6 +83,7 @@ private slots:
 	void initTestCase()
 	{
 		Engine::init(true);
+		Engine::audioEngine()->audioDev()->stopProcessing();  // the test reads and writes channel buffers itself
 		while (Engine::mixer()->numChannels() <= 4) { Engine::mixer()->createChannel(); }
 		ControlRegistry::setReady(true);
 	}
@@ -225,9 +228,14 @@ private slots:
 		const std::array<float, 2> level = mixerstrip::sendLevel(*control::findMixerRoute(3, 4));
 		QCOMPARE(level[0], 0.4f);
 		QCOMPARE(level[1], 0.2f);
-		const QJsonArray sends = run(QStringLiteral("mixer.send_meters"), {{QStringLiteral("channel"), ch(3)}}).result.value(QStringLiteral("sends")).toArray();
-		QCOMPARE(sends.size(), 1);
-		QVERIFY(qAbs(sends.first().toObject().value(QStringLiteral("left_db")).toDouble() - 20.0 * std::log10(0.4)) < 1e-3);
+		// Every channel also sends to the master: find the send to channel 4 among them.
+		QJsonObject toFour;
+		for (const QJsonValue& send : run(QStringLiteral("mixer.send_meters"), {{QStringLiteral("channel"), ch(3)}}).result.value(QStringLiteral("sends")).toArray())
+		{
+			if (send.toObject().value(QStringLiteral("to")).toString() == ch(4)) { toFour = send.toObject(); }
+		}
+		QVERIFY(!toFour.isEmpty());
+		QVERIFY(qAbs(toFour.value(QStringLiteral("left_db")).toDouble() - 20.0 * std::log10(0.4)) < 1e-3);
 		QVERIFY(run(QStringLiteral("mixer.channel_eq"), {{QStringLiteral("channel"), ch(4)}, {QStringLiteral("high"), 6.0}}).ok);
 		const QJsonObject compare = run(QStringLiteral("mixer.eq_compare"), {{QStringLiteral("a"), ch(3)}, {QStringLiteral("b"), ch(4)}}).result;
 		QCOMPARE(compare.value(QStringLiteral("difference")).toObject().value(QStringLiteral("high")).toDouble(), 6.0);

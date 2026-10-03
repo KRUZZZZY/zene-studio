@@ -43,6 +43,7 @@ namespace lmms::gui
  *  gently from its last peak. Used by the Inspector's send rows (MX-053) and the track headers (MX-011). */
 class LMMS_EXPORT LevelBar : public QWidget
 {
+	Q_OBJECT
 public:
 	LevelBar(std::function<float()> level, const QString& name, QWidget* parent);
 

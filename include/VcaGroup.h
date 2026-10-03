@@ -147,6 +147,8 @@ public:
 	void setPhaseLocked(bool locked) { m_phaseLocked = locked; }
 
 	//! 0.5.0 L09 (MX-070): the group this one sits in (0 = none) - its gain scales this group's too.
+	//! The group this one sits inside, or NoParent. Group ids start at 0, so 0 is a group, not "none".
+	static constexpr int NoParent = -1;
 	int parentId() const { return m_parentId; }
 	void setParentId(int id) { m_parentId = id; }
 	//! 0.5.0 L09 (MX-071): which of the group's attributes reach its members - level (the VCA gain),
@@ -183,7 +185,7 @@ private:
 	//! The phase lock. ON by default: the feature IS the lock, and a group with
 	//! no edit tracks never reads it.
 	bool m_phaseLocked = true;
-	int m_parentId = 0;
+	int m_parentId = NoParent;
 	bool m_linkGain = true;
 	bool m_linkMute = true;
 	bool m_linkSolo = true;

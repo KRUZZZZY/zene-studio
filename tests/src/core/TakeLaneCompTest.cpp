@@ -399,8 +399,9 @@ private slots:
 			QVERIFY2(!entry->reason.isEmpty(), qPrintable(id + " has an empty reason"));
 			QVERIFY2(!entry->mechanism.isEmpty(), qPrintable(id + " has an empty mechanism"));
 		}
-		// 4 in the take half, 4 in the composite half (comp.audition, R3.1), and comp.cycle (0.5.0 L03, ED-168).
-		QCOMPARE(seen, 9);
+		// 4 in the take half, 4 in the composite half (comp.audition, R3.1), comp.cycle (0.5.0 L03, ED-168), and
+		// comp.move_edge / comp.select_group / comp.split_passes (0.5.0 W3: ED-169, ED-172, ED-167).
+		QCOMPARE(seen, 12);
 	}
 
 private:

@@ -43,7 +43,6 @@
 #include <QTextBrowser>
 #include <QUrl>
 #include <QVBoxLayout>
-#include <QWhatsThis>
 
 #include "CommandForm.h"
 #include "ConfigManager.h"
@@ -257,7 +256,8 @@ void installHelpEntries(QMenuBar* bar)
 	QMenu* help = bar->actions().last()->menu();
 	if (help == nullptr || help->findChild<QAction*>(QStringLiteral("helpWhatsThis")) != nullptr) { return; }
 	help->addSeparator();
-	QAction* whatsThis = help->addAction(HelpCenter::tr("What's This?"), [] { QWhatsThis::enterWhatsThisMode(); });
+	QAction* whatsThis = addCommandAction(help, HelpCenter::tr("What's This?"), QStringLiteral("app.help"),
+		[] { return CommandCall{QStringLiteral("app.help"), {{QStringLiteral("whats_this"), true}}, {}, QString(), false}; });
 	whatsThis->setObjectName(QStringLiteral("helpWhatsThis"));
 	whatsThis->setShortcut(QKeySequence(Qt::SHIFT | Qt::Key_F1));
 	addCommandAction(help, HelpCenter::tr("Manual"), QStringLiteral("app.help"),

@@ -65,7 +65,7 @@ int nearestIn(int key, const std::vector<int>& classes)
 //! The pitch classes the chord track sounds at @a pos (its chord, or its scale), empty where it is silent.
 std::vector<int> classesAt(tick_t pos, bool scale)
 {
-	const ChordEvent* event = Engine::getSong()->chordTrack().findAt(pos);
+	const ChordEvent* event = Engine::getSong()->chordTrack().soundingAt(pos);  // the chord heard there, not one starting there
 	if (event == nullptr) { return {}; }
 	const ChordVocabulary::Chord* chord = scale && !event->scale.isEmpty() ? ChordVocabulary::scaleByName(event->scale) : ChordVocabulary::chordByName(event->chord);
 	return chord != nullptr ? ChordVocabulary::pitchClassesOf(*chord, event->root) : std::vector<int>{};

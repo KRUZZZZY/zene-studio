@@ -162,7 +162,7 @@ private slots:
 
 	void noTransientWithoutAudio()
 	{
-		Engine::getSong()->setPlayPos(5000, Song::PlayMode::Song);
+		Engine::getSong()->setPlayPos(5000);  // the current mode's play head, the one the command reads
 		QCOMPARE(run(QStringLiteral("arrangement.next_transient")).errorKind, ControlErrorKind::NotFound);
 	}
 

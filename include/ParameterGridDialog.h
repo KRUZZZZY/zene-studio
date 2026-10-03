@@ -40,6 +40,7 @@ namespace gui
 //! knob per number, four to a row, then its switches; each control bound to the device's own model.
 class LMMS_EXPORT ParameterGridDialog : public EffectControlDialog
 {
+	Q_OBJECT
 public:
 	explicit ParameterGridDialog(ParameterControls* controls);
 	~ParameterGridDialog() override = default;

@@ -155,12 +155,14 @@ void ProjectJournal::redo()
 		CheckPoint undoState;
 
 		bool did = restoreStep( c, &undoState );
-		for( int i = c.actions.size() - 1; i >= 0; --i )
+		// Redo replays the recorded operations in push order - the order the command ran them, so a
+		// later one finds what an earlier one made (a chain before the devices put on it) - and the
+		// undo record keeps that order for the next undo to run backwards.
+		for( const auto & action : c.actions )
 		{
-			const std::function<void()> redoAction = c.actions.at( i ).second;
-			if( !redoAction ) { continue; }
-			undoState.actions.prepend( c.actions.at( i ) );
-			redoAction();
+			if( !action.second ) { continue; }
+			undoState.actions.append( action );
+			action.second();
 			did = true;
 		}
 		if( !did ) { continue; }

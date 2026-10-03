@@ -42,6 +42,7 @@ namespace lmms::gui
  *  its ch-<n> id on every refresh (20 a second while shown), so a deleted channel reads as silence. */
 class LMMS_EXPORT ChannelLevelMeter : public QWidget
 {
+	Q_OBJECT
 public:
 	ChannelLevelMeter(const QString& channelId, QWidget* parent = nullptr);
 

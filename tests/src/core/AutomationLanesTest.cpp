@@ -75,6 +75,9 @@ class AutomationLanesTest : public QObject
 private slots:
 	void initTestCase()
 	{
+		#ifdef LMMS_TEST_PLUGIN_DIR
+		qputenv("LMMS_PLUGIN_DIR", LMMS_TEST_PLUGIN_DIR);  // a real instrument, whose parameters a lane can take
+#endif
 		Engine::init(true);
 		ControlRegistry::setReady(true);
 	}
@@ -89,6 +92,7 @@ private slots:
 	{
 		Engine::getSong()->clearProject();
 		m_track = dynamic_cast<InstrumentTrack*>(Track::create(Track::Type::Instrument, Engine::getSong()));
+		m_track->loadInstrument(QStringLiteral("tripleoscillator"));
 	}
 
 	void shapesTransformAndThinning()
@@ -185,7 +189,8 @@ private slots:
 		QDomDocument doc;
 		QDomElement root = doc.createElement(QStringLiteral("root"));
 		const QDomElement saved = lane->saveState(doc, root);
-		QCOMPARE(saved.attribute(QStringLiteral("follows")).toInt(), m_track->id());
+		// The automation track's own attribute (saveTrackSpecificSettings writes the <automationtrack> child).
+		QCOMPARE(saved.firstChildElement(QStringLiteral("automationtrack")).attribute(QStringLiteral("follows")).toInt(), m_track->id());
 	}
 
 	//! ED-191: a person's (or a command's) change records the model; automation does not.

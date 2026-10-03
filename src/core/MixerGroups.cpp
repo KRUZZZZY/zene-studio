@@ -34,7 +34,7 @@ float vcaGroupGain(const Mixer& mixer, const VcaGroup& group)
 {
 	float gain = group.gain();
 	int parent = group.parentId();
-	for (int depth = 0; parent != 0 && depth < MaxGroupDepth; ++depth)
+	for (int depth = 0; parent != VcaGroup::NoParent && depth < MaxGroupDepth; ++depth)
 	{
 		const VcaGroup* above = mixer.vcaGroup(parent);
 		if (above == nullptr || above == &group) { break; }
@@ -47,7 +47,7 @@ float vcaGroupGain(const Mixer& mixer, const VcaGroup& group)
 bool wouldLoop(const Mixer& mixer, int groupId, int parentId)
 {
 	int at = parentId;
-	for (int depth = 0; at != 0; ++depth)
+	for (int depth = 0; at != VcaGroup::NoParent; ++depth)
 	{
 		if (at == groupId || depth >= MaxGroupDepth) { return true; }
 		const VcaGroup* above = mixer.vcaGroup(at);

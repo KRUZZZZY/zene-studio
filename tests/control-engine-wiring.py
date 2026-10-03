@@ -62,7 +62,7 @@ def check_rack_chain(session, recorder, devices, channel):
     session.result("rack.add_chain", {"channel": channel})
     loaded = session.call("plugin.load", {"target": channel, "device": devices[0], "chain": 1})
     rack = session.result("rack.get_state", {"channel": channel})
-    counts = [c.get("device_count") for c in rack.get("chains") or []]
+    counts = [c.get("devices") for c in rack.get("chains") or []]
     recorder.check("plugin.load {chain: 1} fills the rack's parallel chain",
                    loaded.get("ok") and len(counts) > 1 and counts[1] == 1, "reply=%r rack=%r" % (loaded, counts))
     track = session.result("track.add", {"type": "instrument"}).get("track")
@@ -80,7 +80,7 @@ def check_chain_presets(session, recorder, channel):
     other = session.result("mixer.add_channel").get("channel")
     session.result("rack.add_chain", {"channel": other})
     applied = session.call("chain.apply", {"target": other, "chain": 1, "name": "l01-rack-chain"})
-    counts = [c.get("device_count") for c in session.result("rack.get_state", {"channel": other}).get("chains") or []]
+    counts = [c.get("devices") for c in session.result("rack.get_state", {"channel": other}).get("chains") or []]
     recorder.check("chain.save/apply {chain} copy a rack chain to another channel's rack",
                    saved.get("ok") and applied.get("ok") and counts[1:2] == [1], "save=%r apply=%r counts=%r"
                    % (saved, applied, counts))

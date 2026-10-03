@@ -366,7 +366,6 @@ private:
 	MidiInputTransform m_inputTransform;
 	ArticulationMap m_articulations;
 	std::atomic<int> m_delayMs{0};
-	Note m_keyswitchNote{TimePos(1), TimePos(0), DefaultKey};  //!< 0.5.0 ED-121: re-keyed per keyswitch on the audio thread
 
 	NotePlayHandle* m_notes[NumKeys];
 	NotePlayHandleList m_sustainedNotes;

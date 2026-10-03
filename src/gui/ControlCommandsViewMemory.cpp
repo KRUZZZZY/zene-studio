@@ -74,7 +74,7 @@ gui::SongEditor* arranger()
 //! The active range as range.set takes it, or an empty object when there is none.
 QJsonObject currentRange()
 {
-	const QJsonObject range = read("range.get").value(QStringLiteral("range")).toObject();
+	const QJsonObject range = read("range.get");  // range.get's reply is the range itself (active, start, end, tracks)
 	if (!range.value(QStringLiteral("active")).toBool()) { return {}; }
 	QJsonObject out{{QStringLiteral("start"), range.value(QStringLiteral("start"))}, {QStringLiteral("end"), range.value(QStringLiteral("end"))}};
 	if (range.value(QStringLiteral("all_tracks")).toBool()) { out.insert(QStringLiteral("all"), true); }

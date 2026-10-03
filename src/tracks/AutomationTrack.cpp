@@ -68,7 +68,7 @@ Clip* AutomationTrack::createClip(const TimePos & pos)
 
 void AutomationTrack::saveTrackSpecificSettings(QDomDocument& doc, QDomElement& _this, bool presetMode)
 {
-	if (m_followsTrack > 0) { _this.setAttribute("follows", m_followsTrack); }  // 0.5.0 ED-181
+	if (m_followsTrack >= 0) { _this.setAttribute("follows", m_followsTrack); }  // 0.5.0 ED-181
 }
 
 
@@ -76,7 +76,7 @@ void AutomationTrack::saveTrackSpecificSettings(QDomDocument& doc, QDomElement& 
 
 void AutomationTrack::loadTrackSpecificSettings( const QDomElement & _this )
 {
-	m_followsTrack = _this.attribute("follows", "0").toInt();
+	m_followsTrack = _this.attribute("follows", "-1").toInt();
 	// just in case something somehow wrent wrong...
 	if( type() == Type::HiddenAutomation )
 	{

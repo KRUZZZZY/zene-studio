@@ -191,32 +191,36 @@ void collectActions(const QList<QAction*>& actions, const QString& containerPath
 // slot, so most of them carry no QAction at all; a button with a popup menu
 // (New from template, Recently opened) brings its menu along.
 
-//! One toolbar button: the label a human sees, the command it declares, and
-//! its popup menu if it has one.
-void collectToolButton(QToolButton* button, const QString& bar, const QString& barClass,
-	QJsonArray& out)
+//! A toolbar button's own entry: the label a human sees and the command it declares.
+void appendToolButtonItem(QToolButton* button, const QString& text, const QString& bar, const QString& barClass, QJsonArray& out)
 {
 	QAction* action = button->defaultAction();
 	QObject* owner = action != nullptr ? static_cast<QObject*>(action) : button;
 	const QString objectName = owner->objectName();
+	const QStringList candidates{objectName, owner->property("controlCommand").toString()};
+	const QString data = action != nullptr ? action->data().toString() : QString();
+	const bool dataLive = looksLikeCommandId(data) && ControlRegistry::instance()->hasCommand(data);
+	out.append(makeItem(QStringLiteral("toolbar"), bar, barClass, text, objectName, candidates, data, dataLive));
+}
+
+//! One toolbar button and its popup menu if it has one. A button that only pops up its menu is a container,
+//! like a submenu's title: its entries are the actions, and a menu built as it shows is built first.
+void collectToolButton(QToolButton* button, const QString& bar, const QString& barClass,
+	QJsonArray& out)
+{
+	QAction* action = button->defaultAction();
 	QString text = action != nullptr ? displayText(action->text()) : QString();
-	if (text.isEmpty())
-	{
-		text = displayText(button->toolTip());
-	}
+	if (text.isEmpty()) { text = displayText(button->toolTip()); }
 	if (text.isEmpty())
 	{
 		return; // a pure icon with no label is not nameable
 	}
-	const QStringList candidates{objectName, owner->property("controlCommand").toString()};
-	const QString data = action != nullptr ? action->data().toString() : QString();
-	const bool dataLive = looksLikeCommandId(data) && ControlRegistry::instance()->hasCommand(data);
-	out.append(makeItem(QStringLiteral("toolbar"), bar, barClass, text, objectName, candidates,
-		data, dataLive));
-	if (QMenu* menu = button->menu())
-	{
-		collectMenu(menu, out);
-	}
+	QMenu* menu = button->menu();
+	const bool container = menu != nullptr && action == nullptr && button->popupMode() == QToolButton::InstantPopup;
+	if (!container) { appendToolButtonItem(button, text, bar, barClass, out); }
+	if (menu == nullptr) { return; }
+	if (container) { emit menu->aboutToShow(); }
+	collectMenu(menu, out);
 }
 
 QString stripName(const QWidget* widget)

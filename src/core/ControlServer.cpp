@@ -174,6 +174,21 @@ void ControlServer::Client::retire() const
 	if (notifier) { notifier->setEnabled(false); notifier->deleteLater(); }
 }
 
+void ControlServer::reapHungUpClients()
+{
+#if defined(Q_OS_UNIX)
+	QList<int> closed;
+	for (auto it = m_clients.cbegin(); it != m_clients.cend(); ++it)
+	{
+		char byte = 0;
+		const ssize_t n = ::recv(it.key(), &byte, 1, MSG_PEEK | MSG_DONTWAIT);
+		// 0: an orderly shutdown; an error other than "nothing to read yet": a reset peer.
+		if (n == 0 || (n < 0 && errno != EAGAIN && errno != EWOULDBLOCK)) { closed.append(it.key()); }
+	}
+	for (const int fd : closed) { dropClient(fd); }
+#endif
+}
+
 void ControlServer::onNewConnection()
 {
 #if !defined(Q_OS_UNIX)
@@ -186,6 +201,9 @@ void ControlServer::onNewConnection()
 		{
 			return; // EAGAIN: no more pending connections
 		}
+		// BUGS 11.31: a peer that hung up holds its slot until its own read notifier fires, so a full house of
+		// closed peers would refuse a live one; at the cap, ask the sockets first.
+		if (m_clients.size() >= MaxClients) { reapHungUpClients(); }
 		if (m_clients.size() >= MaxClients)
 		{
 			// Accept and immediately refuse excess peers: leaving them queued would

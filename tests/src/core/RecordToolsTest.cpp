@@ -34,6 +34,7 @@
 #include "ControlRegistry.h"
 #include "ControlVocabulary.h"
 #include "Engine.h"
+#include "Mixer.h"
 #include "MetronomeOptions.h"
 #include "RecorderTaps.h"
 #include "SampleTrack.h"
@@ -165,7 +166,7 @@ private slots:
 		QVERIFY(recordertaps::tapped(0));
 		QCOMPARE(run(QStringLiteral("record.route_source"), {{QStringLiteral("route"), 0}}).result.value(QStringLiteral("side")).toString(), QStringLiteral("right"));
 		QVERIFY(run(QStringLiteral("record.route_source"), {{QStringLiteral("route"), 0}, {QStringLiteral("source"), QStringLiteral("channel")},
-			{QStringLiteral("channel"), QStringLiteral("ch-0")}, {QStringLiteral("tap"), QStringLiteral("pre_fader")}}).ok);
+			{QStringLiteral("channel"), control::channelIdOf(Engine::mixer()->mixerChannel(0))}, {QStringLiteral("tap"), QStringLiteral("pre_fader")}}).ok);
 		QCOMPARE(recordertaps::get(0).source, recordertaps::Source::Channel);
 		QVERIFY(run(QStringLiteral("control.undo")).ok);
 		QCOMPARE(recordertaps::get(0).source, recordertaps::Source::Master);

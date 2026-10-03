@@ -44,6 +44,7 @@ namespace lmms::gui
  *  project on its single tempo, as it always was. */
 class LMMS_EXPORT TempoMapPanel : public QDialog
 {
+	Q_OBJECT
 public:
 	explicit TempoMapPanel(QWidget* parent = nullptr);
 

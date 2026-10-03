@@ -261,18 +261,21 @@ def check_refusals(session, recorder, outdir):
     recorder.check("a file the decoders cannot read is refused typed",
                    error_kind(undecodable) == "refused", "kind=%r message=%r"
                    % (error_kind(undecodable), error_message(undecodable)))
-    wrong_rate = os.path.join(outdir, "48k.wav")
-    write_source_wav(wrong_rate, seconds=1, rate=48000)
-    refused_rate = session.result("stem.job_start", {"source": wrong_rate})
-    recorder.check("a file that is not 44100 Hz is refused, naming the rate and OQ-1",
-                   error_kind(refused_rate) == "refused"
-                   and "44100" in error_message(refused_rate)
-                   and "OQ-1" in error_message(refused_rate),
-                   "kind=%r message=%r" % (error_kind(refused_rate), error_message(refused_rate)))
     status = session.result("stem.job_status")
     recorder.check("none of the refusals created a job",
                    status.get("count") == 0 and status.get("running") == 0,
                    "status=%r" % (status,))
+    # 0.5.0 E27 (44e082633): a rate other than the model's is resampled to its 44100 Hz, no longer refused (OQ-1
+    # closed). The job is accepted, reports the model's rate, and is cancelled so the happy path starts alone.
+    other_rate = os.path.join(outdir, "48k.wav")
+    write_source_wav(other_rate, seconds=1, rate=48000)
+    ok, resampled = session.ok_and_result("stem.job_start", {"source": other_rate})
+    recorder.check("a 48 kHz file is accepted and resampled to 44100 Hz (E27)",
+                   ok and isinstance(resampled.get("job_id"), int) and resampled.get("sample_rate") == SAMPLE_RATE,
+                   repr(resampled)[:200])
+    if ok and isinstance(resampled.get("job_id"), int):
+        session.call("stem.job_cancel", {"job_id": resampled["job_id"]})
+        poll_until(session, resampled["job_id"], ("completed", "failed", "cancelled"))
     unknown = session.result("stem.job_status", {"job_id": 999999})
     recorder.check("stem.job_status on an id this instance never issued is not_found",
                    error_kind(unknown) == "not_found", repr(unknown)[:200])

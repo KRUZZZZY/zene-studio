@@ -67,6 +67,16 @@ const ChordEvent* ChordTrack::findAt(tick_t pos) const
 }
 
 
+const ChordEvent* ChordTrack::soundingAt(tick_t pos) const
+{
+	int last = -1;
+	for (int index = 0; index < size() && m_events[static_cast<std::size_t>(index)].pos <= pos; ++index) { last = index; }
+	if (last < 0) { return nullptr; }
+	const ChordEvent& event = m_events[static_cast<std::size_t>(last)];
+	return pos < event.pos + effectiveLength(last, DefaultEventTicks) ? &event : nullptr;
+}
+
+
 tick_t ChordTrack::effectiveLength(int index, tick_t fallbackTicks) const
 {
 	if (index < 0 || index >= size()) { return fallbackTicks; }

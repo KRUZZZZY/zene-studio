@@ -30,6 +30,8 @@
 
 #include <QtTest>
 
+#include <cmath>
+
 #include <QDomDocument>
 #include <QJsonArray>
 
@@ -38,6 +40,7 @@
 #include "ClipEdits.h"
 #include "ControlRegistry.h"
 #include "ControlVocabulary.h"
+#include "ImportDetectionDsp.h"
 #include "InstrumentTrack.h"
 #include "MidiClip.h"
 #include "ProjectMarkers.h"
@@ -148,24 +151,25 @@ private slots:
 		a->setAutoResize(false);
 		auto* b = dynamic_cast<SampleClip*>(a->getTrack()->createClip(TimePos(192)));
 		b->changeLength(TimePos(192));
-		const QString track = control::trackIdOf(a->getTrack());
+		Track* audio = a->getTrack();
+		const QString track = control::trackIdOf(audio);
 		QVERIFY(run(QStringLiteral("range.set"), {{QStringLiteral("start"), 144}, {QStringLiteral("end"), 240},
 			{QStringLiteral("tracks"), QJsonArray{track}}}).ok);
 		QVERIFY(run(QStringLiteral("range.fade"), {}).ok);
 		QCOMPARE(a->clipEdits().fadeOutTicks, 48);  // its end is inside: out over 144..192
 		QCOMPARE(b->clipEdits().fadeInTicks, 48);   // its start is inside: in over 192..240
-		QVERIFY(run(QStringLiteral("control.undo")).ok);
-		QCOMPARE(a->getTrack()->getClips().size(), std::size_t{2});
-		for (const Clip* clip : a->getTrack()->getClips()) { QVERIFY(!clip->clipEdits().hasFade()); }
+		QVERIFY(run(QStringLiteral("control.undo")).ok);  // a track checkpoint: the clips are rebuilt, so read them from the track
+		QCOMPARE(audio->getClips().size(), std::size_t{2});
+		for (const Clip* clip : audio->getClips()) { QVERIFY(!clip->clipEdits().hasFade()); }
 		// A clip wholly inside the range has no edge at it: nothing is faded (review L05-L09-L08-1 #11).
 		QVERIFY(run(QStringLiteral("range.set"), {{QStringLiteral("start"), 0}, {QStringLiteral("end"), 960},
 			{QStringLiteral("tracks"), QJsonArray{track}}}).ok);
 		run(QStringLiteral("range.fade"), {});
-		for (const Clip* clip : a->getTrack()->getClips()) { QVERIFY(!clip->clipEdits().hasFade()); }
+		for (const Clip* clip : audio->getClips()) { QVERIFY(!clip->clipEdits().hasFade()); }
 		QVERIFY(run(QStringLiteral("range.set"), {{QStringLiteral("start"), 144}, {QStringLiteral("end"), 240},
 			{QStringLiteral("tracks"), QJsonArray{track}}}).ok);
 		QVERIFY(run(QStringLiteral("range.fade"), {{QStringLiteral("fade_in"), 12}, {QStringLiteral("shape"), QStringLiteral("logarithmic")}}).ok);
-		for (const Clip* clip : a->getTrack()->getClips())
+		for (const Clip* clip : audio->getClips())
 		{
 			QCOMPARE(clip->clipEdits().fadeInTicks, 12);
 			QCOMPARE(clip->clipEdits().fadeInShape, FadeShape::Logarithmic);
@@ -200,7 +204,7 @@ private slots:
 		QCOMPARE(found.size(), 4);
 		QVERIFY(std::abs(found.at(1).toObject().value(QStringLiteral("tick")).toInt() - 58) <= 6);
 		QVERIFY(run(QStringLiteral("clip.split_at"), {{QStringLiteral("clip"), control::clipIdOf(audio)}, {QStringLiteral("at"), QStringLiteral("transients")}}).ok);
-		QCOMPARE(clipsOn(audio->getTrack()), 4);  // the first hit is at the clip's start side: three cuts inside
+		QCOMPARE(clipsOn(audio->getTrack()), 5);  // a cut at each of the four hits, all inside the clip (the first at tick 10)
 	}
 
 	void slicingToASamplerTrack()
@@ -229,7 +233,14 @@ private slots:
 		QVERIFY(map.active());
 		QCOMPARE(map.size(), 3);  // one event per gap between four hits
 		const int tempo = Engine::getSong()->getTempo();
-		for (const TempoMapEvent& event : map.all()) { QVERIFY(std::abs(event.tempo - tempo) <= 3); }  // a beat apart at the song tempo
+		// A beat apart at the song tempo, to the onset detector's resolution: each hit is placed to one hop
+		// (detection::TempoHopSize frames), so an interval is good to a hop and the tempo to tempo * hop / beat.
+		const double framesPerBeat = Engine::framesPerTick() * (DefaultTicksPerBar / 4);
+		const int resolution = static_cast<int>(std::ceil(tempo * detection::TempoHopSize / framesPerBeat));
+		for (const TempoMapEvent& event : map.all())
+		{
+			QVERIFY2(std::abs(event.tempo - tempo) <= resolution, qPrintable(QStringLiteral("%1 against %2 (+-%3)").arg(event.tempo).arg(tempo).arg(resolution)));
+		}
 		QVERIFY(run(QStringLiteral("control.undo")).ok);
 		QCOMPARE(Engine::getSong()->tempoMap().map().size(), 0);
 	}

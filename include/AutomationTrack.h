@@ -61,7 +61,7 @@ public:
 
 private:
 	friend class AutomationTrackView;
-	int m_followsTrack = 0;
+	int m_followsTrack = -1;  // no track: ids start at 0, so 0 is a track (it made every lane follow track 0)
 
 } ;
 

@@ -42,6 +42,7 @@ namespace lmms::gui
  *  so the editor and an agent make the same edit and one undo takes it back. */
 class LMMS_EXPORT FollowActionEditor : public QDialog
 {
+	Q_OBJECT
 public:
 	FollowActionEditor(const QString& command, const QJsonObject& where, const QJsonArray& chain, const QString& title,
 		QWidget* parent = nullptr);

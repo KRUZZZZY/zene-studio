@@ -640,7 +640,12 @@ void Vst3InstrumentIntegrationTest::testTheInstrumentsOwnEditorOpensInItsOwnWind
 		if (top->isVisible() && top->windowTitle() == instrument->displayName()) { window = top; }
 	}
 	QVERIFY2(window != nullptr, "no window titled after the instrument is showing");
-	QCOMPARE(window->size(), QSize(400, 300));
+	// The plug-in's 400x300 view with the host header (0.5.0 MX-091) above it; the header's
+	// buttons may make the window wider than the view, never narrower.
+	const auto* header = window->findChild<QWidget*>(QStringLiteral("pluginHostHeader"));
+	QVERIFY(header != nullptr);
+	QCOMPARE(window->height(), 300 + header->sizeHint().height());
+	QVERIFY(window->width() >= 400);
 	QVERIFY2(instrument->openNativeEditor(&error), qPrintable(error));  // raised, not stacked
 	int windows = 0;
 	for (QWidget* top : QApplication::topLevelWidgets())

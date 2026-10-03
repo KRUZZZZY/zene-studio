@@ -84,17 +84,18 @@ private:
 	{
 		Engine::getSong()->clearProject();
 		m_track = dynamic_cast<InstrumentTrack*>(Track::create(Track::Type::Instrument, Engine::getSong()));
+		m_track->loadInstrument(QStringLiteral("tripleoscillator"));
 		m_clip = dynamic_cast<MidiClip*>(m_track->createClip(TimePos(0)));
 		return m_clip->addNote(Note(TimePos(length), TimePos(0), key), false);
 	}
 
-	//! Play from @a tick for a few periods; the keys of the handles the track started.
-	QList<int> playFrom(tick_t tick)
+	//! Play from @a tick for @a periods periods; the keys of the handles the track has sounding then.
+	QList<int> playFrom(tick_t tick, int periods = 3)
 	{
 		Song* song = Engine::getSong();
 		song->setPlayPos(tick, Song::PlayMode::Song);
 		song->playSong();
-		for (int period = 0; period < 3; ++period) { Engine::audioEngine()->renderNextPeriod(); }
+		for (int period = 0; period < periods; ++period) { Engine::audioEngine()->renderNextPeriod(); }
 		const QList<int> keys = handleKeys(m_track);
 		song->stop();
 		for (int period = 0; period < 64 && !handleKeys(m_track).isEmpty(); ++period) { Engine::audioEngine()->renderNextPeriod(); }
@@ -111,6 +112,9 @@ private:
 private slots:
 	void initTestCase()
 	{
+		#ifdef LMMS_TEST_PLUGIN_DIR
+		qputenv("LMMS_PLUGIN_DIR", LMMS_TEST_PLUGIN_DIR);  // a real instrument, so notes start (SessionTuningTest's pattern)
+#endif
 		Engine::init(true);
 		Engine::audioEngine()->audioDev()->stopProcessing();
 		NotePlayHandleManager::init();
@@ -169,7 +173,7 @@ private slots:
 				{QStringLiteral("keyswitch"), 25}}}}}).ok);
 		QCOMPARE(m_track->articulations().indexOf(QStringLiteral("Staccato")), 2);
 		QVERIFY(run(QStringLiteral("note.edit"), edit(note, {{QStringLiteral("articulation"), 2}})).ok);
-		QCOMPARE(playFrom(0), (QList<int>{25, 60}));
+		QCOMPARE(playFrom(0, 1), (QList<int>{25, 60}));  // one period in: the one-tick keyswitch still sounds
 		// Saved with the track, and one undo takes the map away.
 		QDomDocument doc;
 		QDomElement element = doc.createElement(QStringLiteral("track"));

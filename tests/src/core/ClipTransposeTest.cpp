@@ -77,6 +77,9 @@ class ClipTransposeTest : public QObject
 private slots:
 	void initTestCase()
 	{
+		#ifdef LMMS_TEST_PLUGIN_DIR
+		qputenv("LMMS_PLUGIN_DIR", LMMS_TEST_PLUGIN_DIR);  // a real instrument, so notes start (SessionTuningTest's pattern)
+#endif
 		Engine::init(true);
 		Engine::audioEngine()->audioDev()->stopProcessing();
 		NotePlayHandleManager::init();
@@ -95,6 +98,7 @@ private slots:
 		Song* song = Engine::getSong();
 		song->clearProject();
 		auto* track = dynamic_cast<InstrumentTrack*>(Track::create(Track::Type::Instrument, song));
+		QVERIFY(track->loadInstrument(QStringLiteral("tripleoscillator")) != nullptr);
 		auto* clip = dynamic_cast<MidiClip*>(track->createClip(TimePos(0)));
 		clip->addNote(Note(TimePos(192), TimePos(0), 69), false);
 		const QString id = control::clipIdOf(clip);

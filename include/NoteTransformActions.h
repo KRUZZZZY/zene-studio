@@ -47,6 +47,10 @@ namespace lmms::gui
 //! Asks for one number: (title, label, initial, min, max, decimals) -> the value, or nothing.
 using NoteTransformPrompt = std::function<std::optional<double>(const QString&, const QString&, double, double, double, int)>;
 
+/*! Hands the notes selected in the piano roll (Note::selected) to the command surface (note.select), whose own
+ *  selection a command's 'selection' scope reads; false, sending nothing, when none is selected. */
+LMMS_EXPORT bool handOverNoteSelection(const MidiClip* clip);
+
 //! Replaces the prompt (a QInputDialog by default) - for tests; an empty function restores it.
 LMMS_EXPORT void setNoteTransformPrompt(NoteTransformPrompt prompt);
 

@@ -171,6 +171,9 @@ public:
 	bool isPlaying() const;
 	void setIsPlaying(bool isPlaying);
 	void setSampleBuffer(std::shared_ptr<const SampleBuffer> sb);
+	//! 0.5.0: a new source and the window to play of it, in one owner call - what a destructive edit (crop, a range
+	//! edit, a printed chain) does; the window is written here, by the clip, as the one-writer rule requires.
+	void replaceSample(std::shared_ptr<const SampleBuffer> sb, const SampleWindow& window);
 
 	SampleClip* clone() override
 	{

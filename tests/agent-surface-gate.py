@@ -290,7 +290,7 @@ def launch(binary, tmp):
 def fetch(client, request_id, command, args=None):
     """Call a command and insist on a typed, successful reply."""
     reply = client.call(request_id, command, args)
-    problem = typed(reply, request_id)
+    problem = typed(reply, request_id, command)
     if problem is not None:
         raise RuntimeError("%s: %s" % (command, problem))
     if not reply.get("ok"):
@@ -308,7 +308,7 @@ def probe(client, request_id, command, args):
     except (ConnectionError, OSError) as error:
         return {"status": "dead", "detail": str(error), "elapsed": time.time() - began}
     elapsed = time.time() - began
-    problem = typed(reply, request_id)
+    problem = typed(reply, request_id, command)
     if problem is not None:
         return {"status": "malformed", "detail": problem, "elapsed": elapsed}
     if reply.get("ok"):
@@ -340,7 +340,7 @@ def sweep_commands(client, commands, allowlist, overrides, budget, started):
 def quit_and_wait(client, process, request_id):
     """The last command: its typed reply plus a clean, prompt process exit."""
     reply = client.call(request_id, "control.quit")
-    problem = typed(reply, request_id)
+    problem = typed(reply, request_id, "control.quit")
     client.close()
     if problem is not None:
         return {"status": "malformed", "detail": problem, "elapsed": 0.0}

@@ -288,11 +288,12 @@ ControlResult ControlRegistry::invoke(const QString& id, const QJsonObject& args
 namespace
 {
 
-//! A true-inverse command leaves a journal step whenever it changes something, so one that left none changed nothing
-//! (a report-only call, a value it already had) and is no macro step (review W3-batchB #4).
-bool changedNothing(bool journalled, quint64 step, const QString& commandId)
+//! A true-inverse command leaves a journal step - or, for one with its own mechanism, a transaction payload - whenever it
+//! changes something, so a call that left neither changed nothing (a report-only call, a value it already had) and is
+//! no transaction and no macro step (review W3-batchA #4, #8).
+bool changedNothing(bool journalled, quint64 step, const QString& commandId, const ControlResult& result)
 {
-	if (!journalled || step != 0) { return false; }
+	if (!journalled || step != 0 || result.result.contains(QStringLiteral("__transaction"))) { return false; }
 	const control::ReversibilityEntry* row = control::ReversibilityTable::instance().lookup(commandId);
 	return row != nullptr && row->cls == control::ReversibilityClass::TrueInverse;
 }
@@ -348,7 +349,7 @@ ControlResult ControlRegistry::runHandler(
 	// handlers share the one `dry_run: true` result field, so the seam is here.
 	const bool dryRunPreview = result.result.value(QStringLiteral("dry_run")).toBool(false);
 	// Review W3-batchA #8: a call that changed nothing (a report-only call, a value already set) records nothing.
-	const bool changed = result.ok && !dryRunPreview && !changedNothing(journal != nullptr, step, commandId);
+	const bool changed = result.ok && !dryRunPreview && !changedNothing(journal != nullptr, step, commandId, result);
 	if (mutating && changed)
 	{
 		recordTransactionOf(commandId, &result, coalesced, step);

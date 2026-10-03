@@ -233,7 +233,7 @@ private slots:
 		QVERIFY2(recalled.ok, qPrintable(recalled.errorMessage));
 		QVERIFY(recalled.result.value(QStringLiteral("range_restored")).toBool());
 		QCOMPARE(run(QStringLiteral("transport.get_state")).result.value(QStringLiteral("position_ticks")).toInt(), 1920);
-		QCOMPARE(run(QStringLiteral("range.get")).result.value(QStringLiteral("range")).toObject().value(QStringLiteral("end")).toInt(), 2880);
+		QCOMPARE(run(QStringLiteral("range.get")).result.value(QStringLiteral("end")).toInt(), 2880);
 		QCOMPARE(run(QStringLiteral("location.recall"), {{QStringLiteral("name"), QStringLiteral("chorus")}}).errorKind, ControlErrorKind::NotFound);
 		const QString named = m_dir.filePath(QStringLiteral("memory.mmp"));
 		QVERIFY(Engine::getSong()->saveProjectFile(named));
@@ -253,7 +253,7 @@ private slots:
 		QVERIFY(run(QStringLiteral("range.set"), {{QStringLiteral("start"), 100}, {QStringLiteral("end"), 200}}).ok);
 		const ControlResult applied = run(QStringLiteral("selection.apply"), {{QStringLiteral("name"), QStringLiteral("intro")}});
 		QVERIFY2(applied.ok, qPrintable(applied.errorMessage));
-		QCOMPARE(run(QStringLiteral("range.get")).result.value(QStringLiteral("range")).toObject().value(QStringLiteral("end")).toInt(), 3840);
+		QCOMPARE(run(QStringLiteral("range.get")).result.value(QStringLiteral("end")).toInt(), 3840);
 		QCOMPARE(run(QStringLiteral("selection.list")).result.value(QStringLiteral("count")).toInt(), 1);
 		// range.set and clip.select are interface state: the newest undo step is still the save.
 		QVERIFY(run(QStringLiteral("control.undo")).ok);

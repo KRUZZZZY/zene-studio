@@ -110,9 +110,8 @@ ControlResult editRange(const QJsonObject& args)
 	const int rate = static_cast<int>(clip->sample().sampleRate());
 	const auto frames = static_cast<f_cnt_t>(result.size());
 	clip->addJournalCheckPoint();
-	clip->setSampleBuffer(std::make_shared<SampleBuffer>(std::move(result), rate));
 	// Same length: the clip keeps playing the window it played; a new length plays the whole new source.
-	clip->setSampleWindow(windowAfter(window, op, from, to, frames));
+	clip->replaceSample(std::make_shared<SampleBuffer>(std::move(result), rate), windowAfter(window, op, from, to, frames));
 	Engine::getSong()->setModified();
 	return ControlResult::success({{QStringLiteral("clip"), clipId(ref.id)}, {QStringLiteral("op"), op}, {QStringLiteral("frames"), static_cast<double>(frames)},
 		{QStringLiteral("window"), QJsonArray{static_cast<double>(clip->sampleWindow().sourceIn), static_cast<double>(clip->sampleWindow().sourceOut)}}});

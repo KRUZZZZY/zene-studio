@@ -654,12 +654,12 @@ private slots:
 		// M2: the mute is a gain of zero, not the channel mute machinery, so
 		// solo cannot lift it.
 		mixer->toggledSolo();
+		// The mixer applies a solo itself when the model changes (0.5.0 L08, Mixer::createChannel); a second
+		// toggledSolo() here would be a second click that resets it.
 		mixer->mixerChannel(4)->m_soloModel.setValue(true);
-		mixer->toggledSolo();
 		QVERIFY2(peakOf(renderFeed(mixer, kMembers, kPeriods)) == 0.0f,
 			"a soloed member made its muted group audible");
 		mixer->mixerChannel(4)->m_soloModel.setValue(false);
-		mixer->toggledSolo();
 
 		group->muteModel()->setValue(false);
 		QCOMPARE(renderFeed(mixer, kMembers, kPeriods), open);
@@ -677,8 +677,7 @@ private slots:
 		QVERIFY(group != nullptr);
 		mixer->toggledSolo(); // normalise the mixer's single-solo latch
 
-		mixer->mixerChannel(4)->m_soloModel.setValue(true);
-		mixer->toggledSolo();
+		mixer->mixerChannel(4)->m_soloModel.setValue(true);  // applied by the mixer itself (0.5.0 L08)
 
 		for (int member : kMembers)
 		{

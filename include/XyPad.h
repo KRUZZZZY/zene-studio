@@ -41,6 +41,7 @@ namespace lmms::gui
 //! The square: a dot at (x, y) in 0..1 (y up); a press or a drag moves it and reports the new place.
 class LMMS_EXPORT XyPadArea : public QWidget
 {
+	Q_OBJECT
 public:
 	explicit XyPadArea(QWidget* parent = nullptr);
 	void setPoint(QPointF point);
@@ -63,6 +64,7 @@ private:
  *  path, and every bound parameter follows). */
 class LMMS_EXPORT XyPadDialog : public QDialog
 {
+	Q_OBJECT
 public:
 	XyPadDialog(const QString& channel, QWidget* parent = nullptr);
 

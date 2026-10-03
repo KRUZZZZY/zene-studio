@@ -169,6 +169,8 @@ private:
 	//! says EOF is already in hand, so the client can be dropped at once.
 	void refuseOverCapLine(int fd, bool closed);
 	void dropClient(int fd);
+	//! BUGS 11.31: at the client cap, drop the peers whose sockets report they have hung up.
+	void reapHungUpClients();
 	//! Hand one whole reply line to \p fd: write what the socket takes now and
 	//! queue the tail for onClientWritable. Returns false ONLY when the peer is
 	//! gone (a real write error) - a full socket buffer is not an error, and a

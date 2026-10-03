@@ -65,14 +65,14 @@ SampleClip* sampleClipOf(const QJsonObject& args, ClipRef* ref, ControlResult* e
 	return clip;
 }
 
-//! Copy source frames [@a from, @a to) of @a clip into a fresh buffer and swap it in, one checkpoint.
-void swapIn(SampleClip* clip, f_cnt_t from, f_cnt_t to)
+//! Copy source frames [@a from, @a to) of @a clip into a fresh buffer and swap it in, playing @a window of it, one checkpoint.
+void swapIn(SampleClip* clip, f_cnt_t from, f_cnt_t to, const SampleWindow& window)
 {
 	const SampleFrame* data = clip->sample().data();
 	std::vector<SampleFrame> frames(data + from, data + to);
 	const int rate = static_cast<int>(clip->sample().sampleRate());
 	clip->addJournalCheckPoint();
-	clip->setSampleBuffer(std::make_shared<SampleBuffer>(std::move(frames), rate));
+	clip->replaceSample(std::make_shared<SampleBuffer>(std::move(frames), rate), window);  // the window written by its owner
 	Engine::getSong()->setModified();
 }
 
@@ -85,8 +85,7 @@ ControlResult crop(const QJsonObject& args)
 	const SampleWindow window = clip->sampleWindow();
 	const auto size = static_cast<f_cnt_t>(clip->sample().sampleSize());
 	if (window.sourceIn <= 0 && window.sourceOut >= size) { return ControlResult::failure(ControlErrorKind::Refused, QStringLiteral("the clip plays its whole source: nothing to crop")); }
-	swapIn(clip, window.sourceIn, window.sourceOut);
-	clip->setSampleWindow(SampleWindow::full(window.sourceOut - window.sourceIn));
+	swapIn(clip, window.sourceIn, window.sourceOut, SampleWindow::full(window.sourceOut - window.sourceIn));
 	return ControlResult::success({{QStringLiteral("clip"), clipId(ref.id)}, {QStringLiteral("frames"), static_cast<double>(window.sourceOut - window.sourceIn)},
 		{QStringLiteral("discarded"), static_cast<double>(size - (window.sourceOut - window.sourceIn))}});
 }
@@ -98,8 +97,7 @@ ControlResult makeUnique(const QJsonObject& args)
 	SampleClip* clip = sampleClipOf(args, &ref, &error);
 	if (clip == nullptr) { return error; }
 	const SampleWindow window = clip->sampleWindow();
-	swapIn(clip, 0, static_cast<f_cnt_t>(clip->sample().sampleSize()));
-	clip->setSampleWindow(window);
+	swapIn(clip, 0, static_cast<f_cnt_t>(clip->sample().sampleSize()), window);
 	return ControlResult::success({{QStringLiteral("clip"), clipId(ref.id)}, {QStringLiteral("frames"), static_cast<double>(clip->sample().sampleSize())}});
 }
 

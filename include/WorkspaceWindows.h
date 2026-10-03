@@ -43,6 +43,7 @@ namespace lmms::gui
  *  section (app.help) or the command's reference entry. Offline, like app.ask. */
 class LMMS_EXPORT AssistantDialog : public QDialog
 {
+	Q_OBJECT
 public:
 	explicit AssistantDialog(QWidget* parent = nullptr);
 	//! Ask @a question and show the answers; how many there are.
@@ -58,6 +59,7 @@ private:
  *  and the ones before. */
 class LMMS_EXPORT WhatsNewDialog : public QDialog
 {
+	Q_OBJECT
 public:
 	explicit WhatsNewDialog(const QJsonObject& whatsNew, QWidget* parent = nullptr);
 	QString notesText() const;
@@ -71,6 +73,7 @@ private:
  *  from transport.get_state. A display: it changes nothing. */
 class LMMS_EXPORT LargeClock : public QDialog
 {
+	Q_OBJECT
 public:
 	explicit LargeClock(QWidget* parent = nullptr);
 	//! Re-read the position and redraw; what it shows.
@@ -87,6 +90,7 @@ private:
  *  (tuner.set). Opening it listens to the input when the tuner was off; closing it switches it off. */
 class LMMS_EXPORT TunerWindow : public QDialog
 {
+	Q_OBJECT
 public:
 	explicit TunerWindow(QWidget* parent = nullptr);
 	~TunerWindow() override;

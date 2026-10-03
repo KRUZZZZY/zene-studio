@@ -191,7 +191,7 @@ ControlResult splitPasses(const QJsonObject& args)
 	for (std::size_t k = 0; k < pieces.size(); ++k)
 	{
 		lane = model.addLane(QStringLiteral("Pass %1").arg(k + 1));
-		pieces[k]->setLaneIndex(lane);
+		assignTakeLane(pieces[k], lane);  // the lane tag's one writer (ControlCommandsComp.cpp)
 		pieces[k]->movePosition(TimePos(begin));
 	}
 	model.selectSegment(static_cast<int>(begin), static_cast<int>(begin + loop), lane, 0);

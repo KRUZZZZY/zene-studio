@@ -33,8 +33,11 @@
 #include <QDomDocument>
 #include <QJsonArray>
 
+#include "ControlMixerSupport.h"
 #include "ControlRegistry.h"
 #include "ControlVocabulary.h"
+#include "AudioDevice.h"
+#include "AudioEngine.h"
 #include "Engine.h"
 #include "Mixer.h"
 #include "MixerSendPan.h"
@@ -69,6 +72,7 @@ private slots:
 	void initTestCase()
 	{
 		Engine::init(true);
+		Engine::audioEngine()->audioDev()->stopProcessing();  // the test reads and writes channel buffers itself
 		Mixer* mixer = Engine::mixer();
 		while (mixer->numChannels() <= 4) { mixer->createChannel(); }
 		ControlRegistry::setReady(true);
@@ -94,7 +98,8 @@ private slots:
 		const ControlResult panned = run(QStringLiteral("mixer.send_pan"), {{QStringLiteral("channel"), ch(1)}, {QStringLiteral("to"), ch(3)},
 			{QStringLiteral("pan"), -1.0}});
 		QVERIFY2(panned.ok, qPrintable(panned.errorMessage));
-		MixerRoute* route = Engine::mixer()->mixerChannel(1)->m_sends.front();
+		MixerRoute* route = control::findMixerRoute(1, 3);  // not front(): every channel already sends to the master
+		QVERIFY(route != nullptr);
 		QCOMPARE(route->pan()->value(), -1.f);
 		// What the receiver gets: the left side only, scaled by the send.
 		std::vector<SampleFrame> dst(4, SampleFrame(0.f, 0.f));
@@ -111,18 +116,21 @@ private slots:
 
 	void sendsFromManyChannelsAreOneStep()
 	{
+		// Counted from what each channel already sends (the master route, any a test left).
+		const std::size_t one = Engine::mixer()->mixerChannel(1)->m_sends.size();
+		const std::size_t two = Engine::mixer()->mixerChannel(2)->m_sends.size();
 		const ControlResult made = run(QStringLiteral("mixer.send_many"), {{QStringLiteral("channels"), QJsonArray{ch(1), ch(2)}},
 			{QStringLiteral("to"), ch(4)}, {QStringLiteral("amount"), 0.5}});
 		QVERIFY2(made.ok, qPrintable(made.errorMessage));
 		QCOMPARE(made.result.value(QStringLiteral("made")).toInt(), 2);
-		QCOMPARE(Engine::mixer()->mixerChannel(1)->m_sends.size(), std::size_t{1});
-		QCOMPARE(Engine::mixer()->mixerChannel(2)->m_sends.size(), std::size_t{1});
+		QCOMPARE(Engine::mixer()->mixerChannel(1)->m_sends.size(), one + 1);
+		QCOMPARE(Engine::mixer()->mixerChannel(2)->m_sends.size(), two + 1);
 		QVERIFY(run(QStringLiteral("control.undo")).ok);  // one undo takes both away
-		QVERIFY(Engine::mixer()->mixerChannel(1)->m_sends.empty());
-		QVERIFY(Engine::mixer()->mixerChannel(2)->m_sends.empty());
+		QCOMPARE(Engine::mixer()->mixerChannel(1)->m_sends.size(), one);
+		QCOMPARE(Engine::mixer()->mixerChannel(2)->m_sends.size(), two);
 		QCOMPARE(run(QStringLiteral("mixer.send_many"), {{QStringLiteral("channels"), QJsonArray{ch(1), QStringLiteral("ch-9999")}},
 			{QStringLiteral("to"), ch(4)}}).errorKind, ControlErrorKind::NotFound);
-		QVERIFY(Engine::mixer()->mixerChannel(1)->m_sends.empty());  // nothing written
+		QCOMPARE(Engine::mixer()->mixerChannel(1)->m_sends.size(), one);  // nothing written
 	}
 
 	void nestedGroupsMultiplyAndRefuseLoops()
@@ -175,6 +183,7 @@ private slots:
 		saved->setLinks(true, false, true);
 		QDomDocument doc;
 		QDomElement root = doc.createElement(QStringLiteral("root"));
+		doc.appendChild(root);  // in the document, so its text holds what was saved
 		const QDomElement element = Engine::mixer()->saveState(doc, root);
 		QVERIFY(doc.toString().contains(QStringLiteral("links=\"gs\"")));
 		saved->setLinks(true, true, true);

@@ -57,19 +57,11 @@ std::optional<double> ask(const QString& title, const QString& label, double val
 	return ok ? std::optional<double>(chosen) : std::nullopt;
 }
 
-//! The scope for @a clip: "selection" when the piano roll has notes selected - which it hands to
-//! the command surface first (note.select), whose own selection that scope reads - else "clip".
+//! The scope for @a clip: "selection" when the piano roll has notes selected (handed to the command
+//! surface first), else "clip".
 QString scopeOf(const MidiClip* clip)
 {
-	QJsonArray selected;
-	for (const Note* note : clip->notes())
-	{
-		if (note->selected()) { selected.append(control::noteIdOf(note)); }
-	}
-	if (selected.isEmpty()) { return QStringLiteral("clip"); }
-	ControlRegistry::instance()->invoke(QStringLiteral("note.select"),
-		{{QStringLiteral("clip"), control::clipIdOf(clip)}, {QStringLiteral("notes"), selected}});
-	return QStringLiteral("selection");
+	return handOverNoteSelection(clip) ? QStringLiteral("selection") : QStringLiteral("clip");
 }
 
 //! One item: asks with @a title/@a label, then runs @a command with the clip, the scope and
@@ -97,6 +89,19 @@ QAction* transform(const QString& text, const QString& command, const QString& a
 }
 
 } // namespace
+
+bool handOverNoteSelection(const MidiClip* clip)
+{
+	QJsonArray selected;
+	for (const Note* note : clip->notes())
+	{
+		if (note->selected()) { selected.append(control::noteIdOf(note)); }
+	}
+	if (selected.isEmpty()) { return false; }
+	ControlRegistry::instance()->invoke(QStringLiteral("note.select"),
+		{{QStringLiteral("clip"), control::clipIdOf(clip)}, {QStringLiteral("notes"), selected}});
+	return true;
+}
 
 void setNoteTransformPrompt(NoteTransformPrompt replacement)
 {

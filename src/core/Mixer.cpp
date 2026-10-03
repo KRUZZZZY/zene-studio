@@ -2281,7 +2281,7 @@ void Mixer::saveSettings( QDomDocument & _doc, QDomElement & _this )
 		// to "no groups" in an older LMMS.
 		groupDom.setAttribute("locked", group->isPhaseLocked() ? 1 : 0);
 		// 0.5.0 L09 (MX-070 / MX-071): nesting and the chosen links, written only when not the default.
-		if (group->parentId() != 0) { groupDom.setAttribute("parent", group->parentId()); }
+		if (group->parentId() != VcaGroup::NoParent) { groupDom.setAttribute("parent", group->parentId()); }
 		if (!group->linksGain() || !group->linksMute() || !group->linksSolo())
 		{
 			groupDom.setAttribute("links", QStringLiteral("%1%2%3").arg(group->linksGain() ? "g" : "").arg(group->linksMute() ? "m" : "")
@@ -2484,7 +2484,7 @@ void Mixer::loadSettings( const QDomElement & _this )
 		// with a default of 1, so a <vcagroup> written before the edit half
 		// existed loads as the locked group it was.
 		group->setPhaseLocked( groupDom.attribute( "locked", "1" ) != QString( "0" ) );
-		group->setParentId( groupDom.attribute( "parent", "0" ).toInt() );
+		group->setParentId( groupDom.attribute( "parent", QString::number( VcaGroup::NoParent ) ).toInt() );
 		const QString links = groupDom.attribute( "links", "gms" );
 		group->setLinks( links.contains( 'g' ), links.contains( 'm' ), links.contains( 's' ) );
 		group->setSuspended( groupDom.attribute( "suspended", "0" ).toInt() != 0 );

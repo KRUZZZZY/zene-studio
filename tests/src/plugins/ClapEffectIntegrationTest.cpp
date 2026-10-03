@@ -452,7 +452,12 @@ void lmms::ClapEffectIntegrationTest::testTheEffectsOwnEditorOpensInItsOwnWindow
 		if (top->isVisible() && top->windowTitle() == effect->displayName()) { window = top; }
 	}
 	QVERIFY2(window != nullptr, "no window titled after the effect is showing");
-	QCOMPARE(window->size(), QSize(400, 300));
+	// The plug-in's 400x300 view with the host header (0.5.0 MX-091) above it; the header's
+	// buttons may make the window wider than the view, never narrower.
+	const auto* header = window->findChild<QWidget*>(QStringLiteral("pluginHostHeader"));
+	QVERIFY(header != nullptr);
+	QCOMPARE(window->height(), 300 + header->sizeHint().height());
+	QVERIFY(window->width() >= 400);
 	effect->closeNativeEditor();
 	QVERIFY(!effect->nativeEditorOpen());
 }

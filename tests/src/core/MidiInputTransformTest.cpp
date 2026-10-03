@@ -185,12 +185,14 @@ private slots:
 		QDomDocument doc;
 		QDomElement root = doc.createElement(QStringLiteral("root"));
 		const QDomElement saved = track->saveState(doc, root);
-		QVERIFY(saved.hasAttribute(QStringLiteral("inputtransform")));
+		// The attribute is the instrument track's own (saveTrackSpecificSettings writes the <instrumenttrack> child).
+		QVERIFY(saved.firstChildElement(QStringLiteral("instrumenttrack")).hasAttribute(QStringLiteral("inputtransform")));
 		auto* other = dynamic_cast<InstrumentTrack*>(Track::create(Track::Type::Instrument, song));
 		other->restoreState(saved);
 		QCOMPARE(other->inputTransform().toJson().value(QStringLiteral("fixed_velocity")).toInt(), 80);
 		QVERIFY(run(QStringLiteral("track.input_transform_set"), {{QStringLiteral("track"), id}, {QStringLiteral("reset"), true}}).ok);
-		QVERIFY(!track->saveState(doc, root).hasAttribute(QStringLiteral("inputtransform")));  // the identity is not written
+		QVERIFY(!track->saveState(doc, root).firstChildElement(QStringLiteral("instrumenttrack"))
+			.hasAttribute(QStringLiteral("inputtransform")));  // the identity is not written
 	}
 
 	void liveInputPlaysTheTransformedNote()

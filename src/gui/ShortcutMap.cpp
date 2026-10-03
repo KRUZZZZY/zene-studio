@@ -58,6 +58,14 @@ QString idOf(const PaletteEntry& entry)
 	return entry.path.isEmpty() ? label : entry.path + QStringLiteral(" ▸ ") + label;
 }
 
+//! @a entry's action gets its override from @a chosen, or its default back.
+void applyTo(const PaletteEntry& entry, const QJsonObject& chosen)
+{
+	const QString id = idOf(entry);
+	const QString keys = chosen.contains(id) ? chosen.value(id).toString() : defaultOf(entry.action);
+	entry.action->setShortcut(QKeySequence::fromString(keys, QKeySequence::PortableText));
+}
+
 } // namespace
 
 QJsonObject overrides()
@@ -78,6 +86,9 @@ QList<Binding> bindings(QMenuBar* bar)
 		binding.action = entry.action;
 		binding.defaults = defaultOf(entry.action);
 		binding.overridden = chosen.contains(binding.id);
+		// The walk asked each menu to fill itself, and one that builds its items on show (New from template) made
+		// them anew without their keys: give them back before reading (a listed binding is the live one).
+		applyTo(entry, chosen);
 		binding.keys = entry.action->shortcut().toString(QKeySequence::PortableText);
 		out.append(binding);
 	}
@@ -89,10 +100,7 @@ void apply(QMenuBar* bar)
 	const QJsonObject chosen = overrides();
 	for (const PaletteEntry& entry : paletteMenuEntries(bar))
 	{
-		if (entry.action.isNull()) { continue; }
-		const QString id = idOf(entry);
-		const QString keys = chosen.contains(id) ? chosen.value(id).toString() : defaultOf(entry.action);
-		entry.action->setShortcut(QKeySequence::fromString(keys, QKeySequence::PortableText));
+		if (!entry.action.isNull()) { applyTo(entry, chosen); }
 	}
 }
 

@@ -209,7 +209,10 @@ private slots:
 		const ControlResult notes = run(QStringLiteral("app.whats_new"));
 		QVERIFY2(notes.ok, qPrintable(notes.errorMessage));
 		WhatsNewDialog dialog(notes.result);
-		QVERIFY(dialog.notesText().contains(QStringLiteral("0.5.0")));
+		// This version's notes, as window.whats_new promises - whichever version the build says it is.
+		const QString title = notes.result.value(QStringLiteral("notes")).toObject().value(QStringLiteral("title")).toString();
+		QVERIFY(!title.isEmpty());
+		QVERIFY2(dialog.notesText().contains(title), qPrintable(dialog.notesText().left(200)));
 	}
 
 	void theClockShowsThePosition()

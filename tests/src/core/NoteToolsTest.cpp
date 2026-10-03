@@ -124,7 +124,8 @@ private slots:
 		QCOMPARE(clip->notes().size(), std::size_t{6});
 		QVERIFY(run(QStringLiteral("control.undo")).ok);
 		QCOMPARE(run(QStringLiteral("note.transpose_in_key"), self(clip)).errorKind, ControlErrorKind::Refused);  // no scale yet
-		QVERIFY(run(QStringLiteral("scale.set"), {{QStringLiteral("root"), QStringLiteral("C")}, {QStringLiteral("scale"), QStringLiteral("Major")}}).ok);
+		QVERIFY(run(QStringLiteral("scale.root_set"), {{QStringLiteral("root"), QStringLiteral("C")}}).ok);
+		QVERIFY(run(QStringLiteral("scale.set"), {{QStringLiteral("scale"), QStringLiteral("Major")}}).ok);
 		QVERIFY(run(QStringLiteral("note.transpose_in_key"), self(clip)).ok);
 		QCOMPARE(keysOf(clip), (QList<int>{62, 64}));  // C -> D, D -> E: one degree each
 	}
@@ -188,7 +189,8 @@ private slots:
 		QCOMPARE(clip->startPosition().getTicks(), tick_t{192});
 		QVERIFY(run(QStringLiteral("scale.define"), {{QStringLiteral("name"), QStringLiteral("Mine")},
 			{QStringLiteral("degrees"), QJsonArray{3, 7, 10}}}).ok);
-		QVERIFY(run(QStringLiteral("scale.set"), {{QStringLiteral("root"), QStringLiteral("D")}, {QStringLiteral("scale"), QStringLiteral("Mine")}}).ok);
+		QVERIFY(run(QStringLiteral("scale.root_set"), {{QStringLiteral("root"), QStringLiteral("D")}}).ok);
+		QVERIFY(run(QStringLiteral("scale.set"), {{QStringLiteral("scale"), QStringLiteral("Mine")}}).ok);
 		QVERIFY(run(QStringLiteral("scale.define"), {{QStringLiteral("name"), QStringLiteral("Mine")}}).ok);  // removed again
 		QCOMPARE(run(QStringLiteral("scale.define"), {{QStringLiteral("name"), QStringLiteral("Bad")},
 			{QStringLiteral("degrees"), QJsonArray{14}}}).errorKind, ControlErrorKind::InvalidArgs);

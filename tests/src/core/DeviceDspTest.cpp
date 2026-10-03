@@ -45,6 +45,7 @@
 
 #include "AllocationProbe.h"
 #include "AudioBus.h"
+#include "AudioDevice.h"
 #include "AudioEngine.h"
 #include "ControlRegistry.h"
 #include "ControlVocabulary.h"
@@ -95,12 +96,10 @@ void set(const QString& target, const QString& plugin, const char* name, double 
 
 double parameterValue(const QString& target, const QString& plugin, const QString& name)
 {
-	for (const QJsonValue& value : run(QStringLiteral("plugin.param_get"), {{QStringLiteral("target"), target},
-		{QStringLiteral("plugin"), plugin}}).result.value(QStringLiteral("parameters")).toArray())
-	{
-		if (value.toObject().value(QStringLiteral("name")).toString() == name) { return value.toObject().value(QStringLiteral("value")).toDouble(); }
-	}
-	return -1e9;
+	// plugin.param_get reads ONE parameter, by 'name' (or 'index').
+	const ControlResult read = run(QStringLiteral("plugin.param_get"), {{QStringLiteral("target"), target},
+		{QStringLiteral("plugin"), plugin}, {QStringLiteral("name"), name}});
+	return read.ok ? read.result.value(QStringLiteral("parameter")).toObject().value(QStringLiteral("value")).toDouble() : -1e9;
 }
 
 using Signal = std::function<SampleFrame(long frame)>;
@@ -188,6 +187,7 @@ private slots:
 		qputenv("LMMS_PLUGIN_DIR", LMMS_TEST_PLUGIN_DIR);
 #endif
 		Engine::init(true);
+		Engine::audioEngine()->audioDev()->stopProcessing();  // the test reads and writes channel buffers itself
 		while (Engine::mixer()->numChannels() <= 3) { Engine::mixer()->createChannel(); }
 		block().assign(Engine::audioEngine()->framesPerPeriod(), SampleFrame());
 		ControlRegistry::setReady(true);

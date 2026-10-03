@@ -38,6 +38,8 @@
 
 #include "ControlRegistry.h"
 #include "ControlVocabulary.h"
+#include "AudioDevice.h"
+#include "AudioEngine.h"
 #include "Engine.h"
 #include "Mixer.h"
 #include "MixerStrip.h"
@@ -63,6 +65,19 @@ void fill(int index, float left, float right, int frames = 8)
 	for (int f = 0; f < frames; ++f) { channel(index)->m_buffer[f] = SampleFrame(left, right); }
 }
 
+//! Let @a c's pan models run out their change ramp, as the period after a change does, so a stage reads the value
+//! the test set (a model's valueBuffer() ramps from the old value to the new across the first period).
+void settle(MixerChannel* c)
+{
+	for (int period = 0; period < 2; ++period)
+	{
+		AutomatableModel::incrementPeriodCounter();
+		c->m_panModel.valueBuffer();
+		c->m_panRightModel.valueBuffer();
+	}
+	AutomatableModel::incrementPeriodCounter();
+}
+
 } // namespace
 
 class MixerStripTest : public QObject
@@ -73,6 +88,7 @@ private slots:
 	void initTestCase()
 	{
 		Engine::init(true);
+		Engine::audioEngine()->audioDev()->stopProcessing();  // the test reads and writes channel buffers itself
 		while (Engine::mixer()->numChannels() <= 3) { Engine::mixer()->createChannel(); }
 		ControlRegistry::setReady(true);
 	}
@@ -121,11 +137,13 @@ private slots:
 		QCOMPARE(channel(2)->m_panModel.value(), -1.f);  // dual from centred pans: hard left and hard right
 		QCOMPARE(channel(2)->m_panRightModel.value(), 1.f);
 		fill(2, 0.6f, 0.2f);
+		settle(channel(2));
 		QVERIFY(mixerstrip::applyPanMode(*channel(2), 8));
 		QVERIFY(std::abs(channel(2)->m_buffer[0][0] - 0.6f) < 1e-5f && std::abs(channel(2)->m_buffer[0][1] - 0.2f) < 1e-5f);
 		QVERIFY(run(QStringLiteral("mixer.set_strip"), {{QStringLiteral("channel"), ch(2)}, {QStringLiteral("pan_mode"), QStringLiteral("width")},
 			{QStringLiteral("width"), 0.0}, {QStringLiteral("pan"), 0.0}}).ok);
 		fill(2, 0.6f, 0.2f);
+		settle(channel(2));
 		mixerstrip::applyPanMode(*channel(2), 8);
 		QVERIFY(std::abs(channel(2)->m_buffer[0][0] - 0.4f) < 1e-5f && std::abs(channel(2)->m_buffer[0][1] - 0.4f) < 1e-5f);  // width 0: mono
 		QCOMPARE(run(QStringLiteral("mixer.set_strip"), {{QStringLiteral("channel"), ch(2)}, {QStringLiteral("width"), 3.0}}).errorKind,
@@ -151,12 +169,14 @@ private slots:
 	{
 		QDomDocument doc;
 		QDomElement root = doc.createElement(QStringLiteral("root"));
+		doc.appendChild(root);  // in the document, so its text holds what was saved
 		Engine::mixer()->saveState(doc, root);
 		QVERIFY(!doc.toString().contains(QStringLiteral("solosafe")));
 		QVERIFY(run(QStringLiteral("mixer.set_strip"), {{QStringLiteral("channel"), ch(3)}, {QStringLiteral("solo_safe"), true},
 			{QStringLiteral("note"), QStringLiteral("lead vox")}}).ok);
 		QDomDocument second;
 		QDomElement root2 = second.createElement(QStringLiteral("root"));
+		second.appendChild(root2);
 		const QDomElement saved = Engine::mixer()->saveState(second, root2);
 		QVERIFY(second.toString().contains(QStringLiteral("lead vox")));
 		channel(3)->m_note.clear();
@@ -187,6 +207,10 @@ private slots:
 		QCOMPARE(run(QStringLiteral("mixer.solo_mode")).result.value(QStringLiteral("mode")).toString(), QStringLiteral("exclusive"));
 		QVERIFY(run(QStringLiteral("mixer.solo_mode"), {{QStringLiteral("mode"), QStringLiteral("additive")}}).ok);
 		QVERIFY(mixerstrip::additiveSolo());
+		QVERIFY(run(QStringLiteral("control.undo")).ok);  // the mode change is one undo step
+		QVERIFY(!mixerstrip::additiveSolo());
+		QVERIFY(run(QStringLiteral("control.redo")).ok);
+		QVERIFY(mixerstrip::additiveSolo());
 		channel(1)->m_soloModel.setValue(true);
 		channel(2)->m_soloModel.setValue(true);
 		QVERIFY(channel(1)->m_soloModel.value());  // additive: the first solo stays on
@@ -194,8 +218,7 @@ private slots:
 		QVERIFY(channel(3)->m_muteModel.value());   // the channel nobody soloed is muted
 		run(QStringLiteral("mixer.set_many"), {{QStringLiteral("all"), true}, {QStringLiteral("soloed"), false}});
 		QVERIFY(!channel(3)->m_muteModel.value());  // the last solo off unmutes everyone
-		QVERIFY(run(QStringLiteral("control.undo")).ok);  // the clear
-		QVERIFY(run(QStringLiteral("control.undo")).ok);  // the mode change
+		QVERIFY(run(QStringLiteral("mixer.solo_mode"), {{QStringLiteral("mode"), QStringLiteral("exclusive")}}).ok);
 		QVERIFY(!mixerstrip::additiveSolo());
 		QCOMPARE(run(QStringLiteral("mixer.solo_mode"), {{QStringLiteral("mode"), QStringLiteral("loud")}}).errorKind,
 			ControlErrorKind::InvalidArgs);

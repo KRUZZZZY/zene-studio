@@ -28,11 +28,11 @@ What it drives, in order:
                                            NO live-mode claim, because HTDemucs
                                            cannot run on an audio block;
   2. the refusals                          a missing `source`, a relative path,
-                                           a file that is not there, a 48 kHz
-                                           file (no resampler - SPEC-stem-split
-                                           OQ-1) and a non-audio file are each
-                                           typed, and NO job is created by any
-                                           of them;
+                                           a file that is not there and a
+                                           non-audio file are each typed, and NO
+                                           job is created by any of them; a 48 kHz
+                                           file is ACCEPTED, resampled to 44100 Hz
+                                           (0.5.0 E27), and its job cancelled;
   3. `stem.job_start` + a ping             THE ASYNCHRONY: the id comes back
                                            immediately, `stem.job_status` shows
                                            the job running, and `control.ping`

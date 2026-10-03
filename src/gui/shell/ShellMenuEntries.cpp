@@ -128,7 +128,12 @@ void trackMidiOutEntries(QMenu* menu, Track* track, const QJsonObject& self)
 		const QJsonObject args = with(self, "port", port);
 		addCommandAction(out, port, QStringLiteral("track.midi_out"), [args] { return CommandCall{QStringLiteral("track.midi_out"), args, {}, QString(), false}; });
 	}
-	if (out->isEmpty()) { out->addAction(tr("No MIDI output ports"))->setEnabled(false); }
+	if (out->isEmpty())
+	{
+		QAction* none = out->addAction(tr("No MIDI output ports"));
+		none->setProperty("controlCommand", QStringLiteral("track.midi_out"));  // what it would run, as every entry declares
+		none->setEnabled(false);
+	}
 	out->addSeparator();
 	add(out, "Channel...", "track.midi_out", self, true, {{QStringLiteral("channel"), 1}});
 	add(out, "Stop Sending MIDI Out", "track.midi_out", with(self, "enabled", false), false);

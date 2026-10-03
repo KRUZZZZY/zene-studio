@@ -130,6 +130,9 @@ public:
 	int indexAt(tick_t pos) const;
 	//! The event at \a pos, or nullptr.
 	const ChordEvent* findAt(tick_t pos) const;
+	//! 0.5.0: the event SOUNDING at \a pos - the latest one starting at or before it whose effectiveLength (with
+	//! DefaultEventTicks as the fallback) reaches past it - or nullptr where the track is silent.
+	const ChordEvent* soundingAt(tick_t pos) const;
 	//! The event at \a index; the caller has proved the index.
 	const ChordEvent& at(int index) const { return m_events[static_cast<std::size_t>(index)]; }
 	//! Every event, in ascending position order.

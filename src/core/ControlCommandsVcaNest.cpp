@@ -48,7 +48,7 @@ namespace
 //! A group's nesting and links as they stand, to put back.
 struct GroupLinks
 {
-	int parent = 0;
+	int parent = VcaGroup::NoParent;
 	bool gain = true;
 	bool mute = true;
 	bool solo = true;
@@ -80,7 +80,7 @@ ControlResult change(VcaGroup* group, const GroupLinks& next, const QString& com
 	apply(id, next);
 	Engine::getSong()->setModified();
 	QJsonObject result = groupState(group);
-	result.insert(QStringLiteral("parent"), next.parent != 0 ? vcaGroupId(next.parent) : QString());
+	result.insert(QStringLiteral("parent"), next.parent != VcaGroup::NoParent ? vcaGroupId(next.parent) : QString());
 	result.insert(QStringLiteral("links"), QJsonObject{{QStringLiteral("gain"), next.gain}, {QStringLiteral("mute"), next.mute},
 		{QStringLiteral("solo"), next.solo}, {QStringLiteral("suspended"), next.suspended}});
 	result.insert(QStringLiteral("__transaction"), control::transactionPayload({{QStringLiteral("group"), vcaGroupId(id)}}, command, {},
@@ -94,7 +94,7 @@ ControlResult setParent(const QJsonObject& args)
 	VcaGroup* group = resolveGroup(args, &error);
 	if (group == nullptr) { return error; }
 	GroupLinks next = linksOf(group);
-	next.parent = 0;
+	next.parent = VcaGroup::NoParent;
 	const QString parentId = args.value(QStringLiteral("parent")).toString();
 	if (!parentId.isEmpty())
 	{

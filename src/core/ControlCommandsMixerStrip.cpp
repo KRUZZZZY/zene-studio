@@ -61,6 +61,10 @@ struct StripFlags
 	int id = 0;
 	bool muted = false;
 	bool soloed = false;
+	//! Which of the two a write sets: a call that names only 'soloed' must not write back a mute taken while a solo
+	//! held the channel muted (it re-muted it after the solo let go). An undo restores both.
+	bool writeMute = true;
+	bool writeSolo = true;
 };
 
 MixerChannel* channelById(int id)
@@ -79,8 +83,8 @@ void restoreFlags(const QVector<StripFlags>& flags)
 	{
 		if (MixerChannel* channel = channelById(flag.id))
 		{
-			channel->m_muteModel.setValue(flag.muted);
-			channel->m_soloModel.setValue(flag.soloed);
+			if (flag.writeMute) { channel->m_muteModel.setValue(flag.muted); }
+			if (flag.writeSolo) { channel->m_soloModel.setValue(flag.soloed); }
 		}
 	}
 }
@@ -118,7 +122,8 @@ ControlResult setMany(const QJsonObject& args)
 	{
 		const StripFlags was{channel->id(), channel->m_muteModel.value(), channel->m_soloModel.value()};
 		before.append(was);
-		after.append({was.id, args.value(QStringLiteral("muted")).toBool(was.muted), args.value(QStringLiteral("soloed")).toBool(was.soloed)});
+		after.append({was.id, args.value(QStringLiteral("muted")).toBool(was.muted), args.value(QStringLiteral("soloed")).toBool(was.soloed),
+			args.contains(QStringLiteral("muted")), args.contains(QStringLiteral("soloed"))});
 	}
 	addUndoStep([before]() { restoreFlags(before); }, [after]() { restoreFlags(after); });
 	restoreFlags(after);

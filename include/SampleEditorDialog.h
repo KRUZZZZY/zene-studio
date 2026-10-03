@@ -45,6 +45,7 @@ namespace lmms::gui
 //! The waveform of a sample clip's whole source, with a selection dragged across it (source frames).
 class LMMS_EXPORT SampleSelectionView : public QWidget
 {
+	Q_OBJECT
 public:
 	explicit SampleSelectionView(QWidget* parent = nullptr);
 	void setClip(SampleClip* clip);
@@ -71,6 +72,7 @@ private:
  *  and the editor's are one path and one undo step each. */
 class LMMS_EXPORT SampleEditorDialog : public QDialog
 {
+	Q_OBJECT
 public:
 	SampleEditorDialog(SampleClip* clip, QWidget* parent = nullptr);
 

@@ -91,6 +91,15 @@ QString loadAnEffect(const QString& target)
 
 QJsonArray cards(const DevicePanel& panel) { return panel.describe().value(QStringLiteral("cards")).toArray(); }
 
+//! The @a T children that show: a rebuild hides the widgets it drops at once and deletes them later.
+template <class T>
+QList<T*> shownChildren(QWidget* parent)
+{
+	QList<T*> shown = parent->findChildren<T*>();
+	shown.removeIf([parent](const T* child) { return !child->isVisibleTo(parent); });
+	return shown;
+}
+
 template <class T>
 T* childNamed(QWidget* parent, const QString& accessibleName)
 {
@@ -206,6 +215,7 @@ private slots:
 	void theSectionMenusOfferTheW1Commands()
 	{
 		auto* instrument = Track::create(Track::Type::Instrument, Engine::getSong());
+		dynamic_cast<InstrumentTrack*>(instrument)->loadInstrument(QStringLiteral("tripleoscillator"));
 		auto* sample = Track::create(Track::Type::Sample, Engine::getSong());
 		Clip* midiClip = instrument->createClip(TimePos(0));
 		Clip* sampleClip = sample->createClip(TimePos(0));
@@ -286,6 +296,7 @@ private slots:
 	void theInspectorsNumericFieldsEditTheClipAndItsNotes()
 	{
 		auto* track = Track::create(Track::Type::Instrument, Engine::getSong());
+		dynamic_cast<InstrumentTrack*>(track)->loadInstrument(QStringLiteral("tripleoscillator"));
 		auto* clip = dynamic_cast<MidiClip*>(track->createClip(TimePos(0)));
 		Note* note = clip->addNote(Note(TimePos(48), TimePos(0), 60, 100), false);
 		note->setSelected(true);
@@ -388,7 +399,7 @@ private slots:
 		QCOMPARE(panel.describe().value(QStringLiteral("modulators")).toArray(), QJsonArray{modulator});
 
 		// The power button is plugin.bypass.
-		auto* deviceCard = panel.findChildren<DeviceCard*>().first();
+		auto* deviceCard = shownChildren<DeviceCard>(&panel).first();
 		Effect* effect = deviceCard->spec().effect;
 		auto* power = childNamed<QToolButton>(deviceCard, QStringLiteral("Switch %1 on or off").arg(deviceCard->spec().title));
 		QVERIFY(power != nullptr);
@@ -424,13 +435,13 @@ private slots:
 		ShellSelection::instance()->setChannel(channel);
 		panel.rebuild();
 		QCoreApplication::processEvents();
-		const QList<ChannelLevelMeter*> meters = panel.findChildren<ChannelLevelMeter*>();
+		const QList<ChannelLevelMeter*> meters = shownChildren<ChannelLevelMeter>(&panel);
 		QCOMPARE(meters.size(), 1);
 		QCOMPARE(meters.first()->channelId(), channel);
 		mixerChannel->m_rmsLeft.set(0.5f);
 		meters.first()->refresh();
 		QVERIFY(std::abs(meters.first()->levels().first + 6.0206f) < 0.05f);
-		DeviceCard* card = panel.findChildren<DeviceCard*>().first();
+		DeviceCard* card = shownChildren<DeviceCard>(&panel).first();
 		Effect* device = card->spec().effect;
 		QVERIFY(childNamed<QWidget>(card, QStringLiteral("Blend")) != nullptr);
 		auto* delta = childNamed<QToolButton>(card, QStringLiteral("Hear only what %1 changes").arg(card->spec().title));
@@ -445,7 +456,7 @@ private slots:
 		QVERIFY(device->deviceOptions().folded);
 		QCoreApplication::processEvents();
 		QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
-		DeviceCard* redrawn = panel.findChildren<DeviceCard*>().first();
+		DeviceCard* redrawn = shownChildren<DeviceCard>(&panel).first();
 		QVERIFY(childNamed<QWidget>(redrawn, QStringLiteral("Blend")) == nullptr);  // folded: the header only
 		QVERIFY(run(QStringLiteral("control.undo")).ok);
 		QVERIFY(!device->deviceOptions().folded);

@@ -1017,6 +1017,11 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 		# 0.5.0 L10 (W3): the device tools load the build's amplifier module.
 		OR LMMS_TEST_NAME STREQUAL "DeviceToolsTest"
 		OR LMMS_TEST_NAME STREQUAL "DeviceDspTest"
+		# 0.5.0: the note-playback tests play a real instrument (tripleoscillator) on their tracks.
+		OR LMMS_TEST_NAME STREQUAL "NotePlaybackTest"
+		OR LMMS_TEST_NAME STREQUAL "ClipTransposeTest"
+		OR LMMS_TEST_NAME STREQUAL "NoteEditingCommandsTest"
+		OR LMMS_TEST_NAME STREQUAL "AutomationLanesTest"
 		# 0.5.0 W3 engine: post-fader inserts and chain.receive load the build's amplifier and receiver modules.
 		OR LMMS_TEST_NAME STREQUAL "W3EngineTest")
 		set_target_properties(${LMMS_TEST_NAME} PROPERTIES ENABLE_EXPORTS ON)

@@ -127,6 +127,9 @@ private slots:
 		QVERIFY( scheduler.requestLaunch( 0, 0, LaunchMode::Trigger, LaunchQuantisation::Bar ) );
 		scheduler.processAudio( clock( 0 ), kFramesPerPeriod );
 		QVERIFY( scheduler.requestLaunch( 0, 1, LaunchMode::Trigger, LaunchQuantisation::Bar ) );
+		// The press is drained by the next period, which quantises it to the bar after THAT period (here: bar 1),
+		// as a running engine drains it within a period of the press.
+		scheduler.processAudio( clock( 10 ), kFramesPerPeriod );
 		scheduler.processAudio( clock( kTicksPerBar + 50 ), kFramesPerPeriod );
 		QCOMPARE( int( scheduler.playbackForColumn( 0 ).positionTicks ), 50 );
 	}

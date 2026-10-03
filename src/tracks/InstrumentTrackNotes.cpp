@@ -169,10 +169,13 @@ void InstrumentTrack::sendArticulation(int index, f_cnt_t offset)
 	}
 	if (articulation->keyswitch >= 0)
 	{
-		// The keyswitch is a play handle, which waits out a delay itself; one note, made once, re-keyed.
-		m_keyswitchNote.setKey(articulation->keyswitch);  // built with the track, not here (review W3-batchA #12)
+		// The keyswitch is a play handle, which waits out a delay itself.
+		// A note on the stack: no static (review W3-batchA #12) and no member - a Note member takes a project id
+		// for every track built, which shifted every track's id on load. Its id costs what every played note's
+		// handle copy already does (ProjectIds::allocate, no lock, no allocation).
+		const Note key(TimePos(1), TimePos(0), articulation->keyswitch);
 		Engine::audioEngine()->addPlayHandle(NotePlayHandleManager::acquire(this, offset,
-			static_cast<f_cnt_t>(Engine::framesPerTick()), m_keyswitchNote));
+			static_cast<f_cnt_t>(Engine::framesPerTick()), key));
 	}
 }
 

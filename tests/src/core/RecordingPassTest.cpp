@@ -149,7 +149,7 @@ private slots:
 		QVERIFY(Engine::getSong()->sessionModel().slot(1, 1).isEmpty());
 		QCOMPARE(Engine::patternStore()->numOfPatterns(), patternsBefore);
 		QCOMPARE(run(QStringLiteral("session.capture_to_slot"), {{QStringLiteral("track"), 9}, {QStringLiteral("scene"), 0}}).errorKind,
-			ControlErrorKind::NotFound);  // outside the grid
+			ControlErrorKind::InvalidArgs);  // outside the grid: gridContains' refusal, as every session command's
 		run(QStringLiteral("midi.retro_capture_arm"), {{QStringLiteral("armed"), false}});
 	}
 

@@ -163,6 +163,7 @@ private slots:
 		QVERIFY(std::abs(gainModel()->value() - 6.25f) < 1e-3f);  // 0.5^4 of 0..100
 		QDomDocument doc;
 		QDomElement rack = doc.createElement(QStringLiteral("rack"));
+		doc.appendChild(rack);  // in the document, so its text holds what was saved
 		macros.saveSettings(doc, rack);
 		QVERIFY(doc.toString().contains(QStringLiteral("curve=\"-1\"")));
 		RackMacros reloaded;

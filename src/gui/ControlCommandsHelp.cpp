@@ -29,6 +29,7 @@
  *    settings.set's. */
 
 #include <QJsonArray>
+#include <QWhatsThis>
 
 #include "Appearance.h"
 #include "ControlEdit.h"
@@ -49,6 +50,11 @@ namespace
 
 ControlResult help(const QJsonObject& args)
 {
+	if (args.value(QStringLiteral("whats_this")).toBool())
+	{
+		QWhatsThis::enterWhatsThisMode();  // 0.5.0 L14: the next click on a control shows its full description
+		return ControlResult::success({{QStringLiteral("whats_this"), true}});
+	}
 	gui::HelpCenter::showHelp(args.value(QStringLiteral("topic")).toString(), args.value(QStringLiteral("reference")).toBool());
 	return ControlResult::success({{QStringLiteral("open"), true}});
 }
@@ -106,8 +112,10 @@ void registerHelpCommands(ControlRegistry& registry)
 {
 	add(registry, "app.help", QStringLiteral("Open the manual inside the application - at 'topic' (window, arrange, notes, mix, "
 		"devices, record, launch, projects, agents, customise, access) - or, with 'reference', the command reference: every command with "
-		"its description and arguments, built from the registry. Interface state."),
-		objectSchema({{QStringLiteral("topic"), stringProperty()}, {QStringLiteral("reference"), booleanProperty()}}), false, true, help);
+		"its description and arguments, built from the registry - or, with 'whats_this', What's This? mode: the next click on a "
+		"control shows its full description. Interface state."),
+		objectSchema({{QStringLiteral("topic"), stringProperty()}, {QStringLiteral("reference"), booleanProperty()},
+			{QStringLiteral("whats_this"), booleanProperty()}}), false, true, help);
 	add(registry, "app.tours", QStringLiteral("The guided tours there are: each one's name, title and step count."),
 		objectSchema({}), false, false, tours);
 	add(registry, "app.tour", QStringLiteral("Start a guided tour ('name', as app.tours lists it): each step points at a part of the "

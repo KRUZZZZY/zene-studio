@@ -341,13 +341,18 @@ def check_include_paths(boundary, control_entries, control_source):
 
 
 def compile_probe(text, flags, cwd, name):
-    handle = tempfile.NamedTemporaryFile("w", suffix=".cpp", prefix=name + "-", delete=False)
-    handle.write(text)
-    handle.close()
+    # In a directory of its own: a quoted #include searches the probe's own directory first, so a stray header
+    # left in the shared temp directory (found 2026-10-03: a truncated ControlRegistry.h in /tmp) would be
+    # compiled instead of the tree's.
+    workdir = tempfile.mkdtemp(prefix="zene-api-probe-")
+    path = os.path.join(workdir, name + ".cpp")
+    with open(path, "w") as handle:
+        handle.write(text)
     try:
-        return run(flags + [handle.name], cwd=cwd)
+        return run(flags + [path], cwd=cwd)
     finally:
-        os.unlink(handle.name)
+        os.unlink(path)
+        os.rmdir(workdir)
 
 
 def probe_flags(boundary):

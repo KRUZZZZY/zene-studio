@@ -255,7 +255,7 @@ int targetSize()
 QString scaleMetrics(const QString& css, double factor)
 {
 	if (factor == 1.0) { return css; }
-	static const QRegularExpression declaration(QStringLiteral("((?:padding(?:-left|-right|-top|-bottom)?|min-height|min-width)\\s*:)([^;}]*)"));
+	static const QRegularExpression declaration(QStringLiteral("((?:padding(?:-left|-right|-top|-bottom)?|min-height|min-width)\\s*:)([^;\\x7d]*)"));  // \x7d: the closing brace, spelled out so brace checkers do not count it
 	QString out;
 	out.reserve(css.size());
 	int last = 0;

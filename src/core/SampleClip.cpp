@@ -161,6 +161,12 @@ void SampleClip::setSampleBuffer(std::shared_ptr<const SampleBuffer> sb)
 	Engine::getSong()->setModified();
 }
 
+void SampleClip::replaceSample(std::shared_ptr<const SampleBuffer> sb, const SampleWindow& window)
+{
+	setSampleBuffer(std::move(sb));
+	setSampleWindow(window);
+}
+
 void SampleClip::setSampleFile(const QString& sf)
 {
 	// Remove any prior offset in the clip

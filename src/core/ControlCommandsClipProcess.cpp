@@ -133,8 +133,7 @@ ControlResult process(const QJsonObject& args)
 	const SampleWindow kept = SampleWindow::clamped(static_cast<f_cnt_t>(std::llround(static_cast<double>(window.sourceIn) * scale)),
 		static_cast<f_cnt_t>(std::llround(static_cast<double>(window.sourceOut) * scale)), frames);
 	clip->addJournalCheckPoint();
-	clip->setSampleBuffer(std::make_shared<SampleBuffer>(std::move(audio), static_cast<int>(rate)));
-	clip->setSampleWindow(kept);
+	clip->replaceSample(std::make_shared<SampleBuffer>(std::move(audio), static_cast<int>(rate)), kept);
 	Engine::getSong()->setModified();
 	return ControlResult::success({{QStringLiteral("clip"), clipId(ref.id)}, {QStringLiteral("from"), from.id},
 		{QStringLiteral("devices"), static_cast<int>(scratch.effects().size())}, {QStringLiteral("frames"), static_cast<double>(frames)}});

@@ -376,7 +376,8 @@ bool CommandForm::collect(QJsonObject* args, QString* error) const
 	QJsonObject out = m_call.fixed;
 	for (const Field& field : m_fields)
 	{
-		QJsonValue value;
+		// Undefined until a field is read: a default QJsonValue is Null, which sent every empty optional field as null.
+		QJsonValue value(QJsonValue::Undefined);
 		if (!readField(field, &value, error)) { return false; }
 		if (!value.isUndefined()) { out.insert(field.key, value); }
 	}

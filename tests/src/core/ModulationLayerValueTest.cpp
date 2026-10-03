@@ -159,7 +159,7 @@ private slots:
 		ModulatorSource parsed;
 		QVERIFY(modulationShapeFromName(QStringLiteral("smooth_random"), &parsed.shape));
 		QCOMPARE(parsed.shape, ModulationShape::SmoothRandom);
-		QCOMPARE(modulationShapeNames().size(), 8);
+		QCOMPARE(modulationShapeNames().size(), 9);  // + formula (W3 L10, MX-118)
 		ModulationLayer layer;
 		QCOMPARE(layer.addModulator(QStringLiteral("seq"), steps), 0);
 		QDomDocument doc;

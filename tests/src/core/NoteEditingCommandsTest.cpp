@@ -114,6 +114,7 @@ private:
 		Song* song = Engine::getSong();
 		song->clearProject();
 		m_track = dynamic_cast<InstrumentTrack*>(Track::create(Track::Type::Instrument, song));
+		m_track->loadInstrument(QStringLiteral("tripleoscillator"));
 		m_clip = dynamic_cast<MidiClip*>(m_track->createClip(TimePos(0)));
 		for (const Note& note : notes) { m_clip->addNote(note, false); }
 		m_clip->rearrangeAllNotes();
@@ -129,6 +130,9 @@ private:
 private slots:
 	void initTestCase()
 	{
+		#ifdef LMMS_TEST_PLUGIN_DIR
+		qputenv("LMMS_PLUGIN_DIR", LMMS_TEST_PLUGIN_DIR);  // a real instrument, so notes start (SessionTuningTest's pattern)
+#endif
 		Engine::init(true);
 		Engine::audioEngine()->audioDev()->stopProcessing();
 		NotePlayHandleManager::init();

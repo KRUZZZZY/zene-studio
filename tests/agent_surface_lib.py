@@ -19,6 +19,12 @@ import time
 #: error.kind values the wire contract allows (AGENT-TOOLING.md section 4).
 TERMINAL_KINDS = {"not_found", "requires", "invalid_args", "busy", "refused"}
 
+#: SPEC A16's sixth kind, and only an undo may answer it: control.undo refusing a record with no inverse
+#: (or whose step a bound evicted), and control.history_jump, which is control.undo run in turn
+#: (include/ControlRegistry.h, ControlErrorKind::Irreversible).
+UNDO_KINDS = {"irreversible"}
+UNDO_COMMANDS = {"control.undo", "control.history_jump"}
+
 
 # --------------------------------------------------------------------------
 # file formats
@@ -282,7 +288,7 @@ def derive_args(schema, command, overrides):
             for name in schema.get("required", [])}
 
 
-def typed(reply, expected_id):
+def typed(reply, expected_id, command=None):
     """None when the reply is a well-formed typed result, else why it is not."""
     if not isinstance(reply, dict):
         return "reply is not a JSON object"
@@ -292,7 +298,8 @@ def typed(reply, expected_id):
         return None if isinstance(reply.get("result"), dict) else "ok=true without a result object"
     if reply.get("ok") is False:
         error = reply.get("error") or {}
-        if error.get("kind") not in TERMINAL_KINDS:
+        allowed = TERMINAL_KINDS | (UNDO_KINDS if command in UNDO_COMMANDS else set())
+        if error.get("kind") not in allowed:
             return "error.kind %r is not in the closed set" % error.get("kind")
         if not error.get("message"):
             return "typed error carries no message"

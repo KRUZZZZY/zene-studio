@@ -134,15 +134,17 @@ std::vector<std::pair<f_cnt_t, f_cnt_t>> quietRuns(SampleClip& clip, float level
 	const SampleFrame* data = clip.sample().data();
 	std::vector<std::pair<f_cnt_t, f_cnt_t>> runs;
 	if (data == nullptr || window.sourceOut <= window.sourceIn) { return runs; }
-	f_cnt_t start = -1;
+	// f_cnt_t is unsigned: a run is marked by its own flag, never a -1 start.
+	bool inRun = false;
+	f_cnt_t start = 0;
 	for (f_cnt_t f = window.sourceIn; f <= window.sourceOut; ++f)
 	{
 		const bool quiet = f < window.sourceOut && std::max(std::fabs(data[f][0]), std::fabs(data[f][1])) < level;
-		if (quiet && start < 0) { start = f; }
-		if (!quiet && start >= 0)
+		if (quiet && !inRun) { start = f; inRun = true; }
+		if (!quiet && inRun)
 		{
 			if (f - start >= minFrames) { runs.emplace_back(start, f); }
-			start = -1;
+			inRun = false;
 		}
 	}
 	return runs;

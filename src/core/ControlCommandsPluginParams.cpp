@@ -227,8 +227,8 @@ void registerParamSet(ControlRegistry& registry)
 		if (model == nullptr) { return error; }
 
 		const double value = args.value(QStringLiteral("value")).toDouble();
-		if (value < static_cast<double>(model->minValue<float>()) ||
-			value > static_cast<double>(model->maxValue<float>()))
+		// Compared as the model stores it, a float: 0.1 is the minimum 0.1f, not "below 0.100000001".
+		if (static_cast<float>(value) < model->minValue<float>() || static_cast<float>(value) > model->maxValue<float>())
 		{
 			return rangeRefusal(model, value);
 		}

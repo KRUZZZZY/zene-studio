@@ -42,6 +42,7 @@
 #include "InspectorPanel.h"
 #include "MidiClip.h"
 #include "NoteGrid.h"
+#include "NoteTransformActions.h"
 #include "Song.h"
 #include "TransportReadouts.h"
 
@@ -107,8 +108,11 @@ QString velocityText(const Note* note) { return QString::number(note->getVolume(
 QString startText(const Note* note) { return barBeatText(note->pos().getTicks()); }
 QString lengthText(const Note* note) { return InspectorPanel::tr("%1 ticks").arg(note->length().getTicks()); }
 
-QJsonObject selectionOf(const QString& id)
+//! The arguments that run a command on the notes selected in @a clip - the editor's selection, handed to the command
+//! surface first, since that is the one a 'selection' scope reads.
+QJsonObject selectionOf(const MidiClip* clip, const QString& id)
 {
+	handOverNoteSelection(clip);
 	return {{QStringLiteral("clip"), id}, {QStringLiteral("scope"), QStringLiteral("selection")}};
 }
 
@@ -118,7 +122,7 @@ bool setSelectedKey(const QPointer<MidiClip>& clip, const QString& id, const QSt
 	int wanted = 0;
 	const Note* note = firstSelected(clip);
 	if (note == nullptr || !keyFromText(typed, &wanted)) { return false; }
-	QJsonObject args = selectionOf(id);
+	QJsonObject args = selectionOf(clip, id);
 	args.insert(QStringLiteral("semitones"), wanted - note->key());
 	return invoke(QStringLiteral("note.transpose"), args);
 }
@@ -130,7 +134,7 @@ bool setSelectedVelocity(const QPointer<MidiClip>& clip, const QString& id, cons
 	const int wanted = typed.trimmed().toInt(&ok);
 	const Note* note = firstSelected(clip);
 	if (note == nullptr || !ok) { return false; }
-	QJsonObject args = selectionOf(id);
+	QJsonObject args = selectionOf(clip, id);
 	args.insert(QStringLiteral("delta"), std::clamp(wanted, 0, 200) - static_cast<int>(note->getVolume()));
 	return invoke(QStringLiteral("note.velocity_offset"), args);
 }

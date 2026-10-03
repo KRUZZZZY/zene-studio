@@ -118,7 +118,8 @@ void MidiClipControllers::setPoints(ControllerKind kind, int controller, std::ve
 	if (it != m_lanes.end())
 	{
 		it->points = std::move(unique);
-		it->lastTick = -2;  // send again from wherever the clip is
+		it->lastTick = -2;  // send again from wherever the clip is - a new curve, nothing sent of it yet
+		it->lastSent = -1;
 		return;
 	}
 	ControllerLane lane;

@@ -38,6 +38,7 @@
 
 #include "AllocationProbe.h"
 #include "AudioBus.h"
+#include "AudioDevice.h"
 #include "AudioEngine.h"
 #include "ControlMixerSupport.h"
 #include "ControlRegistry.h"
@@ -82,11 +83,14 @@ QString loadAnEffect(const QString& target)
 //! The first float parameter of @a plugin on @a target and a value inside its range away from the current one.
 bool aParameter(const QString& target, const QString& plugin, QString* name, double* other)
 {
-	const QJsonArray params = run(QStringLiteral("plugin.param_get"), {{QStringLiteral("target"), target},
-		{QStringLiteral("plugin"), plugin}}).result.value(QStringLiteral("parameters")).toArray();
-	for (const QJsonValue& value : params)
+	// plugin.param_get reads ONE parameter (by 'name' or 'index'): walk the indices until there is none.
+	for (int index = 0; index < 256; ++index)
 	{
-		const QJsonObject p = value.toObject();
+		const ControlResult read = run(QStringLiteral("plugin.param_get"), {{QStringLiteral("target"), target},
+			{QStringLiteral("plugin"), plugin}, {QStringLiteral("index"), index}});
+		if (!read.ok) { break; }
+		const QJsonObject p = read.result.value(QStringLiteral("parameter")).toObject();
+		if (p.value(QStringLiteral("type")).toString() == QLatin1String("boolean")) { continue; }  // a float one, not "enabled"
 		const double lo = p.value(QStringLiteral("min")).toDouble();
 		const double hi = p.value(QStringLiteral("max")).toDouble();
 		if (hi - lo <= 0.0) { continue; }
@@ -131,12 +135,9 @@ float runBlocks(EffectChain& chain, std::vector<SampleFrame>& block, float level
 
 double parameterValue(const QString& target, const QString& plugin, const QString& name)
 {
-	for (const QJsonValue& value : run(QStringLiteral("plugin.param_get"), {{QStringLiteral("target"), target},
-		{QStringLiteral("plugin"), plugin}}).result.value(QStringLiteral("parameters")).toArray())
-	{
-		if (value.toObject().value(QStringLiteral("name")).toString() == name) { return value.toObject().value(QStringLiteral("value")).toDouble(); }
-	}
-	return -1e9;
+	const ControlResult read = run(QStringLiteral("plugin.param_get"), {{QStringLiteral("target"), target},
+		{QStringLiteral("plugin"), plugin}, {QStringLiteral("name"), name}});
+	return read.ok ? read.result.value(QStringLiteral("parameter")).toObject().value(QStringLiteral("value")).toDouble() : -1e9;
 }
 
 } // namespace
@@ -152,6 +153,7 @@ private slots:
 		qputenv("LMMS_PLUGIN_DIR", LMMS_TEST_PLUGIN_DIR);
 #endif
 		Engine::init(true);
+		Engine::audioEngine()->audioDev()->stopProcessing();  // the test reads and writes channel buffers itself
 		while (Engine::mixer()->numChannels() <= 3) { Engine::mixer()->createChannel(); }
 		ControlRegistry::setReady(true);
 	}
