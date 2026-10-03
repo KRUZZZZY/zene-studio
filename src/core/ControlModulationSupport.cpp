@@ -151,11 +151,22 @@ QJsonObject modulationSourceJson(const ModulatorSource& source)
 		out.insert(QStringLiteral("steps"), steps);
 	}
 	if (source.shape == ModulationShape::Envelope) { out.insert(QStringLiteral("attack"), static_cast<double>(source.attack)); }
+	// MX-121: the track whose notes restart it, when it follows one.
+	if (source.triggerTrack >= 0) { out.insert(QStringLiteral("trigger"), trackId(source.triggerTrack)); }
 	// The LFO's own bounds, published so a caller can define a rate without a
 	// round trip through a refusal.
 	out.insert(QStringLiteral("min_rate"), static_cast<double>(ModulationLayer::MinRateHz));
 	out.insert(QStringLiteral("max_rate"), static_cast<double>(ModulationLayer::MaxRateHz));
 	return out;
+}
+
+void editModulationLayer(const std::function<void(ModulationLayer&, ModulationRuntime&)>& change)
+{
+	songModulationLayer().edit([&change](ModulationLayer& layer, ModulationRuntime& runtime) {
+		change(layer, runtime);
+		rebuildModulationRuntimeRestoring(layer, &runtime);
+		return true;
+	});
 }
 
 QJsonObject modulationRouteJson(const ModulationRoute& route, int index)
@@ -183,6 +194,7 @@ QJsonObject modulatorJson(const Modulator& modulator, int index)
 	out.insert(QStringLiteral("id"), modulatorId(index));
 	out.insert(QStringLiteral("name"), modulator.name);
 	out.insert(QStringLiteral("source"), modulationSourceJson(modulator.source));
+	if (!modulator.formula.isEmpty()) { out.insert(QStringLiteral("formula"), modulator.formula); }  // MX-118
 	QJsonArray routes;
 	for (int i = 0; i < modulator.routeCount(); ++i)
 	{

@@ -41,9 +41,42 @@ ModulationLayerPublisher::~ModulationLayerPublisher()
 	for (QMetaObject::Connection& watch : m_watch) { QObject::disconnect(watch); }
 }
 
+void ModulationLayerPublisher::publishTriggers()
+{
+	bool any = false;
+	for (int m = 0; m < ModulationLayer::MaxModulators; ++m)
+	{
+		const auto slot = static_cast<std::size_t>(m);
+		const int track = m < m_runtime.sourceCount ? m_runtime.sources[slot].triggerTrack : -1;
+		// A modulator that starts following a track (or another one) waits for its first note.
+		if (m_triggerTrack[slot].load(std::memory_order_relaxed) != track) { m_triggeredAt[slot].store(-1.0, std::memory_order_relaxed); }
+		m_triggerTrack[slot].store(track, std::memory_order_relaxed);
+		any = any || track >= 0;
+	}
+	m_anyTrigger.store(any, std::memory_order_release);
+}
+
+void ModulationLayerPublisher::noteStarted(int trackId) noexcept
+{
+	if (!m_anyTrigger.load(std::memory_order_acquire)) { return; }
+	const double now = m_blockSeconds.load(std::memory_order_relaxed);
+	for (std::size_t m = 0; m < m_triggerTrack.size(); ++m)
+	{
+		if (m_triggerTrack[m].load(std::memory_order_relaxed) == trackId) { m_triggeredAt[m].store(now, std::memory_order_relaxed); }
+	}
+}
+
+double ModulationLayerPublisher::sinceTrigger(int modulator, int triggerTrack, double seconds) const noexcept
+{
+	if (triggerTrack < 0 || modulator < 0 || modulator >= ModulationLayer::MaxModulators) { return seconds; }
+	const double at = m_triggeredAt[static_cast<std::size_t>(modulator)].load(std::memory_order_relaxed);
+	return at < 0.0 || seconds < at ? 0.0 : seconds - at;
+}
+
 void ModulationLayerPublisher::publishView()
 {
 	m_hasLayer.store(m_layer.shouldPersist(), std::memory_order_release);
+	publishTriggers();  // MX-121
 
 	ModulationAudioView view;
 	view.sources = m_runtime.sources;
@@ -92,6 +125,7 @@ void ModulationLayerPublisher::publishView()
 void applyModulationBlock(const ModulationLayerPublisher& publisher,
 	const ModulationAudioView& view, double seconds, ModulationBlock block)
 {
+	publisher.setBlockSeconds(seconds);  // MX-121: what a note in this block is stamped with
 	if (!view.active()) { return; }
 	for (int i = 0; i < view.entryCount; ++i)
 	{
@@ -103,8 +137,9 @@ void applyModulationBlock(const ModulationLayerPublisher& publisher,
 		if (entry.modulator < 0 || entry.modulator >= view.sourceCount) { continue; }
 		const ModulatorSource& source = view.sources[static_cast<std::size_t>(entry.modulator)];
 		if (!source.active) { continue; }
+		// MX-121: a modulator that follows a track runs from that track's last note.
 		writeModulatedEntry(entry.model, source, entry.base, entry.depth, entry.minimum, entry.maximum,
-			seconds, entry.perSample, block);
+			publisher.sinceTrigger(entry.modulator, source.triggerTrack, seconds), entry.perSample, block);
 	}
 }
 

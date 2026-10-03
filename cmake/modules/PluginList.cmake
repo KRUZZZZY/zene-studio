@@ -33,10 +33,14 @@ SET(LMMS_PLUGIN_LIST
 	ClapEffect
 	ClapInstrument
 	Compressor
+	Console
+	ConvolutionReverb
 	CrossoverEQ
+	DeEsser
 	Delay
 	Dispersion
 	DualFilter
+	DynamicEq
 	DynamicsProcessor
 	Eq
 	Flanger
@@ -44,6 +48,7 @@ SET(LMMS_PLUGIN_LIST
 	Gate
 	GranularPitchShifter
 	HydrogenImport
+	InsertRecorder
 	LadspaBrowser
 	LadspaEffect
 	LOMM
@@ -76,6 +81,7 @@ SET(LMMS_PLUGIN_LIST
 	StereoMatrix
 	Stk
 	TapTempo
+	TransientShaper
 	VstBase
 	Vst3Effect
 	Vst3Instrument
@@ -86,6 +92,7 @@ SET(LMMS_PLUGIN_LIST
 	WaveShaper
 	Vectorscope
 	Vibed
+	Vocoder
 	Xpressive
 	ZynAddSubFx
 )

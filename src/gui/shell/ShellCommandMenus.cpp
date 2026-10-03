@@ -217,6 +217,9 @@ void sampleClipMenus(QMenu* menu, Clip* clip, const QJsonObject& self)
 	choices(process, "Fade", "sample.fade", "direction", self);
 	add(process, "Gain Envelope...", "clip.gain_envelope_set", self, true);
 	add(process, "Clear Gain Envelope", "clip.gain_envelope_set", with(self, "points", QJsonArray()), false);
+	// MX-083 (L10 W3): the clip printed through a chain's devices - its own track's by default.
+	add(process, "Print a Chain's Effects onto the Clip...", "clip.process", self, true,
+		{{QStringLiteral("from"), control::trackIdOf(clip->getTrack())}, {QStringLiteral("tail"), 0.0}});
 	Clip* next = nextClip(clip);
 	QAction* fade = add(menu, "Crossfade Into Next Clip...", "clip.crossfade",
 		{{QStringLiteral("out"), id}, {QStringLiteral("in"), next != nullptr ? control::clipIdOf(next) : QString()}}, true);
@@ -447,6 +450,11 @@ void populateChannel(QMenu* menu, const QString& channel)
 	add(menu, "Unmute All Channels", "mixer.set_many", {{QStringLiteral("all"), true}, {QStringLiteral("muted"), false}}, false);
 	add(menu, "Clear All Solos", "mixer.set_many", {{QStringLiteral("all"), true}, {QStringLiteral("soloed"), false}}, false);
 	choices(menu, "Solo Mode", "mixer.solo_mode", "mode", {});  // MX-029
+	// MX-150 (L10 W3): the Console device on every channel at once.
+	QMenu* console = menu->addMenu(tr("Console Across the Mix"));
+	add(console, "Apply to Every Channel...", "mixer.console_apply", {}, true,
+		{{QStringLiteral("drive"), 30.0}, {QStringLiteral("character"), QStringLiteral("warm")}});
+	add(console, "Remove from Every Channel", "mixer.console_apply", {{QStringLiteral("remove"), true}}, false);
 	// MX-037: the listen bus.
 	QMenu* listen = menu->addMenu(tr("Listen"));
 	add(listen, "Listen to This Channel", "mixer.listen", with(self, "exclusive", true), false);

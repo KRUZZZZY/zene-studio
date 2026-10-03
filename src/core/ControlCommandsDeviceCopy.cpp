@@ -40,11 +40,13 @@
 #include "ControlDeviceMoves.h"
 #include "ControlDevicePlacement.h"
 #include "ControlDeviceSupport.h"
+#include "ControlDeviceTools.h"
 #include "ControlEdit.h"
 #include "ControlRegistry.h"
 #include "ControlRegistryGroups.h"
 #include "ControlStructuralSupport.h"
 #include "ControlVocabulary.h"
+#include "AutomatableModel.h"
 #include "Effect.h"
 #include "EffectChain.h"
 
@@ -140,7 +142,24 @@ struct AbSlots
 	//! The device the slots belong to: ids restart with each document, so a slot found under the
 	//! id of a device it was not stored for is not its (review L10-L03-L02-1 #3).
 	QPointer<Effect> owner;
+	//! 0.5.0 L10 (MX-093): each slot's parameter values, in plugin.param_get order, for plugin.blend.
+	std::vector<float> aValues;
+	std::vector<float> bValues;
 };
+
+std::vector<float> parameterValues(Effect* effect)
+{
+	std::vector<float> values;
+	for (const AutomatableModel* model : controlEffectParameters(effect)) { values.push_back(model->value<float>()); }
+	return values;
+}
+
+//! Keep the settings heard now in slot B (or A), with their parameter values.
+void storeSlot(Effect* effect, AbSlots& pair, bool toB)
+{
+	(toB ? pair.b : pair.a) = controlEffectStateXml(effect);
+	(toB ? pair.bValues : pair.aValues) = parameterValues(effect);
+}
 
 std::map<int, AbSlots>& abSlots()
 {
@@ -182,9 +201,8 @@ ControlResult abRecall(Effect* effect, AbSlots& pair, bool toB)
 //! The settings heard now become the current slot's; the other slot - a copy on the first toggle - is recalled.
 ControlResult abToggle(Effect* effect, AbSlots& pair)
 {
-	(pair.onB ? pair.b : pair.a) = controlEffectStateXml(effect);
-	QString& other = pair.onB ? pair.a : pair.b;
-	if (other.isEmpty()) { other = pair.onB ? pair.b : pair.a; }
+	storeSlot(effect, pair, pair.onB);
+	if ((pair.onB ? pair.a : pair.b).isEmpty()) { storeSlot(effect, pair, !pair.onB); }
 	return abRecall(effect, pair, !pair.onB);
 }
 
@@ -203,11 +221,28 @@ ControlResult pluginAb(const QJsonObject& args)
 	if (action == QLatin1String("toggle")) { return abToggle(effect, pair); }
 	if (action == QLatin1String("store"))
 	{
-		(toB ? pair.b : pair.a) = controlEffectStateXml(effect);
+		storeSlot(effect, pair, toB);
 		pair.onB = toB;
 	}
 	return ControlResult::success(abJson(pair));
 }
+
+} // namespace
+
+bool control::abSlotValues(Effect* effect, std::vector<float>* a, std::vector<float>* b)
+{
+	const auto found = abSlots().find(effect->id());
+	if (found == abSlots().end() || found->second.owner != effect || found->second.a.isEmpty() || found->second.b.isEmpty())
+	{
+		return false;
+	}
+	*a = found->second.aValues;
+	*b = found->second.bValues;
+	return true;
+}
+
+namespace
+{
 
 void add(ControlRegistry& registry, const char* id, const QString& description, const QJsonObject& args, const QStringList& required,
 	ControlResult (*handler)(const QJsonObject&))

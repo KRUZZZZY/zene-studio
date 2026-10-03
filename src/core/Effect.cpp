@@ -117,6 +117,8 @@ void Effect::saveSettings( QDomDocument & _doc, QDomElement & _this )
 	// element's children and turns each one into control state, so a child
 	// would become a phantom control group on load.
 	_this.setAttribute( "id", m_id );
+	// 0.5.0 L10 (W3): the user's options for this device, as attributes written only when set.
+	m_deviceOptions.save( _this );
 }
 
 
@@ -127,6 +129,7 @@ void Effect::loadSettings( const QDomElement & _this )
 	m_enabledModel.loadSettings( _this, "on" );
 	m_wetDryModel.loadSettings( _this, "wet" );
 	m_autoQuitModel.loadSettings( _this, "autoquit" );
+	m_deviceOptions.load( _this );
 
 	// The stable id (SPEC-stable-ids.md slice 2; the slice-1 pattern of
 	// Track::loadTrack). A file that carries one keeps it; a file that does
@@ -336,7 +339,8 @@ Effect * Effect::instantiate( const QString& pluginName,
 
 void Effect::handleAutoQuit(bool silentOutput)
 {
-	if (!m_autoQuitEnabled)
+	// 0.5.0 L10 (MX-099): a device set to keep running is never put to sleep on silence.
+	if (!m_autoQuitEnabled || m_deviceOptions.keepRunning)
 	{
 		return;
 	}

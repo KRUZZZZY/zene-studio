@@ -32,6 +32,7 @@
 #include <QString>
 
 #include "RackMacros.h"
+#include "RackSplit.h"
 #include "RackZones.h"
 #include "lmms_export.h"
 
@@ -139,6 +140,14 @@ public:
 	//! Drops every parallel chain and the wiring: the channel is a plain chain
 	void clear();
 
+	/**
+	 * 0.5.0 L10 (MX-108): what each chain of a PARALLEL rack is fed - the whole signal, a
+	 * frequency band, the mid or the side, the left or the right (@see RackSplit). Re-wires like
+	 * a selection change (the model-change guard, a block boundary). clear() drops it.
+	 */
+	void setSplit(const RackSplit& split);
+	auto split() const -> const RackSplit& { return m_split; }
+
 	// --- audio thread ---
 
 	/**
@@ -209,6 +218,8 @@ private:
 	std::vector<int> m_routedChains;
 
 	int m_selectedChain = Parallel;
+	//! MX-108: how a parallel rack's input is divided between its chains
+	RackSplit m_split;
 	//! Set by rebuildRoutingGraph() when the graph is on the signal path
 	bool m_graphActive = false;
 

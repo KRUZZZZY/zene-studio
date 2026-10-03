@@ -143,6 +143,21 @@ ModulatorPanel::ModulatorPanel(QWidget* parent) :
 			{{QStringLiteral("steps"), QJsonArray{1.0, -1.0, 0.5, -0.5}}, {QStringLiteral("attack"), 0.1}}, {}, true});
 	});
 	source->addRow(QString(), shapeValues);
+	// 0.5.0 L10 (MX-118 / MX-121): a formula of the modulator's own, and restarting it on a track's notes.
+	auto* formula = commandButton(tr("Formula..."), "modulator.formula_set", this);
+	connect(formula, &QPushButton::clicked, this, [this] {
+		if (selectedId().isEmpty()) { return; }
+		runCommand(this, CommandCall{QStringLiteral("modulator.formula_set"), {{QStringLiteral("modulator"), selectedId()}},
+			{{QStringLiteral("formula"), QStringLiteral("sin(2*pi*t)")}}, {}, true});
+	});
+	auto* follow = commandButton(tr("Restart on a Track's Notes..."), "modulator.trigger_set", this);
+	connect(follow, &QPushButton::clicked, this, [this] {
+		if (selectedId().isEmpty()) { return; }
+		runCommand(this, CommandCall{QStringLiteral("modulator.trigger_set"), {{QStringLiteral("modulator"), selectedId()}},
+			selectionContext(QStringLiteral("modulator.trigger_set")), {}, true});
+	});
+	source->addRow(QString(), formula);
+	source->addRow(QString(), follow);
 	auto* bindRow = new QHBoxLayout;
 	for (QWidget* widget : std::initializer_list<QWidget*>{m_channel, m_effect, m_parameter, m_depth, bindButton, unbind})
 	{

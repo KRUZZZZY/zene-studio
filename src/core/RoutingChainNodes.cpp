@@ -94,7 +94,8 @@ void EffectNode::process(f_cnt_t frames)
 		toInterleaved(out.groupBuffers(0), out.interleavedBuffer());
 	}
 
-	m_lastResult = (m_effect != nullptr) && m_effect->processAudioBuffer(out);
+	// 0.5.0 L10 (MX-080): through the device's delta tap - its plain output while the tap is off.
+	m_lastResult = (m_effect != nullptr) && m_effect->deltaTap().process(*m_effect, out);
 }
 
 } // namespace lmms

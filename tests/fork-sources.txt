@@ -518,6 +518,7 @@ include/AudioWideInputStage.h
 include/AutomationModeMenu.h
 include/AutomationRamp.h
 include/AutomationSwitches.h
+include/BiquadDesign.h
 include/BounceInPlace.h
 include/BrowserCatalog.h
 include/BrowserIndex.h
@@ -527,6 +528,7 @@ include/BrowserSearch.h
 include/BrowserSearchView.h
 include/BrowserTagMenu.h
 include/ChainPresetMenu.h
+include/ChannelLevelMeter.h
 include/ChannelPickDialog.h
 include/ChordDetect.h
 include/ChordProgression.h
@@ -589,7 +591,9 @@ include/CrashReportMenu.h
 include/CrashReporter.h
 include/CrashReporterFormat.h
 include/DawProjectInterchange.h
+include/DeltaTap.h
 include/DesignTokens.h
+include/DeviceOptions.h
 include/DevicePanel.h
 include/DocumentIndex.h
 include/DpiHelper.h
@@ -660,6 +664,7 @@ include/MixerStrip.h
 include/MixerViewOptions.h
 include/MixerWindows.h
 include/ModifierTools.h
+include/ModulationFormula.h
 include/ModulationLayer.h
 include/ModulatorPanel.h
 include/MonitorMode.h
@@ -679,6 +684,8 @@ include/NoteRandom.h
 include/NoteTransform.h
 include/NoteTransformActions.h
 include/OutOfProcessHosting.h
+include/ParameterControls.h
+include/ParameterGridDialog.h
 include/PatchWiring.h
 include/PinConnector.h
 include/PitchTrack.h
@@ -707,6 +714,7 @@ include/Rack.h
 include/RackMacros.h
 include/RackMenu.h
 include/RackNodes.h
+include/RackSplit.h
 include/RackZones.h
 include/RealtimeScope.h
 include/RecordLaunchMenus.h
@@ -784,6 +792,7 @@ include/StemSeparation/StemTypes.h
 include/StemSplitController.h
 include/TakeLane.h
 include/TakeLanesPanel.h
+include/TakeRecorder.h
 include/Telemetry.h
 include/TelemetryConsentDialog.h
 include/TelemetryNetworkTransport.h
@@ -843,12 +852,24 @@ plugins/ClapInstrument/ClapInstrument.cpp
 plugins/ClapInstrument/ClapInstrument.h
 plugins/ClapInstrument/ClapInstrumentView.cpp
 plugins/ClapInstrument/ClapInstrumentView.h
+plugins/Console/Console.cpp
+plugins/Console/Console.h
+plugins/ConvolutionReverb/ConvolutionKernel.cpp
+plugins/ConvolutionReverb/ConvolutionKernel.h
+plugins/ConvolutionReverb/ConvolutionReverb.cpp
+plugins/ConvolutionReverb/ConvolutionReverb.h
+plugins/DeEsser/DeEsser.cpp
+plugins/DeEsser/DeEsser.h
+plugins/DynamicEq/DynamicEq.cpp
+plugins/DynamicEq/DynamicEq.h
 plugins/Gate/Gate.cpp
 plugins/Gate/Gate.h
 plugins/Gate/GateControlDialog.cpp
 plugins/Gate/GateControlDialog.h
 plugins/Gate/GateControls.cpp
 plugins/Gate/GateControls.h
+plugins/InsertRecorder/InsertRecorder.cpp
+plugins/InsertRecorder/InsertRecorder.h
 plugins/Modulation/Modulation.cpp
 plugins/Modulation/Modulation.h
 plugins/Modulation/ModulationControlDialog.cpp
@@ -868,6 +889,10 @@ plugins/RnnoiseDenoiser/RnnoiseDenoiserControls.h
 plugins/RnnoiseDenoiser/RnnoiseDenoiserEffect.cpp
 plugins/RnnoiseDenoiser/RnnoiseDenoiserEffect.h
 plugins/RnnoiseDenoiser/testdata/rnn_harness.c
+plugins/TransientShaper/TransientShaper.cpp
+plugins/TransientShaper/TransientShaper.h
+plugins/Vocoder/Vocoder.cpp
+plugins/Vocoder/Vocoder.h
 plugins/Vst3Effect/Vst3BusMap.cpp
 plugins/Vst3Effect/Vst3BusMap.h
 plugins/Vst3Effect/Vst3ComponentHandler.h
@@ -971,6 +996,7 @@ src/core/ControlCommandsClipEdits.cpp
 src/core/ControlCommandsClipEnvelope.cpp
 src/core/ControlCommandsClipLink.cpp
 src/core/ControlCommandsClipLinkState.cpp
+src/core/ControlCommandsClipProcess.cpp
 src/core/ControlCommandsClipTrim.cpp
 src/core/ControlCommandsClock.cpp
 src/core/ControlCommandsCollectMedia.cpp
@@ -989,6 +1015,8 @@ src/core/ControlCommandsDetect.cpp
 src/core/ControlCommandsDetectApply.cpp
 src/core/ControlCommandsDevice.cpp
 src/core/ControlCommandsDeviceCopy.cpp
+src/core/ControlCommandsDeviceParams.cpp
+src/core/ControlCommandsDeviceTools.cpp
 src/core/ControlCommandsDrumRack.cpp
 src/core/ControlCommandsDsp.cpp
 src/core/ControlCommandsExport.cpp
@@ -1031,6 +1059,7 @@ src/core/ControlCommandsMixerStrip.cpp
 src/core/ControlCommandsMixerTools.cpp
 src/core/ControlCommandsModulator.cpp
 src/core/ControlCommandsModulatorRoutes.cpp
+src/core/ControlCommandsModulatorTools.cpp
 src/core/ControlCommandsMonitor.cpp
 src/core/ControlCommandsMts.cpp
 src/core/ControlCommandsNoteAcross.cpp
@@ -1081,6 +1110,7 @@ src/core/ControlCommandsRackZones.cpp
 src/core/ControlCommandsRange.cpp
 src/core/ControlCommandsRangeBounce.cpp
 src/core/ControlCommandsRecordTools.cpp
+src/core/ControlCommandsRecorder.cpp
 src/core/ControlCommandsRecording.cpp
 src/core/ControlCommandsRecordingInput.cpp
 src/core/ControlCommandsRecordingPass.cpp
@@ -1157,6 +1187,7 @@ src/core/ControlDeviceMoves.cpp
 src/core/ControlDevicePlacement.cpp
 src/core/ControlDeviceState.cpp
 src/core/ControlDeviceSupport.cpp
+src/core/ControlDeviceTools.h
 src/core/ControlDeviceVst3.cpp
 src/core/ControlEditSupport.cpp
 src/core/ControlExportPresetSupport.cpp
@@ -1217,6 +1248,7 @@ src/core/ControlReversibilityTableVca.cpp
 src/core/ControlReversibilityTableVerbs.cpp
 src/core/ControlReversibilityTableW3Custom.cpp
 src/core/ControlReversibilityTableW3Library.cpp
+src/core/ControlReversibilityTableW3Devices.cpp
 src/core/ControlReversibilityTableWasmRender.cpp
 src/core/ControlReversibilityTableWindow.cpp
 src/core/ControlRoom.cpp
@@ -1246,6 +1278,8 @@ src/core/DawProjectReadTracks.cpp
 src/core/DawProjectSession.cpp
 src/core/DawProjectWrite.cpp
 src/core/DawProjectZip.cpp
+src/core/DeltaTap.cpp
+src/core/DeviceOptions.cpp
 src/core/DocumentIndex.cpp
 src/core/EditLocks.cpp
 src/core/EffectChainPatcher.cpp
@@ -1291,6 +1325,7 @@ src/core/MixerOptions.cpp
 src/core/MixerSendPan.cpp
 src/core/MixerSnapshots.cpp
 src/core/MixerStrip.cpp
+src/core/ModulationFormula.cpp
 src/core/ModulationLayer.cpp
 src/core/ModulationLayerPublisher.cpp
 src/core/NamespaceRegistry.cpp
@@ -1299,6 +1334,7 @@ src/core/NoteRandom.cpp
 src/core/NoteTransform.cpp
 src/core/OnnxRuntimeStemSeparator.cpp
 src/core/OutOfProcessHosting.cpp
+src/core/ParameterControls.cpp
 src/core/PatchWiring.cpp
 src/core/PitchTrack.cpp
 src/core/PluginEditorHost.cpp
@@ -1323,6 +1359,7 @@ src/core/ProvenanceSection.cpp
 src/core/Rack.cpp
 src/core/RackMacros.cpp
 src/core/RackNodes.cpp
+src/core/RackSplit.cpp
 src/core/RackZones.cpp
 src/core/RecordOptions.cpp
 src/core/RecorderTaps.cpp
@@ -1374,6 +1411,7 @@ src/core/StemJobManager.cpp
 src/core/StemModelStore.cpp
 src/core/StemTrackBuilder.cpp
 src/core/TakeLane.cpp
+src/core/TakeRecorder.cpp
 src/core/Telemetry.cpp
 src/core/TelemetryNetworkTransport.cpp
 src/core/TempoMap.cpp
@@ -1447,6 +1485,7 @@ src/gui/ModifierTools.cpp
 src/gui/ModulatorPanel.cpp
 src/gui/MpeInputAction.cpp
 src/gui/NoteTransformActions.cpp
+src/gui/ParameterGridDialog.cpp
 src/gui/PinConnector.cpp
 src/gui/PluginNativeEditor.cpp
 src/gui/PluginQuarantineMenu.cpp
@@ -1493,6 +1532,7 @@ src/gui/noteeditor/NoteEditorToolbar.cpp
 src/gui/noteeditor/NoteGrid.cpp
 src/gui/noteeditor/NoteLanes.cpp
 src/gui/shell/BrowserPanel.cpp
+src/gui/shell/ChannelLevelMeter.cpp
 src/gui/shell/DesignTokens.cpp
 src/gui/shell/DeviceCard.cpp
 src/gui/shell/DevicePanel.cpp
@@ -1657,6 +1697,8 @@ tests/src/core/ControlWarpCommandsTest.cpp
 tests/src/core/CustomAccessTest.cpp
 tests/src/core/DataFileSaveIntegrityTest.cpp
 tests/src/core/DeviceCopyTest.cpp
+tests/src/core/DeviceDspTest.cpp
+tests/src/core/DeviceToolsTest.cpp
 tests/src/core/DocumentIndexTest.cpp
 tests/src/core/DocumentSectionsTest.cpp
 tests/src/core/ExportDitherTest.cpp
@@ -1678,6 +1720,7 @@ tests/src/core/MixerStripTest.cpp
 tests/src/core/MixerToolsTest.cpp
 tests/src/core/MixingRoutingTest.cpp
 tests/src/core/ModulationLayerProjectRoundTripTest.cpp
+tests/src/core/ModulatorToolsTest.cpp
 tests/src/core/MpscQueueTest.cpp
 tests/src/core/NamespaceRegistryTest.cpp
 tests/src/core/NoteCurvesAcrossTest.cpp

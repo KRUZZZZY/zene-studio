@@ -35,6 +35,7 @@
 #include "ControlCommandsOutOfProcessShared.h"
 #include "ControlRegistry.h"
 #include "ControlVocabulary.h"
+#include "Effect.h"
 #include "Plugin.h"
 
 namespace lmms
@@ -54,6 +55,13 @@ ControlResult editorOpen(const QJsonObject& args)
 	control::HostedDevice device;
 	ControlResult error;
 	if (!control::resolveHostedDevice(args, &device, &error)) { return error; }
+	// 0.5.0 L10 (MX-099): a device set to the generic editor never opens its own window - the
+	// caller (the Device panel's editor button) falls back to the host's generic controls.
+	if (device.effect != nullptr && device.effect->deviceOptions().genericEditor)
+	{
+		return ControlResult::failure(ControlErrorKind::Refused, QStringLiteral("%1/%2 (%3) is set to the generic editor "
+			"(plugin.options generic_editor)").arg(device.targetId, device.deviceId, device.pluginLabel));
+	}
 	QString why;
 	if (!device.plugin()->openNativeEditor(&why))
 	{

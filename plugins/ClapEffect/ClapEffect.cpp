@@ -90,6 +90,7 @@ ClapEffect::ClapEffect(Model* parent, const Descriptor::SubPluginFeatures::Key* 
 
 bool ClapEffect::openNativeEditor(QString* error)
 {
+	m_plugin.setEditorScale(deviceOptions().editorScale);  // 0.5.0 L10 (MX-094)
 	return m_editor.open(gui::PluginNativeEditor::Hooks{
 		[this](void* parent, QString* why) { return m_plugin.openEditor(parent, why); },
 		[this] { m_plugin.closeEditor(); },

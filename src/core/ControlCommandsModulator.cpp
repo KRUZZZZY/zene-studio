@@ -58,28 +58,6 @@ namespace
 
 const QString kGroup = QStringLiteral("modulator");
 
-/*! Every edit to the layer goes through here, and every edit restores the
- *  targets first. That is what makes re-capturing a base idempotent: the models
- *  are at their unmodulated values when the new base is read, so editing a
- *  modulator can never bake a modulated value into it (docs/MODULATION.md
- *  section 3).
- *
- *  The undo step each handler records beside it is an ACTION checkpoint
- *  (control::addUndoStep), not a Song journal checkpoint: a Song checkpoint
- *  captures the track container, and the layer is not in it - the same finding
- *  the tempo map records. A step captures VALUES (indices, copies of the
- *  layer's own data), never a pointer, because a step can run long after the
- *  command that recorded it.
- */
-void editLayer(const std::function<void(ModulationLayer&, ModulationRuntime&)>& change)
-{
-	songModulationLayer().edit([&change](ModulationLayer& layer, ModulationRuntime& runtime) {
-		change(layer, runtime);
-		rebuildModulationRuntimeRestoring(layer, &runtime);
-		return true;
-	});
-}
-
 //! The undo/redo pair of a step that removes \a modulator at \a index: the
 //! inverse re-inserts the captured modulator (name, source and routes) at its
 //! own index, so the layer and the modulator-<n> ids come back exactly.
@@ -87,12 +65,12 @@ void recordRemoval(int index, const Modulator& captured)
 {
 	addUndoStep(
 		[index, captured]() {
-			editLayer([index, captured](ModulationLayer& layer, ModulationRuntime&) {
+			editModulationLayer([index, captured](ModulationLayer& layer, ModulationRuntime&) {
 				layer.insertModulator(index, captured);
 			});
 		},
 		[index]() {
-			editLayer([index](ModulationLayer& layer, ModulationRuntime&) {
+			editModulationLayer([index](ModulationLayer& layer, ModulationRuntime&) {
 				layer.removeModulator(index);
 			});
 		});
@@ -105,12 +83,12 @@ void recordCreation(int index, const Modulator& created)
 {
 	addUndoStep(
 		[index]() {
-			editLayer([index](ModulationLayer& layer, ModulationRuntime&) {
+			editModulationLayer([index](ModulationLayer& layer, ModulationRuntime&) {
 				layer.removeModulator(index);
 			});
 		},
 		[index, created]() {
-			editLayer([index, created](ModulationLayer& layer, ModulationRuntime&) {
+			editModulationLayer([index, created](ModulationLayer& layer, ModulationRuntime&) {
 				layer.insertModulator(index, created);
 			});
 		});
@@ -122,12 +100,12 @@ void recordSource(int index, const ModulatorSource& previous, const ModulatorSou
 {
 	addUndoStep(
 		[index, previous]() {
-			editLayer([index, previous](ModulationLayer& layer, ModulationRuntime&) {
+			editModulationLayer([index, previous](ModulationLayer& layer, ModulationRuntime&) {
 				layer.setSource(index, previous);
 			});
 		},
 		[index, written]() {
-			editLayer([index, written](ModulationLayer& layer, ModulationRuntime&) {
+			editModulationLayer([index, written](ModulationLayer& layer, ModulationRuntime&) {
 				layer.setSource(index, written);
 			});
 		});
@@ -247,7 +225,7 @@ void registerCreate(ControlRegistry& registry)
 
 		int index = -1;
 		const QJsonObject before = modulationLayerJson(layer);
-		editLayer([&](ModulationLayer& target, ModulationRuntime&) {
+		editModulationLayer([&](ModulationLayer& target, ModulationRuntime&) {
 			index = target.addModulator(name, source);
 		});
 		if (index < 0)
@@ -292,7 +270,7 @@ void registerRemove(ControlRegistry& registry)
 
 		const Modulator captured = *layer.modulator(index);
 		const QJsonObject before = modulationLayerJson(layer);
-		editLayer([&](ModulationLayer& target, ModulationRuntime&) {
+		editModulationLayer([&](ModulationLayer& target, ModulationRuntime&) {
 			target.removeModulator(index);
 		});
 		recordRemoval(index, captured);
@@ -360,7 +338,7 @@ void registerRateSet(ControlRegistry& registry)
 			return ControlResult::failure(ControlErrorKind::InvalidArgs, why);
 		}
 		const QJsonObject before = layerResult(layer, index);
-		editLayer([&](ModulationLayer& target, ModulationRuntime&) {
+		editModulationLayer([&](ModulationLayer& target, ModulationRuntime&) {
 			target.setSource(index, wanted);
 		});
 		recordSource(index, previous, wanted);

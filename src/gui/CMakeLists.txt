@@ -110,6 +110,8 @@ SET(LMMS_SRCS
 	gui/noteeditor/ControllerLaneView.cpp
 	gui/noteeditor/NoteBackgroundAudio.cpp
 	gui/XyPad.cpp
+	gui/ParameterGridDialog.cpp
+	gui/shell/ChannelLevelMeter.cpp
 	gui/FollowActionEditor.cpp
 	gui/SampleEditorDialog.cpp
 	gui/MixerWindows.cpp

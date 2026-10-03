@@ -77,6 +77,10 @@ LMMS_EXPORT int resolveZoneIndex(const Rack& rack, const QString& id, ControlRes
 //! selector, every macro with its targets, and every zone.
 LMMS_EXPORT QJsonObject rackState(MixerChannel* channel, Rack& rack);
 
+//! 0.5.0 L10 (MX-108): the rack's split as rack.get_state and rack.split report it - the mode, the
+//! crossovers in force for the chains it has (bands), and whether it applies (a parallel rack).
+LMMS_EXPORT QJsonObject rackSplitJson(const Rack& rack);
+
 /*! One half of a rack.macro_set's inverse: the macro's own value plus the value
  *  every parameter had before (or what was written, for the redo).
  *

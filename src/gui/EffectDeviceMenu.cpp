@@ -34,6 +34,7 @@
 #include "ControlDeviceSupport.h"
 #include "ControlRegistry.h"
 #include "ControlVocabulary.h"
+#include "DeviceOptions.h"
 #include "Effect.h"
 #include "EffectChain.h"
 #include "EffectPickerOrganiser.h"
@@ -42,6 +43,7 @@
 #include "Mixer.h"
 #include "PluginNativeEditor.h"
 #include "PluginOrganiser.h"
+#include "TakeRecorder.h"
 
 namespace lmms::gui
 {
@@ -110,6 +112,72 @@ QAction* entry(QMenu* menu, const QString& text, const char* id, std::function<v
 	return action;
 }
 
+CommandCall deviceCall(const char* id, const QJsonObject& fixed, bool ask, const QJsonObject& defaults = {})
+{
+	return CommandCall{QLatin1String(id), fixed, defaults, QString(), ask};
+}
+
+//! 0.5.0 L10 (W3): find, rename and randomise parameters (MX-089 / MX-097 / MX-093), fold the card
+//! (MX-113), the delta (MX-080), compatibility and editor options (MX-099 / MX-094), a convolution
+//! reverb's impulse (MX-152). These commands name a device by
+//! 'target' and its fx-<n> alone - a rack chain's device is found on its channel by its id.
+void addParameterEntries(QMenu* menu, QWidget* parent, const Effect* effect, const QJsonObject& device)
+{
+	const QJsonObject self{{QStringLiteral("target"), device.value(QStringLiteral("target"))},
+		{QStringLiteral("plugin"), device.value(QStringLiteral("plugin"))}};
+	QMenu* parameters = menu->addMenu(QObject::tr("Parameters"));
+	entry(parameters, QObject::tr("Find Parameter..."), "plugin.param_search", [parent, self] {
+		CommandCall find = deviceCall("plugin.param_search", {{QStringLiteral("target"), self.value(QStringLiteral("target"))}}, true);
+		find.showResult = true;
+		runCommand(parent, find);
+	});
+	entry(parameters, QObject::tr("Rename Parameter..."), "plugin.param_rename", [parent, self] {
+		runCommand(parent, deviceCall("plugin.param_rename", self, true));
+	});
+	entry(parameters, QObject::tr("Randomise"), "plugin.randomise", [parent, self] { runCommand(parent, deviceCall("plugin.randomise", self, false)); });
+	entry(parameters, QObject::tr("Randomise by..."), "plugin.randomise", [parent, self] {
+		runCommand(parent, deviceCall("plugin.randomise", self, true, {{QStringLiteral("amount"), 0.25}}));
+	});
+	const bool folded = effect->deviceOptions().folded;
+	entry(menu, folded ? QObject::tr("Unfold") : QObject::tr("Fold"), "plugin.fold", [parent, self, folded] {
+		QJsonObject args = self;
+		args.insert(QStringLiteral("folded"), !folded);
+		runCommand(parent, deviceCall("plugin.fold", args, false));
+	});
+	const bool listening = effect->deltaTap().enabled();
+	QAction* delta = entry(menu, QObject::tr("Hear Only What It Changes"), "plugin.delta", [parent, self, listening] {
+		QJsonObject args = self;
+		args.insert(QStringLiteral("on"), !listening);
+		runCommand(parent, deviceCall("plugin.delta", args, false));
+	});
+	delta->setCheckable(true);
+	delta->setChecked(listening);
+	entry(menu, QObject::tr("Compatibility and Editor..."), "plugin.options", [parent, self] {
+		runCommand(parent, deviceCall("plugin.options", self, true));
+	});
+	// MX-156: a Recorder records what passes it and lands its last take on a track.
+	if (const TakeRecorder* recorder = TakeRecorder::of(effect))
+	{
+		const bool recording = recorder->recording();
+		entry(menu, recording ? QObject::tr("Stop Recording") : QObject::tr("Record What Passes Here"), "plugin.record",
+			[parent, self, recording] {
+				QJsonObject args = self;
+				args.insert(QStringLiteral("on"), !recording);
+				runCommand(parent, deviceCall("plugin.record", args, false));
+			});
+		entry(menu, QObject::tr("Put the Last Take on a New Track"), "plugin.recorder_land", [parent, self] {
+			runCommand(parent, deviceCall("plugin.recorder_land", self, false));
+		});
+	}
+	// MX-152: a convolution reverb takes an impulse response file (the form offers a file picker).
+	if (QString::fromUtf8(effect->descriptor()->name) == QLatin1String("convolutionreverb"))
+	{
+		entry(menu, QObject::tr("Load Impulse Response..."), "plugin.impulse_load", [parent, self] {
+			runCommand(parent, deviceCall("plugin.impulse_load", self, true));
+		});
+	}
+}
+
 } // namespace
 
 QJsonObject chainAddress(const EffectChain* chain)
@@ -165,6 +233,12 @@ void addEffectDeviceMenus(QMenu* menu, Effect* effect)
 		const CommandCall call = abCall(action, slot);
 		entry(ab, text, "plugin.ab", [parent, call] { runCommand(parent, call); });
 	}
+	entry(ab, QObject::tr("Blend A and B..."), "plugin.blend", [parent, device] {
+		const QJsonObject self{{QStringLiteral("target"), device.value(QStringLiteral("target"))},
+			{QStringLiteral("plugin"), device.value(QStringLiteral("plugin"))}};
+		runCommand(parent, deviceCall("plugin.blend", self, true, {{QStringLiteral("amount"), 0.5}}));
+	});
+	addParameterEntries(menu, parent, effect, device);
 }
 
 } // namespace lmms::gui

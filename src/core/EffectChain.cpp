@@ -88,7 +88,8 @@ void EffectChain::refreshLatency()
 		{
 			if (effect->isEnabled() && effect->isOkay() && !effect->dontRun())
 			{
-				frames += std::max(0, effect->latencyFrames());
+				// 0.5.0 L10 (MX-099): a user's latency override replaces what the device reports.
+				frames += std::max(0, effect->compensatedLatencyFrames());
 			}
 		}
 	}
@@ -333,7 +334,8 @@ bool EffectChain::processAudioBuffer(AudioBus& bus, const AudioBuffer* sidechain
 	{
 		for (Effect* effect : m_effects)
 		{
-			moreEffects |= effect->processAudioBuffer(bus);
+			// 0.5.0 L10 (MX-080): through the device's delta tap - its plain output while the tap is off.
+			moreEffects |= effect->deltaTap().process(*effect, bus);
 		}
 	}
 

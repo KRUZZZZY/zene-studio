@@ -56,33 +56,22 @@ namespace
 
 const QString kGroup = QStringLiteral("modulator");
 
-//! One edit of the layer, restoring the targets before the runtime is rebuilt
-//! (see ControlCommandsModulator.cpp - the rule is stated there once).
-void editLayer(const std::function<void(ModulationLayer&, ModulationRuntime&)>& change)
-{
-	songModulationLayer().edit([&change](ModulationLayer& layer, ModulationRuntime& runtime) {
-		change(layer, runtime);
-		rebuildModulationRuntimeRestoring(layer, &runtime);
-		return true;
-	});
-}
-
 /*! The undo/redo pairs the three route commands record beside their edit. Each
  *  captures VALUES (the modulator index, the route index, a copy of the route),
  *  never a pointer: an undo step can run long after the command that recorded
- *  it, and it re-resolves the layer through editLayer so the runtime is rebuilt
+ *  it, and it re-resolves the layer through editModulationLayer so the runtime is rebuilt
  *  the same way the edit rebuilt it.
  */
 void recordRouteRemoval(int modulator, int route, const ModulationRoute& captured)
 {
 	addUndoStep(
 		[modulator, route, captured]() {
-			editLayer([modulator, route, captured](ModulationLayer& layer, ModulationRuntime&) {
+			editModulationLayer([modulator, route, captured](ModulationLayer& layer, ModulationRuntime&) {
 				layer.insertRoute(modulator, route, captured);
 			});
 		},
 		[modulator, route]() {
-			editLayer([modulator, route](ModulationLayer& layer, ModulationRuntime&) {
+			editModulationLayer([modulator, route](ModulationLayer& layer, ModulationRuntime&) {
 				layer.removeRoute(modulator, route);
 			});
 		});
@@ -94,12 +83,12 @@ void recordRouteCreation(int modulator, int route, const ModulationRoute& create
 {
 	addUndoStep(
 		[modulator, route]() {
-			editLayer([modulator, route](ModulationLayer& layer, ModulationRuntime&) {
+			editModulationLayer([modulator, route](ModulationLayer& layer, ModulationRuntime&) {
 				layer.removeRoute(modulator, route);
 			});
 		},
 		[modulator, route, created]() {
-			editLayer([modulator, route, created](ModulationLayer& layer, ModulationRuntime&) {
+			editModulationLayer([modulator, route, created](ModulationLayer& layer, ModulationRuntime&) {
 				layer.insertRoute(modulator, route, created);
 			});
 		});
@@ -111,12 +100,12 @@ void recordDepth(int modulator, int route, float previous, float written)
 {
 	addUndoStep(
 		[modulator, route, previous]() {
-			editLayer([modulator, route, previous](ModulationLayer& layer, ModulationRuntime&) {
+			editModulationLayer([modulator, route, previous](ModulationLayer& layer, ModulationRuntime&) {
 				layer.setDepth(modulator, route, previous);
 			});
 		},
 		[modulator, route, written]() {
-			editLayer([modulator, route, written](ModulationLayer& layer, ModulationRuntime&) {
+			editModulationLayer([modulator, route, written](ModulationLayer& layer, ModulationRuntime&) {
 				layer.setDepth(modulator, route, written);
 			});
 		});
@@ -238,7 +227,7 @@ void registerTargetSet(ControlRegistry& registry)
 
 		const QJsonObject before = modulationLayerJson(layer);
 		int routeIndex = -1;
-		editLayer([&](ModulationLayer& target, ModulationRuntime&) {
+		editModulationLayer([&](ModulationLayer& target, ModulationRuntime&) {
 			routeIndex = target.addRoute(index, route);
 		});
 		if (routeIndex < 0)
@@ -301,7 +290,7 @@ void registerDepthSet(ControlRegistry& registry)
 				QStringLiteral("'depth' %1 is outside -1..1 (a fraction of the target's range)")
 					.arg(static_cast<double>(depth)));
 		}
-		editLayer([&](ModulationLayer& target, ModulationRuntime&) {
+		editModulationLayer([&](ModulationLayer& target, ModulationRuntime&) {
 			target.setDepth(index, route, depth);
 		});
 		recordDepth(index, route, previous, depth);
@@ -355,7 +344,7 @@ void registerTargetRemove(ControlRegistry& registry)
 		}
 		const ModulationRoute captured = modulator->routes[static_cast<std::size_t>(route)];
 		const QJsonObject before = modulationLayerJson(layer);
-		editLayer([&](ModulationLayer& target, ModulationRuntime&) {
+		editModulationLayer([&](ModulationLayer& target, ModulationRuntime&) {
 			target.removeRoute(index, route);
 		});
 		recordRouteRemoval(index, route, captured);

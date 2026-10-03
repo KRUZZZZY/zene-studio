@@ -32,9 +32,13 @@
  *    modulator that drives one of them, its cards' header buttons dispatch plugin.bypass and
  *    plugin.unload, and a device removed from anywhere takes its card with it at once - before
  *    the device is deleted, so no control paints a deleted parameter.
+ *  - 0.5.0 L10 (W3): the channel's level beside its heading, a parameter's alias on its card, the
+ *    card's delta and fold buttons.
  *  The device half is skipped when this host loads no effect module. */
 
 #include <QtTest>
+
+#include <cmath>
 
 #include <QJsonArray>
 #include <QJsonObject>
@@ -54,6 +58,7 @@
 #include "MenuTestSupport.h"
 #include "Mixer.h"
 #include "SampleTrack.h"
+#include "ChannelLevelMeter.h"
 #include "CommandLists.h"
 #include "ShellCommandMenus.h"
 #include "ShellSelection.h"
@@ -399,6 +404,51 @@ private slots:
 		QVERIFY(run(QStringLiteral("control.undo")).ok);
 		QCoreApplication::processEvents();
 		QCOMPARE(cards(panel).size(), second.isEmpty() ? 1 : 2);
+		ShellSelection::instance()->setTrack(nullptr);
+	}
+
+	//! 0.5.0 L10 (W3): a channel's level beside its heading (MX-101); a parameter's alias captions its
+	//! control (MX-097); the delta button is plugin.delta (MX-080); folding hides the parameters (MX-113).
+	void theLevelAliasDeltaAndFoldShowOnTheCard()
+	{
+		const int index = Engine::mixer()->createChannel();
+		MixerChannel* mixerChannel = Engine::mixer()->mixerChannel(index);
+		const QString channel = control::channelIdOf(mixerChannel);
+		const QString effect = loadAnEffect(channel);
+		if (effect.isEmpty()) { QSKIP("this host loads no effect module"); }
+		QVERIFY(run(QStringLiteral("plugin.param_rename"), {{QStringLiteral("target"), channel}, {QStringLiteral("plugin"), effect},
+			{QStringLiteral("name"), QStringLiteral("Wet/Dry mix")}, {QStringLiteral("alias"), QStringLiteral("Blend")}}).ok);
+		DevicePanel panel;
+		panel.resize(1200, 300);
+		panel.show();
+		ShellSelection::instance()->setChannel(channel);
+		panel.rebuild();
+		QCoreApplication::processEvents();
+		const QList<ChannelLevelMeter*> meters = panel.findChildren<ChannelLevelMeter*>();
+		QCOMPARE(meters.size(), 1);
+		QCOMPARE(meters.first()->channelId(), channel);
+		mixerChannel->m_rmsLeft.set(0.5f);
+		meters.first()->refresh();
+		QVERIFY(std::abs(meters.first()->levels().first + 6.0206f) < 0.05f);
+		DeviceCard* card = panel.findChildren<DeviceCard*>().first();
+		Effect* device = card->spec().effect;
+		QVERIFY(childNamed<QWidget>(card, QStringLiteral("Blend")) != nullptr);
+		auto* delta = childNamed<QToolButton>(card, QStringLiteral("Hear only what %1 changes").arg(card->spec().title));
+		QVERIFY(delta != nullptr);
+		delta->click();
+		QVERIFY(device->deltaTap().enabled());
+		delta->click();
+		QVERIFY(!device->deltaTap().enabled());
+		auto* fold = childNamed<QToolButton>(card, QStringLiteral("Fold or open %1").arg(card->spec().title));
+		QVERIFY(fold != nullptr);
+		fold->click();
+		QVERIFY(device->deviceOptions().folded);
+		QCoreApplication::processEvents();
+		QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+		DeviceCard* redrawn = panel.findChildren<DeviceCard*>().first();
+		QVERIFY(childNamed<QWidget>(redrawn, QStringLiteral("Blend")) == nullptr);  // folded: the header only
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
+		QVERIFY(!device->deviceOptions().folded);
 		ShellSelection::instance()->setTrack(nullptr);
 	}
 

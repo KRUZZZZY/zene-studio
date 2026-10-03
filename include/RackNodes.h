@@ -28,6 +28,7 @@
 #include <memory>
 #include <vector>
 
+#include "RackSplit.h"
 #include "RoutingNode.h"
 #include "SampleFrame.h"
 #include "lmms_export.h"
@@ -89,6 +90,10 @@ public:
 	 */
 	void setSidechain(const AudioBuffer* sidechain) { m_sidechain = sidechain; }
 
+	//! 0.5.0 L10 (MX-108): the part of the rack's input this chain gets (a band, the mid, the
+	//! side, one side). Control thread, before prepare(); the default passes the whole block.
+	void setSplit(const RackSplitFilter& split) { m_split = split; }
+
 	/**
 	 * @returns what the chain's processAudioBuffer() reported last time: false
 	 *          means "this chain has nothing more to say", which the rack
@@ -111,6 +116,7 @@ private:
 	//! AudioBus is not assignable (its members are const), so it is built here
 	std::unique_ptr<AudioBus> m_bus;
 	bool m_lastResult = false;
+	RackSplitFilter m_split;
 };
 
 /**
