@@ -35,6 +35,7 @@
 #include <QPainterPath>
 
 #include "ArrangementEdits.h"
+#include "ArrangementSections.h"
 #include "ControlRegistry.h"
 #include "ControlVocabulary.h"
 #include "DesignTokens.h"
@@ -99,6 +100,28 @@ void MarkerRulerOverlay::paintTempo(QPainter& p)
 	p.drawPolyline(curve);
 }
 
+namespace
+{
+
+//! ED-047: the song's sections as named bands along the ruler.
+void paintSections(QPainter& p, TimeLineWidget* ruler, int width, int height)
+{
+	const tokens::Palette& pal = tokens::palette();
+	for (const ArrangementSection& section : ArrangementSections::instance().sections())
+	{
+		const int left = std::max(0, ruler->markerX(TimePos(section.start)));
+		const int right = std::min(width, ruler->markerX(TimePos(section.end)));
+		if (right <= left) { continue; }
+		QColor band = section.color.isEmpty() ? pal.selected : QColor(section.color);
+		band.setAlpha(90);
+		p.fillRect(QRect(left, 0, right - left, height / 2), band);
+		p.setPen(pal.text);
+		p.drawText(QRect(left + 3, 0, right - left - 4, height / 2), Qt::AlignVCenter | Qt::AlignLeft, section.name);
+	}
+}
+
+} // namespace
+
 void MarkerRulerOverlay::paintEvent(QPaintEvent*)
 {
 	m_drawn.clear();
@@ -108,6 +131,7 @@ void MarkerRulerOverlay::paintEvent(QPaintEvent*)
 	p.setRenderHint(QPainter::Antialiasing);
 	paintTempo(p);
 	p.setFont(tokens::font(tokens::TextRole::Small));
+	paintSections(p, m_ruler, width(), height());
 	for (const Marker& marker : ProjectMarkers::instance().markers())
 	{
 		const int x = m_ruler->markerX(TimePos(marker.tick));

@@ -283,6 +283,27 @@ ListSpec markers()
 	return out;
 }
 
+ListSpec clips()
+{
+	ListSpec out = spec("Clip List", "clip.list", "clips", {QStringLiteral("name"), QStringLiteral("track_name"), QStringLiteral("start"),
+		QStringLiteral("length"), QStringLiteral("kind")});
+	out.summaryKeys = {QStringLiteral("count")};
+	const QHash<QString, QString> clip{{QStringLiteral("clip"), QStringLiteral("clip")}};
+	out.actions = {act("Select", "clip.select", clip), act("Delete", "clip.delete", clip)};
+	return out;
+}
+
+ListSpec sections()
+{
+	ListSpec out = spec("Sections", "section.list", "sections", {QStringLiteral("name"), QStringLiteral("start"), QStringLiteral("end"),
+		QStringLiteral("color")});
+	const QHash<QString, QString> section{{QStringLiteral("section"), QStringLiteral("section")}};
+	out.actions = {act("Select", "section.select", section), act("Edit...", "section.set", section, {}, true),
+		act("Remove", "section.remove", section)};
+	out.extras = {extra("Add...", "section.add")};
+	return out;
+}
+
 ListSpec noteEvents(const QString& clip)
 {
 	const QJsonObject where{{QStringLiteral("clip"), clip}};

@@ -123,6 +123,23 @@ bool shapeArg(const QJsonObject& args, const QString& key, FadeShape* shape, Con
 	return false;
 }
 
+/*! 0.5.0 L05 (ED-176): the crossfade's shape ('shape', equal power when left out) and its two sides -
+ *  'out_length' / 'in_length' (the overlap when left out) and 'out_shape' / 'in_shape' (the shape). */
+bool crossfadeSides(const QJsonObject& args, int overlap, FadeShape* shape, ClipEdits* out, ClipEdits* in, ControlResult* error)
+{
+	if (!shapeArg(args, QStringLiteral("shape"), shape, error)) { return false; }
+	out->fadeOutShape = *shape;
+	in->fadeInShape = *shape;
+	out->fadeOutTicks = args.value(QStringLiteral("out_length")).toInt(overlap);
+	in->fadeInTicks = args.value(QStringLiteral("in_length")).toInt(overlap);
+	if (out->fadeOutTicks < 1 || in->fadeInTicks < 1)
+	{
+		*error = ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("a crossfade side is at least one tick"));
+		return false;
+	}
+	return shapeArg(args, QStringLiteral("out_shape"), &out->fadeOutShape, error) && shapeArg(args, QStringLiteral("in_shape"), &in->fadeInShape, error);
+}
+
 /*! Rejects a fade pair that cannot both fit inside the clip it ramps over. The
  *  rule is the rejected-edit rule and not a clamp (invariant I4's shape): a pair
  *  that overlaps would make the clip's own envelope ambiguous, and the caller
@@ -273,11 +290,16 @@ void registerClipCrossfade(ControlRegistry& registry)
 	cmd.description = QStringLiteral("Ramp two overlapping clips on one track into each other: the "
 		"outgoing clip gets a fade-out and the incoming clip a fade-in, both exactly as long as "
 		"their overlap, with the given shape (default equal_power, which sums the pair to unity "
-		"POWER). Reversible through the ProjectJournal (Track checkpoint).");
+		"POWER) - or each side its own: 'out_length' / 'in_length' (ticks) and 'out_shape' / 'in_shape'. "
+		"Reversible through the ProjectJournal (Track checkpoint).");
 	cmd.argsSchema = control::objectSchema({
 		{QStringLiteral("out"), control::stringProperty()},
 		{QStringLiteral("in"), control::stringProperty()},
 		{QStringLiteral("shape"), control::stringProperty()},
+		{QStringLiteral("out_length"), control::integerProperty(1, MaxSongLength)},
+		{QStringLiteral("in_length"), control::integerProperty(1, MaxSongLength)},
+		{QStringLiteral("out_shape"), control::stringProperty()},
+		{QStringLiteral("in_shape"), control::stringProperty()},
 	}, {QStringLiteral("out"), QStringLiteral("in")});
 	cmd.resultSchema = control::objectSchema({
 		{QStringLiteral("out"), control::stringProperty()},
@@ -329,17 +351,12 @@ void registerClipCrossfade(ControlRegistry& registry)
 		}
 		const int overlap = static_cast<int>(overlapEnd - overlapStart);
 
-		FadeShape shape = FadeShape::EqualPower;
-		if (!shapeArg(args, QStringLiteral("shape"), &shape, &error)) { return error; }
-
 		const ClipEdits outBefore = outRef.clip->clipEdits();
 		const ClipEdits inBefore = inRef.clip->clipEdits();
 		ClipEdits outAfter = outBefore;
 		ClipEdits inAfter = inBefore;
-		outAfter.fadeOutTicks = overlap;
-		outAfter.fadeOutShape = shape;
-		inAfter.fadeInTicks = overlap;
-		inAfter.fadeInShape = shape;
+		FadeShape shape = FadeShape::EqualPower;
+		if (!crossfadeSides(args, overlap, &shape, &outAfter, &inAfter, &error)) { return error; }
 		// Each ramp is bounded by ITS OWN clip, and a clip whose OTHER fade no
 		// longer fits is a refusal naming the fix rather than a silent overwrite
 		// of an edit the caller made deliberately.

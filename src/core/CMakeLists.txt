@@ -964,6 +964,15 @@ set(LMMS_SRCS
 	core/ControlCommandsCompGroup.cpp
 	core/ControlCommandsRecordTools.cpp
 	core/MetronomeOptions.cpp
+	core/ControlCommandsArrangeTools.cpp
+	core/ControlCommandsSections.cpp
+	core/ArrangementSections.cpp
+	core/ControlCommandsSampleTools.cpp
+	core/ControlCommandsAutomationTools.cpp
+	core/AutomationSwitches.cpp
+	core/ControlCommandsAudioAnalysis.cpp
+	core/ControlTrackCreation.cpp
+	core/PitchTrack.cpp
 	core/MarkerActions.cpp
 	core/MixerOptions.cpp
 	core/ArticulationMap.cpp

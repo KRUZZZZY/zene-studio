@@ -194,6 +194,22 @@ ControlResult repeatNotes(const QJsonObject& args)
 	return ControlResult::success(finish(ref, clip, QStringLiteral("note.repeat"), {{QStringLiteral("added"), notes.size() * count}}));
 }
 
+//! ED-028: the notes in scope moved 'amount' ticks later (negative: earlier), wrapped inside the clip's length.
+ControlResult rotate(const QJsonObject& args)
+{
+	ClipRef ref;
+	QVector<Note*> notes;
+	ControlResult error;
+	MidiClip* clip = scopedNotes(args, &ref, &notes, &error);
+	if (clip == nullptr) { return error; }
+	const tick_t length = std::max<tick_t>(1, clip->length().getTicks());
+	const tick_t amount = args.value(QStringLiteral("amount")).toInt();
+	if (amount % length == 0) { return ControlResult::success({{QStringLiteral("clip"), clipId(ref.id)}, {QStringLiteral("rotated"), 0}}); }
+	clip->addJournalCheckPoint();
+	for (Note* note : notes) { note->setPos(TimePos(((note->pos().getTicks() + amount) % length + length) % length)); }
+	return ControlResult::success(finish(ref, clip, QStringLiteral("note.rotate"), {{QStringLiteral("rotated"), notes.size()}}));
+}
+
 //! Which of @a steps steps carry a pulse: Bjorklund's grouping (E(3,8) is x..x..x.), rotated by @a rotate.
 std::vector<bool> euclid(int steps, int pulses, int rotate)
 {
@@ -280,6 +296,9 @@ void registerNoteToolCommands(ControlRegistry& registry)
 		with({{QStringLiteral("offset"), integerProperty(1, 96)}, {QStringLiteral("velocity"), numberProperty()}}), flam);
 	add(registry, "transpose_in_key", QStringLiteral("Move the notes in 'scope' 'steps' scale degrees (negative: down) within the scale "
 		"scale.set chose, so they stay in key. One undo step."), with({{QStringLiteral("steps"), integerProperty(-24, 24)}}), transposeInKey);
+	add(registry, "rotate", QStringLiteral("Move the notes in 'scope' 'amount' ticks later (negative: earlier), wrapping round inside "
+		"the clip's length, so the pattern turns without growing. One undo step."),
+		with({{QStringLiteral("amount"), integerProperty(-192 * 256, 192 * 256)}}), rotate);
 	add(registry, "repeat", QStringLiteral("Repeat each note in 'scope' 'count' times (1..64), every 'interval' ticks - a note repeater. "
 		"One undo step."), with({{QStringLiteral("count"), integerProperty(1, 64)}, {QStringLiteral("interval"), integerProperty(1, 3072)}}),
 		repeatNotes);

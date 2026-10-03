@@ -84,6 +84,7 @@ void fillToolsMenu(QMenu* menu, const QJsonObject& scoped, const QJsonObject& wh
 	addCommandAction(menu, tr("Invert"), QStringLiteral("note.invert"), run("note.invert", scoped, false));
 	addCommandAction(menu, tr("Arpeggiate..."), QStringLiteral("note.arpeggiate"), run("note.arpeggiate", scoped, true));
 	addCommandAction(menu, tr("Flam"), QStringLiteral("note.flam"), run("note.flam", scoped, false));
+	addCommandAction(menu, tr("Rotate..."), QStringLiteral("note.rotate"), run("note.rotate", scoped, true));
 	addCommandAction(menu, tr("Repeat..."), QStringLiteral("note.repeat"), run("note.repeat", scoped, true));
 	addCommandAction(menu, tr("Up a Degree in Key"), QStringLiteral("note.transpose_in_key"),
 		run("note.transpose_in_key", merged(scoped, {{QStringLiteral("steps"), 1}}), false));

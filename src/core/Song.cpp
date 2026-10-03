@@ -34,6 +34,7 @@
 #include <cmath>
 
 #include "AutomationRamp.h"
+#include "AutomationSwitches.h"
 #include "AutomationTrack.h"
 #include "AutomationEditor.h"
 #include "ConfigManager.h"
@@ -596,7 +597,7 @@ void Song::processAutomations(const TrackList &tracklist, TimePos timeStart, f_c
 				}
 				writes = recordedModel->automationWantsWrite( automationRun, automationNowNs );
 			}
-			if( writes )
+			if( writes && AutomationSwitches::instance().writesAt( timeStart.getTicks() ) )  // 0.5.0 L06 (ED-200/201)
 			{
 				// The values in an automation clip are stored in un-un-scaled format, so if you
 				// are automating a log knob, when you draw an curve, the values being stored are not the actual values the
@@ -645,7 +646,7 @@ void Song::processAutomations(const TrackList &tracklist, TimePos timeStart, f_c
 		// The clip itself is untouched, and the mode is the only gate here:
 		// an Off control that a gesture or the clip's own record flag is
 		// writing to is still recording (that is what those two are for).
-		if (!isRecording && model->automationMode() != AutomatableModel::AutomationMode::Off)
+		if (!isRecording && model->automationMode() != AutomatableModel::AutomationMode::Off && AutomationSwitches::instance().reads())
 		{
 			/* TODO
 			 * Remove scaleValue() from here when automation editor's

@@ -273,6 +273,43 @@ private slots:
 		QVERIFY2(back.ok, qPrintable(back.errorMessage));
 	}
 
+	//! 0.5.0 L06 (ED-201, ED-194): a control's trim is set and undone, and one automation point moves in
+	//! time and value as one undo step.
+	void trimAndAPointMove()
+	{
+		ControlRegistry* registry = ControlRegistry::instance();
+		QString trackId;
+		QString paramId;
+		double minValue = 0.0;
+		double maxValue = 0.0;
+		if (!findAutomatableParameter(registry, &trackId, &paramId, &minValue, &maxValue))
+		{
+			if (!testHostCanLoadPluginModules()) { QSKIP("this test host cannot load plugin modules (see the slot above)"); }
+			QFAIL("the song exposes no automatable device parameter");
+		}
+		const QJsonObject which{{QStringLiteral("track"), trackId}, {QStringLiteral("parameter"), paramId}};
+		QJsonObject trim = which;
+		trim.insert(QStringLiteral("offset"), (maxValue - minValue) / 4.0);
+		QVERIFY(registry->invoke(QStringLiteral("automation.trim_set"), trim).ok);
+		QCOMPARE(registry->invoke(QStringLiteral("automation.trim_get"), which).result.value(QStringLiteral("offset")).toDouble(), (maxValue - minValue) / 4.0);
+		QVERIFY(registry->invoke(QStringLiteral("control.undo")).ok);
+		QCOMPARE(registry->invoke(QStringLiteral("automation.trim_get"), which).result.value(QStringLiteral("offset")).toDouble(), 0.0);
+		QJsonObject point = which;
+		point.insert(QStringLiteral("ticks"), 96);
+		point.insert(QStringLiteral("value"), minValue);
+		QVERIFY(registry->invoke(QStringLiteral("automation.add_point"), point).ok);
+		QJsonObject move = which;
+		move.insert(QStringLiteral("ticks"), 96);
+		move.insert(QStringLiteral("new_ticks"), 192);
+		move.insert(QStringLiteral("new_value"), maxValue);
+		const ControlResult moved = registry->invoke(QStringLiteral("automation.move_point"), move);
+		QVERIFY2(moved.ok, qPrintable(moved.errorMessage));
+		QCOMPARE(moved.result.value(QStringLiteral("ticks")).toInt(), 192);
+		QCOMPARE(registry->invoke(QStringLiteral("automation.move_point"), move).errorKind, ControlErrorKind::NotFound);  // nothing at 96 now
+		QVERIFY(registry->invoke(QStringLiteral("control.undo")).ok);
+		QVERIFY(registry->invoke(QStringLiteral("automation.move_point"), move).ok);  // back at 96
+	}
+
 private:
 	static QString qstr(const char* text) { return QString::fromLatin1(text); }
 

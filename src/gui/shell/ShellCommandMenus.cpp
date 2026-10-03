@@ -325,6 +325,12 @@ void populateClip(QMenu* menu, Clip* clip)
 	{
 		add(menu, "Consolidate", "clip.consolidate", {{QStringLiteral("track"), control::trackIdOf(clip->getTrack())},
 			{QStringLiteral("start"), static_cast<int>(clip->startPosition())}, {QStringLiteral("end"), static_cast<int>(clip->endPosition())}}, false);
+		add(menu, "Remove Silence...", "clip.remove_silence", self, true, {{QStringLiteral("threshold_db"), -50.0}});  // ED-040
+		add(menu, "Crop the Sample", "sample.crop", self, false);  // ED-155
+		add(menu, "Convert to MIDI Notes", "clip.audio_to_midi", self, false);  // ED-160
+		add(menu, "Make the Sample Unique", "sample.make_unique", self, false);
+		add(menu, "Split at the Play Position", "clip.split_at", with(with(self, "at", QStringLiteral("positions")), "positions",  // ED-005
+			QJsonArray{static_cast<int>(Engine::getSong()->getPlayPos().getTicks())}), false);
 	}
 	add(menu, "Move With Edit Group...", "vca.edit_move", self, true, at);
 	const int transpose = clip->clipEdits().transpose;
@@ -466,6 +472,10 @@ void populateChannel(QMenu* menu, const QString& channel)
 void populateProject(QMenu* menu)
 {
 	list(menu, "Revisions...", [] { return CommandLists::revisions(); });
+	list(menu, "Clip List...", [] { return CommandLists::clips(); });  // L04 (ED-036)
+	list(menu, "Sections...", [] { return CommandLists::sections(); });  // L04 (ED-047)
+	add(menu, "Next Transient", "arrangement.next_transient", {}, false);  // L04 (ED-025)
+	add(menu, "Previous Transient", "arrangement.next_transient", {{QStringLiteral("direction"), QStringLiteral("previous")}}, false);
 	list(menu, "Project Files...", [] { return CommandLists::missingFiles(Engine::getSong()->projectFileName()); });
 	add(menu, "Collect Media...", "project.collect_media", {}, true);
 	// L11 / L12: templates, tracks from another project, a hand-off folder, bouncing a selection.
@@ -476,6 +486,9 @@ void populateProject(QMenu* menu)
 	choices(menu, "Low-Latency Monitoring", "transport.low_latency", "enabled", {});  // L01 (MX-159)
 	add(menu, "Global Swing...", "transport.groove", {}, true);  // L07 (ED-142)
 	choices(menu, "Pan Law", "mixer.options", "pan_law", {});  // L08 (MX-025)
+	choices(menu, "Automation Read", "automation.switches", "read", {});  // L06 (ED-200)
+	choices(menu, "Automation Write", "automation.switches", "write", {});
+	choices(menu, "Punched Automation Writes", "automation.switches", "punched_writes", {});  // ED-201
 	choices(menu, "Mono Check", "mixer.set_strip", "mono", {{QStringLiteral("channel"), control::channelIdOf(Engine::mixer()->mixerChannel(0))}});  // MX-039
 	add(menu, "Order the Mixer by Tracks", "mixer.order_by_tracks", {}, false);  // MX-018
 	add(menu, "Find a Channel...", "mixer.find", {}, true, {}, true);  // MX-009

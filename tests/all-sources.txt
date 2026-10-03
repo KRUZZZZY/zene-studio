@@ -72,6 +72,7 @@ include/Accessibility.h
 include/ActionGroup.h
 include/Appearance.h
 include/ArrangementEdits.h
+include/ArrangementSections.h
 include/ArrangerOverlays.h
 include/ArrayVector.h
 include/ArticulationMap.h
@@ -118,6 +119,7 @@ include/AutomationEditor.h
 include/AutomationModeMenu.h
 include/AutomationNode.h
 include/AutomationRamp.h
+include/AutomationSwitches.h
 include/AutomationTrack.h
 include/AutomationTrackView.h
 include/BandLimitedWave.h
@@ -189,6 +191,7 @@ include/ControlScaleShared.h
 include/ControlServer.h
 include/ControlStemSupport.h
 include/ControlStructuralSupport.h
+include/ControlTrackCreation.h
 include/ControlUndoCoalescing.h
 include/ControlVocabulary.h
 include/ControlWarpSupport.h
@@ -443,6 +446,7 @@ include/PianoRoll.h
 include/PianoView.h
 include/PinConnector.h
 include/Pitch.h
+include/PitchTrack.h
 include/PixmapButton.h
 include/PlayHandle.h
 include/Plugin.h
@@ -1128,6 +1132,7 @@ src/common/SharedMemory.cpp
 src/common/SystemSemaphore.cpp
 src/core/Appearance.cpp
 src/core/ArrangementEdits.cpp
+src/core/ArrangementSections.cpp
 src/core/ArticulationMap.cpp
 src/core/AudioBuffer.cpp
 src/core/AudioBus.cpp
@@ -1145,6 +1150,7 @@ src/core/AutomationClip.cpp
 src/core/AutomationClipTransforms.cpp
 src/core/AutomationNode.cpp
 src/core/AutomationRamp.cpp
+src/core/AutomationSwitches.cpp
 src/core/BandLimitedWave.cpp
 src/core/BounceInPlace.cpp
 src/core/BrowserCatalog.cpp
@@ -1170,13 +1176,16 @@ src/core/ControlBounceSupport.cpp
 src/core/ControlBrowserSupport.cpp
 src/core/ControlChainPresetSupport.cpp
 src/core/ControlChordSupport.cpp
+src/core/ControlCommandsArrangeTools.cpp
 src/core/ControlCommandsArrangement.cpp
 src/core/ControlCommandsArrangementState.cpp
+src/core/ControlCommandsAudioAnalysis.cpp
 src/core/ControlCommandsAudioSlice.cpp
 src/core/ControlCommandsAutomation.cpp
 src/core/ControlCommandsAutomationEdit.cpp
 src/core/ControlCommandsAutomationLanes.cpp
 src/core/ControlCommandsAutomationRamp.cpp
+src/core/ControlCommandsAutomationTools.cpp
 src/core/ControlCommandsBounceLand.cpp
 src/core/ControlCommandsBrowser.cpp
 src/core/ControlCommandsBrowserCollections.cpp
@@ -1314,9 +1323,11 @@ src/core/ControlCommandsSafeStartEdit.cpp
 src/core/ControlCommandsSafeStartShared.h
 src/core/ControlCommandsSample.cpp
 src/core/ControlCommandsSampleEdit.cpp
+src/core/ControlCommandsSampleTools.cpp
 src/core/ControlCommandsScale.cpp
 src/core/ControlCommandsScaleEdit.cpp
 src/core/ControlCommandsScript.cpp
+src/core/ControlCommandsSections.cpp
 src/core/ControlCommandsSession.cpp
 src/core/ControlCommandsSessionCapture.cpp
 src/core/ControlCommandsSessionFollow.cpp
@@ -1434,6 +1445,7 @@ src/core/ControlStemModel.cpp
 src/core/ControlStemSupport.cpp
 src/core/ControlStemWav.cpp
 src/core/ControlStructuralSupport.cpp
+src/core/ControlTrackCreation.cpp
 src/core/ControlTransactions.cpp
 src/core/ControlUndoCoalescing.cpp
 src/core/ControlVocabulary.cpp
@@ -1539,6 +1551,7 @@ src/core/PatternStore.cpp
 src/core/PeakController.cpp
 src/core/PerfLog.cpp
 src/core/Piano.cpp
+src/core/PitchTrack.cpp
 src/core/PlayHandle.cpp
 src/core/Plugin.cpp
 src/core/PluginEditorHost.cpp
@@ -1947,8 +1960,11 @@ tests/data/gigproof/make_gig.cpp
 tests/data/vst3-chunk-probe/vst3-chunk-probe.cpp
 tests/data/vst3-test-instrument/vst3-test-instrument.cpp
 tests/src/core/AllocationProbe.h
+tests/src/core/ArrangeToolsTest.cpp
 tests/src/core/ArrangementModesTest.cpp
 tests/src/core/ArrayVectorTest.cpp
+tests/src/core/AudioAnalysisTest.cpp
+tests/src/core/AudioAutomationToolsTest.cpp
 tests/src/core/AudioBufferTest.cpp
 tests/src/core/AudioBurstSupport.h
 tests/src/core/AudioBusHandleTest.cpp

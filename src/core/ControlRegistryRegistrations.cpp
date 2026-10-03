@@ -128,6 +128,11 @@ void registerControlCommands(ControlRegistry& registry)
 	registerSessionPerformCommands(registry);
 	registerCompGroupCommands(registry);
 	registerRecordToolCommands(registry);
+	registerArrangeToolCommands(registry);
+	registerSectionCommands(registry);
+	registerSampleToolCommands(registry);
+	registerAutomationToolCommands(registry);
+	registerAudioAnalysisCommands(registry);
 #ifdef ZENE_TELEMETRY_ENABLED
 	// The telemetry.* group travels with the client. -DZENE_TELEMETRY=OFF
 	// removes the client, so the registry must not carry ids that would

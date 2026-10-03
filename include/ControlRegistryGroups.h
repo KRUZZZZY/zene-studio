@@ -833,6 +833,16 @@ LMMS_EXPORT void registerSessionPerformCommands(ControlRegistry& registry);
 //! punch_here, record.remaining (ControlCommandsRecordTools.cpp).
 LMMS_EXPORT void registerCompGroupCommands(ControlRegistry& registry);
 LMMS_EXPORT void registerRecordToolCommands(ControlRegistry& registry);
+//! 0.5.0 L04 (W3): clip.list / remove_silence, arrangement.next_transient (ControlCommandsArrangeTools.cpp);
+//! section.* (ControlCommandsSections.cpp).
+LMMS_EXPORT void registerArrangeToolCommands(ControlRegistry& registry);
+LMMS_EXPORT void registerSectionCommands(ControlRegistry& registry);
+//! 0.5.0 L05/L06 (W3): sample.crop / make_unique, clip.fade_curve (ControlCommandsSampleTools.cpp); automation.switches /
+//! trim_get / trim_set / move_point (ControlCommandsAutomationTools.cpp).
+LMMS_EXPORT void registerSampleToolCommands(ControlRegistry& registry);
+LMMS_EXPORT void registerAutomationToolCommands(ControlRegistry& registry);
+//! 0.5.0 L05 (W3): clip.audio_to_midi, sample.spectrogram (ControlCommandsAudioAnalysis.cpp).
+LMMS_EXPORT void registerAudioAnalysisCommands(ControlRegistry& registry);
 } // namespace lmms
 
 #endif // LMMS_CONTROL_REGISTRY_GROUPS_H

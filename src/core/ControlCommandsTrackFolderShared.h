@@ -65,6 +65,16 @@ namespace lmms
 namespace trackfoldercontrol
 {
 
+//! 0.5.0: whether @a track sits inside @a folder at any depth (session.launch_group, track.folder_move).
+inline bool insideFolder(const Track* track, const TrackFolder* folder)
+{
+	for (const TrackFolder* parent = track->parentFolder(); parent != nullptr; parent = parent->parentFolder())
+	{
+		if (parent == folder) { return true; }
+	}
+	return false;
+}
+
 //! Resolve a `track` argument that must name a FOLDER. A well-formed id naming a
 //! track of another type is a typed Refused - the same shape track.set_arm uses -
 //! and never a silent no-op.

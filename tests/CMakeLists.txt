@@ -599,6 +599,12 @@ set(LMMS_TESTS
 	src/core/SessionPerformTest.cpp
 	# 0.5.0 L03 (W3): comp edges and groups, metronome options, punch here, remaining record time.
 	src/core/RecordToolsTest.cpp
+	# 0.5.0 L04 (W3): the clip list, sections, remove silence, tab to transient, note rotation.
+	src/core/ArrangeToolsTest.cpp
+	# 0.5.0 L05/L06 (W3): crop, unique copies, fade curves, asymmetric crossfades, automation switches, trim, moving a point.
+	src/core/AudioAutomationToolsTest.cpp
+	# 0.5.0 L05 (W3): the YIN pitch tracker, audio to MIDI, the spectrogram, a folder moved as one.
+	src/core/AudioAnalysisTest.cpp
 	# 0.5.0 L05: fade shapes and handles, automatic and range fades, splits, slices, beat mapping.
 	src/core/AudioEditingTest.cpp
 	# 0.5.0 W2 gaps (audit-rows-1): clip.join, ripple on move and insert, controller.map / unmap.

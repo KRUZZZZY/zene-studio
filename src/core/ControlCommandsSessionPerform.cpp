@@ -43,6 +43,7 @@
 #include "ControlVocabulary.h"
 #include "SessionModel.h"
 #include "SessionScheduler.h"
+#include "ControlCommandsTrackFolderShared.h"
 #include "Song.h"
 #include "TrackFolder.h"
 
@@ -50,6 +51,7 @@ namespace lmms
 {
 
 using namespace control;
+using trackfoldercontrol::insideFolder;
 using namespace sessioncontrol;
 
 namespace
@@ -165,16 +167,6 @@ ControlResult setPlaylist(const QJsonObject& args)
 	recordBlock(before, *model);
 	for (const int scene : scenes) { invoke(QStringLiteral("session.scene_follow_set"), {{QStringLiteral("scene"), scene}}); }  // armed now
 	return ControlResult::success({{QStringLiteral("scenes"), args.value(QStringLiteral("scenes"))}, {QStringLiteral("cleared"), clear}});
-}
-
-//! Whether song track @a track sits inside @a folder (at any depth).
-bool insideFolder(const Track* track, const TrackFolder* folder)
-{
-	for (const TrackFolder* parent = track->parentFolder(); parent != nullptr; parent = parent->parentFolder())
-	{
-		if (parent == folder) { return true; }
-	}
-	return false;
 }
 
 ControlResult launchGroup(const QJsonObject& args)

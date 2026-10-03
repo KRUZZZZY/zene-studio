@@ -34,6 +34,7 @@
 #include "ArrangementEdits.h"
 #include "ClipTransients.h"
 #include "ControlEdit.h"
+#include "ControlTrackCreation.h"
 #include "ControlRegistry.h"
 #include "ControlRegistryGroups.h"
 #include "ControlVocabulary.h"
@@ -222,19 +223,8 @@ ControlResult sliceToInstrument(const QJsonObject& args)
 	if (capped) { frames.resize(MaxInstrumentSlices); }
 	InstrumentTrack* track = buildSliceTrack(*sample, frames, &error);
 	if (track == nullptr) { return error; }
-	// One undo step removes the track; redo rebuilds it from what it was saved as.
-	QDomDocument doc;
-	QDomElement root = doc.createElement(QStringLiteral("root"));
-	doc.appendChild(root);
-	track->saveState(doc, root);
-	const QString saved = doc.toString();
-	auto holder = std::make_shared<Track*>(track);
-	addUndoStep([holder]() { if (*holder != nullptr) { removeTrack(*holder); *holder = nullptr; } },
-		[holder, saved]() {
-			QDomDocument again;
-			again.setContent(saved);
-			*holder = Track::create(again.documentElement().firstChildElement(), Engine::getSong());
-		});
+	// One undo step removes the track; redo rebuilds it from what it was saved as (ControlTrackCreation.h).
+	recordCreatedTrack(track);
 	Engine::getSong()->setModified();
 	QJsonObject result{{QStringLiteral("clip"), clipId(ref.id)}, {QStringLiteral("track"), trackIdOf(track)},
 		{QStringLiteral("slices"), static_cast<int>(frames.size()) + 1}, {QStringLiteral("capped"), capped}};

@@ -501,6 +501,7 @@
 include/Accessibility.h
 include/Appearance.h
 include/ArrangementEdits.h
+include/ArrangementSections.h
 include/ArrangerOverlays.h
 include/ArticulationMap.h
 include/AudioBus.h
@@ -513,6 +514,7 @@ include/AudioStretcher.h
 include/AudioWideInputStage.h
 include/AutomationModeMenu.h
 include/AutomationRamp.h
+include/AutomationSwitches.h
 include/BounceInPlace.h
 include/BrowserCatalog.h
 include/BrowserPanel.h
@@ -567,6 +569,7 @@ include/ControlScaleShared.h
 include/ControlServer.h
 include/ControlStemSupport.h
 include/ControlStructuralSupport.h
+include/ControlTrackCreation.h
 include/ControlUndoCoalescing.h
 include/ControlVocabulary.h
 include/ControlWarpSupport.h
@@ -662,6 +665,7 @@ include/NoteTransformActions.h
 include/OutOfProcessHosting.h
 include/PatchWiring.h
 include/PinConnector.h
+include/PitchTrack.h
 include/PluginAudioPorts.h
 include/PluginEditorHost.h
 include/PluginHostChunking.h
@@ -873,6 +877,7 @@ plugins/WasmEffect/WasmEffectControls.h
 scripts/capabilities-dump.py
 src/core/Appearance.cpp
 src/core/ArrangementEdits.cpp
+src/core/ArrangementSections.cpp
 src/core/ArticulationMap.cpp
 src/core/AudioBus.cpp
 src/core/AudioInputPath.cpp
@@ -881,6 +886,7 @@ src/core/AudioStretcher.cpp
 src/core/AudioWideInputStage.cpp
 src/core/AutomationClipTransforms.cpp
 src/core/AutomationRamp.cpp
+src/core/AutomationSwitches.cpp
 src/core/BounceInPlace.cpp
 src/core/BrowserCatalog.cpp
 src/core/BrowserMetadata.cpp
@@ -900,13 +906,16 @@ src/core/ControlBounceSupport.cpp
 src/core/ControlBrowserSupport.cpp
 src/core/ControlChainPresetSupport.cpp
 src/core/ControlChordSupport.cpp
+src/core/ControlCommandsArrangeTools.cpp
 src/core/ControlCommandsArrangement.cpp
 src/core/ControlCommandsArrangementState.cpp
+src/core/ControlCommandsAudioAnalysis.cpp
 src/core/ControlCommandsAudioSlice.cpp
 src/core/ControlCommandsAutomation.cpp
 src/core/ControlCommandsAutomationEdit.cpp
 src/core/ControlCommandsAutomationLanes.cpp
 src/core/ControlCommandsAutomationRamp.cpp
+src/core/ControlCommandsAutomationTools.cpp
 src/core/ControlCommandsBounceLand.cpp
 src/core/ControlCommandsBrowser.cpp
 src/core/ControlCommandsBrowserCollections.cpp
@@ -1044,9 +1053,11 @@ src/core/ControlCommandsSafeStartEdit.cpp
 src/core/ControlCommandsSafeStartShared.h
 src/core/ControlCommandsSample.cpp
 src/core/ControlCommandsSampleEdit.cpp
+src/core/ControlCommandsSampleTools.cpp
 src/core/ControlCommandsScale.cpp
 src/core/ControlCommandsScaleEdit.cpp
 src/core/ControlCommandsScript.cpp
+src/core/ControlCommandsSections.cpp
 src/core/ControlCommandsSession.cpp
 src/core/ControlCommandsSessionCapture.cpp
 src/core/ControlCommandsSessionFollow.cpp
@@ -1164,6 +1175,7 @@ src/core/ControlStemModel.cpp
 src/core/ControlStemSupport.cpp
 src/core/ControlStemWav.cpp
 src/core/ControlStructuralSupport.cpp
+src/core/ControlTrackCreation.cpp
 src/core/ControlTransactions.cpp
 src/core/ControlUndoCoalescing.cpp
 src/core/ControlVocabulary.cpp
@@ -1229,6 +1241,7 @@ src/core/NoteTransform.cpp
 src/core/OnnxRuntimeStemSeparator.cpp
 src/core/OutOfProcessHosting.cpp
 src/core/PatchWiring.cpp
+src/core/PitchTrack.cpp
 src/core/PluginEditorHost.cpp
 src/core/PluginHostChunking.cpp
 src/core/PluginHostNotes.cpp
@@ -1523,7 +1536,10 @@ tests/rt_safety_source.py
 
 tests/session_api_proof_lib.py
 tests/session_api_proof_rows.py
+tests/src/core/ArrangeToolsTest.cpp
 tests/src/core/ArrangementModesTest.cpp
+tests/src/core/AudioAnalysisTest.cpp
+tests/src/core/AudioAutomationToolsTest.cpp
 tests/src/core/AudioBurstSupport.h
 tests/src/core/AudioEditingTest.cpp
 tests/src/core/AudioResamplerRatioTest.cpp

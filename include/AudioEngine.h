@@ -309,6 +309,12 @@ public:
 	//! lets a recorder take - the one gate the record routes and the record-armed clips share
 	//! (0.5.0, engine audit E3). Every frame when no region is armed.
 	PunchFrames punchWindow(f_cnt_t frames) const noexcept;
+	//! 0.5.0 L06: whether song tick @a tick is inside the published punch region (any thread).
+	bool punchCapturesTick(tick_t tick) const noexcept
+	{
+		return m_punchArmed.load(std::memory_order_relaxed) && tick >= m_punchBegin.load(std::memory_order_relaxed)
+			&& tick < m_punchEnd.load(std::memory_order_relaxed);
+	}
 
 	// -----------------------------------------------------------------------
 	// The N-CHANNEL capture IN path (0.3.0, feature row 64 "Arbitrary input
