@@ -24,7 +24,8 @@
 /*! 0.5.0 W3 L13 / L14, the interface side: the light palette holds every declared pair at AA (WF-118);
  *  a theme colour override is one undo step, names the pairs it breaks and round-trips through a file,
  *  and the Theme Colours list runs it (WF-117); the layout density scales the stylesheet's metrics and is
- *  a window.appearance field (WF-134). */
+ *  a window.appearance field (WF-134); Help > Ask shows app.ask's answers (WF-142), What's New the shipped notes
+ *  (WF-141), the large clock the play position (WF-101); the window verbs refuse, typed, without a main window. */
 
 #include <QtTest>
 
@@ -39,6 +40,7 @@
 #include "DesignTokens.h"
 #include "Engine.h"
 #include "WcagContrast.h"
+#include "WorkspaceWindows.h"
 
 using namespace lmms;
 using namespace lmms::gui;
@@ -185,6 +187,39 @@ private slots:
 		QVERIFY(!run(QStringLiteral("window.appearance"), {{QStringLiteral("density"), QStringLiteral("cramped")}}).ok);
 		QVERIFY(run(QStringLiteral("control.undo")).ok);
 		QCOMPARE(appearance::options().density, QStringLiteral("standard"));
+	}
+
+	void askShowsTheAnswers()
+	{
+		AssistantDialog dialog;
+		QVERIFY(dialog.ask(QStringLiteral("how do I add a send to a return channel")) > 0);
+		QVERIFY(!dialog.answersText().isEmpty());
+		QCOMPARE(dialog.ask(QStringLiteral("a")), 0);
+	}
+
+	void whatsNewShowsTheNotes()
+	{
+		const ControlResult notes = run(QStringLiteral("app.whats_new"));
+		QVERIFY2(notes.ok, qPrintable(notes.errorMessage));
+		WhatsNewDialog dialog(notes.result);
+		QVERIFY(dialog.notesText().contains(QStringLiteral("0.5.0")));
+	}
+
+	void theClockShowsThePosition()
+	{
+		LargeClock clock;
+		QVERIFY2(clock.refresh().startsWith(QStringLiteral("1 . 1 . 000")), qPrintable(clock.refresh()));
+	}
+
+	void theWindowVerbsNeedAMainWindow()
+	{
+		for (const char* id : {"window.stay_on_top", "window.tidy", "window.large_clock", "window.ask", "window.whats_new",
+			"window.focus_panel"})
+		{
+			const ControlResult refused = run(QLatin1String(id));
+			QVERIFY2(!refused.ok, id);
+			QCOMPARE(refused.errorKind, ControlErrorKind::Requires);
+		}
 	}
 
 private:

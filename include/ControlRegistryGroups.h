@@ -848,6 +848,12 @@ LMMS_EXPORT void registerAudioAnalysisCommands(ControlRegistry& registry);
 LMMS_EXPORT void registerThemeCommands(ControlRegistry& registry);
 //! track.overview / set_color / set_visible / set_icon, mixer.cpu_load (src/core/ControlCommandsTrackLooks.cpp).
 LMMS_EXPORT void registerTrackLookCommands(ControlRegistry& registry);
+//! app.ask / app.whats_new (src/core/ControlCommandsAssistant.cpp), and what window.whats_new calls once the
+//! notes are on screen: this version's notes count as shown.
+LMMS_EXPORT void registerAssistantCommands(ControlRegistry& registry);
+LMMS_EXPORT void markWhatsNewSeen();
+//! window.stay_on_top / tidy / large_clock / ask / whats_new / focus_panel (src/gui/ControlCommandsWorkspace.cpp).
+LMMS_EXPORT void registerWorkspaceCommands(ControlRegistry& registry);
 } // namespace lmms
 
 #endif // LMMS_CONTROL_REGISTRY_GROUPS_H

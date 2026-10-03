@@ -24,14 +24,18 @@
 
 #include "WorkspaceMenus.h"
 
+#include <QKeySequence>
 #include <QMenu>
 #include <QMenuBar>
+#include <QTimer>
 
 #include "CommandForm.h"
 #include "CommandLists.h"
+#include "ControlRegistry.h"
 #include "MenuBarExtras.h"
 #include "TrackIcons.h"
 #include "TrackLooks.h"
+#include "UnattendedRun.h"
 
 namespace lmms::gui
 {
@@ -62,6 +66,38 @@ void choices(QMenu* menu, const QString& label, const QString& id, const QString
 	addCommandChoices(menu, label, id, key, [id] { return CommandCall{id, {}, {}, QString(), false}; });
 }
 
+void fillWindowMenu(QMenu* menu)
+{
+	list(menu, QObject::tr("Track Manager..."), CommandLists::trackManager);
+	run(menu, QObject::tr("Channel Load"), QStringLiteral("mixer.cpu_load"), {}, false, true);
+	run(menu, QObject::tr("Large Clock"), QStringLiteral("window.large_clock"));
+	menu->addSeparator();
+	run(menu, QObject::tr("Focus Next Panel"), QStringLiteral("window.focus_panel"), {{QStringLiteral("panel"), QStringLiteral("next")}})
+		->setShortcut(QKeySequence(Qt::Key_F6));
+	run(menu, QObject::tr("Focus Previous Panel"), QStringLiteral("window.focus_panel"), {{QStringLiteral("panel"), QStringLiteral("previous")}})
+		->setShortcut(QKeySequence(Qt::SHIFT | Qt::Key_F6));
+	menu->addSeparator();
+	choices(menu, QObject::tr("Keep on Top"), QStringLiteral("window.stay_on_top"), QStringLiteral("enabled"));
+	run(menu, QObject::tr("Cascade Windows"), QStringLiteral("window.tidy"), {{QStringLiteral("mode"), QStringLiteral("cascade")}});
+	run(menu, QObject::tr("Tile Windows"), QStringLiteral("window.tidy"), {{QStringLiteral("mode"), QStringLiteral("tile")}});
+}
+
+void fillHelpMenu(QMenu* help)
+{
+	help->addSeparator();
+	run(help, QObject::tr("Ask..."), QStringLiteral("window.ask"));
+	run(help, QObject::tr("What's New"), QStringLiteral("window.whats_new"));
+}
+
+//! WF-141: this version's release notes, once, when a person starts it (never for an agent or a test).
+void showWhatsNewOnce(QWidget* window)
+{
+	if (isUnattendedRun()) { return; }
+	const ControlResult notes = ControlRegistry::instance()->invoke(QStringLiteral("app.whats_new"));
+	if (!notes.ok || notes.result.value(QStringLiteral("seen")).toBool()) { return; }
+	QTimer::singleShot(1500, window, [] { ControlRegistry::instance()->invoke(QStringLiteral("window.whats_new")); });
+}
+
 } // namespace
 
 void populateCustomiseExtras(QMenu* menu)
@@ -83,8 +119,9 @@ void installWorkspaceMenus(QMenuBar* bar)
 	auto* menu = new QMenu(QObject::tr("&Window"), bar->window());
 	menu->setObjectName(QStringLiteral("workspaceMenu"));
 	if (insertBeforeHelp(bar, menu) != menu) { return; }
-	list(menu, QObject::tr("Track Manager..."), CommandLists::trackManager);
-	run(menu, QObject::tr("Channel Load"), QStringLiteral("mixer.cpu_load"), {}, false, true);
+	fillWindowMenu(menu);
+	if (QMenu* help = bar->actions().last()->menu()) { fillHelpMenu(help); }
+	showWhatsNewOnce(bar->window());
 }
 
 } // namespace lmms::gui

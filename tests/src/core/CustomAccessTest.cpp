@@ -23,7 +23,8 @@
  */
 /*! 0.5.0 W3 L13 / L14, the commands that need no interface: the track manager's list and its colour,
  *  visibility and icon edits, each one undo step, the icon saved only when set (WF-097 / WF-120); every
- *  mixer channel's processing load (WF-104). */
+ *  mixer channel's processing load (WF-104); a question answered from the manual and the commands, offline
+ *  (WF-142); the shipped release notes and their once-per-version marker (WF-141). */
 
 #include <QtTest>
 
@@ -31,7 +32,9 @@
 #include <QJsonArray>
 #include <QTemporaryDir>
 
+#include "ConfigManager.h"
 #include "ControlRegistry.h"
+#include "ControlRegistryGroups.h"
 #include "ControlVocabulary.h"
 #include "Engine.h"
 #include "Mixer.h"
@@ -75,6 +78,9 @@ private slots:
 	void initTestCase()
 	{
 		QVERIFY(m_dir.isValid());
+		// A throwaway config: app.whats_new's marker and the settings presets are written to it.
+		qputenv("HOME", m_dir.path().toLocal8Bit());
+		ConfigManager::inst()->loadConfigFile(m_dir.filePath(QStringLiteral("zene.xml")));
 		Engine::init(true);
 		ControlRegistry::setReady(true);
 		m_track = Track::create(Track::Type::Sample, Engine::getSong());
@@ -156,6 +162,41 @@ private slots:
 		QCOMPARE(static_cast<int>(channels.size()), static_cast<int>(Engine::mixer()->numChannels()));
 		for (const QJsonValue& channel : channels) { QVERIFY(channel.toObject().value(QStringLiteral("cpu_percent")).toDouble() >= 0.0); }
 		QVERIFY(load.result.value(QStringLiteral("total_percent")).toDouble() >= 0.0);
+	}
+
+	void aQuestionFindsTheManualAndTheCommands()
+	{
+		const ControlResult tempo = run(QStringLiteral("app.ask"), {{QStringLiteral("question"), QStringLiteral("How do I change the tempo?")},
+			{QStringLiteral("limit"), 10}});
+		QVERIFY2(tempo.ok, qPrintable(tempo.errorMessage));
+		QVERIFY(tempo.result.value(QStringLiteral("offline")).toBool());
+		QStringList ids;
+		for (const QJsonValue& answer : tempo.result.value(QStringLiteral("answers")).toArray())
+		{
+			ids.append(answer.toObject().value(QStringLiteral("id")).toString());
+		}
+		QVERIFY2(ids.contains(QStringLiteral("transport.set_tempo")), qPrintable(ids.join(QStringLiteral(", "))));
+		const ControlResult record = run(QStringLiteral("app.ask"), {{QStringLiteral("question"), QStringLiteral("record audio takes")}});
+		bool manual = false;
+		for (const QJsonValue& answer : record.result.value(QStringLiteral("answers")).toArray())
+		{
+			manual = manual || answer.toObject().value(QStringLiteral("kind")).toString() == QLatin1String("manual");
+		}
+		QVERIFY2(manual, "the manual's sections were not searched (data/manual/index.html)");
+		QCOMPARE(run(QStringLiteral("app.ask"), {{QStringLiteral("question"), QStringLiteral("a an")}}).errorKind, ControlErrorKind::InvalidArgs);
+		QVERIFY(run(QStringLiteral("app.ask"), {{QStringLiteral("question"), QStringLiteral("qqqzzz xxyyq")}}).result
+			.value(QStringLiteral("answers")).toArray().isEmpty());
+	}
+
+	void theReleaseNotesAreShownOncePerVersion()
+	{
+		const ControlResult notes = run(QStringLiteral("app.whats_new"));
+		QVERIFY2(notes.ok, qPrintable(notes.errorMessage));
+		QVERIFY(!notes.result.value(QStringLiteral("notes")).toObject().value(QStringLiteral("items")).toArray().isEmpty());
+		QVERIFY(!notes.result.value(QStringLiteral("update_check")).toBool());
+		QVERIFY(!notes.result.value(QStringLiteral("seen")).toBool());
+		markWhatsNewSeen();
+		QVERIFY(run(QStringLiteral("app.whats_new")).result.value(QStringLiteral("seen")).toBool());
 	}
 
 private:

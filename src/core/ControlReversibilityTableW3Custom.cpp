@@ -57,6 +57,19 @@ const ReversibilityRow kW3CustomRows[] = {
 	R("track.set_icon", RC::TrueInverse, true, "it sets a track's icon (the <track-looks> section of the project)",
 		"action checkpoint: the recorded undo step puts the previous icon back", ""),
 	R("mixer.cpu_load", RC::NotMutating, false, "it reads the channels' processing load. Nothing is written", "no write", ""),
+	// WF-141 / WF-142: the release notes and the offline assistant.
+	R("app.ask", RC::NotMutating, false, "it searches the manual and the command descriptions. Nothing is written or sent",
+		"no write", ""),
+	R("app.whats_new", RC::NotMutating, false, "it reads the release notes the program ships. Nothing is written or fetched",
+		"no write", ""),
+	// WF-101 / WF-105 / WF-132 and the windows of WF-141 / WF-142: interface state.
+	R("window.stay_on_top", RC::NotMutating, false, "it keeps the main window above others or not: interface state", "no write", ""),
+	R("window.tidy", RC::NotMutating, false, "it moves the floating windows: interface state", "no write", ""),
+	R("window.large_clock", RC::NotMutating, false, "it opens a clock: a display", "no write", ""),
+	R("window.ask", RC::NotMutating, false, "it opens the assistant: interface state", "no write", ""),
+	R("window.whats_new", RC::NotMutating, false, "it shows the release notes and remembers they were shown (an interface "
+		"marker in the config file, as the window layout is kept)", "no project write", ""),
+	R("window.focus_panel", RC::NotMutating, false, "it moves the keyboard focus: interface state", "no write", ""),
 };
 
 #undef R

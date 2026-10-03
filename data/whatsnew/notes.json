@@ -1,0 +1,28 @@
+{
+	"format": "zene-whatsnew",
+	"comment": "Release notes shown inside the application (Help > What's New, app.whats_new), newest first. Shipped with the program; nothing is fetched.",
+	"versions": [
+		{
+			"version": "0.5.0",
+			"title": "Zene Studio 0.5.0",
+			"items": [
+				"One window: the arrangement in the middle, the browser on the left, the Inspector on the right, the editors and the mixer below.",
+				"A new note editor with velocity colours, an expression lane, scale folding and ghost notes.",
+				"Themes: a light palette beside dark and high contrast, your own colours (Customise > Theme), and a roomier or touch-sized layout density.",
+				"The Window menu: a track manager, a large clock, a tuner, memory locations, saved selections, keep-on-top and window tidying.",
+				"Help > Ask: type a question and get the manual sections and commands that answer it - offline.",
+				"Settings presets, search and backup (Customise > Settings).",
+				"Every action is a named command an agent, a Lua script or a controller can run too, and every edit can be undone."
+			]
+		},
+		{
+			"version": "0.4.0",
+			"title": "Zene Studio 0.4.0",
+			"items": [
+				"Recording with take lanes and comping, punch in and out, input monitoring.",
+				"VST3 and CLAP plug-in editors; plug-in delay compensation.",
+				"Focus Desk, start hub and keyboard shortcuts page."
+			]
+		}
+	]
+}

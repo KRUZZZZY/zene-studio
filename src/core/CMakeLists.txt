@@ -976,6 +976,7 @@ set(LMMS_SRCS
 	core/JsonFile.cpp
 	core/TrackLooks.cpp
 	core/ControlCommandsTrackLooks.cpp
+	core/ControlCommandsAssistant.cpp
 	core/ControlTrackCreation.cpp
 	core/PitchTrack.cpp
 	core/MarkerActions.cpp

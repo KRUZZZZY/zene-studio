@@ -652,6 +652,7 @@ include/WarpMarkers.h
 include/WaveformPreview.h
 include/WcagContrast.h
 include/WorkspaceMenus.h
+include/WorkspaceWindows.h
 include/XmlDepthGuard.h
 include/XyPad.h
 include/aeffectx.h
@@ -1185,6 +1186,7 @@ src/core/ControlChordSupport.cpp
 src/core/ControlCommandsArrangeTools.cpp
 src/core/ControlCommandsArrangement.cpp
 src/core/ControlCommandsArrangementState.cpp
+src/core/ControlCommandsAssistant.cpp
 src/core/ControlCommandsAudioAnalysis.cpp
 src/core/ControlCommandsAudioSlice.cpp
 src/core/ControlCommandsAutomation.cpp
@@ -1745,6 +1747,7 @@ src/gui/ControlCommandsShell.cpp
 src/gui/ControlCommandsShortcuts.cpp
 src/gui/ControlCommandsTheme.cpp
 src/gui/ControlCommandsWindow.cpp
+src/gui/ControlCommandsWorkspace.cpp
 src/gui/ControlGuiSupport.cpp
 src/gui/ControlLayout.cpp
 src/gui/ControllerDialog.cpp
@@ -1833,6 +1836,7 @@ src/gui/UndoHistoryPanel.cpp
 src/gui/VcaStripView.cpp
 src/gui/VisibilitySetMenu.cpp
 src/gui/WorkspaceMenus.cpp
+src/gui/WorkspaceWindows.cpp
 src/gui/XyPad.cpp
 src/gui/clips/AutomationClipView.cpp
 src/gui/clips/ClipView.cpp
