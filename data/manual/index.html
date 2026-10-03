@@ -78,7 +78,18 @@ windows have a header with bypass, A/B and presets. Favourite, hide or file plug
 picker or the plug-in manager (Project &gt; Plug-in Manager); Preferred Plug-in Format lists a plug-in installed in
 several formats once. A device card's dot lights while the device processes audio. The rack menu bypasses every device,
 switches them all back on, removes the bypassed ones and opens an XY pad that plays two macros at once. Modulators can
-be random, smooth random, a step sequence or a retriggered envelope as well as an LFO.</p>
+be random, smooth random, a step sequence or a retriggered envelope as well as an LFO; a modulator can run a formula of
+its own (sin(2*pi*t), tri(t) * rand(x)...) and restart on every note a track plays.</p>
+<p>A rack can split its input between its parallel chains (Rack &gt; Split the Input): by frequency band, mid and side,
+or left and right - the chains add back to the whole. A device's menu finds, renames and randomises its parameters
+(a renamed parameter keeps its own name for macros and modulators), blends its A and B settings, folds its card to
+the header, plays only what the device changes (the card's &Delta; button), and sets compatibility options: the
+generic editor instead of the plug-in's window, keep running on silence, a latency override, the editor zoom. The
+Device panel shows the level of the channel its devices play into. Native devices: De-esser, Transient Shaper,
+Vocoder (the voice on the sidechain), Console (Mixer &gt; Console Across the Mix puts one on every channel), Dynamic
+EQ (bands that move with the level, on the mid or the side alone), Convolution Reverb (Load Impulse Response... from
+its menu) and Recorder (records what passes it; its menu puts the last take on a new track). An audio clip's
+Process menu prints a chain's effects onto the clip.</p>
 
 <h2 id="record">Recording</h2>
 <p>Arm a track with the record button in its header (or Record &gt; Arm All Audio Tracks), choose its input from its
