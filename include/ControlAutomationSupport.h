@@ -79,6 +79,9 @@ LMMS_EXPORT bool findAutomationParameter(const ControlTarget& target, const QStr
 
 //! invalid_args naming the model's own min..max (the same refusal plugin.param_set uses).
 LMMS_EXPORT ControlResult automatableRangeRefusal(const AutomatableModel* model, double value);
+//! The automation commands' one parser: `track` (a ch-/trk- target) and `parameter` of @a args.
+LMMS_EXPORT bool resolveAutomationParameter(const QJsonObject& args, ControlTarget* target,
+	AutomationParameter* parameter, ControlResult* error);
 
 // ---------------------------------------------------------------------------
 // automation clips
@@ -137,6 +140,11 @@ LMMS_EXPORT bool addressableParameterForModel(const AutomatableModel* model,
  */
 LMMS_EXPORT AutomationClip* automationClipForModel(AutomatableModel* model, bool* created,
 	ControlResult* error);
+
+/*! automationClipForModel, readied for an edit that is ONE undo step: a clip this call created
+ *  gets an action step that removes its whole AutomationTrack again (no clip checkpoint can), an
+ *  existing clip gets its journal checkpoint. The edit then follows. */
+LMMS_EXPORT AutomationClip* automationClipForEdit(AutomatableModel* model, bool* created, ControlResult* error);
 
 // ---------------------------------------------------------------------------
 // read-back

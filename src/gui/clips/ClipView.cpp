@@ -987,7 +987,7 @@ void ClipView::mouseReleaseEvent( QMouseEvent * me )
 		// TODO: Fix m_clip->setJournalling() consistency
 		m_clip->setJournalling( true );
 		// 0.5.0 ED-044: a clip dropped onto others trims or crossfades them, per the overlap mode.
-		if (m_action == Action::Move) { arrangement::afterUserMove(m_clip); }
+		if (m_action == Action::Move) { arrangement::afterUserMove(m_clip, m_initialClipPos.getTicks()); }
 	}
 	else if( m_action == Action::Split )
 	{

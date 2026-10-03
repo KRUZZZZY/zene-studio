@@ -53,8 +53,15 @@ public:
 	void saveTrackSpecificSettings(QDomDocument& doc, QDomElement& parent, bool presetMode) override;
 	void loadTrackSpecificSettings( const QDomElement & _this ) override;
 
+	/*! 0.5.0 ED-181/190: the track this automation lane belongs to (its Track::id(), 0 for none) -
+	 *  the lane sits under that track and, when the arranger says so, its points move with that
+	 *  track's clips. Saved as `follows`, only when set. */
+	int followsTrack() const { return m_followsTrack; }
+	void setFollowsTrack(int trackId) { m_followsTrack = trackId; }
+
 private:
 	friend class AutomationTrackView;
+	int m_followsTrack = 0;
 
 } ;
 

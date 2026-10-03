@@ -92,6 +92,20 @@ const ReversibilityRow kArrangerRows[] = {
 		"it plays from a point with the other tracks silenced; the mutes are set with journalling off and are put back "
 		"by audition_stop - engine run state, not project state", "no write to the project (transport.audition_stop)", ""),
 	R("transport.audition_stop", RC::NotMutating, false, "it ends an audition, restoring what it changed", "no write", ""),
+	R("automation.lane_add", RC::TrueInverse, true, "it creates an automation track under a track",
+		"action step: undo removes the lane", ""),
+	R("automation.add_trim", RC::TrueInverse, true, "it creates a relative automation lane under a track",
+		"action step: undo removes the lane", ""),
+	R("automation.draw_shape", RC::TrueInverse, true, "it rewrites a parameter's points over a range",
+		"AutomationClip journal checkpoint (or, for a clip the call created, an action step removing its track)", ""),
+	R("automation.transform", RC::TrueInverse, true, "it moves and rescales a parameter's points",
+		"AutomationClip journal checkpoint (or an action step removing a created track)", ""),
+	R("automation.thin", RC::TrueInverse, true, "it removes a parameter's redundant points",
+		"AutomationClip journal checkpoint (or an action step removing a created track)", ""),
+	R("automation.set_curve", RC::TrueInverse, true, "it sets one point's curve, saved on the point's element",
+		"AutomationClip journal checkpoint", ""),
+	R("automation.last_touched", RC::NotMutating, false, "it reads which parameter was last changed. Nothing is written",
+		"no write", ""),
 };
 
 #undef R

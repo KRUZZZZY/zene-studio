@@ -185,6 +185,9 @@ void registerClipMove(ControlRegistry& registry)
 		ref.clip->movePosition(TimePos(static_cast<tick_t>(
 			args.value(QStringLiteral("position")).toDouble())));
 		arrangement::applyOverlap(ref.clip, overlap);
+		// ED-190: the automation lanes following this track carry their points with the clip.
+		arrangement::moveFollowingAutomation(ref.track, previous, ref.clip->length().getTicks(),
+			ref.clip->startPosition().getTicks() - previous, true);
 
 		QJsonObject result;
 		result.insert(QStringLiteral("clip"), control::clipId(ref.id));

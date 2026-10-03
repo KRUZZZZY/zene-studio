@@ -122,6 +122,7 @@ set(LMMS_SRCS
 	core/RubberBandStretch.cpp
 	core/AutomatableModel.cpp
 	core/AutomationClip.cpp
+	core/AutomationClipTransforms.cpp
 	core/AutomationNode.cpp
 	core/AutomationRamp.cpp
 	core/BandLimitedWave.cpp
@@ -907,6 +908,7 @@ set(LMMS_SRCS
 	core/McuProtocol.cpp
 	core/McuSurface.cpp
 	core/ArrangementEdits.cpp
+	core/ControlCommandsAutomationLanes.cpp
 	core/ControlCommandsClipArrange.cpp
 	core/ControlCommandsClipEnvelope.cpp
 	core/ControlCommandsMarkers.cpp

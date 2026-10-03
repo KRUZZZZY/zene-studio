@@ -755,6 +755,9 @@ LMMS_EXPORT void registerRangeCommands(ControlRegistry& registry);
 LMMS_EXPORT void registerClipEnvelopeCommands(ControlRegistry& registry);
 //! 0.5.0 L04 (ED-030/032): clip.repeat, clip.time_scale (ControlCommandsClipArrange.cpp).
 LMMS_EXPORT void registerClipArrangeCommands(ControlRegistry& registry);
+//! 0.5.0 L06: automation.lane_add / add_trim / draw_shape / transform / thin / set_curve /
+//! last_touched (ControlCommandsAutomationLanes.cpp).
+LMMS_EXPORT void registerAutomationLaneCommands(ControlRegistry& registry);
 } // namespace lmms
 
 #endif // LMMS_CONTROL_REGISTRY_GROUPS_H

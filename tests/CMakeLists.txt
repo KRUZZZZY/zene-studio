@@ -567,6 +567,8 @@ set(LMMS_TESTS
 	src/core/ClipTransposeTest.cpp
 	# 0.5.0 L04 ED-020/043/044: ripple, overlap and edge snapping.
 	src/core/ArrangementModesTest.cpp
+	# 0.5.0 L06: automation lanes, trim, shapes, transform, thinning, curves, last touched.
+	src/core/AutomationLanesTest.cpp
 	# Feature row 50 (0.3.0): the Lua API's DAW-control half - the mixer channel
 	# and effect-chain bindings. Drives a REAL mixer channel and the chain the
 	# control surface addresses from Lua, reads the engine back (not the script's

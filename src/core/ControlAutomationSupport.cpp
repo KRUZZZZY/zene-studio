@@ -26,12 +26,15 @@
 
 #include "ControlVocabulary.h"
 
+#include <memory>
 #include <utility>
 
 #include "AutomatableModel.h"
 #include "AutomationClip.h"
 #include "AutomationTrack.h"
 #include "ControlDeviceSupport.h"
+#include "ControlEdit.h"
+#include "ControlReversibility.h"
 #include "Effect.h"
 #include "EffectChain.h"
 #include "Engine.h"
@@ -406,6 +409,34 @@ QJsonObject automationTransaction(const AutomationParameter& parameter, const QJ
 			"automation.add_point")
 		: QStringLiteral("ProjectJournal (AutomationClip checkpoint)"));
 	return transaction;
+}
+
+bool resolveAutomationParameter(const QJsonObject& args, ControlTarget* target,
+	AutomationParameter* parameter, ControlResult* error)
+{
+	if (!resolveControlTarget(args.value(QStringLiteral("track")).toString(), target, error)) { return false; }
+	return findAutomationParameter(*target, args.value(QStringLiteral("parameter")).toString(), parameter, error);
+}
+
+AutomationClip* automationClipForEdit(AutomatableModel* model, bool* created, ControlResult* error)
+{
+	AutomationClip* clip = automationClipForModel(model, created, error);
+	if (clip == nullptr) { return nullptr; }
+	if (*created)
+	{
+		// SPEC A16 deliverable 5: a whole AutomationTrack was created, which no clip checkpoint can
+		// take back (the clip lives inside it). ONE action step, recorded before the edit, removes
+		// the track again - so the first edit is one undoable step like every later one.
+		auto holder = std::make_shared<Track*>(clip->getTrack());
+		addUndoStep([holder]() {
+			if (*holder != nullptr) { removeTrack(*holder); *holder = nullptr; }
+		});
+	}
+	else
+	{
+		clip->addJournalCheckPoint();
+	}
+	return clip;
 }
 
 } // namespace control

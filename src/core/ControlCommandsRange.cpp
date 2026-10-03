@@ -317,7 +317,8 @@ QJsonObject modesJson()
 	const arrangement::Modes current = arrangement::modes();
 	return {{QStringLiteral("ripple"), rippleNames().at(static_cast<int>(current.ripple))},
 		{QStringLiteral("overlap"), overlapNames().at(static_cast<int>(current.overlap))},
-		{QStringLiteral("snap_to_edges"), current.snapToEdges}};
+		{QStringLiteral("snap_to_edges"), current.snapToEdges},
+		{QStringLiteral("automation_follows_clips"), current.automationFollowsClips}};
 }
 
 ControlResult setModes(const QJsonObject& args)
@@ -326,6 +327,7 @@ ControlResult setModes(const QJsonObject& args)
 	if (args.contains(QStringLiteral("ripple"))) { next.ripple = static_cast<arrangement::Ripple>(rippleNames().indexOf(args.value(QStringLiteral("ripple")).toString())); }
 	if (args.contains(QStringLiteral("overlap"))) { next.overlap = static_cast<arrangement::Overlap>(overlapNames().indexOf(args.value(QStringLiteral("overlap")).toString())); }
 	if (args.contains(QStringLiteral("snap_to_edges"))) { next.snapToEdges = args.value(QStringLiteral("snap_to_edges")).toBool(); }
+	if (args.contains(QStringLiteral("automation_follows_clips"))) { next.automationFollowsClips = args.value(QStringLiteral("automation_follows_clips")).toBool(); }
 	arrangement::setModes(next);
 	return ControlResult::success(modesJson());
 }
@@ -355,13 +357,15 @@ void registerRangeCommands(ControlRegistry& registry)
 	modes.verb = QStringLiteral("modes");
 	modes.description = QStringLiteral("The arranger's editing modes, set and answered: 'ripple' (off, track, all - a deletion "
 		"closes its gap on the clip's track or on every track), 'overlap' (free, trim, crossfade - what a clip moved onto "
-		"others does to them) and 'snap_to_edges' (moving a clip also snaps to other clips' edges and to markers). The "
+		"others does to them), 'snap_to_edges' (moving a clip also snaps to other clips' edges and to markers) and "
+		"'automation_follows_clips' (a clip's move carries the points of the automation lanes following its track). The "
 		"arranger's gestures and clip.move / clip.delete / range.delete follow them. An editing preference kept in the "
 		"config file, not project state.");
 	modes.argsSchema = objectSchema({{QStringLiteral("ripple"), enumProperty(rippleNames())},
-		{QStringLiteral("overlap"), enumProperty(overlapNames())}, {QStringLiteral("snap_to_edges"), booleanProperty()}});
+		{QStringLiteral("overlap"), enumProperty(overlapNames())}, {QStringLiteral("snap_to_edges"), booleanProperty()},
+		{QStringLiteral("automation_follows_clips"), booleanProperty()}});
 	modes.resultSchema = objectSchema({{QStringLiteral("ripple"), stringProperty()}, {QStringLiteral("overlap"), stringProperty()},
-		{QStringLiteral("snap_to_edges"), booleanProperty()}});
+		{QStringLiteral("snap_to_edges"), booleanProperty()}, {QStringLiteral("automation_follows_clips"), booleanProperty()}});
 	modes.handler = setModes;
 	registry.registerCommand(modes);
 

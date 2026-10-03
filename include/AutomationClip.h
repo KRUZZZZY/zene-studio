@@ -61,6 +61,9 @@ public:
 		CubicHermite
 	} ;
 
+	//! ED-184: the shapes drawShape writes.
+	enum class Shape { Sine, Triangle, Square, Saw, Random, Adsr };
+
 	using timeMap = QMap<int, AutomationNode>;
 	using objectVector = std::vector<QPointer<AutomatableModel>>;
 
@@ -258,6 +261,24 @@ public slots:
 	void flipY();
 	void flipX(int start = -1, int end = -1);
 
+public:
+	//! 0.5.0 L06 (AutomationClipTransforms.cpp). ED-184: replace the points in [@a start, @a end]
+	//! with @a shape (@a cycles periods, @a low..@a high, a point every @a step ticks; @a seed makes
+	//! Random repeatable).
+	void drawShape(int start, int end, Shape shape, int cycles, float low, float high, int step, unsigned seed = 1);
+	//! ED-186: the points in [@a start, @a end] rescaled about @a start in time (then shifted by
+	//! @a timeOffset) and about the range's middle in value (then shifted); how many moved.
+	int transformRange(int start, int end, double timeScale, int timeOffset, double valueScale, double valueOffset);
+	//! ED-187: remove the points within @a tolerance (value units) of the line through their kept
+	//! neighbours (Douglas-Peucker; the first and last stay); how many were removed.
+	int thin(float tolerance);
+
+	/*! ED-199: a RELATIVE (trim) clip does not set its parameter, it offsets it: its value's
+	 *  distance from the middle of the parameter's range is added to whatever the absolute clips
+	 *  (or, without one, the parameter's own value when playback reached it) say. */
+	bool isRelative() const { return m_relative; }
+	void setRelative(bool relative) { m_relative = relative; }
+
 protected:
 	AutomationClip( const AutomationClip & _clip_to_copy );
 
@@ -266,6 +287,8 @@ private:
 	void generateTangents();
 	void generateTangents(timeMap::iterator it, int numToGenerate);
 	float valueAt( timeMap::const_iterator v, int offset ) const;
+	//! ED-185: a Bend segment's value (AutomationClipTransforms.cpp).
+	float bendValueAt( timeMap::const_iterator v, int offset ) const;
 
 	/*! The curve's value at clip-relative tick @a rel (plus @a fraction of the
 	 *  segment that starts there) - the segment, not the node, so a node whose
@@ -298,6 +321,7 @@ private:
 	float m_tension;
 	bool m_hasAutomation;
 	ProgressionType m_progressionType;
+	bool m_relative = false;  //!< ED-199
 
 	//! Sample-accurate rendering of this clip's curve (feature-list row 9).
 	//! Serialized only when it is ON, so a project that never asked for it

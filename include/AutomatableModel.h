@@ -410,6 +410,24 @@ public:
 	//! running. A Latch engagement is bound to the token it was made under.
 	static quint64 automationTransportRun();
 
+	/*! 0.5.0 ED-191: the journalling id of the model a person (or a command) last changed - not
+	 *  the automation - for "automate the last touched control". An id, not a pointer, so a
+	 *  model deleted since cannot dangle (ProjectJournal::journallingObject resolves it). */
+	static jo_id_t lastTouched();
+
+	/*! 0.5.0 ED-199: what a relative (trim) automation clip offsets when no absolute clip sets this
+	 *  parameter - its own value when transport run @a run first reached it, kept for the run.
+	 *  Audio thread; two plain members, no allocation. */
+	float trimBase(quint64 run)
+	{
+		if (m_trimRun != run)
+		{
+			m_trimRun = run;
+			m_trimBase = value<float>();
+		}
+		return m_trimBase;
+	}
+
 	//! Monotone wall clock in nanoseconds (std::chrono::steady_clock): ~25 ns
 	//! and lock-free. Call it once per Song::processAutomations(), not once per
 	//! model.
@@ -472,6 +490,9 @@ protected:
 	float fittedValue( float value ) const;
 
 private:
+	static std::atomic<jo_id_t> s_lastTouched;
+	float m_trimBase = 0.f;  //!< ED-199, see trimBase()
+	quint64 m_trimRun = 0;
 	// dynamicCast implementation
 	template<class Target>
 	struct DCastVisitor : public ModelVisitor

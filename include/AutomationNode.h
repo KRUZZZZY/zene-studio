@@ -26,6 +26,8 @@
 #ifndef LMMS_AUTOMATION_NODE_H
 #define LMMS_AUTOMATION_NODE_H
 
+class QDomElement;
+
 namespace lmms
 {
 
@@ -151,6 +153,17 @@ public:
 		m_clip = clip;
 	}
 
+	/*! 0.5.0 ED-185: this point's own curve to the next point - the clip's progression (Clip), or
+	 *  Hold, Linear, Smooth (cubic Hermite), or Bend (an exponential curve, bend -1..1: negative
+	 *  rises fast then levels, positive starts slow). Saved only when not Clip. */
+	enum class Curve { Clip, Hold, Linear, Smooth, Bend };
+	Curve curve() const { return m_curve; }
+	float bend() const { return m_bend; }
+	void setCurve(Curve curve, float bend = 0.f);
+	//! The curve's attributes on a node element, written only when the curve is not Clip; and read back.
+	void saveCurve(QDomElement& element) const;
+	void loadCurve(const QDomElement& element);
+
 private:
 	// Clip that this node belongs to
 	AutomationClip* m_clip;
@@ -173,6 +186,9 @@ private:
 	// the tangents from this node will not be recalculated. It's set back
 	// to false if the tangents are reset.
 	bool m_lockedTangents;
+
+	Curve m_curve = Curve::Clip;
+	float m_bend = 0.f;
 };
 
 } // namespace lmms

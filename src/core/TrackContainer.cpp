@@ -382,6 +382,32 @@ bool TrackContainer::isEmpty() const
 
 
 
+namespace
+{
+
+//! 0.5.0 ED-199: each relative clip's distance from the middle of its range, added to what the
+//! absolute clips set (or the parameter's own value for the run), clamped to the parameter.
+void applyRelativeClips(const Track::clipVector& clips, TimePos time, AutomatedValueMap& valueMap)
+{
+	const quint64 run = AutomatableModel::automationTransportRun();
+	for (Clip* clip : clips)
+	{
+		auto* p = dynamic_cast<AutomationClip*>(clip);
+		if (p == nullptr || !p->isRelative() || clip->isMuted() || clip->startPosition() > time || !p->hasAutomation()) { continue; }
+		TimePos relTime = time - p->startPosition() - p->startTimeOffset();
+		relTime = std::min(static_cast<int>(relTime), p->length() - p->startTimeOffset());
+		const float offset = p->valueAt(relTime) - (p->getMin() + p->getMax()) / 2.f;
+		for (AutomatableModel* model : p->objects())
+		{
+			if (model == nullptr) { continue; }
+			const float base = valueMap.contains(model) ? valueMap[model] : model->trimBase(run);
+			valueMap[model] = std::clamp(base + offset, model->minValue<float>(), model->maxValue<float>());
+		}
+	}
+}
+
+} // namespace
+
 AutomatedValueMap TrackContainer::automatedValuesAt(TimePos time, int clipNum) const
 {
 	return automatedValuesFromTracks(tracks(), time, clipNum);
@@ -426,7 +452,8 @@ AutomatedValueMap TrackContainer::automatedValuesFromTracks(const TrackList &tra
 
 		if (auto* p = dynamic_cast<AutomationClip *>(clip))
 		{
-			if (! p->hasAutomation()) {
+			// A relative (trim) clip offsets rather than sets: applied after every absolute one.
+			if (! p->hasAutomation() || p->isRelative()) {
 				continue;
 			}
 			TimePos relTime = time - p->startPosition() - p->startTimeOffset();
@@ -462,6 +489,7 @@ AutomatedValueMap TrackContainer::automatedValuesFromTracks(const TrackList &tra
 		}
 	}
 
+	applyRelativeClips(clips, time, valueMap);
 	return valueMap;
 };
 

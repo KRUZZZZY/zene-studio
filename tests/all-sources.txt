@@ -1088,6 +1088,7 @@ src/core/AudioStretcher.cpp
 src/core/AudioWideInputStage.cpp
 src/core/AutomatableModel.cpp
 src/core/AutomationClip.cpp
+src/core/AutomationClipTransforms.cpp
 src/core/AutomationNode.cpp
 src/core/AutomationRamp.cpp
 src/core/BandLimitedWave.cpp
@@ -1117,6 +1118,7 @@ src/core/ControlCommandsArrangement.cpp
 src/core/ControlCommandsArrangementState.cpp
 src/core/ControlCommandsAutomation.cpp
 src/core/ControlCommandsAutomationEdit.cpp
+src/core/ControlCommandsAutomationLanes.cpp
 src/core/ControlCommandsAutomationRamp.cpp
 src/core/ControlCommandsBounceLand.cpp
 src/core/ControlCommandsBrowser.cpp
@@ -1822,6 +1824,7 @@ tests/src/core/AudioPortsTest.cpp
 tests/src/core/AudioResamplerRatioTest.cpp
 tests/src/core/AudioStretcherTest.cpp
 tests/src/core/AutomatableModelTest.cpp
+tests/src/core/AutomationLanesTest.cpp
 tests/src/core/AutomationModesTest.cpp
 tests/src/core/BenchmarkBaseline.h
 tests/src/core/BrowserCatalogTest.cpp

@@ -27,6 +27,8 @@
 #include <algorithm>
 #include <cstdlib>
 
+#include "AutomationClip.h"
+#include "AutomationTrack.h"
 #include "Clip.h"
 #include "ClipEdits.h"
 #include "ConfigManager.h"
@@ -140,6 +142,7 @@ Modes modes()
 	out.ripple = static_cast<Ripple>(std::clamp(config->value(QStringLiteral("arrangement"), QStringLiteral("ripple"), QStringLiteral("0")).toInt(), 0, 2));
 	out.overlap = static_cast<Overlap>(std::clamp(config->value(QStringLiteral("arrangement"), QStringLiteral("overlap"), QStringLiteral("0")).toInt(), 0, 2));
 	out.snapToEdges = config->value(QStringLiteral("arrangement"), QStringLiteral("snapedges"), QStringLiteral("1")).toInt() != 0;
+	out.automationFollowsClips = config->value(QStringLiteral("arrangement"), QStringLiteral("followauto"), QStringLiteral("1")).toInt() != 0;
 	return out;
 }
 
@@ -149,6 +152,7 @@ void setModes(const Modes& modes)
 	config->setValue(QStringLiteral("arrangement"), QStringLiteral("ripple"), QString::number(static_cast<int>(modes.ripple)));
 	config->setValue(QStringLiteral("arrangement"), QStringLiteral("overlap"), QString::number(static_cast<int>(modes.overlap)));
 	config->setValue(QStringLiteral("arrangement"), QStringLiteral("snapedges"), modes.snapToEdges ? QStringLiteral("1") : QStringLiteral("0"));
+	config->setValue(QStringLiteral("arrangement"), QStringLiteral("followauto"), modes.automationFollowsClips ? QStringLiteral("1") : QStringLiteral("0"));
 }
 
 QVector<Track*> rippleTracks(Track* track, Ripple mode)
@@ -167,12 +171,39 @@ void checkpointForDelete(Track* track, Ripple mode)
 	control::addUndoStep(touched);
 }
 
-void afterUserMove(Clip* moved)
+void afterUserMove(Clip* moved, tick_t oldStart)
 {
+	if (moved == nullptr || moved->getTrack() == nullptr) { return; }
+	if (oldStart >= 0 && oldStart != moved->startPosition().getTicks())
+	{
+		moveFollowingAutomation(moved->getTrack(), oldStart, moved->length().getTicks(),
+			moved->startPosition().getTicks() - oldStart, true);
+	}
 	const Overlap mode = modes().overlap;
-	if (mode == Overlap::Free || moved == nullptr || moved->getTrack() == nullptr) { return; }
+	if (mode == Overlap::Free) { return; }
 	moved->getTrack()->addJournalCheckPoint();
 	applyOverlap(moved, mode);
+}
+
+int moveFollowingAutomation(Track* track, tick_t oldStart, tick_t length, tick_t delta, bool checkpoint)
+{
+	if (!modes().automationFollowsClips || delta == 0) { return 0; }
+	int changed = 0;
+	for (Track* each : Engine::getSong()->tracks())
+	{
+		auto* lane = dynamic_cast<AutomationTrack*>(each);
+		if (lane == nullptr || lane->followsTrack() != track->id()) { continue; }
+		for (Clip* clip : lane->getClips())
+		{
+			auto* automation = dynamic_cast<AutomationClip*>(clip);
+			if (automation == nullptr) { continue; }
+			const tick_t clipStart = clip->startPosition().getTicks();
+			if (checkpoint) { automation->addJournalCheckPoint(); }
+			automation->transformRange(oldStart - clipStart, oldStart + length - 1 - clipStart, 1.0, delta, 1.0, 0.0);
+		}
+		++changed;
+	}
+	return changed;
 }
 
 int rippleAfterDelete(Track* track, tick_t start, tick_t length, Ripple mode)

@@ -613,11 +613,17 @@ float AutomationClip::valueAt( timeMap::const_iterator v, int offset ) const
 	// value if we do
 	if (offset == 0) { return INVAL(v); }
 
-	if (m_progressionType == ProgressionType::Discrete)
+	// 0.5.0 ED-185: a point may carry its own curve to the next point.
+	const AutomationNode::Curve curve = v.value().curve();
+	if (curve == AutomationNode::Curve::Bend) { return bendValueAt(v, offset); }
+	const ProgressionType type = curve == AutomationNode::Curve::Clip ? m_progressionType
+		: curve == AutomationNode::Curve::Hold ? ProgressionType::Discrete
+		: curve == AutomationNode::Curve::Linear ? ProgressionType::Linear : ProgressionType::CubicHermite;
+	if (type == ProgressionType::Discrete)
 	{
 		return OUTVAL(v);
 	}
-	else if( m_progressionType == ProgressionType::Linear )
+	else if( type == ProgressionType::Linear )
 	{
 		auto const nv = std::next(v);
 		float slope =
@@ -822,110 +828,7 @@ float *AutomationClip::valuesAfter( const TimePos & _time ) const
 
 
 
-void AutomationClip::flipY(int min, int max)
-{
-	QMutexLocker m(&m_clipMutex);
-
-	bool changedTimeMap = false;
-
-	for (auto it = m_timeMap.begin(); it != m_timeMap.end(); ++it)
-	{
-		// Get distance from IN/OUT values to max value
-		float inValDist = max - INVAL(it);
-		float outValDist = max - OUTVAL(it);
-
-		// To flip, that will be the new distance between
-		// the IN/OUT values and the min value
-		it.value().setInValue(min + inValDist);
-		it.value().setOutValue(min + outValDist);
-
-		changedTimeMap = true;
-	}
-
-	if (changedTimeMap)
-	{
-		generateTangents();
-		emit dataChanged();
-	}
-}
-
-
-
-
-void AutomationClip::flipY()
-{
-	flipY(getMin(), getMax());
-}
-
-
-
-
-void AutomationClip::flipX(int start, int end)
-{
-	QMutexLocker m(&m_clipMutex);
-
-	timeMap::const_iterator firstIterator = m_timeMap.lowerBound(0);
-
-	if (firstIterator == m_timeMap.end()) { return; }
-
-	if (start == -1 && end == -1) { start = 0; end = length() - startTimeOffset(); }
-	else if (!(end >= 0 && start >= 0 && end > start)) { return; }
-
-	// Temporary map where we will store the flipped version
-	// of our clip
-	timeMap tempMap;
-
-	for (auto it = m_timeMap.begin(); it != m_timeMap.end(); ++it)
-	{
-		if (POS(it) < start || POS(it) > end)
-		{
-			tempMap[POS(it)] = *it;
-		}
-		else
-		{
-			// If the first node in the clip is not at the start, it can break things when clipping, so
-			// we have to set its in value to 0.
-			if (it == firstIterator && POS(firstIterator) > 0)
-			{
-				tempMap[end - (POS(it) - start)] = AutomationNode(this, OUTVAL(it), 0, end - (POS(it) - start));
-			}
-			else
-			{
-				tempMap[end - (POS(it) - start)] = AutomationNode(this, OUTVAL(it), INVAL(it), end - (POS(it) - start));
-			}
-		}
-	}
-
-	if (m_timeMap.contains(start) && m_timeMap.contains(end))
-	{
-		tempMap[start] = AutomationNode(this, m_timeMap[start].getInValue(), m_timeMap[end].getInValue(), start);
-		tempMap[end] = AutomationNode(this, m_timeMap[start].getOutValue(), m_timeMap[end].getOutValue(), end);
-	}
-	else if (m_timeMap.contains(start))
-	{
-		tempMap[start] = AutomationNode(this, m_timeMap[start].getInValue(), valueAt(end), start);
-		tempMap[end] = AutomationNode(this, m_timeMap[start].getOutValue(), valueAt(end), end);
-	}
-	else if (m_timeMap.contains(end))
-	{
-		tempMap[start] = AutomationNode(this, valueAt(start), m_timeMap[end].getInValue(), start);
-		tempMap[end] = AutomationNode(this, valueAt(start), m_timeMap[end].getOutValue(), end);
-	}
-	else
-	{
-		tempMap[start] = AutomationNode(this, valueAt(start), valueAt(end), start);
-		tempMap[end] = AutomationNode(this, valueAt(start), valueAt(end), end);
-	}
-
-	m_timeMap.clear();
-
-	m_timeMap = tempMap;
-
-	cleanObjects();
-
-	generateTangents();
-	emit dataChanged();
-}
+// flipY / flipX, and the 0.5.0 range edits (shapes, transform, thinning): AutomationClipTransforms.cpp.
 
 
 
@@ -939,6 +842,7 @@ void AutomationClip::saveSettings( QDomDocument & _doc, QDomElement & _this )
 	_this.setAttribute( "name", name() );
 	_this.setAttribute( "prog", QString::number( static_cast<int>(progressionType()) ) );
 	_this.setAttribute( "tens", QString::number( getTension() ) );
+	if (m_relative) { _this.setAttribute("relative", 1); }  // ED-199, only when set
 	_this.setAttribute( "mute", QString::number( isMuted() ) );
 	_this.setAttribute("off", startTimeOffset());
 	_this.setAttribute("autoresize", QString::number(getAutoResize()));
@@ -967,6 +871,7 @@ void AutomationClip::saveSettings( QDomDocument & _doc, QDomElement & _this )
 		element.setAttribute("inTan", INTAN(it));
 		element.setAttribute("outTan", OUTTAN(it));
 		element.setAttribute("lockedTan", static_cast<int>(LOCKEDTAN(it)));
+		it.value().saveCurve(element);
 		_this.appendChild( element );
 	}
 
@@ -996,6 +901,7 @@ void AutomationClip::loadSettings( const QDomElement & _this )
 	clear();
 
 	movePosition( _this.attribute( "pos" ).toInt() );
+	m_relative = _this.attribute("relative", "0").toInt() != 0;
 	setName( _this.attribute( "name" ) );
 	setProgressionType( static_cast<ProgressionType>( _this.attribute(
 							"prog" ).toInt() ) );
@@ -1025,6 +931,7 @@ void AutomationClip::loadSettings( const QDomElement & _this )
 			float timeMapOutValue = LocaleHelper::toFloat(element.attribute("outValue"));
 
 			m_timeMap[timeMapPos] = AutomationNode(this, timeMapInValue, timeMapOutValue, timeMapPos);
+			m_timeMap[timeMapPos].loadCurve(element);
 
 			// Load tangents if there is information about it (it's enough to check for either inTan or outTan)
 			if (element.hasAttribute("inTan"))

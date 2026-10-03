@@ -305,6 +305,13 @@ void AutomatableModel::loadSettings( const QDomElement& element, const QString& 
 
 
 
+std::atomic<jo_id_t> AutomatableModel::s_lastTouched{0};
+
+jo_id_t AutomatableModel::lastTouched()
+{
+	return s_lastTouched.load(std::memory_order_relaxed);
+}
+
 void AutomatableModel::setValue(const float value, const bool isAutomated)
 {
 	if (fittedValue(value) == m_value)
@@ -314,7 +321,7 @@ void AutomatableModel::setValue(const float value, const bool isAutomated)
 		return;
 	}
 
-	if (!isAutomated) { addJournalCheckPoint(); }
+	if (!isAutomated) { addJournalCheckPoint(); s_lastTouched.store(id(), std::memory_order_relaxed); }
 
 	// set value for this and the other linked models
 	setValueInternal(value);

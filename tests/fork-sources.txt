@@ -825,6 +825,7 @@ src/core/AudioInputPath.cpp
 src/core/AudioPortsModel.cpp
 src/core/AudioStretcher.cpp
 src/core/AudioWideInputStage.cpp
+src/core/AutomationClipTransforms.cpp
 src/core/AutomationRamp.cpp
 src/core/BounceInPlace.cpp
 src/core/BrowserCatalog.cpp
@@ -847,6 +848,7 @@ src/core/ControlCommandsArrangement.cpp
 src/core/ControlCommandsArrangementState.cpp
 src/core/ControlCommandsAutomation.cpp
 src/core/ControlCommandsAutomationEdit.cpp
+src/core/ControlCommandsAutomationLanes.cpp
 src/core/ControlCommandsAutomationRamp.cpp
 src/core/ControlCommandsBounceLand.cpp
 src/core/ControlCommandsBrowser.cpp
@@ -1389,6 +1391,7 @@ tests/session_api_proof_lib.py
 tests/session_api_proof_rows.py
 tests/src/core/ArrangementModesTest.cpp
 tests/src/core/AudioResamplerRatioTest.cpp
+tests/src/core/AutomationLanesTest.cpp
 tests/src/core/BrowserCatalogTest.cpp
 tests/src/core/BrowserTestSupport.h
 tests/src/core/ClipGainEnvelopeTest.cpp

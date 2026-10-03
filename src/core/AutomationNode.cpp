@@ -26,6 +26,10 @@
 #include "AutomationNode.h"
 #include "AutomationClip.h"
 
+#include <algorithm>
+
+#include <QDomElement>
+
 
 namespace lmms
 {
@@ -112,6 +116,25 @@ void AutomationNode::resetOutValue()
 	// Calls setOutValue so it also takes care of generating
 	// the tangents
 	setOutValue(m_inValue);
+}
+
+void AutomationNode::setCurve(Curve curve, float bend)
+{
+	m_curve = curve;
+	m_bend = std::clamp(bend, -1.f, 1.f);
+}
+
+void AutomationNode::saveCurve(QDomElement& element) const
+{
+	if (m_curve == Curve::Clip) { return; }
+	element.setAttribute("curve", static_cast<int>(m_curve));
+	if (m_curve == Curve::Bend) { element.setAttribute("bend", static_cast<double>(m_bend)); }
+}
+
+void AutomationNode::loadCurve(const QDomElement& element)
+{
+	const int curve = std::clamp(element.attribute("curve", "0").toInt(), 0, static_cast<int>(Curve::Bend));
+	setCurve(static_cast<Curve>(curve), element.attribute("bend", "0").toFloat());
 }
 
 } // namespace lmms

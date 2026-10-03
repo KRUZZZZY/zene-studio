@@ -78,6 +78,8 @@ struct Modes
 	Ripple ripple = Ripple::Off;
 	Overlap overlap = Overlap::Free;
 	bool snapToEdges = true;
+	//! ED-190: a clip's move carries the points of the automation lanes following its track.
+	bool automationFollowsClips = true;
 };
 LMMS_EXPORT Modes modes();
 LMMS_EXPORT void setModes(const Modes& modes);
@@ -91,7 +93,12 @@ LMMS_EXPORT void checkpointForDelete(Track* track, Ripple mode);
 
 //! What the arranger does after the user drops @a moved: the overlap mode, as one more undo step
 //! (the track's checkpoint), when it is not Free.
-LMMS_EXPORT void afterUserMove(Clip* moved);
+LMMS_EXPORT void afterUserMove(Clip* moved, tick_t oldStart = -1);
+
+/*! ED-190: move the points of every automation lane following @a track that lie in
+ *  [@a oldStart, @a oldStart + @a length) by @a delta (when the mode says so). The lanes' clips
+ *  are checkpointed first when @a checkpoint. How many lanes changed. */
+LMMS_EXPORT int moveFollowingAutomation(Track* track, tick_t oldStart, tick_t length, tick_t delta, bool checkpoint);
 
 //! The tolerance edge snapping uses, in pixels (converted to ticks at the current zoom).
 constexpr int SnapEdgePixels = 8;

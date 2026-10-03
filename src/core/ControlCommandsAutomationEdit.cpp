@@ -51,12 +51,7 @@ using control::AutomationParameter;
 bool resolveParameter(const QJsonObject& args, ControlTarget* target,
 	AutomationParameter* parameter, ControlResult* error)
 {
-	if (!resolveControlTarget(args.value(QStringLiteral("track")).toString(), target, error))
-	{
-		return false;
-	}
-	return control::findAutomationParameter(*target,
-		args.value(QStringLiteral("parameter")).toString(), parameter, error);
+	return control::resolveAutomationParameter(args, target, parameter, error);
 }
 
 tick_t ticksArg(const QJsonObject& args)
@@ -85,28 +80,11 @@ ControlResult automationAddPoint(const QJsonObject& args)
 	}
 
 	bool created = false;
-	AutomationClip* clip = control::automationClipForModel(parameter.model, &created, &error);
+	// SPEC A16: one undo step whether the clip existed (its checkpoint) or this call made its whole
+	// AutomationTrack (an action step removing it) - automationClipForEdit.
+	AutomationClip* clip = control::automationClipForEdit(parameter.model, &created, &error);
 	if (clip == nullptr) { return error; }
-
 	const QJsonArray before = control::automationPointsJson(clip, parameter.model);
-	if (created)
-	{
-		// SPEC A16 deliverable 5: this call created a whole AutomationTrack,
-		// which no clip checkpoint can take back (the clip lives inside it). ONE
-		// action step, recorded before the point is written, removes the track
-		// again - so the first point is one undoable step like every later one.
-		// No redo is offered: re-issue automation.add_point instead.
-		auto holder = std::make_shared<Track*>(clip->getTrack());
-		control::addUndoStep([holder]() {
-			if (*holder != nullptr) { control::removeTrack(*holder); *holder = nullptr; }
-		});
-	}
-	else
-	{
-		// SPEC A16: the clip is a JournallingObject, so this checkpoint is the
-		// inverse the engine's own undo stack replays.
-		clip->addJournalCheckPoint();
-	}
 	const tick_t ticks = ticksArg(args);
 	// The wire value is the model's own unit; the clip stores the model's
 	// inverse-scaled value, because Song::processAutomations() applies

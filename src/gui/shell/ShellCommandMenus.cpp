@@ -30,7 +30,9 @@
 #include <QMenu>
 
 #include "CommandForm.h"
+#include "AutomationClip.h"
 #include "CommandLists.h"
+#include "ControlAutomationSupport.h"
 #include "ControlRegistry.h"
 #include "ClipEdits.h"
 #include "ControlVocabulary.h"
@@ -101,6 +103,55 @@ Clip* nextClip(Clip* clip)
 	return best;
 }
 
+//! L06: a lane (or a trim lane) for each of the track's automatable parameters, and for the last touched one.
+void automationMenu(QMenu* menu, const QString& trackId)
+{
+	QMenu* automation = menu->addMenu(tr("Automation"));
+	QMenu* lanes = automation->addMenu(tr("Lane for"));
+	QMenu* trims = automation->addMenu(tr("Trim Lane for"));
+	const QJsonArray tracks = ControlRegistry::instance()->invoke(QStringLiteral("automation.get_state"),
+		{{QStringLiteral("track"), trackId}}).result.value(QStringLiteral("tracks")).toArray();
+	constexpr int MaxListed = 64;
+	int listed = 0;
+	for (const QJsonValue& value : tracks.isEmpty() ? QJsonArray() : tracks.first().toObject().value(QStringLiteral("parameters")).toArray())
+	{
+		if (++listed > MaxListed) { break; }
+		const QJsonObject parameter = value.toObject();
+		const QJsonObject args{{QStringLiteral("track"), trackId}, {QStringLiteral("parameter"), parameter.value(QStringLiteral("id"))}};
+		const QString name = parameter.value(QStringLiteral("name")).toString();
+		addCommandAction(lanes, name, QStringLiteral("automation.lane_add"), [args] { return CommandCall{QStringLiteral("automation.lane_add"), args, {}, QString(), false}; });
+		addCommandAction(trims, name, QStringLiteral("automation.add_trim"), [args] { return CommandCall{QStringLiteral("automation.add_trim"), args, {}, QString(), false}; });
+	}
+	lanes->setEnabled(listed > 0);
+	trims->setEnabled(listed > 0);
+	QAction* last = automation->addAction(tr("Lane for Last Touched Control"));
+	last->setProperty("controlCommand", QStringLiteral("automation.last_touched"));
+	QObject::connect(last, &QAction::triggered, automation, [automation] {
+		const ControlResult touched = ControlRegistry::instance()->invoke(QStringLiteral("automation.last_touched"));
+		const QJsonObject args{{QStringLiteral("track"), touched.result.value(QStringLiteral("track"))},
+			{QStringLiteral("parameter"), touched.result.value(QStringLiteral("parameter"))}};
+		runCommand(automation->parentWidget(), touched.ok ? CommandCall{QStringLiteral("automation.lane_add"), args, {}, QString(), false}
+			: CommandCall{QStringLiteral("automation.last_touched"), {}, {}, QString(), false});
+	});
+}
+
+//! L06: shapes, transform, thinning and a point's curve on an automation clip's parameter.
+void automationClipMenus(QMenu* menu, Clip* clip)
+{
+	auto* automation = dynamic_cast<AutomationClip*>(clip);
+	control::ParameterAddress address;
+	if (automation == nullptr || automation->firstObject() == nullptr
+		|| !control::addressableParameterForModel(automation->firstObject(), &address)) { return; }
+	const QJsonObject self{{QStringLiteral("track"), address.target}, {QStringLiteral("parameter"), address.parameter.id()}};
+	const QJsonObject span{{QStringLiteral("start"), static_cast<int>(clip->startPosition())}, {QStringLiteral("end"), static_cast<int>(clip->endPosition())}};
+	QJsonObject shapeDefaults = span;
+	shapeDefaults.insert(QStringLiteral("shape"), QStringLiteral("sine"));
+	add(menu, "Draw Shape...", "automation.draw_shape", self, true, shapeDefaults);
+	add(menu, "Transform...", "automation.transform", self, true, span);
+	add(menu, "Thin Points...", "automation.thin", self, true, {{QStringLiteral("tolerance"), 0.01}});
+	add(menu, "Point Curve...", "automation.set_curve", self, true, {{QStringLiteral("curve"), QStringLiteral("bend")}});
+}
+
 void recordMenu(QMenu* menu, const QJsonObject& self, bool instrument)
 {
 	QMenu* record = menu->addMenu(tr("Record"));
@@ -163,6 +214,7 @@ void populateTrack(QMenu* menu, Track* track)
 	const QString id = control::trackIdOf(track);
 	const QJsonObject self{{QStringLiteral("track"), id}};
 	recordMenu(menu, self, dynamic_cast<InstrumentTrack*>(track) != nullptr);
+	automationMenu(menu, id);
 	QMenu* takes = menu->addMenu(tr("Takes and Comping"));
 	list(takes, "Take Lanes...", [id] { return CommandLists::takeLanes(id); });
 	add(takes, "Add Take Lane...", "comp.lane_add", self, true);
@@ -212,6 +264,7 @@ void populateClip(QMenu* menu, Clip* clip)
 	add(links, "Link State", "clip.link_get_state", self, false, {}, true);
 	if (dynamic_cast<SampleClip*>(clip) != nullptr) { sampleClipMenus(menu, clip, self); }
 	if (dynamic_cast<MidiClip*>(clip) != nullptr) { midiClipMenus(menu, self); }
+	automationClipMenus(menu, clip);
 }
 
 void populateChannel(QMenu* menu, const QString& channel)
