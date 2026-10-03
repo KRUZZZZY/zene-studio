@@ -172,7 +172,7 @@ void RenderQueue::runRender(RenderJob& job)
 	m_process = new QProcess(this);
 	m_process->setStandardOutputFile(QProcess::nullDevice());
 	m_process->setStandardErrorFile(QProcess::nullDevice());
-	connect(m_process, &QProcess::finished, this, [this, id](int exitCode, QProcess::ExitStatus status) {
+	connect(m_process, QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished), this, [this, id](int exitCode, QProcess::ExitStatus status) {
 		finish(id, status == QProcess::NormalExit && exitCode == 0, exitCode,
 			status == QProcess::NormalExit ? QString() : QStringLiteral("the render process crashed"));
 	});

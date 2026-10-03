@@ -24,6 +24,7 @@
 #ifndef LMMS_GUI_BROWSER_SEARCH_VIEW_H
 #define LMMS_GUI_BROWSER_SEARCH_VIEW_H
 
+#include <QJsonArray>
 #include <QJsonObject>
 
 #include "SideBarWidget.h"
@@ -103,6 +104,7 @@ private:
 	QTreeWidget* m_results = nullptr;
 	QListWidget* m_gallery = nullptr;
 	QJsonArray m_items;
+	bool m_showingMedia = false;  //!< the list is Project Media, not a history entry
 };
 
 } // namespace lmms::gui

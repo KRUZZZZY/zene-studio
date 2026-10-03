@@ -262,7 +262,7 @@ void registerRenderQueueCommands(ControlRegistry& registry)
 	add(registry, "render.queue_add", QStringLiteral("Queue a render to 'out' (absolute) as 'format': of the session as it is NOW "
 		"(a snapshot is taken, so later edits do not change it) or of another project file ('project'), whole or one range "
 		"('start_ticks' and 'end_ticks' together), with the export settings in force. Jobs run one after another in a child "
-		"process without holding this surface ('start' false only queues); render.queue_list follows them and each ends "
+		"process without holding this surface ('start' false queues it without starting the queue now - it runs when the queue next runs); render.queue_list follows them and each ends "
 		"with a report (bytes, sha256, time, loudness)."),
 		{{QStringLiteral("out"), stringProperty()}, {QStringLiteral("format"), formats}, {QStringLiteral("project"), stringProperty()},
 			{QStringLiteral("start_ticks"), tickProperty()}, {QStringLiteral("end_ticks"), tickProperty()}, {QStringLiteral("start"), booleanProperty()}},

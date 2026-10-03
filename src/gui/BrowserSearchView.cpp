@@ -24,6 +24,7 @@
 
 #include "BrowserSearchView.h"
 
+#include <QAbstractScrollArea>
 #include <QCheckBox>
 #include <QComboBox>
 #include <QDateTime>
@@ -265,6 +266,7 @@ void BrowserSearchView::browse(const QString& command, const QJsonObject& args, 
 {
 	const ControlResult shown = run(QStringLiteral("browser.browse"), {{QStringLiteral("command"), command}, {QStringLiteral("args"), args},
 		{QStringLiteral("label"), label}});
+	m_showingMedia = false;
 	showItems(shown.result.value(QStringLiteral("items")).toArray());
 }
 
@@ -288,13 +290,16 @@ void BrowserSearchView::findSimilar(const QString& path)
 		m_status->setText(found.errorMessage);
 		return;
 	}
+	m_showingMedia = false;
 	showItems(found.result.value(QStringLiteral("items")).toArray());
 }
 
 void BrowserSearchView::goHistory(int step)
 {
 	const ControlResult shown = run(QStringLiteral("browser.history_go"), {{QStringLiteral("step"), step}});
-	if (shown.ok) { showItems(shown.result.value(QStringLiteral("items")).toArray()); }
+	if (!shown.ok) { return; }
+	m_showingMedia = false;
+	showItems(shown.result.value(QStringLiteral("items")).toArray());
 }
 
 void BrowserSearchView::showProjectMedia()
@@ -310,6 +315,7 @@ void BrowserSearchView::showProjectMedia()
 			{QStringLiteral("size_bytes"), QFileInfo(path).size()}, {QStringLiteral("modified_ms"), QFileInfo(path).lastModified().toMSecsSinceEpoch()},
 			{QStringLiteral("tags"), QJsonArray{ref.value(QStringLiteral("tag")).toString()}}});
 	}
+	m_showingMedia = true;
 	showItems(items);
 }
 
@@ -320,7 +326,7 @@ void BrowserSearchView::showItems(const QJsonArray& items)
 	m_results->clear();
 	for (const QJsonValue& item : items) { m_results->addTopLevelItem(rowOf(item.toObject())); }
 	m_results->setSortingEnabled(true);
-	if (m_gallery->isVisible()) { fillGallery(items); }
+	if (!m_gallery->isHidden()) { fillGallery(items); }  // the gallery mode, shown or not
 }
 
 void BrowserSearchView::fillGallery(const QJsonArray& items)
@@ -412,9 +418,9 @@ void BrowserSearchView::showRowMenu(QWidget* view, const QPoint& at, const QStri
 		menu.addSeparator();
 	}
 	addBrowserTagMenu(&menu, path);
-	const QAction* chosen = menu.exec(view->mapToGlobal(at));
+	const QAction* chosen = menu.exec(static_cast<QAbstractScrollArea*>(view)->viewport()->mapToGlobal(at));
 	// A tag edit: the list is shown again as it stands (the current history entry, not a new one).
-	if (chosen != nullptr && chosen->data().toString().startsWith(QLatin1String("browser.tag"))) { goHistory(0); }
+	if (chosen != nullptr && chosen->data().toString().startsWith(QLatin1String("browser.tag"))) { m_showingMedia ? showProjectMedia() : goHistory(0); }
 }
 
 } // namespace lmms::gui

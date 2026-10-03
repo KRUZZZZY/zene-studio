@@ -116,7 +116,11 @@ SubprojectSection& section()
 	return *links;
 }
 
-bool samePath(const QString& a, const QString& b) { return QFileInfo(a).canonicalFilePath() == QFileInfo(b).canonicalFilePath(); }
+bool samePath(const QString& a, const QString& b)
+{
+	const QString first = QFileInfo(a).canonicalFilePath();
+	return !first.isEmpty() && first == QFileInfo(b).canonicalFilePath();
+}
 
 //! Whether the project at @a from links to @a target through its subprojects, within @a depth levels.
 bool reaches(const QString& from, const QString& target, int depth)
@@ -128,6 +132,7 @@ bool reaches(const QString& from, const QString& target, int depth)
 		link = link.nextSiblingElement(QStringLiteral("subproject")))
 	{
 		const QString path = link.attribute(QStringLiteral("path"));
+		if (!QFileInfo(path).isFile()) { continue; }  // a dead link reaches nothing (and is never opened)
 		if (samePath(path, target) || reaches(path, target, depth - 1)) { return true; }
 	}
 	return false;

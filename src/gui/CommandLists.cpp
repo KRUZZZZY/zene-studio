@@ -322,7 +322,7 @@ ListSpec noteEvents(const QString& clip)
 ListSpec mixerSnapshots()
 {
 	ListSpec out = spec("Mixer Snapshots", "mixer.snapshot_list", "snapshots", {QStringLiteral("name"), QStringLiteral("channels")});
-	out.summaryKeys = {QStringLiteral("count"), QStringLiteral("limit")};
+	out.summaryKeys = QStringList{QStringLiteral("count"), QStringLiteral("limit")};
 	const QHash<QString, QString> named{{QStringLiteral("name"), QStringLiteral("name")}};
 	RowAction remove = act("Remove", "mixer.snapshot_remove", named);
 	remove.confirm = true;
@@ -351,7 +351,7 @@ ListSpec devicePresets(const QJsonObject& device)
 {
 	ListSpec out = spec("Device Presets", "plugin.preset_list", "presets", {QStringLiteral("name"), QStringLiteral("factory"),
 		QStringLiteral("bytes")}, device);
-	out.summaryKeys = {QStringLiteral("plugin"), QStringLiteral("count"), QStringLiteral("dir")};
+	out.summaryKeys = QStringList{QStringLiteral("plugin"), QStringLiteral("count"), QStringLiteral("dir")};
 	const QHash<QString, QString> named{{QStringLiteral("name"), QStringLiteral("name")}};
 	RowAction remove = act("Remove", "plugin.preset_remove", named, device);
 	remove.confirm = true;
@@ -364,7 +364,7 @@ ListSpec renderQueue()
 {
 	ListSpec out = spec("Render Queue", "render.queue_list", "jobs", {QStringLiteral("job"), QStringLiteral("kind"), QStringLiteral("state"),
 		QStringLiteral("out"), QStringLiteral("error")});
-	out.summaryKeys = {QStringLiteral("open"), QStringLiteral("running"), QStringLiteral("limit")};
+	out.summaryKeys = QStringList{QStringLiteral("open"), QStringLiteral("running"), QStringLiteral("limit")};
 	const QHash<QString, QString> job{{QStringLiteral("job"), QStringLiteral("job")}};
 	RowAction report = act("Report", "render.queue_report", job);
 	report.showResult = true;
@@ -378,7 +378,7 @@ ListSpec backgroundTasks()
 {
 	ListSpec out = spec("Background Tasks", "app.tasks", "tasks", {QStringLiteral("kind"), QStringLiteral("state"), QStringLiteral("label"),
 		QStringLiteral("progress")});
-	out.summaryKeys = {QStringLiteral("count")};
+	out.summaryKeys = QStringList{QStringLiteral("count")};
 	out.actions = {act("Cancel", "app.task_cancel", {{QStringLiteral("id"), QStringLiteral("id")}})};
 	return out;
 }
@@ -387,7 +387,7 @@ ListSpec subprojects()
 {
 	ListSpec out = spec("Subprojects", "project.subprojects", "subprojects", {QStringLiteral("track"), QStringLiteral("path"),
 		QStringLiteral("stale"), QStringLiteral("exists")});
-	out.summaryKeys = {QStringLiteral("count")};
+	out.summaryKeys = QStringList{QStringLiteral("count")};
 	RowAction open = act("Open Its Project", "project.open", {{QStringLiteral("path"), QStringLiteral("path")}});
 	open.confirm = true;
 	out.actions = {act("Render Again", "project.subproject_refresh", {{QStringLiteral("track"), QStringLiteral("track")}}), open};
@@ -399,7 +399,7 @@ ListSpec alternatives()
 {
 	ListSpec out = spec("Alternatives", "project.alternatives", "alternatives", {QStringLiteral("name"), QStringLiteral("active"),
 		QStringLiteral("exists"), QStringLiteral("file")});
-	out.summaryKeys = {QStringLiteral("main"), QStringLiteral("active")};
+	out.summaryKeys = QStringList{QStringLiteral("main"), QStringLiteral("active")};
 	const QHash<QString, QString> named{{QStringLiteral("name"), QStringLiteral("name")}};
 	RowAction switchTo = act("Switch To", "project.alternative_switch", named);
 	switchTo.confirm = true;
