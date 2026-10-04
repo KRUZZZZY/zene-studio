@@ -2511,6 +2511,7 @@ tests/src/gui/BrowserTagMenuTest.cpp
 tests/src/gui/CaptureMidiMenuTest.cpp
 tests/src/gui/ChainPresetMenuTest.cpp
 tests/src/gui/ClipEditsMenuTest.cpp
+tests/src/gui/CollabPanelTest.cpp
 tests/src/gui/CommandFormTest.cpp
 tests/src/gui/CommandPaletteTest.cpp
 tests/src/gui/ControllerTemplateMenuTest.cpp

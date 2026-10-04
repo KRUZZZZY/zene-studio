@@ -20,6 +20,13 @@
  * synthesis. Note-off starts a linear release over TEST_INSTRUMENT_RELEASE
  * frames; note-choke silences immediately.
  *
+ * The factory holds a SECOND class, TEST_INSTRUMENT_MULTIOUT_ID (0.5.0 MX-114):
+ * the same generator with two stereo output ports - "Out" (main) and "Aux" -
+ * the subject of the multi-output instrument commands (plugin.output_*). Its
+ * Aux port carries the same constant level scaled by TEST_INSTRUMENT_AUX_SCALE,
+ * so the two buses are told apart by their amplitude. The first class is
+ * unchanged: one output port, the same descriptor, the same process().
+ *
  * SPDX-License-Identifier: MIT
  */
 
@@ -41,11 +48,18 @@
 /* The level one sounding voice writes, before the gain parameter. */
 #define TEST_INSTRUMENT_LEVEL 0.25
 
+/* The multi-output class (MX-114): the same generator with a second stereo port. */
+#define TEST_INSTRUMENT_MULTIOUT_ID "org.lmms.test.clap-instrument-multiout"
+#define TEST_INSTRUMENT_MULTIOUT_NAME "LMMS CLAP Test Instrument (multi-out)"
+/* The Aux port's level, relative to the main port's. */
+#define TEST_INSTRUMENT_AUX_SCALE 0.5
+
 enum
 {
 	PARAM_GAIN = 1,
 	NOTE_PORT_ID = 1,
 	AUDIO_PORT_ID = 1,
+	AUX_AUDIO_PORT_ID = 2,
 };
 
 /* The plug-in's own account of what it was asked to do, saved through
@@ -115,6 +129,8 @@ typedef struct instrument_plugin
 	/* the sounding voice */
 	int sounding;          /* a note-on has arrived and no note-off yet */
 	uint32_t release_left; /* frames left of the release, 0 when silent */
+	/* 0 for the original class; 1 for TEST_INSTRUMENT_MULTIOUT_ID */
+	int multiout;
 } instrument_plugin_t;
 
 static const clap_plugin_descriptor_t s_descriptor = {
@@ -127,6 +143,20 @@ static const clap_plugin_descriptor_t s_descriptor = {
 	.support_url = "https://lmms.io",
 	.version = "1.0.0",
 	.description = "Generator test plug-in for the LMMS native CLAP instrument host",
+	.features = (const char* const[]){CLAP_PLUGIN_FEATURE_INSTRUMENT,
+		CLAP_PLUGIN_FEATURE_SYNTHESIZER, NULL},
+};
+
+static const clap_plugin_descriptor_t s_descriptor_multiout = {
+	.clap_version = CLAP_VERSION_INIT,
+	.id = TEST_INSTRUMENT_MULTIOUT_ID,
+	.name = TEST_INSTRUMENT_MULTIOUT_NAME,
+	.vendor = "LMMS contributors",
+	.url = "https://lmms.io",
+	.manual_url = "https://lmms.io",
+	.support_url = "https://lmms.io",
+	.version = "1.0.0",
+	.description = "Multi-output generator test plug-in for the LMMS native CLAP instrument host",
 	.features = (const char* const[]){CLAP_PLUGIN_FEATURE_INSTRUMENT,
 		CLAP_PLUGIN_FEATURE_SYNTHESIZER, NULL},
 };
@@ -262,6 +292,34 @@ static bool instrument_audio_ports_get(const clap_plugin_t* plugin, uint32_t ind
 static const clap_plugin_audio_ports_t s_audio_ports = {
 	.count = instrument_audio_ports_count,
 	.get = instrument_audio_ports_get,
+};
+
+/* The multi-output class: no input port, the main stereo output and a second
+   stereo output ("Aux") - an instrument with one extra output bus. */
+static uint32_t multiout_audio_ports_count(const clap_plugin_t* plugin, bool is_input)
+{
+	(void)plugin;
+	return is_input ? 0 : 2;
+}
+
+static bool multiout_audio_ports_get(const clap_plugin_t* plugin, uint32_t index,
+	bool is_input, clap_audio_port_info_t* info)
+{
+	if (is_input || index > 1) { return false; }
+	if (index == 0) { return instrument_audio_ports_get(plugin, 0, false, info); }
+	memset(info, 0, sizeof(*info));
+	info->id = AUX_AUDIO_PORT_ID;
+	strncpy(info->name, "Aux", CLAP_NAME_SIZE - 1);
+	info->flags = 0;
+	info->channel_count = 2;
+	info->port_type = CLAP_PORT_STEREO;
+	info->in_place_pair = CLAP_INVALID_ID;
+	return true;
+}
+
+static const clap_plugin_audio_ports_t s_audio_ports_multiout = {
+	.count = multiout_audio_ports_count,
+	.get = multiout_audio_ports_get,
 };
 
 /* ----------------------------------------------------------------- state -- */
@@ -422,11 +480,13 @@ static clap_process_status instrument_process(const clap_plugin_t* plugin,
 	{
 		const clap_audio_buffer_t* buffer = &process->audio_outputs[p];
 		if (!buffer->data32) { continue; }
+		/* the multi-output class's Aux port: the same voice, at its own level */
+		const double port_level = (self->multiout && p > 0) ? level * TEST_INSTRUMENT_AUX_SCALE : level;
 		for (uint32_t c = 0; c < buffer->channel_count; ++c)
 		{
 			float* channel = buffer->data32[c];
 			if (!channel) { continue; }
-			for (uint32_t f = 0; f < frames; ++f) { channel[f] = (float)level; }
+			for (uint32_t f = 0; f < frames; ++f) { channel[f] = (float)port_level; }
 		}
 	}
 
@@ -492,10 +552,10 @@ static void instrument_reset(const clap_plugin_t* plugin)
 
 static const void* instrument_get_extension(const clap_plugin_t* plugin, const char* id)
 {
-	(void)plugin;
+	const instrument_plugin_t* self = (const instrument_plugin_t*)plugin->plugin_data;
 	if (!strcmp(id, CLAP_EXT_PARAMS)) { return &s_params; }
 	if (!strcmp(id, CLAP_EXT_NOTE_PORTS)) { return &s_note_ports; }
-	if (!strcmp(id, CLAP_EXT_AUDIO_PORTS)) { return &s_audio_ports; }
+	if (!strcmp(id, CLAP_EXT_AUDIO_PORTS)) { return self->multiout ? &s_audio_ports_multiout : &s_audio_ports; }
 	if (!strcmp(id, CLAP_EXT_STATE)) { return &s_state; }
 	return NULL;
 }
@@ -505,12 +565,13 @@ static void instrument_on_main_thread(const clap_plugin_t* plugin)
 	(void)plugin;
 }
 
-static const clap_plugin_t* instrument_create(const clap_host_t* host)
+static const clap_plugin_t* instrument_create(const clap_host_t* host, int multiout)
 {
 	instrument_plugin_t* self = (instrument_plugin_t*)calloc(1, sizeof(*self));
 	if (!self) { return NULL; }
 
 	self->host = host;
+	self->multiout = multiout;
 	self->gain = 1.0;
 	self->first_note_time = -1;
 	self->last_note_time = -1;
@@ -520,7 +581,7 @@ static const clap_plugin_t* instrument_create(const clap_host_t* host)
 	self->last_channel = -1;
 	self->last_port_index = -1;
 
-	self->plugin.desc = &s_descriptor;
+	self->plugin.desc = multiout ? &s_descriptor_multiout : &s_descriptor;
 	self->plugin.plugin_data = self;
 	self->plugin.init = instrument_init;
 	self->plugin.destroy = instrument_destroy;
@@ -540,14 +601,15 @@ static const clap_plugin_t* instrument_create(const clap_host_t* host)
 static uint32_t instrument_factory_get_plugin_count(const clap_plugin_factory_t* factory)
 {
 	(void)factory;
-	return 1;
+	return 2;
 }
 
 static const clap_plugin_descriptor_t* instrument_factory_get_plugin_descriptor(
 	const clap_plugin_factory_t* factory, uint32_t index)
 {
 	(void)factory;
-	return index == 0 ? &s_descriptor : NULL;
+	if (index == 0) { return &s_descriptor; }
+	return index == 1 ? &s_descriptor_multiout : NULL;
 }
 
 static const clap_plugin_t* instrument_factory_create_plugin(
@@ -555,8 +617,10 @@ static const clap_plugin_t* instrument_factory_create_plugin(
 {
 	(void)factory;
 	if (!clap_version_is_compatible(host->clap_version)) { return NULL; }
-	if (!plugin_id || strcmp(plugin_id, TEST_INSTRUMENT_ID)) { return NULL; }
-	return instrument_create(host);
+	if (!plugin_id) { return NULL; }
+	if (!strcmp(plugin_id, TEST_INSTRUMENT_ID)) { return instrument_create(host, 0); }
+	if (!strcmp(plugin_id, TEST_INSTRUMENT_MULTIOUT_ID)) { return instrument_create(host, 1); }
+	return NULL;
 }
 
 static const clap_plugin_factory_t s_factory = {

@@ -11,6 +11,9 @@ THE STEPS (every assertion reads a copy's own state, never the reply of the edit
   2. A hosts (consent true, map_port false: no router is involved) and hands out a
      "local" editor invite; collab.host without consent is refused.
   3. B joins and reaches peer.state "joined" with the project; A lists B.
+  3a. Re-sync both ways (collab.resync on the peer, then on the host) leaves the
+     copies equal; the host changes B's role to viewer and back (collab.set_role),
+     its peer list says so each time, and an unknown peer or a peer asking is refused.
   4. A adds a track: B's track count follows.
   5. B adds a track: the edit is FORWARDED (B's reply says so), A applies it, and
      both copies end with the same count.
@@ -107,6 +110,38 @@ def step_join(a, b, invite, problems):
     problems.require(a.track_count() == b.track_count(), "B's copy does not match A's after the join")
 
 
+def peer_role(a, peer_id):
+    for peer in a.state().get("host", {}).get("peers", []):
+        if peer.get("id") == peer_id:
+            return peer.get("role")
+    return None
+
+
+def step_session_controls(a, b, problems):
+    resent = b.ok("collab.resync")
+    problems.require(resent.get("mode") == "joined", "B's collab.resync did not answer with its session state")
+    wait_for(lambda: peer_joined(b), "B holds the host's project after asking for it again")
+    hosted = a.ok("collab.resync")
+    problems.require(hosted.get("mode") == "hosting", "A's collab.resync did not answer with its session state")
+    wait_for(lambda: peer_joined(b) and a.track_count() == b.track_count(), "B matches A after A's re-sync")
+
+    peers = a.state().get("host", {}).get("peers", [])
+    problems.require(len(peers) == 1, "A does not list exactly one peer: %r" % peers)
+    peer_id = peers[0]["id"]
+    problems.require(peer_role(a, peer_id) == "editor", "B did not join as an editor")
+    viewer = a.ok("collab.set_role", {"peer": peer_id, "role": "viewer"})
+    problems.require(viewer.get("mode") == "hosting", "collab.set_role did not answer with the host's state")
+    problems.require(peer_role(a, peer_id) == "viewer", "B's role is not viewer after collab.set_role")
+    a.ok("collab.set_role", {"peer": peer_id, "role": "editor"})
+    problems.require(peer_role(a, peer_id) == "editor", "B's role is not editor again after collab.set_role")
+    unknown = a.call("collab.set_role", {"peer": peer_id + 1000, "role": "viewer"})
+    problems.require(unknown.get("ok") is False and (unknown.get("error") or {}).get("kind") == "not_found",
+                     "collab.set_role on an unknown peer was not a typed not_found: %r" % unknown)
+    asked = b.call("collab.set_role", {"peer": peer_id, "role": "viewer"})
+    problems.require(asked.get("ok") is False and (asked.get("error") or {}).get("kind") == "refused",
+                     "a peer's collab.set_role was not refused: %r" % asked)
+
+
 def step_host_edit(a, b, problems):
     before = b.track_count()
     a.ok("track.add", {"type": "instrument", "name": "from A"})
@@ -165,6 +200,7 @@ def run(binary):
             return SKIP_EXIT
         invite = step_host(a, problems)
         step_join(a, b, invite, problems)
+        step_session_controls(a, b, problems)
         step_host_edit(a, b, problems)
         step_peer_edit(a, b, problems)
         step_undo(a, b, problems)

@@ -866,6 +866,8 @@ IF(ZENE_HAVE_COLLAB)
 		src/core/CollabPolicyTest.cpp
 		src/core/CollabTransportTest.cpp
 		src/core/PortMappingCodecTest.cpp
+		# collab.show_panel (requires: display) over the real main window.
+		src/gui/CollabPanelTest.cpp
 	)
 ENDIF()
 
@@ -1333,6 +1335,9 @@ set_tests_properties(TakeLanesPanelTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=
 set_tests_properties(ShortcutsPageTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(StartHubTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(HelpAccessTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+if(ZENE_HAVE_COLLAB)
+	set_tests_properties(CollabPanelTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+endif()
 set_tests_properties(WorkspaceAccessTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(PianoRollBenchmarkTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 # AccessibilityHelperTest constructs the shell, so it takes the same
@@ -2117,6 +2122,12 @@ if(TARGET lmms_clap)
 			CLAP_TEST_INSTRUMENT_DIR="$<TARGET_FILE_DIR:clap-test-instrument>"
 		)
 		add_dependencies(ControlDeviceCatalogueTest clap-test-instrument)
+	endif()
+	# MX-114 (plugin.output_*): the fixture's multi-output class is the instrument with output buses.
+	if(TARGET clap-test-instrument AND TARGET InstrumentLayersCommandsTest)
+		target_compile_definitions(InstrumentLayersCommandsTest PRIVATE
+			CLAP_TEST_INSTRUMENT_DIR="$<TARGET_FILE_DIR:clap-test-instrument>")
+		add_dependencies(InstrumentLayersCommandsTest clap-test-instrument)
 	endif()
 endif()
 

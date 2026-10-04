@@ -32,12 +32,28 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 
+#include <QFileInfo>
+
+#include "ConfigManager.h"
 #include "ControlInstrumentCommands.h"
+#include "Engine.h"
+#include "ControlMixerSupport.h"
+#include "Instrument.h"
+#include "InstrumentOutputBuses.h"
 #include "InstrumentTrack.h"
+#include "Mixer.h"
 #include "ModulationLayer.h"
+#include "PluginFactory.h"
 #include "Song.h"
 #include "RackTestSupport.h"
 #include "ReversibilityTestSupport.h"
+
+//! The directory holding the in-tree CLAP instrument fixture, whose factory carries the multi-output
+//! class the plugin.output_* case loads (tests/data/clap-test-plugin/clap-test-instrument.c). Set by
+//! tests/CMakeLists.txt when this build has the fixture; empty otherwise, and that case skips.
+#ifndef CLAP_TEST_INSTRUMENT_DIR
+#define CLAP_TEST_INSTRUMENT_DIR ""
+#endif
 
 using namespace racktest;
 using revtest::run;
@@ -64,6 +80,18 @@ int layerZoneCount(const QString& track)
 int partCount(const QString& track)
 {
 	return run(QStringLiteral("plugin.midi_parts"), {{QStringLiteral("target"), track}}).result.value(QStringLiteral("part_count")).toInt(-1);
+}
+
+//! The dev-<n> id plugin.list gives the CLAP class @a clapId, or empty.
+QString clapDevice(const QString& clapId)
+{
+	const ControlResult listed = run(QStringLiteral("plugin.list"), {{QStringLiteral("format"), QStringLiteral("clap")}});
+	for (const QJsonValue& value : listed.result.value(QStringLiteral("devices")).toArray())
+	{
+		const QJsonObject device = value.toObject();
+		if (device.value(QStringLiteral("clap_id")).toString() == clapId) { return device.value(QStringLiteral("id")).toString(); }
+	}
+	return QString();
 }
 
 //! The track's state saved and read back into the same track - the project round trip of one track.
@@ -136,6 +164,24 @@ private slots:
 		QCOMPARE(layerZoneCount(m_track), 2);
 		QVERIFY(!run(QStringLiteral("rack.layer_remove"), {{QStringLiteral("target"), m_track},
 			{QStringLiteral("layer"), QStringLiteral("layer-0")}}).ok);  // the track's own instrument stays
+
+		// rack.layer_zone_remove: dropping layer-0's own zone (zone-1, keys 0..59) gives the track's
+		// instrument the whole keyboard back; control.undo re-inserts the zone at its index.
+		const ControlResult removed = run(QStringLiteral("rack.layer_zone_remove"), {{QStringLiteral("target"), m_track},
+			{QStringLiteral("zone"), QStringLiteral("zone-1")}});
+		QVERIFY2(removed.ok, qPrintable(removed.errorMessage));
+		QCOMPARE(removed.result.value(QStringLiteral("removed")).toString(), QStringLiteral("zone-1"));
+		QCOMPARE(layerZoneCount(m_track), 1);
+		QCOMPARE(layerCount(m_track), 1);  // a zone removal leaves the layers alone
+		QVERIFY(track->layers().basePlays(80, 100));
+		REV_UNDO_OR_FAIL();
+		QCOMPARE(layerZoneCount(m_track), 2);
+		QVERIFY(!track->layers().basePlays(80, 100));
+		QVERIFY(track->layers().basePlays(40, 100));
+		const ControlResult missing = run(QStringLiteral("rack.layer_zone_remove"), {{QStringLiteral("target"), m_track},
+			{QStringLiteral("zone"), QStringLiteral("zone-9")}});
+		QVERIFY(!missing.ok);
+		QCOMPARE(missing.errorKind, ControlErrorKind::NotFound);
 	}
 
 	//! MX-114: a MIDI part is added and removed through the surface, undone, and saved with the track.
@@ -171,6 +217,84 @@ private slots:
 		if (buses.ok) { QVERIFY(buses.result.value(QStringLiteral("bus_count")).toInt() >= 1); }
 		QVERIFY(!run(QStringLiteral("plugin.output_bus_route"), {{QStringLiteral("target"), m_track},
 			{QStringLiteral("bus"), 0}, {QStringLiteral("channel"), QString()}}).ok);
+	}
+
+	//! MX-114 on a real multi-output instrument: the CLAP fixture's multi-output class (main "Out" plus
+	//! "Aux") lists two buses; routing Aux to a channel and un-routing it through control.undo, then
+	//! creating a channel for every unrouted bus and deleting it again through control.undo.
+	void multiOutputBusesRouteCreateUndo()
+	{
+		if (getPluginFactory()->pluginInfo("clapinstrument").isNull())
+		{
+			QSKIP("this build has no clapinstrument module, so no instrument with output buses");
+		}
+		const QString fixtureDir = QStringLiteral(CLAP_TEST_INSTRUMENT_DIR);
+		if (fixtureDir.isEmpty() || !QFileInfo::exists(fixtureDir))
+		{
+			QSKIP("this build has no CLAP instrument fixture (tests/data/clap-test-plugin)");
+		}
+		ConfigManager::inst()->setVSTDir(fixtureDir);  // the CLAP scan walks this directory too
+		const QString device = clapDevice(QStringLiteral("org.lmms.test.clap-instrument-multiout"));
+		QVERIFY2(!device.isEmpty(), "plugin.list format=clap does not carry the fixture's multi-output class");
+		const QString target = revtest::addTrack();
+		QVERIFY(!target.isEmpty());
+		const ControlResult loaded = run(QStringLiteral("plugin.load"), {{QStringLiteral("target"), target},
+			{QStringLiteral("device"), device}});
+		QVERIFY2(loaded.ok, qPrintable(loaded.errorMessage));
+
+		const ControlResult buses = run(QStringLiteral("plugin.output_buses"), {{QStringLiteral("target"), target}});
+		QVERIFY2(buses.ok, qPrintable(buses.errorMessage));
+		QCOMPARE(buses.result.value(QStringLiteral("target")).toString(), target);
+		QCOMPARE(buses.result.value(QStringLiteral("bus_count")).toInt(), 2);
+		QCOMPARE(buses.result.value(QStringLiteral("routed_count")).toInt(), 0);
+		const QJsonArray list = buses.result.value(QStringLiteral("buses")).toArray();
+		QCOMPARE(list.size(), 2);
+		QVERIFY(list.at(0).toObject().value(QStringLiteral("main")).toBool());
+		const QJsonObject aux = list.at(1).toObject();
+		QCOMPARE(aux.value(QStringLiteral("name")).toString(), QStringLiteral("Aux"));
+		QCOMPARE(aux.value(QStringLiteral("channels")).toInt(), 2);
+		QVERIFY(!aux.value(QStringLiteral("main")).toBool());
+		QVERIFY(aux.value(QStringLiteral("active")).toBool());
+		QCOMPARE(aux.value(QStringLiteral("channel")).toString(), QString());
+
+		// plugin.output_bus_route: Aux into a fresh channel, then control.undo routes it back to nowhere.
+		Mixer* mixer = Engine::mixer();
+		const int index = mixer->createChannel();
+		const QString channel = QStringLiteral("ch-%1").arg(mixer->mixerChannel(index)->id());
+		const ControlResult routed = run(QStringLiteral("plugin.output_bus_route"), {{QStringLiteral("target"), target},
+			{QStringLiteral("bus"), 1}, {QStringLiteral("channel"), channel}});
+		QVERIFY2(routed.ok, qPrintable(routed.errorMessage));
+		QCOMPARE(routed.result.value(QStringLiteral("routed_count")).toInt(), 1);
+		QCOMPARE(routed.result.value(QStringLiteral("buses")).toArray().at(1).toObject()
+			.value(QStringLiteral("channel")).toString(), channel);
+		InstrumentOutputBuses* model = trackOf(target)->instrument()->outputBuses();
+		QVERIFY(model != nullptr);
+		QCOMPARE(QStringLiteral("ch-%1").arg(model->routeOf(1)), channel);
+		REV_UNDO_OR_FAIL();
+		QCOMPARE(model->routeOf(1), -1);
+		const ControlResult noBus = run(QStringLiteral("plugin.output_bus_route"), {{QStringLiteral("target"), target},
+			{QStringLiteral("bus"), 2}, {QStringLiteral("channel"), channel}});
+		QCOMPARE(noBus.errorKind, ControlErrorKind::NotFound);  // the fixture has buses 0..1
+
+		// plugin.output_buses_create_channels: one new channel, named after the track and the bus, with
+		// Aux routed to it; control.undo un-routes the bus and deletes the channel it made.
+		const auto channelsBefore = mixer->numChannels();
+		const ControlResult created = run(QStringLiteral("plugin.output_buses_create_channels"),
+			{{QStringLiteral("target"), target}});
+		QVERIFY2(created.ok, qPrintable(created.errorMessage));
+		const QJsonArray made = created.result.value(QStringLiteral("created")).toArray();
+		QCOMPARE(made.size(), 1);
+		QCOMPARE(made.at(0).toObject().value(QStringLiteral("bus")).toInt(), 1);
+		const QString madeChannel = made.at(0).toObject().value(QStringLiteral("channel")).toString();
+		QCOMPARE(created.result.value(QStringLiteral("routed_count")).toInt(), 1);
+		QCOMPARE(mixer->numChannels(), channelsBefore + 1);
+		QCOMPARE(QStringLiteral("ch-%1").arg(model->routeOf(1)), madeChannel);
+		QVERIFY(mixer->mixerChannel(mixer->numChannels() - 1)->m_name.endsWith(QStringLiteral(" Aux")));
+		REV_UNDO_OR_FAIL();
+		QCOMPARE(mixer->numChannels(), channelsBefore);
+		QCOMPARE(model->routeOf(1), -1);
+		ControlResult gone;
+		QVERIFY2(control::resolveMixerChannel(madeChannel, &gone) == nullptr, "the created channel survived its undo");
 	}
 
 	//! MX-120: a per-voice modulator needs a track to follow; bound to the track's instrument it reports
