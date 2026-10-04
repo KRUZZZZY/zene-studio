@@ -1214,7 +1214,9 @@ are **drivable through the socket, not from the interface**, and this section is
   take that edit back. Both verbs therefore write only attributes their clip type serialises
   **unconditionally** (`pos`, `len`, `off`, `autoresize`), and `setSampleWindow` is not reachable
   from this surface in 0.3.0; an agent that wants to move which part of a source plays uses
-  `clip.slip`'s tick offset. A frame-domain trim is a later feature and is not claimed here.
+  `clip.slip`'s tick offset. Since 0.5.0 (F3, ED-021) `clip.split frames` and `clip.trim
+  start_frames/end_frames/zero_crossing` are that frame-domain edit: they author the window through
+  its owner and reset the sub-tick `lead` on absence (see the wave 2 section at the end).
 - **`clip.trim` does not reduce a pattern clip's offset modulo the pattern length.** The song
   editor does that as a GUI overflow guard; the value this command sets is the value the model
   holds, and the engine moduluses at use time.
@@ -2213,3 +2215,80 @@ Fleshed out, because both halves of that sentence hide something real:
   (re-taken with `bash tools/dawproject-proof.sh`, part 2) and `ControlRegistryTest`'s
   `commandCount()` (`85 + 7 + 5 + 5 + 5 + 3 + 3 + 7`). Two sibling lanes add groups
   too; the train re-takes both at the merged tip.
+
+## 0.5.0 catch-up wave 2 — what each new feature does not do (2026-10-04)
+
+**F1, hardware I/O (MX-040/041/036/061).**
+- JACK and ALSA multichannel output are written, and they pass the syntax check, but neither has
+  been run: there was no jackd or multichannel interface on the build machine. The Dummy device's
+  `LMMS_DUMMY_OUTPUT_CHANNELS` is what the tests measure.
+- PulseAudio, SDL, OSS, sndio and SoundIo stay stereo; routes beyond 1/2 answer
+  `multichannel:false` / `stereo_backend`. PortAudio is not compiled in this build.
+- Input channel names and buses are labels only; JACK port names do not use them.
+- A hardware insert is bypassed during an export: the dry signal passes and it reports 0 latency.
+- `pdc.report` does not list the insert's latency per channel, although PDC includes it.
+
+**F2, instruments (MX-114/112/120).**
+- Output buses, MIDI parts, layers and per-voice modulation have no interface yet; they are
+  command-only.
+- Layers receive the track's played notes, not the notes its chord or arpeggio functions add.
+- Each layer is a hidden track with its own bus handle and MIDI port, so under JACK each one has its
+  own ports.
+- Hosted instruments still report no latency to PDC (BUGS 11.34). Routed buses are aligned to the
+  target channel's latency only.
+- Removing a layer while live MIDI is forwarded from the MIDI thread has the same unguarded window
+  as deleting any track.
+- CLAP note events now carry `note_id = channel × 128 + key` instead of -1.
+
+**F3, arranging (ED-021, WF-107, WF-042, WF-048).**
+- Frame edits are refused on warped and source-tempo clips.
+- Waveform drawing, transients, pre-fades and comp slip ignore the sub-tick lead, so they can be up
+  to one tick off on a frame-edited clip. Shift-knife does not snap to zero crossings.
+- The reference project is read-only and never plays: Engine and Song are singletons, so this is
+  not a multi-document engine.
+- Automation and pattern clips cannot be copied from the reference project, and `copy_devices`
+  rebuilds the target chain, so its fx ids renumber.
+- EditLocks does not refuse `reference.copy_clips` onto a locked track.
+
+**F4, AAF import (WF-038).**
+- OMF is refused by name, because LibAAF reads AAF only.
+- MXF essence is listed as missing, because the sample decoder does not open .mxf.
+- A multichannel clip plays its first source only.
+- Timing uses the global tempo; an active tempo map is reported, not followed.
+- Solo is counted as lost, not imported.
+- Builds without LibAAF (hosted CI today) compile the reader out, and its two fixture cases skip.
+
+**F5, video (ED-054).**
+- There is one video per project, stored by absolute path, and `project.missing_assets`/relink do
+  not know it.
+- `video.extract_audio` decodes on the interface thread, so a long video freezes the interface for
+  the decode.
+- Builds without FFmpeg compile the decoder out and every `video.*` id answers "unavailable".
+
+**F6, peer-to-peer collaboration and remote control (WF-050/052).**
+- It is off by default and experimental, and LAN-first.
+- Over the internet it is best effort, with no STUN or hole punching, because both need a server.
+- Behind carrier-grade or double NAT, port mapping cannot help. The build machine is in that case,
+  measured read-only: NAT-PMP answered "no external address" and the IGD's external address was
+  empty. The invite then falls back to the LAN address and says so.
+- Edits that bypass the command registry (many interface gestures today) re-sync the whole project
+  to peers. On a peer they cannot be sent and are reverted.
+- Samples are not transferred.
+- Undo is shared, not per peer. A peer's Edit > Undo is local and is reverted; `control.undo` is
+  forwarded.
+- Windows and macOS packages need Qt's OpenSSL TLS plug-in for PSK, otherwise `collab.host`
+  answers "unavailable".
+- There is no reconnect, and no HTML remote page, because browsers cannot do TLS-PSK.
+
+**F7, surround (MX-060).**
+- Multichannel WAV export is not built: the renderer writes stereo. A stereo export applies the
+  BS.775 downmix.
+- A surround channel's extra channels get no PDC delay.
+- Its devices, post-fader inserts, mono/polarity/width/EQ and meters act on L/R only.
+- Cue mixes, listen and the recorder carry L/R.
+- The pan acts on the extra channels at its block value.
+
+**Found while integrating.** `transport.seek` while the transport is stopped moves the stopped
+mode's timeline, not the song's, and `transport.play` starts from the song's. The video window
+follows the song's timeline, as the arranger's ruler does. Logged for 0.5.x.
+

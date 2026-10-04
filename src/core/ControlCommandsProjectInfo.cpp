@@ -32,6 +32,7 @@
 #include <QJsonArray>
 
 #include "Clip.h"
+#include "ControlArrangingCommands.h"
 #include "ControlCommandDef.h"
 #include "ControlEdit.h"
 #include "ControlRegistry.h"
@@ -222,6 +223,7 @@ void registerProjectInfoCommands(ControlRegistry& registry)
 		"track.set_locked does for a whole track. Saved with the project; one undo step."),
 		{{QStringLiteral("clip"), stringProperty()}, {QStringLiteral("locked"), booleanProperty()}}, {QStringLiteral("clip")}, true, setClipLocked);
 	add(registry, "project.locks", QStringLiteral("The tracks and clips locked against editing."), {}, {}, false, locks);
+	registerArrangingCommands(registry);  // 0.5.0 F3: spacers, the reference project, switching, typed new documents
 }
 
 } // namespace lmms

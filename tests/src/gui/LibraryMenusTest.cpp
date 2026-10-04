@@ -116,6 +116,44 @@ private slots:
 		}
 	}
 
+	void theProjectMenuOffersOtherProjectsAndTypedDocuments()  // 0.5.0 F3: WF-042, WF-048
+	{
+		QMenu menu;
+		LibraryCommandMenus::populateProject(&menu);
+		const QStringList declared = declaredCommands(&menu);
+		for (const char* id : {"project.new_document", "reference.open", "reference.get_state", "project.switch", "project.paste_tracks"})
+		{
+			QVERIFY2(declared.contains(QLatin1String(id)), id);
+			QVERIFY2(ControlRegistry::instance()->hasCommand(QLatin1String(id)), id);
+		}
+		QVERIFY(lmms::test::menuAction(&menu, {QStringLiteral("New Document"), QStringLiteral("Mastering")}) != nullptr);
+		QVERIFY(lmms::test::menuAction(&menu, {QStringLiteral("Other Projects"), QStringLiteral("Open as Reference...")}) != nullptr);
+	}
+
+	void theTitleNamesANonDefaultDocumentType()  // 0.5.0 F3: WF-048 (production, the default, is untagged)
+	{
+		QCOMPARE(LibraryCommandMenus::taggedTitle(QStringLiteral("Song - Zene Studio"), QStringLiteral("mastering")),
+			QStringLiteral("[Mastering] Song - Zene Studio"));
+		QCOMPARE(LibraryCommandMenus::taggedTitle(QStringLiteral("[Live] Song* - Zene Studio"), QStringLiteral("production")),
+			QStringLiteral("Song* - Zene Studio"));
+	}
+
+	void aTrackGetsASpacerFromItsMenu()  // 0.5.0 F3: WF-107
+	{
+		Track* track = Track::create(Track::Type::Instrument, Engine::getSong());
+		QMenu menu;
+		LibraryCommandMenus::populateTrack(&menu, track);
+		QVERIFY(lmms::test::menuAction(&menu, {QStringLiteral("Add Spacer Below...")}) != nullptr);
+		QVERIFY(lmms::test::menuAction(&menu, {QStringLiteral("Remove Spacer Below")}) == nullptr);
+		QVERIFY(run(QStringLiteral("track.set_spacer"), {{QStringLiteral("track"), control::trackIdOf(track)}, {QStringLiteral("height"), 20}}).ok);
+		QMenu again;
+		LibraryCommandMenus::populateTrack(&again, track);
+		QAction* remove = lmms::test::menuAction(&again, {QStringLiteral("Remove Spacer Below")});
+		QVERIFY(remove != nullptr);
+		remove->trigger();
+		QCOMPARE(run(QStringLiteral("track.spacers")).result.value(QStringLiteral("count")).toInt(), 0);
+	}
+
 	void aTrackLocksFromItsMenu()
 	{
 		Track* track = Track::create(Track::Type::Instrument, Engine::getSong());

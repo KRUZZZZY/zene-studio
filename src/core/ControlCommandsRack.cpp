@@ -39,6 +39,7 @@
 #include "ControlDeviceMoves.h"
 #include "ControlDeviceSupport.h" // ControlSnapshotLimit, the SPEC A16 snapshot bound
 #include "ControlEdit.h"
+#include "ControlInstrumentCommands.h"
 #include "ControlRackSupport.h"
 #include "ControlRegistry.h"
 #include "ControlReversibility.h"
@@ -382,6 +383,7 @@ void registerRackCommands(ControlRegistry& registry)
 	// unit (the automation and warp groups' split).
 	registerRackMacroCommands(registry);
 	registerRackZoneCommands(registry);
+	registerRackLayerCommands(registry);  // 0.5.0 MX-112: instrument layers
 }
 
 } // namespace lmms

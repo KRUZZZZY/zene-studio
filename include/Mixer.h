@@ -28,10 +28,12 @@
 #include "AudioBus.h"
 #include "AudioBuffer.h"
 #include "EffectChain.h"
+#include "HardwareIo.h"
 #include "JournallingObject.h"
 #include "LatencyCompensation.h"
 #include "MixerPostInserts.h"
 #include "MixerStrip.h"
+#include "MixerSurround.h"
 #include "Model.h"
 #include "Rack.h"
 #include "ThreadableJob.h"
@@ -83,6 +85,14 @@ public:
 
 	//! 0.5.0 MX-082: the inserts after the fader; empty (and skipped) unless a project adds devices.
 	PostFaderInserts m_postInserts;
+
+	//! 0.5.0 F1 (MX-040, MX-036, MX-061): the direct out, cue sends and hardware insert (HardwareIo.h);
+	//! all off - and nothing saved - unless a project routes something to the hardware.
+	ChannelHardwareIo m_hardwareIo;
+
+	//! 0.5.0 F7 (MX-060): the channel's surround format, its side buffer and its panner (MixerSurround.h);
+	//! stereo, panner off - and nothing saved - unless a project sets them.
+	ChannelSurround m_surround;
 
 	// set to true if any effect in the channel is enabled and running
 	bool m_stillRunning;

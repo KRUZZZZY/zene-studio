@@ -430,6 +430,9 @@ void InstrumentTrack::processInEvent( const MidiEvent& event, const TimePos& tim
 		return;
 	}
 
+	// 0.5.0 MX-112: a live note (and its note-off) reaches the layers whose zones claim it.
+	m_layers.forwardInEvent(event, time, offset);
+
 	bool eventHandled = false;
 
 	switch( event.type() )
@@ -597,39 +600,18 @@ void InstrumentTrack::processOutEvent( const MidiEvent& event, const TimePos& ti
 
 	switch( event.type() )
 	{
+		// 0.5.0 (MX-112 layer zones, MX-114 MIDI parts, MX-120 voices): the note paths are in
+		// InstrumentTrackNotes.cpp, moved out of this function unchanged but for those three.
 		case MidiNoteOn:
-			m_midiNotesMutex.lock();
-			m_piano.setKeyState( event.key(), true );	// event.key() = original key
-
-			if( key >= 0 && key < NumKeys )
-			{
-				if( m_runningMidiNotes[key] > 0 )
-				{
-					m_instrument->handleMidiEvent( MidiEvent( MidiNoteOff, handleEventOutputChannel, key, 0 ), time, offset );
-				}
-				++m_runningMidiNotes[key];
-				m_instrument->handleMidiEvent( MidiEvent( MidiNoteOn, handleEventOutputChannel, key, event.velocity() ), time, offset );
-
-			}
-			m_midiNotesMutex.unlock();
-			emit newNote();
+			sendNoteOn( event, key, handleEventOutputChannel, time, offset );
 			break;
 
 		case MidiNoteOff:
-			m_midiNotesMutex.lock();
-			m_piano.setKeyState( event.key(), false );	// event.key() = original key
-
-			if( key >= 0 && key < NumKeys && --m_runningMidiNotes[key] <= 0 )
-			{
-				// The note-off velocity (0 unless the note has a release velocity, 0.5.0 L07).
-				m_instrument->handleMidiEvent( MidiEvent( MidiNoteOff, handleEventOutputChannel, key, event.velocity() ), time, offset );
-			}
-			m_midiNotesMutex.unlock();
-			emit endNote();
+			sendNoteOff( event, key, handleEventOutputChannel, time, offset );
 			break;
 
 		default:
-			m_instrument->handleMidiEvent( transposedEvent, time, offset );
+			sendChannelEvent( transposedEvent, time, offset );
 			break;
 	}
 
@@ -693,7 +675,8 @@ void InstrumentTrack::playNote( NotePlayHandle* n, std::span<SampleFrame> workin
 	m_noteStacking.processNote( n );
 	m_arpeggio.processNote( n );
 
-	if( n->isMasterNote() == false && m_instrument != nullptr )
+	// 0.5.0 MX-112: a layer rack's zones can leave the track's own instrument out of a note.
+	if( n->isMasterNote() == false && m_instrument != nullptr && m_layers.basePlays(n->key(), n->getVolume()) )
 	{
 		// all is done, so now lets play the note!
 		m_instrument->playNote( n, workingBuffer );
@@ -788,6 +771,7 @@ void InstrumentTrack::updatePitchRange()
 void InstrumentTrack::updateMixerChannel()
 {
 	m_audioBusHandle.setNextMixerChannel(m_mixerChannelModel.value());
+	m_layers.followMixerChannel(m_mixerChannelModel.value());  // 0.5.0 MX-112: the layers play where the track does
 }
 
 
@@ -1019,6 +1003,7 @@ void InstrumentTrack::saveTrackSpecificSettings(QDomDocument& doc, QDomElement& 
 	m_soundShaping.saveState( doc, thisElement );
 	m_noteStacking.saveState( doc, thisElement );
 	m_arpeggio.saveState( doc, thisElement );
+	saveZeneInstrumentSettings(doc, thisElement, presetMode);  // 0.5.0 MX-112/MX-114: layers, parts, buses
 
 	// Save the midi port info if we are not in song saving mode, e.g. in
 	// track cloning mode or if we are in song saving mode and the user
@@ -1125,12 +1110,13 @@ void InstrumentTrack::loadTrackSpecificSettings( const QDomElement & thisElement
 					emit instrumentChanged();
 				}
 			}
+			else if (isZeneInstrumentNode(node.nodeName()))
+			{
+				// 0.5.0 MX-112/MX-114: read after the instrument (loadZeneInstrumentSettings), never as a plug-in name
+			}
 			else if (node.nodeName() == "midicontrollers")
 			{
-				for (int i = 0; i < MidiControllerCount; ++i)
-				{
-					m_midiCCModel[i]->loadSettings(node.toElement(), "cc" + QString::number(i));
-				}
+				loadMidiControllers(node.toElement());
 			}
 			// compat code - if node-name doesn't match any known
 			// one, we assume that it is an instrument-plugin
@@ -1158,6 +1144,8 @@ void InstrumentTrack::loadTrackSpecificSettings( const QDomElement & thisElement
 
 	updatePitchRange();
 	unlock();
+
+	loadZeneInstrumentSettings(thisElement);
 }
 
 
@@ -1218,7 +1206,12 @@ Instrument * InstrumentTrack::loadInstrument(const QString & _plugin_name,
 	silenceAllNotes( true );
 
 	lock();
+	// 0.5.0 MX-120: the old instrument goes while the render is held off - a per-voice modulator's block
+	// may be handing it a per-note value (ModulationLayerPublisher.cpp).
+	Engine::audioEngine()->requestChangeInModel();
 	delete m_instrument;
+	m_instrument = nullptr;
+	Engine::audioEngine()->doneChangeInModel();
 	m_instrument = Instrument::instantiate(_plugin_name, this,
 					key, keyFromDnd);
 	unlock();

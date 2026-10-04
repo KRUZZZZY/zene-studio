@@ -35,6 +35,7 @@
 
 #include "AutomatableModel.h"
 #include "ControlRegistry.h"
+#include "Instrument.h"
 
 namespace lmms
 {
@@ -71,6 +72,7 @@ void saveSource(QDomDocument& doc, QDomElement& modulatorElement, const Modulato
 	if (source.shape == ModulationShape::Envelope) { modulatorElement.setAttribute(QStringLiteral("attack"), static_cast<double>(source.attack)); }
 	// MX-121: the track whose notes restart it, only when it follows one.
 	if (source.triggerTrack >= 0) { modulatorElement.setAttribute(QStringLiteral("trigger"), source.triggerTrack); }
+	if (source.perVoice) { modulatorElement.setAttribute(QStringLiteral("pervoice"), 1); }  // MX-120, only when on
 }
 
 void saveRoute(QDomDocument& doc, QDomElement& modulatorElement, const ModulationRoute& route)
@@ -83,6 +85,7 @@ void saveRoute(QDomDocument& doc, QDomElement& modulatorElement, const Modulatio
 	routeElement.setAttribute(QStringLiteral("depth"), static_cast<double>(route.depth));
 	// R1.3: written only when on, so every existing route keeps its bytes.
 	if (route.perSample) { routeElement.setAttribute(QStringLiteral("persample"), 1); }
+	if (route.track >= 0) { routeElement.setAttribute(QStringLiteral("track"), route.track); }  // MX-120
 	modulatorElement.appendChild(routeElement);
 }
 
@@ -108,6 +111,7 @@ ModulatorSource readSource(const QDomElement& element)
 	for (int i = 0; i < source.stepCount; ++i) { source.steps[static_cast<std::size_t>(i)] = boundedValue(values[i], -1.f, 0.f); }
 	source.attack = boundedValue(element.attribute(QStringLiteral("attack"), QStringLiteral("0.1")), 0.f, 0.1f);
 	source.triggerTrack = std::max(-1, element.attribute(QStringLiteral("trigger"), QStringLiteral("-1")).toInt());
+	source.perVoice = element.attribute(QStringLiteral("pervoice"), QStringLiteral("0")).toInt() != 0;
 	return source;
 }
 
@@ -120,6 +124,7 @@ ModulationRoute readRoute(const QDomElement& element)
 	route.parameter = element.attribute(QStringLiteral("parameter"));
 	route.depth = boundedValue(element.attribute(QStringLiteral("depth")), -1.f, 0.f);
 	route.perSample = element.attribute(QStringLiteral("persample"), QStringLiteral("0")).toInt() != 0;
+	route.track = std::max(-1, element.attribute(QStringLiteral("track"), QStringLiteral("-1")).toInt());
 	return route;
 }
 
@@ -164,6 +169,10 @@ bool resolveRoute(const ModulationRoute& route, ModulationRuntime::Entry* entry)
 	entry->base = entry->model->value<float>();
 	entry->minimum = entry->model->minValue<float>();
 	entry->maximum = entry->model->maxValue<float>();
+	// MX-120: a track route's instrument, kept only when it takes per-note values for this parameter.
+	Instrument* instrument = route.track >= 0 ? modulationTargetInstrument(route) : nullptr;
+	entry->noteTarget = instrument != nullptr ? instrument->perNoteTarget(entry->model.data()) : -1;
+	entry->instrument = entry->noteTarget >= 0 ? instrument : nullptr;
 	return true;
 }
 
@@ -434,7 +443,7 @@ const ModulationRoute* ModulationLayer::findRoute(const ModulationRoute& route) 
 	{
 		for (const ModulationRoute& candidate : modulator.routes)
 		{
-			const bool same = candidate.channel == route.channel
+			const bool same = candidate.channel == route.channel && candidate.track == route.track
 				&& candidate.chain == route.chain && candidate.effect == route.effect
 				&& candidate.parameter == route.parameter;
 			if (same) { return &candidate; }

@@ -36,6 +36,7 @@
 
 #include "AudioEngine.h"
 #include "AudioInputPath.h"
+#include "AudioIoSetup.h"
 #include "ConfigManager.h"
 #include "GuiApplication.h"
 #include "MainWindow.h"
@@ -99,7 +100,6 @@ AudioJack::AudioJack(bool& successful, AudioEngine* audioEngineParam)
 	, m_client(nullptr)
 	, m_active(false)
 	, m_midiClient(nullptr)
-	, m_tempOutBufs(new jack_default_audio_sample_t*[channels()])
 {
 	successful = initJackClient();
 	if (successful) {
@@ -130,8 +130,6 @@ AudioJack::~AudioJack()
 		}
 		jack_client_close(m_client);
 	}
-
-	delete[] m_tempOutBufs;
 }
 
 
@@ -195,6 +193,10 @@ bool AudioJack::initJackClient()
 					clientName.toLatin1().constData(), jack_get_client_name(m_client));
 	}
 
+	// 0.5.0 F1 (MX-040, MX-041): the outputs the interface's I/O setup asks for (2 unless set), and
+	// the inputs the capture plan asks for (2 unless set) - each its own count.
+	setChannels(static_cast<ch_cnt_t>(audioio::requestedOutputs(audioio::deviceKey(name()))));
+	m_inputChannels = AudioInputPath::configuredChannelCount();
 	resizeInputBuffer(jack_get_buffer_size(m_client));
 
 	// set buffer-size callback
@@ -218,16 +220,23 @@ bool AudioJack::initJackClient()
 		const QString name = buildOutputName(ch);
 		m_outputPorts.push_back(
 			jack_port_register(m_client, name.toLatin1().constData(), JACK_DEFAULT_AUDIO_TYPE, JackPortIsOutput, 0));
-
-		const QString input_name = buildInputName(ch);
-		m_inputPorts.push_back(jack_port_register(m_client, input_name.toLatin1().constData(), JACK_DEFAULT_AUDIO_TYPE, JackPortIsInput, 0));
-
 		if (m_outputPorts.back() == nullptr)
 		{
 			std::fprintf(stderr, "no more JACK-ports available!\n");
 			return false;
 		}
 	}
+	for (int ch = 0; ch < m_inputChannels; ++ch)
+	{
+		const QString input_name = buildInputName(static_cast<ch_cnt_t>(ch));
+		m_inputPorts.push_back(jack_port_register(m_client, input_name.toLatin1().constData(), JACK_DEFAULT_AUDIO_TYPE, JackPortIsInput, 0));
+		if (m_inputPorts.back() == nullptr)
+		{
+			std::fprintf(stderr, "no more JACK-ports available!\n");
+			return false;
+		}
+	}
+	m_tempOutBufs.assign(m_outputPorts.size(), nullptr);
 
 	return true;
 }
@@ -238,7 +247,7 @@ bool AudioJack::initJackClient()
 void AudioJack::resizeInputBuffer(jack_nframes_t nframes)
 {
 	prepareCapture(static_cast<f_cnt_t>(nframes));
-	m_captureWide.assign(static_cast<std::size_t>(nframes) * static_cast<std::size_t>(channels()), 0.f);
+	m_captureWide.assign(static_cast<std::size_t>(nframes) * static_cast<std::size_t>(m_inputChannels), 0.f);
 }
 
 void AudioJack::attemptToConnect(size_t index, const char *lmms_port_type, const char *source_port, const char *destination_port)
@@ -299,7 +308,7 @@ void AudioJack::startProcessingImpl()
 
 	m_active = true;
 	AudioInputPath::setCaptureCapable(true);
-	AudioInputPath::publishOpen(AudioInputPath::configuredPlan(), static_cast<int>(channels()),
+	AudioInputPath::publishOpen(AudioInputPath::configuredPlan(), static_cast<int>(m_inputPorts.size()),
 		static_cast<int>(jack_get_sample_rate(m_client)), QStringLiteral("float"));
 
 	// try to sync JACK's and LMMS's buffer-size
@@ -307,13 +316,12 @@ void AudioJack::startProcessingImpl()
 
 	const auto cm = ConfigManager::inst();
 
-	const auto numberOfChannels = channels();
-	for (size_t i = 0; i < numberOfChannels; ++i)
+	for (size_t i = 0; i < m_outputPorts.size(); ++i)
 	{
 		attemptToReconnectOutput(i, cm->value(audioJackClass, getOutputKeyByChannel(i)));
 	}
 
-	for (size_t i = 0; i < numberOfChannels; ++i)
+	for (size_t i = 0; i < m_inputPorts.size(); ++i)
 	{
 		attemptToReconnectInput(i, cm->value(audioJackClass, getInputKeyByChannel(i)));
 	}
@@ -403,7 +411,7 @@ int AudioJack::processCallback(jack_nframes_t nframes)
 	const int frames = std::min<int>(nframes, audioEngine()->framesPerAudioBuffer());
 	for (JackPortMap::iterator it = m_portMap.begin(); it != m_portMap.end(); ++it)
 	{
-		for (ch_cnt_t ch = 0; ch < channels(); ++ch)
+		for (ch_cnt_t ch = 0; ch < DEFAULT_CHANNELS; ++ch)
 		{
 			if (it.value().ports[ch] == nullptr) { continue; }
 			jack_default_audio_sample_t* buf
@@ -425,7 +433,7 @@ int AudioJack::processCallback(jack_nframes_t nframes)
 	}
 	else
 	{
-		audioEngine()->renderNextBuffer({m_tempOutBufs, channels(), nframes});
+		audioEngine()->renderNextBuffer({m_tempOutBufs.data(), channels(), nframes});
 	}
 
 	// 0.5.0 W4: MIDI out after the render, so what this cycle's render sent goes out in this
@@ -439,7 +447,7 @@ int AudioJack::processCallback(jack_nframes_t nframes)
 	// publisher (AudioDevice::publishCaptured), which feeds the N-channel path, the stereo
 	// bus and the capture counter - the stereo copy that indexed a SampleFrame per port
 	// (BUGS_FOUND 10.11) is gone with it.
-	const int width = channels();
+	const int width = static_cast<int>(m_inputPorts.size());
 	if (m_captureWide.size() >= static_cast<std::size_t>(nframes) * static_cast<std::size_t>(width))
 	{
 		for (int c = 0; c < width; ++c)

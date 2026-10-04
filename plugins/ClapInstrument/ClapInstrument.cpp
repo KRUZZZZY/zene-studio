@@ -135,6 +135,7 @@ ClapInstrument::ClapInstrument(InstrumentTrack* parent,
 	{
 		const auto counts = channelCountsOf(m_plugin.busLayout());
 		audioPorts().setAllChannelCounts(counts.total, counts.inputs, counts.outputs);
+		m_outputBuses.setLayout(clap::outputBusesOf(m_plugin.ports()));  // MX-114
 
 		if (auto* engine = Engine::audioEngine())
 		{
@@ -216,6 +217,7 @@ void ClapInstrument::reprepare()
 		{
 			const auto counts = channelCountsOf(m_plugin.busLayout());
 			audioPorts().setAllChannelCounts(counts.total, counts.inputs, counts.outputs);
+			m_outputBuses.setLayout(clap::outputBusesOf(m_plugin.ports()));  // MX-114
 		}
 		engine->doneChangeInModel();
 	}
@@ -312,8 +314,33 @@ auto ClapInstrument::processImpl(PlanarBufferView<const float, DynamicChannelCou
 	const auto frames = static_cast<int>(out.frames());
 	m_plugin.process(in.data(), out.data(),
 		static_cast<int>(in.channels()), static_cast<int>(out.channels()), frames);
+	// MX-114: the output ports past the main one, into the mixer channels they are routed to.
+	m_outputBuses.deliver(out.data(), static_cast<int>(out.channels()), out.frames(),
+		instrumentTrack() != nullptr && instrumentTrack()->isMuted());
 
 	return lmms::ProcessStatus::Continue;
+}
+
+auto ClapInstrument::perNoteTarget(const AutomatableModel* parameter) const -> std::int64_t
+{
+	for (const ClapParamModel* model : m_params.models())
+	{
+		if (model != parameter) { continue; }
+		const int index = m_plugin.paramIndex(model->paramId());
+		const auto& params = m_plugin.parameters();
+		const bool perNote = index >= 0 && static_cast<std::size_t>(index) < params.size()
+			&& params[static_cast<std::size_t>(index)].modulatablePerNote;
+		return perNote ? static_cast<std::int64_t>(model->paramId()) : -1;
+	}
+	return -1;
+}
+
+void ClapInstrument::modulateNote(std::int64_t target, int channel, int key, float offset, float)
+{
+	// Audio thread: one bounded push into the host's note queue, delivered with the next block.
+	if (target < 0 || !m_plugin.acceptsNotes()) { return; }
+	m_plugin.setNoteParamMod(static_cast<std::uint8_t>(std::clamp(channel, 0, 15)),
+		static_cast<std::int16_t>(std::clamp(key, 0, 127)), static_cast<std::uint32_t>(target), offset);
 }
 
 void ClapInstrument::saveSettings(QDomDocument& doc, QDomElement& element)

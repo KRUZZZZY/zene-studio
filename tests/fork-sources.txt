@@ -498,6 +498,8 @@
 # their thresholds. The two tests that exercise them live in tests/src/gui/, which the
 # recipe's pathspec does not cover - the FocusDesk tests sit the same way, registered in
 # tests/CMakeLists.txt and listed in tests/all-sources.txt.
+include/AafImport.h
+include/AafImportMenu.h
 include/Accessibility.h
 include/AccessibilityAudit.h
 include/AccessibleWidgets.h
@@ -513,6 +515,7 @@ include/ArrangerZoom.h
 include/ArticulationMap.h
 include/AudioBus.h
 include/AudioInputPath.h
+include/AudioIoSetup.h
 include/AudioPlugin.h
 include/AudioPorts.h
 include/AudioPortsModel.h
@@ -548,6 +551,15 @@ include/ClipLinks.h
 include/ClipLockFeedback.h
 include/ClipPreFades.h
 include/ClipTransients.h
+include/CollabClient.h
+include/CollabCommandTap.h
+include/CollabCommands.h
+include/CollabHost.h
+include/CollabInvite.h
+include/CollabLink.h
+include/CollabPanel.h
+include/CollabPolicy.h
+include/CollabSession.h
 include/CommandForm.h
 include/CommandFormFields.h
 include/CommandListBuild.h
@@ -558,11 +570,13 @@ include/CommandPalette.h
 include/CompSlip.h
 include/CompSwipeStrip.h
 include/ContextHelp.h
+include/ControlArrangingCommands.h
 include/ControlAutomationSupport.h
 include/ControlBounceSupport.h
 include/ControlBrowserSupport.h
 include/ControlChainPresetSupport.h
 include/ControlChordSupport.h
+include/ControlClipFrames.h
 include/ControlClipLinkSupport.h
 include/ControlCommandDef.h
 include/ControlCompSupport.h
@@ -573,12 +587,15 @@ include/ControlDeviceSupport.h
 include/ControlEdit.h
 include/ControlExportPresetSupport.h
 include/ControlGrooveSupport.h
+include/ControlHardwareIoSupport.h
+include/ControlInstrumentCommands.h
 include/ControlMasteringSupport.h
 include/ControlMeterSupport.h
 include/ControlMixerSupport.h
 include/ControlModulationSupport.h
 include/ControlNoteShared.h
 include/ControlProjectAssets.h
+include/ControlProjectTransplant.h
 include/ControlRackMacroWrites.h
 include/ControlRackSupport.h
 include/ControlRecordingSupport.h
@@ -625,6 +642,9 @@ include/FollowActionEditor.h
 include/GrooveMenu.h
 include/GroovePool.h
 include/GrooveTemplate.h
+include/HardwareInsert.h
+include/HardwareIo.h
+include/HardwareOutputBus.h
 include/HelpCenter.h
 include/ImportDetection.h
 include/ImportDetectionDsp.h
@@ -633,6 +653,10 @@ include/InputMeter.h
 include/InputMonitor.h
 include/InspectorChannelRouting.h
 include/InspectorPanel.h
+include/InstrumentLayers.h
+include/InstrumentMidiParts.h
+include/InstrumentOutputBus.h
+include/InstrumentOutputBuses.h
 include/JsonFile.h
 include/LatencyCompensation.h
 include/LaunchBindings.h
@@ -669,6 +693,7 @@ include/MidiReconnect.h
 include/MidiReconnectAction.h
 include/MidiSurfaceInput.h
 include/MixerGroups.h
+include/MixerHardwareMenu.h
 include/MixerLatencyText.h
 include/MixerListen.h
 include/MixerOptions.h
@@ -678,11 +703,13 @@ include/MixerSendPan.h
 include/MixerSendsBanner.h
 include/MixerSnapshots.h
 include/MixerStrip.h
+include/MixerSurround.h
 include/MixerViewOptions.h
 include/MixerWindows.h
 include/ModifierTools.h
 include/ModulationFormula.h
 include/ModulationLayer.h
+include/ModulationVoices.h
 include/ModulatorPanel.h
 include/MonitorMode.h
 include/MpeExpression.h
@@ -718,6 +745,8 @@ include/PluginOrganiser.h
 include/PluginPaths.h
 include/PluginQuarantineMenu.h
 include/PluginScanCache.h
+include/PortMapping.h
+include/PortMappingCodec.h
 include/PreviewOutput.h
 include/ProjectContainer.h
 include/ProjectIds.h
@@ -746,6 +775,8 @@ include/RecordRingBuffer.h
 include/RecorderTaps.h
 include/RecordingJournal.h
 include/RecordingRecoveryMenu.h
+include/ReferenceProject.h
+include/ReferenceProjectPanel.h
 include/RemoteControls.h
 include/RemotePluginAudioPorts.h
 include/RenderPresetMenu.h
@@ -766,6 +797,7 @@ include/SafeStart.h
 include/SampleBufferResample.h
 include/SampleClipOverlays.h
 include/SampleEditorDialog.h
+include/SampleFrameEdits.h
 include/SampleFrameRingBuffer.h
 include/SampleRecordAccumulator.h
 include/SampleWindow.h
@@ -815,6 +847,7 @@ include/StemSeparation/StemSeparator.h
 include/StemSeparation/StemTrackBuilder.h
 include/StemSeparation/StemTypes.h
 include/StemSplitController.h
+include/SurroundPanner.h
 include/TakeLane.h
 include/TakeLanesPanel.h
 include/TakeRecorder.h
@@ -832,6 +865,7 @@ include/TrackMixModels.h
 include/TrackPinStrip.h
 include/TrackRecorder.h
 include/TrackRenderMenu.h
+include/TrackSpacers.h
 include/TrackVersions.h
 include/TransportReadouts.h
 include/TunerTap.h
@@ -841,6 +875,14 @@ include/UnclaimedElements.h
 include/UndoHistoryPanel.h
 include/VcaGroup.h
 include/VcaStripView.h
+include/VideoAudioExtract.h
+include/VideoCommands.h
+include/VideoDecoder.h
+include/VideoFfmpeg.h
+include/VideoFramePump.h
+include/VideoLane.h
+include/VideoReference.h
+include/VideoWindow.h
 include/ViewMemory.h
 include/VisibilitySetMenu.h
 include/WarpMarkers.h
@@ -964,12 +1006,16 @@ plugins/WasmEffect/WasmEffectControlDialog.h
 plugins/WasmEffect/WasmEffectControls.cpp
 plugins/WasmEffect/WasmEffectControls.h
 scripts/capabilities-dump.py
+src/core/AafImportBuild.cpp
+src/core/AafImportModel.cpp
+src/core/AafImportRead.cpp
 src/core/Appearance.cpp
 src/core/ArrangementEdits.cpp
 src/core/ArrangementSections.cpp
 src/core/ArticulationMap.cpp
 src/core/AudioBus.cpp
 src/core/AudioInputPath.cpp
+src/core/AudioIoSetup.cpp
 src/core/AudioPortsModel.cpp
 src/core/AudioStretcher.cpp
 src/core/AudioWideInputStage.cpp
@@ -994,6 +1040,14 @@ src/core/ClipEdits.cpp
 src/core/ClipLinks.cpp
 src/core/ClipPreFades.cpp
 src/core/ClipTransients.cpp
+src/core/CollabClient.cpp
+src/core/CollabCommandTap.cpp
+src/core/CollabHost.cpp
+src/core/CollabInvite.cpp
+src/core/CollabLink.cpp
+src/core/CollabPolicy.cpp
+src/core/CollabSession.cpp
+src/core/CollabSessionSync.cpp
 src/core/CompSlip.cpp
 src/core/ControlAutomationSupport.cpp
 src/core/ControlBounceSupport.cpp
@@ -1001,6 +1055,7 @@ src/core/ControlBrowserSupport.cpp
 src/core/ControlChainPresetSupport.cpp
 src/core/ControlChordSupport.cpp
 src/core/ControlCommandDef.cpp
+src/core/ControlCommandsAafImport.cpp
 src/core/ControlCommandsAlternatives.cpp
 src/core/ControlCommandsArrangeTools.cpp
 src/core/ControlCommandsArrangement.cpp
@@ -1031,11 +1086,13 @@ src/core/ControlCommandsClipArrange.cpp
 src/core/ControlCommandsClipControllers.cpp
 src/core/ControlCommandsClipEdits.cpp
 src/core/ControlCommandsClipEnvelope.cpp
+src/core/ControlCommandsClipFrames.cpp
 src/core/ControlCommandsClipLink.cpp
 src/core/ControlCommandsClipLinkState.cpp
 src/core/ControlCommandsClipProcess.cpp
 src/core/ControlCommandsClipTrim.cpp
 src/core/ControlCommandsClock.cpp
+src/core/ControlCommandsCollab.cpp
 src/core/ControlCommandsCollectMedia.cpp
 src/core/ControlCommandsComp.cpp
 src/core/ControlCommandsCompEdits.cpp
@@ -1047,6 +1104,7 @@ src/core/ControlCommandsControllerMap.cpp
 src/core/ControlCommandsControllerTemplates.cpp
 src/core/ControlCommandsCrash.cpp
 src/core/ControlCommandsCrashControl.cpp
+src/core/ControlCommandsCueMix.cpp
 src/core/ControlCommandsDawProject.cpp
 src/core/ControlCommandsDetect.cpp
 src/core/ControlCommandsDetectApply.cpp
@@ -1054,6 +1112,7 @@ src/core/ControlCommandsDevice.cpp
 src/core/ControlCommandsDeviceCopy.cpp
 src/core/ControlCommandsDeviceParams.cpp
 src/core/ControlCommandsDeviceTools.cpp
+src/core/ControlCommandsDocuments.cpp
 src/core/ControlCommandsDrumRack.cpp
 src/core/ControlCommandsDsp.cpp
 src/core/ControlCommandsExport.cpp
@@ -1064,6 +1123,8 @@ src/core/ControlCommandsGroove.cpp
 src/core/ControlCommandsGrooveEdit.cpp
 src/core/ControlCommandsGroovePool.cpp
 src/core/ControlCommandsHandoff.cpp
+src/core/ControlCommandsHardwareInsert.cpp
+src/core/ControlCommandsHardwareIo.cpp
 src/core/ControlCommandsHistoryJump.cpp
 src/core/ControlCommandsHostChunking.cpp
 src/core/ControlCommandsHostNotes.cpp
@@ -1093,10 +1154,12 @@ src/core/ControlCommandsMixerMeters.cpp
 src/core/ControlCommandsMixerRoutes.cpp
 src/core/ControlCommandsMixerSnapshots.cpp
 src/core/ControlCommandsMixerStrip.cpp
+src/core/ControlCommandsMixerSurround.cpp
 src/core/ControlCommandsMixerTools.cpp
 src/core/ControlCommandsModulator.cpp
 src/core/ControlCommandsModulatorRoutes.cpp
 src/core/ControlCommandsModulatorTools.cpp
+src/core/ControlCommandsModulatorVoices.cpp
 src/core/ControlCommandsMonitor.cpp
 src/core/ControlCommandsMts.cpp
 src/core/ControlCommandsNoteAcross.cpp
@@ -1124,9 +1187,11 @@ src/core/ControlCommandsPatcherEdit.cpp
 src/core/ControlCommandsPatcherShared.h
 src/core/ControlCommandsPdc.cpp
 src/core/ControlCommandsPlugin.cpp
+src/core/ControlCommandsPluginBuses.cpp
 src/core/ControlCommandsPluginEditor.cpp
 src/core/ControlCommandsPluginOrganise.cpp
 src/core/ControlCommandsPluginParams.cpp
+src/core/ControlCommandsPluginParts.cpp
 src/core/ControlCommandsPluginPaths.cpp
 src/core/ControlCommandsPluginPreset.cpp
 src/core/ControlCommandsPluginScan.cpp
@@ -1142,6 +1207,7 @@ src/core/ControlCommandsProjectLifecycle.cpp
 src/core/ControlCommandsProjectMmpzGit.cpp
 src/core/ControlCommandsPunch.cpp
 src/core/ControlCommandsRack.cpp
+src/core/ControlCommandsRackLayers.cpp
 src/core/ControlCommandsRackMacroPair.cpp
 src/core/ControlCommandsRackMacros.cpp
 src/core/ControlCommandsRackWrap.cpp
@@ -1156,6 +1222,7 @@ src/core/ControlCommandsRecordingPass.cpp
 src/core/ControlCommandsRecordingRecovery.cpp
 src/core/ControlCommandsRecordingRetro.cpp
 src/core/ControlCommandsRecordingRoutes.cpp
+src/core/ControlCommandsReference.cpp
 src/core/ControlCommandsRemote.cpp
 src/core/ControlCommandsRenderQueue.cpp
 src/core/ControlCommandsRenderStems.cpp
@@ -1200,6 +1267,7 @@ src/core/ControlCommandsTrackFolderShared.h
 src/core/ControlCommandsTrackMidiOut.cpp
 src/core/ControlCommandsTrackLooks.cpp
 src/core/ControlCommandsTrackPresets.cpp
+src/core/ControlCommandsTrackSpacers.cpp
 src/core/ControlCommandsTrackVersions.cpp
 src/core/ControlCommandsTransport.cpp
 src/core/ControlCommandsTransportMap.cpp
@@ -1212,6 +1280,7 @@ src/core/ControlCommandsVcaEditSet.cpp
 src/core/ControlCommandsVcaMix.cpp
 src/core/ControlCommandsVcaNest.cpp
 src/core/ControlCommandsVcaShared.h
+src/core/ControlCommandsVideo.cpp
 src/core/ControlCommandsW3Engine.cpp
 src/core/ControlCommandsWarp.cpp
 src/core/ControlCommandsWarpEdit.cpp
@@ -1233,6 +1302,7 @@ src/core/ControlDeviceVst3.cpp
 src/core/ControlEditSupport.cpp
 src/core/ControlExportPresetSupport.cpp
 src/core/ControlGrooveSupport.cpp
+src/core/ControlHardwareIoSupport.cpp
 src/core/ControlMasteringSupport.cpp
 src/core/ControlMixerSupport.cpp
 src/core/ControlModulationSupport.cpp
@@ -1254,6 +1324,7 @@ src/core/ControlReversibilityTableAutomationRamp.cpp
 src/core/ControlReversibilityTableChain.cpp
 src/core/ControlReversibilityTableChord.cpp
 src/core/ControlReversibilityTableClapInstrument.cpp
+src/core/ControlReversibilityTableCollab.cpp
 src/core/ControlReversibilityTableController.cpp
 src/core/ControlReversibilityTableCustomisation.cpp
 src/core/ControlReversibilityTableDawProject.cpp
@@ -1287,6 +1358,7 @@ src/core/ControlReversibilityTableStructure.cpp
 src/core/ControlReversibilityTableTrackFolder.cpp
 src/core/ControlReversibilityTableVca.cpp
 src/core/ControlReversibilityTableVerbs.cpp
+src/core/ControlReversibilityTableVideo.cpp
 src/core/ControlReversibilityTableW3Custom.cpp
 src/core/ControlReversibilityTableW3Library.cpp
 src/core/ControlReversibilityTableW3Devices.cpp
@@ -1331,6 +1403,9 @@ src/core/ExportRenderSettings.cpp
 src/core/ExternalProcessStemSeparator.cpp
 src/core/GroovePool.cpp
 src/core/GrooveTemplate.cpp
+src/core/HardwareInsert.cpp
+src/core/HardwareIo.cpp
+src/core/HardwareOutputBus.cpp
 src/core/ImportDetection.cpp
 src/core/ImportDetectionDsp.cpp
 src/core/ImportDetectionKey.cpp
@@ -1338,6 +1413,9 @@ src/core/ImportDetectionSpectrum.cpp
 src/core/ImportDetectionSpectrum.h
 src/core/InputMeter.cpp
 src/core/InputMonitor.cpp
+src/core/InstrumentLayers.cpp
+src/core/InstrumentMidiParts.cpp
+src/core/InstrumentOutputBuses.cpp
 src/core/JsonFile.cpp
 src/core/LatencyCompensation.cpp
 src/core/LaunchBindings.cpp
@@ -1368,9 +1446,12 @@ src/core/MixerPostInserts.cpp
 src/core/MixerSendPan.cpp
 src/core/MixerSnapshots.cpp
 src/core/MixerStrip.cpp
+src/core/MixerSurround.cpp
+src/core/MixerSurroundMix.cpp
 src/core/ModulationFormula.cpp
 src/core/ModulationLayer.cpp
 src/core/ModulationLayerPublisher.cpp
+src/core/ModulationVoices.cpp
 src/core/MusicalTime.cpp
 src/core/NamespaceRegistry.cpp
 src/core/NoteConditions.cpp
@@ -1388,6 +1469,10 @@ src/core/PluginHostNotes.cpp
 src/core/PluginOrganiser.cpp
 src/core/PluginPaths.cpp
 src/core/PluginScanCache.cpp
+src/core/PortMapping.cpp
+src/core/PortMappingCodec.cpp
+src/core/PortMappingPmp.cpp
+src/core/PortMappingUpnp.cpp
 src/core/PreviewOutput.cpp
 src/core/ProjectContainer.cpp
 src/core/ProjectContainerEntries.cpp
@@ -1412,6 +1497,7 @@ src/core/RackZones.cpp
 src/core/RecordOptions.cpp
 src/core/RecorderTaps.cpp
 src/core/RecordingJournal.cpp
+src/core/ReferenceProject.cpp
 src/core/RemoteControls.cpp
 src/core/RenderQueue.cpp
 src/core/RetroAudioCapture.cpp
@@ -1429,6 +1515,7 @@ src/core/RoutingNodes.cpp
 src/core/RubberBandStretch.cpp
 src/core/SafeStart.cpp
 src/core/SampleBufferResample.cpp
+src/core/SampleFrameEdits.cpp
 src/core/SampleOperators.cpp
 src/core/SampleOperators.h
 src/core/ScoreExport.cpp
@@ -1468,16 +1555,23 @@ src/core/TrackContainerFolders.cpp
 src/core/TrackKeyNames.cpp
 src/core/TrackLooks.cpp
 src/core/TrackMixModels.cpp
+src/core/TrackSpacers.cpp
 src/core/TrackVersions.cpp
 src/core/TunerTap.cpp
 src/core/UnattendedRun.cpp
 src/core/UnclaimedElements.cpp
 src/core/VcaGroup.cpp
+src/core/VideoAudioExtract.cpp
+src/core/VideoDecoder.cpp
+src/core/VideoFfmpeg.cpp
+src/core/VideoFramePump.cpp
+src/core/VideoReference.cpp
 src/core/ViewMemory.cpp
 src/core/audio/MultiTrackRecorder.cpp
 src/core/audio/TrackRecorder.cpp
 src/core/midi/MidiReconnect.cpp
 src/core/midi/MpeExpression.cpp
+src/gui/AafImportMenu.cpp
 src/gui/ArrangerNavigator.cpp
 src/gui/AccessibilityAudit.cpp
 src/gui/AccessibleMode.cpp
@@ -1494,6 +1588,7 @@ src/gui/BrowserTagMenu.cpp
 src/gui/ChainPresetMenu.cpp
 src/gui/ChannelPickDialog.cpp
 src/gui/ClipEditsMenu.cpp
+src/gui/CollabPanel.cpp
 src/gui/CommandForm.cpp
 src/gui/CommandFormFields.cpp
 src/gui/CommandListDialog.cpp
@@ -1537,6 +1632,7 @@ src/gui/MidiClockMenu.cpp
 src/gui/MidiControllerMenu.cpp
 src/gui/MidiLearnGui.cpp
 src/gui/MidiReconnectAction.cpp
+src/gui/MixerHardwareMenu.cpp
 src/gui/MixerOverlays.cpp
 src/gui/MixerSendsBanner.cpp
 src/gui/MixerViewOptions.cpp
@@ -1552,6 +1648,7 @@ src/gui/PluginQuarantineMenu.cpp
 src/gui/RackMenu.cpp
 src/gui/RecordLaunchMenus.cpp
 src/gui/RecordingRecoveryMenu.cpp
+src/gui/ReferenceProjectPanel.cpp
 src/gui/RenderPresetMenu.cpp
 src/gui/SampleEditorDialog.cpp
 src/gui/ScriptBudgetAction.cpp
@@ -1564,6 +1661,7 @@ src/gui/ShortcutMap.cpp
 src/gui/ShortcutsPage.cpp
 src/gui/StartHub.cpp
 src/gui/StemSplitController.cpp
+src/gui/SurroundPanner.cpp
 src/gui/TakeLanesPanel.cpp
 src/gui/TelemetryConsentDialog.cpp
 src/gui/TempoMapPanel.cpp
@@ -1574,6 +1672,8 @@ src/gui/TrackRenderMenu.cpp
 src/gui/UiConfigStore.cpp
 src/gui/UndoHistoryPanel.cpp
 src/gui/VcaStripView.cpp
+src/gui/VideoLane.cpp
+src/gui/VideoWindow.cpp
 src/gui/VisibilitySetMenu.cpp
 src/gui/WorkspaceMenus.cpp
 src/gui/WorkspaceWindows.cpp
@@ -1726,8 +1826,10 @@ tests/rt_safety_source.py
 
 tests/session_api_proof_lib.py
 tests/session_api_proof_rows.py
+tests/src/core/AafImportTest.cpp
 tests/src/core/ArrangeToolsTest.cpp
 tests/src/core/ArrangementModesTest.cpp
+tests/src/core/ArrangingCatchUpTest.cpp
 tests/src/core/AudioAnalysisTest.cpp
 tests/src/core/AudioAutomationToolsTest.cpp
 tests/src/core/AudioBurstSupport.h
@@ -1740,6 +1842,8 @@ tests/src/core/ClipGainEnvelopeTest.cpp
 tests/src/core/ClipJoinRippleTest.cpp
 tests/src/core/ClipSerialisationTest.cpp
 tests/src/core/ClipTransposeTest.cpp
+tests/src/core/CollabPolicyTest.cpp
+tests/src/core/CollabTransportTest.cpp
 tests/src/core/ControlAutomationScriptTest.cpp
 tests/src/core/ControlBrowserCommandsTest.cpp
 
@@ -1768,7 +1872,10 @@ tests/src/core/DocumentIndexTest.cpp
 tests/src/core/DocumentSectionsTest.cpp
 tests/src/core/ExportDitherTest.cpp
 tests/src/core/ExportWavDitherTest.cpp
+tests/src/core/HardwareIoTest.cpp
 tests/src/core/ImportDetectionTest.cpp
+tests/src/core/InstrumentLayersCommandsTest.cpp
+tests/src/core/InstrumentRoutingTest.cpp
 tests/src/core/LibraryBrowserTest.cpp
 tests/src/core/LibraryProjectsTest.cpp
 tests/src/core/LufsMeterTest.cpp
@@ -1797,6 +1904,7 @@ tests/src/core/OutOfProcessHostClientLoopTest.cpp
 tests/src/core/OutOfProcessHostSupport.h
 tests/src/core/OutOfProcessHostTest.cpp
 tests/src/core/PartialLoadTest.cpp
+tests/src/core/PortMappingCodecTest.cpp
 tests/src/core/ProjectContainerEntriesTest.cpp
 tests/src/core/ProjectContainerTest.cpp
 tests/src/core/ProjectMarkersTest.cpp
@@ -1860,6 +1968,7 @@ tests/src/core/StableTrackIdsTest.cpp
 tests/src/core/StemExportTest.cpp
 tests/src/core/StemExportTestSupport.h
 tests/src/core/StemJobManagerTest.cpp
+tests/src/core/SurroundTest.cpp
 # 2026-09-22 (040/arch4-s4, ARCH-4 slice S4): tests/src/core/WriteRefusalGateTest.cpp
 # enters the list - the write-refusal gate (SPEC-ARCH-4 1.7 Requirement 6): a text scan
 # of the write path that fails on a setter called for a value it does not own, and on a
@@ -1870,6 +1979,8 @@ tests/src/core/UnclaimedElementsTest.cpp
 tests/src/core/UnclaimedTrackTypeTest.cpp
 tests/src/core/UndoBoundsTest.cpp
 tests/src/core/UndoHonestyTest.cpp
+tests/src/core/VideoTestClip.h
+tests/src/core/VideoTrackTest.cpp
 tests/src/core/W3EngineTest.cpp
 tests/src/core/WarpQuantizeTest.cpp
 tests/src/core/WriteRefusalGateTest.cpp

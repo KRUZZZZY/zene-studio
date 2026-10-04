@@ -54,6 +54,7 @@
 #include <QJsonObject>
 
 #include "Clip.h"
+#include "ControlClipFrames.h"
 #include "ControlEdit.h"
 #include "ControlRegistry.h"
 #include "Song.h"
@@ -144,11 +145,17 @@ void registerClipTrim(ControlRegistry& registry)
 		"audio the clip already carried at the same song position: the start, the length and the "
 		"source offset move together, which is what the song editor's own left-edge drag does. An "
 		"optional 'end' trims the tail in the same step. Reversible through the ProjectJournal "
-		"(Clip checkpoint).");
+		"(Clip checkpoint). ED-021, sample clips only: 'start_frames' / 'end_frames' put an edge that many "
+		"engine frames after its tick (frame-exact: the clip's window takes the frame, the sub-tick rest its "
+		"lead), and 'zero_crossing' (default: arrangement.modes' snap_to_zero_crossings) moves each edge to "
+		"the nearest zero crossing within 10 ms; the reply then adds the window's source frames.");
 	cmd.argsSchema = objectSchema({
 		{QStringLiteral("clip"), stringProperty()},
 		{QStringLiteral("start"), integerProperty(0, MaxSongLength)},
 		{QStringLiteral("end"), integerProperty(1, MaxSongLength)},
+		{QStringLiteral("start_frames"), integerProperty(0, MaxSongLength)},
+		{QStringLiteral("end_frames"), integerProperty(0, MaxSongLength)},
+		{QStringLiteral("zero_crossing"), booleanProperty()},
 	}, {QStringLiteral("clip"), QStringLiteral("start")});
 	cmd.resultSchema = objectSchema({
 		{QStringLiteral("clip"), stringProperty()},
@@ -156,12 +163,17 @@ void registerClipTrim(ControlRegistry& registry)
 		{QStringLiteral("length"), integerProperty(0, MaxSongLength)},
 		{QStringLiteral("end"), integerProperty(0, MaxSongLength)},
 		{QStringLiteral("offset"), integerProperty(-MaxSongLength, MaxSongLength)},
+		{QStringLiteral("source_in"), integerProperty()},
+		{QStringLiteral("source_out"), integerProperty()},
+		{QStringLiteral("lead_frames"), integerProperty()},
+		{QStringLiteral("zero_crossing"), booleanProperty()},
 	});
 	cmd.mutating = true;
 	cmd.handler = [](const QJsonObject& args) {
 		ControlResult error;
 		ClipRef ref;
 		if (!resolveClip(args.value(QStringLiteral("clip")).toString(), &ref, &error)) { return error; }
+		if (clipframes::wanted(ref, args)) { return clipframes::trim(ref, args); }  // ED-021
 
 		TrimPlan plan;
 		const QJsonObject before = edgeState(ref);

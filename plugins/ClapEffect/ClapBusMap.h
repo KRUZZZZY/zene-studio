@@ -30,6 +30,8 @@
 
 #include <QString>
 
+#include "InstrumentOutputBus.h"
+
 namespace lmms::clap
 {
 
@@ -84,6 +86,13 @@ struct PortLayout
  * - a second input port marks the layout as having a side-chain
  */
 auto mapPorts(const std::vector<PortDescriptor>& ports) -> PortLayout;
+
+/*!
+ * 0.5.0 MX-114: the OUTPUT ports as an instrument's output buses, in the plug-in's own order (the first
+ * is the main output), each with the flat output channel its first channel lands on - the same channel
+ * budget mapPorts() applies, so a port mapPorts() drops reports firstChannel -1.
+ */
+auto outputBusesOf(const std::vector<PortDescriptor>& ports) -> std::vector<InstrumentOutputBus>;
 
 } // namespace lmms::clap
 

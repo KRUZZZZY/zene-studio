@@ -26,6 +26,7 @@
 
 #include "ArrangementEdits.h"
 #include "Clip.h"
+#include "ControlClipFrames.h"
 #include "ControlEdit.h"
 #include "ControlReversibility.h"
 #include "ControlRegistry.h"
@@ -268,14 +269,24 @@ void registerClipSplit(ControlRegistry& registry)
 	cmd.group = QStringLiteral("clip");
 	cmd.verb = QStringLiteral("split");
 	cmd.description = QStringLiteral("Split a clip at an absolute tick position, leaving the left part in "
-		"place and returning both ids. Reversible through the ProjectJournal (Track checkpoint).");
+		"place and returning both ids. Reversible through the ProjectJournal (Track checkpoint). "
+		"ED-021, sample clips only: 'frames' cuts that many engine frames after 'position' (frame-exact - the "
+		"halves' audio meets at that frame, their clips overlap by under a tick), and 'zero_crossing' (default: "
+		"arrangement.modes' snap_to_zero_crossings) moves the cut to the nearest zero crossing within 10 ms; the "
+		"reply then names the source 'frame' cut at.");
 	cmd.argsSchema = control::objectSchema({
 		{QStringLiteral("clip"), control::stringProperty()},
 		{QStringLiteral("position"), control::integerProperty(1, MaxSongLength)},
+		{QStringLiteral("frames"), control::integerProperty(0, MaxSongLength)},
+		{QStringLiteral("zero_crossing"), control::booleanProperty()},
 	}, {QStringLiteral("clip"), QStringLiteral("position")});
 	cmd.resultSchema = control::objectSchema({
 		{QStringLiteral("left"), control::stringProperty()},
 		{QStringLiteral("right"), control::stringProperty()},
+		{QStringLiteral("frame"), control::integerProperty()},
+		{QStringLiteral("zero_crossing"), control::booleanProperty()},
+		{QStringLiteral("right_position"), control::integerProperty()},
+		{QStringLiteral("lead_frames"), control::integerProperty()},
 	});
 	cmd.mutating = true;
 	cmd.handler = [](const QJsonObject& args) {
@@ -285,6 +296,7 @@ void registerClipSplit(ControlRegistry& registry)
 		{
 			return error;
 		}
+		if (control::clipframes::wanted(ref, args)) { return control::clipframes::split(ref, args); }  // ED-021
 		const tick_t start = ref.clip->startPosition().getTicks();
 		const tick_t end = ref.clip->endPosition().getTicks();
 		const tick_t splitPos = static_cast<tick_t>(args.value(QStringLiteral("position")).toDouble());

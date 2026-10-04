@@ -27,6 +27,7 @@
 
 #include "ControlDevicePlacement.h"
 #include "ControlDeviceSupport.h"
+#include "ControlInstrumentCommands.h"
 
 #include "ControlVocabulary.h"
 #include "ControlRegistry.h"
@@ -480,6 +481,8 @@ void registerPluginCommands(ControlRegistry& registry)
 	registerPluginDeviceCommands(registry);
 	registerPluginParameterCommands(registry);
 	registerPluginStateCommands(registry);
+	registerPluginBusCommands(registry);   // 0.5.0 MX-114: output buses
+	registerPluginPartCommands(registry);  // 0.5.0 MX-114: MIDI parts
 }
 
 } // namespace lmms

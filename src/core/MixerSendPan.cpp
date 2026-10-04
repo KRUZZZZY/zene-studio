@@ -27,6 +27,7 @@
 #include <algorithm>
 
 #include "Mixer.h"
+#include "MixerSurround.h"
 #include "SampleFrame.h"
 #include "ValueBuffer.h"
 
@@ -43,7 +44,9 @@ void balanceGains(float pan, float* left, float* right)
 bool sendIsPanned(MixerRoute& route)
 {
 	// The buffer first: valueBuffer() is what moves the model's ramp on, once per period.
-	return route.pan()->valueBuffer() != nullptr || route.pan()->value() != 0.f;
+	const bool panned = route.pan()->valueBuffer() != nullptr || route.pan()->value() != 0.f;
+	// 0.5.0 F7 (MX-060): a stereo channel panned into a surround one takes this path too (addPannedSend).
+	return panned || surround::panTakesSend(route);
 }
 
 namespace
@@ -59,6 +62,12 @@ float at(const ValueBuffer* buffer, float value, f_cnt_t f)
 
 void addPannedSend(SampleFrame* dst, const SampleFrame* src, MixerRoute& route, MixerChannel& sender, f_cnt_t frames)
 {
+	if (surround::panTakesSend(route))
+	{
+		// 0.5.0 F7 (MX-060): the surround panner, in place of the send's stereo pan (dst is the receiver's buffer).
+		surround::panSend(route, src, frames);
+		return;
+	}
 	const ValueBuffer* panBuf = route.pan()->valueBuffer();
 	const float pan = route.pan()->value();
 	const ValueBuffer* sendBuf = route.amount()->valueBuffer();

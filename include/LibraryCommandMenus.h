@@ -46,17 +46,23 @@ namespace lmms::gui
 namespace LibraryCommandMenus
 {
 
-//! The Project Tools menu's project entries: settings, metadata, document type, mixer snapshots, locks,
-//! the render queue, background tasks, pasting tracks from another project, sync.
+//! The Project Tools menu's project entries: settings, metadata, document type, a new document of a type,
+//! mixer snapshots, locks, the render queue, background tasks, other projects (the reference project,
+//! switching, pasting tracks from another instance), sync.
 LMMS_EXPORT void populateProject(QMenu* menu);
-//! A track's lock, flattening it, copying it to another project.
+//! A track's lock, flattening it, copying it to another project, the spacer below it.
 LMMS_EXPORT void populateTrack(QMenu* menu, Track* track);
 //! A clip's lock, and saving it into the library.
 LMMS_EXPORT void populateClip(QMenu* menu, Clip* clip);
 //! The view a document type opens in (WF-048): production the arranger, mastering the mixer, live the
 //! arranger with the launcher showing.
 LMMS_EXPORT void applyDocumentType(const QString& type);
-//! Start-up wiring, once: a loaded project opens in its document type's view.
+//! WF-048: a document type's name as the interface shows it ("Mastering").
+LMMS_EXPORT QString documentTypeLabel(const QString& type);
+//! WF-048: @a title led by @a type's tag ("[Mastering] Song - Zene Studio"), any other type's tag replaced.
+LMMS_EXPORT QString taggedTitle(const QString& title, const QString& type);
+//! Start-up wiring, once: a loaded project opens in its document type's view, a new document of a type
+//! (project.new_document) too; the window title shows the type; the reference panel follows the reference.
 LMMS_EXPORT void install();
 
 } // namespace LibraryCommandMenus

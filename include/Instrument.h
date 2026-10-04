@@ -29,6 +29,7 @@
 #include <QString>
 
 #include <cmath>
+#include <cstdint>
 #include <span>
 
 #include "Flags.h"
@@ -44,6 +45,7 @@ namespace lmms
 // forward-declarations
 class AudioPortsModel;
 class AutomatableModel;
+class InstrumentOutputBuses;
 class InstrumentTrack;
 class MidiEvent;
 class NotePlayHandle;
@@ -154,6 +156,23 @@ public:
 	virtual auto audioPortsModel() const -> const AudioPortsModel*
 	{
 		return nullptr;
+	}
+
+	//! 0.5.0 MX-114: the instrument's extra audio output buses (InstrumentOutputBuses.h), or nullptr for an
+	//! instrument with one output - every built-in. The hosts (CLAP, VST3, LV2) return theirs.
+	virtual auto outputBuses() -> InstrumentOutputBuses* { return nullptr; }
+
+	/*! 0.5.0 MX-120: the handle this instrument takes PER-NOTE values for @a parameter under - a CLAP
+	 *  parameter id the plug-in marks modulatable per key or note, a VST3 note-expression type - or -1 when
+	 *  it has no per-note path for it (a per-voice modulator then falls back to the newest note). Control
+	 *  thread; the handle is what the audio thread passes to modulateNote(). */
+	virtual auto perNoteTarget(const AutomatableModel*) const -> std::int64_t { return -1; }
+	/*! Audio thread, allocation-free: the note on (@a channel, @a key) gets @a target's per-note value -
+	 *  @a offset in the parameter's own units (CLAP note modulation adds it to the parameter), @a normalized
+	 *  as 0..1 (a VST3 note expression's absolute value). */
+	virtual void modulateNote(std::int64_t /*target*/, int /*channel*/, int /*key*/, float /*offset*/,
+		float /*normalized*/)
+	{
 	}
 
 	bool isBendable() const

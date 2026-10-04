@@ -431,6 +431,9 @@ set(LMMS_TESTS
 	src/core/RackZonesTest.cpp
 	# 0.5.0 E20/E38: rack zones route notes to their chain; a zone's sample plays.
 	src/core/RackZoneRoutingTest.cpp
+	# 0.5.0 F2: output buses, MIDI parts, layers, the voice pool; the layer/part/voice commands
+	src/core/InstrumentRoutingTest.cpp
+	src/core/InstrumentLayersCommandsTest.cpp
 	src/core/RecordClipTest.cpp
 	src/core/RecordRingBufferTest.cpp
 	src/core/RetroMidiRingTest.cpp
@@ -506,6 +509,10 @@ set(LMMS_TESTS
 	src/core/MixerChannelPanTest.cpp
 	# 0.5.0 L09 MX-037: the listen bus (AFL / PFL).
 	src/core/MixerListenTest.cpp
+	# 0.5.0 F1: hardware outputs, cue mixes, hardware inserts
+	src/core/HardwareIoTest.cpp
+	# 0.5.0 F7: surround channels, the surround panner, the downmix
+	src/core/SurroundTest.cpp
 	# 0.5.0 L09: send pan, sends from many channels, nested / linked / shared VCA groups, mixer view modes.
 	src/core/MixingRoutingTest.cpp
 	# 0.5.0 L08: the strip stages (trim, polarity, mono, pan modes), meters, solo safe, mute / solo many.
@@ -618,6 +625,8 @@ set(LMMS_TESTS
 	src/core/LibraryBrowserTest.cpp
 	# 0.5.0 L12 (W3): the render queue, batch conversion, the task list, flattening, tracks copied between projects.
 	src/core/ProjectToolsTest.cpp
+	# 0.5.0 F3: frame cuts, zero-crossing snap, spacers, the reference project, per-type documents
+	src/core/ArrangingCatchUpTest.cpp
 	# 0.5.0 L10 (W3): rack splits, parameter search and aliases, randomise and blend, folding, device options.
 	src/core/DeviceToolsTest.cpp
 	# 0.5.0 L10 (W3): the de-esser, transient shaper, vocoder and console devices.
@@ -666,6 +675,10 @@ set(LMMS_TESTS
 	# the file or its hash. A separate executable so the file stays inside the
 	# new-file cap; it builds a real Engine and drives the dawproject.* commands.
 	src/core/DawProjectInterchangeRoundTripTest.cpp
+	# 0.5.0 F4 (WF-038): AAF import through LibAAF; the fixture cases skip without the library
+	src/core/AafImportTest.cpp
+	# 0.5.0 F5 (ED-054): the video track; the FFmpeg cases skip without the library
+	src/core/VideoTrackTest.cpp
 	src/core/StableTrackIdsTest.cpp
 	# ARCH-4 slice S3: the id-family registry (clip/lane/note/scene/warp over
 	# the one counter) and the per-object revision pair - absent rev == 0, an
@@ -844,6 +857,16 @@ IF(LMMS_HAVE_STEM_SPLIT)
 	IF(LMMS_HAVE_ONNXRUNTIME)
 		LIST(APPEND LMMS_TESTS src/core/OnnxRuntimeStemSeparatorTest.cpp)
 	ENDIF()
+ENDIF()
+
+# Peer-to-peer collaboration (0.5.0 F6): the invite, the TLS-PSK transport and the port-mapping
+# codecs exist only with Qt Network.
+IF(ZENE_HAVE_COLLAB)
+	LIST(APPEND LMMS_TESTS
+		src/core/CollabPolicyTest.cpp
+		src/core/CollabTransportTest.cpp
+		src/core/PortMappingCodecTest.cpp
+	)
 ENDIF()
 
 # Session View data layer tests (native engine code since ARCH-4 S10 removed
@@ -1041,7 +1064,10 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 		OR LMMS_TEST_NAME STREQUAL "NoteEditingCommandsTest"
 		OR LMMS_TEST_NAME STREQUAL "AutomationLanesTest"
 		# 0.5.0 W3 engine: post-fader inserts and chain.receive load the build's amplifier and receiver modules.
-		OR LMMS_TEST_NAME STREQUAL "W3EngineTest")
+		OR LMMS_TEST_NAME STREQUAL "W3EngineTest"
+		# 0.5.0 wave 2: layers and parts load a real instrument; the reference project copies a real effect.
+		OR LMMS_TEST_NAME STREQUAL "InstrumentLayersCommandsTest"
+		OR LMMS_TEST_NAME STREQUAL "ArrangingCatchUpTest")
 		set_target_properties(${LMMS_TEST_NAME} PROPERTIES ENABLE_EXPORTS ON)
 		target_compile_definitions(${LMMS_TEST_NAME} PRIVATE
 			LMMS_TEST_PLUGIN_DIR="${CMAKE_BINARY_DIR}/plugins")
@@ -1160,7 +1186,7 @@ set_tests_properties(ScriptDawBindingTest PROPERTIES
 # The rack command-group tests (rack.* macros and key/velocity zones) construct a
 # full Engine and drive the mixer's own save/load, so they need the same
 # headless Qt platform as the test above - and the developer box has no display.
-set_tests_properties(RackMacrosTest RackZonesTest RackZoneRoutingTest PROPERTIES
+set_tests_properties(RackMacrosTest RackZonesTest RackZoneRoutingTest InstrumentRoutingTest InstrumentLayersCommandsTest PROPERTIES
 	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 
 # The #602 modulation layer's two tests build a full Engine, a real Mixer and a
@@ -3717,6 +3743,10 @@ set_tests_properties(SmfInterchangeTest SmfInterchangeRoundTripTest PROPERTIES
 # platform plugin even though nothing opens a window.
 set_tests_properties(DawProjectInterchangeRoundTripTest PROPERTIES
 	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+# 0.5.0 wave 2: AAF import, the video track and hardware I/O build a real Engine and drive the
+# registry (the video window and lane are widgets), so they need a Qt platform plugin.
+set_tests_properties(AafImportTest VideoTrackTest HardwareIoTest SurroundTest PROPERTIES
+	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 # The retrospective MIDI capture surface (owner item 14) builds a real Engine,
 # a MIDI client and MidiClips and drives the registry commands, so it needs a
 # Qt platform plugin even though nothing opens a window.
@@ -4157,4 +4187,34 @@ endif()
 if(PYTHON3_EXECUTABLE)
 	add_test(NAME DocFiguresGate
 		COMMAND ${PYTHON3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/doc-figures-gate.py)
+endif()
+
+# 0.5.0 F1 (MX-040/041/036/061): hardware outputs, interface channels, cue mixes and the hardware
+# insert ping driven end to end on a 4-output Dummy whose loopback carries outputs 3/4.
+if(PYTHON3_EXECUTABLE)
+	add_test(NAME ControlHardwareIo
+		COMMAND ${PYTHON3_EXECUTABLE}
+			${CMAKE_CURRENT_SOURCE_DIR}/control-hardware-io.py
+			$<TARGET_FILE:zene>)
+	set_tests_properties(ControlHardwareIo PROPERTIES
+		ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+		TIMEOUT 300
+	)
+endif()
+
+# 0.5.0 F6 (WF-050/WF-052): two real instances on 127.0.0.1 - host, a local invite, join, edits both
+# ways, an undo re-sync and a refused viewer. Exits 77 (skipped) where the TLS-PSK backend is missing.
+if(PYTHON3_EXECUTABLE AND ZENE_HAVE_COLLAB)
+	set_tests_properties(CollabPolicyTest CollabTransportTest PortMappingCodecTest PROPERTIES
+		ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+	add_test(NAME ControlCollab
+		COMMAND ${PYTHON3_EXECUTABLE}
+			${CMAKE_CURRENT_SOURCE_DIR}/control-collab.py
+			$<TARGET_FILE:zene>)
+	set_tests_properties(ControlCollab PROPERTIES
+		ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+		TIMEOUT 300
+		RUN_SERIAL TRUE
+		SKIP_RETURN_CODE 77
+	)
 endif()

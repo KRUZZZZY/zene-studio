@@ -125,6 +125,8 @@ OPTION(WANT_VST_32	"Include 32-bit Windows VST support" ON)
 OPTION(WANT_VST_64	"Include 64-bit Windows VST support" ON)
 OPTION(WANT_WINMM	"Include WinMM MIDI support" OFF)
 OPTION(WANT_RUBBERBAND	"Include the optional Rubber Band time stretch (owner decision 12; WSOLA stays the default)" ON)
+OPTION(ZENE_WANT_LIBAAF	"Include AAF import through LibAAF (WF-038)" ON)
+OPTION(ZENE_WANT_FFMPEG	"Include the optional FFmpeg video track (ED-054)" ON)
 OPTION(WANT_STEM_SPLIT	"Include offline stem separation (HTDemucs via ONNX Runtime; the model is fetched on first use)" ON)
 OPTION(WANT_DEBUG_FPE	"Debug floating point exceptions" OFF)
 option(WANT_DEBUG_ASAN	"Enable AddressSanitizer" OFF)
@@ -149,6 +151,11 @@ option(ZENE_TELEMETRY "Compile the opt-in telemetry client (OFF removes it and i
 IF(ZENE_TELEMETRY)
 	SET(ZENE_TELEMETRY_ENABLED 1)
 ENDIF()
+
+# Peer-to-peer collaboration and remote control (WF-050/WF-052, 0.5.0 F6): no server, TLS-PSK over
+# Qt Network, off at runtime until collab.host / collab.join. OFF compiles the transport out; the
+# collab.* ids still register and refuse 'unavailable'.
+option(WANT_COLLAB "Include peer-to-peer collaboration and remote control (Qt Network, TLS-PSK)" ON)
 
 
 # Offline stem separation (HTDemucs). On by default since owner decision 14
@@ -380,6 +387,17 @@ IF(ZENE_TELEMETRY_ENABLED)
 	FIND_PACKAGE(Qt${QT_VERSION_MAJOR} COMPONENTS Network REQUIRED)
 	LIST(APPEND QT_LIBRARIES Qt${QT_VERSION_MAJOR}::Network)
 ENDIF()
+
+IF(WANT_COLLAB)
+	FIND_PACKAGE(Qt${QT_VERSION_MAJOR} COMPONENTS Network)
+	IF(Qt${QT_VERSION_MAJOR}Network_FOUND)
+		SET(ZENE_HAVE_COLLAB 1)
+		LIST(APPEND QT_LIBRARIES Qt${QT_VERSION_MAJOR}::Network)
+	ELSE()
+		MESSAGE(STATUS "Qt Network not found: collab.* is compiled out")
+	ENDIF()
+ENDIF()
+LIST(REMOVE_DUPLICATES QT_LIBRARIES)
 
 # Resolve qmake to full path for use in packaging scripts
 get_target_property(QT_QMAKE_EXECUTABLE Qt${QT_VERSION_MAJOR}::qmake IMPORTED_LOCATION)
@@ -748,6 +766,32 @@ ELSE()
 	SET(STATUS_RUBBERBAND "not built as requested")
 ENDIF()
 
+# check for LibAAF (WF-038): OPTIONAL. Found, it backs interchange.aaf_*; absent, the ids still register and refuse 'unavailable'.
+IF(ZENE_WANT_LIBAAF)
+	PKG_CHECK_MODULES(LIBAAF IMPORTED_TARGET libaaf)
+	IF(LIBAAF_FOUND)
+		SET(ZENE_HAVE_LIBAAF TRUE)
+		SET(STATUS_LIBAAF "OK (${LIBAAF_VERSION})")
+	ELSE()
+		SET(STATUS_LIBAAF "not found, install LibAAF (github.com/agfline/LibAAF) if you want AAF import")
+	ENDIF()
+ELSE()
+	SET(STATUS_LIBAAF "not built as requested")
+ENDIF()
+
+# check for FFmpeg (ED-054): OPTIONAL. Found, it backs the video track; absent, video.* register and refuse 'unavailable'.
+IF(ZENE_WANT_FFMPEG)
+	PKG_CHECK_MODULES(FFMPEG libavformat libavcodec libswscale libswresample libavutil)
+	IF(FFMPEG_FOUND)
+		SET(ZENE_HAVE_FFMPEG TRUE)
+		SET(STATUS_FFMPEG "OK (libavformat ${FFMPEG_libavformat_VERSION})")
+	ELSE()
+		SET(STATUS_FFMPEG "not found, please install libavformat-dev libavcodec-dev libswscale-dev libswresample-dev libavutil-dev if you want the video track")
+	ENDIF()
+ELSE()
+	SET(STATUS_FFMPEG "not built as requested")
+ENDIF()
+
 # check for WINE
 if(WANT_VST)
 	if((WANT_VST_32 OR WANT_VST_64) AND NOT LMMS_BUILD_WIN32)
@@ -1049,6 +1093,8 @@ MESSAGE(
 "* OSS                         : ${STATUS_OSS}\n"
 "* Sndio                       : ${STATUS_SNDIO}\n"
 "* Rubber Band stretch         : ${STATUS_RUBBERBAND}\n"
+"* AAF import (LibAAF)         : ${STATUS_LIBAAF}\n"
+"* FFmpeg video track          : ${STATUS_FFMPEG}\n"
 "* PortAudio                   : ${STATUS_PORTAUDIO}\n"
 "* libsoundio                  : ${STATUS_SOUNDIO}\n"
 "* PulseAudio                  : ${STATUS_PULSEAUDIO}\n"

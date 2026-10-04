@@ -30,6 +30,7 @@
 #include "endian_handling.h"
 #include "AudioEngine.h"
 #include "AudioInputPath.h"
+#include "AudioIoSetup.h"
 #include "ConfigManager.h"
 
 namespace lmms
@@ -79,10 +80,19 @@ AudioAlsa::AudioAlsa( bool & _success_ful, AudioEngine*  _audioEngine ) :
 	snd_pcm_hw_params_malloc( &m_hwParams );
 	snd_pcm_sw_params_malloc( &m_swParams );
 
-	if (int err = setHWParams(channels(), SND_PCM_ACCESS_RW_INTERLEAVED); err < 0)
+	// 0.5.0 F1 (MX-040, MX-041): the outputs the interface's I/O setup asks for; a device that cannot
+	// open that many plays its stereo pair, as it always did.
+	setChannels(static_cast<ch_cnt_t>(std::max(audioio::requestedOutputs(audioio::deviceKey(name())), int{DEFAULT_CHANNELS})));
+	int hwErr = setHWParams(channels(), SND_PCM_ACCESS_RW_INTERLEAVED);
+	if (hwErr < 0 && channels() > DEFAULT_CHANNELS)
+	{
+		setChannels(DEFAULT_CHANNELS);
+		hwErr = setHWParams(channels(), SND_PCM_ACCESS_RW_INTERLEAVED);
+	}
+	if (hwErr < 0)
 	{
 		printf( "Setting of hwparams failed: %s\n",
-							snd_strerror( err ) );
+							snd_strerror( hwErr ) );
 		return;
 	}
 	if (int err = setSWParams(); err < 0)

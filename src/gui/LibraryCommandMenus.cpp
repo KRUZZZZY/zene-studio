@@ -24,8 +24,11 @@
 
 #include "LibraryCommandMenus.h"
 
+#include <QFileInfo>
 #include <QJsonArray>
 #include <QMenu>
+#include <QPointer>
+#include <QTimer>
 
 #include "Clip.h"
 #include "CommandLists.h"
@@ -33,9 +36,14 @@
 #include "ControlVocabulary.h"
 #include "EditLocks.h"
 #include "Engine.h"
+#include "GuiApplication.h"
+#include "MainWindow.h"
 #include "ProjectInfo.h"
+#include "ReferenceProject.h"
+#include "ReferenceProjectPanel.h"
 #include "Song.h"
 #include "Track.h"
+#include "TrackSpacers.h"
 
 namespace lmms::gui::LibraryCommandMenus
 {
@@ -101,6 +109,73 @@ void documentTypeMenu(QMenu* menu)
 	}
 }
 
+//! The widget a menu's dialogs belong to: the first ancestor that is not a menu.
+QWidget* hostOf(QMenu* menu)
+{
+	QWidget* host = menu;
+	while (qobject_cast<QMenu*>(host) != nullptr) { host = host->parentWidget(); }
+	return host;
+}
+
+//! Whether the session may be replaced: the main window asks to save it; with no window (a test) yes.
+bool mayLeaveSession()
+{
+	return getGUI() == nullptr || getGUI()->mainWindow() == nullptr || getGUI()->mainWindow()->mayChangeProject(true);
+}
+
+//! An entry that runs @a id with @a args after the session may be left (project.new_document, project.switch).
+void leavingEntry(QMenu* menu, const QString& label, const QString& id, const QJsonObject& args)
+{
+	QAction* action = menu->addAction(label);
+	action->setProperty("controlCommand", id);
+	QObject::connect(action, &QAction::triggered, menu, [menu, id, args] {
+		if (mayLeaveSession()) { runCommand(hostOf(menu), CommandCall{id, args, {}, QString(), false}); }
+	});
+}
+
+//! WF-048: a new document of each type, from the type's template.
+void newDocumentMenu(QMenu* menu)
+{
+	QMenu* documents = menu->addMenu(tr("New Document"));
+	for (const QString& type : ProjectInfo::documentTypes())
+	{
+		leavingEntry(documents, documentTypeLabel(type), QStringLiteral("project.new_document"), {{QStringLiteral("type"), type}});
+	}
+}
+
+//! An entry opening the reference panel through @a open (which shows it, after a file dialog or at once).
+void referenceEntry(QMenu* menu, const char* label, const char* id, bool (*open)(QWidget*))
+{
+	QAction* action = menu->addAction(tr(label));
+	action->setProperty("controlCommand", QLatin1String(id));
+	QObject::connect(action, &QAction::triggered, menu, [menu, open] { open(hostOf(menu)); });
+}
+
+//! WF-042: other projects - the reference beside the session, switching between recent projects, pasting tracks.
+void otherProjectsMenu(QMenu* menu)
+{
+	QMenu* other = menu->addMenu(tr("Other Projects"));
+	referenceEntry(other, "Open as Reference...", "reference.open", ReferenceProjectPanel::openWithDialog);
+	referenceEntry(other, "Reference Project...", "reference.get_state", [](QWidget* host) { return ReferenceProjectPanel::showPanel(host) != nullptr; });
+	other->addSeparator();
+	const QJsonObject keep{{QStringLiteral("save_current"), false}};
+	leavingEntry(other, tr("Switch to Last Project"), QStringLiteral("project.switch"), keep);
+	QJsonObject keepReference = keep;
+	keepReference.insert(QStringLiteral("keep_as_reference"), true);
+	leavingEntry(other, tr("Switch to Last Project, Keeping This One as Reference"), QStringLiteral("project.switch"), keepReference);
+	QMenu* switchTo = other->addMenu(tr("Switch To"));
+	for (const QJsonValue& value : run(QStringLiteral("project.recent")).result.value(QStringLiteral("projects")).toArray())
+	{
+		const QJsonObject project = value.toObject();
+		QJsonObject args = keep;
+		args.insert(QStringLiteral("path"), project.value(QStringLiteral("path")));
+		leavingEntry(switchTo, project.value(QStringLiteral("name")).toString(), QStringLiteral("project.switch"), args);
+	}
+	switchTo->setEnabled(!switchTo->isEmpty());
+	other->addSeparator();
+	entry(other, "Paste Tracks From Another Project", "project.paste_tracks", {}, false);  // WF-042, between instances
+}
+
 void snapshotMenu(QMenu* menu)
 {
 	QMenu* snapshots = menu->addMenu(tr("Mixer Snapshots"));  // MX-170
@@ -144,13 +219,14 @@ void populateProject(QMenu* menu)
 		return run(QStringLiteral("project.metadata")).result.value(QStringLiteral("metadata")).toObject();
 	});
 	documentTypeMenu(menu);  // WF-048
+	newDocumentMenu(menu);  // WF-048: the type's template
 	snapshotMenu(menu);
 	QMenu* locks = menu->addMenu(tr("Locks"));  // WF-044
 	list(locks, "Locked Tracks...", [] { return CommandLists::lockedTracks(); });
 	list(locks, "Locked Clips...", [] { return CommandLists::lockedClips(); });
 	list(menu, "Render Queue...", [] { return CommandLists::renderQueue(); });  // WF-040
 	list(menu, "Background Tasks...", [] { return CommandLists::backgroundTasks(); });  // WF-046
-	entry(menu, "Paste Tracks From Another Project", "project.paste_tracks", {}, false);  // WF-042
+	otherProjectsMenu(menu);  // WF-042
 	QMenu* family = menu->addMenu(tr("Alternatives and Subprojects"));
 	entry(family, "Keep as an Alternative...", "project.alternative_save", {}, true);  // WF-032
 	list(family, "Alternatives...", [] { return CommandLists::alternatives(); });
@@ -167,6 +243,13 @@ void populateTrack(QMenu* menu, Track* track)
 	entry(menu, locked ? "Unlock Track" : "Lock Track", "track.set_locked", {{QStringLiteral("track"), id}, {QStringLiteral("locked"), !locked}}, false);
 	entry(menu, "Flatten Track (Replace With Its Audio)", "track.flatten", {{QStringLiteral("track"), id}}, false);  // ED-207
 	entry(menu, "Copy to Another Project", "project.copy_tracks", {{QStringLiteral("tracks"), QJsonArray{id}}}, false);  // WF-042
+	const TrackSpacers::Spacer spacer = TrackSpacers::instance().spacer(track->id());  // WF-107
+	entry(menu, spacer.height > 0 ? "Edit Spacer Below..." : "Add Spacer Below...", "track.set_spacer", {{QStringLiteral("track"), id}}, true,
+		[spacer] { return QJsonObject{{QStringLiteral("height"), spacer.height > 0 ? spacer.height : 24}, {QStringLiteral("label"), spacer.label}}; });
+	if (spacer.height > 0)
+	{
+		entry(menu, "Remove Spacer Below", "track.set_spacer", {{QStringLiteral("track"), id}, {QStringLiteral("height"), 0}}, false);
+	}
 }
 
 void populateClip(QMenu* menu, Clip* clip)
@@ -194,6 +277,64 @@ void applyDocumentType(const QString& type)
 	}
 }
 
+QString documentTypeLabel(const QString& type)
+{
+	if (type == QLatin1String("mastering")) { return tr("Mastering"); }
+	if (type == QLatin1String("live")) { return tr("Live"); }
+	return tr("Production");
+}
+
+QString taggedTitle(const QString& title, const QString& type)
+{
+	QString base = title;
+	for (const QString& each : ProjectInfo::documentTypes())
+	{
+		const QString tag = QStringLiteral("[%1] ").arg(documentTypeLabel(each));
+		if (base.startsWith(tag)) { base.remove(0, tag.size()); }
+	}
+	// Production is the default document: only the other types are named in the title.
+	if (type == ProjectInfo::documentTypes().first()) { return base; }
+	return QStringLiteral("[%1] %2").arg(documentTypeLabel(type), base);
+}
+
+namespace
+{
+
+//! The main window whose title shows the document type, once it is known; null again when it goes.
+QPointer<MainWindow>& titledWindow()
+{
+	static QPointer<MainWindow> window;
+	return window;
+}
+
+//! WF-048: the window title leads with the document type, whatever MainWindow::resetWindowTitle wrote.
+void tagTitle(MainWindow* window)
+{
+	const QString tagged = taggedTitle(window->windowTitle(), ProjectInfo::instance().documentType());
+	if (window->windowTitle() != tagged) { window->setWindowTitle(tagged); }
+}
+
+//! Once the main window exists: keep its title tagged from now on.
+void ensureTitleTagging()
+{
+	static bool connected = false;
+	MainWindow* window = connected || getGUI() == nullptr ? nullptr : getGUI()->mainWindow();
+	if (window == nullptr) { return; }
+	connected = true;
+	titledWindow() = window;
+	QObject::connect(window, &QWidget::windowTitleChanged, window, [window] { tagTitle(window); });
+	tagTitle(window);
+}
+
+void documentChanged(ProjectInfo::Change change)
+{
+	if (change == ProjectInfo::Change::Created) { applyDocumentType(ProjectInfo::instance().documentType()); }
+	ensureTitleTagging();
+	if (!titledWindow().isNull()) { titledWindow()->resetWindowTitle(); }
+}
+
+} // namespace
+
 void install()
 {
 	static bool installed = false;
@@ -204,6 +345,9 @@ void install()
 		const QString type = ProjectInfo::instance().documentType();
 		if (type != ProjectInfo::documentTypes().first()) { applyDocumentType(type); }
 	});
+	ProjectInfo::setChangeHook(documentChanged);  // WF-048: the type in the title, a new document's view
+	ReferenceProject::setChangeHook(ReferenceProjectPanel::refreshIfOpen);  // WF-042
+	QTimer::singleShot(0, song, [] { ensureTitleTagging(); });  // the main window is built after this runs
 }
 
 } // namespace lmms::gui::LibraryCommandMenus

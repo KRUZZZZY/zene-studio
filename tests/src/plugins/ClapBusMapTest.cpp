@@ -56,6 +56,7 @@ private slots:
 	void testChannelBudgetIsClamped();
 	void testPortOrderIsPreserved();
 	void testMultiOutputPorts();
+	void testOutputBusesOfAMultiOutputInstrument();
 };
 
 void ClapBusMapTest::testStereoPair()
@@ -168,6 +169,30 @@ void ClapBusMapTest::testMultiOutputPorts()
 	QCOMPARE(layout.outputPortChannels, (std::vector<int>{2, 2}));
 	// only extra *input* ports are side-chains
 	QCOMPARE(layout.hasSideChain, false);
+}
+
+//! 0.5.0 MX-114: each output port is one instrument output bus, main first, at the flat channel mapPorts
+//! gives it; input ports are not buses, and a port past the channel budget is reported unmapped.
+void ClapBusMapTest::testOutputBusesOfAMultiOutputInstrument()
+{
+	auto kick = makePort(PortDirection::Output, 2);
+	kick.name = QStringLiteral("Kick");
+	const auto buses = outputBusesOf({
+		makePort(PortDirection::Input, 2, true),
+		makePort(PortDirection::Output, 2, true),
+		kick,
+		makePort(PortDirection::Output, 1),
+		makePort(PortDirection::Output, 200),
+	});
+	QCOMPARE(buses.size(), std::size_t{4});
+	QCOMPARE(buses[0].firstChannel, 0);
+	QCOMPARE(buses[1].firstChannel, 2);
+	QCOMPARE(buses[1].name, QStringLiteral("Kick"));
+	QCOMPARE(buses[2].firstChannel, 4);
+	QCOMPARE(buses[2].channels, 1);
+	QCOMPARE(buses[3].firstChannel, 5);  // clamped by mapPorts, but its first channel still fits
+	const auto layout = mapPorts({makePort(PortDirection::Output, 2, true), makePort(PortDirection::Output, 200)});
+	QCOMPARE(layout.outputs, static_cast<int>(MaxChannelsPerAudioBuffer));
 }
 
 } // namespace lmms::clap

@@ -11,11 +11,11 @@
  * length ratchet allows 500 lines and ControlReversibilityTable.cpp is at 499
  * (itself already split twice for the same reason).
  *
- * THREE of the four rows are not_mutating, and that is a claim about the session,
+ * FIVE of the seven rows are not_mutating, and that is a claim about the session,
  * not about the filesystem: smf_export writes a file OUTSIDE the project and
  * smf_read/smf_convention only read, so there is no session state for an inverse
  * to restore - the same class project.save and render.stems carry, and for the
- * same reason. smf_import is the one that moves session state.
+ * same reason. smf_import and aaf_import (WF-038) are the two that move session state.
  *
  * Copyright (c) 2026 Zene Studio contributors
  *
@@ -53,7 +53,7 @@ using RC = ReversibilityClass;
 #define R(id, cls, rev, reason, mechanism, fallback) \
 	{ id, cls, reason, mechanism, fallback, rev, nullptr }
 
-/*! The four rows. The reasoning that has to be written down, because it is the
+/*! The seven rows. The reasoning that has to be written down, because it is the
  *  part a reviewer cannot re-derive from the code:
  *
  *  - the three readers/writers of the FILESYSTEM are not_mutating on the same
@@ -101,6 +101,27 @@ const ReversibilityRow kInterchangeRows[] = {
 		"transport.tempo_map_* commands use for the same object; the recorded inverse names no "
 		"single command because the previous map is not any one file, and the transaction's "
 		"before-state IS that map)",
+		""),
+	// WF-038: AAF import through LibAAF (src/core/ControlCommandsAafImport.cpp). The two readers are
+	// not_mutating on the smf_read ground; aaf_import ADDS tracks and markers and nothing else.
+	R("interchange.aaf_convention", RC::NotMutating, false,
+		"it reports whether this build reads AAF, the library's version, the time and media rules and the "
+		"stated losses - build facts - and touches no session state",
+		"none needed: the command does not write anything (the interchange.smf_convention shape)",
+		""),
+	R("interchange.aaf_read", RC::NotMutating, false,
+		"it reads an AAF file and reports its composition as a dry run: nothing is extracted, nothing is "
+		"written, and the session is not touched, so a second identical call answers the same thing",
+		"none needed: a pure read",
+		""),
+	R("interchange.aaf_import", RC::TrueInverse, true,
+		"the session state it changes is the tracks it ADDS and the marker list; neither is inside a live "
+		"object checkpoint (a created track has no before-state to restore), so the inverse is a recorded "
+		"ACTION checkpoint holding the new tracks' stable ids and the marker list from before the import",
+		"ProjectJournal (action checkpoint: the undo removes the imported tracks by Track::id through "
+		"control::removeTrack, as project.import_tracks' does, and restores the marker list through "
+		"ProjectMarkers::restore; the redo builds the same model again. The WAV files extracted from the "
+		"AAF are files outside the session and stay on disk, as a bounce's render does)",
 		""),
 };
 

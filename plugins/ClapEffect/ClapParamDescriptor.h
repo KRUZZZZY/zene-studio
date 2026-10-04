@@ -54,6 +54,9 @@ struct ClapParamDescriptor
 	//! The plug-in only applies the value inside process(), so the host must
 	//! deliver the change as an event instead of assuming get_value reflects it.
 	bool requiresProcess = false;
+	//! 0.5.0 MX-120: the plug-in takes a per-note modulation of it (CLAP_PARAM_IS_MODULATABLE plus
+	//! _PER_KEY or _PER_NOTE_ID): a per-voice modulator's value can reach one note only.
+	bool modulatablePerNote = false;
 	//! defaultValue mapped onto [0, 1] for display convenience.
 	double defaultNormalized = 0.0;
 };

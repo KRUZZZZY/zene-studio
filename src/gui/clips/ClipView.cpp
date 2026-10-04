@@ -50,6 +50,7 @@
 #include "MidiClipView.h"
 #include "PatternClip.h"
 #include "PatternStore.h"
+#include "SampleFrameEdits.h"
 #include "Song.h"
 #include "SongEditor.h"
 #include "StringPairDrag.h"
@@ -1028,6 +1029,8 @@ void ClipView::mouseReleaseEvent( QMouseEvent * me )
 	}
 	else if( m_action == Action::Move || m_action == Action::Resize || m_action == Action::ResizeLeft )
 	{
+		// 0.5.0 ED-021: with zero-crossing snap on, the dragged edge of a sample clip lands on a crossing.
+		arrangement::snapEdgeToZeroCrossing(m_clip, m_action != Action::Move, m_action == Action::ResizeLeft);
 		// TODO: Fix m_clip->setJournalling() consistency
 		m_clip->setJournalling( true );
 		// 0.5.0 ED-044: a clip dropped onto others trims or crossfades them, per the overlap mode;
@@ -1521,6 +1524,8 @@ bool ClipView::splitClip(const TimePos pos)
 	// Cutting at exactly the start/end position would create a zero length
 	// clip (bad), and a clip the same length as the original one (pointless).
 	if (splitPos <= m_initialClipPos || splitPos >= m_initialClipEnd) { return false; }
+	// 0.5.0 ED-021: with zero-crossing snap on, a sample clip is cut frame-exact at the nearest zero crossing.
+	if (arrangement::splitAtZeroCrossing(m_clip, splitPos.getTicks())) { return true; }
 
 	m_clip->getTrack()->addJournalCheckPoint();
 	m_clip->getTrack()->saveJournallingState(false);

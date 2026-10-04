@@ -24,9 +24,12 @@
  
 #include "SampleClip.h"
 
+#include <cmath>
+
 #include <QDomElement>
 #include <QFileInfo>
 
+#include "AudioEngine.h"
 #include "Engine.h"
 #include "PatternStore.h"
 #include "PathUtil.h"
@@ -82,7 +85,8 @@ SampleClip::SampleClip(const SampleClip& orig) :
 	// The warp members moved to Clip (SPEC-ARCH-4 census row 5);
 	// Clip(const Clip&) copies them for every clip type now.
 	m_isPlaying(orig.m_isPlaying),
-	m_startFrameOffset(orig.m_startFrameOffset)
+	m_startFrameOffset(orig.m_startFrameOffset),
+	m_leadFrames(orig.leadFrames())
 {
 	saveJournallingState( false );
 	setSampleFile( "" );
@@ -189,6 +193,7 @@ void SampleClip::setSampleFile(const QString& sf)
 		// one, so they go with it. `setSampleFile("")` (the copy constructor)
 		// deliberately keeps them - the source has not changed.
 		m_warp.clear();
+		setLeadFrames(0);  // ED-021: the lead was a frame of the old source too
 		m_sample = Sample(SampleBuffer::fromFile(sf));
 		resetWindowToFullBuffer();
 		updateLength();
@@ -284,6 +289,26 @@ void SampleClip::setStartTimeOffset(const TimePos& startTimeOffset)
 {
 	m_startFrameOffset = startTimeOffset * Engine::framesPerTick();
 	Clip::setStartTimeOffset(startTimeOffset);
+}
+
+
+void SampleClip::setLeadFrames(f_cnt_t frames)
+{
+	m_leadFrames.store(frames, std::memory_order_relaxed);
+}
+
+
+f_cnt_t SampleClip::leadOutputFramesAt(TimePos at) const
+{
+	const f_cnt_t lead = leadFrames();
+	if (lead == 0) { return 0; }
+	const double framesPerTick = clipFramesPerTick();
+	if (framesPerTick <= 0.0) { return 0; }
+	const auto relativeTicks = at.getTicks() - startPosition().getTicks() - startTimeOffset().getTicks();
+	const auto elapsed = relativeTicks > 0 ? TimePos(relativeTicks).frames(framesPerTick) : f_cnt_t{0};
+	if (elapsed >= lead) { return 0; }
+	const double outputPerSource = Engine::framesPerTick(Engine::audioEngine()->outputSampleRate()) / framesPerTick;
+	return static_cast<f_cnt_t>(std::llround(static_cast<double>(lead - elapsed) * outputPerSource));
 }
 
 
@@ -481,9 +506,12 @@ f_cnt_t SampleClip::sourceFrameAt(TimePos timelinePos) const
 
 	if (m_warp.empty())
 	{
-		const auto relative = relativeTicks > 0
+		const auto elapsed = relativeTicks > 0
 			? TimePos(relativeTicks).frames(framesPerTick)
 			: f_cnt_t{ 0 };
+		// ED-021: a frame-exact edit's sub-tick lead holds the audio back (0 for every other clip).
+		const f_cnt_t lead = leadFrames();
+		const auto relative = elapsed > lead ? elapsed - lead : f_cnt_t{ 0 };
 		return std::clamp(m_window.sourceIn + relative, m_window.sourceIn, m_window.sourceOut);
 	}
 
@@ -502,7 +530,7 @@ TimePos SampleClip::timelinePosAt(f_cnt_t sourceFrame) const
 	if (m_warp.empty())
 	{
 		return TimePos(originTicks
-			+ static_cast<int>(TimePos::fromFrames(frame - m_window.sourceIn, framesPerTick)));
+			+ static_cast<int>(TimePos::fromFrames(frame - m_window.sourceIn + leadFrames(), framesPerTick)));
 	}
 
 	return TimePos(originTicks + m_warp.timelineOffsetAt(frame, m_window.sourceIn, framesPerTick));
@@ -541,6 +569,8 @@ void SampleClip::saveSettings( QDomDocument & _doc, QDomElement & _this )
 		_this.setAttribute( "srcin", QString::number(m_window.sourceIn) );
 		_this.setAttribute( "srcout", QString::number(m_window.sourceOut) );
 	}
+	// ED-021: the sub-tick lead of a frame-exact edit; additive like the window (a clip without one writes nothing).
+	if (leadFrames() > 0) { _this.setAttribute("lead", QString::number(leadFrames())); }
 	// The warp map (#597): the `<warp>` child moved to the base clip
 	// (Clip::saveWarp — SPEC-ARCH-4 census row 5). Same element, same
 	// mode/tempo/stretch/marker vocabulary, same additive rule (I9), now
@@ -605,6 +635,8 @@ void SampleClip::loadSettings( const QDomElement & _this )
 	}
 
 	setAutoResize(_this.attribute("autoresize", "1").toInt());
+	// ED-021: reset on absence, so a checkpoint taken before a clip's first frame-exact edit takes it back.
+	setLeadFrames(static_cast<f_cnt_t>(_this.attribute("lead", "0").toULongLong()));
 
 	// The `<warp>` child moved to the base clip (Clip::loadWarp — SPEC-ARCH-4
 	// census row 5). It reads right AFTER this function returns, which keeps

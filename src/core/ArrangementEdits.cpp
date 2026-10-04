@@ -144,6 +144,7 @@ Modes modes()
 	out.automationFollowsClips = config->value(QStringLiteral("arrangement"), QStringLiteral("followauto"), QStringLiteral("1")).toInt() != 0;
 	out.autoFadeMs = std::clamp(config->value(QStringLiteral("arrangement"), QStringLiteral("autofade"), QStringLiteral("0")).toInt(), 0, MaxAutoFadeMs);
 	out.showTransients = config->value(QStringLiteral("arrangement"), QStringLiteral("showtransients"), QStringLiteral("0")).toInt() != 0;
+	out.snapToZeroCrossings = config->value(QStringLiteral("arrangement"), QStringLiteral("zerocross"), QStringLiteral("0")).toInt() != 0;
 	return out;
 }
 
@@ -166,6 +167,7 @@ void setModes(const Modes& modes)
 	config->setValue(QStringLiteral("arrangement"), QStringLiteral("snapedges"), modes.snapToEdges ? QStringLiteral("1") : QStringLiteral("0"));
 	config->setValue(QStringLiteral("arrangement"), QStringLiteral("followauto"), modes.automationFollowsClips ? QStringLiteral("1") : QStringLiteral("0"));
 	config->setValue(QStringLiteral("arrangement"), QStringLiteral("showtransients"), modes.showTransients ? QStringLiteral("1") : QStringLiteral("0"));
+	config->setValue(QStringLiteral("arrangement"), QStringLiteral("zerocross"), modes.snapToZeroCrossings ? QStringLiteral("1") : QStringLiteral("0"));
 	const int autoFade = std::clamp(modes.autoFadeMs, 0, MaxAutoFadeMs);
 	config->setValue(QStringLiteral("arrangement"), QStringLiteral("autofade"), QString::number(autoFade));
 	s_autoFadeMs.store(autoFade, std::memory_order_relaxed);

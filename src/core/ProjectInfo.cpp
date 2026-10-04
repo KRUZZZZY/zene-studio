@@ -29,6 +29,28 @@
 namespace lmms
 {
 
+namespace
+{
+
+ProjectInfo::ChangeHook s_hook = nullptr;
+
+void announce(ProjectInfo::Change change)
+{
+	if (s_hook != nullptr) { s_hook(change); }
+}
+
+} // namespace
+
+void ProjectInfo::setChangeHook(ChangeHook hook)
+{
+	s_hook = hook;
+}
+
+void ProjectInfo::announceCreated() const
+{
+	announce(Change::Created);
+}
+
 ProjectInfo::ProjectInfo() :
 	m_type(documentTypes().first())
 {
@@ -68,7 +90,11 @@ bool ProjectInfo::setField(const QString& name, const QString& value)
 bool ProjectInfo::setDocumentType(const QString& type)
 {
 	if (!documentTypes().contains(type)) { return false; }
-	m_type = type;
+	if (type != m_type)
+	{
+		m_type = type;
+		announce(Change::Edited);
+	}
 	return true;
 }
 
@@ -94,7 +120,11 @@ void ProjectInfo::load(const QDomElement& element)
 void ProjectInfo::clear()
 {
 	m_fields.clear();
-	m_type = documentTypes().first();
+	if (m_type != documentTypes().first())
+	{
+		m_type = documentTypes().first();
+		announce(Change::Edited);
+	}
 }
 
 } // namespace lmms

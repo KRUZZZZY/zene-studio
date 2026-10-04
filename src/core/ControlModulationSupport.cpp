@@ -33,7 +33,10 @@
 #include "ControlRackSupport.h"
 #include "ControlVocabulary.h"
 #include "Engine.h"
+#include "Instrument.h"
+#include "InstrumentTrack.h"
 #include "Mixer.h"
+#include "PatternStore.h"
 #include "RackMacros.h"
 #include "Song.h"
 
@@ -67,7 +70,55 @@ MixerChannel* routeChannel(const ModulationRoute& route)
 	return nullptr;
 }
 
+//! MX-120: the instrument track a track route (ModulationRoute::track) names, or nullptr.
+InstrumentTrack* routeTrack(const ModulationRoute& route)
+{
+	if (route.track < 0 || Engine::getSong() == nullptr) { return nullptr; }
+	Track* track = Engine::getSong()->findTrackById(route.track);
+	if (track == nullptr && Engine::patternStore() != nullptr) { track = Engine::patternStore()->findTrackById(route.track); }
+	return dynamic_cast<InstrumentTrack*>(track);
+}
+
+//! MX-120: a track route's parameter - the instrument's parameter of that display name.
+AutomatableModel* trackRouteModel(const ModulationRoute& route, QString* why)
+{
+	Instrument* instrument = modulationTargetInstrument(route);
+	if (instrument == nullptr)
+	{
+		if (why != nullptr) { *why = QStringLiteral("no instrument on track %1").arg(trackId(route.track)); }
+		return nullptr;
+	}
+	for (int i = 0; i < instrument->parameterCount(); ++i)
+	{
+		if (instrument->parameterName(i) == route.parameter) { return instrument->parameterModel(i); }
+	}
+	if (why != nullptr) { *why = QStringLiteral("the instrument has no parameter named '%1'").arg(route.parameter); }
+	return nullptr;
+}
+
+//! MX-120: how a per-voice modulator drives @a route - per note, or the newest note's cycle - and why.
+void insertVoiceMode(const ModulationRoute& route, QJsonObject* out)
+{
+	AutomatableModel* model = modulationTargetModel(route, nullptr);
+	Instrument* instrument = modulationTargetInstrument(route);
+	const bool perNote = model != nullptr && instrument != nullptr && instrument->perNoteTarget(model) >= 0;
+	out->insert(QStringLiteral("voice_mode"), perNote ? QStringLiteral("per_note") : QStringLiteral("mono_newest_note"));
+	out->insert(QStringLiteral("voice_note"), perNote
+		? QStringLiteral("each note runs its own cycle and the instrument receives the value for that note only "
+			"(CLAP note modulation / VST3 note expression)")
+		: route.track < 0
+			? QStringLiteral("a mixer device has no per-note input: the newest note restarts the cycle and drives the parameter")
+			: QStringLiteral("the instrument takes no per-note value for this parameter: the newest note restarts the "
+				"cycle and drives the parameter (monophonic fallback)"));
+}
+
 } // namespace
+
+Instrument* modulationTargetInstrument(const ModulationRoute& route)
+{
+	InstrumentTrack* track = routeTrack(route);
+	return track != nullptr ? track->instrument() : nullptr;
+}
 
 ModulationLayerPublisher& songModulationLayer()
 {
@@ -79,6 +130,7 @@ ModulationLayerPublisher& songModulationLayer()
 // be a second opinion about what a parameter name means.
 AutomatableModel* modulationTargetModel(const ModulationRoute& route, QString* why)
 {
+	if (route.track >= 0) { return trackRouteModel(route, why); }  // MX-120: an instrument's own parameter
 	ControlResult error;
 	MixerChannel* channel = routeChannel(route);
 	if (channel == nullptr)
@@ -153,6 +205,7 @@ QJsonObject modulationSourceJson(const ModulatorSource& source)
 	if (source.shape == ModulationShape::Envelope) { out.insert(QStringLiteral("attack"), static_cast<double>(source.attack)); }
 	// MX-121: the track whose notes restart it, when it follows one.
 	if (source.triggerTrack >= 0) { out.insert(QStringLiteral("trigger"), trackId(source.triggerTrack)); }
+	if (source.perVoice) { out.insert(QStringLiteral("per_voice"), true); }  // MX-120
 	// The LFO's own bounds, published so a caller can define a rate without a
 	// round trip through a refusal.
 	out.insert(QStringLiteral("min_rate"), static_cast<double>(ModulationLayer::MinRateHz));
@@ -182,6 +235,7 @@ QJsonObject modulationRouteJson(const ModulationRoute& route, int index)
 	out.insert(QStringLiteral("parameter"), route.parameter);
 	out.insert(QStringLiteral("depth"), static_cast<double>(route.depth));
 	out.insert(QStringLiteral("per_sample"), route.perSample);
+	if (route.track >= 0) { out.insert(QStringLiteral("track"), trackId(route.track)); }  // MX-120
 	QString why;
 	out.insert(QStringLiteral("resolved"), modulationTargetModel(route, &why) != nullptr);
 	if (!why.isEmpty()) { out.insert(QStringLiteral("why"), why); }
@@ -198,7 +252,15 @@ QJsonObject modulatorJson(const Modulator& modulator, int index)
 	QJsonArray routes;
 	for (int i = 0; i < modulator.routeCount(); ++i)
 	{
-		routes.append(modulationRouteJson(modulator.routes[static_cast<std::size_t>(i)], i));
+		QJsonObject route = modulationRouteJson(modulator.routes[static_cast<std::size_t>(i)], i);
+		if (modulator.source.perVoice) { insertVoiceMode(modulator.routes[static_cast<std::size_t>(i)], &route); }
+		routes.append(route);
+	}
+	if (modulator.source.perVoice)
+	{
+		// MX-120: the notes it is running a cycle for now, and the ones the fixed pool had no room for.
+		out.insert(QStringLiteral("active_voices"), songModulationLayer().voices().activeCount());
+		out.insert(QStringLiteral("dropped_voices"), static_cast<int>(songModulationLayer().voices().dropped()));
 	}
 	out.insert(QStringLiteral("targets"), routes);
 	out.insert(QStringLiteral("target_count"), modulator.routeCount());

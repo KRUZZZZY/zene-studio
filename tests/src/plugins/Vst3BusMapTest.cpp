@@ -41,6 +41,7 @@ private slots:
 	void testSecondInputBusIsSideChain();
 	void testZeroChannelBusIgnored();
 	void testQuad();
+	void testOutputBusesKeepInactiveOnes();
 };
 
 namespace
@@ -124,6 +125,20 @@ void Vst3BusMapTest::testQuad()
 	QCOMPARE(layout.inputs, 4);
 	QCOMPARE(layout.outputs, 4);
 	QCOMPARE(layout.inputBusChannels[0], 4);
+}
+
+//! 0.5.0 MX-114: every output bus is listed in the plug-in's order; an inactive aux bus has no flat channel
+//! (-1) until it is activated, and the active ones after it are numbered as mapBuses numbers them.
+void Vst3BusMapTest::testOutputBusesKeepInactiveOnes()
+{
+	const auto buses = outputBusesOf({bus(Input, Main, 2), bus(Output, Main, 2), bus(Output, Aux, 2, false),
+		bus(Output, Aux, 2)});
+	QCOMPARE(buses.size(), std::size_t{3});
+	QCOMPARE(buses[0].firstChannel, 0);
+	QCOMPARE(buses[1].firstChannel, -1);
+	QCOMPARE(buses[1].channels, 2);
+	QCOMPARE(buses[2].firstChannel, 2);
+	QCOMPARE(mapBuses({bus(Output, Main, 2), bus(Output, Aux, 2, false), bus(Output, Aux, 2)}).outputs, 4);
 }
 
 } // namespace lmms::vst3

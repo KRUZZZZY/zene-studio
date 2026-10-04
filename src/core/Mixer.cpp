@@ -247,6 +247,7 @@ MixerChannel::MixerChannel( int idx, Model * _parent ) :
 	m_bus.silenceAllChannels();
 	m_sidechainBuffer.silenceAllChannels();
 	m_postFaderBuffer.silenceAllChannels();
+	m_surround.init( Engine::audioEngine()->framesPerPeriod() );  // 0.5.0 F7: the side buffer, once
 }
 
 
@@ -637,6 +638,8 @@ void MixerChannel::doProcessing()
 					const float v = postinserts::faderValue( *sender, senderRoute );
 					MixHelpers::addMultipliedByBuffer( m_buffer, ch_buf, v, sendBuf, fpp );
 				}
+				// 0.5.0 F7 (MX-060): a surround sender's other speakers, carried or folded (a no-op for stereo).
+				surround::addSideChannels( *senderRoute, fpp );
 				if( ! compensate && ! feedback )
 				{
 					m_bus.quietChannels() &= sender->m_bus.quietChannels(); // mix silence status
@@ -699,6 +702,9 @@ void MixerChannel::doProcessing()
 				: m_fxChain.processAudioBuffer(m_bus, &m_sidechainBuffer);
 		}
 
+		// 0.5.0 F1 (MX-061): the hardware insert, after the devices and before the fader (a no-op while off).
+		hardwareio::processInsert( *this, fpp );
+
 		// VCA / mix group (#622). The group gain is applied here, as one extra
 		// factor on the post-FX buffer, and nowhere else: m_buffer is what the
 		// fader snapshot, the peak meter, the post-/pre-fader sidechain taps
@@ -747,6 +753,9 @@ void MixerChannel::doProcessing()
 				m_buffer[f][1] *= std::min(1.0f, 1.0f + p);
 			}
 		}
+
+		// 0.5.0 F7 (MX-060): the side channels' trim, VCA gain and balance (a no-op for stereo).
+		surround::processChannel( *this, fpp );
 
 		// D1: the volume multiply happens after the send loop, producing the
 		// post-fader snapshot used by post-fader sidechain taps.
@@ -1826,7 +1835,8 @@ int Mixer::resolveLatency(std::size_t index)
 	m_latencyInputScratch[index] = input;
 	m_latencyOutputScratch[index] =
 		input + std::max(0, channel->m_fxChain.latencyFrames())
-		+ std::max(0, channel->m_postInserts.chain().latencyFrames());  // 0.5.0 MX-082 (0 while empty)
+		+ std::max(0, channel->m_postInserts.chain().latencyFrames())  // 0.5.0 MX-082 (0 while empty)
+		+ hardwareio::insertLatency( *channel );  // 0.5.0 F1 (MX-061): 0 while off or bypassed
 	m_latencyVisitScratch[index] = 2;
 	return m_latencyOutputScratch[index];
 }
@@ -2078,9 +2088,14 @@ void Mixer::masterMix( SampleFrame* _buf )
 		? 1.0f
 		: postinserts::faderValue( *m_mixerChannels[0], nullptr );
 	MixHelpers::addMultiplied( _buf, m_mixerChannels[0]->m_buffer, v, fpp );
+	// 0.5.0 F7 (MX-060): a surround master's other speakers - onto the outputs, or folded into the mix.
+	surround::masterOutput( *this, _buf, fpp );
 	recordertaps::master( _buf, fpp );  // 0.5.0 WF-072: a record route resampling the master
-	// 0.5.0 L09 (MX-037): a channel listened to (AFL / PFL) replaces the mix on the output.
-	mixerlisten::replaceOutput( _buf, *this, fpp );
+	// 0.5.0 F1 (MX-040, MX-036, MX-061): direct outs, cue mixes and insert sends onto the hardware outputs.
+	hardwareio::mixOutputs( *this, _buf, fpp );
+	// 0.5.0 L09 (MX-037): a channel listened to (AFL / PFL) replaces the mix on the output - unless the
+	// listen goes to a cue mix instead (0.5.0 F1, Ableton's Solo/Cue switch).
+	hardwareio::listenOnMain( _buf, *this, fpp );
 
 	// clear all channel buffers and
 	// reset channel process state
@@ -2091,6 +2106,7 @@ void Mixer::masterMix( SampleFrame* _buf )
 		// per-period scratch data
 		m_mixerChannels[i]->m_sidechainBuffer.silenceAllChannels();
 		m_mixerChannels[i]->m_postFaderBuffer.silenceAllChannels();
+		m_mixerChannels[i]->m_surround.clearPeriod();  // 0.5.0 F7
 		m_mixerChannels[i]->reset();
 		m_mixerChannels[i]->m_queued = false;
 		// also reset hasInput
@@ -2118,6 +2134,8 @@ void Mixer::clear()
 	if (deleted) { emit channelDeleted(); }
 
 	clearChannel(0);
+	hardwareio::resetMixer();  // 0.5.0 F1 (MX-036): the cue masters
+	surround::resetMixer();  // 0.5.0 F7 (MX-060): the downmix options
 }
 
 
@@ -2129,6 +2147,8 @@ void Mixer::clearChannel(mix_ch_t index)
 	// #599: a cleared channel has no rack (no parallel chains, no selector).
 	ch->m_rack.clear();
 	ch->m_postInserts.clear();  // 0.5.0 MX-082
+	ch->m_hardwareIo.clear();  // 0.5.0 F1
+	ch->m_surround.reset();  // 0.5.0 F7
 	ch->m_volumeModel.setValue( 1.0f );
 	ch->m_panModel.setValue( 0.0f );
 	ch->m_muteModel.setValue( false );
@@ -2188,6 +2208,8 @@ void Mixer::saveSettings( QDomDocument & _doc, QDomElement & _this )
 		// with no rack writes no element at all.
 		ch->m_rack.saveSettings( _doc, mixch );
 		ch->m_postInserts.save( _doc, mixch );  // 0.5.0 MX-082: only while it holds devices
+		ch->m_hardwareIo.save( _doc, mixch );  // 0.5.0 F1: only while it routes something to the hardware
+		ch->m_surround.save( _doc, mixch );  // 0.5.0 F7: only while it is not stereo or pans
 		ch->m_volumeModel.saveSettings( _doc, mixch, "volume" );
 		// Written only when it says something: a centred, unautomated pan
 		// writes nothing, so a project that never panned a channel saves
@@ -2324,6 +2346,8 @@ void Mixer::saveSettings( QDomDocument & _doc, QDomElement & _this )
 			editDom.setAttribute("track", editTrack);
 		}
 	}
+	hardwareio::saveMixer( _doc, _this );  // 0.5.0 F1 (MX-036): the cue masters, only what is not the default
+	surround::saveMixer( _doc, _this );  // 0.5.0 F7 (MX-060): the downmix options, only when not the default
 }
 
 // make sure we have at least num channels
@@ -2430,6 +2454,8 @@ void Mixer::loadSettings( const QDomElement & _this )
 		// <rack> element loads an empty rack, which is off the signal path.
 		m_mixerChannels[num]->m_rack.loadSettings( mixch );
 		m_mixerChannels[num]->m_postInserts.load( mixch );  // 0.5.0 MX-082: absent empties it
+		m_mixerChannels[num]->m_hardwareIo.load( mixch, Engine::audioEngine()->framesPerPeriod() );  // 0.5.0 F1
+		m_mixerChannels[num]->m_surround.load( mixch );  // 0.5.0 F7: absent is stereo, panner off
 
 		// mixer sends
 		QDomNodeList chData = mixch.childNodes();
@@ -2537,6 +2563,8 @@ void Mixer::loadSettings( const QDomElement & _this )
 
 	// Publish the loaded gains (and reset every ungrouped channel to unity).
 	refreshGroups();
+	hardwareio::loadMixer( _this );  // 0.5.0 F1 (MX-036): the cue masters (absent: the defaults)
+	surround::loadMixer( _this );  // 0.5.0 F7 (MX-060): the downmix options (absent: the defaults)
 
 	emit dataChanged();
 }

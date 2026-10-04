@@ -25,6 +25,7 @@
 #ifndef LMMS_RACK_ZONES_H
 #define LMMS_RACK_ZONES_H
 
+#include <cstdint>
 #include <functional>
 #include <memory>
 #include <vector>
@@ -127,6 +128,8 @@ public:
 	//! Inserts a zone at @a index, for the inverse of a removal.
 	auto insertZone(int index, const RackZone& zone) -> bool;
 	auto removeZone(int index) -> bool;
+	//! 0.5.0 MX-112: replaces the whole list in one edit (a layer removed renumbers the zones it leaves).
+	void assign(std::vector<RackZone> zones);
 
 	/**
 	 * The index of the first zone - in the order the zones were added - whose
@@ -139,6 +142,12 @@ public:
 	 * left to whichever loop happens to run.
 	 */
 	auto resolve(int key, int velocity) const -> int;
+
+	/*! 0.5.0 MX-112: EVERY zone - not the first - whose key range and velocity range both contain the
+	 *  note, one bit per zone index (zones past 63 are not reported). An instrument layer rack sounds
+	 *  each layer a matching zone names, so it needs all of them; the routing racks keep resolve().
+	 *  A read: no allocation, no lock. */
+	auto matchMask(int key, int velocity) const -> std::uint64_t;
 
 	//! Drops every zone.
 	void clear();

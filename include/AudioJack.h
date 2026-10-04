@@ -66,6 +66,8 @@ public:
 	//! R2.2: JACK's own latency ranges for the first capture and playback port (the max).
 	f_cnt_t inputLatencyFrames() const override;
 	f_cnt_t outputLatencyFrames() const override;
+	//! 0.5.0 F1 (MX-040): JACK opens as many output ports as the interface's I/O setup asks for.
+	bool supportsMultichannelOutput() const override { return true; }
 
 	// this is to allow the jack midi connection to use the same jack client connection
 	// the jack callback is handled here, we call the midi client so that it can read
@@ -130,7 +132,10 @@ private:
 	std::atomic<MidiJack*> m_midiClient;
 	std::vector<jack_port_t*> m_outputPorts;
 	std::vector<jack_port_t*> m_inputPorts;
-	jack_default_audio_sample_t** m_tempOutBufs;
+	//! One pointer per output port, sized when the ports are registered (0.5.0 F1: N outputs).
+	std::vector<jack_default_audio_sample_t*> m_tempOutBufs;
+	//! 0.5.0 F1: the input ports - the capture plan's count (AudioInputPath), no longer the outputs'.
+	int m_inputChannels = DEFAULT_CHANNELS;
 	//! Every input port interleaved - the block AudioDevice::publishCaptured takes (R2.3).
 	//! Sized in the buffer-size callback, outside the process thread.
 	std::vector<float> m_captureWide;

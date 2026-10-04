@@ -62,6 +62,7 @@
 #include "PeakIndicator.h"
 #include "RackMenu.h"
 #include "SendButtonIndicator.h"
+#include "MixerHardwareMenu.h"
 #include "ShellCommandMenus.h"
 #include "Song.h"
 
@@ -324,6 +325,10 @@ void MixerChannelView::contextMenuEvent(QContextMenuEvent*)
 		for (int i = 0; i < static_cast<int>(Engine::mixer()->numChannels()); ++i) { view->updateMixerChannel(i); }
 	});
 
+	// 0.5.0 F1: the channel's hardware output, cue sends and hardware insert (MixerHardwareMenu.h).
+	addHardwareMenu(contextMenu, control::channelIdOf(mixerChannel()));
+	// 0.5.0 F7 (MX-060): the channel's speaker format, its surround panner and the downmix (MixerHardwareMenu.h).
+	addSurroundMenu(contextMenu, control::channelIdOf(mixerChannel()));
 	// 0.5.0 W1: sends (pre/post), sidechain, rack zones and wiring - the Inspector's channel menu.
 	ShellCommandMenus::populateChannel(contextMenu->addMenu(tr("More")), control::channelIdOf(mixerChannel()));
 	contextMenu->exec(QCursor::pos());

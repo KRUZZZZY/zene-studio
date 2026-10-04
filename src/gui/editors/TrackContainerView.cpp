@@ -43,6 +43,7 @@
 #include "Song.h"
 #include "StringPairDrag.h"
 #include "TrackPinStrip.h"
+#include "TrackSpacers.h"
 #include "TrackView.h"
 #include "GuiApplication.h"
 #include "PluginFactory.h"
@@ -131,6 +132,8 @@ TrackContainerView::TrackContainerView( TrackContainer * _tc ) :
 			this, SLOT(removeAllTrackViews()) );
 	// A visibility set applied (menu or socket) hides and shows rows.
 	connect(m_tc, &TrackContainer::visibilityChanged, this, &TrackContainerView::realignTracks, Qt::QueuedConnection);
+	// 0.5.0 F3 (WF-107): a spacer set, undone or loaded re-lays the rows out.
+	connect(&TrackSpacers::instance(), &TrackSpacers::changed, this, &TrackContainerView::realignTracks, Qt::QueuedConnection);
 }
 
 
@@ -300,6 +303,7 @@ void TrackContainerView::realignTracks()
 		// Hidden by a visibility set (the track's own view flag) or by a collapsed folder.
 		trackView->setVisible(trackView->getTrack()->isVisible() && !hiddenByFolder(trackView->getTrack()));
 		trackView->updateFolderIndent();
+		trackView->applySpacer();
 		trackView->update();
 	}
 	// 0.5.0 E21: a pinned folder's row to the strip above the scroll area, every other row back in order.
@@ -530,7 +534,7 @@ unsigned int TrackContainerView::totalHeightOfTracks() const
 	unsigned int heightSum = 0;
 	for (auto & trackView : m_trackViews)
 	{
-		heightSum += scaledPixels(trackView->getTrack()->getHeight());
+		heightSum += scaledPixels(trackView->getTrack()->getHeight()) + trackView->spacerPixels();
 	}
 	return heightSum;
 }

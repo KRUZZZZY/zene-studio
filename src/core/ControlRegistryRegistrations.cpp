@@ -39,8 +39,11 @@
  * Boston, MA 02110-1301 USA.
  */
 
+#include "CollabCommands.h"
+#include "ControlHardwareIoSupport.h"
 #include "ControlRegistry.h"
 #include "ControlWindowCommands.h"
+#include "VideoCommands.h"
 
 // The #ifdef block in registerControlCommands() below uses the macro the build
 // sets (ZENE_TELEMETRY_ENABLED); it lives in lmmsconfig.h, which reached
@@ -135,6 +138,7 @@ void registerControlCommands(ControlRegistry& registry)
 	registerAudioAnalysisCommands(registry);
 	registerSampleRangeCommands(registry);
 	registerMixerMeterCommands(registry);
+	registerHardwareIoCommands(registry);  // 0.5.0 F1: audio.io_*, mixer.hardware_*, mixer.cue_*
 	registerTrackMidiOutCommands(registry);
 	registerTrackVersionCommands(registry);
 	registerScoreExportCommands(registry);
@@ -162,6 +166,8 @@ void registerControlCommands(ControlRegistry& registry)
 	registerRecorderCommands(registry);
 	registerClipProcessCommand(registry);
 	registerW3EngineCommands(registry);
+	registerVideoCommands(registry);  // 0.5.0 F5 (ED-054)
+	registerCollabCommands(registry);  // 0.5.0 F6 (WF-050/WF-052)
 #ifdef ZENE_TELEMETRY_ENABLED
 	// The telemetry.* group travels with the client. -DZENE_TELEMETRY=OFF
 	// removes the client, so the registry must not carry ids that would

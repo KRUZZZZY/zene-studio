@@ -63,6 +63,16 @@ public:
 	//! False (and unchanged) for a name that is not a document type.
 	bool setDocumentType(const QString& type);
 
+	/*! 0.5.0 F3 (WF-048): told when the document type may have changed (Edited: a setting, a load, a clear)
+	 *  and when project.new_document made a new document of a type (Created) - the interface shows the type
+	 *  in the window title and, for a new document, opens its view. One hook; nullptr (the default, and in
+	 *  a core test) calls nothing. UI thread. */
+	enum class Change { Edited, Created };
+	using ChangeHook = void (*)(Change);
+	static void setChangeHook(ChangeHook hook);
+	//! project.new_document's announcement (Change::Created).
+	void announceCreated() const;
+
 	QString elementName() const override { return QStringLiteral("project-info"); }
 	bool shouldPersist() const override { return !m_fields.isEmpty() || m_type != documentTypes().first(); }
 	void save(QDomDocument& doc, QDomElement& parent) const override;

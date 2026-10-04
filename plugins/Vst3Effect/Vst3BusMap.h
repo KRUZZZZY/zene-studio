@@ -29,6 +29,8 @@
 
 #include <QString>
 
+#include "InstrumentOutputBus.h"
+
 namespace lmms::vst3
 {
 
@@ -87,6 +89,11 @@ struct BusLayout
 //! Inactive buses are ignored. Auxiliary input buses (anything but the first
 //! active input bus) are reported as side-chain inputs.
 auto mapBuses(const std::vector<BusDescriptor>& buses) -> BusLayout;
+
+//! 0.5.0 MX-114: the OUTPUT buses as an instrument's output buses, in the plug-in's own order (the main
+//! bus first), each with the flat output channel mapBuses() gives its first channel - -1 for a bus that
+//! is inactive (a VST3 aux output until the host activates it).
+auto outputBusesOf(const std::vector<BusDescriptor>& buses) -> std::vector<InstrumentOutputBus>;
 
 } // namespace lmms::vst3
 

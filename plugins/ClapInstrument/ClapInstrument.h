@@ -35,6 +35,7 @@
 
 #include "AudioPlugin.h"
 #include "ClapHost.h"
+#include "InstrumentOutputBuses.h"
 #include "PluginNativeEditor.h"
 #include "ClapParameter.h"
 
@@ -120,6 +121,12 @@ public:
 	bool handleMidiEvent(const MidiEvent& event, const TimePos& time = TimePos(),
 		f_cnt_t offset = 0) override;
 
+	//! 0.5.0 MX-114: the plug-in's output ports past the main one, routable to mixer channels.
+	auto outputBuses() -> InstrumentOutputBuses* override { return &m_outputBuses; }
+	//! 0.5.0 MX-120: a parameter the plug-in modulates per key or note id takes per-note values.
+	auto perNoteTarget(const AutomatableModel* parameter) const -> std::int64_t override;
+	void modulateNote(std::int64_t target, int channel, int key, float offset, float normalized) override;
+
 signals:
 	//! W6: the plug-in rescanned its parameters and the models were rebuilt; the view redraws its knobs.
 	void parametersChanged();
@@ -142,6 +149,7 @@ private:
 	ClapParamModelList m_params;
 	QTimer* m_pollTimer = nullptr;
 	std::atomic<bool> m_needsReprepare{false};
+	InstrumentOutputBuses m_outputBuses;  //!< MX-114, its layout follows the plug-in's output ports
 };
 
 } // namespace lmms

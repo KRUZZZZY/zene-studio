@@ -62,6 +62,29 @@ const ReversibilityRow kMixingRows[] = {
 		"no project write: mixer.listen with the opposite 'on' is the inverse", ""),
 	R("mixer.listen_mode", RC::NotMutating, false, "the listen bus's mode is interface state, not the project",
 		"no project write", ""),
+	// 0.5.0 F1 (MX-040, MX-041, MX-036, MX-061): hardware I/O.
+	R("audio.io_list", RC::NotMutating, false, "it reads the interface's channels and what is routed to them", "no write", ""),
+	R("audio.io_setup", RC::TrueInverse, true, "it writes the device's I/O setup, a machine setting in the config file (ConfigManager "
+		"is not a JournallingObject)", "action checkpoint: the recorded undo step puts the device's previous I/O setup back", ""),
+	R("mixer.hardware_output", RC::TrueInverse, true, "it routes a channel to the hardware outputs (saved with the project)",
+		"action checkpoint: the recorded undo step puts the channel's previous hardware output back", ""),
+	R("mixer.hardware_get", RC::NotMutating, false, "it reads every channel's hardware side and the cue masters", "no write", ""),
+	R("mixer.cue_send", RC::TrueInverse, true, "it sets a channel's send to a cue mix (saved with the project)",
+		"action checkpoint: the recorded undo step puts the channel's previous cue send back", ""),
+	R("mixer.cue_master", RC::TrueInverse, true, "it sets a cue mix's master or where listening goes (saved with the project)",
+		"action checkpoint: the recorded undo step puts every cue master and the listen target back", ""),
+	R("mixer.hardware_insert", RC::TrueInverse, true, "it sets up a channel's hardware insert (saved with the project)",
+		"action checkpoint: the recorded undo step puts the channel's previous hardware insert settings back", ""),
+	R("mixer.hardware_insert_ping", RC::TrueInverse, true, "it measures a hardware insert's latency, which delay compensation "
+		"then uses (saved with the project)", "action checkpoint: the recorded undo step puts the previous measured latency back", ""),
+	// 0.5.0 F7 (MX-060): surround channels.
+	R("mixer.channel_format", RC::TrueInverse, true, "it sets a channel's speaker format (saved with the project)",
+		"action checkpoint: the recorded undo step puts the channel's previous format back", ""),
+	R("mixer.surround_pan", RC::TrueInverse, true, "it sets a channel's surround panner (saved with the project)",
+		"action checkpoint: the recorded undo step puts the channel's previous surround panner back", ""),
+	R("mixer.downmix_options", RC::TrueInverse, true, "it sets how surround folds into fewer speakers (saved with the project)",
+		"action checkpoint: the recorded undo step puts the previous downmix options back", ""),
+	R("mixer.surround_get", RC::NotMutating, false, "it reads every channel's speaker format, panner and outputs", "no write", ""),
 };
 
 #undef R

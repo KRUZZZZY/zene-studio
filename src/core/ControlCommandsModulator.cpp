@@ -43,6 +43,7 @@
 #include <QJsonObject>
 
 #include "ControlEdit.h"
+#include "ControlInstrumentCommands.h"
 #include "ControlModulationSupport.h"
 #include "ControlRegistry.h"
 #include "ControlReversibility.h"
@@ -380,6 +381,7 @@ void registerModulatorCommands(ControlRegistry& registry)
 	registerCreate(registry);
 	registerRemove(registry);
 	registerRateSet(registry);
+	registerModulatorVoiceCommands(registry);  // 0.5.0 MX-120: per-voice modulation
 }
 
 } // namespace lmms

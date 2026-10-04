@@ -43,6 +43,7 @@
 #include "PunchWindow.h"
 #include "PlayHandle.h"
 #include "AudioWideInputStage.h"
+#include "HardwareOutputBus.h"
 #include "MultiTrackRecorder.h"
 #include "RetroAudioCapture.h"
 #include "SampleFrameRingBuffer.h"
@@ -154,6 +155,12 @@ public:
 	{
 		return m_audioDev;
 	}
+
+	//! 0.5.0 F1 (MX-040): the device outputs beyond the master - direct outs, cue mixes, hardware
+	//! insert sends (HardwareOutputBus.h). The mixer writes it on the render thread; the device feed
+	//! (renderNextBuffer) reads it. Nothing else may touch it while the engine renders.
+	HardwareOutputBus& hardwareOutputs() { return m_hardwareOut; }
+	const HardwareOutputBus& hardwareOutputs() const { return m_hardwareOut; }
 
 	/*! The PASSIVE loudness tap on the master mix (feature row 24 of
 	 *  docs/FEATURE-LIST-0.3.0.md): the live LUFS-I / LUFS-M / LUFS-S / true-peak
@@ -398,7 +405,9 @@ public:
 	 *
 	 * If @a dst has 1 channel, the channels are averaged to mono.
 	 * If @a dst has 2 channels, the channels are directly copied.
-	 * If @a dst has more than 2 channels, the stereo channels are copied and the rest are zero-filled.
+	 * If @a dst has more than 2 channels, the stereo channels are copied and the rest are zero-filled -
+	 * unless the mixer routed something to the hardware outputs (0.5.0 F1, HardwareOutputBus): then
+	 * each device channel carries what is routed there, the master on its own pair (1/2 by default).
 	 *
 	 * @param dst An audio buffer view to write into. Both interleaved and planar overloads are provided.
 	 */
@@ -439,29 +448,49 @@ private:
 			if (m_outputBufferReadIndex == m_framesPerPeriod) { m_outputBufferReadIndex = 0; }
 			if (m_outputBufferReadIndex == 0) { renderNextPeriod(); }
 
-			switch (dst.channels())
-			{
-			case 0:
-				assert(false);
-				break;
-			case 1:
-				dst.sample(0, frame) = m_outputBufferRead[m_outputBufferReadIndex].average();
-				break;
-			case 2:
-				dst.sample(0, frame) = m_outputBufferRead[m_outputBufferReadIndex][0];
-				dst.sample(1, frame) = m_outputBufferRead[m_outputBufferReadIndex][1];
-				break;
-			default:
-				dst.sample(0, frame) = m_outputBufferRead[m_outputBufferReadIndex][0];
-				dst.sample(1, frame) = m_outputBufferRead[m_outputBufferReadIndex][1];
-				for (auto channel = 2; channel < dst.channels(); ++channel)
-				{
-					dst.sample(channel, frame) = 0.f;
-				}
-				break;
-			}
+			const SampleFrame& master = m_outputBufferRead[m_outputBufferReadIndex];
+			// 0.5.0 F1 (MX-040): only a period that routes something to the hardware takes the bus;
+			// every other period is written exactly as it always was.
+			if (m_hardwareOut.active()) { writeHardwareFrame(dst, frame, master); }
+			else { writeMasterFrame(dst, frame, master); }
 
 			++m_outputBufferReadIndex;
+		}
+	}
+
+	//! The master alone on the device: averaged for one channel, on the first two otherwise, silence beyond.
+	static void writeMasterFrame(AudioBufferView<float> auto dst, f_cnt_t frame, const SampleFrame& master)
+	{
+		switch (dst.channels())
+		{
+		case 0:
+			assert(false);
+			break;
+		case 1:
+			dst.sample(0, frame) = master.average();
+			break;
+		default:
+			dst.sample(0, frame) = master[0];
+			dst.sample(1, frame) = master[1];
+			for (auto channel = 2; channel < dst.channels(); ++channel)
+			{
+				dst.sample(channel, frame) = 0.f;
+			}
+			break;
+		}
+	}
+
+	//! 0.5.0 F1: every device channel from the hardware bus, the master on its placement.
+	void writeHardwareFrame(AudioBufferView<float> auto dst, f_cnt_t frame, const SampleFrame& master) const
+	{
+		if (dst.channels() == 1)
+		{
+			dst.sample(0, frame) = m_hardwareOut.monoSample(m_outputBufferReadIndex, master);
+			return;
+		}
+		for (auto channel = 0; channel < dst.channels(); ++channel)
+		{
+			dst.sample(channel, frame) = m_hardwareOut.sample(channel, m_outputBufferReadIndex, master);
 		}
 	}
 
@@ -545,6 +574,8 @@ private:
 	std::unique_ptr<SampleFrame[]> m_outputBufferRead;
 	std::unique_ptr<SampleFrame[]> m_outputBufferWrite;
 	f_cnt_t m_outputBufferReadIndex;
+	//! 0.5.0 F1 (MX-040): the hardware outputs beyond the master, flipped with the two buffers above.
+	HardwareOutputBus m_hardwareOut;
 
 	/*! The live loudness tap (feature row 24), construction-only and disarmed
 	 *  until a caller arms it. Held by unique_ptr rather than by value so the

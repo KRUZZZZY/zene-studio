@@ -30,6 +30,8 @@
 #include "ArticulationMap.h"
 #include "AudioBusHandle.h"
 #include "InstrumentFunctions.h"
+#include "InstrumentLayers.h"
+#include "InstrumentMidiParts.h"
 #include "InstrumentSoundShaping.h"
 #include "Microtuner.h"
 #include "Midi.h"
@@ -95,6 +97,13 @@ public:
 	//! 0.5.0 L07 (ED-121): the track's articulations (ArticulationMap.h); write with the track locked.
 	ArticulationMap& articulations() { return m_articulations; }
 	const ArticulationMap& articulations() const { return m_articulations; }
+
+	//! 0.5.0 MX-114: the track's MIDI parts - zones sending notes to several channels of a multitimbral plug-in.
+	InstrumentMidiParts& midiParts() { return m_midiParts; }
+	const InstrumentMidiParts& midiParts() const { return m_midiParts; }
+	//! 0.5.0 MX-112: the track's instrument layer rack (InstrumentLayers.h).
+	InstrumentLayers& layers() { return m_layers; }
+	const InstrumentLayers& layers() const { return m_layers; }
 
 	/*! The live note handle playing \a key, or nullptr. Readback for the
 	 *  captured expression (and what a piano-roll expression editor would
@@ -365,6 +374,24 @@ private:
 	bool handleInputTransform( const MidiEvent& event, const TimePos& time, f_cnt_t offset );
 	void loadMpeExpressionOntoChannelNotes( int channel );
 
+	// 0.5.0 MX-112/MX-114/MX-120 (InstrumentTrackNotes.cpp)
+	//! processOutEvent's note-on, note-off and other messages to the instrument (@a fallbackChannel is the
+	//! channel the track would use without MIDI parts).
+	void sendNoteOn( const MidiEvent& event, int key, int fallbackChannel, const TimePos& time, f_cnt_t offset );
+	void sendNoteOff( const MidiEvent& event, int key, int fallbackChannel, const TimePos& time, f_cnt_t offset );
+	void sendChannelEvent( const MidiEvent& event, const TimePos& time, f_cnt_t offset );
+	//! The <midicontrollers> element: the MIDI CC rack's knob values.
+	void loadMidiControllers( const QDomElement& element );
+	//! A channel-wide or per-key message sent to the MIDI parts' channels; false when there are no parts.
+	bool sendToParts( const MidiEvent& event, const TimePos& time, f_cnt_t offset );
+	//! A note-on/off sent to the instrument, told to the per-voice modulators that follow this track.
+	void noteVoiceChanged( bool on, int channel, int key, f_cnt_t offset );
+	//! The layers, MIDI parts and output-bus routes, saved beside the instrument.
+	void saveZeneInstrumentSettings( QDomDocument& doc, QDomElement& element, bool presetMode );
+	void loadZeneInstrumentSettings( const QDomElement& element );
+	//! Whether @a name is one of those elements (the loader must not take it for an instrument plug-in).
+	static bool isZeneInstrumentNode( const QString& name );
+
 	MidiPort m_midiPort;
 
 	MpeExpression m_mpeExpression;
@@ -414,6 +441,10 @@ private:
 
 	std::unique_ptr<BoolModel> m_midiCCEnable;
 	std::unique_ptr<FloatModel> m_midiCCModel[MidiControllerCount];
+
+	// 0.5.0: declared last, so they go first - the layers unlink from the models above while those still exist.
+	InstrumentMidiParts m_midiParts;   //!< MX-114
+	InstrumentLayers m_layers{this};   //!< MX-112
 
 	friend class gui::InstrumentTrackView;
 	friend class gui::InstrumentTrackWindow;

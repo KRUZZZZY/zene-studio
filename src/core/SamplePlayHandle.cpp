@@ -375,6 +375,15 @@ void SamplePlayHandle::play( std::span<SampleFrame> buffer )
 	SampleFrame* workingBuffer = buffer.data();
 	f_cnt_t frames = buffer.size();
 
+	// 0.5.0 ED-021: a frame-exact clip start (SampleClip::leadFrames) can lie beyond this period;
+	// silence until it comes. Never true otherwise: the song's offset is always inside the period.
+	if (framesDone() == 0 && offset() >= frames)
+	{
+		zeroSampleFrames(workingBuffer, frames);
+		setOffset(offset() - frames);
+		return;
+	}
+
 	// apply offset for the first period
 	if( framesDone() == 0 )
 	{

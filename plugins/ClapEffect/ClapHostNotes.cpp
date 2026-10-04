@@ -188,9 +188,36 @@ void HostedPlugin::Impl::scanNotePorts()
 namespace
 {
 
+/*! 0.5.0 MX-120: a note's id - the channel and key, so a per-note modulation can name the voice a note-on
+ *  started (CLAP_PARAM_IS_MODULATABLE_PER_NOTE_ID) without the host keeping a table. A retriggered key
+ *  reuses its id, exactly as key addressing does. */
+std::int32_t noteIdOf(const NoteEventIn& queued)
+{
+	return static_cast<std::int32_t>(queued.channel) * 128 + std::max<std::int32_t>(queued.key, 0);
+}
+
+//! MX-120: a per-note parameter modulation, addressed by note id, key and channel.
+NoteOrExpression toParamMod(const NoteEventIn& queued, std::int16_t portIndex)
+{
+	NoteOrExpression out{};
+	out.header.time = static_cast<std::uint32_t>(std::max(queued.frameOffset, 0));
+	out.header.space_id = CLAP_CORE_EVENT_SPACE_ID;
+	out.header.type = CLAP_EVENT_PARAM_MOD;
+	out.header.size = sizeof(clap_event_param_mod_t);
+	out.paramMod.param_id = queued.paramId;
+	out.paramMod.cookie = nullptr;
+	out.paramMod.note_id = noteIdOf(queued);
+	out.paramMod.port_index = portIndex;
+	out.paramMod.channel = static_cast<std::int16_t>(queued.channel);
+	out.paramMod.key = queued.key;
+	out.paramMod.amount = queued.value;
+	return out;
+}
+
 //! One queued event as the CLAP event the plug-in receives: a note, or a note expression (E11).
 NoteOrExpression toClapEvent(const NoteEventIn& queued, std::int16_t portIndex)
 {
+	if (queued.type == CLAP_EVENT_PARAM_MOD) { return toParamMod(queued, portIndex); }
 	NoteOrExpression out{};
 	// The frame offset is where LMMS' own MIDI route put the event, in frames from the start of
 	// this request; the plug-in applies it at that frame of the chunk it is handed.
@@ -209,7 +236,7 @@ NoteOrExpression toClapEvent(const NoteEventIn& queued, std::int16_t portIndex)
 		return out;
 	}
 	out.header.size = sizeof(clap_event_note_t);
-	out.note.note_id = -1; // this host carries no per-note id
+	out.note.note_id = noteIdOf(queued); // MX-120: channel and key, what a per-note modulation names
 	// The plug-in's OWN port index: clap_event_note_t::port_index is an index into the plug-in's
 	// note input ports, not a port id.
 	out.note.port_index = portIndex;
@@ -231,6 +258,19 @@ void HostedPlugin::setNoteExpression(std::uint8_t channel, std::int16_t key, std
 	event.key = key;
 	event.expressionId = expressionId;
 	event.value = value;
+	event.frameOffset = frameOffset;
+	pushNote(event);
+}
+
+void HostedPlugin::setNoteParamMod(std::uint8_t channel, std::int16_t key, std::uint32_t paramId, double amount,
+	std::int32_t frameOffset)
+{
+	NoteEventIn event;
+	event.type = CLAP_EVENT_PARAM_MOD;
+	event.channel = static_cast<std::uint8_t>(std::min<int>(channel, 15));
+	event.key = static_cast<std::int16_t>(std::clamp<int>(key, 0, 127));
+	event.paramId = paramId;
+	event.value = amount;
 	event.frameOffset = frameOffset;
 	pushNote(event);
 }

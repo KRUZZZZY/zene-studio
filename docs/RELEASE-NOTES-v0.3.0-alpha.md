@@ -930,8 +930,25 @@ window.layout_project_apply (`not_mutating`) (+13); the seven macro.* rows becam
 **0.5.0 catch-up wave 1** added rack.macro_set_pair and chord.follow_set (`true_inverse`), track.set_arm_many
 (`snapshot`, one step disarms what it armed) and, in WASM builds, wasm.device_load (`true_inverse`) (+4).
 
+**0.5.0 catch-up wave 2** (+54, three new groups):
+- F1 hardware I/O: audio.io_setup, mixer.hardware_output, mixer.cue_send, mixer.cue_master, mixer.hardware_insert and
+  mixer.hardware_insert_ping (`true_inverse`); audio.io_list and mixer.hardware_get (`not_mutating`).
+- F2 instruments: plugin.output_bus_route, plugin.output_buses_create_channels, plugin.midi_part_add, plugin.midi_part_remove,
+  rack.layer_add, rack.layer_remove, rack.layer_zone_add, rack.layer_zone_remove, modulator.voice_set and
+  modulator.instrument_target_set (`true_inverse`); plugin.output_buses, plugin.midi_parts and rack.layers (`not_mutating`).
+- F3 arranging: track.set_spacer, reference.copy_tracks, reference.copy_clips and reference.copy_devices (`true_inverse`);
+  track.spacers, reference.open, reference.close, reference.get_state and project.recent (`not_mutating`);
+  project.switch and project.new_document (`irreversible`, as project.open).
+- F4 AAF: interchange.aaf_import (`true_inverse`); interchange.aaf_read and interchange.aaf_convention (`not_mutating`).
+- F5 video: video.attach, video.detach, video.set_offset and video.extract_audio (`true_inverse`); video.get_state and
+  video.window_show (`not_mutating`).
+- F6 collaboration: collab.host, collab.stop, collab.invite, collab.join, collab.leave, collab.get_state, collab.set_role,
+  collab.resync and collab.show_panel (`not_mutating`; a joined project arrives through project.open's own row).
+- F7 surround: mixer.channel_format, mixer.surround_pan and mixer.downmix_options (`true_inverse`); mixer.surround_get
+  (`not_mutating`).
+
 <!-- A16-HISTOGRAM-BEGIN
-     measured: rows=754 true_inverse=373 snapshot=40 irreversible=19 not_mutating=322
+     measured: rows=808 true_inverse=401 snapshot=40 irreversible=21 not_mutating=346
      configuration: telemetry.status wasm.load session.get_state stem.get_state
      option telemetry.status rows=2 not_mutating=2
      option wasm.load rows=9 true_inverse=1 snapshot=3 not_mutating=5

@@ -29,7 +29,9 @@
  *  every imported track.
  *  0.5.0 L12 (WF-042): project.copy_tracks / paste_tracks copy tracks between two OPEN projects - two
  *  instances, each with its own song - through the system clipboard (MIME type
- *  application/x-zene-tracks), detached the same way an import detaches them. */
+ *  application/x-zene-tracks), detached the same way an import detaches them.
+ *  0.5.0 F3 (WF-042): what these share - detaching, rebasing media, building tracks as one step - is
+ *  exposed in ControlProjectTransplant.h for the reference project's copies (ControlCommandsReference.cpp). */
 
 #include <memory>
 #include <vector>
@@ -41,6 +43,7 @@
 #include <QMimeData>
 
 #include "ControlEdit.h"
+#include "ControlProjectTransplant.h"
 #include "ControlProjectAssets.h"
 #include "ControlProjectAssetsShared.h"
 #include "ControlRegistry.h"
@@ -58,27 +61,25 @@ namespace lmms
 
 using namespace control;
 
-namespace
+namespace control::transplant
 {
 
-//! The song's <track> elements of the project at @a path, or an empty list (with @a error).
-QList<QDomElement> songTracksOf(DataFile& file, ControlResult* error)
+QList<QDomElement> songTracks(const QDomElement& content)
 {
 	QList<QDomElement> out;
-	const QDomElement container = file.content().firstChildElement(QStringLiteral("trackcontainer"));
+	const QDomElement container = content.firstChildElement(QStringLiteral("trackcontainer"));
 	for (QDomElement track = container.firstChildElement(QStringLiteral("track")); !track.isNull();
 		track = track.nextSiblingElement(QStringLiteral("track")))
 	{
 		out.append(track);
 	}
-	if (out.isEmpty()) { *error = ControlResult::failure(ControlErrorKind::NotFound, QStringLiteral("the project has no song tracks")); }
 	return out;
 }
 
 //! Drop the stable ids a copied subtree carries and point its mixer channel at the master. A track's
 //! 'folder' is another track's id too, so it goes as well unless @a keepFolders (a copy, decided at
 //! paste time): kept, a track from another project would join whichever folder here has that id.
-void detach(QDomElement element, bool keepFolders = false)
+void detach(QDomElement element, bool keepFolders)
 {
 	static const QStringList withIds{QStringLiteral("track"), QStringLiteral("effect"), QStringLiteral("midiclip"),
 		QStringLiteral("sampleclip"), QStringLiteral("automationclip"), QStringLiteral("patternclip")};
@@ -86,17 +87,6 @@ void detach(QDomElement element, bool keepFolders = false)
 	if (!keepFolders && element.tagName() == QLatin1String("track")) { element.removeAttribute(QStringLiteral("folder")); }
 	if (element.hasAttribute(QStringLiteral("mixch"))) { element.setAttribute(QStringLiteral("mixch"), 0); }
 	for (QDomElement child = element.firstChildElement(); !child.isNull(); child = child.nextSiblingElement()) { detach(child, keepFolders); }
-}
-
-//! A pasted track stays in its folder only when it was copied from this project and the folder is still here.
-void settleFolder(QDomElement track, bool sameProject)
-{
-	bool ok = false;
-	const int folder = track.attribute(QStringLiteral("folder")).toInt(&ok);
-	if (!sameProject || !ok || dynamic_cast<TrackFolder*>(Engine::getSong()->findTrackById(folder)) == nullptr)
-	{
-		track.removeAttribute(QStringLiteral("folder"));
-	}
 }
 
 //! Point a copied subtree's media references that resolve against the source project's folder ('local:'
@@ -111,6 +101,33 @@ void rebaseMedia(QDomElement element, const QString& sourceDir)
 		if (where.resolved && where.via != QLatin1String("absolute")) { element.setAttribute(attribute, controlProjectAssetStoredPath(where.path)); }
 	}
 	for (QDomElement child = element.firstChildElement(); !child.isNull(); child = child.nextSiblingElement()) { rebaseMedia(child, sourceDir); }
+}
+
+} // namespace control::transplant
+
+namespace
+{
+
+using transplant::detach;
+using transplant::rebaseMedia;
+
+//! The song's <track> elements of the project @a file holds, or an empty list (with @a error).
+QList<QDomElement> songTracksOf(DataFile& file, ControlResult* error)
+{
+	const QList<QDomElement> out = transplant::songTracks(file.content());
+	if (out.isEmpty()) { *error = ControlResult::failure(ControlErrorKind::NotFound, QStringLiteral("the project has no song tracks")); }
+	return out;
+}
+
+//! A pasted track stays in its folder only when it was copied from this project and the folder is still here.
+void settleFolder(QDomElement track, bool sameProject)
+{
+	bool ok = false;
+	const int folder = track.attribute(QStringLiteral("folder")).toInt(&ok);
+	if (!sameProject || !ok || dynamic_cast<TrackFolder*>(Engine::getSong()->findTrackById(folder)) == nullptr)
+	{
+		track.removeAttribute(QStringLiteral("folder"));
+	}
 }
 
 QJsonArray listing(const QList<QDomElement>& tracks)
@@ -197,14 +214,11 @@ ControlResult importTracks(const QJsonObject& args)
 	const QList<QDomElement> tracks = songTracksOf(file, &error);
 	if (tracks.isEmpty()) { return error; }
 	if (args.value(QStringLiteral("list")).toBool()) { return ControlResult::success({{QStringLiteral("tracks"), listing(tracks)}}); }
-	QStringList documents;
-	if (!chosen(args, tracks, QFileInfo(path).absolutePath(), &documents, &error)) { return error; }
-	const std::vector<int> made = buildAsOneStep(documents);
-	Engine::getSong()->setModified();
-	QJsonObject result = madeResult(QStringLiteral("imported"), made, documents.size());
-	result.insert(QStringLiteral("__transaction"), transactionPayload({{QStringLiteral("path"), path}}, QStringLiteral("control.undo"), {},
+	ControlResult imported = transplant::importTrackElements(tracks, args, QFileInfo(path).absolutePath(), QStringLiteral("imported"));
+	if (!imported.ok) { return imported; }
+	imported.result.insert(QStringLiteral("__transaction"), transactionPayload({{QStringLiteral("path"), path}}, QStringLiteral("control.undo"), {},
 		true, QStringLiteral("action checkpoint: the recorded undo step removes the imported tracks; its redo imports them again")));
-	return ControlResult::success(result);
+	return imported;
 }
 
 const QString TracksMime = QStringLiteral("application/x-zene-tracks");
@@ -281,6 +295,17 @@ ControlResult pasteTracks(const QJsonObject&)
 }
 
 } // namespace
+
+ControlResult control::transplant::importTrackElements(const QList<QDomElement>& tracks, const QJsonObject& args, const QString& sourceDir,
+	const QString& key)
+{
+	QStringList documents;
+	ControlResult error;
+	if (!chosen(args, tracks, sourceDir, &documents, &error)) { return error; }
+	const std::vector<int> made = buildAsOneStep(documents);
+	Engine::getSong()->setModified();
+	return ControlResult::success(madeResult(key, made, documents.size()));
+}
 
 void registerImportTracksCommand(ControlRegistry& registry)
 {

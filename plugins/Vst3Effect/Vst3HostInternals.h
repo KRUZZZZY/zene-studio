@@ -114,6 +114,16 @@ struct HostedPlugin::Impl
 	std::vector<BusDescriptor> inputBusDescs;
 	std::vector<BusDescriptor> outputBusDescs;
 
+	//! 0.5.0 MX-120: one note-expression type the plug-in declares on its event input bus.
+	struct NoteExpression
+	{
+		std::uint32_t typeId = 0;
+		QString title;
+		std::uint32_t parameter = 0;   //!< its associated parameter, when hasParameter
+		bool hasParameter = false;
+	};
+	std::vector<NoteExpression> noteExpressions;  //!< read by refreshNoteExpressions(), GUI thread
+
 	// audio thread scratch, all allocated in prepare()
 	std::vector<AudioBusBuffers> inputBuses;
 	std::vector<AudioBusBuffers> outputBuses;

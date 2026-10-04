@@ -117,6 +117,30 @@ const ReversibilityRow kW3LibraryRows[] = {
 		"action checkpoint: the recorded undo step puts the previous list back", ""),
 	R("browser.remember_source", RC::NotMutating, false, "it remembers the browser's source for a view: an interface preference "
 		"in the config file, as window.set_view's view is", "no write to the project", ""),
+	// 0.5.0 F3 (WF-107): track spacers.
+	R("track.set_spacer", RC::TrueInverse, true, "it sets or removes the gap below a track in the track list (<track-spacers>)",
+		"action checkpoint: the recorded undo step puts the previous spacer back", ""),
+	R("track.spacers", RC::NotMutating, false, "it reads the tracks' spacers. Nothing is written", "no write", ""),
+	// 0.5.0 F3 (WF-042): the reference project and switching between projects.
+	R("reference.open", RC::NotMutating, false, "it parses another project file as the read-only reference: interface state, "
+		"not the project", "no write (reference.close)", ""),
+	R("reference.close", RC::NotMutating, false, "it closes the reference project: interface state", "no write", ""),
+	R("reference.get_state", RC::NotMutating, false, "it reads the reference project. Nothing is written", "no write", ""),
+	R("reference.copy_tracks", RC::TrueInverse, true, "it adds copies of the reference's tracks to the project",
+		"action checkpoint: the recorded undo step removes the copied tracks; its redo copies them again", ""),
+	R("reference.copy_clips", RC::TrueInverse, true, "it adds copies of the reference's clips to a track of the project",
+		"ProjectJournal (Track checkpoint: Track::restoreState re-loads the track's clips as they were before the copy)", ""),
+	R("reference.copy_devices", RC::TrueInverse, true, "it appends copies of the reference's devices to a chain of the project",
+		"action checkpoint: the recorded undo step restores the chain's own <fxchain> document captured before the copy "
+		"(bounded; a chain too large to capture is refused)", ""),
+	R("project.recent", RC::NotMutating, false, "it reads the recently opened projects. Nothing is written", "no write", ""),
+	R("project.switch", RC::Irreversible, false, "it opens another project - a project.open, which replaces the session",
+		"none: the session is saved to its own file first when it changed, so nothing is lost - unless save_current was false",
+		"switch back with project.switch (with no arguments it goes to the project just left)"),
+	// 0.5.0 F3 (WF-048): a new document of a type, from its template.
+	R("project.new_document", RC::Irreversible, false, "a new document replaces the whole session, exactly as project.new does, "
+		"and the engine keeps no snapshot of what it replaced (unsaved edits included)", "none",
+		"save first (project.save), then reopen that file with project.open"),
 };
 
 #undef R

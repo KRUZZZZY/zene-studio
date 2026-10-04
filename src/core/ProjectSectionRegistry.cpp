@@ -37,6 +37,7 @@
 #include "ProjectWorkspace.h"
 #include "TrackLooks.h"
 #include "TrackVersions.h"
+#include "VideoReference.h"
 #include "ViewMemory.h"
 
 namespace lmms::projectsections
@@ -57,6 +58,7 @@ void registerAll()
 	ProjectWorkspace::instance();  // 0.5.0 themes 19/22: workflows and the layout kept with the project
 	TrackLooks::instance();  // W3 L13
 	ViewMemory::instance();
+	VideoReference::instance();  // 0.5.0 F5 (ED-054): the project's video
 	AutomationLatency::instance();  // W3 engine: read by the audio thread's automation ramps
 	registerAlternatives();
 	registerSubprojects();

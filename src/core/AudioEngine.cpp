@@ -134,6 +134,7 @@ AudioEngine::AudioEngine(bool renderOnly)
 	BufferManager::init( m_framesPerPeriod );
 	m_outputBufferRead = std::make_unique<SampleFrame[]>(m_framesPerPeriod);
 	m_outputBufferWrite = std::make_unique<SampleFrame[]>(m_framesPerPeriod);
+	m_hardwareOut.init(m_framesPerPeriod);  // 0.5.0 F1 (MX-040): allocated once, here, never on the render path
 
 
 	for( int i = 0; i < m_numWorkers+1; ++i )
@@ -609,6 +610,7 @@ void AudioEngine::swapBuffers()
 
 	std::swap(m_outputBufferRead, m_outputBufferWrite);
 	zeroSampleFrames(m_outputBufferWrite.get(), m_framesPerPeriod);
+	m_hardwareOut.swap();  // 0.5.0 F1: the hardware outputs follow the master's double buffer
 }
 
 void AudioEngine::clear()
@@ -1298,11 +1300,20 @@ f_cnt_t latencyFromEnv(const char* name)
 	return ok && value > 0 ? static_cast<f_cnt_t>(value) : 0;
 }
 
+//! 0.5.0 F1: the first device output (0-based) of the pair the loopback cable carries back to the input.
+int g_dummyLoopOutput = 0;
+
 } // namespace
 
 
 void AudioDummy::configureLoopback()
 {
+	// 0.5.0 F1 (MX-040): LMMS_DUMMY_OUTPUT_CHANNELS gives the Dummy that many outputs (2..128) - an
+	// interface with more than a stereo pair, for the hardware-output tests - and
+	// LMMS_DUMMY_LOOPBACK_OUTPUT (1-based) picks the pair the loopback cable plugs into (1/2 unless set).
+	const f_cnt_t outputs = latencyFromEnv("LMMS_DUMMY_OUTPUT_CHANNELS");
+	setChannels(static_cast<ch_cnt_t>(std::clamp<f_cnt_t>(outputs, DEFAULT_CHANNELS, HardwareOutputBus::MaxChannels)));
+	g_dummyLoopOutput = std::clamp<int>(static_cast<int>(latencyFromEnv("LMMS_DUMMY_LOOPBACK_OUTPUT")) - 1, 0, channels() - 2);
 	m_loopback = !qEnvironmentVariableIsEmpty("LMMS_DUMMY_LOOPBACK");
 	if (!m_loopback) { return; }
 	m_loopInLatency = latencyFromEnv("LMMS_DUMMY_INPUT_LATENCY");
@@ -1326,7 +1337,16 @@ void AudioDummy::feedBack(std::span<const SampleFrame> period)
 	const std::size_t size = m_loopLine.size();
 	const std::size_t delay = static_cast<std::size_t>(m_loopInLatency + m_loopOutLatency);
 	const std::size_t frames = std::min(period.size(), m_loopBlock.size());
-	for (std::size_t f = 0; f < frames; ++f) { m_loopLine[(m_loopWrite + f) % size] = period[f]; }
+	// 0.5.0 F1: the cable carries what the device's looped pair plays - the master on 1/2 unless the
+	// mixer routed the hardware outputs (HardwareOutputBus), and then exactly what that pair is fed.
+	const HardwareOutputBus& bus = audioEngine()->hardwareOutputs();
+	const int pair = g_dummyLoopOutput;
+	for (std::size_t f = 0; f < frames; ++f)
+	{
+		const auto at = static_cast<f_cnt_t>(f);
+		m_loopLine[(m_loopWrite + f) % size] = !bus.active() ? (pair == 0 ? period[f] : SampleFrame(0.f, 0.f))
+			: SampleFrame(bus.sample(pair, at, period[f]), bus.sample(pair + 1, at, period[f]));
+	}
 	for (std::size_t f = 0; f < frames; ++f) { m_loopBlock[f] = m_loopLine[(m_loopWrite + f + size - delay) % size]; }
 	m_loopWrite = (m_loopWrite + frames) % size;
 	audioEngine()->pushInputFrames(m_loopBlock.data(), static_cast<f_cnt_t>(frames));

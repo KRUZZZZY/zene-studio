@@ -46,6 +46,7 @@
 #include "TimeLineWidget.h"
 #include "TrackContentWidget.h"
 #include "TrackView.h"
+#include "VideoLane.h"
 
 namespace lmms::gui
 {
@@ -258,6 +259,7 @@ void installArrangerOverlays(SongEditor* editor)
 {
 	if (editor == nullptr || editor->timeLine() == nullptr) { return; }
 	if (editor->findChild<ArrangerRulerLanes*>() == nullptr) { new ArrangerRulerLanes(editor); }
+	if (editor->findChild<VideoLane*>() == nullptr) { new VideoLane(editor); }
 	if (editor->findChild<ArrangerRangeOverlay*>() == nullptr) { new ArrangerRangeOverlay(editor); }
 	if (editor->findChild<ArrangerEditPreview*>() == nullptr) { new ArrangerEditPreview(editor); }
 	cliplocks::install();

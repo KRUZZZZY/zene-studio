@@ -83,12 +83,14 @@
 
 #include "LmmsTypes.h"
 #include "ModulationFormula.h"
+#include "ModulationVoices.h"
 #include "lmms_export.h"
 
 namespace lmms
 {
 
 class AutomatableModel;
+class Instrument;
 
 //! The fixed LFO vocabulary. A closed set because the layer persists a NAME.
 enum class ModulationShape
@@ -129,6 +131,10 @@ struct ModulationRoute
 	 *  knots across the block and read per sample - instead of one value per block (the
 	 *  zipper a fast LFO makes). Off by default; saved only when on. */
 	bool perSample = false;
+	/*! 0.5.0 MX-120: >= 0 makes the route address a parameter of THIS track's instrument (its persistent
+	 *  id; 'parameter' is the display name, channel/chain/effect are unused) - the target a per-voice
+	 *  modulator sends per-note values to. -1 (the default, and every route before 0.5.0): the rack address. */
+	int track = -1;
 };
 
 //! The frames and rate of the block being modulated - what a per-sample route needs to
@@ -155,6 +161,10 @@ struct ModulatorSource
 	//! MX-121: the track (its persistent id) whose notes restart this modulator's cycle; -1 runs it
 	//! free on the timeline.
 	int triggerTrack = -1;
+	/*! MX-120: one cycle PER NOTE of the trigger track, each note's value sent to the instrument as a
+	 *  per-note modulation where the target supports it; where it does not, the route follows the newest
+	 *  note (the MX-121 behaviour) and the state reply says so. Needs a trigger track. */
+	bool perVoice = false;
 };
 
 //! One named modulator: a source and the routes it drives.
@@ -259,6 +269,10 @@ struct ModulationRuntime
 		float minimum = 0.0f;
 		float maximum = 0.0f;
 		bool perSample = false;  //!< R1.3, the route's own flag
+		//! MX-120: the instrument that takes this route's per-note values, and its handle for the
+		//! parameter (Instrument::perNoteTarget); nullptr / -1 when it has no per-note path.
+		Instrument* instrument = nullptr;
+		std::int64_t noteTarget = -1;
 	};
 
 	std::array<Source, ModulationLayer::MaxModulators> sources{};
@@ -285,6 +299,8 @@ struct ModulationAudioView
 		float minimum = 0.0f;
 		float maximum = 0.0f;
 		bool perSample = false;
+		Instrument* instrument = nullptr;  //!< MX-120, valid while the entry's token is alive
+		std::int64_t noteTarget = -1;
 	};
 
 	std::array<ModulatorSource, ModulationLayer::MaxModulators> sources{};
@@ -364,6 +380,15 @@ public:
 	//! The block's song time, which a note started during it is stamped with (audio thread).
 	void setBlockSeconds(double seconds) const noexcept { m_blockSeconds.store(seconds, std::memory_order_relaxed); }
 
+	/*! 0.5.0 MX-120: a note-on (@a on) or note-off reached track @a trackId's instrument on (@a channel,
+	 *  @a key), @a offset frames into the block - audio thread, atomics only. A voice is kept only while a
+	 *  per-voice modulator follows the track. */
+	void voiceChanged(int trackId, bool on, int channel, int key, f_cnt_t offset) noexcept;
+	//! The voices per-voice modulators run for (read by the block, and by the state reply).
+	const ModulationVoices& voices() const noexcept { return m_voices; }
+	//! The block's sample rate, for a note's frame offset (audio thread).
+	void setBlockRate(sample_rate_t rate) const noexcept { m_blockRate.store(rate, std::memory_order_relaxed); }
+
 	//! The audio view as of the last completed edit. Lock-free, allocation-free
 	//! and bounded; safe to call from the audio thread.
 	ModulationAudioView snapshot() const noexcept
@@ -403,6 +428,11 @@ private:
 	std::array<std::atomic<double>, ModulationLayer::MaxModulators> m_triggeredAt{};
 	mutable std::atomic<double> m_blockSeconds{0.0};
 	std::atomic<bool> m_anyTrigger{false};
+	//! MX-120: each modulator's per-voice flag as of the last edit, and the voices they run for.
+	std::array<std::atomic<bool>, ModulationLayer::MaxModulators> m_perVoice{};
+	std::atomic<bool> m_anyPerVoice{false};
+	ModulationVoices m_voices;
+	mutable std::atomic<sample_rate_t> m_blockRate{0};
 	std::atomic<unsigned> m_version{0};
 };
 
@@ -414,6 +444,8 @@ private:
  *  one is allowed to build a QString.
  */
 LMMS_EXPORT AutomatableModel* modulationTargetModel(const ModulationRoute& route, QString* why);
+//! 0.5.0 MX-120: the instrument a track route (ModulationRoute::track) addresses, or nullptr.
+LMMS_EXPORT Instrument* modulationTargetInstrument(const ModulationRoute& route);
 
 /*! Rebuilds @a runtime from @a layer (control thread): resolves every route,
  *  captures each target's min/max and the BASE value it currently has, and

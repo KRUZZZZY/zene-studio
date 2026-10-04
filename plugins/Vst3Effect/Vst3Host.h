@@ -98,6 +98,18 @@ public:
 
 	auto parameters() const -> const std::vector<Vst3ParamDescriptor>&;
 	auto busLayout() const -> const BusLayout&;
+	//! 0.5.0 MX-114: every audio OUTPUT bus the plug-in declares, active or not, in its own order.
+	auto outputBusDescriptors() const -> const std::vector<BusDescriptor>&;
+	/*! Activates output buses 1..@a upTo - a prefix, so ProcessData's bus array keeps the plug-in's own
+	 *  bus indexes - and re-reads the layout. GUI thread, and only while not prepared (VST3 activates
+	 *  buses on an inactive component). False when the component refuses one. */
+	auto activateOutputBuses(int upTo) -> bool;
+	/*! 0.5.0 MX-120: reads the note-expression types the plug-in declares on its event input bus
+	 *  (INoteExpressionController, channel 0). GUI thread; none when it has no such controller. */
+	void refreshNoteExpressions();
+	auto hasNoteExpressions() const -> bool;
+	//! The note-expression type for parameter @a id (its associated parameter, else the same title), or -1.
+	auto noteExpressionFor(std::uint32_t id, const QString& title) const -> std::int64_t;
 	auto className() const -> QString;
 	auto vendor() const -> QString;
 	auto isInstrument() const -> bool;

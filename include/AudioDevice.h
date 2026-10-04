@@ -31,6 +31,7 @@
 #include <samplerate.h>
 
 #include "LmmsTypes.h"
+#include "lmms_constants.h"
 #include "SampleFrame.h"
 
 class QThread;
@@ -66,6 +67,12 @@ public:
 	{
 		return m_sampleRate;
 	}
+
+	//! 0.5.0 F1 (MX-040): the output channels this device opened - the master's pair and any beyond it.
+	ch_cnt_t outputChannels() const { return m_channels; }
+	//! 0.5.0 F1: whether the backend can open more than a stereo pair. JACK, ALSA and PortAudio can
+	//! (they override this); the others are stereo, unless they opened more (the Dummy, configured to).
+	virtual bool supportsMultichannelOutput() const { return m_channels > DEFAULT_CHANNELS; }
 
 #ifdef LMMS_TESTING
 	//! Test-only: pin the device sample rate to a spec value.

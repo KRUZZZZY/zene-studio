@@ -79,7 +79,8 @@ struct NoteEventIn
 	std::int16_t velocity = 0;    //!< 0 .. 127; ignored for note-off
 	std::int32_t frameOffset = 0; //!< frames from the start of the block
 	std::uint8_t expressionId = 0; //!< CLAP_NOTE_EXPRESSION_*, for CLAP_EVENT_NOTE_EXPRESSION (E11)
-	double value = 0.0;           //!< the expression's value in CLAP's own range
+	double value = 0.0;           //!< the expression's value in CLAP's own range; a CLAP_EVENT_PARAM_MOD's amount
+	std::uint32_t paramId = 0;    //!< 0.5.0 MX-120: the parameter a CLAP_EVENT_PARAM_MOD modulates for one note
 };
 
 //! How many note events one block can carry. Fixed at compile time so the

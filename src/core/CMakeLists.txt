@@ -47,6 +47,30 @@ IF(ZENE_TELEMETRY_ENABLED)
 	)
 ENDIF()
 
+# Peer-to-peer collaboration (0.5.0 F6, WF-050/WF-052). The command group, its policy and the
+# registry tap are always built (without Qt Network the ids refuse 'unavailable'); the TLS-PSK
+# transport, the session and the hand-written port mapping need Qt Network.
+SET(LMMS_COLLAB_SRCS
+	core/CollabCommandTap.cpp
+	core/CollabPolicy.cpp
+	core/ControlCommandsCollab.cpp
+	core/ControlReversibilityTableCollab.cpp
+)
+IF(ZENE_HAVE_COLLAB)
+	LIST(APPEND LMMS_COLLAB_SRCS
+		core/CollabClient.cpp
+		core/CollabHost.cpp
+		core/CollabInvite.cpp
+		core/CollabLink.cpp
+		core/CollabSession.cpp
+		core/CollabSessionSync.cpp
+		core/PortMapping.cpp
+		core/PortMappingCodec.cpp
+		core/PortMappingPmp.cpp
+		core/PortMappingUpnp.cpp
+	)
+ENDIF()
+
 # The telemetry.* command group is the client's agent surface, so it travels with
 # the client (SPEC A15). Kept in its own variable so the big source list below
 # keeps the position it has always had.
@@ -293,6 +317,11 @@ set(LMMS_SRCS
 	# the four dawproject.* ids. Its own translation unit for the same reason -
 	# gate 7 measures a file, not a group.
 	core/ControlCommandsDawProject.cpp
+	# AAF import through LibAAF (WF-038): model, reader (library calls only under ZENE_HAVE_LIBAAF), builder, interchange.aaf_* ids.
+	core/AafImportBuild.cpp
+	core/AafImportModel.cpp
+	core/AafImportRead.cpp
+	core/ControlCommandsAafImport.cpp
 	# The modulation layer (#602): the layer + LFO half, the route half, and the
 	# per-note expression group (docs/MODULATION.md).
 	core/ControlCommandsModulator.cpp
@@ -793,6 +822,27 @@ set(LMMS_SRCS
 	core/MixHelpers.cpp
 	core/MixerGroups.cpp
 	core/MixerListen.cpp
+	# 0.5.0 F1: hardware outputs, interface channels, cue mixes, hardware inserts (MX-040/041/036/061).
+	core/AudioIoSetup.cpp
+	core/ControlCommandsCueMix.cpp
+	core/ControlCommandsHardwareInsert.cpp
+	core/ControlCommandsHardwareIo.cpp
+	core/ControlHardwareIoSupport.cpp
+	core/HardwareInsert.cpp
+	core/HardwareIo.cpp
+	core/HardwareOutputBus.cpp
+	# 0.5.0 F7: surround channels, the surround panner, the downmix (MX-060).
+	core/MixerSurround.cpp
+	core/MixerSurroundMix.cpp
+	core/ControlCommandsMixerSurround.cpp
+	# 0.5.0 F5: the video track through FFmpeg (ED-054); library calls only under ZENE_HAVE_FFMPEG.
+	core/VideoReference.cpp
+	core/VideoFfmpeg.cpp
+	core/VideoDecoder.cpp
+	core/VideoAudioExtract.cpp
+	core/VideoFramePump.cpp
+	core/ControlCommandsVideo.cpp
+	core/ControlReversibilityTableVideo.cpp
 	core/MixerSendPan.cpp
 	core/MixerStrip.cpp
 	core/Model.cpp
@@ -849,6 +899,16 @@ set(LMMS_SRCS
 	core/RackMacros.cpp
 	core/RackNodes.cpp
 	core/RackZones.cpp
+	# 0.5.0 F2: multi-output instruments and MIDI parts (MX-114), instrument layers (MX-112),
+	# per-voice and per-note modulation (MX-120).
+	core/InstrumentOutputBuses.cpp
+	core/InstrumentMidiParts.cpp
+	core/InstrumentLayers.cpp
+	core/ModulationVoices.cpp
+	core/ControlCommandsPluginBuses.cpp
+	core/ControlCommandsPluginParts.cpp
+	core/ControlCommandsRackLayers.cpp
+	core/ControlCommandsModulatorVoices.cpp
 	core/RackZoneInputs.cpp
 	core/RackZoneFeed.cpp
 	core/RenderManager.cpp
@@ -993,6 +1053,15 @@ set(LMMS_SRCS
 	# 0.5.0 L11 / L12 (W3): mixer snapshots, project settings / metadata / document type, edit locks.
 	core/ControlCommandsMixerSnapshots.cpp
 	core/ControlCommandsProjectInfo.cpp
+	# 0.5.0 F3: frame-exact cuts and zero-crossing snap (ED-021), track spacers (WF-107), the reference
+	# project and quick switch (WF-042), per-type documents (WF-048).
+	core/SampleFrameEdits.cpp
+	core/ControlCommandsClipFrames.cpp
+	core/TrackSpacers.cpp
+	core/ControlCommandsTrackSpacers.cpp
+	core/ReferenceProject.cpp
+	core/ControlCommandsReference.cpp
+	core/ControlCommandsDocuments.cpp
 	core/MixerSnapshots.cpp
 	core/ProjectInfo.cpp
 	core/EditLocks.cpp
@@ -1127,6 +1196,7 @@ set(LMMS_SRCS
 	${LMMS_SESSION_SRCS}
 
 	${LMMS_TELEMETRY_SRCS}
+	${LMMS_COLLAB_SRCS}
 )
 
 # The list is handed to the parent scope at the END of this file, after the
@@ -1213,6 +1283,9 @@ SET(ZENE_API_SRCS
 	core/ControlReversibilityTableW3Engine.cpp
 	core/ControlReversibilityTableArranger.cpp
 	core/ControlReversibilityTableShell.cpp
+	core/ControlReversibilityTableVideo.cpp
+	core/ControlReversibilityTableCollab.cpp
+	core/CollabCommandTap.cpp
 )
 
 # The boundary is what the registry is compiled by: every file named above is

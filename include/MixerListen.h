@@ -34,6 +34,7 @@ namespace lmms
 {
 
 class Mixer;
+class MixerChannel;
 class SampleFrame;
 
 /*! 0.5.0 L09 (MX-037): listening to channels without touching the mix. While any channel listens,
@@ -60,6 +61,10 @@ LMMS_EXPORT QVector<int> listeningChannels();
 LMMS_EXPORT void clear();
 LMMS_EXPORT void setMode(Mode mode);
 LMMS_EXPORT Mode mode();
+
+//! Audio thread: add @a channel's signal after (or before) its fader to @a out, times @a gain, balanced by @a pan.
+LMMS_EXPORT void addChannelSignal(SampleFrame* out, MixerChannel& channel, bool afterFader, f_cnt_t frames,
+	float gain = 1.f, float pan = 0.f);
 
 //! Audio thread, from Mixer::masterMix: when a channel listens, @a out becomes the listened sum.
 LMMS_EXPORT void replaceOutput(SampleFrame* out, Mixer& mixer, f_cnt_t frames);

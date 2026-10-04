@@ -63,6 +63,8 @@ auto descriptorOf(const clap_param_info_t& info) -> ParamDescriptor
 	descriptor.automatable = (info.flags & CLAP_PARAM_IS_AUTOMATABLE) != 0;
 	descriptor.hidden = (info.flags & CLAP_PARAM_IS_HIDDEN) != 0;
 	descriptor.requiresProcess = (info.flags & CLAP_PARAM_REQUIRES_PROCESS) != 0;
+	descriptor.modulatablePerNote = (info.flags & CLAP_PARAM_IS_MODULATABLE) != 0
+		&& (info.flags & (CLAP_PARAM_IS_MODULATABLE_PER_KEY | CLAP_PARAM_IS_MODULATABLE_PER_NOTE_ID)) != 0;
 	descriptor.defaultNormalized = normalize(descriptor, descriptor.defaultValue);
 	return descriptor;
 }
@@ -138,6 +140,7 @@ void HostedPlugin::Impl::refreshParamInfo()
 		params[i].hidden = fresh[i].hidden;
 		params[i].automatable = fresh[i].automatable;
 		params[i].requiresProcess = fresh[i].requiresProcess;
+		params[i].modulatablePerNote = fresh[i].modulatablePerNote;
 		params[i].defaultValue = fresh[i].defaultValue;
 		params[i].defaultNormalized = fresh[i].defaultNormalized;
 	}

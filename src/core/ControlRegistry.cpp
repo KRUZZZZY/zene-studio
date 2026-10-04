@@ -25,6 +25,7 @@
 #include "ControlResultCheck.h"
 #include "UnattendedRun.h"
 
+#include "CollabCommandTap.h"
 #include "ControlReversibility.h"
 #include "EditLocks.h"
 #include "ProjectJournal.h"
@@ -267,6 +268,9 @@ ControlResult ControlRegistry::invoke(const QString& id, const QJsonObject& args
 	const bool mutating = cmd->mutating;
 	const QString commandId = cmd->id;
 	return runOnUiThread([this, handler, mutating, commandId, args]() {
+		// 0.5.0 F6 (WF-050): on a peer that joined a collaboration session, an edit is the host's to apply.
+		ControlResult elsewhere;
+		if (collab::CommandTap::intercepted(commandId, mutating, m_depth, args, &elsewhere)) { return elsewhere; }
 		return runHandler(handler, commandId, mutating, args);
 	});
 }
@@ -356,6 +360,7 @@ ControlResult ControlRegistry::runHandler(
 	}
 	control::finishResult(commandId, m_commands.value(commandId).resultSchema, &result);
 	notifyObserver(commandId, args, mutating, changed);
+	collab::CommandTap::observed(commandId, args, mutating, changed, m_depth);  // F6: what a host streams to its peers
 	return result;
 }
 

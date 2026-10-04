@@ -29,6 +29,7 @@
 #include <array>
 
 #include "Instrument.h"
+#include "InstrumentOutputBuses.h"
 #include "InstrumentView.h"
 #include "Lv2ControlBase.h"
 #include "Lv2ViewBase.h"
@@ -83,6 +84,9 @@ public:
 #endif
 	void playImpl(std::span<SampleFrame> out) override;
 
+	//! 0.5.0 MX-114: the plug-in's audio outputs past its main pair, a stereo bus per two ports.
+	auto outputBuses() -> InstrumentOutputBuses* override { return &m_outputBuses; }
+
 	/*
 		misc
 	*/
@@ -98,6 +102,12 @@ private:
 	std::array<int, NumKeys> m_runningNotes = {};
 #endif
 	void clearRunningNotes();
+	//! MX-114: the output buses' layout, from the processor's extra output ports.
+	void publishOutputBuses();
+	//! MX-114 (audio thread): each routed extra bus, copied out of the plug-in and into its channel.
+	void deliverOutputBuses(f_cnt_t frames);
+
+	InstrumentOutputBuses m_outputBuses;
 
 	friend class gui::Lv2InsView;
 };

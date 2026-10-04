@@ -56,6 +56,9 @@ when you drag it - a downbeat after a pickup. Navigate &gt; Show Navigator puts 
 click or drag in it to scroll, turn the wheel to zoom. Navigate &gt; Second Tool on a Modifier Key gives Alt, Ctrl or Shift a
 tool of its own while held. Track &gt; Versions keeps several versions of a track's clips and switches between them. An audio
 clip's Speed menu ramps its speed (the pitch going with it) or adds a tape start or a tape stop.</p>
+<p>Splits and trims can land on an exact sample, and with Navigate &gt; Snap Cuts to Zero Crossings on, the knife and an edge drag move to the
+nearest zero crossing so the cut does not click. A track's menu adds a spacer below it (Add Spacer Below): an empty band
+that separates groups of tracks and moves with the track.</p>
 <p>Edit &gt; Tempo Map... lists the song's tempo and metre changes: add, remove and ramp them, or import and export them as a
 Standard MIDI File.</p>
 <p>Automation can be switched off for reading or writing across the whole song (Project &gt; Automation Read / Write),
@@ -90,6 +93,12 @@ names. Each send in the Inspector has a meter beside it, and instrument and samp
 Compare Channel EQ draws two channels' EQ over each other. The Control Room (Project menu) switches between three sets of
 speakers, each with its own trim, and dims, mutes or checks the mix in mono - on what you hear only, never on an export. A
 channel's "Play Previews Here" sends the browser's previews to it instead of the master.</p>
+<p>A channel's Hardware I/O menu sends it to your interface's outputs as well as the mix, builds up to four cue
+(headphone) mixes with their own sends, and adds a hardware insert: send to an output, return from an input, with the
+round trip measured by a ping and compensated. Interface Channels names your interface's inputs and outputs and pairs them;
+the names are kept per device, not per project. Its Surround menu sets a channel to LCR, quad, 5.1 or 7.1: the Surround
+Panner places a channel's sends into it on a 2-D room with an LFE send and spread, and a stereo master or a stereo export gets
+the standard downmix. Extra channels need a backend with more than two outputs (JACK or ALSA).</p>
 
 <h2 id="devices">Devices</h2>
 <p>Add a device from the browser or the rack's menu; right-click a device to insert another before or after it, copy it
@@ -139,6 +148,16 @@ a setlist of songs to step through. A marker can run a command when playback cro
 <p>Projects keep their history: Project &gt; Revisions restores or compares an earlier state. Collect Media copies every
 file a project uses beside it; Project &gt; Hand Off writes a folder someone else can open with a list of the devices
 to install first. Import Tracks copies tracks from another project; Save as Template keeps a project to start from.</p>
+<p>Project &gt; New Document starts a production, mastering or live project from its own template (your own
+<i>type</i>.mpt in the templates folder wins); the window title names a mastering or live document. Project &gt; Other Projects
+opens another project as a read-only reference beside this one and copies its tracks, clips or devices across, and switches to
+a recent project - keeping the one you left open as the reference if you like. Project &gt; Import AAF... brings in an AAF
+from another editor: its audio tracks, clips, fades, clip gain and markers (embedded audio is extracted beside the project;
+OMF is not read). View &gt; Video Window shows a project's video in time with the transport, with a strip of its frames over
+the arranger; the video's sound can be extracted to an audio track. Edit &gt; Collaborate... lets someone on your network (or
+across the internet, where your router allows it) join the project: you share an invite code, every edit is sent to the
+others, and a remote invite gives a phone or another machine the transport and faders only. Nothing listens until you host,
+and you are asked first.</p>
 
 <h2 id="agents">Scripts, agents and controllers</h2>
 <p>Every command is reachable over the control socket (JSON-RPC) and from the MCP bridge; Lua scripts

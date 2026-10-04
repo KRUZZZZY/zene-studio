@@ -32,6 +32,7 @@
 #include <QObject>
 
 #include "AutomatableModel.h"
+#include "Instrument.h"
 
 namespace lmms
 {
@@ -51,16 +52,43 @@ ModulationLayerPublisher::~ModulationLayerPublisher()
 void ModulationLayerPublisher::publishTriggers()
 {
 	bool any = false;
+	bool anyPerVoice = false;
 	for (int m = 0; m < ModulationLayer::MaxModulators; ++m)
 	{
 		const auto slot = static_cast<std::size_t>(m);
 		const int track = m < m_runtime.sourceCount ? m_runtime.sources[slot].triggerTrack : -1;
+		// MX-120: a per-voice modulator counts the notes of its trigger track.
+		const bool perVoice = track >= 0 && m_runtime.sources[slot].perVoice;
+		m_perVoice[slot].store(perVoice, std::memory_order_relaxed);
+		anyPerVoice = anyPerVoice || perVoice;
 		// A modulator that starts following a track (or another one) waits for its first note.
 		if (m_triggerTrack[slot].load(std::memory_order_relaxed) != track) { m_triggeredAt[slot].store(-1.0, std::memory_order_relaxed); }
 		m_triggerTrack[slot].store(track, std::memory_order_relaxed);
 		any = any || track >= 0;
 	}
 	m_anyTrigger.store(any, std::memory_order_release);
+	m_anyPerVoice.store(anyPerVoice, std::memory_order_release);
+	if (!anyPerVoice) { m_voices.clear(); }
+}
+
+void ModulationLayerPublisher::voiceChanged(int trackId, bool on, int channel, int key, f_cnt_t offset) noexcept
+{
+	if (!m_anyPerVoice.load(std::memory_order_acquire)) { return; }
+	bool followed = false;
+	for (std::size_t m = 0; m < m_perVoice.size() && !followed; ++m)
+	{
+		followed = m_perVoice[m].load(std::memory_order_relaxed)
+			&& m_triggerTrack[m].load(std::memory_order_relaxed) == trackId;
+	}
+	if (!followed) { return; }
+	if (!on)
+	{
+		m_voices.noteOff(trackId, channel, key);
+		return;
+	}
+	const sample_rate_t rate = m_blockRate.load(std::memory_order_relaxed);
+	const double late = rate > 0 ? static_cast<double>(offset) / static_cast<double>(rate) : 0.0;
+	m_voices.noteOn(trackId, channel, key, m_blockSeconds.load(std::memory_order_relaxed) + late);
 }
 
 void ModulationLayerPublisher::noteStarted(int trackId) noexcept
@@ -107,6 +135,8 @@ void ModulationLayerPublisher::publishView()
 		to.base = from.base;
 		to.minimum = from.minimum;
 		to.maximum = from.maximum;
+		to.instrument = from.instrument;  // MX-120
+		to.noteTarget = from.noteTarget;
 
 		AutomatableModel* model = from.model.data();
 		if (model == nullptr) { continue; }
@@ -129,24 +159,68 @@ void ModulationLayerPublisher::publishView()
 	m_view = view;
 }
 
+namespace
+{
+
+/*! MX-120: one per-voice entry - each sounding note of the modulator's trigger track gets its own cycle
+ *  (from the note's start) and the value goes to the instrument for that note only. Allocation-free: a
+ *  bounded walk of the fixed voice pool. */
+void applyVoiceEntry(const ModulationLayerPublisher& publisher, const ModulationAudioView::Entry& entry,
+	const ModulatorSource& source, double seconds)
+{
+	const float range = entry.maximum - entry.minimum;
+	ModulationVoice voice;
+	for (int slot = 0; slot < ModulationVoices::VoiceCount; ++slot)
+	{
+		if (!publisher.voices().voice(slot, &voice) || voice.track != source.triggerTrack) { continue; }
+		const double since = seconds > voice.startedAt ? seconds - voice.startedAt : 0.0;
+		const float value = modulatedValue(source, entry.base, entry.depth, entry.minimum, entry.maximum, since);
+		const float normalized = range > 0.0f ? (value - entry.minimum) / range : 0.0f;
+		entry.instrument->modulateNote(entry.noteTarget, voice.channel, voice.key, value - entry.base, normalized);
+	}
+}
+
+/*! The source entry @a i is driven by this block, or nullptr: a destroyed (or re-bound) target is skipped,
+ *  never dereferenced; a zero depth is bookkeeping, not a modulation (see the runtime form); an inactive
+ *  source drives nothing. */
+const ModulatorSource* drivingSource(const ModulationLayerPublisher& publisher, const ModulationAudioView& view, int i)
+{
+	const ModulationAudioView::Entry& entry = view.entries[static_cast<std::size_t>(i)];
+	if (entry.model == nullptr || !publisher.targetAlive(i, entry.token)) { return nullptr; }
+	if (entry.depth == 0.0f) { return nullptr; }
+	if (entry.modulator < 0 || entry.modulator >= view.sourceCount) { return nullptr; }
+	const ModulatorSource& source = view.sources[static_cast<std::size_t>(entry.modulator)];
+	return source.active ? &source : nullptr;
+}
+
+//! MX-120: a per-voice modulator's entry whose instrument takes per-note values for its parameter.
+bool perNoteEntry(const ModulatorSource& source, const ModulationAudioView::Entry& entry)
+{
+	return source.perVoice && source.triggerTrack >= 0 && entry.instrument != nullptr && entry.noteTarget >= 0;
+}
+
+} // namespace
+
 void applyModulationBlock(const ModulationLayerPublisher& publisher,
 	const ModulationAudioView& view, double seconds, ModulationBlock block)
 {
 	publisher.setBlockSeconds(seconds);  // MX-121: what a note in this block is stamped with
+	publisher.setBlockRate(block.sampleRate);  // MX-120: and its frame offset
 	if (!view.active()) { return; }
 	for (int i = 0; i < view.entryCount; ++i)
 	{
 		const ModulationAudioView::Entry& entry = view.entries[static_cast<std::size_t>(i)];
-		// A destroyed (or re-bound) target is skipped, never dereferenced.
-		if (entry.model == nullptr || !publisher.targetAlive(i, entry.token)) { continue; }
-		// A zero depth is bookkeeping, not a modulation (see the runtime form).
-		if (entry.depth == 0.0f) { continue; }
-		if (entry.modulator < 0 || entry.modulator >= view.sourceCount) { continue; }
-		const ModulatorSource& source = view.sources[static_cast<std::size_t>(entry.modulator)];
-		if (!source.active) { continue; }
+		const ModulatorSource* source = drivingSource(publisher, view, i);
+		if (source == nullptr) { continue; }
+		// MX-120: per note where the instrument takes it; otherwise the newest note drives the parameter.
+		if (perNoteEntry(*source, entry))
+		{
+			applyVoiceEntry(publisher, entry, *source, seconds);
+			continue;
+		}
 		// MX-121: a modulator that follows a track runs from that track's last note.
-		writeModulatedEntry(entry.model, source, entry.base, entry.depth, entry.minimum, entry.maximum,
-			publisher.sinceTrigger(entry.modulator, source.triggerTrack, seconds), entry.perSample, block);
+		writeModulatedEntry(entry.model, *source, entry.base, entry.depth, entry.minimum, entry.maximum,
+			publisher.sinceTrigger(entry.modulator, source->triggerTrack, seconds), entry.perSample, block);
 	}
 }
 

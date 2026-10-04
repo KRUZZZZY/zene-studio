@@ -111,16 +111,12 @@ Vst3Instrument::Vst3Instrument(InstrumentTrack* parent,
 	}
 	else
 	{
-		const auto& layout = m_plugin.busLayout();
-		// A VST3 instrument generates its audio: no track channels are routed
-		// into it. Any audio input bus the plug-in declares is fed silence by
-		// the host, which is what AudioPlugin's single-bus instrument
-		// transport can express.
-		const auto mainInputs = static_cast<ch_cnt_t>(std::max(0, layout.inputs));
-		const auto mainOutputs = std::max<ch_cnt_t>(ch_cnt_t{2},
-			static_cast<ch_cnt_t>(std::max(0, layout.outputs)));
-		audioPorts().setAllChannelCounts(std::max(mainInputs, mainOutputs),
-			mainInputs, mainOutputs);
+		applyChannelCounts();
+		// MX-114/MX-120: the output buses a route can send to a channel, and the note expressions.
+		m_outputBuses.setLayout(vst3::outputBusesOf(m_plugin.outputBusDescriptors()));
+		m_outputBuses.setEnableHook([this](int bus) { return enableOutputBus(bus); });
+		m_plugin.refreshNoteExpressions();
+		m_noteIds.store(m_plugin.hasNoteExpressions(), std::memory_order_relaxed);
 
 		if (auto* engine = Engine::audioEngine())
 		{
@@ -197,6 +193,64 @@ auto Vst3Instrument::modelForParam(std::uint32_t id) -> Vst3ParamModel*
 	return nullptr;
 }
 
+void Vst3Instrument::applyChannelCounts()
+{
+	const auto& layout = m_plugin.busLayout();
+	// A VST3 instrument generates its audio: no track channels are routed
+	// into it. Any audio input bus the plug-in declares is fed silence by
+	// the host, which is what AudioPlugin's single-bus instrument
+	// transport can express.
+	const auto mainInputs = static_cast<ch_cnt_t>(std::max(0, layout.inputs));
+	const auto mainOutputs = std::max<ch_cnt_t>(ch_cnt_t{2},
+		static_cast<ch_cnt_t>(std::max(0, layout.outputs)));
+	audioPorts().setAllChannelCounts(std::max(mainInputs, mainOutputs),
+		mainInputs, mainOutputs);
+}
+
+bool Vst3Instrument::enableOutputBus(int bus)
+{
+	auto* engine = Engine::audioEngine();
+	if (engine == nullptr || !m_plugin.isInstrument()) { return false; }
+	// GUI thread, with the render held off: a VST3 bus is activated on an inactive component, and the
+	// transport's channel count follows the new layout before the next block.
+	engine->requestChangeInModel();
+	m_plugin.release();
+	const bool activated = m_plugin.activateOutputBuses(bus);
+	QString error;
+	if (!m_plugin.prepare(engine->outputSampleRate(), engine->framesPerPeriod(), &error))
+	{
+		qWarning() << "VST3: re-prepare after activating output bus" << bus << "failed:" << error;
+	}
+	applyChannelCounts();
+	m_outputBuses.setLayout(vst3::outputBusesOf(m_plugin.outputBusDescriptors()));
+	engine->doneChangeInModel();
+	return activated;
+}
+
+auto Vst3Instrument::perNoteTarget(const AutomatableModel* parameter) const -> std::int64_t
+{
+	if (!m_plugin.hasNoteExpressions()) { return -1; }
+	for (const auto* model : m_paramModels)
+	{
+		if (model == parameter) { return m_plugin.noteExpressionFor(model->paramId(), model->displayName()); }
+	}
+	return -1;
+}
+
+void Vst3Instrument::modulateNote(std::int64_t target, int channel, int key, float, float normalized)
+{
+	// Audio thread: one bounded push into the host's MIDI queue - a NoteExpressionValueEvent for the note.
+	if (target < 0 || !m_plugin.receivesMidi()) { return; }
+	vst3::MidiEventIn midi;
+	midi.type = vst3::kNoteExpressionMidiType;
+	midi.channel = static_cast<std::uint8_t>(std::clamp(channel, 0, 15));
+	midi.data0 = static_cast<std::uint8_t>(std::clamp(key, 0, 127));
+	midi.expressionType = static_cast<std::uint32_t>(target);
+	midi.expressionValue = normalized;
+	midi.withNoteId = true;
+	m_plugin.pushMidiEvent(midi);
+}
+
 void Vst3Instrument::reprepare()
 {
 	if (auto* engine = Engine::audioEngine())
@@ -225,6 +279,7 @@ bool Vst3Instrument::handleMidiEvent(const MidiEvent& event, const TimePos&,
 	// (NotePlayHandle.cpp:235-237, :396-400), which is exactly what VST3
 	// calls Event::sampleOffset (SDK ivstevents.h:145).
 	midi.frameOffset = static_cast<std::int32_t>(offset);
+	midi.withNoteId = m_noteIds.load(std::memory_order_relaxed);  // MX-120
 
 	switch (event.type())
 	{
@@ -302,6 +357,9 @@ auto Vst3Instrument::processImpl(PlanarBufferView<const float, DynamicChannelCou
 	m_plugin.process(in.data(), out.data(),
 		static_cast<int>(in.channels()), static_cast<int>(out.channels()), frames);
 	forwardOutputEvents();
+	// MX-114: the output buses past the main one, into the mixer channels they are routed to.
+	m_outputBuses.deliver(out.data(), static_cast<int>(out.channels()), out.frames(),
+		instrumentTrack() != nullptr && instrumentTrack()->isMuted());
 
 	return lmms::ProcessStatus::Continue;
 }

@@ -205,6 +205,13 @@ public:
 	void setNoteExpression(std::uint8_t channel, std::int16_t key, std::uint8_t expressionId, double value,
 		std::int32_t frameOffset);
 	void setNoteChoke(std::uint8_t channel, std::int16_t key, std::int32_t frameOffset = 0);
+	/*!
+	 * 0.5.0 MX-120: parameter @a paramId of the note on (@a channel, @a key) only, offset by @a amount
+	 * (plain units) - a CLAP_EVENT_PARAM_MOD addressed by note id, key and channel. Audio thread safe, the
+	 * same bounded push as a note; meaningful for a parameter whose descriptor says modulatablePerNote.
+	 */
+	void setNoteParamMod(std::uint8_t channel, std::int16_t key, std::uint32_t paramId, double amount,
+		std::int32_t frameOffset = 0);
 
 	/*!
 	 * Processes one block. inputs/outputs are planar channel pointer arrays;

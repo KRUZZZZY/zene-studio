@@ -81,6 +81,8 @@ public:
 	//! R2.2: the opened stream's own latencies (Pa_GetStreamInfo, seconds -> frames).
 	f_cnt_t inputLatencyFrames() const override;
 	f_cnt_t outputLatencyFrames() const override;
+	//! 0.5.0 F1 (MX-040): PortAudio opens the output channels its setup names.
+	bool supportsMultichannelOutput() const override { return true; }
 
 private:
 	void startProcessingImpl() override;

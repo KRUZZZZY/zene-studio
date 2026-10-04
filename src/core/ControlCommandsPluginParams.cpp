@@ -41,6 +41,23 @@ namespace lmms
 
 using namespace control;  // the shared vocabulary lives in ControlVocabulary.h
 
+//! MX-112: the parameters of the instrument layered on @a target as @a pluginId ("layer-<n>").
+static bool layerParameters(const ControlTarget& target, const QString& pluginId,
+	QList<AutomatableModel*>* models, QString* pluginName, ControlResult* error)
+{
+	InstrumentTrack* layer = target.instrumentTrack->layers().layer(idToIndex(pluginId, QStringLiteral("layer-")));
+	Instrument* instrument = layer != nullptr ? layer->instrument() : nullptr;
+	if (instrument == nullptr)
+	{
+		*error = ControlResult::failure(ControlErrorKind::NotFound,
+			QStringLiteral("target %1 has no layer '%2'").arg(target.id, pluginId));
+		return false;
+	}
+	*models = controlInstrumentParameters(instrument);
+	*pluginName = QString::fromUtf8(instrument->descriptor()->name);
+	return true;
+}
+
 // Declared in ControlDeviceSupport.h (0.5.0 L10: remote-control pages read the same list).
 bool controlDeviceParameters(const ControlTarget& target, const QString& pluginId,
 	QList<AutomatableModel*>* models, QString* pluginName, ControlResult* error)
@@ -57,6 +74,12 @@ bool controlDeviceParameters(const ControlTarget& target, const QString& pluginI
 		*models = controlInstrumentParameters(instrument);
 		*pluginName = QString::fromUtf8(instrument->descriptor()->name);
 		return true;
+	}
+
+	// 0.5.0 MX-112: "layer-<n>" is an instrument layered on the track (rack.layer_add).
+	if (pluginId.startsWith(QLatin1String("layer-")) && target.instrumentTrack != nullptr)
+	{
+		return layerParameters(target, pluginId, models, pluginName, error);
 	}
 
 	Effect* effect = resolveControlEffect(target, pluginId, error);

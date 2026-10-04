@@ -79,6 +79,7 @@
 #include "ScriptBudgetAction.h"
 #include "SessionTuningMenu.h"
 #include "TrackRenderMenu.h"
+#include "AafImportMenu.h"
 #include "ControllerTemplateMenu.h"
 #include "PatternEditor.h"
 #include "NoteEditor.h"
@@ -105,6 +106,7 @@
 #include "TextFloat.h"
 #include "ToolPlugin.h"
 #include "VersionedSaveDialog.h"
+#include "VideoDecoder.h"
 
 #include "lmmsversion.h"
 
@@ -335,6 +337,7 @@ void MainWindow::finalize()
 		keySequence(Qt::CTRL, Qt::Key_M), &MainWindow::onExportProjectMidi), "project.export_midi");
 	// DAWproject interchange, through dawproject.import / dawproject.export.
 	addDawProjectActions(project_menu);
+	addAafImportAction(project_menu);  // 0.5.0 F4 (WF-038)
 	// Named render presets for render.render (export.preset_*).
 	addRenderPresetMenu(project_menu);
 	// Captures an abnormal exit left behind (record.recovery_*).
@@ -372,6 +375,8 @@ void MainWindow::finalize()
 		this, [](){ dispatchShellCommand(QStringLiteral("window.modulators")); }), "window.modulators");
 	declares(edit_menu->addAction(embed::getIconPixmap("edit_undo"), tr("Undo History..."),
 		this, [](){ dispatchShellCommand(QStringLiteral("window.undo_history")); }), "window.undo_history");
+	declares(edit_menu->addAction(embed::getIconPixmap("setup_general"), tr("Collaborate..."),
+		this, [](){ dispatchShellCommand(QStringLiteral("collab.show_panel")); }), "collab.show_panel");  // 0.5.0 F6
 
 	edit_menu->addSeparator();
 	windowToggleAction(edit_menu, embed::getIconPixmap("microtuner"), tr("Scales and keymaps"), "microtuner");
@@ -1276,6 +1281,9 @@ void MainWindow::updateViewMenu()
 		action->setChecked(window != nullptr && window->isVisible());
 		m_viewMenu->addAction(action);
 	}
+	// 0.5.0 ED-054: the project's video in its floating window (greyed out in a build without FFmpeg).
+	declares(m_viewMenu->addAction(tr("Video Window"), this, []() { dispatchShellCommand(QStringLiteral("video.window_show")); }),
+		"video.window_show")->setEnabled(VideoDecoder::available());
 	m_viewMenu->addSeparator();
 
 	declares(m_viewMenu->addAction(embed::getIconPixmap( "fullscreen" ),

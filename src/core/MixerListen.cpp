@@ -24,6 +24,7 @@
 
 #include "MixerListen.h"
 
+#include <algorithm>
 #include <array>
 #include <atomic>
 
@@ -43,23 +44,26 @@ std::array<std::atomic<bool>, MaxChannels> s_listening{};
 std::atomic<int> s_count{0};
 std::atomic<int> s_mode{static_cast<int>(Mode::AfterFader)};
 
-//! Add @a channel's listened signal to @a out. Its buffer is its post-insert, pre-fader signal, which AFL
-//! takes through the fader (sample-exact where the fader is) - unless post-fader inserts baked the fader
-//! into it (MX-082): AFL then takes it at unity, and PFL the pre-fader copy the inserts kept.
-void addListened(SampleFrame* out, MixerChannel& channel, bool afterFader, f_cnt_t frames)
+} // namespace
+
+//! Add @a channel's signal to @a out. Its buffer is its post-insert, pre-fader signal, which after the fader
+//! is taken through the fader (sample-exact where the fader is) - unless post-fader inserts baked the fader
+//! into it (MX-082): after the fader it is then taken at unity, and before it the pre-fader copy the inserts
+//! kept. 0.5.0 F1: shared by the cue sends and direct outs (HardwareIo.cpp), with their gain and balance.
+void addChannelSignal(SampleFrame* out, MixerChannel& channel, bool afterFader, f_cnt_t frames, float gain, float pan)
 {
 	const SampleFrame* src = !afterFader && channel.m_postInserts.baked() ? channel.m_postInserts.preFader() : channel.m_buffer;
 	const ValueBuffer* volBuf = afterFader ? postinserts::faderBuffer(channel, nullptr) : nullptr;
-	const float gain = afterFader ? postinserts::faderValue(channel, nullptr) : 1.f;
+	const float fader = afterFader ? postinserts::faderValue(channel, nullptr) : 1.f;
+	const float left = gain * std::min(1.f, 1.f - pan);
+	const float right = gain * std::min(1.f, 1.f + pan);
 	for (f_cnt_t f = 0; f < frames; ++f)
 	{
-		const float g = volBuf != nullptr ? volBuf->values()[f] : gain;
-		out[f][0] += src[f][0] * g;
-		out[f][1] += src[f][1] * g;
+		const float g = volBuf != nullptr ? volBuf->values()[f] : fader;
+		out[f][0] += src[f][0] * g * left;
+		out[f][1] += src[f][1] * g * right;
 	}
 }
-
-} // namespace
 
 void setListening(int channel, bool on)
 {
@@ -107,7 +111,7 @@ void replaceOutput(SampleFrame* out, Mixer& mixer, f_cnt_t frames)
 		MixerChannel* channel = mixer.mixerChannel(i);
 		// A muted channel is not processed, so its buffer still holds its last block: it is heard as silence.
 		if (channel->m_muted.load(Relaxed)) { continue; }
-		addListened(out, *channel, afterFader, frames);
+		addChannelSignal(out, *channel, afterFader, frames);
 	}
 }
 

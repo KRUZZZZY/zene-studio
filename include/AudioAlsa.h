@@ -77,6 +77,9 @@ public:
 	AudioAlsa( bool & _success_ful, AudioEngine* audioEngine );
 	~AudioAlsa() override;
 
+	//! 0.5.0 F1 (MX-040): ALSA opens the output count the interface's I/O setup asks for, when the device has it.
+	bool supportsMultichannelOutput() const override { return true; }
+
 	inline static QString name()
 	{
 		return QT_TRANSLATE_NOOP( "AudioDeviceSetupWidget",

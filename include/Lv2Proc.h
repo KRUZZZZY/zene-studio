@@ -160,6 +160,10 @@ public:
 	 */
 	void copyBuffersToCore(SampleFrame* buf, unsigned firstChan, unsigned num,
 								f_cnt_t frames) const;
+	//! 0.5.0 MX-114: an instrument's audio outputs past its main pair, in port order (extra output buses).
+	LMMS_EXPORT std::size_t extraOutputCount() const;  // exported: the Lv2Instrument plug-in calls it
+	//! Copies extra output @a index into channel @a channel (0 left, 1 right) of @a buf.
+	LMMS_EXPORT void copyExtraOutputToCore(std::size_t index, SampleFrame* buf, unsigned channel, f_cnt_t frames) const;
 	//! Run the Lv2 plugin instance for @param frames frames
 	void run(f_cnt_t frames);
 
@@ -198,6 +202,10 @@ private:
 	std::vector<std::unique_ptr<Lv2Ports::PortBase>> m_ports;
 	// quick reference to specific, unique ports
 	StereoPortRef m_inPorts, m_outPorts;
+	//! 0.5.0 MX-114: takes @a audio as an extra output when it is one (createPorts' port beyond the pair)
+	void addExtraPort(Lv2Ports::Audio& audio);
+	//! 0.5.0 MX-114: the output ports past m_outPorts (an instrument's extra buses); not owned
+	std::vector<Lv2Ports::Audio*> m_extraOutPorts;
 	Lv2Ports::AtomSeq *m_midiIn = nullptr, *m_midiOut = nullptr;
 	//! the output control port the plug-in reports its latency on, if any
 	Lv2Ports::Control* m_latencyPort = nullptr;

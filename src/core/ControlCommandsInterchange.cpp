@@ -446,12 +446,17 @@ void registerImportCommand(ControlRegistry& registry)
 
 } // namespace
 
+//! WF-038: the group's AAF ids (interchange.aaf_convention / aaf_read / aaf_import), in their own file -
+//! src/core/ControlCommandsAafImport.cpp - so this one stays inside the file-length cap.
+void registerAafImportCommands(ControlRegistry& registry);
+
 void registerInterchangeCommands(ControlRegistry& registry)
 {
 	registerConventionCommand(registry);
 	registerExportCommand(registry);
 	registerReadCommand(registry);
 	registerImportCommand(registry);
+	registerAafImportCommands(registry);
 }
 
 } // namespace lmms

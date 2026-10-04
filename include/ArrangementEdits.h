@@ -88,6 +88,8 @@ struct Modes
 	int autoFadeMs = 0;
 	//! ED-150: sample clips mark where their audio has its transients.
 	bool showTransients = false;
+	//! ED-021 (0.5.0 F3): a split or trim of a sample clip moves to the nearest zero crossing (SampleFrameEdits.h).
+	bool snapToZeroCrossings = false;
 };
 constexpr int MaxAutoFadeMs = 50;
 LMMS_EXPORT Modes modes();

@@ -25,6 +25,7 @@
 #ifndef LMMS_SAMPLE_CLIP_H
 #define LMMS_SAMPLE_CLIP_H
 
+#include <atomic>
 #include <memory>
 #include <span>
 #include "Clip.h"
@@ -165,6 +166,19 @@ public:
 	}
 
 	void setStartTimeOffset(const TimePos& startTimeOffset) override;
+
+	/*! 0.5.0 ED-021: the sub-tick part of a frame-exact edit. The clip's audio starts this many SOURCE
+	 *  frames after its tick origin (start + offset), less than one tick's worth: a split or a trim at a
+	 *  frame between two ticks puts the remainder here, so the cut frame sounds exactly where it did.
+	 *  0 for every clip a frame-exact edit never touched, which keeps the mapping below (and every saved
+	 *  project) exactly as it was. Saved as `lead`, read back reset-on-absence. Linear clips only: a
+	 *  warped clip's frame edits are refused (SampleFrameEdits.h). */
+	f_cnt_t leadFrames() const { return m_leadFrames.load(std::memory_order_relaxed); }
+	void setLeadFrames(f_cnt_t frames);
+	/*! The OUTPUT frames of silence still owed before the audio starts when a pass begins at @a at - what
+	 *  SampleTrack adds to the play handle's offset. 0 without a lead, or once the lead has passed. */
+	f_cnt_t leadOutputFramesAt(TimePos at) const;
+
 	gui::ClipView * createView( gui::TrackView * _tv ) override;
 
 
@@ -206,6 +220,9 @@ private:
 	void ensureRubberBandPool();
 	bool m_isPlaying;
 	int m_startFrameOffset;
+	//! ED-021: see leadFrames(). Written on the UI thread, read by the playback path: a relaxed atomic, the
+	//! pattern Sample's own frame fields use.
+	std::atomic<f_cnt_t> m_leadFrames = 0;
 
 	//! Points the window (and Sample's frame fields) at the whole buffer; called
 	//! wherever the source buffer is replaced.

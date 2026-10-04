@@ -121,6 +121,7 @@ bool SampleTrack::play( const TimePos & _start, const f_cnt_t _frames,
 	{
 		SampleClip* clip;
 		SampleWindow window;
+		f_cnt_t lead = 0;  //!< 0.5.0 ED-021: output frames before a frame-exact clip's audio starts
 	};
 	std::vector<ScheduledClip> clips;
 	class PatternTrack * pattern_track = nullptr;
@@ -174,7 +175,7 @@ bool SampleTrack::play( const TimePos & _start, const f_cnt_t _frames,
 					//recording (BUGS_FOUND 11.8, RecordingLatencyTest)
 					if( windowStart < windowEnd || sClip->isRecord() )
 					{
-						clips.push_back({sClip, { windowStart, windowEnd }});
+						clips.push_back({sClip, { windowStart, windowEnd }, sClip->leadOutputFramesAt( _start )});
 						sClip->setIsPlaying( true );
 						nowPlaying = true;
 					}
@@ -210,7 +211,7 @@ bool SampleTrack::play( const TimePos & _start, const f_cnt_t _frames,
 				smpHandle->setPatternTrack(pattern_track);
 				handle = smpHandle;
 			}
-			handle->setOffset( _offset );
+			handle->setOffset( _offset + scheduled.lead );
 			// send it to the audio engine
 			Engine::audioEngine()->addPlayHandle( handle );
 			played_a_note = true;

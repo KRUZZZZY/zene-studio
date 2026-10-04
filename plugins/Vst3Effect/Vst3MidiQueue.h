@@ -43,7 +43,15 @@ struct MidiEventIn
 	std::uint8_t data0 = 0;       //!< note key / controller number
 	std::uint8_t data1 = 0;       //!< note velocity / controller value
 	std::int32_t frameOffset = 0; //!< frames from the start of the block
+	//! 0.5.0 MX-120: give the note a VST3 note id (channel * 128 + key) - set for a plug-in with note
+	//! expressions, so a NoteExpressionValueEvent can name the voice; -1 (no id) otherwise, as before.
+	bool withNoteId = false;
+	std::uint32_t expressionType = 0;  //!< type == kNoteExpressionMidiType: the VST3 note-expression type
+	double expressionValue = 0.0;      //!< ... and its normalized value
 };
+
+//! 0.5.0 MX-120: not a MIDI status (0xF5 is undefined): a per-note expression for the note (channel, data0).
+inline constexpr std::uint8_t kNoteExpressionMidiType = 0xF5;
 
 //! How many MIDI events one audio block can carry. Fixed at compile time so
 //! the audio thread sizes its VST3 event list once, in prepare(), and never

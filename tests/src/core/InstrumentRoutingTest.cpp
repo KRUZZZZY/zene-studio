@@ -1,0 +1,269 @@
+/*
+ * InstrumentRoutingTest.cpp - 0.5.0 F2: the engine halves of MX-114 (output
+ * buses, MIDI parts), MX-112 (the zones' every-match lookup) and MX-120 (the
+ * voice pool, the per-voice fields' persistence).
+ *
+ * Copyright (c) 2026 Zene Studio contributors
+ *
+ * This file is part of LMMS - https://lmms.io
+ *
+ * This program is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU General Public
+ * License as published by the Free Software Foundation; either
+ * version 2 of the License, or (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public
+ * License along with this program (see COPYING); if not, write to the
+ * Free Software Foundation, Inc., 51 Franklin Street, Fifth Floor,
+ * Boston, MA 02110-1301 USA.
+ */
+
+#include <QtTest>
+
+#include <vector>
+
+#include <QDomDocument>
+#include <QDomElement>
+
+#include "InstrumentMidiParts.h"
+#include "InstrumentOutputBuses.h"
+#include "ModulationLayer.h"
+#include "ModulationVoices.h"
+#include "RackTestSupport.h"
+#include "RackZones.h"
+
+using namespace racktest;
+
+namespace
+{
+
+//! A channel of the mixer, created for this test: its index and persistent id.
+struct TestChannel
+{
+	int index = -1;
+	int id = -1;
+};
+
+TestChannel newChannel()
+{
+	TestChannel channel;
+	channel.index = Engine::mixer()->createChannel();
+	channel.id = Engine::mixer()->mixerChannel(channel.index)->id();
+	return channel;
+}
+
+void silenceChannel(int index)
+{
+	MixerChannel* channel = Engine::mixer()->mixerChannel(index);
+	channel->m_bus.silenceAllChannels();
+	channel->m_hasInput = false;
+}
+
+//! Four planar channels of one period: main L/R silent, bus 1 at (0.5, -0.25).
+struct PlanarBlock
+{
+	explicit PlanarBlock(f_cnt_t frames) :
+		data(4, std::vector<float>(static_cast<std::size_t>(frames), 0.0f))
+	{
+		std::fill(data[2].begin(), data[2].end(), 0.5f);
+		std::fill(data[3].begin(), data[3].end(), -0.25f);
+		for (std::size_t c = 0; c < 4; ++c) { pointers[c] = data[c].data(); }
+	}
+	std::vector<std::vector<float>> data;
+	const float* pointers[4] = {};
+};
+
+RackZone zoneOf(int lowKey, int highKey, int lowVelocity, int highVelocity, int chain)
+{
+	RackZone zone;
+	zone.lowKey = lowKey;
+	zone.highKey = highKey;
+	zone.lowVelocity = lowVelocity;
+	zone.highVelocity = highVelocity;
+	zone.chain = chain;
+	return zone;
+}
+
+} // namespace
+
+class InstrumentRoutingTest : public QObject
+{
+	Q_OBJECT
+
+private slots:
+	void initTestCase()
+	{
+		QString why;
+		QVERIFY2(initRackFixture(&why), qPrintable(why));
+	}
+
+	void cleanupTestCase() { teardownRackFixture(); }
+
+	//! MX-114: the main bus is never routed, an inactive bus is enabled through the host's hook, and a routed
+	//! bus's channels arrive in its mixer channel - nothing reaches it while the track is muted.
+	void outputBusesRouteAndDeliver()
+	{
+		const TestChannel target = newChannel();
+		InstrumentOutputBuses buses;
+		buses.setLayout({{QStringLiteral("Main"), 2, 0}, {QStringLiteral("Kick"), 2, 2}, {QStringLiteral("Aux"), 2, -1}});
+		QCOMPARE(buses.busCount(), 3);
+		QVERIFY(!buses.route(0, target.id));       // the main output reaches the track, never a route
+		QVERIFY(!buses.route(3, target.id));       // past the layout
+		QVERIFY(!buses.route(2, target.id));       // inactive, and no host to enable it
+		int asked = -1;
+		buses.setEnableHook([&buses, &asked](int bus) {
+			asked = bus;
+			buses.setLayout({{QStringLiteral("Main"), 2, 0}, {QStringLiteral("Kick"), 2, 2}, {QStringLiteral("Aux"), 2, 4}});
+			return true;
+		});
+		QVERIFY(buses.route(2, target.id));
+		QCOMPARE(asked, 2);
+		QVERIFY(buses.route(1, target.id));
+		QCOMPARE(buses.routedCount(), 2);
+		QVERIFY(buses.route(2, -1));               // un-routed again
+		QCOMPARE(buses.routeOf(2), -1);
+
+		const f_cnt_t frames = Engine::audioEngine()->framesPerPeriod();
+		PlanarBlock block(frames);
+		silenceChannel(target.index);
+		buses.deliver(block.pointers, 4, frames, true);
+		QVERIFY(!Engine::mixer()->mixerChannel(target.index)->m_hasInput);  // muted: nothing delivered
+		buses.deliver(block.pointers, 4, frames, false);
+		const MixerChannel* channel = Engine::mixer()->mixerChannel(target.index);
+		QVERIFY(channel->m_hasInput);
+		QCOMPARE(channel->m_buffer[frames - 1][0], 0.5f);
+		QCOMPARE(channel->m_buffer[frames - 1][1], -0.25f);
+		silenceChannel(target.index);
+	}
+
+	//! MX-114: routes are saved by channel id and read back; a document without them clears them.
+	void outputBusRoutesSurviveSaveAndLoad()
+	{
+		const TestChannel target = newChannel();
+		InstrumentOutputBuses buses;
+		buses.setLayout({{QStringLiteral("Main"), 2, 0}, {QStringLiteral("Out 2"), 2, 2}});
+		QVERIFY(buses.route(1, target.id));
+		QDomDocument doc;
+		QDomElement parent = doc.createElement(QStringLiteral("instrumenttrack"));
+		doc.appendChild(parent);
+		buses.saveSettings(doc, parent);
+		QCOMPARE(parent.elementsByTagName(QStringLiteral("route")).size(), 1);
+
+		InstrumentOutputBuses loaded;
+		loaded.setLayout({{QStringLiteral("Main"), 2, 0}, {QStringLiteral("Out 2"), 2, 2}});
+		loaded.loadSettings(parent);
+		QCOMPARE(loaded.routeOf(1), target.id);
+		loaded.loadSettings(doc.createElement(QStringLiteral("instrumenttrack")));
+		QCOMPARE(loaded.routedCount(), 0);
+	}
+
+	//! MX-114: without parts every note keeps its channel; with parts, first match wins, the note-off
+	//! follows its note-on, and channel-wide messages reach every part's channel.
+	void midiPartsPickChannels()
+	{
+		InstrumentMidiParts parts;
+		QCOMPARE(parts.noteOnChannel(60, 100, 3), 3);
+		parts.zones().addZone(zoneOf(0, 59, 0, 200, 1));
+		parts.zones().addZone(zoneOf(60, 127, 150, 200, 2));  // loud notes only
+		parts.zones().addZone(zoneOf(60, 127, 0, 200, 4));
+		QCOMPARE(parts.noteOnChannel(40, 64, 0), 1);
+		QCOMPARE(parts.noteOnChannel(70, 100, 0), 2);  // velocity 100 is note volume 156
+		QCOMPARE(parts.noteOnChannel(72, 40, 0), 4);
+		QCOMPARE(parts.noteOffChannel(40, 9), 1);
+		QCOMPARE(parts.noteOffChannel(40, 9), 9);      // forgotten once it ended
+		QCOMPARE(parts.channelOfKey(70, 9), 2);
+		QCOMPARE(parts.channelMask(), static_cast<std::uint16_t>((1u << 1) | (1u << 2) | (1u << 4)));
+
+		QDomDocument doc;
+		QDomElement parent = doc.createElement(QStringLiteral("instrumenttrack"));
+		doc.appendChild(parent);
+		parts.saveSettings(doc, parent);
+		InstrumentMidiParts loaded;
+		loaded.loadSettings(parent);
+		QCOMPARE(loaded.zones().zoneCount(), 3);
+		QCOMPARE(loaded.zones().zone(1)->chain, 2);
+		loaded.loadSettings(doc.createElement(QStringLiteral("instrumenttrack")));
+		QVERIFY(!loaded.active());
+	}
+
+	//! MX-112: a layer rack stacks - matchMask reports every zone a note falls into, resolve() still the first.
+	void zonesReportEveryMatch()
+	{
+		RackZones zones;
+		zones.addZone(zoneOf(0, 127, 0, 200, 0));
+		zones.addZone(zoneOf(48, 72, 0, 200, 1));
+		zones.addZone(zoneOf(48, 72, 120, 200, 2));
+		QCOMPARE(zones.matchMask(60, 100), std::uint64_t{0b011});
+		QCOMPARE(zones.matchMask(60, 150), std::uint64_t{0b111});
+		QCOMPARE(zones.matchMask(30, 150), std::uint64_t{0b001});
+		QCOMPARE(zones.resolve(60, 150), 0);
+		zones.assign({zoneOf(0, 10, 0, 200, 3)});
+		QCOMPARE(zones.zoneCount(), 1);
+		QCOMPARE(zones.matchMask(60, 150), std::uint64_t{0});
+	}
+
+	//! MX-120: one voice per (track, channel, key); a retrigger restarts it; the fixed pool drops, never grows.
+	void voicePoolIsFixed()
+	{
+		ModulationVoices voices;
+		voices.noteOn(7, 0, 60, 1.0);
+		voices.noteOn(7, 0, 60, 2.0);  // retriggered: the same voice, restarted
+		QCOMPARE(voices.activeCount(), 1);
+		ModulationVoice voice;
+		int found = -1;
+		for (int i = 0; i < ModulationVoices::VoiceCount && found < 0; ++i) { found = voices.voice(i, &voice) ? i : -1; }
+		QVERIFY(found >= 0);
+		QCOMPARE(voice.startedAt, 2.0);
+		voices.noteOff(7, 0, 60);
+		QCOMPARE(voices.activeCount(), 0);
+		for (int key = 0; key < ModulationVoices::VoiceCount + 3; ++key) { voices.noteOn(1, 0, key, 0.0); }
+		QCOMPARE(voices.activeCount(), ModulationVoices::VoiceCount);
+		QCOMPARE(voices.dropped(), 3u);
+		voices.clear();
+		QCOMPARE(voices.activeCount(), 0);
+	}
+
+	//! MX-120: a modulator's per-voice flag and a route's track address survive the project file; a
+	//! modulator without them writes neither attribute (existing projects keep their bytes).
+	void perVoiceFieldsRoundTrip()
+	{
+		ModulationLayer layer;
+		ModulatorSource source;
+		source.triggerTrack = 12;
+		source.perVoice = true;
+		const int index = layer.addModulator(QStringLiteral("voice"), source);
+		ModulationRoute route;
+		route.channel = -1;
+		route.track = 12;
+		route.parameter = QStringLiteral("Cutoff");
+		route.depth = 0.5f;
+		QCOMPARE(layer.addRoute(index, route), 0);
+		layer.addModulator(QStringLiteral("plain"), ModulatorSource{});
+
+		QDomDocument doc;
+		QDomElement parent = doc.createElement(QStringLiteral("song"));
+		doc.appendChild(parent);
+		QVERIFY(layer.saveSettings(doc, parent));
+		const QDomNodeList modulators = parent.elementsByTagName(QStringLiteral("modulator"));
+		QCOMPARE(modulators.size(), 2);
+		QVERIFY(!modulators.at(1).toElement().hasAttribute(QStringLiteral("pervoice")));
+
+		ModulationLayer loaded;
+		QVERIFY(loaded.loadSettings(parent.firstChildElement()));
+		QVERIFY(loaded.modulator(0)->source.perVoice);
+		QCOMPARE(loaded.modulator(0)->routes.front().track, 12);
+		QVERIFY(!loaded.modulator(1)->source.perVoice);
+		QVERIFY(loaded.findRoute(route) != nullptr);
+		ModulationRoute rackRoute = route;
+		rackRoute.track = -1;
+		QVERIFY(loaded.findRoute(rackRoute) == nullptr);  // a rack address is not the instrument's parameter
+	}
+};
+
+QTEST_GUILESS_MAIN(InstrumentRoutingTest)
+#include "InstrumentRoutingTest.moc"

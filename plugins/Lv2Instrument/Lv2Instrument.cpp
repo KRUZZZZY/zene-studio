@@ -32,6 +32,7 @@
 #include "Engine.h"
 #include "InstrumentPlayHandle.h"
 #include "InstrumentTrack.h"
+#include "Lv2Proc.h"
 #include "Lv2SubPluginFeatures.h"
 #include "StringPairDrag.h"
 #include "Clipboard.h"
@@ -88,6 +89,8 @@ Lv2Instrument::Lv2Instrument(InstrumentTrack *instrumentTrackArg,
 		this, SLOT(updatePitchRange()), Qt::DirectConnection);
 	connect(Engine::audioEngine(), &AudioEngine::sampleRateChanged,
 		this, &Lv2Instrument::onSampleRateChanged);
+
+	publishOutputBuses();  // 0.5.0 MX-114
 
 	// now we need a play-handle which cares for calling play()
 	auto iph = new InstrumentPlayHandle(this, instrumentTrackArg);
@@ -193,6 +196,41 @@ void Lv2Instrument::playImpl(std::span<SampleFrame> out)
 
 	copyModelsToLmms();
 	copyBuffersToLmms(out.data(), out.size());
+	deliverOutputBuses(static_cast<f_cnt_t>(out.size()));
+}
+
+
+
+
+void Lv2Instrument::publishOutputBuses()
+{
+	std::vector<InstrumentOutputBus> buses{{QStringLiteral("Main"), 2, 0}};
+	const std::size_t extra = control(0) != nullptr ? control(0)->extraOutputCount() : 0;
+	for (std::size_t port = 0; port < extra; port += 2)
+	{
+		const int channels = port + 1 < extra ? 2 : 1;
+		buses.push_back({QStringLiteral("Aux %1").arg(buses.size()), channels, static_cast<int>(2 + port)});
+	}
+	m_outputBuses.setLayout(buses);
+}
+
+
+
+
+void Lv2Instrument::deliverOutputBuses(f_cnt_t frames)
+{
+	const Lv2Proc* proc = control(0);
+	const bool muted = instrumentTrack() != nullptr && instrumentTrack()->isMuted();
+	for (int bus = 1; bus < m_outputBuses.busCount(); ++bus)
+	{
+		SampleFrame* block = m_outputBuses.routedBuffer(bus, frames);
+		if (block == nullptr || proc == nullptr) { continue; }
+		const auto left = static_cast<std::size_t>(2 * (bus - 1));
+		const auto right = m_outputBuses.bus(bus)->channels > 1 ? left + 1 : left;
+		proc->copyExtraOutputToCore(left, block, 0, frames);
+		proc->copyExtraOutputToCore(right, block, 1, frames);
+		m_outputBuses.send(bus, frames, muted);
+	}
 }
 
 

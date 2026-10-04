@@ -452,7 +452,7 @@ QJsonObject modesJson()
 		{QStringLiteral("overlap"), overlapNames().at(static_cast<int>(current.overlap))},
 		{QStringLiteral("snap_to_edges"), current.snapToEdges},
 		{QStringLiteral("automation_follows_clips"), current.automationFollowsClips}, {QStringLiteral("auto_fade_ms"), current.autoFadeMs},
-		{QStringLiteral("show_transients"), current.showTransients}};
+		{QStringLiteral("show_transients"), current.showTransients}, {QStringLiteral("snap_to_zero_crossings"), current.snapToZeroCrossings}};
 }
 
 ControlResult setModes(const QJsonObject& args)
@@ -464,6 +464,7 @@ ControlResult setModes(const QJsonObject& args)
 	if (args.contains(QStringLiteral("automation_follows_clips"))) { next.automationFollowsClips = args.value(QStringLiteral("automation_follows_clips")).toBool(); }
 	if (args.contains(QStringLiteral("auto_fade_ms"))) { next.autoFadeMs = args.value(QStringLiteral("auto_fade_ms")).toInt(); }
 	if (args.contains(QStringLiteral("show_transients"))) { next.showTransients = args.value(QStringLiteral("show_transients")).toBool(); }
+	next.snapToZeroCrossings = args.value(QStringLiteral("snap_to_zero_crossings")).toBool(next.snapToZeroCrossings);
 	arrangement::setModes(next);
 	return ControlResult::success(modesJson());
 }
@@ -488,16 +489,18 @@ void registerRangeCommands(ControlRegistry& registry)
 		"others does to them; trim by default, and never to a locked clip: such a move is refused), 'snap_to_edges' (moving a clip also snaps to other clips' edges and to markers) and "
 		"'automation_follows_clips' (a clip's move carries the points of the automation lanes following its track) and "
 		"'auto_fade_ms' (0..50: every sample clip fades in and out over at least that long, so no edit clicks; 0 off) and "
-		"'show_transients' (sample clips mark their audio's hits). The "
+		"'show_transients' (sample clips mark their audio's hits) and 'snap_to_zero_crossings' (a split or trim of a sample "
+		"clip - the knife, clip.split, clip.trim - moves to the nearest zero crossing within 10 ms, frame-exact). The "
 		"arranger's gestures and clip.move / clip.delete / range.delete follow them. An editing preference kept in the "
 		"config file, not project state.");
 	modes.argsSchema = objectSchema({{QStringLiteral("ripple"), enumProperty(rippleNames())},
 		{QStringLiteral("overlap"), enumProperty(overlapNames())}, {QStringLiteral("snap_to_edges"), booleanProperty()},
 		{QStringLiteral("automation_follows_clips"), booleanProperty()}, {QStringLiteral("auto_fade_ms"), integerProperty(0, arrangement::MaxAutoFadeMs)},
-		{QStringLiteral("show_transients"), booleanProperty()}});
+		{QStringLiteral("show_transients"), booleanProperty()}, {QStringLiteral("snap_to_zero_crossings"), booleanProperty()}});
 	modes.resultSchema = objectSchema({{QStringLiteral("ripple"), stringProperty()}, {QStringLiteral("overlap"), stringProperty()},
 		{QStringLiteral("snap_to_edges"), booleanProperty()}, {QStringLiteral("automation_follows_clips"), booleanProperty()},
-		{QStringLiteral("auto_fade_ms"), integerProperty(0, arrangement::MaxAutoFadeMs)}, {QStringLiteral("show_transients"), booleanProperty()}});
+		{QStringLiteral("auto_fade_ms"), integerProperty(0, arrangement::MaxAutoFadeMs)}, {QStringLiteral("show_transients"), booleanProperty()},
+		{QStringLiteral("snap_to_zero_crossings"), booleanProperty()}});
 	modes.handler = setModes;
 	registry.registerCommand(modes);
 

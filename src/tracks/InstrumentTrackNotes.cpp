@@ -29,15 +29,20 @@
 
 #include <algorithm>
 
+#include <QDomElement>
+
 #include "ChordFollow.h"
 #include "AudioEngine.h"
 #include "Engine.h"
+#include "Instrument.h"
+#include "InstrumentOutputBuses.h"
 #include "InstrumentTrack.h"
 #include "MidiClip.h"
 #include "MidiEvent.h"
 #include "MidiPlayback.h"
 #include "NoteRandom.h"
 #include "PatternTrack.h"
+#include "Song.h"
 
 namespace lmms
 {
@@ -205,6 +210,8 @@ void InstrumentTrack::triggerNote(const NoteTrigger& trigger, f_cnt_t offset, f_
 		handle->setPatternTrack(trigger.patternTrack);
 		// Velocity jitter, the slide source, the song-global offset and the clip's transpose.
 		decorateNoteHandle(handle, trigger.clip, trigger.note, trigger.first, trigger.songGlobal, songOffset, trigger.midiSeed);
+		// 0.5.0 MX-112: the same note on each layer its zones name - before the hand-off, which owns the handle.
+		m_layers.playNote(*handle, offset + hit * each, length, trigger.patternTrack);
 		Engine::audioEngine()->addPlayHandle(handle);
 	}
 }
@@ -222,6 +229,117 @@ TimePos InstrumentTrack::loopedPosition(const MidiClip* clip, const TimePos& pos
 {
 	const int loop = clip->clipEdits().loopTicks;
 	return loop > 0 && position >= 0 ? TimePos(position.getTicks() % loop) : position;
+}
+
+// ---------------------------------------------------------------------------
+// 0.5.0 MX-112 (layers), MX-114 (MIDI parts, output buses), MX-120 (per-voice modulation)
+// ---------------------------------------------------------------------------
+
+void InstrumentTrack::sendNoteOn(const MidiEvent& event, int key, int fallbackChannel, const TimePos& time, f_cnt_t offset)
+{
+	// MX-112: a layer rack whose zones leave the track's own instrument out of this note.
+	if (!m_layers.baseTakesNoteOn(event.key(), event.velocity())) { return; }
+	m_midiNotesMutex.lock();
+	m_piano.setKeyState(event.key(), true);  // event.key() = original key
+	if (key >= 0 && key < NumKeys)
+	{
+		// MX-114: the MIDI part (channel) the note plays on; without parts, the fallback channel.
+		const int previousChannel = m_midiParts.channelOfKey(event.key(), fallbackChannel);
+		const int channel = m_midiParts.noteOnChannel(event.key(), event.velocity(), fallbackChannel);
+		if (m_runningMidiNotes[key] > 0)
+		{
+			m_instrument->handleMidiEvent(MidiEvent(MidiNoteOff, previousChannel, key, 0), time, offset);
+		}
+		++m_runningMidiNotes[key];
+		m_instrument->handleMidiEvent(MidiEvent(MidiNoteOn, channel, key, event.velocity()), time, offset);
+		noteVoiceChanged(true, channel, key, offset);  // MX-120: a per-voice modulator's voice
+	}
+	m_midiNotesMutex.unlock();
+	emit newNote();
+}
+
+void InstrumentTrack::sendNoteOff(const MidiEvent& event, int key, int fallbackChannel, const TimePos& time, f_cnt_t offset)
+{
+	if (!m_layers.baseTakesNoteOff(event.key())) { return; }  // MX-112: its note-on was not sent either
+	m_midiNotesMutex.lock();
+	m_piano.setKeyState(event.key(), false);  // event.key() = original key
+	if (key >= 0 && key < NumKeys && --m_runningMidiNotes[key] <= 0)
+	{
+		const int channel = m_midiParts.noteOffChannel(event.key(), fallbackChannel);  // MX-114
+		// The note-off velocity (0 unless the note has a release velocity, 0.5.0 L07).
+		m_instrument->handleMidiEvent(MidiEvent(MidiNoteOff, channel, key, event.velocity()), time, offset);
+		noteVoiceChanged(false, channel, key, offset);
+	}
+	m_midiNotesMutex.unlock();
+	emit endNote();
+}
+
+void InstrumentTrack::sendChannelEvent(const MidiEvent& event, const TimePos& time, f_cnt_t offset)
+{
+	// MX-114: with MIDI parts a channel-wide message reaches every part's channel.
+	if (!sendToParts(event, time, offset)) { m_instrument->handleMidiEvent(event, time, offset); }
+}
+
+void InstrumentTrack::loadMidiControllers(const QDomElement& element)
+{
+	for (int i = 0; i < MidiControllerCount; ++i)
+	{
+		m_midiCCModel[i]->loadSettings(element, "cc" + QString::number(i));
+	}
+}
+
+bool InstrumentTrack::sendToParts(const MidiEvent& event, const TimePos& time, f_cnt_t offset)
+{
+	// Audio thread (processOutEvent): a handful of copies of a POD event, no allocation.
+	if (!m_midiParts.active()) { return false; }
+	if (event.type() == MidiKeyPressure)
+	{
+		MidiEvent copy(event);
+		copy.setChannel(static_cast<int8_t>(m_midiParts.channelOfKey(event.key(), event.channel())));
+		m_instrument->handleMidiEvent(copy, time, offset);
+		return true;
+	}
+	// Every part's channel, and the track's own one for the notes no part claims.
+	const std::uint16_t channels = static_cast<std::uint16_t>(m_midiParts.channelMask() | (1u << (event.channel() & 0x0f)));
+	for (int channel = 0; channel < InstrumentMidiParts::Channels; ++channel)
+	{
+		if (((channels >> channel) & 1u) == 0) { continue; }
+		MidiEvent copy(event);
+		copy.setChannel(static_cast<int8_t>(channel));
+		m_instrument->handleMidiEvent(copy, time, offset);
+	}
+	return true;
+}
+
+void InstrumentTrack::noteVoiceChanged(bool on, int channel, int key, f_cnt_t offset)
+{
+	// Atomics only (ModulationVoices): the per-voice modulators that follow this track start or end a voice.
+	if (Song* song = Engine::getSong()) { song->modulationLayer().voiceChanged(id(), on, channel, key, offset); }
+}
+
+bool InstrumentTrack::isZeneInstrumentNode(const QString& name)
+{
+	return name == QLatin1String("midiparts") || name == QLatin1String("layers")
+		|| name == QLatin1String("outputbuses");
+}
+
+void InstrumentTrack::saveZeneInstrumentSettings(QDomDocument& doc, QDomElement& element, bool presetMode)
+{
+	m_midiParts.saveSettings(doc, element);
+	m_layers.saveSettings(doc, element);
+	// Routes name this project's mixer channels: a preset carries the sound, not where it is mixed.
+	InstrumentOutputBuses* buses = m_instrument != nullptr ? m_instrument->outputBuses() : nullptr;
+	if (!presetMode && buses != nullptr) { buses->saveSettings(doc, element); }
+}
+
+void InstrumentTrack::loadZeneInstrumentSettings(const QDomElement& element)
+{
+	// Each reads its own element and treats a missing one as "none", so an undo step or a preset that
+	// predates the feature takes it back.
+	m_midiParts.loadSettings(element);
+	m_layers.loadSettings(element);
+	InstrumentOutputBuses* buses = m_instrument != nullptr ? m_instrument->outputBuses() : nullptr;
+	if (buses != nullptr && !m_previewMode) { buses->loadSettings(element); }
 }
 
 } // namespace lmms

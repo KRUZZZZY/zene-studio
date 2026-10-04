@@ -61,6 +61,18 @@ auto resolveEventInputBus(IComponent* component) -> int32
 	return chosen;
 }
 
+namespace
+{
+
+//! 0.5.0 MX-120: the note id a note event carries - its channel and key when the plug-in takes note
+//! expressions (so an expression can name the voice), the SDK samples' -1 otherwise.
+int32 noteIdOf(const MidiEventIn& midi)
+{
+	return midi.withNoteId ? static_cast<int32>(midi.channel) * 128 + midi.data0 : -1;
+}
+
+} // namespace
+
 auto midiToVst3Event(const MidiEventIn& midi, int32 busIndex, Event* event) -> bool
 {
 	*event = Event{};
@@ -81,7 +93,7 @@ auto midiToVst3Event(const MidiEventIn& midi, int32 busIndex, Event* event) -> b
 				event->noteOff.channel = channel;
 				event->noteOff.pitch = key;
 				event->noteOff.velocity = 0.f;
-				event->noteOff.noteId = -1;
+				event->noteOff.noteId = noteIdOf(midi);
 				event->noteOff.tuning = 0.f;
 				return true;
 			}
@@ -93,7 +105,7 @@ auto midiToVst3Event(const MidiEventIn& midi, int32 busIndex, Event* event) -> b
 			// No length: the host does not guess a note duration, the matching
 			// note-off always follows (SDK ivstevents.h:50).
 			event->noteOn.length = 0;
-			event->noteOn.noteId = -1;
+			event->noteOn.noteId = noteIdOf(midi);
 			return true;
 
 		case MidiNoteOff:
@@ -101,7 +113,7 @@ auto midiToVst3Event(const MidiEventIn& midi, int32 busIndex, Event* event) -> b
 			event->noteOff.channel = channel;
 			event->noteOff.pitch = key;
 			event->noteOff.velocity = value;
-			event->noteOff.noteId = -1;
+			event->noteOff.noteId = noteIdOf(midi);
 			event->noteOff.tuning = 0.f;
 			return true;
 
@@ -110,7 +122,14 @@ auto midiToVst3Event(const MidiEventIn& midi, int32 busIndex, Event* event) -> b
 			event->polyPressure.channel = channel;
 			event->polyPressure.pitch = key;
 			event->polyPressure.pressure = value;
-			event->polyPressure.noteId = -1;
+			event->polyPressure.noteId = noteIdOf(midi);
+			return true;
+
+		case kNoteExpressionMidiType:
+			event->type = Event::kNoteExpressionValueEvent;
+			event->noteExpressionValue.typeId = midi.expressionType;
+			event->noteExpressionValue.noteId = static_cast<int32>(midi.channel) * 128 + midi.data0;
+			event->noteExpressionValue.value = std::clamp(midi.expressionValue, 0.0, 1.0);
 			return true;
 
 		case MidiControlChange:

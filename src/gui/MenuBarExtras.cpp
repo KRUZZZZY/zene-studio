@@ -87,6 +87,7 @@ QMenu* installNavigateMenu(QMenuBar* bar)
 	onTools(QObject::tr("Ripple"), QStringLiteral("arrangement.modes"), QStringLiteral("ripple"), {});
 	onTools(QObject::tr("Overlap"), QStringLiteral("arrangement.modes"), QStringLiteral("overlap"), {});
 	onTools(QObject::tr("Snap to Clip Edges and Markers"), QStringLiteral("arrangement.modes"), QStringLiteral("snap_to_edges"), {});
+	onTools(QObject::tr("Snap Cuts to Zero Crossings"), QStringLiteral("arrangement.modes"), QStringLiteral("snap_to_zero_crossings"), {});  // ED-021
 	onTools(QObject::tr("Show Transients"), QStringLiteral("arrangement.modes"), QStringLiteral("show_transients"), {});
 	onTools(QObject::tr("Show Navigator"), QStringLiteral("arrangement.navigator"), QStringLiteral("visible"), {});  // ED-053
 	addCommandAction(menu, QObject::tr("Second Tool on a Modifier Key..."), QStringLiteral("arrangement.modifier_tools"), [] {  // ED-014

@@ -60,4 +60,18 @@ auto mapBuses(const std::vector<BusDescriptor>& buses) -> BusLayout
 	return layout;
 }
 
+auto outputBusesOf(const std::vector<BusDescriptor>& buses) -> std::vector<InstrumentOutputBus>
+{
+	std::vector<InstrumentOutputBus> result;
+	int next = 0;
+	for (const auto& bus : buses)
+	{
+		if (bus.direction != BusDescriptor::Direction::Output) { continue; }
+		const bool mapped = bus.active && bus.channelCount > 0;
+		result.push_back({bus.name, bus.channelCount, mapped ? next : -1});
+		next += mapped ? bus.channelCount : 0;
+	}
+	return result;
+}
+
 } // namespace lmms::vst3

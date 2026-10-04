@@ -49,7 +49,9 @@ LMMS_EXPORT void addPannedSend(SampleFrame* dst, const SampleFrame* src, MixerRo
 /*! 0.5.0 W4: true when @a route's pan acts on this block - off centre, or moving (a sample-exact
  *  buffer this period, even one that ends at centre). The channel pan's own test (Mixer.cpp,
  *  MixerChannel::doProcessing). A send whose pan never moved from centre - every send of every
- *  older project - answers false and keeps the inherited branches, bit for bit. */
+ *  older project - answers false and keeps the inherited branches, bit for bit.
+ *  0.5.0 F7 (MX-060): also true when the sender pans into a surround receiver with the surround panner
+ *  (surround::panTakesSend); addPannedSend then hands the block to surround::panSend. */
 LMMS_EXPORT bool sendIsPanned(MixerRoute& route);
 
 //! The two balance gains (left, right) for a pan in -1..1.

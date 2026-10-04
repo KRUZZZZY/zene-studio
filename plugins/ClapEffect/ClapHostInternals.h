@@ -94,6 +94,7 @@ union NoteOrExpression
 	clap_event_header_t header;
 	clap_event_note_t note;
 	clap_event_note_expression_t expression;
+	clap_event_param_mod_t paramMod;  //!< 0.5.0 MX-120: a per-note modulation (a per-voice modulator)
 };
 
 struct EventListState

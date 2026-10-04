@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-10-04T09:34:49Z",
+  "captured_at": "2026-10-04T13:47:59Z",
   "commands": [
     {
       "args_schema": {
@@ -340,12 +340,15 @@
           },
           "snap_to_edges": {
             "type": "boolean"
+          },
+          "snap_to_zero_crossings": {
+            "type": "boolean"
           }
         },
         "required": [],
         "type": "object"
       },
-      "description": "The arranger's editing modes, set and answered: 'ripple' (off, track, all - a deletion closes its gap on the clip's track or on every track), 'overlap' (free, trim, crossfade - what a clip moved onto others does to them; trim by default, and never to a locked clip: such a move is refused), 'snap_to_edges' (moving a clip also snaps to other clips' edges and to markers) and 'automation_follows_clips' (a clip's move carries the points of the automation lanes following its track) and 'auto_fade_ms' (0..50: every sample clip fades in and out over at least that long, so no edit clicks; 0 off) and 'show_transients' (sample clips mark their audio's hits). The arranger's gestures and clip.move / clip.delete / range.delete follow them. An editing preference kept in the config file, not project state.",
+      "description": "The arranger's editing modes, set and answered: 'ripple' (off, track, all - a deletion closes its gap on the clip's track or on every track), 'overlap' (free, trim, crossfade - what a clip moved onto others does to them; trim by default, and never to a locked clip: such a move is refused), 'snap_to_edges' (moving a clip also snaps to other clips' edges and to markers) and 'automation_follows_clips' (a clip's move carries the points of the automation lanes following its track) and 'auto_fade_ms' (0..50: every sample clip fades in and out over at least that long, so no edit clicks; 0 off) and 'show_transients' (sample clips mark their audio's hits) and 'snap_to_zero_crossings' (a split or trim of a sample clip - the knife, clip.split, clip.trim - moves to the nearest zero crossing within 10 ms, frame-exact). The arranger's gestures and clip.move / clip.delete / range.delete follow them. An editing preference kept in the config file, not project state.",
       "group": "arrangement",
       "id": "arrangement.modes",
       "mutating": false,
@@ -371,6 +374,9 @@
             "type": "boolean"
           },
           "snap_to_edges": {
+            "type": "boolean"
+          },
+          "snap_to_zero_crossings": {
             "type": "boolean"
           }
         },
@@ -793,6 +799,75 @@
           }
         },
         "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {},
+        "required": [],
+        "type": "object"
+      },
+      "description": "The audio interface's channels: how many outputs and inputs the running device opened ('granted') against what its I/O setup asks for ('requested'), every channel's name, the stereo and mono buses, and what is routed to each output (channels' hardware outputs, insert sends, cue mixes). 'multichannel' false: this backend opens a stereo pair only, and routes beyond outputs 1/2 play nowhere. Read only.",
+      "group": "audio",
+      "id": "audio.io_list",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "inputs": {
+            "additionalProperties": false,
+            "properties": {
+              "buses": {
+                "type": "array"
+              },
+              "channels": {
+                "maximum": 128,
+                "minimum": 1,
+                "type": "integer"
+              },
+              "names": {
+                "type": "array"
+              }
+            },
+            "required": [],
+            "type": "object"
+          },
+          "outputs": {
+            "additionalProperties": false,
+            "properties": {
+              "buses": {
+                "type": "array"
+              },
+              "channels": {
+                "maximum": 128,
+                "minimum": 1,
+                "type": "integer"
+              },
+              "names": {
+                "type": "array"
+              }
+            },
+            "required": [],
+            "type": "object"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "description": "Set up the running device's interface channels - machine settings, kept per device, not in the project. 'outputs' and 'inputs' each take 'names' (one per channel, from channel 1; an empty one is left alone) and 'buses' ([{name, channels: \"3/4\" or \"5\"}], replacing the buses; a bus is stereo or mono, buses may not overlap and their names must differ); 'outputs' also takes 'channels', how many outputs to open (1..128, 2 by default), which takes effect when the device is next opened (JACK and ALSA; PortAudio opens what its own setup names). The input count is the capture plan's (record.input_set). One undo step.",
+      "group": "audio",
+      "id": "audio.io_setup",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
         "type": "object"
       }
     },
@@ -5501,10 +5576,18 @@
           "clip": {
             "type": "string"
           },
+          "frames": {
+            "maximum": 1919808,
+            "minimum": 0,
+            "type": "integer"
+          },
           "position": {
             "maximum": 1919808,
             "minimum": 1,
             "type": "integer"
+          },
+          "zero_crossing": {
+            "type": "boolean"
           }
         },
         "required": [
@@ -5513,7 +5596,7 @@
         ],
         "type": "object"
       },
-      "description": "Split a clip at an absolute tick position, leaving the left part in place and returning both ids. Reversible through the ProjectJournal (Track checkpoint).",
+      "description": "Split a clip at an absolute tick position, leaving the left part in place and returning both ids. Reversible through the ProjectJournal (Track checkpoint). ED-021, sample clips only: 'frames' cuts that many engine frames after 'position' (frame-exact - the halves' audio meets at that frame, their clips overlap by under a tick), and 'zero_crossing' (default: arrangement.modes' snap_to_zero_crossings) moves the cut to the nearest zero crossing within 10 ms; the reply then names the source 'frame' cut at.",
       "group": "clip",
       "id": "clip.split",
       "mutating": true,
@@ -5521,11 +5604,23 @@
       "result_schema": {
         "additionalProperties": false,
         "properties": {
+          "frame": {
+            "type": "integer"
+          },
+          "lead_frames": {
+            "type": "integer"
+          },
           "left": {
             "type": "string"
           },
           "right": {
             "type": "string"
+          },
+          "right_position": {
+            "type": "integer"
+          },
+          "zero_crossing": {
+            "type": "boolean"
           }
         },
         "required": [],
@@ -5641,10 +5736,23 @@
             "minimum": 1,
             "type": "integer"
           },
+          "end_frames": {
+            "maximum": 1919808,
+            "minimum": 0,
+            "type": "integer"
+          },
           "start": {
             "maximum": 1919808,
             "minimum": 0,
             "type": "integer"
+          },
+          "start_frames": {
+            "maximum": 1919808,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "zero_crossing": {
+            "type": "boolean"
           }
         },
         "required": [
@@ -5653,7 +5761,7 @@
         ],
         "type": "object"
       },
-      "description": "Move a clip's start edge to an absolute tick, holding the audio the clip already carried at the same song position: the start, the length and the source offset move together, which is what the song editor's own left-edge drag does. An optional 'end' trims the tail in the same step. Reversible through the ProjectJournal (Clip checkpoint).",
+      "description": "Move a clip's start edge to an absolute tick, holding the audio the clip already carried at the same song position: the start, the length and the source offset move together, which is what the song editor's own left-edge drag does. An optional 'end' trims the tail in the same step. Reversible through the ProjectJournal (Clip checkpoint). ED-021, sample clips only: 'start_frames' / 'end_frames' put an edge that many engine frames after its tick (frame-exact: the clip's window takes the frame, the sub-tick rest its lead), and 'zero_crossing' (default: arrangement.modes' snap_to_zero_crossings) moves each edge to the nearest zero crossing within 10 ms; the reply then adds the window's source frames.",
       "group": "clip",
       "id": "clip.trim",
       "mutating": true,
@@ -5667,6 +5775,9 @@
           "end": {
             "maximum": 1919808,
             "minimum": 0,
+            "type": "integer"
+          },
+          "lead_frames": {
             "type": "integer"
           },
           "length": {
@@ -5683,6 +5794,15 @@
             "maximum": 1919808,
             "minimum": 0,
             "type": "integer"
+          },
+          "source_in": {
+            "type": "integer"
+          },
+          "source_out": {
+            "type": "integer"
+          },
+          "zero_crossing": {
+            "type": "boolean"
           }
         },
         "required": [],
@@ -5878,6 +5998,213 @@
           }
         },
         "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {},
+        "required": [],
+        "type": "object"
+      },
+      "description": "The session: mode (idle, hosting, joined), the peers with their roles and connection, the port and the router mapping (method, external address, whether the internet can reach it), the last notice and the undo model. Never includes an invite or key.",
+      "group": "collab",
+      "id": "collab.get_state",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "consent": {
+            "type": "boolean"
+          },
+          "map_port": {
+            "type": "boolean"
+          },
+          "name": {
+            "type": "string"
+          },
+          "port": {
+            "maximum": 65535,
+            "minimum": 1024,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "consent"
+        ],
+        "type": "object"
+      },
+      "description": "Host a peer-to-peer collaboration session (no server): listen on TCP 'port' (default 41740; any free port when that one is taken) with TLS-PSK encryption, and with 'map_port' (default true) ask the router to open it (PCP/NAT-PMP, then UPnP). Needs 'consent': true; a person at the screen is asked as well. 'name' is how peers see you. The router's answer arrives in collab.get_state's host.mapping.",
+      "group": "collab",
+      "id": "collab.host",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "role": {
+            "enum": [
+              "editor",
+              "viewer",
+              "remote"
+            ],
+            "type": "string"
+          },
+          "scope": {
+            "enum": [
+              "auto",
+              "public",
+              "lan",
+              "local"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "description": "The invite for a 'role' (editor - default; viewer; remote: transport, markers and faders only) as one copyable string carrying the address, port and that role's 128-bit key. 'scope': auto (the router's public address when the mapping worked, else the LAN address), public, lan, or local (127.0.0.1). The invite is a secret: whoever holds it can join as that role.",
+      "group": "collab",
+      "id": "collab.invite",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "invite": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "invite"
+        ],
+        "type": "object"
+      },
+      "description": "Join a session with an 'invite' (ZENE1-...). The host's project replaces the open one, then every edit made through a command stays in step: yours go to the host, which applies and streams them to everyone in its order. 'name' is how others see you. Asynchronous: follow collab.get_state's peer.state.",
+      "group": "collab",
+      "id": "collab.join",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {},
+        "required": [],
+        "type": "object"
+      },
+      "description": "Leave the session; the project stays open here as it was.",
+      "group": "collab",
+      "id": "collab.leave",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {},
+        "required": [],
+        "type": "object"
+      },
+      "description": "Send the host's project again: a host re-sends it to every peer, a peer asks the host for it.",
+      "group": "collab",
+      "id": "collab.resync",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "peer": {
+            "maximum": 1073741824,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "role": {
+            "enum": [
+              "editor",
+              "viewer",
+              "remote"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "peer",
+          "role"
+        ],
+        "type": "object"
+      },
+      "description": "Host only: change connected 'peer' (its id) to 'role' (editor, viewer, remote).",
+      "group": "collab",
+      "id": "collab.set_role",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {},
+        "required": [],
+        "type": "object"
+      },
+      "description": "Show the collaboration panel (host, invites, join, who is connected).",
+      "group": "collab",
+      "id": "collab.show_panel",
+      "mutating": false,
+      "requires": [
+        "display"
+      ],
+      "result_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {},
+        "required": [],
+        "type": "object"
+      },
+      "description": "Stop hosting: every peer is disconnected and the router mapping removed.",
+      "group": "collab",
+      "id": "collab.stop",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
         "type": "object"
       }
     },
@@ -9688,6 +10015,78 @@
         "required": [],
         "type": "object"
       },
+      "description": "Whether this build imports AAF and how, as data: 'available' (false in a build configured without LibAAF), the library and its version, the formats read (AAF; OMF is NOT - LibAAF does not parse its Bento container), the time rule (edit units -> frames at the composition's sample rate -> ticks at the project tempo), the media rule (embedded essence extracted to WAV, external essence found by path, a missing file listed) and the stated losses. Reads nothing; changes nothing.",
+      "group": "interchange",
+      "id": "interchange.aaf_convention",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "media_dir": {
+            "type": "string"
+          },
+          "media_location": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "start_at_first_clip": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "path"
+        ],
+        "type": "object"
+      },
+      "description": "Import an AAF file into the session: one new sample track per audio track (name, constant gain as the volume, constant pan, mute), one sample clip per clip whose media is there (position, length, sample-accurate source offset, clip gain, gain curve, fades; crossfades as the fade pair they are) and one marker per marker, placed at the project tempo. Embedded media is extracted to WAV files in 'media_dir' (absolute; default beside the project, or beside the AAF for an unsaved project); 'media_location' adds a directory to search for external media; a missing file is listed in 'missing_media' and its clips are not built. 'start_at_first_clip' moves everything so the earliest clip starts at the song's start (an AAF's timeline often begins at timecode 01:00:00:00). Adds to the session, replacing nothing; one undo step removes what it added. An OMF file is refused by name; a build without LibAAF refuses 'unavailable'.",
+      "group": "interchange",
+      "id": "interchange.aaf_import",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "media_location": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "path"
+        ],
+        "type": "object"
+      },
+      "description": "Read an AAF file's composition WITHOUT touching the session or the disk - the dry run of interchange.aaf_import: its audio tracks (name, gain, pan, mute) and clips (position, length and source offset in frames at the composition's sample rate, clip gain, gain curve, fades and their curves, mute), markers, the media each clip plays (embedded, found, or MISSING) and 'loss', what the import would not carry (video, automation, solo, multichannel splits and the rest). 'media_location' adds a directory LibAAF searches for external media. An OMF file is refused by name; a build without LibAAF refuses 'unavailable'.",
+      "group": "interchange",
+      "id": "interchange.aaf_read",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {},
+        "required": [],
+        "type": "object"
+      },
       "description": "The tick/PPQ and time-signature convention this product's Standard MIDI File interchange uses, as data: the division it writes (ticks per quarter note), LMMS' own ticks per quarter note and the exact ratio between them, the unit the tempo meta event is expressed in, the byte layout of the time-signature meta event, the file shape (format and track layout), the tick-0 rule and the stated limits (steps only, conductor track only).",
       "group": "interchange",
       "id": "interchange.smf_convention",
@@ -11809,6 +12208,39 @@
     {
       "args_schema": {
         "additionalProperties": false,
+        "properties": {
+          "channel": {
+            "type": "string"
+          },
+          "format": {
+            "enum": [
+              "stereo",
+              "lcr",
+              "quad",
+              "5.1",
+              "7.1"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "channel",
+          "format"
+        ],
+        "type": "object"
+      },
+      "description": "Set a channel's speaker format: 'stereo' (the default), 'lcr', 'quad', '5.1' or '7.1' (WAVE channel order: L R C LFE Ls Rs; 7.1 L R C LFE Lrs Rrs Ls Rs). A surround channel keeps its speakers beyond L/R next to its stereo signal: its devices process L/R only, the other speakers pass with its trim, VCA gain, pan (a balance on each left/right pair), fader and mute. Into a stereo channel - the master, usually - it is downmixed (mixer.downmix_options); its hardware output names its first output and it takes as many as it has channels, or the stereo downmix where the device lacks them. Saved with the project; one undo step.",
+      "group": "mixer",
+      "id": "mixer.channel_format",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
         "properties": {},
         "required": [],
         "type": "object"
@@ -11935,6 +12367,118 @@
       "args_schema": {
         "additionalProperties": false,
         "properties": {
+          "cue": {
+            "type": "string"
+          },
+          "follow_listen": {
+            "type": "boolean"
+          },
+          "level": {
+            "type": "number"
+          },
+          "listen_to": {
+            "enum": [
+              "main",
+              "cue"
+            ],
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "output": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "description": "A cue mix's master, 'cue' A..D: its 'name', 'level' 0..2, the 'output' it plays on ('none', '3', '3/4' or a bus name of audio.io_list) and 'follow_listen' (true by default: while a channel listens, AFL or PFL, the cue carries the listened signal instead of its sends). 'listen_to' main (the default) or cue - Ableton's Solo/Cue switch: with cue, listening reaches only the cue mixes that follow it and the main output keeps the mix (it falls back to main while no such cue is routed). Without changes it reports. Saved with the project; one undo step.",
+      "group": "mixer",
+      "id": "mixer.cue_master",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "channel": {
+            "type": "string"
+          },
+          "cue": {
+            "type": "string"
+          },
+          "level": {
+            "type": "number"
+          },
+          "pan": {
+            "type": "number"
+          },
+          "pre_fader": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "channel",
+          "cue"
+        ],
+        "type": "object"
+      },
+      "description": "A channel's send to a cue (headphone) mix, 'cue' A..D: 'level' 0..2 (1 unity, 0 no send), 'pan' -1..1 (a balance on top of the channel's pan) and 'pre_fader' (true by default: the cue does not follow the channel's fader). What is not given is kept. The master's send is its main mix after the fader. A muted channel sends nothing, so a cue follows solo. Saved with the project; one undo step.",
+      "group": "mixer",
+      "id": "mixer.cue_send",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "center_db": {
+            "maximum": 6,
+            "minimum": -60,
+            "type": "number"
+          },
+          "lfe": {
+            "type": "boolean"
+          },
+          "lfe_db": {
+            "maximum": 12,
+            "minimum": -60,
+            "type": "number"
+          },
+          "reset": {
+            "type": "boolean"
+          },
+          "surround_db": {
+            "maximum": 6,
+            "minimum": -60,
+            "type": "number"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "description": "How surround folds into fewer speakers (into stereo, a surround master on a stereo device, and every export): 'center_db' and 'surround_db' (-3 dB each by default, ITU-R BS.775), 'lfe' true to keep the LFE (dropped by default) at 'lfe_db' (0 by default); 'reset' true for the defaults first. The project's; saved with it; one undo step.",
+      "group": "mixer",
+      "id": "mixer.downmix_options",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
           "a": {
             "type": "string"
           },
@@ -12005,6 +12549,111 @@
           }
         },
         "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "channel": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "description": "Every channel's hardware side ('channel' for one): its hardware output, its cue sends and its hardware insert (send, return, mix, latency, ping state), with the cue masters and where listening goes ('listen_to' main or cue). Read only.",
+      "group": "mixer",
+      "id": "mixer.hardware_get",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "channel": {
+            "type": "string"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "latency_frames": {
+            "type": "integer"
+          },
+          "mix": {
+            "type": "number"
+          },
+          "return": {
+            "type": "string"
+          },
+          "send": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "channel"
+        ],
+        "type": "object"
+      },
+      "description": "A channel's hardware insert - outboard gear after the channel's devices and before its fader: 'enabled', the 'send' output pair ('3/4', '3' or a bus name), the 'return' input pair ('1/2', ...), 'mix' 0 (dry) .. 1 (wet, the default) and 'latency_frames', the round trip typed in (negative: the figure mixer.hardware_insert_ping measured). The latency is reported to delay compensation and the dry signal is delayed by it. A device that cannot carry the send or return says so in its status. An export runs no device, so it renders the dry signal. What is not given is kept. Saved with the project; one undo step.",
+      "group": "mixer",
+      "id": "mixer.hardware_insert",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "channel": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "channel"
+        ],
+        "type": "object"
+      },
+      "description": "Measure a hardware insert's round trip: one click goes out of its send, and the frames until it comes back on its return are its latency (the music is kept off the send and the dry signal plays while it measures). Answers at once with ping 'measuring'; mixer.hardware_get reports 'done' with 'measured', or 'failed' when nothing came back within two seconds. The insert must be on. One undo step (the previous figure).",
+      "group": "mixer",
+      "id": "mixer.hardware_insert_ping",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "channel": {
+            "type": "string"
+          },
+          "output": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "channel",
+          "output"
+        ],
+        "type": "object"
+      },
+      "description": "Route a channel to the interface's outputs: 'output' is 'none', an output ('3', mono), a pair ('3/4') or a bus name from audio.io_list; 'default' takes the route away. A channel's hardware output is a direct out after its fader, beside its sends (remove its master send for the hardware only). The master's is where the main mix plays: outputs 1/2 unless routed elsewhere or to 'none'. The reply's status says whether the device carries it (ok, beyond_device, stereo_backend). Saved with the project; one undo step.",
+      "group": "mixer",
+      "id": "mixer.hardware_output",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
         "type": "object"
       }
     },
@@ -12814,6 +13463,71 @@
       "args_schema": {
         "additionalProperties": false,
         "properties": {
+          "channel": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "description": "Every channel's speaker format, speakers, surround panner, the surround channels it sends into and, for a surround channel, the outputs it plays on ('ok') or that it is downmixed ('downmix'), with the downmix options ('channel' for one). Read only.",
+      "group": "mixer",
+      "id": "mixer.surround_get",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "channel": {
+            "type": "string"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "lfe": {
+            "maximum": 1,
+            "minimum": 0,
+            "type": "number"
+          },
+          "spread": {
+            "maximum": 1,
+            "minimum": 0,
+            "type": "number"
+          },
+          "x": {
+            "maximum": 1,
+            "minimum": -1,
+            "type": "number"
+          },
+          "y": {
+            "maximum": 1,
+            "minimum": -1,
+            "type": "number"
+          }
+        },
+        "required": [
+          "channel"
+        ],
+        "type": "object"
+      },
+      "description": "A channel's surround panner, for its sends into surround channels, in place of its stereo pan: 'x' -1 (left) .. 1 (right) and 'y' -1 (back) .. 1 (front) place it in the room (constant-power between the two speakers either side; nearer the middle, more of the room), 'lfe' 0..1 sends to the LFE, 'spread' 0..1 widens it toward every speaker. A position turns the panner on; 'enabled' false turns it off (L/R then go to the receiver's L/R). The channel's L/R are summed to mono. Saved with the project; one undo step.",
+      "group": "mixer",
+      "id": "mixer.surround_pan",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
           "active": {
             "type": "boolean"
           },
@@ -13015,6 +13729,76 @@
           },
           "modulators": {
             "type": "array"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "depth": {
+            "type": "number"
+          },
+          "modulator": {
+            "type": "string"
+          },
+          "parameter": {
+            "type": "string"
+          },
+          "per_sample": {
+            "type": "boolean"
+          },
+          "target": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "modulator",
+          "target",
+          "parameter"
+        ],
+        "type": "object"
+      },
+      "description": "Bind a parameter of an instrument track's INSTRUMENT ('target' trk-<n>, 'parameter' its display name, as plugin.param_get lists it) to a modulator, with 'depth' a fraction of the parameter's range (-1..1). This is the target a per-voice modulator sends per-note values to; 'per_note' says whether the instrument takes them for this parameter (a CLAP parameter marked modulatable per key or note, a VST3 note-expression type). Refused when the parameter does not resolve or is already driven. Reversible through the ProjectJournal (modulator.target_remove is the inverse).",
+      "group": "modulator",
+      "id": "modulator.instrument_target_set",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "driving": {
+            "type": "integer"
+          },
+          "engine_active": {
+            "type": "boolean"
+          },
+          "max_modulators": {
+            "type": "integer"
+          },
+          "max_targets_per_modulator": {
+            "type": "integer"
+          },
+          "modulator": {
+            "type": "string"
+          },
+          "modulator_count": {
+            "type": "integer"
+          },
+          "modulators": {
+            "type": "array"
+          },
+          "per_note": {
+            "type": "boolean"
+          },
+          "target_count": {
+            "type": "integer"
+          },
+          "target_index": {
+            "type": "integer"
           }
         },
         "required": [],
@@ -13322,6 +14106,69 @@
       "mutating": true,
       "requires": [],
       "result_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "modulator": {
+            "type": "string"
+          },
+          "per_voice": {
+            "type": "boolean"
+          },
+          "trigger": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "modulator",
+          "per_voice"
+        ],
+        "type": "object"
+      },
+      "description": "Make a modulator per-voice (or not): 'per_voice' true restarts its LFO or envelope for EVERY note of the 'trigger' track (trk-<n>; needed unless it already follows one) and runs one cycle per sounding note, each note's value sent to the instrument for that note only (CLAP note modulation, VST3 note expression). A target the instrument cannot modulate per note follows the newest note instead - monophonic - and modulator.get_state reports 'voice_mode' per target. Saved with the project. Reversible through the ProjectJournal.",
+      "group": "modulator",
+      "id": "modulator.voice_set",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "driving": {
+            "type": "integer"
+          },
+          "engine_active": {
+            "type": "boolean"
+          },
+          "max_modulators": {
+            "type": "integer"
+          },
+          "max_targets_per_modulator": {
+            "type": "integer"
+          },
+          "modulator": {
+            "type": "string"
+          },
+          "modulator_count": {
+            "type": "integer"
+          },
+          "modulators": {
+            "type": "array"
+          },
+          "per_note": {
+            "type": "boolean"
+          },
+          "target_count": {
+            "type": "integer"
+          },
+          "target_index": {
+            "type": "integer"
+          }
+        },
+        "required": [],
         "type": "object"
       }
     },
@@ -16731,6 +17578,159 @@
       "args_schema": {
         "additionalProperties": false,
         "properties": {
+          "high_key": {
+            "maximum": 127,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "high_velocity": {
+            "maximum": 200,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "low_key": {
+            "maximum": 127,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "low_velocity": {
+            "maximum": 200,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "midi_channel": {
+            "maximum": 16,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "target": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "target",
+          "midi_channel"
+        ],
+        "type": "object"
+      },
+      "description": "Add a MIDI part to an instrument track: notes in the key range (0..127) and velocity range (0..200, the note volume) are sent to the instrument on 'midi_channel' (1..16). Channel-wide messages (pitch bend, controllers) then go to every part's channel. Saved with the track. Reversible through the ProjectJournal.",
+      "group": "plugin",
+      "id": "plugin.midi_part_add",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "part": {
+            "type": "string"
+          },
+          "part_count": {
+            "type": "integer"
+          },
+          "parts": {
+            "type": "array"
+          },
+          "removed": {
+            "type": "string"
+          },
+          "target": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "part": {
+            "type": "string"
+          },
+          "target": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "target",
+          "part"
+        ],
+        "type": "object"
+      },
+      "description": "Drop a MIDI part (part-<n>) from an instrument track; a note sounding on its channel still ends there. Reversible through the ProjectJournal.",
+      "group": "plugin",
+      "id": "plugin.midi_part_remove",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "part": {
+            "type": "string"
+          },
+          "part_count": {
+            "type": "integer"
+          },
+          "parts": {
+            "type": "array"
+          },
+          "removed": {
+            "type": "string"
+          },
+          "target": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "target": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "target"
+        ],
+        "type": "object"
+      },
+      "description": "List an instrument track's MIDI parts: key and velocity zones that each send their notes on one MIDI channel (1..16), so one track plays several parts of a multitimbral plug-in. First match wins; a note no part claims keeps the track's own channel. Read-only.",
+      "group": "plugin",
+      "id": "plugin.midi_parts",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "part": {
+            "type": "string"
+          },
+          "part_count": {
+            "type": "integer"
+          },
+          "parts": {
+            "type": "array"
+          },
+          "removed": {
+            "type": "string"
+          },
+          "target": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
           "editor_scale": {
             "type": "number"
           },
@@ -16816,6 +17816,138 @@
       "mutating": true,
       "requires": [],
       "result_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "bus": {
+            "maximum": 31,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "channel": {
+            "type": "string"
+          },
+          "target": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "target",
+          "bus"
+        ],
+        "type": "object"
+      },
+      "description": "Route one of an instrument's extra output buses (1..n) to a mixer channel ('channel': ch-<n>), or un-route it ('channel' empty). The bus bypasses the track's volume, pan and effects, follows the track's mute and is aligned by the channel's latency compensation. A VST3 aux bus is activated (with every bus before it) when first routed. Saved with the project. Reversible through the ProjectJournal.",
+      "group": "plugin",
+      "id": "plugin.output_bus_route",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "bus_count": {
+            "type": "integer"
+          },
+          "buses": {
+            "type": "array"
+          },
+          "created": {
+            "type": "array"
+          },
+          "routed_count": {
+            "type": "integer"
+          },
+          "target": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "target": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "target"
+        ],
+        "type": "object"
+      },
+      "description": "List an instrument track's output buses: bus 0 is the instrument's main output (it reaches the track as always), every other bus - a drum sampler's separate outputs, a multitimbral synth's part outputs - plays into the mixer channel it is routed to ('channel'), or nowhere. 'active' is false for a VST3 aux bus the plug-in keeps off until it is routed. Read-only.",
+      "group": "plugin",
+      "id": "plugin.output_buses",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "bus_count": {
+            "type": "integer"
+          },
+          "buses": {
+            "type": "array"
+          },
+          "created": {
+            "type": "array"
+          },
+          "routed_count": {
+            "type": "integer"
+          },
+          "target": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "target": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "target"
+        ],
+        "type": "object"
+      },
+      "description": "Create one mixer channel per extra output bus of an instrument that is not routed yet, named after the track and the bus, and route the bus to it - the multi-output setup in one step. 'created' lists each bus and its new ch-<n>. One undo step removes the channels again.",
+      "group": "plugin",
+      "id": "plugin.output_buses_create_channels",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "bus_count": {
+            "type": "integer"
+          },
+          "buses": {
+            "type": "array"
+          },
+          "created": {
+            "type": "array"
+          },
+          "routed_count": {
+            "type": "integer"
+          },
+          "target": {
+            "type": "string"
+          }
+        },
+        "required": [],
         "type": "object"
       }
     },
@@ -18735,6 +19867,33 @@
       "args_schema": {
         "additionalProperties": false,
         "properties": {
+          "type": {
+            "enum": [
+              "production",
+              "mastering",
+              "live"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "type"
+        ],
+        "type": "object"
+      },
+      "description": "Replace the session with a new document of 'type' (production, mastering or live), from that type's template: the user's own <template dir>/<type>.mpt when there is one; otherwise production is the default template (as project.new), mastering a 'Mix' and a muted 'Reference' sample track with EQ, multiband, compressor and analyser on the master, and live two instruments and three sample tracks. The interface opens the type's view and shows the type in the title. Not undoable, as project.new; unsaved edits are gone.",
+      "group": "project",
+      "id": "project.new_document",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
           "path": {
             "type": "string"
           },
@@ -18832,6 +19991,22 @@
       "group": "project",
       "id": "project.paste_tracks",
       "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {},
+        "required": [],
+        "type": "object"
+      },
+      "description": "The recently opened projects other than the session's own file, most recent first (index, path, name, whether it still exists) - what project.switch picks from.",
+      "group": "project",
+      "id": "project.recent",
+      "mutating": false,
       "requires": [],
       "result_schema": {
         "type": "object"
@@ -19170,6 +20345,37 @@
       "args_schema": {
         "additionalProperties": false,
         "properties": {
+          "index": {
+            "maximum": 100,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "keep_as_reference": {
+            "type": "boolean"
+          },
+          "path": {
+            "type": "string"
+          },
+          "save_current": {
+            "type": "boolean"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "description": "Switch to another project: 'path', or 'index' into project.recent (0, the default, is the most recent other one - so repeating it toggles between two projects). The session is saved first when it changed (unless 'save_current' is false; an untitled session with changes is refused rather than lost). With 'keep_as_reference' the project left behind stays open as the reference to copy from (reference.*). Opens as project.open does, so it is not undoable; switch back instead.",
+      "group": "project",
+      "id": "project.switch",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
           "channel": {
             "type": "string"
           }
@@ -19248,6 +20454,292 @@
           },
           "zone_count": {
             "type": "integer"
+          },
+          "zones": {
+            "type": "array"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "device": {
+            "type": "string"
+          },
+          "target": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "target",
+          "device"
+        ],
+        "type": "object"
+      },
+      "description": "Layer another instrument (an instrument dev-<n>) on an instrument track. It plays into the track's mixer channel, follows the track's volume, pan and mute, and gets a whole-keyboard zone (rack.layer_zone_add / layer_zone_remove narrow it). Its parameters are reached with plugin.param_get / param_set as plugin 'layer-<n>'. Saved with the track. Reversible through the ProjectJournal.",
+      "group": "rack",
+      "id": "rack.layer_add",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "layer": {
+            "type": "string"
+          },
+          "layer_count": {
+            "type": "integer"
+          },
+          "layers": {
+            "type": "array"
+          },
+          "max_layers": {
+            "type": "integer"
+          },
+          "removed": {
+            "type": "string"
+          },
+          "target": {
+            "type": "string"
+          },
+          "zone": {
+            "type": "string"
+          },
+          "zones": {
+            "type": "array"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "layer": {
+            "type": "string"
+          },
+          "target": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "target",
+          "layer"
+        ],
+        "type": "object"
+      },
+      "description": "Remove a layer (layer-<n>, n >= 1) from an instrument track's layer rack; its zones go with it and the later layers move down one. Reversible through the ProjectJournal.",
+      "group": "rack",
+      "id": "rack.layer_remove",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "layer": {
+            "type": "string"
+          },
+          "layer_count": {
+            "type": "integer"
+          },
+          "layers": {
+            "type": "array"
+          },
+          "max_layers": {
+            "type": "integer"
+          },
+          "removed": {
+            "type": "string"
+          },
+          "target": {
+            "type": "string"
+          },
+          "zone": {
+            "type": "string"
+          },
+          "zones": {
+            "type": "array"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "high_key": {
+            "maximum": 127,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "high_velocity": {
+            "maximum": 200,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "layer": {
+            "type": "string"
+          },
+          "low_key": {
+            "maximum": 127,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "low_velocity": {
+            "maximum": 200,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "target": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "target",
+          "layer"
+        ],
+        "type": "object"
+      },
+      "description": "Add a key/velocity zone to an instrument track's layer rack: notes in the key range (0..127) and velocity range (0..200) play on 'layer' (layer-<n>; layer-0 is the track's own instrument, which plays every note until it has a zone of its own). Reversible through the ProjectJournal.",
+      "group": "rack",
+      "id": "rack.layer_zone_add",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "layer": {
+            "type": "string"
+          },
+          "layer_count": {
+            "type": "integer"
+          },
+          "layers": {
+            "type": "array"
+          },
+          "max_layers": {
+            "type": "integer"
+          },
+          "removed": {
+            "type": "string"
+          },
+          "target": {
+            "type": "string"
+          },
+          "zone": {
+            "type": "string"
+          },
+          "zones": {
+            "type": "array"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "target": {
+            "type": "string"
+          },
+          "zone": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "target",
+          "zone"
+        ],
+        "type": "object"
+      },
+      "description": "Drop a zone (zone-<n>) from an instrument track's layer rack. A layer left with no zone plays no note. Reversible through the ProjectJournal.",
+      "group": "rack",
+      "id": "rack.layer_zone_remove",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "layer": {
+            "type": "string"
+          },
+          "layer_count": {
+            "type": "integer"
+          },
+          "layers": {
+            "type": "array"
+          },
+          "max_layers": {
+            "type": "integer"
+          },
+          "removed": {
+            "type": "string"
+          },
+          "target": {
+            "type": "string"
+          },
+          "zone": {
+            "type": "string"
+          },
+          "zones": {
+            "type": "array"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "target": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "target"
+        ],
+        "type": "object"
+      },
+      "description": "Read an instrument track's layer rack: layer-0 is the track's own instrument, layer-1.. the instruments layered on it, and the key/velocity zones that pick which layers a note plays on (every layer a matching zone names sounds - a layer rack stacks). Read-only.",
+      "group": "rack",
+      "id": "rack.layers",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "layer": {
+            "type": "string"
+          },
+          "layer_count": {
+            "type": "integer"
+          },
+          "layers": {
+            "type": "array"
+          },
+          "max_layers": {
+            "type": "integer"
+          },
+          "removed": {
+            "type": "string"
+          },
+          "target": {
+            "type": "string"
+          },
+          "zone": {
+            "type": "string"
           },
           "zones": {
             "type": "array"
@@ -20149,7 +21641,7 @@
         ],
         "type": "object"
       },
-      "description": "Arm one record route: start writing the interleaved input channel it selects into a 24-bit WAV, and journal the take beside it (the take journal is what makes a crashed capture recoverable - record.journal_begin's side file, written here by the recorder's own arm()). 'route' is the route index record.get_state reports; 'input_channel' defaults to the route's own index and must be inside [0, input_channel_capacity) - the FRAMES the route records come from the engine's input path, so with no capture device open and no frames staged the take is silent however the route is armed (record.input_get_state says which of those is true). 'file' must be absolute and defaults to zene-take-route<N>.wav beside this instance's recovery file. Reversible: the recorded inverse is record.disarm_track, which stops the capture and retires the journal; the take file itself is left on disk, like any recording you keep.",
+      "description": "Arm one record route: start writing the interleaved input channel it selects into a 24-bit WAV, and journal the take beside it (the take journal is what makes a crashed capture recoverable - record.journal_begin's side file, written here by the recorder's own arm()). 'route' is the route index record.get_state reports; 'input_channel' defaults to the route's own index and must be inside [0, input_channel_capacity) - the FRAMES the route records come from the engine's input path, so with no capture device open and no frames staged the take is silent however the route is armed (record.input_get_state says which of those is true). 'file' must be absolute and defaults to zene-take-route<N>.wav beside this instance's recovery file; 'sample_rate', when given, must be the engine's rate (a take records at the rate the engine runs). Reversible: the recorded inverse is record.disarm_track, which stops the capture and retires the journal; the take file itself is left on disk, like any recording you keep.",
       "group": "record",
       "id": "record.arm_track",
       "mutating": true,
@@ -21144,6 +22636,151 @@
       "group": "record",
       "id": "record.route_source",
       "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {},
+        "required": [],
+        "type": "object"
+      },
+      "description": "Close the reference project.",
+      "group": "reference",
+      "id": "reference.close",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "clips": {
+            "type": "array"
+          },
+          "position": {
+            "maximum": 1919808,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "to": {
+            "type": "string"
+          },
+          "track": {
+            "maximum": 100000,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "track",
+          "to"
+        ],
+        "type": "object"
+      },
+      "description": "Copy clips of the reference's track 'track' (index) - 'clips' (indices; every one when left out) - onto this project's track 'to' (trk-<n>): note clips onto an instrument track, audio clips onto a sample track. They keep their positions, or with 'position' (ticks) the first lands there and the rest keep their spacing. One undo step.",
+      "group": "reference",
+      "id": "reference.copy_clips",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "channel": {
+            "maximum": 100000,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "devices": {
+            "type": "array"
+          },
+          "to": {
+            "type": "string"
+          },
+          "track": {
+            "maximum": 100000,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "to"
+        ],
+        "type": "object"
+      },
+      "description": "Copy devices - 'devices' (indices; every one when left out) of the reference's track 'track' or mixer channel 'channel' (indices) - onto the end of the chain of 'to' (trk-<n> or ch-<n>) in this project, with their settings. The chain is rebuilt from its document (chain.apply's path), so its device ids renumber. One undo step.",
+      "group": "reference",
+      "id": "reference.copy_devices",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "tracks": {
+            "type": "array"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "description": "Copy the reference's 'tracks' (indices; every one when left out) into this project - device, effects, clips and automation - as project.import_tracks does: each plays into the master, with ids of its own. One undo step removes them.",
+      "group": "reference",
+      "id": "reference.copy_tracks",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {},
+        "required": [],
+        "type": "object"
+      },
+      "description": "The reference project: its file (and 'stale' when the file changed since it was parsed), its tracks - index, name, type, instrument, clips (index, kind, name, position, length) and devices (index, plugin) - and its mixer channels with their devices.",
+      "group": "reference",
+      "id": "reference.get_state",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "path": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "path"
+        ],
+        "type": "object"
+      },
+      "description": "Open another project file ('path', .mmp / .mmpz) as the reference, beside the session: parsed, browsable, copied from - several projects at once without a second engine. Answers what reference.get_state does. The reference is read-only interface state: never played, never saved with a project, and it stays open across project.open and project.switch.",
+      "group": "reference",
+      "id": "reference.open",
+      "mutating": false,
       "requires": [],
       "result_schema": {
         "type": "object"
@@ -27191,6 +28828,36 @@
       "args_schema": {
         "additionalProperties": false,
         "properties": {
+          "height": {
+            "maximum": 200,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "label": {
+            "type": "string"
+          },
+          "track": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "track"
+        ],
+        "type": "object"
+      },
+      "description": "A gap below 'track' in the track list, to divide the list into sections: 'height' in pixels (0 removes it, at most 200; 24 when a new spacer leaves it out) and an optional 'label' drawn in it. Not a track - it has no clips, device or channel - so it moves and goes with its track. Saved with the project; one undo step.",
+      "group": "track",
+      "id": "track.set_spacer",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
           "track": {
             "type": "string"
           },
@@ -27208,6 +28875,22 @@
       "group": "track",
       "id": "track.set_visible",
       "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {},
+        "required": [],
+        "type": "object"
+      },
+      "description": "The tracks with a spacer below them, in track order: the track, its name, the spacer's height and label.",
+      "group": "track",
+      "id": "track.spacers",
+      "mutating": false,
       "requires": [],
       "result_schema": {
         "type": "object"
@@ -29699,6 +31382,129 @@
       "args_schema": {
         "additionalProperties": false,
         "properties": {
+          "offset": {
+            "maximum": 2147483647,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "path": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "path"
+        ],
+        "type": "object"
+      },
+      "description": "Attach the video file 'path' to the project (one video per project: an attached one is replaced), its first frame shown at song tick 'offset' (0 when left out). FFmpeg reads its frame rate, length, size and whether it has sound. The video window and the arranger's video lane follow it. Saved with the project (the path absolute); one undo step.",
+      "group": "video",
+      "id": "video.attach",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {},
+        "required": [],
+        "type": "object"
+      },
+      "description": "Take the video off the project (the file is left alone). One undo step.",
+      "group": "video",
+      "id": "video.detach",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "out": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "description": "Decode the video's sound to a 32-bit float stereo WAV - 'out', or '<video>-audio.wav' next to the project (next to the video while the project is unsaved), numbered when taken - and put it on a new audio track at the video's offset. Runs to the end before it answers. One undo step removes the track; the WAV stays on disk.",
+      "group": "video",
+      "id": "video.extract_audio",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {},
+        "required": [],
+        "type": "object"
+      },
+      "description": "The project's video: whether one is attached, its 'path' (and whether the file still 'exists'), the song tick it starts at ('offset', also in seconds) and ends at ('end'), its 'fps', 'duration' (seconds), 'width', 'height' and 'has_audio'.",
+      "group": "video",
+      "id": "video.get_state",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "offset": {
+            "maximum": 2147483647,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "offset"
+        ],
+        "type": "object"
+      },
+      "description": "Move the video to start at song tick 'offset'. Saved with the project; one undo step.",
+      "group": "video",
+      "id": "video.set_offset",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "shown": {
+            "type": "boolean"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "description": "Show the video window ('shown' false hides it; it toggles when left out): the project's video, following play, seeks and loops - frames are dropped rather than late when decoding falls behind - with its timecode (HH:MM:SS:FF). Decoding runs on its own thread. Interface state.",
+      "group": "video",
+      "id": "video.window_show",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
           "enabled": {
             "type": "boolean"
           }
@@ -31790,7 +33596,7 @@
       }
     }
   ],
-  "count": 745,
+  "count": 799,
   "instance": {
     "binary": null,
     "binary_bytes": null,
@@ -31798,15 +33604,15 @@
     "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-survey/tools/zene-pa-agentctl",
     "lane_head": null,
     "proto": 1,
-    "source_socket": "/tmp/zctl-run-m6lfwbsn/zene.sock",
-    "version": "0.4.0-alpha.110+b9a463a"
+    "source_socket": "/tmp/zctl-run-zooiyha2/zene.sock",
+    "version": "0.4.0-alpha.112+57980be"
   },
   "kind": "zene-control-command-list",
   "proto": 1,
   "schema": 1,
   "surface": {
-    "group_count": 72,
-    "id_count": 745,
-    "ids_sha256": "82aec9d8e07120fa101108a77f4666f9840ce17de00e42b42576afd12c12100f"
+    "group_count": 75,
+    "id_count": 799,
+    "ids_sha256": "709074e5ad1725388eb0111de069f108aea32836bae4442668f93baa55a52390"
   }
 }

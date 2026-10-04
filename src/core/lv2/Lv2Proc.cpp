@@ -64,6 +64,16 @@ struct MidiInputEvent
 
 
 
+//! 0.5.0 MX-114: more than a stereo pair of outputs is refused for an effect only; an instrument (no audio
+//! input) plays the rest as extra output buses.
+static bool tooManyOutputs(unsigned inputs, unsigned outputs)
+{
+	return outputs > 2 && inputs > 0;
+}
+
+
+
+
 Plugin::Type Lv2Proc::check(const LilvPlugin *plugin,
 	std::vector<PluginIssue>& issues)
 {
@@ -121,7 +131,9 @@ Plugin::Type Lv2Proc::check(const LilvPlugin *plugin,
 			std::to_string(audioChannels[inCount]));
 	if (audioChannels[outCount] == 0)
 		issues.emplace_back(PluginIssueType::NoOutputChannel);
-	else if (audioChannels[outCount] > 2)
+	// 0.5.0 MX-114: an INSTRUMENT (no audio input) may have more outputs - the first two are its main
+	// output, the rest its extra output buses (Lv2Proc::copyExtraOutputToCore, InstrumentOutputBuses).
+	else if (tooManyOutputs(audioChannels[inCount], audioChannels[outCount]))
 		issues.emplace_back(PluginIssueType::TooManyOutputChannels,
 			std::to_string(audioChannels[outCount]));
 
@@ -160,7 +172,7 @@ Plugin::Type Lv2Proc::check(const LilvPlugin *plugin,
 		}
 	}
 
-	return (audioChannels[inCount] > 2 || audioChannels[outCount] > 2)
+	return (audioChannels[inCount] > 2 || tooManyOutputs(audioChannels[inCount], audioChannels[outCount]))
 		? Plugin::Type::Undefined
 		: (audioChannels[inCount] > 0)
 			? Plugin::Type::Effect
@@ -364,6 +376,30 @@ void Lv2Proc::copyBuffersToCore(SampleFrame* buf,
 			? outPorts().m_right : outPorts().m_left;
 		ap->copyBuffersToCore(buf, firstChan + 1, frames);
 	}
+}
+
+
+
+
+void Lv2Proc::addExtraPort(Lv2Ports::Audio& audio)
+{
+	if (audio.m_flow == Lv2Ports::Flow::Output) { m_extraOutPorts.push_back(&audio); }
+}
+
+
+
+
+std::size_t Lv2Proc::extraOutputCount() const
+{
+	return m_extraOutPorts.size();
+}
+
+
+
+
+void Lv2Proc::copyExtraOutputToCore(std::size_t index, SampleFrame* buf, unsigned channel, f_cnt_t frames) const
+{
+	if (index < m_extraOutPorts.size()) { m_extraOutPorts[index]->copyBuffersToCore(buf, channel, frames); }
 }
 
 
@@ -837,6 +873,8 @@ void Lv2Proc::createPorts()
 				// in Lv2, leftPort is defined to be the first port
 				if (!portRef->m_left) { portRef->m_left = &audio; }
 				else if (!portRef->m_right) { portRef->m_right = &audio; }
+				// 0.5.0 MX-114: an instrument's outputs past the main pair, in port order
+				else { m_proc->addExtraPort(audio); }
 			}
 		}
 

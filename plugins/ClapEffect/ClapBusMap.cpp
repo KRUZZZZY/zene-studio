@@ -63,4 +63,19 @@ auto mapPorts(const std::vector<PortDescriptor>& ports) -> PortLayout
 	return layout;
 }
 
+auto outputBusesOf(const std::vector<PortDescriptor>& ports) -> std::vector<InstrumentOutputBus>
+{
+	std::vector<InstrumentOutputBus> buses;
+	constexpr auto maxChannels = static_cast<int>(MaxChannelsPerAudioBuffer);
+	int next = 0;
+	for (const auto& port : ports)
+	{
+		if (port.direction != PortDirection::Output || port.channelCount <= 0) { continue; }
+		const int channels = std::min(port.channelCount, maxChannels - next);
+		buses.push_back({port.name, port.channelCount, channels > 0 ? next : -1});
+		next += std::max(channels, 0);
+	}
+	return buses;
+}
+
 } // namespace lmms::clap

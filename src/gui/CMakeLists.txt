@@ -19,6 +19,11 @@ IF(ZENE_TELEMETRY_ENABLED)
 		gui/TelemetryConsentDialog.cpp
 	)
 ENDIF()
+# The collaboration panel (0.5.0 F6) needs the session, which needs Qt Network.
+SET(LMMS_COLLAB_GUI_SRCS)
+IF(ZENE_HAVE_COLLAB)
+	SET(LMMS_COLLAB_GUI_SRCS gui/CollabPanel.cpp)
+ENDIF()
 
 SET(LMMS_SRCS
 	${LMMS_SRCS}
@@ -74,6 +79,8 @@ SET(LMMS_SRCS
 	gui/ArrangerOverlays.cpp
 	gui/ArrangerEditPreview.cpp
 	gui/ArrangerRulerLanes.cpp
+	gui/VideoLane.cpp
+	gui/VideoWindow.cpp
 	gui/ArrangerZoom.cpp
 	gui/CommandForm.cpp
 	gui/CommandFormFields.cpp
@@ -83,6 +90,7 @@ SET(LMMS_SRCS
 	gui/CommandListDialog.cpp
 	gui/CommandLists.cpp
 	gui/LibraryCommandMenus.cpp
+	gui/ReferenceProjectPanel.cpp
 	gui/CompSwipeStrip.cpp
 	gui/ContextHelp.cpp
 	gui/CommandPalette.cpp
@@ -105,6 +113,7 @@ SET(LMMS_SRCS
 	gui/TrackFolderMenu.cpp
 	gui/TrackPinStrip.cpp
 	gui/TrackRenderMenu.cpp
+	gui/AafImportMenu.cpp
 	gui/UndoHistoryPanel.cpp
 	gui/VisibilitySetMenu.cpp
 	# M3.7: VCA group strips in the mixer + the channel's VCA menu.
@@ -195,6 +204,8 @@ SET(LMMS_SRCS
 	gui/MpeInputAction.cpp
 	gui/NoteTransformActions.cpp
 	gui/MixerChannelView.cpp
+	gui/MixerHardwareMenu.cpp
+	gui/SurroundPanner.cpp
 	gui/MixerOverlays.cpp
 	gui/MixerSendsBanner.cpp
 	gui/MixerViewOptions.cpp
@@ -307,6 +318,7 @@ SET(LMMS_SRCS
 	${LMMS_STEM_GUI_SRCS}
 
 	${LMMS_TELEMETRY_GUI_SRCS}
+	${LMMS_COLLAB_GUI_SRCS}
 
 	PARENT_SCOPE
 )

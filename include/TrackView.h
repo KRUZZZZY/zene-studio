@@ -105,6 +105,13 @@ public:
 	 *  assistive technology. Called by TrackContainerView::realignTracks. */
 	void updateFolderIndent();
 
+	/*! 0.5.0 F3 (WF-107): the row is the track's own height plus its spacer (TrackSpacers), the spacer a
+	 *  band at the bottom where the row's widgets do not reach. Called by TrackContainerView::realignTracks,
+	 *  which every height change and every spacer change ends in. */
+	void applySpacer();
+	//! The spacer's height in screen pixels (0 without one).
+	int spacerPixels() const;
+
 	// Create a menu for assigning/creating channels for this track
 	// Currently instrument track and sample track supports it
 	virtual QMenu * createMixerMenu(QString title, QString newMixerLabel);
@@ -145,6 +152,8 @@ protected:
 
 private:
 	void resizeToHeight(int height);
+	//! The row's height less its spacer: what the track's own widgets fill.
+	int laneHeight() const { return height() - spacerPixels(); }
 
 private:
 	enum class Action

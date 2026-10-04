@@ -34,6 +34,7 @@
 #include <QDomElement>
 
 #include "AudioPlugin.h"
+#include "InstrumentOutputBuses.h"
 #include "Vst3Host.h"
 #include "PluginNativeEditor.h"
 #include "Vst3Parameter.h"
@@ -119,6 +120,12 @@ public:
 	bool handleMidiEvent(const MidiEvent& event, const TimePos& time = TimePos(),
 		f_cnt_t offset = 0) override;
 
+	//! 0.5.0 MX-114: the plug-in's output buses past the main one (an aux bus is activated when routed).
+	auto outputBuses() -> InstrumentOutputBuses* override { return &m_outputBuses; }
+	//! 0.5.0 MX-120: a parameter a note-expression type stands for takes per-note values.
+	auto perNoteTarget(const AutomatableModel* parameter) const -> std::int64_t override;
+	void modulateNote(std::int64_t target, int channel, int key, float offset, float normalized) override;
+
 protected:
 	auto processImpl(PlanarBufferView<const float, DynamicChannelCount> in,
 		PlanarBufferView<float, DynamicChannelCount> out) -> lmms::ProcessStatus override;
@@ -133,12 +140,18 @@ private slots:
 private:
 	//! Audio thread: hand the notes the plug-in wrote this block to the track's MIDI output.
 	void forwardOutputEvents();
+	//! The transport's channel counts for the plug-in's current bus layout.
+	void applyChannelCounts();
+	//! MX-114: activates output buses 1..@a bus (re-preparing the plug-in) when a route asks for one.
+	bool enableOutputBus(int bus);
 	vst3::HostedPlugin m_plugin;
 	gui::PluginNativeEditor m_editor;
 	std::vector<Vst3ParamModel*> m_paramModels;
 	QTimer* m_pollTimer = nullptr;
 	bool m_syncing = false;
 	std::atomic<bool> m_needsReprepare{false};
+	InstrumentOutputBuses m_outputBuses;  //!< MX-114
+	std::atomic<bool> m_noteIds{false};   //!< MX-120: the plug-in takes note expressions, so notes carry ids
 };
 
 } // namespace lmms

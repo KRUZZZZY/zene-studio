@@ -32,6 +32,7 @@
 #include <QMouseEvent>
 #include <QPainter>
 #include <QStyleOption>
+#include <QTimer>
 
 
 #include "AudioEngine.h"
@@ -46,11 +47,33 @@
 #include "Track.h"
 #include "TrackGrip.h"
 #include "TrackContainerView.h"
+#include "TrackSpacers.h"
 #include "ClipView.h"
 
 
 namespace lmms::gui
 {
+
+namespace
+{
+
+//! WF-107: a spacer's band - darker than a row, a divider line at its middle, its label at the left.
+void paintSpacer(QPainter& p, const QRect& band, const QString& label)
+{
+	p.fillRect(band, QColor(20, 22, 25));
+	p.setPen(QColor(70, 76, 84));
+	const int middle = band.center().y();
+	if (label.isEmpty())
+	{
+		p.drawLine(band.left() + 8, middle, band.right() - 8, middle);
+		return;
+	}
+	const QRect text = p.fontMetrics().boundingRect(label);
+	p.drawText(band.left() + 10, middle + text.height() / 2 - p.fontMetrics().descent(), label);
+	p.drawLine(band.left() + 18 + text.width(), middle, band.right() - 8, middle);
+}
+
+} // namespace
 
 /*! \brief Create a new track View.
  *
@@ -118,6 +141,8 @@ TrackView::TrackView( Track * track, TrackContainerView * tcv ) :
 	}
 
 	m_trackContainerView->addTrackView( this );
+	// WF-107: the subclasses set their own height after this constructor; the spacer goes on after them.
+	QTimer::singleShot(0, this, &TrackView::applySpacer);
 }
 
 
@@ -151,16 +176,36 @@ void TrackView::resizeEvent( QResizeEvent * re )
 	if( ConfigManager::inst()->value( "ui",
 					  "compacttrackbuttons" ).toInt() )
 	{
-		m_trackOperationsWidget.setFixedSize( TRACK_OP_WIDTH_COMPACT, height() - 1 );
-		m_trackSettingsWidget.setFixedSize( DEFAULT_SETTINGS_WIDGET_WIDTH_COMPACT, height() - 1 );
+		m_trackOperationsWidget.setFixedSize( TRACK_OP_WIDTH_COMPACT, laneHeight() - 1 );
+		m_trackSettingsWidget.setFixedSize( DEFAULT_SETTINGS_WIDGET_WIDTH_COMPACT, laneHeight() - 1 );
 	}
 	else
 	{
-		m_trackOperationsWidget.setFixedSize( TRACK_OP_WIDTH, height() - 1 );
-		m_trackSettingsWidget.setFixedSize( DEFAULT_SETTINGS_WIDGET_WIDTH, height() - 1 );
+		m_trackOperationsWidget.setFixedSize( TRACK_OP_WIDTH, laneHeight() - 1 );
+		m_trackSettingsWidget.setFixedSize( DEFAULT_SETTINGS_WIDGET_WIDTH, laneHeight() - 1 );
 	}
 
-	m_trackContentWidget.setFixedHeight( height() );
+	m_trackContentWidget.setFixedHeight( laneHeight() );
+}
+
+
+
+
+int TrackView::spacerPixels() const
+{
+	return scaledPixels(TrackSpacers::instance().spacer(m_track->id()).height);
+}
+
+
+
+
+void TrackView::applySpacer()
+{
+	const int spacer = spacerPixels();
+	// No spacer now and none before: the row is left exactly as it always was.
+	if (layout() == nullptr || (spacer == 0 && layout()->contentsMargins().bottom() == 0)) { return; }
+	layout()->setContentsMargins(0, 0, 0, spacer);
+	setFixedHeight(scaledPixels(m_track->getHeight()) + spacer);
 }
 
 
@@ -219,6 +264,7 @@ void TrackView::modelChanged()
 	m_trackOperationsWidget.m_soloBtn->setModel( &m_track->m_soloModel );
 	ModelView::modelChanged();
 	setFixedHeight(scaledPixels(m_track->getHeight()));
+	applySpacer();  // WF-107: a no-op for a row without a spacer
 }
 
 
@@ -282,11 +328,11 @@ void TrackView::mousePressEvent( QMouseEvent * me )
 	const auto pos = position(me);
 
 	// If previously dragged too small, restore on shift-leftclick
-	if( height() < scaledPixels(DEFAULT_TRACK_HEIGHT) &&
+	if( laneHeight() < scaledPixels(DEFAULT_TRACK_HEIGHT) &&
 		me->modifiers() & Qt::ShiftModifier &&
 		me->button() == Qt::LeftButton )
 	{
-		setFixedHeight(scaledPixels(DEFAULT_TRACK_HEIGHT));
+		setFixedHeight(scaledPixels(DEFAULT_TRACK_HEIGHT) + spacerPixels());
 		m_track->setHeight( DEFAULT_TRACK_HEIGHT );
 	}
 
@@ -376,7 +422,7 @@ void TrackView::mouseMoveEvent( QMouseEvent * me )
 		resizeToHeight(pos.y());
 	}
 
-	if( height() < scaledPixels(DEFAULT_TRACK_HEIGHT) )
+	if( laneHeight() < scaledPixels(DEFAULT_TRACK_HEIGHT) )
 	{
 		setToolTip(m_track->m_name);
 	}
@@ -432,6 +478,8 @@ void TrackView::paintEvent( QPaintEvent * pe )
 	opt.initFrom( this );
 	QPainter p( this );
 	style()->drawPrimitive( QStyle::PE_Widget, &opt, &p, this );
+	const int spacer = spacerPixels();
+	if (spacer > 0) { paintSpacer(p, QRect(0, height() - spacer, width(), spacer), TrackSpacers::instance().spacer(m_track->id()).label); }
 }
 
 
@@ -482,9 +530,12 @@ void TrackView::setIndicatorMute(FadeButton* indicator, bool muted)
 
 void TrackView::resizeToHeight(int h)
 {
-	setFixedHeight(qMax<int>(h, scaledPixels(MINIMAL_TRACK_HEIGHT)));
+	// @a h is the whole row; the track keeps the part above its spacer (WF-107), set before the realign
+	// that lays the row out from it.
+	const int spacer = spacerPixels();
+	setFixedHeight(qMax<int>(h - spacer, scaledPixels(MINIMAL_TRACK_HEIGHT)) + spacer);
+	m_track->setHeight(unscaledPixels(height() - spacer));
 	m_trackContainerView->realignTracks();
-	m_track->setHeight(unscaledPixels(height()));
 }
 
 
