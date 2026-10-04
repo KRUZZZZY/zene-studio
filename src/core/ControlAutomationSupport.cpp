@@ -26,7 +26,6 @@
 
 #include "ControlVocabulary.h"
 
-#include <memory>
 #include <utility>
 
 #include "AutomatableModel.h"
@@ -35,6 +34,7 @@
 #include "ControlDeviceSupport.h"
 #include "ControlEdit.h"
 #include "ControlReversibility.h"
+#include "ControlTrackCreation.h"
 #include "Effect.h"
 #include "EffectChain.h"
 #include "Engine.h"
@@ -426,10 +426,10 @@ AutomationClip* automationClipForEdit(AutomatableModel* model, bool* created, Co
 	{
 		// SPEC A16 deliverable 5: a whole AutomationTrack was created, which no clip checkpoint can
 		// take back (the clip lives inside it). ONE action step, recorded before the edit, removes
-		// the track again - so the first edit is one undoable step like every later one.
-		auto holder = std::make_shared<Track*>(clip->getTrack());
-		addUndoStep([holder]() {
-			if (*holder != nullptr) { removeTrack(*holder); *holder = nullptr; }
+		// the track again - so the first edit is one undoable step like every later one. The step holds
+		// the track's id, not its pointer: track.remove and its undo free it and build an equal one.
+		addUndoStep([id = clip->getTrack()->id()]() {
+			if (Track* live = trackWithId(id)) { removeTrack(live); }
 		});
 	}
 	else

@@ -208,6 +208,16 @@ auto renderThroughPool(const std::string& modulePath, std::uint32_t frames,
 	return render;
 }
 
+//! a - b, with non-finite samples made comparable: two NaNs (or two equal infinities) are the same
+//! sample, and a NaN against anything else is an infinite difference - a NaN delta would count the
+//! frame as differing while every magnitude comparison (the maximum, covers()) ignored it.
+double sampleDelta(float a, float b)
+{
+	if (std::isnan(a) || std::isnan(b)) { return std::isnan(a) && std::isnan(b) ? 0.0 : HUGE_VAL; }
+	if (a == b) { return 0.0; }  // equal infinities, whose difference would be a NaN
+	return static_cast<double>(a) - static_cast<double>(b);
+}
+
 } // namespace
 
 auto compareRenders(const std::vector<float>& a, const std::vector<float>& b) -> RenderDifference
@@ -218,7 +228,7 @@ auto compareRenders(const std::vector<float>& a, const std::vector<float>& b) ->
 	double sumOfSquares = 0.0;
 	for (std::size_t i = 0; i < shorter; ++i)
 	{
-		const double delta = static_cast<double>(a[i]) - static_cast<double>(b[i]);
+		const double delta = sampleDelta(a[i], b[i]);
 		if (delta != 0.0)
 		{
 			++difference.differingFrames;

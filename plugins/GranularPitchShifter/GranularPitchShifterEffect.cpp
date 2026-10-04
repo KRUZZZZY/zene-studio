@@ -61,6 +61,24 @@ GranularPitchShifterEffect::GranularPitchShifterEffect(Model* parent, const Desc
 }
 
 
+namespace
+{
+
+//! Grains alive at once: reserved off the audio thread (changeSampleRate), and a grain past it is not
+//! spawned, so processImpl() never reallocates (round 6). Density 16 with full twitch keeps about 65 alive.
+constexpr std::size_t MaxGrains = 512;
+
+//! Audio thread: start a grain when a reserved slot is free.
+template<class Grain>
+void spawnGrain(std::vector<Grain>& grains, int& grainCount, const Grain& grain)
+{
+	if (grains.size() >= MaxGrains) { return; }
+	grains.push_back(grain);
+	++grainCount;
+}
+
+} // namespace
+
 ProcessStatus GranularPitchShifterEffect::processImpl(InterleavedBufferView<float, 2> inOut)
 {
 	const float d = dryLevel();
@@ -177,8 +195,7 @@ ProcessStatus GranularPitchShifterEffect::processImpl(InterleavedBufferView<floa
 				if (readPoint[i] < 0) { readPoint[i] += m_ringBufLength; }
 			}
 			const double phaseInc = 1. / sizeSamples;
-			m_grains.push_back(Grain(grainSpeed * m_speed[0], grainSpeed * m_speed[1], phaseInc, phaseInc, readPoint[0], readPoint[1]));
-			++m_grainCount;
+			spawnGrain(m_grains, m_grainCount, Grain(grainSpeed * m_speed[0], grainSpeed * m_speed[1], phaseInc, phaseInc, readPoint[0], readPoint[1]));
 		}
 		
 		for (int i = 0; i < m_grainCount; ++i)
@@ -269,7 +286,7 @@ void GranularPitchShifterEffect::changeSampleRate()
 	
 	m_grains.clear();
 	m_grainCount = 0;
-	m_grains.reserve(8);// arbitrary
+	m_grains.reserve(MaxGrains);
 	
 	m_dcCoeff = std::exp(-2 * std::numbers::pi_v<float> * DcRemovalHz / m_sampleRate);
 

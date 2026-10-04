@@ -28,6 +28,7 @@
 #include <algorithm>
 
 #include <QElapsedTimer>
+#include <QFile>
 
 #include <sndfile.h>
 
@@ -44,6 +45,11 @@ namespace
 //! bound is what keeps a control handler from waiting on the audio thread: the
 //! same 5 ms the MIDI capture's consumer uses for the same handshake.
 constexpr int QuiesceTimeoutMs = 5;
+
+//! Room past the count read before the snapshot began, for the periods the producer can still
+//! push before it acknowledges: copyOut() copies the OLDEST frames that fit, so a destination
+//! sized to the earlier count would leave out the newest. 16384 frames is several periods.
+constexpr std::size_t SnapshotSlackFrames = 16384;
 
 } // namespace
 
@@ -77,7 +83,7 @@ RetroAudioCapture::Window RetroAudioCapture::takeWindow() const
 	RetroAudioRing& ring = const_cast<RetroAudioRing&>(m_ring);
 
 	Window window;
-	window.frames.resize(ring.bufferedCount());
+	window.frames.resize(std::min(ring.capacity(), ring.bufferedCount() + SnapshotSlackFrames));
 
 	ring.beginSnapshot();
 	QElapsedTimer timer;
@@ -141,11 +147,14 @@ bool writeWindow(const QString& filePath, const std::vector<SampleFrame>& window
 	info.channels = 2;
 	info.format = SF_FORMAT_WAV | SF_FORMAT_PCM_24;
 
-	SNDFILE* sf = sf_open(filePath.toUtf8().constData(), SFM_WRITE, &info);
+	// Written beside the destination and moved over it only once complete: a failed write must
+	// not destroy the take already there (the default path is reused by every take).
+	const QString partial = filePath + QStringLiteral(".partial");
+	SNDFILE* sf = sf_open(partial.toUtf8().constData(), SFM_WRITE, &info);
 	if (sf == nullptr)
 	{
 		*error = QStringLiteral("cannot open %1 for writing: %2")
-			.arg(filePath, QString::fromUtf8(sf_strerror(nullptr)));
+			.arg(partial, QString::fromUtf8(sf_strerror(nullptr)));
 		return false;
 	}
 
@@ -169,6 +178,14 @@ bool writeWindow(const QString& filePath, const std::vector<SampleFrame>& window
 	{
 		*error = QStringLiteral("wrote %1 of %2 frames to %3")
 			.arg(written).arg(window.size()).arg(filePath);
+		QFile::remove(partial);
+		return false;
+	}
+	QFile::remove(filePath);
+	if (!QFile::rename(partial, filePath))
+	{
+		*error = QStringLiteral("could not move the written take to %1").arg(filePath);
+		QFile::remove(partial);
 		return false;
 	}
 	*framesWritten = static_cast<std::uint64_t>(written);
@@ -190,7 +207,13 @@ bool writeRetroAudioTake(const QString& filePath, const std::vector<SampleFrame>
 		if (error != nullptr) { *error = problem; }
 		return false;
 	}
-	return writeWindow(filePath, window, sampleRate, framesWritten, error);
+	// writeWindow() reports through both pointers; either may be null here.
+	std::uint64_t written = 0;
+	QString why;
+	const bool ok = writeWindow(filePath, window, sampleRate, &written, &why);
+	if (framesWritten != nullptr) { *framesWritten = written; }
+	if (error != nullptr) { *error = why; }
+	return ok;
 }
 
 

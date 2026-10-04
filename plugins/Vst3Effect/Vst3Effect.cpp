@@ -142,6 +142,34 @@ void Vst3Effect::cacheLatency()
 	if (EffectChain* chain = effectChain()) { chain->refreshLatency(); }
 }
 
+namespace
+{
+
+//! The channels the wet/dry mix covers: every channel of the main input port (a side-chain port's channels
+//! follow it, from sideChainChannel, and are not dry signal for the outputs), never fewer than the stereo pair
+//! it always covered (round 6: channels past the second stayed fully wet).
+auto dryChannels(ch_cnt_t inputs, ch_cnt_t outputs, int sideChainChannel) -> ch_cnt_t
+{
+	const auto main = sideChainChannel < 0 ? inputs : static_cast<ch_cnt_t>(std::max(2, sideChainChannel));
+	return std::min({inputs, outputs, main});
+}
+
+//! A plug-in that cannot run hands the chain its dry signal and silence past it, not whatever the output
+//! buffer last held (round 6: a failed or unprepared plug-in replayed its last block, or muted the channel).
+void passThrough(PlanarBufferView<const float, DynamicChannelCount> in,
+	PlanarBufferView<float, DynamicChannelCount> out, int sideChainChannel)
+{
+	const auto dry = dryChannels(in.channels(), out.channels(), sideChainChannel);
+	const auto frames = std::min(in.frames(), out.frames());
+	for (ch_cnt_t c = 0; c < out.channels(); ++c)
+	{
+		std::fill_n(out.bufferPtr(c), out.frames(), 0.f);
+		if (c < dry) { std::copy_n(in.bufferPtr(c), frames, out.bufferPtr(c)); }
+	}
+}
+
+} // namespace
+
 auto Vst3Effect::processImpl(PlanarBufferView<const float, DynamicChannelCount> in,
 	PlanarBufferView<float, DynamicChannelCount> out) -> lmms::ProcessStatus
 {
@@ -150,6 +178,7 @@ auto Vst3Effect::processImpl(PlanarBufferView<const float, DynamicChannelCount> 
 		// Either the plug-in failed to load or the sample rate changed. Do the
 		// actual re-configuration on the GUI thread, this path only records it.
 		m_needsReprepare.store(true, std::memory_order_relaxed);
+		passThrough(in, out, m_plugin.busLayout().sideChainChannel);
 		return lmms::ProcessStatus::Continue;
 	}
 
@@ -171,7 +200,7 @@ auto Vst3Effect::processImpl(PlanarBufferView<const float, DynamicChannelCount> 
 	// The plug-in wrote wet output into `out`, `in` still holds the dry signal.
 	const auto wet = wetLevel();
 	const auto dry = dryLevel();
-	const auto mixChannels = std::min({in.channels(), out.channels(), ch_cnt_t{2}});
+	const auto mixChannels = dryChannels(in.channels(), out.channels(), m_plugin.busLayout().sideChainChannel);
 	for (ch_cnt_t c = 0; c < mixChannels; ++c)
 	{
 		auto* outChannel = out.bufferPtr(c);

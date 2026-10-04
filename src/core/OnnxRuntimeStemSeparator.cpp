@@ -93,6 +93,26 @@ bool resolveStemOutputs(Ort::Session& session, const std::vector<std::string>& o
 	return true;
 }
 
+/*! False, with \a error, when an output the stems are read from is smaller than what the loop
+ *  below reads: two channels of \a segment frames, at \a stemStride floats per stem in the
+ *  stacked layout. A dynamic dimension is only known once the model has run. */
+bool outputsHoldSegment(const std::vector<Ort::Value>& outputs, const std::array<int, NumStems>& stemOutput,
+	std::ptrdiff_t stemStride, int segment, QString* error)
+{
+	for (int s = 0; s < NumStems; ++s)
+	{
+		const auto index = static_cast<std::size_t>(stemOutput[static_cast<std::size_t>(s)]);
+		const auto needed = static_cast<std::size_t>(s * stemStride + static_cast<std::ptrdiff_t>(Channels) * segment);
+		if (index >= outputs.size() || outputs[index].GetTensorTypeAndShapeInfo().GetElementCount() < needed)
+		{
+			*error = QStringLiteral("Model output %1 is smaller than a %2-frame stereo segment")
+				.arg(index).arg(segment);
+			return false;
+		}
+	}
+	return true;
+}
+
 } // namespace
 
 
@@ -145,7 +165,8 @@ StemSeparator::Status OnnxRuntimeStemSeparator::separate(const SampleBuffer& mix
 		error = QStringLiteral("Input is empty");
 		return Status::Failed;
 	}
-	const int segment = segmentFrames > 0 ? segmentFrames : HTDemucsSegmentFrames;
+	// A one-frame segment would make the hop below 0 (and the chunk count a division by it).
+	const int segment = segmentFrames > 1 ? segmentFrames : HTDemucsSegmentFrames;
 
 	static Ort::Env env(ORT_LOGGING_LEVEL_WARNING, "zene-stem-split");
 	Ort::SessionOptions options;
@@ -207,10 +228,9 @@ StemSeparator::Status OnnxRuntimeStemSeparator::separate(const SampleBuffer& mix
 		for (int i = 0; i < segment; ++i)
 		{
 			const int src = start + i - padLeft;
-			const float left = (src >= 0 && src < frames) ? mixFrames[static_cast<size_t>(src)].left() : 0.0f;
-			const float right = (src >= 0 && src < frames) ? mixFrames[static_cast<size_t>(src)].right() : 0.0f;
-			inputTensor[static_cast<size_t>(i)] = left;
-			inputTensor[static_cast<size_t>(segment + i)] = right;
+			const SampleFrame frame = (src >= 0 && src < frames) ? mixFrames[static_cast<size_t>(src)] : SampleFrame();
+			inputTensor[static_cast<size_t>(i)] = frame.left();
+			inputTensor[static_cast<size_t>(segment + i)] = frame.right();
 		}
 
 		const std::array<int64_t, 3> shape{ 1, Channels, segment };
@@ -220,6 +240,7 @@ StemSeparator::Status OnnxRuntimeStemSeparator::separate(const SampleBuffer& mix
 		const char* inputNames[] = { inputNameStr.c_str() };
 		auto outputs = session.Run(Ort::RunOptions{ nullptr },
 			inputNames, &tensor, 1, outputNamesRaw.data(), outputNamesRaw.size());
+		if (!outputsHoldSegment(outputs, stemOutput, stemStride, segment, &error)) { return Status::Failed; }
 
 		for (int s = 0; s < NumStems; ++s)
 		{

@@ -24,6 +24,7 @@
 #include "ImportDetection.h"
 
 #include <algorithm>
+#include <cmath>
 #include <optional>
 #include <vector>
 
@@ -141,9 +142,14 @@ ImportDetectionResult analyseAudioFile(const QString& path, double maxSeconds)
 	// Mono: the arithmetic takes one channel, and 0.5 * (L + R) is what an
 	// import's own audition path would hand a listener's single ear.
 	const std::vector<SampleFrame>& frames = decoded->data;
-	const std::vector<float> mono = monoMix(frames.data(), frames.size());
+	// NaN passes std::clamp untouched (and would let the key read the whole file): it takes the default.
+	const double bound = std::clamp(std::isnan(maxSeconds) ? DefaultAnalysisSeconds : maxSeconds, 1.0,
+		MaxAnalysisSeconds);
+	// Only the bounded prefix is mixed: the estimators below read no further, and a copy of
+	// the whole file would scale with its length rather than with the bound.
+	const std::size_t analysed = std::min(frames.size(), static_cast<std::size_t>(bound * sampleRate));
+	const std::vector<float> mono = monoMix(frames.data(), analysed);
 
-	const double bound = std::clamp(maxSeconds, 1.0, MaxAnalysisSeconds);
 	result.sampleRate = sampleRate;
 	result.frames = static_cast<qint64>(frames.size());
 	result.durationSeconds = static_cast<double>(frames.size()) / sampleRate;

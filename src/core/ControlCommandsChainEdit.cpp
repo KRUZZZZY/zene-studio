@@ -89,8 +89,19 @@ ControlResult occupiedRefusal(const QString& to)
 			"it first").arg(to));
 }
 
+//! The chain \a args name ('target' and 'chain'), found again when an undo step runs:
+//! a later removal of the target and its undo rebuild it, and its chain with it, so a
+//! pointer captured at the write could name a deleted chain. nullptr when it is gone.
+EffectChain* liveChain(const QJsonObject& args)
+{
+	ControlTarget target;
+	ControlResult ignored;
+	return resolveChainTarget(args, &target, &ignored) ? target.chain : nullptr;
+}
+
 //! chain.apply: the whole handler, one device list applied in one step.
-ControlResult applyPreset(const ControlTarget& target, const ControlChainPreset& preset)
+ControlResult applyPreset(const ControlTarget& target, const ControlChainPreset& preset,
+	const QJsonObject& args)
 {
 	EffectChain* chain = target.chain;
 	const QString beforeXml = controlChainXml(chain);
@@ -107,11 +118,11 @@ ControlResult applyPreset(const ControlTarget& target, const ControlChainPreset&
 	// part-way through an apply is recoverable: the previous chain's own XML is
 	// already on the undo stack.
 	addUndoStep(
-		[chain, beforeXml]() {
-			controlRestoreChainXml(chain, beforeXml);
+		[args, beforeXml]() {
+			if (EffectChain* live = liveChain(args)) { controlRestoreChainXml(live, beforeXml); }
 		},
-		[chain, preset]() {
-			controlApplyChainPreset(chain, preset);
+		[args, preset]() {
+			if (EffectChain* live = liveChain(args)) { controlApplyChainPreset(live, preset); }
 		});
 
 	ControlResult applied = controlApplyChainPreset(chain, preset);
@@ -178,7 +189,7 @@ void registerChainApply(ControlRegistry& registry)
 		}
 		ControlTarget target;
 		if (!resolveChainTarget(args, &target, &error)) { return error; }
-		return applyPreset(target, preset);
+		return applyPreset(target, preset, args);
 	};
 	registry.registerCommand(cmd);
 }

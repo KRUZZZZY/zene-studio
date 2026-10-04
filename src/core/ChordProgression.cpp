@@ -338,9 +338,11 @@ bool buildSteps(const Request& request, const ChordVocabulary::Chord& scale, con
 		int baseKey = ChordVocabulary::keyOf(rootPc, request.octave + absoluteRoot / 12);
 		// A chord that would run past the MIDI range is moved DOWN as a whole
 		// rather than clipped tone by tone: a clipped chord is a different
-		// chord, and the top of the range is not a musical statement.
-		const int top = baseKey + (tones.back() - tones[0]);
-		if (top > NumKeys - 1) { baseKey -= (top - (NumKeys - 1)); }
+		// chord, and the top of the range is not a musical statement. It moves
+		// by whole octaves, to the highest root of its own pitch class that
+		// fits - a move by the excess (or keyOf()'s clamp) changes the chord.
+		const int span = tones.back() - tones[0];
+		if (baseKey + span > NumKeys - 1) { baseKey = rootPc + 12 * ((NumKeys - 1 - span - rootPc) / 12); }
 		if (baseKey < 0) { baseKey = 0; }
 		step.rootKey = baseKey;
 		std::vector<int> classes;
@@ -418,6 +420,25 @@ void layOutChord(const std::vector<int>& keys, tick_t pos, tick_t room, Pattern 
 }
 
 
+namespace
+{
+
+//! Where the chord at @a index ends: the next chord's ACTUAL start, which a negative position
+//! jitter can pull before its nominal one, and never later than that nominal start.
+tick_t chordEnd(const Request& request, const std::vector<ChordStep>& chords, int index)
+{
+	const tick_t nextNominal = request.start + static_cast<tick_t>(index + 1) * request.stepTicks;
+	if (index + 1 >= request.steps) { return nextNominal; }
+	int inversion = 0;
+	tick_t jitter = 0;
+	int velocity = request.velocity;
+	drawVariation(request, chords[static_cast<std::size_t>(index + 1)], &inversion, &jitter, &velocity);
+	return std::min(nextNominal, std::max<tick_t>(0, nextNominal + jitter));
+}
+
+} // namespace
+
+
 bool generateNotes(const Request& request, std::vector<NoteSpec>* out, QString* error)
 {
 	if (out == nullptr) { return false; }
@@ -430,7 +451,6 @@ bool generateNotes(const Request& request, std::vector<NoteSpec>* out, QString* 
 	{
 		const ChordStep& step = chords[static_cast<std::size_t>(index)];
 		const tick_t nominal = request.start + static_cast<tick_t>(index) * request.stepTicks;
-		const tick_t nextNominal = request.start + static_cast<tick_t>(index + 1) * request.stepTicks;
 
 		int inversion = 0;
 		tick_t positionJitter = 0;
@@ -446,7 +466,7 @@ bool generateNotes(const Request& request, std::vector<NoteSpec>* out, QString* 
 		// The pattern itself is ChordProgression::layOutChord - ONE definition,
 		// shared with the chord track's own write verb, so a track's chords and
 		// a generated progression cannot be laid out differently.
-		layOutChord(voices, pos, nextNominal - pos, request.pattern, velocity, out);
+		layOutChord(voices, pos, chordEnd(request, chords, index) - pos, request.pattern, velocity, out);
 	}
 
 	// Sorted by (position, key) so the output is comparable as a whole - the

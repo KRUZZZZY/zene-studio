@@ -45,6 +45,7 @@
 #include "ControlProjectAssetsShared.h"
 #include "ControlRegistry.h"
 #include "ControlRegistryGroups.h"
+#include "ControlTrackCreation.h"
 #include "ControlVocabulary.h"
 #include "DataFile.h"
 #include "Engine.h"
@@ -153,24 +154,38 @@ bool chosen(const QJsonObject& args, const QList<QDomElement>& tracks, const QSt
 
 //! The reply of an import or paste: the new tracks' ids under @a key, and how many of the @a asked
 //! documents made no track (a track type this build cannot create - a newer file's).
-QJsonObject madeResult(const QString& key, const std::vector<Track*>& made, int asked)
+QJsonObject madeResult(const QString& key, const std::vector<int>& made, int asked)
 {
 	QJsonArray ids;
-	for (const Track* track : made) { ids.append(trackIdOf(track)); }
+	for (const int id : made) { ids.append(trackId(id)); }
 	QJsonObject result{{key, ids}, {QStringLiteral("count"), ids.size()}};
 	if (ids.size() < asked) { result.insert(QStringLiteral("skipped"), asked - static_cast<int>(ids.size())); }
 	return result;
 }
 
-void build(const QStringList& documents, std::vector<Track*>* made)
+//! The tracks of @a documents, made in the song; @a made receives their stable ids.
+void build(const QStringList& documents, std::vector<int>* made)
 {
 	made->clear();
 	for (const QString& text : documents)
 	{
 		QDomDocument doc;
 		doc.setContent(text);
-		if (Track* track = Track::create(doc.documentElement(), Engine::getSong())) { made->push_back(track); }
+		if (Track* track = Track::create(doc.documentElement(), Engine::getSong())) { made->push_back(track->id()); }
 	}
+}
+
+//! build() as ONE undo step - its undo removes the tracks, its redo makes them again - answering their ids.
+//! The step holds ids, never pointers: track.remove and its undo free a track and build an equal one.
+std::vector<int> buildAsOneStep(const QStringList& documents)
+{
+	auto made = std::make_shared<std::vector<int>>();
+	addUndoStep([made]() {
+		for (auto it = made->rbegin(); it != made->rend(); ++it) { if (Track* live = trackWithId(*it)) { removeTrack(live); } }
+		made->clear();
+	}, [made, documents]() { build(documents, made.get()); });
+	build(documents, made.get());
+	return *made;
 }
 
 ControlResult importTracks(const QJsonObject& args)
@@ -184,12 +199,9 @@ ControlResult importTracks(const QJsonObject& args)
 	if (args.value(QStringLiteral("list")).toBool()) { return ControlResult::success({{QStringLiteral("tracks"), listing(tracks)}}); }
 	QStringList documents;
 	if (!chosen(args, tracks, QFileInfo(path).absolutePath(), &documents, &error)) { return error; }
-	auto made = std::make_shared<std::vector<Track*>>();
-	addUndoStep([made]() { for (auto it = made->rbegin(); it != made->rend(); ++it) { removeTrack(*it); } made->clear(); },
-		[made, documents]() { build(documents, made.get()); });
-	build(documents, made.get());
+	const std::vector<int> made = buildAsOneStep(documents);
 	Engine::getSong()->setModified();
-	QJsonObject result = madeResult(QStringLiteral("imported"), *made, documents.size());
+	QJsonObject result = madeResult(QStringLiteral("imported"), made, documents.size());
 	result.insert(QStringLiteral("__transaction"), transactionPayload({{QStringLiteral("path"), path}}, QStringLiteral("control.undo"), {},
 		true, QStringLiteral("action checkpoint: the recorded undo step removes the imported tracks; its redo imports them again")));
 	return ControlResult::success(result);
@@ -263,12 +275,9 @@ ControlResult pasteTracks(const QJsonObject&)
 		documents.append(one.toString());
 	}
 	if (documents.isEmpty()) { return ControlResult::failure(ControlErrorKind::NotFound, QStringLiteral("the clipboard's track data holds no tracks")); }
-	auto made = std::make_shared<std::vector<Track*>>();
-	addUndoStep([made]() { for (auto it = made->rbegin(); it != made->rend(); ++it) { removeTrack(*it); } made->clear(); },
-		[made, documents]() { build(documents, made.get()); });
-	build(documents, made.get());
+	const std::vector<int> made = buildAsOneStep(documents);
 	Engine::getSong()->setModified();
-	return ControlResult::success(madeResult(QStringLiteral("pasted"), *made, documents.size()));
+	return ControlResult::success(madeResult(QStringLiteral("pasted"), made, documents.size()));
 }
 
 } // namespace

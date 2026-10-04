@@ -36,6 +36,8 @@
  * Boston, MA 02110-1301 USA.
  */
 
+#include <algorithm>
+
 #include <QJsonArray>
 #include <QJsonObject>
 #include <QString>
@@ -53,6 +55,14 @@ namespace control
 
 namespace
 {
+
+/*! A step field as an int for GrooveTemplate::setStep to judge, clamped first: casting
+ *  a double outside int's range is undefined, and anything this far out is refused by
+ *  setStep either way (a timing offset is at most half a slot, a velocity 0..MaxVolume). */
+int clampedStepField(const QJsonObject& entry, const QString& key, double fallback)
+{
+	return static_cast<int>(std::clamp(entry.value(key).toDouble(fallback), -1.0e6, 1.0e6));
+}
 
 /*! The steps of a groove.set as the engine's own value type sees them.
  *
@@ -74,10 +84,10 @@ bool readStepList(const QJsonArray& steps, GrooveTemplate* out, ControlResult* e
 		}
 		const QJsonObject entry = value.toObject();
 		GrooveStep step;
-		step.timing = static_cast<tick_t>(entry.value(QStringLiteral("timing")).toDouble(0.0));
-		step.velocity = static_cast<int>(entry.value(QStringLiteral("velocity")).toDouble(0.0));
+		step.timing = clampedStepField(entry, QStringLiteral("timing"), 0.0);
+		step.velocity = clampedStepField(entry, QStringLiteral("velocity"), 0.0);
 		const double slot = entry.value(QStringLiteral("slot")).toDouble(-1.0);
-		if (!out->setStep(static_cast<int>(slot), step))
+		if (!out->setStep(clampedStepField(entry, QStringLiteral("slot"), -1.0), step))
 		{
 			*error = ControlResult::failure(ControlErrorKind::InvalidArgs,
 				QStringLiteral("slot %1 of '%2' is out of range or out of bounds: a slot is "

@@ -31,6 +31,7 @@
 #include "ControlRegistry.h"
 #include "ControlReversibility.h"
 #include "ControlStructuralSupport.h"
+#include "ControlTrackCreation.h"
 #include "Engine.h"
 #include "GuiApplication.h"
 #include "JournallingObject.h"
@@ -155,17 +156,19 @@ void registerTrackAdd(ControlRegistry& registry)
 		// restore, so the inverse is the OPERATION. ONE action step is recorded
 		// BEFORE the creation, so one control.undo - and one Ctrl+Z, which
 		// unwinds the same ProjectJournal - removes the track again. The holder
-		// keeps the pointer alive across the two lambdas without either of them
-		// outliving a stack frame.
+		// shares the track's id between the two lambdas, never its pointer:
+		// track.remove and its undo free the track and build an equal one.
 		const QString name = args.value(QStringLiteral("name")).toString();
-		auto holder = std::make_shared<Track*>(nullptr);
+		auto holder = std::make_shared<int>(-1);
 		control::addUndoStep(
 			[holder]() {
-				if (*holder != nullptr) { control::removeTrack(*holder); *holder = nullptr; }
+				if (Track* live = control::trackWithId(*holder)) { control::removeTrack(live); }
+				*holder = -1;
 			},
 			[song, type, name, holder]() {
-				*holder = createTrackOfType(type, song);
-				if (*holder != nullptr && !name.isEmpty()) { (*holder)->setName(name); }
+				Track* created = createTrackOfType(type, song);
+				if (created != nullptr && !name.isEmpty()) { created->setName(name); }
+				*holder = created != nullptr ? created->id() : -1;
 			});
 
 		// The product's own entry points where they are callable from outside
@@ -173,7 +176,7 @@ void registerTrackAdd(ControlRegistry& registry)
 		// private slots, so those two take the same public Track::create() path
 		// they themselves call - see Song.cpp).
 		Track* track = createTrackOfType(type, song);
-		*holder = track;
+		*holder = track->id();
 		if (!name.isEmpty()) { track->setName(name); }
 		QJsonObject result = trackAddResult(track, song);
 		result.insert(QStringLiteral("__transaction"),

@@ -30,14 +30,13 @@
 #include <memory>
 #include <vector>
 
-#include <QPointer>
-
 #include "ArrangementEdits.h"
 #include "BounceInPlace.h"
 #include "ControlBounceSupport.h"
 #include "ControlEdit.h"
 #include "ControlRegistry.h"
 #include "ControlRegistryGroups.h"
+#include "ControlTrackCreation.h"
 #include "ControlVocabulary.h"
 #include "Engine.h"
 #include "SampleClip.h"
@@ -57,9 +56,11 @@ struct Landing
 	QString path;
 	tick_t at = 0;
 	bool muteSources = true;
-	std::vector<QPointer<Track>> sources;
+	// Tracks by their stable ids, found again when a step runs: a track.remove and its undo rebuild a track as a NEW
+	// object under the same id, so a kept pointer would name a deleted track (or, guarded, stop acting).
+	std::vector<int> sources;
 	std::vector<bool> wereMuted;
-	QPointer<Track> landed;  //!< null once the landed track is deleted some other way (its undo then has nothing to remove)
+	int landed = -1;  //!< -1 once the undo took it away; a track deleted some other way is not found, so nothing is removed
 };
 
 void land(Landing* l)
@@ -67,20 +68,22 @@ void land(Landing* l)
 	Track* track = Track::create(Track::Type::Sample, Engine::getSong());
 	track->setName(QObject::tr("Bounce"));
 	if (auto* clip = dynamic_cast<SampleClip*>(track->createClip(TimePos(l->at)))) { clip->setSampleFile(l->path); }
-	l->landed = track;
-	for (const QPointer<Track>& source : l->sources)
+	l->landed = track->id();
+	for (const int id : l->sources)
 	{
-		if (source && l->muteSources) { source->setMuted(true); }
+		Track* source = trackWithId(id);
+		if (source != nullptr && l->muteSources) { source->setMuted(true); }
 	}
 }
 
 void unland(Landing* l)
 {
-	if (l->landed) { removeTrack(l->landed.data()); }
-	l->landed = nullptr;
+	if (Track* track = trackWithId(l->landed)) { removeTrack(track); }
+	l->landed = -1;
 	for (std::size_t i = 0; i < l->sources.size(); ++i)
 	{
-		if (l->sources[i] && l->muteSources) { l->sources[i]->setMuted(l->wereMuted[i]); }  // only the mutes land() set
+		Track* source = trackWithId(l->sources[i]);
+		if (source != nullptr && l->muteSources) { source->setMuted(l->wereMuted[i]); }  // only the mutes land() set
 	}
 }
 
@@ -103,13 +106,13 @@ ControlResult rangeBounce(const QJsonObject& args)
 	l->muteSources = args.value(QStringLiteral("mute_sources")).toBool(true);
 	for (Track* track : tracks)
 	{
-		l->sources.emplace_back(track);
+		l->sources.push_back(track->id());
 		l->wereMuted.push_back(track->isMuted());
 	}
 	addUndoStep([l]() { unland(l.get()); }, [l]() { land(l.get()); });
 	land(l.get());
 	QJsonObject result = renderJson(rendered);
-	result.insert(QStringLiteral("landed_track"), trackIdOf(l->landed));
+	result.insert(QStringLiteral("landed_track"), trackIdOf(trackWithId(l->landed)));
 	result.insert(QStringLiteral("tracks"), static_cast<int>(tracks.size()));
 	result.insert(QStringLiteral("__transaction"), transactionPayload({{QStringLiteral("tracks"), static_cast<int>(tracks.size())}},
 		QStringLiteral("control.undo"), {}, true, QStringLiteral("action checkpoint: the recorded undo step removes the landed track "

@@ -38,6 +38,7 @@
 #include "InstrumentTrack.h"
 #include "MidiClip.h"
 #include "Note.h"
+#include "ReversibilityTestSupport.h"
 #include "Song.h"
 
 using namespace lmms;
@@ -194,6 +195,20 @@ private slots:
 		QVERIFY(run(QStringLiteral("scale.define"), {{QStringLiteral("name"), QStringLiteral("Mine")}}).ok);  // removed again
 		QCOMPARE(run(QStringLiteral("scale.define"), {{QStringLiteral("name"), QStringLiteral("Bad")},
 			{QStringLiteral("degrees"), QJsonArray{14}}}).errorKind, ControlErrorKind::InvalidArgs);
+	}
+
+	//! The split's undo finds the tracks it made by id: track.remove and its undo rebuild one as a new
+	//! object, which a kept Track* does not name.
+	void aSplitTrackIsFoundAgainAfterItsRemovalIsUndone()
+	{
+		MidiClip* clip = clipWith({{36, 0}, {38, 24}});
+		const int tracksBefore = static_cast<int>(Engine::getSong()->tracks().size());
+		const ControlResult split = run(QStringLiteral("note.split_by_pitch"), self(clip));
+		QVERIFY2(split.ok, qPrintable(split.errorMessage));
+		const QJsonArray made = split.result.value(QStringLiteral("tracks")).toArray();
+		QVERIFY(!made.isEmpty());
+		QVERIFY(revtest::makerUndoFindsTrackAfterRemovalUndone(made.first().toString()));
+		QCOMPARE(static_cast<int>(Engine::getSong()->tracks().size()), tracksBefore);  // every track it made is gone
 	}
 };
 

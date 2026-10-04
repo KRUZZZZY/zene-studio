@@ -38,6 +38,7 @@
 #include "lmmsversion.h"
 #include "versioninfo.h"
 
+#include <atomic>
 #include <cstddef>
 #include <cstdint>
 #include <string>
@@ -67,17 +68,26 @@ namespace
 
 // ---- handler-visible state (written on the main thread, read by the handler) ----
 
-// Re-entrancy guard.  `volatile sig_atomic_t` is the only type the standard
-// blesses for this job; the handler never blocks, locks or waits.
-volatile sig_atomic_t s_active = 0;
+// Lock-free atomics are async-signal-safe, and unlike `volatile sig_atomic_t`
+// they are also safe across threads: two threads faulting together race on
+// these, and setReportDirectory()/uninstall() run beside a crashing thread.
+static_assert(std::atomic<int>::is_always_lock_free);
+
+// Re-entrancy guard, claimed with exchange() so exactly one handler - on any
+// thread - writes the report; the handler never blocks, locks or waits.
+std::atomic<int> s_active{0};
 
 // Directory fd, opened once at install time.  The handler reuses it with
 // openat() so it never has to resolve a path (or take the FS lock twice).
-int s_dirFd = -1;
+// Replaced by publishing the new fd BEFORE the old one is closed.
+std::atomic<int> s_dirFd{-1};
 
-// "Currently open project" hint.  Always NUL-terminated; the reader scans for
-// the NUL within the cap, so a torn read is still a safe read.
-alignas(16) char s_projectPath[kMaxProjectPathBytes] = "(none)";
+// "Currently open project" hint, double-buffered: setProjectPath() fills the
+// slot the handler is not reading and then publishes it, so the handler never
+// reads a buffer while it is being cleared.  Always NUL-terminated; the reader
+// scans for the NUL within the cap.
+alignas(16) char s_projectPath[2][kMaxProjectPathBytes] = {"(none)", "(none)"};
+std::atomic<int> s_projectSlot{0};
 
 // A crash from an exhausted stack cannot run a handler on that stack, so the
 // handlers are installed with SA_ONSTACK and this dedicated stack.  It is
@@ -153,7 +163,8 @@ bool pathExists(const std::string& path)
 
 bool writeSmallFile(const std::string& path, const std::string& contents)
 {
-	const int fd = ::open(path.c_str(), O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, 0600);
+	// O_NOFOLLOW: a symlink planted at the marker's name is refused, not truncated through.
+	const int fd = ::open(path.c_str(), O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC | O_NOFOLLOW, 0600);
 	if (fd < 0) { return false; }
 	std::size_t off = 0;
 	while (off < contents.size())
@@ -220,8 +231,8 @@ bool setReportDirectory(const std::string& workingDirectory)
 	const int fd = ::open(workingDirectory.c_str(), O_RDONLY | O_DIRECTORY | O_CLOEXEC);
 	if (fd < 0) { return false; }
 
-	if (s_dirFd >= 0 && s_dirFd != fd) { ::close(s_dirFd); }
-	s_dirFd = fd;
+	const int old = s_dirFd.exchange(fd);
+	if (old >= 0 && old != fd) { ::close(old); }
 	s_dir = workingDirectory;
 	return true;
 }
@@ -282,7 +293,7 @@ bool uninstall()
 		sigaction(signals[i], &dfl, nullptr);
 	}
 
-	if (s_dirFd >= 0) { ::close(s_dirFd); s_dirFd = -1; }
+	if (const int old = s_dirFd.exchange(-1); old >= 0) { ::close(old); }
 	s_installed = false;
 	return true;
 }
@@ -340,11 +351,14 @@ bool isInstalled()
 void setProjectPath(const std::string& path)
 {
 	const std::string value = path.empty() ? std::string("(none)") : path;
-	std::memset(s_projectPath, 0, sizeof(s_projectPath));
+	const int slot = 1 - s_projectSlot.load(std::memory_order_relaxed);
+	char* target = s_projectPath[slot];
+	std::memset(target, 0, kMaxProjectPathBytes);
 	const std::size_t n = value.size() < (kMaxProjectPathBytes - 1)
 		? value.size() : (kMaxProjectPathBytes - 1);
-	std::memcpy(s_projectPath, value.data(), n);
-	s_projectPath[n] = '\0';
+	std::memcpy(target, value.data(), n);
+	target[n] = '\0';
+	s_projectSlot.store(slot, std::memory_order_release);
 }
 
 void beginSession()
@@ -394,29 +408,32 @@ void discardPendingReport()
 
 bool writeReportIfIdle(const CrashInfo& info)
 {
-	if (s_active != 0)
+	if (s_active.exchange(1) != 0)
 	{
-		// A crash arrived while a crash was being handled.  Refuse to write:
-		// recurse no further, hang on nothing, and let the caller re-raise.
+		// A crash arrived while a crash was being handled (on this thread or
+		// another).  Refuse to write: recurse no further, hang on nothing, and
+		// let the caller re-raise.
 		return false;
 	}
-	s_active = 1;
 
 	bool wrote = false;
 	int fd = -1;
-	if (s_dirFd >= 0)
+	const int dirFd = s_dirFd.load();
+	if (dirFd >= 0)
 	{
 		// The report directory is created here, at crash time, and only here:
 		// mkdirat() is on POSIX's async-signal-safe list, so a run that never
 		// crashes never creates it.  EEXIST is the normal case after the first
 		// crash in a working directory.
-		::mkdirat(s_dirFd, kReportDirName, 0700);
-		const int subFd = ::openat(s_dirFd, kReportDirName,
-			O_RDONLY | O_DIRECTORY | O_CLOEXEC);
+		// O_NOFOLLOW on both: a symlink planted at either name is refused
+		// rather than followed to truncate whatever it points at.
+		::mkdirat(dirFd, kReportDirName, 0700);
+		const int subFd = ::openat(dirFd, kReportDirName,
+			O_RDONLY | O_DIRECTORY | O_CLOEXEC | O_NOFOLLOW);
 		if (subFd >= 0)
 		{
 			fd = ::openat(subFd, kReportFileName,
-				O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, 0644);
+				O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC | O_NOFOLLOW, 0644);
 			::close(subFd);
 		}
 	}
@@ -452,7 +469,8 @@ bool writeReportIfIdle(const CrashInfo& info)
 		pos = appendStr(buf, cap, pos, "\ncompiler=");
 		pos = appendStr(buf, cap, pos, LMMS_BUILDCONF_COMPILER_VERSION);
 		pos = appendStr(buf, cap, pos, "\nproject=");
-		pos = appendCapped(buf, cap, pos, s_projectPath, kMaxProjectPathBytes);
+		pos = appendCapped(buf, cap, pos, s_projectPath[s_projectSlot.load(std::memory_order_acquire)],
+			kMaxProjectPathBytes);
 		pos = appendStr(buf, cap, pos, "\n");
 
 		// Bounded write loop: at most 8 write() calls and never more than
@@ -471,18 +489,18 @@ bool writeReportIfIdle(const CrashInfo& info)
 		::close(fd);
 	}
 
-	s_active = 0;
+	s_active.store(0);
 	return wrote;
 }
 
 bool reentrancyGuardActive()
 {
-	return s_active != 0;
+	return s_active.load() != 0;
 }
 
 void setReentrancyGuardForTest(bool active)
 {
-	s_active = active ? 1 : 0;
+	s_active.store(active ? 1 : 0);
 }
 
 #endif // LMMS_BUILD_WIN32

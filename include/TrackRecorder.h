@@ -138,7 +138,7 @@ public:
 	//! Frames the journal had recorded at its last update (0.3.0). The bound the
 	//! recovery offer reports as guaranteed is this number, read back from the
 	//! file - see include/RecordingJournal.h.
-	std::uint64_t journalledFrames() const noexcept { return m_journalFrames; }
+	std::uint64_t journalledFrames() const noexcept { return m_journalFrames.load(std::memory_order_relaxed); }
 
 private:
 	void writerLoop();
@@ -154,6 +154,10 @@ private:
 	SNDFILE* m_sf = nullptr;                   // disk-writer thread only
 
 	std::atomic<bool> m_armed{false};
+	//! What the audio thread reads: set by arm() only once the ring, the channel, the file and the
+	//! writer are ready (m_armed is claimed first, so it cannot gate the audio path), cleared first
+	//! by disarm().
+	std::atomic<bool> m_capturing{false};
 	std::atomic<bool> m_stopRequested{false};
 	std::atomic<bool> m_writerRunning{false};
 	std::atomic<int> m_inputChannel{0};
@@ -170,9 +174,11 @@ private:
 	// The take journal (0.3.0). m_journalPath is set in arm() before the writer
 	// thread starts and cleared in disarm() after it is joined, so the writer
 	// thread reads a value that cannot change under it; m_journalFrames is
-	// written by arm() (before the thread exists) and by that thread only.
+	// written by arm() (before the thread exists) and by that thread only, and
+	// is atomic because journalledFrames() reads it from the control thread
+	// while that thread runs.
 	std::string m_journalPath;
-	std::uint64_t m_journalFrames = 0;
+	std::atomic<std::uint64_t> m_journalFrames{0};
 	std::uint64_t m_journalIntervalFrames = 0;
 	int m_journalSampleRate = 0;
 	QString m_journalTake;

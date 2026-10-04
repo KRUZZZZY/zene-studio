@@ -146,13 +146,16 @@ void NeuralAmpEffect::loadWorker(QString path)
 void NeuralAmpEffect::publishModel(std::unique_ptr<nam::NamModel> model)
 {
 	nam::NamModel* incoming = model.release();
-	nam::NamModel* previous = m_model.exchange(incoming, std::memory_order_acq_rel);
+	// seq_cst here and on the audio thread's flag store and pointer load (round 6): with acquire/release
+	// alone the audio thread's store could be ordered after its load (store-load reordering), so it could
+	// read `previous` while this thread still saw the flag clear and freed it.
+	nam::NamModel* previous = m_model.exchange(incoming, std::memory_order_seq_cst);
 
 	if (previous != nullptr)
 	{
 		// The audio thread may still be inside processImpl() using `previous`.
 		// Wait for it to leave before freeing; the audio thread never waits.
-		while (m_audioActive.load(std::memory_order_acquire))
+		while (m_audioActive.load(std::memory_order_seq_cst))
 		{
 			std::this_thread::yield();
 		}
@@ -180,8 +183,8 @@ Effect::ProcessStatus NeuralAmpEffect::processImpl(
 {
 	// Announce that the audio thread is using the published model, then take a
 	// snapshot of the pointer. No allocation, no locks, no I/O below.
-	m_audioActive.store(true, std::memory_order_release);
-	nam::NamModel* model = m_model.load(std::memory_order_acquire);
+	m_audioActive.store(true, std::memory_order_seq_cst);
+	nam::NamModel* model = m_model.load(std::memory_order_seq_cst);
 
 	if (model == nullptr || !model->ready())
 	{

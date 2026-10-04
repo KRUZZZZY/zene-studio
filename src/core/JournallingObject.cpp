@@ -69,7 +69,8 @@ JournallingObject::~JournallingObject()
 
 void JournallingObject::addJournalCheckPoint()
 {
-	if( isJournalling() )
+	// No journal outside a live engine (see the constructor): nothing to check in to.
+	if( isJournalling() && Engine::projectJournal() != nullptr )
 	{
 		Engine::projectJournal()->addJournalCheckPoint( this );
 	}

@@ -105,6 +105,7 @@ Effect::ProcessStatus RnnoiseDenoiserEffect::processImpl(
 		// Downmix to mono for RNNoise input and scale it into RNNoise's int16
 		// range; the accumulator therefore holds native-scale samples.
 		const float monoIn = (buf[i][0] + buf[i][1]) * 0.5f;
+		m_dryBuf[m_inputCount] = buf[i];
 		m_inputBuf[m_inputCount++] = monoIn * RNNOISE_SCALE_IN;
 
 		// When we have a full 480-sample frame, process through RNNoise
@@ -116,13 +117,15 @@ Effect::ProcessStatus RnnoiseDenoiserEffect::processImpl(
 			m_hasOutput = true;
 		}
 
-		// Read from the output buffer (with latency) or pass dry signal
+		// Read from the output buffer (with latency). The dry signal is the input of the same frame
+		// position, delayed as much as the denoised one: its slot is rewritten only on the next sample.
 		if (m_hasOutput)
 		{
 			// Scale the denoised frame back to LMMS's normalised range
-			const float denoised = m_outputBuf[m_outputPos++] * RNNOISE_SCALE_OUT;
-			buf[i][0] = buf[i][0] * d + denoised * w;
-			buf[i][1] = buf[i][1] * d + denoised * w;
+			const float denoised = m_outputBuf[m_outputPos] * RNNOISE_SCALE_OUT;
+			const SampleFrame& dry = m_dryBuf[m_outputPos++];
+			buf[i][0] = dry[0] * d + denoised * w;
+			buf[i][1] = dry[1] * d + denoised * w;
 
 			if (m_outputPos >= RNNOISE_FRAME_SIZE)
 			{
@@ -130,8 +133,12 @@ Effect::ProcessStatus RnnoiseDenoiserEffect::processImpl(
 				m_hasOutput = false;
 			}
 		}
-		// else: before the first frame is processed, input passes through unchanged
-		// (dry-only until the first 480-sample frame completes)
+		else
+		{
+			// Before the first frame completes neither path has a sample yet: this is the latency
+			// latencyFrames() reports (the input used to pass through here, undelayed and unmixed).
+			buf[i] = SampleFrame{};
+		}
 	}
 
 	return ProcessStatus::ContinueIfNotQuiet;

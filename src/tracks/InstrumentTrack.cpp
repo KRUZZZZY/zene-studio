@@ -377,10 +377,11 @@ void InstrumentTrack::loadMpeExpressionOntoChannelNotes( int channel )
 		}
 
 		NotePlayHandle* note = m_notes[key];
-		if( note == nullptr )
+		if( note == nullptr || note->midiChannel() != channel )
 		{
 			// Released (or never started) between the event and this lookup -
-			// the same window MidiKeyPressure below already lives with.
+			// the same window MidiKeyPressure below already lives with. A note
+			// on another channel holding this key is not this channel's note.
 			continue;
 		}
 

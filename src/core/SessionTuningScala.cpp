@@ -154,12 +154,34 @@ bool keymapFields(const QStringList& raw, QString* description, QStringList* fie
 
 //! One mapping line: "x" = not mapped (the dialog's -1), else the degree
 //! from its FIRST whitespace section (a trailing comment must not zero it).
-int mapDegreeOf(const QString& line)
+//! A mapping line's degree: -1 for "x" (unmapped). A degree that is not a
+//! whole number, or is negative, is refused (*ok false), as the Microtuner
+//! dialog's validation refuses it (MicrotunerConfig.cpp).
+int mapDegreeOf(const QString& line, bool* ok)
 {
 	const QString first = line.section(QRegularExpression(QStringLiteral("\\s+")),
 		0, 0, QString::SectionSkipEmpty);
-	if (first == QLatin1String("x")) { return -1; }
-	return first.toInt();
+	if (first == QLatin1String("x")) { *ok = true; return -1; }
+	const int degree = first.toInt(ok);
+	*ok = *ok && degree >= 0;
+	return degree;
+}
+
+//! The mapping lines after the seven header fields, or false with *error set.
+bool mappingOf(const QStringList& fields, std::vector<int>* map, QString* error)
+{
+	for (int index = 7; index < fields.size(); ++index)
+	{
+		bool degreeOk = false;
+		map->push_back(mapDegreeOf(fields.at(index), &degreeOk));
+		if (!degreeOk)
+		{
+			*error = QStringLiteral("mapping line %1 must be x or a non-negative whole scale degree")
+				.arg(index - 6);
+			return false;
+		}
+	}
+	return true;
 }
 
 //! The validated Keymap out of the filtered fields: size, the four key
@@ -196,9 +218,10 @@ std::shared_ptr<Keymap> keymapOf(const QStringList& fields, const QString& descr
 	}
 	// fields 7.. are the mapping lines (index 6 is the octave degree).
 	std::vector<int> map;
-	for (int index = 7; index < fields.size(); ++index)
+	if (!mappingOf(fields, &map, error))
 	{
-		map.push_back(mapDegreeOf(fields.at(index)));
+		*ok = false;
+		return nullptr;
 	}
 	if (map.empty())
 	{

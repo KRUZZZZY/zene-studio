@@ -48,6 +48,7 @@
 #include "PatternStore.h"
 #include "RecordOptions.h"
 #include "RetroMidiCapture.h"
+#include "ReversibilityTestSupport.h"
 #include "SessionModel.h"
 #include "Song.h"
 #include "TakeLane.h"
@@ -237,6 +238,25 @@ private slots:
 		QCOMPARE(Engine::patternStore()->numOfPatterns(), patternsBefore);
 		QCOMPARE(run(QStringLiteral("session.capture_to_slot"), {{QStringLiteral("track"), 9}, {QStringLiteral("scene"), 0}}).errorKind,
 			ControlErrorKind::InvalidArgs);  // outside the grid: gridContains' refusal, as every session command's
+		run(QStringLiteral("midi.retro_capture_arm"), {{QStringLiteral("armed"), false}});
+	}
+
+	//! The capture's undo finds its pattern track by id: track.remove and its undo rebuild the track as a NEW object,
+	//! which a guarded pointer no longer names, so the undo used to leave the rebuilt track in place.
+	void aCapturedPatternIsFoundAgainAfterItsRemovalIsUndone()
+	{
+		if (Engine::patternStore()->tracks().empty()) { Track::create(Track::Type::Instrument, Engine::patternStore()); }
+		QVERIFY(run(QStringLiteral("session.set_grid"), {{QStringLiteral("tracks"), 2}, {QStringLiteral("scenes"), 2}}).ok);
+		QVERIFY(run(QStringLiteral("midi.retro_capture_arm"), {{QStringLiteral("armed"), true}}).ok);
+		RetroMidiCapture& capture = Engine::audioEngine()->midiClient()->retroCapture();
+		capture.capture(MidiEvent(MidiNoteOn, 0, 64, 100), 0);
+		capture.capture(MidiEvent(MidiNoteOff, 0, 64, 0), 48);
+		const ControlResult captured = run(QStringLiteral("session.capture_to_slot"), {{QStringLiteral("track"), 0},
+			{QStringLiteral("scene"), 1}});
+		QVERIFY2(captured.ok, qPrintable(captured.errorMessage));
+		const QString pattern = control::trackIdOf(Engine::getSong()->tracks().back());  // the pattern track it made
+		QVERIFY(revtest::makerUndoFindsTrackAfterRemovalUndone(pattern));
+		QVERIFY(Engine::getSong()->sessionModel().slot(0, 1).isEmpty());
 		run(QStringLiteral("midi.retro_capture_arm"), {{QStringLiteral("armed"), false}});
 	}
 

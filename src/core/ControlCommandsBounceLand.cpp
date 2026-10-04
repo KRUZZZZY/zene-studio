@@ -79,22 +79,27 @@ ControlResult bounceLand(const QJsonObject& args)
 	const tick_t at = range.start;
 	const bool wasMuted = source->isMuted();
 	QPointer<Track> sourceRef(source);
-	auto holder = std::make_shared<Track*>(nullptr);
+	// The landed track by its stable id, found again when the undo runs: a later
+	// track.remove and its undo re-create the track as a NEW object under the same id,
+	// so a pointer kept here would name a deleted track.
+	auto landed = std::make_shared<QString>();
 	addUndoStep(
-		[holder, sourceRef, wasMuted]() {
-			if (*holder != nullptr) { removeTrack(*holder); *holder = nullptr; }
+		[landed, sourceRef, wasMuted]() {
+			ControlResult ignored;
+			if (Track* track = resolveTrack(*landed, &ignored)) { removeTrack(track); }
+			landed->clear();
 			if (!sourceRef.isNull()) { sourceRef->setMuted(wasMuted); }
 		},
-		[holder, sourceRef, song, name, path, at]() {
-			*holder = landTrack(song, name, path, at);
+		[landed, sourceRef, song, name, path, at]() {
+			*landed = trackIdOf(landTrack(song, name, path, at));
 			if (!sourceRef.isNull()) { sourceRef->setMuted(true); }
 		});
-	*holder = landTrack(song, name, path, at);
+	*landed = trackIdOf(landTrack(song, name, path, at));
 	source->setMuted(true);
 
 	QJsonObject result = renderJson(rendered);
 	result.insert(QStringLiteral("track"), trackIdOf(source));
-	result.insert(QStringLiteral("landed_track"), trackIdOf(*holder));
+	result.insert(QStringLiteral("landed_track"), *landed);
 	result.insert(QStringLiteral("__transaction"),
 		transactionPayload(QJsonObject{{QStringLiteral("track"), trackIdOf(source)}, {QStringLiteral("muted"), wasMuted}},
 			QStringLiteral("remove the landed track and restore the source's mute"), QJsonObject(), true,

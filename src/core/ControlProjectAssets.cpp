@@ -163,6 +163,16 @@ bool readProjectDocument(const QString& projectPath, QDomDocument* document, QSt
 			QStringLiteral("no such project file: %1").arg(projectPath));
 		return false;
 	}
+	// The extension first: a file this verb does not read is refused before any of
+	// it is read into memory.
+	*format = info.suffix().toLower();
+	if (*format != QLatin1String("mmpz") && *format != QLatin1String("mmp"))
+	{
+		*error = ControlResult::failure(ControlErrorKind::InvalidArgs,
+			QStringLiteral("'%1' is not a project file this verb reads: the extension must "
+				"be .mmp (XML) or .mmpz (compressed XML)").arg(projectPath));
+		return false;
+	}
 	QFile file(projectPath);
 	if (!file.open(QIODevice::ReadOnly))
 	{
@@ -172,7 +182,6 @@ bool readProjectDocument(const QString& projectPath, QDomDocument* document, QSt
 	}
 	const QByteArray stored = file.readAll();
 
-	*format = info.suffix().toLower();
 	QByteArray xml = stored;
 	if (*format == QLatin1String("mmpz"))
 	{
@@ -184,13 +193,6 @@ bool readProjectDocument(const QString& projectPath, QDomDocument* document, QSt
 					"inflate (a .mmpz is qCompress'd XML)").arg(projectPath));
 			return false;
 		}
-	}
-	else if (*format != QLatin1String("mmp"))
-	{
-		*error = ControlResult::failure(ControlErrorKind::InvalidArgs,
-			QStringLiteral("'%1' is not a project file this verb reads: the extension must "
-				"be .mmp (XML) or .mmpz (compressed XML)").arg(projectPath));
-		return false;
 	}
 
 	QString parseError;
@@ -240,6 +242,9 @@ void collectReferences(const QDomElement& parent, const QString& parentChain,
 	for (QDomElement element = parent.firstChildElement(); !element.isNull();
 		element = element.nextSiblingElement())
 	{
+		// Past the cap the scan is refused whole, so stop here: every further
+		// reference would cost a path resolution and a stat for nothing.
+		if (out->references.size() > MaxProjectAssetReferences) { return; }
 		const QString tag = element.tagName();
 		for (const AssetElement& spec : kAssetElements)
 		{
@@ -365,9 +370,9 @@ bool controlScanProjectAssets(const QString& projectPath, ProjectAssetScan* out,
 	if (out->references.size() > MaxProjectAssetReferences)
 	{
 		*error = ControlResult::failure(ControlErrorKind::Refused,
-			QStringLiteral("%1 carries %2 file references, over the %3 this verb reports in one "
-				"answer; nothing was returned as a partial list")
-				.arg(projectPath).arg(out->references.size()).arg(MaxProjectAssetReferences));
+			QStringLiteral("%1 carries more than %2 file references, the most this verb reports "
+				"in one answer; nothing was returned as a partial list")
+				.arg(projectPath).arg(MaxProjectAssetReferences));
 		return false;
 	}
 	out->digest = digestOf(*out);

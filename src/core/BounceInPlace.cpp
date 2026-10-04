@@ -215,13 +215,41 @@ bool serialiseWithOnlyTracks(const std::vector<Track*>& tracks, TempFiles* temps
 	return muteOtherTracks(temps->project, temps->mutedProject, ids, error);
 }
 
+//! True when the render follows a tempo map (Song::followTempoMap), so one frames-per-tick rate does not
+//! hold across the range. An empty map is the project's one rate, so it keeps the rate's own arithmetic.
+bool tempoMapInForce()
+{
+	const TempoMap& map = Engine::getSong()->tempoMap().map();
+	return map.active() && !map.empty();
+}
+
+//! Frames of the render from tick @a from to tick @a to: at the project's one rate, or on the tempo map's
+//! own timeline when it is in force - a range across a tempo change is not at one rate.
+double framesBetween(tick_t from, tick_t to, float framesPerTick, int sampleRate)
+{
+	if (!tempoMapInForce()) { return (to - from) * framesPerTick; }
+	const Song* song = Engine::getSong();
+	return (song->secondsAtTick(to) - song->secondsAtTick(from)) * sampleRate;
+}
+
+//! The tick @a frames of the render after tick @a start: framesBetween()'s inverse.
+tick_t tickAfter(tick_t start, qint64 frames, float framesPerTick, int sampleRate)
+{
+	if (!tempoMapInForce()) { return start + static_cast<tick_t>(std::llround(frames / framesPerTick)); }
+	const Song* song = Engine::getSong();
+	const double seconds = song->secondsAtTick(start) + static_cast<double>(frames) / sampleRate;
+	return song->tempoMap().map().tickAtSeconds(seconds, static_cast<int>(song->getTempo()));
+}
+
 //! Writes the range's frames out of a whole-track render.
 bool writeRange(const QString& rendered, const QString& outPath,
-		const BounceInPlace::Range& range, float framesPerTick,
+		const BounceInPlace::Range& range, float framesPerTick, int sampleRate,
 		qint64* framesWritten, QString* error)
 {
-	const qint64 startFrame = static_cast<qint64>(std::llround(range.start * framesPerTick));
-	const qint64 wanted = static_cast<qint64>(std::llround((range.end - range.start) * framesPerTick));
+	const qint64 startFrame = static_cast<qint64>(
+		std::llround(framesBetween(0, range.start, framesPerTick, sampleRate)));
+	const qint64 wanted = static_cast<qint64>(
+		std::llround(framesBetween(range.start, range.end, framesPerTick, sampleRate)));
 	return BounceInPlace::trimWav(rendered, outPath, startFrame, wanted, framesWritten, error);
 }
 
@@ -234,8 +262,7 @@ BounceInPlace::Result collectResult(const QString& outPath,
 	result.sampleRate = sampleRate;
 	result.range.start = trimmed ? range.start : 0;
 	result.frames = trimmed ? framesWritten : BounceInPlace::wavFrameCount(outPath);
-	result.range.end = result.range.start
-		+ static_cast<tick_t>(std::llround(result.frames / framesPerTick));
+	result.range.end = tickAfter(result.range.start, result.frames, framesPerTick, sampleRate);
 	result.path = outPath;
 	result.bytes = QFileInfo(outPath).size();
 	result.sha256 = BounceInPlace::sha256OfFile(outPath);
@@ -329,7 +356,7 @@ BounceInPlace::Result BounceInPlace::renderTracks(const std::vector<Track*>& tra
 
 	const float framesPerTick = Engine::framesPerTick(static_cast<sample_rate_t>(sampleRate));
 	qint64 written = 0;
-	if (trimmed && !writeRange(renderTarget, outPath, range, framesPerTick, &written, &error))
+	if (trimmed && !writeRange(renderTarget, outPath, range, framesPerTick, sampleRate, &written, &error))
 	{
 		return Result::failure(error);
 	}

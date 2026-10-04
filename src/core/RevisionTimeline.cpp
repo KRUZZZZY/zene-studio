@@ -435,11 +435,9 @@ bool restoreTimelineRevision(const QString& projectPath, const QString& recovery
 			return false;
 		}
 	}
-	QFile::remove(projectPath);
-	if (!QFile::rename(staging, projectPath))
+	if (!replaceProjectWithStaged(projectPath, staging))
 	{
 		*error = QStringLiteral("could not move the staged revision over %1").arg(projectPath);
-		QFile::remove(staging);
 		return false;
 	}
 	return true;

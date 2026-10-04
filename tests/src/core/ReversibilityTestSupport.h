@@ -139,6 +139,16 @@ inline bool hasTrack(const QString& id)
 		QJsonObject{{QStringLiteral("track"), id}}).ok;
 }
 
+//! A command made \a track; it is removed and the removal undone - which builds an equal track, a NEW
+//! object, under the same id - and then the making command is undone. True when that undo found the
+//! track again by its id and took it away. A step that kept the Track* removed a freed track instead.
+inline bool makerUndoFindsTrackAfterRemovalUndone(const QString& track)
+{
+	const auto undone = []() { return run(QStringLiteral("control.undo")).result.value(QStringLiteral("undone")).toBool(); };
+	return run(QStringLiteral("track.remove"), QJsonObject{{QStringLiteral("track"), track}}).ok && !hasTrack(track)
+		&& undone() && hasTrack(track) && undone() && !hasTrack(track);
+}
+
 inline QString trackName(const QString& id)
 {
 	return run(QStringLiteral("track.get_state"),

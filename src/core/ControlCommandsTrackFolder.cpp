@@ -35,7 +35,6 @@
 
 #include <QJsonArray>
 #include <QJsonObject>
-#include <memory>
 
 #include "AutomatableModel.h"
 #include "ControlEdit.h"
@@ -85,6 +84,20 @@ ControlResult destinationFolder(const QJsonObject& args, Track* child, TrackFold
 	return ControlResult::success();
 }
 
+/*! Re-parents the track \a childId names into the folder \a folderId names (empty:
+ *  the container root). Both are found again when an undo step runs: a removal and its
+ *  undo re-create a track as a NEW object under the same stable id, so a pointer kept
+ *  in the step could name a deleted track. A track or folder that is gone is skipped. */
+void reparent(const QString& childId, const QString& folderId)
+{
+	ControlResult ignored;
+	Track* child = control::resolveTrack(childId, &ignored);
+	if (child == nullptr) { return; }
+	if (folderId.isEmpty()) { child->setParentFolder(nullptr); return; }
+	TrackFolder* folder = resolveFolder(QJsonObject{{QStringLiteral("track"), folderId}}, &ignored);
+	if (folder != nullptr) { child->setParentFolder(folder); }
+}
+
 // ---------------------------------------------------------------------------
 // track.set_folder - the reparenting operation.
 // ---------------------------------------------------------------------------
@@ -105,16 +118,12 @@ ControlResult setFolder(const QJsonObject& args)
 	// container index is deliberately NOT touched: a child keeps its row in the
 	// flat list, which is what makes this inverse exact (there is no position to
 	// restore) - docs/TRACK-FOLDER-DESIGN.md section 8.3.
-	auto childRef = std::make_shared<Track*>(child);
-	auto previousRef = std::make_shared<TrackFolder*>(previous);
-	auto folderRef = std::make_shared<TrackFolder*>(folder);
+	const QString childId = control::trackIdOf(child);
+	const QString previousId = control::trackIdOf(previous);  // empty for the root
+	const QString folderId = control::trackIdOf(folder);
 	control::addUndoStep(
-		[childRef, previousRef]() {
-			if (*childRef != nullptr) { (*childRef)->setParentFolder(*previousRef); }
-		},
-		[childRef, folderRef]() {
-			if (*childRef != nullptr) { (*childRef)->setParentFolder(*folderRef); }
-		});
+		[childId, previousId]() { reparent(childId, previousId); },
+		[childId, folderId]() { reparent(childId, folderId); });
 	child->setParentFolder(folder);
 
 	QJsonObject before;
@@ -199,6 +208,17 @@ ControlResult setPinned(const QJsonObject& args)
 	return ControlResult::success(result);
 }
 
+//! Switches the folder \a where names to routing or group mode, if it still exists.
+void setLiveMode(const QJsonObject& where, bool routing)
+{
+	ControlResult missing;
+	QString ignored;
+	if (TrackFolder* folder = resolveFolder(where, &missing))
+	{
+		folder->setMode(routing ? TrackFolder::Mode::Routing : TrackFolder::Mode::Group, &ignored);
+	}
+}
+
 // ---------------------------------------------------------------------------
 // track.set_routing - the mode switch.
 // ---------------------------------------------------------------------------
@@ -232,18 +252,11 @@ ControlResult setRouting(const QJsonObject& args)
 	// one agent command would cost more than one Ctrl+Z. The step is a recorded
 	// action that switches the mode back through the same call, which restores
 	// the mode AND every child's channel as one undo.
-	auto folderRef = std::make_shared<TrackFolder*>(folder);
+	// The folder by its stable id, found again when the step runs (see reparent()).
+	const QJsonObject where{{QStringLiteral("track"), control::trackIdOf(folder)}};
 	control::addUndoStep(
-		[folderRef, previous]() {
-			QString ignored;
-			(*folderRef)->setMode(previous ? TrackFolder::Mode::Routing : TrackFolder::Mode::Group,
-				&ignored);
-		},
-		[folderRef, routing]() {
-			QString ignored;
-			(*folderRef)->setMode(routing ? TrackFolder::Mode::Routing : TrackFolder::Mode::Group,
-				&ignored);
-		});
+		[where, previous]() { setLiveMode(where, previous); },
+		[where, routing]() { setLiveMode(where, routing); });
 
 	QString refusal;
 	const QJsonArray before = childChannels(folder);

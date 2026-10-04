@@ -19,26 +19,32 @@
 #define _GNU_SOURCE
 #include <dlfcn.h>
 #include <sched.h>
+#include <stdatomic.h>
 #include <stdlib.h>
 #include <sys/sysinfo.h>
 #include <unistd.h>
 
-static long s_forced = -1;
+/* Atomic: the first calls can come from several threads at once. Every thread computes the same
+ * value, so the lazy initialisation may run more than once, but no access is a data race. */
+static _Atomic long s_forced = -1;
 
 static long forced_value(void)
 {
-	if (s_forced < 0)
+	long forced = atomic_load(&s_forced);
+	if (forced < 0)
 	{
 		const char *env = getenv("ZENE_FAKE_NCPU");
-		s_forced = env ? strtol(env, NULL, 10) : 0;
+		forced = env ? strtol(env, NULL, 10) : 0;
+		atomic_store(&s_forced, forced);
 	}
-	return s_forced;
+	return forced;
 }
 
 long sysconf(int name)
 {
-	static long (*real_sysconf)(int) = NULL;
-	if (real_sysconf == NULL) { real_sysconf = dlsym(RTLD_NEXT, "sysconf"); }
+	static long (*_Atomic s_real)(int) = NULL;
+	long (*real_sysconf)(int) = atomic_load(&s_real);
+	if (real_sysconf == NULL) { real_sysconf = dlsym(RTLD_NEXT, "sysconf"); atomic_store(&s_real, real_sysconf); }
 
 	if (real_sysconf == NULL) { return -1; }
 
@@ -52,8 +58,9 @@ long sysconf(int name)
 
 int get_nprocs(void)
 {
-	static int (*real_get_nprocs)(void) = NULL;
-	if (real_get_nprocs == NULL) { real_get_nprocs = dlsym(RTLD_NEXT, "get_nprocs"); }
+	static int (*_Atomic s_real)(void) = NULL;
+	int (*real_get_nprocs)(void) = atomic_load(&s_real);
+	if (real_get_nprocs == NULL) { real_get_nprocs = dlsym(RTLD_NEXT, "get_nprocs"); atomic_store(&s_real, real_get_nprocs); }
 
 	const long forced = forced_value();
 	if (forced > 0) { return (int) forced; }
@@ -62,8 +69,9 @@ int get_nprocs(void)
 
 int get_nprocs_conf(void)
 {
-	static int (*real_get_nprocs_conf)(void) = NULL;
-	if (real_get_nprocs_conf == NULL) { real_get_nprocs_conf = dlsym(RTLD_NEXT, "get_nprocs_conf"); }
+	static int (*_Atomic s_real)(void) = NULL;
+	int (*real_get_nprocs_conf)(void) = atomic_load(&s_real);
+	if (real_get_nprocs_conf == NULL) { real_get_nprocs_conf = dlsym(RTLD_NEXT, "get_nprocs_conf"); atomic_store(&s_real, real_get_nprocs_conf); }
 
 	const long forced = forced_value();
 	if (forced > 0) { return (int) forced; }
@@ -76,8 +84,9 @@ int get_nprocs_conf(void)
  * the mask bits at and above the forced count instead. */
 int sched_getaffinity(pid_t pid, size_t cpusetsize, cpu_set_t *mask)
 {
-	static int (*real_getaffinity)(pid_t, size_t, cpu_set_t *) = NULL;
-	if (real_getaffinity == NULL) { real_getaffinity = dlsym(RTLD_NEXT, "sched_getaffinity"); }
+	static int (*_Atomic s_real)(pid_t, size_t, cpu_set_t *) = NULL;
+	int (*real_getaffinity)(pid_t, size_t, cpu_set_t *) = atomic_load(&s_real);
+	if (real_getaffinity == NULL) { real_getaffinity = dlsym(RTLD_NEXT, "sched_getaffinity"); atomic_store(&s_real, real_getaffinity); }
 
 	if (real_getaffinity == NULL) { return -1; }
 

@@ -26,6 +26,7 @@
 
 // std::sort, for records()' deterministic path order.
 #include <algorithm>
+#include <cmath>
 
 #include <QCoreApplication>
 #include <QDebug>
@@ -91,15 +92,25 @@ QJsonObject recordToJson(const PluginScanRecord& rec)
 	return obj;
 }
 
+/*! A JSON number as a qint64, or false when it is not a whole number in qint64's range: a cache
+    file can say 1e300, and converting that is undefined. -2^63 and 2^63 are exact doubles. */
+bool wholeNumberFrom(const QJsonValue& value, qint64* out)
+{
+	if (!value.isDouble()) { return false; }
+	const double number = value.toDouble();
+	if (!(number >= -9223372036854775808.0 && number < 9223372036854775808.0)) { return false; }
+	if (number != std::floor(number)) { return false; }
+	*out = static_cast<qint64>(number);
+	return true;
+}
+
 /*! One malformed record is dropped, not the whole file: returns false for a
     record that cannot be trusted at all. */
 bool recordFromJson(const QJsonObject& obj, PluginScanRecord& out)
 {
 	if (!obj.value("path").isString() || obj.value("path").toString().isEmpty()) { return false; }
 	out.filePath = obj.value("path").toString();
-	if (!obj.value("size").isDouble() || !obj.value("mtime").isDouble()) { return false; }
-	out.size = qint64(obj.value("size").toDouble());
-	out.mtimeMs = qint64(obj.value("mtime").toDouble());
+	if (!wholeNumberFrom(obj.value("size"), &out.size) || !wholeNumberFrom(obj.value("mtime"), &out.mtimeMs)) { return false; }
 	if (!statusFromString(obj.value("status").toString(), out.status)) { return false; }
 	out.error = obj.value("error").toString();
 	out.name = obj.value("name").toString();

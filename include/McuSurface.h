@@ -107,6 +107,7 @@ private:
 	QTimer m_feedback;
 	MpscQueue<mcu::Input, 256> m_inbox;  //!< MIDI thread -> UI thread, lock-free
 	std::atomic<int> m_eventsIn{0};  //!< counted on the MIDI thread
+	std::atomic<int> m_eventsDropped{0};  //!< of those, lost to a full m_inbox
 	int m_eventsOut = 0;
 };
 

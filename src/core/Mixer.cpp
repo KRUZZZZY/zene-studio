@@ -1291,6 +1291,12 @@ void Mixer::moveChannelLeft( int index )
 	}
 	refreshGroups();
 
+	// 0.5.0 L09: listen flags are kept per index too, so they follow their channels (deleteChannel
+	// clears them for the same reason) - otherwise the neighbour moved into the slot is heard.
+	const bool listenedA = mixerlisten::listening( a );
+	mixerlisten::setListening( a, mixerlisten::listening( b ) );
+	mixerlisten::setListening( b, listenedA );
+
 	Engine::audioEngine()->doneChangeInModel();
 }
 

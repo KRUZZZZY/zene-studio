@@ -32,6 +32,7 @@
 
 #include <QFile>
 #include <QJsonArray>
+#include <QStringList>
 
 #include "AudioDevice.h"
 #include "AudioEngine.h"
@@ -80,6 +81,54 @@ QString loadAnEffect(const QString& target, int chain = -1)
 		if (loaded.ok) { return loaded.result.value(QStringLiteral("id")).toString(); }
 	}
 	return QString();
+}
+
+//! The dev-<n> of the effect plugin.list names @a name, or empty.
+QString effectDevice(const QString& name)
+{
+	for (const QJsonValue& device : run(QStringLiteral("plugin.list"), {{QStringLiteral("kind"), QStringLiteral("effect")}})
+		.result.value(QStringLiteral("devices")).toArray())
+	{
+		if (device.toObject().value(QStringLiteral("name")).toString() == name) { return device.toObject().value(QStringLiteral("id")).toString(); }
+	}
+	return QString();
+}
+
+//! The chain of instrument track @a track, or nullptr when there is no such track.
+EffectChain* trackChain(const QString& track)
+{
+	ControlResult error;
+	auto* instrument = dynamic_cast<InstrumentTrack*>(control::resolveTrack(track, &error));
+	return instrument != nullptr ? instrument->audioBusHandle()->effects() : nullptr;
+}
+
+//! The plugin names of the devices on @a track's chain, in order.
+QStringList devicesOn(const QString& track)
+{
+	QStringList names;
+	if (EffectChain* chain = trackChain(track))
+	{
+		for (const Effect* effect : chain->effects()) { names << QString::fromUtf8(effect->descriptor()->name); }
+	}
+	return names;
+}
+
+//! The fx-<n> of the first device on @a track, or empty.
+QString firstDeviceOn(const QString& track)
+{
+	EffectChain* chain = trackChain(track);
+	return chain != nullptr && !chain->effects().empty() ? control::effectIdOf(chain->effects().front()) : QString();
+}
+
+bool undone() { return run(QStringLiteral("control.undo")).result.value(QStringLiteral("undone")).toBool(); }
+bool redone() { return run(QStringLiteral("control.redo")).result.value(QStringLiteral("redone")).toBool(); }
+
+//! track.remove of @a track and the undo that brings it back: an equal track under the same id, but a NEW object, and
+//! so are its chain and the devices on it.
+bool removedAndRebuilt(const QString& track)
+{
+	return run(QStringLiteral("track.remove"), {{QStringLiteral("track"), track}}).ok && trackChain(track) == nullptr && undone()
+		&& trackChain(track) != nullptr;
 }
 
 //! The newest A16 record.
@@ -345,6 +394,44 @@ private slots:
 		QCOMPARE(notes.size(), 2);
 		QCOMPARE(notes.at(0).toObject().value(QStringLiteral("points")).toArray().size(), 0);
 		QVERIFY(!notes.at(1).toObject().value(QStringLiteral("points")).toArray().isEmpty());  // the second note's bend
+	}
+
+	//! plugin.load, plugin.replace and plugin.unload find their chain again by the track's id, and the device by its slot:
+	//! track.remove and its undo rebuild the track - its chain and its devices too - as NEW objects, which a kept
+	//! EffectChain* or Effect* named as freed memory and a guarded one no longer acted on.
+	void deviceStepsFindTheirChainAfterTheTrackIsRebuilt()
+	{
+		const QString amplifier = effectDevice(QStringLiteral("amplifier"));
+		const QString booster = effectDevice(QStringLiteral("bassbooster"));
+		if (amplifier.isEmpty() || booster.isEmpty()) { QSKIP("this build has no amplifier or bass booster module"); }
+		const QString track = run(QStringLiteral("track.add"), {{QStringLiteral("type"), QStringLiteral("instrument")}}).result
+			.value(QStringLiteral("track")).toString();
+		QVERIFY(run(QStringLiteral("plugin.load"), {{QStringLiteral("target"), track}, {QStringLiteral("device"), amplifier}}).ok);
+		const QStringList amplified = devicesOn(track);
+		QCOMPARE(amplified.size(), 1);
+		QVERIFY(removedAndRebuilt(track));
+		QVERIFY(undone());  // plugin.load's step, on the rebuilt chain
+		QVERIFY(devicesOn(track).isEmpty());
+		QVERIFY(redone());
+		QCOMPARE(devicesOn(track), amplified);
+
+		QVERIFY(run(QStringLiteral("plugin.replace"), {{QStringLiteral("target"), track}, {QStringLiteral("plugin"), firstDeviceOn(track)},
+			{QStringLiteral("device"), booster}}).ok);
+		const QStringList boosted = devicesOn(track);
+		QCOMPARE(boosted.size(), 1);
+		QVERIFY(boosted != amplified);
+		QVERIFY(removedAndRebuilt(track));
+		QVERIFY(undone());  // the old device back at its slot, the new one out
+		QCOMPARE(devicesOn(track), amplified);
+		QVERIFY(redone());
+		QCOMPARE(devicesOn(track), boosted);
+
+		QVERIFY(run(QStringLiteral("plugin.unload"), {{QStringLiteral("target"), track}, {QStringLiteral("plugin"), firstDeviceOn(track)}}).ok);
+		QVERIFY(removedAndRebuilt(track));
+		QVERIFY(undone());  // the removal's step re-creates the device on the rebuilt chain...
+		QCOMPARE(devicesOn(track), boosted);
+		QVERIFY(redone());  // ...and its redo takes that one out again
+		QVERIFY(devicesOn(track).isEmpty());
 	}
 
 	//! E19: no record names an "UNIMPLEMENTED" inverse any more - a real one, or an honest one-way record.

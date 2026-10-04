@@ -48,6 +48,7 @@
 #include "ControlVocabulary.h"
 #include "Engine.h"
 #include "InstrumentTrack.h"
+#include "ReversibilityTestSupport.h"
 #include "Song.h"
 #include "TrackContainer.h"
 
@@ -303,6 +304,28 @@ private slots:
 		QVERIFY(dynamic_cast<AutomationClip*>(lane->getClips().front())->isRelative());
 		QVERIFY(run(QStringLiteral("control.undo")).ok);  // one undo step removes the lane
 		QCOMPARE(static_cast<int>(Engine::getSong()->tracks().size()), before);
+	}
+
+	//! automation.lane_add's undo, and the creating automation.add_point's, find the track they made by
+	//! its id: track.remove and its undo rebuild it as a new object, which a kept Track* does not name.
+	void aMadeLaneIsFoundAgainAfterItsRemovalIsUndone()
+	{
+		const QString id = control::trackIdOf(m_track);
+		const QString parameter = firstParameter(id);
+		QVERIFY(!parameter.isEmpty());
+		const ControlResult lane = run(QStringLiteral("automation.lane_add"), addressed(id, parameter));
+		QVERIFY2(lane.ok, qPrintable(lane.errorMessage));
+		QVERIFY(revtest::makerUndoFindsTrackAfterRemovalUndone(lane.result.value(QStringLiteral("lane")).toString()));
+
+		AutomatableModel* model = modelOf(id, parameter);
+		QVERIFY(model != nullptr);
+		const ControlResult point = run(QStringLiteral("automation.add_point"), addressed(id, parameter,
+			{{QStringLiteral("ticks"), 0}, {QStringLiteral("value"), static_cast<double>(model->minValue<float>())}}));
+		QVERIFY2(point.ok, qPrintable(point.errorMessage));
+		QVERIFY(point.result.value(QStringLiteral("created_automation_track")).toBool());
+		AutomationClip* clip = control::existingAutomationClip(model);
+		QVERIFY(clip != nullptr);
+		QVERIFY(revtest::makerUndoFindsTrackAfterRemovalUndone(control::trackIdOf(clip->getTrack())));
 	}
 
 private:

@@ -44,6 +44,7 @@
 #include "AutomatableModel.h"
 #include "ControlDeviceSupport.h"
 #include "ControlReversibility.h"
+#include "ControlStructuralSupport.h"
 #include "Effect.h"
 #include "EffectChain.h"
 #include "Engine.h"
@@ -55,7 +56,6 @@
 #include <QStringList>
 
 #include <cstring>
-#include <memory>
 
 namespace lmms
 {
@@ -193,22 +193,9 @@ void applyLoadEffect(EffectChain* chain, const QString& reference)
 		return;
 	}
 	// SPEC A16: the same recorded action step plugin.load records - unloading
-	// the instance it appended restores the chain exactly.
-	auto holder = std::make_shared<Effect*>(effect);
-	EffectChain* owned = chain;
-	control::addUndoStep(
-		[holder, owned]() {
-			if (*holder != nullptr)
-			{
-				owned->removeEffect(*holder);
-				(*holder)->deleteLater();
-				*holder = nullptr;
-			}
-		},
-		[holder, owned, entry]() {
-			ControlResult ignored;
-			*holder = controlInstantiateDevice(entry, owned, &ignored);
-		});
+	// the instance it appended restores the chain exactly. It finds the chain
+	// again by its channel's id: a deleted channel takes the chain with it.
+	control::journalEffectLoad(chain, effect, entry, static_cast<int>(chain->effects().size()) - 1);
 }
 
 void applyRemoveEffect(EffectChain* chain, int index)

@@ -43,6 +43,8 @@
  * Boston, MA 02110-1301 USA.
  */
 
+#include <algorithm>
+
 #include <QJsonObject>
 #include <QString>
 
@@ -120,6 +122,14 @@ QJsonObject punchStateJson(const Timeline& timeline, const Song* song)
 	return result;
 }
 
+//! A tick argument as tick_t, clamped to one tick past either end of the timeline first: casting a
+//! double outside tick_t's range is undefined, and a clamped value is refused below just as the
+//! original would have been.
+tick_t clampedTicks(const QJsonObject& args, const QString& key)
+{
+	return static_cast<tick_t>(std::clamp(args.value(key).toDouble(), -1.0, MaxSongLength + 1.0));
+}
+
 //! The `start`/`end` pair, validated. The returned string is empty when they are
 //! usable, otherwise it is the refusal's message.
 QString parsePunchRange(const QJsonObject& args, tick_t* start, tick_t* end)
@@ -129,8 +139,8 @@ QString parsePunchRange(const QJsonObject& args, tick_t* start, tick_t* end)
 	{
 		return QStringLiteral("'start' and 'end' are tick positions, in integers");
 	}
-	*start = static_cast<tick_t>(args.value(QStringLiteral("start")).toDouble());
-	*end = static_cast<tick_t>(args.value(QStringLiteral("end")).toDouble());
+	*start = clampedTicks(args, QStringLiteral("start"));
+	*end = clampedTicks(args, QStringLiteral("end"));
 	if (*start < 0) { return QStringLiteral("'start' must not be negative"); }
 	if (*end <= *start)
 	{

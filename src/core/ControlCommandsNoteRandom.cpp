@@ -96,6 +96,16 @@ namespace
 //! move the probability roll of the same note.
 constexpr uint32_t kTimingSalt = 2;
 
+/*! A note position after a position-jitter roll: \a unit in [0, 1) mapped to
+ *  [-jitter, +jitter] ticks. Summed in 64 bits and kept in 0..MaxSongLength,
+ *  because a jitter may be as large as a schema integer (so `pos + offset` in
+ *  int could overflow) and no note can sit before tick 0 or past the timeline. */
+int jitteredPosition(int pos, double jitter, float unit)
+{
+	const auto offset = static_cast<std::int64_t>(std::llround(2.0 * jitter * unit - jitter));
+	return static_cast<int>(std::clamp<std::int64_t>(pos + offset, 0, MaxSongLength));
+}
+
 //! Resolves the clip a roll runs over, refusing one with no notes: a roll over
 //! nothing would report a success that moved nothing.
 MidiClip* resolveRollClip(const QJsonObject& args, ClipRef* ref, ControlResult* error)
@@ -302,9 +312,7 @@ ControlResult randomize(const QJsonObject& args)
 		if (positionJitter > 0.0)
 		{
 			const float unit = NoteRandom::rollUnit(seed, key, pos, length, kTimingSalt);
-			const int offset = static_cast<int>(
-				std::lround(2.0 * positionJitter * unit - positionJitter));
-			const int moved = std::max(0, pos + offset);
+			const int moved = jitteredPosition(pos, positionJitter, unit);
 			if (moved != pos) { note->setPos(TimePos(moved)); }
 		}
 	}

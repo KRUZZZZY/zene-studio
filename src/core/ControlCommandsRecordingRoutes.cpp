@@ -117,6 +117,21 @@ QJsonObject armedReply(const TrackRecorder& target, int route)
 	return result;
 }
 
+/*! 'sample_rate' is accepted only as the engine's own rate. A take is recorded
+ *  at the rate the engine runs, so any other value would be silently ignored -
+ *  and a caller told "armed" would believe it had been honoured. */
+bool sampleRateIsEngines(const QJsonObject& args, ControlResult* error)
+{
+	if (!args.contains(QStringLiteral("sample_rate"))) { return true; }
+	const int requested = args.value(QStringLiteral("sample_rate")).toInt();
+	if (requested == engineSampleRate()) { return true; }
+	*error = ControlResult::failure(ControlErrorKind::InvalidArgs,
+		QStringLiteral("'sample_rate' %1 is not the engine's %2 Hz: a take is recorded at the "
+			"rate the engine runs, so another rate needs the audio device set to it")
+			.arg(requested).arg(engineSampleRate()));
+	return false;
+}
+
 // --------------------------------------------------------------------------
 // record.get_state
 // --------------------------------------------------------------------------
@@ -152,6 +167,7 @@ ControlResult armTrack(const QJsonObject& args)
 				"(record.disarm_track) - an armed route is one take, not a take per call")
 				.arg(route).arg(QString::fromStdString(target.filePath())));
 	}
+	if (!sampleRateIsEngines(args, &error)) { return error; }
 
 	const QString file = takePathArg(args, route, &error);
 	if (!error.ok) { return error; }
@@ -321,7 +337,9 @@ void registerArmTrack(ControlRegistry& registry)
 		"[0, input_channel_capacity) - the FRAMES the route records come from the engine's input "
 		"path, so with no capture device open and no frames staged the take is silent however the "
 		"route is armed (record.input_get_state says which of those is true). 'file' must be "
-		"absolute and defaults to zene-take-route<N>.wav beside this instance's recovery file. "
+		"absolute and defaults to zene-take-route<N>.wav beside this instance's recovery file; "
+		"'sample_rate', when given, must be the engine's rate (a take records at the rate the "
+		"engine runs). "
 		"Reversible: the recorded inverse is record.disarm_track, which stops the capture and "
 		"retires the journal; the take file itself is left on disk, like any recording you keep.");
 	cmd.argsSchema = objectSchema({

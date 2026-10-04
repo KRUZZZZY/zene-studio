@@ -48,6 +48,13 @@ public:
 		return &m_controls;
 	}
 
+	//! A sample's denoised value comes out once its 480-sample frame is complete: 479 frames later. The
+	//! dry path is delayed to match, so the chain can compensate the whole effect (round 6).
+	int latencyFrames() const override
+	{
+		return RNNOISE_FRAME_SIZE - 1;
+	}
+
 private:
 	RnnoiseDenoiserControls m_controls;
 
@@ -60,6 +67,10 @@ private:
 	// Input accumulation buffer (mono)
 	float m_inputBuf[RNNOISE_FRAME_SIZE] = {};
 	int m_inputCount;
+
+	// The input as it arrived, stereo, at the same positions as m_inputBuf: the dry signal mixed with
+	// the denoised sample of the same position, so wet and dry stay aligned
+	SampleFrame m_dryBuf[RNNOISE_FRAME_SIZE] = {};
 
 	// Output buffer for the last processed frame
 	float m_outputBuf[RNNOISE_FRAME_SIZE] = {};

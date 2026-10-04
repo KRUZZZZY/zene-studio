@@ -711,8 +711,9 @@ private:
 	//! The tempo map and its lock-free hand-off to the audio thread.
 	TempoMapPublisher m_tempoMap;
 	//! The tempo the follower last applied, so a block costs one comparison
-	//! when nothing changed. -1 means "nothing applied yet".
-	int m_tempoMapAppliedTempo = -1;
+	//! when nothing changed. -1 means "nothing applied yet". Atomic: the audio
+	//! thread's followTempoMap() and the control thread's setTempo() both write it.
+	std::atomic<int> m_tempoMapAppliedTempo{-1};
 	//! The loop wraps the audio thread played (loopWraps()).
 	std::atomic<unsigned> m_loopWraps{0};
 	//! The modulation layer and its lock-free hand-off to the audio thread

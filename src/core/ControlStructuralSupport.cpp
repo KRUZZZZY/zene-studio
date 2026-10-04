@@ -59,20 +59,27 @@
  *     addressable object and a cached trk-7 still names it after the undo.
  */
 
+#include <algorithm>
+#include <functional>
 #include <memory>
 #include <optional>
 
 #include <QDomDocument>
 #include <QDomElement>
+#include <QJsonObject>
+#include <QPointer>
 
+#include "ControlDevicePlacement.h"
 #include "ControlDeviceSupport.h"
 #include "ControlEdit.h"
 #include "ControlReversibility.h"
 #include "ControlStructuralSupport.h"
 #include "ControlTrackCreation.h"
+#include "ControlVocabulary.h"
 #include "Effect.h"
 #include "EffectChain.h"
 #include "Engine.h"
+#include "Mixer.h"
 #include "Plugin.h"
 #include "Song.h"
 #include "Track.h"
@@ -333,6 +340,85 @@ Effect* recreateEffectFromState(EffectChain* chain, const QString& stateXml, int
 	return effect;
 }
 
+namespace
+{
+
+//! The plugin.* address of @a chain on a mixer channel: its insert chain, its post-fader inserts or rack chain n.
+//! An empty object when no channel owns it.
+QJsonObject channelChainArgs(const EffectChain* chain)
+{
+	Mixer* mixer = Engine::mixer();
+	for (int i = 0; mixer != nullptr && i < static_cast<int>(mixer->numChannels()); ++i)
+	{
+		MixerChannel* channel = mixer->mixerChannel(i);
+		const QString id = channelIdOf(channel);
+		if (&channel->m_fxChain == chain) { return {{QStringLiteral("target"), id}}; }
+		if (&channel->m_postInserts.chain() == chain) { return {{QStringLiteral("target"), postinserts::targetOf(id)}}; }
+		for (int c = 1; c < channel->m_rack.chainCount(); ++c)
+		{
+			if (channel->m_rack.chain(c) == chain) { return {{QStringLiteral("target"), id}, {QStringLiteral("chain"), c}}; }
+		}
+	}
+	return {};
+}
+
+//! The plugin.* address of @a chain - {target}, plus {chain} for a rack chain - or an empty object when no Song
+//! track or mixer channel owns it.
+QJsonObject chainArgs(const EffectChain* chain)
+{
+	for (Track* track : Engine::getSong()->tracks())
+	{
+		ControlTarget target;
+		ControlResult ignored;
+		const QString id = trackIdOf(track);
+		if (resolveControlTarget(id, &target, &ignored) && target.chain == chain) { return {{QStringLiteral("target"), id}}; }
+	}
+	return channelChainArgs(chain);
+}
+
+//! @a chain, found again by its owner's address every time the result is called (nullptr once the owner is gone):
+//! a track.remove and its undo rebuild the track and its chain as NEW objects under the same id. A chain no target
+//! owns has no address, so it is GUARDED instead - null once it is deleted.
+std::function<EffectChain*()> chainFinderOf(EffectChain* chain)
+{
+	const QJsonObject args = chainArgs(chain);
+	if (args.isEmpty()) { return [guarded = QPointer<EffectChain>(chain)]() -> EffectChain* { return guarded.data(); }; }
+	return [args]() -> EffectChain* {
+		ControlTarget target;
+		ControlResult ignored;
+		return resolveChainTarget(args, &target, &ignored) ? target.chain : nullptr;
+	};
+}
+
+QString pluginNameOf(const Effect* effect) { return QString::fromUtf8(effect->descriptor()->name); }
+
+//! The device a recorded step made, on @a chain: @a made while it is still there, else the device at @a slot when it
+//! is the same plugin. A rebuilt chain carries rebuilt devices (their fx ids renumber), so the slot is what still
+//! names it. nullptr when neither does.
+Effect* madeEffect(const EffectChain* chain, const QPointer<Effect>& made, int slot, const QString& plugin)
+{
+	if (chain == nullptr) { return nullptr; }
+	const std::vector<Effect*>& effects = chain->effects();
+	if (!made.isNull() && std::find(effects.begin(), effects.end(), made.data()) != effects.end()) { return made.data(); }
+	if (slot < 0 || slot >= static_cast<int>(effects.size())) { return nullptr; }
+	Effect* atSlot = effects[static_cast<std::size_t>(slot)];
+	return pluginNameOf(atSlot) == plugin ? atSlot : nullptr;
+}
+
+//! Take the device madeEffect() finds off @a chain. Same lifetime as plugin.unload's: the audio engine may still
+//! hold the pointer for the period in flight, so it is deleted later.
+void takeOutMade(EffectChain* chain, QPointer<Effect>& made, int slot, const QString& plugin)
+{
+	if (Effect* effect = madeEffect(chain, made, slot, plugin))
+	{
+		chain->removeEffect(effect);
+		effect->deleteLater();
+	}
+	made = nullptr;
+}
+
+} // namespace
+
 bool journalEffectRemoval(EffectChain* chain, Effect* effect, int index)
 {
 	if (chain == nullptr || effect == nullptr || index < 0) { return false; }
@@ -345,24 +431,32 @@ bool journalEffectRemoval(EffectChain* chain, Effect* effect, int index)
 	// it did not record.
 	if (xml.isEmpty() || xml.size() > StructuralSnapshotLimit) { return false; }
 
-	auto holder = std::make_shared<Effect*>(effect);
+	// No pointer is kept (see journalEffectLoad in the header): the chain by its owner's address, the device by its slot.
+	const auto chainOf = chainFinderOf(chain);
+	const QString plugin = pluginNameOf(effect);
+	auto made = std::make_shared<QPointer<Effect>>();
 	addStructuralUndoStep(
-		[chain, xml, index, holder]() {
-			*holder = recreateEffectFromState(chain, xml, index);
+		[chainOf, xml, index, made]() {
+			if (EffectChain* live = chainOf()) { *made = recreateEffectFromState(live, xml, index); }
 		},
-		[chain, holder]() {
-			if (*holder != nullptr)
-			{
-				chain->removeEffect(*holder);
-				// Same lifetime as the rack's own delete and plugin.unload's:
-				// the audio engine may still hold the pointer for the period in
-				// flight.
-				(*holder)->deleteLater();
-				*holder = nullptr;
-			}
-		},
+		[chainOf, made, index, plugin]() { takeOutMade(chainOf(), *made, index, plugin); },
 		xml.size());
 	return true;
+}
+
+void journalEffectLoad(EffectChain* chain, Effect* effect, const ControlDeviceEntry& entry, int slot)
+{
+	const auto chainOf = chainFinderOf(chain);
+	const QString plugin = pluginNameOf(effect);
+	auto made = std::make_shared<QPointer<Effect>>(effect);
+	addUndoStep(
+		[chainOf, made, slot, plugin]() { takeOutMade(chainOf(), *made, slot, plugin); },
+		[chainOf, made, entry, slot]() {
+			EffectChain* live = chainOf();
+			ControlResult ignored;
+			*made = live != nullptr ? controlInstantiateDevice(entry, live, &ignored) : nullptr;
+			if (!made->isNull()) { placeEffect(live, made->data(), slot); }
+		});
 }
 
 } // namespace control

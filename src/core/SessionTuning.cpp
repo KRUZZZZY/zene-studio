@@ -34,6 +34,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
 #include <utility>
 #include <vector>
 
@@ -44,6 +45,7 @@
 #include "Engine.h"
 #include "InstrumentTrack.h"
 #include "Keymap.h"
+#include "PatternStore.h"
 #include "Scale.h"
 #include "Song.h"
 #include "Track.h"
@@ -94,6 +96,10 @@ bool referenceOf(const Keymap& keymap, const std::vector<Interval>& intervals,
 	return true;
 }
 
+//! The table is read back as a float (noteToFreq()), so a finite double past float's range would
+//! reach the audio thread as infinity.
+constexpr double MaxTableFrequency = std::numeric_limits<float>::max();
+
 //! The cap's content rule for ONE snapshot entry: 0 is the unmapped marker,
 //! everything else must be a finite non-negative number. Decided here so
 //! setState() is a loop and a commit, not a boolean expression tower.
@@ -101,7 +107,7 @@ bool entryIsFrequency(const QJsonValue& value)
 {
 	if (!value.isDouble()) { return false; }
 	const double frequency = value.toDouble(-1.0);
-	return std::isfinite(frequency) && frequency >= 0.0;
+	return std::isfinite(frequency) && frequency >= 0.0 && frequency <= MaxTableFrequency;
 }
 
 } // namespace
@@ -239,14 +245,18 @@ void SessionTuning::retuneSoundingNotes()
 	// takes it: the control thread walks m_processHandles while the render
 	// thread may still be inserting into it.
 	Engine::audioEngine()->requestChangeInModel();
-	for (Track* track : song->tracks())
+	// The pattern store's instrument tracks sound too (session and pattern clips play them), so
+	// they are walked with the song's, as Mixer::moveChannelLeft walks both lists.
+	const PatternStore* patterns = Engine::patternStore();
+	for (const TrackContainer::TrackList& tracks : {song->tracks(),
+		patterns != nullptr ? patterns->tracks() : TrackContainer::TrackList{}})
 	{
-		if (auto* instrumentTrack = dynamic_cast<InstrumentTrack*>(track))
+		for (Track* track : tracks)
 		{
 			// Each marked handle recomputes from THIS table on its next play()
 			// (NotePlayHandle::play sees m_frequencyNeedsUpdate), so a table
 			// change retunes notes already sounding - the card's whole point.
-			instrumentTrack->retunePlayingNotes();
+			if (auto* instrumentTrack = dynamic_cast<InstrumentTrack*>(track)) { instrumentTrack->retunePlayingNotes(); }
 		}
 	}
 	Engine::audioEngine()->doneChangeInModel();
@@ -310,9 +320,9 @@ bool SessionTuning::setNoteFrequency(int key, double frequency, const QString& s
 		if (error != nullptr) { *error = QStringLiteral("note %1 is outside 0..%2").arg(key).arg(TableSize - 1); }
 		return false;
 	}
-	if (!std::isfinite(frequency) || frequency <= 0.0)
+	if (!std::isfinite(frequency) || frequency <= 0.0 || frequency > MaxTableFrequency)
 	{
-		if (error != nullptr) { *error = QStringLiteral("frequency %1 must be a finite positive Hz value").arg(frequency); }
+		if (error != nullptr) { *error = QStringLiteral("frequency %1 must be a finite positive Hz value a float can hold").arg(frequency); }
 		return false;
 	}
 	Table next = m_tables[m_front.load(std::memory_order_relaxed)];

@@ -26,6 +26,7 @@
 #include <QFile>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QSaveFile>
 
 #include "AutomatableModel.h"
 #include "ConfigManager.h"
@@ -123,13 +124,15 @@ bool ControllerSurface::saveTemplate(const QString& name)
 	t.name = name;
 	t.bindings = currentBindings();
 
-	QFile file(templatePathFor(name));
+	// QSaveFile: the old template is replaced only once the whole new one is on
+	// disk, so a full disk or a short write reports failure and keeps the old file.
+	QSaveFile file(templatePathFor(name));
 	if (!file.open(QIODevice::WriteOnly))
 	{
 		return false;
 	}
-	file.write(QJsonDocument(t.toJson()).toJson(QJsonDocument::Compact));
-	return true;
+	const QByteArray bytes = QJsonDocument(t.toJson()).toJson(QJsonDocument::Compact);
+	return file.write(bytes) == bytes.size() && file.commit();
 }
 
 QStringList ControllerSurface::listTemplates() const

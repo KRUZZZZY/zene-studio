@@ -295,6 +295,8 @@ void registerAll(lua_State* L, ScriptEngine* engine)
 			.addFunction("midiIn", +[]() -> LuaMidiIn& { return midiInView(); })
 			.addFunction("midiOut", +[]() -> LuaMidiOut& { return midiOutView(); })
 			.addFunction("setInstructionBudget", +[](int budget) {
+				// A negative int would wrap to an all-but-unlimited quint64; 0 would refuse every run.
+				if (budget < 1) { throw std::runtime_error("setInstructionBudget: budget must be >= 1"); }
 				ScriptEngine::instance()->setInstructionBudget(static_cast<quint64>(budget));
 			})
 			.addFunction("instructionBudget", +[]() -> int {
@@ -535,11 +537,6 @@ LuaNote& LuaNoteBuilder::build() const
 	note.setVolume(m_volume);
 	note.setPanning(m_panning);
 	return ScriptBindings::newNote(note);
-}
-
-void LuaNoteBuilder::addTo(LuaPatternClip& clip) const
-{
-	clip.addNoteAt(m_key, m_pos, m_length, m_volume);
 }
 
 // ---------------------------------------------------------------------------
@@ -834,10 +831,10 @@ LuaNote& LuaPatternClip::note(int index) const
 
 void LuaPatternClip::addNote(const LuaNote& note)
 {
-	addNoteAt(note.key(), note.pos(), note.length(), note.volume());
+	addPannedNote(note.key(), note.pos(), note.length(), note.volume(), note.panning());
 }
 
-void LuaPatternClip::addNoteAt(int key, int pos, int length, int volume)
+void LuaPatternClip::addPannedNote(int key, int pos, int length, int volume, int panning)
 {
 	if (!m_clip) { return; }
 	ScriptCommand command = makeCommand(ScriptCommand::Type::AddNote);
@@ -846,7 +843,7 @@ void LuaPatternClip::addNoteAt(int key, int pos, int length, int volume)
 	command.i1 = std::max(0, pos);
 	command.i2 = std::max(1, length);
 	command.i3 = std::clamp(volume, 0, 255);
-	command.f0 = 0.0f;
+	command.f0 = static_cast<float>(std::clamp(panning, -128, 127));  // panning_t's range, as LuaNote::toNote
 	ScriptEngine::instance()->enqueue(command);
 }
 
@@ -1078,7 +1075,8 @@ bool LuaProjectFile::write(const QString& path, const QString& contents) const
 	{
 		throw std::runtime_error(QStringLiteral("ProjectFile.write: cannot open %1").arg(path).toStdString());
 	}
-	return file.write(contents.toUtf8()) >= 0;
+	const QByteArray bytes = contents.toUtf8();  // a short write (full disk) or failed flush is false
+	return file.write(bytes) == bytes.size() && file.flush();
 }
 
 QStringList LuaProjectFile::list(const QString& path) const

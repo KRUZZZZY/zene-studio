@@ -172,6 +172,9 @@ bool TrackRecorder::arm(const std::string& filePath, int sampleRate, int inputCh
 	}
 
 	m_writerThread = std::thread(&TrackRecorder::writerLoop, this);
+	// Only now does the audio thread see the route: m_armed was claimed above, before the ring
+	// reset and the channel change it must not race.
+	m_capturing.store(true, std::memory_order_release);
 	return true;
 }
 
@@ -198,6 +201,7 @@ void TrackRecorder::disarm()
 	{
 		return; // not armed
 	}
+	m_capturing.store(false, std::memory_order_release);
 
 	m_stopRequested.store(true, std::memory_order_release);
 	if (m_writerThread.joinable())
@@ -246,7 +250,7 @@ void TrackRecorder::processInputInterleaved(const sample_t* interleaved, int cha
 	f_cnt_t frames) noexcept
 {
 	if (interleaved == nullptr || channels < 1 || frames == 0
-		|| !m_armed.load(std::memory_order_acquire))
+		|| !m_capturing.load(std::memory_order_acquire))
 	{
 		return;
 	}

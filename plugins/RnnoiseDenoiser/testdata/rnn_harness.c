@@ -17,14 +17,45 @@
 #include <math.h>
 #include "rnnoise.h"
 
+/* The input scale: a finite, non-zero number, or 0 when the argument is not one (the output is divided by it). */
+static float parse_scale(const char *text)
+{
+	char *end = NULL;
+	const float scale = strtof(text, &end);
+	return (end != text && *end == '\0' && isfinite(scale)) ? scale : 0.0f;
+}
+
+/* Denoises the `count` samples at `in` (a whole frame, or the zero-padded final part frame) into `out`
+ * and writes its stats row; returns the frame's vad probability. */
+static float process_frame(DenoiseState *st, const float *in, float *out, int count, float scale, FILE *fs, int nf)
+{
+	float frame[480] = {0};
+	float denoised[480];
+	double ein = 0.0;
+	for (int j = 0; j < count; j++)
+	{
+		frame[j] = in[j] * scale;
+		ein += (double)in[j] * in[j];
+	}
+	const float v = rnnoise_process_frame(st, denoised, frame);
+	double eout = 0.0;
+	for (int j = 0; j < count; j++)
+	{
+		out[j] = denoised[j] / scale;
+		eout += (double)out[j] * out[j];
+	}
+	if (fs) fprintf(fs, "%d,%.8g,%.8g,%.6f\n", nf, sqrt(ein / count), sqrt(eout / count), v);
+	return v;
+}
+
 int main(int argc, char **argv)
 {
-	if (argc < 4)
+	const float scale = argc < 4 ? 0.0f : parse_scale(argv[3]);
+	if (scale == 0.0f)
 	{
-		fprintf(stderr, "usage: %s <in.f32> <out.f32> <scale> [stats.csv]\n", argv[0]);
+		fprintf(stderr, "usage: %s <in.f32> <out.f32> <scale: finite, non-zero> [stats.csv]\n", argv[0]);
 		return 2;
 	}
-	const float scale = (float)atof(argv[3]);
 
 	FILE *fi = fopen(argv[1], "rb");
 	if (!fi) { perror("in"); return 2; }
@@ -45,27 +76,13 @@ int main(int argc, char **argv)
 	FILE *fs = NULL;
 	if (argc > 4) { fs = fopen(argv[4], "w"); fprintf(fs, "frame,in_rms,out_rms,vad_prob\n"); }
 
-	float frame[480];
 	double vsum = 0.0;
 	int nf = 0;
-	for (long i = 0; i + 480 <= n; i += 480)
+	/* A final part frame is zero-padded and processed too, so the output's tail is not left at zero. */
+	for (long i = 0; i < n; i += 480)
 	{
-		double ein = 0.0;
-		for (int j = 0; j < 480; j++)
-		{
-			frame[j] = in[i + j] * scale;
-			ein += (double)in[i + j] * in[i + j];
-		}
-		float v = rnnoise_process_frame(st, out + i, frame);
-		double eout = 0.0;
-		for (int j = 0; j < 480; j++)
-		{
-			out[i + j] /= scale;
-			eout += (double)out[i + j] * out[i + j];
-		}
-		if (fs) fprintf(fs, "%d,%.8g,%.8g,%.6f\n", nf,
-			sqrt(ein / 480.0), sqrt(eout / 480.0), v);
-		vsum += v;
+		const int count = n - i < 480 ? (int)(n - i) : 480;
+		vsum += process_frame(st, in + i, out + i, count, scale, fs, nf);
 		nf++;
 	}
 	if (fs) fclose(fs);

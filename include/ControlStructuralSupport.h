@@ -39,6 +39,7 @@ class Effect;
 class EffectChain;
 class Track;
 class TrackContainer;
+struct ControlDeviceEntry;
 
 namespace control
 {
@@ -128,6 +129,20 @@ LMMS_EXPORT bool journalTrackMove(Track* track, int fromIndex, int toIndex);
  *  removed from. False when the state could not be captured.
  */
 LMMS_EXPORT bool journalEffectRemoval(EffectChain* chain, Effect* effect, int index);
+
+/*! Records the inverse of loading \a effect, a fresh instance of \a entry that
+ *  sits at \a slot of \a chain: ONE action step whose undo takes the device out
+ *  and whose redo instantiates \a entry at \a slot again (plugin.load,
+ *  plugin.replace, a script's loadEffect).
+ *
+ *  Both this step and journalEffectRemoval()'s hold no chain pointer: they find
+ *  the chain again by its owner's id (the track or mixer channel, and the rack
+ *  chain) every time they run, and the device by its slot. A track.remove and its
+ *  undo rebuild the track - its chain and its devices too - as NEW objects under
+ *  the same id, so a kept EffectChain* or Effect* would name freed memory. A step
+ *  whose chain is gone does nothing.
+ */
+LMMS_EXPORT void journalEffectLoad(EffectChain* chain, Effect* effect, const ControlDeviceEntry& entry, int slot);
 
 /*! Recreates the effect described by \a stateXml (a document written by
  *  controlEffectStateXml()) inside \a chain, at \a index, through

@@ -31,7 +31,9 @@
 #include <atomic>
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 #include <memory>
+#include <stdexcept>
 
 #include "SampleFrame.h"
 
@@ -99,7 +101,10 @@ public:
 
 		const auto head = m_head.load(std::memory_order_relaxed);
 		const auto sequence = m_sequence.load(std::memory_order_relaxed);
-		m_sequence.store(sequence + 1, std::memory_order_release);  // odd: writing
+		m_sequence.store(sequence + 1, std::memory_order_relaxed);  // odd: writing
+		// The odd sequence is visible before any slot write (a release store alone
+		// lets the slot writes move ahead of it).
+		std::atomic_thread_fence(std::memory_order_release);
 		for (std::size_t i = 0; i < count; ++i)
 		{
 			m_slots[(head + i) & m_mask] = frames[i];
@@ -160,7 +165,9 @@ public:
 				dst[i] = m_slots[(first + i) & m_mask];
 			}
 
-			if (m_sequence.load(std::memory_order_acquire) == sequence)
+			// The copy's reads complete before the sequence is read again.
+			std::atomic_thread_fence(std::memory_order_acquire);
+			if (m_sequence.load(std::memory_order_relaxed) == sequence)
 			{
 				return count;  // no producer write overlapped the copy
 			}
@@ -223,6 +230,11 @@ private:
 
 	static std::size_t nextPowerOfTwo(std::size_t value)
 	{
+		// Past the largest power of two a size_t holds, `result <<= 1` wraps to 0 and never ends.
+		if (value > (std::numeric_limits<std::size_t>::max() >> 1) + 1)
+		{
+			throw std::length_error("ring capacity cannot be rounded up to a power of two");
+		}
 		std::size_t result = 1;
 		while (result < value) { result <<= 1; }
 		return result;

@@ -48,6 +48,14 @@ int clampChannels(int channels)
 	return std::clamp(channels, AudioInputPath::MinChannels, AudioInputPath::MaxChannels);
 }
 
+//! An integer key of this path: missing or unparsable text gives @a fallback, as configuredPlan() documents.
+int configInt(const char* key, int fallback)
+{
+	bool ok = false;
+	const int value = ConfigManager::inst()->value(kConfigClass, key).toInt(&ok);
+	return ok ? value : fallback;
+}
+
 } // namespace
 
 
@@ -81,10 +89,9 @@ AudioInputPath::Plan AudioInputPath::configuredPlan()
 	ConfigManager* config = ConfigManager::inst();
 	Plan plan;
 	plan.device = config->value(kConfigClass, kDeviceKey);
-	plan.channels = clampChannels(config->value(kConfigClass, kChannelsKey,
-		QString::number(DefaultChannels)).toInt());
-	plan.left = config->value(kConfigClass, kLeftKey, QStringLiteral("0")).toInt();
-	plan.right = config->value(kConfigClass, kRightKey, QStringLiteral("1")).toInt();
+	plan.channels = clampChannels(configInt(kChannelsKey, DefaultChannels));
+	plan.left = configInt(kLeftKey, 0);
+	plan.right = configInt(kRightKey, 1);
 	// A pair that does not fit the width is clamped HERE rather than refused:
 	// this accessor never fails, and the honoured form is what it returns.
 	plan.left = std::clamp(plan.left, 0, plan.channels - 1);

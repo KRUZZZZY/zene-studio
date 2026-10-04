@@ -322,6 +322,30 @@ void HostedPlugin::unload()
 	impl.paramsChanged.store(false, std::memory_order_relaxed);
 }
 
+namespace
+{
+
+//! Points the event list at one chunk's notes: the queued notes (sorted by time, in frames from the start of
+//! the request) that fall before the chunk's end, rebased to its start; the last chunk takes every note left,
+//! bounded to its last frame. Round 6: every note went to the first chunk at its request-relative time, so a
+//! note meant for a later chunk carried a time past the end of the chunk it was handed in. Audio thread.
+auto sliceNotes(EventListState& state, NoteOrExpression* notes, std::uint32_t first, std::uint32_t total,
+	std::uint32_t offset, std::uint32_t chunk, bool last) -> std::uint32_t
+{
+	std::uint32_t next = first;
+	while (next < total && (last || notes[next].header.time < offset + chunk))
+	{
+		auto& time = notes[next].header.time;
+		time = std::min(time - std::min(time, offset), chunk - 1);
+		++next;
+	}
+	state.notes = notes + first;
+	state.noteCount = next - first;
+	return next;
+}
+
+} // namespace
+
 auto HostedPlugin::process(const float* const* inputs, float* const* outputs, int inputChannels,
 	int outputChannels, int frames) -> bool
 {
@@ -367,10 +391,11 @@ auto HostedPlugin::process(const float* const* inputs, float* const* outputs, in
 	impl.eventState.count = eventCount;
 
 	// --- notes -> the same event list -------------------------------------
-	// Drained once per request: the notes belong to the chunk that starts it,
-	// like the parameter changes, so an event at frame N of the block affects
-	// frame N of that chunk.
+	// Drained once per request; each chunk is handed the notes that fall in it
+	// (sliceNotes), so an event at frame N of the request lands on frame N.
 	impl.drainNoteQueue();
+	const std::uint32_t noteTotal = impl.eventState.noteCount;
+	std::uint32_t nextNote = 0;
 
 	// --- chunks -----------------------------------------------------------
 	// As many chunks of at most the activated block size as the request needs;
@@ -381,14 +406,17 @@ auto HostedPlugin::process(const float* const* inputs, float* const* outputs, in
 	while (offset < frames && ok)
 	{
 		const int chunk = std::min(frames - offset, impl.maxFrames);
+		nextNote = sliceNotes(impl.eventState, impl.noteEvents.data(), nextNote, noteTotal,
+			static_cast<std::uint32_t>(offset), static_cast<std::uint32_t>(chunk), offset + chunk >= frames);
 		ok = impl.runChunk(inputs, outputs, inputChannels, outputChannels, offset, chunk);
-		// The parameter events and the notes belong to the chunk that starts
-		// the request; the later chunks are handed an empty list.
+		// The parameter events belong to the chunk that starts the request;
+		// the later chunks are handed none.
 		impl.eventState.count = 0;
-		impl.eventState.noteCount = 0;
 		counters.recordChunk();
 		offset += chunk;
 	}
+	impl.eventState.notes = impl.noteEvents.data();
+	impl.eventState.noteCount = 0;
 	return ok;
 }
 

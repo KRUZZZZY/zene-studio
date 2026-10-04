@@ -148,7 +148,8 @@ void McuSurface::processInEvent(const MidiEvent& event, const TimePos&, f_cnt_t)
 	const mcu::Input input = mcu::decode(event);
 	if (input.kind == mcu::Kind::None) { return; }
 	m_eventsIn.fetch_add(1, std::memory_order_relaxed);
-	(void)m_inbox.push(input);
+	// A burst past the queue's 256 entries is lost; it is counted so the state says so.
+	if (!m_inbox.push(input)) { m_eventsDropped.fetch_add(1, std::memory_order_relaxed); }
 }
 
 void McuSurface::processOutEvent(const MidiEvent&, const TimePos&, f_cnt_t)
@@ -293,7 +294,9 @@ QJsonObject McuSurface::state() const
 	}
 	return {{QStringLiteral("connected"), true}, {QStringLiteral("input"), m_input}, {QStringLiteral("output"), m_output},
 		{QStringLiteral("bank"), m_bank}, {QStringLiteral("strips"), strips},
-		{QStringLiteral("events_in"), m_eventsIn.load(std::memory_order_relaxed)}, {QStringLiteral("events_out"), m_eventsOut}};
+		{QStringLiteral("events_in"), m_eventsIn.load(std::memory_order_relaxed)},
+		{QStringLiteral("events_dropped"), m_eventsDropped.load(std::memory_order_relaxed)},
+		{QStringLiteral("events_out"), m_eventsOut}};
 }
 
 } // namespace lmms

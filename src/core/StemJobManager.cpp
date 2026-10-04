@@ -315,9 +315,15 @@ void StemJobManager::workerLoop()
 		{
 			job->state.store(State::Cancelled);
 			emit jobCancelled(job->id);
-			continue;
 		}
-		runJob(job);
+		else
+		{
+			runJob(job);
+		}
+		// The input is read by this worker only and is spent once the job has ended, so a
+		// finished job keeps only its result rather than its whole source mix as well.
+		QMutexLocker locker(&m_mutex);
+		job->mix.reset();
 	}
 }
 

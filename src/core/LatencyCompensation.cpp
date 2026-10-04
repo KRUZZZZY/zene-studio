@@ -101,7 +101,9 @@ const SampleFrame* LatencyCompensation::process(const SampleFrame* in, f_cnt_t f
 		return in;
 	}
 	const f_cnt_t capacity = m_ring.size();
-	if (capacity == 0 || frames > capacity || frames > m_scratch.size())
+	// A block larger than init()'s period still fits the ring, so it is written - the history keeps
+	// advancing, as advanceSilence() does - and effectiveDelay() reads 0 for it: passed through, not shifted.
+	if (capacity == 0 || frames > capacity)
 	{
 		return in;
 	}
@@ -151,7 +153,7 @@ void LatencyCompensation::processPlanar(float* left, float* right, f_cnt_t frame
 		return;
 	}
 	const f_cnt_t capacity = m_ring.size();
-	if (capacity == 0 || frames > capacity || frames > m_scratch.size())
+	if (capacity == 0 || frames > capacity)  // a larger block: see process()
 	{
 		return;
 	}

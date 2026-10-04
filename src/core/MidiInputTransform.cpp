@@ -80,7 +80,10 @@ bool MidiInputTransform::noteOn(MidiEvent* event)
 	const int key = event->key();
 	if (!passesChannel(*event) || key < m_keyLow.load(Relaxed) || key > m_keyHigh.load(Relaxed))
 	{
-		held->store(Dropped, Relaxed);
+		// A repeated note-on that is dropped must not overwrite the key a sounding one was given,
+		// or that note's note-off would be dropped with it and the note would hang.
+		int notHeld = NotHeld;
+		held->compare_exchange_strong(notHeld, Dropped, Relaxed);
 		return false;
 	}
 	const int out = snapped(std::clamp(key + m_transpose.load(Relaxed), 0, 127));

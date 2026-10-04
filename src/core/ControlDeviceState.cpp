@@ -30,6 +30,7 @@
 #include <QSaveFile>
 #include <QTextStream>
 
+#include "BounceInPlace.h"
 #include "ConfigManager.h"
 #include "DataFile.h"
 #include "Effect.h"
@@ -193,15 +194,16 @@ QJsonObject controlFileSnapshot(const QString& path)
 	snapshot.insert(QStringLiteral("existed"), info.exists());
 	if (!info.exists()) { return snapshot; }
 
-	QByteArray bytes;
-	ControlResult ignored;
-	if (!controlReadFileBytes(path, &bytes, &ignored)) { return snapshot; }
-	snapshot.insert(QStringLiteral("previous_bytes"), bytes.size());
-	snapshot.insert(QStringLiteral("previous_sha256"), controlSha256OfBytes(bytes));
-	const bool truncated = bytes.size() > ControlSnapshotLimit;
-	snapshot.insert(QStringLiteral("previous_truncated"), truncated);
-	if (truncated) { bytes.truncate(ControlSnapshotLimit); }
-	snapshot.insert(QStringLiteral("previous_content"), QString::fromUtf8(bytes));
+	// Bounded in memory as well as in the record: the path may name any file, so the
+	// hash is streamed and only the first ControlSnapshotLimit bytes are ever read.
+	QFile file(path);
+	if (!file.open(QIODevice::ReadOnly)) { return snapshot; }
+	const qint64 size = file.size();
+	snapshot.insert(QStringLiteral("previous_bytes"), size);
+	snapshot.insert(QStringLiteral("previous_sha256"), BounceInPlace::sha256OfFile(path));
+	snapshot.insert(QStringLiteral("previous_truncated"), size > ControlSnapshotLimit);
+	snapshot.insert(QStringLiteral("previous_content"),
+		QString::fromUtf8(file.read(ControlSnapshotLimit)));
 	return snapshot;
 }
 

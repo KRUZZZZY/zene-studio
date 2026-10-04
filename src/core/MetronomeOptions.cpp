@@ -26,6 +26,7 @@
 #include <algorithm>
 #include <array>
 #include <atomic>
+#include <cmath>
 #include <memory>
 
 #include "ConfigManager.h"
@@ -75,12 +76,19 @@ QString read(const char* key, const char* fallback)
 	return ConfigManager::inst()->value(QStringLiteral("metronome"), QLatin1String(key), QLatin1String(fallback));
 }
 
+//! The level as stored: 0..2. std::clamp passes NaN through (a hand-edited "nan" in the config, which
+//! toFloat() accepts), and it would ride on every click's amplification, so NaN is the default 1.
+float boundedLevel(float level)
+{
+	return std::isnan(level) ? 1.f : std::clamp(level, 0.f, 2.f);
+}
+
 //! The stored options, read once (the first call is on the main thread: options() runs at registration).
 void load()
 {
 	State& s = state();
 	if (s.loaded.load(std::memory_order_acquire)) { return; }
-	s.level.store(std::clamp(read("level", "1").toFloat(), 0.f, 2.f));
+	s.level.store(boundedLevel(read("level", "1").toFloat()));
 	s.accent.store(read("accent", "1").toInt() != 0);
 	s.recordOnly.store(read("recordonly", "0").toInt() != 0);
 	s.sound.store(std::clamp(static_cast<int>(soundNames().indexOf(read("sound", "classic"))), 0, kSoundCount - 1));
@@ -115,7 +123,7 @@ void setOptions(const Options& next)
 {
 	load();
 	State& s = state();
-	s.level.store(std::clamp(next.level, 0.f, 2.f));
+	s.level.store(boundedLevel(next.level));
 	s.accent.store(next.accent);
 	s.recordOnly.store(next.recordOnly);
 	s.sound.store(std::clamp(next.sound, 0, kSoundCount - 1));

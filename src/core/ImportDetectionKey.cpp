@@ -51,8 +51,10 @@ KeyEstimate estimateKey(const float* mono, std::size_t frames, int sampleRate,
 	KeyEstimate estimate;
 	if (mono == nullptr || frames == 0 || sampleRate <= 0 || candidateMasks.empty()) { return estimate; }
 
+	// fmax reads a negative or NaN span as none (fmax drops a NaN): neither may become a huge
+	// unsigned limit, and none gives frameCount 0 and the empty estimate below.
 	const std::size_t limit = static_cast<std::size_t>(
-		std::min<double>(static_cast<double>(frames), maxSeconds * sampleRate));
+		std::min<double>(static_cast<double>(frames), std::fmax(0.0, maxSeconds * sampleRate)));
 	const std::size_t frameCount = frameCountFor(limit, ChromaFrameSize, ChromaHopSize);
 	if (frameCount == 0) { return estimate; }
 

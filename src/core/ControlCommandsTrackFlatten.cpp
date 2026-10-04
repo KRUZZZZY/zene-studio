@@ -38,6 +38,7 @@
 #include "ControlRegistryGroups.h"
 #include "ControlReversibility.h"
 #include "ControlStructuralSupport.h"
+#include "ControlTrackCreation.h"
 #include "ControlVocabulary.h"
 #include "Engine.h"
 #include "SampleClip.h"
@@ -61,6 +62,14 @@ Track* control::landAudioTrack(const QString& name, const QString& path, tick_t 
 
 namespace
 {
+
+//! landAudioTrack, answering the new track's stable id (-1 for none): the undo step below holds ids, never
+//! pointers, because track.remove and its undo free a track and build an equal one.
+int landAudioTrackId(const QString& name, const QString& path, tick_t at, int index)
+{
+	const Track* track = landAudioTrack(name, path, at, index);
+	return track != nullptr ? track->id() : -1;
+}
 
 ControlResult flatten(const QJsonObject& args)
 {
@@ -87,25 +96,28 @@ ControlResult flatten(const QJsonObject& args)
 	const QString sourceId = trackIdOf(source);
 	const QString path = rendered.path;
 	const tick_t at = range.start;
-	auto landed = std::make_shared<Track*>(nullptr);
-	auto restored = std::make_shared<Track*>(nullptr);
+	auto landed = std::make_shared<int>(-1);
+	auto restored = std::make_shared<int>(-1);
 	addStructuralUndoStep(
 		[landed, restored, song, xml, index]() {
-			if (*landed != nullptr) { removeTrack(*landed); *landed = nullptr; }
-			*restored = restoreTrackFromXml(xml, song);
-			if (*restored != nullptr) { moveTrackToIndex(*restored, index); }
+			if (Track* live = trackWithId(*landed)) { removeTrack(live); }
+			*landed = -1;
+			Track* back = restoreTrackFromXml(xml, song);
+			*restored = back != nullptr ? back->id() : -1;
+			if (back != nullptr) { moveTrackToIndex(back, index); }
 		},
 		[landed, restored, name, path, at, index]() {
-			if (*restored != nullptr) { removeTrack(*restored); *restored = nullptr; }
-			*landed = landAudioTrack(name, path, at, index);
+			if (Track* live = trackWithId(*restored)) { removeTrack(live); }
+			*restored = -1;
+			*landed = landAudioTrackId(name, path, at, index);
 		},
 		xml.size());
 	removeTrack(source);
-	*landed = landAudioTrack(name, path, at, index);
+	*landed = landAudioTrackId(name, path, at, index);
 
 	QJsonObject result = renderJson(rendered);
 	result.insert(QStringLiteral("flattened"), sourceId);
-	result.insert(QStringLiteral("track"), trackIdOf(*landed));
+	result.insert(QStringLiteral("track"), trackIdOf(trackWithId(*landed)));
 	return ControlResult::success(result);
 }
 

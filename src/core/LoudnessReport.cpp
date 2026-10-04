@@ -28,7 +28,9 @@
 #include <QStringList>
 #include <QTextStream>
 
+#include <algorithm>
 #include <cmath>
+#include <limits>
 
 namespace lmms
 {
@@ -56,6 +58,29 @@ QString signedNumber(float value)
 	return value >= 0.0f ? QStringLiteral("+") + text : text;
 }
 
+/*! Calls @a feed(offset, count) over [0, frameCount) in pieces of at most @a piece frames - once even
+ *  for an empty block, as the single call it replaces did - and @a afterEach after every piece. */
+template <typename Feed, typename After>
+void inPieces(f_cnt_t frameCount, f_cnt_t piece, Feed feed, After afterEach)
+{
+	f_cnt_t done = 0;
+	do
+	{
+		const f_cnt_t count = std::min(piece, frameCount - done);
+		feed(done, count);
+		afterEach();
+		done += count;
+	}
+	while (done < frameCount);
+}
+
+//! Raises @a max to @a meter's short-term loudness when that is louder.
+void noteShortTerm(const LufsMeter& meter, float* max)
+{
+	const float shortTerm = meter.shortTermLufs();
+	if (shortTerm > *max) { *max = shortTerm; }
+}
+
 } // namespace
 
 LoudnessReport::LoudnessReport(sample_rate_t sampleRate, ch_cnt_t channelCount)
@@ -73,13 +98,19 @@ void LoudnessReport::addBlock(const SampleFrame* frames, f_cnt_t frameCount)
 {
 	// The passive tap. processBlock() takes const frames and only reads them;
 	// nothing here can change what the renderer writes to the file.
-	m_meter.processBlock(frames, frameCount);
-
+	//
 	// Worst-case short-term loudness over the render: the meter only holds the
-	// current 3 s window, the report wants the loudest one. One read per block.
-	const float shortTerm = m_meter.shortTermLufs();
-	if (shortTerm > m_shortTermMax) { m_shortTermMax = shortTerm; }
+	// current 3 s window, the report wants the loudest one. The block is fed one
+	// 100 ms sub-block's worth at most, with a read after each piece: a piece
+	// closes at most one sub-block, so no window falls between two reads however
+	// long the caller's block is.
+	// No frames is the meter's own refusal, passed through whole (an offset into nothing is no pointer).
+	const auto piece = frames != nullptr ? static_cast<f_cnt_t>(m_meter.subBlockFrames())
+		: std::numeric_limits<f_cnt_t>::max();
+	inPieces(frameCount, piece, [&](f_cnt_t at, f_cnt_t count) { m_meter.processBlock(frames + at, count); },
+		[this] { noteShortTerm(m_meter, &m_shortTermMax); });
 }
+
 
 void LoudnessReport::addPlanarBlock(const sample_t* const* channels, ch_cnt_t channelCount,
 	f_cnt_t frameCount)
@@ -87,10 +118,22 @@ void LoudnessReport::addPlanarBlock(const sample_t* const* channels, ch_cnt_t ch
 	// The same passive tap as addBlock(), for the layouts processBlock() cannot
 	// serve: mono fed channel-by-channel, and 5.1, whose channel weights only
 	// exist on the planar path. Reads only.
-	m_meter.processPlanar(channels, channelCount, frameCount);
-
-	const float shortTerm = m_meter.shortTermLufs();
-	if (shortTerm > m_shortTermMax) { m_shortTermMax = shortTerm; }
+	// Fed in sub-block pieces as addBlock() is. A block the meter refuses (not its
+	// channel count, or a missing channel) goes through whole: it is ignored anyway.
+	const bool feedable = channels != nullptr && channelCount == m_meter.channelCount()
+		&& std::none_of(channels, channels + channelCount, [](const sample_t* channel) { return channel == nullptr; });
+	if (!feedable)
+	{
+		m_meter.processPlanar(channels, channelCount, frameCount);
+		noteShortTerm(m_meter, &m_shortTermMax);
+		return;
+	}
+	const sample_t* moved[LufsMeter::MaxChannels] = {};
+	const auto piece = static_cast<f_cnt_t>(m_meter.subBlockFrames());
+	inPieces(frameCount, piece, [&](f_cnt_t at, f_cnt_t count) {
+		for (ch_cnt_t channel = 0; channel < channelCount; ++channel) { moved[channel] = channels[channel] + at; }
+		m_meter.processPlanar(moved, channelCount, count);
+	}, [this] { noteShortTerm(m_meter, &m_shortTermMax); });
 }
 
 LoudnessReport::Verdict LoudnessReport::verdict() const

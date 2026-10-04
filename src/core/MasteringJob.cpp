@@ -292,7 +292,7 @@ bool MasteringJob::loadSourceMix(QString* error)
 	const auto frames = static_cast<std::size_t>(std::max<sf_count_t>(0, info.frames));
 	std::vector<float> interleaved(frames * DEFAULT_CHANNELS);
 	const sf_count_t read = sf_readf_float(file.get(), interleaved.data(), info.frames);
-	if (read < 0)
+	if (read != info.frames)  // an error (negative) or a short read: mastering a prefix is not mastering the mix
 	{
 		*error = QStringLiteral("reading %1 failed").arg(m_sourceRenderFile);
 		return false;

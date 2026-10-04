@@ -47,11 +47,13 @@
 #include <QCryptographicHash>
 #include <QFile>
 #include <QFileInfo>
+#include <QSaveFile>
 #include <QString>
 #include <QStringList>
 
 #include <algorithm>
 #include <cstdint>
+#include <limits>
 #include <vector>
 
 #include "DawProjectInterchange.h"
@@ -140,6 +142,61 @@ quint32 readU32(const QByteArray& bytes, int offset)
 constexpr quint16 DosTime = 0;
 constexpr quint16 DosDate = 0x0021;
 
+//! Writes \a file to \a path beside the target and renames it over it only once complete:
+//! a failed or short write must not destroy the file that was there before.
+bool writeWhole(const QString& path, const QByteArray& file, QString* error)
+{
+	QSaveFile target(path);
+	if (!target.open(QIODevice::WriteOnly))
+	{
+		if (error)
+		{
+			*error = QStringLiteral("cannot write %1: %2").arg(path, target.errorString());
+		}
+		return false;
+	}
+	const qint64 written = target.write(file);
+	if (written != file.size())
+	{
+		if (error)
+		{
+			*error = QStringLiteral("wrote %1 of %2 bytes to %3")
+				.arg(written).arg(file.size()).arg(path);
+		}
+		target.cancelWriting();
+		return false;
+	}
+	if (!target.commit())
+	{
+		if (error) { *error = QStringLiteral("cannot write %1: %2").arg(path, target.errorString()); }
+		return false;
+	}
+	return true;
+}
+
+//! Reads the whole of \a path into \a bytes. Every offset the reader uses is an int, so a
+//! file past INT_MAX bytes is refused before it is read: its offsets would not fit, and it
+//! would be read whole into memory.
+bool readWhole(const QString& path, QByteArray* bytes, QString* error)
+{
+	QFile source(path);
+	if (!source.open(QIODevice::ReadOnly))
+	{
+		if (error)
+		{
+			*error = QStringLiteral("cannot read %1: %2").arg(path, source.errorString());
+		}
+		return false;
+	}
+	if (source.size() > std::numeric_limits<int>::max())
+	{
+		if (error) { *error = QStringLiteral("%1 is too large for this reader (over 2 GiB)").arg(path); }
+		return false;
+	}
+	*bytes = source.readAll();
+	return true;
+}
+
 } // namespace
 
 bool dawProjectZipWrite(const QString& path, const std::vector<DawProjectEntry>& entries,
@@ -220,45 +277,14 @@ bool dawProjectZipWrite(const QString& path, const std::vector<DawProjectEntry>&
 	appendU32(file, static_cast<quint32>(centralOffset));
 	appendU16(file, 0);  // no archive comment
 
-	QFile target(path);
-	if (!target.open(QIODevice::WriteOnly | QIODevice::Truncate))
-	{
-		if (error)
-		{
-			*error = QStringLiteral("cannot write %1: %2").arg(path, target.errorString());
-		}
-		return false;
-	}
-	const qint64 written = target.write(file);
-	if (written != file.size())
-	{
-		if (error)
-		{
-			*error = QStringLiteral("wrote %1 of %2 bytes to %3")
-				.arg(written).arg(file.size()).arg(path);
-		}
-		target.close();
-		QFile::remove(path);
-		return false;
-	}
-	target.close();
-	return true;
+	return writeWhole(path, file, error);
 }
 
 bool dawProjectZipRead(const QString& path, std::vector<DawProjectEntry>* entries,
 	QString* error)
 {
-	QFile source(path);
-	if (!source.open(QIODevice::ReadOnly))
-	{
-		if (error)
-		{
-			*error = QStringLiteral("cannot read %1: %2").arg(path, source.errorString());
-		}
-		return false;
-	}
-	const QByteArray bytes = source.readAll();
-	source.close();
+	QByteArray bytes;
+	if (!readWhole(path, &bytes, error)) { return false; }
 
 	if (bytes.size() < EndOfCentralSize)
 	{
@@ -349,7 +375,8 @@ bool dawProjectZipRead(const QString& path, std::vector<DawProjectEntry>* entrie
 			}
 			return false;
 		}
-		if (localOffset + LocalHeaderSize > static_cast<quint32>(bytes.size()))
+		// In 64 bits: a quint32 sum wraps for an offset near 4 GiB and would pass.
+		if (static_cast<qint64>(localOffset) + LocalHeaderSize > bytes.size())
 		{
 			if (error)
 			{

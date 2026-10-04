@@ -65,18 +65,21 @@ namespace lmms
  * Realtime safety (program rule, AGENTS.md): every buffer is fixed-size and
  * owned by the object. processBlock()/processPlanar() allocate nothing, lock
  * nothing and grow nothing; they are safe to call from an audio thread. The
- * getters only read, so any thread may poll them while blocks are being fed -
- * a poll can land between two blocks, which is exactly what a meter wants.
+ * getters read the same plain fields processBlock() writes, so they belong to
+ * the thread that feeds the meter: a reader on another thread while blocks are
+ * being fed is a data race. A live meter publishes its readings instead - as
+ * MasterLoudnessTap does, storing read()'s values into atomics once per period
+ * on the feeding thread for the UI and the control surface to poll.
  *
  * The meter is opt-in: nothing in the default mixer or render path constructs
  * or feeds one, so adding it changes no existing render.
  *
- * Usage (per block, from whatever produces audio; then poll from the UI):
+ * Usage (per block, from whatever produces audio; then read on the feeding thread):
  * @code
  *   LufsMeter meter(engine->baseSampleRate(), DEFAULT_CHANNELS);
  *   // audio thread:
  *   meter.processBlock(buffer.data(), buffer.size());
- *   // anywhere:
+ *   // the same thread (or publish the values, as above):
  *   const auto reading = meter.read();
  * @endcode
  */
@@ -126,6 +129,8 @@ public:
 
 	sample_rate_t sampleRate() const { return m_sampleRate; }
 	ch_cnt_t channelCount() const { return m_channelCount; }
+	//! Frames in one 100 ms sub-block: the readings change at most once per sub-block.
+	int subBlockFrames() const { return m_subBlockFrames; }
 
 	/**
 	 * Feeds one block of interleaved stereo frames - the shape a SampleBuffer or

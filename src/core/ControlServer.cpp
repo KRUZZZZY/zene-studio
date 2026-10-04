@@ -252,7 +252,7 @@ bool drainPeer(int fd)
 }
 
 //! Read one chunk into \p buffer (appending it) and say whether to read again.
-//! Sets \p closed when the peer sent EOF. Returns false on EOF or EAGAIN, and
+//! Sets \p closed on EOF or a fatal error (all but EAGAIN/EINTR). False on those, EAGAIN, and
 //! also once the pending bytes pass MaxRequestLineBytes: a client that never
 //! sends a newline must not be able to grow this buffer (and the instance's
 //! heap) without bound. Complete lines are dispatched by the caller, so what is
@@ -266,7 +266,7 @@ bool readChunk(int fd, QByteArray& buffer, bool* closed)
 		buffer.append(chunk, static_cast<int>(got));
 		return buffer.size() <= ControlServer::MaxRequestLineBytes;
 	}
-	if (got == 0) { *closed = true; }
+	if (got == 0 || (errno != EAGAIN && errno != EWOULDBLOCK && errno != EINTR)) { *closed = true; }
 	return false;
 }
 

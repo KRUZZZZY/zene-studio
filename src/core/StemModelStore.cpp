@@ -32,6 +32,7 @@
 #include <QNetworkReply>
 #include <QNetworkRequest>
 #include <QStandardPaths>
+#include <QTimer>
 #include <QUrl>
 
 namespace lmms
@@ -277,10 +278,51 @@ bool verifiedInPlace(const StemModelSpec& spec, const QString& destDir)
 			spec.sha256, spec.sizeBytes);
 }
 
+//! How often a transfer looks at its cancel flag, independently of data arriving.
+constexpr int CancelPollMs = 250;
+//! A transfer that moves no data for this long is aborted (a server that accepted and stalled).
+constexpr int StallTimeoutMs = 30000;
+
+//! Appends what \a reply has to \a partFile; false, writing nothing, when that would take the
+//! file past \a maxBytes - the pinned size, which a longer body could only fail to verify against
+//! after an endless one had filled the disk.
+bool appendCapped(QNetworkReply* reply, QFile& partFile, qint64 maxBytes)
+{
+	const QByteArray chunk = reply->readAll();
+	if (partFile.pos() + chunk.size() > maxBytes) { return false; }
+	partFile.write(chunk);
+	return true;
+}
+
+//! Streams \a reply into \a partFile (capped, see appendCapped()), and polls \a cancel on a
+//! timer, so a server that stops sending is still cancellable: downloadProgress, the other place
+//! the flag is read, only fires when data arrives.
+void streamInto(QNetworkReply* reply, QFile& partFile, qint64 maxBytes, const std::atomic<bool>* cancel,
+	bool* oversize)
+{
+	QObject::connect(reply, &QNetworkReply::readyRead, [reply, &partFile, maxBytes, oversize]()
+		{
+			if (!appendCapped(reply, partFile, maxBytes)) { *oversize = true; reply->abort(); }
+		});
+	if (cancel == nullptr) { return; }
+	auto* poll = new QTimer(reply);
+	QObject::connect(poll, &QTimer::timeout, [reply, cancel]() { if (cancel->load()) { reply->abort(); } });
+	poll->start(CancelPollMs);
+}
+
+//! Why a transfer failed, in the order a reader needs it: cancelled, oversize, then the network's own.
+QString transferFailure(bool cancelled, bool oversize, qint64 maxBytes, const QNetworkReply& reply)
+{
+	if (cancelled) { return QStringLiteral("cancelled"); }
+	if (oversize) { return QStringLiteral("the server sent more than the pinned %1 bytes").arg(maxBytes); }
+	return reply.errorString();
+}
+
 /*! The network half: GET \a url into \a partFile. Streamed as it arrives, so a
- *  166 MB model is never held in memory whole; a set \a cancel aborts at the
- *  next chunk. Blocks on a local event loop, so it runs on any QThread. */
-bool transfer(const QString& url, QFile& partFile, const StemModelStore::DownloadProgressFn& progress,
+ *  166 MB model is never held in memory whole, and never past \a maxBytes; a set
+ *  \a cancel aborts within CancelPollMs. Blocks on a local event loop, so it runs
+ *  on any QThread. */
+bool transfer(const QString& url, QFile& partFile, qint64 maxBytes, const StemModelStore::DownloadProgressFn& progress,
 	const std::atomic<bool>* cancel, QString* networkError)
 {
 	QNetworkAccessManager manager;
@@ -288,10 +330,11 @@ bool transfer(const QString& url, QFile& partFile, const StemModelStore::Downloa
 	request.setAttribute(QNetworkRequest::RedirectPolicyAttribute,
 		QNetworkRequest::NoLessSafeRedirectPolicy);
 	request.setHeader(QNetworkRequest::UserAgentHeader, QStringLiteral("Zene-Studio-stem-split/1.0"));
+	request.setTransferTimeout(StallTimeoutMs);
 
 	QNetworkReply* reply = manager.get(request);
-	QObject::connect(reply, &QNetworkReply::readyRead,
-		[reply, &partFile]() { partFile.write(reply->readAll()); });
+	bool oversize = false;
+	streamInto(reply, partFile, maxBytes, cancel, &oversize);
 	QObject::connect(reply, &QNetworkReply::downloadProgress,
 		[&progress, reply, cancel](qint64 received, qint64 total)
 		{
@@ -303,10 +346,10 @@ bool transfer(const QString& url, QFile& partFile, const StemModelStore::Downloa
 	QObject::connect(reply, &QNetworkReply::finished, &loop, &QEventLoop::quit);
 	loop.exec();
 
+	oversize = oversize || !appendCapped(reply, partFile, maxBytes);
 	const bool cancelled = cancel != nullptr && cancel->load();
-	const bool ok = !cancelled && reply->error() == QNetworkReply::NoError;
-	if (!ok) { *networkError = cancelled ? QStringLiteral("cancelled") : reply->errorString(); }
-	partFile.write(reply->readAll());
+	const bool ok = !cancelled && !oversize && reply->error() == QNetworkReply::NoError;
+	if (!ok) { *networkError = transferFailure(cancelled, oversize, maxBytes, *reply); }
 	partFile.close();
 	reply->deleteLater();
 	return ok;
@@ -352,7 +395,7 @@ bool StemModelStore::download(const StemModelSpec& spec,
 	}
 
 	QString networkError;
-	if (!transfer(spec.url, partFile, progress, cancel, &networkError))
+	if (!transfer(spec.url, partFile, spec.sizeBytes, progress, cancel, &networkError))
 	{
 		QFile::remove(partPath);
 		setError(error, QStringLiteral("Download failed: %1").arg(networkError));

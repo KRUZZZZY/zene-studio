@@ -159,9 +159,16 @@ void WasmEffect::refreshChainLatency()
 	}
 }
 
+int WasmEffect::compensatedModuleLatency() const
+{
+	// One bound for the report and the dry path (round 6): the report used the module's raw value, which
+	// could pass what the dry path delays by, and overflow an int once the block was added to INT_MAX.
+	return std::clamp(m_worker.declaredLatency(), 0, static_cast<int>(maxCompensatedLatency));
+}
+
 int WasmEffect::latencyFrames() const
 {
-	const int moduleFrames = std::max(0, m_worker.declaredLatency());
+	const int moduleFrames = compensatedModuleLatency();
 	if (moduleFrames == 0)
 	{
 		return 0;
@@ -190,8 +197,7 @@ Effect::ProcessStatus WasmEffect::processImpl(SampleFrame* buf, const f_cnt_t fr
 	// The module's declared latency, clamped to what the dry path compensates.
 	// A reload keeps the last value and a trap keeps it too, so the dry path
 	// stays aligned with whatever the module was doing.
-	const auto moduleLatency = static_cast<std::uint32_t>(
-		std::clamp(m_worker.declaredLatency(), 0, static_cast<int>(maxCompensatedLatency)));
+	const auto moduleLatency = static_cast<std::uint32_t>(compensatedModuleLatency());
 
 	if (!m_worker.isReady())
 	{

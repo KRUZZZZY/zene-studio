@@ -111,7 +111,15 @@ int rotateProjectRevision(const QString& projectPath, bool* refused, QString* re
 		copyRevision(older, projectRevisionPath(projectPath, revision), &ignored);
 	}
 	bool ignored = false;
-	copyRevision(projectPath, projectRevisionPath(projectPath, 0), &ignored);
+	if (!copyRevision(projectPath, projectRevisionPath(projectPath, 0), &ignored))
+	{
+		// Nothing of the file about to be replaced was kept: a refusal, so a save does not claim an
+		// inverse and a restore does not go on to replace the live file.
+		*refused = true;
+		*refusedReason = QStringLiteral("could not keep %1 as revision 0: the copy failed, so no "
+			"revision of the file about to be replaced was kept").arg(projectPath);
+		return 0;
+	}
 	trimRevisionSet(projectPath);
 
 	int kept = 0;
@@ -200,15 +208,23 @@ bool restoreProjectRevision(const QString& projectPath, int revision, QString* e
 		}
 	}
 
-	QFile::remove(projectPath);
-	if (!QFile::copy(staging, projectPath))
+	if (!replaceProjectWithStaged(projectPath, staging))
 	{
 		*error = QStringLiteral("could not copy %1 over %2").arg(source, projectPath);
-		QFile::remove(staging);
 		return false;
 	}
-	QFile::remove(staging);
 	return true;
+}
+
+bool replaceProjectWithStaged(const QString& projectPath, const QString& staging)
+{
+	const bool hadLive = QFileInfo::exists(projectPath);
+	QFile::remove(projectPath);
+	if (QFile::rename(staging, projectPath)) { return true; }
+	QFile::remove(staging);
+	// The rotation just kept the live file as revision 0: put it back rather than leave no project.
+	if (hadLive) { QFile::copy(projectRevisionPath(projectPath, 0), projectPath); }
+	return false;
 }
 
 } // namespace control

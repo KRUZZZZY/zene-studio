@@ -133,7 +133,8 @@ GrooveStep GrooveTemplate::step(int slot) const
 bool GrooveTemplate::setStep(int slot, const GrooveStep& value)
 {
 	if (slot < 0 || slot >= m_slotCount) { return false; }
-	if (std::abs(value.timing) > m_stepTicks / 2) { return false; }
+	// Both bounds, not std::abs: |INT_MIN| is not representable, so abs() of a loaded one is UB.
+	if (value.timing < -(m_stepTicks / 2) || value.timing > m_stepTicks / 2) { return false; }
 	const bool noOpinion = value.velocity == GrooveStep::NoVelocityOpinion;
 	if (!noOpinion && (value.velocity < static_cast<int>(MinVolume)
 		|| value.velocity > static_cast<int>(MaxVolume))) { return false; }
@@ -222,7 +223,10 @@ bool GrooveTemplate::loadXml(const QDomElement& element)
 		const int slot = child.attribute(QStringLiteral("slot"), QStringLiteral("-1")).toInt();
 		GrooveStep value;
 		value.timing = child.attribute(QStringLiteral("timing"), QStringLiteral("0")).toInt();
-		value.velocity = child.attribute(QStringLiteral("velocity"), QStringLiteral("0")).toInt();
+		bool velocityRead = false;
+		const int velocity = child.attribute(QStringLiteral("velocity")).toInt(&velocityRead);
+		// A missing or unreadable velocity says nothing about velocity; 0 would silence the slot.
+		value.velocity = velocityRead ? velocity : GrooveStep::NoVelocityOpinion;
 		// A step out of range or out of bounds leaves the slot it names
 		// neutral (the step it already holds) rather than failing the whole
 		// template: the geometry is what a reader depends on.

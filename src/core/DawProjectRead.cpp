@@ -71,6 +71,48 @@ using namespace readdetail;
 namespace
 {
 
+//! True when @a tempo is one the engine accepts (NaN is not: both comparisons fail); otherwise
+//! false with state.error naming it - a <Tempo> and a tempo automation point alike.
+bool tempoAccepted(double tempo, ReadState& state)
+{
+	if (tempo >= DawProjectMinTempo && tempo <= DawProjectMaxTempo) { return true; }
+	state.error = QStringLiteral("the document's tempo %1 is outside the "
+		"engine's own %2..%3").arg(tempo).arg(DawProjectMinTempo).arg(DawProjectMaxTempo);
+	return false;
+}
+
+//! The points of one <TempoAutomation> (or, @a isMeter, <TimeSignatureAutomation>). False - with
+//! state.error set - for a tempo point the engine will not accept, as for the global <Tempo>.
+bool parseAutomationPoints(QXmlStreamReader& reader, ReadState& state, bool isMeter)
+{
+	const QString element = isMeter ? QStringLiteral("TimeSignatureAutomation") : QStringLiteral("TempoAutomation");
+	while (!reader.atEnd())
+	{
+		reader.readNext();
+		if (reader.isEndElement() && reader.name() == element) { break; }
+		if (!reader.isStartElement()) { continue; }
+		if (reader.name() == QLatin1String("Target")) { skipElement(reader); continue; }
+		const QXmlStreamAttributes attributes = reader.attributes();
+		DawProjectPoint entry;
+		entry.isMeter = isMeter;
+		entry.time = doubleAttribute(attributes, QStringLiteral("time"), 0.0);
+		if (isMeter)
+		{
+			entry.numerator = intAttribute(attributes, QStringLiteral("numerator"), 4);
+			entry.denominator = intAttribute(attributes, QStringLiteral("denominator"), 4);
+			state.model->meterPoints.append(entry);
+		}
+		else
+		{
+			entry.value = doubleAttribute(attributes, QStringLiteral("value"), 120.0);
+			if (!tempoAccepted(entry.value, state)) { return false; }
+			state.model->tempoPoints.append(entry);
+		}
+		skipElement(reader);
+	}
+	return true;
+}
+
 bool parseDocument(QXmlStreamReader& reader, ReadState& state)
 {
 	bool sawProject = false;
@@ -119,14 +161,7 @@ bool parseDocument(QXmlStreamReader& reader, ReadState& state)
 				{
 					state.model->tempo =
 						doubleAttribute(attributes, QStringLiteral("value"), 120.0);
-					if (state.model->tempo < DawProjectMinTempo
-						|| state.model->tempo > DawProjectMaxTempo)
-					{
-						state.error = QStringLiteral("the document's tempo %1 is outside the "
-							"engine's own %2..%3").arg(state.model->tempo)
-							.arg(DawProjectMinTempo).arg(DawProjectMaxTempo);
-						return false;
-					}
+					if (!tempoAccepted(state.model->tempo, state)) { return false; }
 				}
 				else if (reader.name() == QLatin1String("TimeSignature"))
 				{
@@ -170,33 +205,9 @@ bool parseDocument(QXmlStreamReader& reader, ReadState& state)
 				else if (child == QLatin1String("TempoAutomation")
 					|| child == QLatin1String("TimeSignatureAutomation"))
 				{
-					const bool isMeter = child == QLatin1String("TimeSignatureAutomation");
-					while (!reader.atEnd())
+					if (!parseAutomationPoints(reader, state, child == QLatin1String("TimeSignatureAutomation")))
 					{
-						reader.readNext();
-						if (reader.isEndElement() && reader.name() == child) { break; }
-						if (!reader.isStartElement()) { continue; }
-						const QStringView point = reader.name();
-						if (point == QLatin1String("Target")) { skipElement(reader); continue; }
-						const QXmlStreamAttributes attributes = reader.attributes();
-						DawProjectPoint entry;
-						entry.isMeter = isMeter;
-						entry.time = doubleAttribute(attributes, QStringLiteral("time"), 0.0);
-						if (isMeter)
-						{
-							entry.numerator =
-								intAttribute(attributes, QStringLiteral("numerator"), 4);
-							entry.denominator =
-								intAttribute(attributes, QStringLiteral("denominator"), 4);
-							state.model->meterPoints.append(entry);
-						}
-						else
-						{
-							entry.value = doubleAttribute(attributes, QStringLiteral("value"),
-								120.0);
-							state.model->tempoPoints.append(entry);
-						}
-						skipElement(reader);
+						return false;
 					}
 				}
 				else { skipElement(reader); }
@@ -213,7 +224,9 @@ bool parseDocument(QXmlStreamReader& reader, ReadState& state)
 		state.error = QStringLiteral("the project.xml entry has no <Project> root element");
 		return false;
 	}
-	return true;
+	// A refusal the nested walks recorded (a seconds <Notes> timeline, a <Clip> with no track, a
+	// nesting past MaxNesting) fails the read: the walks are void and only leave state.error.
+	return state.error.isEmpty();
 }
 
 } // namespace

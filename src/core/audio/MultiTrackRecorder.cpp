@@ -37,7 +37,7 @@ MultiTrackRecorder::MultiTrackRecorder(int routeCapacity, int inputChannelCapaci
 {
 	// Built once, here, off the audio thread: from now on the route list never
 	// changes size, which is what lets processInput() walk it without a lock.
-	const auto routes = std::max(1, routeCapacity);
+	const auto routes = std::clamp(routeCapacity, 1, MaxRoutes);  // the documented bound (RecorderTaps' table)
 	m_tracks.reserve(static_cast<std::size_t>(routes));
 	for (int i = 0; i < routes; ++i)
 	{

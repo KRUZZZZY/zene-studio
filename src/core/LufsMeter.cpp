@@ -176,8 +176,12 @@ void LufsMeter::processPlanar(const sample_t* const* channels, ch_cnt_t channelC
 	}
 }
 
-void LufsMeter::accumulateSample(ch_cnt_t channel, sample_t value)
+void LufsMeter::accumulateSample(ch_cnt_t channel, sample_t sample)
 {
+	// A non-finite sample (a misbehaving plug-in) would poison the filter state
+	// and the pending energy for good, and +inf would reach binIndex()'s int
+	// conversion; it is measured as silence instead.
+	const sample_t value = std::isfinite(sample) ? sample : 0.0f;
 	FilterState& state = m_filterState[channel];
 	const double x = static_cast<double>(value);
 
@@ -412,7 +416,9 @@ int LufsMeter::shortTermBinAtCount(float threshold, std::uint64_t target, bool s
 	std::uint64_t seen = 0;
 	for (int index = 1; index <= lastIndex; ++index)
 	{
-		if (binLoudness(index) <= threshold) { continue; }
+		// An empty bin is never a percentile: with one surviving window the high
+		// target is 0, and the first bin past the gate would otherwise answer.
+		if (binLoudness(index) <= threshold || m_shortTerm[index].count == 0) { continue; }
 		seen += m_shortTerm[index].count;
 		if (strictly ? seen > target : seen >= target) { return index; }
 	}

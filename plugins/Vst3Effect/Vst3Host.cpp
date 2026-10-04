@@ -32,6 +32,7 @@
 #include <cstdint>
 #include <cstring>
 #include <limits>
+#include <thread>
 
 #include <QDebug>
 
@@ -347,12 +348,14 @@ void HostedPlugin::pushMidiEvent(const MidiEventIn& event)
 {
 	auto& d = *m_impl;
 	// Nothing would ever drain the queue if the plug-in has no instrument
-	// event input, so refuse rather than let events pile up unread.
-	if (!d.midiEnabled) { return; }
-	if (!d.midiQueue.push(event))
-	{
-		++d.droppedMidi;
-	}
+	// event input, so refuse rather than let events pile up unread. The push is
+	// announced before the switch is read: release() turns the switch off, then
+	// waits for the announced pushes before it resets the queue, so a reset never
+	// lands in the middle of one (round 6). Both are seq_cst, which is what makes
+	// "this push sees the switch off" or "release() sees this push" certain.
+	d.midiProducers.fetch_add(1);
+	if (d.midiEnabled && !d.midiQueue.push(event)) { ++d.droppedMidi; }
+	d.midiProducers.fetch_sub(1);
 }
 
 auto HostedPlugin::droppedMidiEvents() const -> std::uint64_t
@@ -508,8 +511,9 @@ auto HostedPlugin::prepare(double sampleRate, int maxBlockSize, QString* error) 
 	// MIDI: the event list is already sized (its constructor did it), the
 	// ordering scratch is sized here, and the queue starts empty. All three
 	// are pre-allocated so process() never touches the allocator.
-	d.midiEnabled = d.eventInputBusIndex >= 0;
-	d.midiQueue.reset();
+	// release() above emptied the queue with the producers held off; they stay off
+	// (midiEnabled) until the end of this function.
+	const bool midiEnabled = d.eventInputBusIndex >= 0;
 	d.droppedMidi = 0;
 	d.droppedOutput = 0;
 	d.midiEvents.assign(static_cast<std::size_t>(kMaxMidiEventsPerBlock), MidiEventIn{});
@@ -525,7 +529,7 @@ auto HostedPlugin::prepare(double sampleRate, int maxBlockSize, QString* error) 
 	d.controllerMap.build(d.controller, d.eventInputBusIndex);
 	// Instruments with an input event bus get one; effects keep nullptr, which
 	// is what every effect has always been given.
-	d.processData.inputEvents = d.midiEnabled ? &d.inputEvents : nullptr;
+	d.processData.inputEvents = midiEnabled ? &d.inputEvents : nullptr;
 	d.processData.processContext = &d.context;
 
 	// Transport state is reported per block through setTransportPlaying() and
@@ -537,6 +541,7 @@ auto HostedPlugin::prepare(double sampleRate, int maxBlockSize, QString* error) 
 
 	d.sampleRate = sampleRate;
 	d.maxBlockSize = maxBlockSize;
+	d.midiEnabled = midiEnabled;
 	d.prepared = true;
 	return true;
 }
@@ -562,6 +567,7 @@ void HostedPlugin::release()
 	// queued but never processed would otherwise sound on the first block
 	// after a sample-rate change, or after the project is reloaded.
 	d.midiEnabled = false;
+	while (d.midiProducers.load() != 0) { std::this_thread::yield(); }
 	d.midiQueue.reset();
 	d.inputEvents.clear();
 	d.midiEvents.clear();

@@ -51,7 +51,7 @@
 #include "SmfInterchange.h"
 
 #include <QCryptographicHash>
-#include <QFile>
+#include <QSaveFile>
 #include <QFileInfo>
 
 #include <algorithm>
@@ -264,8 +264,10 @@ QByteArray conductorFile(const QByteArray& body)
 
 bool writeBytes(const QString& path, const QByteArray& bytes, QString* error)
 {
-	QFile file(path);
-	if (!file.open(QIODevice::WriteOnly | QIODevice::Truncate))
+	// QSaveFile: the file at \a path is replaced only by a complete write (commit), so a full
+	// disk leaves an existing file as it was instead of truncated and then removed.
+	QSaveFile file(path);
+	if (!file.open(QIODevice::WriteOnly) || file.write(bytes) != bytes.size() || !file.commit())
 	{
 		if (error != nullptr)
 		{
@@ -273,17 +275,6 @@ bool writeBytes(const QString& path, const QByteArray& bytes, QString* error)
 		}
 		return false;
 	}
-	if (file.write(bytes) != bytes.size())
-	{
-		if (error != nullptr)
-		{
-			*error = QStringLiteral("cannot write %1: %2").arg(path, file.errorString());
-		}
-		file.close();
-		QFile::remove(path);
-		return false;
-	}
-	file.close();
 	return true;
 }
 

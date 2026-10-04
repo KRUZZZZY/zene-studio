@@ -121,8 +121,9 @@ BrowserFeatures BrowserFeatures::analyse(const QString& path)
 	const std::optional<SampleDecoder::Result> decoded = SampleDecoder::decode(path);
 	if (!decoded || decoded->data.empty() || decoded->sampleRate <= 0) { return features; }
 	const int rate = decoded->sampleRate;
-	const std::vector<float> mono = monoMix(decoded->data.data(), decoded->data.size());
-	const std::size_t count = std::min(mono.size(), static_cast<std::size_t>(FeatureSeconds * rate));
+	// Only the analysed window is mixed: a mono copy of the whole file would scale with its length.
+	const std::size_t count = std::min(decoded->data.size(), static_cast<std::size_t>(FeatureSeconds * rate));
+	const std::vector<float> mono = monoMix(decoded->data.data(), count);
 	features.valid = true;
 	features.durationSeconds = static_cast<double>(decoded->data.size()) / rate;
 	features.loudnessDb = rmsDb(mono, count);

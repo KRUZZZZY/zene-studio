@@ -31,6 +31,7 @@
 
 #include "ControlRegistry.h"
 #include "Engine.h"
+#include "ReversibilityTestSupport.h"
 
 using namespace lmms;
 
@@ -312,6 +313,15 @@ private slots:
 		QVERIFY2(removed.ok, qPrintable(removed.errorMessage));
 		QCOMPARE(removed.result.value(QStringLiteral("removed")).toString(), track);
 		QCOMPARE(removed.result.value(QStringLiteral("track_count")).toInt(), countBefore - 1);
+	}
+
+	//! track.add's undo finds its track by id when it runs: track.remove and its undo rebuild the
+	//! track as a new object, and the step used to remove the freed one it kept a pointer to.
+	void trackAddUndoFindsItsTrackAfterARemovalIsUndone()
+	{
+		const QString track = revtest::addTrack(QStringLiteral("sample"));
+		QVERIFY(!track.isEmpty());
+		QVERIFY(revtest::makerUndoFindsTrackAfterRemovalUndone(track));
 	}
 };
 

@@ -30,6 +30,7 @@
 
 #include <QtTest>
 
+#include <algorithm>
 #include <cmath>
 
 #include <QDomDocument>
@@ -126,12 +127,13 @@ private slots:
 		QVERIFY(clip->clipEdits().isNeutral());
 		QVERIFY(run(QStringLiteral("arrangement.modes"), {{QStringLiteral("auto_fade_ms"), 10}}).ok);
 		QCOMPARE(arrangement::autoFadeMs(), 10);
-		std::vector<SampleFrame> buffer(1024, SampleFrame(0.f, 0.f));
+		const auto fadeFrames = static_cast<std::size_t>(rate / 100);
+		// Long enough for the fade plus the frames read after it at any rate (10 ms is 1920 frames at 192 kHz).
+		std::vector<SampleFrame> buffer(std::max<std::size_t>(1024, fadeFrames + 64), SampleFrame(0.f, 0.f));
 		{
 			SamplePlayHandle handle(clip);
 			handle.play(std::span<SampleFrame>(buffer));
 		}
-		const auto fadeFrames = static_cast<std::size_t>(rate / 100);
 		QVERIFY2(std::abs(buffer[0].left()) < 0.01f, "the clip starts silent");
 		QVERIFY(buffer[fadeFrames / 2].left() > 0.1f && buffer[fadeFrames / 2].left() < 0.4f);
 		QVERIFY(std::abs(buffer[fadeFrames + 10].left() - 0.5f) < 0.01f);

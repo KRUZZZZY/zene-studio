@@ -138,7 +138,11 @@ bool loadScheduledSource(const QJsonObject& args, QString* source, ControlResult
 			QStringLiteral("cannot read the Lua script at '%1'").arg(path));
 		return false;
 	}
-	*source = QString::fromUtf8(file.readAll());
+	// UTF-8 spends at most three bytes per UTF-16 unit, so past three bytes per unit
+	// of the scheduler's SourceByteCap (plus a byte-order mark and one) a file decodes
+	// over the cap whatever it holds: setSchedule() refuses it as it would the whole
+	// file, and the whole file is never read into memory.
+	*source = QString::fromUtf8(file.read(3 * static_cast<qint64>(ScriptClock::SourceByteCap) + 4));
 	return true;
 }
 

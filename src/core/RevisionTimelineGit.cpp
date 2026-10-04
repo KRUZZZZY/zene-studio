@@ -215,12 +215,32 @@ QVector<RevisionEntry> entries(const QString& projectPath, QJsonObject* report)
 	return listed;
 }
 
+namespace
+{
+
+//! False, with \a error, when \a size is over the revision cap.
+bool withinRevisionCap(const QString& spec, qint64 size, QString* error)
+{
+	if (size <= Bounds::MaxRevisionBytes) { return true; }
+	*error = QStringLiteral("the revision in %1 is %2 bytes, over the %3-byte revision cap")
+		.arg(spec).arg(size).arg(Bounds::MaxRevisionBytes);
+	return false;
+}
+
+} // namespace
+
 bool bytesOfCommit(const QString& projectPath, const QString& commit, QByteArray* bytes,
 	QString* error)
 {
 	const QFileInfo project(projectPath);
 	const QString dir = project.absolutePath();
 	const QString spec = commit + QStringLiteral(":./") + project.fileName();
+	// The blob's size first: runGit() reads a child's whole output into memory, so the cap has
+	// to be applied before `cat-file blob`, not to what it buffered.
+	QByteArray sizeText;
+	const QStringList sizeArgs{QStringLiteral("-C"), dir, QStringLiteral("cat-file"), QStringLiteral("-s"), spec};
+	const qint64 declared = runGit(dir, sizeArgs, &sizeText) ? sizeText.trimmed().toLongLong() : 0;
+	if (!withinRevisionCap(spec, declared, error)) { return false; }
 	const QStringList args{QStringLiteral("-C"), dir, QStringLiteral("cat-file"),
 		QStringLiteral("blob"), spec};
 	if (!runGit(dir, args, bytes))
@@ -229,13 +249,7 @@ bool bytesOfCommit(const QString& projectPath, const QString& commit, QByteArray
 			"it, is not in this repository)").arg(spec);
 		return false;
 	}
-	if (bytes->size() > Bounds::MaxRevisionBytes)
-	{
-		*error = QStringLiteral("the revision in %1 is %2 bytes, over the %3-byte revision cap")
-			.arg(spec).arg(bytes->size()).arg(Bounds::MaxRevisionBytes);
-		return false;
-	}
-	return true;
+	return withinRevisionCap(spec, bytes->size(), error);
 }
 
 } // namespace timelineGit

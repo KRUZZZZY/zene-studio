@@ -26,6 +26,7 @@
 #include <QDomDocument>
 #include <QDomElement>
 
+#include "AudioEngine.h"
 #include "Clip.h"
 #include "Engine.h"
 #include "Song.h"
@@ -80,7 +81,12 @@ bool TrackVersions::replaceClips(Track* track, const QString& xml)
 	QDomDocument doc;
 	// Parsed before anything goes: a stored version that is not XML leaves the track as it is (review L19 #15).
 	if (!doc.setContent(xml)) { return false; }
-	track->deleteClips();
+	{
+		// The audio thread walks the track's clips: they are deleted only while it is out of the
+		// period, the guard Track::loadSettings takes around the same call.
+		auto guard = Engine::audioEngine()->requestChangesGuard();
+		track->deleteClips();
+	}
 	for (QDomElement element = doc.documentElement().firstChildElement(); !element.isNull(); element = element.nextSiblingElement())
 	{
 		Clip* clip = track->createClip(TimePos(0));

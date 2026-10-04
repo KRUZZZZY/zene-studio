@@ -479,8 +479,9 @@ using DawProjectEntry = std::pair<QString, QByteArray>;
 
 /*! Write \\a entries as a ZIP container. STORE only (no compression): the
  *  format constrains the entries, not the method, and a stored entry needs no
- *  compression dependency to be a valid entry. False - with \\a error set and
- *  no file left behind - when the path is unusable or an entry name is empty.
+ *  compression dependency to be a valid entry. False - with \\a error set, no
+ *  new file left behind and a file already at \\a path untouched - when the
+ *  path is unusable, an entry name is empty or the write fails.
  */
 LMMS_EXPORT bool dawProjectZipWrite(const QString& path,
 	const std::vector<DawProjectEntry>& entries, QString* error);

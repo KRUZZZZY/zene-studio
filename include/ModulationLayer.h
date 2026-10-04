@@ -373,10 +373,13 @@ public:
 		do
 		{
 			version = m_version.load(std::memory_order_acquire);
-			if ((version & 1u) != 0u) { continue; }  // a write is in progress
-			copy = m_view;
+			if ((version & 1u) == 0u) { copy = m_view; }  // odd: a write is in progress
+			// The copy's reads complete before the version is read again.
+			std::atomic_thread_fence(std::memory_order_acquire);
 		}
-		while (m_version.load(std::memory_order_acquire) != version);
+		// An odd version retries too: `continue` used to reach this test with the
+		// version unchanged and return the default, empty view mid-edit.
+		while ((version & 1u) != 0u || m_version.load(std::memory_order_relaxed) != version);
 		return copy;
 	}
 

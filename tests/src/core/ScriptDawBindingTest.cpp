@@ -217,6 +217,39 @@ private slots:
 		QVERIFY(logs.filter(qstr("refused")).size() >= 2);
 	}
 
+	/*! A script's loadEffect is one undo step that finds its chain again by
+	 *  the channel's id: undo takes the device out and redo puts it back, and
+	 *  once the channel is deleted the step does nothing. It used to keep the
+	 *  EffectChain* and the Effect*, which the deletion freed. */
+	void aScriptsLoadedEffectIsUndoneOnTheChannelItNames()
+	{
+		QString device;
+		const QList<ControlDeviceEntry> catalogue = controlDeviceCatalogue();
+		for (int i = 0; i < catalogue.size() && device.isEmpty(); ++i)
+		{
+			if (catalogue.at(i).name == qstr("amplifier") && catalogue.at(i).loadable) { device = control::deviceId(i); }
+		}
+		if (device.isEmpty()) { QSKIP("this build has no amplifier module"); }
+		Mixer* mixer = Engine::mixer();
+		const int index = mixer->createChannel();
+		ScriptEngine* engine = ScriptEngine::instance();
+		QString error;
+		QCOMPARE(int(engine->runString(qstr("zene.mixer():channel(%1):chain():loadEffect(\"%2\")\n").arg(index).arg(device),
+			&error)), int(ScriptEngine::RunResult::Ok));
+		QVERIFY2(error.isEmpty(), qPrintable(error));
+		const EffectChain& chain = mixer->mixerChannel(index)->m_fxChain;
+		QCOMPARE(static_cast<int>(chain.effects().size()), 1);
+		ProjectJournal* journal = Engine::projectJournal();
+		journal->undo();
+		QVERIFY(chain.effects().empty());
+		journal->redo();
+		QCOMPARE(static_cast<int>(chain.effects().size()), 1);
+		mixer->deleteChannel(index);
+		journal->undo();  // its channel is gone: nothing to take out, and nothing freed is touched
+		QCOMPARE(static_cast<int>(mixer->numChannels()), index);
+		engine->takeLogMessages();
+	}
+
 	/*! The version policy's Lua face: the surface this build reports is the
 	 *  version this translation unit was compiled with, and the DAW-control
 	 *  namespace entry is visible in it. */

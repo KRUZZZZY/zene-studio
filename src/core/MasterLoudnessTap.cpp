@@ -55,7 +55,7 @@ void MasterLoudnessTap::setEnabled(bool enabled) noexcept
 {
 	if (!enabled)
 	{
-		m_enabled.store(false, std::memory_order_release);
+		m_enabled.store(false, std::memory_order_seq_cst);
 		// Not required for correctness (nothing below touches the meter), but it
 		// makes the contract simple to state: once setEnabled(false) returns, the
 		// last feed() that could have been running has finished, so the reading a
@@ -69,7 +69,7 @@ void MasterLoudnessTap::setEnabled(bool enabled) noexcept
 	// audio thread is not inside it; the quiesce wait is bounded, and a wait that
 	// expires leaves the tap exactly as it was rather than resetting under a feed
 	// in flight.
-	m_enabled.store(false, std::memory_order_release);
+	m_enabled.store(false, std::memory_order_seq_cst);
 	if (!waitForQuiet())
 	{
 		m_enabled.store(true, std::memory_order_release);
@@ -82,7 +82,7 @@ void MasterLoudnessTap::setEnabled(bool enabled) noexcept
 bool MasterLoudnessTap::reset() noexcept
 {
 	const bool wasEnabled = enabled();
-	if (wasEnabled) { m_enabled.store(false, std::memory_order_release); }
+	if (wasEnabled) { m_enabled.store(false, std::memory_order_seq_cst); }
 	if (!waitForQuiet())
 	{
 		// Nothing was reset: saying so is the point. A caller that is told false
@@ -118,9 +118,17 @@ void MasterLoudnessTap::clearMeasurement() noexcept
 void MasterLoudnessTap::feed(const SampleFrame* frames, f_cnt_t frameCount) noexcept
 {
 	if (frames == nullptr || frameCount == 0) { return; }
-	if (!m_enabled.load(std::memory_order_acquire)) { return; }
 
-	m_inFlight.fetch_add(1, std::memory_order_acq_rel);
+	// Counted BEFORE the enabled check: a feed that read "enabled" and was then
+	// preempted would otherwise enter the meter after a disarm had already seen
+	// zero in flight and started clearing it. Both sides are seq_cst (the store
+	// of false and waitForQuiet's load too): store-then-load on each side.
+	m_inFlight.fetch_add(1, std::memory_order_seq_cst);
+	if (!m_enabled.load(std::memory_order_seq_cst))
+	{
+		m_inFlight.fetch_sub(1, std::memory_order_release);
+		return;
+	}
 
 	// The measurement itself: LufsMeter::processBlock reads the frames and
 	// nothing else (it takes them `const`), allocates nothing and locks
@@ -159,7 +167,7 @@ bool MasterLoudnessTap::waitForQuiet() noexcept
 {
 	const auto deadline = std::chrono::steady_clock::now() +
 		std::chrono::milliseconds(QuietWaitMs);
-	while (m_inFlight.load(std::memory_order_acquire) != 0)
+	while (m_inFlight.load(std::memory_order_seq_cst) != 0)
 	{
 		if (std::chrono::steady_clock::now() >= deadline) { return false; }
 		std::this_thread::sleep_for(std::chrono::microseconds(QuietPollMicroseconds));

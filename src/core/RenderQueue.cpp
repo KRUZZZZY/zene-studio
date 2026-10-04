@@ -92,11 +92,21 @@ QString writeFile(const RenderJob& job, const SampleBuffer& buffer)
 	return QStringLiteral("writing %1 failed").arg(job.out);
 }
 
-//! The staged conversion moved over its destination; empty on success, else the reason.
+//! The staged conversion moved over its destination; empty on success, else the reason. The old
+//! destination is moved aside, not removed, until the staged file is in place: a failed rename
+//! puts it back instead of leaving neither file.
 QString commitStaged(const RenderJob& job)
 {
 	const QString path = stagedPath(job);
-	if ((!QFile::exists(job.out) || QFile::remove(job.out)) && QFile::rename(path, job.out)) { return QString(); }
+	const QString aside = job.out + QStringLiteral(".old");
+	QFile::remove(aside);
+	const bool hadOld = QFile::exists(job.out);
+	if ((!hadOld || QFile::rename(job.out, aside)) && QFile::rename(path, job.out))
+	{
+		QFile::remove(aside);
+		return QString();
+	}
+	if (hadOld && !QFile::exists(job.out)) { QFile::rename(aside, job.out); }
 	QFile::remove(path);
 	return QStringLiteral("writing %1 failed").arg(job.out);
 }

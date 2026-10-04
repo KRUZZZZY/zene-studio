@@ -29,7 +29,6 @@
  *    same chain, as one undo step. */
 
 #include <algorithm>
-#include <memory>
 
 #include <QFileInfo>
 
@@ -106,14 +105,9 @@ ControlResult pluginReplace(const QJsonObject& args)
 	Effect* fresh = controlInstantiateDevice(entry, chain, &error);
 	if (fresh == nullptr) { return error; }
 	placeEffect(chain, fresh, slot);
-	// The new device's step first, so the undo takes the old one back before it takes the new one out.
-	auto holder = std::make_shared<Effect*>(fresh);
-	addUndoStep([holder, chain]() { if (*holder != nullptr) { chain->removeEffect(*holder); (*holder)->deleteLater(); *holder = nullptr; } },
-		[holder, chain, entry, slot]() {
-			ControlResult ignored;
-			*holder = controlInstantiateDevice(entry, chain, &ignored);
-			if (*holder != nullptr) { placeEffect(chain, *holder, slot); }
-		});
+	// The new device's step first, so the undo takes the old one back before it takes the new one out. Neither keeps
+	// the chain or a device: a track.remove and its undo rebuild them, so both find them again by id and slot.
+	journalEffectLoad(chain, fresh, entry, slot);
 	journalEffectRemoval(chain, old, slot + 1);
 	chain->removeEffect(old);
 	old->deleteLater();

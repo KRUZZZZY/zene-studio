@@ -61,8 +61,9 @@ void mixClip(SampleClip* clip, tick_t start, double framesPerTick, std::vector<S
 
 	SamplePlayHandle handle(clip, window);
 	handle.setIgnoresTrackMute(true);
-	const auto at = static_cast<f_cnt_t>(std::llround((from - start) * framesPerTick));
-	const auto span = static_cast<f_cnt_t>(std::llround((to - from) * framesPerTick));
+	// Tick differences in double: a far negative range start must not overflow tick_t.
+	const auto at = static_cast<f_cnt_t>(std::llround((static_cast<double>(from) - start) * framesPerTick));
+	const auto span = static_cast<f_cnt_t>(std::llround((static_cast<double>(to) - from) * framesPerTick));
 	const f_cnt_t room = static_cast<f_cnt_t>(mix->size()) > at ? static_cast<f_cnt_t>(mix->size()) - at : 0;
 	const f_cnt_t length = std::min({span, room, handle.totalFrames()});
 
@@ -128,7 +129,8 @@ ClipConsolidate::Result ClipConsolidate::render(const std::vector<SampleClip*>& 
 	}
 	result.sampleRate = static_cast<int>(Engine::audioEngine()->outputSampleRate());
 	const double framesPerTick = Engine::framesPerTick(result.sampleRate);
-	std::vector<SampleFrame> mix(static_cast<std::size_t>(std::llround((end - start) * framesPerTick)),
+	const double ticks = static_cast<double>(end) - start;  // end - start in tick_t overflows for a far negative start
+	std::vector<SampleFrame> mix(static_cast<std::size_t>(std::llround(ticks * framesPerTick)),
 		SampleFrame(0.0f, 0.0f));
 	for (SampleClip* clip : clips) { mixClip(clip, start, framesPerTick, &mix); }
 	if (!writeWav(outPath, mix, result.sampleRate, &result.error)) { return result; }

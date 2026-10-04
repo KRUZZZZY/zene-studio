@@ -149,8 +149,9 @@ public:
 		}
 	}
 
-	//! GUI thread only, and only while the audio thread cannot be popping
-	//! (prepare() calls it): forget everything queued.
+	//! GUI thread only, and only while the audio thread cannot be popping and
+	//! no producer can be pushing - HostedPlugin::release() turns the producers
+	//! off and waits for the pushes in flight first: forget everything queued.
 	void reset()
 	{
 		// Same initial state as the constructor: cell i's sequence is i.

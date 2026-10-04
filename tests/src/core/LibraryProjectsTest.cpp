@@ -42,6 +42,7 @@
 #include "ControlRegistry.h"
 #include "ControlVocabulary.h"
 #include "Engine.h"
+#include "ReversibilityTestSupport.h"
 #include "Song.h"
 #include "Track.h"
 
@@ -192,6 +193,12 @@ private slots:
 		QVERIFY2(imported.ok, qPrintable(imported.errorMessage));
 		QCOMPARE(static_cast<int>(Engine::getSong()->tracks().size()), before + 2);
 		QVERIFY(run(QStringLiteral("control.undo")).ok);
+		QCOMPARE(static_cast<int>(Engine::getSong()->tracks().size()), before);
+		// The import's undo finds its tracks by id: track.remove and its undo rebuild one as a new object.
+		const ControlResult again = run(QStringLiteral("project.import_tracks"), {{QStringLiteral("path"), other},
+			{QStringLiteral("tracks"), QJsonArray{0}}});
+		QVERIFY2(again.ok, qPrintable(again.errorMessage));
+		QVERIFY(revtest::makerUndoFindsTrackAfterRemovalUndone(again.result.value(QStringLiteral("imported")).toArray().first().toString()));
 		QCOMPARE(static_cast<int>(Engine::getSong()->tracks().size()), before);
 		QCOMPARE(run(QStringLiteral("project.import_tracks"), {{QStringLiteral("path"), other}, {QStringLiteral("tracks"), QJsonArray{999}}})
 			.errorKind, ControlErrorKind::NotFound);

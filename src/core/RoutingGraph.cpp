@@ -78,6 +78,25 @@ void publishScheduleFor(std::vector<RoutingNodeSchedule>& schedule,
 	}
 }
 
+//! The <node> children of @a graphElement added to @a loaded, file id -> graph id in @a idMap.
+//! False for an unknown type, an id that does not parse, or one used twice: a second node with
+//! an id would leave the first in the graph, orphaned, and take its connections.
+bool loadNodes(const QDomElement& graphElement, RoutingGraph& loaded, QHash<int, int>& idMap)
+{
+	for (QDomElement nodeElement = graphElement.firstChildElement(QStringLiteral("node"));
+		!nodeElement.isNull(); nodeElement = nodeElement.nextSiblingElement(QStringLiteral("node")))
+	{
+		std::unique_ptr<RoutingNode> node = RoutingGraph::createNode(nodeElement.attribute(QStringLiteral("type")));
+		bool parsed = false;
+		const int fileId = nodeElement.attribute(QStringLiteral("id")).toInt(&parsed);
+		if (node == nullptr || !parsed || idMap.contains(fileId)) { return false; }
+
+		node->loadSettings(nodeElement);
+		idMap.insert(fileId, loaded.addNode(std::move(node)));
+	}
+	return true;
+}
+
 } // namespace
 
 auto RoutingGraph::addNode(std::unique_ptr<RoutingNode> node) -> int
@@ -292,21 +311,15 @@ void RoutingGraph::save(QDomElement& parent) const
 auto RoutingGraph::load(const QDomElement& parent) -> bool
 {
 	const QDomElement graphElement = parent.firstChildElement(QString::fromLatin1(GRAPH_ELEMENT));
-	if (graphElement.isNull()) { return false; }
+	// Another version is a format this build does not know, never one read as version 1.
+	if (graphElement.isNull() || graphElement.attribute(QStringLiteral("version")).toInt() != GRAPH_VERSION)
+	{
+		return false;
+	}
 
 	RoutingGraph loaded;
 	QHash<int, int> idMap;
-
-	for (QDomElement nodeElement = graphElement.firstChildElement(QStringLiteral("node"));
-		!nodeElement.isNull(); nodeElement = nodeElement.nextSiblingElement(QStringLiteral("node")))
-	{
-		std::unique_ptr<RoutingNode> node = createNode(nodeElement.attribute(QStringLiteral("type")));
-		if (node == nullptr) { return false; }
-
-		node->loadSettings(nodeElement);
-		const int fileId = nodeElement.attribute(QStringLiteral("id")).toInt();
-		idMap.insert(fileId, loaded.addNode(std::move(node)));
-	}
+	if (!loadNodes(graphElement, loaded, idMap)) { return false; }
 
 	for (QDomElement connectionElement = graphElement.firstChildElement(QStringLiteral("connection"));
 		!connectionElement.isNull();

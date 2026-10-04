@@ -118,7 +118,9 @@ void SlicerT::playNoteImpl(NotePlayHandle* handle, std::span<SampleFrame> out)
 		&& m_originalSample.play(out.data() + offset, playbackState, frames, Sample::Loop::Off, speedRatio))
 	{
 		// exponential fade out, applyRelease() not used since it extends the note length
-		int fadeOutFrames = m_fadeOutFrames.value() / 1000.0f * Engine::audioEngine()->outputSampleRate();
+		// At least one frame: a FadeOut of 0 divided 0 by 0 on the slice's last frame, a NaN in the output.
+		const int fadeOutFrames = std::max(1, static_cast<int>(m_fadeOutFrames.value() / 1000.0f
+			* Engine::audioEngine()->outputSampleRate()));
 		for (auto i = std::size_t{0}; i < frames; i++)
 		{
 			float fadeValue = static_cast<float>(framesLeft * speedRatio - static_cast<int>(i)) / fadeOutFrames;

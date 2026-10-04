@@ -247,7 +247,10 @@ public:
 	int noteCount() const;
 	LuaNote& note(int index) const;
 	void addNote(const LuaNote& note);
-	void addNoteAt(int key, int pos, int length, int volume);
+	//! The Lua signature has no panning: the note is centred.
+	void addNoteAt(int key, int pos, int length, int volume) { addPannedNote(key, pos, length, volume, 0); }
+	//! addNoteAt() with a panning; not a Lua function (addNote and NoteBuilder:addTo use it).
+	void addPannedNote(int key, int pos, int length, int volume, int panning);
 	void removeNote(int index);
 	void clearNotes();
 
@@ -259,6 +262,11 @@ private:
 	int m_patternIndex{-1};
 	int m_trackIndex{-1};
 };
+
+inline void LuaNoteBuilder::addTo(LuaPatternClip& clip) const
+{
+	clip.addPannedNote(m_key, m_pos, m_length, m_volume, m_panning);
+}
 
 // ---------------------------------------------------------------------------
 // Transport / Song / PatternStore (spec section 3)

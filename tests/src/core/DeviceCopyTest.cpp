@@ -51,6 +51,7 @@
 #include "PluginPaths.h"
 #include "Rack.h"
 #include "RemoteControls.h"
+#include "ReversibilityTestSupport.h"
 #include "Song.h"
 
 using namespace lmms;
@@ -366,6 +367,20 @@ private slots:
 		QCOMPARE(Engine::mixer()->numChannels(), channelsBefore);
 		QCOMPARE(run(QStringLiteral("track.drum_rack"), {{QStringLiteral("pads"), QJsonArray{QJsonObject{
 			{QStringLiteral("sample"), QStringLiteral("/no/such/file.wav")}}}}}).errorKind, ControlErrorKind::NotFound);
+	}
+
+	//! The rack's undo finds its pads by id: track.remove and its undo rebuild a pad as a new object,
+	//! which a kept Track* does not name.
+	void aDrumRackPadIsFoundAgainAfterItsRemovalIsUndone()
+	{
+		const QString dir = QStringLiteral(ZENE_DRUM_SAMPLES_DIR);
+		const int tracksBefore = static_cast<int>(Engine::getSong()->tracks().size());
+		const ControlResult made = run(QStringLiteral("track.drum_rack"), {{QStringLiteral("pads"),
+			QJsonArray{QJsonObject{{QStringLiteral("sample"), dir + QStringLiteral("/bassdrum01.ogg")}}}}});
+		QVERIFY2(made.ok, qPrintable(made.errorMessage));
+		const QString pad = made.result.value(QStringLiteral("tracks")).toArray().first().toString();
+		QVERIFY(revtest::makerUndoFindsTrackAfterRemovalUndone(pad));
+		QCOMPARE(static_cast<int>(Engine::getSong()->tracks().size()), tracksBefore);  // the folder went too
 	}
 
 	void theOrganiserMarksADevice()

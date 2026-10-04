@@ -174,6 +174,16 @@ def check_range_bounce(session, recorder, outdir):
                    "reply=%r" % bounced)
     state = session.result("track.get_state", {"track": track})
     recorder.check("range.bounce mutes the bounced track", state.get("muted") is True, "state=%r" % state)
+    # Its undo finds the landed track by id: track.remove and its undo rebuild it as a NEW object, which a
+    # guarded pointer no longer names (the undo used to leave the rebuilt track and the mute in place).
+    landed = bounced.get("landed_track")
+    session.result("track.remove", {"track": landed})
+    session.result("control.undo")
+    session.result("control.undo")
+    gone = session.result("track.get_state", {"track": landed})
+    state = session.result("track.get_state", {"track": track})
+    recorder.check("range.bounce's undo takes the landed track away after its removal is undone",
+                   "error" in gone and state.get("muted") is False, "landed=%r source=%r" % (gone, state))
 
 
 def check_window_shell(session, recorder, outdir):

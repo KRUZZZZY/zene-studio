@@ -83,6 +83,13 @@ LMMS_EXPORT QJsonObject projectRevisionState(const QString& projectPath);
 LMMS_EXPORT bool restoreProjectRevision(const QString& projectPath, int revision,
 	QString* error);
 
+/*! Moves \a staging over \a projectPath, for a restore that has already rotated the live file
+ * into revision 0 (rotateProjectRevision without a refusal). When the move fails the live file is
+ * put back from that revision, so a failed restore never leaves the project path empty. False when
+ * the move failed; \a staging is gone either way.
+ */
+LMMS_EXPORT bool replaceProjectWithStaged(const QString& projectPath, const QString& staging);
+
 } // namespace control
 } // namespace lmms
 

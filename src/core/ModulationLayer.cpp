@@ -118,7 +118,7 @@ ModulationRoute readRoute(const QDomElement& element)
 	route.chain = element.attribute(QStringLiteral("chain")).toInt();
 	route.effect = element.attribute(QStringLiteral("effect")).toInt();
 	route.parameter = element.attribute(QStringLiteral("parameter"));
-	route.depth = static_cast<float>(element.attribute(QStringLiteral("depth")).toDouble());
+	route.depth = boundedValue(element.attribute(QStringLiteral("depth")), -1.f, 0.f);
 	route.perSample = element.attribute(QStringLiteral("persample"), QStringLiteral("0")).toInt() != 0;
 	return route;
 }

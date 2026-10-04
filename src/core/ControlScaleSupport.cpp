@@ -135,7 +135,9 @@ bool readScaleRoot(const QJsonObject& args, const QString& key, int* out, Contro
 	if (value.isDouble())
 	{
 		const double number = value.toDouble();
-		const int index = static_cast<int>(number);
+		// Clamped before the cast (casting a double outside int's range is
+		// undefined); anything clamped is outside 0..11 and refused below.
+		const int index = static_cast<int>(std::clamp(number, -1.0, 12.0));
 		if (number != static_cast<double>(index) || index < 0 || index > 11)
 		{
 			*error = ControlResult::failure(ControlErrorKind::InvalidArgs,

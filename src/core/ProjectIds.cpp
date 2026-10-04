@@ -29,6 +29,8 @@
 #include <QStringList>
 #include <QUuid>
 
+#include <limits>
+
 namespace lmms
 {
 
@@ -58,6 +60,13 @@ int s_documentFloor = 0;
 
 //! True between beginLoad() and endLoad(): allocate() is handing out placeholders.
 bool s_inLoad = false;
+
+//! The id after \a id, saturating: a document can carry id INT_MAX, and id + 1 there is signed
+//! overflow. The space is then exhausted and the last id repeats - never a wrapped negative one.
+int successorOf(int id)
+{
+	return id < std::numeric_limits<int>::max() ? id + 1 : id;
+}
 
 /*! The containers a COPY payload puts an object element in, i.e. everything
  *  `ProjectIds::isDocumentElement` must answer false for. EVERY entry is the
@@ -189,14 +198,15 @@ void ProjectIds::observe(int id)
 	// MixerChannel::setId) left the counter at 5 for a three-track project
 	// and the second save wrote next-id="5" where the first wrote "3"
 	// (StableTrackIdsTest::legacyProjectGetsDeterministicIdsAndResavesByteIdentically).
-	if (id >= s_next) { s_next = id + 1; }
-	if (id + 1 > s_documentFloor) { s_documentFloor = id + 1; }
+	const int successor = successorOf(id);
+	if (id >= s_next) { s_next = successor; }
+	if (successor > s_documentFloor) { s_documentFloor = successor; }
 }
 
 int ProjectIds::allocate()
 {
 	const int id = s_next;
-	s_next = id + 1;
+	s_next = successorOf(id);
 	// A load pass's allocations are PLACEHOLDERS: the element's own id overwrites
 	// them a moment later, and one that is KEPT reports itself through
 	// noteLoadAssignment(). Counting them here is what made every round trip

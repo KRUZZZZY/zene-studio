@@ -184,8 +184,11 @@ ControlResult meterMeasureFile(const QString& path)
 	LoudnessReport report(static_cast<sample_rate_t>(audioInfo.samplerate), channels);
 
 	// Two fixed-size buffers, reused for every chunk: the interleaved one for the
-	// one- and two-channel path (SampleFrame IS two floats, which is libsndfile's
-	// own layout) and the planar one for the wider layouts.
+	// stereo path (SampleFrame IS two floats, which is libsndfile's own layout for
+	// two channels) and the planar one for mono and the wider layouts. Mono is NOT
+	// a SampleFrame stream: libsndfile packs one float per frame, so read through
+	// SampleFrame it would meter every other sample and then stale data.
+	const bool stereo = channels == DEFAULT_CHANNELS;
 	std::vector<SampleFrame> frames(FileChunkFrames);
 	std::vector<sample_t> raw(static_cast<std::size_t>(FileChunkFrames) * channels);
 	std::vector<std::vector<sample_t>> planar(channels, std::vector<sample_t>(FileChunkFrames));
@@ -195,12 +198,12 @@ ControlResult meterMeasureFile(const QString& path)
 	while (remaining > 0)
 	{
 		const sf_count_t want = std::min<sf_count_t>(remaining, FileChunkFrames);
-		const sf_count_t got = channels <= DEFAULT_CHANNELS
+		const sf_count_t got = stereo
 			? sf_readf_float(file, reinterpret_cast<float*>(frames.data()), want)
 			: sf_readf_float(file, raw.data(), want);
 		if (got <= 0) { break; }
 
-		if (channels <= DEFAULT_CHANNELS)
+		if (stereo)
 		{
 			report.addBlock(frames.data(), static_cast<f_cnt_t>(got));
 		}

@@ -98,6 +98,26 @@ std::shared_ptr<const SampleBuffer> readStemFile(const QString& path, int sample
 	return std::make_shared<const SampleBuffer>(std::move(frames), sampleRate);
 }
 
+//! Reads every stem the child wrote in @a outDir into @a out. True only when all of them are
+//! there and each is @a frames long - the input's length: a truncated or mismatched stem
+//! would be misaligned with the mix and with the others.
+bool readStems(const QString& outDir, int sampleRate, std::size_t frames, StemSet& out)
+{
+	bool haveAll = true;
+	for (int i = 0; i < NumStems; ++i)
+	{
+		const auto path = QDir(outDir).filePath(
+			QString::fromLatin1(stemName(static_cast<Stem>(i))) + QStringLiteral(".f32"));
+		auto buffer = readStemFile(path, sampleRate);
+		if (buffer == nullptr || buffer->size() != frames)
+		{
+			haveAll = false;
+		}
+		out[static_cast<size_t>(i)] = buffer;
+	}
+	return haveAll;
+}
+
 } // namespace
 
 
@@ -414,18 +434,7 @@ StemSeparator::Status ExternalProcessStemSeparator::separate(const SampleBuffer&
 	const int exitCode = (proc.exitStatus() == QProcess::NormalExit) ? proc.exitCode() : -1;
 
 	// Read whatever stems the child managed to write (partial on cancellation).
-	bool haveAll = true;
-	for (int i = 0; i < NumStems; ++i)
-	{
-		const auto path = QDir(outDir).filePath(
-			QString::fromLatin1(stemName(static_cast<Stem>(i))) + QStringLiteral(".f32"));
-		auto buffer = readStemFile(path, sampleRate);
-		if (buffer == nullptr)
-		{
-			haveAll = false;
-		}
-		out[static_cast<size_t>(i)] = buffer;
-	}
+	const bool haveAll = readStems(outDir, sampleRate, mix.size(), out);
 
 	if (exitCode == 0 && haveAll)
 	{

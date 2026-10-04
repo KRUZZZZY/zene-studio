@@ -88,7 +88,7 @@ public:
 	//! studio actually hits while keeping the pre-allocation honest.
 	static constexpr int MaxRoutes = 64;
 
-	//! \a routeCapacity routes (bounded below by 1), each able to select an
+	//! \a routeCapacity routes (bounded to 1..MaxRoutes), each able to select an
 	//! input channel in [0, \a inputChannelCapacity).
 	explicit MultiTrackRecorder(int routeCapacity = NumTracks,
 		int inputChannelCapacity = static_cast<int>(DEFAULT_CHANNELS));

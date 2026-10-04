@@ -45,6 +45,7 @@
 #include <QJsonObject>
 #include <QString>
 #include <QStringList>
+#include <QtEndian>
 
 namespace lmms
 {
@@ -181,6 +182,9 @@ QByteArray projectDocumentText(const QByteArray& raw)
 	// An `.mmp` IS its XML text; an `.mmpz` is a qCompress container, the shape
 	// DataFile::writeFile writes and qUncompress reads back.
 	if (raw.contains("<?xml")) { return raw; }
+	// qCompress's 4-byte big-endian header declares the inflated size, and qUncompress allocates
+	// that up front: a declared size over the cap is refused before anything is inflated.
+	if (raw.size() < 4 || qFromBigEndian<quint32>(raw.constData()) > Bounds::MaxDocumentBytes) { return QByteArray(); }
 	const QByteArray text = qUncompress(raw);
 	if (text.isEmpty() || text.size() > Bounds::MaxDocumentBytes) { return QByteArray(); }
 	return text;

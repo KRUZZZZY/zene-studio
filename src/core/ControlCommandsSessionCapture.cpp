@@ -31,12 +31,11 @@
 #include <memory>
 #include <vector>
 
-#include <QPointer>
-
 #include "ControlCommandsSessionShared.h"
 #include "ControlEdit.h"
 #include "ControlRegistry.h"
 #include "ControlRegistryGroups.h"
+#include "ControlTrackCreation.h"
 #include "ControlVocabulary.h"
 #include "Engine.h"
 #include "MidiClip.h"
@@ -64,7 +63,9 @@ struct Captured
 	tick_t start = 0;
 	tick_t length = 0;
 	QString session;  //!< the <session> block before
-	QPointer<Track> pattern;  //!< null once the track is gone, whoever removed it (review L10-L03-L02-1 #1)
+	//! The pattern track's stable id (-1: none), found again when a step runs: a track.remove and its undo rebuild it
+	//! as a NEW object under the same id, which neither a pointer nor a guarded one names (review L10-L03-L02-1 #1).
+	int pattern = -1;
 	int written = 0;
 };
 
@@ -92,15 +93,15 @@ bool build(Captured* c)
 	ClipSlot& slot = song->sessionModel().slot(c->track, c->scene);
 	slot.setPatternReference(pattern);
 	slot.setName(QObject::tr("Recorded %1").arg(pattern + 1));
-	c->pattern = patternTrack;
+	c->pattern = patternTrack->id();
 	return true;
 }
 
 void unbuild(Captured* c)
 {
 	if (Song* song = Engine::getSong()) { restoreSessionBlock(song->sessionModel(), c->session); }
-	if (!c->pattern.isNull()) { removeTrack(c->pattern.data()); }
-	c->pattern.clear();
+	if (Track* track = trackWithId(c->pattern)) { removeTrack(track); }
+	c->pattern = -1;
 }
 
 ControlResult captureToSlot(const QJsonObject& args)

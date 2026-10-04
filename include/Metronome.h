@@ -25,19 +25,21 @@
 #ifndef LMMS_METRONOME_H
 #define LMMS_METRONOME_H
 
+#include <atomic>
 #include <cstddef>
 
 namespace lmms {
 class Metronome
 {
 public:
-	bool active() const { return m_active; }
-	void setActive(bool active) { m_active = active; }
+	//! Atomic: written by the UI/control thread, read by processTick() on the audio thread.
+	bool active() const { return m_active.load(std::memory_order_relaxed); }
+	void setActive(bool active) { m_active.store(active, std::memory_order_relaxed); }
 	//! @a force clicks while the metronome is off (0.5.0 L03: a recording pass's count-in).
 	void processTick(int currentTick, int ticksPerBar, int beatsPerBar, size_t bufferOffset, bool force = false);
 
 private:
-	bool m_active = false;
+	std::atomic<bool> m_active{false};
 };
 } // namespace lmms
 

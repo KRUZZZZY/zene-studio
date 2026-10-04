@@ -28,8 +28,6 @@
  *  point's own curve, ED-191 the last touched parameter. Every edit is one undo step: a clip it
  *  edits is checkpointed, a lane it creates is removed again by one action step. */
 
-#include <memory>
-
 #include <QJsonArray>
 
 #include "AutomationClip.h"
@@ -43,6 +41,7 @@
 #include "ControlRegistryGroups.h"
 #include "ControlReversibility.h"
 #include "ControlStructuralSupport.h"
+#include "ControlTrackCreation.h"
 #include "ControlVocabulary.h"
 #include "Engine.h"
 #include "ProjectJournal.h"
@@ -71,8 +70,8 @@ AutomationClip* createLane(Track* owner, AutomatableModel* model, const QString&
 {
 	Song* song = Engine::getSong();
 	auto* lane = dynamic_cast<AutomationTrack*>(Track::create(Track::Type::Automation, song));
-	auto holder = std::make_shared<Track*>(lane);
-	addUndoStep([holder] { if (*holder != nullptr) { removeTrack(*holder); *holder = nullptr; } });
+	// The lane's id, not its pointer: track.remove and its undo free it and build an equal one.
+	addUndoStep([id = lane->id()] { if (Track* live = trackWithId(id)) { removeTrack(live); } });
 	lane->setName(name);
 	lane->setFollowsTrack(owner->id());
 	moveTrackToIndex(lane, trackIndexIn(song, owner) + 1);

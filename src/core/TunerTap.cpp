@@ -59,6 +59,9 @@ void TunerTap::push(Source from, const SampleFrame* frames, f_cnt_t count) noexc
 	}
 	const std::uint64_t head = fresh ? 0 : m_head.load(std::memory_order_relaxed);
 	const f_cnt_t first = count > Capacity ? count - Capacity : 0;
+	// Announced before the slots change (the seqlock shape: store, release fence, then the writes).
+	m_reserved.store(head + (count - first), std::memory_order_relaxed);
+	std::atomic_thread_fence(std::memory_order_release);
 	for (f_cnt_t i = first; i < count; ++i)
 	{
 		m_ring[(head + i - first) & Mask].store(0.5f * (frames[i][0] + frames[i][1]), std::memory_order_relaxed);
@@ -74,7 +77,10 @@ bool TunerTap::latest(float* out, std::size_t count) const noexcept
 	const std::uint64_t start = head - count;
 	for (std::size_t i = 0; i < count; ++i) { out[i] = m_ring[(start + i) & Mask].load(std::memory_order_relaxed); }
 	// The producer may have lapped the window while it was copied: then part of it is newer than the rest.
-	return m_head.load(std::memory_order_acquire) - start <= Capacity;
+	// Read against the push in PROGRESS, not the last published one: a push that has written slots but
+	// not yet moved m_head can already have overwritten the oldest frames of a full window.
+	std::atomic_thread_fence(std::memory_order_acquire);
+	return m_reserved.load(std::memory_order_relaxed) - start <= Capacity;
 }
 
 } // namespace lmms

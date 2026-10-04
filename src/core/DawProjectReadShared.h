@@ -77,7 +77,10 @@
 #include <QString>
 #include <QXmlStreamReader>
 
+#include <algorithm>
 #include <cmath>
+#include <cstdint>
+#include <limits>
 
 #include "DawProjectInterchange.h"
 
@@ -144,6 +147,8 @@ struct ReadState
 	IdMap trackIndexById;
 	//! The track index a <Lanes>/<Clips> chain currently belongs to.
 	int currentTrack = -1;
+	//! How many <Lanes> the walk is inside (see MaxNesting).
+	int lanesDepth = 0;
 	//! The effective timeUnit, inherited down the <Lanes> chain.
 	QString timeUnit = QString::fromLatin1(DawProjectTimeUnit);
 };
@@ -152,12 +157,35 @@ struct ReadState
 //! A time value in beats as LMMS ticks, counting a value that was NOT on
 //! LMMS' 48-ticks-per-beat grid (`rounded_times`): the count is reported rather
 //! than hidden, the rule the SMF reader follows for a foreign division.
+//! A time past the engine's signed 32-bit tick (or NaN / infinity, which toDouble() accepts) is
+//! clamped into it - 0 for a non-finite one - and counted the same way: converting it as it
+//! stands would be undefined, and an in-range qint64 past the tick domain overflows later.
 inline qint64 ticksFromBeats(ReadState& state, double beats)
 {
+	constexpr double TickLimit = std::numeric_limits<std::int32_t>::max();
 	const double exact = beats * DawProjectTicksPerQuarterNote;
-	const double rounded = std::floor(exact + 0.5);
-	if (std::fabs(exact - rounded) > 1e-6) { state.report->loss.roundedTimes++; }
-	return static_cast<qint64>(rounded);
+	const double held = std::isfinite(exact) ? std::clamp(exact, -TickLimit, TickLimit) : 0.0;
+	const double rounded = std::floor(held + 0.5);
+	if (!(std::fabs(exact - rounded) <= 1e-6)) { state.report->loss.roundedTimes++; }
+	return static_cast<qint64>(std::min(rounded, TickLimit));
+}
+
+//! How deep <Lanes> and <Track> may nest. Each level is a stack frame of the walks below, so a
+//! hostile document must not choose the depth; real documents nest a few levels.
+constexpr int MaxNesting = 64;
+
+//! False - with state.error set and the element skipped - when an element at @a depth would pass
+//! MaxNesting. (skipCurrentElement() is a loop, not a recursion.)
+inline bool nestingAllowed(QXmlStreamReader& reader, ReadState& state, int depth)
+{
+	if (depth < MaxNesting) { return true; }
+	if (state.error.isEmpty())
+	{
+		state.error = QStringLiteral("the document nests <Lanes> or <Track> elements deeper than %1 levels")
+			.arg(MaxNesting);
+	}
+	skipElement(reader);
+	return false;
 }
 
 //! Walk the <Arrangement>/<Lanes> tree (defined in DawProjectReadTracks.cpp).

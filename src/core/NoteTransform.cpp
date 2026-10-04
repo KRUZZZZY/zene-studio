@@ -151,7 +151,8 @@ int transpose( const NoteVector& notes, int semitones )
 	for( Note* note : notes )
 	{
 		if( note == nullptr ) { continue; }
-		const int target = std::clamp( note->key() + semitones, 0, NumKeys - 1 );
+		// The shift is bounded first: key + INT_MAX would overflow before the clamp saw it.
+		const int target = std::clamp( note->key() + std::clamp( semitones, -NumKeys, NumKeys ), 0, NumKeys - 1 );
 		if( target != note->key() )
 		{
 			note->setKey( target );
@@ -169,7 +170,8 @@ int offsetVelocity( const NoteVector& notes, int delta )
 	{
 		if( note == nullptr ) { continue; }
 		const int current = static_cast<int>( note->getVolume() );
-		const int target = std::clamp( current + delta, static_cast<int>( MinVolume ), static_cast<int>( MaxVolume ) );
+		const int bounded = std::clamp( delta, -static_cast<int>( MaxVolume ), static_cast<int>( MaxVolume ) );  // no overflow
+		const int target = std::clamp( current + bounded, static_cast<int>( MinVolume ), static_cast<int>( MaxVolume ) );
 		if( target != current )
 		{
 			note->setVolume( static_cast<volume_t>( target ) );
@@ -269,7 +271,8 @@ int jitterFor( int span, uint32_t seed, const Note& note, int slotTick, uint32_t
 int quantizeNotes( const NoteVector& notes, const QuantizeOptions& options )
 {
 	if( options.grid <= 0 ) { return 0; }
-	const float strength = std::clamp( options.strength, 0.0f, 1.0f );
+	// std::clamp keeps a NaN, which std::lround cannot round: NaN moves nothing.
+	const float strength = std::isnan( options.strength ) ? 0.0f : std::clamp( options.strength, 0.0f, 1.0f );
 
 	int changed = 0;
 	for( Note* note : notes )

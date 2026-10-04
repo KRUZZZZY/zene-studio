@@ -275,7 +275,8 @@ void registerDepthSet(ControlRegistry& registry)
 			args.value(QStringLiteral("modulator")).toString(), &error);
 		if (index < 0) { return error; }
 		const Modulator* modulator = layer.modulator(index);
-		const int route = static_cast<int>(args.value(QStringLiteral("target")).toDouble());
+		// toInt, not a cast: an index past int's range reads as -1 (refused), never as UB.
+		const int route = args.value(QStringLiteral("target")).toInt(-1);
 		if (route < 0 || route >= modulator->routeCount())
 		{
 			return ControlResult::failure(ControlErrorKind::NotFound,
@@ -335,7 +336,8 @@ void registerTargetRemove(ControlRegistry& registry)
 			args.value(QStringLiteral("modulator")).toString(), &error);
 		if (index < 0) { return error; }
 		const Modulator* modulator = layer.modulator(index);
-		const int route = static_cast<int>(args.value(QStringLiteral("target")).toDouble());
+		// toInt, not a cast: an index past int's range reads as -1 (refused), never as UB.
+		const int route = args.value(QStringLiteral("target")).toInt(-1);
 		if (route < 0 || route >= modulator->routeCount())
 		{
 			return ControlResult::failure(ControlErrorKind::NotFound,

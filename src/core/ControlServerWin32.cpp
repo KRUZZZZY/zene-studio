@@ -142,7 +142,10 @@ bool waitForIo(HANDLE pipe, OVERLAPPED* operation, HANDLE quitEvent, DWORD* tran
 	const HANDLE waits[2] = { operation->hEvent, quitEvent };
 	if (WaitForMultipleObjects(2, waits, FALSE, INFINITE) != WAIT_OBJECT_0)
 	{
+		// CancelIoEx only REQUESTS the cancel: until the operation completes the kernel
+		// may still write the OVERLAPPED and the buffer, both in the caller's frame.
 		CancelIoEx(pipe, operation);
+		GetOverlappedResult(pipe, operation, transferred, TRUE);
 		return false;
 	}
 	return GetOverlappedResult(pipe, operation, transferred, TRUE) != FALSE;
@@ -329,21 +332,10 @@ void ControlServer::win32AcceptLoop()
 			}
 			else if (error == ERROR_IO_PENDING)
 			{
-				const HANDLE waits[2] = { asHandle(m_win32ConnectEvent),
-					asHandle(m_win32QuitEvent) };
-				const DWORD wait = WaitForMultipleObjects(2, waits, FALSE, INFINITE);
-				if (wait == WAIT_OBJECT_0)
-				{
-					DWORD transferred = 0;
-					connected = GetOverlappedResult(pipe, &operation, &transferred, TRUE);
-				}
-				else
-				{
-					// closeWin32(): cancel the pending connect, then close.
-					CancelIoEx(pipe, &operation);
-					CloseHandle(pipe);
-					break;
-				}
+				// Connected, or closeWin32() cancelled the pending connect: waitForIo
+				// waits the cancel out, and the quit check below closes the instance.
+				DWORD transferred = 0;
+				connected = waitForIo(pipe, &operation, asHandle(m_win32QuitEvent), &transferred);
 			}
 		}
 
@@ -386,6 +378,7 @@ void ControlServer::win32ClientLoop(void* hPipe)
 			// The over-cap line was refused: the rest of what this peer sends is
 			// read and DISCARDED, exactly as the POSIX path drains it, so the
 			// connection was never allowed to buffer an unbounded line.
+			buffer.clear();
 			continue;
 		}
 		if (!win32ServeBuffer(hPipe, ioEvent, quitEvent, buffer, &draining)) { break; }

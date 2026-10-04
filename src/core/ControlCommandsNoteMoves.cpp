@@ -44,6 +44,7 @@
 #include "ControlRegistry.h"
 #include "ControlRegistryGroups.h"
 #include "ControlScaleShared.h"
+#include "ControlTrackCreation.h"
 #include "ControlVocabulary.h"
 #include "InstrumentTrack.h"
 
@@ -106,18 +107,22 @@ ControlResult splitByPitch(const QJsonObject& args)
 	std::set<int> keys;
 	for (const Note* note : clip->notes()) { keys.insert(note->key()); }
 	if (keys.size() < 2) { return ControlResult::failure(ControlErrorKind::NotFound, QStringLiteral("the clip holds fewer than two keys")); }
-	auto made = std::make_shared<std::vector<Track*>>();
+	// The new tracks' ids, never their pointers: track.remove and its undo free a track and build an equal one.
+	auto made = std::make_shared<std::vector<int>>();
 	// Guarded: a later undo can rebuild the source track as a new object, and then redo has nothing to copy.
 	const QPointer<Track> source = clip->getTrack();
 	const QPointer<MidiClip> from = clip;
 	const auto build = [made, source, from, keys]() {
 		if (source.isNull() || from.isNull()) { return; }
-		for (int key : keys) { made->push_back(keyTrack(source, from, key)); }
+		for (int key : keys) { made->push_back(keyTrack(source, from, key)->id()); }
 	};
-	addUndoStep([made]() { for (auto it = made->rbegin(); it != made->rend(); ++it) { removeTrack(*it); } made->clear(); }, build);
+	addUndoStep([made]() {
+		for (auto it = made->rbegin(); it != made->rend(); ++it) { if (Track* live = trackWithId(*it)) { removeTrack(live); } }
+		made->clear();
+	}, build);
 	build();
 	QJsonArray ids;
-	for (const Track* track : *made) { ids.append(trackIdOf(track)); }
+	for (const int id : *made) { ids.append(trackId(id)); }
 	Engine::getSong()->setModified();
 	return ControlResult::success({{QStringLiteral("tracks"), ids}, {QStringLiteral("keys"), static_cast<int>(keys.size())}});
 }

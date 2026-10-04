@@ -25,6 +25,8 @@
 
 #include "Sfxr.h"
 
+#include <algorithm>
+#include <array>
 #include <cstdlib>
 #include <ctime>
 #include <cmath>
@@ -434,6 +436,39 @@ QString SfxrInstrument::nodeName() const
 
 
 
+namespace
+{
+
+//! Fills @a frameNum frames of @a out from @a pitchedFrameNum synth frames, each output frame taking the synth
+//! frame at the same relative position, as the per-period buffer did. The synth runs through a fixed block
+//! on the stack, still all @a pitchedFrameNum frames of it, so no period allocates (round 6).
+void renderPitched(SfxrSynth& synth, SampleFrame* out, f_cnt_t frameNum, int32_t pitchedFrameNum)
+{
+	const auto pitched = static_cast<f_cnt_t>(std::max(pitchedFrameNum, 0));
+	if (pitched == 0)
+	{
+		zeroSampleFrames(out, frameNum);  // the old buffer was empty here, and read past its end
+		return;
+	}
+	std::array<SampleFrame, 256> block;
+	f_cnt_t blockStart = 0;
+	f_cnt_t blockEnd = 0;
+	for (f_cnt_t i = 0; i < frameNum; ++i)
+	{
+		const f_cnt_t source = i * pitched / frameNum;
+		while (source >= blockEnd)
+		{
+			blockStart = blockEnd;
+			blockEnd = std::min<f_cnt_t>(blockStart + block.size(), pitched);
+			synth.update(block.data(), static_cast<int32_t>(blockEnd - blockStart));
+		}
+		out[i] = block[source - blockStart];
+	}
+	if (blockEnd < pitched) { synth.update(nullptr, static_cast<int32_t>(pitched - blockEnd)); }
+}
+
+} // namespace
+
 void SfxrInstrument::playNoteImpl(NotePlayHandle* _n, std::span<SampleFrame> out)
 {
 	float currentSampleRate = Engine::audioEngine()->outputSampleRate();
@@ -459,17 +494,7 @@ void SfxrInstrument::playNoteImpl(NotePlayHandle* _n, std::span<SampleFrame> out
 // debug code
 //	qDebug( "pFN %d", pitchedFrameNum );
 
-	auto pitchedBuffer = new SampleFrame[pitchedFrameNum];
-	static_cast<SfxrSynth*>(_n->m_pluginData)->update( pitchedBuffer, pitchedFrameNum );
-	for( f_cnt_t i=0; i<frameNum; i++ )
-	{
-		for( ch_cnt_t j=0; j<DEFAULT_CHANNELS; j++ )
-		{
-			out[i+offset][j] = pitchedBuffer[i*pitchedFrameNum/frameNum][j];
-		}
-	}
-
-	delete[] pitchedBuffer;
+	renderPitched(*static_cast<SfxrSynth*>(_n->m_pluginData), out.data() + offset, frameNum, pitchedFrameNum);
 
 	applyRelease(out.data(), _n);
 }

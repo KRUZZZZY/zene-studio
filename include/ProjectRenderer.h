@@ -25,6 +25,7 @@
 #ifndef LMMS_PROJECT_RENDERER_H
 #define LMMS_PROJECT_RENDERER_H
 
+#include <atomic>
 #include <memory>
 
 #include "AudioFileDevice.h"
@@ -129,7 +130,7 @@ private:
 	QString m_loudnessReportError;
 
 	volatile int m_progress;
-	volatile bool m_abort;
+	std::atomic<bool> m_abort;  //!< set by abortProcessing() on another thread; volatile is not a synchronisation
 
 	/*! The selection that was in force before this renderer published its own
 	 *  (see ProjectRenderer.cpp): restored by ~ProjectRenderer(), so a render's

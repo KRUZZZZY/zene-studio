@@ -22,8 +22,6 @@
  * Boston, MA 02110-1301 USA.
  */
 
-#include <memory>
-
 #include <QJsonArray>
 #include <QJsonObject>
 
@@ -153,22 +151,10 @@ ControlResult loadEffect(const ControlTarget& target, const ControlDeviceEntry& 
 	// SPEC A16: an APPENDED effect carries only defaults, so the inverse is the
 	// OPERATION and it is exact - ONE action step unloads the instance it
 	// created, and its redo instantiates the same catalogue entry again. (An
-	// instrument REPLACEMENT has no such inverse: see loadInstrument.)
-	auto holder = std::make_shared<Effect*>(effect);
-	control::addUndoStep(
-		[holder, chain]() {
-			if (*holder != nullptr)
-			{
-				chain->removeEffect(*holder);
-				(*holder)->deleteLater();
-				*holder = nullptr;
-			}
-		},
-		[holder, chain, entry, index]() {
-			ControlResult ignored;
-			*holder = controlInstantiateDevice(entry, chain, &ignored);
-			if (*holder != nullptr) { placeEffect(chain, *holder, index); }
-		});
+	// instrument REPLACEMENT has no such inverse: see loadInstrument.) The step
+	// finds the chain again by its target's id and the device by its slot: a
+	// removed track and its undo rebuild both as new objects.
+	control::journalEffectLoad(chain, effect, entry, index);
 
 	QJsonObject result;
 	result.insert(QStringLiteral("target"), target.id);

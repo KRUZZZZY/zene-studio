@@ -50,6 +50,7 @@
  */
 
 #include <cstdint>
+#include <limits>
 
 #include <QFileInfo>
 #include <QJsonObject>
@@ -150,6 +151,14 @@ ControlResult journalUpdate(const QJsonObject& args)
 	{
 		return ControlResult::failure(ControlErrorKind::InvalidArgs,
 			QStringLiteral("'frames_on_disk' is required and must not be negative"));
+	}
+	// Bounded before the cast (casting a double past uint64's range is undefined),
+	// at the range the take's state reports the count in (frames_journalled is a qint64).
+	if (raw >= static_cast<double>(std::numeric_limits<qint64>::max()))
+	{
+		return ControlResult::failure(ControlErrorKind::InvalidArgs,
+			QStringLiteral("'frames_on_disk' %1 is past the largest frame count a journal "
+				"records").arg(raw));
 	}
 	const std::uint64_t frames = static_cast<std::uint64_t>(raw);
 	// Monotonic on purpose: the field says how much of the take had reached disk

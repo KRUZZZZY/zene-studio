@@ -36,6 +36,7 @@
 #include "ControlEdit.h"
 #include "ControlRegistry.h"
 #include "ControlRegistryGroups.h"
+#include "ControlTrackCreation.h"
 #include "ControlVocabulary.h"
 #include "Engine.h"
 #include "Instrument.h"
@@ -66,7 +67,7 @@ struct Pad
 //! What one build made, so its undo can take exactly that away (and a redo fill it again).
 struct Built
 {
-	std::vector<Track*> tracks;  //!< the pads first, the folder last
+	std::vector<int> trackIds;  //!< the pads first, the folder last, by stable id (a removed track's undo frees it)
 	std::vector<int> channelIds;  //!< the pad channels and the bus, by persistent id
 };
 
@@ -110,19 +111,22 @@ void build(const QString& name, const std::vector<Pad>& pads, Built* built)
 		track->baseNoteModel()->setValue(pad.key);
 		track->mixerChannelModel()->setValue(addChannel(pad.name, bus, built));
 		if (folder != nullptr) { track->setParentFolder(folder); }
-		built->tracks.push_back(track);
+		built->trackIds.push_back(track->id());
 	}
 	if (folder != nullptr)
 	{
 		folder->setName(name);
-		built->tracks.push_back(folder);
+		built->trackIds.push_back(folder->id());
 	}
 }
 
 void unbuild(Built* built)
 {
-	for (auto it = built->tracks.rbegin(); it != built->tracks.rend(); ++it) { removeTrack(*it); }
-	built->tracks.clear();
+	for (auto it = built->trackIds.rbegin(); it != built->trackIds.rend(); ++it)
+	{
+		if (Track* live = trackWithId(*it)) { removeTrack(live); }
+	}
+	built->trackIds.clear();
 	// The highest-numbered channel first, so the others keep their numbers while they go.
 	for (auto it = built->channelIds.rbegin(); it != built->channelIds.rend(); ++it)
 	{
@@ -178,7 +182,7 @@ ControlResult drumRack(const QJsonObject& args)
 	build(name, pads, built.get());
 	Engine::getSong()->setModified();
 	QJsonArray tracks;
-	for (const Track* track : built->tracks) { tracks.append(trackIdOf(track)); }
+	for (const int id : built->trackIds) { tracks.append(trackId(id)); }
 	QJsonArray channels;
 	for (const int id : built->channelIds) { channels.append(channelIdOf(channelById(id))); }
 	QJsonObject result{{QStringLiteral("folder"), tracks.isEmpty() ? QString() : tracks.last().toString()},

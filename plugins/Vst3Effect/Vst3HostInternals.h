@@ -80,12 +80,15 @@ struct HostedPlugin::Impl
 	//! The input event bus this host drives, or -1. Only ever set for an
 	//! instrument: an effect's event buses are left exactly as they were.
 	int32 eventInputBusIndex = -1;
-	//! true when MIDI pushed into midiQueue reaches the plug-in
-	bool midiEnabled = false;
+	//! true when MIDI pushed into midiQueue reaches the plug-in. Atomic: the MIDI producers read it
+	//! while prepare()/release() write it (round 6).
+	std::atomic<bool> midiEnabled{false};
+	//! pushMidiEvent() calls in flight; release() waits for none before it resets midiQueue.
+	std::atomic<int> midiProducers{0};
 	//! MIDI path -> audio thread. Bounded, lock free, never grows.
 	MidiQueue midiQueue;
-	//! Events dropped because midiQueue was full
-	std::uint64_t droppedMidi = 0;
+	//! Events dropped because midiQueue was full (counted by every producer)
+	std::atomic<std::uint64_t> droppedMidi{0};
 	//! The event list handed to the plug-in as ProcessData::inputEvents.
 	//! Sized once, in its constructor; cleared and refilled per block.
 	EventList inputEvents{kMaxMidiEventsPerBlock};

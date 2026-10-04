@@ -84,6 +84,9 @@ public:
 private:
 	std::array<std::atomic<float>, Capacity> m_ring{};
 	std::atomic<std::uint64_t> m_head{0};
+	//! Where the push in progress ends: stored before its slots are written (m_head after), so
+	//! latest() can see a write that has not been published yet overlapping its window.
+	std::atomic<std::uint64_t> m_reserved{0};
 	std::atomic<bool> m_resetPending{false};
 	std::atomic<int> m_source{0};
 };

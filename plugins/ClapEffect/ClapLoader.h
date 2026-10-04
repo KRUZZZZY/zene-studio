@@ -172,6 +172,13 @@ struct Library
 	auto isUsable() const -> bool { return entry != nullptr && factory != nullptr; }
 
 	void reset();
+
+	Library() = default;
+	Library(const Library&) = delete;
+	auto operator=(const Library&) -> Library& = delete;
+	//! deinit() before the module closes, on every path: a Library left by a load() that stopped after
+	//! init() (listClasses' FactoryMissing return) used to close the module without it (round 6).
+	~Library() { reset(); }
 };
 
 /*!

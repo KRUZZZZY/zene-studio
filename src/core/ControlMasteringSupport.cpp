@@ -25,6 +25,8 @@
 
 #include "ControlMasteringSupport.h"
 
+#include <algorithm>
+
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
@@ -276,7 +278,9 @@ QString childErrorText(const QString& errorPath)
 {
 	QFile errorFile(errorPath);
 	if (!errorFile.open(QIODevice::ReadOnly)) { return QString(); }
-	return QString::fromUtf8(errorFile.readAll().right(ChildErrorKeep)).trimmed();
+	// Only the tail is read: the bound is on memory too, not just on the quote.
+	errorFile.seek(std::max<qint64>(0, errorFile.size() - ChildErrorKeep));
+	return QString::fromUtf8(errorFile.read(ChildErrorKeep)).trimmed();
 }
 
 QStringList filesCreatedBy(const QStringList& before, const QStringList& after)

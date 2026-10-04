@@ -80,7 +80,8 @@ public:
 	int moduleLatency() const { return m_worker.declaredLatency(); }
 
 	//! Total frames this effect adds to the signal path: the module's declared
-	//! latency plus the host's one-block collect-after-submit pipeline. When
+	//! latency (bounded to maxCompensatedLatency, the most the dry path delays)
+	//! plus the host's one-block collect-after-submit pipeline. When
 	//! the module declares latency the dry path is delayed to match, so this
 	//! figure stays constant even if the module traps and is quarantined.
 	int latencyFrames() const override;
@@ -99,6 +100,8 @@ private:
 	//! Control thread: the owning chain's latency cache refreshed (PDC).
 	void refreshChainLatency();
 	static bool failLoad(QString* error, const QString& why);
+	//! The module's declared latency, bounded to what the dry path compensates.
+	int compensatedModuleLatency() const;
 
 	//! Audio thread: append \p frames of dry input to the compensation line.
 	void pushDry(const SampleFrame* buf, std::uint32_t frames);

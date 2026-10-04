@@ -27,6 +27,8 @@
 
 #include "ControlBounceSupport.h"
 
+#include <algorithm>
+
 #include <QDir>
 #include <QFileInfo>
 
@@ -54,6 +56,14 @@ static QString checkRangeArgs(const QJsonObject& args, bool required)
 	return QString();
 }
 
+//! A tick argument as tick_t, clamped to one tick past either end of the timeline first: casting a
+//! double outside tick_t's range is undefined, and a clamped value is refused below just as the
+//! original would have been.
+static tick_t clampedTicks(const QJsonObject& args, const QString& key)
+{
+	return static_cast<tick_t>(std::clamp(args.value(key).toDouble(), -1.0, MaxSongLength + 1.0));
+}
+
 QString parseRange(const QJsonObject& args, bool required, BounceInPlace::Range* range)
 {
 	const QString problem = checkRangeArgs(args, required);
@@ -65,8 +75,8 @@ QString parseRange(const QJsonObject& args, bool required, BounceInPlace::Range*
 	{
 		return QStringLiteral("'start' and 'end' are tick positions, in integers");
 	}
-	range->start = static_cast<tick_t>(args.value(QStringLiteral("start")).toDouble());
-	range->end = static_cast<tick_t>(args.value(QStringLiteral("end")).toDouble());
+	range->start = clampedTicks(args, QStringLiteral("start"));
+	range->end = clampedTicks(args, QStringLiteral("end"));
 	if (range->start < 0) { return QStringLiteral("'start' must not be negative"); }
 	if (range->end <= range->start) { return QStringLiteral("'end' must be past 'start'"); }
 	if (range->end > MaxSongLength)

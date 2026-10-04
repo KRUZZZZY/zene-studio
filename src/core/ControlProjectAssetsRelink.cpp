@@ -51,9 +51,9 @@
 #include "ControlProjectAssets.h"
 
 #include <QDir>
-#include <QFile>
 #include <QFileInfo>
 
+#include "BounceInPlace.h" // sha256OfFile
 #include "ControlDeviceSupport.h" // controlWriteFileBytes / controlSha256OfBytes
 #include "ControlProjectAssetsShared.h"
 
@@ -93,15 +93,15 @@ bool resolveRelinkTarget(const QString& to, const QString& expectSha256, QString
 	*target = QDir::cleanPath(info.absoluteFilePath());
 	if (expectSha256.isEmpty()) { return true; }
 
-	QFile file(*target);
-	if (!file.open(QIODevice::ReadOnly))
+	// Streamed (BounceInPlace::sha256OfFile reads through the device), so a large
+	// target is hashed in bounded memory rather than read whole.
+	const QString found = BounceInPlace::sha256OfFile(*target);
+	if (found.isEmpty())
 	{
 		*error = ControlResult::failure(ControlErrorKind::Refused,
-			QStringLiteral("cannot read %1 to check its hash (%2)")
-				.arg(*target, file.errorString()));
+			QStringLiteral("cannot read %1 to check its hash").arg(*target));
 		return false;
 	}
-	const QString found = controlSha256OfBytes(file.readAll());
 	if (found.compare(expectSha256, Qt::CaseInsensitive) == 0) { return true; }
 	*error = ControlResult::failure(ControlErrorKind::Refused,
 		QStringLiteral("%1 hashes to %2, not to the expected %3: it is not the media this "

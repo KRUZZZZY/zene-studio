@@ -381,7 +381,11 @@ void Lv2Proc::run(f_cnt_t frames)
 	// catch-up W3: the latency port as the plug-in left it, for latencyFrames() on the control thread.
 	if (m_latencyPort != nullptr)
 	{
-		m_latencySnapshot.store(std::max(0, static_cast<int>(m_latencyPort->m_val)), std::memory_order_relaxed);
+		// NaN, negative or out-of-int-range reports would make the conversion undefined.
+		constexpr float MaxReportedLatency = 1 << 30;
+		const float reported = m_latencyPort->m_val;
+		const float frames = std::isfinite(reported) ? std::clamp(reported, 0.f, MaxReportedLatency) : 0.f;
+		m_latencySnapshot.store(static_cast<int>(frames), std::memory_order_relaxed);
 	}
 
 	if (m_worker)

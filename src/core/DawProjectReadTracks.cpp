@@ -178,33 +178,40 @@ void parseClips(QXmlStreamReader& reader, ReadState& state)
 	}
 }
 
+//! One nested <Lanes>: its timeUnit and its `track` IDREF hold inside it and are restored after it.
+//! Refused past MaxNesting: each level is a stack frame.
+void parseNestedLanes(QXmlStreamReader& reader, ReadState& state)
+{
+	if (!nestingAllowed(reader, state, state.lanesDepth + 1)) { return; }
+	const int savedTrack = state.currentTrack;
+	const QString savedUnit = state.timeUnit;
+	const QXmlStreamAttributes attributes = reader.attributes();
+	const QString unit = attribute(attributes, QStringLiteral("timeUnit"));
+	if (!unit.isEmpty()) { state.timeUnit = unit; }
+	const QString trackId = attribute(attributes, QStringLiteral("track"));
+	if (!trackId.isEmpty())
+	{
+		state.currentTrack = state.trackIndexById.value(trackId, -1);
+	}
+	++state.lanesDepth;
+	parseLanes(reader, state);
+	--state.lanesDepth;
+	state.currentTrack = savedTrack;
+	state.timeUnit = savedUnit;
+}
+
 //! Walk the <Arrangement>/<Lanes> tree. `Lanes` nests, and a nested `Lanes`
 //! carries the `track` IDREF of the track whose clips it holds - the shape the
 //! format's own example uses.
 void parseLanes(QXmlStreamReader& reader, ReadState& state)
 {
-	const int savedTrack = state.currentTrack;
-	const QString savedUnit = state.timeUnit;
 	while (!reader.atEnd())
 	{
 		reader.readNext();
 		if (reader.isEndElement() && reader.name() == QLatin1String("Lanes")) { break; }
 		if (!reader.isStartElement()) { continue; }
 		const QStringView element = reader.name();
-		if (element == QLatin1String("Lanes"))
-		{
-			const QXmlStreamAttributes attributes = reader.attributes();
-			const QString unit = attribute(attributes, QStringLiteral("timeUnit"));
-			if (!unit.isEmpty()) { state.timeUnit = unit; }
-			const QString trackId = attribute(attributes, QStringLiteral("track"));
-			if (!trackId.isEmpty())
-			{
-				state.currentTrack = state.trackIndexById.value(trackId, -1);
-			}
-			parseLanes(reader, state);
-			state.currentTrack = savedTrack;
-			state.timeUnit = savedUnit;
-		}
+		if (element == QLatin1String("Lanes")) { parseNestedLanes(reader, state); }
 		else if (element == QLatin1String("Clips")) { parseClips(reader, state); }
 		else if (element == QLatin1String("Notes") || element == QLatin1String("ClipSlot")
 			|| element == QLatin1String("markers") || element == QLatin1String("Points")
@@ -215,8 +222,6 @@ void parseLanes(QXmlStreamReader& reader, ReadState& state)
 		}
 		else { skipElement(reader); }
 	}
-	state.currentTrack = savedTrack;
-	state.timeUnit = savedUnit;
 }
 
 /*! The values of one <Channel>, whether it sits inside a <Track> (the track's
@@ -286,6 +291,12 @@ ChannelValues parseChannel(QXmlStreamReader& reader, ReadState& state)
 	return values;
 }
 
+//! A <Track> nested in another at @a depth; refused past MaxNesting, as a nested <Lanes> is.
+void parseNestedTrack(QXmlStreamReader& reader, ReadState& state, int depth)
+{
+	if (nestingAllowed(reader, state, depth)) { parseTrack(reader, state, depth); }
+}
+
 //! One <Track>, at any depth. NESTED TRACKS ARE READ AT THE ROOT (LOSSY #4):
 //! the format nests and LMMS' container is flat, so the relation is counted
 //! rather than invented.
@@ -324,7 +335,7 @@ void parseTrack(QXmlStreamReader& reader, ReadState& state, int depth)
 			target.hasPan = values.hasPan;
 			target.pan = values.pan;
 		}
-		else if (element == QLatin1String("Track")) { parseTrack(reader, state, depth + 1); }
+		else if (element == QLatin1String("Track")) { parseNestedTrack(reader, state, depth + 1); }
 		else { skipElement(reader); }
 	}
 }

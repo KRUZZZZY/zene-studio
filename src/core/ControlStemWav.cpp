@@ -34,9 +34,12 @@
 
 #include "ControlStemSupport.h"
 
+#include <limits>
+
 #include <QCryptographicHash>
 #include <QDataStream>
 #include <QFile>
+#include <QSaveFile>
 
 #include "SampleBuffer.h"
 #include "SampleFrame.h"
@@ -71,14 +74,24 @@ bool stemWriteWavFile(const QString& path, const SampleBuffer& buffer, int sampl
 	static_assert(sizeof(SampleFrame) == 2 * sizeof(float),
 		"a stem is written as the buffer's raw interleaved stereo float32 stream");
 
-	QFile file(path);
-	if (!file.open(QIODevice::WriteOnly | QIODevice::Truncate))
+	const quint64 frames = static_cast<quint64>(buffer.size());
+	const quint64 dataBytes = frames * kWavChannels * (kWavBits / 8);
+	// Classic RIFF sizes are 32-bit: past that the header would wrap and lie about
+	// the payload, so the stem is refused before anything is written.
+	if (36 + dataBytes > std::numeric_limits<quint32>::max())
+	{
+		*error = QStringLiteral("%1 would be %2 bytes of audio, past the 4 GiB a RIFF/WAVE "
+			"file can describe").arg(path).arg(dataBytes);
+		return false;
+	}
+	// QSaveFile: an existing file at the path is replaced only once this one is
+	// complete, so a failed write leaves the old stem rather than a truncated one.
+	QSaveFile file(path);
+	if (!file.open(QIODevice::WriteOnly))
 	{
 		*error = QStringLiteral("cannot write %1: %2").arg(path, file.errorString());
 		return false;
 	}
-	const quint64 frames = static_cast<quint64>(buffer.size());
-	const quint64 dataBytes = frames * kWavChannels * (kWavBits / 8);
 
 	QByteArray header;
 	QDataStream out(&header, QIODevice::WriteOnly);
@@ -107,6 +120,11 @@ bool stemWriteWavFile(const QString& path, const SampleBuffer& buffer, int sampl
 	if (file.write(reinterpret_cast<const char*>(buffer.data()), payload) != payload)
 	{
 		*error = QStringLiteral("cannot write %1 (%2 bytes of audio)").arg(path).arg(payload);
+		return false;
+	}
+	if (!file.commit())
+	{
+		*error = QStringLiteral("cannot finish writing %1: %2").arg(path, file.errorString());
 		return false;
 	}
 	return true;
