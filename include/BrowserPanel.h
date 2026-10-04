@@ -25,11 +25,16 @@
 #ifndef LMMS_GUI_BROWSER_PANEL_H
 #define LMMS_GUI_BROWSER_PANEL_H
 
+#include <QList>
+#include <QPointer>
 #include <QWidget>
 
 #include "lmms_export.h"
 
+class QAbstractItemView;
 class QComboBox;
+class QKeyEvent;
+class QLineEdit;
 class QStackedWidget;
 
 namespace lmms::gui
@@ -41,12 +46,22 @@ class SideBarWidget;
 //! collapsible tabs. The sources are the existing PluginBrowser and FileBrowsers - their
 //! search, preview, drag-and-drop, tag menu (browser.tag_*) and peaks are unchanged; only
 //! the chrome around them is new.
+//!
+//! Theme 3 (0.5.0 UX, the owner's decisions): search is the first control - the current source's
+//! own search field (a QLineEdit named "browserSearch"), shown above the selector, filtering that
+//! source's list live and nothing else; the arrow keys in it step through the list and Enter loads
+//! the highlighted result (the first Enter highlights the first result when none is); a click or
+//! Space previews; and the preview stops when the result, the query, the tab or the location changes,
+//! or when focus leaves the Browser. A list the field steps through carries the property
+//! "browserResults"; whatever has a stopPreview() slot (the file lists, the search view's results) is
+//! stopped by stopPreviews().
 class LMMS_EXPORT BrowserPanel : public QWidget
 {
 	Q_OBJECT
 
 public:
 	explicit BrowserPanel(QWidget* parent = nullptr);
+	~BrowserPanel() override;
 
 	//! Add a source; its title is what the selector lists.
 	void addSource(SideBarWidget* source);
@@ -61,13 +76,38 @@ public:
 	QString context() const { return m_context; }
 	//! The selected sample's waveform under the list (WF-010).
 	class WaveformPreview* waveform() const { return m_wave; }
+	//! The search field shown first: the current source's own, nullptr when it has none.
+	QLineEdit* searchField() const;
+	//! Theme 3: stop every preview the sources play (the file lists', the search view's).
+	void stopPreviews();
+	//! Put the keyboard in the search field, its text selected (Ctrl+F in the Browser).
+	void focusSearch();
+
+protected:
+	bool eventFilter(QObject* watched, QEvent* event) override;
 
 private:
+	//! Show @a source's search field in the slot above the selector (an empty page when it has none).
+	void takeSearchField(SideBarWidget* source);
+	//! Stop the preview when a list of @a source changes its current row or is refilled; remember its previewers.
+	void watchResults(SideBarWidget* source);
+	void showSource(int index);
+	bool insideBrowser(const QWidget* widget) const;
+	//! The arrow keys and Enter in the search field, acting on the list it filters; false when not taken.
+	bool searchKey(const QKeyEvent* key);
+	//! The list the current source shows its results in, nullptr when none.
+	QAbstractItemView* currentResults() const;
+	//! Tab reaches the search field first, then the selector, then the source.
+	void orderFocus();
+
+	QStackedWidget* m_searchSlot;
 	QComboBox* m_selector;
 	QStackedWidget* m_stack;
 	class WaveformPreview* m_wave = nullptr;
 	QString m_context;
 	bool m_restoring = false;
+	QList<QPointer<QObject>> m_previewers;
+	QList<QMetaObject::Connection> m_watches;  //!< what calls stopPreviews(), cut when the panel goes
 };
 
 //! The browser with the product's standard sources, as MainWindow's sidebar had them.

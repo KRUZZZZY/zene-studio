@@ -26,7 +26,11 @@
  *  window covers exactly those bars, gone once the pass ends; comp.cycle moves a comp segment to the
  *  next take lane and back, wrapping, and one undo puts it back (ED-168); a launcher binding is stored
  *  and undone, and learning binds the next note played (WF-069); session.capture_to_slot puts what was
- *  played into a new pattern a cell plays, and one undo takes it away (WF-055). */
+ *  played into a new pattern a cell plays, and one undo takes it away (WF-055).
+ *  Theme 7: Replace erases the notes from before the pass that a recorded note overlaps, at any pitch, and
+ *  nothing else - not a note of the pass itself, not the clip's controller lanes - and the record options'
+ *  reply states that scope; transport.time_format switches bars|beats, ticks and time as one undo step, and
+ *  positions and lengths read and type back exactly in each. */
 
 #include <QtTest>
 
@@ -34,9 +38,13 @@
 #include "ControlRegistry.h"
 #include "ControlVocabulary.h"
 #include "Engine.h"
+#include "InstrumentTrack.h"
 #include "LaunchBindings.h"
 #include "MidiClient.h"
+#include "MidiClip.h"
 #include "MidiEvent.h"
+#include "MusicalTime.h"
+#include "Note.h"
 #include "PatternStore.h"
 #include "RecordOptions.h"
 #include "RetroMidiCapture.h"
@@ -123,6 +131,85 @@ private slots:
 			{QStringLiteral("direction"), QStringLiteral("previous")}}).result.value(QStringLiteral("lane")).toInt(), 0);
 		QCOMPARE(run(QStringLiteral("comp.cycle"), {{QStringLiteral("track"), track}, {QStringLiteral("tick"), 5000}}).errorKind,
 			ControlErrorKind::NotFound);  // no segment there
+	}
+
+	//! Theme 7 (owner decision): Replace erases overlapped NOTES only, at any pitch; Overdub erases nothing.
+	void replaceErasesOverlappedNotesOnly()
+	{
+		auto* track = dynamic_cast<InstrumentTrack*>(Track::create(Track::Type::Instrument, Engine::getSong()));
+		auto* clip = dynamic_cast<MidiClip*>(track->createClip(TimePos(0)));
+		Note* chord = clip->addNote(Note(TimePos(48), TimePos(0), 60), false);    // [0, 48): overlapped
+		Note* pad = clip->addNote(Note(TimePos(48), TimePos(24), 72), false);     // [24, 72): overlapped, another pitch
+		Note* later = clip->addNote(Note(TimePos(48), TimePos(96), 48), false);   // [96, 144): clear of it
+		clip->setControllerPoints(ControllerKind::ControlChange, 1, {{0, 10}, {40, 90}, {120, 30}});
+		const std::vector<int> beforePass{chord->id(), pad->id(), later->id()};
+		const int laterId = later->id();
+		Note* ofThePass = clip->addNote(Note(TimePos(24), TimePos(36), 64), false);  // played in this pass
+		const int passId = ofThePass->id();
+		const Note recorded(TimePos(30), TimePos(30), 65);  // [30, 60)
+
+		recordoptions::setOptions({0, 0, recordoptions::Mode::Overdub});
+		QCOMPARE(recordoptions::replaceOverlapped(clip, recorded, beforePass), 0);
+		QCOMPARE(static_cast<int>(clip->notes().size()), 4);
+
+		recordoptions::setOptions({0, 0, recordoptions::Mode::Replace});
+		QCOMPARE(recordoptions::replaceOverlapped(clip, recorded, beforePass), 2);
+		QCOMPARE(static_cast<int>(clip->notes().size()), 2);
+		QList<int> kept;
+		for (const Note* note : clip->notes()) { kept << note->id(); }
+		QVERIFY(kept.contains(laterId) && kept.contains(passId));
+		const ControllerLane* lane = clip->controllers().lane(ControllerKind::ControlChange, 1);
+		QVERIFY(lane != nullptr);
+		QCOMPARE(static_cast<int>(lane->points.size()), 3);  // the controller lane is untouched
+
+		const QJsonObject reply = run(QStringLiteral("transport.record_options")).result;
+		QCOMPARE(reply.value(QStringLiteral("replace_erases")).toString(), QStringLiteral("overlapped_notes_any_pitch"));
+		QVERIFY(reply.value(QStringLiteral("replace_keeps")).toArray().contains(QStringLiteral("automation")));
+		QVERIFY(reply.value(QStringLiteral("mode_scope")).toString().contains(QStringLiteral("Controllers and automation are kept")));
+		recordoptions::setOptions({});
+		delete track;
+	}
+
+	//! Theme 7: the time format is one undo step, and every format reads and types back the same tick.
+	void theTimeFormatReadsAndTypesMusicalTime()
+	{
+		using namespace musicaltime;
+		QCOMPARE(run(QStringLiteral("transport.time_format")).result.value(QStringLiteral("format")).toString(), QStringLiteral("bars_beats"));
+		QVERIFY(run(QStringLiteral("transport.time_format"), {{QStringLiteral("format"), QStringLiteral("ticks")}}).ok);
+		QVERIFY(currentFormat() == Format::Ticks);
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
+		QVERIFY(currentFormat() == Format::BarsBeats);
+		QCOMPARE(run(QStringLiteral("transport.time_format"), {{QStringLiteral("format"), QStringLiteral("smpte")}}).errorKind,
+			ControlErrorKind::InvalidArgs);
+
+		// 4/4, 192 ticks a bar: a beat is 48, a sixteenth 12.
+		QCOMPARE(positionText(0), QStringLiteral("1.1.1"));
+		QCOMPARE(positionText(192 + 48 + 12 + 2), QStringLiteral("2.2.2.2"));
+		QCOMPARE(counterText(192 + 48 + 12 + 2), QStringLiteral("2.2.2"));
+		QCOMPARE(lengthText(192), QStringLiteral("1.0.0"));
+		QCOMPARE(lengthText(-48), QStringLiteral("-0.1.0"));
+		tick_t tick = 0;
+		QVERIFY(positionFromText(QStringLiteral("2.2.2.2"), &tick) && tick == 192 + 48 + 12 + 2);
+		QVERIFY(positionFromText(QStringLiteral("2.1"), &tick) && tick == 192);
+		QVERIFY(positionFromText(QStringLiteral("768t"), &tick) && tick == 768);
+		QVERIFY(!positionFromText(QStringLiteral("1.5"), &tick));  // no fifth beat in 4/4
+		QVERIFY(lengthFromText(QStringLiteral("2"), &tick) && tick == 384);  // a plain number: bars, as shown
+		QVERIFY(lengthFromText(QStringLiteral("1.5 bars"), &tick) && tick == 288);
+		QVERIFY(lengthFromText(QStringLiteral("-0.1.0"), &tick) && tick == -48);
+		QVERIFY(lengthFromText(QStringLiteral("96"), &tick, 0, Format::Ticks) && tick == 96);  // ticks shown: ticks
+		QCOMPARE(positionText(96, 0, Format::Ticks), QStringLiteral("96 ticks"));
+
+		IntModel& tempo = Engine::getSong()->tempoModel();
+		const int wasTempo = tempo.value();
+		tempo.setValue(120);  // 96 ticks are a second
+		QCOMPARE(positionText(96, 0, Format::Time), QStringLiteral("0:01.000"));
+		for (const tick_t at : {0, 1, 95, 97, 1000, 12345})
+		{
+			QVERIFY(positionFromText(positionText(at, 0, Format::Time), &tick, 0, Format::Time));
+			QCOMPARE(tick, at);  // read to the millisecond, typed back to the same tick
+		}
+		QVERIFY(lengthFromText(QStringLiteral("0:00.5"), &tick, 96, Format::Time) && tick == 48);
+		tempo.setValue(static_cast<float>(wasTempo));
 	}
 
 	//! WF-055: what was played lands in a new pattern a launcher cell plays; one undo takes it away.

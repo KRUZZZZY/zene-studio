@@ -24,6 +24,8 @@
 
 #include "ArrangerAids.h"
 
+#include <cmath>
+
 #include <QCursor>
 #include <QEvent>
 #include <QGestureEvent>
@@ -33,8 +35,12 @@
 #include <QTimer>
 #include <QWidget>
 
+#include "ArrangerZoom.h"
+#include "AutomatableModel.h"
 #include "ControlRegistry.h"
 #include "DesignTokens.h"
+#include "GuiApplication.h"
+#include "SongEditor.h"
 
 namespace lmms::gui
 {
@@ -43,7 +49,6 @@ namespace
 {
 
 constexpr int PollMs = 33;          //!< about 30 times a second, only while shown
-constexpr qreal PinchStep = 1.25;   //!< the pinch scale that is one zoom step
 
 //! The guides: a transparent child over the whole arranger that follows the pointer. It never takes a
 //! mouse event, so the arranger's own gestures are untouched.
@@ -103,7 +108,9 @@ private:
 	QPoint m_at{-1, -1};
 };
 
-//! A pinch on the arranger: a zoom step each time the scale passes another quarter in or out.
+/*! A pinch on the arranger. 0.5.0 theme 9: it zooms continuously (as finely as the zoom model goes) around
+ *  the tick under the pinch's centre where it began, and the zoom it started from joins the history
+ *  arrangement.zoom_back walks once, when it ends - not one entry per step. */
 class PinchZoom : public QObject
 {
 public:
@@ -120,25 +127,29 @@ protected:
 	{
 		if (event->type() != QEvent::Gesture) { return false; }
 		auto* pinch = static_cast<QPinchGesture*>(static_cast<QGestureEvent*>(event)->gesture(Qt::PinchGesture));
-		if (pinch == nullptr) { return false; }
-		if (pinch->state() == Qt::GestureStarted) { m_scale = 1.0; }
+		SongEditor* editor = getGUI() != nullptr && getGUI()->songEditor() != nullptr ? getGUI()->songEditor()->m_editor : nullptr;
+		if (pinch == nullptr || editor == nullptr) { return false; }
+		if (pinch->state() == Qt::GestureStarted) { begin(editor, pinch); }
 		m_scale *= pinch->scaleFactor();
-		zoomWhilePassing();
+		const int value = editor->zoomValueFor(static_cast<int>(std::lround(m_startPixelsPerBar * m_scale)));
+		if (value != editor->zoomingModel()->value()) { arrangerzoom::zoomAround(editor, value, m_anchor); }
+		if (pinch->state() == Qt::GestureFinished && editor->zoomingModel()->value() != m_startValue) { arrangerzoom::remember(m_startValue); }
 		return true;
 	}
 
 private:
-	void zoomWhilePassing()
+	void begin(SongEditor* editor, const QPinchGesture* pinch)
 	{
-		while (m_scale >= PinchStep || m_scale <= 1.0 / PinchStep)
-		{
-			const bool in = m_scale >= PinchStep;
-			m_scale = in ? m_scale / PinchStep : m_scale * PinchStep;
-			ControlRegistry::instance()->invoke(QStringLiteral("arrangement.zoom"), {{QStringLiteral("step"), in ? 1 : -1}});
-		}
+		m_scale = 1.0;
+		m_startPixelsPerBar = editor->pixelsPerBar();
+		m_startValue = editor->zoomingModel()->value();
+		m_anchor = arrangerzoom::tickAtGlobal(editor, pinch->startCenterPoint().toPoint());
 	}
 
 	qreal m_scale = 1.0;
+	double m_startPixelsPerBar = 1.0;
+	int m_startValue = 0;
+	tick_t m_anchor = 0;
 };
 
 QPointer<CrosshairOverlay> s_overlay;

@@ -54,6 +54,7 @@
 #include <QPainterPath>  // IWYU pragma: keep
 
 #include "lmms_math.h"
+#include "AccessibleWidgets.h"
 #include "CaptionMenu.h"
 #include "ConfigManager.h"
 #include "DeprecationHelper.h"
@@ -84,6 +85,7 @@ Fader::Fader(FloatModel* model, const QString& name, QWidget* parent, bool model
 	}
 
 	setWindowTitle(name);
+	setFocusPolicy(Qt::TabFocus);  // 0.5.0 (theme 10): Tab reaches it; a click still leaves focus where it was
 	// For now resize the widget to the size of the previous background image "fader_background.png" as it was found in the classic and default theme
 	constexpr QSize minimumSize(23, 116);
 	setMinimumSize(minimumSize);
@@ -532,14 +534,23 @@ void Fader::modelValueChanged()
 
 QString Fader::getModelValueAsDbString() const
 {
-	QString label(tr("Volume: %1 dB"));
+	return tr("Volume: %1 dB").arg(dbValueText());
+}
+
+QString Fader::accessibleValueText() const
+{
+	return QStringLiteral("%1 dB").arg(dbValueText());
+}
+
+QString Fader::dbValueText() const
+{
 	// Check that the pointer isn't dangling, which can happen if the
 	// model was dropped in order to load a new project from an existing one.
 	auto* newModel = model();
 	if (!newModel)
 	{
 		// model() was a dangling pointer, so return a sane default value.
-		return label.arg(tr("-inf"));
+		return tr("-inf");
 	}
 	const auto value = newModel->value();
 
@@ -547,17 +558,38 @@ QString Fader::getModelValueAsDbString() const
 	{
 		if (value <= 0.)
 		{
-			return label.arg(tr("-inf"));
+			return tr("-inf");
 		}
 		else
 		{
-			return label.arg(ampToDbfs(value), 3, 'f', 2);
+			return QStringLiteral("%1").arg(ampToDbfs(value), 3, 'f', 2);
 		}
 	}
 	else
 	{
-		return label.arg(value, 3, 'f', 2);
+		return QStringLiteral("%1").arg(value, 3, 'f', 2);
 	}
+}
+
+void Fader::keyPressEvent(QKeyEvent* ke)
+{
+	// 0.5.0 (theme 10): a fader Tab reaches answers the keys a slider does - the arrows step as the wheel
+	// does (with its modifiers), PageUp/PageDown step coarsely, Home/End go to the ends; other keys pass on.
+	const a11y::KeyStep step = model() != nullptr ? a11y::keyStep(ke->key()) : a11y::KeyStep::None;
+	if (step == a11y::KeyStep::Up || step == a11y::KeyStep::Down)
+	{
+		adjust(ke->modifiers(), step == a11y::KeyStep::Up ? AdjustmentDirection::Up : AdjustmentDirection::Down);
+	}
+	else if (step == a11y::KeyStep::PageUp || step == a11y::KeyStep::PageDown)
+	{
+		adjust(Qt::ShiftModifier, step == a11y::KeyStep::PageUp ? AdjustmentDirection::Up : AdjustmentDirection::Down);
+	}
+	else if (!a11y::applyKeyStep(model(), step, 0.f, 0.f))
+	{
+		QWidget::keyPressEvent(ke);
+		return;
+	}
+	ke->accept();
 }
 
 void Fader::paintEvent(QPaintEvent* ev)

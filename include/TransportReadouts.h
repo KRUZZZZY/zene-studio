@@ -33,6 +33,7 @@
 #include "AutomatableModel.h"
 #include "lmms_export.h"
 
+class QActionGroup;
 class QLineEdit;
 
 namespace lmms
@@ -91,16 +92,19 @@ private:
 	QLineEdit* m_editor = nullptr;
 };
 
-//! "bar.beat" (both 1-based) of a tick position under the song's meter - what the header, the
-//! Inspector and the note inspector show.
+//! "bar.beat" (both 1-based) of a tick position under the song's meter (musicaltime::barBeatText).
 LMMS_EXPORT QString barBeatText(int ticks);
-//! The tick position of "bar", "bar.beat" or "bar.beat.sixteenth" (what the position readout shows); false
-//! for anything else, a beat past the meter's or a sixteenth past the beat's included.
+//! The tick position of "bar", "bar.beat", "bar.beat.sixteenth" or "bar.beat.sixteenth.tick" (or ticks or a
+//! time with their unit - musicaltime::positionFromText, read as bars|beats); false for anything else, a beat
+//! past the meter's or a sixteenth past the beat's included.
 LMMS_EXPORT bool ticksFromBarBeat(const QString& text, int* ticks);
+//! Theme 7: right-click choices on @a widget - Bars|Beats, Ticks, Time - each running transport.time_format,
+//! the one in use checked. For every field that shows a musical position or length.
+LMMS_EXPORT void addTimeFormatChoices(QWidget* widget);
 
-//! The header's readouts, laid out in the strip: tempo, meter, position and time, master
-//! level and transposition, and the engine load. Replaces the song editor's LCD boxes,
-//! sliders and scope (docs/UI-SHELL.md §1).
+//! The header's readouts, laid out in the strip: tempo, meter, position (in the time format, theme 7) and
+//! time, the record mode with its scope (theme 7), master level and transposition, and the engine load.
+//! Replaces the song editor's LCD boxes, sliders and scope (docs/UI-SHELL.md §1).
 class LMMS_EXPORT TransportReadouts : public QWidget
 {
 	Q_OBJECT
@@ -116,11 +120,16 @@ public:
 
 private:
 	void bindToSong(Song* song);
+	//! The record mode's readout, tooltip (its scope) and checked choice, when the mode has changed.
+	void syncRecordMode();
 
 	ReadoutField* m_tempo;
 	ReadoutField* m_meter;
 	ReadoutField* m_position;
 	ReadoutField* m_time;
+	ReadoutField* m_recordMode;
+	QActionGroup* m_recordModes = nullptr;
+	int m_shownRecordMode = -1;
 	ReadoutField* m_volume;
 	ReadoutField* m_pitch;
 	ReadoutField* m_load;

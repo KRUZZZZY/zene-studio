@@ -43,6 +43,7 @@
 #include "GuiApplication.h"
 #include "MainWindow.h"
 #include "InstrumentTrack.h"
+#include "LayoutMenu.h"
 #include "LibraryCommandMenus.h"
 #include "XyPad.h"
 #include "MidiClip.h"
@@ -525,25 +526,10 @@ void populateProject(QMenu* menu)
 void populateCustomise(QMenu* menu)
 {
 	list(menu, "Keyboard Shortcuts...", [] { return CommandLists::shortcuts(); });
-	list(menu, "Macros...", [] { return CommandLists::macros(); });
+	list(menu, "Workflows...", [] { return CommandLists::macros(); });
 	list(menu, "MIDI Mappings...", [] { return CommandLists::controllerMappings(); });
 	list(menu, "Mapping Templates...", [] { return CommandLists::mappingTemplates(); });
-	QMenu* layouts = menu->addMenu(tr("Window Layouts"));
-	add(layouts, "Save Layout...", "window.layout_save", {}, true);
-	const QJsonArray names = ControlRegistry::instance()->invoke(QStringLiteral("window.layout_list")).result
-		.value(QStringLiteral("layouts")).toArray();
-	QMenu* apply = layouts->addMenu(tr("Apply"));
-	QMenu* remove = layouts->addMenu(tr("Remove"));
-	for (const QJsonValue& name : names)
-	{
-		const QJsonObject named{{QStringLiteral("name"), name}};
-		addCommandAction(apply, name.toString(), QStringLiteral("window.layout_apply"),
-			[named] { return CommandCall{QStringLiteral("window.layout_apply"), named, {}, QString(), false}; });
-		addCommandAction(remove, name.toString(), QStringLiteral("window.layout_remove"),
-			[named] { return CommandCall{QStringLiteral("window.layout_remove"), named, {}, QString(), false}; });
-	}
-	apply->setEnabled(!names.isEmpty());
-	remove->setEnabled(!names.isEmpty());
+	LayoutMenu::populate(menu->addMenu(tr("Window Layouts")));
 	QMenu* surface = menu->addMenu(tr("Control Surface (Mackie Control)"));
 	add(surface, "Connect...", "surface.mcu_connect", {}, true);
 	add(surface, "Ports", "surface.mcu_ports", {}, false, {}, true);

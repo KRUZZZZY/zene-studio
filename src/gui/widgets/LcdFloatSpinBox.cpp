@@ -37,6 +37,7 @@
 #include <QStyleOptionFrame>
 #include <QVBoxLayout>
 
+#include "AccessibleWidgets.h"
 #include "CaptionMenu.h"
 #include "DeprecationHelper.h"
 #include "embed.h"
@@ -106,6 +107,7 @@ void LcdFloatSpinBox::layoutSetup(const QString &style)
 	outerLayout->setSizeConstraint(QLayout::SetFixedSize);
 	this->setLayout(outerLayout);
 	this->setFixedHeight(32);
+	setFocusPolicy(Qt::TabFocus);  // 0.5.0 (theme 10): Tab reaches it; a click still leaves focus where it was
 }
 
 
@@ -198,6 +200,21 @@ void LcdFloatSpinBox::wheelEvent(QWheelEvent *event)
 	event->accept();
 	model()->setValue(model()->value() + ((event->angleDelta().y() > 0) ? 1 : -1) * getStep());
 	emit manualChange();
+}
+
+
+void LcdFloatSpinBox::keyPressEvent(QKeyEvent* event)
+{
+	// 0.5.0 (theme 10): as LcdSpinBox - the arrows step, PageUp/PageDown by ten steps, Home/End go to the ends,
+	// Enter asks for a value; other keys pass on.
+	const float step = model() != nullptr ? model()->step<float>() : 0.f;
+	switch (a11y::spinKey(event->key(), model(), step, 10.f * step))
+	{
+		case a11y::SpinKey::Entered: enterValue(); break;
+		case a11y::SpinKey::Stepped: emit manualChange(); break;
+		default: QWidget::keyPressEvent(event); return;
+	}
+	event->accept();
 }
 
 

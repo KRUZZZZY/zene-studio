@@ -27,11 +27,13 @@
  *  follows and sets the map's switch; Remove deletes the selected row's event; Clear empties it.
  *  And the Standard MIDI File round trip the Export MIDI... / Import MIDI... buttons run: a map
  *  exported, cleared and imported comes back with its events, and a file that is not MIDI is
- *  refused with the map left as it was. */
+ *  refused with the map left as it was. Theme 7: an event's position reads in bars and beats, and in ticks
+ *  once the panel's own picker (transport.time_format) chooses them; Remove still finds the event's tick. */
 
 #include <QtTest>
 
 #include <QCheckBox>
+#include <QComboBox>
 #include <QFile>
 #include <QFileInfo>
 #include <QJsonArray>
@@ -84,7 +86,19 @@ private slots:
 		QCOMPARE(mapState().value(QStringLiteral("event_count")).toInt(), 2);
 		auto* table = panel.findChild<QTableWidget*>();
 		QCOMPARE(table->item(1, 0)->text(), QStringLiteral("5"));
+		QCOMPARE(table->item(1, 1)->text(), QStringLiteral("5.1.1"));  // bars and beats by default
 		QCOMPARE(table->item(1, 2)->text(), QStringLiteral("90"));
+		auto* format = panel.findChild<QComboBox*>();
+		QVERIFY(format != nullptr);
+		QCOMPARE(format->property("controlCommand").toString(), QStringLiteral("transport.time_format"));
+		format->setCurrentIndex(1);
+		emit format->activated(1);  // as a person picks Ticks
+		QCoreApplication::processEvents();
+		QCOMPARE(table->item(1, 1)->text(), QStringLiteral("768 ticks"));
+		format->setCurrentIndex(0);
+		emit format->activated(0);
+		QCoreApplication::processEvents();
+		QCOMPARE(table->item(1, 1)->text(), QStringLiteral("5.1.1"));
 
 		auto* active = panel.findChild<QCheckBox*>();
 		const bool wasActive = mapState().value(QStringLiteral("active")).toBool();

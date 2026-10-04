@@ -253,6 +253,11 @@ QRadioButton::indicator:checked {
 	outline: 1px solid @accent;
 }
 
+/* 0.5.0 (theme 17): a focused box shows it, checked or not (WCAG 2.4.7) */
+QCheckBox::indicator:focus, QCheckBox::indicator:checked:focus {
+	border-color: @focusRing;
+}
+
 QCheckBox::indicator:disabled, QRadioButton::indicator:disabled {
 	border-color: @textDisabled;
 	background-color: @raised;

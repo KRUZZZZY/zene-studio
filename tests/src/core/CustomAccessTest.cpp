@@ -28,13 +28,16 @@
  *  selections, saved with the project only when there are any (WF-098 / WF-106); the undo history walked
  *  several steps at once (WF-102); the settings found by words, backed up, restored and kept as presets, each
  *  write one undo step, no folder path travelling (WF-122); the tuner reads A4 off a 440 Hz tone on its tap,
- *  against the reference chosen (WF-147). */
+ *  against the reference chosen (WF-147); workflows kept with the project when the user chooses so, saved as
+ *  <workspace> only when there is something to keep, and the project's own layout commands without an
+ *  interface (design themes 19 and 22). */
 
 #include <QtTest>
 
 #include <cmath>
 #include <vector>
 
+#include <QDomDocument>
 #include <QFile>
 #include <QJsonArray>
 #include <QTemporaryDir>
@@ -45,6 +48,7 @@
 #include "ControlVocabulary.h"
 #include "Engine.h"
 #include "Mixer.h"
+#include "ProjectWorkspace.h"
 #include "SampleTrack.h"
 #include "Song.h"
 #include "TrackLooks.h"
@@ -344,6 +348,51 @@ private slots:
 		QCOMPARE(run(QStringLiteral("tuner.set"), {{QStringLiteral("reference_hz"), 300.0}}).errorKind, ControlErrorKind::InvalidArgs);
 		QVERIFY(run(QStringLiteral("tuner.set"), {{QStringLiteral("source"), QStringLiteral("off")}, {QStringLiteral("reference_hz"), 440.0}}).ok);
 		QVERIFY(!run(QStringLiteral("tuner.get_state")).result.value(QStringLiteral("clear")).toBool());
+	}
+
+	void workflowsAreKeptWithTheProjectWhenChosen()
+	{
+		const auto count = [] { return run(QStringLiteral("workflow.list")).result.value(QStringLiteral("count")).toInt(); };
+		const QString bare = m_dir.filePath(QStringLiteral("noworkspace.mmp"));
+		QVERIFY(Engine::getSong()->saveProjectFile(bare));
+		QVERIFY2(!fileText(bare).contains(QStringLiteral("<workspace")), "a project that keeps nothing wrote <workspace>");
+		const QJsonArray steps{QJsonObject{{QStringLiteral("command"), QStringLiteral("track.add")},
+			{QStringLiteral("args"), QJsonObject{{QStringLiteral("type"), QStringLiteral("sample")}}}}};
+		QVERIFY(run(QStringLiteral("workflow.save"), {{QStringLiteral("name"), QStringLiteral("shared one")}, {QStringLiteral("steps"), steps}}).ok);
+		QCOMPARE(run(QStringLiteral("workflow.list")).result.value(QStringLiteral("scope")).toString(), QStringLiteral("shared"));
+		QVERIFY(run(QStringLiteral("workflow.set_scope"), {{QStringLiteral("scope"), QStringLiteral("project")}}).result
+			.value(QStringLiteral("changed")).toBool());
+		QCOMPARE(count(), 0);  // the project's own library: the shared one is not in it
+		const ControlResult kept = run(QStringLiteral("workflow.save"), {{QStringLiteral("name"), QStringLiteral("song one")}, {QStringLiteral("steps"), steps}});
+		QVERIFY2(kept.ok, qPrintable(kept.errorMessage));
+		QCOMPARE(kept.result.value(QStringLiteral("scope")).toString(), QStringLiteral("project"));
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
+		QCOMPARE(count(), 0);
+		QVERIFY(run(QStringLiteral("control.redo")).ok);
+		QCOMPARE(count(), 1);
+		const QString with = m_dir.filePath(QStringLiteral("workspace.mmp"));
+		QVERIFY(Engine::getSong()->saveProjectFile(with));
+		const QString text = fileText(with);
+		QVERIFY2(text.contains(QStringLiteral("<workspace")) && text.contains(QStringLiteral("song one")), "the project's workflows were not saved");
+		QVERIFY2(!text.contains(QStringLiteral("shared one")), "a shared workflow travelled in the project");
+		// Read back from the file: the element is the project's library again.
+		ProjectWorkspace::instance().clear();
+		QCOMPARE(count(), 0);
+		QDomDocument doc;
+		QVERIFY(doc.setContent(text));
+		ProjectWorkspace::instance().load(doc.elementsByTagName(QStringLiteral("workspace")).at(0).toElement());
+		QCOMPARE(run(QStringLiteral("workflow.list")).result.value(QStringLiteral("workflows")).toArray().first().toObject()
+			.value(QStringLiteral("name")).toString(), QStringLiteral("song one"));
+		// Shared again: the shared library comes back as it was; the project keeps its own.
+		QVERIFY(run(QStringLiteral("workflow.set_scope"), {{QStringLiteral("scope"), QStringLiteral("shared")}}).ok);
+		QCOMPARE(run(QStringLiteral("workflow.list")).result.value(QStringLiteral("workflows")).toArray().first().toObject()
+			.value(QStringLiteral("name")).toString(), QStringLiteral("shared one"));
+		QVERIFY(run(QStringLiteral("workflow.remove"), {{QStringLiteral("name"), QStringLiteral("shared one")}}).ok);
+		// The project's own layout without an interface: forgetting none is NotFound, remembering needs the shell.
+		ProjectWorkspace::instance().clear();
+		QCOMPARE(run(QStringLiteral("window.layout_project_clear")).errorKind, ControlErrorKind::NotFound);
+		QCOMPARE(run(QStringLiteral("window.layout_project_save")).errorKind, ControlErrorKind::Requires);
+		QVERIFY(!run(QStringLiteral("window.layout_list")).result.value(QStringLiteral("project_layout")).toBool());
 	}
 
 private:

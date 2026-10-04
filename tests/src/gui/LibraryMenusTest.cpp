@@ -24,24 +24,34 @@
 /*! 0.5.0 L11 / L12 (W3), the interface half: the Project Tools menu declares the new project commands
  *  (each entry runs a registered command); a track's Lock entry locks it and then offers Unlock; the
  *  search view swaps its columns for the gallery; the browser panel shows the source remembered for a
- *  view and remembers the one picked in it. */
+ *  view and remembers the one picked in it.
+ *  Theme 3 (0.5.0 UX): the current source's search field is the panel's first control, and a source without
+ *  one shows none; typing searches once and refines that history entry in place; Enter in the field first
+ *  highlights a result, then loads it (one undo step); Space previews a result and toggles it off, another
+ *  result stops it; the tab, the query and focus leaving the Browser stop it too, focus moving inside it does not. */
 
 #include <QtTest>
 
+#include <QJsonArray>
+#include <QLineEdit>
 #include <QListWidget>
 #include <QMenu>
+#include <QTemporaryDir>
 #include <QTreeWidget>
 
 #include "BrowserPanel.h"
+#include "BrowserResults.h"
 #include "BrowserSearchView.h"
 #include "ControlRegistry.h"
 #include "EditLocks.h"
 #include "Engine.h"
 #include "LibraryCommandMenus.h"
 #include "MenuTestSupport.h"
+#include "SampleTrack.h"
 #include "SideBarWidget.h"
 #include "Song.h"
 #include "Track.h"
+#include "../core/TakeLaneTestSupport.h"
 
 using namespace lmms;
 using namespace lmms::gui;
@@ -54,6 +64,23 @@ QStringList declaredCommands(QMenu* menu)
 	QStringList out;
 	for (QAction* action : lmms::test::leafActions(menu)) { out << action->property("controlCommand").toString(); }
 	return out;
+}
+
+ControlResult run(const QString& id, const QJsonObject& args = {})
+{
+	return ControlRegistry::instance()->invoke(id, args);
+}
+
+//! A search result row for the audio file @a path, as the search view lists one.
+QTreeWidgetItem* audioRow(const QString& path)
+{
+	return browserresults::rowOf({{QStringLiteral("name"), QFileInfo(path).fileName()}, {QStringLiteral("kind"), QStringLiteral("audio")},
+		{QStringLiteral("path"), path}});
+}
+
+QJsonArray historyEntries()
+{
+	return run(QStringLiteral("browser.history")).result.value(QStringLiteral("entries")).toArray();
 }
 
 } // namespace
@@ -130,6 +157,104 @@ private slots:
 		panel.setContext(QStringLiteral("arrange"));
 		QCOMPARE(panel.currentSource(), QStringLiteral("Alpha"));
 	}
+
+	void searchIsTheFirstControl()
+	{
+		BrowserPanel panel;
+		auto* search = new BrowserSearchView(&panel);
+		panel.addSource(search);
+		panel.addSource(new SideBarWidget(QStringLiteral("Beta"), QPixmap(), &panel));
+		QLineEdit* field = panel.searchField();
+		QVERIFY(field != nullptr);
+		QCOMPARE(field->objectName(), QStringLiteral("browserSearch"));
+		QWidget* first = panel.layout()->itemAt(0)->widget();
+		QVERIFY(first != nullptr && first->isAncestorOf(field));  // above the selector and the list
+		QVERIFY(!search->isAncestorOf(field));
+		QVERIFY(panel.selectSource(QStringLiteral("Beta")));
+		QVERIFY(panel.searchField() == nullptr);  // search covers the current tab: a tab without one shows none
+	}
+
+	void typingSearchesOnceAndRefinesInPlace()
+	{
+		BrowserPanel panel;
+		panel.addSource(new BrowserSearchView(&panel));
+		const qsizetype before = historyEntries().size();
+		const auto lastLabel = [] { return historyEntries().last().toObject().value(QStringLiteral("label")).toString(); };
+		QTest::keyClicks(panel.searchField(), QStringLiteral("zq"));
+		QTRY_COMPARE(historyEntries().size(), before + 1);  // live: no Return needed
+		QCOMPARE(lastLabel(), QStringLiteral("zq"));
+		QTest::keyClicks(panel.searchField(), QStringLiteral("x"));
+		QTRY_COMPARE(lastLabel(), QStringLiteral("zqx"));
+		QCOMPARE(historyEntries().size(), before + 1);  // refined in place, not one entry per pause in typing
+	}
+
+	void enterHighlightsThenLoadsTheResult()
+	{
+		const QString wav = taketest::writeToneWav(m_dir.filePath(QStringLiteral("enter.wav")), 440.0);
+		QVERIFY(!wav.isEmpty());
+		BrowserPanel panel;
+		auto* search = new BrowserSearchView(&panel);
+		panel.addSource(search);
+		QTreeWidgetItem* row = audioRow(wav);
+		search->results()->addTopLevelItem(row);
+		Song* song = Engine::getSong();
+		const std::size_t tracks = song->tracks().size();
+		QTest::keyClick(panel.searchField(), Qt::Key_Return);
+		QCOMPARE(search->results()->currentItem(), row);  // nothing was highlighted: Enter highlights the first result
+		QCOMPARE(song->tracks().size(), tracks);
+		QTest::keyClick(panel.searchField(), Qt::Key_Return, Qt::ShiftModifier);  // Shift+Enter: onto a new sample track
+		QCOMPARE(song->tracks().size(), tracks + 1);
+		QVERIFY(dynamic_cast<SampleTrack*>(song->tracks().back()) != nullptr);
+		QVERIFY(run(QStringLiteral("control.undo")).ok);  // browser.load is one undo step
+		QCOMPARE(song->tracks().size(), tracks);
+	}
+
+	void spaceTogglesThePreviewAndAnotherResultStopsIt()
+	{
+		const QString a = taketest::writeToneWav(m_dir.filePath(QStringLiteral("a.wav")), 440.0);
+		const QString b = taketest::writeToneWav(m_dir.filePath(QStringLiteral("b.wav")), 660.0);
+		BrowserSearchView view(nullptr);
+		QTreeWidgetItem* first = audioRow(a);
+		QTreeWidgetItem* second = audioRow(b);
+		view.results()->addTopLevelItems({first, second});
+		view.results()->setCurrentItem(first);
+		QTest::keyClick(view.results(), Qt::Key_Space);
+		QCOMPARE(view.actions()->previewing(), a);
+		view.results()->setCurrentItem(second);  // another result
+		QVERIFY(view.actions()->previewing().isEmpty());
+		QTest::keyClick(view.results(), Qt::Key_Space);
+		QCOMPARE(view.actions()->previewing(), b);
+		QTest::keyClick(view.results(), Qt::Key_Space);  // Space on the one playing stops it
+		QVERIFY(view.actions()->previewing().isEmpty());
+	}
+
+	void thePreviewStopsWhenTheTabTheQueryOrTheFocusChanges()
+	{
+		const QString wav = taketest::writeToneWav(m_dir.filePath(QStringLiteral("stop.wav")), 440.0);
+		QWidget window;
+		auto* outside = new QLineEdit(&window);
+		auto* panel = new BrowserPanel(&window);
+		auto* search = new BrowserSearchView(panel);
+		panel->addSource(search);
+		panel->addSource(new SideBarWidget(QStringLiteral("Beta"), QPixmap(), panel));
+		BrowserResultActions* actions = search->actions();
+		QVERIFY(actions->preview(wav, QStringLiteral("audio")));
+		QVERIFY(panel->selectSource(QStringLiteral("Beta")));  // another tab
+		QVERIFY(actions->previewing().isEmpty());
+		QVERIFY(panel->selectSource(search->title()));
+		QVERIFY(actions->preview(wav, QStringLiteral("audio")));
+		QTest::keyClick(panel->searchField(), Qt::Key_K);  // the query changes
+		QVERIFY(actions->previewing().isEmpty());
+		QVERIFY(actions->preview(wav, QStringLiteral("audio")));
+		// QApplication's own signal, as a focus change in an active window emits it (offscreen windows need not activate).
+		emit qApp->focusChanged(search->results(), panel->searchField());  // focus moving inside the Browser
+		QCOMPARE(actions->previewing(), wav);
+		emit qApp->focusChanged(search->results(), outside);  // focus leaving it
+		QVERIFY(actions->previewing().isEmpty());
+	}
+
+private:
+	QTemporaryDir m_dir;
 };
 
 QTEST_MAIN(LibraryMenusTest)

@@ -1,5 +1,5 @@
 /*
- * UiConfigStore.cpp - interface state kept as JSON in the config file, written as one undo step
+ * UiConfigStore.cpp - interface state kept as JSON in the config file (or with the project), written as one undo step
  *
  * Copyright (c) 2026 Zene Studio contributors
  *
@@ -29,6 +29,8 @@
 #include "ConfigManager.h"
 #include "ControlEdit.h"
 #include "ControlReversibility.h"
+#include "Engine.h"
+#include "Song.h"
 
 namespace lmms::gui::uistore
 {
@@ -44,6 +46,22 @@ void store(const QString& key, const QJsonObject& value)
 	ConfigManager::inst()->saveConfigFile();
 }
 
+using Put = std::function<void(const QJsonObject&)>;
+
+//! @a put @a value now and record ONE undo step that puts @a previous back (and a redo that puts @a value
+//! again), running @a apply after each; @a result with the transaction attached.
+ControlResult recordWrite(const Put& put, const QJsonObject& previous, const QJsonObject& value, QJsonObject result,
+	const Inverse& inverse, const std::function<void()>& apply, const QString& mechanism)
+{
+	control::addUndoStep(
+		[put, previous, apply] { put(previous); if (apply) { apply(); } },
+		[put, value, apply] { put(value); if (apply) { apply(); } });
+	put(value);
+	if (apply) { apply(); }
+	result.insert(QStringLiteral("__transaction"), control::transactionPayload(previous, inverse.op, inverse.args, true, mechanism));
+	return ControlResult::success(result);
+}
+
 } // namespace
 
 QJsonObject read(const QString& key)
@@ -54,16 +72,22 @@ QJsonObject read(const QString& key)
 ControlResult write(const QString& key, const QJsonObject& value, QJsonObject result,
 	const Inverse& inverse, const std::function<void()>& apply)
 {
-	const QJsonObject previous = read(key);
-	control::addUndoStep(
-		[key, previous, apply] { store(key, previous); if (apply) { apply(); } },
-		[key, value, apply] { store(key, value); if (apply) { apply(); } });
-	store(key, value);
-	if (apply) { apply(); }
-	result.insert(QStringLiteral("__transaction"), control::transactionPayload(previous, inverse.op, inverse.args, true,
+	return recordWrite([key](const QJsonObject& doc) { store(key, doc); }, read(key), value, std::move(result), inverse, apply,
 		QStringLiteral("action checkpoint: the recorded undo step writes the previous ui/%1 object back, saves "
-			"the config file and re-applies it to the interface, exactly as this command does").arg(key)));
-	return ControlResult::success(result);
+			"the config file and re-applies it to the interface, exactly as this command does").arg(key));
+}
+
+ControlResult writeProject(ProjectWorkspace::Part part, const QJsonObject& value, QJsonObject result,
+	const Inverse& inverse, const std::function<void()>& apply)
+{
+	const Put put = [part](const QJsonObject& doc) {
+		ProjectWorkspace::instance().setPart(part, doc);
+		if (Song* song = Engine::getSong()) { song->setModified(); }
+	};
+	const QString what = part == ProjectWorkspace::Part::Workflows ? QStringLiteral("workflows") : QStringLiteral("layout");
+	return recordWrite(put, ProjectWorkspace::instance().part(part), value, std::move(result), inverse, apply,
+		QStringLiteral("action checkpoint: the recorded undo step puts the project's previous %1 back (<workspace>, "
+			"saved with the project) and re-applies it to the interface, exactly as this command does").arg(what));
 }
 
 } // namespace lmms::gui::uistore

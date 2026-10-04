@@ -26,13 +26,27 @@
  *  arrows step as one wheel notch does (with the wheel's modifiers), PageUp/PageDown step
  *  coarsely, Home/End go to the ends - and passes every other key on, so the transport's Space
  *  still plays with a knob focused. Its accessible name is its constructed name, else its
- *  model's display name, else its description, and a name set explicitly is kept. */
+ *  model's display name, else its description, and a name set explicitly is kept.
+ *
+ *  0.5.0 UX decisions (themes 10 and 17): the other shared controls work without a mouse too - a fader,
+ *  an LCD number and a combo box take Tab focus (not a click's) and answer the same keys, a model button
+ *  takes Tab focus - and each tells a screen reader what it is (AccessibleWidgets.h): its role, its name
+ *  and, for a value control, the value as shown plus a settable value interface. Nothing here installs the
+ *  descriptions: the application object did, as it does in the application. */
 
 #include <QtTest>
 
+#include <QAccessible>
+#include <QLineEdit>
+
 #include "AutomatableModel.h"
+#include "ComboBox.h"
+#include "ComboBoxModel.h"
 #include "Engine.h"
+#include "Fader.h"
 #include "Knob.h"
+#include "LcdSpinBox.h"
+#include "LedCheckBox.h"
 
 using namespace lmms;
 using namespace lmms::gui;
@@ -123,6 +137,169 @@ private slots:
 		explicitName.setAccessibleName(QStringLiteral("Master pitch"));
 		explicitName.setModel(&model);
 		QCOMPARE(explicitName.accessibleName(), QStringLiteral("Master pitch"));
+	}
+
+	void aFaderAnswersTheSliderKeys()
+	{
+		FloatModel model(1.f, 0.f, 2.f, 0.01f, nullptr, QStringLiteral("Volume"));
+		KeyCatcher parent;
+		Fader fader(&model, QStringLiteral("Channel volume"), &parent);
+		QCOMPARE(fader.focusPolicy(), Qt::TabFocus);
+		parent.show();
+
+		QTest::keyClick(&fader, Qt::Key_Up);
+		QVERIFY(model.value() > 1.f);  // a step of the wheel's size, in dB
+		QTest::keyClick(&fader, Qt::Key_Down);
+		QTest::keyClick(&fader, Qt::Key_Down);
+		QVERIFY(model.value() < 1.f);
+		QTest::keyClick(&fader, Qt::Key_End);
+		QCOMPARE(model.value(), 2.f);
+		QTest::keyClick(&fader, Qt::Key_Home);
+		QCOMPARE(model.value(), 0.f);
+		QVERIFY(parent.keys.isEmpty());
+		QTest::keyClick(&fader, Qt::Key_Space);
+		QCOMPARE(parent.keys, QList<int>{Qt::Key_Space});
+	}
+
+	void anLcdNumberAnswersTheSliderKeys()
+	{
+		IntModel model(5, 0, 100, nullptr, QStringLiteral("Steps"));
+		KeyCatcher parent;
+		LcdSpinBox lcd(3, &parent);
+		lcd.setModel(&model);
+		QCOMPARE(lcd.focusPolicy(), Qt::TabFocus);
+		parent.show();
+
+		QTest::keyClick(&lcd, Qt::Key_Up);
+		QCOMPARE(model.value(), 6);
+		QTest::keyClick(&lcd, Qt::Key_PageUp);
+		QCOMPARE(model.value(), 16);  // ten steps
+		QTest::keyClick(&lcd, Qt::Key_End);
+		QCOMPARE(model.value(), 100);
+		QTest::keyClick(&lcd, Qt::Key_Home);
+		QCOMPARE(model.value(), 0);
+		QTest::keyClick(&lcd, Qt::Key_Space);
+		QCOMPARE(parent.keys, QList<int>{Qt::Key_Space});
+	}
+
+	void aComboBoxStepsLikeAList()
+	{
+		ComboBoxModel model(nullptr, QStringLiteral("Shape"));
+		for (const char* item : {"Sine", "Square", "Saw"}) { model.addItem(QString::fromLatin1(item)); }
+		KeyCatcher parent;
+		ComboBox combo(&parent);
+		combo.setModel(&model);
+		QCOMPARE(combo.focusPolicy(), Qt::TabFocus);
+		parent.show();
+
+		QTest::keyClick(&combo, Qt::Key_Down);
+		QCOMPARE(model.value(), 1);  // down the list: the next item, as the wheel turned towards you
+		QTest::keyClick(&combo, Qt::Key_End);
+		QCOMPARE(model.value(), 2);
+		QTest::keyClick(&combo, Qt::Key_Up);
+		QCOMPARE(model.value(), 1);
+		QTest::keyClick(&combo, Qt::Key_Home);
+		QCOMPARE(model.value(), 0);
+		QTest::keyClick(&combo, Qt::Key_A);
+		QCOMPARE(parent.keys, QList<int>{Qt::Key_A});
+	}
+
+	void aModelButtonIsReachedByTab()
+	{
+		LedCheckBox led(QStringLiteral("Loop"), nullptr);
+		QCOMPARE(led.focusPolicy(), Qt::TabFocus);
+	}
+
+	void aKnobIsADialWithItsValue()
+	{
+		FloatModel cutoff(440.f, 20.f, 20000.f, 1.f, nullptr, QStringLiteral("Cutoff"));
+		Knob knob(KnobType::Bright26);
+		knob.setModel(&cutoff);
+		knob.setHintText(QStringLiteral("Cutoff:"), QStringLiteral(" Hz"));
+		QAccessibleInterface* face = QAccessible::queryAccessibleInterface(&knob);
+		QVERIFY(face != nullptr);
+		QCOMPARE(face->role(), QAccessible::Dial);
+		QCOMPARE(face->text(QAccessible::Name), QStringLiteral("Cutoff"));
+		QCOMPARE(face->text(QAccessible::Value), QStringLiteral("440 Hz"));  // as shown, without the caption
+		QAccessibleValueInterface* value = face->valueInterface();
+		QVERIFY(value != nullptr);
+		QCOMPARE(value->currentValue().toFloat(), 440.f);
+		QCOMPARE(value->minimumValue().toFloat(), 20.f);
+		QCOMPARE(value->maximumValue().toFloat(), 20000.f);
+		QCOMPARE(value->minimumStepSize().toFloat(), 1.f);
+		value->setCurrentValue(1000.f);  // a screen reader's edit is the parameter's
+		QCOMPARE(cutoff.value(), 1000.f);
+		face->actionInterface()->doAction(QAccessibleActionInterface::increaseAction());
+		QCOMPARE(cutoff.value(), 1001.f);
+	}
+
+	void theOtherControlsSayWhatTheyAre()
+	{
+		FloatModel level(1.f, 0.f, 2.f, 0.01f, nullptr, QStringLiteral("Volume"));
+		QWidget strip;  // a control's constructed name is its title only inside a window, never a window's own
+		Fader fader(&level, QStringLiteral("Channel volume"), &strip);
+		QAccessibleInterface* face = QAccessible::queryAccessibleInterface(&fader);
+		QCOMPARE(face->role(), QAccessible::Slider);
+		QCOMPARE(face->text(QAccessible::Name), QStringLiteral("Channel volume"));  // its constructed name
+		QCOMPARE(face->text(QAccessible::Value), QStringLiteral("0.00 dB"));
+		QVERIFY(face->valueInterface() != nullptr);
+
+		IntModel steps(5, 0, 100, nullptr, QStringLiteral("Steps"));
+		LcdSpinBox lcd(3, nullptr);
+		lcd.setModel(&steps);
+		lcd.setDisplayOffset(1);
+		face = QAccessible::queryAccessibleInterface(&lcd);
+		QCOMPARE(face->role(), QAccessible::SpinBox);
+		QCOMPARE(face->text(QAccessible::Name), QStringLiteral("Steps"));
+		QCOMPARE(face->text(QAccessible::Value), QStringLiteral("6"));  // as shown, offset included
+
+		ComboBoxModel shapes(nullptr, QStringLiteral("Shape"));
+		shapes.addItem(QStringLiteral("Sine"));
+		shapes.addItem(QStringLiteral("Saw"));
+		ComboBox combo(nullptr);
+		combo.setModel(&shapes);
+		face = QAccessible::queryAccessibleInterface(&combo);
+		QCOMPARE(face->role(), QAccessible::ComboBox);
+		QCOMPARE(face->text(QAccessible::Value), QStringLiteral("Sine"));
+		face->actionInterface()->doAction(QAccessibleActionInterface::increaseAction());
+		QCOMPARE(face->text(QAccessible::Value), QStringLiteral("Saw"));
+
+		LedCheckBox led(QStringLiteral("Loop"), nullptr, QStringLiteral("Loop playback"));
+		face = QAccessible::queryAccessibleInterface(&led);
+		QCOMPARE(face->role(), QAccessible::CheckBox);
+		QCOMPARE(face->text(QAccessible::Name), QStringLiteral("Loop playback"));
+		QVERIFY(face->state().checkable);
+		QVERIFY(!face->state().checked);
+		face->actionInterface()->doAction(QAccessibleActionInterface::toggleAction());
+		QVERIFY(led.model()->value());
+		QVERIFY(face->state().checked);
+	}
+
+	//! The focus ring follows the keyboard onto a custom control that draws none itself (CSS's :focus-visible):
+	//! Tab shows it over the control, a click does not, and a screen reader never sees it as a child.
+	void keyboardFocusShowsTheRing()
+	{
+		FloatModel model(0.f, 0.f, 1.f, 0.01f, nullptr, QStringLiteral("Drive"));
+		QWidget window;
+		auto* knob = new Knob(KnobType::Bright26, &window);
+		knob->setModel(&model);
+		auto* field = new QLineEdit(&window);
+		field->move(0, 60);
+		window.show();
+		window.activateWindow();
+		if (!QTest::qWaitForWindowActive(&window)) { QSKIP("this platform does not activate windows"); }
+
+		field->setFocus(Qt::OtherFocusReason);  // activation may have focused the knob already; Tab moves focus from elsewhere
+		knob->setFocus(Qt::TabFocusReason);
+		const auto ringOn = [knob] { return knob->findChild<QWidget*>(QStringLiteral("zeneFocusRing"), Qt::FindDirectChildrenOnly); };
+		QWidget* ring = ringOn();
+		QVERIFY(ring != nullptr && ring->isVisible());
+		QCOMPARE(ring->geometry(), knob->rect());
+		QCOMPARE(QAccessible::queryAccessibleInterface(knob)->childCount(), 0);
+		field->setFocus(Qt::TabFocusReason);
+		QVERIFY(ringOn() == nullptr);  // a stock field rings itself (the stylesheet)
+		knob->setFocus(Qt::MouseFocusReason);
+		QVERIFY(ringOn() == nullptr);  // a click shows no ring outside accessible mode
 	}
 };
 

@@ -27,9 +27,13 @@
 #include <atomic>
 #include <limits>
 
+#include <QJsonArray>
+
 #include "AudioEngine.h"
 #include "ConfigManager.h"
 #include "Engine.h"
+#include "MidiClip.h"
+#include "Note.h"
 #include "Song.h"
 #include "Timeline.h"
 
@@ -77,8 +81,47 @@ void setOptions(const Options& next)
 
 QJsonObject toJson(const Options& o)
 {
+	// Theme 7: what Replace erases and keeps, stated with the mode (the same for both, so a client can show it
+	// before switching).
 	return {{QStringLiteral("count_in_bars"), o.countInBars}, {QStringLiteral("pre_roll_bars"), o.preRollBars},
-		{QStringLiteral("mode"), modeNames().at(static_cast<int>(o.mode))}};
+		{QStringLiteral("mode"), modeNames().at(static_cast<int>(o.mode))}, {QStringLiteral("mode_scope"), modeScope(o.mode)},
+		{QStringLiteral("replace_erases"), QStringLiteral("overlapped_notes_any_pitch")},
+		{QStringLiteral("replace_keeps"), QJsonArray{QStringLiteral("controllers"), QStringLiteral("automation")}}};
+}
+
+QString modeLabel(Mode mode)
+{
+	return mode == Mode::Replace ? QObject::tr("Replace notes") : QObject::tr("Overdub");
+}
+
+QString modeScope(Mode mode)
+{
+	return mode == Mode::Replace
+		? QObject::tr("Replace: a recorded note erases the notes already there that it overlaps, at any pitch. "
+			"Controllers and automation are kept.")
+		: QObject::tr("Overdub: a MIDI pass keeps the notes it plays over.");
+}
+
+QString modeChoice(Mode mode)
+{
+	return mode == Mode::Replace ? QObject::tr("Replace notes (erase the notes it overlaps, any pitch; keep controllers and automation)")
+		: QObject::tr("Overdub (keep the notes already there)");
+}
+
+int replaceOverlapped(MidiClip* clip, const Note& recorded, const std::vector<int>& beforePass)
+{
+	if (clip == nullptr || options().mode != Mode::Replace) { return 0; }
+	int removed = 0;
+	const NoteVector existing = clip->notes();  // a copy: removing changes the clip's list
+	for (Note* note : existing)
+	{
+		const bool before = std::find(beforePass.begin(), beforePass.end(), note->id()) != beforePass.end();
+		const bool overlaps = note->pos() < recorded.endPos() && recorded.pos() < note->endPos();
+		if (!before || !overlaps) { continue; }
+		clip->removeNote(note);
+		++removed;
+	}
+	return removed;
 }
 
 tick_t beginPass(Song* song)

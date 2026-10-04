@@ -922,8 +922,13 @@ monitoring state (+1).
 **0.5.0 lane 3 (Inspector and Device panel)** added window.select, `not_mutating` interface state
 - which track, clip or mixer channel the two panels show (+1).
 
+**0.5.0 UX build (the owner's design decisions)** added note.remove_many, note.slice, note.cut, note.paste and
+note.duplicate (`true_inverse`, one clip checkpoint each) and note.copy (`not_mutating`); browser.load, transport.time_format,
+workflow.set_scope, window.layout_project_save and window.layout_project_clear (`true_inverse`); arrangement.ruler_lanes and
+window.layout_project_apply (`not_mutating`) (+13); the seven macro.* rows became workflow.* unchanged.
+
 <!-- A16-HISTOGRAM-BEGIN
-     measured: rows=737 true_inverse=360 snapshot=39 irreversible=19 not_mutating=319
+     measured: rows=750 true_inverse=370 snapshot=39 irreversible=19 not_mutating=322
      configuration: telemetry.status wasm.load session.get_state stem.get_state
      option telemetry.status rows=2 not_mutating=2
      option wasm.load rows=8 snapshot=3 not_mutating=5

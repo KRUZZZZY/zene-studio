@@ -25,6 +25,7 @@
 #include "PluginBrowser.h"
 
 #include <algorithm>
+#include <utility>
 
 #include <QHash>
 #include <QHeaderView>
@@ -97,12 +98,25 @@ PluginBrowser::PluginBrowser( QWidget * _parent ) :
 	searchBar->setMaxLength(64);
 	searchBar->setClearButtonEnabled(true);
 	searchBar->addAction(embed::getIconPixmap("zoom"), QLineEdit::LeadingPosition);
+	searchBar->setObjectName(QStringLiteral("browserSearch"));  // 0.5.0 theme 3: the Browser panel shows it first
 
 	m_descTree = new QTreeWidget( m_view );
 	m_descTree->setColumnCount( 1 );
 	m_descTree->header()->setVisible( false );
 	m_descTree->setIndentation( 10 );
 	m_descTree->setSelectionMode( QAbstractItemView::NoSelection );
+	// 0.5.0 theme 3: the panel's search field steps through the tree (the current row is drawn highlighted)
+	// and Enter loads the current instrument onto a new track, as its menu's "Send to new instrument track" does.
+	m_descTree->setProperty("browserResults", true);
+	connect(m_descTree, &QTreeWidget::currentItemChanged, this, [this](QTreeWidgetItem* now, QTreeWidgetItem* was) {
+		for (auto [item, current] : {std::pair{was, false}, std::pair{now, true}})
+		{
+			if (auto* row = item != nullptr ? qobject_cast<PluginDescWidget*>(m_descTree->itemWidget(item, 0)) : nullptr) { row->setCurrent(current); }
+		}
+	});
+	connect(m_descTree, &QTreeWidget::itemActivated, this, [this](QTreeWidgetItem* item) {
+		if (auto* row = qobject_cast<PluginDescWidget*>(m_descTree->itemWidget(item, 0))) { row->openInNewTrack(); }
+	});
 
 	connect( searchBar, SIGNAL( textEdited( const QString& ) ),
 			this, SLOT( onFilterChanged( const QString& ) ) );
@@ -335,9 +349,15 @@ void PluginDescWidget::paintEvent( QPaintEvent * )
 	p.drawPixmap( 4, 4, logo );
 
 	QFont f = p.font();
-	if ( m_mouseOver )
+	if (m_mouseOver || m_current)
 	{
 		f.setBold( true );
+	}
+	if (m_current)  // 0.5.0 theme 3: the row Enter loads
+	{
+		p.setPen(palette().color(QPalette::Highlight));
+		p.drawRect(rect().adjusted(0, 0, -1, -1));
+		p.setPen(palette().color(QPalette::WindowText));
 	}
 
 	p.setFont( f );
@@ -391,6 +411,20 @@ void PluginDescWidget::contextMenuEvent(QContextMenuEvent* e)
 	contextMenu.addSeparator();
 	pickerorganiser::fillKeyMenu(&contextMenu, pickerorganiser::keyOf(m_pluginKey), this, [this] { emit organised(); });
 	contextMenu.exec(e->globalPos());
+}
+
+
+void PluginDescWidget::setCurrent(bool current)
+{
+	m_current = current;
+	update();
+}
+
+
+void PluginDescWidget::openInNewTrack()
+{
+	Engine::setDndPluginKey(&m_pluginKey);  // the loader picks a sub-plugin's key from here, as a drag leaves it
+	openInNewInstrumentTrack(m_pluginKey.desc->name);
 }
 
 

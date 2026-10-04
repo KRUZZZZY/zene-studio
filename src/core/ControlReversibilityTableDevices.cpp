@@ -71,6 +71,10 @@ const ReversibilityRow kDeviceRows[] = {
 	R("transport.record_options", RC::TrueInverse, true,
 		"it writes the count-in, pre-roll and record mode, a preference in the config file - three bounded scalars",
 		"action checkpoint: the recorded undo step writes the previous options back, as settings.set does", ""),
+	// 0.5.0 theme 7, beside the record options (the same kind of preference).
+	R("transport.time_format", RC::TrueInverse, true,
+		"it writes the time format musician-facing fields show, a preference in the config file - one bounded enum",
+		"action checkpoint: the recorded undo step writes the previous format back, as settings.set does", ""),
 	R("comp.cycle", RC::TrueInverse, true, "it switches the take a comp segment plays (the track's take lanes)",
 		"ProjectJournal (Track checkpoint): the track carries its take lanes", ""),
 	R("session.bindings_connect", RC::NotMutating, false, "it opens a MIDI controller for the launcher: device state, not "
@@ -109,7 +113,7 @@ const ReversibilityRow kDeviceRows[] = {
 	R("app.help", RC::NotMutating, false, "it opens the manual or the command reference: interface state", "no write", ""),
 	R("app.tours", RC::NotMutating, false, "it lists the guided tours. Nothing is written", "no write", ""),
 	R("app.tour", RC::NotMutating, false, "it starts a guided tour: interface state", "no write (Close ends it)", ""),
-	R("window.appearance", RC::TrueInverse, true, "it writes the interface scale, text size and palette preferences (config "
+	R("window.appearance", RC::TrueInverse, true, "it writes the interface zoom, palette and accessible-mode preferences (config "
 		"file) - three bounded values", "action checkpoint: the recorded undo step writes the previous appearance back", ""),
 	// 0.5.0 L07 (W3): the note tools.
 	R("note.invert", RC::TrueInverse, true, "it changes the keys of notes", "MidiClip journal checkpoint", ""),
@@ -136,9 +140,10 @@ const ReversibilityRow kDeviceRows[] = {
 	R("track.articulations", RC::NotMutating, false, "it reads a track's articulations. Nothing is written", "no write", ""),
 	R("transport.groove", RC::TrueInverse, true, "it sets the global swing (project state, two bounded values)",
 		"action checkpoint: the recorded undo step writes the previous swing back", ""),
-	R("macro.record_start", RC::NotMutating, false, "it starts listening for the commands to record: interface state", "no write", ""),
-	R("macro.record_stop", RC::TrueInverse, true, "it saves the recorded macro (config file), as macro.save does",
-		"macro.save's own: the recorded undo step puts the previous macros back", ""),
+	R("workflow.record_start", RC::NotMutating, false, "it starts listening for the commands to record: interface state", "no write", ""),
+	R("workflow.record_stop", RC::TrueInverse, true,
+		"it saves the recorded workflow in the library in use (config file, or the project's <workspace>), as workflow.save does",
+		"workflow.save's own: the recorded undo step puts the previous workflows back", ""),
 	R("sample.edit_range", RC::TrueInverse, true, "it bakes an edit of a range into a clip's source", "Clip checkpoint", ""),
 	R("clip.audio_to_midi", RC::TrueInverse, true, "it adds an instrument track with the notes found in the audio",
 		"action checkpoint: the recorded undo step removes the track", ""),

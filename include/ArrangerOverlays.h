@@ -33,8 +33,6 @@
 #include "LmmsTypes.h"
 #include "lmms_export.h"
 
-class QPainter;
-
 namespace lmms
 {
 class Track;
@@ -44,30 +42,9 @@ namespace lmms::gui
 {
 
 class SongEditor;
-class TimeLineWidget;
 
-/*! ED-048: the project's markers, drawn over the arranger's ruler - a flag and the name, in the
- *  marker's colour - from ProjectMarkers. A child of the ruler that follows its size and repaints
- *  with it; transparent to the mouse, so the ruler keeps every gesture it had. */
-class LMMS_EXPORT MarkerRulerOverlay : public QWidget
-{
-	Q_OBJECT
-public:
-	explicit MarkerRulerOverlay(TimeLineWidget* ruler);
-
-	//! The x of each marker drawn on the last paint (a test's view of it).
-	QList<int> drawnMarkers() const { return m_drawn; }
-
-protected:
-	void paintEvent(QPaintEvent* event) override;
-	bool eventFilter(QObject* watched, QEvent* event) override;
-
-private:
-	void paintTempo(QPainter& p);
-
-	QPointer<TimeLineWidget> m_ruler;
-	QList<int> m_drawn;
-};
+// 0.5.0 theme 9: ED-048's MarkerRulerOverlay, which drew the markers, the sections and the tempo curve
+// over the bar ruler, became ArrangerRulerLanes - a lane each, under the ruler.
 
 /*! ED-011: the time range (ArrangerRange) drawn over the tracks it covers, and the arranger's own
  *  tools beyond the song editor's: RANGE (press, drag across time and tracks, release: range.set,
@@ -124,7 +101,8 @@ LMMS_EXPORT const QStringList& arrangerToolNames();
 //! The tool @a editor is in, by name.
 LMMS_EXPORT QString currentArrangerTool(SongEditor* editor);
 
-//! Put the arranger's overlays on the song editor once (the shell calls it at start-up).
+//! Put the arranger's overlays on the song editor once (the shell calls it at start-up): the ruler lanes
+//! (ArrangerRulerLanes), the range overlay, the drag preview (ArrangerEditPreview) and the lock badges.
 LMMS_EXPORT void installArrangerOverlays(SongEditor* editor);
 
 } // namespace lmms::gui

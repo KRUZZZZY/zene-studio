@@ -67,10 +67,19 @@ SET(LMMS_SRCS
 	gui/ControlCommandsViewMemory.cpp
 	gui/ArrangerAids.cpp
 	gui/AccessibilityAudit.cpp
+	gui/AccessibleMode.cpp
+	gui/AccessibleWidgets.cpp
 	gui/ControlGuiSupport.cpp
 	# M3.4: the command palette (menu actions + argument-free commands, searchable).
 	gui/ArrangerOverlays.cpp
+	gui/ArrangerEditPreview.cpp
+	gui/ArrangerRulerLanes.cpp
+	gui/ArrangerZoom.cpp
 	gui/CommandForm.cpp
+	gui/CommandFormFields.cpp
+	gui/CommandMetadata.cpp
+	gui/CommandRun.cpp
+	gui/LayoutMenu.cpp
 	gui/CommandListDialog.cpp
 	gui/CommandLists.cpp
 	gui/LibraryCommandMenus.cpp
@@ -121,11 +130,13 @@ SET(LMMS_SRCS
 	gui/noteeditor/NoteCanvas.cpp
 	gui/noteeditor/NoteCanvasGestures.cpp
 	gui/noteeditor/NoteCanvasInput.cpp
+	gui/noteeditor/NoteCanvasKeys.cpp
 	gui/noteeditor/NoteEditor.cpp
 	gui/noteeditor/NoteEditorParts.cpp
 	gui/noteeditor/NoteEditorMenus.cpp
 	gui/noteeditor/NoteEditorToolbar.cpp
 	gui/noteeditor/NoteGrid.cpp
+	gui/noteeditor/NoteProperties.cpp
 	gui/noteeditor/NoteLanes.cpp
 	gui/shell/BrowserPanel.cpp
 	gui/shell/DesignTokens.cpp
@@ -141,6 +152,7 @@ SET(LMMS_SRCS
 	gui/shell/ShellMenuParts.cpp
 	gui/shell/ShellMenuEntries.cpp
 	gui/shell/ShellFloating.cpp
+	gui/shell/ShellTearOff.cpp
 	gui/shell/ShellIcons.cpp
 	gui/shell/ShellLayout.cpp
 	gui/shell/ShellPanel.cpp
@@ -163,6 +175,7 @@ SET(LMMS_SRCS
 	gui/ChainPresetMenu.cpp
 	gui/ChannelPickDialog.cpp
 	gui/BrowserSearchView.cpp
+	gui/BrowserResults.cpp
 	gui/ClipEditsMenu.cpp
 	gui/CrashReportMenu.cpp
 	gui/EffectDeviceMenu.cpp
@@ -182,6 +195,7 @@ SET(LMMS_SRCS
 	gui/NoteTransformActions.cpp
 	gui/MixerChannelView.cpp
 	gui/MixerOverlays.cpp
+	gui/MixerSendsBanner.cpp
 	gui/MixerViewOptions.cpp
 	gui/MixerView.cpp
 	gui/ModelView.cpp
@@ -202,6 +216,7 @@ SET(LMMS_SRCS
 	gui/clips/AutomationClipView.cpp
 	gui/clips/ClipView.cpp
 	gui/clips/ClipViewTheme.cpp
+	gui/clips/ClipLockFeedback.cpp
 	gui/clips/MidiClipView.cpp
 	gui/clips/PatternClipView.cpp
 	gui/clips/SampleClipOverlays.cpp

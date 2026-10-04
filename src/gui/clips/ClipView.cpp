@@ -25,6 +25,7 @@
 #include "ClipView.h"
 
 #include "ArrangementEdits.h"
+#include "ArrangerEditPreview.h"
 #include "ArrangerOverlays.h"
 
 #include <set>
@@ -35,6 +36,7 @@
 #include <QPainter>
 
 #include "AutomationClip.h"
+#include "ClipLockFeedback.h"
 #include "Clipboard.h"
 #include "ColorChooser.h"
 #include "DataFile.h"
@@ -73,6 +75,33 @@ constexpr float RESIZE_GRIP_MAX_WIDTH_FRACTION = 0.1f;
  * This pointer keeps track of it, as you only ever need one at a time.
  */
 TextFloat * ClipView::s_textFloat = nullptr;
+
+namespace
+{
+
+//! 0.5.0 theme 2: where the grid line a move snapped to lies - the clip's snap point, its start or its
+//! end, whichever is on the grid (its start when none is: the move kept an off-grid offset).
+tick_t gridLineOf(tick_t start, const Clip* clip, float snapBars)
+{
+	const auto step = std::max<tick_t>(1, static_cast<tick_t>(std::lround(snapBars * TimePos::ticksPerBar())));
+	const tick_t snapPoint = std::max(0, clip->clipEdits().snapTicks);
+	for (const tick_t candidate : {start + snapPoint, start, start + clip->length().getTicks()})
+	{
+		if (candidate % step == 0) { return candidate; }
+	}
+	return start;
+}
+
+//! How many of @a objects are clip views of locked clips (EditLocks).
+int lockedAmong(const QVector<selectableObject*>& objects)
+{
+	return static_cast<int>(std::count_if(objects.begin(), objects.end(), [](selectableObject* object) {
+		auto* view = dynamic_cast<ClipView*>(object);
+		return view != nullptr && EditLocks::instance().locks(view->getClip());
+	}));
+}
+
+} // namespace
 
 
 /*! \brief Create a new ClipView
@@ -174,6 +203,7 @@ void ClipView::update()
 		updateLength();
 	}
 	m_needsUpdate = true;
+	cliplocks::syncBadge(this);  // 0.5.0 theme 2: a locked clip wears a padlock
 	selectableObject::update();
 }
 
@@ -574,8 +604,13 @@ void ClipView::mousePressEvent( QMouseEvent * me )
 		overlay->beginRangeFrom(mapToGlobal(position(me)));
 		return;
 	}
-	// 0.5.0 L12 (WF-044): a locked clip (or a clip of a locked track) is not moved, resized or deleted by the mouse.
-	if (EditLocks::instance().locks(m_clip) && me->button() != Qt::RightButton) { return; }
+	// 0.5.0 L12 (WF-044): a locked clip (or a clip of a locked track) is not moved, resized or deleted by the mouse;
+	// 0.5.0 theme 2: it is still selected, for inspection, and an edit tried on it says why it is refused.
+	if (EditLocks::instance().locks(m_clip) && me->button() != Qt::RightButton)
+	{
+		if (me->button() == Qt::LeftButton) { pressLocked(me); }
+		return;
+	}
 	const auto pos = position(me);
 
 	// Right now, active is only used on right/mid clicks actions, so we use a ternary operator
@@ -747,6 +782,7 @@ void ClipView::mousePressEvent( QMouseEvent * me )
  */
 void ClipView::mouseMoveEvent( QMouseEvent * me )
 {
+	if (refuseLockedDrag(me)) { return; }
 	if( m_action == Action::CopySelection || m_action == Action::ToggleSelected )
 	{
 		if( mouseMovedDistance( me, 2 ) == true )
@@ -799,10 +835,13 @@ void ClipView::mouseMoveEvent( QMouseEvent * me )
 	const float ppb = m_trackView->trackContainerView()->pixelsPerBar();
 	if( m_action == Action::Move )
 	{
-		TimePos newPos = draggedClipPos( me );
+		arrangement::SnapHit snap;
+		TimePos newPos = draggedClipPos(me, &snap);
 		m_clip->movePosition(newPos);
 		newPos = m_clip->startPosition(); // Get the real position the Clip was dragged to for the label
 		m_trackView->getTrackContentWidget()->changePosition();
+		// 0.5.0 theme 2: the ghost, what the drop trims and the snap line, before the release.
+		ArrangerEditPreview::showDrag(this, m_initialClipPos.getTicks(), snap);
 		s_textFloat->setText( QString( "%1:%2" ).
 				arg( newPos.getBar() + 1 ).
 				arg( newPos.getTicks() %
@@ -836,6 +875,8 @@ void ClipView::mouseMoveEvent( QMouseEvent * me )
 							it != clips.end(); ++it )
 		{
 			int index = std::distance( clips.begin(), it );
+			// 0.5.0 theme 2: a locked clip in the selection stays where it is (said on the release).
+			if (EditLocks::instance().locks(*it)) { continue; }
 			( *it )->movePosition( newPos + m_initialOffsets[index] );
 		}
 	}
@@ -989,8 +1030,19 @@ void ClipView::mouseReleaseEvent( QMouseEvent * me )
 	{
 		// TODO: Fix m_clip->setJournalling() consistency
 		m_clip->setJournalling( true );
-		// 0.5.0 ED-044: a clip dropped onto others trims or crossfades them, per the overlap mode.
-		if (m_action == Action::Move) { arrangement::afterUserMove(m_clip, m_initialClipPos.getTicks()); }
+		// 0.5.0 ED-044: a clip dropped onto others trims or crossfades them, per the overlap mode;
+		// 0.5.0 theme 2: not a locked one - the drop is refused, the clip goes back, and it says so.
+		if (m_action == Action::Move)
+		{
+			ArrangerEditPreview::endDrag(this);
+			const Clip* locked = arrangement::lockedUnder(m_clip, m_clip->startPosition().getTicks(),
+				m_clip->endPosition().getTicks(), arrangement::modes().overlap);
+			if (!arrangement::afterUserMove(m_clip, m_initialClipPos.getTicks()) && locked != nullptr) { cliplocks::refuseDropOnto(locked); }
+		}
+	}
+	else if (m_action == Action::MoveSelection && mouseMovedDistance(me, 2))
+	{
+		cliplocks::announceKept(lockedAmong(m_trackView->trackContainerView()->selectedObjects()));
 	}
 	else if( m_action == Action::Split )
 	{
@@ -1075,6 +1127,7 @@ void ClipView::contextMenuEvent( QContextMenuEvent * cme )
 	pasteAction->setEnabled(
 		Clipboard::hasFormat(Clipboard::MimeType::StringPair) && getTrackView()->getTrackContentWidget()
 			->canPasteSelection(m_clip->startPosition(), Clipboard::getMimeData())
+		&& !EditLocks::instance().locks(m_clip)  // 0.5.0 theme 2: a paste replaces the clip it lands on
 	);
 
 	contextMenu.addSeparator();
@@ -1157,13 +1210,15 @@ QVector<ClipView *> ClipView::getClickedClips()
 
 void ClipView::remove( QVector<ClipView *> clipvs )
 {
+	int kept = 0;
 	for( auto clipv: clipvs )
 	{
 		// No need to check if it's nullptr because we check when building the QVector
 		// 0.5.0 L12 (WF-044): a locked clip in the selection stays when an unlocked one is deleted (or cut).
-		if (EditLocks::instance().locks(clipv->getClip())) { continue; }
+		if (EditLocks::instance().locks(clipv->getClip())) { ++kept; continue; }
 		clipv->remove();
 	}
+	cliplocks::announceKept(kept);  // 0.5.0 theme 2: and the user is told so
 }
 
 void ClipView::copy( QVector<ClipView *> clipvs )
@@ -1193,6 +1248,8 @@ void ClipView::paste()
 	// For getMimeData()
 	using namespace Clipboard;
 
+	// 0.5.0 theme 2: a paste replaces the clip it lands on, so not a locked one.
+	if (EditLocks::instance().locks(m_clip)) { cliplocks::refuse(m_clip, tr("replaced by a paste"), 3000); return; }
 	// If possible, paste the selection on the TimePos of the selected Track and remove it
 	TimePos clipPos{m_clip->startPosition()};
 
@@ -1286,7 +1343,7 @@ bool ClipView::unquantizedModHeld( QMouseEvent * me )
  *
  * \param me The QMouseEvent
  */
-TimePos ClipView::draggedClipPos( QMouseEvent * me )
+TimePos ClipView::draggedClipPos(QMouseEvent* me, arrangement::SnapHit* snap)
 {
 	//Pixels per bar
 	const float ppb = m_trackView->trackContainerView()->pixelsPerBar();
@@ -1323,13 +1380,51 @@ TimePos ClipView::draggedClipPos( QMouseEvent * me )
 		newPos = TimePos(m_initialClipPos.getTicks() + offset.getTicks() + snapPoint)
 			.quantize(getGUI()->songEditor()->m_editor->getSnapSize()) - TimePos(snapPoint);
 	}
+	// 0.5.0 theme 2: what it snapped to, for the drag preview's snap line - the grid, unless an edge wins below.
+	const bool onGrid = me->button() == Qt::NoButton && !unquantizedModHeld(me);
+	arrangement::SnapHit hit{newPos.getTicks(), gridLineOf(newPos.getTicks(), m_clip, getGUI()->songEditor()->m_editor->getSnapSize()),
+		onGrid ? arrangement::SnapHit::Kind::Grid : arrangement::SnapHit::Kind::None, QString()};
 	// 0.5.0 ED-020: other clips' edges and markers are snap targets too, unless snapping is held off.
 	if (!unquantizedModHeld(me) && arrangement::modes().snapToEdges)
 	{
-		newPos = arrangement::snapToEdges(newPos.getTicks(), m_clip->length().getTicks(), m_clip,
+		const arrangement::SnapHit edge = arrangement::snapToEdgesHit(newPos.getTicks(), m_clip->length().getTicks(), m_clip,
 			static_cast<tick_t>(arrangement::SnapEdgePixels * TimePos::ticksPerBar() / ppb));
+		if (edge.kind != arrangement::SnapHit::Kind::None) { hit = edge; }
+		newPos = edge.start;
 	}
+	if (snap != nullptr) { *snap = hit; }
 	return newPos;
+}
+
+
+
+
+void ClipView::pressLocked(QMouseEvent* me)
+{
+	setInitialPos(position(me));
+	m_action = Action::None;
+	if (me->modifiers() & KBD_COPY_MODIFIER) { setSelected(!isSelected()); }
+	else if (!isSelected())
+	{
+		getGUI()->songEditor()->m_editor->selectAllClips(false);
+		setSelected(true);
+	}
+	if (m_trackView->trackContainerView()->knifeMode())
+	{
+		delete m_hint;
+		m_hint = cliplocks::refuse(m_clip, tr("split"));
+	}
+}
+
+
+
+
+bool ClipView::refuseLockedDrag(QMouseEvent* me)
+{
+	if (m_action != Action::None || !(me->buttons() & Qt::LeftButton) || !EditLocks::instance().locks(m_clip)) { return false; }
+	if (m_hint == nullptr && mouseMovedDistance(me, 2)) { m_hint = cliplocks::refuse(m_clip, tr("moved or resized")); }
+	setCursor(Qt::ForbiddenCursor);
+	return true;
 }
 
 

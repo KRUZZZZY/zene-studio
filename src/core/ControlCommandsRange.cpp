@@ -485,7 +485,7 @@ void registerRangeCommands(ControlRegistry& registry)
 	modes.verb = QStringLiteral("modes");
 	modes.description = QStringLiteral("The arranger's editing modes, set and answered: 'ripple' (off, track, all - a deletion "
 		"closes its gap on the clip's track or on every track), 'overlap' (free, trim, crossfade - what a clip moved onto "
-		"others does to them), 'snap_to_edges' (moving a clip also snaps to other clips' edges and to markers) and "
+		"others does to them; trim by default, and never to a locked clip: such a move is refused), 'snap_to_edges' (moving a clip also snaps to other clips' edges and to markers) and "
 		"'automation_follows_clips' (a clip's move carries the points of the automation lanes following its track) and "
 		"'auto_fade_ms' (0..50: every sample clip fades in and out over at least that long, so no edit clicks; 0 off) and "
 		"'show_transients' (sample clips mark their audio's hits). The "

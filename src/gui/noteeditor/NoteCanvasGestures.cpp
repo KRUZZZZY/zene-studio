@@ -1,5 +1,5 @@
 /*
- * NoteCanvasGestures.cpp - the note editor's paint tool, velocity drag and note colours
+ * NoteCanvasGestures.cpp - the note editor's strokes (paint, mute, slice, play) and note colours
  *
  * Copyright (c) 2026 Zene Studio contributors
  *
@@ -23,6 +23,7 @@
  */
 
 #include <algorithm>
+#include <cmath>
 
 #include <QJsonArray>
 #include <QPainter>
@@ -34,7 +35,6 @@
 #include "NoteCanvas.h"
 #include "NoteEditor.h"
 #include "Track.h"
-#include "volume.h"
 
 namespace lmms::gui
 {
@@ -77,13 +77,13 @@ void NoteCanvas::extendPaint(const QPoint& pos)
 	if (!taken) { m_painted.emplace_back(key, start); }
 }
 
-void NoteCanvas::eraseAlong(const QPoint& from, const QPoint& to)
+void NoteCanvas::strokeAlong(const QPoint& from, const QPoint& to)
 {
-	// Qt coalesces a fast drag into sparse events: every note the eraser's path crosses goes, not
+	// Qt coalesces a fast drag into sparse events: every note the stroke's path crosses counts, not
 	// only the one under each event (a 2-pixel step, finer than a note can be drawn).
 	const QPoint path = to - from;
 	const int steps = std::max(1, std::max(std::abs(path.x()), std::abs(path.y())) / 2);
-	for (int i = 1; i <= steps; ++i) { markErased(noteAt(from + path * i / steps)); }
+	for (int i = 1; i <= steps; ++i) { markStroke(noteAt(from + path * i / steps)); }
 }
 
 void NoteCanvas::commitPaint()
@@ -100,45 +100,63 @@ void NoteCanvas::commitPaint()
 	m_editor->run(QStringLiteral("note.add_many"), {{QStringLiteral("clip"), m_editor->clipId()}, {QStringLiteral("notes"), notes}});
 }
 
-void NoteCanvas::pressMute(const Note* note)
+void NoteCanvas::commitMute()
 {
-	// The note clicked takes the opposite of its state; so does the rest of the selection when it
-	// is part of one (one note.edit, one undo step).
-	if (note == nullptr) { return; }
-	const bool mute = !note->muted();
-	std::vector<Note*> targets = note->selected() ? selectedNotes() : std::vector<Note*>{};
-	if (targets.empty()) { targets.push_back(noteById(note->id())); }
+	// Every note the stroke crossed takes the opposite of the first one's state; so does the rest of the
+	// selection when the stroke started on a selected note (one note.edit, one undo step).
+	if (m_state.clip == nullptr || m_muteTo < 0) { return; }
+	const Note* anchor = noteById(m_anchorId);
+	const bool withSelection = anchor != nullptr && anchor->selected();
 	QJsonArray edits;
-	for (const Note* target : targets)
+	for (const Note* note : m_state.clip->notes())
 	{
-		if (target != nullptr) { edits.append(QJsonObject{{QStringLiteral("note"), control::noteIdOf(target)}, {QStringLiteral("muted"), mute ? 1 : 0}}); }
+		if (stroked(*note) || (withSelection && note->selected()))
+		{
+			edits.append(QJsonObject{{QStringLiteral("note"), control::noteIdOf(note)}, {QStringLiteral("muted"), m_muteTo}});
+		}
 	}
-	m_editor->run(QStringLiteral("note.edit"), {{QStringLiteral("clip"), m_editor->clipId()}, {QStringLiteral("edits"), edits}});
-}
-
-void NoteCanvas::pressVelocity(Note* note)
-{
-	// Alt-drag on a note: up louder, down softer, for every selected note at once.
-	if (!note->selected()) { selectOnly({note}, false); }
-	m_anchorId = note->id();
-	m_drag = Drag::Velocity;
-}
-
-int NoteCanvas::velocityDelta() const { return m_pressPos.y() - m_currentPos.y(); }
-
-void NoteCanvas::commitVelocity()
-{
-	const int delta = velocityDelta();
-	if (delta == 0) { return; }
-	QJsonArray edits;
-	for (Note* note : selectedNotes())
-	{
-		const int velocity = std::clamp(static_cast<int>(note->getVolume()) + delta, int{MinVolume}, int{MaxVolume});
-		if (note->id() == m_anchorId) { m_state.lastVelocity = velocity; }
-		edits.append(QJsonObject{{QStringLiteral("note"), control::noteIdOf(note)}, {QStringLiteral("velocity"), velocity}});
-	}
+	m_strokeIds.clear();
 	if (edits.isEmpty()) { return; }
 	m_editor->run(QStringLiteral("note.edit"), {{QStringLiteral("clip"), m_editor->clipId()}, {QStringLiteral("edits"), edits}});
+}
+
+int NoteCanvas::sliceTick() const
+{
+	return std::max(0, snapTicks(static_cast<int>(std::lround(m_state.grid.tickAtX(m_currentPos.x())))));
+}
+
+void NoteCanvas::commitSlice()
+{
+	// The line stands at the pointer's (snapped) tick and spans the rows from the press to the release: every
+	// note it crosses is cut there, as one note.slice.
+	if (m_state.clip == nullptr) { return; }
+	const int at = sliceTick();
+	const int top = std::min(m_pressPos.y(), m_currentPos.y());
+	const int bottom = std::max(m_pressPos.y(), m_currentPos.y());
+	QJsonArray ids;
+	const NoteVector& notes = m_state.clip->notes();
+	const auto [first, last] = visibleRange();
+	for (int i = first; i < last; ++i)
+	{
+		const Note* note = notes[static_cast<std::size_t>(i)];
+		const QRect r = noteRect(*note);
+		const bool crossed = !r.isEmpty() && r.bottom() >= top && r.top() <= bottom;
+		if (crossed && note->pos().getTicks() < at && note->endPos().getTicks() > at) { ids.append(control::noteIdOf(note)); }
+	}
+	if (ids.isEmpty()) { return; }
+	m_editor->run(QStringLiteral("note.slice"), {{QStringLiteral("clip"), m_editor->clipId()}, {QStringLiteral("at"), at},
+		{QStringLiteral("notes"), ids}});
+}
+
+void NoteCanvas::scrubTo(const QPoint& pos)
+{
+	// The Play tool: a drag sounds each key it reaches, the previous one released first.
+	const Note* note = noteAt(pos);
+	const int key = note != nullptr ? note->key() : m_state.grid.keyAtY(pos.y());
+	if (key < 0 || key == m_auditionKey) { return; }
+	if (m_auditionKey >= 0) { m_editor->auditionRelease(m_auditionKey); }
+	m_auditionKey = key;
+	m_editor->auditionPress(key, note != nullptr ? static_cast<int>(note->getVolume()) : m_state.lastVelocity);
 }
 
 void NoteCanvas::paintPaintPreview(QPainter& p) const
@@ -147,20 +165,6 @@ void NoteCanvas::paintPaintPreview(QPainter& p) const
 	fill.setAlpha(170);
 	const int length = paintLength(m_state);
 	for (const auto& [key, start] : m_painted) { p.fillRect(rectFor(key, start, start + length), fill); }
-}
-
-void NoteCanvas::paintVelocityPreview(QPainter& p) const
-{
-	const tokens::Palette& pal = tokens::palette();
-	p.setFont(tokens::font(tokens::TextRole::Caption));
-	for (const Note* note : selectedNotes())
-	{
-		const int velocity = std::clamp(static_cast<int>(note->getVolume()) + velocityDelta(), int{MinVolume}, int{MaxVolume});
-		const QRect r = noteRect(*note);
-		p.fillRect(r, tokens::velocityColor(velocity));
-		p.setPen(pal.text);
-		p.drawText(r.adjusted(2, -14, 40, 0), Qt::AlignTop | Qt::AlignLeft, QString::number(velocity));
-	}
 }
 
 QColor NoteCanvas::noteFill(const Note& note) const

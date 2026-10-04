@@ -178,6 +178,20 @@ private slots:
 		QVERIFY(!ShellLayout::viewFromName(QStringLiteral("tablet"), untouched));
 		QCOMPARE(untouched, ShellView::Mix);
 	}
+
+	//! 0.5.0 G: one spelling of the region words, which window.get_state and the saved layout share.
+	void regionWordsAreTheSavedLayoutsKeys()
+	{
+		QCOMPARE(ShellLayout::regionName(ShellRegion::Left), QStringLiteral("left"));
+		QCOMPARE(ShellLayout::regionName(ShellRegion::Center), QStringLiteral("center"));
+		QCOMPARE(ShellLayout::regionName(ShellRegion::Bottom), QStringLiteral("bottom"));
+		QCOMPARE(ShellLayout::regionName(ShellRegion::Right), QStringLiteral("right"));
+		const QVariantMap saved = ShellLayout().save().value(QStringLiteral("arrange")).toMap();
+		for (ShellRegion r : {ShellRegion::Left, ShellRegion::Bottom, ShellRegion::Right})
+		{
+			QVERIFY(saved.contains(ShellLayout::regionName(r)));
+		}
+	}
 };
 
 QTEST_GUILESS_MAIN(ShellLayoutTest)

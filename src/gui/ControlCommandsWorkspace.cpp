@@ -310,9 +310,10 @@ void registerWorkspaceCommands(ControlRegistry& registry)
 		"is next) - F6 and Shift+F6. Interface state."),
 		objectSchema({{QStringLiteral("panel"), stringProperty()}}), focusPanel);
 	add(registry, "accessibility_report", QStringLiteral("Walk the main window's controls and count those a screen reader "
-		"would announce with no name; with 'fill', give each the name it already carries (its parameter's, its tooltip, its "
-		"text). Lists, at most 50, the controls with nothing to name them by. The interface fills names this way once at "
-		"start. Interface state."), objectSchema({{QStringLiteral("fill"), booleanProperty()}}), accessibilityReport);
+		"would announce with no name, no role (a bare client or pane) or, for a control that shows a value, no value, and "
+		"those Tab cannot reach; with 'fill', give each nameless one the name it already carries (its constructed name, its "
+		"parameter's, its tooltip, its text). Lists, at most 50 of each, the controls with nothing to name them by and those "
+		"with no role or value. The interface fills names this way once at start. Interface state."), objectSchema({{QStringLiteral("fill"), booleanProperty()}}), accessibilityReport);
 	add(registry, "crosshair", QStringLiteral("Show a cross-hair cursor across the arranger - a vertical and a horizontal guide "
 		"through the pointer - or hide it ('enabled'; toggles when left out). A preference in the config file; one undo step."),
 		objectSchema({{QStringLiteral("enabled"), booleanProperty()}}), crosshair, "view", true);

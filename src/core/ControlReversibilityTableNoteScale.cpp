@@ -133,6 +133,29 @@ const ReversibilityRow kNoteScaleRows[] = {
 		"flag the call cleared, in the scope it cleared them)",
 		""),
 	// =====================================================================
+	// 0.5.0 - the note editor's FL Studio model (owner decision 2026-10-03):
+	// a stroke or a clipboard key as ONE edit. A note's whole state is in the
+	// clip's note list, so the checkpoint taken before the edit restores every
+	// note the command removed, cut, added or shortened.
+	// =====================================================================
+	R("note.remove_many", RC::TrueInverse, true,
+		"it deletes notes from a clip - the note editor's right-drag and Delete key",
+		"MidiClip journal checkpoint: undo restores every removed note", ""),
+	R("note.slice", RC::TrueInverse, true,
+		"it shortens the notes a line crosses and adds their right halves",
+		"MidiClip journal checkpoint", ""),
+	R("note.copy", RC::NotMutating, false,
+		"it fills this instance's note clipboard - process state outside the project, like the "
+		"selection. Nothing in the project is written",
+		"no write: note.paste is the writer, and its inverse is the clip's checkpoint", ""),
+	R("note.cut", RC::TrueInverse, true,
+		"it deletes the notes it copies to the note clipboard (the clipboard itself is not project state)",
+		"MidiClip journal checkpoint: undo restores the cut notes", ""),
+	R("note.paste", RC::TrueInverse, true, "it adds the note clipboard's notes to a clip",
+		"MidiClip journal checkpoint", ""),
+	R("note.duplicate", RC::TrueInverse, true, "it adds copies of notes just after them",
+		"MidiClip journal checkpoint", ""),
+	// =====================================================================
 	// Feature-list row 66 - the scale group.
 	// =====================================================================
 	R("scale.list", RC::NotMutating, false,

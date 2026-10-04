@@ -98,7 +98,7 @@ void applyChoices(gui::NoteEditor* editor, const QJsonObject& args)
 	if (const int color = choice(args, "color_mode", kColors); color >= 0) { editor->setColorMode(static_cast<gui::NoteColor>(color)); }
 }
 
-//! The view's flags and numbers: grid, ghosts, keep-in-scale, the controller lane, zoom, fit.
+//! The view's flags and numbers: grid, ghosts, keep-in-scale, the controller lane, the new note, the audio behind.
 void applyView(gui::NoteEditor* editor, const QJsonObject& args)
 {
 	if (args.contains(QStringLiteral("grid"))) { editor->setGridTicks(args.value(QStringLiteral("grid")).toInt()); }
@@ -111,8 +111,14 @@ void applyView(gui::NoteEditor* editor, const QJsonObject& args)
 			args.value(QStringLiteral("new_velocity")).toInt(editor->state().lastVelocity));
 	}
 	if (args.contains(QStringLiteral("audio_behind"))) { editor->setAudioBehind(args.value(QStringLiteral("audio_behind")).toString()); }
+}
+
+//! The zoom: pixels per tick, then a fit to the clip or (FL's Z) to the selected notes.
+void applyZoom(gui::NoteEditor* editor, const QJsonObject& args)
+{
 	if (args.contains(QStringLiteral("zoom"))) { editor->setZoom(args.value(QStringLiteral("zoom")).toDouble()); }
 	if (args.value(QStringLiteral("fit")).toBool()) { editor->zoomToFit(); }
+	if (args.value(QStringLiteral("zoom_to_selection")).toBool()) { editor->zoomToSelection(); }
 }
 
 ControlResult noteEditorSet(const QJsonObject& args)
@@ -137,6 +143,7 @@ ControlResult noteEditorSet(const QJsonObject& args)
 	if (args.value(QStringLiteral("reveal")).toBool(true)) { g->mainWindow()->revealPanel(QStringLiteral("detail")); }
 	applyChoices(editor, args);
 	applyView(editor, args);
+	applyZoom(editor, args);
 	return ControlResult::success(editor->describe());
 }
 
@@ -158,8 +165,9 @@ void registerNoteEditorWindowCommands(ControlRegistry& registry)
 	cmd.requiresEngine = false;
 	cmd.description = QStringLiteral("Drive the note editor's VIEW - what the editor's header and keys set - "
 		"and answer its state (the same object window.get_state reports as `note_editor`). Every field is "
-		"optional: `clip` opens that MIDI clip in the editor (what double-clicking it does); `tool` is draw, "
-		"select, slice, erase, audition, paint (drag to lay a note on every grid cell) or mute; `grid` the snap in ticks "
+		"optional: `clip` opens that MIDI clip in the editor (what double-clicking it does); `tool` is one of FL Studio's "
+		"piano-roll tools - draw (P), select (E), slice (C), erase (the Delete tool, D), audition (the Play tool, Y), paint "
+		"(B: drag to lay a note on every grid cell) or mute (T); `grid` the snap in ticks "
 		"(1 = off); `fold` none, scale, used or drums (the keys the track names - key_names.* - and the used ones); "
 		"`lane` the expression lane (velocity, pan, chance, timbre, pressure, pitch, release, spread, repeats); `ghosts` shows the "
 		"track's other clips; `color_mode` colours notes by velocity, pitch or track; `keep_in_scale` moves "
@@ -167,7 +175,7 @@ void registerNoteEditorWindowCommands(ControlRegistry& registry)
 		"for the note lane) shows that controller curve of the clip under the notes (clip.controllers_set edits it); `new_length` (ticks; 0 the last drawn) and `new_velocity` are what a clicked note "
 		"gets; `audio_behind` draws an audio clip's waveform behind the notes (a clip id, auto - the first one sounding with the "
 		"clip - or empty); `zoom` is pixels per tick; `fit` zooms to the clip and centres its notes "
-		"(after the panel is shown); `reveal` (default true) brings the note editor "
+		"(after the panel is shown); `zoom_to_selection` fits the selected notes, or the clip when none is (the Z key); `reveal` (default true) brings the note editor "
 		"panel into view. Interface state, not project state: nothing is journalled - the notes themselves "
 		"are edited through note.*. Refused `requires` in a process with no interface.");
 	cmd.argsSchema = objectSchema({
@@ -186,6 +194,7 @@ void registerNoteEditorWindowCommands(ControlRegistry& registry)
 		{QStringLiteral("zoom"), numberProperty()},
 		{QStringLiteral("reveal"), booleanProperty()},
 		{QStringLiteral("fit"), booleanProperty()},
+		{QStringLiteral("zoom_to_selection"), booleanProperty()},
 	});
 	cmd.resultSchema = objectSchema({
 		{QStringLiteral("clip"), stringProperty()}, {QStringLiteral("tool"), stringProperty()},

@@ -41,6 +41,11 @@ namespace lmms
 
 class DataFile;
 
+namespace arrangement
+{
+struct SnapHit;
+}
+
 namespace gui
 {
 
@@ -231,7 +236,12 @@ private:
 	void setInitialOffsets();
 
 	bool mouseMovedDistance( QMouseEvent * me, int distance );
-	TimePos draggedClipPos( QMouseEvent * me );
+	//! 0.5.0 theme 2: what the position snapped to comes back in @a snap (for the drag preview).
+	TimePos draggedClipPos(QMouseEvent* me, arrangement::SnapHit* snap = nullptr);
+	//! 0.5.0 theme 2: a press on a locked clip selects it (Ctrl toggles); the knife says it cannot cut.
+	void pressLocked(QMouseEvent* me);
+	//! 0.5.0 theme 2: a drag tried on a locked clip shows why it does not move; true when it was one.
+	bool refuseLockedDrag(QMouseEvent* me);
 	int knifeMarkerPos( QMouseEvent * me );
 	void setColor(const std::optional<QColor>& color);
 

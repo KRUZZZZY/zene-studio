@@ -28,6 +28,9 @@
  *  registry command appears only when it needs no argument, declares no `requires` and no
  *  menu already carries it; ranking puts a prefix first; and running an entry triggers the
  *  REAL action (or dispatches the command) - never a copy of either.
+ *  0.5.0 theme 4: a registry entry reads by its name with its id secondary, a command with
+ *  arguments left to give configures first (Run with defaults second), and one that cannot be
+ *  undone is flagged.
  */
 
 #include <QtTest>
@@ -39,6 +42,7 @@
 
 #include "DeprecationHelper.h"
 #include "CommandForm.h"
+#include "CommandMetadata.h"
 #include "CommandPalette.h"
 #include "ControlRegistry.h"
 
@@ -67,7 +71,7 @@ void registerFakes()
 			if (counts) { ++g_noopRuns; }
 			return ControlResult::success(QJsonObject());
 		};
-		registry->registerCommand(cmd);
+		if (!registry->hasCommand(cmd.id)) { registry->registerCommand(cmd); }  // a real command is used as it is
 	};
 	const QJsonObject none{{QStringLiteral("type"), QStringLiteral("object")}};
 	add("palettetest.noop", none, {}, true);
@@ -76,11 +80,27 @@ void registerFakes()
 		{QStringLiteral("required"), QJsonArray{QStringLiteral("x")}}}, {}, false);
 	add("palettetest.needs_human", none, {QStringLiteral("human")}, false);
 	add("palettetest.in_a_menu", none, {}, false);
+	add("palettetest.optional", QJsonObject{{QStringLiteral("type"), QStringLiteral("object")},
+		{QStringLiteral("properties"), QJsonObject{{QStringLiteral("level"), QJsonObject{{QStringLiteral("type"), QStringLiteral("integer")}}}}}},
+		{}, true);
+	// A real id the reversibility table classes irreversible (the registry already has it): the flag comes from the table.
+	add("safestart.clear", none, {}, false);
 }
 
 bool hasLabel(const QList<PaletteEntry>& entries, const QString& label)
 {
 	return std::any_of(entries.begin(), entries.end(), [&](const PaletteEntry& e) { return e.label == label; });
+}
+
+bool hasCommand(const QList<PaletteEntry>& entries, const QString& id)
+{
+	return std::any_of(entries.begin(), entries.end(), [&](const PaletteEntry& e) { return e.command == id; });
+}
+
+PaletteEntry entryFor(const QList<PaletteEntry>& entries, const QString& id)
+{
+	const auto found = std::find_if(entries.begin(), entries.end(), [&](const PaletteEntry& e) { return e.command == id; });
+	return found != entries.end() ? *found : PaletteEntry();
 }
 
 } // namespace
@@ -134,23 +154,22 @@ private slots:
 	void registryEntriesAreTheArgumentFreeUnclaimedOnes()
 	{
 		const QList<PaletteEntry> entries = paletteRegistryEntries(paletteMenuEntries(&m_bar));
-		QVERIFY(hasLabel(entries, QStringLiteral("palettetest.noop")));
-		QVERIFY2(!hasLabel(entries, QStringLiteral("palettetest.needs_arg")), "a command with a required argument was listed");
-		QVERIFY2(!hasLabel(entries, QStringLiteral("palettetest.needs_human")), "a command that requires a human was listed");
-		QVERIFY2(!hasLabel(entries, QStringLiteral("palettetest.in_a_menu")), "a command a menu already carries was listed twice");
+		QVERIFY(hasCommand(entries, QStringLiteral("palettetest.noop")));
+		QVERIFY2(!hasCommand(entries, QStringLiteral("palettetest.needs_arg")), "a command with a required argument was listed");
+		QVERIFY2(!hasCommand(entries, QStringLiteral("palettetest.needs_human")), "a command that requires a human was listed");
+		QVERIFY2(!hasCommand(entries, QStringLiteral("palettetest.in_a_menu")), "a command a menu already carries was listed twice");
 	}
 
 	//! 0.5.0 W1: a command that takes required arguments is listed too, and runs through its form.
 	void aCommandWithRequiredArgumentsOpensItsForm()
 	{
 		const QList<PaletteEntry> forms = paletteFormEntries(paletteMenuEntries(&m_bar));
-		QVERIFY(hasLabel(forms, QStringLiteral("palettetest.needs_arg")));
-		QVERIFY2(!hasLabel(forms, QStringLiteral("palettetest.noop")), "an argument-free command was listed as a form");
-		const auto entry = std::find_if(forms.begin(), forms.end(),
-			[](const PaletteEntry& e) { return e.label == QStringLiteral("palettetest.needs_arg"); });
-		QVERIFY(entry->form);
+		QVERIFY(hasCommand(forms, QStringLiteral("palettetest.needs_arg")));
+		QVERIFY2(!hasCommand(forms, QStringLiteral("palettetest.noop")), "an argument-free command was listed as a form");
+		const PaletteEntry entry = entryFor(forms, QStringLiteral("palettetest.needs_arg"));
+		QVERIFY(entry.form);
 		QWidget host;
-		QVERIFY(paletteActivate(*entry, &host).contains(QStringLiteral("form")));
+		QVERIFY(paletteActivate(entry, &host).contains(QStringLiteral("form")));
 		auto* form = host.findChild<CommandForm*>();
 		QVERIFY(form != nullptr);
 		QCOMPARE(form->fields(), QStringList{QStringLiteral("x")});
@@ -185,6 +204,69 @@ private slots:
 		const QString outcome = paletteActivate(command);
 		QCOMPARE(g_noopRuns, before + 1);
 		QVERIFY2(outcome.contains(QStringLiteral("done")), qPrintable(outcome));
+	}
+
+	//! 0.5.0 theme 4: a registry command reads by its name, filed under its group, with its id kept secondary.
+	void aRegistryCommandReadsByItsNameWithItsIdSecondary()
+	{
+		const PaletteEntry noop = entryFor(paletteRegistryEntries(paletteMenuEntries(&m_bar)), QStringLiteral("palettetest.noop"));
+		QCOMPARE(noop.label, QStringLiteral("Noop"));
+		QCOMPARE(noop.path, QStringLiteral("Palettetest"));
+		QCOMPARE(noop.command, QStringLiteral("palettetest.noop"));
+		QVERIFY2(noop.detail.contains(QStringLiteral("It does nothing else.")), "the whole description, not its first sentence");
+		QCOMPARE(commandName(QStringLiteral("transport.set_tempo")), QStringLiteral("Set Tempo"));
+		QCOMPARE(commandName(QStringLiteral("track.remove")), QStringLiteral("Remove Track"));
+		QCOMPARE(commandName(QStringLiteral("transport.tempo_map_add")), QStringLiteral("Add Tempo Map"));
+		QCOMPARE(commandName(QStringLiteral("transport.get_state")), QStringLiteral("Show Transport State"));
+		QCOMPARE(commandName(QStringLiteral("interchange.smf_export")), QStringLiteral("Export MIDI File"));
+		QCOMPARE(commandCategory(QStringLiteral("safestart.clear")), QStringLiteral("Safe Start"));
+		// The id still finds it: a script writer types what they know.
+		QCOMPARE(paletteMatches({noop}, QStringLiteral("palettetest.noop")).size(), 1);
+		CommandPalette palette(&m_bar);
+		palette.setQuery(QStringLiteral("Noop"));
+		QCOMPARE(palette.shown().first().command, QStringLiteral("palettetest.noop"));
+		QVERIFY2(palette.detailText().contains(QStringLiteral("palettetest.noop")), qPrintable(palette.detailText()));
+	}
+
+	//! 0.5.0 theme 4: arguments left to give make Configure the primary action and "Run with defaults" the secondary.
+	void unresolvedArgumentsMakeConfigurePrimary()
+	{
+		const QList<PaletteEntry> entries = paletteRegistryEntries(paletteMenuEntries(&m_bar));
+		const PaletteEntry optional = entryFor(entries, QStringLiteral("palettetest.optional"));
+		QVERIFY2(optional.form, "a command with optional arguments ran without asking");
+		QVERIFY(!entryFor(entries, QStringLiteral("palettetest.noop")).form);
+		QWidget host;
+		const int before = g_noopRuns;
+		QVERIFY(paletteActivate(optional, &host).contains(QStringLiteral("form")));
+		QCOMPARE(g_noopRuns, before);
+		auto* form = host.findChild<CommandForm*>();
+		QVERIFY(form != nullptr);
+		QCOMPARE(form->fields(), QStringList{QStringLiteral("level")});
+		QVERIFY(paletteCanRunWithDefaults(optional));
+		const QString ran = paletteRunWithDefaults(optional, &host);
+		QVERIFY2(ran.contains(QStringLiteral("done")), qPrintable(ran));
+		QCOMPARE(g_noopRuns, before + 1);
+		// A required argument the selection does not fill: no "Run with defaults", and asking for it says why.
+		const PaletteEntry needs = entryFor(paletteFormEntries(paletteMenuEntries(&m_bar)), QStringLiteral("palettetest.needs_arg"));
+		QVERIFY(!paletteCanRunWithDefaults(needs));
+		QVERIFY(paletteRunWithDefaults(needs, &host).contains(QStringLiteral("Configure")));
+		QVERIFY2(!paletteCanRunWithDefaults(entryFor(entries, QStringLiteral("palettetest.noop"))), "a command with nothing to configure");
+	}
+
+	//! 0.5.0 theme 4: a command the reversibility table says cannot be undone is flagged (and, on a screen, asked).
+	void anIrreversibleCommandIsFlagged()
+	{
+		const QList<PaletteEntry> entries = paletteRegistryEntries(paletteMenuEntries(&m_bar));
+		QVERIFY(entryFor(entries, QStringLiteral("safestart.clear")).irreversible);
+		QVERIFY(!entryFor(entries, QStringLiteral("palettetest.noop")).irreversible);
+		QVERIFY(commandIsIrreversible(QStringLiteral("project.new")));
+		QVERIFY(!commandIsIrreversible(QStringLiteral("palettetest.noop")));
+		QVERIFY(commandUndoWarning(QStringLiteral("project.new")).contains(QStringLiteral("cannot be undone")));
+		QVERIFY(commandUndoWarning(QStringLiteral("palettetest.noop")).isEmpty());
+		// Headless there is nobody to ask, so the run goes ahead (confirmAction answers yes): the command itself answers -
+		// here refusing, as there is no crash marker to clear - rather than the question cancelling it.
+		const QString outcome = paletteActivate(entryFor(entries, QStringLiteral("safestart.clear")));
+		QVERIFY2(!outcome.isEmpty() && !outcome.contains(QStringLiteral("cancelled")), qPrintable(outcome));
 	}
 
 private:

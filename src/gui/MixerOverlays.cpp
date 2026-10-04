@@ -70,14 +70,21 @@ void childChannels(const TrackFolder* folder, QSet<int>* out)
 	out->unite(hidden);
 }
 
-//! The model a channel strip's fader shows with the faders on @a target's sends (-1: the channel faders),
-//! or nullptr when it shows no fader.
-FloatModel* faderModelFor(int index, int target)
+//! What channel @a index's fader drives with the faders on @a target's sends (-1: the channel faders).
+FaderRole roleOf(int index, int target)
 {
-	MixerChannel* channel = Engine::mixer()->mixerChannel(index);
-	if (target < 0 || index == target || index == 0) { return &channel->m_volumeModel; }
-	MixerRoute* route = control::findMixerRoute(static_cast<mix_ch_t>(index), static_cast<mix_ch_t>(target));
-	return route != nullptr ? route->amount() : nullptr;
+	if (target < 0 || index == target || index == 0) { return FaderRole::Volume; }
+	const MixerRoute* route = control::findMixerRoute(static_cast<mix_ch_t>(index), static_cast<mix_ch_t>(target));
+	return route != nullptr ? FaderRole::Send : FaderRole::NoSend;
+}
+
+//! The model strip @a view (channel @a index) puts on its fader for @a role: the channel's level, its send
+//! to @a target, or the strip's own still placeholder for "No send".
+FloatModel* faderModelFor(MixerChannelView* view, int index, int target, FaderRole role)
+{
+	if (role == FaderRole::NoSend) { return view->noSendModel(); }
+	if (role == FaderRole::Volume) { return &Engine::mixer()->mixerChannel(index)->m_volumeModel; }
+	return control::findMixerRoute(static_cast<mix_ch_t>(index), static_cast<mix_ch_t>(target))->amount();
 }
 
 //! Put @a model on @a fader (of channel @a index). A send removed while its fader shows it must not
@@ -94,6 +101,19 @@ void showOnFader(Fader* fader, FloatModel* model, int index)
 		if (fader->model() != nullptr && fader->model() != model) { return; }
 		if (guarded) { fader->setModel(guarded.data()); } else { fader->hide(); }
 	});
+}
+
+//! Put on strip @a view's fader (channel @a index) what it drives with the faders on @a target's sends.
+//! A strip never loses its fader (theme 6): with no send there it shows the still placeholder.
+FaderRole showFader(MixerChannelView* view, int index, int target)
+{
+	const FaderRole role = roleOf(index, target);
+	FloatModel* model = faderModelFor(view, index, target, role);
+	view->fader()->setVisible(true);
+	if (view->fader()->model() == model) { return role; }
+	// The placeholder is the strip's own and lives as long as its fader: it needs no guard.
+	if (role == FaderRole::NoSend) { view->fader()->setModel(model); } else { showOnFader(view->fader(), model, index); }
+	return role;
 }
 
 } // namespace
@@ -126,18 +146,24 @@ QSet<int> foldedChannels()
 	return out;
 }
 
+FaderRole faderRole(int index)
+{
+	return roleOf(index, sendsOnFaders());
+}
+
 void apply(const QVector<MixerChannelView*>& views)
 {
 	const QSet<int> folded = foldedChannels();
 	const int target = sendsOnFaders();
 	if (target < 0) { s_sendsOnFadersId = -1; }  // the return is gone: back to the channel faders
-	for (int i = 1; i < views.size() && i < Engine::mixer()->numChannels(); ++i)
+	// Theme 6: what the banner and every fader name - empty on the channel faders.
+	const QString returnName = target >= 0 ? Engine::mixer()->mixerChannel(target)->m_name : QString();
+	for (int i = 0; i < views.size() && i < Engine::mixer()->numChannels(); ++i)
 	{
 		MixerChannelView* view = views.at(i);
-		view->setVisible(!folded.contains(i) && mixerviewoptions::shows(i));  // L08 (MX-005): the channel filter
-		FloatModel* model = faderModelFor(i, target);
-		if (model != nullptr && view->fader()->model() != model) { showOnFader(view->fader(), model, i); }
-		view->fader()->setVisible(model != nullptr);
+		// The master strip is never hidden; the filter is L08's (MX-005).
+		if (i > 0) { view->setVisible(!folded.contains(i) && mixerviewoptions::shows(i)); }
+		view->showFaderRole(showFader(view, i, target), returnName);
 	}
 }
 

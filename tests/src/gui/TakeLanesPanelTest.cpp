@@ -25,6 +25,7 @@
 /*! Two takes on a sample track, then only the panel's own buttons: add two lanes, comp one
  *  half from each lane, audition a lane, and consolidate - each checked against the
  *  socket-visible state (comp.get_state, the track's clips), which is the panel's contract.
+ *  Theme 7: the comp bounds hold ticks but read (and are typed) in bars and beats.
  */
 
 #include <QtTest>
@@ -41,6 +42,7 @@
 #include "ControlEdit.h"
 #include "ControlRegistry.h"
 #include "Engine.h"
+#include "MusicalTime.h"
 #include "SampleBuffer.h"
 #include "SampleClip.h"
 #include "SampleTrack.h"
@@ -112,6 +114,7 @@ private slots:
 		{
 			panel.beginBox()->setValue(from);
 			panel.endBox()->setValue(to);
+			QCOMPARE(panel.beginBox()->text(), musicaltime::positionText(from));  // "1.1.1" for tick 0
 			panel.laneBox()->setCurrentIndex(lane);
 			QTest::mouseClick(panel.compButton(), Qt::LeftButton);
 		}
@@ -119,6 +122,7 @@ private slots:
 			.result.value(QStringLiteral("composite")).toObject().value(QStringLiteral("segments")).toArray();
 		QCOMPARE(segments.size(), 2);
 		QVERIFY2(panel.compositeText().contains(QStringLiteral("lane 1")), qPrintable(panel.compositeText()));
+		QVERIFY2(panel.compositeText().contains(QStringLiteral("1.1.1 to ")), qPrintable(panel.compositeText()));
 
 		QTest::mouseClick(panel.auditionButton(1), Qt::LeftButton);
 		QCOMPARE(track->takeLanes().auditionLane(), 1);

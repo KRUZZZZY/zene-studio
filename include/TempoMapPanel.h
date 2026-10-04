@@ -30,6 +30,7 @@
 #include "lmms_export.h"
 
 class QCheckBox;
+class QComboBox;
 class QLabel;
 class QTableWidget;
 
@@ -37,7 +38,8 @@ namespace lmms::gui
 {
 
 /*! Edit > Tempo Map (KNOWN-LIMITATIONS "nothing in src/gui/ draws, edits or reads a tempo map"):
- *  the map's events as transport.tempo_map_get reports them - bar, tick, tempo, time signature -
+ *  the map's events as transport.tempo_map_get reports them - bar, position (in the time format, bars|beats
+ *  by default, its picker running transport.time_format - theme 7), tempo, time signature -
  *  with its Active switch (transport.tempo_map_set_active), "Add at playhead" (tempo_map_add, at
  *  the song's position, the song's tempo and signature, which the row can then be edited from),
  *  Remove (tempo_map_remove) and Clear (tempo_map_clear). An inactive or empty map leaves the
@@ -63,6 +65,7 @@ public:
 
 private:
 	QCheckBox* m_active = nullptr;
+	QComboBox* m_format = nullptr;
 	QLabel* m_summary = nullptr;
 	QTableWidget* m_table = nullptr;
 };

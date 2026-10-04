@@ -64,6 +64,7 @@
 #include "CommandForm.h"
 #include "ControlRegistry.h"
 #include "MixerOverlays.h"
+#include "MixerSendsBanner.h"
 #include "MixerViewOptions.h"
 #include "Mixer.h"
 #include "MixerChannelView.h"
@@ -96,8 +97,14 @@ MixerView::MixerView(Mixer* mixer) :
 	setWindowTitle(tr("Mixer"));
 	setWindowIcon(embed::getIconPixmap("mixer"));
 
-	// main-layout
-	auto ml = new QHBoxLayout{this};
+	// main-layout, under the sends-on-faders banner (0.5.0 theme 6), which is there only in that mode
+	auto* outer = new QVBoxLayout{this};
+	outer->setContentsMargins(0, 0, 0, 0);
+	outer->setSpacing(0);
+	m_sendsBanner = new MixerSendsBanner(this);
+	outer->addWidget(m_sendsBanner);
+	auto ml = new QHBoxLayout;
+	outer->addLayout(ml, 1);
 
 	// Set margins
 	ml->setContentsMargins(0, 4, 0, 0);
@@ -322,6 +329,12 @@ void describeStrip(MixerChannelView* view, Mixer* mixer, int index)
 	if (view->accessibleName() != channel->m_name) { view->setAccessibleName(channel->m_name); }
 }
 
+//! The fader the arrow keys move: the strip's, unless it is a dimmed "No send" fader (theme 6), which moves nothing.
+Fader* keyboardFader(MixerChannelView* view)
+{
+	return view != nullptr && view->fader()->isEnabled() ? view->fader() : nullptr;
+}
+
 } // namespace
 
 void MixerView::engineDeletedChannel()
@@ -340,6 +353,7 @@ void MixerView::syncWithMixer()
 	if (vcaSignatureOf(getMixer()) != m_vcaSignature) { refreshVcaStrips(); }
 	// 0.5.0 L09 (MX-066, MX-049): folded folders' strips hidden, faders on one send (MixerOverlays.cpp).
 	mixeroverlays::apply(m_mixerChannelViews);
+	m_sendsBanner->refresh();  // theme 6: the mode named across the top while the faders show one send
 	// 0.5.0 L08: the view options (MixerViewOptions.cpp); a change re-lays the send rows.
 	if (m_viewOptionsGeneration != mixerviewoptions::generation())
 	{
@@ -607,11 +621,9 @@ void MixerView::keyPressEvent(QKeyEvent * e)
 {
 	auto adjustCurrentFader = [this](const Qt::KeyboardModifiers& modifiers, Fader::AdjustmentDirection direction)
 	{
-		auto* mixerChannel = currentMixerChannel();
-
-		if (mixerChannel)
+		if (Fader* fader = keyboardFader(currentMixerChannel()))
 		{
-			mixerChannel->fader()->adjust(modifiers, direction);
+			fader->adjust(modifiers, direction);
 		}
 	};
 

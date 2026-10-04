@@ -26,17 +26,21 @@
  *  (MixerOverlays.h) - which return the faders show sends to, and which channel strips a collapsed
  *  folder hides (folding itself is track.folder_set_collapsed, the arranger's own flag) - and, from
  *  L08, the view options (MixerViewOptions.h: sections, strip width, filter, meter mode and scale).
- *  Interface state: nothing is journalled. */
+ *  0.5.0 theme 6: the answer names the return the faders show and what every fader drives, so an agent
+ *  sees what the banner and the strips show. Interface state: nothing is journalled. */
 
 #include <QJsonArray>
+#include <QTimer>
 
 #include "ControlMixerSupport.h"
 #include "ControlRegistry.h"
 #include "ControlVocabulary.h"
 #include "ControlWindowCommands.h"
 #include "Engine.h"
+#include "GuiApplication.h"
 #include "Mixer.h"
 #include "MixerOverlays.h"
+#include "MixerView.h"
 #include "MixerViewOptions.h"
 
 namespace lmms
@@ -46,6 +50,27 @@ using namespace control;
 
 namespace
 {
+
+//! Theme 6: what every channel's fader drives - "volume", "send" (to the return shown) or "no_send".
+QJsonArray faderRoles()
+{
+	static const QStringList names{QStringLiteral("volume"), QStringLiteral("send"), QStringLiteral("no_send")};
+	QJsonArray faders;
+	for (int i = 0; i < Engine::mixer()->numChannels(); ++i)
+	{
+		faders.append(QJsonObject{{QStringLiteral("channel"), channelIdOf(Engine::mixer()->mixerChannel(i))},
+			{QStringLiteral("drives"), names.at(static_cast<int>(gui::mixeroverlays::faderRole(i)))}});
+	}
+	return faders;
+}
+
+//! The mixer on screen follows a mode change now, not at its next half-second sync (queued: the call may
+//! come from a menu on one of its strips, which a sync can rebuild).
+void syncMixerViewSoon()
+{
+	if (gui::getGUI() == nullptr || gui::getGUI()->mixerView() == nullptr) { return; }
+	QTimer::singleShot(0, gui::getGUI()->mixerView(), &gui::MixerView::syncWithMixer);
+}
 
 QJsonObject mixerViewState()
 {
@@ -57,6 +82,8 @@ QJsonObject mixerViewState()
 	const int sends = gui::mixeroverlays::sendsOnFaders();
 	QJsonObject state = gui::mixerviewoptions::toJson(gui::mixerviewoptions::options());
 	state.insert(QStringLiteral("sends_on_faders"), sends >= 0 ? channelIdOf(Engine::mixer()->mixerChannel(sends)) : QString());
+	state.insert(QStringLiteral("sends_on_faders_name"), sends >= 0 ? Engine::mixer()->mixerChannel(sends)->m_name : QString());
+	state.insert(QStringLiteral("faders"), faderRoles());
 	state.insert(QStringLiteral("folded"), folded);
 	return state;
 }
@@ -82,7 +109,11 @@ ControlResult mixerView(const QJsonObject& args)
 	QString error;
 	if (!gui::mixerviewoptions::merge(args, &next, &error)) { return ControlResult::failure(ControlErrorKind::InvalidArgs, error); }
 	// Everything is checked before anything is set: a refused call changes no mode.
-	if (sendsGiven) { gui::mixeroverlays::setSendsOnFaders(index); }
+	if (sendsGiven)
+	{
+		gui::mixeroverlays::setSendsOnFaders(index);
+		syncMixerViewSoon();
+	}
 	if (args.size() > (sendsGiven ? 1 : 0)) { gui::mixerviewoptions::setOptions(next); }
 	return ControlResult::success(mixerViewState());
 }
@@ -98,8 +129,11 @@ void registerMixerViewCommands(ControlRegistry& registry)
 	cmd.mutating = false;
 	cmd.requiresEngine = false;
 	cmd.description = QStringLiteral("The mixer view's modes, set and answered: 'sends_on_faders' (a ch-<n> return, or "
-		"empty for the channel faders) makes every channel's fader drive its send to that return - a channel with no "
-		"send there shows no fader; 'folded' answers the channel strips a collapsed folder hides "
+		"empty for the channel faders) makes every channel's fader drive its send to that return - a banner across the "
+		"mixer names it, every fader is labelled with what it drives, and a channel with no send there keeps a dimmed, "
+		"still 'No send' fader in place; the answer adds 'sends_on_faders_name' (the return's name) and 'faders' (per "
+		"channel, what its fader drives: volume, send or no_send - the return's own fader and the master's stay volume); "
+		"'folded' answers the channel strips a collapsed folder hides "
 		"(track.folder_set_collapsed folds). The view options, kept in the config file (ui/mixerview): 'show_sends', "
 		"'show_pan', 'show_number', 'show_meter_info', 'show_inserts', 'show_macros' (a strip's sections - the meter line is "
 		"the gain reduction and the clip light, the inserts are listed by name, the macros are the rack's first four as knobs), 'strip_width' (narrow / normal / wide), 'filter' (all / instruments / audio / returns / used - "
@@ -116,6 +150,8 @@ void registerMixerViewCommands(ControlRegistry& registry)
 	args.insert(QStringLiteral("sends_on_faders"), stringProperty());
 	QJsonObject result = args;
 	result.insert(QStringLiteral("folded"), arrayProperty());
+	result.insert(QStringLiteral("sends_on_faders_name"), stringProperty());
+	result.insert(QStringLiteral("faders"), arrayProperty());
 	cmd.argsSchema = objectSchema(args);
 	cmd.resultSchema = objectSchema(result);
 	cmd.handler = mixerView;

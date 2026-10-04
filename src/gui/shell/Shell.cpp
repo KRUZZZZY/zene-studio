@@ -24,6 +24,8 @@
 
 #include "Shell.h"
 
+#include <utility>
+
 #include <QAction>
 #include <QActionGroup>
 #include <QApplication>
@@ -63,18 +65,6 @@ namespace
 
 const QString kConfigKey = QStringLiteral("shell.layout");
 const QString kLauncher = QStringLiteral("launcher");
-
-QString regionWord(ShellRegion region)
-{
-	switch (region)
-	{
-	case ShellRegion::Left: return QStringLiteral("left");
-	case ShellRegion::Center: return QStringLiteral("center");
-	case ShellRegion::Bottom: return QStringLiteral("bottom");
-	case ShellRegion::Right: return QStringLiteral("right");
-	}
-	return {};
-}
 
 QWidget* makeHost(QWidget* parent, const QString& name)
 {
@@ -126,6 +116,7 @@ Shell::Shell(QWidget* parent)
 	buildBody();
 	outer->addWidget(m_columns, 1);
 	buildActions();
+	buildFloating();
 	m_footer = new ShellFooter(viewActions(), panelActions(), this);
 	outer->addWidget(m_footer);
 
@@ -140,6 +131,11 @@ void Shell::showEvent(QShowEvent* event)
 	QWidget::showEvent(event);
 	if (m_shownOnce) { return; }
 	m_shownOnce = true;
+	// The floating panels a restored layout listed open once the main window is on screen.
+	if (!m_pendingFloats.isEmpty())
+	{
+		QTimer::singleShot(0, this, [this]() { restoreFloating(std::exchange(m_pendingFloats, QJsonArray())); });
+	}
 	// The user's customisations, once the menus and the header exist: the shortcut overrides
 	// (ShortcutMap) and the header's buttons (ui/header).
 	QTimer::singleShot(0, this, [this]() {
@@ -259,7 +255,7 @@ void Shell::buildActions()
 		action->setProperty("controlCommand", QStringLiteral("window.toggle"));
 		// The footer groups its buttons by this; the arranger is a view, not a footer switch.
 		const bool inFooter = spec.id != QStringLiteral("arranger");
-		action->setProperty("shellRegion", inFooter ? regionWord(spec.home) : QString());
+		action->setProperty("shellRegion", inFooter ? ShellLayout::regionName(spec.home) : QString());
 		const QString id = spec.id;
 		connect(action, &QAction::triggered, this, [this, id]() {
 			dispatchWindowToggle(id);
@@ -328,6 +324,7 @@ void Shell::apply()
 	// A view switch that parked the focused panel hands the keys to the new centre, not to whatever
 	// widget Qt's focus chain finds next (review ux08 #100).
 	if (hadFocus != nullptr && hadFocus->parentWidget() == m_parking) { focusPanel(ShellLayout::centerOf(m_layout.view())); }
+	syncCentrePlaceholder();
 	syncActions();
 	persist();
 	emit layoutChanged();
@@ -363,7 +360,8 @@ void Shell::syncActions()
 	}
 	for (auto it = m_panelActions.cbegin(); it != m_panelActions.cend(); ++it)
 	{
-		it.value()->setChecked(m_layout.isVisible(it.key()));
+		// A panel in its own window is on screen too: its switch brings the window forward (togglePanel).
+		it.value()->setChecked(m_layout.isVisible(it.key()) || isDetached(it.key()));
 	}
 	for (ShellPanel* frame : m_panels) { frame->setPinnedMark(m_layout.isPinned(frame->id())); }
 }
@@ -388,6 +386,7 @@ bool Shell::togglePanel(const QString& id, QString* reason)
 		if (reason != nullptr) { *reason = tr("there is no panel called \"%1\"").arg(id); }
 		return false;
 	}
+	if (isDetached(id)) { return raiseFloating(id); }  // its own window: show it, never hide it unseen
 	if (!ShellLayout::offers(m_layout.view(), id)) { return revealPanel(id); }
 	const bool visible = m_layout.toggle(id, nullptr);
 	apply();
@@ -404,6 +403,7 @@ bool Shell::setPanelPinned(const QString& id, bool pinned)
 bool Shell::revealPanel(const QString& id)
 {
 	if (!ShellLayout::isPanel(id)) { return false; }
+	if (isDetached(id)) { return raiseFloating(id); }
 	if (!ShellLayout::offers(m_layout.view(), id)) { m_layout.setView(viewOffering(id)); }
 	m_layout.open(id, nullptr);
 	apply();
@@ -419,7 +419,7 @@ QJsonObject Shell::state() const
 		panels.append(QJsonObject{
 			{QStringLiteral("id"), spec.id},
 			{QStringLiteral("title"), spec.title},
-			{QStringLiteral("region"), regionWord(m_layout.regionOf(spec.id))},
+			{QStringLiteral("region"), ShellLayout::regionName(m_layout.regionOf(spec.id))},
 			{QStringLiteral("visible"), m_layout.isVisible(spec.id)},
 			{QStringLiteral("available"), ShellLayout::offers(m_layout.view(), spec.id)},
 			{QStringLiteral("shortcut"), spec.shortcut},
@@ -449,6 +449,7 @@ QJsonObject Shell::snapshot() const
 	doc.insert(QStringLiteral("columns"), sizesOf(m_columns));
 	doc.insert(QStringLiteral("rows"), sizesOf(m_rows));
 	doc.insert(QStringLiteral("centre"), sizesOf(m_centre));
+	doc.insert(QStringLiteral("floating"), floatingSnapshot());
 	return doc;
 }
 
@@ -459,6 +460,8 @@ void Shell::restoreSnapshot(const QJsonObject& doc)
 	applySizes(m_columns, doc.value(QStringLiteral("columns")).toArray());
 	applySizes(m_rows, doc.value(QStringLiteral("rows")).toArray());
 	applySizes(m_centre, doc.value(QStringLiteral("centre")).toArray());
+	// A layout saved before 0.5.0 G has no `floating`: the panels floating now stay as they are.
+	if (doc.contains(QStringLiteral("floating"))) { restoreFloating(doc.value(QStringLiteral("floating")).toArray()); }
 	m_restoring = false;
 	apply();
 }

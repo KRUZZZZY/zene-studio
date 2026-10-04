@@ -29,9 +29,11 @@
 #include <QDomElement>
 #include <QJsonArray>
 
+#include "ArrangementEdits.h"
 #include "Clip.h"
 #include "ControlEdit.h"
 #include "ControlRegistry.h"
+#include "ControlVocabulary.h"
 #include "Track.h"
 
 namespace lmms
@@ -94,6 +96,27 @@ bool clipRefused(const QString& clip, QString* why)
 	return true;
 }
 
+//! A clip.move whose overlap mode would trim or fade a locked clip where it lands.
+bool moveRefused(const QJsonObject& args, QString* why)
+{
+	ControlResult ignored;
+	control::ClipRef ref;
+	if (!control::resolveClip(args.value(QStringLiteral("clip")).toString(), &ref, &ignored)) { return false; }
+	const auto start = static_cast<tick_t>(args.value(QStringLiteral("position")).toDouble());
+	const Clip* locked = arrangement::lockedUnder(ref.clip, start, start + ref.clip->length().getTicks(), arrangement::modes().overlap);
+	if (locked == nullptr) { return false; }
+	*why = QStringLiteral("moving %1 there would trim %2, which is locked against editing (clip.set_locked / track.set_locked "
+		"unlocks it; arrangement.modes overlap=free lets clips overlap)").arg(args.value(QStringLiteral("clip")).toString(), control::clipIdOf(locked));
+	return true;
+}
+
+EditLocks::ChangeHook s_changeHook = nullptr;
+
+void notifyChanged()
+{
+	if (s_changeHook != nullptr) { s_changeHook(); }
+}
+
 bool trackRefused(const QString& track, QString* why)
 {
 	const int id = control::idToIndex(track, QStringLiteral("trk-"));
@@ -124,12 +147,19 @@ void EditLocks::setTrackLocked(int trackId, bool locked)
 {
 	if (locked) { m_tracks.insert(trackId); }
 	else { m_tracks.remove(trackId); }
+	notifyChanged();
 }
 
 void EditLocks::setClipLocked(int clipId, bool locked)
 {
 	if (locked) { m_clips.insert(clipId); }
 	else { m_clips.remove(clipId); }
+	notifyChanged();
+}
+
+void EditLocks::setChangeHook(ChangeHook hook)
+{
+	s_changeHook = hook;
 }
 
 bool EditLocks::refuses(const QString& command, const QJsonObject& args, QString* why)
@@ -139,6 +169,7 @@ bool EditLocks::refuses(const QString& command, const QJsonObject& args, QString
 	{
 		if (clipRefused(clip, why)) { return true; }
 	}
+	if (command == QLatin1String("clip.move") && moveRefused(args, why)) { return true; }
 	const QStringList tracks = idsUnder(args, "track") + idsUnder(args, "tracks");
 	return std::any_of(tracks.begin(), tracks.end(), [why](const QString& track) { return trackRefused(track, why); });
 }
@@ -155,12 +186,14 @@ void EditLocks::load(const QDomElement& element)
 {
 	m_tracks = parsed(element.attribute(QStringLiteral("tracks")));
 	m_clips = parsed(element.attribute(QStringLiteral("clips")));
+	notifyChanged();
 }
 
 void EditLocks::clear()
 {
 	m_tracks.clear();
 	m_clips.clear();
+	notifyChanged();
 }
 
 } // namespace lmms

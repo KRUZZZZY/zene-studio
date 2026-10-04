@@ -24,19 +24,16 @@
 
 #include "CommandListDialog.h"
 
-#include <cmath>
-
 #include <QHBoxLayout>
 #include <QHeaderView>
 #include <QJsonDocument>
 #include <QLabel>
 #include <QLineEdit>
-#include <QMessageBox>
 #include <QPushButton>
 #include <QTableWidget>
 #include <QVBoxLayout>
 
-#include "GuiApplication.h"
+#include "CommandMetadata.h"
 
 namespace lmms::gui
 {
@@ -45,43 +42,17 @@ namespace
 {
 
 constexpr int MaxCellChars = 120;
-constexpr double MaxExactWhole = 9007199254740992.0;  // 2^53: every whole number below it is exact in a double
-
-//! A number as it reads: a whole one in full (a size in bytes, a tick - never "1.23457e+06"), else as Qt writes it.
-QString numberText(double number)
-{
-	const bool whole = std::abs(number) < MaxExactWhole && number == std::floor(number);
-	return whole ? QString::number(static_cast<qint64>(number)) : QString::number(number);
-}
-
-//! The whole text of a cell (the table shows it cut at MaxCellChars, with the whole of it as the tooltip).
-QString fullText(const QJsonValue& value)
-{
-	if (value.isString()) { return value.toString(); }
-	if (value.isBool()) { return value.toBool() ? QObject::tr("yes") : QObject::tr("no"); }
-	if (value.isDouble()) { return numberText(value.toDouble()); }
-	if (value.isArray()) { return QString::fromUtf8(QJsonDocument(value.toArray()).toJson(QJsonDocument::Compact)); }
-	if (value.isObject()) { return QString::fromUtf8(QJsonDocument(value.toObject()).toJson(QJsonDocument::Compact)); }
-	return {};
-}
 
 QString clipped(const QString& text)
 {
 	return text.size() > MaxCellChars ? text.left(MaxCellChars - 1) + QStringLiteral("…") : text;
 }
 
+//! A cell as the table shows it: valueText's reading (a whole number in full - a size in bytes, a tick, never
+//! "1.23457e+06"; a list of plain values as "a, b"), cut at MaxCellChars.
 QString cellText(const QJsonValue& value)
 {
-	return clipped(fullText(value));
-}
-
-//! A result field as a heading: "missing_count" reads "Missing count".
-QString titleOf(const QString& key)
-{
-	QString title = key;
-	title.replace(QLatin1Char('_'), QLatin1Char(' '));
-	if (!title.isEmpty()) { title[0] = title.at(0).toUpper(); }
-	return title;
+	return clipped(valueText(value));
 }
 
 //! What the "are you sure" question calls @a item: its name (or label, or path), else its first column.
@@ -95,15 +66,13 @@ QString rowName(const QJsonObject& item, const QStringList& columns)
 	return columns.isEmpty() ? QString() : cellText(item.value(columns.first()));
 }
 
-/*! Whether the person at the screen agrees to @a label on @a target, told @a caution. Nobody is asked
- *  headless or with no interface to ask over (a tool embedding the registry), as announce() floats nothing there. */
-bool confirmed(QWidget* parent, const QString& label, const QString& target, const QString& caution)
+/*! Whether to ask before running @a id: when the list declares it, or (theme 4) when the command cannot be
+ *  undone - with what is lost in @a caution, the declared caution first. */
+bool needsConfirm(bool declared, const QString& id, QString* caution)
 {
-	if (ControlRegistry::instance()->isHeadless() || getGUI() == nullptr) { return true; }
-	const QString what = target.isEmpty() ? label : CommandListDialog::tr("%1 \"%2\"").arg(label, target);
-	const QString question = caution.isEmpty() ? CommandListDialog::tr("%1 - are you sure?").arg(what)
-		: CommandListDialog::tr("%1 - %2 Are you sure?").arg(what, caution);
-	return QMessageBox::question(parent, label, question) == QMessageBox::Yes;
+	const QString warning = commandUndoWarning(id);
+	if (caution->isEmpty()) { *caution = warning; }
+	return declared || !warning.isEmpty();
 }
 
 //! Where @a row is in @a rows, or -1.
@@ -184,7 +153,7 @@ void CommandListDialog::refresh()
 	QStringList summary;
 	for (const QString& key : m_spec.summaryKeys)
 	{
-		if (m_listed.contains(key)) { summary.append(QStringLiteral("%1: %2").arg(titleOf(key), cellText(m_listed.value(key)))); }
+		if (m_listed.contains(key)) { summary.append(QStringLiteral("%1: %2").arg(fieldLabel(key), cellText(m_listed.value(key)))); }
 	}
 	m_summary->setText(summary.join(QStringLiteral("   ")));
 	m_summary->setVisible(!summary.isEmpty());
@@ -200,7 +169,7 @@ void CommandListDialog::fill(const QJsonValue& kept)
 	m_table->clear();
 	m_table->setColumnCount(static_cast<int>(columns.size()));
 	QStringList titles;
-	for (const QString& column : columns) { titles.append(titleOf(column)); }
+	for (const QString& column : columns) { titles.append(fieldLabel(column)); }
 	m_table->setHorizontalHeaderLabels(titles);
 	m_table->setRowCount(static_cast<int>(m_rows.size()));
 	for (int r = 0; r < m_rows.size(); ++r)
@@ -208,7 +177,7 @@ void CommandListDialog::fill(const QJsonValue& kept)
 		const QJsonObject item = m_rows.at(r).toObject();
 		for (int c = 0; c < columns.size(); ++c)
 		{
-			const QString text = fullText(item.value(columns.at(c)));
+			const QString text = valueText(item.value(columns.at(c)));
 			auto* cell = new QTableWidgetItem(clipped(text));
 			if (text.size() > MaxCellChars) { cell->setToolTip(text); }  // a cut path or error stays readable
 			m_table->setItem(r, c, cell);
@@ -239,7 +208,11 @@ ControlResult CommandListDialog::runAction(int index, int action)
 	// A form asking for a track or a clip starts from the selected one.
 	CommandCall call{spec.id, spec.fixed, selectionContext(spec.id), spec.label, spec.ask, spec.showResult};
 	for (auto it = spec.fromRow.begin(); it != spec.fromRow.end(); ++it) { call.fixed.insert(it.key(), item.value(it.value())); }
-	if (spec.confirm && !confirmed(this, spec.label, rowName(item, m_spec.columns), spec.caution)) { return cancelled(spec.label); }
+	QString caution = spec.caution;
+	if (needsConfirm(spec.confirm, spec.id, &caution) && !confirmAction(this, spec.label, rowName(item, m_spec.columns), caution))
+	{
+		return cancelled(spec.label);
+	}
 	return dispatch(spec.label, call);
 }
 
@@ -250,7 +223,11 @@ ControlResult CommandListDialog::runExtra(int index)
 		return ControlResult::failure(ControlErrorKind::InvalidArgs, tr("no such button"));
 	}
 	const ListExtra& extra = m_spec.extras.at(index);
-	if (extra.confirm && !confirmed(this, extra.label, QString(), QString())) { return cancelled(extra.label); }
+	QString caution;
+	if (needsConfirm(extra.confirm, extra.call.id, &caution) && !confirmAction(this, extra.label, QString(), caution))
+	{
+		return cancelled(extra.label);
+	}
 	return dispatch(extra.label, extra.call);
 }
 

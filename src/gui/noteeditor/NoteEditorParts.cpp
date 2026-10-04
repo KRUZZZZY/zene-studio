@@ -104,13 +104,32 @@ void NoteKeyboardView::paintLabel(QPainter& p, const QRect& row, int key) const
 
 void NoteKeyboardView::mousePressEvent(QMouseEvent* event)
 {
+	if (event->button() == Qt::MiddleButton)
+	{
+		m_zoomY = event->pos().y();
+		m_zoomRows = m_state.grid.rowHeight();
+		m_zoomKey = m_state.grid.keyAtY(m_zoomY);
+		return;
+	}
 	m_pressed = m_state.grid.keyAtY(event->pos().y());
 	if (m_pressed >= 0) { m_editor->auditionPress(m_pressed, m_state.lastVelocity); }
 	update();
 }
 
+void NoteKeyboardView::mouseMoveEvent(QMouseEvent* event)
+{
+	// Up makes the rows taller, down shorter - a pixel of row height per eight of drag - with the key the
+	// drag started on staying under the pointer.
+	if (m_zoomY < 0) { return; }
+	NoteGrid& g = m_state.grid;
+	g.setRowHeight(m_zoomRows + (m_zoomY - event->pos().y()) / 8);
+	if (const int row = g.rowOfKey(m_zoomKey); row >= 0) { g.setScrollY(row * g.rowHeight() + g.rowHeight() / 2 - m_zoomY); }
+	emit m_editor->stateChanged();
+}
+
 void NoteKeyboardView::mouseReleaseEvent(QMouseEvent*)
 {
+	m_zoomY = -1;
 	if (m_pressed >= 0) { m_editor->auditionRelease(m_pressed); }
 	m_pressed = -1;
 	update();

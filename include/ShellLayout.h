@@ -77,6 +77,9 @@ public:
 	static bool isPanel(const QString& id);
 	static ShellPanelSpec spec(const QString& id);
 
+	//! The region's word, as window.get_state's `region` and a saved layout spell it.
+	static QString regionName(ShellRegion region);
+
 	static QString viewName(ShellView view);
 	//! false for an unknown name; @a out is untouched then.
 	static bool viewFromName(const QString& name, ShellView& out);

@@ -24,7 +24,9 @@
 #include "ArrangerNavigator.h"
 
 #include <algorithm>
+#include <cstdlib>
 
+#include <QKeyEvent>
 #include <QMouseEvent>
 #include <QPainter>
 #include <QPointer>
@@ -33,6 +35,8 @@
 #include <QToolBar>
 #include <QWheelEvent>
 
+#include "ArrangementSections.h"
+#include "ArrangerZoom.h"
 #include "AutomationClip.h"
 #include "ConfigManager.h"
 #include "ControlRegistry.h"
@@ -42,10 +46,10 @@
 #include "Engine.h"
 #include "GuiApplication.h"
 #include "MidiClip.h"
+#include "ProjectMarkers.h"
 #include "SampleClip.h"
 #include "Song.h"
 #include "SongEditor.h"
-#include "TimeLineWidget.h"
 #include "Track.h"
 
 namespace lmms::gui
@@ -62,13 +66,6 @@ SongEditor* arrangerEditor()
 	return g != nullptr && g->songEditor() != nullptr ? g->songEditor()->m_editor : nullptr;
 }
 
-//! The ticks the arranger shows across its width.
-tick_t visibleTicks(SongEditor* editor)
-{
-	const int width = editor->timeLine()->width() - editor->timeLine()->markerX(editor->currentPosition());
-	return static_cast<tick_t>(std::max(width, 1) * TimePos::ticksPerBar() / std::max(editor->pixelsPerBar(), 1.f));
-}
-
 QColor clipColour(const Clip* clip, const tokens::Palette& pal)
 {
 	if (clip->color().has_value()) { return *clip->color(); }
@@ -77,6 +74,15 @@ QColor clipColour(const Clip* clip, const tokens::Palette& pal)
 	return dynamic_cast<const AutomationClip*>(clip) != nullptr ? pal.clipAutomation : pal.clipPattern;
 }
 
+constexpr int LandmarkBand = 5;  //!< the sections' strip along the top
+constexpr int MinViewport = 6;   //!< the narrowest the viewport frame is drawn, however far out it zooms
+constexpr int WheelStep = 1;
+
+/*! 0.5.0 theme 9: the overview carries the song's LANDMARKS - its sections (a coloured strip along the
+ *  top, a boundary line at each start), its markers, the loop and the play position - and the part the
+ *  arranger shows is a VIEWPORT that stands out: the rest of the song is dimmed and the viewport framed.
+ *  The wheel zooms around the tick under the pointer; with the keyboard, Left/Right scroll an eighth of
+ *  the view, Page Up/Down a whole view, Home/End go to the song's start/end and +/- zoom. */
 class Navigator : public QWidget
 {
 public:
@@ -84,9 +90,11 @@ public:
 		QWidget(parent),
 		m_editor(editor)
 	{
-		setMinimumHeight(34);
+		setMinimumHeight(40);
+		setFocusPolicy(Qt::StrongFocus);
 		setAccessibleName(QObject::tr("Navigator"));
-		setToolTip(QObject::tr("The whole song: click or drag to scroll there, turn the wheel to zoom"));
+		setToolTip(QObject::tr("The whole song: click to centre the arranger there, drag to scroll, turn the wheel to zoom "
+			"around the pointer; with the keyboard, arrows and Page Up/Down scroll, Home/End jump, +/- zoom"));
 		setProperty("controlCommand", QStringLiteral("arrangement.scroll"));
 		connect(editor->horizontalScroll(), &QScrollBar::valueChanged, this, qOverload<>(&QWidget::update));
 		connect(editor, &SongEditor::pixelsPerBarChanged, this, qOverload<>(&QWidget::update));
@@ -102,23 +110,15 @@ protected:
 		QPainter p(this);
 		p.fillRect(rect(), pal.panel);
 		if (m_editor.isNull()) { return; }
-		const double perTick = width() / static_cast<double>(spanTicks());
-		const TrackContainer::TrackList& tracks = Engine::getSong()->tracks();
-		const int rowHeight = std::clamp((height() - 4) / std::max<int>(1, static_cast<int>(tracks.size())), 1, 6);
-		for (int row = 0; row < static_cast<int>(tracks.size()); ++row)
-		{
-			for (const Clip* clip : tracks[row]->getClips())
-			{
-				const int x = static_cast<int>(clip->startPosition().getTicks() * perTick);
-				const int w = std::max(1, static_cast<int>(clip->length().getTicks() * perTick));
-				p.fillRect(QRect(x, 2 + row * rowHeight, w, std::max(1, rowHeight - 1)), clipColour(clip, pal));
-			}
-		}
-		const int left = static_cast<int>(m_editor->currentPosition().getTicks() * perTick);
-		const int shown = std::max(4, static_cast<int>(visibleTicks(m_editor) * perTick));
-		p.setPen(QPen(pal.accent, 2));
-		p.setBrush(Qt::NoBrush);
-		p.drawRect(QRect(left + 1, 1, shown - 2, height() - 2));
+		m_perTick = width() / static_cast<double>(spanTicks());
+		paintSections(p);
+		paintClips(p);
+		paintMarkersAndLoop(p);
+		p.setPen(QPen(pal.playhead, 1));
+		const int play = xOf(arrangerzoom::playhead(m_editor));
+		p.drawLine(play, 0, play, height());
+		paintViewport(p);
+		describe();
 	}
 
 	void mousePressEvent(QMouseEvent* event) override
@@ -131,33 +131,138 @@ protected:
 	}
 	void wheelEvent(QWheelEvent* event) override
 	{
-		// The vertical wheel zooms; a sideways (or empty) turn is not a zoom out - it goes on to the parent.
+		// The vertical wheel zooms around the tick under the pointer; a sideways (or empty) turn is not a
+		// zoom out - it goes on to the parent.
 		const int turn = event->angleDelta().y();
-		if (turn == 0)
+		if (turn == 0 || std::abs(event->angleDelta().x()) > std::abs(turn))
 		{
 			event->ignore();
 			return;
 		}
-		ControlRegistry::instance()->invoke(QStringLiteral("arrangement.zoom"), {{QStringLiteral("step"), turn > 0 ? 1 : -1}});
+		event->accept();
+		const auto anchor = static_cast<int>(event->position().x() / std::max(1, width()) * spanTicks());
+		ControlRegistry::instance()->invoke(QStringLiteral("arrangement.zoom"),
+			{{QStringLiteral("step"), turn > 0 ? WheelStep : -WheelStep}, {QStringLiteral("anchor_tick"), anchor}});
+	}
+	void keyPressEvent(QKeyEvent* event) override
+	{
+		if (!keyScrolls(event->key()) && !keyZooms(event->key())) { return QWidget::keyPressEvent(event); }
+		event->accept();
 	}
 
 private:
+	int xOf(tick_t tick) const { return static_cast<int>(tick * m_perTick); }
+
+	void paintSections(QPainter& p) const
+	{
+		const tokens::Palette& pal = tokens::palette();
+		for (const ArrangementSection& section : ArrangementSections::instance().sections())
+		{
+			const QColor colour = section.color.isEmpty() ? pal.selected : QColor(section.color);
+			p.fillRect(QRect(xOf(section.start), 0, std::max(1, xOf(section.end) - xOf(section.start)), LandmarkBand), colour);
+			p.setPen(QPen(pal.separator, 1));
+			p.drawLine(xOf(section.start), 0, xOf(section.start), height());
+		}
+	}
+
+	void paintClips(QPainter& p) const
+	{
+		const tokens::Palette& pal = tokens::palette();
+		const TrackContainer::TrackList& tracks = Engine::getSong()->tracks();
+		const int top = LandmarkBand + 1;
+		const int rowHeight = std::clamp((height() - top - 2) / std::max<int>(1, static_cast<int>(tracks.size())), 1, 6);
+		for (int row = 0; row < static_cast<int>(tracks.size()); ++row)
+		{
+			for (const Clip* clip : tracks[row]->getClips())
+			{
+				const int w = std::max(1, static_cast<int>(clip->length().getTicks() * m_perTick));
+				p.fillRect(QRect(xOf(clip->startPosition().getTicks()), top + row * rowHeight, w, std::max(1, rowHeight - 1)), clipColour(clip, pal));
+			}
+		}
+	}
+
+	void paintMarkersAndLoop(QPainter& p) const
+	{
+		const tokens::Palette& pal = tokens::palette();
+		for (const Marker& marker : ProjectMarkers::instance().markers())
+		{
+			p.setPen(QPen(marker.color.isEmpty() ? pal.accent : QColor(marker.color), 1));
+			p.drawLine(xOf(marker.tick), 0, xOf(marker.tick), height());
+		}
+		const Timeline& timeline = Engine::getSong()->getTimeline(Song::PlayMode::Song);
+		if (!timeline.loopEnabled()) { return; }
+		p.fillRect(QRect(xOf(timeline.loopBegin().getTicks()), height() - 3,
+			std::max(1, xOf(timeline.loopEnd().getTicks()) - xOf(timeline.loopBegin().getTicks())), 3), pal.accent);
+	}
+
+	void paintViewport(QPainter& p) const
+	{
+		const tokens::Palette& pal = tokens::palette();
+		const int left = xOf(m_editor->currentPosition().getTicks());
+		const int shown = std::max(MinViewport, static_cast<int>(arrangerzoom::visibleTicks(m_editor) * m_perTick));
+		QColor dim = pal.base;
+		dim.setAlpha(150);
+		p.fillRect(QRect(0, 0, left, height()), dim);
+		p.fillRect(QRect(left + shown, 0, width() - left - shown, height()), dim);
+		p.setPen(QPen(hasFocus() ? pal.focusRing : pal.accent, 2));
+		p.setBrush(Qt::NoBrush);
+		p.drawRect(QRect(left + 1, 1, shown - 2, height() - 2));
+	}
+
+	//! What a screen reader says of it: the bars on screen of the song's.
+	void describe()
+	{
+		const tick_t start = m_editor->currentPosition().getTicks();
+		const QString text = QObject::tr("Showing bars %1 to %2 of %3").arg(start / TimePos::ticksPerBar() + 1)
+			.arg((start + arrangerzoom::visibleTicks(m_editor)) / TimePos::ticksPerBar() + 1).arg(Engine::getSong()->length());
+		if (accessibleDescription() != text) { setAccessibleDescription(text); }
+	}
+
+	bool keyScrolls(int key)
+	{
+		const tick_t view = arrangerzoom::visibleTicks(m_editor);
+		const tick_t start = m_editor->currentPosition().getTicks();
+		const tick_t song = static_cast<tick_t>(Engine::getSong()->length()) * TimePos::ticksPerBar();
+		tick_t to = start;
+		switch (key)
+		{
+		case Qt::Key_Left: to = start - view / 8; break;
+		case Qt::Key_Right: to = start + view / 8; break;
+		case Qt::Key_PageUp: to = start - view; break;
+		case Qt::Key_PageDown: to = start + view; break;
+		case Qt::Key_Home: to = 0; break;
+		case Qt::Key_End: to = song - view; break;
+		default: return false;
+		}
+		ControlRegistry::instance()->invoke(QStringLiteral("arrangement.scroll"), {{QStringLiteral("position"), std::max<int>(0, to)}});
+		return true;
+	}
+
+	bool keyZooms(int key)
+	{
+		if (key != Qt::Key_Plus && key != Qt::Key_Minus && key != Qt::Key_Equal) { return false; }
+		ControlRegistry::instance()->invoke(QStringLiteral("arrangement.zoom"),
+			{{QStringLiteral("step"), key == Qt::Key_Minus ? -4 : 4}, {QStringLiteral("anchor"), QStringLiteral("view")}});
+		return true;
+	}
+
 	//! The song's length with a bar to spare, or the end of what the arranger shows when that is further.
 	tick_t spanTicks() const
 	{
 		const tick_t song = (Engine::getSong()->length() + 1) * TimePos::ticksPerBar();
-		return std::max<tick_t>(song, m_editor->currentPosition().getTicks() + visibleTicks(m_editor));
+		return std::max<tick_t>(song, m_editor->currentPosition().getTicks() + arrangerzoom::visibleTicks(m_editor));
 	}
 
 	//! Centre the arranger on the tick under @a x.
 	void scrollTo(double x)
 	{
 		if (m_editor.isNull()) { return; }
-		const auto tick = static_cast<tick_t>(x / std::max(1, width()) * spanTicks()) - visibleTicks(m_editor) / 2;
+		const auto tick = static_cast<tick_t>(x / std::max(1, width()) * spanTicks()) - arrangerzoom::visibleTicks(m_editor) / 2;
 		ControlRegistry::instance()->invoke(QStringLiteral("arrangement.scroll"), {{QStringLiteral("position"), std::max<int>(0, tick)}});
 	}
 
 	QPointer<SongEditor> m_editor;
+	double m_perTick = 1.0;
 };
 
 QToolBar* navigatorBar()
@@ -172,7 +277,7 @@ ControlResult scroll(const QJsonObject& args)
 	if (editor == nullptr) { return noInterface(QStringLiteral("arrangement.scroll")); }
 	editor->horizontalScroll()->setValue(std::max(0, args.value(QStringLiteral("position")).toInt()));
 	return ControlResult::success({{QStringLiteral("position"), static_cast<int>(editor->currentPosition().getTicks())},
-		{QStringLiteral("visible_ticks"), static_cast<int>(visibleTicks(editor))}});
+		{QStringLiteral("visible_ticks"), static_cast<int>(arrangerzoom::visibleTicks(editor))}});
 }
 
 ControlResult navigator(const QJsonObject& args)

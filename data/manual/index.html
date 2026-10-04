@@ -23,7 +23,7 @@ Arrange, Mix and Edit (Alt+1 to Alt+3). Everything a click does is also a named 
 script, an agent or a controller can do it too. Changes to the project can be undone (Edit &gt; Undo, or Window &gt;
 Undo History); actions outside it - files written to disk, messages sent to hardware - cannot.</p>
 <p class="tip">Hover over a control to see what it does; press <b>Shift+F1</b> (Help &gt; What's This?) and click a
-control for its full description. Help &gt; Command Reference lists every command with its arguments; Help &gt; Keyboard
+control for its full description. Help &gt; Command Reference lists every command with its arguments, and the Command Palette finds any menu item or command by name: Enter runs it, or opens its settings when it has any, Shift+Enter runs it with its defaults, and a command that cannot be undone is marked; Help &gt; Keyboard
 Shortcuts lists every shortcut, and Project tools &gt; Customise &gt; Keyboard Shortcuts changes them.</p>
 <nav><a href="#window">The window</a> <a href="#arrange">Arranging</a> <a href="#notes">Notes</a> <a href="#mix">Mixing</a>
 <a href="#devices">Devices</a> <a href="#record">Recording</a> <a href="#launch">Launcher</a> <a href="#projects">Projects</a>
@@ -34,7 +34,7 @@ Shortcuts lists every shortcut, and Project tools &gt; Customise &gt; Keyboard S
 <li><b>Header</b> - transport (play, stop, record), tempo, time signature, position, the master level, the transpose,
 the CPU load and the loudness readout. Right-click
 it to choose which buttons it shows.</li>
-<li><b>Browser</b> - devices, presets, samples and projects. The <i>Search</i> source finds files across the library:
+<li><b>Browser</b> - devices, presets, samples and projects. Search is the first control and filters the current tab as you type; Up and Down move the highlight, Enter loads the highlighted result (Shift+Enter puts a sample on a sample track) and Ctrl+F jumps to it. A click or Space previews, and the preview stops when you pick another result, change the query, tab or location, or leave the Browser. The <i>Search</i> source finds files across the library:
 every word must match (<code>kick 808</code> finds items with both), <code>kick OR snare</code>, <code>-loop</code> excludes, <code>"bass drum"</code> is a phrase, and
 <code>tag:</code> <code>kind:</code> <code>name:</code> <code>path:</code> <code>ext:</code> narrow a word. Save a search
 as a <i>collection</i> to keep it; <i>Project Media</i> lists every file the project uses.</li>
@@ -44,7 +44,7 @@ as a <i>collection</i> to keep it; <i>Project Media</i> lists every file the pro
 
 <h2 id="arrange">Arranging</h2>
 <p>Drag clips to move them; drag their edges to trim. Choose a range with the Range tool (Navigate &gt; Arranger Tool &gt; Range: drag over the tracks; the Smart tool does the
-same from a clip's upper half), then split, delete, crop, fade or bounce it from Navigate &gt; Range. <b>Navigate</b> holds the zoom, markers, ripple and overlap modes; <b>Alt+arrows</b> nudge and select clips.
+same from a clip's upper half), then split, delete, crop, fade or bounce it from Navigate &gt; Range. A clip dragged onto another trims it (Navigate &gt; Overlap chooses trim, crossfade or free), and before you let go the arranger shows what will be cut and what the clip snaps to. A locked clip can be selected but not moved, trimmed or deleted - a padlock marks it. Sections, markers and tempo have lanes of their own under the bar ruler (right-click them to show or hide one); a pinch or Ctrl+wheel zooms around the pointer, the zoom keys around the selection or the play position. <b>Navigate</b> holds the zoom, markers, ripple and overlap modes; <b>Alt+arrows</b> nudge and select clips.
 Sample clips show fade handles near their top corners and, with Navigate &gt; Show Transients, their transients.
 Project &gt; Sections names the song's parts (verse, chorus) as bands over the ruler and selects one as the range; Clip List
 finds a clip by name; Next and Previous Transient move the play position through the audio's hits. A clip's Sample Editor... (its menu) raises or lowers by 3 dB, silences, deletes, reverses, fades or crops a selection
@@ -62,7 +62,7 @@ Standard MIDI File.</p>
 and writes can be limited to the punch region. A control's trim offsets its automation without changing the curve.</p>
 
 <h2 id="notes">Editing notes</h2>
-<p>Double-click a MIDI clip to open it in the note editor. The tools (keys 1-7) draw, select, slice, erase, audition, paint and mute notes; the lanes
+<p>Double-click a MIDI clip to open it in the note editor. The tools follow FL Studio's piano roll: P draw, B paint, D delete, T mute, C slice, E select, Y play, Z zooms to the selection (1-7 also pick them). With any tool the right button deletes every note it crosses (one undo step); a double-click on a note opens its properties; Ctrl selects (Ctrl+Shift adds), Shift and Ctrl lock pitch and timing while dragging, Alt bypasses the grid and Alt+wheel changes velocity; a new note takes the last note's length; Ctrl+C, X, V and B copy, cut, paste and duplicate; the lanes
 below edit velocity, pan, chance, timbre, pressure, micro-pitch, release velocity, velocity spread and repeats, and the
 clip's controller curves. The Notes menu quantises, transposes,
 scales, strums and transforms; Pitch Curve draws a bend on each note. Notes &gt; Tools inverts, arpeggiates, flams,
@@ -115,7 +115,7 @@ Process menu prints a chain's effects onto the clip.</p>
 <h2 id="record">Recording</h2>
 <p>Arm a track with the record button in its header (or Record &gt; Arm All Audio Tracks), choose its input from its
 Record menu and press Record. Record &gt; Count-In and Pre-Roll starts the take bars early; Record Mode chooses
-for MIDI between overdub (the notes already in the clip stay) and replace (a recorded note removes the ones it overlaps). After a looped recording, Split into Loop Passes (the sample clip's menu) puts every pass on its own take lane: drag
+for MIDI between overdub (the notes already in the clip stay) and replace (a recorded note erases the notes it overlaps, at any pitch - notes only; controllers and automation are kept); the header's Rec mode readout shows which. Positions and lengths read in bars and beats - right-click a position, or use the Tempo Map's picker, for ticks or time; any of them can be typed. After a looped recording, Split into Loop Passes (the sample clip's menu) puts every pass on its own take lane: drag
 along a lane in the take-lanes view to comp that range, double-click to cycle the take (or Record &gt; Next Take Here). Retrospective capture keeps what you
 played without recording - save it as a clip or a take afterwards. Record &gt; Punch In Here and Punch Out Here set
 the punch region at the play position while you record; Metronome Sound and Level chooses the click, its level, the
@@ -143,16 +143,15 @@ to install first. Import Tracks copies tracks from another project; Save as Temp
 <h2 id="agents">Scripts, agents and controllers</h2>
 <p>Every command is reachable over the control socket (JSON-RPC) and from the MCP bridge; Lua scripts
 (<code>zene.command</code>) reach all of them except those that change your own configuration or start other scripts
-(shortcuts, macros, scripts, crash reporting, telemetry). The socket accepts connections only from your own user account (it is created readable and writable
+(shortcuts, workflows, scripts, crash reporting, telemetry). The socket accepts connections only from your own user account (it is created readable and writable
 by you alone); anything connected to it can do whatever the menus can - save, render, delete - so connect only programs
 you trust. A controller can drive the remote-control pages (eight knobs following the selected device), a Mackie
 Control surface, or any parameter through MIDI learn.</p>
 
 <h2 id="customise">Customising and the Window menu</h2>
-<p>Project tools &gt; Customise &gt; Theme chooses (from the next start) the palette (dark, high contrast or light) and the layout density
-(standard, comfortable or touch), and edits the theme's colours one by one - export a theme to share it, import one,
+<p>Project tools &gt; Customise &gt; Theme chooses (from the next start) the palette (dark, high contrast or light) the interface zoom and accessible mode, and edits the theme's colours one by one - export a theme to share it, import one,
 or reset to the palette's own. Customise &gt; Window Layouts saves the panels' arrangement under a name and brings it
-back; Customise &gt; Macros... records a run of commands and plays it again. Customise &gt; Settings finds any setting by a word, backs all of them up to a file and
+back, and can remember one layout with the project, put back when it opens; the Workflows menu (and Customise &gt; Workflows...) records a run of commands and plays it again, shared by every project or kept with each (Keep Workflows). Drag a panel's header out of the window to float it - on another monitor if you like - and drag it back onto its place, or press Dock, to return it (Ctrl+Shift+F floats or docks the focused panel). Customise &gt; Settings finds any setting by a word, backs all of them up to a file and
 restores them, and keeps named settings presets (folder paths never travel in a preset or a backup).</p>
 <p>The Window menu holds the track manager (every track in one list: mute, solo, hide, rename, colour, icon, move,
 remove, and how much processing its mixer channel takes), a large clock, a tuner (it listens to the input, or to the
@@ -162,10 +161,11 @@ tiles the floating windows, shows a cross-hair cursor across the arranger, and m
 panel with F6 and Shift+F6. A pinch on a touch screen or a trackpad zooms the arranger.</p>
 
 <h2 id="access">Access</h2>
-<p>Help &gt; Appearance sets the interface scale, the text size, the palette (including high contrast and light) and
-the layout density - the palette and density are the same settings as Customise &gt; Theme - and they take effect at the
-next start. Controls carry names for screen readers - Help &gt;
-Accessibility Check lists any that do not, and the interface names them from their parameter or tooltip at start; the
+<p>Help &gt; Appearance sets the interface zoom (one control sizes text, icons and controls together), the palette and
+accessible mode - larger click targets, strong focus rings, the high-contrast palette and reduced motion - from the next
+start. Knobs, faders, number fields, lists and buttons are reached with Tab and worked with the arrows, Page Up/Down and
+Home/End, and tell a screen reader (NVDA, VoiceOver, Orca) what they are and their value - Help &gt;
+Accessibility Check lists any control with no name, role or value, and the interface names them from their parameter or tooltip at start; the
 keyboard reaches every menu and most lists, and F6 moves between the panels.</p>
 <p>Help &gt; Ask answers a question from this manual and the command reference, offline: nothing is sent anywhere.
 Help &gt; What's New shows the release notes, once per version at start; Help &gt; Tours walks through the window part

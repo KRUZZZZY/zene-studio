@@ -125,7 +125,8 @@ private slots:
 		QCOMPARE(startsOf(m_track), (QList<int>{48, 144, 240}));  // the two after it moved by the same 48
 		QVERIFY(run(QStringLiteral("control.undo")).ok);
 		QCOMPARE(startsOf(m_track), (QList<int>{0, 96, 192}));
-		QVERIFY(run(QStringLiteral("arrangement.modes"), {{QStringLiteral("ripple"), QStringLiteral("off")}}).ok);
+		// Overlap free: the move lands on the next clip, which the default (trim) would cut.
+		QVERIFY(run(QStringLiteral("arrangement.modes"), {{QStringLiteral("ripple"), QStringLiteral("off")}, {QStringLiteral("overlap"), QStringLiteral("free")}}).ok);
 		QVERIFY(run(QStringLiteral("clip.move"), {{QStringLiteral("clip"), control::clipIdOf(m_track->getClips().front())},
 			{QStringLiteral("position"), 24}}).ok);
 		QVERIFY(startsOf(m_track).contains(96) && startsOf(m_track).contains(192));  // without ripple nothing else moves

@@ -28,6 +28,7 @@
 #include <QInputDialog>
 
 #include "LcdSpinBox.h"
+#include "AccessibleWidgets.h"
 #include "KeyboardShortcuts.h"
 #include "CaptionMenu.h"
 #include "DeprecationHelper.h"
@@ -44,6 +45,7 @@ LcdSpinBox::LcdSpinBox( int numDigits, QWidget* parent, const QString& name ) :
 	m_lastMousePos(),
 	m_displayOffset( 0 )
 {
+	setFocusPolicy( Qt::TabFocus );  // 0.5.0 (theme 10): Tab reaches it; a click still leaves focus where it was
 }
 
 
@@ -57,6 +59,7 @@ LcdSpinBox::LcdSpinBox( int numDigits, const QString& style, QWidget* parent, co
 	m_lastMousePos(),
 	m_displayOffset( 0 )
 {
+	setFocusPolicy( Qt::TabFocus );  // 0.5.0 (theme 10): Tab reaches it; a click still leaves focus where it was
 }
 
 void LcdSpinBox::update()
@@ -150,6 +153,20 @@ void LcdSpinBox::wheelEvent(QWheelEvent * we)
 
 	model()->setValue(model()->value() + direction * model()->step<int>());
 	emit manualChange();
+}
+
+void LcdSpinBox::keyPressEvent(QKeyEvent* event)
+{
+	// 0.5.0 (theme 10): the arrows step as the wheel does, PageUp/PageDown by ten steps, Home/End go to the
+	// ends, Enter asks for a value as a double-click does; other keys pass on.
+	const int step = model() != nullptr ? model()->step<int>() : 0;
+	switch (a11y::spinKey(event->key(), model(), step, 10.f * step))
+	{
+		case a11y::SpinKey::Entered: enterValue(); break;
+		case a11y::SpinKey::Stepped: emit manualChange(); break;
+		default: QWidget::keyPressEvent(event); return;
+	}
+	event->accept();
 }
 
 void LcdSpinBox::mouseDoubleClickEvent( QMouseEvent * )

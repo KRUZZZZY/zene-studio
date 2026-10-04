@@ -57,7 +57,8 @@ class NoteLaneView;
 class NoteRuler;
 class ShellButton;
 
-//! The editor's tools (docs/NOTE-EDITOR.md §3). Keys 1..7 pick them.
+//! The editor's tools (docs/NOTE-EDITOR.md §3): FL Studio's piano-roll tools and letters - Draw P, Select E,
+//! Slice C, Delete D (Erase), Play Y (Audition), Paint B, Mute T. Keys 1..7 pick them too, in this order.
 enum class NoteTool
 {
 	Draw,
@@ -85,7 +86,7 @@ struct NoteEditorState
 	NoteGrid grid;
 	NoteTool tool = NoteTool::Draw;
 	int gridTicks = 12;           //!< snap: 1/16 at 192 ticks per bar
-	int lastLength = 12;          //!< the length a drawn note takes
+	int lastLength = 12;          //!< the length a drawn note takes: the last note drawn, touched or resized (FL)
 	int lastVelocity = 100;
 	int newLength = 0;            //!< a clicked note's length in ticks; 0: the last drawn or resized (ED-073)
 	QString audioBehind;          //!< the audio clip drawn behind the notes: "", "auto" or a clip id (ED-081)
@@ -98,9 +99,10 @@ struct NoteEditorState
 	QString controllerLane;       //!< the controller lane shown instead of the note lane ("cc:1", ...), or empty
 };
 
-//! The reworked piano roll (owner direction 2026-10-02, Bitwig-style). Every edit it makes is a
-//! registered command - note.add / note.edit / note.remove / note.select / note.expression_set /
-//! groove.quantize / scale.set / clip.resize - so the editor and an agent on the socket share
+//! The reworked piano roll (owner direction 2026-10-02; its gestures FL Studio's, 2026-10-03). Every edit it
+//! makes is a registered command - note.add / note.edit / note.remove_many / note.slice / note.copy, cut, paste,
+//! duplicate / note.select / note.expression_set / groove.quantize / scale.set / clip.resize - so the editor
+//! and an agent on the socket share
 //! one implementation and one undo history (SPEC A11). It reads the clip directly, on the GUI
 //! thread, and never touches the audio thread: auditioning goes through the instrument track's
 //! piano model, the same thread-safe path a MIDI keyboard uses.
@@ -138,6 +140,11 @@ public:
 	void setZoom(double pixelsPerTick);
 	//! Fit the clip's length to the view and centre its notes vertically.
 	void zoomToFit();
+	//! FL's Z: fit the selected notes to the view (with a little room), or the whole clip when none is selected.
+	void zoomToSelection();
+	//! Whether @a event is one of the editor's own keys - a tool letter (P B D T C E Y), Z, or 1..7 - with
+	//! no modifier; the note area claims these over a window shortcut while it has the focus.
+	static bool handlesKey(const QKeyEvent* event);
 
 	//! Run a registered command as the editor's edit; the reply's result, or an empty object
 	//! (with the refusal shown as a floating message and on stderr) when it was refused.
@@ -180,6 +187,9 @@ private:
 	void fillVelocityMenu(QMenu* menu, const QJsonObject& scoped);
 	void fillTimingMenu(QMenu* menu, const QJsonObject& scoped);
 	void fillMuteMenu(QMenu* menu);
+	//! The New Note Length choices (window.note_editor_set new_length): the Notes menu's, and the grid box's
+	//! right-click menu (FL: right-clicking the snap sets the default length).
+	void fillNewLengthMenu(QMenu* menu);
 	void fillScriptsMenu(QMenu* menu, const QString& clip);
 	void fillPitchCurveMenu(QMenu* menu);
 	//! "selection" when the clip has selected notes, else "clip" - the scope the Notes menu acts on.

@@ -58,6 +58,7 @@
 
 #include <cstdio>
 
+#include "AccessibleWidgets.h"
 #include "UnattendedRun.h"
 
 #ifdef LMMS_BUILD_WIN32
@@ -100,6 +101,7 @@ GuiApplication::GuiApplication()
 {
 	// Immediately register our SIGINT handler
 	createSocketNotifier();
+	a11y::installAccessibility();  // 0.5.0: screen-reader roles and values, focus rings, accessible mode
 
 	// Prompt the user to create the Zene Studio working directory (e.g.
 	// ~/Documents/Zene Studio) if it doesn't exist. In an unattended run

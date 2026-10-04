@@ -27,12 +27,15 @@
 
 #include <QWidget>
 
+#include "MixerOverlays.h"
+
 class QGraphicsView;
 class QLabel;
 class QLineEdit;
 class QStackedWidget;
 
 namespace lmms {
+class FloatModel;
 class MixerChannel;
 }
 
@@ -95,6 +98,14 @@ public:
 	//! The mixer view's "sends" option: false hides the send row and its space; true gives the space back
 	//! (which of its widgets show is the current channel's business, MixerView::updateMixerChannel).
 	void setSendsShown(bool shown);
+	/*! 0.5.0 theme 6 (sends on faders): the line above the fader saying what it drives while the faders
+	 *  show @a returnName's sends - the return's name on a send, "Volume" on the return's own fader and the
+	 *  master's, "No send" on a channel without one (its fader stays in place, dimmed and still). With
+	 *  @a returnName empty (the channel faders) the line is gone and the fader is as it always was. */
+	void showFaderRole(mixeroverlays::FaderRole role, const QString& returnName);
+	//! The still model a "No send" fader shows: it drives nothing.
+	FloatModel* noSendModel() const { return m_noSendModel; }
+	QLabel* faderTarget() const { return m_faderTarget; }
 
 public slots:
 	void renameChannel();
@@ -135,6 +146,8 @@ private:
 	MacroKnobs* m_macroKnobs = nullptr;  // 0.5.0 L10 (MX-090): the rack's first macros
 	Knob* m_panKnob;
 	Fader* m_fader;
+	QLabel* m_faderTarget = nullptr;  // 0.5.0 theme 6: what the fader drives, with the faders on a return's sends
+	FloatModel* m_noSendModel = nullptr;  // ... and what it shows when the channel has no send there
 	EffectRackView* m_effectRackView;
 	MixerView* m_mixerView;
 	int m_channelIndex = 0;

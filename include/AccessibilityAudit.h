@@ -38,13 +38,18 @@ namespace lmms::gui
 /*! 0.5.0 W3 L14 (WF-129): a walk over @a root and the controls under it - buttons, sliders, knobs, faders, fields,
  *  lists, anything that takes the keyboard - counting those a screen reader would announce with no name.
  *  With @a fill, each nameless one is given the name it already carries elsewhere: its parameter's name (a
- *  knob, a fader, a LED button), its tooltip or its text; a control with none stays in the report.
- *  Answers {checked, named, filled, implied (nameless, with a name to give when 'fill' is not set),
- *  unnamed: [{class, object, parent}] - nothing to name them by, at most 50 listed - and unnamed_count, how many
- *  there are in all}. */
+ *  knob, a fader, a LED button), its constructed name, its tooltip or its text; a control with none stays in the report.
+ *  0.5.0 UX decision (theme 17): it checks what the platform's accessibility bridge is told too - the role (a
+ *  control announced as a bare "client" or "pane" says nothing about what it is) and, for a control that shows a
+ *  value (a slider, a spin box, a combo box, a knob, a fader, an LCD number), whether the value is given - and
+ *  counts the controls a keyboard cannot reach. Answers {checked, named, filled, implied (nameless, with a name to
+ *  give when 'fill' is not set), unnamed: [{class, object, parent}] - nothing to name them by - and unnamed_count,
+ *  roleless / roleless_count and valueless / valueless_count ([{class, object, parent, role}]), and
+ *  unreachable_count (no Tab focus)}; each list holds at most 50, its count all of them. */
 LMMS_EXPORT QJsonObject auditAccessibility(QWidget* root, bool fill);
 
-//! The name @a widget could be announced by when it has none: its parameter's, its tooltip or its text.
+//! The name @a widget could be announced by when it has none: its constructed name (the title a custom control keeps
+//! it in, not a window's) or its parameter's - either without a caption's trailing colon - else its tooltip or its text.
 LMMS_EXPORT QString impliedAccessibleName(const QWidget* widget);
 
 } // namespace lmms::gui

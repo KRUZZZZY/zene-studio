@@ -24,32 +24,24 @@
 
 #include "CommandForm.h"
 
-#include <QAction>
-#include <QColorDialog>
-#include <QComboBox>
+#include <algorithm>
+
+#include <QApplication>
+#include <QClipboard>
 #include <QDialogButtonBox>
-#include <QDoubleValidator>
-#include <QFileDialog>
 #include <QFormLayout>
-#include <QHBoxLayout>
-#include <QIntValidator>
 #include <QJsonArray>
 #include <QJsonDocument>
-#include <QKeySequenceEdit>
 #include <QLabel>
-#include <QLineEdit>
-#include <QLocale>
-#include <QMenu>
+#include <QPlainTextEdit>
 #include <QPushButton>
-#include <QRegularExpression>
+#include <QScrollArea>
 #include <QToolButton>
 #include <QVBoxLayout>
 
-#include "ControlVocabulary.h"
-#include "ScriptCommandBridge.h"
-#include "ShellSelection.h"
-#include "GuiApplication.h"
-#include "TextFloat.h"
+#include "CommandFormFields.h"
+#include "CommandMetadata.h"
+#include "DesignTokens.h"
 
 namespace lmms::gui
 {
@@ -57,296 +49,192 @@ namespace lmms::gui
 namespace
 {
 
-QJsonObject propertiesOf(const QString& id)
+//! The schema's keys in the order a form asks for them: the required ones first (the identity a
+//! dangerous option is about comes before the option), then the rest in schema order.
+QStringList fieldOrder(const QJsonObject& properties, const QStringList& required)
 {
-	const ControlCommand* command = ControlRegistry::instance()->command(id);
-	return command != nullptr ? command->argsSchema.value(QStringLiteral("properties")).toObject() : QJsonObject();
-}
-
-QStringList requiredOf(const QString& id)
-{
-	QStringList out;
-	const ControlCommand* command = ControlRegistry::instance()->command(id);
-	if (command == nullptr) { return out; }
-	for (const QJsonValue& key : command->argsSchema.value(QStringLiteral("required")).toArray())
+	QStringList first;
+	QStringList rest;
+	for (auto it = properties.begin(); it != properties.end(); ++it)
 	{
-		out.append(key.toString());
+		(required.contains(it.key()) ? first : rest).append(it.key());
 	}
-	return out;
+	return first + rest;
 }
 
-//! "gain_db" -> "Gain db": what a field's label reads.
-QString labelFor(const QString& key)
+bool anyRawRequired(const QJsonObject& properties, const QStringList& required, const QJsonObject& fixed)
 {
-	QString text = key;
-	text.replace(QLatin1Char('_'), QLatin1Char(' '));
-	if (!text.isEmpty()) { text[0] = text.at(0).toUpper(); }
-	return text;
-}
-
-QString renderValue(const QJsonValue& value)
-{
-	if (value.isString()) { return value.toString(); }
-	if (value.isBool()) { return value.toBool() ? QStringLiteral("yes") : QStringLiteral("no"); }
-	if (value.isDouble()) { return QString::number(value.toDouble()); }
-	if (value.isArray()) { return QString::fromUtf8(QJsonDocument(value.toArray()).toJson(QJsonDocument::Compact)); }
-	if (value.isObject()) { return QString::fromUtf8(QJsonDocument(value.toObject()).toJson(QJsonDocument::Compact)); }
-	return QString();
-}
-
-//! The choices an enum or boolean field offers, in the combo box's order.
-QStringList choicesFor(const QJsonObject& spec)
-{
-	QStringList out;
-	if (spec.contains(QStringLiteral("enum")))
+	for (const QString& key : required)
 	{
-		for (const QJsonValue& value : spec.value(QStringLiteral("enum")).toArray()) { out.append(renderValue(value)); }
-		return out;
+		if (formfield::isRawField(properties.value(key).toObject()) && !fixed.contains(key)) { return true; }
 	}
-	return {QStringLiteral("yes"), QStringLiteral("no")};
-}
-
-bool isChoice(const QJsonObject& spec)
-{
-	return spec.contains(QStringLiteral("enum")) || schemaType(spec) == QStringLiteral("boolean");
-}
-
-//! Text typed into an array/object field, parsed; false when it is not that JSON type.
-bool parseJson(const QString& text, const QString& type, QJsonValue* value)
-{
-	const QJsonDocument doc = QJsonDocument::fromJson(text.toUtf8());
-	if (type == QStringLiteral("array") && doc.isArray()) { *value = doc.array(); return true; }
-	if (type == QStringLiteral("object") && doc.isObject()) { *value = doc.object(); return true; }
 	return false;
 }
 
-//! @a text as the JSON value of a field of @a type; false when it is not that type.
-bool parseText(const QString& text, const QString& type, QJsonValue* value)
-{
-	bool ok = true;
-	if (type == QStringLiteral("integer")) { *value = text.toLongLong(&ok); }
-	else if (type == QStringLiteral("number")) { *value = text.toDouble(&ok); }
-	else if (type == QStringLiteral("array") || type == QStringLiteral("object")) { ok = parseJson(text, type, value); }
-	else { *value = text; }
-	return ok;
-}
-
-//! What a field's editor holds, as text (a captured shortcut in its portable spelling).
-QString editorText(const QWidget* editor)
-{
-	if (const auto* box = qobject_cast<const QComboBox*>(editor)) { return box->currentText(); }
-	if (const auto* keys = qobject_cast<const QKeySequenceEdit*>(editor))
-	{
-		return keys->keySequence().toString(QKeySequence::PortableText);
-	}
-	return static_cast<const QLineEdit*>(editor)->text().trimmed();
-}
-
-//! Put @a text into a field's editor; false when a choice does not offer it.
-bool setEditorText(QWidget* editor, const QString& text)
-{
-	if (auto* box = qobject_cast<QComboBox*>(editor))
-	{
-		const int index = box->findText(text);
-		if (index >= 0) { box->setCurrentIndex(index); }
-		return index >= 0;
-	}
-	if (auto* keys = qobject_cast<QKeySequenceEdit*>(editor))
-	{
-		keys->setKeySequence(QKeySequence::fromString(text, QKeySequence::PortableText));
-		return true;
-	}
-	static_cast<QLineEdit*>(editor)->setText(text);
-	return true;
-}
-
-//! The widget a menu belongs to: a form or message must outlive the menu (often a stack
-//! object closed the moment an action runs), so it is parented past every QMenu.
-QWidget* hostOf(QWidget* widget)
-{
-	while (qobject_cast<QMenu*>(widget) != nullptr) { widget = widget->parentWidget(); }
-	return widget;
-}
-
 } // namespace
-
-QString schemaType(const QJsonObject& spec)
-{
-	const QJsonValue type = spec.value(QStringLiteral("type"));
-	if (!type.isArray()) { return type.toString(); }
-	for (const QJsonValue& name : type.toArray())
-	{
-		if (name.toString() != QStringLiteral("null")) { return name.toString(); }
-	}
-	return QString();
-}
-
-QJsonObject selectionContext(const QString& id)
-{
-	const QJsonObject properties = propertiesOf(id);
-	const ShellSelection* selection = ShellSelection::instance();
-	const QString track = control::trackIdOf(selection->track());
-	const QString clip = selection->clip() != nullptr ? control::clipIdOf(selection->clip()) : QString();
-	const QString channel = selection->channel();
-	QJsonObject out;
-	auto offer = [&](const char* key, const QString& value) {
-		const QJsonObject spec = properties.value(QLatin1String(key)).toObject();
-		if (!value.isEmpty() && schemaType(spec) == QStringLiteral("string")) { out.insert(QLatin1String(key), value); }
-	};
-	offer("track", track);
-	offer("clip", clip);
-	offer("channel", channel);
-	offer("target", channel.isEmpty() ? track : channel);
-	return out;
-}
 
 CommandForm::CommandForm(const CommandCall& call, QWidget* parent) :
 	QDialog(parent),
 	m_call(call),
 	m_result(ControlResult::failure(ControlErrorKind::Busy, tr("the command has not run yet")))
 {
-	const ControlCommand* command = ControlRegistry::instance()->command(call.id);
-	setWindowTitle(call.title.isEmpty() ? call.id : call.title);
+	setWindowTitle(call.title.isEmpty() ? commandName(call.id) : call.title);
 	setAccessibleName(windowTitle());
 	setObjectName(QStringLiteral("commandForm"));
-
 	auto* layout = new QVBoxLayout(this);
-	auto* about = new QLabel(command != nullptr ? command->description.section(QStringLiteral(". "), 0, 0) : QString(), this);
+	addHeader(layout);
+	addBody(layout);
+	addFooter(layout);
+	applyDefaults();
+}
+
+void CommandForm::addHeader(QVBoxLayout* layout)
+{
+	// Theme 4: a command that cannot be undone says so before anything else is read.
+	m_warning = new QLabel(commandUndoWarning(m_call.id), this);
+	m_warning->setObjectName(QStringLiteral("commandFormWarning"));
+	m_warning->setWordWrap(true);
+	m_warning->setStyleSheet(QStringLiteral("color: %1; font-weight: bold;").arg(tokens::palette().warning.name()));
+	m_warning->setVisible(!m_warning->text().isEmpty());
+	layout->addWidget(m_warning);
+	// The whole description (UX 80), not its first sentence: prerequisites and side effects come later in it.
+	auto* about = new QLabel(commandDescription(m_call.id), this);
 	about->setWordWrap(true);
 	about->setObjectName(QStringLiteral("commandFormAbout"));
 	layout->addWidget(about);
+	const QStringList required = commandRequired(m_call.id);
+	if (std::any_of(required.begin(), required.end(), [this](const QString& key) { return !m_call.fixed.contains(key); }))
+	{
+		layout->addWidget(formfield::captionLabel(tr("Fields marked * are required."), this));
+	}
+}
 
+void CommandForm::addBody(QVBoxLayout* layout)
+{
+	// The body scrolls (UX 86): a command with many arguments keeps Run and Cancel on screen.
+	auto* scroll = new QScrollArea(this);
+	scroll->setWidgetResizable(true);
+	scroll->setFrameShape(QFrame::NoFrame);
+	auto* body = new QWidget(scroll);
+	auto* column = new QVBoxLayout(body);
+	column->setContentsMargins(0, 0, 0, 0);
 	auto* form = new QFormLayout;
-	for (auto it = call.fixed.begin(); it != call.fixed.end(); ++it)
+	column->addLayout(form);
+	for (auto it = m_call.fixed.begin(); it != m_call.fixed.end(); ++it)
 	{
-		auto* value = new QLabel(renderValue(it.value()), this);
+		// Where it was asked from, by name (UX 85): the track or channel it will act on, its id beside.
+		auto* value = new QLabel(formfield::fixedText(it.key(), it.value()), body);
 		value->setObjectName(QStringLiteral("fixed:") + it.key());
-		form->addRow(labelFor(it.key()), value);
+		value->setTextInteractionFlags(Qt::TextSelectableByMouse);
+		form->addRow(fieldLabel(it.key()), value);
 	}
-	const QStringList required = requiredOf(call.id);
-	const QJsonObject properties = propertiesOf(call.id);
-	for (auto it = properties.begin(); it != properties.end(); ++it)
+	const QStringList required = commandRequired(m_call.id);
+	const QJsonObject properties = commandProperties(m_call.id);
+	QFormLayout* advanced = nullptr;
+	for (const QString& key : fieldOrder(properties, required))
 	{
-		if (call.fixed.contains(it.key())) { continue; }
-		addField(form, it.key(), it.value().toObject(), required.contains(it.key()));
+		if (m_call.fixed.contains(key)) { continue; }
+		const QJsonObject spec = properties.value(key).toObject();
+		const bool raw = formfield::isRawField(spec);
+		if (raw && advanced == nullptr) { advanced = addAdvanced(column, anyRawRequired(properties, required, m_call.fixed)); }
+		addField(raw ? advanced : form, key, spec, required.contains(key));
 	}
-	layout->addLayout(form);
+	column->addStretch();
+	scroll->setWidget(body);
+	layout->addWidget(scroll, 1);
+}
 
+QFormLayout* CommandForm::addAdvanced(QVBoxLayout* body, bool open)
+{
+	// Theme 5: raw JSON is for a script writer, so it waits behind a disclosure - open only when a
+	// required argument has no other editor.
+	auto* toggle = new QToolButton(this);
+	toggle->setText(tr("Advanced: raw values"));
+	toggle->setCheckable(true);
+	toggle->setChecked(open);
+	toggle->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
+	toggle->setArrowType(open ? Qt::DownArrow : Qt::RightArrow);
+	auto* section = new QWidget(this);
+	section->setObjectName(QStringLiteral("commandFormAdvanced"));
+	section->setVisible(open);
+	auto* form = new QFormLayout(section);
+	form->setContentsMargins(0, 0, 0, 0);
+	form->addRow(formfield::captionLabel(tr("These arguments are typed as JSON, as a script sends them."), section));
+	connect(toggle, &QToolButton::toggled, section, [toggle, section](bool on) {
+		section->setVisible(on);
+		toggle->setArrowType(on ? Qt::DownArrow : Qt::RightArrow);
+	});
+	body->addWidget(toggle);
+	body->addWidget(section);
+	return form;
+}
+
+void CommandForm::addField(QFormLayout* form, const QString& key, const QJsonObject& spec, bool required)
+{
+	QWidget* host = form->parentWidget() != nullptr ? form->parentWidget() : this;
+	const formfield::Editor editor = formfield::makeEditor(host, m_call.id, key, spec, required);
+	Field field{key, spec, editor.value, fieldHelp(m_call.id, key, spec, required), required};
+	const QString label = fieldLabel(key, spec);
+	field.editor->setObjectName(QStringLiteral("field:") + key);
+	field.editor->setAccessibleName(required ? tr("%1 (required)").arg(label) : label);
+	field.editor->setAccessibleDescription(field.help);
+	field.editor->setToolTip(field.help);
+	form->addRow(required ? label + QStringLiteral(" *") : label, editor.row);
+	QLabel* help = formfield::captionLabel(field.help, host);
+	help->setObjectName(QStringLiteral("help:") + key);
+	form->addRow(QString(), help);
+	m_fields.append(field);
+}
+
+void CommandForm::addFooter(QVBoxLayout* layout)
+{
 	m_error = new QLabel(this);
 	m_error->setObjectName(QStringLiteral("commandFormError"));
 	m_error->setWordWrap(true);
 	m_error->hide();
 	layout->addWidget(m_error);
+	m_answer = new QPlainTextEdit(this);
+	m_answer->setObjectName(QStringLiteral("commandFormResult"));
+	m_answer->setReadOnly(true);
+	m_answer->setAccessibleName(tr("Result"));
+	m_answer->hide();
+	layout->addWidget(m_answer, 1);
+	// The id stays visible but secondary (theme 4): what a script, the socket or MCP would call.
+	QLabel* id = formfield::captionLabel(tr("Command ID: %1").arg(m_call.id), this);
+	id->setObjectName(QStringLiteral("commandFormId"));
+	id->setTextInteractionFlags(Qt::TextSelectableByMouse);
+	layout->addWidget(id);
 
-	auto* buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, this);
-	buttons->button(QDialogButtonBox::Ok)->setText(tr("Run"));
+	auto* buttons = new QDialogButtonBox(this);
+	m_run = buttons->addButton(tr("Run"), QDialogButtonBox::AcceptRole);
+	m_run->setDefault(true);
+	m_copy = buttons->addButton(tr("Copy Result"), QDialogButtonBox::ActionRole);
+	m_copy->hide();
+	m_close = buttons->addButton(QDialogButtonBox::Cancel);
 	connect(buttons, &QDialogButtonBox::accepted, this, &CommandForm::accept);
 	connect(buttons, &QDialogButtonBox::rejected, this, &CommandForm::reject);
-	layout->addWidget(buttons);
-
-	for (auto it = call.defaults.begin(); it != call.defaults.end(); ++it)
-	{
-		if (!setField(it.key(), it.value())) { qWarning("%s: default '%s' fits no field", qPrintable(call.id), qPrintable(it.key())); }
-	}
-}
-
-void CommandForm::addField(QFormLayout* form, const QString& key, const QJsonObject& spec, bool required)
-{
-	Field field;
-	field.key = key;
-	field.spec = spec;
-	field.required = required;
-	QWidget* row = makeEditor(key, spec, required, &field.editor);
-	field.editor->setObjectName(QStringLiteral("field:") + key);
-	field.editor->setAccessibleName(required ? tr("%1 (required)").arg(labelFor(key)) : labelFor(key));
-	form->addRow(required ? labelFor(key) + QStringLiteral(" *") : labelFor(key), row);
-	m_fields.append(field);
-}
-
-QWidget* CommandForm::makeEditor(const QString& key, const QJsonObject& spec, bool required, QWidget** editor)
-{
-	if (isChoice(spec))
-	{
-		auto* box = new QComboBox(this);
-		if (!required) { box->addItem(QString()); }
-		box->addItems(choicesFor(spec));
-		*editor = box;
-		return box;
-	}
-	if (spec.value(QStringLiteral("format")).toString() == QStringLiteral("keys"))
-	{
-		// A shortcut is captured by pressing it, not typed as text.
-		*editor = new QKeySequenceEdit(this);
-		return *editor;
-	}
-	auto* edit = new QLineEdit(this);
-	*editor = edit;
-	constrain(edit, spec);
-	static const QRegularExpression colour(QStringLiteral("(^|_)colou?r$"));
-	const bool picks = ScriptCommandBridge::isPathArgument(m_call.id, key) || colour.match(key).hasMatch();
-	return picks ? withBrowse(edit, key) : edit;
-}
-
-void CommandForm::constrain(QLineEdit* edit, const QJsonObject& spec)
-{
-	const QString type = schemaType(spec);
-	const QJsonValue low = spec.value(QStringLiteral("minimum"));
-	const QJsonValue high = spec.value(QStringLiteral("maximum"));
-	// The C locale, as parseText reads the text (QString::toLongLong/toDouble): a "1,5" a German
-	// locale's validator would pass is not a number there, and its "1.5" would be refused.
-	QLocale c = QLocale::c();
-	c.setNumberOptions(QLocale::RejectGroupSeparator);
-	if (type == QStringLiteral("integer"))
-	{
-		auto* validator = new QIntValidator(low.isDouble() ? low.toInt() : INT_MIN, high.isDouble() ? high.toInt() : INT_MAX, edit);
-		validator->setLocale(c);
-		edit->setValidator(validator);
-	}
-	else if (type == QStringLiteral("number"))
-	{
-		auto* validator = new QDoubleValidator(edit);
-		validator->setLocale(c);
-		if (low.isDouble()) { validator->setBottom(low.toDouble()); }
-		if (high.isDouble()) { validator->setTop(high.toDouble()); }
-		edit->setValidator(validator);
-	}
-	else if (type == QStringLiteral("array") || type == QStringLiteral("object"))
-	{
-		edit->setPlaceholderText(type == QStringLiteral("array") ? QStringLiteral("[ ... ]") : QStringLiteral("{ ... }"));
-	}
-}
-
-QWidget* CommandForm::withBrowse(QLineEdit* edit, const QString& key)
-{
-	// A path argument (the sandbox's own rule, ScriptCommandBridge::isPathArgument) gets a
-	// file or folder picker beside its text: a folder for dir/folder/directory, else a file
-	// that may or may not exist yet. A colour argument gets the colour chooser.
-	static const QRegularExpression folder(QStringLiteral("(^|_)(dir|folder|directory)$"));
-	static const QRegularExpression colour(QStringLiteral("(^|_)colou?r$"));
-	const bool wantsFolder = folder.match(key).hasMatch();
-	const bool wantsColour = colour.match(key).hasMatch();
-	auto* row = new QWidget(this);
-	auto* box = new QHBoxLayout(row);
-	box->setContentsMargins(0, 0, 0, 0);
-	box->addWidget(edit, 1);
-	auto* browse = new QToolButton(row);
-	browse->setText(QStringLiteral("..."));
-	browse->setAccessibleName(tr("Choose %1").arg(labelFor(key).toLower()));
-	browse->setToolTip(browse->accessibleName());
-	connect(browse, &QToolButton::clicked, edit, [this, edit, wantsFolder, wantsColour] {
-		if (wantsColour)
-		{
-			const QColor picked = QColorDialog::getColor(QColor(edit->text()), this, windowTitle());
-			if (picked.isValid()) { edit->setText(picked.name()); }
-			return;
-		}
-		const QString chosen = wantsFolder ? QFileDialog::getExistingDirectory(this, windowTitle(), edit->text())
-			: QFileDialog::getSaveFileName(this, windowTitle(), edit->text(), QString(), nullptr,
-				QFileDialog::DontConfirmOverwrite);
-		if (!chosen.isEmpty()) { edit->setText(chosen); }
+	connect(m_copy, &QPushButton::clicked, this, [this] {
+		QApplication::clipboard()->setText(QString::fromUtf8(QJsonDocument(m_result.result).toJson(QJsonDocument::Indented)));
 	});
-	box->addWidget(browse);
-	return row;
+	layout->addWidget(buttons);
+}
+
+void CommandForm::applyDefaults()
+{
+	// The call's defaults first (the selection, the caller's choice), else the schema's own default.
+	for (const Field& field : m_fields)
+	{
+		const QJsonValue given = m_call.defaults.value(field.key);
+		const QJsonValue value = given.isUndefined() ? field.spec.value(QStringLiteral("default")) : given;
+		if (!value.isUndefined() && !setField(field.key, value))
+		{
+			qWarning("%s: default '%s' fits no field", qPrintable(m_call.id), qPrintable(field.key));
+		}
+	}
+	for (auto it = m_call.defaults.begin(); it != m_call.defaults.end(); ++it)
+	{
+		if (!fields().contains(it.key())) { qWarning("%s: default '%s' fits no field", qPrintable(m_call.id), qPrintable(it.key())); }
+	}
 }
 
 QStringList CommandForm::fields() const
@@ -360,26 +248,26 @@ bool CommandForm::setField(const QString& key, const QJsonValue& value)
 {
 	for (const Field& field : m_fields)
 	{
-		if (field.key != key) { continue; }
-		return setEditorText(field.editor, renderValue(value));
+		if (field.key == key) { return formfield::writeValue(field.editor, value); }
 	}
 	return false;
 }
 
 bool CommandForm::readField(const Field& field, QJsonValue* value, QString* error) const
 {
-	const auto* box = qobject_cast<const QComboBox*>(field.editor);
-	const QString text = editorText(field.editor);
-	if (text.isEmpty())
+	QString reason;
+	const QString label = fieldLabel(field.key, field.spec);
+	if (!formfield::readValue(field.editor, field.spec, value, &reason))
 	{
-		if (field.required) { *error = tr("%1 is required").arg(labelFor(field.key)); }
-		return !field.required;
+		*error = tr("%1: %2").arg(label, reason);
+		return false;
 	}
-	const QString type = schemaType(field.spec);
-	if (box != nullptr && type == QStringLiteral("boolean")) { *value = text == QStringLiteral("yes"); return true; }
-	if (parseText(text, type, value)) { return true; }
-	*error = tr("%1: \"%2\" is not a valid %3").arg(labelFor(field.key), text, type);
-	return false;
+	if (value->isUndefined() && field.required)
+	{
+		*error = tr("%1 is required").arg(label);
+		return false;
+	}
+	return true;
 }
 
 bool CommandForm::collect(QJsonObject* args, QString* error, QWidget** invalid) const
@@ -401,100 +289,82 @@ QString CommandForm::errorText() const
 	return m_error->text();
 }
 
+QString CommandForm::resultText() const
+{
+	return m_answer->isHidden() ? QString() : m_answer->toPlainText();
+}
+
+QString CommandForm::warningText() const
+{
+	return m_warning->isHidden() ? QString() : m_warning->text();
+}
+
+bool CommandForm::keepsOpen() const
+{
+	const ControlCommand* command = ControlRegistry::instance()->command(m_call.id);
+	return m_call.showResult || (command != nullptr && !command->mutating);
+}
+
+void CommandForm::showError(const QString& error, QWidget* invalid)
+{
+	m_error->setText(error);
+	m_error->show();
+	if (invalid == nullptr) { return; }
+	invalid->setAccessibleDescription(error);
+	invalid->setFocus(Qt::OtherFocusReason);
+}
+
+void CommandForm::showAnswer()
+{
+	// The answer stays on screen to be read and copied (UX 97), and Close no longer reads as Cancel.
+	m_succeeded = true;
+	m_answer->setPlainText(resultSummary(m_result.result));
+	m_answer->show();
+	m_copy->show();
+	m_run->setText(tr("Run Again"));
+	m_close->setText(tr("Close"));
+}
+
 void CommandForm::accept()
 {
 	QJsonObject args;
 	QString error;
 	QWidget* invalid = nullptr;
-	for (const Field& field : m_fields) { field.editor->setAccessibleDescription(QString()); }
+	for (const Field& field : m_fields) { field.editor->setAccessibleDescription(field.help); }
 	if (!collect(&args, &error, &invalid))
 	{
-		m_error->setText(error);
-		m_error->show();
-		invalid->setAccessibleDescription(error);
-		invalid->setFocus(Qt::OtherFocusReason);
+		showError(error, invalid);
 		return;
 	}
 	m_result = ControlRegistry::instance()->invoke(m_call.id, args);
 	emit ran(m_result);
 	if (!m_result.ok)
 	{
-		m_error->setText(m_result.errorMessage);
-		m_error->show();
+		showError(m_result.errorMessage, nullptr);
 		return;
 	}
 	m_error->clear();
 	m_error->hide();
-	announce(parentWidget(), m_call, m_result);
+	if (keepsOpen())
+	{
+		showAnswer();
+		return;
+	}
+	// A change closes the form with a brief confirmation of what it did (UX 96), never silently.
+	CommandCall confirmed = m_call;
+	confirmed.showResult = true;
+	announce(parentWidget(), confirmed, m_result);
 	QDialog::accept();
 }
 
-void announce(QWidget* parent, const CommandCall& call, const ControlResult& result)
+void CommandForm::reject()
 {
-	// No interface to float a message over (a tool embedding the registry): nothing to show.
-	if (ControlRegistry::instance()->isHeadless() || getGUI() == nullptr || (result.ok && !call.showResult)) { return; }
-	constexpr int MaxChars = 400;
-	QString text = result.ok ? QString::fromUtf8(QJsonDocument(result.result).toJson(QJsonDocument::Indented))
-		: result.errorMessage;
-	if (text.size() > MaxChars) { text = text.left(MaxChars - 1) + QStringLiteral("…"); }
-	TextFloat::displayMessage(call.title.isEmpty() ? call.id : call.title, text, QPixmap(), result.ok ? 8000 : 4000, parent);
-}
-
-ControlResult runCommand(QWidget* parent, const CommandCall& call, CommandForm** form)
-{
-	if (form != nullptr) { *form = nullptr; }
-	bool nothingToAsk = true;
-	const QJsonObject properties = propertiesOf(call.id);
-	for (auto it = properties.begin(); it != properties.end() && nothingToAsk; ++it)
+	if (m_succeeded)
 	{
-		nothingToAsk = call.fixed.contains(it.key());
+		done(QDialog::Accepted);
+		return;
 	}
-	if (!call.ask || nothingToAsk)
-	{
-		const ControlResult result = ControlRegistry::instance()->invoke(call.id, call.fixed);
-		announce(parent, call, result);
-		return result;
-	}
-	auto* shown = new CommandForm(call, parent);
-	shown->setAttribute(Qt::WA_DeleteOnClose);
-	shown->setModal(false);
-	shown->show();
-	if (form != nullptr) { *form = shown; }
-	return ControlResult::failure(ControlErrorKind::Busy, QObject::tr("waiting for the form"));
-}
-
-QAction* addCommandAction(QMenu* menu, const QString& label, const QString& id, std::function<CommandCall()> make)
-{
-	QAction* action = menu->addAction(label);
-	action->setProperty("controlCommand", id);
-	action->setEnabled(ControlRegistry::instance()->hasCommand(id));
-	QObject::connect(action, &QAction::triggered, menu, [menu, make = std::move(make)] {
-		runCommand(hostOf(menu), make());
-	});
-	return action;
-}
-
-QMenu* addCommandChoices(QMenu* menu, const QString& label, const QString& id, const QString& key,
-	std::function<CommandCall()> make)
-{
-	QMenu* sub = menu->addMenu(label);
-	const QJsonObject spec = propertiesOf(id).value(key).toObject();
-	const bool flag = schemaType(spec) == QStringLiteral("boolean");
-	const QJsonArray values = flag ? QJsonArray{true, false} : spec.value(QStringLiteral("enum")).toArray();
-	sub->setEnabled(!values.isEmpty());
-	for (const QJsonValue& value : values)
-	{
-		const QString text = flag ? (value.toBool() ? QObject::tr("On") : QObject::tr("Off")) : renderValue(value);
-		QAction* action = sub->addAction(text);
-		action->setProperty("controlCommand", id);
-		QObject::connect(action, &QAction::triggered, sub, [sub, key, value, make] {
-			CommandCall call = make();
-			call.fixed.insert(key, value);
-			call.ask = false;
-			runCommand(hostOf(sub), call);
-		});
-	}
-	return sub;
+	QDialog::reject();
 }
 
 } // namespace lmms::gui

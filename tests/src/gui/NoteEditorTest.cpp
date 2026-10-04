@@ -27,6 +27,7 @@
 #include <QComboBox>
 #include <QJsonArray>
 #include <QToolButton>
+#include <QWheelEvent>
 
 #include "ControlRegistry.h"
 #include "ControllerLaneView.h"
@@ -291,18 +292,19 @@ private slots:
 		QCOMPARE(m_clip->notes().size(), std::size_t{2});
 	}
 
-	void altDragChangesTheSelectionsVelocityAsOneEdit()
+	void altWheelChangesTheSelectionsVelocityAsOneEdit()
 	{
+		// The FL model (2026-10-03): Alt+wheel over a note sets the velocity (Alt alone no longer drags it).
 		select({m_clip->notes()[0], m_clip->notes()[1]});
-		m_editor->setTool(NoteTool::Select);
-		const QPoint from = m_editor->canvas()->noteRect(*m_clip->notes()[0]).center();
-		drag(from, from - QPoint(0, 30), Qt::AltModifier);
-		QCOMPARE(static_cast<int>(noteAt(m_clip, 0, 60)->getVolume()), 130);
-		QCOMPARE(static_cast<int>(noteAt(m_clip, 192, 64)->getVolume()), 130);
-		QVERIFY2(noteAt(m_clip, 0, 60) != nullptr, "a velocity drag does not move the note");
-		QCOMPARE(m_editor->state().lastVelocity, 130);
+		const QPoint at = m_editor->canvas()->noteRect(*m_clip->notes()[0]).center();
+		QWheelEvent wheel(at, m_editor->canvas()->mapToGlobal(at), QPoint(), QPoint(0, 120), Qt::NoButton, Qt::AltModifier,
+			Qt::NoScrollPhase, false);
+		QApplication::sendEvent(m_editor->canvas(), &wheel);
+		QCOMPARE(static_cast<int>(noteAt(m_clip, 0, 60)->getVolume()), 105);
+		QCOMPARE(static_cast<int>(noteAt(m_clip, 192, 64)->getVolume()), 105);
 		QVERIFY(undo());
 		QCOMPARE(static_cast<int>(noteAt(m_clip, 0, 60)->getVolume()), 100);
+		QCOMPARE(static_cast<int>(noteAt(m_clip, 192, 64)->getVolume()), 100);
 	}
 
 	void keepInScaleDrawsOnTheNearestScaleKey()

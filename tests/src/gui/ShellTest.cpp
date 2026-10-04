@@ -25,9 +25,12 @@
 #include <QAction>
 #include <QApplication>
 #include <QDomDocument>
+#include <QJsonArray>
+#include <QLabel>
 #include <QPointer>
 #include <QSplitter>
 #include <QTemporaryDir>
+#include <QToolButton>
 #include <QtTest>
 
 #include "ConfigManager.h"
@@ -35,6 +38,7 @@
 #include "Shell.h"
 #include "ShellChrome.h"
 #include "ShellPanel.h"
+#include "ShellTearOff.h"
 
 using namespace lmms::gui;
 
@@ -66,6 +70,18 @@ struct World
 		shell.show();
 	}
 };
+
+ShellTearOff* tearOffOf(ShellPanel* frame)
+{
+	return frame->header()->findChild<ShellTearOff*>();
+}
+
+//! A point on panel @a frame's header (the handle), and where it is on the screen.
+const QPoint kGrip(60, 10);
+QPoint gripOf(ShellPanel* frame)
+{
+	return frame->header()->mapToGlobal(kGrip);
+}
 
 } // namespace
 
@@ -212,6 +228,196 @@ private slots:
 		QDomElement saved = doc.createElement(QStringLiteral("pianoroll"));
 		MainWindow::saveWidgetState(noteEditor, saved);
 		QVERIFY(!saved.hasAttribute(QStringLiteral("x")));  // a panel has no window geometry to save
+	}
+
+	//! 0.5.0 G (theme 8): a panel floats in a window of its own and docks back with its editor
+	//! intact; docking shows it, in its home region, in place of what was there.
+	void aFloatingPanelDocksBackIntoItsZone()
+	{
+		World world;
+		QPointer<QWidget> mixer = world.content.value(QStringLiteral("mixer"));
+		QVERIFY(world.shell.detachPanel(QStringLiteral("mixer")));
+		QVERIFY(world.shell.floatingWindow(QStringLiteral("mixer"))->isVisible());
+		QVERIFY(mixer->isVisible());
+		QVERIFY(world.shell.panelAction(QStringLiteral("mixer"))->isChecked());  // on screen, in its own window
+		QVERIFY(world.shell.attachPanel(QStringLiteral("mixer")));
+		QCOMPARE(hostOf(world.shell.panel(QStringLiteral("mixer"))), QStringLiteral("shellBottom"));
+		QVERIFY(world.shell.model().isVisible(QStringLiteral("mixer")));
+		QCOMPARE(world.shell.panel(QStringLiteral("mixer"))->content(), mixer.data());
+		QVERIFY(!world.shell.attachPanel(QStringLiteral("mixer")));  // docked already: nothing to do
+	}
+
+	void aFloatingPanelsSwitchBringsItsWindowForward()
+	{
+		World world;
+		world.shell.detachPanel(QStringLiteral("browser"));
+		QVERIFY(world.shell.togglePanel(QStringLiteral("browser")));
+		QVERIFY(world.shell.isDetached(QStringLiteral("browser")));
+		QVERIFY(world.shell.floatingWindow(QStringLiteral("browser"))->isVisible());
+	}
+
+	void theCentreSaysWhereItsPanelWentAndTheButtonSaysDock()
+	{
+		World world;
+		auto* placeholder = world.shell.findChild<QWidget*>(QStringLiteral("shellFloatingPlaceholder"));
+		auto* button = world.shell.panel(QStringLiteral("arranger"))->findChild<QToolButton*>(QStringLiteral("panelFloat"));
+		QVERIFY(placeholder != nullptr && button != nullptr);
+		QVERIFY(!placeholder->isVisible());
+		QCOMPARE(button->property("controlCommand").toString(), QStringLiteral("window.detach"));
+		world.shell.detachPanel(QStringLiteral("arranger"));
+		QVERIFY(placeholder->isVisible());
+		QVERIFY(placeholder->findChild<QLabel*>()->text().contains(QStringLiteral("Arranger")));
+		QCOMPARE(button->text(), Shell::tr("Dock"));
+		QCOMPARE(button->property("controlCommand").toString(), QStringLiteral("window.attach"));
+		world.shell.attachPanel(QStringLiteral("arranger"));
+		QVERIFY(!placeholder->isVisible());
+		QCOMPARE(hostOf(world.shell.panel(QStringLiteral("arranger"))), QStringLiteral("shellCenter"));
+		QCOMPARE(button->property("controlCommand").toString(), QStringLiteral("window.detach"));
+	}
+
+	void draggingAHeaderOutFloatsThePanelWhereItIsDropped()
+	{
+		World world;
+		QVERIFY(QTest::qWaitForWindowExposed(&world.shell));
+		ShellPanel* frame = world.shell.panel(QStringLiteral("inspector"));
+		ShellTearOff* tear = tearOffOf(frame);
+		QVERIFY(tear != nullptr);
+		const QPoint start = gripOf(frame);
+		tear->press(start, kGrip);
+		tear->move(start + QPoint(20, 0));  // past the drag distance, still on the header
+		QCOMPARE(tear->drag(), ShellTearOff::Drag::Tearing);
+		QVERIFY(tear->previewText().contains(QStringLiteral("Keep dragging")));
+		const QPoint drop = frame->mapToGlobal(QPoint(frame->width() + 300, 200));
+		tear->move(drop);
+		QVERIFY(tear->previewText().contains(QStringLiteral("Release to float")));
+		tear->release(drop);
+		QCOMPARE(tear->drag(), ShellTearOff::Drag::None);
+		QVERIFY(world.shell.isDetached(QStringLiteral("inspector")));
+		QCOMPARE(world.shell.floatingWindow(QStringLiteral("inspector"))->geometry().topLeft(), drop - kGrip);
+		QCOMPARE(frame->content(), world.content.value(QStringLiteral("inspector")).data());
+	}
+
+	void aDragReleasedOnTheHeaderOrCancelledChangesNothing()
+	{
+		World world;
+		QVERIFY(QTest::qWaitForWindowExposed(&world.shell));
+		ShellPanel* frame = world.shell.panel(QStringLiteral("inspector"));
+		ShellTearOff* tear = tearOffOf(frame);
+		const QPoint start = gripOf(frame);
+		tear->press(start, kGrip);
+		tear->move(start + QPoint(30, 25));  // within a header's height of it
+		tear->release(start + QPoint(30, 25));
+		QVERIFY(!world.shell.isDetached(QStringLiteral("inspector")));
+		tear->press(start, kGrip);
+		tear->move(frame->mapToGlobal(QPoint(frame->width() + 300, 200)));
+		tear->cancel();  // Esc
+		QCOMPARE(tear->drag(), ShellTearOff::Drag::None);
+		QVERIFY(tear->previewText().isEmpty());
+		QVERIFY(!world.shell.isDetached(QStringLiteral("inspector")));
+		QCOMPARE(hostOf(frame), QStringLiteral("shellLeft"));
+	}
+
+	void draggingAFloatingHeaderOntoItsZoneDocksItAndElsewhereMovesIt()
+	{
+		World world;
+		QVERIFY(QTest::qWaitForWindowExposed(&world.shell));
+		const QString mixer = QStringLiteral("mixer");
+		world.shell.setNextFloatGeometry(mixer, QRect(world.shell.mapToGlobal(QPoint(500, 200)), QSize(480, 320)));
+		QVERIFY(world.shell.detachPanel(mixer));
+		ShellPanel* frame = world.shell.panel(mixer);
+		ShellTearOff* tear = tearOffOf(frame);
+		auto* hint = world.shell.findChild<ShellDockHint*>();
+		QVERIFY(hint != nullptr);
+		const QPoint zone = world.shell.mapToGlobal(world.shell.dockZone(mixer).center());
+		tear->press(gripOf(frame), kGrip);
+		tear->move(zone);
+		QCOMPARE(tear->drag(), ShellTearOff::Drag::Moving);
+		QVERIFY(hint->isVisible());
+		QCOMPARE(hint->mode(), ShellDockHint::Armed);
+		// The bottom region shows one panel: the highlight says which one docking replaces.
+		QVERIFY(hint->text().contains(QStringLiteral("Release to dock")));
+		QVERIFY(hint->text().contains(QStringLiteral("Note Editor")));
+		tear->release(zone);
+		QVERIFY(!world.shell.isDetached(mixer));
+		QVERIFY(!hint->isVisible());
+		QCOMPARE(hostOf(frame), QStringLiteral("shellBottom"));
+
+		QVERIFY(world.shell.detachPanel(mixer));
+		const QPoint before = world.shell.floatingWindow(mixer)->pos();
+		const QPoint start = gripOf(frame);
+		const QPoint away = world.shell.mapToGlobal(QPoint(world.shell.width() + 400, 50));
+		tear->press(start, kGrip);
+		tear->move(away);
+		QVERIFY(!hint->isVisible());  // off the main window there is nowhere to dock
+		tear->release(away);
+		QVERIFY(world.shell.isDetached(mixer));
+		QCOMPARE(world.shell.floatingWindow(mixer)->pos(), before + (away - start));
+	}
+
+	void theKeyFloatsAndDocksTheFocusedPanel()
+	{
+		World world;
+		QCOMPARE(world.shell.floatAction()->shortcut(), QKeySequence(QStringLiteral("Ctrl+Shift+F")));
+		// The focused panel when it is on screen, else the view's main panel.
+		const QString focused = world.shell.model().focused();
+		const bool shown = !focused.isEmpty() && world.shell.model().isVisible(focused);
+		const QString id = shown ? focused : QStringLiteral("arranger");
+		world.shell.floatAction()->trigger();
+		QVERIFY(world.shell.isDetached(id));
+		world.shell.floatAction()->trigger();
+		QVERIFY(!world.shell.isDetached(id));
+	}
+
+	void aSavedLayoutRemembersItsFloatingPanels()
+	{
+		World world;
+		const QRect where(100, 100, 500, 400);
+		world.shell.setNextFloatGeometry(QStringLiteral("devices"), where);
+		QVERIFY(world.shell.detachPanel(QStringLiteral("devices")));
+		const QJsonObject saved = world.shell.snapshot();
+		const QJsonArray floating = saved.value(QStringLiteral("floating")).toArray();
+		QCOMPARE(floating.size(), 1);
+		QCOMPARE(floating.at(0).toObject().value(QStringLiteral("panel")).toString(), QStringLiteral("devices"));
+		QVERIFY(floating.at(0).toObject().contains(QStringLiteral("screen")));
+		world.shell.attachPanel(QStringLiteral("devices"));
+		world.shell.restoreSnapshot(saved);
+		QVERIFY(world.shell.isDetached(QStringLiteral("devices")));
+		QCOMPARE(world.shell.floatingWindow(QStringLiteral("devices"))->geometry(), where);
+		// A layout saved before the tear-off (no `floating`) leaves the panels as they are ...
+		QJsonObject older = saved;
+		older.remove(QStringLiteral("floating"));
+		world.shell.restoreSnapshot(older);
+		QVERIFY(world.shell.isDetached(QStringLiteral("devices")));
+		// ... and one that lists none docks them.
+		QJsonObject docked = saved;
+		docked.insert(QStringLiteral("floating"), QJsonArray());
+		world.shell.restoreSnapshot(docked);
+		QVERIFY(!world.shell.isDetached(QStringLiteral("devices")));
+	}
+
+	void floatingPanelsSurviveARestart()
+	{
+		const QRect where(120, 140, 500, 380);
+		{
+			World world;
+			world.shell.restoreConfiguredLayout();
+			world.shell.setNextFloatGeometry(QStringLiteral("mixer"), where);
+			world.shell.detachPanel(QStringLiteral("mixer"));
+		}
+		World again;
+		again.shell.restoreConfiguredLayout();
+		QVERIFY(again.shell.isDetached(QStringLiteral("mixer")));
+		QCOMPARE(again.shell.floatingWindow(QStringLiteral("mixer"))->geometry(), where);
+	}
+
+	void quittingKeepsAPanelFloatingAndACancelledQuitBringsItBack()
+	{
+		World world;
+		world.shell.detachPanel(QStringLiteral("browser"));
+		QWidget* own = world.shell.floatingWindow(QStringLiteral("browser"));
+		own->close();  // not from its title bar: what File > Quit's closeAllWindows does
+		QVERIFY(world.shell.isDetached(QStringLiteral("browser")));
+		QTRY_VERIFY(own->isVisible());  // the main window stayed open, so the window comes back
 	}
 
 	//! BUGS_FOUND 11.30, carried over from FocusDeskPaneTest when the Focus Desk was retired: a

@@ -102,13 +102,13 @@ const std::vector<Setting>& catalogue()
 		{"audioengine/sanitizemix", "Audio", "Clean the mix of invalid samples"},
 		{"midi/autoquantize", "MIDI", "Quantise recorded notes automatically"},
 		{"ui/scale", "Appearance", "Interface scale"},
-		{"ui/fontscale", "Appearance", "Text size"},
 		{"ui/palette", "Appearance", "Colour palette: dark, high contrast or light"},
-		{"ui/density", "Appearance", "Layout density: standard, comfortable or touch"},
+		{"ui/density", "Appearance", "Accessible mode: larger targets, strong focus rings, high contrast, reduced motion"},
 		{"ui/theme", "Customise", "Theme colours"},
 		{"ui/header", "Customise", "Header buttons"},
 		{"ui/shortcuts", "Customise", "Keyboard shortcuts"},
-		{"ui/macros", "Customise", "Macros"},
+		{"ui/workflows", "Customise", "Workflows (the shared library)"},
+		{"ui/workflows.scope", "Customise", "Where workflows are kept: shared by every project or with each project"},
 		{"ui/shell.layouts", "Customise", "Saved window layouts"},
 	};
 	return settings;

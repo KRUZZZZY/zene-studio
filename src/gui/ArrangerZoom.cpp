@@ -1,0 +1,148 @@
+/*
+ * ArrangerZoom.cpp - the arranger's zoom, kept around what the user is looking at
+ *
+ * Copyright (c) 2026 Zene Studio contributors
+ *
+ * This file is part of LMMS - https://lmms.io
+ *
+ * This program is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU General Public
+ * License as published by the Free Software Foundation; either
+ * version 2 of the License, or (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public
+ * License along with this program (see COPYING); if not, write to the
+ * Free Software Foundation, Inc., 51 Franklin Street, Fifth Floor,
+ * Boston, MA 02110-1301 USA.
+ *
+ */
+
+#include "ArrangerZoom.h"
+
+#include <algorithm>
+#include <limits>
+
+#include <QScrollBar>
+#include <QVector>
+
+#include "ArrangementEdits.h"
+#include "AutomatableModel.h"
+#include "Clip.h"
+#include "ClipView.h"
+#include "SongEditor.h"
+#include "TimeLineWidget.h"
+
+namespace lmms::gui::arrangerzoom
+{
+
+namespace
+{
+
+constexpr int HistoryDepth = 32;
+QVector<int> s_history;  //!< earlier zoom model values, newest last (UI thread only)
+
+} // namespace
+
+bool selectedClipsSpan(SongEditor* editor, tick_t* begin, tick_t* end)
+{
+	*begin = std::numeric_limits<tick_t>::max();
+	*end = 0;
+	for (selectableObject* object : editor->selectedObjects())
+	{
+		auto* view = dynamic_cast<ClipView*>(object);
+		if (view == nullptr) { continue; }
+		*begin = std::min<tick_t>(*begin, view->getClip()->startPosition().getTicks());
+		*end = std::max<tick_t>(*end, view->getClip()->endPosition().getTicks());
+	}
+	return *end > *begin;
+}
+
+int visibleWidth(SongEditor* editor)
+{
+	return std::max(1, editor->timeLine()->width() - editor->timeLine()->markerX(editor->currentPosition()));
+}
+
+tick_t visibleTicks(SongEditor* editor)
+{
+	return static_cast<tick_t>(visibleWidth(editor) * TimePos::ticksPerBar() / std::max(editor->pixelsPerBar(), 1.f));
+}
+
+tick_t tickAtGlobal(SongEditor* editor, const QPoint& global)
+{
+	const int x = editor->timeLine()->mapFromGlobal(global).x() - editor->timeLine()->markerX(editor->currentPosition());
+	const double ticks = editor->currentPosition().getTicks() + x * TimePos::ticksPerBar() / std::max(editor->pixelsPerBar(), 1.f);
+	return std::max<tick_t>(0, static_cast<tick_t>(ticks));
+}
+
+bool selectionSpan(SongEditor* editor, tick_t* begin, tick_t* end)
+{
+	const ArrangerRange& range = ArrangerRange::instance();
+	if (range.active())
+	{
+		*begin = range.start();
+		*end = range.end();
+		return true;
+	}
+	return selectedClipsSpan(editor, begin, end);
+}
+
+tick_t playhead(SongEditor* editor, bool* shown)
+{
+	const tick_t at = editor->timeLine()->timeline()->pos().getTicks();
+	const tick_t start = editor->currentPosition().getTicks();
+	if (shown != nullptr) { *shown = at >= start && at <= start + visibleTicks(editor); }
+	return at;
+}
+
+tick_t keyboardAnchor(SongEditor* editor)
+{
+	tick_t begin = 0;
+	tick_t end = 0;
+	if (selectionSpan(editor, &begin, &end)) { return begin + (end - begin) / 2; }
+	bool shown = false;
+	const tick_t at = playhead(editor, &shown);
+	return shown ? at : editor->currentPosition().getTicks() + visibleTicks(editor) / 2;
+}
+
+void keepInPlace(SongEditor* editor, tick_t anchor, double ppbBefore, tick_t startBefore)
+{
+	const double after = editor->pixelsPerBar();
+	if (after == ppbBefore) { return; }
+	editor->horizontalScroll()->setValue(static_cast<int>(
+		arrangement::anchoredViewStart(startBefore, visibleWidth(editor), ppbBefore, after, anchor)));
+}
+
+void zoomAround(SongEditor* editor, int value, tick_t anchor)
+{
+	const double before = editor->pixelsPerBar();
+	const tick_t start = editor->currentPosition().getTicks();
+	editor->zoomingModel()->setValue(value);
+	keepInPlace(editor, anchor, before, start);
+}
+
+void remember(int value)
+{
+	if (!s_history.isEmpty() && s_history.last() == value) { return; }
+	s_history.append(value);
+	if (s_history.size() > HistoryDepth) { s_history.removeFirst(); }
+}
+
+bool takeEarlier(int current, int* earlier)
+{
+	if (s_history.isEmpty()) { return false; }
+	*earlier = s_history.takeLast();
+	s_history.append(current);  // so going back twice toggles between two zooms
+	return true;
+}
+
+int historySize()
+{
+	return static_cast<int>(s_history.size());
+}
+
+} // namespace lmms::gui::arrangerzoom

@@ -26,6 +26,7 @@
 #define LMMS_GUI_SHELL_H
 
 #include <QHash>
+#include <QJsonArray>
 #include <QJsonObject>
 #include <QPointer>
 #include <QWidget>
@@ -37,10 +38,12 @@ class QAction;
 class QActionGroup;
 class QHBoxLayout;
 class QSplitter;
+class QTimer;
 
 namespace lmms::gui
 {
 
+class ShellDockHint;
 class ShellFooter;
 class ShellHeader;
 class ShellPanel;
@@ -99,10 +102,41 @@ public:
 	void restoreSnapshot(const QJsonObject& doc);
 
 	//! WF-092: panel @a id in a window of its own - movable to a second monitor - or back in
-	//! the shell. A detached panel stays in its window whatever view or layout is applied.
+	//! the shell. A detached panel stays in its window whatever view is chosen; a saved layout
+	//! that lists the floating panels (snapshot()'s `floating`) puts them back as it lists them.
+	//! Docking opens the panel in its dock zone, so "Dock" always shows it in the main window.
 	bool detachPanel(const QString& id, QString* reason = nullptr);
 	bool attachPanel(const QString& id);
 	bool isDetached(const QString& id) const { return m_floating.contains(id); }
+
+	//! 0.5.0 G (theme 8), the tear-off (ShellFloating.cpp, ShellTearOff.cpp). window.detach or
+	//! window.attach for @a id through the registry: the header's Dock button, the drag, the
+	//! header's menu and the key all run this, as an agent on the socket does. A shell the
+	//! commands cannot reach (not the main window's: a test's) acts directly.
+	void dispatchFloat(const QString& id, bool floating);
+	//! Where the next detachPanel(@a id) puts its window: global, the client area.
+	void setNextFloatGeometry(const QString& id, const QRect& geometry);
+	//! Where panel @a id docks, in this widget's coordinates: the view's centre when it is the
+	//! view's main panel, else its home region (or that edge's band while the region is
+	//! closed). Empty when the current view has no place for it (the arranger outside Arrange).
+	QRect dockZone(const QString& id) const;
+	//! The panel a dock of @a id would take the place of (its region shows one), or empty.
+	QString displacedBy(const QString& id) const;
+	//! The drop highlight over @a id's dock zone; an empty @a id hides it (ShellDockHint::Mode).
+	void showDockHint(const QString& id, int mode);
+	QWidget* floatingWindow(const QString& id) const { return m_floating.value(id).data(); }
+	//! Bring floating @a id's window to the front; false when it does not float.
+	bool raiseFloating(const QString& id);
+	//! Move floating @a id's window onto screen @a index of QGuiApplication::screens(), keeping
+	//! its size and its place relative to the screen; false when it does not float or there is
+	//! no such screen.
+	bool moveFloatingToScreen(const QString& id, int index);
+	//! The keyboard route: float the focused panel, or dock it when it floats (Ctrl+Shift+F).
+	QAction* floatAction() const { return m_floatAction; }
+	//! A floating window moved or resized: persist the layout shortly (coalesced).
+	void schedulePersist();
+	//! A floating window's size: the panel's, at least 480 x 320 and at most 1200 x 800.
+	static QSize floatSize(const QWidget* frame);
 
 	//! Restore the persisted layout (config ui/shell.layout); safe to call once at start-up.
 	//! Until it has been called the shell writes nothing to the config.
@@ -129,8 +163,23 @@ private:
 	void syncActions();
 	void onFocusChanged(QWidget* now);
 	static ShellView viewOffering(const QString& id);
-	//! The panel header's pop-out button (window.detach / window.attach, ShellFloating.cpp).
+	//! The panel header's pop-out button (window.detach / window.attach, ShellFloating.cpp) and
+	//! the header's drag handle (ShellTearOff).
 	void addFloatButton(ShellPanel* frame);
+	//! The Dock button, the drop highlight, the centre's placeholder and the persist timer.
+	void buildFloating();
+	//! The button says "Dock" while its panel floats, and shows the pop-out glyph while it is docked.
+	void syncFloatButton(const QString& id);
+	//! While the view's main panel floats, the centre says where it went and offers Dock.
+	void syncCentrePlaceholder();
+	//! Put floating @a id back in the shell without touching the layout (a layout restore).
+	bool dockQuietly(const QString& id);
+	//! The floating panels as a layout saves them - [{panel, screen, x, y, width, height}] - and
+	//! putting them back: listed panels float there, others dock. Before the window is first
+	//! shown the list waits (m_pendingFloats), so no panel window opens before the main one.
+	QJsonArray floatingSnapshot() const;
+	void restoreFloating(const QJsonArray& floating);
+	void floatOne(const QJsonObject& entry);
 
 	ShellLayout m_layout;
 	QHash<QString, ShellPanel*> m_panels;
@@ -149,6 +198,12 @@ private:
 	bool m_restoreAttempted = false;
 	bool m_shownOnce = false;
 	QHash<QString, QPointer<QWidget>> m_floating;  // panel id -> its own window
+	QHash<QString, QRect> m_nextFloatGeometry;     // panel id -> where its next window opens
+	QJsonArray m_pendingFloats;                    // a restored layout's floats, until the first show
+	QAction* m_floatAction = nullptr;
+	ShellDockHint* m_dockHint = nullptr;
+	QWidget* m_centrePlaceholder = nullptr;
+	QTimer* m_persistTimer = nullptr;
 };
 
 } // namespace lmms::gui

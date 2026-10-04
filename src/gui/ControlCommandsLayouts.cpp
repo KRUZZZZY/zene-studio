@@ -26,14 +26,21 @@
  *  own for a second monitor (window.detach / window.attach) and WF-116 the header's buttons
  *  (window.header_get / window.header_set). Layouts and the header are interface state kept
  *  in the config file (UiConfigStore: one undo step per write); applying a layout or moving a
- *  panel is interface state the shell persists itself, as window.set_view is. */
+ *  panel is interface state the shell persists itself, as window.set_view is.
+ *  Design theme 22: the saved layouts are the user's personal library, and besides it each project
+ *  can remember a layout of its own (window.layout_project_*, <workspace>: project state, one undo
+ *  step per write), put back when the project opens (LayoutMenu::recallProjectLayout). A save says
+ *  what it kept ('captures') and can refuse to replace ('replace' false: the menu's Save never
+ *  overwrites silently, its Replace does it by name). */
 
+#include <QGuiApplication>
 #include <QJsonArray>
 
 #include "ControlRegistry.h"
 #include "ControlVocabulary.h"
 #include "ControlWindowCommands.h"
 #include "MainWindow.h"
+#include "ProjectWorkspace.h"
 #include "Shell.h"
 #include "ShellChrome.h"
 #include "UiConfigStore.h"
@@ -66,6 +73,23 @@ ControlResult storeLayouts(const QJsonObject& layouts, QJsonObject result, const
 	return gui::uistore::write(LayoutsKey, {{QStringLiteral("layouts"), layouts}}, std::move(result), inverse, {});
 }
 
+//! Theme 22: what a saved layout holds, by the snapshot's own parts (view, panels, sizes, floating...).
+QJsonArray capturesOf(const QJsonObject& snapshot)
+{
+	return QJsonArray::fromStringList(snapshot.keys());
+}
+
+//! Why @a name cannot be saved into @a layouts now, or empty: the limit, or a name in use with 'replace' false.
+QString saveRefusal(const QJsonObject& layouts, const QString& name, bool replace)
+{
+	if (layouts.contains(name))
+	{
+		return replace ? QString() : QStringLiteral("a layout named '%1' is saved already: choose another name, or replace it "
+			"(Window Layouts > Replace)").arg(name);
+	}
+	return layouts.size() >= MaxLayouts ? QStringLiteral("at most %1 layouts are kept; remove one first").arg(MaxLayouts) : QString();
+}
+
 ControlResult saveLayout(const QJsonObject& args)
 {
 	gui::Shell* s = shell();
@@ -73,19 +97,30 @@ ControlResult saveLayout(const QJsonObject& args)
 	const QString name = args.value(QStringLiteral("name")).toString().trimmed();
 	if (name.isEmpty()) { return ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("a layout needs a name")); }
 	QJsonObject layouts = savedLayouts();
-	const bool replaced = layouts.contains(name);
-	if (!replaced && layouts.size() >= MaxLayouts)
+	if (const QString why = saveRefusal(layouts, name, args.value(QStringLiteral("replace")).toBool(true)); !why.isEmpty())
 	{
-		return ControlResult::failure(ControlErrorKind::Refused, QStringLiteral("at most %1 layouts are kept; remove one first").arg(MaxLayouts));
+		return ControlResult::failure(ControlErrorKind::Refused, why);
 	}
-	layouts.insert(name, s->snapshot());
+	const bool replaced = layouts.contains(name);
+	const QJsonObject snapshot = s->snapshot();
+	layouts.insert(name, snapshot);
 	// A replaced layout comes back through the recorded step (control.undo): layout_save would save the
 	// layout on screen then, not the one replaced.
 	const gui::uistore::Inverse inverse = replaced
 		? gui::uistore::Inverse{QStringLiteral("control.undo"), {}}
 		: gui::uistore::Inverse{QStringLiteral("window.layout_remove"), {{QStringLiteral("name"), name}}};
 	return storeLayouts(layouts, {{QStringLiteral("name"), name}, {QStringLiteral("replaced"), replaced},
-		{QStringLiteral("count"), layouts.size()}}, inverse);
+		{QStringLiteral("count"), layouts.size()}, {QStringLiteral("max_layouts"), MaxLayouts},
+		{QStringLiteral("captures"), capturesOf(snapshot)}}, inverse);
+}
+
+//! Put @a snapshot on screen; window.get_state's view of the result plus @a extra.
+ControlResult showSnapshot(gui::Shell* s, const QJsonObject& snapshot, const QJsonObject& extra)
+{
+	s->restoreSnapshot(snapshot);
+	QJsonObject result = s->state();
+	for (auto it = extra.begin(); it != extra.end(); ++it) { result.insert(it.key(), it.value()); }
+	return ControlResult::success(result);
 }
 
 ControlResult applyLayout(const QJsonObject& args)
@@ -95,16 +130,47 @@ ControlResult applyLayout(const QJsonObject& args)
 	const QString name = args.value(QStringLiteral("name")).toString();
 	const QJsonObject layouts = savedLayouts();
 	if (!layouts.contains(name)) { return ControlResult::failure(ControlErrorKind::NotFound, QStringLiteral("no saved layout '%1'").arg(name)); }
-	s->restoreSnapshot(layouts.value(name).toObject());
-	QJsonObject result = s->state();
-	result.insert(QStringLiteral("name"), name);
-	return ControlResult::success(result);
+	return showSnapshot(s, layouts.value(name).toObject(), {{QStringLiteral("name"), name}});
+}
+
+QJsonObject projectLayout()
+{
+	return ProjectWorkspace::instance().part(ProjectWorkspace::Part::Layout);
 }
 
 ControlResult listLayouts(const QJsonObject&)
 {
 	return ControlResult::success({{QStringLiteral("layouts"), QJsonArray::fromStringList(savedLayouts().keys())},
-		{QStringLiteral("max_layouts"), MaxLayouts}});
+		{QStringLiteral("max_layouts"), MaxLayouts}, {QStringLiteral("project_layout"), !projectLayout().isEmpty()}});
+}
+
+//! window.layout_project_save: the layout on screen, remembered with the project.
+ControlResult rememberLayout(const QJsonObject&)
+{
+	gui::Shell* s = shell();
+	if (s == nullptr) { return noInterface(QStringLiteral("window.layout_project_save")); }
+	const QJsonObject snapshot = s->snapshot();
+	const bool replaced = !projectLayout().isEmpty();
+	QJsonObject result{{QStringLiteral("replaced"), replaced}, {QStringLiteral("captures"), capturesOf(snapshot)},
+		{QStringLiteral("changed"), snapshot != projectLayout()}};
+	if (snapshot == projectLayout()) { return ControlResult::success(result); }  // already remembered just so: no undo step
+	return gui::uistore::writeProject(ProjectWorkspace::Part::Layout, snapshot, result, replaced
+		? gui::uistore::Inverse{QStringLiteral("control.undo"), {}} : gui::uistore::Inverse{QStringLiteral("window.layout_project_clear"), {}}, {});
+}
+
+ControlResult recallLayout(const QJsonObject&)
+{
+	gui::Shell* s = shell();
+	if (s == nullptr) { return noInterface(QStringLiteral("window.layout_project_apply")); }
+	if (projectLayout().isEmpty()) { return ControlResult::failure(ControlErrorKind::NotFound, QStringLiteral("this project remembers no layout")); }
+	return showSnapshot(s, projectLayout(), {{QStringLiteral("project"), true}});
+}
+
+ControlResult forgetLayout(const QJsonObject&)
+{
+	if (projectLayout().isEmpty()) { return ControlResult::failure(ControlErrorKind::NotFound, QStringLiteral("this project remembers no layout")); }
+	return gui::uistore::writeProject(ProjectWorkspace::Part::Layout, {}, {{QStringLiteral("cleared"), true}},
+		{QStringLiteral("control.undo"), {}}, {});  // window.layout_project_save would remember the layout on screen, not this one
 }
 
 ControlResult removeLayout(const QJsonObject& args)
@@ -125,6 +191,26 @@ ControlResult unknownPanel(const QString& panel)
 	return ControlResult::failure(ControlErrorKind::NotFound, QStringLiteral("no panel '%1' (%2)").arg(panel, ids.join(QStringLiteral(", "))));
 }
 
+//! window.detach's 'screen' (-1 when not given); @a refusal is set when it names no connected screen.
+int screenArg(const QJsonObject& args, QString& refusal)
+{
+	if (!args.contains(QStringLiteral("screen"))) { return -1; }
+	const int screen = args.value(QStringLiteral("screen")).toInt(-1);
+	const int count = static_cast<int>(QGuiApplication::screens().size());
+	if (screen < 0 || screen >= count) { refusal = QStringLiteral("no screen %1: there are %2").arg(screen).arg(count); }
+	return screen;
+}
+
+//! Float @a panel (a panel already floating stays so) and, with @a screen, move its window there; false with @a reason
+//! when it could not float.
+bool detachTo(gui::Shell* s, const QString& panel, int screen, bool* changed, QString* reason)
+{
+	*changed = s->detachPanel(panel, reason);
+	if (!*changed && !s->isDetached(panel)) { return false; }
+	if (screen >= 0) { s->moveFloatingToScreen(panel, screen); }
+	return true;
+}
+
 ControlResult movePanel(const QJsonObject& args, bool detach)
 {
 	gui::Shell* s = shell();
@@ -132,9 +218,13 @@ ControlResult movePanel(const QJsonObject& args, bool detach)
 	if (s == nullptr) { return noInterface(id); }
 	const QString panel = args.value(QStringLiteral("panel")).toString();
 	if (!gui::ShellLayout::isPanel(panel)) { return unknownPanel(panel); }
+	QString refusal;
+	const int screen = detach ? screenArg(args, refusal) : -1;
+	if (!refusal.isEmpty()) { return ControlResult::failure(ControlErrorKind::InvalidArgs, refusal); }
 	QString reason;
-	const bool done = detach ? s->detachPanel(panel, &reason) : s->attachPanel(panel);
-	if (detach && !done) { return ControlResult::failure(ControlErrorKind::Refused, reason); }
+	bool done = false;
+	if (!detach) { done = s->attachPanel(panel); }
+	else if (!detachTo(s, panel, screen, &done, &reason)) { return ControlResult::failure(ControlErrorKind::Refused, reason); }
 	return ControlResult::success({{QStringLiteral("panel"), panel}, {QStringLiteral("floating"), s->isDetached(panel)},
 		{QStringLiteral("changed"), done}});
 }
@@ -194,26 +284,51 @@ void add(ControlRegistry& registry, const char* verb, const QString& description
 
 } // namespace
 
+//! Theme 22: the layout each project remembers, beside the personal library.
+void registerProjectLayoutCommands(ControlRegistry& registry)
+{
+	ProjectWorkspace::instance();  // registers the section before any project loads
+	add(registry, "layout_project_save", QStringLiteral("Remember the window layout on screen with the project (the same parts "
+		"window.layout_save keeps: 'captures' lists them), replacing the one it remembered ('replaced'). Saved with the project "
+		"and put back when it opens; one undo step ('changed' false, and no step, when it remembered just this one)."),
+		objectSchema({}), objectSchema({{QStringLiteral("replaced"), booleanProperty()}, {QStringLiteral("captures"), arrayProperty()},
+		{QStringLiteral("changed"), booleanProperty()}}), true, rememberLayout);
+	add(registry, "layout_project_apply", QStringLiteral("Put back the layout the project remembers; answers window.get_state's "
+		"view of the result. Interface state: not recorded. Refused NotFound when it remembers none."), objectSchema({}),
+		objectProperty(), false, recallLayout);
+	add(registry, "layout_project_clear", QStringLiteral("Forget the layout the project remembers (the personal layouts are "
+		"kept). One undo step; refused NotFound when it remembers none."), objectSchema({}),
+		objectSchema({{QStringLiteral("cleared"), booleanProperty()}}), true, forgetLayout);
+}
+
 void registerLayoutCommands(ControlRegistry& registry)
 {
 	const QJsonObject named = objectSchema({{QStringLiteral("name"), stringProperty()}}, {QStringLiteral("name")});
 	const QJsonObject panel = objectSchema({{QStringLiteral("panel"), stringProperty()}}, {QStringLiteral("panel")});
-	add(registry, "layout_save", QStringLiteral("Save the window layout - the view, the open panels and the "
-		"splitter sizes - under 'name' (replacing one of that name). At most 32 are kept, in the config file; "
-		"one undo step."), named, objectSchema({{QStringLiteral("name"), stringProperty()},
-		{QStringLiteral("replaced"), booleanProperty()}, {QStringLiteral("count"), integerProperty()}}), true, saveLayout);
+	add(registry, "layout_save", QStringLiteral("Save the window layout - the view, the open, pinned and floating panels and "
+		"the splitter sizes ('captures' lists the parts kept) - under 'name' in the personal library, replacing one of that "
+		"name ('replaced') unless 'replace' is false, when a name in use is refused. At most 32 are kept ('max_layouts'), in "
+		"the config file; one undo step."), objectSchema({{QStringLiteral("name"), stringProperty()},
+		{QStringLiteral("replace"), booleanProperty()}}, {QStringLiteral("name")}), objectSchema({{QStringLiteral("name"), stringProperty()},
+		{QStringLiteral("replaced"), booleanProperty()}, {QStringLiteral("count"), integerProperty()},
+		{QStringLiteral("max_layouts"), integerProperty()}, {QStringLiteral("captures"), arrayProperty()}}), true, saveLayout);
 	add(registry, "layout_apply", QStringLiteral("Switch to the saved layout 'name'; answers window.get_state's view "
 		"of the result. Interface state, as window.set_view is: not recorded."), named, objectProperty(), false, applyLayout);
-	add(registry, "layout_list", QStringLiteral("The saved layouts' names."), objectSchema({}),
-		objectSchema({{QStringLiteral("layouts"), arrayProperty()}, {QStringLiteral("max_layouts"), integerProperty()}}),
-		false, listLayouts);
+	add(registry, "layout_list", QStringLiteral("The personal library's layout names, its limit, and whether the project "
+		"remembers a layout of its own ('project_layout', window.layout_project_*)."), objectSchema({}),
+		objectSchema({{QStringLiteral("layouts"), arrayProperty()}, {QStringLiteral("max_layouts"), integerProperty()},
+		{QStringLiteral("project_layout"), booleanProperty()}}), false, listLayouts);
 	add(registry, "layout_remove", QStringLiteral("Forget the saved layout 'name'. One undo step."), named,
 		objectSchema({{QStringLiteral("name"), stringProperty()}, {QStringLiteral("count"), integerProperty()}}), true, removeLayout);
+	registerProjectLayoutCommands(registry);
 	const QJsonObject moved = objectSchema({{QStringLiteral("panel"), stringProperty()},
 		{QStringLiteral("floating"), booleanProperty()}, {QStringLiteral("changed"), booleanProperty()}});
 	add(registry, "detach", QStringLiteral("Show shell panel 'panel' (window.get_state's panel ids) in a window of its "
 		"own - one that can sit on a second monitor; it stays there whatever view is chosen until window.attach or "
-		"its window is closed. Interface state: not recorded."), panel, moved, false,
+		"its window is closed. With 'screen' (an index into the connected screens, 0 = the first) its window moves "
+		"onto that screen, also when it already floats. Interface state: not recorded."),
+		objectSchema({{QStringLiteral("panel"), stringProperty()}, {QStringLiteral("screen"), integerProperty()}}, {QStringLiteral("panel")}),
+		moved, false,
 		[](const QJsonObject& args) { return movePanel(args, true); });
 	add(registry, "attach", QStringLiteral("Put a panel shown in its own window (window.detach) back in the shell."),
 		panel, moved, false, [](const QJsonObject& args) { return movePanel(args, false); });

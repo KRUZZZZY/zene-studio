@@ -29,10 +29,12 @@ therefore make the same call, leave the same transaction record and share one un
 | Gesture | Command |
 |---|---|
 | Draw a note (click, or drag for its length) | `note.add` |
-| Move, transpose or resize a selection; nudge with the arrow keys; slice (its first half) | `note.edit`: one batch, one undo step |
-| Ctrl-drag a selection (copy) | `note.add` per copy |
-| Erase (eraser drag, right button, Delete) | `note.remove` per note |
-| Select (click, Shift-click, rubber band, Ctrl+A, Escape) | `note.select` |
+| Move, transpose or resize a selection (either edge); nudge with the arrow keys; Alt+wheel velocity or nudge; mute stroke; the properties box | `note.edit`: one batch, one undo step |
+| Delete (a right-drag, a Delete-tool stroke, the Delete key) | `note.remove_many`: one undo step |
+| Slice (the Slice tool's line, or a right-drag from an empty row) | `note.slice`: one undo step |
+| Copy, cut, paste, duplicate (Ctrl+C, Ctrl+X, Ctrl+V, Ctrl+B) | `note.copy` (no undo step: the clipboard is not project state), `note.cut`, `note.paste`, `note.duplicate` |
+| Paint stroke | `note.add_many` |
+| Select (click a note, Ctrl-click, Ctrl-drag, Ctrl+Shift to add, Ctrl+A, Escape) | `note.select` |
 | Velocity, pan or chance lane | `note.edit` (one batch per stroke) |
 | Timbre, pressure or micro-pitch lane | `note.expression_set` per note |
 | Quantise | `groove.quantize` |
@@ -54,21 +56,48 @@ never reached an editor, so an agent could not select what the user would then d
 The editor repaints from the clip's own `dataChanged` signal. Every note command emits it, so
 an agent's edit shows at once.
 
-## 3. Tools
+## 3. Tools and gestures: FL Studio's piano roll
 
-Keys **1** to **5** choose the tool:
+The owner decided on 2026-10-03 that the editor follows FL Studio's piano roll
+(`research/reviews/bughunt-2026-10-03/ux-research/FL-PIANO-ROLL-SPEC.md`). The tools take FL's
+letters; **1** to **7** still pick them, in the order draw, select, slice, delete, play, paint, mute.
 
-- **Draw** (1): click a row to add a note of the last length; drag right to set the length. A
-  click on a note selects and moves it; its right edge resizes it.
-- **Select** (2): click, Shift-click or rubber-band to select; drag to move; Ctrl-drag to copy.
-  Double-click an empty row to add a note, or double-click a note to remove it.
-- **Slice** (3): click a note to split it at the grid line under the pointer (Alt: no snap).
-- **Erase** (4): click or drag across notes. The right button erases with any tool.
-- **Audition** (5): press a row or a note to hear it. The key column auditions with every tool,
-  and so does pressing a note to move it.
+| Tool | Key | What it does |
+|---|---|---|
+| Draw (the default) | P | Add, move, resize and delete notes |
+| Paint | B | Lay a note on every grid cell the drag crosses |
+| Delete | D | Click or drag to delete notes (one undo step per stroke) |
+| Mute | T | Click or drag to mute notes (the first note crossed decides mute or unmute) |
+| Slice | C | Drag a line; every note it crosses is cut where it stands |
+| Select | E | Click or drag a rectangle to select; drag a note to move it |
+| Zoom to selection | Z | Fit the selected notes, or the whole clip when none is selected |
+| Play | Y | Press a note or a row to hear it; drag to scrub |
 
-Moves and resizes snap to the grid; hold Alt to turn snapping off. The arrow keys move the
-selection by one grid cell or one semitone; Shift with up or down moves an octave.
+With the Draw (and Select) tool:
+
+- **Left click** on an empty row draws a note of the last note's length: the last one drawn,
+  touched or resized. **Left drag** from an empty row draws it and sets its length.
+- **Left drag** on a note moves it (the selection with it); on its right edge it resizes it;
+  **Shift-drag on its left edge** resizes it from the start.
+- **Right click or drag** deletes every note the pointer crosses, whatever the tool; a right
+  drag that starts on an empty row is the slice tool for that stroke.
+- **Double-click** a note to open its properties: key, start, length, velocity, pan, release
+  velocity, Mod X and Mod Y (the note's MPE timbre and pressure), chance, slide and mute. OK
+  writes the changes as one `note.edit`. A double-click that draws a note does not open it.
+- **Ctrl**-click selects one note, Ctrl-drag a rectangle; **Ctrl+Shift** adds to the selection.
+- While dragging, **Shift** locks the pitch and **Ctrl** the timing; **Alt** turns the snap off.
+- **Alt+wheel** over a note changes its velocity by 5 (Ctrl+Alt by 1); **Shift+Alt+wheel**
+  nudges it a grid step. The selection follows when the note is part of it. The wheel alone
+  scrolls; Ctrl zooms, Shift scrolls sideways, Alt over an empty row changes the row height.
+- The **middle button** drags the view both ways; a middle-button vertical drag on the key
+  column zooms the rows.
+- **Ctrl+C, Ctrl+X, Ctrl+V, Ctrl+B** copy, cut, paste and duplicate the selection (the whole clip
+  when nothing is selected); a paste lands where the notes were copied from, and a duplicate
+  just after them; both leave the new notes selected. **Delete** removes the selection; the
+  arrow keys move it by a grid cell or a semitone (Shift: an octave). The Notes menu's Edit
+  submenu has the same verbs. On macOS Ctrl reads as Command and Alt as Option.
+- **New Note Length** (the Notes menu, or a right-click on the grid box) fixes the length a new
+  note takes instead of the last note's.
 
 ## 4. Rows, scale and folding
 
@@ -149,7 +178,6 @@ as a floating window from View ▸ Classic Piano Roll, and `window.toggle` accep
 
 - **Not in the new editor yet:** MIDI recording, step input, chord stamping and detuning
   automation. Use the classic piano roll (§7).
-- **Erasing and copying:** both issue one command per note, so each is one undo step per note.
 - **Gain lane:** there is no separate per-note gain lane (§5).
 - **Not measured:** clips of several thousand notes with the expression lane open; the lane
   uses the same visible range as the note area.

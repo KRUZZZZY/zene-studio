@@ -52,6 +52,7 @@ ShellPanel::ShellPanel(const QString& id, const QString& title, QWidget* parent)
 	outer->setSpacing(0);
 
 	auto* header = new QWidget(this);
+	m_header = header;
 	header->setObjectName(QStringLiteral("shellPanelHeader"));
 	header->setFixedHeight(tokens::size::panelHeader);
 	auto* row = new QHBoxLayout(header);

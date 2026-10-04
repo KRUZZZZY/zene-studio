@@ -179,15 +179,18 @@ void registerClipMove(ControlRegistry& registry)
 			return error;
 		}
 		const tick_t previous = ref.clip->startPosition().getTicks();
+		const auto target = static_cast<tick_t>(args.value(QStringLiteral("position")).toDouble());
 		// ED-044: a move that trims or crossfades the clips under it changes them too, so the
 		// track's checkpoint (which carries every clip) is taken instead of the clip's.
-		// ED-043: so does a ripple, which moves the clips after it.
+		// ED-043: so does a ripple, which moves the clips after it. 0.5.0 theme 2: trim is the default
+		// overlap mode, so a move onto empty time - which changes no other clip - stays the clip's own.
 		const arrangement::Overlap overlap = arrangement::modes().overlap;
 		const bool ripple = arrangement::modes().ripple != arrangement::Ripple::Off;
-		const bool trackWide = overlap != arrangement::Overlap::Free || ripple;
+		const bool landsOnClips = overlap != arrangement::Overlap::Free
+			&& !arrangement::overlapEffects(ref.clip, target, target + ref.clip->length().getTicks()).isEmpty();
+		const bool trackWide = landsOnClips || ripple;
 		if (trackWide) { ref.track->addJournalCheckPoint(); } else { ref.clip->addJournalCheckPoint(); }
-		ref.clip->movePosition(TimePos(static_cast<tick_t>(
-			args.value(QStringLiteral("position")).toDouble())));
+		ref.clip->movePosition(TimePos(target));
 		arrangement::rippleAfterMove(ref.clip, previous, ripple);
 		arrangement::applyOverlap(ref.clip, overlap);
 		// ED-190: the automation lanes following this track carry their points with the clip.

@@ -43,12 +43,14 @@
 #include <QTimeLine>
 
 #include "ActionGroup.h"
+#include "ArrangerZoom.h"
 #include "AudioDevice.h"
 #include "AudioEngine.h"
 #include "AutomatableSlider.h"
 #include "ClipView.h"
 #include "ComboBox.h"
 #include "ConfigManager.h"
+#include "DesignTokens.h"
 #include "CPULoadWidget.h"
 #include "DeprecationHelper.h"
 #include "DpiHelper.h"
@@ -90,7 +92,7 @@ SongEditor::SongEditor( Song * song ) :
 	m_snappingModel(new ComboBoxModel()),
 	m_proportionalSnap( false ),
 	m_scrollBack( false ),
-	m_smoothScroll( ConfigManager::inst()->value( "ui", "smoothscroll" ).toInt() ),
+	m_smoothScroll( ConfigManager::inst()->value( "ui", "smoothscroll" ).toInt() && !tokens::reducedMotion() ),
 	m_mode(EditMode::Draw),
 	m_origin(),
 	m_scrollPos(),
@@ -428,12 +430,13 @@ void SongEditor::keyPressEvent( QKeyEvent * ke )
 	}
 	else if( ke->key() == Qt::Key_Delete || ke->key() == Qt::Key_Backspace )
 	{
-		QVector<selectableObject *> so = selectedObjects();
-		for (const auto& selectedClip : so)
+		// 0.5.0 theme 2: through ClipView::remove, so a locked clip in the selection stays - and says so.
+		QVector<ClipView*> views;
+		for (selectableObject* selected : selectedObjects())
 		{
-			auto clipv = dynamic_cast<ClipView*>(selectedClip);
-			clipv->remove();
+			if (auto clipv = dynamic_cast<ClipView*>(selected)) { views.push_back(clipv); }
 		}
+		ClipView::remove(views);
 	}
 	else if( ke->key() == Qt::Key_A && ke->modifiers() & Qt::ControlModifier )
 	{
@@ -445,7 +448,12 @@ void SongEditor::keyPressEvent( QKeyEvent * ke )
 	}
 	else if (ke->key() == Qt::Key_0 && ke->modifiers() & Qt::ControlModifier)
 	{
+		// 0.5.0 theme 9: a keyboard zoom keeps the selection, else the playhead, where it is on screen.
+		const tick_t anchor = arrangerzoom::keyboardAnchor(this);
+		const float before = pixelsPerBar();
+		const tick_t start = m_currentPosition.getTicks();
 		m_zoomingModel->reset();
+		arrangerzoom::keepInPlace(this, anchor, before, start);
 	}
 	else
 	{
@@ -699,7 +707,7 @@ void SongEditor::updatePosition()
 	if ((m_song->isPlaying() && m_song->m_playMode == Song::PlayMode::Song)
 							|| m_scrollBack)
 	{
-		m_smoothScroll = ConfigManager::inst()->value( "ui", "smoothscroll" ).toInt();
+		m_smoothScroll = ConfigManager::inst()->value( "ui", "smoothscroll" ).toInt() && !tokens::reducedMotion();
 		const int w = width() - widgetWidth
 							- trackOpWidth
 							- contentWidget()->verticalScrollBar()->width(); // width of right scrollbar
@@ -741,7 +749,8 @@ void SongEditor::updatePositionLine()
 		m_positionLine->hide();
 	}
 
-	m_positionLine->setFixedHeight(totalHeightOfTracks());
+	// 0.5.0 theme 9: the line runs through the ruler lanes (between the ruler and the tracks) as well.
+	m_positionLine->setFixedHeight(totalHeightOfTracks() + contentWidget()->y() - m_timeLine->height());
 }
 
 
@@ -824,9 +833,11 @@ bool SongEditor::knifeMode() const
 
 int SongEditor::trackIndexFromSelectionPoint(int yPos)
 {
-	const TrackView * tv = trackViewAt(yPos - m_timeLine->height());
+	// 0.5.0 theme 9: the tracks start under the ruler AND its lanes, where the content widget is.
+	const int tracksTop = contentWidget()->y();
+	const TrackView * tv = trackViewAt(yPos - tracksTop);
 	return tv ? indexOfTrackView(tv)
-			  : yPos < m_timeLine->height() ? 0
+			  : yPos < tracksTop ? 0
 											: trackViews().count();
 }
 

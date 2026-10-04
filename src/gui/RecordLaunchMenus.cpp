@@ -23,6 +23,7 @@
  */
 #include "RecordLaunchMenus.h"
 
+#include <QActionGroup>
 #include <QMenu>
 #include <QMenuBar>
 
@@ -31,6 +32,7 @@
 #include "ControlVocabulary.h"
 #include "Engine.h"
 #include "MenuBarExtras.h"
+#include "RecordOptions.h"
 #include "SampleTrack.h"
 #include "ShellSelection.h"
 #include "Song.h"
@@ -84,6 +86,28 @@ void armAllEntry(QMenu* menu, const QString& label, bool armed)
 	});
 }
 
+//! Theme 7: Record Mode as two choices that each state their scope ("Replace notes (erase the notes it overlaps,
+//! any pitch; keep controllers and automation)"), the one in use checked, each running transport.record_options.
+void recordModeMenu(QMenu* menu)
+{
+	QMenu* sub = menu->addMenu(QObject::tr("Record Mode (MIDI)"));
+	sub->setToolTipsVisible(true);
+	auto* group = new QActionGroup(sub);
+	for (const recordoptions::Mode mode : {recordoptions::Mode::Overdub, recordoptions::Mode::Replace})
+	{
+		const QString name = recordoptions::modeNames().at(static_cast<int>(mode));
+		QAction* action = addCommandAction(sub, recordoptions::modeChoice(mode), QStringLiteral("transport.record_options"),
+			[name] { return CommandCall{QStringLiteral("transport.record_options"), {{QStringLiteral("mode"), name}}, {}, QString(), false}; });
+		action->setCheckable(true);
+		action->setToolTip(recordoptions::modeScope(mode));
+		group->addAction(action);
+	}
+	QObject::connect(sub, &QMenu::aboutToShow, sub, [group] {
+		const auto current = static_cast<int>(recordoptions::options().mode);
+		for (int i = 0; i < group->actions().size(); ++i) { group->actions().at(i)->setChecked(i == current); }
+	});
+}
+
 //! The Launch Scene items stay enabled only for the scenes the launcher's grid has.
 void followSceneCount(QMenu* menu, const QList<QAction*>& scenes)
 {
@@ -104,8 +128,7 @@ void fillRecord(QMenu* menu)
 	run(menu, QObject::tr("Record From the Master or a Channel..."), QStringLiteral("record.route_source"), {}, true);  // WF-072/086
 	run(menu, QObject::tr("Punch In Here"), QStringLiteral("transport.punch_here"), {{QStringLiteral("edge"), QStringLiteral("in")}});  // WF-079
 	run(menu, QObject::tr("Punch Out Here"), QStringLiteral("transport.punch_here"), {{QStringLiteral("edge"), QStringLiteral("out")}});
-	addCommandChoices(menu, QObject::tr("Record Mode"), QStringLiteral("transport.record_options"), QStringLiteral("mode"),
-		[] { return CommandCall{QStringLiteral("transport.record_options"), {}, {}, QString(), false}; });
+	recordModeMenu(menu);
 	menu->addSeparator();
 	armAllEntry(menu, QObject::tr("Arm All Audio Tracks"), true);
 	run(menu, QObject::tr("Disarm All Tracks"), QStringLiteral("record.disarm_all"));

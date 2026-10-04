@@ -89,6 +89,10 @@ public:
 	 */
 	void unsetToolTip() { m_staticToolTip.reset(); }
 
+	//! 0.5.0 (theme 17): the value as the floating text shows it, without the description ("440 Hz",
+	//! "-6.00 dBFS") - what a screen reader reads as the control's value (AccessibleWidgets.h).
+	QString accessibleValueText();
+
 signals:
 	void sliderPressed();
 	void sliderReleased();

@@ -40,18 +40,6 @@ constexpr int kViews = 3;
 
 int regionKey(ShellRegion region) { return static_cast<int>(region); }
 
-QString regionName(ShellRegion region)
-{
-	switch (region)
-	{
-	case ShellRegion::Left: return QStringLiteral("left");
-	case ShellRegion::Center: return QStringLiteral("center");
-	case ShellRegion::Bottom: return QStringLiteral("bottom");
-	case ShellRegion::Right: return QStringLiteral("right");
-	}
-	return {};
-}
-
 const ShellRegion kSideRegions[] = {ShellRegion::Left, ShellRegion::Bottom, ShellRegion::Right};
 
 } // namespace
@@ -68,6 +56,18 @@ ShellLayout::ShellLayout()
 	}
 	m_states[static_cast<int>(ShellView::Arrange)].openPanel.insert(
 		regionKey(ShellRegion::Bottom), QStringLiteral("detail"));
+}
+
+QString ShellLayout::regionName(ShellRegion region)
+{
+	switch (region)
+	{
+	case ShellRegion::Left: return QStringLiteral("left");
+	case ShellRegion::Center: return QStringLiteral("center");
+	case ShellRegion::Bottom: return QStringLiteral("bottom");
+	case ShellRegion::Right: return QStringLiteral("right");
+	}
+	return {};
 }
 
 QList<ShellPanelSpec> ShellLayout::panels()

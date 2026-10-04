@@ -95,8 +95,11 @@ ControlResult browse(const QJsonObject& args)
 	History& h = history();
 	const std::vector<QJsonObject> before = h.entries;
 	const int was = h.position;
+	// Theme 3 (0.5.0 UX): a search refined as it is typed replaces the entry it refines, not one entry per keystroke.
+	const bool replace = args.value(QStringLiteral("replace")).toBool() && h.position >= 0;
 	h.entries.resize(static_cast<std::size_t>(h.position + 1));  // a new step drops the forward history
-	h.entries.push_back(entry);
+	if (replace) { h.entries.back() = entry; }
+	else { h.entries.push_back(entry); }
 	if (static_cast<int>(h.entries.size()) > MaxHistory) { h.entries.erase(h.entries.begin()); }
 	h.position = static_cast<int>(h.entries.size()) - 1;
 	ControlResult result = runEntry(entry);
@@ -161,9 +164,10 @@ void registerBrowserNavigationCommands(ControlRegistry& registry)
 {
 	add(registry, "browse", QStringLiteral("Show a list in the browser and remember it: runs 'command' (browser.query, "
 		"browser.index_query, browser.collection_run or browser.similar) with 'args', answers its result, and adds it to the "
-		"browser's history ('label' is what the history shows). A step after going back drops the forward history."),
+		"browser's history ('label' is what the history shows) - or, with 'replace', puts it in place of the current entry (a "
+		"search refined as it is typed). A step after going back drops the forward history."),
 		{{QStringLiteral("command"), enumProperty(browseCommands())}, {QStringLiteral("args"), objectProperty()},
-			{QStringLiteral("label"), stringProperty()}}, {QStringLiteral("command")}, browse);
+			{QStringLiteral("label"), stringProperty()}, {QStringLiteral("replace"), booleanProperty()}}, {QStringLiteral("command")}, browse);
 	add(registry, "history", QStringLiteral("The browser's history (most recent last) and where it stands. Session state."), {}, {}, listHistory);
 	add(registry, "history_go", QStringLiteral("Go back ('step' -1, the default) or forward (+1) - or several steps - in the "
 		"browser's history: the remembered list is run again and its result answered."),

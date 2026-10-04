@@ -26,6 +26,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <cmath>
 #include <cstdlib>
 
 #include "AutomationClip.h"
@@ -34,6 +35,7 @@
 #include "ClipEdits.h"
 #include "ConfigManager.h"
 #include "ControlReversibility.h"
+#include "EditLocks.h"
 #include "ProjectJournal.h"
 #include "ProjectMarkers.h"
 #include "Engine.h"
@@ -136,7 +138,8 @@ Modes modes()
 	ConfigManager* config = ConfigManager::inst();
 	Modes out;
 	out.ripple = static_cast<Ripple>(std::clamp(config->value(QStringLiteral("arrangement"), QStringLiteral("ripple"), QStringLiteral("0")).toInt(), 0, 2));
-	out.overlap = static_cast<Overlap>(std::clamp(config->value(QStringLiteral("arrangement"), QStringLiteral("overlap"), QStringLiteral("0")).toInt(), 0, 2));
+	// 0.5.0 theme 2: with nothing chosen, a dragged clip trims what it lands on (Overlap::Trim).
+	out.overlap = static_cast<Overlap>(std::clamp(config->value(QStringLiteral("arrangement"), QStringLiteral("overlap"), QStringLiteral("1")).toInt(), 0, 2));
 	out.snapToEdges = config->value(QStringLiteral("arrangement"), QStringLiteral("snapedges"), QStringLiteral("1")).toInt() != 0;
 	out.automationFollowsClips = config->value(QStringLiteral("arrangement"), QStringLiteral("followauto"), QStringLiteral("1")).toInt() != 0;
 	out.autoFadeMs = std::clamp(config->value(QStringLiteral("arrangement"), QStringLiteral("autofade"), QStringLiteral("0")).toInt(), 0, MaxAutoFadeMs);
@@ -234,16 +237,22 @@ bool movedOnATrack(const Clip* moved, tick_t oldStart) { return moved != nullptr
 
 } // namespace
 
-void afterUserMove(Clip* moved, tick_t oldStart)
+bool afterUserMove(Clip* moved, tick_t oldStart)
 {
-	if (!movedOnATrack(moved, oldStart)) { return; }
+	if (!movedOnATrack(moved, oldStart)) { return true; }
 	const tick_t newStart = moved->startPosition().getTicks();
 	// A press released where it started (a click, or a drag back) moved nothing onto anything.
-	if (newStart == oldStart) { return; }
+	if (newStart == oldStart) { return true; }
 	const Overlap mode = modes().overlap;
+	// 0.5.0 theme 2: a drop that would trim or fade a locked clip is refused - the clip goes back.
+	if (lockedUnder(moved, newStart, moved->endPosition().getTicks(), mode) != nullptr)
+	{
+		moved->movePosition(TimePos(oldStart));
+		return false;
+	}
 	const bool follow = modes().automationFollowsClips;
 	const bool ripple = modes().ripple != Ripple::Off;
-	if (mode == Overlap::Free && !follow && !ripple) { return; }
+	if (mode == Overlap::Free && !follow && !ripple) { return true; }
 	// ONE undo step for the whole gesture (review W2a-1 #3): the track's checkpoint is taken at the
 	// PRE-drag position - the clip is put back for it - and merged with the clip checkpoint the
 	// press took, so Ctrl+Z returns to before the drag, never to "moved but not yet trimmed".
@@ -257,6 +266,7 @@ void afterUserMove(Clip* moved, tick_t oldStart)
 	if (follow) { moveFollowingAutomation(track, oldStart, moved->length().getTicks(), newStart - oldStart, true); }
 	applyOverlap(moved, mode);
 	mergeFrom(journal, mark);
+	return true;
 }
 
 int moveFollowingAutomation(Track* track, tick_t oldStart, tick_t length, tick_t delta, bool checkpoint)
@@ -328,44 +338,88 @@ void overlapOne(Clip* moved, Clip* other, Overlap mode, tick_t start, tick_t end
 
 } // namespace
 
+QVector<OverlapEffect> overlapEffects(const Clip* moved, tick_t start, tick_t end)
+{
+	QVector<OverlapEffect> out;
+	if (moved == nullptr || moved->getTrack() == nullptr) { return out; }
+	for (Clip* other : moved->getTrack()->getClips())
+	{
+		const tick_t otherStart = other->startPosition().getTicks();
+		const tick_t otherEnd = other->endPosition().getTicks();
+		if (other == moved || otherEnd <= start || otherStart >= end) { continue; }
+		out.append({other, std::max(start, otherStart), std::min(end, otherEnd), EditLocks::instance().locks(other)});
+	}
+	return out;
+}
+
+const Clip* lockedUnder(const Clip* moved, tick_t start, tick_t end, Overlap mode)
+{
+	if (mode == Overlap::Free) { return nullptr; }
+	for (const OverlapEffect& effect : overlapEffects(moved, start, end))
+	{
+		if (effect.locked) { return effect.clip; }
+	}
+	return nullptr;
+}
+
 int applyOverlap(Clip* moved, Overlap mode)
 {
 	if (mode == Overlap::Free) { return 0; }
 	const tick_t start = moved->startPosition().getTicks();
 	const tick_t end = moved->endPosition().getTicks();
 	int changed = 0;
-	const auto others = moved->getTrack()->getClips();
-	for (Clip* other : others)
+	// overlapEffects() is a copy taken before anything is split, so the splits below do not feed it.
+	for (const OverlapEffect& effect : overlapEffects(moved, start, end))
 	{
-		if (other == moved || other->endPosition().getTicks() <= start || other->startPosition().getTicks() >= end) { continue; }
-		overlapOne(moved, other, mode, start, end);
+		if (effect.locked) { continue; }  // a lock protects it (the drop or the command was refused already)
+		overlapOne(moved, effect.clip, mode, start, end);
 		++changed;
 	}
 	return changed;
 }
 
-tick_t snapToEdges(tick_t proposed, tick_t length, const Clip* moving, tick_t tolerance)
+SnapHit snapToEdgesHit(tick_t proposed, tick_t length, const Clip* moving, tick_t tolerance)
 {
-	tick_t best = proposed;
+	SnapHit best{proposed, proposed, SnapHit::Kind::None, QString()};
 	tick_t bestDistance = tolerance + 1;
-	const auto consider = [&](tick_t edge) {
+	const auto consider = [&](tick_t edge, SnapHit::Kind kind, const QString& label) {
 		for (const tick_t candidate : {edge, edge - length})  // the start lands there, or the end does
 		{
 			const tick_t distance = std::abs(candidate - proposed);
-			if (candidate >= 0 && distance < bestDistance) { best = candidate; bestDistance = distance; }
+			if (candidate >= 0 && distance < bestDistance) { best = {candidate, edge, kind, label}; bestDistance = distance; }
 		}
 	};
+	const QString clipEdge = QStringLiteral("Clip edge");
 	for (Track* track : Engine::getSong()->tracks())
 	{
 		for (const Clip* clip : track->getClips())
 		{
 			if (clip == moving) { continue; }
-			consider(clip->startPosition().getTicks());
-			consider(clip->endPosition().getTicks());
+			consider(clip->startPosition().getTicks(), SnapHit::Kind::ClipEdge, clipEdge);
+			consider(clip->endPosition().getTicks(), SnapHit::Kind::ClipEdge, clipEdge);
 		}
 	}
-	for (const Marker& marker : ProjectMarkers::instance().markers()) { consider(marker.tick); }
+	for (const Marker& marker : ProjectMarkers::instance().markers())
+	{
+		consider(marker.tick, SnapHit::Kind::Marker, QStringLiteral("Marker: %1").arg(marker.name));
+	}
 	return best;
+}
+
+tick_t snapToEdges(tick_t proposed, tick_t length, const Clip* moving, tick_t tolerance)
+{
+	return snapToEdgesHit(proposed, length, moving, tolerance).start;
+}
+
+tick_t anchoredViewStart(tick_t viewStart, int widthPx, double ppbBefore, double ppbAfter, tick_t anchor)
+{
+	const double ticksPerBar = TimePos::ticksPerBar();
+	const double width = std::max(widthPx, 1);
+	const double visibleBefore = width * ticksPerBar / std::max(ppbBefore, 1.0);
+	double fraction = (anchor - viewStart) / visibleBefore;
+	if (fraction < 0.0 || fraction > 1.0) { fraction = 0.5; }  // off screen before: into the middle
+	const double visibleAfter = width * ticksPerBar / std::max(ppbAfter, 1.0);
+	return std::max<tick_t>(0, static_cast<tick_t>(std::lround(anchor - fraction * visibleAfter)));
 }
 
 } // namespace arrangement

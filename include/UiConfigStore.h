@@ -1,5 +1,5 @@
 /*
- * UiConfigStore.h - interface state kept as JSON in the config file, written as one undo step
+ * UiConfigStore.h - interface state kept as JSON in the config file (or with the project), written as one undo step
  *
  * Copyright (c) 2026 Zene Studio contributors
  *
@@ -31,13 +31,14 @@
 #include <QString>
 
 #include "ControlRegistry.h"
+#include "ProjectWorkspace.h"
 #include "lmms_export.h"
 
 namespace lmms::gui::uistore
 {
 
 /*! The interface's own customisations - shortcut overrides, the header's buttons, saved
- *  layouts, macros - each kept as one JSON object under `ui/<key>` in the config file. They
+ *  layouts, workflows - each kept as one JSON object under `ui/<key>` in the config file. They
  *  are not project state, so no journal checkpoint holds them; a write is instead ONE action
  *  step on the engine's undo stack that puts the previous object back (the settings.set
  *  precedent), so Ctrl+Z, control.undo and the transaction record agree. */
@@ -57,6 +58,12 @@ struct Inverse
  *  each so the live interface follows; run @a apply now. Returns @a result with the
  *  transaction attached (before = the previous object, inverse = @a inverse). */
 LMMS_EXPORT ControlResult write(const QString& key, const QJsonObject& value, QJsonObject result,
+	const Inverse& inverse, const std::function<void()>& apply);
+
+/*! 0.5.0 (themes 19 and 22): write() for what the user chose to keep WITH THE PROJECT instead - @a part
+ *  of the project's <workspace> (ProjectWorkspace). The same one undo step, apply and transaction; the
+ *  project is marked modified, since the next save carries it. */
+LMMS_EXPORT ControlResult writeProject(ProjectWorkspace::Part part, const QJsonObject& value, QJsonObject result,
 	const Inverse& inverse, const std::function<void()>& apply);
 
 } // namespace lmms::gui::uistore

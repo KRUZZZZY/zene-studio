@@ -78,6 +78,10 @@ const ReversibilityRow kW3LibraryRows[] = {
 	R("browser.history", RC::NotMutating, false, "it reads the browser's history. Nothing is written", "no write", ""),
 	R("browser.history_go", RC::NotMutating, false, "it steps through the browser's history (session state)", "no write", ""),
 	R("browser.sources", RC::NotMutating, false, "it reads the source remembered for each view. Nothing is written", "no write", ""),
+	// Theme 3 (0.5.0 UX): Enter on a browser result.
+	R("browser.load", RC::TrueInverse, true, "it adds a track holding the file: a preset's instrument, a sample in the instrument "
+		"that opens it, or a sample track playing it", "action checkpoint: the recorded undo step removes the created track "
+		"(control::recordCreatedTrack, as clip.slice_to_instrument's does); redo builds it again from what it was saved as", ""),
 	// L12 (WF-040 / WF-046 / ED-207 / WF-042): the render queue, the task list, flattening, copying between projects.
 	R("render.queue_add", RC::NotMutating, false, "it queues a render: the job writes an OUTPUT ARTEFACT from a snapshot of the "
 		"session (or another file), as render.render does; the session is not modified", "no write to the project", ""),

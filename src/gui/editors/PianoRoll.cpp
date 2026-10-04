@@ -4597,14 +4597,9 @@ void PianoRoll::notePassStart()
 
 void PianoRoll::replaceOverlapped(const Note& recorded)
 {
-	if (recordoptions::options().mode != recordoptions::Mode::Replace) { return; }
-	const NoteVector existing = m_midiClip->notes();  // a copy: removing changes the clip's list
-	for (Note* note : existing)
-	{
-		const bool before = std::find(m_notesBeforePass.begin(), m_notesBeforePass.end(), note->id()) != m_notesBeforePass.end();
-		const bool overlaps = note->pos() < recorded.endPos() && recorded.pos() < note->endPos();
-		if (before && overlaps) { m_midiClip->removeNote(note); }
-	}
+	// Theme 7: Replace erases the overlapped notes from before the pass, at any pitch - notes only, never the
+	// clip's controller lanes or any automation (RecordOptions.h). Overdub erases nothing.
+	recordoptions::replaceOverlapped(m_midiClip, recorded, m_notesBeforePass);
 }
 
 
@@ -5278,8 +5273,12 @@ PianoRollWindow::PianoRollWindow() :
 	setCentralWidget( m_editor );
 
 	m_playAction->setToolTip(tr( "Play/pause current clip (Space)" ) );
-	m_recordAction->setToolTip(tr( "Record notes from MIDI-device/channel-piano" ) );
-	m_recordAccompanyAction->setToolTip( tr( "Record notes from MIDI-device/channel-piano while playing song or pattern track" ) );
+	// Theme 7: the record buttons state what a pass does to the notes already there (Record > Record Mode).
+	const QString recordScope = tr("Record Mode decides what happens to the notes already there. %1 %2")
+		.arg(recordoptions::modeScope(recordoptions::Mode::Overdub), recordoptions::modeScope(recordoptions::Mode::Replace));
+	m_recordAction->setToolTip(tr( "Record notes from MIDI-device/channel-piano" ) + QStringLiteral("\n") + recordScope);
+	m_recordAccompanyAction->setToolTip( tr( "Record notes from MIDI-device/channel-piano while playing song or pattern track" )
+		+ QStringLiteral("\n") + recordScope);
 	m_toggleStepRecordingAction->setToolTip( tr( "Record notes from MIDI-device/channel-piano, one step at the time" ) );
 	m_stopAction->setToolTip( tr( "Stop playing of current clip (Space)" ) );
 

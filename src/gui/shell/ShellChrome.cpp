@@ -36,7 +36,6 @@
 #include <QStyleOptionToolButton>
 
 #include "Accessibility.h"
-#include "Appearance.h"
 #include "CommandForm.h"
 #include "ControlRegistry.h"
 #include "ControlWindowCommands.h"
@@ -62,11 +61,11 @@ QFrame* separator(QWidget* parent)
 	return line;
 }
 
-//! The header's height: the token's at the standard text size, and taller with a larger one (WF-131), so the
-//! readouts' value and caption are not cut off (review ux08 #106).
+//! The header's height: the token's. Text has no size of its own any more - the one global zoom (Appearance.h)
+//! scales the header and its readouts together, so the value and caption still fit (review ux08 #106).
 int headerHeight()
 {
-	return static_cast<int>(std::lround(tokens::size::headerHeight * std::max(1.0, appearance::options().fontScale)));
+	return tokens::size::headerHeight;
 }
 
 //! A view word as the footer shows it: upper case, no mnemonic marker, no shortcut suffix.
@@ -136,7 +135,7 @@ void ShellButton::paintEvent(QPaintEvent*)
 	paintFace(p);
 	if (!hasFocus()) { return; }
 	QPen ring(tokens::palette().focusRing);
-	ring.setWidthF(1.5);
+	ring.setWidthF(tokens::focusRingWidth());
 	p.setPen(ring);
 	p.setBrush(Qt::NoBrush);
 	p.drawRoundedRect(r.adjusted(0.5, 0.5, -0.5, -0.5), tokens::radius::md, tokens::radius::md);

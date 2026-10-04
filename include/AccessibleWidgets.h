@@ -1,0 +1,111 @@
+/*
+ * AccessibleWidgets.h - what a screen reader learns about the custom controls, and accessible mode
+ *
+ * Copyright (c) 2026 Zene Studio contributors
+ *
+ * This file is part of LMMS - https://lmms.io
+ *
+ * This program is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU General Public
+ * License as published by the Free Software Foundation; either
+ * version 2 of the License, or (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public
+ * License along with this program (see COPYING); if not, write to the
+ * Free Software Foundation, Inc., 51 Franklin Street, Fifth Floor,
+ * Boston, MA 02110-1301 USA.
+ *
+ */
+
+#ifndef LMMS_GUI_ACCESSIBLE_WIDGETS_H
+#define LMMS_GUI_ACCESSIBLE_WIDGETS_H
+
+#include <QString>
+
+#include "lmms_export.h"
+
+class QObject;
+class QWidget;
+
+namespace lmms
+{
+class AutomatableModel;
+}
+
+/*! 0.5.0 UX decisions (themes 10, 17 and 23; one screen reader per platform - NVDA, VoiceOver, Orca).
+ *
+ *  Qt's accessibility bridges (UI Automation on Windows, NSAccessibility on macOS, AT-SPI on Linux) describe a
+ *  widget by the QAccessibleInterface Qt makes for it. For a stock widget that is a button, a slider or a field; for
+ *  a custom-painted control it is a nameless "client" with no value. installAccessibleWidgets() adds a factory
+ *  that describes the shared custom controls (src/gui/widgets) as what they are:
+ *  - a knob is a dial and every other model editor (a fader, a bar editor) a slider, with a value interface - the
+ *    model's value, bounds and step, settable - and the value as it is shown ("-6.00 dB", "440 Hz");
+ *  - an LCD number is a spin box, a model combo box a combo box (its current item the value; its actions open the
+ *    menu and step the choice), an LED check box a check box, every other model button a push button - checkable
+ *    when it toggles - whose action presses it;
+ *  - a graph is a chart, a group box and the meter and navigation groups groupings, a tab bar a page-tab list.
+ *  Each is named by its accessible name or else the name it already carries (AccessibilityAudit.h's
+ *  impliedAccessibleName: its constructed name, its parameter's, its tooltip or its text).
+ *
+ *  Announcements (theme 17): a value change is announced only for the control with keyboard focus, and at most
+ *  every 250 ms, with the settled value last - a value the automation moves is read when it is asked for, never
+ *  narrated; meters and scopes have no value events at all. announceStatus() is for the transitions that matter:
+ *  an error, a refused edit, a finished render.
+ *
+ *  installAccessibility() is installAccessibleWidgets() plus accessible mode's runtime part (Appearance.h): a focus
+ *  ring painted over the custom controls that draw none themselves - shown for keyboard focus, and in accessible mode
+ *  for any focus, focusRingWidth() wide - and reduced motion (no animated menus, combo boxes, tooltips or docks).
+ *  Both run by themselves when the application object is made (AccessibleMode.cpp), so every binary that links
+ *  the interface, the tests included, has them; calling them again does nothing. */
+namespace lmms::a11y
+{
+
+LMMS_EXPORT void installAccessibleWidgets();
+LMMS_EXPORT void installAccessibility();
+
+//! What a key does to a value control: the keys every one of them answers as a slider does.
+enum class KeyStep
+{
+	None,
+	Up,       //!< Up or Right: one step up
+	Down,     //!< Down or Left: one step down
+	PageUp,   //!< a coarse step up
+	PageDown, //!< a coarse step down
+	Home,     //!< the minimum
+	End       //!< the maximum
+};
+LMMS_EXPORT KeyStep keyStep(int key);
+//! Apply @a step to @a model: @a fine for Up/Down, @a coarse for PageUp/PageDown, the bounds for Home/End; false
+//! (and nothing changed) for KeyStep::None or no model.
+LMMS_EXPORT bool applyKeyStep(AutomatableModel* model, KeyStep step, float fine, float coarse);
+//! What a key did to a number field (an LCD spin box): stepped @a model as applyKeyStep does, or was Enter - the
+//! field then asks for a value - or neither (it passes on).
+enum class SpinKey
+{
+	None,
+	Stepped,
+	Entered
+};
+LMMS_EXPORT SpinKey spinKey(int key, AutomatableModel* model, float fine, float coarse);
+
+//! How urgently a screen reader should speak an announcement.
+enum class Politeness
+{
+	Polite,   //!< after what it is saying now (a finished render, a saved project)
+	Assertive //!< at once (an error, a refused edit)
+};
+//! Speak @a message (Qt 6.8's announcement event; on older Qt an alert raised on @a source, whose name the screen
+//! reader reads, so pass the label that shows the message). Nothing when no assistive technology is listening.
+LMMS_EXPORT void announceStatus(QObject* source, const QString& message, Politeness politeness = Politeness::Polite);
+
+//! The value @a widget shows, as a screen reader reads it ("-6.00 dB"); empty when it has none.
+LMMS_EXPORT QString valueText(QWidget* widget);
+
+} // namespace lmms::a11y
+
+#endif // LMMS_GUI_ACCESSIBLE_WIDGETS_H

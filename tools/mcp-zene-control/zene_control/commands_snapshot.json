@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-10-03T20:59:45Z",
+  "captured_at": "2026-10-04T07:38:22Z",
   "commands": [
     {
       "args_schema": {
@@ -345,7 +345,7 @@
         "required": [],
         "type": "object"
       },
-      "description": "The arranger's editing modes, set and answered: 'ripple' (off, track, all - a deletion closes its gap on the clip's track or on every track), 'overlap' (free, trim, crossfade - what a clip moved onto others does to them), 'snap_to_edges' (moving a clip also snaps to other clips' edges and to markers) and 'automation_follows_clips' (a clip's move carries the points of the automation lanes following its track) and 'auto_fade_ms' (0..50: every sample clip fades in and out over at least that long, so no edit clicks; 0 off) and 'show_transients' (sample clips mark their audio's hits). The arranger's gestures and clip.move / clip.delete / range.delete follow them. An editing preference kept in the config file, not project state.",
+      "description": "The arranger's editing modes, set and answered: 'ripple' (off, track, all - a deletion closes its gap on the clip's track or on every track), 'overlap' (free, trim, crossfade - what a clip moved onto others does to them; trim by default, and never to a locked clip: such a move is refused), 'snap_to_edges' (moving a clip also snaps to other clips' edges and to markers) and 'automation_follows_clips' (a clip's move carries the points of the automation lanes following its track) and 'auto_fade_ms' (0..50: every sample clip fades in and out over at least that long, so no edit clicks; 0 off) and 'show_transients' (sample clips mark their audio's hits). The arranger's gestures and clip.move / clip.delete / range.delete follow them. An editing preference kept in the config file, not project state.",
       "group": "arrangement",
       "id": "arrangement.modes",
       "mutating": false,
@@ -483,6 +483,45 @@
       "args_schema": {
         "additionalProperties": false,
         "properties": {
+          "markers": {
+            "type": "boolean"
+          },
+          "sections": {
+            "type": "boolean"
+          },
+          "tempo": {
+            "type": "boolean"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "description": "Show or hide the arranger's ruler lanes under the bar ruler: 'sections' (named bands), 'markers' (flags and names) and 'tempo' (the tempo map's curve and values). A lane left out keeps its state; with no arguments it reports them. A preference (config ui/rulerlanes; all three shown by default), not project state.",
+      "group": "arrangement",
+      "id": "arrangement.ruler_lanes",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "markers": {
+            "type": "boolean"
+          },
+          "sections": {
+            "type": "boolean"
+          },
+          "tempo": {
+            "type": "boolean"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
           "position": {
             "type": "integer"
           }
@@ -569,6 +608,21 @@
       "args_schema": {
         "additionalProperties": false,
         "properties": {
+          "anchor": {
+            "enum": [
+              "auto",
+              "selection",
+              "playhead",
+              "view",
+              "start"
+            ],
+            "type": "string"
+          },
+          "anchor_tick": {
+            "maximum": 2147483647,
+            "minimum": 0,
+            "type": "integer"
+          },
           "end": {
             "maximum": 2147483647,
             "minimum": 0,
@@ -597,7 +651,7 @@
         "required": [],
         "type": "object"
       },
-      "description": "Zoom the arranger: to 'pixels_per_bar', by 'step' zoom steps (negative zooms out), to the span 'start'..'end' (the zoom tool's drag), or to 'fit' the song, the loop or the selected clips across its width (scrolled to their start). The previous zoom joins the history arrangement.zoom_back walks. Interface state.",
+      "description": "Zoom the arranger: to 'pixels_per_bar', by 'step' zoom steps (negative zooms out), to the span 'start'..'end' (the zoom tool's drag), or to 'fit' the song, the loop or the selected clips across its width (scrolled to their start). A 'pixels_per_bar' or 'step' zoom keeps one tick where it is on screen ('anchor' in the answer): 'anchor_tick' (a pointer gesture passes the tick under the pointer), else 'anchor' - selection, playhead, view (its middle), start (its left edge) or auto (the default: the selection, else the playhead when it is on screen, else the middle). The previous zoom joins the history arrangement.zoom_back walks. Interface state.",
       "group": "arrangement",
       "id": "arrangement.zoom",
       "mutating": false,
@@ -605,6 +659,9 @@
       "result_schema": {
         "additionalProperties": false,
         "properties": {
+          "anchor": {
+            "type": "integer"
+          },
           "history": {
             "type": "integer"
           },
@@ -629,7 +686,7 @@
         "required": [],
         "type": "object"
       },
-      "description": "Go back to the previous zoom. It swaps the current zoom with the last one, so going back twice toggles between two zooms. Refused when there is no earlier zoom.",
+      "description": "Go back to the previous zoom. It swaps the current zoom with the last one, so going back twice toggles between two zooms; the selection, else the playhead on screen, stays where it is. Refused when there is no earlier zoom.",
       "group": "arrangement",
       "id": "arrangement.zoom_back",
       "mutating": false,
@@ -637,6 +694,9 @@
       "result_schema": {
         "additionalProperties": false,
         "properties": {
+          "anchor": {
+            "type": "integer"
+          },
           "history": {
             "type": "integer"
           },
@@ -1669,6 +1729,9 @@
           },
           "label": {
             "type": "string"
+          },
+          "replace": {
+            "type": "boolean"
           }
         },
         "required": [
@@ -1676,7 +1739,7 @@
         ],
         "type": "object"
       },
-      "description": "Show a list in the browser and remember it: runs 'command' (browser.query, browser.index_query, browser.collection_run or browser.similar) with 'args', answers its result, and adds it to the browser's history ('label' is what the history shows). A step after going back drops the forward history.",
+      "description": "Show a list in the browser and remember it: runs 'command' (browser.query, browser.index_query, browser.collection_run or browser.similar) with 'args', answers its result, and adds it to the browser's history ('label' is what the history shows) - or, with 'replace', puts it in place of the current entry (a search refined as it is typed). A step after going back drops the forward history.",
       "group": "browser",
       "id": "browser.browse",
       "mutating": false,
@@ -1877,6 +1940,35 @@
       "group": "browser",
       "id": "browser.index_status",
       "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "as": {
+            "enum": [
+              "instrument",
+              "sample_track"
+            ],
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "path"
+        ],
+        "type": "object"
+      },
+      "description": "Load the audio file or preset 'path' onto a new track - what Enter does on a browser result: a preset (.xpf) becomes the new instrument track's settings, any other file opens in the instrument that takes its extension (a sample in AudioFileProcessor). 'as' sample_track puts an audio file on a new sample track instead (Shift+Enter). A project or MIDI file is refused: project.open and project.import take those. One undo step removes the track.",
+      "group": "browser",
+      "id": "browser.load",
+      "mutating": true,
       "requires": [],
       "result_schema": {
         "type": "object"
@@ -10558,198 +10650,6 @@
     {
       "args_schema": {
         "additionalProperties": false,
-        "properties": {},
-        "required": [],
-        "type": "object"
-      },
-      "description": "The saved macros with their steps.",
-      "group": "macro",
-      "id": "macro.list",
-      "mutating": false,
-      "requires": [],
-      "result_schema": {
-        "additionalProperties": false,
-        "properties": {
-          "count": {
-            "type": "integer"
-          },
-          "macros": {
-            "type": "array"
-          },
-          "max_macros": {
-            "type": "integer"
-          },
-          "max_steps": {
-            "type": "integer"
-          }
-        },
-        "required": [],
-        "type": "object"
-      }
-    },
-    {
-      "args_schema": {
-        "additionalProperties": false,
-        "properties": {
-          "name": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "name"
-        ],
-        "type": "object"
-      },
-      "description": "Start recording macro 'name': every command that changes something from now on (not undo, redo or the macro commands) becomes one of its steps, with its arguments, until macro.record_stop. Refused while another is being recorded.",
-      "group": "macro",
-      "id": "macro.record_start",
-      "mutating": false,
-      "requires": [],
-      "result_schema": {
-        "type": "object"
-      }
-    },
-    {
-      "args_schema": {
-        "additionalProperties": false,
-        "properties": {},
-        "required": [],
-        "type": "object"
-      },
-      "description": "Stop recording and save the macro as macro.save would (refused when nothing was done; a refused save keeps recording, nothing lost). Commands past the 64th step are not kept: 'dropped' counts them. One undo step.",
-      "group": "macro",
-      "id": "macro.record_stop",
-      "mutating": true,
-      "requires": [],
-      "result_schema": {
-        "type": "object"
-      }
-    },
-    {
-      "args_schema": {
-        "additionalProperties": false,
-        "properties": {
-          "name": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "name"
-        ],
-        "type": "object"
-      },
-      "description": "Forget macro 'name'. One undo step.",
-      "group": "macro",
-      "id": "macro.remove",
-      "mutating": true,
-      "requires": [],
-      "result_schema": {
-        "additionalProperties": false,
-        "properties": {
-          "count": {
-            "type": "integer"
-          },
-          "name": {
-            "type": "string"
-          }
-        },
-        "required": [],
-        "type": "object"
-      }
-    },
-    {
-      "args_schema": {
-        "additionalProperties": false,
-        "properties": {
-          "name": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "name"
-        ],
-        "type": "object"
-      },
-      "description": "Run macro 'name': acknowledged at once ('queued' steps), then each step runs through the registry on the next turn of the event loop, in order, stopping at the first that fails - macro.status reports the outcome ('stopped_at', -1 when every step ran). Each step records and undoes as itself; this command records nothing of its own. One macro runs at a time.",
-      "group": "macro",
-      "id": "macro.run",
-      "mutating": false,
-      "requires": [],
-      "result_schema": {
-        "additionalProperties": false,
-        "properties": {
-          "name": {
-            "type": "string"
-          },
-          "poll": {
-            "type": "string"
-          },
-          "queued": {
-            "type": "integer"
-          }
-        },
-        "required": [],
-        "type": "object"
-      }
-    },
-    {
-      "args_schema": {
-        "additionalProperties": false,
-        "properties": {
-          "name": {
-            "type": "string"
-          },
-          "steps": {
-            "type": "array"
-          }
-        },
-        "required": [
-          "name",
-          "steps"
-        ],
-        "type": "object"
-      },
-      "description": "Save a macro: 'steps' is a list of {command, args} run in order by macro.run (1..64 steps, every command registered, none a macro.* one). Replaces a macro of that name; at most 64 are kept. The Macros menu gains an action for it. Kept in the config file; one undo step.",
-      "group": "macro",
-      "id": "macro.save",
-      "mutating": true,
-      "requires": [],
-      "result_schema": {
-        "additionalProperties": false,
-        "properties": {
-          "name": {
-            "type": "string"
-          },
-          "replaced": {
-            "type": "boolean"
-          },
-          "steps": {
-            "type": "integer"
-          }
-        },
-        "required": [],
-        "type": "object"
-      }
-    },
-    {
-      "args_schema": {
-        "additionalProperties": false,
-        "properties": {},
-        "required": [],
-        "type": "object"
-      },
-      "description": "The last macro run: 'state' (idle, running, done), and once done how many steps ran, where it stopped and each step's outcome.",
-      "group": "macro",
-      "id": "macro.status",
-      "mutating": false,
-      "requires": [],
-      "result_schema": {
-        "type": "object"
-      }
-    },
-    {
-      "args_schema": {
-        "additionalProperties": false,
         "properties": {
           "color": {
             "type": "string"
@@ -13867,6 +13767,98 @@
           "clip": {
             "type": "string"
           },
+          "scope": {
+            "enum": [
+              "clip",
+              "selection"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "clip"
+        ],
+        "type": "object"
+      },
+      "description": "Copy the notes in 'scope' (selection, or the whole clip) to the note clipboard, replacing what it held. The clipboard is this instance's, not the project's: nothing is written and there is no undo step.",
+      "group": "note",
+      "id": "note.copy",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "clip": {
+            "type": "string"
+          },
+          "scope": {
+            "enum": [
+              "clip",
+              "selection"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "clip"
+        ],
+        "type": "object"
+      },
+      "description": "Copy the notes in 'scope' (selection, or the whole clip) to the note clipboard and delete them. One undo step (MidiClip checkpoint).",
+      "group": "note",
+      "id": "note.cut",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "clip": {
+            "type": "string"
+          },
+          "grid": {
+            "maximum": 1919808,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "scope": {
+            "enum": [
+              "clip",
+              "selection"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "clip"
+        ],
+        "type": "object"
+      },
+      "description": "Copy the notes in 'scope' (selection, or the whole clip) to just after themselves: shifted by their span, from the earliest start to the latest end, each rounded out to 'grid' ticks (default 1, the exact span). The copies become the selection, so a second duplicate continues the run. One undo step (MidiClip checkpoint).",
+      "group": "note",
+      "id": "note.duplicate",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "clip": {
+            "type": "string"
+          },
           "edits": {
             "type": "array"
           }
@@ -13877,7 +13869,7 @@
         ],
         "type": "object"
       },
-      "description": "Change several notes of one clip as ONE edit and ONE undo step - what the note editor sends for a drag, a multi-note resize or a lane gesture. 'edits' is a list of {note, position?, key?, length?, velocity?, pan?, probability?, muted?, release_velocity?}: position and length in ticks, key 0..127, velocity 0..200 (the engine's note volume), pan -100..100, probability 0..1, muted 0/1 (a muted note stays in the clip, unplayed), release_velocity -1..200 (the note-off velocity on the volume scale; -1 none, a note-off of 0), velocity_spread 0..1 (the velocity varies by up to that share each playback), repeats 0..16 (extra hits evenly inside the note), recur_length 0..16 and recur_mask (over that many passes of the loop the note plays on the passes whose bit is set: length 2, mask 1 is the first of every two), articulation (the track's articulation, track.articulations, 1-based; 0 none), group (0 none; note.group makes one); a field left out keeps its value. The whole batch is validated first - one bad entry (an unknown note, a value out of range, an entry naming no field) refuses it and changes nothing. The note ids do not change. Reversible through the ProjectJournal (one MidiClip checkpoint); the inverse is note.edit with the previous values.",
+      "description": "Change several notes of one clip as ONE edit and ONE undo step - what the note editor sends for a drag, a multi-note resize or a lane gesture. 'edits' is a list of {note, position?, key?, length?, velocity?, pan?, probability?, muted?, release_velocity?}: position and length in ticks, key 0..127, velocity 0..200 (the engine's note volume), pan -100..100, probability 0..1, muted 0/1 (a muted note stays in the clip, unplayed), release_velocity -1..200 (the note-off velocity on the volume scale; -1 none, a note-off of 0), velocity_spread 0..1 (the velocity varies by up to that share each playback), repeats 0..16 (extra hits evenly inside the note), recur_length 0..16 and recur_mask (over that many passes of the loop the note plays on the passes whose bit is set: length 2, mask 1 is the first of every two), articulation (the track's articulation, track.articulations, 1-based; 0 none), group (0 none; note.group makes one), slide 0/1 (a slide note), timbre and pressure 0..127 (the note's MPE timbre and pressure - the note properties box's Mod X and Mod Y); a field left out keeps its value. The whole batch is validated first - one bad entry (an unknown note, a value out of range, an entry naming no field) refuses it and changes nothing. The note ids do not change. Reversible through the ProjectJournal (one MidiClip checkpoint); the inverse is note.edit with the previous values.",
       "group": "note",
       "id": "note.edit",
       "mutating": true,
@@ -14433,6 +14425,33 @@
           "clip": {
             "type": "string"
           },
+          "position": {
+            "maximum": 1919808,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "clip"
+        ],
+        "type": "object"
+      },
+      "description": "Add the note clipboard's notes to a clip (any MIDI clip): where they were copied from, or with the earliest at tick 'position'. The pasted notes become the selection. One undo step (MidiClip checkpoint).",
+      "group": "note",
+      "id": "note.paste",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "clip": {
+            "type": "string"
+          },
           "note": {
             "type": "string"
           }
@@ -14794,6 +14813,32 @@
           "clip": {
             "type": "string"
           },
+          "notes": {
+            "type": "array"
+          }
+        },
+        "required": [
+          "clip",
+          "notes"
+        ],
+        "type": "object"
+      },
+      "description": "Delete several notes of one clip as ONE edit: 'notes' is a list of note ids - what the note editor's right-drag, Delete tool stroke and Delete key send. The whole list is checked first; one unknown id refuses it and removes nothing (an id named twice is removed once). One undo step (MidiClip checkpoint).",
+      "group": "note",
+      "id": "note.remove_many",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "clip": {
+            "type": "string"
+          },
           "count": {
             "maximum": 64,
             "minimum": 1,
@@ -15063,6 +15108,37 @@
       "group": "note",
       "id": "note.select_where",
       "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "at": {
+            "maximum": 1919808,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "clip": {
+            "type": "string"
+          },
+          "notes": {
+            "type": "array"
+          }
+        },
+        "required": [
+          "clip",
+          "at"
+        ],
+        "type": "object"
+      },
+      "description": "Cut notes in two at tick 'at' (inside the clip): every note in 'notes' (ids; default every note of the clip) that 'at' falls strictly inside keeps its id and ends at 'at', and a copy of it starts there - the slice tool's line. A line that crosses no note changes nothing (no undo step). One undo step (MidiClip checkpoint).",
+      "group": "note",
+      "id": "note.slice",
+      "mutating": true,
       "requires": [],
       "result_schema": {
         "type": "object"
@@ -27699,7 +27775,7 @@
         "required": [],
         "type": "object"
       },
-      "description": "How a recording pass starts and what it keeps: 'count_in_bars' (0..4 - the metronome clicks them before the play position, on or not), 'pre_roll_bars' (0..8 - played without the click), so the transport starts that many bars early and audio is captured only from the play position; 'mode' overdub (a MIDI pass keeps the notes it plays over) or replace (the notes a recorded note overlaps are removed). A field left out keeps its value; none reads them. A preference in the config file, not the project; a change is one undo step.",
+      "description": "How a recording pass starts and what it keeps: 'count_in_bars' (0..4 - the metronome clicks them before the play position, on or not), 'pre_roll_bars' (0..8 - played without the click), so the transport starts that many bars early and audio is captured only from the play position; 'mode' overdub (a MIDI pass keeps the notes it plays over) or replace (a recorded note erases the notes already in the clip that it overlaps, at any pitch - notes only: the clip's controller lanes and all automation are kept; the reply's 'mode_scope' says so). A field left out keeps its value; none reads them. A preference in the config file, not the project; a change is one undo step.",
       "group": "transport",
       "id": "transport.record_options",
       "mutating": true,
@@ -28075,6 +28151,31 @@
           }
         },
         "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "format": {
+            "enum": [
+              "bars_beats",
+              "ticks",
+              "time"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "description": "How musician-facing positions and lengths read - the header's position, the Inspector's clip and note fields, the tempo map, the comp bounds: 'format' bars_beats (the default: \"5.1.1\" for a position, \"1.0.0\" for a one-bar length), ticks, or time (min:sec through the tempo map). Typed text is read in any of them. None given reads it. A preference in the config file, not the project; a change is one undo step.",
+      "group": "transport",
+      "id": "transport.time_format",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
         "type": "object"
       }
     },
@@ -29933,7 +30034,7 @@
         "required": [],
         "type": "object"
       },
-      "description": "Walk the main window's controls and count those a screen reader would announce with no name; with 'fill', give each the name it already carries (its parameter's, its tooltip, its text). Lists, at most 50, the controls with nothing to name them by. The interface fills names this way once at start. Interface state.",
+      "description": "Walk the main window's controls and count those a screen reader would announce with no name, no role (a bare client or pane) or, for a control that shows a value, no value, and those Tab cannot reach; with 'fill', give each nameless one the name it already carries (its constructed name, its parameter's, its tooltip, its text). Lists, at most 50 of each, the controls with nothing to name them by and those with no role or value. The interface fills names this way once at start. Interface state.",
       "group": "window",
       "id": "window.accessibility_report",
       "mutating": false,
@@ -29946,6 +30047,9 @@
       "args_schema": {
         "additionalProperties": false,
         "properties": {
+          "accessible": {
+            "type": "boolean"
+          },
           "density": {
             "enum": [
               "standard",
@@ -29972,7 +30076,7 @@
         "required": [],
         "type": "object"
       },
-      "description": "How the interface looks, from the next start: 'scale' (0.5..3, the whole interface; an explicit QT_SCALE_FACTOR still wins), 'font_scale' (0.75..2, the text size), 'palette' (dark, high_contrast - text at 7:1 on every surface - or light) and 'density' (standard, comfortable - more room around every control, fewer on screen - or touch, targets large enough for a finger). A field left out keeps its value; none reads them. A preference in the config file; a change is one undo step.",
+      "description": "How the interface looks, from the next start: 'scale' (0.5..3), the one interface zoom - text, icons and controls scale together; an explicit QT_SCALE_FACTOR still wins - 'palette' (dark, high_contrast - text at 7:1 on every surface - or light) and 'accessible', accessible mode: larger click targets, strong focus rings, the high-contrast palette and reduced motion. Kept for older callers: 'font_scale' sets the zoom when 'scale' is not given, and 'density' sets accessible mode (standard off; comfortable or touch on) when 'accessible' is not given. A field left out keeps its value; none reads them. A preference in the config file; a change is one undo step.",
       "group": "window",
       "id": "window.appearance",
       "mutating": true,
@@ -30091,6 +30195,9 @@
         "properties": {
           "panel": {
             "type": "string"
+          },
+          "screen": {
+            "type": "integer"
           }
         },
         "required": [
@@ -30098,7 +30205,7 @@
         ],
         "type": "object"
       },
-      "description": "Show shell panel 'panel' (window.get_state's panel ids) in a window of its own - one that can sit on a second monitor; it stays there whatever view is chosen until window.attach or its window is closed. Interface state: not recorded.",
+      "description": "Show shell panel 'panel' (window.get_state's panel ids) in a window of its own - one that can sit on a second monitor; it stays there whatever view is chosen until window.attach or its window is closed. With 'screen' (an index into the connected screens, 0 = the first) its window moves onto that screen, also when it already floats. Interface state: not recorded.",
       "group": "window",
       "id": "window.detach",
       "mutating": false,
@@ -30318,7 +30425,7 @@
         "required": [],
         "type": "object"
       },
-      "description": "The saved layouts' names.",
+      "description": "The personal library's layout names, its limit, and whether the project remembers a layout of its own ('project_layout', window.layout_project_*).",
       "group": "window",
       "id": "window.layout_list",
       "mutating": false,
@@ -30331,6 +30438,77 @@
           },
           "max_layouts": {
             "type": "integer"
+          },
+          "project_layout": {
+            "type": "boolean"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {},
+        "required": [],
+        "type": "object"
+      },
+      "description": "Put back the layout the project remembers; answers window.get_state's view of the result. Interface state: not recorded. Refused NotFound when it remembers none.",
+      "group": "window",
+      "id": "window.layout_project_apply",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {},
+        "required": [],
+        "type": "object"
+      },
+      "description": "Forget the layout the project remembers (the personal layouts are kept). One undo step; refused NotFound when it remembers none.",
+      "group": "window",
+      "id": "window.layout_project_clear",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "cleared": {
+            "type": "boolean"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {},
+        "required": [],
+        "type": "object"
+      },
+      "description": "Remember the window layout on screen with the project (the same parts window.layout_save keeps: 'captures' lists them), replacing the one it remembered ('replaced'). Saved with the project and put back when it opens; one undo step ('changed' false, and no step, when it remembered just this one).",
+      "group": "window",
+      "id": "window.layout_project_save",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "captures": {
+            "type": "array"
+          },
+          "changed": {
+            "type": "boolean"
+          },
+          "replaced": {
+            "type": "boolean"
           }
         },
         "required": [],
@@ -30375,6 +30553,9 @@
         "properties": {
           "name": {
             "type": "string"
+          },
+          "replace": {
+            "type": "boolean"
           }
         },
         "required": [
@@ -30382,7 +30563,7 @@
         ],
         "type": "object"
       },
-      "description": "Save the window layout - the view, the open panels and the splitter sizes - under 'name' (replacing one of that name). At most 32 are kept, in the config file; one undo step.",
+      "description": "Save the window layout - the view, the open, pinned and floating panels and the splitter sizes ('captures' lists the parts kept) - under 'name' in the personal library, replacing one of that name ('replaced') unless 'replace' is false, when a name in use is refused. At most 32 are kept ('max_layouts'), in the config file; one undo step.",
       "group": "window",
       "id": "window.layout_save",
       "mutating": true,
@@ -30390,7 +30571,13 @@
       "result_schema": {
         "additionalProperties": false,
         "properties": {
+          "captures": {
+            "type": "array"
+          },
           "count": {
+            "type": "integer"
+          },
+          "max_layouts": {
             "type": "integer"
           },
           "name": {
@@ -30468,7 +30655,7 @@
         "required": [],
         "type": "object"
       },
-      "description": "The mixer view's modes, set and answered: 'sends_on_faders' (a ch-<n> return, or empty for the channel faders) makes every channel's fader drive its send to that return - a channel with no send there shows no fader; 'folded' answers the channel strips a collapsed folder hides (track.folder_set_collapsed folds). The view options, kept in the config file (ui/mixerview): 'show_sends', 'show_pan', 'show_number', 'show_meter_info', 'show_inserts', 'show_macros' (a strip's sections - the meter line is the gain reduction and the clip light, the inserts are listed by name, the macros are the rack's first four as knobs), 'strip_width' (narrow / normal / wide), 'filter' (all / instruments / audio / returns / used - the channels a track plays into or a send reaches), 'meter_mode' (peak - after the fader -, rms, pre_fader) and 'meter_scale' (db42 - the default range -, db60, db24, linear). Interface state: nothing is journalled.",
+      "description": "The mixer view's modes, set and answered: 'sends_on_faders' (a ch-<n> return, or empty for the channel faders) makes every channel's fader drive its send to that return - a banner across the mixer names it, every fader is labelled with what it drives, and a channel with no send there keeps a dimmed, still 'No send' fader in place; the answer adds 'sends_on_faders_name' (the return's name) and 'faders' (per channel, what its fader drives: volume, send or no_send - the return's own fader and the master's stay volume); 'folded' answers the channel strips a collapsed folder hides (track.folder_set_collapsed folds). The view options, kept in the config file (ui/mixerview): 'show_sends', 'show_pan', 'show_number', 'show_meter_info', 'show_inserts', 'show_macros' (a strip's sections - the meter line is the gain reduction and the clip light, the inserts are listed by name, the macros are the rack's first four as knobs), 'strip_width' (narrow / normal / wide), 'filter' (all / instruments / audio / returns / used - the channels a track plays into or a send reaches), 'meter_mode' (peak - after the fader -, rms, pre_fader) and 'meter_scale' (db42 - the default range -, db60, db24, linear). Interface state: nothing is journalled.",
       "group": "window",
       "id": "window.mixer_view",
       "mutating": false,
@@ -30476,6 +30663,9 @@
       "result_schema": {
         "additionalProperties": false,
         "properties": {
+          "faders": {
+            "type": "array"
+          },
           "filter": {
             "enum": [
               "all",
@@ -30507,6 +30697,9 @@
             "type": "string"
           },
           "sends_on_faders": {
+            "type": "string"
+          },
+          "sends_on_faders_name": {
             "type": "string"
           },
           "show_inserts": {
@@ -30651,12 +30844,15 @@
           },
           "zoom": {
             "type": "number"
+          },
+          "zoom_to_selection": {
+            "type": "boolean"
           }
         },
         "required": [],
         "type": "object"
       },
-      "description": "Drive the note editor's VIEW - what the editor's header and keys set - and answer its state (the same object window.get_state reports as `note_editor`). Every field is optional: `clip` opens that MIDI clip in the editor (what double-clicking it does); `tool` is draw, select, slice, erase, audition, paint (drag to lay a note on every grid cell) or mute; `grid` the snap in ticks (1 = off); `fold` none, scale, used or drums (the keys the track names - key_names.* - and the used ones); `lane` the expression lane (velocity, pan, chance, timbre, pressure, pitch, release, spread, repeats); `ghosts` shows the track's other clips; `color_mode` colours notes by velocity, pitch or track; `keep_in_scale` moves drawn and dragged notes to the nearest key of the scale; `controller_lane` (cc:<n>, pitchbend, aftertouch, program; empty for the note lane) shows that controller curve of the clip under the notes (clip.controllers_set edits it); `new_length` (ticks; 0 the last drawn) and `new_velocity` are what a clicked note gets; `audio_behind` draws an audio clip's waveform behind the notes (a clip id, auto - the first one sounding with the clip - or empty); `zoom` is pixels per tick; `fit` zooms to the clip and centres its notes (after the panel is shown); `reveal` (default true) brings the note editor panel into view. Interface state, not project state: nothing is journalled - the notes themselves are edited through note.*. Refused `requires` in a process with no interface.",
+      "description": "Drive the note editor's VIEW - what the editor's header and keys set - and answer its state (the same object window.get_state reports as `note_editor`). Every field is optional: `clip` opens that MIDI clip in the editor (what double-clicking it does); `tool` is one of FL Studio's piano-roll tools - draw (P), select (E), slice (C), erase (the Delete tool, D), audition (the Play tool, Y), paint (B: drag to lay a note on every grid cell) or mute (T); `grid` the snap in ticks (1 = off); `fold` none, scale, used or drums (the keys the track names - key_names.* - and the used ones); `lane` the expression lane (velocity, pan, chance, timbre, pressure, pitch, release, spread, repeats); `ghosts` shows the track's other clips; `color_mode` colours notes by velocity, pitch or track; `keep_in_scale` moves drawn and dragged notes to the nearest key of the scale; `controller_lane` (cc:<n>, pitchbend, aftertouch, program; empty for the note lane) shows that controller curve of the clip under the notes (clip.controllers_set edits it); `new_length` (ticks; 0 the last drawn) and `new_velocity` are what a clicked note gets; `audio_behind` draws an audio clip's waveform behind the notes (a clip id, auto - the first one sounding with the clip - or empty); `zoom` is pixels per tick; `fit` zooms to the clip and centres its notes (after the panel is shown); `zoom_to_selection` fits the selected notes, or the clip when none is (the Z key); `reveal` (default true) brings the note editor panel into view. Interface state, not project state: nothing is journalled - the notes themselves are edited through note.*. Refused `requires` in a process with no interface.",
       "group": "window",
       "id": "window.note_editor_set",
       "mutating": false,
@@ -31179,9 +31375,249 @@
       "result_schema": {
         "type": "object"
       }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {},
+        "required": [],
+        "type": "object"
+      },
+      "description": "The workflows in the library in use, with their steps, and which library that is ('scope': shared or project).",
+      "group": "workflow",
+      "id": "workflow.list",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "count": {
+            "type": "integer"
+          },
+          "max_steps": {
+            "type": "integer"
+          },
+          "max_workflows": {
+            "type": "integer"
+          },
+          "scope": {
+            "type": "string"
+          },
+          "workflows": {
+            "type": "array"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "type": "object"
+      },
+      "description": "Start recording workflow 'name': every command that changes something from now on (not undo, redo or the workflow commands) becomes one of its steps, with its arguments, until workflow.record_stop. Refused while another is being recorded. The recording shows in the header and the Workflows menu, and in workflow.status's 'recording'; 'replaces' says a saved workflow of that name will be replaced when it stops.",
+      "group": "workflow",
+      "id": "workflow.record_start",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {},
+        "required": [],
+        "type": "object"
+      },
+      "description": "Stop recording and save the workflow as workflow.save would (refused when nothing was done; a refused save keeps recording, nothing lost). Commands past the 64th step are not kept: 'dropped' counts them. One undo step.",
+      "group": "workflow",
+      "id": "workflow.record_stop",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "type": "object"
+      },
+      "description": "Forget workflow 'name' from the library in use. One undo step.",
+      "group": "workflow",
+      "id": "workflow.remove",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "count": {
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          },
+          "scope": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "type": "object"
+      },
+      "description": "Run workflow 'name': acknowledged at once ('queued' steps), then each step runs through the registry on the next turn of the event loop, in order, stopping at the first that fails - workflow.status reports the outcome ('stopped_at', -1 when every step ran) and the interface says where it stopped. Each step records and undoes as itself; this command records nothing of its own. One workflow runs at a time.",
+      "group": "workflow",
+      "id": "workflow.run",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "poll": {
+            "type": "string"
+          },
+          "queued": {
+            "type": "integer"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "steps": {
+            "type": "array"
+          }
+        },
+        "required": [
+          "name",
+          "steps"
+        ],
+        "type": "object"
+      },
+      "description": "Save a workflow: 'steps' is a list of {command, args} run in order by workflow.run (1..64 steps, every command registered, none a workflow.* one). Replaces a workflow of that name ('replaced' says so); at most 64 are kept. The Workflows menu gains an action for it. Kept in the library in use ('scope': shared, in the config file, or project, saved with the project - workflow.set_scope); one undo step.",
+      "group": "workflow",
+      "id": "workflow.save",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "replaced": {
+            "type": "boolean"
+          },
+          "scope": {
+            "type": "string"
+          },
+          "steps": {
+            "type": "integer"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "scope": {
+            "enum": [
+              "shared",
+              "project"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "scope"
+        ],
+        "type": "object"
+      },
+      "description": "Choose where workflows are kept: 'shared' (the default - one library in the config file, for every project) or 'project' (each project's own, saved with it). The other library is kept as it is, and comes back when it is chosen again. The ui/workflows.scope setting; one undo step ('changed' false, and no step, when it was already so).",
+      "group": "workflow",
+      "id": "workflow.set_scope",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "changed": {
+            "type": "boolean"
+          },
+          "previous": {
+            "type": "string"
+          },
+          "scope": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {},
+        "required": [],
+        "type": "object"
+      },
+      "description": "The last workflow run: 'state' (idle, running, done), and once done how many steps ran, where it stopped and each step's outcome; 'recording' says whether a workflow is being recorded (its name and steps so far).",
+      "group": "workflow",
+      "id": "workflow.status",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "type": "object"
+      }
     }
   ],
-  "count": 729,
+  "count": 742,
   "instance": {
     "binary": null,
     "binary_bytes": null,
@@ -31189,15 +31625,15 @@
     "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-survey/tools/zene-pa-agentctl",
     "lane_head": null,
     "proto": 1,
-    "source_socket": "/tmp/zctl-run-8x9nb9jz/zene.sock",
-    "version": "0.4.0-alpha.104+2408224"
+    "source_socket": "/tmp/zctl-run-i8spto09/zene.sock",
+    "version": "0.4.0-alpha.109+e5a6031"
   },
   "kind": "zene-control-command-list",
   "proto": 1,
   "schema": 1,
   "surface": {
     "group_count": 72,
-    "id_count": 729,
-    "ids_sha256": "ab53932663f2ede1972451d27d5bbd5311f3de6fb5b1b6e9043e7476752fce71"
+    "id_count": 742,
+    "ids_sha256": "d77c398178a355a428ed0e9ff60838e16951e923b12d4419441c6a8573cc6bfd"
   }
 }

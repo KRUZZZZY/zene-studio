@@ -76,4 +76,12 @@ inline QJsonObject finish(const ClipRef& ref, MidiClip* clip, const QString& com
 
 } // namespace lmms::control::notes
 
+namespace lmms
+{
+class ControlRegistry;
+//! note.remove_many, note.slice, note.copy / cut / paste / duplicate (ControlCommandsNoteClipboard.cpp); registered
+//! with the note shape group (registerNoteShapeCommands), so the registration list needs no line of its own.
+void registerNoteClipboardCommands(ControlRegistry& registry);
+} // namespace lmms
+
 #endif // LMMS_CONTROL_COMMANDS_NOTE_SHARED_H

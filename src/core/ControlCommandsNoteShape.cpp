@@ -384,6 +384,7 @@ void registerNoteShapeCommands(ControlRegistry& registry)
 			QStringLiteral("remove"), QStringLiteral("transpose"), QStringLiteral("velocity_set"), QStringLiteral("velocity_offset"),
 			QStringLiteral("mute"), QStringLiteral("unmute")})},
 		{QStringLiteral("amount"), integerProperty()}}, {QStringLiteral("clip"), QStringLiteral("action")}), true, transformWhere);
+	registerNoteClipboardCommands(registry);
 }
 
 } // namespace lmms

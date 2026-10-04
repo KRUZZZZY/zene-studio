@@ -36,6 +36,7 @@
 #include <QStyleOptionFrame>
 #include <QScreen>
 
+#include "AccessibleWidgets.h"
 #include "CaptionMenu.h"
 #include "DpiHelper.h"
 #include "FontHelper.h"
@@ -60,6 +61,7 @@ ComboBox::ComboBox( QWidget * _parent, const QString & _name ) :
 				this, SLOT(setItem(QAction*)));
 
 	setWindowTitle( _name );
+	setFocusPolicy( Qt::TabFocus );  // 0.5.0 (theme 10): Tab reaches it; a click still leaves focus where it was
 	setAttribute( Qt::WA_Hover, true );
 	doConnections();
 }
@@ -113,31 +115,7 @@ void ComboBox::mousePressEvent( QMouseEvent* event )
 	{
 		if (pos.x() > width() - CB_ARROW_BTN_WIDTH)
 		{
-			m_pressed = true;
-			update();
-
-			m_menu.clear();
-			for( int i = 0; i < model()->size(); ++i )
-			{
-				QAction * a = m_menu.addAction( model()->itemPixmap( i ) ? model()->itemPixmap( i )->pixmap() : QPixmap(),
-													model()->itemText( i ) );
-				a->setData( i );
-			}
-
-			QPoint gpos = mapToGlobal(QPoint(0, height()));
-
-			bool const menuCanBeFullyShown = screen()->geometry().contains(QRect(gpos, m_menu.sizeHint()));
-			if (menuCanBeFullyShown)
-			{
-				m_menu.exec(gpos);
-			}
-			else
-			{
-				m_menu.exec(mapToGlobal(QPoint(width(), 0)));
-			}
-
-			m_pressed = false;
-			update();
+			showMenu();
 		}
 		else if( event->button() == Qt::LeftButton )
 		{
@@ -154,6 +132,61 @@ void ComboBox::mousePressEvent( QMouseEvent* event )
 	{
 		IntModelView::mousePressEvent( event );
 	}
+}
+
+
+
+
+void ComboBox::showMenu()
+{
+	if( model() == nullptr ) { return; }
+	m_pressed = true;
+	update();
+
+	m_menu.clear();
+	for( int i = 0; i < model()->size(); ++i )
+	{
+		QAction * a = m_menu.addAction( model()->itemPixmap( i ) ? model()->itemPixmap( i )->pixmap() : QPixmap(),
+											model()->itemText( i ) );
+		a->setData( i );
+		if( i == model()->value() ) { m_menu.setActiveAction( a ); }  // the keyboard starts on the current item
+	}
+
+	QPoint gpos = mapToGlobal(QPoint(0, height()));
+
+	bool const menuCanBeFullyShown = screen()->geometry().contains(QRect(gpos, m_menu.sizeHint()));
+	if (menuCanBeFullyShown)
+	{
+		m_menu.exec(gpos);
+	}
+	else
+	{
+		m_menu.exec(mapToGlobal(QPoint(width(), 0)));
+	}
+
+	m_pressed = false;
+	update();
+}
+
+
+
+
+void ComboBox::keyPressEvent( QKeyEvent* event )
+{
+	// 0.5.0 (theme 10): Space, Enter or Alt+Down opens the menu; Down/Right/PageDown choose the next item and
+	// Up/Left/PageUp the previous one, as in a list (and as the wheel does), Home/End the first and last; other
+	// keys pass on.
+	const int key = event->key();
+	const bool opens = key == Qt::Key_Space || key == Qt::Key_Return || key == Qt::Key_Enter
+		|| (key == Qt::Key_Down && ( event->modifiers() & Qt::AltModifier ));
+	const float down = key == Qt::Key_Up || key == Qt::Key_Down ? -1.f : 1.f;  // a list counts down the screen
+	if( model() != nullptr && opens ) { showMenu(); }
+	else if( !a11y::applyKeyStep( model(), a11y::keyStep( key ), down, -1.f ) )
+	{
+		QWidget::keyPressEvent( event );
+		return;
+	}
+	event->accept();
 }
 
 

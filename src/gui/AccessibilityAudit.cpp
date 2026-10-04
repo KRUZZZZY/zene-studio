@@ -28,12 +28,15 @@
 #include <QAbstractItemView>
 #include <QAbstractSlider>
 #include <QAbstractSpinBox>
+#include <QAccessible>
 #include <QComboBox>
 #include <QJsonArray>
 #include <QLineEdit>
+#include <QMetaEnum>
 #include <QTextDocument>
 
-#include "Model.h"
+#include "AccessibleWidgets.h"
+#include "AutomatableModel.h"
 #include "ModelView.h"
 
 namespace lmms::gui
@@ -53,12 +56,40 @@ bool interactive(const QWidget* widget)
 		|| dynamic_cast<const ModelView*>(widget) != nullptr || (widget->focusPolicy() & Qt::TabFocus) != 0;
 }
 
+//! A control that shows a value a screen reader must say: a slider, a spin box, a combo box, or a parameter
+//! control whose parameter is not an on/off one (a knob, a fader, an LCD number, a model combo box).
+bool showsValue(const QWidget* widget)
+{
+	if (qobject_cast<const QAbstractSlider*>(widget) != nullptr || qobject_cast<const QAbstractSpinBox*>(widget) != nullptr
+		|| qobject_cast<const QComboBox*>(widget) != nullptr)
+	{
+		return true;
+	}
+	const auto* view = dynamic_cast<const ModelView*>(widget);
+	const auto* model = view != nullptr ? dynamic_cast<const AutomatableModel*>(view->model()) : nullptr;
+	return model != nullptr && dynamic_cast<const BoolModel*>(model) == nullptr && qobject_cast<const QAbstractButton*>(widget) == nullptr;
+}
+
+//! A role that tells a screen reader nothing about what the control is.
+bool genericRole(QAccessible::Role role)
+{
+	return role == QAccessible::NoRole || role == QAccessible::Client || role == QAccessible::Pane;
+}
+
 QString plain(const QString& text)
 {
 	if (!Qt::mightBeRichText(text)) { return text.simplified(); }
 	QTextDocument document;
 	document.setHtml(text);
 	return document.toPlainText().simplified();
+}
+
+//! "Volume:" -> "Volume": a caption's colon is not part of the name.
+QString nameFrom(const QString& text)
+{
+	QString name = plain(text);
+	while (name.endsWith(QLatin1Char(':'))) { name.chop(1); }
+	return name.trimmed();
 }
 
 QJsonObject entryOf(const QWidget* widget)
@@ -68,14 +99,89 @@ QJsonObject entryOf(const QWidget* widget)
 		{QStringLiteral("parent"), widget->parentWidget() != nullptr ? widget->parentWidget()->objectName() : QString()}};
 }
 
+//! One finding kind: how many, and the first MaxListed of them.
+struct Findings
+{
+	QJsonArray listed;
+	int count = 0;
+
+	void add(const QJsonObject& entry)
+	{
+		if (++count <= MaxListed) { listed.append(entry); }
+	}
+};
+
+//! The walk's counts (auditAccessibility's reply).
+struct Tally
+{
+	bool fill = false;
+	int checked = 0;
+	int named = 0;
+	int filled = 0;
+	int implied = 0;
+	int unreachable = 0;
+	Findings unnamed;
+	Findings roleless;
+	Findings valueless;
+
+	void checkName(QWidget* widget)
+	{
+		if (!widget->accessibleName().isEmpty())
+		{
+			++named;
+			return;
+		}
+		const QString name = impliedAccessibleName(widget);
+		if (name.isEmpty())
+		{
+			unnamed.add(entryOf(widget));
+			return;
+		}
+		if (fill) { widget->setAccessibleName(name); }
+		++(fill ? filled : implied);
+	}
+
+	//! What the platform bridge is told: a role that says what the control is, and the value it shows.
+	void checkRoleAndValue(QWidget* widget)
+	{
+		QAccessibleInterface* face = QAccessible::queryAccessibleInterface(widget);
+		const QAccessible::Role role = face != nullptr ? face->role() : QAccessible::NoRole;
+		QJsonObject entry = entryOf(widget);
+		entry.insert(QStringLiteral("role"), QString::fromLatin1(QMetaEnum::fromType<QAccessible::Role>().valueToKey(role)));
+		if (genericRole(role)) { roleless.add(entry); }
+		const bool valueGiven = face != nullptr && (face->valueInterface() != nullptr || !face->text(QAccessible::Value).isEmpty());
+		if (showsValue(widget) && !valueGiven) { valueless.add(entry); }
+	}
+
+	void check(QWidget* widget)
+	{
+		++checked;
+		checkName(widget);
+		checkRoleAndValue(widget);
+		if ((widget->focusPolicy() & Qt::TabFocus) == 0) { ++unreachable; }
+	}
+
+	QJsonObject reply() const
+	{
+		return {{QStringLiteral("checked"), checked}, {QStringLiteral("named"), named}, {QStringLiteral("filled"), filled},
+			{QStringLiteral("implied"), implied}, {QStringLiteral("unnamed"), unnamed.listed},
+			{QStringLiteral("unnamed_count"), unnamed.count}, {QStringLiteral("roleless"), roleless.listed},
+			{QStringLiteral("roleless_count"), roleless.count}, {QStringLiteral("valueless"), valueless.listed},
+			{QStringLiteral("valueless_count"), valueless.count}, {QStringLiteral("unreachable_count"), unreachable}};
+	}
+};
+
 } // namespace
 
 QString impliedAccessibleName(const QWidget* widget)
 {
+	// A custom control's constructed name (LMMS widgets keep it as their title - a window's title is its own), the
+	// name FloatModelEditorBase::refreshAccessibleName puts first too; then its parameter's.
+	if (!widget->isWindow() && !widget->windowTitle().trimmed().isEmpty()) { return nameFrom(widget->windowTitle()); }
 	if (const auto* view = dynamic_cast<const ModelView*>(widget); view != nullptr && view->model() != nullptr
 		&& !view->model()->displayName().isEmpty())
 	{
-		return view->model()->displayName();
+		return nameFrom(view->model()->displayName());
 	}
 	if (!widget->toolTip().isEmpty()) { return plain(widget->toolTip()); }
 	const auto* button = qobject_cast<const QAbstractButton*>(widget);
@@ -84,30 +190,16 @@ QString impliedAccessibleName(const QWidget* widget)
 
 QJsonObject auditAccessibility(QWidget* root, bool fill)
 {
-	int checked = 0;
-	int named = 0;
-	int filled = 0;
-	int implicit = 0;
-	int nameless = 0;
-	QJsonArray unnamed;
+	a11y::installAccessibleWidgets();  // roles and values as the running application reports them
+	Tally tally;
+	tally.fill = fill;
 	QList<QWidget*> widgets = root->findChildren<QWidget*>();
 	widgets.prepend(root);  // the control it is given is one of those it checks
 	for (QWidget* widget : widgets)
 	{
-		if (!widget->isVisible() || !interactive(widget)) { continue; }
-		++checked;
-		if (!widget->accessibleName().isEmpty()) { ++named; continue; }
-		const QString implied = impliedAccessibleName(widget);
-		if (!implied.isEmpty())
-		{
-			if (fill) { widget->setAccessibleName(implied); }
-			++(fill ? filled : implicit);
-			continue;
-		}
-		if (++nameless <= MaxListed) { unnamed.append(entryOf(widget)); }
+		if (widget->isVisible() && interactive(widget)) { tally.check(widget); }
 	}
-	return {{QStringLiteral("checked"), checked}, {QStringLiteral("named"), named}, {QStringLiteral("filled"), filled},
-		{QStringLiteral("implied"), implicit}, {QStringLiteral("unnamed"), unnamed}, {QStringLiteral("unnamed_count"), nameless}};
+	return tally.reply();
 }
 
 } // namespace lmms::gui

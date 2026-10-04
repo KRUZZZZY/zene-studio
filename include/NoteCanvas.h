@@ -55,8 +55,12 @@ using NoteRange = std::pair<int, int>;
 //! The note area. Painting reads the clip and the shared NoteEditorState; it draws only the
 //! rows and notes on screen, found by binary search over the position-sorted note list, so a
 //! frame costs the visible notes, not the clip's (PianoRollBenchmarkTest measures it).
-//! Gestures are previewed locally and committed as ONE command on release (note.add,
-//! note.edit, note.remove, note.select), so a drag is one undo step.
+//! Gestures follow FL Studio's piano roll (owner decision 2026-10-03; docs/NOTE-EDITOR.md §3):
+//! left draws, moves and resizes, right deletes what it crosses (or, from an empty row, slices),
+//! Ctrl selects, Shift and Ctrl lock pitch and timing while dragging, Alt bypasses the snap.
+//! Each gesture is previewed locally and committed as ONE command on release (note.add,
+//! note.edit, note.remove_many, note.slice, note.add_many, note.select), so a stroke is one
+//! undo step.
 class LMMS_EXPORT NoteCanvas : public QWidget
 {
 	Q_OBJECT
@@ -75,6 +79,8 @@ public:
 	QRect rectFor(int key, int start, int end) const;
 	//! Whether @a pos is on the resize handle at the right end of @a note.
 	bool onResizeHandle(const Note& note, const QPoint& pos) const;
+	//! Whether @a pos is on the handle at the left end of @a note (Shift-drag there resizes from the start).
+	bool onStartHandle(const Note& note, const QPoint& pos) const;
 
 	//! The playhead, in ticks inside the clip, or -1 when the clip is not playing.
 	void setPlayhead(int tick);
@@ -83,6 +89,7 @@ public:
 	void cancelGesture();
 
 protected:
+	bool event(QEvent* event) override;
 	void paintEvent(QPaintEvent* event) override;
 	void mousePressEvent(QMouseEvent* event) override;
 	void mouseMoveEvent(QMouseEvent* event) override;
@@ -101,11 +108,14 @@ private:
 		Draw,
 		Move,
 		Resize,
+		ResizeStart,  //!< Shift-drag on a note's left edge
 		Band,
-		Erase,
+		Erase,        //!< the Delete tool, or the right button over notes
+		Slice,        //!< the Slice tool, or the right button from an empty row
+		Mute,
 		Audition,
 		Paint,
-		Velocity
+		Pan           //!< the middle button scrolls both ways
 	};
 
 	// painting (NoteCanvas.cpp)
@@ -117,56 +127,71 @@ private:
 	void paintNote(QPainter& p, const Note& note, const QRect& r) const;
 	void paintDragPreview(QPainter& p) const;
 	void paintDrawPreview(QPainter& p) const;
-	void paintErasePreview(QPainter& p) const;
-	bool erased(const Note& note) const;  //!< whether the eraser has crossed @a note this gesture
+	void paintStrokePreview(QPainter& p) const;  //!< the notes a delete or mute stroke has crossed
+	bool stroked(const Note& note) const;        //!< whether the stroke in flight has crossed @a note
 	void paintMovePreview(QPainter& p) const;
+	void paintSlicePreview(QPainter& p) const;
 	void paintGhostClip(QPainter& p, const MidiClip& clip, int offset) const;
 	void paintOverlay(QPainter& p) const;
-	//! A move drag with Ctrl held: the release copies the selection (commitMove) instead of moving it.
-	bool copying() const;
 
 	// gestures (NoteCanvasInput.cpp)
+	bool altHeld() const;  //!< Alt: the grid snap is off while it is held
+	int snapTicks(int ticks) const;
 	void beginPress(QMouseEvent* event);
+	void pressRight(const Note* note);
 	void pressDrawOrSelect(Note* note, QMouseEvent* event);
-	void commitDrag(Drag drag, bool shift);  //!< the one command a released gesture sends
+	void commitDrag(Drag drag);  //!< the one command a released gesture sends
+	void commitStroke(Drag drag);  //!< ... when it was a delete, slice, mute or paint stroke
+	void updateCursor(const QPoint& pos);  //!< the resize cursor over a note's handles, with no button held
 	void pressAudition(const Note* note);
-	void pressErase(const Note* note);
-	void markErased(const Note* note);  //!< adds @a note (if any) to m_erasedIds, kept sorted
-	bool nudgeForKey(int key, bool shift);
+	void pressStroke(Drag drag, const Note* note);  //!< a delete or mute stroke, starting on @a note (or none)
+	void markStroke(const Note* note);  //!< adds @a note (if any) to m_strokeIds, kept sorted
 	int resizeDelta() const;  //!< the snapped length change of a resize drag (0 otherwise)
+	int startDelta() const;   //!< the snapped start change of a resize-from-start drag (0 otherwise)
 	void pressOnNote(Note* note, QMouseEvent* event);
 	void pressOnEmpty(QMouseEvent* event);
+	void pressBand(QMouseEvent* event);
 	std::pair<int, int> drawSpan() const;  //!< the note a draw gesture makes: start, length
 	void commitDraw();
 	void commitMove();
 	void commitResize();
-	void commitBand(bool additive);
+	void commitResizeStart();
+	void commitBand();
 	void commitErase();
-	void sliceAt(Note* note, const QPoint& pos);
 	void selectOnly(const std::vector<Note*>& notes, bool additive);
 	Note* noteById(int id) const;
 	std::vector<Note*> selectedNotes() const;
-	void nudgeSelection(int ticks, int keys);
-	void deleteSelection();
 	int dragTicks() const;
 	int dragKeys() const;
 	int keyMovedBy(int key, int rows) const;
 
-	// paint tool, velocity drag, note colour (NoteCanvasGestures.cpp)
+	// strokes, paint tool, note colour (NoteCanvasGestures.cpp)
 	int scaleKey(int key) const;  //!< @a key, moved into the scale when keep-in-scale is on
 	void pressPaint();
-	void pressMute(const Note* note);
 	void extendPaint(const QPoint& pos);
-	//! The eraser's path from @a from to @a to: every note on it is marked, not only the one at its end.
-	void eraseAlong(const QPoint& from, const QPoint& to);
+	//! The stroke's path from @a from to @a to: every note on it is marked, not only the one at its end.
+	void strokeAlong(const QPoint& from, const QPoint& to);
 	void commitPaint();
-	void pressVelocity(Note* note);
-	int velocityDelta() const;
-	void commitVelocity();
+	void commitMute();
+	int sliceTick() const;  //!< the snapped tick a slice line stands at
+	void commitSlice();
+	void scrubTo(const QPoint& pos);  //!< the Play tool: a drag sounds each key it reaches
 	void paintPaintPreview(QPainter& p) const;
-	void paintVelocityPreview(QPainter& p) const;
 	QColor noteFill(const Note& note) const;
 	QString noteLabel(const Note& note) const;
+
+	// keys, wheel, clipboard, middle button (NoteCanvasKeys.cpp)
+	void nudgeSelection(int ticks, int keys);
+	bool nudgeForKey(int key, bool shift);
+	bool selectionKey(const QKeyEvent* event);
+	bool clipboardKey(const QKeyEvent* event);
+	void deleteSelection();
+	//! note.copy / note.cut / note.paste / note.duplicate on the selection, or the whole clip when none is selected.
+	void runClipboard(const QString& command);
+	void wheelOnNote(const Note* note, int amount, Qt::KeyboardModifiers mods);
+	void wheelView(const QWheelEvent* event, int amount);
+	void pressPan();
+	void panTo(const QPoint& pos);
 
 	NoteEditor* m_editor;
 	NoteBackgroundAudio m_audioBehind;  //!< 0.5.0 ED-081
@@ -175,6 +200,8 @@ private:
 	int m_playhead = -1;
 
 	Drag m_drag = Drag::None;
+	Qt::KeyboardModifiers m_mods;      //!< the modifiers of the gesture's latest event (the locks, Alt)
+	Qt::KeyboardModifiers m_pressMods; //!< the modifiers at the press (Ctrl selects, Ctrl+Shift adds)
 	QPoint m_pressPos;
 	QPoint m_currentPos;
 	int m_pressTick = 0;
@@ -183,10 +210,15 @@ private:
 	// the socket between press and release can replace the clip's note objects (a journal
 	// restore re-loads the list), and a held pointer would then be a freed one - BUGS 11.27's
 	// lesson, a view must not outlive its model.
-	int m_anchorId = -1;                 //!< the note a move/resize was started on
-	std::vector<int> m_erasedIds;        //!< notes the eraser has crossed (sorted), removed on release
+	int m_anchorId = -1;                 //!< the note a move/resize/mute stroke was started on
+	std::vector<int> m_strokeIds;        //!< notes a delete or mute stroke has crossed (sorted)
+	int m_muteTo = -1;                   //!< a mute stroke's state: 1 mute, 0 unmute, -1 not yet decided
+	QString m_justDrawn;                 //!< the note the last click drew: a double-click that drew it is not a properties request
+	ulong m_drawnAt = 0;                 //!< the timestamp of the release that drew it
 	int m_auditionKey = -1;
 	std::vector<std::pair<int, int>> m_painted;  //!< the paint tool's cells so far: key, start tick
+	double m_panTicks = 0;               //!< the view at a middle-button press
+	int m_panY = 0;
 };
 
 } // namespace lmms::gui

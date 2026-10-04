@@ -39,6 +39,8 @@
 #include <QScrollBar>
 
 #include "ArrangerOverlays.h"
+#include "ArrangerRulerLanes.h"
+#include "ArrangerZoom.h"
 #include "ClipView.h"
 #include "CommandForm.h"
 #include "ControlReversibility.h"
@@ -63,9 +65,7 @@ using namespace control;
 namespace
 {
 
-constexpr int HistoryDepth = 32;
 constexpr int MaxFitHeight = 256;
-QVector<int> g_zoomHistory;  //!< earlier zoom model values, newest last (UI thread only)
 
 gui::SongEditor* arranger()
 {
@@ -81,14 +81,7 @@ ControlResult noArranger(const QString& id)
 QJsonObject zoomState(gui::SongEditor* editor)
 {
 	return {{QStringLiteral("pixels_per_bar"), static_cast<double>(editor->pixelsPerBar())},
-		{QStringLiteral("zoom"), editor->zoomingModel()->value()}, {QStringLiteral("history"), g_zoomHistory.size()}};
-}
-
-void pushHistory(int value)
-{
-	if (!g_zoomHistory.isEmpty() && g_zoomHistory.last() == value) { return; }
-	g_zoomHistory.append(value);
-	if (g_zoomHistory.size() > HistoryDepth) { g_zoomHistory.removeFirst(); }
+		{QStringLiteral("zoom"), editor->zoomingModel()->value()}, {QStringLiteral("history"), gui::arrangerzoom::historySize()}};
 }
 
 //! The tick range a fit spans, or false (with @a error) when there is nothing to fit.
@@ -103,18 +96,7 @@ bool fitRange(gui::SongEditor* editor, const QString& fit, tick_t* begin, tick_t
 		*begin = timeline.loopBegin().getTicks();
 		*end = timeline.loopEnd().getTicks();
 	}
-	else if (fit == QStringLiteral("selection"))
-	{
-		*begin = std::numeric_limits<tick_t>::max();
-		*end = 0;
-		for (gui::selectableObject* object : editor->selectedObjects())
-		{
-			auto* view = dynamic_cast<gui::ClipView*>(object);
-			if (view == nullptr) { continue; }
-			*begin = std::min<tick_t>(*begin, view->getClip()->startPosition().getTicks());
-			*end = std::max<tick_t>(*end, view->getClip()->endPosition().getTicks());
-		}
-	}
+	else if (fit == QStringLiteral("selection")) { gui::arrangerzoom::selectedClipsSpan(editor, begin, end); }
 	if (*end <= *begin) { *error = QStringLiteral("nothing to fit: the %1 is empty").arg(fit); }
 	return *end > *begin;
 }
@@ -122,9 +104,9 @@ bool fitRange(gui::SongEditor* editor, const QString& fit, tick_t* begin, tick_t
 //! Zoom and scroll so [@a begin, @a end) fills the arranger's width.
 void fitSpan(gui::SongEditor* editor, tick_t begin, tick_t end)
 {
-	const int width = editor->timeLine()->width() - editor->timeLine()->markerX(editor->currentPosition());
+	const int width = gui::arrangerzoom::visibleWidth(editor);
 	const double bars = static_cast<double>(end - begin) / TimePos::ticksPerBar();
-	editor->zoomingModel()->setValue(editor->zoomValueFor(static_cast<int>(std::max(1.0, std::floor(std::max(width, 1) / bars)))));
+	editor->zoomingModel()->setValue(editor->zoomValueFor(static_cast<int>(std::max(1.0, std::floor(width / bars)))));
 	editor->horizontalScroll()->setValue(static_cast<int>(begin));
 }
 
@@ -140,6 +122,34 @@ QString spanProblem(const QJsonObject& args)
 	return QString();
 }
 
+/*! 0.5.0 theme 9: the tick a step or pixels_per_bar zoom keeps where it is on screen - 'anchor_tick'
+ *  (a pointer gesture's: the tick under the pointer), else the 'anchor' named: the selection, the
+ *  playhead, the view's middle or its start (the zoom before 0.5.0), or by default (auto) the selection,
+ *  else the playhead on screen, else the view's middle. */
+tick_t zoomAnchor(gui::SongEditor* editor, const QJsonObject& args)
+{
+	if (args.contains(QStringLiteral("anchor_tick"))) { return std::max(0, args.value(QStringLiteral("anchor_tick")).toInt()); }
+	const QString anchor = args.value(QStringLiteral("anchor")).toString(QStringLiteral("auto"));
+	const tick_t start = editor->currentPosition().getTicks();
+	if (anchor == QStringLiteral("start")) { return start; }
+	if (anchor == QStringLiteral("view")) { return start + gui::arrangerzoom::visibleTicks(editor) / 2; }
+	if (anchor == QStringLiteral("playhead")) { return gui::arrangerzoom::playhead(editor); }
+	tick_t begin = 0;
+	tick_t end = 0;
+	if (anchor == QStringLiteral("selection") && gui::arrangerzoom::selectionSpan(editor, &begin, &end)) { return begin + (end - begin) / 2; }
+	return gui::arrangerzoom::keyboardAnchor(editor);
+}
+
+//! The zoom model value a 'pixels_per_bar' or 'step' zoom asks for (clamped to the model).
+int requestedZoom(gui::SongEditor* editor, const QJsonObject& args)
+{
+	IntModel* model = editor->zoomingModel();
+	const int value = args.contains(QStringLiteral("pixels_per_bar"))
+		? editor->zoomValueFor(static_cast<int>(std::lround(args.value(QStringLiteral("pixels_per_bar")).toDouble())))
+		: model->value() + args.value(QStringLiteral("step")).toInt(1);
+	return std::clamp(value, model->minValue(), model->maxValue());
+}
+
 ControlResult zoom(const QJsonObject& args)
 {
 	gui::SongEditor* editor = arranger();
@@ -147,6 +157,7 @@ ControlResult zoom(const QJsonObject& args)
 	if (const QString problem = spanProblem(args); !problem.isEmpty()) { return ControlResult::failure(ControlErrorKind::InvalidArgs, problem); }
 	IntModel* model = editor->zoomingModel();
 	const int before = model->value();
+	tick_t anchor = -1;
 	if (args.contains(QStringLiteral("start")) && args.contains(QStringLiteral("end")))
 	{
 		// ED-008: the zoom tool's span fills the width.
@@ -165,14 +176,15 @@ ControlResult zoom(const QJsonObject& args)
 		}
 		fitSpan(editor, begin, end);
 	}
-	else if (args.contains(QStringLiteral("pixels_per_bar")))
+	else
 	{
-		model->setValue(editor->zoomValueFor(static_cast<int>(std::lround(args.value(QStringLiteral("pixels_per_bar")).toDouble()))));
+		anchor = zoomAnchor(editor, args);
+		gui::arrangerzoom::zoomAround(editor, requestedZoom(editor, args), anchor);
 	}
-	else { model->incValue(args.value(QStringLiteral("step")).toInt(1)); }
-	if (model->value() != before) { pushHistory(before); }
+	if (model->value() != before) { gui::arrangerzoom::remember(before); }
 	QJsonObject result = zoomState(editor);
 	result.insert(QStringLiteral("previous_zoom"), before);
+	if (anchor >= 0) { result.insert(QStringLiteral("anchor"), static_cast<int>(anchor)); }
 	return ControlResult::success(result);
 }
 
@@ -180,12 +192,14 @@ ControlResult zoomBack(const QJsonObject&)
 {
 	gui::SongEditor* editor = arranger();
 	if (editor == nullptr) { return noArranger(QStringLiteral("arrangement.zoom_back")); }
-	if (g_zoomHistory.isEmpty()) { return ControlResult::failure(ControlErrorKind::NotFound, QStringLiteral("no earlier zoom to go back to")); }
-	// Back swaps the current zoom with the last one, so pressing it twice toggles between them.
-	const int current = editor->zoomingModel()->value();
-	const int earlier = g_zoomHistory.takeLast();
-	g_zoomHistory.append(current);
-	editor->zoomingModel()->setValue(earlier);
+	// Back swaps the current zoom with the last one, so pressing it twice toggles between them; like
+	// every keyboard zoom it keeps the selection or the playhead in place (0.5.0 theme 9).
+	int earlier = 0;
+	if (!gui::arrangerzoom::takeEarlier(editor->zoomingModel()->value(), &earlier))
+	{
+		return ControlResult::failure(ControlErrorKind::NotFound, QStringLiteral("no earlier zoom to go back to"));
+	}
+	gui::arrangerzoom::zoomAround(editor, earlier, gui::arrangerzoom::keyboardAnchor(editor));
 	return ControlResult::success(zoomState(editor));
 }
 
@@ -376,17 +390,23 @@ void registerArrangerViewCommands(ControlRegistry& registry)
 {
 	const QJsonObject zoomResult = objectSchema({{QStringLiteral("pixels_per_bar"), numberProperty()},
 		{QStringLiteral("zoom"), integerProperty()}, {QStringLiteral("history"), integerProperty()},
-		{QStringLiteral("previous_zoom"), integerProperty()}});
+		{QStringLiteral("previous_zoom"), integerProperty()}, {QStringLiteral("anchor"), integerProperty()}});
 	add(registry, "arrangement", "zoom", QStringLiteral("Zoom the arranger: to 'pixels_per_bar', by 'step' zoom steps "
 		"(negative zooms out), to the span 'start'..'end' (the zoom tool's drag), or to 'fit' the song, the loop or the "
 		"selected clips across its width (scrolled to "
-		"their start). The previous zoom joins the history arrangement.zoom_back walks. Interface state."),
+		"their start). A 'pixels_per_bar' or 'step' zoom keeps one tick where it is on screen ('anchor' in the answer): "
+		"'anchor_tick' (a pointer gesture passes the tick under the pointer), else 'anchor' - selection, playhead, view "
+		"(its middle), start (its left edge) or auto (the default: the selection, else the playhead when it is on "
+		"screen, else the middle). The previous zoom joins the history arrangement.zoom_back walks. Interface state."),
 		objectSchema({{QStringLiteral("pixels_per_bar"), numberProperty()}, {QStringLiteral("step"), integerProperty()},
 			{QStringLiteral("start"), tickProperty()}, {QStringLiteral("end"), tickProperty()},
-			{QStringLiteral("fit"), enumProperty({QStringLiteral("song"), QStringLiteral("loop"), QStringLiteral("selection")})}}),
+			{QStringLiteral("fit"), enumProperty({QStringLiteral("song"), QStringLiteral("loop"), QStringLiteral("selection")})},
+			{QStringLiteral("anchor"), enumProperty({QStringLiteral("auto"), QStringLiteral("selection"), QStringLiteral("playhead"),
+				QStringLiteral("view"), QStringLiteral("start")})}, {QStringLiteral("anchor_tick"), tickProperty()}}),
 		zoomResult, false, zoom);
 	add(registry, "arrangement", "zoom_back", QStringLiteral("Go back to the previous zoom. It swaps the current zoom "
-		"with the last one, so going back twice toggles between two zooms. Refused when there is no earlier zoom."),
+		"with the last one, so going back twice toggles between two zooms; the selection, else the playhead on screen, "
+		"stays where it is. Refused when there is no earlier zoom."),
 		objectSchema({}), zoomResult, false, zoomBack);
 	add(registry, "arrangement", "fit_tracks", QStringLiteral("Give every track the height that fits them all in the "
 		"arranger's height (clamped to 32..256 px), or the 'heights' given, in track order. Track heights are "
@@ -411,6 +431,7 @@ void registerArrangerViewCommands(ControlRegistry& registry)
 		"the note editor's, each running arrangement.set_tool or window.note_editor_set. Headless, nothing is shown "
 		"and the entries are answered."), objectSchema({}),
 		objectSchema({{QStringLiteral("shown"), booleanProperty()}, {QStringLiteral("entries"), arrayProperty()}}), false, toolMenu);
+	registerRulerLaneCommands(registry);  // 0.5.0 theme 9: arrangement.ruler_lanes
 }
 
 } // namespace lmms

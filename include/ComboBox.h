@@ -56,6 +56,8 @@ public:
 public slots:
 	void selectNext();
 	void selectPrevious();
+	//! Open the item menu below the box (above it when it would not fit), on the current item.
+	void showMenu();
 
 
 protected:
@@ -63,6 +65,7 @@ protected:
 	void mousePressEvent( QMouseEvent* event ) override;
 	void paintEvent( QPaintEvent* event ) override;
 	void wheelEvent( QWheelEvent* event ) override;
+	void keyPressEvent( QKeyEvent* event ) override;
 
 
 private:

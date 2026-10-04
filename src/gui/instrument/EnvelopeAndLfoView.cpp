@@ -62,9 +62,10 @@ EnvelopeAndLfoView::EnvelopeAndLfoView(QWidget * parent) :
 		return knob;
 	};
 
-	auto buildPixmapButton = [&](std::string_view activePixmap, std::string_view inactivePixmap)
+	auto buildPixmapButton = [&](std::string_view activePixmap, std::string_view inactivePixmap, const QString& name)
 	{
-		auto button = new PixmapButton(this, nullptr);
+		auto button = new PixmapButton(this, name);  // 0.5.0: named, for the tooltip and screen readers
+		button->setToolTip(name);
 		button->setActiveGraphic(embed::getIconPixmap(activePixmap));
 		button->setInactiveGraphic(embed::getIconPixmap(inactivePixmap));
 
@@ -132,12 +133,12 @@ EnvelopeAndLfoView::EnvelopeAndLfoView(QWidget * parent) :
 	typesLayout->setContentsMargins(0, 0, 0, 0);
 	typesLayout->setSpacing(0);
 
-	auto sin_lfo_btn = buildPixmapButton("sin_wave_active", "sin_wave_inactive");
-	auto triangle_lfo_btn = buildPixmapButton("triangle_wave_active", "triangle_wave_inactive");
-	auto saw_lfo_btn = buildPixmapButton("saw_wave_active", "saw_wave_inactive");
-	auto sqr_lfo_btn = buildPixmapButton("square_wave_active","square_wave_inactive");
-	auto random_lfo_btn = buildPixmapButton("random_wave_active", "random_wave_inactive");
-	m_userLfoBtn = buildPixmapButton("usr_wave_active", "usr_wave_inactive");
+	auto sin_lfo_btn = buildPixmapButton("sin_wave_active", "sin_wave_inactive", tr("Sine wave"));
+	auto triangle_lfo_btn = buildPixmapButton("triangle_wave_active", "triangle_wave_inactive", tr("Triangle wave"));
+	auto saw_lfo_btn = buildPixmapButton("saw_wave_active", "saw_wave_inactive", tr("Saw wave"));
+	auto sqr_lfo_btn = buildPixmapButton("square_wave_active","square_wave_inactive", tr("Square wave"));
+	auto random_lfo_btn = buildPixmapButton("random_wave_active", "random_wave_inactive", tr("Random"));
+	m_userLfoBtn = buildPixmapButton("usr_wave_active", "usr_wave_inactive", tr("User-defined shape"));
 
 	connect(m_userLfoBtn, SIGNAL(toggled(bool)), this, SLOT(lfoUserWaveChanged()));
 

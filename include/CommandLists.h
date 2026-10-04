@@ -63,7 +63,8 @@ LMMS_EXPORT ListSpec safeStart();
 
 //! WF-110/111: every menu action's keys - set (captured), reset, export and import a set.
 LMMS_EXPORT ListSpec shortcuts();
-//! WF-114: the saved macros - run, remove, save a new one.
+//! WF-114 / design theme 19: the saved workflows (once "macros"; the function keeps that name) in the
+//! library in use - run, remove, save a new one.
 LMMS_EXPORT ListSpec macros();
 //! WF-124: the controls a MIDI controller drives - soft takeover, feedback - and the saved
 //! mapping templates.

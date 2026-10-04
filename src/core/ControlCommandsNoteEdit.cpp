@@ -82,6 +82,9 @@ constexpr Field kFields[] = {
 	{"recur_mask", 0, 65535},      // ED-133: bit n - the note plays on pass n of the pattern
 	{"articulation", 0, NoteConditions::MaxArticulations}, // ED-121: the track's articulation, 1-based, 0 none
 	{"group", 0, 1 << 30},         // ED-069: the note's group, 0 none
+	{"slide", 0, 1},               // 0.5.0 FL model: 1 makes it a slide (portamento) note - the properties box
+	{"timbre", 0, 127},            // 0.5.0 FL model: the note's MPE timbre (CC74) - the properties box's Mod X
+	{"pressure", 0, 127},          // 0.5.0 FL model: the note's MPE pressure - the properties box's Mod Y
 };
 
 //! One resolved edit: the note and the values it is to take.
@@ -114,7 +117,7 @@ bool checkEditValues(const QJsonObject& entry, int index, ControlResult* error)
 		*error = ControlResult::failure(ControlErrorKind::InvalidArgs,
 			QStringLiteral("edits[%1] changes nothing: name at least one of position, key, length, "
 				"velocity, pan, probability, muted, release_velocity, velocity_spread, repeats, recur_length, recur_mask, "
-				"articulation, group").arg(index));
+				"articulation, group, slide, timbre, pressure").arg(index));
 		return false;
 	}
 	return true;
@@ -132,7 +135,10 @@ bool resolveEdits(MidiClip* clip, const QJsonArray& edits, std::vector<Edit>* ou
 	{
 		QJsonObject entry = edits.at(i).toObject();
 		// 'muted' may be a boolean too; it is stored and checked as 0 / 1 like every other field.
-		if (entry.value(QStringLiteral("muted")).isBool()) { entry.insert(QStringLiteral("muted"), entry.value(QStringLiteral("muted")).toBool() ? 1 : 0); }
+		for (const QString& flag : {QStringLiteral("muted"), QStringLiteral("slide")})
+		{
+			if (entry.value(flag).isBool()) { entry.insert(flag, entry.value(flag).toBool() ? 1 : 0); }
+		}
 		int index = -1;
 		Note* note = resolveNote(clip, entry.value(QStringLiteral("note")).toString(), &index, error);
 		if (note == nullptr || !checkEditValues(entry, i, error)) { return false; }
@@ -162,6 +168,9 @@ QJsonObject previousValues(const Note* note, const QJsonObject& values)
 	keep("muted", note->muted() ? 1 : 0);
 	keep("release_velocity", note->releaseVelocity());
 	keep("velocity_spread", static_cast<double>(note->velocityJitter()));
+	keep("slide", note->slide() ? 1 : 0);
+	keep("timbre", note->mpeTimbre());
+	keep("pressure", note->mpePressure());
 	const NoteConditions& c = note->conditions();
 	keep("repeats", c.repeats);
 	keep("recur_length", c.recurLength);
@@ -191,6 +200,14 @@ void applyConditions(Note* note, const QJsonObject& v)
 	note->setConditions(c);
 }
 
+//! The FL model's properties-box fields: slide, and the MPE timbre and pressure (Mod X / Mod Y).
+void applyFlModel(Note* note, const QJsonObject& v)
+{
+	if (v.contains(QStringLiteral("slide"))) { note->setSlide(v.value(QStringLiteral("slide")).toInt() != 0); }
+	if (v.contains(QStringLiteral("timbre"))) { note->setMpeTimbre(v.value(QStringLiteral("timbre")).toInt()); }
+	if (v.contains(QStringLiteral("pressure"))) { note->setMpePressure(v.value(QStringLiteral("pressure")).toInt()); }
+}
+
 void applyEdit(Note* note, const QJsonObject& v)
 {
 	const auto has = [&v](const char* name) { return v.contains(QLatin1String(name)); };
@@ -205,6 +222,7 @@ void applyEdit(Note* note, const QJsonObject& v)
 	if (has("release_velocity")) { note->setReleaseVelocity(static_cast<int>(num("release_velocity"))); }
 	if (has("velocity_spread")) { note->setVelocityJitter(static_cast<float>(num("velocity_spread"))); }
 	applyConditions(note, v);
+	applyFlModel(note, v);
 }
 
 ControlResult editNotes(const QJsonObject& args)
@@ -257,7 +275,8 @@ void registerNoteEditCommands(ControlRegistry& registry)
 		"by up to that share each playback), repeats 0..16 (extra hits evenly inside the note), recur_length 0..16 and "
 		"recur_mask (over that many passes of the loop the note plays on the passes whose bit is set: length 2, mask 1 "
 		"is the first of every two), articulation (the track's articulation, track.articulations, 1-based; 0 none), "
-		"group (0 none; note.group makes one); a field left out keeps its value. The whole batch is validated first - one bad entry "
+		"group (0 none; note.group makes one), slide 0/1 (a slide note), timbre and pressure 0..127 (the note's MPE "
+		"timbre and pressure - the note properties box's Mod X and Mod Y); a field left out keeps its value. The whole batch is validated first - one bad entry "
 		"(an unknown note, a value out of range, an entry naming no field) refuses it and changes "
 		"nothing. The note ids do not change. Reversible through the ProjectJournal (one MidiClip "
 		"checkpoint); the inverse is note.edit with the previous values.");

@@ -62,6 +62,8 @@ public:
 
 	//! Where an editor puts its own header controls (grid, zoom, tools).
 	QHBoxLayout* toolArea() const { return m_tools; }
+	//! The header strip itself: the handle the tear-off drags (ShellTearOff.h).
+	QWidget* header() const { return m_header; }
 
 	//! The panel that last took keyboard focus draws an accent line under its header.
 	void setFocusedPanel(bool focused);
@@ -74,6 +76,7 @@ protected:
 
 private:
 	QString m_id;
+	QWidget* m_header;
 	QLabel* m_title;
 	QHBoxLayout* m_tools;
 	QToolButton* m_pin;

@@ -500,12 +500,16 @@
 # tests/CMakeLists.txt and listed in tests/all-sources.txt.
 include/Accessibility.h
 include/AccessibilityAudit.h
+include/AccessibleWidgets.h
 include/Appearance.h
 include/ArrangementEdits.h
 include/ArrangementSections.h
 include/ArrangerNavigator.h
 include/ArrangerAids.h
+include/ArrangerEditPreview.h
 include/ArrangerOverlays.h
+include/ArrangerRulerLanes.h
+include/ArrangerZoom.h
 include/ArticulationMap.h
 include/AudioBus.h
 include/AudioInputPath.h
@@ -525,6 +529,7 @@ include/BrowserCatalog.h
 include/BrowserIndex.h
 include/BrowserPanel.h
 include/BrowserPeakCache.h
+include/BrowserResults.h
 include/BrowserSearch.h
 include/BrowserSearchView.h
 include/BrowserTagMenu.h
@@ -539,12 +544,15 @@ include/ClipConsolidate.h
 include/ClipEdits.h
 include/ClipEditsMenu.h
 include/ClipLinks.h
+include/ClipLockFeedback.h
 include/ClipPreFades.h
 include/ClipTransients.h
 include/CommandForm.h
+include/CommandFormFields.h
 include/CommandListBuild.h
 include/CommandListDialog.h
 include/CommandLists.h
+include/CommandMetadata.h
 include/CommandPalette.h
 include/CompSwipeStrip.h
 include/ContextHelp.h
@@ -625,6 +633,7 @@ include/InspectorPanel.h
 include/JsonFile.h
 include/LatencyCompensation.h
 include/LaunchBindings.h
+include/LayoutMenu.h
 include/LevelBar.h
 include/LibraryCommandMenus.h
 include/LinkPeerTransport.h
@@ -662,6 +671,7 @@ include/MixerOptions.h
 include/MixerOverlays.h
 include/MixerPostInserts.h
 include/MixerSendPan.h
+include/MixerSendsBanner.h
 include/MixerSnapshots.h
 include/MixerStrip.h
 include/MixerViewOptions.h
@@ -675,6 +685,7 @@ include/MpeExpression.h
 include/MpeInputAction.h
 include/MpscQueue.h
 include/MultiTrackRecorder.h
+include/MusicalTime.h
 include/NamespaceRegistry.h
 include/NoteBackgroundAudio.h
 include/NoteCanvas.h
@@ -683,6 +694,7 @@ include/NoteEditor.h
 include/NoteEditorParts.h
 include/NoteGrid.h
 include/NoteLanes.h
+include/NoteProperties.h
 include/NoteRandom.h
 include/NoteTransform.h
 include/NoteTransformActions.h
@@ -711,6 +723,7 @@ include/ProjectRecovery.h
 include/ProjectRevisions.h
 include/ProjectSection.h
 include/ProjectSectionRegistry.h
+include/ProjectWorkspace.h
 include/ProvenanceSection.h
 include/PunchWindow.h
 include/Rack.h
@@ -780,6 +793,7 @@ include/ShellLayout.h
 include/ShellMenuParts.h
 include/ShellPanel.h
 include/ShellSelection.h
+include/ShellTearOff.h
 include/ShortcutMap.h
 include/ShortcutsPage.h
 include/SidechainInputs.h
@@ -1075,6 +1089,7 @@ src/core/ControlCommandsModulatorTools.cpp
 src/core/ControlCommandsMonitor.cpp
 src/core/ControlCommandsMts.cpp
 src/core/ControlCommandsNoteAcross.cpp
+src/core/ControlCommandsNoteClipboard.cpp
 src/core/ControlCommandsNoteCurves.cpp
 src/core/ControlCommandsNoteEdit.cpp
 src/core/ControlCommandsNoteExpression.cpp
@@ -1344,6 +1359,7 @@ src/core/MixerStrip.cpp
 src/core/ModulationFormula.cpp
 src/core/ModulationLayer.cpp
 src/core/ModulationLayerPublisher.cpp
+src/core/MusicalTime.cpp
 src/core/NamespaceRegistry.cpp
 src/core/NoteConditions.cpp
 src/core/NoteRandom.cpp
@@ -1371,6 +1387,7 @@ src/core/ProjectMarkers.cpp
 src/core/ProjectRecovery.cpp
 src/core/ProjectRevisions.cpp
 src/core/ProjectSectionRegistry.cpp
+src/core/ProjectWorkspace.cpp
 src/core/ProvenanceSection.cpp
 src/core/Rack.cpp
 src/core/RackMacros.cpp
@@ -1448,19 +1465,28 @@ src/core/midi/MidiReconnect.cpp
 src/core/midi/MpeExpression.cpp
 src/gui/ArrangerNavigator.cpp
 src/gui/AccessibilityAudit.cpp
+src/gui/AccessibleMode.cpp
+src/gui/AccessibleWidgets.cpp
 src/gui/ArrangerAids.cpp
+src/gui/ArrangerEditPreview.cpp
 src/gui/ArrangerOverlays.cpp
+src/gui/ArrangerRulerLanes.cpp
+src/gui/ArrangerZoom.cpp
 src/gui/AutomationModeMenu.cpp
+src/gui/BrowserResults.cpp
 src/gui/BrowserSearchView.cpp
 src/gui/BrowserTagMenu.cpp
 src/gui/ChainPresetMenu.cpp
 src/gui/ChannelPickDialog.cpp
 src/gui/ClipEditsMenu.cpp
 src/gui/CommandForm.cpp
+src/gui/CommandFormFields.cpp
 src/gui/CommandListDialog.cpp
 src/gui/CommandLists.cpp
 src/gui/CommandListsCustom.cpp
+src/gui/CommandMetadata.cpp
 src/gui/CommandPalette.cpp
+src/gui/CommandRun.cpp
 src/gui/CompSwipeStrip.cpp
 src/gui/ContextHelp.cpp
 src/gui/ControlCommandsArrangerView.cpp
@@ -1486,6 +1512,7 @@ src/gui/FeedbackModeAction.cpp
 src/gui/FollowActionEditor.cpp
 src/gui/GrooveMenu.cpp
 src/gui/HelpCenter.cpp
+src/gui/LayoutMenu.cpp
 src/gui/LevelBar.cpp
 src/gui/LibraryCommandMenus.cpp
 src/gui/MacroKnobs.cpp
@@ -1496,6 +1523,7 @@ src/gui/MidiControllerMenu.cpp
 src/gui/MidiLearnGui.cpp
 src/gui/MidiReconnectAction.cpp
 src/gui/MixerOverlays.cpp
+src/gui/MixerSendsBanner.cpp
 src/gui/MixerViewOptions.cpp
 src/gui/MixerWindows.cpp
 src/gui/ModifierTools.cpp
@@ -1534,6 +1562,7 @@ src/gui/VisibilitySetMenu.cpp
 src/gui/WorkspaceMenus.cpp
 src/gui/WorkspaceWindows.cpp
 src/gui/XyPad.cpp
+src/gui/clips/ClipLockFeedback.cpp
 src/gui/clips/ClipViewTheme.cpp
 src/gui/clips/SampleClipOverlays.cpp
 src/gui/modals/EffectPickerOrganiser.cpp
@@ -1542,12 +1571,14 @@ src/gui/noteeditor/NoteBackgroundAudio.cpp
 src/gui/noteeditor/NoteCanvas.cpp
 src/gui/noteeditor/NoteCanvasGestures.cpp
 src/gui/noteeditor/NoteCanvasInput.cpp
+src/gui/noteeditor/NoteCanvasKeys.cpp
 src/gui/noteeditor/NoteEditor.cpp
 src/gui/noteeditor/NoteEditorMenus.cpp
 src/gui/noteeditor/NoteEditorParts.cpp
 src/gui/noteeditor/NoteEditorToolbar.cpp
 src/gui/noteeditor/NoteGrid.cpp
 src/gui/noteeditor/NoteLanes.cpp
+src/gui/noteeditor/NoteProperties.cpp
 src/gui/shell/BrowserPanel.cpp
 src/gui/shell/ChannelLevelMeter.cpp
 src/gui/shell/DesignTokens.cpp
@@ -1567,6 +1598,7 @@ src/gui/shell/ShellMenuEntries.cpp
 src/gui/shell/ShellMenuParts.cpp
 src/gui/shell/ShellPanel.cpp
 src/gui/shell/ShellSelection.cpp
+src/gui/shell/ShellTearOff.cpp
 src/gui/shell/TransportReadouts.cpp
 src/gui/shell/WaveformPreview.cpp
 src/tracks/InstrumentTrackNotes.cpp

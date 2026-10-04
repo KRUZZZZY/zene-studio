@@ -26,7 +26,6 @@
 
 #include <algorithm>
 
-#include <QGuiApplication>
 #include <QPainter>
 #include <QPaintEvent>
 
@@ -78,15 +77,14 @@ NoteCanvas::NoteCanvas(NoteEditor* editor)
 	setMouseTracking(true);
 	setAttribute(Qt::WA_OpaquePaintEvent, true);
 	a11y::announce(this, tr("Notes"),
-		tr("The clip's notes. Keys 1 to 7 pick draw, select, slice, erase, audition, paint and mute; the "
-			"arrow keys move the selection, Delete removes it. Alt-drag on a note changes the velocity, "
-			"Ctrl-drag copies, the right button erases. The wheel scrolls; with Ctrl it zooms, with Shift it "
-			"scrolls sideways, with Alt it changes the row height."));
-}
-
-bool NoteCanvas::copying() const
-{
-	return m_drag == Drag::Move && QGuiApplication::keyboardModifiers().testFlag(Qt::ControlModifier);
+		tr("The clip's notes, edited as in FL Studio's piano roll. P draw, B paint, D delete, T mute, C slice, "
+			"E select, Y play, Z zoom to the selection (1 to 7 pick the tools too). A click draws, a drag on a note "
+			"moves it or, on its right edge, resizes it; the right button deletes the notes it crosses, and from an "
+			"empty row slices. Ctrl selects, Ctrl+Shift adds; Shift locks the pitch and Ctrl the timing while "
+			"dragging; Alt turns the snap off. Double-click a note for its properties. Ctrl+C, Ctrl+X, Ctrl+V and "
+			"Ctrl+B copy, cut, paste and duplicate; Delete removes the selection; the arrow keys move it. Alt+wheel "
+			"over a note changes its velocity (Ctrl+Alt finely, Shift+Alt nudges it). The wheel scrolls; with Ctrl it "
+			"zooms, with Shift it scrolls sideways; the middle button drags the view."));
 }
 
 void NoteCanvas::focusInEvent(QFocusEvent* event)
@@ -123,7 +121,8 @@ void NoteCanvas::cancelGesture()
 	m_drag = Drag::None;
 	m_anchorId = -1;
 	m_auditionKey = -1;
-	m_erasedIds.clear();
+	m_strokeIds.clear();
+	m_muteTo = -1;
 	m_painted.clear();
 	update();
 }
@@ -167,6 +166,12 @@ bool NoteCanvas::onResizeHandle(const Note& note, const QPoint& pos) const
 {
 	const QRect r = noteRect(note);
 	return r.width() > 2 * kResizeHandle && r.contains(pos) && pos.x() >= r.right() - kResizeHandle;
+}
+
+bool NoteCanvas::onStartHandle(const Note& note, const QPoint& pos) const
+{
+	const QRect r = noteRect(note);
+	return r.width() > 2 * kResizeHandle && r.contains(pos) && pos.x() <= r.left() + kResizeHandle;
 }
 
 void NoteCanvas::resizeEvent(QResizeEvent*)
@@ -277,8 +282,7 @@ void NoteCanvas::paintNotes(QPainter& p) const
 	p.setRenderHint(QPainter::Antialiasing, false);
 	const NoteVector& notes = m_state.clip->notes();
 	const auto [first, last] = visibleRange();
-	// A copy (Ctrl held) leaves the originals where they are, so they stay drawn in full.
-	const bool moving = (m_drag == Drag::Move && !copying()) || m_drag == Drag::Resize;
+	const bool moving = m_drag == Drag::Move || m_drag == Drag::Resize || m_drag == Drag::ResizeStart;
 	for (int i = first; i < last; ++i)
 	{
 		const Note& note = *notes[static_cast<std::size_t>(i)];
@@ -328,21 +332,35 @@ void NoteCanvas::paintNote(QPainter& p, const Note& note, const QRect& r) const
 	if (note.slide()) { p.fillRect(QRect(r.right() - 3, r.top(), 3, r.height()), pal.text); }
 }
 
-bool NoteCanvas::erased(const Note& note) const
+bool NoteCanvas::stroked(const Note& note) const
 {
-	return std::binary_search(m_erasedIds.begin(), m_erasedIds.end(), note.id());
+	return std::binary_search(m_strokeIds.begin(), m_strokeIds.end(), note.id());
 }
 
-void NoteCanvas::paintErasePreview(QPainter& p) const
+void NoteCanvas::paintStrokePreview(QPainter& p) const
 {
+	// A delete stroke marks what it crossed in the record colour, a mute stroke greys it.
 	if (m_state.clip == nullptr) { return; }
+	const QColor mark = m_drag == Drag::Erase ? tokens::palette().record : tokens::palette().textMuted;
 	const NoteVector& notes = m_state.clip->notes();
 	const auto [first, last] = visibleRange();
 	for (int i = first; i < last; ++i)
 	{
 		const Note& note = *notes[static_cast<std::size_t>(i)];
-		if (erased(note)) { p.fillRect(noteRect(note), tokens::palette().record); }
+		if (stroked(note)) { p.fillRect(noteRect(note), mark); }
 	}
+}
+
+void NoteCanvas::paintSlicePreview(QPainter& p) const
+{
+	// The slice line: faint over the whole height, solid over the rows it spans.
+	const int x = static_cast<int>(m_state.grid.xOfTick(sliceTick()));
+	QColor faint = tokens::palette().accent;
+	faint.setAlpha(80);
+	p.fillRect(QRect(x, 0, 1, height()), faint);
+	const int top = std::min(m_pressPos.y(), m_currentPos.y());
+	const int bottom = std::max(m_pressPos.y(), m_currentPos.y());
+	p.fillRect(QRect(x - 1, top, 2, bottom - top + 1), tokens::palette().accent);
 }
 
 void NoteCanvas::paintOverlay(QPainter& p) const
@@ -364,7 +382,7 @@ void NoteCanvas::paintOverlay(QPainter& p) const
 	if (hasFocus())
 	{
 		// Where the note keys act: the shell's focus ring, as on its other focusable surfaces.
-		p.setPen(QPen(pal.focusRing, 2));
+		p.setPen(QPen(pal.focusRing, tokens::focusRingWidth()));
 		p.setBrush(Qt::NoBrush);
 		p.drawRect(rect().adjusted(1, 1, -1, -1));
 	}

@@ -35,9 +35,10 @@ namespace lmms::gui
 /*! 0.5.0 W3 L13 / L14, two aids on the arranger, installed once with the menus:
  *  - the cross-hair cursor (WF-109): a vertical and a horizontal guide through the pointer across the whole
  *    arranger, to line a clip up with a bar and a track at a glance; shown while view.crosshair is on;
- *  - pinch to zoom (WF-133): a two-finger pinch on a touch screen or a trackpad zooms the arranger
- *    (arrangement.zoom, a step per quarter of a pinch).
- *  Both are interface only: they paint or run a registry command, and touch nothing else. */
+ *  - pinch to zoom (WF-133): a two-finger pinch on a touch screen or a trackpad zooms the arranger -
+ *    0.5.0 theme 9: continuously, around the tick under the pinch (ArrangerZoom), one zoom history entry
+ *    per pinch.
+ *  Both are interface only: they paint, zoom the view or run a registry command, and touch nothing else. */
 LMMS_EXPORT void installArrangerAids(QWidget* arranger);
 
 //! Show or hide the cross-hair (the arranger's aids must be installed for it to show).

@@ -1,5 +1,5 @@
 /*
- * MacroMenu.h - the menu bar's Macros menu: one action per saved macro
+ * MacroMenu.h - the menu bar's Workflows menu: one action per saved workflow, and the recording state
  *
  * Copyright (c) 2026 Zene Studio contributors
  *
@@ -25,7 +25,10 @@
 #ifndef LMMS_GUI_MACRO_MENU_H
 #define LMMS_GUI_MACRO_MENU_H
 
+#include <QJsonArray>
+#include <QJsonObject>
 #include <QMenu>
+#include <QPointer>
 
 #include "lmms_export.h"
 
@@ -34,21 +37,39 @@ class QMenuBar;
 namespace lmms::gui
 {
 
-/*! WF-114: a macro is a named run of registry commands (macro.save); this menu has one action
- *  per macro - each runs macro.run - so a macro is in the palette and takes a shortcut like any
- *  menu action (ShortcutMap). It is rebuilt when the macros change, never on show, so a key
- *  bound to a macro's action stays bound. */
+/*! WF-114 / design theme 19: a workflow is a named run of registry commands (workflow.save); this
+ *  menu ("Workflows" - the class keeps its first name) has one action per workflow in the library in
+ *  use, so each is in the command palette and can be given a shortcut (ShortcutMap), then Record /
+ *  Stop Recording, where workflows are kept (shared or with the project) and the list to edit them.
+ *  While a workflow is being recorded the menu's first line says so, and so does an indicator in the
+ *  header that stops the recording when clicked (showRecording). The menu also follows the project:
+ *  a project opened is a library of its own when workflows are kept with projects, and a layout the
+ *  project remembers is put back (LayoutMenu::recallProjectLayout). */
 class LMMS_EXPORT MacroMenu : public QMenu
 {
 	Q_OBJECT
 public:
 	explicit MacroMenu(QWidget* parent = nullptr);
 
-	//! Re-read the saved macros (ui/macros) and rebuild the actions.
+	//! Re-read the workflows in use (workflow.list) and the recording state, and rebuild the actions.
 	void refresh();
 
-	//! The main window's Macros menu, added to @a bar before Help the first time.
+	//! The main window's Workflows menu, added to @a bar before Help the first time.
 	static MacroMenu* install(QMenuBar* bar);
+
+	/*! Theme 19's visible recording state in @a window: the header's indicator (shown while @a on,
+	 *  naming the workflow and its @a steps so far; a click runs workflow.record_stop) and the
+	 *  menu's status line. */
+	static void showRecording(QWidget* window, bool on, const QString& name, int steps);
+
+private:
+	void addRuns(const QJsonArray& workflows);
+	void addRecording();
+	void addScopeMenu(const QString& scope);
+	//! A project was opened (@a loaded) or renamed: its workflows and its remembered layout.
+	void followProject(bool loaded);
+
+	QPointer<QAction> m_status;  //!< "Recording ..." while a workflow is being recorded
 };
 
 } // namespace lmms::gui

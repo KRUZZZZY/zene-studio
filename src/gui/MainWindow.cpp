@@ -1268,6 +1268,7 @@ void MainWindow::updateViewMenu()
 	for (QAction* action : m_shell->viewActions()) { m_viewMenu->addAction(action); }
 	m_viewMenu->addSeparator();
 	for (QAction* action : m_shell->panelActions()) { m_viewMenu->addAction(action); }
+	m_viewMenu->addAction(m_shell->floatAction());  // 0.5.0 theme 8: float or dock the focused panel
 	m_viewMenu->addSeparator();
 	for (QAction* action : floatingWindowActions())
 	{

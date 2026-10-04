@@ -1,0 +1,78 @@
+/*
+ * ArrangerZoom.h - the arranger's zoom, kept around what the user is looking at
+ *
+ * Copyright (c) 2026 Zene Studio contributors
+ *
+ * This file is part of LMMS - https://lmms.io
+ *
+ * This program is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU General Public
+ * License as published by the Free Software Foundation; either
+ * version 2 of the License, or (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public
+ * License along with this program (see COPYING); if not, write to the
+ * Free Software Foundation, Inc., 51 Franklin Street, Fifth Floor,
+ * Boston, MA 02110-1301 USA.
+ *
+ */
+
+#ifndef LMMS_GUI_ARRANGER_ZOOM_H
+#define LMMS_GUI_ARRANGER_ZOOM_H
+
+#include <QPoint>
+
+#include "LmmsTypes.h"
+#include "lmms_export.h"
+
+namespace lmms::gui
+{
+
+class SongEditor;
+
+/*! 0.5.0 theme 9 (DESIGN-DECISIONS.md "a readable timeline"): a zoom keeps the user's focus in place.
+ *  A pointer gesture (the wheel, a pinch, the navigator's wheel) keeps the tick under the pointer where
+ *  it is; a keyboard or menu zoom keeps the SELECTION there (the time range, else the selected clips),
+ *  else the PLAYHEAD when it is on screen, else the middle of the view - Pro Tools' and Live's order. An
+ *  anchor that was off screen ends up in the middle. arrangement.zoom, the song editor's Ctrl+0, the
+ *  pinch and the navigator all go through here, and so does the zoom history arrangement.zoom_back walks.
+ *  Interface state only. */
+namespace arrangerzoom
+{
+
+//! The pixels the arranger shows clips across (the ruler's width less the track heads).
+LMMS_EXPORT int visibleWidth(SongEditor* editor);
+//! The ticks that width shows at the current zoom.
+LMMS_EXPORT tick_t visibleTicks(SongEditor* editor);
+//! The tick under @a global (a screen point), for a pointer gesture's anchor.
+LMMS_EXPORT tick_t tickAtGlobal(SongEditor* editor, const QPoint& global);
+//! The span of the selected clips; false when none is selected.
+LMMS_EXPORT bool selectedClipsSpan(SongEditor* editor, tick_t* begin, tick_t* end);
+//! The selected span: the arranger's time range, else the selected clips; false when nothing is selected.
+LMMS_EXPORT bool selectionSpan(SongEditor* editor, tick_t* begin, tick_t* end);
+//! The playhead's tick, and whether it is on screen.
+LMMS_EXPORT tick_t playhead(SongEditor* editor, bool* shown = nullptr);
+//! What a keyboard zoom keeps in place: the selection's middle, else the playhead on screen, else the view's middle.
+LMMS_EXPORT tick_t keyboardAnchor(SongEditor* editor);
+
+//! After a zoom from @a ppbBefore with the view at @a startBefore: scroll so @a anchor is where it was.
+LMMS_EXPORT void keepInPlace(SongEditor* editor, tick_t anchor, double ppbBefore, tick_t startBefore);
+//! Set the zoom model to @a value and keep @a anchor in place.
+LMMS_EXPORT void zoomAround(SongEditor* editor, int value, tick_t anchor);
+
+//! The zoom history arrangement.zoom_back walks (zoom model values, newest last; UI thread).
+LMMS_EXPORT void remember(int value);
+//! Swap @a current with the newest remembered value, into @a earlier; false when there is none.
+LMMS_EXPORT bool takeEarlier(int current, int* earlier);
+LMMS_EXPORT int historySize();
+
+} // namespace arrangerzoom
+
+} // namespace lmms::gui
+
+#endif // LMMS_GUI_ARRANGER_ZOOM_H

@@ -25,6 +25,7 @@
 #include "TempoMapPanel.h"
 
 #include <QCheckBox>
+#include <QComboBox>
 #include <QFileDialog>
 #include <QHBoxLayout>
 #include <QHeaderView>
@@ -41,6 +42,7 @@
 
 #include "ControlRegistry.h"
 #include "Engine.h"
+#include "MusicalTime.h"
 #include "Song.h"
 #include "UnattendedRun.h"
 
@@ -75,12 +77,13 @@ int lastTempoRow(const QJsonArray& events)
 	return -1;
 }
 
-//! One event's cells: bar, tick, tempo (with its ramp, when it has a later tempo to ramp to) and time signature.
+//! One event's cells: bar, position (in the time format - bars|beats unless ticks or time is chosen, theme 7),
+//! tempo (with its ramp, when it has a later tempo to ramp to) and time signature.
 QStringList eventCells(const QJsonObject& event, int ticksPerBar, bool ramps)
 {
 	const int tick = event.value(QStringLiteral("tick")).toInt();
 	const int numerator = event.value(QStringLiteral("numerator")).toInt();
-	return {QString::number(tick / std::max(1, ticksPerBar) + 1), QString::number(tick),
+	return {QString::number(tick / std::max(1, ticksPerBar) + 1), musicaltime::positionText(tick),
 		cell(event.value(QStringLiteral("bpm")).toInt()) + (ramps ? QStringLiteral("  \u2197 ramp") : QString()),
 		numerator > 0 ? QStringLiteral("%1/%2").arg(numerator).arg(event.value(QStringLiteral("denominator")).toInt())
 			: QStringLiteral("-")};
@@ -97,7 +100,20 @@ TempoMapPanel::TempoMapPanel(QWidget* parent) :
 	m_active->setProperty("controlCommand", QStringLiteral("transport.tempo_map_set_active"));
 	m_summary = new QLabel(this);
 	m_table = new QTableWidget(0, 4, this);
-	m_table->setHorizontalHeaderLabels({tr("Bar"), tr("Tick"), tr("Tempo (BPM)"), tr("Time signature")});
+	m_table->setHorizontalHeaderLabels({tr("Bar"), tr("Position"), tr("Tempo (BPM)"), tr("Time signature")});
+	// Theme 7: positions read in bars and beats unless ticks or time is chosen - here, or anywhere a position shows.
+	m_format = new QComboBox(this);
+	m_format->setAccessibleName(tr("Show positions as"));
+	m_format->setProperty("controlCommand", QStringLiteral("transport.time_format"));
+	for (int i = 0; i < musicaltime::formatNames().size(); ++i)
+	{
+		m_format->addItem(musicaltime::formatLabel(static_cast<musicaltime::Format>(i)), musicaltime::formatNames().at(i));
+	}
+	connect(m_format, &QComboBox::activated, this, [this](int index) {
+		run("transport.time_format", {{QStringLiteral("format"), m_format->itemData(index).toString()}});
+	});
+	// Queued: the change is announced from inside transport.time_format, and refresh() runs commands of its own.
+	connect(musicaltime::formatSignal(), &musicaltime::FormatSignal::changed, this, &TempoMapPanel::refresh, Qt::QueuedConnection);
 	m_table->horizontalHeader()->setStretchLastSection(true);
 	m_table->setSelectionBehavior(QAbstractItemView::SelectRows);
 	m_table->setEditTriggers(QAbstractItemView::NoEditTriggers);
@@ -168,8 +184,15 @@ TempoMapPanel::TempoMapPanel(QWidget* parent) :
 	buttons->addWidget(importMidi);
 	buttons->addWidget(exportMidi);
 	buttons->addWidget(clear);
+	auto* format = new QHBoxLayout;
+	auto* formatLabel = new QLabel(tr("Show positions as"), this);
+	formatLabel->setBuddy(m_format);
+	format->addWidget(formatLabel);
+	format->addWidget(m_format);
+	format->addStretch();
 	auto* layout = new QVBoxLayout(this);
 	layout->addWidget(m_active);
+	layout->addLayout(format);
 	layout->addWidget(m_summary);
 	layout->addWidget(m_table, 1);
 	layout->addLayout(buttons);
@@ -184,6 +207,10 @@ void TempoMapPanel::refresh()
 	{
 		const QSignalBlocker block(m_active);
 		m_active->setChecked(map.value(QStringLiteral("active")).toBool());
+	}
+	{
+		const QSignalBlocker block(m_format);
+		m_format->setCurrentIndex(static_cast<int>(musicaltime::currentFormat()));
 	}
 	m_summary->setText(tr("%1 events (the map holds at most %2); project tempo %3 BPM")
 		.arg(map.value(QStringLiteral("event_count")).toInt())
@@ -202,6 +229,7 @@ void TempoMapPanel::refresh()
 		{
 			m_table->setItem(row, column, new QTableWidgetItem(cells.at(column)));
 		}
+		m_table->item(row, 0)->setData(Qt::UserRole, event.value(QStringLiteral("tick")).toInt());  // the event's own tick
 	}
 }
 
@@ -246,7 +274,7 @@ bool TempoMapPanel::removeRow(int row)
 {
 	if (row < 0 || row >= m_table->rowCount()) { return false; }
 	const ControlResult removed = run("transport.tempo_map_remove",
-		{{QStringLiteral("tick"), m_table->item(row, 1)->text().toInt()}});
+		{{QStringLiteral("tick"), m_table->item(row, 0)->data(Qt::UserRole).toInt()}});
 	if (!removed.ok) { m_summary->setText(removed.errorMessage); return false; }
 	refresh();
 	return true;

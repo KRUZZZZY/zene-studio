@@ -66,6 +66,8 @@ protected:
 	void contextMenuEvent( QContextMenuEvent * _me ) override;
 	void mousePressEvent( QMouseEvent * _me ) override;
 	void mouseReleaseEvent( QMouseEvent * _me ) override;
+	//! 0.5.0 (theme 10): Space on a focused button, or a screen reader's press, toggles the model as a click does.
+	void nextCheckState() override;
 
 
 private:

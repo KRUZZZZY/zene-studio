@@ -31,7 +31,6 @@
 #include <QActionGroup>
 #include <QComboBox>
 #include <QGridLayout>
-#include <QKeyEvent>
 #include <QLabel>
 #include <QScrollBar>
 #include <QVBoxLayout>
@@ -247,9 +246,10 @@ QJsonObject NoteEditor::run(const QString& command, const QJsonObject& args)
 void NoteEditor::setTool(NoteTool tool)
 {
 	m_state.tool = tool;
-	const QList<QAction*> actions = m_tools->actions();
-	const int index = static_cast<int>(tool);
-	if (index < actions.size()) { actions.at(index)->setChecked(true); }
+	for (QAction* action : m_tools->actions())
+	{
+		if (action->data().toInt() == static_cast<int>(tool)) { action->setChecked(true); }
+	}
 	emit stateChanged();
 }
 
@@ -386,17 +386,6 @@ void NoteEditor::auditionRelease(int key)
 	if (key < 0 || m_auditionPiano == nullptr) { return; }
 	m_auditionPiano->handleKeyRelease(key);
 	if (m_auditionKey == key) { m_auditionKey = -1; m_auditionPiano = nullptr; }
-}
-
-void NoteEditor::keyPressEvent(QKeyEvent* event)
-{
-	if (event->modifiers() == Qt::NoModifier && event->key() >= Qt::Key_1 && event->key() <= Qt::Key_7)
-	{
-		setTool(static_cast<NoteTool>(event->key() - Qt::Key_1));
-		event->accept();
-		return;
-	}
-	QWidget::keyPressEvent(event);
 }
 
 void NoteEditor::resizeEvent(QResizeEvent* event)

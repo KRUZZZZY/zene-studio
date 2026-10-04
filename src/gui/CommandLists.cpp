@@ -201,14 +201,14 @@ ListSpec shortcuts()
 
 ListSpec macros()
 {
-	ListSpec out = spec("Macros", "macro.list", "macros", {QStringLiteral("name"), QStringLiteral("step_count"),
+	ListSpec out = spec("Workflows", "workflow.list", "workflows", {QStringLiteral("name"), QStringLiteral("step_count"),
 		QStringLiteral("steps")});
-	out.summaryKeys = {QStringLiteral("count"), QStringLiteral("max_macros")};
+	out.summaryKeys = {QStringLiteral("count"), QStringLiteral("max_workflows"), QStringLiteral("scope")};
 	const QHash<QString, QString> name{{QStringLiteral("name"), QStringLiteral("name")}};
-	RowAction remove = act("Remove", "macro.remove", name);
+	RowAction remove = act("Remove", "workflow.remove", name);
 	remove.confirm = true;
-	out.actions = {act("Run", "macro.run", name), remove};
-	out.extras = {extra("New Macro...", "macro.save")};
+	out.actions = {act("Run", "workflow.run", name), remove};
+	out.extras = {extra("New Workflow...", "workflow.save")};
 	return out;
 }
 

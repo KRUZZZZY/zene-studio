@@ -34,7 +34,10 @@ class SongEditorWindow;
 /*! 0.5.0 L04 (ED-053): the navigator - every track's clips across the whole song in a thin strip under the
  *  arranger, with the part the arranger shows outlined. Click or drag in it to scroll there
  *  (arrangement.scroll), turn the wheel to zoom (arrangement.zoom). Shown with arrangement.navigator (Navigate >
- *  Show Navigator), a preference kept as config ui/navigator; hidden by default. Installs once. */
+ *  Show Navigator), a preference kept as config ui/navigator; hidden by default. Installs once.
+ *  0.5.0 theme 9: it shows the song's landmarks (sections, markers, the loop, the play position), dims what
+ *  the arranger does not show so the viewport stands out, zooms around the tick under the pointer, and
+ *  takes the keyboard (arrows, Page Up/Down, Home/End scroll; +/- zoom). */
 LMMS_EXPORT void installArrangerNavigator(SongEditorWindow* window);
 
 } // namespace lmms::gui

@@ -27,8 +27,10 @@
 #include <algorithm>
 
 #include <QAbstractScrollArea>
+#include <QApplication>
 #include <QCheckBox>
 #include <QComboBox>
+#include <QCursor>
 #include <QDateTime>
 #include <QFileInfo>
 #include <QGuiApplication>
@@ -40,7 +42,6 @@
 #include <QLineEdit>
 #include <QListWidget>
 #include <QMenu>
-#include <QMouseEvent>
 #include <QPushButton>
 #include <QSignalBlocker>
 #include <QStyleHints>
@@ -48,12 +49,12 @@
 #include <QTreeWidget>
 #include <QVBoxLayout>
 
+#include "BrowserResults.h"
 #include "BrowserTagMenu.h"
 #include "ControlRegistry.h"
 #include "embed.h"
 #include "Engine.h"
 #include "Song.h"
-#include "StringPairDrag.h"
 
 namespace lmms::gui
 {
@@ -61,37 +62,16 @@ namespace lmms::gui
 namespace
 {
 
-enum Column { Name, Kind, Size, Modified, Tags };
+using namespace browserresults;
 
 //! Thumbnails one gallery view draws; the rest show their kind's icon (a thumbnail decodes the file once).
 constexpr int MaxThumbnails = 60;
+//! How long typing pauses before the search runs (theme 3: the list follows the field as it is typed).
+constexpr int LiveSearchDelayMs = 250;
 
 ControlResult run(const QString& id, const QJsonObject& args = {})
 {
 	return ControlRegistry::instance()->invoke(id, args);
-}
-
-//! The drag key a row of @a kind carries, as the file lists' rows carry it.
-QString dragKey(const QString& kind)
-{
-	if (kind == QLatin1String("preset")) { return QStringLiteral("presetfile"); }
-	if (kind == QLatin1String("project")) { return QStringLiteral("projectfile"); }
-	if (kind == QLatin1String("midi")) { return QStringLiteral("importedproject"); }
-	return QStringLiteral("samplefile");
-}
-
-QPixmap kindIcon(const QString& kind)
-{
-	if (kind == QLatin1String("preset")) { return embed::getIconPixmap("preset_file"); }
-	if (kind == QLatin1String("project")) { return embed::getIconPixmap("project_file"); }
-	return embed::getIconPixmap("sample_file");
-}
-
-//! A left press on a row of @a kind drags its file out, as the file lists' rows do; a missing project file has nothing to drop.
-void dragOut(QWidget* from, const QString& kind, const QString& path, const QPixmap& icon)
-{
-	if (!(QGuiApplication::mouseButtons() & Qt::LeftButton) || kind == BrowserSearchView::tr("missing")) { return; }
-	new StringPairDrag(dragKey(kind), path, icon, from);
 }
 
 //! The status line for a list just shown: how many, and whether there is more than it shows.
@@ -105,36 +85,6 @@ QString countText(const QJsonObject& result)
 		return BrowserSearchView::tr("Showing the first %1 results - the search stopped early, so narrow it to see the rest").arg(shown);
 	}
 	return shown > 0 ? BrowserSearchView::tr("Results: %1").arg(shown) : BrowserSearchView::tr("No results");
-}
-
-//! A result row; the size and date sort as numbers (their data), not as text.
-QTreeWidgetItem* rowOf(const QJsonObject& item)
-{
-	auto* row = new QTreeWidgetItem;
-	row->setText(Name, item.value(QStringLiteral("name")).toString());
-	row->setText(Kind, item.value(QStringLiteral("kind")).toString());
-	row->setData(Size, Qt::DisplayRole, item.value(QStringLiteral("size_bytes")).toInteger() / 1024);
-	row->setText(Modified, QDateTime::fromMSecsSinceEpoch(item.value(QStringLiteral("modified_ms")).toInteger()).toString(Qt::ISODate));
-	QStringList tags;
-	for (const QJsonValue& tag : item.value(QStringLiteral("tags")).toArray()) { tags << tag.toString(); }
-	row->setText(Tags, tags.join(QStringLiteral(", ")));
-	row->setData(Name, Qt::UserRole, item.value(QStringLiteral("path")).toString());
-	row->setToolTip(Name, item.value(QStringLiteral("path")).toString());
-	return row;
-}
-
-//! A gallery tile: the file's waveform thumbnail when @a thumbnail, else its kind's icon.
-QListWidgetItem* tileOf(const QJsonObject& item, bool thumbnail)
-{
-	const QString path = item.value(QStringLiteral("path")).toString();
-	const QString kind = item.value(QStringLiteral("kind")).toString();
-	auto* tile = new QListWidgetItem(item.value(QStringLiteral("name")).toString());
-	const ControlResult drawn = thumbnail ? run(QStringLiteral("browser.thumbnail"), {{QStringLiteral("path"), path}}) : ControlResult();
-	tile->setIcon(drawn.ok && thumbnail ? QIcon(drawn.result.value(QStringLiteral("image")).toString()) : QIcon(kindIcon(kind)));
-	tile->setData(Qt::UserRole, path);
-	tile->setData(Qt::UserRole + 1, kind);
-	tile->setToolTip(path);
-	return tile;
 }
 
 QPushButton* button(QWidget* parent, const QString& text, const char* command)
@@ -153,6 +103,8 @@ BrowserSearchView::BrowserSearchView(QWidget* parent) :
 	m_search = new QLineEdit(contentParent());
 	m_search->setPlaceholderText(tr("Search: kick OR snare, -loop, tag:drums, kind:audio, \"bass drum\""));
 	m_search->setAccessibleName(tr("Search the library"));
+	m_search->setObjectName(QStringLiteral("browserSearch"));  // the browser panel shows it as its first control
+	m_search->setProperty("browserSearchHint", true);  // ... keeping this placeholder: it teaches the syntax
 	m_kind = new QComboBox(contentParent());
 	m_kind->setAccessibleName(tr("Kind"));
 	for (const QString& kind : {tr("Any kind"), QStringLiteral("audio"), QStringLiteral("preset"), QStringLiteral("project"), QStringLiteral("midi")})
@@ -186,6 +138,9 @@ BrowserSearchView::BrowserSearchView(QWidget* parent) :
 	m_collections->setContextMenuPolicy(Qt::CustomContextMenu);
 	addContentWidget(m_collections);
 
+	m_actions = new BrowserResultActions(this);  // theme 3: Enter loads, a click or Space previews
+	connect(m_actions, &BrowserResultActions::failed, m_status, &QLabel::setText);
+
 	m_results = new QTreeWidget(contentParent());
 	m_results->setAccessibleName(tr("Results"));
 	m_results->setHeaderLabels({tr("Name"), tr("Kind"), tr("Size (KB)"), tr("Modified"), tr("Tags")});
@@ -193,6 +148,7 @@ BrowserSearchView::BrowserSearchView(QWidget* parent) :
 	m_results->setRootIsDecorated(false);
 	m_results->setContextMenuPolicy(Qt::CustomContextMenu);
 	m_results->header()->setSectionResizeMode(Name, QHeaderView::Stretch);
+	m_results->setProperty("browserResults", true);  // what the panel's search field steps through and loads from
 	addContentWidget(m_results);
 
 	m_gallery = new QListWidget(contentParent());
@@ -203,9 +159,20 @@ BrowserSearchView::BrowserSearchView(QWidget* parent) :
 	m_gallery->setMovement(QListView::Static);
 	m_gallery->setContextMenuPolicy(Qt::CustomContextMenu);
 	m_gallery->hide();
+	m_gallery->setProperty("browserResults", true);
 	addContentWidget(m_gallery);
 
-	connect(m_search, &QLineEdit::returnPressed, this, &BrowserSearchView::runSearch);
+	// Theme 3: the list follows the field as it is typed (one history entry per search, refined in place);
+	// Return runs it at once. A changed query, kind or root stops the preview, as a new list does.
+	m_live = new QTimer(this);
+	m_live->setSingleShot(true);
+	m_live->setInterval(LiveSearchDelayMs);
+	connect(m_search, &QLineEdit::textEdited, this, [this] {
+		m_actions->stopPreview();
+		m_live->start();
+	});
+	connect(m_live, &QTimer::timeout, this, &BrowserSearchView::runLiveSearch);
+	connect(m_search, &QLineEdit::returnPressed, this, [this] { search(m_liveEntry); });  // typed: refreshed in place
 	connect(m_kind, &QComboBox::currentIndexChanged, this, &BrowserSearchView::runSearch);
 	connect(m_root, &QComboBox::currentIndexChanged, this, &BrowserSearchView::runSearch);
 	connect(m_indexed, &QCheckBox::toggled, this, &BrowserSearchView::runSearch);
@@ -259,21 +226,32 @@ void BrowserSearchView::connectLists()
 	connect(m_results, &QWidget::customContextMenuRequested, this, [this](const QPoint& at) {
 		if (QTreeWidgetItem* item = m_results->itemAt(at))
 		{
-			showRowMenu(m_results, at, item->data(Name, Qt::UserRole).toString(), item->text(Kind));
+			showRowMenu(m_results, at, item->data(Name, PathRole).toString(), item->text(Kind));
 		}
 	});
 	connect(m_gallery, &QWidget::customContextMenuRequested, this, [this](const QPoint& at) {
 		if (QListWidgetItem* tile = m_gallery->itemAt(at))
 		{
-			showRowMenu(m_gallery, at, tile->data(Qt::UserRole).toString(), tile->data(Qt::UserRole + 1).toString());
+			showRowMenu(m_gallery, at, tile->data(PathRole).toString(), tile->data(KindRole).toString());
 		}
 	});
 	connect(m_results, &QTreeWidget::itemPressed, this, [this](QTreeWidgetItem* item) {
-		if (item != nullptr) { dragOut(this, item->text(Kind), item->data(Name, Qt::UserRole).toString(), kindIcon(item->text(Kind))); }
+		if (item != nullptr) { pressRow(item->text(Kind), item->data(Name, PathRole).toString(), kindIcon(item->text(Kind))); }
 	});
 	connect(m_gallery, &QListWidget::itemPressed, this, [this](QListWidgetItem* tile) {
-		if (tile != nullptr) { dragOut(this, tile->data(Qt::UserRole + 1).toString(), tile->data(Qt::UserRole).toString(), tile->icon().pixmap(48)); }
+		if (tile != nullptr) { pressRow(tile->data(KindRole).toString(), tile->data(PathRole).toString(), tile->icon().pixmap(48)); }
 	});
+	m_actions->watch(m_results);
+	m_actions->watch(m_gallery);
+}
+
+void BrowserSearchView::pressRow(const QString& kind, const QString& path, const QPixmap& icon)
+{
+	const bool left = QGuiApplication::mouseButtons() & Qt::LeftButton;
+	const QPoint from = QCursor::pos();
+	dragOut(this, kind, path, icon);
+	// Theme 3: a press released where it was is a click, and a click previews the row; a drag drops the file instead.
+	if (left && (QCursor::pos() - from).manhattanLength() < QApplication::startDragDistance()) { m_actions->preview(path, kind); }
 }
 
 void BrowserSearchView::pickCollection(const QString& name)
@@ -298,10 +276,15 @@ QJsonObject BrowserSearchView::queryArgs() const
 	return args;
 }
 
-void BrowserSearchView::browse(const QString& command, const QJsonObject& args, const QString& label)
+void BrowserSearchView::browse(const QString& command, const QJsonObject& args, const QString& label, bool live)
 {
-	showBrowsed(run(QStringLiteral("browser.browse"), {{QStringLiteral("command"), command}, {QStringLiteral("args"), args},
-		{QStringLiteral("label"), label}}));
+	// A live search refines the live search before it in place: one history entry, not one per pause in typing.
+	const bool replace = live && m_liveEntry;
+	m_live->stop();
+	const ControlResult shown = run(QStringLiteral("browser.browse"), {{QStringLiteral("command"), command}, {QStringLiteral("args"), args},
+		{QStringLiteral("label"), label}, {QStringLiteral("replace"), replace}});
+	showBrowsed(shown);
+	if (shown.ok) { m_liveEntry = live; }
 }
 
 void BrowserSearchView::showBrowsed(const ControlResult& shown)
@@ -312,6 +295,7 @@ void BrowserSearchView::showBrowsed(const ControlResult& shown)
 		return;
 	}
 	m_showingMedia = false;
+	m_liveEntry = false;  // a list shown from the history is no longer the one being typed
 	showItems(shown.result.value(QStringLiteral("items")).toArray());
 	m_status->setText(countText(shown.result));
 	restoreQuery(shown.result.value(QStringLiteral("entry")).toObject());
@@ -324,16 +308,26 @@ void BrowserSearchView::restoreQuery(const QJsonObject& entry)
 	if (!indexed && command != QLatin1String("browser.query")) { return; }  // a collection or similar sounds: no search of its own
 	const QJsonObject args = entry.value(QStringLiteral("args")).toObject();
 	const QSignalBlocker kind(m_kind), root(m_root), index(m_indexed);  // shown already: no search again
-	m_search->setText(args.value(QStringLiteral("text")).toString());
+	// The same text is left alone, so a live search never moves the cursor of the field being typed in.
+	if (m_search->text() != args.value(QStringLiteral("text")).toString()) { m_search->setText(args.value(QStringLiteral("text")).toString()); }
 	m_kind->setCurrentIndex(std::max(0, m_kind->findText(args.value(QStringLiteral("kind")).toString())));
 	m_root->setCurrentIndex(std::max(0, m_root->findData(args.value(QStringLiteral("root")).toString())));
 	m_indexed->setChecked(indexed);
 	m_root->setDisabled(indexed);
 }
 
-void BrowserSearchView::runSearch()
+void BrowserSearchView::search(bool live)
 {
-	browse(m_indexed->isChecked() ? QStringLiteral("browser.index_query") : QStringLiteral("browser.query"), queryArgs(), m_search->text());
+	browse(m_indexed->isChecked() ? QStringLiteral("browser.index_query") : QStringLiteral("browser.query"), queryArgs(), m_search->text(), live);
+}
+
+void BrowserSearchView::runSearch() { search(false); }
+
+void BrowserSearchView::runLiveSearch() { search(true); }
+
+void BrowserSearchView::settleSearch()
+{
+	if (m_live->isActive()) { runLiveSearch(); }
 }
 
 void BrowserSearchView::runCollection(const QString& name)
@@ -383,6 +377,7 @@ void BrowserSearchView::showProjectMedia()
 void BrowserSearchView::showItems(const QJsonArray& items)
 {
 	m_items = items;
+	m_actions->stopPreview();  // theme 3: a new list (query, location, history) stops the preview
 	m_results->setSortingEnabled(false);
 	m_results->clear();
 	for (const QJsonValue& item : items) { m_results->addTopLevelItem(rowOf(item.toObject())); }
@@ -460,18 +455,21 @@ void BrowserSearchView::addPreviewEntries(QMenu* menu, const QString& path)
 		QAction* action = preview->addAction(label);
 		action->setProperty("controlCommand", QStringLiteral("browser.preview"));
 		connect(action, &QAction::triggered, this, [this, path, match = QLatin1String(match)] {
-			const ControlResult played = run(QStringLiteral("browser.preview"), {{QStringLiteral("path"), path}, {QStringLiteral("match"), match}});
-			if (!played.ok) { m_status->setText(played.errorMessage); }  // as Find Similar Sounds reports its error
+			m_actions->preview(path, QStringLiteral("audio"), match);  // an error shows on the status line
 		});
 	}
 	QAction* stop = preview->addAction(tr("Stop"));
 	stop->setProperty("controlCommand", QStringLiteral("browser.preview_stop"));
-	connect(stop, &QAction::triggered, this, [] { run(QStringLiteral("browser.preview_stop")); });
+	connect(stop, &QAction::triggered, this, [this] {
+		m_actions->stopPreview();
+		run(QStringLiteral("browser.preview_stop"));  // whoever started it
+	});
 }
 
 void BrowserSearchView::showRowMenu(QWidget* view, const QPoint& at, const QString& path, const QString& kind)
 {
 	QMenu menu(this);
+	m_actions->addLoadEntry(&menu, path, kind);  // theme 3: what Enter does, named where the other actions are
 	if (kind == QLatin1String("audio"))
 	{
 		addPreviewEntries(&menu, path);

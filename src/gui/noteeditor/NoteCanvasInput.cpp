@@ -1,5 +1,5 @@
 /*
- * NoteCanvasInput.cpp - the note editor's note area: tools, gestures and keys
+ * NoteCanvasInput.cpp - the note editor's note area: the mouse, as FL Studio's piano roll has it
  *
  * Copyright (c) 2026 Zene Studio contributors
  *
@@ -27,10 +27,9 @@
 
 #include <QGuiApplication>
 #include <QJsonArray>
-#include <QKeyEvent>
 #include <QMouseEvent>
 #include <QPainter>
-#include <QWheelEvent>
+#include <QStyleHints>
 
 #include "ControlVocabulary.h"
 #include "DesignTokens.h"
@@ -38,6 +37,7 @@
 #include "Note.h"
 #include "NoteCanvas.h"
 #include "NoteEditor.h"
+#include "NoteProperties.h"
 
 namespace lmms::gui
 {
@@ -52,11 +52,14 @@ QJsonArray idsOf(const std::vector<Note*>& notes)
 	return ids;
 }
 
-//! Alt held turns the grid snap off while drawing, moving, resizing or slicing (the grid's tooltip).
-bool snapOff() { return QGuiApplication::keyboardModifiers().testFlag(Qt::AltModifier); }
-int snapped(int ticks, int grid) { return snapOff() ? ticks : NoteGrid::snap(ticks, grid); }
-
 } // namespace
+
+bool NoteCanvas::altHeld() const
+{
+	return (m_mods | QGuiApplication::keyboardModifiers()).testFlag(Qt::AltModifier);
+}
+
+int NoteCanvas::snapTicks(int ticks) const { return altHeld() ? ticks : NoteGrid::snap(ticks, m_state.gridTicks); }
 
 Note* NoteCanvas::noteById(int id) const
 {
@@ -95,12 +98,15 @@ void NoteCanvas::selectOnly(const std::vector<Note*>& notes, bool additive)
 
 int NoteCanvas::dragTicks() const
 {
-	const int delta = static_cast<int>(std::lround(m_state.grid.tickAtX(m_currentPos.x()) - m_pressTick));
-	return m_drag == Drag::None ? 0 : snapped(delta, m_state.gridTicks);
+	// Ctrl while dragging locks the timing (FL's horizontal lock).
+	if (m_drag == Drag::None || (m_drag == Drag::Move && m_mods.testFlag(Qt::ControlModifier))) { return 0; }
+	return snapTicks(static_cast<int>(std::lround(m_state.grid.tickAtX(m_currentPos.x()) - m_pressTick)));
 }
 
 int NoteCanvas::dragKeys() const
 {
+	// Shift while dragging locks the pitch (FL's vertical lock).
+	if (m_drag == Drag::Move && m_mods.testFlag(Qt::ShiftModifier)) { return 0; }
 	const int rowH = m_state.grid.rowHeight();
 	return static_cast<int>(std::floor((m_currentPos.y() + m_state.grid.scrollY()) / double(rowH)))
 		- static_cast<int>(std::floor((m_pressPos.y() + m_state.grid.scrollY()) / double(rowH)));
@@ -122,13 +128,22 @@ void NoteCanvas::mousePressEvent(QMouseEvent* event)
 	m_pressPos = m_currentPos = event->pos();
 	m_pressTick = static_cast<int>(m_state.grid.tickAtX(event->pos().x()));
 	m_pressKey = m_state.grid.keyAtY(event->pos().y());
-	if (event->button() == Qt::RightButton)
+	m_mods = m_pressMods = event->modifiers();
+	switch (event->button())
 	{
-		// The right button erases whatever tool is chosen, as in the classic piano roll.
-		pressErase(noteAt(event->pos()));
-		return;
+	case Qt::RightButton: pressRight(noteAt(event->pos())); break;
+	case Qt::MiddleButton: pressPan(); break;
+	case Qt::LeftButton: beginPress(event); break;
+	default: break;
 	}
-	if (event->button() == Qt::LeftButton) { beginPress(event); }
+}
+
+void NoteCanvas::pressRight(const Note* note)
+{
+	// FL, whatever the tool: the right button deletes every note it crosses; held on an empty row it is
+	// the slice tool for the stroke.
+	if (note != nullptr) { pressStroke(Drag::Erase, note); }
+	else { m_drag = Drag::Slice; }
 }
 
 void NoteCanvas::beginPress(QMouseEvent* event)
@@ -137,12 +152,10 @@ void NoteCanvas::beginPress(QMouseEvent* event)
 	switch (m_state.tool)
 	{
 	case NoteTool::Audition: pressAudition(note); return;
-	case NoteTool::Erase: pressErase(note); return;
+	case NoteTool::Erase: pressStroke(Drag::Erase, note); return;
+	case NoteTool::Mute: pressStroke(Drag::Mute, note); return;
 	case NoteTool::Paint: pressPaint(); return;
-	case NoteTool::Mute: pressMute(note); return;
-	case NoteTool::Slice:
-		if (note != nullptr) { sliceAt(note, event->pos()); }
-		return;
+	case NoteTool::Slice: m_drag = Drag::Slice; return;
 	case NoteTool::Draw:
 	case NoteTool::Select: pressDrawOrSelect(note, event); return;
 	}
@@ -150,8 +163,9 @@ void NoteCanvas::beginPress(QMouseEvent* event)
 
 void NoteCanvas::pressDrawOrSelect(Note* note, QMouseEvent* event)
 {
-	if (note == nullptr) { pressOnEmpty(event); }
-	else if (event->modifiers().testFlag(Qt::AltModifier)) { pressVelocity(note); }
+	// Ctrl selects (a click one note, a drag a rectangle; Ctrl+Shift adds), whatever is under the pointer.
+	if (m_pressMods.testFlag(Qt::ControlModifier)) { pressBand(event); }
+	else if (note == nullptr) { pressOnEmpty(event); }
 	else { pressOnNote(note, event); }
 }
 
@@ -162,38 +176,34 @@ void NoteCanvas::pressAudition(const Note* note)
 	m_editor->auditionPress(m_auditionKey, note != nullptr ? static_cast<int>(note->getVolume()) : m_state.lastVelocity);
 }
 
-void NoteCanvas::pressErase(const Note* note)
+void NoteCanvas::pressStroke(Drag drag, const Note* note)
 {
-	m_drag = Drag::Erase;
-	m_erasedIds.clear();
-	markErased(note);
+	m_drag = drag;
+	m_strokeIds.clear();
+	m_muteTo = -1;
+	m_anchorId = note != nullptr ? note->id() : -1;
+	markStroke(note);
 	update();
 }
 
-void NoteCanvas::markErased(const Note* note)
+void NoteCanvas::markStroke(const Note* note)
 {
 	// Kept sorted, so the preview and the release look a note up in log time, not by a scan.
 	if (note == nullptr) { return; }
-	const auto it = std::lower_bound(m_erasedIds.begin(), m_erasedIds.end(), note->id());
-	if (it == m_erasedIds.end() || *it != note->id()) { m_erasedIds.insert(it, note->id()); }
+	if (m_drag == Drag::Mute && m_muteTo < 0) { m_muteTo = note->muted() ? 0 : 1; }  // the first note crossed decides
+	const auto it = std::lower_bound(m_strokeIds.begin(), m_strokeIds.end(), note->id());
+	if (it == m_strokeIds.end() || *it != note->id()) { m_strokeIds.insert(it, note->id()); }
 }
 
 void NoteCanvas::pressOnNote(Note* note, QMouseEvent* event)
 {
-	if (event->modifiers().testFlag(Qt::ShiftModifier))
-	{
-		std::vector<Note*> chosen = selectedNotes();
-		const auto it = std::find(chosen.begin(), chosen.end(), note);
-		if (it != chosen.end()) { chosen.erase(it); }
-		else { chosen.push_back(note); }
-		selectOnly(chosen, false);
-		return;
-	}
+	m_state.lastLength = static_cast<int>(note->length().getTicks());  // a new note takes the last touched one's length
 	if (!note->selected()) { selectOnly({note}, false); }
 	Note* anchor = noteById(note->id());  // the select command may have re-sorted nothing, but resolve anew
 	if (anchor == nullptr) { return; }
 	m_anchorId = anchor->id();
-	m_drag = onResizeHandle(*anchor, event->pos()) ? Drag::Resize : Drag::Move;
+	const bool fromStart = m_pressMods.testFlag(Qt::ShiftModifier) && onStartHandle(*anchor, event->pos());
+	m_drag = onResizeHandle(*anchor, event->pos()) ? Drag::Resize : fromStart ? Drag::ResizeStart : Drag::Move;
 	m_auditionKey = anchor->key();
 	m_editor->auditionPress(anchor->key(), static_cast<int>(anchor->getVolume()));
 }
@@ -207,30 +217,49 @@ void NoteCanvas::pressOnEmpty(QMouseEvent* event)
 		m_editor->auditionPress(m_pressKey, m_state.lastVelocity);
 		return;
 	}
+	pressBand(event);
+}
+
+void NoteCanvas::pressBand(QMouseEvent* event)
+{
 	m_drag = Drag::Band;
-	if (!event->modifiers().testFlag(Qt::ShiftModifier) && !selectedNotes().empty()) { selectOnly({}, false); }
+	const bool additive = m_pressMods.testFlag(Qt::ShiftModifier);
+	if (!additive && noteAt(event->pos()) == nullptr && !selectedNotes().empty()) { selectOnly({}, false); }
 }
 
 void NoteCanvas::mouseMoveEvent(QMouseEvent* event)
 {
 	const QPoint from = m_currentPos;
 	m_currentPos = event->pos();
-	if (m_drag == Drag::Erase) { eraseAlong(from, event->pos()); }
-	if (m_drag == Drag::Paint) { extendPaint(event->pos()); }
-	if (m_drag == Drag::None)
+	m_mods = event->modifiers();
+	switch (m_drag)
 	{
-		Note* note = noteAt(event->pos());
-		const bool handle = note != nullptr && m_state.tool != NoteTool::Erase && onResizeHandle(*note, event->pos());
-		setCursor(handle ? Qt::SizeHorCursor : Qt::ArrowCursor);
-		return;
+	case Drag::None: updateCursor(event->pos()); return;
+	case Drag::Pan: panTo(event->pos()); return;
+	case Drag::Erase:
+	case Drag::Mute: strokeAlong(from, event->pos()); break;
+	case Drag::Paint: extendPaint(event->pos()); break;
+	case Drag::Audition: scrubTo(event->pos()); break;
+	default: break;
 	}
 	update();
+}
+
+void NoteCanvas::updateCursor(const QPoint& pos)
+{
+	const Note* note = noteAt(pos);
+	const bool editing = note != nullptr && (m_state.tool == NoteTool::Draw || m_state.tool == NoteTool::Select);
+	const bool handle = editing && (onResizeHandle(*note, pos)
+		|| (QGuiApplication::keyboardModifiers().testFlag(Qt::ShiftModifier) && onStartHandle(*note, pos)));
+	setCursor(handle ? Qt::SizeHorCursor : Qt::ArrowCursor);
 }
 
 void NoteCanvas::mouseReleaseEvent(QMouseEvent* event)
 {
 	m_currentPos = event->pos();
-	commitDrag(m_drag, event->modifiers().testFlag(Qt::ShiftModifier));
+	m_mods = event->modifiers();
+	if (m_drag == Drag::Draw) { m_drawnAt = event->timestamp(); }
+	commitDrag(m_drag);
 	if (m_auditionKey >= 0) { m_editor->auditionRelease(m_auditionKey); }
 	m_auditionKey = -1;
 	m_drag = Drag::None;
@@ -238,55 +267,61 @@ void NoteCanvas::mouseReleaseEvent(QMouseEvent* event)
 	update();
 }
 
-void NoteCanvas::commitDrag(Drag drag, bool shift)
+void NoteCanvas::commitDrag(Drag drag)
 {
 	switch (drag)
 	{
 	case Drag::Draw: commitDraw(); break;
 	case Drag::Move: commitMove(); break;
 	case Drag::Resize: commitResize(); break;
-	case Drag::Band: commitBand(shift); break;
+	case Drag::ResizeStart: commitResizeStart(); break;
+	case Drag::Band: commitBand(); break;
+	default: commitStroke(drag); break;
+	}
+}
+
+void NoteCanvas::commitStroke(Drag drag)
+{
+	switch (drag)
+	{
 	case Drag::Erase: commitErase(); break;
+	case Drag::Slice: commitSlice(); break;
+	case Drag::Mute: commitMute(); break;
 	case Drag::Paint: commitPaint(); break;
-	case Drag::Velocity: commitVelocity(); break;
-	case Drag::Audition:
-	case Drag::None: break;
+	default: break;
 	}
 }
 
 void NoteCanvas::mouseDoubleClickEvent(QMouseEvent* event)
 {
-	// Select tool: a double-click on an empty row draws a note there, on a note removes it.
-	if (m_state.clip == nullptr || m_state.tool != NoteTool::Select || event->button() != Qt::LeftButton) { return; }
-	if (Note* note = noteAt(event->pos()))
-	{
-		m_editor->run(QStringLiteral("note.remove"), {{QStringLiteral("clip"), m_editor->clipId()},
-			{QStringLiteral("note"), control::noteIdOf(note)}});
-		return;
-	}
-	m_pressPos = m_currentPos = event->pos();
-	m_pressTick = static_cast<int>(m_state.grid.tickAtX(event->pos().x()));
-	m_pressKey = m_state.grid.keyAtY(event->pos().y());
-	if (m_pressKey >= 0) { commitDraw(); }
+	// FL: a double-click on a note opens its properties - not when its first click drew that note.
+	const bool editing = m_state.tool == NoteTool::Draw || m_state.tool == NoteTool::Select;
+	if (m_state.clip == nullptr || event->button() != Qt::LeftButton || !editing) { return; }
+	const Note* note = noteAt(event->pos());
+	const auto interval = static_cast<ulong>(QGuiApplication::styleHints()->mouseDoubleClickInterval());
+	const bool drawnByIt = note != nullptr && control::noteIdOf(note) == m_justDrawn && event->timestamp() - m_drawnAt <= interval;
+	if (note != nullptr && !drawnByIt) { showNoteProperties(m_editor, *note); }
 }
 
 std::pair<int, int> NoteCanvas::drawSpan() const
 {
-	// A click draws a note of the last length; a drag right of half a grid cell sets the length.
-	const int start = std::max(0, snapOff() ? m_pressTick : NoteGrid::snapDown(m_pressTick, m_state.gridTicks));
-	const int end = snapped(static_cast<int>(m_state.grid.tickAtX(m_currentPos.x())), m_state.gridTicks);
+	// A click draws a note of the last note's length (or New Note Length); a drag to the right sets the length
+	// to where it reaches. A click is a click wherever in the cell it lands: only a real drag sets a length.
+	const int start = std::max(0, altHeld() ? m_pressTick : NoteGrid::snapDown(m_pressTick, m_state.gridTicks));
+	const int end = snapTicks(static_cast<int>(m_state.grid.tickAtX(m_currentPos.x())));
 	const int clicked = m_state.newLength > 0 ? m_state.newLength : m_state.lastLength;
-	const int length = end > start + std::max(1, m_state.gridTicks) / 2 ? end - start : clicked;
-	return {start, std::max(1, length)};
+	const bool dragged = std::abs(m_currentPos.x() - m_pressPos.x()) > 3 && end > start;
+	return {start, std::max(1, dragged ? end - start : clicked)};
 }
 
 void NoteCanvas::commitDraw()
 {
 	const auto [start, length] = drawSpan();
 	m_state.lastLength = length;
-	m_editor->run(QStringLiteral("note.add"), {{QStringLiteral("clip"), m_editor->clipId()},
+	const QJsonObject added = m_editor->run(QStringLiteral("note.add"), {{QStringLiteral("clip"), m_editor->clipId()},
 		{QStringLiteral("key"), scaleKey(m_pressKey)}, {QStringLiteral("position"), start},
 		{QStringLiteral("length"), m_state.lastLength}, {QStringLiteral("velocity"), m_state.lastVelocity}});
+	m_justDrawn = added.value(QStringLiteral("note")).toString();
 }
 
 void NoteCanvas::commitMove()
@@ -294,26 +329,17 @@ void NoteCanvas::commitMove()
 	const int dt = dragTicks();
 	const int rows = dragKeys();
 	if (dt == 0 && rows == 0) { return; }
-	const bool copy = copying();
 	QJsonArray edits;
 	for (Note* note : selectedNotes())
 	{
-		const int position = std::max(0, static_cast<int>(note->pos().getTicks()) + dt);
-		const int key = keyMovedBy(note->key(), rows);
-		if (copy)
-		{
-			edits.append(QJsonObject{{QStringLiteral("key"), key}, {QStringLiteral("position"), position},
-				{QStringLiteral("length"), static_cast<int>(note->length().getTicks())}, {QStringLiteral("velocity"), static_cast<int>(note->getVolume())}});
-			continue;
-		}
 		edits.append(QJsonObject{{QStringLiteral("note"), control::noteIdOf(note)},
-			{QStringLiteral("position"), position}, {QStringLiteral("key"), key}});
+			{QStringLiteral("position"), std::max(0, static_cast<int>(note->pos().getTicks()) + dt)},
+			{QStringLiteral("key"), keyMovedBy(note->key(), rows)}});
 	}
-	// The copies go in as one note.add_many, the moves as one note.edit: one undo step either way.
+	// The whole selection as one note.edit: one undo step.
 	if (!edits.isEmpty())
 	{
-		m_editor->run(copy ? QStringLiteral("note.add_many") : QStringLiteral("note.edit"),
-			{{QStringLiteral("clip"), m_editor->clipId()}, {copy ? QStringLiteral("notes") : QStringLiteral("edits"), edits}});
+		m_editor->run(QStringLiteral("note.edit"), {{QStringLiteral("clip"), m_editor->clipId()}, {QStringLiteral("edits"), edits}});
 	}
 }
 
@@ -332,120 +358,57 @@ void NoteCanvas::commitResize()
 	m_editor->run(QStringLiteral("note.edit"), {{QStringLiteral("clip"), m_editor->clipId()}, {QStringLiteral("edits"), edits}});
 }
 
-void NoteCanvas::commitBand(bool additive)
+void NoteCanvas::commitResizeStart()
 {
+	// Shift-drag on the left edge: every selected note's start moves by the same snapped amount; its end stays.
+	Note* anchor = noteById(m_anchorId);
+	const int delta = startDelta();
+	if (anchor == nullptr || delta == 0) { return; }
+	QJsonArray edits;
+	for (Note* note : selectedNotes())
+	{
+		const int end = static_cast<int>(note->endPos().getTicks());
+		const int start = std::clamp(static_cast<int>(note->pos().getTicks()) + delta, 0, end - 1);
+		if (note == anchor) { m_state.lastLength = end - start; }
+		edits.append(QJsonObject{{QStringLiteral("note"), control::noteIdOf(note)}, {QStringLiteral("position"), start},
+			{QStringLiteral("length"), end - start}});
+	}
+	m_editor->run(QStringLiteral("note.edit"), {{QStringLiteral("clip"), m_editor->clipId()}, {QStringLiteral("edits"), edits}});
+}
+
+void NoteCanvas::commitBand()
+{
+	// A click (no real rectangle) picks the note under it; a drag every note the rectangle touches.
 	const QRect band = QRect(m_pressPos, m_currentPos).normalized();
 	std::vector<Note*> inside;
-	for (Note* note : m_state.clip->notes())
+	if (band.width() < 3 && band.height() < 3)
 	{
-		if (noteRect(*note).intersects(band)) { inside.push_back(note); }
+		if (Note* note = noteAt(m_pressPos)) { inside.push_back(note); }
 	}
-	selectOnly(inside, additive);
+	else
+	{
+		for (Note* note : m_state.clip->notes())
+		{
+			if (noteRect(*note).intersects(band)) { inside.push_back(note); }
+		}
+	}
+	selectOnly(inside, m_pressMods.testFlag(Qt::ShiftModifier));
 }
 
 void NoteCanvas::commitErase()
 {
-	// One pass over the clip collects the ids; a command may re-load the note list, so it is not
-	// walked while they run.
+	// One pass over the clip collects the ids, and one note.remove_many deletes them: the stroke is one undo step.
 	QJsonArray ids;
-	if (m_state.clip != nullptr && !m_erasedIds.empty())
+	if (m_state.clip != nullptr && !m_strokeIds.empty())
 	{
 		for (const Note* note : m_state.clip->notes())
 		{
-			if (erased(*note)) { ids.append(control::noteIdOf(note)); }
+			if (stroked(*note)) { ids.append(control::noteIdOf(note)); }
 		}
 	}
-	m_erasedIds.clear();
-	for (const QJsonValue& id : ids)
-	{
-		m_editor->run(QStringLiteral("note.remove"), {{QStringLiteral("clip"), m_editor->clipId()}, {QStringLiteral("note"), id}});
-	}
-}
-
-void NoteCanvas::sliceAt(Note* note, const QPoint& pos)
-{
-	const int raw = static_cast<int>(m_state.grid.tickAtX(pos.x()));
-	const int at = snapped(raw, m_state.gridTicks);
-	const int start = note->pos().getTicks();
-	const int end = note->endPos().getTicks();
-	if (at <= start || at >= end) { return; }
-	const int key = note->key();
-	const int velocity = static_cast<int>(note->getVolume());
-	QJsonArray edits{QJsonObject{{QStringLiteral("note"), control::noteIdOf(note)}, {QStringLiteral("length"), at - start}}};
-	m_editor->run(QStringLiteral("note.edit"), {{QStringLiteral("clip"), m_editor->clipId()}, {QStringLiteral("edits"), edits}});
-	m_editor->run(QStringLiteral("note.add"), {{QStringLiteral("clip"), m_editor->clipId()}, {QStringLiteral("key"), key},
-		{QStringLiteral("position"), at}, {QStringLiteral("length"), end - at}, {QStringLiteral("velocity"), velocity}});
-}
-
-void NoteCanvas::nudgeSelection(int ticks, int keys)
-{
-	QJsonArray edits;
-	for (Note* note : selectedNotes())
-	{
-		edits.append(QJsonObject{{QStringLiteral("note"), control::noteIdOf(note)},
-			{QStringLiteral("position"), std::max(0, static_cast<int>(note->pos().getTicks()) + ticks)},
-			{QStringLiteral("key"), std::clamp(note->key() + keys, 0, 127)}});
-	}
-	if (edits.isEmpty()) { return; }
-	m_editor->run(QStringLiteral("note.edit"), {{QStringLiteral("clip"), m_editor->clipId()}, {QStringLiteral("edits"), edits}});
-}
-
-void NoteCanvas::deleteSelection()
-{
-	m_erasedIds.clear();
-	for (const Note* note : selectedNotes()) { m_erasedIds.push_back(note->id()); }
-	std::sort(m_erasedIds.begin(), m_erasedIds.end());
-	commitErase();
-}
-
-bool NoteCanvas::nudgeForKey(int key, bool shift)
-{
-	const int step = std::max(1, m_state.gridTicks);
-	const int octave = shift ? 12 : 1;
-	switch (key)
-	{
-	case Qt::Key_Up: nudgeSelection(0, octave); return true;
-	case Qt::Key_Down: nudgeSelection(0, -octave); return true;
-	case Qt::Key_Left: nudgeSelection(-step, 0); return true;
-	case Qt::Key_Right: nudgeSelection(step, 0); return true;
-	default: return false;
-	}
-}
-
-void NoteCanvas::keyPressEvent(QKeyEvent* event)
-{
-	const int key = event->key();
-	const bool ctrlA = key == Qt::Key_A && event->modifiers().testFlag(Qt::ControlModifier) && m_state.clip != nullptr;
-	if (key == Qt::Key_Delete || key == Qt::Key_Backspace) { deleteSelection(); }
-	else if (key == Qt::Key_Escape) { selectOnly({}, false); }
-	else if (ctrlA) { selectOnly(std::vector<Note*>(m_state.clip->notes().begin(), m_state.clip->notes().end()), false); }
-	else if (!nudgeForKey(key, event->modifiers().testFlag(Qt::ShiftModifier)))
-	{
-		event->ignore();
-		return;
-	}
-	event->accept();
-}
-
-void NoteCanvas::wheelEvent(QWheelEvent* event)
-{
-	const QPoint delta = event->angleDelta();
-	const int amount = delta.y() != 0 ? delta.y() : delta.x();
-	const Qt::KeyboardModifiers mods = event->modifiers();
-	NoteGrid& g = m_state.grid;
-	if (mods.testFlag(Qt::ControlModifier))
-	{
-		// Smooth zoom: continuous, anchored under the pointer.
-		g.zoomAround(std::pow(1.0015, amount), event->position().x());
-	}
-	else if (mods.testFlag(Qt::AltModifier)) { g.setRowHeight(g.rowHeight() + (amount > 0 ? 1 : -1)); }
-	else if (mods.testFlag(Qt::ShiftModifier) || delta.x() != 0)
-	{
-		g.setScrollTicks(g.scrollTicks() - amount / g.pixelsPerTick() / 4.0);
-	}
-	else { g.setScrollY(g.scrollY() - amount / 2); }
-	event->accept();
-	emit m_editor->stateChanged();
+	m_strokeIds.clear();
+	if (ids.isEmpty()) { return; }
+	m_editor->run(QStringLiteral("note.remove_many"), {{QStringLiteral("clip"), m_editor->clipId()}, {QStringLiteral("notes"), ids}});
 }
 
 void NoteCanvas::paintDragPreview(QPainter& p) const
@@ -453,11 +416,13 @@ void NoteCanvas::paintDragPreview(QPainter& p) const
 	switch (m_drag)
 	{
 	case Drag::Draw: paintDrawPreview(p); break;
-	case Drag::Erase: paintErasePreview(p); break;
+	case Drag::Erase:
+	case Drag::Mute: paintStrokePreview(p); break;
 	case Drag::Paint: paintPaintPreview(p); break;
-	case Drag::Velocity: paintVelocityPreview(p); break;
+	case Drag::Slice: paintSlicePreview(p); break;
 	case Drag::Move:
-	case Drag::Resize: paintMovePreview(p); break;
+	case Drag::Resize:
+	case Drag::ResizeStart: paintMovePreview(p); break;
 	default: break;
 	}
 }
@@ -477,7 +442,16 @@ int NoteCanvas::resizeDelta() const
 	if (m_drag != Drag::Resize || anchor == nullptr) { return 0; }
 	const int end = anchor->endPos().getTicks();
 	const int raw = end + static_cast<int>(std::lround(m_state.grid.tickAtX(m_currentPos.x()) - m_pressTick));
-	return snapped(raw, m_state.gridTicks) - end;
+	return snapTicks(raw) - end;
+}
+
+int NoteCanvas::startDelta() const
+{
+	const Note* anchor = noteById(m_anchorId);
+	if (m_drag != Drag::ResizeStart || anchor == nullptr) { return 0; }
+	const int start = anchor->pos().getTicks();
+	const int raw = start + static_cast<int>(std::lround(m_state.grid.tickAtX(m_currentPos.x()) - m_pressTick));
+	return snapTicks(raw) - start;
 }
 
 void NoteCanvas::paintMovePreview(QPainter& p) const
@@ -485,10 +459,14 @@ void NoteCanvas::paintMovePreview(QPainter& p) const
 	const int dt = m_drag == Drag::Move ? dragTicks() : 0;
 	const int rows = m_drag == Drag::Move ? dragKeys() : 0;
 	const int dLen = resizeDelta();
+	const int dStart = startDelta();
 	for (const Note* note : selectedNotes())
 	{
-		const int start = std::max(0, static_cast<int>(note->pos().getTicks()) + dt);
-		const int length = std::max(1, static_cast<int>(note->length().getTicks()) + dLen);
+		// A resize from the start keeps the end (commitResizeStart's rule); a move or a resize keeps the start.
+		const int end = static_cast<int>(note->endPos().getTicks());
+		const int start = dStart != 0 ? std::clamp(static_cast<int>(note->pos().getTicks()) + dStart, 0, end - 1)
+			: std::max(0, static_cast<int>(note->pos().getTicks()) + dt);
+		const int length = dStart != 0 ? end - start : std::max(1, static_cast<int>(note->length().getTicks()) + dLen);
 		paintNote(p, *note, rectFor(keyMovedBy(note->key(), rows), start, start + length));
 	}
 }

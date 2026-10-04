@@ -104,6 +104,9 @@ public:
 
 	void adjustByDialog();
 
+	//! 0.5.0 (theme 17): the level as a screen reader reads it ("-6.00 dB", "-inf dB").
+	QString accessibleValueText() const;
+
 	void setDisplayConversion(bool b)
 	{
 		m_conversionFactor = b ? 100.0 : 1.0;
@@ -126,6 +129,7 @@ private:
 	void mouseMoveEvent(QMouseEvent* ev) override;
 	void mouseReleaseEvent(QMouseEvent* me) override;
 	void wheelEvent(QWheelEvent* ev) override;
+	void keyPressEvent(QKeyEvent* ke) override;
 	void paintEvent(QPaintEvent* ev) override;
 
 	void paintHandle(QPainter& painter);
@@ -156,6 +160,7 @@ private:
 	void updateTextFloat();
 	void modelValueChanged();
 	QString getModelValueAsDbString() const;
+	QString dbValueText() const;  //!< the level's number in dB, or "-inf"
 
 	bool modelIsLinear() const { return m_modelIsLinear; }
 

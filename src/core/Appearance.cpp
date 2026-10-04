@@ -1,5 +1,5 @@
 /*
- * Appearance.cpp - interface scale, text size and the palette
+ * Appearance.cpp - the interface's zoom, palette and accessible mode
  *
  * Copyright (c) 2026 Zene Studio contributors
  *
@@ -60,30 +60,32 @@ const QStringList& densityNames()
 	return names;
 }
 
-double densityFactor(const QString& name)
+bool densityIsAccessible(const QString& name)
 {
-	if (name == QLatin1String("touch")) { return 1.8; }
-	return name == QLatin1String("comfortable") ? 1.35 : 1.0;
+	return name == QLatin1String("accessible") || name == QLatin1String("comfortable") || name == QLatin1String("touch");
+}
+
+QString effectivePalette(const Options& o)
+{
+	return o.accessible ? QStringLiteral("high_contrast") : o.palette;
 }
 
 Options options()
 {
 	Options out;
 	out.scale = std::clamp(configDouble("scale", 1.0), 0.5, 3.0);
-	out.fontScale = std::clamp(configDouble("fontscale", 1.0), 0.75, 2.0);
 	const QString palette = ConfigManager::inst()->value(kSection, QStringLiteral("palette"), QStringLiteral("dark"));
 	out.palette = paletteNames().contains(palette) ? palette : QStringLiteral("dark");
-	const QString density = ConfigManager::inst()->value(kSection, QStringLiteral("density"), QStringLiteral("standard"));
-	out.density = densityNames().contains(density) ? density : QStringLiteral("standard");
+	out.accessible = densityIsAccessible(ConfigManager::inst()->value(kSection, QStringLiteral("density")));
 	return out;
 }
 
 bool setOptions(const Options& next)
 {
 	ConfigManager::inst()->setValue(kSection, QStringLiteral("scale"), QString::number(std::clamp(next.scale, 0.5, 3.0)));
-	ConfigManager::inst()->setValue(kSection, QStringLiteral("fontscale"), QString::number(std::clamp(next.fontScale, 0.75, 2.0)));
 	ConfigManager::inst()->setValue(kSection, QStringLiteral("palette"), next.palette);
-	ConfigManager::inst()->setValue(kSection, QStringLiteral("density"), next.density);
+	ConfigManager::inst()->setValue(kSection, QStringLiteral("density"),
+		next.accessible ? QStringLiteral("accessible") : QStringLiteral("standard"));
 	return syncScaleFile();
 }
 
@@ -102,8 +104,9 @@ bool syncScaleFile()
 
 QJsonObject toJson(const Options& o)
 {
-	return {{QStringLiteral("scale"), o.scale}, {QStringLiteral("font_scale"), o.fontScale}, {QStringLiteral("palette"), o.palette},
-		{QStringLiteral("density"), o.density}, {QStringLiteral("applies"), QStringLiteral("next_start")}};
+	return {{QStringLiteral("scale"), o.scale}, {QStringLiteral("palette"), o.palette}, {QStringLiteral("accessible"), o.accessible},
+		{QStringLiteral("font_scale"), 1.0}, {QStringLiteral("density"), o.accessible ? QStringLiteral("comfortable") : QStringLiteral("standard")},
+		{QStringLiteral("applies"), QStringLiteral("next_start")}};
 }
 
 QString scaleFilePath()

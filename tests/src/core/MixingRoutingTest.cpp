@@ -26,7 +26,8 @@
  *  (MX-048); mixer.send_many makes the same send from several channels as one undo step (MX-050);
  *  a VCA group inside another takes its gain, a loop is refused (MX-070); a channel can sit in two
  *  groups when asked and their gains multiply (MX-070); a group's links choose what reaches its
- *  members and suspend turns them off (MX-071); window.mixer_view answers its modes (MX-049). */
+ *  members and suspend turns them off (MX-071); window.mixer_view answers its modes (MX-049) and, from
+ *  0.5.0 theme 6, the return the faders show by name and what every fader drives. */
 
 #include <QtTest>
 
@@ -211,6 +212,34 @@ private slots:
 		QVERIFY(run(QStringLiteral("window.mixer_view"), {{QStringLiteral("filter"), QStringLiteral("all")},
 			{QStringLiteral("strip_width"), QStringLiteral("normal")}, {QStringLiteral("show_pan"), true},
 			{QStringLiteral("meter_mode"), QStringLiteral("peak")}}).ok);
+	}
+
+	//! 0.5.0 theme 6: the answer names the return the faders show and what every fader drives - a channel
+	//! without that send keeps a "No send" fader; the return's own and the master's stay their level.
+	void theSendsOnFadersAnswerNamesEveryFader()
+	{
+		QVERIFY(run(QStringLiteral("mixer.send_to"), {{QStringLiteral("channel"), ch(1)}, {QStringLiteral("to"), ch(4)},
+			{QStringLiteral("amount"), 0.5}}).ok);
+		const ControlResult on = run(QStringLiteral("window.mixer_view"), {{QStringLiteral("sends_on_faders"), ch(4)}});
+		QVERIFY2(on.ok, qPrintable(on.errorMessage));
+		QCOMPARE(on.result.value(QStringLiteral("sends_on_faders_name")).toString(), Engine::mixer()->mixerChannel(4)->m_name);
+		QHash<QString, QString> drives;
+		for (const QJsonValue fader : on.result.value(QStringLiteral("faders")).toArray())
+		{
+			drives.insert(fader[QStringLiteral("channel")].toString(), fader[QStringLiteral("drives")].toString());
+		}
+		QCOMPARE(drives.size(), static_cast<int>(Engine::mixer()->numChannels()));  // every fader, none collapsed
+		QCOMPARE(drives.value(ch(0)), QStringLiteral("volume"));
+		QCOMPARE(drives.value(ch(1)), QStringLiteral("send"));
+		QCOMPARE(drives.value(ch(2)), QStringLiteral("no_send"));
+		QCOMPARE(drives.value(ch(4)), QStringLiteral("volume"));
+		const ControlResult off = run(QStringLiteral("window.mixer_view"), {{QStringLiteral("sends_on_faders"), QString()}});
+		QCOMPARE(off.result.value(QStringLiteral("sends_on_faders_name")).toString(), QString());
+		for (const QJsonValue fader : off.result.value(QStringLiteral("faders")).toArray())
+		{
+			QCOMPARE(fader[QStringLiteral("drives")].toString(), QStringLiteral("volume"));
+		}
+		run(QStringLiteral("mixer.route_remove"), {{QStringLiteral("channel"), ch(1)}, {QStringLiteral("to"), ch(4)}});
 	}
 };
 

@@ -28,6 +28,7 @@
 
 #include <QCheckBox>
 #include <QFont>
+#include <QGraphicsOpacityEffect>
 #include <QGraphicsProxyWidget>
 #include <QGraphicsScene>
 #include <QGraphicsView>
@@ -157,6 +158,14 @@ MixerChannelView::MixerChannelView(QWidget* parent, MixerView* mixerView, int ch
 	m_panKnob->setToolTip(tr("Pan this channel (centre = both sides at unity)"));
 
 	m_fader = new Fader{&mixerChannel->m_volumeModel, tr("Fader %1").arg(channelIndex), this};
+	// 0.5.0 theme 6: what the fader drives while the faders show a return's sends (MixerOverlays.h).
+	m_faderTarget = new QLabel{this};
+	m_faderTarget->setObjectName(QStringLiteral("mixerFaderTarget"));
+	m_faderTarget->setAlignment(Qt::AlignHCenter);
+	m_faderTarget->setFont(tokens::font(tokens::TextRole::Caption));
+	m_faderTarget->hide();
+	m_noSendModel = new FloatModel{0.f, 0.f, 1.f, 0.001f, nullptr, tr("No send")};  // a send's range, at the bottom
+	m_noSendModel->setParent(this);
 
 	m_peakIndicator = new PeakIndicator(this);
 	connect(m_fader, &Fader::peakChanged, m_peakIndicator, &PeakIndicator::updatePeak);
@@ -183,6 +192,7 @@ MixerChannelView::MixerChannelView(QWidget* parent, MixerView* mixerView, int ch
 	m_insertList->setAlignment(Qt::AlignHCenter);
 	m_insertList->setWordWrap(true);
 	mainLayout->addWidget(m_insertList);
+	mainLayout->addWidget(m_faderTarget, 0, Qt::AlignHCenter);
 	mainLayout->addWidget(m_peakIndicator);
 	mainLayout->addWidget(m_fader, 1, Qt::AlignHCenter);
 
@@ -214,6 +224,61 @@ void MixerChannelView::setSendsShown(bool shown)
 		widget->setSizePolicy(policy);
 		if (!shown) { widget->setVisible(false); }
 	}
+}
+
+namespace
+{
+
+//! Theme 6: the line above a fader - its text, its spoken form (tooltip, accessible name) and colour.
+struct FaderLine
+{
+	QString caption;
+	QString spoken;
+	QColor colour;
+};
+
+//! The line for @a role with the faders on @a returnName's sends; none on the channel faders (empty name).
+FaderLine faderLineFor(mixeroverlays::FaderRole role, const QString& returnName)
+{
+	using mixeroverlays::FaderRole;
+	const tokens::Palette& pal = tokens::palette();
+	if (returnName.isEmpty()) { return {}; }
+	if (role == FaderRole::Send)
+	{
+		return {QString(QChar(0x2192)) + QLatin1Char(' ') + returnName,
+			MixerChannelView::tr("Fader: the send to %1").arg(returnName), pal.accent};
+	}
+	if (role == FaderRole::NoSend)
+	{
+		return {MixerChannelView::tr("No send"),
+			MixerChannelView::tr("No send to %1 on this channel - the channel menu's Send To makes one").arg(returnName),
+			pal.textMuted};
+	}
+	return {MixerChannelView::tr("Volume"), MixerChannelView::tr("Fader: this channel's volume (not a send)"), pal.text};
+}
+
+} // namespace
+
+void MixerChannelView::showFaderRole(mixeroverlays::FaderRole role, const QString& returnName)
+{
+	const bool noSend = role == mixeroverlays::FaderRole::NoSend;
+	m_fader->setEnabled(!noSend);
+	// Dimmed, so it reads as nothing to move; the effect exists only while it is (a null one deletes it).
+	if (noSend != (m_fader->graphicsEffect() != nullptr))
+	{
+		auto* dim = noSend ? new QGraphicsOpacityEffect{m_fader} : nullptr;
+		if (dim != nullptr) { dim->setOpacity(0.35); }
+		m_fader->setGraphicsEffect(dim);
+	}
+	const FaderLine line = faderLineFor(role, returnName);
+	m_faderTarget->setVisible(!line.caption.isEmpty());
+	if (m_fader->accessibleDescription() != line.spoken) { m_fader->setAccessibleDescription(line.spoken); }
+	const QString text = QFontMetrics{m_faderTarget->font()}.elidedText(line.caption, Qt::ElideRight, m_renameLineEdit->width());
+	if (m_faderTarget->text() == text && m_faderTarget->toolTip() == line.spoken) { return; }  // each set is announced
+	m_faderTarget->setStyleSheet(line.colour.isValid() ? QStringLiteral("color: %1;").arg(line.colour.name()) : QString());
+	m_faderTarget->setText(text);
+	m_faderTarget->setToolTip(line.spoken);
+	m_faderTarget->setAccessibleName(line.spoken);
 }
 
 void MixerChannelView::contextMenuEvent(QContextMenuEvent*)

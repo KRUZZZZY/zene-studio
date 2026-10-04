@@ -191,6 +191,18 @@ private slots:
 		}
 	}
 
+	//! 0.5.0 (themes 17 and 23): a keyboard focus ring is at least 2 px wide (WCAG 2.4.13), and outside accessible
+	//! mode the click targets keep the token's size - the one global zoom does every other sizing.
+	void theFocusRingIsStrongAndTargetsKeepTheirSize()
+	{
+		QVERIFY(tokens::focusRingWidth() >= 2.0);
+		QVERIFY(!tokens::accessibleMode());
+		QVERIFY(!tokens::reducedMotion());
+		QCOMPARE(tokens::targetFactor(), 1.0);
+		QCOMPARE(tokens::targetSize(), tokens::size::target);
+		QCOMPARE(tokens::font(tokens::TextRole::Body).pixelSize(), 12);  // text follows the zoom, not a second scale
+	}
+
 	void theStylesheetTemplateResolvesEveryToken()
 	{
 		const QString templ = tokens::styleSheetTemplate();

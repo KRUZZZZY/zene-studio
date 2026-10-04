@@ -7,11 +7,15 @@ Starts the REAL `zene` binary headless (its own throwaway config) and proves:
      refused unless forced (which moves the key), one control.undo restores, a set exports to a
      file and imports back, and reset gives the defaults back (WF-110/111);
   2. window.layout_*: a layout saves the view, applies again after a switch, is listed and
-     removed, and one undo brings a removed layout back (WF-091);
+     removed, and one undo brings a removed layout back (WF-091); a save says what it keeps and,
+     asked not to replace, refuses a name in use; the project remembers a layout of its own, saved
+     with it and put back when it opens, forgotten in one undo step (design theme 22);
   3. window.detach / attach: a panel floats in its own window and comes back (WF-092);
   4. window.header_*: a header button hides, a command button is added, undo restores (WF-116);
-  5. macro.*: a macro saves, runs (acknowledged, then polled) and adds what its steps add; a
-     step naming no command or a macro is refused (WF-114); a macro is recorded from what is done (ED-056);
+  5. workflow.* (the recorded command macros, renamed for design theme 19): a workflow saves, runs
+     (acknowledged, then polled) and adds what its steps add; a step naming no command or a workflow is
+     refused (WF-114); a workflow is recorded from what is done, and the recording is reported while it
+     lasts (ED-056); workflows are shared or kept with the project, as chosen, one undo step;
   6. arrangement.zoom / zoom_back / fit_tracks / set_tool and window.tool_menu (WF-094/095/108);
   7. session.pattern_list names the patterns a launcher cell can play (WF-054);
   8. the Lua sandbox refuses the customisation writers (they change the user's own config).
@@ -91,6 +95,54 @@ def check_layouts(session, recorder):
     recorder.check("removing a layout is one undo step", gone and back, "gone=%r back=%r" % (gone, back))
     missing = session.call("window.layout_apply", {"name": "no-such-layout"})
     recorder.check("an unknown layout is not_found", kind(missing) == "not_found", "reply=%r" % missing)
+    # Theme 22: a save says what it keeps, and the menu's Save (replace false) never overwrites silently.
+    first = session.result("window.layout_save", {"name": "l13-keep"})
+    kept = session.call("window.layout_save", {"name": "l13-keep", "replace": False})
+    replaced = session.result("window.layout_save", {"name": "l13-keep"})
+    recorder.check("a save lists what it keeps; asked not to replace, a name in use is refused; Replace replaces",
+                   "view" in (first.get("captures") or []) and first.get("max_layouts") == 32
+                   and kind(kept) == "refused" and replaced.get("replaced") is True,
+                   "first=%r kept=%r replaced=%r" % (first, kept, replaced))
+    session.result("window.layout_remove", {"name": "l13-keep"})
+
+
+def view_of(session):
+    return session.result("window.get_state").get("view")
+
+
+def check_project_layout(session, recorder, tmp):
+    none = session.call("window.layout_project_apply")
+    session.result("window.set_view", {"view": "mix"})
+    remembered = session.result("window.layout_project_save")
+    unchanged = session.result("window.layout_project_save")
+    session.result("window.set_view", {"view": "arrange"})
+    applied = session.result("window.layout_project_apply")
+    listed = session.result("window.layout_list")
+    recorder.check("the project remembers a layout of its own and puts it back",
+                   kind(none) == "not_found" and remembered.get("replaced") is False and unchanged.get("changed") is False
+                   and applied.get("view") == "mix" and listed.get("project_layout") is True,
+                   "none=%r remembered=%r unchanged=%r applied=%r listed=%r" % (none, remembered, unchanged, applied, listed))
+    path = os.path.join(tmp, "remembers-a-layout.mmp")
+    session.result("project.save", {"path": path})
+    session.result("window.set_view", {"view": "arrange"})
+    session.result("project.open", {"path": path})
+    view = None
+    for _ in range(50):
+        view = view_of(session)
+        if view == "mix":
+            break
+        time.sleep(0.1)
+    recorder.check("a project that remembers a layout gets it back when it opens", view == "mix", "view=%r" % view)
+    session.result("window.layout_project_clear")
+    cleared = session.result("window.layout_list").get("project_layout")
+    again = session.call("window.layout_project_clear")
+    session.result("control.undo")
+    restored = session.result("window.layout_list").get("project_layout")
+    recorder.check("forgetting it is one undo step; forgetting none is not_found",
+                   cleared is False and kind(again) == "not_found" and restored is True,
+                   "cleared=%r again=%r restored=%r" % (cleared, again, restored))
+    session.result("window.layout_project_clear")
+    session.result("window.set_view", {"view": "arrange"})
 
 
 def floating(session, panel_id):
@@ -144,42 +196,84 @@ def track_count(session):
     return session.result("track.list").get("count") or 0
 
 
-def check_macros(session, recorder):
+def check_workflows(session, recorder):
     before = track_count(session)
-    steps = [{"command": "track.add", "args": {"type": "instrument", "name": "macro one"}},
-             {"command": "track.add", "args": {"type": "sample", "name": "macro two"}}]
-    saved = session.call("macro.save", {"name": "two tracks", "steps": steps})
-    ran = session.result("macro.run", {"name": "two tracks"})
+    steps = [{"command": "track.add", "args": {"type": "instrument", "name": "workflow one"}},
+             {"command": "track.add", "args": {"type": "sample", "name": "workflow two"}}]
+    saved = session.call("workflow.save", {"name": "two tracks", "steps": steps})
+    ran = session.result("workflow.run", {"name": "two tracks"})
     status = {}
     for _ in range(50):
-        status = session.result("macro.status")
+        status = session.result("workflow.status")
         if status.get("state") == "done":
             break
         time.sleep(0.1)
-    recorder.check("a macro saves, runs and adds what its steps add",
+    recorder.check("a workflow saves, runs and adds what its steps add",
                    saved.get("ok") and ran.get("queued") == 2 and status.get("stopped_at") == -1
                    and track_count(session) == before + 2, "save=%r run=%r status=%r" % (saved, ran, status))
-    unknown = session.call("macro.save", {"name": "bad", "steps": [{"command": "no.such_command"}]})
-    nested = session.call("macro.save", {"name": "nest", "steps": [{"command": "macro.run", "args": {"name": "x"}}]})
-    recorder.check("a step naming no command, or a macro, is refused",
+    unknown = session.call("workflow.save", {"name": "bad", "steps": [{"command": "no.such_command"}]})
+    nested = session.call("workflow.save", {"name": "nest", "steps": [{"command": "workflow.run", "args": {"name": "x"}}]})
+    recorder.check("a step naming no command, or a workflow, is refused",
                    kind(unknown) == "invalid_args" and kind(nested) == "invalid_args", "unknown=%r nested=%r" % (unknown, nested))
-    listed = [m.get("name") for m in session.result("macro.list").get("macros") or []]
-    session.result("macro.remove", {"name": "two tracks"})
-    recorder.check("macro.list lists it and macro.remove forgets it",
-                   "two tracks" in listed and not session.result("macro.list").get("macros"), "listed=%r" % listed)
-    # 0.5.0 ED-056: what is done while recording becomes the macro's steps (not the undo in between).
-    session.result("macro.record_start", {"name": "recorded"})
+    listed = [m.get("name") for m in session.result("workflow.list").get("workflows") or []]
+    session.result("workflow.remove", {"name": "two tracks"})
+    recorder.check("workflow.list lists it and workflow.remove forgets it",
+                   "two tracks" in listed and not session.result("workflow.list").get("workflows"), "listed=%r" % listed)
+    gone = session.call("macro.list")
+    recorder.check("the old macro.* ids are gone (renamed workflow.*, never shipped)", kind(gone) == "not_found", "reply=%r" % gone)
+
+
+def check_workflow_recording(session, recorder):
+    # 0.5.0 ED-056: what is done while recording becomes the workflow's steps (not the undo in between).
+    idle = session.result("workflow.status").get("recording") or {}
+    started = session.result("workflow.record_start", {"name": "recorded"})
     session.result("track.add", {"type": "instrument", "name": "recorded one"})
     session.result("control.undo")
     session.result("track.add", {"type": "sample", "name": "recorded two"})
-    stopped = session.call("macro.record_stop")
-    recorded = [m for m in session.result("macro.list").get("macros") or [] if m.get("name") == "recorded"]
+    during = session.result("workflow.status").get("recording") or {}
+    # Theme 19: the recording state is visible while it lasts.
+    recorder.check("the recording is reported while it lasts, with its name and steps",
+                   idle.get("on") is False and started.get("recording") is True and during.get("on") is True
+                   and during.get("name") == "recorded" and during.get("steps") == 2,
+                   "idle=%r started=%r during=%r" % (idle, started, during))
+    stopped = session.call("workflow.record_stop")
+    recorded = [m for m in session.result("workflow.list").get("workflows") or [] if m.get("name") == "recorded"]
     steps = recorded[0].get("steps") if recorded else []
-    empty = session.call("macro.record_stop")
-    recorder.check("a recorded macro keeps what was done, not the undo",
+    empty = session.call("workflow.record_stop")
+    after = session.result("workflow.status").get("recording") or {}
+    recorder.check("a recorded workflow keeps what was done, not the undo",
                    stopped.get("ok") and len(steps) == 2 and all(s.get("command") == "track.add" for s in steps)
-                   and kind(empty) == "refused", "stop=%r steps=%r empty=%r" % (stopped, steps, empty))
-    session.result("macro.remove", {"name": "recorded"})
+                   and kind(empty) == "refused" and after.get("on") is False,
+                   "stop=%r steps=%r empty=%r after=%r" % (stopped, steps, empty, after))
+    session.result("workflow.remove", {"name": "recorded"})
+
+
+def workflow_names(session):
+    return [m.get("name") for m in session.result("workflow.list").get("workflows") or []]
+
+
+def check_workflow_scope(session, recorder):
+    step = [{"command": "track.add", "args": {"type": "sample", "name": "scoped"}}]
+    shared = session.result("workflow.save", {"name": "everywhere", "steps": step})
+    chosen = session.result("workflow.set_scope", {"scope": "project"})
+    empty_here = workflow_names(session)
+    kept = session.result("workflow.save", {"name": "this song", "steps": step})
+    listed = session.result("workflow.list")
+    recorder.check("kept with the project: a library of its own, the shared one untouched",
+                   shared.get("scope") == "shared" and chosen.get("changed") is True and "everywhere" not in empty_here
+                   and kept.get("scope") == "project" and listed.get("scope") == "project"
+                   and workflow_names(session) == ["this song"],
+                   "shared=%r chosen=%r here=%r kept=%r listed=%r" % (shared, chosen, empty_here, kept, listed))
+    again = session.result("workflow.set_scope", {"scope": "project"})
+    bad = session.call("workflow.set_scope", {"scope": "everywhere"})
+    recorder.check("choosing the scope in use changes nothing; an unknown scope is refused",
+                   again.get("changed") is False and kind(bad) == "invalid_args", "again=%r bad=%r" % (again, bad))
+    session.result("control.undo")  # the project workflow's save
+    session.result("control.undo")  # the scope
+    back = session.result("workflow.list")
+    recorder.check("one undo each: the save, then the scope back to shared with its library",
+                   back.get("scope") == "shared" and "everywhere" in workflow_names(session), "back=%r" % back)
+    session.result("workflow.remove", {"name": "everywhere"})
 
 
 def check_arranger_view(session, recorder):
@@ -234,13 +328,13 @@ def check_patterns(session, recorder):
 def check_lua_refuses(session, recorder):
     source = ("local r, err, kind = zene.command('shortcuts.reset')\n"
               "print('shortcuts ' .. tostring(kind))\n"
-              "local m, why, mk = zene.command('macro.list')\n"
-              "print('macro ' .. tostring(mk))\n")
+              "local m, why, mk = zene.command('workflow.list')\n"
+              "print('workflow ' .. tostring(mk))\n")
     ran = session.result("script.run", {"source": source})
     lines = ran.get("log") or ran.get("lines") or ran.get("output") or []
     text = "\n".join(lines) if isinstance(lines, list) else str(lines)
     recorder.check("scripts cannot write the user's customisations",
-                   "shortcuts refused" in text and "macro refused" in text, "log=%r" % ran)
+                   "shortcuts refused" in text and "workflow refused" in text, "log=%r" % ran)
 
 
 def main(argv):
@@ -258,7 +352,10 @@ def main(argv):
         check_layouts(session, recorder)
         check_floating(session, recorder)
         check_header(session, recorder)
-        check_macros(session, recorder)
+        check_project_layout(session, recorder, instance.tmp)
+        check_workflows(session, recorder)
+        check_workflow_recording(session, recorder)
+        check_workflow_scope(session, recorder)
         check_arranger_view(session, recorder)
         check_patterns(session, recorder)
         check_nudge_and_navigation(session, recorder)

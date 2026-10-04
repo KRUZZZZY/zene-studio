@@ -62,8 +62,15 @@ public:
 
 	/*! Whether the mutating command @a command with @a args would edit a locked track or clip; the
 	 *  reason in @a why. Always false when nothing is locked (the registry's fast path), and for the
-	 *  lock commands themselves. */
+	 *  lock commands themselves. 0.5.0 theme 2: a clip.move whose overlap mode would trim or fade a
+	 *  locked clip it lands on is refused too (arrangement::lockedUnder). */
 	static bool refuses(const QString& command, const QJsonObject& args, QString* why);
+
+	/*! 0.5.0 theme 2: called after every change to what is locked (a lock, an unlock, an undo of one,
+	 *  a load or a clear), so the interface can show it at once - the arranger's lock badges. One hook;
+	 *  nullptr (the default, and in a core test) calls nothing. UI thread. */
+	using ChangeHook = void (*)();
+	static void setChangeHook(ChangeHook hook);
 
 	QString elementName() const override { return QStringLiteral("edit-locks"); }
 	bool shouldPersist() const override { return !isEmpty(); }

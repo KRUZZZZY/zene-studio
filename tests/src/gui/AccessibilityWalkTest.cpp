@@ -40,9 +40,11 @@
  *  The windows that open on demand are walked too - an instrument track's window and a sample
  *  track's (every page of every nested tab), the settings and export dialogs - and since knobs
  *  take Tab focus (KnobKeyboardTest) they are walked with the rest; the second walk found 13
- *  more, all named. NOT walked: controls that still take no keyboard focus - the faders (the
- *  mixer drives its current channel's fader from the keyboard instead) and the LED buttons -
- *  and the dialogs not listed here (docs/KNOWN-LIMITATIONS.md). */
+ *  more, all named. Since 0.5.0 (theme 10) the faders, LCD numbers, model combo boxes and model
+ *  (LED and pixmap) buttons take Tab focus too and are walked with the rest; a custom control is
+ *  named by what it carries when it has no name set - its constructed name, its parameter's, its
+ *  tooltip (AccessibleWidgets.h). NOT walked: the dialogs not listed here
+ *  (docs/KNOWN-LIMITATIONS.md). */
 
 #include <QtTest>
 

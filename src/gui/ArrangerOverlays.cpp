@@ -32,17 +32,16 @@
 #include <QMouseEvent>
 #include <QScrollArea>
 #include <QPainter>
-#include <QPainterPath>
 
 #include "ArrangementEdits.h"
-#include "ArrangementSections.h"
+#include "ArrangerEditPreview.h"
+#include "ArrangerRulerLanes.h"
+#include "ClipLockFeedback.h"
 #include "ControlRegistry.h"
 #include "ControlVocabulary.h"
 #include "DesignTokens.h"
 #include "Engine.h"
 #include "Song.h"
-#include "TempoMap.h"
-#include "ProjectMarkers.h"
 #include "SongEditor.h"
 #include "TimeLineWidget.h"
 #include "TrackContentWidget.h"
@@ -50,106 +49,6 @@
 
 namespace lmms::gui
 {
-
-MarkerRulerOverlay::MarkerRulerOverlay(TimeLineWidget* ruler) :
-	QWidget(ruler),
-	m_ruler(ruler)
-{
-	setObjectName(QStringLiteral("markerRulerOverlay"));
-	setAttribute(Qt::WA_TransparentForMouseEvents);
-	setAttribute(Qt::WA_NoSystemBackground);
-	setGeometry(ruler->rect());
-	ruler->installEventFilter(this);
-	connect(&ProjectMarkers::instance(), &ProjectMarkers::changed, this, qOverload<>(&QWidget::update));
-	show();
-	raise();
-}
-
-bool MarkerRulerOverlay::eventFilter(QObject* watched, QEvent* event)
-{
-	if (watched == m_ruler && event->type() == QEvent::Resize) { setGeometry(m_ruler->rect()); }
-	if (watched == m_ruler && event->type() == QEvent::Paint) { update(); }
-	return QWidget::eventFilter(watched, event);
-}
-
-void MarkerRulerOverlay::paintTempo(QPainter& p)
-{
-	// ED-050: an active tempo map as a curve along the ruler's lower edge - holds flat, ramps
-	// slope - so a ramp or a jump is visible where it happens.
-	const TempoMap& map = Engine::getSong()->tempoMap().map();
-	if (!map.active() || map.empty()) { return; }
-	const int global = Engine::getSong()->getTempo();
-	int low = global;
-	int high = global;
-	for (const TempoMapEvent& event : map.all())
-	{
-		if (event.hasTempo) { low = std::min(low, event.tempo); high = std::max(high, event.tempo); }
-	}
-	const double x0 = m_ruler->markerX(TimePos(0));
-	const double perTick = (m_ruler->markerX(TimePos(TimePos::ticksPerBar())) - x0) / TimePos::ticksPerBar();
-	if (perTick <= 0.0) { return; }
-	constexpr int Band = 8;
-	QPolygonF curve;
-	for (int x = 0; x <= width(); x += 2)
-	{
-		const double tempo = map.exactTempoAtTick(static_cast<tick_t>(std::max(0.0, (x - x0) / perTick)), global);
-		const double y = height() - 1 - (high > low ? (tempo - low) / (high - low) : 0.5) * Band;
-		curve << QPointF(x, y);
-	}
-	p.setPen(QPen(tokens::palette().play, 1.25));
-	p.drawPolyline(curve);
-}
-
-namespace
-{
-
-//! ED-047: the song's sections as named bands along the ruler.
-void paintSections(QPainter& p, TimeLineWidget* ruler, int width, int height)
-{
-	const tokens::Palette& pal = tokens::palette();
-	for (const ArrangementSection& section : ArrangementSections::instance().sections())
-	{
-		const int left = std::max(0, ruler->markerX(TimePos(section.start)));
-		const int right = std::min(width, ruler->markerX(TimePos(section.end)));
-		if (right <= left) { continue; }
-		QColor band = section.color.isEmpty() ? pal.selected : QColor(section.color);
-		band.setAlpha(90);
-		p.fillRect(QRect(left, 0, right - left, height / 2), band);
-		p.setPen(pal.text);
-		p.drawText(QRect(left + 3, 0, right - left - 4, height / 2), Qt::AlignVCenter | Qt::AlignLeft, section.name);
-	}
-}
-
-} // namespace
-
-void MarkerRulerOverlay::paintEvent(QPaintEvent*)
-{
-	m_drawn.clear();
-	if (m_ruler.isNull()) { return; }
-	const tokens::Palette& pal = tokens::palette();
-	QPainter p(this);
-	p.setRenderHint(QPainter::Antialiasing);
-	paintTempo(p);
-	p.setFont(tokens::font(tokens::TextRole::Small));
-	paintSections(p, m_ruler, width(), height());
-	for (const Marker& marker : ProjectMarkers::instance().markers())
-	{
-		const int x = m_ruler->markerX(TimePos(marker.tick));
-		if (x < 0 || x >= width()) { continue; }
-		const QColor colour = marker.color.isEmpty() ? pal.accent : QColor(marker.color);
-		QPainterPath flag;
-		flag.moveTo(x, 0);
-		flag.lineTo(x + 7, 0);
-		flag.lineTo(x, 7);
-		flag.closeSubpath();
-		p.fillPath(flag, colour);
-		p.setPen(QPen(colour, 1));
-		p.drawLine(x, 0, x, height());
-		p.setPen(pal.text);
-		p.drawText(QPoint(x + 9, height() - 3), marker.name);
-		m_drawn.append(x);
-	}
-}
 
 ArrangerRangeOverlay::ArrangerRangeOverlay(SongEditor* editor) :
 	QWidget(editor->contentWidget()->viewport()),
@@ -358,8 +257,10 @@ QString currentArrangerTool(SongEditor* editor)
 void installArrangerOverlays(SongEditor* editor)
 {
 	if (editor == nullptr || editor->timeLine() == nullptr) { return; }
-	if (editor->timeLine()->findChild<MarkerRulerOverlay*>() == nullptr) { new MarkerRulerOverlay(editor->timeLine()); }
+	if (editor->findChild<ArrangerRulerLanes*>() == nullptr) { new ArrangerRulerLanes(editor); }
 	if (editor->findChild<ArrangerRangeOverlay*>() == nullptr) { new ArrangerRangeOverlay(editor); }
+	if (editor->findChild<ArrangerEditPreview*>() == nullptr) { new ArrangerEditPreview(editor); }
+	cliplocks::install();
 }
 
 } // namespace lmms::gui

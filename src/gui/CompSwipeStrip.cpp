@@ -33,6 +33,7 @@
 #include "ControlEdit.h"
 #include "ControlRegistry.h"
 #include "DesignTokens.h"
+#include "MusicalTime.h"
 #include "TimePos.h"
 #include "Track.h"
 
@@ -165,7 +166,9 @@ void CompSwipeStrip::mouseReleaseEvent(QMouseEvent* event)
 	if (end <= begin) { return; }
 	const ControlResult result = ControlRegistry::instance()->invoke(QStringLiteral("comp.select"),
 		{{QStringLiteral("track"), m_trackId}, {QStringLiteral("begin"), begin}, {QStringLiteral("end"), end}, {QStringLiteral("lane"), lane}});
-	emit ran(result.ok ? tr("Comped %1-%2 on lane %3").arg(begin).arg(end).arg(lane) : result.errorMessage);
+	// Theme 7: the range in the time format (bars|beats by default), not raw ticks.
+	emit ran(result.ok ? tr("Comped %1 to %2 on lane %3").arg(musicaltime::positionText(begin), musicaltime::positionText(end)).arg(lane)
+		: result.errorMessage);
 }
 
 void CompSwipeStrip::mouseDoubleClickEvent(QMouseEvent* event)

@@ -842,6 +842,7 @@ set(LMMS_SRCS
 	core/ProjectRevisions.cpp
 	core/ProjectVersion.cpp
 	core/RecordOptions.cpp
+	core/MusicalTime.cpp
 	core/RemoteControls.cpp
 	core/RemotePlugin.cpp
 	core/Rack.cpp
@@ -959,6 +960,7 @@ set(LMMS_SRCS
 	core/ControlCommandsNoteAcross.cpp
 	core/ControlCommandsNoteCurves.cpp
 	core/ControlCommandsNoteShape.cpp
+	core/ControlCommandsNoteClipboard.cpp
 	core/ControlCommandsNoteTools.cpp
 	core/ControlCommandsNoteMoves.cpp
 	core/ControlCommandsNoteHarmony.cpp
@@ -1016,6 +1018,7 @@ set(LMMS_SRCS
 	core/TrackVersions.cpp
 	core/ControlCommandsTrackVersions.cpp
 	core/ProjectSectionRegistry.cpp
+	core/ProjectWorkspace.cpp
 	core/ScoreExport.cpp
 	core/ControlCommandsScoreExport.cpp
 	core/AutomationLatency.cpp

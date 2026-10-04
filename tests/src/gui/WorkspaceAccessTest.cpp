@@ -23,17 +23,21 @@
  */
 /*! 0.5.0 W3 L13 / L14, the interface side: the light palette holds every declared pair at AA (WF-118);
  *  a theme colour override is one undo step, names the pairs it breaks and round-trips through a file,
- *  and the Theme Colours list runs it (WF-117); the layout density scales the stylesheet's metrics and is
- *  a window.appearance field (WF-134); Help > Ask shows app.ask's answers (WF-142), What's New the shipped notes
+ *  and the Theme Colours list runs it (WF-117); accessible mode scales the stylesheet's metrics and is a
+ *  window.appearance field that the old density values still set (WF-134, 0.5.0 themes 17/23); Help > Ask shows app.ask's answers (WF-142), What's New the shipped notes
  *  (WF-141), the large clock the play position (WF-101), the tuner listens only while open (WF-147); the
- *  accessibility walk names nameless controls from what they carry (WF-129); the cross-hair is a preference with
+ *  accessibility walk names nameless controls from what they carry (WF-129) and reports controls with no role or
+ *  no value (theme 17); the cross-hair is a preference with
  *  one undo step and follows it on the arranger (WF-109); the window verbs refuse, typed, without a main window. */
 
 #include <QtTest>
 
+#include <cmath>
+
 #include <QJsonArray>
 #include <QLabel>
 #include <QPushButton>
+#include <QSlider>
 #include <QTemporaryDir>
 #include <QToolButton>
 
@@ -46,6 +50,7 @@
 #include "ControlRegistry.h"
 #include "DesignTokens.h"
 #include "Engine.h"
+#include "Knob.h"
 #include "WcagContrast.h"
 #include "WorkspaceWindows.h"
 
@@ -172,7 +177,7 @@ private slots:
 		QVERIFY(tokens::themeOverrides().isEmpty());
 	}
 
-	void theDensityScalesTheStylesheet()
+	void accessibleModeScalesTheStylesheet()
 	{
 		const QString css = QStringLiteral("QPushButton { padding: 5px 10px; min-height: 18px; color: #ffffff; border-width: 1px; }");
 		QCOMPARE(tokens::scaleMetrics(css, 1.0), css);
@@ -180,20 +185,72 @@ private slots:
 		QVERIFY(touch.contains(QStringLiteral("padding: 10px 20px;")));
 		QVERIFY(touch.contains(QStringLiteral("min-height: 36px;")));
 		QVERIFY(touch.contains(QStringLiteral("border-width: 1px;")));
-		QCOMPARE(appearance::densityFactor(QStringLiteral("standard")), 1.0);
-		QVERIFY(appearance::densityFactor(QStringLiteral("touch")) > appearance::densityFactor(QStringLiteral("comfortable")));
+		QVERIFY(appearance::accessibleTargetFactor > 1.0);
+		QCOMPARE(static_cast<int>(std::lround(tokens::size::target * appearance::accessibleTargetFactor)), 32);
 		QVERIFY(tokens::targetSize() >= tokens::size::target);
+		// Accessible mode's own rules thicken every focusable border and ring the controls the base rules leave bare.
+		QStringList unknown;
+		const QString rules = tokens::resolveStyleSheet(tokens::accessibleModeRules(), &unknown);
+		QVERIFY2(unknown.isEmpty(), qPrintable(unknown.join(QStringLiteral(", "))));
+		QVERIFY(rules.contains(QStringLiteral("border-width: 3px")));
+		QVERIFY(rules.contains(QStringLiteral("QCheckBox::indicator:focus")));
 	}
 
-	void theDensityIsAnAppearanceField()
+	void accessibleModeIsAnAppearanceField()
+	{
+		QVERIFY(!appearance::options().accessible);
+		const QString chosen = appearance::options().palette;
+		const ControlResult set = run(QStringLiteral("window.appearance"), {{QStringLiteral("accessible"), true}});
+		QVERIFY2(set.ok, qPrintable(set.errorMessage));
+		QVERIFY(appearance::options().accessible);
+		QVERIFY(set.result.value(QStringLiteral("accessible")).toBool());
+		// Accessible mode draws with the high-contrast palette whatever the chosen one is, and keeps the choice.
+		QCOMPARE(appearance::options().palette, chosen);
+		QCOMPARE(appearance::effectivePalette(appearance::options()), QStringLiteral("high_contrast"));
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
+		QVERIFY(!appearance::options().accessible);
+		QCOMPARE(appearance::effectivePalette(appearance::options()), chosen);
+	}
+
+	//! The W3 density values still work: comfortable and touch turn accessible mode on, standard turns it off,
+	//! and the reply still says a density.
+	void theOldDensityValuesSetAccessibleMode()
 	{
 		const ControlResult set = run(QStringLiteral("window.appearance"), {{QStringLiteral("density"), QStringLiteral("comfortable")}});
 		QVERIFY2(set.ok, qPrintable(set.errorMessage));
-		QCOMPARE(appearance::options().density, QStringLiteral("comfortable"));
+		QVERIFY(appearance::options().accessible);
 		QCOMPARE(set.result.value(QStringLiteral("density")).toString(), QStringLiteral("comfortable"));
 		QVERIFY(!run(QStringLiteral("window.appearance"), {{QStringLiteral("density"), QStringLiteral("cramped")}}).ok);
 		QVERIFY(run(QStringLiteral("control.undo")).ok);
-		QCOMPARE(appearance::options().density, QStringLiteral("standard"));
+		QVERIFY(!appearance::options().accessible);
+		QVERIFY(run(QStringLiteral("window.appearance"), {{QStringLiteral("density"), QStringLiteral("touch")}}).ok);
+		QVERIFY(appearance::options().accessible);
+		const ControlResult off = run(QStringLiteral("window.appearance"), {{QStringLiteral("density"), QStringLiteral("standard")}});
+		QVERIFY(!appearance::options().accessible);
+		QCOMPARE(off.result.value(QStringLiteral("density")).toString(), QStringLiteral("standard"));
+		// An explicit 'accessible' wins over a density sent beside it.
+		QVERIFY(run(QStringLiteral("window.appearance"), {{QStringLiteral("density"), QStringLiteral("touch")},
+			{QStringLiteral("accessible"), false}}).ok);
+		QVERIFY(!appearance::options().accessible);
+		// A config written before accessible mode reads its density the same way.
+		ConfigManager::inst()->setValue(QStringLiteral("ui"), QStringLiteral("density"), QStringLiteral("touch"));
+		QVERIFY(appearance::options().accessible);
+		ConfigManager::inst()->setValue(QStringLiteral("ui"), QStringLiteral("density"), QStringLiteral("standard"));
+	}
+
+	//! One global zoom is the sizing model: the old text-size field asks for the zoom, and reads back as 1.
+	void theTextSizeFieldSetsTheOneZoom()
+	{
+		const ControlResult set = run(QStringLiteral("window.appearance"), {{QStringLiteral("font_scale"), 1.25}});
+		QVERIFY2(set.ok, qPrintable(set.errorMessage));
+		QCOMPARE(appearance::options().scale, 1.25);
+		QCOMPARE(set.result.value(QStringLiteral("font_scale")).toDouble(), 1.0);
+		// 'scale' wins when both are given.
+		QVERIFY(run(QStringLiteral("window.appearance"), {{QStringLiteral("scale"), 1.5}, {QStringLiteral("font_scale"), 2.0}}).ok);
+		QCOMPARE(appearance::options().scale, 1.5);
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
+		QCOMPARE(appearance::options().scale, 1.0);
 	}
 
 	void askShowsTheAnswers()
@@ -252,6 +309,41 @@ private slots:
 		QCOMPARE(play->accessibleName(), QStringLiteral("Play from the cursor"));
 		QCOMPARE(save->accessibleName(), QStringLiteral("Save"));
 		QVERIFY(bare->accessibleName().isEmpty());
+	}
+
+	//! Theme 17: the walk checks what the accessibility bridge is told - a control announced as a bare client has
+	//! no role, and a control that shows a value must give it - and counts the controls Tab cannot reach.
+	void theWalkReportsRolesAndValues()
+	{
+		//! A parameter control with no description of its own: a plain widget the bridge calls a client.
+		struct BareDial : public QWidget, public IntModelView
+		{
+			explicit BareDial(QWidget* parent) : QWidget(parent), IntModelView(new IntModel(3, 0, 9, nullptr, QStringLiteral("Bare"), true), this)
+			{
+				setFocusPolicy(Qt::TabFocus);
+			}
+		};
+		FloatModel cutoff(440.f, 20.f, 20000.f, 1.f, nullptr, QStringLiteral("Cutoff"));
+		QWidget root;
+		auto* knob = new Knob(KnobType::Bright26, &root);
+		knob->setModel(&cutoff);
+		new QSlider(Qt::Horizontal, &root);
+		auto* bare = new BareDial(&root);
+		bare->setObjectName(QStringLiteral("bareDial"));
+		auto* flat = new QToolButton(&root);
+		flat->setToolTip(QStringLiteral("Flat"));
+		flat->setFocusPolicy(Qt::NoFocus);
+		root.show();
+		const QJsonObject looked = auditAccessibility(&root, false);
+		QCOMPARE(looked.value(QStringLiteral("checked")).toInt(), 4);
+		QCOMPARE(looked.value(QStringLiteral("roleless_count")).toInt(), 1);
+		const QJsonObject roleless = looked.value(QStringLiteral("roleless")).toArray().first().toObject();
+		QCOMPARE(roleless.value(QStringLiteral("object")).toString(), QStringLiteral("bareDial"));
+		QCOMPARE(roleless.value(QStringLiteral("role")).toString(), QStringLiteral("Client"));
+		QCOMPARE(looked.value(QStringLiteral("valueless_count")).toInt(), 1);  // the knob and the slider say theirs
+		QCOMPARE(looked.value(QStringLiteral("valueless")).toArray().first().toObject().value(QStringLiteral("object")).toString(),
+			QStringLiteral("bareDial"));
+		QCOMPARE(looked.value(QStringLiteral("unreachable_count")).toInt(), 1);  // the flat button
 	}
 
 	void theCrosshairIsAPreference()

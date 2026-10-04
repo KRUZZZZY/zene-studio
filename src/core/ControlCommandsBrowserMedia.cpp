@@ -28,7 +28,8 @@
  *    to the song - stretched to the song's tempo (WSOLA, pitch kept) and/or moved to its key - using the
  *    tempo and key the import detection finds in the file. The audio is prepared here, on the control
  *    thread, and handed to the engine as one finished buffer; stopping is a generation number the play
- *    handle reads (an atomic), so the audio thread never waits, allocates or frees for it. */
+ *    handle reads (an atomic), so the audio thread never waits, allocates or frees for it;
+ *  - browser.load (theme 3, 0.5.0 UX): what Enter on a result does - the file on a new track, one undo step. */
 
 #include <algorithm>
 #include <atomic>
@@ -53,13 +54,20 @@
 #include "ConfigManager.h"
 #include "ControlBrowserSupport.h"
 #include "ControlCommandDef.h"
+#include "ControlEdit.h"
 #include "ControlRegistry.h"
 #include "ControlRegistryGroups.h"
 #include "ControlScaleShared.h"
+#include "ControlTrackCreation.h"
 #include "ControlVocabulary.h"
+#include "DataFile.h"
 #include "Engine.h"
 #include "ImportDetection.h"
+#include "Instrument.h"
+#include "InstrumentTrack.h"
+#include "PluginFactory.h"
 #include "Sample.h"
+#include "SampleClip.h"
 #include "SampleDecoder.h"
 #include "SamplePlayHandle.h"
 #include "Song.h"
@@ -257,6 +265,70 @@ ControlResult previewStop(const QJsonObject&)
 	return ControlResult::success({{QStringLiteral("stopped"), true}});
 }
 
+// ---------------------------------------------------------------------------
+// browser.load
+// ---------------------------------------------------------------------------
+
+//! A new sample track playing @a path from the song's start (the file lists' Shift+Enter).
+Track* loadAsSampleTrack(const QString& path)
+{
+	Track* track = Track::create(Track::Type::Sample, Engine::getSong());
+	if (track == nullptr) { return nullptr; }
+	if (auto* clip = dynamic_cast<SampleClip*>(track->createClip(TimePos(0)))) { clip->setSampleFile(path); }
+	return track;
+}
+
+//! A new instrument track holding @a path: an .xpf preset as the track's settings, any other file in the
+//! instrument that opens its extension (a sample in AudioFileProcessor, an .xiz in ZynAddSubFX) - the file
+//! lists' Enter (FileBrowserTreeWidget::handleFile). Sets @a error and builds nothing when no instrument opens it.
+Track* loadAsInstrument(const QString& path, ControlResult* error)
+{
+	const QString ext = QFileInfo(path).suffix().toLower();
+	const PluginFactory::PluginInfoAndKey plugin = getPluginFactory()->pluginSupportingExtension(ext);
+	if (ext != QLatin1String("xpf") && plugin.isNull())
+	{
+		*error = ControlResult::failure(ControlErrorKind::Requires, QStringLiteral("no instrument in this build opens .%1 files").arg(ext));
+		return nullptr;
+	}
+	auto* track = dynamic_cast<InstrumentTrack*>(Track::create(Track::Type::Instrument, Engine::getSong()));
+	if (track == nullptr) { return nullptr; }
+	if (ext == QLatin1String("xpf"))
+	{
+		track->replaceInstrument(DataFile(path));
+		return track;
+	}
+	if (Instrument* instrument = track->loadInstrument(plugin.info.name(), &plugin.key)) { instrument->loadFile(path); }
+	return track;
+}
+
+ControlResult load(const QJsonObject& args)
+{
+	QString path;
+	ControlResult error;
+	if (!readBrowserFileArgument(args, &path, &error)) { return error; }
+	const BrowserKind kind = browserKindForPath(path);
+	if (kind != BrowserKind::Audio && kind != BrowserKind::Preset)
+	{
+		return ControlResult::failure(ControlErrorKind::Refused, QStringLiteral("browser.load takes an audio file or a preset; %1 is a %2 "
+			"(project.open opens a project, project.import imports a MIDI file)").arg(path, browserKindName(kind)));
+	}
+	const bool sampleTrack = args.value(QStringLiteral("as")).toString() == QLatin1String("sample_track");
+	if (sampleTrack && kind != BrowserKind::Audio)
+	{
+		return ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("only an audio file loads as a sample track"));
+	}
+	error = ControlResult::failure(ControlErrorKind::Refused, QStringLiteral("no track could be made"));  // loadAsInstrument may say why
+	Track* track = sampleTrack ? loadAsSampleTrack(path) : loadAsInstrument(path, &error);
+	if (track == nullptr) { return error; }
+	recordCreatedTrack(track);  // one undo step removes the track; redo builds it again (ControlTrackCreation.h)
+	Engine::getSong()->setModified();
+	QJsonObject result{{QStringLiteral("path"), path}, {QStringLiteral("kind"), browserKindName(kind)}, {QStringLiteral("track"), trackIdOf(track)},
+		{QStringLiteral("as"), sampleTrack ? QStringLiteral("sample_track") : QStringLiteral("instrument")}};
+	result.insert(QStringLiteral("__transaction"), transactionPayload({{QStringLiteral("path"), path}}, QStringLiteral("control.undo"), {}, true,
+		QStringLiteral("action checkpoint: the recorded undo step removes the created track")));
+	return ControlResult::success(result);
+}
+
 void add(ControlRegistry& registry, const char* verb, const QString& description, const QJsonObject& args,
 	const QStringList& required, ControlResult (*handler)(const QJsonObject&))
 {
@@ -280,6 +352,14 @@ void registerBrowserMediaCommands(ControlRegistry& registry)
 		{{QStringLiteral("path"), stringProperty()}, {QStringLiteral("match"), enumProperty({QStringLiteral("none"), QStringLiteral("tempo"),
 			QStringLiteral("key"), QStringLiteral("both")})}, {QStringLiteral("key"), integerProperty(0, 11)}}, {QStringLiteral("path")}, preview);
 	add(registry, "preview_stop", QStringLiteral("Stop the browser's preview."), {}, {}, previewStop);
+	// Theme 3 (0.5.0 UX): what Enter on a browser result does.
+	control::defineCommandWithSchema(registry, QStringLiteral("browser.load"), QStringLiteral("Load the audio file or preset 'path' "
+		"onto a new track - what Enter does on a browser result: a preset (.xpf) becomes the new instrument track's settings, any "
+		"other file opens in the instrument that takes its extension (a sample in AudioFileProcessor). 'as' sample_track puts an "
+		"audio file on a new sample track instead (Shift+Enter). A project or MIDI file is refused: project.open and "
+		"project.import take those. One undo step removes the track."),
+		objectSchema({{QStringLiteral("path"), stringProperty()}, {QStringLiteral("as"), enumProperty({QStringLiteral("instrument"),
+			QStringLiteral("sample_track")})}}, QJsonArray{QStringLiteral("path")}), true, load);
 }
 
 } // namespace lmms

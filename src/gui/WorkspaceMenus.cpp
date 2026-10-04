@@ -119,7 +119,13 @@ void populateCustomiseExtras(QMenu* menu)
 	menu->addSeparator();
 	QMenu* theme = menu->addMenu(QObject::tr("Theme"));
 	choices(theme, QObject::tr("Palette"), QStringLiteral("window.appearance"), QStringLiteral("palette"));
-	choices(theme, QObject::tr("Layout Density"), QStringLiteral("window.appearance"), QStringLiteral("density"));
+	// 0.5.0 UX decision (theme 23): one global zoom sizes everything; accessible mode replaces the density presets.
+	QMenu* zoom = theme->addMenu(QObject::tr("Interface Zoom"));
+	for (const int percent : {75, 100, 125, 150, 175, 200})
+	{
+		run(zoom, QObject::tr("%1%").arg(percent), QStringLiteral("window.appearance"), {{QStringLiteral("scale"), percent / 100.0}});
+	}
+	choices(theme, QObject::tr("Accessible Mode"), QStringLiteral("window.appearance"), QStringLiteral("accessible"));
 	list(theme, QObject::tr("Colours..."), CommandLists::themeColors);
 	run(theme, QObject::tr("Export Theme..."), QStringLiteral("theme.export"), {}, true);
 	run(theme, QObject::tr("Import Theme..."), QStringLiteral("theme.import"), {}, true);

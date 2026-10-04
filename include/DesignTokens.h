@@ -137,7 +137,7 @@ enum class TextRole
 };
 LMMS_EXPORT QFont font(TextRole role);
 //! 0.5.0 L14 (WF-130): the palette by name - dark, high_contrast or light (Appearance.h); palette() is the
-//! chosen one with the user's theme overrides (themeOverrides()) put on it.
+//! chosen one (high_contrast in accessible mode) with the user's theme overrides (themeOverrides()) put on it.
 LMMS_EXPORT Palette paletteNamed(const QString& name);
 
 //! 0.5.0 W3 (WF-117 theme editing): the colour roles' names - the stylesheet's @tokens, theme.set_token's names.
@@ -150,14 +150,23 @@ LMMS_EXPORT Palette withOverrides(Palette base, const QJsonObject& colors, QStri
 //! The user's colour overrides, {role: "#rrggbb"} (config ui/theme, written by theme.set_token / theme.import).
 LMMS_EXPORT QJsonObject themeOverrides();
 
-//! 0.5.0 W3 (WF-134 / WF-133): the layout density's factor (Appearance.h) - 1 standard, 1.35 comfortable,
-//! 1.8 touch - read once, like the palette.
-LMMS_EXPORT double densityFactor();
-//! A clickable target's side at that density: size::target scaled, never below it.
+//! 0.5.0 UX decision (themes 17 and 23): whether accessible mode is on (Appearance.h) - read once, like the palette.
+LMMS_EXPORT bool accessibleMode();
+//! Accessible mode's reduced motion: no animated menus, tooltips, docks or smooth scrolling.
+LMMS_EXPORT bool reducedMotion();
+//! A keyboard focus ring's width in device-independent pixels: 2 (WCAG 2.4.13's minimum), 3 in accessible mode.
+LMMS_EXPORT qreal focusRingWidth();
+//! How much accessible mode enlarges click targets and paddings: 1, or Appearance's accessibleTargetFactor
+//! (it replaces the W3 density presets; the one global zoom does all other sizing).
+LMMS_EXPORT double targetFactor();
+//! A clickable target's side: size::target times targetFactor(), never below it.
 LMMS_EXPORT int targetSize();
 //! @a css with every length of its padding, min-height and min-width declarations scaled by @a factor
-//! (the density's stylesheet; exposed for the test).
+//! (accessible mode's stylesheet; exposed for the test).
 LMMS_EXPORT QString scaleMetrics(const QString& css, double factor);
+//! The rules accessible mode adds to the stylesheet: thick borders on every bordered control, so the focus ring
+//! (the border's colour) is strong, and focus rings on check boxes, radio buttons and lists (exposed for the test).
+LMMS_EXPORT QString accessibleModeRules();
 //! The interface's one typeface (Inter, SIL OFL 1.1, compiled in - data/fonts/OFL.txt); its
 //! faces are registered on first use. "sans-serif" if the resource could not be read.
 LMMS_EXPORT QString family();
@@ -186,7 +195,8 @@ LMMS_EXPORT QColor trackColor(int index);
 LMMS_EXPORT int trackColorCount();
 
 //! The interface's stylesheet: data/themes/zene/zene.qss (compiled in as :/zene/zene.qss) with
-//! every @token resolved from palette(). It replaces the inherited theme's style.css for the
+//! every @token resolved from palette() - in accessible mode with accessibleModeRules() after it and its
+//! metrics scaled by targetFactor(). It replaces the inherited theme's style.css for the
 //! default theme, covering the stock Qt widgets and every inherited editor's colour properties.
 LMMS_EXPORT QString applicationStyleSheet();
 //! The unresolved template, and the resolver (exposed for DesignTokensTest).

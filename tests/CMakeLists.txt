@@ -705,6 +705,8 @@ set(LMMS_TESTS
 	# command and one undo step - and note.edit's whole-batch validation.
 	src/gui/NoteGridTest.cpp
 	src/gui/NoteEditorTest.cpp
+	# 0.5.0 theme 1: the note editor follows FL Studio's piano roll.
+	src/gui/NoteEditorFlTest.cpp
 	# 0.5.0 lane 3: the shell selection, the Inspector and the Device panel's cards and
 	# modulators over a real engine (the build's plugin modules).
 	src/gui/DevicePanelTest.cpp
@@ -726,6 +728,10 @@ set(LMMS_TESTS
 	src/gui/AutomationModeMenuTest.cpp
 	# BUGS_FOUND 11.12: a removed VCA group's strip never paints its freed fader model.
 	src/gui/VcaStripLifetimeTest.cpp
+	# 0.5.0 theme 6: sends on faders - the banner names the return, every fader labelled, "No send" faders dimmed in place.
+	src/gui/MixerSendsOnFadersTest.cpp
+	# 0.5.0 themes 2/9: ruler lanes, anchored zoom, the drag preview, locked clips.
+	src/gui/ArrangerTimelineTest.cpp
 	# M3: folders from the interface - make one, move a track in, collapse, pin, take it out.
 	src/gui/TrackFolderMenuTest.cpp
 	# Edit > Undo History: lists the record, undoes and redoes through the registry.
@@ -1299,6 +1305,9 @@ set_tests_properties(AccessibilityWalkTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFO
 set_tests_properties(KnobKeyboardTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(AutomationModeMenuTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(VcaStripLifetimeTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+set_tests_properties(NoteEditorFlTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+set_tests_properties(MixerSendsOnFadersTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+set_tests_properties(ArrangerTimelineTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(TrackFolderMenuTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(UndoHistoryPanelTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(ExportQualityControlsTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")

@@ -22,11 +22,14 @@
  *
  */
 
+#include <algorithm>
+#include <functional>
 #include <vector>
 
 #include <QAction>
 #include <QHBoxLayout>
 #include <QJsonArray>
+#include <QKeySequence>
 #include <QMenu>
 
 #include "Accessibility.h"
@@ -139,27 +142,39 @@ void fillPlayMenus(QMenu* passes, QMenu* articulations, const QString& clip, con
 	if (map.empty()) { articulations->addAction(tr("(Track > Articulations... defines them)"))->setEnabled(false); }
 }
 
-//! 0.5.0 L07: a clicked note's length (ED-073) and the audio drawn behind the notes (ED-081).
-void fillNewNoteMenu(QMenu* menu, const NoteEditorState& state)
+//! 0.5.0 FL model: the clipboard verbs and Delete, each one command over the scope (the keys Ctrl+C, Ctrl+X,
+//! Ctrl+V, Ctrl+B and Delete do the same in the note area).
+void fillEditMenu(QMenu* menu, const QJsonObject& scoped, const QJsonArray& selected, int grid)
 {
-	const auto set = [](const QJsonObject& values) {
-		QJsonObject args = values;
-		args.insert(QStringLiteral("reveal"), false);
-		return [args]() { return CommandCall{QStringLiteral("window.note_editor_set"), args, {}, {}, false}; };
+	const auto now = [](const char* id, const QJsonObject& args) {
+		return [id, args]() { return CommandCall{QLatin1String(id), args, {}, {}, false}; };
 	};
-	const auto tr = [](const char* text) { return NoteEditor::tr(text); };
-	const struct { const char* label; int ticks; } lengths[] = {{"Last Drawn", 0}, {"1/32", 6}, {"1/16", 12}, {"1/8", 24},
-		{"1/4", 48}, {"1/2", 96}, {"1/1", 192}};
-	QMenu* length = menu->addMenu(tr("New Note Length"));
-	for (const auto& choice : lengths)
-	{
-		QAction* action = addCommandAction(length, tr(choice.label), QStringLiteral("window.note_editor_set"),
-			set({{QStringLiteral("new_length"), choice.ticks}}));
-		action->setCheckable(true);
-		action->setChecked(state.newLength == choice.ticks);
-	}
-	QAction* behind = addCommandAction(menu, tr("Audio Behind the Notes"), QStringLiteral("window.note_editor_set"),
-		set({{QStringLiteral("audio_behind"), state.audioBehind.isEmpty() ? QStringLiteral("auto") : QString()}}));
+	const auto label = [](const char* text, const QKeySequence& keys) {
+		return NoteEditor::tr(text) + QLatin1Char('\t') + keys.toString(QKeySequence::NativeText);
+	};
+	const QJsonObject where{{QStringLiteral("clip"), scoped.value(QStringLiteral("clip"))}};
+	addCommandAction(menu, label("Copy", QKeySequence::Copy), QStringLiteral("note.copy"), now("note.copy", scoped));
+	addCommandAction(menu, label("Cut", QKeySequence::Cut), QStringLiteral("note.cut"), now("note.cut", scoped));
+	addCommandAction(menu, label("Paste", QKeySequence::Paste), QStringLiteral("note.paste"), now("note.paste", where));
+	addCommandAction(menu, label("Duplicate", QKeySequence(Qt::CTRL | Qt::Key_B)), QStringLiteral("note.duplicate"),
+		now("note.duplicate", merged(scoped, {{QStringLiteral("grid"), std::max(1, grid)}})));
+	addCommandAction(menu, label("Delete", QKeySequence(Qt::Key_Delete)), QStringLiteral("note.remove_many"),
+		now("note.remove_many", merged(where, {{QStringLiteral("notes"), selected}})))->setEnabled(!selected.isEmpty());
+}
+
+//! A window.note_editor_set call with @a values that leaves the panel where it is.
+std::function<CommandCall()> viewSet(const QJsonObject& values)
+{
+	QJsonObject args = values;
+	args.insert(QStringLiteral("reveal"), false);
+	return [args]() { return CommandCall{QStringLiteral("window.note_editor_set"), args, {}, {}, false}; };
+}
+
+//! 0.5.0 L07: the audio drawn behind the notes (ED-081).
+void fillAudioBehind(QMenu* menu, const NoteEditorState& state)
+{
+	QAction* behind = addCommandAction(menu, NoteEditor::tr("Audio Behind the Notes"), QStringLiteral("window.note_editor_set"),
+		viewSet({{QStringLiteral("audio_behind"), state.audioBehind.isEmpty() ? QStringLiteral("auto") : QString()}}));
 	behind->setCheckable(true);
 	behind->setChecked(!state.audioBehind.isEmpty());
 }
@@ -211,6 +226,9 @@ void NoteEditor::fillNotesMenu(QMenu* menu)
 	menu->addSeparator();
 	const QJsonObject where{{QStringLiteral("clip"), clip}};
 	const QJsonObject scoped{{QStringLiteral("clip"), clip}, {QStringLiteral("scope"), noteScope()}};
+	QJsonArray selected;
+	for (const Note* note : notesInScope(m_state.clip, true)) { selected.append(control::noteIdOf(note)); }
+	fillEditMenu(menu->addMenu(tr("Edit")), scoped, selected, m_state.gridTicks);
 	auto call = [](const QString& id, const QJsonObject& fixed, const QJsonObject& defaults = {}, bool ask = true) {
 		return [id, fixed, defaults, ask]() { return CommandCall{id, fixed, defaults, {}, ask}; };
 	};
@@ -223,7 +241,8 @@ void NoteEditor::fillNotesMenu(QMenu* menu)
 	QMenu* articulations = menu->addMenu(tr("Articulation"));
 	fillPlayMenus(passes, articulations, clip, notesInScope(m_state.clip, noteScope() == QStringLiteral("selection")),
 		dynamic_cast<const InstrumentTrack*>(m_state.clip->getTrack()));
-	fillNewNoteMenu(menu, m_state);
+	fillNewLengthMenu(menu->addMenu(tr("New Note Length")));
+	fillAudioBehind(menu, m_state);
 	fillMuteMenu(menu->addMenu(tr("Mute")));
 	fillPitchCurveMenu(menu->addMenu(tr("Pitch Curve")));
 	QMenu* groove = menu->addMenu(tr("Groove"));
@@ -248,6 +267,21 @@ void NoteEditor::fillNotesMenu(QMenu* menu)
 		call(QStringLiteral("window.note_editor_set"), view, {}, false));
 	menu->addSeparator();
 	fillScriptsMenu(menu->addMenu(tr("Scripts")), clip);
+}
+
+void NoteEditor::fillNewLengthMenu(QMenu* menu)
+{
+	// 0.5.0 L07 (ED-073), FL's rule: a new note takes the last note's length - drawn, touched or resized - unless
+	// a fixed length is chosen here.
+	const struct { const char* label; int ticks; } lengths[] = {{"Last Note", 0}, {"1/32", 6}, {"1/16", 12}, {"1/8", 24},
+		{"1/4", 48}, {"1/2", 96}, {"1/1", 192}};
+	for (const auto& choice : lengths)
+	{
+		QAction* action = addCommandAction(menu, tr(choice.label), QStringLiteral("window.note_editor_set"),
+			viewSet({{QStringLiteral("new_length"), choice.ticks}}));
+		action->setCheckable(true);
+		action->setChecked(m_state.newLength == choice.ticks);
+	}
 }
 
 void NoteEditor::fillPitchCurveMenu(QMenu* menu)

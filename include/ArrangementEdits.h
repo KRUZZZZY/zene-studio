@@ -26,6 +26,7 @@
 #define LMMS_ARRANGEMENT_EDITS_H
 
 #include <QObject>
+#include <QString>
 #include <QVector>
 
 #include "LmmsTypes.h"
@@ -68,7 +69,8 @@ LMMS_EXPORT int cropToRange(Track* track, tick_t start, tick_t end);
 //! ED-043: how a deletion closes its gap - not at all, on the clip's track, or on every track.
 enum class Ripple { Off, Track, All };
 //! ED-044: what a clip moved onto others does to them - nothing, trims them away under it, or
-//! crossfades with them over the overlap.
+//! crossfades with them over the overlap. 0.5.0 theme 2 (owner decision 2026-10-03): a dragged clip
+//! trims what it lands on, so Trim is the default.
 enum class Overlap { Free, Trim, Crossfade };
 
 /*! The arranger's editing modes (interface preferences, kept in the config file): the ripple and
@@ -78,7 +80,7 @@ enum class Overlap { Free, Trim, Crossfade };
 struct Modes
 {
 	Ripple ripple = Ripple::Off;
-	Overlap overlap = Overlap::Free;
+	Overlap overlap = Overlap::Trim;
 	bool snapToEdges = true;
 	//! ED-190: a clip's move carries the points of the automation lanes following its track.
 	bool automationFollowsClips = true;
@@ -102,9 +104,11 @@ LMMS_EXPORT QVector<Track*> rippleTracks(Track* track, Ripple mode);
 //! track's at once (Ripple::All) - one step either way. clip.delete and the arranger's delete.
 LMMS_EXPORT void checkpointForDelete(Track* track, Ripple mode);
 
-//! What the arranger does after the user drops @a moved: the overlap mode, as one more undo step
-//! (the track's checkpoint), when it is not Free. Nothing when it was dropped where it started.
-LMMS_EXPORT void afterUserMove(Clip* moved, tick_t oldStart = -1);
+/*! What the arranger does after the user drops @a moved: the overlap mode, as one more undo step
+ *  (the track's checkpoint), when it is not Free. Nothing when it was dropped where it started.
+ *  0.5.0 theme 2: false - and @a moved back at @a oldStart - when the overlap mode would trim or fade
+ *  a locked clip (lockedUnder()); the drop is refused, nothing else changes. */
+LMMS_EXPORT bool afterUserMove(Clip* moved, tick_t oldStart = -1);
 
 /*! ED-190: move the points of every automation lane following @a track that lie in
  *  [@a oldStart, @a oldStart + @a length) by @a delta (when the mode says so). The lanes' clips
@@ -130,10 +134,46 @@ LMMS_EXPORT void rippleAfterMove(Clip* moved, tick_t oldStart, bool ripple);
 //! with the ones it overlaps (fades over the overlap). How many clips were changed.
 LMMS_EXPORT int applyOverlap(Clip* moved, Overlap mode);
 
+/*! 0.5.0 theme 2: one clip a clip spanning [start, end) on @a moved's track lands on - the part of it
+ *  under the span ([from, to)), and whether it is locked (EditLocks), so the overlap mode may not
+ *  touch it. What applyOverlap changes, and what the arranger previews before the drop. */
+struct OverlapEffect
+{
+	Clip* clip = nullptr;
+	tick_t from = 0;
+	tick_t to = 0;
+	bool locked = false;
+};
+//! Every clip of @a moved's track (but @a moved) that [@a start, @a end) overlaps, in track order.
+LMMS_EXPORT QVector<OverlapEffect> overlapEffects(const Clip* moved, tick_t start, tick_t end);
+//! The first locked clip @a mode would change were @a moved to span [@a start, @a end); nullptr when
+//! none (and always under Overlap::Free, which changes nothing).
+LMMS_EXPORT const Clip* lockedUnder(const Clip* moved, tick_t start, tick_t end, Overlap mode);
+
 /*! ED-020: @a proposed (the grid-snapped start of a clip of @a length being moved) moved onto
  *  the nearest other clip edge or marker within @a tolerance ticks - its start or its end may land
  *  there; @a proposed unchanged when nothing is that close. @a moving is left out. */
 LMMS_EXPORT tick_t snapToEdges(tick_t proposed, tick_t length, const Clip* moving, tick_t tolerance);
+
+/*! 0.5.0 theme 2: what a move snapped to, for the arranger's snap line - the start it gives the clip,
+ *  the tick the line is drawn at (the edge the clip's start or end landed on), and the kind of
+ *  target: the nearest edge or marker within the tolerance wins over the grid (ED-020's rule,
+ *  unchanged); the label names it ("Marker: Verse"). */
+struct SnapHit
+{
+	enum class Kind { None, Grid, ClipEdge, Marker };
+	tick_t start = 0;
+	tick_t line = 0;
+	Kind kind = Kind::None;
+	QString label;
+};
+//! snapToEdges(), telling what won: a ClipEdge or Marker hit, or Kind::None (start == @a proposed).
+LMMS_EXPORT SnapHit snapToEdgesHit(tick_t proposed, tick_t length, const Clip* moving, tick_t tolerance);
+
+/*! 0.5.0 theme 9: the view start that keeps @a anchor where it was on screen across a zoom from
+ *  @a ppbBefore to @a ppbAfter pixels per bar, over a view @a widthPx wide that started at
+ *  @a viewStart; an anchor that was off screen ends up in the middle. Never below 0. */
+LMMS_EXPORT tick_t anchoredViewStart(tick_t viewStart, int widthPx, double ppbBefore, double ppbAfter, tick_t anchor);
 
 } // namespace arrangement
 

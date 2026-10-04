@@ -64,6 +64,11 @@ def check_groups(session, recorder, chans):
 def check_view(session, recorder, chans):
     view = session.result("window.mixer_view", {"sends_on_faders": chans[2]})
     recorder.check("window.mixer_view puts the faders on one return's sends", view.get("sends_on_faders") == chans[2], "reply=%r" % view)
+    # 0.5.0 theme 6: the return is named, and every channel keeps a fader (a send, volume or no_send).
+    drives = {f.get("channel"): f.get("drives") for f in view.get("faders") or []}
+    recorder.check("the answer names the return and what every fader drives",
+                   bool(view.get("sends_on_faders_name")) and drives.get(chans[2]) == "volume"
+                   and set(drives.values()) <= {"volume", "send", "no_send"}, "reply=%r" % view)
     back = session.result("window.mixer_view", {"sends_on_faders": ""})
     recorder.check("and back to the channel faders", back.get("sends_on_faders") == "", "reply=%r" % back)
     narrow = session.result("window.mixer_view", {"strip_width": "narrow", "filter": "returns", "meter_mode": "pre_fader"})

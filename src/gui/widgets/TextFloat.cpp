@@ -29,6 +29,9 @@
 #include <QVBoxLayout>
 #include <QLabel>
 
+#include <QRegularExpression>
+
+#include "AccessibleWidgets.h"
 #include "GuiApplication.h"
 #include "MainWindow.h"
 
@@ -115,6 +118,12 @@ TextFloat * TextFloat::displayMessage(const QString & title,
 		QWidget * mw = getGUI()->mainWindow();
 		tf->moveGlobal(mw, QPoint(32, mw->height() - tf->height() - 8));
 	}
+
+	// 0.5.0 (theme 17): a status message is spoken too, once, after what the screen reader is saying (the float's
+	// name carries it for a Qt without announcement events, AccessibleWidgets.h).
+	const QString spoken = QStringList{title, msg}.filter(QRegularExpression(QStringLiteral("\\S"))).join(QStringLiteral(". "));
+	tf->setAccessibleName(spoken);
+	a11y::announceStatus(tf, spoken);
 
 	if (timeout > 0)
 	{

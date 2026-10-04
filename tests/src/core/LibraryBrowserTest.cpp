@@ -26,7 +26,9 @@
  *  refused (WF-025); a folder scanned into the index answers an
  *  indexed search without a walk (WF-012) and ranks the closest tone first (WF-020); a thumbnail is a
  *  picture of the requested size (WF-018); a matched preview plays and stops (WF-009); the browser's
- *  history steps back and refuses past its start (WF-014); a remembered source reads back (WF-023). */
+ *  history steps back and refuses past its start (WF-014); a remembered source reads back (WF-023); a search
+ *  refined as it is typed replaces its history entry, and a result loads onto a new track that one undo takes
+ *  away, a project or MIDI file being refused (theme 3, 0.5.0 UX). */
 
 #include <QtTest>
 
@@ -43,6 +45,7 @@
 #include "InstrumentTrack.h"
 #include "MidiClip.h"
 #include "Note.h"
+#include "SampleTrack.h"
 #include "Song.h"
 #include "TakeLaneTestSupport.h"
 
@@ -221,6 +224,62 @@ private slots:
 		QCOMPARE(back.result.value(QStringLiteral("entry")).toObject().value(QStringLiteral("label")).toString(), QStringLiteral("tone-5"));
 		QCOMPARE(back.result.value(QStringLiteral("matched")).toInt(), 1);
 		QCOMPARE(run(QStringLiteral("browser.history_go"), {{QStringLiteral("step"), -1}}).errorKind, ControlErrorKind::Refused);
+	}
+
+	// After theHistoryStepsBack, which counts from an empty history.
+	void aTypedSearchRefinesOneHistoryEntry()
+	{
+		const auto browse = [](const QString& text, bool replace) {
+			return run(QStringLiteral("browser.browse"), {{QStringLiteral("command"), QStringLiteral("browser.index_query")},
+				{QStringLiteral("args"), QJsonObject{{QStringLiteral("text"), text}}}, {QStringLiteral("label"), text},
+				{QStringLiteral("replace"), replace}});
+		};
+		QVERIFY(browse(QStringLiteral("tone-4"), false).ok);
+		const int size = run(QStringLiteral("browser.history")).result.value(QStringLiteral("entries")).toArray().size();
+		const ControlResult refined = browse(QStringLiteral("tone-44"), true);
+		QVERIFY2(refined.ok, qPrintable(refined.errorMessage));
+		const QJsonObject history = run(QStringLiteral("browser.history")).result;
+		const QJsonArray entries = history.value(QStringLiteral("entries")).toArray();
+		QCOMPARE(entries.size(), size);  // in place of the entry it refines, not beside it
+		QCOMPARE(entries.last().toObject().value(QStringLiteral("label")).toString(), QStringLiteral("tone-44"));
+		QCOMPARE(history.value(QStringLiteral("position")).toInt(), size - 1);
+		QVERIFY(browse(QStringLiteral("tone-5"), false).ok);  // without 'replace' a search is a new entry
+		QCOMPARE(run(QStringLiteral("browser.history")).result.value(QStringLiteral("entries")).toArray().size(), size + 1);
+	}
+
+	void aResultLoadsOntoANewTrack()
+	{
+		Song* song = Engine::getSong();
+		const std::size_t tracks = song->tracks().size();
+		const ControlResult loaded = run(QStringLiteral("browser.load"), {{QStringLiteral("path"), tones(QStringLiteral("tone-440.wav"))},
+			{QStringLiteral("as"), QStringLiteral("sample_track")}});
+		QVERIFY2(loaded.ok, qPrintable(loaded.errorMessage));
+		QCOMPARE(song->tracks().size(), tracks + 1);
+		auto* track = dynamic_cast<SampleTrack*>(song->tracks().back());
+		QVERIFY(track != nullptr);
+		QCOMPARE(track->getClips().size(), std::size_t{1});
+		QCOMPARE(loaded.result.value(QStringLiteral("track")).toString(), control::trackIdOf(track));
+		QCOMPARE(loaded.result.value(QStringLiteral("kind")).toString(), QStringLiteral("audio"));
+		QVERIFY(run(QStringLiteral("control.undo")).ok);  // one undo step takes the track away
+		QCOMPARE(song->tracks().size(), tracks);
+	}
+
+	void aProjectIsNotLoadedAsATrack()
+	{
+		const QString project = QDir(m_dir.path()).filePath(QStringLiteral("song.mmp"));
+		const QString preset = QDir(m_dir.path()).filePath(QStringLiteral("lead.xpf"));
+		for (const QString& path : {project, preset})
+		{
+			QFile file(path);
+			QVERIFY(file.open(QIODevice::WriteOnly));
+			file.write("<?xml version=\"1.0\"?>\n");
+		}
+		const std::size_t tracks = Engine::getSong()->tracks().size();
+		QCOMPARE(run(QStringLiteral("browser.load"), {{QStringLiteral("path"), project}}).errorKind, ControlErrorKind::Refused);  // project.open's
+		QCOMPARE(run(QStringLiteral("browser.load"), {{QStringLiteral("path"), preset}, {QStringLiteral("as"), QStringLiteral("sample_track")}}).errorKind,
+			ControlErrorKind::InvalidArgs);  // only audio goes on a sample track
+		QCOMPARE(run(QStringLiteral("browser.load"), {{QStringLiteral("path"), QStringLiteral("relative.wav")}}).errorKind, ControlErrorKind::InvalidArgs);
+		QCOMPARE(Engine::getSong()->tracks().size(), tracks);  // a refusal builds nothing
 	}
 
 	void aSourceIsRememberedPerView()

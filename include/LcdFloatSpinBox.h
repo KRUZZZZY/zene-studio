@@ -65,6 +65,7 @@ protected:
 	void mouseMoveEvent(QMouseEvent *me) override;
 	void mouseReleaseEvent(QMouseEvent *me) override;
 	void wheelEvent(QWheelEvent *we) override;
+	void keyPressEvent(QKeyEvent* event) override;
 	void mouseDoubleClickEvent(QMouseEvent *me) override;
 	void paintEvent(QPaintEvent *pe) override;
 

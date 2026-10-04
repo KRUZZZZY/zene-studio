@@ -119,6 +119,37 @@ and it declares that command in its `controlCommand` property for the agent-surf
 - Instrument and sample track windows still restore their open state, because an open plugin
   window is per-object state that the user left open.
 
+### Panels in their own windows: the tear-off (0.5.0 G, theme 8)
+
+Any panel can leave the shell for a window of its own, which can sit on another monitor, and
+come back. Every route ends in `window.detach` or `window.attach` (`Shell::dispatchFloat`):
+
+- **Drag the header out.** Past the drag distance a preview of the window follows the
+  pointer; pulled more than a header's height off the header (or past its ends) and released,
+  the panel floats there, as a browser tab tears off its strip. Released on the header band,
+  or with Esc, nothing changes (`ShellTearOff`). The header shows an open hand; its buttons keep
+  the arrow.
+- **Drag it back.** Dragging a floating panel's header moves its window. Over the main window
+  a dashed outline marks the panel's dock zone; inside it the zone fills and says "Release to
+  dock", naming the panel it will replace when its region already shows one. A panel docks
+  into its own home (the template of §2 gives every tool one home): its side region, or the
+  centre when it is the view's main panel. Dragging by the system title bar moves the window
+  but cannot dock it (the program never sees that release); over the zone a short note says
+  to drag the header instead.
+- **Dock button, key, menu.** The header's pop-out button reads **Dock** while the panel
+  floats. **Ctrl+Shift+F** floats or docks the focused panel (from either window).
+  Double-clicking the header, or right-clicking it, does the same.
+- While the view's main panel floats, the centre says where it went and offers **Show Its
+  Window** and **Dock It Here**. A floating panel's footer switch stays lit and brings its
+  window forward. Closing the window from its title bar docks the panel; a program closing
+  every window (File > Quit) leaves it floating, so the next start brings it back.
+- A saved layout (`window.layout_save`, the persisted `ui/shell.layout`) lists the floating
+  panels with their screen and geometry (`floating: [{panel, screen, x, y, width, height}]`).
+  Applying it floats those and docks the rest; a window whose screen is gone opens on the
+  primary one. A layout saved before 0.5.0 has no `floating` and leaves the windows as they are.
+- On Wayland a program can neither place its windows nor see the pointer outside them: the
+  header drag hands the move to the compositor and docking is the Dock button's.
+
 ## 6. What is not done yet, stated
 
 - **Device cards draw at most 16 parameters** (`DeviceCard::MaxParameters`); the rest are

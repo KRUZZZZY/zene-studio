@@ -43,7 +43,9 @@ AutomatableButton::AutomatableButton( QWidget * _parent,
 {
 	setWindowTitle( _name );
 	doConnections();
-	setFocusPolicy( Qt::NoFocus );
+	// 0.5.0 (theme 10): Tab reaches the button and Space presses it; a click still takes no focus, so a
+	// clicked button never keeps the keys the editors and the transport answer.
+	setFocusPolicy( Qt::TabFocus );
 }
 
 
@@ -160,6 +162,15 @@ void AutomatableButton::mouseReleaseEvent( QMouseEvent * _me )
 		}
 		emit clicked();
 	}
+}
+
+
+
+
+void AutomatableButton::nextCheckState()
+{
+	// QAbstractButton::click() (Space, Enter, an accessibility press) flips the button only; the model is the state.
+	if( isCheckable() ) { toggle(); }
 }
 
 

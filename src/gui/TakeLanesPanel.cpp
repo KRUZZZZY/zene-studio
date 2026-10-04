@@ -28,6 +28,7 @@
 #include <QHBoxLayout>
 #include <QJsonArray>
 #include <QLabel>
+#include <QLineEdit>
 #include <QSpinBox>
 #include <QToolButton>
 #include <QVBoxLayout>
@@ -35,6 +36,8 @@
 #include "CompSwipeStrip.h"
 #include "ControlEdit.h"
 #include "ControlRegistry.h"
+#include "Engine.h"
+#include "MusicalTime.h"
 #include "Song.h"
 #include "Track.h"
 
@@ -45,6 +48,38 @@ namespace
 {
 
 constexpr int RefreshMs = 300;
+
+/*! Theme 7: a comp bound. Its value is a tick (what comp.select takes); its text is that position in the time
+ *  format - bars|beats unless ticks or time is chosen - and it is typed in any of them. The arrows step a beat. */
+class PositionBox : public QSpinBox
+{
+public:
+	explicit PositionBox(QWidget* parent) :
+		QSpinBox(parent)
+	{
+		setRange(0, MaxSongLength);
+		Song* song = Engine::getSong();
+		setSingleStep(std::max(1, song->ticksPerBar() / std::max(1, song->getTimeSigModel().getNumerator())));
+		QObject::connect(musicaltime::formatSignal(), &musicaltime::FormatSignal::changed, this,
+			[this] { lineEdit()->setText(textFromValue(value())); });
+	}
+
+protected:
+	QString textFromValue(int value) const override { return musicaltime::positionText(value); }
+
+	int valueFromText(const QString& text) const override
+	{
+		int tick = value();
+		musicaltime::positionFromText(text, &tick);
+		return tick;
+	}
+
+	QValidator::State validate(QString& text, int&) const override
+	{
+		int tick = 0;
+		return musicaltime::positionFromText(text, &tick) && tick <= maximum() ? QValidator::Acceptable : QValidator::Intermediate;
+	}
+};
 
 } // namespace
 
@@ -80,11 +115,15 @@ TakeLanesPanel::TakeLanesPanel(const QString& trackId, QWidget* parent) :
 	outer->addWidget(m_composite);
 
 	auto* comp = new QHBoxLayout;
-	m_begin = new QSpinBox(this);
-	m_end = new QSpinBox(this);
-	for (QSpinBox* box : {m_begin, m_end}) { box->setRange(0, MaxSongLength); box->setSuffix(tr(" ticks")); }
-	m_begin->setAccessibleName(tr("Comp from tick"));
-	m_end->setAccessibleName(tr("Comp to tick"));
+	m_begin = new PositionBox(this);
+	m_end = new PositionBox(this);
+	for (QSpinBox* box : {m_begin, m_end})
+	{
+		box->setToolTip(tr("A position in bars and beats (bar.beat.sixteenth), or ticks or a time when that format is "
+			"chosen; type any of them (\"768t\", \"0:08.5\")"));
+	}
+	m_begin->setAccessibleName(tr("Comp from"));
+	m_end->setAccessibleName(tr("Comp to"));
 	m_lane = new QComboBox(this);
 	m_lane->setAccessibleName(tr("Lane to comp in"));
 	m_comp = makeButton(QStringLiteral("comp.select"), tr("Comp"));
@@ -234,8 +273,8 @@ void TakeLanesPanel::showComposite(const QJsonObject& composite, bool hasLanes)
 	for (const QJsonValue& value : composite.value(QStringLiteral("segments")).toArray())
 	{
 		const QJsonObject segment = value.toObject();
-		segments << tr("%1-%2: lane %3").arg(segment.value(QStringLiteral("begin")).toInt())
-			.arg(segment.value(QStringLiteral("end")).toInt()).arg(segment.value(QStringLiteral("lane")).toInt());
+		segments << tr("%1 to %2: lane %3").arg(musicaltime::positionText(segment.value(QStringLiteral("begin")).toInt()),
+			musicaltime::positionText(segment.value(QStringLiteral("end")).toInt())).arg(segment.value(QStringLiteral("lane")).toInt());
 	}
 	m_composite->setText(segments.isEmpty() ? tr("No comp yet: pick a range and a lane, then Comp.")
 		: tr("Comp: %1").arg(segments.join(QStringLiteral(", "))));

@@ -22,18 +22,24 @@
  *
  */
 
+#include <algorithm>
+
 #include <QAbstractItemView>
 #include <QAction>
 #include <QActionGroup>
 #include <QComboBox>
 #include <QHBoxLayout>
 #include <QJsonArray>
+#include <QKeyEvent>
 #include <QLabel>
 #include <QMenu>
 
 #include "Accessibility.h"
 #include "ControlScaleShared.h"
 #include "DesignTokens.h"
+#include "MidiClip.h"
+#include "Note.h"
+#include "NoteCanvas.h"
 #include "NoteEditor.h"
 #include "ShellChrome.h"
 #include "ShellIcons.h"
@@ -51,6 +57,36 @@ struct GridChoice
 	const char* label;
 	int ticks;
 };
+
+//! FL Studio's piano-roll tools, in its toolbar's order, each with its letter (owner decision 2026-10-03).
+struct ToolChoice
+{
+	NoteTool tool;
+	const char* icon;
+	const char* text;
+	Qt::Key key;
+};
+
+constexpr ToolChoice kTools[] = {
+	{NoteTool::Draw, "draw", "Draw", Qt::Key_P}, {NoteTool::Paint, "paint", "Paint", Qt::Key_B},
+	{NoteTool::Erase, "erase", "Delete", Qt::Key_D}, {NoteTool::Mute, "mute", "Mute", Qt::Key_T},
+	{NoteTool::Slice, "slice", "Slice", Qt::Key_C}, {NoteTool::Select, "select", "Select", Qt::Key_E},
+	{NoteTool::Audition, "audition", "Play", Qt::Key_Y},
+};
+
+//! The tool a plain key picks: its FL letter, or 1..7 in NoteTool's order (kept as aliases); false for any other key.
+bool toolForKey(const QKeyEvent* event, NoteTool* tool)
+{
+	if (event->modifiers() != Qt::NoModifier) { return false; }
+	if (event->key() >= Qt::Key_1 && event->key() <= Qt::Key_7)
+	{
+		*tool = static_cast<NoteTool>(event->key() - Qt::Key_1);
+		return true;
+	}
+	const auto* it = std::find_if(std::begin(kTools), std::end(kTools), [event](const ToolChoice& c) { return c.key == event->key(); });
+	if (it != std::end(kTools)) { *tool = it->tool; }
+	return it != std::end(kTools);
+}
 
 constexpr GridChoice kGrid[] = {
 	{"1/1", 192}, {"1/2", 96}, {"1/4", 48}, {"1/8", 24}, {"1/16", 12}, {"1/32", 6},
@@ -106,20 +142,22 @@ QWidget* NoteEditor::buildToolbar()
 
 void NoteEditor::addToolButtons(QWidget* bar, QHBoxLayout* row)
 {
-	// The tools, keys 1..7.
+	// The tools, FL's letters (1..7 too).
 	m_tools = new QActionGroup(this);
-	const struct { const char* icon; QString text; } tools[] = {
-		{"draw", tr("Draw")}, {"select", tr("Select")}, {"slice", tr("Slice")}, {"erase", tr("Erase")},
-		{"audition", tr("Audition")}, {"paint", tr("Paint")}, {"mute", tr("Mute")}};
-	for (int i = 0; i < 7; ++i)
+	for (const ToolChoice& choice : kTools)
 	{
-		QAction* action = checkable(m_tools, QString::fromLatin1(tools[i].icon), tools[i].text,
-			tr("%1 tool (%2)").arg(tools[i].text).arg(i + 1));
+		const QString text = tr(choice.text);
+		const int alias = static_cast<int>(choice.tool) + 1;
+		QAction* action = checkable(m_tools, QString::fromLatin1(choice.icon), text,
+			tr("%1 tool (%2, or %3)").arg(text, QKeySequence(choice.key).toString(QKeySequence::NativeText)).arg(alias));
+		action->setData(static_cast<int>(choice.tool));
+		action->setProperty("controlCommand", QStringLiteral("window.note_editor_set"));
 		m_tools->addAction(action);
-		connect(action, &QAction::triggered, this, [this, i]() { setTool(static_cast<NoteTool>(i)); });
+		const NoteTool tool = choice.tool;
+		connect(action, &QAction::triggered, this, [this, tool]() { setTool(tool); });
 		row->addWidget(toolButton(bar, action));
 	}
-	m_tools->actions().first()->setChecked(true);
+	setTool(m_state.tool);
 	row->addSpacing(tokens::space::md);
 }
 
@@ -129,7 +167,15 @@ void NoteEditor::addGridControls(QWidget* bar, QHBoxLayout* row)
 	m_gridBox = new QComboBox(bar);
 	for (const GridChoice& choice : kGrid) { m_gridBox->addItem(tr(choice.label), choice.ticks); }
 	m_gridBox->setCurrentIndex(m_gridBox->findData(m_state.gridTicks));
-	a11y::announce(m_gridBox, tr("Grid"), tr("The snap grid for drawing, moving and resizing notes; Alt while dragging turns it off."));
+	a11y::announce(m_gridBox, tr("Grid"), tr("The snap grid for drawing, moving and resizing notes; Alt while dragging turns it off. "
+		"Right-click it to set the length a new note takes."));
+	// FL: right-clicking the snap control sets a default length for new notes instead of the last note's.
+	m_gridBox->setContextMenuPolicy(Qt::CustomContextMenu);
+	connect(m_gridBox, &QWidget::customContextMenuRequested, this, [this](const QPoint& at) {
+		QMenu menu(this);
+		fillNewLengthMenu(&menu);
+		menu.exec(m_gridBox->mapToGlobal(at));
+	});
 	connect(m_gridBox, qOverload<int>(&QComboBox::currentIndexChanged), this,
 		[this](int index) { setGridTicks(m_gridBox->itemData(index).toInt()); });
 	row->addWidget(m_gridBox);
@@ -208,9 +254,10 @@ void NoteEditor::addViewButtons(QWidget* bar, QHBoxLayout* row)
 		ghosts->setChecked(m_state.ghosts);
 	});
 	row->addWidget(toolButton(bar, ghosts));
-	auto* fit = new QAction(shellicons::icon(QStringLiteral("follow")), tr("Zoom to fit"), this);
-	fit->setToolTip(tr("Fit the clip's length in view and centre its notes"));
-	connect(fit, &QAction::triggered, this, &NoteEditor::zoomToFit);
+	auto* fit = new QAction(shellicons::icon(QStringLiteral("follow")), tr("Zoom to selection"), this);
+	fit->setToolTip(tr("Fit the selected notes in view, or the whole clip when none is selected (Z)"));
+	fit->setProperty("controlCommand", QStringLiteral("window.note_editor_set"));
+	connect(fit, &QAction::triggered, this, &NoteEditor::zoomToSelection);
 	row->addWidget(toolButton(bar, fit));
 	row->addStretch(1);
 }
@@ -287,6 +334,54 @@ void NoteEditor::readScale()
 	m_state.grid.setScaleMask(set ? bits : std::array<bool, 12>{}, state.value(QStringLiteral("root")).toInt());
 	m_state.scaleName = set ? QStringLiteral("%1 %2").arg(state.value(QStringLiteral("root_name")).toString(),
 		state.value(QStringLiteral("scale")).toString()) : QString();
+	emit stateChanged();
+}
+
+bool NoteEditor::handlesKey(const QKeyEvent* event)
+{
+	NoteTool tool = NoteTool::Draw;
+	return toolForKey(event, &tool) || (event->modifiers() == Qt::NoModifier && event->key() == Qt::Key_Z);
+}
+
+void NoteEditor::keyPressEvent(QKeyEvent* event)
+{
+	NoteTool tool = NoteTool::Draw;
+	if (toolForKey(event, &tool)) { setTool(tool); }
+	else if (event->modifiers() == Qt::NoModifier && event->key() == Qt::Key_Z) { zoomToSelection(); }
+	else
+	{
+		QWidget::keyPressEvent(event);
+		return;
+	}
+	event->accept();
+}
+
+void NoteEditor::zoomToSelection()
+{
+	if (m_state.clip == nullptr) { return; }
+	int first = -1;
+	int last = 0;
+	int lowest = 127;
+	int highest = 0;
+	for (const Note* note : m_state.clip->notes())
+	{
+		if (!note->selected()) { continue; }
+		first = first < 0 ? note->pos().getTicks() : std::min<int>(first, note->pos().getTicks());
+		last = std::max<int>(last, note->endPos().getTicks());
+		lowest = std::min(lowest, note->key());
+		highest = std::max(highest, note->key());
+	}
+	if (first < 0)
+	{
+		zoomToFit();
+		return;
+	}
+	// A beat of room on each side, so the notes do not touch the edges.
+	const int room = DefaultTicksPerBar / 4;
+	m_pendingFit = false;
+	m_state.grid.setPixelsPerTick(std::max(1, m_canvas->width() - 16) / static_cast<double>(last - first + 2 * room));
+	m_state.grid.setScrollTicks(std::max(0, first - room));
+	m_state.grid.centreOnKey((lowest + highest) / 2);
 	emit stateChanged();
 }
 

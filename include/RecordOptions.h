@@ -24,6 +24,8 @@
 #ifndef LMMS_RECORD_OPTIONS_H
 #define LMMS_RECORD_OPTIONS_H
 
+#include <vector>
+
 #include <QJsonObject>
 #include <QStringList>
 
@@ -33,6 +35,8 @@
 namespace lmms
 {
 
+class MidiClip;
+class Note;
 class Song;
 
 /*! 0.5.0 L03: how a recording pass starts and what it does to what is there, kept in the config file
@@ -43,6 +47,9 @@ class Song;
  *    armed - then the region decides). Stopping puts the punch region back as the timeline has it.
  *  - WF-082 record mode: overdub keeps the notes a MIDI pass plays over; replace removes the notes
  *    already in the clip that a recorded note overlaps. (An audio pass always lands as its own take.)
+ *    Theme 7 (owner decision 2026-10-03): Replace erases NOTES only - every note from before the pass that
+ *    a recorded note overlaps in time, at any pitch - and never the clip's controller lanes (CC, pitch
+ *    bend, aftertouch, program) or any automation. modeScope() is that sentence, for the record controls.
  *  beginPass / endPass run on the UI thread around Song::playAndRecord and Song::stop;
  *  countingIn() is read by the metronome on the render thread (one relaxed atomic). */
 namespace recordoptions
@@ -65,6 +72,16 @@ LMMS_EXPORT const QStringList& modeNames();
 LMMS_EXPORT Options options();
 LMMS_EXPORT void setOptions(const Options& next);
 LMMS_EXPORT QJsonObject toJson(const Options& options);
+//! "Overdub" or "Replace notes": the mode as a record control names it.
+LMMS_EXPORT QString modeLabel(Mode mode);
+//! What @a mode does to what is there, in one sentence - the scope a record control states.
+LMMS_EXPORT QString modeScope(Mode mode);
+//! A record control's choice for @a mode, its scope in brief: "Replace notes (erase overlapped notes; keep ...)".
+LMMS_EXPORT QString modeChoice(Mode mode);
+//! The Replace pass's erase (UI thread): in Replace mode, removes from @a clip every note of @a beforePass (note
+//! ids: the notes the clip held when the pass began) that @a recorded overlaps in time, at any pitch, and answers
+//! how many it removed. Notes only - the clip's controller lanes are not touched. In Overdub: nothing, 0.
+LMMS_EXPORT int replaceOverlapped(MidiClip* clip, const Note& recorded, const std::vector<int>& beforePass);
 
 //! Before a recording pass starts: seek back and open the capture gate at the play position. Answers
 //! that position (where Stop returns to), or -1 when there is no count-in or pre-roll.

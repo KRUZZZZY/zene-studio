@@ -45,6 +45,8 @@ namespace lmms
 namespace lmms::gui
 {
 
+class MixerSendsBanner;
+
 class LMMS_EXPORT MixerView
 	: public QWidget
 	, public ModelView
@@ -113,6 +115,9 @@ public:
 	 *  channel with the mixer on screen (BUGS_FOUND 11.27). */
 	void engineDeletedChannel();
 
+	//! 0.5.0 theme 6: the bar naming the return whose sends the faders show (hidden on the channel faders).
+	MixerSendsBanner* sendsBanner() const { return m_sendsBanner; }
+
 public slots:
 	int addNewChannel();
 
@@ -148,6 +153,7 @@ private:
 	//! What the VCA strips were last built from (id, name, member count per group).
 	QString m_vcaSignature;
 	int m_viewOptionsGeneration = -1;  // 0.5.0 L08: MixerViewOptions::generation() last applied
+	MixerSendsBanner* m_sendsBanner = nullptr;
 	Mixer* m_mixer;
 
 	void updateMaxChannelSelector();

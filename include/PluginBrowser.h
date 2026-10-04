@@ -75,6 +75,10 @@ public:
 	PluginDescWidget( const PluginKey & _pk, QWidget * _parent );
 	QString name() const;
 	void openInNewInstrumentTrack(QString value);
+	//! 0.5.0 theme 3: what Enter on the row does - the instrument (with its sub-plugin key) on a new track.
+	void openInNewTrack();
+	//! 0.5.0 theme 3: the row is the tree's current one (the one Enter loads), drawn highlighted.
+	void setCurrent(bool current);
 
 signals:
 	//! 0.5.0 L10 (MX-166): the plug-in was marked a favourite, hidden or filed (the browser redraws).
@@ -98,6 +102,7 @@ private:
 	QPixmap m_logo;
 
 	bool m_mouseOver;
+	bool m_current = false;
 };
 
 

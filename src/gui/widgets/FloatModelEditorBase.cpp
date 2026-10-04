@@ -608,6 +608,15 @@ QString FloatModelEditorBase::getDynamicFloatingText(const QString& currentValue
 }
 
 
+QString FloatModelEditorBase::accessibleValueText()
+{
+	if (model() == nullptr) { return QString(); }
+	QString shown = getDynamicFloatingText(currentValueToText());
+	if (!m_description.isEmpty() && shown.startsWith(m_description)) { shown.remove(0, m_description.size()); }
+	return shown.trimmed();
+}
+
+
 void FloatModelEditorBase::doConnections()
 {
 	refreshAccessibleName();

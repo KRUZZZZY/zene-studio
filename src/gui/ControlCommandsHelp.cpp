@@ -24,9 +24,8 @@
 /*! 0.5.0 L14: help and access on the spine.
  *  - app.help (WF-136) opens the manual - at a topic - or the command reference (HelpCenter.h);
  *  - app.tours / app.tour (WF-140) list the guided tours and start one;
- *  - window.appearance (WF-130 / WF-131, W3 WF-118 / WF-134) sets the interface scale, the text size, the
- *    palette and the layout density (Appearance.h), from the next start; a change is one undo step, as
- *    settings.set's. */
+ *  - window.appearance (WF-130 / WF-131, W3 WF-118, 0.5.0 UX themes 17 and 23) sets the one interface zoom, the
+ *    palette and accessible mode (Appearance.h), from the next start; a change is one undo step, as settings.set's. */
 
 #include <QJsonArray>
 #include <QWhatsThis>
@@ -86,16 +85,23 @@ ControlResult tour(const QJsonObject& args)
 	return ControlResult::success({{QStringLiteral("name"), args.value(QStringLiteral("name"))}, {QStringLiteral("steps"), started->stepCount()}});
 }
 
+//! The appearance @a args ask for, on top of @a next: 'scale' is the one zoom, and the old 'font_scale' asks for that zoom
+//! when 'scale' is not given; 'accessible' switches accessible mode, and the old 'density' does when it is not given.
+appearance::Options requestedAppearance(const QJsonObject& args, appearance::Options next)
+{
+	const QJsonValue zoom = args.contains(QStringLiteral("scale")) ? args.value(QStringLiteral("scale")) : args.value(QStringLiteral("font_scale"));
+	next.scale = zoom.toDouble(next.scale);
+	next.palette = args.value(QStringLiteral("palette")).toString(next.palette);
+	if (args.contains(QStringLiteral("accessible"))) { next.accessible = args.value(QStringLiteral("accessible")).toBool(); }
+	else if (args.contains(QStringLiteral("density"))) { next.accessible = appearance::densityIsAccessible(args.value(QStringLiteral("density")).toString()); }
+	return next;
+}
+
 ControlResult appearanceCommand(const QJsonObject& args)
 {
 	const appearance::Options before = appearance::options();
-	appearance::Options after = before;
-	after.scale = args.value(QStringLiteral("scale")).toDouble(after.scale);
-	after.fontScale = args.value(QStringLiteral("font_scale")).toDouble(after.fontScale);
-	after.palette = args.value(QStringLiteral("palette")).toString(after.palette);
-	after.density = args.value(QStringLiteral("density")).toString(after.density);
-	const bool changed = after.scale != before.scale || after.fontScale != before.fontScale || after.palette != before.palette
-		|| after.density != before.density;
+	const appearance::Options after = requestedAppearance(args, before);
+	const bool changed = after.scale != before.scale || after.palette != before.palette || after.accessible != before.accessible;
 	if (changed)
 	{
 		appearance::setOptions(after);
@@ -137,13 +143,15 @@ void registerHelpCommands(ControlRegistry& registry)
 	add(registry, "app.tour", QStringLiteral("Start a guided tour ('name', as app.tours lists it): each step points at a part of the "
 		"window - showing its panel first when it is hidden - with Back, Next and Close. Interface state."),
 		objectSchema({{QStringLiteral("name"), stringProperty()}}, {QStringLiteral("name")}), false, true, tour);
-	add(registry, "window.appearance", QStringLiteral("How the interface looks, from the next start: 'scale' (0.5..3, the whole "
-		"interface; an explicit QT_SCALE_FACTOR still wins), 'font_scale' (0.75..2, the text size), 'palette' (dark, "
-		"high_contrast - text at 7:1 on every surface - or light) and 'density' (standard, comfortable - more room around "
-		"every control, fewer on screen - or touch, targets large enough for a finger). A field left out keeps its value; "
-		"none reads them. A preference in the config file; a change is one undo step."),
-		objectSchema({{QStringLiteral("scale"), numberProperty()}, {QStringLiteral("font_scale"), numberProperty()},
-			{QStringLiteral("palette"), enumProperty(appearance::paletteNames())},
+	add(registry, "window.appearance", QStringLiteral("How the interface looks, from the next start: 'scale' (0.5..3), the one "
+		"interface zoom - text, icons and controls scale together; an explicit QT_SCALE_FACTOR still wins - 'palette' (dark, "
+		"high_contrast - text at 7:1 on every surface - or light) and 'accessible', accessible mode: larger click targets, "
+		"strong focus rings, the high-contrast palette and reduced motion. Kept for older callers: 'font_scale' sets the zoom "
+		"when 'scale' is not given, and 'density' sets accessible mode (standard off; comfortable or touch on) when "
+		"'accessible' is not given. A field left out keeps its value; none reads them. A preference in the config file; a "
+		"change is one undo step."),
+		objectSchema({{QStringLiteral("scale"), numberProperty()}, {QStringLiteral("palette"), enumProperty(appearance::paletteNames())},
+			{QStringLiteral("accessible"), booleanProperty()}, {QStringLiteral("font_scale"), numberProperty()},
 			{QStringLiteral("density"), enumProperty(appearance::densityNames())}}), true, false, appearanceCommand);
 }
 

@@ -292,7 +292,8 @@ private slots:
 	}
 
 	/*! ED-015/016 (0.5.0 L04): the Inspector's clip and note fields edit through the registry -
-	 *  typed the way a person types into them (double-click, text, Enter). */
+	 *  typed the way a person types into them (double-click, text, Enter). Theme 7: they read in bars and
+	 *  beats by default, in ticks once transport.time_format says so, and take either when typed. */
 	void theInspectorsNumericFieldsEditTheClipAndItsNotes()
 	{
 		auto* track = Track::create(Track::Type::Instrument, Engine::getSong());
@@ -323,8 +324,25 @@ private slots:
 		QCOMPARE(clip->startPosition().getTicks(), Engine::getSong()->ticksPerBar());
 		QVERIFY(type(QStringLiteral("Length"), QStringLiteral("2")));
 		QCOMPARE(clip->length().getTicks(), 2 * Engine::getSong()->ticksPerBar());
-		QVERIFY(type(QStringLiteral("Offset"), QStringLiteral("48")));
+		QVERIFY(type(QStringLiteral("Offset"), QStringLiteral("0.1.0")));  // one beat (bars|beats shown: a plain "48" is bars)
 		QCOMPARE(clip->startTimeOffset().getTicks(), 48);
+		const auto shown = [&inspector](const QString& caption) {
+			for (ReadoutField* field : inspector.findChildren<ReadoutField*>())
+			{
+				if (field->caption() == caption && field->isVisibleTo(&inspector)) { return field->valueText(); }
+			}
+			return QString();
+		};
+		inspector.rebuild();
+		QCoreApplication::processEvents();
+		QCOMPARE(shown(QStringLiteral("Start")), QStringLiteral("2.1.1"));  // the clip's, the first of the two Starts
+		QCOMPARE(shown(QStringLiteral("Length")), QStringLiteral("2.0.0"));
+		QVERIFY(ControlRegistry::instance()->invoke(QStringLiteral("transport.time_format"),
+			{{QStringLiteral("format"), QStringLiteral("ticks")}}).ok);
+		QCOMPARE(shown(QStringLiteral("Length")), QStringLiteral("384 ticks"));  // shown at once, in the new format
+		QVERIFY(type(QStringLiteral("Offset"), QStringLiteral("24")));  // ticks shown: a plain number is ticks
+		QCOMPARE(clip->startTimeOffset().getTicks(), 24);
+		ControlRegistry::instance()->invoke(QStringLiteral("transport.time_format"), {{QStringLiteral("format"), QStringLiteral("bars_beats")}});
 		QVERIFY(type(QStringLiteral("Key"), QStringLiteral("62")));
 		QCOMPARE(clip->notes().front()->key(), 62);
 		QVERIFY(type(QStringLiteral("Velocity"), QStringLiteral("64")));

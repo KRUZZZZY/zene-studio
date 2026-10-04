@@ -82,7 +82,7 @@ const ReversibilityRow kArrangerRows[] = {
 		"Clip journal checkpoint: undo restores the clip's notes (or warp) and length", ""),
 	R("range.consolidate", RC::NotMutating, false,
 		"it runs clip.consolidate over the range on each covered sample track; each of those records - and undoes - "
-		"as itself (the macro.run precedent), so this command records nothing of its own",
+		"as itself (the workflow.run precedent), so this command records nothing of its own",
 		"nothing of its own: undo each track's clip.consolidate", ""),
 	R("arrangement.nudge", RC::NotMutating, false,
 		"it runs clip.move on the selected clip, which records itself; nothing of its own is written",
@@ -97,6 +97,9 @@ const ReversibilityRow kArrangerRows[] = {
 		"no write to the project, and the config write is not journalled (set the previous bindings)", ""),
 	R("arrangement.navigator", RC::NotMutating, false, "it shows or hides the navigator, a preference in the config file",
 		"no write to the project, and the config write is not journalled (set it back)", ""),
+	R("arrangement.ruler_lanes", RC::NotMutating, false,
+		"it shows or hides the arranger's ruler lanes (sections, markers, tempo), a preference in the config file",
+		"no write to the project, and the config write is not journalled (set the previous lanes)", ""),
 	R("arrangement.modes", RC::NotMutating, false,
 		"it sets the arranger's editing preferences (ripple, overlap, snap to edges), kept in the config file - not "
 		"project state", "no write to the project, and the config write is not journalled (set the previous modes)", ""),

@@ -29,17 +29,24 @@
  *  - runCommand dispatches at once when nothing is left to ask, otherwise opens the form;
  *  - addCommandChoices offers every enum value (On/Off for a boolean) and each runs the command;
  *  - CommandListDialog shows the rows a list command answers - one level down too - and a row
- *    action maps the row's fields onto another command's arguments. */
+ *    action maps the row's fields onto another command's arguments;
+ *  - 0.5.0 themes 4 and 5: labels with units, bounds and blank guidance, worded choices, comma lists,
+ *    raw JSON only under Advanced, input and output paths told apart, the answer shown, and a command
+ *    that cannot be undone flagged. */
 
 #include <QtTest>
 
+#include <QComboBox>
 #include <QJsonArray>
 #include <QJsonObject>
 #include <QKeySequenceEdit>
+#include <QLabel>
+#include <QLineEdit>
 #include <QMenu>
 #include <QToolButton>
 
 #include "CommandForm.h"
+#include "CommandMetadata.h"
 #include "CommandListDialog.h"
 #include "ControlRegistry.h"
 #include "MenuTestSupport.h"
@@ -61,9 +68,10 @@ QJsonObject prop(const char* type)
 }
 
 void add(const char* id, const QJsonObject& properties, const QJsonArray& required,
-	std::function<ControlResult(const QJsonObject&)> handler)
+	std::function<ControlResult(const QJsonObject&)> handler, bool mutating = false)
 {
 	ControlCommand cmd;
+	cmd.mutating = mutating;
 	cmd.id = QLatin1String(id);
 	cmd.group = cmd.id.section(QLatin1Char('.'), 0, 0);
 	cmd.verb = cmd.id.section(QLatin1Char('.'), 1);
@@ -73,7 +81,7 @@ void add(const char* id, const QJsonObject& properties, const QJsonArray& requir
 	cmd.resultSchema = prop("object");
 	cmd.requiresEngine = false;
 	cmd.handler = std::move(handler);
-	ControlRegistry::instance()->registerCommand(cmd);
+	if (!ControlRegistry::instance()->hasCommand(cmd.id)) { ControlRegistry::instance()->registerCommand(cmd); }  // a real one stays
 }
 
 void registerFakes()
@@ -112,6 +120,28 @@ void registerFakes()
 		g_lastArgs = args;
 		return ControlResult::success();
 	});
+	QJsonObject gain = prop("number");
+	gain.insert(QStringLiteral("minimum"), -60);
+	gain.insert(QStringLiteral("maximum"), 6);
+	QJsonObject snap = prop("string");
+	snap.insert(QStringLiteral("enum"), QJsonArray{QStringLiteral("to_grid"), QStringLiteral("off")});
+	QJsonObject names = prop("array");
+	names.insert(QStringLiteral("items"), prop("string"));
+	add("formtest.units", {{QStringLiteral("level"), prop("integer")}, {QStringLiteral("snap"), snap},
+		{QStringLiteral("names"), names}, {QStringLiteral("gain_db"), gain}}, {QStringLiteral("gain_db")},
+		[](const QJsonObject& args) { g_lastArgs = args; return ControlResult::success({{QStringLiteral("gain_db"), -3}}); }, true);
+	// A real id the reversibility table classes irreversible, registered as a fake: the flag comes from the table.
+	add("safestart.clear", {{QStringLiteral("note"), prop("string")}}, {}, [](const QJsonObject&) { return ControlResult::success(); }, true);
+}
+
+//! Whether @a widget sits inside the form's Advanced section.
+bool underAdvanced(const QWidget* widget)
+{
+	for (const QWidget* at = widget; at != nullptr; at = at->parentWidget())
+	{
+		if (at->objectName() == QStringLiteral("commandFormAdvanced")) { return true; }
+	}
+	return false;
 }
 
 CommandCall echo(QJsonObject fixed = {}, bool ask = true)
@@ -266,6 +296,113 @@ private slots:
 		b.id = QStringLiteral("B");
 		QCOMPARE(ShortcutMap::conflicts({a, b}, QStringLiteral("Ctrl+K"), QStringLiteral("B")), QStringList{QStringLiteral("A")});
 		QVERIFY(ShortcutMap::conflicts({a, b}, QStringLiteral("Ctrl+K"), QStringLiteral("A")).isEmpty());
+	}
+
+	//! 0.5.0 theme 5: a label in words with its unit, the bounds, what a blank means; required fields first.
+	void eachFieldSaysWhatItWants()
+	{
+		QCOMPARE(fieldLabel(QStringLiteral("gain_db")), QStringLiteral("Gain (dB)"));
+		QCOMPARE(fieldLabel(QStringLiteral("track_id")), QStringLiteral("Track"));
+		QCOMPARE(fieldLabel(QStringLiteral("cpu_percent")), QStringLiteral("CPU (%)"));
+		QCOMPARE(fieldLabel(QStringLiteral("missing_count")), QStringLiteral("Missing count"));
+		QCOMPARE(fieldUnit(QStringLiteral("length_ticks"), prop("integer")), QStringLiteral("ticks"));
+		QVERIFY2(fieldUnit(QStringLiteral("name_db"), prop("string")).isEmpty(), "a text field was given a unit");
+		CommandForm form(CommandCall{QStringLiteral("formtest.units"), {}, {}, QString(), true});
+		QCOMPARE(form.windowTitle(), commandName(QStringLiteral("formtest.units")));
+		QCOMPARE(form.fields().first(), QStringLiteral("gain_db"));
+		const auto* gainHelp = form.findChild<QLabel*>(QStringLiteral("help:gain_db"));
+		QVERIFY(gainHelp != nullptr);
+		QVERIFY2(gainHelp->text().contains(QStringLiteral("-60 to 6 dB")), qPrintable(gainHelp->text()));
+		QVERIFY2(gainHelp->text().contains(QStringLiteral("Required")), qPrintable(gainHelp->text()));
+		QVERIFY(form.findChild<QLabel*>(QStringLiteral("help:level"))->text().contains(QStringLiteral("blank")));
+		QVERIFY(form.findChild<QWidget*>(QStringLiteral("field:gain_db"))->accessibleName().contains(QStringLiteral("required")));
+		// Out of its bounds: refused before running, naming the field and the range.
+		QVERIFY(form.setField(QStringLiteral("gain_db"), 99));
+		QJsonObject args;
+		QString error;
+		QVERIFY(!form.collect(&args, &error));
+		QVERIFY2(error.contains(QStringLiteral("Gain (dB)")) && error.contains(QStringLiteral("-60 to 6")), qPrintable(error));
+		QVERIFY(form.setField(QStringLiteral("gain_db"), -6));
+		QVERIFY2(form.collect(&args, &error), qPrintable(error));
+		QCOMPARE(args.value(QStringLiteral("gain_db")).toDouble(), -6.0);
+	}
+
+	//! 0.5.0 theme 5: an enum offers its values in words (the blank entry says "(Default)"), a list of plain
+	//! values is typed as "a, b", and raw JSON waits under Advanced.
+	void choicesListsAndRawJsonHaveTheirPlaces()
+	{
+		CommandForm form(CommandCall{QStringLiteral("formtest.units"), {}, {}, QString(), true});
+		auto* snap = form.findChild<QComboBox*>(QStringLiteral("field:snap"));
+		QVERIFY(snap != nullptr);
+		QCOMPARE(snap->itemText(0), QStringLiteral("(Default)"));
+		QVERIFY(form.setField(QStringLiteral("snap"), QStringLiteral("to_grid")));
+		QCOMPARE(snap->currentText(), QStringLiteral("To grid"));
+		QVERIFY(form.setField(QStringLiteral("names"), QJsonArray{QStringLiteral("a"), QStringLiteral("b")}));
+		QCOMPARE(form.findChild<QLineEdit*>(QStringLiteral("field:names"))->text(), QStringLiteral("a, b"));
+		form.findChild<QLineEdit*>(QStringLiteral("field:names"))->setText(QStringLiteral("x, y"));
+		QVERIFY(form.setField(QStringLiteral("gain_db"), 0));
+		QJsonObject args;
+		QString error;
+		QVERIFY2(form.collect(&args, &error), qPrintable(error));
+		QCOMPARE(args.value(QStringLiteral("snap")).toString(), QStringLiteral("to_grid"));
+		QCOMPARE(args.value(QStringLiteral("names")).toArray(), (QJsonArray{QStringLiteral("x"), QStringLiteral("y")}));
+		QVERIFY2(!underAdvanced(form.findChild<QWidget*>(QStringLiteral("field:names"))), "a list of plain values was hidden as JSON");
+		CommandForm echoForm(echo());
+		QVERIFY2(underAdvanced(echoForm.findChild<QWidget*>(QStringLiteral("field:items"))), "a raw JSON field was not under Advanced");
+		QVERIFY(!underAdvanced(echoForm.findChild<QWidget*>(QStringLiteral("field:name"))));
+		QVERIFY(echoForm.findChild<QWidget*>(QStringLiteral("commandFormAdvanced"))->isHidden());
+	}
+
+	//! 0.5.0 theme 5: a path says whether the command reads it or writes it, and its picker matches.
+	void pathsAreToldApartAsInputOrOutput()
+	{
+		QCOMPARE(pathRole(QStringLiteral("formtest.editors"), QStringLiteral("file")), PathRole::OpenFile);
+		QCOMPARE(pathRole(QStringLiteral("theme.export"), QStringLiteral("file")), PathRole::SaveFile);
+		QCOMPARE(pathRole(QStringLiteral("project.merge"), QStringLiteral("report")), PathRole::SaveFile);
+		QCOMPARE(pathRole(QStringLiteral("project.merge"), QStringLiteral("base")), PathRole::OpenFile);
+		QCOMPARE(pathRole(QStringLiteral("formtest.editors"), QStringLiteral("out_dir")), PathRole::SaveFolder);
+		QCOMPARE(pathRole(QStringLiteral("formtest.editors"), QStringLiteral("sample_dir")), PathRole::OpenFolder);
+		QCOMPARE(pathRole(QStringLiteral("formtest.editors"), QStringLiteral("color")), PathRole::None);
+		QVERIFY(pathRoleText(PathRole::OpenFile).startsWith(QStringLiteral("Input")));
+		QVERIFY(pathRoleText(PathRole::SaveFile).startsWith(QStringLiteral("Output")));
+		CommandForm form(CommandCall{QStringLiteral("formtest.editors"), {}, {}, QString(), true});
+		const auto pickerOf = [&form](const char* key) {
+			return form.findChild<QWidget*>(QStringLiteral("field:") + QLatin1String(key))->parentWidget()->findChild<QToolButton*>()->text();
+		};
+		QCOMPARE(pickerOf("file"), QStringLiteral("Open…"));
+		QCOMPARE(pickerOf("out_dir"), QStringLiteral("Choose Folder…"));
+		QVERIFY(form.findChild<QLabel*>(QStringLiteral("help:file"))->text().contains(QStringLiteral("Input")));
+		QVERIFY(form.findChild<QLabel*>(QStringLiteral("help:out_dir"))->text().contains(QStringLiteral("Output")));
+	}
+
+	//! 0.5.0 themes 4 and 5: a read keeps its answer on screen (and Close is not Cancel), a change closes, and a
+	//! command that cannot be undone says so; the id is shown, secondary.
+	void theResultIsShownAndAnIrreversibleCommandWarns()
+	{
+		CommandForm read(echo());
+		QSignalSpy accepted(&read, &QDialog::accepted);
+		QSignalSpy rejected(&read, &QDialog::rejected);
+		read.setField(QStringLiteral("name"), QStringLiteral("good"));
+		read.accept();
+		QVERIFY2(read.resultText().contains(QStringLiteral("good")), qPrintable(read.resultText()));
+		read.reject();
+		QCOMPARE(accepted.count(), 1);
+		QCOMPARE(rejected.count(), 0);
+
+		CommandForm change(CommandCall{QStringLiteral("formtest.units"), {}, {}, QString(), true});
+		QSignalSpy closed(&change, &QDialog::accepted);
+		change.setField(QStringLiteral("gain_db"), -3);
+		change.accept();
+		QVERIFY(change.result().ok);
+		QCOMPARE(closed.count(), 1);
+		QVERIFY2(change.resultText().isEmpty(), "a change kept the form open");
+		QVERIFY(change.warningText().isEmpty());
+		QVERIFY(change.findChild<QLabel*>(QStringLiteral("commandFormId"))->text().contains(QStringLiteral("formtest.units")));
+
+		CommandForm risky(CommandCall{QStringLiteral("safestart.clear"), {}, {}, QString(), true});
+		QVERIFY2(risky.warningText().contains(QStringLiteral("cannot be undone")), qPrintable(risky.warningText()));
+		QVERIFY(resultSummary({{QStringLiteral("gain_db"), -3}, {QStringLiteral("rows"), QJsonArray{QJsonObject{}}}})
+			.contains(QStringLiteral("Gain (dB): -3 dB")));
 	}
 
 	void theListDialogMapsARowOntoAnotherCommand()

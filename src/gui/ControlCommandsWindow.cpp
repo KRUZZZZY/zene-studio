@@ -96,7 +96,8 @@ bool isShowing(gui::GuiApplication* g, const EditorEntry& entry)
 {
 	if (entry.panel != nullptr)
 	{
-		return g->mainWindow()->shell()->model().isVisible(QLatin1String(entry.panel));
+		gui::Shell* shell = g->mainWindow()->shell();
+		return shell->model().isVisible(QLatin1String(entry.panel)) || shell->isDetached(QLatin1String(entry.panel));
 	}
 	// A floating window is its own top level: it is showing while it is visible.
 	QWidget* widget = entry.window(g);

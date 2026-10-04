@@ -202,7 +202,7 @@ Palette paletteNamed(const QString& name)
 const Palette& palette()
 {
 	// Read once, at the first draw: the chosen palette with the user's overrides on it.
-	static const Palette p = withOverrides(paletteNamed(appearance::options().palette), themeOverrides());
+	static const Palette p = withOverrides(paletteNamed(appearance::effectivePalette(appearance::options())), themeOverrides());
 	return p;
 }
 
@@ -241,15 +241,32 @@ QJsonObject themeOverrides()
 	return uistore::read(QStringLiteral("theme")).value(QStringLiteral("colors")).toObject();
 }
 
-double densityFactor()
+bool accessibleMode()
 {
-	static const double factor = appearance::densityFactor(appearance::options().density);  // read once
-	return factor;
+	static const bool on = appearance::options().accessible;  // read once
+	return on;
 }
+
+bool reducedMotion() { return accessibleMode(); }
+
+qreal focusRingWidth() { return accessibleMode() ? 3.0 : 2.0; }
+
+double targetFactor() { return accessibleMode() ? appearance::accessibleTargetFactor : 1.0; }
 
 int targetSize()
 {
-	return std::max(size::target, static_cast<int>(std::lround(size::target * densityFactor())));
+	return std::max(size::target, static_cast<int>(std::lround(size::target * targetFactor())));
+}
+
+QString accessibleModeRules()
+{
+	// The base rules colour a focused control's border with @focusRing; three pixels make that ring strong, and
+	// every bordered control gets them focused or not, so focus never shifts a control's content.
+	return QStringLiteral("\n/* accessible mode (DesignTokens.cpp) */\n"
+		"QPushButton, QToolButton, QLineEdit, QSpinBox, QDoubleSpinBox, QTextEdit, QPlainTextEdit, QComboBox, QDateTimeEdit "
+		"{ border-width: 3px; }\n"
+		"QCheckBox::indicator:focus, QRadioButton::indicator:focus { border: 3px solid @focusRing; }\n"
+		"QTreeView:focus, QListView:focus, QTableView:focus { border: 3px solid @focusRing; }\n");
 }
 
 QString scaleMetrics(const QString& css, double factor)
@@ -290,8 +307,7 @@ QFont font(TextRole role)
 {
 	static constexpr std::array<int, 5> pixels{10, 11, 12, 14, 20};
 	QFont f(family());
-	static const double scale = appearance::options().fontScale;  // 0.5.0 L14 (WF-131), read once
-	f.setPixelSize(static_cast<int>(std::lround(pixels[static_cast<std::size_t>(role)] * scale)));
+	f.setPixelSize(pixels[static_cast<std::size_t>(role)]);  // the one global zoom scales it (Appearance.h)
 	f.setHintingPreference(QFont::PreferNoHinting);
 	f.setStyleStrategy(QFont::PreferAntialias);
 	if (role == TextRole::Title) { f.setWeight(QFont::DemiBold); }
@@ -406,7 +422,8 @@ QString styleSheetTemplate()
 
 QString applicationStyleSheet()
 {
-	return scaleMetrics(resolveStyleSheet(styleSheetTemplate(), nullptr), densityFactor());
+	const QString templ = accessibleMode() ? styleSheetTemplate() + accessibleModeRules() : styleSheetTemplate();
+	return scaleMetrics(resolveStyleSheet(templ, nullptr), targetFactor());
 }
 
 void strokeCrisp(QPainter& painter, const QRectF& rect, const QColor& colour)

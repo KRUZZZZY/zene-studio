@@ -1,7 +1,7 @@
 /*
  * ControlReversibilityTableCustomisation.cpp - the 0.5.0 L13 customisation commands' rows of
  *     the SPEC A16 classification table (shortcuts.*, window.layout_* / detach / attach /
- *     header_*, macro.*), joined into reversibilityRowTable() beside the window.* block
+ *     header_*, window.layout_project_*, workflow.*), joined into reversibilityRowTable() beside the window.* block
  *
  * Copyright (c) 2026 Zene Studio contributors
  *
@@ -46,6 +46,17 @@ using RC = ReversibilityClass;
 #define CONFIG_WRITE_MECHANISM \
 	"action checkpoint (UiConfigStore): the recorded undo step writes the previous object back, saves " \
 	"the config file and re-applies it to the interface, exactly as the command does"
+//! Design theme 19: a workflow write lands in the library in use - the config file, or the project when the user keeps
+//! workflows with each project (ui/workflows.scope).
+#define WORKFLOW_WRITE_REASON(what) \
+	"it writes " what " in the library in use: the config file (ui/workflows, the user's own, not the project), or - " \
+	"when workflows are kept with each project - the project's <workspace>. Either way the previous library is one " \
+	"bounded JSON object"
+#define WORKFLOW_WRITE_MECHANISM \
+	"action checkpoint (UiConfigStore write / writeProject): the recorded undo step writes the previous library back " \
+	"where it was (saving the config file, or marking the project modified) and refreshes the Workflows menu"
+#define PROJECT_LAYOUT_MECHANISM \
+	"action checkpoint (UiConfigStore::writeProject): the recorded undo step puts the project's previous layout back"
 
 const ReversibilityRow kCustomisationRows[] = {
 	R("controller.map", RC::TrueInverse, true, "it binds a parameter to a MIDI controller (saved in the project)",
@@ -74,12 +85,27 @@ const ReversibilityRow kCustomisationRows[] = {
 		"no write to the project (window.detach restores)", ""),
 	R("window.header_get", RC::NotMutating, false, "it reads the header's buttons. Nothing is written", "no write", ""),
 	R("window.header_set", RC::TrueInverse, true, CONFIG_WRITE_REASON("the header's buttons"), CONFIG_WRITE_MECHANISM, ""),
-	R("macro.save", RC::TrueInverse, true, CONFIG_WRITE_REASON("one macro"), CONFIG_WRITE_MECHANISM, ""),
-	R("macro.remove", RC::TrueInverse, true, CONFIG_WRITE_REASON("the macros"), CONFIG_WRITE_MECHANISM, ""),
-	R("macro.list", RC::NotMutating, false, "it reads the saved macros. Nothing is written", "no write", ""),
-	R("macro.status", RC::NotMutating, false, "it reads the last macro run's outcome. Nothing is written", "no write", ""),
-	R("macro.run", RC::NotMutating, false,
-		"it queues a macro's steps; each step is a registry command of its own and records - and undoes - as "
+	// Design theme 22: the layout a project remembers (<workspace>), beside the personal library above.
+	R("window.layout_project_save", RC::TrueInverse, true,
+		"it remembers the window layout with the project (<workspace>): project state, one bounded JSON object",
+		PROJECT_LAYOUT_MECHANISM, ""),
+	R("window.layout_project_clear", RC::TrueInverse, true,
+		"it forgets the layout the project remembers (<workspace>): project state, one bounded JSON object",
+		PROJECT_LAYOUT_MECHANISM, ""),
+	R("window.layout_project_apply", RC::NotMutating, false,
+		"it switches the shell to the layout the project remembers - view, panels, sizes. Interface state, as "
+		"window.layout_apply is: no project data is written",
+		"no write to the project (interface state only; apply the previous layout to restore)", ""),
+	// Design theme 19: the recorded command macros, renamed workflows (new in 0.5.0, never shipped as macro.*).
+	R("workflow.save", RC::TrueInverse, true, WORKFLOW_WRITE_REASON("one workflow"), WORKFLOW_WRITE_MECHANISM, ""),
+	R("workflow.remove", RC::TrueInverse, true, WORKFLOW_WRITE_REASON("the workflows"), WORKFLOW_WRITE_MECHANISM, ""),
+	R("workflow.set_scope", RC::TrueInverse, true, CONFIG_WRITE_REASON("where workflows are kept (ui/workflows.scope)"),
+		CONFIG_WRITE_MECHANISM, ""),
+	R("workflow.list", RC::NotMutating, false, "it reads the workflows in use. Nothing is written", "no write", ""),
+	R("workflow.status", RC::NotMutating, false, "it reads the last workflow run's outcome and the recording state. Nothing is written",
+		"no write", ""),
+	R("workflow.run", RC::NotMutating, false,
+		"it queues a workflow's steps; each step is a registry command of its own and records - and undoes - as "
 		"itself (the run is acknowledged first, the mastering.run precedent)",
 		"nothing of its own to reverse: undo each step, as its own record says", ""),
 	R("session.pattern_list", RC::NotMutating, false, "it reads the patterns' numbers and names. Nothing is written",
@@ -107,6 +133,9 @@ const ReversibilityRow kCustomisationRows[] = {
 		"action checkpoint: the recorded undo step gives every track its previous height back", ""),
 };
 
+#undef PROJECT_LAYOUT_MECHANISM
+#undef WORKFLOW_WRITE_MECHANISM
+#undef WORKFLOW_WRITE_REASON
 #undef CONFIG_WRITE_MECHANISM
 #undef CONFIG_WRITE_REASON
 #undef R

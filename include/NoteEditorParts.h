@@ -57,6 +57,7 @@ public:
 protected:
 	void paintEvent(QPaintEvent* event) override;
 	void mousePressEvent(QMouseEvent* event) override;
+	void mouseMoveEvent(QMouseEvent* event) override;
 	void mouseReleaseEvent(QMouseEvent* event) override;
 	void wheelEvent(QWheelEvent* event) override;
 
@@ -68,6 +69,9 @@ private:
 	NoteEditor* m_editor;
 	NoteEditorState& m_state;
 	int m_pressed = -1;
+	int m_zoomY = -1;     //!< FL: a middle-button vertical drag on the keys zooms the rows - where it started
+	int m_zoomRows = 0;   //!< ... and the row height then
+	int m_zoomKey = -1;   //!< ... and the key under it, kept under the pointer
 };
 
 //! The bar ruler, with the clip's loop region - the span the clip plays and repeats - drawn

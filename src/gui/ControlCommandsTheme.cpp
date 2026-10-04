@@ -52,10 +52,10 @@ namespace
 const QString StoreKey = QStringLiteral("theme");
 const QString FileFormat = QStringLiteral("zene-theme");
 
-//! The palette the next start draws with, given @a overrides.
+//! The palette the next start draws with, given @a overrides (the high-contrast one in accessible mode).
 gui::tokens::Palette nextPalette(const QJsonObject& overrides)
 {
-	return gui::tokens::withOverrides(gui::tokens::paletteNamed(appearance::options().palette), overrides);
+	return gui::tokens::withOverrides(gui::tokens::paletteNamed(appearance::effectivePalette(appearance::options())), overrides);
 }
 
 //! The declared pairs @a palette leaves below their minimum.
@@ -86,7 +86,7 @@ QJsonObject themeState(const QJsonObject& overrides)
 			{QStringLiteral("color"), gui::tokens::roleColor(palette, name).name()},
 			{QStringLiteral("overridden"), overrides.contains(name)}});
 	}
-	return {{QStringLiteral("palette"), appearance::options().palette}, {QStringLiteral("overrides"), overrides},
+	return {{QStringLiteral("palette"), appearance::effectivePalette(appearance::options())}, {QStringLiteral("overrides"), overrides},
 		{QStringLiteral("colors"), colors}, {QStringLiteral("contrast_failures"), contrastFailures(palette)},
 		{QStringLiteral("applies"), QStringLiteral("next_start")}};
 }

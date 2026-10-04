@@ -25,7 +25,10 @@
 /*! ED-020/043/044 (0.5.0 L04): the arranger's editing modes - arrangement.modes round-trips; a
  *  clip moved onto another trims it away or crossfades with it; a move snaps to another clip's
  *  edge or a marker within the tolerance and nowhere else; clip.delete closes the gap in a ripple
- *  mode, one undo step; range.delete follows the ripple mode when not told. */
+ *  mode, one undo step; range.delete follows the ripple mode when not told.
+ *  0.5.0 themes 2 and 9: with nothing chosen a dropped clip trims what it lands on; the preview lists
+ *  what a drop trims and which of it is locked; a drop or a clip.move onto a locked clip is refused and
+ *  changes nothing; a snap says what it snapped to; a zoom keeps its anchor where it was on screen. */
 
 #include <QtTest>
 
@@ -35,7 +38,9 @@
 #include "Clip.h"
 #include "ClipEdits.h"
 #include "ControlRegistry.h"
+#include "ConfigManager.h"
 #include "ControlVocabulary.h"
+#include "EditLocks.h"
 #include "Engine.h"
 #include "ProjectMarkers.h"
 #include "Song.h"
@@ -186,6 +191,114 @@ private slots:
 		QVERIFY(!other->isMuted());
 		QVERIFY2(alreadyMuted->isMuted(), "a track muted before the audition came back unmuted");
 		QCOMPARE(run(QStringLiteral("control.undo_depth")).result.value(QStringLiteral("depth")).toInt(), depth);
+	}
+
+	//! Theme 2, the owner's decision: a dragged clip trims what it lands on unless told otherwise.
+	void withNothingChosenADropTrims()
+	{
+		ConfigManager::inst()->deleteValue(QStringLiteral("arrangement"), QStringLiteral("overlap"));
+		QCOMPARE(arrangement::modes().overlap, arrangement::Overlap::Trim);
+		QCOMPARE(run(QStringLiteral("arrangement.modes")).result.value(QStringLiteral("overlap")).toString(), QStringLiteral("trim"));
+	}
+
+	//! Theme 2: the preview's list is what a drop changes - the part of each clip under the span - and a
+	//! locked clip is marked, and left alone by the trim.
+	void theOverlapPreviewListsWhatADropTrims()
+	{
+		Clip* left = clipAt(m_track, 0, 2 * Bar);
+		Clip* right = clipAt(m_track, 3 * Bar, 2 * Bar);
+		Clip* moved = clipAt(m_track, 8 * Bar, 2 * Bar);
+		const QVector<arrangement::OverlapEffect> effects = arrangement::overlapEffects(moved, Bar, 4 * Bar);
+		QCOMPARE(effects.size(), 2);
+		QCOMPARE(effects.at(0).clip, left);
+		QCOMPARE(effects.at(0).from, Bar);
+		QCOMPARE(effects.at(0).to, 2 * Bar);
+		QCOMPARE(effects.at(1).clip, right);
+		QCOMPARE(effects.at(1).from, 3 * Bar);
+		QCOMPARE(effects.at(1).to, 4 * Bar);
+		QVERIFY(!effects.at(0).locked);
+
+		EditLocks::instance().setClipLocked(right->id(), true);
+		QVERIFY(arrangement::overlapEffects(moved, Bar, 4 * Bar).at(1).locked);
+		QCOMPARE(arrangement::lockedUnder(moved, Bar, 4 * Bar, arrangement::Overlap::Trim), right);
+		QCOMPARE(arrangement::lockedUnder(moved, Bar, 4 * Bar, arrangement::Overlap::Free), nullptr);  // free changes nothing
+		QCOMPARE(arrangement::lockedUnder(moved, 0, Bar, arrangement::Overlap::Trim), nullptr);
+		moved->changeLength(TimePos(3 * Bar));
+		moved->movePosition(TimePos(Bar));  // now over both: the unlocked one is trimmed, the locked one is not touched
+		QCOMPARE(arrangement::applyOverlap(moved, arrangement::Overlap::Trim), 1);
+		QCOMPARE(left->length().getTicks(), Bar);
+		QCOMPARE(right->startPosition().getTicks(), 3 * Bar);
+		QCOMPARE(right->length().getTicks(), 2 * Bar);
+		EditLocks::instance().clear();
+	}
+
+	//! Theme 2: a drop onto a locked clip goes back where it came from, and nothing else moves.
+	void aDropOntoALockedClipIsRefused()
+	{
+		Clip* locked = clipAt(m_track, 0, 2 * Bar);
+		Clip* moved = clipAt(m_track, 4 * Bar, Bar);
+		QVERIFY(run(QStringLiteral("arrangement.modes"), {{QStringLiteral("overlap"), QStringLiteral("trim")}}).ok);
+		EditLocks::instance().setClipLocked(locked->id(), true);
+		moved->movePosition(TimePos(Bar));  // what the drag did
+		QVERIFY(!arrangement::afterUserMove(moved, 4 * Bar));
+		QCOMPARE(moved->startPosition().getTicks(), 4 * Bar);
+		QCOMPARE(spans(m_track), (QList<QPair<int, int>>{{0, 2 * Bar}, {4 * Bar, 5 * Bar}}));
+
+		// Onto empty time the same drop is taken.
+		moved->movePosition(TimePos(6 * Bar));
+		QVERIFY(arrangement::afterUserMove(moved, 4 * Bar));
+		QCOMPARE(moved->startPosition().getTicks(), 6 * Bar);
+		EditLocks::instance().clear();
+	}
+
+	//! Theme 2: the control surface refuses the same move, typed and with the reason, and changes nothing.
+	void aCommandMoveOntoALockedClipIsRefused()
+	{
+		Clip* locked = clipAt(m_track, 0, 2 * Bar);
+		Clip* moved = clipAt(m_track, 4 * Bar, Bar);
+		QVERIFY(run(QStringLiteral("arrangement.modes"), {{QStringLiteral("overlap"), QStringLiteral("trim")}}).ok);
+		QVERIFY(run(QStringLiteral("clip.set_locked"), {{QStringLiteral("clip"), control::clipIdOf(locked)}}).ok);
+		const ControlResult refused = run(QStringLiteral("clip.move"), {{QStringLiteral("clip"), control::clipIdOf(moved)}, {QStringLiteral("position"), Bar}});
+		QCOMPARE(refused.errorKind, ControlErrorKind::Refused);
+		QVERIFY2(refused.errorMessage.contains(control::clipIdOf(locked)), qPrintable(refused.errorMessage));
+		QCOMPARE(spans(m_track), (QList<QPair<int, int>>{{0, 2 * Bar}, {4 * Bar, 5 * Bar}}));
+		// With clips free to overlap, the move trims nothing, so the lock has nothing to refuse.
+		QVERIFY(run(QStringLiteral("arrangement.modes"), {{QStringLiteral("overlap"), QStringLiteral("free")}}).ok);
+		QVERIFY(run(QStringLiteral("clip.move"), {{QStringLiteral("clip"), control::clipIdOf(moved)}, {QStringLiteral("position"), Bar}}).ok);
+		QCOMPARE(locked->length().getTicks(), 2 * Bar);
+		EditLocks::instance().clear();
+	}
+
+	//! Theme 2: the snap line's source - which edge or marker won, where the line goes, what it says.
+	void aSnapSaysWhatItSnappedTo()
+	{
+		clipAt(m_track, 0, Bar);
+		ProjectMarkers::instance().add(400, QStringLiteral("Drop"), QString());
+		const arrangement::SnapHit edge = arrangement::snapToEdgesHit(190, 100, nullptr, 10);
+		QCOMPARE(edge.kind, arrangement::SnapHit::Kind::ClipEdge);
+		QCOMPARE(edge.start, Bar);
+		QCOMPARE(edge.line, Bar);
+		const arrangement::SnapHit marker = arrangement::snapToEdgesHit(305, 100, nullptr, 10);
+		QCOMPARE(marker.kind, arrangement::SnapHit::Kind::Marker);
+		QCOMPARE(marker.start, 300);
+		QCOMPARE(marker.line, 400);  // the clip's END landed on the marker: the line is drawn there
+		QCOMPARE(marker.label, QStringLiteral("Marker: Drop"));
+		QCOMPARE(arrangement::snapToEdgesHit(250, 100, nullptr, 10).kind, arrangement::SnapHit::Kind::None);
+		ProjectMarkers::instance().clear();
+	}
+
+	//! Theme 9: a zoom keeps its anchor at the same place on screen, centres one that was off it, and never
+	//! scrolls before the song's start.
+	void aZoomKeepsItsAnchorInPlace()
+	{
+		// 1000 px at 100 px a bar shows ten bars; the anchor halfway across stays halfway across at 200 px.
+		QCOMPARE(arrangement::anchoredViewStart(0, 1000, 100.0, 200.0, 5 * Bar), 5 * Bar - 5 * Bar / 2);
+		// The left edge as the anchor keeps the left edge (the zoom before 0.5.0).
+		QCOMPARE(arrangement::anchoredViewStart(3 * Bar, 1000, 100.0, 50.0, 3 * Bar), 3 * Bar);
+		// Off screen before: into the middle of the new view.
+		QCOMPARE(arrangement::anchoredViewStart(0, 1000, 100.0, 100.0, 40 * Bar), 40 * Bar - 5 * Bar);
+		// Zooming out around an anchor near the start does not go before tick 0.
+		QCOMPARE(arrangement::anchoredViewStart(0, 1000, 100.0, 10.0, Bar), 0);
 	}
 
 private:

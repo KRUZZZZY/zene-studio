@@ -138,6 +138,11 @@ public:
 	//! that are expanded in the tree.
 	QList<QString> expandedDirs( QTreeWidgetItem * item = nullptr ) const;
 
+public slots:
+	//! If a preview is playing, stop it. 0.5.0 theme 3: public, so the Browser panel stops it when its
+	//! tab or query changes or focus leaves it.
+	void stopPreview();
+
 protected:
 	void contextMenuEvent( QContextMenuEvent * e ) override;
 	void mousePressEvent( QMouseEvent * me ) override;
@@ -154,8 +159,9 @@ protected:
 private:
 	//! Start a preview of a file item
 	void previewFileItem(FileItem* file);
-	//! If a preview is playing, stop it.
-	void stopPreview();
+	//! What Enter does on @a file: a sound or preset onto a new track (Shift: a sample track; Ctrl: the
+	//! pattern editor), a project opened or a MIDI file imported (0.5.0 theme 3).
+	void insertFileItem(FileItem* file, Qt::KeyboardModifiers modifiers);
 
 	void handleFile( FileItem * fi, InstrumentTrack * it );
 	void openInNewInstrumentTrack( TrackContainer* tc, FileItem* item );

@@ -54,11 +54,12 @@ constexpr int MaxDepth = 16;
 
 const QStringList& refusedPrefixes()
 {
-	// shortcuts.* and macro.* (0.5.0 L13) write the user's own configuration, as settings.set
-	// does; a macro is also a run of commands the sandbox has not looked at.
+	// shortcuts.* and workflow.* (0.5.0 L13; workflows were "macros" until design theme 19) write the
+	// user's own configuration, as settings.set does; a workflow is also a run of commands the sandbox
+	// has not looked at.
 	static const QStringList prefixes{QStringLiteral("script."), QStringLiteral("livecode."),
 		QStringLiteral("crash."), QStringLiteral("telemetry."), QStringLiteral("feedback."),
-		QStringLiteral("shortcuts."), QStringLiteral("macro.")};
+		QStringLiteral("shortcuts."), QStringLiteral("workflow.")};
 	return prefixes;
 }
 

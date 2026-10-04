@@ -1,5 +1,5 @@
 /*
- * ControlCommandsRecordingPass.cpp - transport.record_options and comp.cycle: how a pass starts, cycling takes
+ * ControlCommandsRecordingPass.cpp - transport.record_options, transport.time_format and comp.cycle
  *
  * Copyright (c) 2026 Zene Studio contributors
  *
@@ -24,16 +24,20 @@
 /*! 0.5.0 L03: the recording pass on the spine.
  *  - transport.record_options (WF-080 / WF-082): count-in and pre-roll bars and the record mode
  *    (RecordOptions.h) - a preference in the config file, one undo step;
+ *  - transport.time_format (theme 7): bars|beats, ticks or time in every musician-facing position and
+ *    length (MusicalTime.h) - a preference in the config file, one undo step;
  *  - comp.cycle (ED-168): the comp segment at a position plays the next (or previous) take lane -
  *    what cycling takes from the keyboard runs - one undo step (a Track checkpoint, as comp.select). */
 
 #include <QJsonArray>
 
+#include "ControlCommandDef.h"
 #include "ControlEdit.h"
 #include "ControlRegistry.h"
 #include "ControlRegistryGroups.h"
 #include "ControlVocabulary.h"
 #include "Engine.h"
+#include "MusicalTime.h"
 #include "RecordOptions.h"
 #include "Song.h"
 #include "TakeLane.h"
@@ -64,6 +68,23 @@ ControlResult recordOptions(const QJsonObject& args)
 		addUndoStep([before]() { recordoptions::setOptions(before); }, [after]() { recordoptions::setOptions(after); });
 	}
 	return ControlResult::success(recordoptions::toJson(recordoptions::options()));
+}
+
+//! Theme 7: the time format musician-facing fields show; with none given it reads it.
+ControlResult timeFormat(const QJsonObject& args)
+{
+	const musicaltime::Format before = musicaltime::currentFormat();
+	const auto after = args.contains(QStringLiteral("format"))
+		? static_cast<musicaltime::Format>(musicaltime::formatNames().indexOf(args.value(QStringLiteral("format")).toString()))
+		: before;
+	if (after != before)  // only a real change is an undo step
+	{
+		musicaltime::setFormat(after);
+		addUndoStep([before]() { musicaltime::setFormat(before); }, [after]() { musicaltime::setFormat(after); });
+	}
+	const musicaltime::Format now = musicaltime::currentFormat();
+	return ControlResult::success({{QStringLiteral("format"), musicaltime::formatNames().at(static_cast<int>(now))},
+		{QStringLiteral("label"), musicaltime::formatLabel(now)}, {QStringLiteral("formats"), QJsonArray::fromStringList(musicaltime::formatNames())}});
 }
 
 //! The segment of @a model that holds @a tick, or false.
@@ -129,8 +150,9 @@ void registerRecordingPassCommands(ControlRegistry& registry)
 	cmd.description = QStringLiteral("How a recording pass starts and what it keeps: 'count_in_bars' (0..4 - the metronome clicks "
 		"them before the play position, on or not), 'pre_roll_bars' (0..8 - played without the click), so the transport starts "
 		"that many bars early and audio is captured only from the play position; 'mode' overdub (a MIDI pass keeps the notes "
-		"it plays over) or replace (the notes a recorded note overlaps are removed). A field left out keeps its value; none "
-		"reads them. A preference in the config file, not the project; a change is one undo step.");
+		"it plays over) or replace (a recorded note erases the notes already in the clip that it overlaps, at any pitch - "
+		"notes only: the clip's controller lanes and all automation are kept; the reply's 'mode_scope' says so). A field left "
+		"out keeps its value; none reads them. A preference in the config file, not the project; a change is one undo step.");
 	cmd.argsSchema = objectSchema({{QStringLiteral("count_in_bars"), integerProperty(0, 4)},
 		{QStringLiteral("pre_roll_bars"), integerProperty(0, 8)}, {QStringLiteral("mode"), enumProperty(recordoptions::modeNames())}});
 	cmd.resultSchema = objectProperty();
@@ -138,6 +160,13 @@ void registerRecordingPassCommands(ControlRegistry& registry)
 	cmd.requiresEngine = false;
 	cmd.handler = recordOptions;
 	registry.registerCommand(cmd);
+
+	defineCommandWithSchema(registry, QStringLiteral("transport.time_format"),
+		QStringLiteral("How musician-facing positions and lengths read - the header's position, the Inspector's clip and note "
+			"fields, the tempo map, the comp bounds: 'format' bars_beats (the default: \"5.1.1\" for a position, \"1.0.0\" for a "
+			"one-bar length), ticks, or time (min:sec through the tempo map). Typed text is read in any of them. None given "
+			"reads it. A preference in the config file, not the project; a change is one undo step."),
+		objectSchema({{QStringLiteral("format"), enumProperty(musicaltime::formatNames())}}), true, timeFormat, false);
 
 	cmd.id = QStringLiteral("comp.cycle");
 	cmd.group = QStringLiteral("comp");

@@ -37,6 +37,7 @@ class QLabel;
 class QLineEdit;
 class QMenu;
 class QListWidget;
+class QTimer;
 class QTreeWidget;
 class QTreeWidgetItem;
 
@@ -63,7 +64,10 @@ namespace lmms::gui
  *  - WF-014: Back and Forward step through what the view has shown (browser.browse / history_go);
  *  - WF-018: Gallery shows the results as waveform thumbnails (browser.thumbnail) instead of columns;
  *  - WF-020 / WF-009: a row's menu finds similar sounds (browser.similar) and previews the file as it is
- *    or matched to the song's tempo and key (browser.preview).
+ *    or matched to the song's tempo and key (browser.preview);
+ *  - theme 3 (0.5.0 UX): the list follows the search field as it is typed (one history entry, refined in
+ *    place); Enter loads the current result, a click or Space previews it (BrowserResultActions), and the
+ *    preview stops when the result, the list, the query or the kind or root changes.
  *  A row drags out as the file lists' rows do, so a sample drops on a track or a launcher cell. */
 class LMMS_EXPORT BrowserSearchView : public SideBarWidget
 {
@@ -71,8 +75,10 @@ class LMMS_EXPORT BrowserSearchView : public SideBarWidget
 public:
 	explicit BrowserSearchView(QWidget* parent);
 
-	//! Run the search field (and filters) now; what the Search button and Return do.
+	//! Run the search field (and filters) now, as a new history entry; what a changed kind, root or index does.
 	void runSearch();
+	//! Run a search typing has left pending now (what the panel's Enter and arrow keys do first).
+	Q_INVOKABLE void settleSearch();
 	//! Run the saved collection @a name.
 	void runCollection(const QString& name);
 	//! The indexed sounds most like the file at @a path.
@@ -86,6 +92,7 @@ public:
 	int resultCount() const;
 	QTreeWidget* results() const { return m_results; }
 	QListWidget* galleryView() const { return m_gallery; }
+	class BrowserResultActions* actions() const { return m_actions; }
 
 private:
 	void buildActionRow();
@@ -93,8 +100,13 @@ private:
 	//! A collection picked in the list: run once per gesture (a click and an activation can both come).
 	void pickCollection(const QString& name);
 	QJsonObject queryArgs() const;
+	//! The search the field and filters describe; @a live when typing ran it (it refines the last live one in place).
+	void search(bool live);
+	void runLiveSearch();
+	//! A press on a result: a drag drops its file, a click previews it.
+	void pressRow(const QString& kind, const QString& path, const QPixmap& icon);
 	//! Run a list command through browser.browse (so it joins the history) and show its items.
-	void browse(const QString& command, const QJsonObject& args, const QString& label);
+	void browse(const QString& command, const QJsonObject& args, const QString& label, bool live = false);
 	//! A browse or history step's answer: its items and their count on the status line, or its error there.
 	void showBrowsed(const ControlResult& shown);
 	//! Put the search a history entry ran back in the field and filters (a collection or similar sounds leaves them).
@@ -115,6 +127,9 @@ private:
 	QListWidget* m_collections = nullptr;
 	QTreeWidget* m_results = nullptr;
 	QListWidget* m_gallery = nullptr;
+	class BrowserResultActions* m_actions = nullptr;
+	QTimer* m_live = nullptr;  //!< the pause in typing before a live search runs
+	bool m_liveEntry = false;  //!< the current history entry is a live search (the next one replaces it)
 	QJsonArray m_items;
 	bool m_showingMedia = false;  //!< the list is Project Media, not a history entry
 	QString m_lastPicked;  //!< pickCollection's last name and when, so one gesture runs it once

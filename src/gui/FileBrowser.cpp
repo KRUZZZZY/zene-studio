@@ -108,6 +108,7 @@ FileBrowser::FileBrowser(Type type, const QString& directories, const QString& f
 	m_filterEdit->setPlaceholderText(tr("Search"));
 	m_filterEdit->setClearButtonEnabled(true);
 	m_filterEdit->addAction(embed::getIconPixmap("zoom"), QLineEdit::LeadingPosition);
+	m_filterEdit->setObjectName(QStringLiteral("browserSearch"));  // 0.5.0 theme 3: the Browser panel shows it first
 
 	connect(m_filterEdit, &QLineEdit::textEdited, this, &FileBrowser::onSearch);
 	connect(&m_searchJob, &FileSearchJob::started, this, &FileBrowser::onSearchStarted, Qt::QueuedConnection);
@@ -473,6 +474,7 @@ FileBrowserTreeWidget::FileBrowserTreeWidget(QWidget * parent ) :
 	setColumnCount( 1 );
 	headerItem()->setHidden( true );
 	setSortingEnabled( false );
+	setProperty("browserResults", true);  // 0.5.0 theme 3: what the Browser panel's search field steps through
 
 	connect( this, SIGNAL(itemDoubleClicked(QTreeWidgetItem*,int)),
 			SLOT(activateListItem(QTreeWidgetItem*,int)));
@@ -559,21 +561,32 @@ void FileBrowserTreeWidget::keyPressEvent(QKeyEvent * ke )
 		previewFileItem(file);
 	}
 
-	// When enter is pressed, add the selected item...
-	if (insert)
-	{
-		// ...to the song editor by default, or to the pattern editor if ctrl is held
-		bool songEditor = !(ke->modifiers() & Qt::ControlModifier);
-		// If shift is held, we send the item to a new sample track...
-		bool sampleTrack = ke->modifiers() & Qt::ShiftModifier;
-		// ...but only in the song editor. So, ctrl+shift enter does nothing
-		if (sampleTrack && songEditor){ openInNewSampleTrack(file); }
-		// Otherwise we send the item as a new instrument track
-		else if (!sampleTrack){ openInNewInstrumentTrack(file, songEditor); }
-	}
+	// When enter is pressed, add the selected item
+	if (insert) { insertFileItem(file, ke->modifiers()); }
 
 	// When space is pressed, start a preview of the selected item
 	if (preview) { previewFileItem(file); }
+}
+
+
+
+
+void FileBrowserTreeWidget::insertFileItem(FileItem* file, Qt::KeyboardModifiers modifiers)
+{
+	// 0.5.0 theme 3: Enter loads what it is on - a project opens and a MIDI file is imported, as a double-click does
+	if (!file->isTrack())
+	{
+		activateListItem(file, 0);
+		return;
+	}
+	// To the song editor by default, or to the pattern editor if ctrl is held
+	bool songEditor = !(modifiers & Qt::ControlModifier);
+	// If shift is held, we send the item to a new sample track...
+	bool sampleTrack = modifiers & Qt::ShiftModifier;
+	// ...but only in the song editor. So, ctrl+shift enter does nothing
+	if (sampleTrack && songEditor){ openInNewSampleTrack(file); }
+	// Otherwise we send the item as a new instrument track
+	else if (!sampleTrack){ openInNewInstrumentTrack(file, songEditor); }
 }
 
 

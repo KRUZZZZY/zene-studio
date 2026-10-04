@@ -34,6 +34,7 @@
 #include "ProjectInfo.h"
 #include "ProjectMarkers.h"
 #include "TrackKeyNames.h"
+#include "ProjectWorkspace.h"
 #include "TrackLooks.h"
 #include "TrackVersions.h"
 #include "ViewMemory.h"
@@ -53,6 +54,7 @@ void registerAll()
 	EditLocks::instance();  // W3 L12
 	MixerSnapshots::instance();
 	ProjectInfo::instance();
+	ProjectWorkspace::instance();  // 0.5.0 themes 19/22: workflows and the layout kept with the project
 	TrackLooks::instance();  // W3 L13
 	ViewMemory::instance();
 	AutomationLatency::instance();  // W3 engine: read by the audio thread's automation ramps

@@ -25,8 +25,8 @@
 #include "TransportReadouts.h"
 
 #include <cmath>
-#include <limits>
 
+#include <QActionGroup>
 #include <QHBoxLayout>
 #include <QJsonObject>
 #include <QKeyEvent>
@@ -38,11 +38,14 @@
 
 #include "Accessibility.h"
 #include "AudioEngine.h"
+#include "CommandForm.h"
 #include "ControlRegistry.h"
 #include "DesignTokens.h"
 #include "Engine.h"
 #include "MeterModel.h"
+#include "MusicalTime.h"
 #include "ProjectJournal.h"
+#include "RecordOptions.h"
 #include "Song.h"
 #include "TempoMap.h"
 
@@ -119,7 +122,7 @@ void ReadoutField::paintEvent(QPaintEvent*)
 	p.drawRoundedRect(r, tokens::radius::lg, tokens::radius::lg);
 	if (hasFocus())
 	{
-		p.setPen(QPen(pal.focusRing, 1.5));
+		p.setPen(QPen(pal.focusRing, tokens::focusRingWidth()));
 		p.setBrush(Qt::NoBrush);
 		p.drawRoundedRect(r.adjusted(0.75, 0.75, -0.75, -0.75), tokens::radius::lg, tokens::radius::lg);
 	}
@@ -271,48 +274,57 @@ bool setMeterTyped(MeterModel* meter, const QString& typed)
 
 QString barBeatText(int ticks)
 {
-	Song* song = Engine::getSong();
-	const int perBar = std::max(1, song->ticksPerBar());
-	const int numerator = std::max(1, song->getTimeSigModel().getNumerator());
-	const int perBeat = std::max(1, perBar / numerator);
-	// A denominator that does not divide 192 (5/7) leaves a bar a tick or two longer than its whole beats:
-	// those ticks belong to the last beat, never to a beat past the meter (review r4 L19 #13).
-	return QStringLiteral("%1.%2").arg(ticks / perBar + 1).arg(std::min(numerator, (ticks % perBar) / perBeat + 1));
+	return musicaltime::barBeatText(ticks);
+}
+
+bool ticksFromBarBeat(const QString& text, int* ticks)
+{
+	return musicaltime::positionFromText(text, ticks, 0, musicaltime::Format::BarsBeats);
 }
 
 namespace
 {
 
-//! Part @a index of @a parts as a number in [1, @a most] into @a out; true for an absent part (@a out kept).
-bool partIn(const QStringList& parts, int index, int most, int* out)
+//! One checkable right-click action on @a widget per value in @a values: each runs @a id with {@a key: value}.
+QActionGroup* addChoices(QWidget* widget, const QString& id, const QString& key, const QStringList& values,
+	const QStringList& labels)
 {
-	if (index >= parts.size()) { return true; }
-	bool ok = false;
-	const int value = parts.at(index).toInt(&ok);
-	if (!ok || value < 1 || value > most) { return false; }
-	*out = value;
-	return true;
+	widget->setContextMenuPolicy(Qt::ActionsContextMenu);
+	auto* group = new QActionGroup(widget);
+	for (int i = 0; i < values.size(); ++i)
+	{
+		auto* action = new QAction(labels.value(i, values.at(i)), group);
+		action->setCheckable(true);
+		action->setProperty("controlCommand", id);
+		const QJsonObject args{{key, values.at(i)}};
+		QObject::connect(action, &QAction::triggered, widget, [widget, id, args] {
+			runCommand(widget, CommandCall{id, args, {}, QString(), false});
+		});
+		widget->addAction(action);
+	}
+	return group;
+}
+
+void checkChoice(QActionGroup* group, int index)
+{
+	const QList<QAction*> actions = group->actions();
+	for (int i = 0; i < actions.size(); ++i) { actions.at(i)->setChecked(i == index); }
 }
 
 } // namespace
 
-bool ticksFromBarBeat(const QString& text, int* ticks)
+void addTimeFormatChoices(QWidget* widget)
 {
-	Song* song = Engine::getSong();
-	const QStringList parts = text.trimmed().split(QLatin1Char('.'));
-	const int numerator = std::max(1, song->getTimeSigModel().getNumerator());
-	const int perBar = std::max(1, song->ticksPerBar());
-	const int perBeat = std::max(1, perBar / numerator);
-	const int perSixteenth = std::max(1, perBeat / 4);
-	// A beat inside the bar, a sixteenth (as the position readout shows it) inside the beat, and a bar whose
-	// start still fits a tick count (review L19 #6, #7).
-	int bar = 0;
-	int beat = 1;
-	int sixteenth = 1;
-	if (parts.size() > 3 || !partIn(parts, 0, std::numeric_limits<int>::max() / perBar, &bar) || !partIn(parts, 1, numerator, &beat)
-		|| !partIn(parts, 2, (perBeat + perSixteenth - 1) / perSixteenth, &sixteenth)) { return false; }
-	*ticks = (bar - 1) * perBar + (beat - 1) * perBeat + (sixteenth - 1) * perSixteenth;
-	return true;
+	QStringList labels;
+	for (int i = 0; i < musicaltime::formatNames().size(); ++i)
+	{
+		labels << QObject::tr("Show %1").arg(musicaltime::formatLabel(static_cast<musicaltime::Format>(i)));
+	}
+	QActionGroup* group = addChoices(widget, QStringLiteral("transport.time_format"), QStringLiteral("format"),
+		musicaltime::formatNames(), labels);
+	const auto sync = [group] { checkChoice(group, static_cast<int>(musicaltime::currentFormat())); };
+	sync();
+	QObject::connect(musicaltime::formatSignal(), &musicaltime::FormatSignal::changed, group, sync);
 }
 
 TransportReadouts::TransportReadouts(QWidget* parent)
@@ -327,11 +339,12 @@ TransportReadouts::TransportReadouts(QWidget* parent)
 	m_meter = new ReadoutField(tr("Meter"), this);
 	m_position = new ReadoutField(tr("Position"), this);
 	m_time = new ReadoutField(tr("Time"), this);
+	m_recordMode = new ReadoutField(tr("Rec mode"), this);
 	m_volume = new ReadoutField(tr("Master"), this);
 	m_pitch = new ReadoutField(tr("Transpose"), this);
 	m_load = new ReadoutField(tr("CPU"), this);
 	m_loudness = new ReadoutField(tr("LUFS"), this);
-	for (ReadoutField* f : {m_tempo, m_meter, m_position, m_time, m_volume, m_pitch, m_load, m_loudness}) { row->addWidget(f); }
+	for (ReadoutField* f : {m_tempo, m_meter, m_position, m_time, m_recordMode, m_volume, m_pitch, m_load, m_loudness}) { row->addWidget(f); }
 	// A shell built without an engine (a widget test) shows the readouts inert.
 	if (song != nullptr) { bindToSong(song); }
 }
@@ -343,23 +356,36 @@ void TransportReadouts::bindToSong(Song* song)
 	m_meter->bindText([meter]() { return QStringLiteral("%1/%2").arg(meter->getNumerator()).arg(meter->getDenominator()); },
 		[meter](const QString& typed) { return setMeterTyped(meter, typed); });
 	connect(meter, &Model::dataChanged, m_meter, &ReadoutField::refresh);
-	m_position->bindText([song]() {
-		const TimePos pos = song->getPlayPos();
-		const int ticksPerBeat = std::max(1, song->ticksPerBar() / std::max(1, song->getTimeSigModel().getNumerator()));
-		const int sixteenth = std::max(1, ticksPerBeat / 4);
-		return QStringLiteral("%1.%2.%3").arg(pos.getBar() + 1).arg(song->getBeat() + 1)
-			.arg(song->getBeatTicks() / sixteenth + 1);
-	}, [](const QString& typed) {
-		// "bar" or "bar.beat": jump there (transport.seek), as typing a position does in any DAW.
-		int ticks = 0;
-		return ticksFromBarBeat(typed, &ticks)
-			&& ControlRegistry::instance()->invoke(QStringLiteral("transport.seek"), {{QStringLiteral("ticks"), ticks}}).ok;
-	});
+	// Theme 7: the play position in the time format (bars|beats by default); typed in any of them it jumps
+	// there (transport.seek), as typing a position does in any DAW. Right-click picks the format.
+	m_position->bindText([song]() { return musicaltime::counterText(song->getPlayPos().getTicks()); },
+		[](const QString& typed) {
+			tick_t ticks = 0;
+			return musicaltime::positionFromText(typed, &ticks)
+				&& ControlRegistry::instance()->invoke(QStringLiteral("transport.seek"), {{QStringLiteral("ticks"), ticks}}).ok;
+		});
+	m_position->setToolTip(tr("Position: double-click to type a bar.beat.sixteenth, ticks (\"768t\") or a time "
+		"(\"0:08.5\"); right-click to show ticks or time instead of bars and beats"));
+	addTimeFormatChoices(m_position);
+	connect(musicaltime::formatSignal(), &musicaltime::FormatSignal::changed, m_position, &ReadoutField::refresh);
 	m_time->bindText([song]() {
 		const int ms = song->getMilliseconds();
 		return QStringLiteral("%1:%2.%3").arg(ms / 60000).arg((ms / 1000) % 60, 2, 10, QLatin1Char('0'))
 			.arg((ms % 1000) / 10, 2, 10, QLatin1Char('0'));
 	});
+	// Theme 7: the record mode, its scope in the tooltip - what a MIDI pass does to the notes already there.
+	// Right-click chooses (transport.record_options); typing "overdub" or "replace" does too.
+	m_recordMode->bindText([]() { return recordoptions::modeLabel(recordoptions::options().mode); },
+		[](const QString& typed) {
+			const QString word = typed.trimmed().toLower();
+			const int mode = word.isEmpty() ? -1 : word.startsWith(QLatin1Char('r')) ? 1 : word.startsWith(QLatin1Char('o')) ? 0 : -1;
+			return mode >= 0 && ControlRegistry::instance()->invoke(QStringLiteral("transport.record_options"),
+				{{QStringLiteral("mode"), recordoptions::modeNames().at(mode)}}).ok;
+		});
+	m_recordModes = addChoices(m_recordMode, QStringLiteral("transport.record_options"), QStringLiteral("mode"),
+		recordoptions::modeNames(), {recordoptions::modeChoice(recordoptions::Mode::Overdub),
+			recordoptions::modeChoice(recordoptions::Mode::Replace)});
+	syncRecordMode();
 	m_volume->bind(&song->masterVolumeModel(), [](int v) { return QStringLiteral("%1%").arg(v); }, 2);
 	m_pitch->bind(&song->masterPitchModel(), [](int v) { return signedValue(v); }, 8);
 	m_load->bindText([]() { return QStringLiteral("%1%").arg(Engine::audioEngine()->cpuLoad()); });
@@ -373,6 +399,18 @@ void TransportReadouts::bindToSong(Song* song)
 	});
 }
 
+void TransportReadouts::syncRecordMode()
+{
+	if (m_recordModes == nullptr) { return; }
+	const auto mode = static_cast<int>(recordoptions::options().mode);
+	if (mode == m_shownRecordMode) { return; }
+	m_shownRecordMode = mode;
+	m_recordMode->refresh();
+	m_recordMode->setToolTip(tr("%1\nRight-click to choose; double-click and type overdub or replace.")
+		.arg(recordoptions::modeScope(static_cast<recordoptions::Mode>(mode))));
+	checkChoice(m_recordModes, mode);
+}
+
 void TransportReadouts::tick()
 {
 	if (Engine::getSong() == nullptr) { return; }
@@ -382,7 +420,11 @@ void TransportReadouts::tick()
 	// The loudness reading changes at the meter's own 100 ms block rate; 60 Hz would only
 	// re-ask the registry for the same numbers.
 	constexpr int LoudnessEvery = 15;
-	if (++m_ticks % LoudnessEvery == 0) { m_loudness->refresh(); }
+	if (++m_ticks % LoudnessEvery == 0)
+	{
+		m_loudness->refresh();
+		syncRecordMode();  // a mode set from the Record menu, a script or an undo
+	}
 }
 
 } // namespace lmms::gui
