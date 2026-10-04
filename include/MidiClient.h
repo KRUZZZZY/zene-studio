@@ -59,6 +59,15 @@ public:
 						const TimePos & _time,
 						const MidiPort * _port ) = 0;
 
+	//! 0.5.0 W4: @a event, produced @a offset frames into the engine period. A client that can
+	//! place an event inside its output cycle overrides this (MidiJack); every other client sends
+	//! it exactly as processOutEvent() does, so their output is unchanged.
+	virtual void processOutEventAt( const MidiEvent& event, const TimePos& time, const MidiPort* port, f_cnt_t offset )
+	{
+		(void) offset;
+		processOutEvent( event, time, port );
+	}
+
 	// inheriting classes can re-implement this for being able to update
 	// their internal port-structures etc.
 	virtual void applyPortMode( MidiPort * _port );

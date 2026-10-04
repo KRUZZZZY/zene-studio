@@ -62,8 +62,8 @@ const QString ClauseClipBake = QStringLiteral("ProjectJournal (Clip checkpoint: 
 	"control.undo, one step; the transaction's before-state is bounded metadata (id/frames/"
 	"rate), never the samples (decision §2.1, include/ControlReversibility.h:437)");
 
-const QString NoInverseCommand = QStringLiteral("UNIMPLEMENTED: no command re-applies a buffer "
-	"by hand - the Clip checkpoint holds the previous source, which is the documented route");
+//! E19: the Clip checkpoint holds the previous source, and control.undo replays it - no command re-applies a buffer.
+const QString NoInverseCommand = QStringLiteral("control.undo");
 
 struct BakeTarget
 {

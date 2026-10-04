@@ -33,11 +33,16 @@ namespace lmms
 
 class MidiClip;
 
-/*! 0.5.0 L07 (ED-086, the export half): @a clip as a MusicXML 4.0 partwise score - one part, one voice, in the
- *  time signature @a numerator / @a denominator. Notes and rests are quantised to a 64th (3 ticks; divisions are
- *  the engine's 48 ticks a quarter, so a duration is its tick count), notes starting together become a chord,
- *  an earlier note is cut where a later one starts, and a value no single note can show is tied from standard
- *  ones, across bar lines too. Muted notes are left out. */
+/*! 0.5.0 L07 (ED-086, the export half): @a clip as a MusicXML 4.0 partwise score - one part, in the time
+ *  signature @a numerator / @a denominator. Notes and rests are quantised to a 64th (3 ticks; divisions are the
+ *  engine's 48 ticks a quarter, so a duration is its tick count), notes starting together with one length become
+ *  a chord, an earlier note is cut where the next one of its voice starts, and a value no single note can show
+ *  is tied from standard ones, across bar lines too. Muted notes are left out.
+ *
+ *  Voices (W6): voice 1 holds, at every start, the shortest of the notes starting there, with rests in its gaps -
+ *  for notes that share their lengths, every note, as before. Notes that start with shorter ones but last longer
+ *  go to voice 2, 3, ... by length, written after a <backup> to the bar line with <forward> over their gaps, so
+ *  every note keeps its own duration. */
 LMMS_EXPORT QString musicXmlOf(const MidiClip& clip, int numerator, int denominator, const QString& title);
 
 } // namespace lmms

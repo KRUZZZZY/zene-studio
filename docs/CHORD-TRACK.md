@@ -124,7 +124,7 @@ The run reports the seed it used, so a caller that liked a take can reproduce it
 
 ## 5. The command surface
 
-Nine ids, all of them `chord.*` (the ids keep the group prefix; the file split is a read/edit
+Ten ids (nine in 0.3.0; `chord.follow_set` since 0.5.0, §6a), all of them `chord.*` (the ids keep the group prefix; the file split is a read/edit
 split, not a group split - and inside the writes it is also the A16 seam: the four track verbs
 record an action checkpoint, the two generators reverse through the clip's own, so they are
 `ControlCommandsChordEdit.cpp` and `ControlCommandsChordWrite.cpp`):
@@ -140,10 +140,11 @@ record an action checkpoint, the two generators reverse through the clip's own, 
 | `chord.detect_to_track` | yes | recorded action checkpoint; when NOTHING could be written the track is put back and the call is refused BEFORE a step is recorded |
 | `chord.track_write` | yes | the clip's own journal checkpoint |
 | `chord.progression_generate` | yes | the clip's own journal checkpoint |
+| `chord.follow_set` | yes | recorded action checkpoint (followers included); the recorded op names `chord.follow_set` with the track's previous mode |
 
 | verb | args (required in bold) | result |
 |---|---|---|
-| `chord.get_state` | — | `chords`, `max_chords`, `events[]` (`pos`, `length`, `root`, `octave`, `key`, `chord`, `scale`) |
+| `chord.get_state` | — | `chords`, `max_chords`, `events[]` (`pos`, `length`, `root`, `octave`, `key`, `chord`, `scale`), `followers[]` (`track`, `mode`) |
 | `chord.detect` | **clip**, `window_ticks`, `min_pitch_classes` | `clip`, `track`, `count`, `window_ticks`, `min_pitch_classes`, `chords[]`, `key` |
 | `chord.progression_list` | `name` | `progressions[]`, `count`, `scales[]`, `chords[]`, `patterns[]`, `max_steps`, `max_degree_count`, `max_chords`, `progression` |
 | `chord.set` | **pos**, **chord**, `root`, `octave`, `length`, `scale` | the track state, `event`, `replaced` |
@@ -151,6 +152,7 @@ record an action checkpoint, the two generators reverse through the clip's own, 
 | `chord.clear` | — | the track state, `removed` (count) |
 | `chord.detect_to_track` | **clip**, `window_ticks`, `min_pitch_classes`, `append` | the track state, `clip`, `clip_track`, `detected`, `written`, `skipped`, `appended` |
 | `chord.track_write` | **clip**, `pattern`, `velocity`, `length`, `replace` | `clip`, `track`, `pattern`, `chords_written`, `notes_written`, `notes_replaced`, `note_count` |
+| `chord.follow_set` | **track**, `mode` (off / chord / scale) | the track state, `track`, `mode`, `previous`, `changed` |
 | `chord.progression_generate` | **clip**, **progression**, `scale`, `root`, `octave`, `tick`, `step_ticks`, `steps`, `pattern`, `velocity`, `seed`, `variation`, `replace` | `clip`, `track`, `progression`, `scale`, `root`, `octave`, `tick`, `step_ticks`, `steps`, `pattern`, `velocity`, `seed`, `variation`, `chords[]`, `notes_written`, `notes_replaced`, `note_count` |
 
 `replace` (default true) clears the clip's notes first and reports how many went; false adds to
@@ -192,11 +194,43 @@ documented tool, 227 -> 236 ids).
   and the project file (the element present when the track holds a chord, absent when it does
   not).
 
+## 6a. 0.5.0 E23: the chord lane, and chord follow
+
+**The chord lane.** The arranger's ruler lanes (`src/gui/ArrangerRulerLanes.cpp`, theme 9) have a
+fourth lane under Tempo: each chord a band from where it starts for as long as it sounds
+(`ChordTrack::effectiveLength`), labelled with its root and chord ("C Major"), its scale in the
+tooltip; a click moves the play position to the chord (`transport.seek`). The lane takes room only
+while the chord track holds a chord (so a project without one lays out as before), and
+`arrangement.ruler_lanes` gained a `chords` switch (the preference, all four lanes by default). The
+lane follows the chord track by `ChordTrack::revision()`, polled every 250 ms, so a chord set,
+removed, undone or loaded shows without the model having to signal the interface.
+
+**Chord follow.** `chord.follow_set {track, mode}` makes an instrument track FOLLOW the chord track
+while it plays: each note it starts in the arrangement sounds on the nearest tone (down on a tie) of
+the chord sounding where the note starts (`mode` chord, the default) or of that chord's scale
+(`mode` scale; the chord where the event names no scale); `mode` off stops it. It is the
+non-destructive twin of `note.follow_chords`: the play handle's copy of the note moves, the clip
+keeps its keys. Where the chord track is silent the notes play as written. The followers are part
+of the chord track - `<follow track="<id>" mode="chord|scale"/>` children of `<chord-track>`, so the
+element is written when the track has followers even with no chord - and `chord.get_state` reports
+them as `followers[]`. `chord.clear` empties the chords and keeps the followers; a new project
+drops both. One recorded action checkpoint, like every chord-track edit; setting the mode a track
+already has records nothing (`changed` false).
+
+The read is on the audio thread (`ChordTrack::followedKey`, called from
+`InstrumentTrack::decorateNoteHandle` through `include/ChordFollow.h`), so every chord-track edit
+takes the model-change guard and the tones each event sounds are derived on the editing thread as
+two 12-bit masks; the audio read is a scan over integers. Not followed: notes played live from a
+MIDI input, and a clip played on its own in the piano roll (its notes have no song position).
+Proofs: `ChordTrackTest` (`followedKeySnapsToTheSoundingChord`, `followersPersistWithTheTrack`)
+and `ControlChordCommandsTest` (`aTrackFollowsTheChordTrackReversibly`).
+
 ## 7. What is NOT in this release
 
-The interface does not show or play a chord track, and there is no chord ruler, no chord lane and
-no generator panel: `grep -rniI 'ChordTrack\|chord-track' src/gui/` returns **0** hits. The
-socket is the only way to reach any of it. Also not built: chord detection from AUDIO (this
+*(0.3.0 record; since 0.5.0 E23 the arranger draws a chord lane and playback reads the chord track
+for the tracks that follow it - §6a.)* The interface does not show or play a chord track, and there
+is no chord ruler, no chord lane and no generator panel. The socket is the only way to reach any of
+it. Also not built: chord detection from AUDIO (this
 detection reads notes), a chord track that plays through an instrument on its own (the track is
 harmony written down; `chord.track_write` is what turns it into notes), key/scale auto-detection
 over TIME (the key reported is one estimate for the whole note list), and roman-numeral analysis

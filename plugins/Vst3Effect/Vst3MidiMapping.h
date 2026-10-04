@@ -34,6 +34,7 @@ namespace Steinberg::Vst
 {
 class IEditController;
 class IParameterChanges;
+class IParamValueQueue;
 }
 
 namespace lmms::vst3
@@ -57,9 +58,11 @@ public:
 	//! GUI thread: read the plug-in's mapping for event bus @a busIndex; empty when the
 	//! controller does not implement IMidiMapping.
 	void build(Steinberg::Vst::IEditController* controller, std::int32_t busIndex);
-	//! Audio thread: queue @a midi as a parameter change when it is a mapped controller.
-	//! True when it was (and is then not to be sent as an event).
-	auto apply(const MidiEventIn& midi, Steinberg::Vst::IParameterChanges* changes) const -> bool;
+	//! Audio thread: queue @a midi as a parameter change when it is a mapped controller, as a point
+	//! at @a sampleOffset (the event's own frame, which the caller bounds to the request). True when
+	//! it was (and is then not to be sent as an event).
+	auto apply(const MidiEventIn& midi, Steinberg::Vst::IParameterChanges* changes,
+		std::int32_t sampleOffset = 0) const -> bool;
 	auto mappedCount() const -> int { return m_mapped; }
 
 private:
@@ -67,6 +70,26 @@ private:
 	std::array<std::uint32_t, 16 * Controllers> m_params{};
 	int m_mapped = 0;
 };
+
+/*! The points one parameter's queue takes in one request. The SDK's ParameterValueQueue reserves
+ *  this many (kQueueReservedPoints, public.sdk/source/vst/hosting/parameterchanges.cpp), so a queue
+ *  that stays within it never reallocates on the audio thread. */
+inline constexpr int kMaxPointsPerParameter = 5;
+
+/*! Audio thread: add a point at @a sampleOffset to @a queue without growing it past
+ *  kMaxPointsPerParameter. Points arrive in time order (drainMidiIntoEventList sorts them); once the
+ *  queue is full, a later point overwrites the last one's value, so the newest value is never lost
+ *  and only lands at the last kept point's frame. */
+void addBoundedPoint(Steinberg::Vst::IParamValueQueue* queue, std::int32_t sampleOffset, double value);
+
+/*! Audio thread: copy into @a to the points of @a from that fall in the chunk [offset, offset + chunk),
+ *  rebased to the chunk's start - the parameter half of the per-chunk slicing HostedPlugin::process()
+ *  does for a request longer than the prepared block (the event half is Impl::sliceEvents). A
+ *  parameter with no point in the chunk is left out. @a to is cleared by the caller. Every point of a
+ *  request lies in [0, frames), so each one reaches exactly one chunk. No allocation while @a to has
+ *  a queue per parameter (prepare() sizes it) and @a from keeps kMaxPointsPerParameter. */
+void sliceParameterChanges(Steinberg::Vst::IParameterChanges& from, Steinberg::Vst::IParameterChanges& to,
+	std::int32_t offset, std::int32_t chunk);
 
 } // namespace lmms::vst3
 

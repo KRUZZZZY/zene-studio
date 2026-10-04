@@ -122,6 +122,15 @@ const ReversibilityRow kChordRows[] = {
 		"BEFORE any step is recorded, so a refused call leaves no undo entry behind",
 		""),
 
+	R("chord.follow_set", RC::TrueInverse, true,
+		"which tracks follow the chord track is part of the chord track (its <follow> children), "
+		"project state the Song's journal checkpoint does not carry",
+		"action checkpoint: the <chord-track> element, followers included, is captured before the "
+		"change and the recorded step writes it back through ChordTrack::loadSettings, ONE step. "
+		"The recorded inverse op names chord.follow_set with the track's previous mode. Setting the "
+		"mode a track already has changes nothing and records no step",
+		""),
+
 	// ---- the two generators: the CLIP's own checkpoint is the inverse ----
 	R("chord.track_write", RC::TrueInverse, true,
 		"it writes notes into a MidiClip and, by default, first clears the notes the clip "

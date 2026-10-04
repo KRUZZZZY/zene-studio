@@ -69,6 +69,17 @@ SampleClip* makeTake(SampleTrack& track, int rate, float level, int lane)
 	return clip;
 }
 
+//! A take whose first second is 0.5 and second second is 0.25: where a span reads from shows in its level.
+SampleClip* makeStepTake(SampleTrack& track, int rate)
+{
+	auto* clip = dynamic_cast<SampleClip*>(track.createClip(TimePos(0)));
+	Q_ASSERT(clip != nullptr);
+	std::vector<SampleFrame> data(static_cast<std::size_t>(2 * rate), SampleFrame(0.5f, 0.5f));
+	std::fill(data.begin() + rate, data.end(), SampleFrame(0.25f, 0.25f));
+	clip->setSampleBuffer(std::make_shared<SampleBuffer>(data.data(), data.size(), rate));
+	return clip;
+}
+
 std::vector<SampleFrame> render(SampleClip* clip)
 {
 	SamplePlayHandle handle(clip, clip->sampleWindow());
@@ -180,6 +191,37 @@ private slots:
 			QVERIFY(withLanes[i][0] == plain[i][0] && withLanes[i][1] == plain[i][1]);
 		}
 		QVERIFY(std::fabs(meanLevel(plain, 256, plain.size() / 2) - 0.5) < 1e-6);
+	}
+
+	//! 0.5.0 E2: a slipped segment READS the take slipped. One take, its first half at 0.5 and its second at 0.25,
+	//! comped in quarters Q: [0, Q) at its own place, then [Q, 4Q) slipped by 2Q - one segment, one slip. So
+	//! [Q, 2Q) reads the take's [3Q, 4Q) (0.25 - unslipped it would be 0.5), and [2Q, 4Q) reads past the take's end
+	//! (silence - unslipped it would be 0.25).
+	void aSlippedSegmentReadsTheTakeSlipped()
+	{
+		SampleTrack track(Engine::getSong());
+		SampleClip* take = makeStepTake(track, m_rate);
+		TakeLaneModel& comp = track.takeLanes();
+		comp.addLane();
+		const int quarter = take->length().getTicks() / 4;
+		QVERIFY(comp.selectSegment(0, 4 * quarter, 0));
+		QVERIFY(comp.selectSegment(quarter, 4 * quarter, 0, 2 * quarter));
+		QCOMPARE(comp.segments().size(), std::size_t{2});
+
+		const std::vector<SampleFrame> out = render(take);
+		const auto at = [this](int ticks) { return static_cast<std::size_t>(std::llround(ticks * Engine::framesPerTick(m_rate))); };
+		const std::size_t guard = 512;  // clear of the comp ramps and the resampler's edges
+		QVERIFY(at(4 * quarter) <= out.size());
+		std::printf("SLIP_EVIDENCE [0,Q) %.4f  [Q,2Q) %.4f  [2Q+,4Q) %.4f\n", meanLevel(out, guard, at(quarter) - guard),
+			meanLevel(out, at(quarter) + guard, at(2 * quarter) - guard), meanLevel(out, at(3 * quarter) - at(quarter) / 2, at(4 * quarter) - guard));
+		QVERIFY(std::fabs(meanLevel(out, guard, at(quarter) - guard) - 0.5) < 1e-4);
+		QVERIFY(std::fabs(meanLevel(out, at(quarter) + guard, at(2 * quarter) - guard) - 0.25) < 1e-4);
+		QVERIFY(meanLevel(out, at(3 * quarter) - at(quarter) / 2, at(4 * quarter) - guard) < 1e-4);
+
+		// The same comp with no slip reads the take at its own place: the slip is the whole difference.
+		QVERIFY(comp.selectSegment(quarter, 4 * quarter, 0, 0));
+		const std::vector<SampleFrame> plain = render(take);
+		QVERIFY(std::fabs(meanLevel(plain, at(quarter) + guard, at(2 * quarter) - guard) - 0.5) < 1e-4);
 	}
 
 	//! R3.3: a MIDI take is comped by note - the gate InstrumentTrack::play asks per note.

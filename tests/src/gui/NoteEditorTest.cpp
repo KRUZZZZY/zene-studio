@@ -118,6 +118,28 @@ private slots:
 		m_clip = nullptr;
 	}
 
+	//! 0.5.0 W2: the grid the canvas paints reads the song's time signature and the tempo map's metre changes.
+	void theGridFollowsTheSongsMetre()
+	{
+		Song* song = Engine::getSong();
+		song->getTimeSigModel().numeratorModel().setValue(3);
+		TempoMapEvent change;
+		change.tick = 576;  // bar 5 in 3/4
+		change.hasTimeSignature = true;
+		change.numerator = 7;
+		change.denominator = 8;
+		song->tempoMap().edit([&](TempoMap& map) { map.setActive(true); return map.addEvent(change); });
+		m_editor->canvas()->repaint();
+		const std::vector<NoteGrid::MeterSpan> meter = m_editor->state().grid.meter();
+		song->tempoMap().edit([](TempoMap& map) { map.clear(); return true; });
+		song->getTimeSigModel().numeratorModel().setValue(4);
+		QCOMPARE(meter.size(), std::size_t{2});
+		QCOMPARE(meter[0].barTicks, 144);
+		QCOMPARE(meter[1].start, 576);
+		QCOMPARE(meter[1].firstBar, 4);
+		QCOMPARE(meter[1].beatTicks, 24);
+	}
+
 	void aClickWithTheDrawToolAddsOneSnappedNote()
 	{
 		m_editor->setTool(NoteTool::Draw);

@@ -154,9 +154,10 @@ private slots:
 
 	//! Removing a lane re-points the range it supplied to the base lane instead
 	//! of leaving a hole, and removing the last lane clears the composite.
-	//! A selection that RESTARTS the take inside one lane is not merged into one
-	//! segment - a merge would silently change what each tick reads - so the two
-	//! shapes are asserted separately.
+	//! 0.5.0 E2: two plain selections of one lane are ONE continuous read (a slip
+	//! of 0 is the take at its own place on both sides) and merge; a selection
+	//! that JUMPS in the take - a different slip - is not merged, because a merge
+	//! would silently change what each tick reads.
 	void removingALaneRepointsItsSegmentsToTheBaseLane()
 	{
 		QVector<SampleClip*> clips;
@@ -174,14 +175,15 @@ private slots:
 		QCOMPARE(model.segments().front().beginTick, 0);
 		QCOMPARE(model.segments().front().endTick, 200);
 
-		// The restart shape: two selections that each read the lane's take from
-		// its own start stay two segments (the merge rule only joins a
-		// CONTINUOUS read), which is the shape a comp with a deliberate jump in
-		// it is written as.
+		// Continuous: the same lane at the same slip on both sides is one read.
 		QVERIFY(model.selectSegment(0, 100, 0));
 		QVERIFY(model.selectSegment(100, 200, 0));
-		QCOMPARE(static_cast<int>(model.segments().size()), 2);
+		QCOMPARE(static_cast<int>(model.segments().size()), 1);
 		QCOMPARE(model.segments().back().sourceOffset, 0);
+		// The jump shape: the second half slipped is a deliberate seam, kept.
+		QVERIFY(model.selectSegment(100, 200, 0, 30));
+		QCOMPARE(static_cast<int>(model.segments().size()), 2);
+		QCOMPARE(model.segments().back().sourceOffset, 30);
 
 		// Removing the LAST lane clears the composite: with no lane left there
 		// is nothing that could supply a tick, and a comp of nothing is nothing.
@@ -207,12 +209,99 @@ private slots:
 		int offset = -1;
 		QVERIFY(model.resolve(40, &lane, &offset));
 		QCOMPARE(lane, 1);
-		QCOMPARE(offset, 40);
+		QCOMPARE(offset, 0);  // 0.5.0 E2: the SLIP, constant across the segment - not a position growing with the tick
 		QVERIFY(!model.resolve(4000, &lane, &offset));
+		QVERIFY(model.selectSegment(50, 100, 1, 12));
+		QVERIFY(model.resolve(60, &lane, &offset));
+		QCOMPARE(offset, 12);
+		QVERIFY(model.resolve(99, &lane, &offset));
+		QCOMPARE(offset, 12);
 
 		QVERIFY(model.selectSegment(0, 100, 0));
 		QVERIFY(model.resolve(40, &lane, &offset));
 		QCOMPARE(lane, 0);
+	}
+
+	//! 0.5.0 E2: a slip is the segment's own - painting over part of a segment,
+	//! or clamping it to a span, keeps it on what is left; the same slip next to
+	//! it joins it; and it travels in the file as `slip`. A pre-0.5.0 `srcpos`
+	//! held the old, contradictory reading and nothing ever played it, so a load
+	//! ignores it (an old project sounds as it always did).
+	void aSlipIsKeptBySplitsAndClampsAndTravelsAsSlip()
+	{
+		QVector<SampleClip*> clips;
+		SampleTrack* track = makeTakeTrack(m_dir.path(), 1, &clips);
+		QVERIFY(track != nullptr);
+		TakeLaneModel& model = track->takeLanes();
+		model.addLane();
+		model.addLane();
+		model.addLane();
+		QVERIFY(model.selectSegment(0, 200, 1, 30));
+		QVERIFY(model.selectSegment(80, 120, 2));
+		QCOMPARE(segmentBegins(model), (QVector<int>{0, 80, 120}));
+		QCOMPARE(model.segments().front().sourceOffset, 30);
+		QCOMPARE(model.segments().back().sourceOffset, 30);  // the right part keeps the slip
+		QCOMPARE(model.rebuild(50, 180), 3);
+		QCOMPARE(model.segments().front().beginTick, 50);
+		QCOMPARE(model.segments().front().sourceOffset, 30);  // clamped, slip kept
+		QVERIFY(model.selectSegment(80, 120, 1, 30));          // the same slip between them: one read again
+		QCOMPARE(static_cast<int>(model.segments().size()), 1);
+
+		QDomDocument doc;
+		QDomElement element = doc.createElement(QStringLiteral("takelanes"));
+		model.saveSettings(doc, element);
+		const QDomElement seg = element.firstChildElement(QStringLiteral("z:segment"));
+		QCOMPARE(seg.attribute(QStringLiteral("slip")), QStringLiteral("30"));
+		QVERIFY(!seg.hasAttribute(QStringLiteral("srcpos")));
+		TakeLaneModel back;
+		back.loadSettings(element);
+		QCOMPARE(back.segments().front().sourceOffset, 30);
+
+		QDomElement legacy = element.cloneNode(true).toElement();
+		QDomElement legacySeg = legacy.firstChildElement(QStringLiteral("z:segment"));
+		legacySeg.removeAttribute(QStringLiteral("slip"));
+		legacySeg.setAttribute(QStringLiteral("srcpos"), 40);
+		TakeLaneModel old;
+		old.loadSettings(legacy);
+		QCOMPARE(static_cast<int>(old.segments().size()), 1);
+		QCOMPARE(old.segments().front().sourceOffset, 0);
+	}
+
+	//! 0.5.0 E2: the take that supplies a slipped tick must reach the slipped
+	//! tick too, and the frame reported is the slipped one.
+	void aSlippedTickResolvesToTheSlippedFrame()
+	{
+		QVector<SampleClip*> clips;
+		SampleTrack* track = makeTakeTrack(m_dir.path(), 1, &clips);
+		QVERIFY(track != nullptr);
+		TakeLaneModel& model = track->takeLanes();
+		model.addLane();
+		const int length = clips[0]->length().getTicks();
+		QVERIFY(length > 100);
+		QVERIFY(model.selectSegment(0, length, 0, 40));
+		f_cnt_t frame = 0;
+		int lane = -1;
+		QVERIFY(model.resolveSource(track->getClips(), 10, &frame, &lane));
+		QCOMPARE(frame, clips[0]->sourceFrameAt(TimePos(50)));
+		// Near the end the slipped read runs off the take: unresolved, not guessed at.
+		QVERIFY(model.takeAt(track->getClips(), length - 20) == nullptr);
+		QVERIFY(!model.resolveSource(track->getClips(), length - 20, &frame, &lane));
+	}
+
+	//! 0.5.0 E2: a MIDI take is gated per note and has no slipped read, so a
+	//! non-zero slip on an instrument track is refused rather than stored unheard.
+	void aSlipOnAnInstrumentTrackIsRefused()
+	{
+		const ControlResult track = revtest::run(QStringLiteral("track.add"), {{QStringLiteral("type"), QStringLiteral("instrument")}});
+		QVERIFY(track.ok);
+		const QString trackId = track.result.value(QStringLiteral("track")).toString();
+		QVERIFY(revtest::run(QStringLiteral("comp.lane_add"), {{QStringLiteral("track"), trackId}}).ok);
+		const QJsonObject select{{QStringLiteral("track"), trackId}, {QStringLiteral("begin"), 0}, {QStringLiteral("end"), 96},
+			{QStringLiteral("lane"), 0}, {QStringLiteral("srcpos"), 10}};
+		QCOMPARE(revtest::run(QStringLiteral("comp.select"), select).errorKind, ControlErrorKind::Refused);
+		QJsonObject plain = select;
+		plain.insert(QStringLiteral("srcpos"), 0);
+		QVERIFY(revtest::run(QStringLiteral("comp.select"), plain).ok);
 	}
 
 	// ------------------------------------------------------------------ the surface

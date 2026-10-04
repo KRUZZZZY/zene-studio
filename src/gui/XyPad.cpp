@@ -24,11 +24,13 @@
 #include "XyPad.h"
 
 #include <algorithm>
+#include <utility>
 
 #include <QComboBox>
 #include <QFormLayout>
 #include <QJsonArray>
 #include <QJsonObject>
+#include <QLabel>
 #include <QMouseEvent>
 #include <QPainter>
 #include <QVBoxLayout>
@@ -50,6 +52,19 @@ QJsonArray rackMacros(const QString& channel)
 {
 	return ControlRegistry::instance()->invoke(QStringLiteral("rack.get_state"), {{QStringLiteral("channel"), channel}})
 		.result.value(QStringLiteral("macros")).toArray();
+}
+
+//! W1: the ONE call a pad position makes - both macros as one step (rack.macro_set_pair), or X's macro alone through
+//! rack.macro_set when both axes name it (Y is not sent then, so the two axes never fight over one value).
+std::pair<QString, QJsonObject> padCall(const QString& channel, const QString& x, const QString& y, QPointF point)
+{
+	if (x == y)
+	{
+		return {QStringLiteral("rack.macro_set"), {{QStringLiteral("channel"), channel}, {QStringLiteral("macro"), x},
+			{QStringLiteral("value"), point.x()}}};
+	}
+	return {QStringLiteral("rack.macro_set_pair"), {{QStringLiteral("channel"), channel}, {QStringLiteral("x_macro"), x},
+		{QStringLiteral("x_value"), point.x()}, {QStringLiteral("y_macro"), y}, {QStringLiteral("y_value"), point.y()}}};
 }
 
 } // namespace
@@ -104,7 +119,8 @@ XyPadDialog::XyPadDialog(const QString& channel, QWidget* parent) :
 	m_channel(channel),
 	m_x(new QComboBox(this)),
 	m_y(new QComboBox(this)),
-	m_area(new XyPadArea(this))
+	m_area(new XyPadArea(this)),
+	m_status(new QLabel(this))
 {
 	ControlResult ignored;
 	const MixerChannel* target = control::resolveMixerChannel(channel, &ignored);
@@ -113,13 +129,16 @@ XyPadDialog::XyPadDialog(const QString& channel, QWidget* parent) :
 	setAttribute(Qt::WA_DeleteOnClose);
 	a11y::announce(m_x, QObject::tr("X macro"), QObject::tr("The rack macro the pad's left-right position drives."));
 	a11y::announce(m_y, QObject::tr("Y macro"), QObject::tr("The rack macro the pad's up-down position drives."));
-	m_area->setProperty("controlCommand", QStringLiteral("rack.macro_set"));
+	m_area->setProperty("controlCommand", QStringLiteral("rack.macro_set_pair"));
+	m_status->setWordWrap(true);
+	m_status->setAccessibleName(QObject::tr("XY pad status"));
 	auto* form = new QFormLayout;
 	form->addRow(QObject::tr("X:"), m_x);
 	form->addRow(QObject::tr("Y:"), m_y);
 	auto* layout = new QVBoxLayout(this);
 	layout->addLayout(form);
 	layout->addWidget(m_area, 1);
+	layout->addWidget(m_status);
 	fillMacros();
 	m_area->moved = [this](QPointF point) { send(point); };
 	// A new choice of macro shows where that macro stands, not where the last one was.
@@ -159,14 +178,12 @@ void XyPadDialog::syncPoint()
 
 void XyPadDialog::send(QPointF point)
 {
-	ControlRegistry* registry = ControlRegistry::instance();
-	registry->invoke(QStringLiteral("rack.macro_set"), {{QStringLiteral("channel"), m_channel},
-		{QStringLiteral("macro"), m_x->currentData().toString()}, {QStringLiteral("value"), point.x()}});
-	if (m_y->currentData() != m_x->currentData())
-	{
-		registry->invoke(QStringLiteral("rack.macro_set"), {{QStringLiteral("channel"), m_channel},
-			{QStringLiteral("macro"), m_y->currentData().toString()}, {QStringLiteral("value"), point.y()}});
-	}
+	const auto [id, args] = padCall(m_channel, m_x->currentData().toString(), m_y->currentData().toString(), point);
+	const ControlResult result = ControlRegistry::instance()->invoke(id, args);
+	// The result is read (W1): a refused move - a macro an agent removed while the pad was open, say - is named on the
+	// status line, and the dot goes back to where the macros really stand rather than where the pointer is.
+	m_status->setText(result.ok ? QString() : QObject::tr("Not set: %1").arg(result.errorMessage));
+	if (!result.ok) { syncPoint(); }
 }
 
 } // namespace lmms::gui

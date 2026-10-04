@@ -278,47 +278,9 @@ auto HostedPlugin::load(const QString& modulePath, const QString& pluginId, QStr
 	// the note path (tests/complexity-gate.sh measures it).
 	impl.scanNotePorts();
 
-	if (impl.paramsExt)
-	{
-		const auto paramCount = impl.paramsExt->count(impl.plugin);
-		impl.params.reserve(paramCount);
-		impl.paramIds.reserve(paramCount);
-		impl.paramCookies.reserve(paramCount);
-		for (std::uint32_t i = 0; i < paramCount; ++i)
-		{
-			clap_param_info_t paramInfo{};
-			if (!impl.paramsExt->get_info(impl.plugin, i, &paramInfo)) { continue; }
-			ParamDescriptor descriptor;
-			descriptor.id = paramInfo.id;
-			descriptor.title = QString::fromUtf8(paramInfo.name);
-			descriptor.module = QString::fromUtf8(paramInfo.module);
-			descriptor.minValue = paramInfo.min_value;
-			descriptor.maxValue = paramInfo.max_value;
-			descriptor.defaultValue = paramInfo.default_value;
-			descriptor.stepped = (paramInfo.flags & CLAP_PARAM_IS_STEPPED) != 0;
-			descriptor.periodic = (paramInfo.flags & CLAP_PARAM_IS_PERIODIC) != 0;
-			descriptor.readOnly = (paramInfo.flags & CLAP_PARAM_IS_READONLY) != 0;
-			descriptor.bypass = (paramInfo.flags & CLAP_PARAM_IS_BYPASS) != 0;
-			descriptor.automatable = (paramInfo.flags & CLAP_PARAM_IS_AUTOMATABLE) != 0;
-			descriptor.hidden = (paramInfo.flags & CLAP_PARAM_IS_HIDDEN) != 0;
-			descriptor.requiresProcess = (paramInfo.flags & CLAP_PARAM_REQUIRES_PROCESS) != 0;
-			descriptor.defaultNormalized = normalize(descriptor, descriptor.defaultValue);
-			impl.params.push_back(descriptor);
-			impl.paramIds.push_back(descriptor.id);
-			impl.paramCookies.push_back(paramInfo.cookie);
-		}
-	}
-
-	impl.paramSlots = std::make_unique<Impl::ParamSlot[]>(std::max<std::size_t>(impl.params.size(), 1));
-	for (std::size_t i = 0; i < impl.params.size(); ++i)
-	{
-		double value = impl.params[i].defaultValue;
-		if (impl.paramsExt && impl.paramsExt->get_value(impl.plugin, impl.params[i].id, &value))
-		{
-			value = std::clamp(value, impl.params[i].minValue, impl.params[i].maxValue);
-		}
-		impl.paramSlots[i].value.store(value, std::memory_order_relaxed);
-	}
+	// The parameter list, its ids, cookies and value slots (ClapHostParams.cpp): the same scan a full
+	// rescan runs (W6), so the two cannot read the list differently.
+	impl.scanParams();
 	return true;
 }
 
@@ -357,6 +319,7 @@ void HostedPlugin::unload()
 	impl.flushRequested.store(false, std::memory_order_relaxed);
 	impl.stateDirty.store(false, std::memory_order_relaxed);
 	impl.portsChanged.store(false, std::memory_order_relaxed);
+	impl.paramsChanged.store(false, std::memory_order_relaxed);
 }
 
 auto HostedPlugin::process(const float* const* inputs, float* const* outputs, int inputChannels,

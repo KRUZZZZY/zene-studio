@@ -32,16 +32,10 @@
 
 #include "ClapHost.h"
 #include "ClapInstrument.h"
-#include "Knob.h"
+#include "ClapKnobGrid.h"
 
 namespace lmms::gui
 {
-
-namespace
-{
-//! number of knobs per row in the generated parameter view
-constexpr int KnobsPerRow = 4;
-}
 
 ClapInstrumentView::ClapInstrumentView(ClapInstrument* instrument, QWidget* parent) :
 	InstrumentView(instrument, parent)
@@ -59,27 +53,13 @@ ClapInstrumentView::ClapInstrumentView(ClapInstrument* instrument, QWidget* pare
 
 	auto* grid = new QGridLayout();
 	grid->setSpacing(6);
-
-	int visible = 0;
-	for (auto* model : instrument->paramModels())
-	{
-		const auto& descriptor = model->descriptor();
-		if (descriptor.hidden) { continue; }
-
-		auto* knob = new Knob(KnobType::Bright26, descriptor.title, this);
-		knob->setModel(model);
-		knob->setHintText(descriptor.title, QString{});
-		grid->addWidget(knob, visible / KnobsPerRow, visible % KnobsPerRow,
-			Qt::AlignCenter);
-		++visible;
-	}
-
-	if (visible == 0)
-	{
-		grid->addWidget(new QLabel(tr("This instrument exposes no visible parameters."),
-			this), 0, 0);
-	}
+	fillClapKnobGrid(grid, instrument->paramModels(), this, tr("This instrument exposes no visible parameters."));
 	outer->addLayout(grid);
+	// W6: a parameter rescan rebuilt the models - the knobs follow (names, ranges, added and removed ones).
+	connect(instrument, &ClapInstrument::parametersChanged, this, [this, instrument, grid] {
+		fillClapKnobGrid(grid, instrument->paramModels(), this, tr("This instrument exposes no visible parameters."));
+		setFixedSize(sizeHint());
+	});
 
 	// The two facts an agent or a user needs to see about the note path and
 	// the audio-output configuration, on the surface rather than in a log.

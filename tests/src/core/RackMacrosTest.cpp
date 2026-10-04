@@ -197,8 +197,9 @@ private slots:
 		QVERIFY(macros.removeMacro(macro));
 	}
 
-	//! Macros and zones are NOT on the audio path: with both configured, the
-	//! rack's own process() still allocates nothing.
+	//! With macros and zones configured the rack's own process() allocates
+	//! nothing: a macro is not on the audio path, and a zone's routing (0.5.0
+	//! E20) reads blocks prepared when the rack re-wired.
 	void configuringMacrosAndZonesLeavesTheAudioPathAllocatingNothing()
 	{
 		Rack& rack = rackUnderTest();

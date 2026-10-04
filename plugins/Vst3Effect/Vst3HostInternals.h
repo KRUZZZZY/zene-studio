@@ -119,7 +119,11 @@ struct HostedPlugin::Impl
 	std::vector<float> silence;
 	std::vector<float> scratchOutput;
 
+	//! The whole request's parameter changes (host changes at 0, mapped controllers at their frame).
 	ParameterChanges inputParamChanges;
+	//! The slice of inputParamChanges that belongs to the chunk being processed, rebased to the
+	//! chunk's start (sliceParameterChanges). Sized in prepare(), as inputParamChanges is.
+	ParameterChanges chunkParamChanges;
 	MidiControllerMap controllerMap;  //!< E10, built in prepare()
 	ProcessData processData{};
 	ProcessContext context{};

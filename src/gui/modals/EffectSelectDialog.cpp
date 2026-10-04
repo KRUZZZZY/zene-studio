@@ -256,10 +256,17 @@ void EffectSelectDialog::addOrganiserControls(QVBoxLayout* rightSection)
 		const QModelIndex index = m_model.mapToSource(m_pluginList->indexAt(at));
 		if (!index.isValid()) { return; }
 		QMenu menu(this);
-		pickerorganiser::fillRowMenu(&menu, m_sourceModel.index(index.row(), 0), this, [this] { refreshOrganisation(); });
+		// The organiser's own change signal (below) refreshes the list, for a menu action as for any other.
+		pickerorganiser::fillRowMenu(&menu, m_sourceModel.index(index.row(), 0), this, [] {});
 		menu.exec(m_pluginList->viewport()->mapToGlobal(at));
 	});
 	refreshOrganisation();
+	// 0.5.0 W6: a change made outside the picker while it is open - plugin.organise over the socket, Lua or MCP,
+	// the Plug-in Manager, the preferred format - shows at once, not the next time the picker opens.
+	connect(pluginorganiser::notifier(), &pluginorganiser::Notifier::changed, this, [this] {
+		refreshOrganisation();
+		updateSelection();
+	});
 }
 
 void EffectSelectDialog::refreshOrganisation()

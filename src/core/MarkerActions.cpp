@@ -60,6 +60,51 @@ std::atomic<unsigned>& jumps()
 	return value;
 }
 
+//! The two counters as one look read them: every jump, and the loop wraps among them (Song::loopWraps).
+struct Counts
+{
+	unsigned jumps = 0;
+	unsigned wraps = 0;
+	bool operator!=(const Counts& other) const { return jumps != other.jumps || wraps != other.wraps; }
+};
+
+Counts& seen()
+{
+	static Counts value;
+	return value;
+}
+
+Counts countsNow(const Song& song)
+{
+	return {jumps().load(std::memory_order_acquire), song.loopWraps()};
+}
+
+//! What moved the position between two looks.
+enum class Moved { Not, Wrapped, Jumped, Racing };
+
+//! Song counts a wrap before it announces the wrap's jump, so more wraps than jumps is a wrap caught
+//! between the two (the next look sees it whole); a jump that is not a wrap is a seek.
+Moved movedBetween(const Counts& before, const Counts& now)
+{
+	const unsigned jumped = now.jumps - before.jumps;
+	const unsigned wrapped = now.wraps - before.wraps;
+	if (wrapped > jumped) { return Moved::Racing; }
+	if (jumped == 0) { return Moved::Not; }
+	return jumped == wrapped ? Moved::Wrapped : Moved::Jumped;
+}
+
+//! The move since the last look, taking the counts as seen - or Racing, and nothing taken, while a wrap's
+//! jump is still to come. The same racing counts on a second look are a wrap whose jump was never
+//! announced (the transport stopped and started again under it): a seek, then, so the watcher goes on.
+Moved settle(const Counts& now)
+{
+	static Counts racing;
+	const Moved moved = movedBetween(seen(), now);
+	if (moved == Moved::Racing && now != std::exchange(racing, now)) { return Moved::Racing; }
+	seen() = now;
+	return moved == Moved::Racing ? Moved::Jumped : moved;
+}
+
 //! The mark a fresh start takes: one tick before where the song's playback started, so a marker ON the
 //! start tick runs too, when that is where it really played from up to @a now; Unwatched when not (an
 //! enforced loop moved it, or a count-in began the pass before the recorded start).
@@ -72,23 +117,42 @@ tick_t startMark(const Song& song, tick_t now)
 	return timeline.loopEnabled() && outsideLoop ? Unwatched : from - 1;
 }
 
+//! A look while the arrangement plays. A wrap runs what the pass crossed up to the loop end and then
+//! what the new pass crossed from the loop begin; a seek only moves the mark (a forward seek must not run
+//! the markers it skipped); a fresh start takes its mark from where playback started.
+void follow(const Song& song, Moved moved, tick_t now, bool paused)
+{
+	if (moved == Moved::Wrapped)
+	{
+		const Timeline& timeline = song.getTimeline(Song::PlayMode::Song);
+		advanceWrapped(now, timeline.loopBegin().getTicks(), timeline.loopEnd().getTicks());
+		return;
+	}
+	if (moved == Moved::Jumped) { lastSeen() = now; }
+	else if (lastSeen() == Unwatched && !paused) { lastSeen() = startMark(song, now); }
+	advance(now, true);
+}
+
 //! One look of the timer. Only the arrangement's playback crosses markers (a pattern or a clip played
-//! alone has its own ticks). A fresh start takes its mark from where playback started, so a marker
-//! crossed before this first look still runs; a resume from pause is not a fresh start. A position jump
-//! (a seek, a loop wrap) only moves the mark: a forward seek must not run the markers it skipped.
+//! alone has its own ticks). A resume from pause is not a fresh start. Stopped, the counters are taken
+//! as they stand, so a wrap whose jump went unannounced (the transport stopped under it) is forgotten.
 void watch(Song& song)
 {
 	static bool paused = false;
-	static unsigned seenJumps = 0;
-	const unsigned jumpsBefore = jumps().load(std::memory_order_acquire);
+	const Counts before = countsNow(song);
 	const bool playing = song.isPlaying() && song.playMode() == Song::PlayMode::Song;
 	const tick_t now = song.getPlayPos().getTicks();
-	if (jumps().load(std::memory_order_acquire) != jumpsBefore) { return; }  // raced a jump: the next look
-	const bool jumped = std::exchange(seenJumps, jumpsBefore) != jumpsBefore;
-	if (!playing) { paused = song.isPaused(); }
-	else if (jumped) { lastSeen() = now; }
-	else if (lastSeen() == Unwatched && !paused) { lastSeen() = startMark(song, now); }
-	advance(now, playing);
+	const Counts after = countsNow(song);
+	if (after != before) { return; }  // raced a jump: the next look
+	if (!playing)
+	{
+		paused = song.isPaused();
+		seen() = after;
+		advance(now, false);
+		return;
+	}
+	const Moved moved = settle(after);
+	if (moved != Moved::Racing) { follow(song, moved, now, paused); }
 }
 
 //! Follows @a song's position jumps (once per song; the watcher may start before the song exists).
@@ -99,6 +163,8 @@ void followJumps(Song* song)
 	followed = song;
 	QObject::connect(song, &Song::playbackPositionJumped, song,
 		[] { jumps().fetch_add(1, std::memory_order_release); }, Qt::DirectConnection);
+	// After the connection: a wrap from here on is counted on both sides.
+	seen() = countsNow(*song);
 }
 
 } // namespace
@@ -111,7 +177,7 @@ int advance(tick_t tick, bool playing)
 		last = playing ? tick : Unwatched;
 		return 0;
 	}
-	// Copied first: an action may edit the markers themselves.
+	// Copied first: an action may edit the markers themselves. ProjectMarkers keeps them in tick order.
 	QVector<Marker> crossed;
 	for (const Marker& marker : ProjectMarkers::instance().markers())
 	{
@@ -123,6 +189,15 @@ int advance(tick_t tick, bool playing)
 		ControlRegistry::instance()->invoke(marker.action, QJsonDocument::fromJson(marker.args.toUtf8()).object());
 	}
 	return static_cast<int>(crossed.size());
+}
+
+int advanceWrapped(tick_t tick, tick_t loopBegin, tick_t loopEnd)
+{
+	tick_t& last = lastSeen();
+	// The tick AT the loop end never plays (the wrap happens on reaching it), so the tail stops one short.
+	const int tail = last != Unwatched && last < loopEnd ? advance(loopEnd - 1, true) : 0;
+	last = loopBegin - 1;  // a marker on the loop begin plays at the start of every pass
+	return tail + advance(tick, true);
 }
 
 void start()

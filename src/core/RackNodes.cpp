@@ -30,6 +30,7 @@
 #include "AudioBuffer.h"
 #include "AudioBus.h"
 #include "EffectChain.h"
+#include "RackZoneInputs.h"
 #include "lmms_constants.h"
 
 namespace lmms
@@ -58,6 +59,15 @@ RackChainNode::RackChainNode(EffectChain* chain) :
 }
 
 RackChainNode::~RackChainNode() = default;
+
+bool RackChainNode::addZonedNotes(SampleFrame* block, f_cnt_t frames) const
+{
+	const SampleFrame* zoned = m_zoneInputs != nullptr ? m_zoneInputs->liveBlock(m_zoneChain) : nullptr;
+	if (zoned == nullptr) { return false; }
+	const f_cnt_t count = std::min(frames, m_zoneInputs->frames());
+	for (f_cnt_t f = 0; f < count; ++f) { block[f] += zoned[f]; }
+	return true;
+}
 
 void RackChainNode::prepare(f_cnt_t frames, ch_cnt_t channels)
 {
@@ -105,6 +115,8 @@ void RackChainNode::process(f_cnt_t frames)
 		m_split.process(interleaved, count);
 		// A crossover's filters ring on after their input stops: that tail is audio, not a quiet block.
 		inputLive = inputLive || (m_split.rings() && holdsSignal(interleaved, count));
+		// E20: the notes a zone routed to this chain, whole (after the split).
+		inputLive = addZonedNotes(m_busData[0], count) || inputLive;
 	}
 	m_bus->quietChannels().set(0, !inputLive);
 	m_bus->quietChannels().set(1, !inputLive);

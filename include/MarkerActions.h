@@ -33,13 +33,19 @@ namespace lmms::markeractions
 /*! 0.5.0 L02 (WF-073): a marker's action runs when playback crosses it. A main-thread watcher reads
  *  the play position a few times a period and runs each crossed marker's command through the
  *  registry - the same call an agent makes, on the thread commands run on; the audio thread is
- *  never involved. A position jump (a loop, a seek either way) only moves the watcher's mark, and a
- *  marker on the tick playback starts from runs. */
+ *  never involved. A seek (either way) only moves the watcher's mark, and a marker on the tick
+ *  playback starts from runs. A loop wrap - told from a seek by Song::loopWraps() (0.5.0 W2) - runs
+ *  what the pass crossed up to the loop end, then what the new pass crossed from the loop begin. When
+ *  the loop is shorter than one look (about 15 ms), the whole passes in between are not run again. */
 LMMS_EXPORT void start();
 
 //! One step of the watcher: the markers crossed between the last position seen and @a tick run
 //! (exposed for tests; the watcher calls it with the song's position while it plays).
 LMMS_EXPORT int advance(tick_t tick, bool playing);
+
+//! A step across a loop wrap: the markers from the last position seen up to (not on) @a loopEnd, then
+//! those from @a loopBegin (on it too) up to @a tick, in that order (exposed for tests, as advance()).
+LMMS_EXPORT int advanceWrapped(tick_t tick, tick_t loopBegin, tick_t loopEnd);
 
 } // namespace lmms::markeractions
 

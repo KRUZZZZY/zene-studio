@@ -37,6 +37,7 @@
 #include "Mixer.h"
 #include "Engine.h"
 #include "MixHelpers.h"
+#include "RackZoneFeed.h"
 
 namespace lmms
 {
@@ -123,6 +124,27 @@ bool AudioBusHandle::processEffects()
 }
 
 
+//! The track's volume and panning, applied to m_buffer in place: sample-exact where a model has a value
+//! buffer this period, its value otherwise. One loop for the four cases the code used to spell out (and for
+//! a volume model without a panning model, where p = 0 makes both factors 1): the products are the same
+//! two multiplies in the same order, so the output is bit-identical to the four-branch version.
+void AudioBusHandle::applyVolumeAndPanning(const f_cnt_t fpp)
+{
+	if (m_volumeModel == nullptr) { return; }  // a panning model alone was never applied
+	const ValueBuffer* volBuf = m_volumeModel->valueBuffer();
+	const ValueBuffer* panBuf = m_panningModel != nullptr ? m_panningModel->valueBuffer() : nullptr;
+	const float volume = m_volumeModel->value() * 0.01f;
+	const float panning = m_panningModel != nullptr ? m_panningModel->value() * 0.01f : 0.0f;
+	for (f_cnt_t f = 0; f < fpp; ++f)
+	{
+		const float v = volBuf != nullptr ? volBuf->values()[f] * 0.01f : volume;
+		const float p = panBuf != nullptr ? panBuf->values()[f] * 0.01f : panning;
+		m_buffer[f][0] *= (p <= 0 ? 1.0f : 1.0f - p) * v;
+		m_buffer[f][1] *= (p >= 0 ? 1.0f : 1.0f + p) * v;
+	}
+}
+
+
 void AudioBusHandle::doProcessing()
 {
 	if (m_mutedModel && m_mutedModel->value())
@@ -147,6 +169,11 @@ void AudioBusHandle::doProcessing()
 		// this loop is running on a worker). The critical section is a
 		// pointer-array scan plus the list's own append/erase.
 		const QMutexLocker playHandleLockGuard(&m_playHandleLock);
+		// 0.5.0 E20/E38: the notes a key/velocity zone of the channel's rack claims play into that zone's
+		// chain, with this track's volume and pan; their buffers are released, so the loop below skips them.
+		const auto gain = [this, fpp] { applyVolumeAndPanning(fpp); };
+		RackZoneFeed zoneFeed(m_nextMixerChannel, m_effects.get());
+		if (zoneFeed.run(m_playHandles, m_buffer, gain)) { m_bus.silenceAllChannels(); }
 		for (PlayHandle* ph : m_playHandles) // now we mix all playhandle buffers into our internal buffer
 		{
 			if (auto phBuffer = ph->buffer(); phBuffer.data() != nullptr)
@@ -167,88 +194,7 @@ void AudioBusHandle::doProcessing()
 
 	if (m_bufferUsage)
 	{
-		// handle volume and panning
-		// has both vol and pan models
-		if (m_volumeModel && m_panningModel)
-		{
-			ValueBuffer* volBuf = m_volumeModel->valueBuffer();
-			ValueBuffer* panBuf = m_panningModel->valueBuffer();
-
-			// both vol and pan have s.ex.data:
-			if (volBuf && panBuf)
-			{
-				for (f_cnt_t f = 0; f < fpp; ++f)
-				{
-					float v = volBuf->values()[f] * 0.01f;
-					float p = panBuf->values()[f] * 0.01f;
-					m_buffer[f][0] *= (p <= 0 ? 1.0f : 1.0f - p) * v;
-					m_buffer[f][1] *= (p >= 0 ? 1.0f : 1.0f + p) * v;
-				}
-			}
-
-			// only vol has s.ex.data:
-			else if (volBuf)
-			{
-				float p = m_panningModel->value() * 0.01f;
-				float l = (p <= 0 ? 1.0f : 1.0f - p);
-				float r = (p >= 0 ? 1.0f : 1.0f + p);
-				for (f_cnt_t f = 0; f < fpp; ++f)
-				{
-					float v = volBuf->values()[f] * 0.01f;
-					m_buffer[f][0] *= v * l;
-					m_buffer[f][1] *= v * r;
-				}
-			}
-
-			// only pan has s.ex.data:
-			else if (panBuf)
-			{
-				float v = m_volumeModel->value() * 0.01f;
-				for (f_cnt_t f = 0; f < fpp; ++f)
-				{
-					float p = panBuf->values()[f] * 0.01f;
-					m_buffer[f][0] *= (p <= 0 ? 1.0f : 1.0f - p) * v;
-					m_buffer[f][1] *= (p >= 0 ? 1.0f : 1.0f + p) * v;
-				}
-			}
-
-			// neither has s.ex.data:
-			else
-			{
-				float p = m_panningModel->value() * 0.01f;
-				float v = m_volumeModel->value() * 0.01f;
-				for (f_cnt_t f = 0; f < fpp; ++f)
-				{
-					m_buffer[f][0] *= (p <= 0 ? 1.0f : 1.0f - p) * v;
-					m_buffer[f][1] *= (p >= 0 ? 1.0f : 1.0f + p) * v;
-				}
-			}
-		}
-
-		// has vol model only
-		else if (m_volumeModel)
-		{
-			ValueBuffer* volBuf = m_volumeModel->valueBuffer();
-
-			if (volBuf)
-			{
-				for (f_cnt_t f = 0; f < fpp; ++f)
-				{
-					float v = volBuf->values()[f] * 0.01f;
-					m_buffer[f][0] *= v;
-					m_buffer[f][1] *= v;
-				}
-			}
-			else
-			{
-				float v = m_volumeModel->value() * 0.01f;
-				for (f_cnt_t f = 0; f < fpp; ++f)
-				{
-					m_buffer[f][0] *= v;
-					m_buffer[f][1] *= v;
-				}
-			}
-		}
+		applyVolumeAndPanning(fpp);
 
 		const auto sanitized = Engine::audioEngine()->sanitizationEnabled() ? m_bus.sanitizeAll() : false;
 		m_corrupted.store(sanitized, std::memory_order_relaxed);

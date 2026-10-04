@@ -174,7 +174,7 @@ ControlResult handleBusRemove(const QJsonObject& args)
 	QJsonObject inverseArgs;
 	inverseArgs.insert(QStringLiteral("count_before"), before);
 	QJsonObject transaction = transactionPayload(beforeState,
-		QStringLiteral("UNIMPLEMENTED: restore a deleted bus channel"),
+		QStringLiteral("none: no command restores a deleted bus channel with its state"),
 		inverseArgs,
 		false,
 		QStringLiteral("snapshot only: a deleted MixerChannel cannot be recreated by "

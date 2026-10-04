@@ -36,8 +36,16 @@
  *     the pre-existing vocabulary, or the event is refused - the track cannot
  *     hold a name nothing else in the product can read.
  *
- * NOTHING here is called from the audio thread; the track is edited by commands
- * and read by commands.
+ * 0.5.0 E23: ONE read is made on the audio thread - followedKey(), which a track
+ * that FOLLOWS the chord track asks for each note it starts (chord follow, the
+ * non-destructive twin of note.follow_chords): the note sounds on the nearest
+ * tone of the chord (or its scale) the track holds where the note starts, and
+ * the clip keeps its own keys. So every edit takes the audio engine's
+ * model-change guard, and the tones each event sounds are worked out on the
+ * editing thread (m_tones) - the audio read is a scan over integers. The
+ * followers (which tracks follow, and in which mode) are part of the track and
+ * persist as <follow> children of its element. Everything else here is edited
+ * and read by commands, and by the arranger's chord lane.
  *
  * Copyright (c) 2026 Zene Studio contributors
  *
@@ -61,6 +69,8 @@
 #ifndef LMMS_CHORD_TRACK_H
 #define LMMS_CHORD_TRACK_H
 
+#include <cstdint>
+#include <functional>
 #include <vector>
 
 #include <QString>
@@ -95,6 +105,21 @@ struct ChordEvent
 	QString scale;
 };
 
+//! 0.5.0 E23: how a track follows the chord track while it plays.
+enum class ChordFollowMode
+{
+	Off,    //!< it plays its notes as written
+	Chord,  //!< each note moves to the nearest tone of the chord sounding where it starts
+	Scale   //!< ... of that chord's scale (its chord where the event names no scale)
+};
+
+//! A track that follows the chord track, by its stable id (Track::id(), the `trk-<n>` number).
+struct ChordFollower
+{
+	int trackId = -1;
+	ChordFollowMode mode = ChordFollowMode::Chord;
+};
+
 /*! The project's chord track (see the header comment for where it lives).
  *
  *  Ordering is the whole contract: events are kept sorted by position and a
@@ -112,6 +137,8 @@ public:
 	static constexpr tick_t MinEventTicks = 1;
 	//! The bound a generated/held event takes when the caller names none.
 	static constexpr tick_t DefaultEventTicks = DefaultTicksPerBar;
+	//! The most tracks that may follow the chord track at once.
+	static constexpr int MaxFollowers = 256;
 
 	//! True when the track holds no event at all.
 	bool empty() const { return m_events.empty(); }
@@ -120,11 +147,13 @@ public:
 	/*! Whether the project file needs a <chord-track> element. False for an
 	 *  empty track, which is what keeps a project that never used a chord
 	 *  byte-identical to how it saved before this feature existed. */
-	bool shouldPersist() const { return !m_events.empty(); }
+	bool shouldPersist() const { return !m_events.empty() || !m_followers.empty(); }
 
-	//! Drops every event. Called by Song::clearProject, so a new project never
-	//! inherits the previous one's chords.
-	void clear() { m_events.clear(); }
+	//! Drops every event and every follower. Called by Song::clearProject, so a
+	//! new project never inherits the previous one's chords.
+	void clear();
+	//! Drops every event and keeps the followers (chord.clear, a replacing detection).
+	void clearEvents();
 
 	//! Index of the event at \a pos, or -1.
 	int indexAt(tick_t pos) const;
@@ -173,6 +202,31 @@ public:
 	//! Removes the event at \a pos. False when there is none.
 	bool removeAt(tick_t pos);
 
+	// --- 0.5.0 E23: chord follow ---
+
+	//! The tracks that follow, in the order they were set.
+	const std::vector<ChordFollower>& followers() const { return m_followers; }
+	//! How the track with stable id \a trackId follows (Off when it does not).
+	ChordFollowMode followOf(int trackId) const;
+	/*! Sets how \a trackId follows; Off drops it. False - nothing changes - when
+	 *  the id is negative or a new follower would pass MaxFollowers. */
+	bool setFollow(int trackId, ChordFollowMode mode);
+
+	/*! AUDIO THREAD. The key a note of \a key, starting at song tick \a pos,
+	 *  sounds on a track with stable id \a trackId: the nearest tone (down on a
+	 *  tie) of what the chord track sounds there in the track's mode, or \a key
+	 *  itself when the track does not follow or the chord track is silent there.
+	 *  Reads integers only: no allocation, no lock, no string. */
+	int followedKey(int trackId, int key, tick_t pos) const;
+
+	//! "off", "chord" or "scale": a mode as the project file and the control surface spell it.
+	static QString followModeName(ChordFollowMode mode);
+	//! The mode @a name spells; false - @a mode untouched - for any other text.
+	static bool followModeFromName(const QString& name, ChordFollowMode* mode);
+
+	//! Moves on every change; the arranger's chord lane repaints when it does.
+	unsigned revision() const { return m_revision; }
+
 	//! Appends the whole track as one <chord-track> element.
 	void saveSettings(QDomDocument& doc, QDomElement& parent) const;
 
@@ -202,7 +256,23 @@ private:
 	//! root (one builder, two homes - the element cannot diverge).
 	QDomElement toElement(QDomDocument& doc) const;
 
+	//! The pitch classes an event sounds, one bit each (bit 0 = C): its chord's, and its scale's (0: none).
+	struct EventTones
+	{
+		std::uint16_t chord = 0;
+		std::uint16_t scale = 0;
+	};
+
+	//! Runs \a change under the model-change guard, then re-derives m_tones and moves the revision.
+	void edit(const std::function<void()>& change);
+	//! The index of the event sounding at \a pos (soundingAt's rule), or -1.
+	int soundingIndex(tick_t pos) const;
+
 	std::vector<ChordEvent> m_events;
+	//! Index-aligned with m_events; derived on the editing thread (edit()).
+	std::vector<EventTones> m_tones;
+	std::vector<ChordFollower> m_followers;
+	unsigned m_revision = 0;
 };
 
 } // namespace lmms

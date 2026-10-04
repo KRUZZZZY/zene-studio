@@ -180,7 +180,10 @@ public:
 	 *    buffer shorter than the frames it is asked for (which is what an
 	 *    unclamped request would do to the scratch buffers) and it is never
 	 *    asked for more frames than it declared in setupProcessing();
-	 *  - parameter changes are delivered once, at the start of the request;
+	 *  - parameter changes are delivered once each: a host change at the start
+	 *    of the request, a mapped MIDI controller (IMidiMapping) at its own
+	 *    frame, bounded to [0, frames - 1], in the chunk that frame falls in and
+	 *    rebased to it (0.5.0 W4), so no point lands past numSamples;
 	 *    MIDI events are delivered in the chunk their sample offset falls in,
 	 *    with the offset rebased to that chunk, and an event whose offset is at
 	 *    or beyond the end of the request is delivered with the LAST chunk at

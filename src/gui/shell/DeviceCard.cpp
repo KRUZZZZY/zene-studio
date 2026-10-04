@@ -36,6 +36,7 @@
 
 #include "AudioPortsModel.h"
 #include "ComboBox.h"
+#include "ParameterAliases.h"
 #include "CommandForm.h"
 #include "ControlRegistry.h"
 #include "DesignTokens.h"
@@ -294,12 +295,14 @@ QWidget* DeviceCard::buildParameters(const QList<AutomatableModel*>& parameters)
 	auto* switches = new QHBoxLayout;
 	switches->setSpacing(tokens::space::md);
 	int knobs = 0;
-	for (AutomatableModel* model : parameters)
+	// W6: an alias is found by the parameter's stable key (ParameterAliases.h), all of the card's at once.
+	const QStringList names = m_spec.effect != nullptr ? parameteraliases::shownNamesOf(m_spec.effect, parameters) : QStringList();
+	for (int index = 0; index < parameters.size(); ++index)
 	{
+		AutomatableModel* model = parameters.at(index);
 		if (isChainBookkeeping(model, m_spec.effect)) { continue; }
 		++m_total;
-		const QString name = m_spec.effect != nullptr ? m_spec.effect->deviceOptions().shownName(model->displayName())
-			: model->displayName();
+		const QString name = names.value(index, model->displayName());
 		QWidget* widget = m_shown < MaxParameters ? parameterWidget(model, name, body) : nullptr;
 		if (widget == nullptr) { continue; }
 		++m_shown;

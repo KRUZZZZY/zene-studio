@@ -39,6 +39,7 @@
 #include <QVBoxLayout>
 
 #include "ArrangementSections.h"
+#include "ChordTrack.h"
 #include "ConfigManager.h"
 #include "ControlRegistry.h"
 #include "ControlVocabulary.h"
@@ -46,6 +47,7 @@
 #include "DesignTokens.h"
 #include "Engine.h"
 #include "GuiApplication.h"
+#include "ImportDetectionDsp.h"
 #include "ProjectMarkers.h"
 #include "Song.h"
 #include "SongEditor.h"
@@ -58,7 +60,8 @@ namespace lmms::gui
 namespace
 {
 
-constexpr std::array<int, ArrangerRulerLanes::LaneCount> LaneHeights{16, 16, 20};
+constexpr std::array<int, ArrangerRulerLanes::LaneCount> LaneHeights{16, 16, 20, 18};
+constexpr int ChordPollMs = 250;  //!< how often the chord lane looks at the chord track's revision
 constexpr int MarkerHit = 6;     //!< pixels either side of a marker's line a click still takes
 constexpr int LabelGap = 4;      //!< pixels kept between a label and the next object
 constexpr int MinLabel = 14;     //!< narrower than this, a label is left out (its tooltip still has it)
@@ -86,7 +89,7 @@ QString laneTitle(int lane)
 {
 	static const std::array<const char*, ArrangerRulerLanes::LaneCount> titles{
 		QT_TRANSLATE_NOOP("lmms::gui::ArrangerRulerLanes", "Sections"), QT_TRANSLATE_NOOP("lmms::gui::ArrangerRulerLanes", "Markers"),
-		QT_TRANSLATE_NOOP("lmms::gui::ArrangerRulerLanes", "Tempo")};
+		QT_TRANSLATE_NOOP("lmms::gui::ArrangerRulerLanes", "Tempo"), QT_TRANSLATE_NOOP("lmms::gui::ArrangerRulerLanes", "Chords")};
 	return ArrangerRulerLanes::tr(titles[lane]);
 }
 
@@ -113,6 +116,17 @@ QString markerName(const Marker& marker)
 	return marker.name.isEmpty() ? ArrangerRulerLanes::tr("Marker") : marker.name;
 }
 
+const ChordTrack& chordTrack()
+{
+	return Engine::getSong()->chordTrack();
+}
+
+//! "C Major": the chord's root and its name, as the lane labels it.
+QString chordName(const ChordEvent& event)
+{
+	return QStringLiteral("%1 %2").arg(QString::fromLatin1(detection::pitchClassName(event.root)), event.chord);
+}
+
 } // namespace
 
 ArrangerRulerLanes::ArrangerRulerLanes(SongEditor* editor) :
@@ -129,18 +143,34 @@ ArrangerRulerLanes::ArrangerRulerLanes(SongEditor* editor) :
 	connect(&ProjectMarkers::instance(), &ProjectMarkers::changed, this, qOverload<>(&QWidget::update));
 	connect(editor, &SongEditor::pixelsPerBarChanged, this, qOverload<>(&QWidget::update));
 	connect(editor->horizontalScroll(), &QScrollBar::valueChanged, this, qOverload<>(&QWidget::update));
+	auto* chordPoll = new QTimer(this);
+	connect(chordPoll, &QTimer::timeout, this, &ArrangerRulerLanes::followChordTrack);
+	chordPoll->start(ChordPollMs);
 	relayout();
 }
 
 const QStringList& ArrangerRulerLanes::laneNames()
 {
-	static const QStringList names{QStringLiteral("sections"), QStringLiteral("markers"), QStringLiteral("tempo")};
+	static const QStringList names{QStringLiteral("sections"), QStringLiteral("markers"), QStringLiteral("tempo"),
+		QStringLiteral("chords")};
 	return names;
 }
 
 bool ArrangerRulerLanes::laneShown(Lane lane)
 {
 	return shownNames().contains(laneNames().at(static_cast<int>(lane)));
+}
+
+bool ArrangerRulerLanes::laneDrawn(Lane lane)
+{
+	return laneShown(lane) && (lane != Lane::Chords || !chordTrack().empty());
+}
+
+void ArrangerRulerLanes::followChordTrack()
+{
+	if (chordTrack().revision() == m_chordRevision) { return; }
+	m_chordRevision = chordTrack().revision();
+	if (laneDrawn(Lane::Chords) != m_chordsDrawn) { relayout(); } else { update(); }
 }
 
 void ArrangerRulerLanes::setLaneShown(Lane lane, bool shown)
@@ -157,7 +187,8 @@ void ArrangerRulerLanes::setLaneShown(Lane lane, bool shown)
 void ArrangerRulerLanes::relayout()
 {
 	int height = 0;
-	for (int i = 0; i < LaneCount; ++i) { height += laneShown(static_cast<Lane>(i)) ? LaneHeights[i] : 0; }
+	for (int i = 0; i < LaneCount; ++i) { height += laneDrawn(static_cast<Lane>(i)) ? LaneHeights[i] : 0; }
+	m_chordsDrawn = laneDrawn(Lane::Chords);
 	setFixedHeight(std::max(height, 0));
 	setVisible(height > 0);
 	update();
@@ -170,7 +201,7 @@ QRect ArrangerRulerLanes::laneRect(Lane lane) const
 	int top = 0;
 	for (int i = 0; i < LaneCount; ++i)
 	{
-		if (!laneShown(static_cast<Lane>(i))) { continue; }
+		if (!laneDrawn(static_cast<Lane>(i))) { continue; }
 		if (i == static_cast<int>(lane)) { return QRect(0, top, width(), LaneHeights[i]); }
 		top += LaneHeights[i];
 	}
@@ -192,6 +223,12 @@ int ArrangerRulerLanes::contentLeft() const
 int ArrangerRulerLanes::xOf(tick_t tick) const
 {
 	return m_editor.isNull() ? 0 : m_editor->timeLine()->markerX(TimePos(tick));
+}
+
+tick_t ArrangerRulerLanes::tickAt(int x) const
+{
+	return m_editor->currentPosition().getTicks()
+		+ static_cast<tick_t>((x - contentLeft()) * TimePos::ticksPerBar() / std::max(1.f, m_editor->pixelsPerBar()));
 }
 
 void ArrangerRulerLanes::paintSections(QPainter& p, const QRect& lane) const
@@ -284,6 +321,37 @@ void ArrangerRulerLanes::paintTempoValues(QPainter& p, const QRect& lane, const 
 	}
 }
 
+void ArrangerRulerLanes::paintChords(QPainter& p, const QRect& lane) const
+{
+	const tokens::Palette& pal = tokens::palette();
+	const ChordTrack& track = chordTrack();
+	for (int i = 0; i < track.size(); ++i)
+	{
+		const ChordEvent& event = track.at(i);
+		const int left = std::max(contentLeft(), xOf(event.pos));
+		const int right = std::min(width(), xOf(event.pos + track.effectiveLength(i, ChordTrack::DefaultEventTicks)));
+		if (right <= left) { continue; }
+		const QRect area(left, lane.top() + 1, right - left - 1, lane.height() - 2);
+		p.fillRect(area, pal.raised);
+		p.setPen(pal.accent);
+		p.drawLine(area.topLeft(), area.bottomLeft());
+		p.setPen(pal.text);
+		const QString label = p.fontMetrics().elidedText(chordName(event), Qt::ElideRight, area.width() - 2 * LabelGap);
+		if (area.width() >= MinLabel) { p.drawText(area.adjusted(LabelGap, 0, -LabelGap, 0), Qt::AlignVCenter | Qt::AlignLeft, label); }
+	}
+}
+
+bool ArrangerRulerLanes::chordAt(const QPoint& pos, QString* command, QJsonObject* args, QString* name) const
+{
+	if (!laneRect(Lane::Chords).contains(pos)) { return false; }
+	const ChordEvent* event = chordTrack().soundingAt(tickAt(pos.x()));
+	if (event == nullptr) { return false; }
+	*command = QStringLiteral("transport.seek");
+	*args = {{QStringLiteral("ticks"), static_cast<qint64>(event->pos)}};
+	*name = event->scale.isEmpty() ? chordName(*event) : tr("%1 (in %2)").arg(chordName(*event), event->scale);
+	return true;
+}
+
 void ArrangerRulerLanes::paintEvent(QPaintEvent*)
 {
 	m_drawn.clear();
@@ -302,7 +370,10 @@ void ArrangerRulerLanes::paintEvent(QPaintEvent*)
 		p.drawText(QRect(LabelGap, lane.top(), contentLeft() - 2 * LabelGap, lane.height()), Qt::AlignVCenter | Qt::AlignRight, laneTitle(i));
 		p.save();
 		p.setClipRect(QRect(contentLeft(), lane.top(), width() - contentLeft(), lane.height()));
-		if (i == 0) { paintSections(p, lane); } else if (i == 1) { paintMarkers(p, lane); } else { paintTempo(p, lane); }
+		if (i == 0) { paintSections(p, lane); }
+		else if (i == 1) { paintMarkers(p, lane); }
+		else if (i == 2) { paintTempo(p, lane); }
+		else { paintChords(p, lane); }
 		p.restore();
 		p.setPen(pal.separator);
 		p.drawLine(0, lane.bottom(), width(), lane.bottom());
@@ -314,15 +385,14 @@ bool ArrangerRulerLanes::itemAt(const QPoint& pos, QString* command, QJsonObject
 	if (pos.x() < contentLeft()) { return false; }
 	if (laneRect(Lane::Sections).contains(pos))
 	{
-		const ArrangementSection* section = ArrangementSections::instance().at(
-			m_editor->currentPosition().getTicks() + static_cast<tick_t>((pos.x() - contentLeft()) * TimePos::ticksPerBar() / std::max(1.f, m_editor->pixelsPerBar())));
+		const ArrangementSection* section = ArrangementSections::instance().at(tickAt(pos.x()));
 		if (section == nullptr) { return false; }
 		*command = QStringLiteral("section.select");
 		*args = {{QStringLiteral("section"), QStringLiteral("sec-%1").arg(section->id)}};
 		*name = section->name;
 		return true;
 	}
-	if (!laneRect(Lane::Markers).contains(pos)) { return false; }
+	if (!laneRect(Lane::Markers).contains(pos)) { return chordAt(pos, command, args, name); }
 	const QVector<Marker>& markers = ProjectMarkers::instance().markers();
 	for (int i = static_cast<int>(markers.size()) - 1; i >= 0; --i)  // the latest marker at or before the pointer
 	{
@@ -405,12 +475,14 @@ void registerRulerLaneCommands(ControlRegistry& registry)
 {
 	ControlCommand cmd = guiCommand("arrangement", "ruler_lanes");
 	cmd.description = QStringLiteral("Show or hide the arranger's ruler lanes under the bar ruler: 'sections' (named bands), "
-		"'markers' (flags and names) and 'tempo' (the tempo map's curve and values). A lane left out keeps its state; with "
-		"no arguments it reports them. A preference (config ui/rulerlanes; all three shown by default), not project state.");
-	cmd.argsSchema = control::objectSchema({{QStringLiteral("sections"), control::booleanProperty()},
-		{QStringLiteral("markers"), control::booleanProperty()}, {QStringLiteral("tempo"), control::booleanProperty()}});
-	cmd.resultSchema = control::objectSchema({{QStringLiteral("sections"), control::booleanProperty()},
-		{QStringLiteral("markers"), control::booleanProperty()}, {QStringLiteral("tempo"), control::booleanProperty()}});
+		"'markers' (flags and names), 'tempo' (the tempo map's curve and values) and 'chords' (the chord track's chords, "
+		"which takes room only while the chord track holds one). A lane left out keeps its state; with no arguments it "
+		"reports them. A preference (config ui/rulerlanes; all four shown by default), not project state.");
+	const QJsonObject lanes{{QStringLiteral("sections"), control::booleanProperty()},
+		{QStringLiteral("markers"), control::booleanProperty()}, {QStringLiteral("tempo"), control::booleanProperty()},
+		{QStringLiteral("chords"), control::booleanProperty()}};
+	cmd.argsSchema = control::objectSchema(lanes);
+	cmd.resultSchema = control::objectSchema(lanes);
 	cmd.handler = rulerLanes;
 	registry.registerCommand(cmd);
 }

@@ -143,6 +143,34 @@ private slots:
 		QCOMPARE(lanes->height(), sections.height() + markers.height() + tempo.height());
 	}
 
+	//! 0.5.0 E23: the chord track has a lane under Tempo - it takes room only while the chord track holds a
+	//! chord, follows a chord set and an undo without a signal, and a click on a chord seeks there.
+	void theChordTrackIsDrawnInItsLane()
+	{
+		auto* lanes = m_editor->findChild<ArrangerRulerLanes*>();
+		QVERIFY(lanes != nullptr);
+		using Lane = ArrangerRulerLanes::Lane;
+		QVERIFY2(lanes->laneRect(Lane::Chords).isEmpty(), "an empty chord track took room");
+		const int without = lanes->height();
+
+		QVERIFY(run(QStringLiteral("chord.set"), {{QStringLiteral("pos"), 2 * Bar}, {QStringLiteral("chord"), QStringLiteral("Major")},
+			{QStringLiteral("root"), 7}, {QStringLiteral("length"), 2 * Bar}}).ok);
+		QTRY_VERIFY(!lanes->laneRect(Lane::Chords).isEmpty());
+		QTRY_COMPARE(lanes->height(), without + lanes->laneRect(Lane::Chords).height());
+		QVERIFY(lanes->laneRect(Lane::Tempo).bottom() < lanes->laneRect(Lane::Chords).top());
+
+		// A click on the chord moves the play position to it.
+		const QRect lane = lanes->laneRect(Lane::Chords);
+		const int x = m_editor->timeLine()->markerX(TimePos(3 * Bar));
+		QTest::mouseClick(lanes, Qt::LeftButton, Qt::NoModifier, QPoint(x, lane.center().y()));
+		QCOMPARE(Engine::getSong()->getPlayPos().getTicks(), 2 * Bar);
+
+		QVERIFY(run(QStringLiteral("control.undo")).ok);  // the seek
+		QVERIFY(run(QStringLiteral("control.undo")).ok);  // the chord
+		QTRY_VERIFY(lanes->laneRect(Lane::Chords).isEmpty());
+		QTRY_COMPARE(lanes->height(), without);
+	}
+
 	void aKeyboardZoomKeepsThePlayheadInPlace()
 	{
 		clipAt(m_track, 40 * Bar, Bar);  // a song long enough to scroll

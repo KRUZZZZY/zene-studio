@@ -30,6 +30,7 @@
 #include <cmath>
 
 #include "ArrangementEdits.h"
+#include "CompSlip.h"
 #include "AudioEngine.h"
 #include "AudioBusHandle.h"
 #include "Engine.h"
@@ -281,6 +282,8 @@ void SamplePlayHandle::snapshotComp(const SampleClip* clip)
 		}
 		return;
 	}
+	// 0.5.0 E2: a slipped span reads the take slipped - linear clips at their own pitch (include/CompSlip.h).
+	if (m_rendersLinearly && !m_preservePitch) { m_compSlip = CompSlipReaders::create(comp, *clip, m_window.sourceIn, fpt); }
 	for (const TakeLaneSegment& segment : comp.segments())
 	{
 		if (segment.laneIndex != lane || m_compSpanCount >= MaxCompSpans) { continue; }
@@ -401,9 +404,15 @@ void SamplePlayHandle::play( std::span<SampleFrame> buffer )
 		{
 			renderPreservingPitch(workingBuffer, frames);
 		}
-		else if (!m_sample->play(workingBuffer, &m_state, frames, Sample::Loop::Off, warpRatio() / speedHere()))
+		else
 		{
-			zeroSampleFrames(workingBuffer, frames);
+			const double ratio = warpRatio() / speedHere();
+			if (!m_sample->play(workingBuffer, &m_state, frames, Sample::Loop::Off, ratio))
+			{
+				zeroSampleFrames(workingBuffer, frames);
+			}
+			// 0.5.0 E2: the slipped spans' frames, from their slipped reads, before the comp gate runs.
+			if (m_compSlip != nullptr) { m_compSlip->render(*m_sample, workingBuffer, frames, m_envelopeStart + m_frame, ratio); }
 		}
 
 		/*! The clip's fade-and-gain envelope (the fade/crossfade/clip-gain wave).

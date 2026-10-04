@@ -61,7 +61,7 @@ private:
 
 /*! 0.5.0 L10 (MX-152): a convolution reverb. The wet signal is the input, delayed by 'pre-delay',
  *  convolved with an impulse response (a WAV / FLAC / OGG file - stereo or mono, up to 5 seconds,
- *  resampled to the engine's rate - loaded with plugin.impulse_load; without one, a generated
+ *  resampled band-limited to the engine's rate - loaded with plugin.impulse_load; without one, a generated
  *  two-second hall), then low- and high-cut. It runs one ConvolutionKernel partition late, reports
  *  that as its latency for delay compensation, and delays its dry signal by the same so the mix is
  *  coherent; its tail is the impulse response's length plus the pre-delay. Everything the audio

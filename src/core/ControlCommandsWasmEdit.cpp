@@ -1,6 +1,7 @@
 /*
  * ControlCommandsWasmEdit.cpp - the wasm.* command group's MUTATING half: load,
- *                               unload and set_param (SPEC A11-A16, item #614).
+ *                               unload and set_param (SPEC A11-A16, item #614),
+ *                               and device_load (0.5.0 E22).
  *
  * The read half (list, get_state, process) is ControlCommandsWasm.cpp and their
  * shared vocabulary is ControlWasmSupport.h. The split is the one the automation,
@@ -35,12 +36,18 @@
  * Boston, MA 02110-1301 USA.
  */
 
+#include <QDomDocument>
 #include <QFileInfo>
 #include <QJsonArray>
 #include <QJsonObject>
 
+#include "ControlDeviceSupport.h"
 #include "ControlRegistry.h"
+#include "ControlReversibility.h"
 #include "ControlWasmSupport.h"
+#include "Effect.h"
+#include "Engine.h"
+#include "Song.h"
 
 #include "src/wasm/WasmAbi.h"
 #include "src/wasm/WasmSandboxHost.h"
@@ -278,6 +285,113 @@ void registerWasmSetParamCommand(ControlRegistry& registry)
 		true, [](const QJsonObject& args) { return handleSetParam(args); }));
 }
 
+// ---------------------------------------------------------------------------
+// wasm.device_load (0.5.0 E22): a module into a wasm_effect DEVICE, in any chain
+// ---------------------------------------------------------------------------
+
+//! The controls element a wasm_effect saves its module path and parameters in.
+const QString kDeviceControls = QStringLiteral("wasmeffectcontrols");
+
+/*! @a state (a controlEffectStateXml document) with its module set to @a path, in @a changed, and the
+ *  module it named before in @a previous. False when the device is not a wasm_effect - its document
+ *  has no wasmeffectcontrols element. The device takes the module through its own settings, the way
+ *  plugin.impulse_load hands a Convolution Reverb its response: the core never links the plugin. */
+bool withDeviceModule(const QString& state, const QString& path, QString* changed, QString* previous)
+{
+	QDomDocument doc;
+	if (!doc.setContent(state)) { return false; }
+	QDomElement controls = doc.elementsByTagName(kDeviceControls).item(0).toElement();
+	if (controls.isNull()) { return false; }
+	*previous = controls.attribute(QStringLiteral("module"));
+	controls.setAttribute(QStringLiteral("module"), path);
+	*changed = doc.toString();
+	return true;
+}
+
+//! The module the device's settings name now (empty when none is hosted).
+QString deviceModule(Effect* effect)
+{
+	QDomDocument doc;
+	doc.setContent(controlEffectStateXml(effect));
+	return doc.elementsByTagName(kDeviceControls).item(0).toElement().attribute(QStringLiteral("module"));
+}
+
+//! Undo/redo: the device found again by its ids (fx-<n> is unique, rack chains included), then the
+//! captured settings document restored. No pointer is held: the step may run after a reload.
+void restoreDevice(const QString& targetId, const QString& pluginId, const QString& state)
+{
+	ControlTarget target;
+	ControlResult error;
+	if (!resolveControlTarget(targetId, &target, &error)) { return; }
+	if (Effect* effect = resolveControlEffect(target, pluginId, &error)) { controlRestoreEffectState(effect, state.toUtf8()); }
+}
+
+ControlResult deviceRefusal(ControlErrorKind kind, const QString& why)
+{
+	return ControlResult::failure(kind, wasmNotFound(QStringLiteral("wasm.device_load"), why));
+}
+
+ControlResult handleDeviceLoad(const QJsonObject& args)
+{
+	const QString targetId = args.value(QStringLiteral("target")).toString();
+	const QString pluginId = args.value(QStringLiteral("plugin")).toString();
+	ControlTarget target;
+	ControlResult error;
+	if (!resolveControlTarget(targetId, &target, &error)) { return error; }
+	Effect* effect = resolveControlEffect(target, pluginId, &error);
+	if (effect == nullptr) { return error; }
+	const QString path = QFileInfo(args.value(QStringLiteral("path")).toString()).absoluteFilePath();
+	if (!QFileInfo::exists(path)) { return deviceRefusal(ControlErrorKind::NotFound, QStringLiteral("no module file at '%1'").arg(path)); }
+	const QString before = controlEffectStateXml(effect);
+	QString after;
+	QString previous;
+	if (!withDeviceModule(before, path, &after, &previous))
+	{
+		return deviceRefusal(ControlErrorKind::Refused, QStringLiteral("%1 is not a wasm_effect device").arg(pluginId));
+	}
+	// Refused BEFORE the device is touched: the module it runs keeps running.
+	QString why;
+	if (!wasmProbeDeviceModule(path, &why))
+	{
+		return deviceRefusal(ControlErrorKind::Refused, QStringLiteral("'%1' cannot be hosted: %2").arg(path, why));
+	}
+	const ControlResult restored = controlRestoreEffectState(effect, after.toUtf8());
+	if (!restored.ok) { return restored; }
+	if (deviceModule(effect) != path)
+	{
+		// Sound, but the device's worker could not host it (the pool is full, or the load timed out); the
+		// device has put its previous module back, so there is nothing to undo.
+		return deviceRefusal(ControlErrorKind::Refused, QStringLiteral("'%1' passed the checks but the device could not host it "
+			"(wasm.pool reports the worker pool)").arg(path));
+	}
+	addUndoStep([targetId, pluginId, before]() { restoreDevice(targetId, pluginId, before); },
+		[targetId, pluginId, after]() { restoreDevice(targetId, pluginId, after); });
+	Engine::getSong()->setModified();
+	return ControlResult::success({{QStringLiteral("target"), targetId}, {QStringLiteral("plugin"), pluginId},
+		{QStringLiteral("module"), path}, {QStringLiteral("previous_module"), previous}});
+}
+
+void registerWasmDeviceLoadCommand(ControlRegistry& registry)
+{
+	ControlCommand cmd = wasmCommand(QStringLiteral("device_load"),
+		QStringLiteral("Load a module into a wasm_effect DEVICE - 'plugin' fx-<n> on 'target' (trk-<n> or ch-<n>), in the "
+			"target's own chain or any parallel chain of a channel's rack (plugin.load with 'chain' puts a wasm_effect "
+			"there) - without the device's file chooser. 'path' is a .wasm module exporting process(). ALL OR NOTHING: "
+			"the module is compiled and instantiated first and one that fails is refused, typed, with the device's "
+			"module still running; the swap itself waits for the audio period to end. The path is saved with the "
+			"project like the chooser's, and one control.undo puts the device's previous module (or none) back - "
+			"re-instantiated from a cold memory image, so a stateful module starts over. Unlike wasm.load, this is "
+			"heard: the device is on the signal path."),
+		{{QStringLiteral("target"), stringProperty()}, {QStringLiteral("plugin"), stringProperty()},
+			{QStringLiteral("path"), stringProperty()}},
+		{QStringLiteral("target"), QStringLiteral("plugin"), QStringLiteral("path")},
+		{{QStringLiteral("target"), stringProperty()}, {QStringLiteral("plugin"), stringProperty()},
+			{QStringLiteral("module"), stringProperty()}, {QStringLiteral("previous_module"), stringProperty()}},
+		true, [](const QJsonObject& args) { return handleDeviceLoad(args); });
+	cmd.requiresEngine = true;  // a device lives in the project, unlike the host's own sandbox
+	registry.registerCommand(cmd);
+}
+
 } // namespace
 
 void registerWasmEditCommands(ControlRegistry& registry)
@@ -285,6 +399,7 @@ void registerWasmEditCommands(ControlRegistry& registry)
 	registerWasmLoadCommand(registry);
 	registerWasmUnloadCommand(registry);
 	registerWasmSetParamCommand(registry);
+	registerWasmDeviceLoadCommand(registry);
 }
 
 } // namespace lmms

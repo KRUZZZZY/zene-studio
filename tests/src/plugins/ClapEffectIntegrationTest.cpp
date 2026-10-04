@@ -32,6 +32,7 @@
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
+#include <QPointer>
 
 #include <algorithm>
 #include <cmath>
@@ -39,6 +40,7 @@
 
 #include "AudioBuffer.h"
 #include "AudioBus.h"
+#include "AutomationClip.h"
 #include "BufferManager.h"
 #include "ClapEffect.h"
 #include "ClapEffectControls.h"
@@ -48,6 +50,8 @@
 #include "Engine.h"
 #include "Mixer.h"
 #include "Plugin.h"
+#include "Song.h"
+#include "Track.h"
 #include "plugin_export.h" // PLUGIN_EXPORT of the clapeffect plug-in
 
 #ifndef CLAP_TEST_PLUGIN_PATH
@@ -73,6 +77,7 @@ private slots:
 	void testTheControlDialogsButtonOpensTheEditor();
 	void testThePluginsLatencyReachesTheChain();
 	void testThePluginsTailKeepsItRunning();
+	void testParameterRescansRebuildTheModels();
 
 private:
 	auto makeKey() const -> Plugin::Descriptor::SubPluginFeatures::Key;
@@ -524,6 +529,60 @@ void lmms::ClapEffectIntegrationTest::testThePluginsTailKeepsItRunning()
 	QCOMPARE(effect->tailFrames(), 96000);
 	const auto periods = static_cast<f_cnt_t>(96000 / Engine::audioEngine()->framesPerPeriod());
 	QVERIFY2(effect->timeout() > periods, "the auto-quit wait covers the declared tail");
+	chain.clear();
+}
+
+/*! W6: a parameter rescan rebuilds the effect's models and keeps what is connected to them. An info rescan renames
+ *  the Gain model in place; a full rescan (a restart, then the list re-read deactivated) keeps the Gain model - the
+ *  same object, so the automation clip on it still drives it - deletes the model of the removed Bypass switch, and
+ *  adds models for Drive and Tone whose changes reach the plug-in. Before, the models stayed as they were loaded. */
+void lmms::ClapEffectIntegrationTest::testParameterRescansRebuildTheModels()
+{
+	BufferManager::init(48);
+	qputenv("CLAP_TEST_GAIN_RESCAN", "info");
+	EffectChain chain{nullptr};
+	const auto key = makeKey();
+	auto* effect = new ClapEffect{&chain, &key};
+	chain.appendEffect(effect);
+	auto* controls = dynamic_cast<ClapEffectControls*>(effect->controls());
+	QVERIFY(controls != nullptr);
+	const QPointer<ClapParamModel> gain = controls->modelForParam(1);
+	const QPointer<ClapParamModel> bypass = controls->modelForParam(2);
+	QVERIFY(gain != nullptr && bypass != nullptr);
+	QCOMPARE(gain->objectName(), QStringLiteral("clap-1"));  // the stable key its alias is kept by
+	auto* clip = dynamic_cast<AutomationClip*>(Track::create(Track::Type::Automation, Engine::getSong())->createClip(TimePos(0)));
+	QVERIFY(clip != nullptr);
+	QVERIFY(clip->addObject(gain));
+	QSignalSpy rebuilt(controls, &ClapEffectControls::parametersChanged);
+	QVERIFY(QMetaObject::invokeMethod(controls, "poll"));  // the plug-in renames Gain: an info rescan
+	QCOMPARE(rebuilt.count(), 1);
+	QCOMPARE(controls->modelForParam(1), gain.data());
+	QCOMPARE(gain->displayName(), QStringLiteral("Level"));
+
+	qputenv("CLAP_TEST_GAIN_RESCAN", "all");
+	effect->reprepare();  // activate() asks for the main-thread call in which the plug-in asks for a restart
+	QVERIFY(QMetaObject::invokeMethod(controls, "poll"));  // the restart: deactivated, the list is re-read
+	qunsetenv("CLAP_TEST_GAIN_RESCAN");
+	QCOMPARE(rebuilt.count(), 2);
+	QCOMPARE(controls->paramModels().size(), std::size_t{3});
+	QCOMPARE(controls->modelForParam(1), gain.data());
+	QVERIFY(bypass.isNull());
+	QCOMPARE(clip->objects().size(), std::size_t{1});
+	QCOMPARE(clip->objects().front().data(), static_cast<AutomatableModel*>(gain.data()));
+	ClapParamModel* drive = controls->modelForParam(3);
+	QVERIFY(drive != nullptr);
+	QCOMPARE(drive->maxValue(), 10.f);
+	QCOMPARE(drive->value(), 2.f);
+	drive->setValue(4.f);
+	QCOMPARE(effect->plugin()->paramPlain(3), 4.0);
+
+	gain->setValue(0.5f);
+	SampleFrame storage[48];
+	for (auto& frame : storage) { frame = SampleFrame(0.5f, 0.5f); }
+	SampleFrame* busData[1] = {storage};
+	AudioBus bus{busData, 1, 48};
+	QVERIFY(chain.processAudioBuffer(bus));
+	QVERIFY2(std::abs(storage[0][0] - 0.25f) < 1e-6f, qPrintable(QString::number(storage[0][0])));
 	chain.clear();
 }
 

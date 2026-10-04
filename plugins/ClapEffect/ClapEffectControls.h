@@ -47,7 +47,8 @@ class EffectControlDialog;
 }
 
 //! Exposes every CLAP parameter as an AutomatableModel and persists the
-//! plug-in's own state (clap.state) into the .mmp.
+//! plug-in's own state (clap.state) into the .mmp. The models follow the
+//! plug-in's parameter rescans (W6, ClapParamModelList).
 class ClapEffectControls : public EffectControls
 {
 	Q_OBJECT
@@ -61,15 +62,19 @@ public:
 	auto nodeName() const -> QString override { return "clap"; }
 	auto controlCount() -> int override
 	{
-		return static_cast<int>(m_paramModels.size());
+		return static_cast<int>(m_params.models().size());
 	}
 	auto createView() -> gui::EffectControlDialog* override;
 
 	auto paramModels() const -> const std::vector<ClapParamModel*>&
 	{
-		return m_paramModels;
+		return m_params.models();
 	}
 	auto modelForParam(std::uint32_t id) -> ClapParamModel*;
+
+signals:
+	//! W6: the plug-in rescanned its parameters and the models were rebuilt; a view redraws its knobs.
+	void parametersChanged();
 
 private slots:
 	//! GUI thread: pull plug-in side changes into the models and service the
@@ -78,9 +83,8 @@ private slots:
 
 private:
 	ClapEffect* m_effect;
-	std::vector<ClapParamModel*> m_paramModels;
+	ClapParamModelList m_params;
 	QTimer* m_pollTimer = nullptr;
-	bool m_syncing = false;
 };
 
 } // namespace lmms

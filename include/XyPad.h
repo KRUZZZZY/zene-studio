@@ -34,6 +34,7 @@
 #include "lmms_export.h"
 
 class QComboBox;
+class QLabel;
 
 namespace lmms::gui
 {
@@ -60,8 +61,10 @@ private:
 };
 
 /*! 0.5.0 L10 (MX-110): a mixer channel rack's two macros played together on one pad - X drives one
- *  macro, Y the other, each through rack.macro_set (so an agent's macro edits and the pad are one
- *  path, and every bound parameter follows). */
+ *  macro, Y the other, both through ONE rack.macro_set_pair per move (W1: a drag is one undo step, and
+ *  an agent's macro edits and the pad are one path, every bound parameter following). When both axes
+ *  name the same macro, X drives it alone through rack.macro_set. A refused move is shown on the
+ *  status line under the pad. */
 class LMMS_EXPORT XyPadDialog : public QDialog
 {
 	Q_OBJECT
@@ -77,6 +80,8 @@ private:
 	QComboBox* m_x;
 	QComboBox* m_y;
 	XyPadArea* m_area;
+	//! W1: the last refused move's reason, cleared by the next move that lands (one line, never a box per move).
+	QLabel* m_status;
 };
 
 } // namespace lmms::gui

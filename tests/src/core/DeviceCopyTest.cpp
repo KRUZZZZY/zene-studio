@@ -431,6 +431,28 @@ private slots:
 		QVERIFY(run(QStringLiteral("control.undo")).ok);
 		QVERIFY(pluginorganiser::preferredFormat().isEmpty());
 	}
+
+	//! W6: the organiser tells an open effect picker that it changed - plugin.organise and plugin.prefer_format
+	//! over the socket, and their undo - once per real change, and not for a write that changes nothing.
+	void theOrganiserSignalsItsChanges()
+	{
+		QSignalSpy changed(pluginorganiser::notifier(), &pluginorganiser::Notifier::changed);
+		const QString key = QStringLiteral("amplifier");
+		QVERIFY(run(QStringLiteral("plugin.organise"), {{QStringLiteral("key"), key}, {QStringLiteral("hidden"), true}}).ok);
+		QCOMPARE(changed.count(), 1);
+		pluginorganiser::setEntry(key, pluginorganiser::entry(key));  // the same entry again: nothing to show
+		QCOMPARE(changed.count(), 1);
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
+		QCOMPARE(changed.count(), 2);
+		QVERIFY(pluginorganiser::entry(key).isDefault());
+		QVERIFY(run(QStringLiteral("plugin.prefer_format"), {{QStringLiteral("format"), QStringLiteral("lv2")}}).ok);
+		QCOMPARE(changed.count(), 3);
+		pluginorganiser::setPreferredFormat(QStringLiteral("lv2"));  // unchanged
+		QCOMPARE(changed.count(), 3);
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
+		QCOMPARE(changed.count(), 4);
+		QVERIFY(pluginorganiser::preferredFormat().isEmpty());
+	}
 };
 
 QTEST_MAIN(DeviceCopyTest)

@@ -81,9 +81,16 @@ QString keyOf(const ControlDeviceEntry& device)
 
 Entry entry(const QString& key) { return fromJson(stored().value(key).toObject()); }
 
+Notifier* notifier()
+{
+	static Notifier instance;
+	return &instance;
+}
+
 void setEntry(const QString& key, const Entry& value)
 {
-	QJsonObject all = stored();
+	const QJsonObject before = stored();
+	QJsonObject all = before;
 	if (value.isDefault()) { all.remove(key); }
 	else
 	{
@@ -94,6 +101,7 @@ void setEntry(const QString& key, const Entry& value)
 	// Written to the file with the rest of the config when the application saves it (not here: a
 	// unit test driving this must not write the developer's own config file).
 	ConfigManager::inst()->setValue(kSection, kKey, QString::fromUtf8(QJsonDocument(all).toJson(QJsonDocument::Compact)));
+	if (all != before) { emit notifier()->changed(); }
 }
 
 QMap<QString, Entry> entries()
@@ -111,7 +119,9 @@ QString preferredFormat()
 
 void setPreferredFormat(const QString& format)
 {
+	if (format == preferredFormat()) { return; }
 	ConfigManager::inst()->setValue(QStringLiteral("plugins"), QStringLiteral("preferredformat"), format);
+	emit notifier()->changed();
 }
 
 const QStringList& formatNames()

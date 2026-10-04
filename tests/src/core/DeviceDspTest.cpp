@@ -148,10 +148,10 @@ float noise(long f, float level)
 	return level * (static_cast<float>(x >> 8) / static_cast<float>(1u << 24) * 2.f - 1.f);
 }
 
-//! A mono 16-bit WAV of @a samples at the engine's rate (so nothing is resampled) in @a path.
-bool writeWav(const QString& path, const std::vector<qint16>& samples)
+//! A mono 16-bit WAV of @a samples in @a path, at @a hz - by default the engine's rate, so nothing is resampled.
+bool writeWav(const QString& path, const std::vector<qint16>& samples, quint32 hz = 0)
 {
-	const auto hz = static_cast<quint32>(rate());
+	if (hz == 0) { hz = static_cast<quint32>(rate()); }
 	QFile file(path);
 	if (!file.open(QIODevice::WriteOnly)) { return false; }
 	QDataStream out(&file);
@@ -315,6 +315,34 @@ private slots:
 		QVERIFY(!console.isEmpty());
 		QJsonObject wrong{{QStringLiteral("target"), ch(1)}, {QStringLiteral("plugin"), console}, {QStringLiteral("path"), click}};
 		QCOMPARE(run(QStringLiteral("plugin.impulse_load"), wrong).errorKind, ControlErrorKind::Refused);
+		chainOf(1).clear();
+	}
+
+	//! W6 (review lane10 #4): an impulse response recorded at twice the engine's rate is resampled band-limited. Its
+	//! click plus a tone above the engine's Nyquist frequency must play as the click alone - flat - and not with
+	//! the tone folded down to a quarter of the rate (the old linear resampler: about 7 times louder there).
+	void aHighRateImpulseIsResampledWithoutAliasing()
+	{
+		const QString reverb = loadByName(ch(1), QStringLiteral("convolutionreverb"));
+		if (reverb.isEmpty()) { QSKIP("this build has no convolution reverb module"); }
+		QTemporaryDir dir;
+		const QString file = dir.filePath(QStringLiteral("high-rate.wav"));
+		std::vector<qint16> samples(2048, 0);
+		samples[0] = 16384;
+		for (std::size_t n = 0; n < samples.size(); ++n)  // 0.375 of the file's rate: 0.75 of the engine's
+		{
+			samples[n] = static_cast<qint16>(samples[n] + 2000.0 * std::sin(kTwoPi * 0.375 * static_cast<double>(n)));
+		}
+		QVERIFY(writeWav(file, samples, static_cast<quint32>(2 * rate())));
+		const ControlResult loaded = run(QStringLiteral("plugin.impulse_load"),
+			{{QStringLiteral("target"), ch(1)}, {QStringLiteral("plugin"), reverb}, {QStringLiteral("path"), file}});
+		QVERIFY2(loaded.ok, qPrintable(loaded.errorMessage));
+		long at = 0;
+		const float low = runBlocks(chainOf(1), sine(1000.0, 0.25f), 80, &at)[0];
+		const float folded = runBlocks(chainOf(1), sine(0.99 * rate() / 4.0, 0.25f), 80, &at)[0];
+		QVERIFY2(low > 0.01f, qPrintable(QString::number(low)));
+		QVERIFY2(folded / low < 1.5f && folded / low > 0.67f,
+			qPrintable(QStringLiteral("a quarter of the rate %1, 1 kHz %2").arg(folded).arg(low)));
 		chainOf(1).clear();
 	}
 

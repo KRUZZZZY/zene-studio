@@ -125,7 +125,7 @@ void MidiController::processInEvent(const MidiEvent& event, const TimePos& time,
 
 void MidiController::processOutEvent(const MidiEvent& event, const TimePos& time, f_cnt_t offset)
 {
-	m_midiPort.processOutEvent(event, time);
+	m_midiPort.processOutEvent(event, time, offset);
 }
 
 void MidiController::setSoftTakeoverEnabled(bool enabled)

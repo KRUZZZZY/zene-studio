@@ -1,5 +1,5 @@
 /*
- * ClapParameter.h - an AutomatableModel mapped onto one CLAP parameter
+ * ClapParameter.h - an AutomatableModel mapped onto one CLAP parameter, and the list of them
  *
  * Copyright (c) 2026 Zene Studio contributors
  *
@@ -27,6 +27,7 @@
 
 #include <cstdint>
 #include <functional>
+#include <vector>
 
 #include <QString>
 
@@ -35,6 +36,11 @@
 
 namespace lmms
 {
+
+namespace clap
+{
+class HostedPlugin;
+}
 
 /**
  * An LMMS model for a single CLAP parameter.
@@ -56,6 +62,9 @@ public:
 
 	auto paramId() const -> std::uint32_t { return m_descriptor.id; }
 	auto descriptor() const -> const ClapParamDescriptor& { return m_descriptor; }
+	//! W6: the plug-in rescanned this parameter - its name, range and flags follow; the model, and so every
+	//! automation, controller, macro and modulator connected to it, stays.
+	void setDescriptor(const ClapParamDescriptor& descriptor);
 
 	//! Sets the callback used to render a plain value as a string
 	void setDisplayFormatter(DisplayFormatter formatter) { m_formatter = std::move(formatter); }
@@ -65,6 +74,46 @@ public:
 private:
 	ClapParamDescriptor m_descriptor;
 	DisplayFormatter m_formatter;
+};
+
+/**
+ * The models of one hosted CLAP plug-in's parameters, kept in step with its list (W6) - shared by the
+ * effect's controls and the instrument.
+ *
+ * sync() builds them, and after the plug-in rescanned its parameters (HostedPlugin::paramsRevision
+ * moved) brings them in step: a parameter that is still there keeps its model, with its name, range
+ * and flags refreshed, so automation, controllers, macros and modulators stay connected to it; a new
+ * parameter gets a model; a removed one's model is deleted, under the engine's change guard, since the
+ * audio thread may be automating it. A model's value is the parameter's plain value: a change is
+ * written to the host's lock-free snapshot, except the host's own (pullValues). GUI thread, except the
+ * write of a changed value, which runs on the thread that changed the model.
+ */
+class ClapParamModelList
+{
+public:
+	//! The models of @a plugin's parameters, children of @a parent. Builds nothing until sync().
+	ClapParamModelList(clap::HostedPlugin* plugin, Model* parent);
+
+	//! Brings the models in step with the plug-in's list; true when it built or rebuilt them.
+	auto sync() -> bool;
+	auto models() const -> const std::vector<ClapParamModel*>& { return m_models; }
+	auto modelFor(std::uint32_t id) const -> ClapParamModel*;
+	//! The plug-in's values into the models, not echoed back: each further from the model's than
+	//! @a tolerance of its range (0: every value that differs).
+	void pullValues(float tolerance);
+
+private:
+	auto create(const ClapParamDescriptor& descriptor) -> ClapParamModel*;
+	//! Deletes the models not in @a kept.
+	void removeAllBut(const std::vector<ClapParamModel*>& kept);
+
+	clap::HostedPlugin* m_plugin;
+	Model* m_parent;
+	std::vector<ClapParamModel*> m_models;
+	std::uint32_t m_revision = 0;
+	bool m_built = false;
+	//! True while the host writes into the models: their change is not sent back to the plug-in.
+	bool m_syncing = false;
 };
 
 } // namespace lmms

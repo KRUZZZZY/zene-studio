@@ -319,6 +319,18 @@ const ReversibilityRow kActionRows[] = {
 		"gone is skipped rather than dereferenced",
 		"",
 		"channel,macro"),
+	// W1: the XY pad's two macros as one step (a drag coalesces on the pair).
+	RC("rack.macro_set_pair", RC::TrueInverse, true,
+		"the same two kinds of object as rack.macro_set, twice: each macro's own "
+		"scalar (on the rack, not journalled) plus every parameter model it "
+		"drives",
+		"action checkpoint: ONE recorded undo step puts both macros' values back "
+		"and writes every parameter the call changed back to the value it had - "
+		"in reverse order, so a parameter both macros drive gets its pre-call "
+		"value. Targets are re-resolved by chain/effect/parameter name when the "
+		"step runs; a target whose device is gone is skipped",
+		"",
+		"channel,x_macro,y_macro"),
 	R("rack.zone_add", RC::TrueInverse, true,
 		"a created zone has no before-state; the zone list is the rack's own "
 		"data",

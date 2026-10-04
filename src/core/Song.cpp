@@ -400,23 +400,11 @@ void Song::processNextBuffer()
 
 	auto& timeline = getTimeline();
 
-	// If the playback position is outside of the range [begin, end), move it to
-	// begin and inform interested parties.
-	// Returns true if the playback position was moved, else false.
-	const auto enforceLoop = [this](const TimePos& begin, const TimePos& end)
-	{
-		if (getPlayPos() < begin || getPlayPos() >= end)
-		{
-			getTimeline().setTicks(begin.getTicks());
-			return true;
-		}
-		return false;
-	};
-
 	const auto loopEnabled = !m_exporting && timeline.loopEnabled();
 
-	// Ensure playback begins within the loop if it is enabled
-	if (loopEnabled) { enforceLoop(timeline.loopBegin(), timeline.loopEnd()); }
+	// Ensure playback begins within the loop if it is enabled (a correction, not a wrap: a seek or a
+	// start put the position outside the loop)
+	if (loopEnabled) { enforceLoop(timeline.loopBegin(), timeline.loopEnd(), false); }
 
 	const auto framesPerTick = Engine::framesPerTick();
 	const auto framesPerPeriod = Engine::audioEngine()->framesPerPeriod();
@@ -449,11 +437,11 @@ void Song::processNextBuffer()
 			// loop back to the beginning when we reach the end
 			if (m_playMode == PlayMode::Pattern)
 			{
-				enforceLoop(TimePos{0}, TimePos{Engine::patternStore()->lengthOfCurrentPattern(), 0});
+				enforceLoop(TimePos{0}, TimePos{Engine::patternStore()->lengthOfCurrentPattern(), 0}, true);
 			}
 			else if (m_playMode == PlayMode::MidiClip && m_loopMidiClip && !loopEnabled)
 			{
-				enforceLoop(-m_midiClipToPlay->startTimeOffset(), m_midiClipToPlay->length() - m_midiClipToPlay->startTimeOffset());
+				enforceLoop(-m_midiClipToPlay->startTimeOffset(), m_midiClipToPlay->length() - m_midiClipToPlay->startTimeOffset(), true);
 			}
 
 			// Handle loop points, and inform VST plugins of the loop status
@@ -463,7 +451,7 @@ void Song::processNextBuffer()
 					timeline.loopBegin().getTicks(), timeline.loopEnd().getTicks());
 
 				// Loop if necessary, and decrement the remaining loops if we did
-				if (enforceLoop(timeline.loopBegin(), timeline.loopEnd())
+				if (enforceLoop(timeline.loopBegin(), timeline.loopEnd(), true)
 					&& m_loopRenderRemaining > 1)
 				{
 					m_loopRenderRemaining--;
@@ -494,7 +482,7 @@ void Song::processNextBuffer()
 		if (static_cast<f_cnt_t>(frameOffsetInTick) == 0)
 		{
 			// First frame of tick: process automation and play tracks
-			MidiPlayback::instance().tickPlayed(getPlayPos().getTicks());  // 0.5.0 L07: chase and the loop pass
+			MidiPlayback::instance().tickPlayed(getPlayPos().getTicks(), m_loopWraps.load(std::memory_order_relaxed));  // 0.5.0 L07/W2: chase and the loop pass
 			processAutomations(trackList, getPlayPos(), framesToPlay);
 			processMetronome(frameOffsetInPeriod);
 
@@ -542,6 +530,18 @@ void Song::processNextBuffer()
 
 	// Reset the jumped state after processing this buffer, since presumably it has now been handled.
 	m_vstSyncController.setPlaybackJumped(false);
+}
+
+
+bool Song::enforceLoop(const TimePos& begin, const TimePos& end, bool wrapping)
+{
+	const bool playedToEnd = getPlayPos() >= end;
+	if (!playedToEnd && getPlayPos() >= begin) { return false; }
+	// 0.5.0 W2: counted BEFORE setTicks announces the jump, so a listener of that jump already sees the
+	// wrap; an atomic add, nothing else, on the render thread.
+	if (wrapping && playedToEnd) { m_loopWraps.fetch_add(1, std::memory_order_release); }
+	getTimeline().setTicks(begin.getTicks());
+	return true;
 }
 
 

@@ -226,6 +226,52 @@ ControlResult armTrackArm(MultiTrackRecorder& recorder, Track* track, const QStr
 	return ControlResult::success(result);
 }
 
+//! track.set_arm's handler: arm or disarm the record route one song track maps to.
+ControlResult setArm(const QJsonObject& args)
+{
+	ControlResult error;
+	Track* track = control::resolveTrack(args.value(QStringLiteral("track")).toString(), &error);
+	if (track == nullptr) { return error; }
+	if (!args.contains(QStringLiteral("armed")))
+	{
+		return ControlResult::failure(ControlErrorKind::InvalidArgs,
+			QStringLiteral("'armed' is required: true starts the capture, false stops it"));
+	}
+
+	AudioEngine* engine = Engine::audioEngine();
+	if (engine == nullptr)
+	{
+		return ControlResult::failure(ControlErrorKind::Refused,
+			QStringLiteral("this instance has no audio engine, so there is no recorder to arm "
+				"(the route state lives on it: include/AudioEngine.h)"));
+	}
+	MultiTrackRecorder& recorder = engine->recorder();
+
+	const int route = trackRouteOf(track);
+	if (route < 0)
+	{
+		return ControlResult::failure(ControlErrorKind::NotFound,
+			QStringLiteral("the track is not in the song container, so it has no route in the "
+				"recorder"));
+	}
+	if (route >= recorder.trackCount())
+	{
+		return ControlResult::failure(ControlErrorKind::Refused,
+			QStringLiteral("this track is at position %1 in the song and the engine prepared "
+				"%2 record route(s) (MultiTrackRecorder::MaxRoutes, fixed at start): a track "
+				"past the last route has nowhere to record to")
+				.arg(route).arg(recorder.trackCount()));
+	}
+
+	const QString trackId = args.value(QStringLiteral("track")).toString();
+	if (!args.value(QStringLiteral("armed")).toBool())
+	{
+		return disarmTrackArm(recorder.track(route), trackId, route);
+	}
+	return armTrackArm(recorder, track, trackId, route, args,
+		static_cast<int>(engine->baseSampleRate()));
+}
+
 void registerTrackSetArm(ControlRegistry& registry)
 {
 	ControlCommand cmd;
@@ -265,49 +311,90 @@ void registerTrackSetArm(ControlRegistry& registry)
 		{QStringLiteral("armed_before"), control::booleanProperty()},
 	});
 	cmd.mutating = true;
-	cmd.handler = [](const QJsonObject& args) {
-		ControlResult error;
-		Track* track = control::resolveTrack(args.value(QStringLiteral("track")).toString(), &error);
-		if (track == nullptr) { return error; }
-		if (!args.contains(QStringLiteral("armed")))
-		{
-			return ControlResult::failure(ControlErrorKind::InvalidArgs,
-				QStringLiteral("'armed' is required: true starts the capture, false stops it"));
-		}
+	cmd.handler = setArm;
+	registry.registerCommand(cmd);
+}
 
-		AudioEngine* engine = Engine::audioEngine();
-		if (engine == nullptr)
-		{
-			return ControlResult::failure(ControlErrorKind::Refused,
-				QStringLiteral("this instance has no audio engine, so there is no recorder to arm "
-					"(the route state lives on it: include/AudioEngine.h)"));
-		}
-		MultiTrackRecorder& recorder = engine->recorder();
+//! W1: what a batch arm did - the tracks it changed (in order), the ones that refused and why, each route's reply.
+struct ArmBatch
+{
+	QJsonArray changed;
+	QJsonArray refused;
+	QJsonArray routes;
+	QString lastReason;
+};
 
-		const int route = trackRouteOf(track);
-		if (route < 0)
+//! Each track @a ids names, through track.set_arm's own handler. A track already in that state (busy) is skipped, not
+//! refused; every other refusal is collected and the rest still go ahead.
+ArmBatch armEach(const QJsonArray& ids, bool armed)
+{
+	ArmBatch out;
+	for (const QJsonValue& id : ids)
+	{
+		ControlResult one = setArm({{QStringLiteral("track"), id.toString()}, {QStringLiteral("armed"), armed}});
+		if (one.ok)
 		{
-			return ControlResult::failure(ControlErrorKind::NotFound,
-				QStringLiteral("the track is not in the song container, so it has no route in the "
-					"recorder"));
+			one.result.remove(QStringLiteral("__transaction"));  // the batch records ONE transaction for all of them
+			out.changed.append(id.toString());
+			out.routes.append(one.result);
+			continue;
 		}
-		if (route >= recorder.trackCount())
-		{
-			return ControlResult::failure(ControlErrorKind::Refused,
-				QStringLiteral("this track is at position %1 in the song and the engine prepared "
-					"%2 record route(s) (MultiTrackRecorder::MaxRoutes, fixed at start): a track "
-					"past the last route has nowhere to record to")
-					.arg(route).arg(recorder.trackCount()));
-		}
+		if (one.errorKind == ControlErrorKind::Busy) { continue; }
+		out.refused.append(QJsonObject{{QStringLiteral("track"), id.toString()}, {QStringLiteral("reason"), one.errorMessage}});
+		out.lastReason = one.errorMessage;
+	}
+	return out;
+}
 
-		const QString trackId = args.value(QStringLiteral("track")).toString();
-		if (!args.value(QStringLiteral("armed")).toBool())
-		{
-			return disarmTrackArm(recorder.track(route), trackId, route);
-		}
-		return armTrackArm(recorder, track, trackId, route, args,
-			static_cast<int>(engine->baseSampleRate()));
-	};
+/*! track.set_arm_many (W1): the mixer's Arm All as ONE call and ONE undo step. Arming records one inverse - this command
+ *  with armed: false over exactly the tracks it armed - so one control.undo disarms them all; disarming records none, as
+ *  track.set_arm's disarm does not (re-arming starts a NEW take). */
+ControlResult setArmMany(const QJsonObject& args)
+{
+	const QJsonArray ids = args.value(QStringLiteral("tracks")).toArray();
+	if (ids.isEmpty()) { return ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("'tracks' names no track")); }
+	const bool armed = args.value(QStringLiteral("armed")).toBool();
+	const ArmBatch batch = armEach(ids, armed);
+	if (batch.changed.isEmpty())
+	{
+		return batch.refused.isEmpty()
+			? ControlResult::failure(ControlErrorKind::Busy, QStringLiteral("every named track's route is already armed"))
+			: ControlResult::failure(ControlErrorKind::Refused, QStringLiteral("no track was armed: %1").arg(batch.lastReason));
+	}
+	QJsonObject result{{QStringLiteral("armed"), armed}, {QStringLiteral("tracks"), batch.changed},
+		{QStringLiteral("refused"), batch.refused}, {QStringLiteral("routes"), batch.routes}};
+	if (armed)
+	{
+		const QJsonObject inverse{{QStringLiteral("tracks"), batch.changed}, {QStringLiteral("armed"), false}};
+		result.insert(QStringLiteral("__transaction"), control::commandTransaction(inverse, QStringLiteral("track.set_arm_many"), inverse));
+	}
+	return ControlResult::success(result);
+}
+
+void registerTrackSetArmMany(ControlRegistry& registry)
+{
+	ControlCommand cmd;
+	cmd.id = QStringLiteral("track.set_arm_many");
+	cmd.group = QStringLiteral("track");
+	cmd.verb = QStringLiteral("set_arm_many");
+	cmd.description = QStringLiteral("Arm or disarm several song tracks for recording in one call - the mixer's Arm All. "
+		"Each track in 'tracks' (trk-<n> ids) is armed or disarmed as track.set_arm does it, with its default take file and "
+		"input channel; a track already armed is skipped, and a track that refuses (past the last record route, say) is "
+		"listed in 'refused' with its reason while the others still go ahead. 'tracks' answers the ones changed, 'routes' "
+		"each one's route reply. Arming is ONE undo step: control.undo disarms exactly the tracks this call armed (their "
+		"takes stay on disk). Disarming records no inverse, as track.set_arm's does not.");
+	cmd.argsSchema = control::objectSchema({
+		{QStringLiteral("tracks"), control::arrayProperty()},
+		{QStringLiteral("armed"), control::booleanProperty()},
+	}, {QStringLiteral("tracks"), QStringLiteral("armed")});
+	cmd.resultSchema = control::objectSchema({
+		{QStringLiteral("armed"), control::booleanProperty()},
+		{QStringLiteral("tracks"), control::arrayProperty()},
+		{QStringLiteral("refused"), control::arrayProperty()},
+		{QStringLiteral("routes"), control::arrayProperty()},
+	});
+	cmd.mutating = true;
+	cmd.handler = setArmMany;
 	registry.registerCommand(cmd);
 }
 
@@ -316,6 +403,7 @@ void registerTrackSetArm(ControlRegistry& registry)
 void registerArrangementStateCommands(ControlRegistry& registry)
 {
 	registerTrackSetArm(registry);
+	registerTrackSetArmMany(registry);
 	registerArrangementGetState(registry);
 }
 

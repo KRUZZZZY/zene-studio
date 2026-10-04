@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-10-04T07:38:22Z",
+  "captured_at": "2026-10-04T09:34:49Z",
   "commands": [
     {
       "args_schema": {
@@ -483,6 +483,9 @@
       "args_schema": {
         "additionalProperties": false,
         "properties": {
+          "chords": {
+            "type": "boolean"
+          },
           "markers": {
             "type": "boolean"
           },
@@ -496,7 +499,7 @@
         "required": [],
         "type": "object"
       },
-      "description": "Show or hide the arranger's ruler lanes under the bar ruler: 'sections' (named bands), 'markers' (flags and names) and 'tempo' (the tempo map's curve and values). A lane left out keeps its state; with no arguments it reports them. A preference (config ui/rulerlanes; all three shown by default), not project state.",
+      "description": "Show or hide the arranger's ruler lanes under the bar ruler: 'sections' (named bands), 'markers' (flags and names), 'tempo' (the tempo map's curve and values) and 'chords' (the chord track's chords, which takes room only while the chord track holds one). A lane left out keeps its state; with no arguments it reports them. A preference (config ui/rulerlanes; all four shown by default), not project state.",
       "group": "arrangement",
       "id": "arrangement.ruler_lanes",
       "mutating": false,
@@ -504,6 +507,9 @@
       "result_schema": {
         "additionalProperties": false,
         "properties": {
+          "chords": {
+            "type": "boolean"
+          },
           "markers": {
             "type": "boolean"
           },
@@ -2853,7 +2859,10 @@
             "type": "string"
           },
           "to": {
-            "type": "string"
+            "type": [
+              "string",
+              "array"
+            ]
           },
           "to_chain": {
             "maximum": 64,
@@ -2867,7 +2876,7 @@
         ],
         "type": "object"
       },
-      "description": "Copy every device of a chain ('target', 'chain') to another ('to', 'to_chain'), in order, with their settings: appended, or with 'replace' in place of the devices there. One undo step.",
+      "description": "Copy every device of a chain ('target', 'chain') to another ('to', or a list of them; 'to_chain'), in order, with their settings: appended, or with 'replace' in place of the devices there. 'copies' says what each destination got; a device that cannot be made stops the rest ('stopped'). One undo step, however many destinations.",
       "group": "chain",
       "id": "chain.copy",
       "mutating": true,
@@ -3170,6 +3179,9 @@
           "events": {
             "type": "array"
           },
+          "followers": {
+            "type": "array"
+          },
           "max_chords": {
             "maximum": 64,
             "minimum": 0,
@@ -3329,6 +3341,9 @@
           "events": {
             "type": "array"
           },
+          "followers": {
+            "type": "array"
+          },
           "max_chords": {
             "maximum": 64,
             "minimum": 0,
@@ -3343,6 +3358,68 @@
             "maximum": 2147483647,
             "minimum": 0,
             "type": "integer"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "mode": {
+            "enum": [
+              "off",
+              "chord",
+              "scale"
+            ],
+            "type": "string"
+          },
+          "track": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "track"
+        ],
+        "type": "object"
+      },
+      "description": "Make an instrument track FOLLOW the chord track while it plays (chord follow): each note the track starts in the arrangement sounds on the nearest tone (down on a tie) of the chord sounding where it starts - 'mode' chord (the default) - or of that chord's scale - 'mode' scale, the chord where it names no scale - and the clip keeps the keys it was written with (note.follow_chords is the destructive twin). 'mode' off stops it. Where the chord track is silent the notes play as written. Saved with the chord track. Reversible: one recorded action checkpoint; setting the mode a track already has changes nothing and records nothing ('changed' false).",
+      "group": "chord",
+      "id": "chord.follow_set",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "changed": {
+            "type": "boolean"
+          },
+          "chords": {
+            "maximum": 64,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "events": {
+            "type": "array"
+          },
+          "followers": {
+            "type": "array"
+          },
+          "max_chords": {
+            "maximum": 64,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "mode": {
+            "type": "string"
+          },
+          "previous": {
+            "type": "string"
+          },
+          "track": {
+            "type": "string"
           }
         },
         "required": [],
@@ -3370,6 +3447,9 @@
             "type": "integer"
           },
           "events": {
+            "type": "array"
+          },
+          "followers": {
             "type": "array"
           },
           "max_chords": {
@@ -3713,6 +3793,9 @@
           "events": {
             "type": "array"
           },
+          "followers": {
+            "type": "array"
+          },
           "max_chords": {
             "maximum": 64,
             "minimum": 0,
@@ -3815,6 +3898,9 @@
             "type": "object"
           },
           "events": {
+            "type": "array"
+          },
+          "followers": {
             "type": "array"
           },
           "max_chords": {
@@ -6142,7 +6228,7 @@
         ],
         "type": "object"
       },
-      "description": "Move the boundary between two takes of the composite nearest 'tick' to 'to': the take on the growing side carries on in time (its source offset follows). Refused where that take does not reach. Reversible through the ProjectJournal (Track checkpoint).",
+      "description": "Move the boundary between two takes of the composite nearest 'tick' to 'to': the take on the growing side carries on in time (the same lane at its own slip). Refused where no take of that lane reaches over the range it would grow into. Reversible through the ProjectJournal (Track checkpoint).",
       "group": "comp",
       "id": "comp.move_edge",
       "mutating": true,
@@ -6239,7 +6325,7 @@
         ],
         "type": "object"
       },
-      "description": "Choose which take lane supplies the composite over [begin, end) ticks, slipped 'srcpos' ticks into that lane's take (default 0 = the take's own start). A selection paints over what was there: the range is cut out of every existing segment and the new choice is inserted, so the composite stays ordered and gapless over its span. The take audio is not touched, and nothing is copied. Reversible through the ProjectJournal (Track checkpoint).",
+      "description": "Choose which take lane supplies the composite over [begin, end) ticks, slipped 'srcpos' ticks (default 0 = the take at its own place; N pulls N ticks of later take material under the range - an audio track only, refused on a MIDI one). A selection paints over what was there: the range is cut out of every existing segment and the new choice is inserted, so the composite stays ordered and gapless over its span. The take audio is not touched, and nothing is copied. Reversible through the ProjectJournal (Track checkpoint).",
       "group": "comp",
       "id": "comp.select",
       "mutating": true,
@@ -6513,7 +6599,7 @@
         "required": [],
         "type": "object"
       },
-      "description": "Redo the last undone journal checkpoint. A structural step whose inverse was a one-way action has nothing to redo, and says so: the redo stack is emptied at that point rather than replaying an older step.",
+      "description": "Redo the last undone journal checkpoint. A structural step whose inverse was a one-way action has nothing to redo, and says so: the redo stack is emptied at that point rather than replaying an older step. A redo that re-creates a device which cannot be built again FAILS typed, as control.undo does, instead of answering 'redone'.",
       "group": "control",
       "id": "control.redo",
       "mutating": false,
@@ -16240,7 +16326,10 @@
             "type": "string"
           },
           "to": {
-            "type": "string"
+            "type": [
+              "string",
+              "array"
+            ]
           },
           "to_chain": {
             "maximum": 64,
@@ -16255,7 +16344,7 @@
         ],
         "type": "object"
       },
-      "description": "Copy one device ('plugin', fx-<n> on 'target' - with 'chain' for a rack chain) to another chain: 'to' (trk-<n> / ch-<n>, 'to_chain' for its rack chain), at 'position' (0 = first; appended when left out), with its settings. 'plugins' answers the copy's fx-<n>. One undo step.",
+      "description": "Copy one device ('plugin', fx-<n> on 'target' - with 'chain' for a rack chain) to another chain: 'to' (trk-<n> / ch-<n>, or a list of them; 'to_chain' for a rack chain), at 'position' (0 = first; appended when left out), with its settings. 'plugins' answers the copies' fx-<n>, 'copies' each destination's; a copy that cannot be made stops the rest ('stopped'). One undo step, however many destinations.",
       "group": "plugin",
       "id": "plugin.copy",
       "mutating": true,
@@ -19315,6 +19404,48 @@
       "args_schema": {
         "additionalProperties": false,
         "properties": {
+          "channel": {
+            "type": "string"
+          },
+          "x_macro": {
+            "type": "string"
+          },
+          "x_value": {
+            "maximum": 1,
+            "minimum": 0,
+            "type": "number"
+          },
+          "y_macro": {
+            "type": "string"
+          },
+          "y_value": {
+            "maximum": 1,
+            "minimum": 0,
+            "type": "number"
+          }
+        },
+        "required": [
+          "channel",
+          "x_macro",
+          "x_value",
+          "y_macro",
+          "y_value"
+        ],
+        "type": "object"
+      },
+      "description": "Set two macros of a channel's rack at once - the XY pad: 'x_macro' to 'x_value' and 'y_macro' to 'y_value' (0..1 each, two different macro-<n>), each driving its bound parameters as rack.macro_set does. Both macros are checked before either is written, so the pair is set whole or refused whole. ONE undo step; a run of calls on the same pair inside the coalescing window (a drag) stays one step. 'x' and 'y' answer each macro's value, applied/skipped counts and writes.",
+      "group": "rack",
+      "id": "rack.macro_set_pair",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
           "chain": {
             "type": "integer"
           },
@@ -19444,7 +19575,7 @@
         ],
         "type": "object"
       },
-      "description": "Drop a parallel chain from a channel's rack. Chain 0 is the channel's own effect chain and is refused. The removed chain's effects and their state are captured in the transaction's before-state.",
+      "description": "Drop a parallel chain from a channel's rack. Chain 0 is the channel's own effect chain and is refused. The removed chain's effects and their state are captured in the transaction's before-state. Removing the rack's LAST chain is one undo step that re-creates it with its devices; an inner chain's removal has no automatic undo (the transaction says reversible: false).",
       "group": "rack",
       "id": "rack.remove_chain",
       "mutating": true,
@@ -19558,7 +19689,7 @@
         ],
         "type": "object"
       },
-      "description": "Wrap devices of a channel's own chain into a new chain of its rack, in order and with their settings: 'plugins' (fx-<n> ids) or, left out, every device. Wrapping every device selects the new chain, so the channel sounds as before and more chains can be layered beside it (rack.add_chain, rack.set_selected parallel); wrapping some makes them a parallel layer beside the devices that stay. One undo step.",
+      "description": "Wrap devices of a channel's own chain into a new chain of its rack, in order and with their settings: 'plugins' (fx-<n> ids) or, left out, every device. Wrapping every device selects the new chain, so the channel sounds as before and more chains can be layered beside it (rack.add_chain, rack.set_selected parallel); wrapping some makes them a parallel layer beside the devices that stay. A device that cannot be re-created stops the rest: the reply then carries 'stopped' (why) and 'not_wrapped' (how many). One undo step.",
       "group": "rack",
       "id": "rack.wrap",
       "mutating": true,
@@ -19607,7 +19738,7 @@
         ],
         "type": "object"
       },
-      "description": "Add a key/velocity zone to a channel's rack: an inclusive key range (0..127) and an inclusive velocity range (0..200) mapped to one of the rack's chains, with an optional sample reference. Returns its zone-<n> id. Reversible through the ProjectJournal (an action checkpoint removes the zone this command created).",
+      "description": "Add a key/velocity zone to a channel's rack: an inclusive key range (0..127) and an inclusive velocity range (0..200) mapped to one of the rack's chains, with an optional sample reference. A note of an instrument track playing into the channel that falls into the zone (the first matching zone wins) plays on that chain only; with a sample that loads, the note plays the sample there instead of the instrument ('sample_loaded' in zone_state says whether it loaded - a missing file is kept, not refused). Returns its zone-<n> id. Reversible through the ProjectJournal (an action checkpoint removes the zone this command created).",
       "group": "rack",
       "id": "rack.zone_add",
       "mutating": true,
@@ -19696,7 +19827,7 @@
         ],
         "type": "object"
       },
-      "description": "Ask which of a channel's rack zones a note falls into: the first zone, in the order it was added, whose key range and velocity range both contain (key, velocity). Read-only. NOTE: nothing in this build consults a zone while a note plays - see docs/KNOWN-LIMITATIONS.md.",
+      "description": "Ask which of a channel's rack zones a note falls into: the first zone, in the order it was added, whose key range and velocity range both contain (key, velocity) - the zone, and so the chain, such a note plays on. Read-only.",
       "group": "rack",
       "id": "rack.zone_resolve",
       "mutating": false,
@@ -26568,6 +26699,48 @@
       "args_schema": {
         "additionalProperties": false,
         "properties": {
+          "armed": {
+            "type": "boolean"
+          },
+          "tracks": {
+            "type": "array"
+          }
+        },
+        "required": [
+          "tracks",
+          "armed"
+        ],
+        "type": "object"
+      },
+      "description": "Arm or disarm several song tracks for recording in one call - the mixer's Arm All. Each track in 'tracks' (trk-<n> ids) is armed or disarmed as track.set_arm does it, with its default take file and input channel; a track already armed is skipped, and a track that refuses (past the last record route, say) is listed in 'refused' with its reason while the others still go ahead. 'tracks' answers the ones changed, 'routes' each one's route reply. Arming is ONE undo step: control.undo disarms exactly the tracks this call armed (their takes stay on disk). Disarming records no inverse, as track.set_arm's does not.",
+      "group": "track",
+      "id": "track.set_arm_many",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "armed": {
+            "type": "boolean"
+          },
+          "refused": {
+            "type": "array"
+          },
+          "routes": {
+            "type": "array"
+          },
+          "tracks": {
+            "type": "array"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
           "color": {
             "type": "string"
           },
@@ -31617,7 +31790,7 @@
       }
     }
   ],
-  "count": 742,
+  "count": 745,
   "instance": {
     "binary": null,
     "binary_bytes": null,
@@ -31625,15 +31798,15 @@
     "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-survey/tools/zene-pa-agentctl",
     "lane_head": null,
     "proto": 1,
-    "source_socket": "/tmp/zctl-run-i8spto09/zene.sock",
-    "version": "0.4.0-alpha.109+e5a6031"
+    "source_socket": "/tmp/zctl-run-m6lfwbsn/zene.sock",
+    "version": "0.4.0-alpha.110+b9a463a"
   },
   "kind": "zene-control-command-list",
   "proto": 1,
   "schema": 1,
   "surface": {
     "group_count": 72,
-    "id_count": 742,
-    "ids_sha256": "d77c398178a355a428ed0e9ff60838e16951e923b12d4419441c6a8573cc6bfd"
+    "id_count": 745,
+    "ids_sha256": "82aec9d8e07120fa101108a77f4666f9840ce17de00e42b42576afd12c12100f"
   }
 }

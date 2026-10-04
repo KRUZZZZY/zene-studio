@@ -27,6 +27,7 @@
 #include "ControlRegistry.h"
 
 #include "src/wasm/WasmAbi.h"
+#include "src/wasm/WasmSandbox.h"
 #include "src/wasm/WasmSandboxHost.h"
 
 #include <QJsonArray>
@@ -100,6 +101,23 @@ QJsonObject wasmStateJson()
 	}
 	out.insert(QStringLiteral("params"), params);
 	return out;
+}
+
+bool wasmProbeDeviceModule(const QString& path, QString* error)
+{
+	std::string why;
+	wasm::WasmSandbox probe;  // created, used and dropped on this thread: the sandbox's one-owner rule
+	if (!probe.loadModuleFile(path.toStdString(), why))
+	{
+		if (error != nullptr) { *error = wasmText(why); }
+		return false;
+	}
+	if (!probe.hasProcess())
+	{
+		if (error != nullptr) { *error = QStringLiteral("the module does not export %1()").arg(QLatin1String(wasm::abi::processExport)); }
+		return false;
+	}
+	return true;
 }
 
 } // namespace control

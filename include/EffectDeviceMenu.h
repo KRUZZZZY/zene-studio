@@ -41,7 +41,7 @@ namespace lmms::gui
 
 /*! 0.5.0 L10: what a device's menu offers beyond moving and removing it, each through the registry:
  *  - MX-074: Insert Effect Before / After - the effect picker, then plugin.load at that position;
- *  - MX-076: Copy to Channels... (plugin.copy for each channel chosen) and Copy Chain to Channels...
+ *  - MX-076: Copy to Channels... (one plugin.copy naming every channel chosen) and Copy Chain to Channels...
  *    (chain.copy);
  *  - MX-092: A/B - store the settings in A or B, toggle between them (plugin.ab).
  *  Used by the rack's effect entries and the Device panel's cards. */

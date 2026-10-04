@@ -162,7 +162,10 @@ void WasmEffectControls::loadSettings(const QDomElement& element)
 	const QString path = element.attribute("module");
 	if (path.isEmpty())
 	{
-		m_modulePath.clear();
+		// 0.5.0 E22: an element without a module unloads the one running, so restoring a
+		// device's earlier settings (the undo of wasm.device_load's first load) stops the
+		// module instead of leaving it playing behind an empty path.
+		m_effect->loadModule(QString());
 		m_error.clear();
 		return;
 	}

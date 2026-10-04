@@ -26,11 +26,16 @@
  *  folder (track.add), a track's Folder menu moves it in (track.set_folder), the folder's own menu
  *  collapses it (track.folder_set_collapsed) - and a collapsed folder's children leave the track
  *  list while the folder's row stays - pins it and switches its routing. A collapse sent over the
- *  socket redraws the list too, through TrackFolder::stateChanged. */
+ *  socket redraws the list too, through TrackFolder::stateChanged. And (0.5.0 E21) a pinned folder's
+ *  row stays on screen while the list scrolls: it sits in the strip above the scroll area, leaving a
+ *  zero-height placeholder at its index in the scrolling list, and an unpin puts it back there. */
 
 #include <QtTest>
 
+#include <QLayout>
 #include <QMenu>
+#include <QScrollArea>
+#include <QScrollBar>
 #include <QToolBar>
 
 #include "ControlRegistry.h"
@@ -43,6 +48,7 @@
 #include "SongEditor.h"
 #include "TrackFolder.h"
 #include "TrackFolderMenu.h"
+#include "TrackPinStrip.h"
 #include "TrackView.h"
 
 using namespace lmms;
@@ -157,6 +163,48 @@ private slots:
 		actionIn(&out, QObject::tr("No folder"))->trigger();
 		QVERIFY(child->parentFolder() == nullptr);
 		QTRY_COMPARE(viewOf(child)->getTrackSettingsWidget()->contentsMargins().left(), 0);
+	}
+
+	void aPinnedFolderStaysInViewWhileTheListScrolls()
+	{
+		SongEditor* editor = getGUI()->songEditor()->m_editor;
+		Track* folder = Track::create(Track::Type::Folder, Engine::getSong());
+		for (int i = 0; i < 40; ++i) { Track::create(Track::Type::Sample, Engine::getSong()); }
+		QCoreApplication::processEvents();
+		TrackView* view = viewOf(folder);
+		QVERIFY(view != nullptr);
+		const int index = editor->trackViews().indexOf(view);
+		QWidget* content = editor->contentWidget()->widget();
+		QLayout* rows = content->layout();
+
+		const auto pin = [folder](bool on) {
+			return ControlRegistry::instance()->invoke(QStringLiteral("track.set_pinned"),
+				{{QStringLiteral("track"), control::trackIdOf(folder)}, {QStringLiteral("pinned"), on}}).ok;
+		};
+		QVERIFY(pin(true));
+		TrackPinStrip* strip = editor->pinStrip();
+		QTRY_VERIFY(strip->pinnedViews().contains(view));
+		QCOMPARE(view->parentWidget(), strip);
+		// Its index in the scrolling list holds a placeholder that takes no room, so every row below keeps its index.
+		QVERIFY(rows->itemAt(index)->widget() != view);
+		QCOMPARE(rows->itemAt(index)->widget()->height(), 0);
+
+		// Scroll to the end of the list: the folder's own row would be far above the viewport, and it is in view.
+		QScrollBar* scroll = editor->contentWidget()->verticalScrollBar();
+		QTRY_VERIFY(scroll->maximum() > 0);
+		scroll->setValue(scroll->maximum());
+		QTRY_VERIFY(strip->isVisible());
+		QVERIFY(view->isVisible());
+		const int viewBottom = view->mapTo(editor, QPoint(0, view->height())).y();
+		QVERIFY2(viewBottom <= editor->contentWidget()->geometry().top(), "the pinned row is not above the scrolling tracks");
+		QVERIFY(view->mapTo(editor, QPoint(0, 0)).y() >= 0);
+
+		// Unpinned, the row goes back into the scrolling list at its own index.
+		QVERIFY(pin(false));
+		QTRY_COMPARE(view->parentWidget(), content);
+		QCOMPARE(rows->itemAt(index)->widget(), view);
+		QVERIFY(!strip->pinnedViews().contains(view));
+		QVERIFY(view->isVisible());
 	}
 
 private:

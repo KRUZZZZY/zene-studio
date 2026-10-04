@@ -131,6 +131,10 @@ public:
 	//! What the note path has done so far. Any thread.
 	auto noteCounters() const -> NoteCounters;
 
+	//! Counts parameter (re)scans and in-place refreshes (W6): CLAP_PARAM_RESCAN_INFO and _TEXT move it at the next
+	//! serviceMainThread(), _ALL at the next prepare(), which re-reads the list. The owner rebuilds its models
+	//! when it moves, as it re-applies its channel counts when layoutRevision() does.
+	auto paramsRevision() const -> std::uint32_t;
 	auto paramIndex(std::uint32_t id) const -> int;
 	auto paramPlain(std::uint32_t id) const -> double;
 	auto paramNormalized(std::uint32_t id) const -> float;

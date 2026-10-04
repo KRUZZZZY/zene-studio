@@ -24,6 +24,8 @@
 #include "RecordLaunchMenus.h"
 
 #include <QActionGroup>
+#include <QJsonArray>
+#include <QJsonObject>
 #include <QMenu>
 #include <QMenuBar>
 
@@ -60,29 +62,34 @@ void cycleEntry(QMenu* menu, const QString& label, const QString& direction)
 	});
 }
 
-//! WF-074: arm (or disarm) every audio track, each its own track.set_arm. A track already in that
-//! state is not a failure; the others' refusals are shown together, the last one's reason with them.
+//! WF-074: arm (or disarm) every audio track - W1: ONE track.set_arm_many naming them all, so one undo step takes the arm
+//! back. A track already in that state is not a failure; the others' refusals are shown together, the last one's reason
+//! with them.
 void armAllEntry(QMenu* menu, const QString& label, bool armed)
 {
 	QAction* action = menu->addAction(label);
-	action->setProperty("controlCommand", QStringLiteral("track.set_arm"));
-	action->setEnabled(ControlRegistry::instance()->hasCommand(QStringLiteral("track.set_arm")));
+	action->setProperty("controlCommand", QStringLiteral("track.set_arm_many"));
+	action->setEnabled(ControlRegistry::instance()->hasCommand(QStringLiteral("track.set_arm_many")));
 	QObject::connect(action, &QAction::triggered, menu, [menu, label, armed] {
-		int refused = 0;
-		QString reason;
+		QJsonArray tracks;
 		for (Track* track : Engine::getSong()->tracks())
 		{
-			if (dynamic_cast<SampleTrack*>(track) == nullptr) { continue; }
-			const ControlResult result = ControlRegistry::instance()->invoke(QStringLiteral("track.set_arm"),
-				{{QStringLiteral("track"), control::trackIdOf(track)}, {QStringLiteral("armed"), armed}});
-			if (result.ok || result.errorKind == ControlErrorKind::Busy) { continue; }
-			++refused;
-			reason = result.errorMessage;
+			if (dynamic_cast<SampleTrack*>(track) != nullptr) { tracks.append(control::trackIdOf(track)); }
 		}
-		if (refused == 0) { return; }
-		announce(menu->parentWidget(), CommandCall{QStringLiteral("track.set_arm"), {}, {}, label, false},
-			ControlResult::failure(ControlErrorKind::Refused,
-				QObject::tr("%n audio track(s) refused: %1", nullptr, refused).arg(reason)));
+		if (tracks.isEmpty()) { return; }
+		const ControlResult result = ControlRegistry::instance()->invoke(QStringLiteral("track.set_arm_many"),
+			{{QStringLiteral("tracks"), tracks}, {QStringLiteral("armed"), armed}});
+		const CommandCall call{QStringLiteral("track.set_arm_many"), {}, {}, label, false};
+		if (!result.ok)
+		{
+			if (result.errorKind != ControlErrorKind::Busy) { announce(menu->parentWidget(), call, result); }  // all already armed: fine
+			return;
+		}
+		const QJsonArray refused = result.result.value(QStringLiteral("refused")).toArray();
+		if (refused.isEmpty()) { return; }
+		announce(menu->parentWidget(), call, ControlResult::failure(ControlErrorKind::Refused,
+			QObject::tr("%n audio track(s) refused: %1", nullptr, refused.size())
+				.arg(refused.last().toObject().value(QStringLiteral("reason")).toString())));
 	});
 }
 

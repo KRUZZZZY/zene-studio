@@ -57,11 +57,9 @@ auto HostedPlugin::prepare(double sampleRate, int maxBlockSize, QString* error) 
 		return false;
 	}
 	release();
-	// Deactivated now, which is when CLAP lets a host re-read a changed port layout.
-	if (impl.portsChanged.exchange(false, std::memory_order_relaxed) && impl.audioPortsExt != nullptr)
-	{
-		impl.scanAudioPorts();
-	}
+	// Deactivated now, which is when CLAP lets a host re-read a changed port layout or parameter list - before
+	// the buffers below are sized from them.
+	impl.rescanWhileInactive();
 
 	impl.sampleRate = sampleRate;
 	impl.maxFrames = maxBlockSize;
@@ -108,6 +106,12 @@ auto HostedPlugin::prepare(double sampleRate, int maxBlockSize, QString* error) 
 	impl.prepared = true;
 	impl.needsReprepare.store(false, std::memory_order_relaxed);
 	return true;
+}
+
+void HostedPlugin::Impl::rescanWhileInactive()
+{
+	if (portsChanged.exchange(false, std::memory_order_relaxed) && audioPortsExt != nullptr) { scanAudioPorts(); }
+	if (paramsChanged.exchange(false, std::memory_order_relaxed)) { scanParams(); }
 }
 
 void HostedPlugin::release()

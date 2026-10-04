@@ -42,6 +42,7 @@
 #include "PatternTrack.h"
 #include "Song.h"
 #include "StringPairDrag.h"
+#include "TrackPinStrip.h"
 #include "TrackView.h"
 #include "GuiApplication.h"
 #include "PluginFactory.h"
@@ -86,7 +87,8 @@ TrackContainerView::TrackContainerView( TrackContainer * _tc ) :
 	m_trackViews(),
 	m_scrollArea( new scrollArea( this ) ),
 	m_ppb( DEFAULT_PIXELS_PER_BAR ),
-	m_rubberBand( new RubberBand( m_scrollArea ) )
+	m_rubberBand( new RubberBand( m_scrollArea ) ),
+	m_pinStrip( new TrackPinStrip( this ) )
 {
 	m_tc->setHook( this );
 	//keeps the direction of the widget, undepended on the locale
@@ -97,6 +99,7 @@ TrackContainerView::TrackContainerView( TrackContainer * _tc ) :
 	auto layout = new QVBoxLayout(this);
 	layout->setContentsMargins(0, 0, 0, 0);
 	layout->setSpacing( 0 );
+	layout->addWidget( m_pinStrip ); // 0.5.0 E21: pinned folders, above the rows that scroll
 	layout->addWidget( m_scrollArea );
 
 	// The widget that will contain all TrackViews
@@ -137,6 +140,7 @@ void TrackContainerView::removeAllTrackViews()
 	{
 		delete m_trackViews.takeLast();
 	}
+	m_pinStrip->sync( m_trackViews, m_scrollLayout ); // drops the pinned rows' placeholders
 }
 
 
@@ -298,6 +302,8 @@ void TrackContainerView::realignTracks()
 		trackView->updateFolderIndent();
 		trackView->update();
 	}
+	// 0.5.0 E21: a pinned folder's row to the strip above the scroll area, every other row back in order.
+	m_pinStrip->sync( m_trackViews, m_scrollLayout );
 
 	emit tracksRealigned();
 }
@@ -347,6 +353,7 @@ const TrackView * TrackContainerView::trackViewAt( const int _y ) const
 
 	for (const auto& trackView : m_trackViews)
 	{
+		if (trackView->parentWidget() != m_scrollArea->widget()) { continue; } // E21: a pinned row
 		const int y_cnt1 = y_cnt;
 		y_cnt += trackView->height();
 		if (abs_y >= y_cnt1 && abs_y < y_cnt) { return trackView; }

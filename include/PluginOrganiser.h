@@ -26,6 +26,7 @@
 
 #include <QJsonObject>
 #include <QMap>
+#include <QObject>
 #include <QString>
 #include <QStringList>
 
@@ -69,6 +70,19 @@ LMMS_EXPORT QMap<QString, Entry> entries();
 LMMS_EXPORT QStringList folders();
 
 LMMS_EXPORT QJsonObject toJson(const QString& key, const Entry& value);
+
+/*! 0.5.0 W6: tells what shows the organiser's sorting that it changed - an entry (a row's menu, plugin.organise
+ *  over the socket, Lua or MCP) or the preferred format - so an open effect picker follows a change made outside
+ *  it. Emitted only when the stored value really changed. UI / control thread. */
+class LMMS_EXPORT Notifier : public QObject
+{
+	Q_OBJECT
+signals:
+	void changed();
+};
+
+//! The one notifier.
+LMMS_EXPORT Notifier* notifier();
 
 /*! 0.5.0 L10 (MX-167): the format to list when one plug-in is installed in several ("clap", "vst3", "lv2",
  *  "ladspa"; empty lists them all). The pickers leave out a plug-in's other formats. Config file. */

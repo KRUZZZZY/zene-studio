@@ -378,6 +378,11 @@ void Lv2Proc::run(f_cnt_t frames)
 	}
 
 	lilv_instance_run(m_instance, static_cast<uint32_t>(frames));
+	// catch-up W3: the latency port as the plug-in left it, for latencyFrames() on the control thread.
+	if (m_latencyPort != nullptr)
+	{
+		m_latencySnapshot.store(std::max(0, static_cast<int>(m_latencyPort->m_val)), std::memory_order_relaxed);
+	}
 
 	if (m_worker)
 	{
@@ -779,9 +784,9 @@ bool Lv2Proc::restoreState(const QString& document)
 
 int Lv2Proc::latencyFrames() const
 {
-	// Written by the plug-in in run() on the audio thread, read here on the control thread: a
-	// single aligned float, read once; a value one block stale only delays the re-alignment.
-	return m_latencyPort != nullptr ? std::max(0, static_cast<int>(m_latencyPort->m_val)) : 0;
+	// The plug-in writes its port inside run() on the audio thread; run() snapshots it (catch-up
+	// W3). A value one block stale only delays the re-alignment.
+	return m_latencySnapshot.load(std::memory_order_relaxed);
 }
 
 

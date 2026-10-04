@@ -33,6 +33,7 @@
 #include <QDomDocument>
 #include <QFile>
 #include <QJsonArray>
+#include <QRegularExpression>
 #include <QTemporaryDir>
 
 #include <cstdlib>
@@ -229,6 +230,7 @@ private slots:
 		QVERIFY(xml.contains(QStringLiteral("<chord/>")));
 		QVERIFY(xml.contains(QStringLiteral("<tie type=\"start\"/>")));  // the A is tied into bar 2
 		QCOMPARE(xml.count(QStringLiteral("<measure ")), 2);
+		QVERIFY(!xml.contains(QStringLiteral("<backup>")));  // one length per start: one voice, as before W6
 		QCOMPARE(run(QStringLiteral("clip.export_musicxml"), {{QStringLiteral("clip"), control::clipIdOf(clip)}, {QStringLiteral("path"), QStringLiteral("/tmp/x.mid")}}).errorKind,
 			ControlErrorKind::InvalidArgs);
 		QTemporaryDir dir;
@@ -243,6 +245,31 @@ private slots:
 		const QString onDisk = QString::fromUtf8(file.readAll());
 		QVERIFY(onDisk.contains(QStringLiteral("<chord/>")));
 		QCOMPARE(onDisk.count(QStringLiteral("<measure ")), 2);  // the same score the function above builds, in 4/4
+	}
+
+	//! W6: notes that start together but end apart are written as voices - the short one in voice 1, the long one in
+	//! voice 2 after a <backup> to the bar line - so each keeps its own duration (it used to be cut to the chord's).
+	void aChordOfMixedLengthsBecomesVoices()
+	{
+		auto* track = dynamic_cast<InstrumentTrack*>(Track::create(Track::Type::Instrument, Engine::getSong()));
+		auto* clip = dynamic_cast<MidiClip*>(track->createClip(TimePos(0)));
+		clip->addNote(Note(TimePos(48), TimePos(0), 64), false);   // E4, a quarter
+		clip->addNote(Note(TimePos(192), TimePos(0), 48), false);  // C3 under it, held for the whole bar
+		clip->addNote(Note(TimePos(48), TimePos(48), 67), false);  // G4 on beat 2, while the C3 still sounds
+		const QString xml = musicXmlOf(*clip, 4, 4, QStringLiteral("Voices"));
+		QCOMPARE(xml.count(QStringLiteral("<measure ")), 1);
+		QCOMPARE(xml.count(QStringLiteral("<backup>")), 1);
+		QVERIFY(!xml.contains(QStringLiteral("<chord/>")));  // two lengths are two voices, not one chord
+		// The held note keeps its whole bar, untied, in voice 2.
+		static const QRegularExpression held(QStringLiteral("<step>C</step>\\s*<octave>3</octave>\\s*</pitch>\\s*"
+			"<duration>192</duration>\\s*<voice>2</voice>"));
+		QVERIFY2(held.match(xml).hasMatch(), qPrintable(xml));
+		QVERIFY(!xml.contains(QStringLiteral("<tie ")));
+		// Voice 1 carries the melody: E4 and G4, a quarter each, then a half rest.
+		static const QRegularExpression melody(QStringLiteral("<step>G</step>\\s*<octave>4</octave>\\s*</pitch>\\s*"
+			"<duration>48</duration>\\s*<voice>1</voice>"));
+		QVERIFY(melody.match(xml).hasMatch());
+		QVERIFY(xml.contains(QStringLiteral("<duration>96</duration>")));
 	}
 
 	void notesRotateInsideTheClip()

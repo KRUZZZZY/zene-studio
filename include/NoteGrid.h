@@ -32,6 +32,12 @@
 
 #include "lmms_export.h"
 
+namespace lmms
+{
+class TempoMap;
+struct TempoMapTimeSignature;
+}
+
 namespace lmms::gui
 {
 
@@ -124,6 +130,38 @@ public:
 	//! grid when its cells are at least @a minPixels wide, else the next coarser power of two.
 	int visibleGridTicks(int gridTicks, int minPixels = 6) const;
 
+	// --- metre (0.5.0 W2) --------------------------------------------------------------
+	//! A stretch of the clip's timeline in one metre: from @a start (clip ticks) on, bars of @a barTicks
+	//! split into beats of @a beatTicks; @a firstBar is the number of the bar at @a start, counted from
+	//! the clip's first bar (0).
+	struct MeterSpan
+	{
+		int start;
+		int barTicks;
+		int beatTicks;
+		int firstBar;
+	};
+	//! One bar: where it starts (clip ticks), how long it is (shorter than barTicks when a metre change
+	//! cuts it), its beat, and its number from the clip's first bar (0).
+	struct Bar
+	{
+		int tick;
+		int length;
+		int barTicks;
+		int beatTicks;
+		int index;
+	};
+	/*! The song's metre as a clip starting at song tick @a clipStart sees it: the metre in force there
+	 *  (@a global unless @a map changes it before), then each of the map's metre changes from its own
+	 *  tick on - a change starts a bar. Bars count from the clip's start, which is where bar 1 begins.
+	 *  An inactive map changes nothing; without a call the grid is 4/4. */
+	void setMeter(const TempoMapTimeSignature& global, const TempoMap& map, int clipStart);
+	const std::vector<MeterSpan>& meter() const { return m_meter; }
+	//! The bars that reach into [@a from, @a to] - the one holding @a from too - in order.
+	std::vector<Bar> barsBetween(double from, double to) const;
+	//! The beat, in ticks, of the metre in force at @a tick.
+	int beatTicksAt(int tick) const;
+
 	static bool isBlackKey(int key);
 	static QString keyName(int key);  //!< "A4", "F#3": the engine's numbering, key 0 = C0, key 57 = A4
 
@@ -132,7 +170,7 @@ private:
 	bool shows(int key) const;  //!< whether the fold keeps @a key's row
 	void clampScrollY();
 
-	double m_pixelsPerTick = 0.25;  // 48 px per beat, 192 px per bar at 4/4
+	double m_pixelsPerTick = 0.25;  // 48 px per quarter note, 192 px per bar at 4/4
 	int m_rowHeight = 14;
 	double m_scrollTicks = 0.0;
 	int m_scrollY = 0;
@@ -145,6 +183,7 @@ private:
 	std::array<bool, 128> m_named{};
 	std::vector<int> m_rows;
 	std::array<int, 128> m_rowOfKey{};
+	std::vector<MeterSpan> m_meter{{0, 192, 48, 0}};  // 4/4 until setMeter
 };
 
 } // namespace lmms::gui

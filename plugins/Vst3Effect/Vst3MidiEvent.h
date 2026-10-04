@@ -71,7 +71,11 @@ auto midiToVst3Event(const MidiEventIn& midi, Steinberg::int32 busIndex,
  * queued is picked up by the next block. At most kMaxMidiEventsPerBlock events
  * are taken per call, so the work per block is bounded.
  *
- * @returns how many events were added to \a events
+ * A controller \a controllers maps becomes a point in \a changes at its own
+ * frame, bounded to [0, frames - 1] (0.5.0 W4); the request's list is sliced
+ * per chunk by HostedPlugin::Impl::runChunk (sliceParameterChanges).
+ *
+ * @returns how many events were taken from the queue
  */
 auto drainMidiIntoEventList(MidiQueue& queue, std::vector<MidiEventIn>& scratch,
 	Steinberg::Vst::EventList& events, Steinberg::int32 busIndex, int frames,

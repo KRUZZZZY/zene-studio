@@ -149,6 +149,31 @@ private slots:
 		QCOMPARE(ProjectMarkers::instance().markers().front().action, QStringLiteral("session.set_quantisation"));
 	}
 
+	//! 0.5.0 W2: a loop wrap runs the markers the pass crossed in its last stretch before the loop end (the
+	//! watcher's last look fell before them), then the ones on and after the loop begin; a seek back runs none.
+	void aLoopWrapRunsTheMarkersBeforeTheLoopEnd()
+	{
+		const QJsonObject args{{QStringLiteral("quantisation"), QStringLiteral("bar")}};
+		QStringList ids;
+		for (const int tick : {960, 1150, 1152})  // the loop begin, the last stretch, the loop end itself
+		{
+			const ControlResult added = run(QStringLiteral("marker.add"), {{QStringLiteral("tick"), tick}});
+			QVERIFY(added.ok);
+			ids << added.result.value(QStringLiteral("marker")).toString();
+			QVERIFY(run(QStringLiteral("marker.set"), {{QStringLiteral("marker"), ids.last()},
+				{QStringLiteral("action"), QStringLiteral("session.set_quantisation")}, {QStringLiteral("args"), args}}).ok);
+		}
+		QCOMPARE(markeractions::advance(1140, true), 0);                // the last look before the end
+		QCOMPARE(markeractions::advanceWrapped(965, 960, 1152), 2);     // 1150, then 960; 1152 never plays
+		QCOMPARE(markeractions::advance(1100, true), 0);
+		QCOMPARE(markeractions::advance(1000, true), 0);                // a seek back: only the mark moves
+		QCOMPARE(markeractions::advance(1151, true), 1);                // 1150 again
+		QCOMPARE(markeractions::advance(1200, false), 0);
+		QCOMPARE(markeractions::advanceWrapped(970, 960, 1152), 1);     // not watching: no tail, the head only
+		QCOMPARE(markeractions::advance(1200, false), 0);
+		for (const QString& id : ids) { QVERIFY(run(QStringLiteral("marker.remove"), {{QStringLiteral("marker"), id}}).ok); }
+	}
+
 	void releaseAndJumpQueue()
 	{
 		QVERIFY(run(QStringLiteral("session.release_slot"), {{QStringLiteral("track"), 0}, {QStringLiteral("scene"), 0}}).ok);

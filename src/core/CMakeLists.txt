@@ -849,6 +849,8 @@ set(LMMS_SRCS
 	core/RackMacros.cpp
 	core/RackNodes.cpp
 	core/RackZones.cpp
+	core/RackZoneInputs.cpp
+	core/RackZoneFeed.cpp
 	core/RenderManager.cpp
 	core/RetroMidiCapture.cpp
 	core/RetroMidiCaptureSettings.cpp
@@ -961,6 +963,7 @@ set(LMMS_SRCS
 	core/ControlCommandsNoteCurves.cpp
 	core/ControlCommandsNoteShape.cpp
 	core/ControlCommandsNoteClipboard.cpp
+	core/ControlCommandsRackMacroPair.cpp
 	core/ControlCommandsNoteTools.cpp
 	core/ControlCommandsNoteMoves.cpp
 	core/ControlCommandsNoteHarmony.cpp
@@ -1035,6 +1038,7 @@ set(LMMS_SRCS
 	core/ModulationFormula.cpp
 	core/DeltaTap.cpp
 	core/DeviceOptions.cpp
+	core/ParameterAliases.cpp
 	core/ParameterControls.cpp
 	core/RackSplit.cpp
 	core/TakeRecorder.cpp
@@ -1050,6 +1054,7 @@ set(LMMS_SRCS
 	core/TrackMixModels.cpp
 	core/TimePos.cpp
 	core/TakeLane.cpp
+	core/CompSlip.cpp
 	core/ToolPlugin.cpp
 	core/Track.cpp
 	core/TrackContainer.cpp

@@ -9,12 +9,12 @@
  * only keys is a zone whose velocity range is the whole space. The lookup rule
  * is first-match-wins in the order the zones were added.
  *
- * HONEST SCOPE, asserted here rather than only written down: nothing in this
- * build consults a zone while a note plays. The rack renders one stereo block
- * and has no per-note input, so what ships is the persisted, validated,
- * queryable zone model, its resolver and its surface; rack.zone_resolve answers
- * which zone a note falls into and routes nothing. docs/KNOWN-LIMITATIONS.md and
- * the release notes carry the same sentence in one line each.
+ * 0.5.0 E20/E38: zones ROUTE. A note an instrument track plays into the channel
+ * is claimed by the first zone that matches it (RackZoneFeed) and plays into
+ * that zone's chain only, through the rack's per-chain input block
+ * (RackZoneInputs); a zone whose sample loads plays the sample for the note. The
+ * routing itself is proved in RackZoneRoutingTest.cpp; this file keeps the
+ * model, the surface and the persistence.
  *
  * The macro half is RackMacrosTest.cpp; the fixture both share is
  * RackTestSupport.h.

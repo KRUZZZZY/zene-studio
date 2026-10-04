@@ -27,10 +27,12 @@
 #include <QFileInfo>
 
 #include <cmath>
+#include <memory>
 #include <vector>
 
 #include "Midi.h"
 #include "Vst3Host.h"
+#include "Vst3MidiEvent.h"
 #include "Vst3MidiMapping.h"
 #include "pluginterfaces/vst/ivsteditcontroller.h"
 #include "pluginterfaces/vst/ivstmidicontrollers.h"
@@ -108,6 +110,32 @@ public:
 	Steinberg::IPlugView* PLUGIN_API createView(Steinberg::FIDString) override { return nullptr; }
 };
 
+//! The queue @a changes holds for parameter @a id, or nullptr.
+auto queueFor(Steinberg::Vst::IParameterChanges& changes, Steinberg::Vst::ParamID id) -> Steinberg::Vst::IParamValueQueue*
+{
+	for (Steinberg::int32 i = 0; i < changes.getParameterCount(); ++i)
+	{
+		auto* queue = changes.getParameterData(i);
+		if (queue != nullptr && queue->getParameterId() == id) { return queue; }
+	}
+	return nullptr;
+}
+
+//! Point @a index of @a queue as (sample offset, value); (-1, -1) when there is none.
+auto pointOf(Steinberg::Vst::IParamValueQueue* queue, Steinberg::int32 index) -> std::pair<Steinberg::int32, double>
+{
+	Steinberg::int32 offset = -1;
+	Steinberg::Vst::ParamValue value = -1.0;
+	if (queue == nullptr || queue->getPoint(index, offset, value) != Steinberg::kResultTrue) { return {-1, -1.0}; }
+	return {offset, value};
+}
+
+auto addPointTo(Steinberg::Vst::ParameterChanges& changes, Steinberg::Vst::ParamID id, Steinberg::int32 offset, double value)
+{
+	Steinberg::int32 index = 0;
+	changes.addParameterData(id, index)->addPoint(offset, value, index);
+}
+
 } // namespace
 
 class Vst3HostTest : public QObject
@@ -124,6 +152,9 @@ private slots:
 	void testAudioSilenceWhenGainIsZero();
 	void testChannelPartition();
 	void testMidiControllersReachMappedParameters();
+	void testMappedControllersKeepTheirFrame();
+	void testParameterChangesAreSlicedPerChunk();
+	void testAFullParameterQueueKeepsTheNewestValue();
 
 private:
 	void process(HostedPlugin& plugin, const std::vector<std::vector<float>>& inputs,
@@ -324,6 +355,77 @@ void Vst3HostTest::testMidiControllersReachMappedParameters()
 	changes.getParameterData(1)->getPoint(0, offset, value);
 	QCOMPARE(changes.getParameterData(1)->getParameterId(), Steinberg::Vst::ParamID{Steinberg::Vst::kAfterTouch});
 	QVERIFY(std::abs(value - 64.0 / 127.0) < 1e-9);
+}
+
+/*! 0.5.0 W4 (review lane20 luna BUG 4): a mapped controller, channel pressure and pitch bend
+ *  reach the plug-in's parameter queue at their own frame, not at the request's first frame; a
+ *  frame past the request is bounded to its last frame (a point must lie inside the block), and
+ *  the mapped controllers are not sent as events too. */
+void Vst3HostTest::testMappedControllersKeepTheirFrame()
+{
+	MappingController controller;
+	MidiControllerMap map;
+	map.build(&controller, 0);
+	constexpr int Frames = 1024;
+	auto queue = std::make_unique<MidiQueue>();
+	QVERIFY(queue->push({static_cast<std::uint8_t>(MidiChannelPressure), 3, 32, 0, 700}));
+	QVERIFY(queue->push({static_cast<std::uint8_t>(MidiControlChange), 3, 74, 127, 300}));
+	QVERIFY(queue->push({static_cast<std::uint8_t>(MidiControlChange), 3, 74, 0, Frames + 50}));
+	std::vector<MidiEventIn> scratch(kMaxMidiEventsPerBlock);
+	Steinberg::Vst::EventList events{kMaxMidiEventsPerBlock};
+	Steinberg::Vst::ParameterChanges changes(4);
+	QCOMPARE(drainMidiIntoEventList(*queue, scratch, events, 0, Frames, &map, &changes), 3);
+	QCOMPARE(events.getEventCount(), 0);
+	auto* timbre = queueFor(changes, 74);
+	QVERIFY(timbre != nullptr);
+	QCOMPARE(timbre->getPointCount(), 2);
+	QCOMPARE(pointOf(timbre, 0), std::make_pair(Steinberg::int32{300}, 1.0));
+	QCOMPARE(pointOf(timbre, 1), std::make_pair(Steinberg::int32{Frames - 1}, 0.0));
+	auto* pressure = queueFor(changes, Steinberg::Vst::kAfterTouch);
+	QVERIFY(pressure != nullptr);
+	QCOMPARE(pointOf(pressure, 0).first, Steinberg::int32{700});
+	QVERIFY(std::abs(pointOf(pressure, 0).second - 32.0 / 127.0) < 1e-9);
+}
+
+/*! 0.5.0 W4: a request longer than the prepared block is processed in chunks, and each chunk gets
+ *  only the points that fall in it, rebased to its start - so no point lands past numSamples and
+ *  none is delivered twice. A parameter with no point in a chunk is not in that chunk's list. */
+void Vst3HostTest::testParameterChangesAreSlicedPerChunk()
+{
+	Steinberg::Vst::ParameterChanges request(4);
+	addPointTo(request, 1, 0, 0.25);    // a host change: the start of the request
+	addPointTo(request, 1, 600, 0.75);  // a mapped controller in the second chunk
+	addPointTo(request, 2, 511, 0.5);   // the last frame of the first chunk
+	Steinberg::Vst::ParameterChanges chunk(4);
+	sliceParameterChanges(request, chunk, 0, 512);
+	QCOMPARE(chunk.getParameterCount(), 2);
+	QCOMPARE(queueFor(chunk, 1)->getPointCount(), 1);
+	QCOMPARE(pointOf(queueFor(chunk, 1), 0), std::make_pair(Steinberg::int32{0}, 0.25));
+	QCOMPARE(pointOf(queueFor(chunk, 2), 0), std::make_pair(Steinberg::int32{511}, 0.5));
+	chunk.clearQueue();
+	sliceParameterChanges(request, chunk, 512, 512);
+	QCOMPARE(chunk.getParameterCount(), 1);
+	QVERIFY(queueFor(chunk, 2) == nullptr);
+	QCOMPARE(queueFor(chunk, 1)->getPointCount(), 1);
+	QCOMPARE(pointOf(queueFor(chunk, 1), 0), std::make_pair(Steinberg::int32{600 - 512}, 0.75));
+	chunk.clearQueue();
+	sliceParameterChanges(request, chunk, 1024, 37);  // the tail chunk holds nothing
+	QCOMPARE(chunk.getParameterCount(), 0);
+}
+
+/*! 0.5.0 W4: a burst of controller points never grows a parameter's queue past the points the SDK
+ *  reserves (no allocation on the audio thread); the newest value is kept, on the last kept point. */
+void Vst3HostTest::testAFullParameterQueueKeepsTheNewestValue()
+{
+	Steinberg::Vst::ParameterChanges changes(1);
+	Steinberg::int32 index = 0;
+	auto* queue = changes.addParameterData(7, index);
+	for (int i = 0; i < kMaxPointsPerParameter + 3; ++i) { addBoundedPoint(queue, i * 10, i / 10.0); }
+	QCOMPARE(queue->getPointCount(), kMaxPointsPerParameter);
+	QCOMPARE(pointOf(queue, 0), std::make_pair(Steinberg::int32{0}, 0.0));
+	const auto last = pointOf(queue, kMaxPointsPerParameter - 1);
+	QCOMPARE(last.first, Steinberg::int32{(kMaxPointsPerParameter - 1) * 10});
+	QCOMPARE(last.second, (kMaxPointsPerParameter + 2) / 10.0);
 }
 
 } // namespace lmms::vst3

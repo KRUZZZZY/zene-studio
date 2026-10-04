@@ -52,12 +52,20 @@ constexpr auto RACK_ELEMENT = "rack";
 //! know, and a channel with no rack still writes no element at all.
 constexpr auto RACK_VERSION = 2;
 
+//! Whether a rack of @a chains chains and @a zones zones is on the signal path: two chains, or any zone.
+bool isOnPath(int chains, int zones)
+{
+	return chains >= 2 || zones > 0;
+}
+
 } // namespace
 
 Rack::Rack(EffectChain* baseChain) :
 	m_baseChain(baseChain),
 	m_graph(std::make_unique<RoutingGraph>())
 {
+	// E20: a zone added or removed changes what the graph has to render (a zoned rack is on the path).
+	m_zones.setChangedHook([this] { rebuildRoutingGraph(); });
 }
 
 Rack::~Rack() = default;
@@ -93,6 +101,7 @@ void Rack::rebuildRoutingGraph()
 	m_routedChains.clear();
 	m_input.reset();
 	m_output.reset();
+	m_zoneInputs.clear();
 	m_graphActive = false;
 
 	auto* engine = Engine::audioEngine();
@@ -100,8 +109,9 @@ void Rack::rebuildRoutingGraph()
 	if (frames == 0) { return; }
 
 	// One chain is not a rack: the channel's own chain is the whole signal
-	// path, exactly as it was before this class existed.
-	if (chainCount() < 2) { return; }
+	// path, exactly as it was before this class existed - unless a key/velocity
+	// zone routes notes to it (E20), which needs the rack's per-chain input.
+	if (!isOnPath(chainCount(), m_zones.zoneCount())) { return; }
 
 	// An out-of-range selection wires nothing, so a bad selection cannot route
 	// a chain nobody asked for (see setSelectedChain).
@@ -136,6 +146,7 @@ void Rack::rebuildRoutingGraph()
 		RackSplitFilter filter;
 		filter.configure(split, position++, static_cast<int>(routed.size()), sampleRate);
 		raw->setSplit(filter);
+		raw->setZoneInput(&m_zoneInputs, index);
 		const int id = m_graph->addNode(std::move(node));
 		m_chainNodes.push_back(raw);
 
@@ -157,6 +168,7 @@ void Rack::rebuildRoutingGraph()
 	// The wiring the audio thread will read: routedChains() first, then the
 	// prepared graph, then the flag that puts it on the path.
 	m_routedChains = routed;
+	m_zoneInputs.prepare(routed, chainCount(), frames, engine->outputSampleRate());
 	m_graph->setOutputNode(sumId);
 	m_graph->prepare(frames, DEFAULT_CHANNELS);
 	m_graphActive = true;
@@ -212,6 +224,8 @@ void Rack::clear()
 	m_parallelChains.clear();
 	m_selectedChain = Parallel;
 	m_split = RackSplit{};
+	// E20: a zone puts the rack on the path, so a cleared channel - a plain chain - has none.
+	m_zones.clear();
 	rebuildRoutingGraph();
 
 	if (engine != nullptr) { engine->doneChangeInModel(); }
@@ -290,6 +304,8 @@ auto Rack::processAudioBuffer(AudioBus& bus, const AudioBuffer* sidechainBuffer)
 
 	m_sidechainBuffer = nullptr;
 	for (RackChainNode* node : m_chainNodes) { node->setSidechain(nullptr); }
+	// E20: the zoned notes this period's chains just played are spent.
+	m_zoneInputs.endPeriod();
 
 	// 4. Publish the rendered block back onto the bus, silence flags included:
 	//    the mixer reads those flags to decide whether the channels fed by this

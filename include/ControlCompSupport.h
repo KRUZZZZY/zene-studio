@@ -67,11 +67,16 @@ LMMS_EXPORT QString takeClipId(const Clip* clip);
  */
 LMMS_EXPORT bool resolveTakeClip(const QString& id, ClipRef* ref, ControlResult* error);
 
+/*! 0.5.0 E2: whether \p srcpos is a slip \p track's comp can play: non-negative (invalid_args), and 0 on a track
+ *  that is not a sample track (refused: a MIDI take is gated per note and has no slipped read). Asked BEFORE a
+ *  checkpoint, like TakeLaneModel::canSelect. */
+LMMS_EXPORT bool slipAccepted(const Track* track, int srcpos, ControlResult* error);
+
 //! One lane: its index, its name and the ids of the takes assigned to it.
 LMMS_EXPORT QJsonObject laneState(const Track* track, const TakeLane& lane);
 //! Every lane of \p track, in index order.
 LMMS_EXPORT QJsonArray lanesState(const Track* track);
-//! One composite segment: begin, end, lane, srcpos and the length it covers.
+//! One composite segment: begin, end, lane, srcpos (its slip, include/TakeLane.h) and the length it covers.
 LMMS_EXPORT QJsonObject segmentState(const TakeLaneSegment& seg);
 /*! What the composite resolves to, one entry per segment: the take clip that
  *  supplies the segment's first tick and the source frame it starts at, with

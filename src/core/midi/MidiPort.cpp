@@ -181,7 +181,7 @@ void MidiPort::processInEvent( const MidiEvent& event, const TimePos& time )
 
 
 
-void MidiPort::processOutEvent( const MidiEvent& event, const TimePos& time )
+void MidiPort::processOutEvent( const MidiEvent& event, const TimePos& time, f_cnt_t offset )
 {
 	// The measurement, taken at the boundary this port is: an event was offered
 	// to the output path, and - inside the gate below - the MIDI client was
@@ -207,7 +207,7 @@ void MidiPort::processOutEvent( const MidiEvent& event, const TimePos& time )
 			outEvent.setKey( fixedOutputNote() );
 		}
 
-		m_midiClient->processOutEvent( outEvent, time, this );
+		m_midiClient->processOutEventAt( outEvent, time, this, offset );
 		m_outputEventsWritten.fetch_add( 1, std::memory_order_relaxed );
 	}
 }

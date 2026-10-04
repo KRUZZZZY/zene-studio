@@ -119,23 +119,42 @@ rather than stored and matched never (or, worse, routing a chain nobody asked
 for). The schema bounds the ranges too, so an out-of-range key never reaches the
 handler.
 
-**Honest scope — this is the part to read.** The rack renders **one stereo block**
-and has no per-note input: the first slice's report said exactly this when it
-explained why zones needed "a different data path (per-note routing), not a
-control on this one". **Nothing in this build consults a zone while a note
-plays.** What shipped is the persisted, validated, queryable zone model and its
-resolver, reachable through the socket (`rack.zone_add` / `zone_remove` /
-`zone_resolve`), and it survives a save/reload like the rest of the rack. What did
-**not** ship is note routing through a zone. Closing that gap needs a per-note
-path at the rack (a note event carrying its key and velocity into a chain
-decision), which is a change to the mixer's rendering contract, not to this
-model. `docs/KNOWN-LIMITATIONS.md` and the release notes carry the same sentence
-in one line each.
+**Note routing (0.5.0 E20/E38).** Zones route. Each NotePlayHandle renders into a
+buffer of its own, so a NOTE is the unit a zone routes: on the audio worker that
+renders an instrument track, `RackZoneFeed` (made by `AudioBusHandle::doProcessing`
+for the channel the track plays into) asks the zones about every note; a note a zone
+claims leaves the track's common sum and is summed with the other notes of that
+zone's chain, given the track's own volume and pan, and delivered to the rack's
+input block for that chain (`RackZoneInputs`). The chain's node adds the block to
+its share of the channel's input, after the split - a zone routes a whole note. A
+zone whose `sample` loads plays the sample for the note instead of the
+instrument's sound for it (linear interpolation at the note's pitch - the file's
+own pitch at the track's base note, as AudioFileProcessor plays one - at the
+note's velocity, a 256-frame fade once the note is released; 32 voices per rack,
+no stealing). The sample is decoded when the zone is added or loaded, never on the
+audio path; a reference that does not load is kept and reported
+(`sample_loaded: false`), and the zone then routes the instrument's own note.
+
+What takes the common path - the channel input and the rack's selector, exactly as
+before zones: a note no zone claims; a zone's note whose chain a selected rack does
+not render (it is heard through the selected chain rather than lost); and every note
+of a track whose channel is a bus or muted, whose own effect chain has effects, or
+whose output the channel's latency compensation delays. An instrument that renders
+every note into one stream (most hosted plug-ins) has no per-note buffers, so its
+notes cannot be split - they still play a zone's sample, which needs none. A rack
+with any zone is on the signal path even with one chain. Zoned notes enter their
+chain after the channel's input stage, so the channel's trim, input mono and pre-FX
+taps do not see them. Realtime: the zone list and the rack are edited under the
+model-change guard; the feed reads them and adds into blocks prepared when the rack
+re-wired (a spin flag held for one block add, the shape of `mixToChannel`'s lock,
+covers several tracks feeding one rack). Proof: `tests/src/core/RackZoneRoutingTest.cpp`.
 
 ## 4. What is NOT done
 
-* **Note routing through a zone** — see §3. The model, the surface and the
-  resolver are in; nothing calls the resolver on the audio path.
+* **Zone routing's limits** — see §3 (single-stream instruments, a track with
+  effects of its own or a compensation delay, the channel's input stage, 32 sample
+  voices without stealing). Not proved end to end through an instrument plug-in:
+  the fixture keeps instruments out (§5).
 * **No UI, and no Lua binding.** Nothing in `src/gui/` creates a rack, a macro or
   a zone, and there is no macro knob or zone editor. `ScriptBindings` (Lua) is not
   extended either: the reachable path is the control surface.

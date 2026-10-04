@@ -38,9 +38,19 @@ class SampleFrame;
 /*! 0.5.0 L09 (MX-048): add @a src (the sender's block, already delayed for PDC) into @a dst as the
  *  route sends it - the send amount, the sender's fader unless the send is pre-fader, sample-exact
  *  where those models are - balanced by the route's own pan (the balance law the channel pan uses).
- *  Only called for a route whose pan is off centre: a centred send keeps the inherited arithmetic.
- *  Audio thread (a mixer worker): no allocation, no lock. */
+ *  The pan is sample-exact too (0.5.0 W4): read per frame from its value buffer when it has one (an
+ *  automation curve, or a change ramped across the block as the send level and the channel pan
+ *  are), else its value for the whole block.
+ *  Only called for a route sendIsPanned() picks: a centred send keeps the inherited arithmetic.
+ *  Audio thread (a mixer worker): no allocation; the model reads are the ones the send level and
+ *  the channel pan already make on this thread. */
 LMMS_EXPORT void addPannedSend(SampleFrame* dst, const SampleFrame* src, MixerRoute& route, MixerChannel& sender, f_cnt_t frames);
+
+/*! 0.5.0 W4: true when @a route's pan acts on this block - off centre, or moving (a sample-exact
+ *  buffer this period, even one that ends at centre). The channel pan's own test (Mixer.cpp,
+ *  MixerChannel::doProcessing). A send whose pan never moved from centre - every send of every
+ *  older project - answers false and keeps the inherited branches, bit for bit. */
+LMMS_EXPORT bool sendIsPanned(MixerRoute& route);
 
 //! The two balance gains (left, right) for a pan in -1..1.
 LMMS_EXPORT void balanceGains(float pan, float* left, float* right);

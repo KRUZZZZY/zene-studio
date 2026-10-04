@@ -60,11 +60,10 @@ const QString ClauseTrackJournalled = QStringLiteral("ProjectJournal (Track chec
 	"Track::saveTrack writes the <takelanes> element - the lane list AND the composite - and "
 	"Track::loadTrack re-reads it)");
 
-//! The reason a result's transaction records when no single command re-creates the
-//! previous composite. The checkpoint is the real inverse; this names what would.
-const QString ManualCompositeInverse = QStringLiteral(
-	"UNIMPLEMENTED: re-select each previous segment (there is no un-select, because a "
-	"composite is total over its span); the previous segment list is in this before-state");
+//! The inverse a result's transaction records: the Track checkpoint, which control.undo replays (E19). No single
+//! command re-creates the previous composite (there is no un-select: a composite is total over its span); the
+//! previous segment list is in the before-state.
+const QString ManualCompositeInverse = QStringLiteral("control.undo");
 
 //! "lanes 0, 2" - what a refusal tells the caller they could have named instead.
 QString laneIndexList(const TakeLaneModel& model)
@@ -114,8 +113,8 @@ void registerCompSelect(ControlRegistry& registry)
 	cmd.group = QStringLiteral("comp");
 	cmd.verb = QStringLiteral("select");
 	cmd.description = QStringLiteral("Choose which take lane supplies the composite over "
-		"[begin, end) ticks, slipped 'srcpos' ticks into that lane's take (default 0 = the "
-		"take's own start). A selection paints over what was there: the range is cut out of "
+		"[begin, end) ticks, slipped 'srcpos' ticks (default 0 = the take at its own place; N pulls "
+		"N ticks of later take material under the range - an audio track only, refused on a MIDI one). A selection paints over what was there: the range is cut out of "
 		"every existing segment and the new choice is inserted, so the composite stays "
 		"ordered and gapless over its span. The take audio is not touched, and nothing is "
 		"copied. Reversible through the ProjectJournal (Track checkpoint).");
@@ -155,11 +154,7 @@ void registerCompSelect(ControlRegistry& registry)
 				QStringLiteral("%1 has no take lane %2 (its lanes: %3); add one with "
 					"comp.lane_add").arg(trackIdOf(track)).arg(lane).arg(laneIndexList(model)));
 		}
-		if (srcpos < 0)
-		{
-			return ControlResult::failure(ControlErrorKind::InvalidArgs,
-				QStringLiteral("'%1' must be >= 0, got %2").arg(ArgSrcpos).arg(srcpos));
-		}
+		if (!slipAccepted(track, srcpos, &error)) { return error; }
 
 		const QString id = trackIdOf(track);
 		if (!model.canSelect(begin, end, lane, srcpos))

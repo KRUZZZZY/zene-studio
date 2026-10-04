@@ -30,6 +30,7 @@
 
 #include "AudioPlugin.h"
 #include "CompressorControls.h"
+#include "CompressorKeyFilter.h"
 
 namespace lmms
 {
@@ -81,29 +82,10 @@ private:
 
 	inline void calcTiltFilter(sample_t inputSample, sample_t &outputSample, int filtNum);
 
-	//! 0.5.0 L09 (MX-057): one biquad section per channel (RBJ cookbook, Q = 0.707) for the key filter.
-	struct KeyBiquad
-	{
-		float b0 = 1.f, b1 = 0.f, b2 = 0.f, a1 = 0.f, a2 = 0.f;
-		float z1[2] = {0.f, 0.f};
-		float z2[2] = {0.f, 0.f};
-		bool on = false;
-		float process(float x, int ch)
-		{
-			const float y = b0 * x + z1[ch];
-			z1[ch] = b1 * x - a1 * y + z2[ch];
-			z2[ch] = b2 * x - a2 * y;
-			return y;
-		}
-	};
-	KeyBiquad m_keyHp;
-	KeyBiquad m_keyLp;
-	//! The detector's input through the key filter (a no-op while both halves are off).
-	float keyFilter(float x, int ch)
-	{
-		if (m_keyHp.on) { x = m_keyHp.process(x, ch); }
-		return m_keyLp.on ? m_keyLp.process(x, ch) : x;
-	}
+	//! 0.5.0 L09 (MX-057): the detector's key filter. calcKeyFilter() designs it wherever a knob moves
+	//! and posts it to the mailbox; the audio thread adopts it before a block (catch-up W3).
+	KeyFilterMailbox m_keyMailbox;
+	KeyFilter m_keyFilter;
 
 	enum class StereoLinkMode { Unlinked, Maximum, Average, Minimum, Blend };
 

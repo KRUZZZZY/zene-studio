@@ -40,6 +40,7 @@
 #include "Clip.h"
 #include "Timeline.h"
 #include "ControlCommandDef.h"
+#include "ControlCompSupport.h"
 #include "ControlEdit.h"
 #include "ControlRegistry.h"
 #include "ControlRegistryGroups.h"
@@ -74,17 +75,34 @@ int nearestEdge(const std::vector<TakeLaneSegment>& segments, int tick)
 	return best;
 }
 
-//! The range, lane and source offset that move the boundary between @a left and @a right to @a to: the
-//! growing side's take continues where it was - the left one from its end, the right one back from its start.
+//! The range, lane and slip that move the boundary between @a left and @a right to @a to: the growing side's take
+//! carries on in time - the same lane at the same slip (include/TakeLane.h, 0.5.0 E2), so the merge joins it.
 TakeLaneSegment edgeMove(const TakeLaneSegment& left, const TakeLaneSegment& right, int to)
 {
 	const bool growLeft = to > left.endTick;
+	const TakeLaneSegment& growing = growLeft ? left : right;
 	TakeLaneSegment move;
 	move.beginTick = growLeft ? left.endTick : to;
 	move.endTick = growLeft ? to : left.endTick;
-	move.laneIndex = growLeft ? left.laneIndex : right.laneIndex;
-	move.sourceOffset = growLeft ? left.sourceOffset + (left.endTick - left.beginTick) : right.sourceOffset - (right.beginTick - to);
+	move.laneIndex = growing.laneIndex;
+	move.sourceOffset = growing.sourceOffset;
 	return move;
+}
+
+//! Whether a take of @a move's lane covers @a tick, where its handle plays, and the slipped tick it reads there.
+bool takeCovers(const Track& track, const TakeLaneSegment& move, int tick)
+{
+	const std::vector<Clip*>& clips = track.getClips();
+	return std::any_of(clips.begin(), clips.end(), [&move, tick](const Clip* clip) {
+		return clip != nullptr && clip->laneIndex() == move.laneIndex && tick >= clip->startPosition().getTicks()
+			&& tick + move.sourceOffset < clip->endPosition().getTicks();
+	});
+}
+
+//! Whether the growing take reaches over the whole range it grows into (both ends - a lane may hold a gap).
+bool takeReaches(const Track& track, const TakeLaneSegment& move)
+{
+	return takeCovers(track, move, move.beginTick) && takeCovers(track, move, move.endTick - 1);
 }
 
 ControlResult moveEdge(const QJsonObject& args)
@@ -105,7 +123,7 @@ ControlResult moveEdge(const QJsonObject& args)
 	const QJsonObject result{{QStringLiteral("track"), trackIdOf(track)}, {QStringLiteral("edge"), to}};
 	if (to == left.endTick) { return ControlResult::success(result); }
 	const TakeLaneSegment move = edgeMove(left, right, to);
-	if (move.sourceOffset < 0 || !model.canSelect(move.beginTick, move.endTick, move.laneIndex, move.sourceOffset))
+	if (!takeReaches(*track, move) || !model.canSelect(move.beginTick, move.endTick, move.laneIndex, move.sourceOffset))
 	{
 		return ControlResult::failure(ControlErrorKind::Refused, QStringLiteral("the take on that side does not reach %1").arg(to));
 	}
@@ -147,6 +165,7 @@ ControlResult selectGroup(const QJsonObject& args)
 	// Every track is asked first: one that cannot take the choice refuses the whole edit.
 	for (Track* track : tracks)
 	{
+		if (!slipAccepted(track, srcpos, &error)) { return error; }
 		if (!track->takeLanes().hasLane(lane) || !track->takeLanes().canSelect(begin, end, lane, srcpos))
 		{
 			return ControlResult::failure(ControlErrorKind::Refused, QStringLiteral("%1 cannot take lane %2 over [%3, %4)")
@@ -215,7 +234,8 @@ void add(ControlRegistry& registry, const char* id, const QString& description, 
 void registerCompGroupCommands(ControlRegistry& registry)
 {
 	add(registry, "comp.move_edge", QStringLiteral("Move the boundary between two takes of the composite nearest 'tick' to 'to': the "
-		"take on the growing side carries on in time (its source offset follows). Refused where that take does not reach. "
+		"take on the growing side carries on in time (the same lane at its own slip). Refused where no take of that lane reaches "
+		"over the range it would grow into. "
 		"Reversible through the ProjectJournal (Track checkpoint)."),
 		{{QStringLiteral("track"), stringProperty()}, {QStringLiteral("tick"), tickProperty()}, {QStringLiteral("to"), tickProperty()}},
 		{QStringLiteral("track"), QStringLiteral("tick"), QStringLiteral("to")}, moveEdge);

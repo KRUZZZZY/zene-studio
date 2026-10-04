@@ -35,8 +35,9 @@
  *       section and no `z` prefix binding either).
  *
  * See docs/COMPING.md for the element shape, the group-name decision and the
- * precise list of what is NOT wired yet (nothing renders a composite on the
- * audio thread in this release).
+ * list of what is NOT wired. The composite PLAYS: each take's play handle gates
+ * its lane's spans (R3.1) and, since 0.5.0 E2, reads a slipped span slipped
+ * (include/CompSlip.h).
  *
  * Copyright (c) 2026 Zene Studio contributors
  *
@@ -101,13 +102,30 @@ struct TakeLane
 };
 
 /*! One choice of the composite: over the timeline range `[beginTick, endTick)`
- *  the composite takes its audio from `laneIndex`, slipped by `sourceOffset`
- *  ticks into that lane's take (0 = the take's own start, which is what a plain
- *  "use this lane here" selection means).
+ *  the composite takes its audio from `laneIndex`, SLIPPED by `sourceOffset`
+ *  ticks.
  *
- *  The offset is RECORDED AND REPORTED, not yet applied: the composite PLAYS
- *  (SamplePlayHandle gates each take by its lane's segments, R3.1), but a take
- *  plays at its own mapping - docs/COMPING.md says so plainly. */
+ *  0.5.0 E2 - ONE meaning, which every rule below follows: `sourceOffset` is a
+ *  SLIP, constant across the segment and relative to the take's own mapping.
+ *  At timeline tick t inside the segment the composite reads the lane's take at
+ *  the take's own position for tick `t + sourceOffset`, so 0 is "the take at its
+ *  own place" (what a plain "use this lane here" selection means) and N > 0
+ *  pulls N ticks of LATER take material under the segment. It is never an
+ *  absolute position in the take: a lane may hold several takes, and an
+ *  absolute position would not say which one it is a position in. Hence:
+ *   - two neighbouring segments of one lane with the SAME slip are one
+ *     continuous read and merge; a different slip is a jump and stays a seam;
+ *   - splitting, clamping or painting over part of a segment keeps its slip;
+ *   - resolve() reports the slip itself (not a position that grows with t);
+ *   - the file carries it as `slip`, written only when non-zero (I9). The
+ *     pre-0.5.0 `srcpos` attribute held the old, contradictory reading and was
+ *     never applied by any playback path, so a load IGNORES it: an old project
+ *     sounds exactly as it always did.
+ *
+ *  Where it sounds (include/CompSlip.h): an audio take's play handle reads the
+ *  slipped spans of its lane from its source, linear-rate clips only; a
+ *  pitch-preserving or warped take, and a MIDI take, play unslipped (the comp.*
+ *  commands refuse a non-zero slip on an instrument track). */
 struct TakeLaneSegment
 {
 	int beginTick = 0;
@@ -152,7 +170,7 @@ public:
 
 	// ---- the composite (a view) -----------------------------------------
 	/*! Chooses lane \p laneIndex over `[beginTick, endTick)`, slipped by
-	 *  \p sourceOffset ticks. Any earlier choice over the same range is
+	 *  \p sourceOffset ticks (see TakeLaneSegment for what a slip is). Any earlier choice over the same range is
 	 *  overwritten (a selection paints over what was there), so this is the one
 	 *  operation that changes the composite. False = rejected, nothing written:
 	 *  an empty or reversed range, a negative offset, or a lane the track does
@@ -166,7 +184,7 @@ public:
 	bool canSelect(int beginTick, int endTick, int laneIndex, int sourceOffset = 0) const;
 
 	/*! Normalises the composite: sorts it, merges segments that are contiguous
-	 *  in the same lane at a continuous offset, and - when a span is given
+	 *  in the same lane at the same slip, and - when a span is given
 	 *  (`spanEnd > spanBegin >= 0`) - clamps the composite to exactly that span,
 	 *  filling every gap with the base lane. Returns the number of segments the
 	 *  composite now has; 0 with an empty lane set. */
@@ -176,21 +194,22 @@ public:
 	const std::vector<TakeLaneSegment>& segments() const { return m_segments; }
 	//! The timeline range the composite covers; false when it is empty.
 	bool span(int* beginTick, int* endTick) const;
-	//! The lane and offset that supply \p tick; false when the composite does
+	//! The lane and the slip that supply \p tick; false when the composite does
 	//! not cover it (there is no "default lane" answer: an uncovered tick is
 	//! simply not comped).
 	bool resolve(int tick, int* laneIndex, int* sourceOffset) const;
 
 	/*! The take the composite would read at \p tick: the clip on the resolved
-	 *  lane whose own range covers \p tick, plus its source frame from
-	 *  `Clip::sourceFrameAt()`. False means the composite names a lane with no
+	 *  lane whose own range covers \p tick AND the slipped tick, plus its source
+	 *  frame from `Clip::sourceFrameAt()` at the slipped tick. False means the composite names a lane with no
 	 *  covering take there - reported as unresolved, never guessed at. Reads
 	 *  only; nothing is written and no buffer is touched. */
 	bool resolveSource(const std::vector<Clip*>& clips, int tick,
 		f_cnt_t* sourceFrame, int* laneIndex) const;
 
 	/*! The take clip itself at \p tick, or nullptr when the composite does not
-	 *  cover the tick or names a lane with no covering take. `resolveSource()`
+	 *  cover the tick or names a lane with no take covering both the tick (where
+	 *  the take's handle plays) and the slipped tick (what it reads there). `resolveSource()`
 	 *  and the comp.* result builder share this one lookup, so the two cannot
 	 *  disagree about which clip supplies a tick. */
 	Clip* takeAt(const std::vector<Clip*>& clips, int tick, int* laneIndex = nullptr) const;
@@ -210,7 +229,7 @@ public:
 	/*! Writes the model's CHILDREN onto \p element (the caller creates and
 	 *  places the element, so an empty model writes nothing at all - I9):
 	 *  `<z:lane id index name>` entities, then `<z:segment begin end lane
-	 *  [srcpos]>` - ONE vocabulary for both contexts since ARCH-4 S7 (S7). A
+	 *  [slip]>` - ONE vocabulary for both contexts since ARCH-4 S7 (S7). A
 	 *  project file's parent is the `<z:tracklanes>` group of the top-level
 	 *  `<z:lanes>` section; a journal checkpoint's or copy payload's is the
 	 *  track's `<takelanes>` (docs/COMPING.md section 3). */
@@ -230,7 +249,7 @@ private:
 	static void subtractRange(const TakeLaneSegment& seg, int beginTick, int endTick,
 		std::vector<TakeLaneSegment>* out);
 	void sortSegments();
-	//! Merges neighbouring segments that are the same lane at a continuous offset.
+	//! Merges neighbouring segments that are the same lane at the same slip.
 	void mergeSegments();
 	int fillGaps(int spanBegin, int spanEnd);
 

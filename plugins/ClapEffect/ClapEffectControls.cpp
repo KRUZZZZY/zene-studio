@@ -26,39 +26,21 @@
 #include "Song.h"
 #include "Engine.h"
 
-#include <cmath>
-
 #include <QTimer>
 
 #include "ClapEffect.h"
 #include "ClapEffectControlDialog.h"
+#include "EffectChain.h"
 
 namespace lmms
 {
 
 ClapEffectControls::ClapEffectControls(ClapEffect* effect) :
 	EffectControls(effect),
-	m_effect(effect)
+	m_effect(effect),
+	m_params(effect->plugin(), this)
 {
-	auto* plugin = m_effect->plugin();
-	for (const auto& descriptor : plugin->parameters())
-	{
-		auto* model = new ClapParamModel(descriptor, this);
-		m_paramModels.push_back(model);
-		// host -> plug-in: mirror the model value into the lock free snapshot
-		// the audio thread reads. Safe from any thread that changes a model.
-		QObject::connect(model, &Model::dataChanged, model,
-			[this, plugin, id = descriptor.id, model] {
-				// poll() writes plug-in values back into the models; do not
-				// echo those back to the plug-in.
-				if (m_syncing) { return; }
-				plugin->setParamPlain(id, static_cast<double>(model->value()));
-			});
-		// plug-in -> host: render the value with the plug-in's own formatter
-		model->setDisplayFormatter([plugin, id = descriptor.id](double value) {
-			return plugin->paramDisplayValue(id, value);
-		});
-	}
+	m_params.sync();
 
 	m_pollTimer = new QTimer(this);
 	m_pollTimer->setInterval(100);
@@ -68,11 +50,7 @@ ClapEffectControls::ClapEffectControls(ClapEffect* effect) :
 
 auto ClapEffectControls::modelForParam(std::uint32_t id) -> ClapParamModel*
 {
-	for (auto* model : m_paramModels)
-	{
-		if (model->paramId() == id) { return model; }
-	}
-	return nullptr;
+	return m_params.modelFor(id);
 }
 
 void ClapEffectControls::poll()
@@ -80,27 +58,21 @@ void ClapEffectControls::poll()
 	auto* plugin = m_effect->plugin();
 	if (!plugin->isLoaded()) { return; }
 
+	// The plug-in's requests first: one that asks for a restart (a full parameter rescan, W6) is answered by the
+	// re-prepare right after it, in this same poll.
+	if (plugin->serviceMainThread() && Engine::getSong() != nullptr) { Engine::getSong()->setModified(); }
 	if (m_effect->needsReprepare() || plugin->needsReprepare())
 	{
 		plugin->clearNeedsReprepare();
 		m_effect->reprepare();
 	}
-	if (plugin->serviceMainThread() && Engine::getSong() != nullptr) { Engine::getSong()->setModified(); }
-
-	if (m_syncing) { return; }
-	m_syncing = true;
-	for (auto* model : m_paramModels)
+	if (m_params.sync())
 	{
-		const auto id = model->paramId();
-		const auto& descriptor = model->descriptor();
-		const auto range = std::max(1e-12, descriptor.maxValue - descriptor.minValue);
-		const auto value = static_cast<float>(plugin->paramPlain(id));
-		if (std::abs(model->value() - value) > range * 1e-4f)
-		{
-			model->setValue(value);
-		}
+		emit parametersChanged();
+		// The Device panel redraws a card on its chain's dataChanged.
+		if (EffectChain* chain = m_effect->effectChain()) { emit chain->dataChanged(); }
 	}
-	m_syncing = false;
+	m_params.pullValues(1e-4f);
 }
 
 void ClapEffectControls::saveSettings(QDomDocument& doc, QDomElement& element)
@@ -122,12 +94,7 @@ void ClapEffectControls::loadSettings(const QDomElement& element)
 	m_effect->plugin()->loadState(QByteArray::fromBase64(stateElement.text().toLatin1()));
 
 	// reflect the restored state in the models
-	m_syncing = true;
-	for (auto* model : m_paramModels)
-	{
-		model->setValue(static_cast<float>(m_effect->plugin()->paramPlain(model->paramId())));
-	}
-	m_syncing = false;
+	m_params.pullValues(0.f);
 }
 
 auto ClapEffectControls::createView() -> gui::EffectControlDialog*

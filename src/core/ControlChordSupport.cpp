@@ -154,6 +154,14 @@ QJsonObject chordTrackState(const ChordTrack& track)
 	QJsonArray events;
 	for (const ChordEvent& event : track.events()) { events.append(chordEventJson(event)); }
 	out.insert(QStringLiteral("events"), events);
+	// 0.5.0 E23: the tracks that follow the chord track while they play.
+	QJsonArray followers;
+	for (const ChordFollower& follower : track.followers())
+	{
+		followers.append(QJsonObject{{QStringLiteral("track"), trackId(follower.trackId)},
+			{QStringLiteral("mode"), ChordTrack::followModeName(follower.mode)}});
+	}
+	out.insert(QStringLiteral("followers"), followers);
 	return out;
 }
 
@@ -164,6 +172,7 @@ QJsonObject chordTrackStateSchema(QJsonObject extra)
 		{QStringLiteral("chords"), integerProperty(0, ChordTrack::MaxEvents)},
 		{QStringLiteral("max_chords"), integerProperty(0, ChordTrack::MaxEvents)},
 		{QStringLiteral("events"), arrayProperty()},
+		{QStringLiteral("followers"), arrayProperty()},
 	};
 	for (auto it = extra.begin(); it != extra.end(); ++it) { properties.insert(it.key(), it.value()); }
 	return objectSchema(properties);

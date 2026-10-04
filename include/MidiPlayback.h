@@ -63,9 +63,10 @@ public:
 	//! Write the two preferences (and the config file).
 	void setPreferences(bool chase, int offsetMs);
 
-	// Audio thread, once a tick before the tracks play: a tick that does not follow the last one is
-	// a start, a jump or a loop - notes are chased there, and a jump back counts a pass.
-	void tickPlayed(tick_t tick);
+	/*! Audio thread, once a tick before the tracks play: a tick that does not follow the last one is
+	 *  a start, a jump or a loop - notes are chased there. @a loopWraps is Song::loopWraps(): each wrap
+	 *  since the last tick counts a pass (0.5.0 W2), and a seek - backward or forward - counts none. */
+	void tickPlayed(tick_t tick, unsigned loopWraps);
 	//! Playback stopped: the next tick is a start, and the pass count starts again.
 	void stopped();
 	bool chasingNow() const { return m_chasingNow; }
@@ -92,6 +93,7 @@ private:
 	std::atomic<int> m_offsetMs{0};
 	// The audio thread's own; stopped() (UI thread) only raises m_restart, which the next tick takes.
 	tick_t m_lastTick = -2;
+	unsigned m_lastWraps = 0;  //!< Song::loopWraps() at the last tick: the passes are the wraps since the start
 	bool m_chasingNow = false;
 	std::atomic<bool> m_restart{true};
 	std::atomic<int> m_pass{0};

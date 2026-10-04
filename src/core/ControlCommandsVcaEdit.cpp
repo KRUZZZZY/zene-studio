@@ -166,11 +166,9 @@ ControlResult editMove(const QJsonObject& args)
 	inverseArgs.insert(QStringLiteral("position"), from);
 	result.insert(QStringLiteral("__transaction"),
 		control::transactionPayload(before,
-			// There is no single call that moves every locked member back, so the
-			// operation is named as the manual one (the shape clip.split and
-			// clip.crossfade use) while `mechanism` names what control.undo
-			// actually replays.
-			QStringLiteral("UNIMPLEMENTED: one call that moves every locked clip back"),
+			// E19: the inverse IS the merged checkpoint below, so the op names what
+			// replays it (control.undo) rather than a call that does not exist.
+			QStringLiteral("control.undo"),
 			inverseArgs, true,
 			QStringLiteral("composite checkpoint: a LIVE Clip checkpoint was taken for every "
 				"clip the lock moved (the anchor plus one or more per member track that had "

@@ -56,20 +56,28 @@ class SongEditor;
  *  label is cut to the room it has and its full text is a tooltip. A click on a section selects it as
  *  the range (section.select), on a marker moves the play position there (marker.jump). Which lanes show
  *  is a preference (arrangement.ruler_lanes, config ui/rulerlanes; all three by default), also in the
- *  lanes' context menu. Interface only: nothing here edits the project. */
+ *  lanes' context menu. Interface only: nothing here edits the project.
+ *
+ *  0.5.0 E23: a fourth lane, the CHORD TRACK - each chord as a band from where it starts for as long as it
+ *  sounds (ChordTrack::effectiveLength), named by its root and chord ("C Major"), its scale in the tooltip.
+ *  It takes room only while the chord track holds a chord (the preference still says whether it may show),
+ *  and a click on a chord moves the play position there (transport.seek). The lane follows the chord track
+ *  by its revision, so a chord set, removed, undone or loaded shows without a signal from the model. */
 class LMMS_EXPORT ArrangerRulerLanes : public QWidget
 {
 	Q_OBJECT
 public:
-	enum class Lane { Sections, Markers, Tempo };
-	static constexpr int LaneCount = 3;
+	enum class Lane { Sections, Markers, Tempo, Chords };
+	static constexpr int LaneCount = 4;
 
 	explicit ArrangerRulerLanes(SongEditor* editor);
 
 	//! The lanes by name, in Lane order: sections, markers, tempo.
 	static const QStringList& laneNames();
-	//! Whether @a lane shows (the preference).
+	//! Whether @a lane may show (the preference).
 	static bool laneShown(Lane lane);
+	//! Whether @a lane is drawn: the preference, and for the chord lane a chord track that holds a chord.
+	static bool laneDrawn(Lane lane);
 	static void setLaneShown(Lane lane, bool shown);
 
 	//! Read the preference again: the lanes shown, the height they take.
@@ -88,6 +96,8 @@ protected:
 
 private:
 	int xOf(tick_t tick) const;
+	//! The song tick at x = @a x (the inverse of xOf).
+	tick_t tickAt(int x) const;
 	int contentLeft() const;
 	//! The section or marker under @a pos: its command and argument, and its full name.
 	bool itemAt(const QPoint& pos, QString* command, QJsonObject* args, QString* name) const;
@@ -95,9 +105,16 @@ private:
 	void paintMarkers(QPainter& p, const QRect& lane);
 	void paintTempo(QPainter& p, const QRect& lane) const;
 	void paintTempoValues(QPainter& p, const QRect& lane, const TempoMap& map) const;
+	void paintChords(QPainter& p, const QRect& lane) const;
+	//! The chord under @a pos, as itemAt reports it.
+	bool chordAt(const QPoint& pos, QString* command, QJsonObject* args, QString* name) const;
+	//! Polled: a changed chord track repaints the lane, and re-lays it out when it gains or loses its room.
+	void followChordTrack();
 
 	QPointer<SongEditor> m_editor;
 	QList<int> m_drawn;
+	unsigned m_chordRevision = 0;
+	bool m_chordsDrawn = false;
 };
 
 } // namespace gui

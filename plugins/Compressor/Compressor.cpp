@@ -243,30 +243,11 @@ void CompressorEffect::calcTiltCoeffs()
 
 void CompressorEffect::calcKeyFilter()
 {
-	// RBJ high-pass and low-pass at Q = 1/sqrt(2); a cutoff at the end of its range switches that half off.
-	using namespace std::numbers;
-	const auto design = [this](KeyBiquad& filter, float hz, bool highPass) {
-		const float w = 2.f * pi_v<float> * hz / m_sampleRate;
-		const float alpha = std::sin(w) / sqrt2_v<float>;  // sin(w) / (2Q), Q = 1/sqrt(2)
-		const float cosw = std::cos(w);
-		const float a0 = 1.f + alpha;
-		const float k = highPass ? (1.f + cosw) / 2.f : (1.f - cosw) / 2.f;
-		filter.b0 = k / a0;
-		filter.b1 = (highPass ? -2.f * k : 2.f * k) / a0;
-		filter.b2 = k / a0;
-		filter.a1 = -2.f * cosw / a0;
-		filter.a2 = (1.f - alpha) / a0;
-	};
-	const float hp = m_compressorControls.m_keyHpModel.value();
-	const float lp = m_compressorControls.m_keyLpModel.value();
-	// A half switched on starts from rest (its state froze while it was off), designed before it is used.
-	const auto update = [&design](KeyBiquad& filter, bool on, float hz, bool highPass) {
-		if (on && !filter.on) { filter.z1[0] = filter.z1[1] = filter.z2[0] = filter.z2[1] = 0.f; }
-		if (on) { design(filter, hz, highPass); }
-		filter.on = on;
-	};
-	update(m_keyHp, hp > 20.5f, hp, true);
-	update(m_keyLp, lp < 19999.f && lp < m_sampleRate * 0.45f, lp, false);
+	// Designed here, on whichever thread moved the knob, and adopted by the audio thread between
+	// blocks (CompressorKeyFilter.h): nothing it is running is rewritten under it.
+	m_keyMailbox.publish([this] {
+		return designKeyFilter(m_compressorControls.m_keyHpModel.value(), m_compressorControls.m_keyLpModel.value(), m_sampleRate);
+	});
 }
 
 void CompressorEffect::calcMix()
@@ -279,6 +260,7 @@ void CompressorEffect::calcMix()
 ProcessStatus CompressorEffect::processImpl(InterleavedBufferView<float, 2> inOut)
 {
 	m_cleanedBuffers = false;
+	m_keyFilter.follow(m_keyMailbox);  // a key filter the knobs changed since the last block
 
 	const float d = dryLevel();
 	const float w = wetLevel();
@@ -350,7 +332,7 @@ ProcessStatus CompressorEffect::processImpl(InterleavedBufferView<float, 2> inOu
 			{
 				inputValue = (feedback && !lookahead) ? m_prevOut[i] : s[i];
 			}
-			inputValue = keyFilter(inputValue, i);  // 0.5.0 L09 (MX-057)
+			inputValue = m_keyFilter.process(inputValue, i);  // 0.5.0 L09 (MX-057)
 
 			// Calculate the crest factor of the audio by diving the peak by the RMS
 			m_crestPeakVal[i] = qMax(qMax(COMP_NOISE_FLOOR, inputValue * inputValue), m_crestTimeConst * m_crestPeakVal[i] + (1 - m_crestTimeConst) * (inputValue * inputValue));

@@ -129,7 +129,7 @@ QJsonObject transactionFor(const QString& op, VcaGroup* group, const ClipRef& an
 	before.insert(QStringLiteral("anchor"), trackIdOf(anchor.track));
 	before.insert(QStringLiteral("edited_count"), count);
 	return transactionPayload(before,
-		QStringLiteral("UNIMPLEMENTED: one call that reverses every locked edit"), QJsonObject(), true,
+		QStringLiteral("control.undo"), QJsonObject(), true,
 		QStringLiteral("composite checkpoint: a LIVE checkpoint (Clip, or Track for a split) was "
 			"taken before every clip the lock wrote, and the registry merges one command's "
 			"checkpoints into ONE undo step (ControlRegistry::runHandler -> "

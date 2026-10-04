@@ -34,6 +34,7 @@
 #include "EffectChain.h"
 #include "EffectControls.h"
 #include "EffectView.h"
+#include "ParameterAliases.h"
 #include "ProjectIds.h"
 #include "SampleFrame.h"
 
@@ -175,6 +176,8 @@ void Effect::loadSettings( const QDomElement & _this )
 		}
 		node = node.nextSibling();
 	}
+	// 0.5.0: aliases a project kept by display name move to the parameters' stable keys.
+	parameteraliases::adoptLegacyAliases( this, &m_deviceOptions );
 }
 
 

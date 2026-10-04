@@ -312,7 +312,7 @@ void registerClipSplit(ControlRegistry& registry)
 		result.insert(QStringLiteral("left"), control::clipId(ref.id));
 		result.insert(QStringLiteral("right"), control::clipId(rightOrdinal));
 		result.insert(QStringLiteral("__transaction"),
-			control::transactionPayload(before, QStringLiteral("UNIMPLEMENTED: re-join the two halves"),
+			control::transactionPayload(before, QStringLiteral("control.undo"),
 				QJsonObject{{QStringLiteral("left"), control::clipId(ref.id)},
 					{QStringLiteral("right"), control::clipId(rightOrdinal)}},
 				true, ClauseTrackJournalled));
@@ -391,7 +391,7 @@ void registerClipDelete(ControlRegistry& registry)
 		result.insert(QStringLiteral("track"), trackIdText);
 		result.insert(QStringLiteral("dry_run"), false);
 		result.insert(QStringLiteral("__transaction"),
-			control::transactionPayload(snapshot, QStringLiteral("UNIMPLEMENTED: re-create the clip"),
+			control::transactionPayload(snapshot, QStringLiteral("control.undo"),
 				QJsonObject(), true, ClauseTrackJournalled));
 		return ControlResult::success(result);
 	};

@@ -113,6 +113,19 @@ bool targetNotes(MidiClip* clip, const QJsonObject& args, std::vector<Note*>* no
 	return true;
 }
 
+/*! W1: every target note's curve before the write, by its id - the transaction's before-state. It used to hold the first
+ *  note's curve alone ('points', kept for the readers of that key), so a multi-note write reported one note's past. The
+ *  undo itself was always complete (one MidiClip checkpoint). */
+QJsonObject curvesBefore(const std::vector<Note*>& notes)
+{
+	QJsonArray each;
+	for (const Note* note : notes)
+	{
+		each.append(QJsonObject{{QStringLiteral("note"), noteIdOf(note)}, {QStringLiteral("points"), curveJson(note)}});
+	}
+	return {{QStringLiteral("points"), curveJson(notes.front())}, {QStringLiteral("notes"), each}};
+}
+
 void putCurve(Note* note, const std::vector<CurvePoint>& points, bool relative)
 {
 	note->clearDetuning();  // a fresh curve: the old one may be shared with a copy of the note
@@ -138,7 +151,7 @@ ControlResult setCurve(const QJsonObject& args)
 	const bool relative = args.value(QStringLiteral("relative")).toBool();
 	std::vector<CurvePoint> points;
 	if (!readCurve(args.value(QStringLiteral("points")).toArray(), relative, &points, &error)) { return error; }
-	const QJsonArray before = curveJson(notes.front());
+	const QJsonObject before = curvesBefore(notes);
 	clip->addJournalCheckPoint();
 	for (Note* note : notes) { putCurve(note, points, relative); }
 	emit clip->dataChanged();
@@ -146,7 +159,7 @@ ControlResult setCurve(const QJsonObject& args)
 	Engine::getSong()->setModified();
 	QJsonObject result{{QStringLiteral("clip"), clipId(ref.id)}, {QStringLiteral("note"), noteIdOf(notes.front())},
 		{QStringLiteral("notes"), static_cast<int>(notes.size())}, {QStringLiteral("points"), curveJson(notes.front())}};
-	result.insert(QStringLiteral("__transaction"), transactionPayload({{QStringLiteral("points"), before}}, QStringLiteral("control.undo"), {},
+	result.insert(QStringLiteral("__transaction"), transactionPayload(before, QStringLiteral("control.undo"), {},
 		true, QStringLiteral("MidiClip journal checkpoint: undo restores the notes' previous curves")));
 	return ControlResult::success(result);
 }

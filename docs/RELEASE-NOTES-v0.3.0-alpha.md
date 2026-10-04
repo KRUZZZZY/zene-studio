@@ -927,11 +927,14 @@ note.duplicate (`true_inverse`, one clip checkpoint each) and note.copy (`not_mu
 workflow.set_scope, window.layout_project_save and window.layout_project_clear (`true_inverse`); arrangement.ruler_lanes and
 window.layout_project_apply (`not_mutating`) (+13); the seven macro.* rows became workflow.* unchanged.
 
+**0.5.0 catch-up wave 1** added rack.macro_set_pair and chord.follow_set (`true_inverse`), track.set_arm_many
+(`snapshot`, one step disarms what it armed) and, in WASM builds, wasm.device_load (`true_inverse`) (+4).
+
 <!-- A16-HISTOGRAM-BEGIN
-     measured: rows=750 true_inverse=370 snapshot=39 irreversible=19 not_mutating=322
+     measured: rows=754 true_inverse=373 snapshot=40 irreversible=19 not_mutating=322
      configuration: telemetry.status wasm.load session.get_state stem.get_state
      option telemetry.status rows=2 not_mutating=2
-     option wasm.load rows=8 snapshot=3 not_mutating=5
+     option wasm.load rows=9 true_inverse=1 snapshot=3 not_mutating=5
      option session.get_state rows=18 true_inverse=7 not_mutating=11
      option stem.get_state rows=7 not_mutating=7
      A16-HISTOGRAM-END -->

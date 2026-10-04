@@ -39,6 +39,8 @@
 #include "AudioBus.h"
 #include "AudioDevice.h"
 #include "AudioEngine.h"
+#include "AutomatableModel.h"
+#include "ControlDeviceSupport.h"
 #include "ControlRegistry.h"
 #include "ControlVocabulary.h"
 #include "DeviceOptions.h"
@@ -46,6 +48,7 @@
 #include "EffectChain.h"
 #include "Engine.h"
 #include "Mixer.h"
+#include "ParameterAliases.h"
 #include "Rack.h"
 #include "RackSplit.h"
 #include "SampleBuffer.h"
@@ -151,6 +154,13 @@ Effect* effectOn(int index)
 {
 	const std::vector<Effect*>& effects = channel(index)->m_fxChain.effects();
 	return effects.empty() ? nullptr : effects.back();
+}
+
+//! The amplifier @a effect's Volume parameter, or nullptr.
+AutomatableModel* volumeOf(Effect* effect)
+{
+	ControlResult error;
+	return controlResolveParameter(effect, QStringLiteral("Volume"), 0, false, &error);
 }
 
 } // namespace
@@ -282,7 +292,10 @@ private slots:
 		rename.insert(QStringLiteral("alias"), QStringLiteral("Drive"));
 		QVERIFY(run(QStringLiteral("plugin.param_rename"), rename).ok);
 		Effect* effect = effectOn(1);
-		QCOMPARE(effect->deviceOptions().alias(QStringLiteral("Volume")), QStringLiteral("Drive"));
+		const QString key = parameteraliases::keysOf(effect, {volumeOf(effect)}).value(0);
+		QVERIFY2(key.startsWith(QStringLiteral("id:")), qPrintable(key));
+		QCOMPARE(effect->deviceOptions().alias(key), QStringLiteral("Drive"));  // W6: by the parameter's key...
+		QVERIFY(effect->deviceOptions().alias(QStringLiteral("Volume")).isEmpty());  // ...not its translated name
 		const ControlResult found = run(QStringLiteral("plugin.param_search"), {{QStringLiteral("query"), QStringLiteral("driv")},
 			{QStringLiteral("target"), ch(1)}});
 		QCOMPARE(found.result.value(QStringLiteral("count")).toInt(), 1);
@@ -296,12 +309,52 @@ private slots:
 		QVERIFY(!element.hasAttribute(QStringLiteral("folded")));
 		DeviceOptions back;
 		back.load(element);
-		QCOMPARE(back.shownName(QStringLiteral("Volume")), QStringLiteral("Drive"));
+		QCOMPARE(back.alias(key), QStringLiteral("Drive"));
 		QVERIFY(run(QStringLiteral("control.undo")).ok);  // the parameter write
 		QVERIFY(run(QStringLiteral("control.undo")).ok);  // the rename
 		QVERIFY(effect->deviceOptions().aliases().isEmpty());
 		rename.insert(QStringLiteral("name"), QStringLiteral("No such knob"));
 		QCOMPARE(run(QStringLiteral("plugin.param_rename"), rename).errorKind, ControlErrorKind::NotFound);
+	}
+
+	//! W6: an alias is kept by the parameter's stable key, so it follows the parameter when its display name changes
+	//! (the project opened in another language). A project saved before W6 keyed it by the display name: that entry
+	//! is still read by the name and is moved to the key, while an entry that names no parameter here is kept.
+	void anAliasFollowsTheParameterNotItsName()
+	{
+		Effect* effect = effectOn(1);
+		if (effect == nullptr) { QSKIP("this build has no amplifier module"); }
+		AutomatableModel* volume = volumeOf(effect);
+		QVERIFY(volume != nullptr);
+		QVERIFY(run(QStringLiteral("plugin.param_rename"), {{QStringLiteral("target"), ch(1)},
+			{QStringLiteral("plugin"), control::effectIdOf(effect)}, {QStringLiteral("name"), QStringLiteral("Volume")},
+			{QStringLiteral("alias"), QStringLiteral("Drive")}}).ok);
+		volume->setDisplayName(QStringLiteral("Lautstaerke"));  // the same knob, named in another language
+		const ControlResult found = run(QStringLiteral("plugin.param_search"), {{QStringLiteral("query"), QStringLiteral("driv")},
+			{QStringLiteral("target"), ch(1)}});
+		QCOMPARE(found.result.value(QStringLiteral("count")).toInt(), 1);
+		QCOMPARE(found.result.value(QStringLiteral("parameters")).toArray().first().toObject().value(QStringLiteral("name")).toString(),
+			QStringLiteral("Lautstaerke"));
+		QCOMPARE(parameteraliases::shownNamesOf(effect, {volume}).value(0), QStringLiteral("Drive"));
+		volume->setDisplayName(QStringLiteral("Volume"));
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
+		QVERIFY(effect->deviceOptions().isDefault());
+
+		QDomDocument doc;
+		QDomElement saved = doc.createElement(QStringLiteral("effect"));
+		saved.setAttribute(QStringLiteral("aliases"), QStringLiteral("{\"Volume\":\"Level\",\"Pegel\":\"Gain trim\"}"));
+		effect->deviceOptions().load(saved);  // as a project saved before W6 reads back
+		QCOMPARE(parameteraliases::aliasesOf(effect, {volume}, effect->deviceOptions()).value(0), QStringLiteral("Level"));
+		QVERIFY(parameteraliases::adoptLegacyAliases(effect, &effect->deviceOptions()));
+		const QString key = parameteraliases::keysOf(effect, {volume}).value(0);
+		QCOMPARE(effect->deviceOptions().alias(key), QStringLiteral("Level"));
+		QVERIFY(effect->deviceOptions().alias(QStringLiteral("Volume")).isEmpty());
+		QCOMPARE(effect->deviceOptions().alias(QStringLiteral("Pegel")), QStringLiteral("Gain trim"));  // no such parameter: kept
+		QVERIFY(!parameteraliases::adoptLegacyAliases(effect, &effect->deviceOptions()));  // nothing left to move
+		const QJsonObject reported = parameteraliases::toJson(effect, effect->deviceOptions());
+		QCOMPARE(reported.value(QStringLiteral("Volume")).toString(), QStringLiteral("Level"));  // the wire still names it
+		QCOMPARE(reported.value(QStringLiteral("Pegel")).toString(), QStringLiteral("Gain trim"));
+		effect->deviceOptions() = DeviceOptions();
 	}
 
 	//! MX-093: randomise moves every setting inside its range; blend sets the A/B midpoint; both undo.

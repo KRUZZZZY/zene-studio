@@ -78,6 +78,8 @@ public:
 
 private:
 	ProcessStatus processImpl(InterleavedBufferView<float, 2> inOut) override;
+	//! Bypassed (or not processing for another reason): it turns nothing down, so it reports 0 dB.
+	void processBypassedImpl() override { m_reductionDb.store(0.f, std::memory_order_relaxed); }
 	void design(float frequency, float rate);
 	//! The frame with this sample's gain applied in the chosen mode.
 	SampleFrame shaped(const SampleFrame& in, Mode mode, bool listen);

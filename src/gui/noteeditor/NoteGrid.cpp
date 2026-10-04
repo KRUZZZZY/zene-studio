@@ -26,6 +26,10 @@
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
+
+#include "TempoMap.h"
+#include "TimePos.h"
 
 namespace lmms::gui
 {
@@ -35,6 +39,25 @@ namespace
 
 constexpr int kKeys = 128;
 constexpr int kFoldedAway = -1000000;
+
+NoteGrid::MeterSpan meterSpan(int start, const TempoMapTimeSignature& signature, int firstBar)
+{
+	const int denominator = std::max(1, signature.denominator);
+	return {start, std::max(1, DefaultTicksPerBar * std::max(1, signature.numerator) / denominator),
+		std::max(1, DefaultTicksPerBar / denominator), firstBar};
+}
+
+//! The bars of @a span (which ends at @a end) that reach into [@a from, @a to].
+void appendBars(const NoteGrid::MeterSpan& span, int end, double from, double to, std::vector<NoteGrid::Bar>& bars)
+{
+	const int first = std::max(0, static_cast<int>(std::floor((from - span.start) / span.barTicks)));
+	for (long long tick = span.start + static_cast<long long>(first) * span.barTicks; tick < end && tick <= to; tick += span.barTicks)
+	{
+		const int at = static_cast<int>(tick);
+		bars.push_back({at, std::min(span.barTicks, end - at), span.barTicks, span.beatTicks,
+			span.firstBar + static_cast<int>((tick - span.start) / span.barTicks)});
+	}
+}
 
 } // namespace
 
@@ -226,6 +249,38 @@ int NoteGrid::visibleGridTicks(int gridTicks, int minPixels) const
 	int ticks = std::max(1, gridTicks);
 	while (ticks * m_pixelsPerTick < minPixels && ticks < (1 << 20)) { ticks *= 2; }
 	return ticks;
+}
+
+void NoteGrid::setMeter(const TempoMapTimeSignature& global, const TempoMap& map, int clipStart)
+{
+	m_meter.assign(1, meterSpan(0, map.timeSignatureAtTick(clipStart, global), 0));
+	if (!map.active()) { return; }
+	for (const TempoMapEvent& event : map.all())  // in tick order
+	{
+		const int start = static_cast<int>(event.tick) - clipStart;
+		if (!event.hasTimeSignature || start <= 0) { continue; }  // at or before the clip start: in the first span
+		const MeterSpan& last = m_meter.back();
+		const int bars = (start - last.start + last.barTicks - 1) / last.barTicks;  // a bar the change cuts short counts
+		m_meter.push_back(meterSpan(start, {event.numerator, event.denominator}, last.firstBar + bars));
+	}
+}
+
+std::vector<NoteGrid::Bar> NoteGrid::barsBetween(double from, double to) const
+{
+	std::vector<Bar> bars;
+	for (std::size_t i = 0; i < m_meter.size(); ++i)
+	{
+		const int end = i + 1 < m_meter.size() ? m_meter[i + 1].start : std::numeric_limits<int>::max();
+		if (end > from) { appendBars(m_meter[i], end, from, to, bars); }  // a span over before from has no bar in it
+	}
+	return bars;
+}
+
+int NoteGrid::beatTicksAt(int tick) const
+{
+	const auto after = std::upper_bound(m_meter.begin() + 1, m_meter.end(), tick,
+		[](int t, const MeterSpan& span) { return t < span.start; });
+	return std::prev(after)->beatTicks;
 }
 
 bool NoteGrid::isBlackKey(int key)

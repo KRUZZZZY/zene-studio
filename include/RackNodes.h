@@ -39,6 +39,7 @@ namespace lmms
 class AudioBuffer;
 class AudioBus;
 class EffectChain;
+class RackZoneInputs;
 
 /**
  * @brief The two node types a Rack wires up, and nothing else.
@@ -94,6 +95,10 @@ public:
 	//! side, one side). Control thread, before prepare(); the default passes the whole block.
 	void setSplit(const RackSplitFilter& split) { m_split = split; }
 
+	//! 0.5.0 E20: where this chain's zoned notes arrive (chain @a chain of @a inputs), added to its input after
+	//! the split - a zone routes a whole note to its chain. Control thread, before prepare().
+	void setZoneInput(const RackZoneInputs* inputs, int chain) { m_zoneInputs = inputs; m_zoneChain = chain; }
+
 	/**
 	 * @returns what the chain's processAudioBuffer() reported last time: false
 	 *          means "this chain has nothing more to say", which the rack
@@ -102,6 +107,9 @@ public:
 	auto lastResult() const -> bool { return m_lastResult; }
 
 private:
+	//! Adds this chain's zoned notes to @a block (interleaved); true when there were any.
+	bool addZonedNotes(SampleFrame* block, f_cnt_t frames) const;
+
 	EffectChain* m_chain = nullptr;
 	const AudioBuffer* m_sidechain = nullptr;
 
@@ -117,6 +125,8 @@ private:
 	std::unique_ptr<AudioBus> m_bus;
 	bool m_lastResult = false;
 	RackSplitFilter m_split;
+	const RackZoneInputs* m_zoneInputs = nullptr;
+	int m_zoneChain = -1;
 };
 
 /**

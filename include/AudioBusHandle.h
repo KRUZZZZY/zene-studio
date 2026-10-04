@@ -95,6 +95,9 @@ public:
 	bool isCorrupted() const { return m_corrupted.load(std::memory_order_relaxed); }
 
 private:
+	//! The track's volume and panning, applied to m_buffer in place
+	void applyVolumeAndPanning(f_cnt_t fpp);
+
 	volatile bool m_bufferUsage;
 
 	//! Interleaved stereo buffer (one track channel pair) that play handles are mixed into

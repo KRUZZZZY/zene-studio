@@ -135,7 +135,9 @@ public:
 	}
 
 	void processInEvent( const MidiEvent& event, const TimePos& time = TimePos() );
-	void processOutEvent( const MidiEvent& event, const TimePos& time = TimePos() );
+	//! @a offset: frames into the engine period the event was produced at (0.5.0 W4), for a client
+	//! that places events inside its cycle (MidiClient::processOutEventAt).
+	void processOutEvent( const MidiEvent& event, const TimePos& time = TimePos(), f_cnt_t offset = 0 );
 
 
 	void saveSettings( QDomDocument& doc, QDomElement& thisElement ) override;

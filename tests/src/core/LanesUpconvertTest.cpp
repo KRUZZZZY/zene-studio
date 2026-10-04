@@ -194,8 +194,9 @@ private slots:
 		QCOMPARE(segment.attribute(QStringLiteral("end")).toInt(), 64);
 		QCOMPARE(segment.attribute(QStringLiteral("lane")).toInt(), 1);
 		QVERIFY(!group.lastChildElement(QStringLiteral("z:segment")).isNull());
+		// 0.5.0 E2: the slip travels as `slip` (the pre-0.5.0 `srcpos` reading is ignored on load).
 		QCOMPARE(group.lastChildElement(QStringLiteral("z:segment"))
-			.attribute(QStringLiteral("srcpos")).toInt(), 7);
+			.attribute(QStringLiteral("slip")).toInt(), 7);
 
 		// The clip side does not move: the reference stays the `lane` index
 		// attribute, written only when non-zero (I9 at clip scope).

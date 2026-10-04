@@ -25,6 +25,8 @@
 #ifndef LMMS_RACK_ZONES_H
 #define LMMS_RACK_ZONES_H
 
+#include <functional>
+#include <memory>
 #include <vector>
 
 #include <QDomDocument>
@@ -35,6 +37,8 @@
 
 namespace lmms
 {
+
+class SampleBuffer;
 
 //! The MIDI key range a zone is stated in (the engine's own key space).
 constexpr int RackZoneMinKey = 0;
@@ -54,10 +58,17 @@ constexpr int RackZoneMaxVelocity = 200;
  * split plus a dynamics layer), and it keeps ONE lookup rule rather than two
  * that can disagree about which of them wins.
  *
- * The ranges are inclusive. `sample` is an optional free-form reference
- * (typically the file name a chain plays); it is recorded and reported but does
- * not take part in matching, because the rack routes to a chain and the chain
- * owns what it plays.
+ * The ranges are inclusive. `sample` is an optional reference to an audio file
+ * (a path, or one of the engine's `factorysample:` / `usersample:` prefixes); it
+ * does not take part in matching. 0.5.0 E38: the reference is LOADED (decoded on
+ * the control thread into `loaded`) when the zone is added or read from a
+ * project, and a note the zone claims then plays that sample on the zone's chain
+ * instead of the instrument's own sound for that note - at the pitch the
+ * instrument track gives the note (the sample's own pitch at the track's base
+ * note, as AudioFileProcessor plays one) and at the note's velocity. A reference
+ * that does not load (missing file, unreadable data) is KEPT - it saves back
+ * unchanged and reports `sample_loaded: false` - and the zone then routes the
+ * instrument's own note to its chain, as a zone without a sample does.
  */
 struct RackZone
 {
@@ -69,7 +80,17 @@ struct RackZone
 	int chain = 0;
 	//! Optional sample reference; may be empty.
 	QString sample;
+	//! E38: the decoded sample, or nullptr (no reference, or it did not load).
+	//! Shared, immutable once loaded: a copy of the zone (an undo step) plays the
+	//! same data without decoding again.
+	std::shared_ptr<const SampleBuffer> loaded;
 };
+
+/*! E38: decodes @a zone's sample reference into `zone.loaded` when it has one and
+ *  it is not loaded yet. Control thread (it reads a file). True when the zone
+ *  ends with a playable sample. Never shows a dialog: a project read by an agent
+ *  has nobody to answer one, and a missing file is reported, not refused. */
+LMMS_EXPORT bool loadRackZoneSample(RackZone& zone);
 
 /*! True when every range is inside the engine's own bounds, `low <= high` in
  *  both, and @a chain names an existing chain of a rack with @a chainCount
@@ -84,6 +105,11 @@ LMMS_EXPORT bool isValidRackZone(const RackZone& zone, int chainCount);
  * Stored, validated, persisted as `<zone>` children of the channel's existing
  * `<rack>` element (no second container) and resolvable from the control
  * surface. The lookup is a read: no allocation, no lock, no growth.
+ *
+ * 0.5.0 E20: the audio workers read the list while notes play (RackZoneFeed.h),
+ * so every mutation takes the audio engine's model-change guard, and a sample is
+ * decoded BEFORE the guard is taken - the render never waits on a file. The
+ * owning Rack is told after each change (setChangedHook) so it can re-wire.
  */
 class LMMS_EXPORT RackZones
 {
@@ -117,6 +143,9 @@ public:
 	//! Drops every zone.
 	void clear();
 
+	//! Called after every change, inside the model-change guard (the owning Rack re-wires).
+	void setChangedHook(std::function<void()> hook) { m_changed = std::move(hook); }
+
 	// --- persistence (children of the channel's <rack> element) ---
 
 	//! Writes one <zone> element per zone, or nothing when there are none.
@@ -125,7 +154,11 @@ public:
 	void loadSettings(const QDomElement& rackElement);
 
 private:
+	//! Runs @a change on the list under the model-change guard, then the hook.
+	void edit(const std::function<void()>& change);
+
 	std::vector<RackZone> m_zones;
+	std::function<void()> m_changed;
 };
 
 } // namespace lmms

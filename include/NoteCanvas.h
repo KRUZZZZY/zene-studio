@@ -82,6 +82,12 @@ public:
 	//! Whether @a pos is on the handle at the left end of @a note (Shift-drag there resizes from the start).
 	bool onStartHandle(const Note& note, const QPoint& pos) const;
 
+	//! Point @a state's grid at the song's metre as its clip sees it (0.5.0 W2): the song's time signature
+	//! and, for a clip in the arrangement, the tempo map's metre changes. The grid and the ruler paint with it.
+	static void followSongMeter(NoteEditorState& state);
+	//! Repaint @a widget when the song's time signature changes.
+	static void repaintOnMeterChange(QWidget* widget);
+
 	//! The playhead, in ticks inside the clip, or -1 when the clip is not playing.
 	void setPlayhead(int tick);
 	//! Drop the gesture in flight (the clip changed or went): its release commits nothing to whichever

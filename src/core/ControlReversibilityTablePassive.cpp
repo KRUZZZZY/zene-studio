@@ -92,7 +92,7 @@ const ReversibilityRow kPassiveRows[] = {
 		"(Lua addCheckPoint()), which ProjectJournal::undo DOES replay - so "
 		"the record is honest about what it can and cannot cover",
 		"run a script that takes its own checkpoint (Lua addCheckPoint()) "
-		"before it edits; control.undo then replays that checkpoint"),
+		"before it edits; the journal's own Undo (Ctrl+Z) then replays it"),
 	R("record.recovery_discard", RC::Irreversible, false,
 		"refusing the offer REMOVES the journal file, and the offer is the "
 		"journal: no engine record holds the bytes it carried, and the project "
@@ -288,9 +288,8 @@ const ReversibilityRow kPassiveRows[] = {
 	R("project.get_state", RC::NotMutating, false, "reads the project state", "no write", ""),
 	R("rack.get_state", RC::NotMutating, false, "reads the rack", "no write", ""),
 	R("rack.zone_resolve", RC::NotMutating, false,
-		"reads the zone list and matches a note against it; it routes nothing, "
-		"because the rack renders one stereo block and no note path consults a "
-		"zone in this build (docs/KNOWN-LIMITATIONS.md)",
+		"reads the zone list and matches a note against it - the zone, and so the chain, such a note "
+		"plays on (0.5.0 E20: zones route notes)",
 		"no write",
 		""),
 	R("roll.get_state", RC::NotMutating, false, "reads the note list", "no write", ""),

@@ -30,8 +30,10 @@
  *    one, toggle between them. The slots live with the session (not the project); a recall is one
  *    undo step. */
 
+#include <algorithm>
 #include <functional>
 #include <map>
+#include <memory>
 #include <vector>
 
 #include <QJsonArray>
@@ -80,10 +82,74 @@ std::function<EffectChain*()> destinationResolver(const QJsonObject& args)
 	};
 }
 
-QJsonObject copied(const ControlTarget& to, const QJsonArray& ids, const QString& mechanism)
+//! @a args with 'to' naming the one destination @a id: the form destination() and destinationResolver() read.
+QJsonObject withDestination(QJsonObject args, const QString& id)
 {
-	QJsonObject result{{QStringLiteral("to"), to.id}, {QStringLiteral("plugins"), ids}, {QStringLiteral("count"), ids.size()}};
-	result.insert(QStringLiteral("__transaction"), transactionPayload({{QStringLiteral("to"), to.id}}, QStringLiteral("control.undo"), {},
+	args.insert(QStringLiteral("to"), id);
+	return args;
+}
+
+/*! W1: the destinations a call names - 'to' as one trk-<n> / ch-<n>, or a LIST of them (the mixer's Copy to Channels:
+ *  every copy in one call, so one undo step takes them all back). Each is resolved before anything is copied, so a bad
+ *  id refuses the whole call rather than leave half the copies made. */
+bool destinations(const QJsonObject& args, std::vector<ControlTarget>* out, ControlResult* error)
+{
+	const QJsonValue to = args.value(QStringLiteral("to"));
+	const QJsonArray ids = to.isArray() ? to.toArray() : QJsonArray{to};
+	QStringList seen;
+	for (const QJsonValue& id : ids)
+	{
+		ControlTarget target;
+		if (!id.isString() || seen.contains(id.toString()))
+		{
+			*error = ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("'to' names each destination once, as a "
+				"trk-<n> / ch-<n> id"));
+			return false;
+		}
+		if (!destination(withDestination(args, id.toString()), &target, error)) { return false; }
+		seen << id.toString();
+		out->push_back(target);
+	}
+	if (out->empty()) { *error = ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("'to' names no destination")); }
+	return !out->empty();
+}
+
+//! What one destination's copy made: the fx-<n> ids, and why it stopped short (empty when it did not).
+struct Copied
+{
+	QJsonArray ids;
+	QString stopped;
+};
+
+using CopyOne = std::function<Copied(const QJsonObject& oneArgs, const ControlTarget& to)>;
+
+/*! Runs @a copyOne for each destination in order, stopping at the first one that stops short: what was copied stays and
+ *  the reply says where it stopped ('stopped'). 'to' answers as the call named it - one id, or the list - and 'copies'
+ *  says what each destination got. Every step the copies record is merged by the registry into ONE undo step. */
+QJsonObject copyToEach(const QJsonObject& args, const std::vector<ControlTarget>& targets, const CopyOne& copyOne,
+	const QString& mechanism)
+{
+	QJsonArray all;
+	QJsonArray copies;
+	QJsonArray ids;
+	QString stopped;
+	for (const ControlTarget& to : targets)
+	{
+		const Copied one = copyOne(withDestination(args, to.id), to);
+		for (const QJsonValue& id : one.ids) { all.append(id); }
+		copies.append(QJsonObject{{QStringLiteral("to"), to.id}, {QStringLiteral("plugins"), one.ids}});
+		ids.append(to.id);
+		stopped = one.stopped;
+		if (!stopped.isEmpty()) { break; }
+	}
+	const QJsonValue named = args.value(QStringLiteral("to")).isArray() ? QJsonValue(ids) : QJsonValue(targets.front().id);
+	QJsonObject result{{QStringLiteral("to"), named}, {QStringLiteral("plugins"), all}, {QStringLiteral("count"), all.size()},
+		{QStringLiteral("copies"), copies}};
+	if (!stopped.isEmpty()) { result.insert(QStringLiteral("stopped"), stopped); }
+	// Nothing copied (an empty source chain): no transaction, so the registry records the call by the steps it left - none
+	// for a plain copy (no record, nothing for control.undo to misattribute), a removal step for a 'replace'.
+	if (all.isEmpty()) { return result; }
+	result.insert(QStringLiteral("__transaction"), transactionPayload({{QStringLiteral("to"), named}}, QStringLiteral("control.undo"), {},
 		true, mechanism));
 	return result;
 }
@@ -91,9 +157,9 @@ QJsonObject copied(const ControlTarget& to, const QJsonArray& ids, const QString
 ControlResult pluginCopy(const QJsonObject& args)
 {
 	ControlTarget from;
-	ControlTarget to;
+	std::vector<ControlTarget> targets;
 	ControlResult error;
-	if (!resolveChainTarget(args, &from, &error) || !destination(args, &to, &error)) { return error; }
+	if (!resolveChainTarget(args, &from, &error) || !destinations(args, &targets, &error)) { return error; }
 	Effect* effect = resolveControlEffect(from, args.value(QStringLiteral("plugin")).toString(), &error);
 	if (effect == nullptr) { return error; }
 	const QString state = controlEffectStateXml(effect);
@@ -102,44 +168,66 @@ ControlResult pluginCopy(const QJsonObject& args)
 		return ControlResult::failure(ControlErrorKind::Refused, QStringLiteral("the device's settings are too large to record for an undo"));
 	}
 	const int position = args.contains(QStringLiteral("position")) ? args.value(QStringLiteral("position")).toInt() : -1;
-	const QJsonArray ids = recreateDevices(destinationResolver(args), {state}, position, &error);
-	if (ids.isEmpty()) { return error.errorMessage.isEmpty() ? ControlResult::failure(ControlErrorKind::Refused, QStringLiteral("the device could not be copied")) : error; }
-	return ControlResult::success(copied(to, ids, QStringLiteral("action checkpoint: the recorded undo step takes the copy out "
-		"again; its redo recreates it from the same settings document")));
+	auto why = std::make_shared<ControlResult>(ControlResult::failure(ControlErrorKind::Refused, QStringLiteral("the device could not be copied")));
+	const QJsonObject result = copyToEach(args, targets, [state, position, why](const QJsonObject& oneArgs, const ControlTarget&) {
+		ControlResult reason;
+		const QJsonArray ids = recreateDevices(destinationResolver(oneArgs), {state}, position, &reason);
+		if (ids.isEmpty() && !reason.errorMessage.isEmpty()) { *why = reason; }
+		return Copied{ids, ids.isEmpty() ? why->errorMessage : QString()};
+	}, QStringLiteral("action checkpoint: the recorded undo step takes every copy out again; its redo recreates them from the "
+		"same settings document"));
+	// Nothing copied at all is the refusal it always was for one destination, with the recreate's own reason.
+	return result.value(QStringLiteral("count")).toInt() == 0 ? *why : ControlResult::success(result);
 }
 
-ControlResult chainCopy(const QJsonObject& args)
+//! chain.copy's checks, before anything is taken out or copied: no destination is the source, and every device it would
+//! copy - and, with 'replace', every device it would remove - fits an undo step.
+ControlResult chainCopyRefusal(const ControlTarget& from, const std::vector<ControlTarget>& targets, bool replace)
 {
-	ControlTarget from;
-	ControlTarget to;
-	ControlResult error;
-	if (!resolveChainTarget(args, &from, &error) || !destination(args, &to, &error)) { return error; }
-	if (from.chain == to.chain) { return ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("the chain cannot be copied onto itself")); }
-	// As plugin.copy: every copy's settings must fit an undo step, checked before 'replace' takes anything out.
+	const auto self = [&from](const ControlTarget& to) { return to.chain == from.chain; };
+	if (std::any_of(targets.begin(), targets.end(), self))
+	{
+		return ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("the chain cannot be copied onto itself"));
+	}
 	if (!devicesRecordable(from.chain->effects()))
 	{
 		return ControlResult::failure(ControlErrorKind::Refused, QStringLiteral("a device on %1 has settings too large to record for "
 			"an undo, so the chain is not copied").arg(from.id));
 	}
+	for (const ControlTarget& to : targets)
+	{
+		if (replace && !devicesRecordable(to.chain->effects()))
+		{
+			return ControlResult::failure(ControlErrorKind::Refused, QStringLiteral("a device on %1 has settings too large to record "
+				"for an undo, so its chain is not replaced").arg(to.id));
+		}
+	}
+	return ControlResult::success({});
+}
+
+ControlResult chainCopy(const QJsonObject& args)
+{
+	ControlTarget from;
+	std::vector<ControlTarget> targets;
+	ControlResult error;
+	if (!resolveChainTarget(args, &from, &error) || !destinations(args, &targets, &error)) { return error; }
+	const bool replace = args.value(QStringLiteral("replace")).toBool();
+	const ControlResult refused = chainCopyRefusal(from, targets, replace);
+	if (!refused.ok) { return refused; }
 	QStringList states;
 	for (Effect* effect : from.chain->effects()) { states.append(controlEffectStateXml(effect)); }
-	const bool replace = args.value(QStringLiteral("replace")).toBool();
-	if (replace && !devicesRecordable(to.chain->effects()))
-	{
-		return ControlResult::failure(ControlErrorKind::Refused, QStringLiteral("a device on %1 has settings too large to record for "
-			"an undo, so its chain is not replaced").arg(to.id));
-	}
-	if (replace)
-	{
-		const std::vector<Effect*> existing = to.chain->effects();  // a copy: the removal changes the chain's list
-		removeDevicesRecorded(destinationResolver(args), existing);
-	}
-	const QJsonArray ids = recreateDevices(destinationResolver(args), states, -1, &error);
-	QJsonObject result = copied(to, ids, QStringLiteral("action checkpoint: the recorded undo step takes the copies out and "
-		"(with 'replace') recreates the devices that were there, at their slots"));
-	// A device that could not be recreated stops the copy there; what was copied stays, and says so.
-	if (ids.size() != states.size()) { result.insert(QStringLiteral("stopped"), error.errorMessage); }
-	return ControlResult::success(result);
+	return ControlResult::success(copyToEach(args, targets, [states, replace](const QJsonObject& oneArgs, const ControlTarget& to) {
+		if (replace)
+		{
+			const std::vector<Effect*> existing = to.chain->effects();  // a copy: the removal changes the chain's list
+			removeDevicesRecorded(destinationResolver(oneArgs), existing);
+		}
+		ControlResult why;
+		const QJsonArray ids = recreateDevices(destinationResolver(oneArgs), states, -1, &why);
+		// A device that could not be recreated stops the copy there; what was copied stays, and says so.
+		return Copied{ids, ids.size() != states.size() ? why.errorMessage : QString()};
+	}, QStringLiteral("action checkpoint: the recorded undo step takes the copies out and (with 'replace') recreates the devices "
+		"that were there, at their slots")));
 }
 
 //! A device's two stored settings and which one it holds now; by the device's stable id.
@@ -280,19 +368,24 @@ void registerDeviceCopyCommands(ControlRegistry& registry)
 	const QJsonObject source{{QStringLiteral("target"), stringProperty()}, {QStringLiteral("chain"), integerProperty(0, 64)}};
 	QJsonObject one = source;
 	one.insert(QStringLiteral("plugin"), stringProperty());
-	one.insert(QStringLiteral("to"), stringProperty());
+	// W1: 'to' is one destination or a list of them (Copy to Channels), all in one undo step.
+	const QJsonObject toOneOrMany{{QStringLiteral("type"), QJsonArray{QStringLiteral("string"), QStringLiteral("array")}}};
+	one.insert(QStringLiteral("to"), toOneOrMany);
 	one.insert(QStringLiteral("to_chain"), integerProperty(0, 64));
 	one.insert(QStringLiteral("position"), integerProperty(0, 1024));
 	add(registry, "plugin.copy", QStringLiteral("Copy one device ('plugin', fx-<n> on 'target' - with 'chain' for a rack chain) "
-		"to another chain: 'to' (trk-<n> / ch-<n>, 'to_chain' for its rack chain), at 'position' (0 = first; appended when "
-		"left out), with its settings. 'plugins' answers the copy's fx-<n>. One undo step."),
+		"to another chain: 'to' (trk-<n> / ch-<n>, or a list of them; 'to_chain' for a rack chain), at 'position' (0 = first; "
+		"appended when left out), with its settings. 'plugins' answers the copies' fx-<n>, 'copies' each destination's; a copy "
+		"that cannot be made stops the rest ('stopped'). One undo step, however many destinations."),
 		one, {QStringLiteral("target"), QStringLiteral("plugin"), QStringLiteral("to")}, pluginCopy);
 	QJsonObject whole = source;
-	whole.insert(QStringLiteral("to"), stringProperty());
+	whole.insert(QStringLiteral("to"), toOneOrMany);
 	whole.insert(QStringLiteral("to_chain"), integerProperty(0, 64));
 	whole.insert(QStringLiteral("replace"), booleanProperty());
-	add(registry, "chain.copy", QStringLiteral("Copy every device of a chain ('target', 'chain') to another ('to', 'to_chain'), "
-		"in order, with their settings: appended, or with 'replace' in place of the devices there. One undo step."),
+	add(registry, "chain.copy", QStringLiteral("Copy every device of a chain ('target', 'chain') to another ('to', or a list of "
+		"them; 'to_chain'), in order, with their settings: appended, or with 'replace' in place of the devices there. 'copies' "
+		"says what each destination got; a device that cannot be made stops the rest ('stopped'). One undo step, however many "
+		"destinations."),
 		whole, {QStringLiteral("target"), QStringLiteral("to")}, chainCopy);
 	QJsonObject ab = source;
 	ab.insert(QStringLiteral("plugin"), stringProperty());

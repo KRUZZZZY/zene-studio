@@ -31,9 +31,12 @@
 
 #include "Accessibility.h"
 #include "DesignTokens.h"
+#include "Engine.h"
 #include "MidiClip.h"
 #include "Note.h"
 #include "NoteEditor.h"
+#include "Song.h"
+#include "TempoMap.h"
 #include "Track.h"
 #include "WcagContrast.h"
 
@@ -85,6 +88,26 @@ NoteCanvas::NoteCanvas(NoteEditor* editor)
 			"Ctrl+B copy, cut, paste and duplicate; Delete removes the selection; the arrow keys move it. Alt+wheel "
 			"over a note changes its velocity (Ctrl+Alt finely, Shift+Alt nudges it). The wheel scrolls; with Ctrl it "
 			"zooms, with Shift it scrolls sideways; the middle button drags the view."));
+	repaintOnMeterChange(this);
+}
+
+void NoteCanvas::followSongMeter(NoteEditorState& state)
+{
+	Song* song = Engine::getSong();
+	if (song == nullptr || state.clip == nullptr) { return; }
+	static const TempoMap noChanges;
+	const TempoMapTimeSignature global{song->getTimeSigModel().getNumerator(), song->getTimeSigModel().getDenominator()};
+	// A pattern's clip has its own ticks, not the arrangement's: the song's metre, with no map changes.
+	const Track* track = state.clip->getTrack();
+	const bool arranged = track != nullptr && track->trackContainer() == song;
+	state.grid.setMeter(global, arranged ? song->tempoMap().map() : noChanges,
+		arranged ? static_cast<int>(state.clip->startPosition().getTicks()) : 0);
+}
+
+void NoteCanvas::repaintOnMeterChange(QWidget* widget)
+{
+	if (Engine::getSong() == nullptr) { return; }
+	connect(Engine::getSong(), &Song::timeSignatureChanged, widget, [widget] { widget->update(); });
 }
 
 void NoteCanvas::focusInEvent(QFocusEvent* event)
@@ -218,16 +241,21 @@ void NoteCanvas::paintRows(QPainter& p, const QRect& area) const
 void NoteCanvas::paintGrid(QPainter& p, const QRect& area) const
 {
 	const tokens::Palette& pal = tokens::palette();
+	followSongMeter(m_state);
 	const NoteGrid& g = m_state.grid;
 	const int step = g.visibleGridTicks(m_state.gridTicks);
-	const int beat = DefaultTicksPerBar / 4;
-	const int first = (static_cast<int>(g.tickAtX(area.left())) / step) * step;
-	const int last = static_cast<int>(g.tickAtX(area.right() + 1));
-	for (int tick = first; tick <= last; tick += step)
-	{
-		const QColor colour = tick % DefaultTicksPerBar == 0 ? pal.gridBar
-			: tick % beat == 0 ? pal.gridBeat : pal.gridStep;
+	const auto line = [&](int tick, const QColor& colour) {
 		p.fillRect(QRect(static_cast<int>(g.xOfTick(tick)), area.top(), 1, area.height()), colour);
+	};
+	// Bar by bar in the song's metre (0.5.0 W2): the steps restart at each bar, the beat is the metre's.
+	// Zoomed out past a bar, every n-th bar's line is drawn.
+	for (const NoteGrid::Bar& bar : g.barsBetween(g.tickAtX(area.left()), g.tickAtX(area.right() + 1)))
+	{
+		if (bar.index % ((step + bar.barTicks - 1) / bar.barTicks) == 0) { line(bar.tick, pal.gridBar); }
+		for (int tick = bar.tick + step; tick < bar.tick + bar.length; tick += step)
+		{
+			line(tick, (tick - bar.tick) % bar.beatTicks == 0 ? pal.gridBeat : pal.gridStep);
+		}
 	}
 }
 

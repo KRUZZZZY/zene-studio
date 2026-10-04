@@ -401,14 +401,12 @@ void registerClipCrossfade(ControlRegistry& registry)
 			fadeShapeName(outBefore.fadeOutShape));
 		inverseArgs.insert(QStringLiteral("in_fade_in"), inBefore.fadeInTicks);
 		inverseArgs.insert(QStringLiteral("in_fade_in_shape"), fadeShapeName(inBefore.fadeInShape));
-		// The automatic inverse is the TRACK checkpoint (both clips live on it,
-		// which the guard above enforces). There is no single command that
-		// restores two clips' fades, so the op is named as the manual one - the
-		// same shape clip.split uses - while `mechanism` names what control.undo
-		// actually replays.
+		// The inverse is the TRACK checkpoint (both clips live on it, which the
+		// guard above enforces), so the op names what replays it (E19); the
+		// args are the previous fades, for audit.
 		result.insert(QStringLiteral("__transaction"),
 			control::transactionPayload(before,
-				QStringLiteral("UNIMPLEMENTED: re-open both clips' previous fades"),
+				QStringLiteral("control.undo"),
 				inverseArgs, true, ClauseTrackJournalled));
 		return ControlResult::success(result);
 	};

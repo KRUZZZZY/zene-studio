@@ -502,6 +502,7 @@ auto HostedPlugin::prepare(double sampleRate, int maxBlockSize, QString* error) 
 	d.silence.assign(static_cast<std::size_t>(maxBlockSize), 0.f);
 	d.scratchOutput.assign(static_cast<std::size_t>(maxBlockSize), 0.f);
 	d.inputParamChanges.setMaxParameters(static_cast<int32>(d.params.size()));
+	d.chunkParamChanges.setMaxParameters(static_cast<int32>(d.params.size()));
 	d.lastParamValues.assign(d.params.size(), std::numeric_limits<float>::lowest());
 
 	// MIDI: the event list is already sized (its constructor did it), the
@@ -603,9 +604,10 @@ void HostedPlugin::process(const float* const* inputs, float* const* outputs,
 	control::PluginHostChunkingCounters& counters = control::vst3HostChunkingCounters();
 	counters.recordRequest(frames, d.maxBlockSize);
 
-	// 0. parameter changes: queued once, for the whole request. A change is a
-	//    time-0 point of the chunk that starts the request (runChunk() hands
-	//    the queue to the first chunk only, so it is delivered exactly once).
+	// 0. parameter changes: queued once, for the whole request. A host change is
+	//    a time-0 point (so it reaches the chunk that starts the request); a
+	//    mapped MIDI controller (step 1) is a point at its own frame. runChunk()
+	//    slices the list, so each point is delivered once, in its own chunk.
 	d.inputParamChanges.clearQueue();
 	int32 queueIndex = 0;
 	for (std::size_t i = 0; i < d.params.size(); ++i)
@@ -653,10 +655,16 @@ void HostedPlugin::process(const float* const* inputs, float* const* outputs,
 void HostedPlugin::Impl::runChunk(const float* const* inputs, float* const* outputs,
 	int numInputs, int numOutputs, int offset, int chunk, bool firstChunk, bool lastChunk)
 {
-	// 1a. parameter changes belong to the chunk that starts the request.
-	if (!firstChunk)
+	// 1a. parameter changes, sliced as the events are (0.5.0 W4): a point belongs
+	//     to the chunk its sample offset falls in, rebased to that chunk's start,
+	//     so a point never lands past numSamples. A request processed in one
+	//     chunk hands the plug-in the request's own list.
+	processData.inputParameterChanges = &inputParamChanges;
+	if (!(firstChunk && lastChunk))
 	{
-		inputParamChanges.clearQueue();
+		chunkParamChanges.clearQueue();
+		sliceParameterChanges(inputParamChanges, chunkParamChanges, offset, chunk);
+		processData.inputParameterChanges = &chunkParamChanges;
 	}
 
 	sliceEvents(offset, chunk, lastChunk);

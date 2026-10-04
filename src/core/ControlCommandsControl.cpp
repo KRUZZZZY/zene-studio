@@ -245,6 +245,50 @@ QString irreversibleUndoMessage(const ControlRegistry::Transaction& tx,
 	return message;
 }
 
+/*! E19: the refusal for a record whose inverse is the journal but whose call left NO
+ *  step on it. Unwinding the journal then would take back an OLDER edit than the one
+ *  asked about - an inverse that "depends entirely on a checkpoint existing" is
+ *  one-way when none exists, and says so rather than pretending.
+ */
+QString unjournalledMessage(const ControlRegistry::Transaction& record)
+{
+	return QStringLiteral("cannot undo '%1': its inverse is an undo step on the project journal, but the "
+		"call left none there (nothing it changed was checkpointed), so unwinding the journal now would "
+		"take back an OLDER edit than the one asked for. Its before-state is in control.transactions; "
+		"re-drive the previous values by hand").arg(record.command);
+}
+
+/*! The typed failure for the journal step that just ran, when its device recreate
+ *  did not happen, or nullopt (BUG-CTL-1, SPEC A16).
+ *
+ *  A structural step's callback cannot return a failure - the journal's callbacks
+ *  are `void` and undo()/redo() are `void` - so a recreate that could not put the
+ *  captured settings back records it in the structural-support layer instead. The
+ *  caller clears the record BEFORE it runs the step, so only a failure THIS step
+ *  recorded is reported; the read consumes it, so nothing leaks into a later call.
+ *  Undo and redo answer alike: a redo that re-creates devices (plugin.copy,
+ *  chain.copy, rack.wrap) can fail the same way, and reporting `redone: true`
+ *  over a device that is not there is the same lie.
+ */
+std::optional<ControlResult> restoreFailureOf(const QString& verb, const QString& command)
+{
+	const std::optional<ControlResult> failed = takeStructuralRestoreFailure();
+	if (!failed) { return std::nullopt; }
+	// The step left its stack, but the device was NOT re-created: the half-restored
+	// instance is already gone, so what remains is the honest state, and the
+	// command's captured settings document is the bounded record that allows a
+	// rebuild by hand.
+	const QString what = command.isEmpty()
+		? QStringLiteral("the last journal step")
+		: QStringLiteral("'%1'").arg(command);
+	return ControlResult::failure(failed->errorKind,
+		QStringLiteral("cannot %1 %2: the recorded step ran but the device was NOT "
+			"restored - %3. The half-restored instance was removed again, so no "
+			"default-parameters device is left behind and the device stays absent; the "
+			"command's 'before.state_xml' is the bounded record that allows a rebuild by "
+			"hand").arg(verb, what, failed->errorMessage));
+}
+
 //! Unwinds one step of the engine's own undo stack.
 //!
 //! \a commands is how many COMMANDS that one step covered: 1 for an ordinary
@@ -256,36 +300,14 @@ QString irreversibleUndoMessage(const ControlRegistry::Transaction& tx,
 ControlResult undoThroughJournal(const QString& command, int commands = 1)
 {
 	ProjectJournal* journal = Engine::projectJournal();
-	// A structural step's callback cannot return a failure - the journal's
-	// callbacks are `void` and undo() is `void` - so a recreate that could not put
-	// the captured settings back records it in the structural-support layer
-	// instead (BUG-CTL-1). Clearing BEFORE the unwind means only a failure THIS
-	// step recorded can be reported; the read below consumes the record, so
-	// nothing leaks into a later undo.
-	clearStructuralRestoreFailure();
+	clearStructuralRestoreFailure();  // see restoreFailureOf
 	bool undone = false;
 	if (journal != nullptr && journal->canUndo())
 	{
 		journal->undo();
 		undone = true;
 	}
-	if (const std::optional<ControlResult> failed = takeStructuralRestoreFailure())
-	{
-		// The step left the stack, but the inverse did NOT happen: the device was
-		// not restored, and reporting success here is the SPEC A16 lie this
-		// answers. The half-restored instance is already gone, so what remains is
-		// the honest state - the removal still stands, and the command's captured
-		// 'before.state_xml' is the bounded record that allows a rebuild by hand.
-		const QString what = command.isEmpty()
-			? QStringLiteral("the last journal step")
-			: QStringLiteral("'%1'").arg(command);
-		return ControlResult::failure(failed->errorKind,
-			QStringLiteral("cannot undo %1: the recorded inverse ran but the device was NOT "
-				"restored - %2. The half-restored instance was removed again, so no "
-				"default-parameters device is left behind and the removal still stands; the "
-				"command's 'before.state_xml' is the bounded record that allows a rebuild by "
-				"hand").arg(what, failed->errorMessage));
-	}
+	if (std::optional<ControlResult> failed = restoreFailureOf(QStringLiteral("undo"), command)) { return *failed; }
 	QJsonObject result;
 	result.insert(QStringLiteral("undone"), undone);
 	result.insert(QStringLiteral("undone_command"), command);
@@ -300,6 +322,26 @@ ControlResult undoThroughJournal(const QString& command, int commands = 1)
 	{
 		result.insert(QStringLiteral("reason"), QStringLiteral("the engine's undo stack is empty"));
 	}
+	return ControlResult::success(result);
+}
+
+//! The undo of @a record by dispatching its inverse COMMAND (a file revision, say), or nullopt when its inverse is not a
+//! registered command and the journal is the way back. @a record is a copy - see undoLastCommand for why.
+std::optional<ControlResult> undoByCommand(ControlRegistry& registry, const ControlRegistry::Transaction& record)
+{
+	const QJsonObject inverse = record.inverse;
+	const QString op = inverse.value(QStringLiteral("op")).toString();
+	const QString applies = inverse.value(QStringLiteral("applies")).toString(QStringLiteral("journal"));
+	if (applies != QLatin1String("command") || !registry.hasCommand(op)) { return std::nullopt; }
+	const ControlResult applied = registry.invoke(op, inverse.value(QStringLiteral("args")).toObject());
+	if (!applied.ok) { return applied; }
+	QJsonObject result;
+	result.insert(QStringLiteral("undone"), true);
+	result.insert(QStringLiteral("undone_command"), record.command);
+	result.insert(QStringLiteral("undone_commands"), record.commands);
+	result.insert(QStringLiteral("class"), record.cls);
+	result.insert(QStringLiteral("restored_by"), op);
+	result.insert(QStringLiteral("inverse_result"), applied.result);
 	return ControlResult::success(result);
 }
 
@@ -367,22 +409,11 @@ ControlResult undoLastCommand(ControlRegistry& registry)
 	// 34870198514: the engine closed the control socket on that undo, with no reply
 	// and nothing written about the cause. Copying costs a handful of refcounts.
 	const ControlRegistry::Transaction record = *top;
-	const QJsonObject inverse = record.inverse;
-	const QString op = inverse.value(QStringLiteral("op")).toString();
-	const QString applies = inverse.value(QStringLiteral("applies")).toString(QStringLiteral("journal"));
-	if (applies == QLatin1String("command") && registry.hasCommand(op))
-	{
-		const ControlResult applied = registry.invoke(op, inverse.value(QStringLiteral("args")).toObject());
-		if (!applied.ok) { return applied; }
-		QJsonObject result;
-		result.insert(QStringLiteral("undone"), true);
-		result.insert(QStringLiteral("undone_command"), record.command);
-		result.insert(QStringLiteral("undone_commands"), record.commands);
-		result.insert(QStringLiteral("class"), record.cls);
-		result.insert(QStringLiteral("restored_by"), op);
-		result.insert(QStringLiteral("inverse_result"), applied.result);
-		return ControlResult::success(result);
-	}
+	if (std::optional<ControlResult> applied = undoByCommand(registry, record)) { return *applied; }
+	// A record with no step of its own refuses - unwinding would take back an older edit - unless its step arrives
+	// after the command answered (mastering.run's asynchronous run, applies "journal_later").
+	const bool stepLater = record.inverse.value(QStringLiteral("applies")).toString() == QLatin1String("journal_later");
+	if (record.step == 0 && journal != nullptr && !stepLater) { return ControlResult::failure(ControlErrorKind::Irreversible, unjournalledMessage(record)); }
 	return undoThroughJournal(record.command, record.commands);
 }
 
@@ -427,7 +458,9 @@ void registerRedoCommand(ControlRegistry& registry)
 	cmd.verb = QStringLiteral("redo");
 	cmd.description = QStringLiteral("Redo the last undone journal checkpoint. A structural "
 		"step whose inverse was a one-way action has nothing to redo, and says so: the redo "
-		"stack is emptied at that point rather than replaying an older step.");
+		"stack is emptied at that point rather than replaying an older step. A redo that "
+		"re-creates a device which cannot be built again FAILS typed, as control.undo does, "
+		"instead of answering 'redone'.");
 	cmd.argsSchema = objectSchema();
 	cmd.resultSchema = objectSchema({
 		{QStringLiteral("redone"), booleanProperty()},
@@ -437,11 +470,13 @@ void registerRedoCommand(ControlRegistry& registry)
 	cmd.handler = [](const QJsonObject&) {
 		auto* journal = Engine::projectJournal();
 		bool redone = false;
+		clearStructuralRestoreFailure();  // as control.undo: only THIS step's failure is reported
 		if (journal != nullptr && journal->canRedo())
 		{
 			journal->redo();
 			redone = true;
 		}
+		if (std::optional<ControlResult> failed = restoreFailureOf(QStringLiteral("redo"), QString())) { return *failed; }
 		QJsonObject result;
 		result.insert(QStringLiteral("redone"), redone);
 		result.insert(QStringLiteral("can_undo"), journal != nullptr && journal->canUndo());

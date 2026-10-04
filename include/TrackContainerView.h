@@ -63,6 +63,7 @@ private:
 namespace gui
 {
 
+class TrackPinStrip;
 class TrackView;
 
 class TrackContainerView : public QWidget, public ModelView,
@@ -151,6 +152,9 @@ public:
 
 	RubberBand *rubberBand() const;
 
+	//! 0.5.0 E21: the strip above the scroll area holding the pinned folders' rows (TrackPinStrip.h)
+	TrackPinStrip* pinStrip() const { return m_pinStrip; }
+
 public slots:
 	void realignTracks();
 	lmms::gui::TrackView * createTrackView( lmms::Track * _t );
@@ -205,6 +209,7 @@ private:
 	float m_ppb;
 
 	RubberBand * m_rubberBand;
+	TrackPinStrip* m_pinStrip;
 
 signals:
 	void positionChanged( const lmms::TimePos & _pos );

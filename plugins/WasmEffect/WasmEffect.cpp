@@ -23,6 +23,7 @@
 #include "WasmEffect.h"
 
 #include "AudioEngine.h"
+#include "ControlWasmSupport.h"
 #include "EffectChain.h"
 #include "Engine.h"
 #include "WasmEffectControls.h"
@@ -87,46 +88,75 @@ QString WasmEffect::modulePath() const
 
 bool WasmEffect::loadModule(const QString& path, QString* error)
 {
-	// A module's declared latency enters the PDC graph through the owning
-	// chain's cache, so every path out of here must refresh it: waiting for the
-	// next unrelated refresh left the graph misaligned by one host period
-	// (#605 audit C1b). Control thread only.
-	const auto refreshChainLatency = [this] {
-		if (EffectChain* chain = effectChain())
-		{
-			chain->refreshLatency();
-		}
-	};
-
 	if (path.isEmpty())
 	{
-		m_worker.stop();
+		stopWorker();
 		m_loaded = false;
 		m_controls->setModulePath(QString());
 		refreshChainLatency();
 		return false;
 	}
 
-	std::string err;
-	if (!m_worker.start(path.toStdString(), err))
+	// 0.5.0 E22: all or nothing. The module is compiled and instantiated on this thread first, with
+	// the checks the worker's lane makes; one that fails them leaves the running module - and the
+	// path the project saves - alone, where a failed load used to stop it and keep its path.
+	QString why;
+	if (!control::wasmProbeDeviceModule(path, &why))
 	{
-		m_loaded = false;
-		if (error != nullptr)
-		{
-			*error = QString::fromStdString(err);
-		}
-		refreshChainLatency();
-		return false;
+		return failLoad(error, why);
 	}
+	const QString previous = m_loaded ? modulePath() : QString();
+	if (startWorker(path, &why))
+	{
+		if (error != nullptr) { error->clear(); }
+		return true;
+	}
+	// The module is sound but the worker could not host it (the pool is full, or the load timed
+	// out): put back the module that was running rather than leave a device with nothing loaded.
+	if (!previous.isEmpty()) { startWorker(previous, nullptr); }
+	return failLoad(error, why);
+}
 
-	m_loaded = true;
-	m_controls->setModulePath(path);
-	if (error != nullptr)
-	{
-		error->clear();
-	}
+bool WasmEffect::failLoad(QString* error, const QString& why)
+{
+	if (error != nullptr) { *error = why; }
+	return false;
+}
+
+bool WasmEffect::startWorker(const QString& path, QString* error)
+{
+	stopWorker();
+	std::string err;
+	m_loaded = m_worker.start(path.toStdString(), err);
+	if (m_loaded) { m_controls->setModulePath(path); }
+	else if (error != nullptr) { *error = QString::fromStdString(err); }
 	refreshChainLatency();
-	return true;
+	return m_loaded;
+}
+
+void WasmEffect::stopWorker()
+{
+	// WasmWorker::stop() drains the block queues the audio thread pushes to (submit) and pops from
+	// (collect); single-producer/single-consumer queues, so the drain must not run while
+	// processImpl() does. The engine's model-change guard waits for the period to finish and holds
+	// the next one off for the drain only - not for the compile, which start() waits on with the
+	// worker in Loading, where processImpl() passes audio through without touching the queues.
+	AudioEngine* engine = Engine::audioEngine();
+	if (engine != nullptr) { engine->requestChangeInModel(); }
+	m_worker.stop();
+	if (engine != nullptr) { engine->doneChangeInModel(); }
+}
+
+void WasmEffect::refreshChainLatency()
+{
+	// A module's declared latency enters the PDC graph through the owning
+	// chain's cache, so every path out of a load must refresh it: waiting for
+	// the next unrelated refresh left the graph misaligned by one host period
+	// (#605 audit C1b). Control thread only.
+	if (EffectChain* chain = effectChain())
+	{
+		chain->refreshLatency();
+	}
 }
 
 int WasmEffect::latencyFrames() const

@@ -32,6 +32,7 @@
 #include "AudioEngine.h"
 #include "Engine.h"
 #include "SampleBuffer.h"
+#include "SampleBufferResample.h"
 #include "embed.h"
 #include "lmms_math.h"
 #include "plugin_export.h"
@@ -62,6 +63,8 @@ namespace
 
 constexpr float kMaxRate = 192000.f;
 constexpr float kHallSeconds = 2.f;
+//! Source frames past the kept length that are resampled too, so the last kept frames see the filter's whole reach.
+constexpr std::size_t kFilterReach = 4096;
 
 //! A generated hall: decaying, slightly darkening, uncorrelated noise per side (-60 dB at its end).
 std::vector<float> generatedHall(float rate, std::uint32_t seed)
@@ -92,22 +95,29 @@ void normalise(std::vector<float>* left, std::vector<float>* right)
 	for (float& x : *right) { x *= gain; }
 }
 
-//! One channel of @a buffer resampled (linear) to @a to Hz, at most @a limit long and at least one frame
-//! (a one-frame impulse at a higher rate would otherwise truncate to nothing and load as silence).
-std::vector<float> channelAt(const SampleBuffer& buffer, int channel, double to, std::size_t limit)
+//! @a decoded at @a rate Hz, through the engine's band-limited (windowed-sinc) resampler: a linear one folds a
+//! high-rate response's content above the new Nyquist frequency back into the audible band (review lane10 #4).
+//! Only the frames that can be kept are converted - a few more for the filter's reach - and a response so short
+//! that it would resample to nothing stays as it is: one frame, not silence.
+std::shared_ptr<const SampleBuffer> atRate(const std::shared_ptr<const SampleBuffer>& decoded, float rate, std::size_t limit)
+{
+	const double ratio = static_cast<double>(decoded->sampleRate()) / static_cast<double>(rate);
+	const auto wanted = static_cast<std::size_t>(std::ceil(static_cast<double>(limit) * ratio)) + kFilterReach;
+	std::shared_ptr<const SampleBuffer> source = decoded;
+	if (decoded->size() > wanted)
+	{
+		source = std::make_shared<const SampleBuffer>(decoded->data(), wanted, decoded->sampleRate());
+	}
+	const std::shared_ptr<const SampleBuffer> resampled = resampleBuffer(source, static_cast<sample_rate_t>(rate));
+	return resampled != nullptr && resampled->size() > 0 ? resampled : source;
+}
+
+//! One channel of @a buffer, at most @a limit long.
+std::vector<float> channelOf(const SampleBuffer& buffer, int channel, std::size_t limit)
 {
 	const SampleFrame* frames = buffer.data();
-	const std::size_t count = buffer.size();
-	const double step = static_cast<double>(buffer.sampleRate()) / to;
-	const auto length = std::min(limit, std::max<std::size_t>(1, static_cast<std::size_t>(static_cast<double>(count) / step)));
-	std::vector<float> out(length);
-	for (std::size_t i = 0; i < length; ++i)
-	{
-		const double at = static_cast<double>(i) * step;
-		const auto k = static_cast<std::size_t>(at);
-		const float next = k + 1 < count ? frames[k + 1][channel] : 0.f;
-		out[i] = frames[k][channel] + static_cast<float>(at - static_cast<double>(k)) * (next - frames[k][channel]);
-	}
+	std::vector<float> out(std::min(limit, buffer.size()));
+	for (std::size_t i = 0; i < out.size(); ++i) { out[i] = frames[i][channel]; }
 	return out;
 }
 
@@ -179,8 +189,9 @@ bool ConvolutionReverbEffect::loadImpulse(const QString& path)
 	{
 		const std::shared_ptr<const SampleBuffer> decoded = SampleBuffer::fromFile(path);
 		if (decoded == nullptr || decoded->size() == 0 || decoded->sampleRate() == 0) { return false; }
-		left = channelAt(*decoded, 0, rate, limit);
-		right = channelAt(*decoded, 1, rate, limit);
+		const std::shared_ptr<const SampleBuffer> impulse = atRate(decoded, rate, limit);
+		left = channelOf(*impulse, 0, limit);
+		right = channelOf(*impulse, 1, limit);
 	}
 	normalise(&left, &right);
 	install(std::make_unique<ConvolutionKernel>(left, right));

@@ -152,6 +152,7 @@ NoteRuler::NoteRuler(NoteEditor* editor)
 	setObjectName(QStringLiteral("noteRuler"));
 	setMouseTracking(true);
 	a11y::announce(this, tr("Bar ruler"), tr("Bars, and the clip's loop region; drag its end to resize the clip."));
+	NoteCanvas::repaintOnMeterChange(this);
 }
 
 QSize NoteRuler::sizeHint() const { return {200, kRulerHeight}; }
@@ -170,14 +171,15 @@ bool NoteRuler::overLoopEnd(int x) const
 
 int NoteRuler::draggedLength(int x) const
 {
-	const int bar = DefaultTicksPerBar;
-	const int step = std::max(m_state.gridTicks, bar / 4);
-	return std::max(step, NoteGrid::snap(static_cast<int>(m_state.grid.tickAtX(x)), step));
+	const int tick = static_cast<int>(m_state.grid.tickAtX(x));
+	const int step = std::max(m_state.gridTicks, m_state.grid.beatTicksAt(tick));  // at least the metre's beat
+	return std::max(step, NoteGrid::snap(tick, step));
 }
 
 void NoteRuler::paintEvent(QPaintEvent*)
 {
 	const tokens::Palette& pal = tokens::palette();
+	NoteCanvas::followSongMeter(m_state);
 	const NoteGrid& g = m_state.grid;
 	QPainter p(this);
 	p.fillRect(rect(), pal.raised);
@@ -191,16 +193,15 @@ void NoteRuler::paintEvent(QPaintEvent*)
 		p.fillRect(QRect(end - 2, 0, 3, height()), pal.accent);
 	}
 	p.setFont(tokens::font(tokens::TextRole::Caption));
-	const int bar = DefaultTicksPerBar;
-	const int barsPerLabel = std::max(1, static_cast<int>(std::ceil(48.0 / (bar * g.pixelsPerTick()))));
-	const int firstBar = static_cast<int>(g.firstVisibleTick()) / bar;
-	for (int b = firstBar; b * bar <= g.lastVisibleTick(); ++b)
+	// The bars in the song's metre (0.5.0 W2), numbered from the clip's start; a label at least every 48 px.
+	for (const NoteGrid::Bar& bar : g.barsBetween(g.firstVisibleTick(), g.lastVisibleTick()))
 	{
-		const int x = static_cast<int>(g.xOfTick(b * bar));
+		const int x = static_cast<int>(g.xOfTick(bar.tick));
 		p.fillRect(QRect(x, height() / 2, 1, height() / 2), pal.gridBar);
-		if (b % barsPerLabel != 0) { continue; }
+		const int barsPerLabel = std::max(1, static_cast<int>(std::ceil(48.0 / (bar.barTicks * g.pixelsPerTick()))));
+		if (bar.index % barsPerLabel != 0) { continue; }
 		p.setPen(pal.textMuted);
-		p.drawText(QRect(x + 3, 0, 60, height() - 6), Qt::AlignVCenter | Qt::AlignLeft, QString::number(b + 1));
+		p.drawText(QRect(x + 3, 0, 60, height() - 6), Qt::AlignVCenter | Qt::AlignLeft, QString::number(bar.index + 1));
 	}
 	p.fillRect(QRect(0, height() - 1, width(), 1), pal.base);
 }

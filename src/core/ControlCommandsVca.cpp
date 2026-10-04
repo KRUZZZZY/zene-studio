@@ -223,8 +223,9 @@ ControlResult removeGroup(const QJsonObject& args)
 				{QStringLiteral("phase_locked"), snap.locked},
 				{QStringLiteral("member_count"), static_cast<int>(snap.members.size())},
 				{QStringLiteral("track_count"), static_cast<int>(snap.tracks.size())}},
-			QStringLiteral("UNIMPLEMENTED: there is no vca.create call that restores "
-				"id, name, fader, flags and both member lists together"),
+			// E19: the recorded step below is the inverse (no vca.create call restores id,
+			// name, fader, flags and both member lists together), so the op names it.
+			QStringLiteral("control.undo"),
 			QJsonObject{{QStringLiteral("group"), id}},
 			true,
 			QStringLiteral("action checkpoint: the recorded undo step re-creates the group with "

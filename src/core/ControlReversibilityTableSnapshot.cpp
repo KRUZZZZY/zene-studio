@@ -127,20 +127,22 @@ const ReversibilityRow kSnapshotRows[] = {
 
 	R("rack.remove_chain", RC::Snapshot, false,
 		"the removed chain's effects and their settings are captured in the "
-		"transaction's before-state, but recreating a chain WITH its effects is "
-		"not one operation the registry can run - the same defect class "
-		"mixer.remove_channel records for a channel, and for the same reason: "
-		"the chain carries devices whose instantiation is a plugin load",
-		"bounded container snapshot: before-state holds the chain's own state "
-		"XML - EffectChain::saveState, the call the project file's <fxchain> is "
-		"written by, capped like every other state snapshot at 64 KiB - or, "
-		"when it exceeds that bound, only its size and the fact that it was "
-		"oversized",
-		"rack.add_chain, then plugin.load each device the captured XML names "
-		"onto the new chain and plugin.state_load its state. A rack with more "
-		"than one parallel chain does NOT get the removed chain's position "
-		"back, so a selection that named a later chain has to be set again with "
-		"rack.set_selected"),
+		"transaction's before-state. A rack APPENDS chains (Rack::addChain), so "
+		"only its LAST chain can be put back at its own index; an inner chain "
+		"would come back at the wrong place, which is why the class stays "
+		"snapshot rather than claiming an inverse for every call",
+		"the rack's LAST chain (W1, E19): a structural step re-creates it - the "
+		"chain appended again, each device re-created in order from its own "
+		"settings document (the path plugin.unload's undo takes), the selection "
+		"put back - and the record says reversible: true. An inner chain, or a "
+		"chain whose devices' settings exceed the 64 KiB bound: bounded container "
+		"snapshot only - before-state holds the chain's state XML "
+		"(EffectChain::saveState) or, over the bound, only its size",
+		"for an inner chain: rack.add_chain, then plugin.load each device the "
+		"captured XML names onto the new chain and plugin.state_load its state. "
+		"A rack with more than one parallel chain does NOT get the removed "
+		"chain's position back, so a selection that named a later chain has to "
+		"be set again with rack.set_selected"),
 	R("control.set_undo_depth", RC::Snapshot, true,
 		"the depth cap is not project state, but LOWERING it evicts undo steps, and an evicted step is gone. The previous cap is a bounded scalar, so the change itself is reversible - what it dropped is not",
 		"snapshot: the transaction's before-state holds the previous cap, and the recorded inverse is the command itself (control.undo dispatches control.set_undo_depth with steps/bytes set back). The journal's byte budget is not stored twice: it is COMPUTED from the steps the stack retains (ProjectJournal::retainedBytes) and reported by control.undo_depth",

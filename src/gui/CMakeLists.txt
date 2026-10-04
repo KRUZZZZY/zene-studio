@@ -103,6 +103,7 @@ SET(LMMS_SRCS
 	gui/ModulatorPanel.cpp
 	gui/TempoMapPanel.cpp
 	gui/TrackFolderMenu.cpp
+	gui/TrackPinStrip.cpp
 	gui/TrackRenderMenu.cpp
 	gui/UndoHistoryPanel.cpp
 	gui/VisibilitySetMenu.cpp

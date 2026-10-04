@@ -25,23 +25,17 @@
 #include "ClapEffectControlDialog.h"
 
 #include <QGridLayout>
-#include <QLabel>
 #include <QPalette>
+#include <QVBoxLayout>
 
 #include "ClapEffect.h"
 #include "ClapEffectControls.h"
-#include "Knob.h"
+#include "ClapKnobGrid.h"
 #include "PluginNativeEditor.h"
 #include "embed.h"
 
 namespace lmms::gui
 {
-
-namespace
-{
-//! number of knobs per row in the generated parameter view
-constexpr int KnobsPerRow = 4;
-}
 
 ClapEffectControlDialog::ClapEffectControlDialog(ClapEffectControls* controls) :
 	EffectControlDialog(controls)
@@ -51,36 +45,24 @@ ClapEffectControlDialog::ClapEffectControlDialog(ClapEffectControls* controls) :
 	pal.setBrush(backgroundRole(), PLUGIN_NAME::getIconPixmap("logo"));
 	setPalette(pal);
 
-	auto* layout = new QGridLayout(this);
+	auto* layout = new QVBoxLayout(this);
 	layout->setContentsMargins(8, 8, 8, 8);
 	layout->setSpacing(6);
-
-	int visible = 0;
-	for (auto* model : controls->paramModels())
-	{
-		const auto& descriptor = model->descriptor();
-		if (descriptor.hidden) { continue; }
-
-		auto* knob = new Knob(KnobType::Bright26, descriptor.title, this);
-		knob->setModel(model);
-		knob->setHintText(descriptor.title, QString{});
-		layout->addWidget(knob, visible / KnobsPerRow, visible % KnobsPerRow,
-			Qt::AlignCenter);
-		++visible;
-	}
-
-	if (visible == 0)
-	{
-		layout->addWidget(new QLabel(tr("This plug-in has no visible parameters."), this),
-			0, 0);
-	}
+	auto* grid = new QGridLayout();
+	grid->setSpacing(6);
+	layout->addLayout(grid);
+	fillClapKnobGrid(grid, controls->paramModels(), this, tr("This plug-in has no visible parameters."));
 	// R4.4: the plug-in's own editor, beside the generic knobs, through plugin.editor_open.
-	const int rows = visible == 0 ? 1 : (visible + KnobsPerRow - 1) / KnobsPerRow;
-	layout->addWidget(makeNativeEditorButton(controls->effect(), this), rows, 0, 1, KnobsPerRow);
+	layout->addWidget(makeNativeEditorButton(controls->effect(), this));
 
 	setLayout(layout);
 	adjustSize();
 	setFixedSize(sizeHint());
+	// W6: a parameter rescan rebuilt the models - the knobs follow (names, ranges, added and removed ones).
+	connect(controls, &ClapEffectControls::parametersChanged, this, [this, controls, grid] {
+		fillClapKnobGrid(grid, controls->paramModels(), this, tr("This plug-in has no visible parameters."));
+		setFixedSize(sizeHint());
+	});
 }
 
 } // namespace lmms::gui

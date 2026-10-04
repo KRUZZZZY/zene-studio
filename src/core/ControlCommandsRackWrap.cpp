@@ -107,6 +107,43 @@ int addWrappingChain(const QString& channel, int selectedAfter)
 	return index;
 }
 
+//! The devices rack.wrap moves: those the call names, refused when there are none or one is too large to record.
+bool devicesToWrap(const QJsonObject& args, const ControlTarget& target, std::vector<Effect*>* devices, ControlResult* error)
+{
+	if (!namedDevices(args, target, devices, error)) { return false; }
+	if (devices->empty())
+	{
+		*error = ControlResult::failure(ControlErrorKind::NotFound, QStringLiteral("the channel's chain has no devices to wrap"));
+		return false;
+	}
+	if (!devicesRecordable(*devices))
+	{
+		*error = ControlResult::failure(ControlErrorKind::Refused, QStringLiteral("a device's settings are too large to record for an undo"));
+		return false;
+	}
+	return true;
+}
+
+/*! rack.wrap's reply. W1: a device that could not be re-created in the new chain stops the rest there, and the reply
+ *  says so - 'stopped' with the reason and 'not_wrapped' with how many are missing - instead of answering success with
+ *  fewer 'plugins' than were named. The devices that did not come are gone from the channel's chain too, so control.undo
+ *  (one step) is the way back, and the reply says that as well. */
+QJsonObject wrapResult(const QString& channelId, int index, const QJsonArray& ids, int selected, int named, const ControlResult& error)
+{
+	QJsonObject result{{QStringLiteral("channel"), channelId}, {QStringLiteral("chain"), index}, {QStringLiteral("plugins"), ids},
+		{QStringLiteral("selected"), selected},
+		{QStringLiteral("__transaction"), transactionPayload({{QStringLiteral("channel"), channelId}}, QStringLiteral("control.undo"),
+			{}, true, QStringLiteral("action checkpoints: the recorded undo steps take the wrapped devices out of the new chain, put "
+				"them back in the channel's chain at their slots, and remove the chain and restore the selection"))}};
+	if (ids.size() < named)
+	{
+		result.insert(QStringLiteral("stopped"), QStringLiteral("%1; control.undo puts every device back in the channel's chain")
+			.arg(error.errorMessage.isEmpty() ? QStringLiteral("a device could not be re-created in the new chain") : error.errorMessage));
+		result.insert(QStringLiteral("not_wrapped"), named - static_cast<int>(ids.size()));
+	}
+	return result;
+}
+
 ControlResult wrap(const QJsonObject& args)
 {
 	ControlTarget target;
@@ -115,12 +152,7 @@ ControlResult wrap(const QJsonObject& args)
 	MixerChannel* channel = resolveRackChannel(channelId, &error);
 	if (channel == nullptr || !resolveControlTarget(channelId, &target, &error)) { return error; }
 	std::vector<Effect*> devices;
-	if (!namedDevices(args, target, &devices, &error)) { return error; }
-	if (devices.empty()) { return ControlResult::failure(ControlErrorKind::NotFound, QStringLiteral("the channel's chain has no devices to wrap")); }
-	if (!devicesRecordable(devices))
-	{
-		return ControlResult::failure(ControlErrorKind::Refused, QStringLiteral("a device's settings are too large to record for an undo"));
-	}
+	if (!devicesToWrap(args, target, &devices, &error)) { return error; }
 	Rack& rack = channel->m_rack;
 	const bool all = devices.size() == target.chain->effects().size();
 	QStringList states;
@@ -135,12 +167,7 @@ ControlResult wrap(const QJsonObject& args)
 		Rack* current = resolveRack(id, &unused);
 		return current != nullptr && index < current->chainCount() ? current->chain(index) : nullptr;
 	}, states, -1, &error);
-	const QJsonObject result{{QStringLiteral("channel"), channelIdOf(channel)}, {QStringLiteral("chain"), index},
-		{QStringLiteral("plugins"), ids}, {QStringLiteral("selected"), selected},
-		{QStringLiteral("__transaction"), transactionPayload({{QStringLiteral("channel"), channelIdOf(channel)}}, QStringLiteral("control.undo"),
-			{}, true, QStringLiteral("action checkpoints: the recorded undo steps take the wrapped devices out of the new chain, put "
-				"them back in the channel's chain at their slots, and remove the chain and restore the selection"))}};
-	return ControlResult::success(result);
+	return ControlResult::success(wrapResult(id, index, ids, selected, static_cast<int>(states.size()), error));
 }
 
 } // namespace
@@ -154,7 +181,8 @@ void registerRackWrapCommand(ControlRegistry& registry)
 	cmd.description = QStringLiteral("Wrap devices of a channel's own chain into a new chain of its rack, in order and with their "
 		"settings: 'plugins' (fx-<n> ids) or, left out, every device. Wrapping every device selects the new chain, so the "
 		"channel sounds as before and more chains can be layered beside it (rack.add_chain, rack.set_selected parallel); "
-		"wrapping some makes them a parallel layer beside the devices that stay. One undo step.");
+		"wrapping some makes them a parallel layer beside the devices that stay. A device that cannot be re-created stops the "
+		"rest: the reply then carries 'stopped' (why) and 'not_wrapped' (how many). One undo step.");
 	cmd.argsSchema = objectSchema({{QStringLiteral("channel"), stringProperty()}, {QStringLiteral("plugins"), arrayProperty()}},
 		{QStringLiteral("channel")});
 	cmd.resultSchema = objectProperty();

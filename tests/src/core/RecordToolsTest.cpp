@@ -51,12 +51,24 @@ ControlResult run(const QString& id, const QJsonObject& args = {})
 	return ControlRegistry::instance()->invoke(id, args);
 }
 
-//! A sample track with two take lanes, composited lane 0 then lane 1 at tick 192.
+//! A take clip on @a lane over [@a start, @a start + @a length) ticks.
+void addTake(SampleTrack* track, int lane, int start, int length)
+{
+	Clip* take = track->createClip(TimePos(start));
+	take->changeLength(TimePos(length));
+	take->setLaneIndex(lane);
+}
+
+//! A sample track with two take lanes, composited lane 0 then lane 1 at tick 192. The takes are real clips -
+//! lane 0's over [0, 384), lane 1's over [192, 384) - since comp.move_edge asks whether the growing take
+//! reaches (0.5.0 E2: a slip is relative to the take, so the takes themselves are what can refuse).
 SampleTrack* twoTakeTrack()
 {
 	auto* track = dynamic_cast<SampleTrack*>(Track::create(Track::Type::Sample, Engine::getSong()));
 	const QString id = control::trackIdOf(track);
 	for (int i = 0; i < 2; ++i) { run(QStringLiteral("comp.lane_add"), {{QStringLiteral("track"), id}}); }
+	addTake(track, 0, 0, 384);
+	addTake(track, 1, 192, 192);
 	TakeLaneModel& model = track->takeLanes();
 	model.selectSegment(0, 192, 0, 0);
 	model.selectSegment(192, 384, 1, 0);
@@ -91,11 +103,30 @@ private slots:
 		QCOMPARE(segments.size(), std::size_t{2});
 		QCOMPARE(segments[0].endTick, 240);
 		QCOMPARE(segments[0].sourceOffset, 0);  // lane 0 carries on in time
-		// Moving it back left: lane 1 would have to start before its own take does - refused.
+		// Moving it back left: lane 1 would have to start before its own take does (at 192) - refused.
 		QCOMPARE(run(QStringLiteral("comp.move_edge"), {{QStringLiteral("track"), id}, {QStringLiteral("tick"), 240}, {QStringLiteral("to"), 100}}).errorKind,
 			ControlErrorKind::Refused);
 		QVERIFY(run(QStringLiteral("control.undo")).ok);
 		QCOMPARE(track->takeLanes().segments()[0].endTick, 192);
+	}
+
+	//! 0.5.0 E2: the growing take keeps its SLIP (a slip is the segment's, not a position that grows with the tick),
+	//! so the grown range merges back into one segment; and the take refuses where its slipped read runs off its end.
+	void aSlippedTakeKeepsItsSlipAcrossAnEdgeMove()
+	{
+		SampleTrack* track = twoTakeTrack();
+		const QString id = control::trackIdOf(track);
+		QVERIFY(run(QStringLiteral("comp.select"), {{QStringLiteral("track"), id}, {QStringLiteral("begin"), 0}, {QStringLiteral("end"), 192},
+			{QStringLiteral("lane"), 0}, {QStringLiteral("srcpos"), 24}}).ok);
+		QVERIFY(run(QStringLiteral("comp.move_edge"), {{QStringLiteral("track"), id}, {QStringLiteral("tick"), 192}, {QStringLiteral("to"), 240}}).ok);
+		const std::vector<TakeLaneSegment>& segments = track->takeLanes().segments();
+		QCOMPARE(segments.size(), std::size_t{2});
+		QCOMPARE(segments[0].endTick, 240);
+		QCOMPARE(segments[0].sourceOffset, 24);
+		// Lane 0's take ends at 384: grown to 370 it would read up to 369 + 24 - past its end.
+		QCOMPARE(run(QStringLiteral("comp.move_edge"), {{QStringLiteral("track"), id}, {QStringLiteral("tick"), 240}, {QStringLiteral("to"), 370}}).errorKind,
+			ControlErrorKind::Refused);
+		QCOMPARE(segments[0].endTick, 240);
 	}
 
 	void oneCompChoiceOnSeveralTracks()

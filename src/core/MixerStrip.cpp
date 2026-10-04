@@ -241,9 +241,15 @@ bool applyPanMode(MixerChannel& channel, f_cnt_t frames)
 namespace
 {
 
+//! The most any device of @a chain that processed this period reports (catch-up W3): a bypassed or
+//! sleeping device turns nothing down, whatever its last processed block left in its meter.
 float chainReductionDb(const EffectChain& chain, float reduction)
 {
-	for (const Effect* effect : chain.effects()) { reduction = std::max(reduction, effect->gainReductionDb()); }
+	if (!chain.isEnabled()) { return reduction; }  // a switched-off chain processes nothing: its last readings are stale
+	for (const Effect* effect : chain.effects())
+	{
+		if (effect->isProcessingAudio()) { reduction = std::max(reduction, effect->gainReductionDb()); }
+	}
 	return reduction;
 }
 

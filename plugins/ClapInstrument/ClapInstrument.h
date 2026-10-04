@@ -96,7 +96,7 @@ public:
 	void closeNativeEditor() override;
 	bool nativeEditorOpen() const override;
 
-	auto paramModels() const -> const std::vector<ClapParamModel*>& { return m_paramModels; }
+	auto paramModels() const -> const std::vector<ClapParamModel*>& { return m_params.models(); }
 	auto modelForParam(std::uint32_t id) -> ClapParamModel*;
 
 	//! GUI thread: re-create the processing setup, e.g. after a sample rate
@@ -120,6 +120,10 @@ public:
 	bool handleMidiEvent(const MidiEvent& event, const TimePos& time = TimePos(),
 		f_cnt_t offset = 0) override;
 
+signals:
+	//! W6: the plug-in rescanned its parameters and the models were rebuilt; the view redraws its knobs.
+	void parametersChanged();
+
 protected:
 	auto processImpl(PlanarBufferView<const float, DynamicChannelCount> in,
 		PlanarBufferView<float, DynamicChannelCount> out) -> lmms::ProcessStatus override;
@@ -134,9 +138,9 @@ private slots:
 private:
 	clap::HostedPlugin m_plugin;
 	gui::PluginNativeEditor m_editor;
-	std::vector<ClapParamModel*> m_paramModels;
+	//! Every CLAP parameter as a model, in the plug-in's plain values, following its rescans (W6).
+	ClapParamModelList m_params;
 	QTimer* m_pollTimer = nullptr;
-	bool m_syncing = false;
 	std::atomic<bool> m_needsReprepare{false};
 };
 

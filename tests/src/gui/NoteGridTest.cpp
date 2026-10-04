@@ -26,16 +26,86 @@
 
 #include "NoteGrid.h"
 #include "NoteLanes.h"
+#include "TempoMap.h"
 
 using lmms::gui::NoteFold;
 using lmms::gui::NoteGrid;
 using lmms::gui::NoteLane;
+
+namespace
+{
+
+//! A metre change at song tick @a tick.
+lmms::TempoMapEvent metreAt(int tick, int numerator, int denominator)
+{
+	lmms::TempoMapEvent event;
+	event.tick = tick;
+	event.hasTimeSignature = true;
+	event.numerator = numerator;
+	event.denominator = denominator;
+	return event;
+}
+
+//! The start ticks of @a bars.
+QList<int> startsOf(const std::vector<NoteGrid::Bar>& bars)
+{
+	QList<int> starts;
+	for (const NoteGrid::Bar& bar : bars) { starts << bar.tick; }
+	return starts;
+}
+
+} // namespace
 
 class NoteGridTest : public QObject
 {
 	Q_OBJECT
 
 private slots:
+	//! 0.5.0 W2: without a metre the grid is 4/4, as it always was.
+	void theGridIsFourFourByDefault()
+	{
+		NoteGrid g;
+		QCOMPARE(startsOf(g.barsBetween(100, 600)), (QList<int>{0, 192, 384, 576}));
+		QCOMPARE(g.barsBetween(100, 600).back().index, 3);
+		QCOMPARE(g.beatTicksAt(500), 48);
+	}
+
+	//! 0.5.0 W2: the bars follow the song's time signature, not 4/4.
+	void theBarsFollowTheSongsMetre()
+	{
+		NoteGrid g;
+		g.setMeter(lmms::TempoMapTimeSignature{3, 4}, lmms::TempoMap{}, 0);
+		QCOMPARE(startsOf(g.barsBetween(0, 500)), (QList<int>{0, 144, 288, 432}));
+		g.setMeter(lmms::TempoMapTimeSignature{6, 8}, lmms::TempoMap{}, 0);
+		const std::vector<NoteGrid::Bar> bars = g.barsBetween(0, 300);
+		QCOMPARE(startsOf(bars), (QList<int>{0, 144, 288}));
+		QCOMPARE(bars.front().beatTicks, 24);  // an eighth
+		QCOMPARE(g.beatTicksAt(200), 24);
+	}
+
+	//! 0.5.0 W2: the tempo map's metre changes start bars at their own tick, seen from the clip's start;
+	//! a bar a change cuts short still counts, and an inactive map changes nothing.
+	void theTempoMapsMetreChangesStartBars()
+	{
+		lmms::TempoMap map;
+		QVERIFY(map.addEvent(metreAt(192, 3, 4)));   // a change before the clip: the clip starts in 3/4
+		QVERIFY(map.addEvent(metreAt(864, 7, 8)));   // in the clip, mid-bar of 3/4 (at clip tick 480)
+		NoteGrid g;
+		g.setMeter(lmms::TempoMapTimeSignature{4, 4}, map, 384);
+		QCOMPARE(g.meter().size(), std::size_t{1});  // inactive: the song's 4/4 throughout
+		QCOMPARE(startsOf(g.barsBetween(0, 400)), (QList<int>{0, 192, 384}));
+		map.setActive(true);
+		g.setMeter(lmms::TempoMapTimeSignature{4, 4}, map, 384);
+		const std::vector<NoteGrid::Bar> bars = g.barsBetween(0, 700);
+		QCOMPARE(startsOf(bars), (QList<int>{0, 144, 288, 432, 480, 648}));
+		QCOMPARE(bars[3].length, 48);    // cut short by the change
+		QCOMPARE(bars[4].index, 4);      // the cut bar counted: the change starts bar 5
+		QCOMPARE(bars[4].barTicks, 168);
+		QCOMPARE(g.beatTicksAt(479), 48);
+		QCOMPARE(g.beatTicksAt(480), 24);
+		QCOMPARE(startsOf(g.barsBetween(500, 700)), (QList<int>{480, 648}));  // the bar holding the start too
+	}
+
 	void ticksAndPixelsRoundTrip()
 	{
 		NoteGrid g;

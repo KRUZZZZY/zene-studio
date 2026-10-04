@@ -48,19 +48,26 @@ Three decisions say exactly what that means:
 
 1. **The composite is total over its span and gapless inside it** (design I6). A selection paints:
    `comp.select [begin,end) lane L` cuts that range out of every existing segment (splitting a
-   segment that straddles it, keeping its `srcpos` arithmetic consistent) and inserts the new
+   segment that straddles it; each piece keeps its slip) and inserts the new
    choice. There is deliberately **no "un-select"**: an unselected tick inside the span is the base
    lane's, which is the region a comp falls back to when no take was chosen.
 2. **Resolution is a pure function of the composite.** `TakeLaneModel::resolve(tick)` answers
-   `(lane, srcpos)` for a tick, or nothing at all outside the span — never a default lane.
+   `(lane, slip)` for a tick, or nothing at all outside the span — never a default lane.
    `takeAt()` / `resolveSource()` then map that tick onto the take clip of that lane **through
    `Clip::sourceFrameAt()`**, the mapping seam the clip wave froze (#611, design §2.4). So the
    frame the comp reads comes from the take's own mapping; a lane with no take covering the tick is
    reported **`unresolved`** rather than guessed at.
-3. **`srcpos` is recorded and reported, not yet applied.** It is the intended slip into the lane's
-   take (0 = that take's own start, which is what a plain "use this lane here" selection means).
-   The composite now PLAYS (R3.1, below), but playback gates each take by its own lane's spans
-   and reads the take at its own mapping, so `srcpos` is still not applied - see §5.
+3. **`srcpos` (on the wire; `slip` in the file) is a SLIP, and it is applied** (0.5.0 E2). It is constant
+   across a segment and relative to the take's own mapping: at tick t the segment reads its lane's
+   take at the take's position for t + slip, so 0 is the take at its own place (a plain "use this
+   lane here") and N pulls N ticks of later take material under the segment. Same lane, same slip,
+   contiguous = one read (merged); a different slip is a seam. Each take's play handle renders its
+   slipped spans from a second, lockstep read of its source (`include/CompSlip.h`), linear-rate
+   clips at their own pitch only; a warped or pitch-preserving take, an auditioned lane and a MIDI
+   take play unslipped, and `comp.select`/`comp.select_group` refuse a non-zero slip on an
+   instrument track. The pre-0.5.0 file attribute `srcpos` held a contradictory reading (an
+   absolute position that grew with each split) that nothing ever played; a load ignores it, so an
+   old project sounds as it did.
 
 **The non-destructive property, stated as the thing the test measures:** after every `comp.*`
 command, after a save and after a load, the takes' **files** and the takes' **in-memory buffers**
@@ -95,7 +102,7 @@ always did — section, `z:` binding and all):
       <z:tracklanes track="3">                        <!-- the track's lane list, by track id -->
         <z:lane id="12" index="0" name="take 1"/>     <!-- the lane ENTITY (lane- id family) -->
         <z:lane id="13" index="1"/>
-        <z:segment begin="0"   end="192" lane="1" srcpos="0"/>  <!-- srcpos only when non-zero -->
+        <z:segment begin="0"   end="192" lane="1" slip="24"/>  <!-- slip only when non-zero -->
         <z:segment begin="192" end="384" lane="0"/>
       </z:tracklanes>
     </z:lanes>
@@ -177,15 +184,16 @@ not have (`not_found`, naming the lanes it does have), a MIDI clip (`refused`), 
   sounds only there, with a 64-frame ramp at every lane switch, so a switch is a short crossfade and
   not a click. A track with no composite has no gate and renders byte-for-byte as before. **Audition**
   is built too: `comp.audition {track, lane}` plays that lane's takes whole and silences the others,
-  as monitoring state that is not saved or journalled. `TakeLaneCompPlaybackTest` holds both. Still not
-  built: applying `srcpos` (a take plays at its own mapping), and MIDI takes (the next item below).
+  as monitoring state that is not saved or journalled. `TakeLaneCompPlaybackTest` holds both. Since 0.5.0 E2
+  a slipped span reads its take slipped (§2.3).
 - **No interface at all.** No lane geometry, no lane header, no lane handle, no comping gesture,
   and no waveform drawing of the composite: `src/gui/` is untouched, and the release notes and
   `docs/KNOWN-LIMITATIONS.md` carry the one-line absence.
 - **No MIDI comping** (design §3: note-level merging across takes is a different edit) and **no
   flatten** (the destructive bounce a
   comp can end in; deliberately absent while nothing renders).
-- **The `srcpos` slip is not applied** by anything (§2.3).
+- **The slip is audio-only and linear-rate-only** (§2.3): a warped or pitch-preserving take plays a
+  slipped span unslipped, and at most 4 distinct slips per take are read (a fifth plays unslipped).
 - **Divergence from the design's `CompClip`**: the design sketches the composite as a new clip
   subclass (`compclip`) with child `<region>` elements, loaded through the clip path. This lane
   puts the composite on the **track** instead, because `Track::loadTrack` dispatches a clip element

@@ -48,6 +48,7 @@
 #include "ControlGrooveSupport.h" // readTicks - the shared bounded-tick reader
 #include "ControlRegistry.h"
 #include "MidiClip.h"
+#include "Track.h"
 
 namespace lmms
 {
@@ -173,7 +174,7 @@ ControlResult chordClear()
 	}
 	const int removed = track->size();
 	const QString before = track->toXml();
-	track->clear();
+	track->clearEvents();  // the followers stay: clearing the chords is not unfollowing
 	recordChordTrackRestore(before);
 
 	QJsonObject result = chordTrackState(*track);
@@ -181,6 +182,50 @@ ControlResult chordClear()
 	result.insert(QStringLiteral("__transaction"), chordTrackInverse(before,
 		QStringLiteral("control.undo"),
 		QJsonObject{{QStringLiteral("command"), QStringLiteral("chord.clear")}}));
+	return ControlResult::success(result);
+}
+
+
+/*! 0.5.0 E23: chord.follow_set - an instrument track follows the chord track while it plays (each note it
+ *  starts sounds on the nearest tone of the chord, or its scale, sounding there; the clip keeps its keys),
+ *  or stops following. One recorded action checkpoint, like every chord-track edit. */
+ControlResult chordFollow(const QJsonObject& args)
+{
+	ChordTrack* track = projectChordTrack();
+	ControlResult error;
+	Track* target = track != nullptr ? resolveTrack(args.value(QStringLiteral("track")).toString(), &error) : nullptr;
+	if (target == nullptr)
+	{
+		return track != nullptr ? error : ControlResult::failure(ControlErrorKind::Busy,
+			QStringLiteral("the song is not up yet, so there is no chord track to follow"));
+	}
+	if (target->type() != Track::Type::Instrument)
+	{
+		return ControlResult::failure(ControlErrorKind::Refused,
+			QStringLiteral("%1 is not an instrument track: only notes can follow the chord track").arg(trackIdOf(target)));
+	}
+	ChordFollowMode mode = ChordFollowMode::Chord;
+	if (args.contains(QStringLiteral("mode")) && !ChordTrack::followModeFromName(args.value(QStringLiteral("mode")).toString(), &mode))
+	{
+		return ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("'mode' is off, chord or scale"));
+	}
+	const ChordFollowMode previous = track->followOf(target->id());
+	QJsonObject result = chordTrackState(*track);
+	result.insert(QStringLiteral("track"), trackIdOf(target));
+	result.insert(QStringLiteral("mode"), ChordTrack::followModeName(mode));
+	result.insert(QStringLiteral("previous"), ChordTrack::followModeName(previous));
+	result.insert(QStringLiteral("changed"), previous != mode);
+	if (previous == mode) { return ControlResult::success(result); }  // nothing changed: no step
+	const QString before = track->toXml();
+	if (!track->setFollow(target->id(), mode))
+	{
+		return ControlResult::failure(ControlErrorKind::Refused,
+			QStringLiteral("%1 tracks already follow the chord track").arg(ChordTrack::MaxFollowers));
+	}
+	recordChordTrackRestore(before);
+	result.insert(QStringLiteral("followers"), chordTrackState(*track).value(QStringLiteral("followers")));
+	result.insert(QStringLiteral("__transaction"), chordTrackInverse(before, QStringLiteral("chord.follow_set"),
+		{{QStringLiteral("track"), trackIdOf(target)}, {QStringLiteral("mode"), ChordTrack::followModeName(previous)}}));
 	return ControlResult::success(result);
 }
 
@@ -225,7 +270,7 @@ ControlResult chordDetectToTrack(const QJsonObject& args)
 	const std::vector<ChordDetect::ChordMatch> matches =
 		ChordDetect::detectChords(clip->notes(), options);
 	const QString before = track->toXml();
-	if (!append) { track->clear(); }
+	if (!append) { track->clearEvents(); }
 
 	int written = 0;
 	int skipped = 0;
@@ -367,6 +412,33 @@ void registerChordEditCommands(ControlRegistry& registry)
 		});
 		cmd.mutating = true;
 		cmd.handler = [](const QJsonObject& args) { return chordDetectToTrack(args); };
+		registry.registerCommand(cmd);
+	}
+
+	{
+		ControlCommand cmd;
+		cmd.id = QStringLiteral("chord.follow_set");
+		cmd.group = kGroup;
+		cmd.verb = QStringLiteral("follow_set");
+		cmd.description = QStringLiteral("Make an instrument track FOLLOW the chord track while it plays (chord "
+			"follow): each note the track starts in the arrangement sounds on the nearest tone (down on a tie) of the "
+			"chord sounding where it starts - 'mode' chord (the default) - or of that chord's scale - 'mode' scale, "
+			"the chord where it names no scale - and the clip keeps the keys it was written with (note.follow_chords "
+			"is the destructive twin). 'mode' off stops it. Where the chord track is silent the notes play as written. "
+			"Saved with the chord track. Reversible: one recorded action checkpoint; setting the mode a track "
+			"already has changes nothing and records nothing ('changed' false).");
+		cmd.argsSchema = objectSchema({
+			{QStringLiteral("track"), stringProperty()},
+			{QStringLiteral("mode"), enumProperty({QStringLiteral("off"), QStringLiteral("chord"), QStringLiteral("scale")})},
+		}, {QStringLiteral("track")});
+		cmd.resultSchema = chordTrackStateSchema({
+			{QStringLiteral("track"), stringProperty()},
+			{QStringLiteral("mode"), stringProperty()},
+			{QStringLiteral("previous"), stringProperty()},
+			{QStringLiteral("changed"), booleanProperty()},
+		});
+		cmd.mutating = true;
+		cmd.handler = [](const QJsonObject& args) { return chordFollow(args); };
 		registry.registerCommand(cmd);
 	}
 }

@@ -276,6 +276,59 @@ private slots:
 			"a new project inherited the previous project's chord track");
 	}
 
+	//! 0.5.0 E23, chord follow: a follower's note moves to the nearest tone (down on a tie) of the chord - or
+	//! its scale - sounding where it starts; a track that does not follow, and a silent stretch, play as written.
+	void followedKeySnapsToTheSoundingChord()
+	{
+		ChordTrack track;
+		ChordEvent cMajor = eventAt(0, QStringLiteral("Major"), 0, 4, 192);
+		cMajor.scale = QStringLiteral("Major");
+		QVERIFY(track.set(cMajor));
+		QVERIFY(track.set(eventAt(192, QStringLiteral("minor"), 9, 4, 192)));  // A minor (the chord is "minor"; "Minor" is the scale)
+		QVERIFY(track.setFollow(7, ChordFollowMode::Chord));
+		QVERIFY(track.setFollow(8, ChordFollowMode::Scale));
+
+		QCOMPARE(track.followedKey(7, 61, 10), 60);   // C# -> C, one down
+		QCOMPARE(track.followedKey(7, 66, 10), 67);   // F# -> G: the nearest chord tone
+		QCOMPARE(track.followedKey(7, 64, 10), 64);   // a chord tone stays
+		QCOMPARE(track.followedKey(8, 66, 10), 65);   // scale mode: F# -> F (F and G tie; down wins)
+		QCOMPARE(track.followedKey(7, 62, 200), 60);  // A minor {A,C,E}: D -> C (C and E tie two away; down wins)
+		QCOMPARE(track.followedKey(9, 61, 10), 61);   // not a follower
+		QCOMPARE(track.followedKey(7, 61, 500), 61);  // past the last chord: silent, as written
+	}
+
+	//! The followers are part of the chord track: saved as <follow> children, restored, kept by clearEvents,
+	//! dropped by clear, and a track that only has followers still persists.
+	void followersPersistWithTheTrack()
+	{
+		ChordTrack track;
+		QVERIFY(!track.setFollow(-1, ChordFollowMode::Chord));
+		QVERIFY(track.setFollow(4, ChordFollowMode::Scale));
+		QVERIFY(track.shouldPersist());
+		QVERIFY(track.set(eventAt(0, QStringLiteral("Major"))));
+
+		ChordTrack copy;
+		QVERIFY(copy.fromXml(track.toXml()));
+		QCOMPARE(copy.followOf(4), ChordFollowMode::Scale);
+		QCOMPARE(copy.size(), 1);
+
+		const unsigned revision = copy.revision();
+		copy.clearEvents();
+		QVERIFY(copy.revision() != revision);
+		QCOMPARE(copy.followOf(4), ChordFollowMode::Scale);
+		QVERIFY(copy.setFollow(4, ChordFollowMode::Off));
+		QCOMPARE(copy.followOf(4), ChordFollowMode::Off);
+		QVERIFY(copy.followers().empty());
+
+		track.clear();
+		QVERIFY(track.followers().empty());
+		QVERIFY(!track.shouldPersist());
+		ChordFollowMode mode = ChordFollowMode::Off;
+		QVERIFY(ChordTrack::followModeFromName(QStringLiteral("scale"), &mode));
+		QCOMPARE(mode, ChordFollowMode::Scale);
+		QVERIFY(!ChordTrack::followModeFromName(QStringLiteral("loud"), &mode));
+	}
+
 	void vocabularyCountsAreThePianoRollsOwn()
 	{
 		// The vocabulary is the pre-existing table: 95 entries, split by

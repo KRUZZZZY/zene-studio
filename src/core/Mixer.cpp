@@ -594,11 +594,12 @@ void MixerChannel::doProcessing()
 					? senderRoute->feedbackCommitted()
 					: senderRoute->compensatedBuffer(postinserts::sendSource(*sender, *senderRoute), fpp);
 
-				if( senderRoute->pan()->value() != 0.0f )
+				if( sendIsPanned( *senderRoute ) )
 				{
-					// 0.5.0 L09 (MX-048): a send with its own pan (MixerSendPan.cpp). A
-					// centred send - every send of every older project - takes the
-					// branches below unchanged.
+					// 0.5.0 L09 (MX-048): a send with its own pan (MixerSendPan.cpp),
+					// sample-exact since 0.5.0 W4 (a moving pan is picked even when it
+					// ends the block at centre). A centred send - every send of every
+					// older project - takes the branches below unchanged.
 					addPannedSend( m_buffer, ch_buf, *senderRoute, *sender, fpp );
 				}
 				else if( senderRoute->preFader() )

@@ -26,6 +26,7 @@
 #define LMMS_SONG_H
 
 #include <array>
+#include <atomic>
 #include <cstdint>
 #include <memory>
 
@@ -323,6 +324,12 @@ public:
 	auto getTimeline(PlayMode mode) const -> const Timeline& { return m_timelines[static_cast<std::size_t>(mode)]; }
 	auto getTimeline() -> Timeline& { return getTimeline(m_playMode); }
 	auto getTimeline() const -> const Timeline& { return getTimeline(m_playMode); }
+
+	/*! 0.5.0 W2: how many times playback has wrapped round a loop (the song's loop, a pattern's or a
+	 *  looped clip's) - not a seek, which moves the position too. The audio thread bumps it before the
+	 *  wrap's jump is announced, so a playbackPositionJumped listener can tell the two apart; any thread
+	 *  may read it. It only counts up and starts at 0 with the song. */
+	unsigned loopWraps() const { return m_loopWraps.load(std::memory_order_acquire); }
 
 	void updateLength();
 	bar_t length() const
@@ -688,6 +695,11 @@ private:
 	 *  nothing else - the byte-identity guarantee on the audio path. */
 	void processModulation();
 
+	/*! Puts the play position back at @a begin when it is outside [@a begin, @a end) and says whether
+	 *  it moved. With @a wrapping (the tick loop's checks), a position that played on to @a end is a
+	 *  loop wrap and m_loopWraps counts it; a position before @a begin is a seek's, never a wrap. */
+	bool enforceLoop(const TimePos& begin, const TimePos& end, bool wrapping);
+
 	void setModified(bool value);
 
 	void setProjectFileName(QString const & projectFileName);
@@ -701,6 +713,8 @@ private:
 	//! The tempo the follower last applied, so a block costs one comparison
 	//! when nothing changed. -1 means "nothing applied yet".
 	int m_tempoMapAppliedTempo = -1;
+	//! The loop wraps the audio thread played (loopWraps()).
+	std::atomic<unsigned> m_loopWraps{0};
 	//! The modulation layer and its lock-free hand-off to the audio thread
 	//! (#602, docs/MODULATION.md).
 	ModulationLayerPublisher m_modulationLayer;

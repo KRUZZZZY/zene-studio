@@ -57,7 +57,8 @@ void MidiControllerMap::build(IEditController* controller, std::int32_t busIndex
 	}
 }
 
-auto MidiControllerMap::apply(const MidiEventIn& midi, IParameterChanges* changes) const -> bool
+auto MidiControllerMap::apply(const MidiEventIn& midi, IParameterChanges* changes, std::int32_t sampleOffset) const
+	-> bool
 {
 	int number = -1;
 	ParamValue value = 0.0;
@@ -73,12 +74,59 @@ auto MidiControllerMap::apply(const MidiEventIn& midi, IParameterChanges* change
 	int32 queueIndex = 0;
 	if (IParamValueQueue* queue = changes->addParameterData(static_cast<ParamID>(id), queueIndex))
 	{
-		int32 pointIndex = 0;
-		// Block rate: the change is a point at the request's first frame, as host parameter
-		// changes already are (HostedPlugin::process step 0).
-		queue->addPoint(0, value, pointIndex);
+		// 0.5.0 W4: sample accurate - the point sits at the controller's own frame, not at the
+		// request's first frame (HostedPlugin::Impl::runChunk slices it into the right chunk).
+		addBoundedPoint(queue, sampleOffset, value);
 	}
 	return true;
+}
+
+void addBoundedPoint(IParamValueQueue* queue, std::int32_t sampleOffset, double value)
+{
+	const int32 count = queue->getPointCount();
+	int32 lastOffset = 0;
+	ParamValue lastValue = 0.0;
+	// Full: write over the last point (addPoint replaces a point at an equal offset in place).
+	if (count >= kMaxPointsPerParameter && queue->getPoint(count - 1, lastOffset, lastValue) == kResultTrue)
+	{
+		sampleOffset = lastOffset;
+	}
+	int32 pointIndex = 0;
+	queue->addPoint(sampleOffset, value, pointIndex);
+}
+
+namespace
+{
+
+//! One parameter's slice of sliceParameterChanges: its points in [begin, end), rebased to begin.
+void sliceQueue(IParamValueQueue& queue, IParameterChanges& to, int32 begin, int32 end)
+{
+	IParamValueQueue* target = nullptr;
+	const int32 points = queue.getPointCount();
+	for (int32 p = 0; p < points; ++p)
+	{
+		int32 sampleOffset = 0;
+		ParamValue value = 0.0;
+		if (queue.getPoint(p, sampleOffset, value) != kResultTrue || sampleOffset < begin || sampleOffset >= end)
+		{
+			continue;
+		}
+		int32 index = 0;
+		if (target == nullptr) { target = to.addParameterData(queue.getParameterId(), index); }
+		if (target == nullptr) { return; }
+		target->addPoint(sampleOffset - begin, value, index);
+	}
+}
+
+} // namespace
+
+void sliceParameterChanges(IParameterChanges& from, IParameterChanges& to, std::int32_t offset, std::int32_t chunk)
+{
+	const int32 count = from.getParameterCount();
+	for (int32 i = 0; i < count; ++i)
+	{
+		if (IParamValueQueue* queue = from.getParameterData(i)) { sliceQueue(*queue, to, offset, offset + chunk); }
+	}
 }
 
 } // namespace lmms::vst3

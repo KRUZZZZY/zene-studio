@@ -147,10 +147,18 @@ auto drainMidiIntoEventList(MidiQueue& queue, std::vector<MidiEventIn>& scratch,
 		scratch[position] = midi;
 		++count;
 	}
+	// A parameter point must lie inside the request ([0, frames), ivstparameterchanges.h), so a
+	// mapped controller is bounded to its last frame; an event keeps the inherited [0, frames] rule.
+	const int lastFrame = std::max(frames - 1, 0);
 	for (std::size_t i = 0; i < count; ++i)
 	{
-		// E10: a controller the plug-in mapped to a parameter becomes a parameter change.
-		if (controllers != nullptr && controllers->apply(scratch[i], changes)) { continue; }
+		// E10: a controller the plug-in mapped to a parameter becomes a parameter change, at its own
+		// frame (0.5.0 W4).
+		if (controllers != nullptr
+			&& controllers->apply(scratch[i], changes, std::clamp(scratch[i].frameOffset, 0, lastFrame)))
+		{
+			continue;
+		}
 		Event event{};
 		if (!midiToVst3Event(scratch[i], busIndex, &event)) { continue; }
 		event.sampleOffset = std::clamp(scratch[i].frameOffset, 0, frames);

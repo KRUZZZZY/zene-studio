@@ -59,7 +59,11 @@ public:
 
 	//! Control thread: load (or replace) the sandboxed module. The module is
 	//! compiled and instantiated on the worker thread; this blocks until it is
-	//! ready (or failed). Returns false and sets \p error on failure.
+	//! ready (or failed). Returns false and sets \p error on failure. All or
+	//! nothing since 0.5.0 E22: a module that cannot be hosted leaves the one
+	//! running (and its saved path) untouched. An empty path unloads. Usable on
+	//! an instance in any chain - this is what the dialog's chooser and the
+	//! wasm.device_load command (through the device's settings) both call.
 	bool loadModule(const QString& path, QString* error = nullptr);
 
 	bool isModuleLoaded() const { return m_loaded; }
@@ -87,6 +91,15 @@ protected:
 	ProcessStatus processImpl(SampleFrame* buf, const f_cnt_t frames) override;
 
 private:
+	//! Control thread: stop the worker, start it on \p path and record the path
+	//! when it is hosted; \p error receives the worker's reason otherwise.
+	bool startWorker(const QString& path, QString* error);
+	//! Control thread: the worker stopped under the engine's model-change guard.
+	void stopWorker();
+	//! Control thread: the owning chain's latency cache refreshed (PDC).
+	void refreshChainLatency();
+	static bool failLoad(QString* error, const QString& why);
+
 	//! Audio thread: append \p frames of dry input to the compensation line.
 	void pushDry(const SampleFrame* buf, std::uint32_t frames);
 	//! Audio thread: read back \p frames from \p delay frames in the past.

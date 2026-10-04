@@ -24,10 +24,15 @@
 
 #include "ChordTrack.h"
 
+#include <algorithm>
+
 #include <QDomDocument>
 #include <QDomElement>
 
+#include "AudioEngine.h"
 #include "ChordVocabulary.h"
+#include "Engine.h"
+#include "Note.h"
 
 namespace lmms
 {
@@ -46,8 +51,129 @@ const QString kRoot = QStringLiteral("root");
 const QString kOctave = QStringLiteral("octave");
 const QString kChord = QStringLiteral("chord");
 const QString kScale = QStringLiteral("scale");
+// 0.5.0 E23: one <follow track= mode=> child per following track.
+const QString kFollowElement = QStringLiteral("follow");
+const QString kFollowTrack = QStringLiteral("track");
+const QString kFollowMode = QStringLiteral("mode");
+
+//! The pitch classes of @a chord (a chord or scale entry) on @a root, one bit each; 0 for no entry.
+std::uint16_t toneMask(const ChordVocabulary::Chord* chord, int root)
+{
+	if (chord == nullptr) { return 0; }
+	std::uint16_t mask = 0;
+	for (const int pitchClass : ChordVocabulary::pitchClassesOf(*chord, root)) { mask |= std::uint16_t(1u << pitchClass); }
+	return mask;
+}
+
+//! The key nearest @a key whose pitch class is in @a mask (down on a tie), or @a key. No allocation.
+int nearestTone(int key, std::uint16_t mask)
+{
+	if (mask == 0) { return key; }
+	for (int distance = 0; distance < 12; ++distance)
+	{
+		for (const int candidate : {key - distance, key + distance})
+		{
+			if (candidate < 0 || candidate >= NumKeys) { continue; }
+			if ((mask >> ChordVocabulary::pitchClassOf(candidate) & 1) != 0) { return candidate; }
+		}
+	}
+	return key;
+}
 
 } // namespace
+
+
+void ChordTrack::edit(const std::function<void()>& change)
+{
+	// followedKey() reads the events, their tones and the followers on the audio thread.
+	AudioEngine* engine = Engine::audioEngine();
+	if (engine != nullptr) { engine->requestChangeInModel(); }
+	change();
+	m_tones.resize(m_events.size());
+	for (std::size_t i = 0; i < m_events.size(); ++i)
+	{
+		const ChordEvent& event = m_events[i];
+		m_tones[i].chord = toneMask(ChordVocabulary::chordByName(event.chord), event.root);
+		m_tones[i].scale = event.scale.isEmpty() ? 0 : toneMask(ChordVocabulary::scaleByName(event.scale), event.root);
+	}
+	++m_revision;
+	if (engine != nullptr) { engine->doneChangeInModel(); }
+}
+
+
+void ChordTrack::clear()
+{
+	edit([this] {
+		m_events.clear();
+		m_followers.clear();
+	});
+}
+
+
+QString ChordTrack::followModeName(ChordFollowMode mode)
+{
+	switch (mode)
+	{
+	case ChordFollowMode::Chord: return QStringLiteral("chord");
+	case ChordFollowMode::Scale: return QStringLiteral("scale");
+	default: return QStringLiteral("off");
+	}
+}
+
+
+bool ChordTrack::followModeFromName(const QString& name, ChordFollowMode* mode)
+{
+	for (const ChordFollowMode candidate : {ChordFollowMode::Off, ChordFollowMode::Chord, ChordFollowMode::Scale})
+	{
+		if (name == followModeName(candidate)) { *mode = candidate; return true; }
+	}
+	return false;
+}
+
+
+void ChordTrack::clearEvents()
+{
+	edit([this] { m_events.clear(); });
+}
+
+
+ChordFollowMode ChordTrack::followOf(int trackId) const
+{
+	for (const ChordFollower& follower : m_followers)
+	{
+		if (follower.trackId == trackId) { return follower.mode; }
+	}
+	return ChordFollowMode::Off;
+}
+
+
+bool ChordTrack::setFollow(int trackId, ChordFollowMode mode)
+{
+	if (trackId < 0) { return false; }
+	const auto it = std::find_if(m_followers.begin(), m_followers.end(),
+		[trackId](const ChordFollower& follower) { return follower.trackId == trackId; });
+	if (it == m_followers.end() && mode != ChordFollowMode::Off && static_cast<int>(m_followers.size()) >= MaxFollowers)
+	{
+		return false;
+	}
+	edit([this, it, trackId, mode] {
+		if (it != m_followers.end() && mode == ChordFollowMode::Off) { m_followers.erase(it); }
+		else if (it != m_followers.end()) { it->mode = mode; }
+		else if (mode != ChordFollowMode::Off) { m_followers.push_back({trackId, mode}); }
+	});
+	return true;
+}
+
+
+int ChordTrack::followedKey(int trackId, int key, tick_t pos) const
+{
+	const ChordFollowMode mode = followOf(trackId);
+	if (mode == ChordFollowMode::Off) { return key; }
+	const int index = soundingIndex(pos);
+	if (index < 0 || index >= static_cast<int>(m_tones.size())) { return key; }
+	const EventTones& tones = m_tones[static_cast<std::size_t>(index)];
+	return nearestTone(key, mode == ChordFollowMode::Scale && tones.scale != 0 ? tones.scale : tones.chord);
+}
 
 
 int ChordTrack::indexAt(tick_t pos) const
@@ -67,13 +193,20 @@ const ChordEvent* ChordTrack::findAt(tick_t pos) const
 }
 
 
-const ChordEvent* ChordTrack::soundingAt(tick_t pos) const
+int ChordTrack::soundingIndex(tick_t pos) const
 {
 	int last = -1;
 	for (int index = 0; index < size() && m_events[static_cast<std::size_t>(index)].pos <= pos; ++index) { last = index; }
-	if (last < 0) { return nullptr; }
+	if (last < 0) { return -1; }
 	const ChordEvent& event = m_events[static_cast<std::size_t>(last)];
-	return pos - event.pos < effectiveLength(last, DefaultEventTicks) ? &event : nullptr;  // no pos + length overflow
+	return pos - event.pos < effectiveLength(last, DefaultEventTicks) ? last : -1;  // no pos + length overflow
+}
+
+
+const ChordEvent* ChordTrack::soundingAt(tick_t pos) const
+{
+	const int index = soundingIndex(pos);
+	return index < 0 ? nullptr : &m_events[static_cast<std::size_t>(index)];
 }
 
 
@@ -168,7 +301,7 @@ bool ChordTrack::set(const ChordEvent& event, bool* replaced)
 	const int existing = indexAt(event.pos);
 	if (existing >= 0)
 	{
-		m_events[static_cast<std::size_t>(existing)] = event;
+		edit([this, existing, &event] { m_events[static_cast<std::size_t>(existing)] = event; });
 		if (replaced != nullptr) { *replaced = true; }
 		return true;
 	}
@@ -178,7 +311,7 @@ bool ChordTrack::set(const ChordEvent& event, bool* replaced)
 	// nothing downstream has to sort and index i is always the i-th chord.
 	std::size_t slot = 0;
 	while (slot < m_events.size() && m_events[slot].pos < event.pos) { ++slot; }
-	m_events.insert(m_events.begin() + static_cast<std::ptrdiff_t>(slot), event);
+	edit([this, slot, &event] { m_events.insert(m_events.begin() + static_cast<std::ptrdiff_t>(slot), event); });
 	return true;
 }
 
@@ -187,7 +320,7 @@ bool ChordTrack::removeAt(tick_t pos)
 {
 	const int index = indexAt(pos);
 	if (index < 0) { return false; }
-	m_events.erase(m_events.begin() + index);
+	edit([this, index] { m_events.erase(m_events.begin() + index); });
 	return true;
 }
 
@@ -209,6 +342,13 @@ QDomElement ChordTrack::toElement(QDomDocument& doc) const
 		chordElement.setAttribute(kChord, event.chord);
 		if (!event.scale.isEmpty()) { chordElement.setAttribute(kScale, event.scale); }
 		trackElement.appendChild(chordElement);
+	}
+	for (const ChordFollower& follower : m_followers)
+	{
+		QDomElement followElement = doc.createElement(kFollowElement);
+		followElement.setAttribute(kFollowTrack, follower.trackId);
+		followElement.setAttribute(kFollowMode, followModeName(follower.mode));
+		trackElement.appendChild(followElement);
 	}
 	return trackElement;
 }
@@ -240,6 +380,13 @@ bool ChordTrack::loadSettings(const QDomElement& element)
 		// An unreadable event is skipped rather than loaded as a wrong chord:
 		// a name this build cannot resolve is a file this build cannot play.
 		set(event, nullptr);
+	}
+	for (QDomElement child = element.firstChildElement(kFollowElement); !child.isNull();
+		child = child.nextSiblingElement(kFollowElement))
+	{
+		ChordFollowMode mode = ChordFollowMode::Chord;  // an unknown mode follows the chord, the default
+		followModeFromName(child.attribute(kFollowMode), &mode);
+		setFollow(child.attribute(kFollowTrack, QStringLiteral("-1")).toInt(), mode);
 	}
 	return true;
 }

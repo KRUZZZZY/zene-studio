@@ -190,7 +190,7 @@ ControlResult handleSidechainWrite(const QJsonObject& args)
 	inverseArgs.insert(QStringLiteral("to"), channelIdOf(ends.to));
 	QJsonObject transaction = transactionPayload(before,
 		existed ? QStringLiteral("mixer.sidechain_to")
-				: QStringLiteral("UNIMPLEMENTED: remove this sidechain send"),
+				: QStringLiteral("control.undo"),  // E19: the recorded step deletes the send
 		inverseArgs, true,
 		existed
 			? QStringLiteral("action checkpoint: the recorded undo step writes the captured amount "

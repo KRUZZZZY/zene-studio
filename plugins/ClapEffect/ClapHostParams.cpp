@@ -22,10 +22,11 @@
  *
  */
 
-//! The parameter and state path of the CLAP host: the parameter getters and
-//! setters (clap.params, mirrored into the lock-free slots process() publishes)
-//! and the state blob (clap.state). Split out of ClapHost.cpp beside the note
-//! path, so the host core file stays under the file-length ratchet.
+//! The parameter and state path of the CLAP host: the parameter list and its
+//! rescans (W6), the parameter getters and setters (clap.params, mirrored into
+//! the lock-free slots process() publishes) and the state blob (clap.state).
+//! Split out of ClapHost.cpp beside the note path, so the host core file stays
+//! under the file-length ratchet.
 
 #include "ClapHost.h"
 #include "ClapHostInternals.h"
@@ -33,6 +34,8 @@
 #include <algorithm>
 #include <cstdint>
 #include <cstring>
+#include <memory>
+#include <vector>
 
 #include <clap/clap.h>
 
@@ -40,6 +43,118 @@
 
 namespace lmms::clap
 {
+
+namespace
+{
+
+auto descriptorOf(const clap_param_info_t& info) -> ParamDescriptor
+{
+	ParamDescriptor descriptor;
+	descriptor.id = info.id;
+	descriptor.title = QString::fromUtf8(info.name);
+	descriptor.module = QString::fromUtf8(info.module);
+	descriptor.minValue = info.min_value;
+	descriptor.maxValue = info.max_value;
+	descriptor.defaultValue = info.default_value;
+	descriptor.stepped = (info.flags & CLAP_PARAM_IS_STEPPED) != 0;
+	descriptor.periodic = (info.flags & CLAP_PARAM_IS_PERIODIC) != 0;
+	descriptor.readOnly = (info.flags & CLAP_PARAM_IS_READONLY) != 0;
+	descriptor.bypass = (info.flags & CLAP_PARAM_IS_BYPASS) != 0;
+	descriptor.automatable = (info.flags & CLAP_PARAM_IS_AUTOMATABLE) != 0;
+	descriptor.hidden = (info.flags & CLAP_PARAM_IS_HIDDEN) != 0;
+	descriptor.requiresProcess = (info.flags & CLAP_PARAM_REQUIRES_PROCESS) != 0;
+	descriptor.defaultNormalized = normalize(descriptor, descriptor.defaultValue);
+	return descriptor;
+}
+
+//! True when @a fresh changes none of what the audio thread reads of @a held - the id, the range, the read-only
+//! flag - nor what CLAP lets change only with a full rescan (RESCAN_ALL: the stepped and bypass flags too).
+auto sameShape(const ParamDescriptor& held, const ParamDescriptor& fresh) -> bool
+{
+	return held.id == fresh.id && held.minValue == fresh.minValue && held.maxValue == fresh.maxValue
+		&& held.stepped == fresh.stepped && held.readOnly == fresh.readOnly && held.bypass == fresh.bypass;
+}
+
+} // namespace
+
+void HostedPlugin::Impl::readParams(std::vector<ParamDescriptor>* descriptors, std::vector<void*>* cookies) const
+{
+	if (paramsExt == nullptr) { return; }
+	const auto count = paramsExt->count(plugin);
+	descriptors->reserve(count);
+	cookies->reserve(count);
+	for (std::uint32_t i = 0; i < count; ++i)
+	{
+		clap_param_info_t info{};
+		if (!paramsExt->get_info(plugin, i, &info)) { continue; }
+		descriptors->push_back(descriptorOf(info));
+		cookies->push_back(info.cookie);
+	}
+}
+
+void HostedPlugin::Impl::scanParams()
+{
+	params.clear();
+	paramCookies.clear();
+	paramIds.clear();
+	readParams(&params, &paramCookies);
+	for (const auto& descriptor : params) { paramIds.push_back(descriptor.id); }
+	paramSlots = std::make_unique<ParamSlot[]>(std::max<std::size_t>(params.size(), 1));
+	for (std::size_t i = 0; i < params.size(); ++i)
+	{
+		double value = params[i].defaultValue;
+		if (paramsExt != nullptr && paramsExt->get_value(plugin, params[i].id, &value))
+		{
+			value = std::clamp(value, params[i].minValue, params[i].maxValue);
+		}
+		paramSlots[i].value.store(value, std::memory_order_relaxed);
+	}
+	paramsChanged.store(false, std::memory_order_relaxed);  // a whole new list answers a pending full rescan too
+	++paramsRevision;
+}
+
+void HostedPlugin::Impl::refreshParamInfo()
+{
+	if (paramsExt == nullptr || paramsChanged.load(std::memory_order_relaxed)) { return; }  // a full rescan is due
+	std::vector<ParamDescriptor> fresh;
+	std::vector<void*> cookies;
+	readParams(&fresh, &cookies);
+	const bool same = fresh.size() == params.size() && cookies == paramCookies
+		&& std::equal(params.begin(), params.end(), fresh.begin(), sameShape);
+	if (!same)
+	{
+		// More changed than RESCAN_INFO covers (a plug-in that should have asked for RESCAN_ALL): the list is
+		// re-read deactivated, by the restart this asks for, never under a running audio thread.
+		paramsChanged.store(true, std::memory_order_relaxed);
+		needsReprepare.store(true, std::memory_order_relaxed);
+		return;
+	}
+	// Only fields the audio thread never reads are written: it may be processing right now.
+	for (std::size_t i = 0; i < params.size(); ++i)
+	{
+		params[i].title = fresh[i].title;
+		params[i].module = fresh[i].module;
+		params[i].periodic = fresh[i].periodic;
+		params[i].hidden = fresh[i].hidden;
+		params[i].automatable = fresh[i].automatable;
+		params[i].requiresProcess = fresh[i].requiresProcess;
+		params[i].defaultValue = fresh[i].defaultValue;
+		params[i].defaultNormalized = fresh[i].defaultNormalized;
+	}
+	++paramsRevision;
+}
+
+void HostedPlugin::Impl::serviceRescan(std::uint32_t flags)
+{
+	// A rescan of values, text or info re-reads the values; info re-reads the descriptors in place, and text only
+	// needs what shows them to draw again. A rescan of the whole list was taken when it was asked for
+	// (paramsRescan): it waits for the next prepare(), deactivated.
+	if ((flags & (CLAP_PARAM_RESCAN_VALUES | CLAP_PARAM_RESCAN_TEXT | CLAP_PARAM_RESCAN_INFO)) != 0) { mirrorParamValues(); }
+	if ((flags & CLAP_PARAM_RESCAN_INFO) != 0) { refreshParamInfo(); }
+	else if ((flags & CLAP_PARAM_RESCAN_TEXT) != 0) { ++paramsRevision; }
+}
+
+auto HostedPlugin::paramsRevision() const -> std::uint32_t { return m_impl->paramsRevision; }
 
 auto HostedPlugin::paramIndex(std::uint32_t id) const -> int { return m_impl->indexOfParam(id); }
 
@@ -150,11 +265,7 @@ auto HostedPlugin::serviceMainThread() -> bool
 	{
 		impl.plugin->on_main_thread(impl.plugin);
 	}
-	// A rescan of values or text re-reads them; a rescan of the list itself takes a new
-	// processing setup (the CLAP rule: the plug-in is deactivated for it).
-	const auto flags = impl.rescanFlags.exchange(0, std::memory_order_relaxed);
-	if ((flags & (CLAP_PARAM_RESCAN_VALUES | CLAP_PARAM_RESCAN_TEXT | CLAP_PARAM_RESCAN_INFO)) != 0) { impl.mirrorParamValues(); }
-	if ((flags & CLAP_PARAM_RESCAN_ALL) != 0) { impl.needsReprepare.store(true, std::memory_order_relaxed); }
+	impl.serviceRescan(impl.rescanFlags.exchange(0, std::memory_order_relaxed));
 	// A flush asked for while the plug-in is inactive is run here. While it is active the
 	// request stays raised until process() delivers the parameters, which clears it (review
 	// L01-1 #9: it used to be consumed here and lost when the chain was asleep).

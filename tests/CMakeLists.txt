@@ -429,6 +429,8 @@ set(LMMS_TESTS
 	src/core/RackMacrosTest.cpp
 	src/core/RackTest.cpp
 	src/core/RackZonesTest.cpp
+	# 0.5.0 E20/E38: rack zones route notes to their chain; a zone's sample plays.
+	src/core/RackZoneRoutingTest.cpp
 	src/core/RecordClipTest.cpp
 	src/core/RecordRingBufferTest.cpp
 	src/core/RetroMidiRingTest.cpp
@@ -565,6 +567,8 @@ set(LMMS_TESTS
 	src/core/SidechainInputsTest.cpp
 	# 0.5.0 engine wiring E25: the lock-free MPSC queue JACK MIDI out is fed through.
 	src/core/MpscQueueTest.cpp
+	# 0.5.0 W4: JACK MIDI out written at each message's frame, in time order.
+	src/core/MidiJackOutScheduleTest.cpp
 	# 0.5.0 engine wiring E27: stem separation resamples instead of refusing.
 	src/core/SampleBufferResampleTest.cpp
 	# 0.5.0 L13 WF-126: the Mackie Control protocol and a surface driving real tracks.
@@ -618,6 +622,10 @@ set(LMMS_TESTS
 	src/core/DeviceToolsTest.cpp
 	# 0.5.0 L10 (W3): the de-esser, transient shaper, vocoder and console devices.
 	src/core/DeviceDspTest.cpp
+	# catch-up W3: atomic snapshots for device options, the compressor key filter, LV2 latency; reduction meters on bypass.
+	src/core/RealtimeSnapshotTest.cpp
+	# catch-up W1: undo honesty - redo failures, list copies, the macro pair, arm many, no journal step refused.
+	src/core/UndoHonestyTest.cpp
 	# 0.5.0 L10 (W3): formula modulators and modulators restarted by a track's notes.
 	src/core/ModulatorToolsTest.cpp
 	# 0.5.0 W3 engine: latency-compensated automation, post-fader inserts, receives, pre-fades.
@@ -732,6 +740,8 @@ set(LMMS_TESTS
 	src/gui/MixerSendsOnFadersTest.cpp
 	# 0.5.0 themes 2/9: ruler lanes, anchored zoom, the drag preview, locked clips.
 	src/gui/ArrangerTimelineTest.cpp
+	# catch-up W1: an XY pad drag is one undo step.
+	src/gui/XyPadPairTest.cpp
 	# M3: folders from the interface - make one, move a track in, collapse, pin, take it out.
 	src/gui/TrackFolderMenuTest.cpp
 	# Edit > Undo History: lists the record, undoes and redoes through the registry.
@@ -1020,9 +1030,11 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 		OR LMMS_TEST_NAME STREQUAL "AudioEditingTest"
 		# 0.5.0 L10: copying and comparing devices loads the build's effect modules.
 		OR LMMS_TEST_NAME STREQUAL "DeviceCopyTest"
+		OR LMMS_TEST_NAME STREQUAL "UndoHonestyTest"
 		# 0.5.0 L10 (W3): the device tools load the build's amplifier module.
 		OR LMMS_TEST_NAME STREQUAL "DeviceToolsTest"
 		OR LMMS_TEST_NAME STREQUAL "DeviceDspTest"
+		OR LMMS_TEST_NAME STREQUAL "RealtimeSnapshotTest"
 		# 0.5.0: the note-playback tests play a real instrument (tripleoscillator) on their tracks.
 		OR LMMS_TEST_NAME STREQUAL "NotePlaybackTest"
 		OR LMMS_TEST_NAME STREQUAL "ClipTransposeTest"
@@ -1148,7 +1160,7 @@ set_tests_properties(ScriptDawBindingTest PROPERTIES
 # The rack command-group tests (rack.* macros and key/velocity zones) construct a
 # full Engine and drive the mixer's own save/load, so they need the same
 # headless Qt platform as the test above - and the developer box has no display.
-set_tests_properties(RackMacrosTest RackZonesTest PROPERTIES
+set_tests_properties(RackMacrosTest RackZonesTest RackZoneRoutingTest PROPERTIES
 	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 
 # The #602 modulation layer's two tests build a full Engine, a real Mixer and a
@@ -1308,6 +1320,7 @@ set_tests_properties(VcaStripLifetimeTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFOR
 set_tests_properties(NoteEditorFlTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(MixerSendsOnFadersTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(ArrangerTimelineTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+set_tests_properties(XyPadPairTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(TrackFolderMenuTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(UndoHistoryPanelTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(ExportQualityControlsTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
@@ -3152,6 +3165,15 @@ if(PYTHON3_EXECUTABLE AND CONTROL_SUITE_AVAILABLE)
 				${CMAKE_CURRENT_SOURCE_DIR}/control-wasm-sandbox.py
 				$<TARGET_FILE:zene>)
 		set_tests_properties(ControlWasmSandbox PROPERTIES
+			ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+			TIMEOUT 300
+		)
+		# 0.5.0 E22: a wasm_effect device in a chain takes a module headlessly (wasm.device_load).
+		add_test(NAME ControlWasmDevice
+			COMMAND ${PYTHON3_EXECUTABLE}
+				${CMAKE_CURRENT_SOURCE_DIR}/control-wasm-device.py
+				$<TARGET_FILE:zene>)
+		set_tests_properties(ControlWasmDevice PROPERTIES
 			ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
 			TIMEOUT 300
 		)

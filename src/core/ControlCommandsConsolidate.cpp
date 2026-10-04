@@ -234,7 +234,7 @@ ControlResult clipConsolidate(const QJsonObject& args)
 	result.insert(QStringLiteral("muted_kept"), region.mutedKept);
 	result.insert(QStringLiteral("recomped"), recomped);
 	result.insert(QStringLiteral("__transaction"),
-		control::transactionPayload(before, QStringLiteral("UNIMPLEMENTED: restore the source clips"),
+		control::transactionPayload(before, QStringLiteral("control.undo"),
 			QJsonObject(), true, ClauseConsolidate));
 	return ControlResult::success(result);
 }

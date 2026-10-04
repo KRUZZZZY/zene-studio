@@ -76,6 +76,9 @@ PluginBrowser::PluginBrowser( QWidget * _parent ) :
 				embed::getIconPixmap( "plugins" ).transformed( QTransform().rotate( 90 ) ), _parent )
 {
 	setWindowTitle( tr( "Instrument browser" ) );
+	// 0.5.0: the list follows organiser changes made elsewhere (the effect picker, a command, a script).
+	connect(pluginorganiser::notifier(), &pluginorganiser::Notifier::changed, this,
+		[this] { QTimer::singleShot(0, this, [this] { rebuildKeepingView(); }); });
 	m_view = new QWidget( contentParent() );
 	//m_view->setFrameShape( QFrame::NoFrame );
 

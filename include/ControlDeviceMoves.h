@@ -62,6 +62,13 @@ LMMS_EXPORT void removeDevicesRecorded(EffectChain* chain, const std::vector<Eff
 //! The same for a chain an undo may delete and a redo create again, found by @a chainOf on every run.
 LMMS_EXPORT void removeDevicesRecorded(const std::function<EffectChain*()>& chainOf, const std::vector<Effect*>& effects);
 
+/*! W1 (E19): records the inverse of rack.remove_chain - call it BEFORE the chain goes. @a states are the removed chain's
+ *  devices' settings documents, in order, and @a selectedBefore the rack's selection. The undo appends a chain (back at
+ *  @a index), re-creates the devices on it and restores the selection; the redo removes it again. False, recording
+ *  nothing, when @a index is not the rack's last chain: Rack::addChain appends, so an inner chain cannot come back at its
+ *  own index. */
+LMMS_EXPORT bool journalChainRemoval(const QString& channelId, int index, const QStringList& states, int selectedBefore);
+
 } // namespace control
 } // namespace lmms
 

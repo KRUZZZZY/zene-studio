@@ -30,6 +30,10 @@ enum
 {
 	PARAM_GAIN = 1,
 	PARAM_BYPASS = 2,
+	/* W6: the list a CLAP_PARAM_RESCAN_ALL brings in (CLAP_TEST_GAIN_RESCAN=all): Gain, Drive, Tone - the
+	   bypass switch gone, two parameters new. */
+	PARAM_DRIVE = 3,
+	PARAM_TONE = 4,
 };
 
 typedef struct gain_state
@@ -54,6 +58,13 @@ typedef struct gain_plugin
 	const clap_plugin_params_t* params;
 	double gain;
 	double bypass;
+	double drive;
+	double tone;
+	/* W6, CLAP_TEST_GAIN_RESCAN: "info" renames Gain to Level (CLAP_PARAM_RESCAN_INFO); "all" asks for a restart
+	   and, deactivated, swaps in the extended list (CLAP_PARAM_RESCAN_ALL) - the order CLAP prescribes. */
+	bool renamed;
+	bool extend_on_deactivate;
+	bool extended;
 	double frames_processed;
 	uint32_t declared_max_frames;
 	uint32_t blocks;
@@ -91,24 +102,40 @@ static const clap_plugin_descriptor_t s_descriptor = {
 
 static uint32_t gain_params_count(const clap_plugin_t* plugin)
 {
-	(void)plugin;
-	return 2;
+	const gain_plugin_t* self = (const gain_plugin_t*)plugin->plugin_data;
+	return self->extended ? 3 : 2;
+}
+
+static void gain_param_info(clap_param_info_t* info, clap_id id, const char* name, double max, double def)
+{
+	info->id = id;
+	strncpy(info->name, name, CLAP_NAME_SIZE - 1);
+	info->min_value = 0.0;
+	info->max_value = max;
+	info->default_value = def;
+	info->flags = CLAP_PARAM_IS_AUTOMATABLE;
+}
+
+/* The extended list's entries after Gain (W6). */
+static bool gain_params_get_extended_info(uint32_t index, clap_param_info_t* info)
+{
+	if (index == 1) { gain_param_info(info, PARAM_DRIVE, "Drive", 10.0, 2.0); return true; }
+	if (index == 2) { gain_param_info(info, PARAM_TONE, "Tone", 1.0, 0.5); return true; }
+	return false;
 }
 
 static bool gain_params_get_info(const clap_plugin_t* plugin, uint32_t index, clap_param_info_t* info)
 {
-	(void)plugin;
+	const gain_plugin_t* self = (const gain_plugin_t*)plugin->plugin_data;
 	memset(info, 0, sizeof(*info));
+	if (index == 0)
+	{
+		gain_param_info(info, PARAM_GAIN, self->renamed ? "Level" : "Gain", 1.0, 1.0);
+		return true;
+	}
+	if (self->extended) { return gain_params_get_extended_info(index, info); }
 	switch (index)
 	{
-	case 0:
-		info->id = PARAM_GAIN;
-		strncpy(info->name, "Gain", CLAP_NAME_SIZE - 1);
-		info->min_value = 0.0;
-		info->max_value = 1.0;
-		info->default_value = 1.0;
-		info->flags = CLAP_PARAM_IS_AUTOMATABLE;
-		return true;
 	case 1:
 		info->id = PARAM_BYPASS;
 		strncpy(info->name, "Bypass", CLAP_NAME_SIZE - 1);
@@ -132,6 +159,12 @@ static bool gain_params_get_value(const clap_plugin_t* plugin, clap_id param_id,
 		return true;
 	case PARAM_BYPASS:
 		*value = self->bypass;
+		return true;
+	case PARAM_DRIVE:
+		*value = self->drive;
+		return true;
+	case PARAM_TONE:
+		*value = self->tone;
 		return true;
 	default:
 		return false;
@@ -175,6 +208,12 @@ static void gain_params_flush(const clap_plugin_t* plugin, const clap_input_even
 			break;
 		case PARAM_BYPASS:
 			self->bypass = event->value;
+			break;
+		case PARAM_DRIVE:
+			self->drive = event->value;
+			break;
+		case PARAM_TONE:
+			self->tone = event->value;
 			break;
 		default:
 			break;
@@ -469,11 +508,28 @@ static bool gain_activate(const clap_plugin_t* plugin, double sample_rate, uint3
 	memset(self->recorded, 0, sizeof(self->recorded));
 	/* With CLAP_TEST_GAIN_MAIN_THREAD set, the plug-in asks for a main-thread call, the path the
 	   host services in HostedPlugin::serviceMainThread() (engine audit E8). */
-	if (getenv("CLAP_TEST_GAIN_MAIN_THREAD") != NULL) { self->host->request_callback(self->host); }
+	if (getenv("CLAP_TEST_GAIN_MAIN_THREAD") != NULL || getenv("CLAP_TEST_GAIN_RESCAN") != NULL)
+	{
+		self->host->request_callback(self->host);
+	}
 	return true;
 }
 
-static void gain_deactivate(const clap_plugin_t* plugin) { (void)plugin; }
+static const clap_host_params_t* gain_host_params(const gain_plugin_t* self)
+{
+	return (const clap_host_params_t*)self->host->get_extension(self->host, CLAP_EXT_PARAMS);
+}
+
+/* W6: deactivated, which is where CLAP lets a plug-in change its parameter list: the restart it asked for. */
+static void gain_deactivate(const clap_plugin_t* plugin)
+{
+	gain_plugin_t* self = (gain_plugin_t*)plugin->plugin_data;
+	if (!self->extend_on_deactivate) { return; }
+	self->extend_on_deactivate = false;
+	self->extended = true;
+	const clap_host_params_t* params = gain_host_params(self);
+	if (params != NULL) { params->rescan(self->host, CLAP_PARAM_RESCAN_ALL); }
+}
 
 static bool gain_start_processing(const clap_plugin_t* plugin)
 {
@@ -553,9 +609,28 @@ static const void* gain_get_extension(const clap_plugin_t* plugin, const char* i
 
 /* On the main-thread call: change a value behind the host's back, ask it to re-read the values,
    and mark the state dirty - three requests a host must honour. */
+/* W6, CLAP_TEST_GAIN_RESCAN: "info" renames a parameter in place; "all" changes the list, which an active plug-in
+   may only do after a restart (gain_deactivate). */
+static void gain_request_rescan(gain_plugin_t* self, const char* kind)
+{
+	if (strcmp(kind, "info") == 0)
+	{
+		self->renamed = true;
+		const clap_host_params_t* params = gain_host_params(self);
+		if (params != NULL) { params->rescan(self->host, CLAP_PARAM_RESCAN_INFO); }
+	}
+	else if (strcmp(kind, "all") == 0 && !self->extended)
+	{
+		self->extend_on_deactivate = true;
+		self->host->request_restart(self->host);
+	}
+}
+
 static void gain_on_main_thread(const clap_plugin_t* plugin)
 {
 	gain_plugin_t* self = (gain_plugin_t*)plugin->plugin_data;
+	const char* rescan = getenv("CLAP_TEST_GAIN_RESCAN");
+	if (rescan != NULL) { gain_request_rescan(self, rescan); }
 	if (getenv("CLAP_TEST_GAIN_MAIN_THREAD") == NULL) { return; }
 	self->gain = 0.25;
 	const clap_host_params_t* params = (const clap_host_params_t*)self->host->get_extension(self->host, CLAP_EXT_PARAMS);
@@ -602,6 +677,8 @@ static const clap_plugin_t* gain_factory_create_plugin(const clap_plugin_factory
 	self->params = &s_params;
 	self->gain = 1.0;
 	self->bypass = 0.0;
+	self->drive = 2.0;
+	self->tone = 0.5;
 	return &self->plugin;
 }
 

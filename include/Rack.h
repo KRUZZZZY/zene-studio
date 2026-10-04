@@ -33,6 +33,7 @@
 
 #include "RackMacros.h"
 #include "RackSplit.h"
+#include "RackZoneInputs.h"
 #include "RackZones.h"
 #include "lmms_export.h"
 
@@ -94,10 +95,14 @@ class RoutingGraph;
  * A macro is a named scalar (0..1) that drives a set of existing model
  * parameters through their own range windows; a key/velocity zone maps an
  * inclusive MIDI key range and velocity range to one of the chains. Both live
- * on this object, both persist as children of the channel's own <rack>
- * element, and NEITHER is read by processAudioBuffer(): a macro writes model
- * values when it is set, and a zone is data plus a lookup (@see RackMacros,
- * RackZones).
+ * on this object, and both persist as children of the channel's own <rack>
+ * element. A macro is not on the audio path: it writes model values when it is
+ * set (@see RackMacros). A zone IS, since 0.5.0 E20: the notes of an instrument
+ * track that plays into this channel are routed by the zones to their chains
+ * (RackZoneFeed, on the audio worker that renders the track) and arrive here as
+ * one extra input block per chain (zoneInputs()), which each chain's node adds
+ * to its share of the channel's input. A rack with zones is on the signal path
+ * even with one chain, so a zone on chain 0 can play its sample.
  */
 class LMMS_EXPORT Rack
 {
@@ -137,7 +142,7 @@ public:
 	void setSelectedChain(int index);
 	auto selectedChain() const -> int { return m_selectedChain; }
 
-	//! Drops every parallel chain and the wiring: the channel is a plain chain
+	//! Drops every parallel chain, the zones and the wiring: the channel is a plain chain
 	void clear();
 
 	/**
@@ -177,6 +182,9 @@ public:
 	//! element. @see RackZones for what a zone does and does not do.
 	auto zones() -> RackZones& { return m_zones; }
 	auto zones() const -> const RackZones& { return m_zones; }
+	//! E20: the per-chain note inputs the zones feed (audio workers deliver, processAudioBuffer consumes).
+	auto zoneInputs() -> RackZoneInputs& { return m_zoneInputs; }
+	auto zoneInputs() const -> const RackZoneInputs& { return m_zoneInputs; }
 
 	// --- persistence ---
 
@@ -223,12 +231,12 @@ private:
 	//! Set by rebuildRoutingGraph() when the graph is on the signal path
 	bool m_graphActive = false;
 
-	//! The macros and the key/velocity zones. Neither is on the audio path:
-	//! a macro writes model values when it is set, and a zone is data plus a
-	//! lookup, so processAudioBuffer() never reads either (@see RackMacros,
-	//! RackZones).
+	//! The macros and the key/velocity zones (@see RackMacros, RackZones).
+	//! The zones tell the rack when they change, so it re-wires.
 	RackMacros m_macros;
 	RackZones m_zones;
+	//! E20: the zoned notes' per-chain blocks and sample voices; prepared with the graph.
+	RackZoneInputs m_zoneInputs;
 
 	//! Audio thread: the channel's sidechain input for the current block
 	const AudioBuffer* m_sidechainBuffer = nullptr;

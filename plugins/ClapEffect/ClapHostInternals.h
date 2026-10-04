@@ -206,6 +206,10 @@ struct HostedPlugin::Impl
 	//! review L01-1 #2: the plug-in changed its ports; the next prepare() re-reads them
 	std::atomic<bool> portsChanged{false};
 	std::uint32_t layoutRevision = 0;
+	//! W6: the plug-in asked for CLAP_PARAM_RESCAN_ALL; the next prepare() re-reads the list, deactivated
+	std::atomic<bool> paramsChanged{false};
+	//! Counts parameter list (re)scans and in-place info or text refreshes; the owner re-syncs its models on a move
+	std::uint32_t paramsRevision = 0;
 	std::atomic<double> tempo{120.0};
 	std::atomic<bool> playing{false};
 
@@ -348,9 +352,16 @@ struct HostedPlugin::Impl
 		static_cast<Impl*>(host->host_data)->callbackRequested.store(true, std::memory_order_relaxed);
 	}
 
+	//! A rescan of the whole list is only legal deactivated (the CLAP rule; a plug-in that is active asks for a
+	//! restart and rescans from deactivate()): it is taken by the next prepare(), right after it deactivates the
+	//! plug-in - the same call when the plug-in rescans from inside that deactivate(). The rest waits for the poll.
 	static void CLAP_ABI paramsRescan(const clap_host_t* host, clap_param_rescan_flags flags)
 	{
-		static_cast<Impl*>(host->host_data)->rescanFlags.fetch_or(flags, std::memory_order_relaxed);
+		auto* self = static_cast<Impl*>(host->host_data);
+		self->rescanFlags.fetch_or(flags, std::memory_order_relaxed);
+		if ((flags & CLAP_PARAM_RESCAN_ALL) == 0) { return; }
+		self->paramsChanged.store(true, std::memory_order_relaxed);
+		self->needsReprepare.store(true, std::memory_order_relaxed);
 	}
 
 	//! The host keeps no per-parameter references beyond the plug-in's own list (automation
@@ -373,6 +384,19 @@ struct HostedPlugin::Impl
 
 	//! Re-read clap.audio-ports (main thread, deactivated).
 	void scanAudioPorts();
+
+	// --- the parameter list (ClapHostParams.cpp, W6) ------------------------
+	//! The plug-in's parameter descriptors and cookies, in its own order.
+	void readParams(std::vector<ParamDescriptor>* descriptors, std::vector<void*>* cookies) const;
+	//! (Re)build the list, the ids, the cookies and the value slots (main thread: load, or deactivated).
+	void scanParams();
+	//! CLAP_PARAM_RESCAN_INFO: names, modules and the flags that may change in place; anything more goes the
+	//! full way, through the next prepare().
+	void refreshParamInfo();
+	//! The rescan flags the plug-in raised since the last poll, serviced on the main thread.
+	void serviceRescan(std::uint32_t flags);
+	//! Main thread, deactivated (prepare()): re-read what the plug-in said changed - its ports, its parameters.
+	void rescanWhileInactive();
 
 	static void CLAP_ABI stateMarkDirty(const clap_host_t* host)
 	{

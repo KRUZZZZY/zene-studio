@@ -56,7 +56,7 @@ inline QStringList chordIds()
 		QStringLiteral("chord.progression_list"), QStringLiteral("chord.set"),
 		QStringLiteral("chord.remove"), QStringLiteral("chord.clear"),
 		QStringLiteral("chord.detect_to_track"), QStringLiteral("chord.track_write"),
-		QStringLiteral("chord.progression_generate")};
+		QStringLiteral("chord.progression_generate"), QStringLiteral("chord.follow_set")};
 }
 
 //! Invoke a command through the registry, exactly as the socket does.

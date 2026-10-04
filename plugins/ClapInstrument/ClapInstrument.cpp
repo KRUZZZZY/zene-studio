@@ -25,7 +25,6 @@
 #include "ClapInstrument.h"
 
 #include <algorithm>
-#include <cmath>
 #include <exception>
 
 #include <QDebug>
@@ -111,7 +110,8 @@ ClapInstrument::ClapInstrument(InstrumentTrack* parent,
 	const Descriptor::SubPluginFeatures::Key* key) :
 	AudioPluginExt<Instrument, ClapInstrumentAudioPortsSettings>(
 		&clapinstrument_plugin_descriptor, parent, key,
-		Instrument::Flag::IsSingleStreamed | Instrument::Flag::IsMidiBased)
+		Instrument::Flag::IsSingleStreamed | Instrument::Flag::IsMidiBased),
+	m_params(&m_plugin, this)
 {
 	const auto modulePath = key != nullptr ? key->attributes.value("file") : QString{};
 	const auto pluginId = key != nullptr ? key->attributes.value("id") : QString{};
@@ -144,22 +144,11 @@ ClapInstrument::ClapInstrument(InstrumentTrack* parent,
 	}
 
 	// Every CLAP parameter becomes an LMMS model, exactly as for the effect
-	// host, so automation and the .mmp both work without new plumbing.
-	for (const auto& descriptor : m_plugin.parameters())
-	{
-		auto* model = new ClapParamModel(descriptor, this);
-		m_paramModels.push_back(model);
-		// host -> plug-in: mirror the model value into the lock free snapshot
-		// the audio thread reads. Safe from any thread that changes a model.
-		QObject::connect(model, &Model::dataChanged, model,
-			[plugin = &m_plugin, id = descriptor.id, model] {
-				plugin->setParamNormalized(id, model->value());
-			});
-		// plug-in -> host: render the value with the plug-in's own formatter
-		model->setDisplayFormatter([plugin = &m_plugin, id = descriptor.id](double value) {
-			return plugin->paramDisplayValue(id, value);
-		});
-	}
+	// host (the same list, ClapParamModelList), so automation and the .mmp both
+	// work without new plumbing. W6: in plain values, as the model's own range
+	// is - the normalised value this used to write and read was right only for
+	// a parameter whose range is 0..1.
+	m_params.sync();
 
 	m_pollTimer = new QTimer(this);
 	m_pollTimer->setInterval(100);
@@ -205,11 +194,7 @@ ClapInstrument::~ClapInstrument()
 
 auto ClapInstrument::modelForParam(std::uint32_t id) -> ClapParamModel*
 {
-	for (auto* model : m_paramModels)
-	{
-		if (model->paramId() == id) { return model; }
-	}
-	return nullptr;
+	return m_params.modelFor(id);
 }
 
 void ClapInstrument::reprepare()
@@ -348,12 +333,7 @@ void ClapInstrument::loadSettings(const QDomElement& element)
 	m_plugin.loadState(QByteArray::fromBase64(node.text().toLatin1()));
 
 	// reflect the restored state in the models
-	m_syncing = true;
-	for (auto* model : m_paramModels)
-	{
-		model->setValue(m_plugin.paramNormalized(model->paramId()));
-	}
-	m_syncing = false;
+	m_params.pullValues(0.f);
 }
 
 void ClapInstrument::poll()
@@ -367,18 +347,8 @@ void ClapInstrument::poll()
 		reprepare();
 	}
 
-	if (m_syncing) { return; }
-	m_syncing = true;
-	for (auto* model : m_paramModels)
-	{
-		const auto id = model->paramId();
-		const auto value = m_plugin.paramNormalized(id);
-		if (std::abs(model->value() - value) > 1e-4f)
-		{
-			model->setValue(value);
-		}
-	}
-	m_syncing = false;
+	if (m_params.sync()) { emit parametersChanged(); }
+	m_params.pullValues(1e-4f);
 }
 
 auto ClapInstrument::instantiateView(QWidget* parent) -> gui::PluginView*

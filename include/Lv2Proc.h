@@ -29,6 +29,7 @@
 
 #ifdef LMMS_HAVE_LV2
 
+#include <atomic>
 #include <lilv/lilv.h>
 #include <memory>
 #include <optional>
@@ -122,7 +123,7 @@ public:
 	bool restoreState(const QString& document);
 
 	//! The latency the plug-in reports on its latency output port, in frames; 0 when it has
-	//! none (BUGS 11.34). Control thread.
+	//! none (BUGS 11.34). Control thread; the value the last run() left, so 0 before the first.
 	int latencyFrames() const;
 
 	/*
@@ -200,6 +201,9 @@ private:
 	Lv2Ports::AtomSeq *m_midiIn = nullptr, *m_midiOut = nullptr;
 	//! the output control port the plug-in reports its latency on, if any
 	Lv2Ports::Control* m_latencyPort = nullptr;
+	//! what that port held after the last run(), in frames: stored by the audio thread, read by
+	//! latencyFrames() on the control thread, so neither reads the port the plug-in is writing
+	std::atomic<int> m_latencySnapshot{0};
 
 	// MIDI
 	// many things here may be moved into the `Instrument` class

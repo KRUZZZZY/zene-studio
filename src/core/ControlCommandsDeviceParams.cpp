@@ -57,6 +57,7 @@
 #include "InstrumentTrack.h"
 #include "MeterModel.h"
 #include "Mixer.h"
+#include "ParameterAliases.h"
 #include "Rack.h"
 #include "Song.h"
 #include "Track.h"
@@ -87,7 +88,9 @@ Effect* effectOf(const QString& targetId, const QString& pluginId, ControlResult
 // ---------------------------------------------------------------------------
 
 //! Put @a options on @a effect and tell what shows them: the chain's delay compensation (a latency
-//! override) and its views (the Device panel redraws a card on the chain's dataChanged).
+//! override) and its views (the Device panel redraws a card on the chain's dataChanged). The audio
+//! thread reads keepRunning and latencyOverride while this assigns them: each is a SharedOption, so
+//! the assignment stores them atomically (catch-up W3).
 void applyOptions(Effect* effect, const DeviceOptions& options)
 {
 	effect->deviceOptions() = options;
@@ -99,14 +102,14 @@ void applyOptions(Effect* effect, const DeviceOptions& options)
 	Engine::getSong()->setModified();
 }
 
-QJsonObject optionsJson(const QString& targetId, const QString& pluginId, const DeviceOptions& options)
+QJsonObject optionsJson(Effect* effect, const QString& targetId, const QString& pluginId, const DeviceOptions& options)
 {
-	QJsonObject aliases;
-	for (auto it = options.aliases().cbegin(); it != options.aliases().cend(); ++it) { aliases.insert(it.key(), it.value()); }
+	// W6: the aliases are kept by each parameter's stable key and reported by its display name (ParameterAliases.h).
+	const QJsonObject aliases = parameteraliases::toJson(effect, options);
 	return {{QStringLiteral("target"), targetId}, {QStringLiteral("plugin"), pluginId}, {QStringLiteral("aliases"), aliases},
 		{QStringLiteral("folded"), options.folded}, {QStringLiteral("editor_scale"), static_cast<double>(options.editorScale)},
-		{QStringLiteral("generic_editor"), options.genericEditor}, {QStringLiteral("keep_running"), options.keepRunning},
-		{QStringLiteral("latency_override"), options.latencyOverride}};
+		{QStringLiteral("generic_editor"), options.genericEditor}, {QStringLiteral("keep_running"), options.keepRunning.load()},
+		{QStringLiteral("latency_override"), options.latencyOverride.load()}};
 }
 
 using OptionsEdit = std::function<bool(Effect*, DeviceOptions*, ControlResult*)>;
@@ -132,7 +135,7 @@ ControlResult editOptions(const QJsonObject& args, const OptionsEdit& edit)
 		};
 		addUndoStep([put, before]() { put(before); }, [put, after]() { put(after); });
 	}
-	return ControlResult::success(optionsJson(targetId, pluginId, after));
+	return ControlResult::success(optionsJson(effect, targetId, pluginId, after));
 }
 
 ControlResult paramRename(const QJsonObject& args)
@@ -141,7 +144,7 @@ ControlResult paramRename(const QJsonObject& args)
 		AutomatableModel* model = controlResolveParameter(effect, args.value(QStringLiteral("name")).toString(),
 			args.value(QStringLiteral("index")).toInt(), args.contains(QStringLiteral("index")), error);
 		if (model == nullptr) { return false; }
-		options->setAlias(model->displayName(), args.value(QStringLiteral("alias")).toString());
+		parameteraliases::setAlias(effect, model, args.value(QStringLiteral("alias")).toString(), options);
 		return true;
 	});
 }
@@ -189,13 +192,15 @@ struct SearchScope
 	QJsonArray* hits = nullptr;
 };
 
+//! @a effect is the device whose aliases count, or nullptr (an instrument has none).
 void searchModels(const SearchScope& scope, const QString& targetId, const QString& pluginId, const QString& device,
-	const QList<AutomatableModel*>& models, const DeviceOptions* options)
+	const QList<AutomatableModel*>& models, Effect* effect)
 {
+	const QStringList aliases = effect != nullptr ? parameteraliases::aliasesOf(effect, models, effect->deviceOptions()) : QStringList();
 	for (int i = 0; i < models.size() && scope.hits->size() <= kMaxSearchHits; ++i)  // one past the cap tells "there are more"
 	{
 		const QString name = models.at(i)->displayName();
-		const QString alias = options != nullptr ? options->alias(name) : QString();
+		const QString alias = aliases.value(i);
 		if (!name.contains(scope.query, Qt::CaseInsensitive) && !alias.contains(scope.query, Qt::CaseInsensitive)) { continue; }
 		scope.hits->append(QJsonObject{{QStringLiteral("target"), targetId}, {QStringLiteral("plugin"), pluginId},
 			{QStringLiteral("device"), device}, {QStringLiteral("index"), i}, {QStringLiteral("name"), name},
@@ -208,7 +213,7 @@ void searchChain(const SearchScope& scope, const QString& targetId, const Effect
 	if (chain == nullptr) { return; }
 	for (Effect* effect : chain->effects())
 	{
-		searchModels(scope, targetId, effectIdOf(effect), effect->displayName(), controlEffectParameters(effect), &effect->deviceOptions());
+		searchModels(scope, targetId, effectIdOf(effect), effect->displayName(), controlEffectParameters(effect), effect);
 	}
 }
 

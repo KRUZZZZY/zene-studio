@@ -147,19 +147,52 @@ private slots:
 		QVERIFY(playFrom(0).isEmpty());
 		NoteConditions conditions = m_clip->notes().front()->conditions();
 		QVERIFY(!conditions.recursOnPass(0) && conditions.recursOnPass(1) && !conditions.recursOnPass(2));
-		// The pass counts a jump back, and a stop starts it again.
+		// The pass counts a loop wrap (Song::loopWraps) - not a jump back - and a stop starts it again (0.5.0 W2).
 		MidiPlayback& playback = MidiPlayback::instance();
 		playback.stopped();
-		playback.tickPlayed(10);
+		playback.tickPlayed(10, 5);
 		QVERIFY(playback.chasingNow());
-		playback.tickPlayed(11);
+		QCOMPARE(playback.pass(), 0);  // the wraps before the start are no pass
+		playback.tickPlayed(11, 5);
 		QVERIFY(!playback.chasingNow());
-		playback.tickPlayed(0);
+		playback.tickPlayed(0, 5);     // a seek back
 		QVERIFY(playback.chasingNow());
+		QCOMPARE(playback.pass(), 0);
+		playback.tickPlayed(0, 6);     // a wrap
 		QCOMPARE(playback.pass(), 1);
 		playback.stopped();
-		playback.tickPlayed(0);
+		playback.tickPlayed(0, 6);
 		QCOMPARE(playback.pass(), 0);
+	}
+
+	//! 0.5.0 W2: the song counts the loop wraps its render plays, and a seek back while playing is no wrap
+	//! and no pass (the pass used to count every jump back).
+	void aLoopWrapIsAPassAndASeekBackIsNot()
+	{
+		oneNote();
+		Song* song = Engine::getSong();
+		Timeline& timeline = song->getTimeline(Song::PlayMode::Song);
+		timeline.setLoopPoints(TimePos(0), TimePos(48));
+		timeline.setLoopEnabled(true);
+		song->setPlayPos(0, Song::PlayMode::Song);
+		MidiPlayback::instance().stopped();  // the test above fed it by hand: a fresh start, as after a stop
+		song->playSong();
+		const unsigned before = song->loopWraps();
+		for (int period = 0; period < 2000 && song->loopWraps() == before; ++period) { Engine::audioEngine()->renderNextPeriod(); }
+		QCOMPARE(song->loopWraps(), before + 1);
+		QCOMPARE(MidiPlayback::instance().pass(), 1);
+		for (int period = 0; period < 2000 && song->getPlayPos().getTicks() < 24; ++period) { Engine::audioEngine()->renderNextPeriod(); }
+		song->setPlayPos(4, Song::PlayMode::Song);  // a seek back inside the loop
+		Engine::audioEngine()->renderNextPeriod();
+		QCOMPARE(song->loopWraps(), before + 1);
+		QCOMPARE(MidiPlayback::instance().pass(), 1);
+		song->setPlayPos(100, Song::PlayMode::Song);  // a seek past the loop: put back inside, no wrap either
+		Engine::audioEngine()->renderNextPeriod();
+		QVERIFY(song->getPlayPos().getTicks() < 48);
+		QCOMPARE(song->loopWraps(), before + 1);
+		QCOMPARE(MidiPlayback::instance().pass(), 1);
+		song->stop();
+		timeline.setLoopEnabled(false);
 	}
 
 	void anArticulationPlaysItsKeyswitchFirst()

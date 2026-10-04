@@ -29,6 +29,7 @@
 #include "Sample.h"
 #include <array>
 #include <cstdint>
+#include <memory>
 #include <optional>
 #include <utility>
 
@@ -43,6 +44,7 @@ namespace lmms
 {
 
 
+class CompSlipReaders;
 class PatternTrack;
 class SampleClip;
 class Track;
@@ -205,6 +207,9 @@ private:
 	bool m_autoFaded = false;
 	int m_compSpanCount = 0;
 	std::array<std::pair<f_cnt_t, f_cnt_t>, MaxCompSpans> m_compSpans{};
+	//! 0.5.0 E2: the reads of this take's SLIPPED spans (include/CompSlip.h); null - and nothing extra runs - when
+	//! the clip's lane has no slipped span, or the clip does not render linearly at its own pitch.
+	std::unique_ptr<CompSlipReaders> m_compSlip;
 
 	/*! 0.5.0 W3 (ED-179): a clip with pre-fades (include/ClipPreFades.h) plays a copy of its Sample whose window
 	 *  reaches past the clip's own, and its envelope is measured from the clip's first frame with the frames before

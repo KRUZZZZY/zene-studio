@@ -65,6 +65,24 @@ bool resolveTakeClip(const QString& id, ClipRef* ref, ControlResult* error)
 }
 
 
+bool slipAccepted(const Track* track, int srcpos, ControlResult* error)
+{
+	if (srcpos < 0)
+	{
+		*error = ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("'srcpos' must be >= 0, got %1").arg(srcpos));
+		return false;
+	}
+	// 0.5.0 E2: a slip sounds on an AUDIO take only; a MIDI take is gated per note and has no slipped read.
+	if (srcpos != 0 && track != nullptr && track->type() != Track::Type::Sample)
+	{
+		*error = ControlResult::failure(ControlErrorKind::Refused, QStringLiteral("a slip ('srcpos' %1) plays on an audio "
+			"track's takes only; %2 is not one, and its takes are comped by note").arg(srcpos).arg(trackIdOf(track)));
+		return false;
+	}
+	return true;
+}
+
+
 QJsonObject laneState(const Track* track, const TakeLane& lane)
 {
 	QJsonObject out;
@@ -134,7 +152,7 @@ QJsonArray resolvedState(const Track* track)
 		entry.insert(QStringLiteral("status"), QStringLiteral("bound"));
 		entry.insert(QStringLiteral("clip"), takeClipId(take));
 		entry.insert(QStringLiteral("frame"),
-			static_cast<double>(take->sourceFrameAt(TimePos(seg.beginTick))));
+			static_cast<double>(take->sourceFrameAt(TimePos(seg.beginTick + seg.sourceOffset))));  // slipped (E2)
 		resolved.append(entry);
 	}
 	return resolved;

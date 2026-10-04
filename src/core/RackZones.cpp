@@ -28,6 +28,12 @@
 
 #include <QDomDocument>
 
+#include "AudioEngine.h"
+#include "Engine.h"
+#include "PathUtil.h"
+#include "SampleBuffer.h"
+#include "SampleDecoder.h"
+
 namespace lmms
 {
 
@@ -61,6 +67,31 @@ bool isValidRackZone(const RackZone& zone, int chainCount)
 	return zone.chain < chainCount;
 }
 
+bool loadRackZoneSample(RackZone& zone)
+{
+	if (zone.loaded != nullptr) { return true; }
+	if (zone.sample.isEmpty()) { return false; }
+	// SampleDecoder directly, not SampleBuffer::fromFile: that one shows a message box on a failure,
+	// and a zone whose file is missing is reported (sample_loaded false), not a dialog.
+	auto decoded = SampleDecoder::decode(PathUtil::toAbsolute(zone.sample));
+	if (!decoded || decoded->data.empty()) { return false; }
+	zone.loaded = std::make_shared<const SampleBuffer>(std::move(decoded->data), decoded->sampleRate,
+		PathUtil::toShortestRelative(zone.sample));
+	return true;
+}
+
+void RackZones::edit(const std::function<void()>& change)
+{
+	// The audio workers resolve notes against this list (RackZoneFeed.h): a change waits for the period
+	// boundary, as every other rack topology edit does. The guard is recursive, so a caller already
+	// inside it (Rack::loadSettings) nests.
+	AudioEngine* engine = Engine::audioEngine();
+	if (engine != nullptr) { engine->requestChangeInModel(); }
+	change();
+	if (m_changed) { m_changed(); }
+	if (engine != nullptr) { engine->doneChangeInModel(); }
+}
+
 auto RackZones::zoneCount() const -> int
 {
 	return static_cast<int>(m_zones.size());
@@ -74,7 +105,9 @@ auto RackZones::zone(int index) const -> const RackZone*
 
 auto RackZones::addZone(const RackZone& zone) -> int
 {
-	m_zones.push_back(zone);
+	RackZone loaded = zone;
+	loadRackZoneSample(loaded);  // before the guard: the render never waits on a file
+	edit([this, &loaded] { m_zones.push_back(std::move(loaded)); });
 	return zoneCount() - 1;
 }
 
@@ -82,14 +115,16 @@ auto RackZones::insertZone(int index, const RackZone& zone) -> bool
 {
 	if (index < 0) { return false; }
 	if (index > zoneCount()) { return false; }
-	m_zones.insert(m_zones.begin() + index, zone);
+	RackZone loaded = zone;
+	loadRackZoneSample(loaded);
+	edit([this, index, &loaded] { m_zones.insert(m_zones.begin() + index, std::move(loaded)); });
 	return true;
 }
 
 auto RackZones::removeZone(int index) -> bool
 {
 	if (zone(index) == nullptr) { return false; }
-	m_zones.erase(m_zones.begin() + index);
+	edit([this, index] { m_zones.erase(m_zones.begin() + index); });
 	return true;
 }
 
@@ -110,7 +145,8 @@ auto RackZones::resolve(int key, int velocity) const -> int
 
 void RackZones::clear()
 {
-	m_zones.clear();
+	if (m_zones.empty()) { return; }
+	edit([this] { m_zones.clear(); });
 }
 
 void RackZones::saveSettings(QDomDocument& doc, QDomElement& rackElement) const
@@ -135,8 +171,7 @@ void RackZones::saveSettings(QDomDocument& doc, QDomElement& rackElement) const
 
 void RackZones::loadSettings(const QDomElement& rackElement)
 {
-	clear();
-
+	std::vector<RackZone> read;
 	for (QDomElement zoneElement = rackElement.firstChildElement(QStringLiteral("zone"));
 		!zoneElement.isNull();
 		zoneElement = zoneElement.nextSiblingElement(QStringLiteral("zone")))
@@ -152,8 +187,11 @@ void RackZones::loadSettings(const QDomElement& rackElement)
 			QString::number(RackZoneMaxVelocity)).toInt();
 		zone.chain = zoneElement.attribute(QStringLiteral("chain"), QStringLiteral("0")).toInt();
 		zone.sample = zoneElement.attribute(QStringLiteral("sample"));
-		m_zones.push_back(zone);
+		loadRackZoneSample(zone);  // a missing file keeps its reference (saved back unchanged)
+		read.push_back(std::move(zone));
 	}
+	// One swap under the guard: a reload never accumulates and never leaves a half-read list to a worker.
+	edit([this, &read] { m_zones.swap(read); });
 }
 
 } // namespace lmms

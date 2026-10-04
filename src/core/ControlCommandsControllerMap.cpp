@@ -28,6 +28,8 @@
  *  bind (bindMidiController); controller.unmap frees it. Each is one undo step (an action step that
  *  re-resolves the parameter by name, so it survives the model being rebuilt). */
 
+#include <QPointer>
+
 #include "ControlAutomationSupport.h"
 #include "ControlDeviceSupport.h"
 #include "ControlCommandDef.h"
@@ -35,6 +37,7 @@
 #include "ControlRegistry.h"
 #include "ControlRegistryGroups.h"
 #include "ControlVocabulary.h"
+#include "Controller.h"
 #include "ControllerConnection.h"
 #include "ControllerSurface.h"
 #include "Engine.h"
@@ -105,11 +108,60 @@ MidiBinding bindingOf(const AutomatableModel* model)
 	return {midi->midiPort().inputChannel(), midi->midiPort().inputController(), midi->softTakeoverEnabled(), midi->feedbackEnabled()};
 }
 
+/*! What @a model was connected to before a map replaced it (W1): a MIDI binding, or a song controller - an LFO, a peak
+ *  follower - that the connection does not own. Undoing the map must put EITHER back; before W1 only the MIDI one came
+ *  back, and a replaced LFO connection was lost. The song controller is GUARDED: a controller deleted since is skipped
+ *  (its connection could not come back), never dereferenced. */
+struct PreviousConnection
+{
+	MidiBinding midi;
+	QPointer<Controller> song;
+};
+
+PreviousConnection previousOf(const AutomatableModel* model)
+{
+	PreviousConnection out{bindingOf(model), nullptr};
+	ControllerConnection* connection = model->controllerConnection();
+	Controller* controller = connection != nullptr ? connection->getController() : nullptr;
+	const bool songOwned = controller != nullptr && out.midi.channel < 0 && controller->type() != Controller::ControllerType::Dummy;
+	if (songOwned) { out.song = controller; }
+	return out;
+}
+
+//! Puts @a previous back on the parameter named @a name (after the map's own binding was taken off).
+void restoreByName(const QString& name, const PreviousConnection& previous)
+{
+	AutomatableModel* model = ControllerSurface::instance().resolveTarget(name);
+	if (model == nullptr) { return; }
+	if (previous.midi.channel >= 0) { bindTo(model, previous.midi); }
+	else if (!previous.song.isNull()) { model->setControllerConnection(new ControllerConnection(previous.song.data())); }
+}
+
 //! controller.map's arguments that bind @a name as @a binding: the inverse of a change that replaced or removed it.
 QJsonObject mapArgsOf(const QString& name, const MidiBinding& binding)
 {
 	return {{QStringLiteral("target"), name}, {QStringLiteral("channel"), binding.channel}, {QStringLiteral("controller"), binding.controller},
 		{QStringLiteral("soft_takeover"), binding.softTakeover}, {QStringLiteral("feedback"), binding.feedback}};
+}
+
+/*! controller.map's transaction. A mapping that replaced a MIDI one is undone by mapping the old one again, and one that
+ *  replaced nothing by unmapping; one that replaced a song controller's connection (an LFO) has no command that reconnects
+ *  it, so its inverse is the recorded step itself - control.undo - and the before-state names the controller. */
+QJsonObject mapTransaction(const QString& name, const PreviousConnection& old)
+{
+	const QString mechanism = QStringLiteral("action checkpoint: the recorded undo step puts the previous binding back");
+	if (old.midi.channel >= 0)
+	{
+		return transactionPayload({{QStringLiteral("control"), name}}, QStringLiteral("controller.map"), mapArgsOf(name, old.midi), true, mechanism);
+	}
+	if (!old.song.isNull())
+	{
+		return transactionPayload({{QStringLiteral("control"), name}, {QStringLiteral("connected_to"), old.song->name()}},
+			QStringLiteral("control.undo"), {}, true, mechanism + QStringLiteral(" - the connection to the song controller it "
+				"replaced, re-made on the same controller"));
+	}
+	return transactionPayload({{QStringLiteral("control"), name}}, QStringLiteral("controller.unmap"), {{QStringLiteral("target"), name}},
+		true, mechanism);
 }
 
 ControlResult mapControl(const QJsonObject& args)
@@ -122,20 +174,15 @@ ControlResult mapControl(const QJsonObject& args)
 	const int channel = binding.channel;
 	const int controller = binding.controller;
 	const QString name = model->fullDisplayName();
-	const MidiBinding old = bindingOf(model);
+	const PreviousConnection old = previousOf(model);
 	addUndoStep([name, old]() {
 		unbindByName(name);
-		if (old.channel >= 0) { bindByName(name, old); }
+		restoreByName(name, old);
 	}, [name, binding]() { bindByName(name, binding); });
 	bindTo(model, binding);
 	Engine::getSong()->setModified();
 	QJsonObject result{{QStringLiteral("control"), name}, {QStringLiteral("channel"), channel}, {QStringLiteral("controller"), controller}};
-	// A mapping that replaced one is undone by mapping the old one again, not by unmapping.
-	const bool replaced = old.channel >= 0;
-	result.insert(QStringLiteral("__transaction"), transactionPayload({{QStringLiteral("control"), name}},
-		replaced ? QStringLiteral("controller.map") : QStringLiteral("controller.unmap"),
-		replaced ? mapArgsOf(name, old) : QJsonObject{{QStringLiteral("target"), name}}, true,
-		QStringLiteral("action checkpoint: the recorded undo step puts the previous binding back")));
+	result.insert(QStringLiteral("__transaction"), mapTransaction(name, old));
 	return ControlResult::success(result);
 }
 

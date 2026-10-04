@@ -44,6 +44,7 @@
 #include "Rack.h"
 #include "RackMacros.h"
 #include "RackZones.h"
+#include "SampleBuffer.h"
 
 namespace lmms
 {
@@ -145,6 +146,9 @@ QJsonObject zoneJson(const RackZone& zone, int index)
 	out.insert(QStringLiteral("high_velocity"), zone.highVelocity);
 	out.insert(QStringLiteral("chain"), zone.chain);
 	out.insert(QStringLiteral("sample"), zone.sample);
+	// E38: whether the reference decoded (a missing file is kept and reported, not refused).
+	out.insert(QStringLiteral("sample_loaded"), zone.loaded != nullptr);
+	out.insert(QStringLiteral("sample_frames"), zone.loaded != nullptr ? static_cast<qint64>(zone.loaded->size()) : 0);
 	return out;
 }
 

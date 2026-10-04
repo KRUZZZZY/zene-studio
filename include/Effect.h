@@ -237,7 +237,8 @@ public:
 	//! is set, else the device's own latencyFrames().
 	int compensatedLatencyFrames() const
 	{
-		return m_deviceOptions.latencyOverride >= 0 ? m_deviceOptions.latencyOverride : latencyFrames();
+		const int override = m_deviceOptions.latencyOverride;  // one read: the interface may write it meanwhile
+		return override >= 0 ? override : latencyFrames();
 	}
 
 	static Effect * instantiate( const QString & _plugin_name,

@@ -392,7 +392,6 @@ int AudioJack::processCallback(jack_nframes_t nframes)
 	if (m_midiClient && nframes > 0)
 	{
 		m_midiClient.load()->JackMidiRead(nframes);
-		m_midiClient.load()->JackMidiWrite(nframes);
 	}
 
 	for (int c = 0; c < channels(); ++c)
@@ -427,6 +426,13 @@ int AudioJack::processCallback(jack_nframes_t nframes)
 	else
 	{
 		audioEngine()->renderNextBuffer({m_tempOutBufs, channels(), nframes});
+	}
+
+	// 0.5.0 W4: MIDI out after the render, so what this cycle's render sent goes out in this
+	// cycle, at its frames, beside the audio it belongs to (it went out one cycle late before).
+	if (m_midiClient && nframes > 0)
+	{
+		m_midiClient.load()->JackMidiWrite(nframes);
 	}
 
 	// R2.3: interleave every port into the wide block and hand it to the ONE capture

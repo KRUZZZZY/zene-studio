@@ -336,7 +336,7 @@ void registerMixerCommands(ControlRegistry& registry)
 			QJsonObject transaction;
 			transaction.insert(QStringLiteral("before"), beforeState);
 			transaction.insert(QStringLiteral("inverse"),
-				QJsonObject{{QStringLiteral("op"), QStringLiteral("UNIMPLEMENTED: restore a deleted mixer channel")},
+				QJsonObject{{QStringLiteral("op"), QStringLiteral("none: no command restores a deleted mixer channel with its state")},
 					{QStringLiteral("count_before"), before}});
 			transaction.insert(QStringLiteral("reversible"), false);
 			transaction.insert(QStringLiteral("mechanism"),

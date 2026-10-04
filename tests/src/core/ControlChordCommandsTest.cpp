@@ -96,7 +96,7 @@ private slots:
 			QStringLiteral("chord.set"), QStringLiteral("chord.remove"),
 			QStringLiteral("chord.clear"), QStringLiteral("chord.detect_to_track"),
 			QStringLiteral("chord.track_write"),
-			QStringLiteral("chord.progression_generate")};
+			QStringLiteral("chord.progression_generate"), QStringLiteral("chord.follow_set")};
 		for (const QString& id : chordIds())
 		{
 			QVERIFY2(registry->hasCommand(id), qPrintable(QStringLiteral("missing %1").arg(id)));
@@ -119,7 +119,7 @@ private slots:
 	void contractRowsClassifyTheGroup()
 	{
 		const QStringList trackEdits = {QStringLiteral("chord.set"), QStringLiteral("chord.remove"),
-			QStringLiteral("chord.clear"), QStringLiteral("chord.detect_to_track")};
+			QStringLiteral("chord.clear"), QStringLiteral("chord.detect_to_track"), QStringLiteral("chord.follow_set")};
 		const QStringList generators = {QStringLiteral("chord.track_write"),
 			QStringLiteral("chord.progression_generate")};
 		const QStringList reads = {QStringLiteral("chord.get_state"), QStringLiteral("chord.detect"),
@@ -300,6 +300,43 @@ private slots:
 		QVERIFY(trackOf().isEmpty());
 		QVERIFY(run(QStringLiteral("control.undo")).ok);
 		QCOMPARE(trackOf().size(), 2);
+	}
+
+	/*! 0.5.0 E23, chord follow on the surface: an instrument track follows (reported in chord.get_state's
+	 *  followers), the same mode again records nothing, one undo stops it following, chord.clear keeps the
+	 *  followers, and a sample track is refused typed. */
+	void aTrackFollowsTheChordTrackReversibly()
+	{
+		const ControlResult added = run(QStringLiteral("track.add"), {{QStringLiteral("type"), QStringLiteral("instrument")}});
+		QVERIFY2(added.ok, qPrintable(added.errorMessage));
+		const QString track = added.result.value(QStringLiteral("track")).toString();
+		const QJsonObject args{{QStringLiteral("track"), track}, {QStringLiteral("mode"), QStringLiteral("scale")}};
+
+		const ControlResult follow = run(QStringLiteral("chord.follow_set"), args);
+		QVERIFY2(follow.ok, qPrintable(follow.errorMessage));
+		QVERIFY(follow.result.value(QStringLiteral("changed")).toBool());
+		QCOMPARE(follow.result.value(QStringLiteral("previous")).toString(), QStringLiteral("off"));
+		const QJsonArray followers = run(QStringLiteral("chord.get_state")).result.value(QStringLiteral("followers")).toArray();
+		QCOMPARE(followers.size(), 1);
+		QCOMPARE(followers.at(0).toObject().value(QStringLiteral("track")).toString(), track);
+		QCOMPARE(followers.at(0).toObject().value(QStringLiteral("mode")).toString(), QStringLiteral("scale"));
+		QVERIFY(!run(QStringLiteral("chord.follow_set"), args).result.value(QStringLiteral("changed")).toBool());
+
+		// chord.clear empties the chords, not the followers.
+		QVERIFY(run(QStringLiteral("chord.set"), {{QStringLiteral("pos"), 0}, {QStringLiteral("chord"), QStringLiteral("Major")}}).ok);
+		QVERIFY(run(QStringLiteral("chord.clear")).ok);
+		QCOMPARE(Engine::getSong()->chordTrack().followers().size(), std::size_t{1});
+		QVERIFY(run(QStringLiteral("control.undo")).ok);  // the clear
+		QVERIFY(run(QStringLiteral("control.undo")).ok);  // the set
+		QVERIFY(run(QStringLiteral("control.undo")).ok);  // the follow
+		QVERIFY2(Engine::getSong()->chordTrack().followers().empty(), "one undo did not stop the track following");
+
+		const ControlResult sample = run(QStringLiteral("track.add"), {{QStringLiteral("type"), QStringLiteral("sample")}});
+		QVERIFY2(sample.ok, qPrintable(sample.errorMessage));
+		const ControlResult refused = run(QStringLiteral("chord.follow_set"),
+			{{QStringLiteral("track"), sample.result.value(QStringLiteral("track")).toString()}});
+		QVERIFY(!refused.ok);
+		QCOMPARE(refused.errorKind, ControlErrorKind::Refused);
 	}
 
 	/*! THE DETECTION WRITER: the chords the detector named land on the track

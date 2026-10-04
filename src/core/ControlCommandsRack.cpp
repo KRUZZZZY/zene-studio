@@ -36,12 +36,14 @@
 #include <QJsonArray>
 #include <QJsonObject>
 
+#include "ControlDeviceMoves.h"
 #include "ControlDeviceSupport.h" // ControlSnapshotLimit, the SPEC A16 snapshot bound
 #include "ControlEdit.h"
 #include "ControlRackSupport.h"
 #include "ControlRegistry.h"
 #include "ControlReversibility.h"
 #include "ControlVocabulary.h"
+#include "Effect.h"
 #include "EffectChain.h"
 #include "Engine.h"
 #include "Mixer.h"
@@ -204,6 +206,35 @@ void registerRackAddChain(ControlRegistry& registry)
 	registry.registerCommand(cmd);
 }
 
+/*! W1 (E19): the inverse rack.remove_chain records BEFORE the chain goes - a structural step that re-creates the rack's
+ *  LAST chain with its devices and the selection (journalChainRemoval). An inner chain, or one whose devices' settings are
+ *  over the snapshot bound, records none. */
+bool journalRemoval(const QString& channelId, Rack& rack, int index)
+{
+	EffectChain* chain = rack.chain(index);
+	if (!devicesRecordable(chain->effects())) { return false; }
+	QStringList states;
+	for (Effect* effect : chain->effects()) { states << controlEffectStateXml(effect); }
+	return journalChainRemoval(channelId, index, states, rack.selectedChain());
+}
+
+//! rack.remove_chain's transaction: the recorded step when there is one, else the honest snapshot.
+QJsonObject removalTransaction(const QJsonObject& beforeState, const QJsonObject& args, bool journalled, bool captured)
+{
+	if (journalled)
+	{
+		return transactionPayload(beforeState, QStringLiteral("control.undo"), args, true,
+			QStringLiteral("structural step: the recorded undo step appends the chain again - it was the rack's last, so it "
+				"comes back at its own index - re-creates its devices in order from their settings documents and puts the "
+				"selection back; its redo removes the chain again"));
+	}
+	return transactionPayload(beforeState, QStringLiteral("none: no command re-creates an inner chain at its own index"), args,
+		false, captured ? QStringLiteral("snapshot only: before-state holds the removed chain's state XML (bounded); an inner "
+			"chain cannot be put back at its own index (a rack appends chains), so no automatic replay was recorded")
+			: QStringLiteral("snapshot only: the chain's state was larger than the bounded snapshot, so only its size is "
+				"recorded and no automatic replay exists"));
+}
+
 void registerRackRemoveChain(ControlRegistry& registry)
 {
 	ControlCommand cmd;
@@ -212,7 +243,9 @@ void registerRackRemoveChain(ControlRegistry& registry)
 	cmd.verb = QStringLiteral("remove_chain");
 	cmd.description = QStringLiteral("Drop a parallel chain from a channel's rack. Chain 0 is the "
 		"channel's own effect chain and is refused. The removed chain's effects and their state "
-		"are captured in the transaction's before-state.");
+		"are captured in the transaction's before-state. Removing the rack's LAST chain is one "
+		"undo step that re-creates it with its devices; an inner chain's removal has no automatic "
+		"undo (the transaction says reversible: false).");
 	cmd.argsSchema = objectSchema({
 		{QStringLiteral("channel"), stringProperty()},
 		{QStringLiteral("chain"), integerProperty()},
@@ -248,6 +281,7 @@ void registerRackRemoveChain(ControlRegistry& registry)
 		const int before = rack.chainCount();
 		const QString stateXml = captureChainXml(*chain);
 		const QString channelIdText = channelIdOf(channel);
+		const bool journalled = journalRemoval(channelIdText, rack, index);
 		rack.removeChain(index);
 
 		QJsonObject beforeState;
@@ -260,19 +294,9 @@ void registerRackRemoveChain(ControlRegistry& registry)
 		result.insert(QStringLiteral("channel"), channelIdText);
 		result.insert(QStringLiteral("removed"), index);
 		result.insert(QStringLiteral("chain_count"), rack.chainCount());
-		result.insert(QStringLiteral("__transaction"),
-			transactionPayload(beforeState,
-				QStringLiteral("UNIMPLEMENTED: re-create the chain with its effects"),
-				QJsonObject{{QStringLiteral("channel"), channelIdText},
-					{QStringLiteral("chain"), index}},
-				false,
-				stateXml.isEmpty()
-					? QStringLiteral("snapshot only: the chain's state was larger than the "
-						"bounded snapshot, so only its size is recorded and no automatic "
-						"replay exists")
-					: QStringLiteral("snapshot only: before-state holds the removed chain's "
-						"state XML (bounded), and there is no command that recreates a chain "
-						"WITH its effects")));
+		result.insert(QStringLiteral("__transaction"), removalTransaction(beforeState,
+			QJsonObject{{QStringLiteral("channel"), channelIdText}, {QStringLiteral("chain"), index}}, journalled,
+			!stateXml.isEmpty()));
 		return ControlResult::success(result);
 	};
 	registry.registerCommand(cmd);

@@ -37,10 +37,12 @@
 
 #include <QThread>
 
+#include <array>
 #include <atomic>
 #include <cstdint>
 
 #include "MidiClient.h"
+#include "MidiJackOutSchedule.h"
 #include "MpscQueue.h"
 
 
@@ -71,6 +73,14 @@ public:
 	void JackMidiWrite(jack_nframes_t nframes);
 	void JackMidiRead(jack_nframes_t nframes);
 
+	/*! 0.5.0 W4: @a event, produced @a offset frames into the engine period, is written to the
+	 *  JACK output port at that frame of the cycle instead of at frame 0. The MIDI path reaches it
+	 *  through processOutEvent() (offset 0) until MidiPort hands the offset on (see the request in
+	 *  the W4 report: MidiClient::processOutEventAt, which this then overrides). The frame is
+	 *  exact when the engine period and the JACK cycle coincide (the usual setup, AudioJack); with
+	 *  a different period the message keeps its place in the order of its period. */
+	void processOutEventAt( const MidiEvent& event, const TimePos& time, const MidiPort* port, f_cnt_t offset ) override;
+
 
 	inline static QString configSection()
 	{
@@ -93,15 +103,12 @@ private:
 	jack_port_t *m_output_port;
 	uint8_t m_jack_buffer[JACK_MIDI_BUFFER_MAX * 4];
 
-	//! 0.5.0 (engine audit E25): one short MIDI message on its way to the JACK output port.
-	struct OutMessage
-	{
-		uint8_t bytes[3];
-		uint8_t length;
-	};
-	//! Senders (the audio thread, the GUI) -> the JACK process callback. Bounded, lock-free.
-	MpscQueue<OutMessage, 1024> m_outQueue;
+	//! Senders (the audio thread, the GUI) -> the JACK process callback. Bounded, lock-free
+	//! (0.5.0 engine audit E25); each message carries its frame (W4, MidiJackOutSchedule.h).
+	MpscQueue<midijack::OutMessage, 1024> m_outQueue;
 	std::atomic<std::uint64_t> m_outDropped{0};
+	//! The JACK process callback's own list of this cycle's messages, ordered by frame.
+	std::array<midijack::OutMessage, midijack::MaxOutPerCycle> m_outCycle{};
 
 	void JackMidiOutEvent(uint8_t *buf, uint8_t len);
 	void lock();

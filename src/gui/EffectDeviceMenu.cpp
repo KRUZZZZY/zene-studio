@@ -110,15 +110,14 @@ void replaceWith(QWidget* parent, const QJsonObject& device)
 	runCommand(parent, CommandCall{QStringLiteral("plugin.replace"), args, {}, QString(), false});
 }
 
+//! W1: every chosen channel in ONE call ('to' as a list), so one undo step takes all the copies back.
 void copyTo(QWidget* parent, const QJsonObject& self, const char* id, const QString& title)
 {
 	const QStringList channels = pickChannels(parent, title, self.value(QStringLiteral("target")).toString());
-	for (const QString& channel : channels)
-	{
-		QJsonObject args = self;
-		args.insert(QStringLiteral("to"), channel);
-		runCommand(parent, CommandCall{QLatin1String(id), args, {}, QString(), false});
-	}
+	if (channels.isEmpty()) { return; }
+	QJsonObject args = self;
+	args.insert(QStringLiteral("to"), QJsonArray::fromStringList(channels));
+	runCommand(parent, CommandCall{QLatin1String(id), args, {}, QString(), false});
 }
 
 QAction* entry(QMenu* menu, const QString& text, const char* id, std::function<void()> run)

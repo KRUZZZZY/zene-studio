@@ -1,6 +1,7 @@
 /*
  * ControlReversibilityTableWasmRender.cpp - the A16 rows of CODE-5
- *                                           (wasm.pool, wasm.render_offline)
+ *                                           (wasm.pool, wasm.render_offline,
+ *                                           wasm.device_load)
  *
  * Copyright (c) 2026 Zene Studio contributors
  *
@@ -65,6 +66,16 @@ const ReversibilityRow kWasmRenderRows[] = {
 		"no parameter and no journal step. Loading the module it names is done "
 		"in that private sandbox, so the hosted module's sandbox - the one "
 		"wasm.load owns - is untouched",
+		""),
+	// 0.5.0 E22: a module into a wasm_effect device, in any chain.
+	R("wasm.device_load", RC::TrueInverse, true,
+		"it loads a module into a wasm_effect device (device state, saved with "
+		"the project): the device's module path changes and the module is heard",
+		"action checkpoint: the recorded undo step restores the device's previous "
+		"settings document - its previous module, or none - and the redo the new "
+		"one, each finding the device again by its target and fx-<n> id. The "
+		"module is re-instantiated from a cold memory image, so a stateful "
+		"module's own state does not come back",
 		""),
 };
 

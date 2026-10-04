@@ -242,17 +242,19 @@ ControlResult scriptRun(const QJsonObject& args)
 	QJsonObject out = scriptRunResultJson(result, logs, path, budget, overridden);
 	// SPEC A16: a script's edits are its own, so the record says exactly that
 	// rather than inventing an inverse. A script may take its own checkpoint
-	// (Lua `addCheckPoint()`), and control.undo replays that one.
+	// (Lua `addCheckPoint()`); the journal's own Undo replays it, while
+	// control.undo refuses this record (E19: no inverse is claimed).
 	QJsonObject transaction;
 	transaction.insert(QStringLiteral("before"), QJsonObject{});
 	transaction.insert(QStringLiteral("inverse"),
 		QJsonObject{{QStringLiteral("op"),
-			QStringLiteral("UNIMPLEMENTED: revert a Lua script's own edits")}});
+			QStringLiteral("none: a Lua script's own edits have no recorded inverse")}});
 	transaction.insert(QStringLiteral("reversible"), false);
 	transaction.insert(QStringLiteral("mechanism"),
 		QStringLiteral("snapshot only: a Lua script mutates the engine through its own bindings; "
 			"the registry records no inverse for that. A script can take its own ProjectJournal "
-			"checkpoint with Lua addCheckPoint(), which control.undo does replay."));
+			"checkpoint with Lua addCheckPoint(), which the journal's own Undo (Ctrl+Z) replays; "
+			"control.undo refuses this record rather than unwind a step it cannot attribute."));
 	out.insert(QStringLiteral("__transaction"), transaction);
 	return ControlResult::success(out);
 }

@@ -262,11 +262,11 @@ that is this page's fault — report it and it gets added.
   (`rack.zone_add` / `rack.zone_remove` / `rack.zone_resolve`, §3), both saved as children of the channel's
   existing `<rack>` element. **Rack macros and key/velocity zones are drivable through the socket, not from
   the interface**: there is no macro knob, no zone editor and no key map to draw, so a user cannot create,
-  see or move either one — `rack.get_state` reports them and nothing in `src/gui/` draws them. **And the zone
-  half is a model plus a lookup, not note routing:** the rack renders one stereo block and has no per-note
-  input, so no note path consults a zone in this build — `rack.zone_resolve` answers which zone a note would
-  fall into, and nothing acts on that answer. `docs/RACK-MACROS.md` §4 states the same limit and what is
-  needed to close it.
+  see or move either one — `rack.get_state` reports them and nothing in `src/gui/` draws them. Since 0.5.0 (E20/E38)
+  zones route: a note of an instrument track playing into the channel that a zone claims plays on that zone's
+  chain only, and a zone whose sample loads plays the sample for the note. Notes of single-stream instruments
+  (most hosted plug-ins) cannot be split, and a track with effects of its own or a compensation delay routes
+  the old way; zoned notes skip the channel's trim, input mono and pre-FX taps.
 - **Folder tracks are in the engine and on the socket, and there is no interface for them —
   added 2026-09-13.** A folder is a **real container**: a track of its own type (`track.add`
   `type=folder`) that holds other tracks, in two modes — `group` (organisation only, every child
@@ -283,8 +283,8 @@ that is this page's fault — report it and it gets added.
   Collapsed, Pinned and Route children through the folder), all through the same `track.*` commands,
   and a collapsed folder's children leave the track list - from the menu or the socket
   (`TrackFolderMenuTest`), and a child's row is indented one step per folder level (its settings column
-  keeping its width) with the membership as its accessible description. Still missing: a pinned folder
-  staying on screen while the list scrolls (the flag is set and saved; nothing reads it yet). The named
+  keeping its width) with the membership as its accessible description. Since 0.5.0 (E21) a pinned
+  folder stays on screen while the list scrolls (a strip above the scrolling tracks; TrackPinStrip.h). The named
   visibility sets have a switcher too - the song editor's Views menu: All tracks (the new
   `track.visibility_show_all`), each set (apply), Save visible tracks as..., Remove - and applying a
   set now actually hides the other rows (the view flag had never been read by the track list;
@@ -349,7 +349,7 @@ that is this page's fault — report it and it gets added.
   *What this bullet still means, and what is still absent (updated 2026-09-29): the composite **plays** (R3.1:
   each audio take sounds only where its lane is selected, with a short ramp at a switch) and **MIDI takes are comped**
   (R3.3: a note plays where the composite selects its clip's lane at the note's start), and `comp.audition` plays
-  one lane whole. Still absent: the per-segment `srcpos` slip is recorded but not applied; there is **no lane
+  one lane whole. Since 0.5.0 (E2) the per-segment slip is applied on audio takes at a constant rate and their own pitch (warped, pitch-preserving and MIDI takes play unslipped); there is **no lane
   geometry, no lane handle, no comping gesture and no waveform drawing** anywhere in `src/gui/`; and there is **no
   flatten** (the destructive bounce a comp can end in). *(2026-09-29, R3.2: `clip.consolidate` is that flatten for
   a region of a sample track - every lane through the composite's gate, one clip back, one undo restores. A clip
@@ -450,7 +450,8 @@ that is this page's fault — report it and it gets added.
   needs a display.
   **And the limit, stated plainly: the group drives the HOST's own sandbox, not a device's.**
   `wasm.load` does not put a module into an effect's audio path and nothing here is heard:
-  `wasm_effect` instances are still given a module through that dialog, and their 8 parameter models are
+  Since 0.5.0 (E22) a `wasm_effect` device in any chain also takes a module headlessly through `wasm.device_load
+  {target, plugin, path}` (all or nothing, saved, one undo step); otherwise instances are given a module through that dialog, and their 8 parameter models are
   project state reachable with `plugin.param_*` on a `wasm_effect` device. A module hosted by `wasm.load` is
   not in any chain. `docs/WASM-EFFECT-ABI.md` §13 says the same.
 
@@ -1188,8 +1189,8 @@ are **drivable through the socket, not from the interface**, and this section is
 - **UI absence — one line: `clip.slip` is drivable through the socket, not from the interface.**
   There is no slip gesture anywhere in the product: a case-insensitive grep for `slip` over `src/`
   and `include/` returns seven hits and every one of them is a comment or a doc-string. The
-  nearest existing concept is the comp take's `srcpos`, which is recorded and reported but
-  deliberately **not applied** (`docs/COMPING.md`). `clip.slip` is the first implementation of the
+  nearest existing concept is the comp take's `srcpos`, which is applied to audio takes since 0.5.0 E2
+  (`docs/COMPING.md`). `clip.slip` is the first implementation of the
   verb and it is socket-only.
 - **UI absence — one line: `note.probability_set` is drivable through the socket, not from the
   interface.** `docs/MIDI-DEPTH.md` already states it — "Probability/velocity jitter is not exposed

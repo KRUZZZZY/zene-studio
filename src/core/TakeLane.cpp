@@ -54,14 +54,14 @@ bool segmentBefore(const TakeLaneSegment& seg, const TakeLaneSegment& other)
 }
 
 /*! True when \p seg continues \p previous: it starts where the previous one
- *  ended, takes the same lane, and reads that lane's take at the offset the
- *  previous one's own arithmetic would have reached (so "the take restarts
- *  here" is expressible and is NOT merged away). */
+ *  ended, takes the same lane, and reads that lane's take at the same SLIP
+ *  (TakeLaneSegment, 0.5.0 E2) - one continuous read. A different slip is a
+ *  jump in the take and is NOT merged away. */
 bool continuesTake(const TakeLaneSegment& previous, const TakeLaneSegment& seg)
 {
 	if (previous.endTick != seg.beginTick) { return false; }
 	if (previous.laneIndex != seg.laneIndex) { return false; }
-	return seg.sourceOffset == previous.sourceOffset + (seg.beginTick - previous.beginTick);
+	return seg.sourceOffset == previous.sourceOffset;
 }
 
 TakeLane laneFromElement(const QDomElement& element)
@@ -93,7 +93,9 @@ TakeLaneSegment segmentFromElement(const QDomElement& element)
 	seg.beginTick = std::max(0, element.attribute(QStringLiteral("begin"), QStringLiteral("0")).toInt());
 	seg.endTick = std::max(0, element.attribute(QStringLiteral("end"), QStringLiteral("0")).toInt());
 	seg.laneIndex = std::max(0, element.attribute(QStringLiteral("lane"), QStringLiteral("0")).toInt());
-	seg.sourceOffset = std::max(0, element.attribute(QStringLiteral("srcpos"), QStringLiteral("0")).toInt());
+	// 0.5.0 E2: the slip is `slip`. A pre-0.5.0 `srcpos` is ignored on purpose - it held the old, contradictory
+	// reading and no playback path ever applied it, so dropping it keeps an old project sounding as it did.
+	seg.sourceOffset = std::max(0, element.attribute(QStringLiteral("slip"), QStringLiteral("0")).toInt());
 	return seg;
 }
 
@@ -180,9 +182,8 @@ void TakeLaneModel::subtractRange(const TakeLaneSegment& seg, int beginTick, int
 	}
 	if (seg.endTick > endTick)
 	{
-		TakeLaneSegment right = seg;
+		TakeLaneSegment right = seg;  // the slip is the segment's, not its start's: it is kept
 		right.beginTick = endTick;
-		right.sourceOffset += endTick - seg.beginTick;
 		out->push_back(right);
 	}
 }
@@ -290,11 +291,7 @@ int TakeLaneModel::rebuild(int spanBegin, int spanEnd)
 	for (const TakeLaneSegment& seg : m_segments)
 	{
 		TakeLaneSegment kept = seg;
-		if (kept.beginTick < spanBegin)
-		{
-			kept.sourceOffset += spanBegin - kept.beginTick;
-			kept.beginTick = spanBegin;
-		}
+		if (kept.beginTick < spanBegin) { kept.beginTick = spanBegin; }  // the slip is kept (E2)
 		if (kept.endTick > spanEnd) { kept.endTick = spanEnd; }
 		if (kept.endTick > kept.beginTick) { clamped.push_back(kept); }
 	}
@@ -319,7 +316,7 @@ bool TakeLaneModel::resolve(int tick, int* laneIndex, int* sourceOffset) const
 		if (tick < seg.beginTick) { break; }
 		if (tick >= seg.endTick) { continue; }
 		if (laneIndex != nullptr) { *laneIndex = seg.laneIndex; }
-		if (sourceOffset != nullptr) { *sourceOffset = seg.sourceOffset + (tick - seg.beginTick); }
+		if (sourceOffset != nullptr) { *sourceOffset = seg.sourceOffset; }
 		return true;
 	}
 	return false;
@@ -329,9 +326,10 @@ bool TakeLaneModel::resolve(int tick, int* laneIndex, int* sourceOffset) const
 bool TakeLaneModel::resolveSource(const std::vector<Clip*>& clips, int tick,
 	f_cnt_t* sourceFrame, int* laneIndex) const
 {
-	Clip* clip = takeAt(clips, tick, laneIndex);
+	int slip = 0;
+	Clip* clip = resolve(tick, nullptr, &slip) ? takeAt(clips, tick, laneIndex) : nullptr;
 	if (clip == nullptr) { return false; }
-	if (sourceFrame != nullptr) { *sourceFrame = clip->sourceFrameAt(TimePos(tick)); }
+	if (sourceFrame != nullptr) { *sourceFrame = clip->sourceFrameAt(TimePos(tick + slip)); }
 	return true;
 }
 
@@ -339,13 +337,14 @@ bool TakeLaneModel::resolveSource(const std::vector<Clip*>& clips, int tick,
 Clip* TakeLaneModel::takeAt(const std::vector<Clip*>& clips, int tick, int* laneIndex) const
 {
 	int lane = 0;
-	int offset = 0;
-	if (!resolve(tick, &lane, &offset)) { return nullptr; }
+	int slip = 0;
+	if (!resolve(tick, &lane, &slip)) { return nullptr; }
 	for (Clip* clip : clips)
 	{
 		if (clip == nullptr || clip->laneIndex() != lane) { continue; }
+		// The take's handle plays where the clip is (tick), and reads it slip ticks later (E2).
 		if (tick < clip->startPosition().getTicks()) { continue; }
-		if (tick >= clip->endPosition().getTicks()) { continue; }
+		if (tick + slip >= clip->endPosition().getTicks()) { continue; }
 		if (laneIndex != nullptr) { *laneIndex = lane; }
 		return clip;
 	}
@@ -378,11 +377,8 @@ void TakeLaneModel::saveSettings(QDomDocument& doc, QDomElement& element) const
 		segElement.setAttribute(QStringLiteral("begin"), seg.beginTick);
 		segElement.setAttribute(QStringLiteral("end"), seg.endTick);
 		segElement.setAttribute(QStringLiteral("lane"), seg.laneIndex);
-		// Additive (I9): a comp with no slip writes no srcpos attribute.
-		if (seg.sourceOffset != 0)
-		{
-			segElement.setAttribute(QStringLiteral("srcpos"), seg.sourceOffset);
-		}
+		// Additive (I9): a comp with no slip writes no slip attribute (0.5.0 E2: `slip`, not the old `srcpos`).
+		if (seg.sourceOffset != 0) { segElement.setAttribute(QStringLiteral("slip"), seg.sourceOffset); }
 		element.appendChild(segElement);
 	}
 }

@@ -110,7 +110,7 @@ const ReversibilityRow kStructureRows[] = {
 		"the music would not. The capture is bounded at 64 KiB and its measured "
 		"size is charged to the undo stack's byte budget",
 		"a track whose XML is over the 64 KiB cap records no inverse and says so "
-		"('UNIMPLEMENTED for this track'); the transaction's before-state still "
+		"('none: this track was too large to capture'); its before-state still "
 		"names what was removed"),
 	R("plugin.unload", RC::TrueInverse, true,
 		"a removed Effect has no live object a checkpoint could restore - "

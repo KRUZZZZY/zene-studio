@@ -85,14 +85,11 @@ QJsonObject recordSessionEdit(const QString& captured, const QJsonObject& before
 		if (song != nullptr) { restoreSessionBlock(song->sessionModel(), block); }
 	};
 	control::addUndoStep([restore, captured]() { restore(captured); }, [restore, edited]() { restore(edited); });
-	// The inverse is NOT a command: no registered command replays a <session>
-	// block, so control.undo reaches it through the journal (it checks
-	// inverse.applies for "command" and finds none). The op text says so in as
-	// many words rather than naming a command that does not exist - the same
-	// form clip.split uses for the step the journal itself performs.
+	// The inverse is the journal step just pushed: no registered command replays a
+	// <session> block, so control.undo reaches it through the journal (it checks
+	// inverse.applies for "command" and finds none) and the op names it (E19).
 	return control::transactionPayload(before,
-		QStringLiteral("UNIMPLEMENTED: replay the captured <session> block through "
-			"session.set_grid / session.set_slot / session.set_scene"),
+		QStringLiteral("control.undo"),
 		QJsonObject(), true,
 		QStringLiteral("ProjectJournal (action checkpoint): one control.undo or Ctrl+Z restores the "
 			"captured <session> block (%1)").arg(what));

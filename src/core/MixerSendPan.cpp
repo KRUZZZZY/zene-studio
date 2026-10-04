@@ -40,19 +40,39 @@ void balanceGains(float pan, float* left, float* right)
 	*right = p < 0.f ? 1.f + p : 1.f;
 }
 
+bool sendIsPanned(MixerRoute& route)
+{
+	// The buffer first: valueBuffer() is what moves the model's ramp on, once per period.
+	return route.pan()->valueBuffer() != nullptr || route.pan()->value() != 0.f;
+}
+
+namespace
+{
+
+//! Frame @a f of a sample-exact @a buffer, or @a value when the model has none this period.
+float at(const ValueBuffer* buffer, float value, f_cnt_t f)
+{
+	return buffer != nullptr ? buffer->values()[f] : value;
+}
+
+} // namespace
+
 void addPannedSend(SampleFrame* dst, const SampleFrame* src, MixerRoute& route, MixerChannel& sender, f_cnt_t frames)
 {
-	float left = 1.f;
-	float right = 1.f;
-	balanceGains(route.pan()->value(), &left, &right);
+	const ValueBuffer* panBuf = route.pan()->valueBuffer();
+	const float pan = route.pan()->value();
 	const ValueBuffer* sendBuf = route.amount()->valueBuffer();
 	// 0.5.0 MX-082: a sender whose post-fader inserts baked its fader is read at unity.
 	const ValueBuffer* volBuf = route.preFader() ? nullptr : postinserts::faderBuffer(sender, &route);
 	const float send = route.amount()->value();
 	const float volume = route.preFader() ? 1.f : postinserts::faderValue(sender, &route);
+	float left = 1.f;
+	float right = 1.f;
+	balanceGains(pan, &left, &right);
 	for (f_cnt_t f = 0; f < frames; ++f)
 	{
-		const float gain = (sendBuf != nullptr ? sendBuf->values()[f] : send) * (volBuf != nullptr ? volBuf->values()[f] : volume);
+		if (panBuf != nullptr) { balanceGains(panBuf->values()[f], &left, &right); }
+		const float gain = at(sendBuf, send, f) * at(volBuf, volume, f);
 		dst[f][0] += src[f][0] * gain * left;
 		dst[f][1] += src[f][1] * gain * right;
 	}

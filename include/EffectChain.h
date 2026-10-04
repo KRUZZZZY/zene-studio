@@ -59,6 +59,9 @@ public:
 	EffectChain( Model * _parent );
 	~EffectChain() override;
 
+	//! Whether the chain's own on/off switch is on (an off chain calls none of its effects).
+	bool isEnabled() const { return m_enabledModel.value(); }
+
 	void saveSettings( QDomDocument & _doc, QDomElement & _parent ) override;
 	void loadSettings( const QDomElement & _this ) override;
 

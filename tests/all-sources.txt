@@ -150,6 +150,7 @@ include/ChainPresetMenu.h
 include/ChannelLevelMeter.h
 include/ChannelPickDialog.h
 include/ChordDetect.h
+include/ChordFollow.h
 include/ChordProgression.h
 include/ChordTrack.h
 include/ChordVocabulary.h
@@ -174,6 +175,7 @@ include/CommandListDialog.h
 include/CommandLists.h
 include/CommandMetadata.h
 include/CommandPalette.h
+include/CompSlip.h
 include/CompSwipeStrip.h
 include/ConfigManager.h
 include/ContextHelp.h
@@ -199,6 +201,7 @@ include/ControlMixerSupport.h
 include/ControlModulationSupport.h
 include/ControlNoteShared.h
 include/ControlProjectAssets.h
+include/ControlRackMacroWrites.h
 include/ControlRackSupport.h
 include/ControlRecordingSupport.h
 include/ControlRegistry.h
@@ -401,6 +404,7 @@ include/MidiEventProcessor.h
 include/MidiEventToByteSeq.h
 include/MidiInputTransform.h
 include/MidiJack.h
+include/MidiJackOutSchedule.h
 include/MidiLearn.h
 include/MidiLearnGui.h
 include/MidiOss.h
@@ -466,6 +470,7 @@ include/Oscilloscope.h
 include/OutOfProcessHosting.h
 include/OutputSettings.h
 include/OversamplingHelpers.h
+include/ParameterAliases.h
 include/ParameterControls.h
 include/ParameterGridDialog.h
 include/PatchWiring.h
@@ -526,6 +531,8 @@ include/RackMacros.h
 include/RackMenu.h
 include/RackNodes.h
 include/RackSplit.h
+include/RackZoneFeed.h
+include/RackZoneInputs.h
 include/RackZones.h
 include/RaiiHelpers.h
 include/RealtimeScope.h
@@ -679,6 +686,7 @@ include/TrackLabelButton.h
 include/TrackLooks.h
 include/TrackMixModels.h
 include/TrackOperationsWidget.h
+include/TrackPinStrip.h
 include/TrackRecorder.h
 include/TrackRenameLineEdit.h
 include/TrackRenderMenu.h
@@ -767,6 +775,7 @@ plugins/ClapEffect/ClapHostInternals.h
 plugins/ClapEffect/ClapHostLifecycle.cpp
 plugins/ClapEffect/ClapHostNotes.cpp
 plugins/ClapEffect/ClapHostParams.cpp
+plugins/ClapEffect/ClapKnobGrid.h
 plugins/ClapEffect/ClapLoader.cpp
 plugins/ClapEffect/ClapLoader.h
 plugins/ClapEffect/ClapNoteQueue.h
@@ -785,6 +794,7 @@ plugins/Compressor/CompressorControlDialog.cpp
 plugins/Compressor/CompressorControlDialog.h
 plugins/Compressor/CompressorControls.cpp
 plugins/Compressor/CompressorControls.h
+plugins/Compressor/CompressorKeyFilter.h
 plugins/Console/Console.cpp
 plugins/Console/Console.h
 plugins/ConvolutionReverb/ConvolutionKernel.cpp
@@ -1253,6 +1263,7 @@ src/core/ClipPreFades.cpp
 src/core/ClipTransients.cpp
 src/core/Clipboard.cpp
 src/core/ComboBoxModel.cpp
+src/core/CompSlip.cpp
 src/core/ConfigManager.cpp
 src/core/ControlAutomationSupport.cpp
 src/core/ControlBounceSupport.cpp
@@ -1401,6 +1412,7 @@ src/core/ControlCommandsProjectLifecycle.cpp
 src/core/ControlCommandsProjectMmpzGit.cpp
 src/core/ControlCommandsPunch.cpp
 src/core/ControlCommandsRack.cpp
+src/core/ControlCommandsRackMacroPair.cpp
 src/core/ControlCommandsRackMacros.cpp
 src/core/ControlCommandsRackWrap.cpp
 src/core/ControlCommandsRackZones.cpp
@@ -1670,6 +1682,7 @@ src/core/NoteTransform.cpp
 src/core/OnnxRuntimeStemSeparator.cpp
 src/core/Oscillator.cpp
 src/core/OutOfProcessHosting.cpp
+src/core/ParameterAliases.cpp
 src/core/ParameterControls.cpp
 src/core/PatchWiring.cpp
 src/core/PathUtil.cpp
@@ -1711,6 +1724,8 @@ src/core/Rack.cpp
 src/core/RackMacros.cpp
 src/core/RackNodes.cpp
 src/core/RackSplit.cpp
+src/core/RackZoneFeed.cpp
+src/core/RackZoneInputs.cpp
 src/core/RackZones.cpp
 src/core/RecordOptions.cpp
 src/core/RecorderTaps.cpp
@@ -1979,6 +1994,7 @@ src/gui/TempoMapPanel.cpp
 src/gui/ToolPluginView.cpp
 src/gui/TrackFolderMenu.cpp
 src/gui/TrackIcons.cpp
+src/gui/TrackPinStrip.cpp
 src/gui/TrackRenderMenu.cpp
 src/gui/UiConfigStore.cpp
 src/gui/UndoHistoryPanel.cpp
@@ -2233,6 +2249,7 @@ tests/src/core/McuSurfaceTest.cpp
 tests/src/core/MeterTapTest.cpp
 tests/src/core/MidiClockTest.cpp
 tests/src/core/MidiInputTransformTest.cpp
+tests/src/core/MidiJackOutScheduleTest.cpp
 tests/src/core/MidiLearnTest.cpp
 tests/src/core/MidiLearnThreadTest.cpp
 tests/src/core/MidiOutQueueTest.cpp
@@ -2296,8 +2313,10 @@ tests/src/core/PunchWindowTest.cpp
 tests/src/core/RackMacrosTest.cpp
 tests/src/core/RackTest.cpp
 tests/src/core/RackTestSupport.h
+tests/src/core/RackZoneRoutingTest.cpp
 tests/src/core/RackZonesTest.cpp
 tests/src/core/RangeEditsTest.cpp
+tests/src/core/RealtimeSnapshotTest.cpp
 tests/src/core/RecordClipTest.cpp
 tests/src/core/RecordRingBufferTest.cpp
 tests/src/core/RecordToolsTest.cpp
@@ -2366,6 +2385,7 @@ tests/src/core/TwoTrackRecordingHarness.cpp
 tests/src/core/UnclaimedElementsTest.cpp
 tests/src/core/UnclaimedTrackTypeTest.cpp
 tests/src/core/UndoBoundsTest.cpp
+tests/src/core/UndoHonestyTest.cpp
 tests/src/core/VcaGroupTest.cpp
 tests/src/core/VcaRefreshAtomicityTest.cpp
 tests/src/core/W3EngineTest.cpp
@@ -2432,6 +2452,7 @@ tests/src/gui/VcaStripViewTest.cpp
 tests/src/gui/VisibilitySetMenuTest.cpp
 tests/src/gui/WcagContrastTest.cpp
 tests/src/gui/WorkspaceAccessTest.cpp
+tests/src/gui/XyPadPairTest.cpp
 tests/src/plugins/AudioPluginTest.cpp
 tests/src/plugins/ClapBusMapTest.cpp
 tests/src/plugins/ClapEffectIntegrationTest.cpp

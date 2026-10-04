@@ -23,7 +23,7 @@
  */
 
 /*! 0.5.0 L09: a send's own pan balances what reaches the receiver and is saved only when set
- *  (MX-048); mixer.send_many makes the same send from several channels as one undo step (MX-050);
+ *  (MX-048), and since 0.5.0 W4 follows its sample-exact buffer frame by frame; mixer.send_many makes the same send from several channels as one undo step (MX-050);
  *  a VCA group inside another takes its gain, a loop is refused (MX-070); a channel can sit in two
  *  groups when asked and their gains multiply (MX-070); a group's links choose what reaches its
  *  members and suspend turns them off (MX-071); window.mixer_view answers its modes (MX-049) and, from
@@ -34,11 +34,16 @@
 #include <QDomDocument>
 #include <QJsonArray>
 
+#include <algorithm>
+#include <vector>
+
 #include "ControlMixerSupport.h"
 #include "ControlRegistry.h"
 #include "ControlVocabulary.h"
+#include "AudioBus.h"
 #include "AudioDevice.h"
 #include "AudioEngine.h"
+#include "AutomatableModel.h"
 #include "Engine.h"
 #include "Mixer.h"
 #include "MixerSendPan.h"
@@ -55,6 +60,23 @@ ControlResult run(const QString& id, const QJsonObject& args = {})
 }
 
 QString ch(int index) { return control::channelIdOf(Engine::mixer()->mixerChannel(index)); }
+
+//! One period of a constant 0.5 on channel 1 through the real render path (mixToChannel ->
+//! masterMix, as MixerChannelPanTest renders); the master's output.
+std::vector<SampleFrame> renderPeriod()
+{
+	Mixer* mixer = Engine::mixer();
+	const f_cnt_t fpp = Engine::audioEngine()->framesPerPeriod();
+	std::vector<SampleFrame> input(fpp, SampleFrame(0.5f, 0.5f));
+	std::vector<SampleFrame> out(fpp, SampleFrame(0.f, 0.f));
+	SampleFrame* busData[1] = {input.data()};
+	const AudioBus bus{busData, 1, fpp};
+	mixer->mixToChannel(bus, static_cast<mix_ch_t>(1));
+	mixer->prepareMasterMix();
+	mixer->masterMix(out.data());
+	AutomatableModel::incrementPeriodCounter();  // what the engine does once per period
+	return out;
+}
 
 float vcaGainOf(int index) { return Engine::mixer()->mixerChannel(index)->vcaGain(); }
 
@@ -102,16 +124,62 @@ private slots:
 		MixerRoute* route = control::findMixerRoute(1, 3);  // not front(): every channel already sends to the master
 		QVERIFY(route != nullptr);
 		QCOMPARE(route->pan()->value(), -1.f);
-		// What the receiver gets: the left side only, scaled by the send.
-		std::vector<SampleFrame> dst(4, SampleFrame(0.f, 0.f));
-		const std::vector<SampleFrame> src(4, SampleFrame(1.f, 1.f));
-		addPannedSend(dst.data(), src.data(), *route, *Engine::mixer()->mixerChannel(1), 4);
-		QVERIFY(std::abs(dst[0][0] - 0.8f * Engine::mixer()->mixerChannel(1)->m_volumeModel.value()) < 1e-5f);
+		// What the receiver gets. 0.5.0 W4: the send pan is sample-exact, so the block the pan moved
+		// in ramps from where it was (centre) to hard left frame by frame - the one-period smoothing
+		// the send level and the channel pan already have (MixerChannelPanTest::settledRender). The
+		// old expectation, the right side already silent at frame 0 of that block, held only because
+		// the pan was applied once per block: the step the review reported (lane14 luna BUG 1).
+		const f_cnt_t fpp = Engine::audioEngine()->framesPerPeriod();
+		const float sent = 0.8f * Engine::mixer()->mixerChannel(1)->m_volumeModel.value();
+		std::vector<SampleFrame> dst(fpp, SampleFrame(0.f, 0.f));
+		const std::vector<SampleFrame> src(fpp, SampleFrame(1.f, 1.f));
+		addPannedSend(dst.data(), src.data(), *route, *Engine::mixer()->mixerChannel(1), fpp);
+		QVERIFY(std::abs(dst[0][0] - sent) < 1e-5f);
+		QVERIFY(std::abs(dst[0][1] - sent) < 1e-5f);  // frame 0: still centred
+		QVERIFY(std::abs(dst[fpp - 1][1] - sent / static_cast<float>(fpp)) < 1e-5f);  // the last: all but hard left
+		QVERIFY(dst[fpp / 2][1] < dst[0][1] && dst[fpp - 1][1] < dst[fpp / 2][1]);
+		// The next block, the pan settled: the left side only, scaled by the send - on every frame.
+		AutomatableModel::incrementPeriodCounter();  // what the engine does once per period
+		std::fill(dst.begin(), dst.end(), SampleFrame(0.f, 0.f));
+		addPannedSend(dst.data(), src.data(), *route, *Engine::mixer()->mixerChannel(1), fpp);
+		QVERIFY(std::abs(dst[0][0] - sent) < 1e-5f);
+		QVERIFY(std::abs(dst[fpp - 1][0] - sent) < 1e-5f);
 		QCOMPARE(dst[0][1], 0.f);
+		QCOMPARE(dst[fpp - 1][1], 0.f);
 		QVERIFY(run(QStringLiteral("control.undo")).ok);
 		QCOMPARE(route->pan()->value(), 0.f);
 		QCOMPARE(run(QStringLiteral("mixer.send_pan"), {{QStringLiteral("channel"), ch(2)}, {QStringLiteral("to"), ch(4)},
 			{QStringLiteral("pan"), 0.5}}).errorKind, ControlErrorKind::NotFound);  // there is no such send
+		run(QStringLiteral("mixer.route_remove"), {{QStringLiteral("channel"), ch(1)}, {QStringLiteral("to"), ch(3)}});
+	}
+
+	/*! 0.5.0 W4 (review lane14 luna BUG 1): a send's pan follows its sample-exact buffer through the
+	 *  real render path. The pan moves from hard left back to centre: before, the mixer picked the
+	 *  panned path from pan()->value() alone, so a block that ends at centre went out centred from
+	 *  frame 0 and the move was one step at the block boundary. Measured on the master, where
+	 *  channel 1's own route adds the same amount to every frame. */
+	void aMovingSendPanIsFollowedFrameByFrame()
+	{
+		QVERIFY(run(QStringLiteral("mixer.send_to"), {{QStringLiteral("channel"), ch(1)}, {QStringLiteral("to"), ch(3)},
+			{QStringLiteral("amount"), 1.0}}).ok);
+		MixerRoute* route = control::findMixerRoute(1, 3);
+		QVERIFY(route != nullptr);
+		const f_cnt_t last = Engine::audioEngine()->framesPerPeriod() - 1;
+		route->pan()->setValue(-1.f);
+		renderPeriod();  // the move to hard left ramps over this period
+		const std::vector<SampleFrame> left = renderPeriod();
+		QVERIFY(left[0][1] < left[0][0]);  // the send's right side is gone
+		route->pan()->setValue(0.f);
+		QVERIFY(sendIsPanned(*route));  // value() is centre, but this period's buffer still moves
+		const std::vector<SampleFrame> moving = renderPeriod();
+		QVERIFY(!sendIsPanned(*route));  // settled at centre: the inherited branches again
+		const std::vector<SampleFrame> centred = renderPeriod();
+		QVERIFY(centred[0][1] > left[0][1]);
+		QVERIFY(std::abs(moving[0][1] - left[0][1]) < 1e-5f);  // frame 0: still hard left
+		const float ramp = static_cast<float>(last) / static_cast<float>(last + 1);
+		QVERIFY(std::abs(moving[last][1] - (left[0][1] + (centred[0][1] - left[0][1]) * ramp)) < 1e-5f);
+		QVERIFY(moving[last / 2][1] > moving[0][1] && moving[last][1] > moving[last / 2][1]);
+		QVERIFY(std::abs(moving[last][0] - left[last][0]) < 1e-5f);  // panning left of centre leaves the left side alone
 		run(QStringLiteral("mixer.route_remove"), {{QStringLiteral("channel"), ch(1)}, {QStringLiteral("to"), ch(3)}});
 	}
 

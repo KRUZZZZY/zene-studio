@@ -25,6 +25,7 @@
 #include "MidiJack.h"
 
 #include <algorithm>
+#include <limits>
 
 #ifdef LMMS_HAVE_JACK
 
@@ -218,12 +219,18 @@ thread_local uint8_t t_outLength = 0;
 
 void MidiJack::processOutEvent( const MidiEvent& event, const TimePos& time, const MidiPort* port )
 {
+	processOutEventAt( event, time, port, 0 );
+}
+
+void MidiJack::processOutEventAt( const MidiEvent& event, const TimePos& time, const MidiPort* port, f_cnt_t offset )
+{
 	t_outLength = 0;
 	MidiClientRaw::processOutEvent( event, time, port );
 	if( t_outLength == 0 ) { return; }
-	OutMessage message{};
+	midijack::OutMessage message{};
 	std::copy( t_outBytes, t_outBytes + t_outLength, message.bytes );
 	message.length = t_outLength;
+	message.frame = static_cast<std::uint32_t>( std::min<f_cnt_t>( offset, std::numeric_limits<std::uint32_t>::max() ) );
 	t_outLength = 0;
 	if( !m_outQueue.push( message ) ) { m_outDropped.fetch_add( 1, std::memory_order_relaxed ); }
 }
@@ -237,15 +244,19 @@ void MidiJack::sendByte( const unsigned char c )
 // we write data to jack
 void MidiJack::JackMidiWrite(jack_nframes_t nframes)
 {
-	// The JACK process callback (realtime): every queued message goes out at the start of this
-	// cycle. jack_midi_event_write copies into the port buffer; nothing allocates or locks.
+	// The JACK process callback (realtime): each queued message goes out at its own frame of this
+	// cycle (0.5.0 W4; it was frame 0 for all), in time order, as jack_midi_event_write requires
+	// (MidiJackOutSchedule.h). Up to MaxOutPerCycle per cycle; the rest stay queued for the next.
+	// jack_midi_event_write copies into the port buffer; nothing allocates or locks.
 	if( m_output_port == nullptr ) { return; }
 	void* buffer = jack_port_get_buffer( m_output_port, nframes );
 	jack_midi_clear_buffer( buffer );
-	OutMessage message;
-	while( m_outQueue.pop( &message ) )
+	const std::size_t count = midijack::drainByFrame( m_outQueue, m_outCycle.data(), m_outCycle.size() );
+	for( std::size_t i = 0; i < count; ++i )
 	{
-		if( jack_midi_event_write( buffer, 0, message.bytes, message.length ) != 0 )
+		const midijack::OutMessage& message = m_outCycle[i];
+		const jack_nframes_t frame = midijack::cycleFrame( message.frame, nframes );
+		if( jack_midi_event_write( buffer, frame, message.bytes, message.length ) != 0 )
 		{
 			m_outDropped.fetch_add( 1, std::memory_order_relaxed );
 		}

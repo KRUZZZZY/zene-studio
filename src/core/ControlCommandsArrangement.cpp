@@ -278,7 +278,7 @@ void registerTrackRemove(ControlRegistry& registry)
 						"because they are IN the captured document; a checkpoint taken after "
 						"the delete could not, since ~Track destroys them first"),
 					true)
-				: trackSnapshot(snapshot, QStringLiteral("UNIMPLEMENTED for this track"),
+				: trackSnapshot(snapshot, QStringLiteral("none: this track was too large to capture"),
 					QStringLiteral("snapshot only: this track's serialized state is larger than the "
 						"%1-character cap, and a truncated track is a corrupt track, so no inverse "
 						"was recorded - the before-state names what was removed")

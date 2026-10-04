@@ -214,9 +214,8 @@ void registerCompLaneRemove(ControlRegistry& registry)
 		before.insert(QStringLiteral("composite"), beforeComposite);
 		result.insert(QStringLiteral("__transaction"),
 			transactionPayload(before,
-				QStringLiteral("UNIMPLEMENTED: re-add the lane at its own index (comp.lane_add "
-					"hands out the lowest free one) and re-point the segments that named it; the "
-					"replacement lane's name is in this before-state"),
+				// E19: the Track checkpoint is the inverse (comp.lane_add hands out the lowest free index).
+				QStringLiteral("control.undo"),
 				QJsonObject{{ArgTrack, id}, {ArgLane, lane}, {ArgName, name}},
 				true, ClauseTrackJournalled));
 		return ControlResult::success(result);

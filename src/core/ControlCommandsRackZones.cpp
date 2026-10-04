@@ -104,8 +104,12 @@ void registerZoneAdd(ControlRegistry& registry)
 	cmd.verb = QStringLiteral("zone_add");
 	cmd.description = QStringLiteral("Add a key/velocity zone to a channel's rack: an inclusive "
 		"key range (0..127) and an inclusive velocity range (0..200) mapped to one of the rack's "
-		"chains, with an optional sample reference. Returns its zone-<n> id. Reversible through "
-		"the ProjectJournal (an action checkpoint removes the zone this command created).");
+		"chains, with an optional sample reference. A note of an instrument track playing into the "
+		"channel that falls into the zone (the first matching zone wins) plays on that chain only; "
+		"with a sample that loads, the note plays the sample there instead of the instrument "
+		"('sample_loaded' in zone_state says whether it loaded - a missing file is kept, not refused). "
+		"Returns its zone-<n> id. Reversible through the ProjectJournal (an action checkpoint removes "
+		"the zone this command created).");
 	cmd.argsSchema = objectSchema({
 		{QStringLiteral("channel"), stringProperty()},
 		{QStringLiteral("low_key"), integerProperty(RackZoneMinKey, RackZoneMaxKey)},
@@ -134,6 +138,8 @@ void registerZoneAdd(ControlRegistry& registry)
 		const QString channelIdText = channelIdOf(channel);
 		const int before = rack.zones().zoneCount();
 		const int index = rack.zones().addZone(zone);
+		// The zone as stored: its sample decoded (E38), so the reply reports it and a redo does not decode again.
+		const RackZone stored = *rack.zones().zone(index);
 		// A created zone has no before-state; the inverse is the operation, one
 		// action step (SPEC A16 deliverable 5). The step drops the zone the
 		// command appended (the last one at creation time), the same shape
@@ -147,17 +153,17 @@ void registerZoneAdd(ControlRegistry& registry)
 				if (current->zones().zoneCount() <= before) { return; }
 				current->zones().removeZone(current->zones().zoneCount() - 1);
 			},
-			[channelIdText, zone]() {
+			[channelIdText, stored]() {
 				ControlResult ignored;
 				Rack* current = resolveRack(channelIdText, &ignored);
-				if (current != nullptr) { current->zones().addZone(zone); }
+				if (current != nullptr) { current->zones().addZone(stored); }
 			});
 
 		QJsonObject result;
 		result.insert(QStringLiteral("channel"), channelIdText);
 		result.insert(QStringLiteral("zone"), zoneId(index));
 		result.insert(QStringLiteral("zone_count"), rack.zones().zoneCount());
-		result.insert(QStringLiteral("zone_state"), zoneJson(zone, index));
+		result.insert(QStringLiteral("zone_state"), zoneJson(stored, index));
 		QJsonObject beforeState;
 		beforeState.insert(QStringLiteral("zone_count"), rack.zones().zoneCount() - 1);
 		result.insert(QStringLiteral("__transaction"),
@@ -245,8 +251,7 @@ void registerZoneResolve(ControlRegistry& registry)
 	cmd.verb = QStringLiteral("zone_resolve");
 	cmd.description = QStringLiteral("Ask which of a channel's rack zones a note falls into: the "
 		"first zone, in the order it was added, whose key range and velocity range both contain "
-		"(key, velocity). Read-only. NOTE: nothing in this build consults a zone while a note "
-		"plays - see docs/KNOWN-LIMITATIONS.md.");
+		"(key, velocity) - the zone, and so the chain, such a note plays on. Read-only.");
 	cmd.argsSchema = objectSchema({
 		{QStringLiteral("channel"), stringProperty()},
 		{QStringLiteral("key"), integerProperty(RackZoneMinKey, RackZoneMaxKey)},

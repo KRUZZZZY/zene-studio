@@ -382,7 +382,8 @@ QJsonObject masteringRunInverse(const QString& outDir, const QStringList& create
 	inverse.insert(QStringLiteral("op"),
 		QStringLiteral("remove the files this run created and write the captured revisions back"));
 	inverse.insert(QStringLiteral("args"), inverseArgs);
-	inverse.insert(QStringLiteral("applies"), QStringLiteral("journal"));
+	// The run answers before it finishes, so its journal step arrives after the record (applies "journal_later").
+	inverse.insert(QStringLiteral("applies"), createdKnown ? QStringLiteral("journal") : QStringLiteral("journal_later"));
 
 	QJsonObject capture = masteringCaptureJson(outDir, before, created);
 	if (!createdKnown) { capture.insert(QStringLiteral("created_not_yet_known"), true); }

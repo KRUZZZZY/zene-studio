@@ -29,6 +29,7 @@
 
 #include <algorithm>
 
+#include "ChordFollow.h"
 #include "AudioEngine.h"
 #include "Engine.h"
 #include "InstrumentTrack.h"
@@ -64,6 +65,8 @@ void InstrumentTrack::decorateNoteHandle(NotePlayHandle* handle, const MidiClip*
 		handle->setKey( std::clamp( currentNote->key() + transpose, 0, NumKeys - 1 ) );
 		handle->setFrequencyUpdate();
 	}
+	// 0.5.0 E23: a track that follows the chord track plays the note on the chord's nearest tone (ChordFollow.h).
+	if( songGlobal ) { chordfollow::apply( *handle, *this, songOffset.getTicks() + currentNote->pos().getTicks() ); }
 	// Slide notes glide from the nearest preceding note in this clip
 	// (SPEC-slide-notes D-2; no preceding note -> no glide)
 	if( currentNote->slide() && note != first )

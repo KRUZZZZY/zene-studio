@@ -75,6 +75,14 @@ LMMS_EXPORT const QJsonObject& wasmStateProperty();
  *  acts on. */
 LMMS_EXPORT QJsonObject wasmStateJson();
 
+/*! 0.5.0 E22: whether \p path is a module a wasm_effect device can host - read, compiled and
+ *  instantiated in a throwaway sandbox on the calling thread, with the process() export the
+ *  device's worker requires: the checks WasmWorker's lane makes, run BEFORE a device stops the
+ *  module it has. False with the reason in \p error. Control thread; it compiles the module, so
+ *  never on the audio thread. One definition for the device (WasmEffect::loadModule) and for
+ *  wasm.device_load, so the two cannot disagree about what is loadable. */
+LMMS_EXPORT bool wasmProbeDeviceModule(const QString& path, QString* error);
+
 } // namespace control
 
 /*! wasm.pool (CODE-5) and wasm.render_offline (CODE-5, feature row 73): the

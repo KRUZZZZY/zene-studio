@@ -40,6 +40,7 @@
 
 #include "AutomatableModel.h"
 #include "ControlEdit.h"
+#include "ControlRackMacroWrites.h"
 #include "ControlRackSupport.h"
 #include "ControlRegistry.h"
 #include "ControlReversibility.h"
@@ -427,46 +428,22 @@ void registerMacroSet(ControlRegistry& registry)
 		if (macro < 0) { return error; }
 
 		const float previousValue = rack.macros().macro(macro)->value;
-		const float value = static_cast<float>(args.value(QStringLiteral("value")).toDouble());
-		const std::size_t targetCount = rack.macros().macro(macro)->targets.size();
 		const QString channelIdText = channelIdOf(channel);
-
-		rack.macros().setValue(macro, value);
-		const std::vector<RackMacroWrite> writes = rack.macros().apply(macro, rack);
-
-		MacroRestore undo;
-		undo.channelId = channelIdText;
-		undo.macro = macro;
-		undo.value = previousValue;
-		MacroRestore redo;
-		redo.channelId = channelIdText;
-		redo.macro = macro;
-		redo.value = rack.macros().macro(macro)->value;
-		QJsonArray written;
-		for (const RackMacroWrite& write : writes)
-		{
-			undo.parameters.emplace_back(write.target, write.previous);
-			redo.parameters.emplace_back(write.target, write.written);
-			QJsonObject entry = macroTargetJson(write.target, 0);
-			entry.insert(QStringLiteral("previous"), static_cast<double>(write.previous));
-			entry.insert(QStringLiteral("written"), static_cast<double>(write.written));
-			written.append(entry);
-		}
+		const MacroApplied applied = applyMacroValue(rack, channelIdText, macro,
+			static_cast<float>(args.value(QStringLiteral("value")).toDouble()));
 		// ONE undo step for the macro's own scalar AND every parameter it
 		// wrote: the step re-resolves each target at undo time, so it carries no
 		// raw model pointer.
-		addUndoStep([undo]() { writeMacroAssignments(undo); },
-			[redo]() { writeMacroAssignments(redo); });
+		addUndoStep([undo = applied.undo]() { writeMacroAssignments(undo); },
+			[redo = applied.redo]() { writeMacroAssignments(redo); });
 
-		const int applied = static_cast<int>(writes.size());
 		QJsonObject result;
 		result.insert(QStringLiteral("channel"), channelIdText);
 		result.insert(QStringLiteral("macro"), macroId(macro));
 		result.insert(QStringLiteral("value"), static_cast<double>(rack.macros().macro(macro)->value));
-		result.insert(QStringLiteral("applied"), applied);
-		result.insert(QStringLiteral("skipped"),
-			static_cast<int>(targetCount) - applied);
-		result.insert(QStringLiteral("writes"), written);
+		result.insert(QStringLiteral("applied"), static_cast<int>(applied.writes.size()));
+		result.insert(QStringLiteral("skipped"), applied.skipped);
+		result.insert(QStringLiteral("writes"), applied.writes);
 		result.insert(QStringLiteral("macro_state"), macroJson(*rack.macros().macro(macro), macro));
 		QJsonObject beforeState = macroJson(*rack.macros().macro(macro), macro);
 		beforeState.insert(QStringLiteral("value"), static_cast<double>(previousValue));
@@ -493,6 +470,7 @@ void registerRackMacroCommands(ControlRegistry& registry)
 	registerMacroTargetAdd(registry);
 	registerMacroTargetRemove(registry);
 	registerMacroSet(registry);
+	registerRackMacroPairCommand(registry);  // W1: ControlCommandsRackMacroPair.cpp
 }
 
 } // namespace lmms

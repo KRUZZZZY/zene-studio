@@ -189,6 +189,7 @@ private slots:
 	void testTimerSupportRunsThePluginsTimer();
 	void testTheEditorEmbedsResizesAndCloses();
 	void testMainThreadRequestsAreServiced();
+	void testParameterRescansRereadTheList();
 
 private:
 	void process(HostedPlugin& plugin, const std::vector<std::vector<float>>& inputs,
@@ -785,6 +786,53 @@ void lmms::clap::ClapHostTest::testMainThreadRequestsAreServiced()
 	QCOMPARE(plugin.paramPlain(GainParamId), 0.25);
 	QVERIFY(!plugin.serviceMainThread());
 	qunsetenv("CLAP_TEST_GAIN_MAIN_THREAD");
+}
+
+/*! W6: a plug-in's parameter rescans reach the host's list. RESCAN_INFO renames a parameter in place - the same
+ *  list and ids, nothing re-prepared; RESCAN_ALL, asked for the CLAP way (a restart, then the rescan from
+ *  deactivate()), re-reads the list in the next prepare(): the removed parameter is gone, the new ones are there
+ *  with their values, and parameter changes still reach the audio. Before, both left the list as it was loaded. */
+void lmms::clap::ClapHostTest::testParameterRescansRereadTheList()
+{
+	constexpr std::uint32_t DriveParamId = 3;
+	qputenv("CLAP_TEST_GAIN_RESCAN", "info");
+	HostedPlugin plugin;
+	QString error;
+	QVERIFY2(plugin.load(QStringLiteral(CLAP_TEST_PLUGIN_PATH), QString::fromLatin1(TestPluginId), &error),
+		qPrintable(error));
+	QVERIFY2(plugin.prepare(TestSampleRate, TestBlockSize, &error), qPrintable(error));
+	const auto loaded = plugin.paramsRevision();
+	QCOMPARE(plugin.parameters()[0].title, QStringLiteral("Gain"));
+	plugin.serviceMainThread();  // the plug-in renames Gain and asks for an info rescan
+	QCOMPARE(plugin.parameters()[0].title, QStringLiteral("Level"));
+	QCOMPARE(plugin.parameters().size(), std::size_t{2});
+	QVERIFY(plugin.paramsRevision() != loaded);
+	QVERIFY(!plugin.needsReprepare());
+
+	qputenv("CLAP_TEST_GAIN_RESCAN", "all");
+	QVERIFY2(plugin.prepare(TestSampleRate, TestBlockSize, &error), qPrintable(error));  // activate() asks for a call
+	plugin.serviceMainThread();  // the plug-in asks for a restart
+	qunsetenv("CLAP_TEST_GAIN_RESCAN");
+	QVERIFY(plugin.needsReprepare());
+	QCOMPARE(plugin.parameters().size(), std::size_t{2});  // nothing is re-read while it is active
+	const auto active = plugin.paramsRevision();
+	QVERIFY2(plugin.prepare(TestSampleRate, TestBlockSize, &error), qPrintable(error));
+	QVERIFY(plugin.paramsRevision() != active);
+	QVERIFY(!plugin.needsReprepare());
+	QCOMPARE(plugin.parameters().size(), std::size_t{3});
+	QCOMPARE(plugin.parameters()[0].title, QStringLiteral("Level"));
+	QCOMPARE(plugin.paramIndex(BypassParamId), -1);
+	QCOMPARE(plugin.paramIndex(DriveParamId), 1);
+	QCOMPARE(plugin.paramPlain(DriveParamId), 2.0);
+	QCOMPARE(plugin.parameters()[1].maxValue, 10.0);
+	plugin.setParamPlain(DriveParamId, 5.0);
+	QCOMPARE(plugin.paramPlain(DriveParamId), 5.0);
+	const auto& layout = plugin.busLayout();
+	std::vector<std::vector<float>> inputs(layout.inputs, std::vector<float>(TestFrames, 0.5f));
+	std::vector<std::vector<float>> outputs(layout.outputs, std::vector<float>(TestFrames, 0.0f));
+	plugin.setParamPlain(GainParamId, 0.5);
+	process(plugin, inputs, outputs, TestFrames);
+	QVERIFY2(std::abs(rms(outputs[0]) - 0.25) < 1e-6, qPrintable(QString::number(rms(outputs[0]))));
 }
 
 QTEST_GUILESS_MAIN(lmms::clap::ClapHostTest)
