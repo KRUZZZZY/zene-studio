@@ -28,21 +28,34 @@
  *  - a keyboard zoom (arrangement.zoom step) keeps the playhead where it is on screen;
  *  - the drag preview shows the ghost, what the drop trims and the snap line, and marks the drop refused
  *    when the clip under it is locked;
- *  - a locked clip wears a padlock (EditLocks' change hook), and a click still selects it without moving it. */
+ *  - a locked clip wears a padlock (EditLocks' change hook), and a click still selects it without moving it.
+ *  Wave 3 (theme 9 finished):
+ *  - the wheel zooms by the turn's size around the pointer, one history entry a gesture;
+ *  - a crowded lane names what it could not label in its tooltip, and the tempo lane names the tempo;
+ *  - a double-click on a section zooms to it; Fit Selection fits the time range;
+ *  - the landmarks are found and named, and the navigator is a readable slider a screen reader can set. */
 
 #include <QtTest>
 
 #include <cstdlib>
 
+#include <QAbstractSlider>
+#include <QToolBar>
+#include <QWheelEvent>
+
 #include "ArrangementEdits.h"
 #include "ArrangerEditPreview.h"
+#include "ArrangerLandmarks.h"
+#include "ArrangerNavigator.h"
 #include "ArrangerOverlays.h"
 #include "ArrangerRulerLanes.h"
+#include "ArrangerZoom.h"
 #include "Clip.h"
 #include "ClipLockFeedback.h"
 #include "ClipView.h"
 #include "ControlRegistry.h"
 #include "ControlVocabulary.h"
+#include "DesignTokens.h"
 #include "Engine.h"
 #include "GuiApplication.h"
 #include "GuiTestApplication.h"
@@ -237,6 +250,118 @@ private slots:
 
 		QVERIFY(run(QStringLiteral("control.undo")).ok);  // the lock's own undo step
 		QVERIFY2(!cliplocks::badgeShown(view), "the padlock stayed after the lock was undone");
+	}
+
+	//! 0.5.0 theme 9 (wave 3): a wheel turn zooms by its size - a touchpad's tenth-of-a-notch deltas add up to a
+	//! notch's steps - around the tick under the pointer, and one gesture joins the zoom history once.
+	void aWheelZoomIsContinuousAroundThePointer()
+	{
+		clipAt(m_track, 40 * Bar, Bar);
+		const tick_t anchor = 4 * Bar;
+		const int x = m_editor->timeLine()->markerX(TimePos(anchor));
+		const int value = m_editor->zoomingModel()->value();
+		const int history = arrangerzoom::historySize();
+		arrangerzoom::wheelZoom(m_editor, 12, false, anchor);  // a tenth of a notch: half a step, nothing yet
+		QCOMPARE(m_editor->zoomingModel()->value(), value);
+		for (int i = 0; i < 19; ++i) { arrangerzoom::wheelZoom(m_editor, 12, false, anchor); }  // twenty tenths: two notches
+		QCOMPARE(m_editor->zoomingModel()->value(), value + 2 * arrangerzoom::WheelNotchSteps);
+		QVERIFY2(arrangerzoom::historySize() - history <= 1, "one wheel gesture left more than one zoom to go back to");
+		QVERIFY2(std::abs(m_editor->timeLine()->markerX(TimePos(anchor)) - x) <= 2, "the tick under the pointer moved");
+
+		// The real wheel over the arranger: Ctrl and one notch, a new gesture, zooms in by a notch's steps.
+		QTest::qWait(arrangerzoom::WheelBurstMs + 100);
+		const int before = m_editor->zoomingModel()->value();
+		const QPoint at = m_editor->timeLine()->mapTo(m_editor, QPoint(m_editor->timeLine()->markerX(TimePos(anchor)), 0))
+			+ QPoint(0, m_editor->height() / 2);
+		QWheelEvent wheel(at, m_editor->mapToGlobal(at), QPoint(), QPoint(0, 120), Qt::NoButton, Qt::ControlModifier,
+			Qt::NoScrollPhase, false);
+		QCoreApplication::sendEvent(m_editor, &wheel);
+		QCOMPARE(m_editor->zoomingModel()->value(), before + arrangerzoom::WheelNotchSteps);
+	}
+
+	//! Wave 3: no label collides - what a crowded lane leaves out, its tooltip names.
+	void aCrowdedLaneNamesWhatItLeftOutInItsTooltip()
+	{
+		auto* lanes = m_editor->findChild<ArrangerRulerLanes*>();
+		QVERIFY(lanes != nullptr);
+		ProjectMarkers::instance().add(2 * Bar, QStringLiteral("Verse"), QString());
+		ProjectMarkers::instance().add(2 * Bar + 4, QStringLiteral("Drop"), QString());  // under a pixel apart at 40 px a bar
+		ProjectMarkers::instance().add(8 * Bar, QStringLiteral("Outro"), QString());
+		QCOMPARE(lanes->markerCluster(0), (QStringList{QStringLiteral("Verse"), QStringLiteral("Drop")}));
+		QCOMPARE(lanes->markerCluster(2), QStringList{QStringLiteral("Outro")});
+
+		const int x = m_editor->timeLine()->markerX(TimePos(3 * Bar));
+		const QString tip = lanes->tempoTip(QPoint(x, lanes->laneRect(ArrangerRulerLanes::Lane::Tempo).center().y()));
+		QVERIFY2(tip.contains(QString::number(Engine::getSong()->getTempo())), qPrintable(tip));
+		QVERIFY(lanes->tempoTip(QPoint(x, lanes->laneRect(ArrangerRulerLanes::Lane::Markers).center().y())).isEmpty());
+	}
+
+	//! Wave 3 (Bitwig's Alt-click on a cue): a double-click on a section fills the arranger with it, and Fit Selection
+	//! fits the time range when there is one.
+	void aDoubleClickZoomsToASectionAndFitSelectionFitsTheRange()
+	{
+		clipAt(m_track, 40 * Bar, Bar);
+		auto* lanes = m_editor->findChild<ArrangerRulerLanes*>();
+		QVERIFY(lanes != nullptr);
+		QVERIFY(run(QStringLiteral("section.add"), {{QStringLiteral("start"), 4 * Bar}, {QStringLiteral("end"), 8 * Bar},
+			{QStringLiteral("name"), QStringLiteral("Chorus")}}).ok);
+		QCoreApplication::processEvents();
+		const int y = lanes->laneRect(ArrangerRulerLanes::Lane::Sections).center().y();
+		QTest::mouseDClick(lanes, Qt::LeftButton, Qt::NoModifier, QPoint(m_editor->timeLine()->markerX(TimePos(5 * Bar)), y));
+		QTRY_COMPARE(m_editor->currentPosition().getTicks(), 4 * Bar);
+		const tick_t shown = arrangerzoom::visibleTicks(m_editor);
+		QVERIFY2(std::abs(shown - 4 * Bar) < Bar / 2, qPrintable(QStringLiteral("the section's 4 bars show as %1 ticks").arg(shown)));
+
+		m_editor->selectAllClips(false);
+		ArrangerRange::instance().set(10 * Bar, 12 * Bar, {}, true);
+		QVERIFY(run(QStringLiteral("arrangement.zoom"), {{QStringLiteral("fit"), QStringLiteral("selection")}}).ok);
+		QTRY_COMPARE(m_editor->currentPosition().getTicks(), 10 * Bar);
+		ArrangerRange::instance().clear();
+	}
+
+	void theLandmarksAreFoundAndNamed()
+	{
+		using landmarks::Landmark;
+		QVERIFY(run(QStringLiteral("section.add"), {{QStringLiteral("start"), 4 * Bar}, {QStringLiteral("end"), 8 * Bar},
+			{QStringLiteral("name"), QStringLiteral("Chorus")}}).ok);
+		ProjectMarkers::instance().add(12 * Bar, QStringLiteral("Drop"), QString());
+		ProjectMarkers::instance().add(16 * Bar, QStringLiteral("Outro"), QString());
+		Timeline& timeline = Engine::getSong()->getTimeline(Song::PlayMode::Song);
+		timeline.setLoopPoints(TimePos(20 * Bar), TimePos(24 * Bar));
+		timeline.setLoopEnabled(false);
+
+		const Landmark marker = landmarks::at(12 * Bar + 10, 20);
+		QCOMPARE(marker.kind, Landmark::Kind::Marker);
+		QCOMPARE(marker.name, QStringLiteral("Drop"));
+		QCOMPARE(marker.end, 16 * Bar);  // up to the next marker
+		const Landmark section = landmarks::at(5 * Bar, 0);
+		QCOMPARE(section.kind, Landmark::Kind::Section);
+		QCOMPARE(section.start, 4 * Bar);
+		QVERIFY(landmarks::describe(section).contains(QStringLiteral("Chorus")));
+		QCOMPARE(landmarks::at(21 * Bar, 0).kind, Landmark::Kind::None);
+		timeline.setLoopEnabled(true);
+		QCOMPARE(landmarks::at(21 * Bar, 0).kind, Landmark::Kind::Loop);
+		timeline.setLoopEnabled(false);
+	}
+
+	//! Wave 3: the navigator keeps a readable size from the design tokens, rings its keyboard focus, and is a
+	//! slider - the arranger's start - that follows the arranger and that a screen reader can set.
+	void theNavigatorIsAReadableSliderOverTheSong()
+	{
+		installArrangerNavigator(getGUI()->songEditor());
+		auto* bar = getGUI()->songEditor()->findChild<QToolBar*>(QStringLiteral("arrangerNavigator"));
+		QVERIFY(bar != nullptr);
+		auto* navigator = bar->findChild<QAbstractSlider*>();
+		QVERIFY2(navigator != nullptr, "the navigator is not a slider");
+		QVERIFY(navigator->minimumHeight() >= tokens::targetSize());
+		QVERIFY(navigator->property("zeneFocusRing").toBool());
+
+		clipAt(m_track, 40 * Bar, Bar);
+		QVERIFY(run(QStringLiteral("arrangement.scroll"), {{QStringLiteral("position"), 8 * Bar}}).ok);
+		QTRY_COMPARE(navigator->value(), static_cast<int>(m_editor->currentPosition().getTicks()));
+		navigator->setValue(2 * Bar);  // what a screen reader's value setting does
+		QTRY_COMPARE(m_editor->currentPosition().getTicks(), 2 * Bar);
+		QVERIFY2(navigator->accessibleDescription().startsWith(QStringLiteral("Showing bars 3 ")), qPrintable(navigator->accessibleDescription()));
 	}
 
 private:

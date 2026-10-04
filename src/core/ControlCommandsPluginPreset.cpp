@@ -33,6 +33,9 @@
 #include "ControlVocabulary.h"
 #include "ControlRegistry.h"
 #include "ControlReversibility.h"
+#include "DeviceAbState.h"
+#include "Effect.h"
+#include "InstrumentTrack.h"
 
 namespace lmms
 {
@@ -93,6 +96,37 @@ bool resolveDeviceArg(const QJsonObject& args, ControlTarget* target,
 	}
 	return resolveControlDevice(*target, args.value(QStringLiteral("plugin")).toString(), handle,
 		error);
+}
+
+/*! 0.5.0 theme 12: what holds the name of the preset a device last loaded or saved, for its card - the effect, or
+ *  the instrument's track (an instrument preset can put a new instrument object on it). A dynamic property: interface
+ *  state, never saved with the project, and no part of any reply. */
+QObject* presetNameHolder(const ControlDeviceHandle& handle)
+{
+	return handle.effect != nullptr ? static_cast<QObject*>(handle.effect) : static_cast<QObject*>(handle.track);
+}
+
+QString presetNameOf(const ControlDeviceHandle& handle)
+{
+	const QObject* holder = presetNameHolder(handle);
+	return holder != nullptr ? holder->property(presetNameProperty()).toString() : QString();
+}
+
+void notePresetName(const ControlDeviceHandle& handle, const QString& name)
+{
+	if (QObject* holder = presetNameHolder(handle)) { holder->setProperty(presetNameProperty(), name); }
+}
+
+//! The same for the device @a pluginId on @a targetId names now: an undo or a redo of a preset load.
+void notePresetName(const QString& targetId, const QString& pluginId, const QString& name)
+{
+	ControlTarget target;
+	ControlDeviceHandle handle;
+	ControlResult ignored;
+	if (resolveControlTarget(targetId, &target, &ignored) && resolveControlDevice(target, pluginId, &handle, &ignored))
+	{
+		notePresetName(handle, name);
+	}
 }
 
 //! The preset's absolute path: the user directory first, then the factory one.
@@ -207,6 +241,7 @@ void registerPresetSave(ControlRegistry& registry)
 		result.insert(QStringLiteral("bytes"), bytes.size());
 		result.insert(QStringLiteral("sha256"), controlSha256OfBytes(bytes));
 		result.insert(QStringLiteral("plugin"), handle.pluginName);
+		notePresetName(handle, name);
 
 		QJsonObject transaction;
 		transaction.insert(QStringLiteral("before"), snapshot);
@@ -272,20 +307,23 @@ void registerPresetLoad(ControlRegistry& registry)
 		// SPEC A16: the same action-step inverse plugin.state_load uses.
 		control::addUndoStep(
 			[targetId = target.id, pluginId = args.value(QStringLiteral("plugin")).toString(),
-				previous]() {
+				previous, previousName = presetNameOf(handle)]() {
 				controlRestoreCapturedState(targetId, pluginId, previous);
+				notePresetName(targetId, pluginId, previousName);
 			},
 			[targetId = target.id, pluginId = args.value(QStringLiteral("plugin")).toString(),
-				path]() {
+				path, name]() {
 				QByteArray bytes;
 				ControlResult ignored;
 				if (controlReadFileBytes(path, &bytes, &ignored))
 				{
 					controlRestoreCapturedState(targetId, pluginId, bytes);
+					notePresetName(targetId, pluginId, name);
 				}
 			});
 		ControlResult restored = controlRestoreDeviceState(handle, bytes);
 		if (!restored.ok) { return restored; }
+		notePresetName(handle, name);
 
 		QJsonObject result = restored.result;
 		result.insert(QStringLiteral("path"), path);

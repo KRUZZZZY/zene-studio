@@ -52,7 +52,9 @@
 #include "RecordLaunchMenus.h"
 #include "ContextHelp.h"
 #include "HelpCenter.h"
+#include "LayoutMenu.h"
 #include "ShellPanel.h"
+#include "ShellRegionTabs.h"
 #include "ShortcutMap.h"
 #include "UiConfigStore.h"
 #include "WorkspaceMenus.h"
@@ -153,6 +155,7 @@ void Shell::showEvent(QShowEvent* event)
 				modifiertools::install();  // 0.5.0 L04 (ED-014)
 			}
 			MacroMenu::install(main->menuBar());
+			LayoutMenu::followNewProjects(this);  // theme 22: a new project brings the personal layout back
 			ShortcutMap::apply(main->menuBar());
 		}
 		m_header->customise(uistore::read(QStringLiteral("header")));
@@ -213,6 +216,14 @@ void Shell::buildBody()
 		auto* frame = new ShellPanel(spec.id, spec.title, m_parking);
 		m_panels.insert(spec.id, frame);
 		addFloatButton(frame);
+	}
+	// Theme 8: each side region names the panels it holds, a tab each, above the open one.
+	for (ShellRegion region : {ShellRegion::Left, ShellRegion::Bottom, ShellRegion::Right})
+	{
+		QWidget* host = m_hosts.value(static_cast<int>(region));
+		auto* tabs = new ShellRegionTabs(this, region, host);
+		host->layout()->addWidget(tabs);
+		m_tabs.insert(static_cast<int>(region), tabs);
 	}
 	for (QSplitter* s : {m_columns, m_rows, m_centre})
 	{
@@ -326,6 +337,7 @@ void Shell::apply()
 	if (hadFocus != nullptr && hadFocus->parentWidget() == m_parking) { focusPanel(ShellLayout::centerOf(m_layout.view())); }
 	syncCentrePlaceholder();
 	syncActions();
+	for (ShellRegionTabs* tabs : m_tabs) { tabs->sync(); }
 	persist();
 	emit layoutChanged();
 }
@@ -427,11 +439,14 @@ QJsonObject Shell::state() const
 			{QStringLiteral("floating"), isDetached(spec.id)},
 			{QStringLiteral("pinned"), m_layout.isPinned(spec.id)}});
 	}
-	return QJsonObject{
+	QJsonObject out{
 		{QStringLiteral("view"), ShellLayout::viewName(m_layout.view())},
 		{QStringLiteral("panels"), panels},
 		{QStringLiteral("focused"), m_layout.focused()},
 		{QStringLiteral("launcher"), m_layout.launcherBesideCenter()}};
+	const QJsonObject chrome = chromeState();
+	for (auto it = chrome.begin(); it != chrome.end(); ++it) { out.insert(it.key(), it.value()); }
+	return out;
 }
 
 void Shell::onFocusChanged(QWidget* now)
@@ -478,7 +493,11 @@ void Shell::persist() const
 void Shell::restoreConfiguredLayout()
 {
 	m_restoreAttempted = true;
-	const QString text = ConfigManager::inst()->value(QStringLiteral("ui"), kConfigKey);
+	// Theme 22: a personal layout put aside for a project's own (ShellLayoutScope.cpp) is the one to start with; the
+	// project, when it opens again, puts its own back over it.
+	const QString aside = ConfigManager::inst()->value(QStringLiteral("ui"), QStringLiteral("shell.personal"));
+	const QString text = aside.isEmpty() ? ConfigManager::inst()->value(QStringLiteral("ui"), kConfigKey) : aside;
+	dropPersonalAside();
 	const QJsonObject doc = QJsonDocument::fromJson(text.toUtf8()).object();
 	if (doc.isEmpty())
 	{

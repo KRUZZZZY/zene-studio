@@ -15,7 +15,9 @@ Starts the REAL `zene` binary headless (its own throwaway config) and proves:
   5. workflow.* (the recorded command macros, renamed for design theme 19): a workflow saves, runs
      (acknowledged, then polled) and adds what its steps add; a step naming no command or a workflow is
      refused (WF-114); a workflow is recorded from what is done, and the recording is reported while it
-     lasts (ED-056); workflows are shared or kept with the project, as chosen, one undo step;
+     lasts (ED-056); workflows are shared or kept with the project, as chosen, one undo step; a run that
+     stops says which step failed and why, what applied and what did not run, and resumes - the step retried,
+     or skipped and the rest run (design theme 19's step recovery, workflow.resume);
   6. arrangement.zoom / zoom_back / fit_tracks / set_tool and window.tool_menu (WF-094/095/108);
   7. session.pattern_list names the patterns a launcher cell can play (WF-054);
   8. the Lua sandbox refuses the customisation writers (they change the user's own config).
@@ -196,18 +198,23 @@ def track_count(session):
     return session.result("track.list").get("count") or 0
 
 
-def check_workflows(session, recorder):
-    before = track_count(session)
-    steps = [{"command": "track.add", "args": {"type": "instrument", "name": "workflow one"}},
-             {"command": "track.add", "args": {"type": "sample", "name": "workflow two"}}]
-    saved = session.call("workflow.save", {"name": "two tracks", "steps": steps})
-    ran = session.result("workflow.run", {"name": "two tracks"})
+def wait_run(session):
     status = {}
     for _ in range(50):
         status = session.result("workflow.status")
         if status.get("state") == "done":
             break
         time.sleep(0.1)
+    return status
+
+
+def check_workflows(session, recorder):
+    before = track_count(session)
+    steps = [{"command": "track.add", "args": {"type": "instrument", "name": "workflow one"}},
+             {"command": "track.add", "args": {"type": "sample", "name": "workflow two"}}]
+    saved = session.call("workflow.save", {"name": "two tracks", "steps": steps})
+    ran = session.result("workflow.run", {"name": "two tracks"})
+    status = wait_run(session)
     recorder.check("a workflow saves, runs and adds what its steps add",
                    saved.get("ok") and ran.get("queued") == 2 and status.get("stopped_at") == -1
                    and track_count(session) == before + 2, "save=%r run=%r status=%r" % (saved, ran, status))
@@ -246,6 +253,37 @@ def check_workflow_recording(session, recorder):
                    and kind(empty) == "refused" and after.get("on") is False,
                    "stop=%r steps=%r empty=%r after=%r" % (stopped, steps, empty, after))
     session.result("workflow.remove", {"name": "recorded"})
+
+
+def check_workflow_recovery(session, recorder):
+    # Design theme 19: step 2 removes a track that is not there, so the run stops at it.
+    before = track_count(session)
+    steps = [{"command": "track.add", "args": {"type": "sample", "name": "recover one"}},
+             {"command": "track.remove", "args": {"track": "no-such-track"}},
+             {"command": "track.add", "args": {"type": "sample", "name": "recover three"}}]
+    session.result("workflow.save", {"name": "stops", "steps": steps})
+    nothing = session.call("workflow.resume")
+    session.result("workflow.run", {"name": "stops"})
+    stopped = wait_run(session)
+    failed = stopped.get("failed") or {}
+    recorder.check("a stopped run says which step failed and why, what applied and what did not run",
+                   stopped.get("stopped_at") == 1 and failed.get("step") == 2 and failed.get("command") == "track.remove"
+                   and failed.get("error") and stopped.get("applied_steps") == [1] and stopped.get("not_run") == [3]
+                   and stopped.get("resumable") is True and "stopped at step 2 of 3" in (stopped.get("message") or "")
+                   and track_count(session) == before + 1, "status=%r" % stopped)
+    retried = session.result("workflow.resume", {"skip": False})
+    again = wait_run(session)
+    skipped = session.result("workflow.resume", {"skip": True})
+    done = wait_run(session)
+    recorder.check("a stopped run resumes: the step retried, or skipped and the rest run",
+                   retried.get("retried") == 2 and again.get("stopped_at") == 1 and skipped.get("skipped") == 2
+                   and skipped.get("from") == 2 and done.get("stopped_at") == -1 and done.get("applied_steps") == [1, 3]
+                   and done.get("skipped_steps") == [2] and done.get("resumable") is False
+                   and track_count(session) == before + 2, "retried=%r again=%r skipped=%r done=%r" % (retried, again, skipped, done))
+    finished = session.call("workflow.resume")
+    recorder.check("nothing to resume is refused: before any stop, and after a run that finished",
+                   kind(nothing) == "refused" and kind(finished) == "refused", "before=%r after=%r" % (nothing, finished))
+    session.result("workflow.remove", {"name": "stops"})
 
 
 def workflow_names(session):
@@ -355,6 +393,7 @@ def main(argv):
         check_project_layout(session, recorder, instance.tmp)
         check_workflows(session, recorder)
         check_workflow_recording(session, recorder)
+        check_workflow_recovery(session, recorder)
         check_workflow_scope(session, recorder)
         check_arranger_view(session, recorder)
         check_patterns(session, recorder)

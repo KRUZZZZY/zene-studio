@@ -31,6 +31,7 @@
 #include <QDialog>
 #include <QDialogButtonBox>
 #include <QFormLayout>
+#include <QKeyEvent>
 #include <QJsonArray>
 #include <QJsonObject>
 #include <QLabel>
@@ -60,6 +61,9 @@ public:
 		setMinimumSize(200, 200);
 		setAccessibleName(QObject::tr("Surround position"));
 		setCursor(Qt::CrossCursor);
+		// 0.5.0 theme 16: the arrow keys move the point (Shift: a larger step); each step is one call.
+		setFocusPolicy(Qt::StrongFocus);
+		describePoint();
 	}
 
 	QPointF point() const { return m_point; }
@@ -81,6 +85,25 @@ protected:
 		p.setPen(QPen(pal.textOnAccent, 1.5));
 		p.setBrush(pal.accent);
 		p.drawEllipse(toWidget(m_point), 7.0, 7.0);
+		if (hasFocus())
+		{
+			p.setPen(QPen(pal.focusRing, tokens::focusRingWidth()));
+			p.setBrush(Qt::NoBrush);
+			p.drawRect(QRectF(rect()).adjusted(1.0, 1.0, -1.0, -1.0));
+		}
+	}
+
+	void keyPressEvent(QKeyEvent* event) override
+	{
+		const QPointF direction = arrowDirection(event->key());
+		if (direction.isNull())
+		{
+			QWidget::keyPressEvent(event);
+			return;
+		}
+		const double step = event->modifiers() & Qt::ShiftModifier ? 0.25 : 0.05;
+		setPoint(m_point + direction * step);
+		if (released) { released(); }
 	}
 
 	void mousePressEvent(QMouseEvent* event) override { moveTo(event->position()); }
@@ -127,10 +150,34 @@ private:
 	void moveTo(QPointF at)
 	{
 		const QRectF r = room();
-		const double x = (at.x() - r.center().x()) / (r.width() / 2.0);
-		const double y = (r.center().y() - at.y()) / (r.height() / 2.0);
-		m_point = {std::clamp(x, -1.0, 1.0), std::clamp(y, -1.0, 1.0)};
+		setPoint({(at.x() - r.center().x()) / (r.width() / 2.0), (r.center().y() - at.y()) / (r.height() / 2.0)});
+	}
+
+	void setPoint(QPointF point)
+	{
+		m_point = {std::clamp(point.x(), -1.0, 1.0), std::clamp(point.y(), -1.0, 1.0)};
+		describePoint();
 		update();
+	}
+
+	//! The point as a screen reader reads it: left/right and front/back, -1..1.
+	void describePoint()
+	{
+		const QString text = QObject::tr("Left-right %1, back-front %2 (arrow keys move it)")
+			.arg(m_point.x(), 0, 'f', 2).arg(m_point.y(), 0, 'f', 2);
+		if (accessibleDescription() != text) { setAccessibleDescription(text); }
+	}
+
+	static QPointF arrowDirection(int key)
+	{
+		switch (key)
+		{
+		case Qt::Key_Left: return {-1.0, 0.0};
+		case Qt::Key_Right: return {1.0, 0.0};
+		case Qt::Key_Up: return {0.0, 1.0};
+		case Qt::Key_Down: return {0.0, -1.0};
+		default: return {};
+		}
 	}
 
 	surround::Format m_format;

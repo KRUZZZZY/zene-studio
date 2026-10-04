@@ -33,18 +33,14 @@
 
 #include "Accessibility.h"
 #include "DesignTokens.h"
+#include "LaneScale.h"
 #include "MidiClip.h"
+#include "MusicalTime.h"
 #include "NoteEditor.h"
+#include "NoteLaneKeys.h"
 
 namespace lmms::gui
 {
-
-namespace
-{
-
-constexpr int kLaneHeight = 96;
-
-} // namespace
 
 ControllerLaneView::ControllerLaneView(NoteEditor* editor)
 	: QWidget(editor)
@@ -52,11 +48,13 @@ ControllerLaneView::ControllerLaneView(NoteEditor* editor)
 	, m_state(editor->state())
 {
 	setObjectName(QStringLiteral("noteControllerLane"));
+	setMouseTracking(true);  // 0.5.0 theme 11: the values under the pointer read out while it hovers
 	a11y::announce(this, tr("Controller lane"), tr("The clip's curve for the chosen controller; drag to draw it, right-drag or Alt-drag to erase."));
 	setToolTip(tr("Drag to draw the controller's curve; right-drag or Alt-drag to erase it"));
+	lanekeys::attachControllerLane(this, editor);  // theme 10: the keyboard (NoteLaneKeys.cpp)
 }
 
-QSize ControllerLaneView::sizeHint() const { return {200, kLaneHeight}; }
+QSize ControllerLaneView::sizeHint() const { return {200, lanescale::laneHeight()}; }
 
 const ControllerLane* ControllerLaneView::lane() const
 {
@@ -95,13 +93,41 @@ void ControllerLaneView::paintEvent(QPaintEvent*)
 	QPainter p(this);
 	p.fillRect(rect(), pal.panel);
 	p.fillRect(QRect(0, 0, width(), 1), pal.base);
+	if (m_state.clip == nullptr || m_state.controllerLane.isEmpty()) { return; }
+	// 0.5.0 theme 11: the controller's name, its scale and the values at its marks, over the curve on a backing.
+	const LaneScale scale = lanescale::forController(m_state.controllerLane);
+	const lanescale::YOf yOf = [this](int value) { return yOfValue(value); };
+	lanescale::paintMarkLines(p, rect(), scale, yOf);
 	if (maximum() > 127) { p.fillRect(QRect(0, yOfValue(8192), width(), 1), pal.gridBeat); }  // pitch bend's centre
 	if (const ControllerLane* shown = lane()) { paintCurve(p, *shown); }
 	if (m_drawing && m_firstTick >= 0) { paintStroke(p); }
-	if (m_state.clip == nullptr || m_state.controllerLane.isEmpty()) { return; }
-	p.setPen(pal.textMuted);
-	p.setFont(tokens::font(tokens::TextRole::Caption));
-	p.drawText(rect().adjusted(6, 4, -6, -4), Qt::AlignTop | Qt::AlignRight, m_state.controllerLane);
+	lanescale::paintLabels(p, rect(), scale, yOf);
+	if (m_hover.x() >= 0) { lanescale::paintReadout(p, rect(), m_hover, pointerReadout(scale)); }
+}
+
+QString ControllerLaneView::timeText(int tick) const
+{
+	return musicaltime::positionText(tick, m_state.clip != nullptr ? m_state.clip->startPosition().getTicks() : 0);
+}
+
+QString ControllerLaneView::pointerReadout(const LaneScale& scale) const
+{
+	const QString level = scale.text(valueAtY(m_hover.y()));
+	if (m_drawing && m_erasing)
+	{
+		return tr("Erasing %1 to %2").arg(timeText(std::min(m_firstTick, m_lastTick)), timeText(std::max(m_firstTick, m_lastTick)));
+	}
+	if (m_drawing) { return tr("Drawing %1 at %2").arg(level, timeText(m_lastTick)); }
+	const int tick = std::max(0, static_cast<int>(m_state.grid.tickAtX(m_hover.x())));
+	const ControllerLane* shown = lane();
+	if (shown == nullptr || shown->points.empty()) { return tr("%1: no curve (pointer at %2)").arg(timeText(tick), level); }
+	return tr("%1: %2 (pointer at %3)").arg(timeText(tick), scale.text(shown->valueAt(tick)), level);
+}
+
+QString ControllerLaneView::readout() const
+{
+	if (m_hover.x() < 0 || m_state.controllerLane.isEmpty()) { return {}; }
+	return pointerReadout(lanescale::forController(m_state.controllerLane));
 }
 
 void ControllerLaneView::paintCurve(QPainter& p, const ControllerLane& shown) const
@@ -113,11 +139,9 @@ void ControllerLaneView::paintCurve(QPainter& p, const ControllerLane& shown) co
 	for (int x = 0; x <= width(); x += 3) { curve << QPoint(x, yOfValue(shown.valueAt(static_cast<tick_t>(m_state.grid.tickAtX(x))))); }
 	p.setPen(QPen(pal.accent, 2));
 	p.drawPolyline(curve);
-	p.setPen(Qt::NoPen);
-	p.setBrush(pal.accent);
 	for (const ControllerPoint& point : shown.points)
 	{
-		p.drawEllipse(QPointF(m_state.grid.xOfTick(point.tick), yOfValue(point.value)), 3.0, 3.0);
+		lanescale::paintHead(p, QPointF(m_state.grid.xOfTick(point.tick), yOfValue(point.value)), pal.accent, LaneHead::Plain);
 	}
 }
 
@@ -130,6 +154,8 @@ void ControllerLaneView::paintStroke(QPainter& p) const
 	QColor band = m_erasing ? pal.record : pal.accent;
 	band.setAlpha(40);
 	p.fillRect(QRect(a, 0, b - a, height()), band);
+	// Erasing is hatched as well as red (0.5.0 theme 11: colour is never the only cue), and the readout says so.
+	if (m_erasing) { p.fillRect(QRect(a, 0, b - a, height()), QBrush(pal.record, Qt::BDiagPattern)); }
 	p.setPen(Qt::NoPen);
 	p.setBrush(pal.text);
 	for (const auto& [tick, value] : m_drawn) { p.drawEllipse(QPointF(m_state.grid.xOfTick(tick), yOfValue(value)), 2.5, 2.5); }
@@ -159,7 +185,16 @@ void ControllerLaneView::mousePressEvent(QMouseEvent* event)
 
 void ControllerLaneView::mouseMoveEvent(QMouseEvent* event)
 {
+	m_hover = event->pos();
 	if (m_drawing) { drawTo(event->pos()); }
+	else { update(); }  // the readout follows the pointer
+}
+
+void ControllerLaneView::leaveEvent(QEvent* event)
+{
+	m_hover = QPoint(-1, -1);
+	update();
+	QWidget::leaveEvent(event);
 }
 
 void ControllerLaneView::mouseReleaseEvent(QMouseEvent*)

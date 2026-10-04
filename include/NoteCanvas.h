@@ -199,6 +199,22 @@ private:
 	void pressPan();
 	void panTo(const QPoint& pos);
 
+	// keyboard editing and screen-reader access, theme 10 (NoteCanvasAccess.cpp)
+	void installKeyboardAccess();  //!< the role and value a screen reader reads, and the key cursor's mark
+	//! Alt+arrows, Home/End move between notes; Ctrl+Left/Right resize, Ctrl+Up/Down change velocity; Insert adds a
+	//! note after the cursor, Enter opens its properties, Ctrl+Shift+L the editable note list.
+	bool editKey(const QKeyEvent* event);
+	static bool isEditKey(const QKeyEvent* event);  //!< the keys editKey() acts on, claimed over window shortcuts
+	bool moveKey(const QKeyEvent* event);
+	bool changeKey(const QKeyEvent* event);
+	void moveCursor(int step, bool extend);  //!< step: a notekeys::Step
+	void resizeSelection(int ticks);
+	void changeVelocity(int amount);
+	void insertAfterCursor();
+	const Note* cursorNote() const;  //!< the note the keys act on: the last one moved to while selected, else the first selected
+	void showCursorNote(const Note& note);  //!< scrolls the view to it
+	QString accessibleValue() const;
+
 	NoteEditor* m_editor;
 	NoteBackgroundAudio m_audioBehind;  //!< 0.5.0 ED-081
 	NoteEditorState& m_state;
@@ -225,6 +241,7 @@ private:
 	std::vector<std::pair<int, int>> m_painted;  //!< the paint tool's cells so far: key, start tick
 	double m_panTicks = 0;               //!< the view at a middle-button press
 	int m_panY = 0;
+	int m_keyCursorId = -1;              //!< the note the keyboard last moved to (Note::id()), theme 10
 };
 
 } // namespace lmms::gui

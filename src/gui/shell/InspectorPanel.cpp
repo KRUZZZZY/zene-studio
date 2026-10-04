@@ -151,13 +151,22 @@ QToolButton* toggle(const QString& text, const QString& tip, QWidget* parent)
 	return button;
 }
 
-Knob* knob(FloatModel* model, const QString& label, QWidget* parent)
+Knob* knob(FloatModel* model, const QString& label, QWidget* parent, Knob* made = nullptr, const QString& unit = QString())
 {
-	auto* knob = new Knob(KnobType::Bright26, label, parent);
+	auto* knob = made != nullptr ? made : new Knob(KnobType::Bright26, label, parent);
 	knob->setFont(tokens::font(tokens::TextRole::Small));
 	knob->setModel(model);
-	knob->setHintText(label + QLatin1Char(':'), QString());
+	knob->setHintText(label + QLatin1Char(':'), unit);
 	return knob;
+}
+
+//! Theme 13: a volume as a musician reads it - in dB (VolumeKnob), its unity gain at @a unity on the model's scale
+//! (100 for a track's 0..200 %, 1 for a channel's 0..2 gain); typing a value takes dB too.
+Knob* volumeKnob(FloatModel* model, const QString& label, QWidget* parent, float unity)
+{
+	auto* volume = new VolumeKnob(KnobType::Bright26, label, parent);
+	volume->setZeroDbfsPoint(unity);
+	return knob(model, label, parent, volume);
 }
 
 QString channelLabel(int index)
@@ -179,20 +188,22 @@ QToolButton* mixerChannelMenu(Track* track, QWidget* parent)
 	button->setAccessibleName(QObject::tr("Mixer channel"));
 	button->setToolTip(QObject::tr("The mixer channel this track plays into"));
 	IntModel* assigned = track->mixerChannelModel();
-	button->setText(channelLabel(assigned->value()));
+	// Theme 13: "To <channel>" - a destination, never mistaken for the track's own name beside it.
+	const auto show = [button](int index) { button->setText(QObject::tr("To %1").arg(channelLabel(index))); };
+	show(assigned->value());
 	// An assignment made elsewhere (an undo, a script, the track header) shows here too.
-	QObject::connect(assigned, &Model::dataChanged, button, [button, assigned] { button->setText(channelLabel(assigned->value())); });
+	QObject::connect(assigned, &Model::dataChanged, button, [show, assigned] { show(assigned->value()); });
 	auto* menu = new QMenu(button);
-	QObject::connect(menu, &QMenu::aboutToShow, menu, [menu, button, assigned = QPointer<IntModel>(assigned), id = control::trackIdOf(track)] {
+	QObject::connect(menu, &QMenu::aboutToShow, menu, [menu, button, show, assigned = QPointer<IntModel>(assigned), id = control::trackIdOf(track)] {
 		menu->clear();
 		if (assigned.isNull()) { return; }  // the track went; the Inspector is about to redraw
-		button->setText(channelLabel(assigned->value()));  // a channel renamed since
+		show(assigned->value());  // a channel renamed since
 		for (int i = 0; i < static_cast<int>(Engine::mixer()->numChannels()); ++i)
 		{
 			const QString channel = control::channelIdOf(Engine::mixer()->mixerChannel(i));
-			QAction* action = menu->addAction(channelLabel(i), button, [button, id, channel, i] {
+			QAction* action = menu->addAction(channelLabel(i), button, [button, show, id, channel, i] {
 				if (invoke(button, QStringLiteral("track.set_mixer_channel"), {{QStringLiteral("track"), id},
-					{QStringLiteral("channel"), channel}}).ok) { button->setText(channelLabel(i)); }
+					{QStringLiteral("channel"), channel}}).ok) { show(i); }
 			});
 			action->setCheckable(true);
 			action->setChecked(i == assigned->value());  // the current channel is marked
@@ -200,6 +211,26 @@ QToolButton* mixerChannelMenu(Track* track, QWidget* parent)
 	});
 	button->setMenu(menu);
 	return button;
+}
+
+//! Theme 13: the channel's name, edited in place - mixer.rename_channel, one undo step; a refused name springs back.
+QLineEdit* channelNameField(MixerChannel* channel, const QString& id, QWidget* parent)
+{
+	auto* name = new QLineEdit(channel->m_name, parent);
+	name->setObjectName(QStringLiteral("inspectorName"));
+	name->setAccessibleName(QObject::tr("Channel name"));
+	name->setPlaceholderText(id);
+	name->setProperty("channel", id);
+	QObject::connect(name, &QLineEdit::editingFinished, name, [name, id] {
+		ControlResult error;
+		const MixerChannel* now = control::resolveMixerChannel(id, &error);
+		if (now == nullptr || name->text().trimmed() == now->m_name) { return; }
+		if (!invoke(name, QStringLiteral("mixer.rename_channel"), {{QStringLiteral("channel"), id}, {QStringLiteral("name"), name->text()}}).ok)
+		{
+			name->setText(now->m_name);
+		}
+	});
+	return name;
 }
 
 } // namespace
@@ -212,18 +243,24 @@ InspectorPanel::InspectorPanel(QWidget* parent)
 	// The content scrolls: a channel's inserts, sends, strip and output can be taller than the region.
 	auto* outer = new QVBoxLayout(this);
 	outer->setContentsMargins(0, 0, 0, 0);
-	auto* scroll = new QScrollArea(this);
-	scroll->setFrameShape(QFrame::NoFrame);
-	scroll->setWidgetResizable(true);
-	scroll->setFocusPolicy(Qt::NoFocus);  // Tab and F6 go to the controls, which the area scrolls into view
-	scroll->viewport()->setAutoFillBackground(false);
-	auto* body = new QWidget(scroll);
+	m_scroll = new QScrollArea(this);
+	m_scroll->setFrameShape(QFrame::NoFrame);
+	m_scroll->setWidgetResizable(true);
+	m_scroll->setFocusPolicy(Qt::NoFocus);  // Tab and F6 go to the controls, which the area scrolls into view
+	m_scroll->viewport()->setAutoFillBackground(false);
+	auto* body = new QWidget(m_scroll);
 	body->setAutoFillBackground(false);
-	scroll->setWidget(body);
-	outer->addWidget(scroll);
+	m_scroll->setWidget(body);
+	outer->addWidget(m_scroll);
 	m_column = new QVBoxLayout(body);
 	m_column->setContentsMargins(tokens::space::lg, tokens::space::lg, tokens::space::lg, tokens::space::lg);
 	m_column->setSpacing(tokens::space::lg);
+	// Theme 13: one content widget for the panel's life; its sections come and go inside it (InspectorSections.cpp).
+	m_content = new QWidget(body);
+	m_sections = new QVBoxLayout(m_content);
+	m_sections->setContentsMargins(0, 0, 0, 0);
+	m_sections->setSpacing(tokens::space::xl);
+	m_column->addWidget(m_content);
 	m_column->addStretch(1);
 	connect(ShellSelection::instance(), &ShellSelection::changed, this, &InspectorPanel::scheduleRebuild);
 	m_pending.setSingleShot(true);
@@ -244,56 +281,6 @@ void InspectorPanel::hideEvent(QHideEvent* event)
 {
 	QWidget::hideEvent(event);
 	m_sync.stop();
-}
-
-void InspectorPanel::dropContent()
-{
-	if (m_content == nullptr) { return; }
-	m_column->removeWidget(m_content);
-	m_content->hide();
-	m_content->deleteLater();
-	m_content = nullptr;
-	m_name = nullptr;
-	m_mute = nullptr;
-	m_solo = nullptr;
-	m_liveFields.clear();  // they were the content's; kept, the list would grow by every rebuild
-}
-
-void InspectorPanel::scheduleRebuild()
-{
-	dropContent();
-	m_pending.start();
-}
-
-void InspectorPanel::rebuild()
-{
-	m_pending.stop();
-	dropContent();
-	if (!m_track.isNull()) { disconnect(m_track, nullptr, this, nullptr); }
-	m_track = ShellSelection::instance()->track();
-	m_clip = ShellSelection::instance()->clip();
-	m_content = new QWidget(this);
-	auto* column = new QVBoxLayout(m_content);
-	column->setContentsMargins(0, 0, 0, 0);
-	column->setSpacing(tokens::space::xl);
-	ControlResult error;
-	const QString channelId = ShellSelection::instance()->channel();
-	MixerChannel* channel = channelId.isEmpty() ? nullptr : control::resolveMixerChannel(channelId, &error);
-	if (channel != nullptr) { column->addWidget(channelSection(channel, channelId)); }
-	else if (m_track.isNull())
-	{
-		column->addWidget(caption(tr("Select a track, a clip or a mixer channel to see its properties here."), m_content));
-		column->itemAt(0)->widget()->setProperty("wordWrap", true);
-	}
-	else
-	{
-		connect(m_track, &QObject::destroyed, this, &InspectorPanel::scheduleRebuild);
-		column->addWidget(trackSection(m_track));
-		if (!m_clip.isNull()) { column->addWidget(clipSection(m_clip)); }
-	}
-	m_column->insertWidget(0, m_content);
-	m_content->show();
-	syncToggles();
 }
 
 void InspectorPanel::addRow(QGridLayout* grid, const QString& text, QWidget* value)
@@ -357,8 +344,8 @@ QWidget* InspectorPanel::trackControls(Track* track, QWidget* parent)
 	column->addLayout(toggles);
 	auto* mix = new QHBoxLayout;
 	mix->setSpacing(tokens::space::lg);
-	if (FloatModel* volume = trackVolumeModel(track)) { mix->addWidget(knob(volume, tr("Volume"), box)); }
-	if (FloatModel* panning = trackPanningModel(track)) { mix->addWidget(knob(panning, tr("Pan"), box)); }
+	if (FloatModel* volume = trackVolumeModel(track)) { mix->addWidget(volumeKnob(volume, tr("Volume"), box, 100.f)); }
+	if (FloatModel* panning = trackPanningModel(track)) { mix->addWidget(knob(panning, tr("Pan"), box, nullptr, QStringLiteral("%"))); }
 	if (track->mixerChannelModel() != nullptr) { mix->addWidget(mixerChannelMenu(track, box)); }
 	mix->addStretch(1);
 	column->addLayout(mix);
@@ -410,29 +397,32 @@ QWidget* InspectorPanel::channelSection(MixerChannel* channel, const QString& id
 {
 	// A channel is not a QObject: its models' own deletion drops the section before a control
 	// could paint a deleted model.
-	connect(&channel->m_volumeModel, &QObject::destroyed, this, &InspectorPanel::scheduleRebuild);
 	auto* section = new QWidget(m_content);
+	// Theme 13: tied to this section (a kept-then-replaced section must not retire its successor).
+	connect(&channel->m_volumeModel, &QObject::destroyed, section, [this, section] {
+		if (m_channelSection.widget == section) { retireSection(m_channelSection); }
+		scheduleRebuild();
+	});
 	auto* column = new QVBoxLayout(section);
 	column->setContentsMargins(0, 0, 0, 0);
 	column->setSpacing(tokens::space::md);
 	column->addWidget(titleBar(tr("Mixer channel"), section, [id](QMenu* menu) { ShellCommandMenus::populateChannel(menu, id); }));
-	auto* name = new QLabel(channel->m_name.isEmpty() ? id : channel->m_name, section);
-	name->setObjectName(QStringLiteral("inspectorName"));
-	column->addWidget(name);
-	column->addWidget(caption(id, section));
+	m_channelName = channelNameField(channel, id, section);
+	column->addWidget(m_channelName);
+	column->addWidget(caption(tr("Mixer channel - %1").arg(id), section));
 	auto* row = new QHBoxLayout;
 	row->setSpacing(tokens::space::md);
 	auto* mute = new LedCheckBox(tr("Mute"), section);
 	mute->setModel(&channel->m_muteModel);
 	auto* solo = new LedCheckBox(tr("Solo"), section);
 	solo->setModel(&channel->m_soloModel);
-	Knob* volume = knob(&channel->m_volumeModel, tr("Volume"), section);
+	Knob* volume = volumeKnob(&channel->m_volumeModel, tr("Volume"), section, 1.f);
 	Knob* pan = knob(&channel->m_panModel, tr("Pan"), section);
 	for (QWidget* w : std::initializer_list<QWidget*>{mute, solo, volume, pan}) { row->addWidget(w); }
 	row->addStretch(1);
 	column->addLayout(row);
 	// MX-012 (0.5.0 L08): the inserts, sends and strip settings beside the fader.
-	column->addWidget(inspectorrouting::routingSection(channel, id, section, [this] { scheduleRebuild(); }));
+	column->addWidget(inspectorrouting::routingSection(channel, id, section, [this] { refreshChannelSection(); }));
 	return section;
 }
 
@@ -444,23 +434,11 @@ void InspectorPanel::syncToggles()
 	{
 		if (!field.isNull() && !typingInto(field)) { field->refresh(); }
 	}
+	syncChannelName();
 	if (m_track.isNull() || m_mute == nullptr) { return; }
 	m_mute->setChecked(m_track->isMuted());
 	m_solo->setChecked(m_track->isSolo());
 	if (m_name != nullptr && !m_name->hasFocus() && m_name->text() != m_track->name()) { m_name->setText(m_track->name()); }
-}
-
-QJsonObject InspectorPanel::describe() const
-{
-	QJsonObject out{{QStringLiteral("track"), control::trackIdOf(m_track)}, {QStringLiteral("clip"), control::clipIdOf(m_clip)},
-		{QStringLiteral("channel"), ShellSelection::instance()->channel()}};
-	if (!m_track.isNull())
-	{
-		out.insert(QStringLiteral("name"), m_track->name());
-		out.insert(QStringLiteral("muted"), m_track->isMuted());
-		out.insert(QStringLiteral("soloed"), m_track->isSolo());
-	}
-	return out;
 }
 
 } // namespace lmms::gui

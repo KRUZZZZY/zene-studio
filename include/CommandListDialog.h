@@ -34,14 +34,18 @@
 
 class QBoxLayout;
 class QLabel;
+class QMenu;
+class QPlainTextEdit;
 class QPushButton;
-class QTableWidget;
 
 namespace lmms::gui
 {
 
+class ListTable;
+
 //! An action on the selected row: runs `id` with `fixed` plus, for each `fromRow` entry, the
-//! argument named by its key set to the row's field named by its value.
+//! argument named by its key set to the row's field named by its value. A list's FIRST action is its
+//! primary one (theme 18): Enter or a double-click on a row runs it.
 struct RowAction
 {
 	QString label;
@@ -90,7 +94,13 @@ struct ListSpec
  *  files, VCA groups, warp markers, rack zones, the plug-ins in a project. It holds nothing of
  *  its own: the rows are whatever the list command answers, re-read after every action, and
  *  every action is a registered command (SPEC A11), so a feature that has a list command and an
- *  action command has its interface by declaring a ListSpec. */
+ *  action command has its interface by declaring a ListSpec.
+ *  0.5.0 design theme 18 - the shared list made easier to act on (ListTable): a find field over any
+ *  list that has no find argument of its own, sorting by a column title, Enter for the primary action
+ *  and the Menu key, Shift+F10 or a right-click for every action on the row; the outcome of each action
+ *  kept in a Results log under the list - time, outcome and the reply as "Label: value" lines - rather
+ *  than only a line that the next action replaces; and the list's reading shown while it lasts (a busy
+ *  cursor and "Reading ..."), with the count of rows shown. */
 class LMMS_EXPORT CommandListDialog : public QDialog
 {
 	Q_OBJECT
@@ -108,6 +118,17 @@ public:
 	ControlResult runExtra(int index);
 	//! The line under the table: the last outcome.
 	QString statusText() const;
+	//! Every outcome so far, oldest first: the Results log's text.
+	QString resultsText() const;
+	//! Find @a text in the rows shown (the find field a list without a find argument has); how many rows show.
+	int find(const QString& text);
+	//! The list, for the keyboard and the test.
+	ListTable* table() const { return m_table; }
+	//! Fill @a menu with row @a index's actions (the primary one the default), Sort By and Refresh;
+	//! the action picked is run by the caller (openRowMenu) - each carries its action's number, -1 for Refresh.
+	void buildRowMenu(QMenu* menu, int index);
+	//! Run the primary action on row @a index (Enter, a double-click).
+	ControlResult activateRow(int index);
 
 private:
 	//! Show m_rows; the row @a kept (the selected one before a refresh) stays selected where it still is.
@@ -115,6 +136,9 @@ private:
 	//! The find field m_spec.filterArg asks for, added to @a layout.
 	void addFilter(QBoxLayout* layout);
 	void syncButtons();
+	//! The line above the table: how many rows show, then the summary keys.
+	void showSummary();
+	void openRowMenu(int index, const QPoint& at);
 	void report(const QString& label, const ControlResult& result);
 	//! A declined "are you sure": reported, and answered Refused.
 	ControlResult cancelled(const QString& label);
@@ -124,8 +148,9 @@ private:
 	QJsonObject m_listed;
 	QJsonArray m_rows;
 	QLabel* m_summary = nullptr;
-	QTableWidget* m_table = nullptr;
+	ListTable* m_table = nullptr;
 	QLabel* m_status = nullptr;
+	QPlainTextEdit* m_results = nullptr;
 	QList<QPushButton*> m_actionButtons;
 };
 

@@ -65,6 +65,15 @@ LMMS_EXPORT void keepInPlace(SongEditor* editor, tick_t anchor, double ppbBefore
 //! Set the zoom model to @a value and keep @a anchor in place.
 LMMS_EXPORT void zoomAround(SongEditor* editor, int value, tick_t anchor);
 
+/*! 0.5.0 theme 9: a wheel turn that zooms (Ctrl+wheel over the arranger, the wheel over the navigator), around
+ *  @a anchor. The zoom follows the turn's size, not the number of events: a mouse notch (120) is WheelNotchSteps
+ *  zoom steps (one with @a fine), and a touchpad's small deltas add up to the same, so the zoom is continuous. Turns
+ *  less than WheelBurstMs apart are one gesture: it joins the history arrangement.zoom_back walks once, as a pinch
+ *  does. The model's bounds are the limits (4 to 400 pixels a bar). */
+LMMS_EXPORT void wheelZoom(SongEditor* editor, int delta, bool fine, tick_t anchor);
+constexpr int WheelNotchSteps = 5;
+constexpr int WheelBurstMs = 400;
+
 //! The zoom history arrangement.zoom_back walks (zoom model values, newest last; UI thread).
 LMMS_EXPORT void remember(int value);
 //! Swap @a current with the newest remembered value, into @a earlier; false when there is none.

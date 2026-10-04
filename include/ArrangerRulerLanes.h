@@ -62,7 +62,12 @@ class SongEditor;
  *  sounds (ChordTrack::effectiveLength), named by its root and chord ("C Major"), its scale in the tooltip.
  *  It takes room only while the chord track holds a chord (the preference still says whether it may show),
  *  and a click on a chord moves the play position there (transport.seek). The lane follows the chord track
- *  by its revision, so a chord set, removed, undone or loaded shows without a signal from the model. */
+ *  by its revision, so a chord set, removed, undone or loaded shows without a signal from the model.
+ *
+ *  0.5.0 theme 9 (wave 3): no label collides. A label too long for its room is elided, one with no room is left out,
+ *  and the tooltip names what the lane could not: every marker of a crowded cluster together, and in the tempo lane
+ *  the tempo change under the pointer, else the tempo there. A double-click on a section or a marker zooms the arranger
+ *  to it (arrangement.zoom start/end: the section, or the marker up to the next one) - Bitwig's Alt-click on a cue. */
 class LMMS_EXPORT ArrangerRulerLanes : public QWidget
 {
 	Q_OBJECT
@@ -86,11 +91,19 @@ public:
 	QRect laneRect(Lane lane) const;
 	//! The x of each marker drawn on the last paint (a test's view of it).
 	QList<int> drawnMarkers() const { return m_drawn; }
+	//! 0.5.0 theme 9 (wave 3): the tempo lane's tooltip at @a pos - the tempo change there, else the tempo there
+	//! (ArrangerRulerTempo.cpp, with the lane's painting); empty off the lane.
+	QString tempoTip(const QPoint& pos) const;
+	//! Every marker (ProjectMarkers order) whose flag stands within a label's reach of the one at @a index, by name:
+	//! the markers a crowded lane could not label, which its tooltip names together.
+	QStringList markerCluster(int index) const;
 
 protected:
 	bool event(QEvent* event) override;
 	void paintEvent(QPaintEvent* event) override;
 	void mousePressEvent(QMouseEvent* event) override;
+	//! 0.5.0 theme 9 (wave 3): a double-click on a section or a marker zooms the arranger to it.
+	void mouseDoubleClickEvent(QMouseEvent* event) override;
 	void contextMenuEvent(QContextMenuEvent* event) override;
 	bool eventFilter(QObject* watched, QEvent* event) override;
 

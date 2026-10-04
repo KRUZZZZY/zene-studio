@@ -117,6 +117,8 @@ private:
 	//! Publish a scan of @a dirs as running, its progress zeroed; false when one already runs.
 	bool claim(const QStringList& dirs);
 	void scan(const QStringList& dirs, bool features, int maxAnalysed);
+	//! 0.5.0 theme 24: a background scan's end, reported to the task area (TaskCenter.h).
+	void reportScanEnd();
 	void loadLocked() const;
 	bool save(const std::vector<BrowserIndexEntry>& entries, const Status& status) const;
 

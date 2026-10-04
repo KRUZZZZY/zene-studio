@@ -38,10 +38,22 @@ namespace lmms::gui
  *  span (the takes' span before there is a comp), each comp segment lit on the lane it plays; a
  *  drag along a lane runs comp.select for the range dragged on that lane, and a double-click runs comp.cycle at that tick (ED-168) - the
  *  registry's commands, so each swipe is one undo step. setState() takes comp.get_state's answer. */
+/*! 0.5.0 theme 10: the strip without a mouse - Up / Down choose the lane, Left / Right move the cursor a beat
+ *  (Ctrl: a bar), Shift+Left / Shift+Right mark a range from it, Home / End go to the span's ends; Enter or Space
+ *  comps the range - or, with none, the comp segment under the cursor - to the cursor's lane (comp.select), C cycles
+ *  the take there (comp.cycle), Escape drops the range, Ctrl+Shift+L opens the editable segment list. The cursor and
+ *  the range are outlined, and a screen reader reads them with the lane the comp plays there. */
 class LMMS_EXPORT CompSwipeStrip : public QWidget
 {
 	Q_OBJECT
 public:
+	struct Segment
+	{
+		int begin = 0;
+		int end = 0;
+		int lane = 0;
+	};
+
 	CompSwipeStrip(const QString& trackId, QWidget* parent);
 
 	void setState(const QJsonObject& state);
@@ -50,25 +62,44 @@ public:
 	int laneAt(int y) const;
 	QSize sizeHint() const override;
 
+	//! What the editable segment list reads (theme 10).
+	QString trackId() const { return m_trackId; }
+	const std::vector<Segment>& segments() const { return m_segments; }
+	const std::vector<int>& lanes() const { return m_lanes; }
+	//! The keyboard's place: the lane, the tick, and the range's other end (-1: no range).
+	int keyLane() const;
+	int keyTick() const { return m_keyTick; }
+	int keyAnchor() const { return m_keyAnchor; }
+	QString accessibleValue() const;
+
 signals:
 	//! A swipe or a cycle ran; the panel refreshes and shows @a status.
 	void ran(const QString& status);
+	//! setState() took a new answer: the segment list re-reads.
+	void stateChanged();
 
 protected:
+	bool event(QEvent* event) override;
 	void paintEvent(QPaintEvent* event) override;
 	void mousePressEvent(QMouseEvent* event) override;
 	void mouseMoveEvent(QMouseEvent* event) override;
 	void mouseReleaseEvent(QMouseEvent* event) override;
 	void mouseDoubleClickEvent(QMouseEvent* event) override;
+	void keyPressEvent(QKeyEvent* event) override;
 
 private:
-	struct Segment
-	{
-		int begin = 0;
-		int end = 0;
-		int lane = 0;
-	};
 	static constexpr int RowHeight = 22;
+
+	int xOf(int tick) const;
+	void paintKeyCursor(QPainter& p) const;
+	bool handlesKey(const QKeyEvent* event) const;
+	bool moveKey(const QKeyEvent* event);
+	//! Where Left / Right (a beat, or a bar) and Home / End put the cursor; -1 for another key.
+	int movedTick(int key, bool byBar) const;
+	void compAtCursor();
+	void cycleAtCursor();
+	//! The comp's segment holding @a tick, or nullptr.
+	const Segment* segmentAt(int tick) const;
 
 	QString m_trackId;
 	std::vector<int> m_lanes;
@@ -78,6 +109,9 @@ private:
 	int m_dragLane = -1;
 	int m_dragFrom = 0;
 	int m_dragTo = 0;
+	int m_keyRow = 0;       //!< theme 10: the lane row the keys act on
+	int m_keyTick = 0;      //!< ... the cursor's tick
+	int m_keyAnchor = -1;   //!< ... the marked range's other end, or -1
 };
 
 } // namespace lmms::gui

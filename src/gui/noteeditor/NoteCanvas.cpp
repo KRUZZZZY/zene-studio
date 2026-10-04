@@ -25,6 +25,7 @@
 #include "NoteCanvas.h"
 
 #include <algorithm>
+#include <cmath>
 
 #include <QPainter>
 #include <QPaintEvent>
@@ -68,6 +69,22 @@ QColor labelColour(const QColor& fill, const tokens::Palette& pal)
 	return a11y::contrastRatio(pal.textOnAccent, shown) >= a11y::contrastRatio(pal.text, shown) ? pal.textOnAccent : pal.text;
 }
 
+//! 0.5.0 theme 11: the narrowest a note's click target gets - the design system's, larger in accessible mode.
+int minimumTarget()
+{
+	return static_cast<int>(std::lround(tokens::space::md * tokens::targetFactor()));
+}
+
+//! A note's edge, opaque in the note's own colour so a faint (unlikely, muted) note still shows against its
+//! row: dashed when the note is muted, dotted when it may not play - its state in a shape, not only a shade.
+void paintEdge(QPainter& p, const Note& note, const QRect& r, const QColor& solid)
+{
+	const Qt::PenStyle style = note.muted() ? Qt::DashLine : note.probability() < 1.f ? Qt::DotLine : Qt::SolidLine;
+	p.setPen(QPen(note.muted() ? tokens::palette().text : solid, 1, style));
+	p.setBrush(Qt::NoBrush);
+	p.drawRect(r.adjusted(0, 0, -1, -1));
+}
+
 } // namespace
 
 NoteCanvas::NoteCanvas(NoteEditor* editor)
@@ -87,7 +104,12 @@ NoteCanvas::NoteCanvas(NoteEditor* editor)
 			"dragging; Alt turns the snap off. Double-click a note for its properties. Ctrl+C, Ctrl+X, Ctrl+V and "
 			"Ctrl+B copy, cut, paste and duplicate; Delete removes the selection; the arrow keys move it. Alt+wheel "
 			"over a note changes its velocity (Ctrl+Alt finely, Shift+Alt nudges it). The wheel scrolls; with Ctrl it "
-			"zooms, with Shift it scrolls sideways; the middle button drags the view."));
+			"zooms, with Shift it scrolls sideways; the middle button drags the view. Without a mouse: Alt+Left and "
+			"Alt+Right go to the previous and next note (Shift adds it), Alt+Up and Alt+Down to the chord's note above "
+			"and below, Home and End to the first and last; Ctrl+Left and Ctrl+Right shorten and lengthen the selection, "
+			"Ctrl+Up and Ctrl+Down change its velocity; Insert adds a note after the cursor, Enter opens its properties, "
+			"Ctrl+Shift+L the editable note list."));
+	installKeyboardAccess();  // theme 10 (NoteCanvasAccess.cpp)
 	repaintOnMeterChange(this);
 }
 
@@ -181,6 +203,18 @@ Note* NoteCanvas::noteAt(const QPoint& pos) const
 	for (int i = last - 1; i >= first; --i)
 	{
 		if (noteRect(*notes[static_cast<std::size_t>(i)]).contains(pos)) { return notes[static_cast<std::size_t>(i)]; }
+	}
+	// 0.5.0 theme 11: a note narrower than the minimum target is hit anywhere in a target that wide, centred
+	// on it - only where no note is hit exactly, so a short note never takes a click from its neighbour.
+	const int minimum = minimumTarget();
+	for (int i = last - 1; i >= first; --i)
+	{
+		const QRect r = noteRect(*notes[static_cast<std::size_t>(i)]);
+		const int grow = minimum - r.width();
+		if (!r.isEmpty() && grow > 0 && r.adjusted(-grow / 2, 0, grow - grow / 2, 0).contains(pos))
+		{
+			return notes[static_cast<std::size_t>(i)];
+		}
 	}
 	return nullptr;
 }
@@ -332,18 +366,21 @@ void NoteCanvas::paintNotes(QPainter& p) const
 void NoteCanvas::paintNote(QPainter& p, const Note& note, const QRect& r) const
 {
 	const tokens::Palette& pal = tokens::palette();
-	QColor fill = noteFill(note);
-	// A note that may not play (chance below 100 %) is drawn fainter in proportion.
+	const QColor solid = noteFill(note);
+	QColor fill = solid;
+	// A note that may not play (chance below 100 %) is drawn fainter in proportion - and outlined (paintEdge).
 	fill.setAlphaF(note.muted() ? 0.35f : 0.45f + 0.55f * note.probability());
-	p.fillRect(r, fill);
 	// Zoomed far out a note is a sliver a few pixels wide: the edge band, the label and the slide
 	// mark cannot be seen there, so they are not drawn (the widest-zoom frame's cost, measured in
-	// PianoRollBenchmarkTest, is dominated by these thousands of slivers).
+	// PianoRollBenchmarkTest, is dominated by these thousands of slivers). A sliver is opaque, so a short
+	// note shows whatever its chance (0.5.0 theme 11).
 	if (r.width() <= 4)
 	{
-		if (note.selected()) { p.fillRect(r, pal.text); }
+		p.fillRect(r, note.selected() ? pal.text : solid);
 		return;
 	}
+	p.fillRect(r, fill);
+	paintEdge(p, note, r, solid);
 	p.fillRect(QRect(r.left(), r.top(), 2, r.height()), fill.darker(160));
 	if (note.selected())
 	{
@@ -355,7 +392,10 @@ void NoteCanvas::paintNote(QPainter& p, const Note& note, const QRect& r) const
 	{
 		p.setFont(tokens::font(tokens::TextRole::Caption));
 		p.setPen(labelColour(fill, pal));
-		p.drawText(r.adjusted(4, 0, -2, 0), Qt::AlignVCenter | Qt::AlignLeft, noteLabel(note));
+		// A note that may not play says its chance in words as well as in its fainter fill (0.5.0 theme 11).
+		const QString label = note.probability() < 1.f
+			? tr("%1 %2%").arg(noteLabel(note)).arg(std::lround(note.probability() * 100.f)) : noteLabel(note);
+		p.drawText(r.adjusted(4, 0, -2, 0), Qt::AlignVCenter | Qt::AlignLeft, label);
 	}
 	if (note.slide()) { p.fillRect(QRect(r.right() - 3, r.top(), 3, r.height()), pal.text); }
 }

@@ -28,24 +28,34 @@
 #include <vector>
 
 #include <QDialog>
+#include <QJsonObject>
 #include <QPointer>
 #include <QString>
 #include <QWidget>
 
+#include "SampleRangeFields.h"
 #include "SampleThumbnail.h"
 #include "lmms_export.h"
 
 namespace lmms
 {
+class ControlRegistry;
 class SampleClip;
+
+//! 0.5.0 theme 15: window.sample_editor (src/gui/ControlCommandsSampleEditor.cpp); registered by registerWindowCommands.
+LMMS_EXPORT void registerSampleEditorWindowCommands(ControlRegistry& registry);
 }
 
+class QComboBox;
+class QLabel;
 class QPushButton;
 
 namespace lmms::gui
 {
 
-//! The waveform of a sample clip's whole source, with a selection dragged across it (source frames).
+/*! The waveform of a sample clip's whole source, with a selection dragged across it (source frames, End
+ *  exclusive). 0.5.0 theme 15: the selection's edges are handles - drag one to move that edge - and the
+ *  waveform zooms (Ctrl+wheel around the pointer, or the dialog's zoom buttons) and scrolls (the wheel). */
 class LMMS_EXPORT SampleSelectionView : public QWidget
 {
 	Q_OBJECT
@@ -54,6 +64,16 @@ public:
 	void setClip(SampleClip* clip);
 	int from() const { return std::min(m_anchor, m_end); }
 	int to() const { return std::max(m_anchor, m_end); }
+	int frames() const { return m_frames; }
+	//! Select [@a from, @a to) - clamped to the source, the ends swapped if reversed.
+	void setRange(int from, int to);
+	//! The frames the view shows: from viewFrom(), viewFrames() of them.
+	int viewFrom() const { return m_viewFrom; }
+	int viewFrames() const;
+	//! Zoom by @a factor (above 1 zooms in) keeping the frame under @a anchorX in place.
+	void zoomBy(double factor, int anchorX);
+	void zoomToSelection();
+	void showAll();
 	QSize sizeHint() const override { return {640, 180}; }
 
 signals:
@@ -64,29 +84,74 @@ protected:
 	void paintEvent(QPaintEvent* event) override;
 	void mousePressEvent(QMouseEvent* event) override;
 	void mouseMoveEvent(QMouseEvent* event) override;
+	void wheelEvent(QWheelEvent* event) override;
 
 private:
+	enum class Edge
+	{
+		None,
+		Start,
+		End
+	};
 	int frameAt(int x) const;
+	int xOf(int frame) const;
+	//! The selection edge whose handle is under @a x (a target no narrower than the design system's).
+	Edge edgeAt(int x) const;
+	//! Show @a span frames from @a first, clamped to the source and to a frame a pixel at the most.
+	void setView(int first, int span);
+	void paintHandle(QPainter& p, int frame, Edge edge) const;
 	QPointer<SampleClip> m_clip;
 	SampleThumbnail m_thumbnail;
 	int m_frames = 0;
 	int m_anchor = 0;
 	int m_end = 0;
+	int m_viewFrom = 0;
+	int m_viewSpan = 0;  //!< 0: the whole source
 };
 
-/*! 0.5.0 L05 (ED-156): the sample editor - drag a selection over the clip's source, then gain,
- *  silence, delete, reverse, fade or crop it. Every button runs sample.edit_range, so an agent's edit
- *  and the editor's are one path and one undo step each. */
+/*! 0.5.0 L05 (ED-156): the sample editor - select a range of the clip's source, then gain, silence,
+ *  delete, reverse, fade or crop it. Every button runs sample.edit_range, so an agent's edit and the
+ *  editor's are one path and one undo step each. 0.5.0 theme 15: the range is also three typed fields -
+ *  Start, End and Length, in the unit the Units menu picks (time, bars|beats or samples) - and the
+ *  operations act on exactly what the fields say. window.sample_editor opens it and sets its range. */
 class LMMS_EXPORT SampleEditorDialog : public QDialog
 {
 	Q_OBJECT
 public:
 	SampleEditorDialog(SampleClip* clip, QWidget* parent = nullptr);
+	//! The open sample editor of @a clip, or a new one (shown either way).
+	static SampleEditorDialog* openFor(SampleClip* clip, QWidget* parent);
+
+	SampleClip* clip() const;  // out of line: QPointer<SampleClip>::data() needs the complete type
+	SampleSelectionView* view() const { return m_view; }
+	void setRange(int from, int to) { m_view->setRange(from, to); }
+	void setUnit(samplerange::Unit unit);
+	samplerange::Unit unit() const { return m_unit; }
+	//! window.sample_editor's reply: the clip, its source, the range and the view, with the range as text.
+	QJsonObject describe() const;
+	//! The last operation's outcome as the status line shows it.
+	QString status() const;
 
 private:
-	void apply(const QString& op, double gainDb = 0.0);
+	QWidget* buildFields();
+	QWidget* buildZoom();
+	QWidget* buildActions();
+	samplerange::Context context() const;
+	//! The fields, their limits and the waveform's accessible description follow the selection.
+	void syncFields();
+	//! "0:01.000 to 0:02.500, 0:01.500 long" in the chosen unit, or that nothing is selected.
+	QString rangeText() const;
+	void report(const QString& message, bool failed);
+	//! Run @a op (the button @a label) on the range the fields say; the status line says what happened.
+	void apply(const QString& op, double gainDb, const QString& label);
 	QPointer<SampleClip> m_clip;
 	SampleSelectionView* m_view;
+	SampleFrameField* m_start = nullptr;
+	SampleFrameField* m_end = nullptr;
+	SampleFrameField* m_length = nullptr;
+	QComboBox* m_unitBox = nullptr;
+	QLabel* m_status = nullptr;
+	samplerange::Unit m_unit = samplerange::Unit::Time;
 	std::vector<QPushButton*> m_actions;  //!< the edit buttons: enabled while there is a selection to edit
 };
 

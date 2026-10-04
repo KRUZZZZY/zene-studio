@@ -43,6 +43,7 @@
 #include "ControlDevicePlacement.h"
 #include "ControlDeviceSupport.h"
 #include "ControlDeviceTools.h"
+#include "DeviceAbState.h"
 #include "ControlCommandDef.h"
 #include "ControlEdit.h"
 #include "ControlRegistry.h"
@@ -338,7 +339,55 @@ ControlResult pluginAb(const QJsonObject& args)
 	return ControlResult::success(abJson(pair));
 }
 
+//! 0.5.0 theme 12: the device at slot @a from of the chain @a args address (found again on every run - an undo can
+//! make a rack chain a new object) put at slot @a to; moveUp/moveDown signal nothing, so the views are told here.
+bool reslot(const QJsonObject& args, int from, int to)
+{
+	ControlTarget target;
+	ControlResult ignored;
+	if (!resolveChainTarget(args, &target, &ignored)) { return false; }
+	const int count = static_cast<int>(target.chain->effects().size());
+	if (from < 0 || from >= count || to < 0 || to >= count) { return false; }
+	Effect* effect = target.chain->effects()[from];
+	for (int slot = from; slot > to; --slot) { target.chain->moveUp(effect); }
+	for (int slot = from; slot < to; ++slot) { target.chain->moveDown(effect); }
+	emit target.chain->dataChanged();
+	return true;
+}
+
+//! plugin.move: one device to another slot of its own chain, one undo step (recorded by chain and slot, not by pointer).
+ControlResult pluginMove(const QJsonObject& args)
+{
+	ControlTarget target;
+	ControlResult error;
+	if (!resolveChainTarget(args, &target, &error)) { return error; }
+	Effect* effect = resolveControlEffect(target, args.value(QStringLiteral("plugin")).toString(), &error);
+	if (effect == nullptr) { return error; }
+	const std::vector<Effect*>& effects = target.chain->effects();
+	const int from = static_cast<int>(std::find(effects.begin(), effects.end(), effect) - effects.begin());
+	const int to = std::clamp(args.value(QStringLiteral("position")).toInt(), 0, static_cast<int>(effects.size()) - 1);
+	const QJsonObject result{{QStringLiteral("plugin"), effectIdOf(effect)}, {QStringLiteral("from"), from}, {QStringLiteral("position"), to}};
+	if (from == to) { return ControlResult::success(result); }  // already there: nothing changed, no step
+	QJsonObject chain{{QStringLiteral("target"), target.id}};
+	if (args.contains(QStringLiteral("chain"))) { chain.insert(QStringLiteral("chain"), args.value(QStringLiteral("chain"))); }
+	reslot(chain, from, to);
+	addUndoStep([chain, from, to]() { reslot(chain, to, from); }, [chain, from, to]() { reslot(chain, from, to); });
+	Engine::getSong()->setModified();
+	return ControlResult::success(result);
+}
+
 } // namespace
+
+bool control::abSlotState(const Effect* effect, AbState* state)
+{
+	const auto found = effect != nullptr ? abSlots().find(effect->id()) : abSlots().end();
+	if (found == abSlots().end() || found->second.owner != effect || (found->second.a.isEmpty() && found->second.b.isEmpty()))
+	{
+		return false;
+	}
+	*state = AbState{found->second.onB, !found->second.a.isEmpty(), !found->second.b.isEmpty()};
+	return true;
+}
 
 bool control::abSlotValues(Effect* effect, std::vector<float>* a, std::vector<float>* b)
 {
@@ -396,6 +445,13 @@ void registerDeviceCopyCommands(ControlRegistry& registry)
 		"now and recalls the other (the first toggle copies them, so A and B start equal), 'get' answers which slot is heard "
 		"and which are stored. The slots last the session, not the project; a recall or toggle is one undo step."),
 		ab, {QStringLiteral("target"), QStringLiteral("plugin"), QStringLiteral("action")}, pluginAb);
+	QJsonObject move = source;  // 0.5.0 theme 12: the device card's Move Left / Move Right
+	move.insert(QStringLiteral("plugin"), stringProperty());
+	move.insert(QStringLiteral("position"), integerProperty(0, 1024));
+	add(registry, "plugin.move", QStringLiteral("Move one device ('plugin', fx-<n> on 'target' - with 'chain' for a rack chain) to "
+		"slot 'position' of its own chain (0 = first; clamped to the last slot). 'from' answers where it was. One undo step; a "
+		"device already at that slot changes nothing."),
+		move, {QStringLiteral("target"), QStringLiteral("plugin"), QStringLiteral("position")}, pluginMove);
 }
 
 } // namespace lmms

@@ -28,7 +28,11 @@
  *  note.velocity_offset), so the Inspector edits exactly as an agent does.
  *  Theme 7: every position and length reads in the time format (bars|beats by default, ticks or time by
  *  choice - a right-click on the field, MusicalTime.h) and is typed in any of them. A note's start counts
- *  from the clip's start, as the note editor's ruler does. */
+ *  from the clip's start, as the note editor's ruler does.
+ *  Theme 13: a field the selected notes disagree on says "Multiple values" (a dash before it, not a colour) - never one
+ *  note's value as if it were all of them; a key, velocity or length typed into it is given to every selected note
+ *  (one note.edit), and a start moves the selection so its first note starts there, keeping the notes' spacing.
+ *  Velocities read in % of the default (the engine's 0..200 note volume, 100 % the default). */
 
 #include <algorithm>
 #include <functional>
@@ -96,8 +100,21 @@ const Note* firstSelected(const QPointer<MidiClip>& clip)
 }
 
 QString keyText(const Note* note) { return NoteGrid::keyName(note->key()); }
-// The engine's note volume scale, 0..200 - the one note.velocity_* and the note editor use.
-QString velocityText(const Note* note) { return QString::number(note->getVolume()); }
+// The engine's note volume scale, 0..200 - the one note.velocity_* and the note editor use - in % (100 % the default).
+QString velocityText(const Note* note) { return QStringLiteral("%1%").arg(note->getVolume()); }
+
+//! Theme 13: what a field shows when the selected notes differ - text and a dash, so it does not rest on colour.
+QString mixedText() { return InspectorPanel::tr("\u2014 Multiple values"); }
+
+//! Whether the selected notes of @a clip give different texts for one field.
+bool differ(const QPointer<MidiClip>& clip, QString (*text)(const Note*))
+{
+	const QVector<Note*> notes = clip ? selectedNotes(clip) : QVector<Note*>();
+	return std::any_of(notes.begin(), notes.end(), [&notes, text](const Note* n) { return text(n) != text(notes.first()); });
+}
+//! A note's start and length as exact ticks, for telling selected notes apart (differ()).
+QString startKey(const Note* note) { return QString::number(note->pos().getTicks()); }
+QString lengthKey(const Note* note) { return QString::number(note->length().getTicks()); }
 //! Where @a clip starts (gone: 0) - a length, and a note's time, are measured from there.
 int clipStart(const Clip* clip) { return clip != nullptr ? clip->startPosition().getTicks() : 0; }
 
@@ -109,26 +126,32 @@ QJsonObject selectionOf(const MidiClip* clip, const QString& id)
 	return {{QStringLiteral("clip"), id}, {QStringLiteral("scope"), QStringLiteral("selection")}};
 }
 
-//! The typed key for the selection: transposed so the first selected note lands on it.
+bool editSelected(const QPointer<MidiClip>& clip, const QString& id, const QString& field, const std::function<int(const Note*)>& valueOf);
+
+//! The typed key for the selection: transposed so the first selected note lands on it - or, when the notes' keys
+//! differ (the field said "Multiple values"), given to every selected note.
 bool setSelectedKey(const QPointer<MidiClip>& clip, const QString& id, const QString& typed)
 {
 	int wanted = 0;
 	const Note* note = firstSelected(clip);
 	if (note == nullptr || !keyFromText(typed, &wanted)) { return false; }
+	if (differ(clip, &keyText)) { return editSelected(clip, id, QStringLiteral("key"), [wanted](const Note*) { return wanted; }); }
 	QJsonObject args = selectionOf(clip, id);
 	args.insert(QStringLiteral("semitones"), wanted - note->key());
 	return invoke(QStringLiteral("note.transpose"), args);
 }
 
-//! The typed velocity: the selection offset so the first selected note has it.
+//! The typed velocity ("80" or "80%"): the selection offset so the first selected note has it - or, when the notes'
+//! velocities differ, given to every selected note.
 bool setSelectedVelocity(const QPointer<MidiClip>& clip, const QString& id, const QString& typed)
 {
 	bool ok = false;
-	const int wanted = typed.trimmed().toInt(&ok);
+	const int wanted = std::clamp(QString(typed).remove(QLatin1Char('%')).trimmed().toInt(&ok), 0, 200);
 	const Note* note = firstSelected(clip);
 	if (note == nullptr || !ok) { return false; }
+	if (differ(clip, &velocityText)) { return editSelected(clip, id, QStringLiteral("velocity"), [wanted](const Note*) { return wanted; }); }
 	QJsonObject args = selectionOf(clip, id);
-	args.insert(QStringLiteral("delta"), std::clamp(wanted, 0, 200) - static_cast<int>(note->getVolume()));
+	args.insert(QStringLiteral("delta"), wanted - static_cast<int>(note->getVolume()));
 	return invoke(QStringLiteral("note.velocity_offset"), args);
 }
 
@@ -217,17 +240,25 @@ QWidget* InspectorPanel::notesSection(MidiClip* clip, const QString& id, QWidget
 	auto* grid = new QGridLayout(box);
 	grid->setContentsMargins(0, 0, 0, 0);
 	const QPointer<MidiClip> guarded(clip);
+	// Theme 13: the value the selected notes share, else "Multiple values" - never the first note's alone.
 	const auto shown = [guarded](QString (*text)(const Note*)) {
-		return [guarded, text] { const Note* note = firstSelected(guarded); return note != nullptr ? text(note) : tr("no notes selected"); };
+		return [guarded, text] {
+			const Note* note = firstSelected(guarded);
+			if (note == nullptr) { return tr("no notes selected"); }
+			return differ(guarded, text) ? mixedText() : text(note);
+		};
 	};
-	// A note's start and length in the time format: a time is measured from where the clip starts.
+	// A note's start and length in the time format: a time is measured from where the clip starts. Differing starts
+	// name the first one, where a typed start puts it.
 	const auto timed = [guarded](bool start) {
 		return [guarded, start] {
 			const Note* note = firstSelected(guarded);
 			if (note == nullptr) { return tr("no notes selected"); }
 			const int origin = clipStart(guarded.data());
-			return start ? musicaltime::positionText(note->pos().getTicks(), origin)
+			const QString text = start ? musicaltime::positionText(note->pos().getTicks(), origin)
 				: musicaltime::lengthText(note->length().getTicks(), origin + note->pos().getTicks());
+			if (!differ(guarded, start ? &startKey : &lengthKey)) { return text; }
+			return start ? tr("%1, first at %2").arg(mixedText(), text) : mixedText();
 		};
 	};
 	auto* key = new ReadoutField(tr("Key"), box);
@@ -240,9 +271,11 @@ QWidget* InspectorPanel::notesSection(MidiClip* clip, const QString& id, QWidget
 	length->bindText(timed(false), [guarded, id](const QString& typed) { return setSelectedLength(guarded, id, typed); });
 	timeField(start);
 	timeField(length);
-	grid->addWidget(new QLabel(tr("Selected notes"), box), 0, 0, 1, 2);
-	int row = 1;
-	for (ReadoutField* field : {key, start, length, velocity})
+	// How many notes the fields speak for, live (a selection changed in the note editor shows at once).
+	auto* count = new ReadoutField(tr("Selected notes"), box);
+	count->bindText([guarded] { return guarded ? tr("%n note(s)", "", static_cast<int>(selectedNotes(guarded).size())) : QString(); });
+	int row = 0;
+	for (ReadoutField* field : {count, key, start, length, velocity})
 	{
 		grid->addWidget(field, row++, 0, 1, 2);  // a readout field carries its own caption
 		m_liveFields.append(field);

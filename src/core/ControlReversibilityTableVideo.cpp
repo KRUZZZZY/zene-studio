@@ -48,7 +48,8 @@ const ReversibilityRow kVideoRows[] = {
 	R("video.extract_audio", RC::TrueInverse, true, "it writes the video's sound to a WAV and adds an audio track holding it at "
 		"the video's offset",
 		"action checkpoint: the recorded undo step removes the track (control::recordCreatedTrack); its redo builds it again. "
-		"The WAV stays on disk, as a bounce's render does", ""),
+		"The WAV stays on disk, as a bounce's render does. With 'background' the reply is an acknowledgement and the same "
+		"one step is recorded when the decode completes (none when it fails or is cancelled)", ""),
 	R("video.window_show", RC::NotMutating, false, "it shows or hides the video window: interface state", "no write", ""),
 };
 

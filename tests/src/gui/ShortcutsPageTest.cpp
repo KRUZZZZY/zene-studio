@@ -28,6 +28,7 @@
 #include <QMenu>
 #include <QMenuBar>
 
+#include "HelpTasks.h"
 #include "ShortcutsPage.h"
 
 using namespace lmms::gui;
@@ -61,6 +62,29 @@ private slots:
 		QCOMPARE(page.visibleRowCount(), 2);  // "Ctrl+S" and "Ctrl+Shift+P" both contain it
 		page.setFilter(QString());
 		QCOMPARE(page.visibleRowCount(), 2);
+	}
+
+	//! Design theme 21: the shortcuts are grouped by task - the manual's sections, in its order, under its own
+	//! titles - and found by a task's name and by a command's id as well as by what the columns show.
+	void theShortcutsAreGroupedByTask()
+	{
+		QMenuBar bar;
+		QMenu* file = bar.addMenu(QStringLiteral("&File"));
+		file->addAction(QStringLiteral("&Save"))->setShortcut(QKeySequence(QStringLiteral("Ctrl+S")));
+		QMenu* view = bar.addMenu(QStringLiteral("&View"));
+		QAction* mixer = view->addAction(QStringLiteral("Mixer"));
+		mixer->setShortcut(QKeySequence(QStringLiteral("F9")));
+		mixer->setProperty("controlCommand", QStringLiteral("mixer.get_state"));
+
+		ShortcutsPage page(&bar);
+		QCOMPARE(page.rowCount(), 2);
+		QCOMPARE(page.taskOf(0), lmms::gui::help::topicTitle(QStringLiteral("mix")));  // Mixing comes before Projects
+		QCOMPARE(page.taskOf(1), lmms::gui::help::topicTitle(QStringLiteral("projects")));
+		page.setFilter(lmms::gui::help::topicTitle(QStringLiteral("projects")));
+		QCOMPARE(page.visibleRowCount(), 1);
+		page.setFilter(QStringLiteral("mixer.get_state"));
+		QCOMPARE(page.visibleRowCount(), 1);
+		QVERIFY(lmms::gui::help::menuTopic(QString(), QStringLiteral("Help ▸ Manual")) == QStringLiteral("access"));
 	}
 };
 

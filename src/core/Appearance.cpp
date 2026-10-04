@@ -27,6 +27,7 @@
 
 #include <QDir>
 #include <QFile>
+#include <QObject>
 #include <QSaveFile>
 
 #include "ConfigManager.h"
@@ -102,11 +103,27 @@ bool syncScaleFile()
 	return file.commit();
 }
 
+QJsonObject applyTiming()
+{
+	return {{QStringLiteral("applies"), QStringLiteral("next_start")}, {QStringLiteral("restart_required"), true},
+		{QStringLiteral("applies_note"), QObject::tr("Saved. The interface keeps its current look until Zene Studio is "
+			"restarted; the change applies from the next start.")}};
+}
+
+const Options& startedWith()
+{
+	static const Options started = options();  // read once, like the palette
+	return started;
+}
+
 QJsonObject toJson(const Options& o)
 {
-	return {{QStringLiteral("scale"), o.scale}, {QStringLiteral("palette"), o.palette}, {QStringLiteral("accessible"), o.accessible},
+	QJsonObject out{{QStringLiteral("scale"), o.scale}, {QStringLiteral("palette"), o.palette}, {QStringLiteral("accessible"), o.accessible},
 		{QStringLiteral("font_scale"), 1.0}, {QStringLiteral("density"), o.accessible ? QStringLiteral("comfortable") : QStringLiteral("standard")},
-		{QStringLiteral("applies"), QStringLiteral("next_start")}};
+		{QStringLiteral("restart_pending"), !(o == startedWith())}};
+	const QJsonObject timing = applyTiming();
+	for (auto it = timing.begin(); it != timing.end(); ++it) { out.insert(it.key(), it.value()); }
+	return out;
 }
 
 QString scaleFilePath()

@@ -53,6 +53,8 @@ struct Options
 	double scale = 1.0;
 	QString palette = QStringLiteral("dark");
 	bool accessible = false;
+
+	bool operator==(const Options&) const = default;
 };
 
 //! How much larger accessible mode's click targets and control paddings are than standard's (24 -> 32 px).
@@ -69,9 +71,22 @@ LMMS_EXPORT QString effectivePalette(const Options& options);
 LMMS_EXPORT Options options();
 //! False when the scale file main() reads could not be written (the config values are set either way).
 LMMS_EXPORT bool setOptions(const Options& next);
-//! {scale, palette, accessible, applies}, plus the two old fields: font_scale (always 1 - text follows the zoom)
-//! and density (comfortable in accessible mode, standard otherwise).
+//! {scale, palette, accessible, applies, restart_required, applies_note, restart_pending}, plus the two old fields:
+//! font_scale (always 1 - text follows the zoom) and density (comfortable in accessible mode, standard otherwise).
 LMMS_EXPORT QJsonObject toJson(const Options& options);
+
+/*! 0.5.0 UX decision (theme 20): every change to how the interface looks says when it takes effect. Each one - the
+ *  zoom, the palette, accessible mode, a colour override - is read when the interface starts and applies from the next
+ *  start (a live switch would leave controls that cached the old colours mixed with new ones), so this is
+ *  {applies: "next_start", restart_required: true, applies_note: the sentence a person reads}. */
+LMMS_EXPORT QJsonObject applyTiming();
+//! The options this run of the interface draws with: captured the first time anything asks - the palette's first read,
+//! before any change this session can be made - and unchanged after.
+LMMS_EXPORT const Options& startedWith();
+/*! Tell the person at the window that a change to the look was saved and when it applies (a non-modal floating
+ *  message, spoken to a screen reader too). Nothing without a main window: an agent, a test or the CLI. Implemented
+ *  with the theme commands in the interface (src/gui/ControlCommandsTheme.cpp). */
+LMMS_EXPORT void noticeAppliesNextStart();
 //! The file main() reads the scale from.
 LMMS_EXPORT QString scaleFilePath();
 //! Write the configured scale to that file (after the config's ui/scale was written some other way);

@@ -46,6 +46,7 @@
 #include "SampleBuffer.h"
 #include "SampleBufferResample.h"
 #include "SampleDecoder.h"
+#include "TaskCenter.h"
 
 namespace lmms
 {
@@ -176,6 +177,20 @@ void endJob(RenderJob* job, bool ok, int exitCode, QString error)
 	if (job->ownsSource) { QFile::remove(job->source); }
 }
 
+//! 0.5.0 theme 24: what the task area calls this job.
+QString taskTitle(const RenderJob& job)
+{
+	const QString name = QFileInfo(job.out).fileName();
+	return job.kind == RenderJob::Kind::Render ? QObject::tr("Render %1").arg(name) : QObject::tr("Convert %1").arg(name);
+}
+
+//! The task area's state for an ended job.
+TaskState taskState(RenderJob::State state)
+{
+	if (state == RenderJob::State::Done) { return TaskState::Done; }
+	return state == RenderJob::State::Cancelled ? TaskState::Cancelled : TaskState::Failed;
+}
+
 } // namespace
 
 RenderQueue& RenderQueue::instance()
@@ -204,6 +219,8 @@ int RenderQueue::add(RenderJob job)
 	job.queuedMs = now();
 	if (job.kind == RenderJob::Kind::Render) { job.settings = ControlExportPresetSettings::effective(); }
 	m_jobs.push_back(job);
+	// 0.5.0 theme 24: the job is listed in the task area from the moment it is queued, with the queue's own cancel.
+	TaskCenter::instance().begin(this, job.id, {kindName(job.kind), taskTitle(job), [id = job.id] { instance().cancel(id); }, {}, true});
 	return job.id;
 }
 
@@ -231,6 +248,7 @@ void RenderQueue::next()
 	queued->state = RenderJob::State::Running;
 	queued->startedMs = now();
 	m_current = queued->id;
+	TaskCenter::instance().progress(this, queued->id, -1.0);  // running: a child render cannot say how far it is
 	if (queued->kind == RenderJob::Kind::Render) { runRender(*queued); }
 	else { runConvert(*queued); }
 }
@@ -271,7 +289,11 @@ QString RenderQueue::convert(const RenderJob& job)
 void RenderQueue::finish(int id, bool ok, int exitCode, const QString& error)
 {
 	RenderJob* job = find(id);
-	if (job != nullptr) { endJob(job, ok, exitCode, error); }
+	if (job != nullptr)
+	{
+		endJob(job, ok, exitCode, error);
+		TaskCenter::instance().finish(this, id, taskState(job->state), job->error);
+	}
 	if (m_process != nullptr)
 	{
 		m_process->deleteLater();
@@ -289,6 +311,7 @@ bool RenderQueue::cancel(int id)
 	job->state = RenderJob::State::Cancelled;
 	job->finishedMs = now();
 	if (!running && job->ownsSource) { QFile::remove(job->source); }
+	if (!running) { TaskCenter::instance().finish(this, id, TaskState::Cancelled); }  // a running one ends in finish()
 	// A running render's process is stopped: its finished signal then ends the job (finish() sees it
 	// cancelled and removes what it wrote). A running conversion completes on its worker and is then
 	// dropped the same way, its staged file never moved into place (review L17 #1, #2).

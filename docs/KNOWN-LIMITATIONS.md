@@ -2292,3 +2292,44 @@ Fleshed out, because both halves of that sentence hide something real:
 mode's timeline, not the song's, and `transport.play` starts from the song's. The video window
 follows the song's timeline, as the arranger's ruler does. Logged for 0.5.x.
 
+
+## 0.5.0 catch-up wave 3 — the redesign themes 8-24, and what they leave out (2026-10-04)
+
+**Workspace and layouts (themes 8, 22).**
+- The controller rack and project notes stay floating tools rather than docked panels: docking them would change what every project file saves.
+- The main window's own geometry is not remembered; it opens maximised.
+- The header and footer overflow are tested offscreen only.
+
+**Arranger and launcher (themes 9, 14).**
+- Zoom is not animated (reduced motion).
+- Wheel and pinch zoom act directly rather than through a command, so they don't flood the zoom history.
+- `session.jump_slot` keeps its default of 0.
+
+**Canvases without a mouse, and announcements (themes 10, 17).**
+- The editable item list is a floating tool window opened with Ctrl+Shift+L or `window.item_list`. There are no List buttons in the toolbars yet.
+- The sample editor's keyboard route is its range fields. The waveform itself takes no keys.
+- An MPE lane key edits only the cursor note.
+- Screen readers (NVDA, VoiceOver, Orca) are reached through Qt's bridge, which the tests assert. No screen reader was run.
+
+**Lanes and the sample editor (themes 11, 15).**
+- The lanes have no playhead.
+- No arbitrary controller number can be chosen from the lane.
+
+**Devices and the Inspector (themes 12, 13).**
+- VST3 and CLAP vendors read "Not reported", because the catalogue carries none.
+- Channel pan and width still read in the knob's own units.
+- Mixed values cover the selected notes only: the selection holds one clip.
+- The rack's own "Add effect" still uses the older dialog.
+
+**Mixer (theme 16).**
+- There is no "Selected" channel filter; the type filters stand in for it.
+
+**Lists, help and workflows (themes 18, 19, 21).**
+- Results of commands run from menus or the palette still float briefly.
+- List reads show a busy cursor rather than a progress bar, because the list commands are synchronous.
+- Editing workflow steps, and portable workflows, are deferred.
+
+**Themes, shared controls and background tasks (themes 20, 23, 24).**
+- Theme changes apply at the next start, and every reply and the window say so.
+- The plug-in scan, `render.render`, `render.stems` and `browser.peaks` stay synchronous and are not in the task area.
+- Accessible mode's larger targets are not re-applied if a knob later resets its own fixed size.

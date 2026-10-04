@@ -36,6 +36,7 @@
 #include "Fader.h"
 #include "Mixer.h"
 #include "MixerGroups.h"
+#include "MixerStripTags.h"
 #include "VcaGroup.h"
 
 namespace lmms::gui
@@ -79,6 +80,8 @@ VcaStripView::VcaStripView(VcaGroup* group, QWidget* parent) :
 	auto* layout = new QVBoxLayout(this);
 	layout->setContentsMargins(4, 4, 4, 4);
 	layout->setSpacing(2);
+	// 0.5.0 theme 16: the same type badge as the channel strips (MixerStripTags.h).
+	layout->addWidget(mixerstriptags::makeBadge(this, tr("VCA")), 0, Qt::AlignHCenter);
 	layout->addWidget(m_name, 0, Qt::AlignHCenter);
 	layout->addWidget(members, 0, Qt::AlignHCenter);
 	layout->addWidget(m_solo, 0, Qt::AlignHCenter);

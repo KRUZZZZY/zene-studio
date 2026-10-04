@@ -25,7 +25,9 @@
 #define LMMS_GUI_HELP_CENTER_H
 
 #include <QDialog>
+#include <QHash>
 #include <QJsonArray>
+#include <QJsonObject>
 #include <QPointer>
 #include <QStringList>
 
@@ -45,7 +47,13 @@ namespace lmms::gui
 /*! 0.5.0 L14 (WF-136): the manual inside the application - the bundled HTML (data/manual) in one tab
  *  and, in another, the command reference built from the registry itself: every command's id, its
  *  description and its arguments, filtered as you type. It cannot drift from the program: the
- *  reference is the registry. */
+ *  reference is the registry.
+ *  0.5.0 design theme 21: the manual has a find field (Enter finds the next match, Shift+Enter the one
+ *  before); the reference is grouped by task - the manual's own sections, each linking to it - names each
+ *  command by its friendly name (CommandMetadata) with its id and shortcut secondary, and finds by task
+ *  words too ("mixer" finds the mixing commands); and in-context help (F1, app.help's 'context') shows
+ *  what the focused control is and does above the manual, opened at its section - help that needs no
+ *  hovering (HelpTasks.h). */
 class LMMS_EXPORT HelpCenter : public QDialog
 {
 	Q_OBJECT
@@ -54,13 +62,32 @@ public:
 	static HelpCenter* showHelp(const QString& topic, bool reference = false);
 	QString referenceText() const;
 	void filterReference(const QString& text);
+	//! The reference tab, its find field holding @a text (app.help's 'query').
+	void findCommand(const QString& text);
+	//! Show @a context (help::contextHelp) above the tabs; an empty one hides the panel.
+	void showContext(const QJsonObject& context);
+	//! The in-context panel's text; empty while it is hidden.
+	QString contextText() const;
+	//! Find @a text in the manual after (or, @a backward, before) the last match, wrapping round; false when absent.
+	bool findInManual(const QString& text, bool backward = false);
+
+protected:
+	//! Shift+Enter in the manual's find field finds backwards.
+	bool eventFilter(QObject* watched, QEvent* event) override;
 
 private:
 	explicit HelpCenter(QWidget* parent);
+	QWidget* makeManualTab();
+	//! A "topic:<anchor>" link opens the manual there; any other opens outside.
+	void follow(const QUrl& url);
 	QTabWidget* m_tabs;
 	QTextBrowser* m_manual;
 	QTextBrowser* m_reference;
 	QLineEdit* m_filter;
+	QLineEdit* m_manualFind = nullptr;
+	QLabel* m_manualFound = nullptr;
+	QLabel* m_context = nullptr;
+	QHash<QString, QString> m_shortcuts;  //!< command id -> its menu shortcut, read when the window is shown
 };
 
 /*! 0.5.0 L14 (WF-140): a guided tour - steps (data/tours/<name>.json: target, panel, title, text)
@@ -102,7 +129,7 @@ private:
 	QPushButton* m_next = nullptr;
 };
 
-//! Help menu entries: What's This?, Manual, Command Reference, Tours, Appearance.
+//! Help menu entries: What's This?, Help for This (F1), Manual, Command Reference, Tours, Appearance.
 LMMS_EXPORT void installHelpEntries(QMenuBar* bar);
 
 } // namespace lmms::gui

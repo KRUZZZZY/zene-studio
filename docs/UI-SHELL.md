@@ -15,7 +15,7 @@ The main window holds one page, `Shell` (`include/Shell.h`), laid out top to bot
 | Menu bar | File, Edit, View, Tools, Help. Unchanged: every action still declares its command. | `MainWindow::finalize` |
 | Header | The product mark, then Play and Stop (`transport.play` / `transport.stop`), then the readouts - tempo, meter, position, time, master level, transposition and engine load - each a caption over a value that drags, scrolls or takes typing (`TransportReadouts`; typing a position is `transport.seek`). A stretch follows, then New, Open (with recent projects), Save, Export and the metronome toggle. The strip is `objectName "mainToolbar"`, which the agent-surface gate walks. | `ShellHeader` (`src/gui/shell/ShellChrome.cpp`) |
 | Body | Four regions (§2). | `Shell::buildBody` |
-| Footer | One switch per panel, grouped by the region the panel opens in, then the view words ARRANGE · MIX · EDIT, then the Browser switch on the far right. | `ShellFooter` |
+| Footer | One switch per panel, grouped by the region the panel opens in, then **Tools** (every tool that opens in a window of its own, theme 8), then the view words ARRANGE · MIX · EDIT, then the Browser switch on the far right. The switches are labelled (icon and name) while they fit, icons only when narrower, and the rest go into a **More** button; the header's right-hand buttons do the same (theme 8, `ShellOverflow`). | `ShellFooter` |
 
 ## 2. Regions, panels and views
 
@@ -38,6 +38,16 @@ The body is a fixed template, not a docking system:
   switched on.
 - **Each view keeps its own side panels.** Switching views restores the panels you had in
   that view.
+- **A region names its panels (theme 8).** A side region that holds two or more panels in the
+  current view carries a tab strip above the open one (`ShellRegionTabs`): a tab per panel, with
+  its icon and name; choosing one (a click, or the arrow keys) is `window.toggle`, as the footer
+  switch is. Tabs that do not fit scroll; the list button names every panel of the region, those
+  floating in their own window too; the hide button closes the region. The bottom region is the
+  one with tabs today; the Inspector and the Browser are alone in theirs.
+- **Tools that open in a window of their own** (controller rack, project notes, scales and
+  keymaps, classic piano roll, undo history, tempo map, modulators, large clock, tuner, video,
+  collaboration) have their home in the footer's **Tools** menu (`ShellToolsMenu`), each entry
+  the registered command that opens it.
 
 The panels (`ShellLayout::panels()`):
 
@@ -79,6 +89,9 @@ and it declares that command in its `controlCommand` property for the agent-surf
   - `focused`: the panel that last took keyboard focus
   - `launcher`: whether the launcher is beside the centre
   - `editors`: `{editor, visible, panel}` for every `window.toggle` name
+  - `tools`: `{name, command, editor, home}` for every tool window the footer's Tools menu lists
+  - `regions`: per side region, the panel `open` there and the `tabs` it offers in this view
+  - `footer`: how the footer's switches fit - `labelled`, `compact` or `overflowing`
 - **`window.toggle {editor}`** accepts every panel id. It also accepts the 0.4.0 editor names,
   which keep working:
   - `song` → `arranger`
@@ -109,6 +122,12 @@ and it declares that command in its `controlCommand` property for the agent-surf
 - With `SubWindow::setFloatOutsideWorkspace(true)`, a sub-window becomes its own top-level
   window when shown, centred over the main window. It closes the way the long-standing
   "detached" behaviour closes, and it is never re-attached.
+- **Tool windows remember their place (theme 22).** The controller rack, project notes, the
+  microtuner and the classic piano roll open where the user last left them - screen, position
+  and size, kept per user in `ui/tools.geometry` (`ToolWindowMemory`) - fitted inside that
+  screen's available area, or the nearest connected screen's. One never placed opens centred.
+  The project's MDI-era placement for them is still not used (it was relative to the hidden
+  workspace).
 - Editor geometry saved by MDI-era projects (`x`, `y`, `width`, `height`, `visible`,
   `maximized`) is **ignored safely**. For a panel's editor, `restoreWidgetState` finds no
   sub-window and does nothing (`ShellTest::mdiEraGeometryInAProjectIsIgnoredSafely`). The tool
@@ -149,6 +168,23 @@ come back. Every route ends in `window.detach` or `window.attach` (`Shell::dispa
   primary one. A layout saved before 0.5.0 has no `floating` and leaves the windows as they are.
 - On Wayland a program can neither place its windows nor see the pointer outside them: the
   header drag hands the move to the compositor and docking is the Dock button's.
+
+### Personal and project layouts (theme 22)
+
+- **Personal layouts** (`window.layout_save` / `apply` / `remove`, the config file) are yours in
+  every project. Window > Layouts (also Project tools > Customise > Window Layouts) says what a layout keeps (the view, the open, pinned and
+  floating panels and their sizes - not the zoom, the scroll or the selection) and how many of
+  the 32 are saved. **Save Layout...** never replaces (a name in use is refused, the form says
+  so); **Replace** names the layout and asks first.
+- **A project's layout** (`window.layout_project_*`) is saved with it and put back when it opens.
+  While it is on screen, the personal layout it replaced is put aside (`ui/shell.personal`) and
+  comes back when a project without a layout of its own opens, a new project starts, or at the
+  next start (`Shell::setPersonalAside`, `window.layout_list`'s `project_layout_shown`). Applying
+  a personal layout makes it the personal one.
+- **Memory locations and saved selections** say what they keep (`captures`) and what they never
+  keep (`not_kept`); a recall says what came back (`restored`) and what did not (`skipped`).
+  The Window menu's Save refuses a name in use (`replace: false`); its Replace asks first.
+  Questions are asked only of a person: an agent's call or an unattended run never waits.
 
 ## 6. What is not done yet, stated
 

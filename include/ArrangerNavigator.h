@@ -37,7 +37,13 @@ class SongEditorWindow;
  *  Show Navigator), a preference kept as config ui/navigator; hidden by default. Installs once.
  *  0.5.0 theme 9: it shows the song's landmarks (sections, markers, the loop, the play position), dims what
  *  the arranger does not show so the viewport stands out, zooms around the tick under the pointer, and
- *  takes the keyboard (arrows, Page Up/Down, Home/End scroll; +/- zoom). */
+ *  takes the keyboard (arrows, Page Up/Down, Home/End scroll; +/- zoom).
+ *  0.5.0 theme 9, wave 3: the sections are named in it, markers wear flags, the loop is a bracket and the play
+ *  position has a head (shape as well as colour); it keeps a readable minimum height (DesignTokens: the small type and
+ *  a target's side, both larger in accessible mode) and shares rows between tracks when there are more than fit; the
+ *  tooltip names the landmark under the pointer (ArrangerLandmarks.h), and Alt-click or a double-click zooms the
+ *  arranger to it (arrangement.zoom start/end). The wheel zooms continuously (arrangerzoom::wheelZoom). A screen
+ *  reader finds it as a slider whose value, the arranger's start in ticks, it can set (arrangement.scroll). */
 LMMS_EXPORT void installArrangerNavigator(SongEditorWindow* window);
 
 } // namespace lmms::gui

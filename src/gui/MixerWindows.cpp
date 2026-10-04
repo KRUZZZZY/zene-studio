@@ -1,5 +1,5 @@
 /*
- * MixerWindows.cpp - the large meters and the routing matrix
+ * MixerWindows.cpp - the large meters, the routing matrix's menu entry and the EQ comparison
  *
  * Copyright (c) 2026 Zene Studio contributors
  *
@@ -29,14 +29,12 @@
 #include <QComboBox>
 #include <QDialog>
 #include <QHBoxLayout>
-#include <QHeaderView>
 #include <QJsonArray>
 #include <QJsonObject>
 #include <QLabel>
 #include <QMenu>
 #include <QPainter>
 #include <QPointer>
-#include <QTableWidget>
 #include <QTimer>
 #include <QVBoxLayout>
 
@@ -47,6 +45,7 @@
 #include "GuiApplication.h"
 #include "MainWindow.h"
 #include "Mixer.h"
+#include "MixerRoutingMatrix.h"
 
 namespace lmms::gui
 {
@@ -117,97 +116,6 @@ private:
 	}
 
 	QString m_loudness;
-};
-
-//! MX-055: channels against channels; a cell shows the send's amount, activating it (double-click or
-//! Enter) sends there, starting from the send's current amount.
-class RoutingMatrix : public QDialog
-{
-public:
-	explicit RoutingMatrix(QWidget* parent) :
-		QDialog(parent),
-		m_status(new QLabel(this)),
-		m_table(new QTableWidget(this))
-	{
-		setWindowTitle(QObject::tr("Routing Matrix"));
-		setAttribute(Qt::WA_DeleteOnClose);
-		m_table->setAccessibleName(QObject::tr("Routing matrix: rows send to columns"));
-		m_table->setEditTriggers(QAbstractItemView::NoEditTriggers);
-		m_table->setProperty("controlCommand", QStringLiteral("routing.matrix"));
-		m_status->setWordWrap(true);
-		m_status->hide();
-		auto* layout = new QVBoxLayout(this);
-		layout->addWidget(m_status);
-		layout->addWidget(m_table);
-		connect(m_table, &QTableWidget::cellActivated, this, [this](int row, int column) { send(row, column); });
-		fill();
-		resize(640, 420);
-	}
-
-private:
-	//! A failed read says so and keeps the matrix last read, rather than showing an empty project.
-	void fill()
-	{
-		const ControlResult matrix = ControlRegistry::instance()->invoke(QStringLiteral("routing.matrix"));
-		m_status->setVisible(!matrix.ok);
-		if (!matrix.ok)
-		{
-			m_status->setText(QObject::tr("The routing could not be read: %1").arg(matrix.errorMessage));
-			return;
-		}
-		const QJsonArray channels = matrix.result.value(QStringLiteral("channels")).toArray();
-		m_ids.clear();
-		QStringList names;
-		for (const QJsonValue& value : channels)
-		{
-			m_ids << value.toObject().value(QStringLiteral("channel")).toString();
-			names << value.toObject().value(QStringLiteral("name")).toString();
-		}
-		m_table->clearContents();  // a send removed since the last read leaves no figure behind
-		m_table->setRowCount(static_cast<int>(channels.size()));
-		m_table->setColumnCount(static_cast<int>(channels.size()));
-		m_table->setVerticalHeaderLabels(names);
-		m_table->setHorizontalHeaderLabels(names);
-		for (int row = 0; row < channels.size(); ++row)
-		{
-			placeSends(row, channels.at(row).toObject().value(QStringLiteral("sends")).toArray());
-			auto* self = new QTableWidgetItem;
-			self->setFlags(Qt::NoItemFlags);
-			self->setToolTip(QObject::tr("A channel cannot send to itself"));
-			m_table->setItem(row, row, self);
-		}
-	}
-
-	void placeSends(int row, const QJsonArray& sends)
-	{
-		for (const QJsonValue& send : sends)
-		{
-			const QJsonObject s = send.toObject();
-			const int column = static_cast<int>(m_ids.indexOf(s.value(QStringLiteral("to")).toString()));
-			if (column < 0) { continue; }
-			const double amount = s.value(QStringLiteral("amount")).toDouble();
-			QString text = QString::number(amount, 'f', 2);
-			if (!s.value(QStringLiteral("enabled")).toBool(true)) { text += QObject::tr(" (off)"); }
-			auto* item = new QTableWidgetItem(text);
-			item->setData(Qt::UserRole, amount);
-			m_table->setItem(row, column, item);
-		}
-	}
-
-	void send(int row, int column)
-	{
-		if (row == column || row >= m_ids.size() || column >= m_ids.size()) { return; }
-		const QTableWidgetItem* existing = m_table->item(row, column);
-		const QVariant current = existing != nullptr ? existing->data(Qt::UserRole) : QVariant();
-		const double amount = current.isValid() ? current.toDouble() : 1.0;
-		runCommand(this, CommandCall{QStringLiteral("mixer.send_to"), {{QStringLiteral("channel"), m_ids.at(row)}, {QStringLiteral("to"), m_ids.at(column)}},
-			{{QStringLiteral("amount"), amount}}, QObject::tr("Send"), true});
-		QTimer::singleShot(200, this, [this] { fill(); });
-	}
-
-	QLabel* m_status;
-	QTableWidget* m_table;
-	QStringList m_ids;
 };
 
 //! MX-140: the two responses mixer.eq_compare reports, -18..18 dB over 20 Hz..20 kHz; A in the accent colour.
@@ -339,7 +247,6 @@ void showOne(QPointer<QDialog>* open)
 }
 
 QPointer<QDialog> s_meters;
-QPointer<QDialog> s_matrix;
 QPointer<QDialog> s_eq;
 
 } // namespace
@@ -351,7 +258,7 @@ void addMixerWindows(QMenu* menu)
 	QObject::connect(meters, &QAction::triggered, menu, [] { showOne<LargeMeters>(&s_meters); });
 	QAction* matrix = menu->addAction(QObject::tr("Routing Matrix..."));
 	matrix->setProperty("controlCommand", QStringLiteral("routing.matrix"));
-	QObject::connect(matrix, &QAction::triggered, menu, [] { showOne<RoutingMatrix>(&s_matrix); });
+	QObject::connect(matrix, &QAction::triggered, menu, [] { showRoutingMatrix(); });  // theme 16: sparse (MixerRoutingMatrix.h)
 	QAction* eq = menu->addAction(QObject::tr("Compare Channel EQ..."));
 	eq->setProperty("controlCommand", QStringLiteral("mixer.eq_compare"));
 	QObject::connect(eq, &QAction::triggered, menu, [] { showOne<EqCompare>(&s_eq); });

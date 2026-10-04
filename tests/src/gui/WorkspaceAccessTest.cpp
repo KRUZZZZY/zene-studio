@@ -134,15 +134,61 @@ private slots:
 		QVERIFY(tokens::themeOverrides().isEmpty());
 	}
 
-	void anUnreadableThemeIsNamed()
+	//! 0.5.0 theme 20: a colour that makes text unreadable is refused, naming the pairs, unless the user insists - then it
+	//! is kept and still named. Nothing is written by the refusal.
+	void anUnreadableThemeIsRefusedUnlessAllowed()
 	{
 		const QString panel = tokens::paletteNamed(appearance::options().palette).panel.name();
-		const ControlResult set = run(QStringLiteral("theme.set_token"), {{QStringLiteral("name"), QStringLiteral("text")},
-			{QStringLiteral("color"), panel}});
+		const QJsonObject args{{QStringLiteral("name"), QStringLiteral("text")}, {QStringLiteral("color"), panel}};
+		const ControlResult refused = run(QStringLiteral("theme.set_token"), args);
+		QVERIFY(!refused.ok);
+		QCOMPARE(refused.errorKind, ControlErrorKind::Refused);
+		QVERIFY2(refused.errorMessage.contains(QStringLiteral("text on panel")), qPrintable(refused.errorMessage));
+		QVERIFY(refused.errorMessage.contains(QStringLiteral("allow_low_contrast")));
+		QVERIFY(tokens::themeOverrides().isEmpty());
+
+		QJsonObject insist = args;
+		insist.insert(QStringLiteral("allow_low_contrast"), true);
+		const ControlResult set = run(QStringLiteral("theme.set_token"), insist);
 		QVERIFY2(set.ok, qPrintable(set.errorMessage));
 		QVERIFY(!set.result.value(QStringLiteral("contrast_failures")).toArray().isEmpty());
+		QVERIFY(!set.result.value(QStringLiteral("new_contrast_failures")).toArray().isEmpty());
 		QVERIFY(run(QStringLiteral("control.undo")).ok);
 		QVERIFY(run(QStringLiteral("theme.get")).result.value(QStringLiteral("contrast_failures")).toArray().isEmpty());
+	}
+
+	//! A pair that already fails does not block an unrelated change, and an import is held to the same check.
+	void onlyANewFailureBlocks()
+	{
+		const QString panel = tokens::paletteNamed(appearance::options().palette).panel.name();
+		QVERIFY(run(QStringLiteral("theme.set_token"), {{QStringLiteral("name"), QStringLiteral("text")}, {QStringLiteral("color"), panel},
+			{QStringLiteral("allow_low_contrast"), true}}).ok);
+		const ControlResult unrelated = run(QStringLiteral("theme.set_token"), {{QStringLiteral("name"), QStringLiteral("playhead")},
+			{QStringLiteral("color"), QStringLiteral("#ffffff")}});
+		QVERIFY2(unrelated.ok, qPrintable(unrelated.errorMessage));
+		QVERIFY(unrelated.result.value(QStringLiteral("new_contrast_failures")).toArray().isEmpty());
+		QVERIFY(!run(QStringLiteral("theme.import"), {{QStringLiteral("colors"), QJsonObject{{QStringLiteral("focusRing"), panel}}}}).ok);
+		for (int step = 0; step < 2; ++step) { QVERIFY(run(QStringLiteral("control.undo")).ok); }
+		QVERIFY(tokens::themeOverrides().isEmpty());
+	}
+
+	//! Every theme reply says when it takes effect, and whether the running interface still draws something else.
+	void everyThemeReplySaysWhenItApplies()
+	{
+		for (const ControlResult& reply : {run(QStringLiteral("theme.get")), run(QStringLiteral("window.appearance"), QJsonObject{})})
+		{
+			QVERIFY2(reply.ok, qPrintable(reply.errorMessage));
+			QCOMPARE(reply.result.value(QStringLiteral("applies")).toString(), QStringLiteral("next_start"));
+			QVERIFY(reply.result.value(QStringLiteral("restart_required")).toBool());
+			QVERIFY(!reply.result.value(QStringLiteral("applies_note")).toString().isEmpty());
+			QVERIFY(reply.result.contains(QStringLiteral("restart_pending")));
+		}
+		QVERIFY(!run(QStringLiteral("theme.get")).result.value(QStringLiteral("restart_pending")).toBool());
+		const ControlResult set = run(QStringLiteral("theme.set_token"), {{QStringLiteral("name"), QStringLiteral("playhead")},
+			{QStringLiteral("color"), QStringLiteral("#ffffff")}});
+		QVERIFY2(set.ok, qPrintable(set.errorMessage));
+		QVERIFY(set.result.value(QStringLiteral("restart_pending")).toBool());  // drawn from the next start only
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
 	}
 
 	void aThemeRoundTripsThroughAFile()
@@ -168,8 +214,9 @@ private slots:
 	{
 		CommandListDialog dialog(CommandLists::themeColors());
 		QCOMPARE(dialog.rowCount(), static_cast<int>(tokens::tokenNames().size()));
+		// #123456 is unreadable on most roles: allowed explicitly (theme 20's contrast check would refuse it).
 		QVERIFY(run(QStringLiteral("theme.set_token"), {{QStringLiteral("name"), dialog.row(0).value(QStringLiteral("name"))},
-			{QStringLiteral("color"), QStringLiteral("#123456")}}).ok);
+			{QStringLiteral("color"), QStringLiteral("#123456")}, {QStringLiteral("allow_low_contrast"), true}}).ok);
 		QCOMPARE(static_cast<int>(tokens::themeOverrides().size()), 1);
 		dialog.refresh();
 		const ControlResult cleared = dialog.runAction(0, 1);  // "Use the Palette's"

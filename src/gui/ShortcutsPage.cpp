@@ -29,11 +29,43 @@
 #include <QHeaderView>
 #include <QKeySequence>
 #include <QLineEdit>
-#include <QTableWidget>
+#include <QMenu>
 #include <QVBoxLayout>
+
+#include "CommandMetadata.h"
+#include "CommandForm.h"
+#include "HelpTasks.h"
+#include "ListTable.h"
 
 namespace lmms::gui
 {
+
+namespace
+{
+
+//! The task a shortcut belongs to, as its position among the manual's sections (for the order) - its command's,
+//! else its menu's.
+int taskRank(const PaletteEntry& entry)
+{
+	return static_cast<int>(help::topics().indexOf(help::menuTopic(entry.command, entry.path)));
+}
+
+ListRow shortcutRow(const PaletteEntry& entry, const QString& task)
+{
+	QString label = entry.label;
+	label.remove(QLatin1Char('&'));
+	const QString command = entry.command.isEmpty() ? QString() : commandName(entry.command);
+	ListRow row;
+	row.cells = QStringList{task, entry.shortcut, label, entry.path, command};
+	row.tips = QStringList{QString(), QString(), QString(), QString(), entry.command};
+	// The portable spelling too ("Ctrl+S"): on macOS the shown text is native ("⌘S"), and a filter typed the way the
+	// rest of the product writes shortcuts must still find it; the command's id finds it as well.
+	row.hiddenWords = QKeySequence::fromString(entry.shortcut, QKeySequence::NativeText).toString(QKeySequence::PortableText)
+		+ QLatin1Char(' ') + entry.command;
+	return row;
+}
+
+} // namespace
 
 QList<PaletteEntry> shortcutEntries(QMenuBar* bar)
 {
@@ -50,42 +82,41 @@ QList<PaletteEntry> shortcutEntries(QMenuBar* bar)
 
 
 ShortcutsPage::ShortcutsPage(QMenuBar* bar, QWidget* parent) :
-	QDialog(parent)
+	QDialog(parent),
+	m_entries(shortcutEntries(bar))
 {
 	setWindowTitle(tr("Keyboard Shortcuts"));
 	setObjectName(QStringLiteral("ShortcutsPage"));
 	auto* layout = new QVBoxLayout(this);
 	m_filter = new QLineEdit(this);
-	m_filter->setPlaceholderText(tr("Filter by action, menu or key"));
+	m_filter->setPlaceholderText(tr("Filter by task, action, menu, key or command"));
 	m_filter->setAccessibleName(tr("Filter shortcuts"));
+	m_filter->setClearButtonEnabled(true);
 	layout->addWidget(m_filter);
 
-	const QList<PaletteEntry> entries = shortcutEntries(bar);
-	m_table = new QTableWidget(static_cast<int>(entries.size()), 4, this);
-	m_table->setAccessibleName(tr("Keyboard shortcuts"));
-	m_table->setHorizontalHeaderLabels({tr("Shortcut"), tr("Action"), tr("Menu"), tr("Command")});
-	m_table->setEditTriggers(QAbstractItemView::NoEditTriggers);
-	m_table->setSelectionBehavior(QAbstractItemView::SelectRows);
-	m_table->verticalHeader()->hide();
-	for (int row = 0; row < static_cast<int>(entries.size()); ++row)
+	// Theme 21: by task - the manual's sections in its order - and within a task by menu, as shortcutEntries orders.
+	std::stable_sort(m_entries.begin(), m_entries.end(), [](const PaletteEntry& a, const PaletteEntry& b) {
+		return taskRank(a) < taskRank(b);
+	});
+	QList<ListRow> rows;
+	for (const PaletteEntry& entry : m_entries)
 	{
-		const PaletteEntry& entry = entries[row];
-		QString label = entry.label;
-		label.remove(QLatin1Char('&'));
-		const QStringList cells{entry.shortcut, label, entry.path, entry.command};
-		for (int column = 0; column < cells.size(); ++column)
-		{
-			m_table->setItem(row, column, new QTableWidgetItem(cells[column]));
-		}
-		// The portable spelling too ("Ctrl+S"): on macOS the shown text is native ("⌘S"), and a
-		// filter typed the way the rest of the product writes shortcuts must still find it.
-		m_table->item(row, 0)->setData(Qt::UserRole,
-			QKeySequence::fromString(entry.shortcut, QKeySequence::NativeText).toString(QKeySequence::PortableText));
+		m_tasks.append(help::topicTitle(help::menuTopic(entry.command, entry.path)));
+		rows.append(shortcutRow(entry, m_tasks.last()));
 	}
+	m_table = new ListTable(this);
+	m_table->setAccessibleName(tr("Keyboard shortcuts, by task"));
+	m_table->setAccessibleDescription(tr("Enter runs the highlighted action; the Menu key or Shift+F10 offers its "
+		"Command Reference entry; a column title sorts by that column"));
+	m_table->verticalHeader()->hide();
+	m_table->setRows({tr("Task"), tr("Shortcut"), tr("Action"), tr("Menu"), tr("Command")}, rows);
 	m_table->resizeColumnsToContents();
 	layout->addWidget(m_table);
 	connect(m_filter, &QLineEdit::textChanged, this, &ShortcutsPage::setFilter);
-	resize(640, 480);
+	connect(m_filter, &QLineEdit::returnPressed, m_table, qOverload<>(&QWidget::setFocus));
+	connect(m_table, &ListTable::rowActivated, this, &ShortcutsPage::runRow);
+	connect(m_table, &ListTable::rowMenuRequested, this, &ShortcutsPage::openRowMenu);
+	resize(760, 480);
 }
 
 
@@ -97,24 +128,48 @@ int ShortcutsPage::rowCount() const
 
 int ShortcutsPage::visibleRowCount() const
 {
-	int visible = 0;
-	for (int row = 0; row < m_table->rowCount(); ++row) { visible += m_table->isRowHidden(row) ? 0 : 1; }
-	return visible;
+	return m_table->visibleRowCount();
 }
 
 
 void ShortcutsPage::setFilter(const QString& text)
 {
-	const QString needle = text.trimmed();
-	for (int row = 0; row < m_table->rowCount(); ++row)
+	m_table->setFilter(text);
+}
+
+
+QString ShortcutsPage::taskOf(int row) const
+{
+	return m_tasks.value(row);
+}
+
+
+bool ShortcutsPage::runRow(int row)
+{
+	if (row < 0 || row >= m_entries.size() || m_entries.at(row).action.isNull()) { return false; }
+	paletteActivate(m_entries.at(row), parentWidget());
+	return true;
+}
+
+
+void ShortcutsPage::openRowMenu(int row, const QPoint& at)
+{
+	QMenu menu(this);
+	menu.setAccessibleName(tr("Shortcut actions"));
+	const QString command = row >= 0 ? m_entries.at(row).command : QString();
+	QAction* run = menu.addAction(tr("Run"));
+	run->setEnabled(row >= 0);
+	menu.setDefaultAction(run);
+	QAction* reference = menu.addAction(tr("Show in the Command Reference"));
+	reference->setProperty("controlCommand", QStringLiteral("app.help"));
+	reference->setEnabled(!command.isEmpty());
+	m_table->addSortMenu(&menu);
+	const QAction* chosen = menu.exec(at);
+	if (chosen == run) { runRow(row); }
+	else if (chosen == reference)
 	{
-		bool match = needle.isEmpty()
-			|| m_table->item(row, 0)->data(Qt::UserRole).toString().contains(needle, Qt::CaseInsensitive);
-		for (int column = 0; column < m_table->columnCount() && !match; ++column)
-		{
-			match = m_table->item(row, column)->text().contains(needle, Qt::CaseInsensitive);
-		}
-		m_table->setRowHidden(row, !match);
+		runCommand(this, CommandCall{QStringLiteral("app.help"), {{QStringLiteral("reference"), true}, {QStringLiteral("query"), command}},
+			{}, QString(), false});
 	}
 }
 

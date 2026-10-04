@@ -71,7 +71,7 @@ ListSpec memoryLocations()
 		QStringLiteral("zoom")});
 	const QHash<QString, QString> named{{QStringLiteral("name"), QStringLiteral("name")}};
 	out.actions = {act("Go", "location.recall", named), act("Remove", "location.remove", named)};
-	out.extras = {extra("Save Here...", "location.save")};
+	out.extras = {extra("Save Here...", "location.save", {{QStringLiteral("replace"), false}})};  // a name in use is refused, never replaced silently
 	return out;
 }
 
@@ -81,7 +81,7 @@ ListSpec savedSelections()
 		QStringLiteral("range")});
 	const QHash<QString, QString> named{{QStringLiteral("name"), QStringLiteral("name")}};
 	out.actions = {act("Select", "selection.apply", named), act("Remove", "selection.remove", named)};
-	out.extras = {extra("Save the Selection...", "selection.save")};
+	out.extras = {extra("Save the Selection...", "selection.save", {{QStringLiteral("replace"), false}})};
 	return out;
 }
 

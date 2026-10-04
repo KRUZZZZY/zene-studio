@@ -32,6 +32,7 @@
 
 #include "lmms_export.h"
 
+class QMainWindow;
 class QMenuBar;
 
 namespace lmms::gui
@@ -42,7 +43,9 @@ namespace lmms::gui
  *  use, so each is in the command palette and can be given a shortcut (ShortcutMap), then Record /
  *  Stop Recording, where workflows are kept (shared or with the project) and the list to edit them.
  *  While a workflow is being recorded the menu's first line says so, and so does an indicator in the
- *  header that stops the recording when clicked (showRecording). The menu also follows the project:
+ *  header with a Stop button (WorkflowRecordingIndicator, through showRecording). A run that stopped at a
+ *  failing step is said here too, with Retry Step N and Skip Step N and Continue (workflow.resume; theme 19's
+ *  step recovery). The menu also follows the project:
  *  a project opened is a library of its own when workflows are kept with projects, and a layout the
  *  project remembers is put back (LayoutMenu::recallProjectLayout). */
 class LMMS_EXPORT MacroMenu : public QMenu
@@ -56,14 +59,18 @@ public:
 
 	//! The main window's Workflows menu, added to @a bar before Help the first time.
 	static MacroMenu* install(QMenuBar* bar);
+	//! Rebuild @a window's Workflows menu (made when missing) and put the shortcuts bound to its actions back.
+	static void refreshIn(QMainWindow* window);
 
 	/*! Theme 19's visible recording state in @a window: the header's indicator (shown while @a on,
-	 *  naming the workflow and its @a steps so far; a click runs workflow.record_stop) and the
+	 *  naming the workflow and its @a steps so far, with Stop - workflow.record_stop) and the
 	 *  menu's status line. */
 	static void showRecording(QWidget* window, bool on, const QString& name, int steps);
 
 private:
 	void addRuns(const QJsonArray& workflows);
+	//! The stopped run's line and its Retry / Skip entries, when workflow.status @a status says one stopped.
+	void addRecovery(const QJsonObject& status);
 	void addRecording();
 	void addScopeMenu(const QString& scope);
 	//! A project was opened (@a loaded) or renamed: its workflows and its remembered layout.

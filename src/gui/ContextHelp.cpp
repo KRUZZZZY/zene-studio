@@ -31,6 +31,7 @@
 #include <QWhatsThis>
 #include <QWidget>
 
+#include "CommandMetadata.h"
 #include "ControlRegistry.h"
 
 namespace lmms::gui
@@ -54,7 +55,11 @@ QString describe(const QString& id, bool full)
 {
 	const ControlCommand* command = ControlRegistry::instance()->command(id);
 	if (command == nullptr || command->description.isEmpty()) { return {}; }
-	if (full) { return QStringLiteral("<b>%1</b><br>%2").arg(id, command->description.toHtmlEscaped()); }
+	if (full)
+	{
+		return QStringLiteral("<b>%1</b> <small>(%2)</small><br>%3").arg(commandName(id).toHtmlEscaped(), id,
+			command->description.toHtmlEscaped());
+	}
 	const int stop = command->description.indexOf(QLatin1String(". "));
 	return stop > 0 ? command->description.left(stop + 1) : command->description;
 }
@@ -74,6 +79,11 @@ QString ContextHelp::helpFor(const QWidget* widget, bool full)
 {
 	const QString id = commandOf(widget);
 	return id.isEmpty() ? QString() : describe(id, full);
+}
+
+QString ContextHelp::commandFor(const QWidget* widget)
+{
+	return commandOf(widget);
 }
 
 namespace

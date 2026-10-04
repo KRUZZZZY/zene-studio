@@ -24,6 +24,8 @@
 
 #include "TimeLineWidget.h"
 
+#include <algorithm>
+
 #include <QGuiApplication>
 #include <QMenu>
 #include <QMouseEvent>
@@ -167,9 +169,13 @@ void TimeLineWidget::paintEvent( QPaintEvent * )
 	bar_t barNumber = m_begin.getBar();
 	int const x = m_xOffset - ((static_cast<int>(m_begin * m_ppb) / TimePos::ticksPerBar()) % static_cast<int>(m_ppb));
 
-	// Double the interval between bar numbers until they are far enough apart
+	// Double the interval between bar numbers until they are far enough apart. 0.5.0 theme 9: far enough is also
+	// the widest number on screen and a gap, so a long song's numbers (or the larger type of the interface zoom)
+	// never run into each other.
+	const bar_t lastBar = m_begin.getBar() + static_cast<bar_t>(width() / std::max(m_ppb, 1.f)) + 1;
+	const int labelRoom = std::max(MIN_BAR_LABEL_DISTANCE, 5 + p.fontMetrics().horizontalAdvance(QString::number(lastBar)) + 5);
 	int barLabelInterval = 1;
-	while (barLabelInterval * m_ppb < MIN_BAR_LABEL_DISTANCE) { barLabelInterval *= 2; }
+	while (barLabelInterval * m_ppb < labelRoom) { barLabelInterval *= 2; }
 
 	for( int i = 0; x + i * m_ppb < width(); ++i )
 	{

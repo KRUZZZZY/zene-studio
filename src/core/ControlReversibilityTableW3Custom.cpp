@@ -108,6 +108,11 @@ const ReversibilityRow kW3CustomRows[] = {
 	// WF-129 / WF-109.
 	R("window.accessibility_report", RC::NotMutating, false, "it reads the controls' accessible names and, with 'fill', "
 		"gives nameless ones the name they carry: interface state", "no write", ""),
+	// 0.5.0 themes 10 and 17: the editable item list beside a canvas, and the announcement level.
+	R("window.item_list", RC::NotMutating, false, "it opens or closes a canvas's item list: interface state (the list's "
+		"edits are the canvases' own commands, each recorded by itself)", "no write", ""),
+	R("view.announcements", RC::TrueInverse, true, "it writes the announcement level in the config file (ui/announcements)",
+		"action checkpoint: the recorded undo step writes the previous ui/announcements object back", ""),
 	R("view.crosshair", RC::TrueInverse, true, "it writes the cross-hair preference in the config file (ui/crosshair)",
 		"action checkpoint: the recorded undo step writes the previous ui/crosshair object back", ""),
 };

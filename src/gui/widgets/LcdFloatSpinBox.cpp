@@ -40,6 +40,7 @@
 #include "AccessibleWidgets.h"
 #include "CaptionMenu.h"
 #include "DeprecationHelper.h"
+#include "DesignTokens.h"
 #include "embed.h"
 #include "GuiApplication.h"
 #include "FontHelper.h"
@@ -106,7 +107,7 @@ void LcdFloatSpinBox::layoutSetup(const QString &style)
 	outerLayout->setContentsMargins(0, 0, 0, 0);
 	outerLayout->setSizeConstraint(QLayout::SetFixedSize);
 	this->setLayout(outerLayout);
-	this->setFixedHeight(32);
+	this->setFixedHeight(tokens::size::target + tokens::space::md);  // the field (a target's height) and the label's line
 	setFocusPolicy(Qt::TabFocus);  // 0.5.0 (theme 10): Tab reaches it; a click still leaves focus where it was
 }
 

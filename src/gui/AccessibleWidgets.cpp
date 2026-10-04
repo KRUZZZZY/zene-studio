@@ -30,6 +30,7 @@
 #include <QTimer>
 
 #include "AccessibilityAudit.h"
+#include "AccessibleCanvas.h"
 #include "AutomatableButton.h"
 #include "ComboBox.h"
 #include "Fader.h"
@@ -245,6 +246,18 @@ private:
 	QAbstractButton* button() const { return static_cast<QAbstractButton*>(widget()); }
 };
 
+//! A custom-painted editing surface (AccessibleCanvas.h): the role it was given, its value read when asked for and
+//! announced, like a knob's, while it has focus.
+class CanvasControl : public Control
+{
+public:
+	CanvasControl(QWidget* widget, QAccessible::Role role)
+		: Control(widget, role)
+	{
+		new ValueAnnouncer(widget);
+	}
+};
+
 QAccessibleInterface* valueControl(QWidget* widget)
 {
 	if (qobject_cast<Knob*>(widget) != nullptr) { return new ValueControl(widget, QAccessible::Dial); }
@@ -278,6 +291,7 @@ QAccessibleInterface* describeControl(const QString& className, QObject* object)
 {
 	auto* widget = qobject_cast<QWidget*>(object);
 	if (widget == nullptr || className != QLatin1String(object->metaObject()->className())) { return nullptr; }
+	if (const QAccessible::Role role = canvasRole(widget); role != QAccessible::NoRole) { return new CanvasControl(widget, role); }
 	QAccessibleInterface* face = valueControl(widget);
 	return face != nullptr ? face : otherControl(widget);
 }
@@ -341,6 +355,7 @@ SpinKey spinKey(int key, AutomatableModel* model, float fine, float coarse)
 
 QString valueText(QWidget* widget)
 {
+	if (canvasRole(widget) != QAccessible::NoRole) { return canvasValue(widget); }
 	if (auto* editor = qobject_cast<FloatModelEditorBase*>(widget)) { return editor->accessibleValueText(); }
 	if (auto* fader = qobject_cast<Fader*>(widget)) { return fader->accessibleValueText(); }
 	if (auto* combo = qobject_cast<ComboBox*>(widget); combo != nullptr && combo->model() != nullptr)

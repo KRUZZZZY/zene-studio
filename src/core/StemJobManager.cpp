@@ -29,9 +29,11 @@
 
 #include <QHash>
 #include <QMutexLocker>
+#include <QPointer>
 #include <QThread>
 
 #include "SampleBuffer.h"
+#include "TaskCenter.h"
 
 namespace lmms
 {
@@ -62,6 +64,24 @@ StemJobManager::StemJobManager(QObject* parent) :
 	m_thread = new CallableThread([this] { workerLoop(); });
 	m_thread->setObjectName(QStringLiteral("StemJobManager"));
 	m_thread->start();
+	reportToTaskArea();
+}
+
+
+
+
+void StemJobManager::reportToTaskArea()
+{
+	// 0.5.0 theme 24: the job signals the worker already emits, queued to the task area on the main thread. The
+	// lambdas carry this manager's address only as the jobs' owner key and never dereference it.
+	const void* key = this;
+	TaskCenter* tasks = &TaskCenter::instance();
+	connect(this, &StemJobManager::jobStarted, tasks, [key](int id) { TaskCenter::instance().progress(key, id, 0.0); });
+	connect(this, &StemJobManager::jobProgress, tasks, [key](int id, float fraction) { TaskCenter::instance().progress(key, id, fraction); });
+	connect(this, &StemJobManager::jobFinished, tasks, [key](int id, double) { TaskCenter::instance().finish(key, id, TaskState::Done); });
+	connect(this, &StemJobManager::jobCancelled, tasks, [key](int id) { TaskCenter::instance().finish(key, id, TaskState::Cancelled); });
+	connect(this, &StemJobManager::jobFailed, tasks,
+		[key](int id, const QString& error) { TaskCenter::instance().finish(key, id, TaskState::Failed, error); });
 }
 
 
@@ -69,6 +89,7 @@ StemJobManager::StemJobManager(QObject* parent) :
 
 StemJobManager::~StemJobManager()
 {
+	TaskCenter::instance().forget(this);
 	{
 		QMutexLocker locker(&m_mutex);
 		m_quit = true;
@@ -121,6 +142,9 @@ int StemJobManager::submit(std::shared_ptr<const SampleBuffer> mix,
 		m_jobs.insert(job->id, job);
 		m_queue.push_back(job);
 	}
+	// Listed before the worker can start it, so the job's first signal finds its task.
+	TaskCenter::instance().begin(this, job->id, {QStringLiteral("stem_split"), tr("Split stems"),
+		[manager = QPointer<StemJobManager>(this), id = job->id] { if (manager != nullptr) { manager->cancel(id); } }, {}, true});
 	m_jobAvailable.wakeOne();
 	return job->id;
 }

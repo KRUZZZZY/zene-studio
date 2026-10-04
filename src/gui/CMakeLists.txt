@@ -74,6 +74,13 @@ SET(LMMS_SRCS
 	gui/AccessibilityAudit.cpp
 	gui/AccessibleMode.cpp
 	gui/AccessibleWidgets.cpp
+	# 0.5.0 wave 3 themes 10/17: canvases by keyboard, the shared editable item list, announcements, the staged audit.
+	gui/AccessibleAnnouncements.cpp
+	gui/AccessibleCanvas.cpp
+	gui/ArrangerClipKeys.cpp
+	gui/ControlCommandsAccessibleEditing.cpp
+	gui/ItemListPanel.cpp
+	gui/ItemListSurfaceSources.cpp
 	gui/ControlGuiSupport.cpp
 	# M3.4: the command palette (menu actions + argument-free commands, searchable).
 	gui/ArrangerOverlays.cpp
@@ -82,12 +89,19 @@ SET(LMMS_SRCS
 	gui/VideoLane.cpp
 	gui/VideoWindow.cpp
 	gui/ArrangerZoom.cpp
+	gui/ArrangerRulerTempo.cpp
+	gui/ArrangerLandmarks.cpp
 	gui/CommandForm.cpp
 	gui/CommandFormFields.cpp
 	gui/CommandMetadata.cpp
 	gui/CommandRun.cpp
 	gui/LayoutMenu.cpp
 	gui/CommandListDialog.cpp
+	gui/ListTable.cpp
+	gui/HelpTasks.cpp
+	gui/WorkflowRun.cpp
+	gui/WorkflowRunReport.cpp
+	gui/WorkflowRecordingIndicator.cpp
 	gui/CommandLists.cpp
 	gui/LibraryCommandMenus.cpp
 	gui/ReferenceProjectPanel.cpp
@@ -103,6 +117,8 @@ SET(LMMS_SRCS
 	gui/PluginNativeEditor.cpp
 	gui/SessionGridMenus.cpp
 	gui/SessionGridView.cpp
+	gui/SessionGridCells.cpp
+	gui/SessionGridDrop.cpp
 	gui/SessionSyncAction.cpp
 	gui/SessionTransportBar.cpp
 	gui/ShortcutsPage.cpp
@@ -133,14 +149,23 @@ SET(LMMS_SRCS
 	gui/shell/ChannelLevelMeter.cpp
 	gui/FollowActionEditor.cpp
 	gui/SampleEditorDialog.cpp
+	gui/SampleRangeFields.cpp
+	gui/SampleSelectionView.cpp
+	gui/ControlCommandsSampleEditor.cpp
 	gui/MixerWindows.cpp
 	gui/ArrangerNavigator.cpp
 	gui/LevelBar.cpp
 	gui/ModifierTools.cpp
 	gui/noteeditor/NoteCanvas.cpp
+	gui/noteeditor/LaneScale.cpp
+	gui/noteeditor/NoteLanePaint.cpp
 	gui/noteeditor/NoteCanvasGestures.cpp
 	gui/noteeditor/NoteCanvasInput.cpp
 	gui/noteeditor/NoteCanvasKeys.cpp
+	gui/noteeditor/ItemListNoteSources.cpp
+	gui/noteeditor/NoteCanvasAccess.cpp
+	gui/noteeditor/NoteKeyNav.cpp
+	gui/noteeditor/NoteLaneKeys.cpp
 	gui/noteeditor/NoteEditor.cpp
 	gui/noteeditor/NoteEditorParts.cpp
 	gui/noteeditor/NoteEditorMenus.cpp
@@ -151,10 +176,14 @@ SET(LMMS_SRCS
 	gui/shell/BrowserPanel.cpp
 	gui/shell/DesignTokens.cpp
 	gui/shell/DeviceCard.cpp
+	gui/shell/DeviceActionMenu.cpp
+	gui/shell/DeviceCardState.cpp
+	gui/shell/DevicePicker.cpp
 	gui/shell/DevicePanel.cpp
 	gui/shell/InspectorClipFields.cpp
 	gui/shell/InspectorChannelRouting.cpp
 	gui/shell/InspectorPanel.cpp
+	gui/shell/InspectorSections.cpp
 	gui/shell/ModulatorCard.cpp
 	gui/shell/Shell.cpp
 	gui/shell/ShellChrome.cpp
@@ -163,6 +192,10 @@ SET(LMMS_SRCS
 	gui/shell/ShellMenuEntries.cpp
 	gui/shell/ShellFloating.cpp
 	gui/shell/ShellTearOff.cpp
+	gui/shell/ShellOverflow.cpp
+	gui/shell/ShellRegionTabs.cpp
+	gui/shell/ShellToolsMenu.cpp
+	gui/shell/ShellLayoutScope.cpp
 	gui/shell/ShellIcons.cpp
 	gui/shell/ShellLayout.cpp
 	gui/shell/ShellPanel.cpp
@@ -205,9 +238,15 @@ SET(LMMS_SRCS
 	gui/NoteTransformActions.cpp
 	gui/MixerChannelView.cpp
 	gui/MixerHardwareMenu.cpp
+	gui/TaskIndicator.cpp
+	gui/widgets/ControlCues.cpp
 	gui/SurroundPanner.cpp
 	gui/MixerOverlays.cpp
 	gui/MixerSendsBanner.cpp
+	gui/MixerStripInfo.cpp
+	gui/MixerStripTags.cpp
+	gui/MixerModeBar.cpp
+	gui/MixerRoutingMatrix.cpp
 	gui/MixerViewOptions.cpp
 	gui/MixerView.cpp
 	gui/ModelView.cpp
@@ -223,6 +262,7 @@ SET(LMMS_SRCS
 	gui/SideBarWidget.cpp
 	gui/StringPairDrag.cpp
 	gui/SubWindow.cpp
+	gui/ToolWindowMemory.cpp
 	gui/ToolPluginView.cpp
 
 	gui/clips/AutomationClipView.cpp

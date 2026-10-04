@@ -115,7 +115,7 @@ protected:
 			case QEvent::Resize:
 				if (watched == m_target && m_ring != nullptr) { m_ring->setGeometry(m_target->rect()); }
 				break;
-			case QEvent::Show: reduceMotion(qobject_cast<QMainWindow*>(watched)); break;
+			case QEvent::Show: mainWindowShown(qobject_cast<QMainWindow*>(watched)); break;
 			default: break;
 		}
 		return false;
@@ -142,9 +142,17 @@ private:
 		m_ring->setParent(nullptr);  // never deleted with a control that goes away
 	}
 
+	//! A main window shows after the engine made the song: its transitions are followed from then (theme 17).
+	void mainWindowShown(QMainWindow* window)
+	{
+		if (window == nullptr) { return; }
+		watchSongTransitions();
+		reduceMotion(window);
+	}
+
 	void reduceMotion(QMainWindow* window)
 	{
-		if (window == nullptr || !gui::tokens::reducedMotion()) { return; }
+		if (!gui::tokens::reducedMotion()) { return; }
 		window->setAnimated(false);
 		for (const Qt::UIEffect effect : {Qt::UI_AnimateMenu, Qt::UI_FadeMenu, Qt::UI_AnimateCombo, Qt::UI_AnimateTooltip,
 			Qt::UI_FadeTooltip, Qt::UI_AnimateToolBox})
@@ -184,7 +192,8 @@ void installAccessibility()
 
 void announceStatus(QObject* source, const QString& message, Politeness politeness)
 {
-	if (source == nullptr || message.isEmpty() || !QAccessible::isActive()) { return; }
+	// The policy first (AccessibleAnnouncements.cpp), so a test with no screen reader still sees what would be said.
+	if (source == nullptr || !shouldAnnounce(message, politeness) || !QAccessible::isActive()) { return; }
 #if QT_VERSION >= QT_VERSION_CHECK(6, 8, 0)
 	QAccessibleAnnouncementEvent event(source, message);
 	event.setPoliteness(politeness == Politeness::Assertive ? QAccessible::AnnouncementPoliteness::Assertive

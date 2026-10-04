@@ -74,6 +74,8 @@ public:
 	using PluginKey = Plugin::Descriptor::SubPluginFeatures::Key;
 	PluginDescWidget( const PluginKey & _pk, QWidget * _parent );
 	QString name() const;
+	//! 0.5.0 theme 12: what the row says beside the name, in words - "Instrument · LV2", "· Favourite" for a favourite.
+	QString details() const { return m_details; }
 	void openInNewInstrumentTrack(QString value);
 	//! 0.5.0 theme 3: what Enter on the row does - the instrument (with its sub-plugin key) on a new track.
 	void openInNewTrack();
@@ -100,6 +102,7 @@ private:
 
 	PluginKey m_pluginKey;
 	QPixmap m_logo;
+	QString m_details;
 
 	bool m_mouseOver;
 	bool m_current = false;

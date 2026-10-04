@@ -88,6 +88,9 @@ protected:
 
 
 private:
+	//! The field's border: brighter under the pointer when the number is editable (0.5.0 theme 23).
+	QColor borderColour() const;
+
 
 	static const int charsPerPixmap = 12;
 

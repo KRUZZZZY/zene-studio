@@ -42,13 +42,16 @@
 #include <QPushButton>
 #include <QTabWidget>
 #include <QTextBrowser>
+#include <QTextDocumentFragment>
 #include <QUrl>
 #include <QVBoxLayout>
 
+#include "AccessibleWidgets.h"
 #include "CommandForm.h"
 #include "ConfigManager.h"
 #include "ControlRegistry.h"
 #include "GuiApplication.h"
+#include "HelpTasks.h"
 #include "MainWindow.h"
 
 namespace lmms::gui
@@ -58,20 +61,6 @@ namespace
 {
 
 QString dataPath(const QString& sub) { return QDir(ConfigManager::inst()->dataDir()).filePath(sub); }
-
-//! One command as the reference shows it: id, description, arguments (required ones marked).
-QString commandEntry(const ControlCommand& command)
-{
-	QStringList args;
-	const QJsonArray required = command.argsSchema.value(QStringLiteral("required")).toArray();
-	const QJsonObject properties = command.argsSchema.value(QStringLiteral("properties")).toObject();
-	for (auto it = properties.begin(); it != properties.end(); ++it)
-	{
-		args << (required.contains(it.key()) ? QStringLiteral("<b>%1</b>").arg(it.key()) : it.key());
-	}
-	return QStringLiteral("<h3>%1</h3><p>%2</p><p><i>%3</i> %4</p>").arg(command.id, command.description.toHtmlEscaped(),
-		HelpCenter::tr("Arguments:"), args.isEmpty() ? HelpCenter::tr("none") : args.join(QStringLiteral(", ")));
-}
 
 QPointer<HelpCenter> s_center;
 
@@ -100,6 +89,16 @@ HelpCenter::HelpCenter(QWidget* parent) :
 	setWindowTitle(tr("Zene Studio Help"));
 	resize(760, 620);
 	auto* layout = new QVBoxLayout(this);
+	m_context = new QLabel(this);
+	m_context->setObjectName(QStringLiteral("helpContext"));
+	m_context->setWordWrap(true);
+	m_context->setTextFormat(Qt::RichText);
+	m_context->setTextInteractionFlags(Qt::TextBrowserInteraction);  // its manual link is reached with Tab
+	m_context->setFrameShape(QFrame::StyledPanel);
+	m_context->setAccessibleName(tr("Help for the focused control"));
+	m_context->hide();
+	connect(m_context, &QLabel::linkActivated, this, [this](const QString& link) { follow(QUrl(link)); });
+	layout->addWidget(m_context);
 	layout->addWidget(m_tabs);
 	m_manual->setOpenExternalLinks(true);
 	const QString manual = dataPath(QStringLiteral("manual/index.html"));
@@ -111,17 +110,97 @@ HelpCenter::HelpCenter(QWidget* parent) :
 			"Reference tab still lists every command.</p>").arg(manual.toHtmlEscaped()));
 	}
 	m_manual->setAccessibleName(tr("Manual"));
-	m_tabs->addTab(m_manual, tr("Manual"));
+	m_tabs->addTab(makeManualTab(), tr("Manual"));
 	auto* reference = new QWidget(this);
 	auto* column = new QVBoxLayout(reference);
-	m_filter->setPlaceholderText(tr("Find a command: name or words of its description"));
+	m_filter->setPlaceholderText(tr("Find a command: its name, a task (mixing, recording...), a shortcut or a word of its description"));
 	m_filter->setAccessibleName(tr("Find a command"));
-	m_reference->setAccessibleName(tr("Command reference"));
+	m_reference->setAccessibleName(tr("Command reference, by task"));
+	m_reference->setOpenLinks(false);  // a task's "read the manual" opens the Manual tab there (follow)
+	connect(m_reference, &QTextBrowser::anchorClicked, this, &HelpCenter::follow);
 	column->addWidget(m_filter);
 	column->addWidget(m_reference);
 	m_tabs->addTab(reference, tr("Command Reference"));
 	connect(m_filter, &QLineEdit::textChanged, this, &HelpCenter::filterReference);
-	filterReference(QString());
+}
+
+QWidget* HelpCenter::makeManualTab()
+{
+	auto* tab = new QWidget(this);
+	auto* column = new QVBoxLayout(tab);
+	auto* row = new QHBoxLayout;
+	m_manualFind = new QLineEdit(tab);
+	m_manualFind->setObjectName(QStringLiteral("helpManualFind"));
+	m_manualFind->setPlaceholderText(tr("Find in the manual (Enter: next, Shift+Enter: previous)"));
+	m_manualFind->setAccessibleName(tr("Find in the manual"));
+	m_manualFind->setClearButtonEnabled(true);
+	m_manualFind->installEventFilter(this);
+	m_manualFound = new QLabel(tab);
+	m_manualFound->setAccessibleName(tr("Find result"));
+	row->addWidget(m_manualFind, 1);
+	row->addWidget(m_manualFound);
+	column->addLayout(row);
+	column->addWidget(m_manual, 1);
+	connect(m_manualFind, &QLineEdit::returnPressed, this, [this] { findInManual(m_manualFind->text()); });
+	connect(m_manualFind, &QLineEdit::textEdited, this, [this](const QString& text) {
+		m_manual->moveCursor(QTextCursor::Start);  // as typed: the first match from the top
+		findInManual(text);
+	});
+	return tab;
+}
+
+bool HelpCenter::findInManual(const QString& text, bool backward)
+{
+	const QString needle = text.trimmed();
+	m_manualFound->clear();
+	if (needle.isEmpty()) { return false; }
+	const QTextDocument::FindFlags flags = backward ? QTextDocument::FindBackward : QTextDocument::FindFlags();
+	bool found = m_manual->find(needle, flags);
+	if (!found)
+	{
+		m_manual->moveCursor(backward ? QTextCursor::End : QTextCursor::Start);  // round again from the other end
+		found = m_manual->find(needle, flags);
+	}
+	if (!found)
+	{
+		m_manualFound->setText(tr("Not in the manual - try other words, the Command Reference or Help > Ask"));
+		a11y::announceStatus(m_manualFound, m_manualFound->text());
+	}
+	return found;
+}
+
+bool HelpCenter::eventFilter(QObject* watched, QEvent* event)
+{
+	if (watched == m_manualFind && event->type() == QEvent::KeyPress)
+	{
+		const auto* key = static_cast<QKeyEvent*>(event);
+		const bool enter = key->key() == Qt::Key_Return || key->key() == Qt::Key_Enter;
+		if (enter && (key->modifiers() & Qt::ShiftModifier))
+		{
+			findInManual(m_manualFind->text(), true);
+			return true;
+		}
+	}
+	return QDialog::eventFilter(watched, event);
+}
+
+void HelpCenter::follow(const QUrl& url)
+{
+	if (url.scheme() != QLatin1String("topic")) { return; }
+	m_manual->scrollToAnchor(url.path());
+	m_tabs->setCurrentIndex(0);
+}
+
+void HelpCenter::showContext(const QJsonObject& context)
+{
+	m_context->setText(context.isEmpty() ? QString() : help::contextHtml(context));
+	m_context->setVisible(!context.isEmpty());
+	if (!context.isEmpty()) { a11y::announceStatus(m_context, m_context->text()); }
+}
+
+QString HelpCenter::contextText() const
+{
+	return m_context->isHidden() ? QString() : QTextDocumentFragment::fromHtml(m_context->text()).toPlainText();
 }
 
 HelpCenter* HelpCenter::showHelp(const QString& topic, bool reference)
@@ -131,6 +210,11 @@ HelpCenter* HelpCenter::showHelp(const QString& topic, bool reference)
 		QWidget* parent = getGUI() != nullptr ? getGUI()->mainWindow() : nullptr;
 		s_center = new HelpCenter(parent);
 	}
+	// The shortcuts as the menus have them now (the user may have rebound one), in the reference's entries.
+	QMenuBar* bar = getGUI() != nullptr && getGUI()->mainWindow() != nullptr ? getGUI()->mainWindow()->menuBar() : nullptr;
+	s_center->m_shortcuts = help::commandShortcuts(bar);
+	s_center->filterReference(s_center->m_filter->text());
+	s_center->showContext({});
 	if (!topic.isEmpty()) { s_center->m_manual->scrollToAnchor(topic); }
 	s_center->m_tabs->setCurrentIndex(reference ? 1 : 0);
 	s_center->QDialog::show();
@@ -140,18 +224,18 @@ HelpCenter* HelpCenter::showHelp(const QString& topic, bool reference)
 
 QString HelpCenter::referenceText() const { return m_reference->toPlainText(); }
 
+void HelpCenter::findCommand(const QString& text)
+{
+	m_tabs->setCurrentIndex(1);
+	m_filter->setText(text);  // filters as typing does
+	filterReference(text);    // and when the text was already there
+}
+
 void HelpCenter::filterReference(const QString& text)
 {
-	QString html;
-	const QString needle = text.trimmed();
-	for (const QString& id : ControlRegistry::instance()->commandIds())
-	{
-		const ControlCommand* command = ControlRegistry::instance()->command(id);
-		if (command == nullptr) { continue; }
-		if (!needle.isEmpty() && !id.contains(needle, Qt::CaseInsensitive) && !command->description.contains(needle, Qt::CaseInsensitive)) { continue; }
-		html += commandEntry(*command);
-	}
-	m_reference->setHtml(html.isEmpty() ? tr("<p>No command matches.</p>") : html);
+	const QString html = help::referenceHtml(text, m_shortcuts);
+	m_reference->setHtml(html.isEmpty() ? tr("<p>No command matches. Try a task (mixing, recording), other words, "
+		"or Help &gt; Ask.</p>") : html);
 }
 
 // ---------------------------------------------------------------------------
@@ -323,6 +407,11 @@ void installHelpEntries(QMenuBar* bar)
 		[] { return CommandCall{QStringLiteral("app.help"), {{QStringLiteral("whats_this"), true}}, {}, QString(), false}; });
 	whatsThis->setObjectName(QStringLiteral("helpWhatsThis"));
 	whatsThis->setShortcut(QKeySequence(Qt::SHIFT | Qt::Key_F1));
+	// Design theme 21: help for the focused control from the keyboard - no hovering, no click needed.
+	QAction* forThis = addCommandAction(help, HelpCenter::tr("Help for This"), QStringLiteral("app.help"),
+		[] { return CommandCall{QStringLiteral("app.help"), {{QStringLiteral("context"), true}}, {}, QString(), false}; });
+	forThis->setObjectName(QStringLiteral("helpForThis"));
+	forThis->setShortcut(QKeySequence(Qt::Key_F1));
 	addCommandAction(help, HelpCenter::tr("Manual"), QStringLiteral("app.help"),
 		[] { return CommandCall{QStringLiteral("app.help"), {}, {}, QString(), false}; });
 	addCommandAction(help, HelpCenter::tr("Command Reference"), QStringLiteral("app.help"),

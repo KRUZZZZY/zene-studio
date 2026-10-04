@@ -23,6 +23,7 @@
  */
 
 #include "Knob.h"
+#include "ControlCues.h"
 
 #include "DesignTokens.h"
 
@@ -453,7 +454,8 @@ void Knob::drawFlatKnob(QPainter* painter)
 
 	painter->save();
 	painter->setRenderHint(QPainter::Antialiasing);
-	painter->setPen(QPen(pal.control, stroke, Qt::SolidLine, Qt::FlatCap));
+	// 0.5.0 theme 23: the track lightens under the pointer - the hover state every shared control shows.
+	painter->setPen(QPen(cues::hovered(this) ? pal.gridBar : pal.control, stroke, Qt::SolidLine, Qt::FlatCap));
 	painter->drawArc(arcRect, 315 * 16, static_cast<int>(16 * m_totalAngle));
 	painter->setPen(QPen(enabled ? pal.accent : pal.textDisabled, stroke, Qt::SolidLine, Qt::FlatCap));
 	painter->drawArc(arcRect, (90 - centerAngle) * 16, -16 * (m_angle - centerAngle));

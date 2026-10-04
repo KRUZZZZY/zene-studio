@@ -21,7 +21,7 @@
  * Boston, MA 02110-1301 USA.
  *
  */
-/*! 0.5.0 W3 L13 / L14, the commands that need no interface: the track manager's list and its colour,
+/*! 0.5.0 W3 L13 / L14, the commands that need no interface (and design theme 19's workflow step recovery): the track manager's list and its colour,
  *  visibility and icon edits, each one undo step, the icon saved only when set (WF-097 / WF-120); every
  *  mixer channel's processing load (WF-104); a question answered from the manual and the commands, offline
  *  (WF-142); the shipped release notes and their once-per-version marker (WF-141); memory locations and saved
@@ -273,6 +273,42 @@ private slots:
 		QCOMPARE(run(QStringLiteral("selection.list")).result.value(QStringLiteral("count")).toInt(), 1);
 	}
 
+	//! Design theme 22: a save says what it kept and what a memory of its kind never keeps; asked not to replace, a
+	//! name in use is refused (the Window menu's Save); a recall says what came back.
+	void aViewMemorySaysWhatItKeepsAndAsksBeforeReplacing()
+	{
+		const QString name = QStringLiteral("bridge");
+		QVERIFY(run(QStringLiteral("range.set"), {{QStringLiteral("start"), 0}, {QStringLiteral("end"), 1920}}).ok);
+		const ControlResult saved = run(QStringLiteral("location.save"), {{QStringLiteral("name"), name}});
+		QVERIFY2(saved.ok, qPrintable(saved.errorMessage));
+		const QJsonArray captures = saved.result.value(QStringLiteral("captures")).toArray();
+		QVERIFY(captures.contains(QStringLiteral("position")) && captures.contains(QStringLiteral("range")));
+		QVERIFY(saved.result.value(QStringLiteral("not_kept")).toArray().contains(QStringLiteral("scroll")));
+		QCOMPARE(saved.result.value(QStringLiteral("max_entries")).toInt(), 99);
+		const ControlResult kept = run(QStringLiteral("location.save"), {{QStringLiteral("name"), name}, {QStringLiteral("replace"), false}});
+		QCOMPARE(kept.errorKind, ControlErrorKind::Refused);
+		QVERIFY(kept.errorMessage.contains(name));
+		QVERIFY(run(QStringLiteral("location.save"), {{QStringLiteral("name"), name}}).result.value(QStringLiteral("replaced")).toBool());
+		const ControlResult recalled = run(QStringLiteral("location.recall"), {{QStringLiteral("name"), name}});
+		QVERIFY2(recalled.ok, qPrintable(recalled.errorMessage));
+		const QJsonArray restored = recalled.result.value(QStringLiteral("restored")).toArray();
+		QVERIFY(restored.contains(QStringLiteral("position")) && restored.contains(QStringLiteral("range")));
+		QVERIFY(!recalled.result.value(QStringLiteral("skipped")).toArray().contains(QStringLiteral("position")));
+		QVERIFY(run(QStringLiteral("location.list")).result.value(QStringLiteral("not_kept")).toArray().contains(QStringLiteral("layout")));
+		QVERIFY(run(QStringLiteral("location.remove"), {{QStringLiteral("name"), name}}).ok);
+		// A saved selection keeps the same contract.
+		QVERIFY(run(QStringLiteral("selection.save"), {{QStringLiteral("name"), name}}).ok);
+		QCOMPARE(run(QStringLiteral("selection.save"), {{QStringLiteral("name"), name}, {QStringLiteral("replace"), false}}).errorKind,
+			ControlErrorKind::Refused);
+		const ControlResult applied = run(QStringLiteral("selection.apply"), {{QStringLiteral("name"), name}});
+		QVERIFY2(applied.ok, qPrintable(applied.errorMessage));
+		QVERIFY(applied.result.value(QStringLiteral("restored")).toArray().contains(QStringLiteral("range")));
+		QVERIFY(run(QStringLiteral("selection.remove"), {{QStringLiteral("name"), name}}).ok);
+		QVERIFY(run(QStringLiteral("range.set"), {{QStringLiteral("start"), 0}, {QStringLiteral("end"), 0}}).ok);
+		// Headless there is no shell, so no project's layout is on screen.
+		QVERIFY(!run(QStringLiteral("window.layout_list")).result.value(QStringLiteral("project_layout_shown")).toBool());
+	}
+
 	void theHistoryIsWalkedInOneGo()
 	{
 		const QString id = control::trackIdOf(m_track);
@@ -393,6 +429,40 @@ private slots:
 		QCOMPARE(run(QStringLiteral("window.layout_project_clear")).errorKind, ControlErrorKind::NotFound);
 		QCOMPARE(run(QStringLiteral("window.layout_project_save")).errorKind, ControlErrorKind::Requires);
 		QVERIFY(!run(QStringLiteral("window.layout_list")).result.value(QStringLiteral("project_layout")).toBool());
+	}
+
+	//! Design theme 19: a run that stops says which step failed and why, what applied and what did not run; it
+	//! resumes with the step retried, or skipped and the rest run; with nothing stopped there is nothing to resume.
+	void aStoppedWorkflowSaysWhereAndResumes()
+	{
+		const auto step = [](const char* command, const QJsonObject& args) {
+			return QJsonObject{{QStringLiteral("command"), QLatin1String(command)}, {QStringLiteral("args"), args}};
+		};
+		const QJsonArray steps{step("track.list", {}), step("track.remove", {{QStringLiteral("track"), QStringLiteral("no-such-track")}}),
+			step("track.list", {})};
+		QVERIFY(run(QStringLiteral("workflow.save"), {{QStringLiteral("name"), QStringLiteral("stops")}, {QStringLiteral("steps"), steps}}).ok);
+		const auto done = [] { return run(QStringLiteral("workflow.status")).result.value(QStringLiteral("state")).toString() == QStringLiteral("done"); };
+		QVERIFY(run(QStringLiteral("workflow.run"), {{QStringLiteral("name"), QStringLiteral("stops")}}).ok);
+		QTRY_VERIFY(done());
+		QJsonObject status = run(QStringLiteral("workflow.status")).result;
+		QCOMPARE(status.value(QStringLiteral("stopped_at")).toInt(), 1);
+		QCOMPARE(status.value(QStringLiteral("failed")).toObject().value(QStringLiteral("step")).toInt(), 2);
+		QVERIFY(!status.value(QStringLiteral("failed")).toObject().value(QStringLiteral("error")).toString().isEmpty());
+		QCOMPARE(status.value(QStringLiteral("applied_steps")).toArray(), QJsonArray{1});
+		QCOMPARE(status.value(QStringLiteral("not_run")).toArray(), QJsonArray{3});
+		QVERIFY(status.value(QStringLiteral("message")).toString().contains(QStringLiteral("stopped at step 2 of 3")));
+
+		QCOMPARE(run(QStringLiteral("workflow.resume")).result.value(QStringLiteral("retried")).toInt(), 2);
+		QTRY_VERIFY(done());
+		QCOMPARE(run(QStringLiteral("workflow.status")).result.value(QStringLiteral("stopped_at")).toInt(), 1);  // it fails again
+		QCOMPARE(run(QStringLiteral("workflow.resume"), {{QStringLiteral("skip"), true}}).result.value(QStringLiteral("skipped")).toInt(), 2);
+		QTRY_VERIFY(done());
+		status = run(QStringLiteral("workflow.status")).result;
+		QCOMPARE(status.value(QStringLiteral("stopped_at")).toInt(), -1);
+		QCOMPARE(status.value(QStringLiteral("applied_steps")).toArray(), (QJsonArray{1, 3}));
+		QCOMPARE(status.value(QStringLiteral("skipped_steps")).toArray(), QJsonArray{2});
+		QCOMPARE(run(QStringLiteral("workflow.resume")).errorKind, ControlErrorKind::Refused);
+		QVERIFY(run(QStringLiteral("workflow.remove"), {{QStringLiteral("name"), QStringLiteral("stops")}}).ok);
 	}
 
 private:

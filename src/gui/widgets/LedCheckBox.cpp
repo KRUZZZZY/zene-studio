@@ -23,6 +23,7 @@
  */
 
 #include "LedCheckBox.h"
+#include "ControlCues.h"
 
 #include <QFontMetrics>
 #include <QPainter>
@@ -125,14 +126,15 @@ void LedCheckBox::paintIndicator(QPainter& p, const QRect& box) const
 	const qreal d = std::min(box.width(), box.height()) * 0.7;
 	const QRectF dot(box.center().x() - d / 2.0 + 0.5, box.center().y() - d / 2.0 + 0.5, d, d);
 	p.setRenderHint(QPainter::Antialiasing);
+	const bool hot = cues::hovered(this);  // 0.5.0 theme 23: the hover state brightens the indicator, on or off
 	if (model() != nullptr && model()->value())
 	{
 		p.setPen(Qt::NoPen);
-		p.setBrush(isEnabled() ? pal.accent : pal.textDisabled);
+		p.setBrush(!isEnabled() ? pal.textDisabled : hot ? pal.accentHover : pal.accent);
 	}
 	else
 	{
-		p.setPen(QPen(isEnabled() ? pal.textMuted : pal.textDisabled, 1.4));
+		p.setPen(QPen(!isEnabled() ? pal.textDisabled : hot ? pal.text : pal.textMuted, 1.4));
 		p.setBrush(Qt::NoBrush);
 	}
 	p.drawEllipse(dot);

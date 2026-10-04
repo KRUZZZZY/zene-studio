@@ -98,6 +98,7 @@ const QSet<QString>& wholeProjectIds()
 		QStringLiteral("project.subproject_refresh"), QStringLiteral("revisions.restore"),
 		QStringLiteral("session.setlist_go"), QStringLiteral("dawproject.import"), QStringLiteral("interchange.smf_import"),
 		QStringLiteral("script.run"), QStringLiteral("script.set_memory_budget"), QStringLiteral("workflow.run"),
+		QStringLiteral("workflow.resume"),
 		QStringLiteral("livecode.schedule"), QStringLiteral("livecode.unschedule"), QStringLiteral("record.recovery_restore"),
 		QStringLiteral("record.recovery_discard")};
 	return ids;

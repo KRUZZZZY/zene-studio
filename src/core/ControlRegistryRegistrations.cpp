@@ -43,6 +43,7 @@
 #include "ControlHardwareIoSupport.h"
 #include "ControlRegistry.h"
 #include "ControlWindowCommands.h"
+#include "TaskCommands.h"
 #include "VideoCommands.h"
 
 // The #ifdef block in registerControlCommands() below uses the macro the build
@@ -104,6 +105,7 @@ void registerControlCommands(ControlRegistry& registry)
 	registerControllerMapCommands(registry);
 	registerMixerListenCommands(registry);
 	registerMixerStripCommands(registry);
+	registerMixerRenameCommands(registry);  // 0.5.0 theme 13: mixer.rename_channel
 	registerDeviceCopyCommands(registry);
 	registerPluginOrganiseCommands(registry);
 	registerPluginPathsCommands(registry);
@@ -167,6 +169,7 @@ void registerControlCommands(ControlRegistry& registry)
 	registerClipProcessCommand(registry);
 	registerW3EngineCommands(registry);
 	registerVideoCommands(registry);  // 0.5.0 F5 (ED-054)
+	registerTaskCommands(registry);  // 0.5.0 theme 24: the background task area
 	registerCollabCommands(registry);  // 0.5.0 F6 (WF-050/WF-052)
 #ifdef ZENE_TELEMETRY_ENABLED
 	// The telemetry.* group travels with the client. -DZENE_TELEMETRY=OFF

@@ -1,0 +1,300 @@
+/*
+ * ItemListPanelTest.cpp - the editable item list, the staged accessibility audit and the announcement policy
+ *
+ * Copyright (c) 2026 Zene Studio contributors
+ *
+ * This file is part of LMMS - https://lmms.io
+ *
+ * This program is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU General Public
+ * License as published by the Free Software Foundation; either
+ * version 2 of the License, or (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public
+ * License along with this program (see COPYING); if not, write to the
+ * Free Software Foundation, Inc., 51 Franklin Street, Fifth Floor,
+ * Boston, MA 02110-1301 USA.
+ *
+ */
+
+/*! Theme 10: the list beside a canvas is a synchronised, fully editable equivalent - its rows are the canvas's items,
+ *  a typed cell, Insert and Delete are each the canvas's command and one undo step, a refusal is shown, and the
+ *  selection follows both ways. Theme 17: the audit runs its checks separately (duplicate names among them), and
+ *  announcements follow the level, the repeat window and the song's transitions. */
+
+#include <QtTest>
+
+#include <QJsonArray>
+#include <QPushButton>
+#include <QTableView>
+#include <QTemporaryDir>
+
+#include "AccessibilityAudit.h"
+#include "AccessibleWidgets.h"
+#include "ConfigManager.h"
+#include "ControlRegistry.h"
+#include "ControlVocabulary.h"
+#include "Engine.h"
+#include "InstrumentTrack.h"
+#include "ItemList.h"
+#include "MidiClip.h"
+#include "Note.h"
+#include "NoteCanvas.h"
+#include "NoteEditor.h"
+#include "NoteGrid.h"
+#include "NotePlayHandle.h"
+#include "Song.h"
+
+using namespace lmms;
+using namespace lmms::gui;
+
+namespace
+{
+
+ControlResult invoke(const QString& id, const QJsonObject& args = {})
+{
+	return ControlRegistry::instance()->invoke(id, args);
+}
+
+bool undo() { return invoke(QStringLiteral("control.undo")).ok; }
+
+Note* noteAt(MidiClip* clip, int position, int key)
+{
+	for (Note* note : clip->notes())
+	{
+		if (note->pos().getTicks() == position && note->key() == key) { return note; }
+	}
+	return nullptr;
+}
+
+QString cell(ItemListPanel* panel, int row, int column)
+{
+	return panel->table()->model()->index(row, column).data().toString();
+}
+
+bool edit(ItemListPanel* panel, int row, int column, const QString& text)
+{
+	QAbstractItemModel* model = panel->table()->model();
+	return model->setData(model->index(row, column), text, Qt::EditRole);
+}
+
+} // namespace
+
+class ItemListPanelTest : public QObject
+{
+	Q_OBJECT
+
+private slots:
+	void initTestCase()
+	{
+		QVERIFY(m_home.isValid());
+		qputenv("HOME", m_home.path().toLocal8Bit());
+		ConfigManager::inst()->loadConfigFile(m_home.filePath(QStringLiteral("zene.xml")));
+		Engine::init(true);
+		NotePlayHandleManager::init();
+		ControlRegistry::setReady(true);
+		m_track = dynamic_cast<InstrumentTrack*>(Track::create(Track::Type::Instrument, Engine::getSong()));
+		QVERIFY(m_track != nullptr);
+	}
+
+	void cleanupTestCase()
+	{
+		ControlRegistry::setReady(false);
+		Engine::destroy();
+	}
+
+	void init()
+	{
+		m_clip = dynamic_cast<MidiClip*>(m_track->createClip(TimePos(0)));
+		QVERIFY(m_clip != nullptr);
+		m_clip->addNote(Note(TimePos(48), TimePos(0), 60, 100), false);
+		m_clip->addNote(Note(TimePos(48), TimePos(0), 64, 100), false);
+		m_clip->addNote(Note(TimePos(96), TimePos(192), 62, 100), false);
+		m_clip->rearrangeAllNotes();
+		m_editor = new NoteEditor;
+		m_editor->resize(1000, 600);
+		m_editor->show();
+		QVERIFY(QTest::qWaitForWindowExposed(m_editor));
+		m_editor->setClip(m_clip);
+		m_editor->setGridTicks(12);
+		m_panel = ItemListPanel::open(m_editor->canvas(), QStringLiteral("notes"),
+			[this](QObject* parent) { return itemlists::notes(m_editor, parent); });
+		m_panel->show();
+	}
+
+	void cleanup()
+	{
+		delete m_editor;  // the list goes with the canvas it lists
+		m_editor = nullptr;
+		m_panel = nullptr;
+		delete m_clip;
+		m_clip = nullptr;
+	}
+
+	void theNoteListMirrorsTheClip()
+	{
+		QCOMPARE(m_panel->table()->model()->rowCount(), 3);
+		QCOMPARE(m_panel->table()->model()->columnCount(), 4);
+		QCOMPARE(cell(m_panel, 0, 1), NoteGrid::keyName(60));  // start, then pitch
+		QCOMPARE(cell(m_panel, 1, 1), NoteGrid::keyName(64));
+		QCOMPARE(cell(m_panel, 2, 1), NoteGrid::keyName(62));
+		QCOMPARE(cell(m_panel, 2, 3), QStringLiteral("100"));
+		// Changed elsewhere (here: the socket), the list re-reads.
+		QVERIFY(invoke(QStringLiteral("note.edit"), {{QStringLiteral("clip"), m_editor->clipId()}, {QStringLiteral("edits"),
+			QJsonArray{QJsonObject{{QStringLiteral("note"), control::noteIdOf(noteAt(m_clip, 192, 62))}, {QStringLiteral("velocity"), 80}}}}}).ok);
+		QTRY_COMPARE(cell(m_panel, 2, 3), QStringLiteral("80"));
+		// The expression lane's value is a column while the lane shows one.
+		m_editor->setLane(NoteLane::Pan);
+		QTRY_COMPARE(m_panel->table()->model()->columnCount(), 5);
+	}
+
+	void aTypedCellIsOneEditAndOneStep()
+	{
+		QVERIFY(edit(m_panel, 2, 3, QStringLiteral("90")));
+		QCOMPARE(static_cast<int>(noteAt(m_clip, 192, 62)->getVolume()), 90);
+		QVERIFY(edit(m_panel, 2, 1, QStringLiteral("72")));  // a pitch typed as a number
+		QVERIFY(noteAt(m_clip, 192, 72) != nullptr);
+		QVERIFY(undo());
+		QVERIFY(noteAt(m_clip, 192, 62) != nullptr);
+		QVERIFY(undo());
+		QCOMPARE(static_cast<int>(noteAt(m_clip, 192, 62)->getVolume()), 100);
+		// Text that is no value changes nothing and says so.
+		QVERIFY(!edit(m_panel, 2, 3, QStringLiteral("loud")));
+		QTRY_VERIFY(m_panel->statusText().startsWith(QStringLiteral("Not done")));
+	}
+
+	void insertAndDeleteAreOneStepEach()
+	{
+		m_panel->table()->setCurrentIndex(m_panel->table()->model()->index(2, 0));
+		QVERIFY(m_panel->insertItem());
+		QCOMPARE(m_clip->notes().size(), std::size_t{4});
+		QVERIFY(noteAt(m_clip, 288, 62) != nullptr);  // after the current note, on its key
+		QVERIFY(undo());
+		QCOMPARE(m_clip->notes().size(), std::size_t{3});
+		m_panel->reload();
+		m_panel->table()->selectRow(0);
+		QVERIFY(m_panel->removeItems());
+		QCOMPARE(m_clip->notes().size(), std::size_t{2});
+		QVERIFY(noteAt(m_clip, 0, 60) == nullptr);
+		QVERIFY(undo());
+		QCOMPARE(m_clip->notes().size(), std::size_t{3});
+	}
+
+	void theSelectionFollowsBothWays()
+	{
+		m_panel->table()->selectRow(1);
+		QVERIFY(noteAt(m_clip, 0, 64)->selected());
+		QVERIFY(!noteAt(m_clip, 0, 60)->selected());
+		QVERIFY(invoke(QStringLiteral("note.select"), {{QStringLiteral("clip"), m_editor->clipId()},
+			{QStringLiteral("notes"), QJsonArray{control::noteIdOf(noteAt(m_clip, 192, 62))}}}).ok);
+		m_panel->reload();
+		const QModelIndexList rows = m_panel->table()->selectionModel()->selectedRows();
+		QCOMPARE(rows.size(), 1);
+		QCOMPARE(rows.first().row(), 2);
+	}
+
+	void theControllerListEditsTheLane()
+	{
+		m_editor->setControllerLane(QStringLiteral("cc:7"));
+		ItemListPanel* points = ItemListPanel::open(m_editor, QStringLiteral("controller"),
+			[this](QObject* parent) { return itemlists::controllerPoints(m_editor, parent); });
+		QCOMPARE(points->table()->model()->rowCount(), 0);
+		QVERIFY(points->insertItem());
+		points->reload();
+		QCOMPARE(points->table()->model()->rowCount(), 1);
+		QVERIFY(edit(points, 0, 1, QStringLiteral("100")));
+		const ControllerLane* lane = m_clip->controllers().lane(ControllerKind::ControlChange, 7);
+		QVERIFY(lane != nullptr);
+		QCOMPARE(lane->points.front().value, 100);
+		points->reload();
+		points->table()->selectRow(0);
+		QVERIFY(points->removeItems());
+		QVERIFY(m_clip->controllers().lane(ControllerKind::ControlChange, 7) == nullptr);  // no points: no lane
+		QVERIFY(undo());
+		QVERIFY(m_clip->controllers().lane(ControllerKind::ControlChange, 7) != nullptr);
+	}
+
+	void theCommandOpensAndClosesTheList()
+	{
+		m_panel->close();
+		QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+		const ControlResult opened = invoke(QStringLiteral("window.item_list"), {{QStringLiteral("surface"), QStringLiteral("notes")}});
+		QVERIFY2(opened.ok, qPrintable(opened.errorMessage));
+		QVERIFY(opened.result.value(QStringLiteral("visible")).toBool());
+		QCOMPARE(opened.result.value(QStringLiteral("count")).toInt(), 3);
+		QCOMPARE(opened.result.value(QStringLiteral("rows")).toArray().first().toObject().value(QStringLiteral("key")).toString(),
+			NoteGrid::keyName(60));
+		QVERIFY(ItemListPanel::find(m_editor->canvas(), QStringLiteral("notes")) != nullptr);
+		const ControlResult closed = invoke(QStringLiteral("window.item_list"), {{QStringLiteral("surface"), QStringLiteral("notes")}});
+		QVERIFY(closed.ok);
+		QVERIFY(!closed.result.value(QStringLiteral("visible")).toBool());  // toggled
+		QCOMPARE(invoke(QStringLiteral("window.item_list"), {{QStringLiteral("surface"), QStringLiteral("xy")}}).errorKind, ControlErrorKind::NotFound);
+		QCOMPARE(invoke(QStringLiteral("window.item_list"), {{QStringLiteral("surface"), QStringLiteral("piano")}}).errorKind,
+			ControlErrorKind::InvalidArgs);
+	}
+
+	void theAuditRunsItsChecksSeparately()
+	{
+		QWidget root;
+		for (int strip = 0; strip < 2; ++strip)
+		{
+			auto* group = new QWidget(&root);
+			auto* mute = new QPushButton(QStringLiteral("Mute"), group);
+			mute->setObjectName(QStringLiteral("mute%1").arg(strip));
+		}
+		root.show();
+		QJsonObject report = auditAccessibility(&root, false, {QStringLiteral("duplicates")});
+		QCOMPARE(report.value(QStringLiteral("duplicates_count")).toInt(), 2);  // nothing tells the two apart
+		QVERIFY(!report.contains(QStringLiteral("unnamed")));  // a check not run is not reported
+		QCOMPARE(report.value(QStringLiteral("summary")).toObject().keys(), QStringList{QStringLiteral("duplicates")});
+		int strip = 0;
+		for (QWidget* group : root.findChildren<QWidget*>(QString(), Qt::FindDirectChildrenOnly))
+		{
+			group->setAccessibleName(QStringLiteral("Strip %1").arg(++strip));
+		}
+		report = auditAccessibility(&root, false, {QStringLiteral("duplicates"), QStringLiteral("focus")});
+		QCOMPARE(report.value(QStringLiteral("duplicates_count")).toInt(), 0);  // each strip's name tells them apart
+		QVERIFY(report.contains(QStringLiteral("unreachable")));
+		QCOMPARE(accessibilityCheckNames().size(), 5);
+		QVERIFY(auditAccessibility(&root, false).contains(QStringLiteral("unnamed_count")));  // the old form runs them all
+	}
+
+	void announcementsFollowTheLevelAndTheRepeatWindow()
+	{
+		QVERIFY(a11y::shouldAnnounce(QStringLiteral("Saved one"), a11y::Politeness::Polite));
+		QVERIFY2(!a11y::shouldAnnounce(QStringLiteral("Saved one"), a11y::Politeness::Polite), "the same message within a second");
+		const ControlResult errorsOnly = invoke(QStringLiteral("view.announcements"), {{QStringLiteral("level"), QStringLiteral("errors")}});
+		QVERIFY2(errorsOnly.ok, qPrintable(errorsOnly.errorMessage));
+		QCOMPARE(a11y::announceLevel(), a11y::AnnounceLevel::Errors);
+		QVERIFY(!a11y::shouldAnnounce(QStringLiteral("Recording"), a11y::Politeness::Polite));
+		QVERIFY(a11y::shouldAnnounce(QStringLiteral("Not done: locked"), a11y::Politeness::Assertive));
+		QVERIFY(undo());
+		QCOMPARE(a11y::announceLevel(), a11y::AnnounceLevel::All);
+		QCOMPARE(invoke(QStringLiteral("view.announcements"), {{QStringLiteral("level"), QStringLiteral("loud")}}).errorKind,
+			ControlErrorKind::InvalidArgs);
+	}
+
+	void aSaveIsAnnounced()
+	{
+		a11y::watchSongTransitions();
+		Song* song = Engine::getSong();
+		song->setModified();
+		song->noteProjectSaved(m_home.filePath(QStringLiteral("tune.mmpz")));
+		QTRY_COMPARE(a11y::lastAnnouncement(), QStringLiteral("Saved tune.mmpz"));
+	}
+
+private:
+	QTemporaryDir m_home;
+	InstrumentTrack* m_track = nullptr;
+	MidiClip* m_clip = nullptr;
+	NoteEditor* m_editor = nullptr;
+	ItemListPanel* m_panel = nullptr;
+};
+
+QTEST_MAIN(ItemListPanelTest)
+#include "ItemListPanelTest.moc"

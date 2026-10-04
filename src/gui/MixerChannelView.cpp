@@ -63,6 +63,7 @@
 #include "RackMenu.h"
 #include "SendButtonIndicator.h"
 #include "MixerHardwareMenu.h"
+#include "MixerStripTags.h"
 #include "ShellCommandMenus.h"
 #include "Song.h"
 
@@ -178,11 +179,18 @@ MixerChannelView::MixerChannelView(QWidget* parent, MixerView* mixerView, int ch
 	mainLayout->setContentsMargins(4, 4, 4, 4);
 	mainLayout->setSpacing(2);
 
+	// 0.5.0 theme 16: the type badge on top; the routing and mode lines under the name (MixerStripTags.h).
+	m_typeBadge = mixerstriptags::makeBadge(this);
+	m_routingLine = mixerstriptags::makeLine(this, QStringLiteral("mixerRoutingLine"));
+	m_stateLine = mixerstriptags::makeLine(this, QStringLiteral("mixerStateLine"));
+	mainLayout->addWidget(m_typeBadge, 0, Qt::AlignHCenter);
 	mainLayout->addWidget(m_receiveArrowOrSendButton, 0, Qt::AlignHCenter);
 	mainLayout->addWidget(m_sendKnob, 0, Qt::AlignHCenter);
 	mainLayout->addWidget(m_sendArrow, 0, Qt::AlignHCenter);
 	mainLayout->addWidget(m_channelNumberLcd, 0, Qt::AlignHCenter);
 	mainLayout->addWidget(m_renameLineEdit, 0, Qt::AlignHCenter);
+	mainLayout->addWidget(m_routingLine, 0, Qt::AlignHCenter);
+	mainLayout->addWidget(m_stateLine, 0, Qt::AlignHCenter);
 	mainLayout->addLayout(soloMuteLayout);
 	mainLayout->addWidget(m_panKnob, 0, Qt::AlignHCenter);
 	// 0.5.0 L10: the rack's first four macros (MX-090) and the inserts by name (MX-073); MixerViewOptions shows them.
@@ -421,10 +429,11 @@ void MixerChannelView::renameFinished()
 	const auto mc = mixerChannel();
 	if (!newName.isEmpty() && mc->m_name != newName)
 	{
-		mc->m_name = newName;
-		m_renameLineEdit->setText(elideName(newName));
-		Engine::getSong()->setModified();
+		// 0.5.0 wave 3: through mixer.rename_channel - one undo step, and the same path an agent takes.
+		runCommand(this, CommandCall{QStringLiteral("mixer.rename_channel"),
+			{{QStringLiteral("channel"), control::channelIdOf(mc)}, {QStringLiteral("name"), newName}}, {}, QString(), false});
 	}
+	m_renameLineEdit->setText(elideName(mc->m_name));
 
 	setToolTip(mc->m_name);
 	setAccessibleName(mc->m_name);
@@ -525,6 +534,14 @@ void MixerChannelView::moveChannelRight()
 {
 	auto mix = getGUI()->mixerView();
 	mix->moveChannelRight(m_channelIndex);
+}
+
+void MixerChannelView::syncName()
+{
+	const MixerChannel* mc = mixerChannel();
+	if (m_inRename || mc == nullptr) { return; }
+	const QString shown = elideName(mc->m_name);
+	if (m_renameLineEdit->text() != shown) { m_renameLineEdit->setText(shown); }
 }
 
 QString MixerChannelView::elideName(const QString& name)

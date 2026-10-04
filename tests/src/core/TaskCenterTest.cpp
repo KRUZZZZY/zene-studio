@@ -1,0 +1,233 @@
+/*
+ * TaskCenterTest.cpp - the background jobs' one list and the task.* commands
+ *
+ * Copyright (c) 2026 Zene Studio contributors
+ *
+ * This file is part of LMMS - https://lmms.io
+ *
+ * This program is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU General Public
+ * License as published by the Free Software Foundation; either
+ * version 2 of the License, or (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public
+ * License along with this program (see COPYING); if not, write to the
+ * Free Software Foundation, Inc., 51 Franklin Street, Fifth Floor,
+ * Boston, MA 02110-1301 USA.
+ *
+ */
+
+/*! 0.5.0 UX decision (theme 24): a job reports begin, progress and end by its owner's own id; a report from a worker
+ *  thread reaches the list on the main thread; Cancel runs the job's own cancel and is refused for a job that has none
+ *  or has ended; an owner going away ends its tasks; the list keeps at most MaxFinished ended tasks. task.list,
+ *  task.cancel and task.clear_finished answer over the registry, and a render-queue job is listed from the moment it
+ *  is queued and cancelled through the list. */
+
+#include <QtTest>
+
+#include <QJsonArray>
+#include <QSignalSpy>
+#include <QTemporaryDir>
+
+#include <thread>
+
+#include "ControlRegistry.h"
+#include "Engine.h"
+#include "RenderQueue.h"
+#include "TaskCenter.h"
+
+using namespace lmms;
+
+namespace
+{
+
+ControlResult run(const QString& id, const QJsonObject& args = {})
+{
+	return ControlRegistry::instance()->invoke(id, args);
+}
+
+//! The listed task @a id; a default one (id 0) when there is none.
+TaskInfo taskWithId(int id)
+{
+	for (const TaskInfo& task : TaskCenter::instance().tasks())
+	{
+		if (task.id == id) { return task; }
+	}
+	return TaskInfo{};
+}
+
+} // namespace
+
+class TaskCenterTest : public QObject
+{
+	Q_OBJECT
+
+private:
+	int m_ownerA = 0;  //!< their addresses are the owners' keys
+	int m_ownerB = 0;
+
+private slots:
+	void initTestCase()
+	{
+		Engine::init(true);
+		ControlRegistry::setReady(true);
+	}
+
+	void cleanupTestCase()
+	{
+		ControlRegistry::setReady(false);
+		Engine::destroy();
+	}
+
+	void init() { TaskCenter::instance().clearFinished(); }
+
+	void aJobIsListedFromBeginToEnd()
+	{
+		TaskCenter& tasks = TaskCenter::instance();
+		QSignalSpy changed(&tasks, &TaskCenter::changed);
+		tasks.begin(&m_ownerA, 7, {QStringLiteral("render"), QStringLiteral("Render a.wav"), {}, {}, true});
+		const int id = tasks.idOf(&m_ownerA, 7);
+		QVERIFY(id > 0);
+		QCOMPARE(taskWithId(id).state, TaskState::Queued);
+		QVERIFY(!taskWithId(id).cancellable);
+		tasks.progress(&m_ownerA, 7, 0.25, QStringLiteral("a quarter"));
+		QCOMPARE(taskWithId(id).state, TaskState::Running);
+		QCOMPARE(taskWithId(id).progress, 0.25);
+		QCOMPARE(taskWithId(id).status, QStringLiteral("a quarter"));
+		tasks.finish(&m_ownerA, 7, TaskState::Done);
+		QCOMPARE(taskWithId(id).state, TaskState::Done);
+		QCOMPARE(taskWithId(id).progress, 1.0);
+		QVERIFY(taskWithId(id).finishedMs >= taskWithId(id).startedMs);
+		QCOMPARE(tasks.idOf(&m_ownerA, 7), -1);  // ended: no open task under that id
+		QVERIFY(changed.count() >= 3);
+		tasks.progress(&m_ownerA, 7, 0.5);  // a late report for an ended job changes nothing
+		QCOMPARE(taskWithId(id).state, TaskState::Done);
+	}
+
+	void aWorkersReportReachesTheMainThread()
+	{
+		TaskCenter& tasks = TaskCenter::instance();
+		tasks.begin(&m_ownerA, 1, {QStringLiteral("index"), QStringLiteral("Index"), {}, {}, false});
+		const int id = tasks.idOf(&m_ownerA, 1);
+		std::thread worker([this] {
+			TaskCenter::instance().progress(&m_ownerA, 1, 0.5);
+			TaskCenter::instance().finish(&m_ownerA, 1, TaskState::Failed, QStringLiteral("disk full"));
+		});
+		worker.join();
+		QCOMPARE(taskWithId(id).state, TaskState::Running);  // posted, not applied on the worker
+		QTRY_COMPARE(taskWithId(id).state, TaskState::Failed);
+		QCOMPARE(taskWithId(id).status, QStringLiteral("disk full"));
+	}
+
+	void cancelRunsTheJobsOwnCancel()
+	{
+		TaskCenter& tasks = TaskCenter::instance();
+		int calls = 0;
+		tasks.begin(&m_ownerA, 2, {QStringLiteral("stem_split"), QStringLiteral("Split"), [&calls] { ++calls; }, {}, false});
+		tasks.begin(&m_ownerA, 3, {QStringLiteral("mastering"), QStringLiteral("Master"), {}, {}, false});
+		const int cancellable = tasks.idOf(&m_ownerA, 2);
+		const int fixed = tasks.idOf(&m_ownerA, 3);
+		QVERIFY(taskWithId(cancellable).cancellable);
+		QVERIFY(tasks.cancel(cancellable));
+		QCOMPARE(calls, 1);
+		QVERIFY(taskWithId(cancellable).active());  // the job ends itself, at its next safe point
+		tasks.finish(&m_ownerA, 2, TaskState::Cancelled);
+		QVERIFY(!tasks.cancel(cancellable));  // ended
+		QVERIFY(!tasks.cancel(fixed));        // runs to its end
+		QVERIFY(!tasks.cancel(-5));
+		tasks.finish(&m_ownerA, 3, TaskState::Done);
+		QCOMPARE(calls, 1);
+	}
+
+	void aProbeIsReadWhenTheListIs()
+	{
+		TaskCenter& tasks = TaskCenter::instance();
+		double now = 0.1;
+		tasks.begin(&m_ownerB, 1, {QStringLiteral("video_audio"), QStringLiteral("Extract"), {}, [&now] { return now; }, false});
+		const int id = tasks.idOf(&m_ownerB, 1);
+		QCOMPARE(taskWithId(id).progress, 0.1);
+		now = 0.8;
+		QCOMPARE(taskWithId(id).progress, 0.8);
+		tasks.finish(&m_ownerB, 1, TaskState::Done);
+		now = 0.2;
+		QCOMPARE(taskWithId(id).progress, 1.0);  // an ended task's probe is dropped
+	}
+
+	void anOwnerGoingAwayEndsItsTasks()
+	{
+		TaskCenter& tasks = TaskCenter::instance();
+		tasks.begin(&m_ownerB, 4, {QStringLiteral("render"), QStringLiteral("R4"), [] {}, {}, true});
+		tasks.begin(&m_ownerB, 5, {QStringLiteral("render"), QStringLiteral("R5"), [] {}, {}, false});
+		const int four = tasks.idOf(&m_ownerB, 4);
+		tasks.forget(&m_ownerB);
+		QCOMPARE(taskWithId(four).state, TaskState::Cancelled);
+		QCOMPARE(tasks.idOf(&m_ownerB, 5), -1);
+	}
+
+	void theListKeepsABoundedHistory()
+	{
+		TaskCenter& tasks = TaskCenter::instance();
+		for (int i = 0; i < TaskCenter::MaxFinished + 5; ++i)
+		{
+			tasks.begin(&m_ownerA, 100 + i, {QStringLiteral("index"), QStringLiteral("I"), {}, {}, false});
+			tasks.finish(&m_ownerA, 100 + i, TaskState::Done);
+		}
+		QVERIFY(static_cast<int>(tasks.tasks().size()) <= TaskCenter::MaxFinished);
+		QVERIFY(tasks.clearFinished() > 0);
+		QVERIFY(tasks.tasks().empty());
+	}
+
+	void theCommandsListCancelAndClear()
+	{
+		TaskCenter& tasks = TaskCenter::instance();
+		bool stopped = false;
+		tasks.begin(&m_ownerA, 9, {QStringLiteral("stem_split"), QStringLiteral("Split mix"), [&stopped] { stopped = true; }, {}, false});
+		const int id = tasks.idOf(&m_ownerA, 9);
+		const ControlResult listed = run(QStringLiteral("task.list"));
+		QVERIFY2(listed.ok, qPrintable(listed.errorMessage));
+		QCOMPARE(listed.result.value(QStringLiteral("active")).toInt(), 1);
+		const QJsonObject row = listed.result.value(QStringLiteral("tasks")).toArray().last().toObject();
+		QCOMPARE(row.value(QStringLiteral("id")).toInt(), id);
+		QCOMPARE(row.value(QStringLiteral("state")).toString(), QStringLiteral("running"));
+		QVERIFY(row.value(QStringLiteral("cancellable")).toBool());
+
+		QCOMPARE(run(QStringLiteral("task.cancel"), {{QStringLiteral("id"), 99999}}).errorKind, ControlErrorKind::NotFound);
+		const ControlResult cancel = run(QStringLiteral("task.cancel"), {{QStringLiteral("id"), id}});
+		QVERIFY2(cancel.ok, qPrintable(cancel.errorMessage));
+		QVERIFY(stopped);
+		tasks.finish(&m_ownerA, 9, TaskState::Cancelled);
+		QCOMPARE(run(QStringLiteral("task.cancel"), {{QStringLiteral("id"), id}}).errorKind, ControlErrorKind::Refused);
+		const ControlResult cleared = run(QStringLiteral("task.clear_finished"));
+		QVERIFY2(cleared.ok, qPrintable(cleared.errorMessage));
+		QVERIFY(cleared.result.value(QStringLiteral("removed")).toInt() >= 1);
+		QCOMPARE(taskWithId(id).id, 0);
+	}
+
+	void aQueuedRenderIsListedAndCancelledThroughTheList()
+	{
+		QTemporaryDir dir;
+		RenderJob job;
+		job.kind = RenderJob::Kind::Convert;
+		job.source = dir.filePath(QStringLiteral("in.wav"));
+		job.out = dir.filePath(QStringLiteral("out.wav"));
+		const int queued = RenderQueue::instance().add(job);  // not started: it waits its turn
+		QVERIFY(queued > 0);
+		const int id = TaskCenter::instance().idOf(&RenderQueue::instance(), queued);
+		QVERIFY(id > 0);
+		QCOMPARE(taskWithId(id).state, TaskState::Queued);
+		QCOMPARE(taskWithId(id).kind, QStringLiteral("convert"));
+		QCOMPARE(taskWithId(id).title, QStringLiteral("Convert out.wav"));
+		QVERIFY(run(QStringLiteral("task.cancel"), {{QStringLiteral("id"), id}}).ok);
+		QCOMPARE(RenderQueue::instance().job(queued)->state, RenderJob::State::Cancelled);
+		QCOMPARE(taskWithId(id).state, TaskState::Cancelled);
+		RenderQueue::instance().clearFinished();
+	}
+};
+
+QTEST_GUILESS_MAIN(TaskCenterTest)
+#include "TaskCenterTest.moc"

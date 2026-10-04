@@ -34,21 +34,31 @@
  *    the device is deleted, so no control paints a deleted parameter.
  *  - 0.5.0 L10 (W3): the channel's level beside its heading, a parameter's alias on its card, the
  *    card's delta and fold buttons.
+ *  - 0.5.0 theme 12: cards update in place (a device added keeps the other cards), each card says its state in
+ *    words (bypassed, A/B) and has one action menu of registered commands; the device picker searches and words
+ *    each row's state.
+ *  - 0.5.0 theme 13: the Inspector keeps an unchanged section (and its focus) when the selection moves, says
+ *    "Multiple values" for notes that differ and gives a typed value to all of them, reads velocities in %, and
+ *    edits a channel's name in place (mixer.rename_channel).
  *  The device half is skipped when this host loads no effect module. */
 
 #include <QtTest>
 
+#include <algorithm>
 #include <cmath>
 
 #include <QJsonArray>
 #include <QJsonObject>
+#include <QLabel>
 #include <QLineEdit>
+#include <QPointer>
 #include <QMenu>
 #include <QToolButton>
 
 #include "ControlRegistry.h"
 #include "ControlVocabulary.h"
 #include "DevicePanel.h"
+#include "DevicePicker.h"
 #include "Effect.h"
 #include "EffectChain.h"
 #include "Engine.h"
@@ -424,12 +434,15 @@ private slots:
 		power->click();
 		QVERIFY(!effect->isEnabled());
 
-		// Removed over the socket: the card goes with it, and the panel redraws what is left.
+		// Removed over the socket: its card goes with it at once - before the device is deleted - and (theme 12) only
+		// its card: the other device's card stays, the same widget, through the redraw.
+		const QPointer<DeviceCard> other = second.isEmpty() ? nullptr : shownChildren<DeviceCard>(&panel).last();
 		QVERIFY(run(QStringLiteral("plugin.unload"), {{QStringLiteral("target"), channel}, {QStringLiteral("plugin"), first}}).ok);
-		QCOMPARE(cards(panel).size(), 0);
+		QCOMPARE(cards(panel).size(), second.isEmpty() ? 0 : 1);
 		QCoreApplication::processEvents();
 		QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
 		QCOMPARE(cards(panel).size(), second.isEmpty() ? 0 : 1);
+		if (!second.isEmpty()) { QVERIFY(!other.isNull() && other->isVisibleTo(&panel)); }
 		QVERIFY(run(QStringLiteral("control.undo")).ok);
 		QCoreApplication::processEvents();
 		QCOMPARE(cards(panel).size(), second.isEmpty() ? 1 : 2);
@@ -499,6 +512,181 @@ private slots:
 		QCOMPARE(drawn.last().toObject().value(QStringLiteral("plugin")).toString(), effect);
 		const bool hasInstrument = dynamic_cast<InstrumentTrack*>(resolved)->instrument() != nullptr;
 		QCOMPARE(drawn.size(), hasInstrument ? 2 : 1);
+		ShellSelection::instance()->setTrack(nullptr);
+	}
+
+	//! Theme 12: a device added redraws the panel in place - the cards already there are the same widgets - and a card
+	//! says its state in words: "Bypassed" once bypassed, the A/B slot heard once one is stored.
+	void theCardsStayInPlaceAndSayTheirState()
+	{
+		const int index = Engine::mixer()->createChannel();
+		const QString channel = control::channelIdOf(Engine::mixer()->mixerChannel(index));
+		const QString first = loadAnEffect(channel);
+		if (first.isEmpty()) { QSKIP("this host loads no effect module"); }
+		DevicePanel panel;
+		panel.resize(1200, 300);
+		panel.show();
+		ShellSelection::instance()->setChannel(channel);
+		panel.rebuild();
+		QCoreApplication::processEvents();
+		const QPointer<DeviceCard> card = shownChildren<DeviceCard>(&panel).first();
+		QVERIFY(!loadAnEffect(channel).isEmpty());
+		QCoreApplication::processEvents();
+		QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+		QCOMPARE(cards(panel).size(), 2);
+		QVERIFY2(!card.isNull() && card->isVisibleTo(&panel), "the first card was made again for a device added after it");
+		QVERIFY(run(QStringLiteral("plugin.bypass"), {{QStringLiteral("target"), channel}, {QStringLiteral("plugin"), first},
+			{QStringLiteral("bypass"), true}}).ok);
+		card->refreshActivity();
+		auto* state = card->findChild<QLabel*>(QStringLiteral("deviceState"));
+		QVERIFY(state != nullptr && state->text().contains(QStringLiteral("Bypassed")));
+		QVERIFY(state->accessibleName().contains(QStringLiteral("Bypassed")));  // a screen reader hears it too
+		QVERIFY(cards(panel).first().toObject().value(QStringLiteral("state")).toObject().value(QStringLiteral("bypassed")).toBool());
+		auto* ab = card->findChild<QToolButton*>(QStringLiteral("deviceAb"));
+		QVERIFY(ab != nullptr && !ab->isVisibleTo(card));  // no slot stored yet: A/B means nothing
+		QVERIFY(run(QStringLiteral("plugin.ab"), {{QStringLiteral("target"), channel}, {QStringLiteral("plugin"), first},
+			{QStringLiteral("action"), QStringLiteral("store")}, {QStringLiteral("slot"), QStringLiteral("b")}}).ok);
+		card->refreshActivity();
+		QVERIFY(ab->isVisibleTo(card));
+		QCOMPARE(ab->text(), QStringLiteral("B"));  // the letter, not a colour
+		QVERIFY(state->text().contains(QStringLiteral("Hearing B")));
+		ShellSelection::instance()->setTrack(nullptr);
+	}
+
+	//! Theme 12: the card's Actions button and its right-click offer one menu; its first part - bypass, editor,
+	//! presets, A/B, replace, move, remove - names registered commands, and Move Right is plugin.move, one undo step.
+	void theCardsActionMenuOffersEachAction()
+	{
+		const int index = Engine::mixer()->createChannel();
+		MixerChannel* mixerChannel = Engine::mixer()->mixerChannel(index);
+		const QString channel = control::channelIdOf(mixerChannel);
+		const QString first = loadAnEffect(channel);
+		if (first.isEmpty()) { QSKIP("this host loads no effect module"); }
+		const QString second = loadAnEffect(channel);
+		DevicePanel panel;
+		panel.resize(1200, 300);
+		panel.show();
+		ShellSelection::instance()->setChannel(channel);
+		panel.rebuild();
+		QCoreApplication::processEvents();
+		DeviceCard* card = shownChildren<DeviceCard>(&panel).first();
+		auto* actions = card->findChild<QToolButton*>(QStringLiteral("deviceActions"));
+		QVERIFY(actions != nullptr && actions->menu() != nullptr);
+		QVERIFY(!actions->accessibleName().isEmpty());
+		emit actions->menu()->aboutToShow();
+		QMenu* menu = actions->menu();
+		for (const QString& text : {QStringLiteral("Bypass"), QStringLiteral("Open Editor"), QStringLiteral("Replace With..."),
+				QStringLiteral("Move Left"), QStringLiteral("Move Right"), QStringLiteral("Remove")})
+		{
+			QAction* action = menuAction(menu, {text});
+			QVERIFY2(action != nullptr, qPrintable(text));
+			QVERIFY2(ControlRegistry::instance()->hasCommand(action->property("controlCommand").toString()), qPrintable(text));
+		}
+		QVERIFY(menuAction(menu, {QStringLiteral("Presets"), QStringLiteral("Load Preset...")}) != nullptr);
+		QVERIFY(menuAction(menu, {QStringLiteral("A/B"), QStringLiteral("Toggle A/B")}) != nullptr);
+		QVERIFY2(!menuAction(menu, {QStringLiteral("Move Left")})->isEnabled(), "the first device offered to move left");
+		if (second.isEmpty()) { ShellSelection::instance()->setTrack(nullptr); return; }
+		menuAction(menu, {QStringLiteral("Move Right")})->trigger();
+		QCOMPARE(control::effectIdOf(mixerChannel->m_fxChain.effects().back()), first);
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
+		QCOMPARE(control::effectIdOf(mixerChannel->m_fxChain.effects().front()), first);
+		ShellSelection::instance()->setTrack(nullptr);
+	}
+
+	//! Theme 12: the device picker lists the catalogue's effects with their type and format in words, and its search
+	//! filters them live; a search that matches nothing shows nothing.
+	void theDevicePickerSearchesAndWordsEachRow()
+	{
+		DevicePicker picker(DevicePicker::Kind::Effect, QStringLiteral("Add"));
+		if (picker.shownRows() == 0) { QSKIP("this host catalogues no effect"); }
+		const QString row = picker.shownRowText(0);
+		QVERIFY2(row.contains(QStringLiteral("Effect")), qPrintable(row));
+		const QString name = row.section(QStringLiteral(" | "), 0, 0);
+		picker.setQuery(name);
+		QVERIFY(picker.shownRows() >= 1);
+		QVERIFY(picker.shownRowText(0).contains(name));
+		picker.setQuery(QStringLiteral("zz-no-device-is-called-this"));
+		QCOMPARE(picker.shownRows(), 0);
+		QVERIFY(picker.selectedDevice().isEmpty());
+		picker.setQuery(QString());
+		QVERIFY(picker.selectedDevice().startsWith(QStringLiteral("dev-")) || picker.shownRows() > 0);
+	}
+
+	//! Theme 13: selecting another clip of the same track keeps the track section - the same widget, with the focus
+	//! where it was; the notes' fields say "Multiple values" when the notes differ, and a key typed there goes to all.
+	void theInspectorKeepsItsContextAndShowsMixedValues()
+	{
+		auto* track = Track::create(Track::Type::Instrument, Engine::getSong());
+		dynamic_cast<InstrumentTrack*>(track)->loadInstrument(QStringLiteral("tripleoscillator"));
+		auto* clip = dynamic_cast<MidiClip*>(track->createClip(TimePos(0)));
+		auto* other = dynamic_cast<MidiClip*>(track->createClip(TimePos(4 * 192)));
+		Note* low = clip->addNote(Note(TimePos(0), TimePos(0), 60, 100), false);
+		Note* high = clip->addNote(Note(TimePos(48), TimePos(0), 64, 80), false);
+		low->setSelected(true);
+		high->setSelected(true);
+		InspectorPanel inspector;
+		inspector.show();
+		inspector.activateWindow();
+		ShellSelection::instance()->setClip(clip);
+		inspector.rebuild();
+		QCoreApplication::processEvents();
+		auto* name = childNamed<QLineEdit>(&inspector, QStringLiteral("Track name"));
+		QVERIFY(name != nullptr);
+		name->setFocus();
+		const auto field = [&inspector](const QString& caption) -> ReadoutField* {
+			for (ReadoutField* f : inspector.findChildren<ReadoutField*>())
+			{
+				if (f->caption() == caption && f->isVisibleTo(&inspector)) { return f; }
+			}
+			return nullptr;
+		};
+		QVERIFY(field(QStringLiteral("Key")) != nullptr);
+		QVERIFY2(field(QStringLiteral("Key"))->valueText().contains(QStringLiteral("Multiple values")), qPrintable(field(QStringLiteral("Key"))->valueText()));
+		QVERIFY(field(QStringLiteral("Velocity"))->valueText().contains(QStringLiteral("Multiple values")));
+		QVERIFY(field(QStringLiteral("Selected notes"))->valueText().contains(QStringLiteral("2")));
+		QTest::mouseDClick(field(QStringLiteral("Key")), Qt::LeftButton);
+		auto* editor = field(QStringLiteral("Key"))->findChild<QLineEdit*>();
+		QVERIFY(editor != nullptr);
+		editor->setText(QStringLiteral("62"));
+		emit editor->editingFinished();
+		QCOMPARE(low->key(), 62);  // given to every selected note, not transposed by the first one's distance
+		QCOMPARE(high->key(), 62);
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
+		// The undo restored the clip's checkpoint, which makes its notes anew: the second note (velocity 80) is
+		// found again.
+		const auto restored = std::find_if(clip->notes().begin(), clip->notes().end(),
+			[](const Note* note) { return static_cast<int>(note->getVolume()) == 80; });
+		QVERIFY(restored != clip->notes().end());
+		QCOMPARE((*restored)->key(), 64);
+		ShellSelection::instance()->setClip(other);
+		inspector.rebuild();
+		QCoreApplication::processEvents();
+		QCOMPARE(childNamed<QLineEdit>(&inspector, QStringLiteral("Track name")), name);  // the track section stayed
+		QVERIFY(inspector.describe().value(QStringLiteral("sections")).toArray().contains(QStringLiteral("clip")));
+		ShellSelection::instance()->setTrack(nullptr);
+		delete track;
+	}
+
+	//! Theme 13: a channel's name is a field in the Inspector, and Enter renames it through mixer.rename_channel.
+	void theChannelsNameIsEditedInPlace()
+	{
+		const int index = Engine::mixer()->createChannel();
+		MixerChannel* mixerChannel = Engine::mixer()->mixerChannel(index);
+		const QString channel = control::channelIdOf(mixerChannel);
+		const QString before = mixerChannel->m_name;
+		InspectorPanel inspector;
+		inspector.show();
+		ShellSelection::instance()->setChannel(channel);
+		inspector.rebuild();
+		QCoreApplication::processEvents();
+		auto* name = childNamed<QLineEdit>(&inspector, QStringLiteral("Channel name"));
+		QVERIFY(name != nullptr);
+		QCOMPARE(name->text(), before);
+		name->setText(QStringLiteral("Vocals"));
+		emit name->editingFinished();
+		QCOMPARE(mixerChannel->m_name, QStringLiteral("Vocals"));
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
+		QCOMPARE(mixerChannel->m_name, before);
 		ShellSelection::instance()->setTrack(nullptr);
 	}
 };

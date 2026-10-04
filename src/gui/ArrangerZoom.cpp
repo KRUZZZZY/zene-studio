@@ -25,8 +25,10 @@
 #include "ArrangerZoom.h"
 
 #include <algorithm>
+#include <cmath>
 #include <limits>
 
+#include <QElapsedTimer>
 #include <QScrollBar>
 #include <QVector>
 
@@ -44,7 +46,17 @@ namespace
 {
 
 constexpr int HistoryDepth = 32;
+constexpr double WheelNotch = 120.0;  //!< QWheelEvent's angleDelta for one mouse notch
 QVector<int> s_history;  //!< earlier zoom model values, newest last (UI thread only)
+
+//! The wheel gesture under way (UI thread only): the part of a step not yet zoomed, and whether it is remembered.
+struct WheelGesture
+{
+	QElapsedTimer since;
+	double remainder = 0.0;
+	bool remembered = false;
+};
+WheelGesture s_wheel;
 
 } // namespace
 
@@ -123,6 +135,28 @@ void zoomAround(SongEditor* editor, int value, tick_t anchor)
 	const tick_t start = editor->currentPosition().getTicks();
 	editor->zoomingModel()->setValue(value);
 	keepInPlace(editor, anchor, before, start);
+}
+
+void wheelZoom(SongEditor* editor, int delta, bool fine, tick_t anchor)
+{
+	// A pause ends the gesture; a turn the other way keeps it but not the leftover of the turn before.
+	const double steps = delta / WheelNotch * (fine ? 1 : WheelNotchSteps);
+	const bool newGesture = !s_wheel.since.isValid() || s_wheel.since.elapsed() > WheelBurstMs;
+	if (newGesture) { s_wheel.remembered = false; }
+	if (newGesture || s_wheel.remainder * steps < 0) { s_wheel.remainder = 0.0; }
+	s_wheel.since.start();
+	s_wheel.remainder += steps;
+	const int whole = static_cast<int>(std::trunc(s_wheel.remainder));
+	if (whole == 0) { return; }
+	s_wheel.remainder -= whole;
+	IntModel* model = editor->zoomingModel();
+	const int before = model->value();
+	zoomAround(editor, std::clamp(before + whole, model->minValue(), model->maxValue()), anchor);
+	if (model->value() != before && !s_wheel.remembered)
+	{
+		remember(before);
+		s_wheel.remembered = true;
+	}
 }
 
 void remember(int value)

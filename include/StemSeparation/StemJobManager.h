@@ -147,6 +147,8 @@ signals:
 
 private:
 	void workerLoop();
+	//! 0.5.0 theme 24: the job signals reported to the task area (TaskCenter.h).
+	void reportToTaskArea();
 	void runJob(const std::shared_ptr<Job>& job);
 	//! The provisioner step of runJob: false when it ended the job (the
 	//! terminal state and its signal are already published).

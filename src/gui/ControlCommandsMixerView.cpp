@@ -27,7 +27,9 @@
  *  folder hides (folding itself is track.folder_set_collapsed, the arranger's own flag) - and, from
  *  L08, the view options (MixerViewOptions.h: sections, strip width, filter, meter mode and scale).
  *  0.5.0 theme 6: the answer names the return the faders show and what every fader drives, so an agent
- *  sees what the banner and the strips show. Interface state: nothing is journalled. */
+ *  sees what the banner and the strips show. 0.5.0 theme 16: the view (mix / routing) and the density
+ *  (compact / expanded), and per channel what its strip says - its type, format, routes by name, hardware
+ *  output and modes (MixerStripInfo.h). Interface state: nothing is journalled. */
 
 #include <QJsonArray>
 #include <QTimer>
@@ -40,6 +42,7 @@
 #include "GuiApplication.h"
 #include "Mixer.h"
 #include "MixerOverlays.h"
+#include "MixerStripInfo.h"
 #include "MixerView.h"
 #include "MixerViewOptions.h"
 
@@ -64,6 +67,21 @@ QJsonArray faderRoles()
 	return faders;
 }
 
+//! Theme 16: what every channel's strip says - type, format, inputs, outputs, hardware output, modes - by name.
+QJsonArray stripInfos()
+{
+	const gui::mixerstripinfo::Context context = gui::mixerstripinfo::buildContext();
+	QJsonArray strips;
+	for (int i = 0; i < Engine::mixer()->numChannels(); ++i)
+	{
+		QJsonObject strip = gui::mixerstripinfo::toJson(gui::mixerstripinfo::describe(*Engine::mixer(), i, context));
+		strip.insert(QStringLiteral("channel"), channelIdOf(Engine::mixer()->mixerChannel(i)));
+		strip.insert(QStringLiteral("name"), Engine::mixer()->mixerChannel(i)->m_name);
+		strips.append(strip);
+	}
+	return strips;
+}
+
 //! The mixer on screen follows a mode change now, not at its next half-second sync (queued: the call may
 //! come from a menu on one of its strips, which a sync can rebuild).
 void syncMixerViewSoon()
@@ -84,6 +102,7 @@ QJsonObject mixerViewState()
 	state.insert(QStringLiteral("sends_on_faders"), sends >= 0 ? channelIdOf(Engine::mixer()->mixerChannel(sends)) : QString());
 	state.insert(QStringLiteral("sends_on_faders_name"), sends >= 0 ? Engine::mixer()->mixerChannel(sends)->m_name : QString());
 	state.insert(QStringLiteral("faders"), faderRoles());
+	state.insert(QStringLiteral("strips"), stripInfos());
 	state.insert(QStringLiteral("folded"), folded);
 	return state;
 }
@@ -114,7 +133,11 @@ ControlResult mixerView(const QJsonObject& args)
 		gui::mixeroverlays::setSendsOnFaders(index);
 		syncMixerViewSoon();
 	}
-	if (args.size() > (sendsGiven ? 1 : 0)) { gui::mixerviewoptions::setOptions(next); }
+	if (args.size() > (sendsGiven ? 1 : 0))
+	{
+		gui::mixerviewoptions::setOptions(next);
+		syncMixerViewSoon();  // theme 16: the strips and the mode bar follow an agent's change at once
+	}
 	return ControlResult::success(mixerViewState());
 }
 
@@ -138,20 +161,30 @@ void registerMixerViewCommands(ControlRegistry& registry)
 		"'show_pan', 'show_number', 'show_meter_info', 'show_inserts', 'show_macros' (a strip's sections - the meter line is "
 		"the gain reduction and the clip light, the inserts are listed by name, the macros are the rack's first four as knobs), 'strip_width' (narrow / normal / wide), 'filter' (all / instruments / audio / returns / used - "
 		"the channels a track plays into or a send reaches), 'meter_mode' (peak - after the fader -, rms, pre_fader) and "
-		"'meter_scale' (db42 - the default range -, db60, db24, linear). Interface state: nothing is journalled.");
+		"'meter_scale' (db42 - the default range -, db60, db24, linear). Theme 16: 'view' (mix - levels, pan and processing, "
+		"the default -, routing - each strip lists where its signal comes from and goes by name, the sends row always "
+		"shown, inserts and macros left to the mix view) and 'density' (expanded - the default, every section the options "
+		"show -, compact - no inserts, no macros, in the mix view no sends row, routing on one line); a mode bar across "
+		"the mixer shows and sets both, the filter and the modes. The answer adds 'strips': per channel its 'type' (master, "
+		"return, group, track, channel), 'format' (stereo, LCR, Quad, 5.1, 7.1), 'inputs' and 'outputs' (by name; each "
+		"output with amount, pre_fader, enabled), 'hardware' (its hardware output's label, empty for none) and 'states' "
+		"(afl, pfl, solo_safe, surround_pan, cue, hardware_insert). Interface state: nothing is journalled.");
 	const QJsonObject fields{{QStringLiteral("show_sends"), booleanProperty()}, {QStringLiteral("show_pan"), booleanProperty()},
 		{QStringLiteral("show_number"), booleanProperty()}, {QStringLiteral("show_meter_info"), booleanProperty()},
 		{QStringLiteral("show_inserts"), booleanProperty()}, {QStringLiteral("show_macros"), booleanProperty()},
 		{QStringLiteral("strip_width"), enumProperty(gui::mixerviewoptions::widthNames())},
 		{QStringLiteral("filter"), enumProperty(gui::mixerviewoptions::filterNames())},
 		{QStringLiteral("meter_mode"), enumProperty(gui::mixerviewoptions::meterModeNames())},
-		{QStringLiteral("meter_scale"), enumProperty(gui::mixerviewoptions::meterScaleNames())}};
+		{QStringLiteral("meter_scale"), enumProperty(gui::mixerviewoptions::meterScaleNames())},
+		{QStringLiteral("view"), enumProperty(gui::mixerviewoptions::viewNames())},
+		{QStringLiteral("density"), enumProperty(gui::mixerviewoptions::densityNames())}};
 	QJsonObject args = fields;
 	args.insert(QStringLiteral("sends_on_faders"), stringProperty());
 	QJsonObject result = args;
 	result.insert(QStringLiteral("folded"), arrayProperty());
 	result.insert(QStringLiteral("sends_on_faders_name"), stringProperty());
 	result.insert(QStringLiteral("faders"), arrayProperty());
+	result.insert(QStringLiteral("strips"), arrayProperty());
 	cmd.argsSchema = objectSchema(args);
 	cmd.resultSchema = objectSchema(result);
 	cmd.handler = mixerView;

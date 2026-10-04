@@ -201,8 +201,9 @@ Palette paletteNamed(const QString& name)
 
 const Palette& palette()
 {
-	// Read once, at the first draw: the chosen palette with the user's overrides on it.
-	static const Palette p = withOverrides(paletteNamed(appearance::effectivePalette(appearance::options())), themeOverrides());
+	// Read once, at the first draw: the chosen palette with the user's overrides on it. The options are the ones this
+	// run started with (Appearance.h), which is what every reply's restart_pending is measured against.
+	static const Palette p = withOverrides(paletteNamed(appearance::effectivePalette(appearance::startedWith())), themeOverrides());
 	return p;
 }
 
@@ -243,7 +244,7 @@ QJsonObject themeOverrides()
 
 bool accessibleMode()
 {
-	static const bool on = appearance::options().accessible;  // read once
+	static const bool on = appearance::startedWith().accessible;  // read once
 	return on;
 }
 
@@ -334,6 +335,12 @@ std::vector<ContrastPair> contrastPairs(const Palette& p)
 		{"muted text on raised", p.textMuted, p.raised, 4.5},
 		{"muted text on control", p.textMuted, p.control, 4.5},
 		{"muted text on selected", p.textMuted, p.selected, 4.5},
+		// 0.5.0 theme 20: the surfaces a custom colour could otherwise slip past unchecked.
+		{"muted text on base", p.textMuted, p.base, 4.5},
+		{"muted text on hovered control", p.textMuted, p.controlHover, 4.5},
+		{"warning on panel", p.warning, p.panel, 3.0},
+		{"warning on raised", p.warning, p.raised, 3.0},
+		{"accent toggle on control", p.accent, p.control, 3.0},
 		{"text on accent", p.textOnAccent, p.accent, 4.5},
 		{"text on hovered accent", p.textOnAccent, p.accentHover, 4.5},
 		{"accent text on panel", p.accent, p.panel, 4.5},
@@ -341,6 +348,8 @@ std::vector<ContrastPair> contrastPairs(const Palette& p)
 		{"focus ring on panel", p.focusRing, p.panel, 3.0},
 		{"focus ring on control", p.focusRing, p.control, 3.0},
 		{"focus ring on selected", p.focusRing, p.selected, 3.0},
+		{"focus ring on raised", p.focusRing, p.raised, 3.0},
+		{"focus ring on hovered control", p.focusRing, p.controlHover, 3.0},
 		{"record on raised", p.record, p.raised, 3.0},
 		{"play on raised", p.play, p.raised, 3.0},
 		{"playhead on white-key row", p.playhead, p.keyWhiteRow, 3.0},

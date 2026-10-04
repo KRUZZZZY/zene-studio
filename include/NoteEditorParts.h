@@ -27,6 +27,7 @@
 
 #include <map>
 
+#include <QPoint>
 #include <QWidget>
 
 #include "lmms_export.h"
@@ -42,6 +43,7 @@ namespace lmms::gui
 {
 
 class NoteEditor;
+struct LaneScale;
 struct NoteEditorState;
 
 //! The key column: one row per visible key, the C of each octave named, the in-scale keys
@@ -119,24 +121,35 @@ public:
 	int shownValue(const Note& note) const;
 	//! Drop a stroke in flight (the clip changed or went): the release writes nothing.
 	void cancelDrag();
+	//! 0.5.0 theme 11: what the lane reads out now - the value under the pointer (and the note there) while it
+	//! hovers or draws, else the selected notes' values ("" with neither). The header shows the selection's.
+	QString readout() const;
+	QString selectionReadout() const;
 
 protected:
 	void paintEvent(QPaintEvent* event) override;
 	void mousePressEvent(QMouseEvent* event) override;
 	void mouseMoveEvent(QMouseEvent* event) override;
 	void mouseReleaseEvent(QMouseEvent* event) override;
+	void leaveEvent(QEvent* event) override;
 
 private:
 	int valueAtY(int y) const;
 	int yOfValue(int value) const;
 	void drawAt(const QPoint& pos);
 	void commit();
+	//! The stems, each in its value's place, its state in its head's shape (NoteLanePaint.cpp).
+	void paintStems(QPainter& p, int baseY) const;
+	//! The visible note whose stem is nearest @a x within the stem tolerance, or null.
+	const Note* stemAt(int x) const;
+	QString pointerReadout(const LaneScale& scale) const;
 
 	NoteEditor* m_editor;
 	NoteEditorState& m_state;
 	std::map<int, int> m_pending;  //!< Note::id() -> value drawn but not yet written
 	int m_lastValue = 0;           //!< the value the stroke drew last: the new notes' velocity on the Velocity lane
 	bool m_drawing = false;
+	QPoint m_hover{-1, -1};        //!< the pointer over the lane, or x < 0 when it is elsewhere
 };
 
 } // namespace lmms::gui

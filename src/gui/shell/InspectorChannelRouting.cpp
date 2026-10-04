@@ -65,9 +65,9 @@ QLabel* heading(const QString& text, QWidget* parent)
 	return label;
 }
 
-Knob* smallKnob(FloatModel* model, const QString& label, QWidget* parent)
+Knob* smallKnob(FloatModel* model, const QString& label, QWidget* parent, Knob* made = nullptr)
 {
-	auto* knob = new Knob(KnobType::Small17, label, parent);
+	auto* knob = made != nullptr ? made : new Knob(KnobType::Small17, label, parent);
 	knob->setFont(tokens::font(tokens::TextRole::Small));
 	knob->setModel(model);
 	knob->setHintText(label + QLatin1Char(':'), QString());
@@ -165,7 +165,10 @@ void addSends(QVBoxLayout* column, MixerChannel* channel, const QString& id, QWi
 		const QString to = control::channelIdOf(route->receiver());
 		const QString toName = channelName(route->receiver());
 		auto* name = new QLabel(toName + (route->preFader() ? QObject::tr(" (pre)") : QString()), parent);
-		Knob* amount = smallKnob(route->amount(), QObject::tr("Send"), parent);
+		// Theme 13: a send's level in dB (its 0..1 gain, unity at 1), typed in dB too.
+		auto* level = new VolumeKnob(KnobType::Small17, QObject::tr("Send"), parent);
+		level->setZeroDbfsPoint(1.f);
+		Knob* amount = smallKnob(route->amount(), QObject::tr("Send"), parent, level);
 		amount->setAccessibleName(QObject::tr("Send level to %1").arg(toName));  // every row's knobs read apart
 		Knob* pan = smallKnob(route->pan(), QObject::tr("Send pan"), parent);
 		pan->setAccessibleName(QObject::tr("Send pan to %1").arg(toName));

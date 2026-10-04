@@ -40,6 +40,9 @@ namespace lmms::gui
 {
 
 //! The square: a dot at (x, y) in 0..1 (y up); a press or a drag moves it and reports the new place.
+//! 0.5.0 theme 10: the keys move it too - Left / Right and Up / Down 1 % (with Shift, or Page Up / Page Down for Y,
+//! 10 %), Home / End put X at its ends; each press reports the new place like a drag step. A screen reader reads it
+//! as a slider whose value is both axes ("X Cutoff 30 %, Y Drive 90 %"); Ctrl+Shift+L opens the editable axis list.
 class LMMS_EXPORT XyPadArea : public QWidget
 {
 	Q_OBJECT
@@ -47,17 +50,26 @@ public:
 	explicit XyPadArea(QWidget* parent = nullptr);
 	void setPoint(QPointF point);
 	QPointF point() const { return m_point; }
+	//! The names the value is read with ("Cutoff", "Drive").
+	void setAxisNames(const QString& x, const QString& y);
+	QString accessibleValue() const;
 	std::function<void(QPointF)> moved;
 	QSize sizeHint() const override { return {220, 220}; }
 
 protected:
+	bool event(QEvent* event) override;
 	void paintEvent(QPaintEvent* event) override;
 	void mousePressEvent(QMouseEvent* event) override;
 	void mouseMoveEvent(QMouseEvent* event) override;
+	void keyPressEvent(QKeyEvent* event) override;
 
 private:
 	void moveTo(const QPoint& at);
+	//! The place a key moves the dot to, or the current one for a key the pad does not use.
+	QPointF keyed(const QKeyEvent* event) const;
 	QPointF m_point{0.5, 0.5};
+	QString m_xName;
+	QString m_yName;
 };
 
 /*! 0.5.0 L10 (MX-110): a mixer channel rack's two macros played together on one pad - X drives one
@@ -70,6 +82,19 @@ class LMMS_EXPORT XyPadDialog : public QDialog
 	Q_OBJECT
 public:
 	XyPadDialog(const QString& channel, QWidget* parent = nullptr);
+
+	//! What the editable axis list (theme 10) reads and writes: the rack's channel, an axis's macro id
+	//! ("macro-<n>", empty when the rack has none) and name, and the pad.
+	QString channel() const { return m_channel; }
+	QString macroId(bool y) const;
+	QString macroName(bool y) const;
+	XyPadArea* area() const { return m_area; }
+	//! Show where the chosen macros stand now (after an edit made elsewhere).
+	void refresh() { syncPoint(); }
+
+signals:
+	//! The dot moved or the axes changed: the list re-reads.
+	void changed();
 
 private:
 	void fillMacros();

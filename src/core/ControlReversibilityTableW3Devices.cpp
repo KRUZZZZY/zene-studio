@@ -67,6 +67,8 @@ const ReversibilityRow kW3DeviceRows[] = {
 		"Clip checkpoint", ""),
 	R("mixer.console_apply", RC::TrueInverse, true, "it adds the Console device to every channel, changes the ones there, or removes them",
 		"action checkpoints (each added device taken out, each removed one recreated) and model checkpoints, merged into one step", ""),
+	R("plugin.move", RC::TrueInverse, true, "it moves a device to another slot of its chain (the signal order)",
+		"action checkpoint: the recorded undo step moves the device at the new slot back to its old one", ""),
 };
 
 #undef R

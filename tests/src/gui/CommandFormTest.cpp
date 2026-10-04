@@ -49,6 +49,7 @@
 #include "CommandMetadata.h"
 #include "CommandListDialog.h"
 #include "ControlRegistry.h"
+#include "ListTable.h"
 #include "MenuTestSupport.h"
 #include "ShortcutMap.h"
 
@@ -433,6 +434,47 @@ private slots:
 		QCOMPARE(rows.size(), 2);
 		QCOMPARE(rows.at(1).toObject().value(QStringLiteral("k")).toInt(), 2);
 		QCOMPARE(rows.at(1).toObject().value(QStringLiteral("parent_id")).toString(), QStringLiteral("g"));
+	}
+
+	//! Design theme 18: the shared list finds, sorts by a column (numbers by value, a third click back to the list's
+	//! order), runs its primary action on Enter - on the row chosen, wherever the sort put it - offers every action
+	//! from the Menu key or Shift+F10, and keeps each outcome in its Results log.
+	void theListFindsSortsAndActsFromTheKeyboard()
+	{
+		ListSpec spec;
+		spec.title = QStringLiteral("Rows");
+		spec.listId = QStringLiteral("formtest.list");
+		spec.arrayKey = QStringLiteral("rows");
+		spec.columns = {QStringLiteral("id"), QStringLiteral("n")};
+		RowAction take;
+		take.label = QStringLiteral("Take");
+		take.id = QStringLiteral("formtest.take");
+		take.fromRow = {{QStringLiteral("item"), QStringLiteral("id")}};
+		spec.actions = {take};
+		CommandListDialog dialog(spec);
+		QCOMPARE(dialog.find(QStringLiteral("r2")), 1);
+		QCOMPARE(dialog.find(QString()), 2);
+		ListTable* table = dialog.table();
+		table->sortRows(1, false);  // by n, highest first
+		QCOMPARE(table->item(0, 0)->text(), QStringLiteral("r2"));
+		table->selectDataRow(0);  // r1, shown second now
+		QCOMPARE(table->currentRow(), 1);
+		g_lastArgs = {};
+		QTest::keyClick(table, Qt::Key_Return);
+		QCOMPARE(g_lastArgs.value(QStringLiteral("item")).toString(), QStringLiteral("r1"));
+		QCOMPARE(table->currentDataRow(), 0);  // the refresh after the action kept the row and the sort
+		QCOMPARE(table->item(0, 0)->text(), QStringLiteral("r2"));
+		QVERIFY2(dialog.resultsText().contains(QStringLiteral("Take: done")), qPrintable(dialog.resultsText()));
+		QObject::disconnect(table, &ListTable::rowMenuRequested, &dialog, nullptr);  // no menu to block the test
+		QSignalSpy menus(table, &ListTable::rowMenuRequested);
+		QTest::keyClick(table, Qt::Key_F10, Qt::ShiftModifier);
+		QCOMPARE(menus.count(), 1);
+		QCOMPARE(menus.first().first().toInt(), 0);
+		QMenu menu;
+		dialog.buildRowMenu(&menu, 0);
+		QVERIFY(menu.defaultAction() != nullptr && menu.defaultAction()->text() == QStringLiteral("Take"));
+		table->sortRows(-1);
+		QCOMPARE(table->item(0, 0)->text(), QStringLiteral("r1"));
 	}
 };
 

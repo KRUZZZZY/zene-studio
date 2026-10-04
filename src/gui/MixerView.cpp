@@ -18,7 +18,6 @@
 
 #include "MixerView.h"
 #include "VcaGroup.h"
-#include "MixerLatencyText.h"
 #include "VcaStripView.h"
 /* ---------------------------------------------------------------------------
  * THE VIEW LIST AND THE MIXER'S CHANNEL LIST ARE NOT THE SAME LIST.
@@ -63,8 +62,11 @@
 #include "MainWindow.h"
 #include "CommandForm.h"
 #include "ControlRegistry.h"
+#include "MixerModeBar.h"
 #include "MixerOverlays.h"
 #include "MixerSendsBanner.h"
+#include "MixerStripInfo.h"
+#include "MixerStripTags.h"
 #include "MixerViewOptions.h"
 #include "Mixer.h"
 #include "MixerChannelView.h"
@@ -97,10 +99,14 @@ MixerView::MixerView(Mixer* mixer) :
 	setWindowTitle(tr("Mixer"));
 	setWindowIcon(embed::getIconPixmap("mixer"));
 
-	// main-layout, under the sends-on-faders banner (0.5.0 theme 6), which is there only in that mode
+	// main-layout, under the mode bar (0.5.0 theme 16) and the sends-on-faders banner (theme 6), which is
+	// there only in that mode
 	auto* outer = new QVBoxLayout{this};
 	outer->setContentsMargins(0, 0, 0, 0);
 	outer->setSpacing(0);
+	m_modeBar = new MixerModeBar(this);
+	connect(m_modeBar, &MixerModeBar::changed, this, &MixerView::syncWithMixer, Qt::QueuedConnection);
+	outer->addWidget(m_modeBar);
 	m_sendsBanner = new MixerSendsBanner(this);
 	outer->addWidget(m_sendsBanner);
 	auto ml = new QHBoxLayout;
@@ -314,21 +320,6 @@ QString vcaSignatureOf(const Mixer* mixer)
 	return signature;
 }
 
-/*! A strip's tooltip: its delay compensation (the same figures pdc.report gives), its note (MX-016)
- *  and, on a return, what sets it apart (MX-045). Its accessible name follows the channel's name, an
- *  agent's rename included (set only on a change: each set is announced). */
-void describeStrip(MixerChannelView* view, Mixer* mixer, int index)
-{
-	MixerChannel* channel = mixer->mixerChannel(index);
-	const int rate = static_cast<int>(Engine::audioEngine()->outputSampleRate());
-	QString tip = mixerLatencyText(channel->m_name, channel->m_fxChain.latencyFrames(),
-		channel->inputLatencyFrames(), index == 0 ? mixer->totalLatencyFrames() : -1, rate);
-	if (!channel->m_note.isEmpty()) { tip += QLatin1Char('\n') + channel->m_note; }
-	if (channel->isBus()) { tip += QLatin1Char('\n') + MixerView::tr("Return - sends into it are pre-fader"); }
-	view->setToolTip(tip);
-	if (view->accessibleName() != channel->m_name) { view->setAccessibleName(channel->m_name); }
-}
-
 //! The fader the arrow keys move: the strip's, unless it is a dimmed "No send" fader (theme 6), which moves nothing.
 Fader* keyboardFader(MixerChannelView* view)
 {
@@ -364,9 +355,14 @@ void MixerView::syncWithMixer()
 	{
 		MixerChannel* channel = getMixer()->mixerChannel(i);
 		if (channel == nullptr || m_mixerChannelViews[i] == nullptr) { continue; }
-		describeStrip(m_mixerChannelViews[i], getMixer(), i);
+		mixerstripinfo::describeStrip(m_mixerChannelViews[i], getMixer(), i);
+		m_mixerChannelViews[i]->syncName();  // a rename from the Inspector or an agent shows on the strip
 		mixerviewoptions::applyToStrip(m_mixerChannelViews[i], channel);
 	}
+	// 0.5.0 theme 16: each strip's type, routing and modes in words, and the mode bar - read once per pass.
+	const mixerstripinfo::Context context = mixerstripinfo::buildContext();
+	mixerstriptags::applyAll(getMixer(), m_mixerChannelViews, context);
+	m_modeBar->refresh(context);
 }
 
 void MixerView::refreshVcaStrips()
@@ -490,7 +486,7 @@ void MixerView::updateMixerChannel(int index)
 
 	const auto currentIndex = m_currentMixerChannel->channelIndex();
 	const auto thisLine = m_mixerChannelViews[index];
-	describeStrip(thisLine, mixer, index);
+	mixerstripinfo::describeStrip(thisLine, mixer, index);
 
 	const auto sendModelCurrentToThis = mixer->channelSendModel(currentIndex, index);
 	if (sendModelCurrentToThis == nullptr)
@@ -519,7 +515,7 @@ void MixerView::updateMixerChannel(int index)
 		thisLine->m_receiveArrowOrSendButton->setCurrentIndex(thisLine->m_sendButtonStackedIndex);
 	}
 
-	thisLine->setSendsShown(mixerviewoptions::options().sends);  // 0.5.0 L08 (MX-003)
+	thisLine->setSendsShown(mixerviewoptions::effective(mixerviewoptions::options()).sends);  // L08 (MX-003), theme 16
 	thisLine->m_sendButton->updateLightStatus();
 	thisLine->m_renameLineEdit->setText(thisLine->elideName(thisLine->mixerChannel()->m_name));
 	thisLine->update();

@@ -35,7 +35,9 @@
 #include "MicrotunerConfig.h"
 #include "PianoRoll.h"
 #include "ProjectNotes.h"
+#include "SampleEditorDialog.h"
 #include "Shell.h"
+#include "ShellToolsMenu.h"
 
 namespace lmms
 {
@@ -143,6 +145,7 @@ ControlResult getState(const QJsonObject&)
 	for (const EditorEntry& entry : kEditors) { editors.append(editorState(g, entry)); }
 	QJsonObject state = g->mainWindow()->shell()->state();
 	state.insert(QStringLiteral("editors"), editors);
+	state.insert(QStringLiteral("tools"), gui::shelltools::state());
 	state.insert(QStringLiteral("note_editor"), noteEditorState());
 	state.insert(QStringLiteral("selection"), shellSelectionState());
 	return ControlResult::success(state);
@@ -197,7 +200,7 @@ void registerWindowCommands(ControlRegistry& registry)
 	{
 		ControlCommand cmd = command("toggle");
 		cmd.description = QStringLiteral("Show or hide one shell panel or floating window - the View "
-			"menu, the footer's panel buttons, Alt+I/B/D/E/M/A/P/L, the MDI-era Ctrl+1..7 and Edit > "
+			"menu, the footer's panel buttons and Tools menu, a region's tabs, Alt+I/B/D/E/M/A/P/L, the MDI-era Ctrl+1..7 and Edit > "
 			"Scales and keymaps dispatch exactly this. `editor` is a panel id (arranger, launcher, "
 			"detail, devices, inspector, browser, mixer, automation, pattern), a 0.4.0 editor name "
 			"(song = arranger, piano_roll = detail, clip_launcher = launcher), or a floating window "
@@ -223,13 +226,19 @@ void registerWindowCommands(ControlRegistry& registry)
 			"left, center, bottom or right and available says whether the current view offers it; "
 			"`focused`, the panel that last took keyboard focus; `launcher`, whether the clip launcher "
 			"sits beside the view's main panel; `editors`, one {editor, visible, panel} entry per "
-			"window.toggle name; `note_editor`, the note editor's view (window.note_editor_set's reply); and "
+			"window.toggle name; `tools`, one {name, command, editor, home} per tool that opens in a window of its own (the "
+			"footer's Tools menu: the command that opens it, and its window.toggle editor when it has one); `regions`, per side "
+			"region (left, bottom, right) the panel `open` there and the `tabs` its tab strip offers in this view; `footer`, how "
+			"the footer's switches fit its width (labelled, compact, or overflowing into its More button); `note_editor`, the "
+			"note editor's view (window.note_editor_set's reply); and "
 			"`selection`, what the Inspector and the Device panel show (window.select's reply). Read-only. Refused `requires` in a process with no interface.");
 		cmd.argsSchema = objectSchema({});
 		cmd.resultSchema = objectSchema({{QStringLiteral("editors"), arrayProperty()},
 			{QStringLiteral("view"), stringProperty()}, {QStringLiteral("panels"), arrayProperty()},
 			{QStringLiteral("focused"), stringProperty()}, {QStringLiteral("launcher"), booleanProperty()},
-			{QStringLiteral("note_editor"), objectProperty()}, {QStringLiteral("selection"), objectProperty()}});
+			{QStringLiteral("note_editor"), objectProperty()}, {QStringLiteral("selection"), objectProperty()},
+			{QStringLiteral("tools"), arrayProperty()}, {QStringLiteral("regions"), objectProperty()},
+			{QStringLiteral("footer"), stringProperty()}});
 		cmd.handler = getState;
 		registry.registerCommand(cmd);
 	}
@@ -262,6 +271,7 @@ void registerWindowCommands(ControlRegistry& registry)
 		registry.registerCommand(cmd);
 	}
 	registerNoteEditorWindowCommands(registry);
+	registerSampleEditorWindowCommands(registry);  // 0.5.0 wave 3 theme 15
 	registerSelectionWindowCommands(registry);
 	registerShortcutCommands(registry);
 	registerMixerViewCommands(registry);

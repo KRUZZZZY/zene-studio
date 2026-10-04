@@ -39,7 +39,9 @@ namespace lmms::gui
  *  already checks), and every command has a description - so:
  *  - hovering a control that has no tooltip of its own shows its command's first sentence;
  *  - What's This (Shift+F1, Help > What's This?, then a click) shows the whole description and the
- *    command's id, for any control that runs one.
+ *    command's friendly name (CommandMetadata; design theme 21) with its id, for any control that runs one;
+ *  - and F1 (Help > Help for This, app.help's 'context') shows the focused control's help in the help
+ *    centre - help that needs no hovering (HelpTasks.h).
  *  One application-wide event filter, installed once by the shell. */
 class LMMS_EXPORT ContextHelp : public QObject
 {
@@ -49,6 +51,8 @@ public:
 
 	//! The help a widget carries: its command's description (or its parents', two levels up); empty when none.
 	static QString helpFor(const QWidget* widget, bool full);
+	//! The command a widget runs (or one of its two nearest parents); empty when none.
+	static QString commandFor(const QWidget* widget);
 
 protected:
 	bool eventFilter(QObject* watched, QEvent* event) override;

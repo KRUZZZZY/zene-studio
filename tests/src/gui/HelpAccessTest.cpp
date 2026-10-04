@@ -27,7 +27,10 @@
  *  over the REAL main window (GuiApplication: app.tour has no window to show a tour in without
  *  it); window.appearance stores the scale where main() reads it and one undo puts it back
  *  (WF-131); window.pin keeps a side panel open across views (MX-007); the library search view
- *  runs a query and lists its columns (WF-003 / WF-011). */
+ *  runs a query and lists its columns (WF-003 / WF-011). Design theme 21: the reference is grouped by
+ *  the manual's own sections under their own titles and finds by task; the manual has a find field; and
+ *  F1's in-context help (app.help 'context') names the focused control, its command by its friendly name
+ *  and its manual section, needing no hover. */
 
 #include <QtTest>
 
@@ -38,6 +41,8 @@
 #include <QTreeWidget>
 
 #include "Appearance.h"
+#include "CommandMetadata.h"
+#include "ConfigManager.h"
 #include "BrowserSearchView.h"
 #include "ContextHelp.h"
 #include "ControlRegistry.h"
@@ -45,6 +50,7 @@
 #include "GuiApplication.h"
 #include "GuiTestApplication.h"
 #include "HelpCenter.h"
+#include "HelpTasks.h"
 #include "MainWindow.h"
 #include "Shell.h"
 
@@ -80,6 +86,59 @@ private slots:
 		QVERIFY(help->referenceText().contains(QStringLiteral("browser.collection_save")));
 		QVERIFY(!help->referenceText().contains(QStringLiteral("transport.play")));
 		help->close();
+	}
+
+	//! Theme 21: the tasks are the manual's sections, under the manual's own headings, and the reference is
+	//! grouped and found by them - "mixing" finds the mixer's commands, each by its friendly name.
+	void theReferenceIsGroupedByTheManualsTasks()
+	{
+		QFile manual(ConfigManager::inst()->dataDir() + QStringLiteral("manual/index.html"));
+		QVERIFY(manual.open(QIODevice::ReadOnly));
+		const QString html = QString::fromUtf8(manual.readAll());
+		for (const QString& topic : help::topics())
+		{
+			const QString heading = QStringLiteral("<h2 id=\"%1\">%2</h2>").arg(topic, help::topicTitle(topic));
+			QVERIFY2(html.contains(heading), qPrintable(heading));
+		}
+		HelpCenter* centre = HelpCenter::showHelp(QString(), true);
+		centre->filterReference(QStringLiteral("mixing"));
+		const QString text = centre->referenceText();
+		QVERIFY(text.contains(help::topicTitle(QStringLiteral("mix"))));
+		QVERIFY(text.contains(QStringLiteral("mixer.set_volume")));
+		QVERIFY(text.contains(commandName(QStringLiteral("mixer.set_volume"))));
+		QVERIFY(!text.contains(QStringLiteral("transport.play")));
+		centre->findCommand(QStringLiteral("collection_save"));  // app.help's 'query'
+		QVERIFY(centre->referenceText().contains(QStringLiteral("browser.collection_save")));
+		QVERIFY(centre->findInManual(QStringLiteral("Mixing")));
+		QVERIFY(!centre->findInManual(QStringLiteral("zzqqxxnothing")));
+		centre->close();
+	}
+
+	//! Theme 21: in-context help for the focused control, no hovering - its name, its command by name, its
+	//! section - from F1's command, over the help centre.
+	void theFocusedControlHasHelpWithoutHovering()
+	{
+		QToolButton button;
+		button.setText(QStringLiteral("&Record options"));
+		button.setProperty("controlCommand", QStringLiteral("transport.record_options"));
+		const QJsonObject context = help::contextHelp(&button);
+		QCOMPARE(context.value(QStringLiteral("name")).toString(), QStringLiteral("Record options"));
+		QCOMPARE(context.value(QStringLiteral("command_name")).toString(), commandName(QStringLiteral("transport.record_options")));
+		QCOMPARE(context.value(QStringLiteral("topic")).toString(), help::commandTopic(QStringLiteral("transport.record_options")));
+		QVERIFY(context.value(QStringLiteral("command_help")).toString().startsWith(QStringLiteral("How a recording pass starts")));
+		button.setProperty("helpTopic", QStringLiteral("record"));
+		QCOMPARE(help::widgetTopic(&button), QStringLiteral("record"));  // a declared topic wins
+
+		ControlRegistry* registry = ControlRegistry::instance();
+		const bool headless = registry->isHeadless();
+		registry->setHeadless(false);
+		const ControlResult opened = registry->invoke(QStringLiteral("app.help"), {{QStringLiteral("context"), true}});
+		registry->setHeadless(headless);
+		QVERIFY2(opened.ok, qPrintable(opened.errorMessage));
+		QVERIFY(opened.result.value(QStringLiteral("context")).toObject().contains(QStringLiteral("topic")));
+		HelpCenter* centre = getGUI()->mainWindow()->findChild<HelpCenter*>();
+		QVERIFY(centre != nullptr && !centre->contextText().isEmpty());
+		centre->close();
 	}
 
 	void aControlShowsItsCommandsHelp()

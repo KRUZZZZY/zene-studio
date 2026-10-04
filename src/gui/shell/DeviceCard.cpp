@@ -43,7 +43,8 @@
 #include "Effect.h"
 #include "EffectControlDialog.h"
 #include "EffectControls.h"
-#include "EffectDeviceMenu.h"
+#include "DeviceActionMenu.h"
+#include "DeviceCardState.h"
 #include "GuiApplication.h"
 #include "InstrumentTrack.h"
 #include "InstrumentTrackView.h"
@@ -165,6 +166,26 @@ bool isSwitch(AutomatableModel* model)
 	return qobject_cast<BoolModel*>(model) != nullptr || qobject_cast<ComboBoxModel*>(model) != nullptr;
 }
 
+//! Theme 12: the card's Actions button - the same menu as a right-click on the card (DeviceActionMenu.h).
+QToolButton* actionsButton(DeviceCard* card, QWidget* parent)
+{
+	auto* actions = new QToolButton(parent);
+	actions->setObjectName(QStringLiteral("deviceActions"));
+	actions->setText(QStringLiteral("\u22EF"));  // the same "more" mark the Inspector's section menus show
+	actions->setToolTip(DeviceCard::tr("Actions for %1").arg(card->spec().title));
+	actions->setAccessibleName(actions->toolTip());
+	actions->setAutoRaise(true);
+	actions->setMinimumSize(tokens::targetSize(), tokens::targetSize());
+	actions->setPopupMode(QToolButton::InstantPopup);
+	auto* menu = new QMenu(actions);
+	QObject::connect(menu, &QMenu::aboutToShow, menu, [menu, card] {
+		menu->clear();
+		fillDeviceActionMenu(menu, card);  // built as it opens: the bypass check and the move ends are current
+	});
+	actions->setMenu(menu);
+	return actions;
+}
+
 InstrumentTrackView* instrumentTrackView(const InstrumentTrack* track)
 {
 	GuiApplication* gui = getGUI();
@@ -188,12 +209,20 @@ DeviceCard::DeviceCard(const Spec& spec, const QList<AutomatableModel*>& paramet
 	column->setContentsMargins(0, 0, 0, tokens::space::md);
 	column->setSpacing(tokens::space::sm);
 	column->addWidget(buildHeader());
+	// Theme 12: the device's state in words under its header (bypassed, A/B, latency, hosting, preset).
+	m_state = new QLabel(this);
+	m_state->setObjectName(QStringLiteral("deviceState"));
+	m_state->setWordWrap(true);
+	m_state->setContentsMargins(tokens::space::sm, 0, tokens::space::sm, 0);
+	m_state->hide();  // shown once there is something to say (refreshStateLine)
+	column->addWidget(m_state);
 	m_body = buildParameters(parameters);
 	column->addWidget(m_body);
 	column->addStretch(1);
 	// MX-113: a folded device shows its header only.
 	m_body->setVisible(spec.effect == nullptr || !spec.effect->deviceOptions().folded);
 	setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Expanding);
+	refreshStateLine();
 }
 
 DeviceCard::~DeviceCard() { closeEditor(); }
@@ -232,6 +261,7 @@ QWidget* DeviceCard::buildHeader()
 	titles->addWidget(title);
 	titles->addWidget(subtitle);
 	row->addLayout(titles, 1);
+	addStateButtons(row, header);
 	if (m_spec.effect != nullptr && m_spec.effect->audioPortsModel() != nullptr)
 	{
 		QToolButton* pins = headerButton(QStringLiteral("pins"), tr("Route %1's audio pins").arg(m_spec.title), header);
@@ -280,6 +310,7 @@ QWidget* DeviceCard::buildHeader()
 		});
 		row->addWidget(remove);
 	}
+	row->addWidget(actionsButton(this, header));
 	return header;
 }
 
@@ -327,11 +358,10 @@ QWidget* DeviceCard::buildParameters(const QList<AutomatableModel*>& parameters)
 
 void DeviceCard::contextMenuEvent(QContextMenuEvent* event)
 {
-	// 0.5.0 L10 (W3): the device's menu on its card - insert, replace, copy, A/B, and the parameter
-	// and option entries - the same one the rack's effect entries offer.
-	if (m_spec.effect == nullptr) { QFrame::contextMenuEvent(event); return; }
+	// Theme 12: the card's one action menu - the same entries, in the same order, as its Actions button.
 	QMenu menu(this);
-	addEffectDeviceMenus(&menu, m_spec.effect);
+	fillDeviceActionMenu(&menu, this);
+	if (menu.isEmpty()) { QFrame::contextMenuEvent(event); return; }
 	menu.exec(event->globalPos());
 }
 
@@ -396,6 +426,7 @@ void DeviceCard::syncHeader()
 
 void DeviceCard::refreshActivity()
 {
+	refreshStateLine();
 	if (m_activity == nullptr || m_spec.effect == nullptr) { return; }
 	syncHeader();
 	const bool on = m_spec.effect->isProcessingAudio();

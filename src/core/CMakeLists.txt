@@ -242,6 +242,7 @@ set(LMMS_SRCS
 	core/ControlCommandsMixer.cpp
 	core/ControlCommandsMixerListen.cpp
 	core/ControlCommandsMixerStrip.cpp
+	core/ControlCommandsMixerRename.cpp
 	core/ControlCommandsDeviceCopy.cpp
 	core/ControlCommandsDrumRack.cpp
 	core/ControlCommandsHandoff.cpp
@@ -843,6 +844,10 @@ set(LMMS_SRCS
 	core/VideoFramePump.cpp
 	core/ControlCommandsVideo.cpp
 	core/ControlReversibilityTableVideo.cpp
+	# 0.5.0 theme 24: the background task area's reporting API and task.* commands.
+	core/TaskCenter.cpp
+	core/ControlCommandsTask.cpp
+	core/ControlReversibilityTableTask.cpp
 	core/MixerSendPan.cpp
 	core/MixerStrip.cpp
 	core/Model.cpp
@@ -1286,6 +1291,7 @@ SET(ZENE_API_SRCS
 	core/ControlReversibilityTableVideo.cpp
 	core/ControlReversibilityTableCollab.cpp
 	core/CollabCommandTap.cpp
+	core/ControlReversibilityTableTask.cpp
 )
 
 # The boundary is what the registry is compiled by: every file named above is

@@ -45,6 +45,7 @@
  */
 
 #include "Fader.h"
+#include "ControlCues.h"
 
 #include "DesignTokens.h"
 
@@ -619,7 +620,8 @@ void Fader::paintHandle(QPainter& painter)
 		m_knobSize.width() - 2.0, m_knobSize.height() - 2.0);
 	painter.setRenderHint(QPainter::Antialiasing);
 	painter.setPen(QPen(pal.base, 1));
-	painter.setBrush(isEnabled() ? pal.text : pal.textDisabled);
+	// 0.5.0 theme 23: the cap takes the accent under the pointer (the hover state), the disabled colour when inactive.
+	painter.setBrush(!isEnabled() ? pal.textDisabled : cues::hovered(this) ? pal.accent : pal.text);
 	painter.drawRoundedRect(handle, tokens::radius::sm + 1, tokens::radius::sm + 1);
 	painter.setPen(QPen(pal.base, 1.5));
 	const qreal y = handle.center().y();
@@ -668,7 +670,9 @@ void Fader::paintLevels(QPaintEvent* ev, QPainter& painter, bool linear)
 	qreal radius = 2;
 	path.addRoundedRect(leftMeterOutlineRect, radius, radius);
 	path.addRoundedRect(rightMeterOutlineRect, radius, radius);
-	painter.fillPath(path, Qt::black);
+	// 0.5.0 theme 20: the meter trough follows the theme - the window base, darkened, so the levels read on it in the
+	// light palette too (it is the old near-black in the dark ones).
+	painter.fillPath(path, tokens::palette().base.darker(300));
 
 	// Now clip everything to the paths of the meters
 	painter.setClipPath(path);
@@ -783,8 +787,13 @@ void Fader::paintFaderTicks(QPainter& painter)
 {
 	painter.save();
 
-	const QPen zeroPen(QColor(255, 255, 255, 216), 2.5);
-	const QPen nonZeroPen(QColor(255, 255, 255, 128), 1.);
+	// 0.5.0 theme 20: the ticks in the theme's text colour (white in the dark palettes, as before), not a fixed white.
+	QColor zero = tokens::palette().text;
+	zero.setAlpha(216);
+	QColor nonZero = tokens::palette().text;
+	nonZero.setAlpha(128);
+	const QPen zeroPen(zero, 2.5);
+	const QPen nonZeroPen(nonZero, 1.);
 
 	// We use the maximum dB value of the model to calculate the nearest multiple
 	// of the step size that we use to paint the ticks so that we know the start point.

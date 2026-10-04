@@ -27,6 +27,9 @@
 
 #include <QFrame>
 #include <QJsonArray>
+#include <functional>
+
+#include <QHash>
 #include <QJsonObject>
 #include <QPointer>
 #include <QTimer>
@@ -90,23 +93,33 @@ public:
 	int totalParameters() const { return m_total; }
 	//! Close the editor window this card opened, while its device still exists.
 	void closeEditor();
+	//! The device's own editor: a hosted plug-in's window (plugin.editor_open), else the built-in dialog.
+	void openEditor();
 	//! 0.5.0 L10 (MX-095): light the header's dot while the device processes audio, and bring the
 	//! header's power, fold and delta switches back to the device's state (an undo, a socket command
-	//! or the card's own menu changes it without the card).
+	//! or the card's own menu changes it without the card). Theme 12: the state line and the A/B button too.
 	void refreshActivity();
+	//! 0.5.0 theme 12: the hosting problems of the panel's last oop.get_state read (devicestate::hostingProblems),
+	//! then refreshActivity().
+	void refreshState(const QHash<QString, QString>& hostingProblems);
+	//! The state line's words (DeviceCardState.h), as window.get_state's card `state` reports them.
+	QJsonObject stateJson() const;
 
 protected:
 	void contextMenuEvent(QContextMenuEvent* event) override;
 
 private:
 	QWidget* buildHeader();
+	//! Theme 12: the A/B button (shown once a slot is stored) and the Actions button, at the header's end.
+	void addStateButtons(QHBoxLayout* row, QWidget* header);
 	QWidget* buildParameters(const QList<AutomatableModel*>& parameters);
-	void openEditor();
 	void openEffectDialog();
 	//! Engine audit E18: the device's pin connector - which track channels feed which plug-in
 	//! ports - in its own window (the view existed, nothing opened it).
 	void openPins();
 	void syncHeader();
+	//! Theme 12: the state line, its accessible name, and the A/B button's letter, from the device as it is now.
+	void refreshStateLine();
 
 	Spec m_spec;
 	int m_shown = 0;
@@ -118,6 +131,9 @@ private:
 	QToolButton* m_fold = nullptr;
 	QToolButton* m_delta = nullptr;
 	QWidget* m_body = nullptr;  //!< the parameters, hidden while the device is folded (MX-113)
+	QLabel* m_state = nullptr;  //!< theme 12: the state line - bypass, A/B, latency, hosting, preset - in words
+	QToolButton* m_ab = nullptr;  //!< theme 12: which A/B slot is heard, as a letter; a click toggles
+	QString m_hosting;          //!< "", "crashed" or "quarantined" (the panel's last oop.get_state read)
 };
 
 //! A modulator, placed right after the device it modulates: its shape, rate (drag or type -
@@ -138,9 +154,11 @@ private:
 //! channel it plays into (when that is not the master) with that channel's inserts and the
 //! modulators driving them - or, for a selected mixer strip, that channel alone. It follows
 //! ShellSelection. A chain edited from anywhere (rack, socket, undo) redraws it: the
-//! chain's own signals drop the cards BEFORE a device is deleted - a card never outlives the
-//! models it draws - and a light poll while the panel is visible catches what has no signal
-//! (a modulator added over the socket).
+//! chain's own signals drop the card of a device leaving it BEFORE the device is deleted - a card
+//! never outlives the models it draws - and a light poll while the panel is visible catches what
+//! has no signal (a modulator added over the socket). Theme 12: a redraw updates in place - every
+//! card, heading, meter and modulator whose content is unchanged stays the same widget, so nothing
+//! blinks, crowds or loses its scroll position; only what changed is made or dropped.
 class LMMS_EXPORT DevicePanel : public QWidget
 {
 	Q_OBJECT
@@ -149,7 +167,8 @@ public:
 	explicit DevicePanel(QWidget* parent = nullptr);
 
 	//! What the panel shows (window.get_state's `devices`): {track, channel, cards: [{target,
-	//! plugin, name, enabled, parameters, shown}], modulators: [id...]}.
+	//! plugin, name, enabled, parameters, shown, state}], modulators: [id...]} - `state` is the card's state line
+	//! (DeviceCardState.h: bypassed, ab, latency_frames, hosting, preset, text).
 	QJsonObject describe() const;
 	void rebuild();
 
@@ -159,7 +178,17 @@ protected:
 
 private:
 	void dropCards();
+	//! Theme 12: drop at once only the cards whose device has left its chain (or, @a clearing, every card of that
+	//! chain - EffectChain::clear deletes its devices right after aboutToClear); the rest stay for the redraw.
+	void dropLeavingCards(const EffectChain* clearing = nullptr);
+	//! Drop the instrument's card at once: the instrument (and the models it draws) is going.
+	void dropInstrumentCards();
+	void retire(QWidget* widget);
+	//! Theme 12: the widget for @a key - the one already shown when there is one, else @a make()'s - placed next.
+	void place(const QString& key, const std::function<QWidget*()>& make, Qt::Alignment alignment = {});
 	void scheduleRebuild();
+	//! Theme 12: every keyed widget taken out of the row into m_reusable, for rebuild() to place again or retire.
+	void collectReusable();
 	void watch(Track* track, MixerChannel* channel);
 	void watchChain(EffectChain* chain);
 	void addInstrumentCard(InstrumentTrack* track);
@@ -168,6 +197,8 @@ private:
 	void addChain(EffectChain* chain, const QString& target, const QJsonArray& modulators, int chainIndex = 0);
 	void addModulators(const QJsonArray& modulators, const QString& target, int chainIndex, int effectIndex);
 	void addSection(const QString& text);
+	//! The channel's heading, level, macros, inserts and parallel chains, with the modulators driving them.
+	void addChannel(MixerChannel* channel);
 	QWidget* buildAddButton();
 	QString signature() const;
 	void poll();
@@ -186,6 +217,9 @@ private:
 	QString m_target;   //!< where Add device puts a device: the track, or the selected channel
 	QString m_channel;  //!< the mixer channel whose inserts are drawn, if any
 	QStringList m_modulators;
+	QHash<QString, QWidget*> m_reusable;  //!< during rebuild(): the shown widgets not yet placed again, by key
+	QHash<QString, QString> m_hosting;    //!< the last oop.get_state read (devicestate::hostingProblems)
+	int m_polls = 0;
 };
 
 } // namespace lmms::gui

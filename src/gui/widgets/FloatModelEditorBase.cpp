@@ -36,6 +36,7 @@
 #include "lmms_math.h"
 #include "DeprecationHelper.h"
 #include "CaptionMenu.h"
+#include "DesignTokens.h"
 #include "ControllerConnection.h"
 #include "GuiApplication.h"
 #include "KeyboardShortcuts.h"
@@ -307,7 +308,7 @@ void FloatModelEditorBase::paintEvent(QPaintEvent *)
 {
 	QPainter p(this);
 
-	const auto foreground = QColor{3, 94, 97};
+	const QColor foreground = tokens::palette().accent;  // 0.5.0 theme 20: the theme's accent, not a fixed teal
 
 	const auto* mod = model();
 	const auto minValue = mod->minValue();

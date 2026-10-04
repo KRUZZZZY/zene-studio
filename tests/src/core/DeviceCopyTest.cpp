@@ -27,7 +27,8 @@
  *  curve is accepted by the command (MX-105); plugin.organise marks a device and plugin.organisation
  *  lists it, undoably (MX-166); plugin.paths_set replaces a format's folders (MX-163); chain.bypass_all
  *  bypasses every device and chain.clean removes the bypassed ones, each one undo step (MX-078); the
- *  preferred plug-in format is kept and undone (MX-167). */
+ *  preferred plug-in format is kept and undone (MX-167). Theme 12: the card's read of the A/B slots, and plugin.move
+ *  within a chain, one undo step. */
 
 #include <QtTest>
 
@@ -43,6 +44,7 @@
 #include "ControlMixerSupport.h"
 #include "ControlRegistry.h"
 #include "ControlVocabulary.h"
+#include "DeviceAbState.h"
 #include "Effect.h"
 #include "EffectChain.h"
 #include "Engine.h"
@@ -231,6 +233,47 @@ private slots:
 		QVERIFY(std::abs(parameterValue(ch(1), plugin, name) - other) < 1e-3);  // the recall undone
 		const QJsonObject state = with(QStringLiteral("get")).result;
 		QVERIFY(state.value(QStringLiteral("has_a")).toBool() && state.value(QStringLiteral("has_b")).toBool());
+		// Theme 12: the card's read of the same slots - no command, so nothing recorded or forwarded.
+		control::AbState read;
+		QVERIFY(control::abSlotState(chainOf(1).effects().front(), &read));
+		QVERIFY(read.hasA && read.hasB);
+		QCOMPARE(read.onB, state.value(QStringLiteral("current")).toString() == QLatin1String("b"));
+		QVERIFY(!control::abSlotState(nullptr, &read));
+	}
+
+	//! 0.5.0 theme 12: plugin.move puts a device at another slot of its chain (the card's Move Left / Right), one undo
+	//! step that its redo repeats; a slot past the end is the last one, and the slot it is at changes nothing.
+	void aDeviceMovesWithinItsChain()
+	{
+		const int index = Engine::mixer()->createChannel();
+		const QString target = ch(index);
+		const QString first = loadAnEffect(target);
+		if (first.isEmpty()) { QSKIP("this build loads no effect"); }
+		const QString second = loadAnEffect(target);
+		QVERIFY(!second.isEmpty());
+		const auto order = [index] {
+			QStringList ids;
+			for (const Effect* effect : chainOf(index).effects()) { ids << control::effectIdOf(effect); }
+			return ids;
+		};
+		const auto move = [target](const QString& plugin, int position) {
+			return run(QStringLiteral("plugin.move"), {{QStringLiteral("target"), target}, {QStringLiteral("plugin"), plugin},
+				{QStringLiteral("position"), position}});
+		};
+		const ControlResult moved = move(first, 5);
+		QVERIFY2(moved.ok, qPrintable(moved.errorMessage));
+		QCOMPARE(moved.result.value(QStringLiteral("from")).toInt(), 0);
+		QCOMPARE(moved.result.value(QStringLiteral("position")).toInt(), 1);  // clamped to the last slot
+		QCOMPARE(order(), (QStringList{second, first}));
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
+		QCOMPARE(order(), (QStringList{first, second}));
+		QVERIFY(run(QStringLiteral("control.redo")).ok);
+		QCOMPARE(order(), (QStringList{second, first}));
+		QVERIFY(move(first, 1).ok);  // already there
+		QCOMPARE(order(), (QStringList{second, first}));
+		QCOMPARE(move(QStringLiteral("fx-99999"), 0).errorKind, ControlErrorKind::NotFound);
+		QVERIFY(run(QStringLiteral("control.undo")).ok);  // the redone move: the order it started with
+		QCOMPARE(order(), (QStringList{first, second}));
 	}
 
 	//! MX-145 / MX-153: the native Gate closes on a signal under its threshold and opens on one over

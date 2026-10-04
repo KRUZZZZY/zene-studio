@@ -132,6 +132,7 @@ LMMS_EXPORT const ReversibilityRow* reversibilityW3DevicesRowTable(int* rowCount
 // ControlReversibilityTableW3Engine.cpp.
 LMMS_EXPORT const ReversibilityRow* reversibilityW3EngineRowTable(int* rowCount);
 LMMS_EXPORT const ReversibilityRow* reversibilityVideoRowTable(int* rowCount);
+LMMS_EXPORT const ReversibilityRow* reversibilityTaskRowTable(int* rowCount);
 
 /*! The true_inverse block, in its SIX files JOINED: the LIVE-checkpoint rows
  *  (ControlReversibilityTableLive.cpp, this train's move - see that file's own
@@ -168,7 +169,8 @@ const ReversibilityRow* reversibilityRowTable(int* rowCount)
 				reversibilityMtsRowTable, reversibilityWindowRowTable, reversibilityShellRowTable,
 				reversibilityCustomisationRowTable, reversibilityArrangerRowTable, reversibilityMixingRowTable,
 				reversibilityDeviceRowTable, reversibilityW3CustomRowTable, reversibilityW3LibraryRowTable,
-				reversibilityW3DevicesRowTable, reversibilityW3EngineRowTable, reversibilityVideoRowTable, reversibilityCollabRowTable})
+				reversibilityW3DevicesRowTable, reversibilityW3EngineRowTable, reversibilityVideoRowTable, reversibilityCollabRowTable,
+				reversibilityTaskRowTable})
 		{
 			int count = 0;
 			const ReversibilityRow* rows = rowsFor(&count);

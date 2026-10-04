@@ -30,7 +30,13 @@
  *  Both are kept with the project (ViewMemory.h, <view-memory>); saving and removing are one undo step each.
  *  Recalling moves the play position through transport.seek and the range through range.set, which record
  *  themselves; the zoom and the clip selection are interface state. Without an interface the position and
- *  the range still work. */
+ *  the range still work.
+ *  Design theme 22: each save says what it kept ('captures') and what a memory of its kind never keeps
+ *  ('not_kept'), and each recall what came back ('restored') and what did not ('skipped'); 'replace' false
+ *  refuses a name in use, so the Window menu's Save never overwrites silently (its Replace asks first). */
+
+#include <utility>
+#include <vector>
 
 #include <QJsonArray>
 
@@ -114,6 +120,36 @@ QString nameOf(const QJsonObject& args)
 	return args.value(QStringLiteral("name")).toString().trimmed();
 }
 
+//! Theme 22: the parts a memory of @a kind never keeps - said by every save and in the Window menu.
+QJsonArray notKept(Kind kind)
+{
+	if (kind == Kind::Location)
+	{
+		return {QStringLiteral("scroll"), QStringLiteral("vertical_zoom"), QStringLiteral("track_heights"),
+			QStringLiteral("selection"), QStringLiteral("layout")};
+	}
+	return {QStringLiteral("notes"), QStringLiteral("automation_points"), QStringLiteral("mixer_channels"),
+		QStringLiteral("play_position")};
+}
+
+//! The parts @a entry holds, by name: position (its tick), range, zoom, clips.
+QJsonArray partsOf(const QJsonObject& entry)
+{
+	QJsonArray parts;
+	if (entry.contains(QStringLiteral("tick"))) { parts.append(QStringLiteral("position")); }
+	for (const char* part : {"range", "zoom"})
+	{
+		if (entry.contains(QLatin1String(part))) { parts.append(QLatin1String(part)); }
+	}
+	if (!entry.value(QStringLiteral("clips")).toArray().isEmpty()) { parts.append(QStringLiteral("clips")); }
+	return parts;
+}
+
+QString kindNoun(Kind kind)
+{
+	return kind == Kind::Location ? QStringLiteral("memory location") : QStringLiteral("saved selection");
+}
+
 //! Replace the entries of @a kind with @a next as ONE undo step.
 void storeEntries(Kind kind, const QJsonArray& next)
 {
@@ -124,10 +160,22 @@ void storeEntries(Kind kind, const QJsonArray& next)
 	Engine::getSong()->setModified();
 }
 
-//! @a entry stored under its name - replacing one of that name - or a refusal when the list is full.
-ControlResult saveEntry(Kind kind, const QJsonObject& entry)
+//! Whether a name is in use among the entries of @a kind.
+bool isSaved(Kind kind, const QString& name)
+{
+	return !ViewMemory::instance().entry(kind, name).isEmpty();
+}
+
+//! @a entry stored under its name - replacing one of that name unless @a replace is false - or a refusal when the
+//! name is in use and may not be replaced, or the list is full.
+ControlResult saveEntry(Kind kind, const QJsonObject& entry, bool replace)
 {
 	const QString name = entry.value(QStringLiteral("name")).toString();
+	if (!replace && isSaved(kind, name))
+	{
+		return ControlResult::failure(ControlErrorKind::Refused, QStringLiteral("a %1 named '%2' is saved already: choose another "
+			"name, or replace it (Window > Replace)").arg(kindNoun(kind), name));
+	}
 	QJsonArray next;
 	bool replaced = false;
 	for (const QJsonValue& value : ViewMemory::instance().entries(kind))
@@ -147,6 +195,9 @@ ControlResult saveEntry(Kind kind, const QJsonObject& entry)
 	QJsonObject result = entry;
 	result.insert(QStringLiteral("replaced"), replaced);
 	result.insert(QStringLiteral("changed"), changed);
+	result.insert(QStringLiteral("captures"), partsOf(entry));
+	result.insert(QStringLiteral("not_kept"), notKept(kind));
+	result.insert(QStringLiteral("max_entries"), MaxEntries);
 	return ControlResult::success(result);
 }
 
@@ -183,7 +234,23 @@ ControlResult saveLocation(const QJsonObject& args)
 			: read("transport.get_state").value(QStringLiteral("position_ticks"))}};
 	if (const QJsonObject range = currentRange(); !range.isEmpty()) { entry.insert(QStringLiteral("range"), range); }
 	if (gui::SongEditor* editor = arranger()) { entry.insert(QStringLiteral("zoom"), static_cast<double>(editor->pixelsPerBar())); }
-	return saveEntry(Kind::Location, entry);
+	return saveEntry(Kind::Location, entry, args.value(QStringLiteral("replace")).toBool(true));
+}
+
+//! Theme 22: @a result plus 'restored' and 'skipped' - of the parts @a entry holds (partsOf), those that came back and
+//! those that did not, @a outcome saying which did.
+QJsonObject withOutcome(QJsonObject result, const QJsonObject& entry, const std::vector<std::pair<const char*, bool>>& outcome)
+{
+	QJsonArray restored;
+	QJsonArray skipped;
+	const QJsonArray held = partsOf(entry);
+	for (const auto& [part, done] : outcome)
+	{
+		if (held.contains(QLatin1String(part))) { (done ? restored : skipped).append(QLatin1String(part)); }
+	}
+	result.insert(QStringLiteral("restored"), restored);
+	result.insert(QStringLiteral("skipped"), skipped);
+	return result;
 }
 
 //! Put a saved range back; whether there was one.
@@ -204,8 +271,9 @@ ControlResult recallLocation(const QJsonObject& args)
 	const bool range = restoreRange(entry);
 	const bool zoom = entry.contains(QStringLiteral("zoom")) && arranger() != nullptr
 		&& ControlRegistry::instance()->invoke(QStringLiteral("arrangement.zoom"), {{QStringLiteral("pixels_per_bar"), entry.value(QStringLiteral("zoom"))}}).ok;
-	return ControlResult::success({{QStringLiteral("name"), name}, {QStringLiteral("tick"), entry.value(QStringLiteral("tick"))},
-		{QStringLiteral("range_restored"), range}, {QStringLiteral("zoom_restored"), zoom}});
+	return ControlResult::success(withOutcome({{QStringLiteral("name"), name}, {QStringLiteral("tick"), entry.value(QStringLiteral("tick"))},
+		{QStringLiteral("range_restored"), range}, {QStringLiteral("zoom_restored"), zoom}}, entry,
+		{{"position", true}, {"range", range}, {"zoom", zoom}}));
 }
 
 //! The first of @a ids that names no clip in the project, or an empty string when every one does.
@@ -238,7 +306,7 @@ ControlResult saveSelection(const QJsonObject& args)
 	}
 	QJsonObject entry{{QStringLiteral("name"), name}, {QStringLiteral("clips"), clips}};
 	if (!range.isEmpty()) { entry.insert(QStringLiteral("range"), range); }
-	return saveEntry(Kind::Selection, entry);
+	return saveEntry(Kind::Selection, entry, args.value(QStringLiteral("replace")).toBool(true));
 }
 
 ControlResult applySelection(const QJsonObject& args)
@@ -257,8 +325,9 @@ ControlResult applySelection(const QJsonObject& args)
 	selectInArranger(live);
 	if (!live.isEmpty()) { ControlRegistry::instance()->invoke(QStringLiteral("clip.select"), {{QStringLiteral("clip"), live.first()}}); }
 	else { selectClip(QString()); }  // the arranger's selection is empty now, so the surface's is too
-	return ControlResult::success({{QStringLiteral("name"), name}, {QStringLiteral("clips"), live},
-		{QStringLiteral("missing"), entry.value(QStringLiteral("clips")).toArray().size() - live.size()}, {QStringLiteral("range_restored"), range}});
+	return ControlResult::success(withOutcome({{QStringLiteral("name"), name}, {QStringLiteral("clips"), live},
+		{QStringLiteral("missing"), entry.value(QStringLiteral("clips")).toArray().size() - live.size()}, {QStringLiteral("range_restored"), range}},
+		entry, {{"range", range}, {"clips", !live.isEmpty()}}));
 }
 
 void add(ControlRegistry& registry, const char* group, const char* verb, const QString& description, const QJsonObject& args,
@@ -277,10 +346,12 @@ void registerKind(ControlRegistry& registry, const char* group, Kind kind, const
 {
 	const QJsonObject named = objectSchema({{QStringLiteral("name"), stringProperty()}}, {QStringLiteral("name")});
 	const QString key = kind == Kind::Location ? QStringLiteral("locations") : QStringLiteral("selections");
-	add(registry, group, "list", QStringLiteral("The project's %1, in the order they were saved.").arg(what), objectSchema({}), false,
+	add(registry, group, "list", QStringLiteral("The project's %1, in the order they were saved, their 'count' and limit "
+		"('max_entries'), and what one never keeps ('not_kept').").arg(what), objectSchema({}), false,
 		[kind, key](const QJsonObject&) {
 			const QJsonArray entries = ViewMemory::instance().entries(kind);
-			return ControlResult::success({{key, entries}, {QStringLiteral("count"), entries.size()}});
+			return ControlResult::success({{key, entries}, {QStringLiteral("count"), entries.size()},
+				{QStringLiteral("max_entries"), MaxEntries}, {QStringLiteral("not_kept"), notKept(kind)}});
 		});
 	add(registry, group, "remove", QStringLiteral("Forget one of the project's %1 ('name'). One undo step.").arg(what), named, true,
 		[kind](const QJsonObject& args) { return removeEntry(kind, args); });
@@ -292,23 +363,28 @@ void registerViewMemoryCommands(ControlRegistry& registry)
 {
 	ViewMemory::instance();  // registers the section before any project loads
 	add(registry, "location", "save", QStringLiteral("Save a memory location 'name': the play position (or 'tick'), the range "
-		"and the arranger's zoom as they are now - replacing one of that name, at most 99. Saved with the project; one undo step "
-		"('changed' false, and no step, when it was already saved just so). Names are trimmed here and in every lookup."),
-		objectSchema({{QStringLiteral("name"), stringProperty()}, {QStringLiteral("tick"), tickProperty()}}, {QStringLiteral("name")}),
-		true, saveLocation);
+		"and the arranger's zoom as they are now ('captures' lists the parts kept; 'not_kept' what a location never keeps: the "
+		"scroll, the vertical zoom, track heights, the selection and the window layout) - replacing one of that name ('replaced') "
+		"unless 'replace' is false, when a name in use is refused; at most 99 ('max_entries'). Saved with the project; one undo "
+		"step ('changed' false, and no step, when it was already saved just so). Names are trimmed here and in every lookup."),
+		objectSchema({{QStringLiteral("name"), stringProperty()}, {QStringLiteral("tick"), tickProperty()},
+		{QStringLiteral("replace"), booleanProperty()}}, {QStringLiteral("name")}), true, saveLocation);
 	add(registry, "location", "recall", QStringLiteral("Go to memory location 'name': the play position (transport.seek), its "
-		"range (range.set) and its zoom come back."), objectSchema({{QStringLiteral("name"), stringProperty()}}, {QStringLiteral("name")}),
-		false, recallLocation);
+		"range (range.set) and its zoom come back - 'restored' lists the parts that did, 'skipped' those it holds that did not "
+		"(the zoom without an arranger, a range refused)."), objectSchema({{QStringLiteral("name"), stringProperty()}},
+		{QStringLiteral("name")}), false, recallLocation);
 	registerKind(registry, "location", Kind::Location, QStringLiteral("memory locations"));
 	add(registry, "selection", "save", QStringLiteral("Save the selection as 'name': the range and the clips selected in the "
-		"arranger (or 'clips', a list of clip ids; refused NotFound naming one that is not in the project) - replacing one of "
-		"that name, at most 99 ('changed' false when it was already saved just so: no undo step). Refused when nothing is selected. "
-		"Saved with the project; one undo step."),
-		objectSchema({{QStringLiteral("name"), stringProperty()}, {QStringLiteral("clips"), arrayProperty()}}, {QStringLiteral("name")}),
-		true, saveSelection);
+		"arranger (or 'clips', a list of clip ids; refused NotFound naming one that is not in the project) - 'captures' lists the "
+		"parts kept, 'not_kept' what a saved selection never keeps (notes, automation points, mixer channels, the play position) - "
+		"replacing one of that name ('replaced') unless 'replace' is false, when a name in use is refused; at most 99 ('changed' "
+		"false when it was already saved just so: no undo step). Refused when nothing is selected. Saved with the project; one "
+		"undo step."),
+		objectSchema({{QStringLiteral("name"), stringProperty()}, {QStringLiteral("clips"), arrayProperty()},
+		{QStringLiteral("replace"), booleanProperty()}}, {QStringLiteral("name")}), true, saveSelection);
 	add(registry, "selection", "apply", QStringLiteral("Select saved selection 'name' again: its range (range.set) and those of "
-		"its clips that still exist ('missing' counts the rest)."), objectSchema({{QStringLiteral("name"), stringProperty()}},
-		{QStringLiteral("name")}), false, applySelection);
+		"its clips that still exist ('missing' counts the rest; 'restored' and 'skipped' name the parts that came back and those "
+		"that did not)."), objectSchema({{QStringLiteral("name"), stringProperty()}}, {QStringLiteral("name")}), false, applySelection);
 	registerKind(registry, "selection", Kind::Selection, QStringLiteral("saved selections"));
 }
 

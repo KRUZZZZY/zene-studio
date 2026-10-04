@@ -96,7 +96,8 @@ bool fitRange(gui::SongEditor* editor, const QString& fit, tick_t* begin, tick_t
 		*begin = timeline.loopBegin().getTicks();
 		*end = timeline.loopEnd().getTicks();
 	}
-	else if (fit == QStringLiteral("selection")) { gui::arrangerzoom::selectedClipsSpan(editor, begin, end); }
+	// 0.5.0 theme 9 (wave 3): the selection as every keyboard zoom reads it - the time range, else the selected clips.
+	else if (fit == QStringLiteral("selection")) { gui::arrangerzoom::selectionSpan(editor, begin, end); }
 	if (*end <= *begin) { *error = QStringLiteral("nothing to fit: the %1 is empty").arg(fit); }
 	return *end > *begin;
 }
@@ -393,8 +394,8 @@ void registerArrangerViewCommands(ControlRegistry& registry)
 		{QStringLiteral("previous_zoom"), integerProperty()}, {QStringLiteral("anchor"), integerProperty()}});
 	add(registry, "arrangement", "zoom", QStringLiteral("Zoom the arranger: to 'pixels_per_bar', by 'step' zoom steps "
 		"(negative zooms out), to the span 'start'..'end' (the zoom tool's drag), or to 'fit' the song, the loop or the "
-		"selected clips across its width (scrolled to "
-		"their start). A 'pixels_per_bar' or 'step' zoom keeps one tick where it is on screen ('anchor' in the answer): "
+		"selection (the time range, else the selected clips) across its width (scrolled to "
+		"its start). A 'pixels_per_bar' or 'step' zoom keeps one tick where it is on screen ('anchor' in the answer): "
 		"'anchor_tick' (a pointer gesture passes the tick under the pointer), else 'anchor' - selection, playhead, view "
 		"(its middle), start (its left edge) or auto (the default: the selection, else the playhead when it is on "
 		"screen, else the middle). The previous zoom joins the history arrangement.zoom_back walks. Interface state."),

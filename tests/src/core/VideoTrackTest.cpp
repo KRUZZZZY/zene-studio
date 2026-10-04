@@ -42,6 +42,7 @@
 #include "Engine.h"
 #include "SampleClip.h"
 #include "Song.h"
+#include "TaskCenter.h"
 #include "Track.h"
 #include "VideoDecoder.h"
 #include "VideoFramePump.h"
@@ -63,6 +64,16 @@ QString fileText(const QString& path)
 {
 	QFile file(path);
 	return file.open(QIODevice::ReadOnly) ? QString::fromUtf8(file.readAll()) : QString();
+}
+
+//! Task @a id's state in the task area (Failed when it is not listed).
+TaskState taskState(int id)
+{
+	for (const TaskInfo& info : TaskCenter::instance().tasks())
+	{
+		if (info.id == id) { return info.state; }
+	}
+	return TaskState::Failed;
 }
 
 bool reddish(const QImage& image)
@@ -304,6 +315,59 @@ private slots:
 		QVERIFY(run(QStringLiteral("control.undo")).ok);
 		QCOMPARE(song->tracks().size(), tracksBefore);
 		QVERIFY2(QFileInfo::exists(out), "the undo removed the WAV, which it documents it keeps");
+		song->clearProject();
+	}
+
+	//! 0.5.0 theme 24: with 'background' the decode runs on a worker listed in the task area and the reply comes at once;
+	//! the track lands when it completes, as the same ONE undo step.
+	void extractAudioInTheBackgroundLandsWhenItCompletes()
+	{
+		if (!needClip()) { QSKIP("no FFmpeg in this build, or the test clip could not be made"); }
+		Song* song = Engine::getSong();
+		song->clearProject();
+		QVERIFY(run(QStringLiteral("video.attach"), {{QStringLiteral("path"), m_clip}, {QStringLiteral("offset"), 96}}).ok);
+		const auto tracksBefore = song->tracks().size();
+		const QString out = m_dir.filePath(QStringLiteral("background.wav"));
+		const ControlResult started = run(QStringLiteral("video.extract_audio"), {{QStringLiteral("out"), out},
+			{QStringLiteral("background"), true}});
+		QVERIFY2(started.ok, qPrintable(started.errorMessage));
+		QVERIFY(started.result.value(QStringLiteral("background")).toBool());
+		const int task = started.result.value(QStringLiteral("task")).toInt(-1);
+		QVERIFY(task > 0);
+		const auto stateOf = [task] { return taskState(task); };
+		QTRY_VERIFY_WITH_TIMEOUT(stateOf() != TaskState::Running, 20000);
+		QCOMPARE(stateOf(), TaskState::Done);
+		QCOMPARE(song->tracks().size(), tracksBefore + 1);
+		const auto* clip = dynamic_cast<const SampleClip*>(song->tracks().back()->getClips().front());
+		QVERIFY(clip != nullptr);
+		QCOMPARE(clip->startPosition().getTicks(), 96);
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
+		QCOMPARE(song->tracks().size(), tracksBefore);
+		song->clearProject();
+	}
+
+	//! A background extraction cancelled from the task area adds nothing and leaves no WAV behind.
+	void aCancelledBackgroundExtractionAddsNothing()
+	{
+		if (!needClip()) { QSKIP("no FFmpeg in this build, or the test clip could not be made"); }
+		Song* song = Engine::getSong();
+		song->clearProject();
+		QVERIFY(run(QStringLiteral("video.attach"), {{QStringLiteral("path"), m_clip}}).ok);
+		const auto tracksBefore = song->tracks().size();
+		const QString out = m_dir.filePath(QStringLiteral("cancelled.wav"));
+		const ControlResult started = run(QStringLiteral("video.extract_audio"), {{QStringLiteral("out"), out},
+			{QStringLiteral("background"), true}});
+		QVERIFY2(started.ok, qPrintable(started.errorMessage));
+		const int task = started.result.value(QStringLiteral("task")).toInt(-1);
+		// The worker may already be done with a two-second clip; either way the outcome is consistent.
+		const bool cancelled = TaskCenter::instance().cancel(task);
+		const auto stateOf = [task] { return taskState(task); };
+		QTRY_VERIFY_WITH_TIMEOUT(stateOf() != TaskState::Running, 20000);
+		const bool done = stateOf() == TaskState::Done;
+		QVERIFY(done || stateOf() == TaskState::Cancelled);
+		QVERIFY(cancelled || done);
+		QCOMPARE(song->tracks().size(), tracksBefore + (done ? 1 : 0));
+		if (!done) { QVERIFY2(!QFileInfo::exists(out), "a cancelled extraction left its WAV"); }
 		song->clearProject();
 	}
 };

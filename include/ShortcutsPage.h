@@ -33,10 +33,11 @@
 
 class QLineEdit;
 class QMenuBar;
-class QTableWidget;
 
 namespace lmms::gui
 {
+
+class ListTable;
 
 /*! The menu entries under @a bar that carry a shortcut, ordered by where they live. Read from
  *  the live menus (the palette's own walk, paletteMenuEntries), so the page cannot drift from
@@ -44,19 +45,32 @@ namespace lmms::gui
 LMMS_EXPORT QList<PaletteEntry> shortcutEntries(QMenuBar* bar);
 
 /*! Help > Keyboard Shortcuts (M3 item 4): a searchable table of shortcut, action, menu path
- *  and the registry command the action declares. Read-only - it lists, it does not remap. */
+ *  and the registry command the action declares. Read-only - it lists, it does not remap.
+ *  0.5.0 design themes 18 and 21: grouped by task - the manual's sections (HelpTasks.h), the first
+ *  column and the order - with each command by its friendly name (CommandMetadata; its id in the
+ *  tooltip and found by the filter); the shared list's sorting and keys (ListTable): Enter runs the
+ *  highlighted action, the Menu key or Shift+F10 offers Run and its Command Reference entry. */
 class LMMS_EXPORT ShortcutsPage : public QDialog
 {
+	Q_OBJECT
 public:
 	explicit ShortcutsPage(QMenuBar* bar, QWidget* parent = nullptr);
 
 	int rowCount() const;
 	int visibleRowCount() const;
 	void setFilter(const QString& text);
+	//! The task column's text for row @a row in the list's own order (the test's view of the grouping).
+	QString taskOf(int row) const;
+	//! Run the action of row @a row (its data index); false when it has no action left.
+	bool runRow(int row);
 
 private:
+	void openRowMenu(int row, const QPoint& at);
+
+	QList<PaletteEntry> m_entries;
+	QStringList m_tasks;
 	QLineEdit* m_filter = nullptr;
-	QTableWidget* m_table = nullptr;
+	ListTable* m_table = nullptr;
 };
 
 } // namespace lmms::gui

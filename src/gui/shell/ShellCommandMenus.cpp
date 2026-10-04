@@ -309,7 +309,7 @@ void populateClip(QMenu* menu, Clip* clip)
 		QAction* editor = menu->addAction(tr("Sample Editor..."));  // ED-156
 		editor->setProperty("controlCommand", QStringLiteral("sample.edit_range"));
 		const QPointer<SampleClip> sample = static_cast<SampleClip*>(clip);
-		QObject::connect(editor, &QAction::triggered, menu, [sample, menu] { if (sample) { (new SampleEditorDialog(sample, menu->parentWidget()))->show(); } });
+		QObject::connect(editor, &QAction::triggered, menu, [sample, menu] { if (sample) { SampleEditorDialog::openFor(sample, menu->parentWidget()); } });
 		add(menu, "Make the Sample Unique", "sample.make_unique", self, false);
 		clipSpeedEntries(menu, clip, self);  // ED-152 / ED-179
 		add(menu, "Split at the Play Position", "clip.split_at", with(with(self, "at", QStringLiteral("positions")), "positions",  // ED-005
@@ -381,6 +381,8 @@ void viewOptionsMenu(QMenu* menu)
 	choices(view, "Show Channels", "window.mixer_view", "filter", {});
 	choices(view, "Meter", "window.mixer_view", "meter_mode", {});
 	choices(view, "Meter Scale", "window.mixer_view", "meter_scale", {});
+	choices(view, "View", "window.mixer_view", "view", {});  // 0.5.0 theme 16: Mix or Routing
+	choices(view, "Density", "window.mixer_view", "density", {});  // Compact or Expanded
 }
 
 //! The window a dialog opened from a menu belongs to: the main window, since a context menu is deleted when it

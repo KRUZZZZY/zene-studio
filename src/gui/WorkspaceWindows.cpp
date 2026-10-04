@@ -38,6 +38,7 @@
 #include <QUrl>
 #include <QVBoxLayout>
 
+#include "CommandMetadata.h"
 #include "ControlRegistry.h"
 #include "DesignTokens.h"
 #include "Engine.h"
@@ -57,7 +58,8 @@ QString answerHtml(const QJsonObject& answer)
 	const QString id = answer.value(QStringLiteral("id")).toString();
 	const QString link = (manual ? QStringLiteral("topic:") : QStringLiteral("command:")) + id;
 	return QStringLiteral("<p><a href=\"%1\"><b>%2</b></a> <small>(%3)</small><br>%4</p>")
-		.arg(link, answer.value(QStringLiteral("title")).toString().toHtmlEscaped(),
+		.arg(link, (manual ? answer.value(QStringLiteral("title")).toString()
+				: commandName(id) + QStringLiteral(" - ") + id).toHtmlEscaped(),  // the menus' name for a command
 			manual ? AssistantDialog::tr("manual") : AssistantDialog::tr("command"),
 			answer.value(QStringLiteral("text")).toString().toHtmlEscaped());
 }

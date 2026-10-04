@@ -32,6 +32,7 @@
 
 #ifdef ZENE_HAVE_FFMPEG
 
+#include <algorithm>
 #include <vector>
 
 #include <sndfile.h>
@@ -109,22 +110,43 @@ struct WavSink
 	}
 };
 
-//! Decode every frame of @a media into @a sink.
-void decodeAll(video::MediaStream& media, WavSink& sink)
+//! The file's length in seconds, or 0 when it does not say.
+double lengthOf(const video::MediaStream& media)
+{
+	return media.format->duration > 0 ? static_cast<double>(media.format->duration) / AV_TIME_BASE : 0.0;
+}
+
+//! Tell @a control how far @a frame is into the file; false when it asks the decode to stop.
+bool reportFrame(const video::MediaStream& media, const AVFrame* frame, double length, VideoExtractControl* control)
+{
+	if (control == nullptr) { return true; }
+	if (length > 0.0 && frame->pts != AV_NOPTS_VALUE)
+	{
+		control->progress.store(static_cast<float>(std::clamp(media.secondsOf(frame->pts) / length, 0.0, 1.0)));
+	}
+	return !control->cancel.load();
+}
+
+//! Decode every frame of @a media into @a sink; false when @a control stopped it.
+bool decodeAll(video::MediaStream& media, WavSink& sink, VideoExtractControl* control)
 {
 	AVFrame* frame = av_frame_alloc();
 	AVPacket* packet = av_packet_alloc();
+	const double length = lengthOf(media);
+	bool whole = true;
 	while (media.receive(frame, packet))
 	{
 		sink.write(const_cast<const uint8_t**>(frame->extended_data), frame->nb_samples);
+		if (!reportFrame(media, frame, length, control)) { whole = false; break; }
 	}
 	sink.write(nullptr, 0);
 	av_frame_free(&frame);
 	av_packet_free(&packet);
+	return whole;
 }
 
 //! Write @a video's audio to @a wav; the error text, or empty on success.
-QString extract(const QString& video, const QString& wav, VideoAudio* out)
+QString extract(const QString& video, const QString& wav, VideoAudio* out, VideoExtractControl* control)
 {
 	video::MediaStream media;
 	QString why;
@@ -133,7 +155,11 @@ QString extract(const QString& video, const QString& wav, VideoAudio* out)
 	WavSink sink;
 	if (!sink.openResampler(media.codec)) { return QObject::tr("the video's audio cannot be converted to stereo"); }
 	if (!sink.openFile(wav, media.codec->sample_rate)) { return QObject::tr("cannot write '%1': %2").arg(wav, QString::fromUtf8(sf_strerror(nullptr))); }
-	decodeAll(media, sink);
+	if (!decodeAll(media, sink, control))
+	{
+		sink.discard(wav);
+		return QObject::tr("the extraction was cancelled");
+	}
 	if (sink.frames <= 0)
 	{
 		sink.discard(wav);
@@ -145,20 +171,25 @@ QString extract(const QString& video, const QString& wav, VideoAudio* out)
 
 } // namespace
 
-bool extractVideoAudio(const QString& video, const QString& wav, VideoAudio* out, QString* error)
+bool extractVideoAudio(const QString& video, const QString& wav, VideoAudio* out, QString* error, VideoExtractControl* control)
 {
-	*error = extract(video, wav, out);
+	*error = extract(video, wav, out, control);
 	return error->isEmpty();
 }
 
 #else // no FFmpeg
 
-bool extractVideoAudio(const QString&, const QString&, VideoAudio*, QString* error)
+bool extractVideoAudio(const QString&, const QString&, VideoAudio*, QString* error, VideoExtractControl*)
 {
 	*error = VideoDecoder::unavailableReason();
 	return false;
 }
 
 #endif // ZENE_HAVE_FFMPEG
+
+bool extractVideoAudio(const QString& video, const QString& wav, VideoAudio* out, QString* error)
+{
+	return extractVideoAudio(video, wav, out, error, nullptr);
+}
 
 } // namespace lmms

@@ -39,14 +39,11 @@
 #include "DeviceOptions.h"
 #include "Effect.h"
 #include "EffectChain.h"
-#include "EffectPickerOrganiser.h"
-#include "EffectSelectDialog.h"
+#include "DevicePicker.h"
 #include "Engine.h"
 #include "Mixer.h"
 #include "PluginNativeEditor.h"
-#include "PluginOrganiser.h"
 #include "TakeRecorder.h"
-#include "TextFloat.h"
 
 namespace lmms::gui
 {
@@ -54,42 +51,22 @@ namespace lmms::gui
 namespace
 {
 
-//! The catalogue's dev-<n> for the picker's @a key, or empty: the same organiser key on both sides.
-QString deviceIdOf(const EffectKey& key)
-{
-	const QString wanted = pickerorganiser::keyOf(key);
-	const QList<ControlDeviceEntry> catalogue = controlDeviceCatalogue();
-	for (int i = 0; i < catalogue.size(); ++i)
-	{
-		if (pluginorganiser::keyOf(catalogue.at(i)) == wanted) { return control::deviceId(i); }
-	}
-	return QString();
-}
-
 int slotOf(const Effect* effect)
 {
 	const std::vector<Effect*>& effects = effect->effectChain()->effects();
 	return static_cast<int>(std::find(effects.begin(), effects.end(), effect) - effects.begin());
 }
 
-//! The picker, then the chosen device's dev-<n>; empty when cancelled, or (said so) when the device
-//! list has no entry for the choice.
-QString pickDevice(QWidget* parent)
+//! 0.5.0 theme 12: the searchable device picker (DevicePicker.h), then the chosen effect's dev-<n>; empty when cancelled.
+//! It lists plugin.list's own entries, so every choice is one plugin.load takes.
+QString pickDevice(QWidget* parent, const QString& title)
 {
-	EffectSelectDialog picker(parent);
-	if (picker.exec() != QDialog::Accepted) { return QString(); }
-	const QString device = deviceIdOf(picker.selectedKey());
-	if (device.isEmpty())
-	{
-		TextFloat::displayMessage(QObject::tr("Device not available"), QObject::tr("%1 is not in the device list (plugin.list), "
-			"so it cannot be inserted from here.").arg(picker.selectedKey().displayName()), QPixmap(), 4000, parent);
-	}
-	return device;
+	return DevicePicker::pick(parent, DevicePicker::Kind::Effect, title);
 }
 
 void insertBeside(QWidget* parent, const QPointer<Effect>& effect, bool after)
 {
-	const QString device = pickDevice(parent);
+	const QString device = pickDevice(parent, after ? QObject::tr("Insert an effect after") : QObject::tr("Insert an effect before"));
 	// The picker is modal: the device may have been unloaded (or its chain removed) while it was open.
 	if (device.isEmpty() || effect.isNull() || effect->effectChain() == nullptr) { return; }
 	const int slot = slotOf(effect);
@@ -103,7 +80,7 @@ void insertBeside(QWidget* parent, const QPointer<Effect>& effect, bool after)
 //! The picker, then plugin.replace: another device in this one's place (L11, WF-016).
 void replaceWith(QWidget* parent, const QJsonObject& device)
 {
-	const QString chosen = pickDevice(parent);
+	const QString chosen = pickDevice(parent, QObject::tr("Replace the device with"));
 	if (chosen.isEmpty()) { return; }
 	QJsonObject args = device;
 	args.insert(QStringLiteral("device"), chosen);
@@ -122,10 +99,7 @@ void copyTo(QWidget* parent, const QJsonObject& self, const char* id, const QStr
 
 QAction* entry(QMenu* menu, const QString& text, const char* id, std::function<void()> run)
 {
-	QAction* action = menu->addAction(text);
-	action->setProperty("controlCommand", QLatin1String(id));
-	QObject::connect(action, &QAction::triggered, menu, std::move(run));
-	return action;
+	return addCommandEntry(menu, text, id, std::move(run));
 }
 
 CommandCall deviceCall(const char* id, const QJsonObject& fixed, bool ask, const QJsonObject& defaults = {})
@@ -217,30 +191,31 @@ QJsonObject chainAddress(const EffectChain* chain)
 	return {};
 }
 
-void addEffectDeviceMenus(QMenu* menu, Effect* effect)
+QAction* addCommandEntry(QMenu* menu, const QString& text, const char* id, std::function<void()> run)
 {
-	if (effect == nullptr || effect->effectChain() == nullptr) { return; }
-	QJsonObject self = chainAddress(effect->effectChain());
-	if (self.isEmpty()) { return; }
+	QAction* action = menu->addAction(text);
+	action->setProperty("controlCommand", QLatin1String(id));
+	QObject::connect(action, &QAction::triggered, menu, std::move(run));
+	return action;
+}
+
+QJsonObject deviceAddress(const Effect* effect)
+{
+	if (effect == nullptr || effect->effectChain() == nullptr) { return {}; }
+	QJsonObject device = chainAddress(effect->effectChain());
+	if (!device.isEmpty()) { device.insert(QStringLiteral("plugin"), control::effectIdOf(effect)); }
+	return device;
+}
+
+void addReplaceEntry(QMenu* menu, const QJsonObject& device)
+{
 	QWidget* parent = menu->parentWidget();
-	entry(menu, QObject::tr("Insert Effect Before..."), "plugin.load", [parent, guarded = QPointer<Effect>(effect)] {
-		insertBeside(parent, guarded, false);
-	});
-	entry(menu, QObject::tr("Insert Effect After..."), "plugin.load", [parent, guarded = QPointer<Effect>(effect)] {
-		insertBeside(parent, guarded, true);
-	});
-	QJsonObject device = self;
-	device.insert(QStringLiteral("plugin"), control::effectIdOf(effect));
 	entry(menu, QObject::tr("Replace With..."), "plugin.replace", [parent, device] { replaceWith(parent, device); });
-	entry(menu, QObject::tr("Copy to Channels..."), "plugin.copy", [parent, device] {
-		copyTo(parent, device, "plugin.copy", QObject::tr("Copy the device to"));
-	});
-	entry(menu, QObject::tr("Copy Chain to Channels..."), "chain.copy", [parent, self] {
-		copyTo(parent, self, "chain.copy", QObject::tr("Copy the chain to"));
-	});
-	entry(menu, QObject::tr("Presets..."), "plugin.preset_list", [parent, device] {  // L11 (WF-025)
-		showCommandList(parent, CommandLists::devicePresets(device));
-	});
+}
+
+void addAbMenu(QMenu* menu, const QJsonObject& device)
+{
+	QWidget* parent = menu->parentWidget();
 	QMenu* ab = menu->addMenu(QObject::tr("A/B"));
 	const auto abCall = [device](const QString& action, const QString& slot) {
 		QJsonObject args = device;
@@ -260,6 +235,46 @@ void addEffectDeviceMenus(QMenu* menu, Effect* effect)
 			{QStringLiteral("plugin"), device.value(QStringLiteral("plugin"))}};
 		runCommand(parent, deviceCall("plugin.blend", self, true, {{QStringLiteral("amount"), 0.5}}));
 	});
+}
+
+void addInsertAndCopyEntries(QMenu* menu, Effect* effect, bool withReplace)
+{
+	const QJsonObject device = deviceAddress(effect);
+	if (device.isEmpty()) { return; }
+	QJsonObject self = device;
+	self.remove(QStringLiteral("plugin"));
+	QWidget* parent = menu->parentWidget();
+	entry(menu, QObject::tr("Insert Effect Before..."), "plugin.load", [parent, guarded = QPointer<Effect>(effect)] {
+		insertBeside(parent, guarded, false);
+	});
+	entry(menu, QObject::tr("Insert Effect After..."), "plugin.load", [parent, guarded = QPointer<Effect>(effect)] {
+		insertBeside(parent, guarded, true);
+	});
+	if (withReplace) { addReplaceEntry(menu, device); }
+	entry(menu, QObject::tr("Copy to Channels..."), "plugin.copy", [parent, device] {
+		copyTo(parent, device, "plugin.copy", QObject::tr("Copy the device to"));
+	});
+	entry(menu, QObject::tr("Copy Chain to Channels..."), "chain.copy", [parent, self] {
+		copyTo(parent, self, "chain.copy", QObject::tr("Copy the chain to"));
+	});
+}
+
+void addParameterMenus(QMenu* menu, Effect* effect)
+{
+	const QJsonObject device = deviceAddress(effect);
+	if (!device.isEmpty()) { addParameterEntries(menu, menu->parentWidget(), effect, device); }
+}
+
+void addEffectDeviceMenus(QMenu* menu, Effect* effect)
+{
+	const QJsonObject device = deviceAddress(effect);
+	if (device.isEmpty()) { return; }
+	QWidget* parent = menu->parentWidget();
+	addInsertAndCopyEntries(menu, effect, true);
+	entry(menu, QObject::tr("Presets..."), "plugin.preset_list", [parent, device] {  // L11 (WF-025)
+		showCommandList(parent, CommandLists::devicePresets(device));
+	});
+	addAbMenu(menu, device);
 	addParameterEntries(menu, parent, effect, device);
 }
 

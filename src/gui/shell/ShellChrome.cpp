@@ -44,6 +44,9 @@
 #include "LibraryCommandMenus.h"
 #include "ShellCommandMenus.h"
 #include "ShellIcons.h"
+#include "ShellOverflow.h"
+#include "ShellToolsMenu.h"
+#include "TaskIndicator.h"
 #include "TransportReadouts.h"
 #include "Song.h"
 
@@ -68,10 +71,16 @@ int headerHeight()
 	return tokens::size::headerHeight;
 }
 
-//! A view word as the footer shows it: upper case, no mnemonic marker, no shortcut suffix.
-QString wordOf(QString text)
+//! A label as a button shows it: no mnemonic marker, no shortcut suffix.
+QString labelOf(QString text)
 {
-	return text.remove(QLatin1Char('&')).section(QLatin1Char('\t'), 0, 0).toUpper();
+	return text.remove(QLatin1Char('&')).section(QLatin1Char('\t'), 0, 0);
+}
+
+//! A view word as the footer shows it: upper case, no mnemonic marker, no shortcut suffix.
+QString wordOf(const QString& text)
+{
+	return labelOf(text).toUpper();
 }
 
 } // namespace
@@ -92,6 +101,13 @@ QSize ShellButton::sizeHint() const
 	{
 		const QFontMetrics fm(tokens::font(tokens::TextRole::Small));
 		const int w = fm.horizontalAdvance(wordOf(text())) + 2 * tokens::space::md;
+		return {std::max(w, tokens::targetSize()), tokens::targetSize()};
+	}
+	if (toolButtonStyle() == Qt::ToolButtonTextBesideIcon)
+	{
+		// Theme 8: a labelled switch - its icon, then its name.
+		const QFontMetrics fm(tokens::font(tokens::TextRole::Small));
+		const int w = iconSize().width() + tokens::space::xs + fm.horizontalAdvance(labelOf(text())) + 2 * tokens::space::md;
 		return {std::max(w, tokens::targetSize()), tokens::targetSize()};
 	}
 	// 0.5.0 W3 (WF-134 / WF-133): the target grows with the layout density (size::target at standard).
@@ -118,10 +134,28 @@ void ShellButton::paintFace(QPainter& p)
 		p.drawText(rect(), Qt::AlignCenter, wordOf(text()));
 		return;
 	}
+	if (toolButtonStyle() == Qt::ToolButtonTextBesideIcon)
+	{
+		paintLabelled(p);
+		return;
+	}
 	const QSize is = iconSize();
 	const QRect target(QPoint((width() - is.width()) / 2, (height() - is.height()) / 2), is);
 	icon().paint(&p, target, Qt::AlignCenter, isEnabled() ? QIcon::Normal : QIcon::Disabled,
 		isChecked() ? QIcon::On : QIcon::Off);
+}
+
+void ShellButton::paintLabelled(QPainter& p)
+{
+	const tokens::Palette& pal = tokens::palette();
+	const QSize is = iconSize();
+	const QRect glyph(QPoint(tokens::space::md, (height() - is.height()) / 2), is);
+	icon().paint(&p, glyph, Qt::AlignCenter, isEnabled() ? QIcon::Normal : QIcon::Disabled, isChecked() ? QIcon::On : QIcon::Off);
+	// Checked is told three ways: the fill, the accent glyph and the brighter name - never by colour alone.
+	p.setFont(tokens::font(tokens::TextRole::Small));
+	p.setPen(!isEnabled() ? pal.textDisabled : isChecked() ? pal.text : pal.textMuted);
+	const QRect words = rect().adjusted(glyph.right() + 1 + tokens::space::xs, 0, -tokens::space::md, 0);
+	p.drawText(words, Qt::AlignVCenter | Qt::AlignLeft, labelOf(text()));
 }
 
 void ShellButton::paintEvent(QPaintEvent*)
@@ -197,6 +231,10 @@ ShellHeader::ShellHeader(QWidget* parent)
 		ShellCommandMenus::populateProject(toolsMenu);
 	});
 	tools->setMenu(toolsMenu);
+	// Theme 8: what does not fit on a narrow screen goes into More (refit), never off the edge.
+	m_more = new ShellOverflowButton(tr("More header controls"), m_strip);
+	m_more->setObjectName(QStringLiteral("headerMore"));
+	m_stripLayout->addWidget(m_more);
 	LibraryCommandMenus::install();  // 0.5.0 L12 (WF-048): a project opens in its document type's view
 	syncTransport();
 }
@@ -246,8 +284,58 @@ void ShellHeader::customise(const QJsonObject& doc)
 	for (const QJsonValue& name : doc.value(QStringLiteral("hidden")).toArray()) { hidden.append(name.toString()); }
 	for (auto* button : m_strip->findChildren<ShellButton*>(QString(), Qt::FindDirectChildrenOnly))
 	{
-		button->setVisible(!hidden.contains(button->objectName().mid(7)));  // "header_" + name
+		if (button == m_more) { continue; }
+		const bool userHidden = hidden.contains(button->objectName().mid(7));  // "header_" + name
+		button->setProperty(shelloverflow::userHiddenProperty(), userHidden);
+		button->setVisible(!userHidden);
 	}
+	refit();
+}
+
+QList<QToolButton*> ShellHeader::rightButtons() const
+{
+	QList<QToolButton*> out;
+	for (int i = m_stretchIndex + 1; i < m_stripLayout->count(); ++i)
+	{
+		auto* button = qobject_cast<QToolButton*>(m_stripLayout->itemAt(i)->widget());
+		if (button != nullptr && button != m_more) { out.append(button); }
+	}
+	return out;
+}
+
+int ShellHeader::stripFloor(const QList<QToolButton*>& right) const
+{
+	m_stripLayout->invalidate();
+	const int gap = m_stripLayout->spacing();
+	int floor = m_stripLayout->minimumSize().width();
+	for (const QToolButton* button : right)
+	{
+		if (!button->isHidden()) { floor -= button->sizeHint().width() + gap; }
+	}
+	return m_more->isHidden() ? floor + m_more->sizeHint().width() + gap : floor;
+}
+
+void ShellHeader::refit()
+{
+	if (m_fitting || m_more == nullptr) { return; }
+	m_fitting = true;
+	m_stripLayout->removeWidget(m_more);
+	m_stripLayout->addWidget(m_more);  // after every button, the ones added since it was made too
+	const QList<QToolButton*> right = rightButtons();
+	// Measured at the preferred sizes: buttons go into More before the tempo, time and meter controls are squeezed.
+	shelloverflow::fit(right, m_more, m_strip->width(), [this] {
+		m_stripLayout->invalidate();
+		return m_stripLayout->sizeHint().width();
+	}, false);
+	// The strip may be narrower than all it holds: the window can shrink, and what does not fit is in More.
+	if (const int floor = stripFloor(right); m_strip->minimumWidth() != floor) { m_strip->setMinimumWidth(floor); }
+	m_fitting = false;
+}
+
+void ShellHeader::resizeEvent(QResizeEvent* event)
+{
+	QWidget::resizeEvent(event);
+	refit();
 }
 
 namespace
@@ -312,11 +400,14 @@ void ShellHeader::contextMenuEvent(QContextMenuEvent* event)
 QJsonArray ShellHeader::buttons() const
 {
 	QJsonArray out;
-	for (const auto* button : m_strip->findChildren<ShellButton*>(QString(), Qt::FindDirectChildrenOnly))
+	const QList<QToolButton*> overflowed = m_more != nullptr ? m_more->overflowed() : QList<QToolButton*>();
+	for (auto* button : m_strip->findChildren<ShellButton*>(QString(), Qt::FindDirectChildrenOnly))
 	{
+		if (button == m_more) { continue; }
+		const bool inMore = overflowed.contains(button);
 		out.append(QJsonObject{{QStringLiteral("name"), button->objectName().mid(7)},
 			{QStringLiteral("text"), button->toolTip()}, {QStringLiteral("command"), button->property("controlCommand").toString()},
-			{QStringLiteral("visible"), !button->isHidden()}});
+			{QStringLiteral("visible"), inMore || !button->isHidden()}, {QStringLiteral("overflowed"), inMore}});
 	}
 	return out;
 }
@@ -341,7 +432,8 @@ ShellFooter::ShellFooter(const QList<QAction*>& viewActions, const QList<QAction
 	setObjectName(QStringLiteral("shellFooter"));
 	// The footer holds a row of buttons, so it grows with them at a lower density (WF-134).
 	setFixedHeight(std::max(tokens::size::footerHeight, tokens::targetSize() + tokens::space::sm));
-	a11y::announce(this, tr("Footer"), tr("Panel switches, grouped by where each panel opens, and the views."));
+	a11y::announce(this, tr("Footer"), tr("Panel switches, grouped by where each panel opens, the tools that open in "
+		"windows of their own, and the views."));
 
 	auto* row = new QHBoxLayout(this);
 	row->setContentsMargins(tokens::space::sm, 0, tokens::space::sm, 0);
@@ -357,12 +449,19 @@ ShellFooter::ShellFooter(const QList<QAction*>& viewActions, const QList<QAction
 		}
 		return out;
 	};
-	for (QAction* a : byRegion(QStringLiteral("left"))) { addPanelButton(row, a); }
-	row->addSpacing(tokens::space::lg);
-	for (QAction* a : byRegion(QStringLiteral("bottom"))) { addPanelButton(row, a); }
-	row->addSpacing(tokens::space::lg);
-	for (QAction* a : byRegion(QStringLiteral("center"))) { addPanelButton(row, a); }
-	row->addStretch(1);
+	// Theme 8: the switches fit themselves to the room there is - the bottom region's and the launcher's go into More
+	// first, the Tools home next, the Inspector's last.
+	m_switches = new ShellOverflowRow(tr("More panels and tools"), this);
+	m_switches->setObjectName(QStringLiteral("footerSwitches"));
+	for (QAction* a : byRegion(QStringLiteral("left"))) { m_switches->addButton(panelButton(a), 2); }
+	m_switches->addSpacing(tokens::space::lg);
+	for (QAction* a : byRegion(QStringLiteral("bottom"))) { m_switches->addButton(panelButton(a)); }
+	m_switches->addSpacing(tokens::space::lg);
+	for (QAction* a : byRegion(QStringLiteral("center"))) { m_switches->addButton(panelButton(a)); }
+	m_switches->addSpacing(tokens::space::lg);
+	m_switches->addButton(shelltools::makeButton(this), 1);
+	row->addWidget(m_switches, 1);
+	row->addWidget(new TaskIndicator(this));  // 0.5.0 theme 24: background jobs, never blocking
 	for (QAction* a : viewActions)
 	{
 		auto* word = new ShellButton(this);
@@ -372,15 +471,15 @@ ShellFooter::ShellFooter(const QList<QAction*>& viewActions, const QList<QAction
 		row->addWidget(word);
 	}
 	row->addSpacing(tokens::space::lg);
-	for (QAction* a : byRegion(QStringLiteral("right"))) { addPanelButton(row, a); }
+	for (QAction* a : byRegion(QStringLiteral("right"))) { row->addWidget(panelButton(a)); }
 }
 
-void ShellFooter::addPanelButton(QHBoxLayout* row, QAction* action)
+ShellButton* ShellFooter::panelButton(QAction* action)
 {
 	auto* button = new ShellButton(this);
 	button->setDefaultAction(action);
 	a11y::announce(button, action->text(), tr("Show or hide this panel. %1").arg(action->toolTip()));
-	row->addWidget(button);
+	return button;
 }
 
 void ShellFooter::paintEvent(QPaintEvent*)

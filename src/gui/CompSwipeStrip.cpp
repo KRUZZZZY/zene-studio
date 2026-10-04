@@ -26,14 +26,20 @@
 #include <algorithm>
 
 #include <QJsonArray>
+#include <QKeyEvent>
 #include <QMouseEvent>
 #include <QPainter>
+#include <QSet>
 
+#include "AccessibleCanvas.h"
+#include "AccessibleWidgets.h"
 #include "Clip.h"
 #include "ControlEdit.h"
 #include "ControlRegistry.h"
 #include "DesignTokens.h"
+#include "Engine.h"
 #include "MusicalTime.h"
+#include "Song.h"
 #include "TimePos.h"
 #include "Track.h"
 
@@ -60,6 +66,16 @@ bool takeSpan(const QString& trackId, const std::vector<int>& lanes, int* begin,
 	return found;
 }
 
+//! A beat of the song's metre, in ticks: the cursor's step.
+int beatTicks()
+{
+	Song* song = Engine::getSong();
+	const int beats = song != nullptr ? std::max(1, song->getTimeSigModel().getNumerator()) : 4;
+	return std::max(1, TimePos::ticksPerBar() / beats);
+}
+
+Qt::KeyboardModifiers modsOf(const QKeyEvent* event) { return event->modifiers() & ~Qt::KeypadModifier; }
+
 } // namespace
 
 CompSwipeStrip::CompSwipeStrip(const QString& trackId, QWidget* parent) :
@@ -70,6 +86,11 @@ CompSwipeStrip::CompSwipeStrip(const QString& trackId, QWidget* parent) :
 	setAccessibleName(tr("Comp lanes - drag along a lane to comp that range, double-click to cycle the take"));
 	setMouseTracking(false);
 	setMinimumHeight(RowHeight);
+	setAccessibleDescription(tr("Keys: Up and Down choose the lane, Left and Right move a beat (Ctrl: a bar), Shift marks a "
+		"range; Enter comps the range, or the segment under the cursor, to the lane; C cycles the take there; Ctrl+Shift+L "
+		"lists the segments to edit them."));
+	setAttribute(Qt::WA_Hover);  // theme 23: the hover cue
+	a11y::describeCanvas(this, QAccessible::Canvas, [this] { return accessibleValue(); });
 }
 
 void CompSwipeStrip::setState(const QJsonObject& state)
@@ -93,8 +114,11 @@ void CompSwipeStrip::setState(const QJsonObject& state)
 		m_end = 4 * TimePos::ticksPerBar();
 	}
 	setMinimumHeight(RowHeight * std::max<int>(1, static_cast<int>(m_lanes.size())));
+	m_keyRow = std::clamp(m_keyRow, 0, std::max(0, static_cast<int>(m_lanes.size()) - 1));
+	if (m_keyTick < m_begin || m_keyTick >= m_end) { m_keyTick = m_begin; }
 	updateGeometry();
 	update();
+	emit stateChanged();
 }
 
 int CompSwipeStrip::tickAt(int x) const
@@ -118,7 +142,6 @@ void CompSwipeStrip::paintEvent(QPaintEvent*)
 {
 	QPainter p(this);
 	p.fillRect(rect(), palette().base());
-	const auto xOf = [this](int tick) { return static_cast<int>(static_cast<double>(tick - m_begin) / std::max(1, m_end - m_begin) * width()); };
 	for (std::size_t row = 0; row < m_lanes.size(); ++row)
 	{
 		const int y = static_cast<int>(row) * RowHeight;
@@ -138,6 +161,149 @@ void CompSwipeStrip::paintEvent(QPaintEvent*)
 		p.setPen(palette().text().color());
 		p.drawText(QRect(4, y, width() - 8, RowHeight), Qt::AlignVCenter | Qt::AlignLeft, tr("Lane %1").arg(m_lanes[row]));
 	}
+	paintKeyCursor(p);
+	a11y::paintCanvasCues(p, this);
+}
+
+int CompSwipeStrip::xOf(int tick) const
+{
+	return static_cast<int>(static_cast<double>(tick - m_begin) / std::max(1, m_end - m_begin) * width());
+}
+
+void CompSwipeStrip::paintKeyCursor(QPainter& p) const
+{
+	// Theme 10/23: the range the keys marked (an outlined band) and the cursor (a line), on the cursor's lane, while
+	// the strip has the focus - an outline, not a tint alone.
+	if (!hasFocus() || m_lanes.empty()) { return; }
+	const int y = m_keyRow * RowHeight;
+	const int x = xOf(m_keyTick);
+	if (m_keyAnchor >= 0)
+	{
+		const int from = xOf(std::min(m_keyAnchor, m_keyTick));
+		a11y::paintKeyMark(p, QRect(from, y, std::max(4, std::abs(xOf(m_keyAnchor) - x)), RowHeight));
+	}
+	a11y::paintKeyMark(p, QRect(x - 3, y, 7, RowHeight));
+}
+
+int CompSwipeStrip::keyLane() const
+{
+	return m_lanes.empty() ? -1 : m_lanes[static_cast<std::size_t>(m_keyRow)];
+}
+
+const CompSwipeStrip::Segment* CompSwipeStrip::segmentAt(int tick) const
+{
+	for (const Segment& segment : m_segments)
+	{
+		if (tick >= segment.begin && tick < segment.end) { return &segment; }
+	}
+	return nullptr;
+}
+
+QString CompSwipeStrip::accessibleValue() const
+{
+	if (m_lanes.empty()) { return tr("No take lanes"); }
+	QString text = m_keyAnchor >= 0
+		? tr("Lane %1, %2 to %3 marked").arg(keyLane()).arg(musicaltime::positionText(std::min(m_keyAnchor, m_keyTick)),
+			musicaltime::positionText(std::max(m_keyAnchor, m_keyTick)))
+		: tr("Lane %1, at %2").arg(keyLane()).arg(musicaltime::positionText(m_keyTick));
+	const Segment* playing = segmentAt(m_keyTick);
+	return text + (playing != nullptr ? tr("; the comp plays lane %1 here").arg(playing->lane) : tr("; no comp here"));
+}
+
+bool CompSwipeStrip::handlesKey(const QKeyEvent* event) const
+{
+	static const QSet<int> keys{Qt::Key_Left, Qt::Key_Right, Qt::Key_Up, Qt::Key_Down, Qt::Key_Home, Qt::Key_End,
+		Qt::Key_Return, Qt::Key_Enter, Qt::Key_Space, Qt::Key_C, Qt::Key_Escape};
+	const Qt::KeyboardModifiers mods = modsOf(event) & ~(Qt::ShiftModifier | Qt::ControlModifier);
+	if (event->key() == Qt::Key_L) { return modsOf(event) == (Qt::ControlModifier | Qt::ShiftModifier); }
+	return keys.contains(event->key()) && mods == Qt::NoModifier && !m_lanes.empty();
+}
+
+bool CompSwipeStrip::event(QEvent* event)
+{
+	// The strip's keys are its own while it has the focus (the arrows and C are not window shortcuts here).
+	if (event->type() == QEvent::ShortcutOverride && handlesKey(static_cast<QKeyEvent*>(event)))
+	{
+		event->accept();
+		return true;
+	}
+	return QWidget::event(event);
+}
+
+bool CompSwipeStrip::moveKey(const QKeyEvent* event)
+{
+	const int key = event->key();
+	if (key == Qt::Key_Up || key == Qt::Key_Down)
+	{
+		m_keyRow = std::clamp(m_keyRow + (key == Qt::Key_Up ? -1 : 1), 0, static_cast<int>(m_lanes.size()) - 1);
+		return true;
+	}
+	const int moved = movedTick(key, modsOf(event).testFlag(Qt::ControlModifier));
+	if (moved < 0) { return false; }
+	const bool shift = modsOf(event).testFlag(Qt::ShiftModifier);
+	if (shift && m_keyAnchor < 0) { m_keyAnchor = m_keyTick; }
+	if (!shift) { m_keyAnchor = -1; }
+	m_keyTick = std::clamp(moved, m_begin, m_end);
+	return true;
+}
+
+int CompSwipeStrip::movedTick(int key, bool byBar) const
+{
+	const int step = byBar ? TimePos::ticksPerBar() : beatTicks();
+	switch (key)
+	{
+		case Qt::Key_Home: return m_begin;
+		case Qt::Key_End: return m_end;
+		case Qt::Key_Left: return std::max(0, m_keyTick - step);
+		case Qt::Key_Right: return m_keyTick + step;
+		default: return -1;
+	}
+}
+
+void CompSwipeStrip::keyPressEvent(QKeyEvent* event)
+{
+	if (!handlesKey(event))
+	{
+		QWidget::keyPressEvent(event);
+		return;
+	}
+	const int key = event->key();
+	if (moveKey(event)) { update(); return; }
+	if (key == Qt::Key_C) { cycleAtCursor(); }
+	else if (key == Qt::Key_Escape) { m_keyAnchor = -1; }
+	else if (key == Qt::Key_L)
+	{
+		ControlRegistry::instance()->invoke(QStringLiteral("window.item_list"), {{QStringLiteral("surface"), QStringLiteral("comp")}});
+	}
+	else { compAtCursor(); }
+	update();
+}
+
+void CompSwipeStrip::compAtCursor()
+{
+	// The marked range, else the segment under the cursor, else the beat there: to the cursor's lane, ONE comp.select.
+	int begin = m_keyAnchor >= 0 ? std::min(m_keyAnchor, m_keyTick) : m_keyTick;
+	int end = m_keyAnchor >= 0 ? std::max(m_keyAnchor, m_keyTick) : m_keyTick + beatTicks();
+	if (const Segment* under = segmentAt(m_keyTick); under != nullptr && m_keyAnchor < 0)
+	{
+		begin = under->begin;
+		end = under->end;
+	}
+	if (end <= begin) { return; }
+	const ControlResult result = ControlRegistry::instance()->invoke(QStringLiteral("comp.select"),
+		{{QStringLiteral("track"), m_trackId}, {QStringLiteral("begin"), begin}, {QStringLiteral("end"), end}, {QStringLiteral("lane"), keyLane()}});
+	m_keyAnchor = -1;
+	if (!result.ok) { a11y::announceTransition(this, a11y::Transition::Refused, result.errorMessage); }
+	emit ran(result.ok ? tr("Comped %1 to %2 on lane %3").arg(musicaltime::positionText(begin), musicaltime::positionText(end)).arg(keyLane())
+		: result.errorMessage);
+}
+
+void CompSwipeStrip::cycleAtCursor()
+{
+	const ControlResult result = ControlRegistry::instance()->invoke(QStringLiteral("comp.cycle"),
+		{{QStringLiteral("track"), m_trackId}, {QStringLiteral("tick"), m_keyTick}});
+	if (!result.ok) { a11y::announceTransition(this, a11y::Transition::Refused, result.errorMessage); }
+	emit ran(result.ok ? tr("Lane %1 there now").arg(result.result.value(QStringLiteral("lane")).toInt()) : result.errorMessage);
 }
 
 void CompSwipeStrip::mousePressEvent(QMouseEvent* event)

@@ -31,9 +31,13 @@
  *  video.window_show lives with the window (src/gui/VideoWindow.cpp). In a build without FFmpeg every command
  *  answers `requires` with VideoDecoder::unavailableReason(). */
 
+#include <memory>
+
+#include <QCoreApplication>
 #include <QDir>
 #include <QFileInfo>
 #include <QJsonArray>
+#include <QThreadPool>
 
 #include "ControlCommandDef.h"
 #include "ControlRegistry.h"
@@ -43,6 +47,7 @@
 #include "Engine.h"
 #include "SampleClip.h"
 #include "Song.h"
+#include "TaskCenter.h"
 #include "Track.h"
 #include "VideoAudioExtract.h"
 #include "VideoCommands.h"
@@ -58,6 +63,8 @@ namespace
 {
 
 constexpr int MaxAudioNames = 100;  //!< "<video>-audio-<n>.wav" tried up to this n before the last one is reused
+const int ExtractionOwner = 0;  //!< its address names the background extractions in the task area
+int nextExtraction = 1;
 
 ControlResult unavailable()
 {
@@ -170,6 +177,53 @@ Track* landAudio(const VideoAttachment& video, const QString& wav)
 	return track;
 }
 
+/*! A background extraction's end, back on the main thread (0.5.0 theme 24): the track lands as ONE undo step - the
+ *  same step the synchronous run records - when the project still has the video it started from; otherwise nothing is
+ *  added and the task says where the WAV is. */
+void landExtracted(const VideoAttachment& video, const QString& wav, int local, const QString& why, bool cancelled)
+{
+	const void* key = &ExtractionOwner;
+	if (!why.isEmpty())
+	{
+		TaskCenter::instance().finish(key, local, cancelled ? TaskState::Cancelled : TaskState::Failed, why);
+		return;
+	}
+	if (!(VideoReference::instance().attachment() == video))
+	{
+		TaskCenter::instance().finish(key, local, TaskState::Failed,
+			QObject::tr("the project's video changed while its audio was extracted; the WAV is kept at %1").arg(wav));
+		return;
+	}
+	const Track* track = landAudio(video, wav);
+	TaskCenter::instance().finish(key, local, TaskState::Done, track->name());
+}
+
+//! Decode on a worker, listed in the task area with its progress and Cancel; the reply is an acknowledgement.
+ControlResult extractInBackground(const VideoAttachment& video, const QString& wav)
+{
+	auto control = std::make_shared<VideoExtractControl>();
+	const int local = nextExtraction++;
+	TaskCenter& tasks = TaskCenter::instance();
+	tasks.begin(&ExtractionOwner, local, {QStringLiteral("video_audio"), QObject::tr("Extract audio from %1")
+		.arg(QFileInfo(video.path).fileName()), [control] { control->cancel.store(true); },
+		[control] { return static_cast<double>(control->progress.load()); }, false});
+	if (QCoreApplication::instance() != nullptr)  // quitting stops it, so the pool is not held up by a long decode
+	{
+		QObject::connect(QCoreApplication::instance(), &QCoreApplication::aboutToQuit, &tasks,
+			[weak = std::weak_ptr<VideoExtractControl>(control)] { if (auto live = weak.lock()) { live->cancel.store(true); } });
+	}
+	QThreadPool::globalInstance()->start([control, video, wav, local] {
+		VideoAudio audio;
+		QString why;
+		extractVideoAudio(video.path, wav, &audio, &why, control.get());
+		QMetaObject::invokeMethod(&TaskCenter::instance(), [video, wav, local, why, cancelled = control->cancel.load()] {
+			landExtracted(video, wav, local, why, cancelled);
+		}, Qt::QueuedConnection);
+	});
+	return ControlResult::success({{QStringLiteral("background"), true}, {QStringLiteral("task"), tasks.idOf(&ExtractionOwner, local)},
+		{QStringLiteral("path"), wav}, {QStringLiteral("position"), static_cast<qint64>(video.offset)}});
+}
+
 ControlResult extractAudio(const QJsonObject& args)
 {
 	if (!VideoDecoder::available()) { return unavailable(); }
@@ -178,6 +232,7 @@ ControlResult extractAudio(const QJsonObject& args)
 	if (!video.hasAudio) { return ControlResult::failure(ControlErrorKind::Refused, QStringLiteral("the video has no audio stream")); }
 	const QString out = args.value(QStringLiteral("out")).toString();
 	const QString wav = out.isEmpty() ? defaultAudioPath(video.path) : QFileInfo(out).absoluteFilePath();
+	if (args.value(QStringLiteral("background")).toBool()) { return extractInBackground(video, wav); }
 	VideoAudio audio;
 	QString why;
 	// The decode happens before anything is recorded: a failed one leaves the project and the journal untouched.
@@ -213,8 +268,11 @@ void registerVideoCommands(ControlRegistry& registry)
 		"one undo step."), {{QStringLiteral("offset"), tickProperty()}}, {QStringLiteral("offset")}, true, setOffset);
 	add(registry, "video.extract_audio", QStringLiteral("Decode the video's sound to a 32-bit float stereo WAV - 'out', or "
 		"'<video>-audio.wav' next to the project (next to the video while the project is unsaved), numbered when taken - and "
-		"put it on a new audio track at the video's offset. Runs to the end before it answers. One undo step removes the "
-		"track; the WAV stays on disk."), {{QStringLiteral("out"), stringProperty()}}, {}, true, extractAudio);
+		"put it on a new audio track at the video's offset. Runs to the end before it answers - or, with 'background' true, "
+		"decodes on a worker listed in the task area (task.list: its progress, and task.cancel stops it) and answers at once "
+		"with the 'task' id; the track then lands when the decode completes. One undo step removes the track; the WAV stays "
+		"on disk."), {{QStringLiteral("out"), stringProperty()}, {QStringLiteral("background"), booleanProperty()}}, {}, true,
+		extractAudio);
 	registerVideoWindowCommand(registry);
 }
 

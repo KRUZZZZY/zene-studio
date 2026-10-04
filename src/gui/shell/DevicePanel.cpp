@@ -24,11 +24,12 @@
 
 #include "DevicePanel.h"
 
+#include <algorithm>
+
 #include <QGridLayout>
 #include <QHBoxLayout>
 #include <QJsonDocument>
 #include <QLabel>
-#include <QMenu>
 #include <QScrollArea>
 #include <QToolButton>
 #include <QVBoxLayout>
@@ -55,6 +56,9 @@
 #include "AudioPortsModel.h"
 #include "Knob.h"
 #include "PinConnector.h"
+#include "ParameterAliases.h"
+#include "DeviceCardState.h"
+#include "DevicePicker.h"
 #include "LedCheckBox.h"
 #include "MacroKnobs.h"
 #include "MainWindow.h"
@@ -94,6 +98,17 @@ MixerChannel* trackChannel(Track* track)
 	const int index = channel->value();
 	return index > 0 && index < static_cast<int>(Engine::mixer()->numChannels())
 		? Engine::mixer()->mixerChannel(index) : nullptr;
+}
+
+//! The property a placed widget carries its key in (place()).
+constexpr const char* KeyProperty = "devicePanelKey";
+
+//! What a card is drawn from - its device, target, title and parameter captions: a card whose key still matches is
+//! kept as it is when the panel redraws (theme 12).
+QString cardKey(const char* kind, const void* device, const QString& target, const QString& title, const QStringList& names)
+{
+	return QStringLiteral("%1:%2|%3|%4|%5").arg(QLatin1String(kind), QString::number(reinterpret_cast<quintptr>(device), 16),
+		target, title, names.join(QChar(0x1f)));
 }
 
 MixerChannel* selectedChannel()
@@ -144,24 +159,17 @@ QWidget* DevicePanel::buildAddButton()
 	add->setIcon(shellicons::icon(QStringLiteral("plus")));
 	add->setText(tr("Add device"));
 	add->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
-	add->setPopupMode(QToolButton::InstantPopup);
-	add->setAccessibleName(tr("Add a built-in effect to the selected track or channel"));
-	auto* menu = new QMenu(add);
-	connect(menu, &QMenu::aboutToShow, menu, [this, menu] {
-		menu->clear();
-		const QList<ControlDeviceEntry> catalogue = controlDeviceCatalogue();
-		for (int i = 0; i < catalogue.size(); ++i)
-		{
-			const ControlDeviceEntry& entry = catalogue.at(i);
-			if (entry.kind != QLatin1String("effect") || !entry.loadable || entry.format != QLatin1String("builtin")) { continue; }
-			menu->addAction(entry.displayName, this, [this, id = control::deviceId(i)] {
-				// runCommand: a refused load is shown, not swallowed.
-				runCommand(this, CommandCall{QStringLiteral("plugin.load"), {{QStringLiteral("target"), m_target},
-					{QStringLiteral("device"), id}}, {}, QString(), false});
-			});
-		}
+	add->setAccessibleName(tr("Add a device to the selected track or channel"));
+	add->setMinimumHeight(tokens::targetSize());
+	// Theme 12: the searchable picker (DevicePicker.h) - every loadable effect of every format, with its vendor and
+	// state in words - in place of a menu of the built-in effects only.
+	connect(add, &QToolButton::clicked, this, [this] {
+		const QString device = DevicePicker::pick(this, DevicePicker::Kind::Effect, tr("Add a device to %1").arg(m_target));
+		if (device.isEmpty() || m_target.isEmpty()) { return; }
+		// runCommand: a refused load is shown, not swallowed.
+		runCommand(this, CommandCall{QStringLiteral("plugin.load"), {{QStringLiteral("target"), m_target},
+			{QStringLiteral("device"), device}}, {}, QString(), false});
 	});
-	add->setMenu(menu);
 	return add;
 }
 
@@ -178,34 +186,76 @@ void DevicePanel::hideEvent(QHideEvent* event)
 	m_poll.stop();
 }
 
+void DevicePanel::retire(QWidget* widget)
+{
+	// Hidden and released now - before the device whose models a card draws is deleted - and destroyed once control
+	// returns to the event loop, since the click that removed a device came from a button on its own card.
+	if (auto* card = qobject_cast<DeviceCard*>(widget)) { card->closeEditor(); }
+	m_cards->removeWidget(widget);
+	widget->hide();
+	widget->deleteLater();
+}
+
 void DevicePanel::dropCards()
 {
-	// Hidden and released now - before the device whose models a card draws is deleted - and
-	// destroyed once control returns to the event loop, since the click that removed a device
-	// came from a button on its own card.
 	for (int i = m_cards->count() - 1; i >= 0; --i)
 	{
 		QWidget* widget = m_cards->itemAt(i)->widget();
-		if (widget == nullptr || widget == m_empty || widget == m_add) { continue; }
-		if (auto* card = qobject_cast<DeviceCard*>(widget)) { card->closeEditor(); }
-		m_cards->removeWidget(widget);
-		widget->hide();
-		widget->deleteLater();
+		if (widget != nullptr && widget != m_empty && widget != m_add) { retire(widget); }
 	}
 	m_modulators.clear();
 }
 
+void DevicePanel::dropLeavingCards(const EffectChain* clearing)
+{
+	for (int i = m_cards->count() - 1; i >= 0; --i)
+	{
+		auto* card = qobject_cast<DeviceCard*>(m_cards->itemAt(i)->widget());
+		const Effect* effect = card != nullptr ? card->spec().effect : nullptr;
+		if (effect == nullptr) { continue; }
+		// Every card's device is alive here: a device's removal signals its chain before the device is deleted, and
+		// that signal retired its card.
+		const EffectChain* chain = effect->effectChain();
+		const bool leaving = chain == nullptr || chain == clearing
+			|| std::find(chain->effects().begin(), chain->effects().end(), effect) == chain->effects().end();
+		if (leaving) { retire(card); }
+	}
+}
+
+void DevicePanel::dropInstrumentCards()
+{
+	for (int i = m_cards->count() - 1; i >= 0; --i)
+	{
+		auto* card = qobject_cast<DeviceCard*>(m_cards->itemAt(i)->widget());
+		if (card != nullptr && card->spec().instrumentTrack != nullptr) { retire(card); }
+	}
+}
+
 void DevicePanel::scheduleRebuild()
 {
-	dropCards();
+	// Theme 12: what is shown stays until the redraw, which keeps what has not changed; only a card whose device is
+	// going was dropped already (dropLeavingCards).
 	m_pending.start();
+}
+
+void DevicePanel::place(const QString& key, const std::function<QWidget*()>& make, Qt::Alignment alignment)
+{
+	QWidget* widget = m_reusable.take(key);
+	if (widget == nullptr)
+	{
+		widget = make();
+		widget->setProperty(KeyProperty, key);
+		if (auto* card = qobject_cast<DeviceCard*>(widget)) { card->refreshState(m_hosting); }
+	}
+	m_cards->insertWidget(m_cards->indexOf(m_add), widget, 0, alignment);
+	widget->show();
 }
 
 void DevicePanel::watchChain(EffectChain* chain)
 {
 	if (chain == nullptr) { return; }
-	m_watch << connect(chain, &EffectChain::dataChanged, this, &DevicePanel::scheduleRebuild);
-	m_watch << connect(chain, &EffectChain::aboutToClear, this, &DevicePanel::scheduleRebuild);
+	m_watch << connect(chain, &EffectChain::dataChanged, this, [this] { dropLeavingCards(); scheduleRebuild(); });
+	m_watch << connect(chain, &EffectChain::aboutToClear, this, [this, chain] { dropLeavingCards(chain); scheduleRebuild(); });
 }
 
 void DevicePanel::watch(Track* track, MixerChannel* channel)
@@ -220,14 +270,14 @@ void DevicePanel::watch(Track* track, MixerChannel* channel)
 		for (int c = 1; c < channel->m_rack.chainCount(); ++c) { watchChain(channel->m_rack.chain(c)); }
 	}
 	if (track == nullptr) { return; }
-	m_watch << connect(track, &QObject::destroyed, this, &DevicePanel::scheduleRebuild);
+	m_watch << connect(track, &QObject::destroyed, this, [this] { dropCards(); scheduleRebuild(); });
 	watchChain(trackChain(track));
 	if (auto* instrument = dynamic_cast<InstrumentTrack*>(track))
 	{
-		m_watch << connect(instrument, &InstrumentTrack::instrumentChanged, this, &DevicePanel::scheduleRebuild);
+		m_watch << connect(instrument, &InstrumentTrack::instrumentChanged, this, [this] { dropInstrumentCards(); scheduleRebuild(); });
 		if (instrument->instrument() != nullptr)
 		{
-			m_watch << connect(instrument->instrument(), &QObject::destroyed, this, &DevicePanel::scheduleRebuild);
+			m_watch << connect(instrument->instrument(), &QObject::destroyed, this, [this] { dropInstrumentCards(); scheduleRebuild(); });
 		}
 	}
 	if (IntModel* channel = track->mixerChannelModel())
@@ -238,12 +288,14 @@ void DevicePanel::watch(Track* track, MixerChannel* channel)
 
 void DevicePanel::addSection(const QString& text)
 {
-	auto* label = new QLabel(text, m_row);
-	label->setObjectName(QStringLiteral("deviceSection"));
-	label->setAlignment(Qt::AlignLeft | Qt::AlignTop);
-	label->setWordWrap(true);
-	label->setFixedWidth(DeviceCard::CellWidth + tokens::space::xl);
-	m_cards->insertWidget(m_cards->indexOf(m_add), label);
+	place(QStringLiteral("section:") + text, [this, text] {
+		auto* label = new QLabel(text, m_row);
+		label->setObjectName(QStringLiteral("deviceSection"));
+		label->setAlignment(Qt::AlignLeft | Qt::AlignTop);
+		label->setWordWrap(true);
+		label->setFixedWidth(DeviceCard::CellWidth + tokens::space::xl);
+		return label;
+	});
 }
 
 void DevicePanel::addInstrumentCard(InstrumentTrack* track)
@@ -256,8 +308,12 @@ void DevicePanel::addInstrumentCard(InstrumentTrack* track)
 	spec.title = instrument->displayName();
 	spec.subtitle = tr("Instrument");
 	spec.instrumentTrack = track;
-	auto* card = new DeviceCard(spec, controlInstrumentParameters(instrument), m_row);
-	m_cards->insertWidget(m_cards->indexOf(m_add), card);
+	const QList<AutomatableModel*> parameters = controlInstrumentParameters(instrument);
+	QStringList names;
+	for (const AutomatableModel* model : parameters) { names << model->displayName(); }
+	place(cardKey("inst", instrument, spec.target, spec.title, names), [this, spec, parameters] {
+		return new DeviceCard(spec, parameters, m_row);
+	});
 }
 
 void DevicePanel::addModulators(const QJsonArray& modulators, const QString& target, int chainIndex, int effectIndex)
@@ -275,7 +331,9 @@ void DevicePanel::addModulators(const QJsonArray& modulators, const QString& tar
 		const QString id = modulator.value(QStringLiteral("id")).toString();
 		if (!drives || m_modulators.contains(id)) { continue; }
 		m_modulators << id;
-		m_cards->insertWidget(m_cards->indexOf(m_add), new ModulatorCard(modulator, m_row));
+		// Its whole description is its key: a changed rate or target makes a new card, an unchanged one stays.
+		const QString key = QStringLiteral("mod:") + QString::fromUtf8(QJsonDocument(modulator).toJson(QJsonDocument::Compact));
+		place(key, [this, modulator] { return new ModulatorCard(modulator, m_row); });
 	}
 }
 
@@ -293,37 +351,22 @@ void DevicePanel::addChain(EffectChain* chain, const QString& target, const QJso
 		spec.subtitle = target.startsWith(QLatin1String("ch-")) ? tr("Insert on %1").arg(target) : tr("Audio effect");
 		spec.enabled = effect->isEnabled();
 		spec.effect = effect;
-		m_cards->insertWidget(m_cards->indexOf(m_add), new DeviceCard(spec, controlEffectParameters(effect), m_row));
+		const QList<AutomatableModel*> parameters = controlEffectParameters(effect);
+		place(cardKey("fx", effect, target, spec.title, parameteraliases::shownNamesOf(effect, parameters)),
+			[this, spec, parameters] { return new DeviceCard(spec, parameters, m_row); });
 		addModulators(modulators, target, chainIndex, i);
 	}
 }
 
-void DevicePanel::rebuild()
+void DevicePanel::addChannel(MixerChannel* channel)
 {
-	m_pending.stop();
-	dropCards();
-	Track* track = ShellSelection::instance()->track();
-	MixerChannel* channel = track != nullptr ? trackChannel(track) : selectedChannel();
-	watch(track, channel);
-	m_channel = control::channelIdOf(channel);
-	m_target = track != nullptr ? control::trackIdOf(track) : m_channel;
-	m_empty->setVisible(m_target.isEmpty());
-	m_add->setVisible(!m_target.isEmpty() && (track == nullptr || trackChain(track) != nullptr));
-	m_signature = signature();
-	if (track != nullptr)
-	{
-		if (auto* instrument = dynamic_cast<InstrumentTrack*>(track)) { addInstrumentCard(instrument); }
-		addChain(trackChain(track), m_target, {});
-	}
-	if (channel == nullptr) { return; }
 	const QJsonArray modulators = invoke(QStringLiteral("modulator.get_state"), {}).result
 		.value(QStringLiteral("modulators")).toArray();
 	addSection(tr("Mixer %1 - %2").arg(m_channel, channel->m_name));
 	// 0.5.0 L10 (MX-101): the level of the channel these devices play into, beside its heading.
-	m_cards->insertWidget(m_cards->indexOf(m_add), new ChannelLevelMeter(m_channel, m_row), 0, Qt::AlignTop);
+	place(QStringLiteral("meter:") + m_channel, [this] { return new ChannelLevelMeter(m_channel, m_row); }, Qt::AlignTop);
 	// 0.5.0 L10 (MX-104): the rack's macros as knobs, before the devices they drive.
-	auto* macros = new MacroKnobs(m_channel, 8, false, m_row);
-	m_cards->insertWidget(m_cards->indexOf(m_add), macros);
+	place(QStringLiteral("macros:") + m_channel, [this] { return new MacroKnobs(m_channel, 8, false, m_row); });
 	addChain(&channel->m_fxChain, m_channel, modulators);
 	// 0.5.0 L10 (MX-102): the rack's parallel chains, each after its own heading; their devices are
 	// addressed by fx-<n> on the channel like the chain's own.
@@ -332,6 +375,45 @@ void DevicePanel::rebuild()
 		addSection(tr("Parallel chain %1").arg(c));
 		addChain(channel->m_rack.chain(c), m_channel, modulators, c);  // a modulator can drive a rack chain's device
 	}
+}
+
+void DevicePanel::collectReusable()
+{
+	m_modulators.clear();
+	m_reusable.clear();
+	for (int i = m_cards->count() - 1; i >= 0; --i)
+	{
+		QWidget* widget = m_cards->itemAt(i)->widget();
+		const QString key = widget != nullptr ? widget->property(KeyProperty).toString() : QString();
+		if (key.isEmpty()) { continue; }
+		m_cards->removeWidget(widget);
+		m_reusable.insert(key, widget);
+	}
+}
+
+void DevicePanel::rebuild()
+{
+	m_pending.stop();
+	Track* track = ShellSelection::instance()->track();
+	MixerChannel* channel = track != nullptr ? trackChannel(track) : selectedChannel();
+	watch(track, channel);
+	m_channel = control::channelIdOf(channel);
+	m_target = track != nullptr ? control::trackIdOf(track) : m_channel;
+	m_empty->setVisible(m_target.isEmpty());
+	m_add->setVisible(!m_target.isEmpty() && (track == nullptr || trackChain(track) != nullptr));
+	m_signature = signature();
+	// Theme 12: everything shown is taken out of the row and placed again in the new order when its key still matches;
+	// what is left over afterwards is what the selection or the chain no longer has.
+	collectReusable();
+	if (track != nullptr)
+	{
+		if (auto* instrument = dynamic_cast<InstrumentTrack*>(track)) { addInstrumentCard(instrument); }
+		addChain(trackChain(track), m_target, {});
+	}
+	if (channel != nullptr) { addChannel(channel); }
+	const QList<QWidget*> leftOver = m_reusable.values();
+	m_reusable.clear();
+	for (QWidget* widget : leftOver) { retire(widget); }
 }
 
 QString DevicePanel::signature() const
@@ -361,11 +443,13 @@ void DevicePanel::poll()
 	const QString target = track != nullptr ? control::trackIdOf(track) : control::channelIdOf(selectedChannel());
 	if (target != m_target || signature() != m_signature) { rebuild(); return; }
 	for (MacroKnobs* macros : m_row->findChildren<MacroKnobs*>()) { macros->refresh(); }  // values set elsewhere
+	// Theme 12: a crashed or quarantined host, every fourth beat (two seconds) - a report, not a command that mutates.
+	if (m_polls++ % 4 == 0) { m_hosting = devicestate::hostingProblems(); }
 	// MX-095. Only the cards in the row: a dropped card stays a child until its deferred delete, and the device it
 	// points at may be gone already.
 	for (int i = 0; i < m_cards->count(); ++i)
 	{
-		if (auto* card = qobject_cast<DeviceCard*>(m_cards->itemAt(i)->widget())) { card->refreshActivity(); }
+		if (auto* card = qobject_cast<DeviceCard*>(m_cards->itemAt(i)->widget())) { card->refreshState(m_hosting); }
 	}
 }
 
@@ -380,7 +464,8 @@ QJsonObject DevicePanel::describe() const
 			{QStringLiteral("plugin"), card->spec().plugin}, {QStringLiteral("name"), card->spec().title},
 			{QStringLiteral("enabled"), card->spec().effect == nullptr || card->spec().effect->isEnabled()},
 			{QStringLiteral("processing"), card->spec().effect != nullptr && card->spec().effect->isProcessingAudio()},
-			{QStringLiteral("parameters"), card->totalParameters()}, {QStringLiteral("shown"), card->shownParameters()}});
+			{QStringLiteral("parameters"), card->totalParameters()}, {QStringLiteral("shown"), card->shownParameters()},
+			{QStringLiteral("state"), card->stateJson()}});
 	}
 	return {{QStringLiteral("track"), control::trackIdOf(m_track)}, {QStringLiteral("channel"), m_channel}, {QStringLiteral("cards"), cards},
 		{QStringLiteral("modulators"), QJsonArray::fromStringList(m_modulators)}};

@@ -27,7 +27,8 @@
  *  RMS and a latched clip light that mixer.clear_clips clears; mixer.set_strip is one undo step and
  *  is saved only when set; solo safe keeps a channel playing through another's solo; mixer.set_many
  *  unmutes every channel in one step; mixer.solo_mode's additive solo keeps every soloed channel on
- *  (MX-029); the pre-fader meter mode's peak ignores the fader (MX-129). */
+ *  (MX-029); the pre-fader meter mode's peak ignores the fader (MX-129); mixer.rename_channel is one undo step
+ *  (theme 13). */
 
 #include <QtTest>
 
@@ -232,6 +233,28 @@ private slots:
 		mixerstrip::updateMeters(*channel(3), channel(3)->m_buffer, 0.5f, 4);
 		QCOMPARE(channel(3)->m_preMeterLeft.get(), 0.25f);  // the fader does not touch it
 		QCOMPARE(channel(3)->m_peakLeft >= 0.f, true);
+	}
+
+	//! 0.5.0 theme 13: mixer.rename_channel names a channel (the Inspector's in-place name, the strip's own field), one
+	//! undo step puts the old name back and its redo the new one; a blank name is refused and a same name is no step.
+	void aChannelIsRenamedAndTheUndoPutsTheNameBack()
+	{
+		const QString before = channel(2)->m_name;
+		const ControlResult renamed = run(QStringLiteral("mixer.rename_channel"), {{QStringLiteral("channel"), ch(2)},
+			{QStringLiteral("name"), QStringLiteral("  Drum Bus  ")}});
+		QVERIFY2(renamed.ok, qPrintable(renamed.errorMessage));
+		QCOMPARE(channel(2)->m_name, QStringLiteral("Drum Bus"));  // trimmed
+		QCOMPARE(renamed.result.value(QStringLiteral("previous")).toString(), before);
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
+		QCOMPARE(channel(2)->m_name, before);
+		QVERIFY(run(QStringLiteral("control.redo")).ok);
+		QCOMPARE(channel(2)->m_name, QStringLiteral("Drum Bus"));
+		QCOMPARE(run(QStringLiteral("mixer.rename_channel"), {{QStringLiteral("channel"), ch(2)}, {QStringLiteral("name"), QStringLiteral("   ")}})
+			.errorKind, ControlErrorKind::InvalidArgs);
+		QCOMPARE(run(QStringLiteral("mixer.rename_channel"), {{QStringLiteral("channel"), QStringLiteral("ch-99999")},
+			{QStringLiteral("name"), QStringLiteral("x")}}).errorKind, ControlErrorKind::NotFound);
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
+		QCOMPARE(channel(2)->m_name, before);
 	}
 };
 

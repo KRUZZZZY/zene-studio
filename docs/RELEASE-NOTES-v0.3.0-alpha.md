@@ -947,8 +947,12 @@ window.layout_project_apply (`not_mutating`) (+13); the seven macro.* rows becam
 - F7 surround: mixer.channel_format, mixer.surround_pan and mixer.downmix_options (`true_inverse`); mixer.surround_get
   (`not_mutating`).
 
+**0.5.0 catch-up wave 3** (the redesign themes 8-24; +10, one new group): plugin.move, mixer.rename_channel and
+view.announcements (`true_inverse`); window.sample_editor, window.item_list, workflow.resume and task.list, task.cancel,
+task.clear_finished and task.show (`not_mutating`, interface state).
+
 <!-- A16-HISTOGRAM-BEGIN
-     measured: rows=808 true_inverse=401 snapshot=40 irreversible=21 not_mutating=346
+     measured: rows=818 true_inverse=404 snapshot=40 irreversible=21 not_mutating=353
      configuration: telemetry.status wasm.load session.get_state stem.get_state
      option telemetry.status rows=2 not_mutating=2
      option wasm.load rows=9 true_inverse=1 snapshot=3 not_mutating=5

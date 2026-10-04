@@ -27,6 +27,7 @@
 
 #include <map>
 
+#include <QPoint>
 #include <QWidget>
 
 #include "lmms_export.h"
@@ -42,6 +43,7 @@ namespace lmms::gui
 {
 
 class NoteEditor;
+struct LaneScale;
 struct NoteEditorState;
 
 /*! 0.5.0 L07 (ED-130): the lane under the notes when the chooser names a controller - the clip's
@@ -58,12 +60,16 @@ public:
 	QSize sizeHint() const override;
 	//! Drop a stroke in progress, uncommitted: the clip it was drawn on changed or went away.
 	void cancelDrag();
+	//! 0.5.0 theme 11: what the lane reads out - the curve's value and the pointer's at the pointer's time
+	//! while it hovers, the stroke's while it draws or erases; "" with the pointer elsewhere.
+	QString readout() const;
 
 protected:
 	void paintEvent(QPaintEvent* event) override;
 	void mousePressEvent(QMouseEvent* event) override;
 	void mouseMoveEvent(QMouseEvent* event) override;
 	void mouseReleaseEvent(QMouseEvent* event) override;
+	void leaveEvent(QEvent* event) override;
 
 private:
 	const ControllerLane* lane() const;
@@ -73,6 +79,9 @@ private:
 	int snappedTick(int x) const;
 	void paintCurve(QPainter& p, const ControllerLane& shown) const;
 	void paintStroke(QPainter& p) const;
+	QString pointerReadout(const LaneScale& scale) const;
+	//! @a tick (clip ticks) as the musical-time format reads it.
+	QString timeText(int tick) const;
 	void drawTo(const QPoint& pos);
 	void commit();
 
@@ -83,6 +92,7 @@ private:
 	int m_lastTick = -1;
 	bool m_drawing = false;
 	bool m_erasing = false;
+	QPoint m_hover{-1, -1};  //!< the pointer over the lane, or x < 0 when it is elsewhere
 };
 
 } // namespace lmms::gui

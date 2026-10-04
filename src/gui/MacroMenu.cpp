@@ -27,20 +27,16 @@
 #include <QActionGroup>
 #include <QMainWindow>
 #include <QMenuBar>
-#include <QToolButton>
 
 #include "CommandForm.h"
 #include "CommandLists.h"
 #include "ControlRegistry.h"
-#include "DesignTokens.h"
 #include "Engine.h"
 #include "LayoutMenu.h"
-#include "MainWindow.h"
 #include "MenuBarExtras.h"
-#include "Shell.h"
-#include "ShellChrome.h"
 #include "ShortcutMap.h"
 #include "Song.h"
+#include "WorkflowRecordingIndicator.h"
 
 namespace lmms::gui
 {
@@ -48,36 +44,18 @@ namespace lmms::gui
 namespace
 {
 
-const QString IndicatorName = QStringLiteral("workflowRecording");
-
 QJsonObject reply(const char* id)
 {
 	return ControlRegistry::instance()->invoke(QLatin1String(id)).result;
 }
 
-QString recordingText(const QString& name, int steps)
+//! A line of the menu that says something rather than does something (a registry item: it shows @a command's state).
+QAction* addStatusLine(QMenu* menu, const QString& text, const char* command)
 {
-	return MacroMenu::tr("Recording workflow \"%1\" - %n step(s) so far", "", steps).arg(name);
-}
-
-//! The header's recording indicator - made when @a make and there is none yet; nullptr without a shell.
-QToolButton* indicator(QWidget* window, bool make)
-{
-	auto* main = qobject_cast<MainWindow*>(window);
-	Shell* shell = main != nullptr ? main->shell() : nullptr;
-	if (shell == nullptr || shell->header() == nullptr) { return nullptr; }
-	auto* found = shell->header()->strip()->findChild<QToolButton*>(IndicatorName, Qt::FindDirectChildrenOnly);
-	if (found != nullptr || !make) { return found; }
-	auto* button = new QToolButton;
-	button->setObjectName(IndicatorName);
-	button->setProperty("controlCommand", QStringLiteral("workflow.record_stop"));  // the agent surface: a registered command
-	button->setToolButtonStyle(Qt::ToolButtonTextOnly);
-	button->setToolTip(MacroMenu::tr("Stop recording and save the workflow"));
-	QObject::connect(button, &QToolButton::clicked, button, [button] {
-		runCommand(button->window(), CommandCall{QStringLiteral("workflow.record_stop"), {}, {}, QString(), false});
-	});
-	shell->header()->addToStrip(button);
-	return button;
+	QAction* line = menu->addAction(text);
+	line->setEnabled(false);
+	line->setProperty("controlCommand", QLatin1String(command));
+	return line;
 }
 
 } // namespace
@@ -99,17 +77,17 @@ void MacroMenu::refresh()
 	clearRebuiltMenu(this);
 	m_status = nullptr;
 	const QJsonObject listed = reply("workflow.list");
-	const QJsonObject recording = reply("workflow.status").value(QStringLiteral("recording")).toObject();
+	const QJsonObject status = reply("workflow.status");
+	const QJsonObject recording = status.value(QStringLiteral("recording")).toObject();
 	if (recording.value(QStringLiteral("on")).toBool())
 	{
 		// Theme 19: the first thing the menu says while recording; a status line, not an action.
-		m_status = addAction(recordingText(recording.value(QStringLiteral("name")).toString(),
-			recording.value(QStringLiteral("steps")).toInt()));
-		m_status->setEnabled(false);
-		m_status->setProperty("controlCommand", QStringLiteral("workflow.status"));  // the line shows it: a registry item (A15)
+		m_status = addStatusLine(this, WorkflowRecordingIndicator::recordingText(recording.value(QStringLiteral("name")).toString(),
+			recording.value(QStringLiteral("steps")).toInt()), "workflow.status");
 		addSeparator();
 	}
 	addRuns(listed.value(QStringLiteral("workflows")).toArray());
+	addRecovery(status);
 	addRecording();
 	addScopeMenu(listed.value(QStringLiteral("scope")).toString());
 	QAction* edit = addAction(tr("Edit Workflows..."));
@@ -128,6 +106,21 @@ void MacroMenu::addRuns(const QJsonArray& workflows)
 		});
 	}
 	if (!workflows.isEmpty()) { addSeparator(); }
+}
+
+void MacroMenu::addRecovery(const QJsonObject& status)
+{
+	// Theme 19: a run that stopped at a failing step says where, and offers the step back or the rest without it.
+	if (!status.value(QStringLiteral("resumable")).toBool()) { return; }
+	const QJsonObject failed = status.value(QStringLiteral("failed")).toObject();
+	const int step = failed.value(QStringLiteral("step")).toInt();
+	addStatusLine(this, tr("\"%1\" stopped at step %2: %3").arg(status.value(QStringLiteral("name")).toString()).arg(step)
+		.arg(failed.value(QStringLiteral("name")).toString()), "workflow.status");
+	addCommandAction(this, tr("Retry Step %1").arg(step), QStringLiteral("workflow.resume"),
+		[] { return CommandCall{QStringLiteral("workflow.resume"), {{QStringLiteral("skip"), false}}, {}, QString(), false}; });
+	addCommandAction(this, tr("Skip Step %1 and Continue").arg(step), QStringLiteral("workflow.resume"),
+		[] { return CommandCall{QStringLiteral("workflow.resume"), {{QStringLiteral("skip"), true}}, {}, QString(), false}; });
+	addSeparator();
 }
 
 void MacroMenu::addRecording()
@@ -177,16 +170,15 @@ MacroMenu* MacroMenu::install(QMenuBar* bar)
 
 void MacroMenu::showRecording(QWidget* window, bool on, const QString& name, int steps)
 {
-	const QString text = recordingText(name, steps);
-	if (QToolButton* button = indicator(window, on))
-	{
-		button->setText(QStringLiteral("● ") + text);
-		button->setAccessibleName(text);
-		button->setStyleSheet(QStringLiteral("QToolButton { color: %1; font-weight: bold; }").arg(tokens::palette().record.name()));
-		button->setVisible(on);
-	}
+	if (WorkflowRecordingIndicator* shown = WorkflowRecordingIndicator::inWindow(window, on)) { shown->setRecording(on, name, steps); }
 	auto* menu = window->findChild<MacroMenu*>();
-	if (menu != nullptr && !menu->m_status.isNull()) { menu->m_status->setText(text); }
+	if (menu != nullptr && !menu->m_status.isNull()) { menu->m_status->setText(WorkflowRecordingIndicator::recordingText(name, steps)); }
+}
+
+void MacroMenu::refreshIn(QMainWindow* window)
+{
+	install(window->menuBar())->refresh();
+	ShortcutMap::apply(window->menuBar());  // the rebuilt actions get the keys bound to them back
 }
 
 } // namespace lmms::gui

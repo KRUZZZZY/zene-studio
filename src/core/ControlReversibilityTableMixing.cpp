@@ -54,6 +54,7 @@ const ReversibilityRow kMixingRows[] = {
 	R("mixer.set_strip", RC::TrueInverse, true, "it changes a channel's own settings (saved with the project)",
 		"action checkpoint: the recorded undo step puts the channel's previous strip settings back", ""),
 	R("mixer.strip_get", RC::NotMutating, false, "it reads a channel's settings and meters. Nothing is written", "no write", ""),
+	R("mixer.rename_channel", RC::TrueInverse, true, "it renames a mixer channel (saved with the project)", "action checkpoint: the recorded undo step puts the previous name back", ""),
 	R("mixer.solo_mode", RC::TrueInverse, true,
 		"it writes the solo mode, a preference in the config file (ConfigManager is not a JournallingObject) - a bounded "
 		"scalar", "action checkpoint: the recorded undo step writes the previous mode back, as settings.set does", ""),

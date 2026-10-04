@@ -108,6 +108,11 @@ const ReversibilityRow kCustomisationRows[] = {
 		"it queues a workflow's steps; each step is a registry command of its own and records - and undoes - as "
 		"itself (the run is acknowledged first, the mastering.run precedent)",
 		"nothing of its own to reverse: undo each step, as its own record says", ""),
+	// Design theme 19: step recovery - a stopped run resumed from its failed step, or past it.
+	R("workflow.resume", RC::NotMutating, false,
+		"it re-queues the steps of a workflow run that stopped at a failing step (that step again, or the ones after it); "
+		"each step is a registry command of its own and records - and undoes - as itself, as workflow.run's do",
+		"nothing of its own to reverse: undo each step, as its own record says", ""),
 	R("session.pattern_list", RC::NotMutating, false, "it reads the patterns' numbers and names. Nothing is written",
 		"no write", ""),
 	R("surface.mcu_ports", RC::NotMutating, false, "it reads the MIDI client's ports. Nothing is written", "no write", ""),

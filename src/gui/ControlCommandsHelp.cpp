@@ -22,11 +22,13 @@
  *
  */
 /*! 0.5.0 L14: help and access on the spine.
- *  - app.help (WF-136) opens the manual - at a topic - or the command reference (HelpCenter.h);
+ *  - app.help (WF-136) opens the manual - at a topic - or the command reference (HelpCenter.h), and (design
+ *    theme 21) with 'context' the focused control's help above the manual at its section (HelpTasks.h);
  *  - app.tours / app.tour (WF-140) list the guided tours and start one;
  *  - window.appearance (WF-130 / WF-131, W3 WF-118, 0.5.0 UX themes 17 and 23) sets the one interface zoom, the
  *    palette and accessible mode (Appearance.h), from the next start; a change is one undo step, as settings.set's. */
 
+#include <QApplication>
 #include <QJsonArray>
 #include <QWhatsThis>
 
@@ -37,6 +39,7 @@
 #include "ControlWindowCommands.h"
 #include "GuiApplication.h"
 #include "HelpCenter.h"
+#include "HelpTasks.h"
 #include "MainWindow.h"
 
 namespace lmms
@@ -50,14 +53,21 @@ namespace
 //! The manual's sections (its <h2 id>s, data/manual/index.html): the topics app.help opens it at.
 const QStringList& manualTopics()
 {
-	static const QStringList topics{QStringLiteral("window"), QStringLiteral("arrange"), QStringLiteral("notes"), QStringLiteral("mix"),
-		QStringLiteral("devices"), QStringLiteral("record"), QStringLiteral("launch"), QStringLiteral("projects"), QStringLiteral("agents"),
-		QStringLiteral("customise"), QStringLiteral("access")};
-	return topics;
+	return gui::help::topics();
+}
+
+//! Design theme 21: help for the control with the keyboard focus, no hovering needed - the manual opened at its
+//! section with what the control is and does above it.
+ControlResult contextHelp()
+{
+	const QJsonObject context = gui::help::contextHelp(QApplication::focusWidget());
+	gui::HelpCenter::showHelp(context.value(QStringLiteral("topic")).toString())->showContext(context);
+	return ControlResult::success({{QStringLiteral("open"), true}, {QStringLiteral("context"), context}});
 }
 
 ControlResult help(const QJsonObject& args)
 {
+	if (args.value(QStringLiteral("context")).toBool()) { return contextHelp(); }
 	if (args.value(QStringLiteral("whats_this")).toBool())
 	{
 		QWhatsThis::enterWhatsThisMode();  // 0.5.0 L14: the next click on a control shows its full description
@@ -70,7 +80,8 @@ ControlResult help(const QJsonObject& args)
 		return ControlResult::failure(ControlErrorKind::NotFound, QStringLiteral("the manual has no topic '%1' (%2)")
 			.arg(topic, manualTopics().join(QStringLiteral(", "))));
 	}
-	gui::HelpCenter::showHelp(topic, args.value(QStringLiteral("reference")).toBool());
+	gui::HelpCenter* centre = gui::HelpCenter::showHelp(topic, args.value(QStringLiteral("reference")).toBool());
+	if (const QString query = args.value(QStringLiteral("query")).toString(); !query.isEmpty()) { centre->findCommand(query); }
 	return ControlResult::success({{QStringLiteral("open"), true}});
 }
 
@@ -106,6 +117,7 @@ ControlResult appearanceCommand(const QJsonObject& args)
 	{
 		appearance::setOptions(after);
 		addUndoStep([before]() { appearance::setOptions(before); }, [after]() { appearance::setOptions(after); });
+		appearance::noticeAppliesNextStart();  // theme 20: says when the change takes effect
 	}
 	return ControlResult::success(appearance::toJson(appearance::options()));
 }
@@ -134,10 +146,14 @@ void registerHelpCommands(ControlRegistry& registry)
 {
 	add(registry, "app.help", QStringLiteral("Open the manual inside the application - at 'topic' (%1) - or, with 'reference', "
 		"the command reference: every command with "
-		"its description and arguments, built from the registry - or, with 'whats_this', What's This? mode: the next click on a "
-		"control shows its full description. Interface state.").arg(manualTopics().join(QStringLiteral(", "))),
+		"its description and arguments, built from the registry and grouped by the manual's sections, found by 'query' when "
+		"given (a name, a task, a shortcut or a word) - or, with 'whats_this', "
+		"What's This? mode: the next click on a control shows its full description - or, with 'context' (F1), help for the "
+		"control with the keyboard focus, needing no hover: the manual at its section with what the control is, the "
+		"command it runs by name and its shortcut ('context' in the reply). Interface state.").arg(manualTopics().join(QStringLiteral(", "))),
 		objectSchema({{QStringLiteral("topic"), stringProperty()}, {QStringLiteral("reference"), booleanProperty()},
-			{QStringLiteral("whats_this"), booleanProperty()}}), false, true, help);
+			{QStringLiteral("whats_this"), booleanProperty()}, {QStringLiteral("context"), booleanProperty()},
+			{QStringLiteral("query"), stringProperty()}}), false, true, help);
 	add(registry, "app.tours", QStringLiteral("The guided tours there are: each one's name, title and step count."),
 		objectSchema({}), false, false, tours);
 	add(registry, "app.tour", QStringLiteral("Start a guided tour ('name', as app.tours lists it): each step points at a part of the "

@@ -65,6 +65,12 @@ const ReversibilityRow kWindowRows[] = {
 		"project changes",
 		"no write to the project (interface state only)",
 		""),
+	R("window.sample_editor", RC::NotMutating, false,
+		"it opens the Sample Editor on an audio clip and sets its view - the selected source range, the fields' unit "
+		"and the waveform's zoom. That is interface state: the audio is edited through sample.edit_range, and nothing "
+		"in the project changes",
+		"no write to the project (interface state only)",
+		""),
 	R("window.select", RC::NotMutating, false,
 		"it sets which track and clip the Inspector and the Device panel show. A selection is "
 		"interface state: no model, clip, track or project data is written",

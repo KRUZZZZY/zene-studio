@@ -39,6 +39,7 @@
 #include "ControlDeviceSupport.h"
 #include "ControlRegistry.h"
 #include "ControlReversibility.h"
+#include "TaskCenter.h"
 
 namespace lmms
 {
@@ -239,6 +240,15 @@ void setMasteringRunState(const QString& state, const QString& error)
 {
 	runStateStore().state = state;
 	runStateStore().error = error;
+	// 0.5.0 theme 24: the one run in flight is listed in the task area. It runs to its end - there is no cancel - and
+	// the child process cannot say how far it is. The acknowledgement and its reply are unchanged.
+	const void* key = &runStateStore();
+	if (state == QLatin1String("running"))
+	{
+		TaskCenter::instance().begin(key, 0, {QStringLiteral("mastering"), QObject::tr("Master the mix"), {}, {}, false});
+	}
+	else if (state == QLatin1String("completed")) { TaskCenter::instance().finish(key, 0, TaskState::Done); }
+	else if (state == QLatin1String("failed")) { TaskCenter::instance().finish(key, 0, TaskState::Failed, error); }
 }
 
 bool readMasteringReportFile(const QString& path, QJsonObject* report,

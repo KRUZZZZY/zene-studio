@@ -35,7 +35,8 @@ namespace lmms::gui
  *  - Large Meters (MX-131): the master's level as two tall bars, its correlation and loudness, big
  *    enough to read across the room;
  *  - Routing Matrix (MX-055): every channel against every channel, each cell the send between them
- *    (routing.matrix, the same data an agent reads); double-click a cell to send there;
+ *    (routing.matrix, the same data an agent reads); double-click a cell to send there - since 0.5.0
+ *    theme 16 its own file, sparse (MixerRoutingMatrix.h);
  *  - Compare Channel EQ (MX-140): two channels' strip EQ curves over each other (mixer.eq_compare).
  *  Add their entries to @a menu. */
 LMMS_EXPORT void addMixerWindows(QMenu* menu);

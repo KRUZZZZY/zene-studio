@@ -773,6 +773,7 @@ LMMS_EXPORT void registerMixerListenCommands(ControlRegistry& registry);
 LMMS_EXPORT void registerVcaNestCommands(ControlRegistry& registry);
 //! 0.5.0 L08: mixer.set_many and the strip settings (ControlCommandsMixerStrip.cpp).
 LMMS_EXPORT void registerMixerStripCommands(ControlRegistry& registry);
+LMMS_EXPORT void registerMixerRenameCommands(ControlRegistry& registry);  //!< 0.5.0 theme 13: mixer.rename_channel (ControlCommandsMixerRename.cpp)
 //! 0.5.0 L10 (MX-076/092): plugin.copy, chain.copy, plugin.ab (ControlCommandsDeviceCopy.cpp).
 LMMS_EXPORT void registerDeviceCopyCommands(ControlRegistry& registry);
 //! 0.5.0 L10 (MX-166): plugin.organise / plugin.organisation (ControlCommandsPluginOrganise.cpp).

@@ -36,10 +36,12 @@
 #include "Accessibility.h"
 #include "ControlVocabulary.h"
 #include "DesignTokens.h"
+#include "LaneScale.h"
 #include "MidiClip.h"
 #include "Note.h"
 #include "NoteCanvas.h"
 #include "NoteEditor.h"
+#include "NoteLaneKeys.h"
 
 namespace lmms::gui
 {
@@ -49,7 +51,6 @@ namespace
 
 constexpr int kKeyboardWidth = 84;
 constexpr int kRulerHeight = 24;
-constexpr int kLaneHeight = 96;
 
 bool centred(const NoteLaneSpec& spec) { return spec.minimum < 0; }
 
@@ -256,12 +257,15 @@ NoteLaneView::NoteLaneView(NoteEditor* editor)
 	, m_state(editor->state())
 {
 	setObjectName(QStringLiteral("noteLane"));
+	setMouseTracking(true);  // 0.5.0 theme 11: the value under the pointer reads out while it hovers
 	a11y::announce(this, tr("Expression lane"),
 		tr("One value per note - velocity, pan, chance, timbre, pressure, micro-pitch, release velocity, velocity "
-			"spread or repeats; drag across notes to draw."));
+			"spread or repeats; drag across notes to draw. Keys: Left and Right go from note to note, Up and Down change "
+			"the value (Page Up and Page Down by 10)."));
+	lanekeys::attachExpressionLane(this, editor);  // theme 10: the keyboard (NoteLaneKeys.cpp)
 }
 
-QSize NoteLaneView::sizeHint() const { return {200, kLaneHeight}; }
+QSize NoteLaneView::sizeHint() const { return {200, lanescale::laneHeight()}; }
 
 int NoteLaneView::valueAtY(int y) const
 {
@@ -285,36 +289,6 @@ int NoteLaneView::shownValue(const Note& note) const
 	return it != m_pending.end() ? it->second : notelanes::valueOf(note, m_state.lane);
 }
 
-void NoteLaneView::paintEvent(QPaintEvent*)
-{
-	const tokens::Palette& pal = tokens::palette();
-	QPainter p(this);
-	p.fillRect(rect(), pal.panel);
-	p.fillRect(QRect(0, 0, width(), 1), pal.base);
-	const NoteLaneSpec spec = notelanes::spec(m_state.lane);
-	const int baseY = centred(spec) ? yOfValue(0) : height() - 1;
-	p.fillRect(QRect(0, baseY, width(), 1), pal.gridBeat);
-	if (m_state.clip == nullptr) { return; }
-	const NoteVector& notes = m_state.clip->notes();
-	const auto [first, last] = m_editor->canvas()->visibleRange();
-	// A dot on each stem only when the stems are far enough apart to tell them apart; zoomed
-	// far out thousands of antialiased dots cost more than the whole note area.
-	const bool heads = (last - first) * 6 < std::max(1, width());
-	p.setRenderHint(QPainter::Antialiasing, heads);
-	for (int i = first; i < last; ++i)
-	{
-		const Note& note = *notes[static_cast<std::size_t>(i)];
-		const int x = static_cast<int>(m_state.grid.xOfTick(note.pos().getTicks()));
-		const int y = yOfValue(shownValue(note));
-		const QColor colour = note.selected() ? pal.text : tokens::velocityColor(static_cast<int>(note.getVolume()));
-		p.fillRect(QRect(x, std::min(y, baseY), 2, std::abs(baseY - y) + 1), colour);
-		if (!heads) { continue; }
-		p.setPen(Qt::NoPen);
-		p.setBrush(colour);
-		p.drawEllipse(QPointF(x + 1, y), 3.5, 3.5);
-	}
-}
-
 void NoteLaneView::cancelDrag()
 {
 	m_drawing = false;
@@ -332,7 +306,9 @@ void NoteLaneView::mousePressEvent(QMouseEvent* event)
 
 void NoteLaneView::mouseMoveEvent(QMouseEvent* event)
 {
+	m_hover = event->pos();
 	if (m_drawing) { drawAt(event->pos()); }
+	else { update(); }  // the readout follows the pointer
 }
 
 void NoteLaneView::mouseReleaseEvent(QMouseEvent*)
@@ -356,7 +332,7 @@ void NoteLaneView::drawAt(const QPoint& pos)
 	{
 		const Note& note = *notes[static_cast<std::size_t>(i)];
 		const int x = static_cast<int>(m_state.grid.xOfTick(note.pos().getTicks()));
-		if (std::abs(x - pos.x()) <= 4 && (!anySelected || note.selected()))
+		if (std::abs(x - pos.x()) <= lanescale::stemTolerance() && (!anySelected || note.selected()))
 		{
 			m_pending[note.id()] = value;
 			m_lastValue = value;

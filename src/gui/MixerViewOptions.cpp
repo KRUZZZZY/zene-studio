@@ -164,6 +164,18 @@ const QStringList& meterScaleNames()
 	return names;
 }
 
+const QStringList& viewNames()
+{
+	static const QStringList names{QStringLiteral("mix"), QStringLiteral("routing")};
+	return names;
+}
+
+const QStringList& densityNames()
+{
+	static const QStringList names{QStringLiteral("compact"), QStringLiteral("expanded")};
+	return names;
+}
+
 const Options& options()
 {
 	if (!s_loaded)
@@ -187,12 +199,31 @@ void setOptions(const Options& next)
 
 int generation() { return s_generation; }
 
+Options effective(const Options& o)
+{
+	Options shown = o;
+	const bool routing = o.view == QLatin1String("routing");
+	if (routing) { shown.sends = true; }
+	if (routing || o.density == QLatin1String("compact"))
+	{
+		shown.inserts = false;
+		shown.macros = false;
+	}
+	if (!routing && o.density == QLatin1String("compact")) { shown.sends = false; }
+	return shown;
+}
+
+bool routingView() { return options().view == QLatin1String("routing"); }
+
+bool compactDensity() { return options().density == QLatin1String("compact"); }
+
 QJsonObject toJson(const Options& o)
 {
 	return {{QStringLiteral("show_sends"), o.sends}, {QStringLiteral("show_pan"), o.pan}, {QStringLiteral("show_number"), o.number},
 		{QStringLiteral("show_meter_info"), o.meterInfo}, {QStringLiteral("show_inserts"), o.inserts},
 		{QStringLiteral("show_macros"), o.macros}, {QStringLiteral("strip_width"), o.width}, {QStringLiteral("filter"), o.filter},
-		{QStringLiteral("meter_mode"), o.meterMode}, {QStringLiteral("meter_scale"), o.meterScale}};
+		{QStringLiteral("meter_mode"), o.meterMode}, {QStringLiteral("meter_scale"), o.meterScale},
+		{QStringLiteral("view"), o.view}, {QStringLiteral("density"), o.density}};
 }
 
 bool merge(const QJsonObject& args, Options* base, QString* error)
@@ -208,6 +239,8 @@ bool merge(const QJsonObject& args, Options* base, QString* error)
 	next.filter = pick(args, "filter", filterNames(), next.filter, error);
 	next.meterMode = pick(args, "meter_mode", meterModeNames(), next.meterMode, error);
 	next.meterScale = pick(args, "meter_scale", meterScaleNames(), next.meterScale, error);
+	next.view = pick(args, "view", viewNames(), next.view, error);
+	next.density = pick(args, "density", densityNames(), next.density, error);
 	if (!error->isEmpty()) { return false; }
 	*base = next;
 	return true;
@@ -229,7 +262,7 @@ bool shows(int index)
 
 void applyToStrip(MixerChannelView* view, MixerChannel* channel)
 {
-	const Options& o = options();
+	const Options o = effective(options());  // theme 16: the view and the density decide the sections
 	view->setSendsShown(o.sends);
 	view->panKnob()->setVisible(o.pan);
 	view->numberLcd()->setVisible(o.number);

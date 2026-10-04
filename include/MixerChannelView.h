@@ -92,6 +92,8 @@ public:
 	Knob* panKnob() const { return m_panKnob; }
 	LcdWidget* numberLcd() const { return m_channelNumberLcd; }
 	QLineEdit* nameEdit() const { return m_renameLineEdit; }
+	//! The name field follows a rename made elsewhere (the Inspector, an agent), unless the strip is mid-rename.
+	void syncName();
 	QLabel* meterInfo() const { return m_meterInfo; }
 	QLabel* insertList() const { return m_insertList; }
 	MacroKnobs* macroKnobs() const { return m_macroKnobs; }
@@ -106,6 +108,11 @@ public:
 	//! The still model a "No send" fader shows: it drives nothing.
 	FloatModel* noSendModel() const { return m_noSendModel; }
 	QLabel* faderTarget() const { return m_faderTarget; }
+	//! 0.5.0 theme 16 (MixerStripTags.h): the type badge, the routing lines and the mode line.
+	QLabel* typeBadge() const { return m_typeBadge; }
+	QLabel* routingLine() const { return m_routingLine; }
+	QLabel* stateLine() const { return m_stateLine; }
+	AutomatableButton* soloButton() const { return m_soloButton; }
 
 public slots:
 	void renameChannel();
@@ -148,6 +155,9 @@ private:
 	Fader* m_fader;
 	QLabel* m_faderTarget = nullptr;  // 0.5.0 theme 6: what the fader drives, with the faders on a return's sends
 	FloatModel* m_noSendModel = nullptr;  // ... and what it shows when the channel has no send there
+	QLabel* m_typeBadge = nullptr;  // 0.5.0 theme 16: what the strip is, in words
+	QLabel* m_routingLine = nullptr;  // ... where its signal goes (and, in the routing view, comes from)
+	QLabel* m_stateLine = nullptr;  // ... the modes it is in
 	EffectRackView* m_effectRackView;
 	MixerView* m_mixerView;
 	int m_channelIndex = 0;

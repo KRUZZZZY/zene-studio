@@ -23,6 +23,7 @@
  */
 
 #include "SongEditor.h"
+#include "ArrangerClipKeys.h"
 
 #include <QSignalBlocker>
 #include "Timeline.h"
@@ -394,6 +395,8 @@ void SongEditor::toggleProportionalSnap()
 
 void SongEditor::keyPressEvent( QKeyEvent * ke )
 {
+	// 0.5.0 theme 10: clip selection across tracks and clip resizing from the keyboard (ArrangerClipKeys.h).
+	if (arrangerkeys::handle(this, ke)) { return; }
 	bool isShiftPressed = ke->modifiers() & Qt::ShiftModifier;
 	if( isShiftPressed &&
 						( ke->key() == Qt::Key_Insert || ke->key() == Qt::Key_Enter || ke->key() == Qt::Key_Return ) )
@@ -475,24 +478,10 @@ void SongEditor::wheelEvent( QWheelEvent * we )
 	const auto posX = we->position().toPoint().x();
 	if ((we->modifiers() & Qt::ControlModifier) && (posX > m_trackHeadWidth))
 	{
-		int x = posX - m_trackHeadWidth;
-		// tick based on the mouse x-position where the scroll wheel was used
-		int tick = x / pixelsPerBar() * TimePos::ticksPerBar();
-
-		// move zoom slider (pixelsPerBar will change automatically)
-		int step = we->modifiers() & Qt::ShiftModifier ? 1 : 5;
-		// when Alt is pressed, wheelEvent returns delta for x coordinate (mimics horizontal mouse wheel)
-		int direction = (we->angleDelta().y() + we->angleDelta().x()) > 0 ? 1 : -1;
-		m_zoomingModel->incValue(step * direction);
-
-		// scroll to zooming around cursor's tick
-		int newTick = static_cast<int>(x / pixelsPerBar() * TimePos::ticksPerBar());
-		m_leftRightScroll->setValue(m_leftRightScroll->value() + tick - newTick);
-
-		// update timeline
-		m_timeLine->setPixelsPerBar(pixelsPerBar());
-		// and make sure, all Clip's are resized and relocated
-		realignTracks();
+		// 0.5.0 theme 9: the zoom follows the turn's size (a touchpad zooms continuously, a notch is five steps, one
+		// with Shift) and keeps the tick under the pointer where it is. With Alt the turn arrives as x.
+		arrangerzoom::wheelZoom(this, we->angleDelta().y() + we->angleDelta().x(), we->modifiers() & Qt::ShiftModifier,
+			arrangerzoom::tickAtGlobal(this, we->globalPosition().toPoint()));
 	}
 
 	// FIXME: Reconsider if determining orientation is necessary in Qt6.

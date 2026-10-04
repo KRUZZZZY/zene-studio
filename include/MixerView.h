@@ -45,6 +45,7 @@ namespace lmms
 namespace lmms::gui
 {
 
+class MixerModeBar;
 class MixerSendsBanner;
 
 class LMMS_EXPORT MixerView
@@ -117,6 +118,8 @@ public:
 
 	//! 0.5.0 theme 6: the bar naming the return whose sends the faders show (hidden on the channel faders).
 	MixerSendsBanner* sendsBanner() const { return m_sendsBanner; }
+	//! 0.5.0 theme 16: the bar naming and setting the view, density, filter and modes (MixerModeBar.h).
+	MixerModeBar* modeBar() const { return m_modeBar; }
 
 public slots:
 	int addNewChannel();
@@ -154,6 +157,7 @@ private:
 	QString m_vcaSignature;
 	int m_viewOptionsGeneration = -1;  // 0.5.0 L08: MixerViewOptions::generation() last applied
 	MixerSendsBanner* m_sendsBanner = nullptr;
+	MixerModeBar* m_modeBar = nullptr;
 	Mixer* m_mixer;
 
 	void updateMaxChannelSelector();

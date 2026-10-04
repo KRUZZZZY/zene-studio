@@ -92,8 +92,10 @@ class ShellTest : public QObject
 private slots:
 	void init()
 	{
-		// Every test starts from the first-run layout: no persisted ui/shell.layout.
+		// Every test starts from the first-run layout: no persisted ui/shell.layout, and no personal layout put
+		// aside for a project's (theme 22: restoreConfiguredLayout would prefer it).
 		lmms::ConfigManager::inst()->setValue(QStringLiteral("ui"), QStringLiteral("shell.layout"), QString());
+		lmms::ConfigManager::inst()->setValue(QStringLiteral("ui"), QStringLiteral("shell.personal"), QString());
 	}
 
 	void eachViewPutsItsMainPanelInTheCentre()

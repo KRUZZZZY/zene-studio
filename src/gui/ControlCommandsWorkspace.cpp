@@ -46,6 +46,7 @@
 #include "ControlRegistryGroups.h"
 #include "ControlVocabulary.h"
 #include "ControlWindowCommands.h"
+#include "ItemList.h"
 #include "MainWindow.h"
 #include "Shell.h"
 #include "ShellPanel.h"
@@ -269,7 +270,18 @@ ControlResult accessibilityReport(const QJsonObject& args)
 {
 	gui::MainWindow* window = controlMainWindow();
 	if (window == nullptr) { return noInterface(QStringLiteral("window.accessibility_report")); }
-	return ControlResult::success(gui::auditAccessibility(window, args.value(QStringLiteral("fill")).toBool()));
+	// Theme 17: 'checks' runs only the named stages of the audit (all of them when left out).
+	QStringList checks;
+	for (const QJsonValue& check : args.value(QStringLiteral("checks")).toArray())
+	{
+		if (!gui::accessibilityCheckNames().contains(check.toString()))
+		{
+			return ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("unknown check '%1' (one of %2)")
+				.arg(check.toString(), gui::accessibilityCheckNames().join(QStringLiteral(", "))));
+		}
+		checks.append(check.toString());
+	}
+	return ControlResult::success(gui::auditAccessibility(window, args.value(QStringLiteral("fill")).toBool(), checks));
 }
 
 void add(ControlRegistry& registry, const char* verb, const QString& description, const QJsonObject& args,
@@ -313,10 +325,15 @@ void registerWorkspaceCommands(ControlRegistry& registry)
 		"would announce with no name, no role (a bare client or pane) or, for a control that shows a value, no value, and "
 		"those Tab cannot reach; with 'fill', give each nameless one the name it already carries (its constructed name, its "
 		"parameter's, its tooltip, its text). Lists, at most 50 of each, the controls with nothing to name them by and those "
-		"with no role or value. The interface fills names this way once at start. Interface state."), objectSchema({{QStringLiteral("fill"), booleanProperty()}}), accessibilityReport);
+		"with no role or value. The interface fills names this way once at start. Theme 17's staged audit: 'checks' "
+		"picks the checks to run - name, role, value, focus (the controls Tab cannot reach, listed) and duplicates "
+		"(controls announced alike with no named group, description or role to tell them apart) - all when left out; "
+		"the reply's 'summary' counts each check's findings. Interface state."),
+		objectSchema({{QStringLiteral("fill"), booleanProperty()}, {QStringLiteral("checks"), arrayProperty()}}), accessibilityReport);
 	add(registry, "crosshair", QStringLiteral("Show a cross-hair cursor across the arranger - a vertical and a horizontal guide "
 		"through the pointer - or hide it ('enabled'; toggles when left out). A preference in the config file; one undo step."),
 		objectSchema({{QStringLiteral("enabled"), booleanProperty()}}), crosshair, "view", true);
+	registerAccessibleEditingCommands(registry);  // 0.5.0 themes 10 and 17: window.item_list, view.announcements
 }
 
 } // namespace lmms

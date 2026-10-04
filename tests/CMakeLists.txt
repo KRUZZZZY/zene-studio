@@ -511,6 +511,8 @@ set(LMMS_TESTS
 	src/core/MixerListenTest.cpp
 	# 0.5.0 F1: hardware outputs, cue mixes, hardware inserts
 	src/core/HardwareIoTest.cpp
+	# 0.5.0 theme 24: the task area's reporting API and task.* commands
+	src/core/TaskCenterTest.cpp
 	# 0.5.0 F7: surround channels, the surround panner, the downmix
 	src/core/SurroundTest.cpp
 	# 0.5.0 L09: send pan, sends from many channels, nested / linked / shared VCA groups, mixer view modes.
@@ -718,6 +720,8 @@ set(LMMS_TESTS
 	# and BUGS_FOUND 11.30's clamp guarantee (carried over from the retired Focus Desk tests).
 	src/gui/ShellLayoutTest.cpp
 	src/gui/ShellTest.cpp
+	# 0.5.0 wave 3 themes 8/22: region tabs, footer/header overflow, the Tools home, personal vs project layouts
+	src/gui/ShellHomesTest.cpp
 	# The design tokens: every declared text/surface pair AA, the generated stylesheet AA, the
 	# velocity ramp ordered in lightness, every icon a path that paints at the screen's scale.
 	src/gui/DesignTokensTest.cpp
@@ -726,6 +730,12 @@ set(LMMS_TESTS
 	# command and one undo step - and note.edit's whole-batch validation.
 	src/gui/NoteGridTest.cpp
 	src/gui/NoteEditorTest.cpp
+	# 0.5.0 wave 3 theme 10/17: canvases by keyboard; the editable item list, the staged audit, announcements
+	src/gui/CanvasKeyboardTest.cpp
+	src/gui/ItemListPanelTest.cpp
+	# 0.5.0 wave 3 theme 11/15: lane scales and readouts; the Sample Editor's range fields
+	src/gui/LaneReadoutTest.cpp
+	src/gui/SampleEditorDialogTest.cpp
 	# 0.5.0 theme 1: the note editor follows FL Studio's piano roll.
 	src/gui/NoteEditorFlTest.cpp
 	# 0.5.0 lane 3: the shell selection, the Inspector and the Device panel's cards and
@@ -751,6 +761,8 @@ set(LMMS_TESTS
 	src/gui/VcaStripLifetimeTest.cpp
 	# 0.5.0 theme 6: sends on faders - the banner names the return, every fader labelled, "No send" faders dimmed in place.
 	src/gui/MixerSendsOnFadersTest.cpp
+	# 0.5.0 theme 16: mixer views, densities, type badges, routing by name, mode bar, sparse routing matrix.
+	src/gui/MixerModesTest.cpp
 	# 0.5.0 themes 2/9: ruler lanes, anchored zoom, the drag preview, locked clips.
 	src/gui/ArrangerTimelineTest.cpp
 	# catch-up W1: an XY pad drag is one undo step.
@@ -828,6 +840,10 @@ set(LMMS_TESTS
 	src/gui/TakeLanesPanelTest.cpp
 	# M3 item 4: the keyboard shortcuts page lists what the menus bind, filterable.
 	src/gui/ShortcutsPageTest.cpp
+	# 0.5.0 wave 3 theme 19: the workflow recording indicator and the run report
+	src/gui/WorkflowFeedbackTest.cpp
+	# 0.5.0 theme 24: the task indicator and its list
+	src/gui/TaskIndicatorTest.cpp
 	# M3 item 10: the start hub reopens a recent project through project.open.
 	src/gui/StartHubTest.cpp
 	# 0.5.0 L14 / L11: the manual and reference, hover help, tours, appearance, the library search view.
@@ -1324,6 +1340,9 @@ set_tests_properties(ClipLinkTest ClipLinkPersistenceTest ImportDetectionTest
 set_tests_properties(ShellTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(DesignTokensTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(NoteEditorTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+set_tests_properties(LaneReadoutTest SampleEditorDialogTest MixerModesTest WorkflowFeedbackTest ShellHomesTest
+	TaskCenterTest TaskIndicatorTest CanvasKeyboardTest ItemListPanelTest PROPERTIES
+	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(DevicePanelTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(LibraryMenusTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(CommandPaletteTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")

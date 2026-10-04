@@ -37,11 +37,15 @@
 #include <QtTest>
 
 #include <QAccessible>
+#include <QHBoxLayout>
+#include <QHelpEvent>
 #include <QLineEdit>
+#include <QToolTip>
 
 #include "AutomatableModel.h"
 #include "ComboBox.h"
 #include "ComboBoxModel.h"
+#include "ControlCues.h"
 #include "Engine.h"
 #include "Fader.h"
 #include "Knob.h"
@@ -300,6 +304,77 @@ private slots:
 		QVERIFY(ringOn() == nullptr);  // a stock field rings itself (the stylesheet)
 		knob->setFocus(Qt::MouseFocusReason);
 		QVERIFY(ringOn() == nullptr);  // a click shows no ring outside accessible mode
+	}
+
+	//! 0.5.0 theme 23: every shared control says how it works in its What's This (after a panel's own text, never instead
+	//! of it) and asks for hover repaints; the kinds are told apart.
+	void everySharedControlSaysHowItWorks()
+	{
+		cues::install();  // runs by itself at startup; again does nothing
+		FloatModel level(0.5f, 0.f, 1.f, 0.01f, nullptr, QStringLiteral("Level"));
+		IntModel number(4, 0, 99, nullptr, QStringLiteral("Steps"));
+		ComboBoxModel choice(nullptr, QStringLiteral("Wave"));
+		choice.addItem(QStringLiteral("Sine"));
+		QWidget window;
+		auto* knob = new Knob(KnobType::Bright26, &window);
+		knob->setModel(&level);
+		knob->setWhatsThis(QStringLiteral("The cutoff frequency."));
+		auto* fader = new Fader(&level, QStringLiteral("Volume"), &window);
+		auto* lcd = new LcdSpinBox(2, &window);
+		lcd->setModel(&number);
+		auto* combo = new ComboBox(&window);
+		combo->setModel(&choice);
+		auto* led = new LedCheckBox(QStringLiteral("Loop"), &window);
+		window.show();  // the first show polishes them: the cues are added then
+
+		const QList<std::pair<QWidget*, cues::Kind>> expected{{knob, cues::Kind::Knob}, {fader, cues::Kind::Fader},
+			{lcd, cues::Kind::Number}, {combo, cues::Kind::Choice}, {led, cues::Kind::Toggle}};
+		for (const auto& [widget, kind] : expected)
+		{
+			QCOMPARE(cues::kindOf(widget), kind);
+			QVERIFY2(widget->whatsThis().contains(cues::interactionHelp(kind)), qPrintable(widget->metaObject()->className()));
+			QVERIFY(widget->whatsThis().contains(QStringLiteral("Right-click")));
+			QVERIFY(widget->testAttribute(Qt::WA_Hover));
+		}
+		QVERIFY(knob->whatsThis().startsWith(QStringLiteral("The cutoff frequency.")));
+		QCOMPARE(cues::kindOf(&window), cues::Kind::None);
+		QVERIFY(cues::interactionHelp(cues::Kind::Knob).contains(QStringLiteral("wheel")));
+	}
+
+	//! A control with a tooltip shows the one-line reminder under it; one without shows none.
+	void aTooltipCarriesTheReminder()
+	{
+		cues::install();
+		FloatModel level(1.f, 0.f, 2.f, 0.01f, nullptr, QStringLiteral("Volume"));
+		QWidget window;
+		auto* fader = new Fader(&level, QStringLiteral("Volume"), &window);
+		fader->setToolTip(QStringLiteral("-6.0 dB"));
+		window.show();
+		QHelpEvent help(QEvent::ToolTip, QPoint(2, 2), fader->mapToGlobal(QPoint(2, 2)));
+		QApplication::sendEvent(fader, &help);
+		QVERIFY2(QToolTip::text().contains(cues::interactionHint(cues::Kind::Fader)), qPrintable(QToolTip::text()));
+		QVERIFY(QToolTip::text().startsWith(QStringLiteral("-6.0 dB")));
+		QToolTip::hideText();
+	}
+
+	//! The hover state is drawn only for an enabled control under the pointer; outside accessible mode a control keeps the
+	//! size it was given (the one global zoom does every other sizing).
+	void hoverIsForEnabledControlsAndSizesStay()
+	{
+		FloatModel level(0.5f, 0.f, 1.f, 0.01f, nullptr, QStringLiteral("Level"));
+		QWidget window;
+		auto* row = new QHBoxLayout(&window);
+		auto* knob = new Knob(KnobType::Small17, &window);
+		knob->setModel(&level);
+		row->addWidget(knob);
+		const QSize before = knob->size();
+		window.show();
+		QCOMPARE(knob->size(), before);
+		knob->setAttribute(Qt::WA_UnderMouse, true);
+		QVERIFY(cues::hovered(knob));
+		knob->setEnabled(false);
+		QVERIFY(!cues::hovered(knob));
+		QVERIFY(!cues::hovered(nullptr));
 	}
 };
 

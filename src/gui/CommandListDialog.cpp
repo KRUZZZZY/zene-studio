@@ -24,16 +24,20 @@
 
 #include "CommandListDialog.h"
 
+#include <QGuiApplication>
 #include <QHBoxLayout>
-#include <QHeaderView>
 #include <QJsonDocument>
 #include <QLabel>
 #include <QLineEdit>
+#include <QMenu>
+#include <QPlainTextEdit>
 #include <QPushButton>
-#include <QTableWidget>
+#include <QTime>
 #include <QVBoxLayout>
 
+#include "AccessibleWidgets.h"
 #include "CommandMetadata.h"
+#include "ListTable.h"
 
 namespace lmms::gui
 {
@@ -42,6 +46,8 @@ namespace
 {
 
 constexpr int MaxCellChars = 120;
+constexpr int MaxResultLines = 8;   //!< a reply's "Label: value" lines kept in the Results log per action
+constexpr int MaxResultBlocks = 500;
 
 QString clipped(const QString& text)
 {
@@ -85,6 +91,23 @@ int indexOfRow(const QJsonArray& rows, const QJsonValue& row)
 	return -1;
 }
 
+//! The list command's reply, read under a busy cursor: a long reading shows that it is under way.
+ControlResult readList(const QString& id, const QJsonObject& args)
+{
+	QGuiApplication::setOverrideCursor(Qt::BusyCursor);
+	const ControlResult listed = ControlRegistry::instance()->invoke(id, args);
+	QGuiApplication::restoreOverrideCursor();
+	return listed;
+}
+
+//! @a result's reply as indented "Label: value" lines under its outcome, for the Results log; empty for none.
+QString replyLines(const ControlResult& result)
+{
+	if (!result.ok) { return QString(); }
+	QString lines = resultSummary(result.result, MaxResultLines);
+	return lines.isEmpty() ? lines : QStringLiteral("\n    ") + lines.replace(QLatin1Char('\n'), QStringLiteral("\n    "));
+}
+
 } // namespace
 
 CommandListDialog::CommandListDialog(const ListSpec& spec, QWidget* parent) :
@@ -99,21 +122,23 @@ CommandListDialog::CommandListDialog(const ListSpec& spec, QWidget* parent) :
 	m_summary->setWordWrap(true);
 	m_summary->setObjectName(QStringLiteral("commandListSummary"));
 	layout->addWidget(m_summary);
-	addFilter(layout);
-	m_table = new QTableWidget(this);
-	m_table->setSelectionBehavior(QAbstractItemView::SelectRows);
-	m_table->setSelectionMode(QAbstractItemView::SingleSelection);
-	m_table->setEditTriggers(QAbstractItemView::NoEditTriggers);
-	m_table->horizontalHeader()->setStretchLastSection(true);
+	m_table = new ListTable(this);
+	m_table->setObjectName(QStringLiteral("commandListTable"));
 	m_table->setAccessibleName(spec.title);
-	layout->addWidget(m_table, 1);
+	if (!spec.actions.isEmpty())
+	{
+		m_table->setAccessibleDescription(tr("Enter runs %1; the Menu key or Shift+F10 opens the row's actions; a column "
+			"title sorts by that column").arg(spec.actions.first().label));
+	}
+	addFilter(layout);
+	layout->addWidget(m_table, 3);
 
 	auto* buttons = new QHBoxLayout;
 	for (int i = 0; i < spec.actions.size(); ++i)
 	{
 		auto* button = new QPushButton(spec.actions.at(i).label, this);
 		button->setProperty("controlCommand", spec.actions.at(i).id);
-		connect(button, &QPushButton::clicked, this, [this, i] { runAction(m_table->currentRow(), i); });
+		connect(button, &QPushButton::clicked, this, [this, i] { runAction(m_table->currentDataRow(), i); });
 		buttons->addWidget(button);
 		m_actionButtons.append(button);
 	}
@@ -135,62 +160,88 @@ CommandListDialog::CommandListDialog(const ListSpec& spec, QWidget* parent) :
 	m_status = new QLabel(this);
 	m_status->setObjectName(QStringLiteral("commandListStatus"));
 	m_status->setWordWrap(true);
+	m_status->setAccessibleName(tr("Last outcome"));
 	layout->addWidget(m_status);
+	m_results = new QPlainTextEdit(this);
+	m_results->setObjectName(QStringLiteral("commandListResults"));
+	m_results->setReadOnly(true);
+	m_results->setMaximumBlockCount(MaxResultBlocks);
+	m_results->setAccessibleName(tr("Results"));
+	m_results->setAccessibleDescription(tr("Every action's outcome in this list, with its reply, oldest first"));
+	m_results->setPlaceholderText(tr("Results of the actions you run here stay in this log."));
+	m_results->hide();  // shown with the first outcome, so an untouched list stays compact
+	layout->addWidget(m_results, 1);
 
 	connect(m_table, &QTableWidget::itemSelectionChanged, this, &CommandListDialog::syncButtons);
-	resize(640, 420);
+	connect(m_table, &ListTable::rowActivated, this, &CommandListDialog::activateRow);
+	connect(m_table, &ListTable::rowMenuRequested, this, &CommandListDialog::openRowMenu);
+	resize(640, 480);
 	refresh();
 }
 
 void CommandListDialog::refresh()
 {
-	const ControlResult listed = ControlRegistry::instance()->invoke(m_spec.listId, m_spec.listArgs);
-	const int was = m_table->currentRow();
+	const int was = m_table->currentDataRow();
 	const QJsonValue kept = was >= 0 && was < m_rows.size() ? m_rows.at(was) : QJsonValue();
+	const QString before = m_status->text();
+	m_status->setText(tr("Reading %1...").arg(m_spec.title));
+	if (m_status->isVisible()) { m_status->repaint(); }  // painted before the reading, which holds the event loop
+	const ControlResult listed = readList(m_spec.listId, m_spec.listArgs);
 	m_listed = listed.ok ? listed.result : QJsonObject();
 	m_rows = listRows(m_spec, m_listed);
-	if (!listed.ok) { m_status->setText(listed.errorMessage); }
-	QStringList summary;
+	m_status->setText(listed.ok ? before : listed.errorMessage);
+	fill(kept);
+}
+
+void CommandListDialog::showSummary()
+{
+	const int shown = m_table->visibleRowCount();
+	QStringList summary{shown == m_rows.size() ? tr("%n item(s)", "", shown)
+		: tr("%1 of %n item(s) shown", "", static_cast<int>(m_rows.size())).arg(shown)};
 	for (const QString& key : m_spec.summaryKeys)
 	{
 		if (m_listed.contains(key)) { summary.append(QStringLiteral("%1: %2").arg(fieldLabel(key), cellText(m_listed.value(key)))); }
 	}
 	m_summary->setText(summary.join(QStringLiteral("   ")));
-	m_summary->setVisible(!summary.isEmpty());
-	fill(kept);
+}
+
+int CommandListDialog::find(const QString& text)
+{
+	m_table->setFilter(text);
+	showSummary();
+	syncButtons();
+	return m_table->visibleRowCount();
 }
 
 void CommandListDialog::fill(const QJsonValue& kept)
 {
-	// The selection follows its row, not its index: after a Remove the next row must not slide under it.
-	const int keep = indexOfRow(m_rows, kept);
 	QStringList columns = m_spec.columns;
 	if (columns.isEmpty() && !m_rows.isEmpty()) { columns = m_rows.first().toObject().keys(); }
-	m_table->clear();
-	m_table->setColumnCount(static_cast<int>(columns.size()));
 	QStringList titles;
 	for (const QString& column : columns) { titles.append(fieldLabel(column)); }
-	m_table->setHorizontalHeaderLabels(titles);
-	m_table->setRowCount(static_cast<int>(m_rows.size()));
-	for (int r = 0; r < m_rows.size(); ++r)
+	QList<ListRow> rows;
+	for (const QJsonValue& value : m_rows)
 	{
-		const QJsonObject item = m_rows.at(r).toObject();
-		for (int c = 0; c < columns.size(); ++c)
+		const QJsonObject item = value.toObject();
+		ListRow row;
+		for (const QString& column : columns)
 		{
-			const QString text = valueText(item.value(columns.at(c)));
-			auto* cell = new QTableWidgetItem(clipped(text));
-			if (text.size() > MaxCellChars) { cell->setToolTip(text); }  // a cut path or error stays readable
-			m_table->setItem(r, c, cell);
+			const QString text = valueText(item.value(column));
+			row.cells.append(clipped(text));
+			row.tips.append(text.size() > MaxCellChars ? text : QString());  // a cut path or error stays readable
 		}
+		rows.append(row);
 	}
-	if (keep >= 0) { m_table->selectRow(keep); }
-	else { m_table->setCurrentItem(nullptr); }  // gone: nothing selected, so no action is aimed at another row
+	// The selection follows its row, not its index: after a Remove the next row must not slide under it; a row
+	// that is gone leaves nothing selected, so no action is aimed at another row.
+	m_table->setRows(titles, rows, indexOfRow(m_rows, kept));
+	showSummary();
 	syncButtons();
 }
 
 void CommandListDialog::syncButtons()
 {
-	const bool chosen = m_table->currentRow() >= 0 && m_table->currentRow() < m_rows.size();
+	const bool chosen = m_table->currentDataRow() >= 0;
 	for (int i = 0; i < m_actionButtons.size(); ++i)
 	{
 		m_actionButtons.at(i)->setEnabled(chosen && ControlRegistry::instance()->hasCommand(m_spec.actions.at(i).id));
@@ -214,6 +265,41 @@ ControlResult CommandListDialog::runAction(int index, int action)
 		return cancelled(spec.label);
 	}
 	return dispatch(spec.label, call);
+}
+
+ControlResult CommandListDialog::activateRow(int index)
+{
+	if (m_spec.actions.isEmpty()) { return ControlResult::failure(ControlErrorKind::InvalidArgs, tr("this list has no row action")); }
+	return runAction(index, 0);
+}
+
+void CommandListDialog::buildRowMenu(QMenu* menu, int index)
+{
+	for (int i = 0; i < m_spec.actions.size(); ++i)
+	{
+		QAction* action = menu->addAction(m_spec.actions.at(i).label);
+		action->setData(i);
+		action->setProperty("controlCommand", m_spec.actions.at(i).id);
+		action->setEnabled(index >= 0 && ControlRegistry::instance()->hasCommand(m_spec.actions.at(i).id));
+		if (i == 0) { menu->setDefaultAction(action); }  // shown bold: what Enter does
+	}
+	if (!m_spec.actions.isEmpty()) { menu->addSeparator(); }
+	m_table->addSortMenu(menu);
+	QAction* again = menu->addAction(tr("Refresh"));
+	again->setData(-1);
+	again->setProperty("controlCommand", m_spec.listId);
+}
+
+void CommandListDialog::openRowMenu(int index, const QPoint& at)
+{
+	QMenu menu(this);
+	menu.setAccessibleName(tr("Row actions"));
+	buildRowMenu(&menu, index);
+	const QAction* chosen = menu.exec(at);
+	// Sort By's entries act by themselves; a row action or Refresh runs once the menu is closed.
+	if (chosen == nullptr || !chosen->data().isValid()) { return; }
+	if (chosen->data().toInt() < 0) { refresh(); }
+	else { runAction(index, chosen->data().toInt()); }
 }
 
 ControlResult CommandListDialog::runExtra(int index)
@@ -240,7 +326,20 @@ ControlResult CommandListDialog::cancelled(const QString& label)
 
 void CommandListDialog::addFilter(QBoxLayout* layout)
 {
-	if (m_spec.filterArg.isEmpty()) { return; }
+	if (m_spec.filterArg.isEmpty())
+	{
+		// Theme 18: a list without a find argument of its own is found in as shown.
+		auto* local = new QLineEdit(this);
+		local->setObjectName(QStringLiteral("commandListFind"));
+		local->setPlaceholderText(tr("Find in this list"));
+		local->setAccessibleName(tr("Find in %1").arg(m_spec.title));
+		local->setClearButtonEnabled(true);
+		local->setProperty("controlCommand", m_spec.listId);  // it narrows that command's rows
+		connect(local, &QLineEdit::textChanged, this, &CommandListDialog::find);
+		connect(local, &QLineEdit::returnPressed, m_table, qOverload<>(&QWidget::setFocus));
+		layout->addWidget(local);
+		return;
+	}
 	auto* find = new QLineEdit(m_spec.listArgs.value(m_spec.filterArg).toString(), this);
 	find->setPlaceholderText(m_spec.filterLabel);
 	find->setAccessibleName(m_spec.filterLabel);
@@ -250,6 +349,7 @@ void CommandListDialog::addFilter(QBoxLayout* layout)
 		m_spec.listArgs.insert(m_spec.filterArg, text);
 		refresh();
 	});
+	connect(find, &QLineEdit::returnPressed, m_table, qOverload<>(&QWidget::setFocus));
 	layout->addWidget(find);
 }
 
@@ -271,12 +371,21 @@ ControlResult CommandListDialog::dispatch(const QString& label, const CommandCal
 
 void CommandListDialog::report(const QString& label, const ControlResult& result)
 {
-	m_status->setText(result.ok ? tr("%1: done").arg(label) : tr("%1: %2").arg(label, result.errorMessage));
+	const QString line = result.ok ? tr("%1: done").arg(label) : tr("%1: %2").arg(label, result.errorMessage);
+	m_status->setText(line);
+	a11y::announceStatus(m_status, line, result.ok ? a11y::Politeness::Polite : a11y::Politeness::Assertive);
+	m_results->appendPlainText(QTime::currentTime().toString(QStringLiteral("HH:mm:ss  ")) + line + replyLines(result));
+	m_results->show();
 }
 
 QString CommandListDialog::statusText() const
 {
 	return m_status->text();
+}
+
+QString CommandListDialog::resultsText() const
+{
+	return m_results->toPlainText();
 }
 
 QJsonArray listRows(const ListSpec& spec, const QJsonObject& listed)

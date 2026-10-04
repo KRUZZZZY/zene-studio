@@ -26,6 +26,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cstdlib>
 
 #include <QContextMenuEvent>
 #include <QHelpEvent>
@@ -39,6 +40,7 @@
 #include <QVBoxLayout>
 
 #include "ArrangementSections.h"
+#include "ArrangerLandmarks.h"
 #include "ChordTrack.h"
 #include "ConfigManager.h"
 #include "ControlRegistry.h"
@@ -51,7 +53,6 @@
 #include "ProjectMarkers.h"
 #include "Song.h"
 #include "SongEditor.h"
-#include "TempoMap.h"
 #include "TimeLineWidget.h"
 
 namespace lmms::gui
@@ -99,18 +100,6 @@ ArrangerRulerLanes* lanesWidget()
 	return g != nullptr && g->songEditor() != nullptr ? g->songEditor()->m_editor->findChild<ArrangerRulerLanes*>() : nullptr;
 }
 
-//! The lowest and highest tempo of @a map, the song's @a global tempo among them.
-std::pair<int, int> tempoRange(const TempoMap& map, int global)
-{
-	int low = global;
-	int high = global;
-	for (const TempoMapEvent& event : map.all())
-	{
-		if (event.hasTempo) { low = std::min(low, event.tempo); high = std::max(high, event.tempo); }
-	}
-	return {low, high};
-}
-
 QString markerName(const Marker& marker)
 {
 	return marker.name.isEmpty() ? ArrangerRulerLanes::tr("Marker") : marker.name;
@@ -135,7 +124,7 @@ ArrangerRulerLanes::ArrangerRulerLanes(SongEditor* editor) :
 {
 	setObjectName(QStringLiteral("arrangerRulerLanes"));
 	setAccessibleName(tr("Ruler lanes"));
-	setAccessibleDescription(tr("Sections, markers and tempo along the song; click a section to select it, a marker to jump there"));
+	setAccessibleDescription(tr("Sections, markers and tempo along the song; click a section to select it, a marker to jump there; double-click either to zoom to it"));
 	setFocusPolicy(Qt::NoFocus);
 	setMouseTracking(true);
 	if (auto* box = qobject_cast<QVBoxLayout*>(editor->layout())) { box->insertWidget(box->indexOf(editor->timeLine()) + 1, this); }
@@ -279,48 +268,6 @@ void ArrangerRulerLanes::paintMarkers(QPainter& p, const QRect& lane)
 	}
 }
 
-void ArrangerRulerLanes::paintTempo(QPainter& p, const QRect& lane) const
-{
-	const tokens::Palette& pal = tokens::palette();
-	const TempoMap& map = Engine::getSong()->tempoMap().map();
-	const int global = Engine::getSong()->getTempo();
-	p.setPen(pal.textMuted);
-	if (!map.active() || map.empty())
-	{
-		p.drawText(lane.adjusted(contentLeft() + LabelGap, 0, 0, 0), Qt::AlignVCenter | Qt::AlignLeft, tr("%1 BPM (no tempo map)").arg(global));
-		return;
-	}
-	const auto [low, high] = tempoRange(map, global);
-	// ED-050's curve - holds flat, ramps slope - over the lane, with each tempo change's value beside it.
-	const double perTick = (xOf(TimePos::ticksPerBar()) - xOf(0)) / static_cast<double>(TimePos::ticksPerBar());
-	if (perTick <= 0.0) { return; }
-	const int band = lane.height() - 4;
-	QPolygonF curve;
-	for (int x = contentLeft(); x <= width(); x += 2)
-	{
-		const double tempo = map.exactTempoAtTick(static_cast<tick_t>(std::max(0.0, (x - xOf(0)) / perTick)), global);
-		curve << QPointF(x, lane.bottom() - 2 - (high > low ? (tempo - low) / (high - low) : 0.5) * band);
-	}
-	p.setPen(QPen(pal.play, 1.25));
-	p.drawPolyline(curve);
-	paintTempoValues(p, lane, map);
-}
-
-void ArrangerRulerLanes::paintTempoValues(QPainter& p, const QRect& lane, const TempoMap& map) const
-{
-	// Each tempo change's value beside it, unless the last one's label is still in the way.
-	p.setPen(tokens::palette().text);
-	int freeFrom = contentLeft();
-	for (const TempoMapEvent& event : map.all())
-	{
-		const int x = xOf(event.tick);
-		if (!event.hasTempo || x < freeFrom || x >= width()) { continue; }
-		const QString value = QString::number(event.tempo);
-		p.drawText(QPoint(x + 2, lane.top() + p.fontMetrics().ascent()), value);
-		freeFrom = x + 2 + p.fontMetrics().horizontalAdvance(value) + LabelGap;
-	}
-}
-
 void ArrangerRulerLanes::paintChords(QPainter& p, const QRect& lane) const
 {
 	const tokens::Palette& pal = tokens::palette();
@@ -367,7 +314,8 @@ void ArrangerRulerLanes::paintEvent(QPaintEvent*)
 		if (lane.isEmpty()) { continue; }
 		p.fillRect(QRect(0, lane.top(), contentLeft(), lane.height()), pal.raised);
 		p.setPen(pal.textMuted);
-		p.drawText(QRect(LabelGap, lane.top(), contentLeft() - 2 * LabelGap, lane.height()), Qt::AlignVCenter | Qt::AlignRight, laneTitle(i));
+		const QRect title(LabelGap, lane.top(), contentLeft() - 2 * LabelGap, lane.height());
+		p.drawText(title, Qt::AlignVCenter | Qt::AlignRight, p.fontMetrics().elidedText(laneTitle(i), Qt::ElideRight, title.width()));
 		p.save();
 		p.setClipRect(QRect(contentLeft(), lane.top(), width() - contentLeft(), lane.height()));
 		if (i == 0) { paintSections(p, lane); }
@@ -401,21 +349,36 @@ bool ArrangerRulerLanes::itemAt(const QPoint& pos, QString* command, QJsonObject
 		if (pos.x() > x + MarkerHit + fontMetrics().horizontalAdvance(markerName(markers.at(i))) + 9) { return false; }
 		*command = QStringLiteral("marker.jump");
 		*args = {{QStringLiteral("marker"), QStringLiteral("mk-%1").arg(markers.at(i).id)}};
-		*name = markerName(markers.at(i));
+		*name = markerCluster(i).join(QStringLiteral(" \u00b7 "));
 		return true;
 	}
 	return false;
 }
 
+QStringList ArrangerRulerLanes::markerCluster(int index) const
+{
+	// A marker's label needs its flag, a gap and the narrowest label: markers closer than that crowd each other.
+	const QVector<Marker>& markers = ProjectMarkers::instance().markers();
+	const int reach = 9 + LabelGap + MinLabel;
+	const int x = xOf(markers.at(index).tick);
+	QStringList names;
+	for (const Marker& marker : markers)
+	{
+		if (std::abs(xOf(marker.tick) - x) < reach) { names << markerName(marker); }
+	}
+	return names;
+}
+
 bool ArrangerRulerLanes::event(QEvent* event)
 {
 	if (event->type() != QEvent::ToolTip) { return QWidget::event(event); }
-	// A label cut short shows in full here.
+	// A label cut short or left out shows in full here.
 	auto* help = static_cast<QHelpEvent*>(event);
 	QString command;
 	QJsonObject args;
 	QString name;
-	if (itemAt(help->pos(), &command, &args, &name)) { QToolTip::showText(help->globalPos(), name, this); }
+	if (!itemAt(help->pos(), &command, &args, &name)) { name = tempoTip(help->pos()); }
+	if (!name.isEmpty()) { QToolTip::showText(help->globalPos(), name, this); }
 	else { QToolTip::hideText(); }
 	return true;
 }
@@ -427,6 +390,22 @@ void ArrangerRulerLanes::mousePressEvent(QMouseEvent* event)
 	QString name;
 	if (event->button() != Qt::LeftButton || !itemAt(event->pos(), &command, &args, &name)) { return QWidget::mousePressEvent(event); }
 	ControlRegistry::instance()->invoke(command, args);
+}
+
+void ArrangerRulerLanes::mouseDoubleClickEvent(QMouseEvent* event)
+{
+	const QPoint pos = event->pos();
+	const bool markers = laneRect(Lane::Markers).contains(pos);
+	if (event->button() != Qt::LeftButton || pos.x() < contentLeft() || (!markers && !laneRect(Lane::Sections).contains(pos)))
+	{
+		return QWidget::mouseDoubleClickEvent(event);
+	}
+	// In the markers lane the marker nearest the pointer, in the sections lane the section under it.
+	const auto slack = static_cast<tick_t>(markers ? MarkerHit * TimePos::ticksPerBar() / std::max(1.f, m_editor->pixelsPerBar()) : 0);
+	const landmarks::Landmark here = landmarks::at(tickAt(pos.x()), slack);
+	if (here.kind == landmarks::Landmark::Kind::None || here.end <= here.start) { return; }
+	ControlRegistry::instance()->invoke(QStringLiteral("arrangement.zoom"),
+		{{QStringLiteral("start"), static_cast<int>(here.start)}, {QStringLiteral("end"), static_cast<int>(here.end)}});
 }
 
 void ArrangerRulerLanes::contextMenuEvent(QContextMenuEvent* event)

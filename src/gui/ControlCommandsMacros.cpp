@@ -31,22 +31,21 @@
  *  ui/workflows.scope setting), with each project (<workspace>, ProjectWorkspace). The Workflows menu has
  *  an action per workflow, so a workflow is in the palette and can be given a shortcut. A workflow cannot
  *  run a workflow (no nesting, no loops), and scripts cannot run or write workflows (ScriptCommandBridge's
- *  refusal list). Recording is visible while it lasts: the header's indicator and the menu's status line
- *  (MacroMenu::showRecording), and workflow.status's `recording`. */
+ *  refusal list). Recording is visible while it lasts: the header's indicator with its Stop button and the
+ *  menu's status line (MacroMenu::showRecording), and workflow.status's `recording`. A run (WorkflowRun.h)
+ *  reports which step failed and why and what applied, in a report that stays on screen, and a run that
+ *  stopped resumes from the failed step or past it (workflow.resume) - design theme 19. */
 
 #include <QJsonArray>
-#include <QMenuBar>
-#include <QTimer>
 
-#include "CommandForm.h"
 #include "ControlRegistry.h"
 #include "ControlVocabulary.h"
 #include "ControlWindowCommands.h"
 #include "MacroMenu.h"
 #include "MainWindow.h"
 #include "ProjectWorkspace.h"
-#include "ShortcutMap.h"
 #include "UiConfigStore.h"
+#include "WorkflowRun.h"
 
 namespace lmms
 {
@@ -62,8 +61,6 @@ const QString SharedScope = QStringLiteral("shared");
 const QString ProjectScope = QStringLiteral("project");
 constexpr int MaxWorkflows = 64;
 constexpr int MaxSteps = 64;
-bool g_running = false;  //!< a workflow is running: workflow.run refuses a second one (UI thread only)
-QJsonObject g_lastRun;   //!< workflow.status: the last run's outcome
 
 //! Whether the user keeps workflows with each project (ui/workflows.scope) rather than sharing them.
 bool keptWithProject()
@@ -87,9 +84,7 @@ QJsonObject saved()
 void refreshMenu()
 {
 	gui::MainWindow* window = controlMainWindow();
-	if (window == nullptr) { return; }
-	gui::MacroMenu::install(window->menuBar())->refresh();
-	gui::ShortcutMap::apply(window->menuBar());
+	if (window != nullptr) { gui::MacroMenu::refreshIn(window); }
 }
 
 //! Write @a workflows to the library in use, as ONE undo step.
@@ -175,51 +170,17 @@ ControlResult setScope(const QJsonObject& args)
 		{QStringLiteral("workflow.set_scope"), {{QStringLiteral("scope"), previous}}}, refreshMenu);
 }
 
-//! A run that stopped at a failing step is said where the user can see it, not only in workflow.status.
-void announceStop(const QString& name, const QJsonObject& failed, int at)
-{
-	gui::MainWindow* window = controlMainWindow();
-	if (window == nullptr) { return; }
-	gui::announce(window, gui::CommandCall{QStringLiteral("workflow.run"), {}, {}, name, false},
-		ControlResult::failure(ControlErrorKind::Refused, QStringLiteral("Workflow '%1' stopped at step %2 (%3): %4").arg(name)
-			.arg(at + 1).arg(failed.value(QStringLiteral("command")).toString(), failed.value(QStringLiteral("error")).toString())));
-}
-
-//! The steps, each a top-level registry call of its own; the outcome lands in g_lastRun.
-void runSteps(const QString& name, const QJsonArray& steps)
-{
-	QJsonArray results;
-	int failedAt = -1;
-	for (int i = 0; i < steps.size() && failedAt < 0; ++i)
-	{
-		const QJsonObject step = steps.at(i).toObject();
-		const QString command = step.value(QStringLiteral("command")).toString();
-		const ControlResult ran = ControlRegistry::instance()->invoke(command, step.value(QStringLiteral("args")).toObject());
-		QJsonObject entry{{QStringLiteral("command"), command}, {QStringLiteral("ok"), ran.ok}};
-		if (!ran.ok) { entry.insert(QStringLiteral("error"), ran.errorMessage); failedAt = i; }
-		results.append(entry);
-	}
-	g_lastRun = {{QStringLiteral("name"), name}, {QStringLiteral("state"), QStringLiteral("done")},
-		{QStringLiteral("ran"), results.size()}, {QStringLiteral("stopped_at"), failedAt}, {QStringLiteral("results"), results}};
-	g_running = false;
-	if (failedAt >= 0) { announceStop(name, results.last().toObject(), failedAt); }
-}
-
 ControlResult runWorkflow(const QJsonObject& args)
 {
 	const QString name = args.value(QStringLiteral("name")).toString();
 	const QJsonObject workflows = saved();
 	if (!workflows.contains(name)) { return ControlResult::failure(ControlErrorKind::NotFound, QStringLiteral("no workflow '%1'").arg(name)); }
-	if (g_running) { return ControlResult::failure(ControlErrorKind::Refused, QStringLiteral("a workflow is already running")); }
-	// The steps run on the next turn of the event loop, each as a top-level command: run inside
-	// this handler, the registry would fold every step's undo step into this command's while each
-	// step kept a transaction record of its own, and control.undo would then disagree with Ctrl+Z.
-	g_running = true;
-	const QJsonArray steps = workflows.value(name).toObject().value(QStringLiteral("steps")).toArray();
-	g_lastRun = {{QStringLiteral("name"), name}, {QStringLiteral("state"), QStringLiteral("running")}};
-	QTimer::singleShot(0, ControlRegistry::instance(), [name, steps] { runSteps(name, steps); });
-	return ControlResult::success({{QStringLiteral("name"), name}, {QStringLiteral("queued"), steps.size()},
-		{QStringLiteral("poll"), QStringLiteral("workflow.status")}});
+	return workflow::start(name, workflows.value(name).toObject().value(QStringLiteral("steps")).toArray());
+}
+
+ControlResult resumeWorkflow(const QJsonObject& args)
+{
+	return workflow::resume(args.value(QStringLiteral("skip")).toBool(), saved());
 }
 
 //! ED-056: the workflow being recorded - the commands the user (or an agent) runs until workflow.record_stop.
@@ -313,8 +274,7 @@ ControlResult recordStop(const QJsonObject&)
 
 ControlResult workflowStatus(const QJsonObject&)
 {
-	QJsonObject out = g_lastRun;
-	if (out.isEmpty()) { out.insert(QStringLiteral("state"), QStringLiteral("idle")); }
+	QJsonObject out = workflow::lastRun();
 	out.insert(QStringLiteral("recording"), recordingState());
 	return ControlResult::success(out);
 }
@@ -357,15 +317,30 @@ void registerMacroCommands(ControlRegistry& registry)
 			{QStringLiteral("name"), QStringLiteral("steps")}),
 		objectSchema({{QStringLiteral("name"), stringProperty()}, {QStringLiteral("steps"), integerProperty()},
 			{QStringLiteral("replaced"), booleanProperty()}, {QStringLiteral("scope"), stringProperty()}}), true, saveWorkflow);
+	const QJsonObject queuedFields{{QStringLiteral("name"), stringProperty()}, {QStringLiteral("queued"), integerProperty()},
+		{QStringLiteral("from"), integerProperty()}, {QStringLiteral("poll"), stringProperty()}};
+	const QJsonObject queued = objectSchema(queuedFields);
+	// A resume's reply is a run's, plus the step it retried or skipped (one of the two).
+	QJsonObject resumedFields = queuedFields;
+	resumedFields.insert(QStringLiteral("retried"), integerProperty());
+	resumedFields.insert(QStringLiteral("skipped"), integerProperty());
 	add(registry, "run", QStringLiteral("Run workflow 'name': acknowledged at once ('queued' steps), then each step runs "
 		"through the registry on the next turn of the event loop, in order, stopping at the first that fails - "
-		"workflow.status reports the outcome ('stopped_at', -1 when every step ran) and the interface says where it stopped. "
+		"workflow.status reports the outcome ('stopped_at', -1 when every step ran; which step failed and why, which applied "
+		"and stay applied, which did not run) and the interface shows it in a report with Retry and Skip (workflow.resume). "
 		"Each step records and undoes as itself; this command records nothing of its own. One workflow runs at a time."), named,
-		objectSchema({{QStringLiteral("name"), stringProperty()}, {QStringLiteral("queued"), integerProperty()},
-			{QStringLiteral("poll"), stringProperty()}}), false, runWorkflow);
+		queued, false, runWorkflow);
+	add(registry, "resume", QStringLiteral("Resume the last workflow run, which stopped at a failing step: run that step again "
+		"and the rest, or with 'skip' leave it out and run the rest - the steps as the workflow is saved now. Acknowledged at "
+		"once ('queued', 'from' 0-based, 'retried' or 'skipped' the step's number) and run as workflow.run runs; "
+		"workflow.status adds up what applied and what was skipped over the resumes. Refused when the last run did not "
+		"stop at a failure. Each step records and undoes as itself; this command records nothing of its own."),
+		objectSchema({{QStringLiteral("skip"), booleanProperty()}}), objectSchema(resumedFields), false, resumeWorkflow);
 	add(registry, "status", QStringLiteral("The last workflow run: 'state' (idle, running, done), and once done how many "
-		"steps ran, where it stopped and each step's outcome; 'recording' says whether a workflow is being recorded "
-		"(its name and steps so far)."), objectSchema({}), objectProperty(), false, workflowStatus);
+		"steps ran, where it stopped ('stopped_at'), each step's outcome, the failed step with its reason and arguments "
+		"('failed'), which steps applied, were skipped or did not run, whether it can be resumed and the outcome as a "
+		"sentence ('message'); 'recording' says whether a workflow is being recorded (its name and steps so far)."),
+		objectSchema({}), objectProperty(), false, workflowStatus);
 	add(registry, "list", QStringLiteral("The workflows in the library in use, with their steps, and which library that is "
 		"('scope': shared or project)."), objectSchema({}),
 		objectSchema({{QStringLiteral("workflows"), arrayProperty()}, {QStringLiteral("count"), integerProperty()},

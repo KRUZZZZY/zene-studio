@@ -24,6 +24,8 @@
 
 #include "WorkspaceMenus.h"
 
+#include <QApplication>
+#include <QJsonArray>
 #include <QKeySequence>
 #include <QMenu>
 #include <QMenuBar>
@@ -34,6 +36,7 @@
 #include "CommandLists.h"
 #include "ControlRegistry.h"
 #include "GuiApplication.h"
+#include "LayoutMenu.h"
 #include "MenuBarExtras.h"
 #include "SongEditor.h"
 #include "TrackIcons.h"
@@ -71,6 +74,58 @@ void choices(QMenu* menu, const QString& label, const QString& id, const QString
 	addCommandChoices(menu, label, id, key, [id] { return CommandCall{id, {}, {}, QString(), false}; });
 }
 
+//! A disabled line saying what the entries below keep; it declares the list command it reads (A15).
+void note(QMenu* menu, const QString& text, const QString& listId)
+{
+	QAction* line = menu->addAction(text);
+	line->setEnabled(false);
+	line->setProperty("controlCommand", listId);
+}
+
+//! Theme 22: a submenu naming each saved entry (@a listId's @a key), each replacing that entry with what is there now
+//! (@a saveId, 'replace' true) once the person has said yes to @a question; rebuilt each time it opens.
+void replaceMenu(QMenu* menu, const QString& label, const QString& listId, const QString& key, const QString& saveId,
+	const QString& question)
+{
+	QMenu* sub = menu->addMenu(label);
+	QObject::connect(sub, &QMenu::aboutToShow, sub, [sub, listId, key, saveId, question] {
+		clearRebuiltMenu(sub);
+		const QJsonArray entries = ControlRegistry::instance()->invoke(listId).result.value(key).toArray();
+		for (const QJsonValue& entry : entries)
+		{
+			const QString name = entry.toObject().value(QStringLiteral("name")).toString();
+			QAction* action = sub->addAction(name);
+			action->setProperty("controlCommand", saveId);
+			QObject::connect(action, &QAction::triggered, sub, [saveId, question, name] {
+				if (!LayoutMenu::confirm(question.arg(name))) { return; }
+				runCommand(QApplication::activeWindow(), CommandCall{saveId, {{QStringLiteral("name"), name},
+					{QStringLiteral("replace"), true}}, {}, QString(), false});
+			});
+		}
+		if (entries.isEmpty()) { note(sub, QObject::tr("Nothing is saved yet"), listId); }
+	});
+}
+
+//! Memory locations and saved selections: what each keeps, saving under a new name (a name in use is refused,
+//! the form says so), and replacing one by name, asking first.
+void fillViewMemories(QMenu* menu)
+{
+	note(menu, QObject::tr("A memory location keeps the play position, the range and the zoom - not the scroll, track "
+		"heights or the layout"), QStringLiteral("location.list"));
+	list(menu, QObject::tr("Memory Locations..."), CommandLists::memoryLocations);
+	run(menu, QObject::tr("Save Memory Location..."), QStringLiteral("location.save"), {{QStringLiteral("replace"), false}}, true);
+	replaceMenu(menu, QObject::tr("Replace Memory Location"), QStringLiteral("location.list"), QStringLiteral("locations"),
+		QStringLiteral("location.save"), QObject::tr("Replace the memory location \"%1\" with the play position, range and "
+		"zoom now?"));
+	menu->addSeparator();
+	note(menu, QObject::tr("A saved selection keeps the range and the selected clips - not notes or automation points"),
+		QStringLiteral("selection.list"));
+	list(menu, QObject::tr("Saved Selections..."), CommandLists::savedSelections);
+	run(menu, QObject::tr("Save the Selection..."), QStringLiteral("selection.save"), {{QStringLiteral("replace"), false}}, true);
+	replaceMenu(menu, QObject::tr("Replace Saved Selection"), QStringLiteral("selection.list"), QStringLiteral("selections"),
+		QStringLiteral("selection.save"), QObject::tr("Replace the saved selection \"%1\" with what is selected now?"));
+}
+
 void fillWindowMenu(QMenu* menu)
 {
 	list(menu, QObject::tr("Track Manager..."), CommandLists::trackManager);
@@ -79,10 +134,11 @@ void fillWindowMenu(QMenu* menu)
 	run(menu, QObject::tr("Tuner"), QStringLiteral("window.tuner"));
 	run(menu, QObject::tr("Undo History..."), QStringLiteral("window.undo_history"));
 	menu->addSeparator();
-	list(menu, QObject::tr("Memory Locations..."), CommandLists::memoryLocations);
-	run(menu, QObject::tr("Save Memory Location..."), QStringLiteral("location.save"), {}, true);
-	list(menu, QObject::tr("Saved Selections..."), CommandLists::savedSelections);
-	run(menu, QObject::tr("Save the Selection..."), QStringLiteral("selection.save"), {}, true);
+	fillViewMemories(menu);
+	menu->addSeparator();
+	// Theme 8 / 22: the layouts have a home where windows are, besides Project tools > Customise > Window Layouts.
+	// Titled apart from that one, so each of their entries has a name of its own (the agent-surface gate's key).
+	LayoutMenu::populate(menu->addMenu(QObject::tr("Layouts")));
 	menu->addSeparator();
 	run(menu, QObject::tr("Focus Next Panel"), QStringLiteral("window.focus_panel"), {{QStringLiteral("panel"), QStringLiteral("next")}})
 		->setShortcut(QKeySequence(Qt::Key_F6));
@@ -118,6 +174,8 @@ void populateCustomiseExtras(QMenu* menu)
 {
 	menu->addSeparator();
 	QMenu* theme = menu->addMenu(QObject::tr("Theme"));
+	// Theme 20: a section heading, not an entry - it runs nothing, so it declares no command.
+	theme->addSection(QObject::tr("Changes apply at the next start"));
 	choices(theme, QObject::tr("Palette"), QStringLiteral("window.appearance"), QStringLiteral("palette"));
 	// 0.5.0 UX decision (theme 23): one global zoom sizes everything; accessible mode replaces the density presets.
 	QMenu* zoom = theme->addMenu(QObject::tr("Interface Zoom"));

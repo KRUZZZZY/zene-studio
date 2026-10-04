@@ -25,6 +25,7 @@
 
 
 #include "ComboBox.h"
+#include "ControlCues.h"
 
 #include <QPainterPath>
 
@@ -202,7 +203,7 @@ void ComboBox::paintEvent( QPaintEvent * )
 	p.setRenderHint( QPainter::Antialiasing );
 	const QRectF field = QRectF( rect() ).adjusted( 0.5, 0.5, -0.5, -0.5 );
 	p.setPen( QPen( hasFocus() ? pal.focusRing : pal.separator, 1 ) );
-	p.setBrush( m_pressed ? pal.selected : underMouse() ? pal.controlHover : pal.control );
+	p.setBrush( m_pressed ? pal.selected : cues::hovered( this ) ? pal.controlHover : pal.control );  // no hover when disabled
 	p.drawRoundedRect( field, tokens::radius::md, tokens::radius::md );
 
 	const qreal cx = width() - CB_ARROW_BTN_WIDTH / 2.0;

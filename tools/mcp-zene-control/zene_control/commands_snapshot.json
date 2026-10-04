@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-10-04T13:47:59Z",
+  "captured_at": "2026-10-04T17:22:52Z",
   "commands": [
     {
       "args_schema": {
@@ -55,6 +55,12 @@
       "args_schema": {
         "additionalProperties": false,
         "properties": {
+          "context": {
+            "type": "boolean"
+          },
+          "query": {
+            "type": "string"
+          },
           "reference": {
             "type": "boolean"
           },
@@ -68,7 +74,7 @@
         "required": [],
         "type": "object"
       },
-      "description": "Open the manual inside the application - at 'topic' (window, arrange, notes, mix, devices, record, launch, projects, agents, customise, access) - or, with 'reference', the command reference: every command with its description and arguments, built from the registry - or, with 'whats_this', What's This? mode: the next click on a control shows its full description. Interface state.",
+      "description": "Open the manual inside the application - at 'topic' (window, arrange, notes, mix, devices, record, launch, projects, agents, customise, access) - or, with 'reference', the command reference: every command with its description and arguments, built from the registry and grouped by the manual's sections, found by 'query' when given (a name, a task, a shortcut or a word) - or, with 'whats_this', What's This? mode: the next click on a control shows its full description - or, with 'context' (F1), help for the control with the keyboard focus, needing no hover: the manual at its section with what the control is, the command it runs by name and its shortcut ('context' in the reply). Interface state.",
       "group": "app",
       "id": "app.help",
       "mutating": false,
@@ -663,7 +669,7 @@
         "required": [],
         "type": "object"
       },
-      "description": "Zoom the arranger: to 'pixels_per_bar', by 'step' zoom steps (negative zooms out), to the span 'start'..'end' (the zoom tool's drag), or to 'fit' the song, the loop or the selected clips across its width (scrolled to their start). A 'pixels_per_bar' or 'step' zoom keeps one tick where it is on screen ('anchor' in the answer): 'anchor_tick' (a pointer gesture passes the tick under the pointer), else 'anchor' - selection, playhead, view (its middle), start (its left edge) or auto (the default: the selection, else the playhead when it is on screen, else the middle). The previous zoom joins the history arrangement.zoom_back walks. Interface state.",
+      "description": "Zoom the arranger: to 'pixels_per_bar', by 'step' zoom steps (negative zooms out), to the span 'start'..'end' (the zoom tool's drag), or to 'fit' the song, the loop or the selection (the time range, else the selected clips) across its width (scrolled to its start). A 'pixels_per_bar' or 'step' zoom keeps one tick where it is on screen ('anchor' in the answer): 'anchor_tick' (a pointer gesture passes the tick under the pointer), else 'anchor' - selection, playhead, view (its middle), start (its left edge) or auto (the default: the selection, else the playhead when it is on screen, else the middle). The previous zoom joins the history arrangement.zoom_back walks. Interface state.",
       "group": "arrangement",
       "id": "arrangement.zoom",
       "mutating": false,
@@ -11052,7 +11058,7 @@
         "required": [],
         "type": "object"
       },
-      "description": "The project's memory locations, in the order they were saved.",
+      "description": "The project's memory locations, in the order they were saved, their 'count' and limit ('max_entries'), and what one never keeps ('not_kept').",
       "group": "location",
       "id": "location.list",
       "mutating": false,
@@ -11074,7 +11080,7 @@
         ],
         "type": "object"
       },
-      "description": "Go to memory location 'name': the play position (transport.seek), its range (range.set) and its zoom come back.",
+      "description": "Go to memory location 'name': the play position (transport.seek), its range (range.set) and its zoom come back - 'restored' lists the parts that did, 'skipped' those it holds that did not (the zoom without an arranger, a range refused).",
       "group": "location",
       "id": "location.recall",
       "mutating": false,
@@ -11112,6 +11118,9 @@
           "name": {
             "type": "string"
           },
+          "replace": {
+            "type": "boolean"
+          },
           "tick": {
             "maximum": 2147483647,
             "minimum": 0,
@@ -11123,7 +11132,7 @@
         ],
         "type": "object"
       },
-      "description": "Save a memory location 'name': the play position (or 'tick'), the range and the arranger's zoom as they are now - replacing one of that name, at most 99. Saved with the project; one undo step ('changed' false, and no step, when it was already saved just so). Names are trimmed here and in every lookup.",
+      "description": "Save a memory location 'name': the play position (or 'tick'), the range and the arranger's zoom as they are now ('captures' lists the parts kept; 'not_kept' what a location never keeps: the scroll, the vertical zoom, track heights, the selection and the window layout) - replacing one of that name ('replaced') unless 'replace' is false, when a name in use is refused; at most 99 ('max_entries'). Saved with the project; one undo step ('changed' false, and no step, when it was already saved just so). Names are trimmed here and in every lookup.",
       "group": "location",
       "id": "location.save",
       "mutating": true,
@@ -12805,6 +12814,32 @@
           }
         },
         "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "channel": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "channel",
+          "name"
+        ],
+        "type": "object"
+      },
+      "description": "Name a mixer channel ('channel', ch-<n>): 'name', 1..64 characters (trimmed). 'previous' answers the name it had. One undo step; the name it already has changes nothing.",
+      "group": "mixer",
+      "id": "mixer.rename_channel",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
         "type": "object"
       }
     },
@@ -17724,6 +17759,43 @@
           }
         },
         "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "chain": {
+            "maximum": 64,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "plugin": {
+            "type": "string"
+          },
+          "position": {
+            "maximum": 1024,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "target": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "target",
+          "plugin",
+          "position"
+        ],
+        "type": "object"
+      },
+      "description": "Move one device ('plugin', fx-<n> on 'target' - with 'chain' for a rack chain) to slot 'position' of its own chain (0 = first; clamped to the last slot). 'from' answers where it was. One undo step; a device already at that slot changes nothing.",
+      "group": "plugin",
+      "id": "plugin.move",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
         "type": "object"
       }
     },
@@ -24833,7 +24905,7 @@
         ],
         "type": "object"
       },
-      "description": "Select saved selection 'name' again: its range (range.set) and those of its clips that still exist ('missing' counts the rest).",
+      "description": "Select saved selection 'name' again: its range (range.set) and those of its clips that still exist ('missing' counts the rest; 'restored' and 'skipped' name the parts that came back and those that did not).",
       "group": "selection",
       "id": "selection.apply",
       "mutating": false,
@@ -24849,7 +24921,7 @@
         "required": [],
         "type": "object"
       },
-      "description": "The project's saved selections, in the order they were saved.",
+      "description": "The project's saved selections, in the order they were saved, their 'count' and limit ('max_entries'), and what one never keeps ('not_kept').",
       "group": "selection",
       "id": "selection.list",
       "mutating": false,
@@ -24889,6 +24961,9 @@
           },
           "name": {
             "type": "string"
+          },
+          "replace": {
+            "type": "boolean"
           }
         },
         "required": [
@@ -24896,7 +24971,7 @@
         ],
         "type": "object"
       },
-      "description": "Save the selection as 'name': the range and the clips selected in the arranger (or 'clips', a list of clip ids; refused NotFound naming one that is not in the project) - replacing one of that name, at most 99 ('changed' false when it was already saved just so: no undo step). Refused when nothing is selected. Saved with the project; one undo step.",
+      "description": "Save the selection as 'name': the range and the clips selected in the arranger (or 'clips', a list of clip ids; refused NotFound naming one that is not in the project) - 'captures' lists the parts kept, 'not_kept' what a saved selection never keeps (notes, automation points, mixer channels, the play position) - replacing one of that name ('replaced') unless 'replace' is false, when a name in use is refused; at most 99 ('changed' false when it was already saved just so: no undo step). Refused when nothing is selected. Saved with the project; one undo step.",
       "group": "selection",
       "id": "selection.save",
       "mutating": true,
@@ -27225,6 +27300,80 @@
     {
       "args_schema": {
         "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "type": "object"
+      },
+      "description": "Stop task 'id' (task.list), if its job can be stopped: a queued one is dropped, a running one stops at its next safe point and removes what it had written. Refused for a task that has ended or whose job runs to its end (a mastering run). The project is not touched.",
+      "group": "task",
+      "id": "task.cancel",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {},
+        "required": [],
+        "type": "object"
+      },
+      "description": "Forget every ended task in the list (done, failed or cancelled); running and queued ones stay. Session state.",
+      "group": "task",
+      "id": "task.clear_finished",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {},
+        "required": [],
+        "type": "object"
+      },
+      "description": "The long jobs of this session, oldest first - render-queue renders and conversions, stem splits, mastering runs, library indexing, video audio extraction - each {id, kind, title, status, progress (0..1, or -1 while the job cannot say), state (queued, running, done, failed, cancelled), cancellable, started_ms, finished_ms}, and how many are 'active'. What the status bar's Tasks list shows. Read-only.",
+      "group": "task",
+      "id": "task.list",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "shown": {
+            "type": "boolean"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "description": "Show the list of background jobs - the status bar's Tasks list ('shown' false hides it; it toggles when left out): each job's title, state, progress and Cancel where the job supports it. It never blocks the window: Escape or a click elsewhere closes it. Interface state.",
+      "group": "task",
+      "id": "task.show",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
         "properties": {},
         "required": [],
         "type": "object"
@@ -27366,7 +27515,7 @@
         "required": [],
         "type": "object"
       },
-      "description": "The interface's colours as the next start will draw them: the palette, the user's overrides, every colour role {name, color, overridden}, and the declared text/surface pairs that fall below their WCAG contrast.",
+      "description": "The interface's colours as the next start will draw them: the palette, the user's overrides, every colour role {name, color, overridden}, the declared text/surface pairs that fall below their WCAG contrast, when the colours take effect ('applies' next_start, 'restart_required', 'applies_note') and whether the running interface still draws other colours ('restart_pending').",
       "group": "theme",
       "id": "theme.get",
       "mutating": false,
@@ -27379,6 +27528,9 @@
       "args_schema": {
         "additionalProperties": false,
         "properties": {
+          "allow_low_contrast": {
+            "type": "boolean"
+          },
           "colors": {
             "type": "object"
           },
@@ -27392,7 +27544,7 @@
         "required": [],
         "type": "object"
       },
-      "description": "Take a theme's colours from 'file' (theme.export's format) - or from 'colors', {role: #rrggbb} - on top of the current overrides, or instead of them with 'replace'. Every name must be a colour role. Applies from the next start; one undo step.",
+      "description": "Take a theme's colours from 'file' (theme.export's format) - or from 'colors', {role: #rrggbb} - on top of the current overrides, or instead of them with 'replace'. Every name must be a colour role. Applies from the next start; one undo step. A change that would put a text/surface pair below WCAG AA contrast (4.5:1 for text, 3:1 for large text and controls) that met it before is refused, naming the pairs - unless 'allow_low_contrast' is true; the reply lists them either way ('new_contrast_failures').",
       "group": "theme",
       "id": "theme.import",
       "mutating": true,
@@ -27421,6 +27573,9 @@
       "args_schema": {
         "additionalProperties": false,
         "properties": {
+          "allow_low_contrast": {
+            "type": "boolean"
+          },
           "color": {
             "type": "string"
           },
@@ -27467,7 +27622,7 @@
         ],
         "type": "object"
       },
-      "description": "Give colour role 'name' (theme.get lists them: panel, text, accent, ...) the colour 'color' (#rrggbb), or with 'color' empty put the palette's own back. Applies from the next start; a preference in the config file, one undo step. The reply lists any contrast pair the change breaks.",
+      "description": "Give colour role 'name' (theme.get lists them: panel, text, accent, ...) the colour 'color' (#rrggbb), or with 'color' empty put the palette's own back. Applies from the next start; a preference in the config file, one undo step. A change that would put a text/surface pair below WCAG AA contrast (4.5:1 for text, 3:1 for large text and controls) that met it before is refused, naming the pairs - unless 'allow_low_contrast' is true; the reply lists them either way ('new_contrast_failures').",
       "group": "theme",
       "id": "theme.set_token",
       "mutating": true,
@@ -31425,6 +31580,9 @@
       "args_schema": {
         "additionalProperties": false,
         "properties": {
+          "background": {
+            "type": "boolean"
+          },
           "out": {
             "type": "string"
           }
@@ -31432,7 +31590,7 @@
         "required": [],
         "type": "object"
       },
-      "description": "Decode the video's sound to a 32-bit float stereo WAV - 'out', or '<video>-audio.wav' next to the project (next to the video while the project is unsaved), numbered when taken - and put it on a new audio track at the video's offset. Runs to the end before it answers. One undo step removes the track; the WAV stays on disk.",
+      "description": "Decode the video's sound to a 32-bit float stereo WAV - 'out', or '<video>-audio.wav' next to the project (next to the video while the project is unsaved), numbered when taken - and put it on a new audio track at the video's offset. Runs to the end before it answers - or, with 'background' true, decodes on a worker listed in the task area (task.list: its progress, and task.cancel stops it) and answers at once with the 'task' id; the track then lands when the decode completes. One undo step removes the track; the WAV stays on disk.",
       "group": "video",
       "id": "video.extract_audio",
       "mutating": true,
@@ -31496,6 +31654,33 @@
       "group": "video",
       "id": "video.window_show",
       "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "level": {
+            "enum": [
+              "all",
+              "errors",
+              "off"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "level"
+        ],
+        "type": "object"
+      },
+      "description": "What a screen reader is told without asking: 'level' all (errors, refused edits, recording starting and stopping, a project saved or opened, a finished job - the default), errors (errors and refusals only) or off. The same message is never spoken twice within a second, and values are spoken only for the focused control, never for meters or automation. A preference in the config file (ui/announcements); one undo step.",
+      "group": "view",
+      "id": "view.announcements",
+      "mutating": true,
       "requires": [],
       "result_schema": {
         "type": "object"
@@ -32006,6 +32191,9 @@
       "args_schema": {
         "additionalProperties": false,
         "properties": {
+          "checks": {
+            "type": "array"
+          },
           "fill": {
             "type": "boolean"
           }
@@ -32013,7 +32201,7 @@
         "required": [],
         "type": "object"
       },
-      "description": "Walk the main window's controls and count those a screen reader would announce with no name, no role (a bare client or pane) or, for a control that shows a value, no value, and those Tab cannot reach; with 'fill', give each nameless one the name it already carries (its constructed name, its parameter's, its tooltip, its text). Lists, at most 50 of each, the controls with nothing to name them by and those with no role or value. The interface fills names this way once at start. Interface state.",
+      "description": "Walk the main window's controls and count those a screen reader would announce with no name, no role (a bare client or pane) or, for a control that shows a value, no value, and those Tab cannot reach; with 'fill', give each nameless one the name it already carries (its constructed name, its parameter's, its tooltip, its text). Lists, at most 50 of each, the controls with nothing to name them by and those with no role or value. The interface fills names this way once at start. Theme 17's staged audit: 'checks' picks the checks to run - name, role, value, focus (the controls Tab cannot reach, listed) and duplicates (controls announced alike with no named group, description or role to tell them apart) - all when left out; the reply's 'summary' counts each check's findings. Interface state.",
       "group": "window",
       "id": "window.accessibility_report",
       "mutating": false,
@@ -32286,7 +32474,7 @@
         "required": [],
         "type": "object"
       },
-      "description": "The shell's layout: `view` (arrange, mix or edit); `panels`, one {id, title, region, visible, available, shortcut, mounted} per panel, where region is left, center, bottom or right and available says whether the current view offers it; `focused`, the panel that last took keyboard focus; `launcher`, whether the clip launcher sits beside the view's main panel; `editors`, one {editor, visible, panel} entry per window.toggle name; `note_editor`, the note editor's view (window.note_editor_set's reply); and `selection`, what the Inspector and the Device panel show (window.select's reply). Read-only. Refused `requires` in a process with no interface.",
+      "description": "The shell's layout: `view` (arrange, mix or edit); `panels`, one {id, title, region, visible, available, shortcut, mounted} per panel, where region is left, center, bottom or right and available says whether the current view offers it; `focused`, the panel that last took keyboard focus; `launcher`, whether the clip launcher sits beside the view's main panel; `editors`, one {editor, visible, panel} entry per window.toggle name; `tools`, one {name, command, editor, home} per tool that opens in a window of its own (the footer's Tools menu: the command that opens it, and its window.toggle editor when it has one); `regions`, per side region (left, bottom, right) the panel `open` there and the `tabs` its tab strip offers in this view; `footer`, how the footer's switches fit its width (labelled, compact, or overflowing into its More button); `note_editor`, the note editor's view (window.note_editor_set's reply); and `selection`, what the Inspector and the Device panel show (window.select's reply). Read-only. Refused `requires` in a process with no interface.",
       "group": "window",
       "id": "window.get_state",
       "mutating": false,
@@ -32300,6 +32488,9 @@
           "focused": {
             "type": "string"
           },
+          "footer": {
+            "type": "string"
+          },
           "launcher": {
             "type": "boolean"
           },
@@ -32309,8 +32500,14 @@
           "panels": {
             "type": "array"
           },
+          "regions": {
+            "type": "object"
+          },
           "selection": {
             "type": "object"
+          },
+          "tools": {
+            "type": "array"
           },
           "view": {
             "type": "string"
@@ -32362,6 +32559,38 @@
     {
       "args_schema": {
         "additionalProperties": false,
+        "properties": {
+          "surface": {
+            "enum": [
+              "notes",
+              "controller",
+              "xy",
+              "comp",
+              "clips"
+            ],
+            "type": "string"
+          },
+          "visible": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "surface"
+        ],
+        "type": "object"
+      },
+      "description": "Open the editable item list of a canvas beside it, or close it ('visible'; toggles when left out) - 'surface': notes (the open note editor's notes, with the expression lane's value), controller (the controller lane's points), xy (the open XY pad's two axes), comp (the take lanes' comp segments) or clips (the arrangement's clips). Every cell edit, Insert and Delete in the list runs the canvas's own command (note.edit, note.add, note.remove_many, clip.controllers_set, rack.macro_set, comp.select, clip.move, clip.resize, clip.add, clip.delete), one undo step each; selection follows the canvas both ways. Answers the list: {surface, visible, title, columns: [{id, title, editable}], rows: [{id, <column>: text}] (at most 200), count}. Ctrl+Shift+L on a canvas. Interface state.",
+      "group": "window",
+      "id": "window.item_list",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
         "properties": {},
         "required": [],
         "type": "object"
@@ -32388,7 +32617,7 @@
         ],
         "type": "object"
       },
-      "description": "Switch to the saved layout 'name'; answers window.get_state's view of the result. Interface state, as window.set_view is: not recorded.",
+      "description": "Switch to the saved layout 'name'; answers window.get_state's view of the result and the parts it put back ('captures'). It becomes the personal layout: one a project's layout had put aside is dropped. Interface state, as window.set_view is: not recorded.",
       "group": "window",
       "id": "window.layout_apply",
       "mutating": false,
@@ -32404,7 +32633,7 @@
         "required": [],
         "type": "object"
       },
-      "description": "The personal library's layout names, its limit, and whether the project remembers a layout of its own ('project_layout', window.layout_project_*).",
+      "description": "The personal library's layout names, its limit, whether the project remembers a layout of its own ('project_layout', window.layout_project_*), and whether a project's layout is on screen with the personal one put aside ('project_layout_shown').",
       "group": "window",
       "id": "window.layout_list",
       "mutating": false,
@@ -32420,6 +32649,9 @@
           },
           "project_layout": {
             "type": "boolean"
+          },
+          "project_layout_shown": {
+            "type": "boolean"
           }
         },
         "required": [],
@@ -32433,7 +32665,7 @@
         "required": [],
         "type": "object"
       },
-      "description": "Put back the layout the project remembers; answers window.get_state's view of the result. Interface state: not recorded. Refused NotFound when it remembers none.",
+      "description": "Put back the layout the project remembers; answers window.get_state's view of the result and the parts it put back ('captures'). The personal layout on screen before is put aside and comes back when a project without a layout of its own opens, a new project starts, or at the next start (window.layout_list's 'project_layout_shown'). Interface state: not recorded. Refused NotFound when it remembers none.",
       "group": "window",
       "id": "window.layout_project_apply",
       "mutating": false,
@@ -32574,6 +32806,13 @@
       "args_schema": {
         "additionalProperties": false,
         "properties": {
+          "density": {
+            "enum": [
+              "compact",
+              "expanded"
+            ],
+            "type": "string"
+          },
           "filter": {
             "enum": [
               "all",
@@ -32629,12 +32868,19 @@
               "wide"
             ],
             "type": "string"
+          },
+          "view": {
+            "enum": [
+              "mix",
+              "routing"
+            ],
+            "type": "string"
           }
         },
         "required": [],
         "type": "object"
       },
-      "description": "The mixer view's modes, set and answered: 'sends_on_faders' (a ch-<n> return, or empty for the channel faders) makes every channel's fader drive its send to that return - a banner across the mixer names it, every fader is labelled with what it drives, and a channel with no send there keeps a dimmed, still 'No send' fader in place; the answer adds 'sends_on_faders_name' (the return's name) and 'faders' (per channel, what its fader drives: volume, send or no_send - the return's own fader and the master's stay volume); 'folded' answers the channel strips a collapsed folder hides (track.folder_set_collapsed folds). The view options, kept in the config file (ui/mixerview): 'show_sends', 'show_pan', 'show_number', 'show_meter_info', 'show_inserts', 'show_macros' (a strip's sections - the meter line is the gain reduction and the clip light, the inserts are listed by name, the macros are the rack's first four as knobs), 'strip_width' (narrow / normal / wide), 'filter' (all / instruments / audio / returns / used - the channels a track plays into or a send reaches), 'meter_mode' (peak - after the fader -, rms, pre_fader) and 'meter_scale' (db42 - the default range -, db60, db24, linear). Interface state: nothing is journalled.",
+      "description": "The mixer view's modes, set and answered: 'sends_on_faders' (a ch-<n> return, or empty for the channel faders) makes every channel's fader drive its send to that return - a banner across the mixer names it, every fader is labelled with what it drives, and a channel with no send there keeps a dimmed, still 'No send' fader in place; the answer adds 'sends_on_faders_name' (the return's name) and 'faders' (per channel, what its fader drives: volume, send or no_send - the return's own fader and the master's stay volume); 'folded' answers the channel strips a collapsed folder hides (track.folder_set_collapsed folds). The view options, kept in the config file (ui/mixerview): 'show_sends', 'show_pan', 'show_number', 'show_meter_info', 'show_inserts', 'show_macros' (a strip's sections - the meter line is the gain reduction and the clip light, the inserts are listed by name, the macros are the rack's first four as knobs), 'strip_width' (narrow / normal / wide), 'filter' (all / instruments / audio / returns / used - the channels a track plays into or a send reaches), 'meter_mode' (peak - after the fader -, rms, pre_fader) and 'meter_scale' (db42 - the default range -, db60, db24, linear). Theme 16: 'view' (mix - levels, pan and processing, the default -, routing - each strip lists where its signal comes from and goes by name, the sends row always shown, inserts and macros left to the mix view) and 'density' (expanded - the default, every section the options show -, compact - no inserts, no macros, in the mix view no sends row, routing on one line); a mode bar across the mixer shows and sets both, the filter and the modes. The answer adds 'strips': per channel its 'type' (master, return, group, track, channel), 'format' (stereo, LCR, Quad, 5.1, 7.1), 'inputs' and 'outputs' (by name; each output with amount, pre_fader, enabled), 'hardware' (its hardware output's label, empty for none) and 'states' (afl, pfl, solo_safe, surround_pan, cue, hardware_insert). Interface state: nothing is journalled.",
       "group": "window",
       "id": "window.mixer_view",
       "mutating": false,
@@ -32642,6 +32888,13 @@
       "result_schema": {
         "additionalProperties": false,
         "properties": {
+          "density": {
+            "enum": [
+              "compact",
+              "expanded"
+            ],
+            "type": "string"
+          },
           "faders": {
             "type": "array"
           },
@@ -32704,6 +32957,16 @@
               "narrow",
               "normal",
               "wide"
+            ],
+            "type": "string"
+          },
+          "strips": {
+            "type": "array"
+          },
+          "view": {
+            "enum": [
+              "mix",
+              "routing"
             ],
             "type": "string"
           }
@@ -32940,6 +33203,98 @@
       "mutating": false,
       "requires": [],
       "result_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "clip": {
+            "type": "string"
+          },
+          "from": {
+            "maximum": 2147483647,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "to": {
+            "maximum": 2147483647,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "unit": {
+            "enum": [
+              "time",
+              "bars_beats",
+              "samples"
+            ],
+            "type": "string"
+          },
+          "zoom": {
+            "enum": [
+              "in",
+              "out",
+              "selection",
+              "all"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "clip"
+        ],
+        "type": "object"
+      },
+      "description": "Open the Sample Editor on an audio clip (what the clip menu's Sample Editor... does), or bring its open one forward, and set its VIEW: `from` and `to` select the source frames [from, to) - End exclusive, as sample.edit_range takes them, clamped to the source and swapped if reversed; `unit` is what its Start, End and Length fields read in (time, bars_beats - at the song's tempo from the clip's start - or samples); `zoom` zooms the waveform in or out, to the selection, or to all of it. The reply is the editor's state, the range also as the fields show it. Interface state, not project state: nothing is journalled - sample.edit_range edits the audio. Refused `requires` in a process with no interface.",
+      "group": "window",
+      "id": "window.sample_editor",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "clip": {
+            "type": "string"
+          },
+          "end_text": {
+            "type": "string"
+          },
+          "frames": {
+            "type": "integer"
+          },
+          "from": {
+            "type": "integer"
+          },
+          "length": {
+            "type": "integer"
+          },
+          "length_text": {
+            "type": "string"
+          },
+          "sample_rate": {
+            "type": "integer"
+          },
+          "start_text": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "to": {
+            "type": "integer"
+          },
+          "unit": {
+            "type": "string"
+          },
+          "view_from": {
+            "type": "integer"
+          },
+          "view_to": {
+            "type": "integer"
+          }
+        },
+        "required": [],
         "type": "object"
       }
     },
@@ -33246,7 +33601,7 @@
         ],
         "type": "object"
       },
-      "description": "Show or hide one shell panel or floating window - the View menu, the footer's panel buttons, Alt+I/B/D/E/M/A/P/L, the MDI-era Ctrl+1..7 and Edit > Scales and keymaps dispatch exactly this. `editor` is a panel id (arranger, launcher, detail, devices, inspector, browser, mixer, automation, pattern), a 0.4.0 editor name (song = arranger, piano_roll = detail, clip_launcher = launcher), or a floating window (controller_rack, project_notes, microtuner, classic_piano_roll). A panel shares its region with others, so showing it hides the region's previous panel; a view's main panel cannot be hidden (it stays visible); a panel the current view does not offer is revealed by switching to the Arrange view. `visible` is the state afterwards, `panel` the panel id (empty for a window), `view` the view afterwards. Interface state, not project state: nothing is journalled. Refused `requires` in a process with no interface.",
+      "description": "Show or hide one shell panel or floating window - the View menu, the footer's panel buttons and Tools menu, a region's tabs, Alt+I/B/D/E/M/A/P/L, the MDI-era Ctrl+1..7 and Edit > Scales and keymaps dispatch exactly this. `editor` is a panel id (arranger, launcher, detail, devices, inspector, browser, mixer, automation, pattern), a 0.4.0 editor name (song = arranger, piano_roll = detail, clip_launcher = launcher), or a floating window (controller_rack, project_notes, microtuner, classic_piano_roll). A panel shares its region with others, so showing it hides the region's previous panel; a view's main panel cannot be hidden (it stays visible); a panel the current view does not offer is revealed by switching to the Arrange view. `visible` is the state afterwards, `panel` the panel id (empty for a window), `view` the view afterwards. Interface state, not project state: nothing is journalled. Refused `requires` in a process with no interface.",
       "group": "window",
       "id": "window.toggle",
       "mutating": false,
@@ -33467,6 +33822,48 @@
       "args_schema": {
         "additionalProperties": false,
         "properties": {
+          "skip": {
+            "type": "boolean"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "description": "Resume the last workflow run, which stopped at a failing step: run that step again and the rest, or with 'skip' leave it out and run the rest - the steps as the workflow is saved now. Acknowledged at once ('queued', 'from' 0-based, 'retried' or 'skipped' the step's number) and run as workflow.run runs; workflow.status adds up what applied and what was skipped over the resumes. Refused when the last run did not stop at a failure. Each step records and undoes as itself; this command records nothing of its own.",
+      "group": "workflow",
+      "id": "workflow.resume",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "from": {
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          },
+          "poll": {
+            "type": "string"
+          },
+          "queued": {
+            "type": "integer"
+          },
+          "retried": {
+            "type": "integer"
+          },
+          "skipped": {
+            "type": "integer"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
           "name": {
             "type": "string"
           }
@@ -33476,7 +33873,7 @@
         ],
         "type": "object"
       },
-      "description": "Run workflow 'name': acknowledged at once ('queued' steps), then each step runs through the registry on the next turn of the event loop, in order, stopping at the first that fails - workflow.status reports the outcome ('stopped_at', -1 when every step ran) and the interface says where it stopped. Each step records and undoes as itself; this command records nothing of its own. One workflow runs at a time.",
+      "description": "Run workflow 'name': acknowledged at once ('queued' steps), then each step runs through the registry on the next turn of the event loop, in order, stopping at the first that fails - workflow.status reports the outcome ('stopped_at', -1 when every step ran; which step failed and why, which applied and stay applied, which did not run) and the interface shows it in a report with Retry and Skip (workflow.resume). Each step records and undoes as itself; this command records nothing of its own. One workflow runs at a time.",
       "group": "workflow",
       "id": "workflow.run",
       "mutating": false,
@@ -33484,6 +33881,9 @@
       "result_schema": {
         "additionalProperties": false,
         "properties": {
+          "from": {
+            "type": "integer"
+          },
           "name": {
             "type": "string"
           },
@@ -33586,7 +33986,7 @@
         "required": [],
         "type": "object"
       },
-      "description": "The last workflow run: 'state' (idle, running, done), and once done how many steps ran, where it stopped and each step's outcome; 'recording' says whether a workflow is being recorded (its name and steps so far).",
+      "description": "The last workflow run: 'state' (idle, running, done), and once done how many steps ran, where it stopped ('stopped_at'), each step's outcome, the failed step with its reason and arguments ('failed'), which steps applied, were skipped or did not run, whether it can be resumed and the outcome as a sentence ('message'); 'recording' says whether a workflow is being recorded (its name and steps so far).",
       "group": "workflow",
       "id": "workflow.status",
       "mutating": false,
@@ -33596,7 +33996,7 @@
       }
     }
   ],
-  "count": 799,
+  "count": 809,
   "instance": {
     "binary": null,
     "binary_bytes": null,
@@ -33604,15 +34004,15 @@
     "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-survey/tools/zene-pa-agentctl",
     "lane_head": null,
     "proto": 1,
-    "source_socket": "/tmp/zctl-run-zooiyha2/zene.sock",
-    "version": "0.4.0-alpha.112+57980be"
+    "source_socket": "/tmp/zctl-run-4g8c9srg/zene.sock",
+    "version": "0.4.0-alpha.114+9a9f339"
   },
   "kind": "zene-control-command-list",
   "proto": 1,
   "schema": 1,
   "surface": {
-    "group_count": 75,
-    "id_count": 799,
-    "ids_sha256": "709074e5ad1725388eb0111de069f108aea32836bae4442668f93baa55a52390"
+    "group_count": 76,
+    "id_count": 809,
+    "ids_sha256": "30a5e1ef45f2a6f4cd493d28b6b923826da185f96165d735ba363909b12ca8e2"
   }
 }

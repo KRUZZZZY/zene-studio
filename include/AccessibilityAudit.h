@@ -27,6 +27,7 @@
 
 #include <QJsonObject>
 #include <QString>
+#include <QStringList>
 
 #include "lmms_export.h"
 
@@ -47,6 +48,21 @@ namespace lmms::gui
  *  roleless / roleless_count and valueless / valueless_count ([{class, object, parent, role}]), and
  *  unreachable_count (no Tab focus)}; each list holds at most 50, its count all of them. */
 LMMS_EXPORT QJsonObject auditAccessibility(QWidget* root, bool fill);
+
+/*! Theme 17, the staged audit: the same walk running only the checks named in @a checks (accessibilityCheckNames();
+ *  empty runs them all, which is what the two-argument form does):
+ *  - "name": no accessible name (unnamed, implied, filled - as above);
+ *  - "role": a bare client or pane (roleless);
+ *  - "value": a control that shows a value and gives none (valueless);
+ *  - "focus": a control Tab cannot reach (unreachable, unreachable_count);
+ *  - "duplicates": controls a screen reader would announce the same way with nothing to tell them apart - the same
+ *    name, role and description inside the same named group (a mixer strip's "Mute" is told apart by its strip's
+ *    name; two nameless strips' are not): duplicates [{name, role, context, count, objects}] and duplicates_count
+ *    (the controls involved).
+ *  The reply adds checks (those run) and summary {check: findings}; the lists of checks not run are left out. */
+LMMS_EXPORT QJsonObject auditAccessibility(QWidget* root, bool fill, const QStringList& checks);
+//! "name", "role", "value", "focus", "duplicates" - the audit's checks, in the order of the staged rollout.
+LMMS_EXPORT const QStringList& accessibilityCheckNames();
 
 //! The name @a widget could be announced by when it has none: its constructed name (the title a custom control keeps
 //! it in, not a window's) or its parameter's - either without a caption's trailing colon - else its tooltip or its text.

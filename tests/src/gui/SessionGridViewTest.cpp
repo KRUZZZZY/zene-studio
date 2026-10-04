@@ -30,15 +30,25 @@
 
 #include <QtTest>
 
+#include <QDragEnterEvent>
+#include <QDropEvent>
+#include <QFile>
 #include <QJsonArray>
 #include <QJsonObject>
+#include <QLabel>
 #include <QMenu>
+#include <QMimeData>
+#include <QTemporaryDir>
 #include <QToolButton>
+#include <QUrl>
 
 #include "ControlRegistry.h"
 #include "Engine.h"
 #include "MenuTestSupport.h"
+#include "SessionGridCells.h"
 #include "SessionGridView.h"
+#include "Song.h"
+#include "Track.h"
 
 using namespace lmms;
 using namespace lmms::gui;
@@ -255,6 +265,105 @@ private slots:
 		QCOMPARE(slotState(1, 1).value(QStringLiteral("type")).toString(), QStringLiteral("midi"));
 		QCOMPARE(slotState(1, 1).value(QStringLiteral("pattern")).toInt(), patterns.first().toObject().value(QStringLiteral("pattern")).toInt());
 		QVERIFY(run(QStringLiteral("session.clear_slot"), {{QStringLiteral("track"), 1}, {QStringLiteral("scene"), 1}}).ok);
+	}
+
+	//! 0.5.0 theme 14: a scene's state is its row's - queued over playing over stopped over empty - and a cell's
+	//! play mark says its column's phase by its shape.
+	void theSceneStateIsItsRowsAndTheMarksAreShapes()
+	{
+		using sessiongrid::SceneState;
+		const std::vector<QString> names{QStringLiteral("kick"), QString(), QStringLiteral("bass"), QString()};  // 2 x 2
+		const std::vector<QString> idle{QString(), QString()};
+		QCOMPARE(sessiongrid::sceneState(0, 2, names, {-1, -1}, idle), SceneState::Stopped);
+		QCOMPARE(sessiongrid::sceneState(1, 2, names, {-1, -1}, idle), SceneState::Empty);
+		QCOMPARE(sessiongrid::sceneState(0, 2, names, {0, -1}, {QStringLiteral("playing"), QString()}), SceneState::Playing);
+		QCOMPARE(sessiongrid::sceneState(0, 2, names, {0, 0}, {QStringLiteral("playing"), QStringLiteral("launching")}),
+			SceneState::Queued);
+		QVERIFY(sessiongrid::cellMark(QString(), false).isEmpty());  // an empty cell has nothing to launch
+		QVERIFY(sessiongrid::cellMark(QString(), true) != sessiongrid::cellMark(QStringLiteral("playing"), true));
+		QVERIFY(sessiongrid::cellMark(QStringLiteral("launching"), true) != sessiongrid::cellMark(QStringLiteral("playing"), true));
+		const int songTracks = static_cast<int>(Engine::getSong()->tracks().size());
+		QCOMPARE(sessiongrid::columnTitle(songTracks), QStringLiteral("Track %1").arg(songTracks + 1));  // no such track
+	}
+
+	//! 0.5.0 theme 14: the columns are headed by their tracks' names; the scene buttons and the filled cells carry a
+	//! play mark and say their state; a cell in a playing column says what launching it replaces.
+	void theColumnsAreNamedAndTheScenesShowTheirState()
+	{
+		Track* first = Engine::getSong()->tracks().front();
+		const QString kept = first->name();
+		first->setName(QStringLiteral("Drums"));
+		SessionGridView view;
+		view.refresh();
+		QCOMPARE(view.columnHeader(0)->accessibleName(), QStringLiteral("Track 1: Drums"));
+		QVERIFY(view.columnHeader(0)->text().startsWith(QStringLiteral("Dr")));
+		QVERIFY(view.columnHeader(1)->accessibleName().startsWith(QStringLiteral("Track 2: ")));
+		QCOMPARE(view.cellButton(0, 0)->focusPolicy(), Qt::StrongFocus);
+		QCOMPARE(view.columnHeader(0)->focusPolicy(), Qt::NoFocus);  // a header is read, not pressed
+
+		QVERIFY(view.sceneButton(0)->accessibleName().endsWith(QStringLiteral("stopped")));
+		QVERIFY(view.sceneButton(1)->accessibleName().endsWith(QStringLiteral("empty")));
+		QVERIFY2(view.sceneButton(1)->font().italic(), "an empty scene is not told apart but by its words");
+		QVERIFY(view.cellButton(0, 0)->text().startsWith(sessiongrid::cellMark(QString(), true)));
+		QVERIFY(view.cellButton(1, 1)->text().isEmpty());
+
+		QVERIFY(run(QStringLiteral("session.set_slot"), {{QStringLiteral("track"), 0}, {QStringLiteral("scene"), 1},
+			{QStringLiteral("type"), QStringLiteral("audio")}, {QStringLiteral("source"), QStringLiteral("snare.wav")},
+			{QStringLiteral("name"), QStringLiteral("snare")}}).ok);
+		QTest::mouseClick(view.sceneButton(0), Qt::LeftButton);
+		QTRY_COMPARE_WITH_TIMEOUT(playingScene(0), 0, 3000);
+		QTRY_VERIFY_WITH_TIMEOUT(view.sceneButton(0)->accessibleName().endsWith(QStringLiteral("playing")), 3000);
+		QVERIFY(view.sceneButton(0)->text().startsWith(sessiongrid::sceneMark(sessiongrid::SceneState::Playing)));
+		QVERIFY2(view.cellButton(0, 1)->toolTip().contains(QStringLiteral("kick")), qPrintable(view.cellButton(0, 1)->toolTip()));
+		QCOMPARE(view.cellButton(0, 1)->accessibleDescription(), view.cellButton(0, 1)->toolTip());
+
+		run(QStringLiteral("session.stop_all"));
+		QTRY_COMPARE_WITH_TIMEOUT(playingScene(0), -1, 3000);
+		QVERIFY(run(QStringLiteral("session.clear_slot"), {{QStringLiteral("track"), 0}, {QStringLiteral("scene"), 1}}).ok);
+		first->setName(kept);
+	}
+
+	//! 0.5.0 theme 14: an audio file dragged over a filled cell shows the replacement before the drop; the drop is
+	//! one undo step, says what it replaced, and Undo Replace puts the clip back.
+	void aDropOnAFilledCellShowsTheReplacementAndUndoes()
+	{
+		QTemporaryDir dir;
+		const QString file = dir.filePath(QStringLiteral("snare.wav"));
+		QFile audio(file);
+		QVERIFY(audio.open(QIODevice::WriteOnly));
+		audio.close();
+		SessionGridView view;
+		view.refresh();
+		QToolButton* cell = view.cellButton(0, 0);  // holds kick
+		QMimeData mime;
+		mime.setUrls({QUrl::fromLocalFile(file)});
+
+		QDragEnterEvent enter(QPoint(4, 4), Qt::CopyAction, &mime, Qt::LeftButton, Qt::NoModifier);
+		QCoreApplication::sendEvent(cell, &enter);
+		QVERIFY(enter.isAccepted());
+		QCOMPARE(view.dropPreviewCell(), 0);
+		QVERIFY2(cell->text().contains(QStringLiteral("Replace kick")), qPrintable(cell->text()));
+		QVERIFY2(view.statusLine().contains(QStringLiteral("replace kick")), qPrintable(view.statusLine()));
+		view.refresh();  // the timer's redraw keeps the preview
+		QVERIFY(cell->text().contains(QStringLiteral("Replace kick")));
+		QDragLeaveEvent leave;
+		QCoreApplication::sendEvent(cell, &leave);
+		QCOMPARE(view.dropPreviewCell(), -1);
+		QVERIFY(!cell->text().contains(QStringLiteral("Replace")));
+
+		QDragEnterEvent again(QPoint(4, 4), Qt::CopyAction, &mime, Qt::LeftButton, Qt::NoModifier);
+		QCoreApplication::sendEvent(cell, &again);
+		QDropEvent drop(QPointF(4, 4), Qt::CopyAction, &mime, Qt::LeftButton, Qt::NoModifier);
+		QCoreApplication::sendEvent(cell, &drop);
+		QVERIFY(slotState(0, 0).value(QStringLiteral("source")).toString().endsWith(QStringLiteral("snare.wav")));
+		QCOMPARE(slotState(0, 0).value(QStringLiteral("name")).toString(), QStringLiteral("snare"));
+		QVERIFY2(view.statusLine().contains(QStringLiteral("Replaced kick")), qPrintable(view.statusLine()));
+		QVERIFY(!view.undoReplaceButton()->isHidden());
+
+		QTest::mouseClick(view.undoReplaceButton(), Qt::LeftButton);  // one step puts kick back
+		QCOMPARE(slotState(0, 0).value(QStringLiteral("name")).toString(), QStringLiteral("kick"));
+		QCOMPARE(slotState(0, 0).value(QStringLiteral("source")).toString(), QStringLiteral("kick.wav"));
+		QVERIFY(view.undoReplaceButton()->isHidden());
 	}
 };
 

@@ -32,6 +32,7 @@
 #include <QComboBox>
 #include <QJsonArray>
 #include <QLineEdit>
+#include <QMap>
 #include <QMetaEnum>
 #include <QTextDocument>
 
@@ -111,18 +112,80 @@ struct Findings
 	}
 };
 
+//! The name a control is announced by once the walk is done: its own, else (when it is to be filled, or only looked
+//! at) the one it carries.
+QString announcedName(const QWidget* widget)
+{
+	return !widget->accessibleName().isEmpty() ? widget->accessibleName() : impliedAccessibleName(widget);
+}
+
+QString roleName(QAccessible::Role role)
+{
+	return QString::fromLatin1(QMetaEnum::fromType<QAccessible::Role>().valueToKey(role));
+}
+
+//! The nearest named group around @a widget (inside @a root): what tells two same-named controls apart.
+QString contextOf(const QWidget* widget, const QWidget* root)
+{
+	for (const QWidget* up = widget->parentWidget(); up != nullptr; up = up->parentWidget())
+	{
+		if (!up->accessibleName().isEmpty()) { return up->accessibleName(); }
+		if (up == root) { break; }
+	}
+	return QString();
+}
+
+//! Controls that would be announced alike: grouped by name, role, description and context.
+struct Duplicates
+{
+	QMap<QString, QJsonArray> groups;
+	QMap<QString, QJsonObject> heads;
+
+	void add(const QWidget* widget, QAccessible::Role role, const QWidget* root)
+	{
+		const QString name = announcedName(widget);
+		if (name.isEmpty()) { return; }  // the name check reports it
+		const QString context = contextOf(widget, root);
+		const QString key = QStringList{name, roleName(role), widget->accessibleDescription(), context}.join(QChar(0x1f));
+		groups[key].append(widget->objectName().isEmpty() ? QString::fromLatin1(widget->metaObject()->className()) : widget->objectName());
+		heads.insert(key, {{QStringLiteral("name"), name}, {QStringLiteral("role"), roleName(role)}, {QStringLiteral("context"), context}});
+	}
+
+	void reply(QJsonObject* out) const
+	{
+		QJsonArray listed;
+		int count = 0;
+		for (auto it = groups.cbegin(); it != groups.cend(); ++it)
+		{
+			if (it.value().size() < 2) { continue; }
+			count += static_cast<int>(it.value().size());
+			QJsonObject group = heads.value(it.key());
+			group.insert(QStringLiteral("count"), static_cast<int>(it.value().size()));
+			group.insert(QStringLiteral("objects"), it.value());
+			if (listed.size() < MaxListed) { listed.append(group); }
+		}
+		out->insert(QStringLiteral("duplicates"), listed);
+		out->insert(QStringLiteral("duplicates_count"), count);
+	}
+};
+
 //! The walk's counts (auditAccessibility's reply).
 struct Tally
 {
 	bool fill = false;
+	QStringList run;
+	const QWidget* root = nullptr;
 	int checked = 0;
 	int named = 0;
 	int filled = 0;
 	int implied = 0;
-	int unreachable = 0;
 	Findings unnamed;
 	Findings roleless;
 	Findings valueless;
+	Findings unreachable;
+	Duplicates duplicates;
+
+	bool on(const char* check) const { return run.contains(QLatin1String(check)); }
 
 	void checkName(QWidget* widget)
 	{
@@ -142,32 +205,55 @@ struct Tally
 	}
 
 	//! What the platform bridge is told: a role that says what the control is, and the value it shows.
-	void checkRoleAndValue(QWidget* widget)
+	void checkRoleAndValue(QWidget* widget, QAccessibleInterface* face, QAccessible::Role role)
 	{
-		QAccessibleInterface* face = QAccessible::queryAccessibleInterface(widget);
-		const QAccessible::Role role = face != nullptr ? face->role() : QAccessible::NoRole;
 		QJsonObject entry = entryOf(widget);
-		entry.insert(QStringLiteral("role"), QString::fromLatin1(QMetaEnum::fromType<QAccessible::Role>().valueToKey(role)));
-		if (genericRole(role)) { roleless.add(entry); }
+		entry.insert(QStringLiteral("role"), roleName(role));
+		if (on("role") && genericRole(role)) { roleless.add(entry); }
 		const bool valueGiven = face != nullptr && (face->valueInterface() != nullptr || !face->text(QAccessible::Value).isEmpty());
-		if (showsValue(widget) && !valueGiven) { valueless.add(entry); }
+		if (on("value") && showsValue(widget) && !valueGiven) { valueless.add(entry); }
 	}
 
 	void check(QWidget* widget)
 	{
 		++checked;
-		checkName(widget);
-		checkRoleAndValue(widget);
-		if ((widget->focusPolicy() & Qt::TabFocus) == 0) { ++unreachable; }
+		if (on("name")) { checkName(widget); }
+		QAccessibleInterface* face = QAccessible::queryAccessibleInterface(widget);
+		const QAccessible::Role role = face != nullptr ? face->role() : QAccessible::NoRole;
+		checkRoleAndValue(widget, face, role);
+		if (on("focus") && (widget->focusPolicy() & Qt::TabFocus) == 0) { unreachable.add(entryOf(widget)); }
+		if (on("duplicates")) { duplicates.add(widget, role, root); }
+	}
+
+	void replyName(QJsonObject* out) const
+	{
+		out->insert(QStringLiteral("named"), named);
+		out->insert(QStringLiteral("filled"), filled);
+		out->insert(QStringLiteral("implied"), implied);
+		out->insert(QStringLiteral("unnamed"), unnamed.listed);
+		out->insert(QStringLiteral("unnamed_count"), unnamed.count);
 	}
 
 	QJsonObject reply() const
 	{
-		return {{QStringLiteral("checked"), checked}, {QStringLiteral("named"), named}, {QStringLiteral("filled"), filled},
-			{QStringLiteral("implied"), implied}, {QStringLiteral("unnamed"), unnamed.listed},
-			{QStringLiteral("unnamed_count"), unnamed.count}, {QStringLiteral("roleless"), roleless.listed},
-			{QStringLiteral("roleless_count"), roleless.count}, {QStringLiteral("valueless"), valueless.listed},
-			{QStringLiteral("valueless_count"), valueless.count}, {QStringLiteral("unreachable_count"), unreachable}};
+		QJsonObject out{{QStringLiteral("checked"), checked}, {QStringLiteral("checks"), QJsonArray::fromStringList(run)}};
+		QJsonObject summary;
+		const auto put = [&out, &summary](const char* check, const char* key, const Findings& findings) {
+			out.insert(QLatin1String(key), findings.listed);
+			out.insert(QLatin1String(key) + QStringLiteral("_count"), findings.count);
+			summary.insert(QLatin1String(check), findings.count);
+		};
+		if (on("name")) { replyName(&out); summary.insert(QStringLiteral("name"), unnamed.count); }
+		if (on("role")) { put("role", "roleless", roleless); }
+		if (on("value")) { put("value", "valueless", valueless); }
+		if (on("focus")) { put("focus", "unreachable", unreachable); }
+		if (on("duplicates"))
+		{
+			duplicates.reply(&out);
+			summary.insert(QStringLiteral("duplicates"), out.value(QStringLiteral("duplicates_count")));
+		}
+		out.insert(QStringLiteral("summary"), summary);
+		return out;
 	}
 };
 
@@ -188,11 +274,28 @@ QString impliedAccessibleName(const QWidget* widget)
 	return button != nullptr ? plain(button->text()).remove(QLatin1Char('&')) : QString();
 }
 
+const QStringList& accessibilityCheckNames()
+{
+	static const QStringList names{QStringLiteral("name"), QStringLiteral("role"), QStringLiteral("value"),
+		QStringLiteral("focus"), QStringLiteral("duplicates")};
+	return names;
+}
+
 QJsonObject auditAccessibility(QWidget* root, bool fill)
+{
+	return auditAccessibility(root, fill, {});
+}
+
+QJsonObject auditAccessibility(QWidget* root, bool fill, const QStringList& checks)
 {
 	a11y::installAccessibleWidgets();  // roles and values as the running application reports them
 	Tally tally;
 	tally.fill = fill;
+	tally.root = root;
+	for (const QString& check : accessibilityCheckNames())
+	{
+		if (checks.isEmpty() || checks.contains(check)) { tally.run.append(check); }
+	}
 	QList<QWidget*> widgets = root->findChildren<QWidget*>();
 	widgets.prepend(root);  // the control it is given is one of those it checks
 	for (QWidget* widget : widgets)

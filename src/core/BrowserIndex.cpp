@@ -42,6 +42,7 @@
 
 #include "ConfigManager.h"
 #include "ImportDetection.h"
+#include "TaskCenter.h"
 
 namespace lmms
 {
@@ -171,7 +172,13 @@ bool BrowserIndex::start(const QStringList& dirs, bool features)
 	static const bool stopsOnQuit = QCoreApplication::instance() != nullptr
 		&& QObject::connect(QCoreApplication::instance(), &QCoreApplication::aboutToQuit, [] { BrowserIndex::instance().cancel(); });
 	Q_UNUSED(stopsOnQuit)
-	QThreadPool::globalInstance()->start([this, dirs, features] { scan(dirs, features, MaxAnalysed); });
+	// 0.5.0 theme 24: a background scan is listed in the task area, with this scan's own cancel.
+	TaskCenter::instance().begin(this, 0, {QStringLiteral("index"), QObject::tr("Index the library"), [] { BrowserIndex::instance().cancel(); },
+		{}, false});
+	QThreadPool::globalInstance()->start([this, dirs, features] {
+		scan(dirs, features, MaxAnalysed);
+		reportScanEnd();
+	});
 	return true;
 }
 
@@ -222,6 +229,13 @@ void BrowserIndex::scan(const QStringList& dirs, bool features, int maxAnalysed)
 	walk.status.error = saved ? QString() : QStringLiteral("the index could not be written to %1").arg(storePath());
 	m_entries = std::move(walk.found);
 	m_status = walk.status;
+}
+
+void BrowserIndex::reportScanEnd()
+{
+	const Status ended = status();
+	const TaskState state = m_cancel.load() ? TaskState::Cancelled : ended.error.isEmpty() ? TaskState::Done : TaskState::Failed;
+	TaskCenter::instance().finish(this, 0, state, state == TaskState::Done ? QObject::tr("%n file(s)", "", ended.entries) : ended.error);
 }
 
 BrowserIndex::Status BrowserIndex::status() const

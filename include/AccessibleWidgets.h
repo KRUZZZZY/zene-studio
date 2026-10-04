@@ -26,6 +26,7 @@
 #define LMMS_GUI_ACCESSIBLE_WIDGETS_H
 
 #include <QString>
+#include <QStringList>
 
 #include "lmms_export.h"
 
@@ -103,8 +104,43 @@ enum class Politeness
 //! reader reads, so pass the label that shows the message). Nothing when no assistive technology is listening.
 LMMS_EXPORT void announceStatus(QObject* source, const QString& message, Politeness politeness = Politeness::Polite);
 
-//! The value @a widget shows, as a screen reader reads it ("-6.00 dB"); empty when it has none.
+//! The value @a widget shows, as a screen reader reads it ("-6.00 dB"); empty when it has none. A canvas
+//! (AccessibleCanvas.h) reads the value it was described with.
 LMMS_EXPORT QString valueText(QWidget* widget);
+
+/*! Theme 17's announcement policy (AccessibleAnnouncements.cpp). announceStatus() speaks nothing when the level
+ *  (config ui/announcements {level}, set by view.announcements) is "off", only assertive messages when it is
+ *  "errors", and a message it spoke less than a second ago not again. */
+enum class AnnounceLevel
+{
+	All,    //!< errors, refusals and the transitions below (the default)
+	Errors, //!< errors and refusals only
+	Off     //!< nothing
+};
+LMMS_EXPORT AnnounceLevel announceLevel();
+//! "all", "errors", "off" - view.announcements' enum, in AnnounceLevel order.
+LMMS_EXPORT const QStringList& announceLevelNames();
+//! Whether announceStatus() may speak @a message now (the level, then the repeat window); true records it as spoken.
+LMMS_EXPORT bool shouldAnnounce(const QString& message, Politeness politeness);
+//! The last message the policy let through - spoken, or about to be when an assistive technology listens (tests).
+LMMS_EXPORT QString lastAnnouncement();
+
+//! The state transitions spoken by default.
+enum class Transition
+{
+	Error,         //!< assertive: @a detail is the message
+	Refused,       //!< assertive: "Not done: <detail>"
+	RecordStarted, //!< polite: "Recording"
+	RecordStopped, //!< polite: "Recording stopped"
+	Saved,         //!< polite: "Saved <detail>" (the file's name)
+	Opened,        //!< polite: "Opened <detail>"
+	Finished       //!< polite: @a detail (a render, a bounce)
+};
+//! Speak @a kind on @a source (null: the active window), through announceStatus().
+LMMS_EXPORT void announceTransition(QObject* source, Transition kind, const QString& detail = QString());
+//! Follow the song for recording, save and open transitions (once per song; AccessibleMode calls it when a main
+//! window shows, after the engine made the song).
+LMMS_EXPORT void watchSongTransitions();
 
 } // namespace lmms::a11y
 

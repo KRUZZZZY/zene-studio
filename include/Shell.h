@@ -47,6 +47,7 @@ class ShellDockHint;
 class ShellFooter;
 class ShellHeader;
 class ShellPanel;
+class ShellRegionTabs;
 
 //! The main window's one page (docs/UI-SHELL.md). It renders a ShellLayout - which panel is
 //! open in which region, in which view - into splitters, and keeps the view and panel
@@ -87,8 +88,27 @@ public:
 	//! Make @a id visible, switching view when the current one does not offer it.
 	bool revealPanel(const QString& id);
 
-	//! window.get_state's view of the layout: `view`, `panels`, `focused`, `launcher`.
+	//! window.get_state's view of the layout: `view`, `panels`, `focused`, `launcher`, and the
+	//! chrome's (chromeState): `regions` and `footer`.
 	QJsonObject state() const;
+	//! Theme 8 (ShellRegionTabs.cpp): `regions` - per side region the panel open there and the
+	//! tabs it offers in this view - and `footer`, how its switches fit (labelled, compact or
+	//! overflowing, ShellOverflow.h).
+	QJsonObject chromeState() const;
+	//! The tab strip over side region @a region (none for the centre).
+	ShellRegionTabs* regionTabs(ShellRegion region) const { return m_tabs.value(static_cast<int>(region)); }
+
+	//! Theme 22 (ShellLayoutScope.cpp): project and personal layouts kept apart. While a project's
+	//! own layout is on screen (window.layout_project_apply) the personal layout it replaced is
+	//! put aside in the config (ui/shell.personal) - only the first: a second project's layout
+	//! does not replace it - and it comes back when a project without a layout of its own opens,
+	//! a new project starts, or the next start (restoreConfiguredLayout prefers it).
+	void setPersonalAside();
+	//! Put the personal layout set aside back on screen; false when none is aside.
+	bool restorePersonal();
+	//! The user chose a personal layout (window.layout_apply): nothing is aside any more.
+	static void dropPersonalAside();
+	static bool personalAside();
 
 	//! The actions the View menu lists: the three views, then every panel.
 	QList<QAction*> viewActions() const;
@@ -184,6 +204,7 @@ private:
 	ShellLayout m_layout;
 	QHash<QString, ShellPanel*> m_panels;
 	QHash<int, QWidget*> m_hosts;  // ShellRegion -> host; Center = the view's centre
+	QHash<int, ShellRegionTabs*> m_tabs;  // side ShellRegion -> its tab strip (theme 8)
 	QWidget* m_launcherHost = nullptr;
 	QWidget* m_parking = nullptr;
 	QSplitter* m_columns = nullptr;  // left | centre column | right

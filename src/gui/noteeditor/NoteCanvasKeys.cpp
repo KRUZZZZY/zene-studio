@@ -68,7 +68,7 @@ bool NoteCanvas::event(QEvent* event)
 	if (event->type() == QEvent::ShortcutOverride)
 	{
 		const auto* key = static_cast<QKeyEvent*>(event);
-		if (canvasKey(key) || NoteEditor::handlesKey(key))
+		if (canvasKey(key) || isEditKey(key) || NoteEditor::handlesKey(key))
 		{
 			event->accept();
 			return true;
@@ -148,7 +148,8 @@ bool NoteCanvas::clipboardKey(const QKeyEvent* event)
 
 void NoteCanvas::keyPressEvent(QKeyEvent* event)
 {
-	const bool handled = m_state.clip != nullptr && (clipboardKey(event) || selectionKey(event)
+	// Theme 10's keys (NoteCanvasAccess.cpp) come before the nudge, which takes the arrows with Shift or nothing.
+	const bool handled = m_state.clip != nullptr && (clipboardKey(event) || selectionKey(event) || editKey(event)
 		|| nudgeForKey(event->key(), event->modifiers().testFlag(Qt::ShiftModifier)));
 	if (!handled)
 	{

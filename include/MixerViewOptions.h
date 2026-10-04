@@ -49,7 +49,13 @@ class MixerChannelView;
  *  - MX-005: which channels are shown (all, instruments, audio, returns, used);
  *  - MX-127 / MX-129: what the meter shows (the post-fader peak, RMS, the pre-fader peak);
  *  - MX-128: the meter's scale (-42 dB - the inherited one -, -60 dB, -24 dB, or linear);
- *  - MX-126 / MX-130: the meter line under a strip - the latched clip light and the gain reduction. */
+ *  - MX-126 / MX-130: the meter line under a strip - the latched clip light and the gain reduction;
+ *  - 0.5.0 theme 16: the VIEW - what a strip is for (mix: levels, pan and processing; routing: where the
+ *    signal comes from and goes, the sends row always shown, the inserts and macros left to the mix view) -
+ *    and, independent of it, the DENSITY - how much a strip stacks (expanded: every section the options
+ *    show; compact: the essentials - no inserts, no macros, in the mix view no sends row, routing on one
+ *    line). Density never narrows a strip: its width stays strip_width's, and a project too wide for the
+ *    screen scrolls, or is filtered, rather than shrinking strips below readability. */
 namespace mixerviewoptions
 {
 
@@ -65,17 +71,25 @@ struct Options
 	QString filter = QStringLiteral("all");
 	QString meterMode = QStringLiteral("peak");
 	QString meterScale = QStringLiteral("db42");
+	QString view = QStringLiteral("mix");          //!< theme 16: mix / routing
+	QString density = QStringLiteral("expanded");  //!< theme 16: compact / expanded
 };
 
 LMMS_EXPORT const QStringList& widthNames();
 LMMS_EXPORT const QStringList& filterNames();
 LMMS_EXPORT const QStringList& meterModeNames();
 LMMS_EXPORT const QStringList& meterScaleNames();
+LMMS_EXPORT const QStringList& viewNames();
+LMMS_EXPORT const QStringList& densityNames();
 
 LMMS_EXPORT const Options& options();
 //! Store and save @a next; every change bumps generation() so the view re-lays its strips.
 LMMS_EXPORT void setOptions(const Options& next);
 LMMS_EXPORT int generation();
+//! Theme 16: the options with the view and the density applied - the sections a strip actually shows.
+LMMS_EXPORT Options effective(const Options& options);
+LMMS_EXPORT bool routingView();
+LMMS_EXPORT bool compactDensity();
 
 LMMS_EXPORT QJsonObject toJson(const Options& options);
 //! @a args over @a base (the window.mixer_view field names); false with @a error on a bad name.

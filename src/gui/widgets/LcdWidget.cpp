@@ -29,6 +29,7 @@
 #include <QPainter>
 
 #include "LcdWidget.h"
+#include "ControlCues.h"
 
 #include "DesignTokens.h"
 #include "DeprecationHelper.h"
@@ -136,6 +137,13 @@ void LcdWidget::setTextShadowColor( const QColor & c )
 
 
 
+QColor LcdWidget::borderColour() const
+{
+	// 0.5.0 theme 23: an editable number's border brightens under the pointer (the hover state); a display does not.
+	const bool hot = cues::hovered( this ) && cues::kindOf( this ) == cues::Kind::Number;
+	return hot ? tokens::palette().textMuted : tokens::palette().separator;
+}
+
 void LcdWidget::paintEvent( QPaintEvent* )
 {
 	// 0.5.0 (docs/UI-SHELL.md §1): a flat number field painted from the design tokens - the
@@ -151,7 +159,7 @@ void LcdWidget::paintEvent( QPaintEvent* )
 	const QRectF field( 0.5, 0.5, m_cellWidth * m_numDigits + marginX1 + marginX2 - 1.0, m_cellHeight + 1.0 );
 	const qreal radius = tokens::radius::md;
 	const QRectF body = field.adjusted( m_seamlessLeft ? -2 * radius : 0, 0, m_seamlessRight ? 2 * radius : 0, 0 );
-	p.setPen( QPen( pal.separator, 1 ) );
+	p.setPen( QPen( borderColour(), 1 ) );
 	p.setBrush( pal.base );
 	p.drawRoundedRect( body, radius, radius );
 

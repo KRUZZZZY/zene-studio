@@ -40,6 +40,8 @@
 #include <QTimer>
 #include <QTreeWidget>
 
+#include "DesignTokens.h"
+#include "DevicePicker.h"
 #include "EffectPickerOrganiser.h"
 #include "PluginOrganiser.h"
 #include "embed.h"
@@ -66,6 +68,18 @@ QStringList listedFolders(const QMap<QString, pluginorganiser::Entry>& organised
 	}
 	std::sort(names.begin(), names.end(), [](const QString& l, const QString& r) { return QString::compare(l, r, Qt::CaseInsensitive) < 0; });
 	return names;
+}
+
+//! 0.5.0 theme 12: the format of the plug-in @a key names, as the device picker words it.
+QString formatOf(const Plugin::Descriptor::SubPluginFeatures::Key& key)
+{
+	if (key.desc == nullptr || key.desc->subPluginFeatures == nullptr) { return devicelabels::formatLabel(QStringLiteral("builtin")); }
+	const QString host = QString::fromUtf8(key.desc->name).toLower();
+	for (const QString& format : {QStringLiteral("vst3"), QStringLiteral("clap"), QStringLiteral("lv2"), QStringLiteral("ladspa")})
+	{
+		if (host.contains(format)) { return devicelabels::formatLabel(format); }
+	}
+	return QString::fromUtf8(key.desc->displayName);
 }
 
 } // namespace
@@ -179,7 +193,8 @@ void PluginBrowser::onFilterChanged( const QString & filter )
 		{
 			QTreeWidgetItem * item = root->child( itemIndex );
 			auto descWidget = static_cast<PluginDescWidget*>(m_descTree->itemWidget(item, 0));
-			if (descWidget->name().contains(filter, Qt::CaseInsensitive))
+			// Theme 12: the search finds the format and the favourite mark too ("lv2", "favourite"), not the name alone.
+			if (descWidget->name().contains(filter, Qt::CaseInsensitive) || descWidget->details().contains(filter, Qt::CaseInsensitive))
 			{
 				item->setHidden( false );
 			}
@@ -320,6 +335,11 @@ PluginDescWidget::PluginDescWidget(const PluginKey &_pk,
 	setToolTip(_pk.desc->subPluginFeatures
 		? _pk.description()
 		: tr(_pk.desc->description));
+	// Theme 12: the row's type, format and favourite mark in words (not a colour or an icon alone).
+	QStringList details{devicelabels::kindLabel(QStringLiteral("instrument")), formatOf(_pk)};
+	if (pluginorganiser::entry(pickerorganiser::keyOf(_pk)).favourite) { details << tr("Favourite"); }
+	m_details = details.join(QStringLiteral(" \u00b7 "));
+	setAccessibleDescription(m_details);
 }
 
 
@@ -364,7 +384,15 @@ void PluginDescWidget::paintEvent( QPaintEvent * )
 	}
 
 	p.setFont( f );
-	p.drawText( 10 + logo_size.width(), 15, m_pluginKey.displayName());
+	const int textX = 10 + logo_size.width();
+	p.drawText(textX, 15, m_pluginKey.displayName());
+	// Theme 12: the details at the row's right end, in the muted caption colour, cut short before they reach the name.
+	const int nameEnd = textX + QFontMetrics(f).horizontalAdvance(m_pluginKey.displayName()) + tokens::space::md;
+	const QFont small = tokens::font(tokens::TextRole::Small);
+	const QString shown = QFontMetrics(small).elidedText(m_details, Qt::ElideRight, std::max(0, width() - nameEnd - tokens::space::sm));
+	p.setFont(small);
+	p.setPen(tokens::palette().textMuted);
+	p.drawText(QRect(nameEnd, 0, width() - nameEnd - tokens::space::sm, height()), Qt::AlignRight | Qt::AlignVCenter, shown);
 }
 
 

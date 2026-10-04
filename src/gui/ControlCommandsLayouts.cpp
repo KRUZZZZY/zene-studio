@@ -31,7 +31,9 @@
  *  can remember a layout of its own (window.layout_project_*, <workspace>: project state, one undo
  *  step per write), put back when the project opens (LayoutMenu::recallProjectLayout). A save says
  *  what it kept ('captures') and can refuse to replace ('replace' false: the menu's Save never
- *  overwrites silently, its Replace does it by name). */
+ *  overwrites silently, its Replace does it by name and asks first). While a project's own layout is on
+ *  screen the personal one it replaced is put aside (Shell::setPersonalAside) and comes back with the next
+ *  project that has none; applying a personal layout makes it the personal one ('project_layout_shown'). */
 
 #include <QGuiApplication>
 #include <QJsonArray>
@@ -130,7 +132,9 @@ ControlResult applyLayout(const QJsonObject& args)
 	const QString name = args.value(QStringLiteral("name")).toString();
 	const QJsonObject layouts = savedLayouts();
 	if (!layouts.contains(name)) { return ControlResult::failure(ControlErrorKind::NotFound, QStringLiteral("no saved layout '%1'").arg(name)); }
-	return showSnapshot(s, layouts.value(name).toObject(), {{QStringLiteral("name"), name}});
+	gui::Shell::dropPersonalAside();  // theme 22: the user chose a personal layout; it is theirs now
+	const QJsonObject snapshot = layouts.value(name).toObject();
+	return showSnapshot(s, snapshot, {{QStringLiteral("name"), name}, {QStringLiteral("captures"), capturesOf(snapshot)}});
 }
 
 QJsonObject projectLayout()
@@ -141,7 +145,8 @@ QJsonObject projectLayout()
 ControlResult listLayouts(const QJsonObject&)
 {
 	return ControlResult::success({{QStringLiteral("layouts"), QJsonArray::fromStringList(savedLayouts().keys())},
-		{QStringLiteral("max_layouts"), MaxLayouts}, {QStringLiteral("project_layout"), !projectLayout().isEmpty()}});
+		{QStringLiteral("max_layouts"), MaxLayouts}, {QStringLiteral("project_layout"), !projectLayout().isEmpty()},
+		{QStringLiteral("project_layout_shown"), gui::Shell::personalAside()}});
 }
 
 //! window.layout_project_save: the layout on screen, remembered with the project.
@@ -163,7 +168,8 @@ ControlResult recallLayout(const QJsonObject&)
 	gui::Shell* s = shell();
 	if (s == nullptr) { return noInterface(QStringLiteral("window.layout_project_apply")); }
 	if (projectLayout().isEmpty()) { return ControlResult::failure(ControlErrorKind::NotFound, QStringLiteral("this project remembers no layout")); }
-	return showSnapshot(s, projectLayout(), {{QStringLiteral("project"), true}});
+	s->setPersonalAside();  // theme 22: the personal layout comes back with the next project that has none
+	return showSnapshot(s, projectLayout(), {{QStringLiteral("project"), true}, {QStringLiteral("captures"), capturesOf(projectLayout())}});
 }
 
 ControlResult forgetLayout(const QJsonObject&)
@@ -294,7 +300,10 @@ void registerProjectLayoutCommands(ControlRegistry& registry)
 		objectSchema({}), objectSchema({{QStringLiteral("replaced"), booleanProperty()}, {QStringLiteral("captures"), arrayProperty()},
 		{QStringLiteral("changed"), booleanProperty()}}), true, rememberLayout);
 	add(registry, "layout_project_apply", QStringLiteral("Put back the layout the project remembers; answers window.get_state's "
-		"view of the result. Interface state: not recorded. Refused NotFound when it remembers none."), objectSchema({}),
+		"view of the result and the parts it put back ('captures'). The personal layout on screen before is put aside and comes "
+		"back when a project without a layout of its own opens, a new project starts, or at the next start "
+		"(window.layout_list's 'project_layout_shown'). Interface state: not recorded. Refused NotFound when it remembers none."),
+		objectSchema({}),
 		objectProperty(), false, recallLayout);
 	add(registry, "layout_project_clear", QStringLiteral("Forget the layout the project remembers (the personal layouts are "
 		"kept). One undo step; refused NotFound when it remembers none."), objectSchema({}),
@@ -313,11 +322,14 @@ void registerLayoutCommands(ControlRegistry& registry)
 		{QStringLiteral("replaced"), booleanProperty()}, {QStringLiteral("count"), integerProperty()},
 		{QStringLiteral("max_layouts"), integerProperty()}, {QStringLiteral("captures"), arrayProperty()}}), true, saveLayout);
 	add(registry, "layout_apply", QStringLiteral("Switch to the saved layout 'name'; answers window.get_state's view "
-		"of the result. Interface state, as window.set_view is: not recorded."), named, objectProperty(), false, applyLayout);
-	add(registry, "layout_list", QStringLiteral("The personal library's layout names, its limit, and whether the project "
-		"remembers a layout of its own ('project_layout', window.layout_project_*)."), objectSchema({}),
+		"of the result and the parts it put back ('captures'). It becomes the personal layout: one a project's layout had put "
+		"aside is dropped. Interface state, as window.set_view is: not recorded."), named, objectProperty(), false, applyLayout);
+	add(registry, "layout_list", QStringLiteral("The personal library's layout names, its limit, whether the project "
+		"remembers a layout of its own ('project_layout', window.layout_project_*), and whether a project's layout is on "
+		"screen with the personal one put aside ('project_layout_shown')."), objectSchema({}),
 		objectSchema({{QStringLiteral("layouts"), arrayProperty()}, {QStringLiteral("max_layouts"), integerProperty()},
-		{QStringLiteral("project_layout"), booleanProperty()}}), false, listLayouts);
+		{QStringLiteral("project_layout"), booleanProperty()}, {QStringLiteral("project_layout_shown"), booleanProperty()}}),
+		false, listLayouts);
 	add(registry, "layout_remove", QStringLiteral("Forget the saved layout 'name'. One undo step."), named,
 		objectSchema({{QStringLiteral("name"), stringProperty()}, {QStringLiteral("count"), integerProperty()}}), true, removeLayout);
 	registerProjectLayoutCommands(registry);

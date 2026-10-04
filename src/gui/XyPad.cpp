@@ -30,11 +30,14 @@
 #include <QFormLayout>
 #include <QJsonArray>
 #include <QJsonObject>
+#include <QKeyEvent>
 #include <QLabel>
 #include <QMouseEvent>
 #include <QPainter>
 #include <QVBoxLayout>
 
+#include "AccessibleCanvas.h"
+#include "AccessibleWidgets.h"
 #include "Accessibility.h"
 #include "ControlMixerSupport.h"
 #include "ControlRegistry.h"
@@ -67,6 +70,26 @@ std::pair<QString, QJsonObject> padCall(const QString& channel, const QString& x
 		{QStringLiteral("x_value"), point.x()}, {QStringLiteral("y_macro"), y}, {QStringLiteral("y_value"), point.y()}}};
 }
 
+constexpr double FineStep = 0.01;   //!< an arrow key: 1 % of an axis
+constexpr double CoarseStep = 0.1;  //!< with Shift, or Page Up / Page Down: 10 %
+
+QString percent(double value) { return QStringLiteral("%1 %").arg(qRound(value * 100.0)); }
+
+//! How far an arrow (by @a step) or Page Up / Page Down (by CoarseStep, on Y) moves the dot; nothing for another key.
+QPointF keyDelta(int key, double step)
+{
+	switch (key)
+	{
+		case Qt::Key_Left: return {-step, 0.0};
+		case Qt::Key_Right: return {step, 0.0};
+		case Qt::Key_Up: return {0.0, step};
+		case Qt::Key_Down: return {0.0, -step};
+		case Qt::Key_PageUp: return {0.0, CoarseStep};
+		case Qt::Key_PageDown: return {0.0, -CoarseStep};
+		default: return {};
+	}
+}
+
 } // namespace
 
 XyPadArea::XyPadArea(QWidget* parent) :
@@ -74,6 +97,63 @@ XyPadArea::XyPadArea(QWidget* parent) :
 {
 	setMinimumSize(160, 160);
 	setAccessibleName(QObject::tr("XY pad"));
+	setAccessibleDescription(QObject::tr("Drag, or use the arrow keys: Left and Right move X, Up and Down move Y, by 1 % "
+		"(10 % with Shift; Page Up and Page Down move Y by 10 %); Home and End put X at its ends. Ctrl+Shift+L lists the "
+		"axes to type their values."));
+	setAttribute(Qt::WA_Hover);  // theme 23: the hover cue follows the pointer
+	a11y::describeCanvas(this, QAccessible::Slider, [this] { return accessibleValue(); });
+}
+
+void XyPadArea::setAxisNames(const QString& x, const QString& y)
+{
+	m_xName = x;
+	m_yName = y;
+	update();
+}
+
+QString XyPadArea::accessibleValue() const
+{
+	if (!isEnabled()) { return QObject::tr("No macros"); }
+	return QObject::tr("X %1 %2, Y %3 %4").arg(m_xName, percent(m_point.x()), m_yName, percent(m_point.y())).simplified();
+}
+
+bool XyPadArea::event(QEvent* event)
+{
+	// The pad's keys are its own while it has the focus: an arrow is not a window shortcut's here.
+	if (event->type() == QEvent::ShortcutOverride && keyed(static_cast<QKeyEvent*>(event)) != m_point)
+	{
+		event->accept();
+		return true;
+	}
+	return QWidget::event(event);
+}
+
+QPointF XyPadArea::keyed(const QKeyEvent* event) const
+{
+	const Qt::KeyboardModifiers mods = event->modifiers() & ~(Qt::KeypadModifier | Qt::ShiftModifier);
+	if (mods != Qt::NoModifier) { return m_point; }
+	const double step = event->modifiers().testFlag(Qt::ShiftModifier) ? CoarseStep : FineStep;
+	const int key = event->key();
+	QPointF to = m_point + keyDelta(key, step);
+	if (key == Qt::Key_Home || key == Qt::Key_End) { to.setX(key == Qt::Key_Home ? 0.0 : 1.0); }
+	return QPointF(std::clamp(to.x(), 0.0, 1.0), std::clamp(to.y(), 0.0, 1.0));
+}
+
+void XyPadArea::keyPressEvent(QKeyEvent* event)
+{
+	if (event->key() == Qt::Key_L && event->modifiers() == (Qt::ControlModifier | Qt::ShiftModifier))
+	{
+		ControlRegistry::instance()->invoke(QStringLiteral("window.item_list"), {{QStringLiteral("surface"), QStringLiteral("xy")}});
+		return;
+	}
+	const QPointF to = keyed(event);
+	if (to == m_point || !isEnabled())
+	{
+		QWidget::keyPressEvent(event);
+		return;
+	}
+	setPoint(to);
+	if (moved) { moved(m_point); }
 }
 
 void XyPadArea::setPoint(QPointF point)
@@ -95,6 +175,9 @@ void XyPadArea::paintEvent(QPaintEvent*)
 	p.setBrush(pal.accent);
 	p.setPen(Qt::NoPen);
 	p.drawEllipse(at, 7.0, 7.0);
+	// Theme 23: where the keys act is outlined while the pad has the focus, and hover and disabled look as on every canvas.
+	if (hasFocus()) { a11y::paintKeyMark(p, QRectF(at.x() - 11, at.y() - 11, 22, 22).toRect()); }
+	a11y::paintCanvasCues(p, this);
 }
 
 void XyPadArea::mousePressEvent(QMouseEvent* event)
@@ -145,6 +228,16 @@ XyPadDialog::XyPadDialog(const QString& channel, QWidget* parent) :
 	for (QComboBox* axis : {m_x, m_y}) { connect(axis, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this] { syncPoint(); }); }
 }
 
+QString XyPadDialog::macroId(bool y) const
+{
+	return (y ? m_y : m_x)->currentData().toString();
+}
+
+QString XyPadDialog::macroName(bool y) const
+{
+	return (y ? m_y : m_x)->currentText();
+}
+
 void XyPadDialog::fillMacros()
 {
 	const QJsonArray macros = rackMacros(m_channel);
@@ -171,6 +264,8 @@ void XyPadDialog::syncPoint()
 		return macros.at(std::max(0, axis->currentIndex())).toObject().value(QStringLiteral("value")).toDouble(0.5);
 	};
 	m_area->setPoint(QPointF(valueOf(m_x), valueOf(m_y)));
+	m_area->setAxisNames(m_x->currentText(), m_y->currentText());
+	emit changed();
 	// One macro on both axes is driven by X alone (send), and the pad says so rather than ignore Y silently.
 	m_area->setToolTip(m_x->currentIndex() == m_y->currentIndex()
 		? QObject::tr("Both axes name the same macro: only left-right moves it.") : QString());
@@ -183,7 +278,13 @@ void XyPadDialog::send(QPointF point)
 	// The result is read (W1): a refused move - a macro an agent removed while the pad was open, say - is named on the
 	// status line, and the dot goes back to where the macros really stand rather than where the pointer is.
 	m_status->setText(result.ok ? QString() : QObject::tr("Not set: %1").arg(result.errorMessage));
-	if (!result.ok) { syncPoint(); }
+	if (!result.ok)
+	{
+		a11y::announceTransition(m_status, a11y::Transition::Refused, result.errorMessage);  // theme 17
+		syncPoint();
+		return;
+	}
+	emit changed();
 }
 
 } // namespace lmms::gui

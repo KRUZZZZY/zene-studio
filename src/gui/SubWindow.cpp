@@ -45,6 +45,7 @@
 #include <QWindow>
 
 #include "ConfigManager.h"
+#include "ToolWindowMemory.h"
 #include "embed.h"
 
 namespace lmms::gui
@@ -380,12 +381,14 @@ void SubWindow::floatOut()
 	const QRect area = availableArea(top);
 	const QSize wanted = size.expandedTo(QSize(160, 120));
 	content->resize(area.isEmpty() ? wanted : wanted.boundedTo(area.size()));
-	if (top != nullptr && top != content)
+	// Design theme 22: a tool window (the controller rack, project notes...) opens where the user last left it.
+	if (!toolwindows::placeRemembered(content) && top != nullptr && top != content)
 	{
 		QRect frame(QPoint(), content->size());
 		frame.moveCenter(top->geometry().center());
 		content->move(keptInside(frame, area));
 	}
+	toolwindows::remember(content);
 }
 
 void SubWindow::attach()
