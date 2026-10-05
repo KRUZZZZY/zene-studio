@@ -604,6 +604,52 @@ private slots:
 		QCOMPARE(applied.result.value(QStringLiteral("velocities_moved")).toInt(), 1);
 		QCOMPARE(applied.result.value(QStringLiteral("notes_moved")).toInt(), 2);
 	}
+
+	/*! A FRACTIONAL tick is refused, not truncated to the whole part. Every tick
+	 *  argument is declared through tickProperty()/integerProperty(), which
+	 *  ControlSchema's integer check rejects unless the value is whole, and the
+	 *  registry validates the arguments BEFORE the handler runs - so the number
+	 *  never reaches readTicks to be cast.
+	 *
+	 *  The refusals have to change nothing, which is the part that matters: a
+	 *  groove of a fractional length is not created and a clip is not touched. */
+	void fractionalTickArgumentsAreRefused()
+	{
+		const QString clip = makeClip();
+		QVERIFY2(!clip.isEmpty(), "the fixture clip was not created");
+		QVERIFY(addNote(clip, 60, 0, 100));
+		const QVector<NoteAt> beforeTake = takeOf(clip);
+		const int groovesBefore = projectPool().size();
+
+		// length_ticks is read by readTicks, and 12.5 is a whole-tick argument
+		// that is not whole.
+		const ControlResult fracLength = run(QStringLiteral("groove.set"),
+			{{QStringLiteral("name"), QStringLiteral("fractional")},
+				{QStringLiteral("length_ticks"), 12.5}, {QStringLiteral("step_ticks"), 12},
+				{QStringLiteral("steps"), feelSteps()}});
+		QVERIFY2(!fracLength.ok, "a fractional length_ticks was accepted");
+		QCOMPARE(fracLength.errorKind, ControlErrorKind::InvalidArgs);
+		QVERIFY2(projectPool().find(QStringLiteral("fractional")) == nullptr,
+			"a groove of a fractional length was created");
+
+		// The same through groove.quantize's grid, and through its humanise.
+		const ControlResult fracGrid = run(QStringLiteral("groove.quantize"),
+			{{QStringLiteral("clip"), clip}, {QStringLiteral("grid"), 1.5}});
+		QVERIFY2(!fracGrid.ok, "a fractional quantise grid was accepted");
+		QCOMPARE(fracGrid.errorKind, ControlErrorKind::InvalidArgs);
+
+		const ControlResult fracHumanise = run(QStringLiteral("groove.quantize"),
+			{{QStringLiteral("clip"), clip}, {QStringLiteral("grid"), 12},
+				{QStringLiteral("humanise_ticks"), 1.5}});
+		QVERIFY2(!fracHumanise.ok, "a fractional humanise_ticks was accepted");
+		QCOMPARE(fracHumanise.errorKind, ControlErrorKind::InvalidArgs);
+
+		// Nothing above reached the clip or the pool.
+		QCOMPARE(projectPool().size(), groovesBefore);
+		QVERIFY2(takeOf(clip) == beforeTake,
+			qPrintable(QStringLiteral("a refused fractional argument changed the clip: %1")
+				.arg(describe(takeOf(clip)))));
+	}
 };
 
 QTEST_GUILESS_MAIN(ControlGrooveCommandsTest)
