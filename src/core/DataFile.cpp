@@ -42,6 +42,7 @@
 #include <QMessageBox>
 #include <QRegularExpression>
 #include <QSaveFile>
+#include <QtEndian>
 #include <QXmlStreamReader>
 
 #include "base64.h"
@@ -194,6 +195,24 @@ inline bool fsyncPath( const QString &, bool = false )
 }
 #endif
 
+//! ARCH-4 S5. The largest document recovery will take, in bytes - a complete
+//! save of even a very large project is far below this. A compressed temp's
+//! first 4 bytes are the uncompressed size it declares, and qUncompress
+//! allocates exactly that much before it decompresses anything, so both the
+//! file on disk and the declared size are measured against this first.
+constexpr qint64 MaxRecoveredDocumentBytes = 256LL * 1024 * 1024;
+
+//! The uncompressed size a qCompress stream declares in its leading 4 bytes
+//! (big endian), or 0 when the bytes are too short to carry one.
+quint32 declaredUncompressedSize( const QByteArray & bytes )
+{
+	if( bytes.size() < 4 )
+	{
+		return 0;
+	}
+	return qFromBigEndian<quint32>( reinterpret_cast<const uchar*>( bytes.constData() ) );
+}
+
 //! ARCH-4 S5. Parse \a bytes under the SAME depth guard the project load
 //! applies to every parse (SPEC-ARCH-4 1.8) and accept it only if it is a
 //! document this program recognizes. The guard runs BEFORE the parse, so a
@@ -214,11 +233,42 @@ bool parsesAsRecoverableDocument( const QByteArray & bytes )
 //! trade one corrupt file for another. A payload that begins with '<' but does
 //! not parse is truncated plain XML and is never handed to qUncompress, which
 //! would only warn on XML bytes; anything else is tried as compressed.
-inline bool isCompleteDocument( const QString & path )
+//! ARCH-4 S5. The compressed-temp half of isCompleteDocument(): \a bytes are
+//! not plain XML, so they are a compressed temp (a .mmpz/.xptz save). Its
+//! declared uncompressed size is checked against the recovery limit BEFORE
+//! qUncompress allocates that much, and what comes back is parsed under the
+//! same depth guard as plain XML. \a reason is set to "oversized" when a size
+//! was refused, so the caller reports a refusal as itself, not as truncation.
+bool decompressesAsRecoverableDocument( const QByteArray & bytes, QString * reason )
+{
+	if( declaredUncompressedSize( bytes ) > MaxRecoveredDocumentBytes )
+	{
+		*reason = QStringLiteral( "oversized" );
+		return false;
+	}
+	const QByteArray uncompressed = qUncompress( bytes );
+	if( uncompressed.isEmpty() )
+	{
+		return false;
+	}
+	if( uncompressed.size() > MaxRecoveredDocumentBytes )
+	{
+		*reason = QStringLiteral( "oversized" );
+		return false;
+	}
+	return parsesAsRecoverableDocument( uncompressed );
+}
+
+inline bool isCompleteDocument( const QString & path, QString * reason )
 {
 	QFile f( path );
 	if( ! f.open( QIODevice::ReadOnly ) )
 	{
+		return false;
+	}
+	if( f.size() > MaxRecoveredDocumentBytes )
+	{
+		*reason = QStringLiteral( "oversized" );
 		return false;
 	}
 	const QByteArray bytes = f.readAll();
@@ -234,8 +284,7 @@ inline bool isCompleteDocument( const QString & path )
 	{
 		return false;
 	}
-	const QByteArray uncompressed = qUncompress( bytes );
-	return ! uncompressed.isEmpty() && parsesAsRecoverableDocument( uncompressed );
+	return decompressesAsRecoverableDocument( bytes, reason );
 }
 
 
@@ -254,7 +303,8 @@ void recoverPendingWrite( const QString & fileName )
 	{
 		return;
 	}
-	if( isCompleteDocument( pending ) )
+	QString reason;
+	if( isCompleteDocument( pending, &reason ) )
 	{
 		if( renameOverwrite( pending, fileName ) )
 		{
@@ -266,6 +316,13 @@ void recoverPendingWrite( const QString & fileName )
 			qWarning() << "Found a complete" << pending << "but could not adopt it over"
 				<< fileName << "- leaving it beside the file for the next open";
 		}
+	}
+	else if( reason == QLatin1String( "oversized" ) )
+	{
+		// Not a truncation and not unreadable: too big to look at. The temp was
+		// never validated, so it stays where it is - the bytes are the user's.
+		qWarning() << "Refused an oversized" << pending << "left by an interrupted save of"
+			<< fileName << "- it declares more content than the recovery holds; leaving it in place";
 	}
 	else if( QFile::remove( pending ) )
 	{

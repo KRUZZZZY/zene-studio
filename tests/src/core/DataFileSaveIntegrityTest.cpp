@@ -50,6 +50,15 @@ bool writeText( const QString& path, const QString& text )
 	return file.write( text.toUtf8() ) >= 0;
 }
 
+bool writeBytes( const QString& path, const QByteArray& bytes )
+{
+	QFile file( path );
+	if( !file.open( QIODevice::WriteOnly | QIODevice::Truncate ) )
+	{
+		return false;
+	}
+	return file.write( bytes ) == bytes.size();
+}
 
 QString readText( const QString& path )
 {
@@ -592,6 +601,50 @@ private slots:
 			qPrintable( QStringLiteral( "a deeply nested .new was adopted; captured: [%1]" ).arg( report ) ) );
 		QVERIFY2( !QFile::exists( temp ), "the deeply nested .new was not discarded" );
 		QCOMPARE( probe, QStringLiteral( "old" ) );
+		QCOMPARE( readText( target ), oldText );
+	}
+
+	//! A compressed temp carries its uncompressed size in a 4-byte header, and
+	//! qUncompress allocates EXACTLY what that header claims before it looks at
+	//! a single compressed byte. A few-byte .new claiming a gigabyte was
+	//! therefore allocated on open. The claim is now checked against the
+	//! recovery limit first, and the refusal says so - the temp is left in place
+	//! rather than destroyed, since it was never validated.
+	void newFileDeclaringAnEnormousSizeIsRefusedBeforeDecompressing()
+	{
+		qunsetenv( "ZENE_TEST_SAVE_FAULT" );
+		QTemporaryDir dir;
+		QVERIFY( dir.isValid() );
+
+		const QString target = dir.filePath( QStringLiteral( "song.mmp" ) );
+		const QString temp = target + QStringLiteral( ".new" );
+
+		DataFile first( DataFile::Type::SongProject );
+		first.content().setAttribute( "s5probe", "old" );
+		QVERIFY( first.writeFile( target ) );
+		const QString oldText = readText( target );
+
+		// A genuine qCompress stream whose 4-byte size header is rewritten to
+		// claim a gigabyte: small on disk, enormous as declared.
+		QByteArray crafted = qCompress( QByteArrayLiteral(
+			"<?xml version=\"1.0\"?>\n<zene-project version=\"40\" type=\"song\">"
+			"<head/><song><trackcontainer type=\"song\"/></song></zene-project>\n" ) );
+		QVERIFY( crafted.size() > 4 );
+		crafted.replace( 0, 4, QByteArray::fromRawData( "\x40\x00\x00\x00", 4 ) );
+		QVERIFY( writeBytes( temp, crafted ) );
+
+		QString report;
+		QString probe;
+		{
+			MessageRecorder recorder;
+			DataFile loaded( target );
+			report = recorder.messages();
+			probe = loaded.content().attribute( QStringLiteral( "s5probe" ) );
+		}
+
+		QVERIFY2( report.contains( QStringLiteral( "Refused an oversized" ) ),
+			qPrintable( QStringLiteral( "the declared size was not checked; captured: [%1]" ).arg( report ) ) );
+		QCOMPARE( probe, QStringLiteral( "old" ) );  // the valid project stands
 		QCOMPARE( readText( target ), oldText );
 	}
 };
