@@ -485,6 +485,68 @@ private slots:
 			"note.randomize moved a note past the clip's end but did not grow the clip");
 	}
 
+	//! Luna cluster 4814: note.remove advertised note.add as its inverse, passing only key,
+	//! position, length and velocity. Everything else the note carried - its pan, its
+	//! probability, its id - could not be restored by replaying that pair, so the advertised
+	//! inverse silently produced a DIFFERENT note. The clip checkpoint is what really reverses
+	//! the removal, so the inverse is control.undo, which takes no arguments.
+	void theAdvertisedInverseOfRemovingANoteRestoresTheWholeNote()
+	{
+		MidiClip* clip = clipWith({{60, 0}}, 48);
+		Note* note = clip->notes().front();
+		note->setPanning(30);  // panning_t is an int8 in the -64..64 range, not a fraction
+		note->setProbability(0.5f);
+		const QString id = control::noteIdOf(note);
+		QJsonObject args = self(clip);
+		args.insert(QStringLiteral("note"), id);
+		QVERIFY2(run(QStringLiteral("note.remove"), args).ok, "note.remove refused");
+		QCOMPARE(clip->notes().size(), std::size_t{0});
+
+		const ControlRegistry::Transaction* recorded = ControlRegistry::instance()->lastTransaction();
+		QVERIFY(recorded != nullptr);
+		QCOMPARE(recorded->inverse.value(QStringLiteral("op")).toString(), QStringLiteral("control.undo"));
+		// The before-payload still carries the full note state a client needs...
+		QVERIFY(!recorded->before.isEmpty());
+		// ...and replaying the advertised pair really does bring the note back whole.
+		const ControlResult replay = run(recorded->inverse.value(QStringLiteral("op")).toString(),
+			recorded->inverse.value(QStringLiteral("args")).toObject());
+		QVERIFY2(replay.ok, qPrintable(replay.errorMessage));
+		QCOMPARE(clip->notes().size(), std::size_t{1});
+		QVERIFY2(static_cast<int>(clip->notes().front()->getPanning()) == 30,
+			"the inverse restored the note with its default pan, not the pan it had");
+		QVERIFY2(qFuzzyCompare(clip->notes().front()->probability(), 0.5f),
+			"the inverse restored the note with its default probability");
+	}
+
+	//! Luna cluster 4812: the selection store holds note-list POSITIONS, but a move re-sorts
+	//! the list, so a stored position then names a different note and `previous_notes` reports
+	//! the wrong selection. The notes' own selection flags travel with the note objects
+	//! through a re-sort, so they are what the previous selection is read from.
+	void selectingAfterAMoveReportsTheNoteThatWasActuallySelected()
+	{
+		MidiClip* clip = clipWith({{60, 0}, {64, 24}});
+		const QString first = control::noteIdOf(clip->notes()[0]);
+		const QString second = control::noteIdOf(clip->notes()[1]);
+
+		QVERIFY2(run(QStringLiteral("note.select"), {{QStringLiteral("clip"), control::clipIdOf(clip)},
+			{QStringLiteral("notes"), QJsonArray{first}}}).ok, "note.select refused");
+
+		// Move the selected note (at position 0) behind the other one: the list re-sorts, so
+		// the stored position 0 now points at the note that was NOT selected.
+		QJsonObject move = self(clip);
+		move.insert(QStringLiteral("note"), first);
+		move.insert(QStringLiteral("position"), 48);
+		QVERIFY2(run(QStringLiteral("note.move"), move).ok, "note.move refused");
+		QVERIFY2(clip->notes()[0]->key() == 64, "the fixture's move must re-sort the list");
+
+		const ControlResult selected = run(QStringLiteral("note.select"), {{QStringLiteral("clip"), control::clipIdOf(clip)},
+			{QStringLiteral("notes"), QJsonArray{second}}});
+		QVERIFY2(selected.ok, qPrintable(selected.errorMessage));
+		const QJsonArray previous = selected.result.value(QStringLiteral("previous_notes")).toArray();
+		QCOMPARE(previous.size(), 1);
+		QCOMPARE(previous.first().toString(), first);
+	}
+
 };
 
 QTEST_MAIN(NoteToolsTest)
