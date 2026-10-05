@@ -552,6 +552,20 @@ void summarize(const std::vector<SmfInterchangeEvent>& merged, SmfReadReport* re
 	}
 }
 
+//! The header's trackCount is the file's own statement of how many MTrk chunks
+//! follow. readTracks() counted the ones it actually found and the two numbers
+//! were never compared, so a file declaring more tracks than it carries
+//! succeeded with a map built from part of the file and nothing said a track
+//! was missing. A count that does not match is refused like any other
+//! malformed structure, not imported as far as it goes.
+bool trackCountMatches(const SmfReadReport* report, int tracksRead, QString* error)
+{
+	if (report->trackCount == tracksRead) { return true; }
+	*error = QStringLiteral("the MThd chunk declares %1 track(s) but the file carries %2 - "
+		"a track is missing from the file").arg(report->trackCount).arg(tracksRead);
+	return false;
+}
+
 bool readAllTracks(const QByteArray& bytes, SmfReadReport* report, QString* error)
 {
 	const unsigned char* raw = reinterpret_cast<const unsigned char*>(bytes.constData());
@@ -566,6 +580,7 @@ bool readAllTracks(const QByteArray& bytes, SmfReadReport* report, QString* erro
 		*error = QStringLiteral("the file carries no MTrk track");
 		return false;
 	}
+	if (!trackCountMatches(report, tracksRead, error)) { return false; }
 
 	std::stable_sort(candidates.begin(), candidates.end(),
 		[](const Candidate& a, const Candidate& b) { return a.smfTick < b.smfTick; });

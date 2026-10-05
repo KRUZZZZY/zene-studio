@@ -554,6 +554,39 @@ private slots:
 			{{QStringLiteral("path"), good}}).ok, "an SMF format 1 file is read");
 	}
 
+	//! The header's trackCount is the file's own statement of how many MTrk
+	//! chunks follow, and parseHeader() recorded it without ever comparing it
+	//! to what readTracks() found. A file that declares two tracks and carries
+	//! one therefore succeeded with a conductor map built from half the file
+	//! and nothing said a track was missing. This reader refuses malformed
+	//! structures rather than importing what it can see, and a count that does
+	//! not match is one of them.
+	void aFileWithFewerTracksThanItDeclaresIsRefused()
+	{
+		QByteArray bytes = plainFile(480, {{0, 120, 4, 4}});
+		bytes[10] = static_cast<char>(0x00);
+		bytes[11] = static_cast<char>(0x02);  // declares two tracks, carries one
+		const QString file = path(m_directory, QStringLiteral("short-tracks.mid"));
+		QVERIFY(writeFile(file, bytes));
+		const ControlResult read = run(QStringLiteral("interchange.smf_read"),
+			{{QStringLiteral("path"), file}});
+		QVERIFY2(!read.ok, "a file carrying fewer tracks than it declares was accepted");
+		QCOMPARE(read.errorKind, ControlErrorKind::InvalidArgs);
+		QVERIFY2(read.errorMessage.contains(QStringLiteral("track")),
+			qPrintable(read.errorMessage));
+		const ControlResult imported = run(QStringLiteral("interchange.smf_import"),
+			{{QStringLiteral("path"), file}});
+		QVERIFY(!imported.ok);
+		QCOMPARE(digest(mapEvents()), QString());  // a refusal imports nothing
+
+		// The control: the same file declaring the one track it carries.
+		QByteArray honest = plainFile(480, {{0, 120, 4, 4}});
+		const QString good = path(m_directory, QStringLiteral("matching-tracks.mid"));
+		QVERIFY(writeFile(good, honest));
+		QVERIFY2(run(QStringLiteral("interchange.smf_read"),
+			{{QStringLiteral("path"), good}}).ok, "a matching track count is read");
+	}
+
 	//! Every track ends with an end-of-track meta event; it is how the format
 	//! says the sequence is over. readTrack() returned success when its walk ran
 	//! out of bytes, and nothing recorded whether the event had arrived - so a
