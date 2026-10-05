@@ -344,8 +344,27 @@ def _check_tempo_map_verb(session, recorder):
                                                      map_state.get("tempo_at_position")))
 
 
+def _check_advertised_inverse_is_the_undo(session, recorder):
+    # The RECORDED inverse must be able to put the before-state back. A descriptor
+    # that names detect.apply with the same path replays the DETECTION instead, so
+    # the record has to point at the mechanism that restores (control.undo, which
+    # unwinds the recorded action step), the shape scale.from_detected_key uses.
+    records = [record for record in (session.result("control.transactions")
+                                     .get("transactions") or [])
+               if record.get("command") == "detect.apply"]
+    top = records[-1] if records else {}
+    inverse = top.get("inverse") or {}
+    recorder.check(
+        "detect.apply's recorded inverse restores rather than re-applying",
+        bool(records) and top.get("reversible") is True
+        and inverse.get("op") != "detect.apply"
+        and inverse.get("op") == "control.undo",
+        "inverse=%r reversible=%r" % (inverse, top.get("reversible")))
+
+
 def _check_one_undo_takes_both(session, recorder):
     # 8. ONE undo takes BOTH halves off ------------------------------------
+    _check_advertised_inverse_is_the_undo(session, recorder)
     session.result("control.undo")
     state = session.result("detect.get_state")
     recorder.check(
