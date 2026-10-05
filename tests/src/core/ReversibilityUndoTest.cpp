@@ -604,6 +604,51 @@ private slots:
 	}
 
 
+	//! Luna cluster 2050: plugin.state_load advertised an inverse that could not be
+	//! replayed. The command is an ACTION checkpoint - the table
+	//! (ControlReversibilityTableAction.cpp) and its own `mechanism` both say the
+	//! recorded undo step restores the captured settings XML - but the transaction
+	//! named plugin.state_save and supplied only a `note`. That command requires
+	//! target, plugin and path, and saving a device's CURRENT state would not
+	//! restore the previous one anyway. A client that FOLLOWS the returned inverse
+	//! - which is what `reversible: true` promises - could not undo the load.
+	void theStateLoadInverseIsTheCheckpointItActuallyRecorded()
+	{
+		const QString track = addInstrumentTrack();
+		if (track.isEmpty()) { QSKIP("this build exposes no loadable built-in instrument"); }
+		const QString pluginId = QStringLiteral("inst");
+
+		QTemporaryDir dir;
+		QVERIFY(dir.isValid());
+		const QString file = dir.path() + QStringLiteral("/state.xml");
+		QVERIFY(run(QStringLiteral("plugin.state_save"),
+			{{QStringLiteral("target"), track}, {QStringLiteral("plugin"), pluginId},
+				{QStringLiteral("path"), file}}).ok);
+		QVERIFY(run(QStringLiteral("plugin.state_load"),
+			{{QStringLiteral("target"), track}, {QStringLiteral("plugin"), pluginId},
+				{QStringLiteral("path"), file}}).ok);
+
+		const QJsonObject recorded = stateOf(QStringLiteral("plugin.state_load"));
+		QVERIFY(!recorded.isEmpty());
+		QCOMPARE(recorded.value(QStringLiteral("reversible")).toBool(), true);
+		const QJsonObject inverse = recorded.value(QStringLiteral("inverse")).toObject();
+		const QString op = inverse.value(QStringLiteral("op")).toString();
+		QVERIFY2(!op.isEmpty(), "plugin.state_load recorded an inverse with no op");
+		QVERIFY2(ControlRegistry::instance()->command(op) != nullptr,
+			qPrintable(QStringLiteral("the recorded inverse names '%1', which is not a "
+				"command of the surface").arg(op)));
+
+		// The promise `reversible: true` makes: a caller that follows the inverse
+		// must be able to run it. It refused, for want of the arguments the
+		// advertised command requires.
+		const ControlResult replay = run(op, inverse.value(QStringLiteral("args")).toObject());
+		QVERIFY2(replay.ok, qPrintable(QStringLiteral("plugin.state_load advertised the "
+			"replayable inverse %1%2, which the registry refused: %3").arg(op,
+				QString::fromUtf8(QJsonDocument(inverse).toJson(QJsonDocument::Compact)),
+				replay.errorMessage)));
+	}
+
+
 	//! SPEC A16 deliverable 4: project.save keeps a recoverable previous
 	//! revision, the retention policy is named, the set is bounded, and the
 	//! restore path is reachable through the control surface.
