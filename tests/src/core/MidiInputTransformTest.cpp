@@ -141,6 +141,53 @@ private slots:
 		QCOMPARE(release.key(), 55);
 	}
 
+	//! A key range whose ends are swapped is a RANGE, and a range with no keys in
+	//! it is not a setting an instrument track may hold: checked key by key the
+	//! pair (100, 20) is two legal keys, and every note-on then fails the range
+	//! test and is dropped. One bad value changes nothing, so the pair is
+	//! refused together and the previous range stands.
+	void anInvertedKeyRangeIsRefused()
+	{
+		MidiInputTransform transform;
+		QVERIFY(set(transform, {{QStringLiteral("key_low"), 48}, {QStringLiteral("key_high"), 72}}));
+		QVERIFY2(!set(transform, {{QStringLiteral("key_low"), 100}, {QStringLiteral("key_high"), 20}}),
+			"a range whose low end is above its high end is refused");
+		QVERIFY2(!set(transform, {{QStringLiteral("key_high"), 10}}),
+			"and it is refused when only one end is named");
+		QString why;
+		const bool inverted = transform.fromJson({{QStringLiteral("key_low"), 100},
+			{QStringLiteral("key_high"), 20}}, &why);
+		QVERIFY2(!inverted, "the pair is refused whatever the shape of the request");
+		QVERIFY2(!why.isEmpty(), "the refusal says why");
+
+		// The range that stood is still the range: a note inside it passes.
+		MidiEvent inside = noteOn(60, 100);
+		QVERIFY(transform.apply(&inside));
+		QCOMPARE(inside.key(), 60);
+		MidiEvent outside = noteOn(80, 100);
+		QVERIFY(!transform.apply(&outside));
+	}
+
+	//! Every setting is an integer. QJsonValue::toInt() answers the DEFAULT (0)
+	//! for a number that is not whole, so a fractional value used to pass the
+	//! range check and be stored as that default: 'transpose': 2.5 was accepted
+	//! and transposed by 0.
+	void aFractionalSettingIsRefused()
+	{
+		MidiInputTransform transform;
+		QVERIFY(set(transform, {{QStringLiteral("transpose"), 12}}));
+		QVERIFY2(!set(transform, {{QStringLiteral("transpose"), 2.5}}),
+			"2.5 is not an integer and is refused");
+		QVERIFY2(!set(transform, {{QStringLiteral("velocity_scale"), 99.5}}),
+			"in every setting, not just the first");
+		QVERIFY2(!set(transform, {{QStringLiteral("key_low"), 40.25},
+			{QStringLiteral("key_high"), 90}}),
+			"and nothing beside it is stored either");
+		MidiEvent event = noteOn(60, 100);
+		QVERIFY(transform.apply(&event));
+		QCOMPARE(event.key(), 72);  // the transpose of 12 is still the one in force
+	}
+
 	void theChannelFilterAndTheScaleSnap()
 	{
 		MidiInputTransform transform;

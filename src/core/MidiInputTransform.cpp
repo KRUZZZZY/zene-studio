@@ -41,6 +41,13 @@ constexpr int NotHeld = -2;
 constexpr int Dropped = -1;
 constexpr auto Relaxed = std::memory_order_relaxed;
 
+//! The value \a key carries in \a json, or \a fallback when it is not named -
+//! so a pair whose other end is already in force is checked against it.
+int namedInt(const QJsonObject& json, const char* key, int fallback)
+{
+	return json.contains(QLatin1String(key)) ? json.value(QLatin1String(key)).toInt() : fallback;
+}
+
 } // namespace
 
 MidiInputTransform::MidiInputTransform()
@@ -162,6 +169,18 @@ bool MidiInputTransform::fromJson(const QJsonObject& json, QString* error)
 			*error = QStringLiteral("'%1' is an integer in %2..%3").arg(QLatin1String(s.key)).arg(s.minimum).arg(s.maximum);
 			return false;
 		}
+	}
+	// The two ends are a RANGE, checked one value at a time: 100 and 20 are each
+	// a legal key, and together they hold no key at all, so every note-on fails
+	// the range test in noteOn() and the instrument goes silent. The ordering is
+	// part of the range, and - like any other bad value - it is checked before
+	// anything is stored, against whichever end the request does not name.
+	if (namedInt(json, "key_low", m_keyLow.load(Relaxed))
+		> namedInt(json, "key_high", m_keyHigh.load(Relaxed)))
+	{
+		*error = QStringLiteral("'key_low' must not be above 'key_high': the range would "
+			"hold no key and every note would be dropped");
+		return false;
 	}
 	for (const Setting& s : settings())
 	{
