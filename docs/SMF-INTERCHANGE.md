@@ -87,6 +87,14 @@ because a caller wants to identify its artefact, and it is deliberately not what
 - **Only the tempo and metre meta events are read.** The rest of a foreign file is ignored rather than
   refused (the reader walks every chunk, including running-status channel events and sysex, so it does not
   fall over on them).
+- **A track the format itself describes wrongly is refused, not repaired.** The reader refuses an
+  end-of-track meta event that carries a payload, bytes after that event, a time-signature `dd` above 5
+  (a denominator the map cannot hold), and a track that accumulates past 2^32 file ticks. These follow the
+  same precedent as an SMPTE division: a value the reader would have to rewrite is a value it will not read.
+- **Only what the timeline obeys is written.** An INACTIVE tempo map exports just the tick-0 seed — the
+  global tempo and metre — because its stored events are dormant and must not change the file. A global
+  tempo outside the engine's 10..999 bpm is refused (`invalid_args`) instead of dividing by zero in the
+  microseconds-per-quarter-note quotient.
 - **A full map can export one event more than it can hold.** `TempoMap::MaxEvents` is 128 and the tick-0 seed
   is not part of the map: a 128-event map whose first event is later than tick 0 writes 129 conductor ticks,
   and re-importing that file is refused (`capacity_events: 1`, `importable: false`) rather than truncated.
