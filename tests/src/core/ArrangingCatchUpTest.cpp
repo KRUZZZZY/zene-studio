@@ -438,7 +438,8 @@ private slots:
 		const auto guard = engine->requestChangesGuard();
 		auto track = std::make_unique<SampleTrack>(Engine::getSong());
 		track->setMonitorMode(MonitorMode::In);
-		InputMonitorHandle* pending = track->monitorHandle();
+		// monitorHandle() is the const accessor (SampleTrack.h); the render list holds PlayHandle*.
+		PlayHandle* pending = const_cast<InputMonitorHandle*>(track->monitorHandle());
 		QVERIFY(pending != nullptr);
 		track->setMonitorMode(MonitorMode::Off);
 		QVERIFY(track->monitorHandle() == nullptr);
