@@ -53,6 +53,26 @@ namespace lmms
 namespace
 {
 
+//! The n/d half of an interval line. A ratio is two POSITIVE integers: the
+//! denominator is parsed with its own ok check (3/nope is not 3/1), and neither
+//! half is clamped up to 1 (that silently rewrote 3/0 as 3/1 and 0/2 as 1/2).
+//! Split out so intervalFromLine's CCN counts only its two shapes.
+bool ratioFromLine(const QString& line, int numerator, Interval* out)
+{
+	int denominator = 1;
+	if (line.contains(QLatin1Char('/')))
+	{
+		bool denOk = false;
+		denominator = line.split(QLatin1Char('/')).at(1)
+			.section(QRegularExpression(QStringLiteral("\\s+")), 0, 0, QString::SectionSkipEmpty)
+			.toInt(&denOk);
+		if (!denOk || denominator <= 0) { return false; }
+	}
+	if (numerator <= 0) { return false; }
+	*out = Interval(static_cast<uint32_t>(numerator), static_cast<uint32_t>(denominator));
+	return true;
+}
+
 //! The .scl interval line MicrotunerConfig::applyScale() accepts: the first
 //! whitespace-or-slash section is either cents (contains '.') or a ratio.
 bool intervalFromLine(const QString& line, Interval* out)
@@ -71,16 +91,7 @@ bool intervalFromLine(const QString& line, Interval* out)
 	bool numOk = false;
 	const int num = first.toInt(&numOk);
 	if (!numOk) { return false; }
-	int den = 1;
-	if (line.contains(QLatin1Char('/')))
-	{
-		den = line.split(QLatin1Char('/')).at(1)
-			.section(QRegularExpression(QStringLiteral("\\s+")), 0, 0, QString::SectionSkipEmpty)
-			.toInt();
-	}
-	*out = Interval(static_cast<uint32_t>(std::max(num, 1)),
-		static_cast<uint32_t>(std::max(den, 1)));
-	return true;
+	return ratioFromLine(line, num, out);
 }
 
 //! Record a typed parse failure; a null \a error means "the caller does not

@@ -90,6 +90,19 @@ QString writeJiScl(QTemporaryDir& dir)
 	return path;
 }
 
+//! A one-off .scl holding exactly \a body lines, for the scales this test
+//! writes itself rather than shares.
+QString writeScl(QTemporaryDir& dir, const QString& name, const QStringList& body)
+{
+	const QString path = dir.filePath(name);
+	QFile file(path);
+	if (!file.open(QIODevice::WriteOnly | QIODevice::Text)) { return QString(); }
+	file.write(body.join(QLatin1Char('\n')).toUtf8());
+	file.write("\n");
+	file.close();
+	return path;
+}
+
 bool closeTo(double actual, double expected)
 {
 	return std::fabs(actual - expected) <= 1e-4 * std::fmax(1.0, std::fabs(expected));
@@ -489,6 +502,54 @@ private slots:
 			qPrintable(sessionScale->getDescription()),
 			qPrintable(sessionKeymap->getDescription()));
 		tuning->reset();
+	}
+
+	//! Luna 4449: an .scl ratio line is n/d. The denominator parse ignored its
+	//! own result and BOTH halves were clamped up to 1, so 3/nope loaded as 3/1
+	//! and 0/2 as 1/2 - the table then held an interval the file never asked for.
+	//! A line that is not a positive ratio is a bad LINE: it is refused, typed,
+	//! and the table that was already loaded is left standing.
+	void anInvalidRatioLineIsRefusedInsteadOfRewrittenToADifferentOne()
+	{
+		Song* song = Engine::getSong();
+		song->clearProject();
+		SessionTuning* tuning = SessionTuning::instance();
+		tuning->reset();
+
+		QTemporaryDir dir;
+		QVERIFY(dir.isValid());
+		const QString good = writeJiScl(dir);
+		QVERIFY(!good.isEmpty());
+		QVERIFY2(run(QStringLiteral("mts.load_scale"),
+			QJsonObject{{QStringLiteral("path"), good}}).ok, "the JI fixture did not load");
+		const QJsonObject before = snapshotState(run(QStringLiteral("mts.get_state")).result);
+
+		// A .scl is name line, degree count, then that many interval lines.
+		const QStringList badOne{QStringLiteral("bad ratio fixture"), QStringLiteral("3"),
+			QStringLiteral("1/1"), QStringLiteral("3/nope")};
+		const QStringList badZeroDen{QStringLiteral("bad ratio fixture"), QStringLiteral("3"),
+			QStringLiteral("1/1"), QStringLiteral("3/0")};
+		const QStringList badZeroNum{QStringLiteral("bad ratio fixture"), QStringLiteral("3"),
+			QStringLiteral("1/1"), QStringLiteral("0/2")};
+		const QStringList badInMiddle{QStringLiteral("bad ratio fixture"), QStringLiteral("3"),
+			QStringLiteral("3/nope"), QStringLiteral("3/2")};
+		const QVector<QStringList> badBodies{badOne, badZeroDen, badZeroNum, badInMiddle};
+		for (const QStringList& body : badBodies)
+		{
+			const QString path = writeScl(dir, QStringLiteral("bad-%1.scl").arg(qHash(body)), body);
+			QVERIFY2(!path.isEmpty(), "the fixture .scl could not be written");
+			const ControlResult loaded = run(QStringLiteral("mts.load_scale"),
+				QJsonObject{{QStringLiteral("path"), path}});
+			QVERIFY2(!loaded.ok, qPrintable(QStringLiteral("'%1' was accepted: the bad ratio "
+				"line became a different, valid interval").arg(body.last())));
+			QCOMPARE(loaded.errorKind, ControlErrorKind::Refused);
+
+			int mismatch = 0;
+			const QJsonObject after = snapshotState(run(QStringLiteral("mts.get_state")).result);
+			QVERIFY2(sameTable(before, after, &mismatch),
+				qPrintable(QStringLiteral("the refused scale still changed the table at key %1")
+					.arg(mismatch)));
+		}
 	}
 
 	//! The recorded undo step restores the Scale/Keymap the table was BUILT from,
