@@ -262,6 +262,12 @@ bool Section::load(const QDomElement& section)
 	{
 		Change change;
 		if (!parseChange(node, change, highest)) { return false; }
+		// STRICTLY ascending, the shape writeTo produces (it assigns
+		// m_nextSeq++ and appends). An entry that does not ascend - or
+		// repeats - was not written by this writer; claiming it would append
+		// a further entry after the break and leave a file its own loader
+		// refuses. Refused, so the caller preserves it verbatim.
+		if (!parsed.isEmpty() && change.seq <= parsed.last().seq) { return false; }
 		parsed.append(change);
 	}
 	// Claim nothing (and preserve the element verbatim as unclaimed) when the

@@ -541,6 +541,32 @@ private slots:
 		QCOMPARE(provenance::Section::instance().lastSeq(), lastBefore);
 	}
 
+	//! THE ORDER: entries this writer produced are strictly ascending in seq
+	//! (it assigns m_nextSeq++ and appends), and the section's own `seq` is
+	//! the highest of them (writeTo sets it to lastSeq()). A section whose
+	//! entries descend - 3, 1 - was never written by this writer; claiming it
+	//! would append a further entry after the descent, leaving a file its own
+	//! loader refuses. Such a section is preserved verbatim, not claimed.
+	void anOutOfOrderSectionIsRefusedRatherThanAdopted()
+	{
+		QDomDocument document;
+		document.setContent(QStringLiteral(
+			"<z:provenance v=\"1\" seq=\"3\">"
+			"<z:change seq=\"3\" at=\"2026-01-01T00:00:00Z\" actor=\"human\""
+			" instance=\"0123abcd-456\" command=\"track.add\"/>"
+			"<z:change seq=\"1\" at=\"2026-01-01T00:00:01Z\" actor=\"human\""
+			" instance=\"0123abcd-456\" command=\"clip.add\"/>"
+			"</z:provenance>"));
+		const QDomElement section = document.documentElement();
+
+		const int heldBefore = heldChanges().size();
+		const quint64 lastBefore = provenance::Section::instance().lastSeq();
+		QVERIFY2(!provenance::Section::instance().load(section),
+			"entries that do not ascend in seq must be refused, not adopted");
+		QCOMPARE(heldChanges().size(), heldBefore);
+		QCOMPARE(provenance::Section::instance().lastSeq(), lastBefore);
+	}
+
 	//! THE ACTOR: a session KIND, never a person (1.9: "not a credential, not
 	//! a user identity - the file must be shareable"). Outside a socket scope
 	//! the attribution is "human"; the instance is the same non-identifying
