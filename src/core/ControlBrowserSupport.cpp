@@ -288,10 +288,17 @@ QJsonObject browserStringListProperty()
 		{QStringLiteral("items"), stringProperty()}};
 }
 
+//! The browser addresses a file by its absolute path, EXACTLY as given.
+//!
+//! The value is not trimmed: a leading or trailing space is a legal character in
+//! a filename, so trimming would resolve "kick.wav " onto the DIFFERENT file
+//! "kick.wav" beside it and a tag edit would land on a file the caller never
+//! named. Only a value that is empty or entirely whitespace is refused - there
+//! is no such file to address.
 bool readBrowserFileArgument(const QJsonObject& args, QString* key, ControlResult* error)
 {
-	const QString raw = args.value(QStringLiteral("path")).toString().trimmed();
-	if (raw.isEmpty())
+	const QString raw = args.value(QStringLiteral("path")).toString();
+	if (raw.trimmed().isEmpty())
 	{
 		*error = ControlResult::failure(ControlErrorKind::InvalidArgs,
 			QStringLiteral("'path' is required and is empty: the browser addresses a file by "
