@@ -487,6 +487,82 @@ private slots:
 			static_cast<int>(xml.count("<effect ")));
 	}
 
+	//! Tilt must bias the detector even when the detector reads an external
+	//! sidechain: Tilt is documented as biasing the sidechain toward the low
+	//! or high frequencies, so with a sidechain keyed by a steady DC signal
+	//! the Tilt setting must change how hard the bus is ducked. Before the fix
+	//! the Tilt filter ran on the channel signal only, so the external key was
+	//! never tilted and both settings ducked identically.
+	void tiltAlsoBiasesAnExternalSidechainKey()
+	{
+		if (!testHostCanLoadPluginModules()) { QSKIP(PluginModuleHostSkipMessage); }
+
+		auto mixer = Engine::mixer();
+		mixer->clear();
+		while (mixer->numChannels() < 3) { mixer->createChannel(); }
+
+		const int bus = mixer->createBusChannel();
+		mixer->channelSendModel(1, 0)->setValue(0.0f); // key channel is not audible
+		QVERIFY(mixer->createChannelSend(2, bus, 1.0f) != nullptr);
+		QVERIFY(mixer->createSidechainSend(1, bus, 1.0f,
+			SidechainTapPoint::PostFader) != nullptr);
+
+		EffectChain* busChain = chainOf(mixer, bus);
+		Effect* compressor = Effect::instantiate("compressor", busChain, nullptr);
+		QVERIFY2(compressor != nullptr,
+			"native Compressor plugin could not be instantiated");
+		busChain->appendEffect(compressor);
+
+		PeriodHarness harness(mixer);
+		const float key = 0.5f;
+		const float program = 0.02f;
+
+		//! Configure the compressor through its normal XML path and measure the
+		//! steady level the bus is ducked to with that Tilt setting.
+		auto duckedLevelForTilt = [&](const char* tilt) {
+			QDomDocument doc;
+			QDomElement effect = doc.createElement("effect");
+			effect.setAttribute("on", "1");
+			effect.setAttribute("wet", "1");
+			QDomElement controls = doc.createElement("CompressorControls");
+			controls.setAttribute("threshold", "-20");
+			controls.setAttribute("ratio", "20");
+			controls.setAttribute("attack", "1");
+			controls.setAttribute("release", "50");
+			controls.setAttribute("knee", "0");
+			controls.setAttribute("peakmode", "1");
+			controls.setAttribute("rms", "1");
+			controls.setAttribute("autoMakeup", "0");
+			controls.setAttribute("outGain", "0");
+			controls.setAttribute("tilt", tilt);
+			effect.appendChild(controls);
+			compressor->restoreState(effect);
+
+			double level = 0.0;
+			int measured = 0;
+			for (int p = 0; p < 16; ++p)
+			{
+				feedDc(harness, 1, key);
+				feedDc(harness, 2, program);
+				const std::vector<SampleFrame> out = harness.render();
+				// Skip the first half: the tilt filter and the envelope settle.
+				if (p >= 8) { level += meanAbs(out, 0, harness.fpp()); ++measured; }
+			}
+			return level / measured;
+		};
+
+		const double flat = duckedLevelForTilt("0");
+		const double lowBiased = duckedLevelForTilt("-6");
+
+		QVERIFY2(flat > 0.0, "the bus measured silence with the key on");
+		QVERIFY2(lowBiased < flat,
+			qPrintable(QString("Tilt did not bias the external sidechain key: "
+				"flat %1, low-biased %2").arg(flat).arg(lowBiased)));
+
+		evidence("SIDECHAIN_TILT key=%.4f program=%.4f flat=%.6f low_biased=%.6f "
+			"drop_db=%.2f", key, program, flat, lowBiased, toDb(lowBiased / flat));
+	}
+
 	//! A sidechain send that would close a scheduling cycle is refused.
 	void cycleFormingSidechainSendIsRejected()
 	{
