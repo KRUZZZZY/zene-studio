@@ -250,11 +250,19 @@ void collectReferences(const QDomElement& parent, const QString& parentChain,
 		{
 			if (!elementMatches(spec, tag, parentChain)) { continue; }
 			if (!element.hasAttribute(QLatin1String(spec.attribute))) { continue; }
-			// An element whose path attribute is empty names no file. It is
-			// counted, not listed: inline media is not a missing asset.
+			// An element whose path attribute is empty names no file, so it is
+			// never listed. It counts as embedded media ONLY when its element type
+			// has an inline form and that media is actually present (the same
+			// test fillReference uses): `sf2player` and the session `clip` carry no
+			// inline attribute at all, so `<sf2player src="">` is an inert reference
+			// and counting it would report inline content the project does not hold.
 			if (element.attribute(QLatin1String(spec.attribute)).isEmpty())
 			{
-				++out->embeddedCount;
+				if (spec.embedAttribute[0] != '\0'
+					&& element.hasAttribute(QString::fromLatin1(spec.embedAttribute)))
+				{
+					++out->embeddedCount;
+				}
 				continue;
 			}
 			ProjectAssetReference ref;

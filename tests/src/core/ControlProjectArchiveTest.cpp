@@ -322,6 +322,52 @@ private slots:
 		QCOMPARE(referenceWithRaw(references, QStringLiteral("gone.wav"))
 			.value(QStringLiteral("exists")).toBool(), false);
 	}
+	//! An empty path attribute names no file, so it is not listed as a reference -
+	//! but it is only "embedded media" when the element type actually HAS an inline
+	//! form and the media is really there. `sf2player` and the session `clip` have no
+	//! inline attribute at all (ControlProjectAssets.cpp:80-85), so `<sf2player src="">`
+	//! is an inert reference: counting it as embedded media reports inline content the
+	//! project does not carry.
+	void onlyInlineMediaCountsAsEmbedded()
+	{
+		QTemporaryDir dir;
+		QVERIFY(dir.isValid());
+		const QString quoted = QDir::fromNativeSeparators(dir.path());
+		QString xml = QStringLiteral(
+			"<?xml version=\"1.0\"?>\n"
+			"<zene-project creator=\"Zene Studio\" version=\"1.0\" type=\"song\" creatorversion=\"0.3.0\">\n"
+			"  <head bpm=\"120\" timesig_numerator=\"4\" timesig_denominator=\"4\"/>\n"
+			"  <song>\n"
+			"    <trackcontainer type=\"song\">\n"
+			"      <track name=\"Audio\" type=\"0\">\n"
+			"        <instrumenttrack><instrument name=\"audiofileprocessor\">\n"
+			"          <audiofileprocessor src=\"\" sampledata=\"AAAA\" amp=\"100\"/></instrument>\n"
+			"        </instrumenttrack>\n"
+			"        <instrumenttrack instrument=\"1\"><instrument name=\"sf2player\">\n"
+			"          <sf2player src=\"\" bank=\"0\" patch=\"0\"/></instrument>\n"
+			"        </instrumenttrack>\n"
+			"      </track>\n"
+			"    </trackcontainer>\n"
+			"    <session><clips>\n"
+			"      <clip track=\"0\" scene=\"0\" type=\"1\" src=\"\"/>\n"
+			"    </clips></session>\n"
+			"  </song>\n"
+			"</zene-project>\n").arg(quoted);
+		const QString project = dir.path() + QStringLiteral("/empty-src.mmp");
+		QVERIFY(writeBytes(project, xml.toUtf8()));
+
+		const ControlResult scanned = run(QStringLiteral("project.missing_assets"),
+			QJsonObject{{QStringLiteral("project"), project}});
+		QVERIFY2(scanned.ok, qPrintable(scanned.errorMessage));
+
+		// Exactly ONE element carries its media inline: the audiofileprocessor
+		// with sampledata. The empty sf2player and the empty session clip have no
+		// inline form, so they are not embedded media.
+		QCOMPARE(scanned.result.value(QStringLiteral("embedded_count")).toInt(), 1);
+		// None of the three names a file, so none is a missing asset either.
+		QCOMPARE(scanned.result.value(QStringLiteral("missing_count")).toInt(), 0);
+		QCOMPARE(scanned.result.value(QStringLiteral("reference_count")).toInt(), 0);
+	}
 	//! Hashing is the identity step: the digest is stable, and relinking
 	//! changes it, because the digest covers the reference set and its hashes.
 	void hashingIsStableAndChangesWithTheReferenceSet()
