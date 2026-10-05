@@ -45,9 +45,23 @@ int savedId(const QDomElement& element)
 	return ok && id >= 0 ? id : -1;
 }
 
+//! The lowest id in 1..\a maxId no marker in \a taken holds. The marker count is
+//! capped at maxId, so while a marker is still missing or duplicated there is
+//! always a free id to hand it even when the ids above it have run out of
+//! representable values - the caller only reaches this with a marker still
+//! needing one.
+int lowestFreeId(const QSet<int>& taken, int maxId)
+{
+	for (int id = 1; id <= maxId; ++id)
+	{
+		if (!taken.contains(id)) { return id; }
+	}
+	return -1;
+}
+
 //! A hand-edited file's ids made unique: one that is missing or already taken gets a fresh one after the rest,
 //! so find, replace and remove each address exactly one marker.
-void makeIdsUnique(QVector<Marker>& markers)
+void makeIdsUnique(QVector<Marker>& markers, int maxId)
 {
 	int next = 1;
 	for (const Marker& marker : markers)
@@ -57,7 +71,11 @@ void makeIdsUnique(QVector<Marker>& markers)
 	QSet<int> taken;
 	for (Marker& marker : markers)
 	{
-		if ((marker.id < 0 || taken.contains(marker.id)) && next < std::numeric_limits<int>::max()) { marker.id = next++; }
+		if (marker.id >= 0 && !taken.contains(marker.id)) { taken.insert(marker.id); continue; }
+		// The running counter has run out of representable values above the rest of
+		// this file's ids, but leaving the duplicate as it is would leave one address
+		// naming two markers, so drop to a free id below them instead.
+		marker.id = next < std::numeric_limits<int>::max() ? next++ : lowestFreeId(taken, maxId);
 		taken.insert(marker.id);
 	}
 }
@@ -168,7 +186,7 @@ void ProjectMarkers::load(const QDomElement& element)
 			child.attribute(QStringLiteral("name")), child.attribute(QStringLiteral("color")), child.attribute(QStringLiteral("action")),
 			child.attribute(QStringLiteral("args"))});
 	}
-	makeIdsUnique(loaded);
+	makeIdsUnique(loaded, MaxMarkers);
 	m_nextId = 1;
 	restore(loaded);
 }

@@ -29,9 +29,12 @@
 
 #include <QtTest>
 
+#include <QDomDocument>
+#include <QDomElement>
 #include <QFile>
 #include <QJsonArray>
 #include <QJsonObject>
+#include <QSet>
 #include <QTemporaryDir>
 
 #include "ControlRegistry.h"
@@ -149,6 +152,78 @@ private slots:
 		QVERIFY(run(QStringLiteral("control.undo")).ok);
 		QVERIFY2(ProjectMarkers::instance().find(idMarker(id))->action.isEmpty(),
 			"four undos did not take the marker back to no action at all");
+	}
+
+	//! A <markers> element holding \a markers, each one "id|tick|name", handed to
+	//! the loader directly. Driven through load() rather than a saved project
+	//! file so the assertion can only be about what the loader did with the
+	//! element it was given - a file load that refused would otherwise leave the
+	//! previous markers in place and pass the assertions by accident.
+	QDomElement markersElement(const QStringList& markers)
+	{
+		QDomDocument doc;
+		QDomElement list = doc.createElement(QStringLiteral("markers"));
+		for (const QString& spec : markers)
+		{
+			const QStringList parts = spec.split(QLatin1Char('|'));
+			QDomElement marker = doc.createElement(QStringLiteral("marker"));
+			marker.setAttribute(QStringLiteral("id"), parts.at(0));
+			marker.setAttribute(QStringLiteral("tick"), parts.at(1));
+			marker.setAttribute(QStringLiteral("name"), parts.at(2));
+			list.appendChild(marker);
+		}
+		doc.appendChild(list);
+		return list;
+	}
+
+	//! Luna 5237: two markers whose ids are BOTH one below INT_MAX are the one
+	//! case makeIdsUnique cannot repair by handing out a higher id - there is
+	//! no higher id to hand out. It has to find a free one BELOW instead, or
+	//! find() addresses one marker while remove() deletes both.
+	void duplicateIdsAtTheTopOfTheRangeAreStillMadeUnique()
+	{
+		ProjectMarkers& markers = ProjectMarkers::instance();
+		markers.clear();
+		markers.load(markersElement({QStringLiteral("2147483646|96|Intro"),
+			QStringLiteral("2147483646|384|Drop")}));
+
+		const QVector<Marker>& loaded = markers.markers();
+		QCOMPARE(loaded.size(), 2);
+		QVERIFY2(loaded.at(0).id != loaded.at(1).id,
+			"two markers loaded under one id, so an address names both of them");
+		// Each id addresses exactly the marker that carries it.
+		QCOMPARE(markers.find(loaded.at(0).id)->name, QStringLiteral("Intro"));
+		QCOMPARE(markers.find(loaded.at(1).id)->name, QStringLiteral("Drop"));
+		// And removing one leaves the other standing.
+		QVERIFY(markers.remove(loaded.at(0).id));
+		QCOMPARE(markers.markers().size(), 1);
+		QCOMPARE(markers.markers().at(0).name, QStringLiteral("Drop"));
+	}
+
+	//! Luna 634/635: a hand-edited file is repaired on the way IN - a negative
+	//! tick clamped exactly as add() and replace() clamp it, and a missing,
+	//! malformed or duplicated id given one that addresses exactly its marker.
+	void aHandEditedFileIsRepairedOnTheWayIn()
+	{
+		ProjectMarkers& markers = ProjectMarkers::instance();
+		markers.clear();
+		markers.load(markersElement({QStringLiteral("1|-192|Drop"),
+			QStringLiteral("oops|96|Intro"), QStringLiteral("|192|Bridge")}));
+
+		const QVector<Marker>& loaded = markers.markers();
+		QCOMPARE(loaded.size(), 3);
+		for (const Marker& marker : loaded)
+		{
+			QVERIFY2(marker.tick >= 0,
+				qPrintable(QStringLiteral("a marker loaded at tick %1").arg(marker.tick)));
+			QVERIFY2(marker.id >= 0,
+				qPrintable(QStringLiteral("a malformed id loaded as %1").arg(marker.id)));
+		}
+		// Three markers, three ids: no address names two of them.
+		QSet<int> ids;
+		for (const Marker& marker : loaded) { ids.insert(marker.id); }
+		QCOMPARE(ids.size(), 3);
+		QCOMPARE(markers.find(loaded.at(0).id)->tick, 0);   // -192 clamped as add() clamps
 	}
 
 	//! A marker action is stored so that the CROSSING can run it, so its
