@@ -171,6 +171,9 @@ public:
 private:
 	//! One synthesis hop: search, window, overlap-add, emit, carry.
 	void produceHop(const SampleFrame* src, f_cnt_t srcFrames, double speed);
+	//! Windowed overlap-add of the grain starting at `grainStart` onto the
+	//! carry, using the first hop's flat left half or the periodic Hann.
+	void overlapAddGrain(const SampleFrame* src, f_cnt_t srcFrames, double grainStart);
 
 	Parameters m_params{};
 	int m_grain = 0;
