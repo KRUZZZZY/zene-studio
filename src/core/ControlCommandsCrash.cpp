@@ -285,6 +285,19 @@ ControlResult handleAcknowledgeReport()
 			QStringLiteral("%1: there is no report to acknowledge at %2").arg(AcknowledgeName, wire(paths.report)));
 	}
 
+	// An ALREADY-offered report is not a mutation: the sentinel is on disk, so
+	// this call would change nothing while recording an irreversible transaction
+	// for it. Refuse before the write, the way crash.enable refuses "already
+	// armed" and a second discard is not_found - crash.list_reports' `offered`
+	// is where the state this leaves behind is read.
+	if (QFileInfo::exists(wire(paths.offered)))
+	{
+		return ControlResult::failure(ControlErrorKind::Refused,
+			QStringLiteral("%1: the report at %2 is ALREADY acknowledged (its `offered` sentinel %3 "
+				"exists), so nothing was changed. crash.list_reports' `offered` reports that state")
+				.arg(AcknowledgeName, wire(paths.report), wire(paths.offered)));
+	}
+
 	const QJsonObject before = crashBeforeState(paths);
 	crashreporter::acknowledgePendingReport();
 

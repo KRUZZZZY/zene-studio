@@ -147,6 +147,13 @@ def subset(source, keys):
     return {key: (source or {}).get(key) for key in keys}
 
 
+def count_acknowledge_records(session):
+    """How many crash.acknowledge_report transactions are in the A16 journal."""
+    return len([record for record in (session.result("control.transactions")
+                                      .get("transactions") or [])
+                if record.get("command") == "crash.acknowledge_report"])
+
+
 def plant_report(instance, problems):
     """Create the report the reporter's predicates are about, where it looks."""
     directory = os.path.join(instance.workspace, REPORT_DIR_NAME)
@@ -260,6 +267,18 @@ def check_acknowledge(session, problems, report_path):
     state = session.result("crash.list_reports")
     problems.require(state.get("pending") is False and state.get("offered") is True,
                      "the state must stay acknowledged across reads: %r" % (state.get("pending"),))
+
+    # Acknowledging an ALREADY-offered report changes nothing: the sentinel is
+    # already on disk, so the second call must be a typed refusal and must NOT
+    # record a second irreversible mutation.
+    before_records = count_acknowledge_records(session)
+    again = session.typed_error("crash.acknowledge_report")
+    problems.require(again.get("kind") in ("refused", "conflict", "no_change"),
+                     "acknowledging an already-offered report must be a typed "
+                     "no-change refusal: %r" % (again,))
+    problems.require(count_acknowledge_records(session) == before_records,
+                     "a refused acknowledge must not record another transaction "
+                     "(%d -> %d)" % (before_records, count_acknowledge_records(session)))
 
     refused = session.typed_error("control.undo")
     problems.require(refused.get("kind") == "irreversible"
