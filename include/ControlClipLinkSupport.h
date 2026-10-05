@@ -168,7 +168,10 @@ inline QJsonObject groupState(const QVector<Clip*>& members)
 inline QVector<Clip*> groupOf(const Clip* clip) { return ClipLinks::groupOf(clip); }
 
 /*! Reads the `clips` argument: an array of clip ids, non-empty, no duplicates.
- *  Refuses typed and leaves \p out untouched otherwise. */
+ *  Refuses typed and leaves \p out untouched otherwise - the list is read into a
+ *  local and handed over only once every entry has passed, so a refusal after a
+ *  valid prefix (a duplicate, a non-string) cannot leave a half-read list in a
+ *  vector the caller reuses. */
 inline bool readClipList(const QJsonObject& args, QVector<QString>* out, ControlResult* error)
 {
 	const QJsonValue value = args.value(QStringLiteral("clips"));
@@ -186,6 +189,7 @@ inline bool readClipList(const QJsonObject& args, QVector<QString>* out, Control
 		return false;
 	}
 	QStringList seen;
+	QVector<QString> parsed;
 	for (const QJsonValue& entry : array)
 	{
 		if (!entry.isString())
@@ -202,8 +206,9 @@ inline bool readClipList(const QJsonObject& args, QVector<QString>* out, Control
 			return false;
 		}
 		seen.append(id);
-		out->append(id);
+		parsed.append(id);
 	}
+	*out = parsed;
 	return true;
 }
 

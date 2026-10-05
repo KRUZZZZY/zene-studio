@@ -50,10 +50,12 @@
 #include <QtTest>
 
 #include <QJsonArray>
+#include <QJsonDocument>
 #include <QJsonObject>
 #include <QStringList>
 
 #include "ClipLinkTestSupport.h"
+#include "ControlClipLinkSupport.h"
 #include "ControlRegistry.h"
 #include "ControlReversibility.h"
 #include "Engine.h"
@@ -122,6 +124,51 @@ private slots:
 			QJsonObject{{QStringLiteral("clip"), QStringLiteral("clip-0")}});
 		QVERIFY(!missing.ok);
 		QCOMPARE(missing.errorKind, ControlErrorKind::InvalidArgs);
+	}
+
+	// -----------------------------------------------------------------------
+	// 1b. the 'clips' reader's own contract: a refusal writes NOTHING
+	// -----------------------------------------------------------------------
+
+	/*! readClipList() documents that a refusal leaves \p out untouched. It is the
+	 *  only thing standing between a half-read list and a caller that reuses the
+	 *  vector, so the guarantee is checked here, entry by entry, against a
+	 *  vector that already holds something. */
+	void aRefusedClipListWritesNothingIntoTheCallersVector()
+	{
+		const QVector<QString> kept{QStringLiteral("clip-7")};
+		const QVector<QJsonArray> refused = {
+			QJsonArray{QStringLiteral("clip-1"), QStringLiteral("clip-1")},                 // duplicate
+			QJsonArray{QStringLiteral("clip-1"), 42},                                      // not a string
+			QJsonArray{42},                                                                // not a string
+			QJsonArray{},                                                                  // empty
+			QJsonArray{QStringLiteral("clip-1"), QStringLiteral("clip-2"), QStringLiteral("clip-1")},
+		};
+		for (const QJsonArray& clips : refused)
+		{
+			ControlResult error;
+			QVector<QString> out = kept;
+			QVERIFY2(!control::cliplink::readClipList(
+				QJsonObject{{QStringLiteral("clips"), clips}}, &out, &error),
+				qPrintable(QStringLiteral("a refused list was accepted: %1").arg(QJsonDocument(clips).toJson())));
+			QCOMPARE(error.errorKind, ControlErrorKind::InvalidArgs);
+			QVERIFY2(out == kept,
+				qPrintable(QStringLiteral("a refused list wrote %1 of %2 ids into the caller's vector")
+					.arg(out.size()).arg(clips.size())));
+		}
+
+		// A missing 'clips' key is a refusal too, and writes nothing.
+		ControlResult error;
+		QVector<QString> out = kept;
+		QVERIFY(!control::cliplink::readClipList(QJsonObject(), &out, &error));
+		QCOMPARE(error.errorKind, ControlErrorKind::InvalidArgs);
+		QVERIFY(out == kept);
+
+		// And an accepted list replaces it wholesale, in the order given.
+		QVERIFY(control::cliplink::readClipList(
+			QJsonObject{{QStringLiteral("clips"), QJsonArray{QStringLiteral("clip-3"), QStringLiteral("clip-4")}}},
+			&out, &error));
+		QCOMPARE(out, QVector<QString>({QStringLiteral("clip-3"), QStringLiteral("clip-4")}));
 	}
 
 	// -----------------------------------------------------------------------
