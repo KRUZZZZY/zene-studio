@@ -185,13 +185,26 @@ private slots:
 		clip->putValue(TimePos(96), 100.f, false, true);
 		clip->putValue(TimePos(192), 0.f, false, true);
 
-		QCOMPARE(clip->transformRange(0, 192, 1.0e18, 0, 1.0, 0.0), 3);
+		// A scale that keeps every destination distinct but sends them a very long way: each
+		// point must still be a real tick, and the point count must be unchanged.
+		QCOMPARE(clip->transformRange(0, 192, 1.0e6, 0, 1.0, 0.0), 3);
+		QCOMPARE(static_cast<int>(clip->getTimeMap().size()), 3);
+		QVERIFY(clip->getTimeMap().contains(192000000));
 		for (auto it = clip->getTimeMap().begin(); it != clip->getTimeMap().end(); ++it)
 		{
 			QVERIFY(it.key() >= 0);
 			QVERIFY2(it.value().getOutValue() >= clip->getMin() && it.value().getOutValue() <= clip->getMax(),
 				"a transformed point's value left the clip's range");
 		}
+
+		// A scale so large that every destination clamps onto the same tick is refused as
+		// a collision, and leaves the clip exactly as it was.
+		AutomationClip* collapsed = freshClip(m_track->volumeModel());
+		for (const int tick : {0, 96, 192}) { collapsed->putValue(TimePos(tick), tick / 2.f, false, true); }
+		QCOMPARE(collapsed->transformRange(0, 192, 1.0e18, 0, 1.0, 0.0), 0);
+		QCOMPARE(static_cast<int>(collapsed->getTimeMap().size()), 3);
+		QVERIFY(collapsed->getTimeMap().contains(192));
+		QCOMPARE(collapsed->getTimeMap().value(96).getOutValue(), 48.f);
 
 		// The same for a scale that is not finite: nothing may be written at all.
 		AutomationClip* other = freshClip(m_track->volumeModel());
@@ -204,6 +217,36 @@ private slots:
 		// An ordinary transform is unaffected: the guards are for the extremes.
 		QCOMPARE(other->transformRange(0, 96, 2.0, 0, 1.0, 0.0), 2);
 		QVERIFY(other->getTimeMap().contains(192));
+	}
+
+	/*! ED-186 where two source points round onto one tick: the transform must refuse
+	 *  rather than let the later point silently replace the earlier one while still
+	 *  reporting every source point as moved. Automation was lost and the count lied. */
+	void aTransformThatWouldLandTwoPointsOnOneTickIsRefused()
+	{
+		AutomationClip* clip = freshClip(m_track->volumeModel());
+		clip->putValue(TimePos(0), 0.f, false, true);
+		clip->putValue(TimePos(1), 100.f, false, true);
+		clip->putValue(TimePos(2), 0.f, false, true);
+
+		// Halving the range rounds ticks 1 and 2 both onto 1.
+		QCOMPARE(clip->transformRange(0, 2, 0.5, 0, 1.0, 0.0), 0);
+		QCOMPARE(static_cast<int>(clip->getTimeMap().size()), 3);
+		QCOMPARE(clip->getTimeMap().value(1).getOutValue(), 100.f);  // neither point was overwritten
+		QCOMPARE(clip->getTimeMap().value(2).getOutValue(), 0.f);
+
+		// And a moved point must not land on an unmoved one outside the range either.
+		AutomationClip* onto = freshClip(m_track->volumeModel());
+		onto->putValue(TimePos(0), 10.f, false, true);
+		onto->putValue(TimePos(192), 90.f, false, true);  // outside [0, 96]
+		QCOMPARE(onto->transformRange(0, 96, 0.0, 192, 1.0, 0.0), 0);
+		QCOMPARE(static_cast<int>(onto->getTimeMap().size()), 2);
+		QCOMPARE(onto->getTimeMap().value(192).getOutValue(), 90.f);
+
+		// A transform whose destinations are all distinct still moves every point.
+		QCOMPARE(onto->transformRange(0, 96, 2.0, 0, 1.0, 0.0), 1);
+		QVERIFY(onto->getTimeMap().contains(0));  // the in-range point stayed, the out-of-range one was untouched
+		QCOMPARE(onto->getTimeMap().value(192).getOutValue(), 90.f);
 	}
 
 	void aPointsOwnCurveDecidesTheSegmentAfterIt()

@@ -32,6 +32,7 @@
 #include <cmath>
 #include <limits>
 #include <random>
+#include <set>
 #include <vector>
 
 #include "AutomationClip.h"
@@ -276,6 +277,21 @@ int transformedTick(int start, int pos, double timeScale, int timeOffset)
 	return static_cast<int>(std::llround(clamped));
 }
 
+/*! False when two of @a destinations are the same tick, or when one of them is a tick
+ *  @a kept already holds. A time map holds ONE node per tick, so either case means a
+ *  point the caller owns would be silently replaced - while the count the transform
+ *  returns went on reporting every source point. A transform that would lose a point is
+ *  refused whole instead: the clip is left as it was and nothing is reported as moved. */
+bool destinationsAreDistinct(const AutomationClip::timeMap& kept, const std::vector<int>& destinations)
+{
+	std::set<int> seen;
+	for (const int tick : destinations)
+	{
+		if (kept.contains(tick) || !seen.insert(tick).second) { return false; }
+	}
+	return true;
+}
+
 } // namespace
 
 int AutomationClip::transformRange(int start, int end, double timeScale, int timeOffset, double valueScale, double valueOffset)
@@ -289,16 +305,21 @@ int AutomationClip::transformRange(int start, int end, double timeScale, int tim
 		if (POS(it) < start || POS(it) > end) { kept[POS(it)] = *it; continue; }
 		moved.emplace_back(POS(it), *it);
 	}
+	std::vector<int> destinations;
+	destinations.reserve(moved.size());
+	for (const auto& source : moved) { destinations.push_back(transformedTick(start, source.first, timeScale, timeOffset)); }
+	// Before anything is committed, so a collision cannot cost the clip a point on the way out.
+	if (!destinationsAreDistinct(kept, destinations)) { return 0; }
 	const float pivot = (getMin() + getMax()) / 2.f;
 	const auto value = [&](float v) {
 		return std::clamp(static_cast<float>((v - pivot) * valueScale + pivot + valueOffset), getMin(), getMax());
 	};
-	for (const auto& [pos, node] : moved)
+	for (std::size_t i = 0; i < moved.size(); ++i)
 	{
-		const int tick = transformedTick(start, pos, timeScale, timeOffset);
+		const int tick = destinations[i];
 		// The point keeps its own curve and bend (review L06-L07a #1).
-		AutomationNode point(this, value(node.getInValue()), value(node.getOutValue()), tick);
-		point.setCurve(node.curve(), node.bend());
+		AutomationNode point(this, value(moved[i].second.getInValue()), value(moved[i].second.getOutValue()), tick);
+		point.setCurve(moved[i].second.curve(), moved[i].second.bend());
 		kept[tick] = point;
 	}
 	m_timeMap = kept;
