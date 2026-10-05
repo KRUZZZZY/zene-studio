@@ -85,8 +85,9 @@ private slots:
 
 	void theLineNamesTheState()
 	{
-		const auto state = [](bool sending, bool following, bool locked) {
-			return QJsonObject{{QStringLiteral("master"), QJsonObject{{QStringLiteral("enabled"), sending}}},
+		const auto state = [](bool sending, bool following, bool locked, bool ready = true) {
+			return QJsonObject{{QStringLiteral("master"), QJsonObject{{QStringLiteral("enabled"), sending},
+					{QStringLiteral("port_ready"), ready}}},
 				{QStringLiteral("slave"), QJsonObject{{QStringLiteral("enabled"), following},
 					{QStringLiteral("locked"), locked}, {QStringLiteral("tempo_bpm"), 123.44}}}};
 		};
@@ -94,6 +95,24 @@ private slots:
 		QCOMPARE(midiClockStatusText(state(true, true, false)), QStringLiteral("Clock sending, following: no lock"));
 		QCOMPARE(midiClockStatusText(state(false, true, true)),
 			QStringLiteral("Clock not sending, following: locked at 123.4 BPM"));
+	}
+
+	// The master's enabled flag says the clock is on; port_ready says whether anything is
+	// subscribed to receive it (MidiClock::masterPortReady). An enabled master with no output
+	// routed must not read as "sending" - it emits to nobody.
+	void theLineDistinguishesEnabledFromRouted()
+	{
+		const auto state = [](bool sending, bool ready) {
+			return QJsonObject{
+				{QStringLiteral("master"), QJsonObject{{QStringLiteral("enabled"), sending},
+					{QStringLiteral("port_ready"), ready}}},
+				{QStringLiteral("slave"), QJsonObject{{QStringLiteral("enabled"), false}}}};
+		};
+		QCOMPARE(midiClockStatusText(state(true, true)), QStringLiteral("Clock sending, not following"));
+		QVERIFY(midiClockStatusText(state(true, false))
+			!= midiClockStatusText(state(true, true)));
+		QVERIFY(midiClockStatusText(state(true, false))
+			!= midiClockStatusText(state(false, false)));
 	}
 
 	void followingIsSwitchedFromTheMenu()

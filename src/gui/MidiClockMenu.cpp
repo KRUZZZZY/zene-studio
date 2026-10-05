@@ -90,8 +90,13 @@ QString midiClockStatusText(const QJsonObject& state)
 {
 	const QJsonObject master = state.value(QStringLiteral("master")).toObject();
 	const QJsonObject slave = state.value(QStringLiteral("slave")).toObject();
-	const QString sending = master.value(QStringLiteral("enabled")).toBool()
-		? QMenu::tr("sending") : QMenu::tr("not sending");
+	const bool enabled = master.value(QStringLiteral("enabled")).toBool();
+	const bool routed = master.value(QStringLiteral("port_ready")).toBool();
+	// The enabled flag says the clock is on; port_ready says a destination is subscribed to
+	// receive it (MidiClock::masterPortReady). An enabled master with nothing subscribed emits
+	// to nobody, and saying "sending" there would be a claim the engine cannot back.
+	const QString sending = !enabled ? QMenu::tr("not sending")
+		: routed ? QMenu::tr("sending") : QMenu::tr("sending, no output port");
 	if (!slave.value(QStringLiteral("enabled")).toBool())
 	{
 		return QMenu::tr("Clock %1, not following").arg(sending);
