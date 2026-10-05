@@ -502,6 +502,55 @@ private slots:
 		QVERIFY(!t.bus().quietChannels()[1]);
 	}
 
+	//! A sample exactly AT the silence threshold must read the same in both
+	//! branches of update(): the stereo-pair path calls a channel non-quiet only
+	//! above the threshold (`>`), so exactly-at-threshold is quiet there, while
+	//! the single-channel paths called it quiet only strictly below (`<`), which
+	//! made an at-threshold sample non-quiet there. One inclusive comparison.
+	//! The threshold itself is a file-local constant of AudioBus.cpp.
+	void UpdateThresholdSampleIsQuietOnBothPaths()
+	{
+		constexpr float kThreshold = 0.0001431f;  // AudioBus.cpp's SilenceThreshold
+
+		// single-sided path (0b10): left only - BOTH of track channel 1's
+		// output pins must go, or the pair still reads as 0b11
+		auto leftModel = makeAllPinsModel();
+		leftModel->out().setPin(1, 0, false);
+		leftModel->out().setPin(1, 1, false);
+		QVERIFY(!leftModel->out().usedTrackChannels()[1]);
+		TestBus l{32};
+		l.setSample(0, 4, kThreshold);
+		QVERIFY(l.bus().update(*leftModel));
+		QVERIFY(l.bus().quietChannels()[0]);
+
+		// single-sided path (0b01): right only
+		auto rightModel = makeAllPinsModel();
+		rightModel->out().setPin(0, 0, false);
+		rightModel->out().setPin(0, 1, false);
+		QVERIFY(!rightModel->out().usedTrackChannels()[0]);
+		TestBus r{32};
+		r.setSample(1, 4, kThreshold);
+		QVERIFY(r.bus().update(*rightModel));
+		QVERIFY(r.bus().quietChannels()[1]);
+
+		// stereo-pair path (0b11): same value, both sides
+		auto stereoModel = makeAllPinsModel();
+		TestBus s{32};
+		s.setSample(0, 4, kThreshold);
+		s.setSample(1, 4, kThreshold);
+		QVERIFY(s.bus().update(*stereoModel));
+		QVERIFY(s.bus().quietChannels()[0]);
+		QVERIFY(s.bus().quietChannels()[1]);
+
+		// and one ulp above the threshold is still non-quiet everywhere
+		TestBus above{32};
+		above.setSample(0, 4, std::nextafter(kThreshold, 1.f));
+		above.setSample(1, 4, kThreshold);
+		QVERIFY(!above.bus().update(*stereoModel));
+		QVERIFY(!above.bus().quietChannels()[0]);
+		QVERIFY(above.bus().quietChannels()[1]);
+	}
+
 	//! update() on a model with no used track channels (0b00) reports every
 	//! examined channel as quiet and leaves the flags untouched.
 	void UpdateNoUsedChannels()

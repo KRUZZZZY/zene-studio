@@ -250,7 +250,7 @@ auto AudioBus::update(const std::bitset<MaxTrackChannels>& channels, ch_cnt_t up
 			{
 				const auto tcPair = trackChannelPair(tc / 2);
 				const auto quiet = std::ranges::all_of(tcPair.framesView(), [](const float* frame) {
-					return std::abs(frame[0]) < SilenceThreshold;
+					return std::abs(frame[0]) <= SilenceThreshold;
 				});
 				m_quietChannels[tc] = quiet;
 				allQuiet = allQuiet && quiet;
@@ -260,7 +260,7 @@ auto AudioBus::update(const std::bitset<MaxTrackChannels>& channels, ch_cnt_t up
 			{
 				const auto tcPair = trackChannelPair(tc / 2);
 				const auto quiet = std::ranges::all_of(tcPair.framesView(), [](const float* frame) {
-					return std::abs(frame[1]) < SilenceThreshold;
+					return std::abs(frame[1]) <= SilenceThreshold;
 				});
 				m_quietChannels[tc + 1] = quiet;
 				allQuiet = allQuiet && quiet;
