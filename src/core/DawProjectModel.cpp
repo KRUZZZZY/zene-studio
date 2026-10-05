@@ -136,6 +136,37 @@ QString dawProjectContentTypeForType(const QString& typeName, bool* lost)
 	return QString();
 }
 
+namespace
+{
+
+//! The engine track type one declared contentType VALUE names, or an empty
+//! string for the two values ("notes", and anything the vocabulary does not
+//! have) that are decided by the caller. Extracted from
+//! dawProjectTypeForContentType because the four-way table plus the loss flag
+//! pushed that function one branch past the per-function complexity target.
+QString engineTypeForContentValue(const QString& value)
+{
+	if (value.compare(QLatin1String("audio"), Qt::CaseInsensitive) == 0)
+	{
+		return QStringLiteral("sample");
+	}
+	if (value.compare(QLatin1String("automation"), Qt::CaseInsensitive) == 0)
+	{
+		return QStringLiteral("automation");
+	}
+	if (value.compare(QLatin1String("video"), Qt::CaseInsensitive) == 0)
+	{
+		return QStringLiteral("video");
+	}
+	if (value.compare(QLatin1String("tracks"), Qt::CaseInsensitive) == 0)
+	{
+		return QStringLiteral("folder");
+	}
+	return QString();
+}
+
+} // namespace
+
 QString dawProjectTypeForContentType(const QString& contentType, bool* lost)
 {
 	if (lost != nullptr) { *lost = false; }
@@ -149,18 +180,24 @@ QString dawProjectTypeForContentType(const QString& contentType, bool* lost)
 	const QStringList values = contentType.split(QLatin1Char(' '), Qt::SkipEmptyParts);
 	for (const QString& value : values)
 	{
-		if (is(value, "audio")) { return QStringLiteral("sample"); }
-		if (is(value, "automation")) { return QStringLiteral("automation"); }
-		if (is(value, "video")) { return QStringLiteral("video"); }
-		if (is(value, "tracks")) { return QStringLiteral("folder"); }
+		const QString mapped = engineTypeForContentValue(value);
+		if (!mapped.isEmpty()) { return mapped; }
 	}
 	for (const QString& value : values)
 	{
 		if (is(value, "notes")) { return QStringLiteral("instrument"); }
 	}
-	// A document that declares nothing, or only "markers", is read as an
-	// instrument track: it carries notes if it carries anything this module
-	// understands, and Instrument is the type that can hold them.
+	// The document DECLARED content and none of it named a type this module can
+	// build: "markers" is the vocabulary's own value for a track this engine
+	// cannot represent, and the reader skips the <markers> lane without reading
+	// its content. The track is still read as an instrument (the type that can
+	// hold notes, if it carries any) but the uncarried content is now counted
+	// rather than arriving as a supported, empty track.
+	//
+	// A document that declares NOTHING stays lossless: the writer emits an empty
+	// contentType for an event or video track (LOSSY #5), and flagging that
+	// would misreport every such export.
+	if (!values.isEmpty() && lost != nullptr) { *lost = true; }
 	return QStringLiteral("instrument");
 }
 
