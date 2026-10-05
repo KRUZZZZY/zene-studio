@@ -52,6 +52,7 @@
 
 #include <QFileInfo>
 #include <QJsonArray>
+#include <QJsonDocument>
 #include <QJsonObject>
 #include <QString>
 
@@ -174,9 +175,12 @@ SessionSnapshot captureSession(Song* song)
 	Mixer* mixer = Engine::mixer();
 	for (int index = 0; index < static_cast<int>(mixer->numChannels()); index++)
 	{
-		snapshot.channels.append(channelState(mixer->mixerChannel(index)));
+		const QJsonObject entry = channelState(mixer->mixerChannel(index));
+		snapshot.channels.append(entry);
+		snapshot.payloadBytes += static_cast<qint64>(QJsonDocument(entry).toJson(QJsonDocument::Compact).size());
 	}
 	snapshot.map = song->tempoMap().map();
+	snapshot.payloadBytes += snapshot.map.size() * static_cast<qint64>(sizeof(TempoMapEvent));
 	snapshot.globalTempo = static_cast<int>(song->getTempo());
 	snapshot.numerator = song->getTimeSigModel().numeratorModel().value();
 	snapshot.denominator = song->getTimeSigModel().denominatorModel().value();
@@ -206,10 +210,51 @@ void restoreSession(Song* song, const SessionSnapshot& snapshot)
 		channel->m_muteModel.setValue(entry.value(QStringLiteral("mute")).toBool());
 		channel->m_soloModel.setValue(entry.value(QStringLiteral("solo")).toBool());
 	}
+	// The strips the import created ABOVE the captured ones are not part of the
+	// session being put back: an undo that leaves them behind restores a mixer
+	// the user never had. Deleted from the top down, because a deletion shifts
+	// the indices below it. The master (index 0) is always captured, so this
+	// loop never reaches it.
+	for (int index = static_cast<int>(mixer->numChannels()) - 1;
+		index >= snapshot.channels.size(); index--)
+	{
+		mixer->deleteChannel(index);
+	}
 	song->setTempo(static_cast<bpm_t>(snapshot.globalTempo));
 	song->getTimeSigModel().numeratorModel().setValue(snapshot.numerator);
 	song->getTimeSigModel().denominatorModel().setValue(snapshot.denominator);
 	song->tempoMap().edit([&snapshot](TempoMap& map) { map = snapshot.map; return true; });
+}
+
+/*! The measured size of the model document the import step RETAINS as its
+ *  redo - the model the redo closure holds, so a control.undo_depth client
+ *  reads what the step really costs.
+ *
+ *  addStructuralUndoStep's contract is "the measured size of the document the
+ *  closure holds" (include/ControlReversibility.h:488); an import holds two,
+ *  the session it replaced and the model it wrote, and counting only the first
+ *  under-reports the step by exactly the redo.
+ */
+qint64 modelDocumentBytes(const dwp::DawProjectModel& model)
+{
+	qint64 bytes = 0;
+	for (const dwp::DawProjectMixerChannel& channel : model.mixerChannels)
+	{
+		bytes += (channel.id.size() + channel.name.size() + channel.role.size())
+			* static_cast<int>(sizeof(QChar));
+	}
+	for (const dwp::DawProjectTrack& track : model.tracks)
+	{
+		bytes += (track.id.size() + track.name.size()) * static_cast<int>(sizeof(QChar));
+		bytes += track.clips.size() * static_cast<qint64>(sizeof(dwp::DawProjectClip));
+		for (const dwp::DawProjectClip& clip : track.clips)
+		{
+			bytes += clip.notes.size() * static_cast<qint64>(sizeof(dwp::DawProjectNote));
+		}
+	}
+	bytes += (model.tempoPoints.size() + model.meterPoints.size())
+		* static_cast<qint64>(sizeof(dwp::DawProjectPoint));
+	return bytes;
 }
 
 //! Why dawproject.import is reversible, in the words the transaction record uses.
@@ -457,12 +502,13 @@ void registerImportCommand(ControlRegistry& registry)
 				QString ignored;
 				dwp::applyDawProjectModel(song, wanted, &ignored);
 			},
-			before.payloadBytes);
+			before.payloadBytes + modelDocumentBytes(wanted));
 
 		QJsonObject result;
 		result.insert(QStringLiteral("path"), path);
 		result.insert(QStringLiteral("format_version"), model.formatVersion);
 		result.insert(QStringLiteral("track_count"), after.trackCount());
+		result.insert(QStringLiteral("mixer_channel_count"), after.mixerChannelCount());
 		result.insert(QStringLiteral("clip_count"), after.clipCount());
 		result.insert(QStringLiteral("note_count"), after.noteCount());
 		result.insert(QStringLiteral("tempo"), after.tempo);
@@ -476,10 +522,12 @@ void registerImportCommand(ControlRegistry& registry)
 		result.insert(QStringLiteral("loss"), loss);
 		// The inverse is a whole captured session, so no single command is the
 		// honest inverse and the record says so (the interchange.smf_import and
-		// transport.tempo_map_clear shape).
+		// transport.tempo_map_clear shape). The `before` half describes the
+		// session the import REPLACED, so its track count is the captured
+		// snapshot's, not the one the import left behind.
 		result.insert(QStringLiteral("__transaction"), transactionPayload(
 			QJsonObject{{QStringLiteral("path"), path},
-				{QStringLiteral("track_count"), static_cast<int>(song->tracks().size())},
+				{QStringLiteral("track_count"), static_cast<int>(before.trackXml.size())},
 				{QStringLiteral("loss"), loss}},
 			QString(), QJsonObject(), true, importMechanism()));
 		return ControlResult::success(result);

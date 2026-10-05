@@ -79,6 +79,7 @@
 #include "TempoMap.h"
 #include "TimePos.h"
 #include "Track.h"
+#include "TrackFolder.h"
 #include "TrackContainer.h"
 
 namespace lmms
@@ -132,6 +133,33 @@ Track* createTrackOfType(Track::Type type, Song* song)
 	return Track::create(type, song);
 }
 
+/*! Whether createTrackOfType() can make this type at all. Track::create's
+ *  switch leaves Event and Video falling through to `default: break`, so a model
+ *  asking for one of them can only be discovered as a REFUSAL - and a refusal
+ *  discovered after the song has been cleared replaces the tracks with none.
+ *  Asking first is the whole difference between a typed refusal and a
+ *  half-replaced session. */
+bool trackTypeCreatable(Track::Type type)
+{
+	return type != Track::Type::Video && type != Track::Type::Event;
+}
+
+//! Whether every track of @a model is a type the engine can create. False with
+//! \\a error naming the first \\a typeName that is not.
+bool allTrackTypesCreatable(const DawProjectModel& model, QString* error)
+{
+	for (const DawProjectTrack& entry : model.tracks)
+	{
+		if (trackTypeCreatable(trackTypeFromName(entry.typeName))) { continue; }
+		if (error)
+		{
+			*error = QStringLiteral("the engine cannot create a '%1' track").arg(entry.typeName);
+		}
+		return false;
+	}
+	return true;
+}
+
 //! The panning model a track type has, or nullptr. This is the LOSSY #6 seam:
 //! MixerChannel carries volume, mute and solo but no pan, so the value the
 //! format's <Pan> carries comes from the TRACK - and only InstrumentTrack
@@ -176,6 +204,29 @@ QString roleForMixerChannel(MixerChannel* channel)
 }
 
 } // namespace
+
+//! How many parent-child relations this track's export loses: every track of a
+//! folder (LOSSY #4 - the format nests and LMMS' container is flat). An EMPTY
+//! folder loses nothing, and a folder of five loses five - the counter reports
+//! relations, not folders.
+int lostFolderChildren(Track* track)
+{
+	auto* folder = dynamic_cast<TrackFolder*>(track);
+	return folder == nullptr ? 0 : folder->childCount();
+}
+
+//! The strips the model does not name are not part of the imported document: a
+//! session of four strips taking a file that carries one must not keep three of
+//! the previous project's strips, with their names, faders, mute and solo,
+//! looking as though they were imported. Deleted from the top down, because a
+//! deletion shifts the indices below it. Never below one: the master is index 0.
+void removeMixerChannelsPast(Mixer* mixer, int keep)
+{
+	for (int index = static_cast<int>(mixer->numChannels()) - 1; index >= keep; index--)
+	{
+		mixer->deleteChannel(index);
+	}
+}
 
 DawProjectModel dawProjectModelFromSong(Song* song, DawProjectLossReport* loss)
 {
@@ -280,7 +331,12 @@ DawProjectModel dawProjectModelFromSong(Song* song, DawProjectLossReport* loss)
 					// LMMS' note volume is 0..200 (include/volume.h); the
 					// format's vel is 0..1. MaxVolume is the format's 1.0.
 					noteEntry.vel = static_cast<double>(note->getVolume()) / MaxVolume;
-					noteEntry.rel = noteEntry.vel;
+					// The note-off velocity, which the engine DOES carry (Note's
+					// `relvel`): -1 means the note carries none, and a note with
+					// none writes the format's own default - rel equal to vel.
+					noteEntry.rel = note->releaseVelocity() >= 0
+						? static_cast<double>(note->releaseVelocity()) / MaxVolume
+						: noteEntry.vel;
 					clipEntry.notes.append(noteEntry);
 				}
 				entry.clips.append(clipEntry);
@@ -292,7 +348,7 @@ DawProjectModel dawProjectModelFromSong(Song* song, DawProjectLossReport* loss)
 			else { local.automationClipsSkipped++; }
 		}
 
-		if (track->type() == Track::Type::Folder) { local.folderChildrenLost++; }
+		local.folderChildrenLost += lostFolderChildren(track);
 		model.tracks.append(entry);
 	}
 
@@ -341,19 +397,29 @@ DawProjectModel dawProjectModelFromSong(Song* song, DawProjectLossReport* loss)
 	return model;
 }
 
-bool applyDawProjectModel(Song* song, const DawProjectModel& model, QString* error)
+//! The refusal a beat the engine cannot place on its own grid gets. The value
+//! is named because the file named it: a refusal that does not say WHICH value
+//! it is about is a refusal the caller cannot act on.
+QString beatNotABeat(double beats, const QString& kind)
 {
-	song->aboutToClearTracks();
-	song->clearAllTracks();
-	song->setTempo(static_cast<bpm_t>(model.tempo));
-	song->getTimeSigModel().numeratorModel().setValue(model.numerator);
-	song->getTimeSigModel().denominatorModel().setValue(model.denominator);
+	return QStringLiteral("a %1-map point at time %2 is not a time this engine's "
+		"48-tick-per-beat grid can express")
+		.arg(kind)
+		.arg(beats, 0, 'g', 17);
+}
 
-	// The map: the two timelines merged back onto their tick list, per property,
-	// which is how the map itself merges (docs/TEMPO-MAP.md decision 1).
-	TempoMap rebuilt;
-	for (const DawProjectPoint& point : model.tempoPoints)
+//! The tempo arm of the model's automation, into @a rebuilt. False with error
+//! set when a point's beat is not one the grid can express, or when the events
+//! do not fit the engine's map.
+bool addTempoPoints(const QVector<DawProjectPoint>& points, TempoMap& rebuilt, QString* error)
+{
+	for (const DawProjectPoint& point : points)
 	{
+		if (!dawProjectBeatRepresentable(point.time))
+		{
+			if (error) { *error = beatNotABeat(point.time, QStringLiteral("tempo")); }
+			return false;
+		}
 		TempoMapEvent event;
 		event.tick = static_cast<tick_t>(dawProjectTicksFromBeats(point.time));
 		event.hasTempo = true;
@@ -369,8 +435,19 @@ bool applyDawProjectModel(Song* song, const DawProjectModel& model, QString* err
 			return false;
 		}
 	}
-	for (const DawProjectPoint& point : model.meterPoints)
+	return true;
+}
+
+//! The time-signature arm, under the same two refusals.
+bool addMeterPoints(const QVector<DawProjectPoint>& points, TempoMap& rebuilt, QString* error)
+{
+	for (const DawProjectPoint& point : points)
 	{
+		if (!dawProjectBeatRepresentable(point.time))
+		{
+			if (error) { *error = beatNotABeat(point.time, QStringLiteral("time-signature")); }
+			return false;
+		}
 		TempoMapEvent event;
 		event.tick = static_cast<tick_t>(dawProjectTicksFromBeats(point.time));
 		event.hasTimeSignature = true;
@@ -386,7 +463,28 @@ bool applyDawProjectModel(Song* song, const DawProjectModel& model, QString* err
 			return false;
 		}
 	}
+	return true;
+}
+
+bool applyDawProjectModel(Song* song, const DawProjectModel& model, QString* error)
+{
+	// Build the map before touching the live session. A map-capacity refusal must
+	// leave the tracks and global settings that were already there intact.
+	TempoMap rebuilt;
+	if (!addTempoPoints(model.tempoPoints, rebuilt, error)) { return false; }
+	if (!addMeterPoints(model.meterPoints, rebuilt, error)) { return false; }
 	if (rebuilt.size() > 0) { rebuilt.setActive(true); }
+
+	// Ask the engine about every track type BEFORE the session is touched, so the
+	// refusal below is one the caller sees with its tracks, tempo and metre still
+	// in place rather than after they have been cleared and rewritten.
+	if (!allTrackTypesCreatable(model, error)) { return false; }
+
+	song->aboutToClearTracks();
+	song->clearAllTracks();
+	song->setTempo(static_cast<bpm_t>(model.tempo));
+	song->getTimeSigModel().numeratorModel().setValue(model.numerator);
+	song->getTimeSigModel().denominatorModel().setValue(model.denominator);
 	song->tempoMap().edit([&rebuilt](TempoMap& map) { map = rebuilt; return true; });
 
 	// The mixer's strips, by POSITION: the bare <Channel> elements of <Structure>
@@ -404,6 +502,7 @@ bool applyDawProjectModel(Song* song, const DawProjectModel& model, QString* err
 		channel->m_muteModel.setValue(entry.mute);
 		channel->m_soloModel.setValue(entry.solo);
 	}
+	removeMixerChannelsPast(mixer, qMax(1, model.mixerChannels.size()));
 
 	for (const DawProjectTrack& entry : model.tracks)
 	{
@@ -485,7 +584,17 @@ bool applyDawProjectModel(Song* song, const DawProjectModel& model, QString* err
 					// FALSE: the clip does not quantise a note an agent placed by
 					// tick, and the quantiser reads the piano roll's GUI, which a
 					// headless instance does not have.
-					midi->addNote(note, false);
+					Note* placed = midi->addNote(note, false);
+					// The note-off velocity the document carried, when it says
+					// anything the note-on velocity does not: the engine's Note
+					// holds one (`relvel`) and the format's `rel` is required, so a
+					// distinct value is a fact, not a default. Equal rel and vel is
+					// left alone, which is the engine's own default.
+					if (placed != nullptr && noteEntry.rel != noteEntry.vel)
+					{
+						placed->setReleaseVelocity(static_cast<int>(std::lround(
+							noteEntry.rel * MaxVolume)));
+					}
 				}
 			}
 			const tick_t length = static_cast<tick_t>(

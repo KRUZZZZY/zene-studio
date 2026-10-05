@@ -58,6 +58,7 @@
 
 #include "DawProjectInterchange.h"
 #include "DawProjectReadShared.h"
+#include "TempoMap.h"
 
 namespace lmms
 {
@@ -81,33 +82,98 @@ bool tempoAccepted(double tempo, ReadState& state)
 	return false;
 }
 
+//! True when the engine will accept this metre (the same closed rule
+//! TempoMap::validEvent applies: a numerator inside [1, 32] and a denominator
+//! that is a power of two). Otherwise false, with state.error naming the value:
+//! a metre the engine cannot hold is carried into the session as an unusable
+//! signature, and the fallback of 4/4 would report a document's own silence.
+bool meterAccepted(int numerator, int denominator, ReadState& state)
+{
+	if (numerator < TempoMapMinNumerator || numerator > TempoMapMaxNumerator)
+	{
+		state.error = QStringLiteral("the document's time signature numerator %1 is outside the "
+			"engine's own %2..%3").arg(numerator).arg(TempoMapMinNumerator)
+			.arg(TempoMapMaxNumerator);
+		return false;
+	}
+	if (!isSupportedTempoMapDenominator(denominator))
+	{
+		state.error = QStringLiteral("the document's time signature denominator %1 is not one the "
+			"engine's meter uses (a power of two up to %2)").arg(denominator)
+			.arg(TempoMapLargestDenominator);
+		return false;
+	}
+	return true;
+}
+
+//! The point's `time` attribute as BEATS on LMMS' 48-tick grid - the same
+//! conversion the notes and clips go through, so an automation point off the
+//! grid is normalised and counted (`rounded_times`) rather than kept as raw
+//! beats. False - with state.error set - for a time the conversion refuses.
+bool pointTime(const QXmlStreamAttributes& attributes, ReadState& state, double* beats)
+{
+	const double raw = doubleAttribute(attributes, state, QStringLiteral("time"), 0.0);
+	if (!dawProjectBeatRepresentable(raw))
+	{
+		state.error = QStringLiteral("a map point at time %1 is not a time this engine's "
+			"48-tick-per-beat grid can express").arg(raw, 0, 'g', 17);
+		return false;
+	}
+	*beats = static_cast<double>(ticksFromBeats(state, raw)) / DawProjectTicksPerQuarterNote;
+	return true;
+}
+
+//! The unit in force for a WHOLE <TempoAutomation> element: its own `timeUnit`
+//! when it declares one, else the one the enclosing lanes left in state. False -
+//! with state.error set - for a seconds timeline, refused the way a seconds
+//! <Notes> lane is: converting it needs the tempo curve, which this module will
+//! not guess.
+bool automationUnitAccepted(QXmlStreamReader& reader, ReadState& state, const QString& element)
+{
+	QString unit = attribute(reader.attributes(), QStringLiteral("timeUnit"));
+	if (unit.isEmpty()) { unit = state.timeUnit; }
+	if (unit != QLatin1String("seconds")) { return true; }
+	state.error = QStringLiteral("a <%1> timeline declares timeUnit=\"seconds\"; this module "
+		"places its points on a beat grid and will not guess the tempo curve that would "
+		"convert them").arg(element);
+	return false;
+}
+
+//! One point of the map, read and checked: its time on the 48-tick grid, then
+//! its value - a tempo or a metre - against the engine's own rule. False - with
+//! state.error set - when either refuses.
+bool parseAutomationPoint(const QXmlStreamAttributes& attributes, ReadState& state, bool isMeter)
+{
+	DawProjectPoint entry;
+	entry.isMeter = isMeter;
+	if (!pointTime(attributes, state, &entry.time)) { return false; }
+	if (isMeter)
+	{
+		entry.numerator = intAttribute(attributes, state, QStringLiteral("numerator"), 4);
+		entry.denominator = intAttribute(attributes, state, QStringLiteral("denominator"), 4);
+		if (!meterAccepted(entry.numerator, entry.denominator, state)) { return false; }
+		state.model->meterPoints.append(entry);
+		return true;
+	}
+	entry.value = doubleAttribute(attributes, state, QStringLiteral("value"), 120.0);
+	if (!tempoAccepted(entry.value, state)) { return false; }
+	state.model->tempoPoints.append(entry);
+	return true;
+}
+
 //! The points of one <TempoAutomation> (or, @a isMeter, <TimeSignatureAutomation>). False - with
 //! state.error set - for a tempo point the engine will not accept, as for the global <Tempo>.
 bool parseAutomationPoints(QXmlStreamReader& reader, ReadState& state, bool isMeter)
 {
 	const QString element = isMeter ? QStringLiteral("TimeSignatureAutomation") : QStringLiteral("TempoAutomation");
+	if (!automationUnitAccepted(reader, state, element)) { return false; }
 	while (!reader.atEnd())
 	{
 		reader.readNext();
 		if (reader.isEndElement() && reader.name() == element) { break; }
 		if (!reader.isStartElement()) { continue; }
 		if (reader.name() == QLatin1String("Target")) { skipElement(reader); continue; }
-		const QXmlStreamAttributes attributes = reader.attributes();
-		DawProjectPoint entry;
-		entry.isMeter = isMeter;
-		entry.time = doubleAttribute(attributes, QStringLiteral("time"), 0.0);
-		if (isMeter)
-		{
-			entry.numerator = intAttribute(attributes, QStringLiteral("numerator"), 4);
-			entry.denominator = intAttribute(attributes, QStringLiteral("denominator"), 4);
-			state.model->meterPoints.append(entry);
-		}
-		else
-		{
-			entry.value = doubleAttribute(attributes, QStringLiteral("value"), 120.0);
-			if (!tempoAccepted(entry.value, state)) { return false; }
-			state.model->tempoPoints.append(entry);
-		}
+		if (!parseAutomationPoint(reader.attributes(), state, isMeter)) { return false; }
 		skipElement(reader);
 	}
 	return true;
@@ -116,6 +182,7 @@ bool parseAutomationPoints(QXmlStreamReader& reader, ReadState& state, bool isMe
 bool parseDocument(QXmlStreamReader& reader, ReadState& state)
 {
 	bool sawProject = false;
+	bool sawApplication = false;
 	while (!reader.atEnd())
 	{
 		reader.readNext();
@@ -141,6 +208,7 @@ bool parseDocument(QXmlStreamReader& reader, ReadState& state)
 			const QXmlStreamAttributes attributes = reader.attributes();
 			state.model->applicationName = attribute(attributes, QStringLiteral("name"));
 			state.model->applicationVersion = attribute(attributes, QStringLiteral("version"));
+			sawApplication = true;
 			if (state.model->applicationName.isEmpty())
 			{
 				state.error = QStringLiteral("<Application> declares no name, which Project.xsd "
@@ -160,15 +228,19 @@ bool parseDocument(QXmlStreamReader& reader, ReadState& state)
 				if (reader.name() == QLatin1String("Tempo"))
 				{
 					state.model->tempo =
-						doubleAttribute(attributes, QStringLiteral("value"), 120.0);
+						doubleAttribute(attributes, state, QStringLiteral("value"), 120.0);
 					if (!tempoAccepted(state.model->tempo, state)) { return false; }
 				}
 				else if (reader.name() == QLatin1String("TimeSignature"))
 				{
 					state.model->numerator =
-						intAttribute(attributes, QStringLiteral("numerator"), 4);
+						intAttribute(attributes, state, QStringLiteral("numerator"), 4);
 					state.model->denominator =
-						intAttribute(attributes, QStringLiteral("denominator"), 4);
+						intAttribute(attributes, state, QStringLiteral("denominator"), 4);
+					if (!meterAccepted(state.model->numerator, state.model->denominator, state))
+					{
+						return false;
+					}
 				}
 				else { skipElement(reader); }
 			}
@@ -222,6 +294,15 @@ bool parseDocument(QXmlStreamReader& reader, ReadState& state)
 	if (!sawProject)
 	{
 		state.error = QStringLiteral("the project.xml entry has no <Project> root element");
+		return false;
+	}
+	// <Application> is use="required" in Project.xsd, and this reader's own header
+	// claims its absence is a refusal: a model carrying an empty application name
+	// is a document the writer never produced.
+	if (!sawApplication)
+	{
+		state.error = QStringLiteral("the document has no <Application> element, which Project.xsd "
+			"makes required");
 		return false;
 	}
 	// A refusal the nested walks recorded (a seconds <Notes> timeline, a <Clip> with no track, a

@@ -135,7 +135,14 @@ constexpr int DawProjectMaxTempo = 999;
 //! Fraction of a beat one LMMS tick is, as the writer's decimal places use it.
 LMMS_EXPORT double dawProjectBeatsFromTicks(qint64 ticks);
 //! The tick a beat value lands on - the reader's inverse, rounded to the grid.
+//! A value that is not a beat (NaN, an infinity, or a magnitude the tick grid
+//! cannot express) has no tick: the conversion refuses and returns 0 rather
+//! than casting a double that does not fit qint64.
 LMMS_EXPORT qint64 dawProjectTicksFromBeats(double beats);
+//! True when @a beats is a beat dawProjectTicksFromBeats() can convert at all,
+//! so a reader or an applier can REFUSE the point as a typed refusal instead of
+//! applying a tick the conversion invented.
+LMMS_EXPORT bool dawProjectBeatRepresentable(double beats);
 //! True when `id` is a usable xs:ID (an NCName), so the writer may emit it.
 LMMS_EXPORT bool dawProjectUsableDocumentId(const QString& id);
 

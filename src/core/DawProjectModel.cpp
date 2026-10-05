@@ -48,6 +48,7 @@
 #include <QStringList>
 
 #include <cmath>
+#include <limits>
 
 #include "DawProjectInterchange.h"
 
@@ -68,7 +69,23 @@ double dawProjectBeatsFromTicks(qint64 ticks)
 
 qint64 dawProjectTicksFromBeats(double beats)
 {
-	return static_cast<qint64>(std::floor(beats * DawProjectTicksPerQuarterNote + 0.5));
+	// A double that is not a beat - NaN, an infinity, or a magnitude whose tick
+	// count does not fit qint64 - has no tick. Converting it is undefined
+	// behaviour (and in practice yields INT64_MIN), so the conversion REFUSES
+	// and reports the grid's own origin; a caller that applies a document
+	// checks dawProjectBeatRepresentable() and fails the point as a typed
+	// refusal rather than inheriting whatever the cast produced.
+	if (!dawProjectBeatRepresentable(beats)) { return 0; }
+	const double ticks = beats * DawProjectTicksPerQuarterNote;
+	return static_cast<qint64>(std::floor(ticks + 0.5));
+}
+
+bool dawProjectBeatRepresentable(double beats)
+{
+	if (!std::isfinite(beats)) { return false; }
+	const double ticks = beats * DawProjectTicksPerQuarterNote;
+	return ticks >= static_cast<double>(std::numeric_limits<qint64>::lowest())
+		&& ticks <= static_cast<double>(std::numeric_limits<qint64>::max());
 }
 
 bool dawProjectUsableDocumentId(const QString& id)
@@ -119,6 +136,37 @@ QString dawProjectContentTypeForType(const QString& typeName, bool* lost)
 	return QString();
 }
 
+namespace
+{
+
+//! The engine track type one declared contentType VALUE names, or an empty
+//! string for the two values ("notes", and anything the vocabulary does not
+//! have) that are decided by the caller. Extracted from
+//! dawProjectTypeForContentType because the four-way table plus the loss flag
+//! pushed that function one branch past the per-function complexity target.
+QString engineTypeForContentValue(const QString& value)
+{
+	if (value.compare(QLatin1String("audio"), Qt::CaseInsensitive) == 0)
+	{
+		return QStringLiteral("sample");
+	}
+	if (value.compare(QLatin1String("automation"), Qt::CaseInsensitive) == 0)
+	{
+		return QStringLiteral("automation");
+	}
+	if (value.compare(QLatin1String("video"), Qt::CaseInsensitive) == 0)
+	{
+		return QStringLiteral("video");
+	}
+	if (value.compare(QLatin1String("tracks"), Qt::CaseInsensitive) == 0)
+	{
+		return QStringLiteral("folder");
+	}
+	return QString();
+}
+
+} // namespace
+
 QString dawProjectTypeForContentType(const QString& contentType, bool* lost)
 {
 	if (lost != nullptr) { *lost = false; }
@@ -130,20 +178,34 @@ QString dawProjectTypeForContentType(const QString& contentType, bool* lost)
 		return value.compare(QLatin1String(name), Qt::CaseInsensitive) == 0;
 	};
 	const QStringList values = contentType.split(QLatin1Char(' '), Qt::SkipEmptyParts);
-	for (const QString& value : values)
-	{
-		if (is(value, "audio")) { return QStringLiteral("sample"); }
-		if (is(value, "automation")) { return QStringLiteral("automation"); }
-		if (is(value, "video")) { return QStringLiteral("video"); }
-		if (is(value, "tracks")) { return QStringLiteral("folder"); }
-	}
+	// NOTES FIRST, deliberately ahead of the audio/automation/video/tracks table.
+	// A track may declare several kinds of content at once, and the reader
+	// returns ONE engine type for it: the type decides whether the track's
+	// <Notes> can exist at all. Choosing "sample" for a "notes audio" track
+	// created a sample track, where DawProjectSession.cpp adds notes only through
+	// dynamic_cast<MidiClip*>, so a read that succeeded imported zero notes and
+	// reported no loss. Notes win, and the audio half is already counted as
+	// LOSSY #1 by the clip reader.
 	for (const QString& value : values)
 	{
 		if (is(value, "notes")) { return QStringLiteral("instrument"); }
 	}
-	// A document that declares nothing, or only "markers", is read as an
-	// instrument track: it carries notes if it carries anything this module
-	// understands, and Instrument is the type that can hold them.
+	for (const QString& value : values)
+	{
+		const QString mapped = engineTypeForContentValue(value);
+		if (!mapped.isEmpty()) { return mapped; }
+	}
+	// The document DECLARED content and none of it named a type this module can
+	// build: "markers" is the vocabulary's own value for a track this engine
+	// cannot represent, and the reader skips the <markers> lane without reading
+	// its content. The track is still read as an instrument (the type that can
+	// hold notes, if it carries any) but the uncarried content is now counted
+	// rather than arriving as a supported, empty track.
+	//
+	// A document that declares NOTHING stays lossless: the writer emits an empty
+	// contentType for an event or video track (LOSSY #5), and flagging that
+	// would misreport every such export.
+	if (!values.isEmpty() && lost != nullptr) { *lost = true; }
 	return QStringLiteral("instrument");
 }
 
@@ -196,6 +258,40 @@ QString value(double number, int decimals = DigestDecimals)
 	return QString::number(number, 'f', decimals);
 }
 
+//! The digest writes an ABSENT optional string as "-", so a field the document
+//! did not carry is distinguishable from one it carried empty. Extracted
+//! because the track and clip lines below both need it and inlining the ternary
+//! twice pushed this module's digest over its recorded complexity.
+QString orDash(const QString& text)
+{
+	return text.isEmpty() ? QStringLiteral("-") : text;
+}
+
+//! One clip as the JSON model view represents it. The notes are carried as
+//! objects, not only as `note_count`: the view is what `dawproject.read`
+//! returns as `model` and its description promises the clips AND the notes, so
+//! a client must be able to read a note back without a second command.
+QJsonObject clipJson(const DawProjectClip& clip)
+{
+	QJsonArray notes;
+	for (const DawProjectNote& note : clip.notes)
+	{
+		notes.append(QJsonObject{{QStringLiteral("time"), note.time},
+			{QStringLiteral("duration"), note.duration},
+			{QStringLiteral("channel"), note.channel},
+			{QStringLiteral("key"), note.key},
+			{QStringLiteral("vel"), note.vel},
+			{QStringLiteral("rel"), note.rel}});
+	}
+	return QJsonObject{{QStringLiteral("time"), clip.time},
+		{QStringLiteral("duration"), clip.duration},
+		{QStringLiteral("play_start"), clip.playStart},
+		{QStringLiteral("name"), clip.name},
+		{QStringLiteral("color"), clip.color},
+		{QStringLiteral("note_count"), clip.notes.size()},
+		{QStringLiteral("notes"), notes}};
+}
+
 } // namespace
 
 QString dawProjectModelDigest(const DawProjectModel& model)
@@ -208,17 +304,17 @@ QString dawProjectModelDigest(const DawProjectModel& model)
 	for (int index = 0; index < model.mixerChannels.size(); index++)
 	{
 		const DawProjectMixerChannel& channel = model.mixerChannels[index];
-		lines << QStringLiteral("mixer %1 id=%2 name=%3 role=%4 solo=%5 volume=%6 mute=%7")
-			.arg(index).arg(channel.id, channel.name, channel.role)
+		lines << QStringLiteral("mixer %1 id=%2 name=%3 role=%4 solo=%5 volume=%6 mute=%7 "
+			"audio=%8").arg(index).arg(channel.id, channel.name, channel.role)
 			.arg(channel.solo ? 1 : 0).arg(value(channel.volume))
-			.arg(channel.mute ? 1 : 0);
+			.arg(channel.mute ? 1 : 0).arg(channel.audioChannels);
 	}
 	for (int index = 0; index < model.tracks.size(); index++)
 	{
 		const DawProjectTrack& track = model.tracks[index];
 		lines << QStringLiteral("track %1 id=%2 name=%3 type=%4 content=%5 color=%6")
 			.arg(index).arg(track.id, track.name, track.typeName, track.contentType,
-				track.color.isEmpty() ? QStringLiteral("-") : track.color);
+				orDash(track.color));
 		lines << QStringLiteral("  channel id=%1 solo=%2 volume=%3 mute=%4 pan=%5 dest=%6")
 			.arg(track.channelId).arg(track.solo ? 1 : 0)
 			.arg(track.hasVolume ? value(track.volume) : QStringLiteral("absent"))
@@ -229,9 +325,10 @@ QString dawProjectModelDigest(const DawProjectModel& model)
 		for (int clipIndex = 0; clipIndex < track.clips.size(); clipIndex++)
 		{
 			const DawProjectClip& clip = track.clips[clipIndex];
-			lines << QStringLiteral("  clip %1 time=%2 duration=%3 playStart=%4 notes=%5 name=%6")
-				.arg(clipIndex).arg(value(clip.time), value(clip.duration),
-					value(clip.playStart)).arg(clip.notes.size()).arg(clip.name);
+			lines << QStringLiteral("  clip %1 time=%2 duration=%3 playStart=%4 notes=%5 "
+				"name=%6 color=%7").arg(clipIndex).arg(value(clip.time), value(clip.duration),
+					value(clip.playStart)).arg(clip.notes.size()).arg(clip.name)
+				.arg(orDash(clip.color));
 			for (int noteIndex = 0; noteIndex < clip.notes.size(); noteIndex++)
 			{
 				const DawProjectNote& note = clip.notes[noteIndex];
@@ -341,16 +438,7 @@ QJsonObject dawProjectModelJson(const DawProjectModel& model)
 		entry.insert(QStringLiteral("clip_count"), track.clipCount());
 		entry.insert(QStringLiteral("note_count"), track.noteCount());
 		QJsonArray clips;
-		for (const DawProjectClip& clip : track.clips)
-		{
-			QJsonObject clipEntry;
-			clipEntry.insert(QStringLiteral("time"), clip.time);
-			clipEntry.insert(QStringLiteral("duration"), clip.duration);
-			clipEntry.insert(QStringLiteral("play_start"), clip.playStart);
-			clipEntry.insert(QStringLiteral("name"), clip.name);
-			clipEntry.insert(QStringLiteral("note_count"), clip.notes.size());
-			clips.append(clipEntry);
-		}
+		for (const DawProjectClip& clip : track.clips) { clips.append(clipJson(clip)); }
 		entry.insert(QStringLiteral("clips"), clips);
 		tracks.append(entry);
 	}
