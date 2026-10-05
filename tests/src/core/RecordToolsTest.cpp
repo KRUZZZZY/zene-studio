@@ -235,6 +235,23 @@ private slots:
 		}
 	}
 
+	//! A16 §3 on the split: comp.split_passes cut the clip, added a lane per pass and changed the
+	//! composite after a Track checkpoint, but returned no __transaction - so its record carried no
+	//! composite before-state and no inverse, unlike its siblings comp.move_edge and comp.select_group.
+	void splittingPassesRecordsItsBeforeStateAndInverse()
+	{
+		auto* track = dynamic_cast<SampleTrack*>(Track::create(Track::Type::Sample, Engine::getSong()));
+		Clip* take = track->createClip(TimePos(192));
+		take->changeLength(TimePos(192 * 3));
+		Engine::getSong()->getTimeline(Song::PlayMode::Song).setLoopPoints(TimePos(192), TimePos(384));
+		QVERIFY(run(QStringLiteral("comp.split_passes"), {{QStringLiteral("clip"), control::clipIdOf(take)}}).ok);
+		const QJsonObject record = lastRecord();
+		QCOMPARE(record.value(QStringLiteral("command")).toString(), QStringLiteral("comp.split_passes"));
+		QVERIFY(record.value(QStringLiteral("reversible")).toBool());
+		QVERIFY(record.value(QStringLiteral("before")).toObject().contains(QStringLiteral("composite")));
+		QCOMPARE(record.value(QStringLiteral("inverse")).toObject().value(QStringLiteral("op")).toString(), QStringLiteral("control.undo"));
+	}
+
 	//! A16 §3: a mutating command records what it wrote - the composite before the edit and the
 	//! inverse control.undo replays. comp.move_edge journalled the track but described nothing, so
 	//! the record carried no before-state and no inverse, unlike its sibling comp.select.

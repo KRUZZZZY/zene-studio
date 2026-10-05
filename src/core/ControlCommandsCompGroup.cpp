@@ -262,6 +262,11 @@ ControlResult splitPasses(const QJsonObject& args)
 		// Capping the cuts would leave every pass past the 32nd merged into the last take.
 		return ControlResult::failure(ControlErrorKind::Refused, QStringLiteral("the clip spans %1 passes; at most 32 can be split").arg(passes));
 	}
+	const QString id = trackIdOf(ref.track);
+	// A16 §3: the Track checkpoint below is what control.undo replays, so the record says so and
+	// carries the composite as it was - like its siblings comp.move_edge and comp.select_group.
+	QJsonObject result{{QStringLiteral("track"), id}};
+	QJsonObject before{{QStringLiteral("track"), id}, {QStringLiteral("composite"), compositeState(ref.track)}};
 	ref.track->addJournalCheckPoint();
 	std::vector<Clip*> pieces{ref.clip};
 	for (int k = passes - 1; k >= 1; --k)
@@ -282,7 +287,11 @@ ControlResult splitPasses(const QJsonObject& args)
 	const tick_t covered = std::min<tick_t>(loop, pieces.back()->length().getTicks());
 	model.selectSegment(static_cast<int>(begin), static_cast<int>(begin + covered), lane, 0);
 	Engine::getSong()->setModified();
-	return ControlResult::success({{QStringLiteral("track"), trackIdOf(ref.track)}, {QStringLiteral("passes"), static_cast<int>(pieces.size())}});
+	result.insert(QStringLiteral("passes"), static_cast<int>(pieces.size()));
+	result.insert(QStringLiteral("__transaction"),
+		transactionPayload(before, CompositeInverseOp, QJsonObject{{QStringLiteral("track"), id}},
+			true, CompositeMechanism));
+	return ControlResult::success(result);
 }
 
 void add(ControlRegistry& registry, const char* id, const QString& description, const QJsonObject& args, const QStringList& required,
