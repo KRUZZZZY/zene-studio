@@ -170,6 +170,10 @@ static bool gain_params_get_value(const clap_plugin_t* plugin, clap_id param_id,
 	switch (param_id)
 	{
 	case PARAM_GAIN:
+		/* CLAP_TEST_GAIN_NAN_VALUE: the plug-in REPORTS a non-finite value. std::clamp does not
+		   sanitize NaN, so a host that clamps and stores it forwards NaN to the plug-in's own
+		   processing instead of a number in the parameter's range. */
+		if (getenv("CLAP_TEST_GAIN_NAN_VALUE") != NULL) { *value = (double)NAN; return true; }
 		*value = self->gain;
 		return true;
 	case PARAM_BYPASS:

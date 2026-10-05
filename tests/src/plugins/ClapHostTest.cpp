@@ -199,6 +199,7 @@ private slots:
 	void testANonFiniteSampleRateIsRefused();
 	void testANoteVelocityKeepsItsFraction();
 	void testAPluginClosedEditorIsReopened();
+	void testANonFiniteParamValueNeverReachesThePlugin();
 
 private:
 	void process(HostedPlugin& plugin, const std::vector<std::vector<float>>& inputs,
@@ -1044,6 +1045,63 @@ void lmms::clap::ClapHostTest::testAPluginClosedEditorIsReopened()
 	QCOMPARE(height, 300);
 	recreating.closeEditor();
 	qunsetenv("CLAP_TEST_GAIN_CLOSE_GUI");
+}
+
+/*! A non-finite value must never reach a plug-in, from either side. std::clamp does NOT sanitize
+ *  NaN: every comparison against it is false, so a NaN is returned unchanged and stored verbatim -
+ *  and then published to the processor as a CLAP_EVENT_PARAM_VALUE. The host now refuses a
+ *  non-finite value at both boundaries (the caller and the plug-in's own reported value). */
+void lmms::clap::ClapHostTest::testANonFiniteParamValueNeverReachesThePlugin()
+{
+	constexpr double NaN = std::numeric_limits<double>::quiet_NaN();
+	constexpr double Infinity = std::numeric_limits<double>::infinity();
+
+	// --- the caller sets a non-finite value: the held value stays the last good one ---
+	HostedPlugin plugin;
+	QString error;
+	QVERIFY2(plugin.load(QStringLiteral(CLAP_TEST_PLUGIN_PATH), QString::fromLatin1(TestPluginId), &error),
+		qPrintable(error));
+	QVERIFY2(plugin.prepare(TestSampleRate, TestBlockSize, &error), qPrintable(error));
+	plugin.setParamPlain(GainParamId, 0.5);
+	QCOMPARE(plugin.paramPlain(GainParamId), 0.5);
+	plugin.setParamPlain(GainParamId, NaN);
+	QVERIFY2(std::isfinite(plugin.paramPlain(GainParamId)),
+		"a NaN the caller set was stored in the parameter slot");
+	QVERIFY2(plugin.paramPlain(GainParamId) >= 0.0 && plugin.paramPlain(GainParamId) <= 1.0,
+		"a NaN the caller set landed outside the parameter's range");
+	plugin.setParamPlain(GainParamId, Infinity);
+	QVERIFY2(std::isfinite(plugin.paramPlain(GainParamId)),
+		"an infinite value the caller set was stored in the parameter slot");
+	QVERIFY2(plugin.paramPlain(GainParamId) >= 0.0 && plugin.paramPlain(GainParamId) <= 1.0,
+		"an infinite value the caller set landed outside the parameter's range");
+
+	// --- the PLUG-IN reports a non-finite value: what it read back is still finite, and is what
+	//     the processor is handed ---
+	qputenv("CLAP_TEST_GAIN_NAN_VALUE", "1");
+	HostedPlugin reporting;
+	QVERIFY2(reporting.load(QStringLiteral(CLAP_TEST_PLUGIN_PATH), QString::fromLatin1(TestPluginId), &error),
+		qPrintable(error));
+	QVERIFY2(reporting.prepare(TestSampleRate, TestBlockSize, &error), qPrintable(error));
+	const auto held = reporting.paramPlain(GainParamId);
+	QVERIFY2(std::isfinite(held),
+		qPrintable(QStringLiteral("the plug-in's own NaN was stored: %1").arg(held)));
+	const auto& gain = reporting.parameters()[0];
+	QVERIFY2(held >= gain.minValue && held <= gain.maxValue,
+		qPrintable(QStringLiteral("the held value %1 is outside %2 .. %3")
+			.arg(held).arg(gain.minValue).arg(gain.maxValue)));
+
+	// processing it must not put a NaN into the audio either
+	const std::vector<std::vector<float>> noInputs;
+	std::vector<std::vector<float>> outputs(2, std::vector<float>(TestFrames, 0.0f));
+	process(reporting, noInputs, outputs, TestFrames);
+	for (const auto& channel : outputs)
+	{
+		for (const auto sample : channel)
+		{
+			QVERIFY2(std::isfinite(sample), "a NaN parameter value reached the processed audio");
+		}
+	}
+	qunsetenv("CLAP_TEST_GAIN_NAN_VALUE");
 }
 
 QTEST_GUILESS_MAIN(lmms::clap::ClapHostTest)

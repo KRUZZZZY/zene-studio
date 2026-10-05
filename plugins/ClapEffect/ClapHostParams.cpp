@@ -128,7 +128,7 @@ void HostedPlugin::Impl::scanParams()
 		double value = params[i].defaultValue;
 		if (paramsExt != nullptr && paramsExt->get_value(plugin, params[i].id, &value))
 		{
-			value = std::clamp(value, params[i].minValue, params[i].maxValue);
+			value = sanitizedValue(params[i], value);
 		}
 		paramSlots[i].value.store(value, std::memory_order_relaxed);
 	}
@@ -217,7 +217,7 @@ void HostedPlugin::setParamPlain(std::uint32_t id, double value)
 	const auto index = impl.indexOfParam(id);
 	if (index < 0 || impl.params[index].readOnly) { return; }
 	auto& descriptor = impl.params[index];
-	const auto clamped = std::clamp(value, descriptor.minValue, descriptor.maxValue);
+	const auto clamped = sanitizedValue(descriptor, value);
 	auto& slot = impl.paramSlots[index];
 	if (slot.value.load(std::memory_order_relaxed) == clamped) { return; }
 	slot.value.store(clamped, std::memory_order_relaxed);

@@ -34,7 +34,9 @@
 
 #include "ClapHost.h"
 
+#include <algorithm>
 #include <atomic>
+#include <cmath>
 #include <cstdint>
 #include <cstring>
 #include <memory>
@@ -70,6 +72,16 @@ inline auto normalize(const ParamDescriptor& descriptor, double value) -> float
 	const auto range = descriptor.maxValue - descriptor.minValue;
 	if (range <= 0.0) { return 0.0f; }
 	return static_cast<float>((value - descriptor.minValue) / range);
+}
+
+//! A value on its way into a parameter slot, from either boundary (the caller and the plug-in's own
+//! reported value). std::clamp does NOT sanitize NaN - every comparison against it is false, so a
+//! non-finite value would be returned unchanged and then handed to the processor as a
+//! CLAP_EVENT_PARAM_VALUE. A value that is not a number falls back to the descriptor's default.
+inline auto sanitizedValue(const ParamDescriptor& descriptor, double value) -> double
+{
+	return std::isfinite(value) ? std::clamp(value, descriptor.minValue, descriptor.maxValue)
+							   : descriptor.defaultValue;
 }
 
 //! Static identity of one CLAP class inside a module. DECLARED here and
@@ -426,7 +438,10 @@ struct HostedPlugin::Impl
 		for (std::size_t i = 0; i < params.size(); ++i)
 		{
 			double value = params[i].defaultValue;
-			if (paramsExt->get_value(plugin, params[i].id, &value)) { paramSlots[i].value.store(value, std::memory_order_relaxed); }
+			if (paramsExt->get_value(plugin, params[i].id, &value))
+			{
+				paramSlots[i].value.store(sanitizedValue(params[i], value), std::memory_order_relaxed);
+			}
 		}
 	}
 
