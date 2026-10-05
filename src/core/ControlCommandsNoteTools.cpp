@@ -323,15 +323,29 @@ ControlResult generate(const QJsonObject& args)
 	const bool random = args.value(QStringLiteral("kind")).toString() == QLatin1String("random");
 	std::mt19937 rng(static_cast<unsigned>(args.value(QStringLiteral("seed")).toInt(1)));
 	if (pulses == 0) { return ControlResult::success({{QStringLiteral("clip"), clipId(ref.id)}, {QStringLiteral("added"), 0}}); }  // no step to add
-	const std::vector<bool> hits = euclid(steps, pulses, args.value(QStringLiteral("rotate")).toInt(0));
+	// Luna cluster 1154: the checkpoint was taken before the random draw, and a draw that hits
+	// nothing - which it can, at 1 pulse over 128 steps - still answered ok, so a roll that
+	// wrote no note pushed an undo step. The hit set is decided first; the checkpoint follows it.
+	std::vector<bool> on = euclid(steps, pulses, args.value(QStringLiteral("rotate")).toInt(0));
+	if (random)
+	{
+		on.assign(static_cast<std::size_t>(steps), false);
+		for (int i = 0; i < steps; ++i)
+		{
+			on[static_cast<std::size_t>(i)] = std::uniform_int_distribution<int>(0, steps - 1)(rng) < pulses;
+		}
+	}
+	if (std::none_of(on.begin(), on.end(), [](bool hit) { return hit; }))
+	{
+		return ControlResult::success({{QStringLiteral("clip"), clipId(ref.id)}, {QStringLiteral("added"), 0}});
+	}
 	Note note(TimePos(step), TimePos(0), args.value(QStringLiteral("key")).toInt(DefaultKey),
 		static_cast<volume_t>(args.value(QStringLiteral("velocity")).toInt(DefaultVolume)));
 	clip->addJournalCheckPoint();
 	int made = 0;
 	for (int i = 0; i < steps; ++i)
 	{
-		const bool on = random ? std::uniform_int_distribution<int>(0, steps - 1)(rng) < pulses : hits[static_cast<std::size_t>(i)];
-		if (!on) { continue; }
+		if (!on[static_cast<std::size_t>(i)]) { continue; }
 		note.setPos(TimePos(i * step));
 		clip->addNote(note, false);
 		++made;

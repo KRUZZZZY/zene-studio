@@ -38,6 +38,7 @@
 #include "InstrumentTrack.h"
 #include "MidiClip.h"
 #include "Note.h"
+#include "ProjectJournal.h"
 #include "ReversibilityTestSupport.h"
 #include "Song.h"
 
@@ -391,6 +392,32 @@ private slots:
 		args.insert(QStringLiteral("pulses"), 4);
 		QVERIFY(run(QStringLiteral("note.generate"), args).ok);
 		QCOMPARE(clip->notes().size(), std::size_t{4});
+	}
+
+//! Luna cluster 1154: generate() took the MidiClip checkpoint before the random draw, and a
+	//! draw that hits nothing still answered ok - so a roll that wrote no note pushed an undo step.
+	void aRandomRhythmThatHitsNothingTakesNoUndoStep()
+	{
+		MidiClip* clip = clipWith({});
+		ProjectJournal* journal = Engine::projectJournal();
+		QVERIFY(journal != nullptr);
+		const int depthBefore = journal->undoDepth();
+		QJsonObject args = self(clip);
+		args.insert(QStringLiteral("kind"), QStringLiteral("random"));
+		args.insert(QStringLiteral("steps"), 128);
+		args.insert(QStringLiteral("pulses"), 1);
+		args.insert(QStringLiteral("seed"), 0);  // this seed draws 128 times and never hits
+		const ControlResult generated = run(QStringLiteral("note.generate"), args);
+		QVERIFY2(generated.ok, qPrintable(generated.errorMessage));
+		QCOMPARE(generated.result.value(QStringLiteral("added")).toInt(), 0);
+		QCOMPARE(clip->notes().size(), std::size_t{0});
+		QCOMPARE(journal->undoDepth(), depthBefore);
+
+		// A seed that does hit still takes its one step.
+		args.insert(QStringLiteral("seed"), 1);
+		QVERIFY(run(QStringLiteral("note.generate"), args).ok);
+		QVERIFY(clip->notes().size() > std::size_t{0});
+		QCOMPARE(journal->undoDepth(), depthBefore + 1);
 	}
 
 //! The split's undo finds the tracks it made by id: track.remove and its undo rebuild one as a new
