@@ -83,15 +83,25 @@ ControlResult moveToTrack(const QJsonObject& args)
 	return ControlResult::success(result);
 }
 
+//! Where @a clip sits in @a track's clip order, -1 when it is not there; a clone keeps the order.
+int clipOrder(const Track* track, const Clip* clip)
+{
+	const Track::clipVector& clips = track->getClips();
+	for (int i = 0; i < static_cast<int>(clips.size()); ++i) { if (clips[i] == clip) { return i; } }
+	return -1;
+}
+
 //! A copy of @a source holding, of all its clips, only @a clip's twin with only @a key's notes.
 Track* keyTrack(Track* source, const MidiClip* clip, int key)
 {
+	// The twin is found by place in the clip order: a start position alone also names a sibling clip.
+	const int twin = clipOrder(source, clip);
 	Track* copy = source->clone();
-	const tick_t start = clip->startPosition().getTicks();
-	for (Clip* other : std::vector<Clip*>(copy->getClips().begin(), copy->getClips().end()))
+	const std::vector<Clip*> clips(copy->getClips().begin(), copy->getClips().end());
+	for (int i = 0; i < static_cast<int>(clips.size()); ++i)
 	{
-		auto* midi = dynamic_cast<MidiClip*>(other);
-		if (midi == nullptr || midi->startPosition().getTicks() != start) { delete other; continue; }  // a clip leaves its track as it goes
+		auto* midi = dynamic_cast<MidiClip*>(clips[i]);
+		if (midi == nullptr || i != twin) { delete clips[i]; continue; }  // a clip leaves its track as it goes
 		for (Note* note : NoteVector(midi->notes())) { if (note->key() != key) { midi->removeNote(note); } }
 	}
 	copy->setName(QStringLiteral("%1 %2%3").arg(source->name(), scaleRootNames().value(key % 12)).arg(key / 12));

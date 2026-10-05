@@ -197,6 +197,51 @@ private slots:
 			{QStringLiteral("degrees"), QJsonArray{14}}}).errorKind, ControlErrorKind::InvalidArgs);
 	}
 
+	//! Luna cluster 5680: a track holding TWO MIDI clips at the SAME start. keyTrack() picked the
+	//! clone to keep by start position alone, so the other clip - also at that start - survived the
+	//! cleanup too and had its notes filtered by key as well: every generated track then carried
+	//! notes from BOTH clips.
+	void aSplitKeepsOnlyTheClonedCounterpartOfTheNamedClip()
+	{
+		auto* track = dynamic_cast<InstrumentTrack*>(Track::create(Track::Type::Instrument, Engine::getSong()));
+		QVERIFY(track != nullptr);
+		// Two clips, both starting at tick 0 - the arrangement allows it, and it is the
+		// case a start-position match cannot tell apart.
+		auto* first = dynamic_cast<MidiClip*>(track->createClip(TimePos(0)));
+		first->addNote(Note(TimePos(24), TimePos(0), 36), false);
+		first->addNote(Note(TimePos(24), TimePos(24), 38), false);
+		auto* second = dynamic_cast<MidiClip*>(track->createClip(TimePos(0)));
+		second->addNote(Note(TimePos(24), TimePos(0), 40), false);
+		second->addNote(Note(TimePos(24), TimePos(24), 42), false);
+
+		const ControlResult split = run(QStringLiteral("note.split_by_pitch"), self(first));
+		QVERIFY2(split.ok, qPrintable(split.errorMessage));
+		const QJsonArray made = split.result.value(QStringLiteral("tracks")).toArray();
+		QCOMPARE(made.size(), 2);  // only the NAMED clip's keys
+
+		// Each new track is a copy of the source track holding ONE clip - the twin of
+		// 'first' - and that clip's notes are the named key alone. A start-position match
+		// would have kept the twin of 'second' as well, and its 40s/42s alongside.
+		for (const QJsonValue& value : made)
+		{
+			Track* madeTrack = nullptr;
+			for (Track* candidate : Engine::getSong()->tracks())
+			{
+				if (control::trackIdOf(candidate) == value.toString()) { madeTrack = candidate; }
+			}
+			QVERIFY2(madeTrack != nullptr, "the split must report a track that exists");
+			QCOMPARE(madeTrack->getClips().size(), std::size_t{1});
+			auto* midi = dynamic_cast<MidiClip*>(madeTrack->getClips().front());
+			QVERIFY(midi != nullptr);
+			QCOMPARE(midi->notes().size(), std::size_t{1});
+			QVERIFY2(QList<int>({36, 38}).contains(midi->notes().front()->key()),
+				"a generated track holds a note of the OTHER clip's keys");
+		}
+		// The source track is untouched by all of this.
+		QCOMPARE(first->notes().size(), std::size_t{2});
+		QCOMPARE(second->notes().size(), std::size_t{2});
+	}
+
 	//! The split's undo finds the tracks it made by id: track.remove and its undo rebuild one as a new
 	//! object, which a kept Track* does not name.
 	void aSplitTrackIsFoundAgainAfterItsRemovalIsUndone()
