@@ -477,10 +477,12 @@ void registerImportCommand(ControlRegistry& registry)
 		result.insert(QStringLiteral("loss"), loss);
 		// The inverse is a whole captured session, so no single command is the
 		// honest inverse and the record says so (the interchange.smf_import and
-		// transport.tempo_map_clear shape).
+		// transport.tempo_map_clear shape). The `before` half describes the
+		// session the import REPLACED, so its track count is the captured
+		// snapshot's, not the one the import left behind.
 		result.insert(QStringLiteral("__transaction"), transactionPayload(
 			QJsonObject{{QStringLiteral("path"), path},
-				{QStringLiteral("track_count"), static_cast<int>(song->tracks().size())},
+				{QStringLiteral("track_count"), static_cast<int>(before.trackXml.size())},
 				{QStringLiteral("loss"), loss}},
 			QString(), QJsonObject(), true, importMechanism()));
 		return ControlResult::success(result);
