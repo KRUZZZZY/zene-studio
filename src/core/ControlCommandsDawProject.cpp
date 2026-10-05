@@ -463,6 +463,7 @@ void registerImportCommand(ControlRegistry& registry)
 		result.insert(QStringLiteral("path"), path);
 		result.insert(QStringLiteral("format_version"), model.formatVersion);
 		result.insert(QStringLiteral("track_count"), after.trackCount());
+		result.insert(QStringLiteral("mixer_channel_count"), after.mixerChannelCount());
 		result.insert(QStringLiteral("clip_count"), after.clipCount());
 		result.insert(QStringLiteral("note_count"), after.noteCount());
 		result.insert(QStringLiteral("tempo"), after.tempo);
