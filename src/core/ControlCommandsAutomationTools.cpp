@@ -141,9 +141,16 @@ ControlResult movePoint(const QJsonObject& args)
 		return automatableRangeRefusal(parameter.model, value);
 	}
 	const QJsonArray before = automationPointsJson(clip, parameter.model);
+	// The point's own curve is its progression to the next point, and a Bend carries its bend
+	// amount - neither survives removing the node and letting putValue insert a plain one, so
+	// they are carried across to the destination.
+	const AutomationNode& oldNode = clip->getTimeMap()[TimePos(ticks)];
+	const auto curve = oldNode.curve();
+	const auto bend = oldNode.bend();
 	clip->addJournalCheckPoint();
 	clip->removeNode(TimePos(ticks));
 	clip->putValue(TimePos(to), parameter.model->inverseScaledValue(static_cast<float>(value)), false);
+	clip->getTimeMap()[TimePos(to)].setCurve(curve, bend);
 	QJsonObject result{{QStringLiteral("track"), target.id}, {QStringLiteral("parameter"), parameter.id()}, {QStringLiteral("ticks"), static_cast<double>(toSong)},
 		{QStringLiteral("value"), value}, {QStringLiteral("automation"), automationJson(clip, parameter.model)}};
 	result.insert(QStringLiteral("__transaction"), automationTransaction(parameter, before, before.size(), false));

@@ -645,6 +645,45 @@ private slots:
 		QCOMPARE(clip->getTimeMap().value(64).getOutValue(), model->inverseScaledValue(static_cast<float>(high)));
 	}
 
+	/*! ED-186 for automation.move_point's curve handling. The handler saved only the point's
+	 *  value, removed the node and inserted a fresh one, so a node carrying a custom curve
+	 *  (and, for Bend, a bend amount) came back with the insertion default - Hold for
+	 *  AutomationClip::putValue's plain insert path, bend 0. The point's own curve is its
+	 *  progression to the next point, so losing it silently rewrites the shape of the segment.
+	 *
+	 *  Checked as sound: the curve type AND the bend amount survive a move, on a clip that does
+	 *  not start at song tick 0 so the move really relocates the node, and the curve on a
+	 *  neighbouring point that the move does not touch is left alone. */
+	void movePointKeepsTheCurveAndBendOfThePointItMoves()
+	{
+		const QString id = control::trackIdOf(m_track);
+		const QString parameter = firstParameter(id);
+		QVERIFY(!parameter.isEmpty());
+		AutomatableModel* model = modelOf(id, parameter);
+		QVERIFY(model != nullptr);
+		const double high = model->maxValue<double>();
+
+		auto* track = dynamic_cast<AutomationTrack*>(Track::create(Track::Type::Automation, Engine::getSong()));
+		auto* clip = dynamic_cast<AutomationClip*>(track->createClip(TimePos(384)));
+		clip->addObject(model);
+		clip->changeLength(TimePos(4 * 192));
+		clip->putValue(TimePos(16), 0.f, false, true);   // song tick 400: the moved point
+		clip->putValue(TimePos(112), 0.f, false, true);  // song tick 496: not touched
+		clip->getTimeMap()[TimePos(16)].setCurve(AutomationNode::Curve::Bend, 0.6f);
+		clip->getTimeMap()[TimePos(112)].setCurve(AutomationNode::Curve::Hold);
+
+		const ControlResult moved = run(QStringLiteral("automation.move_point"), addressed(id, parameter,
+			{{QStringLiteral("ticks"), 400}, {QStringLiteral("new_ticks"), 448},
+				{QStringLiteral("new_value"), high}}));
+		QVERIFY2(moved.ok, qPrintable(moved.errorMessage));
+
+		QVERIFY(clip->getTimeMap().contains(64));  // 448 - 384
+		AutomationNode& node = clip->getTimeMap()[TimePos(64)];
+		QCOMPARE(int(node.curve()), int(AutomationNode::Curve::Bend));
+		QVERIFY(qAbs(node.bend() - 0.6f) < 1e-6f);
+		QCOMPARE(int(clip->getTimeMap()[TimePos(112)].curve()), int(AutomationNode::Curve::Hold));
+	}
+
 private:
 	InstrumentTrack* m_track = nullptr;
 };
