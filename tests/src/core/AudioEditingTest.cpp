@@ -209,6 +209,35 @@ private slots:
 		QCOMPARE(clipsOn(audio->getTrack()), 5);  // a cut at each of the four hits, all inside the clip (the first at tick 10)
 	}
 
+	//! `at: "positions"` takes song ticks. An entry that is not a whole number is
+	//! a caller error, and it is reported as one: it used to become a silent 0
+	//! that the out-of-range filter then dropped, so the command answered success
+	//! having cut at the other positions only.
+	void splittingAtPositionsRefusesAnEntryThatIsNotATick()
+	{
+		Song* song = Engine::getSong();
+		song->clearProject();
+		auto* track = dynamic_cast<InstrumentTrack*>(Track::create(Track::Type::Instrument, song));
+		auto* clip = dynamic_cast<MidiClip*>(track->createClip(TimePos(0)));
+		clip->changeLength(TimePos(192));
+		clip->setAutoResize(false);
+		const QString id = control::clipIdOf(clip);
+
+		const ControlResult mixed = run(QStringLiteral("clip.split_at"),
+			{{QStringLiteral("clip"), id}, {QStringLiteral("at"), QStringLiteral("positions")},
+				{QStringLiteral("positions"), QJsonArray{48, QStringLiteral("oops")}}});
+		QVERIFY2(!mixed.ok, "a split position that is not a tick was ignored and the rest went ahead");
+		QCOMPARE(mixed.errorKind, ControlErrorKind::InvalidArgs);
+		QCOMPARE(clipsOn(track), 1);   // nothing was cut, not even at the valid 48
+
+		// A whole number inside the clip still cuts, and one outside it is still
+		// ignored (the command's own documented contract).
+		QVERIFY(run(QStringLiteral("clip.split_at"), {{QStringLiteral("clip"), id},
+			{QStringLiteral("at"), QStringLiteral("positions")},
+			{QStringLiteral("positions"), QJsonArray{48, 100000}}}).ok);
+		QCOMPARE(clipsOn(track), 2);
+	}
+
 	void slicingToASamplerTrack()
 	{
 		SampleClip* audio = test::sampleClipOf(test::burstAudio(200, {10, 58, 106, 154}));
