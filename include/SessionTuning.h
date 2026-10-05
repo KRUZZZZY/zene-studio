@@ -139,6 +139,12 @@ public:
 	//! records: 128 finite positive frequencies, the active flag, the source.
 	bool setState(const QJsonObject& state, QString* error);
 
+	//! Put back the Scale / Keymap the table was BUILT from - the other half
+	//! of a recorded table mutation's before-state (the frequencies travel
+	//! through setState; this is the provenance setState does not carry). Does
+	//! not touch the table: the caller has already restored it.
+	void setBuiltFrom(std::shared_ptr<const Scale> scale, std::shared_ptr<const Keymap> keymap);
+
 	//! One note's frequency (MTS-ESP's per-note dynamic tuning); activates the
 	//! table. false + \a error outside the cap. \a source records where the
 	//! edit came from (empty = "manual (mts.set_note)").

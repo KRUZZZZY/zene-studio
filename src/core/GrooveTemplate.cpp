@@ -28,6 +28,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdlib>
+#include <limits>
 
 #include "NoteRandom.h"
 
@@ -42,12 +43,25 @@ namespace
 
 /*! Floor division: the slot of a tick must be the same for a positive and a
  *  negative position, and C++'s `/` truncates toward zero. Slots are always
- *  positive here, so only the numerator's sign matters. */
-tick_t floorDiv(tick_t value, tick_t divisor) noexcept
+ *  positive here, so only the numerator's sign matters. \a value is wide
+ *  because a position plus half a slot does not fit a signed tick at the very
+ *  end of the timeline. */
+long long floorDiv(long long value, tick_t divisor) noexcept
 {
-	const tick_t quotient = value / divisor;
+	const long long quotient = value / divisor;
 	if (value % divisor != 0 && value < 0) { return quotient - 1; }
 	return quotient;
+}
+
+//! \a value narrowed back to a tick, clamped rather than wrapped: an offset
+//! that has run past the end of the timeline is the last tick, never a negative.
+tick_t clampedTick(long long value) noexcept
+{
+	constexpr long long lowest = static_cast<long long>(std::numeric_limits<tick_t>::min());
+	constexpr long long highest = static_cast<long long>(std::numeric_limits<tick_t>::max());
+	if (value > highest) { return static_cast<tick_t>(highest); }
+	if (value < lowest) { return static_cast<tick_t>(lowest); }
+	return static_cast<tick_t>(value);
 }
 
 //! The mean of \a sum over \a count, rounded to the nearest whole unit.
@@ -61,7 +75,7 @@ int roundedMean(long long sum, int count) noexcept
  *  the slot width, i.e. a note is assigned to the slot it is closest to. */
 tick_t absoluteSlotOf(tick_t pos, tick_t stepTicks) noexcept
 {
-	return floorDiv(pos + stepTicks / 2, stepTicks);
+	return clampedTick(floorDiv(static_cast<long long>(pos) + stepTicks / 2, stepTicks));
 }
 
 //! \a slot taken modulo the template's cycle, never negative.
@@ -133,8 +147,17 @@ GrooveStep GrooveTemplate::step(int slot) const
 bool GrooveTemplate::setStep(int slot, const GrooveStep& value)
 {
 	if (slot < 0 || slot >= m_slotCount) { return false; }
+	// STRICTLY inside half the slot, not merely within it. Exactly half a slot
+	// is the BOUNDARY between two slots, and a note sitting on the boundary is
+	// read back into the NEXT one (absoluteSlotOf rounds the half up), so a
+	// shift of exactly half a slot would carry every note of that slot one slot
+	// along - and a second application would carry it one more. A slot one tick
+	// is the most a step may reach: a step that shifted a note into the next
+	// slot would be a rearrangement, not a feel.
 	// Both bounds, not std::abs: |INT_MIN| is not representable, so abs() of a loaded one is UB.
-	if (value.timing < -(m_stepTicks / 2) || value.timing > m_stepTicks / 2) { return false; }
+	const tick_t half = m_stepTicks / 2;
+	if (half > 0 ? (value.timing <= -half || value.timing >= half) : value.timing != 0)
+	{ return false; }
 	const bool noOpinion = value.velocity == GrooveStep::NoVelocityOpinion;
 	if (!noOpinion && (value.velocity < static_cast<int>(MinVolume)
 		|| value.velocity > static_cast<int>(MaxVolume))) { return false; }
@@ -153,14 +176,15 @@ GrooveStep GrooveTemplate::stepForPosition(tick_t pos) const noexcept
 tick_t GrooveTemplate::gridTickFor(tick_t pos) const noexcept
 {
 	if (m_stepTicks <= 0) { return pos; }
-	return absoluteSlotOf(pos, m_stepTicks) * m_stepTicks;
+	return clampedTick(static_cast<long long>(absoluteSlotOf(pos, m_stepTicks)) * m_stepTicks);
 }
 
 
 tick_t GrooveTemplate::targetTickFor(tick_t pos) const noexcept
 {
 	if (m_slotCount <= 0) { return pos; }
-	return gridTickFor(pos) + stepForPosition(pos).timing;
+	const long long grid = gridTickFor(pos);
+	return clampedTick(grid + stepForPosition(pos).timing);
 }
 
 
@@ -220,7 +244,13 @@ bool GrooveTemplate::loadXml(const QDomElement& element)
 	for (QDomElement child = element.firstChildElement(kStepElement); !child.isNull();
 		child = child.nextSiblingElement(kStepElement))
 	{
-		const int slot = child.attribute(QStringLiteral("slot"), QStringLiteral("-1")).toInt();
+		// A slot that is not a NUMBER names no slot, so it is skipped whole: read
+		// as 0 it would quietly overwrite slot zero while the template still
+		// loaded. The "-1" default is the missing attribute, which names no slot
+		// either - setStep refuses it below, leaving the slot it already holds.
+		bool slotRead = false;
+		const int slot = child.attribute(QStringLiteral("slot"), QStringLiteral("-1")).toInt(&slotRead);
+		if (!slotRead) { continue; }
 		GrooveStep value;
 		value.timing = child.attribute(QStringLiteral("timing"), QStringLiteral("0")).toInt();
 		bool velocityRead = false;
@@ -266,7 +296,8 @@ struct SlotSums
 		const tick_t pos = note.pos().getTicks();
 		const tick_t slotIndex = absoluteSlotOf(pos, stepTicks);
 		const std::size_t slot = static_cast<std::size_t>(cycleOf(slotIndex, slotCount));
-		timing[slot] += static_cast<long long>(pos) - static_cast<long long>(slotIndex * stepTicks);
+		timing[slot] += static_cast<long long>(pos)
+			- (static_cast<long long>(slotIndex) * stepTicks);
 		velocity[slot] += static_cast<int>(note.getVolume());
 		++counts[slot];
 		++read;
@@ -283,10 +314,17 @@ bool writeSlot(GrooveTemplate* out, int slot, const SlotSums& sums, tick_t stepT
 {
 	if (sums.counts[static_cast<std::size_t>(slot)] == 0) { return true; }
 	GrooveStep value;
+	// The same STRICT half a slot setStep accepts (see it): the clamp stops one
+	// tick short of the boundary, because a note reading its own slot is what
+	// makes the groove a fixed point. Clamping to the boundary instead would
+	// produce a step the template refuses, and a refused step falls back to the
+	// neutral one - so an extracted groove whose notes all sit exactly on the
+	// boundary would capture NO feel at all.
 	const int half = static_cast<int>(stepTicks / 2);
+	const int reach = half > 0 ? half - 1 : 0;
 	value.timing = static_cast<tick_t>(std::clamp(
 		roundedMean(sums.timing[static_cast<std::size_t>(slot)],
-			sums.counts[static_cast<std::size_t>(slot)]), -half, half));
+			sums.counts[static_cast<std::size_t>(slot)]), -reach, reach));
 	value.velocity = roundedMean(sums.velocity[static_cast<std::size_t>(slot)],
 		sums.counts[static_cast<std::size_t>(slot)]);
 	if (out->setStep(slot, value)) { return true; }
@@ -352,14 +390,18 @@ constexpr std::uint32_t GrooveRandomVelocitySalt = 0x1A5E7C90;
 //! applyGroove's random timing: @a moved offset by a seeded draw in +-@a randomTicks,
 //! never before tick 0 (a position the engine cannot represent is clamped rather than
 //! produced, exactly as quantizeNotes does). @a randomTicks 0 leaves @a moved alone.
-static tick_t jitteredTick(const Note& note, tick_t pos, tick_t moved, tick_t randomTicks,
+//! @a slotTick - NOT the note's own position - is what the draw is made from, and
+//! that is what makes the call a FIXED POINT: a note already sitting where the
+//! groove put it reads the same slot, rolls the same jitter and stays where it
+//! is. It is humanise's rule for the same reason (NoteTransform.cpp, jitterFor).
+static tick_t jitteredTick(const Note& note, tick_t slotTick, tick_t moved, tick_t randomTicks,
 	std::uint32_t seed)
 {
 	if (randomTicks <= 0) { return moved; }
 	const double unit = static_cast<double>(NoteRandom::rollUnit(seed,
-		note.key(), pos, note.length().getTicks(), GrooveRandomTickSalt));
-	const tick_t jittered = moved + static_cast<tick_t>(std::lround(
-		(unit * 2.0 - 1.0) * static_cast<double>(randomTicks)));
+		note.key(), slotTick, note.length().getTicks(), GrooveRandomTickSalt));
+	const tick_t jittered = clampedTick(moved + static_cast<tick_t>(std::lround(
+		(unit * 2.0 - 1.0) * static_cast<double>(randomTicks))));
 	return jittered < 0 ? 0 : jittered;
 }
 
@@ -375,11 +417,20 @@ static int jitteredVolume(const Note& note, tick_t pos, int velocity, int random
 		(unit * 2.0 - 1.0) * static_cast<double>(randomVelocity))), 0, 200);
 }
 
+//! The groove strength as an amount, with a NaN read as 0. std::clamp leaves a
+//! NaN as a NaN (every NaN comparison is false), so a NaN amount would slip past
+//! applyGroove's early return and reach lround and the tick conversion. Reading
+//! it as 0 is the same idiom the quantise's humanise uses for its own strength.
+static float grooveAmount(float strength)
+{
+	return std::isnan(strength) ? 0.0f : std::clamp(strength, 0.0f, 1.0f);
+}
+
 int applyGroove(const NoteVector& notes, const GrooveTemplate& groove, float strength,
 	tick_t randomTicks, int randomVelocity, std::uint32_t seed)
 {
 	if (!groove.valid()) { return 0; }
-	const float amount = std::clamp(strength, 0.0f, 1.0f);
+	const float amount = grooveAmount(strength);
 	if (amount <= 0.0f && groove.neutral()) { return 0; }
 
 	int changed = 0;
@@ -388,8 +439,10 @@ int applyGroove(const NoteVector& notes, const GrooveTemplate& groove, float str
 		if (note == nullptr) { continue; }
 		const tick_t pos = note->pos().getTicks();
 		const tick_t target = groove.targetTickFor(pos);
-		const tick_t moved = pos + static_cast<tick_t>(std::lround(amount
-			* static_cast<double>(target - pos)));
+		// The travel is a wide difference of two ticks that can each be the very
+		// last one: in tick_t arithmetic that subtraction overflows.
+		const tick_t moved = clampedTick(pos + static_cast<tick_t>(std::lround(amount
+			* static_cast<double>(static_cast<long long>(target) - pos))));
 		const int velocity = static_cast<int>(note->getVolume());
 		const int newVelocity = groovedVelocity(velocity, groove.targetVelocityFor(pos), amount);
 
@@ -397,7 +450,14 @@ int applyGroove(const NoteVector& notes, const GrooveTemplate& groove, float str
 		// timing and velocity amounts). Drawn from the note's identity and the
 		// caller's seed, never from hidden state, so the same call on the same
 		// notes reproduces the same take - the rule quantise's humanise follows.
-		const tick_t jittered = jitteredTick(*note, pos, moved, randomTicks, seed);
+		// The timing draw reads the note's grid SLOT rather than its position, so
+		// repeating the call at full strength is a no-op instead of a re-roll:
+		// the position has moved, the slot it sits in has not.
+		const tick_t jittered = jitteredTick(*note, groove.gridTickFor(pos), moved, randomTicks,
+			seed);
+		// The velocity draw stays on the position: the target is an absolute
+		// velocity, so a repeat rolls the jitter again - the documented contract
+		// of the surface (groove.quantize's humanise, ControlGrooveCommandsTest).
 		const int jitteredVelocity = jitteredVolume(*note, pos, newVelocity, randomVelocity, seed);
 
 		if (jittered != pos) { note->setPos(TimePos(jittered)); }

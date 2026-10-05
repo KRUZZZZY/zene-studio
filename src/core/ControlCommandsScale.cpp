@@ -87,7 +87,7 @@ QJsonArray scaleEntries(int root, bool includeChords)
 	QJsonArray out;
 	for (const Chord& chord : ChordTable::getInstance().chords())
 	{
-		if (chord.isEmpty() || chord.isScale() != !includeChords) { continue; }
+		if (chord.isEmpty() || (!chord.isScale() && !includeChords)) { continue; }
 		std::vector<int> degrees;
 		degrees.reserve(static_cast<size_t>(chord.size()));
 		for (int i = 0; i < chord.size(); ++i) { degrees.push_back(chord[i]); }
@@ -181,9 +181,15 @@ QJsonObject contextTransaction(const QString& command, int previousRoot, const Q
 	QJsonObject before;
 	before.insert(QStringLiteral("root"), previousRoot);
 	before.insert(QStringLiteral("scale"), previousScale);
+	// control.undo takes no arguments (it unwinds the stack the step is on), so
+	// the saved pair travels in `before` only. The other inverses here are the
+	// forward writers, which DO take root + scale.
 	QJsonObject inverseArgs;
-	inverseArgs.insert(QStringLiteral("root"), previousRoot);
-	inverseArgs.insert(QStringLiteral("scale"), previousScale);
+	if (command != QStringLiteral("control.undo"))
+	{
+		inverseArgs.insert(QStringLiteral("root"), previousRoot);
+		inverseArgs.insert(QStringLiteral("scale"), previousScale);
+	}
 	return transactionPayload(before, command, inverseArgs, true,
 		QStringLiteral("recorded ACTION checkpoint: the root/scale context is this group's own "
 			"process state and not a JournallingObject, so the recorded undo step writes the "
@@ -260,7 +266,7 @@ ControlResult fromDetectedKey(const QJsonObject&)
 	result.insert(QStringLiteral("previous_root"), previousRoot);
 	result.insert(QStringLiteral("previous_scale"), previousScale);
 	result.insert(QStringLiteral("__transaction"),
-		contextTransaction(QStringLiteral("scale.from_detected_key"), previousRoot, previousScale,
+		contextTransaction(QStringLiteral("control.undo"), previousRoot, previousScale,
 			key.tonicPitchClass(), scale));
 	return ControlResult::success(result);
 }

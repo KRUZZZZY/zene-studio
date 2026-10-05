@@ -38,6 +38,8 @@
 #include <QStringList>
 #include <QVector>
 
+#include <limits>
+
 #include "ChordProgression.h"
 
 using namespace lmms;
@@ -185,6 +187,103 @@ private slots:
 		request.velocity = DefaultVolume;
 		request.variation = 2.0f;
 		QVERIFY(!chordsFor(request, &chords, &error));
+		request.variation = -1.0f;
+		QVERIFY(!chordsFor(request, &chords, &error));
+		// NaN is in NEITHER range, so the pair of comparisons alone lets it
+		// through - and it would then reach std::lround().
+		request.variation = std::numeric_limits<float>::quiet_NaN();
+		QVERIFY2(!chordsFor(request, &chords, &error), "a NaN variation passed validation");
+		QVERIFY(error.contains(QStringLiteral("variation")));
+	}
+
+	//! Every note a pattern emits stays inside the room it was given - the
+	//! contract layOutChord's own header states. A step too short for the
+	//! chord's tones therefore emits FEWER notes, never notes past the step:
+	//! with stepTicks == 1 a triad arpeggiates as its single first tone.
+	void aOneTickStepNeverPlacesANotePastIt()
+	{
+		const std::vector<int> keys{60, 64, 67};
+		const Pattern patterns[] = { Pattern::ArpeggioUp, Pattern::ArpeggioDown,
+			Pattern::Broken };
+		for (const Pattern pattern : patterns)
+		{
+			std::vector<NoteSpec> notes;
+			layOutChord(keys, 10, 1, pattern, 100, &notes);
+			QVERIFY2(!notes.empty(), qPrintable(patternName(pattern)));
+			for (const NoteSpec& note : notes)
+			{
+				QVERIFY2(note.pos >= 10 && note.pos < 11,
+					qPrintable(QStringLiteral("%1: key %2 at %3 for %4")
+						.arg(patternName(pattern)).arg(note.key).arg(note.pos).arg(note.length)));
+				QVERIFY2(note.pos + note.length <= 11, qPrintable(patternName(pattern)));
+			}
+		}
+
+		// The same rule through the walk, where the room is the STEP: four
+		// one-tick steps must not all pile their tones onto tick 0.
+		Request request;
+		request.progression = QStringLiteral("ii-V-I");
+		request.steps = 4;
+		request.stepTicks = 1;
+		request.pattern = Pattern::ArpeggioUp;
+		std::vector<NoteSpec> notes;
+		QString error;
+		QVERIFY2(generateNotes(request, &notes, &error), qPrintable(error));
+		for (const NoteSpec& note : notes)
+		{
+			QVERIFY2(note.pos + note.length <= 4, qPrintable(keysOf(notes)));
+		}
+	}
+
+	//! The tick the walk starts at: a chord track holds no event before tick 0
+	//! (ChordTrack::set refuses one), so a request that starts there could not
+	//! be written as events at all - it is refused, the one rule both output
+	//! paths can honour.
+	void aNegativeStartIsRefused()
+	{
+		Request request;
+		request.progression = QStringLiteral("I-V-vi-IV");
+		request.steps = 4;
+		request.stepTicks = 100;
+		request.start = -100;
+		std::vector<ChordStep> chords;
+		QString error;
+		QVERIFY2(!chordsFor(request, &chords, &error),
+			"a walk starting before tick 0 was accepted");
+
+		request.start = 0;
+		QVERIFY2(chordsFor(request, &chords, &error), qPrintable(error));
+	}
+
+	/*! A tick is an int32 and the walk's last position is
+	 *  `start + (steps - 1) * stepTicks`, so a walk that FITS is one whose
+	 *  whole extent fits a tick. Both step_ticks and tick reach MaxSchemaInteger
+	 *  at the control layer, so `start = 0, stepTicks = INT32_MAX, steps = 3`
+	 *  is a request every bound accepts and only the extent refuses. */
+	void aWalkThatDoesNotFitInATickIsRefused()
+	{
+		Request request;
+		request.progression = QStringLiteral("I-V-vi-IV");
+		request.steps = 3;
+		request.stepTicks = std::numeric_limits<tick_t>::max();
+		request.start = 0;
+		std::vector<ChordStep> chords;
+		QString error;
+		QVERIFY2(!chordsFor(request, &chords, &error),
+			"a walk whose steps overflow a tick was accepted");
+
+		// Neither output path may emit the overflowing positions either.
+		std::vector<NoteSpec> notes;
+		QVERIFY(!generateNotes(request, &notes, &error));
+		std::vector<ChordEvent> events;
+		QVERIFY(!trackEventsFor(request, &events, &error));
+
+		// The walk that ends ON the last tick is still a walk.
+		request.stepTicks = 1024;
+		request.start = std::numeric_limits<tick_t>::max() - 2048;
+		QVERIFY2(chordsFor(request, &chords, &error), qPrintable(error));
+		QVERIFY2(generateNotes(request, &notes, &error), qPrintable(error));
+		for (const NoteSpec& note : notes) { QVERIFY(note.pos >= 0); }
 	}
 
 	/*! CLAIM 2, first half: the SAME REQUEST AND SEED IS THE SAME TAKE, note

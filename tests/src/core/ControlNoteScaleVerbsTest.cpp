@@ -59,7 +59,9 @@
 #include "ControlRegistry.h"
 #include "ControlReversibility.h"
 #include "Engine.h"
+#include "ProjectKey.h"
 #include "ReversibilityTestSupport.h"
+#include "Song.h"
 
 using namespace lmms;
 using namespace revtest;
@@ -472,6 +474,25 @@ private slots:
 		QVERIFY2(sawMajor, "the engine's own scale vocabulary must carry Major");
 		QCOMPARE(listed.result.value(QStringLiteral("roots")).toArray().size(), 12);
 
+		// include_chords ADDS the chords to the scales - it must not replace the
+		// scales with the chords.
+		const ControlResult withChords = run(QStringLiteral("scale.list"),
+			QJsonObject{{QStringLiteral("include_chords"), true}});
+		QVERIFY2(withChords.ok, qPrintable(withChords.errorMessage));
+		const QJsonArray mixed = withChords.result.value(QStringLiteral("scales")).toArray();
+		int sawScale = 0;
+		int sawChord = 0;
+		for (const QJsonValue& value : mixed)
+		{
+			if (value.toObject().value(QStringLiteral("is_scale")).toBool()) { ++sawScale; }
+			else { ++sawChord; }
+		}
+		QVERIFY2(sawScale >= 10,
+			qPrintable(QStringLiteral("include_chords:true returned only %1 scales - the "
+				"option ADDS chords to the scales").arg(sawScale)));
+		QVERIFY2(sawChord > 0, "include_chords:true returned no chords at all");
+		QCOMPARE(mixed.size(), sawScale + sawChord);
+
 		// A root by NAME shifts the classes; by index gives the same answer.
 		const ControlResult byName = run(QStringLiteral("scale.get_state"),
 			QJsonObject{{QStringLiteral("root"), QStringLiteral("D")},
@@ -621,6 +642,56 @@ private slots:
 
 		const ControlResult noArgument = run(QStringLiteral("device.mpe_set"));
 		QCOMPARE(noArgument.errorKind, ControlErrorKind::InvalidArgs);
+	}
+
+	//! scale.from_detected_key's ADVERTISED inverse must be able to restore the
+	//! context it replaced. Replaying the forward command as its own inverse
+	//! cannot: that handler ignores the recorded root/scale and re-reads the
+	//! project key, so the replay re-applies the detected key instead of the
+	//! saved pair.
+	void theDetectedKeyVerbAdvertisesAnInverseThatRestoresTheContext()
+	{
+		// A known context to be replaced, and a project key that names another.
+		QVERIFY2(run(QStringLiteral("scale.set"),
+			QJsonObject{{QStringLiteral("scale"), QStringLiteral("")}}).ok,
+			"could not clear the scale");
+		QVERIFY2(run(QStringLiteral("scale.root_set"),
+			QJsonObject{{QStringLiteral("root"), 0}}).ok, "could not set the root");
+		QVERIFY2(run(QStringLiteral("scale.root_set"),
+			QJsonObject{{QStringLiteral("root"), 4}}).ok,
+			"could not set the starting root (E)");
+		QVERIFY2(run(QStringLiteral("scale.set"),
+			QJsonObject{{QStringLiteral("scale"), QStringLiteral("Minor")}}).ok,
+			"could not set the starting scale");
+
+		Engine::getSong()->projectKey().set(QStringLiteral("D"), 2,
+			QStringLiteral("Major"), 1.0, 0.5, QStringLiteral("test"),
+			QStringLiteral("/tmp/test-key.json"));
+
+		const ControlResult applied = run(QStringLiteral("scale.from_detected_key"));
+		QVERIFY2(applied.ok, qPrintable(applied.errorMessage));
+		QCOMPARE(run(QStringLiteral("scale.get_state")).result
+			.value(QStringLiteral("root")).toInt(), 2);
+		QCOMPARE(run(QStringLiteral("scale.get_state")).result
+			.value(QStringLiteral("scale")).toString(), QStringLiteral("Major"));
+
+		// The context the command replaced is E minor - what the advertised
+		// inverse must put back, however the project key stands now.
+		const QJsonObject transaction = stateOf(QStringLiteral("scale.from_detected_key"));
+		QVERIFY2(!transaction.isEmpty(),
+			"scale.from_detected_key recorded no transaction to replay");
+		const QJsonObject inverse = transaction.value(QStringLiteral("inverse")).toObject();
+		const QString inverseOp = inverse.value(QStringLiteral("op")).toString();
+		const QJsonObject inverseArgs = inverse.value(QStringLiteral("args")).toObject();
+		const ControlResult replayed = run(inverseOp, inverseArgs);
+		QVERIFY2(replayed.ok, qPrintable(QStringLiteral("the advertised inverse '%1' refused: "
+			"%2").arg(inverseOp, replayed.errorMessage)));
+		QCOMPARE(run(QStringLiteral("scale.get_state")).result
+			.value(QStringLiteral("root")).toInt(), 4);
+		QCOMPARE(run(QStringLiteral("scale.get_state")).result
+			.value(QStringLiteral("scale")).toString(), QStringLiteral("Minor"));
+
+		REV_UNDO_OR_FAIL();
 	}
 };
 

@@ -34,6 +34,7 @@
 #include <cmath>
 #include <cstdio>
 
+#include <QDir>
 #include <QJsonArray>
 #include <QJsonObject>
 #include <QString>
@@ -85,6 +86,19 @@ QString writeJiScl(QTemporaryDir& dir)
 	QFile file(path);
 	if (!file.open(QIODevice::WriteOnly | QIODevice::Text)) { return QString(); }
 	file.write(jiSclLines().join(QLatin1Char('\n')).toUtf8());
+	file.write("\n");
+	file.close();
+	return path;
+}
+
+//! A one-off .scl holding exactly \a body lines, for the scales this test
+//! writes itself rather than shares.
+QString writeScl(QTemporaryDir& dir, const QString& name, const QStringList& body)
+{
+	const QString path = dir.filePath(name);
+	QFile file(path);
+	if (!file.open(QIODevice::WriteOnly | QIODevice::Text)) { return QString(); }
+	file.write(body.join(QLatin1Char('\n')).toUtf8());
 	file.write("\n");
 	file.close();
 	return path;
@@ -205,6 +219,28 @@ const QVector<RefusalCase>& refusalCases(const QString& missingPath)
 		{QStringLiteral("mts.load_keymap"),
 			QJsonObject{{QStringLiteral("path"), missingPath}},
 			ControlErrorKind::NotFound},
+		// Relative paths: both error strings promise "must be absolute", so a
+		// RELATIVE name is an argument error, not a missing-file one - even when
+		// it happens to exist in the process's working directory.
+		{QStringLiteral("mts.load_scale"),
+			QJsonObject{{QStringLiteral("path"), QStringLiteral("ji3.scl")}},
+			ControlErrorKind::InvalidArgs},
+		{QStringLiteral("mts.load_keymap"),
+			QJsonObject{{QStringLiteral("path"), QStringLiteral("ji3.kbm")}},
+			ControlErrorKind::InvalidArgs},
+		// Mixed shapes: a whole-table write never carries a note-shaped field, and
+		// a half pair is not a pair.
+		{QStringLiteral("mts.set_tuning"),
+			QJsonObject{{QStringLiteral("frequencies"), frequenciesOf(128, 440.0)},
+				{QStringLiteral("note"), 5}},
+			ControlErrorKind::InvalidArgs},
+		{QStringLiteral("mts.set_tuning"),
+			QJsonObject{{QStringLiteral("frequencies"), frequenciesOf(128, 440.0)},
+				{QStringLiteral("frequency"), 440.0}},
+			ControlErrorKind::InvalidArgs},
+		{QStringLiteral("mts.set_tuning"),
+			QJsonObject{{QStringLiteral("frequency"), 440.0}},
+			ControlErrorKind::InvalidArgs},
 		{QStringLiteral("mts.set_tuning"), QJsonObject{}, ControlErrorKind::InvalidArgs},
 		{QStringLiteral("mts.set_tuning"),
 			QJsonObject{{QStringLiteral("note"), 5}},
@@ -424,6 +460,75 @@ private slots:
 		}
 	}
 
+	//! Luna 3530: MaxSourceLength is a stated cap (include/SessionTuning.h:88),
+	//! and setState() already refuses an over-cap source. The OTHER mutating
+	//! entry point did not: setNoteFrequency() handed the source straight to
+	//! commit(), which silently kept source.left(MaxSourceLength) - so a caller
+	//! asking for a 300-character label got a success and a 256-character one.
+	//! Over-cap is REFUSED, typed, writing nothing (the same rule setState
+	//! applies), and the exactly-at-the-cap source still succeeds.
+	void aSourceOverTheCapIsRefusedRatherThanSilentlyTruncated()
+	{
+		SessionTuning* tuning = SessionTuning::instance();
+		tuning->reset();
+		QTemporaryDir dir;
+		QVERIFY(dir.isValid());
+
+		// A long .scl PATH: loadScaleFile() passes the path itself as the
+		// source, so a file under a deep enough directory reaches commit() the
+		// same way a long label does.
+		// Segments stay well under the 255-byte NAME_MAX so the deep path really
+		// is created; the whole PATH is what has to pass the source cap.
+		QString deepPath = dir.path();
+		while (deepPath.size() < SessionTuning::MaxSourceLength + 40)
+		{
+			const QString segment(60, QLatin1Char('d'));
+			deepPath += QLatin1Char('/') + segment;
+			if (!QDir().mkpath(deepPath)) { break; }
+		}
+		QVERIFY2(deepPath.size() > SessionTuning::MaxSourceLength,
+			"the deep fixture path did not pass the source cap, so this half cannot run");
+		const QString sclPath = deepPath + QStringLiteral("/ji3.scl");
+		QFile scl(sclPath);
+		QVERIFY(scl.open(QIODevice::WriteOnly | QIODevice::Text));
+		scl.write(jiSclLines().join(QLatin1Char('\n')).toUtf8() + "\n");
+		scl.close();
+
+		const QJsonObject beforeLoad = snapshotState(run(QStringLiteral("mts.get_state")).result);
+		const ControlResult loaded = run(QStringLiteral("mts.load_scale"),
+			QJsonObject{{QStringLiteral("path"), sclPath}});
+		QVERIFY2(!loaded.ok,
+			"a scale whose path is over the source cap loaded successfully: the "
+			"recorded source was silently truncated");
+		QCOMPARE(loaded.errorKind, ControlErrorKind::Refused);
+		int mismatch = 0;
+		const QJsonObject afterLoad = snapshotState(run(QStringLiteral("mts.get_state")).result);
+		QVERIFY2(sameTable(beforeLoad, afterLoad, &mismatch),
+			qPrintable(QStringLiteral("the refused load still changed the table at key %1")
+				.arg(mismatch)));
+
+		// The note path: an over-cap source label is refused, and mts.set_note
+		// does NOT push an undo step for the refusal.
+		const int depthBefore = Engine::projectJournal()->undoDepth();
+		const QString longSource(SessionTuning::MaxSourceLength + 1, QLatin1Char('s'));
+		const ControlResult refused = run(QStringLiteral("mts.set_note"),
+			QJsonObject{{QStringLiteral("note"), 5}, {QStringLiteral("frequency"), 500.0},
+				{QStringLiteral("source"), longSource}});
+		QVERIFY2(!refused.ok,
+			"an over-cap source was accepted: m_source silently lost its tail");
+		QCOMPARE(Engine::projectJournal()->undoDepth(), depthBefore);
+
+		// Exactly at the cap is legal - the boundary is inclusive.
+		const QString atCap(SessionTuning::MaxSourceLength, QLatin1Char('t'));
+		QVERIFY2(run(QStringLiteral("mts.set_note"),
+			QJsonObject{{QStringLiteral("note"), 5}, {QStringLiteral("frequency"), 500.0},
+				{QStringLiteral("source"), atCap}}).ok,
+			"a source of exactly MaxSourceLength characters was refused: the cap is inclusive");
+		QCOMPARE(run(QStringLiteral("mts.get_state")).result
+			.value(QStringLiteral("source")).toString().size(), qint64(SessionTuning::MaxSourceLength));
+		tuning->reset();
+	}
+
 	//! The anti-reimplementation anchor: same Scale, same Keymap, 128 keys.
 	void sessionTableMatchesTheMicrotunerOverAll128Keys()
 	{
@@ -466,6 +571,375 @@ private slots:
 			"scale='%s' keymap='%s'\n",
 			qPrintable(sessionScale->getDescription()),
 			qPrintable(sessionKeymap->getDescription()));
+		tuning->reset();
+	}
+
+	//! Luna 4449: an .scl ratio line is n/d. The denominator parse ignored its
+	//! own result and BOTH halves were clamped up to 1, so 3/nope loaded as 3/1
+	//! and 0/2 as 1/2 - the table then held an interval the file never asked for.
+	//! A line that is not a positive ratio is a bad LINE: it is refused, typed,
+	//! and the table that was already loaded is left standing.
+	void anInvalidRatioLineIsRefusedInsteadOfRewrittenToADifferentOne()
+	{
+		Song* song = Engine::getSong();
+		song->clearProject();
+		SessionTuning* tuning = SessionTuning::instance();
+		tuning->reset();
+
+		QTemporaryDir dir;
+		QVERIFY(dir.isValid());
+		const QString good = writeJiScl(dir);
+		QVERIFY(!good.isEmpty());
+		QVERIFY2(run(QStringLiteral("mts.load_scale"),
+			QJsonObject{{QStringLiteral("path"), good}}).ok, "the JI fixture did not load");
+		const QJsonObject before = snapshotState(run(QStringLiteral("mts.get_state")).result);
+
+		// A .scl is name line, degree count, then that many interval lines.
+		// Three interval lines for the declared three degrees - the point of
+		// these bodies is the RATIO on one of them, so none of them may also be
+		// a truncated scale.
+		const QStringList badOne{QStringLiteral("bad ratio fixture"), QStringLiteral("3"),
+			QStringLiteral("1/1"), QStringLiteral("3/nope"), QStringLiteral("3/2")};
+		const QStringList badZeroDen{QStringLiteral("bad ratio fixture"), QStringLiteral("3"),
+			QStringLiteral("1/1"), QStringLiteral("3/0"), QStringLiteral("3/2")};
+		const QStringList badZeroNum{QStringLiteral("bad ratio fixture"), QStringLiteral("3"),
+			QStringLiteral("1/1"), QStringLiteral("0/2"), QStringLiteral("3/2")};
+		const QStringList badInMiddle{QStringLiteral("bad ratio fixture"), QStringLiteral("3"),
+			QStringLiteral("1/1"), QStringLiteral("3/nope"), QStringLiteral("3/2")};
+		const QVector<QStringList> badBodies{badOne, badZeroDen, badZeroNum, badInMiddle};
+		for (const QStringList& body : badBodies)
+		{
+			const QString path = writeScl(dir, QStringLiteral("bad-%1.scl").arg(qHash(body)), body);
+			QVERIFY2(!path.isEmpty(), "the fixture .scl could not be written");
+			const ControlResult loaded = run(QStringLiteral("mts.load_scale"),
+				QJsonObject{{QStringLiteral("path"), path}});
+			QVERIFY2(!loaded.ok, qPrintable(QStringLiteral("'%1' was accepted: the bad ratio "
+				"line became a different, valid interval").arg(body.last())));
+			QCOMPARE(loaded.errorKind, ControlErrorKind::Refused);
+
+			int mismatch = 0;
+			const QJsonObject after = snapshotState(run(QStringLiteral("mts.get_state")).result);
+			QVERIFY2(sameTable(before, after, &mismatch),
+				qPrintable(QStringLiteral("the refused scale still changed the table at key %1")
+					.arg(mismatch)));
+		}
+	}
+
+	//! A .kbm with the standard 12-TET shape but \a baseFrequency in field 5 -
+//! everything else exactly what a hand-written keymap carries.
+QString writeKbm(QTemporaryDir& dir, const QString& name, const QString& baseFrequency)
+{
+	return writeScl(dir, name,
+		// size, then first / last / middle / base key - the whole keyboard, so
+		// every key (base included) is mapped by the lines below.
+		{QStringLiteral("12"),
+			QStringLiteral("0"),
+			QStringLiteral("127"),
+			QStringLiteral("0"),
+			QStringLiteral("0"),
+			baseFrequency,
+			QStringLiteral("12"),
+			// 12 mapping lines, one per scale degree (x = unmapped).
+			QStringLiteral("0"), QStringLiteral("1"), QStringLiteral("2"), QStringLiteral("3"),
+			QStringLiteral("4"), QStringLiteral("5"), QStringLiteral("6"), QStringLiteral("7"),
+			QStringLiteral("8"), QStringLiteral("9"), QStringLiteral("10"), QStringLiteral("11")});
+}
+
+//! Luna 5317: noteToFreq() hands the table to the render path as a FLOAT, so a
+	//! built entry has to be inside float's range before it is committed. A .kbm
+	//! base frequency of 1e100 parses fine and builds fine as a double, and
+	//! arrives at the audio thread as infinity - so such a table is refused whole,
+	//! leaving the one already loaded standing.
+	void aKeymapThatWouldOverflowFloatIsRefusedWithTheTableLeftStanding()
+	{
+		Song* song = Engine::getSong();
+		song->clearProject();
+		SessionTuning* tuning = SessionTuning::instance();
+		tuning->reset();
+
+		QTemporaryDir dir;
+		QVERIFY(dir.isValid());
+
+		// A keymap is CONTENT over whatever scale is loaded, so the test loads
+		// the 12-degree scale its keymap maps (reset() leaves the session's
+		// scale alone, and a mismatched pair is not what this case is about).
+		QStringList twelveTetScale{QStringLiteral("12-tone scale for board card #712"),
+			QStringLiteral("12")};
+		for (int degree = 0; degree < 12; ++degree)
+		{
+			twelveTetScale.append(QStringLiteral("%1/1").arg(degree + 1));
+		}
+		const QString scalePath = writeScl(dir, QStringLiteral("twelve.scl"), twelveTetScale);
+		QVERIFY2(!scalePath.isEmpty(), "the 12-tone .scl could not be written");
+		QVERIFY2(run(QStringLiteral("mts.load_scale"),
+			QJsonObject{{QStringLiteral("path"), scalePath}}).ok, "the 12-tone scale did not load");
+
+		const QString good = writeKbm(dir, QStringLiteral("good.kbm"), QStringLiteral("440.0"));
+		QVERIFY2(!good.isEmpty(), "the fixture .kbm could not be written");
+		QVERIFY2(run(QStringLiteral("mts.load_keymap"),
+			QJsonObject{{QStringLiteral("path"), good}}).ok, "the 440 Hz fixture did not load");
+		const QJsonObject before = snapshotState(run(QStringLiteral("mts.get_state")).result);
+
+		// Finite as a double, far past float's maximum.
+		const QString huge = writeKbm(dir, QStringLiteral("huge.kbm"), QStringLiteral("1e100"));
+		QVERIFY2(!huge.isEmpty(), "the huge .kbm could not be written");
+		const ControlResult loaded = run(QStringLiteral("mts.load_keymap"),
+			QJsonObject{{QStringLiteral("path"), huge}});
+		QVERIFY2(!loaded.ok, "a keymap whose frequencies overflow float was accepted: the "
+			"render path would read them as infinity");
+		QCOMPARE(loaded.errorKind, ControlErrorKind::Refused);
+
+		int mismatch = 0;
+		const QJsonObject after = snapshotState(run(QStringLiteral("mts.get_state")).result);
+		QVERIFY2(sameTable(before, after, &mismatch),
+			qPrintable(QStringLiteral("the refused keymap still changed the table at key %1")
+				.arg(mismatch)));
+
+		// And nothing in the standing table is out of the render path's range.
+		for (int key = 0; key < SessionTuning::TableSize; ++key)
+		{
+			const float frequency = tuning->noteToFreq(key);
+			QVERIFY2(std::isfinite(frequency),
+				qPrintable(QStringLiteral("key %1 reads %2 Hz through the render path")
+					.arg(key).arg(frequency)));
+		}
+	}
+
+	//! Luna 5318: a .scl's second non-comment line DECLARES how many degrees the
+	//! scale has, so a file that ends early has not declared the scale it carries.
+	//! readScaleLines() only checked that it read at least one interval, so a file
+	//! declaring 5 degrees and holding 1 loaded happily as a 1-degree scale - a
+	//! table built from a scale the file never described. The truncation is
+	//! refused, typed, and the standing table is left alone.
+	void aScaleFileShorterThanItsDeclaredDegreeCountIsRefused()
+	{
+		Song* song = Engine::getSong();
+		song->clearProject();
+		SessionTuning* tuning = SessionTuning::instance();
+		tuning->reset();
+
+		QTemporaryDir dir;
+		QVERIFY(dir.isValid());
+		const QString good = writeJiScl(dir);
+		QVERIFY(!good.isEmpty());
+		QVERIFY2(run(QStringLiteral("mts.load_scale"),
+			QJsonObject{{QStringLiteral("path"), good}}).ok, "the JI fixture did not load");
+		const QJsonObject before = snapshotState(run(QStringLiteral("mts.get_state")).result);
+
+		// Declares five degrees, carries one interval: it would otherwise build a
+		// one-degree scale out of the file's own 5-degree name.
+		const QStringList truncated{QStringLiteral("a five degree scale, truncated"),
+			QStringLiteral("5"), QStringLiteral("9/8")};
+		const QString path = writeScl(dir, QStringLiteral("truncated.scl"), truncated);
+		QVERIFY2(!path.isEmpty(), "the fixture .scl could not be written");
+		const ControlResult loaded = run(QStringLiteral("mts.load_scale"),
+			QJsonObject{{QStringLiteral("path"), path}});
+		QVERIFY2(!loaded.ok, "a .scl with fewer interval lines than its declared degree "
+			"count was accepted: it built a scale the file never described");
+		QCOMPARE(loaded.errorKind, ControlErrorKind::Refused);
+
+		int mismatch = 0;
+		const QJsonObject after = snapshotState(run(QStringLiteral("mts.get_state")).result);
+		QVERIFY2(sameTable(before, after, &mismatch),
+			qPrintable(QStringLiteral("the refused scale still changed the table at key %1")
+				.arg(mismatch)));
+	}
+
+	//! A .kbm with the standard 12-TET shape but \a declaredSize in field 0 and
+//! exactly \a mappingLines after the header, for the keymaps this test writes
+//! itself.
+QString writeKbmSized(QTemporaryDir& dir, const QString& name, const QString& declaredSize,
+	const QStringList& headerFields, const QStringList& mappingLines)
+{
+	QStringList body{declaredSize};
+	body += headerFields;
+	body.append(QStringLiteral("12")); // octave degree, ignored
+	body += mappingLines;
+	return writeScl(dir, name, body);
+}
+
+	//! Luna 5320: a .kbm's first field is the SIZE of the mapping that follows -
+	//! the number of mapping lines the file promises. Only its positivity was
+	//! checked, so a file declaring a 12-entry map and carrying one line built a
+	//! Keymap whose map period is 1, and getDegree() then answered with that one
+	//! degree for every key on the keyboard. The mismatch is refused, typed, and
+	//! the standing table is left alone.
+	void aKeymapWhoseMappingLinesDoNotMatchItsDeclaredSizeIsRefused()
+	{
+		Song* song = Engine::getSong();
+		song->clearProject();
+		SessionTuning* tuning = SessionTuning::instance();
+		tuning->reset();
+
+		QTemporaryDir dir;
+		QVERIFY(dir.isValid());
+
+		// first / last / middle / base key, then the base frequency: the shape
+		// writeKbm() hands the parser, so only the size and the lines below it move.
+		const QStringList keys{QStringLiteral("0"), QStringLiteral("127"),
+			QStringLiteral("0"), QStringLiteral("0"), QStringLiteral("440.0")};
+		QStringList twelveLines;
+		for (int degree = 0; degree < 12; ++degree)
+		{
+			twelveLines.append(QString::number(degree));
+		}
+
+		QStringList scaleLines{QStringLiteral("12-tone scale for Luna 5320"),
+			QStringLiteral("12")};
+		for (int degree = 0; degree < 12; ++degree)
+		{
+			scaleLines.append(QStringLiteral("%1/1").arg(degree + 1));
+		}
+		const QString scalePath = writeScl(dir, QStringLiteral("twelve.scl"), scaleLines);
+		QVERIFY2(!scalePath.isEmpty(), "the 12-tone .scl could not be written");
+		QVERIFY2(run(QStringLiteral("mts.load_scale"),
+			QJsonObject{{QStringLiteral("path"), scalePath}}).ok, "the 12-tone scale did not load");
+
+		const QString good = writeKbmSized(dir, QStringLiteral("good.kbm"),
+			QStringLiteral("12"), keys, twelveLines);
+		QVERIFY2(!good.isEmpty(), "the fixture .kbm could not be written");
+		QVERIFY2(run(QStringLiteral("mts.load_keymap"),
+			QJsonObject{{QStringLiteral("path"), good}}).ok,
+			"the matching-size keymap did not load");
+		const QJsonObject before = snapshotState(run(QStringLiteral("mts.get_state")).result);
+
+		// Declares 12, carries one: the map would repeat with a one-entry period.
+		const QString shortMap = writeKbmSized(dir, QStringLiteral("short.kbm"),
+			QStringLiteral("12"), keys, QStringList{QStringLiteral("0")});
+		QVERIFY2(!shortMap.isEmpty(), "the short fixture .kbm could not be written");
+		// And the other direction: declares 3, carries twelve.
+		const QString longMap = writeKbmSized(dir, QStringLiteral("long.kbm"),
+			QStringLiteral("3"), keys, twelveLines);
+		QVERIFY2(!longMap.isEmpty(), "the long fixture .kbm could not be written");
+		for (const QString& path : QStringList{shortMap, longMap})
+		{
+			const ControlResult loaded = run(QStringLiteral("mts.load_keymap"),
+				QJsonObject{{QStringLiteral("path"), path}});
+			QVERIFY2(!loaded.ok, qPrintable(QStringLiteral("'%1' was accepted: its mapping "
+				"does not have the period it declares").arg(path)));
+			QCOMPARE(loaded.errorKind, ControlErrorKind::Refused);
+		}
+
+		int mismatch = 0;
+		const QJsonObject after = snapshotState(run(QStringLiteral("mts.get_state")).result);
+		QVERIFY2(sameTable(before, after, &mismatch),
+			qPrintable(QStringLiteral("the refused keymap still changed the table at key %1")
+				.arg(mismatch)));
+	}
+
+	//! Luna 5321: the four key fields were read with toInt() and no ok check, so
+	//! "oops" became 0 and was then clamped into range like a real key - a middle
+	//! key of 0 instead of a refusal, and a table built from a keymap nobody
+	//! wrote. Each key field's conversion is checked; an invalid one is refused,
+	//! typed, and the standing table is left alone.
+	void aKeymapWithAMalformedKeyFieldIsRefused()
+	{
+		Song* song = Engine::getSong();
+		song->clearProject();
+		SessionTuning* tuning = SessionTuning::instance();
+		tuning->reset();
+
+		QTemporaryDir dir;
+		QVERIFY(dir.isValid());
+
+		QStringList scaleLines{QStringLiteral("12-tone scale for Luna 5321"),
+			QStringLiteral("12")};
+		for (int degree = 0; degree < 12; ++degree)
+		{
+			scaleLines.append(QStringLiteral("%1/1").arg(degree + 1));
+		}
+		const QString scalePath = writeScl(dir, QStringLiteral("twelve.scl"), scaleLines);
+		QVERIFY2(!scalePath.isEmpty(), "the 12-tone .scl could not be written");
+		QVERIFY2(run(QStringLiteral("mts.load_scale"),
+			QJsonObject{{QStringLiteral("path"), scalePath}}).ok, "the 12-tone scale did not load");
+
+		const QStringList goodKeys{QStringLiteral("0"), QStringLiteral("127"),
+			QStringLiteral("0"), QStringLiteral("0"), QStringLiteral("440.0")};
+		QStringList twelveLines;
+		for (int degree = 0; degree < 12; ++degree)
+		{
+			twelveLines.append(QString::number(degree));
+		}
+		const QString good = writeKbmSized(dir, QStringLiteral("good.kbm"),
+			QStringLiteral("12"), goodKeys, twelveLines);
+		QVERIFY2(!good.isEmpty(), "the fixture .kbm could not be written");
+		QVERIFY2(run(QStringLiteral("mts.load_keymap"),
+			QJsonObject{{QStringLiteral("path"), good}}).ok, "the good keymap did not load");
+		const QJsonObject before = snapshotState(run(QStringLiteral("mts.get_state")).result);
+
+		// One field at a time, each in the position it occupies on disk: first,
+		// last, middle and base key. The malformed text is the whole field, so
+		// these cannot pass as something else.
+		const QVector<QPair<QString, QStringList>> badKeys{
+			{QStringLiteral("first"), {QStringLiteral("oops"), QStringLiteral("127"),
+				QStringLiteral("0"), QStringLiteral("0"), QStringLiteral("440.0")}},
+			{QStringLiteral("last"), {QStringLiteral("0"), QStringLiteral("nope"),
+				QStringLiteral("0"), QStringLiteral("0"), QStringLiteral("440.0")}},
+			{QStringLiteral("middle"), {QStringLiteral("0"), QStringLiteral("127"),
+				QStringLiteral("oops"), QStringLiteral("0"), QStringLiteral("440.0")}},
+			{QStringLiteral("base"), {QStringLiteral("0"), QStringLiteral("127"),
+				QStringLiteral("0"), QStringLiteral("oops"), QStringLiteral("440.0")}},
+			// A fractional key is not a MIDI key either, and it used to be
+			// truncated into a plausible one.
+			{QStringLiteral("fractional"), {QStringLiteral("0"), QStringLiteral("127"),
+				QStringLiteral("0"), QStringLiteral("0.5"), QStringLiteral("440.0")}},
+		};
+		for (const auto& badKey : badKeys)
+		{
+			const QString path = writeKbmSized(dir,
+				QStringLiteral("badkey-%1.kbm").arg(badKey.first), QStringLiteral("12"),
+				badKey.second, twelveLines);
+			QVERIFY2(!path.isEmpty(), "the fixture .kbm could not be written");
+			const ControlResult loaded = run(QStringLiteral("mts.load_keymap"),
+				QJsonObject{{QStringLiteral("path"), path}});
+			QVERIFY2(!loaded.ok, qPrintable(QStringLiteral("a .kbm whose %1 key field is "
+				"malformed was accepted: it loaded as a real key").arg(badKey.first)));
+			QCOMPARE(loaded.errorKind, ControlErrorKind::Refused);
+		}
+
+		int mismatch = 0;
+		const QJsonObject after = snapshotState(run(QStringLiteral("mts.get_state")).result);
+		QVERIFY2(sameTable(before, after, &mismatch),
+			qPrintable(QStringLiteral("the refused keymap still changed the table at key %1")
+				.arg(mismatch)));
+	}
+
+	//! The recorded undo step restores the Scale/Keymap the table was BUILT from,
+	//! not just the frequencies: stateJson() carries the table alone, so without
+	//! this mts.get_state kept reporting the scale an undone load had installed.
+	void undoOfALoadScaleAlsoUndoesTheScaleItInstalled()
+	{
+		Song* song = Engine::getSong();
+		song->clearProject();
+		SessionTuning* tuning = SessionTuning::instance();
+		tuning->reset();
+
+		QTemporaryDir dir;
+		QVERIFY(dir.isValid());
+		// Its OWN scale file, so the description this slot installs cannot be
+		// the one an earlier slot left behind: the undo must restore whatever was
+		// reported BEFORE the load, whatever that was.
+		const QString path = dir.filePath(QStringLiteral("theory-undo.scl"));
+		QFile file(path);
+		QVERIFY(file.open(QIODevice::WriteOnly | QIODevice::Text));
+		file.write("! theory-undo.scl\nthe scale this slot installs\n2\n1/1\n9/8\n");
+		file.close();
+
+		const QString reportedBefore = run(QStringLiteral("mts.get_state")).result
+			.value(QStringLiteral("scale")).toString();
+		const ControlResult loaded = run(QStringLiteral("mts.load_scale"),
+			QJsonObject{{QStringLiteral("path"), path}});
+		QVERIFY2(loaded.ok, qPrintable(loaded.errorMessage));
+		const QString installed = run(QStringLiteral("mts.get_state")).result
+			.value(QStringLiteral("scale")).toString();
+		QCOMPARE(installed, QStringLiteral("the scale this slot installs"));
+
+		REV_UNDO_OR_FAIL();
+		QVERIFY2(run(QStringLiteral("mts.get_state")).result
+				.value(QStringLiteral("scale")).toString() == reportedBefore,
+			qPrintable(QStringLiteral("control.undo restored the table but mts.get_state "
+				"still reports '%1' instead of the pre-load '%2'")
+				.arg(installed, reportedBefore)));
 		tuning->reset();
 	}
 

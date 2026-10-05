@@ -30,6 +30,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
 
 #include "ChordVocabulary.h"
 #include "Note.h"       // NumKeys
@@ -143,8 +144,11 @@ void appendNote(std::vector<NoteSpec>* out, int key, tick_t at, tick_t length, t
 {
 	const tick_t startPos = at < 0 ? 0 : at;
 	const tick_t space = span - (startPos - pos);
+	// No room at all: the tone would have to be clamped to a one-tick note
+	// that ends past the span, which is exactly what layOutChord promises it
+	// never does. A step too short for the chord's tones emits fewer notes.
+	if (space < 1) { return; }
 	if (length > space) { length = space; }
-	if (length < 1) { length = 1; }
 	NoteSpec spec;
 	spec.pos = startPos;
 	spec.length = length;
@@ -267,6 +271,30 @@ bool validateKey(const Request& request, QString* error)
 		return fail(QStringLiteral("the step is %1 ticks; a chord needs at least one tick")
 			.arg(static_cast<qint64>(request.stepTicks)));
 	}
+	// A tick is a position in the song, and a chord track holds nothing
+	// before tick 0 (ChordTrack::set refuses it): the note path would only
+	// clamp such a walk to 0 and collide its steps, while the event path
+	// would emit events the track cannot store.
+	if (request.start < 0)
+	{
+		return fail(QStringLiteral("the walk starts at tick %1; a chord track starts at tick 0")
+			.arg(static_cast<qint64>(request.start)));
+	}
+	// A tick is an int32 and every position of the walk is `start + index *
+	// stepTicks`, so the walk's LAST position has to be one a tick can hold:
+	// computed in 64 bits because the sum overflows the very type being
+	// checked. Both step_ticks and tick reach MaxSchemaInteger at the control
+	// layer, so the two bounds above do not imply this one.
+	const qint64 lastPosition = static_cast<qint64>(request.start)
+		+ static_cast<qint64>(request.steps - 1) * static_cast<qint64>(request.stepTicks);
+	if (lastPosition > static_cast<qint64>(std::numeric_limits<tick_t>::max()))
+	{
+		return fail(QStringLiteral("%1 chords from tick %2, one every %3 tick(s), end at tick "
+			"%4; a tick is at most %5")
+			.arg(request.steps).arg(static_cast<qint64>(request.start))
+			.arg(static_cast<qint64>(request.stepTicks)).arg(lastPosition)
+			.arg(static_cast<qint64>(std::numeric_limits<tick_t>::max())));
+	}
 	return true;
 }
 
@@ -290,7 +318,9 @@ bool validateWalk(const Request& request, const Entry& entry, QString* error)
 		return fail(QStringLiteral("the velocity is %1; this engine's notes are %2..%3")
 			.arg(request.velocity).arg(MinVolume).arg(MaxVolume));
 	}
-	if (request.variation < 0.0f || request.variation > 1.0f)
+	// isfinite first: NaN compares false against BOTH bounds, so the range
+	// pair alone accepts it and it would then reach std::lround().
+	if (!std::isfinite(request.variation) || request.variation < 0.0f || request.variation > 1.0f)
 	{
 		return fail(QStringLiteral("the variation is %1; it is a fraction in 0..1")
 			.arg(static_cast<double>(request.variation)));

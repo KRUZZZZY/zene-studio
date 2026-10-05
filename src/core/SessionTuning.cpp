@@ -110,6 +110,55 @@ bool entryIsFrequency(const QJsonValue& value)
 	return std::isfinite(frequency) && frequency >= 0.0 && frequency <= MaxTableFrequency;
 }
 
+//! The documented source cap, checked at every mutating entry point: commit()
+//! truncates an over-cap source, which would make a note edit or a file load
+//! succeed while quietly losing part of where the table came from.
+bool sourceFitsCap(const QString& source, QString* error)
+{
+	if (source.size() <= SessionTuning::MaxSourceLength) { return true; }
+	if (error != nullptr)
+	{
+		*error = QStringLiteral("the source string is %1 characters; the cap is %2 - "
+			"nothing was written").arg(source.size()).arg(SessionTuning::MaxSourceLength);
+	}
+	return false;
+}
+
+//! One key's frequency, straight from Microtuner::keyToFreq()'s branches: a
+//! single-interval scale is constant, an unmapped key is 0, otherwise the
+//! reference frequency times the interval and its octave.
+double frequencyForKey(int key, const Keymap& keymap, const std::vector<Interval>& intervals,
+	int octaveDegree, const Reference& reference)
+{
+	if (octaveDegree == 0) { return keymap.getBaseFreq(); }
+	const int keymapDegree = keymap.getDegree(key);
+	if (keymapDegree == -1) { return 0.0; } // unmapped: the note stays silent
+	const int scaleOctave = keymapDegree / octaveDegree;
+	int rem = keymapDegree % octaveDegree;
+	if (rem < 0) { rem += octaveDegree; }
+	return reference.middleFreq * intervals[rem].getRatio()
+		* std::pow(reference.octaveRatio, keymap.getOctave(key) + scaleOctave);
+}
+
+//! Every built entry must survive the float narrowing noteToFreq() does before
+//! the audio thread sees it: an entry outside that range reaches the render
+//! path as infinity. 0 is the unmapped marker and stays allowed.
+bool tableFrequenciesAreRenderable(const std::array<double, SessionTuning::TableSize>& table,
+	int* badKey, double* badValue)
+{
+	for (int key = 0; key < SessionTuning::TableSize; ++key)
+	{
+		const double frequency = table[key];
+		if (!std::isfinite(frequency) || frequency < 0.0 || frequency > MaxTableFrequency)
+		{
+			*badKey = key;
+			*badValue = frequency;
+			return false;
+		}
+	}
+	return true;
+}
+
 } // namespace
 
 SessionTuning::SessionTuning()
@@ -166,24 +215,19 @@ bool SessionTuning::buildTable(const Scale* scale, const Keymap& keymap,
 
 	for (int key = 0; key < TableSize; ++key)
 	{
-		if (octaveDegree == 0)
+		out->frequencies[key] = frequencyForKey(key, keymap, intervals, octaveDegree, reference);
+	}
+	int badKey = 0;
+	double badValue = 0.0;
+	if (!tableFrequenciesAreRenderable(out->frequencies, &badKey, &badValue))
+	{
+		// Refused whole, so the table the session already had stays standing.
+		if (error != nullptr)
 		{
-			// A single 1/1 interval: constant base frequency, exactly like
-			// Microtuner::keyToFreq()'s octaveDegree == 0 branch.
-			out->frequencies[key] = keymap.getBaseFreq();
-			continue;
+			*error = QStringLiteral("key %1 would be %2 Hz, outside the range the render "
+				"path can use").arg(badKey).arg(badValue);
 		}
-		const int keymapDegree = keymap.getDegree(key);
-		if (keymapDegree == -1)
-		{
-			out->frequencies[key] = 0.0; // unmapped: the note stays silent
-			continue;
-		}
-		const int scaleOctave = keymapDegree / octaveDegree;
-		int rem = keymapDegree % octaveDegree;
-		if (rem < 0) { rem += octaveDegree; }
-		out->frequencies[key] = reference.middleFreq * intervals[rem].getRatio()
-			* std::pow(reference.octaveRatio, keymap.getOctave(key) + scaleOctave);
+		return false;
 	}
 	// (active is not buildTable's to decide - commit() sets it.)
 	return true;
@@ -296,15 +340,7 @@ bool SessionTuning::setState(const QJsonObject& state, QString* error)
 	const QString source = state.contains(QStringLiteral("source"))
 		? state.value(QStringLiteral("source")).toString()
 		: m_source;
-	if (source.size() > MaxSourceLength)
-	{
-		if (error != nullptr)
-		{
-			*error = QStringLiteral("the source string is %1 characters; the cap is %2 - "
-				"nothing was written").arg(source.size()).arg(MaxSourceLength);
-		}
-		return false;
-	}
+	if (!sourceFitsCap(source, error)) { return false; }
 	const bool active = state.contains(QStringLiteral("active"))
 		? state.value(QStringLiteral("active")).toBool(true)
 		: true;
@@ -325,6 +361,7 @@ bool SessionTuning::setNoteFrequency(int key, double frequency, const QString& s
 		if (error != nullptr) { *error = QStringLiteral("frequency %1 must be a finite positive Hz value a float can hold").arg(frequency); }
 		return false;
 	}
+	if (!sourceFitsCap(source, error)) { return false; }
 	Table next = m_tables[m_front.load(std::memory_order_relaxed)];
 	next.frequencies[key] = frequency;
 	commit(next, true, source.isEmpty() ? QStringLiteral("manual (mts.set_note)") : source);
@@ -363,6 +400,13 @@ void SessionTuning::feedKeymap(std::shared_ptr<const Keymap> keymap, const QStri
 	}
 	m_keymap = std::move(keymap);
 	commit(next, isActive(), source);
+}
+
+void SessionTuning::setBuiltFrom(std::shared_ptr<const Scale> scale,
+	std::shared_ptr<const Keymap> keymap)
+{
+	m_scale = std::move(scale);
+	m_keymap = std::move(keymap);
 }
 
 QJsonObject SessionTuning::stateJson() const
