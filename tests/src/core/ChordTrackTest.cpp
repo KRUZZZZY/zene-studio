@@ -236,6 +236,44 @@ private slots:
 		QCOMPARE(restored.toXml(), xml);
 	}
 
+	/*! A number that does not parse is not a zero: an unreadable event is
+	 *  SKIPPED, like an unresolvable chord name. Defaulting instead would
+	 *  silently invent a different, perfectly valid chord - a malformed `pos`
+	 *  becomes a chord at tick 0, a malformed octave becomes octave 4. */
+	void malformedNumbersAreSkipped()
+	{
+		ChordTrack track;
+		QDomDocument document;
+		QVERIFY(document.setContent(QStringLiteral(
+			"<chord-track><chord chord=\"Major\"/></chord-track>")));  // no pos at all
+		QVERIFY(track.loadSettings(document.documentElement()));
+		QVERIFY2(track.empty(), "a chord element with no position became a chord at tick 0");
+
+		QDomDocument garbage;
+		QVERIFY(garbage.setContent(QStringLiteral(
+			"<chord-track><chord pos=\"abc\" chord=\"Major\"/></chord-track>")));
+		QVERIFY(track.loadSettings(garbage.documentElement()));
+		QVERIFY2(track.empty(), "a malformed position became a chord at tick 0");
+
+		QDomDocument partial;
+		QVERIFY(partial.setContent(QStringLiteral(
+			"<chord-track><chord pos=\"96\" octave=\"x\" chord=\"Major\"/>"
+			"<chord pos=\"192\" root=\"?\" chord=\"minor\"/></chord-track>")));
+		QVERIFY(track.loadSettings(partial.documentElement()));
+		QVERIFY2(track.empty(),
+			"a malformed octave or root became a different valid chord at the right tick");
+
+		// The neighbours of a malformed event are still read: one bad element
+		// must not cost the whole track.
+		QDomDocument mixed;
+		QVERIFY(mixed.setContent(QStringLiteral(
+			"<chord-track><chord pos=\"0\" chord=\"Major\"/><chord pos=\"nope\" chord=\"minor\"/>"
+			"<chord pos=\"192\" chord=\"minor\"/></chord-track>")));
+		QVERIFY(track.loadSettings(mixed.documentElement()));
+		QCOMPARE(track.size(), 2);
+		QCOMPARE(orderOf(track), QStringLiteral("0,192"));
+	}
+
 	/*! CLEARED FIRST, unconditionally: the state a restore must be able to
 	 *  reach is "no chord track at all", so an absent or foreign element has to
 	 *  leave an EMPTY track rather than the previous project's chords. */

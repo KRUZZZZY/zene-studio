@@ -25,6 +25,7 @@
 #include "ChordTrack.h"
 
 #include <algorithm>
+#include <limits>
 
 #include <QDomDocument>
 #include <QDomElement>
@@ -360,6 +361,71 @@ void ChordTrack::saveSettings(QDomDocument& doc, QDomElement& parent) const
 }
 
 
+namespace
+{
+
+//! Whether \a value is a whole number of ticks a tick_t can hold.
+bool fitsTick(qint64 value)
+{
+	return value >= std::numeric_limits<tick_t>::min() && value <= std::numeric_limits<tick_t>::max();
+}
+
+/*! The one REQUIRED numeric attribute of a <chord>: pos, because nothing else
+ *  identifies the event. Absent or malformed is not a chord at tick 0. */
+bool requiredTick(const QDomElement& child, const QString& key, tick_t* out)
+{
+	bool ok = false;
+	const qint64 value = child.attribute(key).toLongLong(&ok);
+	if (!ok || !fitsTick(value)) { return false; }
+	*out = static_cast<tick_t>(value);
+	return true;
+}
+
+/*! An OPTIONAL tick attribute: an ABSENT one keeps \a fallback (old files do
+ *  not carry len), but a PRESENT one that is not a whole number of ticks is
+ *  malformed and is refused rather than read as the fallback. */
+bool optionalTick(const QDomElement& child, const QString& key, tick_t fallback, tick_t* out)
+{
+	const QString text = child.attribute(key);
+	if (text.isEmpty()) { *out = fallback; return true; }
+	bool ok = false;
+	const qint64 value = text.toLongLong(&ok);
+	if (!ok || !fitsTick(value)) { return false; }
+	*out = static_cast<tick_t>(value);
+	return true;
+}
+
+//! An OPTIONAL int attribute: absent keeps \a fallback, malformed is refused.
+bool optionalInt(const QDomElement& child, const QString& key, int fallback, int* out)
+{
+	const QString text = child.attribute(key);
+	if (text.isEmpty()) { *out = fallback; return true; }
+	bool ok = false;
+	*out = text.toInt(&ok);
+	return ok;
+}
+
+/*! One <chord> element as an event, or false when it cannot be read as one.
+ *  Every NUMBER is checked for having parsed: a default would not fail the
+ *  load but silently invent a different, perfectly valid chord - an absent or
+ *  malformed pos becomes a chord at tick 0, a malformed octave becomes octave
+ *  4. The pos is required; len, root and octave keep their documented defaults
+ *  only where the file does not carry them. */
+bool eventFromElement(const QDomElement& child, ChordEvent* out)
+{
+	if (!requiredTick(child, kPos, &out->pos)) { return false; }
+	if (!optionalTick(child, kLength, 0, &out->length)) { return false; }
+	if (!optionalInt(child, kRoot, 0, &out->root)) { return false; }
+	// 4 is the writer's and the control layer's own default octave.
+	if (!optionalInt(child, kOctave, 4, &out->octave)) { return false; }
+	out->chord = child.attribute(kChord);
+	out->scale = child.attribute(kScale);
+	return true;
+}
+
+} // namespace
+
+
 bool ChordTrack::loadSettings(const QDomElement& element)
 {
 	// CLEARED FIRST, unconditionally - see the header: the state an absent
@@ -371,12 +437,7 @@ bool ChordTrack::loadSettings(const QDomElement& element)
 		child = child.nextSiblingElement(kEventElement))
 	{
 		ChordEvent event;
-		event.pos = static_cast<tick_t>(child.attribute(kPos).toLongLong());
-		event.length = static_cast<tick_t>(child.attribute(kLength, QStringLiteral("0")).toLongLong());
-		event.root = child.attribute(kRoot, QStringLiteral("0")).toInt();
-		event.octave = child.attribute(kOctave, QStringLiteral("4")).toInt();
-		event.chord = child.attribute(kChord);
-		event.scale = child.attribute(kScale);
+		if (!eventFromElement(child, &event)) { continue; }
 		// An unreadable event is skipped rather than loaded as a wrong chord:
 		// a name this build cannot resolve is a file this build cannot play.
 		set(event, nullptr);
