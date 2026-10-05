@@ -45,6 +45,7 @@
 
 #include <QDir>
 #include <QFile>
+#include <QFileInfo>
 #include <QJsonArray>
 #include <QJsonObject>
 #include <QTemporaryDir>
@@ -248,6 +249,58 @@ private slots:
 		// project.audible_diff renders both files through the RUNNING binary as
 		// child processes, which in-process is this test executable: its success
 		// path is driven over the socket instead (tests/control-project-audible-diff.py).
+	}
+
+	/*! Luna cluster 5742: project.export_midi used FILE EXISTENCE as proof of a
+	 *  successful export. When the midiexport filter does not load,
+	 *  Song::exportProjectMidi writes nothing and says so only through qDebug, so
+	 *  exporting onto a path that already held an older `.mid` left that stale
+	 *  file in place and the handler answered `success` with the OLD byte count -
+	 *  telling a caller that had just overwritten its only copy of the session's
+	 *  notes that the write had happened.
+	 *
+	 *  This asserts the REFUSAL half, which is the half that was wrong. A headless
+	 *  test process loads no export filters, so the export writing nothing is the
+	 *  case by construction - the same state a user hits with a build that cannot
+	 *  load midiexport. Were the filter to load, the temporary output is renamed
+	 *  over the target, and the post-condition below (the target no longer holds
+	 *  the bytes this test wrote) holds either way.
+	 */
+	void exportMidiDoesNotReportAStaleFileAsAFreshExport()
+	{
+		const QString path = m_dir.filePath(QStringLiteral("stale.mid"));
+		const QByteArray stale("MThd-STALE-NOT-AN-EXPORT");
+		{
+			QFile file(path);
+			QVERIFY(file.open(QIODevice::WriteOnly));
+			QVERIFY(file.write(stale) == stale.size());
+		}
+		QVERIFY(QFileInfo::exists(path));
+
+		const ControlResult result = run(QStringLiteral("project.export_midi"),
+			{{QStringLiteral("path"), path}});
+
+		// The defect: the handler saw the file it was pointed at and called the
+		// pre-existing bytes a successful export of this call.
+		QVERIFY2(!result.ok || result.result.value(QStringLiteral("bytes")).toInteger()
+			!= static_cast<qint64>(stale.size()),
+			"project.export_midi reported success for the pre-existing file");
+		if (result.ok)
+		{
+			// The filter DID load, so the target must now hold the NEW bytes.
+			QFile written(path);
+			QVERIFY(written.open(QIODevice::ReadOnly));
+			QVERIFY(written.readAll() != stale);
+		}
+		else
+		{
+			// A refusal names what went wrong rather than failing silently, and
+			// leaves the previous export in place for the caller to fall back on.
+			QVERIFY(!result.errorMessage.isEmpty());
+			QFile kept(path);
+			QVERIFY(kept.open(QIODevice::ReadOnly));
+			QCOMPARE(kept.readAll(), stale);
+		}
 	}
 
 private:

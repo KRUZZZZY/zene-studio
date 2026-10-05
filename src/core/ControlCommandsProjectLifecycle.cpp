@@ -31,6 +31,7 @@
  */
 
 #include <QDir>
+#include <QFile>
 #include <QFileInfo>
 #include <QJsonObject>
 
@@ -210,8 +211,10 @@ void registerProjectExportMidi(ControlRegistry& registry)
 	cmd.verb = QStringLiteral("export_midi");
 	cmd.description = QStringLiteral("Write the session's notes as a Standard MIDI File (the "
 		"midiexport filter; interchange.smf_export writes the tempo map only). File > Export MIDI "
-		"dispatches this after its file dialog. A missing `.mid` suffix is appended. The session "
-		"is not modified.");
+		"dispatches this after its file dialog. A missing `.mid` suffix is appended. The export is "
+		"written to a temporary file and only replaces an existing file once the new output is "
+		"proven to exist, so a failed export never reports a stale file as a fresh one (and never "
+		"destroys the previous one). The session is not modified.");
 	cmd.argsSchema = objectSchema({{QStringLiteral("path"), stringProperty()}}, {QStringLiteral("path")});
 	cmd.resultSchema = objectSchema({
 		{QStringLiteral("path"), stringProperty()},
@@ -222,15 +225,41 @@ void registerProjectExportMidi(ControlRegistry& registry)
 		QString path = requireAbsolute(args, QStringLiteral("path"), &error);
 		if (path.isEmpty()) { return error; }
 		if (!path.endsWith(QStringLiteral(".mid"))) { path += QStringLiteral(".mid"); }
-		Engine::getSong()->exportProjectMidi(path);
-		const QFileInfo written(path);
+
+		//! WHY A TEMPORARY PATH: the midiexport filter can fail to load, and
+		//! Song::exportProjectMidi then writes nothing and says so only through
+		//! qDebug. Exporting straight onto `path` therefore left a PRE-EXISTING
+		//! `.mid` untouched, and checking that `path` exists afterwards called that
+		//! stale file a successful export of this call - reporting the old byte
+		//! count as if the caller's overwrite had happened. Exporting to a sibling
+		//! temporary path makes existence proof mean "this call wrote it"; the
+		//! target is only replaced once that proof holds.
+		const QString temp = path + QStringLiteral(".zene-export.tmp");
+		QFile::remove(temp);
+		Engine::getSong()->exportProjectMidi(temp);
+		const QFileInfo written(temp);
 		if (!written.exists())
 		{
-			return refused(QStringLiteral("no MIDI file was written to '%1' (the midiexport "
+			QFile::remove(temp);
+			return refused(QStringLiteral("no MIDI file was written for '%1' (the midiexport "
 				"filter is not loadable in this process)").arg(path));
 		}
+		const qint64 bytes = static_cast<qint64>(written.size());
+		// Move the proven output into place. The temporary path is a SIBLING of the
+		// target, so this is a same-directory rename and cannot fail for a
+		// cross-device reason; the target is removed first because a rename will
+		// not overwrite it. If the move still fails the call is refused rather
+		// than reporting the bytes as exported, and the caller keeps the
+		// temporary file's location in the message to retry from.
+		QFile::remove(path);
+		if (!QFile::rename(temp, path))
+		{
+			QFile::remove(temp);
+			return refused(QStringLiteral("the MIDI file was written but could not replace '%1'")
+				.arg(path));
+		}
 		return ControlResult::success(QJsonObject{{QStringLiteral("path"), path},
-			{QStringLiteral("bytes"), static_cast<qint64>(written.size())}});
+			{QStringLiteral("bytes"), static_cast<qint64>(bytes)}});
 	};
 	registry.registerCommand(cmd);
 }
