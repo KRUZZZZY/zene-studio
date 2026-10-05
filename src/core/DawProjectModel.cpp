@@ -222,6 +222,31 @@ QString orDash(const QString& text)
 	return text.isEmpty() ? QStringLiteral("-") : text;
 }
 
+//! One clip as the JSON model view represents it. The notes are carried as
+//! objects, not only as `note_count`: the view is what `dawproject.read`
+//! returns as `model` and its description promises the clips AND the notes, so
+//! a client must be able to read a note back without a second command.
+QJsonObject clipJson(const DawProjectClip& clip)
+{
+	QJsonArray notes;
+	for (const DawProjectNote& note : clip.notes)
+	{
+		notes.append(QJsonObject{{QStringLiteral("time"), note.time},
+			{QStringLiteral("duration"), note.duration},
+			{QStringLiteral("channel"), note.channel},
+			{QStringLiteral("key"), note.key},
+			{QStringLiteral("vel"), note.vel},
+			{QStringLiteral("rel"), note.rel}});
+	}
+	return QJsonObject{{QStringLiteral("time"), clip.time},
+		{QStringLiteral("duration"), clip.duration},
+		{QStringLiteral("play_start"), clip.playStart},
+		{QStringLiteral("name"), clip.name},
+		{QStringLiteral("color"), clip.color},
+		{QStringLiteral("note_count"), clip.notes.size()},
+		{QStringLiteral("notes"), notes}};
+}
+
 } // namespace
 
 QString dawProjectModelDigest(const DawProjectModel& model)
@@ -368,16 +393,7 @@ QJsonObject dawProjectModelJson(const DawProjectModel& model)
 		entry.insert(QStringLiteral("clip_count"), track.clipCount());
 		entry.insert(QStringLiteral("note_count"), track.noteCount());
 		QJsonArray clips;
-		for (const DawProjectClip& clip : track.clips)
-		{
-			QJsonObject clipEntry;
-			clipEntry.insert(QStringLiteral("time"), clip.time);
-			clipEntry.insert(QStringLiteral("duration"), clip.duration);
-			clipEntry.insert(QStringLiteral("play_start"), clip.playStart);
-			clipEntry.insert(QStringLiteral("name"), clip.name);
-			clipEntry.insert(QStringLiteral("note_count"), clip.notes.size());
-			clips.append(clipEntry);
-		}
+		for (const DawProjectClip& clip : track.clips) { clips.append(clipJson(clip)); }
 		entry.insert(QStringLiteral("clips"), clips);
 		tracks.append(entry);
 	}
