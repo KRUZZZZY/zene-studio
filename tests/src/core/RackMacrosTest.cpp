@@ -397,6 +397,50 @@ private slots:
 			QStringLiteral("no channel -> not_found; empty name / bad selection / dead target / bad "
 				"window -> invalid_args; chain 0 removal -> refused"));
 	}
+
+	//! A macro/zone id that does not PARSE is a statement about the arguments,
+	//! not about the rack: "macro-x" is malformed in the same way a blank name
+	//! is, and resolveRackChannel already answers invalid_args for "ch-x". The
+	//! two cases must not share one not_found: a caller retrying on not_found
+	//! can never fix a typo, and a caller checking the rack's size from that
+	//! message is told a real rack question about a malformed string.
+	void malformedMacroAndZoneIdsAreInvalidArgs()
+	{
+		const QString channel = underTestChannel();
+
+		// Malformed: the suffix is not a number at all.
+		const ControlResult malformedMacro = revtest::run(QStringLiteral("rack.macro_set"),
+			{{QStringLiteral("channel"), channel}, {QStringLiteral("macro"), QStringLiteral("macro-x")},
+				{QStringLiteral("value"), 0.5}});
+		QVERIFY(!malformedMacro.ok);
+		QCOMPARE(malformedMacro.errorKind, ControlErrorKind::InvalidArgs);
+
+		// Malformed: the prefix itself is wrong ("macro0", not "macro-0").
+		const ControlResult badPrefixMacro = revtest::run(QStringLiteral("rack.macro_set"),
+			{{QStringLiteral("channel"), channel}, {QStringLiteral("macro"), QStringLiteral("macro0")},
+				{QStringLiteral("value"), 0.5}});
+		QVERIFY(!badPrefixMacro.ok);
+		QCOMPARE(badPrefixMacro.errorKind, ControlErrorKind::InvalidArgs);
+
+		// The same for a zone, on the verb that takes a zone id. It is refused
+		// before anything is removed, so the fixture's zones are intact either way.
+		const ControlResult malformedZone = revtest::run(QStringLiteral("rack.zone_remove"),
+			{{QStringLiteral("channel"), channel}, {QStringLiteral("zone"), QStringLiteral("zone-x")}});
+		QVERIFY(!malformedZone.ok);
+		QCOMPARE(malformedZone.errorKind, ControlErrorKind::InvalidArgs);
+
+		// Well-formed but ABSENT stays not_found: the id parsed, the rack has no
+		// such macro. This is the case the old single-kind refusal got right, and
+		// it must not be flattened into invalid_args by this fix.
+		const ControlResult absentMacro = revtest::run(QStringLiteral("rack.macro_set"),
+			{{QStringLiteral("channel"), channel}, {QStringLiteral("macro"), QStringLiteral("macro-99")},
+				{QStringLiteral("value"), 0.5}});
+		QVERIFY(!absentMacro.ok);
+		QCOMPARE(absentMacro.errorKind, ControlErrorKind::NotFound);
+
+		printEvidence("malformed-rack-ids",
+			QStringLiteral("macro-x / macro0 / zone-x -> invalid_args; macro-99 -> not_found"));
+	}
 };
 
 QTEST_GUILESS_MAIN(RackMacrosTest)
