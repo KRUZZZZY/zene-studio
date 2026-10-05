@@ -421,6 +421,43 @@ private slots:
 			"the group still reports a divergent member after the roll was mirrored");
 	}
 
+	//! Luna cluster 5690: note.transpose, note.velocity_offset and note.velocity_scale
+	//! edited the source clip only - unlike note.move, note.resize, note.velocity_set and
+	//! note.randomize, none of the three called ClipLinks::mirrorContent - so a linked
+	//! copy kept the pre-transform keys/velocities and the group reported itself divergent.
+	void aTransformIsSeenByTheOtherMember()
+	{
+		ControlRegistry* registry = ControlRegistry::instance();
+		const QString a = addMidiClip(QStringLiteral("transpose A"));
+		const QString b = addMidiClip(QStringLiteral("transpose B"));
+		QVERIFY2(registry->invoke(QStringLiteral("clip.link_create"),
+			QJsonObject{{QStringLiteral("clip"), a}, {QStringLiteral("clips"), QJsonArray{b}}}).ok,
+			"clip.link_create refused");
+		QVERIFY2(registry->invoke(QStringLiteral("note.add"),
+			QJsonObject{{QStringLiteral("clip"), a}, {QStringLiteral("key"), 60},
+				{QStringLiteral("position"), 0}, {QStringLiteral("length"), 24},
+				{QStringLiteral("velocity"), 100}}).ok, "note.add refused");
+		QCOMPARE(noteCount(b), 1);
+		QCOMPARE(noteVelocityAt(b, 0), 100);
+
+		QVERIFY2(registry->invoke(QStringLiteral("note.transpose"),
+			QJsonObject{{QStringLiteral("clip"), a}, {QStringLiteral("semitones"), 12}}).ok, "note.transpose refused");
+		QVERIFY2(noteKeyAt(b, 0) == 72,
+			qPrintable(QStringLiteral("note.transpose wrote the source clip only: the other member "
+				"still holds key %1, not 72").arg(noteKeyAt(b, 0))));
+
+		QVERIFY2(registry->invoke(QStringLiteral("note.velocity_offset"),
+			QJsonObject{{QStringLiteral("clip"), a}, {QStringLiteral("delta"), 20}}).ok, "note.velocity_offset refused");
+		QCOMPARE(noteVelocityAt(b, 0), 120);  // 100 + 20
+
+		QVERIFY2(registry->invoke(QStringLiteral("note.velocity_scale"),
+			QJsonObject{{QStringLiteral("clip"), a}, {QStringLiteral("factor"), 2.0}}).ok, "note.velocity_scale refused");
+		QCOMPARE(noteVelocityAt(b, 0), 200);  // clamped at MaxVolume
+
+		// and the group is in sync, not divergent.
+		QCOMPARE(divergentCount(a), 0);
+	}
+
 	void unlinkDetachesAndKeepsItsContent()
 	{
 		ControlRegistry* registry = ControlRegistry::instance();

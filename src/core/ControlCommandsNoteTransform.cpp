@@ -62,6 +62,7 @@
 #include <QJsonObject>
 #include <QString>
 
+#include "ClipLinks.h"
 #include "ControlEdit.h"
 #include "ControlGrooveSupport.h"
 #include "ControlNoteShared.h"
@@ -229,6 +230,11 @@ ControlResult transpose(const QJsonObject& args)
 	// note. The positions did not move, so nothing else changes.
 	clip->rearrangeAllNotes();
 	clip->dataChanged();
+	// Luna cluster 5690: a linked group shares content, and every other note edit here
+	// mirrors it (note.move, note.resize, note.velocity_set, note.randomize). These three
+	// did not, so one member's keys/velocities were changed while its copies kept the old
+	// ones - and the group then reported itself divergent.
+	if (clip->linkId() > 0) { ClipLinks::mirrorContent(clip); }
 
 	QJsonObject arguments;
 	arguments.insert(QStringLiteral("semitones"), semitones);
@@ -259,6 +265,7 @@ ControlResult velocityOffset(const QJsonObject& args)
 	clip->addJournalCheckPoint();
 	const int changed = NoteTransform::offsetVelocity(notes, delta);
 	clip->dataChanged();
+	if (clip->linkId() > 0) { ClipLinks::mirrorContent(clip); }  // cluster 5690, as transpose above
 
 	QJsonObject arguments;
 	arguments.insert(QStringLiteral("delta"), delta);
@@ -288,6 +295,7 @@ ControlResult velocityScale(const QJsonObject& args)
 	clip->addJournalCheckPoint();
 	const int changed = NoteTransform::scaleVelocity(notes, static_cast<float>(factor));
 	clip->dataChanged();
+	if (clip->linkId() > 0) { ClipLinks::mirrorContent(clip); }  // cluster 5690, as transpose above
 
 	QJsonObject arguments;
 	arguments.insert(QStringLiteral("factor"), factor);
