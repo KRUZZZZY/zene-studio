@@ -72,6 +72,19 @@ SampleClip* toneClip(Track* track, double hz, tick_t at)
 	return clip;
 }
 
+//! A tone clip whose sample buffer carries @a rate as its own rate, so a clip can
+//! be built in the malformed state @a rate names (a buffer that never recorded one).
+SampleClip* toneClipAtRate(Track* track, double hz, tick_t at, int rate)
+{
+	const std::vector<float> mono = tone(hz, 44100, 1.0);
+	std::vector<SampleFrame> frames;
+	for (const float v : mono) { frames.emplace_back(v, v); }
+	auto* clip = dynamic_cast<SampleClip*>(track->createClip(TimePos(at)));
+	clip->setSampleBuffer(std::make_shared<SampleBuffer>(frames.data(), frames.size(), rate));
+	clip->movePosition(TimePos(at));
+	return clip;
+}
+
 } // namespace
 
 class AudioAnalysisTest : public QObject
@@ -130,6 +143,27 @@ private slots:
 		const double nyquist = Engine::audioEngine()->outputSampleRate() / 2.0;
 		const int expected = static_cast<int>(32.0 * std::log(1000.0 / 30.0) / std::log(nyquist / 30.0));
 		QVERIFY2(std::abs(loudest - expected) <= 1, qPrintable(QStringLiteral("loudest band %1, expected %2").arg(loudest).arg(expected)));
+	}
+
+	//! A clip whose sample buffer names no rate has no Nyquist to work from: the
+	//! spectrogram's band bins divide by it and clip.audio_to_midi hands it straight
+	//! to the pitch detector. Both refuse the clip instead of analysing an impossible rate.
+	void anAudioClipWithNoSampleRateIsRefused()
+	{
+		auto* track = dynamic_cast<SampleTrack*>(Track::create(Track::Type::Sample, Engine::getSong()));
+		SampleClip* clip = toneClipAtRate(track, 1000.0, 0, 0);
+		QCOMPARE(clip->sample().sampleRate(), 0);
+		QVERIFY(clip->sample().data() != nullptr);  // the malformed part is the rate, not the data
+		const QString id = control::clipIdOf(clip);
+
+		const ControlResult midi = run(QStringLiteral("clip.audio_to_midi"), {{QStringLiteral("clip"), id}});
+		QVERIFY2(!midi.ok, "a clip with no sample rate was analysed as if it had one");
+		QCOMPARE(midi.errorKind, ControlErrorKind::InvalidArgs);
+
+		const ControlResult spec = run(QStringLiteral("sample.spectrogram"),
+			{{QStringLiteral("clip"), id}, {QStringLiteral("rows"), 4}, {QStringLiteral("bands"), 32}});
+		QVERIFY2(!spec.ok, "a spectrogram was computed from a clip with no sample rate");
+		QCOMPARE(spec.errorKind, ControlErrorKind::InvalidArgs);
 	}
 
 	void aRangeIsEdited()
