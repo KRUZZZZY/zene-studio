@@ -230,6 +230,30 @@ private slots:
 		QCOMPARE(track->takeLanes().segments()[0].endTick, 192);
 	}
 
+	//! A16 §3, on the multi-track half: one grouped edit is one record, and its before-state names
+	//! EVERY track it wrote - comp.select_group journalled each track but returned no payload, so the
+	//! record said nothing about what had changed.
+	void aGroupedChoiceRecordsEveryTrackItWrote()
+	{
+		SampleTrack* kick = twoTakeTrack();
+		SampleTrack* snare = twoTakeTrack();
+		const QJsonArray tracks{control::trackIdOf(kick), control::trackIdOf(snare)};
+		QVERIFY(run(QStringLiteral("comp.select_group"), {{QStringLiteral("tracks"), tracks}, {QStringLiteral("begin"), 0},
+			{QStringLiteral("end"), 384}, {QStringLiteral("lane"), 1}}).ok);
+		const QJsonObject record = lastRecord();
+		QCOMPARE(record.value(QStringLiteral("command")).toString(), QStringLiteral("comp.select_group"));
+		QVERIFY(record.value(QStringLiteral("reversible")).toBool());
+		const QJsonArray before = record.value(QStringLiteral("before")).toObject().value(QStringLiteral("tracks")).toArray();
+		QCOMPARE(before.size(), 2);
+		for (const QJsonValue& entry : before)
+		{
+			const QJsonObject composite = entry.toObject().value(QStringLiteral("composite")).toObject();
+			QCOMPARE(composite.value(QStringLiteral("segments")).toArray().size(), 2);
+			QCOMPARE(composite.value(QStringLiteral("segments")).toArray().at(0).toObject().value(QStringLiteral("lane")).toInt(), 0);
+		}
+		QCOMPARE(record.value(QStringLiteral("inverse")).toObject().value(QStringLiteral("op")).toString(), QStringLiteral("control.undo"));
+	}
+
 	void theMetronomesOptions()
 	{
 		QVERIFY(run(QStringLiteral("transport.metronome_options"), {{QStringLiteral("level"), 0.5}, {QStringLiteral("sound"), QStringLiteral("rim")},

@@ -141,6 +141,13 @@ const QString CompositeMechanism = QStringLiteral("ProjectJournal (Track checkpo
 	"Track::saveTrack writes the <takelanes> element - the lane list AND the composite - and "
 	"Track::loadTrack re-reads it)");
 
+//! The same mechanism for the grouped half, which takes one checkpoint PER TRACK: the registry
+//! folds them into one step after the handler returns (ControlRegistry::runHandler ->
+//! ProjectJournal::mergeCheckpointsFrom), so one control.undo puts every track back.
+const QString CompositeGroupMechanism = QStringLiteral("ProjectJournal (a Track checkpoint per "
+	"track, folded by the registry into ONE undo step, so one control.undo restores every track "
+	"of the group)");
+
 ControlResult moveEdge(const QJsonObject& args)
 {
 	ControlResult error;
@@ -214,15 +221,22 @@ ControlResult selectGroup(const QJsonObject& args)
 		}
 	}
 	QJsonArray done;
+	QJsonArray before;
 	for (Track* track : tracks)
 	{
+		QJsonObject entry{{QStringLiteral("track"), trackIdOf(track)}, {QStringLiteral("composite"), compositeState(track)}};
 		track->addJournalCheckPoint();
 		track->takeLanes().selectSegment(begin, end, lane, srcpos);
 		done.append(trackIdOf(track));
+		before.append(entry);
 	}
 	Engine::getSong()->setModified();
-	return ControlResult::success({{QStringLiteral("tracks"), done}, {QStringLiteral("lane"), lane}, {QStringLiteral("begin"), begin},
-		{QStringLiteral("end"), end}});
+	QJsonObject result{{QStringLiteral("tracks"), done}, {QStringLiteral("lane"), lane}, {QStringLiteral("begin"), begin},
+		{QStringLiteral("end"), end}};
+	result.insert(QStringLiteral("__transaction"),
+		transactionPayload(QJsonObject{{QStringLiteral("tracks"), before}}, CompositeInverseOp,
+			QJsonObject{{QStringLiteral("tracks"), done}}, true, CompositeGroupMechanism));
+	return ControlResult::success(result);
 }
 
 ControlResult splitPasses(const QJsonObject& args)
