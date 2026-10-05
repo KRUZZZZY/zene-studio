@@ -37,6 +37,7 @@
 #include <QtTest>
 
 #include <limits>
+#include <utility>
 
 #include <QDomDocument>
 #include <QJsonArray>
@@ -70,6 +71,21 @@ AutomationClip* freshClip(FloatModel* model)
 	auto* clip = dynamic_cast<AutomationClip*>(track->createClip(TimePos(0)));
 	clip->addObject(model);
 	clip->changeLength(TimePos(4 * 192));
+	return clip;
+}
+
+//! The points the mirrored-segment test draws on both clips, so a flipped clip and the clip it was
+//! flipped from can be read against each other tick for tick.
+const std::pair<int, float> MirrorPoints[] = { {0, 0.f}, {48, 0.25f}, {96, 0.75f}, {192, 0.1f} };
+
+//! A fresh clip carrying MirrorPoints, with @a draw setting the curves over them (never read back).
+template <typename Draw>
+AutomationClip* clipWithCurves(FloatModel* model, Draw draw)
+{
+	AutomationClip* clip = freshClip(model);
+	clip->setProgressionType(AutomationClip::ProgressionType::Linear);
+	for (const auto& point : MirrorPoints) { clip->putValue(TimePos(point.first), point.second, false, true); }
+	draw(*clip);
 	return clip;
 }
 
@@ -311,32 +327,48 @@ private slots:
 		QCOMPARE(loaded->getTimeMap().value(0).bend(), 0.5f);
 	}
 
-	/*! A flipped range must keep each point's OWN curve. The replacement nodes
-	 *  a mirror builds carry the values but nothing else, so a Hold or a Bend
-	 *  drawn inside the range came back as the default Clip progression - the
-	 *  curve survived the flip on paper and was gone in the sound. */
-	void aFlippedRangeKeepsEachPointsOwnCurve()
+	/*! A flipped range must keep each MIRRORED SEGMENT's own curve. A point's curve belongs to
+	 *  the segment that STARTS at it (include/AutomationNode.h:156), and mirroring [start, end]
+	 *  reverses time, so the segment A -> B inside the range comes back as B' -> A': it now starts
+	 *  at the mirror of B, which is the point that has to take A's curve. Copying each point's own
+	 *  curve onto its mirror moved every shape one segment along - the Hold drawn on 48 governed
+	 *  48 -> 96 and came back governing the mirror of 0 -> 48 instead, so the sound changed and
+	 *  not just the attributes.
+	 *
+	 *  Checked as sound: the same clip, flipped, must read the original's value at every mirrored
+	 *  tick. A Bend's amount is negated with its segment, because bendValueAt() (in
+	 *  src/core/AutomationClipTransforms.cpp) shapes the segment from the point that starts it, so
+	 *  reading that segment backwards is t -> 1 - t. No step below sets a curve it then reads. */
+	void aFlippedRangeKeepsEachSegmentOwnCurve()
 	{
-		AutomationClip* clip = freshClip(m_track->volumeModel());
-		clip->setProgressionType(AutomationClip::ProgressionType::Linear);
-		for (const int tick : {0, 48, 96, 192}) { clip->putValue(TimePos(tick), tick / 2.f, false, true); }
-		clip->getTimeMap()[48].setCurve(AutomationNode::Curve::Hold);
-		clip->getTimeMap()[96].setCurve(AutomationNode::Curve::Bend, 0.5f);
-		clip->getTimeMap()[0].setCurve(AutomationNode::Curve::Linear);
+		const auto withCurves = [](AutomationClip& clip) {
+			clip.getTimeMap()[0].setCurve(AutomationNode::Curve::Linear);   // 0 -> 48
+			clip.getTimeMap()[48].setCurve(AutomationNode::Curve::Hold);   // 48 -> 96
+			clip.getTimeMap()[96].setCurve(AutomationNode::Curve::Bend, 0.5f);  // 96 -> 192
+		};
+		AutomationClip* original = clipWithCurves(m_track->volumeModel(), withCurves);
+		AutomationClip* flipped = clipWithCurves(m_track->volumeModel(), withCurves);
 
-		// [0, 192] mirrored about its middle: 48 <-> 144, 96 stays put.
-		clip->flipX(0, 192);
-		QVERIFY(clip->getTimeMap().contains(144));
-		QCOMPARE(clip->getTimeMap().value(144).curve(), AutomationNode::Curve::Hold);
-		QCOMPARE(clip->getTimeMap().value(96).curve(), AutomationNode::Curve::Bend);
-		QCOMPARE(clip->getTimeMap().value(96).bend(), 0.5f);
-		QCOMPARE(clip->getTimeMap().value(0).curve(), AutomationNode::Curve::Linear);
+		// [0, 192] mirrored about its middle: 0 <-> 192, 48 <-> 144, 96 stays put.
+		flipped->flipX(0, 192);
+		QCOMPARE(static_cast<int>(flipped->getTimeMap().size()), 4);
+		QVERIFY(flipped->getTimeMap().contains(144));
 
-		// And the curve still decides the curve: the Hold point at 144 holds its
-		// own value through the segment that follows it.
-		clip->putValue(TimePos(192), 200.f, false, true);
-		clip->getTimeMap()[144].setCurve(AutomationNode::Curve::Hold);
-		QCOMPARE(clip->valueAt(TimePos(170)), clip->getTimeMap().value(144).getOutValue());
+		// The Linear segment 0 -> 48 comes back as 144 -> 192 and the Bend 96 -> 192 as 0 -> 96:
+		// read backwards, they must be the same curve at the same value.
+		for (const int tick : {12, 24, 36, 120, 144, 168})
+		{
+			const float mirrored = original->valueAt(TimePos(tick));
+			QVERIFY2(qFuzzyCompare(flipped->valueAt(TimePos(192 - tick)), mirrored),
+				qPrintable(QStringLiteral("tick %1: a mirrored segment is not the original's shape").arg(192 - tick)));
+		}
+
+		// The Hold 48 -> 96 comes back as 96 -> 144, so THAT is the segment that holds - at the
+		// level of the point which now starts it. (The held level itself is re-anchored by every
+		// mirror: a hold is the value of its own point, and reversal carries the point's own value
+		// across. What is compared is which segment holds, and it must not hold any earlier.)
+		QCOMPARE(flipped->valueAt(TimePos(120)), flipped->getTimeMap().value(96).getOutValue());
+		QCOMPARE(flipped->valueAt(TimePos(140)), flipped->getTimeMap().value(96).getOutValue());
 	}
 
 	void aRelativeClipOffsetsTheAbsoluteOne()

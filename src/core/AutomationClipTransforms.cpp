@@ -107,12 +107,41 @@ void mirrorRange(AutomationClip* clip, const TimeMap& map, int start, int end, T
 			{
 				out[end - (POS(it) - start)] = AutomationNode(clip, OUTVAL(it), INVAL(it), end - (POS(it) - start));
 			}
-			// A mirrored point keeps its OWN curve: the replacement node above is built
-			// from the values alone, so without this a Hold or a Bend drawn inside the
-			// range came back as the clip's default progression - the curve was dropped
-			// by the flip, not transformed.
+			// The curve of the mirrored point is settled by mirrorSegmentCurves() below, once the
+			// whole map is known: it belongs to the segment the mirror STARTS, not to this one.
 			out[end - (POS(it) - start)].setCurve(it->curve(), it->bend());
 		}
+	}
+}
+
+/*! Each mirrored segment keeps the curve of the ORIGINAL segment it came from. A curve belongs to
+ *  the segment that STARTS at its point (include/AutomationNode.h:156), and mirroring [start, end]
+ *  reverses time, so the segment A -> B inside the range comes back as B' -> A': it now starts at
+ *  the mirror of B, which is the point that must take A's curve - B's predecessor inside the range.
+ *  Taking the curve of the point's own mirror instead is one segment off and puts every shape onto
+ *  the segment that follows the one it was drawn on.
+ *
+ *  A Bend's amount is negated with its segment: bendValueAt() below shapes a segment with
+ *  pow(t, 1+4*bend) (or 1-pow(1-t, 1-4*bend)) from the point that starts it, and reading that
+ *  segment backwards is exactly t -> 1-t, which is what -bend is.
+ *
+ *  A point whose predecessor lies outside the range keeps its own curve: the segment it now starts
+ *  came from one only half inside the flip, and there is no original segment to take it from. */
+void mirrorSegmentCurves(const TimeMap& map, int start, int end, TimeMap& out)
+{
+	auto previous = map.lowerBound(0);
+	for (auto it = map.begin(); it != map.end(); ++it)
+	{
+		if (POS(it) < start) { previous = it; continue; }
+		if (POS(it) > end) { break; }
+		const auto mirrored = out.find(end - (POS(it) - start));
+		const bool reversed = POS(previous) >= start && POS(previous) < POS(it);
+		if (mirrored != out.end())
+		{
+			const float bend = reversed ? -previous->bend() : it->bend();
+			mirrored->setCurve(reversed ? previous->curve() : it->curve(), bend);
+		}
+		previous = it;
 	}
 }
 
@@ -140,20 +169,9 @@ void flipEnds(AutomationClip* clip, const TimeMap& map, int start, int end, Time
 		out[end] = AutomationNode(clip, clip->valueAt(start), clip->valueAt(end), end);
 	}
 
-	// The two ends are rebuilt rather than mirrored, so they need the same
-	// treatment: an end point keeps the curve of the node it replaced, or the
-	// other end's when the clip has no node there - a Hold on an end point used
-	// to come back as the clip's default progression.
-	const int startCurveFrom = map.contains(start) ? start : end;
-	const int endCurveFrom = map.contains(end) ? end : start;
-	if (map.contains(startCurveFrom))
-	{
-		out[start].setCurve(map[startCurveFrom].curve(), map[startCurveFrom].bend());
-	}
-	if (map.contains(endCurveFrom))
-	{
-		out[end].setCurve(map[endCurveFrom].curve(), map[endCurveFrom].bend());
-	}
+	// The curves are not settled here: these two points are rebuilt, not mirrored, and the
+	// curve each of them owns is the curve of the segment that STARTS at it. mirrorSegmentCurves()
+	// works that out over the whole finished map, which is the only place it can be known.
 }
 
 } // namespace
@@ -174,6 +192,9 @@ void AutomationClip::flipX(int start, int end)
 	timeMap tempMap;
 	mirrorRange(this, m_timeMap, start, end, tempMap);
 	flipEnds(this, m_timeMap, start, end, tempMap);
+	// Last: a point's curve decides the segment after it, so which curve a mirrored point takes
+	// can only be read off the finished map.
+	mirrorSegmentCurves(m_timeMap, start, end, tempMap);
 
 	m_timeMap.clear();
 
