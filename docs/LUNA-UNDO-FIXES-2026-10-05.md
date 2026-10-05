@@ -62,7 +62,13 @@ against the advertised result schema.
   suites pass (`DeviceMovesUndoTest`, `UndoHonestyTest`, `DeviceCopyTest`,
   `DeviceToolsTest`, `ControlSuccessPaths`), exit 0.
 - Fork complexity and file-length checks pass without baseline changes.
-- Full lane build, complete suite, and gate results are pending below.
+- Full lane build passes. The first complete suite passed **400/400**.
+- [Full-feature gates](luna-r7-2026-10-05-logs/full-gates.md): **399/400**,
+  `ArrangingCatchUpTest` crashes in an audio worker. Checked command coverage
+  passes at **806/809** and gates 3–15 pass; coverage gate 2 was not run.
+  Overall exit **1**. The isolated arranging test reproduces the crash
+  in 7.08 seconds, exit **8**. The complete lane gate bar remains unmet;
+  the three undo fixes are committed but the lane is not ready to merge.
 
 Evidence uses Markdown because the repository's evidence gate refuses committed
 `.log` files. The original command logs remain in `/tmp`; no gate exemption is
