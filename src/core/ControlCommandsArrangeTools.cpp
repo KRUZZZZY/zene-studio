@@ -168,7 +168,10 @@ ControlResult removeSilence(const QJsonObject& args)
 	if (clip == nullptr) { return ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("'clip' is an audio clip")); }
 	const float level = std::pow(10.f, static_cast<float>(args.value(QStringLiteral("threshold_db")).toDouble(-50.0)) / 20.f);
 	const tick_t minTicks = std::max(1, args.value(QStringLiteral("min_length")).toInt(48));
-	const auto minFrames = static_cast<f_cnt_t>(minTicks * Engine::framesPerTick());
+	// min_length counts TICKS and quietRuns() counts frames of the clip's OWN sample, so the scalar
+	// has to be the clip's: at the engine's rate a 96 kHz clip in a 48 kHz engine would cut half the
+	// frames asked for. clipFramesPerTick() is where the clip's tempo mode enters the mapping.
+	const auto minFrames = static_cast<f_cnt_t>(minTicks * clip->clipFramesPerTick());
 	std::vector<std::pair<tick_t, tick_t>> cuts;
 	for (const auto& [from, to] : quietRuns(*clip, level, minFrames))
 	{
