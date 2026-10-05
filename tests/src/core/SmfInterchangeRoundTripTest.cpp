@@ -130,6 +130,18 @@ QByteArray longTrackFile()
 	return smfFileWithBody(body + bodyEndingWithEndOfTrack());
 }
 
+//! A one-track file whose track chunk ends IMMEDIATELY after a conductor event,
+//! with no `FF 2F 00` behind it. The chunk length says where the track ends, so
+//! the walk simply runs out of events and returns; nothing in it recorded that
+//! the one event every track owes the format never arrived.
+QByteArray trackWithoutEndOfTrack()
+{
+	QByteArray body;
+	appendVlq(body, 0);
+	appendMeta(body, 0x51, QByteArray("\x07\xA1\x20", 3));  // 120 bpm, and then nothing
+	return smfFileWithBody(body);
+}
+
 } // namespace
 
 class SmfInterchangeRoundTripTest : public QObject
@@ -459,6 +471,29 @@ private slots:
 		QVERIFY(writeFile(exact, smfFileWithBody(bodyEndingWithEndOfTrack())));
 		QVERIFY2(run(QStringLiteral("interchange.smf_read"),
 			{{QStringLiteral("path"), exact}}).ok, "a track that ends at its EOT is read");
+	}
+
+	//! Every track ends with an end-of-track meta event; it is how the format
+	//! says the sequence is over. readTrack() returned success when its walk ran
+	//! out of bytes, and nothing recorded whether the event had arrived - so a
+	//! chunk truncated immediately after a complete tempo event imported as a
+	//! valid conductor track, with the file's silence past the event read as
+	//! "the track ended here". A track the format itself describes wrongly is
+	//! refused, as an end-of-track event with a payload already is.
+	void aTrackWithoutAnEndOfTrackEventIsRefused()
+	{
+		const QString file = path(m_directory, QStringLiteral("no-eot.mid"));
+		QVERIFY(writeFile(file, trackWithoutEndOfTrack()));
+		const ControlResult read = run(QStringLiteral("interchange.smf_read"),
+			{{QStringLiteral("path"), file}});
+		QVERIFY2(!read.ok, "a track that never ends was accepted");
+		QCOMPARE(read.errorKind, ControlErrorKind::InvalidArgs);
+		QVERIFY2(read.errorMessage.contains(QStringLiteral("end-of-track")),
+			qPrintable(read.errorMessage));
+		const ControlResult imported = run(QStringLiteral("interchange.smf_import"),
+			{{QStringLiteral("path"), file}});
+		QVERIFY(!imported.ok);
+		QCOMPARE(digest(mapEvents()), QString());  // a refusal imports nothing
 	}
 
 	//! A track whose accumulated time runs past 2^32 file ticks is refused. The

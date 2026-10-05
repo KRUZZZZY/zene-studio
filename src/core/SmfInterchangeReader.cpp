@@ -297,6 +297,13 @@ bool readEvent(Cursor& track, quint32 smfTick, TrackState* state,
 bool readTrack(Cursor& track, std::vector<Candidate>* candidates, QString* error)
 {
 	TrackState state;
+	// Every track ends with an end-of-track meta event; it is how the format says
+	// the sequence is over. The walk below can also stop because the chunk ran
+	// out of bytes, which is a chunk TRUNCATED immediately after its last event
+	// rather than one that ended - and the chunk length is the file's own word
+	// for where the track ends, so nothing else would notice. Kept, because the
+	// two stops are otherwise indistinguishable.
+	bool sawEndOfTrack = false;
 	// 64-bit, because a track's deltas are individually valid yet together may
 	// pass 2^32 file ticks; a 32-bit accumulator wrapped them back to the start
 	// of the track and the event was imported at an earlier position than the
@@ -324,6 +331,7 @@ bool readTrack(Cursor& track, std::vector<Candidate>* candidates, QString* error
 			error)) { return false; }
 		if (outcome == EventOutcome::EndOfTrack)
 		{
+			sawEndOfTrack = true;
 			if (!track.atEnd())
 			{
 				*error = QStringLiteral("%1 bytes follow the end-of-track meta event; the "
@@ -333,6 +341,13 @@ bool readTrack(Cursor& track, std::vector<Candidate>* candidates, QString* error
 			}
 			return true;
 		}
+	}
+	if (!sawEndOfTrack)
+	{
+		*error = QStringLiteral("a track ends without an end-of-track meta event; the format "
+			"ends every track with one, so the chunk was truncated after its last event "
+			"rather than complete");
+		return false;
 	}
 	return true;
 }
