@@ -308,6 +308,16 @@ bool lockedOut(bool mutating, const QString& commandId, const QJsonObject& args,
 	return mutating && EditLocks::refuses(commandId, args, why);
 }
 
+/*! Whether THIS call is the one whose bookkeeping describes the step. A command
+ *  another command runs inside itself is part of the outer one - ED-056 says so
+ *  for the macro-recorder observer, and CommandTap is told the depth - so the
+ *  OUTERMOST handler alone records, and a nested call records neither a second
+ *  transaction for the step nor a second extension of the one before it. */
+bool recordsItsOwnStep(bool mutating, bool changed, int depth)
+{
+	return mutating && changed && depth == 0;
+}
+
 } // namespace
 
 ControlResult ControlRegistry::runHandler(
@@ -354,7 +364,7 @@ ControlResult ControlRegistry::runHandler(
 	const bool dryRunPreview = result.result.value(QStringLiteral("dry_run")).toBool(false);
 	// Review W3-batchA #8: a call that changed nothing (a report-only call, a value already set) records nothing.
 	const bool changed = result.ok && !dryRunPreview && !changedNothing(journal != nullptr, step, commandId, result);
-	if (mutating && changed)
+	if (recordsItsOwnStep(mutating, changed, m_depth))
 	{
 		recordTransactionOf(commandId, &result, coalesced, step);
 	}

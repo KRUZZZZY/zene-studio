@@ -384,6 +384,49 @@ private slots:
 		QVERIFY(!transactions.last().toObject().value(QStringLiteral("reversible")).toBool());
 	}
 
+	//! A mutating command that runs another mutating command inside itself
+	//! (document.open, range.consolidate, the alternative switch) records ONE
+	//! transaction: the nested call is part of the outer one, exactly as the
+	//! macro-recorder observer already treats it.
+	void nestedMutatingCommandRecordsOneTransaction()
+	{
+		ControlRegistry* registry = ControlRegistry::instance();
+		registry->clearTransactions();
+
+		ControlCommand inner;
+		inner.id = QStringLiteral("test.nested_inner");
+		inner.group = QStringLiteral("test");
+		inner.verb = QStringLiteral("nested_inner");
+		inner.mutating = true;
+		inner.handler = [](const QJsonObject&) {
+			QJsonObject transaction;
+			transaction.insert(QStringLiteral("before"), QJsonObject{{QStringLiteral("value"), 1}});
+			transaction.insert(QStringLiteral("inverse"),
+				QJsonObject{{QStringLiteral("op"), QStringLiteral("test.nested_inner")},
+					{QStringLiteral("args"), QJsonObject{{QStringLiteral("value"), 1}}}});
+			transaction.insert(QStringLiteral("reversible"), true);
+			transaction.insert(QStringLiteral("mechanism"), QStringLiteral("test"));
+			return ControlResult::success(QJsonObject{{QStringLiteral("value"), 2},
+				{QStringLiteral("__transaction"), transaction}});
+		};
+		registry->registerCommand(inner);
+
+		ControlCommand outer;
+		outer.id = QStringLiteral("test.nested_outer");
+		outer.group = QStringLiteral("test");
+		outer.verb = QStringLiteral("nested_outer");
+		outer.mutating = true;
+		outer.handler = [inner](const QJsonObject& args) {
+			return ControlRegistry::instance()->invoke(inner.id, args);
+		};
+		registry->registerCommand(outer);
+
+		QVERIFY(registry->invoke(outer.id).ok);
+		const QJsonArray transactions = registry->transactions();
+		QCOMPARE(transactions.size(), 1);
+		QCOMPARE(transactions.last().toObject().value(QStringLiteral("command")).toString(), outer.id);
+	}
+
 	//! The undo/redo commands share the engine's own ProjectJournal.
 	void undoRedoUseTheProjectJournal()
 	{
