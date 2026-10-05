@@ -389,6 +389,31 @@ bool validateDivision(int division, QString* error)
 	return true;
 }
 
+//! This import path builds ONE timeline out of the tracks. Format 1 shares a
+//! tick origin across them, so its tracks merge; format 2's tracks are
+//! independent sequences with their own origins and tempos, which would be
+//! merged as if they played together, and an unknown format says nothing at
+//! all about how its tracks relate. Both are refused rather than merged.
+bool validateFormat(int format, QString* error)
+{
+	if (format == 0 || format == 1) { return true; }
+	*error = QStringLiteral("SMF format %1 cannot be imported - this reader merges format 0 and "
+		"format 1 tracks onto one timeline, and format %1 does not share a tick origin "
+		"across its tracks").arg(format);
+	return false;
+}
+
+//! The chunk length is the file's own statement of where the tracks begin;
+//! extension bytes it names that the file does not carry leave the cursor short
+//! of that point, so the skip past them cannot be allowed to fail unnoticed.
+bool skipHeaderExtension(Cursor& cursor, quint32 headerLength, QString* error)
+{
+	if (headerLength <= 6 || cursor.skip(headerLength - 6)) { return true; }
+	*error = QStringLiteral("the MThd chunk declares %1 bytes but the file ends before them - "
+		"the header extension it names is truncated").arg(headerLength);
+	return false;
+}
+
 bool parseHeader(Cursor& cursor, SmfReadReport* report, QString* error)
 {
 	if (!expectChunkId(cursor, "MThd",
@@ -407,29 +432,8 @@ bool parseHeader(Cursor& cursor, SmfReadReport* report, QString* error)
 		*error = QStringLiteral("the MThd chunk is truncated");
 		return false;
 	}
-	// The chunk length is the file's own statement of where the tracks begin;
-	// extension bytes it names that the file does not carry leave the cursor
-	// short of that point, so the skip cannot be allowed to fail unnoticed.
-	if (headerLength > 6 && !cursor.skip(headerLength - 6))
-	{
-		*error = QStringLiteral(
-			"the MThd chunk declares %1 bytes but the file ends before them - the "
-			"header extension it names is truncated").arg(headerLength);
-		return false;
-	}
-	// This import path builds ONE timeline out of the tracks. Format 1 shares a
-	// tick origin across them, so its tracks merge; format 2's tracks are
-	// independent sequences with their own origins and tempos, which would be
-	// merged as if they played together, and an unknown format says nothing at
-	// all about how its tracks relate. Both are refused rather than merged.
-	if (format != 0 && format != 1)
-	{
-		*error = QStringLiteral(
-			"SMF format %1 cannot be imported - this reader merges format 0 and "
-			"format 1 tracks onto one timeline, and format %1 does not share a "
-			"tick origin across its tracks").arg(format);
-		return false;
-	}
+	if (!skipHeaderExtension(cursor, headerLength, error)) { return false; }
+	if (!validateFormat(format, error)) { return false; }
 	if (!validateDivision(division, error)) { return false; }
 	report->format = format;
 	report->trackCount = trackCount;
