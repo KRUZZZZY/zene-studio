@@ -448,6 +448,31 @@ assert(string.match(lmms.version(), '^%3%.%4$') ~= nil, 'version is not major.mi
 			"a package must not bypass the version gate");
 	}
 
+	//! A DIRECTORY named package.lua is not a package: the entry must be a file
+	//! a script can be loaded from, and QFileInfo::exists() is true for the
+	//! directory too, so the scanner listed a package whose entry cannot be run.
+	void aDirectoryNamedPackageLuaIsNotAPackage()
+	{
+		using namespace lmms;
+		QTemporaryDir root;
+		QVERIFY(root.isValid());
+		QDir rootDir(root.path());
+
+		QVERIFY(rootDir.mkpath(QStringLiteral("bundle/package.lua")));
+		QVERIFY(QFileInfo(rootDir.absoluteFilePath(QStringLiteral("bundle/package.lua"))).isDir());
+
+		// A second, well-formed package beside it: the scanner must still find
+		// that one, so a skip cannot pass by breaking discovery entirely.
+		QVERIFY(rootDir.mkpath(QStringLiteral("arp")));
+		writeScript(rootDir.absoluteFilePath(QStringLiteral("arp/package.lua")),
+			QStringLiteral("--! lmms-api %1\nprint('arp package ran')\n")
+				.arg(QString::fromLatin1(kExpectedApiVersion)));
+
+		const QVector<ScriptPackage> packages = ScriptPackages::scan(root.path());
+		QCOMPARE(static_cast<int>(packages.size()), 1);
+		QCOMPARE(packages[0].name, QStringLiteral("arp"));
+	}
+
 	void manifestParsingIsStrict()
 	{
 		using namespace lmms;
