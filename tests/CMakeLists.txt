@@ -588,6 +588,8 @@ set(LMMS_TESTS
 	src/core/RangeEditsTest.cpp
 	# 0.5.0 L04 ED-042: a sample clip's gain envelope - the curve, the file, the commands.
 	src/core/ClipGainEnvelopeTest.cpp
+	# 0.5.0 L07 ED-130: a MIDI clip's controller lanes as the file carries them.
+	src/core/MidiClipControllersLoadTest.cpp
 	# 0.5.0 L04 ED-038: a clip's non-destructive transpose - command, file, played pitch.
 	src/core/ClipTransposeTest.cpp
 	# 0.5.0 L04 ED-020/043/044: ripple, overlap and edge snapping.
