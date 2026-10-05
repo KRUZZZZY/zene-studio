@@ -49,6 +49,14 @@ int namedInt(const QJsonObject& json, const char* key, int fallback)
 	return json.contains(QLatin1String(key)) ? json.value(QLatin1String(key)).toInt() : fallback;
 }
 
+//! Refused, with \a message through \a error - which is an OUTPUT and may be
+//! null: a caller that wants no message is refused just the same.
+bool refuse(QString* error, const QString& message)
+{
+	if (error != nullptr) { *error = message; }
+	return false;
+}
+
 } // namespace
 
 MidiInputTransform::MidiInputTransform()
@@ -172,8 +180,8 @@ bool MidiInputTransform::fromJson(const QJsonObject& json, QString* error)
 		if (!value.isDouble() || number != std::trunc(number)
 			|| number < s.minimum || number > s.maximum)
 		{
-			*error = QStringLiteral("'%1' is an integer in %2..%3").arg(QLatin1String(s.key)).arg(s.minimum).arg(s.maximum);
-			return false;
+			return refuse(error, QStringLiteral("'%1' is an integer in %2..%3")
+				.arg(QLatin1String(s.key)).arg(s.minimum).arg(s.maximum));
 		}
 	}
 	// The two ends are a RANGE, checked one value at a time: 100 and 20 are each
@@ -184,9 +192,8 @@ bool MidiInputTransform::fromJson(const QJsonObject& json, QString* error)
 	if (namedInt(json, "key_low", m_keyLow.load(Relaxed))
 		> namedInt(json, "key_high", m_keyHigh.load(Relaxed)))
 	{
-		*error = QStringLiteral("'key_low' must not be above 'key_high': the range would "
-			"hold no key and every note would be dropped");
-		return false;
+		return refuse(error, QStringLiteral("'key_low' must not be above 'key_high': the range "
+			"would hold no key and every note would be dropped"));
 	}
 	for (const Setting& s : settings())
 	{

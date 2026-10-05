@@ -168,6 +168,26 @@ private slots:
 		QVERIFY(!transform.apply(&outside));
 	}
 
+	//! The refusal is reported through an OUTPUT pointer, and nothing in the
+	//! header says it may not be null: both error paths wrote through it
+	//! unguarded, so a caller that does not want the message crashed on a bad
+	//! value instead of being refused.
+	void aRefusalIsRefusedWithoutAnErrorPointer()
+	{
+		MidiInputTransform transform;
+		QVERIFY(set(transform, {{QStringLiteral("transpose"), 12}}));
+		QVERIFY2(!transform.fromJson({{QStringLiteral("transpose"), 49}}, nullptr),
+			"a value out of range is refused with nowhere to report it");
+		QVERIFY2(!transform.fromJson({{QStringLiteral("key_low"), 100},
+			{QStringLiteral("key_high"), 20}}, nullptr),
+			"and so is an inverted key range");
+		QVERIFY2(transform.fromJson({{QStringLiteral("transpose"), 3}}, nullptr),
+			"a good value is still applied with no error pointer");
+		MidiEvent event = noteOn(60, 100);
+		QVERIFY(transform.apply(&event));
+		QCOMPARE(event.key(), 63);
+	}
+
 	//! Every setting is an integer. QJsonValue::toInt() answers the DEFAULT (0)
 	//! for a number that is not whole, so a fractional value used to pass the
 	//! range check and be stored as that default: 'transpose': 2.5 was accepted
