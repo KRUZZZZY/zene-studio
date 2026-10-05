@@ -136,6 +136,17 @@ private:
 	static Type type( const QString& typeName );
 	static QString typeName( Type type );
 
+public:
+	//! ARCH-4 S5: true when \a doc is a document of this program's own - a
+	//! recognized root (`zene-project`, or the pre-rename `lmms-project`), a
+	//! recognized type, and the content element that type names. An interrupted
+	//! save's <file>.new is adopted over the project, and a temp this build
+	//! leaves behind can only be one of these: bytes that merely PARSE are not
+	//! enough, since `<not-a-project/>` parses too and adopting it would
+	//! replace a valid project with unrelated XML.
+	static bool isRecoverableDocument( const QDomDocument & doc );
+
+private:
 	void cleanMetaNodes( QDomElement de );
 
 	void mapSrcAttributeInElementsWithResources(const QMap<QString, QString>& map);

@@ -511,6 +511,46 @@ private slots:
 		// The canonical file is untouched by the discard.
 		QCOMPARE( readText( target ), oldText );
 	}
+
+	//! A .new that PARSES is not yet a document: <not-a-project/> parses and has
+	//! a root element, but it is not a Zene or legacy LMMS document at all. The
+	//! recovery renames the temp over the project, so adopting it would replace
+	//! a perfectly good project with unrelated XML. Only a recognized root, a
+	//! recognized type and the content element that type names may be adopted.
+	void unrelatedXmlNewFileIsNotAdopted()
+	{
+		qunsetenv( "ZENE_TEST_SAVE_FAULT" );
+		QTemporaryDir dir;
+		QVERIFY( dir.isValid() );
+
+		const QString target = dir.filePath( QStringLiteral( "song.mmp" ) );
+		const QString temp = target + QStringLiteral( ".new" );
+
+		DataFile first( DataFile::Type::SongProject );
+		first.content().setAttribute( "s5probe", "old" );
+		QVERIFY( first.writeFile( target ) );
+		const QString oldText = readText( target );
+
+		// Complete, well-formed XML - of something that is not a project.
+		QVERIFY( writeText( temp, QStringLiteral( "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
+			"<not-a-project probe=\"unrelated\"/>\n" ) ) );
+
+		QString report;
+		QString probe;
+		{
+			MessageRecorder recorder;
+			DataFile loaded( target );
+			report = recorder.messages();
+			probe = loaded.content().attribute( QStringLiteral( "s5probe" ) );
+		}
+
+		QVERIFY2( report.contains( QStringLiteral( "Discarded incomplete" ) ),
+			qPrintable( QStringLiteral( "an unrelated .new was adopted; captured: [%1]" ).arg( report ) ) );
+		QVERIFY2( !QFile::exists( temp ), "the unrelated .new was not discarded" );
+		// The valid project is still the project.
+		QCOMPARE( probe, QStringLiteral( "old" ) );
+		QCOMPARE( readText( target ), oldText );
+	}
 };
 
 QTEST_GUILESS_MAIN( DataFileSaveIntegrityTest )

@@ -212,9 +212,11 @@ inline bool isCompleteDocument( const QString & path )
 		return false;
 	}
 	QDomDocument doc;
-	if( lmms::setContent( doc, bytes ) && ! doc.documentElement().isNull() )
+	if( lmms::setContent( doc, bytes ) )
 	{
-		return true;
+		// Parsing is not identity: recoverPendingWrite() renames this file over
+		// the project, so only a document this program recognizes is adoptable.
+		return DataFile::isRecoverableDocument( doc );
 	}
 	if( bytes.trimmed().startsWith( '<' ) )
 	{
@@ -227,8 +229,9 @@ inline bool isCompleteDocument( const QString & path )
 	}
 	QDomDocument compressed;
 	return lmms::setContent( compressed, uncompressed )
-		&& ! compressed.documentElement().isNull();
+		&& DataFile::isRecoverableDocument( compressed );
 }
+
 
 //! ARCH-4 S5 (SPEC-ARCH-4 1.8 part 2). A save that wrote <file>.new and died
 //! before the final rename used to leave that temp orphaned forever - the
@@ -271,6 +274,23 @@ void recoverPendingWrite( const QString & fileName )
 }
 
 } // namespace
+
+
+bool DataFile::isRecoverableDocument( const QDomDocument & doc )
+{
+	const QDomElement root = doc.documentElement();
+	if( root.tagName() != QLatin1String( "zene-project" )
+		&& root.tagName() != QLatin1String( "lmms-project" ) )
+	{
+		return false;
+	}
+	const Type type = DataFile::type( root.attribute( "type" ) );
+	if( type == Type::Unknown )
+	{
+		return false;
+	}
+	return ! root.elementsByTagName( DataFile::typeName( type ) ).item( 0 ).toElement().isNull();
+}
 
 
 
