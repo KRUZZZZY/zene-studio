@@ -191,6 +191,49 @@ private slots:
 			QStringLiteral("zone_remove -> control.undo -> the zone is back at its index"));
 	}
 
+	//! Luna 5746: rack.zone_remove advertises rack.zone_add as its inverse, and that
+	//! inverse must be REPLAYABLE. It used to carry only {"channel", "zone"}: no
+	//! "chain" (which rack.zone_add requires), and none of the dropped zone's
+	//! range values, so replaying it either failed argument validation or rebuilt
+	//! a different zone. The args have to describe the zone that was dropped.
+	void zoneRemoveAdvertisesAReplayableInverse()
+	{
+		const QString channel = underTestChannel();
+		const ControlResult added = revtest::run(QStringLiteral("rack.zone_add"),
+			{{QStringLiteral("channel"), channel}, {QStringLiteral("low_key"), 60},
+				{QStringLiteral("high_key"), 72}, {QStringLiteral("low_velocity"), 20},
+				{QStringLiteral("high_velocity"), 90}, {QStringLiteral("chain"), kDrivenChain}});
+		QVERIFY2(added.ok, qPrintable(added.errorMessage));
+		const QString zone = added.result.value(QStringLiteral("zone")).toString();
+		QVERIFY2(revtest::run(QStringLiteral("rack.zone_remove"),
+			{{QStringLiteral("channel"), channel}, {QStringLiteral("zone"), zone}}).ok,
+			"rack.zone_remove refused");
+
+		const QJsonObject inverse = revtest::stateOf(QStringLiteral("rack.zone_remove"))
+			.value(QStringLiteral("inverse")).toObject();
+		QVERIFY2(!inverse.isEmpty(), "rack.zone_remove advertised no inverse at all");
+		QCOMPARE(inverse.value(QStringLiteral("op")).toString(), QStringLiteral("rack.zone_add"));
+		const QJsonObject inverseArgs = inverse.value(QStringLiteral("args")).toObject();
+		QCOMPARE(inverseArgs.value(QStringLiteral("channel")).toString(), channel);
+		QCOMPARE(inverseArgs.value(QStringLiteral("chain")).toInt(), kDrivenChain);
+		QCOMPARE(inverseArgs.value(QStringLiteral("low_key")).toInt(), 60);
+		QCOMPARE(inverseArgs.value(QStringLiteral("high_key")).toInt(), 72);
+		QCOMPARE(inverseArgs.value(QStringLiteral("low_velocity")).toInt(), 20);
+		QCOMPARE(inverseArgs.value(QStringLiteral("high_velocity")).toInt(), 90);
+		// And it really runs: the advertised args put the very zone back.
+		QVERIFY2(revtest::run(inverse.value(QStringLiteral("op")).toString(), inverseArgs).ok,
+			"the advertised rack.zone_add inverse was refused");
+		const QJsonObject resolved = revtest::run(QStringLiteral("rack.zone_resolve"),
+			{{QStringLiteral("channel"), channel}, {QStringLiteral("key"), 66},
+				{QStringLiteral("velocity"), 50}}).result;
+		QVERIFY(resolved.value(QStringLiteral("matched")).toBool());
+		QCOMPARE(resolved.value(QStringLiteral("zone_state")).toObject()
+			.value(QStringLiteral("chain")).toInt(), kDrivenChain);
+		printEvidence("surface-zone-inverse",
+			QStringLiteral("zone_remove's inverse is a rack.zone_add carrying chain and the "
+				"dropped zone's four range values, and it replays"));
+	}
+
 	//! The whole configuration - the chains, the selector, the macros with their
 	//! targets and the zones - is saved as children of the channel's EXISTING
 	//! <rack> element and comes back from a reload, and a reloaded macro whose

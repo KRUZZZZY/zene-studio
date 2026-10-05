@@ -232,10 +232,17 @@ void registerZoneRemove(ControlRegistry& registry)
 		result.insert(QStringLiteral("removed"), zoneId(index));
 		result.insert(QStringLiteral("zone_count"), rack.zones().zoneCount());
 		QJsonObject beforeState = zoneJson(zone, index);
+		// The advertised inverse must be REPLAYABLE, so it carries the whole zone:
+		// rack.zone_add requires 'chain' and reads the four range values, and its
+		// args schema is closed. The recorded undo step still restores the zone at
+		// its own index; these args only have to describe the zone that was dropped.
+		QJsonObject inverseArgs{{QStringLiteral("channel"), channelIdText},
+			{QStringLiteral("chain"), zone.chain}, {QStringLiteral("low_key"), zone.lowKey},
+			{QStringLiteral("high_key"), zone.highKey}, {QStringLiteral("low_velocity"), zone.lowVelocity},
+			{QStringLiteral("high_velocity"), zone.highVelocity}};
+		if (!zone.sample.isEmpty()) { inverseArgs.insert(QStringLiteral("sample"), zone.sample); }
 		result.insert(QStringLiteral("__transaction"),
-			transactionPayload(beforeState, QStringLiteral("rack.zone_add"),
-				QJsonObject{{QStringLiteral("channel"), channelIdText},
-					{QStringLiteral("zone"), zoneId(index)}},
+			transactionPayload(beforeState, QStringLiteral("rack.zone_add"), inverseArgs,
 				true,
 				QStringLiteral("action checkpoint: the recorded undo step re-inserts the captured "
 					"zone at its own index, so the list - and the order the first-match rule "
