@@ -335,19 +335,36 @@ ControlResult selectWhere(const QJsonObject& args)
 	NoteTransform::Filter filter;
 	if (!filterFrom(args.value(QStringLiteral("filter")).toObject(), &filter, &error)) { return error; }
 	const bool additive = args.value(QStringLiteral("additive")).toBool();
+	const NoteVector& noteList = clip->notes();
 	QJsonArray previous;
-	for (Note* note : clip->notes())
+	QVector<int> wanted;
+	for (int index = 0; index < static_cast<int>(noteList.size()); ++index)
 	{
-		if (note->selected()) { previous.append(noteIdOf(note)); }
+		Note* note = noteList.at(index);
+		if (note->selected())
+		{
+			previous.append(noteIdOf(note));
+			// 'additive' KEEPS what was selected, so those notes are part of the
+			// resulting selection the store has to hold as well.
+			if (additive) { wanted.append(index); }
+		}
 		if (!additive) { note->setSelected(false); }
 	}
-	const NoteVector hits = NoteTransform::select(clip->notes(), filter);
+	const NoteVector hits = NoteTransform::select(noteList, filter);
 	QJsonArray selected;
-	for (Note* note : hits)
+	for (int index = 0; index < static_cast<int>(noteList.size()); ++index)
 	{
+		Note* note = noteList.at(index);
+		if (std::find(hits.cbegin(), hits.cend(), note) == hits.cend()) { continue; }
 		note->setSelected(true);
+		wanted.append(index);
 		selected.append(noteIdOf(note));
 	}
+	// The flags above are half the selection: the index store control::selectNotes owns is
+	// the other half, and note.select writes BOTH (src/core/ControlCommandsNotes.cpp:477).
+	// Writing only the flags left roll.get_state and the next note.select reporting the
+	// selection this verb had replaced.
+	control::selectNotes(clipId(ref.id), static_cast<int>(noteList.size()), wanted);
 	emit clip->dataChanged();
 	return ControlResult::success({{QStringLiteral("clip"), clipId(ref.id)}, {QStringLiteral("matched"), selected.size()},
 		{QStringLiteral("selected"), selected}, {QStringLiteral("previous"), previous}});
