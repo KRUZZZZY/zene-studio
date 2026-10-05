@@ -102,6 +102,12 @@ QJsonObject entryById(const QJsonObject& result, const QString& id)
 	return QJsonObject();
 }
 
+//! A command dispatched the way a socket client dispatches it.
+ControlResult run(const QString& id, const QJsonObject& args = QJsonObject())
+{
+	return ControlRegistry::instance()->invoke(id, args);
+}
+
 bool gitAvailable()
 {
 	return !QStandardPaths::findExecutable(QStringLiteral("git")).isEmpty();
@@ -457,6 +463,38 @@ private slots:
 		QCOMPARE(readBytes(project), documentWith(1));
 		QVERIFY2(restoreProjectRevision(project, 0, &error), qPrintable(error));
 		QCOMPARE(readBytes(project), documentWith(5));
+	}
+
+	//! Luna cluster 5737: a restore that CANNOT find its revision records no undo
+	//! step. The handler registered the checkpoint before handing the request to
+	//! restoreProjectRevision(), the call that can refuse it, so asking for a
+	//! revision that is not there failed the command and still pushed a step whose
+	//! undo "restores" a file the command never touched. The caller's next
+	//! control.undo then spent itself on that phantom, and the step before it moved
+	//! one further from the keyboard.
+	void aFailedRestoreRecordsNoUndoStep()
+	{
+		// Its OWN file: the shared fixture's revisions are rotated by the cases
+		// above, so revision 2 would exist there.
+		const QString project = path(QStringLiteral("phantom.mmp"));
+		QVERIFY(writeBytes(project, documentWith(3)));
+		QVERIFY(writeBytes(project + QStringLiteral(".rev0"), documentWith(2)));
+		const QByteArray before = readBytes(project);
+
+		const ControlResult depth = run(QStringLiteral("control.undo_depth"));
+		QVERIFY(depth.ok);
+		const int beforeDepth = depth.result.value(QStringLiteral("depth")).toInt();
+
+		// The fixture holds revision 0 and NO revision 1: a typed miss.
+		const ControlResult missing = run(QStringLiteral("project.restore_revision"),
+			QJsonObject{{QStringLiteral("path"), project}, {QStringLiteral("revision"), 1}});
+		QVERIFY2(!missing.ok, "a restore of a revision that does not exist reported success");
+		QCOMPARE(missing.errorKind, ControlErrorKind::NotFound);
+
+		const ControlResult after = run(QStringLiteral("control.undo_depth"));
+		QVERIFY(after.ok);
+		QCOMPARE(after.result.value(QStringLiteral("depth")).toInt(), beforeDepth);
+		QCOMPARE(readBytes(project), before);
 	}
 };
 

@@ -255,6 +255,18 @@ void registerProjectRestoreRevision(ControlRegistry& registry)
 		// The restore rotates the live file in as the new revision 0, so ONE
 		// action step restoring revision 0 again is the exact inverse - and the
 		// redo re-restores the revision this call chose.
+		//
+		// The step is recorded AFTER the restore has succeeded (Luna cluster
+		// 5737): restoreProjectRevision() is the call that can refuse - the
+		// revision is outside the policy, or is simply not there - and a step
+		// registered before it left a failed command's phantom behind, whose
+		// undo "restored" a file the command never touched. The caller's next
+		// control.undo then spent itself on that phantom and moved the real step
+		// before it one further from the keyboard.
+		if (!control::restoreProjectRevision(target, revision, &error))
+		{
+			return ControlResult::failure(ControlErrorKind::NotFound, error);
+		}
 		control::addUndoStep(
 			[target]() {
 				QString ignored;
@@ -264,10 +276,6 @@ void registerProjectRestoreRevision(ControlRegistry& registry)
 				QString ignored;
 				control::restoreProjectRevision(target, revision, &ignored);
 			});
-		if (!control::restoreProjectRevision(target, revision, &error))
-		{
-			return ControlResult::failure(ControlErrorKind::NotFound, error);
-		}
 
 		QJsonObject result;
 		result.insert(QStringLiteral("file"), target);
