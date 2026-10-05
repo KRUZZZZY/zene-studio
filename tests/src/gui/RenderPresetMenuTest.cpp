@@ -39,10 +39,13 @@
 #include "ConfigManager.h"
 #include "ControlRegistry.h"
 #include "Engine.h"
+#include "ProjectJournal.h"
+#include "../core/ReversibilityTestSupport.h"
 #include "RenderPresetMenu.h"
 
 using namespace lmms;
 using namespace lmms::gui;
+using namespace revtest;
 
 namespace
 {
@@ -144,6 +147,59 @@ private slots:
 		QVERIFY(item(menu, kPreset) == nullptr);
 		QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
 	}
+
+	void aCorruptRenderPresetIsNotDeleted()
+	{
+		const QString name = QStringLiteral("corrupt-preset");
+		const QString dir = run(QStringLiteral("export.preset_list")).result.value(QStringLiteral("dir")).toString();
+		QVERIFY(QDir().mkpath(dir));
+		const QString path = dir + name + QStringLiteral(".zrp");
+		const QByteArray bytes("{malformed preset}");
+		ControlResult error;
+		QVERIFY(controlWriteFileBytes(path, bytes, true, &error));
+		const quint64 serial = Engine::projectJournal()->topStepSerial();
+		const ControlResult removed = run(QStringLiteral("export.preset_remove"), {{QStringLiteral("name"), name}});
+		QVERIFY(!removed.ok);
+		QCOMPARE(removed.errorKind, ControlErrorKind::InvalidArgs);
+		QCOMPARE(readBytes(path), bytes);
+		QCOMPARE(Engine::projectJournal()->topStepSerial(), serial);
+		QVERIFY(QFile::remove(path));
+	}
+
+	void aFailedRenderPresetDeleteLeavesNoHistory()
+	{
+#ifndef Q_OS_UNIX
+		QSKIP("directory write permissions do not enforce Unix unlink failures on this platform");
+#else
+		const QString name = QStringLiteral("undeletable-preset");
+		const ControlResult created = run(QStringLiteral("export.preset_add"),
+			{{QStringLiteral("name"), name}, {QStringLiteral("sample_rate"), 48000},
+				{QStringLiteral("bit_depth"), QStringLiteral("24")}, {QStringLiteral("stereo_mode"), QStringLiteral("stereo")}});
+		QVERIFY2(created.ok, qPrintable(created.errorMessage));
+		const QString path = created.result.value(QStringLiteral("path")).toString();
+		const QString dir = QFileInfo(path).absolutePath();
+		const QByteArray bytes = readBytes(path);
+		const QFile::Permissions permissions = QFile::permissions(dir);
+		QVERIFY(QFile::setPermissions(dir, QFile::ReadOwner | QFile::ExeOwner));
+		QFile probe(dir + QStringLiteral("/unlink-probe"));
+		if (probe.open(QIODevice::WriteOnly))
+		{
+			probe.close();
+			QVERIFY(QFile::setPermissions(dir, permissions));
+			QVERIFY(probe.remove());
+			QSKIP("this runner can write to read-only directories; unlink failure is unobservable");
+		}
+		const quint64 serial = Engine::projectJournal()->topStepSerial();
+		const ControlResult removed = run(QStringLiteral("export.preset_remove"), {{QStringLiteral("name"), name}});
+		QVERIFY(QFile::setPermissions(dir, permissions));
+		QVERIFY(!removed.ok);
+		QCOMPARE(removed.errorKind, ControlErrorKind::Refused);
+		QCOMPARE(readBytes(path), bytes);
+		QCOMPARE(Engine::projectJournal()->topStepSerial(), serial);
+		QVERIFY(QFile::remove(path));
+#endif
+	}
+
 
 private:
 	QTemporaryDir m_world;
