@@ -417,11 +417,20 @@ static int jitteredVolume(const Note& note, tick_t pos, int velocity, int random
 		(unit * 2.0 - 1.0) * static_cast<double>(randomVelocity))), 0, 200);
 }
 
+//! The groove strength as an amount, with a NaN read as 0. std::clamp leaves a
+//! NaN as a NaN (every NaN comparison is false), so a NaN amount would slip past
+//! applyGroove's early return and reach lround and the tick conversion. Reading
+//! it as 0 is the same idiom the quantise's humanise uses for its own strength.
+static float grooveAmount(float strength)
+{
+	return std::isnan(strength) ? 0.0f : std::clamp(strength, 0.0f, 1.0f);
+}
+
 int applyGroove(const NoteVector& notes, const GrooveTemplate& groove, float strength,
 	tick_t randomTicks, int randomVelocity, std::uint32_t seed)
 {
 	if (!groove.valid()) { return 0; }
-	const float amount = std::clamp(strength, 0.0f, 1.0f);
+	const float amount = grooveAmount(strength);
 	if (amount <= 0.0f && groove.neutral()) { return 0; }
 
 	int changed = 0;

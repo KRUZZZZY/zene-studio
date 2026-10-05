@@ -407,6 +407,47 @@ private slots:
 		QCOMPARE(applyGroove(first.vector(), captured, 1.0f, 2, 0, 12345u), 0);
 		QVERIFY2(takeOf(first.vector()) == landed, qPrintable(describe(takeOf(first.vector()))));
 	}
+
+	//! Luna 3176: a strength that is not a NUMBER cannot be clamped - std::clamp
+	//! hands a NaN back, and std::lround of a NaN has no result, so a note would
+	//! be given a position or velocity out of thin air. NoteTransform::quantizeNotes
+	//! already reads a NaN strength as 0 (NoteTransform.cpp:275); applyGroove has to
+	//! say the same thing.
+	void aStrengthThatIsNotANumberMovesNothing()
+	{
+		NoteTable source;
+		fillFeelClip(&source);
+		GrooveTemplate captured;
+		QVERIFY(extractGroove(source.vector(), QStringLiteral("feel"), 48, 12, &captured, nullptr));
+
+		const auto oneNote = []() {
+			NoteTable table;
+			table.add(62, 12, 12, 100);
+			return table;
+		};
+
+		// The strength-0 early return in applyGroove is the deterministic probe.
+		// `amount <= 0.0f` is false for a NaN (every NaN comparison is), so a NaN
+		// slips past a guard that a plain 0 stops at. Against a NEUTRAL groove a
+		// strength of 0 with a random amount is a guaranteed no-op, so anything the
+		// NaN call changes is the NaN alone - no reliance on lround(NaN).
+		GrooveTemplate neutral(QStringLiteral("straight"), 48, 12);
+		QVERIFY(neutral.neutral());
+
+		NoteTable zero = oneNote();
+		const QVector<NoteAt> untouched = takeOf(zero.vector());
+		QCOMPARE(applyGroove(zero.vector(), neutral, 0.0f, 6, 20, 12345u), 0);
+		QVERIFY2(takeOf(zero.vector()) == untouched,
+			qPrintable(describe(takeOf(zero.vector()))));
+
+		NoteTable nan = oneNote();
+		QVERIFY2(applyGroove(nan.vector(), neutral, std::numeric_limits<float>::quiet_NaN(),
+			       6, 20, 12345u) == 0,
+			"a NaN strength is not 0: it passed the amount <= 0 early return that a "
+			"plain 0 strength stops at");
+		QVERIFY2(takeOf(nan.vector()) == untouched,
+			qPrintable(describe(takeOf(nan.vector()))));
+	}
 };
 
 QTEST_GUILESS_MAIN(GrooveTemplateTest)
