@@ -1365,6 +1365,31 @@ void theWriteReportHashesTheFileItWrote()
 	}
 }
 
+//! Luna cluster 4133: a successful write handed back an EMPTY loss report even
+//! when the model it was given said a track's contentType had been lost, so
+//! "this file lost nothing" was reported for a file that did lose something.
+void theWriteReportCountsWhatTheModelMarksLost()
+{
+	DawProjectModel model = authoredModel();
+	model.splitEvents = 3;
+	int lost = 0;
+	// Mark BOTH tracks lost, so the count cannot be satisfied by counting one.
+	for (DawProjectTrack& track : model.tracks)
+	{
+		track.lostContentType = true;
+		++lost;
+	}
+	QVERIFY(lost > 1);
+
+	const QString file = path(m_directory, QStringLiteral("report-loss.dawproject"));
+	DawProjectWriteReport report;
+	QString error;
+	QVERIFY2(writeDawProject(file, model, &report, &error), qPrintable(error));
+
+	QCOMPARE(report.loss.unmappedTrackTypes, lost);
+	QCOMPARE(report.loss.splitMapEvents, 3);
+}
+
 private:
 	QTemporaryDir m_directory;
 };
