@@ -185,13 +185,24 @@ void ProjectMarkers::save(QDomDocument& doc, QDomElement& parent) const
 void ProjectMarkers::load(const QDomElement& element)
 {
 	QVector<Marker> loaded;
+	int offered = 0;
 	for (QDomElement child = element.firstChildElement(QStringLiteral("marker")); !child.isNull() && loaded.size() < MaxMarkers;
 		child = child.nextSiblingElement(QStringLiteral("marker")))
 	{
+		++offered;
 		// A negative tick is clamped as add() and replace() clamp it.
 		loaded.append(Marker{savedId(child), std::max(0, child.attribute(QStringLiteral("tick")).toInt()),
 			child.attribute(QStringLiteral("name")), child.attribute(QStringLiteral("color")), child.attribute(QStringLiteral("action")),
 			child.attribute(QStringLiteral("args"))});
+	}
+	if (offered < element.elementsByTagName(QStringLiteral("marker")).count())
+	{
+		// The ones that did not fit are gone from the next save, so the loss is
+		// said out loud here instead of showing up as a smaller saved project.
+		qWarning("ProjectMarkers: the project holds more than the %d markers this "
+			"project can carry; %d of them were left out of this load and will not "
+			"be saved again.",
+			MaxMarkers, element.elementsByTagName(QStringLiteral("marker")).count() - offered);
 	}
 	makeIdsUnique(loaded, MaxMarkers);
 	m_nextId = 1;

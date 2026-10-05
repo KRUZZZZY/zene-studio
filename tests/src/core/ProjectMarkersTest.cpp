@@ -66,6 +66,32 @@ int idMarker(const QString& id)
 	return ok ? number : -1;
 }
 
+//! Every qWarning the loader emits while a message handler is installed, so a
+//! truncation can be asserted on the WORD it used rather than on the absence
+//! of one (QTest::ignoreMessage proves nothing, see
+//! DataFileSaveIntegrityTest's own note).
+QStringList& capturedWarnings()
+{
+	static QStringList warnings;
+	return warnings;
+}
+
+void captureWarning(QtMsgType, const QMessageLogContext&, const QString& message)
+{
+	capturedWarnings().append(message);
+}
+
+//! Install the recorder for the length of one load, then take it back out.
+class WarningCapture
+{
+public:
+	WarningCapture() { m_previous = qInstallMessageHandler(&captureWarning); capturedWarnings().clear(); }
+	~WarningCapture() { qInstallMessageHandler(m_previous); }
+
+private:
+	QtMessageHandler m_previous = nullptr;
+};
+
 } // namespace
 
 class ProjectMarkersTest : public QObject
@@ -250,6 +276,42 @@ private slots:
 		for (const Marker& marker : loaded) { ids.insert(marker.id); }
 		QCOMPARE(ids.size(), 3);
 		QCOMPARE(markers.find(loaded.at(0).id)->tick, 0);   // -192 clamped as add() clamps
+	}
+
+	//! Luna 3364: a file with more markers than ProjectMarkers can hold is
+	//! still a file that can be loaded - but the ones that do not fit are gone
+	//! from the next save, so the loader has to say so rather than let a project
+	//! quietly come back smaller than it was written.
+	void aMarkerListOverTheCapIsReportedNotSilentlyTruncated()
+	{
+		ProjectMarkers& markers = ProjectMarkers::instance();
+		markers.clear();
+
+		QStringList specs;
+		for (int i = 0; i < ProjectMarkers::MaxMarkers + 1; ++i)
+		{
+			specs.append(QStringLiteral("%1|%2|M%1").arg(i).arg(i * 192));
+		}
+		QVERIFY(specs.size() > ProjectMarkers::MaxMarkers);
+
+		WarningCapture capture;
+		markers.load(markersElement(specs));
+
+		// The cap still holds - 513 markers is a file to repair, not to refuse.
+		QCOMPARE(markers.markers().size(), ProjectMarkers::MaxMarkers);
+
+		// And the one that did not make it is named as a warning, so the loss
+		// is visible instead of showing up as a smaller saved project.
+		QStringList said;
+		for (const QString& warning : capturedWarnings())
+		{
+			if (warning.contains(QStringLiteral("marker"), Qt::CaseInsensitive))
+			{ said.append(warning); }
+		}
+		QVERIFY2(!said.isEmpty(),
+			"a marker past the cap was dropped with nothing said about it");
+		QVERIFY2(said.first().contains(QString::number(ProjectMarkers::MaxMarkers)),
+			qPrintable(QStringLiteral("the warning does not name the cap: %1").arg(said.first())));
 	}
 
 	//! A marker action is stored so that the CROSSING can run it, so its
