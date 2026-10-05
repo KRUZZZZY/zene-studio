@@ -128,6 +128,16 @@ ControlResult resetShortcuts(const QJsonObject& args)
 	if (menus == nullptr) { return noInterface(QStringLiteral("shortcuts.reset")); }
 	QJsonObject overrides = sm::overrides();
 	const QString id = args.value(QStringLiteral("id")).toString();
+	// An empty id resets every action; a named one has to exist, or the caller hears "reset" for nothing.
+	if (!id.isEmpty())
+	{
+		const QList<sm::Binding> all = sm::bindings(menus);
+		const bool known = std::any_of(all.cbegin(), all.cend(), [&id](const sm::Binding& b) { return b.id == id; });
+		if (!known)
+		{
+			return ControlResult::failure(ControlErrorKind::NotFound, QStringLiteral("no menu action '%1' (shortcuts.list names them)").arg(id));
+		}
+	}
 	const int before = overrides.size();
 	if (id.isEmpty()) { overrides = QJsonObject(); } else { overrides.remove(id); }
 	return storeOverrides(menus, overrides, {{QStringLiteral("reset"), before - overrides.size()}},

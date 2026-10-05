@@ -178,6 +178,15 @@ private slots:
 
 	
 
+	//! BUG 7 (cluster 4014): an id no menu has is refused, not reported as a reset of nothing.
+	void resettingAnActionNoMenuHasIsRefused()
+	{
+		const ControlResult reset = run(QStringLiteral("shortcuts.reset"),
+			{{QStringLiteral("id"), QStringLiteral("No Such Menu ▸ No Such Action")}});
+		QVERIFY2(!reset.ok, "a misspelled action id was reported as a successful reset");
+		QCOMPARE(reset.errorKind, ControlErrorKind::NotFound);
+	}
+
 	//! The known id still resets, and without one every action goes back to its own default.
 	void aKnownActionAndEveryActionStillReset()
 	{
