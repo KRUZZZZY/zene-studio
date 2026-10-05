@@ -25,6 +25,7 @@
 #include "Clip.h"
 
 #include <algorithm>
+#include <cmath>
 #include <array>
 #include <span>
 
@@ -611,7 +612,20 @@ void Clip::loadClipEdits(const QDomElement& element)
 	ClipEdits edits;
 	if (element.hasAttribute("gain"))
 	{
-		edits.gain = gainDbToLinear(element.attribute("gain").toFloat());
+		// Same policy as the malformed shapes above: an unreadable or
+		// non-finite value loads neutral, a finite out-of-range one is clamped
+		// to the gain range `clip.set_gain` accepts. Either way the render path
+		// never sees a NaN or an infinite multiplier from a project file.
+		bool ok = false;
+		const float gainDb = element.attribute("gain").toFloat(&ok);
+		if (!ok || !std::isfinite(gainDb))
+		{
+			edits.gain = 1.0f;
+		}
+		else
+		{
+			edits.gain = gainDbToLinear(std::clamp(gainDb, MinGainPointDb, MaxGainPointDb));
+		}
 	}
 	edits.fadeInTicks = std::max(0, element.attribute("fadein", "0").toInt());
 	edits.fadeOutTicks = std::max(0, element.attribute("fadeout", "0").toInt());
