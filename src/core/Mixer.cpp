@@ -2348,7 +2348,11 @@ void Mixer::saveSettings( QDomDocument & _doc, QDomElement & _this )
 			mixch.appendChild( sendsDom );
 
 			sendsDom.setAttribute("channel", send->receiverIndex());
-			if (send->preFader()) { sendsDom.setAttribute("prefader", "1"); }
+			// Luna cluster 1512: a send to a bus is pre-fader by default, so
+			// its post-fader setting has to be written out explicitly -
+			// otherwise the file records nothing and the load applies the
+			// default again.
+			if (send->preFader() || send->receiver()->isBus()) { sendsDom.setAttribute("prefader", send->preFader() ? "1" : "0"); }
 			// board card #709: a cycle-permitted send carries its own flag -
 			// the persisted half of the submode (the mode itself is derived
 			// from these flags on load). A send without the flag writes byte
@@ -2566,6 +2570,11 @@ void Mixer::loadSettings( const QDomElement & _this )
 				const bool preFader =
 					chDataItem.attribute( "prefader" ).toInt() != 0;
 				MixerRoute * mxr = createChannelSend( num, sendTo, 1.0f, preFader );
+				// Luna cluster 1512: createChannelSend() applies the bus
+				// pre-fader default, which is right for a send the file says
+				// nothing about. A file that states the setting is taken at
+				// its word, so a post-fader send to a bus stays post-fader.
+				if( mxr && chDataItem.hasAttribute( "prefader" ) ) { mxr->setPreFader( preFader ); }
 				if( mxr ) mxr->amount()->loadSettings( chDataItem, "amount" );
 				if( mxr && chDataItem.hasAttribute( "pan" ) ) { mxr->pan()->loadSettings( chDataItem, "pan" ); }
 				if( mxr ) { mxr->enabledModel()->setValue( chDataItem.attribute( "off" ).toInt() == 0 ); }

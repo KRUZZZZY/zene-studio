@@ -325,6 +325,45 @@ private slots:
 		evidence("PHASED_ROUNDTRIP routes_identical=1 audio_identical=1 xml_bytes=%d", savedXml.size());
 	}
 
+	// Luna cluster 1512: createChannelSend() forces every send to a bus
+	// pre-fader, so a post-fader bus send (set on the route directly) saved
+	// without a prefader attribute and came back pre-fader.
+	void aPostFaderSendToABusSurvivesSaveLoad()
+	{
+		Mixer* mixer = Engine::mixer();
+		mixer->clear();
+		while (mixer->numChannels() < 3) { mixer->createChannel(); }
+		const int bus = mixer->createBusChannel();
+		mixer->mixerChannel(bus)->m_name = "DrumBus";
+
+		mixer->createChannelSend(1, bus, 0.8f);
+		MixerRoute* send = nullptr;
+		for (MixerRoute* r : mixer->mixerChannel(1)->m_sends) { if (r->receiverIndex() == bus) { send = r; } }
+		QVERIFY(send != nullptr);
+		QVERIFY2(send->preFader(), "a new bus send is pre-fader by default (spec 5.5)");
+		send->setPreFader(false);  // the user switches it to post-fader
+
+		QDomDocument savedDoc;
+		QDomElement savedRoot = savedDoc.createElement("root");
+		savedDoc.appendChild(savedRoot);
+		mixer->saveSettings(savedDoc, savedRoot);
+		const QString savedXml = savedDoc.toString();
+
+		QDomDocument reloadDoc;
+		QDomElement reloadRoot;
+		QVERIFY2(parseMixerElement(savedXml.toUtf8().constData(), reloadDoc, reloadRoot),
+			"the saved project is not valid XML");
+		mixer->loadSettings(reloadRoot);
+
+		const int loadedBus = 3;
+		QVERIFY2(mixer->mixerChannel(loadedBus)->isBus(), "the bus flag did not survive the round-trip");
+		MixerRoute* loaded = nullptr;
+		for (MixerRoute* r : mixer->mixerChannel(1)->m_sends) { if (r->receiverIndex() == loadedBus) { loaded = r; } }
+		QVERIFY2(loaded != nullptr, "the post-fader bus send was dropped entirely");
+		QVERIFY2(!loaded->preFader(), "a post-fader send to a bus reloaded as pre-fader (1512)");
+		QCOMPARE(loaded->amount()->value(), 0.8f);
+	}
+
 	// A legacy project referencing a plugin this build does not have must
 	// still load, keep the unknown effect's data verbatim and re-save it.
 	void unknownLegacyEffectIsPreservedAsDummy()
