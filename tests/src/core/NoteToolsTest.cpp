@@ -452,6 +452,39 @@ private slots:
 		QCOMPARE(static_cast<int>(Engine::getSong()->tracks().size()), before + 2);
 		QVERIFY(undone());
 	}
+	//! Luna cluster 2870: note.randomize rolled its notes' positions in place and never
+	//! called clip->updateLength(), so an auto-resizing clip kept its old length when a
+	//! note was rolled past the old end - the note then lay outside the clip.
+	void aRandomizedClipGrowsToCoverTheNoteItMoved()
+	{
+		constexpr int kJitter = 1024;
+		const tick_t barTicks = TimePos::ticksPerBar();
+		// Its own track: an earlier case in this binary removes m_track, and a roll
+		// that grows a clip must not depend on which case ran before it.
+		auto* track = dynamic_cast<InstrumentTrack*>(Track::create(Track::Type::Instrument, Engine::getSong()));
+		MidiClip* clip = nullptr;
+		int seed = 0;
+		for (int candidate = 1; candidate <= 30 && seed == 0; ++candidate)
+		{
+			clip = dynamic_cast<MidiClip*>(track->createClip(TimePos(0)));
+			clip->addNote(Note(TimePos(24), TimePos(0), 60), false);
+			QJsonObject args = self(clip);
+			args.insert(QStringLiteral("velocity_jitter"), 0.5);
+			args.insert(QStringLiteral("position_jitter"), static_cast<double>(kJitter));
+			args.insert(QStringLiteral("seed"), static_cast<double>(candidate));
+			QVERIFY2(run(QStringLiteral("note.randomize"), args).ok, "note.randomize refused the roll");
+			if (clip->notes()[0]->endPos().getTicks() > barTicks) { seed = candidate; }
+		}
+		QVERIFY2(seed != 0, "no seed in 1..30 rolled the note past the clip's first bar");
+		QVERIFY2(clip->getAutoResize(), "the fixture's clip must auto-resize for this to matter");
+		// The clip must now be long enough to hold the note, and long enough to have
+		// grown: the note was rolled out of the single bar it started in.
+		QVERIFY2(clip->length().getTicks() >= clip->notes()[0]->endPos().getTicks(),
+			"note.randomize left a note outside the auto-resizing clip");
+		QVERIFY2(clip->length().getTicks() > barTicks,
+			"note.randomize moved a note past the clip's end but did not grow the clip");
+	}
+
 };
 
 QTEST_MAIN(NoteToolsTest)

@@ -341,6 +341,9 @@ ControlResult randomize(const QJsonObject& args)
 	// The notes moved, so the clip's own order (position, then key) has to be
 	// restored - the call note.move makes after it moves one note.
 	clip->rearrangeAllNotes();
+	// A note rolled past the old end is outside an auto-resizing clip until the
+	// clip's length is recomputed, the same way finish() does after an edit.
+	clip->updateLength();
 	clip->dataChanged();
 	if (clip->linkId() > 0) { ClipLinks::mirrorContent(clip); }  // a linked copy carries the rolled notes
 
