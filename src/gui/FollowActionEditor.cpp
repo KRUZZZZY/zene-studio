@@ -23,6 +23,7 @@
  */
 #include "FollowActionEditor.h"
 
+#include <QAbstractSpinBox>
 #include <QCheckBox>
 #include <QComboBox>
 #include <QDialogButtonBox>
@@ -100,6 +101,10 @@ QDoubleSpinBox* numberBox(double low, double high, double value, QWidget* parent
 	box->setValue(value);
 	box->setProperty("loaded", value);
 	box->setProperty("shown", box->value());
+	// The user committed the box (Return, or focus leaving it). What it holds is then what they asked
+	// for, even when that is the very number it was loaded with - a round trip through the display is
+	// an edit, not a return to the value that was there before.
+	QObject::connect(box, &QAbstractSpinBox::editingFinished, box, [box] { box->setProperty("edited", true); });
 	return box;
 }
 
@@ -107,6 +112,7 @@ QDoubleSpinBox* numberBox(double low, double high, double value, QWidget* parent
 double valueOf(QWidget* widget)
 {
 	const auto* box = qobject_cast<QDoubleSpinBox*>(widget);
+	if (box->property("edited").toBool()) { return box->value(); }
 	return box->value() == box->property("shown").toDouble() ? box->property("loaded").toDouble() : box->value();
 }
 
