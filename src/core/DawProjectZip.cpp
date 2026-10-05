@@ -248,6 +248,28 @@ bool readWhole(const QString& path, QByteArray* bytes, QString* error)
 	return true;
 }
 
+//! Returns the offset of the end-of-central-directory record in \a bytes, or -1.
+//! It is searched for from the back, because an archive comment may follow it -
+//! this module writes none, but a foreign container may have one. A candidate is
+//! only the end record when (a) its OWN comment length carries it to the end of
+//! the file, and (b) the central directory it declares ends exactly where the
+//! record itself starts. A comment can hold bytes that look like an empty end
+//! record; (a) rejects one that declares a comment of its own, and (b) separates
+//! the rest, because such a record names no directory at all.
+int findEndOfCentralDirectory(const QByteArray& bytes)
+{
+	for (int offset = bytes.size() - EndOfCentralSize; offset >= 0; offset--)
+	{
+		if (readU32(bytes, offset) != EndOfCentralSignature) { continue; }
+		if (offset + EndOfCentralSize + readU16(bytes, offset + 20) != bytes.size()) { continue; }
+		const qint64 directoryEnd = static_cast<qint64>(readU32(bytes, offset + 12))
+			+ static_cast<qint64>(readU32(bytes, offset + 16));
+		if (directoryEnd != offset) { continue; }
+		return offset;
+	}
+	return -1;
+}
+
 } // namespace
 
 bool dawProjectZipWrite(const QString& path, const std::vector<DawProjectEntry>& entries,
@@ -360,11 +382,7 @@ bool dawProjectZipRead(const QString& path, std::vector<DawProjectEntry>* entrie
 	}
 	// The end record is found from the back, because an archive comment may
 	// follow it - this module writes none, but a foreign container may have one.
-	int endOffset = -1;
-	for (int offset = bytes.size() - EndOfCentralSize; offset >= 0; offset--)
-	{
-		if (readU32(bytes, offset) == EndOfCentralSignature) { endOffset = offset; break; }
-	}
+	const int endOffset = findEndOfCentralDirectory(bytes);
 	if (endOffset < 0)
 	{
 		if (error)

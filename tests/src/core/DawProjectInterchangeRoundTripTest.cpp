@@ -1421,6 +1421,57 @@ void archivesPastClassicZipLimitsAreRefused()
 	QCOMPARE(readBack[0].first, QStringLiteral("project.xml"));
 }
 
+//! Luna cluster 5075: the reader finds the end record by scanning BACKWARDS for
+//! the signature and accepts the first match, without checking that the record's
+//! own declared comment length carries it to the end of the file. A ZIP comment
+//! (this module writes none, a foreign container may have one) can therefore end
+//! with 22 bytes that look like an empty end record: the reader takes the fake,
+//! sees zero entries, and returns a SUCCESSFUL but empty archive instead of the
+//! real entries - data loss reported as success. An end record is only the end
+//! record when its comment length places its end exactly at the end of the file.
+void aCommentThatLooksLikeAnEndRecordIsNotOne()
+{
+	QString error;
+	const QString file = path(m_directory, QStringLiteral("fake-end-record.dawproject"));
+	const std::vector<DawProjectEntry> entries = {
+		{QStringLiteral("project.xml"), QByteArray("<Project version=\"1.0\"/>")},
+		{QStringLiteral("metadata.xml"), QByteArray("<MetaData/>")},
+	};
+	QVERIFY2(dawProjectZipWrite(file, entries, &error), qPrintable(error));
+
+	// A comment that ends with what looks like an empty end record: the signature,
+	// zero disks, zero entries, a zero-sized directory at offset 0, no comment.
+	// The real end record declares those 22 bytes as its comment, so this is a
+	// well-formed archive comment - only the record inside it is the impostor.
+	QByteArray bytes;
+	{
+		QFile source(file);
+		QVERIFY(source.open(QIODevice::ReadOnly));
+		bytes = source.readAll();
+	}
+	const int realEnd = bytes.size() - 22;
+	bytes[realEnd + 20] = char(22);  // the real record's comment length
+	bytes[realEnd + 21] = char(0);
+	const char endSignature[4] = {'P', 'K', 0x05, 0x06};
+	bytes.append(endSignature, 4);
+	for (int field = 0; field < 4; field++) { bytes.append(2, '\0'); }  // disks, entries
+	bytes.append(4, '\0');  // central size
+	bytes.append(4, '\0');  // central offset
+	bytes.append(2, '\0');  // comment length: none, so this record ends the file
+	{
+		QFile target(file);
+		QVERIFY(target.open(QIODevice::WriteOnly | QIODevice::Truncate));
+		QCOMPARE(target.write(bytes), bytes.size());
+	}
+
+	std::vector<DawProjectEntry> readBack;
+	QVERIFY2(dawProjectZipRead(file, &readBack, &error),
+		"a comment that ends in a fake end record was taken as the end record");
+	QCOMPARE(readBack.size(), static_cast<std::size_t>(2));
+	QCOMPARE(readBack[0].first, QStringLiteral("project.xml"));
+	QCOMPARE(readBack[1].first, QStringLiteral("metadata.xml"));
+}
+
 private:
 	QTemporaryDir m_directory;
 };
