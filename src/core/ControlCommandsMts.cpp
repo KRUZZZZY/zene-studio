@@ -161,6 +161,11 @@ ControlResult loadScale(const QJsonObject& args)
 		return ControlResult::failure(ControlErrorKind::InvalidArgs,
 			QStringLiteral("'path' is required and must not be empty (an absolute .scl path)"));
 	}
+	if (!QFileInfo(path).isAbsolute())
+	{
+		return ControlResult::failure(ControlErrorKind::InvalidArgs,
+			QStringLiteral("'%1' is not absolute: a path argument must be absolute").arg(path));
+	}
 	if (!QFileInfo::exists(path))
 	{
 		return ControlResult::failure(ControlErrorKind::NotFound,
@@ -187,6 +192,11 @@ ControlResult loadKeymap(const QJsonObject& args)
 	{
 		return ControlResult::failure(ControlErrorKind::InvalidArgs,
 			QStringLiteral("'path' is required and must not be empty (an absolute .kbm path)"));
+	}
+	if (!QFileInfo(path).isAbsolute())
+	{
+		return ControlResult::failure(ControlErrorKind::InvalidArgs,
+			QStringLiteral("'%1' is not absolute: a path argument must be absolute").arg(path));
 	}
 	if (!QFileInfo::exists(path))
 	{

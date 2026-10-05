@@ -205,6 +205,15 @@ const QVector<RefusalCase>& refusalCases(const QString& missingPath)
 		{QStringLiteral("mts.load_keymap"),
 			QJsonObject{{QStringLiteral("path"), missingPath}},
 			ControlErrorKind::NotFound},
+		// Relative paths: both error strings promise "must be absolute", so a
+		// RELATIVE name is an argument error, not a missing-file one - even when
+		// it happens to exist in the process's working directory.
+		{QStringLiteral("mts.load_scale"),
+			QJsonObject{{QStringLiteral("path"), QStringLiteral("ji3.scl")}},
+			ControlErrorKind::InvalidArgs},
+		{QStringLiteral("mts.load_keymap"),
+			QJsonObject{{QStringLiteral("path"), QStringLiteral("ji3.kbm")}},
+			ControlErrorKind::InvalidArgs},
 		{QStringLiteral("mts.set_tuning"), QJsonObject{}, ControlErrorKind::InvalidArgs},
 		{QStringLiteral("mts.set_tuning"),
 			QJsonObject{{QStringLiteral("note"), 5}},
