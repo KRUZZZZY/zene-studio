@@ -95,16 +95,16 @@ bool parseAutomationPoints(QXmlStreamReader& reader, ReadState& state, bool isMe
 		const QXmlStreamAttributes attributes = reader.attributes();
 		DawProjectPoint entry;
 		entry.isMeter = isMeter;
-		entry.time = doubleAttribute(attributes, QStringLiteral("time"), 0.0);
+		entry.time = doubleAttribute(attributes, state, QStringLiteral("time"), 0.0);
 		if (isMeter)
 		{
-			entry.numerator = intAttribute(attributes, QStringLiteral("numerator"), 4);
-			entry.denominator = intAttribute(attributes, QStringLiteral("denominator"), 4);
+			entry.numerator = intAttribute(attributes, state, QStringLiteral("numerator"), 4);
+			entry.denominator = intAttribute(attributes, state, QStringLiteral("denominator"), 4);
 			state.model->meterPoints.append(entry);
 		}
 		else
 		{
-			entry.value = doubleAttribute(attributes, QStringLiteral("value"), 120.0);
+			entry.value = doubleAttribute(attributes, state, QStringLiteral("value"), 120.0);
 			if (!tempoAccepted(entry.value, state)) { return false; }
 			state.model->tempoPoints.append(entry);
 		}
@@ -160,15 +160,15 @@ bool parseDocument(QXmlStreamReader& reader, ReadState& state)
 				if (reader.name() == QLatin1String("Tempo"))
 				{
 					state.model->tempo =
-						doubleAttribute(attributes, QStringLiteral("value"), 120.0);
+						doubleAttribute(attributes, state, QStringLiteral("value"), 120.0);
 					if (!tempoAccepted(state.model->tempo, state)) { return false; }
 				}
 				else if (reader.name() == QLatin1String("TimeSignature"))
 				{
 					state.model->numerator =
-						intAttribute(attributes, QStringLiteral("numerator"), 4);
+						intAttribute(attributes, state, QStringLiteral("numerator"), 4);
 					state.model->denominator =
-						intAttribute(attributes, QStringLiteral("denominator"), 4);
+						intAttribute(attributes, state, QStringLiteral("denominator"), 4);
 				}
 				else { skipElement(reader); }
 			}

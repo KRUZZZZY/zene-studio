@@ -91,15 +91,15 @@ void parseNotes(QXmlStreamReader& reader, ReadState& state, DawProjectClip* clip
 		const QXmlStreamAttributes attributes = reader.attributes();
 		DawProjectNote note;
 		note.time = static_cast<double>(ticksFromBeats(state,
-			doubleAttribute(attributes, QStringLiteral("time"), 0.0)))
+			doubleAttribute(attributes, state, QStringLiteral("time"), 0.0)))
 			/ DawProjectTicksPerQuarterNote;
 		note.duration = static_cast<double>(ticksFromBeats(state,
-			doubleAttribute(attributes, QStringLiteral("duration"), 0.0)))
+			doubleAttribute(attributes, state, QStringLiteral("duration"), 0.0)))
 			/ DawProjectTicksPerQuarterNote;
-		note.channel = intAttribute(attributes, QStringLiteral("channel"), 0);
-		note.key = intAttribute(attributes, QStringLiteral("key"), 60);
-		note.vel = doubleAttribute(attributes, QStringLiteral("vel"), 0.5);
-		note.rel = doubleAttribute(attributes, QStringLiteral("rel"), note.vel);
+		note.channel = intAttribute(attributes, state, QStringLiteral("channel"), 0);
+		note.key = intAttribute(attributes, state, QStringLiteral("key"), 60);
+		note.vel = doubleAttribute(attributes, state, QStringLiteral("vel"), 0.5);
+		note.rel = doubleAttribute(attributes, state, QStringLiteral("rel"), note.vel);
 		clip->notes.append(note);
 	}
 }
@@ -127,13 +127,13 @@ void parseClips(QXmlStreamReader& reader, ReadState& state)
 		const QXmlStreamAttributes attributes = reader.attributes();
 		DawProjectClip clip;
 		clip.time = static_cast<double>(ticksFromBeats(state,
-			doubleAttribute(attributes, QStringLiteral("time"), 0.0)))
+			doubleAttribute(attributes, state, QStringLiteral("time"), 0.0)))
 			/ DawProjectTicksPerQuarterNote;
 		clip.duration = static_cast<double>(ticksFromBeats(state,
-			doubleAttribute(attributes, QStringLiteral("duration"), 0.0)))
+			doubleAttribute(attributes, state, QStringLiteral("duration"), 0.0)))
 			/ DawProjectTicksPerQuarterNote;
 		clip.playStart = static_cast<double>(ticksFromBeats(state,
-			doubleAttribute(attributes, QStringLiteral("playStart"), 0.0)))
+			doubleAttribute(attributes, state, QStringLiteral("playStart"), 0.0)))
 			/ DawProjectTicksPerQuarterNote;
 		clip.name = attribute(attributes, QStringLiteral("name"));
 		clip.color = attribute(attributes, QStringLiteral("color"));
@@ -252,7 +252,7 @@ ChannelValues parseChannel(QXmlStreamReader& reader, ReadState& state)
 	values.name = attribute(attributes, QStringLiteral("name"));
 	values.role = attribute(attributes, QStringLiteral("role"));
 	values.destination = attribute(attributes, QStringLiteral("destination"));
-	values.audioChannels = intAttribute(attributes, QStringLiteral("audioChannels"), 2);
+	values.audioChannels = intAttribute(attributes, state, QStringLiteral("audioChannels"), 2);
 	values.solo = flagAttribute(attributes, QStringLiteral("solo"));
 
 	while (!reader.atEnd())
@@ -265,7 +265,7 @@ ChannelValues parseChannel(QXmlStreamReader& reader, ReadState& state)
 		if (child == QLatin1String("Volume"))
 		{
 			values.hasVolume = true;
-			values.volume = doubleAttribute(childAttributes, QStringLiteral("value"), 1.0);
+			values.volume = doubleAttribute(childAttributes, state, QStringLiteral("value"), 1.0);
 		}
 		else if (child == QLatin1String("Mute"))
 		{
@@ -274,7 +274,7 @@ ChannelValues parseChannel(QXmlStreamReader& reader, ReadState& state)
 		else if (child == QLatin1String("Pan"))
 		{
 			values.hasPan = true;
-			values.pan = doubleAttribute(childAttributes, QStringLiteral("value"), 0.5);
+			values.pan = doubleAttribute(childAttributes, state, QStringLiteral("value"), 0.5);
 		}
 		else if (child == QLatin1String("Sends"))
 		{

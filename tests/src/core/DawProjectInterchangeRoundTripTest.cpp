@@ -815,6 +815,53 @@ private slots:
 			"the mixed track's notes were dropped when the model was applied");
 	}
 
+	//! supported tempo.
+	void malformedNumericAttributesAreRefused()
+	{
+		const QString tempo =
+			QStringLiteral("<Project version=\"1.0\">"
+			"<Application name=\"Probe\" version=\"1\"/>"
+			"<Transport><Tempo value=\"%1\"/></Transport></Project>");
+		for (const char* value : {"oops", "1.2.3", "12x"})
+		{
+			DawProjectModel model;
+			DawProjectReadReport report;
+			QString error;
+			QVERIFY2(!dawProjectModelFromXml(tempo.arg(QLatin1String(value)).toLatin1(),
+				&model, &report, &error),
+				qPrintable(QStringLiteral("a malformed tempo value \"%1\" was read as the default")
+					.arg(QLatin1String(value))));
+		}
+
+		// A malformed integer, on the metre and on a note's key: same rule.
+		const QByteArray malformedInteger =
+			"<Project version=\"1.0\">"
+			"<Application name=\"Probe\" version=\"1\"/>"
+			"<Transport><Tempo value=\"120\"/>"
+			"<TimeSignature numerator=\"four\" denominator=\"4\"/></Transport></Project>";
+		DawProjectModel model;
+		DawProjectReadReport report;
+		QString error;
+		QVERIFY2(!dawProjectModelFromXml(malformedInteger, &model, &report, &error),
+			"a malformed metre numerator was read as the 4/4 default");
+
+		const QByteArray malformedKey =
+			"<Project version=\"1.0\">"
+			"<Application name=\"Probe\" version=\"1\"/>"
+			"<Transport><Tempo value=\"120\"/></Transport>"
+			"<Structure><Track id=\"t1\" name=\"T\" contentType=\"notes\">"
+			"<Channel id=\"c1\"/></Track></Structure>"
+			"<Arrangement><Lanes><Lanes track=\"t1\"><Clips>"
+			"<Clip time=\"0\" duration=\"4\"><Notes>"
+			"<Note time=\"0\" duration=\"1\" channel=\"0\" key=\"sixty\" vel=\"0.8\"/>"
+			"</Notes></Clip></Clips></Lanes></Lanes></Arrangement></Project>";
+		DawProjectModel keyModel;
+		DawProjectReadReport keyReport;
+		QString keyError;
+		QVERIFY2(!dawProjectModelFromXml(malformedKey, &keyModel, &keyReport, &keyError),
+			"a malformed note key was read as the default 60");
+	}
+
 private:
 	QTemporaryDir m_directory;
 };

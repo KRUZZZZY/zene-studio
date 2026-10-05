@@ -107,24 +107,6 @@ inline bool flagAttribute(const QXmlStreamAttributes& attributes, const QString&
 	return value == QLatin1String("true") || value == QLatin1String("1");
 }
 
-inline double doubleAttribute(const QXmlStreamAttributes& attributes, const QString& name, double fallback)
-{
-	const QString value = attribute(attributes, name);
-	if (value.isEmpty()) { return fallback; }
-	bool ok = false;
-	const double parsed = value.toDouble(&ok);
-	return ok ? parsed : fallback;
-}
-
-inline int intAttribute(const QXmlStreamAttributes& attributes, const QString& name, int fallback)
-{
-	const QString value = attribute(attributes, name);
-	if (value.isEmpty()) { return fallback; }
-	bool ok = false;
-	const int parsed = value.toInt(&ok);
-	return ok ? parsed : fallback;
-}
-
 //! Consume the element the reader is standing on, including everything nested
 //! inside it, and leave the reader on its end element.
 inline void skipElement(QXmlStreamReader& reader)
@@ -152,6 +134,50 @@ struct ReadState
 	//! The effective timeUnit, inherited down the <Lanes> chain.
 	QString timeUnit = QString::fromLatin1(DawProjectTimeUnit);
 };
+
+
+/*! A numeric attribute that is PRESENT but not a number is not an absent
+ *  optional one: the fallback is for an attribute the document did not carry,
+ *  and a malformed one leaves state.error set so the document is refused
+ *  (parseDocument fails on any recorded error) rather than arriving as the
+ *  default. A non-finite value is malformed for the same reason - toDouble()
+ *  accepts "nan" and "inf", and neither is a tempo or a time. */
+inline void malformedNumericAttribute(ReadState& state, const QString& name, const QString& value)
+{
+	if (!state.error.isEmpty()) { return; }
+	state.error = QStringLiteral("the attribute %1 carries \"%2\", which is not a number this "
+		"reader accepts").arg(name, value);
+}
+
+inline double doubleAttribute(const QXmlStreamAttributes& attributes, ReadState& state,
+	const QString& name, double fallback)
+{
+	const QString value = attribute(attributes, name);
+	if (value.isEmpty()) { return fallback; }
+	bool ok = false;
+	const double parsed = value.toDouble(&ok);
+	if (!ok || !std::isfinite(parsed))
+	{
+		malformedNumericAttribute(state, name, value);
+		return fallback;
+	}
+	return parsed;
+}
+
+inline int intAttribute(const QXmlStreamAttributes& attributes, ReadState& state,
+	const QString& name, int fallback)
+{
+	const QString value = attribute(attributes, name);
+	if (value.isEmpty()) { return fallback; }
+	bool ok = false;
+	const int parsed = value.toInt(&ok);
+	if (!ok)
+	{
+		malformedNumericAttribute(state, name, value);
+		return fallback;
+	}
+	return parsed;
+}
 
 
 //! A time value in beats as LMMS ticks, counting a value that was NOT on
