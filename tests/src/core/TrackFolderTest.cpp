@@ -42,6 +42,7 @@
 #include "ControlEdit.h"
 #include "ControlRegistry.h"
 #include "DataFile.h"
+#include "AutomatableModel.h"
 #include "Engine.h"
 #include "Mixer.h"
 #include "Song.h"
@@ -421,6 +422,50 @@ private slots:
 		QVERIFY(folder != nullptr);
 		QVERIFY2(folder->savedChildChannels().empty(),
 			"a prevch pair that is not two numbers is discarded, not adopted as 0:<n>");
+	}
+
+	//! A child that LEAVES a routing folder keeps its binding, so it can be routed
+	//! again without inventing a channel for it. But the channel it is given while it
+	//! is OUTSIDE the folder is the one a later release has to restore: routeChild()
+	//! appended the new binding behind the stale one and savedChannelFor() returns the
+	//! FIRST match, so the child went back to the channel it was on before it ever
+	//! left the folder, losing the assignment made in between.
+	void rejoiningARoutingFolderKeepsTheNewestSavedChannel()
+	{
+		const QString name = QStringLiteral("l-rejoin");
+		TrackFolder* folder = static_cast<TrackFolder*>(addTrack(Track::Type::Folder, name));
+		Track* child = addTrack(Track::Type::Instrument, name);
+		// Two channels of the child's own, so "where it was" and "where it was put
+		// while it was out" are both channels that exist. Mixer::createChannel() does
+		// NOT re-range the tracks - TrackFolder::routeChild widens its own children
+		// for exactly that reason - so the model is widened here too.
+		QVERIFY(Engine::mixer()->createChannel() >= 0);
+		QVERIFY(Engine::mixer()->createChannel() >= 0);
+		IntModel* model = child->mixerChannelModel();
+		QVERIFY(model != nullptr);
+		model->setRange(0, static_cast<float>(Engine::mixer()->numChannels() - 1));
+		const int original = 1;
+		const int whileOut = 2;
+		model->setValue(original);
+		child->setParentFolder(folder);
+
+		QString error;
+		QVERIFY2(folder->setMode(TrackFolder::Mode::Routing, &error), qPrintable(error));
+		QCOMPARE(model->value(), static_cast<int>(folder->mixerChannel()));
+
+		// out of the folder: back on its own channel, and free to be moved
+		child->setParentFolder(nullptr);
+		QCOMPARE(model->value(), original);
+		model->setValue(whileOut);
+
+		child->setParentFolder(folder);
+		QCOMPARE(model->value(), static_cast<int>(folder->mixerChannel()));
+
+		QVERIFY2(folder->setMode(TrackFolder::Mode::Group, &error), qPrintable(error));
+		QVERIFY2(model->value() == whileOut,
+			"a child that rejoined on a new channel goes back to THAT channel, "
+			"not to the one it held before it first left the folder");
+		removeAll(name);
 	}
 
 	//! Deleting a folder must give its mixer channel back. ~TrackFolder unlinked

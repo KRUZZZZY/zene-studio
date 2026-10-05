@@ -295,9 +295,31 @@ void TrackFolder::routeChild( Track * child )
 	{
 		model->setRange( model->minValue(), static_cast<float>( m_mixerChannel ) );
 	}
-	m_savedChildChannels.push_back(
-		ChannelBinding{ child->id(), model->value() } );
+	recordBinding( child->id(), model->value() );
 	model->setValue( static_cast<int>( m_mixerChannel ) );
+}
+
+/*! Remembers where \a childId is, as it is RIGHT NOW, for the routing that is
+ *  about to take it over.
+ *
+ *  A binding is REPLACED, never appended behind. A child that leaves a routing
+ *  folder keeps its binding (childUnlinked), so when it rejoins - possibly on a
+ *  channel the user picked in between - the list would hold two entries for it
+ *  and savedChannelFor(), which returns the FIRST match, would hand back the
+ *  stale one: releasing the routing would then undo the LATER assignment instead
+ *  of the routing that took the child away from it.
+ */
+void TrackFolder::recordBinding( int childId, int channel )
+{
+	for( ChannelBinding & binding : m_savedChildChannels )
+	{
+		if( binding.childId == childId )
+		{
+			binding.channel = channel;
+			return;
+		}
+	}
+	m_savedChildChannels.push_back( ChannelBinding{ childId, channel } );
 }
 
 bool TrackFolder::alreadyRouted( Track * child ) const

@@ -187,6 +187,11 @@ signals:
 
 private:
 	void routeChild( Track * child );
+	//! Records where \a childId's own channel is now, REPLACING any binding it
+	//! already has (a child that rejoins a routing folder brings the old one with
+	//! it, and two entries for one child would leave savedChannelFor() answering
+	//! with the stale one).
+	void recordBinding( int childId, int channel );
 	//! Puts \a child back on its own recorded channel (shared by
 	//! releaseRouting() and childUnlinked()).
 	void unrouteChild( Track * child );
