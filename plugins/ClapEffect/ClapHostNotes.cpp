@@ -80,7 +80,9 @@ void HostedPlugin::setNoteOn(std::uint8_t channel, std::int16_t key, double velo
 	event.type = CLAP_EVENT_NOTE_ON;
 	event.channel = static_cast<std::uint8_t>(std::min<int>(channel, 15));
 	event.key = static_cast<std::int16_t>(std::clamp<int>(key, 0, 127));
-	event.velocity = static_cast<std::int16_t>(std::clamp(velocity, 0.0, 1.0) * 127.0);
+	// Kept as the double CLAP asks for: rounding it to a MIDI-scale integer here and dividing by
+	// 127 again on the way out would hand the plug-in 63/127 for a velocity of 0.5.
+	event.velocity = std::clamp(velocity, 0.0, 1.0);
 	event.frameOffset = frameOffset;
 	pushNote(event);
 }
@@ -242,7 +244,7 @@ NoteOrExpression toClapEvent(const NoteEventIn& queued, std::int16_t portIndex)
 	out.note.port_index = portIndex;
 	out.note.channel = static_cast<std::int16_t>(queued.channel);
 	out.note.key = queued.key;
-	out.note.velocity = queued.type == CLAP_EVENT_NOTE_ON ? static_cast<double>(queued.velocity) / 127.0 : 0.0;
+	out.note.velocity = queued.type == CLAP_EVENT_NOTE_ON ? queued.velocity : 0.0;
 	return out;
 }
 

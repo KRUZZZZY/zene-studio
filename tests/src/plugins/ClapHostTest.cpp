@@ -32,6 +32,7 @@
 #include <cstdint>
 #include <limits>
 #include <cstring>
+#include <utility>
 #include <vector>
 
 #include <algorithm>
@@ -196,6 +197,7 @@ private slots:
 	void testAnInvalidParamRangeIsNormalized();
 	void testAnActiveFlushRequestIsServicedOnTheAudioThread();
 	void testANonFiniteSampleRateIsRefused();
+	void testANoteVelocityKeepsItsFraction();
 
 private:
 	void process(HostedPlugin& plugin, const std::vector<std::vector<float>>& inputs,
@@ -942,6 +944,56 @@ void lmms::clap::ClapHostTest::testANonFiniteSampleRateIsRefused()
 	// A refused prepare leaves nothing prepared, and a good rate still works afterwards.
 	QVERIFY(!plugin.needsReprepare());
 	QVERIFY2(plugin.prepare(TestSampleRate, TestBlockSize, &error), qPrintable(error));
+}
+
+/*! A note-on's velocity is CLAP's own double in 0..1, and the plug-in must be handed that number,
+ *  not a MIDI-scale integer that is converted back. The host rounded it to 0..127 on the way in, so
+ *  0.5 arrived as 63/127 (the fixture records the velocity in millis, and saw 496). */
+void lmms::clap::ClapHostTest::testANoteVelocityKeepsItsFraction()
+{
+	const QString path = QStringLiteral(CLAP_TEST_INSTRUMENT_PATH);
+	if (path.isEmpty() || !QFileInfo::exists(path))
+	{
+		QSKIP("no CLAP instrument fixture in this build (tests/data/clap-test-plugin/"
+			"clap-test-instrument.c, built when the pinned CLAP headers are present)");
+	}
+
+	HostedPlugin plugin;
+	QString error;
+	QVERIFY2(plugin.load(path, QString::fromLatin1(TestInstrumentId), &error), qPrintable(error));
+	QVERIFY2(plugin.prepare(TestSampleRate, TestBlockSize, &error), qPrintable(error));
+	QVERIFY(plugin.acceptsNotes());
+
+	const std::vector<std::vector<float>> noInputs;
+	std::vector<std::vector<float>> outputs(2, std::vector<float>(TestFrames, 0.0f));
+
+	// Each velocity is the one the plug-in must receive, in millis (the fixture's own unit): the
+	// values a 7-bit round trip cannot represent.
+	const std::vector<std::pair<double, std::uint32_t>> cases{
+		{0.5, 500}, {0.25, 250}, {0.1, 100}, {1.0, 1000}, {0.0, 0}};
+	std::int16_t key = 60;
+	for (const auto& [velocity, expectedMilli] : cases)
+	{
+		plugin.setNoteOn(0, key, velocity, 0);
+		process(plugin, noInputs, outputs, TestFrames);
+		InstrumentState state{};
+		QVERIFY2(readInstrumentState(plugin, &state), "the fixture saved an unexpected state layout");
+		QCOMPARE(state.lastVelocityMilli, expectedMilli);
+		plugin.setNoteOff(0, key, 0);
+		process(plugin, noInputs, outputs, TestFrames);
+		++key;
+	}
+
+	// Out-of-range velocities are still clamped to CLAP's 0..1 scale.
+	plugin.setNoteOn(0, 80, 2.5, 0);
+	process(plugin, noInputs, outputs, TestFrames);
+	InstrumentState state{};
+	QVERIFY2(readInstrumentState(plugin, &state), "the fixture saved an unexpected state layout");
+	QCOMPARE(state.lastVelocityMilli, std::uint32_t{1000});
+	plugin.setNoteOn(0, 81, -1.0, 0);
+	process(plugin, noInputs, outputs, TestFrames);
+	QVERIFY2(readInstrumentState(plugin, &state), "the fixture saved an unexpected state layout");
+	QCOMPARE(state.lastVelocityMilli, std::uint32_t{0});
 }
 
 QTEST_GUILESS_MAIN(lmms::clap::ClapHostTest)
