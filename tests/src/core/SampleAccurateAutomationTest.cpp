@@ -41,6 +41,7 @@
 
 #include <QtTest>
 
+#include <algorithm>
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
@@ -513,6 +514,50 @@ private slots:
 					.arg(ramp.knotCount()).arg(frames).arg(worst, 0, 'g', 6));
 			QVERIFY2(worst <= 1.0e-4, qPrintable(QStringLiteral("max deviation %1 stored units")
 				.arg(worst, 0, 'g', 6)));
+		}
+	}
+
+	/*! A block that sits entirely BEFORE the clip's first point must read the
+	 *  clip's value there, not step off the node map: `rampValueAt` used to take
+	 *  `std::prev(upperBound(ticks))` without asking whether that iterator was
+	 *  `begin()`. The tick-0 node is removed through the surface, so the first
+	 *  node really is at tick 10 and every tick of this block precedes it -
+	 *  which is the shape a user builds by deleting the first point. */
+	void aBlockBeforeTheFirstPointReadsThePreFirstValue()
+	{
+		control::AutomationParameter gain;
+		QString why;
+		QVERIFY2(channelGainParameter(&gain, &why), qPrintable(why));
+		QVERIFY2(writeCurveThroughTheSurface(gain.id(), &why), qPrintable(why));
+
+		const ControlResult removed = run(QStringLiteral("automation.remove_point"),
+			QJsonObject{{QStringLiteral("track"), channelIdOf()},
+				{QStringLiteral("parameter"), gain.id()},
+				{QStringLiteral("ticks"), 0}});
+		QVERIFY2(removed.ok, qPrintable(removed.errorMessage));
+
+		AutomationClip* clip = control::existingAutomationClip(gain.model);
+		QVERIFY(clip != nullptr);
+		clip->setProgressionType(AutomationClip::ProgressionType::Discrete);
+
+		const f_cnt_t frames = Engine::audioEngine()->framesPerPeriod();
+		const double framesPerTick = static_cast<double>(Engine::framesPerTick());
+		AutomationRamp ramp;
+		// The clip's own start: a block is SHORTER than one tick at this tempo,
+		// so every frame of it lies before the first node at tick 10.
+		clip->writeBlockRamp(ramp, clip->startPosition(), frames, framesPerTick, 0);
+		evidence("ramp-before-first-point",
+			QStringLiteral("knots=%1 refusals=%2 value@0=%3")
+				.arg(ramp.knotCount()).arg(ramp.refusals()).arg(ramp.valueAt(0), 0, 'g', 6));
+		QCOMPARE(ramp.refusals(), std::uint32_t{0});
+
+		// Before the first node no segment has started: the clip's value there is
+		// the one valueAt(TimePos) returns, so the whole block must hold it.
+		for (f_cnt_t f = 0; f < frames; ++f)
+		{
+			QVERIFY2(ramp.valueAt(f) == 0.0f,
+				qPrintable(QStringLiteral("frame %1 of a block entirely before the first point "
+					"reads %2, not the clip's pre-first value").arg(f).arg(ramp.valueAt(f), 0, 'g', 6)));
 		}
 	}
 

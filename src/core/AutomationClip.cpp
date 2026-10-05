@@ -723,7 +723,15 @@ float AutomationClip::rampValueAt( const TimePos & rel, float fraction ) const
 	// value moves along, so the value at the node itself is its OUT value:
 	// valueAt(v, 0) returns the IN value, which is the limit the PREVIOUS
 	// segment reaches, not the one this one starts from.
-	const timeMap::const_iterator v = std::prev( m_timeMap.upperBound( ticks ) );
+	const timeMap::const_iterator next = m_timeMap.upperBound( ticks );
+	if( next == m_timeMap.begin() )
+	{
+		// Before the FIRST node no segment has started, and stepping back from
+		// upperBound() would step off the map: the clip's value there is the one
+		// valueAt(TimePos) returns for the same ticks, which is no value at all.
+		return 0.0f;
+	}
+	const timeMap::const_iterator v = std::prev( next );
 	const int offset = ticks - POS( v );
 	const float start = ( offset == 0 ) ? OUTVAL( v ) : valueAt( v, offset );
 	const float end = valueAt( v, offset + 1 );
