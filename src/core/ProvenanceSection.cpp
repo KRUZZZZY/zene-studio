@@ -119,15 +119,50 @@ QString targetFrom(const QJsonObject& before)
 	return QString();
 }
 
-//! The one quantity the byte bound counts, beside the count cap: every
-//! attribute value plus the attribute names they ride on - a serialised-size
-//! measurement like control::serialisedRecordBytes, never an estimate.
+//! The bytes one character costs as it sits inside a serialised attribute:
+//! five for each of the five entities QDom escapes (&amp; &lt; &gt; &quot;
+//! &apos; - one character, five bytes), otherwise its own UTF-8 width.
+int escapedCharBytes(const QChar character)
+{
+	const char16_t code = character.unicode();
+	const bool escaped = code == u'&' || code == u'<' || code == u'>'
+		|| code == u'"' || code == u'\'';
+	if (escaped) { return 5; }
+	return code < 0x80 ? 1 : QString(character).toUtf8().size();
+}
+
+//! The value's length as QDom ESCAPES it inside an attribute. Counting the
+//! raw QString would undercount an ampersand by four bytes per occurrence.
+int escapedAttributeBytes(const QString& value)
+{
+	int bytes = 0;
+	for (const QChar character : value) { bytes += escapedCharBytes(character); }
+	return bytes;
+}
+
+//! One serialised attribute as ` name="value"`: the leading space, the name,
+//! the equals sign and the two quotes the writer emits around every value.
+int attributeBytes(const char* name, const QString& value)
+{
+	return escapedAttributeBytes(value) + static_cast<int>(QLatin1String(name).size()) + 4;
+}
+
+//! The one quantity the byte bound counts, beside the count cap: the entry as
+//! it is actually SERIALISED - the <z:change/> markup, every attribute name,
+//! its quoting and its UTF-8 bytes, and no more (an absent optional attribute
+//! is not written, so it is not counted). A serialised-size measurement like
+//! control::serialisedRecordBytes, never an estimate.
 int serialisedBytes(const provenance::Change& change)
 {
-	int bytes = QString::number(change.seq).size();
-	bytes += change.at.size() + change.actor.size() + change.instance.size();
-	bytes += change.command.size() + change.target.size();
-	bytes += change.before.size() + change.after.size();
+	int bytes = static_cast<int>(QStringLiteral("<z:change/>").toUtf8().size());
+	bytes += attributeBytes("seq", QString::number(change.seq));
+	bytes += attributeBytes("at", change.at);
+	bytes += attributeBytes("actor", change.actor);
+	bytes += attributeBytes("instance", change.instance);
+	bytes += attributeBytes("command", change.command);
+	if (!change.target.isEmpty()) { bytes += attributeBytes("target", change.target); }
+	if (!change.before.isEmpty()) { bytes += attributeBytes("before", change.before); }
+	if (!change.after.isEmpty()) { bytes += attributeBytes("after", change.after); }
 	return bytes;
 }
 

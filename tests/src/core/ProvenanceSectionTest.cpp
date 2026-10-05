@@ -471,6 +471,48 @@ private slots:
 		QVERIFY(journal->setMaxUndoStates(ProjectJournal::MAX_UNDO_STATES));
 	}
 
+	//! THE BYTE MEASUREMENT: what the byte bound counts IS the serialised
+	//! entry - names, quoting and markup included, in UTF-8 bytes, exactly as
+	//! control::serialisedRecordBytes measures the transaction journal. A
+	//! Change::bytes that omits the attribute names and the <z:change/> markup
+	//! UNDERCOUNTS what the file carries, so the byte cap does not bound the
+	//! section it claims to bound (ProvenanceSection.h: "serialised size, the
+	//! quantity the byte bound counts"). Measured here against the file: the
+	//! saved element's own byte length, per entry.
+	void theCountedBytesAreTheSerialisedBytesOfTheSavedEntry()
+	{
+		loadProject(m_pristine);
+		{
+			provenance::AgentScope agent;
+			QVERIFY(ControlRegistry::instance()->invoke(QStringLiteral("track.add"),
+				QJsonObject{{QStringLiteral("type"), QStringLiteral("instrument")}}).ok);
+			QVERIFY(ControlRegistry::instance()->invoke(QStringLiteral("clip.add"),
+				QJsonObject{{QStringLiteral("track"), m_trackAddr},
+					{QStringLiteral("position"), 0}, {QStringLiteral("length"), 192}}).ok);
+		}
+
+		const QString path = m_dir.filePath(QStringLiteral("measured.mmp"));
+		QVERIFY(Engine::getSong()->saveProjectFile(path, false));
+
+		// The serialised form of each entry, as the FILE carries it - no
+		// re-serialisation from a DOM, which would measure the test's own
+		// writer instead of the bytes that were written.
+		static const QRegularExpression entry(
+			QStringLiteral("<z:change\\b[^>]*/>"));
+		const QString raw = readFile(path);
+		QStringList serialised;
+		auto it = entry.globalMatch(raw);
+		while (it.hasNext()) { serialised << it.next().captured(); }
+
+		const QList<provenance::Change> held = heldChanges();
+		QVERIFY(!held.isEmpty());
+		QCOMPARE(serialised.size(), held.size());
+		for (int i = 0; i < held.size(); ++i)
+		{
+			QCOMPARE(held.at(i).bytes, serialised.at(i).toUtf8().size());
+		}
+	}
+
 	//! THE ACTOR: a session KIND, never a person (1.9: "not a credential, not
 	//! a user identity - the file must be shareable"). Outside a socket scope
 	//! the attribution is "human"; the instance is the same non-identifying
