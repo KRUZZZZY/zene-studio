@@ -105,6 +105,11 @@ void mirrorRange(AutomationClip* clip, const TimeMap& map, int start, int end, T
 			{
 				out[end - (POS(it) - start)] = AutomationNode(clip, OUTVAL(it), INVAL(it), end - (POS(it) - start));
 			}
+			// A mirrored point keeps its OWN curve: the replacement node above is built
+			// from the values alone, so without this a Hold or a Bend drawn inside the
+			// range came back as the clip's default progression - the curve was dropped
+			// by the flip, not transformed.
+			out[end - (POS(it) - start)].setCurve(it->curve(), it->bend());
 		}
 	}
 }
@@ -131,6 +136,21 @@ void flipEnds(AutomationClip* clip, const TimeMap& map, int start, int end, Time
 	{
 		out[start] = AutomationNode(clip, clip->valueAt(start), clip->valueAt(end), start);
 		out[end] = AutomationNode(clip, clip->valueAt(start), clip->valueAt(end), end);
+	}
+
+	// The two ends are rebuilt rather than mirrored, so they need the same
+	// treatment: an end point keeps the curve of the node it replaced, or the
+	// other end's when the clip has no node there - a Hold on an end point used
+	// to come back as the clip's default progression.
+	const int startCurveFrom = map.contains(start) ? start : end;
+	const int endCurveFrom = map.contains(end) ? end : start;
+	if (map.contains(startCurveFrom))
+	{
+		out[start].setCurve(map[startCurveFrom].curve(), map[startCurveFrom].bend());
+	}
+	if (map.contains(endCurveFrom))
+	{
+		out[end].setCurve(map[endCurveFrom].curve(), map[endCurveFrom].bend());
 	}
 }
 

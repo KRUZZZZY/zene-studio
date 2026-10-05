@@ -172,6 +172,34 @@ private slots:
 		QCOMPARE(loaded->getTimeMap().value(0).bend(), 0.5f);
 	}
 
+	/*! A flipped range must keep each point's OWN curve. The replacement nodes
+	 *  a mirror builds carry the values but nothing else, so a Hold or a Bend
+	 *  drawn inside the range came back as the default Clip progression - the
+	 *  curve survived the flip on paper and was gone in the sound. */
+	void aFlippedRangeKeepsEachPointsOwnCurve()
+	{
+		AutomationClip* clip = freshClip(m_track->volumeModel());
+		clip->setProgressionType(AutomationClip::ProgressionType::Linear);
+		for (const int tick : {0, 48, 96, 192}) { clip->putValue(TimePos(tick), tick / 2.f, false, true); }
+		clip->getTimeMap()[48].setCurve(AutomationNode::Curve::Hold);
+		clip->getTimeMap()[96].setCurve(AutomationNode::Curve::Bend, 0.5f);
+		clip->getTimeMap()[0].setCurve(AutomationNode::Curve::Linear);
+
+		// [0, 192] mirrored about its middle: 48 <-> 144, 96 stays put.
+		clip->flipX(0, 192);
+		QVERIFY(clip->getTimeMap().contains(144));
+		QCOMPARE(clip->getTimeMap().value(144).curve(), AutomationNode::Curve::Hold);
+		QCOMPARE(clip->getTimeMap().value(96).curve(), AutomationNode::Curve::Bend);
+		QCOMPARE(clip->getTimeMap().value(96).bend(), 0.5f);
+		QCOMPARE(clip->getTimeMap().value(0).curve(), AutomationNode::Curve::Linear);
+
+		// And the curve still decides the curve: the Hold point at 144 holds its
+		// own value through the segment that follows it.
+		clip->putValue(TimePos(192), 200.f, false, true);
+		clip->getTimeMap()[144].setCurve(AutomationNode::Curve::Hold);
+		QCOMPARE(clip->valueAt(TimePos(170)), clip->getTimeMap().value(144).getOutValue());
+	}
+
 	void aRelativeClipOffsetsTheAbsoluteOne()
 	{
 		FloatModel* volume = m_track->volumeModel();
