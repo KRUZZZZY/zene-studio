@@ -240,10 +240,15 @@ std::shared_ptr<Keymap> keymapOf(const QStringList& fields, const QString& descr
 		*ok = false;
 		return nullptr;
 	}
-	if (map.empty())
+	// The size field PROMISES how many entries the map has, and getDegree()
+	// takes every key modulo that size: a map built from a different number of
+	// lines repeats with the wrong period and answers with the wrong degree for
+	// most of the keyboard. A file that disagrees with itself is refused.
+	if (map.size() != static_cast<std::size_t>(size))
 	{
 		*ok = false;
-		*error = QStringLiteral("no mapping lines");
+		*error = QStringLiteral("the .kbm file declares a map of %1 entries but carries %2 "
+			"mapping lines").arg(size).arg(map.size());
 		return nullptr;
 	}
 	*ok = true;

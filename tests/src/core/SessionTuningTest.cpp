@@ -745,6 +745,88 @@ QString writeKbm(QTemporaryDir& dir, const QString& name, const QString& baseFre
 				.arg(mismatch)));
 	}
 
+	//! A .kbm with the standard 12-TET shape but \a declaredSize in field 0 and
+//! exactly \a mappingLines after the header, for the keymaps this test writes
+//! itself.
+QString writeKbmSized(QTemporaryDir& dir, const QString& name, const QString& declaredSize,
+	const QStringList& headerFields, const QStringList& mappingLines)
+{
+	QStringList body{declaredSize};
+	body += headerFields;
+	body.append(QStringLiteral("12")); // octave degree, ignored
+	body += mappingLines;
+	return writeScl(dir, name, body);
+}
+
+	//! Luna 5320: a .kbm's first field is the SIZE of the mapping that follows -
+	//! the number of mapping lines the file promises. Only its positivity was
+	//! checked, so a file declaring a 12-entry map and carrying one line built a
+	//! Keymap whose map period is 1, and getDegree() then answered with that one
+	//! degree for every key on the keyboard. The mismatch is refused, typed, and
+	//! the standing table is left alone.
+	void aKeymapWhoseMappingLinesDoNotMatchItsDeclaredSizeIsRefused()
+	{
+		Song* song = Engine::getSong();
+		song->clearProject();
+		SessionTuning* tuning = SessionTuning::instance();
+		tuning->reset();
+
+		QTemporaryDir dir;
+		QVERIFY(dir.isValid());
+
+		// first / last / middle / base key, then the base frequency: the shape
+		// writeKbm() hands the parser, so only the size and the lines below it move.
+		const QStringList keys{QStringLiteral("0"), QStringLiteral("127"),
+			QStringLiteral("0"), QStringLiteral("0"), QStringLiteral("440.0")};
+		QStringList twelveLines;
+		for (int degree = 0; degree < 12; ++degree)
+		{
+			twelveLines.append(QString::number(degree));
+		}
+
+		QStringList scaleLines{QStringLiteral("12-tone scale for Luna 5320"),
+			QStringLiteral("12")};
+		for (int degree = 0; degree < 12; ++degree)
+		{
+			scaleLines.append(QStringLiteral("%1/1").arg(degree + 1));
+		}
+		const QString scalePath = writeScl(dir, QStringLiteral("twelve.scl"), scaleLines);
+		QVERIFY2(!scalePath.isEmpty(), "the 12-tone .scl could not be written");
+		QVERIFY2(run(QStringLiteral("mts.load_scale"),
+			QJsonObject{{QStringLiteral("path"), scalePath}}).ok, "the 12-tone scale did not load");
+
+		const QString good = writeKbmSized(dir, QStringLiteral("good.kbm"),
+			QStringLiteral("12"), keys, twelveLines);
+		QVERIFY2(!good.isEmpty(), "the fixture .kbm could not be written");
+		QVERIFY2(run(QStringLiteral("mts.load_keymap"),
+			QJsonObject{{QStringLiteral("path"), good}}).ok,
+			"the matching-size keymap did not load");
+		const QJsonObject before = snapshotState(run(QStringLiteral("mts.get_state")).result);
+
+		// Declares 12, carries one: the map would repeat with a one-entry period.
+		const QString shortMap = writeKbmSized(dir, QStringLiteral("short.kbm"),
+			QStringLiteral("12"), keys, QStringList{QStringLiteral("0")});
+		QVERIFY2(!shortMap.isEmpty(), "the short fixture .kbm could not be written");
+		// And the other direction: declares 3, carries twelve.
+		const QString longMap = writeKbmSized(dir, QStringLiteral("long.kbm"),
+			QStringLiteral("3"), keys, twelveLines);
+		QVERIFY2(!longMap.isEmpty(), "the long fixture .kbm could not be written");
+		for (const QString& path : QStringList{shortMap, longMap})
+		{
+			const ControlResult loaded = run(QStringLiteral("mts.load_keymap"),
+				QJsonObject{{QStringLiteral("path"), path}});
+			QVERIFY2(!loaded.ok, qPrintable(QStringLiteral("'%1' was accepted: its mapping "
+				"does not have the period it declares").arg(path)));
+			QCOMPARE(loaded.errorKind, ControlErrorKind::Refused);
+		}
+
+		int mismatch = 0;
+		const QJsonObject after = snapshotState(run(QStringLiteral("mts.get_state")).result);
+		QVERIFY2(sameTable(before, after, &mismatch),
+			qPrintable(QStringLiteral("the refused keymap still changed the table at key %1")
+				.arg(mismatch)));
+	}
+
 	//! The recorded undo step restores the Scale/Keymap the table was BUILT from,
 	//! not just the frequencies: stateJson() carries the table alone, so without
 	//! this mts.get_state kept reporting the scale an undone load had installed.
