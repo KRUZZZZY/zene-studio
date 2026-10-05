@@ -264,6 +264,20 @@ private slots:
 			qPrintable(warnings.texts().join(QLatin1Char('\n'))));
 	}
 
+	void anInvalidArticulationLeavesNoPrefixLoaded()
+	{
+		oneNote();
+		QDomDocument doc;
+		QDomElement element = doc.createElement(QStringLiteral("track"));
+		element.setAttribute(QStringLiteral("articulations"),
+			QStringLiteral("[{\"name\":\"legato\"},{\"keyswitch\":25}]"));  // the second entry has no name
+		WarningCapture warnings;
+		m_track->articulations().load(element);
+		QVERIFY(m_track->articulations().empty());  // not the valid prefix alone, which would save back as the whole map
+		QVERIFY2(warnings.texts().join(QLatin1Char('\n')).contains(QStringLiteral("could not be read")),
+			qPrintable(warnings.texts().join(QLatin1Char('\n'))));
+	}
+
 	void aLoopedClipPlaysItsStartAgain()
 	{
 		Note* note = oneNote(60, 24);

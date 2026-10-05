@@ -128,6 +128,7 @@ void ArticulationMap::load(const QDomElement& trackElement)
 	if (!fromJson(document.array(), &entries, &why))
 	{
 		qWarning("ArticulationMap: the track's articulations could not be read (%s); it loads with none", qUtf8Printable(why));
+		entries.clear();  // fromJson left the entries before the bad one: none of them is the map.
 	}
 	m_entries = std::move(entries);
 }
