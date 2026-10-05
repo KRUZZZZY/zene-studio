@@ -129,6 +129,9 @@ private slots:
 		QMenu* view = m_bar.addMenu(QStringLiteral("&View"));
 		QAction* inMenu = view->addAction(QStringLiteral("Export"));
 		inMenu->setProperty("controlCommand", QStringLiteral("palettetest.in_a_menu"));
+		// Qt writes a literal ampersand as '&&': the palette must show one '&', not none.
+		QMenu* tools = m_bar.addMenu(QStringLiteral("&Tools"));
+		tools->addAction(QStringLiteral("Cut && Paste"));
 	}
 
 	void menuEntriesCarryTheirPathShortcutAndCommand()
@@ -149,6 +152,18 @@ private slots:
 			}
 			if (entry.label == QStringLiteral("song.mmp")) { QCOMPARE(entry.path, QStringLiteral("File ▸ Recent")); }
 		}
+	}
+
+	//! A literal ampersand is written '&&' in a menu label; the palette keeps one '&' and still
+	//! drops the single '&' that marks a mnemonic.
+	void anEscapedAmpersandSurvivesAsOne()
+	{
+		const QList<PaletteEntry> entries = paletteMenuEntries(&m_bar);
+		QVERIFY2(hasLabel(entries, QStringLiteral("Cut & Paste")), "a literal '&&' lost its ampersand");
+		QVERIFY2(!hasLabel(entries, QStringLiteral("Cut  Paste")), "a literal '&&' lost both ampersands");
+		// The mnemonic markers still go: '&File' reads as 'File', '&Save' as 'Save'.
+		QVERIFY(hasLabel(entries, QStringLiteral("Save")));
+		QVERIFY(hasLabel(entries, QStringLiteral("File ▸ Recent")) || hasLabel(entries, QStringLiteral("song.mmp")));
 	}
 
 	void registryEntriesAreTheArgumentFreeUnclaimedOnes()
