@@ -195,6 +195,27 @@ void registerNoteRemove(ControlRegistry& registry)
 		clip->removeNote(note);
 		clip->dataChanged();
 
+		// The selection store holds POSITIONS in the note list
+		// (control::selectNotes, ControlEditSupport.cpp:264-275), and this remove
+		// shifts every note after the removed one down by one - so a stored
+		// position now names a different note, or (the removed note's own
+		// position, and any position that has fallen off the end) no note at all
+		// and is silently dropped by rollState. The positions are remapped here,
+		// in the one place that moved them: a position above the removed one comes
+		// down by one, the removed position itself goes, and everything else is
+		// left exactly where it was. Re-writing the store through selectNotes()
+		// also re-sorts and de-duplicates it, so this cannot widen it.
+		if (!control::selectedNoteIndices(control::clipId(ref.id)).isEmpty())
+		{
+			QVector<int> kept;
+			for (int position : control::selectedNoteIndices(control::clipId(ref.id)))
+			{
+				if (position == index) { continue; }
+				kept.append(position > index ? position - 1 : position);
+			}
+			control::selectNotes(control::clipId(ref.id), static_cast<int>(clip->notes().size()), kept);
+		}
+
 		QJsonObject result;
 		result.insert(QStringLiteral("removed"), id);
 		result.insert(QStringLiteral("removed_note"), state);
