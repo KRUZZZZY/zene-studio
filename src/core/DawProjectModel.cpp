@@ -178,14 +178,22 @@ QString dawProjectTypeForContentType(const QString& contentType, bool* lost)
 		return value.compare(QLatin1String(name), Qt::CaseInsensitive) == 0;
 	};
 	const QStringList values = contentType.split(QLatin1Char(' '), Qt::SkipEmptyParts);
+	// NOTES FIRST, deliberately ahead of the audio/automation/video/tracks table.
+	// A track may declare several kinds of content at once, and the reader
+	// returns ONE engine type for it: the type decides whether the track's
+	// <Notes> can exist at all. Choosing "sample" for a "notes audio" track
+	// created a sample track, where DawProjectSession.cpp adds notes only through
+	// dynamic_cast<MidiClip*>, so a read that succeeded imported zero notes and
+	// reported no loss. Notes win, and the audio half is already counted as
+	// LOSSY #1 by the clip reader.
+	for (const QString& value : values)
+	{
+		if (is(value, "notes")) { return QStringLiteral("instrument"); }
+	}
 	for (const QString& value : values)
 	{
 		const QString mapped = engineTypeForContentValue(value);
 		if (!mapped.isEmpty()) { return mapped; }
-	}
-	for (const QString& value : values)
-	{
-		if (is(value, "notes")) { return QStringLiteral("instrument"); }
 	}
 	// The document DECLARED content and none of it named a type this module can
 	// build: "markers" is the vocabulary's own value for a track this engine
