@@ -149,6 +149,24 @@ private slots:
 		}
 	}
 
+	void aTagTheStoreCannotSaveTellsTheUserInsteadOfLookingSaved()
+	{
+		const QString file = touch(m_dir, "unwritable.wav");
+		// A store whose file cannot be written: the command is refused, and the menu must not pretend otherwise.
+		QVERIFY(BrowserTagStore::instance().openAt(m_dir.filePath(QStringLiteral("gone-dir/tags.json"))));
+
+		QMenu menu;
+		addBrowserTagMenu(&menu, file);
+		setBrowserTagPrompt([] { return std::optional<QString>(QStringLiteral("doomed")); });
+		QAction* fresh = named(menu, QMenu::tr("New tag..."));
+		QVERIFY(fresh != nullptr);
+		fresh->trigger();
+
+		// The failure is shown rather than swallowed.
+		QVERIFY2(!fresh->statusTip().isEmpty(), "the failed tag write was reported to no one");
+		QVERIFY(fresh->statusTip().contains(QStringLiteral("cannot write"), Qt::CaseInsensitive));
+	}
+
 private:
 	QTemporaryDir m_dir;
 };
