@@ -353,8 +353,6 @@ auto HostedPlugin::process(const float* const* inputs, float* const* outputs, in
 	if (!impl.prepared || !impl.plugin) { return false; }
 	if (frames <= 0) { return true; }
 	t_isAudioThread = true;
-	// A process call is the flush CLAP lets a host answer request_flush with (review L01-1 #9).
-	impl.flushRequested.store(false, std::memory_order_relaxed);
 
 	// Chunking counters, in the CORE (include/PluginHostChunking.h): the audio
 	// path increments, the control surface reads through `plugin.host_chunking`.
@@ -417,7 +415,18 @@ auto HostedPlugin::process(const float* const* inputs, float* const* outputs, in
 	}
 	impl.eventState.notes = impl.noteEvents.data();
 	impl.eventState.noteCount = 0;
+	impl.serviceActiveFlush();
 	return ok;
+}
+
+void HostedPlugin::Impl::serviceActiveFlush()
+{
+	if (!flushRequested.exchange(false, std::memory_order_relaxed) || paramsExt == nullptr
+		|| paramsExt->flush == nullptr)
+	{
+		return;
+	}
+	paramsExt->flush(plugin, &inEvents, &outEvents);
 }
 
 auto HostedPlugin::Impl::runChunk(const float* const* inputs, float* const* outputs,

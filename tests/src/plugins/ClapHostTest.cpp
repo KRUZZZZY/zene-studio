@@ -91,11 +91,13 @@ struct PluginState
 	double gain;
 	double bypass;
 	double framesProcessed;
+	//! params.flush() calls the host made outside process() - it answering a request_flush
+	std::uint32_t hostFlushes;
 };
-static_assert(sizeof(PluginState) == 120, "the state layout in the fixture changed");
+static_assert(sizeof(PluginState) == 128, "the state layout in the fixture changed");
 
 constexpr std::uint32_t PluginStateMagic = 0x4C4D4741u; // "LMGA"
-constexpr std::uint32_t PluginStateVersion = 2u;
+constexpr std::uint32_t PluginStateVersion = 3u;
 
 //! The INSTRUMENT fixture's identity and state (feature row 79), mirroring
 //! tests/data/clap-test-plugin/clap-test-instrument.c: the same read-back trick
@@ -191,6 +193,7 @@ private slots:
 	void testMainThreadRequestsAreServiced();
 	void testParameterRescansRereadTheList();
 	void testAnInvalidParamRangeIsNormalized();
+	void testAnActiveFlushRequestIsServicedOnTheAudioThread();
 
 private:
 	void process(HostedPlugin& plugin, const std::vector<std::vector<float>>& inputs,
@@ -871,6 +874,41 @@ void lmms::clap::ClapHostTest::testAnInvalidParamRangeIsNormalized()
 	plugin.setParamPlain(GainParamId, -5.0);
 	QVERIFY(plugin.paramPlain(GainParamId) >= gain.minValue);
 	qunsetenv("CLAP_TEST_GAIN_BAD_RANGE");
+}
+
+/*! A plug-in that asks for a flush while it is ACTIVE (its own UI changed a value) must be answered on
+ *  the audio thread with the prepared event lists. The host used to clear the request with no flush()
+ *  at all, so the plug-in never collected the value. */
+void lmms::clap::ClapHostTest::testAnActiveFlushRequestIsServicedOnTheAudioThread()
+{
+	qputenv("CLAP_TEST_GAIN_REQUEST_FLUSH", "1");
+	HostedPlugin plugin;
+	QString error;
+	QVERIFY2(plugin.load(QStringLiteral(CLAP_TEST_PLUGIN_PATH), QString::fromLatin1(TestPluginId), &error),
+		qPrintable(error));
+	QVERIFY2(plugin.prepare(TestSampleRate, TestBlockSize, &error), qPrintable(error));
+	PluginState state{};
+	QVERIFY2(readPluginState(plugin, &state), "the fixture saved an unexpected state layout");
+	QCOMPARE(state.hostFlushes, std::uint32_t{0});
+
+	const auto& layout = plugin.busLayout();
+	std::vector<std::vector<float>> inputs(layout.inputs, std::vector<float>(TestFrames, 0.5f));
+	std::vector<std::vector<float>> outputs(layout.outputs, std::vector<float>(TestFrames, 0.0f));
+	process(plugin, inputs, outputs, TestFrames);  // start_processing(): the plug-in asks for its own call
+	plugin.serviceMainThread();  // the plug-in's own call: it changes a value and asks for the flush
+	QVERIFY2(readPluginState(plugin, &state), "the fixture saved an unexpected state layout");
+	QCOMPARE(state.hostFlushes, std::uint32_t{0});  // still active: nothing may be flushed off the audio thread
+
+	process(plugin, inputs, outputs, TestFrames);
+	QVERIFY2(readPluginState(plugin, &state), "the fixture saved an unexpected state layout");
+	QCOMPARE(state.hostFlushes, std::uint32_t{1});
+
+	// and the request is not serviced twice
+	std::fill(outputs[0].begin(), outputs[0].end(), 0.0f);
+	process(plugin, inputs, outputs, TestFrames);
+	QVERIFY2(readPluginState(plugin, &state), "the fixture saved an unexpected state layout");
+	QCOMPARE(state.hostFlushes, std::uint32_t{1});
+	qunsetenv("CLAP_TEST_GAIN_REQUEST_FLUSH");
 }
 
 QTEST_GUILESS_MAIN(lmms::clap::ClapHostTest)

@@ -198,6 +198,12 @@ struct HostedPlugin::Impl
 	auto runChunk(const float* const* inputs, float* const* outputs, int inputChannels,
 		int outputChannels, int offset, int chunk) -> bool;
 
+	//! A flush the plug-in asked for while it was active: answered here, at
+	//! the end of a process() request, on the audio thread with the prepared
+	//! event lists, and only then cleared. Real-time safe (no allocation, no
+	//! lock); a no-op when no flush is pending or the plug-in has no flush.
+	void serviceActiveFlush();
+
 	std::atomic<bool> needsReprepare{false};
 	std::atomic<bool> callbackRequested{false};
 	//! E8: what the plug-in asked of the host, serviced on the main thread (serviceMainThread)

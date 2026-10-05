@@ -19,7 +19,7 @@
 #define TEST_PLUGIN_ID "org.lmms.test.clap-gain"
 #define TEST_PLUGIN_MAGIC 0x4C4D4741u /* "LMGA" */
 /* Bump when the state layout below changes; the host stores the bytes opaquely. */
-#define TEST_PLUGIN_STATE_VERSION 2u
+#define TEST_PLUGIN_STATE_VERSION 3u
 /* How many per-call block sizes the fixture records, for the chunking test
    (ClapHostTest::testChunkedProcessing). The recorded sequence is what the
    host actually asked the plug-in to process, so a test can assert the exact
@@ -49,11 +49,15 @@ typedef struct gain_state
 	double gain;
 	double bypass;
 	double frames_processed;
+	uint32_t host_flushes; /* params.flush() calls that arrived outside process() - a host answering a
+	                          request_flush while the plug-in was active */
 } gain_state_t;
 
 typedef struct gain_plugin
 {
 	clap_plugin_t plugin;
+	uint32_t host_flushes;
+	int in_process;         /* set for the duration of process(), so flush() can tell the two apart */
 	const clap_host_t* host;
 	const clap_plugin_params_t* params;
 	double gain;
@@ -205,6 +209,7 @@ static void gain_params_flush(const clap_plugin_t* plugin, const clap_input_even
 {
 	(void)out_events;
 	gain_plugin_t* self = (gain_plugin_t*)plugin->plugin_data;
+	if (!self->in_process) { self->host_flushes += 1; }
 	const uint32_t size = in_events->size(in_events);
 	for (uint32_t i = 0; i < size; ++i)
 	{
@@ -290,6 +295,7 @@ static bool gain_state_save(const clap_plugin_t* plugin, const clap_ostream_t* s
 	state.gain = self->gain;
 	state.bypass = self->bypass;
 	state.frames_processed = self->frames_processed;
+	state.host_flushes = self->host_flushes;
 	return stream->write(stream, &state, sizeof(state)) == (int64_t)sizeof(state);
 }
 
@@ -304,6 +310,7 @@ static bool gain_state_load(const clap_plugin_t* plugin, const clap_istream_t* s
 	self->gain = state.gain;
 	self->bypass = state.bypass;
 	self->frames_processed = state.frames_processed;
+	self->host_flushes = state.host_flushes;
 	/* The counters are part of the saved state, so restoring a state restores
 	   what the fixture reports as well: two saves of one state round-trip
 	   byte-wise (ClapHostTest::testStateRoundTrip). */
@@ -519,7 +526,10 @@ static bool gain_activate(const clap_plugin_t* plugin, double sample_rate, uint3
 	memset(self->recorded, 0, sizeof(self->recorded));
 	/* With CLAP_TEST_GAIN_MAIN_THREAD set, the plug-in asks for a main-thread call, the path the
 	   host services in HostedPlugin::serviceMainThread() (engine audit E8). */
-	if (getenv("CLAP_TEST_GAIN_MAIN_THREAD") != NULL || getenv("CLAP_TEST_GAIN_RESCAN") != NULL)
+	self->host_flushes = 0;
+	self->in_process = 0;
+	if (getenv("CLAP_TEST_GAIN_MAIN_THREAD") != NULL || getenv("CLAP_TEST_GAIN_RESCAN") != NULL
+		|| getenv("CLAP_TEST_GAIN_REQUEST_FLUSH") != NULL)
 	{
 		self->host->request_callback(self->host);
 	}
@@ -564,13 +574,18 @@ static void gain_reset(const clap_plugin_t* plugin)
 static clap_process_status gain_process(const clap_plugin_t* plugin, const clap_process_t* process)
 {
 	gain_plugin_t* self = (gain_plugin_t*)plugin->plugin_data;
+	self->in_process = 1;
 
 	/* The host delivers parameter changes through the event list. */
 	self->params->flush(plugin, process->in_events, process->out_events);
 
 	/* CLAP_TEST_GAIN_PROCESS_ERROR: report a processing error without writing the output block, the way
 	   a plug-in that fails partway through leaves the rest of the buffer as the host handed it over. */
-	if (getenv("CLAP_TEST_GAIN_PROCESS_ERROR") != NULL) { return CLAP_PROCESS_ERROR; }
+	if (getenv("CLAP_TEST_GAIN_PROCESS_ERROR") != NULL)
+	{
+		self->in_process = 0;
+		return CLAP_PROCESS_ERROR;
+	}
 
 	const double gain = self->bypass >= 0.5 ? 1.0 : self->gain;
 	const uint32_t frames = process->frames_count;
@@ -606,6 +621,7 @@ static clap_process_status gain_process(const clap_plugin_t* plugin, const clap_
 		self->recorded[self->recorded_count] = frames;
 		self->recorded_count += 1;
 	}
+	self->in_process = 0;
 	return CLAP_PROCESS_CONTINUE;
 }
 
@@ -646,6 +662,16 @@ static void gain_on_main_thread(const clap_plugin_t* plugin)
 	gain_plugin_t* self = (gain_plugin_t*)plugin->plugin_data;
 	const char* rescan = getenv("CLAP_TEST_GAIN_RESCAN");
 	if (rescan != NULL) { gain_request_rescan(self, rescan); }
+	/* CLAP_TEST_GAIN_REQUEST_FLUSH: the plug-in changed a value behind the host's back and asks for
+	   the flush, while it is active - the host has to answer it on the audio thread. */
+	if (getenv("CLAP_TEST_GAIN_REQUEST_FLUSH") != NULL)
+	{
+		self->gain = 0.75;
+		const clap_host_params_t* flushParams =
+			(const clap_host_params_t*)self->host->get_extension(self->host, CLAP_EXT_PARAMS);
+		if (flushParams != NULL) { flushParams->request_flush(self->host); }
+		return;
+	}
 	if (getenv("CLAP_TEST_GAIN_MAIN_THREAD") == NULL) { return; }
 	self->gain = 0.25;
 	const clap_host_params_t* params = (const clap_host_params_t*)self->host->get_extension(self->host, CLAP_EXT_PARAMS);
