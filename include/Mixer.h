@@ -542,6 +542,21 @@ public:
 		return m_totalLatencyFrames.load(std::memory_order_relaxed);
 	}
 
+	/*! PDC (#605): whether any compensation DELAY the graph asked for was above
+	 *  the delay lines' capacity and had to be clamped.
+	 *
+	 *  This is NOT the same question as whether totalLatencyFrames() is at or
+	 *  above LatencyCompensation::MaxFrames: the total adds the master chain's
+	 *  own always-applied latency on top of the alignment point, so an aligned
+	 *  graph (every compensation delay 0, nothing clamped) can still publish a
+	 *  total above the capacity. Ask this for "was anything clamped", and the
+	 *  total for "how much latency does the graph have".
+	 */
+	bool latencyCompensationClamped() const
+	{
+		return m_latencyCompensationClamped.load(std::memory_order_relaxed);
+	}
+
 	//! PDC (#605): the alignment point of a channel's input, or 0 when the
 	//! index is out of range.
 	int channelInputLatency(mix_ch_t channel) const;
@@ -728,6 +743,9 @@ private:
 	std::vector<int> m_directSourceLatencyScratch;
 	//! PDC (#605): published total latency; see totalLatencyFrames().
 	std::atomic<int> m_totalLatencyFrames{0};
+	//! PDC (#605): whether any compensation delay was clamped; see
+	//! latencyCompensationClamped().
+	std::atomic<bool> m_latencyCompensationClamped{false};
 
 	//! VCA / mix groups (#622); control thread only.
 	std::vector<VcaGroup*> m_vcaGroups;

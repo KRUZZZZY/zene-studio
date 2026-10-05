@@ -159,9 +159,13 @@ ControlResult handlePdcReport()
 	QJsonObject result;
 	result.insert(QStringLiteral("total_latency_frames"), total);
 	// The bound the graph can actually honour (#605 follow-up, audit B-1): a
-	// request above it is clamped by the delay line itself.
+	// request above it is clamped by the delay line itself. The flag is the
+	// mixer's OWN verdict on the compensation delays it asked for, NOT a
+	// comparison of the published total: the total carries the master chain's
+	// always-applied latency on top of the alignment point, so an aligned graph
+	// (every delay 0, nothing clamped) can exceed the bound on that sum alone.
 	result.insert(QStringLiteral("delay_line_capacity_frames"), LatencyCompensation::MaxFrames);
-	result.insert(QStringLiteral("delay_line_clamped"), total >= LatencyCompensation::MaxFrames);
+	result.insert(QStringLiteral("delay_line_clamped"), mixer->latencyCompensationClamped());
 	result.insert(QStringLiteral("channels"), channels);
 	result.insert(QStringLiteral("channel_count"), channels.size());
 	result.insert(QStringLiteral("routes"), routes);

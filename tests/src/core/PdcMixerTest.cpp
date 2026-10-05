@@ -48,6 +48,7 @@
 #include "AudioBusHandle.h"
 #include "AudioDevice.h"
 #include "AudioEngine.h"
+#include "ControlRegistry.h"
 #include "Effect.h"
 #include "EffectChain.h"
 #include "Engine.h"
@@ -544,6 +545,58 @@ private slots:
 				.arg(cancelledDb)));
 		QVERIFY2(warningsTotal == 1,
 			"a chain at the cap must not emit a capacity diagnostic");
+	}
+
+	/*! Luna cluster 4871: `delay_line_clamped` must mean WHAT IT SAYS - that a
+	 *  compensation delay the graph asked for was clamped by the delay line.
+	 *
+	 *  It was derived from the TOTAL source-to-output latency
+	 *  (`total >= LatencyCompensation::MaxFrames`), which is a different
+	 *  quantity: Mixer::updateLatencyCompensation adds the master chain's own
+	 *  always-applied latency ON TOP of the alignment point, and the alignment
+	 *  point is reached by delaying the EARLIER paths. So a graph whose paths
+	 *  are already aligned - every compensation delay is 0, nothing is clamped -
+	 *  can still publish a total above the capacity purely from the master
+	 *  chain's latency, and the report then claimed a clamp that never happened.
+	 *
+	 *  The case puts the over-cap latency on the MASTER's own chain and sends
+	 *  nothing, so no delay line is asked for anything: `clamped` is false
+	 *  inside the mixer, while the total is far past the cap.
+	 */
+	void theClampFlagFollowsTheCompensationDelaysNotTheTotalLatency()
+	{
+		ControlRegistry::setReady(true);
+		auto mixer = Engine::mixer();
+		mixer->clear();
+		while (mixer->numChannels() < 3) { mixer->createChannel(); }
+
+		const int cap = LatencyCompensation::MaxFrames;
+		EffectChain* master = chainOf(mixer, 0);
+		// A small REAL delay with a reported latency far above the capacity:
+		// the DSP stays cheap, only the number the host believes is over the cap.
+		master->appendEffect(new LatentDelayEffect(master, kLatency, 2 * cap));
+
+		// One real period: updateLatencyCompensation runs inside the mix.
+		renderSignal(mixer, {1}, 2);
+
+		const int total = mixer->totalLatencyFrames();
+		QVERIFY2(total >= cap,
+			qPrintable(QString("premise: the published total is %1, not above the "
+				"capacity %2, so this case would be vacuous").arg(total).arg(cap)));
+
+		const ControlResult report =
+			ControlRegistry::instance()->invoke(QStringLiteral("pdc.report"), QJsonObject());
+		QVERIFY2(report.ok, qPrintable(report.errorMessage));
+		QCOMPARE(report.result.value(QStringLiteral("delay_line_capacity_frames")).toInt(), cap);
+		QVERIFY2(!report.result.value(QStringLiteral("delay_line_clamped")).toBool(),
+			qPrintable(QString("pdc.report claimed a delay-line clamp from a total "
+				"latency of %1 frames, but nothing was clamped: the paths are aligned, "
+				"so every compensation delay is 0 and the total is above the cap only "
+				"because the master chain's own latency sits on top of the alignment "
+				"point").arg(total)));
+
+		evidence("PDC_CLAMPFLAG cap=%d total=%d delay_line_clamped=false", cap, total);
+		ControlRegistry::setReady(false);
 	}
 
 	//! B-2 (audit follow-up): the direct track-input path
