@@ -637,6 +637,8 @@ set(LMMS_TESTS
 	src/core/RealtimeSnapshotTest.cpp
 	# catch-up W1: undo honesty - redo failures, list copies, the macro pair, arm many, no journal step refused.
 	src/core/UndoHonestyTest.cpp
+	# Luna patrol: device undo follows chains and effects rebuilt by track removal's undo.
+	src/core/DeviceMovesUndoTest.cpp
 	# 0.5.0 L10 (W3): formula modulators and modulators restarted by a track's notes.
 	src/core/ModulatorToolsTest.cpp
 	# 0.5.0 W3 engine: latency-compensated automation, post-fader inserts, receives, pre-fades.
@@ -1072,6 +1074,7 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 		# 0.5.0 L10: copying and comparing devices loads the build's effect modules.
 		OR LMMS_TEST_NAME STREQUAL "DeviceCopyTest"
 		OR LMMS_TEST_NAME STREQUAL "UndoHonestyTest"
+		OR LMMS_TEST_NAME STREQUAL "DeviceMovesUndoTest"
 		# 0.5.0 L10 (W3): the device tools load the build's amplifier module.
 		OR LMMS_TEST_NAME STREQUAL "DeviceToolsTest"
 		OR LMMS_TEST_NAME STREQUAL "DeviceDspTest"

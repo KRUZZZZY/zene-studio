@@ -25,7 +25,6 @@
 #include <memory>
 
 #include <QJsonObject>
-#include <QPointer>
 
 #include "BounceInPlace.h"
 #include "ControlBounceSupport.h"
@@ -78,21 +77,22 @@ ControlResult bounceLand(const QJsonObject& args)
 	const QString path = rendered.path;
 	const tick_t at = range.start;
 	const bool wasMuted = source->isMuted();
-	QPointer<Track> sourceRef(source);
+	const QString sourceId = trackIdOf(source);
 	// The landed track by its stable id, found again when the undo runs: a later
 	// track.remove and its undo re-create the track as a NEW object under the same id,
 	// so a pointer kept here would name a deleted track.
 	auto landed = std::make_shared<QString>();
 	addUndoStep(
-		[landed, sourceRef, wasMuted]() {
+		[landed, sourceId, wasMuted]() {
 			ControlResult ignored;
 			if (Track* track = resolveTrack(*landed, &ignored)) { removeTrack(track); }
 			landed->clear();
-			if (!sourceRef.isNull()) { sourceRef->setMuted(wasMuted); }
+			if (Track* current = resolveTrack(sourceId, &ignored)) { current->setMuted(wasMuted); }
 		},
-		[landed, sourceRef, song, name, path, at]() {
+		[landed, sourceId, song, name, path, at]() {
 			*landed = trackIdOf(landTrack(song, name, path, at));
-			if (!sourceRef.isNull()) { sourceRef->setMuted(true); }
+			ControlResult ignored;
+			if (Track* current = resolveTrack(sourceId, &ignored)) { current->setMuted(true); }
 		});
 	*landed = trackIdOf(landTrack(song, name, path, at));
 	source->setMuted(true);

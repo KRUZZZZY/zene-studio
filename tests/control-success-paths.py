@@ -186,6 +186,42 @@ def check_range_bounce(session, recorder, outdir):
                    "error" in gone and state.get("muted") is False, "landed=%r source=%r" % (gone, state))
 
 
+def check_bounce_source_undo(session, recorder, outdir):
+    """A bounce's source mute follows the track rebuilt by track.remove's undo."""
+    track = add_track_with_note(session, "Bounce source", 65)
+    bounced = session.result("bounce.land", {"track": track, "start": 0, "end": 192,
+                                             "out": os.path.join(outdir, "bounce-source.wav")})
+    landed = bounced.get("landed_track")
+    recorder.check("bounce.land creates a track and mutes its source",
+                   str(landed).startswith("trk-")
+                   and session.result("track.get_state", {"track": track}).get("muted") is True,
+                   "reply=%r" % bounced)
+    # Wave 3's checked-command gap: exercise the editor through its public command on real bounced audio.
+    tracks = session.result("arrangement.get_state").get("tracks", [])
+    clips = next((entry.get("clips", []) for entry in tracks if entry.get("id") == landed), [])
+    editor = session.result("window.sample_editor", {"clip": clips[0] if clips else "", "from": 441,
+                                                     "to": 882, "unit": "samples", "zoom": "selection"})
+    recorder.check("window.sample_editor opens the bounced clip with the requested range",
+                   editor.get("from") == 441 and editor.get("to") == 882
+                   and editor.get("length") == 441 and editor.get("unit") == "samples", "reply=%r" % editor)
+    session.result("track.remove", {"track": track})
+    session.result("control.undo")
+    recorder.check("undo of source removal restores the bounced, muted source",
+                   session.result("track.get_state", {"track": track}).get("muted") is True, "track=%r" % track)
+    session.result("control.undo")
+    recorder.check("bounce undo unmutes a rebuilt source and removes the landed track",
+                   session.result("track.get_state", {"track": track}).get("muted") is False
+                   and "error" in session.result("track.get_state", {"track": landed}), "track=%r landed=%r" % (track, landed))
+    redone = session.result("control.redo")
+    recorder.check("bounce redo mutes the rebuilt source again",
+                   redone.get("redone") is True
+                   and session.result("track.get_state", {"track": track}).get("muted") is True,
+                   "reply=%r" % redone)
+    session.result("control.undo")
+    recorder.check("a second bounce undo restores the source's original mute",
+                   session.result("track.get_state", {"track": track}).get("muted") is False, "track=%r" % track)
+
+
 def check_window_shell(session, recorder, outdir):
     """M3.2/M3.4/M3.7: the main window's own verbs, on the harness's offscreen GUI instance.
 
@@ -235,6 +271,7 @@ def main(argv):
         check_subprojects(session, recorder, instance.tmp)
         check_track_flatten(session, recorder)
         check_range_bounce(session, recorder, instance.tmp)
+        check_bounce_source_undo(session, recorder, instance.tmp)
         check_window_shell(session, recorder, instance.tmp)
         session.call("control.quit")
     report_results(recorder)

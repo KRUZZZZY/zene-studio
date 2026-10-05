@@ -45,19 +45,15 @@ namespace lmms::control
 namespace
 {
 
-//! The devices a recorded step made, GUARDED: a newer step can delete one of them (plugin.unload, rack.remove_chain)
-//! and re-create it as a new object, so a raw pointer held here would be freed memory by the time this step runs.
-//! A QPointer is null once the device is gone, and the step skips it rather than delete it twice (W1).
-using Made = std::shared_ptr<std::vector<QPointer<Effect>>>;
-
-//! Take @a effect off @a chain and delete it once the period in flight is done; a device already gone is skipped.
-void takeOut(EffectChain* chain, QPointer<Effect>& effect)
+//! A copied device: keep its guarded instance while live, and its slot and plugin type across a chain rebuild.
+struct RecordedDevice
 {
-	if (chain == nullptr || effect.isNull()) { return; }
-	chain->removeEffect(effect.data());
-	effect->deleteLater();
-	effect = nullptr;
-}
+	QPointer<Effect> effect;
+	int slot;
+	QString plugin;
+};
+
+using Made = std::shared_ptr<std::vector<RecordedDevice>>;
 
 qint64 bytesOf(const QStringList& states)
 {
@@ -68,23 +64,26 @@ qint64 bytesOf(const QStringList& states)
 
 //! The step that takes the devices @a made out again; its redo recreates them from @a states at @a places.
 //! A structural step: its settings documents count against the undo stack's byte budget (review #9).
-void recordRecreation(const std::function<EffectChain*()>& chainOf, const Made& made, const QStringList& states,
-	const std::vector<int>& places)
+void recordRecreation(const std::function<EffectChain*()>& chainOf, const Made& made, const QStringList& states)
 {
 	addStructuralUndoStep(
 		[made, chainOf]() {
 			EffectChain* chain = chainOf();
-			for (auto it = made->rbegin(); it != made->rend(); ++it) { takeOut(chain, *it); }
+			for (auto it = made->rbegin(); it != made->rend(); ++it)
+			{
+				removeRecordedEffect(chain, it->effect, it->slot, it->plugin);
+			}
 		},
-		[made, chainOf, states, places]() {
+		[made, chainOf, states]() {
 			// As recreateDevices itself: the first device that cannot be recreated stops the rest, so a redo never
 			// leaves a later device without an earlier one (and no slot keeps a pointer from before the undo).
 			EffectChain* chain = chainOf();
 			bool stopped = chain == nullptr;
 			for (std::size_t i = 0; i < made->size(); ++i)
 			{
-				(*made)[i] = stopped ? nullptr : recreateEffectFromState(chain, states.at(static_cast<int>(i)), places[i]);
-				stopped = (*made)[i].isNull();
+				RecordedDevice& device = (*made)[i];
+				device.effect = stopped ? nullptr : recreateEffectFromState(chain, states.at(static_cast<int>(i)), device.slot);
+				stopped = device.effect.isNull();
 			}
 		},
 		bytesOf(states));
@@ -94,29 +93,27 @@ void recordRecreation(const std::function<EffectChain*()>& chainOf, const Made& 
 
 QJsonArray recreateDevices(EffectChain* chain, const QStringList& states, int position, ControlResult* error)
 {
-	return recreateDevices([chain] { return chain; }, states, position, error);
+	return recreateDevices(recordedChainFinder(chain), states, position, error);
 }
 
 QJsonArray recreateDevices(const std::function<EffectChain*()>& chainOf, const QStringList& states, int position, ControlResult* error)
 {
 	EffectChain* chain = chainOf();
-	auto made = std::make_shared<std::vector<QPointer<Effect>>>();
-	std::vector<int> places;
+	auto made = std::make_shared<std::vector<RecordedDevice>>();
 	QJsonArray ids;
 	for (const QString& state : states)
 	{
-		const int at = position < 0 ? static_cast<int>(chain->effects().size()) : position + static_cast<int>(places.size());
+		const int at = position < 0 ? static_cast<int>(chain->effects().size()) : position + static_cast<int>(made->size());
 		Effect* effect = recreateEffectFromState(chain, state, at);
 		if (effect == nullptr)
 		{
 			if (std::optional<ControlResult> why = takeStructuralRestoreFailure()) { *error = *why; }
 			break;
 		}
-		made->push_back(effect);
-		places.push_back(placeEffect(chain, effect, at));
+		made->push_back({effect, placeEffect(chain, effect, at), QString::fromUtf8(effect->descriptor()->name)});
 		ids.append(effectIdOf(effect));
 	}
-	if (!made->empty()) { recordRecreation(chainOf, made, states.mid(0, static_cast<int>(made->size())), places); }
+	if (!made->empty()) { recordRecreation(chainOf, made, states.mid(0, static_cast<int>(made->size()))); }
 	return ids;
 }
 
@@ -128,7 +125,7 @@ bool devicesRecordable(const std::vector<Effect*>& effects)
 
 void removeDevicesRecorded(EffectChain* chain, const std::vector<Effect*>& effects)
 {
-	removeDevicesRecorded([chain] { return chain; }, effects);
+	removeDevicesRecorded(recordedChainFinder(chain), effects);
 }
 
 void removeDevicesRecorded(const std::function<EffectChain*()>& chainOf, const std::vector<Effect*>& effects)
@@ -141,6 +138,7 @@ void removeDevicesRecorded(const std::function<EffectChain*()>& chainOf, const s
 		if (at == now.end()) { continue; }
 		const int slot = static_cast<int>(at - now.begin());
 		const QString state = controlEffectStateXml(*it);
+		const QString plugin = QString::fromUtf8((*it)->descriptor()->name);
 		// The chain is found again on every run (review L10-L03-L02-1 #2): a rack chain an undo deleted
 		// and a redo made again is a new object.
 		auto holder = std::make_shared<QPointer<Effect>>(*it);
@@ -148,7 +146,7 @@ void removeDevicesRecorded(const std::function<EffectChain*()>& chainOf, const s
 			[chainOf, state, slot, holder]() {
 				if (EffectChain* current = chainOf()) { *holder = recreateEffectFromState(current, state, slot); }
 			},
-			[chainOf, holder]() { takeOut(chainOf(), *holder); },
+			[chainOf, holder, slot, plugin]() { removeRecordedEffect(chainOf(), *holder, slot, plugin); },
 			state.size());
 		chain->removeEffect(*it);
 		(*it)->deleteLater();

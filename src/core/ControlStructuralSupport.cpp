@@ -376,10 +376,12 @@ QJsonObject chainArgs(const EffectChain* chain)
 	return channelChainArgs(chain);
 }
 
+} // namespace
+
 //! @a chain, found again by its owner's address every time the result is called (nullptr once the owner is gone):
 //! a track.remove and its undo rebuild the track and its chain as NEW objects under the same id. A chain no target
 //! owns has no address, so it is GUARDED instead - null once it is deleted.
-std::function<EffectChain*()> chainFinderOf(EffectChain* chain)
+std::function<EffectChain*()> recordedChainFinder(EffectChain* chain)
 {
 	const QJsonObject args = chainArgs(chain);
 	if (args.isEmpty()) { return [guarded = QPointer<EffectChain>(chain)]() -> EffectChain* { return guarded.data(); }; }
@@ -389,6 +391,9 @@ std::function<EffectChain*()> chainFinderOf(EffectChain* chain)
 		return resolveChainTarget(args, &target, &ignored) ? target.chain : nullptr;
 	};
 }
+
+namespace
+{
 
 QString pluginNameOf(const Effect* effect) { return QString::fromUtf8(effect->descriptor()->name); }
 
@@ -405,9 +410,11 @@ Effect* madeEffect(const EffectChain* chain, const QPointer<Effect>& made, int s
 	return pluginNameOf(atSlot) == plugin ? atSlot : nullptr;
 }
 
+} // namespace
+
 //! Take the device madeEffect() finds off @a chain. Same lifetime as plugin.unload's: the audio engine may still
 //! hold the pointer for the period in flight, so it is deleted later.
-void takeOutMade(EffectChain* chain, QPointer<Effect>& made, int slot, const QString& plugin)
+void removeRecordedEffect(EffectChain* chain, QPointer<Effect>& made, int slot, const QString& plugin)
 {
 	if (Effect* effect = madeEffect(chain, made, slot, plugin))
 	{
@@ -416,8 +423,6 @@ void takeOutMade(EffectChain* chain, QPointer<Effect>& made, int slot, const QSt
 	}
 	made = nullptr;
 }
-
-} // namespace
 
 bool journalEffectRemoval(EffectChain* chain, Effect* effect, int index)
 {
@@ -432,25 +437,25 @@ bool journalEffectRemoval(EffectChain* chain, Effect* effect, int index)
 	if (xml.isEmpty() || xml.size() > StructuralSnapshotLimit) { return false; }
 
 	// No pointer is kept (see journalEffectLoad in the header): the chain by its owner's address, the device by its slot.
-	const auto chainOf = chainFinderOf(chain);
+	const auto chainOf = recordedChainFinder(chain);
 	const QString plugin = pluginNameOf(effect);
 	auto made = std::make_shared<QPointer<Effect>>();
 	addStructuralUndoStep(
 		[chainOf, xml, index, made]() {
 			if (EffectChain* live = chainOf()) { *made = recreateEffectFromState(live, xml, index); }
 		},
-		[chainOf, made, index, plugin]() { takeOutMade(chainOf(), *made, index, plugin); },
+		[chainOf, made, index, plugin]() { removeRecordedEffect(chainOf(), *made, index, plugin); },
 		xml.size());
 	return true;
 }
 
 void journalEffectLoad(EffectChain* chain, Effect* effect, const ControlDeviceEntry& entry, int slot)
 {
-	const auto chainOf = chainFinderOf(chain);
+	const auto chainOf = recordedChainFinder(chain);
 	const QString plugin = pluginNameOf(effect);
 	auto made = std::make_shared<QPointer<Effect>>(effect);
 	addUndoStep(
-		[chainOf, made, slot, plugin]() { takeOutMade(chainOf(), *made, slot, plugin); },
+		[chainOf, made, slot, plugin]() { removeRecordedEffect(chainOf(), *made, slot, plugin); },
 		[chainOf, made, entry, slot]() {
 			EffectChain* live = chainOf();
 			ControlResult ignored;

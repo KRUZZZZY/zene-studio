@@ -25,8 +25,10 @@
 #ifndef LMMS_CONTROL_STRUCTURAL_SUPPORT_H
 #define LMMS_CONTROL_STRUCTURAL_SUPPORT_H
 
+#include <functional>
 #include <optional>
 
+#include <QPointer>
 #include <QString>
 
 #include "ControlRegistry.h"
@@ -143,6 +145,12 @@ LMMS_EXPORT bool journalEffectRemoval(EffectChain* chain, Effect* effect, int in
  *  whose chain is gone does nothing.
  */
 LMMS_EXPORT void journalEffectLoad(EffectChain* chain, Effect* effect, const ControlDeviceEntry& entry, int slot);
+
+//! Find a recorded chain again by its owner's address; an unaddressable chain is guarded until deleted.
+LMMS_EXPORT std::function<EffectChain*()> recordedChainFinder(EffectChain* chain);
+
+//! Remove the recorded device if still on the chain, or its rebuilt counterpart at the same slot and plugin type.
+LMMS_EXPORT void removeRecordedEffect(EffectChain* chain, QPointer<Effect>& made, int slot, const QString& plugin);
 
 /*! Recreates the effect described by \a stateXml (a document written by
  *  controlEffectStateXml()) inside \a chain, at \a index, through
