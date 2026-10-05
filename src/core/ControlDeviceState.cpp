@@ -102,7 +102,21 @@ ControlResult controlRestoreDeviceState(const ControlDeviceHandle& handle, const
 		return controlRestoreEffectState(handle.effect, bytes);
 	}
 	DataFile dataFile(bytes);
-	if (dataFile.content().isNull())
+	// The null check alone is not a validation: DataFile selects its content
+	// element BY the root's `type` attribute (DataFile::loadData's
+	// `root.elementsByTagName(typeName(m_type))`), so ANY other product
+	// document - a saved project, whose root names a `song` content element -
+	// resolves a content element that is not an instrument-track preset at all.
+	// loadPreset was handed it and `restored: true` was reported regardless.
+	// The content `type` this check reads has to HAVE parsed as well: toInt()
+	// answers 0 for a missing or nonnumeric attribute, and 0 is the instrument
+	// track's own type, so an unparsed type would pass this comparison.
+	// This is the check track.preset_load already makes
+	// (ControlCommandsTrackPresets.cpp).
+	bool typeParsed = false;
+	const int presetType = dataFile.content().attribute(QStringLiteral("type")).toInt(&typeParsed);
+	if (dataFile.content().isNull() || !typeParsed
+		|| presetType != static_cast<int>(handle.track->type()))
 	{
 		return ControlResult::failure(ControlErrorKind::InvalidArgs,
 			QStringLiteral("the file is not an instrument-track preset document"));
