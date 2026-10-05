@@ -548,6 +548,53 @@ private slots:
 		QCOMPARE(static_cast<int>(after->mode()), static_cast<int>(SidechainTapPoint::PreFader));
 		evidence("DEFERRED_ROUNDTRIP deferred_before=1 deferred_after=1 xml_bytes=%d", savedXml.size());
 	}
+
+	// Luna cluster 3295: a <member> whose `channel` attribute is missing,
+	// negative or absurdly large was still handed to allocateChannelsTo() and
+	// cast to mix_ch_t. A large positive number allocated that many channels
+	// (a malformed file could allocate the whole mixer); a negative one wrapped
+	// to 65535 and joined the group as a member that names no channel.
+	void aMalformedVcaMemberChannelIsSkipped()
+	{
+		Mixer* mixer = Engine::mixer();
+		QVERIFY(mixer != nullptr);
+		mixer->clear();
+
+		static const char* kBadMembersXml =
+			"<mixer>\n"
+			"  <mixerchannel num=\"0\" muted=\"0\" volume=\"1\" name=\"Master\">\n"
+			"    <fxchain numofeffects=\"0\" enabled=\"0\"/>\n"
+			"  </mixerchannel>\n"
+			"  <mixerchannel num=\"1\" muted=\"0\" volume=\"1\" name=\"Kick\">\n"
+			"    <fxchain numofeffects=\"0\" enabled=\"0\"/>\n"
+			"  </mixerchannel>\n"
+			"  <vcagroup id=\"0\" name=\"Bad\">\n"
+			"    <member channel=\"500\"/>\n"
+			"    <member channel=\"-1\"/>\n"
+			"    <member/>\n"
+			"    <member channel=\"1\"/>\n"
+			"  </vcagroup>\n"
+			"</mixer>\n";
+
+		QDomDocument doc;
+		QDomElement root;
+		QVERIFY2(parseMixerElement(kBadMembersXml, doc, root), "the fixture is not valid XML");
+		mixer->loadSettings(root);
+
+		QVERIFY2(mixer->numChannels() < 100,
+			qPrintable(QString("a member channel=\"500\" allocated %1 channels (3295)")
+				.arg(mixer->numChannels())));
+
+		QVERIFY2(mixer->vcaGroups().size() == 1, "the group was dropped entirely");
+		const std::vector<mix_ch_t>& members = mixer->vcaGroups().front()->members();
+		QVERIFY2(members.size() == 1,
+			qPrintable(QString("a malformed member joined the group: %1 members")
+				.arg(members.size())));
+		QCOMPARE(static_cast<int>(members.front()), 1);
+		evidence("MALFORMED_MEMBER channels=%d members=%d",
+			mixer->numChannels(), static_cast<int>(members.size()));
+	}
+
 	// Soloing walks the send graph with unmuteForSolo()/
 	// unmuteSenderForSolo()/unmuteReceiverForSolo(). Those recurse over
 	// m_sends/m_receives with no visited-channel guard, and the

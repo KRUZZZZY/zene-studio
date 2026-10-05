@@ -2707,8 +2707,22 @@ void Mixer::loadSettings( const QDomElement & _this )
 			{
 				continue;
 			}
-			const int channel = memberDom.attribute( "channel" ).toInt();
-			allocateChannelsTo( channel );
+			// Luna cluster 3295: the attribute is read before it is known to be a
+			// channel index. A missing or non-numeric value is 0 (the master,
+			// which is not a member), a negative one wraps to 65535 when cast
+			// to mix_ch_t, and a large positive one is handed to
+			// allocateChannelsTo(), so a malformed file could allocate a whole
+			// mixer. A member must name an EXISTING non-master channel, which
+			// is exactly what a saved group ever names, so nothing is skipped
+			// that a real project could contain.
+			const QString channelAttr = memberDom.attribute( "channel" );
+			bool parsed = false;
+			const int channel = channelAttr.toInt( &parsed );
+			if( ! parsed || channel <= 0
+				|| static_cast<std::size_t>( channel ) >= m_mixerChannels.size() )
+			{
+				continue;
+			}
 			group->addMember( static_cast<mix_ch_t>( channel ) );
 		}
 	}
