@@ -77,12 +77,27 @@ namespace
 {
 
 
+//! The typed refusal for a clip that carries no note list - anchor or member. A
+//! link group's content channel IS the note list (include/ClipLinks.h), and
+//! ClipLinks::mirrorContent() returns ok=false for a non-MidiClip source, so a
+//! group built on one could never share content: the anchor needed this refusal
+//! as much as a member did.
+ControlResult noNoteList(const QString& id, bool isAnchor)
+{
+	return ControlResult::failure(ControlErrorKind::InvalidArgs,
+		QStringLiteral("'%1' cannot be %2: a link group shares a note list, and this clip has "
+			"none (audio clips are their own source in 0.3.0 - docs/KNOWN-LIMITATIONS.md)")
+			.arg(id).arg(isAnchor ? QStringLiteral("the anchor of a link group")
+					      : QStringLiteral("a link member")));
+}
+
 /*! Resolves and validates the 'clips' list against \p anchor BEFORE anything is
  *  written, so a refusal cannot leave a half-built group behind (the same rule
- *  clip.trim's planTrim follows). Every id must name a live clip, none may be
- *  the anchor itself, a duplicate, or a member of another group - merging two
- *  groups would silently overwrite one group's content with the other's - and
- *  each must carry a note list, because that is the group's content channel.
+ *  clip.trim's planTrim follows). The anchor itself must carry a note list, every
+ *  id must name a live clip, none may be the anchor itself, a duplicate, or a
+ *  member of another group - merging two groups would silently overwrite one
+ *  group's content with the other's - and each must carry a note list, because
+ *  that is the group's content channel.
  *
  *  Split out of the handler for the same reason its siblings here are: the
  *  per-method complexity target is CCN 10 and the ratchet is not moved for a new
@@ -90,6 +105,11 @@ namespace
 bool resolveNewMembers(const ClipRef& anchor, const QVector<QString>& requested,
 	QVector<Clip*>* newcomers, ControlResult* error)
 {
+	if (dynamic_cast<MidiClip*>(anchor.clip) == nullptr)
+	{
+		*error = noNoteList(clipIdOf(anchor.clip), true);
+		return false;
+	}
 	for (const QString& id : requested)
 	{
 		ClipRef ref;
@@ -102,10 +122,7 @@ bool resolveNewMembers(const ClipRef& anchor, const QVector<QString>& requested,
 		}
 		if (dynamic_cast<MidiClip*>(ref.clip) == nullptr)
 		{
-			*error = ControlResult::failure(ControlErrorKind::InvalidArgs,
-				QStringLiteral("'%1' cannot be a link member: a link group shares a note list, "
-					"and this clip has none (audio clips are their own source in 0.3.0 - "
-					"docs/KNOWN-LIMITATIONS.md)").arg(id));
+			*error = noNoteList(id, false);
 			return false;
 		}
 		if (anchor.clip->linkId() > 0 && ref.clip->linkId() == anchor.clip->linkId())

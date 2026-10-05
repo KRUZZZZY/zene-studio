@@ -172,12 +172,33 @@ private slots:
 		QVERIFY(!audioMember.ok);
 		QCOMPARE(audioMember.errorKind, ControlErrorKind::InvalidArgs);
 		QVERIFY(audioMember.errorMessage.contains(QStringLiteral("note list")));
+		const ControlResult audioAnchor = registry->invoke(QStringLiteral("clip.link_create"),
+			QJsonObject{{QStringLiteral("clip"), sampleClip}, {QStringLiteral("clips"), QJsonArray{a}}});
+		QVERIFY(!audioAnchor.ok);
+		QCOMPARE(audioAnchor.errorKind, ControlErrorKind::InvalidArgs);
+		QVERIFY(audioAnchor.errorMessage.contains(QStringLiteral("note list")));
 
-		// nothing was half-written by that refusal: A is still unlinked
+		// The shared list reader rejects the other malformed membership shapes
+		// before the handler can checkpoint or write either clip.
+		QCOMPARE(registry->invoke(QStringLiteral("clip.link_create"),
+			QJsonObject{{QStringLiteral("clip"), a}, {QStringLiteral("clips"), QJsonArray()}}).errorKind,
+			ControlErrorKind::InvalidArgs);
+		QCOMPARE(registry->invoke(QStringLiteral("clip.link_create"),
+			QJsonObject{{QStringLiteral("clip"), a}, {QStringLiteral("clips"), QJsonArray{b, b}}}).errorKind,
+			ControlErrorKind::InvalidArgs);
+		QCOMPARE(registry->invoke(QStringLiteral("clip.link_create"),
+			QJsonObject{{QStringLiteral("clip"), a}, {QStringLiteral("clips"), QJsonArray{a}}}).errorKind,
+			ControlErrorKind::InvalidArgs);
+
+		// Neither a non-MIDI anchor nor a malformed member list was half-written.
 		const ControlResult stateAfterRefusal = registry->invoke(QStringLiteral("clip.link_get_state"),
 			QJsonObject{{QStringLiteral("clip"), a}});
 		QVERIFY(stateAfterRefusal.ok);
 		QVERIFY(!stateAfterRefusal.result.value(QStringLiteral("linked")).toBool());
+		const ControlResult sampleStateAfterRefusal = registry->invoke(QStringLiteral("clip.link_get_state"),
+			QJsonObject{{QStringLiteral("clip"), sampleClip}});
+		QVERIFY(sampleStateAfterRefusal.ok);
+		QVERIFY(!sampleStateAfterRefusal.result.value(QStringLiteral("linked")).toBool());
 
 		// a group is not merged into another by naming one of its members
 		const ControlResult firstPair = registry->invoke(QStringLiteral("clip.link_create"),

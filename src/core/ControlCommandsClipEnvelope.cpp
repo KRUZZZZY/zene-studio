@@ -27,8 +27,11 @@
  *  fades, saved with the clip. A replace is one Clip journal checkpoint. */
 
 #include <algorithm>
+#include <cmath>
+#include <limits>
 
 #include <QJsonArray>
+#include <QJsonObject>
 
 #include "ClipEdits.h"
 #include "ControlCommandDef.h"
@@ -70,6 +73,57 @@ bool resolveSample(const QJsonObject& args, ClipRef* ref, ControlResult* error)
 	return false;
 }
 
+//! @a value as an int, but ONLY when it is a JSON number that is exactly one.
+//! QJsonValue::toInt() answers its DEFAULT - 0 - for a fractional, a string, a
+//! missing key or a value outside the int range, and 0 is a legal tick here, so
+//! without this the wrong shape would become a real edit at tick 0 instead of a
+//! typed refusal. Read off the wire before a tick is ever written.
+bool exactInt(const QJsonValue& value, int* out)
+{
+	if (!value.isDouble()) { return false; }
+	const double number = value.toDouble();
+	if (number != std::trunc(number)
+		|| number < static_cast<double>(std::numeric_limits<int>::lowest())
+		|| number > static_cast<double>(std::numeric_limits<int>::max()))
+	{
+		return false;
+	}
+	*out = static_cast<int>(number);
+	return true;
+}
+
+//! One envelope point read off the wire: an object carrying a whole 'tick' and a
+//! numeric 'gain_db'. false with @a error on any other shape - toObject() answers
+//! an EMPTY object for a non-object, and a missing key answers 0, so a wrong shape
+//! would otherwise be written as a breakpoint at tick 0 / 0 dB.
+bool readPoint(const QJsonValue& value, int clipTicks, GainPoint* point, ControlResult* error)
+{
+	if (!value.isObject())
+	{
+		*error = ControlResult::failure(ControlErrorKind::InvalidArgs,
+			QStringLiteral("each point must be an object {'tick': <whole number>, 'gain_db': <number>}"));
+		return false;
+	}
+	const QJsonObject object = value.toObject();
+	int tick = 0;
+	const QJsonValue dbValue = object.value(QStringLiteral("gain_db"));
+	if (!exactInt(object.value(QStringLiteral("tick")), &tick) || !dbValue.isDouble())
+	{
+		*error = ControlResult::failure(ControlErrorKind::InvalidArgs,
+			QStringLiteral("each point needs a whole-number 'tick' and a numeric 'gain_db'"));
+		return false;
+	}
+	const double db = dbValue.toDouble();
+	if (tick < 0 || tick > clipTicks || db < MinDb || db > MaxDb)
+	{
+		*error = ControlResult::failure(ControlErrorKind::InvalidArgs,
+			QStringLiteral("a point needs 0 <= tick <= %1 and %2 <= gain_db <= %3").arg(clipTicks).arg(MinDb).arg(MaxDb));
+		return false;
+	}
+	*point = {tick, static_cast<float>(db)};
+	return true;
+}
+
 //! @a points as an envelope; false (with @a error) on a point outside the clip or the dB range.
 bool readPoints(const QJsonArray& points, int clipTicks, ClipEdits* edits, ControlResult* error)
 {
@@ -81,16 +135,9 @@ bool readPoints(const QJsonArray& points, int clipTicks, ClipEdits* edits, Contr
 	edits->envelopeCount = 0;
 	for (const QJsonValue& value : points)
 	{
-		const QJsonObject point = value.toObject();
-		const int tick = point.value(QStringLiteral("tick")).toInt();
-		const double db = point.value(QStringLiteral("gain_db")).toDouble();
-		if (tick < 0 || tick > clipTicks || db < MinDb || db > MaxDb)
-		{
-			*error = ControlResult::failure(ControlErrorKind::InvalidArgs,
-				QStringLiteral("a point needs 0 <= tick <= %1 and %2 <= gain_db <= %3").arg(clipTicks).arg(MinDb).arg(MaxDb));
-			return false;
-		}
-		edits->envelope[edits->envelopeCount++] = {tick, static_cast<float>(db)};
+		GainPoint point;
+		if (!readPoint(value, clipTicks, &point, error)) { return false; }
+		edits->envelope[edits->envelopeCount++] = point;
 	}
 	// Stable: two points on one tick are a jump, from the first given to the second, in the order given.
 	std::stable_sort(edits->envelope.begin(), edits->envelope.begin() + edits->envelopeCount,
@@ -171,7 +218,12 @@ ControlResult setSnapPoint(const QJsonObject& args)
 	ClipRef ref;
 	ControlResult error;
 	if (!resolveClip(args.value(QStringLiteral("clip")).toString(), &ref, &error)) { return error; }
-	const int ticks = args.value(QStringLiteral("ticks")).toInt();
+	int ticks = 0;
+	if (!exactInt(args.value(QStringLiteral("ticks")), &ticks))
+	{
+		return ControlResult::failure(ControlErrorKind::InvalidArgs,
+			QStringLiteral("'ticks' must be a whole number of ticks"));
+	}
 	if (ticks < 0 || ticks >= ref.clip->length().getTicks())
 	{
 		return ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("the snap point must be inside the clip"));
