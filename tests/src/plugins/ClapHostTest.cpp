@@ -30,6 +30,7 @@
 
 #include <cmath>
 #include <cstdint>
+#include <limits>
 #include <cstring>
 #include <vector>
 
@@ -194,6 +195,7 @@ private slots:
 	void testParameterRescansRereadTheList();
 	void testAnInvalidParamRangeIsNormalized();
 	void testAnActiveFlushRequestIsServicedOnTheAudioThread();
+	void testANonFiniteSampleRateIsRefused();
 
 private:
 	void process(HostedPlugin& plugin, const std::vector<std::vector<float>>& inputs,
@@ -909,6 +911,37 @@ void lmms::clap::ClapHostTest::testAnActiveFlushRequestIsServicedOnTheAudioThrea
 	QVERIFY2(readPluginState(plugin, &state), "the fixture saved an unexpected state layout");
 	QCOMPARE(state.hostFlushes, std::uint32_t{1});
 	qunsetenv("CLAP_TEST_GAIN_REQUEST_FLUSH");
+}
+
+/*! A sample rate that is not a usable finite positive number is refused before activate(). The host
+ *  used to reject only <= 0, and every comparison against NaN is false, so a NaN or an infinity
+ *  reached the plug-in's activate() as an invalid rate. */
+void lmms::clap::ClapHostTest::testANonFiniteSampleRateIsRefused()
+{
+	constexpr double NaN = std::numeric_limits<double>::quiet_NaN();
+	constexpr double Infinity = std::numeric_limits<double>::infinity();
+	HostedPlugin plugin;
+	QString error;
+	QVERIFY2(plugin.load(QStringLiteral(CLAP_TEST_PLUGIN_PATH), QString::fromLatin1(TestPluginId), &error),
+		qPrintable(error));
+
+	// The zero and negative cases were already refused; they are the control for the two below.
+	QVERIFY(!plugin.prepare(0.0, TestBlockSize, &error));
+	QVERIFY(!error.isEmpty());
+	error.clear();
+	QVERIFY(!plugin.prepare(-TestSampleRate, TestBlockSize, &error));
+	QVERIFY(!error.isEmpty());
+	error.clear();
+
+	QVERIFY2(!plugin.prepare(NaN, TestBlockSize, &error), "a NaN sample rate reached activate()");
+	QVERIFY(!error.isEmpty());
+	error.clear();
+	QVERIFY2(!plugin.prepare(Infinity, TestBlockSize, &error), "an infinite sample rate reached activate()");
+	QVERIFY(!error.isEmpty());
+
+	// A refused prepare leaves nothing prepared, and a good rate still works afterwards.
+	QVERIFY(!plugin.needsReprepare());
+	QVERIFY2(plugin.prepare(TestSampleRate, TestBlockSize, &error), qPrintable(error));
 }
 
 QTEST_GUILESS_MAIN(lmms::clap::ClapHostTest)

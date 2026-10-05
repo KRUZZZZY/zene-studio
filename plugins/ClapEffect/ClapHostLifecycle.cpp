@@ -35,6 +35,7 @@
 #include "ClapLoader.h"
 
 #include <algorithm>
+#include <cmath>
 #include <cstdint>
 #include <memory>
 
@@ -51,7 +52,9 @@ auto HostedPlugin::prepare(double sampleRate, int maxBlockSize, QString* error) 
 		setError(error, QStringLiteral("No CLAP plug-in loaded"));
 		return false;
 	}
-	if (sampleRate <= 0.0 || maxBlockSize <= 0)
+	// std::isfinite first: every comparison against NaN is false, so `sampleRate <= 0.0` alone let a
+	// NaN or an infinity through to activate() as the plug-in's rate.
+	if (!std::isfinite(sampleRate) || sampleRate <= 0.0 || maxBlockSize <= 0)
 	{
 		setError(error, QStringLiteral("Invalid sample rate or block size"));
 		return false;
