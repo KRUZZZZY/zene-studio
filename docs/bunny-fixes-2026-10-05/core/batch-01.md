@@ -28,9 +28,11 @@ Evidence: `include/Clip.h:177` — `setClipEdits` is a plain assignment. Audio-t
 `src/tracks/InstrumentTrackNotes.cpp:67` in `decorateNoteHandle` (the AUDIO THREAD contract is
 documented at `include/ChordFollow.h:37`), reached from `triggerNote` at `:212` via
 `src/tracks/InstrumentTrack.cpp:937`, plus `:224,230` in `passEnd`/`loopedPosition`. Writers are
-control commands (`src/core/ControlCommandsClipEdits.cpp:202,268,374-375`). Any fix requires
-snapshot publication or synchronization on the audio path, which rule 6 forbids (allocation /
-locking on process callbacks) — and an API/design change well beyond a minimal patch.
+control commands (`src/core/ControlCommandsClipEdits.cpp:202,268,374-375`). (Correction: the original wording here said
+that rule 6 forbids *any* snapshot publication or synchronization on the audio path — that was too
+broad. Rule 6 forbids allocation, locking and unbounded growth on audio-thread callbacks; bounded
+atomics and a preallocated snapshot publication can comply.) Any minimal fix in this lane would still
+be an API/design change beyond a minimal patch; the minimal proven fix stays out of this lane's scope.
 Commit: none
 Test: none
 Red/green: none
