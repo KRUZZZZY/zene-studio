@@ -827,6 +827,83 @@ QString writeKbmSized(QTemporaryDir& dir, const QString& name, const QString& de
 				.arg(mismatch)));
 	}
 
+	//! Luna 5321: the four key fields were read with toInt() and no ok check, so
+	//! "oops" became 0 and was then clamped into range like a real key - a middle
+	//! key of 0 instead of a refusal, and a table built from a keymap nobody
+	//! wrote. Each key field's conversion is checked; an invalid one is refused,
+	//! typed, and the standing table is left alone.
+	void aKeymapWithAMalformedKeyFieldIsRefused()
+	{
+		Song* song = Engine::getSong();
+		song->clearProject();
+		SessionTuning* tuning = SessionTuning::instance();
+		tuning->reset();
+
+		QTemporaryDir dir;
+		QVERIFY(dir.isValid());
+
+		QStringList scaleLines{QStringLiteral("12-tone scale for Luna 5321"),
+			QStringLiteral("12")};
+		for (int degree = 0; degree < 12; ++degree)
+		{
+			scaleLines.append(QStringLiteral("%1/1").arg(degree + 1));
+		}
+		const QString scalePath = writeScl(dir, QStringLiteral("twelve.scl"), scaleLines);
+		QVERIFY2(!scalePath.isEmpty(), "the 12-tone .scl could not be written");
+		QVERIFY2(run(QStringLiteral("mts.load_scale"),
+			QJsonObject{{QStringLiteral("path"), scalePath}}).ok, "the 12-tone scale did not load");
+
+		const QStringList goodKeys{QStringLiteral("0"), QStringLiteral("127"),
+			QStringLiteral("0"), QStringLiteral("0"), QStringLiteral("440.0")};
+		QStringList twelveLines;
+		for (int degree = 0; degree < 12; ++degree)
+		{
+			twelveLines.append(QString::number(degree));
+		}
+		const QString good = writeKbmSized(dir, QStringLiteral("good.kbm"),
+			QStringLiteral("12"), goodKeys, twelveLines);
+		QVERIFY2(!good.isEmpty(), "the fixture .kbm could not be written");
+		QVERIFY2(run(QStringLiteral("mts.load_keymap"),
+			QJsonObject{{QStringLiteral("path"), good}}).ok, "the good keymap did not load");
+		const QJsonObject before = snapshotState(run(QStringLiteral("mts.get_state")).result);
+
+		// One field at a time, each in the position it occupies on disk: first,
+		// last, middle and base key. The malformed text is the whole field, so
+		// these cannot pass as something else.
+		const QVector<QPair<QString, QStringList>> badKeys{
+			{QStringLiteral("first"), {QStringLiteral("oops"), QStringLiteral("127"),
+				QStringLiteral("0"), QStringLiteral("0"), QStringLiteral("440.0")}},
+			{QStringLiteral("last"), {QStringLiteral("0"), QStringLiteral("nope"),
+				QStringLiteral("0"), QStringLiteral("0"), QStringLiteral("440.0")}},
+			{QStringLiteral("middle"), {QStringLiteral("0"), QStringLiteral("127"),
+				QStringLiteral("oops"), QStringLiteral("0"), QStringLiteral("440.0")}},
+			{QStringLiteral("base"), {QStringLiteral("0"), QStringLiteral("127"),
+				QStringLiteral("0"), QStringLiteral("oops"), QStringLiteral("440.0")}},
+			// A fractional key is not a MIDI key either, and it used to be
+			// truncated into a plausible one.
+			{QStringLiteral("fractional"), {QStringLiteral("0"), QStringLiteral("127"),
+				QStringLiteral("0"), QStringLiteral("0.5"), QStringLiteral("440.0")}},
+		};
+		for (const auto& badKey : badKeys)
+		{
+			const QString path = writeKbmSized(dir,
+				QStringLiteral("badkey-%1.kbm").arg(badKey.first), QStringLiteral("12"),
+				badKey.second, twelveLines);
+			QVERIFY2(!path.isEmpty(), "the fixture .kbm could not be written");
+			const ControlResult loaded = run(QStringLiteral("mts.load_keymap"),
+				QJsonObject{{QStringLiteral("path"), path}});
+			QVERIFY2(!loaded.ok, qPrintable(QStringLiteral("a .kbm whose %1 key field is "
+				"malformed was accepted: it loaded as a real key").arg(badKey.first)));
+			QCOMPARE(loaded.errorKind, ControlErrorKind::Refused);
+		}
+
+		int mismatch = 0;
+		const QJsonObject after = snapshotState(run(QStringLiteral("mts.get_state")).result);
+		QVERIFY2(sameTable(before, after, &mismatch),
+			qPrintable(QStringLiteral("the refused keymap still changed the table at key %1")
+				.arg(mismatch)));
+	}
+
 	//! The recorded undo step restores the Scale/Keymap the table was BUILT from,
 	//! not just the frequencies: stateJson() carries the table alone, so without
 	//! this mts.get_state kept reporting the scale an undone load had installed.

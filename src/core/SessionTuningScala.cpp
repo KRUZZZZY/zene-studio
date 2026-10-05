@@ -201,9 +201,76 @@ bool mappingOf(const QStringList& fields, std::vector<int>* map, QString* error)
 	return true;
 }
 
-//! The validated Keymap out of the filtered fields: size, the four key
-//! bounds (clamped the way the dialog's models clamp), the base frequency,
-//! and the mapping lines after the seven header fields.
+//! The four key fields (first / last / middle / base), each read with its own
+//! conversion result checked: QString::toInt() returns 0 for text that is not a
+//! number at all, so an unchecked read made "oops" into key 0 and the clamp
+//! then passed it on as a real key. A field that does not convert is refused
+//! (*ok false); a whole number out of keyboard range is still clamped, the way
+//! the dialog's spin boxes clamp it.
+int keyFieldOf(const QString& field, bool* ok)
+{
+	int key = 0;
+	*ok = false;
+	key = field.toInt(ok);
+	return std::clamp(key, 0, NumKeys - 1);
+}
+
+//! The key bounds and base frequency of a .kbm header.
+struct KeyBounds
+{
+	int first;
+	int last;
+	int middle;
+	int baseKey;
+	double baseFreq;
+};
+
+//! The base frequency field: finite as a double AND inside the range a float
+//! can carry, because noteToFreq() hands the built table to the render path as
+//! a float.
+double baseFreqOf(const QString& field, QString* error)
+{
+	bool ok = false;
+	const double baseFreq = field.toDouble(&ok);
+	if (!ok || !std::isfinite(baseFreq) || baseFreq <= 0.0)
+	{
+		*error = QStringLiteral("field 6 must be a positive base frequency");
+		return 0.0;
+	}
+	return baseFreq;
+}
+
+//! Fields 1..6 of a .kbm header: the four key bounds and the base frequency,
+//! every one of them read with its conversion checked. *error names the field.
+bool keyBoundsOf(const QStringList& fields, KeyBounds* bounds, QString* error)
+{
+	bool firstOk = false;
+	bool lastOk = false;
+	bool middleOk = false;
+	bool baseKeyOk = false;
+	bounds->first = keyFieldOf(fields.at(1), &firstOk);
+	bounds->last = keyFieldOf(fields.at(2), &lastOk);
+	bounds->middle = keyFieldOf(fields.at(3), &middleOk);
+	bounds->baseKey = keyFieldOf(fields.at(4), &baseKeyOk);
+	if (!firstOk || !lastOk || !middleOk || !baseKeyOk)
+	{
+		*error = QStringLiteral("the first / last / middle / base key fields must all be "
+			"whole numbers");
+		return false;
+	}
+	bounds->baseFreq = baseFreqOf(fields.at(5), error);
+	if (bounds->baseFreq <= 0.0) { return false; }
+	if (bounds->first > bounds->last)
+	{
+		*error = QStringLiteral("first key %1 is above last key %2")
+			.arg(bounds->first).arg(bounds->last);
+		return false;
+	}
+	return true;
+}
+
+//! The validated Keymap out of the filtered fields: the declared size, the key
+//! bounds, and the mapping lines after the seven header fields.
 std::shared_ptr<Keymap> keymapOf(const QStringList& fields, const QString& description,
 	bool* ok, QString* error)
 {
@@ -215,22 +282,10 @@ std::shared_ptr<Keymap> keymapOf(const QStringList& fields, const QString& descr
 		*error = QStringLiteral("no keymap size");
 		return nullptr;
 	}
-	const int first = std::clamp(fields.at(1).toInt(), 0, NumKeys - 1);
-	const int last = std::clamp(fields.at(2).toInt(), 0, NumKeys - 1);
-	const int middle = std::clamp(fields.at(3).toInt(), 0, NumKeys - 1);
-	const int baseKey = std::clamp(fields.at(4).toInt(), 0, NumKeys - 1);
-	bool freqOk = false;
-	const double baseFreq = fields.at(5).toDouble(&freqOk);
-	if (!freqOk || !std::isfinite(baseFreq) || baseFreq <= 0.0)
+	KeyBounds bounds{0, 0, 0, 0, 0.0};
+	if (!keyBoundsOf(fields, &bounds, error))
 	{
 		*ok = false;
-		*error = QStringLiteral("field 6 must be a positive base frequency");
-		return nullptr;
-	}
-	if (first > last)
-	{
-		*ok = false;
-		*error = QStringLiteral("first key %1 is above last key %2").arg(first).arg(last);
 		return nullptr;
 	}
 	// fields 7.. are the mapping lines (index 6 is the octave degree).
@@ -241,9 +296,9 @@ std::shared_ptr<Keymap> keymapOf(const QStringList& fields, const QString& descr
 		return nullptr;
 	}
 	// The size field PROMISES how many entries the map has, and getDegree()
-	// takes every key modulo that size: a map built from a different number of
-	// lines repeats with the wrong period and answers with the wrong degree for
-	// most of the keyboard. A file that disagrees with itself is refused.
+	// takes every key modulo that size: a map built from fewer lines than were
+	// declared repeats with the wrong period and answers with the wrong degree
+	// for most of the keyboard. A file that disagrees with itself is refused.
 	if (map.size() != static_cast<std::size_t>(size))
 	{
 		*ok = false;
@@ -253,7 +308,8 @@ std::shared_ptr<Keymap> keymapOf(const QStringList& fields, const QString& descr
 	}
 	*ok = true;
 	return std::make_shared<Keymap>(description, std::move(map),
-		first, last, middle, baseKey, baseFreq);
+		bounds.first, bounds.last, bounds.middle, bounds.baseKey,
+		static_cast<float>(bounds.baseFreq));
 }
 
 } // namespace
