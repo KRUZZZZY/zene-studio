@@ -496,6 +496,64 @@ private slots:
 		QCOMPARE(revtest::trackName(track), QStringLiteral("alpha"));
 	}
 
+	//! Luna cluster 5722: a preset load's REDO must replay the BYTES it loaded,
+	//! not whatever the preset file holds when the redo runs.
+	//!
+	//! The redo closure captured `path` and re-read it
+	//! (src/core/ControlCommandsPluginPreset.cpp:316-323). Overwriting that
+	//! preset between the undo and the redo therefore made the redo apply the
+	//! replacement: a redo that reads the file lands on 'decoy', a redo that
+	//! replays what it loaded lands on 'alpha'.
+	void thePresetLoadRedoReplaysTheBytesItLoaded()
+	{
+		const QString track = revtest::addInstrumentTrack();
+		if (track.isEmpty()) { QSKIP("this build exposes no loadable built-in instrument"); }
+		const QString pluginId = QStringLiteral("inst");
+		const auto rename = [track](const QString& name) {
+			return revtest::run(QStringLiteral("track.rename"),
+				{{QStringLiteral("track"), track}, {QStringLiteral("name"), name}}).ok;
+		};
+		const auto save = [track, pluginId](const QString& name) {
+			// The presets live in the user's REAL preset directory (that is where
+			// plugin.preset_save writes), so replace rather than refuse on a re-run
+			// and take them away again at the end.
+			return revtest::run(QStringLiteral("plugin.preset_save"),
+				{{QStringLiteral("target"), track}, {QStringLiteral("plugin"), pluginId},
+					{QStringLiteral("name"), name}, {QStringLiteral("overwrite"), true}});
+		};
+
+		QVERIFY(rename(QStringLiteral("alpha")));
+		const ControlResult alpha = save(QStringLiteral("alpha"));
+		QVERIFY2(alpha.ok, qPrintable(alpha.errorMessage));
+		QVERIFY(rename(QStringLiteral("decoy")));
+		const ControlResult decoy = save(QStringLiteral("decoy"));
+		QVERIFY2(decoy.ok, qPrintable(decoy.errorMessage));
+		QVERIFY(rename(QStringLiteral("gamma")));
+
+		QVERIFY(revtest::run(QStringLiteral("plugin.preset_load"),
+			{{QStringLiteral("target"), track}, {QStringLiteral("plugin"), pluginId},
+				{QStringLiteral("name"), QStringLiteral("alpha")}}).ok);
+		QCOMPARE(revtest::trackName(track), QStringLiteral("alpha"));
+
+		REV_UNDO_OR_FAIL();
+		QCOMPARE(revtest::trackName(track), QStringLiteral("gamma"));
+
+		// The preset the redo would RE-READ now holds another valid state of this
+		// very device. Written straight to disk on purpose: a command here would
+		// take an undo step of its own and discard the redo being tested.
+		{
+			QFile out(alpha.result.value(QStringLiteral("path")).toString());
+			QVERIFY(out.open(QIODevice::WriteOnly | QIODevice::Truncate));
+			out.write(revtest::readBytes(decoy.result.value(QStringLiteral("path")).toString()));
+		}
+
+		QVERIFY(revtest::run(QStringLiteral("control.redo")).result.value(QStringLiteral("redone")).toBool());
+		QCOMPARE(revtest::trackName(track), QStringLiteral("alpha"));
+
+		QFile::remove(alpha.result.value(QStringLiteral("path")).toString());
+		QFile::remove(decoy.result.value(QStringLiteral("path")).toString());
+	}
+
 	//! E19: no record names an "UNIMPLEMENTED" inverse any more - a real one, or an honest one-way record.
 	void noRecordNamesAnUnimplementedInverse()
 	{
