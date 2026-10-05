@@ -28,6 +28,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdlib>
+#include <limits>
 
 #include "NoteRandom.h"
 
@@ -42,12 +43,25 @@ namespace
 
 /*! Floor division: the slot of a tick must be the same for a positive and a
  *  negative position, and C++'s `/` truncates toward zero. Slots are always
- *  positive here, so only the numerator's sign matters. */
-tick_t floorDiv(tick_t value, tick_t divisor) noexcept
+ *  positive here, so only the numerator's sign matters. \a value is wide
+ *  because a position plus half a slot does not fit a signed tick at the very
+ *  end of the timeline. */
+long long floorDiv(long long value, tick_t divisor) noexcept
 {
-	const tick_t quotient = value / divisor;
+	const long long quotient = value / divisor;
 	if (value % divisor != 0 && value < 0) { return quotient - 1; }
 	return quotient;
+}
+
+//! \a value narrowed back to a tick, clamped rather than wrapped: an offset
+//! that has run past the end of the timeline is the last tick, never a negative.
+tick_t clampedTick(long long value) noexcept
+{
+	constexpr long long lowest = static_cast<long long>(std::numeric_limits<tick_t>::min());
+	constexpr long long highest = static_cast<long long>(std::numeric_limits<tick_t>::max());
+	if (value > highest) { return static_cast<tick_t>(highest); }
+	if (value < lowest) { return static_cast<tick_t>(lowest); }
+	return static_cast<tick_t>(value);
 }
 
 //! The mean of \a sum over \a count, rounded to the nearest whole unit.
@@ -61,7 +75,7 @@ int roundedMean(long long sum, int count) noexcept
  *  the slot width, i.e. a note is assigned to the slot it is closest to. */
 tick_t absoluteSlotOf(tick_t pos, tick_t stepTicks) noexcept
 {
-	return floorDiv(pos + stepTicks / 2, stepTicks);
+	return clampedTick(floorDiv(static_cast<long long>(pos) + stepTicks / 2, stepTicks));
 }
 
 //! \a slot taken modulo the template's cycle, never negative.
@@ -153,14 +167,15 @@ GrooveStep GrooveTemplate::stepForPosition(tick_t pos) const noexcept
 tick_t GrooveTemplate::gridTickFor(tick_t pos) const noexcept
 {
 	if (m_stepTicks <= 0) { return pos; }
-	return absoluteSlotOf(pos, m_stepTicks) * m_stepTicks;
+	return clampedTick(static_cast<long long>(absoluteSlotOf(pos, m_stepTicks)) * m_stepTicks);
 }
 
 
 tick_t GrooveTemplate::targetTickFor(tick_t pos) const noexcept
 {
 	if (m_slotCount <= 0) { return pos; }
-	return gridTickFor(pos) + stepForPosition(pos).timing;
+	const long long grid = gridTickFor(pos);
+	return clampedTick(grid + stepForPosition(pos).timing);
 }
 
 
@@ -272,7 +287,8 @@ struct SlotSums
 		const tick_t pos = note.pos().getTicks();
 		const tick_t slotIndex = absoluteSlotOf(pos, stepTicks);
 		const std::size_t slot = static_cast<std::size_t>(cycleOf(slotIndex, slotCount));
-		timing[slot] += static_cast<long long>(pos) - static_cast<long long>(slotIndex * stepTicks);
+		timing[slot] += static_cast<long long>(pos)
+			- (static_cast<long long>(slotIndex) * stepTicks);
 		velocity[slot] += static_cast<int>(note.getVolume());
 		++counts[slot];
 		++read;
@@ -364,8 +380,8 @@ static tick_t jitteredTick(const Note& note, tick_t pos, tick_t moved, tick_t ra
 	if (randomTicks <= 0) { return moved; }
 	const double unit = static_cast<double>(NoteRandom::rollUnit(seed,
 		note.key(), pos, note.length().getTicks(), GrooveRandomTickSalt));
-	const tick_t jittered = moved + static_cast<tick_t>(std::lround(
-		(unit * 2.0 - 1.0) * static_cast<double>(randomTicks)));
+	const tick_t jittered = clampedTick(moved + static_cast<tick_t>(std::lround(
+		(unit * 2.0 - 1.0) * static_cast<double>(randomTicks))));
 	return jittered < 0 ? 0 : jittered;
 }
 
@@ -394,8 +410,10 @@ int applyGroove(const NoteVector& notes, const GrooveTemplate& groove, float str
 		if (note == nullptr) { continue; }
 		const tick_t pos = note->pos().getTicks();
 		const tick_t target = groove.targetTickFor(pos);
-		const tick_t moved = pos + static_cast<tick_t>(std::lround(amount
-			* static_cast<double>(target - pos)));
+		// The travel is a wide difference of two ticks that can each be the very
+		// last one: in tick_t arithmetic that subtraction overflows.
+		const tick_t moved = clampedTick(pos + static_cast<tick_t>(std::lround(amount
+			* static_cast<double>(static_cast<long long>(target) - pos))));
 		const int velocity = static_cast<int>(note->getVolume());
 		const int newVelocity = groovedVelocity(velocity, groove.targetVelocityFor(pos), amount);
 

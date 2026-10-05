@@ -330,9 +330,12 @@ private slots:
 		GrooveTemplate groove(QStringLiteral("end"), 48, 12);
 		QVERIFY(groove.setStep(0, GrooveStep{0, 100}));
 		const tick_t last = std::numeric_limits<tick_t>::max();
-		// 2147483647 = 12 * 178956970 + 7, so the slot it falls in starts 7 ticks
-		// back, and its target (a step of 0) is the note's own position.
-		QCOMPARE(groove.gridTickFor(last), tick_t(last - 7));
+		// 2147483647 = 12 * 178956970 + 7, and 7 is past half a slot, so the slot
+		// it falls in is the one starting at 2147483652 - a tick PAST the end of
+		// the representable timeline. The answer is the last tick itself: a grid
+		// line that cannot be represented clamps, where tick_t arithmetic wrapped
+		// it into 2147483644 (the wrong slot, three ticks before the note).
+		QCOMPARE(groove.gridTickFor(last), last);
 		QCOMPARE(groove.targetTickFor(last), last);
 
 		// Extraction reads a slot's deviation the same wide way: a note at the
