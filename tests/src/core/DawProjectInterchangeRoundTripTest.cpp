@@ -46,6 +46,7 @@
 
 #include <QtTest>
 
+#include <cmath>
 #include <limits>
 
 #include <QByteArray>
@@ -817,6 +818,67 @@ private slots:
 			"the mixed track's notes were dropped when the model was applied");
 	}
 
+	//! as the raw beats while notes and clips are snapped.
+	void automationPointTimesUseTheTickGridAndCountRounding()
+	{
+		const QByteArray offGrid =
+			"<Project version=\"1.0\">"
+			"<Application name=\"Probe\" version=\"1\"/>"
+			"<Transport><Tempo value=\"120\"/></Transport>"
+			"<Arrangement><TempoAutomation timeUnit=\"beats\">"
+			"<RealPoint time=\"0.01\" value=\"120\"/>"
+			"<RealPoint time=\"1.5\" value=\"130\"/>"
+			"</TempoAutomation></Arrangement></Project>";
+
+		DawProjectModel model;
+		DawProjectReadReport report;
+		QString error;
+		QVERIFY2(dawProjectModelFromXml(offGrid, &model, &report, &error), qPrintable(error));
+		QCOMPARE(model.tempoPoints.size(), 2);
+		QVERIFY2(report.loss.roundedTimes >= 1,
+			"an off-grid automation point time was not counted in rounded_times");
+		// 0.01 beats is 0.48 ticks: the grid conversion puts it on tick 0.
+		QVERIFY2(std::fabs(model.tempoPoints[0].time) < 1e-9,
+			"the off-grid point time was not normalised through the tick grid");
+		// 1.5 beats is exactly 72 ticks, so it is untouched.
+		QVERIFY2(std::fabs(model.tempoPoints[1].time - 1.5) < 1e-9,
+			"a point time already on the grid was moved");
+
+		// A seconds automation is refused the same way a seconds <Notes> lane is:
+		// converting it needs the tempo curve, which this module will not guess.
+		const QByteArray seconds =
+			"<Project version=\"1.0\">"
+			"<Application name=\"Probe\" version=\"1\"/>"
+			"<Transport><Tempo value=\"120\"/></Transport>"
+			"<Arrangement><TempoAutomation timeUnit=\"seconds\">"
+			"<RealPoint time=\"1.5\" value=\"120\"/>"
+			"</TempoAutomation></Arrangement></Project>";
+		DawProjectModel secondsModel;
+		DawProjectReadReport secondsReport;
+		QString secondsError;
+		QVERIFY2(!dawProjectModelFromXml(seconds, &secondsModel, &secondsReport, &secondsError),
+			"a seconds automation timeline was read as beats");
+
+		// The metre arm is under the same rule: its time is a beat too.
+		const QByteArray offGridMeter =
+			"<Project version=\"1.0\">"
+			"<Application name=\"Probe\" version=\"1\"/>"
+			"<Transport><Tempo value=\"120\"/></Transport>"
+			"<Arrangement><TimeSignatureAutomation timeUnit=\"beats\">"
+			"<TimeSignaturePoint time=\"0.01\" numerator=\"3\" denominator=\"8\"/>"
+			"</TimeSignatureAutomation></Arrangement></Project>";
+		DawProjectModel meterModel;
+		DawProjectReadReport meterReport;
+		QString meterError;
+		QVERIFY2(dawProjectModelFromXml(offGridMeter, &meterModel, &meterReport, &meterError),
+			qPrintable(meterError));
+		QCOMPARE(meterModel.meterPoints.size(), 1);
+		QVERIFY2(meterReport.loss.roundedTimes >= 1,
+			"an off-grid metre point time was not counted in rounded_times");
+		QVERIFY2(std::fabs(meterModel.meterPoints[0].time) < 1e-9,
+			"the off-grid metre point time was not normalised through the tick grid");
+	}
+
 	//! model as-is and reached the session, where it is an unusable metre.
 	void invalidTimeSignaturesAreRefused()
 	{
@@ -913,6 +975,34 @@ private slots:
 		QString keyError;
 		QVERIFY2(!dawProjectModelFromXml(malformedKey, &keyModel, &keyReport, &keyError),
 			"a malformed note key was read as the default 60");
+	}
+
+	//! a claim about a dangling view.
+	void automationPointsAfterOtherContentStillParse()
+	{
+		const QByteArray xml =
+			"<Project version=\"1.0\">"
+			"<Application name=\"Probe\" version=\"1\"/>"
+			"<Transport><Tempo value=\"120\"/></Transport>"
+			"<Structure><Track id=\"t1\" name=\"T\" contentType=\"notes\">"
+			"<Channel id=\"c1\"/></Track></Structure>"
+			"<Arrangement><Lanes><Lanes track=\"t1\"><Clips>"
+			"<Clip time=\"0\" duration=\"4\"><Notes>"
+			"<Note time=\"0\" duration=\"1\" channel=\"0\" key=\"60\" vel=\"0.8\"/>"
+			"<Note time=\"1\" duration=\"1\" channel=\"0\" key=\"64\" vel=\"0.6\"/>"
+			"</Notes></Clip></Clips></Lanes></Lanes></Arrangement>"
+			"<Arrangement><TempoAutomation timeUnit=\"beats\">"
+			"<RealPoint time=\"0\" value=\"120\"/>"
+			"<RealPoint time=\"2\" value=\"140\"/>"
+			"</TempoAutomation></Arrangement>"
+			"</Project>";
+
+		DawProjectModel model;
+		DawProjectReadReport report;
+		QString error;
+		QVERIFY2(dawProjectModelFromXml(xml, &model, &report, &error), qPrintable(error));
+		QCOMPARE(model.tempoPoints.size(), 2);
+		QCOMPARE(model.noteCount(), 2);
 	}
 
 private:
