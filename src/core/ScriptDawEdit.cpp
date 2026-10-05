@@ -52,6 +52,7 @@
 #include "ScriptCommandBridge.h"
 #include "ScriptEngine.h"
 
+#include <QByteArray>
 #include <QString>
 #include <QStringList>
 
@@ -59,6 +60,15 @@
 
 namespace lmms
 {
+
+bool setCommandText(ScriptCommand& command, const QString& text)
+{
+	const QByteArray utf8 = text.toUtf8();
+	if (utf8.size() >= static_cast<int>(sizeof(command.text))) { return false; }
+	std::strncpy(command.text, utf8.constData(), sizeof(command.text) - 1);
+	command.text[sizeof(command.text) - 1] = '\0';
+	return true;
+}
 
 namespace
 {
@@ -80,12 +90,13 @@ void enqueueDaw(ScriptCommand command)
 }
 
 //! A rename travels in the fixed 256-byte payload, like SetTrackName's.
-ScriptCommand namedDawCommand(ScriptDawBindings::Op op, void* target, const QString& name)
+//! False when the name does not fit whole: the payload is left empty rather
+//! than carrying a truncation that may also be a broken UTF-8 sequence.
+bool namedDawCommand(ScriptDawBindings::Op op, void* target, const QString& name,
+	ScriptCommand& command)
 {
-	ScriptCommand command = dawCommand(op, target);
-	const QByteArray utf8 = name.toUtf8();
-	std::strncpy(command.text, utf8.constData(), sizeof(command.text) - 1);
-	return command;
+	command = dawCommand(op, target);
+	return setCommandText(command, name);
 }
 
 //! Write one model through the existing vocabulary, with the checkpoint that
@@ -328,7 +339,15 @@ void LuaMixerChannel::setSoloed(bool soloed)
 void LuaMixerChannel::setName(const QString& name)
 {
 	if (m_channel == nullptr) { return; }
-	enqueueDaw(namedDawCommand(ScriptDawBindings::Op::SetChannelName, m_channel, name));
+	ScriptCommand command;
+	if (!namedDawCommand(ScriptDawBindings::Op::SetChannelName, m_channel, name, command))
+	{
+		logRefusal(QStringLiteral("renaming this channel"), ControlResult::failure(
+			ControlErrorKind::InvalidArgs, QStringLiteral("name is longer than %1 bytes")
+				.arg(ScriptCommandTextSize - 1)));
+		return;
+	}
+	enqueueDaw(command);
 }
 
 // ---------------------------------------------------------------------------
@@ -342,7 +361,15 @@ LuaEffect& LuaEffectChain::loadEffect(const QString& device) const
 		return ScriptDawBindings::newEffect(nullptr, nullptr);
 	}
 	const int before = effectCount();
-	enqueueDaw(namedDawCommand(ScriptDawBindings::Op::LoadEffect, m_chain, device));
+	ScriptCommand command;
+	if (!namedDawCommand(ScriptDawBindings::Op::LoadEffect, m_chain, device, command))
+	{
+		logRefusal(QStringLiteral("loading '%1'").arg(device), ControlResult::failure(
+			ControlErrorKind::InvalidArgs, QStringLiteral("device name is longer than %1 bytes")
+				.arg(ScriptCommandTextSize - 1)));
+		return ScriptDawBindings::newEffect(nullptr, nullptr);
+	}
+	enqueueDaw(command);
 	ScriptEngine::instance()->flushCommandsForRead();
 	// The count is the only honest witness that the load happened: the queue
 	// carries no reply. A refusal was logged for the script (logRefusal).

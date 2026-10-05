@@ -316,6 +316,33 @@ private slots:
 		QCOMPARE(engine->pendingCommandCount(), 0);
 	}
 
+	/*! A name travels to the apply side in a fixed 256-byte payload, so a name
+	 *  that does not fit must be refused with an error rather than silently
+	 *  truncated - and truncation that splits a multibyte UTF-8 character is
+	 *  worse than a refusal, because the stored name is corrupt. */
+	void anOverlongNameIsRefusedRatherThanTruncated()
+	{
+		using namespace lmms;
+		auto* engine = ScriptEngine::instance();
+		LuaPatternStore store;
+		LuaInstrumentTrack& track = store.addInstrumentTrack();
+		QVERIFY(track.isValid());
+
+		const QString before = track.name();
+		const QString longName(400, QLatin1Char('x'));
+		QString message;
+		QVERIFY(throws([&] { track.setName(longName); }, &message));
+		QVERIFY2(!message.isEmpty(), "the refusal said nothing");
+		engine->processCommands();
+		QCOMPARE(track.name(), before);  // unchanged, not truncated
+
+		// A multibyte name that would be cut mid-character is refused too.
+		const QString multiByte = QString(QChar(0x00E4)).repeated(200);
+		QVERIFY(throws([&] { track.setName(multiByte); }));
+		engine->processCommands();
+		QCOMPARE(track.name(), before);
+	}
+
 	void trackWrapper()
 	{
 		using namespace lmms;
