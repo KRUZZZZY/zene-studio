@@ -302,7 +302,9 @@ bool validateWalk(const Request& request, const Entry& entry, QString* error)
 		return fail(QStringLiteral("the velocity is %1; this engine's notes are %2..%3")
 			.arg(request.velocity).arg(MinVolume).arg(MaxVolume));
 	}
-	if (request.variation < 0.0f || request.variation > 1.0f)
+	// isfinite first: NaN compares false against BOTH bounds, so the range
+	// pair alone accepts it and it would then reach std::lround().
+	if (!std::isfinite(request.variation) || request.variation < 0.0f || request.variation > 1.0f)
 	{
 		return fail(QStringLiteral("the variation is %1; it is a fraction in 0..1")
 			.arg(static_cast<double>(request.variation)));

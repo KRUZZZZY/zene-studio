@@ -187,6 +187,13 @@ private slots:
 		request.velocity = DefaultVolume;
 		request.variation = 2.0f;
 		QVERIFY(!chordsFor(request, &chords, &error));
+		request.variation = -1.0f;
+		QVERIFY(!chordsFor(request, &chords, &error));
+		// NaN is in NEITHER range, so the pair of comparisons alone lets it
+		// through - and it would then reach std::lround().
+		request.variation = std::numeric_limits<float>::quiet_NaN();
+		QVERIFY2(!chordsFor(request, &chords, &error), "a NaN variation passed validation");
+		QVERIFY(error.contains(QStringLiteral("variation")));
 	}
 
 	//! Every note a pattern emits stays inside the room it was given - the
