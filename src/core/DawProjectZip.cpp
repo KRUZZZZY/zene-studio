@@ -142,6 +142,57 @@ quint32 readU32(const QByteArray& bytes, int offset)
 constexpr quint16 DosTime = 0;
 constexpr quint16 DosDate = 0x0021;
 
+//! The largest value the 16- and 32-bit fields of a CLASSIC ZIP (this writer
+//! emits no ZIP64) can hold. An entry name and the entry count live in 16-bit
+//! fields, an entry's body and every offset in 32-bit ones, so a value past one
+//! of them would be narrowed: the number changes silently and the container
+//! written is corrupt. Such an archive is refused instead.
+constexpr qint64 MaxU16 = 0xFFFF;
+constexpr qint64 MaxU32 = 0xFFFFFFFFLL;
+
+//! Why one entry cannot be written, or an empty string when it can.
+QString entryRefusal(const DawProjectEntry& entry)
+{
+	if (entry.first.isEmpty())
+	{
+		return QStringLiteral("a container entry has an empty name");
+	}
+	if (entry.first.toUtf8().size() > MaxU16)
+	{
+		return QStringLiteral("the container entry name %1 is %2 bytes, past the %3 a classic "
+			"ZIP can hold").arg(entry.first).arg(entry.first.toUtf8().size()).arg(MaxU16);
+	}
+	if (entry.second.size() > MaxU32)
+	{
+		return QStringLiteral("the container entry %1 is %2 bytes, past the %3 a classic ZIP can "
+			"hold").arg(entry.first).arg(entry.second.size()).arg(MaxU32);
+	}
+	return {};
+}
+
+//! Why the archive as a whole cannot be written, or an empty string when it can.
+QString containerRefusal(const std::vector<DawProjectEntry>& entries)
+{
+	if (entries.size() > static_cast<std::size_t>(MaxU16))
+	{
+		return QStringLiteral("%1 container entries exceed the %2 a classic ZIP can hold")
+			.arg(entries.size()).arg(MaxU16);
+	}
+	return {};
+}
+
+//! Why the local records assembled so far are already past what the central
+//! directory's 32-bit offset can address, or an empty string when they fit.
+QString assembledRefusal(const QByteArray& file)
+{
+	if (file.size() > MaxU32)
+	{
+		return QStringLiteral("the container would already be %1 bytes before its central "
+			"directory, past the %2 a classic ZIP can address").arg(file.size()).arg(MaxU32);
+	}
+	return {};
+}
+
 //! Writes \a file to \a path beside the target and renames it over it only once complete:
 //! a failed or short write must not destroy the file that was there before.
 bool writeWhole(const QString& path, const QByteArray& file, QString* error)
@@ -209,11 +260,18 @@ bool dawProjectZipWrite(const QString& path, const std::vector<DawProjectEntry>&
 	}
 	for (const DawProjectEntry& entry : entries)
 	{
-		if (entry.first.isEmpty())
+		const QString refusal = entryRefusal(entry);
+		if (!refusal.isEmpty())
 		{
-			if (error) { *error = QStringLiteral("a container entry has an empty name"); }
+			if (error) { *error = refusal; }
 			return false;
 		}
+	}
+	const QString tooMany = containerRefusal(entries);
+	if (!tooMany.isEmpty())
+	{
+		if (error) { *error = tooMany; }
+		return false;
 	}
 
 	QByteArray file;
@@ -240,6 +298,15 @@ bool dawProjectZipWrite(const QString& path, const std::vector<DawProjectEntry>&
 		appendU16(file, 0);  // no extra field
 		file.append(name);
 		file.append(body);
+	}
+
+	// Every offset above, and the central directory's own offset and size, are
+	// 32-bit fields, so the archive has to fit before the directory is built.
+	const QString tooBig = assembledRefusal(file);
+	if (!tooBig.isEmpty())
+	{
+		if (error) { *error = tooBig; }
+		return false;
 	}
 
 	const int centralOffset = file.size();

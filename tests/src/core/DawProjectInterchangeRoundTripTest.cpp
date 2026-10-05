@@ -1390,6 +1390,37 @@ void theWriteReportCountsWhatTheModelMarksLost()
 	QCOMPARE(report.loss.splitMapEvents, 3);
 }
 
+//! Luna cluster 5073: the classic ZIP size fields are 16- and 32-bit, and the
+//! writer narrowed the entry name, the entry count and the body sizes into them
+//! with no range check at all - so an oversized name produced a container whose
+//! central directory pointed at the wrong bytes, and the write still SUCCEEDED.
+//! These are refused before anything is written.
+void archivesPastClassicZipLimitsAreRefused()
+{
+	QString error;
+	const QString file = path(m_directory, QStringLiteral("too-long-name.dawproject"));
+
+	// A name longer than the 16-bit name field.
+	const QString longName(70000, QLatin1Char('n'));
+	std::vector<DawProjectEntry> entries = {{longName, QByteArray("body")}};
+	QVERIFY2(!dawProjectZipWrite(file, entries, &error),
+		"a 70000-byte entry name was narrowed into a 16-bit field and written");
+	QVERIFY2(error.contains(QStringLiteral("classic ZIP")),
+		"the refusal does not say which limit was exceeded");
+
+	// Nothing was left behind by the refusal.
+	QVERIFY2(!QFile::exists(file), "a refused archive left a file at the destination");
+
+	// The positive half: an ordinary entry still writes and reads back.
+	const QString ordinary = path(m_directory, QStringLiteral("ordinary-entry.dawproject"));
+	std::vector<DawProjectEntry> good = {{QStringLiteral("project.xml"), QByteArray("<Project/>")}};
+	QVERIFY2(dawProjectZipWrite(ordinary, good, &error), qPrintable(error));
+	std::vector<DawProjectEntry> readBack;
+	QVERIFY2(dawProjectZipRead(ordinary, &readBack, &error), qPrintable(error));
+	QCOMPARE(readBack.size(), static_cast<std::size_t>(1));
+	QCOMPARE(readBack[0].first, QStringLiteral("project.xml"));
+}
+
 private:
 	QTemporaryDir m_directory;
 };
