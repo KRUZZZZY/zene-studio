@@ -55,6 +55,41 @@ int indexOfNote(MidiClip* clip, const Note* note)
 	return -1;
 }
 
+/**
+ * Snapshot the current selection as note IDS, which travel with the note objects
+ * through a re-sort (Note::id(), SPEC-stable-ids.md slice 2).
+ */
+QVector<QString> selectedNoteIdsSnapshot(MidiClip* clip, const QString& clipText)
+{
+	QVector<QString> ids;
+	for (int position : control::selectedNoteIndices(clipText))
+	{
+		if (position >= 0 && position < static_cast<int>(clip->notes().size()))
+		{
+			ids.append(control::noteIdOf(clip->notes()[position]));
+		}
+	}
+	return ids;
+}
+
+/**
+ * Re-point the selection STORE at the current positions of the notes named by
+ * \a ids, after a reorder moved them. The store holds note-list positions
+ * (control::selectNotes, src/core/ControlEditSupport.cpp:264-275), so a re-sort
+ * that is not followed by this leaves a stored position naming a different note -
+ * which is what note.remove already remaps for its own case.
+ */
+void remapSelectionAfterReorder(MidiClip* clip, const QString& clipText, const QVector<QString>& ids)
+{
+	if (ids.isEmpty()) { return; }
+	QVector<int> positions;
+	for (int i = 0; i < static_cast<int>(clip->notes().size()); ++i)
+	{
+		if (ids.contains(control::noteIdOf(clip->notes()[i]))) { positions.append(i); }
+	}
+	control::selectNotes(clipText, static_cast<int>(clip->notes().size()), positions);
+}
+
 QJsonObject noteArgsOf(const QJsonObject& args, bool withVelocity)
 {
 	QJsonObject inverseArgs;
@@ -264,12 +299,24 @@ void registerNoteMove(ControlRegistry& registry)
 		const QString previousId = control::noteIdOf(note);
 		const tick_t previousPos = note->pos().getTicks();
 
+		const QString clipText = control::clipId(ref.id);
+		const QVector<QString> selectionBeforeMove = selectedNoteIdsSnapshot(clip, clipText);
+
 		clip->addJournalCheckPoint();
 		note->setPos(TimePos(static_cast<tick_t>(args.value(QStringLiteral("position")).toDouble())));
 		// Same follow-up calls as a piano-roll drag: re-sort, then let the clip
 		// follow its notes when it is still auto-resizing.
 		clip->rearrangeAllNotes();
 		clip->updateLength();
+		// The re-sort above moved notes around, and the selection store holds
+		// POSITIONS in that list (control::selectNotes,
+		// src/core/ControlEditSupport.cpp:264-275) - so a stored position now
+		// names whichever note took its place, and a selection-scoped edit
+		// after the move would target the wrong note. The positions are
+		// remapped here, in the one place that moved them, exactly as
+		// note.remove remaps them for its own shift. The note objects' own
+		// selection flags travel with the notes and need no remapping.
+		remapSelectionAfterReorder(clip, clipText, selectionBeforeMove);
 		clip->dataChanged();
 		// Row 6: a content edit to a linked clip is an edit to the whole group -
 		// the members' note lists are rebuilt from this clip's, in the same step.
