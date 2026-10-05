@@ -299,6 +299,8 @@ ControlResult createChannels(InstrumentTrack* track, InstrumentOutputBuses& buse
 	if (!created.empty()) { recordCreation(trackIdText, created); }
 	QJsonObject result = busesState(track, buses);
 	result.insert(QStringLiteral("created"), list);
+	// Nothing routed, nothing created: there is no step to claim, so no transaction.
+	if (created.empty()) { return ControlResult::success(result); }
 	result.insert(QStringLiteral("__transaction"), transactionPayload(
 		QJsonObject{{QStringLiteral("routed_count"), buses.routedCount() - static_cast<int>(created.size())}},
 		QStringLiteral("control.undo"), {}, true,

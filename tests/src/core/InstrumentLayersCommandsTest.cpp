@@ -310,6 +310,16 @@ private slots:
 		QCOMPARE(QStringLiteral("ch-%1").arg(model->routeOf(1)), madeChannel);
 		QVERIFY(mixer->mixerChannel(mixer->numChannels() - 1)->m_name.endsWith(QStringLiteral(" Aux")));
 
+		// Luna 5719: Aux is already routed, so there is nothing left to create. The answer
+		// must not advertise a reversible transaction: no step was recorded to undo.
+		const int stepsBeforeEmpty = transactionCount();
+		const ControlResult nothingToDo = run(QStringLiteral("plugin.output_buses_create_channels"),
+			{{QStringLiteral("target"), target}});
+		QVERIFY2(nothingToDo.ok, qPrintable(nothingToDo.errorMessage));
+		QVERIFY(nothingToDo.result.value(QStringLiteral("created")).toArray().isEmpty());
+		QCOMPARE(mixer->numChannels(), channelsBefore + 1);  // and it made no channel
+		QCOMPARE(transactionCount(), stepsBeforeEmpty);
+
 		REV_UNDO_OR_FAIL();
 		QCOMPARE(mixer->numChannels(), channelsBefore);
 		QCOMPARE(model->routeOf(1), -1);
