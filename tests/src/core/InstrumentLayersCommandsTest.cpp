@@ -94,6 +94,13 @@ QString clapDevice(const QString& clapId)
 	return QString();
 }
 
+//! How many undo steps the registry holds a transaction for. A command that changed
+//! nothing must not grow this: it would hand out a step it never recorded.
+int transactionCount()
+{
+	return run(QStringLiteral("control.transactions")).result.value(QStringLiteral("transactions")).toArray().size();
+}
+
 //! The track's state saved and read back into the same track - the project round trip of one track.
 void saveAndReload(InstrumentTrack* track)
 {
@@ -202,6 +209,7 @@ private slots:
 		QVERIFY(run(QStringLiteral("plugin.midi_part_remove"), {{QStringLiteral("target"), m_track},
 			{QStringLiteral("part"), QStringLiteral("part-0")}}).ok);
 		QCOMPARE(partCount(m_track), 0);
+
 		REV_UNDO_OR_FAIL();
 		QCOMPARE(partCount(m_track), 1);
 		QVERIFY(!run(QStringLiteral("plugin.midi_part_remove"), {{QStringLiteral("target"), m_track},
@@ -270,6 +278,17 @@ private slots:
 		InstrumentOutputBuses* model = trackOf(target)->instrument()->outputBuses();
 		QVERIFY(model != nullptr);
 		QCOMPARE(QStringLiteral("ch-%1").arg(model->routeOf(1)), channel);
+
+		// Luna 5718: routing Aux to the channel it ALREADY uses is not an edit. A step
+		// recorded here would be the one the next undo consumes, hiding the route above.
+		const int stepsBeforeNoOp = transactionCount();
+		const ControlResult routedAgain = run(QStringLiteral("plugin.output_bus_route"), {{QStringLiteral("target"), target},
+			{QStringLiteral("bus"), 1}, {QStringLiteral("channel"), channel}});
+		QVERIFY2(routedAgain.ok, qPrintable(routedAgain.errorMessage));
+		QCOMPARE(routedAgain.result.value(QStringLiteral("routed_count")).toInt(), 1);
+		QCOMPARE(QStringLiteral("ch-%1").arg(model->routeOf(1)), channel);
+		QCOMPARE(transactionCount(), stepsBeforeNoOp);  // the same route claims no step
+
 		REV_UNDO_OR_FAIL();
 		QCOMPARE(model->routeOf(1), -1);
 		const ControlResult noBus = run(QStringLiteral("plugin.output_bus_route"), {{QStringLiteral("target"), target},
@@ -290,6 +309,7 @@ private slots:
 		QCOMPARE(mixer->numChannels(), channelsBefore + 1);
 		QCOMPARE(QStringLiteral("ch-%1").arg(model->routeOf(1)), madeChannel);
 		QVERIFY(mixer->mixerChannel(mixer->numChannels() - 1)->m_name.endsWith(QStringLiteral(" Aux")));
+
 		REV_UNDO_OR_FAIL();
 		QCOMPARE(mixer->numChannels(), channelsBefore);
 		QCOMPARE(model->routeOf(1), -1);
