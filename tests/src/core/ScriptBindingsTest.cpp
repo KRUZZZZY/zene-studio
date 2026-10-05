@@ -512,6 +512,35 @@ private slots:
 		QCOMPARE(song->isPlaying(), false);
 	}
 
+	/*! A read made right after a queued write must see that write: every
+	 *  getter samples engine state the write has not reached yet, so a getter
+	 *  that skips the flush hands the script the value from before its own
+	 *  call. lengthTicks/tempo/masterVolume are the three that did. */
+	void aGetterRightAfterAQueuedWriteSeesThatWrite()
+	{
+		using namespace lmms;
+		auto* engine = ScriptEngine::instance();
+		LuaSong song;
+
+		LuaPatternClip& clip = song.addPattern();
+		QVERIFY(clip.isValid());
+		const int defaultLength = clip.lengthTicks();
+		QVERIFY(defaultLength > 0);
+
+		// No explicit processCommands()/flush: the getter has to do it.
+		clip.setLengthTicks(100);
+		QCOMPARE(clip.lengthTicks(), 100);
+		QCOMPARE(engine->pendingCommandCount(), 0);
+
+		song.setTempo(140);
+		QCOMPARE(song.tempo(), 140);
+		QCOMPARE(engine->pendingCommandCount(), 0);
+
+		song.setMasterVolume(88);
+		QCOMPARE(song.masterVolume(), 88);
+		QCOMPARE(engine->pendingCommandCount(), 0);
+	}
+
 	void patternStoreWrapper()
 	{
 		using namespace lmms;

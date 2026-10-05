@@ -796,6 +796,8 @@ void LuaPatternClip::setName(const QString& name)
 
 int LuaPatternClip::lengthTicks() const
 {
+	// Reads see prior writes from the same script (the apply side drains).
+	ScriptEngine::instance()->flushCommandsForRead();
 	return m_clip ? m_clip->length().getTicks() : 0;
 }
 
@@ -995,6 +997,8 @@ int LuaSong::patternCount() const
 
 int LuaSong::tempo() const
 {
+	// Reads see prior writes from the same script (the apply side drains).
+	ScriptEngine::instance()->flushCommandsForRead();
 	return song() ? song()->getTempo() : 0;
 }
 
@@ -1007,6 +1011,8 @@ void LuaSong::setTempo(int bpm)
 
 int LuaSong::masterVolume() const
 {
+	// Reads see prior writes from the same script (the apply side drains).
+	ScriptEngine::instance()->flushCommandsForRead();
 	return song() ? song()->masterVolume() : 0;
 }
 
