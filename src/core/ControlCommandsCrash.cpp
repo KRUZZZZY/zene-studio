@@ -175,11 +175,12 @@ QJsonObject fileJson(const std::string& path)
 		return out;
 	}
 	const QFileInfo info(wire(path));
-	out.insert(QStringLiteral("exists"), info.exists());
-	// A directory is not a report; bytes are 0 for one, as for a missing file.
+	// A report is a FILE: a directory at the reporter's path is not a report, so
+	// it is reported as absent rather than as an existing, zero-byte one.
+	out.insert(QStringLiteral("exists"), info.isFile());
 	out.insert(QStringLiteral("bytes"), info.isFile() ? qint64(info.size()) : qint64(0));
 	out.insert(QStringLiteral("modified_unix"),
-		info.exists() ? qint64(info.lastModified().toSecsSinceEpoch()) : qint64(0));
+		info.isFile() ? qint64(info.lastModified().toSecsSinceEpoch()) : qint64(0));
 	return out;
 }
 
@@ -203,7 +204,7 @@ ControlResult handleListReports()
 	// nothing, and report_path below is where a crash would write one. So
 	// report_count is a count of reports, not of a path the module could use.
 	QJsonArray reports;
-	if (paths.valid && QFileInfo::exists(wire(paths.report))) { reports.append(fileJson(paths.report)); }
+	if (paths.valid && QFileInfo(wire(paths.report)).isFile()) { reports.append(fileJson(paths.report)); }
 
 	QJsonObject result;
 	result.insert(QStringLiteral("installed"), crashreporter::isInstalled());
@@ -278,7 +279,7 @@ ControlResult handleAcknowledgeReport()
 	const CrashPaths paths = crashPaths();
 	if (!paths.valid) { return noReporter(AcknowledgeName); }
 	const QFileInfo report(wire(paths.report));
-	if (!report.exists())
+	if (!report.isFile())
 	{
 		return ControlResult::failure(ControlErrorKind::NotFound,
 			QStringLiteral("%1: there is no report to acknowledge at %2").arg(AcknowledgeName, wire(paths.report)));
