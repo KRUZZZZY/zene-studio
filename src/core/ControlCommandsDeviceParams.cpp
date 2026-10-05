@@ -273,11 +273,19 @@ bool isSetting(const AutomatableModel* model)
 ControlResult writeValues(const QList<AutomatableModel*>& models, const std::vector<float>& values, const QJsonObject& reply)
 {
 	std::vector<std::pair<AutomatableModel*, float>> writes;
-	for (int i = 0; i < models.size(); ++i) { writes.emplace_back(models.at(i), values[static_cast<std::size_t>(i)]); }
+	for (int i = 0; i < models.size(); ++i)
+	{
+		AutomatableModel* model = models.at(i);
+		const float value = values[static_cast<std::size_t>(i)];
+		// A value that stays the value it already had (plugin.randomise with 'amount: 0') is not a change:
+		// it must not be written, counted or marked as one, and must not take an undo step.
+		if (model->value<float>() == value) { continue; }
+		writes.emplace_back(model, value);
+	}
 	writeModelsRecorded(writes);
-	Engine::getSong()->setModified();
+	if (!writes.empty()) { Engine::getSong()->setModified(); }
 	QJsonObject result = reply;
-	result.insert(QStringLiteral("changed"), static_cast<int>(models.size()));
+	result.insert(QStringLiteral("changed"), static_cast<int>(writes.size()));
 	return ControlResult::success(result);
 }
 

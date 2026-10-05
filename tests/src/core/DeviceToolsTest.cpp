@@ -391,6 +391,24 @@ private slots:
 		QVERIFY(std::abs(parameterValue(ch(1), amp, QStringLiteral("Volume")) - 50.0) < 1e-3);
 	}
 
+	//! MX-093: randomise that changes nothing reports no change and takes no undo step of its own.
+	void aRandomiseThatChangesNothingIsAnEmptyUndoStep()
+	{
+		const QString amp = loadByName(ch(3), QStringLiteral("amplifier"));
+		if (amp.isEmpty()) { QSKIP("this build has no amplifier module"); }
+		const QJsonObject device{{QStringLiteral("target"), ch(3)}, {QStringLiteral("plugin"), amp}};
+		QVERIFY(setParameter(ch(3), amp, QStringLiteral("Volume"), 120.0));
+		QJsonObject still = device;
+		still.insert(QStringLiteral("amount"), 0.0);
+		const ControlResult none = run(QStringLiteral("plugin.randomise"), still);
+		QVERIFY2(none.ok, qPrintable(none.errorMessage));
+		QCOMPARE(none.result.value(QStringLiteral("changed")).toInt(), 0);
+		QCOMPARE(parameterValue(ch(3), amp, QStringLiteral("Volume")), 120.0);
+		QVERIFY(run(QStringLiteral("control.undo")).ok);  // undoes the Volume write: the no-op took no step of its own
+		QCOMPARE(parameterValue(ch(3), amp, QStringLiteral("Volume")), 100.0);
+		channel(3)->m_fxChain.clear();
+	}
+
 	//! MX-080: the delta of a device that changes nothing is silence; of one that doubles the level,
 	//! the input itself; the switch toggles and is not journalled.
 	void theDeltaIsWhatTheDeviceChanges()
