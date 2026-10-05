@@ -398,6 +398,46 @@ private slots:
 		QCOMPARE(mapEvents().at(0).toObject().value(QStringLiteral("denominator")).toInt(), 4);
 	}
 
+	//! An end-of-track event ends the track: the format gives it a length of
+	//! zero and puts nothing after it. The reader accepted a payload on it and
+	//! returned from the track at once, so bytes the file carried after its
+	//! declared end were never looked at and the track was called valid.
+	void aMalformedEndOfTrackIsRefused()
+	{
+		// (a) EOT with a payload: length 1, one byte after it.
+		QByteArray withPayload;
+		appendVlq(withPayload, 0);
+		appendMeta(withPayload, 0x2F, QByteArrayLiteral("\x00"));
+		const QString fat = path(m_directory, QStringLiteral("fat-eot.mid"));
+		QVERIFY(writeFile(fat, smfFileWithBody(withPayload)));
+		const ControlResult fatRead = run(QStringLiteral("interchange.smf_read"),
+			{{QStringLiteral("path"), fat}});
+		QVERIFY2(!fatRead.ok, "an end-of-track event with a payload was accepted");
+		QCOMPARE(fatRead.errorKind, ControlErrorKind::InvalidArgs);
+		QVERIFY2(fatRead.errorMessage.contains(QStringLiteral("end-of-track")),
+			qPrintable(fatRead.errorMessage));
+
+		// (b) A well-formed EOT with a whole further event behind it: the track
+		// does not end where the track's first end-of-track says it does.
+		QByteArray withTrailer = bodyEndingWithEndOfTrack();
+		appendVlq(withTrailer, 0);
+		appendMeta(withTrailer, 0x51, QByteArray("\x07\xA1\x20", 3));
+		const QString trailing = path(m_directory, QStringLiteral("trailing-after-eot.mid"));
+		QVERIFY(writeFile(trailing, smfFileWithBody(withTrailer)));
+		const ControlResult trailingRead = run(QStringLiteral("interchange.smf_read"),
+			{{QStringLiteral("path"), trailing}});
+		QVERIFY2(!trailingRead.ok, "a track continuing past its end-of-track was accepted");
+		QCOMPARE(trailingRead.errorKind, ControlErrorKind::InvalidArgs);
+		QVERIFY2(trailingRead.errorMessage.contains(QStringLiteral("end-of-track")),
+			qPrintable(trailingRead.errorMessage));
+
+		// The control: the same body without the trailer is a valid file.
+		const QString exact = path(m_directory, QStringLiteral("exact-eot.mid"));
+		QVERIFY(writeFile(exact, smfFileWithBody(bodyEndingWithEndOfTrack())));
+		QVERIFY2(run(QStringLiteral("interchange.smf_read"),
+			{{QStringLiteral("path"), exact}}).ok, "a track that ends at its EOT is read");
+	}
+
 private:
 	QTemporaryDir m_directory;
 };

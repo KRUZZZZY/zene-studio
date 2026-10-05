@@ -201,6 +201,19 @@ void readTimeSignaturePayload(const unsigned char* payload, Candidate* candidate
 	candidate->denominator = 1 << payload[1];
 }
 
+//! The end-of-track event's zero payload (SMF 1.0).
+bool readEndOfTrack(quint32 length, EventOutcome* outcome, QString* error)
+{
+	if (length != 0)
+	{
+		*error = QStringLiteral("an end-of-track meta event carries %1 payload bytes; the "
+			"format allows none, so the track was refused").arg(length);
+		return false;
+	}
+	*outcome = EventOutcome::EndOfTrack;
+	return true;
+}
+
 bool readMetaEvent(Cursor& track, quint32 smfTick, std::vector<Candidate>* candidates,
 	EventOutcome* outcome, QString* error)
 {
@@ -233,7 +246,11 @@ bool readMetaEvent(Cursor& track, quint32 smfTick, std::vector<Candidate>* candi
 		if (!error->isEmpty()) { return false; }
 		candidates->push_back(candidate);
 	}
-	else if (type == SmfMetaEndOfTrack) { *outcome = EventOutcome::EndOfTrack; }
+	// SMF 1.0: the end-of-track meta event's length is zero and it is the last
+	// thing in the track. A payload makes the event malformed, and anything
+	// after it belongs to no event, so both are refused instead of being read as
+	// a well-formed track with the rest discarded (see readTrack).
+	else if (type == SmfMetaEndOfTrack) { return readEndOfTrack(length, outcome, error); }
 	return true;
 }
 
@@ -292,7 +309,17 @@ bool readTrack(Cursor& track, std::vector<Candidate>* candidates, QString* error
 		absolute += delta;
 		EventOutcome outcome = EventOutcome::Continue;
 		if (!readEvent(track, absolute, &state, candidates, &outcome, error)) { return false; }
-		if (outcome == EventOutcome::EndOfTrack) { return true; }
+		if (outcome == EventOutcome::EndOfTrack)
+		{
+			if (!track.atEnd())
+			{
+				*error = QStringLiteral("%1 bytes follow the end-of-track meta event; the "
+					"format ends the track there, so the track was refused")
+					.arg(track.end - track.p);
+				return false;
+			}
+			return true;
+		}
 	}
 	return true;
 }
