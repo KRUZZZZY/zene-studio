@@ -119,12 +119,15 @@ ControlResult splitByPitch(const QJsonObject& args)
 	if (keys.size() < 2) { return ControlResult::failure(ControlErrorKind::NotFound, QStringLiteral("the clip holds fewer than two keys")); }
 	// The new tracks' ids, never their pointers: track.remove and its undo free a track and build an equal one.
 	auto made = std::make_shared<std::vector<int>>();
-	// Guarded: a later undo can rebuild the source track as a new object, and then redo has nothing to copy.
-	const QPointer<Track> source = clip->getTrack();
-	const QPointer<MidiClip> from = clip;
-	const auto build = [made, source, from, keys]() {
-		if (source.isNull() || from.isNull()) { return; }
-		for (int key : keys) { made->push_back(keyTrack(source, from, key)->id()); }
+	// The source by name for the same reason: undoing track.remove rebuilds it as a new object, so a
+	// Track* or MidiClip* kept across the undo is null when the redo runs.
+	const QString sourceName = clipIdOf(clip);
+	const auto build = [made, sourceName, keys]() {
+		ClipRef ref;
+		ControlResult error;
+		MidiClip* from = resolveMidiClip(sourceName, &ref, &error);
+		if (from == nullptr) { return; }
+		for (int key : keys) { made->push_back(keyTrack(ref.track, from, key)->id()); }
 	};
 	addUndoStep([made]() {
 		for (auto it = made->rbegin(); it != made->rend(); ++it) { if (Track* live = trackWithId(*it)) { removeTrack(live); } }

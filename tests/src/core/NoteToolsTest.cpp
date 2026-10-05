@@ -255,6 +255,25 @@ private slots:
 		QVERIFY(revtest::makerUndoFindsTrackAfterRemovalUndone(made.first().toString()));
 		QCOMPARE(static_cast<int>(Engine::getSong()->tracks().size()), tracksBefore);  // every track it made is gone
 	}
+
+	//! The split's redo names the source by its ids: undoing track.remove rebuilds the track as a new
+	//! object, so a kept Track* or MidiClip* is null by then and the redo would build nothing.
+	void aSplitIsRebuiltAfterItsSourceTrackIsRemovedAndUndone()
+	{
+		MidiClip* clip = clipWith({{36, 0}, {38, 24}});
+		const int before = static_cast<int>(Engine::getSong()->tracks().size());
+		QVERIFY(run(QStringLiteral("note.split_by_pitch"), self(clip)).ok);
+		QCOMPARE(static_cast<int>(Engine::getSong()->tracks().size()), before + 2);  // one per key
+		const auto undone = []() { return run(QStringLiteral("control.undo")).result.value(QStringLiteral("undone")).toBool(); };
+		QVERIFY(run(QStringLiteral("track.remove"), {{QStringLiteral("track"), control::trackIdOf(m_track)}}).ok);
+		QVERIFY(undone());
+		QCOMPARE(static_cast<int>(Engine::getSong()->tracks().size()), before + 2);  // the source track is back
+		QVERIFY(undone());  // the split goes: its tracks are gone again
+		QCOMPARE(static_cast<int>(Engine::getSong()->tracks().size()), before);
+		QVERIFY(run(QStringLiteral("control.redo")).result.value(QStringLiteral("redone")).toBool());
+		QCOMPARE(static_cast<int>(Engine::getSong()->tracks().size()), before + 2);
+		QVERIFY(undone());
+	}
 };
 
 QTEST_MAIN(NoteToolsTest)
