@@ -314,14 +314,22 @@ void MidiClientRaw::beginSystemCommon( const unsigned char status )
 
 void MidiClientRaw::consumeSystemCommon( const unsigned char data )
 {
+	const uint8_t status = m_midiParseData.m_commonStatus;
 	const uint8_t remaining = m_midiParseData.m_commonBytes;
-	m_midiParseData.m_commonBuffer[2 - remaining] = data & 0x7F;
+	/* The payload byte goes into the slot the completion below READS, so the
+	 * slot is counted from this message's own length: index 0 then 1 for the
+	 * two bytes of a song position, index 0 for the single nibble of a time
+	 * code. Counting from the buffer's capacity instead (`2 - remaining`) agreed
+	 * with the reader only for the two-byte message - the one-byte one wrote
+	 * index 1 and was reported from index 0, i.e. as a stale byte left by an
+	 * earlier song position, or as zero. */
+	const uint8_t total = (status == MidiSongPosition) ? 2 : 1;
+	m_midiParseData.m_commonBuffer[total - remaining] = data & 0x7F;
 	m_midiParseData.m_commonBytes = static_cast<uint8_t>( remaining - 1 );
 	if( m_midiParseData.m_commonBytes > 0 )
 	{
 		return;
 	}
-	const uint8_t status = m_midiParseData.m_commonStatus;
 	m_midiParseData.m_commonStatus = 0;
 	/* 0xF2 carries its position LSB-first (MIDI 1.0); a time-code quarter frame
 	 * carries one nibble. Both are reported to the clock, which counts them and
