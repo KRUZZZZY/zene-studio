@@ -513,6 +513,34 @@ private slots:
 		}
 	}
 
+	//! THE SEQUENCE: a loaded section whose highest seq is exhausted must
+	//! NOT wrap the next assignment to zero - `m_nextSeq = highest + 1`
+	//! overflowed, so the next append wrote seq="0", which this same loader
+	//! rejects as malformed (a seq of zero is refused at load). The section
+	//! was claimed and then made unwritable. An exhausted sequence is
+	//! refused instead, claiming nothing.
+	void anExhaustedSequenceIsRefusedRatherThanWrappedToZero()
+	{
+		QDomDocument document;
+		document.setContent(QStringLiteral(
+			"<z:provenance v=\"1\" seq=\"18446744073709551615\">"
+			"<z:change seq=\"18446744073709551614\" at=\"2026-01-01T00:00:00Z\""
+			" actor=\"human\" instance=\"0123abcd-456\" command=\"track.add\"/>"
+			"<z:change seq=\"18446744073709551615\" at=\"2026-01-01T00:00:01Z\""
+			" actor=\"human\" instance=\"0123abcd-456\" command=\"clip.add\"/>"
+			"</z:provenance>"));
+		const QDomElement section = document.documentElement();
+
+		// Nothing was claimed: the section in memory is untouched, so the
+		// caller's preserve-verbatim path keeps the original bytes.
+		const int heldBefore = heldChanges().size();
+		const quint64 lastBefore = provenance::Section::instance().lastSeq();
+		QVERIFY2(!provenance::Section::instance().load(section),
+			"a section whose sequence space is exhausted must be refused, not adopted");
+		QCOMPARE(heldChanges().size(), heldBefore);
+		QCOMPARE(provenance::Section::instance().lastSeq(), lastBefore);
+	}
+
 	//! THE ACTOR: a session KIND, never a person (1.9: "not a credential, not
 	//! a user identity - the file must be shareable"). Outside a socket scope
 	//! the attribution is "human"; the instance is the same non-identifying

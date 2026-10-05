@@ -49,6 +49,8 @@
 #include <QDomElement>
 #include <QJsonDocument>
 
+#include <limits>
+
 #include "DataFile.h"
 #include "DocumentIndex.h"
 #include "Engine.h"
@@ -166,6 +168,28 @@ int serialisedBytes(const provenance::Change& change)
 	return bytes;
 }
 
+//! One <z:change> child as the loader accepts it: an element named exactly
+//! `z:change` carrying a positive decimal seq. Anything else is a refusal,
+//! not a guess. Returns false for a child this writer could not have written.
+bool parseChange(const QDomNode& node, provenance::Change& change, quint64& highest)
+{
+	if (!node.isElement() || node.nodeName() != QLatin1String("z:change")) { return false; }
+	const QDomElement element = node.toElement();
+	bool seqOk = false;
+	const quint64 seq = element.attribute(QStringLiteral("seq")).toULongLong(&seqOk);
+	if (!seqOk || seq == 0) { return false; }
+	change.seq = seq;
+	change.at = element.attribute(QStringLiteral("at"));
+	change.actor = element.attribute(QStringLiteral("actor"));
+	change.instance = element.attribute(QStringLiteral("instance"));
+	change.command = element.attribute(QStringLiteral("command"));
+	change.target = element.attribute(QStringLiteral("target"));
+	change.before = element.attribute(QStringLiteral("before"));
+	change.after = element.attribute(QStringLiteral("after"));
+	highest = qMax(highest, seq);
+	return true;
+}
+
 } // namespace
 
 namespace provenance
@@ -236,27 +260,19 @@ bool Section::load(const QDomElement& section)
 	quint64 highest = 0;
 	for (QDomNode node = section.firstChild(); !node.isNull(); node = node.nextSibling())
 	{
-		if (!node.isElement() || node.nodeName() != QLatin1String("z:change")) { return false; }
-		const QDomElement element = node.toElement();
-		bool seqOk = false;
-		const quint64 seq = element.attribute(QStringLiteral("seq")).toULongLong(&seqOk);
-		if (!seqOk || seq == 0) { return false; }
 		Change change;
-		change.seq = seq;
-		change.at = element.attribute(QStringLiteral("at"));
-		change.actor = element.attribute(QStringLiteral("actor"));
-		change.instance = element.attribute(QStringLiteral("instance"));
-		change.command = element.attribute(QStringLiteral("command"));
-		change.target = element.attribute(QStringLiteral("target"));
-		change.before = element.attribute(QStringLiteral("before"));
-		change.after = element.attribute(QStringLiteral("after"));
-		highest = qMax(highest, seq);
+		if (!parseChange(node, change, highest)) { return false; }
 		parsed.append(change);
 	}
 	// Claim nothing (and preserve the element verbatim as unclaimed) when the
 	// section is empty or any child is foreign: a write-back of a partial or
 	// future-shaped section would be the rewrite the append-only rule forbids.
 	if (parsed.isEmpty()) { return false; }
+	// An exhausted sequence is refused, not wrapped: `highest + 1` at
+	// UINT64_MAX is 0, and the next append would then write seq="0" - which
+	// this same loader rejects as malformed (a seq of zero is refused above).
+	// Claiming the section would leave it in memory unwritable.
+	if (highest == std::numeric_limits<quint64>::max()) { return false; }
 
 	clear();
 	m_changes = parsed;
