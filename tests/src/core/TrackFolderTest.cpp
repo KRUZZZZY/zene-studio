@@ -440,6 +440,31 @@ private:
 		for (Track* track : doomed) { control::removeTrack(track); }
 	}
 
+	//! A no-op track.set_routing answers with a transaction deliberately (the comment at
+	//! src/core/ControlCommandsTrackFolder.cpp:234 says an undo of a call that changed nothing
+	//! must change nothing, so its inverse is the state the folder is already in). The question
+	//! is whether that costs the NEXT undo - it must not.
+	void aNoOpRoutingReportsReversibleWithoutStealingTheNextUndo()
+	{
+		const QString name = QStringLiteral("h-noop-routing");
+		TrackFolder* folder = static_cast<TrackFolder*>(addTrack(Track::Type::Folder, name));
+		Track* child = addTrack(Track::Type::Instrument, name);
+		child->setParentFolder(folder);
+		QVERIFY2(ControlRegistry::instance()->invoke(QStringLiteral("track.set_pinned"),
+			QJsonObject{{QStringLiteral("track"), control::trackIdOf(folder)}, {QStringLiteral("pinned"), true}}).ok,
+			qPrintable(QStringLiteral("track.set_pinned failed")));
+		QVERIFY2(ControlRegistry::instance()->invoke(QStringLiteral("track.set_routing"),
+			QJsonObject{{QStringLiteral("track"), control::trackIdOf(folder)}, {QStringLiteral("routing"), true}}).ok,
+			qPrintable(QStringLiteral("track.set_routing failed")));
+		QVERIFY(folder->isRouting());
+		const ControlResult noop = ControlRegistry::instance()->invoke(QStringLiteral("track.set_routing"),
+			QJsonObject{{QStringLiteral("track"), control::trackIdOf(folder)}, {QStringLiteral("routing"), true}});
+		QVERIFY2(noop.ok, qPrintable(noop.errorMessage));
+		QVERIFY2(ControlRegistry::instance()->invoke(QStringLiteral("control.undo")).ok, qPrintable(QStringLiteral("undo failed")));
+		QVERIFY(!folder->isRouting());  // the no-op did not swallow the real undo
+		removeAll(name);
+	}
+
 	void loadProject(const QString& path)
 	{
 		Song* song = Engine::getSong();
