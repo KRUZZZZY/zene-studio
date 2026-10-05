@@ -166,9 +166,10 @@ private slots:
 		QCOMPARE(noteIds(), before);
 
 		// (d) the well-formed filter of the same shape still works - the check is on the type,
-		//     not on the field being present.
+		//     not on the field being present. key_max 61 matches BOTH notes below it (60 and
+		//     61), so only the note above survives.
 		QCOMPARE(transform({{QStringLiteral("key_max"), 61}}, "remove"), ControlErrorKind::None);
-		const QStringList survivors{before.at(0), before.at(2)};
+		const QStringList survivors{before.at(2)};
 		QCOMPARE(noteIds(), survivors);
 	}
 

@@ -251,17 +251,36 @@ bool readRanges(const QJsonObject& json, NoteTransform::Filter* f)
 		&& range("position", &f->usePositionRange, &f->minPos, &f->maxPos) && range("length", &f->useLengthRange, &f->minLength, &f->maxLength);
 }
 
-//! The `filter` object as a NoteTransform::Filter: {key,velocity,position,length}_{min,max} (an absent
-//! bound is open), `scale` "in" / "out" (the scale context's pitch classes) and `invert`.
-bool filterFrom(const QJsonObject& json, NoteTransform::Filter* f, ControlResult* error)
+//! filter.invert, held to being a BOOLEAN: toBool() used to read a value of the wrong
+//! type as "do not invert", so a filter the caller meant to narrow silently stopped
+//! narrowing at all.
+bool readInvert(const QJsonValue& value, NoteTransform::Filter* f, ControlResult* error)
 {
-	if (!readRanges(json, f))
+	if (value.isUndefined() || value.isNull()) { return true; }  // absent: no inversion
+	if (!value.isBool())
 	{
-		*error = ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("a filter bound is a whole number (a JSON number)"));
+		*error = ControlResult::failure(ControlErrorKind::InvalidArgs,
+			QStringLiteral("filter.invert is true or false, not a value of another type"));
 		return false;
 	}
-	f->invert = json.value(QStringLiteral("invert")).toBool();
-	const QString scale = json.value(QStringLiteral("scale")).toString();
+	f->invert = value.toBool();
+	return true;
+}
+
+//! filter.scale as NoteTransform::Filter's scale channel: the string "in" / "out" (the scale
+//! context's pitch classes). A value of the wrong type used to become an EMPTY string through
+//! toString(), which the code below reads as "no scale filter" - so a malformed filter matched
+//! every note, and 'action: remove' then removed all of them.
+bool readScale(const QJsonValue& value, NoteTransform::Filter* f, ControlResult* error)
+{
+	if (value.isUndefined() || value.isNull()) { return true; }  // absent: no scale channel
+	if (!value.isString())
+	{
+		*error = ControlResult::failure(ControlErrorKind::InvalidArgs,
+			QStringLiteral("filter.scale is 'in' or 'out' (a string), not a value of another type"));
+		return false;
+	}
+	const QString scale = value.toString();
 	if (scale.isEmpty()) { return true; }
 	ResolvedScale resolved;
 	if (!resolveScale({}, &resolved, error)) { return false; }
@@ -274,6 +293,19 @@ bool filterFrom(const QJsonObject& json, NoteTransform::Filter* f, ControlResult
 	f->scaleMatch = scale == QStringLiteral("in") ? NoteTransform::ScaleMatch::InScale : NoteTransform::ScaleMatch::OutOfScale;
 	f->scaleDegrees = resolved.classes;
 	return true;
+}
+
+//! The `filter` object as a NoteTransform::Filter: {key,velocity,position,length}_{min,max} (an absent
+//! bound is open), `scale` "in" / "out" (the scale context's pitch classes) and `invert`.
+bool filterFrom(const QJsonObject& json, NoteTransform::Filter* f, ControlResult* error)
+{
+	if (!readRanges(json, f))
+	{
+		*error = ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("a filter bound is a whole number (a JSON number)"));
+		return false;
+	}
+	return readInvert(json.value(QStringLiteral("invert")), f, error)
+		&& readScale(json.value(QStringLiteral("scale")), f, error);
 }
 
 //! Apply @a action (with @a amount) to the matched @a hits; the notes to remove are returned.
