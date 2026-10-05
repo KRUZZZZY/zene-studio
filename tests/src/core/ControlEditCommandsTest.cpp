@@ -368,6 +368,50 @@ private slots:
 			"the before-solo snapshot, so unsoloing could not restore them");
 	}
 
+	//! track.set_arm_many answers 'tracks' = the ones it CHANGED. Disarming is
+	//! not a refusal when the route is already disarmed, so the batch has to
+	//! recognise that state itself - and a repeated id names one track, so it can
+	//! be reported once at most.
+	void trackSetArmManyReportsOnlyTheTracksItChanged()
+	{
+		ControlRegistry* registry = ControlRegistry::instance();
+		const QString first = revtest::addTrack();
+		const QString second = revtest::addTrack();
+		QVERIFY(!first.isEmpty());
+		QVERIFY(!second.isEmpty());
+		const QJsonArray both{first, second};
+
+		const ControlResult armed = registry->invoke(QStringLiteral("track.set_arm_many"),
+			{{QStringLiteral("tracks"), both}, {QStringLiteral("armed"), true}});
+		QVERIFY2(armed.ok, qPrintable(armed.errorMessage));
+		QCOMPARE(armed.result.value(QStringLiteral("tracks")).toArray().size(), 2);
+
+		const ControlResult disarmed = registry->invoke(QStringLiteral("track.set_arm_many"),
+			{{QStringLiteral("tracks"), both}, {QStringLiteral("armed"), false}});
+		QVERIFY2(disarmed.ok, qPrintable(disarmed.errorMessage));
+		QCOMPARE(disarmed.result.value(QStringLiteral("tracks")).toArray().size(), 2);
+
+		// Both routes are disarmed already: nothing changed, so nothing may be
+		// listed as changed.
+		const ControlResult noop = registry->invoke(QStringLiteral("track.set_arm_many"),
+			{{QStringLiteral("tracks"), both}, {QStringLiteral("armed"), false}});
+		QVERIFY2(!noop.ok, "a disarm of already-disarmed routes reported changed tracks");
+		QCOMPARE(noop.errorKind, ControlErrorKind::Busy);
+
+		// A repeated id is one track: armed once, disarmed once, reported once.
+		const QString third = revtest::addTrack();
+		QVERIFY(!third.isEmpty());
+		const QJsonArray twice{third, third};
+		QVERIFY(registry->invoke(QStringLiteral("track.set_arm_many"),
+			{{QStringLiteral("tracks"), twice}, {QStringLiteral("armed"), true}}).ok);
+		const ControlResult once = registry->invoke(QStringLiteral("track.set_arm_many"),
+			{{QStringLiteral("tracks"), twice}, {QStringLiteral("armed"), false}});
+		QVERIFY2(once.ok, qPrintable(once.errorMessage));
+		const QJsonArray reported = once.result.value(QStringLiteral("tracks")).toArray();
+		QCOMPARE(reported.size(), 1);
+		QCOMPARE(reported.first().toString(), third);
+	}
+
 	//! An idempotent track.set_solo records no change, so its inverse has to name the
 	//! state it found - not !value, which would unsolo the track the no-op request
 	//! asked to keep soloed.
