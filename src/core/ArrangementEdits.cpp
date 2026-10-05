@@ -306,7 +306,11 @@ namespace
 //! Crossfade @a earlier into @a later over their overlap: fade-out on one, fade-in on the other.
 void crossfade(Clip* earlier, Clip* later)
 {
-	const tick_t overlap = earlier->endPosition().getTicks() - later->startPosition().getTicks();
+	// The overlap is the span the two clips SHARE, so it ends at whichever clip ends first: a
+	// later clip wholly inside the earlier one must not be faded in over the earlier clip's
+	// remaining length, or its fade-in would outlast the clip and never reach full gain.
+	const tick_t overlap = std::min(earlier->endPosition().getTicks(), later->endPosition().getTicks())
+		- later->startPosition().getTicks();
 	if (overlap <= 0) { return; }
 	ClipEdits out = earlier->clipEdits();
 	out.fadeOutTicks = overlap;

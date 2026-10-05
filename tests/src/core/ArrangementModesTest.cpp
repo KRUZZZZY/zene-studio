@@ -134,6 +134,18 @@ private slots:
 		QCOMPARE(moved->clipEdits().fadeInTicks, 48);
 	}
 
+	//! A crossfade is as long as the clips' SHARED span: when the later clip is wholly inside the
+	//! earlier one, the overlap stops at the later clip's end, not at the earlier one's.
+	void aCrossfadeIntoAContainedClipStopsAtItsEnd()
+	{
+		Clip* earlier = clipAt(m_track, 0, 100);          // [0, 100)
+		Clip* later = clipAt(m_track, 20, 20);            // [20, 40), wholly inside it
+		QCOMPARE(arrangement::applyOverlap(later, arrangement::Overlap::Crossfade), 1);
+		// The shared span is [20, 40) - 20 ticks, not the earlier clip's remaining 80.
+		QCOMPARE(earlier->clipEdits().fadeOutTicks, 20);
+		QCOMPARE(later->clipEdits().fadeInTicks, 20);
+	}
+
 	void aMoveSnapsToAnEdgeOrAMarkerOnlyWhenClose()
 	{
 		Clip* other = clipAt(m_track, 0, Bar);
