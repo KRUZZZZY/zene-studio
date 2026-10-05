@@ -321,7 +321,10 @@ Track* captureTargetTrack(const QString& trackId, QString* rule, ControlResult* 
 }
 
 //! The new clip's length: the caller's, or the window rounded up to whole bars
-//! (a clip the length of a two-second window is a clip no one can grab and loop).
+//! and never less than one bar (a clip the length of a two-second window is a
+//! clip no one can grab and loop). A window that is ALREADY a whole number of
+//! bars is that many bars: adding a bar after the division made a note played
+//! from tick 0 and released at the end of bar 1 produce a two-bar clip.
 tick_t clipLengthFor(const QJsonObject& args, tick_t windowStart, tick_t windowEnd)
 {
 	if (args.contains(QStringLiteral("length")))
@@ -332,7 +335,8 @@ tick_t clipLengthFor(const QJsonObject& args, tick_t windowStart, tick_t windowE
 	}
 	const tick_t bar = std::max<tick_t>(1, Engine::getSong() != nullptr
 		? Engine::getSong()->ticksPerBar() : DefaultTicksPerBar);
-	return ((windowEnd - windowStart) / bar + 1) * bar;
+	const tick_t span = std::max<tick_t>(0, windowEnd - windowStart);
+	return std::max<tick_t>(bar, ((span + bar - 1) / bar) * bar);
 }
 
 //! The refusal an empty (or unreadable) window earns. A distinct helper so the

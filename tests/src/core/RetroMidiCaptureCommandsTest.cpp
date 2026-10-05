@@ -599,6 +599,72 @@ private slots:
 
 		registry->invoke(QStringLiteral("midi.retro_capture_arm"), QJsonObject{{QStringLiteral("armed"), false}});
 	}
+
+	//! The default clip length: the window rounded UP to whole bars, and never
+	//! less than one bar. A window that is already a whole number of bars is
+	//! that many bars - the old formula added a bar after the division, so a
+	//! note played from tick 0 and released at tick 192 (one 192-tick bar)
+	//! produced a clip twice as long as the playing it holds.
+	//!
+	//! Last in the class, and it empties the ring first: the ring is drop-OLDEST,
+	//! so a full capacity of controller events (which the note matcher skips)
+	//! leaves a window holding nothing but this case's own, at a tick it picks.
+	void theDefaultLengthIsTheWindowRoundedUpToWholeBars()
+	{
+		ControlRegistry* registry = ControlRegistry::instance();
+		RetroMidiCapture& capture = Engine::audioEngine()->midiClient()->retroCapture();
+		QVERIFY(registry->invoke(QStringLiteral("midi.retro_capture_arm"),
+			QJsonObject{{QStringLiteral("armed"), true}}).ok);
+		const tick_t bar = Engine::getSong()->ticksPerBar();
+		QVERIFY(bar > 0);
+
+		QString trackId;
+		QString unusedClipId;
+		makeInstrumentClip(&trackId, &unusedClipId);
+
+		//! Overwrites every retained event, then plays one note pair at \a at.
+		const auto window = [&capture](tick_t at, int key, tick_t release) {
+			for (std::size_t i = 0; i < capture.ring().capacity(); ++i)
+			{
+				capture.capture(MidiEvent(MidiControlChange, 0, 7, 100), at);
+			}
+			capture.capture(noteOn(0, key, 100), at);
+			capture.capture(noteOff(0, key), release);
+		};
+
+		// Exactly one bar of playing: the clip is that one bar, not two.
+		window(100000, 60, 100000 + bar);
+		const ControlResult exact = registry->invoke(
+			QStringLiteral("midi.retro_capture_to_clip"),
+			QJsonObject{{QStringLiteral("track"), trackId}});
+		QVERIFY2(exact.ok, qPrintable(exact.errorMessage));
+		QCOMPARE(exact.result.value(QStringLiteral("position")).toInt(), 100000);
+		QCOMPARE(exact.result.value(QStringLiteral("length")).toInt(),
+			static_cast<int>(bar));
+		QVERIFY(registry->invoke(QStringLiteral("control.undo")).ok);
+
+		// Eight ticks of playing still gets a clip a hand can grab: one bar.
+		window(200000, 62, 200008);
+		const ControlResult shortWindow = registry->invoke(
+			QStringLiteral("midi.retro_capture_to_clip"),
+			QJsonObject{{QStringLiteral("track"), trackId}});
+		QVERIFY2(shortWindow.ok, qPrintable(shortWindow.errorMessage));
+		QCOMPARE(shortWindow.result.value(QStringLiteral("position")).toInt(), 200000);
+		QCOMPARE(shortWindow.result.value(QStringLiteral("length")).toInt(),
+			static_cast<int>(bar));
+
+		// Half a bar over the line rounds up to two, not to one.
+		window(300000, 64, 300000 + bar + 8);
+		const ControlResult overLine = registry->invoke(
+			QStringLiteral("midi.retro_capture_to_clip"),
+			QJsonObject{{QStringLiteral("track"), trackId}});
+		QVERIFY2(overLine.ok, qPrintable(overLine.errorMessage));
+		QCOMPARE(overLine.result.value(QStringLiteral("length")).toInt(),
+			static_cast<int>(2 * bar));
+
+		registry->invoke(QStringLiteral("midi.retro_capture_arm"),
+			QJsonObject{{QStringLiteral("armed"), false}});
+	}
 };
 
 QTEST_GUILESS_MAIN(RetroMidiCaptureCommandsTest)
