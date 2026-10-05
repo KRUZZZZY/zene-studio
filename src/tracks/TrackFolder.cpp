@@ -412,6 +412,23 @@ void TrackFolder::shrinkChildRange( Track * child )
 	if( model->maxValue() > top ) { model->setRange( model->minValue(), top ); }
 }
 
+/*! Renaming a routing folder renames its mixer channel too.
+ *
+ *  enableRouting() copies the folder's name onto the channel it creates, and that
+ *  name is what the channel's caption, tooltip and LCD show - and what the project
+ *  saves for it (Mixer::saveSettings writes `name`). Without this the channel kept
+ *  advertising the name the folder had when routing was turned on.
+ */
+void TrackFolder::setName( const QString & newName )
+{
+	Track::setName( newName );
+	if( m_mode != Mode::Routing || m_mixerChannel < 0 || Engine::mixer() == nullptr ) { return; }
+	if( MixerChannel * channel = Engine::mixer()->mixerChannel( m_mixerChannel ) )
+	{
+		channel->m_name = newName;
+	}
+}
+
 bool TrackFolder::setMode( Mode mode, QString * error )
 {
 	if( mode == m_mode ) { return true; }

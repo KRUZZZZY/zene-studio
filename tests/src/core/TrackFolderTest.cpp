@@ -503,6 +503,32 @@ private slots:
 		removeAll(name);
 	}
 
+	//! A routing folder's mixer channel is NAMED after it, and the name is shown on
+	//! the channel's caption, tooltip and LCD - and saved with the project. It was
+	//! copied once, when routing was enabled, so renaming the folder afterwards left
+	//! the channel advertising a name the folder no longer has.
+	void renamingARoutingFolderRenamesItsMixerChannel()
+	{
+		const QString name = QStringLiteral("n-rename");
+		TrackFolder* folder = static_cast<TrackFolder*>(addTrack(Track::Type::Folder, name));
+		Track* child = addTrack(Track::Type::Instrument, name);
+		child->setParentFolder(folder);
+		QString error;
+		QVERIFY2(folder->setMode(TrackFolder::Mode::Routing, &error), qPrintable(error));
+		const int channel = static_cast<int>(folder->mixerChannel());
+		MixerChannel* mixerChannel = Engine::mixer()->mixerChannel(channel);
+		QVERIFY(mixerChannel != nullptr);
+		QCOMPARE(mixerChannel->m_name, name);
+
+		const QString renamed = QStringLiteral("n-rename-again");
+		folder->setName(renamed);
+		QVERIFY2(mixerChannel->m_name == renamed,
+			"the mixer channel of a routing folder carries the folder's CURRENT name");
+		// back under the fixture name, so removeAll() can find the folder again
+		folder->setName(name);
+		removeAll(name);
+	}
+
 	//! Deleting a folder must give its mixer channel back. ~TrackFolder unlinked
 	//! the children but never released the folder's OWN channel, unlike
 	//! releaseRouting() - so each deleted routing folder left an orphan channel

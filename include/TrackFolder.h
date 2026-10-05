@@ -148,6 +148,10 @@ public:
 	//! Switches the mode. Routing mode needs at least one child to sum and a
 	//! mixer channel to sum into; false with \a error filled changes NOTHING.
 	bool setMode( Mode mode, QString * error );
+	//! A routing folder's mixer channel is NAMED after it, so renaming the folder
+	//! has to rename that channel too - it is shown on the channel's caption and
+	//! saved with the project.
+	void setName( const QString & newName ) override;
 
 	bool isCollapsed() const { return m_collapsed; }
 	void setCollapsed( bool collapsed );
