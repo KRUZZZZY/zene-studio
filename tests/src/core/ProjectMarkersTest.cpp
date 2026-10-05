@@ -31,6 +31,7 @@
 
 #include <QFile>
 #include <QJsonArray>
+#include <QJsonObject>
 #include <QTemporaryDir>
 
 #include "ControlRegistry.h"
@@ -52,6 +53,14 @@ QString fileText(const QString& path)
 {
 	QFile file(path);
 	return file.open(QIODevice::ReadOnly) ? QString::fromUtf8(file.readAll()) : QString();
+}
+
+//! The wire id "mk-<n>" back to the number ProjectMarkers knows a marker by.
+int idMarker(const QString& id)
+{
+	bool ok = false;
+	const int number = id.mid(3).toInt(&ok);
+	return ok ? number : -1;
 }
 
 } // namespace
@@ -92,6 +101,54 @@ private slots:
 
 		QCOMPARE(run(QStringLiteral("marker.add"), {{QStringLiteral("color"), QStringLiteral("nope")}}).errorKind, ControlErrorKind::InvalidArgs);
 		QCOMPARE(run(QStringLiteral("marker.set"), {{QStringLiteral("marker"), QStringLiteral("mk-999")}}).errorKind, ControlErrorKind::NotFound);
+	}
+
+	//! WF-073: an action carries ITS OWN arguments. Pointing a marker at a
+	//! different command without saying what to pass it must not leave the
+	//! previous command's arguments behind - they would be handed to a command
+	//! that never asked for them.
+	void changingAnActionDoesNotKeepThePreviousArguments()
+	{
+		Engine::getSong()->clearProject();
+		const ControlResult added = run(QStringLiteral("marker.add"), {{QStringLiteral("tick"), 192}});
+		QVERIFY2(added.ok, qPrintable(added.errorMessage));
+		const QString id = added.result.value(QStringLiteral("marker")).toString();
+		QVERIFY(run(QStringLiteral("marker.set"), {{QStringLiteral("marker"), id},
+			{QStringLiteral("action"), QStringLiteral("transport.set_tempo")},
+			{QStringLiteral("args"), QJsonObject{{QStringLiteral("bpm"), 120}}}}).ok);
+		QCOMPARE(ProjectMarkers::instance().find(idMarker(id))->args, QStringLiteral("{\"bpm\":120}"));
+
+		// A different action and no arguments of its own: the old ones go.
+		QVERIFY(run(QStringLiteral("marker.set"), {{QStringLiteral("marker"), id},
+			{QStringLiteral("action"), QStringLiteral("transport.play")}}).ok);
+		const Marker* changed = ProjectMarkers::instance().find(idMarker(id));
+		QVERIFY(changed != nullptr);
+		QCOMPARE(changed->action, QStringLiteral("transport.play"));
+		QVERIFY2(changed->args.isEmpty(),
+			qPrintable(QStringLiteral("the marker kept %1 for an action that never asked for it")
+				.arg(changed->args)));
+
+		// Naming the SAME action again is not a change, so its arguments stay.
+		QVERIFY(run(QStringLiteral("marker.set"), {{QStringLiteral("marker"), id},
+			{QStringLiteral("action"), QStringLiteral("transport.set_tempo")},
+			{QStringLiteral("args"), QJsonObject{{QStringLiteral("bpm"), 120}}}}).ok);
+		QVERIFY(run(QStringLiteral("marker.set"), {{QStringLiteral("marker"), id},
+			{QStringLiteral("tick"), 384}}).ok);
+		QCOMPARE(ProjectMarkers::instance().find(idMarker(id))->args, QStringLiteral("{\"bpm\":120}"));
+
+		// One undo step per edit, as everywhere else on this surface: four
+		// edits went in, so four undos come back out to the marker as it was.
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
+		QCOMPARE(ProjectMarkers::instance().find(idMarker(id))->tick, 192);
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
+		QCOMPARE(ProjectMarkers::instance().find(idMarker(id))->action, QStringLiteral("transport.play"));
+		QVERIFY(ProjectMarkers::instance().find(idMarker(id))->args.isEmpty());
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
+		QCOMPARE(ProjectMarkers::instance().find(idMarker(id))->action, QStringLiteral("transport.set_tempo"));
+		QCOMPARE(ProjectMarkers::instance().find(idMarker(id))->args, QStringLiteral("{\"bpm\":120}"));
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
+		QVERIFY2(ProjectMarkers::instance().find(idMarker(id))->action.isEmpty(),
+			"four undos did not take the marker back to no action at all");
 	}
 
 	void jumpGoesToTheNextMarker()

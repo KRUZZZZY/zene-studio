@@ -123,14 +123,20 @@ ControlResult addMarker(const QJsonObject& args)
 //! WF-073: 'action' (a command; empty removes it) and 'args' onto @a marker; false for an action that is not one.
 bool readMarkerAction(const QJsonObject& args, Marker* marker)
 {
+	const bool argsGiven = args.contains(QStringLiteral("args"));
 	if (args.contains(QStringLiteral("action")))
 	{
 		const QString action = args.value(QStringLiteral("action")).toString();
 		if (!action.isEmpty() && (ControlRegistry::instance()->command(action) == nullptr || action.startsWith(QStringLiteral("marker.")))) { return false; }
+		// A DIFFERENT action cannot inherit the previous one's arguments: they
+		// were arguments FOR the command that is no longer there, and the
+		// crossing would hand them to one that never asked for them. Naming the
+		// same action again is not a change, so its arguments stay.
+		if (action != marker->action && !argsGiven) { marker->args.clear(); }
 		marker->action = action;
 		if (action.isEmpty()) { marker->args.clear(); }
 	}
-	if (args.contains(QStringLiteral("args")))
+	if (argsGiven)
 	{
 		marker->args = QString::fromUtf8(QJsonDocument(args.value(QStringLiteral("args")).toObject()).toJson(QJsonDocument::Compact));
 	}
@@ -151,7 +157,7 @@ ControlResult setMarker(const QJsonObject& args)
 		changed.color = color.isEmpty() ? color : QColor(color).name();
 	}
 	if (!readMarkerAction(args, &changed)) { return ControlResult::failure(ControlErrorKind::InvalidArgs,
-		QStringLiteral("'action' is a registered command id other than a marker command, and 'args' an object")); }
+		QStringLiteral("'action' is a registered command id other than a marker command, and 'args' an object that command accepts")); }
 	return recorded([changed] {
 		ProjectMarkers::instance().replace(changed.id, changed);
 		return ControlResult::success(markerJson(*ProjectMarkers::instance().find(changed.id)));
