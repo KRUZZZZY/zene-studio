@@ -276,16 +276,22 @@ ControlResult recallLocation(const QJsonObject& args)
 		{{"position", true}, {"range", range}, {"zoom", zoom}}));
 }
 
-//! The first of @a ids that names no clip in the project, or an empty string when every one does.
-QString firstUnknownClip(const QJsonArray& ids)
+//! Whether one of @a ids names no clip in the project; @a unknown receives the first such id. The
+//! answer is a flag and NOT the id itself: the empty string is a valid argument that resolves no
+//! clip, so returning it as the "nothing unknown" sentinel let such an id through unvalidated.
+bool firstUnknownClip(const QJsonArray& ids, QString* unknown)
 {
 	for (const QJsonValue& id : ids)
 	{
 		ClipRef ref;
 		ControlResult missing;
-		if (!resolveClip(id.toString(), &ref, &missing)) { return id.isString() ? id.toString() : QStringLiteral("?"); }
+		if (!resolveClip(id.toString(), &ref, &missing))
+		{
+			*unknown = id.isString() ? id.toString() : QStringLiteral("?");
+			return true;
+		}
 	}
-	return QString();
+	return false;
 }
 
 ControlResult saveSelection(const QJsonObject& args)
@@ -296,7 +302,8 @@ ControlResult saveSelection(const QJsonObject& args)
 	const QJsonObject range = currentRange();
 	const bool given = args.contains(QStringLiteral("clips"));
 	const QJsonArray clips = given ? args.value(QStringLiteral("clips")).toArray() : selectedClips();
-	if (const QString unknown = given ? firstUnknownClip(clips) : QString(); !unknown.isEmpty())
+	QString unknown;
+	if (given && firstUnknownClip(clips, &unknown))
 	{
 		return ControlResult::failure(ControlErrorKind::NotFound, QStringLiteral("no clip '%1'").arg(unknown));
 	}

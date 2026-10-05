@@ -309,6 +309,24 @@ private slots:
 		QVERIFY(!run(QStringLiteral("window.layout_list")).result.value(QStringLiteral("project_layout_shown")).toBool());
 	}
 
+	//! Luna cluster 4915: a clip id that names no clip is refused, and the empty string is one of
+	//! them - it is not the "nothing unknown" answer the validator used to return.
+	void aClipIdThatNamesNoClipIsRefusedByTheValidator()
+	{
+		QVERIFY(run(QStringLiteral("range.set"), {{QStringLiteral("start"), 0}, {QStringLiteral("end"), 0}}).ok);
+		const int kept = run(QStringLiteral("selection.list")).result.value(QStringLiteral("count")).toInt();
+		const ControlResult saved = run(QStringLiteral("selection.save"),
+			{{QStringLiteral("name"), QStringLiteral("blank")}, {QStringLiteral("clips"), QJsonArray{QString()}}});
+		QVERIFY2(!saved.ok, "an empty clip id was stored as a clip");
+		QCOMPARE(saved.errorKind, ControlErrorKind::NotFound);
+		QCOMPARE(run(QStringLiteral("selection.list")).result.value(QStringLiteral("count")).toInt(), kept);
+		// A well-formed id naming no live clip is still refused the same way.
+		const ControlResult ghost = run(QStringLiteral("selection.save"),
+			{{QStringLiteral("name"), QStringLiteral("ghost")}, {QStringLiteral("clips"), QJsonArray{QStringLiteral("clip-99999")}}});
+		QCOMPARE(ghost.errorKind, ControlErrorKind::NotFound);
+		QCOMPARE(run(QStringLiteral("selection.list")).result.value(QStringLiteral("count")).toInt(), kept);
+	}
+
 	void theHistoryIsWalkedInOneGo()
 	{
 		const QString id = control::trackIdOf(m_track);
