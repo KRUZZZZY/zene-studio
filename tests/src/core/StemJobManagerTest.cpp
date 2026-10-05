@@ -26,9 +26,12 @@
 #include <atomic>
 #include <chrono>
 #include <functional>
+#include <limits>
 #include <memory>
 #include <thread>
 #include <vector>
+
+#include <cmath>
 
 #include <QSignalSpy>
 #include <QThread>
@@ -61,7 +64,9 @@ public:
 	{
 		Success,
 		Fail,
-		SlowSuccess
+		SlowSuccess,
+		//! Reports a non-finite fraction, which std::clamp passes through.
+		NonFiniteProgress
 	};
 
 	FakeSeparator(Mode mode, int steps) :
@@ -86,11 +91,13 @@ public:
 
 		for (int step = 1; step <= m_steps; ++step)
 		{
-			if (m_mode == Mode::SlowSuccess)
+			if (m_mode == Mode::SlowSuccess || m_mode == Mode::NonFiniteProgress)
 			{
+				// NonFiniteProgress sleeps too: the value has to be read while the
+				// job is running, since the success branch overwrites it with 1.0.
 				QThread::msleep(40);
 			}
-			if (!progress(static_cast<float>(step) / static_cast<float>(m_steps)))
+			if (!progress(reportedFraction(step)))
 			{
 				return Status::Cancelled;
 			}
@@ -113,6 +120,18 @@ public:
 	QString backendName() const override { return QStringLiteral("fake"); }
 
 private:
+	//! The fraction this mode reports at \a step: the usual step/steps, or a
+	//! non-finite one, as a backend dividing by a zero count would report.
+	float reportedFraction(int step) const
+	{
+		if (m_mode == Mode::NonFiniteProgress)
+		{
+			if (step == 1) { return std::numeric_limits<float>::infinity(); }
+			return step == 2 ? 0.5f : std::numeric_limits<float>::quiet_NaN();
+		}
+		return static_cast<float>(step) / static_cast<float>(m_steps);
+	}
+
 	Mode m_mode;
 	int m_steps;
 };
@@ -395,6 +414,77 @@ private slots:
 		manager.cancel(id);
 		QTRY_VERIFY_WITH_TIMEOUT(cancelledSpy.count() == 1, 10000);
 		QCOMPARE(static_cast<int>(manager.state(id)), static_cast<int>(StemJobManager::State::Cancelled));
+	}
+
+	/*! Luna cluster 3576: a backend that reports a non-finite fraction must not
+	 *  put one into the job's progress. std::clamp(NaN, 0, 1) is NaN, so the
+	 *  clamp does not make the value a fraction; every reported value must be a
+	 *  real number inside [0, 1]. */
+	void testANonFiniteFractionIsNeverPublished()
+	{
+		StemJobManager manager;
+		manager.setSeparator(
+			std::make_unique<FakeSeparator>(FakeSeparator::Mode::NonFiniteProgress, 8));
+		QSignalSpy progressSpy(&manager, &StemJobManager::jobProgress);
+
+		const int id = manager.submit(makeMix(), StemModelSampleRate, 1024);
+		// Sampled while the job runs: the success branch overwrites progress with
+		// 1.0, so a read after the fact cannot see what the backend published.
+		// Waited for rather than read at once: submit() returns before the worker starts.
+		QTRY_VERIFY_WITH_TIMEOUT(manager.state(id) == StemJobManager::State::Running, 5000);
+		bool sawRunning = false;
+		while (manager.state(id) == StemJobManager::State::Running)
+		{
+			sawRunning = true;
+			const float fraction = manager.progress(id);
+			QVERIFY2(std::isfinite(fraction), "a non-finite progress value was stored");
+			QVERIFY2(fraction >= 0.0f && fraction <= 1.0f, "progress outside [0, 1]");
+			QTest::qWait(5);
+		}
+		QVERIFY(sawRunning);
+
+		for (const auto& emission : progressSpy)
+		{
+			const float fraction = emission.at(1).toFloat();
+			QVERIFY2(std::isfinite(fraction), "a non-finite progress value was published");
+			QVERIFY2(fraction >= 0.0f && fraction <= 1.0f, "progress outside [0, 1]");
+		}
+		QTRY_VERIFY_WITH_TIMEOUT(
+			static_cast<int>(manager.state(id)) == static_cast<int>(StemJobManager::State::Completed), 10000);
+	}
+
+	//! The same rule for the model-download fraction, which is a second callback into the same field.
+	void testANonFiniteDownloadFractionIsNeverPublished()
+	{
+		StemJobManager manager;
+		manager.setSeparator(std::make_unique<FakeSeparator>(FakeSeparator::Mode::Success, 4));
+		std::atomic<bool> release{false};
+		std::atomic<bool> reported{false};
+		manager.setModelProvisioner([&](const std::atomic<bool>&, const std::function<void(float)>& progress,
+			QString*)
+		{
+			// NaN is reported LAST and then the fake spins, so the stored value is
+			// NaN for as long as the test reads it.
+			progress(0.25f);
+			progress(std::numeric_limits<float>::quiet_NaN());
+			reported.store(true);
+			while (!release.load()) { std::this_thread::sleep_for(std::chrono::milliseconds(2)); }
+			return true;
+		});
+		struct Release
+		{
+			std::atomic<bool>& flag;
+			~Release() { flag.store(true); }
+		} releaseOnExit{release};
+
+		QSignalSpy finishedSpy(&manager, &StemJobManager::jobFinished);
+		const int id = manager.submit(makeMix(), StemModelSampleRate, 1024);
+		QTRY_VERIFY_WITH_TIMEOUT(reported.load(), 5000);
+		const float downloaded = manager.downloadProgress(id);
+		QVERIFY2(std::isfinite(downloaded), "a non-finite download progress was stored");
+		QVERIFY2(downloaded >= 0.0f && downloaded <= 1.0f, "download progress outside [0, 1]");
+		release.store(true);
+		QTRY_VERIFY_WITH_TIMEOUT(finishedSpy.count() == 1, 10000);
 	}
 
 	void testUnknownJobQueriesAreSafe()
