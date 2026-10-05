@@ -182,6 +182,25 @@ bool skipEventPayload(Cursor& track, unsigned char status, QString* error)
 	return true;  // 0xF6 and the real-time statuses carry no data bytes
 }
 
+//! The FF 58 payload's two bytes, once dd is known to be a metre the map holds.
+void readTimeSignaturePayload(const unsigned char* payload, Candidate* candidate, QString* error)
+{
+	// dd is log2(denominator) and the map holds a power of two up to 32
+	// (TempoMapLargestDenominator), so dd = 0..5. Masking the byte instead
+	// rewrote dd 32 as dd 0 and imported 1/1 - a different metre, not the
+	// one the file names - and shifting by 31 is undefined behaviour.
+	if (payload[1] > SmfMaxTimeSignatureExponent)
+	{
+		*error = QStringLiteral("a time signature names denominator 2^%1, which is wider "
+			"than the 2^%2 this engine holds; the file was refused rather than read as a "
+			"different metre").arg(payload[1]).arg(SmfMaxTimeSignatureExponent);
+		return;
+	}
+	candidate->hasTimeSignature = true;
+	candidate->numerator = payload[0];
+	candidate->denominator = 1 << payload[1];
+}
+
 bool readMetaEvent(Cursor& track, quint32 smfTick, std::vector<Candidate>* candidates,
 	EventOutcome* outcome, QString* error)
 {
@@ -210,9 +229,8 @@ bool readMetaEvent(Cursor& track, quint32 smfTick, std::vector<Candidate>* candi
 	{
 		Candidate candidate;
 		candidate.smfTick = smfTick;
-		candidate.hasTimeSignature = true;
-		candidate.numerator = payload[0];
-		candidate.denominator = 1 << (payload[1] & 0x1F);
+		readTimeSignaturePayload(payload, &candidate, error);
+		if (!error->isEmpty()) { return false; }
 		candidates->push_back(candidate);
 	}
 	else if (type == SmfMetaEndOfTrack) { *outcome = EventOutcome::EndOfTrack; }

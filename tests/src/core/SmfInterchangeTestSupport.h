@@ -282,6 +282,40 @@ inline QByteArray plainFile(int division, const std::vector<PlainEvent>& events)
 	return bytes;
 }
 
+/*! A one-track Standard MIDI File around \a body, declaring \a division. It is
+ *  the shell plainFile() builds for itself, exposed for the files that have to
+ *  be malformed in ONE specific place: plainFile() derives its body from an
+ *  event list, so everything it writes is well formed by construction, and a
+ *  claim about what the reader does with a malformed EOT, a bad dd byte or a
+ *  delta that runs past 2^32 needs bytes the event-list writer cannot express. */
+inline QByteArray smfFileWithBody(const QByteArray& body, int division = 480)
+{
+	QByteArray bytes;
+	bytes.append("MThd", 4);
+	for (int shift : {24, 16, 8, 0}) { bytes.append(static_cast<char>((6u >> shift) & 0xFF)); }
+	bytes.append(static_cast<char>(0));  // format 0
+	bytes.append(static_cast<char>(0));
+	bytes.append(static_cast<char>(0));
+	bytes.append(static_cast<char>(1));  // one track
+	bytes.append(static_cast<char>((division >> 8) & 0xFF));
+	bytes.append(static_cast<char>(division & 0xFF));
+	bytes.append("MTrk", 4);
+	const quint32 length = static_cast<quint32>(body.size());
+	for (int shift : {24, 16, 8, 0}) { bytes.append(static_cast<char>((length >> shift) & 0xFF)); }
+	bytes.append(body);
+	return bytes;
+}
+
+//! A body that ends the way the format defines an end of track: delta 0, meta
+//! FF 2F, length 0, nothing after it.
+inline QByteArray bodyEndingWithEndOfTrack()
+{
+	QByteArray body;
+	appendVlq(body, 0);
+	appendMeta(body, 0x2F, QByteArray());
+	return body;
+}
+
 inline bool writeFile(const QString& target, const QByteArray& bytes)
 {
 	QFile file(target);

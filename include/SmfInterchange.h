@@ -120,6 +120,10 @@ constexpr int SmfWrittenFormat = 1;
 //! is refused rather than written as the five-byte quantity the format has no
 //! encoding for.
 constexpr int SmfMaxDeltaTicks = 0x0FFFFFFF;
+//! The widest meter the engine holds: TempoMapLargestDenominator (32) is 2^5,
+//! so dd (log2(denominator)) in a time-signature meta event may be 0..5. A
+//! larger dd is refused rather than masked into another metre.
+constexpr int SmfMaxTimeSignatureExponent = 5;
 
 /*! One conductor event, in LMMS' own tick domain (48 ticks per quarter note).
  *  Either half may be absent, exactly as in TempoMapEvent: the two halves are

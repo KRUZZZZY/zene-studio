@@ -355,6 +355,49 @@ private slots:
 		QCOMPARE(digest(mapEvents()), digest(before));  // a refusal writes nothing
 	}
 
+	//! A dd this engine cannot hold is refused, not turned into a different
+	//! metre. dd is log2(denominator) and the map holds a power of two up to 32,
+	//! so dd is 0..5; masking the byte with 0x1F turned 32 into 0 - a silent 4/1
+	//! that the map happily accepts - and let 31 shift into the sign bit, which
+	//! is undefined. Both are refused with a reason, and nothing is imported.
+	void aMeterExponentTheEngineCannotHoldIsRefused()
+	{
+		QByteArray bytes = plainFile(480, {{0, 120, 4, 4}});
+		const int signatureAt = bytes.indexOf(QByteArrayLiteral("\xFF\x58\x04"));
+		QVERIFY(signatureAt > 0);
+		// dd is payload byte 1: FF 58 04 nn dd cc bb.
+		const int exponentAt = signatureAt + 4;
+		QCOMPARE(static_cast<int>(static_cast<unsigned char>(bytes[exponentAt])), 2);
+
+		for (const unsigned char exponent : {static_cast<unsigned char>(32),
+				static_cast<unsigned char>(6), static_cast<unsigned char>(31)})
+		{
+			bytes[exponentAt] = static_cast<char>(exponent);
+			const QString file = path(m_directory,
+				QStringLiteral("bad-dd-%1.mid").arg(exponent));
+			QVERIFY(writeFile(file, bytes));
+			const ControlResult read = run(QStringLiteral("interchange.smf_read"),
+				{{QStringLiteral("path"), file}});
+			QVERIFY2(!read.ok,
+				qPrintable(QStringLiteral("dd %1 was accepted").arg(exponent)));
+			QCOMPARE(read.errorKind, ControlErrorKind::InvalidArgs);
+			QVERIFY2(read.errorMessage.contains(QStringLiteral("time signature")),
+				qPrintable(read.errorMessage));
+			const ControlResult imported = run(QStringLiteral("interchange.smf_import"),
+				{{QStringLiteral("path"), file}});
+			QVERIFY(!imported.ok);
+			QCOMPARE(digest(mapEvents()), QString());  // a refusal imports nothing
+		}
+
+		// The control: dd 2 is a denominator of 4, and it reads back.
+		bytes[exponentAt] = static_cast<char>(2);
+		const QString good = path(m_directory, QStringLiteral("good-dd.mid"));
+		QVERIFY(writeFile(good, bytes));
+		QVERIFY2(run(QStringLiteral("interchange.smf_import"),
+			{{QStringLiteral("path"), good}}).ok, "dd 2 is a metre the engine holds");
+		QCOMPARE(mapEvents().at(0).toObject().value(QStringLiteral("denominator")).toInt(), 4);
+	}
+
 private:
 	QTemporaryDir m_directory;
 };
