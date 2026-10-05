@@ -587,6 +587,42 @@ private slots:
 			{{QStringLiteral("path"), good}}).ok, "a matching track count is read");
 	}
 
+	//! End of file is the only clean end of a chunk list. readTracks() treated
+	//! one to three remaining bytes as one, so a file whose last chunk header
+	//! was cut short - a stray byte, or the first three bytes of an MTrk header
+	//! - parsed successfully and the malformed tail was dropped without a word.
+	//! A tail that is not nothing cannot be read as nothing, so it is reported
+	//! as the truncated chunk header it is.
+	void aTruncatedTrailingChunkHeaderIsRefused()
+	{
+		for (int tail : {1, 3})
+		{
+			QByteArray bytes = plainFile(480, {{0, 120, 4, 4}});
+			for (int i = 0; i < tail; ++i) { bytes.append(static_cast<char>("MTr"[i])); }
+			const QString file = path(m_directory,
+				QStringLiteral("trailing-%1.mid").arg(tail));
+			QVERIFY(writeFile(file, bytes));
+			const ControlResult read = run(QStringLiteral("interchange.smf_read"),
+				{{QStringLiteral("path"), file}});
+			QVERIFY2(!read.ok,
+				qPrintable(QStringLiteral("a %1-byte partial chunk header was accepted").arg(tail)));
+			QCOMPARE(read.errorKind, ControlErrorKind::InvalidArgs);
+			QVERIFY2(read.errorMessage.contains(QStringLiteral("chunk header")),
+				qPrintable(read.errorMessage));
+			const ControlResult imported = run(QStringLiteral("interchange.smf_import"),
+				{{QStringLiteral("path"), file}});
+			QVERIFY(!imported.ok);
+			QCOMPARE(digest(mapEvents()), QString());  // a refusal imports nothing
+		}
+
+		// The control: the same file with nothing after its last track.
+		QByteArray honest = plainFile(480, {{0, 120, 4, 4}});
+		const QString good = path(m_directory, QStringLiteral("clean-tail.mid"));
+		QVERIFY(writeFile(good, honest));
+		QVERIFY2(run(QStringLiteral("interchange.smf_read"),
+			{{QStringLiteral("path"), good}}).ok, "a file ending exactly at its last track is read");
+	}
+
 	//! Every track ends with an end-of-track meta event; it is how the format
 	//! says the sequence is over. readTrack() returned success when its walk ran
 	//! out of bytes, and nothing recorded whether the event had arrived - so a

@@ -446,7 +446,16 @@ bool readTracks(Cursor& cursor, int* tracksRead, std::vector<Candidate>* candida
 {
 	while (!cursor.atEnd())
 	{
-		if (cursor.remaining() < 4) { break; }
+		// End of file is the only clean end of a chunk list. One to three bytes
+		// left are the start of a chunk header that the file cut short, not an
+		// end: treating them as the end dropped a malformed tail silently.
+		if (cursor.remaining() < 4)
+		{
+			if (cursor.remaining() == 0) { break; }
+			*error = QStringLiteral("a chunk header is truncated - %1 byte(s) follow the last "
+				"chunk, too few for a chunk header").arg(cursor.remaining());
+			return false;
+		}
 		unsigned char id[4];
 		for (unsigned char& c : id) { cursor.byte(&c); }
 		quint32 chunkLength = 0;
