@@ -126,9 +126,15 @@ bool readScaleLines(QTextStream& stream, QString* name, QStringList* lines, QStr
 		else { lines->append(line); }
 		++i;
 	}
-	if (lines->isEmpty())
+	// The count the file declared is a PROMISE about how many degrees follow:
+	// a file that ends early has not described the scale it carries, and
+	// building one from the lines that DID arrive silently substituted a
+	// different scale for it. \a limit is positive by now, so an empty or short
+	// list is a truncated file, not a scale of zero degrees.
+	if (lines->size() != limit)
 	{
-		failWith(error, QStringLiteral("no interval lines in the .scl file"));
+		failWith(error, QStringLiteral("the .scl file declares %1 degrees but carries %2 "
+			"interval lines").arg(limit).arg(lines->size()));
 		return false;
 	}
 	return true;

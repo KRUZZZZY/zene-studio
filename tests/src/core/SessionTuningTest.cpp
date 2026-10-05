@@ -595,14 +595,17 @@ private slots:
 		const QJsonObject before = snapshotState(run(QStringLiteral("mts.get_state")).result);
 
 		// A .scl is name line, degree count, then that many interval lines.
+		// Three interval lines for the declared three degrees - the point of
+		// these bodies is the RATIO on one of them, so none of them may also be
+		// a truncated scale.
 		const QStringList badOne{QStringLiteral("bad ratio fixture"), QStringLiteral("3"),
-			QStringLiteral("1/1"), QStringLiteral("3/nope")};
+			QStringLiteral("1/1"), QStringLiteral("3/nope"), QStringLiteral("3/2")};
 		const QStringList badZeroDen{QStringLiteral("bad ratio fixture"), QStringLiteral("3"),
-			QStringLiteral("1/1"), QStringLiteral("3/0")};
+			QStringLiteral("1/1"), QStringLiteral("3/0"), QStringLiteral("3/2")};
 		const QStringList badZeroNum{QStringLiteral("bad ratio fixture"), QStringLiteral("3"),
-			QStringLiteral("1/1"), QStringLiteral("0/2")};
+			QStringLiteral("1/1"), QStringLiteral("0/2"), QStringLiteral("3/2")};
 		const QStringList badInMiddle{QStringLiteral("bad ratio fixture"), QStringLiteral("3"),
-			QStringLiteral("3/nope"), QStringLiteral("3/2")};
+			QStringLiteral("1/1"), QStringLiteral("3/nope"), QStringLiteral("3/2")};
 		const QVector<QStringList> badBodies{badOne, badZeroDen, badZeroNum, badInMiddle};
 		for (const QStringList& body : badBodies)
 		{
@@ -700,6 +703,46 @@ QString writeKbm(QTemporaryDir& dir, const QString& name, const QString& baseFre
 				qPrintable(QStringLiteral("key %1 reads %2 Hz through the render path")
 					.arg(key).arg(frequency)));
 		}
+	}
+
+	//! Luna 5318: a .scl's second non-comment line DECLARES how many degrees the
+	//! scale has, so a file that ends early has not declared the scale it carries.
+	//! readScaleLines() only checked that it read at least one interval, so a file
+	//! declaring 5 degrees and holding 1 loaded happily as a 1-degree scale - a
+	//! table built from a scale the file never described. The truncation is
+	//! refused, typed, and the standing table is left alone.
+	void aScaleFileShorterThanItsDeclaredDegreeCountIsRefused()
+	{
+		Song* song = Engine::getSong();
+		song->clearProject();
+		SessionTuning* tuning = SessionTuning::instance();
+		tuning->reset();
+
+		QTemporaryDir dir;
+		QVERIFY(dir.isValid());
+		const QString good = writeJiScl(dir);
+		QVERIFY(!good.isEmpty());
+		QVERIFY2(run(QStringLiteral("mts.load_scale"),
+			QJsonObject{{QStringLiteral("path"), good}}).ok, "the JI fixture did not load");
+		const QJsonObject before = snapshotState(run(QStringLiteral("mts.get_state")).result);
+
+		// Declares five degrees, carries one interval: it would otherwise build a
+		// one-degree scale out of the file's own 5-degree name.
+		const QStringList truncated{QStringLiteral("a five degree scale, truncated"),
+			QStringLiteral("5"), QStringLiteral("9/8")};
+		const QString path = writeScl(dir, QStringLiteral("truncated.scl"), truncated);
+		QVERIFY2(!path.isEmpty(), "the fixture .scl could not be written");
+		const ControlResult loaded = run(QStringLiteral("mts.load_scale"),
+			QJsonObject{{QStringLiteral("path"), path}});
+		QVERIFY2(!loaded.ok, "a .scl with fewer interval lines than its declared degree "
+			"count was accepted: it built a scale the file never described");
+		QCOMPARE(loaded.errorKind, ControlErrorKind::Refused);
+
+		int mismatch = 0;
+		const QJsonObject after = snapshotState(run(QStringLiteral("mts.get_state")).result);
+		QVERIFY2(sameTable(before, after, &mismatch),
+			qPrintable(QStringLiteral("the refused scale still changed the table at key %1")
+				.arg(mismatch)));
 	}
 
 	//! The recorded undo step restores the Scale/Keymap the table was BUILT from,
