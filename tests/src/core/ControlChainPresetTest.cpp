@@ -51,6 +51,7 @@
 #include "ControlReversibility.h"
 #include "ConfigManager.h"
 #include "Engine.h"
+#include "ProjectJournal.h"
 #include "ReversibilityTestSupport.h"
 
 using namespace lmms;
@@ -357,6 +358,121 @@ private slots:
 		QVERIFY2(error.errorMessage.contains(QStringLiteral("no_such_label (no-such-file)")),
 			qPrintable(error.errorMessage));
 	}
+
+	void aPresetRefusesADamagedDeviceCount_data()
+	{
+		QTest::addColumn<QString>("count");
+		for (const QString& count : {QStringLiteral("2"), QStringLiteral("0"),
+			QStringLiteral("-1"), QStringLiteral("invalid"), QString()})
+		{
+			QTest::newRow(qPrintable(count.isEmpty() ? QStringLiteral("missing") : count)) << count;
+		}
+	}
+
+	void aPresetRefusesADamagedDeviceCount()
+	{
+		QFETCH(QString, count);
+		QDomDocument doc;
+		QVERIFY(doc.setContent(controlChainPresetDocument(QStringLiteral("count-test"),
+			{deviceOf(deviceDocument(QStringLiteral("amplifier"), {}, {}, 7))})));
+		if (count.isEmpty()) { doc.documentElement().removeAttribute(QStringLiteral("devices")); }
+		else { doc.documentElement().setAttribute(QStringLiteral("devices"), count); }
+		const QString path = controlChainPresetDir() + QStringLiteral("count-test.zcp");
+		QVERIFY(QDir().mkpath(controlChainPresetDir()));
+		ControlResult error;
+		QVERIFY(controlWriteFileBytes(path, doc.toByteArray(), true, &error));
+		ControlChainPreset preset;
+		const bool read = controlReadChainPreset(path, &preset, &error);
+		QVERIFY(QFile::remove(path));
+		QVERIFY(!read);
+		QCOMPARE(error.errorKind, ControlErrorKind::InvalidArgs);
+	}
+
+	void aFailedApplyKeepsTheOriginalDevicesAndHistory()
+	{
+		const QString target = addInstrumentTrack();
+		if (target.isEmpty()) { QSKIP("this build exposes no loadable built-in instrument"); }
+		QStringList ids;
+		QCOMPARE(loadEffects(target, 1, &ids), 1);
+		const QJsonArray before = deviceChain(target);
+		const QString name = QStringLiteral("failed-apply");
+		const QString path = controlChainPresetDir() + name + QStringLiteral(".zcp");
+		const QByteArray valid = deviceDocument(livePlugins(target).first(), {}, {}, 7);
+		QDomDocument invalid;
+		QVERIFY(invalid.setContent(valid));
+		invalid.documentElement().removeChild(invalid.documentElement().firstChildElement());
+		ControlResult error;
+		QVERIFY(QDir().mkpath(controlChainPresetDir()));
+		QVERIFY(controlWriteFileBytes(path, controlChainPresetDocument(name,
+			{deviceOf(valid), deviceOf(invalid.toByteArray())}), true, &error));
+		const quint64 serial = Engine::projectJournal()->topStepSerial();
+		const ControlResult applied = run(QStringLiteral("chain.apply"),
+			{{QStringLiteral("target"), target}, {QStringLiteral("name"), name}});
+		QVERIFY(QFile::remove(path));
+		QVERIFY(!applied.ok);
+		QCOMPARE(applied.errorKind, ControlErrorKind::InvalidArgs);
+		const bool chainUnchanged = deviceChain(target) == before;
+		const bool historyUnchanged = Engine::projectJournal()->topStepSerial() == serial
+			&& !applied.result.contains(QStringLiteral("__transaction"));
+		QVERIFY2(chainUnchanged && historyUnchanged,
+			qPrintable(QStringLiteral("failed apply left chain unchanged=%1 and history unchanged=%2")
+				.arg(chainUnchanged).arg(historyUnchanged)));
+	}
+
+
+	void anUnreadablePresetCannotBeOverwritten_data()
+	{
+		QTest::addColumn<bool>("chain");
+		QTest::newRow("chain") << true;
+		QTest::newRow("export") << false;
+	}
+
+	void anUnreadablePresetCannotBeOverwritten()
+	{
+		QFETCH(bool, chain);
+		const QString name = QStringLiteral("unreadable-preset");
+		QJsonObject args{{QStringLiteral("name"), name}, {QStringLiteral("overwrite"), true}};
+		if (chain)
+		{
+			const QString target = addInstrumentTrack();
+			if (target.isEmpty()) { QSKIP("this build exposes no loadable built-in instrument"); }
+			QStringList ids;
+			QCOMPARE(loadEffects(target, 1, &ids), 1);
+			args.insert(QStringLiteral("target"), target);
+		}
+		else
+		{
+			args.insert(QStringLiteral("sample_rate"), 48000);
+			args.insert(QStringLiteral("bit_depth"), QStringLiteral("24"));
+			args.insert(QStringLiteral("stereo_mode"), QStringLiteral("stereo"));
+		}
+		const QString command = chain ? QStringLiteral("chain.save") : QStringLiteral("export.preset_add");
+		const ControlResult created = run(command, args);
+		QVERIFY2(created.ok, qPrintable(created.errorMessage));
+		const QString path = created.result.value(QStringLiteral("path")).toString();
+		const QByteArray bytes = readBytes(path);
+		QVERIFY(!bytes.isEmpty());
+		const QFile::Permissions permissions = QFile::permissions(path);
+		QVERIFY(QFile::setPermissions(path, QFile::WriteOwner));
+		QFile probe(path);
+		if (probe.open(QIODevice::ReadOnly))
+		{
+			probe.close();
+			QVERIFY(QFile::setPermissions(path, permissions));
+			QSKIP("this runner can read write-only files; unreadable-file failure is unobservable");
+		}
+		const quint64 serial = Engine::projectJournal()->topStepSerial();
+		const ControlResult overwritten = run(command, args);
+		QVERIFY(QFile::setPermissions(path, permissions));
+		const bool refused = !overwritten.ok && overwritten.errorKind == ControlErrorKind::Refused;
+		const bool fileUnchanged = readBytes(path) == bytes;
+		const bool historyUnchanged = Engine::projectJournal()->topStepSerial() == serial;
+		QVERIFY2(refused && fileUnchanged && historyUnchanged,
+			qPrintable(QStringLiteral("overwrite refused=%1, file unchanged=%2, history unchanged=%3")
+				.arg(refused).arg(fileUnchanged).arg(historyUnchanged)));
+		QVERIFY(QFile::remove(path));
+	}
+
 
 	/*! THE MEASURED EFFECT. A chain captured from one track, applied to a second,
 	 *  must give that second track the same ordered device list and the same

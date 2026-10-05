@@ -1,0 +1,80 @@
+Test project /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-fix-presets/build/tests
+    Start  25: ControlChainPresetTest
+1/2 Test  #25: ControlChainPresetTest ...........***Failed    1.31 sec
+********* Start testing of ControlChainPresetTest *********
+Config: Using QtTest library 6.4.2, Qt 6.4.2 (x86_64-little_endian-lp64 shared (dynamic) release build; by GCC 13.2.0), ubuntu 24.04
+QDEBUG : ControlChainPresetTest::initTestCase() Lv2 plugin SUMMARY: 73 of 87  loaded in 113 msecs.
+QDEBUG : ControlChainPresetTest::initTestCase() For details about not loaded plugins, please set
+  environment variable "LMMS_LV2_DEBUG" to nonempty.
+QDEBUG : ControlChainPresetTest::initTestCase() Blocked Lv2 Plugins: 10 of 87 
+  If you want to enable them (dangerous!), please set
+  environment variable "LMMS_ENABLE_BLOCKED_PLUGINS" to nonempty.
+PASS   : ControlChainPresetTest::initTestCase()
+PASS   : ControlChainPresetTest::requiredCommandsAreRegistered()
+PASS   : ControlChainPresetTest::contractRowsClassifyTheGroup()
+PASS   : ControlChainPresetTest::theNameRuleRefusesANameThatWouldEscapeTheStore()
+PASS   : ControlChainPresetTest::theStoreIsTheUserPresetTreeAndNotTheProject()
+PASS   : ControlChainPresetTest::aPresetKeepsEveryDeviceInOrderWithItsOwnIdentity()
+QINFO  : ControlChainPresetTest::aStateDocumentThatIsNotZenePluginStateIsRefused() plugin-scan: 4 file(s), 0 quarantined, 0 served from cache, 0 known-bad skipped, 4 scanned, 4 plugin(s)
+PASS   : ControlChainPresetTest::aStateDocumentThatIsNotZenePluginStateIsRefused()
+FAIL!  : ControlChainPresetTest::aPresetRefusesADamagedDeviceCount(2) '!read' returned FALSE. ()
+   Loc: [/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-fix-presets/tests/src/core/ControlChainPresetTest.cpp(387)]
+FAIL!  : ControlChainPresetTest::aPresetRefusesADamagedDeviceCount(0) '!read' returned FALSE. ()
+   Loc: [/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-fix-presets/tests/src/core/ControlChainPresetTest.cpp(387)]
+FAIL!  : ControlChainPresetTest::aPresetRefusesADamagedDeviceCount(-1) '!read' returned FALSE. ()
+   Loc: [/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-fix-presets/tests/src/core/ControlChainPresetTest.cpp(387)]
+FAIL!  : ControlChainPresetTest::aPresetRefusesADamagedDeviceCount(invalid) '!read' returned FALSE. ()
+   Loc: [/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-fix-presets/tests/src/core/ControlChainPresetTest.cpp(387)]
+FAIL!  : ControlChainPresetTest::aPresetRefusesADamagedDeviceCount(missing) '!read' returned FALSE. ()
+   Loc: [/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-fix-presets/tests/src/core/ControlChainPresetTest.cpp(387)]
+FAIL!  : ControlChainPresetTest::aFailedApplyKeepsTheOriginalDevicesAndHistory() Compared values are not the same
+   Actual   (deviceChain(target)): QJsonArray([{"display_name":"Amplifier","enabled":true,"id":"fx-5","index":0,"latency_frames":0,"parameters":[{"index":0,"max":1,"min":0,"name":"Effect enabled","step":1,"type":"boolean","value":1},{"index":1,"max":1,"min":-1,"name":"Wet/Dry mix","step":0.009999999776482582,"type":"number","value":1},{"index":2,"max":8000,"min":1,"name":"Decay","step":100,"type":"number","value":1},{"index":3,"max":32,"min":1,"name":"Numerator","step":1,"type":"number","value":4},{"index":4,"max":32,"min":1,"name":"Denominator","step":1,"type":"number","value":4},{"index":5,"max":200,"min":0,"name":"Volume","step":0.10000000149011612,"type":"number","value":100},{"index":6,"max":100,"min":-100,"name":"Panning","step":0.10000000149011612,"type":"number","value":0},{"index":7,"max":200,"min":0,"name":"Left gain","step":0.10000000149011612,"type":"number","value":100},{"index":8,"max":200,"min":0,"name":"Right gain","step":0.10000000149011612,"type":"number","v
+   Loc: [/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-fix-presets/tests/src/core/ControlChainPresetTest.cpp(414)]
+FAIL!  : ControlChainPresetTest::anUnreadablePresetCannotBeOverwritten(chain) '!overwritten.ok' returned FALSE. ()
+   Loc: [/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-fix-presets/tests/src/core/ControlChainPresetTest.cpp(463)]
+FAIL!  : ControlChainPresetTest::anUnreadablePresetCannotBeOverwritten(export) '!overwritten.ok' returned FALSE. ()
+   Loc: [/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-fix-presets/tests/src/core/ControlChainPresetTest.cpp(463)]
+JO-ID 8418017 already in use by AmplifierControls!
+JO-ID 8397251 already in use by effect!
+JO-ID 8397893 already in use by waveshapercontrols!
+JO-ID 8396680 already in use by effect!
+PASS   : ControlChainPresetTest::aCapturedChainAppliesToASecondTrackWithTheSameDevicesAndValues()
+PASS   : ControlChainPresetTest::theStoreEditsAreReversible()
+PASS   : ControlChainPresetTest::cleanupTestCase()
+Totals: 10 passed, 8 failed, 0 skipped, 0 blacklisted, 1246ms
+********* Finished testing of ControlChainPresetTest *********
+
+    Start 270: RenderPresetMenuTest
+2/2 Test #270: RenderPresetMenuTest .............***Failed    1.29 sec
+********* Start testing of RenderPresetMenuTest *********
+Config: Using QtTest library 6.4.2, Qt 6.4.2 (x86_64-little_endian-lp64 shared (dynamic) release build; by GCC 13.2.0), ubuntu 24.04
+QDEBUG : RenderPresetMenuTest::initTestCase() Lv2 plugin SUMMARY: 73 of 87  loaded in 112 msecs.
+QDEBUG : RenderPresetMenuTest::initTestCase() For details about not loaded plugins, please set
+  environment variable "LMMS_LV2_DEBUG" to nonempty.
+QDEBUG : RenderPresetMenuTest::initTestCase() Blocked Lv2 Plugins: 10 of 87 
+  If you want to enable them (dangerous!), please set
+  environment variable "LMMS_ENABLE_BLOCKED_PLUGINS" to nonempty.
+PASS   : RenderPresetMenuTest::initTestCase()
+PASS   : RenderPresetMenuTest::aPresetIsSavedAppliedAndDeletedFromTheMenu()
+FAIL!  : RenderPresetMenuTest::aCorruptRenderPresetIsNotDeleted() Compared values are not the same
+   Actual   (readBytes(path)): ""
+   Expected (bytes)          : "{malformed preset}"
+   Loc: [/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-fix-presets/tests/src/gui/RenderPresetMenuTest.cpp(165)]
+FAIL!  : RenderPresetMenuTest::aFailedRenderPresetDeleteLeavesNoHistory() Compared values are not the same
+   Actual   (Engine::projectJournal()->topStepSerial()): 7
+   Expected (serial)                                   : 6
+   Loc: [/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-fix-presets/tests/src/gui/RenderPresetMenuTest.cpp(199)]
+PASS   : RenderPresetMenuTest::cleanupTestCase()
+Totals: 3 passed, 2 failed, 0 skipped, 0 blacklisted, 1205ms
+********* Finished testing of RenderPresetMenuTest *********
+
+
+0% tests passed, 2 tests failed out of 2
+
+Total Test time (real) =   2.62 sec
+
+The following tests FAILED:
+	 25 - ControlChainPresetTest (Failed)
+	270 - RenderPresetMenuTest (Failed)
+Errors while running CTest
+EXIT=8

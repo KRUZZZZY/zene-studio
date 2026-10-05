@@ -45,6 +45,8 @@
 #include "ControlVocabulary.h"
 #include "Effect.h"
 #include "EffectChain.h"
+#include "Engine.h"
+#include "ProjectJournal.h"
 
 namespace lmms
 {
@@ -70,6 +72,63 @@ QString deviceStateRootName()
 {
 	return QStringLiteral("zenepluginstate");
 }
+
+/*! The device count \a root declares, against the devices it actually carries.
+ *
+ *  False and *error set (typed invalid_args) when the attribute is absent, is not
+ *  a number, is negative, or disagrees with the <device> elements present - a
+ *  truncated or hand-edited document is refused rather than read as a shorter
+ *  device list than it claims to be.
+ */
+bool checkDeclaredDeviceCount(const QDomElement& root, const QString& path, ControlResult* error)
+{
+	bool declaredOk = false;
+	const int declared = root.attribute(QStringLiteral("devices")).toInt(&declaredOk);
+	if (!root.hasAttribute(QStringLiteral("devices")) || !declaredOk || declared < 0)
+	{
+		*error = ControlResult::failure(ControlErrorKind::InvalidArgs,
+			QStringLiteral("%1 has no valid non-negative device count").arg(path));
+		return false;
+	}
+	int actual = 0;
+	for (QDomElement holder = root.firstChildElement(QStringLiteral("device"));
+		!holder.isNull(); holder = holder.nextSiblingElement(QStringLiteral("device")))
+	{
+		++actual;
+	}
+	if (declared != actual)
+	{
+		*error = ControlResult::failure(ControlErrorKind::InvalidArgs,
+			QStringLiteral("%1 declares %2 devices but contains %3")
+				.arg(path).arg(declared).arg(actual));
+		return false;
+	}
+	return true;
+}
+
+//! Keep temporary effect construction and state restoration out of the user's undo history.
+class ScopedJournalMute
+{
+public:
+	ScopedJournalMute() :
+		m_journal(Engine::projectJournal()),
+		m_wasJournalling(m_journal != nullptr && m_journal->isJournalling())
+	{
+		if (m_journal != nullptr) { m_journal->setJournalling(false); }
+	}
+
+	~ScopedJournalMute()
+	{
+		if (m_journal != nullptr) { m_journal->setJournalling(m_wasJournalling); }
+	}
+
+	ScopedJournalMute(const ScopedJournalMute&) = delete;
+	ScopedJournalMute& operator=(const ScopedJournalMute&) = delete;
+
+private:
+	ProjectJournal* m_journal;
+	bool m_wasJournalling;
+};
 
 /*! The document's own device identity, as the attribute values the state
  *  document carries.
@@ -222,6 +281,7 @@ bool controlReadChainPreset(const QString& path, ControlChainPreset* out, Contro
 				.arg(path, root.tagName()));
 		return false;
 	}
+	if (!checkDeclaredDeviceCount(root, path, error)) { return false; }
 
 	ControlChainPreset preset;
 	preset.path = path;
@@ -359,23 +419,26 @@ ControlResult controlApplyChainPreset(EffectChain* chain, const ControlChainPres
 		catalogueIndexes.append(index);
 	}
 
-	// Drop what the chain carries, the way plugin.unload drops one device.
-	while (!chain->effects().empty())
-	{
-		Effect* existing = chain->effects().back();
-		chain->removeEffect(existing);
-		existing->deleteLater();
-	}
-
+	// Stage and restore every replacement before touching the live chain. If a
+	// later device cannot be created or restored, the scratch chain owns and
+	// destroys only its partial result; the caller's effects remain intact.
+	ScopedJournalMute muteJournal;
+	EffectChain stagedChain(nullptr);
 	QJsonArray devices;
 	for (int i = 0; i < entries.size(); ++i)
 	{
-		Effect* effect = controlInstantiateDevice(entries.at(i), chain, &error);
+		Effect* effect = controlInstantiateDevice(entries.at(i), &stagedChain, &error);
 		if (effect == nullptr)
 		{
 			return ControlResult::failure(error.errorKind,
 				QStringLiteral("device %1 of preset '%2' (%3) could not be instantiated: %4")
 					.arg(i).arg(preset.name, entries.at(i).name, error.errorMessage));
+		}
+		if (!effect->isOkay())
+		{
+			return ControlResult::failure(ControlErrorKind::Refused,
+				QStringLiteral("device %1 of preset '%2' (%3) could not be instantiated")
+					.arg(i).arg(preset.name, entries.at(i).name));
 		}
 		// The device state goes back through plugin.state_load's own path, which
 		// refuses a document written for a different device.
@@ -389,6 +452,24 @@ ControlResult controlApplyChainPreset(EffectChain* chain, const ControlChainPres
 				QStringLiteral("device %1 of preset '%2': %3")
 					.arg(i).arg(preset.name, restored.errorMessage));
 		}
+	}
+
+	// Drop what the chain carries, the way plugin.unload drops one device, only
+	// after the complete replacement is ready.
+	while (!chain->effects().empty())
+	{
+		Effect* existing = chain->effects().back();
+		chain->removeEffect(existing);
+		existing->deleteLater();
+	}
+
+	const std::vector<Effect*> stagedEffects = stagedChain.effects();
+	for (int i = 0; i < static_cast<int>(stagedEffects.size()); ++i)
+	{
+		Effect* effect = stagedEffects.at(static_cast<std::size_t>(i));
+		stagedChain.removeEffect(effect);
+		effect->setParent(chain);
+		chain->appendEffect(effect);
 
 		QJsonObject entry = controlChainPresetDeviceJson(preset.devices.at(i), i);
 		// The id of the instance just instantiated, which is the one this entry

@@ -143,7 +143,7 @@ bool writePresetDocument(const QString& path, const QByteArray& bytes, bool over
 		return false;
 	}
 	QByteArray previous;
-	if (*existed) { controlReadFileBytes(path, &previous, error); }
+	if (*existed && !controlReadFileBytes(path, &previous, error)) { return false; }
 	*snapshot = controlFileSnapshot(path);
 
 	if (!QDir().mkpath(controlExportPresetDir()))
@@ -441,27 +441,26 @@ void registerExportPresetRemove(ControlRegistry& registry)
 
 		QByteArray bytes;
 		if (!controlReadFileBytes(path, &bytes, &error)) { return error; }
+		ControlExportPreset preset;
+		if (!controlExportPresetFromBytes(bytes, path, &preset, &error)) { return error; }
 		const QJsonObject snapshot = controlFileSnapshot(path);
 		const int bytesRemoved = bytes.size();
 		const QString sha = controlSha256OfBytes(bytes);
 
-		// Recorded BEFORE the removal: a failure to delete then leaves the undo
-		// step pointing at a document that is still there, which is recoverable,
-		// while a delete without a captured inverse is not.
-		addUndoStep(
-			[path, bytes]() {
-				ControlResult ignored;
-				controlWriteFileBytes(path, bytes, true, &ignored);
-			},
-			[path]() { QFile::remove(path); });
 		if (!QFile::remove(path))
 		{
 			return ControlResult::failure(ControlErrorKind::Refused,
 				QStringLiteral("%1 could not be removed").arg(path));
 		}
 
-		ControlExportPreset preset;
-		if (!controlExportPresetFromBytes(bytes, path, &preset, &error)) { return error; }
+		// Parsing succeeded and the file is gone; now record exactly the inverse
+		// of the successful removal. A failed parse or unlink leaves no history.
+		addUndoStep(
+			[path, bytes]() {
+				ControlResult ignored;
+				controlWriteFileBytes(path, bytes, true, &ignored);
+			},
+			[path]() { QFile::remove(path); });
 
 		QJsonObject result = controlExportPresetJson(preset, false);
 		result.insert(QStringLiteral("bytes"), bytesRemoved);
