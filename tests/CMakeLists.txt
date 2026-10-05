@@ -752,6 +752,8 @@ set(LMMS_TESTS
 	# The shell window's own startup: a floating editor hides its whole frame, and an unattended
 	# first run does not record the skipped setup as done.
 	src/gui/MainWindowTest.cpp
+	# The custom theme's hot reload survives the stylesheet being deleted and recreated.
+	src/gui/LmmsStyleTest.cpp
 	# UI precondition #1 (040/ui-precond): include/WcagContrast.h at the AA
 	# boundary, and include/Accessibility.h on the shell surface the owner
 	# manual-tests - the helper, then the footer switches, the chrome bands and

@@ -158,27 +158,21 @@ LmmsStyle::LmmsStyle() :
 	file.open( QIODevice::ReadOnly );
 	qApp->setStyleSheet( QString::fromUtf8( file.readAll() ) );
 
-	m_styleReloader.addPath(QFileInfo{file}.absoluteFilePath());
+	m_customCssPath = QFileInfo{file}.absoluteFilePath();
+	m_styleReloader.addPath(m_customCssPath);
+	// A file watch dies with the file it watches: Qt drops the path as soon as the file is
+	// deleted, and nothing ever put it back, so a stylesheet the user deleted and recreated
+	// stopped being hot-reloaded for the rest of the session. Watching the containing directory
+	// is what lets the file come back under the watch.
+	m_styleReloader.addPath(QFileInfo{m_customCssPath}.absolutePath());
 	connect(&m_styleReloader, &QFileSystemWatcher::fileChanged, this,
 		[this](const QString& path)
 		{
-			if (auto file = QFile{path}; file.exists())
-			{
-				file.open(QIODevice::ReadOnly);
-				qApp->setStyleSheet(QString::fromUtf8(file.readAll()));
-				TextFloat::displayMessage(
-					tr("Theme updated"),
-					tr("Zene Studio theme file %1 has been reloaded.").arg(file.fileName()),
-					embed::getIconPixmap("colorize"),
-					3000
-				);
-				// Handle delete + overwrite events
-				if (!m_styleReloader.files().contains(path))
-				{
-					m_styleReloader.addPath(path);
-				}
-			}
+			if (path == m_customCssPath) { reloadCustomStyle(); }
 		}
+	);
+	connect(&m_styleReloader, &QFileSystemWatcher::directoryChanged, this,
+		[this](const QString&) { reloadCustomStyle(); }
 	);
 
 	if( s_palette != nullptr ) { qApp->setPalette( *s_palette ); }
@@ -186,6 +180,32 @@ LmmsStyle::LmmsStyle() :
 	setBaseStyle( QStyleFactory::create( "Fusion" ) );
 }
 
+
+
+
+/*! Re-reads the custom stylesheet, and puts the file back under the watch if it has gone missing:
+ *  Qt drops a deleted file's watch, so without this the reload only ever works until the first
+ *  delete. Called for both fileChanged and directoryChanged, so the theme follows the file
+ *  whether it is edited, deleted, or recreated. */
+void LmmsStyle::reloadCustomStyle()
+{
+	auto file = QFile{m_customCssPath};
+	if (file.exists())
+	{
+		file.open(QIODevice::ReadOnly);
+		qApp->setStyleSheet(QString::fromUtf8(file.readAll()));
+		TextFloat::displayMessage(
+			tr("Theme updated"),
+			tr("Zene Studio theme file %1 has been reloaded.").arg(file.fileName()),
+			embed::getIconPixmap("colorize"),
+			3000
+		);
+	}
+	if (!m_styleReloader.files().contains(m_customCssPath))
+	{
+		m_styleReloader.addPath(m_customCssPath);
+	}
+}
 
 
 
