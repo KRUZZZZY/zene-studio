@@ -303,6 +303,51 @@ private slots:
 		}
 	}
 
+/*! Luna clusters 5748 / 4833: project.conflicts and project.audible_diff
+	 *  special-cased exit 2 and let every OTHER exit code through. The tool
+	 *  documents 0/1 (success, or "there are conflicts / the renders differ")
+	 *  and 2 (an error it could report); anything else is a tool that died, and
+	 *  answering `success` there told a caller a file was CLEAN (conflict_count
+	 *  0) or that two renders MATCHED (differ:false) when nobody ever compared
+	 *  them - the most dangerous possible answer from a merge-conflict reporter.
+	 *
+	 *  A fake tool makes the failure deterministic: MMPZ_GIT_TOOL wins over the
+	 *  discovered script (ControlCommandsProjectMmpzGit.cpp findMmpzGitTool), so
+	 *  this writes a script that exits 3 and points the commands at it.
+	 */
+	void mmpzToolExitsWithAnUndocumentedCode()
+	{
+		const QString tool = m_dir.filePath(QStringLiteral("fake-mmpz-git.py"));
+		{
+			QFile file(tool);
+			QVERIFY(file.open(QIODevice::WriteOnly | QIODevice::Truncate));
+			QVERIFY(file.write("import sys\n"
+				"sys.stderr.write('fake tool died unexpectedly\\n')\n"
+				"sys.exit(3)\n") > 0);
+		}
+		const QString project = m_dir.filePath(QStringLiteral("mmpz-probe.mmp"));
+		REQUIRE_OK(run(QStringLiteral("project.save"), {{QStringLiteral("path"), project}}),
+			"project.save");
+
+		const QByteArray saved = qgetenv("MMPZ_GIT_TOOL");
+		const bool hadTool = qEnvironmentVariableIsSet("MMPZ_GIT_TOOL");
+		qputenv("MMPZ_GIT_TOOL", tool.toUtf8());
+
+		// The defect, in both handlers: an exit nobody documented is reported
+		// as a clean read of the file.
+		const ControlResult conflicts = run(QStringLiteral("project.conflicts"),
+			{{QStringLiteral("file"), project}});
+		QVERIFY2(!conflicts.ok && !conflicts.errorMessage.isEmpty(),
+			"project.conflicts reported success for an undocumented tool exit");
+		const ControlResult audible = run(QStringLiteral("project.audible_diff"),
+			{{QStringLiteral("a"), project}, {QStringLiteral("b"), project}});
+		QVERIFY2(!audible.ok && !audible.errorMessage.isEmpty(),
+			"project.audible_diff reported success for an undocumented tool exit");
+
+		if (hadTool) { qputenv("MMPZ_GIT_TOOL", saved); }
+		else { qunsetenv("MMPZ_GIT_TOOL"); }
+	}
+
 private:
 	QTemporaryDir m_dir;
 };
