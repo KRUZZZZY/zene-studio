@@ -583,18 +583,28 @@ bool writeDawProject(const QString& path, const DawProjectModel& model,
 
 	if (!dawProjectZipWrite(path, entries, error)) { return false; }
 
+	// The report's file identity is the FILE: `bytes` and `sha256` are
+	// documented as describing the written .dawproject, so both are taken from
+	// the bytes on disk - the ZIP, not the project.xml entry inside it.
 	QFile written(path);
-	qint64 bytes = 0;
-	if (written.open(QIODevice::ReadOnly))
+	QByteArray container;
+	if (!written.open(QIODevice::ReadOnly))
 	{
-		bytes = written.size();
-		written.close();
+		if (error)
+		{
+			*error = QStringLiteral("the container was written but cannot be read back: %1")
+				.arg(written.errorString());
+		}
+		return false;
 	}
+	container = written.readAll();
+	written.close();
+	const qint64 bytes = container.size();
 	if (report != nullptr)
 	{
 		report->path = path;
 		report->bytes = bytes;
-		report->sha256 = dawProjectSha256(projectXml);
+		report->sha256 = dawProjectSha256(container);
 		report->trackCount = model.trackCount();
 		report->mixerChannelCount = model.mixerChannelCount();
 		report->clipCount = model.clipCount();

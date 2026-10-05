@@ -1331,6 +1331,40 @@ void anEmptyApplicationNameIsRefusedByTheWriter()
 	QVERIFY2(dawProjectXmlFromModel(authoredModel(), &xml, &error), qPrintable(error));
 }
 
+//! Luna cluster 5071: the write report's documented file identity. `bytes` and
+//! `sha256` are documented as describing the FILE, but `sha256` hashed only the
+//! project.xml entry inside the ZIP, so a caller that hashed the written
+//! .dawproject and compared got two different values for the same file.
+void theWriteReportHashesTheFileItWrote()
+{
+	const QString file = path(m_directory, QStringLiteral("report-identity.dawproject"));
+	DawProjectWriteReport report;
+	QString error;
+	QVERIFY2(writeDawProject(file, authoredModel(), &report, &error), qPrintable(error));
+
+	QFile written(file);
+	QVERIFY(written.open(QIODevice::ReadOnly));
+	const QByteArray container = written.readAll();
+	written.close();
+
+	QCOMPARE(report.bytes, static_cast<qint64>(container.size()));
+	QCOMPARE(report.sha256, dawProjectSha256(container));
+
+	// And it is NOT the hash of the project.xml entry alone, which is what it
+	// used to report: the entry is only part of a bigger container.
+	std::vector<DawProjectEntry> entries;
+	QVERIFY2(dawProjectZipRead(file, &entries, &error), qPrintable(error));
+	QCOMPARE(entries.size(), static_cast<std::size_t>(2));
+	for (const DawProjectEntry& entry : entries)
+	{
+		if (entry.first == QString::fromLatin1(DawProjectProjectEntry))
+		{
+			QVERIFY2(report.sha256 != dawProjectSha256(entry.second),
+				"the report still hashes only the project.xml entry rather than the file");
+		}
+	}
+}
+
 private:
 	QTemporaryDir m_directory;
 };
