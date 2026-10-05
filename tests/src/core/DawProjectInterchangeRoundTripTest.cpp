@@ -48,6 +48,7 @@
 
 #include <limits>
 
+#include <QByteArray>
 #include <QDir>
 #include <QJsonArray>
 #include <QJsonObject>
@@ -667,6 +668,151 @@ private slots:
 		const ControlResult relative = run(QStringLiteral("dawproject.export"),
 			{{QStringLiteral("path"), QStringLiteral("relative.dawproject")}});
 		QVERIFY(!relative.ok);
+	}
+
+//! Luna cluster 5072 / 4136: the digest must separate two models that
+	//! operator== separates. Mixer `audioChannels` and clip `color` are both
+	//! equality-relevant (DawProjectInterchange.h:209,236) and both are written
+	//! and read back, so two models differing only in either are DIFFERENT models
+	//! whose digests used to collide.
+	void theDigestSeparatesEveryEqualityRelevantField()
+	{
+		const DawProjectModel authored = authoredModel();
+		const QString base = dawProjectModelDigest(authored);
+		QVERIFY(!base.isEmpty());
+
+		DawProjectModel recolored = authored;
+		recolored.tracks[0].clips[0].color = QStringLiteral("#ff8800");
+		QVERIFY2(recolored.tracks[0].clips[0] != authored.tracks[0].clips[0],
+			"the fixture's recolored clip must actually differ under clip equality");
+		QVERIFY2(dawProjectModelDigest(recolored) != base,
+			"the digest ignored clip color, which clip equality compares");
+
+		DawProjectModel widened = authored;
+		widened.mixerChannels[0].audioChannels = 8;
+		QVERIFY2(widened.mixerChannels[0] != authored.mixerChannels[0],
+			"the fixture's widened strip must actually differ under channel equality");
+		QVERIFY2(dawProjectModelDigest(widened) != base,
+			"the digest ignored mixer audioChannels, which mixer equality compares");
+	}
+
+	//! Luna cluster 5070: the JSON model view is what `dawproject.read` returns
+	//! as `model`, and its description promises "every track with its clips and
+	//! notes". The clip object must therefore carry the color and the notes
+	//! themselves, not only a count of them.
+	void theJsonModelViewCarriesNotesAndClipColors()
+	{
+		const QJsonObject root = dawProjectModelJson(authoredModel());
+		const QJsonArray tracks = root.value(QStringLiteral("tracks")).toArray();
+		QCOMPARE(tracks.size(), 2);
+
+		const QJsonObject firstTrack = tracks.at(0).toObject();
+		const QJsonArray clips = firstTrack.value(QStringLiteral("clips")).toArray();
+		QCOMPARE(clips.size(), 1);
+		const QJsonObject clip = clips.at(0).toObject();
+		QCOMPARE(clip.value(QStringLiteral("name")).toString(), QStringLiteral("Intro"));
+		QVERIFY2(clip.contains(QStringLiteral("color")),
+			"the clip JSON dropped clip.color, so a client cannot read it back");
+		QCOMPARE(clip.value(QStringLiteral("note_count")).toInt(), 2);
+
+		QVERIFY2(clip.contains(QStringLiteral("notes")),
+			"the clip JSON dropped the notes themselves, only keeping their count");
+		const QJsonArray notes = clip.value(QStringLiteral("notes")).toArray();
+		QCOMPARE(notes.size(), 2);
+
+		const QJsonObject first = notes.at(0).toObject();
+		QCOMPARE(first.value(QStringLiteral("key")).toInt(), 60);
+		QCOMPARE(first.value(QStringLiteral("channel")).toInt(), 0);
+		QCOMPARE(first.value(QStringLiteral("time")).toDouble(), 0.0);
+		QCOMPARE(first.value(QStringLiteral("duration")).toDouble(), 0.25);
+		QCOMPARE(first.value(QStringLiteral("vel")).toDouble(), 0.75);
+		QCOMPARE(first.value(QStringLiteral("rel")).toDouble(), 0.75);
+		const QJsonObject second = notes.at(1).toObject();
+		QCOMPARE(second.value(QStringLiteral("key")).toInt(), 64);
+		QCOMPARE(second.value(QStringLiteral("time")).toDouble(), 0.5);
+	}
+
+	//! Luna cluster 4125: a track whose contentType names ONLY content this
+	//! module cannot represent ("markers") must be reported as lost rather than
+	//! arriving as an empty instrument track with a clean loss report.
+	void markerOnlyTracksReportTheirContentAsLost()
+	{
+		const QByteArray xml =
+			"<Project version=\"1.0\">"
+			"<Application name=\"Probe\" version=\"1\"/>"
+			"<Transport><Tempo value=\"120\"/></Transport>"
+			"<Structure>"
+			"<Track id=\"t1\" name=\"Markers\" contentType=\"markers\">"
+			"<Channel id=\"c1\"/></Track>"
+			"</Structure>"
+			"<Arrangement><Lanes><Lanes track=\"t1\"><markers/></Lanes></Lanes></Arrangement>"
+			"</Project>";
+
+		DawProjectModel model;
+		DawProjectReadReport report;
+		QString error;
+		QVERIFY2(dawProjectModelFromXml(xml, &model, &report, &error), qPrintable(error));
+		QCOMPARE(model.tracks.size(), 1);
+		QVERIFY2(model.tracks[0].lostContentType,
+			"a markers-only track was read as supported with a clean loss report");
+		QVERIFY2(report.loss.unmappedTrackTypes >= 1,
+			"the skipped marker content was not counted in the loss report");
+
+		// The negative half: a track that declares nothing at all, or only
+		// content this module DOES carry, is still lossless. The writer emits an
+		// empty contentType for an event/video track (LOSSY #5), so marking that
+		// as lost would misreport every such export.
+		bool lostForEmpty = false;
+		QCOMPARE(dawProjectTypeForContentType(QString(), &lostForEmpty),
+			QStringLiteral("instrument"));
+		QVERIFY(!lostForEmpty);
+
+		bool lostForNotes = false;
+		QCOMPARE(dawProjectTypeForContentType(QStringLiteral("notes"), &lostForNotes),
+			QStringLiteral("instrument"));
+		QVERIFY(!lostForNotes);
+
+		bool lostForAudio = false;
+		QCOMPARE(dawProjectTypeForContentType(QStringLiteral("audio"), &lostForAudio),
+			QStringLiteral("sample"));
+		QVERIFY(!lostForAudio);
+	}
+
+	//! Luna cluster 4124: a track declaring BOTH audio and notes carries a
+	//! <Notes> clip. Selecting `sample` for it creates a sample track, where the
+	//! MIDI clip cannot exist and the notes are silently dropped on import. The
+	//! notes must survive; the audio is already counted as LOSSY #1.
+	void mixedNotesAndAudioTracksKeepTheirNotes()
+	{
+		const QByteArray xml =
+			"<Project version=\"1.0\">"
+			"<Application name=\"Probe\" version=\"1\"/>"
+			"<Transport><Tempo value=\"120\"/></Transport>"
+			"<Structure>"
+			"<Track id=\"t1\" name=\"Mixed\" contentType=\"notes audio\">"
+			"<Channel id=\"c1\"/></Track>"
+			"</Structure>"
+			"<Arrangement><Lanes><Lanes track=\"t1\"><Clips>"
+			"<Clip time=\"0\" duration=\"4\"><Notes>"
+			"<Note time=\"0\" duration=\"1\" channel=\"0\" key=\"60\" vel=\"0.8\"/>"
+			"<Note time=\"1\" duration=\"1\" channel=\"0\" key=\"64\" vel=\"0.6\"/>"
+			"</Notes></Clip></Clips></Lanes></Lanes></Arrangement>"
+			"</Project>";
+
+		DawProjectModel read;
+		DawProjectReadReport readReport;
+		QString error;
+		QVERIFY2(dawProjectModelFromXml(xml, &read, &readReport, &error), qPrintable(error));
+		QCOMPARE(read.tracks.size(), 1);
+		QCOMPARE(read.noteCount(), 2);
+		QVERIFY2(read.tracks[0].typeName == QStringLiteral("instrument"),
+			"a notes+audio track was typed by its audio half, which cannot hold notes");
+
+		Engine::mixer()->clear();
+		QVERIFY2(applyDawProjectModel(Engine::getSong(), read, &error), qPrintable(error));
+		const DawProjectModel extracted = dawProjectModelFromSong(Engine::getSong(), nullptr);
+		QVERIFY2(extracted.noteCount() > 0,
+			"the mixed track's notes were dropped when the model was applied");
 	}
 
 private:

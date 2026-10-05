@@ -213,6 +213,15 @@ QString value(double number, int decimals = DigestDecimals)
 	return QString::number(number, 'f', decimals);
 }
 
+//! The digest writes an ABSENT optional string as "-", so a field the document
+//! did not carry is distinguishable from one it carried empty. Extracted
+//! because the track and clip lines below both need it and inlining the ternary
+//! twice pushed this module's digest over its recorded complexity.
+QString orDash(const QString& text)
+{
+	return text.isEmpty() ? QStringLiteral("-") : text;
+}
+
 } // namespace
 
 QString dawProjectModelDigest(const DawProjectModel& model)
@@ -225,17 +234,17 @@ QString dawProjectModelDigest(const DawProjectModel& model)
 	for (int index = 0; index < model.mixerChannels.size(); index++)
 	{
 		const DawProjectMixerChannel& channel = model.mixerChannels[index];
-		lines << QStringLiteral("mixer %1 id=%2 name=%3 role=%4 solo=%5 volume=%6 mute=%7")
-			.arg(index).arg(channel.id, channel.name, channel.role)
+		lines << QStringLiteral("mixer %1 id=%2 name=%3 role=%4 solo=%5 volume=%6 mute=%7 "
+			"audio=%8").arg(index).arg(channel.id, channel.name, channel.role)
 			.arg(channel.solo ? 1 : 0).arg(value(channel.volume))
-			.arg(channel.mute ? 1 : 0);
+			.arg(channel.mute ? 1 : 0).arg(channel.audioChannels);
 	}
 	for (int index = 0; index < model.tracks.size(); index++)
 	{
 		const DawProjectTrack& track = model.tracks[index];
 		lines << QStringLiteral("track %1 id=%2 name=%3 type=%4 content=%5 color=%6")
 			.arg(index).arg(track.id, track.name, track.typeName, track.contentType,
-				track.color.isEmpty() ? QStringLiteral("-") : track.color);
+				orDash(track.color));
 		lines << QStringLiteral("  channel id=%1 solo=%2 volume=%3 mute=%4 pan=%5 dest=%6")
 			.arg(track.channelId).arg(track.solo ? 1 : 0)
 			.arg(track.hasVolume ? value(track.volume) : QStringLiteral("absent"))
@@ -246,9 +255,10 @@ QString dawProjectModelDigest(const DawProjectModel& model)
 		for (int clipIndex = 0; clipIndex < track.clips.size(); clipIndex++)
 		{
 			const DawProjectClip& clip = track.clips[clipIndex];
-			lines << QStringLiteral("  clip %1 time=%2 duration=%3 playStart=%4 notes=%5 name=%6")
-				.arg(clipIndex).arg(value(clip.time), value(clip.duration),
-					value(clip.playStart)).arg(clip.notes.size()).arg(clip.name);
+			lines << QStringLiteral("  clip %1 time=%2 duration=%3 playStart=%4 notes=%5 "
+				"name=%6 color=%7").arg(clipIndex).arg(value(clip.time), value(clip.duration),
+					value(clip.playStart)).arg(clip.notes.size()).arg(clip.name)
+				.arg(orDash(clip.color));
 			for (int noteIndex = 0; noteIndex < clip.notes.size(); noteIndex++)
 			{
 				const DawProjectNote& note = clip.notes[noteIndex];
