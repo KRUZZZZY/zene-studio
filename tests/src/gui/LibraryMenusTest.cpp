@@ -291,6 +291,19 @@ private slots:
 		QVERIFY(actions->previewing().isEmpty());
 	}
 
+	void aResultRowForMissingMediaShowsPlaceholdersInsteadOfZeroAnd1970()
+	{
+		const QString gone = m_dir.filePath(QStringLiteral("not-here.wav"));
+		QVERIFY(!QFileInfo::exists(gone));
+		// Project Media marks a missing reference's unknown metadata with -1 rather than QFileInfo's 0 / epoch.
+		QTreeWidgetItem* row = browserresults::rowOf(
+			{{QStringLiteral("name"), QFileInfo(gone).fileName()}, {QStringLiteral("kind"), QStringLiteral("missing")},
+				{QStringLiteral("path"), gone}, {QStringLiteral("size_bytes"), qint64(-1)}, {QStringLiteral("modified_ms"), qint64(-1)}});
+		QCOMPARE(row->text(browserresults::Size), QStringLiteral("-"));       // not "0" for an unknown size
+		QCOMPARE(row->text(browserresults::Modified), QStringLiteral("-"));  // not 1970-01-01
+		QVERIFY(!row->text(browserresults::Name).isEmpty());                  // the rest of the row is untouched
+	}
+
 private:
 	QTemporaryDir m_dir;
 };

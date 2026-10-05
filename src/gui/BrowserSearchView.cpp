@@ -366,7 +366,8 @@ void BrowserSearchView::showProjectMedia()
 		const QString path = resolved.isEmpty() ? ref.value(QStringLiteral("raw")).toString() : resolved;
 		items.append(QJsonObject{{QStringLiteral("name"), QFileInfo(path).fileName()}, {QStringLiteral("path"), path},
 			{QStringLiteral("kind"), gone ? tr("missing") : QStringLiteral("audio")},
-			{QStringLiteral("size_bytes"), QFileInfo(path).size()}, {QStringLiteral("modified_ms"), QFileInfo(path).lastModified().toMSecsSinceEpoch()},
+			{QStringLiteral("size_bytes"), gone ? qint64(-1) : QFileInfo(path).size()},
+			{QStringLiteral("modified_ms"), gone ? qint64(-1) : QFileInfo(path).lastModified().toMSecsSinceEpoch()},
 			{QStringLiteral("tags"), QJsonArray{ref.value(QStringLiteral("tag")).toString()}}});
 	}
 	m_showingMedia = true;
