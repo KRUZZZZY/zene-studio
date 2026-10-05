@@ -182,6 +182,39 @@ private slots:
 		QCOMPARE(followActionTicks(empty, kTicksPerBar), 0);
 	}
 
+	//! A POSITIVE unlinked time is never zero, however small: 0.001 bars at 192
+	//! ticks per bar rounds to nothing, and a chain that can never fire is
+	//! indistinguishable from a broken one. Only a non-positive time is "cannot
+	//! fire" (0).
+	void positiveFollowTimesAreNeverZero()
+	{
+		const FollowPlan subTick = single(action(FollowAction::Type::Next, 1.0, false, 0.001, 0),
+			kSceneCount);
+		QCOMPARE(followActionTicks(subTick, kTicksPerBar), 1);
+
+		const FollowPlan oneTick = single(action(FollowAction::Type::Next, 1.0, false,
+			1.0 / static_cast<double>( kTicksPerBar ), 0), kSceneCount);
+		QCOMPARE(followActionTicks(oneTick, kTicksPerBar), 1);
+
+		// Rounding is unchanged above the sub-tick range.
+		const FollowPlan twoBars = single(action(FollowAction::Type::Next, 1.0, false, 2.0, 0),
+			kSceneCount);
+		QCOMPARE(followActionTicks(twoBars, kTicksPerBar), 2 * kTicksPerBar);
+
+		// A non-positive time still means "cannot fire".
+		const FollowPlan zero = single(action(FollowAction::Type::Next, 1.0, false, 0.0, 0),
+			kSceneCount);
+		QCOMPARE(followActionTicks(zero, kTicksPerBar), 0);
+		const FollowPlan negative = single(action(FollowAction::Type::Next, 1.0, false, -1.0, 0),
+			kSceneCount);
+		QCOMPARE(followActionTicks(negative, kTicksPerBar), 0);
+
+		// The whole decision must still fire at the clamped one-tick time.
+		const FollowFire fire = decideFollowFire(subTick, evalAt(0, 1));
+		QCOMPARE(static_cast<int>( fire.outcome ), static_cast<int>( FollowOutcome::SwitchScene));
+		QCOMPARE(fire.targetScene, 1);
+	}
+
 	//! Chance A/B weighting: the weights are the entries' own, normalised over
 	//! the chain; a chain whose weights sum to nothing picks the first entry,
 	//! because a chain that can never fire is indistinguishable from a broken

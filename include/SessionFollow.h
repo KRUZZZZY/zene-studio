@@ -169,7 +169,14 @@ inline tick_t followActionTicks( const FollowPlan& plan, tick_t ticksPerBar ) no
 		return plan.clipLengthTicks > 0 ? plan.clipLengthTicks : ticksPerBar;
 	}
 	const double ticks = first.timeBars * static_cast<double>( ticksPerBar );
-	return ticks > 0.5 ? static_cast<tick_t>( ticks + 0.5 ) : 0;
+	if( !( ticks > 0.0 ) )
+	{
+		return 0;
+	}
+	//! A positive time is never zero: 0.001 bars at 192 ticks per bar rounds to
+	//! nothing, and an unlinked chain that can never fire is indistinguishable
+	//! from a broken one. Only a non-positive time answers 0.
+	return ticks < 1.0 ? tick_t{ 1 } : static_cast<tick_t>( ticks + 0.5 );
 }
 
 /*! Index of the chain entry a draw selects, by Chance A/B weighting (SPEC §4.1).
