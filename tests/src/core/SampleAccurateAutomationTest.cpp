@@ -884,6 +884,49 @@ private slots:
 			rampArgs(QStringLiteral("fx-0/1"), QStringLiteral("sample"))).errorKind,
 			ControlErrorKind::NotFound);
 	}
+
+	/*! A ramp_set that finds the clip ALREADY in the requested mode records nothing: no journal
+	 *  checkpoint, no undo step (the checkpoint is only taken inside `if (changed)` at
+	 *  src/core/ControlCommandsAutomationRamp.cpp:165). It nevertheless answered with a
+	 *  `__transaction` marked reversible, so a client was told an inverse existed for a call that
+	 *  had none - and control.undo would then consume the PREVIOUS command's step.
+	 *
+	 *  Checked as sound: the repeat call reports changed:false and carries no inverse at all,
+	 *  and an undo straight afterwards still reverses the real change it did make. */
+	void aNoOpRampSetAdvertisesNoInverseAndConsumesNoUndoStep()
+	{
+		control::AutomationParameter gain;
+		QString why;
+		QVERIFY2(channelGainParameter(&gain, &why), qPrintable(why));
+		QVERIFY2(writeCurveThroughTheSurface(gain.id(), &why), qPrintable(why));
+
+		const QString before = reportedMode(gain.id());
+		const QString flipped = before == QStringLiteral("sample")
+			? QStringLiteral("block") : QStringLiteral("sample");
+		ControlResult result;
+		QVERIFY2(setMode(gain.id(), flipped, &result), qPrintable(result.errorMessage));
+		QCOMPARE(result.result.value(QStringLiteral("changed")).toBool(), true);
+		// The registry consumes the handler's private "__transaction" key, so the recorded
+		// transaction is what a client is told about.
+		const ControlRegistry::Transaction* real = ControlRegistry::instance()->lastTransaction();
+		QVERIFY(real != nullptr);
+		QCOMPARE(real->command, QStringLiteral("automation.ramp_set"));
+		QVERIFY(real->reversible);
+
+		// Same mode again: nothing to do, so nothing to record either.
+		const int beforeCount = ControlRegistry::instance()->transactions().size();
+		ControlResult again;
+		QVERIFY2(setMode(gain.id(), flipped, &again), qPrintable(again.errorMessage));
+		QCOMPARE(again.result.value(QStringLiteral("changed")).toBool(), false);
+		QCOMPARE(ControlRegistry::instance()->transactions().size(), beforeCount);
+		const ControlRegistry::Transaction* top = ControlRegistry::instance()->lastTransaction();
+		QVERIFY(top != nullptr);
+		QCOMPARE(top->command, QStringLiteral("automation.ramp_set"));  // still the change it really made
+
+		// The no-op consumed no undo step: undo still reverses the change that WAS made.
+		QVERIFY2(run(QStringLiteral("control.undo")).ok, qPrintable(QStringLiteral("undo failed")));
+		QCOMPARE(reportedMode(gain.id()), before);
+	}
 };
 
 QTEST_MAIN(SampleAccurateAutomationTest)
