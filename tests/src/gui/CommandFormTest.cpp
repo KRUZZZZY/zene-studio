@@ -194,6 +194,25 @@ private slots:
 		QCOMPARE(args.value(QStringLiteral("items")).toArray(), (QJsonArray{1, 2}));
 	}
 
+	//! setField()'s contract: false when the value does not fit the field's type, so a caller never
+	//! takes "accepted" for "this field now holds your value" when it holds the wrong thing.
+	void aValueOfTheWrongTypeIsRefusedByTheFieldItDoesNotFit()
+	{
+		CommandForm form(echo());
+		QVERIFY2(!form.setField(QStringLiteral("count"), QStringLiteral("abc")), "an integer field took a word");
+		QVERIFY2(!form.setField(QStringLiteral("ratio"), QStringLiteral("abc")), "a number field took a word");
+		QVERIFY2(!form.setField(QStringLiteral("name"), 42), "a string field took a number");
+		QVERIFY2(!form.setField(QStringLiteral("items"), QStringLiteral("a, b")), "an array field took a comma list");
+		// Refused means untouched: the field still holds what it held, and a fitting value goes in.
+		QVERIFY(form.setField(QStringLiteral("name"), QStringLiteral("x")));
+		QVERIFY(form.setField(QStringLiteral("count"), 3));
+		QJsonObject args;
+		QString error;
+		QVERIFY2(form.collect(&args, &error), qPrintable(error));
+		QCOMPARE(args.value(QStringLiteral("count")).toInt(), 3);
+		QVERIFY(!args.contains(QStringLiteral("ratio")));
+	}
+
 	void aMissingRequiredOrMistypedFieldIsRefusedBeforeRunning()
 	{
 		CommandForm form(echo());
@@ -202,11 +221,12 @@ private slots:
 		QVERIFY(!form.collect(&args, &error));
 		QVERIFY2(error.contains(QStringLiteral("Name")), qPrintable(error));
 		form.setField(QStringLiteral("name"), QStringLiteral("x"));
-		form.setField(QStringLiteral("count"), QStringLiteral("abc"));
+		// Mistyped text as a user types it: setField() refuses it now, so it goes into the editor.
+		form.findChild<QLineEdit*>(QStringLiteral("field:count"))->setText(QStringLiteral("abc"));
 		QVERIFY(!form.collect(&args, &error));
 		QVERIFY2(error.contains(QStringLiteral("Count")), qPrintable(error));
-		form.setField(QStringLiteral("count"), QString());
-		form.setField(QStringLiteral("items"), QStringLiteral("{not json"));
+		form.findChild<QLineEdit*>(QStringLiteral("field:count"))->clear();
+		form.findChild<QLineEdit*>(QStringLiteral("field:items"))->setText(QStringLiteral("{not json"));
 		QVERIFY(!form.collect(&args, &error));
 		g_lastArgs = {};
 		form.accept();

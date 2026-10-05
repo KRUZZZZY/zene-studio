@@ -248,7 +248,7 @@ bool CommandForm::setField(const QString& key, const QJsonValue& value)
 {
 	for (const Field& field : m_fields)
 	{
-		if (field.key == key) { return formfield::writeValue(field.editor, value); }
+		if (field.key == key) { return formfield::writeValue(field.editor, field.spec, value); }
 	}
 	return false;
 }

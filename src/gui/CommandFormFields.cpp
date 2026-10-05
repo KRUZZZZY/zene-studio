@@ -459,8 +459,31 @@ bool readValue(const QWidget* editor, const QJsonObject& spec, QJsonValue* value
 	return text.isEmpty() || readText(editor, text, spec, value, error);
 }
 
-bool writeValue(QWidget* editor, const QJsonValue& value)
+//! The JSON types a schema type can have, so a value is checked without guessing its type again.
+bool isOfType(const QJsonValue& value, const QString& type)
 {
+	if (type == QStringLiteral("integer") || type == QStringLiteral("number")) { return value.isDouble(); }
+	if (type == QStringLiteral("boolean")) { return value.isBool(); }
+	if (type == QStringLiteral("array")) { return value.isArray(); }
+	if (type == QStringLiteral("object")) { return value.isObject(); }
+	if (type == QStringLiteral("string")) { return value.isString(); }
+	return true;  // a type the form does not constrain (a raw blob, a path)
+}
+
+//! Whether @a value is what @a editor (spec @a spec) can be read back as: a choice needs its value
+//! offered, any other editor holds its field's own type - a plain list and raw JSON are typed
+//! "array"/"object" by the schema, so the same check covers them. Bounds are collect()'s business
+//! (a field may hold an out-of-range number, so the user can correct it).
+bool fitsEditor(QWidget* editor, const QJsonObject& spec, const QJsonValue& value)
+{
+	if (value.isUndefined()) { return true; }  // a blank field holds Undefined, which readValue answers
+	if (kindOf(editor) == Kind::Choice) { return true; }  // writeChoice answers whether the value is offered
+	return isOfType(value, schemaType(spec));
+}
+
+bool writeValue(QWidget* editor, const QJsonObject& spec, const QJsonValue& value)
+{
+	if (!fitsEditor(editor, spec, value)) { return false; }
 	switch (kindOf(editor))
 	{
 	case Kind::Choice: return writeChoice(static_cast<QComboBox*>(editor), value);
