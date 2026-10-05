@@ -329,7 +329,15 @@ std::vector<SmfInterchangeEvent> exportEvents(const TempoMap& map, int globalTem
 {
 	std::vector<SmfInterchangeEvent> events;
 	events.reserve(static_cast<std::size_t>(map.size()) + 1);
-	for (const TempoMapEvent& source : map.all()) { events.push_back(eventFromMap(source)); }
+	// A map the timeline does not obey (TempoMap::active() is false) has no
+	// stored event in force, so exporting them would put tempo and metre
+	// changes into the file that the session itself does not play. With none
+	// exported, the tick-0 seed below is the whole conductor track: the global
+	// tempo and metre the timeline does obey.
+	if (map.active())
+	{
+		for (const TempoMapEvent& source : map.all()) { events.push_back(eventFromMap(source)); }
+	}
 
 	bool hasTempoAtZero = false;
 	bool hasTimeSignatureAtZero = false;

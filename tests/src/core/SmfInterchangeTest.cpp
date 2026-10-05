@@ -346,6 +346,10 @@ private slots:
 
 		auto mapWithSecondEventAt = [](int tick) {
 			TempoMap map;
+			// The map must be ACTIVE for its events to be in force: an inactive
+			// map exports only the tick-0 seed, so the wide gap would never
+			// reach the file and this case would prove nothing.
+			map.setActive(true);
 			TempoMapEvent first;
 			first.tick = 0;
 			first.hasTempo = true;
@@ -413,7 +417,66 @@ private slots:
 		QVERIFY(QFile::exists(file));
 	}
 
-	private:
+	//! A map switched off is never consulted by the timeline: every tick answers
+	//! the global tempo and metre. Its stored events were still written into the
+	//! file, so a file another DAW read changed tempo at tick 200 in a session
+	//! that does not - the file was a different performance of the same project.
+	//! An inactive map exports the effective global values and nothing else.
+	void anInactiveMapExportsOnlyWhatTheTimelineObeys()
+	{
+		TempoMap map;
+		TempoMapEvent atZero;
+		atZero.tick = 0;
+		atZero.hasTempo = true;
+		atZero.tempo = 140;
+		atZero.hasTimeSignature = true;
+		atZero.numerator = 4;
+		atZero.denominator = 4;
+		QVERIFY(map.addEvent(atZero));
+		TempoMapEvent dormant = atZero;
+		dormant.tick = 200;
+		dormant.tempo = 90;
+		QVERIFY(map.addEvent(dormant));
+		map.setActive(false);
+
+		// The same map ACTIVE is the control: both events are what the session
+		// obeys, so both belong in the file.
+		const std::vector<interchange::SmfInterchangeEvent> obeyed =
+			interchange::exportEvents(map, 120, TempoMapTimeSignature{4, 4}, nullptr);
+		QCOMPARE(static_cast<int>(obeyed.size()), 1);
+
+		// The dormant map exports the seed alone: tick 0, and the GLOBAL tempo
+		// and metre, because those are what every tick of it answers.
+		QCOMPARE(obeyed.front().tick, static_cast<tick_t>(0));
+		QCOMPARE(obeyed.front().tempo, 120);
+		QCOMPARE(obeyed.front().hasTimeSignature, true);
+		QCOMPARE(obeyed.front().numerator, 4);
+		QCOMPARE(obeyed.front().denominator, 4);
+		for (const interchange::SmfInterchangeEvent& event : obeyed)
+		{
+			QVERIFY2(event.tick == 0, "a dormant event reached the exported list");
+		}
+
+		// And the FILE, written while the map is still inactive, says the same
+		// thing: one tempo event, the global one.
+		const QString file = path(m_directory, QStringLiteral("inactive.mid"));
+		QString error;
+		QVERIFY2(interchange::writeConductorTrack(file, map, 120,
+			TempoMapTimeSignature{4, 4}, nullptr, &error), qPrintable(error));
+		const interchange::SmfReadReport read = interchange::readConductorTrack(file);
+		QVERIFY2(read.ok, qPrintable(read.error));
+		QCOMPARE(read.events.size(), static_cast<std::size_t>(1));
+		QCOMPARE(read.events.front().tempo, 120);
+
+		// Switched on, the same map exports what it now obeys: both events.
+		map.setActive(true);
+		const std::vector<interchange::SmfInterchangeEvent> active =
+			interchange::exportEvents(map, 120, TempoMapTimeSignature{4, 4}, nullptr);
+		QCOMPARE(static_cast<int>(active.size()), 2);
+		QCOMPARE(active.back().tick, static_cast<tick_t>(200));
+	}
+
+private:
 	QTemporaryDir m_directory;
 };
 
