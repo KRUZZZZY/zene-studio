@@ -843,14 +843,15 @@ void AudioEngine::removePlayHandlesOfTypes(Track * track, PlayHandle::Types type
 		{
 			LocklessList<PlayHandle *>::Element * next = e->next;
 			PlayHandle * handle = e->value;
-			// NOTE handles only: the proven survivor class (a staged
-			// NotePlayHandle rendering through its freed track). A staged
-			// InstrumentPlayHandle is owned by its instrument's create/delete
-			// bookkeeping and deleting it here double-frees it (the
-			// PluginPortsMigrationTest segfault), so non-note handles wait
-			// for their own owner as before.
-			if (handle->type() == PlayHandle::Type::NotePlayHandle
-				&& handle->isFromTrack(track) && (handle->type() & types))
+			// Every type the caller asked for, as the active sweep above. A staged
+			// InstrumentPlayHandle (an instrument such as LB302 queues one when it is
+			// created) or InputMonitorHandle that this sweep skipped merged into the
+			// render list at the next period and played through its deleted
+			// instrument or track - the ArrangingCatchUpTest audio-worker crash in
+			// InstrumentPlayHandle::play. Matching an instrument handle no longer
+			// reads its instrument (InstrumentPlayHandle::isFromTrack), so a caller
+			// that deleted the instrument before its track is safe here too.
+			if (handle->isFromTrack(track) && (handle->type() & types))
 			{
 				handle->audioBusHandle()->removePlayHandle(handle);
 				if(handle->type() == PlayHandle::Type::NotePlayHandle)

@@ -35,7 +35,8 @@ namespace lmms
 
 InstrumentPlayHandle::InstrumentPlayHandle(Instrument * instrument, InstrumentTrack* instrumentTrack) :
 	PlayHandle(Type::InstrumentPlayHandle),
-	m_instrument(instrument)
+	m_instrument(instrument),
+	m_instrumentTrack(instrumentTrack)
 {
 	setAudioBusHandle(instrumentTrack->audioBusHandle());
 }
@@ -70,7 +71,9 @@ void InstrumentPlayHandle::play(std::span<SampleFrame> buffer)
 
 bool InstrumentPlayHandle::isFromTrack(const Track* track) const
 {
-	return m_instrument->isFromTrack(track);
+	// By the recorded track, not through m_instrument: the instrument may be gone
+	// before its track (PluginPortsMigrationTest deletes it first).
+	return m_instrumentTrack == track;
 }
 
 

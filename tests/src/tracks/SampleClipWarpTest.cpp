@@ -369,6 +369,71 @@ private slots:
 	}
 
 
+	//! An UNMARKED tempo leader still has to play at its leader rate.
+	//!
+	//! `warpRatio()` is what puts the clip's source on the timeline, and with no
+	//! markers the only rate the clip still declares is its own
+	//! `clipFramesPerTick()` - which a `SourceTempo` leader scales by
+	//! `projectTempo / sourceTempo` with no marker anywhere. A handle that
+	//! returns the natural rate in that case plays the leader at the FOLLOWER's
+	//! speed: the pitch is wrong by exactly the tempo ratio, and the clip is
+	//! heard stretched (a leader at half the project tempo sounds a whole tone
+	//! low instead of an octave up).
+	//!
+	//! Measured as the rendered pitch, because that is what the ratio moves: a
+	//! 440 Hz tone rendered by a 2x leader is a 880 Hz tone. Zero crossings are
+	//! counted over the handle's own length, which the mapping already makes the
+	//! right (halved) length, so this measures the RATE and not the duration.
+	void unmarkedLeaderRendersAtItsLeaderRate()
+	{
+		SampleTrack track(Engine::getSong());
+		auto* clip = makeClip(track, m_rate);
+		const auto projectTempo = static_cast<float>(Engine::getSong()->getTempo());
+		const auto outputRate = Engine::audioEngine()->outputSampleRate();
+
+		//! The tone's frequency in the frames one whole handle renders, by
+		//! counting sign changes over the middle half of the render (away from
+		//! the clip's fade-in/out edges).
+		const auto renderedPitch = [outputRate](SamplePlayHandle& handle) {
+			std::vector<SampleFrame> buffer(static_cast<std::size_t>(handle.totalFrames()),
+				SampleFrame(0.0f, 0.0f));
+			auto span = std::span<SampleFrame>(buffer);
+			handle.play(span);
+
+			const auto from = buffer.size() / 4;
+			const auto to = (buffer.size() * 3) / 4;
+			int crossings = 0;
+			for (std::size_t f = from + 1; f < to; ++f)
+			{
+				if ((buffer[f][0] < 0.0f) != (buffer[f - 1][0] < 0.0f)) { ++crossings; }
+			}
+			// a sine crosses zero twice per cycle
+			return static_cast<double>(crossings) * outputRate / (2.0 * (to - from));
+		};
+
+		// the follower: the source at its own pitch, and the reference for the
+		// ratio below. Followers and leaders share every other code path here.
+		SamplePlayHandle follower(clip);
+		const auto followerPitch = renderedPitch(follower);
+		QVERIFY2(followerPitch > 330.0 && followerPitch < 550.0,
+			qPrintable(QString("follower rendered %1 Hz, expected about 440")
+				.arg(followerPitch, 0, 'f', 1)));
+
+		// a leader at half the project tempo is mapped at twice the natural
+		// rate, so it has to SOUND an octave up - not at the follower's pitch.
+		clip->setWarpTempoMode(WarpTempoMode::SourceTempo);
+		clip->setSourceTempo(projectTempo / 2.0f);
+		QVERIFY(clip->warpMarkers().empty());
+		SamplePlayHandle leader(clip);
+		const auto leaderPitch = renderedPitch(leader);
+
+		QVERIFY2(leaderPitch > followerPitch * 1.7 && leaderPitch < followerPitch * 2.3,
+			qPrintable(QString("leader at half the project tempo rendered %1 Hz, follower "
+				"rendered %2 Hz - expected roughly twice the follower (about %3 Hz)")
+				.arg(leaderPitch, 0, 'f', 1).arg(followerPitch, 0, 'f', 1)
+				.arg(followerPitch * 2.0, 0, 'f', 1)));
+	}
+
 	//! I1 still holds with a warp on: a playback pass through the real path
 	//! (Song -> SampleTrack::play -> AudioEngine) schedules a handle and writes
 	//! neither the clip's window nor its markers.

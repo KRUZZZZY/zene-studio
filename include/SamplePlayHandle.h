@@ -200,7 +200,14 @@ private:
 	//! Silences the frames outside the selected spans, with a short ramp at
 	//! every edge so a lane switch does not click. Only run when m_comped.
 	void applyComp(SampleFrame* buffer, f_cnt_t frames) const;
-	static constexpr int MaxCompSpans = 32;
+	//! How many selected spans of this clip's own lane one handle can hold. The
+	//! composite (include/TakeLane.h) stores its segments in a plain vector with no
+	//! count limit, so this is the RENDER budget, not the model's: a fixed array keeps
+	//! applyComp() allocation-free and bounded on the render path. 32 was below what
+	//! real comps reach - a take selected in 40 places played its first 32 and was
+	//! silent for the rest (Luna cluster 3511). 256 covers a heavily comped take and
+	//! costs at most 256 pair comparisons per rendered frame.
+	static constexpr int MaxCompSpans = 256;
 	static constexpr f_cnt_t CompRampFrames = 64;
 	bool m_comped = false;
 	//! 0.5.0 L05 (ED-177): an automatic fade applies to this neutral clip.

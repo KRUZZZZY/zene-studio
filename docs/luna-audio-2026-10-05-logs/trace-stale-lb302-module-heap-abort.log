@@ -1,0 +1,6 @@
+PASS   : ArrangingCatchUpTest::aSwitchRefusesToLoseAnUntitledSession()
+DBG IPH ctor 0x5f1ee58b7fc0 inst=0x5f1ee612fcc0 track=0x5f1ee5f7a6c0
+DBG add IPH 0x5f1ee58b7fc0
+DBG merge IPH 0x5f1ee58b7fc0
+DBG IPH dtor 0x5f1ee58b7fc0
+free(): invalid next size (fast)
