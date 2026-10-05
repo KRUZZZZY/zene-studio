@@ -106,6 +106,16 @@ public:
 	//! GUI thread to build its binding (tests / diagnostics).
 	bool hasPendingBinding() const;
 
+	//! Throw away a control-change waiting in the pending slot. GUI thread only.
+	//!
+	//! Called when the user explicitly disarms: the queued request belongs to a learn
+	//! they just cancelled, and applying it later would bind that control-change to
+	//! whatever control the NEXT armed learn focuses. The exchange is the same claim
+	//! applyPendingBinding() uses, so a request a concurrent MIDI thread is claiming at
+	//! this moment is taken by whichever of the two gets there first - never dropped
+	//! silently by a plain clear, and never applied twice.
+	void cancelPendingBinding();
+
 	//! Number of bindings created since process start (tests / diagnostics).
 	unsigned int bindingCount() const;
 

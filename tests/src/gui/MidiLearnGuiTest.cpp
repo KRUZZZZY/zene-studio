@@ -111,6 +111,39 @@ private slots:
 		QVERIFY(MidiLearn::instance()->lastBindingThreadId() == QThread::currentThreadId());
 		QVERIFY(MidiLearn::instance()->focusTarget() == nullptr);
 	}
+
+	// A control-change queued by the MIDI input thread sits in MidiLearn's pending slot
+	// until the bind timer ticks. Disarming is the user saying "not that one": the queued
+	// request must go with it, or re-arming and focusing a different control binds the
+	// stale CC to that control instead.
+	void disarmingDropsAPendingRequest()
+	{
+		FloatModel first(0.5f, 0.0f, 1.0f, 0.01f);
+		FloatModel second(0.5f, 0.0f, 1.0f, 0.01f);
+
+		MidiLearnGui::instance()->setArmed(true);
+		MidiLearn::instance()->setFocusTarget(&first);
+
+		// The control-change arrives on the MIDI input thread, so it lands in the
+		// pending slot rather than binding there and then.
+		std::thread inputThread([]() {
+			MidiLearn::instance()->handleMidiEvent(MidiEvent(MidiControlChange, 2, 74, 127));
+		});
+		inputThread.join();
+		QVERIFY(MidiLearn::instance()->hasPendingBinding());
+
+		// The user disarms before the next 10 ms tick, then arms again and focuses a
+		// different control.
+		MidiLearnGui::instance()->setArmed(false);
+		MidiLearnGui::instance()->setArmed(true);
+		MidiLearn::instance()->setFocusTarget(&second);
+
+		const unsigned int bound = MidiLearn::instance()->bindingCount();
+		QVERIFY(!MidiLearn::instance()->applyPendingBinding());
+		QCOMPARE(MidiLearn::instance()->bindingCount(), bound);
+		QVERIFY(first.controllerConnection() == nullptr);
+		QVERIFY(second.controllerConnection() == nullptr);
+	}
 };
 
 // QTEST_MAIN would do, but the platform plugin has to be chosen before the

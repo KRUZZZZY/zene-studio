@@ -121,6 +121,16 @@ bool MidiLearn::hasPendingBinding() const
 
 
 
+void MidiLearn::cancelPendingBinding()
+{
+	// The same claim applyPendingBinding() makes: taking the flag with an exchange means
+	// the request is either discarded here or applied there, never both and never by a
+	// plain clear that a racing requestBinding() could overwrite after it.
+	m_pendingBinding.exchange(false, std::memory_order_acquire);
+}
+
+
+
 Qt::HANDLE MidiLearn::lastBindingThreadId() const
 {
 	return m_lastBindingThreadId.load(std::memory_order_acquire);
