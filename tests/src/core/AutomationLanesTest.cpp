@@ -36,6 +36,7 @@
 
 #include <QtTest>
 
+#include <cmath>
 #include <limits>
 #include <utility>
 
@@ -284,6 +285,84 @@ private slots:
 		QVERIFY(clip->getTimeMap().value(0).lockedTangents());
 		QCOMPARE(clip->getTimeMap().value(0).getOutTangent(), 0.25f);
 		QCOMPARE(clip->getTimeMap().value(0).getInTangent(), 0.f);
+	}
+
+	/*! A one-segment cubic clip whose ENDPOINT tangents were locked by hand, so the segment's
+	 *  shape comes from those locks instead of from generateTangents(). Built twice, so one copy
+	 *  can be transformed and read back against the untouched other. */
+	AutomationClip* handLockedSegment(FloatModel* model)
+	{
+		AutomationClip* clip = freshClip(model);
+		clip->setProgressionType(AutomationClip::ProgressionType::CubicHermite);
+		clip->putValue(TimePos(0), 0.f, false, true);
+		clip->putValue(TimePos(100), 100.f, false, true);
+		clip->getTimeMap()[0].setInTangent(0.5f);
+		clip->getTimeMap()[0].setOutTangent(0.5f);
+		clip->getTimeMap()[100].setInTangent(-0.25f);
+		clip->getTimeMap()[100].setOutTangent(-0.25f);
+		clip->getTimeMap()[0].setLockedTangents(true);
+		clip->getTimeMap()[100].setLockedTangents(true);
+		return clip;
+	}
+
+	/*! Completes review of b76118bc8: that commit kept a locked point's tangent VALUE across a
+	 *  range transform. A tangent is a slope - a value per tick - because generateTangents()
+	 *  divides a value difference by a tick difference (src/core/AutomationClip.cpp:1292) and
+	 *  valueAt()'s cubic branch multiplies it back by the segment's tick span
+	 *  (src/core/AutomationClip.cpp:651). So a tangent copied unchanged through a rescaling
+	 *  transform draws the wrong curve: right only for the identity and for a pure offset.
+	 *
+	 *  Checked as sound: the transformed clip must read, at every stretched tick, the original's
+	 *  value at the source tick mapped through the value transform. The value transform is affine
+	 *  about the clip's midpoint, so a correctly rescaled tangent reproduces it exactly. */
+	void aRangeTransformRescalesManuallyLockedTangent()
+	{
+		AutomationClip* original = handLockedSegment(m_track->volumeModel());
+		AutomationClip* stretched = handLockedSegment(m_track->volumeModel());
+		const float pivot = (original->getMin() + original->getMax()) / 2.f;
+
+		// Time doubled, value halved about the midpoint: 0 and 100 become 25 and 75.
+		QCOMPARE(stretched->transformRange(0, 100, 2.0, 0, 0.5, 0.0), 2);
+		QCOMPARE(static_cast<int>(stretched->getTimeMap().size()), 2);
+		QVERIFY(stretched->getTimeMap().contains(200));
+		QVERIFY(stretched->getTimeMap().value(0).lockedTangents());
+		// The value per tick halves while a tick costs twice as much, so the slope is a quarter.
+		QCOMPARE(stretched->getTimeMap().value(0).getOutTangent(), 0.125f);
+		QCOMPARE(stretched->getTimeMap().value(0).getInTangent(), 0.125f);
+
+		for (const int tick : {10, 25, 50, 75, 90})
+		{
+			const float expected = (original->valueAt(TimePos(tick)) - pivot) * 0.5f + pivot;
+			const float actual = stretched->valueAt(TimePos(2 * tick));
+			QVERIFY2(std::abs(actual - expected) < 0.001f,
+				qPrintable(QStringLiteral("tick %1: the stretched curve is not the original's shape").arg(2 * tick)));
+		}
+
+		// Time reversed about tick 100 (time_scale is an unbounded number, so it can be negative):
+		// the same curve read the other way round, so each point's two tangents trade sides and
+		// negate - the segment that arrived at a point now leaves it.
+		AutomationClip* reversed = handLockedSegment(m_track->volumeModel());
+		QCOMPARE(reversed->transformRange(0, 100, -1.0, 200, 1.0, 0.0), 2);
+		QVERIFY(reversed->getTimeMap().contains(100) && reversed->getTimeMap().contains(200));
+		QCOMPARE(reversed->getTimeMap().value(200).getInTangent(), -original->getTimeMap().value(0).getOutTangent());
+		QCOMPARE(reversed->getTimeMap().value(100).getOutTangent(), -original->getTimeMap().value(100).getInTangent());
+
+		for (const int tick : {10, 25, 50, 75, 90})
+		{
+			QVERIFY2(std::abs(reversed->valueAt(TimePos(200 - tick)) - original->valueAt(TimePos(tick))) < 0.001f,
+				qPrintable(QStringLiteral("tick %1: the reversed curve is not the original's shape").arg(200 - tick)));
+		}
+
+		// A time_scale of 0 collapses the range onto one tick, where no slope survives: the
+		// tangents are carried across as they were, not turned into an infinity. Two points in the
+		// range would land on that one tick, so the refusal in aTransformThatWouldLandTwoPointsOnOneTickIsRefused
+		// covers that case; a lone point is the one that gets through.
+		AutomationClip* lone = handLockedSegment(m_track->volumeModel());
+		lone->removeNode(TimePos(0));
+		QCOMPARE(lone->transformRange(100, 100, 0.0, 200, 0.5, 0.0), 1);
+		QVERIFY(lone->getTimeMap().value(300).lockedTangents());
+		QVERIFY(std::isfinite(lone->getTimeMap().value(300).getOutTangent()));
+		QCOMPARE(lone->getTimeMap().value(300).getOutTangent(), -0.25f);
 	}
 
 	/*! ED-187 in a spline clip: a point on the straight line between its neighbours

@@ -313,6 +313,25 @@ bool destinationsAreDistinct(const AutomationClip::timeMap& kept, const std::vec
 	return true;
 }
 
+/*! @a source's tangents, rescaled onto @a point. A tangent is a slope - a value per tick, since
+ *  generateTangents() divides a value difference by a tick difference and valueAt()'s cubic branch
+ *  multiplies it back by the segment's tick span - so it does not survive a rescaling of either
+ *  axis unchanged: the new slope is the old one times valueScale over timeScale (review of
+ *  b76118bc8). A negative timeScale also REVERSES time, so the segment that arrived at the point
+ *  now leaves it and the two tangents trade sides; the negative divisor is what turns them around,
+ *  so a reversal needs no extra sign of its own. A positive scale keeps each tangent on the side it
+ *  described. A timeScale of 0 collapses every point in the range onto one tick, where there is no
+ *  span to be a slope over: two such points are refused as a collision (see
+ *  destinationsAreDistinct), and a lone point keeps the tangents it had rather than the infinity
+ *  the quotient would give. */
+void carryTangents(AutomationNode& point, const AutomationNode& source, double timeScale, double valueScale)
+{
+	const bool reversed = timeScale < 0.0;
+	const float tangentScale = timeScale == 0.0 ? 1.f : static_cast<float>(valueScale / timeScale);
+	point.setInTangent((reversed ? source.getOutTangent() : source.getInTangent()) * tangentScale);
+	point.setOutTangent((reversed ? source.getInTangent() : source.getOutTangent()) * tangentScale);
+}
+
 } // namespace
 
 int AutomationClip::transformRange(int start, int end, double timeScale, int timeOffset, double valueScale, double valueOffset)
@@ -348,8 +367,7 @@ int AutomationClip::transformRange(int start, int end, double timeScale, int tim
 		point.setLockedTangents(moved[i].second.lockedTangents());
 		if (moved[i].second.lockedTangents())
 		{
-			point.setInTangent(moved[i].second.getInTangent());
-			point.setOutTangent(moved[i].second.getOutTangent());
+			carryTangents(point, moved[i].second, timeScale, valueScale);
 		}
 		kept[tick] = point;
 	}
