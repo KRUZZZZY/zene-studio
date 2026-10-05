@@ -33,6 +33,8 @@
 
 #include <QtTest>
 
+#include <limits>
+
 #include <QString>
 #include <QStringList>
 #include <QVector>
@@ -290,6 +292,113 @@ private slots:
 		// the pool is full, which is what makes extract-over-a-name usable.
 		QVERIFY(full.set(GrooveTemplate(QStringLiteral("g0"), 24, 12), nullptr));
 		QCOMPARE(full.find(QStringLiteral("g0"))->lengthTicks(), tick_t(24));
+	}
+
+	/*! A step's timing may not REACH half its slot width, and the reason is the
+	 *  nearest-slot rule: exactly half a slot is the BOUNDARY between two slots,
+	 *  and a note sitting on the boundary is read back into the NEXT one. A step
+	 *  of +half would therefore carry every note one slot along, and a second
+	 *  application would carry it one slot more - the no-op at full strength
+	 *  (GrooveTemplate.h, applyGroove) would not hold. */
+	void aStepCannotReachHalfItsSlot()
+	{
+		GrooveTemplate groove(QStringLiteral("feel"), 48, 12);
+		QVERIFY(groove.setStep(0, GrooveStep{5, 100}));
+		QVERIFY(!groove.setStep(0, GrooveStep{6, 100}));      // exactly half: the boundary
+		QVERIFY(!groove.setStep(0, GrooveStep{-6, 100}));     // ... and the other side of it
+		QCOMPARE(groove.step(0), (GrooveStep{5, 100}));       // the refused writes did nothing
+
+		// The largest shift that IS accepted keeps its note in its own slot, so
+		// the same groove applied again has nothing left to do.
+		GrooveTemplate late(QStringLiteral("late"), 48, 12);
+		QVERIFY(late.setStep(0, GrooveStep{5, GrooveStep::NoVelocityOpinion}));
+		NoteTable notes;
+		notes.add(60, 0, 12, 100);
+		QCOMPARE(applyGroove(notes.vector(), late, 1.0f), 1);
+		QVERIFY2((takeOf(notes.vector()) == QVector<NoteAt>{{5, 100}}),
+			qPrintable(describe(takeOf(notes.vector()))));
+		QCOMPARE(applyGroove(notes.vector(), late, 1.0f), 0);
+		QVERIFY2((takeOf(notes.vector()) == QVector<NoteAt>{{5, 100}}),
+			qPrintable(describe(takeOf(notes.vector()))));
+	}
+
+	/*! The grid arithmetic is done wider than a tick and narrowed back CLAMPED,
+	 *  so a note at the very end of the timeline reads its own slot instead of
+	 *  wrapping around into a negative one. */
+	void theGridArithmeticDoesNotOverflowAtTheEndOfTheTimeline()
+	{
+		GrooveTemplate groove(QStringLiteral("end"), 48, 12);
+		QVERIFY(groove.setStep(0, GrooveStep{0, 100}));
+		const tick_t last = std::numeric_limits<tick_t>::max();
+		// 2147483647 = 12 * 178956970 + 7, so the slot it falls in starts 7 ticks
+		// back, and its target (a step of 0) is the note's own position.
+		QCOMPARE(groove.gridTickFor(last), tick_t(last - 7));
+		QCOMPARE(groove.targetTickFor(last), last);
+
+		// Extraction reads a slot's deviation the same wide way: a note at the
+		// end of the timeline must not turn a slot's shift into garbage.
+		NoteTable notes;
+		notes.add(60, 0, 12, 100);
+		notes.add(62, static_cast<int>(last), 12, 100);
+		GrooveTemplate captured;
+		int read = 0;
+		QVERIFY(extractGroove(notes.vector(), QStringLiteral("end"), 48, 12, &captured, &read));
+		QCOMPARE(read, 2);
+		for (int slot = 0; slot < captured.slotCount(); ++slot)
+		{
+			QVERIFY2(captured.step(slot).timing >= -6 && captured.step(slot).timing <= 6,
+				"a slot's shift came out of the arithmetic as garbage");
+		}
+	}
+
+	//! A step whose slot TEXT is not a number is skipped, not read as slot zero.
+	void aMalformedSlotTextIsNotSlotZero()
+	{
+		QDomDocument doc;
+		QDomElement groove = doc.createElement(QStringLiteral("groove"));
+		groove.setAttribute(QStringLiteral("name"), QStringLiteral("feel"));
+		groove.setAttribute(QStringLiteral("length"), 48);
+		groove.setAttribute(QStringLiteral("step"), 12);
+		groove.setAttribute(QStringLiteral("slots"), 4);
+		QDomElement malformed = doc.createElement(QStringLiteral("step"));
+		malformed.setAttribute(QStringLiteral("slot"), QStringLiteral("bad"));
+		malformed.setAttribute(QStringLiteral("timing"), 3);
+		malformed.setAttribute(QStringLiteral("velocity"), 90);
+		groove.appendChild(malformed);
+		doc.appendChild(groove);
+
+		GrooveTemplate loaded;
+		QVERIFY(loaded.loadXml(groove));          // the geometry is still readable
+		QCOMPARE(loaded.slotCount(), 4);
+		// The entry names no slot, so it names no slot: slot zero is untouched
+		// and the whole template says nothing about timing or velocity.
+		QVERIFY2(loaded.step(0).neutral(), "a malformed slot text overwrote slot zero");
+		QVERIFY2(loaded.neutral(), "a malformed slot text was applied to some slot");
+	}
+
+	/*! The RANDOM timing amount is pinned to the grid SLOT, not to the note's
+	 *  current position - the same rule the humanise draw follows
+	 *  (NoteTransform.cpp). So at full strength a repeat of the same call rolls
+	 *  the same jitter and leaves every position where the first roll put it. */
+	void theRandomTimingIsPinnedToTheSlot()
+	{
+		NoteTable source;
+		fillFeelClip(&source);
+		GrooveTemplate captured;
+		QVERIFY(extractGroove(source.vector(), QStringLiteral("feel"), 48, 12, &captured, nullptr));
+
+		NoteTable first;
+		first.add(60, 0, 12, 100);
+		first.add(62, 12, 12, 100);
+		first.add(64, 24, 12, 100);
+		first.add(65, 36, 12, 100);
+		QVERIFY(applyGroove(first.vector(), captured, 1.0f, 2, 0, 12345u) > 0);
+		const QVector<NoteAt> landed = takeOf(first.vector());
+		QVERIFY2((landed != QVector<NoteAt>{{3, 100}, {9, 120}, {26, 80}, {34, 100}}),
+			"the random amount did not roll a single note");
+
+		QCOMPARE(applyGroove(first.vector(), captured, 1.0f, 2, 0, 12345u), 0);
+		QVERIFY2(takeOf(first.vector()) == landed, qPrintable(describe(takeOf(first.vector()))));
 	}
 };
 

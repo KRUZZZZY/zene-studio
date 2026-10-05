@@ -220,7 +220,13 @@ bool GrooveTemplate::loadXml(const QDomElement& element)
 	for (QDomElement child = element.firstChildElement(kStepElement); !child.isNull();
 		child = child.nextSiblingElement(kStepElement))
 	{
-		const int slot = child.attribute(QStringLiteral("slot"), QStringLiteral("-1")).toInt();
+		// A slot that is not a NUMBER names no slot, so it is skipped whole: read
+		// as 0 it would quietly overwrite slot zero while the template still
+		// loaded. The "-1" default is the missing attribute, which names no slot
+		// either - setStep refuses it below, leaving the slot it already holds.
+		bool slotRead = false;
+		const int slot = child.attribute(QStringLiteral("slot"), QStringLiteral("-1")).toInt(&slotRead);
+		if (!slotRead) { continue; }
 		GrooveStep value;
 		value.timing = child.attribute(QStringLiteral("timing"), QStringLiteral("0")).toInt();
 		bool velocityRead = false;
