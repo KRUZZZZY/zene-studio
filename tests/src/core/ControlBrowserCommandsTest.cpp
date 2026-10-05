@@ -365,6 +365,14 @@ private slots:
 			ControlErrorKind::InvalidArgs);
 		QCOMPARE(run(QStringLiteral("browser.query"),
 			{{QStringLiteral("path"), m_text}}).errorKind, ControlErrorKind::NotFound);
+		// A PRESENT but empty 'path' is a refusal, not "no path given": the caller
+		// named a directory to walk and named nothing, so answering with a
+		// roots-wide query would silently search somewhere else than asked.
+		QCOMPARE(run(QStringLiteral("browser.query"),
+			{{QStringLiteral("path"), QString()}}).errorKind, ControlErrorKind::InvalidArgs);
+		QCOMPARE(run(QStringLiteral("browser.query"),
+			{{QStringLiteral("path"), QStringLiteral("   ")}}).errorKind,
+			ControlErrorKind::InvalidArgs);
 		QCOMPARE(run(QStringLiteral("browser.query"),
 			{{QStringLiteral("tags"), QStringLiteral("not-an-array")}}).errorKind,
 			ControlErrorKind::InvalidArgs);
