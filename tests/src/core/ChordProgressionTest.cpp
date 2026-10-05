@@ -228,6 +228,26 @@ private slots:
 		}
 	}
 
+	//! The tick the walk starts at: a chord track holds no event before tick 0
+	//! (ChordTrack::set refuses one), so a request that starts there could not
+	//! be written as events at all - it is refused, the one rule both output
+	//! paths can honour.
+	void aNegativeStartIsRefused()
+	{
+		Request request;
+		request.progression = QStringLiteral("I-V-vi-IV");
+		request.steps = 4;
+		request.stepTicks = 100;
+		request.start = -100;
+		std::vector<ChordStep> chords;
+		QString error;
+		QVERIFY2(!chordsFor(request, &chords, &error),
+			"a walk starting before tick 0 was accepted");
+
+		request.start = 0;
+		QVERIFY2(chordsFor(request, &chords, &error), qPrintable(error));
+	}
+
 	/*! CLAIM 2, first half: the SAME REQUEST AND SEED IS THE SAME TAKE, note
 	 *  for note - positions, lengths, keys and velocities. */
 	void theSameSeedIsTheSameTake()

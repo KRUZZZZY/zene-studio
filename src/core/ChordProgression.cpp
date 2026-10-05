@@ -270,6 +270,15 @@ bool validateKey(const Request& request, QString* error)
 		return fail(QStringLiteral("the step is %1 ticks; a chord needs at least one tick")
 			.arg(static_cast<qint64>(request.stepTicks)));
 	}
+	// A tick is a position in the song, and a chord track holds nothing
+	// before tick 0 (ChordTrack::set refuses it): the note path would only
+	// clamp such a walk to 0 and collide its steps, while the event path
+	// would emit events the track cannot store.
+	if (request.start < 0)
+	{
+		return fail(QStringLiteral("the walk starts at tick %1; a chord track starts at tick 0")
+			.arg(static_cast<qint64>(request.start)));
+	}
 	return true;
 }
 
