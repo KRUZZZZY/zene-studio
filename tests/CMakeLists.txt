@@ -435,6 +435,7 @@ set(LMMS_TESTS
 	src/core/InstrumentRoutingTest.cpp
 	src/core/InstrumentLayersCommandsTest.cpp
 	src/core/RecordClipTest.cpp
+	src/core/InputChannelRingTest.cpp
 	src/core/RecordRingBufferTest.cpp
 	src/core/RetroMidiRingTest.cpp
 	src/core/RecordingRealtimeTest.cpp
