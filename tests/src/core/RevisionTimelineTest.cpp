@@ -496,6 +496,35 @@ private slots:
 		QCOMPARE(after.result.value(QStringLiteral("depth")).toInt(), beforeDepth);
 		QCOMPARE(readBytes(project), before);
 	}
+
+	//! Luna cluster 5738: a redo restores the BYTES the restore selected, not the
+	//! revision NUMBER it named. Every restore rotates the live file in, so the
+	//! numbers shift under the recorded redo: after the undo, revision 1 held a
+	//! different file and the redo put THAT over the live one, which left the
+	//! project holding the pre-restore bytes under a redo that reported success.
+	void aRedoRestoresTheBytesTheRestoreSelected()
+	{
+		const QString project = path(QStringLiteral("redo.mmp"));
+		QVERIFY(writeBytes(project, documentWith(3)));
+		QVERIFY(writeBytes(project + QStringLiteral(".rev0"), documentWith(2)));
+		QVERIFY(writeBytes(project + QStringLiteral(".rev1"), documentWith(1)));
+
+		const ControlResult restored = run(QStringLiteral("project.restore_revision"),
+			QJsonObject{{QStringLiteral("path"), project}, {QStringLiteral("revision"), 1}});
+		QVERIFY2(restored.ok, qPrintable(restored.errorMessage));
+		QCOMPARE(readBytes(project), documentWith(1));
+
+		// The undo is the displaced live file, which the rotation kept as revision 0.
+		const ControlResult undone = run(QStringLiteral("control.undo"));
+		QVERIFY2(undone.ok, qPrintable(undone.errorMessage));
+		QCOMPARE(readBytes(project), documentWith(3));
+
+		// The redo must bring back what the restore brought in - the SELECTED
+		// document, which the undo's rotation left somewhere in the retained set.
+		const ControlResult redone = run(QStringLiteral("control.redo"));
+		QVERIFY2(redone.ok, qPrintable(redone.errorMessage));
+		QCOMPARE(readBytes(project), documentWith(1));
+	}
 };
 
 QTEST_GUILESS_MAIN(RevisionTimelineTest)

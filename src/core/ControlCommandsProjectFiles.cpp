@@ -54,6 +54,23 @@ QString sha256OfFile(const QString& path)
 	return QString::fromLatin1(hash.result().toHex());
 }
 
+//! The revision of \a projectPath whose bytes hash to \a sha256, or -1 when the
+//! retained set holds no such revision.
+int revisionHoldingBytes(const QString& projectPath, const QString& sha256)
+{
+	if (sha256.isEmpty()) { return -1; }
+	for (const QJsonValue& value
+		: control::projectRevisionState(projectPath).value(QStringLiteral("revisions")).toArray())
+	{
+		const QJsonObject entry = value.toObject();
+		if (entry.value(QStringLiteral("sha256")).toString() == sha256)
+		{
+			return entry.value(QStringLiteral("revision")).toInt();
+		}
+	}
+	return -1;
+}
+
 //! The `__transaction` project.save records, honest PER CALL (BUG-CTL-6).
 //! `revisionKept` is true only when the rotation actually retained a revision,
 //! so the `project.restore_revision {revision: 0}` inverse is recorded ONLY
@@ -267,21 +284,34 @@ void registerProjectRestoreRevision(ControlRegistry& registry)
 		{
 			return ControlResult::failure(ControlErrorKind::NotFound, error);
 		}
+		// What this restore brought in, identified by its CONTENT (Luna cluster
+		// 5738). The number the caller named is not a stable identity: this
+		// restore rotated the live file in, the recorded undo rotates it in again,
+		// and every rotation shifts rev0 -> rev1 -> rev2 - so by the time the redo
+		// ran, revision N held a different file and the redo wrote THAT over the
+		// live one, undoing nothing the caller could see.
+		const QString restoredSha = sha256OfFile(target);
 		control::addUndoStep(
 			[target]() {
 				QString ignored;
 				control::restoreProjectRevision(target, 0, &ignored);
 			},
-			[target, revision]() {
+			[target, restoredSha]() {
 				QString ignored;
-				control::restoreProjectRevision(target, revision, &ignored);
+				// -1: the undo's own rotation left the set in a shape where these
+				// bytes are no longer retained. Restoring some other revision
+				// instead would be a wrong-bytes overwrite, so the redo leaves the
+				// file as the undo left it.
+				const int current = revisionHoldingBytes(target, restoredSha);
+				if (current < 0) { return; }
+				control::restoreProjectRevision(target, current, &ignored);
 			});
 
 		QJsonObject result;
 		result.insert(QStringLiteral("file"), target);
 		result.insert(QStringLiteral("revision"), revision);
 		result.insert(QStringLiteral("restored"), true);
-		result.insert(QStringLiteral("sha256"), sha256OfFile(target));
+		result.insert(QStringLiteral("sha256"), restoredSha);
 		result.insert(QStringLiteral("revisions"), control::projectRevisionState(target));
 		QJsonObject transaction;
 		transaction.insert(QStringLiteral("before"),
