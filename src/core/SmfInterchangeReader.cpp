@@ -417,6 +417,19 @@ bool parseHeader(Cursor& cursor, SmfReadReport* report, QString* error)
 			"header extension it names is truncated").arg(headerLength);
 		return false;
 	}
+	// This import path builds ONE timeline out of the tracks. Format 1 shares a
+	// tick origin across them, so its tracks merge; format 2's tracks are
+	// independent sequences with their own origins and tempos, which would be
+	// merged as if they played together, and an unknown format says nothing at
+	// all about how its tracks relate. Both are refused rather than merged.
+	if (format != 0 && format != 1)
+	{
+		*error = QStringLiteral(
+			"SMF format %1 cannot be imported - this reader merges format 0 and "
+			"format 1 tracks onto one timeline, and format %1 does not share a "
+			"tick origin across its tracks").arg(format);
+		return false;
+	}
 	if (!validateDivision(division, error)) { return false; }
 	report->format = format;
 	report->trackCount = trackCount;

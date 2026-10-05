@@ -514,6 +514,46 @@ private slots:
 			{{QStringLiteral("path"), good}}).ok, "a six-byte MThd chunk is read");
 	}
 
+	//! The import path is documented as accepting formats 0 and 1 only. A
+	//! format 2 file is not that: its tracks are independent sequences, each
+	//! with its own tick origin and its own tempo, and there is no single
+	//! timeline to merge them onto. parseHeader() recorded the format and never
+	//! checked it, so mergeCandidates() folded every track into one map and
+	//! the first tempo at tick zero silently became the tempo of all of them.
+	//! An unknown format is the same story with less information: nothing says
+	//! what the tracks mean. Both are refused here rather than merged.
+	void aFormatTheReaderCannotMergeIsRefused()
+	{
+		for (int format : {2, 7})
+		{
+			QByteArray bytes = plainFile(480, {{0, 120, 4, 4}});
+			bytes[8] = static_cast<char>((format >> 8) & 0xFF);
+			bytes[9] = static_cast<char>(format & 0xFF);
+			const QString file = path(m_directory,
+				QStringLiteral("format-%1.mid").arg(format));
+			QVERIFY(writeFile(file, bytes));
+			const ControlResult read = run(QStringLiteral("interchange.smf_read"),
+				{{QStringLiteral("path"), file}});
+			QVERIFY2(!read.ok,
+				qPrintable(QStringLiteral("SMF format %1 was accepted").arg(format)));
+			QCOMPARE(read.errorKind, ControlErrorKind::InvalidArgs);
+			QVERIFY2(read.errorMessage.contains(QStringLiteral("format")),
+				qPrintable(read.errorMessage));
+			const ControlResult imported = run(QStringLiteral("interchange.smf_import"),
+				{{QStringLiteral("path"), file}});
+			QVERIFY(!imported.ok);
+			QCOMPARE(digest(mapEvents()), QString());  // a refusal imports nothing
+		}
+
+		// The control: format 1 is the multi-track format this reader merges.
+		QByteArray one = plainFile(480, {{0, 120, 4, 4}});
+		one[9] = static_cast<char>(0x01);
+		const QString good = path(m_directory, QStringLiteral("format-1.mid"));
+		QVERIFY(writeFile(good, one));
+		QVERIFY2(run(QStringLiteral("interchange.smf_read"),
+			{{QStringLiteral("path"), good}}).ok, "an SMF format 1 file is read");
+	}
+
 	//! Every track ends with an end-of-track meta event; it is how the format
 	//! says the sequence is over. readTrack() returned success when its walk ran
 	//! out of bytes, and nothing recorded whether the event had arrived - so a
