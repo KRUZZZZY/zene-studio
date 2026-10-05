@@ -147,6 +147,19 @@ ControlResult listNotes(const QJsonObject& args)
 		{QStringLiteral("count"), notes.size()}});
 }
 
+//! The new note's END, which is the sum note.edit's checkEndPosition() also sums in
+//! qint64 (src/core/ControlCommandsNoteEdit.cpp): position and length are each a legal
+//! int on their own, so their sum is where the signed 32-bit tick range can be left.
+bool checkNewEndPosition(int position, int length, int index, ControlResult* error)
+{
+	const qint64 end = static_cast<qint64>(position) + static_cast<qint64>(length);
+	if (end <= static_cast<qint64>(MaxSongLength)) { return true; }
+	*error = ControlResult::failure(ControlErrorKind::InvalidArgs,
+		QStringLiteral("notes[%1] ends at %2, past the song limit of %3")
+			.arg(index).arg(end).arg(static_cast<qint64>(MaxSongLength)));
+	return false;
+}
+
 //! One entry of note.add_many checked: key 0..127, position >= 0, length >= 1, velocity 0..200.
 bool readNewNote(const QJsonObject& entry, int index, Note* out, ControlResult* error)
 {
@@ -161,6 +174,7 @@ bool readNewNote(const QJsonObject& entry, int index, Note* out, ControlResult* 
 			"length >= 1 and velocity %3..%4").arg(index).arg(NumKeys - 1).arg(MinVolume).arg(MaxVolume));
 		return false;
 	}
+	if (!checkNewEndPosition(position, length, index, error)) { return false; }
 	*out = Note(TimePos(length), TimePos(position), key, static_cast<volume_t>(velocity));
 	return true;
 }

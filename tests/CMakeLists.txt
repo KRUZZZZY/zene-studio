@@ -598,6 +598,8 @@ set(LMMS_TESTS
 	src/core/NoteEditingCommandsTest.cpp
 	# 0.5.0 L07: note.edit's range validation - a note may not end past MaxSongLength.
 	src/core/NoteEditRangeTest.cpp
+	# 0.5.0 L07: what the note-shape verbs refuse - a past-the-limit note, a malformed filter field, an unholdable amount.
+	src/core/NoteShapeValidationTest.cpp
 	# 0.5.0 L07 ED-145/113: a track's MIDI input transform - rules, commands, file, live input.
 	src/core/MidiInputTransformTest.cpp
 	# 0.5.0 L07 ED-137: quantise audio - transients become warp markers on the grid.
