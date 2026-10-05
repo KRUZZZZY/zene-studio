@@ -25,6 +25,7 @@
 #include "MidiInputTransform.h"
 
 #include <algorithm>
+#include <cmath>
 
 #include <QDomElement>
 #include <QJsonDocument>
@@ -159,12 +160,17 @@ QJsonObject MidiInputTransform::toJson() const
 
 bool MidiInputTransform::fromJson(const QJsonObject& json, QString* error)
 {
-	// Checked whole first: one bad value changes nothing.
+	// Checked whole first: one bad value changes nothing. The value is compared
+	// as the double it is, because QJsonValue::toInt() answers its DEFAULT (0)
+	// for a number that is not whole - so 2.5 passed the range check and was
+	// stored as 0, transposing by nothing.
 	for (const Setting& s : settings())
 	{
 		const QJsonValue value = json.value(QLatin1String(s.key));
 		if (value.isUndefined()) { continue; }
-		if (!value.isDouble() || value.toInt() < s.minimum || value.toInt() > s.maximum)
+		const double number = value.toDouble();
+		if (!value.isDouble() || number != std::trunc(number)
+			|| number < s.minimum || number > s.maximum)
 		{
 			*error = QStringLiteral("'%1' is an integer in %2..%3").arg(QLatin1String(s.key)).arg(s.minimum).arg(s.maximum);
 			return false;
