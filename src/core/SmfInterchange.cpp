@@ -207,44 +207,67 @@ void mergeHalves(SmfInterchangeEvent* target, const SmfInterchangeEvent& source)
 
 // --- the track chunk, the file and the report -------------------------------
 
+/*! The delta time from @a cursor to @a tick, in file ticks, or false when the
+ *  format cannot carry the distance: a variable-length quantity is at most four
+ *  bytes (SmfMaxDeltaTicks), so a wider gap has no encoding at all and the file
+ *  is refused rather than written as something no reader of the format accepts. */
+bool appendDelta(QByteArray& out, qint64 cursor, qint64 tick, QString* error)
+{
+	const qint64 delta = tick - cursor;
+	if (delta < 0 || delta > SmfMaxDeltaTicks)
+	{
+		if (error != nullptr)
+		{
+			*error = QStringLiteral("the gap to file tick %1 is %2, beyond the %3 a Standard "
+				"MIDI File delta time carries in four bytes; nothing was exported")
+				.arg(tick).arg(delta).arg(SmfMaxDeltaTicks);
+		}
+		return false;
+	}
+	appendVlq(out, static_cast<quint32>(delta));
+	return true;
+}
+
 /*! The track chunk's body: delta times are relative to the previous event, so
  *  the list is walked once with a cursor. At one tick the metre is written
  *  BEFORE the tempo - the order every DAW writes a conductor track in. */
-QByteArray trackBody(const std::vector<SmfInterchangeEvent>& events)
+bool trackBody(const std::vector<SmfInterchangeEvent>& events, QByteArray* body, QString* error)
 {
-	QByteArray body;
+	QByteArray bytes;
 	const QByteArray name(QByteArrayLiteral("Zene Studio tempo map"));
-	const quint32 first = events.empty() ? 0 : static_cast<quint32>(events.front().tick);
-	appendVlq(body, first);
-	appendMeta(body, SmfMetaTrackName, name);
+	// A LMMS tick is 1/48 of a quarter note and the file declares 480 per
+	// quarter, so the file's tick of a LMMS tick is exactly ten times it
+	// (SmfTicksPerLmmsTick) - the conversion this whole module exists to
+	// record. 64-bit throughout the walk, and narrowed only inside appendDelta
+	// after the delta itself has been checked: tick_t is 32-bit, so a tick near
+	// its ceiling times ten does not fit a quint32, and narrowing it there
+	// wrapped the position and every delta after the wrap with it.
+	qint64 cursor = events.empty() ? 0
+		: static_cast<qint64>(events.front().tick) * SmfTicksPerLmmsTick;
+	if (!appendDelta(bytes, 0, cursor, error)) { return false; }
+	appendMeta(bytes, SmfMetaTrackName, name);
 
-	quint32 cursor = first;
 	for (const SmfInterchangeEvent& event : events)
 	{
-		// A LMMS tick is 1/48 of a quarter note and the file declares 480 per
-		// quarter, so the file's tick of a LMMS tick is exactly ten times it
-		// (SmfTicksPerLmmsTick) - the conversion this whole module exists to
-		// record. 64-bit in the middle: tick_t is 32-bit and a tick near its
-		// ceiling would otherwise wrap.
-		const quint32 tick = static_cast<quint32>(
-			static_cast<qint64>(event.tick) * SmfTicksPerLmmsTick);
+		const qint64 tick = static_cast<qint64>(event.tick) * SmfTicksPerLmmsTick;
 		if (event.hasTimeSignature)
 		{
-			appendVlq(body, tick - cursor);
+			if (!appendDelta(bytes, cursor, tick, error)) { return false; }
 			cursor = tick;
-			appendMeta(body, SmfMetaTimeSignature,
+			appendMeta(bytes, SmfMetaTimeSignature,
 				timeSignaturePayload(event.numerator, event.denominator));
 		}
 		if (event.hasTempo)
 		{
-			appendVlq(body, tick - cursor);
+			if (!appendDelta(bytes, cursor, tick, error)) { return false; }
 			cursor = tick;
-			appendMeta(body, SmfMetaTempo, tempoPayload(event.tempo));
+			appendMeta(bytes, SmfMetaTempo, tempoPayload(event.tempo));
 		}
 	}
-	appendVlq(body, 0);
-	appendMeta(body, SmfMetaEndOfTrack, QByteArray());
-	return body;
+	appendVlq(bytes, 0);
+	appendMeta(bytes, SmfMetaEndOfTrack, QByteArray());
+	*body = bytes;
+	return true;
 }
 
 //! The whole file: MThd (format 1, one track, division 480) then one MTrk.
@@ -360,7 +383,9 @@ bool writeConductorTrack(const QString& path, const TempoMap& map, int globalTem
 {
 	const std::vector<SmfInterchangeEvent> events = exportEvents(map, globalTempo, globalSignature,
 		report != nullptr ? &report->seedEvents : nullptr);
-	const QByteArray bytes = conductorFile(trackBody(events));
+	QByteArray body;
+	if (!trackBody(events, &body, error)) { return false; }
+	const QByteArray bytes = conductorFile(body);
 	if (!writeBytes(path, bytes, error)) { return false; }
 	if (report != nullptr) { fillWriteReport(path, bytes, events, report); }
 	return true;
