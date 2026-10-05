@@ -1,3 +1,8 @@
+# Preserved campaign output: green-corrections.log
+
+Original output SHA-256: `56aa1ecfadd2f6d07717a822988aa764feedfe56d08e932355a735464c8e63d9`.
+
+~~~~text
 Test project /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-bunny-integration/build/tests
     Start  30: ChordProgressionTest
 1/5 Test  #30: ChordProgressionTest .................   Passed    0.08 sec
@@ -13,3 +18,4 @@ Test project /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-progra
 100% tests passed, 0 tests failed out of 5
 
 Total Test time (real) =   4.19 sec
+~~~~

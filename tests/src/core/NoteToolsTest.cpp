@@ -30,6 +30,7 @@
 #include <QtTest>
 
 #include <QJsonArray>
+#include <QPointer>
 #include <algorithm>
 
 #include "ControlRegistry.h"
@@ -438,12 +439,20 @@ private slots:
 	//! object, so a kept Track* or MidiClip* is null by then and the redo would build nothing.
 	void aSplitIsRebuiltAfterItsSourceTrackIsRemovedAndUndone()
 	{
-		MidiClip* clip = clipWith({{36, 0}, {38, 24}});
+		const QPointer<InstrumentTrack> sharedTrack(m_track);
+		// Removing and undoing the source builds a new object. Use a private source:
+		// later cases still use m_track, which must not become a dangling pointer.
+		auto* source = dynamic_cast<InstrumentTrack*>(Track::create(Track::Type::Instrument, Engine::getSong()));
+		QVERIFY(source != nullptr);
+		auto* clip = dynamic_cast<MidiClip*>(source->createClip(TimePos(0)));
+		QVERIFY(clip != nullptr);
+		clip->addNote(Note(TimePos(24), TimePos(0), 36), false);
+		clip->addNote(Note(TimePos(24), TimePos(24), 38), false);
 		const int before = static_cast<int>(Engine::getSong()->tracks().size());
 		QVERIFY(run(QStringLiteral("note.split_by_pitch"), self(clip)).ok);
 		QCOMPARE(static_cast<int>(Engine::getSong()->tracks().size()), before + 2);  // one per key
 		const auto undone = []() { return run(QStringLiteral("control.undo")).result.value(QStringLiteral("undone")).toBool(); };
-		QVERIFY(run(QStringLiteral("track.remove"), {{QStringLiteral("track"), control::trackIdOf(m_track)}}).ok);
+		QVERIFY(run(QStringLiteral("track.remove"), {{QStringLiteral("track"), control::trackIdOf(source)}}).ok);
 		QVERIFY(undone());
 		QCOMPARE(static_cast<int>(Engine::getSong()->tracks().size()), before + 2);  // the source track is back
 		QVERIFY(undone());  // the split goes: its tracks are gone again
@@ -451,6 +460,7 @@ private slots:
 		QVERIFY(run(QStringLiteral("control.redo")).result.value(QStringLiteral("redone")).toBool());
 		QCOMPARE(static_cast<int>(Engine::getSong()->tracks().size()), before + 2);
 		QVERIFY(undone());
+		QVERIFY2(sharedTrack, "the destructive regression must leave the shared fixture track alive");
 	}
 	//! Luna cluster 2870: note.randomize rolled its notes' positions in place and never
 	//! called clip->updateLength(), so an auto-resizing clip kept its old length when a
@@ -459,8 +469,7 @@ private slots:
 	{
 		constexpr int kJitter = 1024;
 		const tick_t barTicks = TimePos::ticksPerBar();
-		// Its own track: an earlier case in this binary removes m_track, and a roll
-		// that grows a clip must not depend on which case ran before it.
+		// Its own track: a roll that grows a clip must not depend on which case ran before it.
 		auto* track = dynamic_cast<InstrumentTrack*>(Track::create(Track::Type::Instrument, Engine::getSong()));
 		MidiClip* clip = nullptr;
 		int seed = 0;

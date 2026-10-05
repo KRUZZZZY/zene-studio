@@ -1,3 +1,8 @@
+# Preserved campaign output: configure.log
+
+Original output SHA-256: `de1c8b1171784742d0f3ceffc54e2360ed35fe9cc1b36fdfb2d6571c89f94a1a`.
+
+~~~~text
 -- The C compiler identification is GNU 13.3.0
 -- The CXX compiler identification is GNU 13.3.0
 -- Detecting C compiler ABI info
@@ -363,3 +368,4 @@ running cmake again!
 -- Configuring done (46.2s)
 -- Generating done (8.0s)
 -- Build files have been written to: /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-fix-presets/build
+~~~~

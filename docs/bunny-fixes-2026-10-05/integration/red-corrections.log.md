@@ -1,3 +1,8 @@
+# Preserved campaign output: red-corrections.log
+
+Original output SHA-256: `f3ecf876e7e3e6ab819648ef995ed622e50388971eac82ad5cf0273b605232aa`.
+
+~~~~text
 Test project /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-bunny-integration/build/tests
     Start  30: ChordProgressionTest
 1/5 Test  #30: ChordProgressionTest .................***Failed    0.06 sec
@@ -176,3 +181,4 @@ The following tests FAILED:
 	210 - DawProjectInterchangeRoundTripTest (Failed)
 	222 - TrackFolderTest (Failed)
 Errors while running CTest
+~~~~

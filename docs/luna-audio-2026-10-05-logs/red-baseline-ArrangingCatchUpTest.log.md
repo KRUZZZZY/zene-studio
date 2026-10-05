@@ -1,3 +1,8 @@
+# Preserved campaign output: red-baseline-ArrangingCatchUpTest.log
+
+Original output SHA-256: `dbc274577322db86ee320f46d0ec336ce092ab5ada71b7c49f662101fb8e061c`.
+
+~~~~text
 ********* Start testing of ArrangingCatchUpTest *********
 Config: Using QtTest library 6.4.2, Qt 6.4.2 (x86_64-little_endian-lp64 shared (dynamic) release build; by GCC 13.2.0), ubuntu 24.04
   environment variable "LMMS_LV2_DEBUG" to nonempty.
@@ -36,3 +41,4 @@ FAIL!  : ArrangingCatchUpTest::switchingMonitoringOffRemovesAHandleQueuedInTheSa
 PASS   : ArrangingCatchUpTest::cleanupTestCase()
 Totals: 15 passed, 2 failed, 1 skipped, 0 blacklisted, 1388ms
 ********* Finished testing of ArrangingCatchUpTest *********
+~~~~

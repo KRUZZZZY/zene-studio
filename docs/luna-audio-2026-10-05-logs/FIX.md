@@ -27,14 +27,14 @@ read a freed instrument (recorded at the time as a double free).
 
 The header gains a member, so every module that constructs an `InstrumentPlayHandle` must be rebuilt with it
 (carlabase, clapinstrument, gigplayer, lb302, lv2instrument, opulenz, sf2player, vestige, vst3instrument,
-zynaddsubfx). A run with a stale `lb302` module corrupts the heap (`trace-stale-lb302-module-heap-abort.log`):
+zynaddsubfx). A run with a stale `lb302` module corrupts the heap (`trace-stale-lb302-module-heap-abort.log.md`):
 that, not the fix, was what made the takeover lane's runs "hang".
 
 ## Evidence
-- Red: `red-baseline-ArrangingCatchUpTest.log`: `queuedInstrumentHandlesAreRemovedBeforeTheirTrackCanDie`
+- Red: `red-baseline-ArrangingCatchUpTest.log.md`: `queuedInstrumentHandlesAreRemovedBeforeTheirTrackCanDie`
   (beforeRender 0, expected 1) and `switchingMonitoringOffRemovesAHandleQueuedInTheSamePeriod` fail.
 - ASan (RelWithDebInfo, `-fsanitize=address`): baseline shows no memory error in 6 runs (timing hides the
-  race) and the two regression failures; the sweep change alone passes all (`asan-*-run1.log`).
+  race) and the two regression failures; the sweep change alone passes all (`asan-*-run1.log.md`).
 - Green, every module rebuilt: `ctest -R '^ArrangingCatchUpTest$' --repeat until-fail:30` EXIT=0 (30/30);
   AudioBusHandleTest, AudioEngineTeardownTest, InputMonitorTest, PdcMixerTest, SampleClipWarpTest,
   SampleClipWindowTest, PluginPortsMigrationTest, SessionTuningTest, Vst3InstrumentIntegrationTest EXIT=0.

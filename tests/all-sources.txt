@@ -2460,8 +2460,8 @@ tests/src/core/MpscQueueTest.cpp
 tests/src/core/MultiTrackRecorderTest.cpp
 tests/src/core/NamespaceRegistryTest.cpp
 tests/src/core/NoteCurvesAcrossTest.cpp
-tests/src/core/NoteEditingCommandsTest.cpp
 tests/src/core/NoteEditRangeTest.cpp
+tests/src/core/NoteEditingCommandsTest.cpp
 tests/src/core/NotePlaybackTest.cpp
 tests/src/core/NoteRandomTest.cpp
 tests/src/core/NoteShapeValidationTest.cpp

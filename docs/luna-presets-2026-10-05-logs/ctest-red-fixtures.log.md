@@ -1,9 +1,14 @@
+# Preserved campaign output: ctest-red-fixtures.log
+
+Original output SHA-256: `d8d83523c68cdf5ae3251b3ea62d971e5afddb7fd1e33b746672a4abf6212525`.
+
+~~~~text
 Test project /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-fix-presets/build/tests
     Start  25: ControlChainPresetTest
-1/2 Test  #25: ControlChainPresetTest ...........***Failed    1.37 sec
+1/2 Test  #25: ControlChainPresetTest ...........***Failed    1.31 sec
 ********* Start testing of ControlChainPresetTest *********
 Config: Using QtTest library 6.4.2, Qt 6.4.2 (x86_64-little_endian-lp64 shared (dynamic) release build; by GCC 13.2.0), ubuntu 24.04
-QDEBUG : ControlChainPresetTest::initTestCase() Lv2 plugin SUMMARY: 73 of 87  loaded in 114 msecs.
+QDEBUG : ControlChainPresetTest::initTestCase() Lv2 plugin SUMMARY: 73 of 87  loaded in 113 msecs.
 QDEBUG : ControlChainPresetTest::initTestCase() For details about not loaded plugins, please set
   environment variable "LMMS_LV2_DEBUG" to nonempty.
 QDEBUG : ControlChainPresetTest::initTestCase() Blocked Lv2 Plugins: 10 of 87 
@@ -15,7 +20,7 @@ PASS   : ControlChainPresetTest::contractRowsClassifyTheGroup()
 PASS   : ControlChainPresetTest::theNameRuleRefusesANameThatWouldEscapeTheStore()
 PASS   : ControlChainPresetTest::theStoreIsTheUserPresetTreeAndNotTheProject()
 PASS   : ControlChainPresetTest::aPresetKeepsEveryDeviceInOrderWithItsOwnIdentity()
-QINFO  : ControlChainPresetTest::aStateDocumentThatIsNotZenePluginStateIsRefused() plugin-scan: 3 file(s), 0 quarantined, 0 served from cache, 0 known-bad skipped, 3 scanned, 3 plugin(s)
+QINFO  : ControlChainPresetTest::aStateDocumentThatIsNotZenePluginStateIsRefused() plugin-scan: 4 file(s), 0 quarantined, 0 served from cache, 0 known-bad skipped, 4 scanned, 4 plugin(s)
 PASS   : ControlChainPresetTest::aStateDocumentThatIsNotZenePluginStateIsRefused()
 FAIL!  : ControlChainPresetTest::aPresetRefusesADamagedDeviceCount(2) '!read' returned FALSE. ()
    Loc: [/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-fix-presets/tests/src/core/ControlChainPresetTest.cpp(387)]
@@ -34,20 +39,21 @@ FAIL!  : ControlChainPresetTest::anUnreadablePresetCannotBeOverwritten(chain) '!
    Loc: [/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-fix-presets/tests/src/core/ControlChainPresetTest.cpp(463)]
 FAIL!  : ControlChainPresetTest::anUnreadablePresetCannotBeOverwritten(export) '!overwritten.ok' returned FALSE. ()
    Loc: [/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-fix-presets/tests/src/core/ControlChainPresetTest.cpp(463)]
-FAIL!  : ControlChainPresetTest::aCapturedChainAppliesToASecondTrackWithTheSameDevicesAndValues() Compared values are not the same
-   Actual   (loadEffects(source, 2, &ids)): 1
-   Expected (2)                           : 2
-   Loc: [/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-fix-presets/tests/src/core/ControlChainPresetTest.cpp(489)]
+JO-ID 8418017 already in use by AmplifierControls!
+JO-ID 8397251 already in use by effect!
+JO-ID 8397893 already in use by waveshapercontrols!
+JO-ID 8396680 already in use by effect!
+PASS   : ControlChainPresetTest::aCapturedChainAppliesToASecondTrackWithTheSameDevicesAndValues()
 PASS   : ControlChainPresetTest::theStoreEditsAreReversible()
 PASS   : ControlChainPresetTest::cleanupTestCase()
-Totals: 9 passed, 9 failed, 0 skipped, 0 blacklisted, 1297ms
+Totals: 10 passed, 8 failed, 0 skipped, 0 blacklisted, 1246ms
 ********* Finished testing of ControlChainPresetTest *********
 
     Start 270: RenderPresetMenuTest
 2/2 Test #270: RenderPresetMenuTest .............***Failed    1.29 sec
 ********* Start testing of RenderPresetMenuTest *********
 Config: Using QtTest library 6.4.2, Qt 6.4.2 (x86_64-little_endian-lp64 shared (dynamic) release build; by GCC 13.2.0), ubuntu 24.04
-QDEBUG : RenderPresetMenuTest::initTestCase() Lv2 plugin SUMMARY: 73 of 87  loaded in 111 msecs.
+QDEBUG : RenderPresetMenuTest::initTestCase() Lv2 plugin SUMMARY: 73 of 87  loaded in 112 msecs.
 QDEBUG : RenderPresetMenuTest::initTestCase() For details about not loaded plugins, please set
   environment variable "LMMS_LV2_DEBUG" to nonempty.
 QDEBUG : RenderPresetMenuTest::initTestCase() Blocked Lv2 Plugins: 10 of 87 
@@ -64,16 +70,17 @@ FAIL!  : RenderPresetMenuTest::aFailedRenderPresetDeleteLeavesNoHistory() Compar
    Expected (serial)                                   : 6
    Loc: [/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-fix-presets/tests/src/gui/RenderPresetMenuTest.cpp(199)]
 PASS   : RenderPresetMenuTest::cleanupTestCase()
-Totals: 3 passed, 2 failed, 0 skipped, 0 blacklisted, 1203ms
+Totals: 3 passed, 2 failed, 0 skipped, 0 blacklisted, 1205ms
 ********* Finished testing of RenderPresetMenuTest *********
 
 
 0% tests passed, 2 tests failed out of 2
 
-Total Test time (real) =   2.67 sec
+Total Test time (real) =   2.62 sec
 
 The following tests FAILED:
 	 25 - ControlChainPresetTest (Failed)
 	270 - RenderPresetMenuTest (Failed)
 Errors while running CTest
 EXIT=8
+~~~~

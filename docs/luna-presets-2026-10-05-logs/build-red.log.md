@@ -1,3 +1,8 @@
+# Preserved campaign output: build-red.log
+
+Original output SHA-256: `ce39dcb9e9a9425367011a20803e4031ed689885236a3b30d51338f8e298c537`.
+
+~~~~text
 [  0%] Building C object src/3rdparty/lua/CMakeFiles/lua.dir/lauxlib.c.o
 [  0%] Building C object src/3rdparty/lua/CMakeFiles/lua.dir/lapi.c.o
 [  0%] Building C object src/3rdparty/weakjack/CMakeFiles/weakjack.dir/weakjack/weak_libjack.c.o
@@ -1223,3 +1228,4 @@ EXIT=0
 [100%] Linking CXX shared module ../libwaveshaper.so
 [100%] Built target waveshaper
 EXIT=0
+~~~~

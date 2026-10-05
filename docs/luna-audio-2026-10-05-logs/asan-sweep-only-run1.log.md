@@ -1,3 +1,8 @@
+# Preserved campaign output: asan-sweep-only-run1.log
+
+Original output SHA-256: `241d3fb835cde16a097100ad84f5db24fba09adcc5638f364aa4668a3a1e4b03`.
+
+~~~~text
 PASS   : ArrangingCatchUpTest::initTestCase()
 PASS   : ArrangingCatchUpTest::aSplitCutsAtAFrameBetweenTwoTicks()
 PASS   : ArrangingCatchUpTest::zeroCrossingSnapMovesTheCutOntoACrossing()
@@ -12,7 +17,8 @@ PASS   : ArrangingCatchUpTest::theReferenceCloses()
 PASS   : ArrangingCatchUpTest::aSwitchKeepsTheProjectLeftAsTheReference()
 PASS   : ArrangingCatchUpTest::aSwitchRefusesToLoseAnUntitledSession()
 PASS   : ArrangingCatchUpTest::newDocumentsCarryTheirTypesTemplate()
-FAIL!  : ArrangingCatchUpTest::queuedInstrumentHandlesAreRemovedBeforeTheirTrackCanDie() Compared values are not the same
-FAIL!  : ArrangingCatchUpTest::switchingMonitoringOffRemovesAHandleQueuedInTheSamePeriod() '!survived' returned FALSE. (monitoring Off left a staged monitor in the render list)
+PASS   : ArrangingCatchUpTest::queuedInstrumentHandlesAreRemovedBeforeTheirTrackCanDie()
+PASS   : ArrangingCatchUpTest::switchingMonitoringOffRemovesAHandleQueuedInTheSamePeriod()
 PASS   : ArrangingCatchUpTest::cleanupTestCase()
-Totals: 15 passed, 2 failed, 1 skipped, 0 blacklisted, 2916ms
+Totals: 17 passed, 0 failed, 1 skipped, 0 blacklisted, 2407ms
+~~~~

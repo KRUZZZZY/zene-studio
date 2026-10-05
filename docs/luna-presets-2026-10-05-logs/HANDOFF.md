@@ -68,3 +68,8 @@ env -u LMMS_PLUGIN_DIR QT_QPA_PLATFORM=offscreen ctest -R '^(ControlChainPresetT
 Capture the failing assertions before product edits, then rebuild affected targets and
 capture green. Full suite/gates are parent integration work. Unverified: every regression's
 runtime behavior, all fixes, non-Linux permission behavior. No pushes, tags, or rewrites.
+
+## Evidence packaging correction (2026-10-05)
+
+The original `.log` outputs referenced above are preserved as `.log.md` Markdown transcripts,
+with their original SHA-256 digests. Historical commands retain their original output filenames.
