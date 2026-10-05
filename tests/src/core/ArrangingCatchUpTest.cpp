@@ -222,6 +222,19 @@ private slots:
 		QCOMPARE(clip->startPosition().getTicks(), 0);
 	}
 
+	void anEndFramesTrimWithoutAnEndIsRefused()
+	{
+		SampleClip* clip = freshClip();
+		const int length = clip->length().getTicks();
+		// 'end_frames' is a frame offset from the 'end' tick, so without that tick there is nothing to
+		// offset from: the frame path took the call and answered success while moving nothing.
+		const ControlResult trimmed = run(QStringLiteral("clip.trim"), {{QStringLiteral("clip"), control::clipIdOf(clip)},
+			{QStringLiteral("start"), 0}, {QStringLiteral("end_frames"), 100}, {QStringLiteral("zero_crossing"), false}});
+		QCOMPARE(trimmed.errorKind, ControlErrorKind::InvalidArgs);
+		QVERIFY(!trimmed.ok);
+		QCOMPARE(clip->length().getTicks(), length);
+	}
+
 	void theLeadSavesLoadsAndIsResetWhenAbsent()
 	{
 		SampleClip* clip = freshClip();
