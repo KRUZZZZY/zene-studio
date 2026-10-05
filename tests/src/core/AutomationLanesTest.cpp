@@ -36,6 +36,8 @@
 
 #include <QtTest>
 
+#include <limits>
+
 #include <QDomDocument>
 #include <QJsonArray>
 
@@ -170,6 +172,38 @@ private slots:
 		// A draw inside the limit still draws: the cap is a ceiling, not a refusal of everything.
 		clip->drawShape(384, 576, AutomationClip::Shape::Saw, 1, 0.f, 100.f, 48);
 		QCOMPARE(static_cast<int>(clip->getTimeMap().size()), before + 5);
+	}
+
+	/*! ED-186 with inputs the tick arithmetic cannot represent: a time scale and an
+	 *  offset past the end of int, and a scale that is not a number at all. Every
+	 *  resulting point must still be a real tick in [0, INT_MAX] - the unfixed code
+	 *  lround()s a double far outside long's range and casts the result to int. */
+	void aTransformWithUnrepresentableInputsStaysInTickRange()
+	{
+		AutomationClip* clip = freshClip(m_track->volumeModel());
+		clip->putValue(TimePos(0), 0.f, false, true);
+		clip->putValue(TimePos(96), 100.f, false, true);
+		clip->putValue(TimePos(192), 0.f, false, true);
+
+		QCOMPARE(clip->transformRange(0, 192, 1.0e18, 0, 1.0, 0.0), 3);
+		for (auto it = clip->getTimeMap().begin(); it != clip->getTimeMap().end(); ++it)
+		{
+			QVERIFY(it.key() >= 0);
+			QVERIFY2(it.value().getOutValue() >= clip->getMin() && it.value().getOutValue() <= clip->getMax(),
+				"a transformed point's value left the clip's range");
+		}
+
+		// The same for a scale that is not finite: nothing may be written at all.
+		AutomationClip* other = freshClip(m_track->volumeModel());
+		other->putValue(TimePos(0), 10.f, false, true);
+		other->putValue(TimePos(96), 90.f, false, true);
+		QCOMPARE(other->transformRange(0, 96, std::numeric_limits<double>::infinity(), 0, 1.0, 0.0), 0);
+		QCOMPARE(static_cast<int>(other->getTimeMap().size()), 2);
+		QCOMPARE(other->getTimeMap().value(0).getOutValue(), 10.f);
+
+		// An ordinary transform is unaffected: the guards are for the extremes.
+		QCOMPARE(other->transformRange(0, 96, 2.0, 0, 1.0, 0.0), 2);
+		QVERIFY(other->getTimeMap().contains(192));
 	}
 
 	void aPointsOwnCurveDecidesTheSegmentAfterIt()

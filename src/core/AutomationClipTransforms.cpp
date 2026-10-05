@@ -30,6 +30,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
 #include <random>
 #include <vector>
 
@@ -251,8 +252,35 @@ void AutomationClip::drawShape(int start, int end, Shape shape, int cycles, floa
 	emit dataChanged();
 }
 
+namespace
+{
+
+//! Whether every scale and offset transformRange was handed can take part in arithmetic:
+//! a NaN or an infinity has no tick, so a transform carrying one is refused whole rather
+//! than half-written (and rather than casting a non-finite double to an int).
+bool transformInputsAreFinite(double timeScale, int timeOffset, double valueScale, double valueOffset)
+{
+	return std::isfinite(timeScale) && std::isfinite(valueScale) && std::isfinite(valueOffset)
+		&& timeOffset >= std::numeric_limits<int>::min() / 2 && timeOffset <= std::numeric_limits<int>::max() / 2;
+}
+
+/*! @a pos rescaled about @a start and shifted by @a timeOffset, as a tick clamped into
+ *  [0, INT_MAX]. The scaling is done in long double and the round is made only after the
+ *  result is clamped, so a scale far outside the representable range cannot overflow the
+ *  conversion or the following integer addition. */
+int transformedTick(int start, int pos, double timeScale, int timeOffset)
+{
+	const long double scaled = static_cast<long double>(start) + (pos - start) * timeScale;
+	const long double limit = static_cast<long double>(std::numeric_limits<int>::max());
+	const long double clamped = std::clamp(scaled + timeOffset, 0.0L, limit);
+	return static_cast<int>(std::llround(clamped));
+}
+
+} // namespace
+
 int AutomationClip::transformRange(int start, int end, double timeScale, int timeOffset, double valueScale, double valueOffset)
 {
+	if (!transformInputsAreFinite(timeScale, timeOffset, valueScale, valueOffset)) { return 0; }
 	QMutexLocker m(&m_clipMutex);
 	timeMap kept;
 	std::vector<std::pair<int, AutomationNode>> moved;
@@ -267,7 +295,7 @@ int AutomationClip::transformRange(int start, int end, double timeScale, int tim
 	};
 	for (const auto& [pos, node] : moved)
 	{
-		const int tick = std::max(0, static_cast<int>(std::lround(start + (pos - start) * timeScale)) + timeOffset);
+		const int tick = transformedTick(start, pos, timeScale, timeOffset);
 		// The point keeps its own curve and bend (review L06-L07a #1).
 		AutomationNode point(this, value(node.getInValue()), value(node.getOutValue()), tick);
 		point.setCurve(node.curve(), node.bend());
