@@ -109,9 +109,23 @@ void ArticulationMap::save(QDomElement& trackElement) const
 
 void ArticulationMap::load(const QDomElement& trackElement)
 {
+	const QByteArray raw = trackElement.attribute(QStringLiteral("articulations")).toUtf8();
+	if (raw.isEmpty()) { m_entries.clear(); return; }
+	QJsonParseError problem;
+	const QJsonDocument document = QJsonDocument::fromJson(raw, &problem);
+	if (problem.error != QJsonParseError::NoError || !document.isArray())
+	{
+		// An unreadable document and valid JSON that is not an array both gave an empty array: the map
+		// was cleared without a word. Say so, and load with none either way.
+		const QString why = problem.error == QJsonParseError::NoError ? QStringLiteral("the root is not an array")
+									     : problem.errorString();
+		qWarning("ArticulationMap: the track's articulations could not be read (%s); it loads with none", qUtf8Printable(why));
+		m_entries.clear();
+		return;
+	}
 	std::vector<Articulation> entries;
 	QString why;
-	if (!fromJson(QJsonDocument::fromJson(trackElement.attribute(QStringLiteral("articulations")).toUtf8()).array(), &entries, &why))
+	if (!fromJson(document.array(), &entries, &why))
 	{
 		qWarning("ArticulationMap: the track's articulations could not be read (%s); it loads with none", qUtf8Printable(why));
 	}

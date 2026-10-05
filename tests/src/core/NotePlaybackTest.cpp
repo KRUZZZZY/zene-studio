@@ -69,6 +69,26 @@ QList<int> handleKeys(const InstrumentTrack* track)
 	return keys;
 }
 
+//! The warnings qWarning printed while it is alive.
+class WarningCapture
+{
+public:
+	WarningCapture()
+	{
+		s_texts.clear();
+		qInstallMessageHandler(&collect);
+	}
+
+	~WarningCapture() { qInstallMessageHandler(nullptr); }
+	QStringList texts() const { return s_texts; }
+
+private:
+	static void collect(QtMsgType, const QMessageLogContext&, const QString& text) { s_texts << text; }
+	static QStringList s_texts;
+};
+
+QStringList WarningCapture::s_texts;
+
 } // namespace
 
 class NotePlaybackTest : public QObject
@@ -220,6 +240,28 @@ private slots:
 		QVERIFY(run(QStringLiteral("control.undo")).ok);  // the note's articulation
 		QVERIFY(run(QStringLiteral("control.undo")).ok);  // the map
 		QVERIFY(m_track->articulations().empty());
+	}
+
+	void aMalformedArticulationJsonWarnsAndLoadsWithNone()
+	{
+		oneNote();
+		QVERIFY(run(QStringLiteral("track.articulations_set"), {{QStringLiteral("track"), control::trackIdOf(m_track)},
+			{QStringLiteral("articulations"), QJsonArray{QJsonObject{{QStringLiteral("name"), QStringLiteral("legato")}}}}}).ok);
+		QCOMPARE(m_track->articulations().indexOf(QStringLiteral("Legato")), 1);
+		QDomDocument doc;
+		QDomElement truncated = doc.createElement(QStringLiteral("track"));
+		truncated.setAttribute(QStringLiteral("articulations"), QStringLiteral("[{\"name\":\"legato\","));
+		QDomElement notAnArray = doc.createElement(QStringLiteral("track"));
+		notAnArray.setAttribute(QStringLiteral("articulations"), QStringLiteral("{\"name\":\"legato\"}"));
+		WarningCapture warnings;
+		m_track->articulations().load(truncated);
+		QVERIFY(m_track->articulations().empty());
+		QVERIFY2(warnings.texts().join(QLatin1Char('\n')).contains(QStringLiteral("could not be read")),
+			qPrintable(warnings.texts().join(QLatin1Char('\n'))));
+		m_track->articulations().load(notAnArray);
+		QVERIFY(m_track->articulations().empty());
+		QVERIFY2(warnings.texts().join(QLatin1Char('\n')).contains(QStringLiteral("could not be read")),
+			qPrintable(warnings.texts().join(QLatin1Char('\n'))));
 	}
 
 	void aLoopedClipPlaysItsStartAgain()
