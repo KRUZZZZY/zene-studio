@@ -218,7 +218,12 @@ ControlResult setSnapPoint(const QJsonObject& args)
 	ClipRef ref;
 	ControlResult error;
 	if (!resolveClip(args.value(QStringLiteral("clip")).toString(), &ref, &error)) { return error; }
-	const int ticks = args.value(QStringLiteral("ticks")).toInt();
+	int ticks = 0;
+	if (!exactInt(args.value(QStringLiteral("ticks")), &ticks))
+	{
+		return ControlResult::failure(ControlErrorKind::InvalidArgs,
+			QStringLiteral("'ticks' must be a whole number of ticks"));
+	}
 	if (ticks < 0 || ticks >= ref.clip->length().getTicks())
 	{
 		return ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("the snap point must be inside the clip"));
