@@ -261,11 +261,20 @@ ControlResult rotate(const QJsonObject& args)
 	if (clip == nullptr) { return error; }
 	// The span the clip plays: a clip trimmed on the left plays only up to length - startTimeOffset, so a wrap past
 	// it would park notes where they never sound (review W3-batchB #3).
-	const tick_t length = std::max<tick_t>(1, clip->length().getTicks() - clip->startTimeOffset().getTicks());
+	// Luna cluster 4856: the wrap was taken from ZERO, so a left-trimmed clip rotated its
+	// notes into the trimmed region - a note at tick 70 with a 20-tick offset and a 20-tick
+	// rotation wrapped to tick 10, which the clip never plays. The span is measured from
+	// startTimeOffset() and the offset added back, so every note stays inside the audible region.
+	const tick_t offset = clip->startTimeOffset().getTicks();
+	const tick_t length = std::max<tick_t>(1, clip->length().getTicks() - offset);
 	const tick_t amount = args.value(QStringLiteral("amount")).toInt();
 	if (amount % length == 0) { return ControlResult::success({{QStringLiteral("clip"), clipId(ref.id)}, {QStringLiteral("rotated"), 0}}); }
 	clip->addJournalCheckPoint();
-	for (Note* note : notes) { note->setPos(TimePos(((note->pos().getTicks() + amount) % length + length) % length)); }
+	for (Note* note : notes)
+	{
+		const tick_t relative = note->pos().getTicks() - offset;
+		note->setPos(TimePos(offset + ((relative + amount) % length + length) % length));
+	}
 	return ControlResult::success(finish(ref, clip, QStringLiteral("note.rotate"), {{QStringLiteral("rotated"), notes.size()}}));
 }
 

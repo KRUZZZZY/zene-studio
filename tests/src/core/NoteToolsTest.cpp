@@ -344,7 +344,38 @@ private slots:
 		QCOMPARE(second->notes().size(), std::size_t{2});
 	}
 
-	//! The split's undo finds the tracks it made by id: track.remove and its undo rebuild one as a new
+	//! Luna cluster 4856: rotate() wrapped every position from ZERO inside the shortened
+	//! playable span (length - startTimeOffset), so a note past the span's end landed
+	//! before the clip's startTimeOffset - the trimmed region that never sounds.
+	void rotatingALeftTrimmedClipKeepsEveryNoteInTheAudibleRegion()
+	{
+		auto* clip = dynamic_cast<MidiClip*>(m_track->createClip(TimePos(0)));
+		clip->setAutoResize(false);  // updateLength() would clear the offset below
+		clip->changeLength(TimePos(100));
+		clip->setStartTimeOffset(TimePos(20));
+		clip->addNote(Note(TimePos(10), TimePos(70), 60), false);
+		QCOMPARE(clip->startTimeOffset().getTicks(), tick_t{20});
+
+		QJsonObject args = self(clip);
+		args.insert(QStringLiteral("amount"), 20);
+		QVERIFY(run(QStringLiteral("note.rotate"), args).ok);
+		// 70 + 20 = 90 < 100, so it stays inside the clip's length.
+		QCOMPARE(clip->notes()[0]->pos().getTicks(), tick_t{90});
+
+		// A note that really wraps must land inside [offset, length). 90 + 40 = 130 wraps
+		// to 50 relative to the offset - but wrapping from zero modulo the 80-tick span
+		// would park it at tick 30... and a rotation large enough to cross the offset from
+		// the other side would land it below 20, in the silent region.
+		args.insert(QStringLiteral("amount"), -60);
+		QVERIFY(run(QStringLiteral("note.rotate"), args).ok);
+		const tick_t wrapped = clip->notes()[0]->pos().getTicks();
+		QVERIFY2(wrapped >= clip->startTimeOffset().getTicks() && wrapped < clip->length().getTicks(),
+			qPrintable(QStringLiteral("the wrapped note landed at tick %1 - outside the audible "
+				"[%2, %3) region of the trimmed clip")
+				.arg(wrapped).arg(clip->startTimeOffset().getTicks()).arg(clip->length().getTicks())));
+	}
+
+//! The split's undo finds the tracks it made by id: track.remove and its undo rebuild one as a new
 	//! object, which a kept Track* does not name.
 	void aSplitTrackIsFoundAgainAfterItsRemovalIsUndone()
 	{
