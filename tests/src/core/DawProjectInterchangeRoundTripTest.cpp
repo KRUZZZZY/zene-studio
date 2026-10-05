@@ -46,6 +46,8 @@
 
 #include <QtTest>
 
+#include <limits>
+
 #include <QDir>
 #include <QJsonArray>
 #include <QJsonObject>
@@ -588,6 +590,49 @@ private slots:
 		mixer->clear();
 		Engine::projectJournal()->clearJournal();
 		ControlRegistry::instance()->clearTransactions();
+	}
+
+	//! A beat value the engine cannot turn into a tick - NaN, an infinity, or a
+	//! magnitude past the tick grid - is REFUSED, not converted. Converting such
+	//! a double to qint64 is undefined behaviour, so the conversion is where the
+	//! contract has to hold: it says "0 for a value that is not a beat this
+	//! grid can express", and an import carrying such a point fails its
+	//! addEvent rather than inheriting whatever the conversion produced.
+	void beatConversionRejectsValuesThatAreNotBeats()
+	{
+		QCOMPARE(dawProjectTicksFromBeats(0.0), qint64(0));
+		QCOMPARE(dawProjectTicksFromBeats(1.0), qint64(48));
+		QCOMPARE(dawProjectTicksFromBeats(0.5), qint64(24));
+
+		QCOMPARE(dawProjectTicksFromBeats(std::numeric_limits<double>::quiet_NaN()), qint64(0));
+		QCOMPARE(dawProjectTicksFromBeats(std::numeric_limits<double>::infinity()), qint64(0));
+		QCOMPARE(dawProjectTicksFromBeats(-std::numeric_limits<double>::infinity()), qint64(0));
+		QCOMPARE(dawProjectTicksFromBeats(1e300), qint64(0));
+		QCOMPARE(dawProjectTicksFromBeats(-1e300), qint64(0));
+		QCOMPARE(dawProjectTicksFromBeats(1e18), qint64(0));
+	}
+
+	//! And the IMPORT refuses such a document rather than applying a tick the
+	//! conversion invented: the tempo point's own value is inside the engine's
+	//! bounds, so only the TIME can refuse it.
+	void importRefusesAnUnrepresentableBeat()
+	{
+		DawProjectModel model = authoredModel();
+		model.tempoPoints.clear();
+		DawProjectPoint point;
+		point.time = 1e300;
+		point.isMeter = false;
+		point.value = 120.0;
+		model.tempoPoints.append(point);
+
+		const QString file = path(m_directory, QStringLiteral("huge-beat.dawproject"));
+		DawProjectWriteReport writeReport;
+		QString writeError;
+		QVERIFY2(writeDawProject(file, model, &writeReport, &writeError), qPrintable(writeError));
+
+		const ControlResult result = run(QStringLiteral("dawproject.import"),
+			{{QStringLiteral("path"), file}});
+		QVERIFY(!result.ok);
 	}
 
 	//! Claim 5: typed refusals - a missing file, a file that is not a ZIP, a

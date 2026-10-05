@@ -341,13 +341,29 @@ DawProjectModel dawProjectModelFromSong(Song* song, DawProjectLossReport* loss)
 	return model;
 }
 
-bool applyDawProjectModel(Song* song, const DawProjectModel& model, QString* error)
+//! The refusal a beat the engine cannot place on its own grid gets. The value
+//! is named because the file named it: a refusal that does not say WHICH value
+//! it is about is a refusal the caller cannot act on.
+QString beatNotABeat(double beats, const QString& kind)
 {
-	// Build the map before touching the live session. A map-capacity refusal must
-	// leave the tracks and global settings that were already there intact.
-	TempoMap rebuilt;
-	for (const DawProjectPoint& point : model.tempoPoints)
+	return QStringLiteral("a %1-map point at time %2 is not a time this engine's "
+		"48-tick-per-beat grid can express")
+		.arg(kind)
+		.arg(beats, 0, 'g', 17);
+}
+
+//! The tempo arm of the model's automation, into @a rebuilt. False with error
+//! set when a point's beat is not one the grid can express, or when the events
+//! do not fit the engine's map.
+bool addTempoPoints(const QVector<DawProjectPoint>& points, TempoMap& rebuilt, QString* error)
+{
+	for (const DawProjectPoint& point : points)
 	{
+		if (!dawProjectBeatRepresentable(point.time))
+		{
+			if (error) { *error = beatNotABeat(point.time, QStringLiteral("tempo")); }
+			return false;
+		}
 		TempoMapEvent event;
 		event.tick = static_cast<tick_t>(dawProjectTicksFromBeats(point.time));
 		event.hasTempo = true;
@@ -363,8 +379,19 @@ bool applyDawProjectModel(Song* song, const DawProjectModel& model, QString* err
 			return false;
 		}
 	}
-	for (const DawProjectPoint& point : model.meterPoints)
+	return true;
+}
+
+//! The time-signature arm, under the same two refusals.
+bool addMeterPoints(const QVector<DawProjectPoint>& points, TempoMap& rebuilt, QString* error)
+{
+	for (const DawProjectPoint& point : points)
 	{
+		if (!dawProjectBeatRepresentable(point.time))
+		{
+			if (error) { *error = beatNotABeat(point.time, QStringLiteral("time-signature")); }
+			return false;
+		}
 		TempoMapEvent event;
 		event.tick = static_cast<tick_t>(dawProjectTicksFromBeats(point.time));
 		event.hasTimeSignature = true;
@@ -380,6 +407,16 @@ bool applyDawProjectModel(Song* song, const DawProjectModel& model, QString* err
 			return false;
 		}
 	}
+	return true;
+}
+
+bool applyDawProjectModel(Song* song, const DawProjectModel& model, QString* error)
+{
+	// Build the map before touching the live session. A map-capacity refusal must
+	// leave the tracks and global settings that were already there intact.
+	TempoMap rebuilt;
+	if (!addTempoPoints(model.tempoPoints, rebuilt, error)) { return false; }
+	if (!addMeterPoints(model.meterPoints, rebuilt, error)) { return false; }
 	if (rebuilt.size() > 0) { rebuilt.setActive(true); }
 
 	song->aboutToClearTracks();

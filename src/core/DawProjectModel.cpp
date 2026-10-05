@@ -48,6 +48,7 @@
 #include <QStringList>
 
 #include <cmath>
+#include <limits>
 
 #include "DawProjectInterchange.h"
 
@@ -68,7 +69,23 @@ double dawProjectBeatsFromTicks(qint64 ticks)
 
 qint64 dawProjectTicksFromBeats(double beats)
 {
-	return static_cast<qint64>(std::floor(beats * DawProjectTicksPerQuarterNote + 0.5));
+	// A double that is not a beat - NaN, an infinity, or a magnitude whose tick
+	// count does not fit qint64 - has no tick. Converting it is undefined
+	// behaviour (and in practice yields INT64_MIN), so the conversion REFUSES
+	// and reports the grid's own origin; a caller that applies a document
+	// checks dawProjectBeatRepresentable() and fails the point as a typed
+	// refusal rather than inheriting whatever the cast produced.
+	if (!dawProjectBeatRepresentable(beats)) { return 0; }
+	const double ticks = beats * DawProjectTicksPerQuarterNote;
+	return static_cast<qint64>(std::floor(ticks + 0.5));
+}
+
+bool dawProjectBeatRepresentable(double beats)
+{
+	if (!std::isfinite(beats)) { return false; }
+	const double ticks = beats * DawProjectTicksPerQuarterNote;
+	return ticks >= static_cast<double>(std::numeric_limits<qint64>::lowest())
+		&& ticks <= static_cast<double>(std::numeric_limits<qint64>::max());
 }
 
 bool dawProjectUsableDocumentId(const QString& id)
