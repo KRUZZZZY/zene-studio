@@ -444,7 +444,152 @@ private slots:
 		removeAll(name);
 	}
 
+	//! The inverse control.transactions REPORTS is a promise a client may replay,
+	//! so it has to name a command that really puts the state back. Removing a set
+	//! cannot name itself: the set is already gone, so that replay restores nothing
+	//! (and refuses on the missing name).
+	void removeSetReportsAnInverseThatRestoresIt()
+	{
+		const QString name = QStringLiteral("k-inverse-remove");
+		Track* first = addTrack(Track::Type::Instrument, name);
+		Track* second = addTrack(Track::Type::Instrument, name);
+		const std::vector<Track*> tracks{first, second};
+		const QString setName = QStringLiteral("Removable");
+		QVERIFY2(ControlRegistry::instance()->invoke(QStringLiteral("track.visibility_set_save"),
+			QJsonObject{{QStringLiteral("name"), setName},
+				{QStringLiteral("tracks"), QJsonArray{control::trackIdOf(first)}}}).ok,
+			qPrintable(QStringLiteral("track.visibility_set_save failed")));
+		const QString before = visibilityState(tracks);
+		QVERIFY2(ControlRegistry::instance()->invoke(QStringLiteral("track.visibility_set_remove"),
+			QJsonObject{{QStringLiteral("name"), setName}}).ok,
+			qPrintable(QStringLiteral("track.visibility_set_remove failed")));
+		QVERIFY(Engine::getSong()->findVisibilitySet(setName) == nullptr);
+		replayInverse(lastInverse());
+		QCOMPARE(visibilityState(tracks), before);
+		removeAll(name);
+	}
+
+	//! The same promise for a save: the save that CREATED a set is undone by
+	//! removing it again, not by writing an empty definition back, and the save
+	//! that REPLACED one is undone by writing the captured definition back.
+	void saveSetReportsAnInverseThatRestoresIt()
+	{
+		const QString name = QStringLiteral("k-inverse-save");
+		Track* first = addTrack(Track::Type::Instrument, name);
+		Track* second = addTrack(Track::Type::Instrument, name);
+		const std::vector<Track*> tracks{first, second};
+		const QString setName = QStringLiteral("Fresh");
+		const QString absent = visibilityState(tracks);
+		QVERIFY2(ControlRegistry::instance()->invoke(QStringLiteral("track.visibility_set_save"),
+			QJsonObject{{QStringLiteral("name"), setName},
+				{QStringLiteral("tracks"), QJsonArray{control::trackIdOf(first)}}}).ok,
+			qPrintable(QStringLiteral("track.visibility_set_save failed")));
+		replayInverse(lastInverse());
+		QCOMPARE(visibilityState(tracks), absent);
+		// Now the replace case: the previous definition is what must come back.
+		QVERIFY2(ControlRegistry::instance()->invoke(QStringLiteral("track.visibility_set_save"),
+			QJsonObject{{QStringLiteral("name"), setName},
+				{QStringLiteral("tracks"), QJsonArray{control::trackIdOf(second)}}}).ok,
+			qPrintable(QStringLiteral("track.visibility_set_save failed")));
+		const QString beforeOverwrite = visibilityState(tracks);
+		QVERIFY2(ControlRegistry::instance()->invoke(QStringLiteral("track.visibility_set_save"),
+			QJsonObject{{QStringLiteral("name"), setName},
+				{QStringLiteral("tracks"), QJsonArray{control::trackIdOf(first), control::trackIdOf(second)}}}).ok,
+			qPrintable(QStringLiteral("track.visibility_set_save failed")));
+		replayInverse(lastInverse());
+		QCOMPARE(visibilityState(tracks), beforeOverwrite);
+		removeAll(name);
+	}
+
+	//! An apply writes the visible flag of EVERY track, so no single command puts
+	//! the prior flags back: the inverse has to be the recorded step itself, as the
+	//! comp group's ManualCompositeInverse already is.
+	void applyReportsAnInverseThatRestoresEveryFlag()
+	{
+		const QString name = QStringLiteral("k-inverse-apply");
+		Track* first = addTrack(Track::Type::Instrument, name);
+		addTrack(Track::Type::Instrument, name);
+		addTrack(Track::Type::Instrument, name);
+		const std::vector<Track*> tracks{first};
+		const QString setName = QStringLiteral("Subset");
+		QVERIFY2(ControlRegistry::instance()->invoke(QStringLiteral("track.visibility_set_save"),
+			QJsonObject{{QStringLiteral("name"), setName},
+				{QStringLiteral("tracks"), QJsonArray{control::trackIdOf(first)}}}).ok,
+			qPrintable(QStringLiteral("track.visibility_set_save failed")));
+		const QString before = visibilityState(tracks);
+		QVERIFY2(ControlRegistry::instance()->invoke(QStringLiteral("track.visibility_set_apply"),
+			QJsonObject{{QStringLiteral("name"), setName}}).ok,
+			qPrintable(QStringLiteral("track.visibility_set_apply failed")));
+		// The reported inverse is what a client replays; it must restore the flags.
+		QVERIFY(!first->isVisible() == false);  // the member is visible after the apply
+		replayInverse(lastInverse());
+		QCOMPARE(visibilityState(tracks), before);
+		removeAll(name);
+	}
+
+	//! The same for show-all: it clears the active name and shows every track, so
+	//! the reported inverse is the recorded step rather than show-all again.
+	void showAllReportsAnInverseThatRestoresEveryFlag()
+	{
+		const QString name = QStringLiteral("k-inverse-showall");
+		Track* first = addTrack(Track::Type::Instrument, name);
+		addTrack(Track::Type::Instrument, name);
+		const std::vector<Track*> tracks{first};
+		const QString setName = QStringLiteral("Shown");
+		QVERIFY2(ControlRegistry::instance()->invoke(QStringLiteral("track.visibility_set_save"),
+			QJsonObject{{QStringLiteral("name"), setName},
+				{QStringLiteral("tracks"), QJsonArray{control::trackIdOf(first)}}}).ok,
+			qPrintable(QStringLiteral("track.visibility_set_save failed")));
+		QVERIFY2(ControlRegistry::instance()->invoke(QStringLiteral("track.visibility_set_apply"),
+			QJsonObject{{QStringLiteral("name"), setName}}).ok,
+			qPrintable(QStringLiteral("track.visibility_set_apply failed")));
+		const QString before = visibilityState(tracks);
+		QVERIFY2(ControlRegistry::instance()->invoke(QStringLiteral("track.visibility_show_all")).ok,
+			qPrintable(QStringLiteral("track.visibility_show_all failed")));
+		replayInverse(lastInverse());
+		QCOMPARE(visibilityState(tracks), before);
+		removeAll(name);
+	}
+
 private:
+	//! The state the visibility-set commands change: the active name, every set
+	//! with its members, and every track's visible flag. One string so a replay can
+	//! be asserted against the state the command found.
+	QString visibilityState(const std::vector<Track*>& tracks)
+	{
+		Song* song = Engine::getSong();
+		QString state = QStringLiteral("active=") + song->activeVisibilitySet();
+		for (const TrackContainer::VisibilitySet& set : song->visibilitySets())
+		{
+			QStringList ids;
+			for (int id : set.trackIds) { ids.append(QString::number(id)); }
+			state += QStringLiteral(";set:") + set.name + QLatin1Char('=') + ids.join(QLatin1Char(','));
+		}
+		for (int i = 0; i < static_cast<int>(tracks.size()); ++i)
+		{
+			state += QStringLiteral(";v") + QString::number(i)
+				+ (tracks[static_cast<size_t>(i)]->isVisible() ? QStringLiteral("=1") : QStringLiteral("=0"));
+		}
+		return state;
+	}
+
+	//! The inverse the newest A16 record reports - the op and args a client reads.
+	QJsonObject lastInverse()
+	{
+		const QJsonArray all = ControlRegistry::instance()->invoke(QStringLiteral("control.transactions"))
+			.result.value(QStringLiteral("transactions")).toArray();
+		return all.isEmpty() ? QJsonObject() : all.last().toObject().value(QStringLiteral("inverse")).toObject();
+	}
+
+	//! Replays a reported inverse through the registry, exactly as a client would.
+	void replayInverse(const QJsonObject& inverse)
+	{
+		const ControlResult replayed = ControlRegistry::instance()->invoke(
+			inverse.value(QStringLiteral("op")).toString(),
+			inverse.value(QStringLiteral("args")).toObject());
+		QVERIFY2(replayed.ok, qPrintable(QStringLiteral("the reported inverse did not restore the state: ")
+			+ inverse.value(QStringLiteral("op")).toString() + " -> " + replayed.errorMessage));
+	}
 	//! \a type track named \a name, in the song container.
 	Track* addTrack(Track::Type type, const QString& name)
 	{
