@@ -317,9 +317,19 @@ int AutomationClip::transformRange(int start, int end, double timeScale, int tim
 	for (std::size_t i = 0; i < moved.size(); ++i)
 	{
 		const int tick = destinations[i];
-		// The point keeps its own curve and bend (review L06-L07a #1).
+		// The point keeps its own curve and bend (review L06-L07a #1), and its tangent
+		// state: a node whose tangents were locked by hand keeps them, so the identity
+		// transform does not silently regenerate a hand-drawn slope. The generated
+		// tangents of an unlocked point are left at their defaults - generateTangents()
+		// below derives them from the values and the neighbours anyway.
 		AutomationNode point(this, value(moved[i].second.getInValue()), value(moved[i].second.getOutValue()), tick);
 		point.setCurve(moved[i].second.curve(), moved[i].second.bend());
+		point.setLockedTangents(moved[i].second.lockedTangents());
+		if (moved[i].second.lockedTangents())
+		{
+			point.setInTangent(moved[i].second.getInTangent());
+			point.setOutTangent(moved[i].second.getOutTangent());
+		}
 		kept[tick] = point;
 	}
 	m_timeMap = kept;

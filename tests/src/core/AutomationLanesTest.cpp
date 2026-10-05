@@ -249,6 +249,27 @@ private slots:
 		QCOMPARE(onto->getTimeMap().value(192).getOutValue(), 90.f);
 	}
 
+	/*! ED-186 with a point whose tangents were locked by hand: the transform's
+	 *  replacement node carries the values, the curve and the bend, but not the tangent
+	 *  values or the lock flag, so generateTangents() overwrote a hand-drawn slope and
+	 *  an identity transform changed the curve. */
+	void aRangeTransformKeepsManuallyLockedTangents()
+	{
+		AutomationClip* clip = freshClip(m_track->volumeModel());
+		clip->setProgressionType(AutomationClip::ProgressionType::Linear);
+		clip->putValue(TimePos(0), 0.f, false, true);
+		clip->putValue(TimePos(100), 100.f, false, true);
+		clip->getTimeMap()[0].setInTangent(0.f);
+		clip->getTimeMap()[0].setOutTangent(0.25f);
+		clip->getTimeMap()[0].setLockedTangents(true);
+
+		// An identity transform: every destination is where its point already was.
+		QCOMPARE(clip->transformRange(0, 100, 1.0, 0, 1.0, 0.0), 2);
+		QVERIFY(clip->getTimeMap().value(0).lockedTangents());
+		QCOMPARE(clip->getTimeMap().value(0).getOutTangent(), 0.25f);
+		QCOMPARE(clip->getTimeMap().value(0).getInTangent(), 0.f);
+	}
+
 	void aPointsOwnCurveDecidesTheSegmentAfterIt()
 	{
 		AutomationClip* clip = freshClip(m_track->volumeModel());
