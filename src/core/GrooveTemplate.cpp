@@ -390,12 +390,16 @@ constexpr std::uint32_t GrooveRandomVelocitySalt = 0x1A5E7C90;
 //! applyGroove's random timing: @a moved offset by a seeded draw in +-@a randomTicks,
 //! never before tick 0 (a position the engine cannot represent is clamped rather than
 //! produced, exactly as quantizeNotes does). @a randomTicks 0 leaves @a moved alone.
-static tick_t jitteredTick(const Note& note, tick_t pos, tick_t moved, tick_t randomTicks,
+//! @a slotTick - NOT the note's own position - is what the draw is made from, and
+//! that is what makes the call a FIXED POINT: a note already sitting where the
+//! groove put it reads the same slot, rolls the same jitter and stays where it
+//! is. It is humanise's rule for the same reason (NoteTransform.cpp, jitterFor).
+static tick_t jitteredTick(const Note& note, tick_t slotTick, tick_t moved, tick_t randomTicks,
 	std::uint32_t seed)
 {
 	if (randomTicks <= 0) { return moved; }
 	const double unit = static_cast<double>(NoteRandom::rollUnit(seed,
-		note.key(), pos, note.length().getTicks(), GrooveRandomTickSalt));
+		note.key(), slotTick, note.length().getTicks(), GrooveRandomTickSalt));
 	const tick_t jittered = clampedTick(moved + static_cast<tick_t>(std::lround(
 		(unit * 2.0 - 1.0) * static_cast<double>(randomTicks))));
 	return jittered < 0 ? 0 : jittered;
@@ -437,7 +441,14 @@ int applyGroove(const NoteVector& notes, const GrooveTemplate& groove, float str
 		// timing and velocity amounts). Drawn from the note's identity and the
 		// caller's seed, never from hidden state, so the same call on the same
 		// notes reproduces the same take - the rule quantise's humanise follows.
-		const tick_t jittered = jitteredTick(*note, pos, moved, randomTicks, seed);
+		// The timing draw reads the note's grid SLOT rather than its position, so
+		// repeating the call at full strength is a no-op instead of a re-roll:
+		// the position has moved, the slot it sits in has not.
+		const tick_t jittered = jitteredTick(*note, groove.gridTickFor(pos), moved, randomTicks,
+			seed);
+		// The velocity draw stays on the position: the target is an absolute
+		// velocity, so a repeat rolls the jitter again - the documented contract
+		// of the surface (groove.quantize's humanise, ControlGrooveCommandsTest).
 		const int jitteredVelocity = jitteredVolume(*note, pos, newVelocity, randomVelocity, seed);
 
 		if (jittered != pos) { note->setPos(TimePos(jittered)); }
