@@ -87,7 +87,7 @@ QJsonArray scaleEntries(int root, bool includeChords)
 	QJsonArray out;
 	for (const Chord& chord : ChordTable::getInstance().chords())
 	{
-		if (chord.isEmpty() || chord.isScale() != !includeChords) { continue; }
+		if (chord.isEmpty() || (!chord.isScale() && !includeChords)) { continue; }
 		std::vector<int> degrees;
 		degrees.reserve(static_cast<size_t>(chord.size()));
 		for (int i = 0; i < chord.size(); ++i) { degrees.push_back(chord[i]); }

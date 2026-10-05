@@ -472,6 +472,25 @@ private slots:
 		QVERIFY2(sawMajor, "the engine's own scale vocabulary must carry Major");
 		QCOMPARE(listed.result.value(QStringLiteral("roots")).toArray().size(), 12);
 
+		// include_chords ADDS the chords to the scales - it must not replace the
+		// scales with the chords.
+		const ControlResult withChords = run(QStringLiteral("scale.list"),
+			QJsonObject{{QStringLiteral("include_chords"), true}});
+		QVERIFY2(withChords.ok, qPrintable(withChords.errorMessage));
+		const QJsonArray mixed = withChords.result.value(QStringLiteral("scales")).toArray();
+		int sawScale = 0;
+		int sawChord = 0;
+		for (const QJsonValue& value : mixed)
+		{
+			if (value.toObject().value(QStringLiteral("is_scale")).toBool()) { ++sawScale; }
+			else { ++sawChord; }
+		}
+		QVERIFY2(sawScale >= 10,
+			qPrintable(QStringLiteral("include_chords:true returned only %1 scales - the "
+				"option ADDS chords to the scales").arg(sawScale)));
+		QVERIFY2(sawChord > 0, "include_chords:true returned no chords at all");
+		QCOMPARE(mixed.size(), sawScale + sawChord);
+
 		// A root by NAME shifts the classes; by index gives the same answer.
 		const ControlResult byName = run(QStringLiteral("scale.get_state"),
 			QJsonObject{{QStringLiteral("root"), QStringLiteral("D")},
