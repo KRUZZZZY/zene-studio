@@ -169,6 +169,28 @@ private slots:
 		QVERIFY(QFile::remove(path));
 	}
 
+	void aDetailedPresetListingCarriesTheDocumentHash()
+	{
+		const QString name = QStringLiteral("detailed-hash-preset");
+		const ControlResult created = run(QStringLiteral("export.preset_add"),
+			{{QStringLiteral("name"), name}, {QStringLiteral("sample_rate"), 44100},
+				{QStringLiteral("bit_depth"), QStringLiteral("16")},
+				{QStringLiteral("stereo_mode"), QStringLiteral("jointstereo")}});
+		QVERIFY2(created.ok, qPrintable(created.errorMessage));
+		const QString path = created.result.value(QStringLiteral("path")).toString();
+
+		const QJsonArray presets = run(QStringLiteral("export.preset_list"),
+			{{QStringLiteral("name"), name}}).result.value(QStringLiteral("presets")).toArray();
+		QCOMPARE(presets.size(), 1);
+		const QJsonObject detailed = presets.first().toObject();
+		const QByteArray bytes = readBytes(path);
+		QCOMPARE(detailed.value(QStringLiteral("bytes")).toInt(), bytes.size());
+		const QString hash = detailed.value(QStringLiteral("sha256")).toString();
+		QVERIFY2(hash == controlSha256OfBytes(bytes),
+			qPrintable(QStringLiteral("detailed preset JSON hash was \"%1\"").arg(hash)));
+		QVERIFY(QFile::remove(path));
+	}
+
 	void aFailedRenderPresetDeleteLeavesNoHistory()
 	{
 #ifndef Q_OS_UNIX
