@@ -36,6 +36,7 @@
 #include <QtTest>
 
 #include <cstdint>
+#include <limits>
 
 #include "AllocationProbe.h"
 #include "SessionFollow.h"
@@ -180,6 +181,38 @@ private slots:
 		FollowPlan empty = oneBar;
 		empty.count = 0;
 		QCOMPARE(followActionTicks(empty, kTicksPerBar), 0);
+	}
+
+	//! A malformed (non-finite or absurdly large) unlinked time must not reach
+	//! the tick conversion: converting a double outside tick_t's range is
+	//! undefined behaviour on the audio thread. Such a time is answered as
+	//! "cannot fire" (0), never as a wrapped tick.
+	void malformedFollowTimesAreRefusedBeforeConversion()
+	{
+		const double nonFinite[] = {
+			std::numeric_limits<double>::infinity(),
+			-std::numeric_limits<double>::infinity(),
+			std::numeric_limits<double>::quiet_NaN(),
+		};
+		for (const double time : nonFinite)
+		{
+			const FollowPlan plan = single(action(FollowAction::Type::Next, 1.0, false, time, 0),
+				kSceneCount);
+			QCOMPARE(followActionTicks(plan, kTicksPerBar), 0);
+		}
+
+		// Far beyond tick_t's range: refused rather than converted.
+		const FollowPlan huge = single(action(FollowAction::Type::Next, 1.0, false, 1e100, 0),
+			kSceneCount);
+		QCOMPARE(followActionTicks(huge, kTicksPerBar), 0);
+
+		// A large but in-range time still converts normally.
+		const tick_t halfMax = std::numeric_limits<tick_t>::max() / 2;
+		const double halfMaxBars = static_cast<double>( halfMax )
+			/ static_cast<double>( kTicksPerBar );
+		const FollowPlan largeOk = single(action(FollowAction::Type::Next, 1.0, false,
+			halfMaxBars, 0), kSceneCount);
+		QCOMPARE(followActionTicks(largeOk, kTicksPerBar), halfMax);
 	}
 
 	//! A POSITIVE unlinked time is never zero, however small: 0.001 bars at 192

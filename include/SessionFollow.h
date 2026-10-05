@@ -65,6 +65,7 @@
 #define LMMS_SESSION_FOLLOW_H
 
 #include <cstdint>
+#include <limits>
 
 #include "LmmsTypes.h"
 #include "SessionModel.h"
@@ -170,6 +171,13 @@ inline tick_t followActionTicks( const FollowPlan& plan, tick_t ticksPerBar ) no
 	}
 	const double ticks = first.timeBars * static_cast<double>( ticksPerBar );
 	if( !( ticks > 0.0 ) )
+	{
+		return 0;
+	}
+	//! Converting a double outside tick_t's range is undefined behaviour, so a
+	//! malformed (non-finite or absurdly large) time is refused here - "cannot
+	//! fire" - rather than converted into a wrapped tick on the audio thread.
+	if( ticks >= static_cast<double>( std::numeric_limits<tick_t>::max() ) )
 	{
 		return 0;
 	}
