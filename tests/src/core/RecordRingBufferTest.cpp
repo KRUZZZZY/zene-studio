@@ -27,6 +27,8 @@
 
 #include <QtTest>
 
+#include <limits>
+#include <stdexcept>
 #include <thread>
 #include <vector>
 
@@ -64,6 +66,21 @@ private slots:
 
 		RecordRingBuffer exact{1u << 16};
 		QCOMPARE(asNumber(exact.capacity()), asNumber(1u << 16));
+	}
+
+	// Past the largest power of two a size_t holds, `result <<= 1` wrapped to
+	// zero and the constructor never returned. SampleFrameRingBuffer::nextPowerOfTwo
+	// already refuses such a value; this ring must refuse it too.
+	//
+	// The capacity is read through a volatile on purpose: as a literal the
+	// compiler constant-folds the shift loop, the fold stops at 2^63 and the
+	// std::vector ctor throws a length_error of its own, which would satisfy
+	// this assertion while the runtime path still spins forever.
+	void refusesACapacityThatCannotBeRoundedUp()
+	{
+		volatile std::size_t beyondLargestPowerOfTwo = (std::numeric_limits<std::size_t>::max() >> 1) + 2;
+		QVERIFY_EXCEPTION_THROWN({ RecordRingBuffer ring(beyondLargestPowerOfTwo); },
+			std::length_error);
 	}
 
 	//! A fresh ring reports no data and read() returns 0.
