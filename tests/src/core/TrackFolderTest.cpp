@@ -468,6 +468,41 @@ private slots:
 		removeAll(name);
 	}
 
+	//! Releasing routing has to give the child back its channel RANGE as well as
+	//! its value: routeChild() widens the model so it can hold the folder's
+	//! channel, and unrouteChild() only put the value back. The deleted channel's
+	//! index stayed selectable, and the mixer has no channel there - the child was
+	//! feeding a hole.
+	void releasingRoutingTakesTheChildRangeBackOffTheDeletedChannel()
+	{
+		const QString name = QStringLiteral("m-range");
+		TrackFolder* folder = static_cast<TrackFolder*>(addTrack(Track::Type::Folder, name));
+		Track* child = addTrack(Track::Type::Instrument, name);
+		child->setParentFolder(folder);
+		IntModel* model = child->mixerChannelModel();
+		QVERIFY(model != nullptr);
+		const int before = model->value();
+
+		QString error;
+		QVERIFY2(folder->setMode(TrackFolder::Mode::Routing, &error), qPrintable(error));
+		const int channel = static_cast<int>(folder->mixerChannel());
+		QVERIFY(channel >= 0);
+		// the widening really happened, so the range below proves the release undid it
+		QCOMPARE(model->maxValue(), static_cast<float>(channel));
+
+		QVERIFY2(folder->setMode(TrackFolder::Mode::Group, &error), qPrintable(error));
+		QCOMPARE(model->value(), before);
+		QVERIFY2(channel >= static_cast<int>(Engine::mixer()->numChannels()),
+			"the folder's channel was deleted, so its index is past the last channel");
+		QCOMPARE(model->maxValue(), static_cast<float>(Engine::mixer()->numChannels() - 1));
+
+		// and the deleted index cannot be selected any more
+		model->setValue(channel);
+		QVERIFY2(model->value() < static_cast<int>(Engine::mixer()->numChannels()),
+			"a child must not be able to select a channel that has been deleted");
+		removeAll(name);
+	}
+
 	//! Deleting a folder must give its mixer channel back. ~TrackFolder unlinked
 	//! the children but never released the folder's OWN channel, unlike
 	//! releaseRouting() - so each deleted routing folder left an orphan channel

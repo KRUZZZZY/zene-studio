@@ -389,12 +389,27 @@ bool TrackFolder::releaseRouting()
 		Engine::mixer()->deleteChannel( static_cast<int>( m_mixerChannel ) );
 		m_mixerChannel = -1;
 	}
+	// The children are off the folder's channel and that channel no longer exists,
+	// so the RANGE routeChild() widened to hold it goes back to the channels the
+	// mixer really has - the same thing MixerView::updateMaxChannelSelector does
+	// for every track when the channel list changes. Left widened, a child could
+	// still select the deleted index and would feed a channel that is not there.
+	for( Track * child : children() ) { shrinkChildRange( child ); }
 	if( m_mode != Mode::Group )
 	{
 		m_mode = Mode::Group;
 		Engine::getSong()->setModified();
 	}
 	return true;
+}
+
+void TrackFolder::shrinkChildRange( Track * child )
+{
+	if( Engine::mixer() == nullptr ) { return; }
+	IntModel * model = child->mixerChannelModel();
+	if( model == nullptr ) { return; }
+	const float top = static_cast<float>( Engine::mixer()->numChannels() - 1 );
+	if( model->maxValue() > top ) { model->setRange( model->minValue(), top ); }
 }
 
 bool TrackFolder::setMode( Mode mode, QString * error )

@@ -192,6 +192,9 @@ private:
 	//! it, and two entries for one child would leave savedChannelFor() answering
 	//! with the stale one).
 	void recordBinding( int childId, int channel );
+	//! Takes a child's mixer-channel RANGE back off the folder's channel once that
+	//! channel has been deleted, so the deleted index cannot be selected.
+	void shrinkChildRange( Track * child );
 	//! Puts \a child back on its own recorded channel (shared by
 	//! releaseRouting() and childUnlinked()).
 	void unrouteChild( Track * child );
