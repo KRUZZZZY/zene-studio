@@ -31,6 +31,7 @@
 #include <vector>
 
 #include "Midi.h"
+#include "Vst3ComponentHandler.h"
 #include "Vst3Host.h"
 #include "Vst3MidiEvent.h"
 #include "Vst3MidiMapping.h"
@@ -155,6 +156,7 @@ private slots:
 	void testMappedControllersKeepTheirFrame();
 	void testParameterChangesAreSlicedPerChunk();
 	void testAFullParameterQueueKeepsTheNewestValue();
+	void testComponentHandlerAnswersInterfaceQueries();
 
 private:
 	void process(HostedPlugin& plugin, const std::vector<std::vector<float>>& inputs,
@@ -426,6 +428,41 @@ void Vst3HostTest::testAFullParameterQueueKeepsTheNewestValue()
 	const auto last = pointOf(queue, kMaxPointsPerParameter - 1);
 	QCOMPARE(last.first, Steinberg::int32{(kMaxPointsPerParameter - 1) * 10});
 	QCOMPARE(last.second, (kMaxPointsPerParameter + 2) / 10.0);
+}
+
+/*! 0.5.0 W5: a plug-in that queries the handler it was given for its own interfaces gets them.
+ *  queryInterface() returned kNoInterface for EVERY iid, including the two this object
+ *  implements, so a plug-in could not confirm it has a component handler at all. */
+void Vst3HostTest::testComponentHandlerAnswersInterfaceQueries()
+{
+	std::atomic<float> values[2] = {0.f, 0.f};
+	const std::vector<std::pair<std::uint32_t, std::size_t>> indexById = {{1, 1}};
+	auto* handler = new Vst3ComponentHandler{values, &indexById};
+
+	void* queried = nullptr;
+	QCOMPARE(handler->queryInterface(Steinberg::Vst::IComponentHandler::iid, &queried),
+		Steinberg::kResultOk);
+	QVERIFY(queried != nullptr);
+	QCOMPARE(queried, static_cast<void*>(static_cast<Steinberg::Vst::IComponentHandler*>(handler)));
+	handler->release();
+
+	queried = nullptr;
+	QCOMPARE(handler->queryInterface(Steinberg::FUnknown::iid, &queried), Steinberg::kResultOk);
+	QVERIFY(queried != nullptr);
+	handler->release();
+
+	// an interface this object does not implement still reports kNoInterface,
+	// and never leaves a dangling pointer in the caller's out-parameter
+	queried = reinterpret_cast<void*>(0x1);
+	QCOMPARE(handler->queryInterface(Steinberg::Vst::IMidiMapping::iid, &queried),
+		Steinberg::kNoInterface);
+	QVERIFY(queried == nullptr);
+
+	QCOMPARE(handler->queryInterface(Steinberg::Vst::IComponentHandler::iid, nullptr),
+		Steinberg::kInvalidArgument);
+
+	// the reference count the successful queries took is still owned here
+	handler->release();
 }
 
 } // namespace lmms::vst3

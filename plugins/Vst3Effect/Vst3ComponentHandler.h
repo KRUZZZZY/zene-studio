@@ -104,9 +104,20 @@ public:
 		m_onLatencyChanged = nullptr;
 	}
 
-	tresult PLUGIN_API queryInterface(const TUID, void** obj) SMTG_OVERRIDE
+	//! The two interfaces this object implements. A plug-in that asks the handler it was given
+	//! for IComponentHandler (or for the FUnknown base) gets them, with the reference count
+	//! incremented for the reference it receives; anything else is kNoInterface.
+	tresult PLUGIN_API queryInterface(const TUID iid, void** obj) SMTG_OVERRIDE
 	{
-		if (obj) { *obj = nullptr; }
+		if (obj == nullptr) { return kInvalidArgument; }
+		if (FUnknownPrivate::iidEqual(iid, IComponentHandler::iid)
+			|| FUnknownPrivate::iidEqual(iid, FUnknown::iid))
+		{
+			*obj = static_cast<IComponentHandler*>(this);
+			addRef();
+			return kResultOk;
+		}
+		*obj = nullptr;
 		return kNoInterface;
 	}
 
