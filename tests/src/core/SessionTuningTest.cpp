@@ -34,6 +34,7 @@
 #include <cmath>
 #include <cstdio>
 
+#include <QDir>
 #include <QJsonArray>
 #include <QJsonObject>
 #include <QString>
@@ -457,6 +458,75 @@ private slots:
 				qPrintable(QStringLiteral("%1 refused yet wrote the table; first "
 					"difference at entry %2").arg(refusals.id).arg(mismatchKey)));
 		}
+	}
+
+	//! Luna 3530: MaxSourceLength is a stated cap (include/SessionTuning.h:88),
+	//! and setState() already refuses an over-cap source. The OTHER mutating
+	//! entry point did not: setNoteFrequency() handed the source straight to
+	//! commit(), which silently kept source.left(MaxSourceLength) - so a caller
+	//! asking for a 300-character label got a success and a 256-character one.
+	//! Over-cap is REFUSED, typed, writing nothing (the same rule setState
+	//! applies), and the exactly-at-the-cap source still succeeds.
+	void aSourceOverTheCapIsRefusedRatherThanSilentlyTruncated()
+	{
+		SessionTuning* tuning = SessionTuning::instance();
+		tuning->reset();
+		QTemporaryDir dir;
+		QVERIFY(dir.isValid());
+
+		// A long .scl PATH: loadScaleFile() passes the path itself as the
+		// source, so a file under a deep enough directory reaches commit() the
+		// same way a long label does.
+		// Segments stay well under the 255-byte NAME_MAX so the deep path really
+		// is created; the whole PATH is what has to pass the source cap.
+		QString deepPath = dir.path();
+		while (deepPath.size() < SessionTuning::MaxSourceLength + 40)
+		{
+			const QString segment(60, QLatin1Char('d'));
+			deepPath += QLatin1Char('/') + segment;
+			if (!QDir().mkpath(deepPath)) { break; }
+		}
+		QVERIFY2(deepPath.size() > SessionTuning::MaxSourceLength,
+			"the deep fixture path did not pass the source cap, so this half cannot run");
+		const QString sclPath = deepPath + QStringLiteral("/ji3.scl");
+		QFile scl(sclPath);
+		QVERIFY(scl.open(QIODevice::WriteOnly | QIODevice::Text));
+		scl.write(jiSclLines().join(QLatin1Char('\n')).toUtf8() + "\n");
+		scl.close();
+
+		const QJsonObject beforeLoad = snapshotState(run(QStringLiteral("mts.get_state")).result);
+		const ControlResult loaded = run(QStringLiteral("mts.load_scale"),
+			QJsonObject{{QStringLiteral("path"), sclPath}});
+		QVERIFY2(!loaded.ok,
+			"a scale whose path is over the source cap loaded successfully: the "
+			"recorded source was silently truncated");
+		QCOMPARE(loaded.errorKind, ControlErrorKind::Refused);
+		int mismatch = 0;
+		const QJsonObject afterLoad = snapshotState(run(QStringLiteral("mts.get_state")).result);
+		QVERIFY2(sameTable(beforeLoad, afterLoad, &mismatch),
+			qPrintable(QStringLiteral("the refused load still changed the table at key %1")
+				.arg(mismatch)));
+
+		// The note path: an over-cap source label is refused, and mts.set_note
+		// does NOT push an undo step for the refusal.
+		const int depthBefore = Engine::projectJournal()->undoDepth();
+		const QString longSource(SessionTuning::MaxSourceLength + 1, QLatin1Char('s'));
+		const ControlResult refused = run(QStringLiteral("mts.set_note"),
+			QJsonObject{{QStringLiteral("note"), 5}, {QStringLiteral("frequency"), 500.0},
+				{QStringLiteral("source"), longSource}});
+		QVERIFY2(!refused.ok,
+			"an over-cap source was accepted: m_source silently lost its tail");
+		QCOMPARE(Engine::projectJournal()->undoDepth(), depthBefore);
+
+		// Exactly at the cap is legal - the boundary is inclusive.
+		const QString atCap(SessionTuning::MaxSourceLength, QLatin1Char('t'));
+		QVERIFY2(run(QStringLiteral("mts.set_note"),
+			QJsonObject{{QStringLiteral("note"), 5}, {QStringLiteral("frequency"), 500.0},
+				{QStringLiteral("source"), atCap}}).ok,
+			"a source of exactly MaxSourceLength characters was refused: the cap is inclusive");
+		QCOMPARE(run(QStringLiteral("mts.get_state")).result
+			.value(QStringLiteral("source")).toString().size(), qint64(SessionTuning::MaxSourceLength));
+		tuning->reset();
 	}
 
 	//! The anti-reimplementation anchor: same Scale, same Keymap, 128 keys.

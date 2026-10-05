@@ -249,6 +249,12 @@ std::shared_ptr<Keymap> keymapOf(const QStringList& fields, const QString& descr
 
 bool SessionTuning::loadScaleFile(const QString& path, QString* error)
 {
+	if (path.size() > MaxSourceLength)
+	{
+		failWith(error, QStringLiteral("the source path is %1 characters; the cap is %2 - "
+			"nothing was written").arg(path.size()).arg(MaxSourceLength));
+		return false;
+	}
 	QFile file(path);
 	if (!file.open(QIODevice::ReadOnly | QIODevice::Text))
 	{
@@ -300,6 +306,12 @@ bool SessionTuning::loadScaleFile(const QString& path, QString* error)
 
 bool SessionTuning::loadKeymapFile(const QString& path, QString* error)
 {
+	if (path.size() > MaxSourceLength)
+	{
+		failWith(error, QStringLiteral("the source path is %1 characters; the cap is %2 - "
+			"nothing was written").arg(path.size()).arg(MaxSourceLength));
+		return false;
+	}
 	QFile file(path);
 	if (!file.open(QIODevice::ReadOnly | QIODevice::Text))
 	{

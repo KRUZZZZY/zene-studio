@@ -110,6 +110,20 @@ bool entryIsFrequency(const QJsonValue& value)
 	return std::isfinite(frequency) && frequency >= 0.0 && frequency <= MaxTableFrequency;
 }
 
+//! The documented source cap, checked at every mutating entry point: commit()
+//! truncates an over-cap source, which would make a note edit or a file load
+//! succeed while quietly losing part of where the table came from.
+bool sourceFitsCap(const QString& source, QString* error)
+{
+	if (source.size() <= SessionTuning::MaxSourceLength) { return true; }
+	if (error != nullptr)
+	{
+		*error = QStringLiteral("the source string is %1 characters; the cap is %2 - "
+			"nothing was written").arg(source.size()).arg(SessionTuning::MaxSourceLength);
+	}
+	return false;
+}
+
 //! One key's frequency, straight from Microtuner::keyToFreq()'s branches: a
 //! single-interval scale is constant, an unmapped key is 0, otherwise the
 //! reference frequency times the interval and its octave.
@@ -326,15 +340,7 @@ bool SessionTuning::setState(const QJsonObject& state, QString* error)
 	const QString source = state.contains(QStringLiteral("source"))
 		? state.value(QStringLiteral("source")).toString()
 		: m_source;
-	if (source.size() > MaxSourceLength)
-	{
-		if (error != nullptr)
-		{
-			*error = QStringLiteral("the source string is %1 characters; the cap is %2 - "
-				"nothing was written").arg(source.size()).arg(MaxSourceLength);
-		}
-		return false;
-	}
+	if (!sourceFitsCap(source, error)) { return false; }
 	const bool active = state.contains(QStringLiteral("active"))
 		? state.value(QStringLiteral("active")).toBool(true)
 		: true;
@@ -355,6 +361,7 @@ bool SessionTuning::setNoteFrequency(int key, double frequency, const QString& s
 		if (error != nullptr) { *error = QStringLiteral("frequency %1 must be a finite positive Hz value a float can hold").arg(frequency); }
 		return false;
 	}
+	if (!sourceFitsCap(source, error)) { return false; }
 	Table next = m_tables[m_front.load(std::memory_order_relaxed)];
 	next.frequencies[key] = frequency;
 	commit(next, true, source.isEmpty() ? QStringLiteral("manual (mts.set_note)") : source);
