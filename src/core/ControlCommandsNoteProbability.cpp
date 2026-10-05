@@ -50,6 +50,7 @@
 
 #include <QJsonObject>
 
+#include "ClipLinks.h"
 #include "ControlEdit.h"
 #include "ControlRegistry.h"
 #include "MidiClip.h"
@@ -138,6 +139,7 @@ void registerNoteProbabilitySet(ControlRegistry& registry)
 		clip->addJournalCheckPoint();
 		note->setProbability(static_cast<float>(probability));
 		clip->dataChanged();
+		if (clip->linkId() > 0) { ClipLinks::mirrorContent(clip); }  // a linked copy carries the same probability
 
 		QJsonObject result = noteState(note, index);
 		result.insert(QStringLiteral("clip"), clipId(ref.id));

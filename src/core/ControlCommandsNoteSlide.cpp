@@ -52,6 +52,7 @@
 #include <QJsonObject>
 #include <QString>
 
+#include "ClipLinks.h"
 #include "ControlEdit.h"
 #include "ControlGrooveSupport.h"
 #include "ControlNoteShared.h"
@@ -75,6 +76,16 @@ const QString kSlideCheckpoint = QStringLiteral("ProjectJournal (MidiClip checkp
 	"UNCONDITIONALLY - an absent attribute means 0, a regular note - so a checkpoint taken before "
 	"a FIRST slide edit restores it exactly)");
 
+/*! The end of a slide edit: the clip says it changed, and a member of a link
+ *  group gets the new content - the same content channel note.add, note.move and
+ *  note.expression_set mirror. Its own function so neither verb carries the
+ *  branch (per-method CCN target 10, tests/complexity-gate.sh). */
+void publishSlideEdit(MidiClip* clip)
+{
+	clip->dataChanged();
+	if (clip->linkId() > 0) { ClipLinks::mirrorContent(clip); }
+}
+
 ControlResult slideSet(const QJsonObject& args)
 {
 	ControlResult error;
@@ -95,7 +106,7 @@ ControlResult slideSet(const QJsonObject& args)
 	const bool previous = note->slide();
 	clip->addJournalCheckPoint();
 	note->setSlide(slide);
-	clip->dataChanged();
+	publishSlideEdit(clip);
 
 	QJsonObject result = noteState(note, index);
 	result.insert(QStringLiteral("clip"), clipId(ref.id));
@@ -150,7 +161,7 @@ ControlResult slideClear(const QJsonObject& args)
 		note->setSlide(false);
 		++cleared;
 	}
-	if (cleared > 0) { clip->dataChanged(); }
+	if (cleared > 0) { publishSlideEdit(clip); }
 
 	QJsonObject result;
 	result.insert(QStringLiteral("clip"), clipId(ref.id));
