@@ -394,6 +394,38 @@ private slots:
 		QCOMPARE(readBytes(project), before);
 	}
 
+	/*! A media folder that is a SYMLINK out of the project folder must not be written
+	 *  through: the copies would land outside the project the call claims to make
+	 *  portable, so the call REFUSES and nothing is copied anywhere. The containment
+	 *  check has to resolve the link, not merely compare the spelled-out paths. */
+	void collectMediaRefusesAMediaFolderThatSymlinksOutOfTheProject()
+	{
+		QTemporaryDir dir;
+		QVERIFY(dir.isValid());
+		const QString outside = dir.path() + QStringLiteral("/library");
+		QVERIFY(QDir().mkpath(outside));
+		for (const QString& name : {QStringLiteral("sample.wav"), QStringLiteral("clip.wav"),
+			QStringLiteral("sound.sf2"), QStringLiteral("slot.wav")})
+		{
+			QVERIFY(writeBytes(outside + QLatin1Char('/') + name, fakeWave(32)));
+		}
+		const QString projectDir = dir.path() + QStringLiteral("/song");
+		QVERIFY(QDir().mkpath(projectDir));
+		const QString project = projectDir + QStringLiteral("/song.mmp");
+		QVERIFY(writeBytes(project, fixtureDocument(outside)));
+		const QByteArray before = readBytes(project);
+
+		// The project's own 'media' name is a link to a directory outside it.
+		QVERIFY(QFile::link(outside, projectDir + QStringLiteral("/media")));
+
+		const ControlResult collected = run(QStringLiteral("project.collect_media"),
+			QJsonObject{{QStringLiteral("project"), project}});
+		QVERIFY2(!collected.ok, "a media folder that resolves outside the project must be refused");
+		QVERIFY2(!QFileInfo::exists(outside + QStringLiteral("/media")),
+			"nothing may be written through the link");
+		QCOMPARE(readBytes(project), before);  // the project file is untouched
+	}
+
 	void relinkRepointsTheReferenceAndUndoRestoresTheFile()
 	{
 		QTemporaryDir dir;
