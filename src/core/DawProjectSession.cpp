@@ -331,7 +331,12 @@ DawProjectModel dawProjectModelFromSong(Song* song, DawProjectLossReport* loss)
 					// LMMS' note volume is 0..200 (include/volume.h); the
 					// format's vel is 0..1. MaxVolume is the format's 1.0.
 					noteEntry.vel = static_cast<double>(note->getVolume()) / MaxVolume;
-					noteEntry.rel = noteEntry.vel;
+					// The note-off velocity, which the engine DOES carry (Note's
+					// `relvel`): -1 means the note carries none, and a note with
+					// none writes the format's own default - rel equal to vel.
+					noteEntry.rel = note->releaseVelocity() >= 0
+						? static_cast<double>(note->releaseVelocity()) / MaxVolume
+						: noteEntry.vel;
 					clipEntry.notes.append(noteEntry);
 				}
 				entry.clips.append(clipEntry);
@@ -579,7 +584,17 @@ bool applyDawProjectModel(Song* song, const DawProjectModel& model, QString* err
 					// FALSE: the clip does not quantise a note an agent placed by
 					// tick, and the quantiser reads the piano roll's GUI, which a
 					// headless instance does not have.
-					midi->addNote(note, false);
+					Note* placed = midi->addNote(note, false);
+					// The note-off velocity the document carried, when it says
+					// anything the note-on velocity does not: the engine's Note
+					// holds one (`relvel`) and the format's `rel` is required, so a
+					// distinct value is a fact, not a default. Equal rel and vel is
+					// left alone, which is the engine's own default.
+					if (placed != nullptr && noteEntry.rel != noteEntry.vel)
+					{
+						placed->setReleaseVelocity(static_cast<int>(std::lround(
+							noteEntry.rel * MaxVolume)));
+					}
 				}
 			}
 			const tick_t length = static_cast<tick_t>(

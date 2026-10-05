@@ -61,6 +61,7 @@
 #include "ControlRegistry.h"
 #include "DawProjectInterchange.h"
 #include "Engine.h"
+#include "MidiClip.h"
 #include "Mixer.h"
 #include "ProjectJournal.h"
 #include "Song.h"
@@ -1165,6 +1166,56 @@ private slots:
 		QCOMPARE(song->getTimeSigModel().numeratorModel().value(), beforeNumerator);
 		QCOMPARE(song->getTimeSigModel().denominatorModel().value(), beforeDenominator);
 		QVERIFY(song->tempoMap().map() == beforeMap);
+	}
+
+//! Luna cluster 2216: the engine HAS a release velocity - Note::releaseVelocity
+	//! is written to the file as `relvel` - so the model's `rel` is carried into
+	//! the session and back out. Applying ignored it and exporting set rel=vel,
+	//! so a file's note-off velocity was silently replaced by its note-on
+	//! velocity on the first import. (The note CHANNEL is the other half of the
+	//! finding and stays lost: no engine Note has a channel.)
+	void releaseVelocitySurvivesAnImportAndExport()
+	{
+		Song* song = Engine::getSong();
+		song->clearProject();
+		Track* track = Track::create(Track::Type::Instrument, song);
+		QVERIFY(track != nullptr);
+		Clip* clip = track->createClip(TimePos(0));
+		auto* midi = dynamic_cast<MidiClip*>(clip);
+		QVERIFY(midi != nullptr);
+
+		DawProjectModel model = previousSessionModel();
+		model.tracks.clear();
+		DawProjectTrack entry;
+		entry.typeName = QStringLiteral("instrument");
+		entry.contentType = QStringLiteral("notes");
+		entry.name = QStringLiteral("Rel");
+		DawProjectClip clipEntry;
+		clipEntry.time = 0.0;
+		clipEntry.duration = 4.0;
+		DawProjectNote noteEntry;
+		noteEntry.time = 0.0;
+		noteEntry.duration = 1.0;
+		noteEntry.key = 60;
+		noteEntry.vel = 0.8;
+		noteEntry.rel = 0.2;
+		clipEntry.notes.append(noteEntry);
+		entry.clips.append(clipEntry);
+		model.tracks.append(entry);
+
+		QString error;
+		QVERIFY2(applyDawProjectModel(song, model, &error), qPrintable(error));
+
+		DawProjectLossReport loss;
+		const DawProjectModel back = dawProjectModelFromSong(song, &loss);
+		QCOMPARE(back.tracks.size(), 1);
+		QCOMPARE(back.tracks[0].clips.size(), 1);
+		QCOMPARE(back.tracks[0].clips[0].notes.size(), 1);
+		const DawProjectNote& roundTripped = back.tracks[0].clips[0].notes[0];
+		QCOMPARE(roundTripped.vel, 0.8);
+		QVERIFY2(std::fabs(roundTripped.rel - 0.2) < 1e-6,
+			qPrintable(QStringLiteral("the release velocity came back as %1, not 0.2")
+				.arg(roundTripped.rel)));
 	}
 
 private:
