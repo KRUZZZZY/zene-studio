@@ -59,6 +59,7 @@
  * Boston, MA 02110-1301 USA.
  */
 
+#include <QFileInfo>
 #include <QJsonArray>
 #include <QJsonObject>
 
@@ -160,12 +161,13 @@ ControlResult handleQuarantineAdd(const QJsonObject& args)
 {
 	const QString path = args.value(QStringLiteral("path")).toString();
 	const QString reason = args.value(QStringLiteral("reason")).toString();
-	if (path.isEmpty())
+	if (path.isEmpty() || !QFileInfo(path).isAbsolute())
 	{
 		return ControlResult::failure(ControlErrorKind::InvalidArgs,
 			QStringLiteral("%1 needs 'path': the plugin file to hide, as an absolute path - the quarantine "
-				"list stores paths, and a scan matches a candidate file's absolute path against it")
-				.arg(QuarantineAddName));
+				"list stores paths, and a scan matches a candidate file's absolute path against it. "
+				"Got '%2': a relative path would be stored as an entry no scan can ever match")
+				.arg(QuarantineAddName, path));
 	}
 
 	PluginScanCache* cache = nullptr;
@@ -218,11 +220,12 @@ ControlResult handleQuarantineAdd(const QJsonObject& args)
 ControlResult handleQuarantineRemove(const QJsonObject& args)
 {
 	const QString path = args.value(QStringLiteral("path")).toString();
-	if (path.isEmpty())
+	if (path.isEmpty() || !QFileInfo(path).isAbsolute())
 	{
 		return ControlResult::failure(ControlErrorKind::InvalidArgs,
-			QStringLiteral("%1 needs 'path': the plugin file to un-hide, as an absolute path")
-				.arg(QuarantineRemoveName));
+			QStringLiteral("%1 needs 'path': the plugin file to un-hide, as an absolute path - the list "
+				"stores the absolute paths the scan matches candidates against. Got '%2'")
+				.arg(QuarantineRemoveName, path));
 	}
 
 	PluginScanCache* cache = nullptr;

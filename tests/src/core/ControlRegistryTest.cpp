@@ -182,6 +182,35 @@ private slots:
 		QCOMPARE(result.errorKind, ControlErrorKind::InvalidArgs);
 	}
 
+	//! Luna cluster 5727: a quarantine entry is matched by the scan against the
+	//! CANDIDATE's absolute path (PluginFactory.cpp: `isQuarantined(file.
+	//! absoluteFilePath())`), and both verbs say so in their own error text. A
+	//! relative path can never match that comparison, so accepting one stores an
+	//! entry that reports success and hides nothing on the next scan. It must be
+	//! refused as an argument error - before the scan cache is even consulted, so
+	//! the refusal does not depend on whether this process has a writable cache.
+	void quarantineRefusesARelativePath()
+	{
+		ControlRegistry* registry = ControlRegistry::instance();
+		// ONLY the declared arguments: an extra key would be refused by the
+		// schema and this case would pass without ever reaching the handler.
+		const QJsonObject relative{{QStringLiteral("path"), QStringLiteral("./bad-plugin.so")}};
+		const QJsonObject relativeAdd{{QStringLiteral("path"), QStringLiteral("./bad-plugin.so")},
+			{QStringLiteral("reason"), QStringLiteral("a relative path")}};
+		for (const auto& call : {QPair<QString, QJsonObject>(
+			 QStringLiteral("plugin.scan_cache_quarantine_add"), relativeAdd),
+			QPair<QString, QJsonObject>(
+				QStringLiteral("plugin.scan_cache_quarantine_remove"), relative)})
+		{
+			const ControlResult result = registry->invoke(call.first, call.second);
+			QVERIFY2(!result.ok, qPrintable(QStringLiteral("%1 accepted a relative path")
+				.arg(call.first)));
+			QVERIFY2(result.errorKind == ControlErrorKind::InvalidArgs,
+				qPrintable(QStringLiteral("%1 refused './bad-plugin.so' as kind %2: %3")
+					.arg(call.first).arg(int(result.errorKind)).arg(result.errorMessage)));
+		}
+	}
+
 	void unexpectedArgumentIsInvalidArgs()
 	{
 		ControlRegistry* registry = ControlRegistry::instance();
