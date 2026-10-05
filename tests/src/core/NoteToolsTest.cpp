@@ -197,6 +197,33 @@ private slots:
 			{QStringLiteral("degrees"), QJsonArray{14}}}).errorKind, ControlErrorKind::InvalidArgs);
 	}
 
+	//! Luna cluster 4806: the shared finish() helper advertised the command ITSELF as its
+	//! inverse with empty inverse args, so every command that takes required arguments
+	//! (note.add_many, note.group, ...) named an inverse that cannot be replayed at all:
+	//! control.undo reading it fails validation on the missing 'clip'.
+	void anAdvertisedInverseOfANoteEditCanActuallyBeReplayed()
+	{
+		MidiClip* clip = clipWith({});
+		QJsonArray entries;
+		entries.append(QJsonObject{{QStringLiteral("key"), 60}, {QStringLiteral("position"), 0},
+			{QStringLiteral("length"), 24}});
+		QJsonObject args = self(clip);
+		args.insert(QStringLiteral("notes"), entries);
+		QVERIFY(run(QStringLiteral("note.add_many"), args).ok);
+		QCOMPARE(clip->notes().size(), std::size_t{1});
+
+		const ControlRegistry::Transaction* recorded = ControlRegistry::instance()->lastTransaction();
+		QVERIFY(recorded != nullptr);
+		QCOMPARE(recorded->inverse.value(QStringLiteral("op")).toString(), QStringLiteral("control.undo"));
+		QCOMPARE(recorded->before.value(QStringLiteral("clip")).toString(), control::clipIdOf(clip));
+		// And the advertised pair really does restore the prior state.
+		const ControlResult replay = run(recorded->inverse.value(QStringLiteral("op")).toString(),
+			recorded->inverse.value(QStringLiteral("args")).toObject());
+		QVERIFY2(replay.ok, qPrintable(replay.errorMessage));
+		QVERIFY(replay.result.value(QStringLiteral("undone")).toBool());
+		QCOMPARE(clip->notes().size(), std::size_t{0});
+	}
+
 	//! Luna cluster 5680: a track holding TWO MIDI clips at the SAME start. keyTrack() picked the
 	//! clone to keep by start position alone, so the other clip - also at that start - survived the
 	//! cleanup too and had its notes filtered by key as well: every generated track then carried
