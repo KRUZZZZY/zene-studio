@@ -206,9 +206,10 @@ ControlResult importShortcuts(const QJsonObject& args)
 	QStringList known;
 	for (const sm::Binding& binding : all) { known.append(binding.id); }
 	QJsonArray unknown;
-	QJsonArray invalid;  // not a key sequence: left out (read as empty it would unbind the action)
+	QJsonArray invalid;  // not a string key sequence: left out (read as empty it would unbind the action)
 	for (auto it = incoming.begin(); it != incoming.end(); ++it)
 	{
+		if (!it.value().isString()) { invalid.append(it.key()); continue; }
 		bool ok = false;
 		const QString keys = sm::portable(it.value().toString(), &ok);
 		if (!ok) { invalid.append(it.key()); continue; }
