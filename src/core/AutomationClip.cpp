@@ -778,14 +778,17 @@ void AutomationClip::writeBlockRamp( AutomationRamp & ramp, const TimePos & bloc
 	// Knot 0 is the block's first sample, at its own position inside its tick.
 	addRampKnot( ramp, relStart, 0, frameOffsetInTick, framesPerTick );
 
-	// Then one PAIR of knots per tick boundary strictly inside the block: the
-	// frame before the boundary holds the value the curve had coming into it,
-	// the boundary carries the value it takes going out. For a Discrete curve
-	// that pair IS the step; for a Linear one it is two points on the same line.
+	// Then one PAIR of knots per tick boundary inside the block: the frame
+	// before the boundary holds the value the curve had coming into it, the
+	// boundary carries the value it takes going out. For a Discrete curve that
+	// pair IS the step; for a Linear one it is two points on the same line. A
+	// boundary landing exactly ON the block's last frame is written too - the
+	// block's own end knot carries that frame's value, so the frame before it
+	// still needs the value coming in or the step smears back over it.
 	for( int tick = 1; ; ++tick )
 	{
 		const double knotFrame = tick * framesPerTick - frameOffsetInTick;
-		if( knotFrame >= static_cast<double>( frames ) )
+		if( knotFrame > static_cast<double>( frames ) )
 		{
 			break;
 		}
@@ -793,8 +796,16 @@ void AutomationClip::writeBlockRamp( AutomationRamp & ramp, const TimePos & bloc
 		// value the curve had coming into it and the first frame ON or after it
 		// carries the value it takes going out, so a Discrete curve's step
 		// lands on the first sample that is past it - never a sample early.
-		const int before = static_cast<int>( std::floor( knotFrame ) );
+		int before = static_cast<int>( std::floor( knotFrame ) );
 		const int after = static_cast<int>( std::ceil( knotFrame ) );
+		if( before == after )
+		{
+			// The boundary falls EXACTLY on a sample, so both knots would land on
+			// that one frame and both would carry the value the curve takes going
+			// OUT - leaving the ramp to interpolate into the step over the frames
+			// before it. The frame just before it holds the value coming in.
+			before = after - 1;
+		}
 		if( before > 1 )
 		{
 			addRampKnot( ramp, relStart, before, frameOffsetInTick, framesPerTick );

@@ -561,6 +561,53 @@ private slots:
 		}
 	}
 
+	/*! A Discrete step that lands EXACTLY on a sample must be HELD until that
+	 *  sample. floor(knotFrame) and ceil(knotFrame) are the same frame then, so
+	 *  both knots used to carry the value going OUT and the ramp interpolated
+	 *  into the step over the frames before it. */
+	void aDiscreteStepOnAnExactSampleIsHeldUntilThatSample()
+	{
+		control::AutomationParameter gain;
+		QString why;
+		QVERIFY2(channelGainParameter(&gain, &why), qPrintable(why));
+		QVERIFY2(writeCurveThroughTheSurface(gain.id(), &why), qPrintable(why));
+
+		AutomationClip* clip = control::existingAutomationClip(gain.model);
+		QVERIFY(clip != nullptr);
+		clip->setProgressionType(AutomationClip::ProgressionType::Discrete);
+
+		// An integer frames-per-tick puts every tick boundary exactly ON a
+		// sample - the case floor == ceil.
+		constexpr double kFramesPerTick = 4.0;
+		constexpr f_cnt_t kFrames = 16;
+		AutomationRamp ramp;
+		clip->writeBlockRamp(ramp, clip->startPosition(), kFrames, kFramesPerTick, 0);
+		evidence("discrete-step-exact-frame",
+			QStringLiteral("knots=%1 refusals=%2 value@3=%3 value@4=%4")
+				.arg(ramp.knotCount()).arg(ramp.refusals())
+				.arg(ramp.valueAt(3), 0, 'g', 6).arg(ramp.valueAt(4), 0, 'g', 6));
+		QCOMPARE(ramp.refusals(), std::uint32_t{0});
+
+		// kCurve carries a node on EVERY tick, so the value a Discrete clip holds
+		// over tick i is node i's stored value, and the step must appear exactly
+		// at the frame the boundary falls on.
+		for (std::size_t tick = 0; tick * kFramesPerTick < kFrames; ++tick)
+		{
+			const double stored = static_cast<double>(gain.model->inverseScaledValue(
+				static_cast<float>(kCurve[tick].value)));
+			const f_cnt_t first = static_cast<f_cnt_t>(tick * kFramesPerTick);
+			const f_cnt_t last = std::min<f_cnt_t>(first + static_cast<f_cnt_t>(kFramesPerTick) - 1,
+				kFrames - 1);
+			for (f_cnt_t f = first; f <= last; ++f)
+			{
+				QVERIFY2(std::fabs(static_cast<double>(ramp.valueAt(f)) - stored) <= 1.0e-4,
+					qPrintable(QStringLiteral("frame %1 of tick %2 reads %3, the clip holds %4: "
+						"the step was smeared instead of held")
+						.arg(f).arg(tick).arg(ramp.valueAt(f), 0, 'g', 6).arg(stored, 0, 'g', 6)));
+			}
+		}
+	}
+
 	//! Workspace rule 4, measured on the path the audio thread takes: the ramp
 	//! build AND the per-sample fill, 64 blocks, zero allocations.
 	void theSampleAccuratePathAllocatesNothing()
