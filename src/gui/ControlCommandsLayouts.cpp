@@ -129,7 +129,7 @@ ControlResult applyLayout(const QJsonObject& args)
 {
 	gui::Shell* s = shell();
 	if (s == nullptr) { return noInterface(QStringLiteral("window.layout_apply")); }
-	const QString name = args.value(QStringLiteral("name")).toString();
+	const QString name = args.value(QStringLiteral("name")).toString().trimmed();
 	const QJsonObject layouts = savedLayouts();
 	if (!layouts.contains(name)) { return ControlResult::failure(ControlErrorKind::NotFound, QStringLiteral("no saved layout '%1'").arg(name)); }
 	gui::Shell::dropPersonalAside();  // theme 22: the user chose a personal layout; it is theirs now
@@ -181,7 +181,7 @@ ControlResult forgetLayout(const QJsonObject&)
 
 ControlResult removeLayout(const QJsonObject& args)
 {
-	const QString name = args.value(QStringLiteral("name")).toString();
+	const QString name = args.value(QStringLiteral("name")).toString().trimmed();
 	QJsonObject layouts = savedLayouts();
 	if (!layouts.contains(name)) { return ControlResult::failure(ControlErrorKind::NotFound, QStringLiteral("no saved layout '%1'").arg(name)); }
 	layouts.remove(name);

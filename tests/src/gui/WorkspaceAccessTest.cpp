@@ -51,6 +51,7 @@
 #include "DesignTokens.h"
 #include "Engine.h"
 #include "Knob.h"
+#include "UiConfigStore.h"
 #include "WcagContrast.h"
 #include "WorkspaceWindows.h"
 
@@ -409,6 +410,22 @@ private slots:
 		QVERIFY(run(QStringLiteral("control.undo")).ok);
 		QVERIFY(!crosshairShown());
 		QVERIFY(!overlay->isVisible());
+	}
+
+	//! window.layout_save trims the name (src/gui/ControlCommandsLayouts.cpp saveLayout), so a layout
+	//! saved as " Studio " is stored as "Studio"; the lookup must find it under the name it was saved with.
+	void aLayoutIsFoundUnderTheNameItWasSavedWith()
+	{
+		QVERIFY(gui::uistore::write(QStringLiteral("shell.layouts"),
+			{{QStringLiteral("layouts"), QJsonObject{{QStringLiteral("Studio"), QJsonObject{{QStringLiteral("view"),
+				QStringLiteral("arranger")}}}}}},
+			{}, {}, {}).ok);
+		const ControlResult removed = run(QStringLiteral("window.layout_remove"),
+			{{QStringLiteral("name"), QStringLiteral(" Studio ")}});
+		QVERIFY2(removed.ok, qPrintable(removed.errorMessage));
+		QCOMPARE(removed.result.value(QStringLiteral("name")).toString(), QStringLiteral("Studio"));
+		QVERIFY(gui::uistore::read(QStringLiteral("shell.layouts"))
+			.value(QStringLiteral("layouts")).toObject().isEmpty());
 	}
 
 	void theWindowVerbsNeedAMainWindow()
