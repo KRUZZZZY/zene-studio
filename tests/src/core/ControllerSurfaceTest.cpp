@@ -211,6 +211,45 @@ private slots:
 		QVERIFY(controller->softTakeoverCaptured());
 	}
 
+	/*! LED feedback borrows the port: an input-only control is moved to Duplex
+ *  with its output channel pointed at this control's channel, because a
+ *  port that cannot output cannot carry the write. Turning feedback off
+ *  must GIVE THE PORT BACK - a control the user only ever listens to must
+ *  not stay exposed as an output, on a channel the user never chose, and
+ *  those are exactly the settings MidiPort::saveSettings writes out. */
+	void DisablingFeedbackGivesThePortBack()
+	{
+		FloatModel knob(0.5f, 0.0f, 1.0f, 0.01f, Engine::getSong(),
+			QStringLiteral("Surface Feedback Port Restore Knob"));
+
+		MidiController* controller = bindThroughMidiLearn(&knob, 9, 90);
+		QVERIFY(controller != nullptr);
+		QVERIFY(controller->midiPort().mode() == MidiPort::Mode::Input);
+
+		// What the port looked like before feedback touched it.
+		const MidiPort::Mode modeBefore = controller->midiPort().mode();
+		const int channelBefore = controller->midiPort().outputChannel();
+
+		controller->setFeedbackEnabled(true);
+		QVERIFY(controller->feedbackEnabled());
+		QVERIFY(controller->midiPort().mode() == MidiPort::Mode::Duplex);
+		QCOMPARE(controller->midiPort().outputChannel(), controller->midiPort().inputChannel());
+
+		controller->setFeedbackEnabled(false);
+		QVERIFY(!controller->feedbackEnabled());
+		QCOMPARE(controller->midiPort().mode(), modeBefore);
+		QCOMPARE(controller->midiPort().outputChannel(), channelBefore);
+
+		// And a control that was already Duplex on a channel of its own is
+		// left alone by feedback: only what feedback itself changed is undone.
+		controller->midiPort().setMode(MidiPort::Mode::Duplex);
+		controller->midiPort().setOutputChannel(3);
+		controller->setFeedbackEnabled(true);
+		controller->setFeedbackEnabled(false);
+		QVERIFY(controller->midiPort().mode() == MidiPort::Mode::Duplex);
+		QCOMPARE(controller->midiPort().outputChannel(), 3);
+	}
+
 	/*! The negative control for the test above: with soft-takeover OFF - the
 	 *  default - the very first control-change moves the model. Without this,
 	 *  the ignored CCs above could be explained by something other than the

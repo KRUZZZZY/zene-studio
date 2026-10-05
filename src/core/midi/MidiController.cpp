@@ -169,7 +169,23 @@ void MidiController::resetSoftTakeover()
 void MidiController::setFeedbackEnabled(bool enabled)
 {
 	m_feedbackEnabled = enabled;
-	if (!enabled) { return; }
+	if (!enabled)
+	{
+		// Give back exactly what enabling feedback borrowed, so an input-only
+		// control does not stay exposed as an output on a channel the user
+		// never chose - and does not save those settings.
+		if (m_tookOverPortMode)
+		{
+			m_midiPort.setMode(m_modeBeforeFeedback);
+			m_tookOverPortMode = false;
+		}
+		if (m_tookOverPortChannel)
+		{
+			m_midiPort.setOutputChannel(m_outputChannelBeforeFeedback);
+			m_tookOverPortChannel = false;
+		}
+		return;
+	}
 
 	// A port that is not output-enabled cannot carry the write, and
 	// MidiPort::processOutEvent gates on the port's output CHANNEL: a feedback
@@ -179,10 +195,16 @@ void MidiController::setFeedbackEnabled(bool enabled)
 	// the channel the hardware listens to for its own control's lamp.
 	if (!m_midiPort.isOutputEnabled())
 	{
+		// Remember it only if feedback is the one doing it: a port the user
+		// already made Duplex is not theirs to have undone.
+		m_modeBeforeFeedback = m_midiPort.mode();
+		m_tookOverPortMode = true;
 		m_midiPort.setMode(MidiPort::Mode::Duplex);
 	}
 	if (m_midiPort.inputChannel() > 0 && m_midiPort.outputChannel() != m_midiPort.inputChannel())
 	{
+		m_outputChannelBeforeFeedback = m_midiPort.outputChannel();
+		m_tookOverPortChannel = true;
 		m_midiPort.setOutputChannel(m_midiPort.inputChannel());
 	}
 	sendFeedback();

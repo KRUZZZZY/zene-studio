@@ -165,6 +165,20 @@ private:
 
 	bool m_feedbackEnabled = false;
 
+	/*! What feedback BORROWED from the port, so disabling it can give the port
+	 *  back. Enabling feedback on an input-only control moves the port to
+	 *  Duplex and points its output channel at this control's channel, because
+	 *  a port that cannot output cannot carry the write (MidiController.cpp).
+	 *  Both are settings MidiPort::saveSettings persists, so leaving them
+	 *  behind would hand the user a port exposed as an output, on a channel
+	 *  they never chose - and save that. Only what feedback actually changed
+	 *  is recorded, and restored: a control that was already Duplex on a
+	 *  channel of its own is left alone. */
+	MidiPort::Mode m_modeBeforeFeedback = MidiPort::Mode::Disabled;
+	int m_outputChannelBeforeFeedback = 0;
+	bool m_tookOverPortMode = false;
+	bool m_tookOverPortChannel = false;
+
 	friend class gui::ControllerConnectionDialog;
 	friend class AutoDetectMidiController;
 
