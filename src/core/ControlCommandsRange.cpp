@@ -126,7 +126,10 @@ ControlResult finishEdit(const QString& command, QJsonObject result)
 {
 	Engine::getSong()->setModified();
 	result.insert(QStringLiteral("range"), rangeJson());
-	result.insert(QStringLiteral("__transaction"), transactionPayload(rangeJson(), command, {}, true,
+	// The inverse is control.undo, NOT this command with empty args: every range edit
+	// checkpoints the tracks it covers as one step (beginEdit above), so replaying
+	// control.undo puts them back, whereas replaying range.delete deleted again.
+	result.insert(QStringLiteral("__transaction"), transactionPayload(rangeJson(), QStringLiteral("control.undo"), {}, true,
 		QStringLiteral("Track checkpoints: every track the range covers was checkpointed before the edit, as one step")));
 	return ControlResult::success(result);
 }
@@ -166,7 +169,9 @@ bool rangeFades(ClipEdits* edits, tick_t start, tick_t end, tick_t from, tick_t 
 	if (start >= from && end <= to) { return false; }
 	if (start >= from && start < to) { edits->fadeInTicks = static_cast<int>(std::min(to, end) - start); }
 	if (end > from && end <= to) { edits->fadeOutTicks = static_cast<int>(end - std::max(from, start)); }
-	return true;
+	// A clip spanning the whole range satisfies neither edge, so neither fade was touched:
+	// reporting true counted it as faded (BUGS_FOUND 11.42).
+	return edits->fadeInTicks > 0 || edits->fadeOutTicks > 0;
 }
 
 //! ED-178: the fades a range sets on one sample clip - fixed lengths when @a args name them (batch
