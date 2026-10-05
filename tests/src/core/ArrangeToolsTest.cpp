@@ -206,6 +206,40 @@ private slots:
 		sections.clear();
 	}
 
+	//! A section whose start or end is missing or not a number is refused, not silently read as tick
+	//! zero: a hand-edited <section start="oops" end="192"/> used to load as a section from 0.
+	void aMalformedSectionSpanIsNotReadAsTickZero()
+	{
+		ArrangementSections& sections = ArrangementSections::instance();
+		QDomDocument doc;
+		QDomElement list = doc.createElement(QStringLiteral("sections"));
+		QDomElement bad = doc.createElement(QStringLiteral("section"));
+		bad.setAttribute(QStringLiteral("id"), 1);
+		bad.setAttribute(QStringLiteral("start"), QStringLiteral("oops"));
+		bad.setAttribute(QStringLiteral("end"), 192);
+		list.appendChild(bad);
+		QDomElement noStart = doc.createElement(QStringLiteral("section"));
+		noStart.setAttribute(QStringLiteral("id"), 2);
+		noStart.setAttribute(QStringLiteral("end"), 192);
+		list.appendChild(noStart);
+		QDomElement noEnd = doc.createElement(QStringLiteral("section"));
+		noEnd.setAttribute(QStringLiteral("id"), 3);
+		noEnd.setAttribute(QStringLiteral("start"), 0);
+		list.appendChild(noEnd);
+		QDomElement good = doc.createElement(QStringLiteral("section"));
+		good.setAttribute(QStringLiteral("id"), 4);
+		good.setAttribute(QStringLiteral("start"), 96);
+		good.setAttribute(QStringLiteral("end"), 288);
+		good.setAttribute(QStringLiteral("name"), QStringLiteral("Chorus"));
+		list.appendChild(good);
+		sections.load(list);
+		QCOMPARE(sections.sections().size(), 1);        // only the one that reads as a real span
+		QVERIFY(sections.at(96) != nullptr);
+		QCOMPARE(sections.at(96)->name, QStringLiteral("Chorus"));
+		QCOMPARE(sections.at(96)->start, tick_t{96});    // and it keeps the start it was written with
+		sections.clear();
+	}
+
 	void aQuietStretchIsCutOut()
 	{
 		auto* track = dynamic_cast<SampleTrack*>(Track::create(Track::Type::Sample, Engine::getSong()));
