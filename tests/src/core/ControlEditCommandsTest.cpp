@@ -382,9 +382,11 @@ private slots:
 		const ControlResult repeat = registry->invoke(QStringLiteral("track.set_solo"),
 			{{QStringLiteral("track"), track}, {QStringLiteral("solo"), true}});
 		QVERIFY2(repeat.ok, qPrintable(repeat.errorMessage));
-		const QJsonObject inverse = repeat.result.value(QStringLiteral("__transaction"))
-			.toObject().value(QStringLiteral("inverse")).toObject();
-		QCOMPARE(inverse.value(QStringLiteral("args")).toObject()
+		// The reply itself never carries the transaction (finishResult strips
+		// __transaction), so the recorded one is what a client reads back.
+		QCOMPARE(revtest::stateOf(QStringLiteral("track.set_solo"))
+			.value(QStringLiteral("inverse")).toObject()
+			.value(QStringLiteral("args")).toObject()
 			.value(QStringLiteral("solo")).toBool(), true);
 
 		const ControlResult unsoloed = registry->invoke(QStringLiteral("track.set_solo"),
@@ -393,9 +395,9 @@ private slots:
 		const ControlResult repeatUnsolo = registry->invoke(QStringLiteral("track.set_solo"),
 			{{QStringLiteral("track"), track}, {QStringLiteral("solo"), false}});
 		QVERIFY2(repeatUnsolo.ok, qPrintable(repeatUnsolo.errorMessage));
-		const QJsonObject unsoloInverse = repeatUnsolo.result.value(QStringLiteral("__transaction"))
-			.toObject().value(QStringLiteral("inverse")).toObject();
-		QCOMPARE(unsoloInverse.value(QStringLiteral("args")).toObject()
+		QCOMPARE(revtest::stateOf(QStringLiteral("track.set_solo"))
+			.value(QStringLiteral("inverse")).toObject()
+			.value(QStringLiteral("args")).toObject()
 			.value(QStringLiteral("solo")).toBool(), false);
 	}
 };

@@ -430,7 +430,10 @@ ControlResult setTrackSolo(const QJsonObject& args)
 	result.insert(QStringLiteral("__transaction"),
 		control::transactionPayload(before, QStringLiteral("track.set_solo"),
 			QJsonObject{{QStringLiteral("track"), args.value(QStringLiteral("track")).toString()},
-				{QStringLiteral("solo"), !value}},
+				// The state's undo target, not !value: an idempotent request changed
+				// nothing, and an inverse that unsoloed a track the caller asked to
+				// keep soloed is not the inverse of anything.
+				{QStringLiteral("solo"), previous}},
 			true,
 			QStringLiteral("composite checkpoint: every track of the song container is recorded "
 				"as ONE undo step, so the solo flag and the mute state of every other track "
