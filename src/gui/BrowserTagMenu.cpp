@@ -73,15 +73,15 @@ void addBrowserTagMenu(QMenu* menu, const QString& path)
 	QMenu* tags = menu->addMenu(QMenu::tr("Tags"));
 	const QJsonArray known = ControlRegistry::instance()->invoke(QStringLiteral("browser.tags"), QJsonObject{})
 		.result.value(QStringLiteral("tags")).toArray();
-	// The file's own tags, read from the store under the key the commands use (browser.tags gives
+	// Each file's own tags are read from the store under the key the commands use (browser.tags gives
 	// each tag's file COUNT, not the files). Reading only: every change goes through a command.
-	const QStringList mine = BrowserTagStore::instance().tagsOf(browserCanonicalKey(path));
 	for (const QJsonValue& value : known)
 	{
 		const QString tag = value.toObject().value(QStringLiteral("tag")).toString();
 		QAction* action = tags->addAction(tag);
 		action->setCheckable(true);
-		action->setChecked(mine.contains(tag));
+		// The store compares tags case-insensitively, so ask it rather than QStringList::contains.
+		action->setChecked(BrowserTagStore::instance().has(browserCanonicalKey(path), tag));
 		action->setData(QStringLiteral("browser.tag.add"));
 		QObject::connect(action, &QAction::toggled, tags, [path, tag](bool on) { setTag(path, tag, on); });
 	}

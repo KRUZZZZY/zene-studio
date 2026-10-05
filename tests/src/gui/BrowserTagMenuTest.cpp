@@ -115,6 +115,40 @@ private slots:
 		QVERIFY(!BrowserTagStore::instance().tagsOf(kick).contains(QStringLiteral("drums")));
 	}
 
+	void theMenuChecksTagsWhoseSpellingDiffersOnlyInCase()
+	{
+		const QString a = touch(m_dir, "case-a.wav");
+		const QString b = touch(m_dir, "case-b.wav");
+		// The store treats "Bass" and "bass" as one tag, so the aggregated menu list keeps one spelling.
+		for (const auto& [file, tag] : {std::pair{a, QStringLiteral("Bass")}, std::pair{b, QStringLiteral("bass")}})
+		{
+			setBrowserTagPrompt([tag] { return std::optional<QString>(tag); });
+			QMenu menu;
+			addBrowserTagMenu(&menu, file);
+			named(menu, QMenu::tr("New tag..."))->trigger();
+		}
+		QVERIFY(BrowserTagStore::instance().has(a, QStringLiteral("bass")));
+		QVERIFY(BrowserTagStore::instance().has(b, QStringLiteral("Bass")));
+
+		for (const QString& file : {a, b})
+		{
+			QMenu menu;
+			addBrowserTagMenu(&menu, file);
+			// Whichever spelling the aggregated list kept, this file carries the tag and must read checked.
+			QAction* bass = nullptr;
+			for (QAction* top : menu.actions())
+			{
+				if (top->menu() == nullptr) { continue; }
+				for (QAction* action : top->menu()->actions())
+				{
+					if (action->text().compare(QStringLiteral("bass"), Qt::CaseInsensitive) == 0) { bass = action; }
+				}
+			}
+			QVERIFY2(bass != nullptr, qPrintable(QStringLiteral("no bass entry for %1").arg(file)));
+			QVERIFY2(bass->isChecked(), qPrintable(QStringLiteral("not checked for %1").arg(file)));
+		}
+	}
+
 private:
 	QTemporaryDir m_dir;
 };
