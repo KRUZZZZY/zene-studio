@@ -210,6 +210,26 @@ private slots:
 			{QStringLiteral("part"), QStringLiteral("part-0")}}).ok);
 		QCOMPARE(partCount(m_track), 0);
 
+		// Luna 5720: the reported inverse must be REPLAYABLE. plugin.midi_part_add also
+		// needs the channel and the zone ranges of the part that was removed.
+		const QJsonObject inverse = revtest::stateOf(QStringLiteral("plugin.midi_part_remove"))
+			.value(QStringLiteral("inverse")).toObject();
+		const QJsonObject inverseArgs = inverse.value(QStringLiteral("args")).toObject();
+		QCOMPARE(inverse.value(QStringLiteral("op")).toString(), QStringLiteral("plugin.midi_part_add"));
+		QCOMPARE(inverseArgs.value(QStringLiteral("target")).toString(), m_track);
+		QCOMPARE(inverseArgs.value(QStringLiteral("midi_channel")).toInt(), 3);
+		QCOMPARE(inverseArgs.value(QStringLiteral("low_key")).toInt(), 60);
+		QVERIFY(!inverseArgs.value(QStringLiteral("high_key")).isUndefined());
+		QVERIFY(!inverseArgs.value(QStringLiteral("low_velocity")).isUndefined());
+		QVERIFY(!inverseArgs.value(QStringLiteral("high_velocity")).isUndefined());
+		// And it really runs: the inverse args rebuild the part it took away.
+		QVERIFY2(run(inverse.value(QStringLiteral("op")).toString(), inverseArgs).ok, "the reported inverse is refused");
+		QCOMPARE(partCount(m_track), 1);
+		QCOMPARE(trackOf(m_track)->midiParts().zones().zone(0)->chain, 2);  // channel 3 is index 2
+		QVERIFY(run(QStringLiteral("plugin.midi_part_remove"), {{QStringLiteral("target"), m_track},
+			{QStringLiteral("part"), QStringLiteral("part-0")}}).ok);
+		QCOMPARE(partCount(m_track), 0);
+
 		REV_UNDO_OR_FAIL();
 		QCOMPARE(partCount(m_track), 1);
 		QVERIFY(!run(QStringLiteral("plugin.midi_part_remove"), {{QStringLiteral("target"), m_track},

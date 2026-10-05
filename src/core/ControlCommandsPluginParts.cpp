@@ -230,7 +230,13 @@ ControlResult removePart(InstrumentTrack* track, const QString& id)
 	QJsonObject result = partsState(track);
 	result.insert(QStringLiteral("removed"), partId(index));
 	result.insert(QStringLiteral("__transaction"), transactionPayload(partJson(zone, index),
-		QStringLiteral("plugin.midi_part_add"), QJsonObject{{QStringLiteral("target"), trackIdText}}, true,
+		QStringLiteral("plugin.midi_part_add"),
+		QJsonObject{{QStringLiteral("target"), trackIdText},
+			{QStringLiteral("midi_channel"), zone.chain + 1},
+			{QStringLiteral("low_key"), zone.lowKey},
+			{QStringLiteral("high_key"), zone.highKey},
+			{QStringLiteral("low_velocity"), zone.lowVelocity},
+			{QStringLiteral("high_velocity"), zone.highVelocity}}, true,
 		QStringLiteral("action checkpoint: the recorded undo step re-inserts the captured part at its own index, "
 			"so the first-match order comes back exactly")));
 	return ControlResult::success(result);
