@@ -568,6 +568,10 @@ static clap_process_status gain_process(const clap_plugin_t* plugin, const clap_
 	/* The host delivers parameter changes through the event list. */
 	self->params->flush(plugin, process->in_events, process->out_events);
 
+	/* CLAP_TEST_GAIN_PROCESS_ERROR: report a processing error without writing the output block, the way
+	   a plug-in that fails partway through leaves the rest of the buffer as the host handed it over. */
+	if (getenv("CLAP_TEST_GAIN_PROCESS_ERROR") != NULL) { return CLAP_PROCESS_ERROR; }
+
 	const double gain = self->bypass >= 0.5 ? 1.0 : self->gain;
 	const uint32_t frames = process->frames_count;
 	const uint32_t input_count = process->audio_inputs_count;

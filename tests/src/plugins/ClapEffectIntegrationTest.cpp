@@ -80,6 +80,7 @@ private slots:
 	void testThePluginsTailKeepsItRunning();
 	void testParameterRescansRebuildTheModels();
 	void testReadOnlyParametersGetNoKnob();
+	void testAProcessingErrorFallsBackToDryAudio();
 
 private:
 	auto makeKey() const -> Plugin::Descriptor::SubPluginFeatures::Key;
@@ -622,6 +623,42 @@ void lmms::ClapEffectIntegrationTest::testReadOnlyParametersGetNoKnob()
 	QCOMPARE(knobCount, 1);
 	QVERIFY(first != nullptr);
 	QCOMPARE(first->getLabel(), QStringLiteral("Gain"));
+	chain.clear();
+}
+
+/*! BUGS 5514: a plug-in that reports CLAP_PROCESS_ERROR leaves the rest of the output block as the host
+ *  handed it over, so the effect must hand the chain the dry signal instead of mixing stale wet audio. */
+void lmms::ClapEffectIntegrationTest::testAProcessingErrorFallsBackToDryAudio()
+{
+	constexpr f_cnt_t fpp = 48;
+	BufferManager::init(fpp);
+	qputenv("CLAP_TEST_GAIN_PROCESS_ERROR", "1");
+	EffectChain chain{nullptr};
+	const auto key = makeKey();
+	auto* effect = new ClapEffect{&chain, &key};
+	chain.appendEffect(effect);
+	auto* controls = dynamic_cast<ClapEffectControls*>(effect->controls());
+	QVERIFY(controls != nullptr);
+	controls->modelForParam(1)->setValue(0.5f);  // a successful block would come out at 0.25
+
+	SampleFrame storage[fpp];
+	for (f_cnt_t f = 0; f < fpp; ++f)
+	{
+		storage[f][0] = 0.5f;
+		storage[f][1] = -0.25f;
+	}
+	SampleFrame* busData[1] = {storage};
+	AudioBus bus{busData, 1, fpp};
+	QVERIFY(chain.processAudioBuffer(bus));
+	qunsetenv("CLAP_TEST_GAIN_PROCESS_ERROR");
+
+	for (f_cnt_t f = 0; f < fpp; ++f)
+	{
+		QVERIFY2(std::abs(storage[f][0] - 0.5f) < 1e-6f,
+			qPrintable(QStringLiteral("left %1 is not the dry signal").arg(storage[f][0])));
+		QVERIFY2(std::abs(storage[f][1] + 0.25f) < 1e-6f,
+			qPrintable(QStringLiteral("right %1 is not the dry signal").arg(storage[f][1])));
+	}
 	chain.clear();
 }
 

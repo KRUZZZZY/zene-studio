@@ -204,8 +204,14 @@ auto ClapEffect::processImpl(PlanarBufferView<const float, DynamicChannelCount> 
 	std::array<const float*, MaxHostedInputChannels> inputs{};
 	const float* const* fed = sidechainInputs(in.data(), static_cast<int>(in.channels()), sidechainBuffer(),
 		m_plugin.busLayout().sideChainChannel, inputs);
-	m_plugin.process(fed, out.data(),
-		static_cast<int>(in.channels()), static_cast<int>(out.channels()), frames);
+	if (!m_plugin.process(fed, out.data(),
+		    static_cast<int>(in.channels()), static_cast<int>(out.channels()), frames))
+	{
+		// The plug-in reported a processing error: the rest of the output block is whatever the
+		// buffer already held, so the chain gets the dry signal for the whole block instead.
+		passThrough(in, out, m_plugin.busLayout().sideChainChannel);
+		return lmms::ProcessStatus::Continue;
+	}
 
 	// AudioPlugin's contract: processImpl is responsible for the wet/dry mix.
 	// The plug-in wrote wet output into `out`, `in` still holds the dry signal.
