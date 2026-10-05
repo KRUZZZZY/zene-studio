@@ -216,6 +216,17 @@ QString meterRefusal(const DawProjectModel& model)
 	return QString();
 }
 
+//! The reader refuses a document whose <Application> declares no name
+//! (Project.xsd makes it required), so a model with an empty application name
+//! would write a file this engine cannot read back - the same reason the tempo,
+//! the metre and the times are refused.
+QString identityRefusal(const DawProjectModel& model)
+{
+	if (!model.applicationName.isEmpty()) { return QString(); }
+	return QStringLiteral("the application name is empty, and Project.xsd makes "
+		"<Application name> required, so the file could not be read back");
+}
+
 QString clipTimesRefusal(const DawProjectModel& model)
 {
 	for (const DawProjectTrack& track : model.tracks)
@@ -246,7 +257,7 @@ QString timesRefusal(const DawProjectModel& model)
 QString modelRefusal(const DawProjectModel& model)
 {
 	for (const QString& refusal : {tempoRefusal(model), meterRefusal(model),
-		timesRefusal(model)})
+		identityRefusal(model), timesRefusal(model)})
 	{
 		if (!refusal.isEmpty()) { return refusal; }
 	}

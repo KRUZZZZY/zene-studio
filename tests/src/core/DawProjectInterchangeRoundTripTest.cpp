@@ -1312,6 +1312,25 @@ void timesOutsideTheEngineGridAreRefusedByTheWriter()
 	QVERIFY2(dawProjectXmlFromModel(base, &xml, &error), qPrintable(error));
 }
 
+//! Luna cluster 5067: dawProjectXmlFromModel(DawProjectModel{}) SUCCEEDED and
+//! wrote <Application name=""/>, which this module's own reader refuses
+//! (Project.xsd makes the name required). The writer has to refuse it for the
+//! same reason it refuses an out-of-range tempo.
+void anEmptyApplicationNameIsRefusedByTheWriter()
+{
+	DawProjectModel model = authoredModel();
+	model.applicationName.clear();
+	QByteArray xml;
+	QString error;
+	QVERIFY2(!dawProjectXmlFromModel(model, &xml, &error),
+		"a model with an empty application name was written as a file this module cannot read");
+	QVERIFY2(error.contains(QStringLiteral("name")),
+		"the refusal does not say which attribute is missing");
+
+	// The positive half: a named model still writes.
+	QVERIFY2(dawProjectXmlFromModel(authoredModel(), &xml, &error), qPrintable(error));
+}
+
 private:
 	QTemporaryDir m_directory;
 };
