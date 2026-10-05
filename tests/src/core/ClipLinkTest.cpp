@@ -331,6 +331,49 @@ private slots:
 		QVERIFY(clipLinkId(a) > 0);
 	}
 
+	void undoingAnAddedGroupMemberRestoresItsPriorNotesAndMembership()
+	{
+		ControlRegistry* registry = ControlRegistry::instance();
+		const QString a = addMidiClip(QStringLiteral("existing A"));
+		const QString b = addMidiClip(QStringLiteral("existing B"));
+		const QString c = addMidiClip(QStringLiteral("new C"));
+		const QString d = addMidiClip(QStringLiteral("new D"));
+		const auto addNote = [registry](const QString& id, int key) {
+			return registry->invoke(QStringLiteral("note.add"),
+				QJsonObject{{QStringLiteral("clip"), id}, {QStringLiteral("key"), key},
+					{QStringLiteral("position"), 0}, {QStringLiteral("length"), 24}}).ok;
+		};
+		QVERIFY(addNote(a, 60));
+		QVERIFY(addNote(b, 62));
+		QVERIFY(addNote(c, 64));
+		QVERIFY(addNote(d, 66));
+
+		const ControlResult initialGroup = registry->invoke(QStringLiteral("clip.link_create"),
+			QJsonObject{{QStringLiteral("clip"), a}, {QStringLiteral("clips"), QJsonArray{b}}});
+		QVERIFY2(initialGroup.ok, qPrintable(initialGroup.errorMessage));
+		QCOMPARE(noteKeyAt(b, 0), 60);  // the first link adopts A's content
+
+		// Adding two members adopts the anchor's notes into both. One control.undo
+		// must restore their separate prior content and leave the existing A/B pair.
+		const ControlResult addedMembers = registry->invoke(QStringLiteral("clip.link_create"),
+			QJsonObject{{QStringLiteral("clip"), a}, {QStringLiteral("clips"), QJsonArray{c, d}}});
+		QVERIFY2(addedMembers.ok, qPrintable(addedMembers.errorMessage));
+		QCOMPARE(noteKeyAt(c, 0), 60);
+		QCOMPARE(noteKeyAt(d, 0), 60);
+
+		const ControlResult undo = registry->invoke(QStringLiteral("control.undo"));
+		QVERIFY2(undo.ok, qPrintable(undo.errorMessage));
+		QVERIFY(undo.result.value(QStringLiteral("undone")).toBool());
+		QCOMPARE(clipLinkId(a), clipLinkId(b));
+		QVERIFY(clipLinkId(a) > 0);
+		QCOMPARE(clipLinkId(c), 0);
+		QCOMPARE(clipLinkId(d), 0);
+		QCOMPARE(noteKeyAt(a, 0), 60);
+		QCOMPARE(noteKeyAt(b, 0), 60);
+		QCOMPARE(noteKeyAt(c, 0), 64);
+		QCOMPARE(noteKeyAt(d, 0), 66);
+	}
+
 	// -----------------------------------------------------------------------
 	// 7. the A16 rows
 	// -----------------------------------------------------------------------

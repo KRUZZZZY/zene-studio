@@ -32,6 +32,8 @@
 
 #include <QDomDocument>
 #include <QJsonArray>
+#include <QJsonObject>
+#include <QVector>
 
 #include "ClipEdits.h"
 #include "ControlRegistry.h"
@@ -134,10 +136,47 @@ private slots:
 		Clip* clip = track->createClip(TimePos(0));
 		clip->changeLength(TimePos(192));
 		const QString id = control::clipIdOf(clip);
-		QCOMPARE(run(QStringLiteral("clip.gain_envelope_set"), {{QStringLiteral("clip"), id},
-			{QStringLiteral("points"), QJsonArray{point(500, 0)}}}).errorKind, ControlErrorKind::InvalidArgs);
-		QCOMPARE(run(QStringLiteral("clip.gain_envelope_set"), {{QStringLiteral("clip"), id},
-			{QStringLiteral("points"), QJsonArray{point(0, 40)}}}).errorKind, ControlErrorKind::InvalidArgs);
+		const ControlResult seeded = run(QStringLiteral("clip.gain_envelope_set"), {{QStringLiteral("clip"), id},
+			{QStringLiteral("points"), QJsonArray{point(0, -12), point(96, -6)}}});
+		QVERIFY2(seeded.ok, qPrintable(seeded.errorMessage));
+		const ClipEdits before = clip->clipEdits();
+
+		// Range failures are staged in a local ClipEdits value. Even when a valid
+		// point precedes an invalid one, a refusal must preserve the old envelope.
+		const QVector<QJsonArray> outOfRange = {
+			QJsonArray{point(193, 0)}, QJsonArray{point(96, 25)},
+			QJsonArray{point(0, -24), point(193, 0)}};
+		for (const QJsonArray& points : outOfRange)
+		{
+			const ControlResult rejected = run(QStringLiteral("clip.gain_envelope_set"),
+				{{QStringLiteral("clip"), id}, {QStringLiteral("points"), points}});
+			QVERIFY(!rejected.ok);
+			QCOMPARE(rejected.errorKind, ControlErrorKind::InvalidArgs);
+			QVERIFY(clip->clipEdits() == before);
+		}
+
+		// Array schemas do not validate their elements, so the handler must reject
+		// malformed shapes and types instead of turning defaults into real edits.
+		const QVector<QJsonArray> malformed = {
+			QJsonArray{QJsonObject{}},
+			QJsonArray{QJsonValue(QJsonValue::Null)},
+			QJsonArray{QJsonValue(QStringLiteral("bad"))},
+			QJsonArray{QJsonObject{{QStringLiteral("tick"), 0}}},
+			QJsonArray{QJsonObject{{QStringLiteral("gain_db"), 0}}},
+			QJsonArray{QJsonObject{{QStringLiteral("tick"), QStringLiteral("bad")},
+				{QStringLiteral("gain_db"), QStringLiteral("bad")}}},
+			QJsonArray{QJsonObject{{QStringLiteral("tick"), 1.5}, {QStringLiteral("gain_db"), 0}}},
+			QJsonArray{QJsonObject{{QStringLiteral("tick"), 0}, {QStringLiteral("gain_db"), QStringLiteral("bad")}}},
+		};
+		for (const QJsonArray& points : malformed)
+		{
+			const ControlResult rejected = run(QStringLiteral("clip.gain_envelope_set"),
+				{{QStringLiteral("clip"), id}, {QStringLiteral("points"), points}});
+			QVERIFY(!rejected.ok);
+			QCOMPARE(rejected.errorKind, ControlErrorKind::InvalidArgs);
+			QVERIFY(clip->clipEdits() == before);
+		}
+
 		const ControlResult set = run(QStringLiteral("clip.gain_envelope_set"), {{QStringLiteral("clip"), id},
 			{QStringLiteral("points"), QJsonArray{point(96, -6), point(0, 0)}}});
 		QVERIFY2(set.ok, qPrintable(set.errorMessage));
@@ -146,7 +185,7 @@ private slots:
 		QCOMPARE(got.size(), 2);
 		QCOMPARE(got.at(0).toObject().value(QStringLiteral("tick")).toInt(), 0);
 		QVERIFY(run(QStringLiteral("control.undo")).ok);
-		QVERIFY(!clip->clipEdits().hasEnvelope());
+		QVERIFY(clip->clipEdits() == before);
 
 		auto* instrument = Track::create(Track::Type::Instrument, song);
 		Clip* midi = instrument->createClip(TimePos(0));

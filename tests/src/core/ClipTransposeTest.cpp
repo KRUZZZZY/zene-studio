@@ -167,6 +167,10 @@ private slots:
 		QVERIFY(!clip->saveState(doc, root).hasAttribute(QStringLiteral("snappoint")));
 		QCOMPARE(run(QStringLiteral("clip.set_snap_point"), {{QStringLiteral("clip"), id}, {QStringLiteral("ticks"), 192}}).errorKind,
 			ControlErrorKind::InvalidArgs);
+		QCOMPARE(run(QStringLiteral("clip.set_snap_point"),
+			{{QStringLiteral("clip"), id}, {QStringLiteral("ticks"), 2147483648.0}}).errorKind,
+			ControlErrorKind::InvalidArgs);
+		QCOMPARE(clip->clipEdits().snapTicks, 0);
 	}
 
 	void anAudioClipChangesSpeed()
@@ -203,16 +207,21 @@ private slots:
 		song->clearProject();
 		auto* track = new SampleTrack(song);
 		auto* clip = dynamic_cast<SampleClip*>(track->createClip(TimePos(0)));
+		clip->setWarpStretchMode(WarpStretchMode::PreservePitch);
 		const ControlResult set = run(QStringLiteral("clip.set_transpose"),
 			{{QStringLiteral("clip"), control::clipIdOf(clip)}, {QStringLiteral("semitones"), 3}});
 		if (!RubberBandPool::available())
 		{
 			QCOMPARE(set.errorKind, ControlErrorKind::Requires);
+			QCOMPARE(clip->warpStretchMode(), WarpStretchMode::PreservePitch);
 			return;
 		}
 		QVERIFY2(set.ok, qPrintable(set.errorMessage));
 		QCOMPARE(clip->warpStretchMode(), WarpStretchMode::RubberBand);
 		QCOMPARE(clip->clipEdits().transpose, 3);
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
+		QCOMPARE(clip->warpStretchMode(), WarpStretchMode::PreservePitch);
+		QCOMPARE(clip->clipEdits().transpose, 0);
 	}
 };
 
