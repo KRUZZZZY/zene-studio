@@ -120,13 +120,21 @@ ControlResult movePoint(const QJsonObject& args)
 	ControlResult error;
 	if (!resolveAutomationParameter(args, &target, &parameter, &error)) { return error; }
 	AutomationClip* clip = existingAutomationClip(parameter.model);
-	const auto ticks = static_cast<tick_t>(args.value(QStringLiteral("ticks")).toDouble());
-	if (clip == nullptr || !clip->getTimeMap().contains(TimePos(ticks)))
+	// A time map is keyed by CLIP-LOCAL ticks, so both the point named by 'ticks' and the
+	// destination are song ticks on the way in and local ticks inside the clip - the same
+	// conversion automation.set_curve (ControlCommandsAutomationLanes.cpp:209),
+	// automation.draw_shape (:158) and automation.transform (:172) make. The reply answers in
+	// song ticks, so the caller never has to know the clip's own origin.
+	const int origin = clip != nullptr ? clip->startPosition().getTicks() : 0;
+	const auto songTicks = static_cast<tick_t>(args.value(QStringLiteral("ticks")).toDouble());
+	const auto toSong = static_cast<tick_t>(args.value(QStringLiteral("new_ticks")).toDouble(static_cast<double>(songTicks)));
+	const auto ticks = songTicks - origin;
+	if (clip == nullptr || ticks < 0 || !clip->getTimeMap().contains(TimePos(ticks)))
 	{
-		return ControlResult::failure(ControlErrorKind::NotFound, QStringLiteral("%1 has no point at %2").arg(parameter.id()).arg(static_cast<qint64>(ticks)));
+		return ControlResult::failure(ControlErrorKind::NotFound, QStringLiteral("%1 has no point at %2").arg(parameter.id()).arg(static_cast<qint64>(songTicks)));
 	}
 	const float old = clip->getTimeMap().value(TimePos(ticks)).getInValue();
-	const auto to = static_cast<tick_t>(args.value(QStringLiteral("new_ticks")).toDouble(static_cast<double>(ticks)));
+	const auto to = toSong - origin;
 	const double value = args.value(QStringLiteral("new_value")).toDouble(parameter.model->scaledValue(old));
 	if (value < parameter.model->minValue<float>() || value > parameter.model->maxValue<float>() || to < 0)
 	{
@@ -136,7 +144,7 @@ ControlResult movePoint(const QJsonObject& args)
 	clip->addJournalCheckPoint();
 	clip->removeNode(TimePos(ticks));
 	clip->putValue(TimePos(to), parameter.model->inverseScaledValue(static_cast<float>(value)), false);
-	QJsonObject result{{QStringLiteral("track"), target.id}, {QStringLiteral("parameter"), parameter.id()}, {QStringLiteral("ticks"), static_cast<double>(to)},
+	QJsonObject result{{QStringLiteral("track"), target.id}, {QStringLiteral("parameter"), parameter.id()}, {QStringLiteral("ticks"), static_cast<double>(toSong)},
 		{QStringLiteral("value"), value}, {QStringLiteral("automation"), automationJson(clip, parameter.model)}};
 	result.insert(QStringLiteral("__transaction"), automationTransaction(parameter, before, before.size(), false));
 	return ControlResult::success(result);

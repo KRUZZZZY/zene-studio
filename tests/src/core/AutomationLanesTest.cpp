@@ -606,6 +606,45 @@ private slots:
 		QVERIFY(revtest::makerUndoFindsTrackAfterRemovalUndone(control::trackIdOf(clip->getTrack())));
 	}
 
+	/*! ED-186 through the surface, for automation.move_point, on a clip that does NOT start at
+	 *  song tick 0. A time map is keyed by CLIP-LOCAL ticks, so the point at song tick 400 on a
+	 *  clip starting at 384 sits at local tick 16. move_point used the supplied ticks for the
+	 *  lookup, the removal and the insertion alike, so a request naming a song tick either failed
+	 *  to find the point or placed it at the wrong song position - while its siblings
+	 *  (automation.set_curve at src/core/ControlCommandsAutomationLanes.cpp:209,
+	 *  automation.draw_shape at :158 and automation.transform at :172) all subtract the clip's
+	 *  own origin first.
+	 *
+	 *  Checked as sound: the reply's song tick and the clip's own local key must agree, and the
+	 *  value must have followed the point rather than a tick-relative coincidence. */
+	void movePointTakesSongTicksOnAClipThatStartsLater()
+	{
+		const QString id = control::trackIdOf(m_track);
+		const QString parameter = firstParameter(id);
+		QVERIFY(!parameter.isEmpty());
+		AutomatableModel* model = modelOf(id, parameter);
+		QVERIFY(model != nullptr);
+		const double high = model->maxValue<double>();
+
+		// A lane whose clip starts at song tick 384, with a point 16 ticks into it (song tick 400).
+		auto* track = dynamic_cast<AutomationTrack*>(Track::create(Track::Type::Automation, Engine::getSong()));
+		auto* clip = dynamic_cast<AutomationClip*>(track->createClip(TimePos(384)));
+		clip->addObject(model);
+		clip->changeLength(TimePos(4 * 192));
+		clip->putValue(TimePos(16), 0.f, false, true);
+		clip->putValue(TimePos(112), 0.f, false, true);
+
+		const ControlResult moved = run(QStringLiteral("automation.move_point"), addressed(id, parameter,
+			{{QStringLiteral("ticks"), 400}, {QStringLiteral("new_ticks"), 448},
+				{QStringLiteral("new_value"), high}}));
+		QVERIFY2(moved.ok, qPrintable(moved.errorMessage));
+		QCOMPARE(moved.result.value(QStringLiteral("ticks")).toInt(), 448);  // the reply reports song ticks
+
+		QVERIFY(clip->getTimeMap().contains(64));  // 448 - 384: local, not the song tick
+		QVERIFY(!clip->getTimeMap().contains(448));
+		QCOMPARE(clip->getTimeMap().value(64).getOutValue(), model->inverseScaledValue(static_cast<float>(high)));
+	}
+
 private:
 	InstrumentTrack* m_track = nullptr;
 };
