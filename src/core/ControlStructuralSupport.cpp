@@ -84,6 +84,7 @@
 #include "Song.h"
 #include "Track.h"
 #include "TrackContainer.h"
+#include "TrackFolder.h"
 
 namespace lmms
 {
@@ -233,6 +234,11 @@ bool journalTrackRemoval(Track* track)
 			// ... and where it was, not at the end: the restore path appends,
 			// the same way the project loader does when it builds a song.
 			if (restored != nullptr) { moveTrackToIndex(restored, index); }
+			// A restored routing folder's `mixch` names the channel it had when the
+			// checkpoint was taken, and the delete this step reverses gave that
+			// channel back - so the index is somebody else's now. The folder is
+			// given one of its own rather than left adopting a strip it does not own.
+			if (auto* folder = dynamic_cast<TrackFolder*>(restored)) { QString error; folder->ensureRoutingChannel(&error); }
 		},
 		[id]() {
 			if (Track* live = trackWithId(*id)) { removeTrack(live); }

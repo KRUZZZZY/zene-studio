@@ -553,6 +553,100 @@ private slots:
 		removeAll(name);
 	}
 
+	//! Deleting a routing folder must not leave the OTHER routing folders holding a
+	//! channel index that has moved. Mixer::deleteChannel renumbers the instrument
+	//! and sample channel models, and a TrackFolder's own channel is an index into
+	//! that same vector: two routing folders on channels 3 and 4, delete the lower,
+	//! and the upper used to keep saying 4 - which by then names the strip above
+	//! its own. Its children were routed to the wrong strip, and deleting IT
+	//! removed a strip it did not own.
+	void deletingOneRoutingFolderRenumbersTheOther()
+	{
+		const QString name = QStringLiteral("j-renumber");
+		const mix_ch_t baseline = Engine::mixer()->numChannels();
+
+		TrackFolder* lower = static_cast<TrackFolder*>(addTrack(Track::Type::Folder, name));
+		Track* lowerChild = addTrack(Track::Type::Instrument, name);
+		lowerChild->setParentFolder(lower);
+		QString error;
+		QVERIFY2(lower->setMode(TrackFolder::Mode::Routing, &error), qPrintable(error));
+
+		TrackFolder* upper = static_cast<TrackFolder*>(addTrack(Track::Type::Folder, name));
+		Track* upperChild = addTrack(Track::Type::Instrument, name);
+		upperChild->setParentFolder(upper);
+		QVERIFY2(upper->setMode(TrackFolder::Mode::Routing, &error), qPrintable(error));
+
+		const int lowerChannel = lower->mixerChannel();
+		const int upperChannel = upper->mixerChannel();
+		QVERIFY2(upperChannel == lowerChannel + 1,
+			"the second routing folder must have taken the next channel, or this slot proves nothing");
+
+		// Delete the LOWER one. Its channel goes, and everything above it comes down.
+		control::removeTrack(lower);
+		QCOMPARE(Engine::mixer()->numChannels(), baseline + 1);
+
+		QVERIFY2(upper->mixerChannel() == upperChannel - 1,
+			"the surviving folder follows its channel down when a lower one is deleted");
+		QVERIFY2(upper->mixerChannel() == lowerChannel,
+			"the surviving folder now holds the index the deleted folder had");
+		QVERIFY(Engine::mixer()->mixerChannel(upper->mixerChannel()) != nullptr);
+		// and its ROUTING followed it: the child still sums into the folder's channel.
+		QCOMPARE(upperChild->mixerChannelModel()->value(), static_cast<float>(upper->mixerChannel()));
+
+		// Deleting the survivor now removes ITS OWN strip and only that one.
+		control::removeTrack(upper);
+		QCOMPARE(Engine::mixer()->numChannels(), baseline);
+		removeAll(name);
+	}
+
+	//! Undoing a routing folder's delete must bring its channel back. The
+	//! checkpoint carries `mixch`, an index read from a file - and the delete being
+	//! reversed gave that channel back to the mixer, so the restored folder used to
+	//! adopt an index naming a strip it does not own, routing its children into
+	//! somebody else's channel. It has to take a channel that is really there.
+	void undoingARoutingFolderDeleteRestoresItsChannel()
+	{
+		const QString name = QStringLiteral("j-undo-folder");
+		const mix_ch_t baseline = Engine::mixer()->numChannels();
+
+		TrackFolder* folder = static_cast<TrackFolder*>(addTrack(Track::Type::Folder, name));
+		Track* child = addTrack(Track::Type::Instrument, name);
+		child->setParentFolder(folder);
+		QString error;
+		QVERIFY2(folder->setMode(TrackFolder::Mode::Routing, &error), qPrintable(error));
+		QCOMPARE(Engine::mixer()->numChannels(), baseline + 1);
+
+		ControlRegistry* registry = ControlRegistry::instance();
+		const ControlResult removed = registry->invoke(QStringLiteral("track.remove"),
+			QJsonObject{{QStringLiteral("track"), control::trackIdOf(folder)}});
+		QVERIFY2(removed.ok, qPrintable(removed.errorMessage));
+		QCOMPARE(Engine::mixer()->numChannels(), baseline);
+
+		QVERIFY2(registry->invoke(QStringLiteral("control.undo")).ok, "the undo of a folder delete must apply");
+
+		// The folder is back...
+		Track* restored = nullptr;
+		for (Track* t : Engine::getSong()->tracks())
+		{
+			if (t->type() == Track::Type::Folder && t->name() == name) { restored = t; }
+		}
+		QVERIFY2(restored != nullptr, "the undo must bring the routing folder back");
+		TrackFolder* typed = static_cast<TrackFolder*>(restored);
+		QVERIFY(typed->isRouting());
+
+		// ... on a channel that EXISTS, which is not an assertion about which index:
+		// the deleted channel was given back, so a fresh one is what a correct
+		// restore creates. What must not happen is adopting an index it does not own.
+		QVERIFY2(typed->mixerChannel() >= 0, "the restored folder must own a channel");
+		QVERIFY2(typed->mixerChannel() < static_cast<int>(Engine::mixer()->numChannels()),
+			"the restored folder must not adopt an index past the end of the mixer");
+		QVERIFY(Engine::mixer()->mixerChannel(typed->mixerChannel()) != nullptr);
+		QCOMPARE(Engine::mixer()->numChannels(), baseline + 1);
+		// and the channel it took is its own, named for the folder that is back.
+		QCOMPARE(Engine::mixer()->mixerChannel(typed->mixerChannel())->m_name, name);
+		removeAll(name);
+	}
+
 	//! (i) A no-op unparent is a VALID ANSWER, never a crash: taking a track that
 	//! is already at the container root out of "no folder" must succeed, twice.
 	void unparentingARootTrackIsANoOpNotACrash()

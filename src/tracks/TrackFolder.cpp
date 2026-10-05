@@ -412,6 +412,86 @@ void TrackFolder::shrinkChildRange( Track * child )
 	if( model->maxValue() > top ) { model->setRange( model->minValue(), top ); }
 }
 
+/*! Follows the mixer renumbering a deleted channel causes.
+ *
+ *  The rule is the one the track walk applies to the instrument and sample
+ *  channel models: the folder that recorded the deleted index loses its channel,
+ *  every folder above it comes down by one. What is NOT repeated here is the
+ *  children's own models - they are ordinary tracks in the mixer's track lists,
+ *  so the walk that renumbers them runs over them exactly as it does over any
+ *  other track and would send them to master.
+ */
+void TrackFolder::channelDeleted( int deletedIndex )
+{
+	if( m_mixerChannel < 0 ) { return; }
+	if( m_mixerChannel == deletedIndex )
+	{
+		// The folder's own summing point is the one that went. Its children are
+		// standing on an index that now names a different strip, so they go back
+		// to the channel they were on before routing - the same place
+		// releaseRouting() puts them, and the reason this runs BEFORE the track
+		// walk, which would otherwise put them on master.
+		for( Track * child : children() ) { unrouteChild( child ); }
+		m_savedChildChannels.clear();
+		m_mixerChannel = -1;
+		if( m_mode != Mode::Group )
+		{
+			// A routing folder with no channel has nothing to sum into; leaving
+			// the mode on would advertise a summing point that is not there.
+			m_mode = Mode::Group;
+		}
+		return;
+	}
+	if( m_mixerChannel > deletedIndex ) { m_mixerChannel -= 1; }
+}
+
+/*! Gives a restored routing folder a channel that is really there.
+ *
+ *  The restored `mixch` is what the folder had when the checkpoint was taken,
+ *  and the delete this restore reverses gave that channel back to the mixer, so
+ *  the index it names belongs to somebody else now. Adopting it would leave the
+ *  folder claiming a strip it does not own - and every child it routes would sum
+ *  into that other strip - so the folder takes a fresh channel, the same one
+ *  enableRouting() would give it, and the children go where they went before.
+ */
+bool TrackFolder::ensureRoutingChannel( QString * error )
+{
+	if( m_mode != Mode::Routing || Engine::mixer() == nullptr ) { return true; }
+	if( m_mixerChannel >= 0
+		&& m_mixerChannel < static_cast<int>( Engine::mixer()->numChannels() ) )
+	{
+		// A saved `mixch` that still exists is adopted as-is, EXCEPT for the name:
+		// the folder is back, and its channel must advertise the folder again.
+		if( MixerChannel * channel = Engine::mixer()->mixerChannel( m_mixerChannel ) )
+		{
+			channel->m_name = name();
+		}
+		return true;
+	}
+	m_mixerChannel = -1;
+	// The channel is created here rather than through enableRouting() because that
+	// entry point REFUSES a folder with no children - and on the restore path this
+	// runs before the children are back, so it would refuse the very folder it is
+	// here to fix. What is copied is the part that is about the channel: an
+	// ordinary channel, created the same way, named after the folder.
+	const int created = Engine::mixer()->createChannel();
+	if( created < 0 )
+	{
+		refuse( error, "the mixer refused a new channel" );
+		return false;
+	}
+	m_mixerChannel = created;
+	if( MixerChannel * channel = Engine::mixer()->mixerChannel( m_mixerChannel ) )
+	{
+		channel->m_name = name();
+	}
+	// The children that ARE back (the restore walk rebuilds them one track at a
+	// time) go to the new channel; the ones that arrive later are routed by
+	// childLinked(), which is the same route this is.
+	for( Track * child : children() ) { routeChild( child ); }
+	return true;
+}
+
 /*! Renaming a routing folder renames its mixer channel too.
  *
  *  enableRouting() copies the folder's name onto the channel it creates, and that
