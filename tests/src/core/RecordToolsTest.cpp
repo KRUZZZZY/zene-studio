@@ -32,6 +32,7 @@
 
 #include "AutomationTrack.h"
 #include "Clip.h"
+#include "ControlCompSupport.h"
 #include "ControlRegistry.h"
 #include "ControlVocabulary.h"
 #include "Engine.h"
@@ -209,6 +210,29 @@ private slots:
 		QCOMPARE(track->getClips().size(), std::size_t{1});
 		QCOMPARE(track->getClips()[0]->startPosition().getTicks(), tick_t{192});
 		QCOMPARE(track->takeLanes().laneCount(), 0);
+	}
+
+	//! The last pass can be shorter than the loop, but splitPasses always selected the last lane over
+	//! the WHOLE loop, so the composite named a lane with no take behind it over the uncovered tail -
+	//! TakeLaneModel::takeAt() reports 'unresolved' there and the engine plays nothing for. Only the
+	//! last piece's own duration may be selected.
+	void splittingPassesCompsOnlyWhatTheLastPassCovers()
+	{
+		auto* track = dynamic_cast<SampleTrack*>(Track::create(Track::Type::Sample, Engine::getSong()));
+		Clip* take = track->createClip(TimePos(192));
+		take->changeLength(TimePos(192 * 3 + 96));  // three full passes and half of a fourth
+		Engine::getSong()->getTimeline(Song::PlayMode::Song).setLoopPoints(TimePos(192), TimePos(384));
+		const ControlResult split = run(QStringLiteral("comp.split_passes"), {{QStringLiteral("clip"), control::clipIdOf(take)}});
+		QVERIFY2(split.ok, qPrintable(split.errorMessage));
+		QCOMPARE(split.result.value(QStringLiteral("passes")).toInt(), 4);
+		const std::vector<TakeLaneSegment>& segments = track->takeLanes().segments();
+		QCOMPARE(segments.size(), std::size_t{1});
+		// The last take is 96 ticks, so the composite ends at 192 + 96, not at the loop's end 384.
+		QCOMPARE(segments[0].endTick, 288);
+		for (const QJsonValue& entry : control::resolvedState(track))
+		{
+			QCOMPARE(entry.toObject().value(QStringLiteral("status")).toString(), QStringLiteral("bound"));
+		}
 	}
 
 	//! A16 §3: a mutating command records what it wrote - the composite before the edit and the

@@ -276,7 +276,11 @@ ControlResult splitPasses(const QJsonObject& args)
 		assignTakeLane(pieces[k], lane);  // the lane tag's one writer (ControlCommandsComp.cpp)
 		pieces[k]->movePosition(TimePos(begin));
 	}
-	model.selectSegment(static_cast<int>(begin), static_cast<int>(begin + loop), lane, 0);
+	// The last piece can be shorter than the loop; selecting the last lane over the whole loop would
+	// name it where no take covers, which TakeLaneModel::takeAt() reports 'unresolved'. So only the
+	// last piece's own length is composited.
+	const tick_t covered = std::min<tick_t>(loop, pieces.back()->length().getTicks());
+	model.selectSegment(static_cast<int>(begin), static_cast<int>(begin + covered), lane, 0);
 	Engine::getSong()->setModified();
 	return ControlResult::success({{QStringLiteral("track"), trackIdOf(ref.track)}, {QStringLiteral("passes"), static_cast<int>(pieces.size())}});
 }
