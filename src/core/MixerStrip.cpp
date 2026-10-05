@@ -358,6 +358,25 @@ void load(MixerChannel& c, const QDomElement& e)
 	c.m_note = e.attribute(QStringLiteral("note"));
 }
 
+void reset(MixerChannel& c)
+{
+	c.m_trimModel.setValue(0.f);
+	c.m_polarityLeftModel.setValue(false);
+	c.m_polarityRightModel.setValue(false);
+	c.m_monoModel.setValue(false);
+	c.m_swapModel.setValue(false);
+	c.m_inputMonoModel.setValue(false);
+	c.m_crossfadeSideModel.setValue(0);
+	c.m_eqLowModel.setValue(0.f);
+	c.m_eqMidModel.setValue(0.f);
+	c.m_eqMidFreqModel.setValue(1000.f);
+	c.m_eqHighModel.setValue(0.f);
+	c.m_panModeModel.setValue(static_cast<int>(PanMode::Balance));
+	c.m_panRightModel.setValue(0.f);
+	c.m_widthModel.setValue(1.f);
+	c.m_soloSafeModel.setValue(false);
+}
+
 bool additiveSolo()
 {
 	return ConfigManager::inst()->value(QStringLiteral("mixer"), QStringLiteral("additivesolo"), QStringLiteral("0")).toInt() != 0;

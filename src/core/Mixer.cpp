@@ -2215,6 +2215,10 @@ void Mixer::clearChannel(mix_ch_t index)
 	ch->m_panModel.setValue( 0.0f );
 	ch->m_muteModel.setValue( false );
 	ch->m_soloModel.setValue( false );
+	// Luna cluster 4279: the strip's own settings are reset with the rest, so a cleared
+	// channel (the master after Mixer::clear) does not keep applying the previous
+	// project's trim, polarity, EQ, pan mode and the rest to later audio.
+	mixerstrip::reset(*ch);
 	ch->m_name = ( index == 0 ) ? tr( "Master" ) : tr( "Channel %1" ).arg( index );
 	ch->m_volumeModel.setDisplayName( ch->m_name + ">" + tr( "Volume" ) );
 	ch->m_panModel.setDisplayName( ch->m_name + ">" + tr( "Pan" ) );
