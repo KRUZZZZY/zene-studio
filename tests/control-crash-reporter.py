@@ -348,6 +348,34 @@ def check_transactions(session, problems):
                      "discard must record an irreversible transaction: %r" % (classes,))
 
 
+def check_arm_cannot_move(session, instance, problems):
+    """Arming somewhere ELSE cannot be undone, so the command must refuse to move.
+
+    uninstall() clears the handlers but KEEPS the remembered directory, and the
+    inverse crash.disable records (crash.enable) takes no arguments, so an arm to
+    a second directory could never be taken back: undo would leave the reporter
+    disarmed but naming paths this call invented.
+    """
+    other = os.path.join(instance.workspace, "second-report-dir")
+    try:
+        os.makedirs(other, exist_ok=True)
+    except OSError as error:
+        problems.add("could not plant the second directory at %s: %s" % (other, error))
+        return
+    moved = session.typed_error("crash.enable", {"directory": other})
+    problems.require(moved.get("kind") in ("refused", "busy", "conflict"),
+                     "arming the reporter at a different directory must be refused, because "
+                     "crash.disable's inverse cannot move it back: %r" % (moved,))
+    still = session.result("crash.list_reports")
+    problems.require(still.get("report_directory") == os.path.join(instance.workspace,
+                                                                     REPORT_DIR_NAME),
+                     "the refused arm must leave the remembered report directory where it was: %r"
+                     % (still.get("report_directory"),))
+    problems.require(still.get("armed") is False,
+                     "the refused arm must not have armed the reporter: %r"
+                     % (subset(still, ["armed"]),))
+
+
 def check_arm_pair(session, instance, problems):
     """The arm pair (board task #643): disarm, refuse the no-op, and take it back.
 
@@ -398,6 +426,8 @@ def check_arm_pair(session, instance, problems):
     again = session.typed_error("crash.disable")
     problems.require(again.get("kind") == "refused",
                      "disarming an already disarmed reporter must be a typed refusal: %r" % (again,))
+
+    check_arm_cannot_move(session, instance, problems)
 
     # The recorded inverse is the paired COMMAND, so one undo re-arms - and the
     # dispatch records ITS own inverse, so the pair is a faithful toggle.
