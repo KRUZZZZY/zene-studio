@@ -93,9 +93,15 @@ public:
 		bool started = false;
 	};
 
-	//! 64 transitions between two command calls. A launch is two events, so a
-	//! full 32-cell performance fits; beyond that the ring drops and counts.
-	static constexpr std::size_t Capacity = 64;
+	//! Transitions between two command calls. Sized for ONE WHOLE worst-case
+	//! performance: the scheduler runs SessionScheduler::MaxActiveSlots slots at
+	//! once, and a launch is two events (start + stop), so the ring holds two
+	//! events per slot. Below that the starts alone can fill the ring, every
+	//! later stop is DROPPED, and a land pass that still sees those starts
+	//! refuses without consuming - a performance that can never be landed,
+	//! because neither disarm nor reset clears the ring. Beyond a worst-case
+	//! performance the ring drops and counts, as before.
+	static constexpr std::size_t Capacity = 2 * 64; // 2 * SessionScheduler::MaxActiveSlots
 
 	//! Arm / disarm. Model thread. Disarming does NOT clear what is already in
 	//! the ring: the caller lands it (see the drain in
