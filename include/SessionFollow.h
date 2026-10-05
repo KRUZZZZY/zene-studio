@@ -143,6 +143,12 @@ struct FollowEval
 	int scene = 0;
 	int sceneCount = 0;
 	double rngUnit = 0.0;
+	/*! A SECOND, INDEPENDENT draw in [0, 1), used only to pick Any's/Other's
+	 *  target scene. Selecting the chain entry and selecting that entry's
+	 *  target must not share one draw, or the two choices correlate: on a
+	 *  two-scene grid the entry that "Any" wins is always the entry whose draw
+	 *  lands in the lower half, so its target would always be scene 0. */
+	double targetRngUnit = 0.0;
 };
 
 /*! Ticks between the slot's start and the chain's action time.
@@ -318,8 +324,10 @@ inline FollowFire decideFollowFire( const FollowPlan& plan, const FollowEval& ev
 		default:
 			break;
 	}
+	//! The target is chosen by its OWN draw, never by the entry's: sharing one
+	//! draw would make the two correlate (see FollowEval::targetRngUnit).
 	const int target = followTargetScene( action.type, eval.scene, eval.sceneCount,
-		action.jumpTo, eval.rngUnit );
+		action.jumpTo, eval.targetRngUnit );
 	if( target < 0 )
 	{
 		fire.outcome = FollowOutcome::Refused;

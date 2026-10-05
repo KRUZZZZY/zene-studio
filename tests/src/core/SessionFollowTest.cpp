@@ -183,6 +183,56 @@ private slots:
 		QCOMPARE(followActionTicks(empty, kTicksPerBar), 0);
 	}
 
+	//! Entry choice and target choice must be INDEPENDENT draws. Sharing one
+	//! draw correlates them: a two-entry equal-weight chain whose entry 0 is Any,
+	//! on a two-scene grid, always picked entry 0 AND always targeted scene 0.
+	void chanceAndTargetUseIndependentDraws()
+	{
+		// Entry chosen by rngUnit; the TARGET by its own independent draw. With
+		// one shared draw, a fixed entry draw pins the target to a single row.
+		FollowPlan anyPlan;
+		anyPlan.enabled = true;
+		anyPlan.count = 1;
+		anyPlan.entries[0] = action(FollowAction::Type::Any, 1.0, false, 1.0, 0);
+		anyPlan.sceneCount = 2;
+
+		QCOMPARE(decideFollowFire(anyPlan, evalAt(0, kTicksPerBar, 0.0, 0, 2)).targetScene, 0);
+		FollowEval high = evalAt(0, kTicksPerBar, 0.0, 0, 2);
+		high.targetRngUnit = 0.75;
+		QCOMPARE(decideFollowFire(anyPlan, high).targetScene, 1);
+
+		// Any over a four-scene grid reaches every row from the target draw alone.
+		bool seen[4] = { false, false, false, false };
+		for (int step = 0; step < 4; ++step)
+		{
+			FollowEval eval = evalAt(0, kTicksPerBar, 0.0, 0, kSceneCount);
+			eval.targetRngUnit = ( step + 0.5 ) / 4.0;
+			const int target = decideFollowFire(anyPlan, eval).targetScene;
+			QVERIFY(target >= 0 && target < kSceneCount);
+			seen[target] = true;
+		}
+		for (const bool hit : seen)
+		{
+			QVERIFY(hit);
+		}
+
+		// The two draws are genuinely independent: one target draw spans both
+		// rows while the entry draw is held fixed.
+		bool sawScene0 = false;
+		bool sawScene1 = false;
+		for (int step = 0; step < 20; ++step)
+		{
+			FollowEval eval = evalAt(0, kTicksPerBar, 0.1, 0, 2);
+			eval.targetRngUnit = step / 20.0;
+			const FollowFire fire = decideFollowFire(anyPlan, eval);
+			QCOMPARE(fire.chosenIndex, 0);
+			if (fire.targetScene == 0) { sawScene0 = true; }
+			if (fire.targetScene == 1) { sawScene1 = true; }
+		}
+		QVERIFY(sawScene0);
+		QVERIFY(sawScene1);
+	}
+
 	//! A malformed (non-finite or absurdly large) unlinked time must not reach
 	//! the tick conversion: converting a double outside tick_t's range is
 	//! undefined behaviour on the audio thread. Such a time is answered as
