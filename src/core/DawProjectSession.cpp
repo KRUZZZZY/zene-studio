@@ -79,6 +79,7 @@
 #include "TempoMap.h"
 #include "TimePos.h"
 #include "Track.h"
+#include "TrackFolder.h"
 #include "TrackContainer.h"
 
 namespace lmms
@@ -176,6 +177,16 @@ QString roleForMixerChannel(MixerChannel* channel)
 }
 
 } // namespace
+
+//! How many parent-child relations this track's export loses: every track of a
+//! folder (LOSSY #4 - the format nests and LMMS' container is flat). An EMPTY
+//! folder loses nothing, and a folder of five loses five - the counter reports
+//! relations, not folders.
+int lostFolderChildren(Track* track)
+{
+	auto* folder = dynamic_cast<TrackFolder*>(track);
+	return folder == nullptr ? 0 : folder->childCount();
+}
 
 DawProjectModel dawProjectModelFromSong(Song* song, DawProjectLossReport* loss)
 {
@@ -292,7 +303,7 @@ DawProjectModel dawProjectModelFromSong(Song* song, DawProjectLossReport* loss)
 			else { local.automationClipsSkipped++; }
 		}
 
-		if (track->type() == Track::Type::Folder) { local.folderChildrenLost++; }
+		local.folderChildrenLost += lostFolderChildren(track);
 		model.tracks.append(entry);
 	}
 

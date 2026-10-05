@@ -66,6 +66,7 @@
 #include "Song.h"
 #include "TempoMap.h"
 #include "Track.h"
+#include "TrackFolder.h"
 
 using namespace lmms;
 using namespace lmms::interchange;
@@ -1066,6 +1067,36 @@ private slots:
 			"silently resolved to the later track and its clips were misplaced");
 		QVERIFY2(error.contains(QStringLiteral("t1")),
 			"the refusal must name the duplicated id");
+	}
+
+//! Luna cluster 4134: folder_children_lost is a count of LOST RELATIONS, and
+	//! the session path counted FOLDERS. An empty folder reported one lost child
+	//! (nothing was lost) and a folder holding five reported one as well (four
+	//! relations went unreported).
+	void theFolderLossCountIsTheNumberOfLostChildren()
+	{
+		Song* song = Engine::getSong();
+		song->clearProject();
+
+		TrackFolder* emptyFolder = dynamic_cast<TrackFolder*>(
+			Track::create(Track::Type::Folder, song));
+		QVERIFY(emptyFolder != nullptr);
+
+		TrackFolder* folder = dynamic_cast<TrackFolder*>(
+			Track::create(Track::Type::Folder, song));
+		QVERIFY(folder != nullptr);
+		Track* childA = Track::create(Track::Type::Instrument, song);
+		Track* childB = Track::create(Track::Type::Instrument, song);
+		Track* childC = Track::create(Track::Type::Instrument, song);
+		QVERIFY(childA && childB && childC);
+		childA->setParentFolder(folder);
+		childB->setParentFolder(folder);
+		childC->setParentFolder(folder);
+		QCOMPARE(folder->childCount(), 3);
+
+		DawProjectLossReport loss;
+		dawProjectModelFromSong(song, &loss);
+		QCOMPARE(loss.folderChildrenLost, 3);
 	}
 
 private:
