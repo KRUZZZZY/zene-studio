@@ -37,3 +37,20 @@ fixed source was restored and rebuilt before rechecking.
 Targeted gates 9 and 11 passed (EXIT=0). Gate 6 still reads base..HEAD until the renames are
 committed; its remaining refusals name only the historical raw log paths. Full post-repair gates
 are pending. Non-Linux platforms, coverage, and hardware/soak verification are not run here.
+
+## Full post-repair result and landing
+
+Full gates at `521a90156`, alone on the machine, completed normally: EXIT=3, PASS-WITH-SKIPS.
+CTest: 402/402; checked-command ratchet: 806/809, all three unreached entries listed.
+Gates 1 and 3–15 PASS; gate 2 coverage SKIPPED (not requested with --with-coverage).
+Mutation: 22/25 valid mutants killed (88%), five invalid; final pristine control PASS and
+RoutingGraph.cpp has no diff. Whole-tree gates 4/7/8 were not measured by this run.
+
+The 0.5.0/ui-train worktree zene-ui was fast-forwarded in the prescribed order:
+050/w2-lanes-2 → bugs/luna-r7-2026-10-05 → bugs/bunny-integration-2026-10-05.
+Each merge exited 0; the resulting train tip is exactly the fully tested 521a90156 (no merge
+resolution or new product source). Nothing pushed. The train's own build directory was not
+created; the existing integration build verified this identical commit.
+
+The Markdown transcripts beside this report preserve both full gate outputs and the red/green
+fixture controls. This evidence-only follow-up changes no code, test, command, schema or gate.
