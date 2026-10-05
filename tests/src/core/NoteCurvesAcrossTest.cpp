@@ -191,6 +191,25 @@ private slots:
 		QCOMPARE(keysOf(b), (QList<int>{48}));
 	}
 
+	//! note.across counted every successful handler as an edit, so a handler that succeeded while
+	//! changing nothing made the batch report clips as edited and hand back a control.undo
+	//! transaction no undo step backs - replaying it would undo an unrelated prior action.
+	//! note.restore_timing over notes that keep no original timing succeeds with 'restored: 0',
+	//! adds no journal checkpoint and returns no __transaction.
+	void anEditThatChangedNothingIsNotAnUndoStep()
+	{
+		MidiClip* a = clipWith(0, {60});
+		MidiClip* b = clipWith(192, {62});
+		const QJsonArray clips{control::clipIdOf(a), control::clipIdOf(b)};
+		const int recorded = run(QStringLiteral("control.transactions")).result.value(QStringLiteral("transactions")).toArray().size();
+		const ControlResult done = run(QStringLiteral("note.across"), {{QStringLiteral("clips"), clips},
+			{QStringLiteral("command"), QStringLiteral("note.restore_timing")}, {QStringLiteral("args"), QJsonObject{}}});
+		QCOMPARE(done.errorKind, ControlErrorKind::NotFound);  // it changed no clip
+		QCOMPARE(keysOf(a), (QList<int>{60}));
+		QCOMPARE(keysOf(b), (QList<int>{62}));
+		QCOMPARE(run(QStringLiteral("control.transactions")).result.value(QStringLiteral("transactions")).toArray().size(), recorded);
+	}
+
 	void aBadCallChangesNothing()
 	{
 		MidiClip* a = clipWith(0, {60});
