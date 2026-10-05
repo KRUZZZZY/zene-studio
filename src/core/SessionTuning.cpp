@@ -365,6 +365,13 @@ void SessionTuning::feedKeymap(std::shared_ptr<const Keymap> keymap, const QStri
 	commit(next, isActive(), source);
 }
 
+void SessionTuning::setBuiltFrom(std::shared_ptr<const Scale> scale,
+	std::shared_ptr<const Keymap> keymap)
+{
+	m_scale = std::move(scale);
+	m_keymap = std::move(keymap);
+}
+
 QJsonObject SessionTuning::stateJson() const
 {
 	const Table& table = m_tables[m_front.load(std::memory_order_acquire)];

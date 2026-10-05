@@ -491,6 +491,45 @@ private slots:
 		tuning->reset();
 	}
 
+	//! The recorded undo step restores the Scale/Keymap the table was BUILT from,
+	//! not just the frequencies: stateJson() carries the table alone, so without
+	//! this mts.get_state kept reporting the scale an undone load had installed.
+	void undoOfALoadScaleAlsoUndoesTheScaleItInstalled()
+	{
+		Song* song = Engine::getSong();
+		song->clearProject();
+		SessionTuning* tuning = SessionTuning::instance();
+		tuning->reset();
+
+		QTemporaryDir dir;
+		QVERIFY(dir.isValid());
+		// Its OWN scale file, so the description this slot installs cannot be
+		// the one an earlier slot left behind: the undo must restore whatever was
+		// reported BEFORE the load, whatever that was.
+		const QString path = dir.filePath(QStringLiteral("theory-undo.scl"));
+		QFile file(path);
+		QVERIFY(file.open(QIODevice::WriteOnly | QIODevice::Text));
+		file.write("! theory-undo.scl\nthe scale this slot installs\n2\n1/1\n9/8\n");
+		file.close();
+
+		const QString reportedBefore = run(QStringLiteral("mts.get_state")).result
+			.value(QStringLiteral("scale")).toString();
+		const ControlResult loaded = run(QStringLiteral("mts.load_scale"),
+			QJsonObject{{QStringLiteral("path"), path}});
+		QVERIFY2(loaded.ok, qPrintable(loaded.errorMessage));
+		const QString installed = run(QStringLiteral("mts.get_state")).result
+			.value(QStringLiteral("scale")).toString();
+		QCOMPARE(installed, QStringLiteral("the scale this slot installs"));
+
+		REV_UNDO_OR_FAIL();
+		QVERIFY2(run(QStringLiteral("mts.get_state")).result
+				.value(QStringLiteral("scale")).toString() == reportedBefore,
+			qPrintable(QStringLiteral("control.undo restored the table but mts.get_state "
+				"still reports '%1' instead of the pre-load '%2'")
+				.arg(installed, reportedBefore)));
+		tuning->reset();
+	}
+
 	//! This box has no libMTS.so: arming is a typed REFUSAL that writes nothing
 	//! and names the library; the installed-library branch stays runnable.
 	void masterSetReportsItsOwnMtsEspState()

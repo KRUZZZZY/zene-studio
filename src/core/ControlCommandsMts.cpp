@@ -124,17 +124,31 @@ QString tableMechanism(const QString& what)
  *  plus the transaction. \a before MUST be the state captured before the write
  *  - every caller takes it before calling the engine.
  */
-ControlResult tableMutation(const QJsonObject& before, const QString& mechanism)
+ControlResult tableMutation(const QJsonObject& before, const QString& mechanism,
+	std::shared_ptr<const Scale> beforeScale = nullptr,
+	std::shared_ptr<const Keymap> beforeKeymap = nullptr,
+	bool restoreBuiltFrom = false)
 {
 	const QJsonObject after = SessionTuning::instance()->stateJson();
+	// stateJson() carries the table only; the Scale / Keymap the table was BUILT
+	// from is the other half of the before-state, so a verb that changed it hands
+	// it in and the recorded step puts it back too (otherwise mts.get_state keeps
+	// reporting the scale or keymap an undone load installed).
+	const auto afterScale = SessionTuning::instance()->scale();
+	const auto afterKeymap = SessionTuning::instance()->keymap();
 	control::addUndoStep(
-		[before]() {
+		[before, beforeScale, beforeKeymap, restoreBuiltFrom]() {
 			QString ignored;
 			SessionTuning::instance()->setState(before, &ignored);
+			if (restoreBuiltFrom)
+			{
+				SessionTuning::instance()->setBuiltFrom(beforeScale, beforeKeymap);
+			}
 		},
-		[after]() {
+		[after, afterScale, afterKeymap]() {
 			QString ignored;
 			SessionTuning::instance()->setState(after, &ignored);
+			SessionTuning::instance()->setBuiltFrom(afterScale, afterKeymap);
 		});
 	const QJsonObject transaction = transactionPayload(before,
 		QStringLiteral("mts.set_tuning"), before, true, mechanism);
@@ -172,12 +186,15 @@ ControlResult loadScale(const QJsonObject& args)
 			QStringLiteral("no scale file at '%1' (a path argument must be absolute)").arg(path));
 	}
 	const QJsonObject before = SessionTuning::instance()->stateJson();
+	const auto beforeScale = SessionTuning::instance()->scale();
+	const auto beforeKeymap = SessionTuning::instance()->keymap();
 	QString error;
 	if (!SessionTuning::instance()->loadScaleFile(path, &error))
 	{
 		return ControlResult::failure(ControlErrorKind::Refused, error);
 	}
-	return tableMutation(before, tableMechanism(QStringLiteral("an .scl was loaded")));
+	return tableMutation(before, tableMechanism(QStringLiteral("an .scl was loaded")),
+		beforeScale, beforeKeymap, true);
 }
 
 /*! mts.load_keymap - parse a .kbm and rebuild the table's content with it.
@@ -204,12 +221,15 @@ ControlResult loadKeymap(const QJsonObject& args)
 			QStringLiteral("no keymap file at '%1' (a path argument must be absolute)").arg(path));
 	}
 	const QJsonObject before = SessionTuning::instance()->stateJson();
+	const auto beforeScale = SessionTuning::instance()->scale();
+	const auto beforeKeymap = SessionTuning::instance()->keymap();
 	QString error;
 	if (!SessionTuning::instance()->loadKeymapFile(path, &error))
 	{
 		return ControlResult::failure(ControlErrorKind::Refused, error);
 	}
-	return tableMutation(before, tableMechanism(QStringLiteral("a .kbm was loaded")));
+	return tableMutation(before, tableMechanism(QStringLiteral("a .kbm was loaded")),
+		beforeScale, beforeKeymap, true);
 }
 
 /*! mts.set_tuning - the whole-table writer and the inverse every mutating
