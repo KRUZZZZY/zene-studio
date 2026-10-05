@@ -153,6 +153,17 @@ private slots:
 		QVERIFY(!result.errorMessage.isEmpty());
 	}
 
+	void requiredIsCheckedWithoutAPropertiesObject()
+	{
+		QJsonObject schema;
+		schema.insert(QStringLiteral("type"), QStringLiteral("object"));
+		schema.insert(QStringLiteral("required"), QJsonArray{QStringLiteral("x")});
+		QVERIFY(!ControlRegistry::validateArgs(schema, QJsonObject{}).isEmpty());
+		QJsonObject given;
+		given.insert(QStringLiteral("x"), 1);
+		QVERIFY(ControlRegistry::validateArgs(schema, given).isEmpty());
+	}
+
 	void missingRequiredArgumentIsInvalidArgs()
 	{
 		ControlRegistry* registry = ControlRegistry::instance();

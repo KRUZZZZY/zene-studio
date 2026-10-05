@@ -134,7 +134,7 @@ static QString checkProperties(const QJsonObject& object, const QJsonObject& pro
 
 static QString checkObjectMembers(const QJsonValue& value, const QJsonObject& spec, const QString& path)
 {
-	if (!value.isObject() || !spec.contains(QStringLiteral("properties"))) { return QString(); }
+	if (!value.isObject()) { return QString(); }
 	const QJsonObject object = value.toObject();
 	for (const QJsonValue& name : spec.value(QStringLiteral("required")).toArray())
 	{
@@ -144,6 +144,7 @@ static QString checkObjectMembers(const QJsonValue& value, const QJsonObject& sp
 				.arg(pathLabel(path), name.toString());
 		}
 	}
+	if (!spec.contains(QStringLiteral("properties"))) { return QString(); }
 	const bool noAdditional = spec.contains(QStringLiteral("additionalProperties")) &&
 		!spec.value(QStringLiteral("additionalProperties")).toBool(true);
 	return checkProperties(object, spec.value(QStringLiteral("properties")).toObject(), noAdditional, path);
