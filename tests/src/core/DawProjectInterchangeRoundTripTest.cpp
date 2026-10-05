@@ -1099,6 +1099,34 @@ private slots:
 		QCOMPARE(loss.folderChildrenLost, 3);
 	}
 
+//! Luna cluster 5068: the import updated the strips the model names and never
+	//! removed the ones it does not, so a four-channel session importing a
+	//! one-channel file kept three strips of the PREVIOUS project - their names,
+	//! faders, mute and solo - as if they belonged to the imported document.
+	//! The undo path already deletes them (ControlCommandsDawProject.cpp, the
+	//! restoreSession loop); applying did not.
+	void importRemovesMixerChannelsTheModelDoesNotName()
+	{
+		Mixer* mixer = Engine::mixer();
+		mixer->clear();
+		while (static_cast<int>(mixer->numChannels()) < 4) { mixer->createChannel(); }
+		mixer->mixerChannel(2)->m_name = QStringLiteral("Stale Sub");
+		mixer->mixerChannel(2)->m_muteModel.setValue(true);
+		mixer->mixerChannel(2)->m_volumeModel.setValue(0.11f);
+		mixer->mixerChannel(3)->m_name = QStringLiteral("Stale Master2");
+		QCOMPARE(mixer->numChannels(), 4);
+
+		const DawProjectModel model = previousSessionModel();
+		QCOMPARE(model.mixerChannels.size(), 1);
+
+		QString error;
+		QVERIFY2(applyDawProjectModel(Engine::getSong(), model, &error), qPrintable(error));
+		QCOMPARE(Engine::mixer()->numChannels(), model.mixerChannels.size());
+		QCOMPARE(Engine::mixer()->mixerChannel(0)->m_name,
+			model.mixerChannels[0].name);
+		QVERIFY(!Engine::mixer()->mixerChannel(0)->m_muteModel.value());
+	}
+
 private:
 	QTemporaryDir m_directory;
 };

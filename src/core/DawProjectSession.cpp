@@ -188,6 +188,19 @@ int lostFolderChildren(Track* track)
 	return folder == nullptr ? 0 : folder->childCount();
 }
 
+//! The strips the model does not name are not part of the imported document: a
+//! session of four strips taking a file that carries one must not keep three of
+//! the previous project's strips, with their names, faders, mute and solo,
+//! looking as though they were imported. Deleted from the top down, because a
+//! deletion shifts the indices below it. Never below one: the master is index 0.
+void removeMixerChannelsPast(Mixer* mixer, int keep)
+{
+	for (int index = static_cast<int>(mixer->numChannels()) - 1; index >= keep; index--)
+	{
+		mixer->deleteChannel(index);
+	}
+}
+
 DawProjectModel dawProjectModelFromSong(Song* song, DawProjectLossReport* loss)
 {
 	DawProjectLossReport local;
@@ -452,6 +465,7 @@ bool applyDawProjectModel(Song* song, const DawProjectModel& model, QString* err
 		channel->m_muteModel.setValue(entry.mute);
 		channel->m_soloModel.setValue(entry.solo);
 	}
+	removeMixerChannelsPast(mixer, qMax(1, model.mixerChannels.size()));
 
 	for (const DawProjectTrack& entry : model.tracks)
 	{
