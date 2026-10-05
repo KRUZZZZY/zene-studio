@@ -48,8 +48,11 @@
  * Boston, MA 02110-1301 USA.
  */
 
+#include <cmath>
+
 #include <QJsonObject>
 
+#include "ClipLinks.h"
 #include "ControlEdit.h"
 #include "ControlRegistry.h"
 #include "MidiClip.h"
@@ -80,7 +83,11 @@ constexpr double kMaxProbability = 1.0;
 //! Refuses a probability outside [0, 1] before anything is written.
 bool checkProbability(double probability, ControlResult* error)
 {
-	if (probability < kMinProbability || probability > kMaxProbability)
+	// std::isfinite FIRST, and not as part of the range test: a NaN compares
+	// false against BOTH bounds, so `p < 0 || p > 1` lets it through - and
+	// Note::setProbability's std::clamp(NaN, 0, 1) hands NaN straight back, so
+	// the note would keep a nonfinite probability for the roll to read.
+	if (!std::isfinite(probability) || probability < kMinProbability || probability > kMaxProbability)
 	{
 		*error = ControlResult::failure(ControlErrorKind::InvalidArgs,
 			QStringLiteral("'probability' %1 is outside [0, 1]: 1 is \"always plays\" and 0 is "
@@ -138,6 +145,7 @@ void registerNoteProbabilitySet(ControlRegistry& registry)
 		clip->addJournalCheckPoint();
 		note->setProbability(static_cast<float>(probability));
 		clip->dataChanged();
+		if (clip->linkId() > 0) { ClipLinks::mirrorContent(clip); }  // a linked copy carries the same probability
 
 		QJsonObject result = noteState(note, index);
 		result.insert(QStringLiteral("clip"), clipId(ref.id));

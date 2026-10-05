@@ -29,6 +29,8 @@
 
 #include <QtTest>
 
+#include <limits>
+
 #include <QDomDocument>
 #include <QJsonArray>
 
@@ -189,6 +191,40 @@ private slots:
 		QVERIFY(run(QStringLiteral("control.undo")).ok);
 		QCOMPARE(keysOf(a), (QList<int>{60, 62}));
 		QCOMPARE(keysOf(b), (QList<int>{48}));
+	}
+
+	//! note.across counted every successful handler as an edit, so a handler that succeeded while
+	//! changing nothing made the batch report clips as edited and hand back a control.undo
+	//! transaction no undo step backs - replaying it would undo an unrelated prior action.
+	//! note.restore_timing over notes that keep no original timing succeeds with 'restored: 0',
+	//! adds no journal checkpoint and returns no __transaction.
+	void anEditThatChangedNothingIsNotAnUndoStep()
+	{
+		MidiClip* a = clipWith(0, {60});
+		MidiClip* b = clipWith(192, {62});
+		const QJsonArray clips{control::clipIdOf(a), control::clipIdOf(b)};
+		const int recorded = run(QStringLiteral("control.transactions")).result.value(QStringLiteral("transactions")).toArray().size();
+		const ControlResult done = run(QStringLiteral("note.across"), {{QStringLiteral("clips"), clips},
+			{QStringLiteral("command"), QStringLiteral("note.restore_timing")}, {QStringLiteral("args"), QJsonObject{}}});
+		QCOMPARE(done.errorKind, ControlErrorKind::NotFound);  // it changed no clip
+		QCOMPARE(keysOf(a), (QList<int>{60}));
+		QCOMPARE(keysOf(b), (QList<int>{62}));
+		QCOMPARE(run(QStringLiteral("control.transactions")).result.value(QStringLiteral("transactions")).toArray().size(), recorded);
+	}
+
+	//! Cluster 2857 probe: every comparison against NaN is false, so a NaN tick would slip past
+	//! readCurve's range check and reach std::lround. Whether a nonfinite double can be stored in
+	//! QJsonValue at all decides whether this is reachable; this case measures it.
+	void aNonFiniteCurvePointIsRefused()
+	{
+		MidiClip* clip = clipWith(0, {60});
+		const QString id = control::clipIdOf(clip);
+		const QString note = control::noteIdOf(clip->notes().front());
+		const QJsonArray bend{QJsonObject{{QStringLiteral("tick"), std::numeric_limits<double>::quiet_NaN()},
+			{QStringLiteral("semitones"), 1.0}}};
+		const ControlResult set = run(QStringLiteral("note.pitch_curve_set"), {{QStringLiteral("clip"), id},
+			{QStringLiteral("note"), note}, {QStringLiteral("points"), bend}});
+		QVERIFY2(set.errorKind == ControlErrorKind::InvalidArgs, qPrintable(set.ok ? "accepted a NaN tick" : set.errorMessage));
 	}
 
 	void aBadCallChangesNothing()

@@ -30,7 +30,9 @@
 
 #include <QJsonArray>
 
+#include "AutomationTrack.h"
 #include "Clip.h"
+#include "ControlCompSupport.h"
 #include "ControlRegistry.h"
 #include "ControlVocabulary.h"
 #include "Engine.h"
@@ -49,6 +51,13 @@ namespace
 ControlResult run(const QString& id, const QJsonObject& args = {})
 {
 	return ControlRegistry::instance()->invoke(id, args);
+}
+
+//! The newest A16 record (SPEC A16 §3): what control.transactions reports for the last undo step.
+QJsonObject lastRecord()
+{
+	const QJsonArray all = run(QStringLiteral("control.transactions")).result.value(QStringLiteral("transactions")).toArray();
+	return all.isEmpty() ? QJsonObject() : all.last().toObject();
 }
 
 //! A take clip on @a lane over [@a start, @a start + @a length) ticks.
@@ -110,6 +119,31 @@ private slots:
 		QCOMPARE(track->takeLanes().segments()[0].endTick, 192);
 	}
 
+	//! A lane may hold SEVERAL takes, so the two ends of the range an edge move grows into can be
+	//! supplied by DIFFERENT clips with a gap between them: asking only the two ends let the
+	//! boundary move across the gap and left the composite naming a lane with no take there
+	//! (comp.get_state would report it 'unresolved'). Every tick of the range must be covered.
+	void anEdgeMoveRefusesAcrossAGapInTheGrowingLane()
+	{
+		auto* track = dynamic_cast<SampleTrack*>(Track::create(Track::Type::Sample, Engine::getSong()));
+		const QString id = control::trackIdOf(track);
+		for (int i = 0; i < 2; ++i) { run(QStringLiteral("comp.lane_add"), {{QStringLiteral("track"), id}}); }
+		addTake(track, 0, 0, 240);  // lane 0: two takes with a GAP over [240, 300)
+		addTake(track, 0, 300, 180);
+		addTake(track, 1, 192, 288);
+		TakeLaneModel& model = track->takeLanes();
+		model.selectSegment(0, 192, 0, 0);
+		model.selectSegment(192, 480, 1, 0);
+		// Growing lane 0 over [192, 350): both ends sit inside one of its takes, the gap does not.
+		QCOMPARE(run(QStringLiteral("comp.move_edge"), {{QStringLiteral("track"), id}, {QStringLiteral("tick"), 192},
+			{QStringLiteral("to"), 350}}).errorKind, ControlErrorKind::Refused);
+		QCOMPARE(model.segments()[0].endTick, 192);  // nothing changed
+		// A range inside the first take is still covered, so the move is still allowed.
+		QVERIFY(run(QStringLiteral("comp.move_edge"), {{QStringLiteral("track"), id}, {QStringLiteral("tick"), 192},
+			{QStringLiteral("to"), 240}}).ok);
+		QCOMPARE(model.segments()[0].endTick, 240);
+	}
+
 	//! 0.5.0 E2: the growing take keeps its SLIP (a slip is the segment's, not a position that grows with the tick),
 	//! so the grown range merges back into one segment; and the take refuses where its slipped read runs off its end.
 	void aSlippedTakeKeepsItsSlipAcrossAnEdgeMove()
@@ -159,6 +193,106 @@ private slots:
 		QCOMPARE(track->takeLanes().laneCount(), 3);
 		QVERIFY(run(QStringLiteral("control.undo")).ok);
 		QCOMPARE(track->getClips().size(), std::size_t{1});
+	}
+
+	//! Only a clip comping can hold as a take (an audio or MIDI take, comp.assign's own rule) may be
+	//! cut into passes: splitPasses resolved the clip through the general resolver, so an automation
+	//! clip meeting the loop conditions was cut, moved and tagged with a take lane - lanes whose
+	//! composite can never resolve to it.
+	void splittingPassesRefusesAClipCompingCannotHold()
+	{
+		auto* track = dynamic_cast<AutomationTrack*>(Track::create(Track::Type::Automation, Engine::getSong()));
+		Clip* clip = track->createClip(TimePos(192));
+		clip->changeLength(TimePos(192 * 3));
+		Engine::getSong()->getTimeline(Song::PlayMode::Song).setLoopPoints(TimePos(192), TimePos(384));
+		const ControlResult split = run(QStringLiteral("comp.split_passes"), {{QStringLiteral("clip"), control::clipIdOf(clip)}});
+		QCOMPARE(split.errorKind, ControlErrorKind::Refused);
+		QCOMPARE(track->getClips().size(), std::size_t{1});
+		QCOMPARE(track->getClips()[0]->startPosition().getTicks(), tick_t{192});
+		QCOMPARE(track->takeLanes().laneCount(), 0);
+	}
+
+	//! The last pass can be shorter than the loop, but splitPasses always selected the last lane over
+	//! the WHOLE loop, so the composite named a lane with no take behind it over the uncovered tail -
+	//! TakeLaneModel::takeAt() reports 'unresolved' there and the engine plays nothing for. Only the
+	//! last piece's own duration may be selected.
+	void splittingPassesCompsOnlyWhatTheLastPassCovers()
+	{
+		auto* track = dynamic_cast<SampleTrack*>(Track::create(Track::Type::Sample, Engine::getSong()));
+		Clip* take = track->createClip(TimePos(192));
+		take->changeLength(TimePos(192 * 3 + 96));  // three full passes and half of a fourth
+		Engine::getSong()->getTimeline(Song::PlayMode::Song).setLoopPoints(TimePos(192), TimePos(384));
+		const ControlResult split = run(QStringLiteral("comp.split_passes"), {{QStringLiteral("clip"), control::clipIdOf(take)}});
+		QVERIFY2(split.ok, qPrintable(split.errorMessage));
+		QCOMPARE(split.result.value(QStringLiteral("passes")).toInt(), 4);
+		const std::vector<TakeLaneSegment>& segments = track->takeLanes().segments();
+		QCOMPARE(segments.size(), std::size_t{1});
+		// The last take is 96 ticks, so the composite ends at 192 + 96, not at the loop's end 384.
+		QCOMPARE(segments[0].endTick, 288);
+		for (const QJsonValue& entry : control::resolvedState(track))
+		{
+			QCOMPARE(entry.toObject().value(QStringLiteral("status")).toString(), QStringLiteral("bound"));
+		}
+	}
+
+	//! A16 §3 on the split: comp.split_passes cut the clip, added a lane per pass and changed the
+	//! composite after a Track checkpoint, but returned no __transaction - so its record carried no
+	//! composite before-state and no inverse, unlike its siblings comp.move_edge and comp.select_group.
+	void splittingPassesRecordsItsBeforeStateAndInverse()
+	{
+		auto* track = dynamic_cast<SampleTrack*>(Track::create(Track::Type::Sample, Engine::getSong()));
+		Clip* take = track->createClip(TimePos(192));
+		take->changeLength(TimePos(192 * 3));
+		Engine::getSong()->getTimeline(Song::PlayMode::Song).setLoopPoints(TimePos(192), TimePos(384));
+		QVERIFY(run(QStringLiteral("comp.split_passes"), {{QStringLiteral("clip"), control::clipIdOf(take)}}).ok);
+		const QJsonObject record = lastRecord();
+		QCOMPARE(record.value(QStringLiteral("command")).toString(), QStringLiteral("comp.split_passes"));
+		QVERIFY(record.value(QStringLiteral("reversible")).toBool());
+		QVERIFY(record.value(QStringLiteral("before")).toObject().contains(QStringLiteral("composite")));
+		QCOMPARE(record.value(QStringLiteral("inverse")).toObject().value(QStringLiteral("op")).toString(), QStringLiteral("control.undo"));
+	}
+
+	//! A16 §3: a mutating command records what it wrote - the composite before the edit and the
+	//! inverse control.undo replays. comp.move_edge journalled the track but described nothing, so
+	//! the record carried no before-state and no inverse, unlike its sibling comp.select.
+	void aMovedEdgeRecordsItsBeforeStateAndInverse()
+	{
+		SampleTrack* track = twoTakeTrack();
+		const QString id = control::trackIdOf(track);
+		QVERIFY(run(QStringLiteral("comp.move_edge"), {{QStringLiteral("track"), id}, {QStringLiteral("tick"), 200},
+			{QStringLiteral("to"), 240}}).ok);
+		const QJsonObject record = lastRecord();
+		QCOMPARE(record.value(QStringLiteral("command")).toString(), QStringLiteral("comp.move_edge"));
+		QVERIFY(record.value(QStringLiteral("reversible")).toBool());
+		const QJsonObject before = record.value(QStringLiteral("before")).toObject().value(QStringLiteral("composite")).toObject();
+		QCOMPARE(before.value(QStringLiteral("segments")).toArray().at(0).toObject().value(QStringLiteral("end")).toInt(), 192);
+		QCOMPARE(record.value(QStringLiteral("inverse")).toObject().value(QStringLiteral("op")).toString(), QStringLiteral("control.undo"));
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
+		QCOMPARE(track->takeLanes().segments()[0].endTick, 192);
+	}
+
+	//! A16 §3, on the multi-track half: one grouped edit is one record, and its before-state names
+	//! EVERY track it wrote - comp.select_group journalled each track but returned no payload, so the
+	//! record said nothing about what had changed.
+	void aGroupedChoiceRecordsEveryTrackItWrote()
+	{
+		SampleTrack* kick = twoTakeTrack();
+		SampleTrack* snare = twoTakeTrack();
+		const QJsonArray tracks{control::trackIdOf(kick), control::trackIdOf(snare)};
+		QVERIFY(run(QStringLiteral("comp.select_group"), {{QStringLiteral("tracks"), tracks}, {QStringLiteral("begin"), 0},
+			{QStringLiteral("end"), 384}, {QStringLiteral("lane"), 1}}).ok);
+		const QJsonObject record = lastRecord();
+		QCOMPARE(record.value(QStringLiteral("command")).toString(), QStringLiteral("comp.select_group"));
+		QVERIFY(record.value(QStringLiteral("reversible")).toBool());
+		const QJsonArray before = record.value(QStringLiteral("before")).toObject().value(QStringLiteral("tracks")).toArray();
+		QCOMPARE(before.size(), 2);
+		for (const QJsonValue& entry : before)
+		{
+			const QJsonObject composite = entry.toObject().value(QStringLiteral("composite")).toObject();
+			QCOMPARE(composite.value(QStringLiteral("segments")).toArray().size(), 2);
+			QCOMPARE(composite.value(QStringLiteral("segments")).toArray().at(0).toObject().value(QStringLiteral("lane")).toInt(), 0);
+		}
+		QCOMPARE(record.value(QStringLiteral("inverse")).toObject().value(QStringLiteral("op")).toString(), QStringLiteral("control.undo"));
 	}
 
 	void theMetronomesOptions()

@@ -72,6 +72,50 @@ const QStringList kIds = {
 	QStringLiteral("clip.link_get_state"), QStringLiteral("clip.link_sync"),
 };
 
+//! How many of the clip's notes carry an MPE expression, read through the surface
+//! itself (note.expression_get without a 'note' lists exactly those).
+int expressionCount(ControlRegistry* registry, const QString& clipId)
+{
+	const ControlResult state = registry->invoke(QStringLiteral("note.expression_get"),
+		QJsonObject{{QStringLiteral("clip"), clipId}});
+	if (!state.ok) { return -1; }
+	return state.result.value(QStringLiteral("notes")).toArray().size();
+}
+
+//! Whether the note at @a index of @a clipId carries the slide flag, read through
+//! the surface (roll.get_state publishes `slide` for EVERY note).
+bool slideOfNote(const QString& clipId, int index)
+{
+	const QJsonArray notes = notesOf(clipId);
+	if (index < 0 || index >= notes.size()) { return false; }
+	return notes.at(index).toObject().value(QStringLiteral("slide")).toBool();
+}
+
+//! How many members of the group @a clipId belongs to are listed as divergent -
+//! i.e. whose content the mirror has not reached. The group content channel is
+//! the clip's own note serialisation (ClipLinks::contentFingerprint), and a note
+//! writes its `prob` attribute whenever it is not the default 1, so a probability
+//! that was set on ONE member only shows up here as that member being divergent.
+int divergentCount(const QString& clipId)
+{
+	const ControlResult state = ControlRegistry::instance()->invoke(
+		QStringLiteral("clip.link_get_state"), QJsonObject{{QStringLiteral("clip"), clipId}});
+	if (!state.ok) { return -1; }
+	return state.result.value(QStringLiteral("groups")).toArray().first().toObject()
+		.value(QStringLiteral("divergent")).toArray().size();
+}
+
+//! The @a index-th expression-carrying note's axes, as the surface reports them.
+QJsonObject expressionOfNote(ControlRegistry* registry, const QString& clipId, int index)
+{
+	const ControlResult state = registry->invoke(QStringLiteral("note.expression_get"),
+		QJsonObject{{QStringLiteral("clip"), clipId}});
+	if (!state.ok) { return {}; }
+	const QJsonArray notes = state.result.value(QStringLiteral("notes")).toArray();
+	if (index < 0 || index >= notes.size()) { return {}; }
+	return notes.at(index).toObject();
+}
+
 } // namespace
 
 class ClipLinkTest : public QObject
@@ -282,6 +326,184 @@ private slots:
 	// -----------------------------------------------------------------------
 	// 3. the unlink
 	// -----------------------------------------------------------------------
+
+	void anExpressionEditIsSeenByTheOtherMember()
+	{
+		// Luna cluster 5676: note.expression_set / note.expression_clear wrote the
+		// source clip and emitted dataChanged() but never mirrored the content to
+		// the link group, so the other member kept its old expression.
+		ControlRegistry* registry = ControlRegistry::instance();
+		const QString a = addMidiClip(QStringLiteral("mpe A"));
+		const QString b = addMidiClip(QStringLiteral("mpe B"));
+		QVERIFY2(registry->invoke(QStringLiteral("clip.link_create"),
+			QJsonObject{{QStringLiteral("clip"), a}, {QStringLiteral("clips"), QJsonArray{b}}}).ok,
+			"clip.link_create refused");
+		const ControlResult added = registry->invoke(QStringLiteral("note.add"),
+			QJsonObject{{QStringLiteral("clip"), a}, {QStringLiteral("key"), 60},
+				{QStringLiteral("position"), 0}, {QStringLiteral("length"), 24}});
+		QVERIFY2(added.ok, qPrintable(added.errorMessage));
+		QCOMPARE(noteCount(b), 1);
+
+		const QString note = noteIdAt(a, 0);
+		QVERIFY(!note.isEmpty());
+		QCOMPARE(expressionCount(registry, b), 0);
+
+		// (a) set on A is seen by B, axes and the presence flag both
+		const ControlResult set = registry->invoke(QStringLiteral("note.expression_set"),
+			QJsonObject{{QStringLiteral("clip"), a}, {QStringLiteral("note"), note},
+				{QStringLiteral("pitch"), 120}, {QStringLiteral("pressure"), 64},
+				{QStringLiteral("timbre"), 90}});
+		QVERIFY2(set.ok, qPrintable(set.errorMessage));
+		QCOMPARE(expressionCount(registry, b), 1);
+		const QJsonObject mirrored = expressionOfNote(registry, b, 0);
+		QCOMPARE(mirrored.value(QStringLiteral("pitch_cents")).toInt(), 120);
+		QCOMPARE(mirrored.value(QStringLiteral("pressure")).toInt(), 64);
+		QCOMPARE(mirrored.value(QStringLiteral("timbre")).toInt(), 90);
+
+		// (b) clear on A is seen by B too
+		const ControlResult cleared = registry->invoke(QStringLiteral("note.expression_clear"),
+			QJsonObject{{QStringLiteral("clip"), a}, {QStringLiteral("note"), note}});
+		QVERIFY2(cleared.ok, qPrintable(cleared.errorMessage));
+		QCOMPARE(expressionCount(registry, b), 0);
+	}
+
+	void probabilityAndSlideEditsAreSeenByTheOtherMember()
+	{
+		// Luna cluster 5688: note.probability_set, note.slide_set and
+		// note.slide_clear checkpointed the clip, mutated the note and emitted
+		// dataChanged(), but - like the expression verbs of cluster 5676 - never
+		// called ClipLinks::mirrorContent, so a member of a link group kept the
+		// value the source had before the edit.
+		ControlRegistry* registry = ControlRegistry::instance();
+		const QString a = addMidiClip(QStringLiteral("prob A"));
+		const QString b = addMidiClip(QStringLiteral("prob B"));
+		QVERIFY2(registry->invoke(QStringLiteral("clip.link_create"),
+			QJsonObject{{QStringLiteral("clip"), a}, {QStringLiteral("clips"), QJsonArray{b}}}).ok,
+			"clip.link_create refused");
+		QVERIFY2(registry->invoke(QStringLiteral("note.add"),
+			QJsonObject{{QStringLiteral("clip"), a}, {QStringLiteral("key"), 60},
+				{QStringLiteral("position"), 0}, {QStringLiteral("length"), 24}}).ok,
+			"note.add refused");
+		QCOMPARE(noteCount(b), 1);
+		const QString note = noteIdAt(a, 0);
+		QVERIFY(!note.isEmpty());
+
+		// (a) probability: there is no read-back verb for the field, so the proof
+		//     is the group's own content channel. The note is at the default 1,
+		//     which Note::saveSettings does not write, so the two members agree.
+		QCOMPARE(divergentCount(a), 0);
+		const ControlResult prob = registry->invoke(QStringLiteral("note.probability_set"),
+			QJsonObject{{QStringLiteral("clip"), a}, {QStringLiteral("note"), note},
+				{QStringLiteral("probability"), 0.5}});
+		QVERIFY2(prob.ok, qPrintable(prob.errorMessage));
+		QCOMPARE(prob.result.value(QStringLiteral("probability")).toDouble(), 0.5);
+		QVERIFY2(divergentCount(a) == 0,
+			"a probability written on one member was never mirrored: the group reports a "
+			"divergent member, so the other member kept the default 1");
+
+		// (b) slide: noteState() publishes `slide` for every note, so the other
+		//     member's own note is read directly.
+		QVERIFY2(registry->invoke(QStringLiteral("note.slide_set"),
+			QJsonObject{{QStringLiteral("clip"), a}, {QStringLiteral("note"), note},
+				{QStringLiteral("slide"), true}}).ok, "note.slide_set refused");
+		QVERIFY2(slideOfNote(b, 0),
+			"note.slide_set wrote the source clip only: the other member's note is not a slide note");
+
+		// (c) and the clear half, which is a clip-scope verb of its own.
+		QVERIFY2(registry->invoke(QStringLiteral("note.slide_clear"),
+			QJsonObject{{QStringLiteral("clip"), a}}).ok, "note.slide_clear refused");
+		QVERIFY2(!slideOfNote(b, 0),
+			"note.slide_clear left the other member's note a slide note");
+	}
+
+	//! Luna cluster 5689: note.randomize rolled the notes' velocities and positions and
+	//! re-sorted the clip, but never mirrored the result, so a member of a link group
+	//! kept the notes the source clip had before the roll.
+	void aRollIsSeenByTheOtherMember()
+	{
+		ControlRegistry* registry = ControlRegistry::instance();
+		const QString a = addMidiClip(QStringLiteral("roll A"));
+		const QString b = addMidiClip(QStringLiteral("roll B"));
+		QVERIFY2(registry->invoke(QStringLiteral("clip.link_create"),
+			QJsonObject{{QStringLiteral("clip"), a}, {QStringLiteral("clips"), QJsonArray{b}}}).ok,
+			"clip.link_create refused");
+		for (int index = 0; index < 4; ++index)
+		{
+			QVERIFY2(registry->invoke(QStringLiteral("note.add"),
+				QJsonObject{{QStringLiteral("clip"), a}, {QStringLiteral("key"), 60 + index},
+					{QStringLiteral("position"), index * 24}, {QStringLiteral("length"), 24},
+					{QStringLiteral("velocity"), 100}}).ok, "note.add refused");
+		}
+		QCOMPARE(noteCount(b), 4);
+		const QJsonArray before = notesOf(b);
+
+		// A named seed, so the take is this test's own and not the project's.
+		const ControlResult rolled = registry->invoke(QStringLiteral("note.randomize"),
+			QJsonObject{{QStringLiteral("clip"), a}, {QStringLiteral("velocity_jitter"), 1.0},
+				{QStringLiteral("seed"), 515151}});
+		QVERIFY2(rolled.ok, qPrintable(rolled.errorMessage));
+		QVERIFY2(rolled.result.value(QStringLiteral("velocities_moved")).toInt() > 0,
+			"a full-range velocity roll over four notes moved none of them");
+
+		// (a) through the surface: the other member's notes must carry the rolled
+		//     velocities, not the uniform 100 the source started with.
+		const QJsonArray after = notesOf(b);
+		QCOMPARE(after.size(), before.size());
+		QVERIFY2(after != before,
+			"note.randomize wrote the source clip only: the other member still holds the "
+			"notes the roll started from");
+		bool changed = false;
+		for (int index = 0; index < after.size(); ++index)
+		{
+			if (after.at(index).toObject().value(QStringLiteral("velocity")).toInt()
+				!= before.at(index).toObject().value(QStringLiteral("velocity")).toInt())
+			{
+				changed = true;
+			}
+		}
+		QVERIFY2(changed, "no velocity of the other member followed the roll");
+
+		// (b) and through the group's own content channel, as cluster 5688's half.
+		QVERIFY2(divergentCount(a) == 0,
+			"the group still reports a divergent member after the roll was mirrored");
+	}
+
+	//! Luna cluster 5690: note.transpose, note.velocity_offset and note.velocity_scale
+	//! edited the source clip only - unlike note.move, note.resize, note.velocity_set and
+	//! note.randomize, none of the three called ClipLinks::mirrorContent - so a linked
+	//! copy kept the pre-transform keys/velocities and the group reported itself divergent.
+	void aTransformIsSeenByTheOtherMember()
+	{
+		ControlRegistry* registry = ControlRegistry::instance();
+		const QString a = addMidiClip(QStringLiteral("transpose A"));
+		const QString b = addMidiClip(QStringLiteral("transpose B"));
+		QVERIFY2(registry->invoke(QStringLiteral("clip.link_create"),
+			QJsonObject{{QStringLiteral("clip"), a}, {QStringLiteral("clips"), QJsonArray{b}}}).ok,
+			"clip.link_create refused");
+		QVERIFY2(registry->invoke(QStringLiteral("note.add"),
+			QJsonObject{{QStringLiteral("clip"), a}, {QStringLiteral("key"), 60},
+				{QStringLiteral("position"), 0}, {QStringLiteral("length"), 24},
+				{QStringLiteral("velocity"), 100}}).ok, "note.add refused");
+		QCOMPARE(noteCount(b), 1);
+		QCOMPARE(noteVelocityAt(b, 0), 100);
+
+		QVERIFY2(registry->invoke(QStringLiteral("note.transpose"),
+			QJsonObject{{QStringLiteral("clip"), a}, {QStringLiteral("semitones"), 12}}).ok, "note.transpose refused");
+		QVERIFY2(noteKeyAt(b, 0) == 72,
+			qPrintable(QStringLiteral("note.transpose wrote the source clip only: the other member "
+				"still holds key %1, not 72").arg(noteKeyAt(b, 0))));
+
+		QVERIFY2(registry->invoke(QStringLiteral("note.velocity_offset"),
+			QJsonObject{{QStringLiteral("clip"), a}, {QStringLiteral("delta"), 20}}).ok, "note.velocity_offset refused");
+		QCOMPARE(noteVelocityAt(b, 0), 120);  // 100 + 20
+
+		QVERIFY2(registry->invoke(QStringLiteral("note.velocity_scale"),
+			QJsonObject{{QStringLiteral("clip"), a}, {QStringLiteral("factor"), 2.0}}).ok, "note.velocity_scale refused");
+		QCOMPARE(noteVelocityAt(b, 0), 200);  // clamped at MaxVolume
+
+		// and the group is in sync, not divergent.
+		QCOMPARE(divergentCount(a), 0);
+	}
 
 	void unlinkDetachesAndKeepsItsContent()
 	{

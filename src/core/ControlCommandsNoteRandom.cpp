@@ -77,6 +77,7 @@
 #include "ControlNoteShared.h"
 #include "ControlRegistry.h"
 #include "ControlReversibility.h"
+#include "ClipLinks.h"
 #include "Engine.h"
 #include "MidiClip.h"
 #include "Note.h"
@@ -104,6 +105,38 @@ int jitteredPosition(int pos, double jitter, float unit)
 {
 	const auto offset = static_cast<std::int64_t>(std::llround(2.0 * jitter * unit - jitter));
 	return static_cast<int>(std::clamp<std::int64_t>(pos + offset, 0, MaxSongLength));
+}
+
+/*! The roll itself, over the notes in scope.
+ *
+ *  Split out of randomize() so the handler's own complexity does not grow with
+ *  the two things it has to decide (an empty scope, and a link group to mirror).
+ *  The draw is a pure function of the seed and each note's identity at entry, so
+ *  a note already moved is rolled again from where it now is. */
+void rollNotes(const NoteVector& notes, uint32_t seed, double velocityJitter, double positionJitter)
+{
+	for (Note* note : notes)
+	{
+		if (note == nullptr) { continue; }
+		const int key = note->key();
+		const int pos = static_cast<int>(note->pos().getTicks());
+		const int length = static_cast<int>(note->length().getTicks());
+		if (velocityJitter > 0.0)
+		{
+			const float factor = NoteRandom::velocityFactor(static_cast<float>(velocityJitter),
+				seed, key, pos, length);
+			const int velocity = static_cast<int>(note->getVolume());
+			const int rolled = std::clamp(static_cast<int>(std::lround(velocity * factor)),
+				static_cast<int>(MinVolume), static_cast<int>(MaxVolume));
+			if (rolled != velocity) { note->setVolume(static_cast<volume_t>(rolled)); }
+		}
+		if (positionJitter > 0.0)
+		{
+			const float unit = NoteRandom::rollUnit(seed, key, pos, length, kTimingSalt);
+			const int moved = jitteredPosition(pos, positionJitter, unit);
+			if (moved != pos) { note->setPos(TimePos(moved)); }
+		}
+	}
 }
 
 //! Resolves the clip a roll runs over, refusing one with no notes: a roll over
@@ -292,34 +325,27 @@ ControlResult randomize(const QJsonObject& args)
 	if (!seedGiven) { seed = song->midiSeed(); }
 
 	const NoteVector notes = scopeNotes(*clip, scope, clipId(ref.id));
+	// A scope of "selection" with nothing selected is refused rather than
+	// reported as a roll that changed 0 notes: "I rolled nothing" and "there was
+	// nothing to roll" are different answers, and a caller can tell them apart
+	// only if the second one is an error (the same rule note.transform follows).
+	if (notes.empty())
+	{
+		return ControlResult::failure(ControlErrorKind::Refused,
+			QStringLiteral("%1 has notes but none is selected, so scope 'selection' would roll "
+				"nothing (note.select chooses them)").arg(clipId(ref.id)));
+	}
 	const NoteSnapshot before = snapshotNotes(*clip);
 	clip->addJournalCheckPoint();
-	for (Note* note : notes)
-	{
-		if (note == nullptr) { continue; }
-		const int key = note->key();
-		const int pos = static_cast<int>(note->pos().getTicks());
-		const int length = static_cast<int>(note->length().getTicks());
-		if (velocityJitter > 0.0)
-		{
-			const float factor = NoteRandom::velocityFactor(static_cast<float>(velocityJitter),
-				seed, key, pos, length);
-			const int velocity = static_cast<int>(note->getVolume());
-			const int rolled = std::clamp(static_cast<int>(std::lround(velocity * factor)),
-				static_cast<int>(MinVolume), static_cast<int>(MaxVolume));
-			if (rolled != velocity) { note->setVolume(static_cast<volume_t>(rolled)); }
-		}
-		if (positionJitter > 0.0)
-		{
-			const float unit = NoteRandom::rollUnit(seed, key, pos, length, kTimingSalt);
-			const int moved = jitteredPosition(pos, positionJitter, unit);
-			if (moved != pos) { note->setPos(TimePos(moved)); }
-		}
-	}
+	rollNotes(notes, seed, velocityJitter, positionJitter);
 	// The notes moved, so the clip's own order (position, then key) has to be
 	// restored - the call note.move makes after it moves one note.
 	clip->rearrangeAllNotes();
+	// A note rolled past the old end is outside an auto-resizing clip until the
+	// clip's length is recomputed, the same way finish() does after an edit.
+	clip->updateLength();
 	clip->dataChanged();
+	if (clip->linkId() > 0) { ClipLinks::mirrorContent(clip); }  // a linked copy carries the rolled notes
 
 	QJsonObject result;
 	result.insert(QStringLiteral("clip"), clipId(ref.id));

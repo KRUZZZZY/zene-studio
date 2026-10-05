@@ -548,6 +548,22 @@ private slots:
 		QCOMPARE(m_clip->notes().size(), std::size_t{2});
 	}
 
+	void noteEditRefusesAMisspelledField()
+	{
+		// Luna cluster 4807: a typo beside a valid field was silently ignored and the command
+		// reported success, so a caller editing velocity and misspelling it lost the edit
+		// with no error at all.
+		freshClip({Note(TimePos(0), TimePos(48), 60)});
+		const QString note = control::noteIdOf(m_clip->notes()[0]);
+		const int before = static_cast<int>(m_clip->notes()[0]->getVolume());
+		const ControlResult result = run(QStringLiteral("note.edit"), {{QStringLiteral("clip"), clip()},
+			{QStringLiteral("edits"), QJsonArray{QJsonObject{{QStringLiteral("note"), note},
+				{QStringLiteral("velocity"), 90}, {QStringLiteral("velcoity"), 10}}}}});
+		QCOMPARE(result.errorKind, ControlErrorKind::InvalidArgs);
+		// Nothing was written - the batch validates every entry before the first write.
+		QCOMPARE(static_cast<int>(m_clip->notes()[0]->getVolume()), before);
+	}
+
 	void noteEditCarriesSlideAndModXY()
 	{
 		freshClip({Note(TimePos(12), TimePos(0), 60)});

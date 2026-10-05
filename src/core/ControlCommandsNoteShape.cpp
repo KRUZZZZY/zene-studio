@@ -147,6 +147,19 @@ ControlResult listNotes(const QJsonObject& args)
 		{QStringLiteral("count"), notes.size()}});
 }
 
+//! The new note's END, which is the sum note.edit's checkEndPosition() also sums in
+//! qint64 (src/core/ControlCommandsNoteEdit.cpp): position and length are each a legal
+//! int on their own, so their sum is where the signed 32-bit tick range can be left.
+bool checkNewEndPosition(int position, int length, int index, ControlResult* error)
+{
+	const qint64 end = static_cast<qint64>(position) + static_cast<qint64>(length);
+	if (end <= static_cast<qint64>(MaxSongLength)) { return true; }
+	*error = ControlResult::failure(ControlErrorKind::InvalidArgs,
+		QStringLiteral("notes[%1] ends at %2, past the song limit of %3")
+			.arg(index).arg(end).arg(static_cast<qint64>(MaxSongLength)));
+	return false;
+}
+
 //! One entry of note.add_many checked: key 0..127, position >= 0, length >= 1, velocity 0..200.
 bool readNewNote(const QJsonObject& entry, int index, Note* out, ControlResult* error)
 {
@@ -161,6 +174,7 @@ bool readNewNote(const QJsonObject& entry, int index, Note* out, ControlResult* 
 			"length >= 1 and velocity %3..%4").arg(index).arg(NumKeys - 1).arg(MinVolume).arg(MaxVolume));
 		return false;
 	}
+	if (!checkNewEndPosition(position, length, index, error)) { return false; }
 	*out = Note(TimePos(length), TimePos(position), key, static_cast<volume_t>(velocity));
 	return true;
 }
@@ -237,17 +251,36 @@ bool readRanges(const QJsonObject& json, NoteTransform::Filter* f)
 		&& range("position", &f->usePositionRange, &f->minPos, &f->maxPos) && range("length", &f->useLengthRange, &f->minLength, &f->maxLength);
 }
 
-//! The `filter` object as a NoteTransform::Filter: {key,velocity,position,length}_{min,max} (an absent
-//! bound is open), `scale` "in" / "out" (the scale context's pitch classes) and `invert`.
-bool filterFrom(const QJsonObject& json, NoteTransform::Filter* f, ControlResult* error)
+//! filter.invert, held to being a BOOLEAN: toBool() used to read a value of the wrong
+//! type as "do not invert", so a filter the caller meant to narrow silently stopped
+//! narrowing at all.
+bool readInvert(const QJsonValue& value, NoteTransform::Filter* f, ControlResult* error)
 {
-	if (!readRanges(json, f))
+	if (value.isUndefined() || value.isNull()) { return true; }  // absent: no inversion
+	if (!value.isBool())
 	{
-		*error = ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("a filter bound is a whole number (a JSON number)"));
+		*error = ControlResult::failure(ControlErrorKind::InvalidArgs,
+			QStringLiteral("filter.invert is true or false, not a value of another type"));
 		return false;
 	}
-	f->invert = json.value(QStringLiteral("invert")).toBool();
-	const QString scale = json.value(QStringLiteral("scale")).toString();
+	f->invert = value.toBool();
+	return true;
+}
+
+//! filter.scale as NoteTransform::Filter's scale channel: the string "in" / "out" (the scale
+//! context's pitch classes). A value of the wrong type used to become an EMPTY string through
+//! toString(), which the code below reads as "no scale filter" - so a malformed filter matched
+//! every note, and 'action: remove' then removed all of them.
+bool readScale(const QJsonValue& value, NoteTransform::Filter* f, ControlResult* error)
+{
+	if (value.isUndefined() || value.isNull()) { return true; }  // absent: no scale channel
+	if (!value.isString())
+	{
+		*error = ControlResult::failure(ControlErrorKind::InvalidArgs,
+			QStringLiteral("filter.scale is 'in' or 'out' (a string), not a value of another type"));
+		return false;
+	}
+	const QString scale = value.toString();
 	if (scale.isEmpty()) { return true; }
 	ResolvedScale resolved;
 	if (!resolveScale({}, &resolved, error)) { return false; }
@@ -260,6 +293,19 @@ bool filterFrom(const QJsonObject& json, NoteTransform::Filter* f, ControlResult
 	f->scaleMatch = scale == QStringLiteral("in") ? NoteTransform::ScaleMatch::InScale : NoteTransform::ScaleMatch::OutOfScale;
 	f->scaleDegrees = resolved.classes;
 	return true;
+}
+
+//! The `filter` object as a NoteTransform::Filter: {key,velocity,position,length}_{min,max} (an absent
+//! bound is open), `scale` "in" / "out" (the scale context's pitch classes) and `invert`.
+bool filterFrom(const QJsonObject& json, NoteTransform::Filter* f, ControlResult* error)
+{
+	if (!readRanges(json, f))
+	{
+		*error = ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("a filter bound is a whole number (a JSON number)"));
+		return false;
+	}
+	return readInvert(json.value(QStringLiteral("invert")), f, error)
+		&& readScale(json.value(QStringLiteral("scale")), f, error);
 }
 
 //! Apply @a action (with @a amount) to the matched @a hits; the notes to remove are returned.
@@ -289,19 +335,36 @@ ControlResult selectWhere(const QJsonObject& args)
 	NoteTransform::Filter filter;
 	if (!filterFrom(args.value(QStringLiteral("filter")).toObject(), &filter, &error)) { return error; }
 	const bool additive = args.value(QStringLiteral("additive")).toBool();
+	const NoteVector& noteList = clip->notes();
 	QJsonArray previous;
-	for (Note* note : clip->notes())
+	QVector<int> wanted;
+	for (int index = 0; index < static_cast<int>(noteList.size()); ++index)
 	{
-		if (note->selected()) { previous.append(noteIdOf(note)); }
+		Note* note = noteList.at(index);
+		if (note->selected())
+		{
+			previous.append(noteIdOf(note));
+			// 'additive' KEEPS what was selected, so those notes are part of the
+			// resulting selection the store has to hold as well.
+			if (additive) { wanted.append(index); }
+		}
 		if (!additive) { note->setSelected(false); }
 	}
-	const NoteVector hits = NoteTransform::select(clip->notes(), filter);
+	const NoteVector hits = NoteTransform::select(noteList, filter);
 	QJsonArray selected;
-	for (Note* note : hits)
+	for (int index = 0; index < static_cast<int>(noteList.size()); ++index)
 	{
+		Note* note = noteList.at(index);
+		if (std::find(hits.cbegin(), hits.cend(), note) == hits.cend()) { continue; }
 		note->setSelected(true);
+		wanted.append(index);
 		selected.append(noteIdOf(note));
 	}
+	// The flags above are half the selection: the index store control::selectNotes owns is
+	// the other half, and note.select writes BOTH (src/core/ControlCommandsNotes.cpp:477).
+	// Writing only the flags left roll.get_state and the next note.select reporting the
+	// selection this verb had replaced.
+	control::selectNotes(clipId(ref.id), static_cast<int>(noteList.size()), wanted);
 	emit clip->dataChanged();
 	return ControlResult::success({{QStringLiteral("clip"), clipId(ref.id)}, {QStringLiteral("matched"), selected.size()},
 		{QStringLiteral("selected"), selected}, {QStringLiteral("previous"), previous}});
@@ -311,6 +374,29 @@ ControlResult selectWhere(const QJsonObject& args)
 bool needsAmount(const QString& action)
 {
 	return action == QLatin1String("transpose") || action == QLatin1String("velocity_set") || action == QLatin1String("velocity_offset");
+}
+
+//! 'amount' as the int the actions work in. registerNoteShapeCommands() declares it as an
+//! unbounded integer (integerProperty(), src/core/ControlVocabulary.cpp:85), so a value past
+//! the schema integer is still a whole JSON number and reaches the handler; toInt() would
+//! read it as 0, and a transpose or velocity offset of 0 is a success that moved nothing.
+//! A value the handler cannot hold is refused instead of silently becoming a no-op.
+bool readAmount(const QJsonObject& args, int* out, ControlResult* error)
+{
+	const QJsonValue value = args.value(QStringLiteral("amount"));
+	const double amount = value.toDouble();
+	if (!value.isDouble() || amount != std::floor(amount)
+		|| amount < static_cast<double>(std::numeric_limits<int>::lowest())
+		|| amount > static_cast<double>(std::numeric_limits<int>::max()))
+	{
+		*error = ControlResult::failure(ControlErrorKind::InvalidArgs,
+			QStringLiteral("'amount' is a whole number the handler can hold (%1..%2), not %3")
+				.arg(std::numeric_limits<int>::lowest()).arg(std::numeric_limits<int>::max())
+				.arg(value.isDouble() ? QString::number(amount) : QStringLiteral("a value of another type")));
+		return false;
+	}
+	*out = static_cast<int>(amount);
+	return true;
 }
 
 ControlResult transformWhere(const QJsonObject& args)
@@ -326,13 +412,15 @@ ControlResult transformWhere(const QJsonObject& args)
 	{
 		return ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("'%1' needs an 'amount'").arg(action));
 	}
+	int amount = 0;
+	if (args.contains(QStringLiteral("amount")) && !readAmount(args, &amount, &error)) { return error; }
 	const NoteVector hits = NoteTransform::select(clip->notes(), filter);
 	if (hits.empty())  // nothing to change: no undo step, the project not modified
 	{
 		return ControlResult::success({{QStringLiteral("clip"), clipId(ref.id)}, {QStringLiteral("matched"), 0}, {QStringLiteral("removed"), 0}});
 	}
 	clip->addJournalCheckPoint();
-	const NoteVector doomed = act(hits, action, args.value(QStringLiteral("amount")).toInt());
+	const NoteVector doomed = act(hits, action, amount);
 	for (Note* note : doomed) { clip->removeNote(note); }
 	return ControlResult::success(finish(ref, clip, QStringLiteral("note.transform_where"),
 		{{QStringLiteral("matched"), static_cast<int>(hits.size())}, {QStringLiteral("removed"), static_cast<int>(doomed.size())}}));

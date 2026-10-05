@@ -37,6 +37,7 @@
 #include <QJsonArray>
 #include <QJsonObject>
 
+#include "ClipLinks.h"
 #include "ControlEdit.h"
 #include "ControlRegistry.h"
 #include "ControlReversibility.h"
@@ -171,6 +172,7 @@ void registerExpressionSet(ControlRegistry& registry)
 		target.clip->addJournalCheckPoint();
 		target.note->setMpeExpression(wanted);
 		target.clip->dataChanged();
+		if (target.clip->linkId() > 0) { ClipLinks::mirrorContent(target.clip); }
 
 		QJsonObject result = expressionJson(target.note);
 		result.insert(QStringLiteral("clip"), target.clipId);
@@ -272,6 +274,7 @@ void registerExpressionClear(ControlRegistry& registry)
 		target.clip->addJournalCheckPoint();
 		target.note->clearMpeExpression();
 		target.clip->dataChanged();
+		if (target.clip->linkId() > 0) { ClipLinks::mirrorContent(target.clip); }
 
 		QJsonObject result = expressionJson(target.note);
 		result.insert(QStringLiteral("clip"), target.clipId);

@@ -180,15 +180,11 @@ void registerNoteRemove(ControlRegistry& registry)
 		int index = -1;
 		Note* note = control::resolveNote(clip, args.value(QStringLiteral("note")).toString(), &index, &error);
 		if (note == nullptr) { return error; }
-		// The removed note's full state is the inverse payload: note.add with these
-		// args recreates it, and the clip checkpoint restores it in the journal.
+		// The removed note's full state rides along in the before-payload, but note.add
+		// could never be a faithful inverse of it: it carries no pan, probability or
+		// expression, and it cannot restore the note's id. The clip checkpoint taken
+		// below can restore all of them, so the advertised inverse is control.undo.
 		QJsonObject state = control::noteState(note, index);
-		QJsonObject inverseArgs;
-		inverseArgs.insert(QStringLiteral("clip"), control::clipId(ref.id));
-		inverseArgs.insert(QStringLiteral("key"), note->key());
-		inverseArgs.insert(QStringLiteral("position"), note->pos().getTicks());
-		inverseArgs.insert(QStringLiteral("length"), note->length().getTicks());
-		inverseArgs.insert(QStringLiteral("velocity"), static_cast<int>(note->getVolume()));
 		// The id is read BEFORE the removeNote() below deletes the note
 		// (MidiClip::removeNote does `delete note`). It is the note's own id
 		// (Note::id(), SPEC-stable-ids.md slice 2), which is what the result
@@ -204,7 +200,7 @@ void registerNoteRemove(ControlRegistry& registry)
 		result.insert(QStringLiteral("removed_note"), state);
 		result.insert(QStringLiteral("note_count"), static_cast<int>(clip->notes().size()));
 		result.insert(QStringLiteral("__transaction"),
-			control::transactionPayload(state, QStringLiteral("note.add"), inverseArgs,
+			control::transactionPayload(state, QStringLiteral("control.undo"), QJsonObject(),
 				true, MechanismClipCheckpoint));
 		return ControlResult::success(result);
 	};
@@ -419,6 +415,20 @@ void markSelected(MidiClip* clip, const QVector<int>& positions)
 	for (int position : positions) { clip->notes()[position]->setSelected(true); }
 }
 
+//! The ids of the notes whose own selection flag is set. The selection STORE holds
+//! note-list positions, which a reorder (note.move, note.split, ...) invalidates, so a
+//! previous selection reported from it names the wrong note; the flags travel with the
+//! note objects.
+QJsonArray selectedNoteIds(const MidiClip* clip)
+{
+	QJsonArray ids;
+	for (const Note* note : clip->notes())
+	{
+		if (note->selected()) { ids.append(control::noteIdOf(note)); }
+	}
+	return ids;
+}
+
 //! 0.5.0 L07 (ED-069): @a positions with every note that shares a group with one of them.
 void withGroupMates(const MidiClip* clip, QVector<int>* positions)
 {
@@ -458,7 +468,9 @@ void registerNoteSelect(ControlRegistry& registry)
 		MidiClip* clip = control::resolveMidiClip(args.value(QStringLiteral("clip")).toString(), &ref, &error);
 		if (clip == nullptr) { return error; }
 		const QString clipText = control::clipId(ref.id);
-		const QVector<int> previous = control::selectedNoteIndices(clipText);
+		// Read BEFORE the new selection is marked, and from the notes' own flags: the
+		// store holds positions, which a reorder invalidates.
+		const QJsonArray previous = selectedNoteIds(clip);
 		QVector<int> wanted;
 		for (const QJsonValue& value : args.value(QStringLiteral("notes")).toArray())
 		{
@@ -494,18 +506,10 @@ void registerNoteSelect(ControlRegistry& registry)
 				selected.append(control::noteIdOf(noteList[position]));
 			}
 		}
-		QJsonArray previousIds;
-		for (int position : previous)
-		{
-			if (position >= 0 && position < static_cast<int>(noteList.size()))
-			{
-				previousIds.append(control::noteIdOf(noteList[position]));
-			}
-		}
 		QJsonObject result;
 		result.insert(QStringLiteral("clip"), clipText);
 		result.insert(QStringLiteral("selected_notes"), selected);
-		result.insert(QStringLiteral("previous_notes"), previousIds);
+		result.insert(QStringLiteral("previous_notes"), previous);
 		return ControlResult::success(result);
 	};
 	registry.registerCommand(cmd);

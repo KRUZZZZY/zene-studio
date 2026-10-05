@@ -89,21 +89,64 @@ TakeLaneSegment edgeMove(const TakeLaneSegment& left, const TakeLaneSegment& rig
 	return move;
 }
 
-//! Whether a take of @a move's lane covers @a tick, where its handle plays, and the slipped tick it reads there.
-bool takeCovers(const Track& track, const TakeLaneSegment& move, int tick)
+//! The timeline half-open span over which ONE take of @a move's lane plays: its own range, cut
+//! short by the slip (at timeline tick t the handle reads the take at t + sourceOffset, so the
+//! last slip's worth of ticks is where its slipped read runs off the end).
+struct TakeSpan
 {
-	const std::vector<Clip*>& clips = track.getClips();
-	return std::any_of(clips.begin(), clips.end(), [&move, tick](const Clip* clip) {
-		return clip != nullptr && clip->laneIndex() == move.laneIndex && tick >= clip->startPosition().getTicks()
-			&& tick + move.sourceOffset < clip->endPosition().getTicks();
-	});
+	int begin = 0;
+	int end = 0;
+};
+
+//! Every take of @a move's lane as a span it covers on the timeline.
+std::vector<TakeSpan> takeSpans(const Track& track, const TakeLaneSegment& move)
+{
+	std::vector<TakeSpan> spans;
+	for (const Clip* clip : track.getClips())
+	{
+		if (clip == nullptr || clip->laneIndex() != move.laneIndex) { continue; }
+		const TakeSpan span{static_cast<int>(clip->startPosition().getTicks()),
+			static_cast<int>(clip->endPosition().getTicks()) - move.sourceOffset};
+		if (span.end > span.begin) { spans.push_back(span); }
+	}
+	return spans;
 }
 
-//! Whether the growing take reaches over the whole range it grows into (both ends - a lane may hold a gap).
+/*! Whether the takes of @a move's lane cover EVERY tick of the range it grows into.
+ *
+ *  One lane may hold SEVERAL takes, so the two ends of the range can be supplied by different
+ *  clips with a gap between them: asking only the two ends let a boundary move across that gap
+ *  and left the composite naming a lane with no take there - which TakeLaneModel::takeAt() then
+ *  reports as 'unresolved', and the engine plays nothing for. Every tick is walked instead. */
 bool takeReaches(const Track& track, const TakeLaneSegment& move)
 {
-	return takeCovers(track, move, move.beginTick) && takeCovers(track, move, move.endTick - 1);
+	std::vector<TakeSpan> spans = takeSpans(track, move);
+	std::sort(spans.begin(), spans.end(), [](const TakeSpan& a, const TakeSpan& b) { return a.begin < b.begin; });
+	int reached = move.beginTick;
+	for (const TakeSpan& span : spans)
+	{
+		if (span.begin > reached) { break; }  // a gap no later span can bridge
+		reached = std::max(reached, span.end);
+		if (reached >= move.endTick) { return true; }
+	}
+	return false;
 }
+
+//! The inverse a composite edit's record names (SPEC A16 §3): the Track checkpoint, which
+//! control.undo replays. No single command re-creates the previous composite - there is no
+//! un-select, a composite being total over its span - so the before-state carries it.
+const QString CompositeInverseOp = QStringLiteral("control.undo");
+
+const QString CompositeMechanism = QStringLiteral("ProjectJournal (Track checkpoint: "
+	"Track::saveTrack writes the <takelanes> element - the lane list AND the composite - and "
+	"Track::loadTrack re-reads it)");
+
+//! The same mechanism for the grouped half, which takes one checkpoint PER TRACK: the registry
+//! folds them into one step after the handler returns (ControlRegistry::runHandler ->
+//! ProjectJournal::mergeCheckpointsFrom), so one control.undo puts every track back.
+const QString CompositeGroupMechanism = QStringLiteral("ProjectJournal (a Track checkpoint per "
+	"track, folded by the registry into ONE undo step, so one control.undo restores every track "
+	"of the group)");
 
 ControlResult moveEdge(const QJsonObject& args)
 {
@@ -120,16 +163,21 @@ ControlResult moveEdge(const QJsonObject& args)
 	{
 		return ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("'to' is inside the two takes, %1..%2").arg(left.beginTick + 1).arg(right.endTick - 1));
 	}
-	const QJsonObject result{{QStringLiteral("track"), trackIdOf(track)}, {QStringLiteral("edge"), to}};
-	if (to == left.endTick) { return ControlResult::success(result); }
+	const QString id = trackIdOf(track);
+	QJsonObject result{{QStringLiteral("track"), id}, {QStringLiteral("edge"), to}};
+	if (to == left.endTick) { return ControlResult::success(result); }  // nothing moved: no record
 	const TakeLaneSegment move = edgeMove(left, right, to);
 	if (!takeReaches(*track, move) || !model.canSelect(move.beginTick, move.endTick, move.laneIndex, move.sourceOffset))
 	{
 		return ControlResult::failure(ControlErrorKind::Refused, QStringLiteral("the take on that side does not reach %1").arg(to));
 	}
+	const QJsonObject before{{QStringLiteral("track"), id}, {QStringLiteral("composite"), compositeState(track)}};
 	track->addJournalCheckPoint();
 	model.selectSegment(move.beginTick, move.endTick, move.laneIndex, move.sourceOffset);
 	Engine::getSong()->setModified();
+	result.insert(QStringLiteral("__transaction"),
+		transactionPayload(before, CompositeInverseOp, QJsonObject{{QStringLiteral("track"), id}},
+			true, CompositeMechanism));
 	return ControlResult::success(result);
 }
 
@@ -173,22 +221,32 @@ ControlResult selectGroup(const QJsonObject& args)
 		}
 	}
 	QJsonArray done;
+	QJsonArray before;
 	for (Track* track : tracks)
 	{
+		QJsonObject entry{{QStringLiteral("track"), trackIdOf(track)}, {QStringLiteral("composite"), compositeState(track)}};
 		track->addJournalCheckPoint();
 		track->takeLanes().selectSegment(begin, end, lane, srcpos);
 		done.append(trackIdOf(track));
+		before.append(entry);
 	}
 	Engine::getSong()->setModified();
-	return ControlResult::success({{QStringLiteral("tracks"), done}, {QStringLiteral("lane"), lane}, {QStringLiteral("begin"), begin},
-		{QStringLiteral("end"), end}});
+	QJsonObject result{{QStringLiteral("tracks"), done}, {QStringLiteral("lane"), lane}, {QStringLiteral("begin"), begin},
+		{QStringLiteral("end"), end}};
+	result.insert(QStringLiteral("__transaction"),
+		transactionPayload(QJsonObject{{QStringLiteral("tracks"), before}}, CompositeInverseOp,
+			QJsonObject{{QStringLiteral("tracks"), done}}, true, CompositeGroupMechanism));
+	return ControlResult::success(result);
 }
 
 ControlResult splitPasses(const QJsonObject& args)
 {
 	ClipRef ref;
 	ControlResult error;
-	if (!resolveClip(args.value(QStringLiteral("clip")).toString(), &ref, &error)) { return error; }
+	// The take validator, not the general resolver: only an audio or MIDI take can be comped
+	// (comp.assign's own rule, docs/COMPING.md), so cutting an automation or pattern clip into
+	// passes and tagging the pieces with take lanes would produce lanes nothing can resolve to.
+	if (!resolveTakeClip(args.value(QStringLiteral("clip")).toString(), &ref, &error)) { return error; }
 	const Timeline& timeline = Engine::getSong()->getTimeline(Song::PlayMode::Song);
 	const tick_t begin = timeline.loopBegin().getTicks();
 	const tick_t loop = timeline.loopEnd().getTicks() - begin;
@@ -204,6 +262,11 @@ ControlResult splitPasses(const QJsonObject& args)
 		// Capping the cuts would leave every pass past the 32nd merged into the last take.
 		return ControlResult::failure(ControlErrorKind::Refused, QStringLiteral("the clip spans %1 passes; at most 32 can be split").arg(passes));
 	}
+	const QString id = trackIdOf(ref.track);
+	// A16 §3: the Track checkpoint below is what control.undo replays, so the record says so and
+	// carries the composite as it was - like its siblings comp.move_edge and comp.select_group.
+	QJsonObject result{{QStringLiteral("track"), id}};
+	QJsonObject before{{QStringLiteral("track"), id}, {QStringLiteral("composite"), compositeState(ref.track)}};
 	ref.track->addJournalCheckPoint();
 	std::vector<Clip*> pieces{ref.clip};
 	for (int k = passes - 1; k >= 1; --k)
@@ -218,9 +281,17 @@ ControlResult splitPasses(const QJsonObject& args)
 		assignTakeLane(pieces[k], lane);  // the lane tag's one writer (ControlCommandsComp.cpp)
 		pieces[k]->movePosition(TimePos(begin));
 	}
-	model.selectSegment(static_cast<int>(begin), static_cast<int>(begin + loop), lane, 0);
+	// The last piece can be shorter than the loop; selecting the last lane over the whole loop would
+	// name it where no take covers, which TakeLaneModel::takeAt() reports 'unresolved'. So only the
+	// last piece's own length is composited.
+	const tick_t covered = std::min<tick_t>(loop, pieces.back()->length().getTicks());
+	model.selectSegment(static_cast<int>(begin), static_cast<int>(begin + covered), lane, 0);
 	Engine::getSong()->setModified();
-	return ControlResult::success({{QStringLiteral("track"), trackIdOf(ref.track)}, {QStringLiteral("passes"), static_cast<int>(pieces.size())}});
+	result.insert(QStringLiteral("passes"), static_cast<int>(pieces.size()));
+	result.insert(QStringLiteral("__transaction"),
+		transactionPayload(before, CompositeInverseOp, QJsonObject{{QStringLiteral("track"), id}},
+			true, CompositeMechanism));
+	return ControlResult::success(result);
 }
 
 void add(ControlRegistry& registry, const char* id, const QString& description, const QJsonObject& args, const QStringList& required,

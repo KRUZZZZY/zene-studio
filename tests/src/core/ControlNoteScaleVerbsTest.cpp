@@ -59,6 +59,7 @@
 #include "ControlRegistry.h"
 #include "ControlReversibility.h"
 #include "Engine.h"
+#include "ProjectJournal.h"
 #include "ProjectKey.h"
 #include "ReversibilityTestSupport.h"
 #include "Song.h"
@@ -331,6 +332,16 @@ private slots:
 				{QStringLiteral("velocity_jitter"), 0.5},
 				{QStringLiteral("scope"), QStringLiteral("track")}});
 		QCOMPARE(badScope.errorKind, ControlErrorKind::InvalidArgs);
+		// Luna cluster 3918: the clip HAS notes, but none is selected, so scope
+		// 'selection' is empty. The roll took a checkpoint and answered
+		// notes_rolled:0 rather than refusing - "I edited nothing" and "there was
+		// nothing to edit" have to be different answers, as note.transform already
+		// makes them (ControlCommandsNoteTransform.cpp:110-117).
+		const ControlResult emptyScope = run(QStringLiteral("note.randomize"),
+			QJsonObject{{QStringLiteral("clip"), fixture.clip},
+				{QStringLiteral("velocity_jitter"), 0.5},
+				{QStringLiteral("scope"), QStringLiteral("selection")}});
+		QCOMPARE(emptyScope.errorKind, ControlErrorKind::Refused);
 	}
 
 	//! W5: the slide verbs, from the trap state (a note at the DEFAULT, which writes
@@ -374,6 +385,43 @@ private slots:
 		const ControlResult missing = run(QStringLiteral("note.slide_set"),
 			QJsonObject{{QStringLiteral("clip"), fixture.clip}, {QStringLiteral("note"), note}});
 		QCOMPARE(missing.errorKind, ControlErrorKind::InvalidArgs);
+	}
+
+	//! Luna cluster 3904: slideClear took the MidiClip journal checkpoint before it knew
+	//! whether anything would change, so clearing a scope with no slide notes in it answered
+	//! slides_cleared:0 AND pushed a no-op onto the undo stack - and published dataChanged()
+	//! only in the changed case, so the checkpoint was the only trace of an edit that never
+	//! happened. An undo after that has to unwind nothing, but it consumed a step.
+	void clearingSlidesOnAClipWithoutAnyRecordsNoUndoStep()
+	{
+		Fixture fixture;
+		QVERIFY2(makeFixture(&fixture), "could not build a track + clip fixture");
+		const ControlResult added = run(QStringLiteral("note.add"),
+			QJsonObject{{QStringLiteral("clip"), fixture.clip}, {QStringLiteral("key"), 60},
+				{QStringLiteral("position"), 0}, {QStringLiteral("length"), 24}});
+		QVERIFY2(added.ok, qPrintable(added.errorMessage));
+
+		ProjectJournal* journal = Engine::projectJournal();
+		QVERIFY(journal != nullptr);
+		const int depthBefore = journal->undoDepth();
+		const ControlResult cleared = run(QStringLiteral("note.slide_clear"),
+			QJsonObject{{QStringLiteral("clip"), fixture.clip}});
+		QVERIFY2(cleared.ok, qPrintable(cleared.errorMessage));
+		QCOMPARE(cleared.result.value(QStringLiteral("slides_before")).toInt(), 0);
+		QCOMPARE(cleared.result.value(QStringLiteral("slides_cleared")).toInt(), 0);
+		QCOMPARE(journal->undoDepth(), depthBefore);
+
+		// The same call on a clip that DOES hold a slide note still takes its one step.
+		const QString note = added.result.value(QStringLiteral("note")).toString();
+		QVERIFY(run(QStringLiteral("note.slide_set"),
+			QJsonObject{{QStringLiteral("clip"), fixture.clip}, {QStringLiteral("note"), note},
+				{QStringLiteral("slide"), true}}).ok);
+		const int depthWithSlide = journal->undoDepth();
+		QVERIFY(run(QStringLiteral("note.slide_clear"),
+			QJsonObject{{QStringLiteral("clip"), fixture.clip}}).ok);
+		QCOMPARE(journal->undoDepth(), depthWithSlide + 1);
+		REV_UNDO_OR_FAIL();
+		QCOMPARE(noteState(fixture.clip, 0).value(QStringLiteral("slide")).toBool(), true);
 	}
 
 	//! W6: the three transforms, each with its inverse exercised for real, plus the

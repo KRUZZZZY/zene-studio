@@ -78,13 +78,27 @@ ControlResult invert(const QJsonObject& args)
 	return ControlResult::success(finish(ref, clip, QStringLiteral("note.invert"), {{QStringLiteral("inverted"), notes.size()}}));
 }
 
-//! The chord's keys in the order @a pattern plays them.
-std::vector<int> runOrder(std::vector<int> keys, const QString& pattern)
+/*! Which of @a voices the run plays at each step, as INDICES into it.
+ *
+ *  Luna cluster 5691: this used to be the sorted list of KEYS with one stored note per
+ *  key, so two chord members of the same pitch shared a single voice and the second one's
+ *  velocity, pan and probability were dropped when the chord was removed. One entry per
+ *  note - sorted by key for "up", reversed for "down", back down for "updown" - keeps two
+ *  same-pitch notes as two steps that each carry their own state.
+ */
+std::vector<std::size_t> runOrder(const std::vector<Note>& voices, const QString& pattern)
 {
-	std::sort(keys.begin(), keys.end());
-	if (pattern == QLatin1String("down")) { std::reverse(keys.begin(), keys.end()); }
-	if (pattern == QLatin1String("updown") && keys.size() > 2) { keys.insert(keys.end(), keys.rbegin() + 1, keys.rend() - 1); }
-	return keys;
+	std::vector<std::size_t> order(voices.size());
+	for (std::size_t i = 0; i < voices.size(); ++i) { order[i] = i; }
+	std::stable_sort(order.begin(), order.end(),
+		[&voices](std::size_t a, std::size_t b) { return voices[a].key() < voices[b].key(); });
+	if (pattern == QLatin1String("down")) { std::reverse(order.begin(), order.end()); }
+	if (pattern == QLatin1String("updown") && order.size() > 2)
+	{
+		const std::vector<std::size_t> down = order;
+		order.insert(order.end(), down.rbegin() + 1, down.rend() - 1);
+	}
+	return order;
 }
 
 ControlResult arpeggiate(const QJsonObject& args)
@@ -102,19 +116,18 @@ ControlResult arpeggiate(const QJsonObject& args)
 	for (auto& [start, chord] : chords)
 	{
 		tick_t length = 0;
-		std::vector<int> keys;
-		std::map<int, Note> voices;  // each key plays as its own note did: velocity, pan, probability, mute...
+		std::vector<Note> voices;  // each chord member plays as its own note did: velocity, pan, probability, mute...
+		voices.reserve(static_cast<std::size_t>(chord.size()));
 		for (const Note* note : chord)
 		{
 			length = std::max<tick_t>(length, note->length().getTicks());
-			keys.push_back(note->key());
-			voices.emplace(note->key(), *note);
+			voices.push_back(*note);
 		}
 		for (Note* note : chord) { clip->removeNote(note); }
-		const std::vector<int> order = runOrder(keys, args.value(QStringLiteral("pattern")).toString(QStringLiteral("up")));
+		const std::vector<std::size_t> order = runOrder(voices, args.value(QStringLiteral("pattern")).toString(QStringLiteral("up")));
 		for (tick_t at = 0, i = 0; at < length; at += rate, ++i)
 		{
-			Note& step = voices.at(order[static_cast<std::size_t>(i) % order.size()]);
+			Note step = voices[order[static_cast<std::size_t>(i) % order.size()]];
 			step.setPos(TimePos(start + at));
 			step.setLength(TimePos(std::min(rate, length - at)));
 			clip->addNote(step, false);
@@ -132,7 +145,19 @@ ControlResult flam(const QJsonObject& args)
 	MidiClip* clip = scopedNotes(args, &ref, &notes, &error);
 	if (clip == nullptr) { return error; }
 	const tick_t offset = std::max(1, args.value(QStringLiteral("offset")).toInt(3));
-	const double ratio = std::clamp(args.value(QStringLiteral("velocity")).toDouble(0.6), 0.05, 1.0);
+	// Luna cluster 5694: the ratio was std::clamp-ed into 0.05..1.0 and the call still
+	// answered ok, so `velocity: 2` reported success while writing a value the caller
+	// never asked for. The args schema is a bare number (it is in the
+	// ControlCommandsSnapshot canary and may not change), so the range is refused HERE -
+	// the same handler-side refusal as 4e288ecb5.
+	const double ratio = args.contains(QStringLiteral("velocity"))
+		? args.value(QStringLiteral("velocity")).toDouble(0.6) : 0.6;
+	if (ratio < 0.05 || ratio > 1.0)
+	{
+		return ControlResult::failure(ControlErrorKind::InvalidArgs,
+			QStringLiteral("'velocity' is %1: the grace notes' velocity ratio must be 0.05..1.0")
+				.arg(ratio));
+	}
 	if (std::none_of(notes.begin(), notes.end(), [offset](const Note* note) { return note->pos().getTicks() >= offset; }))
 	{
 		// No note has room for a grace note: nothing changes, so no undo step.
@@ -198,6 +223,21 @@ ControlResult repeatNotes(const QJsonObject& args)
 	if (clip == nullptr) { return error; }
 	const int count = std::clamp(args.value(QStringLiteral("count")).toInt(3), 1, 64);
 	const tick_t interval = std::max(1, args.value(QStringLiteral("interval")).toInt(48));
+	// Luna cluster 2883: the copies' positions were formed with no range check and
+	// MidiClip::addNote validates none, so a note at the right edge of the song produced
+	// notes ending past MaxSongLength - while the reply still counted every one of them.
+	// The farthest copy is the LAST one (i == count), so one check per note covers them
+	// all; the sum is done in qint64, as checkNewEndPosition() does.
+	for (const Note* note : notes)
+	{
+		const qint64 farthest = static_cast<qint64>(note->pos().getTicks())
+			+ static_cast<qint64>(count) * static_cast<qint64>(interval);
+		if (farthest + static_cast<qint64>(note->length().getTicks()) <= static_cast<qint64>(MaxSongLength)) { continue; }
+		return ControlResult::failure(ControlErrorKind::InvalidArgs,
+			QStringLiteral("a repeat of the note at %1 would end at %2, past the song limit of %3")
+				.arg(note->pos().getTicks()).arg(farthest + note->length().getTicks())
+				.arg(static_cast<qint64>(MaxSongLength)));
+	}
 	clip->addJournalCheckPoint();
 	for (const Note* note : notes)
 	{
@@ -221,11 +261,20 @@ ControlResult rotate(const QJsonObject& args)
 	if (clip == nullptr) { return error; }
 	// The span the clip plays: a clip trimmed on the left plays only up to length - startTimeOffset, so a wrap past
 	// it would park notes where they never sound (review W3-batchB #3).
-	const tick_t length = std::max<tick_t>(1, clip->length().getTicks() - clip->startTimeOffset().getTicks());
+	// Luna cluster 4856: the wrap was taken from ZERO, so a left-trimmed clip rotated its
+	// notes into the trimmed region - a note at tick 70 with a 20-tick offset and a 20-tick
+	// rotation wrapped to tick 10, which the clip never plays. The span is measured from
+	// startTimeOffset() and the offset added back, so every note stays inside the audible region.
+	const tick_t offset = clip->startTimeOffset().getTicks();
+	const tick_t length = std::max<tick_t>(1, clip->length().getTicks() - offset);
 	const tick_t amount = args.value(QStringLiteral("amount")).toInt();
 	if (amount % length == 0) { return ControlResult::success({{QStringLiteral("clip"), clipId(ref.id)}, {QStringLiteral("rotated"), 0}}); }
 	clip->addJournalCheckPoint();
-	for (Note* note : notes) { note->setPos(TimePos(((note->pos().getTicks() + amount) % length + length) % length)); }
+	for (Note* note : notes)
+	{
+		const tick_t relative = note->pos().getTicks() - offset;
+		note->setPos(TimePos(offset + ((relative + amount) % length + length) % length));
+	}
 	return ControlResult::success(finish(ref, clip, QStringLiteral("note.rotate"), {{QStringLiteral("rotated"), notes.size()}}));
 }
 
@@ -259,20 +308,44 @@ ControlResult generate(const QJsonObject& args)
 	MidiClip* clip = resolveMidiClip(args.value(QStringLiteral("clip")).toString(), &ref, &error);
 	if (clip == nullptr) { return error; }
 	const int steps = std::clamp(args.value(QStringLiteral("steps")).toInt(16), 1, 128);
+	// Luna cluster 5693: `pulses` was independently clamped to `steps`, so a request that
+	// passes the schema with more pulses than steps succeeded having quietly asked for
+	// fewer. The schema takes pulses 0..128 (the ControlCommandsSnapshot canary), so the
+	// impossible combination is refused HERE, the way cf5504f80 does for note.flam's velocity.
+	if (args.value(QStringLiteral("pulses")).toInt(5) > steps)
+	{
+		return ControlResult::failure(ControlErrorKind::InvalidArgs,
+			QStringLiteral("'pulses' is %1, more than the %2 steps asked for: a step cannot "
+				"carry more than one pulse").arg(args.value(QStringLiteral("pulses")).toInt(5)).arg(steps));
+	}
 	const int pulses = std::clamp(args.value(QStringLiteral("pulses")).toInt(5), 0, steps);
 	const tick_t step = std::max(1, args.value(QStringLiteral("step")).toInt(12));
 	const bool random = args.value(QStringLiteral("kind")).toString() == QLatin1String("random");
 	std::mt19937 rng(static_cast<unsigned>(args.value(QStringLiteral("seed")).toInt(1)));
 	if (pulses == 0) { return ControlResult::success({{QStringLiteral("clip"), clipId(ref.id)}, {QStringLiteral("added"), 0}}); }  // no step to add
-	const std::vector<bool> hits = euclid(steps, pulses, args.value(QStringLiteral("rotate")).toInt(0));
+	// Luna cluster 1154: the checkpoint was taken before the random draw, and a draw that hits
+	// nothing - which it can, at 1 pulse over 128 steps - still answered ok, so a roll that
+	// wrote no note pushed an undo step. The hit set is decided first; the checkpoint follows it.
+	std::vector<bool> on = euclid(steps, pulses, args.value(QStringLiteral("rotate")).toInt(0));
+	if (random)
+	{
+		on.assign(static_cast<std::size_t>(steps), false);
+		for (int i = 0; i < steps; ++i)
+		{
+			on[static_cast<std::size_t>(i)] = std::uniform_int_distribution<int>(0, steps - 1)(rng) < pulses;
+		}
+	}
+	if (std::none_of(on.begin(), on.end(), [](bool hit) { return hit; }))
+	{
+		return ControlResult::success({{QStringLiteral("clip"), clipId(ref.id)}, {QStringLiteral("added"), 0}});
+	}
 	Note note(TimePos(step), TimePos(0), args.value(QStringLiteral("key")).toInt(DefaultKey),
 		static_cast<volume_t>(args.value(QStringLiteral("velocity")).toInt(DefaultVolume)));
 	clip->addJournalCheckPoint();
 	int made = 0;
 	for (int i = 0; i < steps; ++i)
 	{
-		const bool on = random ? std::uniform_int_distribution<int>(0, steps - 1)(rng) < pulses : hits[static_cast<std::size_t>(i)];
-		if (!on) { continue; }
+		if (!on[static_cast<std::size_t>(i)]) { continue; }
 		note.setPos(TimePos(i * step));
 		clip->addNote(note, false);
 		++made;

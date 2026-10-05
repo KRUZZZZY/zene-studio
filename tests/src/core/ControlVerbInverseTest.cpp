@@ -44,6 +44,8 @@
 
 #include <QtTest>
 
+#include <limits>
+
 #include <QDir>
 #include <QJsonObject>
 #include <QStringList>
@@ -282,6 +284,23 @@ private slots:
 				{QStringLiteral("probability"), -0.25}});
 		QVERIFY2(!tooSmall.ok, "a negative probability must be refused, not clamped");
 		QCOMPARE(tooSmall.errorKind, ControlErrorKind::InvalidArgs);
+
+		// Luna cluster 2858: a NONFINITE probability. NaN compares false against
+		// BOTH bounds, so a range test written as two comparisons lets it through -
+		// and Note::setProbability's std::clamp(NaN, 0, 1) returns NaN unchanged,
+		// so the note would keep a nonfinite probability the roll then reads.
+		const ControlResult notANumber = run(QStringLiteral("note.probability_set"),
+			QJsonObject{{QStringLiteral("clip"), fixture.clip},
+				{QStringLiteral("note"), fixture.note},
+				{QStringLiteral("probability"), std::numeric_limits<double>::quiet_NaN()}});
+		QVERIFY2(!notANumber.ok, "a NaN probability must be refused, not stored");
+		QCOMPARE(notANumber.errorKind, ControlErrorKind::InvalidArgs);
+		const ControlResult infinite = run(QStringLiteral("note.probability_set"),
+			QJsonObject{{QStringLiteral("clip"), fixture.clip},
+				{QStringLiteral("note"), fixture.note},
+				{QStringLiteral("probability"), std::numeric_limits<double>::infinity()}});
+		QVERIFY2(!infinite.ok, "an infinite probability must be refused, not stored");
+		QCOMPARE(infinite.errorKind, ControlErrorKind::InvalidArgs);
 	}
 
 	//! render.stems' argument contract, proved WITHOUT running a render: every

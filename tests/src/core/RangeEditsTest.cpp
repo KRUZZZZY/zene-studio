@@ -188,6 +188,39 @@ private slots:
 		QVERIFY(ran.result.value(QStringLiteral("refused")).toArray().isEmpty());
 	}
 
+	//! Luna cluster 4890: a checkpointed range edit advertised ITSELF with empty args as its
+	//! inverse, so replaying range.delete's inverse deleted again instead of putting the clips
+	//! back. The inverse a client can actually replay is control.undo.
+	void aRangeEditAdvertisesControlUndoAsItsInverse()
+	{
+		QVERIFY(run(QStringLiteral("range.delete")).ok);
+		const ControlRegistry::Transaction* recorded = ControlRegistry::instance()->lastTransaction();
+		QVERIFY(recorded != nullptr);
+		QCOMPARE(recorded->inverse.value(QStringLiteral("op")).toString(), QStringLiteral("control.undo"));
+		const ControlResult replay = run(recorded->inverse.value(QStringLiteral("op")).toString(),
+			recorded->inverse.value(QStringLiteral("args")).toObject());
+		QVERIFY2(replay.ok, qPrintable(replay.errorMessage));
+		QVERIFY(replay.result.value(QStringLiteral("undone")).toBool());
+		QCOMPARE(spans(m_track), (QList<QPair<int, int>>{{0, 3 * Bar}}));
+	}
+
+	//! Luna cluster 4897: a sample clip that spans the WHOLE range has neither edge inside it, so
+	//! range.fade changes none of its fade lengths - it must not be counted as faded.
+	void fadeOverAClipSpanningTheWholeRangeIsNotCounted()
+	{
+		auto* sampleTrack = new SampleTrack(Engine::getSong());
+		auto* sample = dynamic_cast<SampleClip*>(sampleTrack->createClip(TimePos(0)));
+		QVERIFY(sample != nullptr);
+		sample->changeLength(TimePos(3 * Bar));
+		QVERIFY(run(QStringLiteral("range.set"), {{QStringLiteral("start"), Bar}, {QStringLiteral("end"), 2 * Bar},
+			{QStringLiteral("tracks"), QJsonArray{control::trackIdOf(sampleTrack)}}}).ok);
+		const ControlResult faded = run(QStringLiteral("range.fade"));
+		QVERIFY2(faded.ok, qPrintable(faded.errorMessage));
+		QCOMPARE(faded.result.value(QStringLiteral("faded")).toInt(), 0);
+		QCOMPARE(sample->clipEdits().fadeInTicks, 0);
+		QCOMPARE(sample->clipEdits().fadeOutTicks, 0);
+	}
+
 	void splitClipAtRefusesTheEdges()
 	{
 		Clip* clip = m_track->getClips().front();

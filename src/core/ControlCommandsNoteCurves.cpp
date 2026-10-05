@@ -86,8 +86,10 @@ bool readCurve(const QJsonArray& json, bool relative, std::vector<CurvePoint>* p
 		const QJsonObject point = value.toObject();
 		const double at = point.value(QStringLiteral("tick")).toDouble(-1.0);
 		const double semitones = point.value(QStringLiteral("semitones")).toDouble(1e9);
-		// An absolute tick past the longest song would overflow the rounding to ticks.
-		if (at < 0.0 || at > (relative ? 1.0 : static_cast<double>(MaxSongLength)) || std::abs(semitones) > MaxDetuning)
+		// Every comparison against NaN is false, so a nonfinite value slipped past the ranges below
+		// and reached std::lround. Qt's QJsonValue holds a NaN, so it can be handed one.
+		if (!std::isfinite(at) || !std::isfinite(semitones) || at < 0.0
+			|| at > (relative ? 1.0 : static_cast<double>(MaxSongLength)) || std::abs(semitones) > MaxDetuning)
 		{
 			*error = ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("a point needs tick 0..%2 from the note's "
 				"start (0..1 of its length with 'relative') and |semitones| <= %1").arg(MaxDetuning).arg(MaxSongLength));

@@ -123,7 +123,12 @@ ControlResult across(const QJsonObject& args)
 	{
 		const ControlResult done = command->handler(call);
 		QJsonObject row{{QStringLiteral("clip"), call.value(QStringLiteral("clip"))}, {QStringLiteral("ok"), done.ok}};
-		if (done.ok) { ++edited; } else { row.insert(QStringLiteral("error"), done.errorMessage); }
+		// A handler that succeeded WITHOUT changing anything left no journal checkpoint and
+		// described no transaction (note.restore_timing over notes that keep no original timing
+		// answers 'restored: 0'). Counting it as an edit would report clips as edited and return a
+		// control.undo transaction that no undo step backs - replaying it would undo something else.
+		if (done.ok && done.result.contains(QStringLiteral("__transaction"))) { ++edited; }
+		else if (!done.ok) { row.insert(QStringLiteral("error"), done.errorMessage); }
 		results.append(row);
 	}
 	if (edited == 0) { return ControlResult::failure(ControlErrorKind::NotFound, QStringLiteral("%1 changed none of the clips").arg(id)); }

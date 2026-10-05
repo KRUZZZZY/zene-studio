@@ -69,7 +69,14 @@ inline QJsonObject finish(const ClipRef& ref, MidiClip* clip, const QString& com
 	if (clip->linkId() > 0) { ClipLinks::mirrorContent(clip); }
 	Engine::getSong()->setModified();
 	result.insert(QStringLiteral("clip"), clipId(ref.id));
-	result.insert(QStringLiteral("__transaction"), transactionPayload({{QStringLiteral("clip"), clipId(ref.id)}}, command, {},
+	// Luna cluster 4806: the inverse named the command itself with EMPTY args, so replaying
+	// it failed validation for every command that requires one (`clip` and `notes` above all):
+	// the advertised pair could never be executed. The journal checkpoint IS the inverse here,
+	// so it is control.undo that undoes the edit - and control.undo takes no arguments at all
+	// (cmd.argsSchema = objectSchema(), ControlCommandsControl.cpp), which is exactly the pair
+	// that validates and runs.
+	result.insert(QStringLiteral("__transaction"), transactionPayload({{QStringLiteral("clip"), clipId(ref.id)}},
+		QStringLiteral("control.undo"), QJsonObject(),
 		true, QStringLiteral("MidiClip journal checkpoint: undo restores every note")));
 	return result;
 }
