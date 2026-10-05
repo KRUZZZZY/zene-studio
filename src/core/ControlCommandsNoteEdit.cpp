@@ -154,6 +154,32 @@ bool checkEditValues(const QJsonObject& entry, int index, ControlResult* error)
 	return true;
 }
 
+//! The note's END must stay inside the supported range too: position and length are each
+//! checked on their own, so without their sum a note could be written past MaxSongLength.
+//! The addition itself is done in a wider type than tick_t.
+bool checkEndPosition(const QJsonObject& entry, const Note* note, int index, ControlResult* error)
+{
+	const qint64 end = static_cast<qint64>(entry.value(QStringLiteral("position")).toInt(note->pos().getTicks()))
+		+ static_cast<qint64>(entry.value(QStringLiteral("length")).toInt(note->length().getTicks()));
+	if (end <= static_cast<qint64>(MaxSongLength)) { return true; }
+	*error = ControlResult::failure(ControlErrorKind::InvalidArgs,
+		QStringLiteral("edits[%1] ends at %2, past the song limit of %3")
+			.arg(index).arg(end).arg(static_cast<qint64>(MaxSongLength)));
+	return false;
+}
+
+//! A pass mask means nothing without a pattern length - the note's own, or one given beside it.
+bool checkRecurPattern(const QJsonObject& entry, const Note* note, int index, ControlResult* error)
+{
+	if (entry.value(QStringLiteral("recur_mask")).toInt() == 0
+		|| entry.value(QStringLiteral("recur_length")).toInt(note->conditions().recurLength) != 0)
+	{
+		return true;
+	}
+	*error = ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("edits[%1].recur_mask needs a recur_length").arg(index));
+	return false;
+}
+
 //! Resolve and validate the whole batch; nothing is written unless every entry passes.
 bool resolveEdits(MidiClip* clip, const QJsonArray& edits, std::vector<Edit>* out, ControlResult* error)
 {
@@ -173,12 +199,11 @@ bool resolveEdits(MidiClip* clip, const QJsonArray& edits, std::vector<Edit>* ou
 		int index = -1;
 		Note* note = resolveNote(clip, entry.value(QStringLiteral("note")).toString(), &index, error);
 		if (note == nullptr || !checkEditValues(entry, i, error)) { return false; }
-		// A pass mask means nothing without a pattern length - the note's own, or one given beside it.
-		if (entry.value(QStringLiteral("recur_mask")).toInt() != 0 && entry.value(QStringLiteral("recur_length")).toInt(note->conditions().recurLength) == 0)
-		{
-			*error = ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("edits[%1].recur_mask needs a recur_length").arg(i));
-			return false;
-		}
+		// The note's END must stay inside the supported range too: position and length
+		// are each checked on their own, so without their sum a note could be written
+		// past MaxSongLength. A wider type than tick_t for the addition itself.
+		if (!checkEndPosition(entry, note, i, error)) { return false; }
+		if (!checkRecurPattern(entry, note, i, error)) { return false; }
 		out->push_back({note, entry});
 	}
 	return true;
