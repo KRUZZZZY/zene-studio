@@ -1362,9 +1362,14 @@ MixerRoute * Mixer::createChannelSend( mix_ch_t fromChannel, mix_ch_t toChannel,
 	{
 		if (send->receiver() == to)
 		{
+			// Luna cluster 5157: preFader is a plain field the render thread
+			// reads, so an update takes the same change-mutex boundary
+			// createRoute() does.
+			Engine::audioEngine()->requestChangeInModel();
 			// simply adjust the amount
 			send->amount()->setValue(amount);
 			send->setPreFader(routePreFader);
+			Engine::audioEngine()->doneChangeInModel();
 			return send;
 		}
 	}
@@ -1462,8 +1467,13 @@ MixerSidechainRoute * Mixer::createSidechainSend( mix_ch_t fromChannel,
 	{
 		if( route->receiver() == to )
 		{
+			// Luna cluster 5157: the tap mode is a plain field the render
+			// thread reads, so an update takes the same change-mutex
+			// boundary the creation path below does.
+			Engine::audioEngine()->requestChangeInModel();
 			route->amount()->setValue(amount);
 			route->setMode(mode);
+			Engine::audioEngine()->doneChangeInModel();
 			return route;
 		}
 	}

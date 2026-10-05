@@ -492,6 +492,44 @@ private slots:
 	// D3 - Mixer::createChannel() reallocates m_mixerChannels and the latency
 	// scratch with no guard, while the render thread iterates them.
 	// -----------------------------------------------------------------------
+	// -----------------------------------------------------------------------
+	// Luna cluster 5157: the update-existing-route branches of
+	// createChannelSend() and createSidechainSend() write plain route fields
+	// (preFader, the sidechain tap mode) that the render thread reads, with
+	// no change-mutex boundary - only createRoute() took one. Deterministic
+	// here for the same reason as D3-D5: the period is held open on this
+	// thread and the mutation is asked whether it got through anyway.
+	// -----------------------------------------------------------------------
+	void updatingAnExistingRouteWaitsForTheRenderPeriodToEnd()
+	{
+		Mixer* mixer = Engine::mixer();
+		mixer->clear();
+		while (mixer->numChannels() < 3) { mixer->createChannel(); }
+
+		MixerRoute* send = mixer->createChannelSend(1, 2, 0.5f, true);
+		QVERIFY(send != nullptr);
+		QVERIFY(send->preFader());
+		const bool flippedWhileRendering = escapesTheRenderPeriod(
+			[mixer] { mixer->createChannelSend(1, 2, 0.5f, false); },
+			[send] { return !send->preFader(); });
+		QVERIFY2(!flippedWhileRendering,
+			"createChannelSend() changed an existing send's preFader while a render period was in flight (5157)");
+		QVERIFY2(!send->preFader(),
+			"the pre-fader change never landed after the render period ended");
+		QCOMPARE(send->amount()->value(), 0.5f);
+
+		MixerSidechainRoute* sidechain = mixer->createSidechainSend(1, 2, 0.5f, SidechainTapPoint::PostFader);
+		QVERIFY(sidechain != nullptr);
+		QCOMPARE(sidechain->mode(), SidechainTapPoint::PostFader);
+		const bool movedWhileRendering = escapesTheRenderPeriod(
+			[mixer] { mixer->createSidechainSend(1, 2, 0.5f, SidechainTapPoint::PreFx); },
+			[sidechain] { return sidechain->mode() == SidechainTapPoint::PreFx; });
+		QVERIFY2(!movedWhileRendering,
+			"createSidechainSend() changed an existing route's mode while a render period was in flight (5157)");
+		QVERIFY2(sidechain->mode() == SidechainTapPoint::PreFx,
+			"the tap-point change never landed after the render period ended");
+	}
+
 	void creatingAChannelIsSerialisedWithTheRenderPeriod()
 	{
 		Mixer* mixer = Engine::mixer();
