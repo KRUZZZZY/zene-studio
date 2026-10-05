@@ -818,6 +818,134 @@ private slots:
 			"the mixed track's notes were dropped when the model was applied");
 	}
 
+//! Luna cluster 5062: Project.xsd makes <Application> use="required", and the
+	//! reader's own header claims a document without one is REFUSED. It only
+	//! tracked <Project>, so `<Project version="1.0"/>` read successfully and
+	//! produced a model with an empty application name.
+	void aDocumentWithoutTheRequiredApplicationIsRefused()
+	{
+		DawProjectModel model;
+		DawProjectReadReport report;
+		QString error;
+		QVERIFY2(!dawProjectModelFromXml(QByteArray("<Project version=\"1.0\"/>"),
+			&model, &report, &error),
+			"a document with no <Application> was accepted with an empty application name");
+		QVERIFY2(error.contains(QStringLiteral("Application")),
+			"the refusal does not name the element that is missing");
+
+		// The positive half: the same document WITH the element reads.
+		QVERIFY2(dawProjectModelFromXml(QByteArray(
+			"<Project version=\"1.0\"><Application name=\"Probe\" version=\"1\"/></Project>"),
+			&model, &report, &error), qPrintable(error));
+		QCOMPARE(model.applicationName, QStringLiteral("Probe"));
+	}
+
+	//! Luna cluster 3098: a numerator or denominator the engine cannot use (zero,
+	//! negative, or a denominator that is not a power of two) was carried into the
+	//! model as-is and reached the session, where it is an unusable metre.
+	void invalidTimeSignaturesAreRefused()
+	{
+		const QString prefix =
+			QStringLiteral("<Project version=\"1.0\">"
+			"<Application name=\"Probe\" version=\"1\"/>"
+			"<Transport><Tempo value=\"120\"/><TimeSignature numerator=\"%1\" denominator=\"%2\"/>"
+			"</Transport></Project>");
+
+		const QList<QPair<int, int>> invalid = {
+			{0, 4}, {4, 0}, {-3, 4}, {4, -4}, {40, 4}, {4, 3}
+		};
+		for (const auto& signature : invalid)
+		{
+			const QByteArray xml = prefix
+				.arg(signature.first).arg(signature.second).toLatin1();
+			DawProjectModel model;
+			DawProjectReadReport report;
+			QString error;
+			QVERIFY2(!dawProjectModelFromXml(xml, &model, &report, &error),
+				qPrintable(QStringLiteral("the meter %1/%2 was accepted")
+					.arg(signature.first).arg(signature.second)));
+		}
+
+		// The positive half: every meter the engine supports still reads.
+		for (int denominator = 1; denominator <= 32; denominator *= 2)
+		{
+			const QByteArray xml = prefix.arg(3).arg(denominator).toLatin1();
+			DawProjectModel model;
+			DawProjectReadReport report;
+			QString error;
+			QVERIFY2(dawProjectModelFromXml(xml, &model, &report, &error), qPrintable(error));
+			QCOMPARE(model.numerator, 3);
+			QCOMPARE(model.denominator, denominator);
+		}
+
+		// And the same rule on a <TimeSignaturePoint> inside the automation.
+		const QByteArray meterPoint =
+			"<Project version=\"1.0\">"
+			"<Application name=\"Probe\" version=\"1\"/>"
+			"<Transport><Tempo value=\"120\"/></Transport>"
+			"<Arrangement><TimeSignatureAutomation timeUnit=\"beats\">"
+			"<TimeSignaturePoint time=\"0\" numerator=\"4\" denominator=\"7\"/>"
+			"</TimeSignatureAutomation></Arrangement></Project>";
+		DawProjectModel pointModel;
+		DawProjectReadReport pointReport;
+		QString pointError;
+		QVERIFY2(!dawProjectModelFromXml(meterPoint, &pointModel, &pointReport, &pointError),
+			"an automation metre point with denominator 7 was accepted");
+	}
+
+	//! Luna cluster 3097: a numeric attribute that is PRESENT but malformed is not
+	//! an absent optional attribute. `<Tempo value="oops"/>` used to read as the
+	//! 120 BPM default, so a document the engine would refuse arrived as a
+	//! supported tempo.
+	void malformedNumericAttributesAreRefused()
+	{
+		const QString tempo =
+			QStringLiteral("<Project version=\"1.0\">"
+			"<Application name=\"Probe\" version=\"1\"/>"
+			"<Transport><Tempo value=\"%1\"/></Transport></Project>");
+		for (const char* value : {"oops", "1.2.3", "12x"})
+		{
+			DawProjectModel model;
+			DawProjectReadReport report;
+			QString error;
+			QVERIFY2(!dawProjectModelFromXml(tempo.arg(QLatin1String(value)).toLatin1(),
+				&model, &report, &error),
+				qPrintable(QStringLiteral("a malformed tempo value \"%1\" was read as the default")
+					.arg(QLatin1String(value))));
+		}
+
+		// A malformed integer, on the metre and on a note's key: same rule.
+		const QByteArray malformedInteger =
+			"<Project version=\"1.0\">"
+			"<Application name=\"Probe\" version=\"1\"/>"
+			"<Transport><Tempo value=\"120\"/>"
+			"<TimeSignature numerator=\"four\" denominator=\"4\"/></Transport></Project>";
+		DawProjectModel model;
+		DawProjectReadReport report;
+		QString error;
+		QVERIFY2(!dawProjectModelFromXml(malformedInteger, &model, &report, &error),
+			"a malformed metre numerator was read as the 4/4 default");
+
+		const QByteArray malformedKey =
+			"<Project version=\"1.0\">"
+			"<Application name=\"Probe\" version=\"1\"/>"
+			"<Transport><Tempo value=\"120\"/></Transport>"
+			"<Structure><Track id=\"t1\" name=\"T\" contentType=\"notes\">"
+			"<Channel id=\"c1\"/></Track></Structure>"
+			"<Arrangement><Lanes><Lanes track=\"t1\"><Clips>"
+			"<Clip time=\"0\" duration=\"4\"><Notes>"
+			"<Note time=\"0\" duration=\"1\" channel=\"0\" key=\"sixty\" vel=\"0.8\"/>"
+			"</Notes></Clip></Clips></Lanes></Lanes></Arrangement></Project>";
+		DawProjectModel keyModel;
+		DawProjectReadReport keyReport;
+		QString keyError;
+		QVERIFY2(!dawProjectModelFromXml(malformedKey, &keyModel, &keyReport, &keyError),
+			"a malformed note key was read as the default 60");
+	}
+
+	//! Luna cluster 5064: an automation point's time is a beat like any other, so
+	//! it goes through the same bounded tick conversion - and is counted in
+	//! `rounded_times` when it is not on the 48-tick grid - instead of being kept
 	//! as the raw beats while notes and clips are snapped.
 	void automationPointTimesUseTheTickGridAndCountRounding()
 	{
@@ -879,104 +1007,9 @@ private slots:
 			"the off-grid metre point time was not normalised through the tick grid");
 	}
 
-	//! model as-is and reached the session, where it is an unusable metre.
-	void invalidTimeSignaturesAreRefused()
-	{
-		const QString prefix =
-			QStringLiteral("<Project version=\"1.0\">"
-			"<Application name=\"Probe\" version=\"1\"/>"
-			"<Transport><Tempo value=\"120\"/><TimeSignature numerator=\"%1\" denominator=\"%2\"/>"
-			"</Transport></Project>");
-
-		const QList<QPair<int, int>> invalid = {
-			{0, 4}, {4, 0}, {-3, 4}, {4, -4}, {40, 4}, {4, 3}
-		};
-		for (const auto& signature : invalid)
-		{
-			const QByteArray xml = prefix
-				.arg(signature.first).arg(signature.second).toLatin1();
-			DawProjectModel model;
-			DawProjectReadReport report;
-			QString error;
-			QVERIFY2(!dawProjectModelFromXml(xml, &model, &report, &error),
-				qPrintable(QStringLiteral("the meter %1/%2 was accepted")
-					.arg(signature.first).arg(signature.second)));
-		}
-
-		// The positive half: every meter the engine supports still reads.
-		for (int denominator = 1; denominator <= 32; denominator *= 2)
-		{
-			const QByteArray xml = prefix.arg(3).arg(denominator).toLatin1();
-			DawProjectModel model;
-			DawProjectReadReport report;
-			QString error;
-			QVERIFY2(dawProjectModelFromXml(xml, &model, &report, &error), qPrintable(error));
-			QCOMPARE(model.numerator, 3);
-			QCOMPARE(model.denominator, denominator);
-		}
-
-		// And the same rule on a <TimeSignaturePoint> inside the automation.
-		const QByteArray meterPoint =
-			"<Project version=\"1.0\">"
-			"<Application name=\"Probe\" version=\"1\"/>"
-			"<Transport><Tempo value=\"120\"/></Transport>"
-			"<Arrangement><TimeSignatureAutomation timeUnit=\"beats\">"
-			"<TimeSignaturePoint time=\"0\" numerator=\"4\" denominator=\"7\"/>"
-			"</TimeSignatureAutomation></Arrangement></Project>";
-		DawProjectModel pointModel;
-		DawProjectReadReport pointReport;
-		QString pointError;
-		QVERIFY2(!dawProjectModelFromXml(meterPoint, &pointModel, &pointReport, &pointError),
-			"an automation metre point with denominator 7 was accepted");
-	}
-
-	//! supported tempo.
-	void malformedNumericAttributesAreRefused()
-	{
-		const QString tempo =
-			QStringLiteral("<Project version=\"1.0\">"
-			"<Application name=\"Probe\" version=\"1\"/>"
-			"<Transport><Tempo value=\"%1\"/></Transport></Project>");
-		for (const char* value : {"oops", "1.2.3", "12x"})
-		{
-			DawProjectModel model;
-			DawProjectReadReport report;
-			QString error;
-			QVERIFY2(!dawProjectModelFromXml(tempo.arg(QLatin1String(value)).toLatin1(),
-				&model, &report, &error),
-				qPrintable(QStringLiteral("a malformed tempo value \"%1\" was read as the default")
-					.arg(QLatin1String(value))));
-		}
-
-		// A malformed integer, on the metre and on a note's key: same rule.
-		const QByteArray malformedInteger =
-			"<Project version=\"1.0\">"
-			"<Application name=\"Probe\" version=\"1\"/>"
-			"<Transport><Tempo value=\"120\"/>"
-			"<TimeSignature numerator=\"four\" denominator=\"4\"/></Transport></Project>";
-		DawProjectModel model;
-		DawProjectReadReport report;
-		QString error;
-		QVERIFY2(!dawProjectModelFromXml(malformedInteger, &model, &report, &error),
-			"a malformed metre numerator was read as the 4/4 default");
-
-		const QByteArray malformedKey =
-			"<Project version=\"1.0\">"
-			"<Application name=\"Probe\" version=\"1\"/>"
-			"<Transport><Tempo value=\"120\"/></Transport>"
-			"<Structure><Track id=\"t1\" name=\"T\" contentType=\"notes\">"
-			"<Channel id=\"c1\"/></Track></Structure>"
-			"<Arrangement><Lanes><Lanes track=\"t1\"><Clips>"
-			"<Clip time=\"0\" duration=\"4\"><Notes>"
-			"<Note time=\"0\" duration=\"1\" channel=\"0\" key=\"sixty\" vel=\"0.8\"/>"
-			"</Notes></Clip></Clips></Lanes></Lanes></Arrangement></Project>";
-		DawProjectModel keyModel;
-		DawProjectReadReport keyReport;
-		QString keyError;
-		QVERIFY2(!dawProjectModelFromXml(malformedKey, &keyModel, &keyReport, &keyError),
-			"a malformed note key was read as the default 60");
-	}
-
+	//! Luna cluster 2232: the Arrangement walk compared `reader.name()` before its
+	//! next readNext(), so a tempo automation following other content parses to
+	//! the end of the document. The case is kept as a guard on that walk, not as
 	//! a claim about a dangling view.
 	void automationPointsAfterOtherContentStillParse()
 	{

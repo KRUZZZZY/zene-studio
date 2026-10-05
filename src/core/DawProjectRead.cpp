@@ -182,6 +182,7 @@ bool parseAutomationPoints(QXmlStreamReader& reader, ReadState& state, bool isMe
 bool parseDocument(QXmlStreamReader& reader, ReadState& state)
 {
 	bool sawProject = false;
+	bool sawApplication = false;
 	while (!reader.atEnd())
 	{
 		reader.readNext();
@@ -207,6 +208,7 @@ bool parseDocument(QXmlStreamReader& reader, ReadState& state)
 			const QXmlStreamAttributes attributes = reader.attributes();
 			state.model->applicationName = attribute(attributes, QStringLiteral("name"));
 			state.model->applicationVersion = attribute(attributes, QStringLiteral("version"));
+			sawApplication = true;
 			if (state.model->applicationName.isEmpty())
 			{
 				state.error = QStringLiteral("<Application> declares no name, which Project.xsd "
@@ -292,6 +294,15 @@ bool parseDocument(QXmlStreamReader& reader, ReadState& state)
 	if (!sawProject)
 	{
 		state.error = QStringLiteral("the project.xml entry has no <Project> root element");
+		return false;
+	}
+	// <Application> is use="required" in Project.xsd, and this reader's own header
+	// claims its absence is a refusal: a model carrying an empty application name
+	// is a document the writer never produced.
+	if (!sawApplication)
+	{
+		state.error = QStringLiteral("the document has no <Application> element, which Project.xsd "
+			"makes required");
 		return false;
 	}
 	// A refusal the nested walks recorded (a seconds <Notes> timeline, a <Clip> with no track, a
