@@ -43,14 +43,20 @@
 #include <QTemporaryDir>
 
 #include <cmath>
+#include <memory>
 
 #include "ArrangementEdits.h"
+#include "AudioEngine.h"
 #include "ControlEdit.h"
 #include "ControlRegistry.h"
 #include "ControlVocabulary.h"
 #include "Effect.h"
 #include "EffectChain.h"
 #include "Engine.h"
+#include "InstrumentPlayHandle.h"
+#include "Instrument.h"
+#include "InstrumentTrack.h"
+#include "InputMonitor.h"
 #include "Mixer.h"
 #include "ProjectInfo.h"
 #include "ReferenceProject.h"
@@ -100,6 +106,17 @@ int indexOfReferenceTrack(const QString& name)
 	}
 	return -1;
 }
+
+class CountedInstrumentHandle : public InstrumentPlayHandle
+{
+public:
+	CountedInstrumentHandle(InstrumentTrack* track, int& destroyed) :
+		InstrumentPlayHandle(track->instrument(), track), m_destroyed(destroyed) {}
+	~CountedInstrumentHandle() override { ++m_destroyed; }
+
+private:
+	int& m_destroyed;
+};
 
 } // namespace
 
@@ -382,6 +399,55 @@ private slots:
 		QCOMPARE(ProjectInfo::instance().documentType(), QStringLiteral("production"));
 		QCOMPARE(run(QStringLiteral("project.new_document"), {{QStringLiteral("type"), QStringLiteral("radio")}}).errorKind,
 			ControlErrorKind::InvalidArgs);
+	}
+
+	void queuedInstrumentHandlesAreRemovedBeforeTheirTrackCanDie()
+	{
+		auto* engine = Engine::audioEngine();
+		const auto guard = engine->requestChangesGuard();
+		auto track = std::make_unique<InstrumentTrack>(Engine::getSong());
+		auto other = std::make_unique<InstrumentTrack>(Engine::getSong());
+		QCOMPARE(track->loadInstrument(QStringLiteral("tripleoscillator"))->nodeName(), QStringLiteral("tripleoscillator"));
+		QCOMPARE(other->loadInstrument(QStringLiteral("tripleoscillator"))->nodeName(), QStringLiteral("tripleoscillator"));
+		int destroyed = 0;
+		int otherDestroyed = 0;
+		// Both handles are guaranteed still to be in the staging list: the
+		// model guard prevents the audio device from beginning another period.
+		QVERIFY(engine->addPlayHandle(new CountedInstrumentHandle(track.get(), destroyed)));
+		QVERIFY(engine->addPlayHandle(new CountedInstrumentHandle(other.get(), otherDestroyed)));
+		engine->removePlayHandlesOfTypes(track.get(), PlayHandle::Type::NotePlayHandle);
+		const int afterNoteRemoval = destroyed;
+		engine->removePlayHandlesOfTypes(track.get(), PlayHandle::Type::InstrumentPlayHandle);
+		const int beforeRender = destroyed;
+		const int otherBeforeRender = otherDestroyed;
+		// Clean up the baseline's survivor while its instrument remains alive,
+		// so a failed assertion records the omission without leaving a crash.
+		engine->renderNextPeriod();
+		track->silenceAllNotes(true);
+		other->silenceAllNotes(true);
+		QCOMPARE(afterNoteRemoval, 0);
+		QCOMPARE(beforeRender, 1);
+		QCOMPARE(otherBeforeRender, 0);
+		QCOMPARE(destroyed, 1);
+		QCOMPARE(otherDestroyed, 1);
+	}
+
+	void switchingMonitoringOffRemovesAHandleQueuedInTheSamePeriod()
+	{
+		auto* engine = Engine::audioEngine();
+		const auto guard = engine->requestChangesGuard();
+		auto track = std::make_unique<SampleTrack>(Engine::getSong());
+		track->setMonitorMode(MonitorMode::In);
+		InputMonitorHandle* pending = track->monitorHandle();
+		QVERIFY(pending != nullptr);
+		track->setMonitorMode(MonitorMode::Off);
+		QVERIFY(track->monitorHandle() == nullptr);
+		engine->renderNextPeriod();
+		const bool survived = engine->playHandles().contains(pending);
+		// A baseline survivor is silent with monitoring Off; remove it from the
+		// active list before checking, while its track still exists.
+		engine->removePlayHandlesOfTypes(track.get(), PlayHandle::Type::InputMonitorHandle);
+		QVERIFY2(!survived, "monitoring Off left a staged monitor in the render list");
 	}
 
 private:
