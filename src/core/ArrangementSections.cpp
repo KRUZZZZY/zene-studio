@@ -65,6 +65,9 @@ int ArrangementSections::add(tick_t start, tick_t end, const QString& name, cons
 
 bool ArrangementSections::replace(int id, const ArrangementSection& section)
 {
+	// The same span add() insists on: a section runs from a start at or after the song's beginning
+	// to a later end, or there is nothing to draw or select.
+	if (section.start < 0 || section.end <= section.start) { return false; }
 	for (ArrangementSection& each : m_sections)
 	{
 		if (each.id != id) { continue; }

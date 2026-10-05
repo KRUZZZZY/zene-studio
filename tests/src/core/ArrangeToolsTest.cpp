@@ -183,6 +183,29 @@ private slots:
 		QCOMPARE(run(QStringLiteral("section.add"), {{QStringLiteral("start"), 100}, {QStringLiteral("end"), 50}}).errorKind, ControlErrorKind::InvalidArgs);
 	}
 
+	//! A replacement enforces the span checks add() does: a reversed or empty span, or one starting
+	//! before the song, is refused and the stored section is left alone.
+	void aSectionReplacementRefusesAnInvalidSpan()
+	{
+		ArrangementSections& sections = ArrangementSections::instance();
+		const int id = sections.add(0, 768, QStringLiteral("Verse"), QString());
+		QVERIFY(id > 0);
+		ArrangementSection reversed{id, 100, 50, QStringLiteral("Reversed"), QString()};
+		QVERIFY(!sections.replace(id, reversed));   // end before start
+		QCOMPARE(sections.find(id)->end, tick_t{768});
+		ArrangementSection empty{id, 300, 300, QStringLiteral("Empty"), QString()};
+		QVERIFY(!sections.replace(id, empty));     // no span at all
+		QCOMPARE(sections.find(id)->end, tick_t{768});
+		ArrangementSection negative{id, -100, 200, QStringLiteral("Negative"), QString()};
+		QVERIFY(!sections.replace(id, negative));   // starting before the song
+		QCOMPARE(sections.find(id)->start, tick_t{0});
+		ArrangementSection good{id, 192, 960, QStringLiteral("Chorus"), QString()};
+		QVERIFY(sections.replace(id, good));       // a real span still replaces
+		QCOMPARE(sections.find(id)->name, QStringLiteral("Chorus"));
+		QCOMPARE(sections.find(id)->id, id);       // and keeps the id it was found by
+		sections.clear();
+	}
+
 	void aQuietStretchIsCutOut()
 	{
 		auto* track = dynamic_cast<SampleTrack*>(Track::create(Track::Type::Sample, Engine::getSong()));
