@@ -151,6 +151,9 @@ static bool gain_params_get_info(const clap_plugin_t* plugin, uint32_t index, cl
 		info->max_value = 1.0;
 		info->default_value = 0.0;
 		info->flags = CLAP_PARAM_IS_AUTOMATABLE | CLAP_PARAM_IS_STEPPED;
+		/* CLAP_TEST_GAIN_READONLY: Bypass is CLAP_PARAM_IS_READONLY, so a host must not offer an
+		   editable knob for it (its writes are ignored). */
+		if (getenv("CLAP_TEST_GAIN_READONLY") != NULL) { info->flags |= CLAP_PARAM_IS_READONLY; }
 		return true;
 	default:
 		return false;

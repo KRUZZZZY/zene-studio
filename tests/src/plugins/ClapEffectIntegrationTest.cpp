@@ -44,6 +44,7 @@
 #include "BufferManager.h"
 #include "ClapEffect.h"
 #include "ClapEffectControls.h"
+#include "ClapKnobGrid.h"
 #include "ControlRegistry.h"
 #include "EffectChain.h"
 #include "EffectControlDialog.h"
@@ -78,6 +79,7 @@ private slots:
 	void testThePluginsLatencyReachesTheChain();
 	void testThePluginsTailKeepsItRunning();
 	void testParameterRescansRebuildTheModels();
+	void testReadOnlyParametersGetNoKnob();
 
 private:
 	auto makeKey() const -> Plugin::Descriptor::SubPluginFeatures::Key;
@@ -583,6 +585,43 @@ void lmms::ClapEffectIntegrationTest::testParameterRescansRebuildTheModels()
 	AudioBus bus{busData, 1, 48};
 	QVERIFY(chain.processAudioBuffer(bus));
 	QVERIFY2(std::abs(storage[0][0] - 0.25f) < 1e-6f, qPrintable(QString::number(storage[0][0])));
+	chain.clear();
+}
+
+/*! BUGS 1902: a read-only CLAP parameter (CLAP_PARAM_IS_READONLY) ignores every write, so the knob the
+ *  dialog used to build for it moved and snapped back on the next poll. The grid now skips it. */
+void lmms::ClapEffectIntegrationTest::testReadOnlyParametersGetNoKnob()
+{
+	BufferManager::init(48);
+	qputenv("CLAP_TEST_GAIN_READONLY", "1");
+	EffectChain chain{nullptr};
+	const auto key = makeKey();
+	auto* effect = new ClapEffect{&chain, &key};
+	chain.appendEffect(effect);
+	auto* controls = dynamic_cast<ClapEffectControls*>(effect->controls());
+	QVERIFY(controls != nullptr);
+	qunsetenv("CLAP_TEST_GAIN_READONLY");
+	auto* bypass = controls->modelForParam(2);
+	QVERIFY(bypass != nullptr);
+	QVERIFY(bypass->descriptor().readOnly);
+
+	QWidget parent;
+	QGridLayout grid;
+	const auto rows = gui::fillClapKnobGrid(&grid, controls->paramModels(), &parent,
+		QStringLiteral("no parameters"));
+	QCOMPARE(rows, 1);  // one row: only Gain is left
+	auto knobCount = 0;
+	auto* first = static_cast<gui::Knob*>(nullptr);
+	for (int i = 0; i < grid.count(); ++i)
+	{
+		auto* knob = dynamic_cast<gui::Knob*>(grid.itemAt(i)->widget());
+		if (knob == nullptr) { continue; }
+		++knobCount;
+		if (first == nullptr) { first = knob; }
+	}
+	QCOMPARE(knobCount, 1);
+	QVERIFY(first != nullptr);
+	QCOMPARE(first->getLabel(), QStringLiteral("Gain"));
 	chain.clear();
 }
 
