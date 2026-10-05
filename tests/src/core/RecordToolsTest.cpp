@@ -30,6 +30,7 @@
 
 #include <QJsonArray>
 
+#include "AutomationTrack.h"
 #include "Clip.h"
 #include "ControlRegistry.h"
 #include "ControlVocabulary.h"
@@ -184,6 +185,23 @@ private slots:
 		QCOMPARE(track->takeLanes().laneCount(), 3);
 		QVERIFY(run(QStringLiteral("control.undo")).ok);
 		QCOMPARE(track->getClips().size(), std::size_t{1});
+	}
+
+	//! Only a clip comping can hold as a take (an audio or MIDI take, comp.assign's own rule) may be
+	//! cut into passes: splitPasses resolved the clip through the general resolver, so an automation
+	//! clip meeting the loop conditions was cut, moved and tagged with a take lane - lanes whose
+	//! composite can never resolve to it.
+	void splittingPassesRefusesAClipCompingCannotHold()
+	{
+		auto* track = dynamic_cast<AutomationTrack*>(Track::create(Track::Type::Automation, Engine::getSong()));
+		Clip* clip = track->createClip(TimePos(192));
+		clip->changeLength(TimePos(192 * 3));
+		Engine::getSong()->getTimeline(Song::PlayMode::Song).setLoopPoints(TimePos(192), TimePos(384));
+		const ControlResult split = run(QStringLiteral("comp.split_passes"), {{QStringLiteral("clip"), control::clipIdOf(clip)}});
+		QCOMPARE(split.errorKind, ControlErrorKind::Refused);
+		QCOMPARE(track->getClips().size(), std::size_t{1});
+		QCOMPARE(track->getClips()[0]->startPosition().getTicks(), tick_t{192});
+		QCOMPARE(track->takeLanes().laneCount(), 0);
 	}
 
 	void theMetronomesOptions()

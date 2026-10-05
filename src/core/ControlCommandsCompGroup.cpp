@@ -215,7 +215,10 @@ ControlResult splitPasses(const QJsonObject& args)
 {
 	ClipRef ref;
 	ControlResult error;
-	if (!resolveClip(args.value(QStringLiteral("clip")).toString(), &ref, &error)) { return error; }
+	// The take validator, not the general resolver: only an audio or MIDI take can be comped
+	// (comp.assign's own rule, docs/COMPING.md), so cutting an automation or pattern clip into
+	// passes and tagging the pieces with take lanes would produce lanes nothing can resolve to.
+	if (!resolveTakeClip(args.value(QStringLiteral("clip")).toString(), &ref, &error)) { return error; }
 	const Timeline& timeline = Engine::getSong()->getTimeline(Song::PlayMode::Song);
 	const tick_t begin = timeline.loopBegin().getTicks();
 	const tick_t loop = timeline.loopEnd().getTicks() - begin;
