@@ -221,13 +221,14 @@ ControlResult loadKeymap(const QJsonObject& args)
 ControlResult setTuning(const QJsonObject& args)
 {
 	const bool hasFrequencies = args.contains(QStringLiteral("frequencies"));
-	const bool hasPair = args.contains(QStringLiteral("note"))
-		&& args.contains(QStringLiteral("frequency"));
-	if (hasFrequencies == hasPair)
+	const bool hasNote = args.contains(QStringLiteral("note"));
+	const bool hasFrequency = args.contains(QStringLiteral("frequency"));
+	if (hasFrequencies ? (hasNote || hasFrequency) : !(hasNote && hasFrequency))
 	{
 		return ControlResult::failure(ControlErrorKind::InvalidArgs,
 			QStringLiteral("exactly one of 'frequencies' (the whole table) or the pair "
-				"'note' + 'frequency' is required"));
+				"'note' + 'frequency' is required - neither alone, and never alongside "
+				"'frequencies'"));
 	}
 
 	const QJsonObject before = SessionTuning::instance()->stateJson();
