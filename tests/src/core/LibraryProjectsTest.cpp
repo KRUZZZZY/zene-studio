@@ -140,6 +140,42 @@ private slots:
 			{QStringLiteral("kind"), QStringLiteral("video")}}).errorKind, ControlErrorKind::InvalidArgs);
 	}
 
+	//! A damaged store file is a corruption error, not an empty store: before this, readAll()
+	//! dropped readStore's failure, so browser.collections answered success with an empty list
+	//! and collection_run answered "no collection 'X'" for a collection that was on disk.
+	void aDamagedCollectionsFileIsRefusedNotReadAsEmpty()
+	{
+		const QString store = m_dir.filePath(QStringLiteral("collections.json"));
+		QVERIFY(run(QStringLiteral("browser.collection_save"), {{QStringLiteral("name"), QStringLiteral("Snares")},
+			{QStringLiteral("text"), QStringLiteral("name:snare")}}).ok);
+		QFile broken(store);
+		QVERIFY(broken.open(QIODevice::WriteOnly));
+		broken.write("{ this is not json");
+		broken.close();
+
+		const ControlResult listed = run(QStringLiteral("browser.collections"));
+		QVERIFY2(!listed.ok, "a damaged collections file was listed as an empty one");
+		QCOMPARE(listed.errorKind, ControlErrorKind::Refused);
+		QVERIFY2(listed.errorMessage.contains(QStringLiteral("collections.json")), qPrintable(listed.errorMessage));
+
+		const ControlResult ran = run(QStringLiteral("browser.collection_run"), {{QStringLiteral("name"), QStringLiteral("Snares")}});
+		QVERIFY2(!ran.ok, "a saved collection behind a damaged store was reported as missing");
+		QCOMPARE(ran.errorKind, ControlErrorKind::Refused);
+
+		// Writing over the damaged file stays refused (that is what readForEdit is for), so the
+		// repair here is the file itself: hand-edit it back and the collection reads again.
+		QVERIFY(!run(QStringLiteral("browser.collection_save"), {{QStringLiteral("name"), QStringLiteral("Snares")},
+			{QStringLiteral("text"), QStringLiteral("name:snare")}}).ok);
+		QFile repaired(store);
+		QVERIFY(repaired.open(QIODevice::WriteOnly));
+		repaired.write(R"({"Snares":{"text":"name:snare"}})");
+		repaired.close();
+		const ControlResult listedAgain = run(QStringLiteral("browser.collections"));
+		QVERIFY2(listedAgain.ok, qPrintable(listedAgain.errorMessage));
+		QCOMPARE(listedAgain.result.value(QStringLiteral("collections")).toArray().size(), 1);
+		QVERIFY(run(QStringLiteral("browser.collection_remove"), {{QStringLiteral("name"), QStringLiteral("Snares")}}).ok);
+	}
+
 	void aCollectionRunsOverItsRoot()
 	{
 		const QString samples = ConfigManager::inst()->userSamplesDir();
