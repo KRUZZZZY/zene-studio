@@ -31,6 +31,7 @@
 #include <QJsonArray>
 #include <QJsonObject>
 #include <QProcess>
+#include <QTemporaryFile>
 #include <QtEndian>
 
 #include "ControlExportPresetSupport.h"
@@ -96,6 +97,9 @@ QJsonArray renderableFormatNames()
 	}
 	return names;
 }
+
+//! How much of a failed render child's own output a refusal may quote.
+constexpr qint64 RENDER_DIAGNOSTIC = 512;
 
 //! What a RIFF/WAVE header tells us. `-1`/`0` mean "not present".
 struct WavInfo
@@ -282,6 +286,32 @@ QString parseRenderRange(const QJsonObject& args, int* begin, int* end)
 	return QString();
 }
 
+/*! The child's own closing words, for a refusal to quote.
+ *
+ *  The whole tail while it fits RENDER_DIAGNOSTIC characters, because the cause
+ *  and the advice are separate lines - the CLI renderer writes "Could not open
+ *  file <path> for writing." and THEN tells you to check write permission - and
+ *  quoting only the last of them drops the one that names the path. A child that
+ *  said more than that gets its last line alone.
+ *
+ *  Read from the tail of a FILE rather than a pipe: a pipe QProcess does not
+ *  drain while nobody reads it can fill and block the child, and a failed render
+ *  is exactly when the child has the most to say.
+ */
+QString lastWordsOf(const QString& path)
+{
+	QFile file(path);
+	if (!file.open(QIODevice::ReadOnly)) { return QString(); }
+	const qint64 size = file.size();
+	if (size <= 0) { return QString(); }
+	if (!file.seek(qMax<qint64>(0, size - RENDER_DIAGNOSTIC))) { return QString(); }
+	QString text = QString::fromUtf8(file.readAll()).trimmed();
+	text.replace(QLatin1Char('\r'), QLatin1Char('\n'));
+	if (text.size() <= RENDER_DIAGNOSTIC) { return text; }
+	const QStringList lines = text.split(QLatin1Char('\n'), Qt::SkipEmptyParts);
+	return lines.isEmpty() ? QString() : lines.last().trimmed();
+}
+
 //! Runs the shipped CLI render path as a child process. The loudness report
 //! (feature row 24) travels with it when the process-wide selection asks for
 //! one: the child is a fresh process whose own ExportRenderSettings start at
@@ -292,18 +322,53 @@ QString parseRenderRange(const QJsonObject& args, int* begin, int* end)
 //! range (row 71) travel the same way, as command-line arguments: the preset
 //! through controlExportPresetRenderArgs (which carries the `-s <rate>` this
 //! call used to pass as a literal), the range through --range-start/--range-end.
+/*! Why a render failed, in the words the caller can act on.
+ *
+ *  The exit code says THAT it failed; the child's own closing words say WHY, and
+ *  one of the two alone is not enough. The child's line is quoted when there is
+ *  one and omitted when there is not - a child killed on timeout rarely gets to
+ *  explain itself.
+ */
+QString renderFailureMessage(int exitCode, const QString& diagnostics)
+{
+	if (diagnostics.isEmpty())
+	{
+		return QStringLiteral("the render failed (exit %1); the session is unchanged").arg(exitCode);
+	}
+	return QStringLiteral("the render failed (exit %1): %2").arg(exitCode).arg(diagnostics);
+}
+
 bool runCliRender(const QString& projectPath, const QString& out, const QString& formatName,
-	const ControlExportPreset& settings, int rangeBegin, int rangeEnd, int* exitCode)
+	const ControlExportPreset& settings, int rangeBegin, int rangeEnd, int* exitCode,
+	QString* diagnostics)
 {
 	const QStringList arguments = controlRenderCliArguments(projectPath, out, formatName, settings, rangeBegin, rangeEnd);
 
+	// The child's stderr is kept, to be read back only if the render fails: it
+	// is where the CLI renderer says WHY ("Could not open file ... for
+	// writing", an encoder it could not start), and an exit code alone left the
+	// caller with nothing to act on. Its stdout stays discarded - the CLI
+	// reports progress there, which is not a refusal.
+	QTemporaryFile errorLog(QDir::tempPath() + QStringLiteral("/zene-render-XXXXXX.log"));
+	errorLog.setAutoRemove(true);
+	if (!errorLog.open()) { errorLog.setAutoRemove(false); }
+
 	QProcess renderer;
 	renderer.setStandardOutputFile(QProcess::nullDevice());
-	renderer.setStandardErrorFile(QProcess::nullDevice());
+	if (errorLog.isOpen())
+	{
+		errorLog.flush();
+		renderer.setStandardErrorFile(errorLog.fileName());
+	}
+	else
+	{
+		renderer.setStandardErrorFile(QProcess::nullDevice());
+	}
 	renderer.start(QCoreApplication::applicationFilePath(), arguments);
 	const bool finished = renderer.waitForStarted(30000) && renderer.waitForFinished(600000);
 	if (!finished) { renderer.kill(); }
 	*exitCode = finished ? renderer.exitCode() : -1;
+	*diagnostics = finished ? lastWordsOf(errorLog.fileName()) : QString();
 	return finished;
 }
 
@@ -348,15 +413,16 @@ ControlResult renderSession(const QJsonObject& args)
 	}
 
 	int exitCode = -1;
+	QString diagnostics;
 	const bool finished = runCliRender(tempProject, out, formatName, settings, rangeBegin,
-		rangeEnd, &exitCode);
+		rangeEnd, &exitCode, &diagnostics);
 	QFile::remove(tempProject);
 
 	QFileInfo info(out);
 	if (!finished || exitCode != 0 || !info.exists() || info.size() == 0)
 	{
 		return ControlResult::failure(ControlErrorKind::Refused,
-			QStringLiteral("the render failed (exit %1); the session is unchanged").arg(exitCode));
+			renderFailureMessage(exitCode, diagnostics));
 	}
 
 	QJsonObject result;
@@ -454,7 +520,8 @@ QStringList controlRenderCliArguments(const QString& project, const QString& out
 
 bool controlRenderProjectFile(const QString& project, const QString& out, int* exitCode)
 {
-	const bool finished = runCliRender(project, out, QStringLiteral("wav"), ControlExportPresetSettings::effective(), -1, -1, exitCode);
+	QString unused;
+	const bool finished = runCliRender(project, out, QStringLiteral("wav"), ControlExportPresetSettings::effective(), -1, -1, exitCode, &unused);
 	return finished && *exitCode == 0 && QFileInfo(out).size() > 0;
 }
 
