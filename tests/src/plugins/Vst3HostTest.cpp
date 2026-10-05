@@ -27,6 +27,7 @@
 #include <QFileInfo>
 
 #include <cmath>
+#include <limits>
 #include <memory>
 #include <vector>
 
@@ -157,6 +158,7 @@ private slots:
 	void testParameterChangesAreSlicedPerChunk();
 	void testAFullParameterQueueKeepsTheNewestValue();
 	void testComponentHandlerAnswersInterfaceQueries();
+	void testNonFiniteParameterValuesAreRefused();
 
 private:
 	void process(HostedPlugin& plugin, const std::vector<std::vector<float>>& inputs,
@@ -462,6 +464,41 @@ void Vst3HostTest::testComponentHandlerAnswersInterfaceQueries()
 		Steinberg::kInvalidArgument);
 
 	// the reference count the successful queries took is still owned here
+	handler->release();
+}
+
+/*! Luna cluster 3625: a plug-in or a caller that reports a value with no
+ *  meaning - NaN, or a double that overflows float - cannot have it stored in
+ *  the parameter array the audio thread reads: std::clamp() passes NaN through
+ *  (both of its comparisons are false for it), so nothing rejected it. */
+void Vst3HostTest::testNonFiniteParameterValuesAreRefused()
+{
+	// the host's own setter: the last good value stays
+	m_plugin.setParamNormalized(GainParamId, 0.5f);
+	m_plugin.setParamNormalized(GainParamId, std::numeric_limits<float>::quiet_NaN());
+	QCOMPARE(m_plugin.paramNormalized(GainParamId), 0.5f);
+	m_plugin.setParamNormalized(GainParamId, std::numeric_limits<float>::infinity());
+	QCOMPARE(m_plugin.paramNormalized(GainParamId), 0.5f);
+	m_plugin.setParamNormalized(GainParamId, -std::numeric_limits<float>::infinity());
+	QCOMPARE(m_plugin.paramNormalized(GainParamId), 0.5f);
+
+	// a plug-in's own edits, through the handler it was given
+	std::atomic<float> values[2] = {0.f, 0.25f};
+	const std::vector<std::pair<std::uint32_t, std::size_t>> indexById = {{0, 0}, {1, 1}};
+	auto* handler = new Vst3ComponentHandler{values, &indexById};
+
+	QCOMPARE(handler->performEdit(1, 2.5), Steinberg::kResultOk);
+	QCOMPARE(values[1].load(), 1.0f);
+	QCOMPARE(handler->performEdit(1, -1.0), Steinberg::kResultOk);
+	QCOMPARE(values[1].load(), 0.0f);
+	QCOMPARE(handler->performEdit(1, std::numeric_limits<double>::quiet_NaN()),
+		Steinberg::kResultOk);
+	QCOMPARE(values[1].load(), 0.0f);
+	QCOMPARE(handler->performEdit(1, std::numeric_limits<double>::infinity()),
+		Steinberg::kResultOk);
+	QCOMPARE(values[1].load(), 0.0f);
+	QCOMPARE(handler->performEdit(1, 1.0e300), Steinberg::kResultOk); // overflows float
+	QCOMPARE(values[1].load(), 1.0f);
 	handler->release();
 }
 

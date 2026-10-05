@@ -25,12 +25,27 @@
 #ifndef LMMS_VST3_PARAM_DESCRIPTOR_H
 #define LMMS_VST3_PARAM_DESCRIPTOR_H
 
+#include <algorithm>
+#include <cmath>
 #include <cstdint>
 
 #include <QString>
 
 namespace lmms
 {
+
+/*! The normalized value to STORE for what a plug-in or a caller reported: a
+ *  finite value is clamped into [0, 1], a value with no meaning is refused and
+ *  @a keep stays. std::clamp() alone does neither for NaN (both of its
+ *  comparisons are false for it, so it passes NaN straight through) and a
+ *  ParamValue too large for float overflows to infinity on the cast - the audio
+ *  thread hands these values to the processor's parameter queue as they are.
+ */
+inline float sanitizedNormalized(double normalized, float keep)
+{
+	if (!std::isfinite(normalized)) { return keep; }
+	return static_cast<float>(std::clamp(normalized, 0.0, 1.0));
+}
 
 //! SDK independent description of a VST3 parameter.
 //!
