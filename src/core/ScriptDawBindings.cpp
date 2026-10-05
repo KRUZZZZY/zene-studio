@@ -385,10 +385,18 @@ LuaMixerChannel& LuaMixer::master() const
 QStringList LuaMixer::ids() const
 {
 	QStringList out;
-	const int count = channelCount();
-	for (int i = 0; i < count; ++i)
+	ScriptDawBindings::syncForRead();
+	Mixer* mixer = liveMixer();
+	if (mixer == nullptr) { return out; }
+	for (int i = 0; i < static_cast<int>(mixer->numChannels()); ++i)
 	{
-		out.append(control::channelId(i));
+		MixerChannel* channel = mixer->mixerChannel(i);
+		// The channel OBJECT's own id - the same number `channel:id()` publishes
+		// and the same one channelById() resolves. channelId(i) names a POSITION,
+		// so this list started at "ch-0" for a master that is ch-1, and the
+		// entries were ids no channel carried: feeding one back to channelById()
+		// returned an invalid wrapper instead of the channel it named.
+		if (channel != nullptr) { out.append(control::channelIdOf(channel)); }
 	}
 	return out;
 }

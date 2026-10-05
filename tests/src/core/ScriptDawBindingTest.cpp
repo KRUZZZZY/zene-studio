@@ -90,6 +90,27 @@ print("refused isValid=" .. tostring(refused:isValid()))
 print("chain effects after refusal=" .. chain:effectCount())
 )LUA";
 
+//! Every id mixer:ids() lists must be resolvable, and must be the id the
+//! channel itself publishes - the vocabulary channelById() understands.
+const char* const IdScript = R"LUA(
+local mixer = zene.mixer()
+local listed = mixer:ids()
+local unresolved = 0
+for i, id in ipairs(listed) do
+  if not mixer:channelById(id):isValid() then unresolved = unresolved + 1 end
+end
+print("listed " .. #listed .. " unresolved " .. unresolved)
+)LUA";
+
+//! Load a device into a chain and remove it again through the binding.
+const char* const RemoveEffectScript = R"LUA(
+local chain = zene.mixer():channel(%1):chain()
+chain:loadEffect("%2")
+print("loaded " .. chain:effectCount())
+chain:removeEffect(0)
+print("removed " .. chain:effectCount())
+)LUA";
+
 } // namespace
 
 class ScriptDawBindingTest : public QObject
@@ -247,6 +268,83 @@ private slots:
 		mixer->deleteChannel(index);
 		journal->undo();  // its channel is gone: nothing to take out, and nothing freed is touched
 		QCOMPARE(static_cast<int>(mixer->numChannels()), index);
+		engine->takeLogMessages();
+	}
+
+	/*! mixer:ids() must publish the CHANNEL ids channel:id() publishes, because
+	 *  those are the ids channelById() resolves. It used to name positions
+	 *  (channelId(index)), so enumerating ids() and feeding the entries back into
+	 *  channelById() addressed nothing: the master is ch-1 but ids() listed ch-0,
+	 *  and a ch-<n> number is an allocated id, never an index. */
+	void mixerIdsListsTheChannelsOwnIdsAndEveryOneResolves()
+	{
+		Mixer* mixer = Engine::mixer();
+		ScriptEngine* engine = ScriptEngine::instance();
+		QString error;
+		QCOMPARE(int(engine->runString(qstr(IdScript), &error)),
+			int(ScriptEngine::RunResult::Ok));
+		QVERIFY2(error.isEmpty(), qPrintable(error));
+
+		// The mixer really has that many channels, and every id ids() listed is
+		// one a channel really carries.
+		const int count = static_cast<int>(mixer->numChannels());
+		for (int i = 0; i < count; ++i)
+		{
+			MixerChannel* channel = mixer->mixerChannel(i);
+			const QString id = control::channelIdOf(channel);
+			ControlTarget target;
+			ControlResult result;
+			QVERIFY2(resolveControlTarget(id, &target, &result),
+				qPrintable(result.errorMessage));
+			QCOMPARE(target.chain, &channel->m_fxChain);
+		}
+
+		// And the binding agrees: it listed every channel, and channelById()
+		// resolved every entry back to a live channel. A positional list listed
+		// "ch-0" for the master, which resolves to nothing at all.
+		QCOMPARE(engine->takeLogMessages(), QStringList{
+			qstr("listed %1 unresolved 0").arg(count)});
+	}
+
+	/*! chain:removeEffect is one undo step, like the load beside it: undo puts
+	 *  the device back with its settings, redo takes it out again. The removal
+	 *  used to be journalless, so the undo fell on the PREVIOUS step and the
+	 *  device was gone for good. */
+	void aScriptsRemovedEffectIsUndoneByItsOwnStep()
+	{
+		QString device;
+		QString deviceName;
+		const QList<ControlDeviceEntry> catalogue = controlDeviceCatalogue();
+		for (int i = 0; i < catalogue.size() && device.isEmpty(); ++i)
+		{
+			if (catalogue.at(i).loadable)
+			{
+				device = control::deviceId(i);
+				deviceName = catalogue.at(i).name;
+			}
+		}
+		if (device.isEmpty()) { QSKIP("this build lists no loadable effect module"); }
+		Mixer* mixer = Engine::mixer();
+		const int index = mixer->createChannel();
+		EffectChain* chain = &mixer->mixerChannel(index)->m_fxChain;
+		ScriptEngine* engine = ScriptEngine::instance();
+		QString error;
+		QCOMPARE(int(engine->runString(qstr(RemoveEffectScript).arg(index).arg(device), &error)),
+			int(ScriptEngine::RunResult::Ok));
+		QVERIFY2(error.isEmpty(), qPrintable(error));
+
+		// The script really removed it: the chain is empty now.
+		QVERIFY(chain->effects().empty());
+
+		ProjectJournal* journal = Engine::projectJournal();
+		QVERIFY(journal != nullptr);
+		journal->undo();
+		QCOMPARE(static_cast<int>(chain->effects().size()), 1);
+		QCOMPARE(QString::fromUtf8(chain->effects().front()->descriptor()->name), deviceName);
+		journal->redo();
+		QVERIFY(chain->effects().empty());
+
+		mixer->deleteChannel(index);
 		engine->takeLogMessages();
 	}
 
