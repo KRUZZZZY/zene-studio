@@ -38,6 +38,7 @@
 #include <memory>
 
 #include <QDomDocument>
+#include <QFile>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -559,6 +560,47 @@ private slots:
 			"reported SUCCESS (BUG-CTL-1)");
 		QCOMPARE(deviceCount(track), 0);
 		QVERIFY(run(QStringLiteral("track.list")).ok);
+	}
+
+
+	//! Luna cluster 5723: a state load that FAILS must leave no undo step.
+	//!
+	//! The handler called addUndoStep() with the captured previous settings
+	//! BEFORE handing the bytes to controlRestoreDeviceState(), which is the
+	//! call that can refuse them. A readable file whose content is not a device
+	//! state document therefore failed the command and still left a step whose
+	//! undo "restores" the device it never changed - so the caller's next
+	//! control.undo consumed a step for an operation that did not happen, and
+	//! the real step before it became unreachable from the keyboard.
+	void aFailedStateLoadRecordsNoUndoStep()
+	{
+		const QString track = addInstrumentTrack();
+		if (track.isEmpty()) { QSKIP("this build exposes no loadable built-in instrument"); }
+		// The instrument-track device is addressed as 'inst'
+		// (ControlDeviceState.cpp:46), not as an fx-<n> effect id.
+		const QString pluginId = QStringLiteral("inst");
+
+		// Readable, and NOT a state document for this device.
+		QTemporaryDir dir;
+		QVERIFY(dir.isValid());
+		const QString bogus = dir.path() + QStringLiteral("/not-a-state.xpf");
+		QFile out(bogus);
+		QVERIFY(out.open(QIODevice::WriteOnly));
+		out.write("this is not an instrument-track preset document");
+		out.close();
+
+		const ControlResult depth = run(QStringLiteral("control.undo_depth"));
+		QVERIFY(depth.ok);
+		const int before = depth.result.value(QStringLiteral("depth")).toInt();
+
+		const ControlResult failed = run(QStringLiteral("plugin.state_load"),
+			{{QStringLiteral("target"), track}, {QStringLiteral("plugin"), pluginId},
+				{QStringLiteral("path"), bogus}});
+		QVERIFY2(!failed.ok, "the device accepted a document that is not its state");
+
+		const ControlResult after = run(QStringLiteral("control.undo_depth"));
+		QVERIFY(after.ok);
+		QCOMPARE(after.result.value(QStringLiteral("depth")).toInt(), before);
 	}
 
 

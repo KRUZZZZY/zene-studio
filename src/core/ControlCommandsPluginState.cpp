@@ -176,6 +176,12 @@ void registerStateLoad(ControlRegistry& registry)
 		// pointers, so the step carries ids, not pointers).
 		const QString targetId = args.value(QStringLiteral("target")).toString();
 		const QString pluginId = args.value(QStringLiteral("plugin")).toString();
+		// Restored FIRST: the step is registered only once the load has
+		// succeeded, because a refused document changes nothing - a step taken
+		// for it would undo a device that was never altered and push the real
+		// step before it one further from the keyboard.
+		ControlResult restored = controlRestoreDeviceState(handle, bytes);
+		if (!restored.ok) { return restored; }
 		control::addUndoStep(
 			[targetId, pluginId, previous]() {
 				controlRestoreCapturedState(targetId, pluginId, previous);
@@ -188,8 +194,6 @@ void registerStateLoad(ControlRegistry& registry)
 					controlRestoreCapturedState(targetId, pluginId, bytes);
 				}
 			});
-		ControlResult restored = controlRestoreDeviceState(handle, bytes);
-		if (!restored.ok) { return restored; }
 
 		QJsonObject result = restored.result;
 		result.insert(QStringLiteral("path"), path);
