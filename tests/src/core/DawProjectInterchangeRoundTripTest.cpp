@@ -1038,6 +1038,36 @@ private slots:
 		QCOMPARE(model.noteCount(), 2);
 	}
 
+	//! Luna cluster 3100: two tracks sharing an id are a malformed document, not
+	//! a lookup where the later one wins. The reader used to insert into
+	//! trackIndexById unconditionally, so a <Lanes track="t1"> resolved to the
+	//! SECOND t1 and its clips landed on a track the file never asked for.
+	void duplicateTrackIdsAreRefused()
+	{
+		const QByteArray duplicate =
+			"<Project version=\"1.0\">"
+			"<Application name=\"Probe\" version=\"1\"/>"
+			"<Transport><Tempo value=\"120\"/></Transport>"
+			"<Structure>"
+			"<Track id=\"t1\" name=\"First\" contentType=\"notes\"><Channel id=\"c1\"/></Track>"
+			"<Track id=\"t1\" name=\"Second\" contentType=\"notes\"><Channel id=\"c2\"/></Track>"
+			"</Structure>"
+			"<Arrangement><Lanes><Lanes track=\"t1\"><Clips>"
+			"<Clip time=\"0\" duration=\"4\"><Notes>"
+			"<Note time=\"0\" duration=\"1\" channel=\"0\" key=\"60\" vel=\"0.8\"/>"
+			"</Notes></Clip></Clips></Lanes></Lanes></Arrangement>"
+			"</Project>";
+
+		DawProjectModel model;
+		DawProjectReadReport report;
+		QString error;
+		QVERIFY2(!dawProjectModelFromXml(duplicate, &model, &report, &error),
+			"a document declaring the same track id twice was read, so a lane naming that id "
+			"silently resolved to the later track and its clips were misplaced");
+		QVERIFY2(error.contains(QStringLiteral("t1")),
+			"the refusal must name the duplicated id");
+	}
+
 private:
 	QTemporaryDir m_directory;
 };

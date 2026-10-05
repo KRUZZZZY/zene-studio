@@ -291,10 +291,28 @@ ChannelValues parseChannel(QXmlStreamReader& reader, ReadState& state)
 	return values;
 }
 
-//! A <Track> nested in another at @a depth; refused past MaxNesting, as a nested <Lanes> is.
+//! A track's own <Track> nested in another at @a depth; refused past MaxNesting, as a nested <Lanes> is.
 void parseNestedTrack(QXmlStreamReader& reader, ReadState& state, int depth)
 {
 	if (nestingAllowed(reader, state, depth)) { parseTrack(reader, state, depth); }
+}
+
+//! Record where a track's id lives, REFUSING a document that declares the same id twice:
+//! <Lanes track="..."> resolves through this map, so a second declaration of an id would
+//! silently redirect that lane's clips to the later track.
+void insertTrackIndex(ReadState& state, const QString& id, int index)
+{
+	if (id.isEmpty()) { return; }
+	if (state.trackIndexById.contains(id))
+	{
+		if (state.error.isEmpty())
+		{
+			state.error = QStringLiteral("the document declares the track id \"%1\" twice, so a "
+				"lane naming it cannot be resolved to one track").arg(id);
+		}
+		return;
+	}
+	state.trackIndexById.insert(id, index);
 }
 
 //! One <Track>, at any depth. NESTED TRACKS ARE READ AT THE ROOT (LOSSY #4):
@@ -314,7 +332,7 @@ void parseTrack(QXmlStreamReader& reader, ReadState& state, int depth)
 
 	const int index = state.model->tracks.size();
 	state.model->tracks.append(track);
-	if (!track.id.isEmpty()) { state.trackIndexById.insert(track.id, index); }
+	insertTrackIndex(state, track.id, index);
 
 	DawProjectTrack& target = state.model->tracks[index];
 	while (!reader.atEnd())
