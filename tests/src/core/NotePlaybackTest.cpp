@@ -30,6 +30,9 @@
 
 #include <QtTest>
 
+#include <cmath>
+#include <limits>
+
 #include <QDomDocument>
 #include <QJsonArray>
 
@@ -263,6 +266,29 @@ private slots:
 		QCOMPARE(playback.offsetMs(), 0);
 		QVERIFY(!playback.shouldPersist());
 		QCOMPARE(run(QStringLiteral("transport.groove"), {{QStringLiteral("swing"), 0.9}}).errorKind, ControlErrorKind::InvalidArgs);
+	}
+
+	//! A non-finite swing must not survive setSwing: std::clamp leaves a NaN
+	//! untouched (every comparison against it is false), and the value reaches
+	//! delayFrames(), save() and shouldPersist() from there.
+	void nonFiniteSwingLoadsBounded()
+	{
+		MidiPlayback& playback = MidiPlayback::instance();
+		const float nan = std::numeric_limits<float>::quiet_NaN();
+		playback.setSwing(nan, 2 * MidiPlayback::DefaultSwingGrid);
+		QVERIFY(std::isfinite(playback.swing()));
+		QVERIFY(playback.swing() >= 0.f);
+		QVERIFY(playback.swing() <= MidiPlayback::MaxSwing);
+		playback.setSwing(std::numeric_limits<float>::infinity(), MidiPlayback::DefaultSwingGrid);
+		QVERIFY(std::isfinite(playback.swing()));
+		QVERIFY(playback.swing() <= MidiPlayback::MaxSwing);
+		playback.setSwing(std::numeric_limits<float>::lowest(), MidiPlayback::DefaultSwingGrid);
+		QVERIFY(std::isfinite(playback.swing()));
+		QVERIFY(playback.swing() >= 0.f);
+		// The delayFrames() result must stay a real frame count throughout.
+		QVERIFY(playback.delayFrames(12, 100.f, 48000) >= 0);
+		playback.setSwing(0.f, MidiPlayback::DefaultSwingGrid);
+		QCOMPARE(playback.swing(), 0.f);
 	}
 
 	void lyricsAndGroups()
