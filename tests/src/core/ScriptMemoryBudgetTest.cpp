@@ -39,9 +39,12 @@
 #include <QJsonObject>
 #include <QStringList>
 
+#include <limits>
+
 #include "ControlRegistry.h"
 #include "Engine.h"
 #include "ScriptEngine.h"
+#include "ScriptMemoryBudget.h"
 
 using namespace lmms;
 
@@ -207,6 +210,44 @@ private slots:
 			qPrintable(refused.errorMessage));
 
 		engine->setMemoryBudget(ScriptEngine::DefaultMemoryBudgetBytes);
+	}
+
+	//! A budget refusal and a system allocation failure reach the run as the
+	//! SAME LUA_ERRMEM with different causes, and only one of them is fixed by
+	//! raising the budget. The allocator counted both as `refused` and every
+	//! LUA_ERRMEM was reported as "memory budget exceeded", so a machine that
+	//! simply could not allocate was told its budget was exhausted.
+	void aSystemAllocationFailureIsNotReportedAsBudgetExhaustion()
+	{
+		// Cap disabled, so only the SYSTEM can refuse below: nothing here is
+		// anywhere near a budget, which is precisely what the shared counter hid.
+		ScriptMemoryState system;
+		system.budget = 0;
+		// A size no allocator can satisfy, so realloc returns null
+		// deterministically without asking the machine to actually run dry.
+		// Volatile, because a constant that size is diagnosed at compile time
+		// rather than handed to realloc, which is the refusal under test.
+		static volatile std::size_t impossible = std::numeric_limits<std::size_t>::max();
+		QVERIFY(ScriptMemoryState::allocate(&system, nullptr, 0,
+			static_cast<std::size_t>(impossible)) == nullptr);
+		QCOMPARE(system.failed, quint64(1));
+		QVERIFY2(system.refused == 0,
+			"a system allocation failure was counted as a budget refusal");
+
+		const QString message = system.memoryErrorMessage(QStringLiteral("not enough memory"));
+		QVERIFY2(!message.contains(QStringLiteral("memory budget exceeded")), qPrintable(message));
+		QVERIFY2(message.contains(QStringLiteral("system allocation failure")), qPrintable(message));
+
+		// ... and the budget wording a client keys on is unchanged when the
+		// budget really is the bound that bit: this is a guard against the fix
+		// going too far and blaming the machine for a budget refusal.
+		ScriptMemoryState budgeted;
+		budgeted.budget = OneMiB;
+		QVERIFY(ScriptMemoryState::allocate(&budgeted, nullptr, 0,
+			static_cast<std::size_t>(OneMiB) + 1) == nullptr);
+		QCOMPARE(budgeted.refused, quint64(1));
+		QVERIFY(budgeted.memoryErrorMessage(QStringLiteral("not enough memory"))
+			.contains(QStringLiteral("memory budget exceeded")));
 	}
 };
 
