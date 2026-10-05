@@ -62,6 +62,7 @@
 #include <QFileInfo>
 #include <QStringList>
 #include <QTextStream>
+#include <QtEndian>
 
 #include "ControlProjectAssetsShared.h"
 #include "PathUtil.h"
@@ -153,37 +154,53 @@ void fillReference(const QDomElement& element, const AssetElement& spec, int ind
 		: QStringLiteral("cannot be resolved to a path on this machine");
 }
 
-bool readProjectDocument(const QString& projectPath, QDomDocument* document, QString* format,
+//! The size on disk is measured BEFORE anything is read: readAll() would
+// otherwise allocate whatever the file happens to be. Same cap and same
+// measured-first rule as the engine's own document recovery
+// (MaxRecoveredDocumentBytes, src/core/DataFile.cpp:202).
+bool storedSizeWithinCap(const QFileInfo& info, const QString& projectPath, ControlResult* error)
+{
+	if (info.size() <= MaxProjectAssetDocumentBytes) { return true; }
+	*error = ControlResult::failure(ControlErrorKind::Refused,
+		QStringLiteral("%1 is %2 bytes, over the %3-byte limit this verb reads; it was not "
+			"loaded into memory").arg(projectPath).arg(info.size()).arg(MaxProjectAssetDocumentBytes));
+	return false;
+}
+
+//! Reads a .mmpz body after measuring the size it DECLARES. A qCompress stream
+//! carries its expanded size in the leading 4 bytes, and qUncompress allocates
+//! exactly that much before it inflates anything - so the header alone decides,
+//! and a crafted header never gets the body read.
+bool readBoundedCompressed(QFile* file, const QString& projectPath, QByteArray* stored,
 	ControlResult* error)
 {
-	const QFileInfo info(projectPath);
-	if (!info.exists() || !info.isFile())
-	{
-		*error = ControlResult::failure(ControlErrorKind::NotFound,
-			QStringLiteral("no such project file: %1").arg(projectPath));
-		return false;
-	}
-	// The extension first: a file this verb does not read is refused before any of
-	// it is read into memory.
-	*format = info.suffix().toLower();
-	if (*format != QLatin1String("mmpz") && *format != QLatin1String("mmp"))
-	{
-		*error = ControlResult::failure(ControlErrorKind::InvalidArgs,
-			QStringLiteral("'%1' is not a project file this verb reads: the extension must "
-				"be .mmp (XML) or .mmpz (compressed XML)").arg(projectPath));
-		return false;
-	}
-	QFile file(projectPath);
-	if (!file.open(QIODevice::ReadOnly))
+	const QByteArray header = file->read(4);
+	const quint32 declared = header.size() >= 4
+		? qFromBigEndian<quint32>(reinterpret_cast<const uchar*>(header.constData())) : 0u;
+	if (declared > MaxProjectAssetDocumentBytes)
 	{
 		*error = ControlResult::failure(ControlErrorKind::Refused,
-			QStringLiteral("cannot read %1 (%2)").arg(projectPath, file.errorString()));
+			QStringLiteral("%1 declares %2 bytes of expanded project, over the %3-byte limit "
+				"this verb reads; it was not inflated").arg(projectPath).arg(declared)
+				.arg(MaxProjectAssetDocumentBytes));
 		return false;
 	}
-	const QByteArray stored = file.readAll();
+	if (!file->seek(0))
+	{
+		*error = ControlResult::failure(ControlErrorKind::Refused,
+			QStringLiteral("cannot rewind %1 (%2)").arg(projectPath, file->errorString()));
+		return false;
+	}
+	*stored = file->readAll();
+	return true;
+}
 
+//! The inflate-and-parse half, once the bytes in hand are already bounded.
+bool parseStoredDocument(const QString& projectPath, const QByteArray& stored, bool compressed,
+	QDomDocument* document, ControlResult* error)
+{
 	QByteArray xml = stored;
-	if (*format == QLatin1String("mmpz"))
+	if (compressed)
 	{
 		xml = qUncompress(stored);
 		if (xml.isEmpty())
@@ -206,6 +223,48 @@ bool readProjectDocument(const QString& projectPath, QDomDocument* document, QSt
 		return false;
 	}
 	return true;
+}
+
+bool readProjectDocument(const QString& projectPath, QDomDocument* document, QString* format,
+	ControlResult* error)
+{
+	const QFileInfo info(projectPath);
+	if (!info.exists() || !info.isFile())
+	{
+		*error = ControlResult::failure(ControlErrorKind::NotFound,
+			QStringLiteral("no such project file: %1").arg(projectPath));
+		return false;
+	}
+	// The extension first: a file this verb does not read is refused before any of
+	// it is read into memory.
+	*format = info.suffix().toLower();
+	if (*format != QLatin1String("mmpz") && *format != QLatin1String("mmp"))
+	{
+		*error = ControlResult::failure(ControlErrorKind::InvalidArgs,
+			QStringLiteral("'%1' is not a project file this verb reads: the extension must "
+				"be .mmp (XML) or .mmpz (compressed XML)").arg(projectPath));
+		return false;
+	}
+	if (!storedSizeWithinCap(info, projectPath, error)) { return false; }
+	QFile file(projectPath);
+	if (!file.open(QIODevice::ReadOnly))
+	{
+		*error = ControlResult::failure(ControlErrorKind::Refused,
+			QStringLiteral("cannot read %1 (%2)").arg(projectPath, file.errorString()));
+		return false;
+	}
+
+	const bool compressed = *format == QLatin1String("mmpz");
+	QByteArray stored;
+	if (compressed)
+	{
+		if (!readBoundedCompressed(&file, projectPath, &stored, error)) { return false; }
+	}
+	else
+	{
+		stored = file.readAll();
+	}
+	return parseStoredDocument(projectPath, stored, compressed, document, error);
 }
 
 QByteArray serialiseDocument(QDomDocument* document)

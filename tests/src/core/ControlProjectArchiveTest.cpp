@@ -422,6 +422,53 @@ private slots:
 		QVERIFY2(scanned.ok, qPrintable(scanned.errorMessage));
 		QVERIFY(!scanned.result.value(QStringLiteral("references")).toArray().isEmpty());
 	}
+	//! Reading a project must be bounded BEFORE the bytes are allocated. A plain
+//! .mmp was read whole, and a .mmpz was handed to qUncompress, which allocates
+//! exactly the size its leading 4 bytes declare - so a crafted 8-byte file could
+//! ask for gigabytes. The engine already measures both against a 256 MiB cap for
+//! document recovery (src/core/DataFile.cpp:202); this verb must refuse too,
+	//! saying WHY rather than reading first and hoping.
+	void anOversizedProjectIsRefusedBeforeItIsRead()
+	{
+		QTemporaryDir dir;
+		QVERIFY(dir.isValid());
+
+		// A plain .mmp larger than the cap. Sparse, so the fixture costs no real
+		// bytes; a verb that checks the size first never reads it.
+		const QString big = dir.path() + QStringLiteral("/big.mmp");
+		QFile bigFile(big);
+		QVERIFY(bigFile.open(QIODevice::WriteOnly));
+		QVERIFY(bigFile.write("<zene-project>") > 0);
+		QVERIFY(bigFile.resize(300LL * 1024LL * 1024LL));
+		bigFile.close();
+		const ControlResult oversized = run(QStringLiteral("project.missing_assets"),
+			QJsonObject{{QStringLiteral("project"), big}});
+		QVERIFY(!oversized.ok);
+		QCOMPARE(oversized.errorKind, ControlErrorKind::Refused);
+		QVERIFY2(oversized.errorMessage.contains(QStringLiteral("over")),
+			qPrintable(QStringLiteral("the refusal did not name the cap: %1")
+				.arg(oversized.errorMessage)));
+
+		// A crafted .mmpz: 4 bytes declaring 3 GiB of expanded project, then bytes
+		// that are not a zlib stream at all. The declared size is refused before
+		// anything is inflated.
+		QByteArray bomb;
+		const quint32 declared = 3u * 1024u * 1024u * 1024u;
+		bomb.append(static_cast<char>((declared >> 24) & 0xFF));
+		bomb.append(static_cast<char>((declared >> 16) & 0xFF));
+		bomb.append(static_cast<char>((declared >> 8) & 0xFF));
+		bomb.append(static_cast<char>(declared & 0xFF));
+		bomb.append("not a zlib stream", 17);
+		const QString bombPath = dir.path() + QStringLiteral("/bomb.mmpz");
+		QVERIFY(writeBytes(bombPath, bomb));
+		const ControlResult inflated = run(QStringLiteral("project.missing_assets"),
+			QJsonObject{{QStringLiteral("project"), bombPath}});
+		QVERIFY(!inflated.ok);
+		QCOMPARE(inflated.errorKind, ControlErrorKind::Refused);
+		QVERIFY2(inflated.errorMessage.contains(QStringLiteral("over")),
+			qPrintable(QStringLiteral("the refusal did not name the declared size: %1")
+				.arg(inflated.errorMessage)));
+	}
 	//! Hashing is the identity step: the digest is stable, and relinking
 	//! changes it, because the digest covers the reference set and its hashes.
 	void hashingIsStableAndChangesWithTheReferenceSet()
