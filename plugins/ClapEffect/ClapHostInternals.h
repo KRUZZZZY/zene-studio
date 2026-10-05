@@ -296,9 +296,17 @@ struct HostedPlugin::Impl
 	static auto CLAP_ABI guiRequestShow(const clap_host_t*) -> bool { return true; }
 	static auto CLAP_ABI guiRequestHide(const clap_host_t*) -> bool { return true; }
 
-	static void CLAP_ABI guiClosed(const clap_host_t* host, bool)
+	//! The plug-in closed its own editor. `wasDestroyed` says whether it took the GUI down with it:
+	//! if it did, there is nothing left to show or destroy, so the host forgets the GUI and the next
+	//! openEditor() creates a fresh one; if it did not, the GUI is alive but hidden, and the next
+	//! openEditor() shows it again. Before, both cases only set guiClosedByPlugin, so a reopen
+	//! returned true without showing anything (editorOpen() stayed false) and closeEditor() hid and
+	//! destroyed a GUI the plug-in had already destroyed.
+	static void CLAP_ABI guiClosed(const clap_host_t* host, bool wasDestroyed)
 	{
-		static_cast<Impl*>(host->host_data)->guiClosedByPlugin = true;
+		auto* self = static_cast<Impl*>(host->host_data);
+		self->guiClosedByPlugin = true;
+		if (wasDestroyed) { self->guiCreated = false; }
 	}
 
 	// --- clap.posix-fd-support / clap.timer-support (R4.1) -----------------

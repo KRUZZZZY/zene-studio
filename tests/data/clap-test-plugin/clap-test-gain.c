@@ -529,7 +529,7 @@ static bool gain_activate(const clap_plugin_t* plugin, double sample_rate, uint3
 	self->host_flushes = 0;
 	self->in_process = 0;
 	if (getenv("CLAP_TEST_GAIN_MAIN_THREAD") != NULL || getenv("CLAP_TEST_GAIN_RESCAN") != NULL
-		|| getenv("CLAP_TEST_GAIN_REQUEST_FLUSH") != NULL)
+		|| getenv("CLAP_TEST_GAIN_REQUEST_FLUSH") != NULL || getenv("CLAP_TEST_GAIN_CLOSE_GUI") != NULL)
 	{
 		self->host->request_callback(self->host);
 	}
@@ -660,6 +660,23 @@ static void gain_request_rescan(gain_plugin_t* self, const char* kind)
 static void gain_on_main_thread(const clap_plugin_t* plugin)
 {
 	gain_plugin_t* self = (gain_plugin_t*)plugin->plugin_data;
+	/* CLAP_TEST_GAIN_CLOSE_GUI: the plug-in closes its OWN editor from the editor's side, the way a
+	   plug-in with a close button does - "hide" leaves the GUI alive, "destroy" takes it down and says
+	   so with was_destroyed. The host must reopen it correctly afterwards. */
+	const char* closeGui = getenv("CLAP_TEST_GAIN_CLOSE_GUI");
+	if (closeGui != NULL && self->gui_created)
+	{
+		const clap_host_gui_t* hostGui =
+			(const clap_host_gui_t*)self->host->get_extension(self->host, CLAP_EXT_GUI);
+		if (hostGui != NULL)
+		{
+			const bool destroyed = strcmp(closeGui, "destroy") == 0;
+			if (destroyed) { s_gui.destroy(plugin); }
+			else { s_gui.hide(plugin); }
+			hostGui->closed(self->host, destroyed);
+		}
+		return;
+	}
 	const char* rescan = getenv("CLAP_TEST_GAIN_RESCAN");
 	if (rescan != NULL) { gain_request_rescan(self, rescan); }
 	/* CLAP_TEST_GAIN_REQUEST_FLUSH: the plug-in changed a value behind the host's back and asks for

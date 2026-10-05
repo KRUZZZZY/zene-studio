@@ -198,6 +198,7 @@ private slots:
 	void testAnActiveFlushRequestIsServicedOnTheAudioThread();
 	void testANonFiniteSampleRateIsRefused();
 	void testANoteVelocityKeepsItsFraction();
+	void testAPluginClosedEditorIsReopened();
 
 private:
 	void process(HostedPlugin& plugin, const std::vector<std::vector<float>>& inputs,
@@ -994,6 +995,55 @@ void lmms::clap::ClapHostTest::testANoteVelocityKeepsItsFraction()
 	process(plugin, noInputs, outputs, TestFrames);
 	QVERIFY2(readInstrumentState(plugin, &state), "the fixture saved an unexpected state layout");
 	QCOMPARE(state.lastVelocityMilli, std::uint32_t{0});
+}
+
+/*! A plug-in that closes its OWN editor (clap.gui's closed callback) leaves the host's GUI state
+ *  stale: guiClosed() only set a flag, so a reopen returned true without showing anything, and a
+ *  GUI the plug-in had already destroyed was hidden and destroyed a second time. Both cases of
+ *  was_destroyed are covered: "hide" leaves the GUI alive, "destroy" takes it down. */
+void lmms::clap::ClapHostTest::testAPluginClosedEditorIsReopened()
+{
+	void* const standInWindow = reinterpret_cast<void*>(std::uintptr_t{0x2a});
+
+	// --- was_destroyed = false: the GUI is alive but hidden, so a reopen SHOWS it again ---
+	qputenv("CLAP_TEST_GAIN_CLOSE_GUI", "hide");
+	HostedPlugin plugin;
+	QString error;
+	QVERIFY2(plugin.load(QStringLiteral(CLAP_TEST_PLUGIN_PATH), QString::fromLatin1(TestPluginId), &error),
+		qPrintable(error));
+	QVERIFY2(plugin.prepare(TestSampleRate, TestBlockSize, &error), qPrintable(error));
+	QVERIFY2(plugin.openEditor(standInWindow, &error), qPrintable(error));
+	QVERIFY(plugin.editorOpen());
+	plugin.serviceMainThread();  // the plug-in closes its own editor (the return is the state-dirty flag)
+	QVERIFY(!plugin.editorOpen());
+	QVERIFY2(plugin.openEditor(standInWindow, &error),
+		qPrintable(QStringLiteral("reopening a GUI the plug-in closed: %1").arg(error)));
+	QVERIFY(plugin.editorOpen());
+	plugin.closeEditor();
+	qunsetenv("CLAP_TEST_GAIN_CLOSE_GUI");
+
+	// --- was_destroyed = true: the GUI is gone, so a reopen CREATES a fresh one ---
+	qputenv("CLAP_TEST_GAIN_CLOSE_GUI", "destroy");
+	HostedPlugin recreating;
+	QString recreateError;
+	QVERIFY2(recreating.load(QStringLiteral(CLAP_TEST_PLUGIN_PATH), QString::fromLatin1(TestPluginId),
+			&recreateError), qPrintable(recreateError));
+	QVERIFY2(recreating.prepare(TestSampleRate, TestBlockSize, &recreateError), qPrintable(recreateError));
+	QVERIFY2(recreating.openEditor(standInWindow, &recreateError), qPrintable(recreateError));
+	recreating.serviceMainThread();  // the plug-in destroys its own editor
+	QVERIFY(!recreating.editorOpen());
+	QVERIFY2(recreating.openEditor(standInWindow, &recreateError),
+		qPrintable(QStringLiteral("reopening a destroyed GUI: %1").arg(recreateError)));
+	QVERIFY(recreating.editorOpen());
+	// The reopened editor is a live one: the new instance is created at the fixture's default size,
+	// not the size of an editor that no longer exists.
+	int width = 0;
+	int height = 0;
+	recreating.editorSize(&width, &height);
+	QCOMPARE(width, 400);
+	QCOMPARE(height, 300);
+	recreating.closeEditor();
+	qunsetenv("CLAP_TEST_GAIN_CLOSE_GUI");
 }
 
 QTEST_GUILESS_MAIN(lmms::clap::ClapHostTest)
