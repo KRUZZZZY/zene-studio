@@ -55,8 +55,11 @@
 #include "ControlRegistry.h"
 #include "DawProjectInterchange.h"
 #include "Engine.h"
+#include "Mixer.h"
 #include "ProjectJournal.h"
 #include "Song.h"
+#include "TempoMap.h"
+#include "Track.h"
 
 using namespace lmms;
 using namespace lmms::interchange;
@@ -171,6 +174,66 @@ DawProjectModel authoredModel()
 	return model;
 }
 
+DawProjectModel previousSessionModel()
+{
+	DawProjectModel model;
+	model.tempo = 137.0;
+	model.numerator = 3;
+	model.denominator = 8;
+
+	DawProjectMixerChannel master;
+	master.id = QStringLiteral("before-mixer0");
+	master.name = QStringLiteral("Before Master");
+	master.role = QStringLiteral("master");
+	master.volume = 0.75;
+	model.mixerChannels.append(master);
+
+	DawProjectTrack track;
+	track.id = QStringLiteral("before-track");
+	track.name = QStringLiteral("Preserved Track");
+	track.contentType = QStringLiteral("notes");
+	track.typeName = QStringLiteral("instrument");
+	model.tracks.append(track);
+
+	DawProjectPoint tempo;
+	tempo.time = 0.0;
+	tempo.value = 109.0;
+	model.tempoPoints.append(tempo);
+
+	DawProjectPoint meter;
+	meter.time = 0.0;
+	meter.isMeter = true;
+	meter.numerator = 3;
+	meter.denominator = 8;
+	model.meterPoints.append(meter);
+	return model;
+}
+
+DawProjectModel modelWithOverCapacityMap(bool meter)
+{
+	DawProjectModel model = authoredModel();
+	model.tempoPoints.clear();
+	model.meterPoints.clear();
+	for (int i = 0; i < TempoMap::MaxEvents + 1; ++i)
+	{
+		DawProjectPoint point;
+		point.time = static_cast<double>(i);
+		if (meter)
+		{
+			point.isMeter = true;
+			point.numerator = 3;
+			point.denominator = 8;
+			model.meterPoints.append(point);
+		}
+		else
+		{
+			point.value = 120.0 + (i % 80);
+			model.tempoPoints.append(point);
+		}
+	}
+	return model;
+}
+
 inline QString path(const QTemporaryDir& directory, const QString& name)
 {
 	return directory.filePath(name);
@@ -186,6 +249,8 @@ inline ControlResult run(const QString& id, const QJsonObject& args = QJsonObjec
 class DawProjectInterchangeRoundTripTest : public QObject
 {
 	Q_OBJECT
+	void verifyOverCapacityRefusalPreservesSession(bool meter);
+
 private slots:
 
 	void initTestCase()
@@ -332,6 +397,7 @@ private slots:
 	void importIsOneUndoStep()
 	{
 		Song* song = Engine::getSong();
+		Engine::mixer()->clear();
 
 		// Build a BEFORE session: one track, one clip, one note.
 		DawProjectModel before;
@@ -377,6 +443,10 @@ private slots:
 		const ControlResult importResult = run(QStringLiteral("dawproject.import"),
 			{{QStringLiteral("path"), file}});
 		QVERIFY2(importResult.ok, qPrintable(importResult.errorMessage));
+		QCOMPARE(importResult.result.value(QStringLiteral("mixer_channel_count")).toInt(), 2);
+		QCOMPARE(ControlRegistry::instance()->transactions().last().toObject()
+			.value(QStringLiteral("before")).toObject()
+			.value(QStringLiteral("track_count")).toInt(), 1);
 
 		// The session now has the AFTER model.
 		DawProjectLossReport afterLoss;
@@ -386,11 +456,138 @@ private slots:
 		// Undo: the before model comes back.
 		const ControlResult undoResult = run(QStringLiteral("control.undo"));
 		QVERIFY2(undoResult.ok, qPrintable(undoResult.errorMessage));
+		QCOMPARE(static_cast<int>(Engine::mixer()->numChannels()), 1);
 
 		DawProjectLossReport restoredLoss;
 		const DawProjectModel restored = dawProjectModelFromSong(song, &restoredLoss);
 		QCOMPARE(restored.tracks.size(), 1);
 		QCOMPARE(restored.tracks[0].name, QStringLiteral("Before"));
+	}
+
+	void overCapacityTempoImportIsRefusedBeforeMutation()
+	{
+		verifyOverCapacityRefusalPreservesSession(false);
+	}
+
+	void overCapacityMeterImportIsRefusedBeforeMutation()
+	{
+		verifyOverCapacityRefusalPreservesSession(true);
+	}
+
+	void importUndoBudgetCountsBothSessionAndRedoDocuments()
+	{
+		Song* song = Engine::getSong();
+		Mixer* mixer = Engine::mixer();
+		QString failure;
+		auto prepare = [&](const QString& masterName, bool withMap) {
+			song->aboutToClearTracks();
+			song->clearAllTracks();
+			mixer->clear();
+			mixer->mixerChannel(0)->m_name = masterName;
+			TempoMap map;
+			if (withMap)
+			{
+				for (int i = 0; i < TempoMap::MaxEvents; ++i)
+				{
+					TempoMapEvent event;
+					event.tick = i * 48;
+					event.hasTempo = true;
+					event.tempo = 90 + (i % 200);
+					if (!map.addEvent(event))
+					{
+						failure = QStringLiteral("could not prepare the bounded before tempo map");
+						return;
+					}
+				}
+				map.setActive(true);
+			}
+			song->tempoMap().edit([&map](TempoMap& target) { target = map; return true; });
+			song->setTempo(123);
+			song->getTimeSigModel().numeratorModel().setValue(4);
+			song->getTimeSigModel().denominatorModel().setValue(4);
+			Engine::projectJournal()->clearJournal();
+			ControlRegistry::instance()->clearTransactions();
+		};
+		auto measure = [&](const QString& suffix, const QString& masterName, bool withMap,
+			const DawProjectModel& importedModel, qint64* beforeBytes, qint64* afterBytes) {
+			prepare(masterName, withMap);
+			if (!failure.isEmpty()) { return false; }
+			const ControlResult beforeDepth = run(QStringLiteral("control.undo_depth"));
+			if (!beforeDepth.ok)
+			{
+				failure = QStringLiteral("could not read undo depth before import");
+				return false;
+			}
+			*beforeBytes = beforeDepth.result.value(QStringLiteral("retained_bytes")).toVariant()
+				.toLongLong();
+
+			const QString file = path(m_directory, suffix);
+			QString error;
+			DawProjectWriteReport writeReport;
+			if (!writeDawProject(file, importedModel, &writeReport, &error))
+			{
+				failure = QStringLiteral("could not write the undo-budget fixture: %1").arg(error);
+				return false;
+			}
+			const ControlResult imported = run(QStringLiteral("dawproject.import"),
+				{{QStringLiteral("path"), file}});
+			if (!imported.ok)
+			{
+				failure = QStringLiteral("undo-budget import failed: %1").arg(imported.errorMessage);
+				return false;
+			}
+			const ControlResult afterDepth = run(QStringLiteral("control.undo_depth"));
+			if (!afterDepth.ok)
+			{
+				failure = QStringLiteral("could not read undo depth after import");
+				return false;
+			}
+			*afterBytes = afterDepth.result.value(QStringLiteral("retained_bytes")).toVariant()
+				.toLongLong();
+			if (*afterBytes <= *beforeBytes)
+			{
+				failure = QStringLiteral("retained_bytes did not grow from %1 after import (was %2)")
+					.arg(*beforeBytes).arg(*afterBytes);
+				return false;
+			}
+			return true;
+		};
+
+		const DawProjectModel small = authoredModel();
+		qint64 smallBefore = 0;
+		qint64 smallAfter = 0;
+		QVERIFY2(measure(QStringLiteral("undo-budget-small.dawproject"), QStringLiteral("Master"),
+			false, small, &smallBefore, &smallAfter), qPrintable(failure));
+
+		qint64 richBefore = 0;
+		qint64 richAfter = 0;
+		QVERIFY2(measure(QStringLiteral("undo-budget-rich-before.dawproject"),
+			QString(4096, QLatin1Char('C')), true, small, &richBefore, &richAfter),
+			qPrintable(failure));
+		QVERIFY2(richAfter > smallAfter,
+			"a larger captured channel name and tempo map must occupy more retained bytes");
+
+		DawProjectModel noteHeavy = small;
+		for (int i = 0; i < 256; ++i)
+		{
+			DawProjectNote note;
+			note.time = static_cast<double>(i % 16) / 16.0;
+			note.duration = 0.0625;
+			note.key = 48 + (i % 48);
+			noteHeavy.tracks[0].clips[0].notes.append(note);
+		}
+		qint64 notesBefore = 0;
+		qint64 notesAfter = 0;
+		QVERIFY2(measure(QStringLiteral("undo-budget-note-heavy.dawproject"),
+			QStringLiteral("Master"), false, noteHeavy, &notesBefore, &notesAfter),
+			qPrintable(failure));
+		QVERIFY2(notesAfter > smallAfter,
+			"a larger redo model with notes must occupy more retained bytes");
+
+		song->clearProject();
+		mixer->clear();
+		Engine::projectJournal()->clearJournal();
+		ControlRegistry::instance()->clearTransactions();
 	}
 
 	//! Claim 5: typed refusals - a missing file, a file that is not a ZIP, a
@@ -430,6 +627,88 @@ private slots:
 private:
 	QTemporaryDir m_directory;
 };
+
+void DawProjectInterchangeRoundTripTest::verifyOverCapacityRefusalPreservesSession(bool meter)
+{
+	Song* song = Engine::getSong();
+	Engine::mixer()->clear();
+	QString error;
+	const DawProjectModel original = previousSessionModel();
+	QVERIFY2(applyDawProjectModel(song, original, &error), qPrintable(error));
+	Engine::projectJournal()->clearJournal();
+	ControlRegistry::instance()->clearTransactions();
+	const ControlResult priorEdit = run(QStringLiteral("transport.set_tempo"),
+		{{QStringLiteral("bpm"), 138}});
+	QVERIFY2(priorEdit.ok, qPrintable(priorEdit.errorMessage));
+
+	const DawProjectModel before = dawProjectModelFromSong(song, nullptr);
+	const TempoMap beforeMap = song->tempoMap().map();
+	const int beforeTempo = song->getTempo();
+	const int beforeNumerator = song->getTimeSigModel().numeratorModel().value();
+	const int beforeDenominator = song->getTimeSigModel().denominatorModel().value();
+	Mixer* mixer = Engine::mixer();
+	const int beforeMixerCount = mixer->numChannels();
+	const QString beforeMasterName = mixer->mixerChannel(0)->m_name;
+	const float beforeMasterVolume = mixer->mixerChannel(0)->m_volumeModel.value();
+	const int beforeUndoDepth = Engine::projectJournal()->undoDepth();
+	const QJsonArray beforeTransactions = ControlRegistry::instance()->transactions();
+	QCOMPARE(before.tracks.size(), 1);
+	QCOMPARE(beforeUndoDepth, 1);
+	QCOMPARE(beforeTransactions.size(), 1);
+
+	const DawProjectModel invalid = modelWithOverCapacityMap(meter);
+	const QString file = path(m_directory, meter ? QStringLiteral("over-capacity-meter.dawproject")
+		: QStringLiteral("over-capacity-tempo.dawproject"));
+	DawProjectWriteReport writeReport;
+	QVERIFY2(writeDawProject(file, invalid, &writeReport, &error), qPrintable(error));
+	DawProjectModel parsed;
+	DawProjectReadReport readReport;
+	QVERIFY2(readDawProject(file, &parsed, &readReport, &error), qPrintable(error));
+	QCOMPARE(meter ? parsed.meterPoints.size() : parsed.tempoPoints.size(), TempoMap::MaxEvents + 1);
+
+	const ControlResult result = run(QStringLiteral("dawproject.import"),
+		{{QStringLiteral("path"), file}});
+	QString failure;
+	if (result.ok || result.errorKind != ControlErrorKind::Refused)
+	{
+		failure = QStringLiteral("over-capacity import did not return a typed refusal");
+	}
+	else if (song->tracks().size() != 1 || song->tracks().front()->name() != before.tracks.front().name)
+	{
+		failure = QStringLiteral("the previous track was removed by the refusal");
+	}
+	else if (song->getTempo() != beforeTempo
+		|| song->getTimeSigModel().numeratorModel().value() != beforeNumerator
+		|| song->getTimeSigModel().denominatorModel().value() != beforeDenominator)
+	{
+		failure = QStringLiteral("the previous global tempo or metre changed on refusal");
+	}
+	else if (song->tempoMap().map() != beforeMap)
+	{
+		failure = QStringLiteral("the previous tempo map changed on refusal");
+	}
+	else if (mixer->numChannels() != beforeMixerCount
+		|| mixer->mixerChannel(0)->m_name != beforeMasterName
+		|| mixer->mixerChannel(0)->m_volumeModel.value() != beforeMasterVolume)
+	{
+		failure = QStringLiteral("the previous mixer state changed on refusal");
+	}
+	else if (Engine::projectJournal()->undoDepth() != beforeUndoDepth
+		|| ControlRegistry::instance()->transactions() != beforeTransactions)
+	{
+		failure = QStringLiteral("the refusal changed the undo journal or transaction history");
+	}
+
+	if (!failure.isEmpty())
+	{
+		Engine::mixer()->clear();
+		QString ignored;
+		applyDawProjectModel(song, before, &ignored);
+		Engine::projectJournal()->clearJournal();
+		ControlRegistry::instance()->clearTransactions();
+	}
+	QVERIFY2(failure.isEmpty(), qPrintable(failure));
+}
 
 QTEST_GUILESS_MAIN(DawProjectInterchangeRoundTripTest)
 #include "DawProjectInterchangeRoundTripTest.moc"

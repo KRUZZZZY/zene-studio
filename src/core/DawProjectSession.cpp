@@ -343,14 +343,8 @@ DawProjectModel dawProjectModelFromSong(Song* song, DawProjectLossReport* loss)
 
 bool applyDawProjectModel(Song* song, const DawProjectModel& model, QString* error)
 {
-	song->aboutToClearTracks();
-	song->clearAllTracks();
-	song->setTempo(static_cast<bpm_t>(model.tempo));
-	song->getTimeSigModel().numeratorModel().setValue(model.numerator);
-	song->getTimeSigModel().denominatorModel().setValue(model.denominator);
-
-	// The map: the two timelines merged back onto their tick list, per property,
-	// which is how the map itself merges (docs/TEMPO-MAP.md decision 1).
+	// Build the map before touching the live session. A map-capacity refusal must
+	// leave the tracks and global settings that were already there intact.
 	TempoMap rebuilt;
 	for (const DawProjectPoint& point : model.tempoPoints)
 	{
@@ -387,6 +381,12 @@ bool applyDawProjectModel(Song* song, const DawProjectModel& model, QString* err
 		}
 	}
 	if (rebuilt.size() > 0) { rebuilt.setActive(true); }
+
+	song->aboutToClearTracks();
+	song->clearAllTracks();
+	song->setTempo(static_cast<bpm_t>(model.tempo));
+	song->getTimeSigModel().numeratorModel().setValue(model.numerator);
+	song->getTimeSigModel().denominatorModel().setValue(model.denominator);
 	song->tempoMap().edit([&rebuilt](TempoMap& map) { map = rebuilt; return true; });
 
 	// The mixer's strips, by POSITION: the bare <Channel> elements of <Structure>
