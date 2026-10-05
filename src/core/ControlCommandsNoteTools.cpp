@@ -145,7 +145,19 @@ ControlResult flam(const QJsonObject& args)
 	MidiClip* clip = scopedNotes(args, &ref, &notes, &error);
 	if (clip == nullptr) { return error; }
 	const tick_t offset = std::max(1, args.value(QStringLiteral("offset")).toInt(3));
-	const double ratio = std::clamp(args.value(QStringLiteral("velocity")).toDouble(0.6), 0.05, 1.0);
+	// Luna cluster 5694: the ratio was std::clamp-ed into 0.05..1.0 and the call still
+	// answered ok, so `velocity: 2` reported success while writing a value the caller
+	// never asked for. The args schema is a bare number (it is in the
+	// ControlCommandsSnapshot canary and may not change), so the range is refused HERE -
+	// the same handler-side refusal as 4e288ecb5.
+	const double ratio = args.contains(QStringLiteral("velocity"))
+		? args.value(QStringLiteral("velocity")).toDouble(0.6) : 0.6;
+	if (ratio < 0.05 || ratio > 1.0)
+	{
+		return ControlResult::failure(ControlErrorKind::InvalidArgs,
+			QStringLiteral("'velocity' is %1: the grace notes' velocity ratio must be 0.05..1.0")
+				.arg(ratio));
+	}
 	if (std::none_of(notes.begin(), notes.end(), [offset](const Note* note) { return note->pos().getTicks() >= offset; }))
 	{
 		// No note has room for a grace note: nothing changes, so no undo step.

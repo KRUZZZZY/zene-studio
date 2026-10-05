@@ -197,6 +197,28 @@ private slots:
 			{QStringLiteral("degrees"), QJsonArray{14}}}).errorKind, ControlErrorKind::InvalidArgs);
 	}
 
+	//! Luna cluster 5694: flam() std::clamp-ed the caller's velocity into 0.05..1.0 and
+	//! answered ok, so `velocity: 2` reported success while creating grace notes at a value
+	//! nobody asked for. The schema takes a bare number (the commands_snapshot canary), so
+	//! the range is refused in the handler instead, the way 4e288ecb5 does.
+	void aFlamVelocityTheHandlerCannotHonourIsRefused()
+	{
+		MidiClip* clip = clipWith({{60, 24}});
+		QJsonObject args = self(clip);
+		args.insert(QStringLiteral("velocity"), 2);
+		const ControlResult refused = run(QStringLiteral("note.flam"), args);
+		QCOMPARE(refused.errorKind, ControlErrorKind::InvalidArgs);
+		QCOMPARE(clip->notes().size(), std::size_t{1});  // nothing was created
+		// Below the floor the same way.
+		args.insert(QStringLiteral("velocity"), 0.0);
+		QCOMPARE(run(QStringLiteral("note.flam"), args).errorKind, ControlErrorKind::InvalidArgs);
+		QCOMPARE(clip->notes().size(), std::size_t{1});
+		// Inside the range it still works, and the default is still 0.6.
+		args.insert(QStringLiteral("velocity"), 0.5);
+		QVERIFY(run(QStringLiteral("note.flam"), args).ok);
+		QCOMPARE(clip->notes().size(), std::size_t{2});
+	}
+
 	//! Luna cluster 5691: arpeggiate() collected the voices in a std::map keyed by pitch, so
 	//! emplace kept only the FIRST note of two same-pitch chord members while keys kept both -
 	//! the second one's velocity, pan and probability were then read as duplicates of the first
