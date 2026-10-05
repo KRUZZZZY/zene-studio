@@ -46,6 +46,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstring>
+#include <limits>
 #include <vector>
 
 namespace lmms
@@ -485,13 +486,26 @@ bool readTracks(Cursor& cursor, int* tracksRead, std::vector<Candidate>* candida
 
 //! The file tick -> LMMS tick conversion: round-to-nearest on LMMS' 48-per-
 //! quarter grid, with \a rounded set when the tick was not representable exactly.
-tick_t lmmsTickFor(quint32 smfTick, int ticksPerQuarterNote, bool* rounded)
+//! The quotient is computed in 64 bits but tick_t is a signed 32-bit count, so a
+//! quotient past its range is REFUSED here rather than cast: casting wraps it to
+//! a small nonnegative tick that later validation accepts, placing the event
+//! near the start of the map instead of where the file put it.
+bool lmmsTickFor(quint32 smfTick, int ticksPerQuarterNote, tick_t* out, bool* rounded, QString* error)
 {
 	const qint64 scaled = static_cast<qint64>(smfTick) * LmmsTicksPerQuarterNote;
 	const qint64 quotient = scaled / ticksPerQuarterNote;
 	const qint64 remainder = scaled % ticksPerQuarterNote;
 	if (remainder != 0) { *rounded = true; }
-	return static_cast<tick_t>(quotient + (2 * remainder >= ticksPerQuarterNote ? 1 : 0));
+	const qint64 roundedTick = quotient + (2 * remainder >= ticksPerQuarterNote ? 1 : 0);
+	if (roundedTick > std::numeric_limits<tick_t>::max()
+		|| roundedTick < std::numeric_limits<tick_t>::min())
+	{
+		*error = QStringLiteral("SMF tick %1 converts to LMMS tick %2, which does not fit the "
+			"map's tick range - the file's times cannot be placed").arg(smfTick).arg(roundedTick);
+		return false;
+	}
+	*out = static_cast<tick_t>(roundedTick);
+	return true;
 }
 
 //! The tempo a microseconds-per-quarter event names, rounded to whole bpm.
@@ -527,14 +541,19 @@ void applyTimeSignature(const Candidate& candidate, SmfInterchangeEvent* event,
 
 /*! One entry per tick, merged PER HALF. The candidates are already in file
  *  order, so "first wins" is simply "the first one seen", which is the rule a
- *  player follows. */
-void mergeCandidates(const std::vector<Candidate>& candidates, SmfReadReport* report,
-	std::vector<SmfInterchangeEvent>* merged)
+ *  player follows. A candidate whose tick cannot be represented refuses the whole
+ *  merge rather than being placed at a wrapped tick. */
+bool mergeCandidates(const std::vector<Candidate>& candidates, SmfReadReport* report,
+	std::vector<SmfInterchangeEvent>* merged, QString* error)
 {
 	for (const Candidate& candidate : candidates)
 	{
 		bool rounded = false;
-		const tick_t tick = lmmsTickFor(candidate.smfTick, report->ticksPerQuarterNote, &rounded);
+		tick_t tick = 0;
+		if (!lmmsTickFor(candidate.smfTick, report->ticksPerQuarterNote, &tick, &rounded, error))
+		{
+			return false;
+		}
 		if (rounded) { report->roundedEvents++; }
 		if (merged->empty() || merged->back().tick != tick)
 		{
@@ -546,6 +565,7 @@ void mergeCandidates(const std::vector<Candidate>& candidates, SmfReadReport* re
 		if (candidate.hasTempo) { applyTempo(candidate, &last, report); }
 		if (candidate.hasTimeSignature) { applyTimeSignature(candidate, &last, report); }
 	}
+	return true;
 }
 
 void summarize(const std::vector<SmfInterchangeEvent>& merged, SmfReadReport* report)
@@ -593,7 +613,8 @@ bool readAllTracks(const QByteArray& bytes, SmfReadReport* report, QString* erro
 
 	std::stable_sort(candidates.begin(), candidates.end(),
 		[](const Candidate& a, const Candidate& b) { return a.smfTick < b.smfTick; });
-	mergeCandidates(candidates, report, &report->events);
+	mergeCandidates(candidates, report, &report->events, error);
+	if (!error->isEmpty()) { return false; }
 	summarize(report->events, report);
 	return true;
 }

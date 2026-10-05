@@ -665,6 +665,42 @@ private slots:
 		QCOMPARE(digest(mapEvents()), QString());  // a refusal imports nothing
 	}
 
+	//! The conversion to LMMS' 48-ticks-per-quarter grid is done in qint64 but
+	//! the result is cast straight to tick_t, which is a signed 32-bit count. A
+	//! file whose division lets the scaled quotient pass 2^31 therefore wrapped
+	//! to a small nonnegative tick that later validation happily accepted, and
+	//! the event landed near the start of the map instead of where it was. A
+	//! tick the map cannot represent is refused before the cast, not wrapped
+	//! into one it can.
+	void aTickTooWideForTheMapIsRefusedInsteadOfWrapping()
+	{
+		// 89,478,486 * 48 = 4,294,967,328 = 2^32 + 32, so the quotient is one
+		// tick too wide and narrows to exactly 32: the most convincing wrong
+		// answer this cast can produce. It still fits a four-byte VLQ, so the
+		// file reaches the conversion rather than being refused as a malformed
+		// delta first.
+		QByteArray bytes = plainFile(1, {{89478486u, 120, 4, 4}});
+		const QString file = path(m_directory, QStringLiteral("wrapping-tick.mid"));
+		QVERIFY(writeFile(file, bytes));
+		const ControlResult read = run(QStringLiteral("interchange.smf_read"),
+			{{QStringLiteral("path"), file}});
+		QVERIFY2(!read.ok, "a tick too wide for the map was accepted, wrapped to another tick");
+		QCOMPARE(read.errorKind, ControlErrorKind::InvalidArgs);
+		QVERIFY2(read.errorMessage.contains(QStringLiteral("tick")),
+			qPrintable(read.errorMessage));
+		const ControlResult imported = run(QStringLiteral("interchange.smf_import"),
+			{{QStringLiteral("path"), file}});
+		QVERIFY(!imported.ok);
+		QCOMPARE(digest(mapEvents()), QString());  // a refusal imports nothing
+
+		// The control: the same file at a tick the map can hold.
+		QByteArray honest = plainFile(1, {{1024u, 120, 4, 4}});
+		const QString good = path(m_directory, QStringLiteral("fitting-tick.mid"));
+		QVERIFY(writeFile(good, honest));
+		QVERIFY2(run(QStringLiteral("interchange.smf_read"),
+			{{QStringLiteral("path"), good}}).ok, "a representable tick is read");
+	}
+
 private:
 	QTemporaryDir m_directory;
 };
