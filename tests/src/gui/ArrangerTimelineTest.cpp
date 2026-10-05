@@ -398,6 +398,37 @@ private slots:
 		QCOMPARE(found.captured(2).toInt(), static_cast<int>(view / Bar));
 	}
 
+	//! A tool chosen while an audition is held ends it: the gesture belongs to the tool that began it, so the
+	//! release finishes the audition instead of dispatching a range with the tool that replaced it.
+	void switchingToolsDuringAHeldAuditionStopsIt()
+	{
+		auto* overlay = m_editor->findChild<ArrangerRangeOverlay*>();
+		QVERIFY2(overlay != nullptr, "no range overlay on the song editor");
+		Track* other = Track::create(Track::Type::Instrument, Engine::getSong());
+		QCoreApplication::processEvents();
+		clipAt(m_track, 40 * Bar, Bar);
+		// The press lands on the row the audition silences every other track for.
+		const TrackView* row = m_editor->trackViews().first();
+		const QPoint press(overlay->width() / 2, row->mapTo(overlay->parentWidget(), QPoint(0, 0)).y() + row->height() / 2);
+
+		QVERIFY(run(QStringLiteral("arrangement.set_tool"), {{QStringLiteral("tool"), QStringLiteral("audition")}}).ok);
+		QCOMPARE(overlay->tool(), ArrangerRangeOverlay::Tool::Audition);
+		QTest::mousePress(overlay, Qt::LeftButton, Qt::NoModifier, press);
+		QVERIFY2(other->isMuted(), "the held audition did not silence the other tracks");
+		QVERIFY(run(QStringLiteral("transport.audition_stop")).ok);  // tidy, should this case fail halfway
+
+		QTest::mousePress(overlay, Qt::LeftButton, Qt::NoModifier, press);
+		QVERIFY2(other->isMuted(), "the second held audition did not silence the other tracks");
+		QVERIFY(run(QStringLiteral("arrangement.set_tool"), {{QStringLiteral("tool"), QStringLiteral("range")}}).ok);
+		QCOMPARE(overlay->tool(), ArrangerRangeOverlay::Tool::Range);
+		QTest::mouseRelease(overlay, Qt::LeftButton, Qt::NoModifier, QPoint(press.x() + 40, press.y()));
+
+		QVERIFY2(!other->isMuted(), "the audition was still sounding after the release that ended the gesture");
+		QVERIFY2(!ArrangerRange::instance().active(), "a tool change mid-audition still dispatched a range");
+		QVERIFY(run(QStringLiteral("transport.audition_stop")).ok);  // tidy whatever happened
+		QVERIFY(run(QStringLiteral("arrangement.set_tool"), {{QStringLiteral("tool"), QStringLiteral("select")}}).ok);
+	}
+
 	private:
 	QTemporaryDir m_home;
 	SongEditor* m_editor = nullptr;

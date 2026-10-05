@@ -69,6 +69,13 @@ ArrangerRangeOverlay::ArrangerRangeOverlay(SongEditor* editor) :
 
 void ArrangerRangeOverlay::setTool(Tool tool)
 {
+	// A tool chosen while an audition is held ends it: the gesture belongs to the tool that began it, so the
+	// release finishes the audition rather than running the tool that replaced it over the same press.
+	if (m_dragging && m_tool == Tool::Audition && tool != Tool::Audition)
+	{
+		m_dragging = false;
+		ControlRegistry::instance()->invoke(QStringLiteral("transport.audition_stop"));
+	}
 	m_tool = tool;
 	setAttribute(Qt::WA_TransparentForMouseEvents, !toolActive());
 	setCursor(tool == Tool::Zoom ? Qt::CrossCursor : tool == Tool::Audition ? Qt::PointingHandCursor : Qt::IBeamCursor);
