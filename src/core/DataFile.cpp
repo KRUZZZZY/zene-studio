@@ -61,6 +61,7 @@
 #include "Track.h"
 #include "PathUtil.h"
 #include "UpgradeExtendedNoteRange.h"
+#include "XmlDepthGuard.h"
 
 #include "lmmsversion.h"
 
@@ -193,6 +194,20 @@ inline bool fsyncPath( const QString &, bool = false )
 }
 #endif
 
+//! ARCH-4 S5. Parse \a bytes under the SAME depth guard the project load
+//! applies to every parse (SPEC-ARCH-4 1.8) and accept it only if it is a
+//! document this program recognizes. The guard runs BEFORE the parse, so a
+//! deeply nested temp is refused before a single node is built from it.
+bool parsesAsRecoverableDocument( const QByteArray & bytes )
+{
+	if( ! lmms::projectXmlDepthWithinLimit( bytes ) )
+	{
+		return false;
+	}
+	QDomDocument doc;
+	return lmms::setContent( doc, bytes ) && DataFile::isRecoverableDocument( doc );
+}
+
 //! ARCH-4 S5. True when \a path holds a COMPLETE document: it parses as XML
 //! (or, for a compressed .mmpz/.xptz temp, parses after qUncompress). A crash
 //! can leave a .new truncated at any byte, and adopting truncated bytes would
@@ -211,25 +226,16 @@ inline bool isCompleteDocument( const QString & path )
 	{
 		return false;
 	}
-	QDomDocument doc;
-	if( lmms::setContent( doc, bytes ) )
+	if( parsesAsRecoverableDocument( bytes ) )
 	{
-		// Parsing is not identity: recoverPendingWrite() renames this file over
-		// the project, so only a document this program recognizes is adoptable.
-		return DataFile::isRecoverableDocument( doc );
+		return true;
 	}
 	if( bytes.trimmed().startsWith( '<' ) )
 	{
 		return false;
 	}
 	const QByteArray uncompressed = qUncompress( bytes );
-	if( uncompressed.isEmpty() )
-	{
-		return false;
-	}
-	QDomDocument compressed;
-	return lmms::setContent( compressed, uncompressed )
-		&& DataFile::isRecoverableDocument( compressed );
+	return ! uncompressed.isEmpty() && parsesAsRecoverableDocument( uncompressed );
 }
 
 

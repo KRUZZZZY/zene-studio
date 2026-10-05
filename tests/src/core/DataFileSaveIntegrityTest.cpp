@@ -33,6 +33,7 @@
 
 #include "ConfigManager.h"
 #include "DataFile.h"
+#include "XmlDepthGuard.h"
 
 using namespace lmms;
 
@@ -548,6 +549,48 @@ private slots:
 			qPrintable( QStringLiteral( "an unrelated .new was adopted; captured: [%1]" ).arg( report ) ) );
 		QVERIFY2( !QFile::exists( temp ), "the unrelated .new was not discarded" );
 		// The valid project is still the project.
+		QCOMPARE( probe, QStringLiteral( "old" ) );
+		QCOMPARE( readText( target ), oldText );
+	}
+
+	//! The recovery parses the temp before the guarded project load does, so a
+	//! deeply nested - but well-formed and complete - .new used to be adopted
+	//! with no depth guard at all. Both parses now carry the same limit, so such
+	//! a temp is discarded with the ordinary report and the project stands.
+	void deeplyNestedNewFileIsRefusedBeforeParsing()
+	{
+		qunsetenv( "ZENE_TEST_SAVE_FAULT" );
+		QTemporaryDir dir;
+		QVERIFY( dir.isValid() );
+
+		const QString target = dir.filePath( QStringLiteral( "song.mmp" ) );
+		const QString temp = target + QStringLiteral( ".new" );
+
+		DataFile first( DataFile::Type::SongProject );
+		first.content().setAttribute( "s5probe", "old" );
+		QVERIFY( first.writeFile( target ) );
+		const QString oldText = readText( target );
+
+		QString nested = QStringLiteral(
+			"<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
+			"<zene-project version=\"40\" type=\"song\"><head/><song>" );
+		for( int i = 0; i < MaxProjectXmlDepth + 16; ++i ) { nested += QStringLiteral( "<x>" ); }
+		for( int i = 0; i < MaxProjectXmlDepth + 16; ++i ) { nested += QStringLiteral( "</x>" ); }
+		nested += QStringLiteral( "</song></zene-project>\n" );
+		QVERIFY( writeText( temp, nested ) );
+
+		QString report;
+		QString probe;
+		{
+			MessageRecorder recorder;
+			DataFile loaded( target );
+			report = recorder.messages();
+			probe = loaded.content().attribute( QStringLiteral( "s5probe" ) );
+		}
+
+		QVERIFY2( report.contains( QStringLiteral( "Discarded incomplete" ) ),
+			qPrintable( QStringLiteral( "a deeply nested .new was adopted; captured: [%1]" ).arg( report ) ) );
+		QVERIFY2( !QFile::exists( temp ), "the deeply nested .new was not discarded" );
 		QCOMPARE( probe, QStringLiteral( "old" ) );
 		QCOMPARE( readText( target ), oldText );
 	}
