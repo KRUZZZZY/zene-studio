@@ -70,6 +70,27 @@ const QStringList kIds = {
 	QStringLiteral("clip.link_get_state"), QStringLiteral("clip.link_sync"),
 };
 
+//! How many of the clip's notes carry an MPE expression, read through the surface
+//! itself (note.expression_get without a 'note' lists exactly those).
+int expressionCount(ControlRegistry* registry, const QString& clipId)
+{
+	const ControlResult state = registry->invoke(QStringLiteral("note.expression_get"),
+		QJsonObject{{QStringLiteral("clip"), clipId}});
+	if (!state.ok) { return -1; }
+	return state.result.value(QStringLiteral("notes")).toArray().size();
+}
+
+//! The @a index-th expression-carrying note's axes, as the surface reports them.
+QJsonObject expressionOfNote(ControlRegistry* registry, const QString& clipId, int index)
+{
+	const ControlResult state = registry->invoke(QStringLiteral("note.expression_get"),
+		QJsonObject{{QStringLiteral("clip"), clipId}});
+	if (!state.ok) { return {}; }
+	const QJsonArray notes = state.result.value(QStringLiteral("notes")).toArray();
+	if (index < 0 || index >= notes.size()) { return {}; }
+	return notes.at(index).toObject();
+}
+
 } // namespace
 
 class ClipLinkTest : public QObject
@@ -235,6 +256,46 @@ private slots:
 	// -----------------------------------------------------------------------
 	// 3. the unlink
 	// -----------------------------------------------------------------------
+
+	void anExpressionEditIsSeenByTheOtherMember()
+	{
+		// Luna cluster 5676: note.expression_set / note.expression_clear wrote the
+		// source clip and emitted dataChanged() but never mirrored the content to
+		// the link group, so the other member kept its old expression.
+		ControlRegistry* registry = ControlRegistry::instance();
+		const QString a = addMidiClip(QStringLiteral("mpe A"));
+		const QString b = addMidiClip(QStringLiteral("mpe B"));
+		QVERIFY2(registry->invoke(QStringLiteral("clip.link_create"),
+			QJsonObject{{QStringLiteral("clip"), a}, {QStringLiteral("clips"), QJsonArray{b}}}).ok,
+			"clip.link_create refused");
+		const ControlResult added = registry->invoke(QStringLiteral("note.add"),
+			QJsonObject{{QStringLiteral("clip"), a}, {QStringLiteral("key"), 60},
+				{QStringLiteral("position"), 0}, {QStringLiteral("length"), 24}});
+		QVERIFY2(added.ok, qPrintable(added.errorMessage));
+		QCOMPARE(noteCount(b), 1);
+
+		const QString note = noteIdAt(a, 0);
+		QVERIFY(!note.isEmpty());
+		QCOMPARE(expressionCount(registry, b), 0);
+
+		// (a) set on A is seen by B, axes and the presence flag both
+		const ControlResult set = registry->invoke(QStringLiteral("note.expression_set"),
+			QJsonObject{{QStringLiteral("clip"), a}, {QStringLiteral("note"), note},
+				{QStringLiteral("pitch"), 120}, {QStringLiteral("pressure"), 64},
+				{QStringLiteral("timbre"), 90}});
+		QVERIFY2(set.ok, qPrintable(set.errorMessage));
+		QCOMPARE(expressionCount(registry, b), 1);
+		const QJsonObject mirrored = expressionOfNote(registry, b, 0);
+		QCOMPARE(mirrored.value(QStringLiteral("pitch_cents")).toInt(), 120);
+		QCOMPARE(mirrored.value(QStringLiteral("pressure")).toInt(), 64);
+		QCOMPARE(mirrored.value(QStringLiteral("timbre")).toInt(), 90);
+
+		// (b) clear on A is seen by B too
+		const ControlResult cleared = registry->invoke(QStringLiteral("note.expression_clear"),
+			QJsonObject{{QStringLiteral("clip"), a}, {QStringLiteral("note"), note}});
+		QVERIFY2(cleared.ok, qPrintable(cleared.errorMessage));
+		QCOMPARE(expressionCount(registry, b), 0);
+	}
 
 	void unlinkDetachesAndKeepsItsContent()
 	{
