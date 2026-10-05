@@ -456,15 +456,27 @@ void MixerChannel::sumSidechainInputs(const f_cnt_t fpp)
 		// Deferred routes do not gate their receiver, so the current
 		// intermediate may not have been written yet this period: read the
 		// snapshot committed in prepareMasterMix() instead (one period late).
-		const float amount = route->mode() == SidechainTapPoint::PostFaderNoGain
-			? 1.0f
-			: route->amount()->value();
+		const bool postNoGain = route->mode() == SidechainTapPoint::PostFaderNoGain;
+		// Luna cluster 5156: an automated amount carries sample-exact data,
+		// exactly like a regular send; read it per frame instead of collapsing
+		// the curve to one scalar for the whole period.
+		ValueBuffer* const amountBuf = postNoGain ? nullptr : route->amount()->valueBuffer();
+		const float amount = postNoGain ? 1.0f : route->amount()->value();
 		// PDC (#605): delay the tap to this channel's alignment point. The
 		// route owns the tap buffer, so the delay is applied in place.
 		const float* s0 = nullptr;
 		const float* s1 = nullptr;
 		route->compensatedTap(route->deferred(), &s0, &s1, fpp);
-		if( amount == 1.0f )
+		if( amountBuf )
+		{
+			for( f_cnt_t f = 0; f < fpp; ++f )
+			{
+				const float a = amountBuf->value( f );
+				dst0[f] += s0[f] * a;
+				dst1[f] += s1[f] * a;
+			}
+		}
+		else if( amount == 1.0f )
 		{
 			for( f_cnt_t f = 0; f < fpp; ++f )
 			{

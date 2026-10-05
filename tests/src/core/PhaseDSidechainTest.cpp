@@ -255,6 +255,54 @@ private slots:
 			probeNoGain->firstL(), expectNoGain);
 	}
 
+	//! Luna cluster 5156: sumSidechainInputs() read the amount with
+	//! amount()->value() and applied that one scalar to every frame of the
+	//! period, so an automated sidechain send lost its curve. A regular send
+	//! multiplies with the amount's ValueBuffer (Mixer.cpp doProcessing).
+	//! Driven directly: publish a sample-exact ramp on the amount, write the
+	//! sender's tap, sum, and read the receiver's sidechain buffer.
+	void anAutomatedSidechainAmountIsAppliedPerFrame()
+	{
+		auto mixer = Engine::mixer();
+		mixer->clear();
+		while (mixer->numChannels() < 3) { mixer->createChannel(); }
+
+		MixerChannel* sender = mixer->mixerChannel(1);
+		MixerChannel* receiver = mixer->mixerChannel(2);
+		MixerSidechainRoute* route = mixer->createSidechainSend(1, 2, 0.0f,
+			SidechainTapPoint::PreFader);
+		QVERIFY(route != nullptr);
+
+		const f_cnt_t fpp = periodFrames();
+		// The sender's signal: a constant 1.0, so the summed buffer IS the
+		// per-frame amount curve.
+		for (f_cnt_t f = 0; f < fpp; ++f) { sender->m_buffer[f] = SampleFrame(1.f, 1.f); }
+		sender->writeSidechainTaps(SidechainTapPoint::PreFader, fpp);
+
+		// A sample-exact ramp 0 -> 1 over this period, published the way the
+		// automation evaluation publishes it (the model's own fixed-capacity
+		// AutomationRamp; valueBuffer() then hands the audio path the curve).
+		FloatModel* amount = route->amount();
+		amount->setValue(1.0f);
+		AutomationRamp ramp;
+		QVERIFY(ramp.addKnot(0, 0.0f));
+		QVERIFY(ramp.addKnot(fpp - 1, 1.0f));
+		amount->publishAutomationRamp(ramp);
+		QVERIFY(amount->valueBuffer() != nullptr);
+
+		receiver->sumSidechainInputs(fpp);
+
+		const float* summed = receiver->m_sidechainBuffer.buffer(0).data();
+		QVERIFY2(summed[0] < 0.05f,
+			qPrintable(QString("first frame %1 is not near the ramp start").arg(summed[0])));
+		QVERIFY2(summed[fpp - 1] > 0.95f,
+			qPrintable(QString("last frame %1 is not near the ramp end (5156)")
+				.arg(summed[fpp - 1])));
+		// A constant-per-block sum would make every frame identical.
+		QVERIFY2(std::fabs(summed[0] - summed[fpp - 1]) > 0.5f,
+			"the sidechain amount was applied as one value for the whole block (5156)");
+	}
+
 	//! 8.1 ducking: the receiver's gain follows the key channel. The ducker
 	//! is deterministic (gain = 1 / (1 + amount * |key|)), so the measured
 	//! level ratio has a closed-form expectation.
