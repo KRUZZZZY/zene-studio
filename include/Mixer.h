@@ -43,6 +43,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <optional>
+#include <vector>
 #include <QColor>
 
 namespace lmms
@@ -597,6 +598,11 @@ public:
 	//! Cycle check over the union of regular and sidechain edges, so a
 	//! sidechain edge can never deadlock the dependency counter.
 	bool checkInfiniteLoop( MixerChannel * from, MixerChannel * to );
+	//! The traversal itself: \a visited carries the channels already expanded
+	//! on this walk, so an existing cycle (which the feedback submode permits)
+	//! is cut instead of recursed into forever.
+	bool checkInfiniteLoop( MixerChannel * from, MixerChannel * to,
+		std::vector<MixerChannel*>& visited );
 	//! True when adding from->to would close a cycle made of sidechain sends
 	//! alone. Such a cycle has no regular send to anchor the ordering, so it
 	//! is refused outright (see createSidechainSend).

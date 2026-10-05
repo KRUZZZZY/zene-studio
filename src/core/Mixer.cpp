@@ -1629,6 +1629,17 @@ int Mixer::setFeedbackMode( bool enabled )
 
 bool Mixer::checkInfiniteLoop( MixerChannel * from, MixerChannel * to )
 {
+	// Control thread only (createRoute / createSidechainSend / the GUI's
+	// routing arrows), so the one visited-set allocation below is never on a
+	// process/render/play path.
+	std::vector<MixerChannel*> visited;
+	return checkInfiniteLoop( from, to, visited );
+}
+
+
+bool Mixer::checkInfiniteLoop( MixerChannel * from, MixerChannel * to,
+	std::vector<MixerChannel*>& visited )
+{
 	// can't send master to anything
 	if( from == m_mixerChannels[0] )
 	{
@@ -1641,6 +1652,16 @@ bool Mixer::checkInfiniteLoop( MixerChannel * from, MixerChannel * to )
 		return true;
 	}
 
+	// Already expanded on this walk: the feedback submode permits real
+	// cycles, so an existing A->B->A would otherwise be followed forever and
+	// blow the stack. Everything reachable from here was decided the first
+	// time, so cutting the revisit cannot change the answer.
+	if (std::find(visited.begin(), visited.end(), to) != visited.end())
+	{
+		return false;
+	}
+	visited.push_back(to);
+
 	// follow sendTo's outputs recursively looking for something that sends
 	// to sendFrom. Phase D: gating sidechain edges are traversed as well,
 	// because a non-deferred sidechain send is a scheduling dependency and a
@@ -1648,7 +1669,13 @@ bool Mixer::checkInfiniteLoop( MixerChannel * from, MixerChannel * to )
 	// routes never gate, so they cannot deadlock and are skipped.
 	for (const auto& send : to->m_sends)
 	{
-		if (checkInfiniteLoop(from, send->receiver()))
+		// A feedback route is cycle-permitted by construction (createRoute
+		// flags the edge that closes one), so it never closes a NEW cycle.
+		if (send->feedback())
+		{
+			continue;
+		}
+		if (checkInfiniteLoop(from, send->receiver(), visited))
 		{
 			return true;
 		}
@@ -1659,7 +1686,7 @@ bool Mixer::checkInfiniteLoop( MixerChannel * from, MixerChannel * to )
 		{
 			continue;
 		}
-		if (checkInfiniteLoop(from, send->receiver()))
+		if (checkInfiniteLoop(from, send->receiver(), visited))
 		{
 			return true;
 		}

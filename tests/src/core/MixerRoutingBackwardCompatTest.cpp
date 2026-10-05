@@ -369,6 +369,40 @@ private slots:
 			"the unknown effect's original data was not re-saved");
 		evidence("LEGACY_UNKNOWN_EFFECT preserved=1 resaved=1");
 	}
+
+	//! A cycle the feedback submode permits (A->B->A, the closing edge flagged)
+	//! must not make a later, unrelated check recurse forever. The traversal
+	//! has no visited set, so asking whether C->A closes a cycle walks
+	//! A->B->A->B->A until the stack is gone.
+	//!
+	//! The answer itself is false: from C nothing reaches C, so no cycle is
+	//! closed - the check must terminate and say so.
+	void anExistingFeedbackCycleDoesNotRecurseForever()
+	{
+		Mixer* mixer = Engine::mixer();
+		QVERIFY(mixer != nullptr);
+
+		mixer->clear();
+		QCOMPARE(mixer->setFeedbackMode(true), 0);
+		while (mixer->numChannels() < 4) { mixer->createChannel(); }
+
+		const mix_ch_t a = 1;
+		const mix_ch_t b = 2;
+		const mix_ch_t c = 3;
+		QVERIFY2(mixer->createChannelSend(a, b, 1.0f) != nullptr, "A->B was not created");
+		QVERIFY(mixer->isInfiniteLoop(b, a));
+		QVERIFY2(mixer->createChannelSend(b, a, 1.0f) != nullptr,
+			"the feedback submode did not permit the loop-closing send");
+		// Confirm the cycle really exists, so the case cannot pass vacuously.
+		QVERIFY(mixer->channelSendModel(b, a) != nullptr);
+
+		const bool closesCycle = mixer->isInfiniteLoop(c, a);
+
+		evidence("FEEDBACK_CYCLE_TERMINATES closes_cycle=%d", closesCycle ? 1 : 0);
+
+		QVERIFY2(!closesCycle,
+			"adding C->A was reported as a cycle although nothing routes back to C");
+	}
 };
 
 QTEST_GUILESS_MAIN(MixerRoutingBackwardCompatTest)
