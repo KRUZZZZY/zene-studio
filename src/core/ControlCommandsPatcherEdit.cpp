@@ -388,8 +388,15 @@ ControlResult setWiring(const QJsonObject& args)
 
 	QJsonObject result = control::patcherStateJson(chain, target);
 	result.insert(QStringLiteral("previous"), control::wiringJson(before));
+	// The effective edges are only HALF the state: a chain on the DERIVED wiring
+	// that is given its own derived edges keeps an identical effective wiring but
+	// flips patchActive() - the patch is now in force, `wiring` above reports
+	// "authored", and the next rebuild re-applies it as a patch instead of
+	// deriving it. Comparing the edges alone reported `changed: false` next to
+	// `wiring: "authored"`, so the authored/derived state is compared too.
+	const bool isAuthored = chain.patchActive();
 	result.insert(QStringLiteral("changed"),
-		!before.equals(control::effectiveWiring(chain)));
+		wasAuthored != isAuthored || !before.equals(control::effectiveWiring(chain)));
 
 	// SPEC A16: an EffectChain is a Model and a SerializingObject, not a
 	// JournallingObject, so there is no live checkpoint to take. The inverse is

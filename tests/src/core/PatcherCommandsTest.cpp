@@ -373,6 +373,49 @@ private slots:
 		QCOMPARE(chainUnderTest()->routingGraph().outputNodeId(), 2);
 	}
 
+	//! `changed` must account for AUTHORED-vs-DERIVED, not only the effective
+	//! edges. Authoring the chain's own derived linear edges leaves the render
+	//! and the effective wiring identical, but the chain's state flips: the
+	//! patch is now in force (patchActive), the read calls it "authored", and
+	//! the next rebuild re-applies it as a patch rather than deriving it. That
+	//! IS a change, so reporting `changed: false` alongside `wiring: "authored"`
+	//! in the same result contradicts itself.
+	void switchingToAnIdenticalAuthoredWiringReportsChanged()
+	{
+		QCOMPARE(readState().value(QStringLiteral("wiring")).toString(), QStringLiteral("derived"));
+		const QJsonObject derived = readState().value(QStringLiteral("effective_wiring")).toObject();
+
+		// Exactly the derived linear wiring of this two-effect chain, authored:
+		// input -> effect:0 -> effect:1, output effect:1.
+		QJsonObject args;
+		args.insert(QStringLiteral("target"), channel());
+		args.insert(QStringLiteral("edges"), QJsonArray{inputTo(QStringLiteral("effect:0")),
+			wire(QStringLiteral("effect:0"), QStringLiteral("effect:1"))});
+		args.insert(QStringLiteral("output"), QStringLiteral("effect:1"));
+		const ControlResult applied = invoke(QStringLiteral("patcher.set_wiring"), args);
+		QVERIFY2(applied.ok, qPrintable(applied.errorMessage));
+
+		QVERIFY2(applied.result.value(QStringLiteral("changed")).toBool(),
+			"authoring the chain's own derived wiring switched the wiring to `authored` but "
+			"reported changed: false");
+		QVERIFY(chainUnderTest()->patchActive());
+		QCOMPARE(applied.result.value(QStringLiteral("wiring")).toString(), QStringLiteral("authored"));
+		// The premise of the case: the EFFECTIVE wiring really is unchanged, so
+		// only the authored/derived state can be what `changed` missed.
+		QCOMPARE(applied.result.value(QStringLiteral("effective_wiring")).toObject(), derived);
+
+		// And the way back is still the derivation, with the same flip reported
+		// in the other direction.
+		QJsonObject restore;
+		restore.insert(QStringLiteral("target"), channel());
+		restore.insert(QStringLiteral("edges"), QJsonArray());
+		const ControlResult derivedAgain = invoke(QStringLiteral("patcher.set_wiring"), restore);
+		QVERIFY2(derivedAgain.ok, qPrintable(derivedAgain.errorMessage));
+		QVERIFY2(derivedAgain.result.value(QStringLiteral("changed")).toBool(),
+			"clearing the authored wiring restored the derived route but reported changed: false");
+		QVERIFY(!chainUnderTest()->patchActive());
+	}
+
 	//! Every refusal is typed and writes nothing - the state is read back after
 	//! each one and compared with the state before it.
 	void refusalsWriteNothing()
