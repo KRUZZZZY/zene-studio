@@ -115,6 +115,51 @@ private slots:
 			ControlErrorKind::InvalidArgs);
 	}
 
+	//! A MIDI clip's controller lanes are in CLIP time, so a time scale has to move them
+	//! with the notes: a CC point at tick 100 next to a note at tick 100 stays next to it.
+	void scalingAMidiClipScalesItsControllerPointsToo()
+	{
+		MidiClip* a = clipAt(0, 192, 60);
+		a->addNote(Note(TimePos(12), TimePos(100), 60), false);  // length 12, at tick 100
+		const QJsonObject set{{QStringLiteral("clip"), control::clipIdOf(a)}, {QStringLiteral("lane"), QStringLiteral("cc:7")},
+			{QStringLiteral("points"), QJsonArray{{QJsonObject{{QStringLiteral("tick"), 100}, {QStringLiteral("value"), 64}}}}}};
+		QVERIFY(run(QStringLiteral("clip.controllers_set"), set).ok);
+		QCOMPARE(a->notes().size(), std::size_t{2});
+
+		QVERIFY(run(QStringLiteral("clip.time_scale"), {{QStringLiteral("clip"), control::clipIdOf(a)}, {QStringLiteral("factor"), 2}}).ok);
+		QCOMPARE(a->notes().size(), std::size_t{2});
+		QCOMPARE(static_cast<int>(a->notes().back()->pos().getTicks()), 200);  // the note at tick 100 moved to 200
+		const ControllerLane* lane = a->controllers().lane(ControllerKind::ControlChange, 7);
+		QVERIFY(lane != nullptr);
+		QCOMPARE(lane->points.size(), std::size_t{1});
+		QCOMPARE(static_cast<int>(lane->points.front().tick), 200);  // and its point moved with it
+	}
+
+	//! ED-031 joins the NOTES of the later clips into the first; their controller lanes are
+	//! their content too, and the clip that carried them is deleted - so they must come too.
+	void joiningKeepsTheOtherClipsControllerLanes()
+	{
+		MidiClip* a = clipAt(0, 96, 60);
+		MidiClip* b = clipAt(192, 96, 64);
+		const QJsonObject first{{QStringLiteral("tick"), 0}, {QStringLiteral("value"), 20}};
+		const QJsonObject second{{QStringLiteral("tick"), 24}, {QStringLiteral("value"), 90}};
+		const QJsonObject set{{QStringLiteral("clip"), control::clipIdOf(b)}, {QStringLiteral("lane"), QStringLiteral("cc:11")},
+			{QStringLiteral("points"), QJsonArray{first, second}}};
+		QVERIFY(run(QStringLiteral("clip.controllers_set"), set).ok);
+
+		QVERIFY(run(QStringLiteral("clip.join"), {{QStringLiteral("clips"),
+			QJsonArray{control::clipIdOf(a), control::clipIdOf(b)}}}).ok);
+		QCOMPARE(m_track->getClips().size(), std::size_t{1});
+		const ControllerLane* lane = a->controllers().lane(ControllerKind::ControlChange, 11);
+		QVERIFY2(lane != nullptr, "the joined clip dropped the deleted clip's controller lane");
+		QCOMPARE(lane->points.size(), std::size_t{2});
+		// b started 192 later in song time, and the first clip starts at 0: the points move by
+		// the same delta the notes moved by (192), so tick 24 lands at 216.
+		QCOMPARE(static_cast<int>(lane->points.front().tick), 192);
+		QCOMPARE(static_cast<int>(lane->points.back().tick), 216);
+		QCOMPARE(a->notes().back()->pos().getTicks(), 192);
+	}
+
 	void rippleCarriesWhatFollowsAMove()
 	{
 		MidiClip* a = clipAt(0, 96, 60);

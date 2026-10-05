@@ -98,6 +98,23 @@ void scaleNotes(MidiClip* clip, double factor)
 	clip->rearrangeAllNotes();
 }
 
+//! Controller points carry clip-time ticks, exactly like note positions, so a time scale moves
+//! them by the same factor and the same rounding. Points that scale onto the same tick collapse
+//! (setPoints keeps one per tick) - the same bounds policy the notes get from their >= 1 length.
+void scaleControllers(MidiClip* clip, double factor)
+{
+	for (const ControllerLane& lane : clip->controllers().lanes())
+	{
+		std::vector<ControllerPoint> points;
+		points.reserve(lane.points.size());
+		for (const ControllerPoint& point : lane.points)
+		{
+			points.push_back({static_cast<tick_t>(std::lround(point.tick * factor)), point.value});
+		}
+		clip->setControllerPoints(lane.kind, lane.controller, std::move(points));
+	}
+}
+
 ControlResult timeScale(const QJsonObject& args)
 {
 	ClipRef ref;
@@ -113,6 +130,7 @@ ControlResult timeScale(const QJsonObject& args)
 	if (auto* midi = dynamic_cast<MidiClip*>(ref.clip))
 	{
 		scaleNotes(midi, factor);
+		scaleControllers(midi, factor);
 		// Scaling writes the clip's own Note objects, so it writes the group's
 		// shared content without passing a note entry point - the same seam
 		// cluster 5689 measured on note.randomize. One mirror keeps every
@@ -166,6 +184,24 @@ bool joinable(const QJsonArray& ids, QVector<MidiClip*>* clips, Track** track, C
 
 //! ED-031 (0.5.0 L05): glue MIDI clips into the first - their notes move in at their song positions,
 //! the others go, and the first spans to the last one's end.
+//! The lanes of @a clip moved into @a first by @a delta ticks - the same song-time delta the
+//! notes get. Points that land on the same tick collapse (one point per tick), and a lane that
+//! already exists in @a first is merged into it rather than replacing it.
+void mergeControllers(MidiClip* first, const MidiClip* other, tick_t delta)
+{
+	for (const ControllerLane& lane : other->controllers().lanes())
+	{
+		std::vector<ControllerPoint> points;
+		const ControllerLane* existing = first->controllers().lane(lane.kind, lane.controller);
+		if (existing != nullptr) { points = existing->points; }
+		for (const ControllerPoint& point : lane.points)
+		{
+			points.push_back({point.tick + delta, point.value});
+		}
+		first->setControllerPoints(lane.kind, lane.controller, std::move(points));
+	}
+}
+
 ControlResult joinClips(const QJsonObject& args)
 {
 	ControlResult error;
@@ -186,6 +222,7 @@ ControlResult joinClips(const QJsonObject& args)
 			moved.setPos(TimePos(from + note->pos().getTicks() - origin));
 			first->addNote(moved, false);
 		}
+		mergeControllers(first, other, from - origin);
 		end = std::max(end, other->endPosition().getTicks());
 		arrangement::deleteClip(track, other);
 	}
