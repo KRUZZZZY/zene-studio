@@ -120,6 +120,20 @@ ControlResult addMarker(const QJsonObject& args)
 	});
 }
 
+//! What a marker's stored pair will be asked to run: the arguments the CROSSING hands
+//! to the action have to satisfy that command's own args schema - the same one
+//! invoke() checks - so a pair that could never run is refused here, where the mistake
+//! is, rather than once per crossing in playback.
+bool actionArgsAreRunnable(const Marker& marker)
+{
+	if (marker.action.isEmpty()) { return true; }
+	const ControlCommand* action = ControlRegistry::instance()->command(marker.action);
+	if (action == nullptr) { return false; }
+	const QJsonObject stored = marker.args.isEmpty() ? QJsonObject()
+		: QJsonDocument::fromJson(marker.args.toUtf8()).object();
+	return ControlRegistry::validateArgs(action->argsSchema, stored).isEmpty();
+}
+
 //! WF-073: 'action' (a command; empty removes it) and 'args' onto @a marker; false for an action that is not one.
 bool readMarkerAction(const QJsonObject& args, Marker* marker)
 {
@@ -140,7 +154,7 @@ bool readMarkerAction(const QJsonObject& args, Marker* marker)
 	{
 		marker->args = QString::fromUtf8(QJsonDocument(args.value(QStringLiteral("args")).toObject()).toJson(QJsonDocument::Compact));
 	}
-	return true;
+	return actionArgsAreRunnable(*marker);
 }
 
 ControlResult setMarker(const QJsonObject& args)

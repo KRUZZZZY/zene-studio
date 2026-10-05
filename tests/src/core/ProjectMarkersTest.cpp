@@ -151,6 +151,42 @@ private slots:
 			"four undos did not take the marker back to no action at all");
 	}
 
+	//! A marker action is stored so that the CROSSING can run it, so its
+	//! arguments have to satisfy the command it names - refused here, where the
+	//! mistake is, rather than on every crossing of the marker in playback.
+	void aMarkerActionCannotCarryArgumentsItsCommandWouldRefuse()
+	{
+		Engine::getSong()->clearProject();
+		const ControlResult added = run(QStringLiteral("marker.add"), {{QStringLiteral("tick"), 192}});
+		QVERIFY2(added.ok, qPrintable(added.errorMessage));
+		const QString id = added.result.value(QStringLiteral("marker")).toString();
+
+		// transport.set_tempo needs a bpm: without one, and with one outside
+		// its own range, the stored pair is one the crossing would refuse.
+		QCOMPARE(run(QStringLiteral("marker.set"), {{QStringLiteral("marker"), id},
+			{QStringLiteral("action"), QStringLiteral("transport.set_tempo")}}).errorKind,
+			ControlErrorKind::InvalidArgs);
+		QCOMPARE(run(QStringLiteral("marker.set"), {{QStringLiteral("marker"), id},
+			{QStringLiteral("action"), QStringLiteral("transport.set_tempo")},
+			{QStringLiteral("args"), QJsonObject{{QStringLiteral("bpm"), 5000}}}}).errorKind,
+			ControlErrorKind::InvalidArgs);
+		QVERIFY2(ProjectMarkers::instance().find(idMarker(id))->action.isEmpty(),
+			"a refused action was written to the marker anyway");
+
+		// A command the arguments DO satisfy is stored, and so is a command
+		// that takes no arguments at all.
+		QVERIFY(run(QStringLiteral("marker.set"), {{QStringLiteral("marker"), id},
+			{QStringLiteral("action"), QStringLiteral("transport.set_tempo")},
+			{QStringLiteral("args"), QJsonObject{{QStringLiteral("bpm"), 120}}}}).ok);
+		QCOMPARE(run(QStringLiteral("marker.set"), {{QStringLiteral("marker"), id},
+			{QStringLiteral("action"), QStringLiteral("transport.play")},
+			{QStringLiteral("args"), QJsonObject{{QStringLiteral("bpm"), 120}}}}).errorKind,
+			ControlErrorKind::InvalidArgs);
+		QVERIFY(run(QStringLiteral("marker.set"), {{QStringLiteral("marker"), id},
+			{QStringLiteral("action"), QStringLiteral("transport.play")}}).ok);
+		QCOMPARE(ProjectMarkers::instance().find(idMarker(id))->action, QStringLiteral("transport.play"));
+	}
+
 	void jumpGoesToTheNextMarker()
 	{
 		Song* song = Engine::getSong();
