@@ -58,6 +58,7 @@
 
 #include "DawProjectInterchange.h"
 #include "DawProjectReadShared.h"
+#include "TempoMap.h"
 
 namespace lmms
 {
@@ -81,6 +82,30 @@ bool tempoAccepted(double tempo, ReadState& state)
 	return false;
 }
 
+//! True when the engine will accept this metre (the same closed rule
+//! TempoMap::validEvent applies: a numerator inside [1, 32] and a denominator
+//! that is a power of two). Otherwise false, with state.error naming the value:
+//! a metre the engine cannot hold is carried into the session as an unusable
+//! signature, and the fallback of 4/4 would report a document's own silence.
+bool meterAccepted(int numerator, int denominator, ReadState& state)
+{
+	if (numerator < TempoMapMinNumerator || numerator > TempoMapMaxNumerator)
+	{
+		state.error = QStringLiteral("the document's time signature numerator %1 is outside the "
+			"engine's own %2..%3").arg(numerator).arg(TempoMapMinNumerator)
+			.arg(TempoMapMaxNumerator);
+		return false;
+	}
+	if (!isSupportedTempoMapDenominator(denominator))
+	{
+		state.error = QStringLiteral("the document's time signature denominator %1 is not one the "
+			"engine's meter uses (a power of two up to %2)").arg(denominator)
+			.arg(TempoMapLargestDenominator);
+		return false;
+	}
+	return true;
+}
+
 //! The points of one <TempoAutomation> (or, @a isMeter, <TimeSignatureAutomation>). False - with
 //! state.error set - for a tempo point the engine will not accept, as for the global <Tempo>.
 bool parseAutomationPoints(QXmlStreamReader& reader, ReadState& state, bool isMeter)
@@ -100,6 +125,7 @@ bool parseAutomationPoints(QXmlStreamReader& reader, ReadState& state, bool isMe
 		{
 			entry.numerator = intAttribute(attributes, state, QStringLiteral("numerator"), 4);
 			entry.denominator = intAttribute(attributes, state, QStringLiteral("denominator"), 4);
+			if (!meterAccepted(entry.numerator, entry.denominator, state)) { return false; }
 			state.model->meterPoints.append(entry);
 		}
 		else
@@ -169,6 +195,10 @@ bool parseDocument(QXmlStreamReader& reader, ReadState& state)
 						intAttribute(attributes, state, QStringLiteral("numerator"), 4);
 					state.model->denominator =
 						intAttribute(attributes, state, QStringLiteral("denominator"), 4);
+					if (!meterAccepted(state.model->numerator, state.model->denominator, state))
+					{
+						return false;
+					}
 				}
 				else { skipElement(reader); }
 			}

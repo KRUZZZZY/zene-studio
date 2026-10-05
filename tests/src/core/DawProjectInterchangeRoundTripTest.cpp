@@ -50,6 +50,8 @@
 
 #include <QByteArray>
 #include <QDir>
+#include <QList>
+#include <QPair>
 #include <QJsonArray>
 #include <QJsonObject>
 #include <QString>
@@ -813,6 +815,57 @@ private slots:
 		const DawProjectModel extracted = dawProjectModelFromSong(Engine::getSong(), nullptr);
 		QVERIFY2(extracted.noteCount() > 0,
 			"the mixed track's notes were dropped when the model was applied");
+	}
+
+	//! model as-is and reached the session, where it is an unusable metre.
+	void invalidTimeSignaturesAreRefused()
+	{
+		const QString prefix =
+			QStringLiteral("<Project version=\"1.0\">"
+			"<Application name=\"Probe\" version=\"1\"/>"
+			"<Transport><Tempo value=\"120\"/><TimeSignature numerator=\"%1\" denominator=\"%2\"/>"
+			"</Transport></Project>");
+
+		const QList<QPair<int, int>> invalid = {
+			{0, 4}, {4, 0}, {-3, 4}, {4, -4}, {40, 4}, {4, 3}
+		};
+		for (const auto& signature : invalid)
+		{
+			const QByteArray xml = prefix
+				.arg(signature.first).arg(signature.second).toLatin1();
+			DawProjectModel model;
+			DawProjectReadReport report;
+			QString error;
+			QVERIFY2(!dawProjectModelFromXml(xml, &model, &report, &error),
+				qPrintable(QStringLiteral("the meter %1/%2 was accepted")
+					.arg(signature.first).arg(signature.second)));
+		}
+
+		// The positive half: every meter the engine supports still reads.
+		for (int denominator = 1; denominator <= 32; denominator *= 2)
+		{
+			const QByteArray xml = prefix.arg(3).arg(denominator).toLatin1();
+			DawProjectModel model;
+			DawProjectReadReport report;
+			QString error;
+			QVERIFY2(dawProjectModelFromXml(xml, &model, &report, &error), qPrintable(error));
+			QCOMPARE(model.numerator, 3);
+			QCOMPARE(model.denominator, denominator);
+		}
+
+		// And the same rule on a <TimeSignaturePoint> inside the automation.
+		const QByteArray meterPoint =
+			"<Project version=\"1.0\">"
+			"<Application name=\"Probe\" version=\"1\"/>"
+			"<Transport><Tempo value=\"120\"/></Transport>"
+			"<Arrangement><TimeSignatureAutomation timeUnit=\"beats\">"
+			"<TimeSignaturePoint time=\"0\" numerator=\"4\" denominator=\"7\"/>"
+			"</TimeSignatureAutomation></Arrangement></Project>";
+		DawProjectModel pointModel;
+		DawProjectReadReport pointReport;
+		QString pointError;
+		QVERIFY2(!dawProjectModelFromXml(meterPoint, &pointModel, &pointReport, &pointError),
+			"an automation metre point with denominator 7 was accepted");
 	}
 
 	//! supported tempo.
