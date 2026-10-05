@@ -386,7 +386,34 @@ private slots:
 			static_cast<quint32>(widestGap * interchange::SmfTicksPerLmmsTick));
 	}
 
-private:
+	//! A global tempo outside the engine's own bounds never reaches the file's
+	//! microseconds-per-quarter arithmetic. An EMPTY map answers the caller's
+	//! global tempo at every tick, so the tick-0 seed carries whatever the caller
+	//! passed - and (60000000 + 0) / 0 is an integer division by zero, which is
+	//! a crash rather than a wrong byte. A tempo the engine does not hold is
+	//! refused, with a reason and no file; a tempo it does hold is still written.
+	void aGlobalTempoTheEngineDoesNotHoldIsRefused()
+	{
+		const QString file = path(m_directory, QStringLiteral("bad-global-tempo.mid"));
+		for (const int tempo : {0, -120, TempoMapMaxTempo + 1})
+		{
+			QString error;
+			QVERIFY2(!interchange::writeConductorTrack(file, TempoMap{}, tempo,
+				TempoMapTimeSignature{4, 4}, nullptr, &error),
+				qPrintable(QStringLiteral("global tempo %1 was accepted").arg(tempo)));
+			QVERIFY2(!error.isEmpty(), "the refusal says why");
+			QVERIFY2(!QFile::exists(file), "and no file is left behind");
+		}
+
+		// The engine's own bounds are the accepted ones: the slowest tempo it
+		// holds still writes.
+		QString error;
+		QVERIFY2(interchange::writeConductorTrack(file, TempoMap{}, TempoMapMinTempo,
+			TempoMapTimeSignature{4, 4}, nullptr, &error), qPrintable(error));
+		QVERIFY(QFile::exists(file));
+	}
+
+	private:
 	QTemporaryDir m_directory;
 };
 

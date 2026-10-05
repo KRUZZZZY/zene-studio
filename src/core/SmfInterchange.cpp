@@ -381,6 +381,21 @@ const SmfConvention& smfConvention()
 bool writeConductorTrack(const QString& path, const TempoMap& map, int globalTempo,
 	const TempoMapTimeSignature& globalSignature, SmfWriteReport* report, QString* error)
 {
+	// The tick-0 seed writes globalTempo verbatim, and tempoPayload divides by
+	// it: a tempo the engine does not hold (0, or anything outside
+	// TempoMapMinTempo..TempoMapMaxTempo) has no microseconds-per-quarter-note
+	// the format can carry, so the export is refused instead of dividing by zero
+	// or writing a byte triple no player reads back as the requested bpm.
+	if (globalTempo < TempoMapMinTempo || globalTempo > TempoMapMaxTempo)
+	{
+		if (error != nullptr)
+		{
+			*error = QStringLiteral("the global tempo %1 bpm is outside the %2..%3 bpm this "
+				"engine holds, so the tick-0 seed has no value the file can carry; nothing "
+				"was exported").arg(globalTempo).arg(TempoMapMinTempo).arg(TempoMapMaxTempo);
+		}
+		return false;
+	}
 	const std::vector<SmfInterchangeEvent> events = exportEvents(map, globalTempo, globalSignature,
 		report != nullptr ? &report->seedEvents : nullptr);
 	QByteArray body;
