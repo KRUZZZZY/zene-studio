@@ -253,15 +253,47 @@ QJsonObject mixerSidechainBeforeState(MixerSidechainRoute* route)
 	return before;
 }
 
-void recordMixerRouteStep(mix_ch_t fromIndex, mix_ch_t toIndex, const QJsonObject& before,
+namespace
+{
+
+/*! The live positions \a fromId and \a toId name right now, or (0, 0) with
+ *  *ok false when either channel is gone.
+ *
+ *  A retained route step must resolve its channels AT THE TIME IT RUNS, not at
+ *  the time it was recorded: the command surface itself resolves "ch-<n>" by
+ *  persistent id (resolveMixerChannel, SPEC-stable-ids.md slice 2), so a step
+ *  that kept the POSITION it was recorded at would act on a different channel
+ *  after a reorder, or dereference a missing one after a removal.
+ */
+bool liveRouteEnds(const QString& fromId, const QString& toId,
+	mix_ch_t* fromIndex, mix_ch_t* toIndex)
+{
+	ControlResult ignored;
+	MixerChannel* from = resolveMixerChannel(fromId, &ignored);
+	if (from == nullptr) { return false; }
+	MixerChannel* to = resolveMixerChannel(toId, &ignored);
+	if (to == nullptr) { return false; }
+	*fromIndex = from->index();
+	*toIndex = to->index();
+	return true;
+}
+
+} // namespace
+
+void recordMixerRouteStep(const QString& fromId, const QString& toId, const QJsonObject& before,
 	float wantedAmount, bool wantedPreFader)
 {
 	const bool existed = before.value(QStringLiteral("existed")).toBool();
 	const float amount = static_cast<float>(before.value(QStringLiteral("amount")).toDouble(1.0));
 	const bool preFader = before.value(QStringLiteral("pre_fader")).toBool();
 	Mixer* mixer = Engine::mixer();
+	// A channel the run has since removed has no route to take back, so the step
+	// is a no-op rather than a write through a stale position.
 	control::addUndoStep(
-		[mixer, fromIndex, toIndex, existed, amount, preFader]() {
+		[mixer, fromId, toId, existed, amount, preFader]() {
+			mix_ch_t fromIndex = 0;
+			mix_ch_t toIndex = 0;
+			if (!liveRouteEnds(fromId, toId, &fromIndex, &toIndex)) { return; }
 			if (!existed) { mixer->deleteChannelSend(fromIndex, toIndex); return; }
 			MixerRoute* route = findMixerRoute(fromIndex, toIndex);
 			if (route != nullptr)
@@ -270,12 +302,15 @@ void recordMixerRouteStep(mix_ch_t fromIndex, mix_ch_t toIndex, const QJsonObjec
 				route->setPreFader(preFader);
 			}
 		},
-		[mixer, fromIndex, toIndex, wantedAmount, wantedPreFader]() {
+		[mixer, fromId, toId, wantedAmount, wantedPreFader]() {
+			mix_ch_t fromIndex = 0;
+			mix_ch_t toIndex = 0;
+			if (!liveRouteEnds(fromId, toId, &fromIndex, &toIndex)) { return; }
 			mixer->createChannelSend(fromIndex, toIndex, wantedAmount, wantedPreFader);
 		});
 }
 
-void recordMixerSidechainStep(mix_ch_t fromIndex, mix_ch_t toIndex, const QJsonObject& before,
+void recordMixerSidechainStep(const QString& fromId, const QString& toId, const QJsonObject& before,
 	float wantedAmount, SidechainTapPoint wantedMode)
 {
 	const bool existed = before.value(QStringLiteral("existed")).toBool();
@@ -284,7 +319,10 @@ void recordMixerSidechainStep(mix_ch_t fromIndex, mix_ch_t toIndex, const QJsonO
 	sidechainTapPointFromName(before.value(QStringLiteral("tap_point")).toString(), &mode);
 	Mixer* mixer = Engine::mixer();
 	control::addUndoStep(
-		[mixer, fromIndex, toIndex, existed, amount, mode]() {
+		[mixer, fromId, toId, existed, amount, mode]() {
+			mix_ch_t fromIndex = 0;
+			mix_ch_t toIndex = 0;
+			if (!liveRouteEnds(fromId, toId, &fromIndex, &toIndex)) { return; }
 			if (!existed) { mixer->deleteSidechainSend(fromIndex, toIndex); return; }
 			MixerSidechainRoute* route = mixer->channelSidechainSend(fromIndex, toIndex);
 			if (route != nullptr)
@@ -293,7 +331,10 @@ void recordMixerSidechainStep(mix_ch_t fromIndex, mix_ch_t toIndex, const QJsonO
 				route->setMode(mode);
 			}
 		},
-		[mixer, fromIndex, toIndex, wantedAmount, wantedMode]() {
+		[mixer, fromId, toId, wantedAmount, wantedMode]() {
+			mix_ch_t fromIndex = 0;
+			mix_ch_t toIndex = 0;
+			if (!liveRouteEnds(fromId, toId, &fromIndex, &toIndex)) { return; }
 			mixer->createSidechainSend(fromIndex, toIndex, wantedAmount, wantedMode);
 		});
 }

@@ -153,6 +153,36 @@ private slots:
 		run(QStringLiteral("mixer.route_remove"), {{QStringLiteral("channel"), ch(1)}, {QStringLiteral("to"), ch(3)}});
 	}
 
+	/*! A retained route step resolves its channels BY ID when it runs, not by the
+	 *  positions they held when it was recorded (SPEC-stable-ids.md slice 2).
+	 *
+	 *  The write creates ch-1 -> ch-3, then a channel BELOW both is removed
+	 *  straight on the mixer (no undo step of its own, so the route step is still
+	 *  the one on top). The removal renumbers the channels, so the recorded
+	 *  positions 1 and 3 now name ch-1 and a channel that never sent anything:
+	 *  a step that kept them would delete (or restore) a route between the wrong
+	 *  two channels. The undo must find the route by id and take back THAT one.
+	 */
+	void aRouteUndoStepFollowsItsChannelsThroughARenumbering()
+	{
+		Mixer* mixer = Engine::mixer();
+		const QString fromId = ch(1);
+		const QString toId = ch(3);
+		QVERIFY2(run(QStringLiteral("mixer.send_to"), {{QStringLiteral("channel"), fromId},
+			{QStringLiteral("to"), toId}, {QStringLiteral("amount"), 0.8}}).ok, "send_to must be accepted");
+		QVERIFY(control::findMixerRoute(1, 3) != nullptr);
+		// Remove channel 2 straight on the mixer: every later channel moves down
+		// one and NO undo step is recorded, so the send's step is still the top.
+		mixer->deleteChannel(2);
+		QVERIFY(control::findMixerRoute(1, 2) != nullptr);  // the same route, at its new position
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
+		// Gone by id: the retained step resolved ch-1/ch-3 to their live
+		// positions (1 and 2) and deleted that route.
+		QVERIFY2(control::findMixerRoute(1, 2) == nullptr,
+			"the undo did not remove the route it was recorded for");
+		mixer->createChannel();  // restore the strip count for the cases below
+	}
+
 	/*! 0.5.0 W4 (review lane14 luna BUG 1): a send's pan follows its sample-exact buffer through the
 	 *  real render path. The pan moves from hard left back to centre: before, the mixer picked the
 	 *  panned path from pan()->value() alone, so a block that ends at centre went out centred from

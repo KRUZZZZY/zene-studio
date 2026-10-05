@@ -101,7 +101,7 @@ ControlResult handleRouteWrite(const QJsonObject& args, bool auxiliary)
 	const bool preFader = args.value(QStringLiteral("pre_fader")).toBool(false);
 
 	const QJsonObject before = mixerRouteBeforeState(findMixerRoute(fromIndex, toIndex));
-	recordMixerRouteStep(fromIndex, toIndex, before, amount, preFader);
+	recordMixerRouteStep(channelIdOf(ends.from), channelIdOf(ends.to), before, amount, preFader);
 	MixerRoute* route = mixer->createChannelSend(fromIndex, toIndex, amount, preFader);
 	if (route == nullptr)
 	{
@@ -164,7 +164,7 @@ ControlResult handleSidechainWrite(const QJsonObject& args)
 	const float amount = static_cast<float>(wanted);
 	const QJsonObject before =
 		mixerSidechainBeforeState(mixer->channelSidechainSend(fromIndex, toIndex));
-	recordMixerSidechainStep(fromIndex, toIndex, before, amount, mode);
+	recordMixerSidechainStep(channelIdOf(ends.from), channelIdOf(ends.to), before, amount, mode);
 	MixerSidechainRoute* route = mixer->createSidechainSend(fromIndex, toIndex, amount, mode);
 	if (route == nullptr)
 	{
