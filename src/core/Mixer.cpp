@@ -1828,6 +1828,13 @@ int Mixer::resolveLatency(std::size_t index)
 			// is what keeps the solve acyclic (every cycle has one of these).
 			continue;
 		}
+		if (!route->enabled())
+		{
+			// A switched-off send delivers nothing (0.5.0 L08 / MX-047), so it
+			// cannot raise the alignment point: keeping it here would delay
+			// every other path into this channel for a route that is silent.
+			continue;
+		}
 		resolveLatency(route->senderIndex());
 		input = std::max(input, sendTapLatency(*route));
 	}

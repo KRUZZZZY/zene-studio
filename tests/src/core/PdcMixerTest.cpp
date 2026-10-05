@@ -688,6 +688,50 @@ private slots:
 				.arg(delayedResidualDb)));
 	}
 
+	//! A switched-off send delivers nothing (0.5.0 L08 / MX-047), so it must
+	//! not raise the receiver's alignment point either. With ch1's 257-frame
+	//! chain feeding ch3 through a send, ch3 aligns at 257 and the master
+	//! follows; once that send is switched off, ch3 has only the zero-latency
+	//! direct path left and its published alignment must return to 0 - while
+	//! the master still hears ch3 through the same route, so the whole graph
+	//! comes back undelayed.
+	void disabledSendDoesNotRaiseAlignment()
+	{
+		auto mixer = Engine::mixer();
+
+		mixer->clear();
+		while (mixer->numChannels() < 4) { mixer->createChannel(); }
+		EffectChain* latent = chainOf(mixer, 1);
+		latent->appendEffect(new LatentDelayEffect(latent, kLatency));
+		MixerRoute* compensated = mixer->createChannelSend(1, 3, 1.0f);
+		QVERIFY2(compensated != nullptr, "the latent send was not created");
+		QVERIFY2(mixer->createChannelSend(2, 3, 1.0f) != nullptr, "the dry send was not created");
+		// Feed the master only through ch3, so the master's alignment is ch3's.
+		mixer->deleteChannelSend(1, 0);
+		mixer->deleteChannelSend(2, 0);
+
+		renderSignal(mixer, {2}, 4);
+		const int alignedReceiverLatency = mixer->channelInputLatency(3);
+		const int alignedMasterLatency = mixer->channelInputLatency(0);
+
+		compensated->enabledModel()->setValue(false);
+		renderSignal(mixer, {2}, 4);
+		const int offReceiverLatency = mixer->channelInputLatency(3);
+		const int offMasterLatency = mixer->channelInputLatency(0);
+
+		evidence("PDC_DISABLED_SEND latency=%d aligned_receiver=%d aligned_master=%d "
+			"disabled_receiver=%d disabled_master=%d",
+			kLatency, alignedReceiverLatency, alignedMasterLatency,
+			offReceiverLatency, offMasterLatency);
+
+		QCOMPARE(alignedReceiverLatency, kLatency);
+		QCOMPARE(alignedMasterLatency, kLatency);
+		QVERIFY2(offReceiverLatency == 0,
+			qPrintable(QString("a send that was switched off still raises the receiver's "
+				"alignment point to %1 frames").arg(offReceiverLatency)));
+		QCOMPARE(offMasterLatency, 0);
+	}
+
 	//! C7 (mixer audit): a muted channel never runs doProcessing(), so the PDC
 	//! advance of the incoming delay lines never happens and the rings freeze
 	//! for the whole mute; on unmute the receiver replays pre-mute history - a
