@@ -393,6 +393,7 @@ ControlResult setTrackSolo(const QJsonObject& args)
 	Track* track = control::resolveTrack(args.value(QStringLiteral("track")).toString(), &error);
 	if (track == nullptr) { return error; }
 	const bool value = args.value(QStringLiteral("solo")).toBool();
+	const bool previous = track->isSolo();
 	QJsonObject before;
 	before.insert(QStringLiteral("track"), args.value(QStringLiteral("track")).toString());
 	before.insert(QStringLiteral("tracks"), muteSoloSnapshot());
@@ -415,7 +416,12 @@ ControlResult setTrackSolo(const QJsonObject& args)
 	for (Track* songTrack : Engine::getSong()->tracks()) { step.append(songTrack); }
 	control::addUndoStep(step);
 	track->setSolo(value);
-	if (gui::getGUI() == nullptr) { track->toggleSolo(); }
+	// Only a request that CHANGED the flag runs the solo action: TrackView's
+	// dataChanged hook fires exactly when the model value moves, and a second
+	// toggle would otherwise re-capture the already-soloed mute states as the
+	// pre-solo snapshot (Track::m_mutedBeforeSolo), so the unsolo that follows
+	// restored the solo states instead of the ones that preceded them.
+	if (gui::getGUI() == nullptr && track->isSolo() != previous) { track->toggleSolo(); }
 
 	QJsonObject result;
 	result.insert(QStringLiteral("track"), args.value(QStringLiteral("track")).toString());

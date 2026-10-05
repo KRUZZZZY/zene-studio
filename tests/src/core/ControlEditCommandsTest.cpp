@@ -35,6 +35,14 @@
 
 using namespace lmms;
 
+//! The track's own mute flag, as track.get_state reports it.
+static bool muted(const QString& track)
+{
+	const ControlResult state = ControlRegistry::instance()->invoke(QStringLiteral("track.get_state"),
+		QJsonObject{{QStringLiteral("track"), track}});
+	return state.ok && state.result.value(QStringLiteral("muted")).toBool();
+}
+
 class ControlEditCommandsTest : public QObject
 {
 	Q_OBJECT
@@ -322,6 +330,73 @@ private slots:
 		const QString track = revtest::addTrack(QStringLiteral("sample"));
 		QVERIFY(!track.isEmpty());
 		QVERIFY(revtest::makerUndoFindsTrackAfterRemovalUndone(track));
+	}
+
+	//! Headless, track.set_solo has to drive Track::toggleSolo() itself (a display-ful
+	//! instance gets it from TrackView's dataChanged hook). A request that changes
+	//! nothing must not run it again: the second solo re-captured the ALREADY SOLOED
+	//! mute states as the "before solo" snapshot, so the unsolo that follows restored
+	//! them instead of the pre-solo ones.
+	void trackSetSoloRepeatedInHeadlessModeIsIdempotent()
+	{
+		ControlRegistry* registry = ControlRegistry::instance();
+		const QString lead = revtest::addTrack();
+		const QString other = revtest::addTrack();
+		QVERIFY(!lead.isEmpty());
+		QVERIFY(!other.isEmpty());
+
+		// Pre-solo: both unmuted, so the unsolo at the end has something to restore.
+		const ControlResult mutedOther = registry->invoke(QStringLiteral("track.set_mute"),
+			{{QStringLiteral("track"), other}, {QStringLiteral("muted"), false}});
+		QVERIFY2(mutedOther.ok, qPrintable(mutedOther.errorMessage));
+
+		const ControlResult soloed = registry->invoke(QStringLiteral("track.set_solo"),
+			{{QStringLiteral("track"), lead}, {QStringLiteral("solo"), true}});
+		QVERIFY2(soloed.ok, qPrintable(soloed.errorMessage));
+		QVERIFY(muted(other));
+		QVERIFY(!muted(lead));
+
+		// The same request again: the track is already soloed, so nothing may change.
+		const ControlResult again = registry->invoke(QStringLiteral("track.set_solo"),
+			{{QStringLiteral("track"), lead}, {QStringLiteral("solo"), true}});
+		QVERIFY2(again.ok, qPrintable(again.errorMessage));
+
+		const ControlResult unsoloed = registry->invoke(QStringLiteral("track.set_solo"),
+			{{QStringLiteral("track"), lead}, {QStringLiteral("solo"), false}});
+		QVERIFY2(unsoloed.ok, qPrintable(unsoloed.errorMessage));
+		QVERIFY2(!muted(other), "the second solo recaptured the post-solo mute states as "
+			"the before-solo snapshot, so unsoloing could not restore them");
+	}
+
+	//! An idempotent track.set_solo records no change, so its inverse has to name the
+	//! state it found - not !value, which would unsolo the track the no-op request
+	//! asked to keep soloed.
+	void trackSetSoloNoOpRequestInvertsToTheStateItFound()
+	{
+		ControlRegistry* registry = ControlRegistry::instance();
+		const QString track = revtest::addTrack();
+		QVERIFY(!track.isEmpty());
+		QVERIFY(registry->invoke(QStringLiteral("track.set_solo"),
+			{{QStringLiteral("track"), track}, {QStringLiteral("solo"), true}}).ok);
+
+		const ControlResult repeat = registry->invoke(QStringLiteral("track.set_solo"),
+			{{QStringLiteral("track"), track}, {QStringLiteral("solo"), true}});
+		QVERIFY2(repeat.ok, qPrintable(repeat.errorMessage));
+		const QJsonObject inverse = repeat.result.value(QStringLiteral("__transaction"))
+			.toObject().value(QStringLiteral("inverse")).toObject();
+		QCOMPARE(inverse.value(QStringLiteral("args")).toObject()
+			.value(QStringLiteral("solo")).toBool(), true);
+
+		const ControlResult unsoloed = registry->invoke(QStringLiteral("track.set_solo"),
+			{{QStringLiteral("track"), track}, {QStringLiteral("solo"), false}});
+		QVERIFY(unsoloed.ok);
+		const ControlResult repeatUnsolo = registry->invoke(QStringLiteral("track.set_solo"),
+			{{QStringLiteral("track"), track}, {QStringLiteral("solo"), false}});
+		QVERIFY2(repeatUnsolo.ok, qPrintable(repeatUnsolo.errorMessage));
+		const QJsonObject unsoloInverse = repeatUnsolo.result.value(QStringLiteral("__transaction"))
+			.toObject().value(QStringLiteral("inverse")).toObject();
+		QCOMPARE(unsoloInverse.value(QStringLiteral("args")).toObject()
+			.value(QStringLiteral("solo")).toBool(), false);
 	}
 };
 
