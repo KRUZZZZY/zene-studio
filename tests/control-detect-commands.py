@@ -291,7 +291,28 @@ def _check_apply_both_halves(session, recorder, click_path):
         abs(detected - CLICK_BPM) <= BPM_TOLERANCE
         and tempo_result.get("bpm") == int(round(detected)),
         "detected=%.3f written=%r" % (detected, tempo_result.get("bpm")))
+    _check_apply_publishes_the_tempo_map(session, recorder, applied)
     _check_apply_key_half(applied, recorder, click_path)
+
+
+def _check_apply_publishes_the_tempo_map(session, recorder, applied):
+    # The result schema DECLARES `tempo_map`, so a client is told to expect the
+    # resulting map state beside the partial `tempo` summary. It is the map that
+    # the write produced: an event at tick 0 at the applied BPM, switched on.
+    published = applied.get("tempo_map") or {}
+    live = tempo_map_of(session.result("detect.get_state"))
+    recorder.check(
+        "detect.apply publishes the tempo map its own result schema declares",
+        published.get("active") is True and published.get("event_count") == 1
+        and published.get("event_at_tick_0") is True
+        # `global_tempo` is the SONG's own tempo field (the fixture project was
+        # built at 140), so the applied BPM is asserted on the map's own reading
+        # at tick 0, which is what the write put there.
+        and published.get("tempo_at_tick_0") == int(round(CLICK_BPM))
+        and published.get("global_tempo") == live.get("global_tempo")
+        and published.get("event_count") == live.get("event_count")
+        and published.get("active") == live.get("active"),
+        "published=%r live=%r" % (published, live))
 
 
 def _check_apply_key_half(applied, recorder, click_path):

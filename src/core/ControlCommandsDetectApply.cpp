@@ -210,6 +210,12 @@ void registerApplyCommand(ControlRegistry& registry)
 		result.insert(QStringLiteral("method"), detectMethodJson());
 		result.insert(QStringLiteral("bounds"), detectBoundsJson());
 		result.insert(QStringLiteral("key_state"), detectProjectKeyJson(song->projectKey()));
+		// The result schema DECLARES tempo_map, so a client is told to expect the map
+		// this call produced and not only the partial `tempo` summary above (which
+		// reports the one event, not the map). It is detect.get_state's OWN tempo_map
+		// block, read after both writes, so the two surfaces cannot drift.
+		result.insert(QStringLiteral("tempo_map"),
+			detectStateJson(song).value(QStringLiteral("tempo_map")));
 		result.insert(QStringLiteral("__transaction"), transactionPayload(beforePayload,
 			QStringLiteral("detect.apply"),
 			QJsonObject{{QStringLiteral("path"), analysis.path}},
