@@ -285,8 +285,11 @@ bool validateKey(const Request& request, QString* error)
 	// computed in 64 bits because the sum overflows the very type being
 	// checked. Both step_ticks and tick reach MaxSchemaInteger at the control
 	// layer, so the two bounds above do not imply this one.
+	// The walk's END, not its last start: each step's room runs to the next
+	// nominal position (`start + (index + 1) * stepTicks`, see the layout
+	// below), and the last step's room ends at `start + steps * stepTicks`.
 	const qint64 lastPosition = static_cast<qint64>(request.start)
-		+ static_cast<qint64>(request.steps - 1) * static_cast<qint64>(request.stepTicks);
+		+ static_cast<qint64>(request.steps) * static_cast<qint64>(request.stepTicks);
 	if (lastPosition > static_cast<qint64>(std::numeric_limits<tick_t>::max()))
 	{
 		return fail(QStringLiteral("%1 chords from tick %2, one every %3 tick(s), end at tick "

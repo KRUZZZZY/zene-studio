@@ -1,0 +1,15 @@
+Test project /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-bunny-integration/build/tests
+    Start  30: ChordProgressionTest
+1/5 Test  #30: ChordProgressionTest .................   Passed    0.08 sec
+    Start  48: GrooveTemplateTest
+2/5 Test  #48: GrooveTemplateTest ...................   Passed    0.07 sec
+    Start  56: DocumentIndexTest
+3/5 Test  #56: DocumentIndexTest ....................   Passed    1.32 sec
+    Start 210: DawProjectInterchangeRoundTripTest
+4/5 Test #210: DawProjectInterchangeRoundTripTest ...   Passed    1.35 sec
+    Start 222: TrackFolderTest
+5/5 Test #222: TrackFolderTest ......................   Passed    1.36 sec
+
+100% tests passed, 0 tests failed out of 5
+
+Total Test time (real) =   4.19 sec

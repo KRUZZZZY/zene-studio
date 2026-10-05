@@ -424,6 +424,15 @@ void TrackFolder::shrinkChildRange( Track * child )
 void TrackFolder::channelDeleted( int deletedIndex )
 {
 	if( m_mixerChannel < 0 ) { return; }
+	// The channels the children go BACK to are mixer indices too, and move with
+	// the strip they name, the same rule Mixer::deleteChannel applies to the
+	// tracks: the deleted one falls back to master, those above come down one.
+	// Done first, because the own-channel case below un-routes through them.
+	for( ChannelBinding & binding : m_savedChildChannels )
+	{
+		if( binding.channel == deletedIndex ) { binding.channel = 0; }
+		else if( binding.channel > deletedIndex ) { binding.channel -= 1; }
+	}
 	if( m_mixerChannel == deletedIndex )
 	{
 		// The folder's own summing point is the one that went. Its children are

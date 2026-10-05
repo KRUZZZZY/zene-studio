@@ -358,6 +358,36 @@ private slots:
 		}
 	}
 
+	//! A step saved at exactly half a slot (accepted before the half-slot bound)
+	//! loads one tick inside its slot rather than being dropped; a step wider
+	//! than half a slot was never valid and still leaves the slot neutral.
+	void aSavedHalfSlotStepLoadsInsideItsSlot()
+	{
+		QDomDocument doc;
+		QDomElement groove = doc.createElement(QStringLiteral("groove"));
+		groove.setAttribute(QStringLiteral("name"), QStringLiteral("feel"));
+		groove.setAttribute(QStringLiteral("length"), 48);
+		groove.setAttribute(QStringLiteral("step"), 12);
+		groove.setAttribute(QStringLiteral("slots"), 4);
+		const auto step = [&doc, &groove](int slot, int timing) {
+			QDomElement element = doc.createElement(QStringLiteral("step"));
+			element.setAttribute(QStringLiteral("slot"), slot);
+			element.setAttribute(QStringLiteral("timing"), timing);
+			element.setAttribute(QStringLiteral("velocity"), 90);
+			groove.appendChild(element);
+		};
+		step(0, 6);    // exactly +half
+		step(1, -6);   // exactly -half
+		step(2, 7);    // wider than half: never valid
+		doc.appendChild(groove);
+
+		GrooveTemplate loaded;
+		QVERIFY(loaded.loadXml(groove));
+		QCOMPARE(loaded.step(0), (GrooveStep{5, 90}));
+		QCOMPARE(loaded.step(1), (GrooveStep{-5, 90}));
+		QCOMPARE(loaded.step(2), GrooveStep());
+	}
+
 	//! A step whose slot TEXT is not a number is skipped, not read as slot zero.
 	void aMalformedSlotTextIsNotSlotZero()
 	{

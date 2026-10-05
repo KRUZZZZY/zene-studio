@@ -647,6 +647,76 @@ private slots:
 		removeAll(name);
 	}
 
+	//! A routed child's SAVED channel is a mixer index too: deleting a channel
+	//! below it must move it with its strip, so releasing routing puts the child
+	//! back on the strip it came from, not on whatever slid into that index.
+	void aSavedChildChannelFollowsItsStripWhenALowerChannelIsDeleted()
+	{
+		const QString name = QStringLiteral("k-saved-follows");
+		Mixer* mixer = Engine::mixer();
+		const int low = mixer->createChannel();
+		const int high = mixer->createChannel();
+		mixer->mixerChannel(high)->m_name = QStringLiteral("k-home-strip");
+
+		TrackFolder* folder = static_cast<TrackFolder*>(addTrack(Track::Type::Folder, name));
+		Track* child = addTrack(Track::Type::Instrument, name);
+		child->mixerChannelModel()->setRange(0, static_cast<float>(mixer->numChannels() - 1));
+		child->mixerChannelModel()->setValue(high);
+		child->setParentFolder(folder);
+		QString error;
+		QVERIFY2(folder->setMode(TrackFolder::Mode::Routing, &error), qPrintable(error));
+
+		mixer->deleteChannel(low);  // the home strip comes down to `low`
+		QVERIFY2(folder->setMode(TrackFolder::Mode::Group, &error), qPrintable(error));
+		const int home = static_cast<int>(child->mixerChannelModel()->value());
+		QVERIFY(mixer->mixerChannel(home) != nullptr);
+		QCOMPARE(mixer->mixerChannel(home)->m_name, QStringLiteral("k-home-strip"));
+
+		removeAll(name);
+		mixer->deleteChannel(home);
+	}
+
+	//! The undo of a routing folder's delete must not adopt its saved index when
+	//! that index is still IN RANGE: the delete gave the folder's channel back,
+	//! so the strip above came down into it, and adopting it would rename and
+	//! route into somebody else's strip.
+	void undoingAFolderDeleteDoesNotAdoptTheStripThatSlidIntoItsIndex()
+	{
+		const QString name = QStringLiteral("k-undo-no-adopt");
+		Mixer* mixer = Engine::mixer();
+		TrackFolder* folder = static_cast<TrackFolder*>(addTrack(Track::Type::Folder, name));
+		Track* child = addTrack(Track::Type::Instrument, name);
+		child->setParentFolder(folder);
+		QString error;
+		QVERIFY2(folder->setMode(TrackFolder::Mode::Routing, &error), qPrintable(error));
+		const int folderChannel = folder->mixerChannel();
+		const int other = mixer->createChannel();
+		mixer->mixerChannel(other)->m_name = QStringLiteral("k-other-strip");
+		QCOMPARE(other, folderChannel + 1);
+
+		ControlRegistry* registry = ControlRegistry::instance();
+		QVERIFY(registry->invoke(QStringLiteral("track.remove"),
+			QJsonObject{{QStringLiteral("track"), control::trackIdOf(folder)}}).ok);
+		QCOMPARE(mixer->mixerChannel(folderChannel)->m_name, QStringLiteral("k-other-strip"));
+		QVERIFY(registry->invoke(QStringLiteral("control.undo")).ok);
+
+		TrackFolder* restored = nullptr;
+		for (Track* t : Engine::getSong()->tracks())
+		{
+			if (t->type() == Track::Type::Folder && t->name() == name) { restored = static_cast<TrackFolder*>(t); }
+		}
+		QVERIFY(restored != nullptr);
+		QVERIFY(restored->mixerChannel() != folderChannel);
+		QCOMPARE(mixer->mixerChannel(folderChannel)->m_name, QStringLiteral("k-other-strip"));
+		QCOMPARE(mixer->mixerChannel(restored->mixerChannel())->m_name, name);
+
+		removeAll(name);
+		for (int i = static_cast<int>(mixer->numChannels()) - 1; i > 0; --i)
+		{
+			if (mixer->mixerChannel(i)->m_name == QStringLiteral("k-other-strip")) { mixer->deleteChannel(i); }
+		}
+	}
+
 	//! (i) A no-op unparent is a VALID ANSWER, never a crash: taking a track that
 	//! is already at the container root out of "no folder" must succeed, twice.
 	void unparentingARootTrackIsANoOpNotACrash()

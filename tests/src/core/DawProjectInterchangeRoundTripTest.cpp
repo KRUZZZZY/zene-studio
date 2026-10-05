@@ -268,6 +268,20 @@ private slots:
 		QVERIFY(m_directory.isValid());
 	}
 
+	/*! Every caller narrows a converted beat to tick_t (an int32), so a beat is
+	 *  representable only if its rounded tick fits that type: a beat that fits
+	 *  qint64 but not an int32 used to pass and wrap when narrowed. */
+	void aBeatIsRepresentableOnlyWithinTheTickRange()
+	{
+		const double perBeat = DawProjectTicksPerQuarterNote;
+		const double lastTick = static_cast<double>(std::numeric_limits<tick_t>::max());
+		QVERIFY(dawProjectBeatRepresentable(lastTick / perBeat));
+		QVERIFY(!dawProjectBeatRepresentable((lastTick + 1.0) / perBeat));
+		QVERIFY(!dawProjectBeatRepresentable(1.0e12));
+		QVERIFY(!dawProjectBeatRepresentable(std::numeric_limits<double>::quiet_NaN()));
+		QCOMPARE(dawProjectTicksFromBeats(lastTick / perBeat), static_cast<qint64>(lastTick));
+	}
+
 	void cleanupTestCase()
 	{
 		ControlRegistry::setReady(false);

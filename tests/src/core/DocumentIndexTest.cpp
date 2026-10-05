@@ -488,6 +488,41 @@ private slots:
 	//! The fixture puts the multibyte text BEFORE the section being selected,
 	//! which is the only placement that matters: the shift is cumulative, so the
 	//! deeper the section sits the further off its offsets land.
+	//! The reader's offsets are UTF-16 units, so a character outside the BMP
+	//! (four UTF-8 bytes, a surrogate pair) counts TWICE. Two of them before
+	//! the section must still leave the cut exactly around it.
+	void aNonBmpCharacterBeforeASectionDoesNotShiftTheCut()
+	{
+		const QString mark = QString::fromUtf8( "\xF0\x9F\x8E\xB5\xF0\x9F\x8E\xB5" );
+		QCOMPARE( mark.size(), 4 );                 // two surrogate pairs
+		QCOMPARE( mark.toUtf8().size(), 8 );
+		const QString dropped = QStringLiteral( "    <dropme a=\"1\">\n"
+			"      <inner b=\"2\"/>\n    </dropme>\n" );
+		const QString element = QStringLiteral( "<dropme a=\"1\">\n"
+			"      <inner b=\"2\"/>\n    </dropme>" );
+		const QByteArray source = QStringLiteral(
+			"<zene-project><song>\n"
+			"    <title>%1</title>\n"
+			"%2    <keepme/>\n</song></zene-project>\n" ).arg( mark, dropped ).toUtf8();
+
+		SectionRanges found;
+		QVERIFY( scanSectionRanges( source, QStringLiteral( "song" ),
+			QStringList{ QStringLiteral( "dropme" ) }, found ) );
+		QCOMPARE( found.ranges.size(), 1 );
+		if( !found.ranges.isEmpty() )
+		{
+			QCOMPARE( source.mid( found.ranges.first().first, found.ranges.first().second ),
+				QByteArray( element.toUtf8() ) );
+		}
+		QStringList skipped;
+		const QByteArray reduced = reduceDocumentSections( source,
+			QStringLiteral( "song" ), QStringList{ QStringLiteral( "dropme" ) }, &skipped );
+		QDomDocument result;
+		QVERIFY2( result.setContent( reduced ), qPrintable( QString::fromUtf8( reduced ) ) );
+		QCOMPARE( result.documentElement().firstChildElement( QStringLiteral( "song" ) )
+			.firstChildElement( QStringLiteral( "title" ) ).text(), mark );
+	}
+
 	void aMultibyteCharacterBeforeASectionDoesNotShiftTheCut()
 	{
 		// Four 2-byte characters plus one 3-byte one: five characters, eleven

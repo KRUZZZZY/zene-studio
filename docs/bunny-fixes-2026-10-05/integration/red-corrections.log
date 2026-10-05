@@ -1,0 +1,178 @@
+Test project /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-bunny-integration/build/tests
+    Start  30: ChordProgressionTest
+1/5 Test  #30: ChordProgressionTest .................***Failed    0.06 sec
+********* Start testing of ChordProgressionTest *********
+Config: Using QtTest library 6.4.2, Qt 6.4.2 (x86_64-little_endian-lp64 shared (dynamic) release build; by GCC 13.2.0), ubuntu 24.04
+PASS   : ChordProgressionTest::initTestCase()
+PASS   : ChordProgressionTest::theCatalogueIsWellFormed()
+PASS   : ChordProgressionTest::aWalkIsNamedFromTheScaleItWalks()
+PASS   : ChordProgressionTest::theNamesAndBoundsAreRefused()
+PASS   : ChordProgressionTest::aOneTickStepNeverPlacesANotePastIt()
+PASS   : ChordProgressionTest::aNegativeStartIsRefused()
+FAIL!  : ChordProgressionTest::aWalkThatDoesNotFitInATickIsRefused() '!chordsFor(request, &chords, &error)' returned FALSE. (a walk whose last step runs past the final tick was accepted)
+   Loc: [../../tests/src/core/ChordProgressionTest.cpp(286)]
+PASS   : ChordProgressionTest::theSameSeedIsTheSameTake()
+PASS   : ChordProgressionTest::aDifferentSeedIsADifferentTake()
+PASS   : ChordProgressionTest::withNoVariationTheSeedDecidesNothing()
+PASS   : ChordProgressionTest::thePatternsLayAChordOut()
+PASS   : ChordProgressionTest::layOutChordRespectsItsRoom()
+PASS   : ChordProgressionTest::theWalkBecomesTrackEvents()
+PASS   : ChordProgressionTest::cleanupTestCase()
+Totals: 13 passed, 1 failed, 0 skipped, 0 blacklisted, 1ms
+********* Finished testing of ChordProgressionTest *********
+
+    Start  48: GrooveTemplateTest
+2/5 Test  #48: GrooveTemplateTest ...................***Failed    0.06 sec
+********* Start testing of GrooveTemplateTest *********
+Config: Using QtTest library 6.4.2, Qt 6.4.2 (x86_64-little_endian-lp64 shared (dynamic) release build; by GCC 13.2.0), ubuntu 24.04
+PASS   : GrooveTemplateTest::initTestCase()
+PASS   : GrooveTemplateTest::theGeometryBoundsAreTheEnginesOwn()
+PASS   : GrooveTemplateTest::extractionReadsTheMeanDeviationPerSlot()
+PASS   : GrooveTemplateTest::applicationIsExactAndIdempotent()
+PASS   : GrooveTemplateTest::theRandomAmountIsReproducibleAndDoesNotDisturbTheDefault()
+PASS   : GrooveTemplateTest::thePoolIsKeyedByItsNameAndRoundTrips()
+PASS   : GrooveTemplateTest::aStepCannotReachHalfItsSlot()
+PASS   : GrooveTemplateTest::theGridArithmeticDoesNotOverflowAtTheEndOfTheTimeline()
+FAIL!  : GrooveTemplateTest::aSavedHalfSlotStepLoadsInsideItsSlot() Compared values are not the same
+   Actual   (loaded.step(0))     : GrooveStep{timing=0, velocity=-1}
+   Expected ((GrooveStep{5, 90})): GrooveStep{timing=5, velocity=90}
+   Loc: [../../tests/src/core/GrooveTemplateTest.cpp(386)]
+PASS   : GrooveTemplateTest::aMalformedSlotTextIsNotSlotZero()
+PASS   : GrooveTemplateTest::theRandomTimingIsPinnedToTheSlot()
+PASS   : GrooveTemplateTest::aStrengthThatIsNotANumberMovesNothing()
+PASS   : GrooveTemplateTest::cleanupTestCase()
+Totals: 12 passed, 1 failed, 0 skipped, 0 blacklisted, 1ms
+********* Finished testing of GrooveTemplateTest *********
+
+    Start  56: DocumentIndexTest
+3/5 Test  #56: DocumentIndexTest ....................***Failed    1.30 sec
+********* Start testing of DocumentIndexTest *********
+Config: Using QtTest library 6.4.2, Qt 6.4.2 (x86_64-little_endian-lp64 shared (dynamic) release build; by GCC 13.2.0), ubuntu 24.04
+QDEBUG : DocumentIndexTest::initTestCase() Lv2 plugin SUMMARY: 73 of 87  loaded in 113 msecs.
+QDEBUG : DocumentIndexTest::initTestCase() For details about not loaded plugins, please set
+  environment variable "LMMS_LV2_DEBUG" to nonempty.
+QDEBUG : DocumentIndexTest::initTestCase() Blocked Lv2 Plugins: 10 of 87 
+  If you want to enable them (dangerous!), please set
+  environment variable "LMMS_ENABLE_BLOCKED_PLUGINS" to nonempty.
+PASS   : DocumentIndexTest::initTestCase()
+PASS   : DocumentIndexTest::sectionsAreTheContentChildrenInDocumentOrder()
+PASS   : DocumentIndexTest::aSectionVersionAttributeBeatsTheDocumentVersion()
+PASS   : DocumentIndexTest::anElementThatIsNeverASectionIsNotIndexed()
+PASS   : DocumentIndexTest::theDigestIsOfTheSectionAsTheWriterSerialisesIt()
+PASS   : DocumentIndexTest::writeThenParseRoundTripsEveryField()
+PASS   : DocumentIndexTest::anEmptyIndexIsNotWrittenAndTheDocumentIsUnchanged()
+PASS   : DocumentIndexTest::anEntryThatCannotBeNamedIsSkipped()
+PASS   : DocumentIndexTest::anUnclaimedSectionEarnsAnIndexAndNoUnclaimedSectionDoesNot()
+FAIL!  : DocumentIndexTest::aNonBmpCharacterBeforeASectionDoesNotShiftTheCut() Compared values are not the same
+   Actual   (source.mid( found.ranges.first().first, found.ranges.first().second )): "<dropme a=\"1\">\n      <inner b=\"2\"/>\n    </dropme>\n "
+   Expected (QByteArray( element.toUtf8() ))                                       : "<dropme a=\"1\">\n      <inner b=\"2\"/>\n    </dropme>"
+   Loc: [../../tests/src/core/DocumentIndexTest.cpp(514)]
+PASS   : DocumentIndexTest::aMultibyteCharacterBeforeASectionDoesNotShiftTheCut()
+PASS   : DocumentIndexTest::cleanupTestCase()
+Totals: 11 passed, 1 failed, 0 skipped, 0 blacklisted, 1232ms
+********* Finished testing of DocumentIndexTest *********
+
+    Start 210: DawProjectInterchangeRoundTripTest
+4/5 Test #210: DawProjectInterchangeRoundTripTest ...***Failed    1.32 sec
+********* Start testing of DawProjectInterchangeRoundTripTest *********
+Config: Using QtTest library 6.4.2, Qt 6.4.2 (x86_64-little_endian-lp64 shared (dynamic) release build; by GCC 13.2.0), ubuntu 24.04
+QDEBUG : DawProjectInterchangeRoundTripTest::initTestCase() Lv2 plugin SUMMARY: 73 of 87  loaded in 112 msecs.
+QDEBUG : DawProjectInterchangeRoundTripTest::initTestCase() For details about not loaded plugins, please set
+  environment variable "LMMS_LV2_DEBUG" to nonempty.
+QDEBUG : DawProjectInterchangeRoundTripTest::initTestCase() Blocked Lv2 Plugins: 10 of 87 
+  If you want to enable them (dangerous!), please set
+  environment variable "LMMS_ENABLE_BLOCKED_PLUGINS" to nonempty.
+PASS   : DawProjectInterchangeRoundTripTest::initTestCase()
+FAIL!  : DawProjectInterchangeRoundTripTest::aBeatIsRepresentableOnlyWithinTheTickRange() '!dawProjectBeatRepresentable((lastTick + 1.0) / perBeat)' returned FALSE. ()
+   Loc: [../../tests/src/core/DawProjectInterchangeRoundTripTest.cpp(279)]
+PASS   : DawProjectInterchangeRoundTripTest::theFileRoundTripComparesTheModel()
+PASS   : DawProjectInterchangeRoundTripTest::theSessionRoundTripCarriesWhatItClaims()
+PASS   : DawProjectInterchangeRoundTripTest::theControlCommandReadsTheModelBack()
+PASS   : DawProjectInterchangeRoundTripTest::importIsOneUndoStep()
+PASS   : DawProjectInterchangeRoundTripTest::overCapacityTempoImportIsRefusedBeforeMutation()
+PASS   : DawProjectInterchangeRoundTripTest::overCapacityMeterImportIsRefusedBeforeMutation()
+PASS   : DawProjectInterchangeRoundTripTest::importUndoBudgetCountsBothSessionAndRedoDocuments()
+PASS   : DawProjectInterchangeRoundTripTest::beatConversionRejectsValuesThatAreNotBeats()
+PASS   : DawProjectInterchangeRoundTripTest::importRefusesAnUnrepresentableBeat()
+PASS   : DawProjectInterchangeRoundTripTest::refusalsAreTyped()
+PASS   : DawProjectInterchangeRoundTripTest::theDigestSeparatesEveryEqualityRelevantField()
+PASS   : DawProjectInterchangeRoundTripTest::theJsonModelViewCarriesNotesAndClipColors()
+PASS   : DawProjectInterchangeRoundTripTest::markerOnlyTracksReportTheirContentAsLost()
+PASS   : DawProjectInterchangeRoundTripTest::mixedNotesAndAudioTracksKeepTheirNotes()
+PASS   : DawProjectInterchangeRoundTripTest::aDocumentWithoutTheRequiredApplicationIsRefused()
+PASS   : DawProjectInterchangeRoundTripTest::invalidTimeSignaturesAreRefused()
+PASS   : DawProjectInterchangeRoundTripTest::malformedNumericAttributesAreRefused()
+PASS   : DawProjectInterchangeRoundTripTest::automationPointTimesUseTheTickGridAndCountRounding()
+PASS   : DawProjectInterchangeRoundTripTest::automationPointsAfterOtherContentStillParse()
+PASS   : DawProjectInterchangeRoundTripTest::duplicateTrackIdsAreRefused()
+PASS   : DawProjectInterchangeRoundTripTest::theFolderLossCountIsTheNumberOfLostChildren()
+PASS   : DawProjectInterchangeRoundTripTest::importRemovesMixerChannelsTheModelDoesNotName()
+PASS   : DawProjectInterchangeRoundTripTest::aTrackTypeTheEngineCannotCreateIsRefusedBeforeAnyMutation()
+PASS   : DawProjectInterchangeRoundTripTest::releaseVelocitySurvivesAnImportAndExport()
+PASS   : DawProjectInterchangeRoundTripTest::hugeBeatPositionsCannotEnterTheModelOutOfTickRange()
+PASS   : DawProjectInterchangeRoundTripTest::timesOutsideTheEngineGridAreRefusedByTheWriter()
+PASS   : DawProjectInterchangeRoundTripTest::anEmptyApplicationNameIsRefusedByTheWriter()
+PASS   : DawProjectInterchangeRoundTripTest::theWriteReportHashesTheFileItWrote()
+PASS   : DawProjectInterchangeRoundTripTest::theWriteReportCountsWhatTheModelMarksLost()
+PASS   : DawProjectInterchangeRoundTripTest::archivesPastClassicZipLimitsAreRefused()
+PASS   : DawProjectInterchangeRoundTripTest::aCommentThatLooksLikeAnEndRecordIsNotOne()
+PASS   : DawProjectInterchangeRoundTripTest::cleanupTestCase()
+Totals: 33 passed, 1 failed, 0 skipped, 0 blacklisted, 1259ms
+********* Finished testing of DawProjectInterchangeRoundTripTest *********
+
+    Start 222: TrackFolderTest
+5/5 Test #222: TrackFolderTest ......................***Failed    1.36 sec
+********* Start testing of TrackFolderTest *********
+Config: Using QtTest library 6.4.2, Qt 6.4.2 (x86_64-little_endian-lp64 shared (dynamic) release build; by GCC 13.2.0), ubuntu 24.04
+QDEBUG : TrackFolderTest::initTestCase() Lv2 plugin SUMMARY: 73 of 87  loaded in 111 msecs.
+QDEBUG : TrackFolderTest::initTestCase() For details about not loaded plugins, please set
+  environment variable "LMMS_LV2_DEBUG" to nonempty.
+QDEBUG : TrackFolderTest::initTestCase() Blocked Lv2 Plugins: 10 of 87 
+  If you want to enable them (dangerous!), please set
+  environment variable "LMMS_ENABLE_BLOCKED_PLUGINS" to nonempty.
+PASS   : TrackFolderTest::initTestCase()
+PASS   : TrackFolderTest::folderIsATrackTypeThatHoldsTracks()
+PASS   : TrackFolderTest::refusesSelfAndCycles()
+PASS   : TrackFolderTest::membershipAndModeSurviveASaveAndReopen()
+PASS   : TrackFolderTest::everyFolderFieldResetsOnAbsence()
+PASS   : TrackFolderTest::routingModePointsEveryChildAtTheFolderChannel()
+PASS   : TrackFolderTest::visibilitySetsSurviveASaveAndReopen()
+PASS   : TrackFolderTest::legacyProjectGrowsNoFolderState()
+QWARN  : TrackFolderTest::danglingFolderIsRepaired() track-folder: trk-1 names folder 99999, which is not a folder in this container; the track is left at the container root
+QWARN  : TrackFolderTest::danglingFolderIsRepaired() project load: 1 track(s) named a folder that is not in the project; they are at the container root
+PASS   : TrackFolderTest::danglingFolderIsRepaired()
+PASS   : TrackFolderTest::aMalformedSavedBindingIsDiscardedNotTakenAsChannelZero()
+PASS   : TrackFolderTest::rejoiningARoutingFolderKeepsTheNewestSavedChannel()
+PASS   : TrackFolderTest::releasingRoutingTakesTheChildRangeBackOffTheDeletedChannel()
+PASS   : TrackFolderTest::renamingARoutingFolderRenamesItsMixerChannel()
+PASS   : TrackFolderTest::deletingARoutingFolderGivesItsMixerChannelBack()
+PASS   : TrackFolderTest::deletingOneRoutingFolderRenumbersTheOther()
+PASS   : TrackFolderTest::undoingARoutingFolderDeleteRestoresItsChannel()
+FAIL!  : TrackFolderTest::aSavedChildChannelFollowsItsStripWhenALowerChannelIsDeleted() Compared values are not the same
+   Actual   (mixer->mixerChannel(home)->m_name): "Master"
+   Expected (QStringLiteral("k-home-strip"))   : "k-home-strip"
+   Loc: [../../tests/src/core/TrackFolderTest.cpp(673)]
+FAIL!  : TrackFolderTest::undoingAFolderDeleteDoesNotAdoptTheStripThatSlidIntoItsIndex() 'restored->mixerChannel() != folderChannel' returned FALSE. ()
+   Loc: [../../tests/src/core/TrackFolderTest.cpp(709)]
+PASS   : TrackFolderTest::unparentingARootTrackIsANoOpNotACrash()
+PASS   : TrackFolderTest::aRepeatedTrackIdIsSavedAsOneMember()
+PASS   : TrackFolderTest::removeSetReportsAnInverseThatRestoresIt()
+PASS   : TrackFolderTest::saveSetReportsAnInverseThatRestoresIt()
+PASS   : TrackFolderTest::applyReportsAnInverseThatRestoresEveryFlag()
+PASS   : TrackFolderTest::showAllReportsAnInverseThatRestoresEveryFlag()
+PASS   : TrackFolderTest::cleanupTestCase()
+Totals: 23 passed, 2 failed, 0 skipped, 0 blacklisted, 1293ms
+********* Finished testing of TrackFolderTest *********
+
+
+0% tests passed, 5 tests failed out of 5
+
+Total Test time (real) =   4.12 sec
+
+The following tests FAILED:
+	 30 - ChordProgressionTest (Failed)
+	 48 - GrooveTemplateTest (Failed)
+	 56 - DocumentIndexTest (Failed)
+	210 - DawProjectInterchangeRoundTripTest (Failed)
+	222 - TrackFolderTest (Failed)
+Errors while running CTest

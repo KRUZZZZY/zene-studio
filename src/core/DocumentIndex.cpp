@@ -385,11 +385,14 @@ qint64 bytePositionOf( const QByteArray & data, qint64 characterOffset )
 	qint64 characters = 0;
 	for( qint64 byte = 0; byte < data.size(); ++byte )
 	{
-		if( characters == characterOffset ) { return byte; }
+		if( characters >= characterOffset ) { return byte; }
 
-		if( ( static_cast< unsigned char >( data.at( byte ) ) & 0xC0 ) != 0x80 )
+		// characterOffset() counts UTF-16 units: a four-byte UTF-8 sequence (lead
+		// byte 0xF0-0xF7, a character outside the BMP) is a surrogate pair, two units.
+		const auto lead = static_cast< unsigned char >( data.at( byte ) );
+		if( ( lead & 0xC0 ) != 0x80 )
 		{
-			++characters;
+			characters += lead >= 0xF0 ? 2 : 1;
 		}
 	}
 

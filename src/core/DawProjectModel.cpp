@@ -51,6 +51,7 @@
 #include <limits>
 
 #include "DawProjectInterchange.h"
+#include "LmmsTypes.h"
 
 namespace lmms
 {
@@ -83,9 +84,12 @@ qint64 dawProjectTicksFromBeats(double beats)
 bool dawProjectBeatRepresentable(double beats)
 {
 	if (!std::isfinite(beats)) { return false; }
-	const double ticks = beats * DawProjectTicksPerQuarterNote;
-	return ticks >= static_cast<double>(std::numeric_limits<qint64>::lowest())
-		&& ticks <= static_cast<double>(std::numeric_limits<qint64>::max());
+	// Every caller narrows the tick to tick_t (an int32), so the beat must land
+	// on a tick that type holds once rounded - not merely one qint64 holds,
+	// which would let a far-off beat wrap when narrowed.
+	const double ticks = std::floor(beats * DawProjectTicksPerQuarterNote + 0.5);
+	return ticks >= static_cast<double>(std::numeric_limits<tick_t>::lowest())
+		&& ticks <= static_cast<double>(std::numeric_limits<tick_t>::max());
 }
 
 bool dawProjectUsableDocumentId(const QString& id)

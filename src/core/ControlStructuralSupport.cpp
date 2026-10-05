@@ -238,7 +238,14 @@ bool journalTrackRemoval(Track* track)
 			// checkpoint was taken, and the delete this step reverses gave that
 			// channel back - so the index is somebody else's now. The folder is
 			// given one of its own rather than left adopting a strip it does not own.
-			if (auto* folder = dynamic_cast<TrackFolder*>(restored)) { QString error; folder->ensureRoutingChannel(&error); }
+			if (auto* folder = dynamic_cast<TrackFolder*>(restored))
+			{
+				// The saved index is stale by construction (see above), even when it
+				// is still in range - it then names whichever strip came down into it.
+				folder->setMixerChannel(-1);
+				QString error;
+				folder->ensureRoutingChannel(&error);
+			}
 		},
 		[id]() {
 			if (Track* live = trackWithId(*id)) { removeTrack(live); }

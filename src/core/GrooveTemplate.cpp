@@ -220,6 +220,23 @@ void GrooveTemplate::saveXml(QDomDocument& doc, QDomElement& parent) const
 }
 
 
+namespace
+{
+
+//! A saved step's timing as the loader adopts it. Files saved before the
+//! half-slot bound may carry exactly +/-half a slot, which was then the largest
+//! accepted shift: it lands one tick inside the slot instead of being dropped, so
+//! the saved feel survives. Anything wider was never valid and is returned as is,
+//! for setStep() to refuse (the slot stays neutral).
+tick_t loadedTiming(tick_t timing, tick_t stepTicks)
+{
+	const tick_t half = stepTicks / 2;
+	if (half > 0 && (timing == half || timing == -half)) { return timing > 0 ? half - 1 : -(half - 1); }
+	return timing;
+}
+
+} // namespace
+
 bool GrooveTemplate::loadXml(const QDomElement& element)
 {
 	// RESET FIRST. A restore has to be able to return to "no groove at all",
@@ -252,7 +269,8 @@ bool GrooveTemplate::loadXml(const QDomElement& element)
 		const int slot = child.attribute(QStringLiteral("slot"), QStringLiteral("-1")).toInt(&slotRead);
 		if (!slotRead) { continue; }
 		GrooveStep value;
-		value.timing = child.attribute(QStringLiteral("timing"), QStringLiteral("0")).toInt();
+		value.timing = loadedTiming(
+			child.attribute(QStringLiteral("timing"), QStringLiteral("0")).toInt(), m_stepTicks);
 		bool velocityRead = false;
 		const int velocity = child.attribute(QStringLiteral("velocity")).toInt(&velocityRead);
 		// A missing or unreadable velocity says nothing about velocity; 0 would silence the slot.

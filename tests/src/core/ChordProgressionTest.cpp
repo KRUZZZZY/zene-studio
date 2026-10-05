@@ -278,9 +278,16 @@ private slots:
 		std::vector<ChordEvent> events;
 		QVERIFY(!trackEventsFor(request, &events, &error));
 
-		// The walk that ends ON the last tick is still a walk.
+		// The last chord's ROOM is part of the walk: a walk whose last chord
+		// STARTS on the final tick still runs past it (each step's room ends at
+		// the next nominal position, start + (index + 1) * stepTicks).
 		request.stepTicks = 1024;
 		request.start = std::numeric_limits<tick_t>::max() - 2048;
+		QVERIFY2(!chordsFor(request, &chords, &error),
+			"a walk whose last step runs past the final tick was accepted");
+
+		// The walk that ends ON the last tick is still a walk.
+		request.start = std::numeric_limits<tick_t>::max() - 3 * 1024;
 		QVERIFY2(chordsFor(request, &chords, &error), qPrintable(error));
 		QVERIFY2(generateNotes(request, &notes, &error), qPrintable(error));
 		for (const NoteSpec& note : notes) { QVERIFY(note.pos >= 0); }
