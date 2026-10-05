@@ -48,6 +48,7 @@
 #include "Engine.h"
 #include "Mixer.h"
 #include "ScriptApiVersion.h"
+#include "ScriptBindings.h"
 #include "ScriptCommandBridge.h"
 #include "ScriptEngine.h"
 // Stack<QString>/Stack<QStringList>. WITHOUT this include every function here
@@ -448,19 +449,28 @@ bool LuaMixerChannel::soloed() const
 	return m_channel->m_soloModel.value();
 }
 
-AutomatableModel* LuaMixerChannel::gainModel() const
+LuaFloatModel& LuaMixerChannel::gainModel() const
 {
-	return m_channel == nullptr ? nullptr : &m_channel->m_volumeModel;
+	// The pooled, REGISTERED FloatModel - not a raw AutomatableModel*, which
+	// the bridge cannot expose (no class of that name is registered, so the
+	// call raised "The class is not registered in LuaBridge").
+	ScriptDawBindings::syncForRead();
+	return ScriptBindings::newFloatModel(
+		m_channel == nullptr ? nullptr : &m_channel->m_volumeModel);
 }
 
-AutomatableModel* LuaMixerChannel::muteModel() const
+LuaBoolModel& LuaMixerChannel::muteModel() const
 {
-	return m_channel == nullptr ? nullptr : &m_channel->m_muteModel;
+	ScriptDawBindings::syncForRead();
+	return ScriptBindings::newBoolModel(
+		m_channel == nullptr ? nullptr : &m_channel->m_muteModel);
 }
 
-AutomatableModel* LuaMixerChannel::soloModel() const
+LuaBoolModel& LuaMixerChannel::soloModel() const
 {
-	return m_channel == nullptr ? nullptr : &m_channel->m_soloModel;
+	ScriptDawBindings::syncForRead();
+	return ScriptBindings::newBoolModel(
+		m_channel == nullptr ? nullptr : &m_channel->m_soloModel);
 }
 
 LuaEffectChain& LuaMixerChannel::chain() const
