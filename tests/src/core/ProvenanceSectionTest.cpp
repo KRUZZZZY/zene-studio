@@ -567,6 +567,41 @@ private slots:
 		QCOMPARE(provenance::Section::instance().lastSeq(), lastBefore);
 	}
 
+	//! THE ENTRY SCHEMA: the writer emits exactly seq, at, actor, instance,
+	//! command and the three optional digests/target - nothing else, and the
+	//! first five always. An entry carrying an unknown attribute, or missing
+	//! one of the four the writer always writes, is a shape this writer never
+	//! produced: claiming it and rewriting it on the next save would DROP
+	//! that attribute - the rewrite the append-only rule forbids. Such a
+	//! section is preserved verbatim, not claimed.
+	void anEntryWithAnUnknownAttributeOrAMissingFieldIsRefused()
+	{
+		const QString shape = QStringLiteral(
+			"<z:change %1 at=\"2026-01-01T00:00:00Z\" actor=\"human\""
+			" instance=\"0123abcd-456\" command=\"track.add\" target=\"trk-1\"/>");
+		const QString sectionAround = QStringLiteral(
+			"<z:provenance v=\"1\" seq=\"1\">%1</z:provenance>");
+
+		auto refuses = [this, &sectionAround](const QString& entry, const char* why) {
+			QDomDocument document;
+			document.setContent(sectionAround.arg(entry));
+			const int heldBefore = heldChanges().size();
+			const quint64 lastBefore = provenance::Section::instance().lastSeq();
+			QVERIFY2(!provenance::Section::instance().load(document.documentElement()), why);
+			QCOMPARE(heldChanges().size(), heldBefore);
+			QCOMPARE(provenance::Section::instance().lastSeq(), lastBefore);
+		};
+
+		refuses(shape.arg(QStringLiteral("seq=\"1\" extra=\"data\"")),
+			"an entry with an unrecognized attribute must be refused, not rewritten without it");
+		refuses(shape.arg(QString()), "an entry with no seq is already refused");
+		// A missing required field, spelled by hand since the shape above
+		// always carries all four.
+		refuses(QStringLiteral("<z:change seq=\"1\" at=\"2026-01-01T00:00:00Z\""
+				" actor=\"human\" instance=\"0123abcd-456\"/>"),
+			"an entry with no command must be refused, not rewritten with an empty one");
+	}
+
 	//! THE ACTOR: a session KIND, never a person (1.9: "not a credential, not
 	//! a user identity - the file must be shareable"). Outside a socket scope
 	//! the attribution is "human"; the instance is the same non-identifying

@@ -49,6 +49,7 @@
 #include <QDomElement>
 #include <QJsonDocument>
 
+#include <algorithm>
 #include <limits>
 
 #include "DataFile.h"
@@ -168,13 +169,51 @@ int serialisedBytes(const provenance::Change& change)
 	return bytes;
 }
 
+//! The attributes writeTo puts on a <z:change>: the five it always writes,
+//! then the three it writes only when they have a value. Anything else on the
+//! element is an attribute this writer never emits.
+const char* const s_supportedAttributes[] = {
+	"seq", "at", "actor", "instance", "command", "target", "before", "after"};
+
+//! The attributes whose absence means the entry is not one writeTo produced:
+//! seq (checked separately, as a positive number), and the four it sets
+//! unconditionally - `at`, `actor`, `instance`, `command`.
+bool hasRequiredAttributes(const QDomElement& element)
+{
+	for (const char* required : {"at", "actor", "instance", "command"})
+	{
+		if (!element.hasAttribute(QLatin1String(required))) { return false; }
+	}
+	return true;
+}
+
+//! Every attribute the element carries is one this writer emits. An unknown
+//! attribute would be silently DROPPED on the next save - the rewrite the
+//! append-only rule forbids - so the entry is refused instead.
+bool hasOnlySupportedAttributes(const QDomElement& element)
+{
+	const QDomNamedNodeMap attributes = element.attributes();
+	for (int i = 0; i < attributes.count(); ++i)
+	{
+		const QByteArray name = attributes.item(i).nodeName().toLatin1();
+		if (std::none_of(std::begin(s_supportedAttributes), std::end(s_supportedAttributes),
+			[&name](const char* supported) { return name == supported; }))
+		{
+			return false;
+		}
+	}
+	return true;
+}
+
 //! One <z:change> child as the loader accepts it: an element named exactly
-//! `z:change` carrying a positive decimal seq. Anything else is a refusal,
+//! `z:change`, carrying a positive decimal seq, carrying every attribute the
+//! writer always writes and nothing it does not. Anything else is a refusal,
 //! not a guess. Returns false for a child this writer could not have written.
 bool parseChange(const QDomNode& node, provenance::Change& change, quint64& highest)
 {
 	if (!node.isElement() || node.nodeName() != QLatin1String("z:change")) { return false; }
 	const QDomElement element = node.toElement();
+	if (!hasRequiredAttributes(element) || !hasOnlySupportedAttributes(element)) { return false; }
 	bool seqOk = false;
 	const quint64 seq = element.attribute(QStringLiteral("seq")).toULongLong(&seqOk);
 	if (!seqOk || seq == 0) { return false; }
