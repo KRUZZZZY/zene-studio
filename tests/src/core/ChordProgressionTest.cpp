@@ -255,6 +255,37 @@ private slots:
 		QVERIFY2(chordsFor(request, &chords, &error), qPrintable(error));
 	}
 
+	/*! A tick is an int32 and the walk's last position is
+	 *  `start + (steps - 1) * stepTicks`, so a walk that FITS is one whose
+	 *  whole extent fits a tick. Both step_ticks and tick reach MaxSchemaInteger
+	 *  at the control layer, so `start = 0, stepTicks = INT32_MAX, steps = 3`
+	 *  is a request every bound accepts and only the extent refuses. */
+	void aWalkThatDoesNotFitInATickIsRefused()
+	{
+		Request request;
+		request.progression = QStringLiteral("I-V-vi-IV");
+		request.steps = 3;
+		request.stepTicks = std::numeric_limits<tick_t>::max();
+		request.start = 0;
+		std::vector<ChordStep> chords;
+		QString error;
+		QVERIFY2(!chordsFor(request, &chords, &error),
+			"a walk whose steps overflow a tick was accepted");
+
+		// Neither output path may emit the overflowing positions either.
+		std::vector<NoteSpec> notes;
+		QVERIFY(!generateNotes(request, &notes, &error));
+		std::vector<ChordEvent> events;
+		QVERIFY(!trackEventsFor(request, &events, &error));
+
+		// The walk that ends ON the last tick is still a walk.
+		request.stepTicks = 1024;
+		request.start = std::numeric_limits<tick_t>::max() - 2048;
+		QVERIFY2(chordsFor(request, &chords, &error), qPrintable(error));
+		QVERIFY2(generateNotes(request, &notes, &error), qPrintable(error));
+		for (const NoteSpec& note : notes) { QVERIFY(note.pos >= 0); }
+	}
+
 	/*! CLAIM 2, first half: the SAME REQUEST AND SEED IS THE SAME TAKE, note
 	 *  for note - positions, lengths, keys and velocities. */
 	void theSameSeedIsTheSameTake()
