@@ -205,6 +205,12 @@ float shapeAt(AutomationClip::Shape shape, double x, float random)
 	return 0.f;
 }
 
+/*! The most points one drawShape may name. A draw over more is refused whole, before the
+ *  range is cleared: the request is refused, not quietly thinned, because a caller that
+ *  asked for a point every tick over the whole song has asked for something no clip can
+ *  hold. 1<<16 is far above any draw a person makes and far below anything that hurts. */
+constexpr long long DrawShapeMaxPoints = 1 << 16;
+
 //! A whole-range ADSR envelope at @a x (0..1): attack 10%, decay to 60% by 30%, release the last 20%.
 float adsrAt(double x)
 {
@@ -219,6 +225,13 @@ float adsrAt(double x)
 void AutomationClip::drawShape(int start, int end, Shape shape, int cycles, float low, float high, int step, unsigned seed)
 {
 	if (end <= start || step <= 0) { return; }
+	// The point count is known before anything is edited: a draw inserts one point every
+	// @a step ticks, so a wide range at a fine step names an impractical number of them
+	// (0..INT_MAX by 1 is two billion insertions, which exhausts memory and stalls the
+	// application). A draw over more than DrawShapeMaxPoints is refused whole - before
+	// the range is cleared - rather than half-drawn.
+	const long long wanted = (static_cast<long long>(end) - start) / step + 2;
+	if (wanted > DrawShapeMaxPoints) { return; }
 	QMutexLocker m(&m_clipMutex);
 	std::mt19937 rng(seed);
 	std::uniform_real_distribution<float> uniform(0.f, 1.f);

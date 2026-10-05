@@ -151,6 +151,27 @@ private slots:
 		QVERIFY(clip->getTimeMap().contains(0) && clip->getTimeMap().contains(192) && clip->getTimeMap().contains(240));
 	}
 
+	/*! ED-184 with a range and a step that name an impractical number of points (the same
+	 *  shape as 0..INT_MAX by 1, scaled down so the unfixed loop terminates): the draw
+	 *  must be refused outright, and it must leave the clip's own points alone rather
+	 *  than clearing the range first and then inserting 200000 nodes into it. */
+	void aDrawThatWouldNameBillionsOfPointsIsRefused()
+	{
+		AutomationClip* clip = freshClip(m_track->volumeModel());
+		clip->putValue(TimePos(96), 42.f, false, true);  // inside the refused range: a refusal must not clear it
+		const int before = static_cast<int>(clip->getTimeMap().size());
+
+		clip->drawShape(0, 200000, AutomationClip::Shape::Saw, 1, 0.f, 100.f, 1);
+
+		QCOMPARE(static_cast<int>(clip->getTimeMap().size()), before);
+		QVERIFY(clip->getTimeMap().contains(96));
+		QCOMPARE(clip->getTimeMap().value(96).getOutValue(), 42.f);
+
+		// A draw inside the limit still draws: the cap is a ceiling, not a refusal of everything.
+		clip->drawShape(384, 576, AutomationClip::Shape::Saw, 1, 0.f, 100.f, 48);
+		QCOMPARE(static_cast<int>(clip->getTimeMap().size()), before + 5);
+	}
+
 	void aPointsOwnCurveDecidesTheSegmentAfterIt()
 	{
 		AutomationClip* clip = freshClip(m_track->volumeModel());
