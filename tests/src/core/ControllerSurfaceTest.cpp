@@ -171,6 +171,46 @@ private slots:
 		QCOMPARE(moved.count(), 4);
 	}
 
+	/*! The crossing the test above proves is an OBSERVED one: the hardware has
+	 *  to be seen to pass the stored value. A first control-change that already
+	 *  sits on the far side of the target is not a crossing - the knob was
+	 *  never at the stored value - so it must be ignored rather than capture
+	 *  the control and jump the model to the hardware's position. */
+	void SoftTakeoverNeedsAnObservedCrossingNotTheFirstSample()
+	{
+		FloatModel knob(0.5f, 0.0f, 1.0f, 0.01f, Engine::getSong(),
+			QStringLiteral("Surface No Spurious Capture Knob"));
+
+		MidiController* controller = bindThroughMidiLearn(&knob, 8, 76);
+		QVERIFY(controller != nullptr);
+		controller->setSoftTakeoverEnabled(true);
+		controller->setSoftTakeoverTarget(0.5f);
+
+		QSignalSpy moved(controller, SIGNAL(valueChanged()));
+
+		// The knob rests at 0.5 and the hardware already sits at 101/127 =
+		// 0.795, well above it. Nothing has crossed 0.5 yet, so this must not
+		// take the control over: 0.795 is nowhere near the target, so the
+		// one-step tolerance cannot be what refuses it.
+		controller->midiPort().processInEvent(makeCc(8, 76, 101), TimePos());
+		QCOMPARE(moved.count(), 0);
+		QVERIFY(!controller->softTakeoverCaptured());
+
+		// Still above the target after a second value - same verdict, so the
+		// refusal above is not just about the very first event.
+		controller->midiPort().processInEvent(makeCc(8, 76, 110), TimePos());
+		QCOMPARE(moved.count(), 0);
+		QVERIFY(!controller->softTakeoverCaptured());
+
+		// Now the hardware comes DOWN through the stored value: 101/127 = 0.795
+		// was above 0.5 and 60/127 = 0.472 is below it. That is a crossing, and
+		// 0.472 is 0.028 away from the target - far outside the one-step
+		// tolerance - so only the observed crossing can capture here.
+		controller->midiPort().processInEvent(makeCc(8, 76, 60), TimePos());
+		QCOMPARE(moved.count(), 1);
+		QVERIFY(controller->softTakeoverCaptured());
+	}
+
 	/*! The negative control for the test above: with soft-takeover OFF - the
 	 *  default - the very first control-change moves the model. Without this,
 	 *  the ignored CCs above could be explained by something other than the
@@ -301,9 +341,16 @@ private slots:
 		QVERIFY(rebound->softTakeoverEnabled());
 		QVERIFY(rebound->feedbackEnabled());
 		QVERIFY(rebound->midiPort().mode() == MidiPort::Mode::Duplex);
-		// The re-bound control drives the model on the synthetic CC.
+		// The re-bound control drives the model on the synthetic CC. Soft takeover
+		// is armed at the model's 0.25, so the FIRST CC alone must not move it:
+		// there is no observed crossing yet. See
+		// SoftTakeoverNeedsAnObservedCrossingNotTheFirstSample.
 		QSignalSpy moved(rebound, SIGNAL(valueChanged()));
 		rebound->midiPort().processInEvent(makeCc(5, 30, 100), TimePos());
+		QCOMPARE(moved.count(), 0);
+		// The second CC comes from the other side of 0.25: that is a crossing, so
+		// this one captures and reaches the model.
+		rebound->midiPort().processInEvent(makeCc(5, 30, 0), TimePos());
 		QCOMPARE(moved.count(), 1);
 
 		// The bindings the project reports are the same list the template holds.

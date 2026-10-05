@@ -88,22 +88,11 @@ void MidiController::processInEvent(const MidiEvent& event, const TimePos& time,
 				unsigned char val = event.controllerValue();
 				const float incoming = static_cast<float>(val) / 127.0f;
 
-				if (m_softTakeoverEnabled && !m_softTakeoverCaptured)
+				if (m_softTakeoverEnabled && !m_softTakeoverCaptured
+					&& !softTakeoverCapturedBy(incoming))
 				{
-					// Capture when the incoming value crosses the target,
-					// or is already very close to it (within 1 MIDI step).
-					const float epsilon = 1.0f / 127.0f;
-					if ((m_lastValue <= m_softTakeoverTarget && incoming >= m_softTakeoverTarget) ||
-					    (m_lastValue >= m_softTakeoverTarget && incoming <= m_softTakeoverTarget) ||
-					    std::abs(incoming - m_softTakeoverTarget) <= epsilon)
-					{
-						m_softTakeoverCaptured = true;
-					}
-					else
-					{
-						// Ignore: the hardware has not yet reached the stored value.
-						break;
-					}
+					// Ignore: the hardware has not yet reached the stored value.
+					break;
 				}
 
 				m_previousValue = m_lastValue;
@@ -128,24 +117,53 @@ void MidiController::processOutEvent(const MidiEvent& event, const TimePos& time
 	m_midiPort.processOutEvent(event, time, offset);
 }
 
+bool MidiController::softTakeoverCapturedBy(float value)
+{
+	// At the target: within one MIDI step, since a knob cannot be placed on an
+	// arbitrary stored value and refusing this step would mean a surface that
+	// never takes over.
+	const float epsilon = 1.0f / 127.0f;
+	const bool atTarget = std::abs(value - m_softTakeoverTarget) <= epsilon;
+
+	// Crossing: the hardware has been SEEN to pass the target. m_haveRawSample
+	// is false for the first value after arming, which can be at the target but
+	// has not crossed it - so m_lastValue (the last value the MODEL accepted,
+	// stale until capture) is not what this compares against.
+	const bool crossed = m_haveRawSample &&
+		((m_previousRawValue <= m_softTakeoverTarget && value >= m_softTakeoverTarget) ||
+		 (m_previousRawValue >= m_softTakeoverTarget && value <= m_softTakeoverTarget));
+
+	// The hardware moved, whether or not the model followed it: that is the
+	// sample the next event is compared against.
+	m_previousRawValue = value;
+	m_haveRawSample = true;
+
+	if (atTarget || crossed)
+	{
+		m_softTakeoverCaptured = true;
+		return true;
+	}
+	return false;
+}
+
 void MidiController::setSoftTakeoverEnabled(bool enabled)
 {
 	m_softTakeoverEnabled = enabled;
 	if (!enabled)
 	{
-		m_softTakeoverCaptured = false;
+		rearmSoftTakeover();
 	}
 }
 
 void MidiController::setSoftTakeoverTarget(float target)
 {
 	m_softTakeoverTarget = std::clamp(target, 0.0f, 1.0f);
-	m_softTakeoverCaptured = false;
+	rearmSoftTakeover();
 }
 
 void MidiController::resetSoftTakeover()
 {
-	m_softTakeoverCaptured = false;
+	rearmSoftTakeover();
 }
 
 void MidiController::setFeedbackEnabled(bool enabled)
