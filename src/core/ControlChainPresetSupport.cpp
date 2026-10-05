@@ -73,6 +73,39 @@ QString deviceStateRootName()
 	return QStringLiteral("zenepluginstate");
 }
 
+/*! The device count \a root declares, against the devices it actually carries.
+ *
+ *  False and *error set (typed invalid_args) when the attribute is absent, is not
+ *  a number, is negative, or disagrees with the <device> elements present - a
+ *  truncated or hand-edited document is refused rather than read as a shorter
+ *  device list than it claims to be.
+ */
+bool checkDeclaredDeviceCount(const QDomElement& root, const QString& path, ControlResult* error)
+{
+	bool declaredOk = false;
+	const int declared = root.attribute(QStringLiteral("devices")).toInt(&declaredOk);
+	if (!root.hasAttribute(QStringLiteral("devices")) || !declaredOk || declared < 0)
+	{
+		*error = ControlResult::failure(ControlErrorKind::InvalidArgs,
+			QStringLiteral("%1 has no valid non-negative device count").arg(path));
+		return false;
+	}
+	int actual = 0;
+	for (QDomElement holder = root.firstChildElement(QStringLiteral("device"));
+		!holder.isNull(); holder = holder.nextSiblingElement(QStringLiteral("device")))
+	{
+		++actual;
+	}
+	if (declared != actual)
+	{
+		*error = ControlResult::failure(ControlErrorKind::InvalidArgs,
+			QStringLiteral("%1 declares %2 devices but contains %3")
+				.arg(path).arg(declared).arg(actual));
+		return false;
+	}
+	return true;
+}
+
 //! Keep temporary effect construction and state restoration out of the user's undo history.
 class ScopedJournalMute
 {
@@ -248,28 +281,7 @@ bool controlReadChainPreset(const QString& path, ControlChainPreset* out, Contro
 				.arg(path, root.tagName()));
 		return false;
 	}
-	bool deviceCountOk = false;
-	const int declaredDeviceCount = root.attribute(QStringLiteral("devices")).toInt(&deviceCountOk);
-	if (!root.hasAttribute(QStringLiteral("devices")) || !deviceCountOk || declaredDeviceCount < 0)
-	{
-		*error = ControlResult::failure(ControlErrorKind::InvalidArgs,
-			QStringLiteral("%1 has no valid non-negative device count")
-				.arg(path));
-		return false;
-	}
-	int actualDeviceCount = 0;
-	for (QDomElement holder = root.firstChildElement(QStringLiteral("device"));
-		!holder.isNull(); holder = holder.nextSiblingElement(QStringLiteral("device")))
-	{
-		++actualDeviceCount;
-	}
-	if (declaredDeviceCount != actualDeviceCount)
-	{
-		*error = ControlResult::failure(ControlErrorKind::InvalidArgs,
-			QStringLiteral("%1 declares %2 devices but contains %3")
-				.arg(path).arg(declaredDeviceCount).arg(actualDeviceCount));
-		return false;
-	}
+	if (!checkDeclaredDeviceCount(root, path, error)) { return false; }
 
 	ControlChainPreset preset;
 	preset.path = path;
