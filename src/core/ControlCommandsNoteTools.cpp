@@ -308,6 +308,16 @@ ControlResult generate(const QJsonObject& args)
 	MidiClip* clip = resolveMidiClip(args.value(QStringLiteral("clip")).toString(), &ref, &error);
 	if (clip == nullptr) { return error; }
 	const int steps = std::clamp(args.value(QStringLiteral("steps")).toInt(16), 1, 128);
+	// Luna cluster 5693: `pulses` was independently clamped to `steps`, so a request that
+	// passes the schema with more pulses than steps succeeded having quietly asked for
+	// fewer. The schema takes pulses 0..128 (the ControlCommandsSnapshot canary), so the
+	// impossible combination is refused HERE, the way cf5504f80 does for note.flam's velocity.
+	if (args.value(QStringLiteral("pulses")).toInt(5) > steps)
+	{
+		return ControlResult::failure(ControlErrorKind::InvalidArgs,
+			QStringLiteral("'pulses' is %1, more than the %2 steps asked for: a step cannot "
+				"carry more than one pulse").arg(args.value(QStringLiteral("pulses")).toInt(5)).arg(steps));
+	}
 	const int pulses = std::clamp(args.value(QStringLiteral("pulses")).toInt(5), 0, steps);
 	const tick_t step = std::max(1, args.value(QStringLiteral("step")).toInt(12));
 	const bool random = args.value(QStringLiteral("kind")).toString() == QLatin1String("random");

@@ -375,6 +375,24 @@ private slots:
 				.arg(wrapped).arg(clip->startTimeOffset().getTicks()).arg(clip->length().getTicks())));
 	}
 
+//! Luna cluster 5693: generate() clamped `pulses` to `steps` and answered ok, so
+	//! `steps: 4, pulses: 7` succeeded as if four pulses had been asked for.
+	void morePulsesThanStepsIsRefusedNotSilentlyReduced()
+	{
+		MidiClip* clip = clipWith({});
+		QJsonObject args = self(clip);
+		args.insert(QStringLiteral("steps"), 4);
+		args.insert(QStringLiteral("pulses"), 7);
+		const ControlResult refused = run(QStringLiteral("note.generate"), args);
+		QCOMPARE(refused.errorKind, ControlErrorKind::InvalidArgs);
+		QVERIFY2(refused.errorMessage.contains(QStringLiteral("pulses")), "the refusal must say which argument");
+		QCOMPARE(clip->notes().size(), std::size_t{0});  // nothing was written
+		// pulses == steps is still legal, and so is pulses below it.
+		args.insert(QStringLiteral("pulses"), 4);
+		QVERIFY(run(QStringLiteral("note.generate"), args).ok);
+		QCOMPARE(clip->notes().size(), std::size_t{4});
+	}
+
 //! The split's undo finds the tracks it made by id: track.remove and its undo rebuild one as a new
 	//! object, which a kept Track* does not name.
 	void aSplitTrackIsFoundAgainAfterItsRemovalIsUndone()
