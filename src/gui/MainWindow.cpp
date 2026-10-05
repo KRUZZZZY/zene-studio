@@ -554,12 +554,15 @@ void MainWindow::finalize()
 
 	if( !ConfigManager::inst()->value( "app", "configured" ).toInt() )
 	{
-		ConfigManager::inst()->setValue( "app", "configured", "1" );
 		// no, so show it that user can setup everything
 		if( interactive )
 		{
 			SetupDialog sd;
 			sd.exec();
+			// Only a run that actually showed the dialog counts as configured. An unattended run
+			// skipped it, so recording it here would suppress the dialog on the next launch even
+			// though the user has never been asked.
+			ConfigManager::inst()->setValue( "app", "configured", "1" );
 		}
 		else
 		{

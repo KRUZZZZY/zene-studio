@@ -749,6 +749,9 @@ set(LMMS_TESTS
 	src/gui/DevicePanelTest.cpp
 	# 0.5.0 L11 / L12 (W3): the project menu's new entries, a track's lock, the gallery, the browser's remembered sources.
 	src/gui/LibraryMenusTest.cpp
+	# The shell window's own startup: a floating editor hides its whole frame, and an unattended
+	# first run does not record the skipped setup as done.
+	src/gui/MainWindowTest.cpp
 	# UI precondition #1 (040/ui-precond): include/WcagContrast.h at the AA
 	# boundary, and include/Accessibility.h on the shell surface the owner
 	# manual-tests - the helper, then the footer switches, the chrome bands and
