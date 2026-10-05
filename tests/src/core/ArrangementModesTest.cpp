@@ -33,6 +33,7 @@
 #include <QtTest>
 
 #include <algorithm>
+#include <limits>
 
 #include "ArrangementEdits.h"
 #include "Clip.h"
@@ -154,6 +155,16 @@ private slots:
 		QCOMPARE(arrangement::snapToEdges(305, 100, nullptr, 10), 300);       // its end lands on the marker
 		QCOMPARE(arrangement::snapToEdges(250, 100, nullptr, 10), 250);       // nothing near
 		QCOMPARE(arrangement::snapToEdges(190, 100, other, 10), 190);         // its own edges do not count
+	}
+
+	//! A tolerance at the very top of tick_t still snaps: measuring the distance must not wrap.
+	void aMaximumToleranceStillSnaps()
+	{
+		clipAt(m_track, 0, Bar);
+		const tick_t widest = std::numeric_limits<tick_t>::max();
+		QCOMPARE(arrangement::snapToEdges(190, 100, nullptr, widest), Bar);
+		// A candidate far above the proposed start (the difference overflows a 32-bit tick) is not a match.
+		QCOMPARE(arrangement::snapToEdges(-1000, 100, nullptr, 10), -1000);
 	}
 
 	void deleteClosesTheGapInARippleModeAsOneStep()
