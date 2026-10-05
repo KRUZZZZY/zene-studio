@@ -1218,6 +1218,44 @@ private slots:
 				.arg(roundTripped.rel)));
 	}
 
+//! Luna cluster 3137: a clip far past the engine's 32-bit tick grid cannot
+	//! enter the model as an out-of-range tick. The reader converts every beat
+	//! through ticksFromBeats(), which clamps into the signed 32-bit tick domain
+	//! and counts the value as rounded, so what reaches applyDawProjectModel()'s
+	//! `static_cast<tick_t>` is already inside the tick_t range - the narrowing
+	//! cannot overflow. Kept as the guard on that clamp.
+	void hugeBeatPositionsCannotEnterTheModelOutOfTickRange()
+	{
+		const QByteArray xml =
+			"<Project version=\"1.0\">"
+			"<Application name=\"Probe\" version=\"1\"/>"
+			"<Transport><Tempo value=\"120\"/></Transport>"
+			"<Structure><Track id=\"t1\" name=\"T\" contentType=\"notes\">"
+			"<Channel id=\"c1\"/></Track></Structure>"
+			"<Arrangement><Lanes><Lanes track=\"t1\"><Clips>"
+			"<Clip time=\"50000000\" duration=\"4\"><Notes>"
+			"<Note time=\"50000000\" duration=\"1\" channel=\"0\" key=\"60\" vel=\"0.8\"/>"
+			"</Notes></Clip></Clips></Lanes></Lanes></Arrangement>"
+			"</Project>";
+
+		DawProjectModel model;
+		DawProjectReadReport report;
+		QString error;
+		QVERIFY2(dawProjectModelFromXml(xml, &model, &report, &error), qPrintable(error));
+		QCOMPARE(model.tracks.size(), 1);
+		QCOMPARE(model.tracks[0].clips.size(), 1);
+		const DawProjectClip& clip = model.tracks[0].clips[0];
+		const double ticks = clip.time * DawProjectTicksPerQuarterNote;
+		QVERIFY2(ticks <= static_cast<double>(std::numeric_limits<std::int32_t>::max()),
+			"a clip past the 32-bit tick grid reached the model as an out-of-range tick");
+		const double noteTicks =
+			clip.notes[0].time * DawProjectTicksPerQuarterNote;
+		QVERIFY2(noteTicks <= static_cast<double>(std::numeric_limits<std::int32_t>::max()),
+			"a note past the 32-bit tick grid reached the model as an out-of-range tick");
+		QVERIFY2(report.loss.roundedTimes >= 1,
+			"a clamped position was not counted in rounded_times");
+	}
+
 private:
 	QTemporaryDir m_directory;
 };
