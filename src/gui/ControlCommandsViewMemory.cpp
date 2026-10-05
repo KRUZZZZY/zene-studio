@@ -150,6 +150,22 @@ QString kindNoun(Kind kind)
 	return kind == Kind::Location ? QStringLiteral("memory location") : QStringLiteral("saved selection");
 }
 
+//! The result key a list of @a kind is published under, here and in the list command.
+QString keyOf(Kind kind)
+{
+	return kind == Kind::Location ? QStringLiteral("locations") : QStringLiteral("selections");
+}
+
+//! The honest transaction of one stored-entry change: the list as it was before, the undo step
+//! that puts it back, and @a changed false for a call that recorded none.
+QJsonObject entryPayload(Kind kind, const QJsonArray& previous, bool changed)
+{
+	return transactionPayload({{keyOf(kind), previous}}, QStringLiteral("control.undo"), {}, changed,
+		changed
+			? QStringLiteral("action checkpoint: the recorded undo step puts the previous list back")
+			: QStringLiteral("nothing changed: this call left no undo step, and there is nothing to take back"));
+}
+
 //! Replace the entries of @a kind with @a next as ONE undo step.
 void storeEntries(Kind kind, const QJsonArray& next)
 {
@@ -190,9 +206,14 @@ ControlResult saveEntry(Kind kind, const QJsonObject& entry, bool replace)
 	}
 	if (!replaced) { next.append(entry); }
 	// Saving what is already saved changes nothing: no undo step, the project stays unmodified.
-	const bool changed = next != ViewMemory::instance().entries(kind);
+	const QJsonArray previous = ViewMemory::instance().entries(kind);
+	const bool changed = next != previous;
 	if (changed) { storeEntries(kind, next); }
 	QJsonObject result = entry;
+	// The list of this kind is a bounded recorded state, and the recorded undo step puts the
+	// previous one back - so SAY SO, as range.set and the copy commands do, rather than leaving
+	// the client to infer it from a bare 'changed'.
+	result.insert(QStringLiteral("__transaction"), entryPayload(kind, previous, changed));
 	result.insert(QStringLiteral("replaced"), replaced);
 	result.insert(QStringLiteral("changed"), changed);
 	result.insert(QStringLiteral("captures"), partsOf(entry));
@@ -213,8 +234,11 @@ ControlResult removeEntry(Kind kind, const QJsonObject& args)
 	{
 		return ControlResult::failure(ControlErrorKind::NotFound, QStringLiteral("nothing is saved as '%1'").arg(name));
 	}
+	const QJsonArray previous = ViewMemory::instance().entries(kind);
 	storeEntries(kind, next);
-	return ControlResult::success({{QStringLiteral("name"), name}, {QStringLiteral("count"), next.size()}});
+	QJsonObject result = {{QStringLiteral("name"), name}, {QStringLiteral("count"), next.size()}};
+	result.insert(QStringLiteral("__transaction"), entryPayload(kind, previous, true));
+	return ControlResult::success(result);
 }
 
 bool namedOrRefuse(const QJsonObject& args, QString* name, ControlResult* error)
