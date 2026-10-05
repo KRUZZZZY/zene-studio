@@ -201,6 +201,13 @@ private slots:
 		DitherMode untouched = DitherMode::Tpdf;
 		QVERIFY(!ditherModeFromName(QStringLiteral("rpdf"), &untouched));
 		QCOMPARE(untouched, DitherMode::Tpdf);
+		// A null out pointer is refused, not dereferenced: a valid name used to
+		// write through it (ExportDitherMode.h's *mode store).
+		for (const QString& name : ditherModeNames())
+		{
+			QVERIFY(!ditherModeFromName(name, nullptr));
+		}
+		QVERIFY(!ditherModeFromName(QStringLiteral("rpdf"), nullptr));
 		ExportRenderSettings::reset();
 	}
 };
