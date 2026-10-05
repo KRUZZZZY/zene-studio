@@ -110,6 +110,31 @@ private slots:
 		QCOMPARE(track->takeLanes().segments()[0].endTick, 192);
 	}
 
+	//! A lane may hold SEVERAL takes, so the two ends of the range an edge move grows into can be
+	//! supplied by DIFFERENT clips with a gap between them: asking only the two ends let the
+	//! boundary move across the gap and left the composite naming a lane with no take there
+	//! (comp.get_state would report it 'unresolved'). Every tick of the range must be covered.
+	void anEdgeMoveRefusesAcrossAGapInTheGrowingLane()
+	{
+		auto* track = dynamic_cast<SampleTrack*>(Track::create(Track::Type::Sample, Engine::getSong()));
+		const QString id = control::trackIdOf(track);
+		for (int i = 0; i < 2; ++i) { run(QStringLiteral("comp.lane_add"), {{QStringLiteral("track"), id}}); }
+		addTake(track, 0, 0, 240);  // lane 0: two takes with a GAP over [240, 300)
+		addTake(track, 0, 300, 180);
+		addTake(track, 1, 192, 288);
+		TakeLaneModel& model = track->takeLanes();
+		model.selectSegment(0, 192, 0, 0);
+		model.selectSegment(192, 480, 1, 0);
+		// Growing lane 0 over [192, 350): both ends sit inside one of its takes, the gap does not.
+		QCOMPARE(run(QStringLiteral("comp.move_edge"), {{QStringLiteral("track"), id}, {QStringLiteral("tick"), 192},
+			{QStringLiteral("to"), 350}}).errorKind, ControlErrorKind::Refused);
+		QCOMPARE(model.segments()[0].endTick, 192);  // nothing changed
+		// A range inside the first take is still covered, so the move is still allowed.
+		QVERIFY(run(QStringLiteral("comp.move_edge"), {{QStringLiteral("track"), id}, {QStringLiteral("tick"), 192},
+			{QStringLiteral("to"), 240}}).ok);
+		QCOMPARE(model.segments()[0].endTick, 240);
+	}
+
 	//! 0.5.0 E2: the growing take keeps its SLIP (a slip is the segment's, not a position that grows with the tick),
 	//! so the grown range merges back into one segment; and the take refuses where its slipped read runs off its end.
 	void aSlippedTakeKeepsItsSlipAcrossAnEdgeMove()

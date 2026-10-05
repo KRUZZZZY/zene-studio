@@ -89,20 +89,47 @@ TakeLaneSegment edgeMove(const TakeLaneSegment& left, const TakeLaneSegment& rig
 	return move;
 }
 
-//! Whether a take of @a move's lane covers @a tick, where its handle plays, and the slipped tick it reads there.
-bool takeCovers(const Track& track, const TakeLaneSegment& move, int tick)
+//! The timeline half-open span over which ONE take of @a move's lane plays: its own range, cut
+//! short by the slip (at timeline tick t the handle reads the take at t + sourceOffset, so the
+//! last slip's worth of ticks is where its slipped read runs off the end).
+struct TakeSpan
 {
-	const std::vector<Clip*>& clips = track.getClips();
-	return std::any_of(clips.begin(), clips.end(), [&move, tick](const Clip* clip) {
-		return clip != nullptr && clip->laneIndex() == move.laneIndex && tick >= clip->startPosition().getTicks()
-			&& tick + move.sourceOffset < clip->endPosition().getTicks();
-	});
+	int begin = 0;
+	int end = 0;
+};
+
+//! Every take of @a move's lane as a span it covers on the timeline.
+std::vector<TakeSpan> takeSpans(const Track& track, const TakeLaneSegment& move)
+{
+	std::vector<TakeSpan> spans;
+	for (const Clip* clip : track.getClips())
+	{
+		if (clip == nullptr || clip->laneIndex() != move.laneIndex) { continue; }
+		const TakeSpan span{static_cast<int>(clip->startPosition().getTicks()),
+			static_cast<int>(clip->endPosition().getTicks()) - move.sourceOffset};
+		if (span.end > span.begin) { spans.push_back(span); }
+	}
+	return spans;
 }
 
-//! Whether the growing take reaches over the whole range it grows into (both ends - a lane may hold a gap).
+/*! Whether the takes of @a move's lane cover EVERY tick of the range it grows into.
+ *
+ *  One lane may hold SEVERAL takes, so the two ends of the range can be supplied by different
+ *  clips with a gap between them: asking only the two ends let a boundary move across that gap
+ *  and left the composite naming a lane with no take there - which TakeLaneModel::takeAt() then
+ *  reports as 'unresolved', and the engine plays nothing for. Every tick is walked instead. */
 bool takeReaches(const Track& track, const TakeLaneSegment& move)
 {
-	return takeCovers(track, move, move.beginTick) && takeCovers(track, move, move.endTick - 1);
+	std::vector<TakeSpan> spans = takeSpans(track, move);
+	std::sort(spans.begin(), spans.end(), [](const TakeSpan& a, const TakeSpan& b) { return a.begin < b.begin; });
+	int reached = move.beginTick;
+	for (const TakeSpan& span : spans)
+	{
+		if (span.begin > reached) { break; }  // a gap no later span can bridge
+		reached = std::max(reached, span.end);
+		if (reached >= move.endTick) { return true; }
+	}
+	return false;
 }
 
 ControlResult moveEdge(const QJsonObject& args)
