@@ -216,7 +216,10 @@ LMMS_EXPORT DocumentIndex parseDocumentIndex( const QDomElement & root );
  *      begin is recovered as the nearest preceding `<`. That is sound because a
  *      literal `<` cannot occur inside a start tag - an attribute value must
  *      escape it - nor inside character data; confirmed on an element whose
- *      attribute value is `a&lt;b`.
+ *      attribute value is `a&lt;b`. The offset counts CHARACTERS while every
+ *      range here addresses a QByteArray, so it is converted to a byte position
+ *      by bytePositionOf() before it is used - this build's Qt (6.4.2) has no
+ *      byteOffset(), which arrives in 6.5.
  *   2. The range is exact for a self-closing child, for a child that is the LAST
  *      child of the content element, and for a same-named element nested one level
  *      deeper (which must NOT count as a section, because only direct children

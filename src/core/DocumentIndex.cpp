@@ -363,6 +363,40 @@ bool closesContentElement( int contentDepth, int depth )
 {
 	return contentDepth >= 0 && depth == contentDepth;
 }
+
+/*! The byte position \a characterOffset characters into \a data.
+ *
+ *  QXmlStreamReader reports CHARACTER offsets, but every range recorded below
+ *  addresses a QByteArray, so the two have to be reconciled before a range can
+ *  be cut. This build's Qt (6.4.2) exposes no byteOffset() - it arrives in 6.5 -
+ *  so the position is derived by counting UTF-8 lead bytes: a byte that is not a
+ *  continuation byte (0b10xxxxxx) begins a character, so counting the others is
+ *  counting characters.
+ *
+ *  The shift this corrects is CUMULATIVE, so it is invisible on an all-ASCII
+ *  document - which is why the reduction measured clean until a project carried
+ *  a name in a non-Latin script. The scan walks forward, so a caller may repeat
+ *  this for each section; it is linear in the document length, on the load
+ *  path, never on an audio thread. */
+qint64 bytePositionOf( const QByteArray & data, qint64 characterOffset )
+{
+	if( characterOffset <= 0 ) { return 0; }
+
+	qint64 characters = 0;
+	for( qint64 byte = 0; byte < data.size(); ++byte )
+	{
+		if( characters == characterOffset ) { return byte; }
+
+		if( ( static_cast< unsigned char >( data.at( byte ) ) & 0xC0 ) != 0x80 )
+		{
+			++characters;
+		}
+	}
+
+	// Past the last character: the end of the document is the honest answer for
+	// an offset that names nothing, and the range's begin is checked anyway.
+	return data.size();
+}
 } // namespace
 
 /*! Record in \a out the byte range of every section \a skipNames names that is a
@@ -397,8 +431,11 @@ bool scanSectionRanges( const QByteArray & data, const QString & contentElementN
 			if( isSkippableSection( contentDepth, depth, name, skipNames ) )
 			{
 				// characterOffset() sits just PAST the start tag, so the subtree's
-				// first byte is the nearest preceding '<' (property 1).
-				const qint64 afterTag = xml.characterOffset();
+				// first byte is the nearest preceding '<' (property 1). It counts
+				// CHARACTERS, and the ranges below address a QByteArray, so it is
+				// converted to a byte position first.
+				const qint64 afterTag =
+					bytePositionOf( data, xml.characterOffset() );
 				const qint64 begin = data.lastIndexOf( '<', afterTag - 1 );
 
 				// Refuse rather than corrupt: an unrecoverable begin offset means
@@ -406,7 +443,8 @@ bool scanSectionRanges( const QByteArray & data, const QString & contentElementN
 				if( begin < 0 ) { return false; }
 
 				xml.skipCurrentElement();
-				out.ranges.append( qMakePair( begin, xml.characterOffset() - begin ) );
+				const qint64 end = bytePositionOf( data, xml.characterOffset() );
+				out.ranges.append( qMakePair( begin, end - begin ) );
 				out.names.append( name );
 
 				// skipCurrentElement() consumed the matching EndElement too, so

@@ -473,6 +473,76 @@ private slots:
 		QVERIFY2( !cleanSaved.contains( documentIndexNamespaceAttribute() ),
 			"a project this build understands completely gained the z namespace" );
 	}
+
+	// -----------------------------------------------------------------------
+	// The scanner's offsets (SRC ARCH-4 S2b)
+	// -----------------------------------------------------------------------
+
+	//! A scan addresses a QByteArray, so the offsets it records must be BYTE
+	//! offsets. characterOffset() counts characters, so a multibyte character
+	//! anywhere before the section makes every recorded offset point earlier
+	//! than the bytes it names - the cut then lands inside the section instead
+	//! of around it, and what comes back is malformed XML rather than a
+	//! reduced document.
+	//!
+	//! The fixture puts the multibyte text BEFORE the section being selected,
+	//! which is the only placement that matters: the shift is cumulative, so the
+	//! deeper the section sits the further off its offsets land.
+	void aMultibyteCharacterBeforeASectionDoesNotShiftTheCut()
+	{
+		// Four 2-byte characters plus one 3-byte one: five characters, eleven
+		// bytes, a six-byte shift a character-based offset cannot see.
+		const QString mark = QStringLiteral(
+			"éééé€" );
+		QCOMPARE( mark.toUtf8().size() - mark.size(), 6 );
+
+		const QString dropped = QStringLiteral( "    <dropme a=\"1\">\n"
+			"      <inner b=\"2\"/>\n    </dropme>\n" );
+		// The range a scan records is the ELEMENT, from its own '<' to its own
+		// '>' - the indentation around it belongs to the document, not to the
+		// section, and property 1 recovers the begin as the '<' for that reason.
+		const QString element = QStringLiteral( "<dropme a=\"1\">\n"
+			"      <inner b=\"2\"/>\n    </dropme>" );
+		const QString kept = QStringLiteral( "    <keepme/>\n" );
+		const QByteArray source = QStringLiteral(
+			"<zene-project><song>\n"
+			"    <title>%1</title>\n"
+			"%2%3</song></zene-project>\n" ).arg( mark, dropped, kept ).toUtf8();
+
+		// The scan must point AT the section's own bytes: the range it records
+		// has to reproduce the section exactly, which is only true if begin and
+		// length are both byte quantities.
+		SectionRanges found;
+		QVERIFY2( scanSectionRanges( source, QStringLiteral( "song" ),
+				QStringList{ QStringLiteral( "dropme" ) }, found ),
+			"the scanner refused a document it can follow to its end" );
+		QCOMPARE( found.names, QStringList{ QStringLiteral( "dropme" ) } );
+		QCOMPARE( found.ranges.size(), 1 );
+		if( !found.ranges.isEmpty() )
+		{
+			const auto range = found.ranges.first();
+			QCOMPARE( source.mid( range.first, range.second ),
+				QByteArray( element.toUtf8() ) );
+		}
+
+		// ...and the reduction built on those offsets must be a document, with
+		// the multibyte title and the kept section intact.
+		QStringList skipped;
+		const QByteArray reduced = reduceDocumentSections( source,
+			QStringLiteral( "song" ), QStringList{ QStringLiteral( "dropme" ) }, &skipped );
+		QCOMPARE( skipped, QStringList{ QStringLiteral( "dropme" ) } );
+		QVERIFY2( !reduced.contains( QByteArray( "dropme" ) ),
+			"the reduction left the selected section behind" );
+
+		QDomDocument result;
+		QVERIFY2( result.setContent( reduced ),
+			qPrintable( "the reduction is not well-formed XML: " +
+				QString::fromUtf8( reduced ) ) );
+		const QDomElement song = result.documentElement()
+			.firstChildElement( QStringLiteral( "song" ) );
+		QCOMPARE( song.firstChildElement( QStringLiteral( "title" ) ).text(), mark );
+		QVERIFY( !song.firstChildElement( QStringLiteral( "keepme" ) ).isNull() );
+	}
 };
 
 QTEST_GUILESS_MAIN( DocumentIndexTest )
