@@ -52,6 +52,13 @@ ControlResult run(const QString& id, const QJsonObject& args = {})
 	return ControlRegistry::instance()->invoke(id, args);
 }
 
+//! The newest A16 record (SPEC A16 §3): what control.transactions reports for the last undo step.
+QJsonObject lastRecord()
+{
+	const QJsonArray all = run(QStringLiteral("control.transactions")).result.value(QStringLiteral("transactions")).toArray();
+	return all.isEmpty() ? QJsonObject() : all.last().toObject();
+}
+
 //! A take clip on @a lane over [@a start, @a start + @a length) ticks.
 void addTake(SampleTrack* track, int lane, int start, int length)
 {
@@ -202,6 +209,25 @@ private slots:
 		QCOMPARE(track->getClips().size(), std::size_t{1});
 		QCOMPARE(track->getClips()[0]->startPosition().getTicks(), tick_t{192});
 		QCOMPARE(track->takeLanes().laneCount(), 0);
+	}
+
+	//! A16 §3: a mutating command records what it wrote - the composite before the edit and the
+	//! inverse control.undo replays. comp.move_edge journalled the track but described nothing, so
+	//! the record carried no before-state and no inverse, unlike its sibling comp.select.
+	void aMovedEdgeRecordsItsBeforeStateAndInverse()
+	{
+		SampleTrack* track = twoTakeTrack();
+		const QString id = control::trackIdOf(track);
+		QVERIFY(run(QStringLiteral("comp.move_edge"), {{QStringLiteral("track"), id}, {QStringLiteral("tick"), 200},
+			{QStringLiteral("to"), 240}}).ok);
+		const QJsonObject record = lastRecord();
+		QCOMPARE(record.value(QStringLiteral("command")).toString(), QStringLiteral("comp.move_edge"));
+		QVERIFY(record.value(QStringLiteral("reversible")).toBool());
+		const QJsonObject before = record.value(QStringLiteral("before")).toObject().value(QStringLiteral("composite")).toObject();
+		QCOMPARE(before.value(QStringLiteral("segments")).toArray().at(0).toObject().value(QStringLiteral("end")).toInt(), 192);
+		QCOMPARE(record.value(QStringLiteral("inverse")).toObject().value(QStringLiteral("op")).toString(), QStringLiteral("control.undo"));
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
+		QCOMPARE(track->takeLanes().segments()[0].endTick, 192);
 	}
 
 	void theMetronomesOptions()

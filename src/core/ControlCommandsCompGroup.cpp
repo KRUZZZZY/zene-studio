@@ -132,6 +132,15 @@ bool takeReaches(const Track& track, const TakeLaneSegment& move)
 	return false;
 }
 
+//! The inverse a composite edit's record names (SPEC A16 §3): the Track checkpoint, which
+//! control.undo replays. No single command re-creates the previous composite - there is no
+//! un-select, a composite being total over its span - so the before-state carries it.
+const QString CompositeInverseOp = QStringLiteral("control.undo");
+
+const QString CompositeMechanism = QStringLiteral("ProjectJournal (Track checkpoint: "
+	"Track::saveTrack writes the <takelanes> element - the lane list AND the composite - and "
+	"Track::loadTrack re-reads it)");
+
 ControlResult moveEdge(const QJsonObject& args)
 {
 	ControlResult error;
@@ -147,16 +156,21 @@ ControlResult moveEdge(const QJsonObject& args)
 	{
 		return ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("'to' is inside the two takes, %1..%2").arg(left.beginTick + 1).arg(right.endTick - 1));
 	}
-	const QJsonObject result{{QStringLiteral("track"), trackIdOf(track)}, {QStringLiteral("edge"), to}};
-	if (to == left.endTick) { return ControlResult::success(result); }
+	const QString id = trackIdOf(track);
+	QJsonObject result{{QStringLiteral("track"), id}, {QStringLiteral("edge"), to}};
+	if (to == left.endTick) { return ControlResult::success(result); }  // nothing moved: no record
 	const TakeLaneSegment move = edgeMove(left, right, to);
 	if (!takeReaches(*track, move) || !model.canSelect(move.beginTick, move.endTick, move.laneIndex, move.sourceOffset))
 	{
 		return ControlResult::failure(ControlErrorKind::Refused, QStringLiteral("the take on that side does not reach %1").arg(to));
 	}
+	const QJsonObject before{{QStringLiteral("track"), id}, {QStringLiteral("composite"), compositeState(track)}};
 	track->addJournalCheckPoint();
 	model.selectSegment(move.beginTick, move.endTick, move.laneIndex, move.sourceOffset);
 	Engine::getSong()->setModified();
+	result.insert(QStringLiteral("__transaction"),
+		transactionPayload(before, CompositeInverseOp, QJsonObject{{QStringLiteral("track"), id}},
+			true, CompositeMechanism));
 	return ControlResult::success(result);
 }
 
