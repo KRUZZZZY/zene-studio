@@ -67,7 +67,7 @@ struct PortLayout
 {
 	int inputs = 0;
 	int outputs = 0;
-	//! a second input port is treated as a side-chain
+	//! every input port behind the main one is treated as a side-chain
 	bool hasSideChain = false;
 	//! flattened index of the side-chain port's first channel, or -1 (E9)
 	int sideChainChannel = -1;
@@ -83,7 +83,9 @@ struct PortLayout
  * - ports with a non-positive channel count are ignored
  * - a port never pushes a direction past MaxChannelsPerAudioBuffer; the excess
  *   channels are dropped so the transport stays within its fixed limits
- * - a second input port marks the layout as having a side-chain
+ * - input ports are ordered MAIN FIRST by clap.audio-ports' CLAP_AUDIO_PORT_IS_MAIN flag (a plug-in
+ *   that flags none keeps its own order), so the transport's first channels are the main signal
+ * - every input port behind the main one is a side-chain; sideChainChannel is where they start
  */
 auto mapPorts(const std::vector<PortDescriptor>& ports) -> PortLayout;
 

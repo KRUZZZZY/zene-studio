@@ -51,6 +51,8 @@ private slots:
 	void testStereoPair();
 	void testMonoToStereo();
 	void testSideChain();
+	void testSideChainReportedBeforeTheMainInput();
+	void testNoMainFlagKeepsTheFirstInputAsMain();
 	void testIgnoresEmptyPorts();
 	void testEmptyLayoutIsInvalid();
 	void testChannelBudgetIsClamped();
@@ -101,6 +103,41 @@ void ClapBusMapTest::testSideChain()
 	QCOMPARE(layout.hasSideChain, true);
 	QCOMPARE(layout.sideChainChannel, 2);  // E9: the second port starts after the main pair
 	QCOMPARE(layout.inputPortChannels, (std::vector<int>{2, 1}));
+}
+
+//! A plug-in that lists its side-chain input BEFORE its main one still gets the main input on the
+//! transport's first channels: the port the plug-in flagged CLAP_AUDIO_PORT_IS_MAIN is the main
+//! one, so the side-chain boundary follows it and not the plug-in's reporting order.
+void ClapBusMapTest::testSideChainReportedBeforeTheMainInput()
+{
+	const auto layout = mapPorts({
+		makePort(PortDirection::Input, 1),       // the side-chain, reported first
+		makePort(PortDirection::Input, 2, true),  // the main input, reported second
+		makePort(PortDirection::Output, 2, true),
+	});
+
+	QCOMPARE(layout.inputs, 3);
+	QCOMPARE(layout.outputs, 2);
+	QCOMPARE(layout.hasSideChain, true);
+	// the main pair feeds the transport's first two channels, the side-chain follows them
+	QCOMPARE(layout.inputPortChannels, (std::vector<int>{2, 1}));
+	QCOMPARE(layout.sideChainChannel, 2);
+}
+
+//! Nothing to go by: no input port carries the main flag, so the plug-in's own order still decides
+//! which port is the main one (the first) and the side-chain boundary is unchanged.
+void ClapBusMapTest::testNoMainFlagKeepsTheFirstInputAsMain()
+{
+	const auto layout = mapPorts({
+		makePort(PortDirection::Input, 2),
+		makePort(PortDirection::Input, 2),
+		makePort(PortDirection::Output, 2, true),
+	});
+
+	QCOMPARE(layout.inputs, 4);
+	QCOMPARE(layout.hasSideChain, true);
+	QCOMPARE(layout.inputPortChannels, (std::vector<int>{2, 2}));
+	QCOMPARE(layout.sideChainChannel, 2);
 }
 
 void ClapBusMapTest::testIgnoresEmptyPorts()

@@ -31,35 +31,79 @@
 namespace lmms::clap
 {
 
+namespace
+{
+
+//! One input port as the host feeds it, with the main flag the MAP uses: a port the plug-in flagged
+//! CLAP_AUDIO_PORT_IS_MAIN is the main one, and when no input port carries the flag the plug-in's own
+//! first input port is taken as the main one.
+struct MappedInput
+{
+	const PortDescriptor* port;
+	bool main;
+};
+
+//! The input ports main-first: a plug-in is free to list its side-chain input before its main one, and
+//! the transport's first channels are the main signal. Everything behind the main port is side-chain.
+bool isUsableInput(const PortDescriptor& port)
+{
+	return port.direction == PortDirection::Input && port.channelCount > 0;
+}
+
+bool anyMain(const std::vector<MappedInput>& inputs)
+{
+	return std::any_of(inputs.begin(), inputs.end(), [](const MappedInput& input) { return input.main; });
+}
+
+auto orderedInputs(const std::vector<PortDescriptor>& ports) -> std::vector<MappedInput>
+{
+	std::vector<MappedInput> ordered;
+	ordered.reserve(ports.size());
+	for (const auto& port : ports)
+	{
+		if (isUsableInput(port) && port.isMain) { ordered.push_back({&port, true}); }
+	}
+	for (const auto& port : ports)
+	{
+		if (isUsableInput(port) && !port.isMain) { ordered.push_back({&port, false}); }
+	}
+	// No input port carries the flag: the reporting order decides, and its first port is the main one.
+	if (!ordered.empty() && !anyMain(ordered)) { ordered.front().main = true; }
+	return ordered;
+}
+
+} // namespace
+
 auto mapPorts(const std::vector<PortDescriptor>& ports) -> PortLayout
 {
 	PortLayout layout;
 	constexpr auto maxChannels = static_cast<int>(MaxChannelsPerAudioBuffer);
 
-	for (const auto& port : ports)
+	// --- inputs, main port first ------------------------------------------
+	int mainChannels = 0;
+	for (const auto& input : orderedInputs(ports))
 	{
-		if (port.channelCount <= 0) { continue; }
-
-		const auto budget = port.direction == PortDirection::Input
-			? maxChannels - layout.inputs
-			: maxChannels - layout.outputs;
-		const auto channels = std::min(port.channelCount, budget);
+		const auto channels = std::min(input.port->channelCount, maxChannels - layout.inputs);
 		if (channels <= 0) { continue; }
-
-		if (port.direction == PortDirection::Input)
-		{
-			layout.inputPortChannels.push_back(channels);
-			layout.inputs += channels;
-		}
-		else
-		{
-			layout.outputPortChannels.push_back(channels);
-			layout.outputs += channels;
-		}
+		layout.inputPortChannels.push_back(channels);
+		layout.inputs += channels;
+		if (input.main) { mainChannels += channels; }
 	}
 
-	layout.hasSideChain = layout.inputPortChannels.size() > 1;
-	layout.sideChainChannel = layout.hasSideChain ? layout.inputPortChannels[0] : -1;
+	// --- outputs, in the plug-in's own order -------------------------------
+	for (const auto& port : ports)
+	{
+		if (port.direction != PortDirection::Output || port.channelCount <= 0) { continue; }
+		const auto channels = std::min(port.channelCount, maxChannels - layout.outputs);
+		if (channels <= 0) { continue; }
+		layout.outputPortChannels.push_back(channels);
+		layout.outputs += channels;
+	}
+
+	// The side-chain is what follows the main port on the flattened inputs; a plug-in with a single
+	// input port (or one whose extra ports the channel budget dropped) has none.
+	layout.hasSideChain = mainChannels < layout.inputs;
+	layout.sideChainChannel = layout.hasSideChain ? mainChannels : -1;
 	return layout;
 }
 
