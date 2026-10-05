@@ -454,9 +454,8 @@ void SamplePlayHandle::play( std::span<SampleFrame> buffer )
 
 float SamplePlayHandle::warpRatio() const
 {
-	// No markers and no source tempo: the natural rate, and the pre-#597 value
-	// of this argument, so the resampler ratio is bit for bit what it was.
-	if (m_warp.empty() || m_naturalFramesPerTick <= 0.0f) { return 1.0f; }
+	// No usable natural rate: the pre-#597 value of this argument, unchanged.
+	if (m_naturalFramesPerTick <= 0.0f) { return 1.0f; }
 
 	// The rate that governs from the source frame this period starts on. The
 	// render has to pick one rate per period because `Sample::play` takes one
