@@ -114,9 +114,12 @@ ControlResult applyPreset(const ControlTarget& target, const ControlChainPreset&
 	}
 	const int before = static_cast<int>(chain->effects().size());
 
-	// The step is recorded BEFORE the write, and it is the reason a failure
-	// part-way through an apply is recoverable: the previous chain's own XML is
-	// already on the undo stack.
+	ControlResult applied = controlApplyChainPreset(chain, preset);
+	if (!applied.ok) { return applied; }
+
+	// The replacement is complete before its successful action enters history.
+	// controlApplyChainPreset stages the whole chain, so every refusal above has
+	// left the previous devices in place and must leave no undo step either.
 	addUndoStep(
 		[args, beforeXml]() {
 			if (EffectChain* live = liveChain(args)) { controlRestoreChainXml(live, beforeXml); }
@@ -124,9 +127,6 @@ ControlResult applyPreset(const ControlTarget& target, const ControlChainPreset&
 		[args, preset]() {
 			if (EffectChain* live = liveChain(args)) { controlApplyChainPreset(live, preset); }
 		});
-
-	ControlResult applied = controlApplyChainPreset(chain, preset);
-	if (!applied.ok) { return applied; }
 
 	QJsonObject result = applied.result;
 	result.insert(QStringLiteral("target"), target.id);

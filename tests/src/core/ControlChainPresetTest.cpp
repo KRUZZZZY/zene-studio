@@ -411,8 +411,12 @@ private slots:
 		QVERIFY(QFile::remove(path));
 		QVERIFY(!applied.ok);
 		QCOMPARE(applied.errorKind, ControlErrorKind::InvalidArgs);
-		QCOMPARE(deviceChain(target), before);
-		QCOMPARE(Engine::projectJournal()->topStepSerial(), serial);
+		const bool chainUnchanged = deviceChain(target) == before;
+		const bool historyUnchanged = Engine::projectJournal()->topStepSerial() == serial
+			&& !applied.result.contains(QStringLiteral("__transaction"));
+		QVERIFY2(chainUnchanged && historyUnchanged,
+			qPrintable(QStringLiteral("failed apply left chain unchanged=%1 and history unchanged=%2")
+				.arg(chainUnchanged).arg(historyUnchanged)));
 	}
 
 
@@ -460,10 +464,12 @@ private slots:
 		const quint64 serial = Engine::projectJournal()->topStepSerial();
 		const ControlResult overwritten = run(command, args);
 		QVERIFY(QFile::setPermissions(path, permissions));
-		QVERIFY(!overwritten.ok);
-		QCOMPARE(overwritten.errorKind, ControlErrorKind::Refused);
-		QCOMPARE(readBytes(path), bytes);
-		QCOMPARE(Engine::projectJournal()->topStepSerial(), serial);
+		const bool refused = !overwritten.ok && overwritten.errorKind == ControlErrorKind::Refused;
+		const bool fileUnchanged = readBytes(path) == bytes;
+		const bool historyUnchanged = Engine::projectJournal()->topStepSerial() == serial;
+		QVERIFY2(refused && fileUnchanged && historyUnchanged,
+			qPrintable(QStringLiteral("overwrite refused=%1, file unchanged=%2, history unchanged=%3")
+				.arg(refused).arg(fileUnchanged).arg(historyUnchanged)));
 		QVERIFY(QFile::remove(path));
 	}
 

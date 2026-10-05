@@ -157,7 +157,7 @@ bool storeWrite(const QString& path, const QByteArray& bytes, bool overwrite, bo
 		return false;
 	}
 	QByteArray previous;
-	if (*existed) { controlReadFileBytes(path, &previous, error); }
+	if (*existed && !controlReadFileBytes(path, &previous, error)) { return false; }
 	*snapshot = controlFileSnapshot(path);
 
 	if (!QDir().mkpath(controlChainPresetDir()))

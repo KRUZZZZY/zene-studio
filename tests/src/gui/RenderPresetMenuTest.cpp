@@ -37,6 +37,7 @@
 #include <QTemporaryDir>
 
 #include "ConfigManager.h"
+#include "ControlDeviceSupport.h"
 #include "ControlRegistry.h"
 #include "Engine.h"
 #include "ProjectJournal.h"
@@ -159,10 +160,12 @@ private slots:
 		QVERIFY(controlWriteFileBytes(path, bytes, true, &error));
 		const quint64 serial = Engine::projectJournal()->topStepSerial();
 		const ControlResult removed = run(QStringLiteral("export.preset_remove"), {{QStringLiteral("name"), name}});
-		QVERIFY(!removed.ok);
-		QCOMPARE(removed.errorKind, ControlErrorKind::InvalidArgs);
-		QCOMPARE(readBytes(path), bytes);
-		QCOMPARE(Engine::projectJournal()->topStepSerial(), serial);
+		const bool refused = !removed.ok && removed.errorKind == ControlErrorKind::InvalidArgs;
+		const bool fileUnchanged = readBytes(path) == bytes;
+		const bool historyUnchanged = Engine::projectJournal()->topStepSerial() == serial;
+		QVERIFY2(refused && fileUnchanged && historyUnchanged,
+			qPrintable(QStringLiteral("corrupt removal refused=%1, file unchanged=%2, history unchanged=%3")
+				.arg(refused).arg(fileUnchanged).arg(historyUnchanged)));
 		QVERIFY(QFile::remove(path));
 	}
 
@@ -192,10 +195,12 @@ private slots:
 		const quint64 serial = Engine::projectJournal()->topStepSerial();
 		const ControlResult removed = run(QStringLiteral("export.preset_remove"), {{QStringLiteral("name"), name}});
 		QVERIFY(QFile::setPermissions(dir, permissions));
-		QVERIFY(!removed.ok);
-		QCOMPARE(removed.errorKind, ControlErrorKind::Refused);
-		QCOMPARE(readBytes(path), bytes);
-		QCOMPARE(Engine::projectJournal()->topStepSerial(), serial);
+		const bool refused = !removed.ok && removed.errorKind == ControlErrorKind::Refused;
+		const bool fileUnchanged = readBytes(path) == bytes;
+		const bool historyUnchanged = Engine::projectJournal()->topStepSerial() == serial;
+		QVERIFY2(refused && fileUnchanged && historyUnchanged,
+			qPrintable(QStringLiteral("failed deletion refused=%1, file unchanged=%2, history unchanged=%3")
+				.arg(refused).arg(fileUnchanged).arg(historyUnchanged)));
 		QVERIFY(QFile::remove(path));
 #endif
 	}
