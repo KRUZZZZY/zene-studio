@@ -359,6 +359,29 @@ bool needsAmount(const QString& action)
 	return action == QLatin1String("transpose") || action == QLatin1String("velocity_set") || action == QLatin1String("velocity_offset");
 }
 
+//! 'amount' as the int the actions work in. registerNoteShapeCommands() declares it as an
+//! unbounded integer (integerProperty(), src/core/ControlVocabulary.cpp:85), so a value past
+//! the schema integer is still a whole JSON number and reaches the handler; toInt() would
+//! read it as 0, and a transpose or velocity offset of 0 is a success that moved nothing.
+//! A value the handler cannot hold is refused instead of silently becoming a no-op.
+bool readAmount(const QJsonObject& args, int* out, ControlResult* error)
+{
+	const QJsonValue value = args.value(QStringLiteral("amount"));
+	const double amount = value.toDouble();
+	if (!value.isDouble() || amount != std::floor(amount)
+		|| amount < static_cast<double>(std::numeric_limits<int>::lowest())
+		|| amount > static_cast<double>(std::numeric_limits<int>::max()))
+	{
+		*error = ControlResult::failure(ControlErrorKind::InvalidArgs,
+			QStringLiteral("'amount' is a whole number the handler can hold (%1..%2), not %3")
+				.arg(std::numeric_limits<int>::lowest()).arg(std::numeric_limits<int>::max())
+				.arg(value.isDouble() ? QString::number(amount) : QStringLiteral("a value of another type")));
+		return false;
+	}
+	*out = static_cast<int>(amount);
+	return true;
+}
+
 ControlResult transformWhere(const QJsonObject& args)
 {
 	ClipRef ref;
@@ -372,13 +395,15 @@ ControlResult transformWhere(const QJsonObject& args)
 	{
 		return ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("'%1' needs an 'amount'").arg(action));
 	}
+	int amount = 0;
+	if (args.contains(QStringLiteral("amount")) && !readAmount(args, &amount, &error)) { return error; }
 	const NoteVector hits = NoteTransform::select(clip->notes(), filter);
 	if (hits.empty())  // nothing to change: no undo step, the project not modified
 	{
 		return ControlResult::success({{QStringLiteral("clip"), clipId(ref.id)}, {QStringLiteral("matched"), 0}, {QStringLiteral("removed"), 0}});
 	}
 	clip->addJournalCheckPoint();
-	const NoteVector doomed = act(hits, action, args.value(QStringLiteral("amount")).toInt());
+	const NoteVector doomed = act(hits, action, amount);
 	for (Note* note : doomed) { clip->removeNote(note); }
 	return ControlResult::success(finish(ref, clip, QStringLiteral("note.transform_where"),
 		{{QStringLiteral("matched"), static_cast<int>(hits.size())}, {QStringLiteral("removed"), static_cast<int>(doomed.size())}}));
