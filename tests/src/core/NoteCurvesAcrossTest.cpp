@@ -29,6 +29,8 @@
 
 #include <QtTest>
 
+#include <limits>
+
 #include <QDomDocument>
 #include <QJsonArray>
 
@@ -208,6 +210,21 @@ private slots:
 		QCOMPARE(keysOf(a), (QList<int>{60}));
 		QCOMPARE(keysOf(b), (QList<int>{62}));
 		QCOMPARE(run(QStringLiteral("control.transactions")).result.value(QStringLiteral("transactions")).toArray().size(), recorded);
+	}
+
+	//! Cluster 2857 probe: every comparison against NaN is false, so a NaN tick would slip past
+	//! readCurve's range check and reach std::lround. Whether a nonfinite double can be stored in
+	//! QJsonValue at all decides whether this is reachable; this case measures it.
+	void aNonFiniteCurvePointIsRefused()
+	{
+		MidiClip* clip = clipWith(0, {60});
+		const QString id = control::clipIdOf(clip);
+		const QString note = control::noteIdOf(clip->notes().front());
+		const QJsonArray bend{QJsonObject{{QStringLiteral("tick"), std::numeric_limits<double>::quiet_NaN()},
+			{QStringLiteral("semitones"), 1.0}}};
+		const ControlResult set = run(QStringLiteral("note.pitch_curve_set"), {{QStringLiteral("clip"), id},
+			{QStringLiteral("note"), note}, {QStringLiteral("points"), bend}});
+		QVERIFY2(set.errorKind == ControlErrorKind::InvalidArgs, qPrintable(set.ok ? "accepted a NaN tick" : set.errorMessage));
 	}
 
 	void aBadCallChangesNothing()
