@@ -270,6 +270,26 @@ private slots:
 		QCOMPARE(clip->getTimeMap().value(0).getInTangent(), 0.f);
 	}
 
+	/*! ED-187 in a spline clip: a point on the straight line between its neighbours
+	 *  but with its tangents locked by hand. Its OUT value lies on the line, so the
+	 *  simplifier measured nothing worth keeping and removed it - and the hand-drawn
+	 *  curve went with it. A locked point's shape is the point's own, so it stays. */
+	void thinningKeepsPointsWhoseTangentsWereLockedByHand()
+	{
+		AutomationClip* clip = freshClip(m_track->volumeModel());
+		clip->setProgressionType(AutomationClip::ProgressionType::CubicHermite);
+		for (const int tick : {0, 96, 192, 288}) { clip->putValue(TimePos(tick), tick / 3.f, false, true); }
+		// 96 and 192 both sit exactly on the line 0..288: only the lock distinguishes them.
+		clip->getTimeMap()[96].setInTangent(0.f);
+		clip->getTimeMap()[96].setOutTangent(2.f);
+		clip->getTimeMap()[96].setLockedTangents(true);
+
+		clip->thin(0.5f);
+		QVERIFY2(clip->getTimeMap().contains(96), "a point whose tangents were locked by hand was thinned away");
+		QVERIFY(clip->getTimeMap().value(96).lockedTangents());
+		QCOMPARE(clip->getTimeMap().value(96).getOutTangent(), 2.f);
+	}
+
 	void aPointsOwnCurveDecidesTheSegmentAfterIt()
 	{
 		AutomationClip* clip = freshClip(m_track->volumeModel());

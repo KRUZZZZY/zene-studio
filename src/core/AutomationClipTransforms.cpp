@@ -382,10 +382,16 @@ int AutomationClip::thin(float tolerance)
 	std::vector<bool> keep(points.size(), false);
 	keep.front() = keep.back() = true;
 	// A step (in != out) or a point with its own curve is not on any straight line: kept (review L06-L07a #7).
+	// A point whose tangents were locked by hand is kept too: its shape is the point's own and the
+	// measurement below only looks at OUT values against a straight line, so it cannot see that shape.
 	std::size_t i = 0;
 	for (auto it = m_timeMap.begin(); it != m_timeMap.end(); ++it, ++i)
 	{
-		if (INVAL(it) != OUTVAL(it) || it.value().curve() != AutomationNode::Curve::Clip) { keep[i] = true; }
+		if (INVAL(it) != OUTVAL(it) || it.value().curve() != AutomationNode::Curve::Clip
+		    || it.value().lockedTangents())
+		{
+			keep[i] = true;
+		}
 	}
 	simplify(points, 0, points.size() - 1, tolerance, keep);
 	int removed = 0;
