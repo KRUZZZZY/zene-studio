@@ -340,6 +340,9 @@ void CompSwipeStrip::mouseReleaseEvent(QMouseEvent* event)
 void CompSwipeStrip::mouseDoubleClickEvent(QMouseEvent* event)
 {
 	m_dragLane = -1;
+	// The strip offers a left double-click to cycle the take; comp.cycle changes the project, so
+	// no other button's double-click may reach it.
+	if (event->button() != Qt::LeftButton) { return; }
 	const ControlResult result = ControlRegistry::instance()->invoke(QStringLiteral("comp.cycle"),
 		{{QStringLiteral("track"), m_trackId}, {QStringLiteral("tick"), tickAt(event->pos().x())}});
 	emit ran(result.ok ? tr("Lane %1 there now").arg(result.result.value(QStringLiteral("lane")).toInt()) : result.errorMessage);

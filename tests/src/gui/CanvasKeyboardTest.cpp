@@ -307,6 +307,28 @@ private slots:
 		QVERIFY2(a11y::lastAnnouncement().startsWith(QStringLiteral("Not done")), qPrintable(a11y::lastAnnouncement()));
 	}
 
+	//! Only a left double-click cycles the take: a right or middle one is not the gesture the
+	//! strip offers, so it must not reach comp.cycle (which changes the project).
+	void onlyALeftDoubleClickCyclesTheTake()
+	{
+		QWidget host;
+		CompSwipeStrip strip(QStringLiteral("trk-999"), &host);
+		strip.resize(400, 60);
+		QStringList ran;
+		QObject::connect(&strip, &CompSwipeStrip::ran, [&ran](const QString& status) { ran.append(status); });
+		const QPoint at(100, 20);
+		for (const Qt::MouseButton button : {Qt::RightButton, Qt::MiddleButton})
+		{
+			const int before = ran.size();
+			QTest::mouseDClick(&strip, button, Qt::NoModifier, at);
+			QVERIFY2(ran.size() == before, "a non-left double-click reached comp.cycle");
+		}
+		// The left double-click still cycles: the gesture the strip offers.
+		const int before = ran.size();
+		QTest::mouseDClick(&strip, Qt::LeftButton, Qt::NoModifier, at);
+		QCOMPARE(ran.size(), before + 1);
+	}
+
 	void theArrangerAddsItsOwnClipKeys()
 	{
 		QKeyEvent across(QEvent::KeyPress, Qt::Key_Down, Qt::ShiftModifier | Qt::AltModifier);
