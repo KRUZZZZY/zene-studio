@@ -790,12 +790,7 @@ QString ScriptEngine::resolveProjectPath(const QString& path, bool forWrite, QSt
 
 	// Canonicalize the deepest existing ancestor so symlinks cannot be used to
 	// step outside the sandbox.
-	QString probe = candidate;
-	while (!QFileInfo::exists(probe) && probe.size() > root.size())
-	{
-		probe = QFileInfo(probe).absolutePath();
-	}
-	const QString realProbe = QFileInfo(probe).canonicalFilePath();
+	const QString realProbe = QFileInfo(deepestExistingAncestor(candidate, root)).canonicalFilePath();
 	if (realProbe != root && !realProbe.startsWith(root + QLatin1Char('/')))
 	{
 		if (error != nullptr)

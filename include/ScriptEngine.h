@@ -25,6 +25,7 @@
 #ifndef LMMS_SCRIPT_ENGINE_H
 #define LMMS_SCRIPT_ENGINE_H
 
+#include <QFileInfo>
 #include <QMutex>
 #include <QObject>
 #include <QSemaphore>
@@ -46,6 +47,23 @@ namespace lmms
 
 class MidiClip;
 class Track;
+
+/*! \brief The deepest ancestor of \a path that already exists on disk.
+ *
+ * Stops at any existing component, including a symlink whose target is
+ * missing: `QFileInfo::exists()` is false for a dangling symlink, so a
+ * naive walk climbs past the link and validates only its in-project
+ * parent. Returns \a root once the walk has consumed it.
+ */
+inline QString deepestExistingAncestor(const QString& path, const QString& root)
+{
+	QString probe = path;
+	while (probe.size() > root.size() && !QFileInfo::exists(probe) && !QFileInfo(probe).isSymLink())
+	{
+		probe = QFileInfo(probe).absolutePath();
+	}
+	return probe;
+}
 
 //! Capacity of the script -> apply-side command queue, in commands.
 constexpr std::size_t ScriptCommandQueueCapacity = 1024;

@@ -462,6 +462,54 @@ assert(string ~= nil and table ~= nil and math ~= nil, "safe stdlib missing")
 		QVERIFY(!QFile::exists(QDir(project.path()).absoluteFilePath("../escape.txt")));
 	}
 
+	//! A DANGLING symlink is not an escape the ancestor walk may step over: its
+	//! target does not exist yet, so QFileInfo::exists() is false for it, the
+	//! walk climbs to the in-project parent and the write that follows the link
+	//! creates a file OUTSIDE the project. The link is inspected as a link, not
+	//! only as a path that exists.
+	void testSandboxRejectsADanglingSymlinkEscape()
+	{
+		using namespace lmms;
+		auto* engine = ScriptEngine::instance();
+		QTemporaryDir project;
+		QTemporaryDir outside;
+		QVERIFY(project.isValid());
+		QVERIFY(outside.isValid());
+		engine->setProjectDir(project.path());
+
+		const QString target = QDir(outside.path()).absoluteFilePath(QStringLiteral("planted.txt"));
+		const QFileInfo targetInfo(target);
+		QVERIFY(!targetInfo.exists());
+
+		// escape -> <outside>/planted.txt, which does not exist: a dangling link.
+		const QString link = QDir(project.path()).absoluteFilePath(QStringLiteral("escape"));
+		QVERIFY2(QFile::link(target, link), "could not create the test symlink");
+
+		QString error;
+		QCOMPARE(int(engine->runString(
+			QStringLiteral("lmms.projectFile():write('escape', 'planted')"), &error)),
+			int(ScriptEngine::RunResult::ScriptError));
+		QVERIFY2(error.contains("escapes the project directory"), qPrintable(error));
+		QVERIFY2(!QFile::exists(target),
+			"the write followed a dangling symlink and created a file outside the project");
+		qInfo().noquote() << "dangling-symlink write rejected:" << error;
+
+		// The tightening must not refuse a link that stays INSIDE the project:
+		// an in-project symlink is a legitimate way to name a file.
+		const QString inside = QDir(project.path()).absoluteFilePath(QStringLiteral("real.txt"));
+		{
+			QFile file(inside);
+			QVERIFY(file.open(QIODevice::WriteOnly));
+			file.write("in project");
+		}
+		QVERIFY(QFile::link(inside, QDir(project.path()).absoluteFilePath(QStringLiteral("alias.txt"))));
+		error.clear();
+		QCOMPARE(int(engine->runString(
+			QStringLiteral("assert(lmms.projectFile():read('alias.txt') == 'in project')"), &error)),
+			int(ScriptEngine::RunResult::Ok));
+		QVERIFY2(error.isEmpty(), qPrintable(error));
+	}
+
 	void testWorkerThreadNotAudioThread()
 	{
 		using namespace lmms;
