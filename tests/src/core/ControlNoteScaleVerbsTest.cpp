@@ -692,6 +692,35 @@ private slots:
 		QCOMPARE(noArgument.errorKind, ControlErrorKind::InvalidArgs);
 	}
 
+	//! A call that changes NOTHING must not take an undo step. device.mpe_set
+	//! answered `changed: false` for a value the flag already had, and still
+	//! recorded a step - so the next control.undo unwound that no-op instead of
+	//! the real edit behind it, and the edit stayed applied.
+	void theMpeSwitchTakesNoUndoStepForAValueItAlreadyHas()
+	{
+		const ControlResult initial = run(QStringLiteral("device.mpe_get_state"));
+		QVERIFY2(initial.ok, qPrintable(initial.errorMessage));
+		const bool wasEnabled = initial.result.value(QStringLiteral("enabled")).toBool();
+
+		// A real edit first, so there IS a step for a no-op to shadow.
+		const bool edited = !wasEnabled;
+		const ControlResult changed = run(QStringLiteral("device.mpe_set"),
+			QJsonObject{{QStringLiteral("enabled"), edited}});
+		QVERIFY2(changed.ok, qPrintable(changed.errorMessage));
+		QCOMPARE(changed.result.value(QStringLiteral("changed")).toBool(), true);
+
+		const ControlResult same = run(QStringLiteral("device.mpe_set"),
+			QJsonObject{{QStringLiteral("enabled"), edited}});
+		QVERIFY2(same.ok, qPrintable(same.errorMessage));
+		QCOMPARE(same.result.value(QStringLiteral("changed")).toBool(), false);
+		QCOMPARE(same.result.value(QStringLiteral("previous_enabled")).toBool(), edited);
+
+		// ONE undo must take the real edit back, not the no-op.
+		REV_UNDO_OR_FAIL();
+		QCOMPARE(run(QStringLiteral("device.mpe_get_state")).result
+			.value(QStringLiteral("enabled")).toBool(), wasEnabled);
+	}
+
 	//! scale.from_detected_key's ADVERTISED inverse must be able to restore the
 	//! context it replaced. Replaying the forward command as its own inverse
 	//! cannot: that handler ignores the recorded root/scale and re-reads the
