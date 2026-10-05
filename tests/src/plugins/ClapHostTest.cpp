@@ -200,6 +200,7 @@ private slots:
 	void testANoteVelocityKeepsItsFraction();
 	void testAPluginClosedEditorIsReopened();
 	void testANonFiniteParamValueNeverReachesThePlugin();
+	void testReloadingAPluginWithoutNotePortsClearsTheCounters();
 
 private:
 	void process(HostedPlugin& plugin, const std::vector<std::vector<float>>& inputs,
@@ -1102,6 +1103,50 @@ void lmms::clap::ClapHostTest::testANonFiniteParamValueNeverReachesThePlugin()
 		}
 	}
 	qunsetenv("CLAP_TEST_GAIN_NAN_VALUE");
+}
+
+/*! The per-instance note counters describe THIS instance, so reloading a plug-in that takes no
+ *  notes must start them over. scanNotePorts() returned before resetting them when the plug-in had
+ *  no clap.note-ports extension at all, so an instance reloaded onto such a plug-in still reported
+ *  the previous instance's totals. */
+void lmms::clap::ClapHostTest::testReloadingAPluginWithoutNotePortsClearsTheCounters()
+{
+	const QString instrumentPath = QStringLiteral(CLAP_TEST_INSTRUMENT_PATH);
+	if (instrumentPath.isEmpty() || !QFileInfo::exists(instrumentPath))
+	{
+		QSKIP("no CLAP instrument fixture in this build (tests/data/clap-test-plugin/"
+			"clap-test-instrument.c, built when the pinned CLAP headers are present)");
+	}
+
+	// --- an instance that DOES take notes: its counters move ---
+	HostedPlugin plugin;
+	QString error;
+	QVERIFY2(plugin.load(instrumentPath, QString::fromLatin1(TestInstrumentId), &error), qPrintable(error));
+	QVERIFY2(plugin.prepare(TestSampleRate, TestBlockSize, &error), qPrintable(error));
+	QVERIFY(plugin.acceptsNotes());
+	QCOMPARE(plugin.noteCounters().ports, std::uint32_t{1});
+	plugin.setNoteOn(0, 60, 1.0, 0);
+	plugin.setNoteOff(0, 60, 0);
+	// Delivering is what process() does, so the block is run: pushed, delivered and played all move.
+	const std::vector<std::vector<float>> noInputs;
+	std::vector<std::vector<float>> outputs(2, std::vector<float>(TestFrames, 0.0f));
+	process(plugin, noInputs, outputs, TestFrames);
+	const auto busy = plugin.noteCounters();
+	QCOMPARE(busy.pushed, std::uint32_t{2});
+	QCOMPARE(busy.delivered, std::uint32_t{2});
+	QCOMPARE(busy.played, std::uint32_t{1});
+
+	// --- the SAME instance reloaded onto a plug-in with no note ports: zeroed, not inherited ---
+	QVERIFY2(plugin.load(QStringLiteral(CLAP_TEST_PLUGIN_PATH), QString::fromLatin1(TestPluginId), &error),
+		qPrintable(error));
+	QVERIFY(!plugin.acceptsNotes());
+	QCOMPARE(plugin.noteInputPorts().size(), std::size_t{0});
+	const auto after = plugin.noteCounters();
+	QCOMPARE(after.ports, std::uint32_t{0});
+	QVERIFY2(after.pushed == 0 && after.dropped == 0 && after.delivered == 0 && after.played == 0,
+		qPrintable(QStringLiteral("the reloaded instance kept the old counters: pushed %1, dropped %2, "
+			"delivered %3, played %4")
+			.arg(after.pushed).arg(after.dropped).arg(after.delivered).arg(after.played)));
 }
 
 QTEST_GUILESS_MAIN(lmms::clap::ClapHostTest)

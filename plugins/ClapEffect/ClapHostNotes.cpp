@@ -132,6 +132,16 @@ void HostedPlugin::pushNote(const NoteEventIn& event)
 
 void HostedPlugin::Impl::scanNotePorts()
 {
+	// The per-instance counters describe THIS instance, so a reload starts
+	// them over. BEFORE the extension check: an instance reloaded onto a
+	// plug-in with no note ports at all keeps nothing, and its counters used
+	// to survive the early return below and report the previous instance's
+	// totals.
+	notesPushed.store(0, std::memory_order_relaxed);
+	notesDropped.store(0, std::memory_order_relaxed);
+	notesDelivered.store(0, std::memory_order_relaxed);
+	notesPlayed.store(0, std::memory_order_relaxed);
+
 	// Main thread, from load(), with the plug-in deactivated - the state
 	// clap.note-ports' contract requires for a port scan. A plug-in WITHOUT
 	// the extension is not an error: a host must not require note ports of a
@@ -139,13 +149,6 @@ void HostedPlugin::Impl::scanNotePorts()
 	// the load. INPUT ports only: this host delivers notes and has no use for
 	// a note output port in this release.
 	if (!notePortsExt) { return; }
-
-	// The per-instance counters describe THIS instance, so a reload starts
-	// them over.
-	notesPushed.store(0, std::memory_order_relaxed);
-	notesDropped.store(0, std::memory_order_relaxed);
-	notesDelivered.store(0, std::memory_order_relaxed);
-	notesPlayed.store(0, std::memory_order_relaxed);
 
 	const auto portCount = notePortsExt->count(plugin, true);
 	notePorts.reserve(portCount);
