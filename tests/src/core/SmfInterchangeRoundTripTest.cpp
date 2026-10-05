@@ -107,6 +107,29 @@ QString firstDifference(const TempoMap& live, const TempoMap& rebuilt)
 		.arg(live.active()).arg(rebuilt.active());
 }
 
+//! A one-track file whose delta times accumulate PAST 2^32: seventeen maximum
+//! four-byte deltas (0x0FFFFFFF each, 4,563,402,735 file ticks) and then the
+//! tempo event that sits at the end of them. The reader used to accumulate in a
+//! quint32, so that event was imported at 268,435,439 - near the very start of
+//! the file, and 4,294,967,296 ticks before where the file put it.
+QByteArray longTrackFile()
+{
+	QByteArray body;
+	for (int index = 0; index < 17; index++)
+	{
+		appendVlq(body, 0x0FFFFFFF);
+		// A note-off takes TWO data bytes (note, velocity); with one the walk
+		// eats the next delta's first byte and the file is refused for an
+		// unrelated reason.
+		body.append(static_cast<char>(0x90));  // a note-off: skipped, not a conductor event
+		body.append(static_cast<char>(0x3C));
+		body.append(static_cast<char>(0x00));
+	}
+	appendVlq(body, 0);
+	appendMeta(body, 0x51, QByteArray("\x07\xA1\x20", 3));  // 120 bpm at that tick
+	return smfFileWithBody(body + bodyEndingWithEndOfTrack());
+}
+
 } // namespace
 
 class SmfInterchangeRoundTripTest : public QObject
@@ -436,6 +459,25 @@ private slots:
 		QVERIFY(writeFile(exact, smfFileWithBody(bodyEndingWithEndOfTrack())));
 		QVERIFY2(run(QStringLiteral("interchange.smf_read"),
 			{{QStringLiteral("path"), exact}}).ok, "a track that ends at its EOT is read");
+	}
+
+	//! A track whose accumulated time runs past 2^32 file ticks is refused. The
+	//! accumulator was a quint32, so an event beyond it wrapped back to near the
+	//! start of the file and was imported at a position the file does not name -
+	//! silently, with the report showing a small plausible tick.
+	void aTrackTimeBeyondTheReadersRangeIsRefused()
+	{
+		const QString file = path(m_directory, QStringLiteral("past-2^32.mid"));
+		QVERIFY(writeFile(file, longTrackFile()));
+		const ControlResult read = run(QStringLiteral("interchange.smf_read"),
+			{{QStringLiteral("path"), file}});
+		QVERIFY2(!read.ok, "a time past the reader's range was accepted");
+		QCOMPARE(read.errorKind, ControlErrorKind::InvalidArgs);
+		QVERIFY(!read.errorMessage.isEmpty());
+		const ControlResult imported = run(QStringLiteral("interchange.smf_import"),
+			{{QStringLiteral("path"), file}});
+		QVERIFY(!imported.ok);
+		QCOMPARE(digest(mapEvents()), QString());  // a refusal imports nothing
 	}
 
 private:

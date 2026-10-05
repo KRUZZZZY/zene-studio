@@ -297,7 +297,12 @@ bool readEvent(Cursor& track, quint32 smfTick, TrackState* state,
 bool readTrack(Cursor& track, std::vector<Candidate>* candidates, QString* error)
 {
 	TrackState state;
-	quint32 absolute = 0;
+	// 64-bit, because a track's deltas are individually valid yet together may
+	// pass 2^32 file ticks; a 32-bit accumulator wrapped them back to the start
+	// of the track and the event was imported at an earlier position than the
+	// file states. Past SmfMaxFileTicks the tick has no place in the reader's
+	// own quint32, so the track is refused rather than truncated.
+	quint64 absolute = 0;
 	while (!track.atEnd())
 	{
 		quint32 delta = 0;
@@ -307,8 +312,16 @@ bool readTrack(Cursor& track, std::vector<Candidate>* candidates, QString* error
 			return false;
 		}
 		absolute += delta;
+		if (absolute > SmfMaxFileTicks)
+		{
+			*error = QStringLiteral("a track reaches %1 file ticks, beyond the %2 the reader "
+				"holds; the track was refused rather than read at a wrapped tick")
+				.arg(absolute).arg(SmfMaxFileTicks);
+			return false;
+		}
 		EventOutcome outcome = EventOutcome::Continue;
-		if (!readEvent(track, absolute, &state, candidates, &outcome, error)) { return false; }
+		if (!readEvent(track, static_cast<quint32>(absolute), &state, candidates, &outcome,
+			error)) { return false; }
 		if (outcome == EventOutcome::EndOfTrack)
 		{
 			if (!track.atEnd())

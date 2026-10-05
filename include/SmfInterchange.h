@@ -124,6 +124,11 @@ constexpr int SmfMaxDeltaTicks = 0x0FFFFFFF;
 //! so dd (log2(denominator)) in a time-signature meta event may be 0..5. A
 //! larger dd is refused rather than masked into another metre.
 constexpr int SmfMaxTimeSignatureExponent = 5;
+//! The widest absolute position one track may reach, in file ticks: the
+//! reader's own event tick is a quint32 (a 32-bit LMMS tick times
+//! SmfTicksPerLmmsTick is not representable), so a track that accumulates
+//! deltas past this is refused rather than read at a wrapped tick.
+constexpr quint64 SmfMaxFileTicks = 0xFFFFFFFFull;
 
 /*! One conductor event, in LMMS' own tick domain (48 ticks per quarter note).
  *  Either half may be absent, exactly as in TempoMapEvent: the two halves are
