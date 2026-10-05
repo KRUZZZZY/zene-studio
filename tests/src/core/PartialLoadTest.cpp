@@ -29,10 +29,12 @@
 #include <QDomDocument>
 #include <QDomElement>
 #include <QFile>
+#include <QJsonObject>
 #include <QString>
 #include <QStringList>
 #include <QTemporaryDir>
 
+#include "ControlRegistry.h"
 #include "DataFile.h"
 #include "DocumentIndex.h"
 #include "Engine.h"
@@ -136,9 +138,61 @@ class PartialLoadTest : public QObject
 {
 	Q_OBJECT
 private slots:
-	void initTestCase() { Engine::init( true ); }
+	// project.save below is driven through the registry, and a registry command
+	// refuses to run until the registry is told the engine is ready.
+	void initTestCase()
+	{
+		Engine::init( true );
+		ControlRegistry::setReady( true );
+	}
 
-	void cleanupTestCase() { Engine::destroy(); }
+	void cleanupTestCase()
+	{
+		ControlRegistry::setReady( false );
+		Engine::destroy();
+	}
+
+	//! project.save must not rotate the revision set before the engine has said
+	//! the save is allowed. The handler rotated first and called
+	//! Song::saveProjectFile() second
+	//! (ControlCommandsProjectFiles.cpp:148 then :159), so a REFUSED save over
+	//! an existing file had already shifted rev0 -> rev1 -> rev2 and dropped the
+	//! oldest retained revision - a refusal cost the caller history it never got
+	//! in exchange for a write.
+	void aRefusedProjectSaveDoesNotRotateTheRevisionSet()
+	{
+		QTemporaryDir dir;
+		QVERIFY( dir.isValid() );
+		const QString path = dir.filePath( QStringLiteral( "partial.mmp" ) );
+		QVERIFY( writeText( path, songProject( QStringLiteral( "    <newsection/>\n" ) ) ) );
+
+		loadFreshSkipping( path, { QStringLiteral( "newsection" ) } );
+		QVERIFY( Engine::getSong()->isPartialLoad() );
+
+		// A project file that already has a FULL revision set, so a rotation is
+		// observable: keep-3 means the oldest of the three is shifted out.
+		const QString target = dir.filePath( QStringLiteral( "existing.mmp" ) );
+		QVERIFY( writeText( target, songProject( QStringLiteral( "" ) ) ) );
+		const QString rev0 = target + QStringLiteral( ".rev0" );
+		const QString rev1 = target + QStringLiteral( ".rev1" );
+		const QString rev2 = target + QStringLiteral( ".rev2" );
+		QVERIFY( writeText( rev0, QStringLiteral( "oldest\n" ) ) );
+		QVERIFY( writeText( rev1, QStringLiteral( "middle\n" ) ) );
+		QVERIFY( writeText( rev2, QStringLiteral( "newest\n" ) ) );
+
+		const ControlResult saved = ControlRegistry::instance()->invoke(
+			QStringLiteral( "project.save" ),
+			QJsonObject{{ QStringLiteral( "path" ), target }} );
+		QVERIFY2( !saved.ok,
+			"a partial session saved a document missing the sections it skipped" );
+
+		// The refusal changed NOTHING on disk: the live file and every retained
+		// revision still hold the bytes they held before the refused save.
+		QVERIFY( QFile::exists( target ) );
+		QCOMPARE( readText( rev0 ), QStringLiteral( "oldest\n" ) );
+		QCOMPARE( readText( rev1 ), QStringLiteral( "middle\n" ) );
+		QCOMPARE( readText( rev2 ), QStringLiteral( "newest\n" ) );
+	}
 
 	// -----------------------------------------------------------------------
 	// What DataFile does with a skip list (the mechanism)

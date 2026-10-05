@@ -140,6 +140,36 @@ void registerProjectSave(ControlRegistry& registry)
 				QStringLiteral("no 'path' given and the session has no project file yet"));
 		}
 
+		// The engine can state a reason of its own - a partial load is the
+		// one it has (ARCH-4 S2b) - and reporting it is the difference
+		// between "try again" and "this session cannot be saved as it
+		// stands, and reopening it whole is the fix".
+		const auto refusalOf = [&song, &target]() -> ControlResult {
+			const QString refusal = song->saveRefusal();
+			return ControlResult::failure(ControlErrorKind::Refused,
+				refusal.isEmpty()
+					? QStringLiteral("the engine refused to write %1").arg(target)
+					: QStringLiteral("%1: %2").arg(target, refusal));
+		};
+
+		// A refusal the engine ALREADY knows about is answered before the
+		// rotation: rotateProjectRevision shifts rev0 -> rev1 -> rev2 and
+		// drops the oldest, so rotating first charged a refused save for the
+		// revision history it never replaced (keep-3, so a full set lost its
+		// oldest entry to a write that did not happen). isPartialLoad() is the
+		// engine's own stated precondition for refusing (include/Song.h:142),
+		// so the gate names the same fact the engine would.
+		if (song->isPartialLoad())
+		{
+			return ControlResult::failure(ControlErrorKind::Refused,
+				QStringLiteral("%1: this session was loaded PARTIALLY: %2 section(s) are not in "
+					"memory (%3), so saving would write a document missing them. Reopen the "
+					"project without \"sections\" to save it.")
+					.arg(target)
+					.arg(song->notLoadedSections().size())
+					.arg(song->notLoadedSections().join(QStringLiteral(", "))));
+		}
+
 		// SPEC A16 deliverable 4: keep the previous revision BEFORE it is
 		// overwritten. A file over the per-revision cap is not copied at all (a
 		// truncated project is a corrupt one) and the result says so.
@@ -154,15 +184,7 @@ void registerProjectSave(ControlRegistry& registry)
 
 		if (!song->saveProjectFile(target))
 		{
-			// The engine can state a reason of its own - a partial load is the
-			// one it has (ARCH-4 S2b) - and reporting it is the difference
-			// between "try again" and "this session cannot be saved as it
-			// stands, and reopening it whole is the fix".
-			const QString refusal = song->saveRefusal();
-			return ControlResult::failure(ControlErrorKind::Refused,
-				refusal.isEmpty()
-					? QStringLiteral("the engine refused to write %1").arg(target)
-					: QStringLiteral("%1: %2").arg(target, refusal));
+			return refusalOf();
 		}
 
 		// The file is written; the SESSION state a successful save records is the
