@@ -368,6 +368,60 @@ private slots:
 		QCOMPARE(scanned.result.value(QStringLiteral("missing_count")).toInt(), 0);
 		QCOMPARE(scanned.result.value(QStringLiteral("reference_count")).toInt(), 0);
 	}
+	//! The digest must distinguish "on disk but not hashed" from "not on disk".
+//! `project.missing_assets` does not hash anything, so EVERY present reference is
+//! unhashed - and digestOf wrote the "missing" marker for both cases, so a scan of a
+//! project whose wav exists and a scan of one whose wav is gone at the same stored
+//! path produced the same digest.
+	void presentButUnhashedIsNotDigestIndistinguishableFromMissing()
+	{
+		QTemporaryDir dir;
+		QVERIFY(dir.isValid());
+		// ONE project file, so the stored values, the tags and the document order
+		// are all identical between the two scans: the only thing that changes is
+		// what is on disk at those paths.
+		const QString project = writeFixture(dir.path(), QStringLiteral("same.mmp"), true);
+
+		const ControlResult present = run(QStringLiteral("project.missing_assets"),
+			QJsonObject{{QStringLiteral("project"), project}});
+		QVERIFY2(present.ok, qPrintable(present.errorMessage));
+		QCOMPARE(present.result.value(QStringLiteral("present_count")).toInt(), 5);
+		QVERIFY(!present.result.value(QStringLiteral("digest")).toString().isEmpty());
+
+		// Take the media away, leaving the project file itself untouched.
+		for (const QString& name : {QStringLiteral("sample.wav"), QStringLiteral("clip.wav"),
+				 QStringLiteral("sound.sf2"), QStringLiteral("slot.wav"), QStringLiteral("gone.wav")})
+		{
+			QVERIFY(QFile::remove(dir.path() + QLatin1Char('/') + name));
+		}
+
+		const ControlResult absent = run(QStringLiteral("project.missing_assets"),
+			QJsonObject{{QStringLiteral("project"), project}});
+		QVERIFY2(absent.ok, qPrintable(absent.errorMessage));
+		QCOMPARE(absent.result.value(QStringLiteral("present_count")).toInt(), 0);
+
+		// Same project, same stored values, nothing on disk: the digest is the
+		// answer to "is this the same media set", and it must say no.
+		QVERIFY2(present.result.value(QStringLiteral("digest")).toString()
+				!= absent.result.value(QStringLiteral("digest")).toString(),
+			"a project whose media is on disk and the same project with its media gone "
+			"digest the same");
+
+		// An over-cap file is present but unhashed too, so it must land on the
+		// same side as any other present file rather than reading as missing.
+		QTemporaryDir bigDir;
+		QVERIFY(bigDir.isValid());
+		const QString big = bigDir.path() + QStringLiteral("/big.wav");
+		QFile bigFile(big);
+		QVERIFY(bigFile.open(QIODevice::WriteOnly));
+		QVERIFY(bigFile.resize(1024LL * 1024LL * 1024LL + 4096));
+		bigFile.close();
+		const QString bigProject = writeFixture(bigDir.path(), QStringLiteral("big.mmp"), true);
+		const ControlResult scanned = run(QStringLiteral("project.missing_assets"),
+			QJsonObject{{QStringLiteral("project"), bigProject}});
+		QVERIFY2(scanned.ok, qPrintable(scanned.errorMessage));
+		QVERIFY(!scanned.result.value(QStringLiteral("references")).toArray().isEmpty());
+	}
 	//! Hashing is the identity step: the digest is stable, and relinking
 	//! changes it, because the digest covers the reference set and its hashes.
 	void hashingIsStableAndChangesWithTheReferenceSet()

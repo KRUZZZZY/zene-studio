@@ -276,7 +276,13 @@ void collectReferences(const QDomElement& parent, const QString& parentChain,
 
 /*! sha256 over the reference set, in document order: one line per reference, so
  *  two projects that reference byte-identical media have the same digest
- *  whatever the projects or the files are named. */
+ *  whatever the projects or the files are named.
+ *
+ *  The third column is the reference's HASH STATUS, and the three unhashed states
+ *  are kept apart: a present-but-unhashed file (project.missing_assets hashes
+ *  nothing, and project.hash_assets leaves an over-cap file unhashed) is not the
+ *  same state as a missing one, and folding the two together made a project with
+ *  its media on disk digest exactly like the same project with its media gone. */
 QString digestOf(const ProjectAssetScan& scan)
 {
 	QByteArray material;
@@ -288,6 +294,7 @@ QString digestOf(const ProjectAssetScan& scan)
 		material += '\t';
 		if (ref.hashed) { material += ref.sha256.toUtf8(); }
 		else if (ref.embedded) { material += "embedded"; }
+		else if (ref.exists) { material += "unhashed"; }
 		else { material += "missing"; }
 		material += '\n';
 	}

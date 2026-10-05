@@ -104,8 +104,11 @@ struct ProjectAssetScan
 	QString format;
 	QVector<ProjectAssetReference> references;
 	//! sha256 over the reference set in document order, one line per reference
-	//! ("<tag>\t<raw>\t<sha256|embedded|missing>\n"). Two projects whose media
-	//! is byte-identical have the same digest whatever the projects are named.
+	//! ("<tag>\t<raw>\t<sha256|embedded|unhashed|missing>\n"). Two projects whose
+	//! media is byte-identical have the same digest whatever the projects are named.
+	//! "unhashed" is a reference that is on disk but not hashed (this verb hashes
+	//! nothing, and project.hash_assets leaves an over-cap file unhashed); it is
+	//! deliberately NOT the same state as "missing".
 	QString digest;
 	//! Elements that carry their media inline and therefore name no file.
 	int embeddedCount = 0;
