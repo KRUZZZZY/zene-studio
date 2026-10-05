@@ -333,8 +333,13 @@ ControlResult pluginAb(const QJsonObject& args)
 	if (action == QLatin1String("toggle")) { return abToggle(effect, pair); }
 	if (action == QLatin1String("store"))
 	{
+		const AbSlots before = pair;
 		storeSlot(effect, pair, toB);
 		pair.onB = toB;
+		// The command is registered mutating, so the slots it changed (what they hold, which one is
+		// heard) go back as one undo step - recorded by the device's id, not by a pointer, like the rest.
+		const int id = effect->id();
+		addUndoStep([id, before]() { abSlots()[id] = before; }, [id, pair]() { abSlots()[id] = pair; });
 	}
 	return ControlResult::success(abJson(pair));
 }
