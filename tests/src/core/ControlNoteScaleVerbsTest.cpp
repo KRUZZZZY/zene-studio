@@ -329,6 +329,16 @@ private slots:
 				{QStringLiteral("velocity_jitter"), 0.5},
 				{QStringLiteral("scope"), QStringLiteral("track")}});
 		QCOMPARE(badScope.errorKind, ControlErrorKind::InvalidArgs);
+		// Luna cluster 3918: the clip HAS notes, but none is selected, so scope
+		// 'selection' is empty. The roll took a checkpoint and answered
+		// notes_rolled:0 rather than refusing - "I edited nothing" and "there was
+		// nothing to edit" have to be different answers, as note.transform already
+		// makes them (ControlCommandsNoteTransform.cpp:110-117).
+		const ControlResult emptyScope = run(QStringLiteral("note.randomize"),
+			QJsonObject{{QStringLiteral("clip"), fixture.clip},
+				{QStringLiteral("velocity_jitter"), 0.5},
+				{QStringLiteral("scope"), QStringLiteral("selection")}});
+		QCOMPARE(emptyScope.errorKind, ControlErrorKind::Refused);
 	}
 
 	//! W5: the slide verbs, from the trap state (a note at the DEFAULT, which writes
