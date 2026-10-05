@@ -143,8 +143,11 @@ void appendNote(std::vector<NoteSpec>* out, int key, tick_t at, tick_t length, t
 {
 	const tick_t startPos = at < 0 ? 0 : at;
 	const tick_t space = span - (startPos - pos);
+	// No room at all: the tone would have to be clamped to a one-tick note
+	// that ends past the span, which is exactly what layOutChord promises it
+	// never does. A step too short for the chord's tones emits fewer notes.
+	if (space < 1) { return; }
 	if (length > space) { length = space; }
-	if (length < 1) { length = 1; }
 	NoteSpec spec;
 	spec.pos = startPos;
 	spec.length = length;
