@@ -230,9 +230,18 @@ void MidiInputTransform::load(const QDomElement& trackElement)
 	// does not, and must not reset what the user set on the track.
 	const QString text = trackElement.attribute(QStringLiteral("inputtransform"));
 	if (text.isEmpty()) { return; }
-	reset();
+	// Parsed and validated into a CANDIDATE first: the attribute is the whole
+	// transform, so the settings in force are replaced wholesale - but only once
+	// the attribute is known to be a transform. reset() before parsing left the
+	// track at the identity when the attribute was malformed, which is a way of
+	// losing what the user had with no word and nothing to undo.
+	const QJsonDocument document = QJsonDocument::fromJson(text.toUtf8());
+	if (document.isNull()) { return; }
+	MidiInputTransform candidate;
 	QString ignored;
-	fromJson(QJsonDocument::fromJson(text.toUtf8()).object(), &ignored);
+	if (!candidate.fromJson(document.object(), &ignored)) { return; }
+	for (const Setting& s : settings()) { (this->*s.field).store((candidate.*s.field).load(Relaxed), Relaxed); }
+	updateActive();
 }
 
 } // namespace lmms

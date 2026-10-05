@@ -188,6 +188,38 @@ private slots:
 		QCOMPARE(event.key(), 63);
 	}
 
+	//! The attribute a project's track element carries is the WHOLE transform.
+	//! load() reset() first and parsed afterwards, ignoring the refusal, so an
+	//! attribute that would not parse or would not validate left the track at
+	//! the identity: the settings the user had were gone with no word.
+	void aMalformedSavedTransformKeepsTheOneInForce()
+	{
+		QDomDocument doc;
+		MidiInputTransform transform;
+		QVERIFY(set(transform, {{QStringLiteral("transpose"), 12}}));
+		QDomElement track = doc.createElement(QStringLiteral("instrumenttrack"));
+
+		track.setAttribute(QStringLiteral("inputtransform"), QStringLiteral("{\"transpose\": 49}"));
+		transform.load(track);  // out of range
+		QCOMPARE(transform.toJson().value(QStringLiteral("transpose")).toInt(), 12);
+
+		track.setAttribute(QStringLiteral("inputtransform"), QStringLiteral("{\"transpose\": \"x\"}"));
+		transform.load(track);  // not a number at all
+		QCOMPARE(transform.toJson().value(QStringLiteral("transpose")).toInt(), 12);
+
+		track.setAttribute(QStringLiteral("inputtransform"), QStringLiteral("{not json at all"));
+		transform.load(track);  // not JSON
+		QCOMPARE(transform.toJson().value(QStringLiteral("transpose")).toInt(), 12);
+		QVERIFY(transform.active());
+
+		// An attribute that IS valid still replaces what was in force.
+		track.setAttribute(QStringLiteral("inputtransform"),
+			QStringLiteral("{\"transpose\": -3, \"fixed_velocity\": 90}"));
+		transform.load(track);
+		QCOMPARE(transform.toJson().value(QStringLiteral("transpose")).toInt(), -3);
+		QCOMPARE(transform.toJson().value(QStringLiteral("fixed_velocity")).toInt(), 90);
+	}
+
 	//! Every setting is an integer. QJsonValue::toInt() answers the DEFAULT (0)
 	//! for a number that is not whole, so a fractional value used to pass the
 	//! range check and be stored as that default: 'transpose': 2.5 was accepted
