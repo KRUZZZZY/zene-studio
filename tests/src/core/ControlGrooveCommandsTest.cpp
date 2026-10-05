@@ -296,6 +296,30 @@ private slots:
 		QVERIFY2(takeOf(third) != humanised, "a second seed produced the same take");
 	}
 
+	/*! THE SWING NEVER CROSSES THE MIDPOINT of its step: full swing delays an
+	 *  odd-step note by HALF a step, rounded DOWN - on an odd grid such as 3,
+	 *  lround would give 2 and land the note nearer the NEXT step (tick 5 of a
+	 *  3/6 pair), which is a different groove, not a swing. */
+	void swingStopsShortOfTheNextGridStep()
+	{
+		const QString odd = makeClip();
+		QVERIFY2(!odd.isEmpty(), "the fixture clip was not created");
+		QVERIFY(addNote(odd, 60, 3, 100));
+		QVERIFY(run(QStringLiteral("groove.quantize"),
+			{{QStringLiteral("clip"), odd}, {QStringLiteral("grid"), 3},
+				{QStringLiteral("strength"), 1.0}, {QStringLiteral("swing"), 1.0}}).ok);
+		QCOMPARE(takeOf(odd)[0].position, 4);  // 3 + 3 / 2, not 3 + 2 = 5
+
+		// An even grid is unchanged: half of 12 is 6, and 6 is the midpoint.
+		const QString even = makeClip();
+		QVERIFY2(!even.isEmpty(), "the second fixture clip was not created");
+		QVERIFY(addNote(even, 60, 12, 100));
+		QVERIFY(run(QStringLiteral("groove.quantize"),
+			{{QStringLiteral("clip"), even}, {QStringLiteral("grid"), 12},
+				{QStringLiteral("strength"), 1.0}, {QStringLiteral("swing"), 1.0}}).ok);
+		QCOMPARE(takeOf(even)[0].position, 18);
+	}
+
 	//! A pool edit reverses through the RECORDED ACTION checkpoint: extract,
 	//! rename and remove each come back off with one control.undo.
 	void poolEditsAreReversibleThroughTheRecordedAction()

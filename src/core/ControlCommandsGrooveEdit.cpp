@@ -310,11 +310,16 @@ std::vector<tick_t> quantizeSteps(const NoteVector& notes, const NoteTransform::
 }
 
 //! Swing (0..1): a note quantised to an odd grid step is delayed by swing x half a step - 0 straight,
-//! 1 the off-beat halfway to the next step. Applied after the quantise.
+//! 1 the off-beat halfway to the next step. Applied after the quantise. The delay is capped at half a
+//! step (`grid / 2` whole ticks): on an ODD grid half a step is not a whole number of ticks, and
+//! lround would round 3 x 1/2 = 1.5 up to 2, carrying the note PAST the midpoint onto the side of the
+//! next step - a different groove, not a swing. The cap is the one-sided half step, so an even grid's
+//! swing is untouched (6 of 12 is the midpoint and stays 6).
 void applySwing(const NoteVector& notes, const std::vector<tick_t>& steps, tick_t grid, double swing)
 {
 	if (swing <= 0.0 || grid <= 1) { return; }
-	const auto delay = static_cast<tick_t>(std::lround(std::min(swing, 1.0) * grid / 2.0));
+	const tick_t asked = static_cast<tick_t>(std::lround(std::min(swing, 1.0) * grid / 2.0));
+	const tick_t delay = std::min(asked, grid / 2);
 	for (std::size_t i = 0; i < notes.size() && i < steps.size(); ++i)
 	{
 		if (steps[i] % 2 == 0) { continue; }
