@@ -7,11 +7,13 @@
  * the channel's existing <rack> element - no second container. What this file
  * adds is the surface: create, drop, and the lookup an agent can ask about.
  *
- * HONEST SCOPE, and it is the reason docs/KNOWN-LIMITATIONS.md and the release
- * notes carry a line for it: the rack moves one stereo block, so it has no
- * per-note input to consult, and nothing in this build calls RackZones::resolve
- * to pick a chain while a note plays. What is here is the persisted, validated,
- * queryable zone model and its resolver - not note routing.
+ * HONEST SCOPE: the zone model is created, dropped and queried here, but it is
+ * socket-only - nothing in src/gui/ draws a zone editor or a key map, so a user
+ * cannot create or see one. Note routing is NOT this file's job and is NOT
+ * missing: since 0.5.0 (E20/E38) an instrument track playing into a channel is
+ * routed through RackZoneFeed (src/core/AudioBusHandle.cpp), so a note a zone
+ * claims plays on that zone's chain. See docs/KNOWN-LIMITATIONS.md and
+ * tests/src/core/RackZoneRoutingTest.cpp.
  *
  * Copyright (c) 2026 Zene Studio contributors
  *
