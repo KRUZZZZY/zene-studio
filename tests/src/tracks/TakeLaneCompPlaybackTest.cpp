@@ -224,6 +224,44 @@ private slots:
 		QVERIFY(std::fabs(meanLevel(plain, at(quarter) + guard, at(2 * quarter) - guard) - 0.5) < 1e-4);
 	}
 
+	//! Luna cluster 3511: the composite may select more spans of one lane than
+	//! SamplePlayHandle::MaxCompSpans could store, and the surplus was dropped SILENTLY -
+	//! the tail of a heavily comped take just went missing. 40 lane-0 selections
+	//! alternating with lane 1: the first and the LAST of lane 0's spans must both sound.
+	void everySelectedSpanSoundsEvenPastTheOldThirtySecondCap()
+	{
+		SampleTrack track(Engine::getSong());
+		SampleClip* take = makeTake(track, m_rate, 0.5f, 0);
+		makeTake(track, m_rate, 0.25f, 1);
+		TakeLaneModel& comp = track.takeLanes();
+		comp.addLane();
+		comp.addLane();
+		const int part = take->length().getTicks() / 160;
+		QVERIFY(part > 0);
+		for (int i = 0; i < 80; ++i)
+		{
+			QVERIFY(comp.selectSegment((2 * i) * part, (2 * i + 1) * part, i % 2));
+		}
+		// 40 disjoint lane-0 spans, none of them contiguous with the next: the model keeps them apart.
+		QCOMPARE(comp.segments().size(), std::size_t{80});
+
+		const std::vector<SampleFrame> out = render(take);
+		const auto at = [this](int ticks) { return static_cast<std::size_t>(std::llround(ticks * Engine::framesPerTick(m_rate))); };
+		const std::size_t guard = 96;  // clear of the 64-frame comp ramp at both span edges
+		QVERIFY(at(part) > 2 * guard + 16);
+		//! The level in the middle of the part numbered k, past both of its ramps.
+		const auto levelIn = [&](int k)
+		{ return meanLevel(out, at(k * part) + guard, at((k + 1) * part) - guard); };
+		std::printf("SPAN_EVIDENCE out=%zu span32(=%d)=%.4f span39(=%d)=%.4f lane1(=%d)=%.4f\n",
+			out.size(), 4 * 31, levelIn(4 * 31), 4 * 39, levelIn(4 * 39), 4 * 39 + 1, levelIn(4 * 39 + 1));
+		// The 32nd span is the last one the old cap could store, the 40th is the one it dropped.
+		QVERIFY2(std::fabs(levelIn(4 * 31) - 0.5) < 1e-4, "the 32nd selected span must sound");
+		QVERIFY2(std::fabs(levelIn(4 * 39) - 0.5) < 1e-4,
+			"the 40th selected span was dropped: the cap silently ignored it");
+		// The lane-1 part beside it stays silent: the fix adds no leakage.
+		QCOMPARE(levelIn(4 * 39 + 1), 0.0);
+	}
+
 	//! R3.3: a MIDI take is comped by note - the gate InstrumentTrack::play asks per note.
 	void midiNotesPlayWhereTheirLaneIsSelected()
 	{
