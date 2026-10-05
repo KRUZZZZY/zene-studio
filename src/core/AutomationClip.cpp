@@ -806,7 +806,10 @@ void AutomationClip::writeBlockRamp( AutomationRamp & ramp, const TimePos & bloc
 			// before it. The frame just before it holds the value coming in.
 			before = after - 1;
 		}
-		if( before > 1 )
+		// The sample before the boundary is any frame past the block's own first
+		// knot, which already carries the value coming in - frame 0 is that knot,
+		// so it is the one frame that must not be written twice.
+		if( before > 0 )
 		{
 			addRampKnot( ramp, relStart, before, frameOffsetInTick, framesPerTick );
 		}
