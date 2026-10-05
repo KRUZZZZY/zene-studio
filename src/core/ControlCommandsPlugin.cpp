@@ -451,12 +451,17 @@ void registerPluginBypass(ControlRegistry& registry)
 		QJsonObject transaction;
 		transaction.insert(QStringLiteral("before"),
 			QJsonObject{{QStringLiteral("enabled"), previouslyEnabled}});
+		// `bypass` and `enabled` are OPPOSITE flags - the handler above applies
+		// setEnabled(!bypass) - so the inverse restores the state the command found
+		// by asking for !previouslyEnabled. Storing previouslyEnabled here re-applied
+		// the change instead of undoing it: bypassing an enabled effect recorded an
+		// inverse that bypassed it again.
 		transaction.insert(QStringLiteral("inverse"),
 			QJsonObject{{QStringLiteral("op"), QStringLiteral("plugin.bypass")},
 				{QStringLiteral("args"),
 					QJsonObject{{QStringLiteral("target"), target.id},
 						{QStringLiteral("plugin"), pluginId},
-						{QStringLiteral("bypass"), previouslyEnabled}}}});
+						{QStringLiteral("bypass"), !previouslyEnabled}}}});
 		transaction.insert(QStringLiteral("reversible"), true);
 		transaction.insert(QStringLiteral("mechanism"),
 			QStringLiteral("ProjectJournal (Effect enabled-model checkpoint)"));

@@ -48,14 +48,64 @@
 #include "ControlRegistry.h"
 #include "ControlReversibility.h"
 #include "ControlStructuralSupport.h"
+#include "ControlVocabulary.h"
 #include "Effect.h"
 #include "EffectChain.h"
 #include "Engine.h"
+#include "Plugin.h"
 #include "ProjectJournal.h"
 #include "ReversibilityTestSupport.h"
 
 using namespace lmms;
 using namespace revtest;
+
+namespace
+{
+
+/*! A real Effect, built here rather than LOADED from the device catalogue.
+ *
+ *  plugin.bypass addresses an Effect by its `fx-<n>` id and calls
+ *  setEnabled()/isEnabled() on it (ControlCommandsPlugin.cpp's
+ *  registerPluginBypass), so the catalogue is not involved - only the chain and
+ *  the id. This build exposes no loadable built-in effect (the device modules
+ *  are found through LMMS_PLUGIN_DIR, which these tests must not export), so
+ *  firstLoadableEffect() is empty here and every slot built on it SKIPs. The
+ *  enabled flag is the whole subject of the case below, and this effect owns one
+ *  exactly as a loaded device does.
+ */
+class RevtestBypassEffect : public Effect
+{
+public:
+	RevtestBypassEffect(Model* parent) : Effect{&s_descriptor, parent, nullptr} {}
+
+	EffectControls* controls() override { return nullptr; }
+
+protected:
+	ProcessStatus processImpl(SampleFrame* buf, const f_cnt_t frames) override
+	{
+		(void)buf;
+		(void)frames;
+		return ProcessStatus::Continue;
+	}
+
+private:
+	static const Plugin::Descriptor s_descriptor;
+};
+
+const Plugin::Descriptor RevtestBypassEffect::s_descriptor
+{
+	"revtestbypasseffect",
+	"ReversibilityUndoTest bypass flag effect",
+	"A pass-through effect whose only state is the enabled flag plugin.bypass drives",
+	"LMMS",
+	0x0100,
+	Plugin::Type::Effect,
+	nullptr,
+	nullptr,
+	nullptr
+};
+
+} // namespace
 
 class ReversibilityUndoTest : public QObject
 {
@@ -357,6 +407,81 @@ private slots:
 		QCOMPARE(deviceParameterValue(track, fx, parameter.value(QStringLiteral("index")).toInt()), previous);
 		REV_UNDO_OR_FAIL();
 		QCOMPARE(deviceParameterValue(track, fx, parameter.value(QStringLiteral("index")).toInt()), wanted);
+	}
+
+
+	/*! Luna cluster 4865: plugin.bypass's recorded INVERSE must be replayable, and
+	 *  replaying it must restore the state the command found.
+	 *
+	 *  The two flags have OPPOSITE meanings and the inverse had them the wrong way
+	 *  round: the handler applies `setEnabled(!bypass)`, but the inverse stored
+	 *  `previouslyEnabled` AS the `bypass` argument. So an effect that was enabled
+	 *  and got bypassed recorded an inverse that bypasses it again, and one that
+	 *  was disabled recorded an inverse that leaves it enabled - the inverse
+	 *  re-applied the change instead of undoing it. control.undo never noticed,
+	 *  because this command's record is journal-class (an Effect enabled-model
+	 *  checkpoint) and undoes through the ProjectJournal, not through these
+	 *  args: the payload was only ever wrong for a caller that FOLLOWS it, which
+	 *  is exactly what `__transaction.inverse` promises a caller it can.
+	 */
+	void theBypassInverseReplaysToTheStateBeforeTheCommand()
+	{
+		const QString track = addTrack(QStringLiteral("instrument"));
+		QVERIFY2(!track.isEmpty(), "track.add refused: this case cannot be measured");
+		ControlTarget target;
+		ControlResult error;
+		QVERIFY2(resolveControlTarget(track, &target, &error),
+			qPrintable(error.errorMessage));
+		Effect* effect = new RevtestBypassEffect(target.chain);
+		target.chain->appendEffect(effect);
+		const QString fx = control::effectId(effect->id());
+
+		// (a) An ENABLED effect, bypassed: the inverse must re-enable it.
+		QVERIFY(effect->isEnabled());
+		const ControlResult bypassed = run(QStringLiteral("plugin.bypass"),
+			{{QStringLiteral("target"), track}, {QStringLiteral("plugin"), fx},
+				{QStringLiteral("bypass"), true}});
+		QVERIFY2(bypassed.ok, qPrintable(bypassed.errorMessage));
+		QVERIFY(!effect->isEnabled());
+
+		const QJsonObject inverse = stateOf(QStringLiteral("plugin.bypass"))
+			.value(QStringLiteral("inverse")).toObject();
+		QCOMPARE(inverse.value(QStringLiteral("op")).toString(), QStringLiteral("plugin.bypass"));
+		const QJsonObject inverseArgs = inverse.value(QStringLiteral("args")).toObject();
+		QVERIFY2(!inverseArgs.isEmpty(), "plugin.bypass recorded an inverse with no args");
+		QVERIFY2(inverseArgs.value(QStringLiteral("bypass")).toBool() == false,
+			"the inverse of bypassing an enabled effect asks to bypass it AGAIN "
+			"(bypass=true re-applies the change instead of undoing it)");
+		QVERIFY2(run(inverse.value(QStringLiteral("op")).toString(), inverseArgs).ok,
+			"the recorded inverse is not replayable");
+		QVERIFY2(effect->isEnabled(),
+			"replaying the recorded inverse did not put the effect back in the state "
+			"plugin.bypass found it in");
+
+		// (b) The other direction: un-bypassing a DISABLED effect records an inverse
+		// that bypasses it again, and the replay puts it back to disabled. The
+		// effect is disabled first on purpose - (a) left it enabled, and running
+		// bypass=false from there is a no-op that records nothing about the disabled
+		// state this half is about.
+		QVERIFY2(run(QStringLiteral("plugin.bypass"),
+			{{QStringLiteral("target"), track}, {QStringLiteral("plugin"), fx},
+				{QStringLiteral("bypass"), true}}).ok, "probe (b)");
+		QVERIFY(!effect->isEnabled());
+		QVERIFY(run(QStringLiteral("plugin.bypass"),
+			{{QStringLiteral("target"), track}, {QStringLiteral("plugin"), fx},
+				{QStringLiteral("bypass"), false}}).ok);
+		QVERIFY(effect->isEnabled());
+		const QJsonObject undoArgs = stateOf(QStringLiteral("plugin.bypass"))
+			.value(QStringLiteral("inverse")).toObject().value(QStringLiteral("args")).toObject();
+		QVERIFY2(undoArgs.value(QStringLiteral("bypass")).toBool() == true,
+			"the inverse of un-bypassing a disabled effect asks to un-bypass it AGAIN "
+			"(bypass=false leaves the effect enabled instead of restoring it disabled)");
+		QVERIFY(run(QStringLiteral("plugin.bypass"), undoArgs).ok);
+		QVERIFY2(!effect->isEnabled(),
+			"replaying the second inverse did not restore the disabled state");
+
+		target.chain->removeEffect(effect);
+		effect->deleteLater();
 	}
 
 
