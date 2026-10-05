@@ -462,6 +462,37 @@ private slots:
 			}
 		}
 	}
+
+	// Soloing walks the send graph with unmuteForSolo()/
+	// unmuteSenderForSolo()/unmuteReceiverForSolo(). Those recurse over
+	// m_sends/m_receives with no visited-channel guard, and the
+	// cycle-permitted submode puts a real A->B->A cycle in m_sends, so
+	// soloing either channel walked the pair until the stack was gone.
+	void soloingAChannelInAFeedbackCycleTerminates()
+	{
+		Mixer* mixer = Engine::mixer();
+		QVERIFY(mixer != nullptr);
+
+		mixer->clear();
+		mixer->setFeedbackMode(true);
+		while (mixer->numChannels() < 4) { mixer->createChannel(); }
+
+		const mix_ch_t a = 1;
+		const mix_ch_t b = 2;
+		QVERIFY(mixer->createChannelSend(a, b, 1.0f) != nullptr);
+		QVERIFY(mixer->isInfiniteLoop(b, a));
+		QVERIFY2(mixer->createChannelSend(b, a, 1.0f) != nullptr,
+			"the feedback submode did not permit the loop-closing send");
+		// Confirm the cycle is really in the graph, so this cannot pass vacuously.
+		QVERIFY(mixer->channelSendModel(a, b) != nullptr);
+		QVERIFY(mixer->channelSendModel(b, a) != nullptr);
+
+		// The whole point: this must return instead of recursing forever.
+		mixer->mixerChannel(a)->m_soloModel.setValue(true);
+
+		QVERIFY(mixer->mixerChannel(a)->m_muteModel.value() == false);
+		mixer->mixerChannel(a)->m_soloModel.setValue(false);
+	}
 };
 
 QTEST_GUILESS_MAIN(MixerRoutingBackwardCompatTest)

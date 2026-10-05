@@ -43,6 +43,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <optional>
+#include <set>
 #include <vector>
 #include <QColor>
 
@@ -270,6 +271,12 @@ public:
 
 private:
 	void doProcessing() override;
+	//! \a visited carries the channels already unmute-d by the ongoing solo
+	//!  propagation. Feedback mode permits real cycles in the send graph, so
+	//!  the traversals below must not follow one twice.
+	void unmuteForSolo(std::set<MixerChannel*>& visited);
+	void unmuteSenderForSolo(std::set<MixerChannel*>& visited);
+	void unmuteReceiverForSolo(std::set<MixerChannel*>& visited);
 	int m_channelIndex;
 	/*! The channel's stable id: the number in `ch-<n>`. Assigned once, in the
 	 *  constructor, and taken back from the project file by

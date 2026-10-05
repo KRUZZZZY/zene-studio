@@ -362,6 +362,8 @@ void MixerChannel::incrementDeps()
 
 void MixerChannel::unmuteForSolo()
 {
+	std::set<MixerChannel*> senderVisited;
+	std::set<MixerChannel*> receiverVisited;
 	m_muteModel.setValue(false);
 
 	// if channel is not master, unmute also every channel it sends to/receives from
@@ -369,18 +371,25 @@ void MixerChannel::unmuteForSolo()
 	{
 		for (const MixerRoute* sendsRoute : m_sends)
 		{
-			sendsRoute->receiver()->unmuteSenderForSolo();
+			sendsRoute->receiver()->unmuteSenderForSolo(senderVisited);
 		}
 
 		for (const MixerRoute* receiverRoute : m_receives)
 		{
-			receiverRoute->sender()->unmuteReceiverForSolo();
+			receiverRoute->sender()->unmuteReceiverForSolo(receiverVisited);
 		}
 	}
 }
 
 void MixerChannel::unmuteSenderForSolo()
 {
+	std::set<MixerChannel*> visited;
+	unmuteSenderForSolo(visited);
+}
+
+void MixerChannel::unmuteSenderForSolo(std::set<MixerChannel*>& visited)
+{
+	if (!visited.insert(this).second) { return; }
 	m_muteModel.setValue(false);
 
 	// if channel is not master, unmute every channel it sends to
@@ -388,7 +397,7 @@ void MixerChannel::unmuteSenderForSolo()
 	{
 		for (const MixerRoute* sendsRoute : m_sends)
 		{
-			sendsRoute->receiver()->unmuteSenderForSolo();
+			sendsRoute->receiver()->unmuteSenderForSolo(visited);
 		}
 	}
 }
@@ -396,6 +405,13 @@ void MixerChannel::unmuteSenderForSolo()
 
 void MixerChannel::unmuteReceiverForSolo()
 {
+	std::set<MixerChannel*> visited;
+	unmuteReceiverForSolo(visited);
+}
+
+void MixerChannel::unmuteReceiverForSolo(std::set<MixerChannel*>& visited)
+{
+	if (!visited.insert(this).second) { return; }
 	m_muteModel.setValue(false);
 
 	// if channel is not master, unmute every channel it receives from, and of those, unmute the channels they send to
@@ -403,12 +419,12 @@ void MixerChannel::unmuteReceiverForSolo()
 	{
 		for (const MixerRoute* receiverRoute : m_receives)
 		{
-			receiverRoute->sender()->unmuteReceiverForSolo();
+			receiverRoute->sender()->unmuteReceiverForSolo(visited);
 		}
 
 		for (const MixerRoute* sendsRoute : m_sends)
 		{
-			sendsRoute->receiver()->unmuteSenderForSolo();
+			sendsRoute->receiver()->unmuteSenderForSolo(visited);
 		}
 	}
 }
