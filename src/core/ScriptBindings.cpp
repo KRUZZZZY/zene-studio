@@ -1032,6 +1032,10 @@ bool LuaSong::saveProject(const QString& path)
 		throw std::runtime_error(QStringLiteral("saveProject: %1").arg(error).toStdString());
 	}
 	if (!song()) { return false; }
+	// The save reads the Song, so the writes this script already made must be
+	// in it: a setTempo() still sitting in the queue would be written to disk
+	// as the pre-write value, and the file would disagree with the script.
+	ScriptEngine::instance()->flushCommandsForRead();
 	return song()->saveProjectFile(resolved);
 }
 

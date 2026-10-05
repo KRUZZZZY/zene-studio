@@ -697,6 +697,38 @@ private slots:
 		QVERIFY2(message.contains(QStringLiteral("sandbox root does not exist")), qPrintable(message));
 	}
 
+	/*! saveProject() must capture the state the SCRIPT has already written, not
+	 *  the state the apply side had reached when saveProject() was called: a
+	 *  script that writes and then saves without an explicit processCommands()
+	 *  wrote nothing at all if the save reads Song before the queue drains. */
+	void saveProjectSeesTheScriptsOwnQueuedWrites()
+	{
+		using namespace lmms;
+		auto* engine = ScriptEngine::instance();
+		LuaSong song;
+
+		QTemporaryDir projectDir;
+		QVERIFY(projectDir.isValid());
+		engine->setProjectDir(projectDir.path());
+
+		// No processCommands(): the save itself has to see this write.
+		song.setTempo(150);
+		QCOMPARE(engine->pendingCommandCount(), 1);
+		QVERIFY(song.saveProject(QStringLiteral("queued.mmp")));
+
+		// Drain before the assertions below so this test leaves no queued
+		// command behind for the next case even when one of them fails.
+		engine->processCommands();
+
+		// Read the bpm back OUT of the written document rather than from the
+		// Song, so this asserts what the file holds and not what memory holds.
+		QFile written(QDir(projectDir.path()).absoluteFilePath(QStringLiteral("queued.mmp")));
+		QVERIFY2(written.open(QIODevice::ReadOnly | QIODevice::Text),
+			"the saved project must be readable");
+		const QString xml = QString::fromUtf8(written.readAll());
+		QVERIFY2(xml.contains(QStringLiteral("bpm=\"150\"")), qPrintable(xml.left(200)));
+	}
+
 	void logWrapper()
 	{
 		using namespace lmms;
