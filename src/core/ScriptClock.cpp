@@ -117,6 +117,15 @@ void ScriptClockGrid::regrid(qint64 pos, qint64 ticksPerBar, qint64 ticksPerBeat
 	m_nextBeat = ((pos / ticksPerBeat) + 1) * ticksPerBeat;
 }
 
+void ScriptClockGrid::prime(bool playing, qint64 pos, qint64 ticksPerBar, qint64 ticksPerBeat)
+{
+	if (ticksPerBar <= 0 || ticksPerBeat <= 0) { return; }
+	m_playing = playing;
+	m_pos = pos;
+	if (!playing) { m_nextBar = 0; m_nextBeat = 0; return; }
+	regrid(pos, ticksPerBar, ticksPerBeat);
+}
+
 ScriptTickEvents ScriptClockGrid::advance(bool playing, qint64 pos, qint64 ticksPerBar,
 	qint64 ticksPerBeat)
 {
@@ -194,6 +203,15 @@ bool ScriptClock::parses(const QString& source, QString* error)
 	return status == LUA_OK;
 }
 
+void ScriptClock::primeGrid()
+{
+	Song* song = Engine::getSong();
+	if (song == nullptr) { return; }
+	const TimeSig timeSig(song->getTimeSigModel());
+	m_grid.prime(song->isPlaying(), static_cast<qint64>(song->getPlayPos().getTicks()),
+		song->ticksPerBar(), std::max<qint64>(1, TimePos().ticksPerBeat(timeSig)));
+}
+
 void ScriptClock::syncTimer()
 {
 	if (m_timer == nullptr)
@@ -202,11 +220,16 @@ void ScriptClock::syncTimer()
 		m_timer = new QTimer();
 		m_timer->setInterval(PollMs);
 		QObject::connect(m_timer, &QTimer::timeout, [this]() { pollOnce(); });
+		// Anchor the grid to the transport as it is BEFORE the first poll:
+		// adding a schedule to a song that is already rolling must not read as
+		// a play edge, and a timer resuming after an empty period must not
+		// fire boundaries the song crossed while nothing was scheduled.
+		primeGrid();
 		m_timer->start();
 		return;
 	}
 	if (m_schedules.empty()) { m_timer->stop(); }
-	else if (!m_timer->isActive()) { m_timer->start(); }
+	else if (!m_timer->isActive()) { primeGrid(); m_timer->start(); }
 }
 
 bool ScriptClock::setSchedule(const QString& id, const QString& source, const QString& hook,

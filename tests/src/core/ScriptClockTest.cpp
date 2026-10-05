@@ -39,7 +39,9 @@
 #include <QJsonObject>
 
 #include "ControlReversibility.h"
+#include "Engine.h"
 #include "ScriptClock.h"
+#include "Song.h"
 
 using namespace lmms;
 
@@ -65,6 +67,18 @@ QJsonObject entryFor(const QJsonObject& state, const QString& id)
 	return QJsonObject();
 }
 
+//! How many times the clock has actually RUN a hook body since it started -
+//! fires + errors + busy_skips. A spurious edge is the defect, and every path
+//! out of a fire moves one of the three (this suite runs no Lua engine, so the
+//! run lands in errors or busy_skips, not in fires).
+int hookRuns(const ScriptClock& clock)
+{
+	const QJsonObject counters = clock.stateJson().value(QStringLiteral("counters")).toObject();
+	return counters.value(QStringLiteral("fires")).toInt()
+		+ counters.value(QStringLiteral("errors")).toInt()
+		+ counters.value(QStringLiteral("busy_skips")).toInt();
+}
+
 } // namespace
 
 class ScriptClockTest : public QObject
@@ -72,6 +86,18 @@ class ScriptClockTest : public QObject
 	Q_OBJECT
 
 private slots:
+	void initTestCase()
+	{
+		using namespace lmms;
+		Engine::init(true);
+	}
+
+	void cleanupTestCase()
+	{
+		using namespace lmms;
+		Engine::destroy();
+	}
+
 	//! A transport hook's half: the EDGE is detected from the flag, from a
 	//! parked grid and from a playing one, with no bar or beat crossing
 	//! smuggled in with it.
@@ -107,6 +133,16 @@ private slots:
 	//! edit) and keeps the id's place; unscheduling takes it off and the
 	//! counters reset with the slot.
 	void registryReplaceAndRemove();
+
+	//! A transport schedule added while the song is ALREADY playing must not
+	//! fire on the clock's first poll: the grid was never primed, so it read
+	//! "stopped -> playing" as a play edge that never happened.
+	void aScheduleAddedDuringPlaybackDoesNotFireAPlayEdge();
+
+	//! Removing the last schedule stops the timer. A later schedule resumes
+	//! polling, and must not fire bar/beat boundaries the song crossed while
+	//! nothing was scheduled.
+	void resumingAfterAnEmptyPeriodDoesNotFireStaleBoundaries();
 
 	//! The contract table classes the group's three ids the way the card
 	//! demands: two snapshots with their inverse named, one read that mutates
@@ -284,6 +320,63 @@ void ScriptClockTest::registryReplaceAndRemove()
 	QVERIFY(!clock.hasSchedule(QStringLiteral("lc-t-r")));
 	QVERIFY2(clock.scheduleState(QStringLiteral("lc-t-r")).isEmpty(),
 		"a removed schedule must report no state, so an undo's before-state cannot lie");
+}
+
+void ScriptClockTest::aScheduleAddedDuringPlaybackDoesNotFireAPlayEdge()
+{
+	Song* song = Engine::getSong();
+	QVERIFY(song != nullptr);
+	ScriptClock& clock = ScriptClock::instance();
+	QString error;
+
+	// Nothing scheduled, nothing playing: the grid is parked and believes the
+	// transport is stopped. That is the state a script inherits when it adds
+	// its transport hook to a song that is ALREADY rolling.
+	QCOMPARE(clock.scheduleCount(), 0);
+	clock.pollOnce();
+	QVERIFY(!clock.grid().playing());
+
+	song->playSong();
+	QVERIFY(song->isPlaying());
+
+	QVERIFY2(clock.setSchedule(QStringLiteral("lc-t-edge"), QStringLiteral("return 1"),
+		QStringLiteral("transport"), 0, &error), qPrintable(error));
+	const int before = hookRuns(clock);
+	clock.pollOnce();
+	QCOMPARE(hookRuns(clock) - before, 0);
+
+	song->stop();
+	QVERIFY2(clock.removeSchedule(QStringLiteral("lc-t-edge"), &error), qPrintable(error));
+}
+
+void ScriptClockTest::resumingAfterAnEmptyPeriodDoesNotFireStaleBoundaries()
+{
+	Song* song = Engine::getSong();
+	QVERIFY(song != nullptr);
+	ScriptClock& clock = ScriptClock::instance();
+	QString error;
+
+	song->playSong();
+	QVERIFY(song->isPlaying());
+	QVERIFY2(clock.setSchedule(QStringLiteral("lc-t-bar"), QStringLiteral("return 1"),
+		QStringLiteral("bar"), 0, &error), qPrintable(error));
+	clock.pollOnce();   // anchors the grid where the play head IS
+
+	// Removing the last schedule stops the timer. The grid keeps its anchor.
+	QVERIFY2(clock.removeSchedule(QStringLiteral("lc-t-bar"), &error), qPrintable(error));
+	QVERIFY(!clock.hasSchedule(QStringLiteral("lc-t-bar")));
+
+	// The song plays on for five bars with nothing scheduled to notice.
+	song->setPlayPos(song->getPlayPos().getTicks() + 192 * 5);
+
+	QVERIFY2(clock.setSchedule(QStringLiteral("lc-t-bar2"), QStringLiteral("return 1"),
+		QStringLiteral("bar"), 0, &error), qPrintable(error));
+	const int before = hookRuns(clock);
+	clock.pollOnce();
+	QCOMPARE(hookRuns(clock) - before, 0);
+
+	song->stop();
+	QVERIFY2(clock.removeSchedule(QStringLiteral("lc-t-bar2"), &error), qPrintable(error));
 }
 
 void ScriptClockTest::a16RowsCarryTheGroup()
