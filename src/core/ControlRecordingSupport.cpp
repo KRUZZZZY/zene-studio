@@ -111,6 +111,14 @@ bool readJournal(const QJsonObject& args, TakeJournal* journal, ControlResult* e
 			QStringLiteral("'take' is required: the absolute path of the capture's WAV file"));
 		return false;
 	}
+	if (!QFileInfo(take).isAbsolute())
+	{
+		*error = ControlResult::failure(ControlErrorKind::InvalidArgs,
+			QStringLiteral("'take' must be an ABSOLUTE path: a relative one names a different "
+				"file in the next process's working directory, which is the run this journal "
+				"exists to be found by"));
+		return false;
+	}
 	if (!read(journalPathFor(take), journal))
 	{
 		*error = ControlResult::failure(ControlErrorKind::NotFound,
