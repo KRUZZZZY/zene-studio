@@ -360,6 +360,41 @@ private slots:
 		QCOMPARE(refused.errorKind, ControlErrorKind::Refused);
 	}
 
+//! The refusal fields have to agree with the state the same object reports.
+	//! A device whose family ships no client resolves to `refused-no-client`, and
+	//! a reader that checks `refused` instead of `state` was told the device is
+	//! perfectly fine while the state line above it said it was refused.
+	void theRefusalFieldsAgreeWithTheState()
+	{
+		ControlRegistry* registry = ControlRegistry::instance();
+		auto track = std::make_unique<InstrumentTrack>(Engine::getSong());
+#ifdef LMMS_TEST_PLUGIN_DIR
+		track->loadInstrument(QStringLiteral("tripleoscillator"));
+#endif
+		if (track->instrument() == nullptr)
+		{
+			QSKIP("this build's test host can instantiate no instrument at all (no plugin module "
+				"is loadable here), so there is no device to read: UNEXERCISED by this run");
+		}
+
+		const QJsonObject hosting = deviceHosting(registry, QJsonObject{
+			{QStringLiteral("target"), control::trackIdOf(track.get())},
+			{QStringLiteral("plugin"), QStringLiteral("inst")}});
+		QVERIFY2(!hosting.isEmpty(), "oop.get_state did not report the track's instrument at all");
+
+		const QString state = hosting.value(QStringLiteral("state")).toString();
+		if (state != QStringLiteral("refused-no-client"))
+		{
+			QSKIP(qPrintable(QStringLiteral("this build resolved the fresh instrument's family to "
+				"'") + state + "', which is not the no-client refusal this case is about: "
+				"UNEXERCISED by this run"));
+		}
+
+		QCOMPARE(hosting.value(QStringLiteral("refused")).toBool(), true);
+		QVERIFY2(!hosting.value(QStringLiteral("refused_reason")).toString().isEmpty(),
+			"the state says refused-no-client and the refusal fields say nothing about it");
+	}
+
 	//! `cleared` is a claim about a CRASH COUNT that went down, not about a
 	//! client that was merely seen. A record with exits and no crashes has
 	//! nothing to clear, and listing it tells the caller a count was reset that
@@ -398,6 +433,7 @@ private slots:
 			"a client with a nonzero crash count was not reported as cleared");
 		QCOMPARE(tracker.record(crashed).crashes, 0);
 	}
+
 
 private:
 	bool m_engineInitialised = false;
