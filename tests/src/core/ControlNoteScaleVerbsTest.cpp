@@ -58,6 +58,7 @@
 
 #include "ControlRegistry.h"
 #include "ControlReversibility.h"
+#include "ControlScaleShared.h"
 #include "Engine.h"
 #include "ProjectJournal.h"
 #include "ProjectKey.h"
@@ -495,6 +496,32 @@ private slots:
 		QVERIFY2(run(QStringLiteral("note.select"),
 			QJsonObject{{QStringLiteral("clip"), fixture.clip}, {QStringLiteral("notes"),
 				QJsonArray()}}).ok, "could not clear the selection");
+	}
+
+	//! A hand-edited scales/custom entry must not turn into a bogus "degree 0" scale.
+	void malformedCustomScaleEntriesAreIgnored()
+	{
+		const QJsonObject before = lmms::control::customScales();
+		QJsonObject edited = before;
+		// an unconvertible value used toInt() into 0; a fractional one was truncated
+		edited.insert(QStringLiteral("Odd"), QJsonArray{true, QStringLiteral("nope")});
+		edited.insert(QStringLiteral("Ragged"), QJsonArray{0, 12, 99, 4});
+		lmms::control::setCustomScales(edited);
+
+		QVERIFY(lmms::control::scaleDegreesOf(QStringLiteral("Odd")).empty());  // nothing valid: not a "C" scale
+		const std::vector<int> ragged = lmms::control::scaleDegreesOf(QStringLiteral("Ragged"));
+		QCOMPARE(ragged.size(), size_t(2));  // only 0 and 4 survive the 0..11 window
+		QCOMPARE(ragged[0], 0);
+		QCOMPARE(ragged[1], 4);
+
+		// a well-formed custom scale still wins over the engine's table
+		QJsonObject good = edited;
+		good.insert(QStringLiteral("Mine"), QJsonArray{0, 5, 7});
+		lmms::control::setCustomScales(good);
+		const std::vector<int> mine = lmms::control::scaleDegreesOf(QStringLiteral("Mine"));
+		QCOMPARE(mine.size(), size_t(3));
+		QCOMPARE(mine[1], 5);
+		lmms::control::setCustomScales(before);
 	}
 
 	//! W7: the scale vocabulary is the engine's own, and the analysis is a measurement.
