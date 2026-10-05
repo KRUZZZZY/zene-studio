@@ -2426,6 +2426,11 @@ void Mixer::loadSettings( const QDomElement & _this )
 			&& ! mixch.firstChildElement( QString( "bus" ) ).isNull() )
 		{
 			const int busNum = mixch.attribute( "num" ).toInt();
+			// A `num` that is not a channel index must be rejected, not used as
+			// one: allocateChannelsTo() ignores a negative number, so indexing
+			// with it read outside m_mixerChannels. Zero is the master, which
+			// cannot be a bus, so only a positive number is one.
+			if( busNum <= 0 ) { continue; }
 			allocateChannelsTo( busNum );
 			m_mixerChannels[busNum]->setIsBus( true );
 		}
@@ -2446,6 +2451,16 @@ void Mixer::loadSettings( const QDomElement & _this )
 
 		// index of the channel we are about to load
 		int num = mixch.attribute( "num" ).toInt();
+
+		// A channel element whose `num` is not a channel index describes
+		// nothing this mixer can address: m_mixerChannels[num] would read
+		// outside the vector, and the master is created by clear(). Such an
+		// element is skipped whole, exactly as a foreign element is.
+		if( num <= 0 )
+		{
+			node = node.nextSibling();
+			continue;
+		}
 
 		// allocate enough channels
 		allocateChannelsTo( num );
@@ -2511,6 +2526,12 @@ void Mixer::loadSettings( const QDomElement & _this )
 			if( chDataItem.nodeName() == QString( "send" ) )
 			{
 				int sendTo = chDataItem.attribute( "channel" ).toInt();
+				// A `channel` that is not a channel index is not routed
+				// anywhere: createChannelSend() indexes m_mixerChannels with
+				// it. Zero (the master) is the one valid low number, so a
+				// negative target is refused here rather than converted to an
+				// unsigned index downstream.
+				if( sendTo < 0 ) { continue; }
 				allocateChannelsTo( sendTo ) ;
 				const bool preFader =
 					chDataItem.attribute( "prefader" ).toInt() != 0;
@@ -2531,6 +2552,9 @@ void Mixer::loadSettings( const QDomElement & _this )
 			else if( chDataItem.nodeName() == QString( "sidechain-send" ) )
 			{
 				int sendTo = chDataItem.attribute( "channel" ).toInt();
+				// Same rule as a <send>: a negative target is not a channel and
+				// createSidechainSend() converts it to an unsigned index.
+				if( sendTo < 0 ) { continue; }
 				allocateChannelsTo( sendTo );
 				const int mode = chDataItem.attribute( "mode" ).toInt();
 				const SidechainTapPoint tap =

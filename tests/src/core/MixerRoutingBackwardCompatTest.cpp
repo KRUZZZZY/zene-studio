@@ -403,6 +403,65 @@ private slots:
 		QVERIFY2(!closesCycle,
 			"adding C->A was reported as a cycle although nothing routes back to C");
 	}
+
+	// A channel number that is not a channel must be rejected, not indexed.
+	// The bus pre-pass read m_mixerChannels[busNum] and the main pass
+	// read m_mixerChannels[num] without rejecting a negative `num`, and a
+	// negative <sidechain-send channel> reached createSidechainSend, which
+	// converts it to an unsigned index. A project carrying num="-1" (or a
+	// send to channel="-1") therefore indexed outside the channel vector.
+	void aNegativeChannelNumberIsRejectedNotIndexed()
+	{
+		Mixer* mixer = Engine::mixer();
+		QVERIFY(mixer != nullptr);
+
+		mixer->clear();
+		while (mixer->numChannels() < 3) { mixer->createChannel(); }
+
+		static const char* kNegativeXml =
+			"<mixer>\n"
+			"  <mixerchannel num=\"0\" muted=\"0\" volume=\"1\" name=\"Master\">\n"
+			"    <fxchain numofeffects=\"0\" enabled=\"0\"/>\n"
+			"  </mixerchannel>\n"
+			"  <mixerchannel num=\"1\" muted=\"0\" volume=\"1\" name=\"Kick\">\n"
+			"    <fxchain numofeffects=\"0\" enabled=\"0\"/>\n"
+			"    <send channel=\"-1\" amount=\"0.5\"/>\n"
+			"    <sidechain-send channel=\"-1\" amount=\"0.5\"/>\n"
+			"  </mixerchannel>\n"
+			"  <mixerchannel num=\"-1\" muted=\"0\" volume=\"1\" name=\"Ghost\">\n"
+			"    <fxchain numofeffects=\"0\" enabled=\"0\"/>\n"
+			"    <bus/>\n"
+			"  </mixerchannel>\n"
+			"</mixer>\n";
+
+		QDomDocument doc;
+		QDomElement root;
+		QVERIFY2(parseMixerElement(kNegativeXml, doc, root), "the fixture is not valid XML");
+
+		// The whole point: loading must not index outside m_mixerChannels.
+		mixer->loadSettings(root);
+
+		// A negative number is not a channel, so it must not have created one
+		// and must not have routed anything to one. The fixture describes
+		// channel 0 and channel 1, so master + Kick is the whole mixer.
+		QCOMPARE(mixer->numChannels(), 2);
+		// The only <send> in the fixture points at channel="-1", so channel 1
+		// must have ended up with no send at all rather than one to a channel
+		// that does not exist.
+		QVERIFY2(mixer->mixerChannel(1)->m_sends.empty(),
+			"a send to channel=\"-1\" was created");
+		for (int i = 0; i < mixer->numChannels(); ++i)
+		{
+			QVERIFY2(!mixer->mixerChannel(i)->isBus(),
+				qPrintable(QString("channel %1 became a bus from a num=\"-1\" element").arg(i)));
+			MixerChannel* ch = mixer->mixerChannel(i);
+			for (MixerSidechainRoute* r : ch->m_sidechainSends)
+			{
+				QVERIFY2(r->receiverIndex() >= 0,
+					"a sidechain send survived with a negative receiver index");
+			}
+		}
+	}
 };
 
 QTEST_GUILESS_MAIN(MixerRoutingBackwardCompatTest)
