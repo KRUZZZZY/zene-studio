@@ -51,9 +51,11 @@ constexpr double kTwoPi = 6.28318530717958647692;
  */
 SampleFrame readAt(const SampleFrame* src, f_cnt_t srcFrames, double position)
 {
-	if (position < 0.0) { return SampleFrame{}; }
+	// The range check is on the double, before the conversion: a NaN or a
+	// 1e300 position from a seek (or from an analysis hop that overflowed) is
+	// out of the source, and converting it to an integer is undefined.
+	if (!(position >= 0.0) || position >= static_cast<double>(srcFrames)) { return SampleFrame{}; }
 	const auto index = static_cast<std::int64_t>(position);
-	if (index >= static_cast<std::int64_t>(srcFrames)) { return SampleFrame{}; }
 
 	const SampleFrame first = src[index];
 	// The last frame has no successor to interpolate towards.

@@ -466,6 +466,39 @@ private slots:
 		}
 		QVERIFY(previousMs > 0.0);
 	}
+
+	/*! Luna cluster 5521: an out-of-source cursor is SILENCE, not an
+	 *  out-of-bounds read. The position arrives from a seek or from a speed
+	 *  so large that the analysis hop overflows, so it is never a value a
+	 *  caller promised to be inside the buffer. */
+	void extremePositionsProduceSilenceInsteadOfOutOfBoundsReads()
+	{
+		const std::vector<SampleFrame> source = twoTone(4096);
+		std::vector<SampleFrame> out(1024);
+		const auto allFinite = [](const std::vector<SampleFrame>& frames) {
+			for (const SampleFrame& frame : frames)
+			{
+				if (!std::isfinite(frame[0]) || !std::isfinite(frame[1])) { return false; }
+			}
+			return true;
+		};
+
+		AudioStretcher seeked;
+		seeked.prepare();
+		seeked.seek(1e300);
+		QCOMPARE(seeked.process(source.data(), static_cast<f_cnt_t>(source.size()),
+			out.data(), static_cast<f_cnt_t>(out.size()), 1.0), static_cast<f_cnt_t>(out.size()));
+		QVERIFY(allFinite(out));
+		for (const SampleFrame& frame : out) { QCOMPARE(frame[0], 0.0f); }
+
+		// The same via the cursor: a huge but finite speed overflows the hop
+		// advance, and the next grain must still read as silence.
+		AudioStretcher fast;
+		fast.prepare();
+		QCOMPARE(fast.process(source.data(), static_cast<f_cnt_t>(source.size()),
+			out.data(), static_cast<f_cnt_t>(out.size()), 1e300), static_cast<f_cnt_t>(out.size()));
+		QVERIFY(allFinite(out));
+	}
 };
 
 QTEST_GUILESS_MAIN(AudioStretcherTest)
