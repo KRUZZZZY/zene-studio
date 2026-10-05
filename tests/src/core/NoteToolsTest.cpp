@@ -197,6 +197,29 @@ private slots:
 			{QStringLiteral("degrees"), QJsonArray{14}}}).errorKind, ControlErrorKind::InvalidArgs);
 	}
 
+	//! Luna cluster 2883: repeatNotes() formed each copy as
+	//! note->pos().getTicks() + i * interval with no range check, and MidiClip::addNote
+	//! validates nothing (src/tracks/MidiClip.cpp:182), so repeating a note at the right
+	//! edge of the song wrote notes whose end is past MaxSongLength - while the reply still
+	//! counted them as `added`. (The signed-overflow half of the report is false: interval is
+	//! capped at 3072 and count at 64, so i * interval stays far inside tick_t's range.)
+	void repeatingANoteAtTheSongsEdgeIsRefusedNotWrittenPastIt()
+	{
+		auto* clip = dynamic_cast<MidiClip*>(m_track->createClip(TimePos(0)));
+		// A legal note whose END is exactly the song limit.
+		const tick_t start = MaxSongLength - 10;
+		clip->addNote(Note(TimePos(10), TimePos(start), 60), false);
+		QCOMPARE(clip->notes().size(), std::size_t{1});
+
+		QJsonObject args = self(clip);
+		args.insert(QStringLiteral("count"), 2);
+		args.insert(QStringLiteral("interval"), 48);
+		const ControlResult refused = run(QStringLiteral("note.repeat"), args);
+		QCOMPARE(refused.errorKind, ControlErrorKind::InvalidArgs);
+		QCOMPARE(clip->notes().size(), std::size_t{1});  // no copy was written past the limit
+		QVERIFY(refused.errorMessage.contains(QStringLiteral("song limit")));
+	}
+
 	//! Luna cluster 5694: flam() std::clamp-ed the caller's velocity into 0.05..1.0 and
 	//! answered ok, so `velocity: 2` reported success while creating grace notes at a value
 	//! nobody asked for. The schema takes a bare number (the commands_snapshot canary), so

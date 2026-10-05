@@ -223,6 +223,21 @@ ControlResult repeatNotes(const QJsonObject& args)
 	if (clip == nullptr) { return error; }
 	const int count = std::clamp(args.value(QStringLiteral("count")).toInt(3), 1, 64);
 	const tick_t interval = std::max(1, args.value(QStringLiteral("interval")).toInt(48));
+	// Luna cluster 2883: the copies' positions were formed with no range check and
+	// MidiClip::addNote validates none, so a note at the right edge of the song produced
+	// notes ending past MaxSongLength - while the reply still counted every one of them.
+	// The farthest copy is the LAST one (i == count), so one check per note covers them
+	// all; the sum is done in qint64, as checkNewEndPosition() does.
+	for (const Note* note : notes)
+	{
+		const qint64 farthest = static_cast<qint64>(note->pos().getTicks())
+			+ static_cast<qint64>(count) * static_cast<qint64>(interval);
+		if (farthest + static_cast<qint64>(note->length().getTicks()) <= static_cast<qint64>(MaxSongLength)) { continue; }
+		return ControlResult::failure(ControlErrorKind::InvalidArgs,
+			QStringLiteral("a repeat of the note at %1 would end at %2, past the song limit of %3")
+				.arg(note->pos().getTicks()).arg(farthest + note->length().getTicks())
+				.arg(static_cast<qint64>(MaxSongLength)));
+	}
 	clip->addJournalCheckPoint();
 	for (const Note* note : notes)
 	{
