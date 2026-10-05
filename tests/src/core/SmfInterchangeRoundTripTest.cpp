@@ -473,6 +473,47 @@ private slots:
 			{{QStringLiteral("path"), exact}}).ok, "a track that ends at its EOT is read");
 	}
 
+	//! An MThd chunk longer than the six header fields names extension bytes the
+	//! file has to carry; parseHeader() skipped past them and threw the result
+	//! away, so a chunk that declares an extension it does not contain parsed as
+	//! if it had none and the file was accepted. The declaration is the file's
+	//! own statement of where the tracks begin, so a skip that cannot reach them
+	//! is a truncated header, refused like any other.
+	void aTruncatedHeaderExtensionIsRefused()
+	{
+		QByteArray bytes = plainFile(480, {{0, 120, 4, 4}});
+		QVERIFY(bytes.size() > 16);
+		// The header chunk's length field claims 256 bytes; the file carries the
+		// six header fields and then an MTrk, so the extension is not there.
+		bytes[4] = static_cast<char>(0x00);
+		bytes[5] = static_cast<char>(0x00);
+		bytes[6] = static_cast<char>(0x01);
+		bytes[7] = static_cast<char>(0x00);
+		const QString file = path(m_directory, QStringLiteral("long-header.mid"));
+		QVERIFY(writeFile(file, bytes));
+		const ControlResult read = run(QStringLiteral("interchange.smf_read"),
+			{{QStringLiteral("path"), file}});
+		QVERIFY2(!read.ok, "a header extension the file does not carry was accepted");
+		QCOMPARE(read.errorKind, ControlErrorKind::InvalidArgs);
+		QVERIFY2(read.errorMessage.contains(QStringLiteral("MThd")),
+			qPrintable(read.errorMessage));
+		const ControlResult imported = run(QStringLiteral("interchange.smf_import"),
+			{{QStringLiteral("path"), file}});
+		QVERIFY(!imported.ok);
+		QCOMPARE(digest(mapEvents()), QString());  // a refusal imports nothing
+
+		// The control: the same file with an honest six-byte header is read.
+		QByteArray honest = plainFile(480, {{0, 120, 4, 4}});
+		honest[4] = static_cast<char>(0x00);
+		honest[5] = static_cast<char>(0x00);
+		honest[6] = static_cast<char>(0x00);
+		honest[7] = static_cast<char>(0x06);
+		const QString good = path(m_directory, QStringLiteral("six-byte-header.mid"));
+		QVERIFY(writeFile(good, honest));
+		QVERIFY2(run(QStringLiteral("interchange.smf_read"),
+			{{QStringLiteral("path"), good}}).ok, "a six-byte MThd chunk is read");
+	}
+
 	//! Every track ends with an end-of-track meta event; it is how the format
 	//! says the sequence is over. readTrack() returned success when its walk ran
 	//! out of bytes, and nothing recorded whether the event had arrived - so a

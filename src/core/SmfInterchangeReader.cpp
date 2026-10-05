@@ -407,7 +407,16 @@ bool parseHeader(Cursor& cursor, SmfReadReport* report, QString* error)
 		*error = QStringLiteral("the MThd chunk is truncated");
 		return false;
 	}
-	if (headerLength > 6) { cursor.skip(headerLength - 6); }
+	// The chunk length is the file's own statement of where the tracks begin;
+	// extension bytes it names that the file does not carry leave the cursor
+	// short of that point, so the skip cannot be allowed to fail unnoticed.
+	if (headerLength > 6 && !cursor.skip(headerLength - 6))
+	{
+		*error = QStringLiteral(
+			"the MThd chunk declares %1 bytes but the file ends before them - the "
+			"header extension it names is truncated").arg(headerLength);
+		return false;
+	}
 	if (!validateDivision(division, error)) { return false; }
 	report->format = format;
 	report->trackCount = trackCount;
