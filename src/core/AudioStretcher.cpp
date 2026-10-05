@@ -99,6 +99,7 @@ void AudioStretcher::prepare(const Parameters& params)
 	for (int i = 0; i < m_grain; ++i)
 	{
 		m_window[i] = static_cast<float>(0.5 - 0.5 * std::cos(kTwoPi * i / m_grain));
+		m_firstWindow[i] = i < m_hop ? 1.0f : m_window[i];
 	}
 
 	m_prepared = true;
@@ -167,12 +168,15 @@ void AudioStretcher::produceHop(const SampleFrame* src, f_cnt_t srcFrames, doubl
 
 	// Windowed overlap-add of the chosen grain onto the carry.
 	const double grainStart = m_sourcePos + static_cast<double>(bestOffset);
+	// The first hop has no overlapping grain to sum its falling window
+	// against, so it uses the flat left half instead of fading the onset in.
+	const auto& window = m_started ? m_window : m_firstWindow;
 	for (int i = 0; i < m_grain; ++i)
 	{
 		const SampleFrame frame = readAt(src, srcFrames, grainStart + i);
-		const float window = m_window[i];
-		m_accum[i][0] += frame[0] * window;
-		m_accum[i][1] += frame[1] * window;
+		const float weight = window[i];
+		m_accum[i][0] += frame[0] * weight;
+		m_accum[i][1] += frame[1] * weight;
 	}
 
 	// The hop's frames are complete: they are the sum of the previous grain's

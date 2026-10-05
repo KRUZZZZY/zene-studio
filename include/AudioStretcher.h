@@ -183,6 +183,11 @@ private:
 	//! always half the grain, so this is the grain's own bound halved).
 	std::array<SampleFrame, MaxGrainFrames / 2> m_hopOut{};
 	std::array<float, MaxGrainFrames> m_window{};
+	/*! The same window for the FIRST hop only, with a flat left half: that hop
+	 *  has no grain before it to sum against, so fading its onset in would
+	 *  fade the sample in with it. From the second hop on, `m_window` is used
+	 *  and the Hann pair still sums to one. */
+	std::array<float, MaxGrainFrames> m_firstWindow{};
 	f_cnt_t m_hopReady = 0;
 	f_cnt_t m_hopRead = 0;
 	//! The analysis cursor, in source frames. Doubles because a fractional hop
