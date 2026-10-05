@@ -423,6 +423,30 @@ private slots:
 			"a prevch pair that is not two numbers is discarded, not adopted as 0:<n>");
 	}
 
+	//! Deleting a folder must give its mixer channel back. ~TrackFolder unlinked
+	//! the children but never released the folder's OWN channel, unlike
+	//! releaseRouting() - so each deleted routing folder left an orphan channel
+	//! in the mixer, and the channel list grew without bound over a session's
+	//! deletions.
+	void deletingARoutingFolderGivesItsMixerChannelBack()
+	{
+		const QString name = QStringLiteral("j-leak");
+		const mix_ch_t before = Engine::mixer()->numChannels();
+
+		TrackFolder* folder = static_cast<TrackFolder*>(addTrack(Track::Type::Folder, name));
+		Track* child = addTrack(Track::Type::Instrument, name);
+		child->setParentFolder(folder);
+		QString error;
+		QVERIFY2(folder->setMode(TrackFolder::Mode::Routing, &error), qPrintable(error));
+		const mix_ch_t routed = Engine::mixer()->numChannels();
+		QVERIFY2(routed == before + 1,
+			"routing must have taken one channel for the folder, or this slot proves nothing");
+
+		control::removeTrack(folder);
+		QCOMPARE(Engine::mixer()->numChannels(), before);
+		removeAll(name);
+	}
+
 	//! (i) A no-op unparent is a VALID ANSWER, never a crash: taking a track that
 	//! is already at the container root out of "no folder" must succeed, twice.
 	void unparentingARootTrackIsANoOpNotACrash()

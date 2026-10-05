@@ -118,6 +118,29 @@ TrackFolder::~TrackFolder()
 	{
 		if( track != this && track->parentFolder() == this ) { track->setParentFolder( nullptr ); }
 	}
+
+	// The folder's OWN channel goes back with it. ~Track unlinks from the
+	// folder first, and unlinking a ROUTING child already put it back on its
+	// saved channel, so by here no child points at m_mixerChannel - which is
+	// the order releaseRouting() documents and must be kept: Mixer::deleteChannel
+	// renumbers the channels above the one it removes.
+	//
+	// Teardown and a loaded `mixch` are both cases this has to survive.
+	// Engine::destroy() clears the song BEFORE deleting the mixer, and a
+	// folder deleted with it lands here with the model half gone;
+	// deleteHelper() nulls what it deletes, so the mixer deleteChannel()
+	// drives (and the song it reads) may already be gone. A saved `mixch`
+	// can also name a channel this mixer never allocated - it is an index
+	// read from the file, not a channel this folder created - and
+	// Mixer::deleteChannel() indexes its channel vector unchecked. A channel
+	// that is not there is not ours to delete, and there is nothing to
+	// renumber around.
+	if( m_mixerChannel >= 0 && Engine::mixer() != nullptr && Engine::getSong() != nullptr
+		&& m_mixerChannel < static_cast<int>( Engine::mixer()->numChannels() ) )
+	{
+		Engine::mixer()->deleteChannel( static_cast<int>( m_mixerChannel ) );
+		m_mixerChannel = -1;
+	}
 }
 
 /*! A folder makes no sound of its own.
