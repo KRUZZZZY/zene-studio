@@ -1294,11 +1294,19 @@ MidiClient * AudioEngine::tryMidiClients()
 namespace
 {
 
+/*! R2.2: the ceiling on a loopback latency read from the environment. The pair sums into the
+ *  delay line configureLoopback() allocates (AudioDummy.h), and the raw figures came straight
+ *  from qEnvironmentVariableIntValue() up to INT_MAX - so two values near the limit asked for
+ *  more than 30 GB of SampleFrame and the allocation could only throw. A cable of more than a
+ *  million frames (over 20 s at 48 kHz) is not a figure any device reports, so both latencies
+ *  are clamped here, before the sum that sizes the line. */
+constexpr f_cnt_t MaxLoopbackLatencyFrames = 1 << 20;
+
 f_cnt_t latencyFromEnv(const char* name)
 {
 	bool ok = false;
 	const int value = qEnvironmentVariableIntValue(name, &ok);
-	return ok && value > 0 ? static_cast<f_cnt_t>(value) : 0;
+	return ok && value > 0 ? std::min<f_cnt_t>(static_cast<f_cnt_t>(value), MaxLoopbackLatencyFrames) : 0;
 }
 
 //! 0.5.0 F1: the first device output (0-based) of the pair the loopback cable carries back to the input.
