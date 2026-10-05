@@ -57,6 +57,7 @@
 #include "InstrumentTrack.h"
 #include "MeterModel.h"
 #include "Mixer.h"
+#include "MixerPostInserts.h"
 #include "ParameterAliases.h"
 #include "Rack.h"
 #include "Song.h"
@@ -229,8 +230,14 @@ void searchTarget(const SearchScope& scope, const QString& targetId)
 	}
 	searchChain(scope, targetId, target.chain);
 	if (!targetId.startsWith(QLatin1String("ch-"))) { return; }
+	if (postinserts::isTarget(targetId)) { return; }  // the post-fader inserts are a target of their own, searched above
 	const Rack* rack = resolveRack(targetId, &ignored);
 	for (int c = 1; rack != nullptr && c < rack->chainCount(); ++c) { searchChain(scope, targetId, rack->chain(c)); }
+	// MX-082: a channel's post-fader inserts hang off that channel, so its search reaches them and
+	// names them by the target that addresses them.
+	const QString postId = postinserts::targetOf(targetId);
+	ControlTarget post;
+	if (resolveControlTarget(postId, &post, &ignored)) { searchChain(scope, postId, post.chain); }
 }
 
 ControlResult paramSearch(const QJsonObject& args)

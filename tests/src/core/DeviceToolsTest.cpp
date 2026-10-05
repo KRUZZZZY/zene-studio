@@ -409,6 +409,23 @@ private slots:
 		channel(3)->m_fxChain.clear();
 	}
 
+	//! MX-082: a parameter of a channel's post-fader insert is found by a search of the channel,
+	//! and the hit names the target that addresses it.
+	void aPostFaderInsertParameterIsFound()
+	{
+		const QString post = ch(2) + QStringLiteral("/post");
+		const QString amp = loadByName(post, QStringLiteral("amplifier"));
+		if (amp.isEmpty()) { QSKIP("this build has no amplifier module"); }
+		const ControlResult found = run(QStringLiteral("plugin.param_search"), {{QStringLiteral("query"), QStringLiteral("volum")},
+			{QStringLiteral("target"), ch(2)}});
+		QVERIFY2(found.ok, qPrintable(found.errorMessage));
+		QVERIFY2(found.result.value(QStringLiteral("count")).toInt() >= 1, "the post-fader insert's Volume was not found on the channel");
+		for (const QJsonValue& hit : found.result.value(QStringLiteral("parameters")).toArray())
+		{
+			QCOMPARE(hit.toObject().value(QStringLiteral("target")).toString(), post);
+		}
+	}
+
 	//! MX-080: the delta of a device that changes nothing is silence; of one that doubles the level,
 	//! the input itself; the switch toggles and is not journalled.
 	void theDeltaIsWhatTheDeviceChanges()
