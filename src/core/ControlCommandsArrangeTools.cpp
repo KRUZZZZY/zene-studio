@@ -71,10 +71,15 @@ ControlResult listClips(const QJsonObject& args)
 	const QString onTrack = args.value(QStringLiteral("track")).toString();
 	const QString text = args.value(QStringLiteral("name")).toString();
 	const int limit = args.value(QStringLiteral("limit")).toInt(500);
+	// A 'track' that names no live track is a typo, not an empty track: refuse it the way
+	// automation.get_state (ControlCommandsAutomation.cpp:129) refuses a filter that matched
+	// nothing, so a misspelt id cannot read as a successful answer about the wrong track.
 	QJsonArray clips;
+	bool matchedTrack = onTrack.isEmpty();
 	for (const Track* track : Engine::getSong()->tracks())
 	{
 		if (!onTrack.isEmpty() && trackIdOf(track) != onTrack) { continue; }
+		matchedTrack = true;
 		for (const Clip* clip : track->getClips())
 		{
 			if (!text.isEmpty() && !clip->name().contains(text, Qt::CaseInsensitive)) { continue; }
@@ -85,6 +90,11 @@ ControlResult listClips(const QJsonObject& args)
 				{QStringLiteral("length"), static_cast<int>(clip->length().getTicks())},
 				{QStringLiteral("kind"), track->type() == Track::Type::Instrument ? QStringLiteral("midi") : kindOf(clip)}});
 		}
+	}
+	if (!matchedTrack)
+	{
+		return ControlResult::failure(ControlErrorKind::NotFound,
+			QStringLiteral("no track %1 (the song has %2)").arg(onTrack).arg(Engine::getSong()->tracks().size()));
 	}
 	return ControlResult::success({{QStringLiteral("clips"), clips}, {QStringLiteral("count"), clips.size()}});
 }

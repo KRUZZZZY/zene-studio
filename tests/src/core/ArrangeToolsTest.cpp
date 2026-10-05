@@ -224,6 +224,17 @@ private slots:
 		QCOMPARE(track->getClips().size(), std::size_t{1});  // untouched
 	}
 
+	//! ED-036: a 'track' that names nothing must not read as an empty track. automation.get_state
+	//! (ControlCommandsAutomation.cpp:129) already refuses a filter that matched nothing.
+	void aClipListRefusesATrackThatIsNotThere()
+	{
+		auto* track = dynamic_cast<InstrumentTrack*>(Track::create(Track::Type::Instrument, Engine::getSong()));
+		track->createClip(TimePos(0));
+		QCOMPARE(run(QStringLiteral("clip.list"), {{QStringLiteral("track"), QStringLiteral("trk-999999")}}).errorKind,
+			ControlErrorKind::NotFound);
+		QCOMPARE(run(QStringLiteral("clip.list"), {{QStringLiteral("track"), control::trackIdOf(track)}}).result.value(QStringLiteral("count")).toInt(), 1);
+	}
+
 	void noTransientWithoutAudio()
 	{
 		Engine::getSong()->setPlayPos(5000);  // the current mode's play head, the one the command reads
