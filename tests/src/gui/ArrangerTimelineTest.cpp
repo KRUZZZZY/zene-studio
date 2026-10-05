@@ -40,6 +40,7 @@
 #include <cstdlib>
 
 #include <QAbstractSlider>
+#include <QRegularExpression>
 #include <QToolBar>
 #include <QWheelEvent>
 
@@ -65,6 +66,7 @@
 #include "SongEditor.h"
 #include "TimeLineWidget.h"
 #include "Track.h"
+#include "TrackView.h"
 
 using namespace lmms;
 using namespace lmms::gui;
@@ -364,7 +366,39 @@ private slots:
 		QVERIFY2(navigator->accessibleDescription().startsWith(QStringLiteral("Showing bars 3 ")), qPrintable(navigator->accessibleDescription()));
 	}
 
-private:
+	//! The navigator names the bars it SHOWS. The view's end is exclusive, so a view that ends exactly on a
+	//! bar line shows one bar fewer than its length in bars - naming the end tick's own bar adds a bar that is
+	//! not on screen.
+	void theNavigatorNamesTheLastBarItShows()
+	{
+		installArrangerNavigator(getGUI()->songEditor());
+		auto* bar = getGUI()->songEditor()->findChild<QToolBar*>(QStringLiteral("arrangerNavigator"));
+		QVERIFY(bar != nullptr);
+		auto* navigator = bar->findChild<QAbstractSlider*>();
+		QVERIFY2(navigator != nullptr, "the navigator is not a slider");
+		clipAt(m_track, 40 * Bar, Bar);
+		QVERIFY(run(QStringLiteral("arrangement.scroll"), {{QStringLiteral("position"), 0}}).ok);
+
+		// A zoom whose view ends exactly on a bar line: the boundary the text has to treat as exclusive.
+		tick_t view = 0;
+		for (int ppb = 4; ppb <= 400; ++ppb)
+		{
+			QVERIFY(run(QStringLiteral("arrangement.zoom"), {{QStringLiteral("pixels_per_bar"), ppb},
+				{QStringLiteral("anchor"), QStringLiteral("start")}}).ok);
+			view = arrangerzoom::visibleTicks(m_editor);
+			if (view > 0 && view % Bar == 0) { break; }
+		}
+		QVERIFY2(view > 0 && view % Bar == 0, "no zoom ended the view exactly on a bar line");
+		QCOMPARE(m_editor->currentPosition().getTicks(), 0);
+
+		static const QRegularExpression said(QStringLiteral("Showing bars (\\d+) to (\\d+) of (\\d+)"));
+		const QRegularExpressionMatch found = said.match(navigator->accessibleDescription());
+		QVERIFY2(found.hasMatch(), qPrintable(navigator->accessibleDescription()));
+		QCOMPARE(found.captured(1).toInt(), 1);
+		QCOMPARE(found.captured(2).toInt(), static_cast<int>(view / Bar));
+	}
+
+	private:
 	QTemporaryDir m_home;
 	SongEditor* m_editor = nullptr;
 	Track* m_track = nullptr;
