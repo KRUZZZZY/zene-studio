@@ -24,6 +24,7 @@
 #include "Appearance.h"
 
 #include <algorithm>
+#include <cmath>
 
 #include <QDir>
 #include <QFile>
@@ -45,6 +46,14 @@ double configDouble(const char* key, double fallback)
 	bool ok = false;
 	const double value = ConfigManager::inst()->value(kSection, QLatin1String(key), QString::number(fallback)).toDouble(&ok);
 	return ok ? value : fallback;
+}
+
+//! The zoom to store or draw with: a finite value inside 0.5..3. std::clamp alone does NOT do
+//! this - every comparison against NaN is false, so a NaN scale is returned untouched and a
+//! non-finite zoom would size the interface from garbage. @a fallback is used instead of one.
+double boundedScale(double scale, double fallback)
+{
+	return std::isfinite(scale) ? std::clamp(scale, 0.5, 3.0) : fallback;
 }
 
 } // namespace
@@ -74,7 +83,7 @@ QString effectivePalette(const Options& o)
 Options options()
 {
 	Options out;
-	out.scale = std::clamp(configDouble("scale", 1.0), 0.5, 3.0);
+	out.scale = boundedScale(configDouble("scale", 1.0), 1.0);
 	const QString palette = ConfigManager::inst()->value(kSection, QStringLiteral("palette"), QStringLiteral("dark"));
 	out.palette = paletteNames().contains(palette) ? palette : QStringLiteral("dark");
 	out.accessible = densityIsAccessible(ConfigManager::inst()->value(kSection, QStringLiteral("density")));
@@ -83,7 +92,10 @@ Options options()
 
 bool setOptions(const Options& next)
 {
-	ConfigManager::inst()->setValue(kSection, QStringLiteral("scale"), QString::number(std::clamp(next.scale, 0.5, 3.0)));
+	// A refused non-finite zoom keeps the zoom in force now, rather than storing a value the
+	// interface cannot draw with.
+	const double scale = boundedScale(next.scale, options().scale);
+	ConfigManager::inst()->setValue(kSection, QStringLiteral("scale"), QString::number(scale));
 	ConfigManager::inst()->setValue(kSection, QStringLiteral("palette"), next.palette);
 	ConfigManager::inst()->setValue(kSection, QStringLiteral("density"),
 		next.accessible ? QStringLiteral("accessible") : QStringLiteral("standard"));

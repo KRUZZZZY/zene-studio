@@ -33,6 +33,7 @@
 #include <QtTest>
 
 #include <cmath>
+#include <limits>
 
 #include <QJsonArray>
 #include <QLabel>
@@ -257,6 +258,24 @@ private slots:
 		QVERIFY(run(QStringLiteral("control.undo")).ok);
 		QVERIFY(!appearance::options().accessible);
 		QCOMPARE(appearance::effectivePalette(appearance::options()), chosen);
+	}
+
+	//! A non-finite zoom is not a zoom: std::clamp leaves NaN untouched (every comparison with it is
+	//! false), so it must be refused before it is stored or the interface is sized from garbage.
+	void aNonFiniteAppearanceScaleIsRefused()
+	{
+		const double before = appearance::options().scale;
+		appearance::Options bad = appearance::options();
+		bad.scale = std::nan("");
+		appearance::setOptions(bad);
+		const double after = appearance::options().scale;
+		QVERIFY(std::isfinite(after));
+		QVERIFY(after >= 0.5 && after <= 3.0);
+		// An infinity is out of range in the other direction, and is refused the same way.
+		bad.scale = std::numeric_limits<double>::infinity();
+		appearance::setOptions(bad);
+		QVERIFY(std::isfinite(appearance::options().scale));
+		QCOMPARE(appearance::options().scale, before);
 	}
 
 	//! The W3 density values still work: comfortable and touch turn accessible mode on, standard turns it off,
