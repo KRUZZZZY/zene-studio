@@ -42,6 +42,7 @@
 #include "ControlEdit.h"
 #include "ControlRegistry.h"
 #include "DataFile.h"
+#include "AutomatableModel.h"
 #include "Engine.h"
 #include "Mixer.h"
 #include "Song.h"
@@ -392,6 +393,260 @@ private slots:
 		QVERIFY(found);
 	}
 
+	//! A malformed `prevch` pair must not become a channel-zero binding: the ids
+	//! are read with an unchecked toInt(), so "bad:4" and "1:bad" each yield 0 -
+	//! and 0 is the MASTER channel, a value the model treats as real. A child
+	//! taken out of such a folder would then be sent to the master instead of
+	//! staying where it was.
+	void aMalformedSavedBindingIsDiscardedNotTakenAsChannelZero()
+	{
+		QString project = legacyProject(projectVersion());
+		project.replace(QStringLiteral("    </trackcontainer>"),
+			QStringLiteral(
+				"      <track type=\"7\" name=\"Holder\" muted=\"0\">\n"
+				"        <trackfolder mode=\"routing\" mixch=\"1\" prevch=\"bad:4,1:bad\"/>\n"
+				"      </track>\n"
+				"    </trackcontainer>"));
+		const QString path = m_dir.filePath(QStringLiteral("malformed-bindings.mmp"));
+		writeFile(path, project);
+		loadProject(path);
+
+		TrackFolder* folder = nullptr;
+		for (Track* track : Engine::getSong()->tracks())
+		{
+			if (track->type() == Track::Type::Folder)
+			{
+				folder = static_cast<TrackFolder*>(track);
+			}
+		}
+		QVERIFY(folder != nullptr);
+		QVERIFY2(folder->savedChildChannels().empty(),
+			"a prevch pair that is not two numbers is discarded, not adopted as 0:<n>");
+	}
+
+	//! A child that LEAVES a routing folder keeps its binding, so it can be routed
+	//! again without inventing a channel for it. But the channel it is given while it
+	//! is OUTSIDE the folder is the one a later release has to restore: routeChild()
+	//! appended the new binding behind the stale one and savedChannelFor() returns the
+	//! FIRST match, so the child went back to the channel it was on before it ever
+	//! left the folder, losing the assignment made in between.
+	void rejoiningARoutingFolderKeepsTheNewestSavedChannel()
+	{
+		const QString name = QStringLiteral("l-rejoin");
+		TrackFolder* folder = static_cast<TrackFolder*>(addTrack(Track::Type::Folder, name));
+		Track* child = addTrack(Track::Type::Instrument, name);
+		// Two channels of the child's own, so "where it was" and "where it was put
+		// while it was out" are both channels that exist. Mixer::createChannel() does
+		// NOT re-range the tracks - TrackFolder::routeChild widens its own children
+		// for exactly that reason - so the model is widened here too.
+		QVERIFY(Engine::mixer()->createChannel() >= 0);
+		QVERIFY(Engine::mixer()->createChannel() >= 0);
+		IntModel* model = child->mixerChannelModel();
+		QVERIFY(model != nullptr);
+		model->setRange(0, static_cast<float>(Engine::mixer()->numChannels() - 1));
+		const int original = 1;
+		const int whileOut = 2;
+		model->setValue(original);
+		child->setParentFolder(folder);
+
+		QString error;
+		QVERIFY2(folder->setMode(TrackFolder::Mode::Routing, &error), qPrintable(error));
+		QCOMPARE(model->value(), static_cast<int>(folder->mixerChannel()));
+
+		// out of the folder: back on its own channel, and free to be moved
+		child->setParentFolder(nullptr);
+		QCOMPARE(model->value(), original);
+		model->setValue(whileOut);
+
+		child->setParentFolder(folder);
+		QCOMPARE(model->value(), static_cast<int>(folder->mixerChannel()));
+
+		QVERIFY2(folder->setMode(TrackFolder::Mode::Group, &error), qPrintable(error));
+		QVERIFY2(model->value() == whileOut,
+			"a child that rejoined on a new channel goes back to THAT channel, "
+			"not to the one it held before it first left the folder");
+		removeAll(name);
+	}
+
+	//! Releasing routing has to give the child back its channel RANGE as well as
+	//! its value: routeChild() widens the model so it can hold the folder's
+	//! channel, and unrouteChild() only put the value back. The deleted channel's
+	//! index stayed selectable, and the mixer has no channel there - the child was
+	//! feeding a hole.
+	void releasingRoutingTakesTheChildRangeBackOffTheDeletedChannel()
+	{
+		const QString name = QStringLiteral("m-range");
+		TrackFolder* folder = static_cast<TrackFolder*>(addTrack(Track::Type::Folder, name));
+		Track* child = addTrack(Track::Type::Instrument, name);
+		child->setParentFolder(folder);
+		IntModel* model = child->mixerChannelModel();
+		QVERIFY(model != nullptr);
+		const int before = model->value();
+
+		QString error;
+		QVERIFY2(folder->setMode(TrackFolder::Mode::Routing, &error), qPrintable(error));
+		const int channel = static_cast<int>(folder->mixerChannel());
+		QVERIFY(channel >= 0);
+		// the widening really happened, so the range below proves the release undid it
+		QCOMPARE(model->maxValue(), static_cast<float>(channel));
+
+		QVERIFY2(folder->setMode(TrackFolder::Mode::Group, &error), qPrintable(error));
+		QCOMPARE(model->value(), before);
+		QVERIFY2(channel >= static_cast<int>(Engine::mixer()->numChannels()),
+			"the folder's channel was deleted, so its index is past the last channel");
+		QCOMPARE(model->maxValue(), static_cast<float>(Engine::mixer()->numChannels() - 1));
+
+		// and the deleted index cannot be selected any more
+		model->setValue(channel);
+		QVERIFY2(model->value() < static_cast<int>(Engine::mixer()->numChannels()),
+			"a child must not be able to select a channel that has been deleted");
+		removeAll(name);
+	}
+
+	//! A routing folder's mixer channel is NAMED after it, and the name is shown on
+	//! the channel's caption, tooltip and LCD - and saved with the project. It was
+	//! copied once, when routing was enabled, so renaming the folder afterwards left
+	//! the channel advertising a name the folder no longer has.
+	void renamingARoutingFolderRenamesItsMixerChannel()
+	{
+		const QString name = QStringLiteral("n-rename");
+		TrackFolder* folder = static_cast<TrackFolder*>(addTrack(Track::Type::Folder, name));
+		Track* child = addTrack(Track::Type::Instrument, name);
+		child->setParentFolder(folder);
+		QString error;
+		QVERIFY2(folder->setMode(TrackFolder::Mode::Routing, &error), qPrintable(error));
+		const int channel = static_cast<int>(folder->mixerChannel());
+		MixerChannel* mixerChannel = Engine::mixer()->mixerChannel(channel);
+		QVERIFY(mixerChannel != nullptr);
+		QCOMPARE(mixerChannel->m_name, name);
+
+		const QString renamed = QStringLiteral("n-rename-again");
+		folder->setName(renamed);
+		QVERIFY2(mixerChannel->m_name == renamed,
+			"the mixer channel of a routing folder carries the folder's CURRENT name");
+		// back under the fixture name, so removeAll() can find the folder again
+		folder->setName(name);
+		removeAll(name);
+	}
+
+	//! Deleting a folder must give its mixer channel back. ~TrackFolder unlinked
+	//! the children but never released the folder's OWN channel, unlike
+	//! releaseRouting() - so each deleted routing folder left an orphan channel
+	//! in the mixer, and the channel list grew without bound over a session's
+	//! deletions.
+	void deletingARoutingFolderGivesItsMixerChannelBack()
+	{
+		const QString name = QStringLiteral("j-leak");
+		const mix_ch_t before = Engine::mixer()->numChannels();
+
+		TrackFolder* folder = static_cast<TrackFolder*>(addTrack(Track::Type::Folder, name));
+		Track* child = addTrack(Track::Type::Instrument, name);
+		child->setParentFolder(folder);
+		QString error;
+		QVERIFY2(folder->setMode(TrackFolder::Mode::Routing, &error), qPrintable(error));
+		const mix_ch_t routed = Engine::mixer()->numChannels();
+		QVERIFY2(routed == before + 1,
+			"routing must have taken one channel for the folder, or this slot proves nothing");
+
+		control::removeTrack(folder);
+		QCOMPARE(Engine::mixer()->numChannels(), before);
+		removeAll(name);
+	}
+
+	//! Deleting a routing folder must not leave the OTHER routing folders holding a
+	//! channel index that has moved. Mixer::deleteChannel renumbers the instrument
+	//! and sample channel models, and a TrackFolder's own channel is an index into
+	//! that same vector: two routing folders on channels 3 and 4, delete the lower,
+	//! and the upper used to keep saying 4 - which by then names the strip above
+	//! its own. Its children were routed to the wrong strip, and deleting IT
+	//! removed a strip it did not own.
+	void deletingOneRoutingFolderRenumbersTheOther()
+	{
+		const QString name = QStringLiteral("j-renumber");
+		const mix_ch_t baseline = Engine::mixer()->numChannels();
+
+		TrackFolder* lower = static_cast<TrackFolder*>(addTrack(Track::Type::Folder, name));
+		Track* lowerChild = addTrack(Track::Type::Instrument, name);
+		lowerChild->setParentFolder(lower);
+		QString error;
+		QVERIFY2(lower->setMode(TrackFolder::Mode::Routing, &error), qPrintable(error));
+
+		TrackFolder* upper = static_cast<TrackFolder*>(addTrack(Track::Type::Folder, name));
+		Track* upperChild = addTrack(Track::Type::Instrument, name);
+		upperChild->setParentFolder(upper);
+		QVERIFY2(upper->setMode(TrackFolder::Mode::Routing, &error), qPrintable(error));
+
+		const int lowerChannel = lower->mixerChannel();
+		const int upperChannel = upper->mixerChannel();
+		QVERIFY2(upperChannel == lowerChannel + 1,
+			"the second routing folder must have taken the next channel, or this slot proves nothing");
+
+		// Delete the LOWER one. Its channel goes, and everything above it comes down.
+		control::removeTrack(lower);
+		QCOMPARE(Engine::mixer()->numChannels(), baseline + 1);
+
+		QVERIFY2(upper->mixerChannel() == upperChannel - 1,
+			"the surviving folder follows its channel down when a lower one is deleted");
+		QVERIFY2(upper->mixerChannel() == lowerChannel,
+			"the surviving folder now holds the index the deleted folder had");
+		QVERIFY(Engine::mixer()->mixerChannel(upper->mixerChannel()) != nullptr);
+		// and its ROUTING followed it: the child still sums into the folder's channel.
+		QCOMPARE(upperChild->mixerChannelModel()->value(), static_cast<float>(upper->mixerChannel()));
+
+		// Deleting the survivor now removes ITS OWN strip and only that one.
+		control::removeTrack(upper);
+		QCOMPARE(Engine::mixer()->numChannels(), baseline);
+		removeAll(name);
+	}
+
+	//! Undoing a routing folder's delete must bring its channel back. The
+	//! checkpoint carries `mixch`, an index read from a file - and the delete being
+	//! reversed gave that channel back to the mixer, so the restored folder used to
+	//! adopt an index naming a strip it does not own, routing its children into
+	//! somebody else's channel. It has to take a channel that is really there.
+	void undoingARoutingFolderDeleteRestoresItsChannel()
+	{
+		const QString name = QStringLiteral("j-undo-folder");
+		const mix_ch_t baseline = Engine::mixer()->numChannels();
+
+		TrackFolder* folder = static_cast<TrackFolder*>(addTrack(Track::Type::Folder, name));
+		Track* child = addTrack(Track::Type::Instrument, name);
+		child->setParentFolder(folder);
+		QString error;
+		QVERIFY2(folder->setMode(TrackFolder::Mode::Routing, &error), qPrintable(error));
+		QCOMPARE(Engine::mixer()->numChannels(), baseline + 1);
+
+		ControlRegistry* registry = ControlRegistry::instance();
+		const ControlResult removed = registry->invoke(QStringLiteral("track.remove"),
+			QJsonObject{{QStringLiteral("track"), control::trackIdOf(folder)}});
+		QVERIFY2(removed.ok, qPrintable(removed.errorMessage));
+		QCOMPARE(Engine::mixer()->numChannels(), baseline);
+
+		QVERIFY2(registry->invoke(QStringLiteral("control.undo")).ok, "the undo of a folder delete must apply");
+
+		// The folder is back...
+		Track* restored = nullptr;
+		for (Track* t : Engine::getSong()->tracks())
+		{
+			if (t->type() == Track::Type::Folder && t->name() == name) { restored = t; }
+		}
+		QVERIFY2(restored != nullptr, "the undo must bring the routing folder back");
+		TrackFolder* typed = static_cast<TrackFolder*>(restored);
+		QVERIFY(typed->isRouting());
+
+		// ... on a channel that EXISTS, which is not an assertion about which index:
+		// the deleted channel was given back, so a fresh one is what a correct
+		// restore creates. What must not happen is adopting an index it does not own.
+		QVERIFY2(typed->mixerChannel() >= 0, "the restored folder must own a channel");
+		QVERIFY2(typed->mixerChannel() < static_cast<int>(Engine::mixer()->numChannels()),
+			"the restored folder must not adopt an index past the end of the mixer");
+		QVERIFY(Engine::mixer()->mixerChannel(typed->mixerChannel()) != nullptr);
+		QCOMPARE(Engine::mixer()->numChannels(), baseline + 1);
+		// and the channel it took is its own, named for the folder that is back.
+		QCOMPARE(Engine::mixer()->mixerChannel(typed->mixerChannel())->m_name, name);
+		removeAll(name);
+	}
+
 	//! (i) A no-op unparent is a VALID ANSWER, never a crash: taking a track that
 	//! is already at the container root out of "no folder" must succeed, twice.
 	void unparentingARootTrackIsANoOpNotACrash()
@@ -416,7 +671,180 @@ private slots:
 		removeAll(name);
 	}
 
+	//! A visibility set is a SET: naming the same track twice must still leave it a set of ONE
+	//! member. The stored definition and the `track_count` the save reply reports both count
+	//! MEMBERS, so the duplicate has to go before either is taken.
+	void aRepeatedTrackIdIsSavedAsOneMember()
+	{
+		const QString name = QStringLiteral("j-dup-ids");
+		const QString firstId = control::trackIdOf(addTrack(Track::Type::Instrument, name));
+		const QString secondId = control::trackIdOf(addTrack(Track::Type::Instrument, name));
+		Song* song = Engine::getSong();
+		ControlResult saved = ControlRegistry::instance()->invoke(QStringLiteral("track.visibility_set_save"),
+			QJsonObject{{QStringLiteral("name"), QStringLiteral("Doubled")},
+				{QStringLiteral("tracks"), QJsonArray{firstId, firstId, secondId, firstId}}});
+		QVERIFY2(saved.ok, qPrintable(saved.errorMessage));
+		// Four ids named, two distinct tracks: the reply counts MEMBERS.
+		QCOMPARE(saved.result.value(QStringLiteral("track_count")).toInt(), 2);
+		QCOMPARE(saved.result.value(QStringLiteral("tracks")).toArray().size(), 2);
+		const TrackContainer::VisibilitySet* set = song->findVisibilitySet(QStringLiteral("Doubled"));
+		QVERIFY(set != nullptr);
+		QCOMPARE(static_cast<int>(set->trackIds.size()), 2);
+		// Applying it shows each member ONCE, so the duplicate is gone from the engine's
+		// own view too - not only from the reply.
+		int shown = 0;
+		int hidden = 0;
+		QVERIFY(song->applyVisibilitySet(QStringLiteral("Doubled"), &shown, &hidden));
+		QCOMPARE(shown, 2);
+		removeAll(name);
+	}
+
+	//! The inverse control.transactions REPORTS is a promise a client may replay,
+	//! so it has to name a command that really puts the state back. Removing a set
+	//! cannot name itself: the set is already gone, so that replay restores nothing
+	//! (and refuses on the missing name).
+	void removeSetReportsAnInverseThatRestoresIt()
+	{
+		const QString name = QStringLiteral("k-inverse-remove");
+		Track* first = addTrack(Track::Type::Instrument, name);
+		Track* second = addTrack(Track::Type::Instrument, name);
+		const std::vector<Track*> tracks{first, second};
+		const QString setName = QStringLiteral("Removable");
+		QVERIFY2(ControlRegistry::instance()->invoke(QStringLiteral("track.visibility_set_save"),
+			QJsonObject{{QStringLiteral("name"), setName},
+				{QStringLiteral("tracks"), QJsonArray{control::trackIdOf(first)}}}).ok,
+			qPrintable(QStringLiteral("track.visibility_set_save failed")));
+		const QString before = visibilityState(tracks);
+		QVERIFY2(ControlRegistry::instance()->invoke(QStringLiteral("track.visibility_set_remove"),
+			QJsonObject{{QStringLiteral("name"), setName}}).ok,
+			qPrintable(QStringLiteral("track.visibility_set_remove failed")));
+		QVERIFY(Engine::getSong()->findVisibilitySet(setName) == nullptr);
+		replayInverse(lastInverse());
+		QCOMPARE(visibilityState(tracks), before);
+		removeAll(name);
+	}
+
+	//! The same promise for a save: the save that CREATED a set is undone by
+	//! removing it again, not by writing an empty definition back, and the save
+	//! that REPLACED one is undone by writing the captured definition back.
+	void saveSetReportsAnInverseThatRestoresIt()
+	{
+		const QString name = QStringLiteral("k-inverse-save");
+		Track* first = addTrack(Track::Type::Instrument, name);
+		Track* second = addTrack(Track::Type::Instrument, name);
+		const std::vector<Track*> tracks{first, second};
+		const QString setName = QStringLiteral("Fresh");
+		const QString absent = visibilityState(tracks);
+		QVERIFY2(ControlRegistry::instance()->invoke(QStringLiteral("track.visibility_set_save"),
+			QJsonObject{{QStringLiteral("name"), setName},
+				{QStringLiteral("tracks"), QJsonArray{control::trackIdOf(first)}}}).ok,
+			qPrintable(QStringLiteral("track.visibility_set_save failed")));
+		replayInverse(lastInverse());
+		QCOMPARE(visibilityState(tracks), absent);
+		// Now the replace case: the previous definition is what must come back.
+		QVERIFY2(ControlRegistry::instance()->invoke(QStringLiteral("track.visibility_set_save"),
+			QJsonObject{{QStringLiteral("name"), setName},
+				{QStringLiteral("tracks"), QJsonArray{control::trackIdOf(second)}}}).ok,
+			qPrintable(QStringLiteral("track.visibility_set_save failed")));
+		const QString beforeOverwrite = visibilityState(tracks);
+		QVERIFY2(ControlRegistry::instance()->invoke(QStringLiteral("track.visibility_set_save"),
+			QJsonObject{{QStringLiteral("name"), setName},
+				{QStringLiteral("tracks"), QJsonArray{control::trackIdOf(first), control::trackIdOf(second)}}}).ok,
+			qPrintable(QStringLiteral("track.visibility_set_save failed")));
+		replayInverse(lastInverse());
+		QCOMPARE(visibilityState(tracks), beforeOverwrite);
+		removeAll(name);
+	}
+
+	//! An apply writes the visible flag of EVERY track, so no single command puts
+	//! the prior flags back: the inverse has to be the recorded step itself, as the
+	//! comp group's ManualCompositeInverse already is.
+	void applyReportsAnInverseThatRestoresEveryFlag()
+	{
+		const QString name = QStringLiteral("k-inverse-apply");
+		Track* first = addTrack(Track::Type::Instrument, name);
+		addTrack(Track::Type::Instrument, name);
+		addTrack(Track::Type::Instrument, name);
+		const std::vector<Track*> tracks{first};
+		const QString setName = QStringLiteral("Subset");
+		QVERIFY2(ControlRegistry::instance()->invoke(QStringLiteral("track.visibility_set_save"),
+			QJsonObject{{QStringLiteral("name"), setName},
+				{QStringLiteral("tracks"), QJsonArray{control::trackIdOf(first)}}}).ok,
+			qPrintable(QStringLiteral("track.visibility_set_save failed")));
+		const QString before = visibilityState(tracks);
+		QVERIFY2(ControlRegistry::instance()->invoke(QStringLiteral("track.visibility_set_apply"),
+			QJsonObject{{QStringLiteral("name"), setName}}).ok,
+			qPrintable(QStringLiteral("track.visibility_set_apply failed")));
+		// The reported inverse is what a client replays; it must restore the flags.
+		QVERIFY(!first->isVisible() == false);  // the member is visible after the apply
+		replayInverse(lastInverse());
+		QCOMPARE(visibilityState(tracks), before);
+		removeAll(name);
+	}
+
+	//! The same for show-all: it clears the active name and shows every track, so
+	//! the reported inverse is the recorded step rather than show-all again.
+	void showAllReportsAnInverseThatRestoresEveryFlag()
+	{
+		const QString name = QStringLiteral("k-inverse-showall");
+		Track* first = addTrack(Track::Type::Instrument, name);
+		addTrack(Track::Type::Instrument, name);
+		const std::vector<Track*> tracks{first};
+		const QString setName = QStringLiteral("Shown");
+		QVERIFY2(ControlRegistry::instance()->invoke(QStringLiteral("track.visibility_set_save"),
+			QJsonObject{{QStringLiteral("name"), setName},
+				{QStringLiteral("tracks"), QJsonArray{control::trackIdOf(first)}}}).ok,
+			qPrintable(QStringLiteral("track.visibility_set_save failed")));
+		QVERIFY2(ControlRegistry::instance()->invoke(QStringLiteral("track.visibility_set_apply"),
+			QJsonObject{{QStringLiteral("name"), setName}}).ok,
+			qPrintable(QStringLiteral("track.visibility_set_apply failed")));
+		const QString before = visibilityState(tracks);
+		QVERIFY2(ControlRegistry::instance()->invoke(QStringLiteral("track.visibility_show_all")).ok,
+			qPrintable(QStringLiteral("track.visibility_show_all failed")));
+		replayInverse(lastInverse());
+		QCOMPARE(visibilityState(tracks), before);
+		removeAll(name);
+	}
+
 private:
+	//! The state the visibility-set commands change: the active name, every set
+	//! with its members, and every track's visible flag. One string so a replay can
+	//! be asserted against the state the command found.
+	QString visibilityState(const std::vector<Track*>& tracks)
+	{
+		Song* song = Engine::getSong();
+		QString state = QStringLiteral("active=") + song->activeVisibilitySet();
+		for (const TrackContainer::VisibilitySet& set : song->visibilitySets())
+		{
+			QStringList ids;
+			for (int id : set.trackIds) { ids.append(QString::number(id)); }
+			state += QStringLiteral(";set:") + set.name + QLatin1Char('=') + ids.join(QLatin1Char(','));
+		}
+		for (int i = 0; i < static_cast<int>(tracks.size()); ++i)
+		{
+			state += QStringLiteral(";v") + QString::number(i)
+				+ (tracks[static_cast<size_t>(i)]->isVisible() ? QStringLiteral("=1") : QStringLiteral("=0"));
+		}
+		return state;
+	}
+
+	//! The inverse the newest A16 record reports - the op and args a client reads.
+	QJsonObject lastInverse()
+	{
+		const QJsonArray all = ControlRegistry::instance()->invoke(QStringLiteral("control.transactions"))
+			.result.value(QStringLiteral("transactions")).toArray();
+		return all.isEmpty() ? QJsonObject() : all.last().toObject().value(QStringLiteral("inverse")).toObject();
+	}
+
+	//! Replays a reported inverse through the registry, exactly as a client would.
+	void replayInverse(const QJsonObject& inverse)
+	{
+		const ControlResult replayed = ControlRegistry::instance()->invoke(
+			inverse.value(QStringLiteral("op")).toString(),
+			inverse.value(QStringLiteral("args")).toObject());
+		QVERIFY2(replayed.ok, qPrintable(QStringLiteral("the reported inverse did not restore the state: ")
+			+ inverse.value(QStringLiteral("op")).toString() + " -> " + replayed.errorMessage));
+	}
 	//! \a type track named \a name, in the song container.
 	Track* addTrack(Track::Type type, const QString& name)
 	{
@@ -438,6 +866,31 @@ private:
 			if (track->name() == name) { doomed.push_back(track); }
 		}
 		for (Track* track : doomed) { control::removeTrack(track); }
+	}
+
+	//! A no-op track.set_routing answers with a transaction deliberately (the comment at
+	//! src/core/ControlCommandsTrackFolder.cpp:234 says an undo of a call that changed nothing
+	//! must change nothing, so its inverse is the state the folder is already in). The question
+	//! is whether that costs the NEXT undo - it must not.
+	void aNoOpRoutingReportsReversibleWithoutStealingTheNextUndo()
+	{
+		const QString name = QStringLiteral("h-noop-routing");
+		TrackFolder* folder = static_cast<TrackFolder*>(addTrack(Track::Type::Folder, name));
+		Track* child = addTrack(Track::Type::Instrument, name);
+		child->setParentFolder(folder);
+		QVERIFY2(ControlRegistry::instance()->invoke(QStringLiteral("track.set_pinned"),
+			QJsonObject{{QStringLiteral("track"), control::trackIdOf(folder)}, {QStringLiteral("pinned"), true}}).ok,
+			qPrintable(QStringLiteral("track.set_pinned failed")));
+		QVERIFY2(ControlRegistry::instance()->invoke(QStringLiteral("track.set_routing"),
+			QJsonObject{{QStringLiteral("track"), control::trackIdOf(folder)}, {QStringLiteral("routing"), true}}).ok,
+			qPrintable(QStringLiteral("track.set_routing failed")));
+		QVERIFY(folder->isRouting());
+		const ControlResult noop = ControlRegistry::instance()->invoke(QStringLiteral("track.set_routing"),
+			QJsonObject{{QStringLiteral("track"), control::trackIdOf(folder)}, {QStringLiteral("routing"), true}});
+		QVERIFY2(noop.ok, qPrintable(noop.errorMessage));
+		QVERIFY2(ControlRegistry::instance()->invoke(QStringLiteral("control.undo")).ok, qPrintable(QStringLiteral("undo failed")));
+		QVERIFY(!folder->isRouting());  // the no-op did not swallow the real undo
+		removeAll(name);
 	}
 
 	void loadProject(const QString& path)

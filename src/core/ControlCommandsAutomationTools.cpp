@@ -113,6 +113,20 @@ ControlResult trimSet(const QJsonObject& args)
 	return ControlResult::success(reply);
 }
 
+//! A time map is keyed by tick, so moving a point onto a tick another node already holds would
+//! silently delete that node. Moving a point onto its own tick is a plain value change, and stays
+//! allowed.
+ControlResult occupiedDestination(const AutomationClip* clip, tick_t ticks, tick_t to,
+	const QString& parameterId, tick_t toSong)
+{
+	if (to != ticks && clip->getTimeMap().contains(TimePos(to)))
+	{
+		return ControlResult::failure(ControlErrorKind::Refused,
+			QStringLiteral("%1 already has a point at %2").arg(parameterId).arg(static_cast<qint64>(toSong)));
+	}
+	return ControlResult::success();
+}
+
 ControlResult movePoint(const QJsonObject& args)
 {
 	ControlTarget target;
@@ -120,23 +134,39 @@ ControlResult movePoint(const QJsonObject& args)
 	ControlResult error;
 	if (!resolveAutomationParameter(args, &target, &parameter, &error)) { return error; }
 	AutomationClip* clip = existingAutomationClip(parameter.model);
-	const auto ticks = static_cast<tick_t>(args.value(QStringLiteral("ticks")).toDouble());
-	if (clip == nullptr || !clip->getTimeMap().contains(TimePos(ticks)))
+	// A time map is keyed by CLIP-LOCAL ticks, so both the point named by 'ticks' and the
+	// destination are song ticks on the way in and local ticks inside the clip - the same
+	// conversion automation.set_curve (ControlCommandsAutomationLanes.cpp:209),
+	// automation.draw_shape (:158) and automation.transform (:172) make. The reply answers in
+	// song ticks, so the caller never has to know the clip's own origin.
+	const int origin = clip != nullptr ? clip->startPosition().getTicks() : 0;
+	const auto songTicks = static_cast<tick_t>(args.value(QStringLiteral("ticks")).toDouble());
+	const auto toSong = static_cast<tick_t>(args.value(QStringLiteral("new_ticks")).toDouble(static_cast<double>(songTicks)));
+	const auto ticks = songTicks - origin;
+	if (clip == nullptr || ticks < 0 || !clip->getTimeMap().contains(TimePos(ticks)))
 	{
-		return ControlResult::failure(ControlErrorKind::NotFound, QStringLiteral("%1 has no point at %2").arg(parameter.id()).arg(static_cast<qint64>(ticks)));
+		return ControlResult::failure(ControlErrorKind::NotFound, QStringLiteral("%1 has no point at %2").arg(parameter.id()).arg(static_cast<qint64>(songTicks)));
 	}
 	const float old = clip->getTimeMap().value(TimePos(ticks)).getInValue();
-	const auto to = static_cast<tick_t>(args.value(QStringLiteral("new_ticks")).toDouble(static_cast<double>(ticks)));
+	const auto to = toSong - origin;
 	const double value = args.value(QStringLiteral("new_value")).toDouble(parameter.model->scaledValue(old));
 	if (value < parameter.model->minValue<float>() || value > parameter.model->maxValue<float>() || to < 0)
 	{
 		return automatableRangeRefusal(parameter.model, value);
 	}
+	if (const ControlResult taken = occupiedDestination(clip, ticks, to, parameter.id(), toSong); !taken.ok) { return taken; }
 	const QJsonArray before = automationPointsJson(clip, parameter.model);
+	// The point's own curve is its progression to the next point, and a Bend carries its bend
+	// amount - neither survives removing the node and letting putValue insert a plain one, so
+	// they are carried across to the destination.
+	const AutomationNode& oldNode = clip->getTimeMap()[TimePos(ticks)];
+	const auto curve = oldNode.curve();
+	const auto bend = oldNode.bend();
 	clip->addJournalCheckPoint();
 	clip->removeNode(TimePos(ticks));
 	clip->putValue(TimePos(to), parameter.model->inverseScaledValue(static_cast<float>(value)), false);
-	QJsonObject result{{QStringLiteral("track"), target.id}, {QStringLiteral("parameter"), parameter.id()}, {QStringLiteral("ticks"), static_cast<double>(to)},
+	clip->getTimeMap()[TimePos(to)].setCurve(curve, bend);
+	QJsonObject result{{QStringLiteral("track"), target.id}, {QStringLiteral("parameter"), parameter.id()}, {QStringLiteral("ticks"), static_cast<double>(toSong)},
 		{QStringLiteral("value"), value}, {QStringLiteral("automation"), automationJson(clip, parameter.model)}};
 	result.insert(QStringLiteral("__transaction"), automationTransaction(parameter, before, before.size(), false));
 	return ControlResult::success(result);

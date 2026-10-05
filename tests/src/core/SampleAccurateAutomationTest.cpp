@@ -41,6 +41,7 @@
 
 #include <QtTest>
 
+#include <algorithm>
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
@@ -516,6 +517,145 @@ private slots:
 		}
 	}
 
+	/*! A block that sits entirely BEFORE the clip's first point must read the
+	 *  clip's value there, not step off the node map: `rampValueAt` used to take
+	 *  `std::prev(upperBound(ticks))` without asking whether that iterator was
+	 *  `begin()`. The tick-0 node is removed through the surface, so the first
+	 *  node really is at tick 10 and every tick of this block precedes it -
+	 *  which is the shape a user builds by deleting the first point. */
+	void aBlockBeforeTheFirstPointReadsThePreFirstValue()
+	{
+		control::AutomationParameter gain;
+		QString why;
+		QVERIFY2(channelGainParameter(&gain, &why), qPrintable(why));
+		QVERIFY2(writeCurveThroughTheSurface(gain.id(), &why), qPrintable(why));
+
+		const ControlResult removed = run(QStringLiteral("automation.remove_point"),
+			QJsonObject{{QStringLiteral("track"), channelIdOf()},
+				{QStringLiteral("parameter"), gain.id()},
+				{QStringLiteral("ticks"), 0}});
+		QVERIFY2(removed.ok, qPrintable(removed.errorMessage));
+
+		AutomationClip* clip = control::existingAutomationClip(gain.model);
+		QVERIFY(clip != nullptr);
+		clip->setProgressionType(AutomationClip::ProgressionType::Discrete);
+
+		const f_cnt_t frames = Engine::audioEngine()->framesPerPeriod();
+		const double framesPerTick = static_cast<double>(Engine::framesPerTick());
+		AutomationRamp ramp;
+		// The clip's own start: a block is SHORTER than one tick at this tempo,
+		// so every frame of it lies before the first node at tick 10.
+		clip->writeBlockRamp(ramp, clip->startPosition(), frames, framesPerTick, 0);
+		evidence("ramp-before-first-point",
+			QStringLiteral("knots=%1 refusals=%2 value@0=%3")
+				.arg(ramp.knotCount()).arg(ramp.refusals()).arg(ramp.valueAt(0), 0, 'g', 6));
+		QCOMPARE(ramp.refusals(), std::uint32_t{0});
+
+		// Before the first node no segment has started: the clip's value there is
+		// the one valueAt(TimePos) returns, so the whole block must hold it.
+		for (f_cnt_t f = 0; f < frames; ++f)
+		{
+			QVERIFY2(ramp.valueAt(f) == 0.0f,
+				qPrintable(QStringLiteral("frame %1 of a block entirely before the first point "
+					"reads %2, not the clip's pre-first value").arg(f).arg(ramp.valueAt(f), 0, 'g', 6)));
+		}
+	}
+
+	/*! A Discrete step that lands EXACTLY on a sample must be HELD until that
+	 *  sample. floor(knotFrame) and ceil(knotFrame) are the same frame then, so
+	 *  both knots used to carry the value going OUT and the ramp interpolated
+	 *  into the step over the frames before it. */
+	void aDiscreteStepOnAnExactSampleIsHeldUntilThatSample()
+	{
+		control::AutomationParameter gain;
+		QString why;
+		QVERIFY2(channelGainParameter(&gain, &why), qPrintable(why));
+		QVERIFY2(writeCurveThroughTheSurface(gain.id(), &why), qPrintable(why));
+
+		AutomationClip* clip = control::existingAutomationClip(gain.model);
+		QVERIFY(clip != nullptr);
+		clip->setProgressionType(AutomationClip::ProgressionType::Discrete);
+
+		// An integer frames-per-tick puts every tick boundary exactly ON a
+		// sample - the case floor == ceil.
+		constexpr double kFramesPerTick = 4.0;
+		constexpr f_cnt_t kFrames = 16;
+		AutomationRamp ramp;
+		clip->writeBlockRamp(ramp, clip->startPosition(), kFrames, kFramesPerTick, 0);
+		evidence("discrete-step-exact-frame",
+			QStringLiteral("knots=%1 refusals=%2 value@3=%3 value@4=%4")
+				.arg(ramp.knotCount()).arg(ramp.refusals())
+				.arg(ramp.valueAt(3), 0, 'g', 6).arg(ramp.valueAt(4), 0, 'g', 6));
+		QCOMPARE(ramp.refusals(), std::uint32_t{0});
+
+		// kCurve carries a node on EVERY tick, so the value a Discrete clip holds
+		// over tick i is node i's stored value, and the step must appear exactly
+		// at the frame the boundary falls on.
+		for (std::size_t tick = 0; tick * kFramesPerTick < kFrames; ++tick)
+		{
+			const double stored = static_cast<double>(gain.model->inverseScaledValue(
+				static_cast<float>(kCurve[tick].value)));
+			const f_cnt_t first = static_cast<f_cnt_t>(tick * kFramesPerTick);
+			const f_cnt_t last = std::min<f_cnt_t>(first + static_cast<f_cnt_t>(kFramesPerTick) - 1,
+				kFrames - 1);
+			for (f_cnt_t f = first; f <= last; ++f)
+			{
+				QVERIFY2(std::fabs(static_cast<double>(ramp.valueAt(f)) - stored) <= 1.0e-4,
+					qPrintable(QStringLiteral("frame %1 of tick %2 reads %3, the clip holds %4: "
+						"the step was smeared instead of held")
+						.arg(f).arg(tick).arg(ramp.valueAt(f), 0, 'g', 6).arg(stored, 0, 'g', 6)));
+			}
+		}
+	}
+
+	/*! A step that lands BETWEEN two samples must hold the old value on the
+	 *  sample before it. The frame before a boundary is written only when it is
+	 *  past frame 1, so for a boundary at frame 1.3 that knot was missing: the
+	 *  ramp ran from frame 0 straight to frame 2 and read a value halfway up the
+	 *  step at frame 1, on a clip that HOLDS until the boundary. */
+	void aDiscreteStepBetweenSamplesIsHeldOnTheSampleBeforeIt()
+	{
+		control::AutomationParameter gain;
+		QString why;
+		QVERIFY2(channelGainParameter(&gain, &why), qPrintable(why));
+		QVERIFY2(writeCurveThroughTheSurface(gain.id(), &why), qPrintable(why));
+
+		AutomationClip* clip = control::existingAutomationClip(gain.model);
+		QVERIFY(clip != nullptr);
+		clip->setProgressionType(AutomationClip::ProgressionType::Discrete);
+
+		// The first tick boundary lands at frame 1.3: between two samples, and
+		// between frame 1 (the sample before it) and frame 2.
+		constexpr double kFramesPerTick = 3.3;
+		constexpr int kFrameOffsetInTick = 2;
+		constexpr f_cnt_t kFrames = 8;
+		AutomationRamp ramp;
+		clip->writeBlockRamp(ramp, clip->startPosition(), kFrames, kFramesPerTick, kFrameOffsetInTick);
+		evidence("discrete-step-between-samples",
+			QStringLiteral("knots=%1 refusals=%2 value@1=%3 value@2=%4")
+				.arg(ramp.knotCount()).arg(ramp.refusals())
+				.arg(ramp.valueAt(1), 0, 'g', 6).arg(ramp.valueAt(2), 0, 'g', 6));
+		QCOMPARE(ramp.refusals(), std::uint32_t{0});
+
+		// kCurve puts a node on every tick, so the value a Discrete clip holds over
+		// tick i is node i's stored value.
+		const double held = static_cast<double>(gain.model->inverseScaledValue(
+			static_cast<float>(kCurve[0].value)));
+		const double stepped = static_cast<double>(gain.model->inverseScaledValue(
+			static_cast<float>(kCurve[1].value)));
+		QVERIFY2(held != stepped, "the curve does not step, so this proves nothing");
+
+		// Frame 1 is the LAST sample before the boundary, so it holds the old value;
+		// frame 2 is the first one past it.
+		QVERIFY2(std::fabs(static_cast<double>(ramp.valueAt(1)) - held) <= 1.0e-4,
+			qPrintable(QStringLiteral("frame 1 reads %1, the clip holds %2 until the boundary "
+				"at frame 1.3: the step was smeared onto the sample before it")
+				.arg(ramp.valueAt(1), 0, 'g', 6).arg(held, 0, 'g', 6)));
+		QVERIFY2(std::fabs(static_cast<double>(ramp.valueAt(2)) - stepped) <= 1.0e-4,
+			qPrintable(QStringLiteral("frame 2 reads %1, the step lands there and the clip holds %2")
+				.arg(ramp.valueAt(2), 0, 'g', 6).arg(stepped, 0, 'g', 6)));
+	}
+
 	//! Workspace rule 4, measured on the path the audio thread takes: the ramp
 	//! build AND the per-sample fill, 64 blocks, zero allocations.
 	void theSampleAccuratePathAllocatesNothing()
@@ -743,6 +883,49 @@ private slots:
 		QCOMPARE(run(QStringLiteral("automation.ramp_set"),
 			rampArgs(QStringLiteral("fx-0/1"), QStringLiteral("sample"))).errorKind,
 			ControlErrorKind::NotFound);
+	}
+
+	/*! A ramp_set that finds the clip ALREADY in the requested mode records nothing: no journal
+	 *  checkpoint, no undo step (the checkpoint is only taken inside `if (changed)` at
+	 *  src/core/ControlCommandsAutomationRamp.cpp:165). It nevertheless answered with a
+	 *  `__transaction` marked reversible, so a client was told an inverse existed for a call that
+	 *  had none - and control.undo would then consume the PREVIOUS command's step.
+	 *
+	 *  Checked as sound: the repeat call reports changed:false and carries no inverse at all,
+	 *  and an undo straight afterwards still reverses the real change it did make. */
+	void aNoOpRampSetAdvertisesNoInverseAndConsumesNoUndoStep()
+	{
+		control::AutomationParameter gain;
+		QString why;
+		QVERIFY2(channelGainParameter(&gain, &why), qPrintable(why));
+		QVERIFY2(writeCurveThroughTheSurface(gain.id(), &why), qPrintable(why));
+
+		const QString before = reportedMode(gain.id());
+		const QString flipped = before == QStringLiteral("sample")
+			? QStringLiteral("block") : QStringLiteral("sample");
+		ControlResult result;
+		QVERIFY2(setMode(gain.id(), flipped, &result), qPrintable(result.errorMessage));
+		QCOMPARE(result.result.value(QStringLiteral("changed")).toBool(), true);
+		// The registry consumes the handler's private "__transaction" key, so the recorded
+		// transaction is what a client is told about.
+		const ControlRegistry::Transaction* real = ControlRegistry::instance()->lastTransaction();
+		QVERIFY(real != nullptr);
+		QCOMPARE(real->command, QStringLiteral("automation.ramp_set"));
+		QVERIFY(real->reversible);
+
+		// Same mode again: nothing to do, so nothing to record either.
+		const int beforeCount = ControlRegistry::instance()->transactions().size();
+		ControlResult again;
+		QVERIFY2(setMode(gain.id(), flipped, &again), qPrintable(again.errorMessage));
+		QCOMPARE(again.result.value(QStringLiteral("changed")).toBool(), false);
+		QCOMPARE(ControlRegistry::instance()->transactions().size(), beforeCount);
+		const ControlRegistry::Transaction* top = ControlRegistry::instance()->lastTransaction();
+		QVERIFY(top != nullptr);
+		QCOMPARE(top->command, QStringLiteral("automation.ramp_set"));  // still the change it really made
+
+		// The no-op consumed no undo step: undo still reverses the change that WAS made.
+		QVERIFY2(run(QStringLiteral("control.undo")).ok, qPrintable(QStringLiteral("undo failed")));
+		QCOMPARE(reportedMode(gain.id()), before);
 	}
 };
 

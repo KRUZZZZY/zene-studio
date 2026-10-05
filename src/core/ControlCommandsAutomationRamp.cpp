@@ -180,16 +180,23 @@ ControlResult automationRampSet(const QJsonObject& args)
 	result.insert(QStringLiteral("mode_before"), modeName(before));
 	result.insert(QStringLiteral("changed"), changed);
 	result.insert(QStringLiteral("automation"), control::automationJson(clip, parameter.model));
-	result.insert(QStringLiteral("__transaction"), control::transactionPayload(beforeState,
-		QStringLiteral("automation.ramp_set"),
-		QJsonObject{{QStringLiteral("track"), target.id},
-			{QStringLiteral("parameter"), parameter.id()},
-			{QStringLiteral("mode"), modeName(before)}},
-		true,
-		QStringLiteral("live checkpoint: the clip is a JournallingObject, so control.undo "
-			"replays the checkpoint taken before the flag moved and the clip's own "
-			"loadSettings resets the flag on absence, which is what takes the FIRST "
-			"ramp_set back too")));
+	// Only a call that took a journal checkpoint has an inverse to offer: when the clip was
+	// ALREADY in the requested mode nothing was recorded, so claiming a reversible transaction
+	// would tell a client an inverse exists for a call that left none - and control.undo would
+	// then consume the PREVIOUS command's step for it.
+	if (changed)
+	{
+		result.insert(QStringLiteral("__transaction"), control::transactionPayload(beforeState,
+			QStringLiteral("automation.ramp_set"),
+			QJsonObject{{QStringLiteral("track"), target.id},
+				{QStringLiteral("parameter"), parameter.id()},
+				{QStringLiteral("mode"), modeName(before)}},
+			true,
+			QStringLiteral("live checkpoint: the clip is a JournallingObject, so control.undo "
+				"replays the checkpoint taken before the flag moved and the clip's own "
+				"loadSettings resets the flag on absence, which is what takes the FIRST "
+				"ramp_set back too")));
+	}
 	return ControlResult::success(result);
 }
 

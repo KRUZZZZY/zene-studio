@@ -148,6 +148,10 @@ public:
 	//! Switches the mode. Routing mode needs at least one child to sum and a
 	//! mixer channel to sum into; false with \a error filled changes NOTHING.
 	bool setMode( Mode mode, QString * error );
+	//! A routing folder's mixer channel is NAMED after it, so renaming the folder
+	//! has to rename that channel too - it is shown on the channel's caption and
+	//! saved with the project.
+	void setName( const QString & newName ) override;
 
 	bool isCollapsed() const { return m_collapsed; }
 	void setCollapsed( bool collapsed );
@@ -180,6 +184,34 @@ public:
 	bool enableRouting( QString * error );
 	bool releaseRouting();
 
+	//! Told by Mixer::deleteChannel that \a deletedIndex is gone, BEFORE it walks
+	//! the instrument and sample channel models. A folder's own channel is an
+	//! index into that same vector, so it moves with it: the folder that recorded
+	//! it keeps its summing point and the ones above it follow it down. Without
+	//! this a second routing folder would keep naming a channel that has moved,
+	//! route its children to the wrong strip, and - when IT is deleted - remove a
+	//! strip it does not own.
+	//!
+	//! Called first, because a child of a routing folder whose OWN channel was the
+	//! deleted one is standing on an index that now belongs to a different
+	//! channel: it has to go back to the channel it was on before routing, while
+	//! the mixer is still about to renumber, not be sent to master by the track
+	//! walk below. A folder that has already released its routing has no bindings
+	//! left, so this is a no-op for it - which is what releaseRouting() and
+	//! ~TrackFolder rely on.
+	void channelDeleted( int deletedIndex );
+
+	//! Makes a RESTORED routing folder own a channel that exists again.
+	//!
+	//! `mixch` is an INDEX READ FROM A FILE: the channel it names can be gone by
+	//! the time the folder is built (the delete that an undo reverses gave it
+	//! back), and adopting that index would leave the folder naming - and routing
+	//! its children to - a strip it does not own. So the folder takes a channel of
+	//! its own instead, exactly as turning routing on does, and names it after
+	//! itself. False with \a error filled when the mixer refuses the new channel,
+	//! which leaves the folder with none rather than with a wrong one.
+	bool ensureRoutingChannel( QString * error );
+
 signals:
 	//! Collapse, pin, membership or mode changed - what a view of the folder draws (R8/M3:
 	//! TrackContainerView re-lays out its rows on it). GUI-thread consumers connect queued.
@@ -187,6 +219,14 @@ signals:
 
 private:
 	void routeChild( Track * child );
+	//! Records where \a childId's own channel is now, REPLACING any binding it
+	//! already has (a child that rejoins a routing folder brings the old one with
+	//! it, and two entries for one child would leave savedChannelFor() answering
+	//! with the stale one).
+	void recordBinding( int childId, int channel );
+	//! Takes a child's mixer-channel RANGE back off the folder's channel once that
+	//! channel has been deleted, so the deleted index cannot be selected.
+	void shrinkChildRange( Track * child );
 	//! Puts \a child back on its own recorded channel (shared by
 	//! releaseRouting() and childUnlinked()).
 	void unrouteChild( Track * child );

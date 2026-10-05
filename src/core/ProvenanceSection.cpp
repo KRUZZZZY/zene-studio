@@ -49,6 +49,9 @@
 #include <QDomElement>
 #include <QJsonDocument>
 
+#include <algorithm>
+#include <limits>
+
 #include "DataFile.h"
 #include "DocumentIndex.h"
 #include "Engine.h"
@@ -119,16 +122,111 @@ QString targetFrom(const QJsonObject& before)
 	return QString();
 }
 
-//! The one quantity the byte bound counts, beside the count cap: every
-//! attribute value plus the attribute names they ride on - a serialised-size
-//! measurement like control::serialisedRecordBytes, never an estimate.
+//! The bytes one character costs as it sits inside a serialised attribute:
+//! five for each of the five entities QDom escapes (&amp; &lt; &gt; &quot;
+//! &apos; - one character, five bytes), otherwise its own UTF-8 width.
+int escapedCharBytes(const QChar character)
+{
+	const char16_t code = character.unicode();
+	const bool escaped = code == u'&' || code == u'<' || code == u'>'
+		|| code == u'"' || code == u'\'';
+	if (escaped) { return 5; }
+	return code < 0x80 ? 1 : QString(character).toUtf8().size();
+}
+
+//! The value's length as QDom ESCAPES it inside an attribute. Counting the
+//! raw QString would undercount an ampersand by four bytes per occurrence.
+int escapedAttributeBytes(const QString& value)
+{
+	int bytes = 0;
+	for (const QChar character : value) { bytes += escapedCharBytes(character); }
+	return bytes;
+}
+
+//! One serialised attribute as ` name="value"`: the leading space, the name,
+//! the equals sign and the two quotes the writer emits around every value.
+int attributeBytes(const char* name, const QString& value)
+{
+	return escapedAttributeBytes(value) + static_cast<int>(QLatin1String(name).size()) + 4;
+}
+
+//! The one quantity the byte bound counts, beside the count cap: the entry as
+//! it is actually SERIALISED - the <z:change/> markup, every attribute name,
+//! its quoting and its UTF-8 bytes, and no more (an absent optional attribute
+//! is not written, so it is not counted). A serialised-size measurement like
+//! control::serialisedRecordBytes, never an estimate.
 int serialisedBytes(const provenance::Change& change)
 {
-	int bytes = QString::number(change.seq).size();
-	bytes += change.at.size() + change.actor.size() + change.instance.size();
-	bytes += change.command.size() + change.target.size();
-	bytes += change.before.size() + change.after.size();
+	int bytes = static_cast<int>(QStringLiteral("<z:change/>").toUtf8().size());
+	bytes += attributeBytes("seq", QString::number(change.seq));
+	bytes += attributeBytes("at", change.at);
+	bytes += attributeBytes("actor", change.actor);
+	bytes += attributeBytes("instance", change.instance);
+	bytes += attributeBytes("command", change.command);
+	if (!change.target.isEmpty()) { bytes += attributeBytes("target", change.target); }
+	if (!change.before.isEmpty()) { bytes += attributeBytes("before", change.before); }
+	if (!change.after.isEmpty()) { bytes += attributeBytes("after", change.after); }
 	return bytes;
+}
+
+//! The attributes writeTo puts on a <z:change>: the five it always writes,
+//! then the three it writes only when they have a value. Anything else on the
+//! element is an attribute this writer never emits.
+const char* const s_supportedAttributes[] = {
+	"seq", "at", "actor", "instance", "command", "target", "before", "after"};
+
+//! The attributes whose absence means the entry is not one writeTo produced:
+//! seq (checked separately, as a positive number), and the four it sets
+//! unconditionally - `at`, `actor`, `instance`, `command`.
+bool hasRequiredAttributes(const QDomElement& element)
+{
+	for (const char* required : {"at", "actor", "instance", "command"})
+	{
+		if (!element.hasAttribute(QLatin1String(required))) { return false; }
+	}
+	return true;
+}
+
+//! Every attribute the element carries is one this writer emits. An unknown
+//! attribute would be silently DROPPED on the next save - the rewrite the
+//! append-only rule forbids - so the entry is refused instead.
+bool hasOnlySupportedAttributes(const QDomElement& element)
+{
+	const QDomNamedNodeMap attributes = element.attributes();
+	for (int i = 0; i < attributes.count(); ++i)
+	{
+		const QByteArray name = attributes.item(i).nodeName().toLatin1();
+		if (std::none_of(std::begin(s_supportedAttributes), std::end(s_supportedAttributes),
+			[&name](const char* supported) { return name == supported; }))
+		{
+			return false;
+		}
+	}
+	return true;
+}
+
+//! One <z:change> child as the loader accepts it: an element named exactly
+//! `z:change`, carrying a positive decimal seq, carrying every attribute the
+//! writer always writes and nothing it does not. Anything else is a refusal,
+//! not a guess. Returns false for a child this writer could not have written.
+bool parseChange(const QDomNode& node, provenance::Change& change, quint64& highest)
+{
+	if (!node.isElement() || node.nodeName() != QLatin1String("z:change")) { return false; }
+	const QDomElement element = node.toElement();
+	if (!hasRequiredAttributes(element) || !hasOnlySupportedAttributes(element)) { return false; }
+	bool seqOk = false;
+	const quint64 seq = element.attribute(QStringLiteral("seq")).toULongLong(&seqOk);
+	if (!seqOk || seq == 0) { return false; }
+	change.seq = seq;
+	change.at = element.attribute(QStringLiteral("at"));
+	change.actor = element.attribute(QStringLiteral("actor"));
+	change.instance = element.attribute(QStringLiteral("instance"));
+	change.command = element.attribute(QStringLiteral("command"));
+	change.target = element.attribute(QStringLiteral("target"));
+	change.before = element.attribute(QStringLiteral("before"));
+	change.after = element.attribute(QStringLiteral("after"));
+	highest = qMax(highest, seq);
+	return true;
 }
 
 } // namespace
@@ -201,27 +299,25 @@ bool Section::load(const QDomElement& section)
 	quint64 highest = 0;
 	for (QDomNode node = section.firstChild(); !node.isNull(); node = node.nextSibling())
 	{
-		if (!node.isElement() || node.nodeName() != QLatin1String("z:change")) { return false; }
-		const QDomElement element = node.toElement();
-		bool seqOk = false;
-		const quint64 seq = element.attribute(QStringLiteral("seq")).toULongLong(&seqOk);
-		if (!seqOk || seq == 0) { return false; }
 		Change change;
-		change.seq = seq;
-		change.at = element.attribute(QStringLiteral("at"));
-		change.actor = element.attribute(QStringLiteral("actor"));
-		change.instance = element.attribute(QStringLiteral("instance"));
-		change.command = element.attribute(QStringLiteral("command"));
-		change.target = element.attribute(QStringLiteral("target"));
-		change.before = element.attribute(QStringLiteral("before"));
-		change.after = element.attribute(QStringLiteral("after"));
-		highest = qMax(highest, seq);
+		if (!parseChange(node, change, highest)) { return false; }
+		// STRICTLY ascending, the shape writeTo produces (it assigns
+		// m_nextSeq++ and appends). An entry that does not ascend - or
+		// repeats - was not written by this writer; claiming it would append
+		// a further entry after the break and leave a file its own loader
+		// refuses. Refused, so the caller preserves it verbatim.
+		if (!parsed.isEmpty() && change.seq <= parsed.last().seq) { return false; }
 		parsed.append(change);
 	}
 	// Claim nothing (and preserve the element verbatim as unclaimed) when the
 	// section is empty or any child is foreign: a write-back of a partial or
 	// future-shaped section would be the rewrite the append-only rule forbids.
 	if (parsed.isEmpty()) { return false; }
+	// An exhausted sequence is refused, not wrapped: `highest + 1` at
+	// UINT64_MAX is 0, and the next append would then write seq="0" - which
+	// this same loader rejects as malformed (a seq of zero is refused above).
+	// Claiming the section would leave it in memory unwritable.
+	if (highest == std::numeric_limits<quint64>::max()) { return false; }
 
 	clear();
 	m_changes = parsed;

@@ -471,6 +471,137 @@ private slots:
 		QVERIFY(journal->setMaxUndoStates(ProjectJournal::MAX_UNDO_STATES));
 	}
 
+	//! THE BYTE MEASUREMENT: what the byte bound counts IS the serialised
+	//! entry - names, quoting and markup included, in UTF-8 bytes, exactly as
+	//! control::serialisedRecordBytes measures the transaction journal. A
+	//! Change::bytes that omits the attribute names and the <z:change/> markup
+	//! UNDERCOUNTS what the file carries, so the byte cap does not bound the
+	//! section it claims to bound (ProvenanceSection.h: "serialised size, the
+	//! quantity the byte bound counts"). Measured here against the file: the
+	//! saved element's own byte length, per entry.
+	void theCountedBytesAreTheSerialisedBytesOfTheSavedEntry()
+	{
+		loadProject(m_pristine);
+		{
+			provenance::AgentScope agent;
+			QVERIFY(ControlRegistry::instance()->invoke(QStringLiteral("track.add"),
+				QJsonObject{{QStringLiteral("type"), QStringLiteral("instrument")}}).ok);
+			QVERIFY(ControlRegistry::instance()->invoke(QStringLiteral("clip.add"),
+				QJsonObject{{QStringLiteral("track"), m_trackAddr},
+					{QStringLiteral("position"), 0}, {QStringLiteral("length"), 192}}).ok);
+		}
+
+		const QString path = m_dir.filePath(QStringLiteral("measured.mmp"));
+		QVERIFY(Engine::getSong()->saveProjectFile(path, false));
+
+		// The serialised form of each entry, as the FILE carries it - no
+		// re-serialisation from a DOM, which would measure the test's own
+		// writer instead of the bytes that were written.
+		static const QRegularExpression entry(
+			QStringLiteral("<z:change\\b[^>]*/>"));
+		const QString raw = readFile(path);
+		QStringList serialised;
+		auto it = entry.globalMatch(raw);
+		while (it.hasNext()) { serialised << it.next().captured(); }
+
+		const QList<provenance::Change> held = heldChanges();
+		QVERIFY(!held.isEmpty());
+		QCOMPARE(serialised.size(), held.size());
+		for (int i = 0; i < held.size(); ++i)
+		{
+			QCOMPARE(held.at(i).bytes, serialised.at(i).toUtf8().size());
+		}
+	}
+
+	//! THE SEQUENCE: a loaded section whose highest seq is exhausted must
+	//! NOT wrap the next assignment to zero - `m_nextSeq = highest + 1`
+	//! overflowed, so the next append wrote seq="0", which this same loader
+	//! rejects as malformed (a seq of zero is refused at load). The section
+	//! was claimed and then made unwritable. An exhausted sequence is
+	//! refused instead, claiming nothing.
+	void anExhaustedSequenceIsRefusedRatherThanWrappedToZero()
+	{
+		QDomDocument document;
+		document.setContent(QStringLiteral(
+			"<z:provenance v=\"1\" seq=\"18446744073709551615\">"
+			"<z:change seq=\"18446744073709551614\" at=\"2026-01-01T00:00:00Z\""
+			" actor=\"human\" instance=\"0123abcd-456\" command=\"track.add\"/>"
+			"<z:change seq=\"18446744073709551615\" at=\"2026-01-01T00:00:01Z\""
+			" actor=\"human\" instance=\"0123abcd-456\" command=\"clip.add\"/>"
+			"</z:provenance>"));
+		const QDomElement section = document.documentElement();
+
+		// Nothing was claimed: the section in memory is untouched, so the
+		// caller's preserve-verbatim path keeps the original bytes.
+		const int heldBefore = heldChanges().size();
+		const quint64 lastBefore = provenance::Section::instance().lastSeq();
+		QVERIFY2(!provenance::Section::instance().load(section),
+			"a section whose sequence space is exhausted must be refused, not adopted");
+		QCOMPARE(heldChanges().size(), heldBefore);
+		QCOMPARE(provenance::Section::instance().lastSeq(), lastBefore);
+	}
+
+	//! THE ORDER: entries this writer produced are strictly ascending in seq
+	//! (it assigns m_nextSeq++ and appends), and the section's own `seq` is
+	//! the highest of them (writeTo sets it to lastSeq()). A section whose
+	//! entries descend - 3, 1 - was never written by this writer; claiming it
+	//! would append a further entry after the descent, leaving a file its own
+	//! loader refuses. Such a section is preserved verbatim, not claimed.
+	void anOutOfOrderSectionIsRefusedRatherThanAdopted()
+	{
+		QDomDocument document;
+		document.setContent(QStringLiteral(
+			"<z:provenance v=\"1\" seq=\"3\">"
+			"<z:change seq=\"3\" at=\"2026-01-01T00:00:00Z\" actor=\"human\""
+			" instance=\"0123abcd-456\" command=\"track.add\"/>"
+			"<z:change seq=\"1\" at=\"2026-01-01T00:00:01Z\" actor=\"human\""
+			" instance=\"0123abcd-456\" command=\"clip.add\"/>"
+			"</z:provenance>"));
+		const QDomElement section = document.documentElement();
+
+		const int heldBefore = heldChanges().size();
+		const quint64 lastBefore = provenance::Section::instance().lastSeq();
+		QVERIFY2(!provenance::Section::instance().load(section),
+			"entries that do not ascend in seq must be refused, not adopted");
+		QCOMPARE(heldChanges().size(), heldBefore);
+		QCOMPARE(provenance::Section::instance().lastSeq(), lastBefore);
+	}
+
+	//! THE ENTRY SCHEMA: the writer emits exactly seq, at, actor, instance,
+	//! command and the three optional digests/target - nothing else, and the
+	//! first five always. An entry carrying an unknown attribute, or missing
+	//! one of the four the writer always writes, is a shape this writer never
+	//! produced: claiming it and rewriting it on the next save would DROP
+	//! that attribute - the rewrite the append-only rule forbids. Such a
+	//! section is preserved verbatim, not claimed.
+	void anEntryWithAnUnknownAttributeOrAMissingFieldIsRefused()
+	{
+		const QString shape = QStringLiteral(
+			"<z:change %1 at=\"2026-01-01T00:00:00Z\" actor=\"human\""
+			" instance=\"0123abcd-456\" command=\"track.add\" target=\"trk-1\"/>");
+		const QString sectionAround = QStringLiteral(
+			"<z:provenance v=\"1\" seq=\"1\">%1</z:provenance>");
+
+		auto refuses = [this, &sectionAround](const QString& entry, const char* why) {
+			QDomDocument document;
+			document.setContent(sectionAround.arg(entry));
+			const int heldBefore = heldChanges().size();
+			const quint64 lastBefore = provenance::Section::instance().lastSeq();
+			QVERIFY2(!provenance::Section::instance().load(document.documentElement()), why);
+			QCOMPARE(heldChanges().size(), heldBefore);
+			QCOMPARE(provenance::Section::instance().lastSeq(), lastBefore);
+		};
+
+		refuses(shape.arg(QStringLiteral("seq=\"1\" extra=\"data\"")),
+			"an entry with an unrecognized attribute must be refused, not rewritten without it");
+		refuses(shape.arg(QString()), "an entry with no seq is already refused");
+		// A missing required field, spelled by hand since the shape above
+		// always carries all four.
+		refuses(QStringLiteral("<z:change seq=\"1\" at=\"2026-01-01T00:00:00Z\""
+				" actor=\"human\" instance=\"0123abcd-456\"/>"),
+			"an entry with no command must be refused, not rewritten with an empty one");
+	}
+
 	//! THE ACTOR: a session KIND, never a person (1.9: "not a credential, not
 	//! a user identity - the file must be shareable"). Outside a socket scope
 	//! the attribution is "human"; the instance is the same non-identifying

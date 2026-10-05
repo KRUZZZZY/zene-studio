@@ -37,6 +37,7 @@
 
 #include <QJsonArray>
 #include <QJsonObject>
+#include <algorithm>
 #include <memory>
 #include <utility>
 #include <vector>
@@ -114,6 +115,11 @@ ControlResult saveSet(const QJsonObject& args)
 		ControlResult error;
 		Track* track = control::resolveTrack(value.toString(), &error);
 		if (track == nullptr) { return error; }
+		// A set is a SET, so naming one track twice still names it ONCE: the stored
+		// definition, the `track_count` this reply reports and the shown/hidden counts
+		// track.visibility_set_apply derives from it all count MEMBERS, and a repeated
+		// id would make one track read as two of them.
+		if (std::find(ids.begin(), ids.end(), track->id()) != ids.end()) { continue; }
 		ids.push_back(track->id());
 		listed.append(control::trackIdOf(track));
 	}
@@ -140,19 +146,28 @@ ControlResult saveSet(const QJsonObject& args)
 	result.insert(QStringLiteral("tracks"), listed);
 	result.insert(QStringLiteral("track_count"), static_cast<int>(ids.size()));
 	result.insert(QStringLiteral("replaced"), existed);
+	// The inverse REPORTED to clients is one they can replay: the same call with
+	// the definition captured before this write, when there was one - and
+	// track.visibility_set_remove when this save CREATED the set, because writing
+	// an empty definition back would leave an empty set rather than the absence
+	// the call found.
 	result.insert(QStringLiteral("__transaction"),
 		control::transactionPayload(
 			QJsonObject{{QStringLiteral("name"), name},
 				{QStringLiteral("existed"), existed},
 				{QStringLiteral("tracks"), idList(previousIds)}},
-			QStringLiteral("track.visibility_set_save"),
-			QJsonObject{{QStringLiteral("name"), name},
-				{QStringLiteral("tracks"), idList(previousIds)}},
+			existed ? QStringLiteral("track.visibility_set_save")
+				: QStringLiteral("track.visibility_set_remove"),
+			existed ? QJsonObject{{QStringLiteral("name"), name},
+					{QStringLiteral("tracks"), idList(previousIds)}}
+				: QJsonObject{{QStringLiteral("name"), name}},
 			true,
 			QStringLiteral("action checkpoint: the recorded undo step writes the definition "
 				"captured before the write back through the same call (and removes the set "
 				"again when there was none), so one control.undo restores the named set "
-				"exactly")));
+				"exactly. The inverse REPORTED here is that same restore as a command: the "
+				"capture through the same call when this save replaced a set, "
+				"track.visibility_set_remove when it created one")));
 	return ControlResult::success(result);
 }
 
@@ -206,13 +221,15 @@ ControlResult applySet(const QJsonObject& args)
 		control::transactionPayload(
 			QJsonObject{{QStringLiteral("name"), name},
 				{QStringLiteral("active_before"), previousActive}},
-			QStringLiteral("track.visibility_set_apply"),
-			QJsonObject{{QStringLiteral("active_before"), previousActive}},
+			QStringLiteral("control.undo"),
+			{},
 			true,
 			QStringLiteral("action checkpoint: the recorded undo step writes every track's "
 				"captured visible flag and the previous active name back, because one apply "
 				"changes the flag of EVERY track of the song and only the members' are in the "
-				"set. `visible` is a view flag: it mutes nothing and changes no render")));
+				"set. The inverse REPORTED here is that step as control.undo: no single command "
+				"puts many flags back. `visible` is a view flag: it mutes nothing and changes "
+				"no render")));
 	return ControlResult::success(result);
 }
 
@@ -245,11 +262,13 @@ ControlResult showAll(const QJsonObject&)
 	result.insert(QStringLiteral("__transaction"),
 		control::transactionPayload(
 			QJsonObject{{QStringLiteral("active_before"), previousActive}},
-			QStringLiteral("track.visibility_show_all"),
-			QJsonObject{{QStringLiteral("active_before"), previousActive}},
+			QStringLiteral("control.undo"),
+			{},
 			true,
 			QStringLiteral("action checkpoint: the recorded undo step writes every track's captured "
-				"visible flag and the previous active name back, as for track.visibility_set_apply")));
+				"visible flag and the previous active name back, as for track.visibility_set_apply. "
+				"The inverse REPORTED here is that step as control.undo: showing every track is "
+				"not undone by showing every track again")));
 	return ControlResult::success(result);
 }
 
@@ -290,15 +309,24 @@ ControlResult removeSet(const QJsonObject& args)
 		control::transactionPayload(
 			QJsonObject{{QStringLiteral("name"), name},
 				{QStringLiteral("tracks"), idList(ids)}},
-			QStringLiteral("track.visibility_set_remove"),
-			QJsonObject{{QStringLiteral("name"), name},
-				{QStringLiteral("tracks"), idList(ids)}},
+			// The inverse REPORTED to clients is one they can replay. It is NOT this
+			// command: the set is already gone, so replaying it refuses on the missing
+			// name and restores nothing. Writing the captured definition back through
+			// the same call restores it - but only the definition, so a set that was the
+			// ACTIVE one (whose name the removal cleared) needs the recorded step, which
+			// restores both facts as one action.
+		wasActive ? QStringLiteral("control.undo") : QStringLiteral("track.visibility_set_save"),
+			wasActive ? QJsonObject{}
+				: QJsonObject{{QStringLiteral("name"), name},
+					{QStringLiteral("tracks"), idList(ids)}},
 			true,
 			QStringLiteral("action checkpoint: the recorded undo step writes the captured "
 				"definition back through the same call, so one control.undo restores the set "
 				"and, when it was the active one, that fact too. The tracks' own visible flags "
 				"are deliberately NOT touched in either direction: a set is a saved selection "
-				"over them")));
+				"over them. The inverse REPORTED here is that restore as a command - "
+				"track.visibility_set_save with the captured name and tracks, or control.undo "
+				"when the set was the active one, since only the step puts that fact back")));
 	return ControlResult::success(result);
 }
 

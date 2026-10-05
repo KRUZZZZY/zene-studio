@@ -48,6 +48,7 @@
 #include "ProjectIds.h"
 #include "SampleTrack.h"
 #include "TrackContainer.h" // For TrackContainer::TrackList typedef
+#include "TrackFolder.h"
 
 namespace lmms
 {
@@ -1122,6 +1123,17 @@ void Mixer::deleteChannel( int index )
 	auto& patternStoreTracks = Engine::patternStore()->tracks();
 	tracks.insert(tracks.end(), songTracks.begin(), songTracks.end());
 	tracks.insert(tracks.end(), patternStoreTracks.begin(), patternStoreTracks.end());
+
+	// A routing folder's OWN mixer channel is an index into the same vector the
+	// track walk below renumbers, so the folders are told FIRST: one whose channel
+	// was the deleted one gives its children back to their own channels before the
+	// walk can send them to master, and the folders above it follow the index down
+	// instead of keeping one that now names somebody else's strip.
+	for( Track* t : tracks )
+	{
+		if( t->type() != Track::Type::Folder ) { continue; }
+		dynamic_cast<TrackFolder*>( t )->channelDeleted( index );
+	}
 
 	for( Track* t : tracks )
 	{

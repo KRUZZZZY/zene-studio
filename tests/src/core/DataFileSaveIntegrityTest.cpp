@@ -33,6 +33,7 @@
 
 #include "ConfigManager.h"
 #include "DataFile.h"
+#include "XmlDepthGuard.h"
 
 using namespace lmms;
 
@@ -49,6 +50,15 @@ bool writeText( const QString& path, const QString& text )
 	return file.write( text.toUtf8() ) >= 0;
 }
 
+bool writeBytes( const QString& path, const QByteArray& bytes )
+{
+	QFile file( path );
+	if( !file.open( QIODevice::WriteOnly | QIODevice::Truncate ) )
+	{
+		return false;
+	}
+	return file.write( bytes ) == bytes.size();
+}
 
 QString readText( const QString& path )
 {
@@ -509,6 +519,132 @@ private slots:
 				.arg( report ) ) );
 		QVERIFY2( !QFile::exists( temp ), "the truncated .new was not discarded" );
 		// The canonical file is untouched by the discard.
+		QCOMPARE( readText( target ), oldText );
+	}
+
+	//! A .new that PARSES is not yet a document: <not-a-project/> parses and has
+	//! a root element, but it is not a Zene or legacy LMMS document at all. The
+	//! recovery renames the temp over the project, so adopting it would replace
+	//! a perfectly good project with unrelated XML. Only a recognized root, a
+	//! recognized type and the content element that type names may be adopted.
+	void unrelatedXmlNewFileIsNotAdopted()
+	{
+		qunsetenv( "ZENE_TEST_SAVE_FAULT" );
+		QTemporaryDir dir;
+		QVERIFY( dir.isValid() );
+
+		const QString target = dir.filePath( QStringLiteral( "song.mmp" ) );
+		const QString temp = target + QStringLiteral( ".new" );
+
+		DataFile first( DataFile::Type::SongProject );
+		first.content().setAttribute( "s5probe", "old" );
+		QVERIFY( first.writeFile( target ) );
+		const QString oldText = readText( target );
+
+		// Complete, well-formed XML - of something that is not a project.
+		QVERIFY( writeText( temp, QStringLiteral( "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
+			"<not-a-project probe=\"unrelated\"/>\n" ) ) );
+
+		QString report;
+		QString probe;
+		{
+			MessageRecorder recorder;
+			DataFile loaded( target );
+			report = recorder.messages();
+			probe = loaded.content().attribute( QStringLiteral( "s5probe" ) );
+		}
+
+		QVERIFY2( report.contains( QStringLiteral( "Discarded incomplete" ) ),
+			qPrintable( QStringLiteral( "an unrelated .new was adopted; captured: [%1]" ).arg( report ) ) );
+		QVERIFY2( !QFile::exists( temp ), "the unrelated .new was not discarded" );
+		// The valid project is still the project.
+		QCOMPARE( probe, QStringLiteral( "old" ) );
+		QCOMPARE( readText( target ), oldText );
+	}
+
+	//! The recovery parses the temp before the guarded project load does, so a
+	//! deeply nested - but well-formed and complete - .new used to be adopted
+	//! with no depth guard at all. Both parses now carry the same limit, so such
+	//! a temp is discarded with the ordinary report and the project stands.
+	void deeplyNestedNewFileIsRefusedBeforeParsing()
+	{
+		qunsetenv( "ZENE_TEST_SAVE_FAULT" );
+		QTemporaryDir dir;
+		QVERIFY( dir.isValid() );
+
+		const QString target = dir.filePath( QStringLiteral( "song.mmp" ) );
+		const QString temp = target + QStringLiteral( ".new" );
+
+		DataFile first( DataFile::Type::SongProject );
+		first.content().setAttribute( "s5probe", "old" );
+		QVERIFY( first.writeFile( target ) );
+		const QString oldText = readText( target );
+
+		QString nested = QStringLiteral(
+			"<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
+			"<zene-project version=\"40\" type=\"song\"><head/><song>" );
+		for( int i = 0; i < MaxProjectXmlDepth + 16; ++i ) { nested += QStringLiteral( "<x>" ); }
+		for( int i = 0; i < MaxProjectXmlDepth + 16; ++i ) { nested += QStringLiteral( "</x>" ); }
+		nested += QStringLiteral( "</song></zene-project>\n" );
+		QVERIFY( writeText( temp, nested ) );
+
+		QString report;
+		QString probe;
+		{
+			MessageRecorder recorder;
+			DataFile loaded( target );
+			report = recorder.messages();
+			probe = loaded.content().attribute( QStringLiteral( "s5probe" ) );
+		}
+
+		QVERIFY2( report.contains( QStringLiteral( "Discarded incomplete" ) ),
+			qPrintable( QStringLiteral( "a deeply nested .new was adopted; captured: [%1]" ).arg( report ) ) );
+		QVERIFY2( !QFile::exists( temp ), "the deeply nested .new was not discarded" );
+		QCOMPARE( probe, QStringLiteral( "old" ) );
+		QCOMPARE( readText( target ), oldText );
+	}
+
+	//! A compressed temp carries its uncompressed size in a 4-byte header, and
+	//! qUncompress allocates EXACTLY what that header claims before it looks at
+	//! a single compressed byte. A few-byte .new claiming a gigabyte was
+	//! therefore allocated on open. The claim is now checked against the
+	//! recovery limit first, and the refusal says so - the temp is left in place
+	//! rather than destroyed, since it was never validated.
+	void newFileDeclaringAnEnormousSizeIsRefusedBeforeDecompressing()
+	{
+		qunsetenv( "ZENE_TEST_SAVE_FAULT" );
+		QTemporaryDir dir;
+		QVERIFY( dir.isValid() );
+
+		const QString target = dir.filePath( QStringLiteral( "song.mmp" ) );
+		const QString temp = target + QStringLiteral( ".new" );
+
+		DataFile first( DataFile::Type::SongProject );
+		first.content().setAttribute( "s5probe", "old" );
+		QVERIFY( first.writeFile( target ) );
+		const QString oldText = readText( target );
+
+		// A genuine qCompress stream whose 4-byte size header is rewritten to
+		// claim a gigabyte: small on disk, enormous as declared.
+		QByteArray crafted = qCompress( QByteArrayLiteral(
+			"<?xml version=\"1.0\"?>\n<zene-project version=\"40\" type=\"song\">"
+			"<head/><song><trackcontainer type=\"song\"/></song></zene-project>\n" ) );
+		QVERIFY( crafted.size() > 4 );
+		crafted.replace( 0, 4, QByteArray::fromRawData( "\x40\x00\x00\x00", 4 ) );
+		QVERIFY( writeBytes( temp, crafted ) );
+
+		QString report;
+		QString probe;
+		{
+			MessageRecorder recorder;
+			DataFile loaded( target );
+			report = recorder.messages();
+			probe = loaded.content().attribute( QStringLiteral( "s5probe" ) );
+		}
+
+		QVERIFY2( report.contains( QStringLiteral( "Refused an oversized" ) ),
+			qPrintable( QStringLiteral( "the declared size was not checked; captured: [%1]" ).arg( report ) ) );
+		QCOMPARE( probe, QStringLiteral( "old" ) );  // the valid project stands
 		QCOMPARE( readText( target ), oldText );
 	}
 };

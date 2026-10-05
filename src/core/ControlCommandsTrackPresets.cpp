@@ -77,7 +77,14 @@ ControlResult presetLoad(const QJsonObject& args)
 	if (!QFileInfo(path).isFile()) { return ControlResult::failure(ControlErrorKind::NotFound, QStringLiteral("no preset file '%1'").arg(path)); }
 	DataFile file(path);
 	const QDomElement content = file.content();
-	if (content.attribute(QStringLiteral("type")).toInt() != static_cast<int>(track->type()))
+	// The track type this check reads has to HAVE parsed: toInt() answers 0 for
+	// a missing or nonnumeric attribute, and 0 is the instrument track's own
+	// type - so a malformed preset used to pass the check for an instrument
+	// track and be loaded. A file whose content element did not resolve at all
+	// is refused here too, before any undo step is added.
+	bool typeParsed = false;
+	const int presetType = content.attribute(QStringLiteral("type")).toInt(&typeParsed);
+	if (content.isNull() || !typeParsed || presetType != static_cast<int>(track->type()))
 	{
 		return ControlResult::failure(ControlErrorKind::Refused, QStringLiteral("the preset is for another kind of track"));
 	}
