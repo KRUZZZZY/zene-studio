@@ -183,6 +183,13 @@ bool MidiClock::setMasterEnabled(bool enabled, const QString& port, QString* err
 	}
 	if (!port.isEmpty())
 	{
+		// Naming a new destination is not enough: the port that was there before
+		// keeps its subscription until it is taken away, so a switched clock
+		// would keep reaching the old destination as well. Unsubscribe it first.
+		if (!m_masterPort.isEmpty() && m_masterPort != port)
+		{
+			output->subscribeWritablePort(m_masterPort, false);
+		}
 		output->subscribeWritablePort(port);
 		m_masterPort = port;
 	}
@@ -194,6 +201,15 @@ bool MidiClock::setMasterEnabled(bool enabled, const QString& port, QString* err
 QString MidiClock::masterPort() const
 {
 	return m_masterPort;
+}
+
+bool MidiClock::masterSubscribedTo(const QString& port) const
+{
+	MidiPort* output = m_outputPort.load();
+	if (output == nullptr) { return false; }
+	const MidiPort::Map& writable = output->writablePorts();
+	auto it = writable.constFind(port);
+	return it != writable.constEnd() && it.value();
 }
 
 void MidiClock::restoreMaster(bool enabled, const QString& port)

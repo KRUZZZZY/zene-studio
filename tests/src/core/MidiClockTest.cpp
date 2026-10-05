@@ -405,6 +405,49 @@ private slots:
 		QCOMPARE(clock->emittedTotal(), afterStop);
 	}
 
+	//! LUNA 4241: A SWITCHED DESTINATION IS A SWITCH, not a second subscription.
+	//! Naming port B used to leave port A subscribed, so a clock the user had
+	//! moved off A kept reaching A. The unsubscribe is what makes the setting mean
+	//! what it says, and undo restores both halves of it.
+	void changingTheClockDestinationUnsubscribesTheOldOne()
+	{
+		MidiClock* clock = MidiClock::instance();
+		QString error;
+		QVERIFY2(clock->setMasterEnabled(true, QStringLiteral("zene-a"),
+			&error), qPrintable(error));
+		QVERIFY2(clock->masterSubscribedTo(QStringLiteral("zene-a")),
+			"the named destination must actually be subscribed");
+
+		// The switch: B is added and A must STOP receiving.
+		QVERIFY2(clock->setMasterEnabled(true, QStringLiteral("zene-b"),
+			&error), qPrintable(error));
+		QCOMPARE(clock->masterPort(), QStringLiteral("zene-b"));
+		QVERIFY2(clock->masterSubscribedTo(QStringLiteral("zene-b")),
+			"the new destination must be subscribed");
+		QVERIFY2(!clock->masterSubscribedTo(QStringLiteral("zene-a")),
+			"the previous destination must be unsubscribed: a switched clock that "
+			"still reaches the old port is not switched");
+
+		// Naming the port it is already on is not a change and must not drop it.
+		QVERIFY2(clock->setMasterEnabled(true, QStringLiteral("zene-b"),
+			&error), qPrintable(error));
+		QVERIFY2(clock->masterSubscribedTo(QStringLiteral("zene-b")),
+			"re-naming the current destination must keep it subscribed");
+
+		// Undo: restoring the before-state must bring the old subscription back and
+		// take the new one away - the exact inverse of the switch above.
+		clock->restoreMaster(true, QStringLiteral("zene-a"));
+		QVERIFY2(clock->masterSubscribedTo(QStringLiteral("zene-a")),
+			"the restored destination must be subscribed");
+		QVERIFY2(!clock->masterSubscribedTo(QStringLiteral("zene-b")),
+			"the destination undo moved away from must be unsubscribed");
+
+		// Undoing back to no destination at all unsubscribes everything.
+		clock->restoreMaster(true, QString());
+		QVERIFY2(!clock->masterSubscribedTo(QStringLiteral("zene-a")),
+			"restoring an empty destination must leave nothing subscribed");
+	}
+
 	// ------------------------------------------------------------------ slave
 
 	//! THE FOLLOWER WRITES THE SONG'S TEMPO, and only when it has a lock. This is
