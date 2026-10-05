@@ -343,7 +343,13 @@ ControlResult removeLayerZone(InstrumentTrack* track, const QString& id)
 	QJsonObject result = layersState(track);
 	result.insert(QStringLiteral("removed"), zoneId(index));
 	result.insert(QStringLiteral("__transaction"), transactionPayload(layerZoneJson(zone, index),
-		QStringLiteral("rack.layer_zone_add"), QJsonObject{{QStringLiteral("target"), trackIdText}}, true,
+		QStringLiteral("rack.layer_zone_add"),
+		QJsonObject{{QStringLiteral("target"), trackIdText},
+			{QStringLiteral("layer"), layerId(zone.chain)},
+			{QStringLiteral("low_key"), zone.lowKey},
+			{QStringLiteral("high_key"), zone.highKey},
+			{QStringLiteral("low_velocity"), zone.lowVelocity},
+			{QStringLiteral("high_velocity"), zone.highVelocity}}, true,
 		QStringLiteral("action checkpoint: the recorded undo step re-inserts the captured zone at its own index")));
 	return ControlResult::success(result);
 }
