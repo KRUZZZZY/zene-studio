@@ -94,23 +94,54 @@ struct Edit
 	QJsonObject values;
 };
 
+//! Whether @a key is an editable field (or the entry's own note selector).
+bool isEditField(const QString& key)
+{
+	if (key == QLatin1String("note")) { return true; }
+	for (const Field& field : kFields)
+	{
+		if (key == QLatin1String(field.name)) { return true; }
+	}
+	return false;
+}
+
+//! Reject a key that names no editable field: a misspelled field beside a valid one used
+//! to be silently dropped while the command reported success.
+bool checkEditKeys(const QJsonObject& entry, int index, ControlResult* error)
+{
+	for (auto it = entry.begin(); it != entry.end(); ++it)
+	{
+		if (isEditField(it.key())) { continue; }
+		*error = ControlResult::failure(ControlErrorKind::InvalidArgs,
+			QStringLiteral("edits[%1].%2 is not an editable note field").arg(index).arg(it.key()));
+		return false;
+	}
+	return true;
+}
+
+//! One field's value must be a number inside the field's closed range (a whole number
+//! unless the field takes a fraction), never clamped.
+bool checkFieldValue(const Field& field, const QJsonValue& value, int index, ControlResult* error)
+{
+	const double v = value.toDouble();
+	if (value.isDouble() && v >= field.minimum && v <= field.maximum && (field.fraction || v == std::floor(v))) { return true; }
+	*error = ControlResult::failure(ControlErrorKind::InvalidArgs,
+		QStringLiteral("edits[%1].%2 must be a %5 in [%3, %4]")
+			.arg(index).arg(QLatin1String(field.name)).arg(field.minimum).arg(field.maximum)
+			.arg(field.fraction ? QStringLiteral("number") : QStringLiteral("whole number")));
+	return false;
+}
+
 bool checkEditValues(const QJsonObject& entry, int index, ControlResult* error)
 {
+	if (!checkEditKeys(entry, index, error)) { return false; }
 	int fields = 0;
 	for (const Field& field : kFields)
 	{
 		const QJsonValue value = entry.value(QLatin1String(field.name));
 		if (value.isUndefined()) { continue; }
 		++fields;
-		const double v = value.toDouble();
-		if (!value.isDouble() || v < field.minimum || v > field.maximum || (!field.fraction && v != std::floor(v)))
-		{
-			*error = ControlResult::failure(ControlErrorKind::InvalidArgs,
-				QStringLiteral("edits[%1].%2 must be a %5 in [%3, %4]")
-					.arg(index).arg(QLatin1String(field.name)).arg(field.minimum).arg(field.maximum)
-					.arg(field.fraction ? QStringLiteral("number") : QStringLiteral("whole number")));
-			return false;
-		}
+		if (!checkFieldValue(field, value, index, error)) { return false; }
 	}
 	if (fields == 0)
 	{
