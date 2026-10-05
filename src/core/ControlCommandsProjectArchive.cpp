@@ -389,11 +389,12 @@ void registerProjectRelink(ControlRegistry& registry)
 				{QStringLiteral("previous_content"), QString::fromUtf8(previous.left(
 					ControlSnapshotLimit))},
 				{QStringLiteral("previous_truncated"), previous.size() > ControlSnapshotLimit}},
-			QStringLiteral("project.relink"),
-			QJsonObject{{QStringLiteral("project"), project},
-				{QStringLiteral("note"), QStringLiteral("a relink is undone through "
-					"control.undo, which restores the file's previous bytes; a project that "
-					"needs its media moved instead is the portable bundle (Bar 3)")}},
+			// The inverse IS the action checkpoint recorded above, so it is
+			// advertised as the one command that replays it. Naming
+			// project.relink here advertised a command that requires `from` and
+			// `to`, which this payload does not carry, so a client replaying the
+			// inverse it was handed was refused as InvalidArgs.
+			QStringLiteral("control.undo"), {},
 			true, QString::fromLatin1(kRelinkMechanism)));
 		return ControlResult::success(result);
 	};
