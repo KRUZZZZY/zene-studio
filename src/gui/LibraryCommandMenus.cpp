@@ -24,6 +24,7 @@
 
 #include "LibraryCommandMenus.h"
 
+#include <QActionGroup>
 #include <QFileInfo>
 #include <QJsonArray>
 #include <QMenu>
@@ -96,12 +97,17 @@ std::function<QJsonObject()> current(const char* id, const QString& dropped = {}
 void documentTypeMenu(QMenu* menu)
 {
 	QMenu* types = menu->addMenu(tr("Document Type"));
+	// A document has ONE type, so the items are exclusive: choosing one unticks the one it replaces,
+	// and choosing the type that is already chosen leaves it ticked instead of clearing it.
+	auto* exclusive = new QActionGroup(types);
+	exclusive->setExclusive(true);
 	const QString now = ProjectInfo::instance().documentType();
 	for (const QString& type : ProjectInfo::documentTypes())
 	{
 		QAction* action = types->addAction(type);
 		action->setCheckable(true);
 		action->setChecked(type == now);
+		exclusive->addAction(action);
 		action->setProperty("controlCommand", QStringLiteral("project.settings"));
 		QObject::connect(action, &QAction::triggered, menu, [type] {
 			if (run(QStringLiteral("project.settings"), {{QStringLiteral("document_type"), type}}).ok) { applyDocumentType(type); }

@@ -47,6 +47,7 @@
 #include "Engine.h"
 #include "LibraryCommandMenus.h"
 #include "MenuTestSupport.h"
+#include "ProjectInfo.h"
 #include "SampleTrack.h"
 #include "SideBarWidget.h"
 #include "Song.h"
@@ -128,6 +129,40 @@ private slots:
 		}
 		QVERIFY(lmms::test::menuAction(&menu, {QStringLiteral("New Document"), QStringLiteral("Mastering")}) != nullptr);
 		QVERIFY(lmms::test::menuAction(&menu, {QStringLiteral("Other Projects"), QStringLiteral("Open as Reference...")}) != nullptr);
+	}
+
+	void theDocumentTypeMenuTicksOneTypeAtATime()  // 0.5.0 F3: WF-048 - the items are exclusive
+	{
+		QMenu menu;
+		LibraryCommandMenus::populateProject(&menu);
+		const QStringList every = ProjectInfo::documentTypes();
+		QVERIFY(every.size() >= 2);
+		QMenu* types = nullptr;
+		for (QAction* action : menu.actions())
+		{
+			if (action->menu() != nullptr && action->text() == QObject::tr("Document Type")) { types = action->menu(); }
+		}
+		QVERIFY(types != nullptr);
+
+		// The document's own type, and no other, is ticked.
+		const auto ticked = [types] {
+			QStringList on;
+			for (QAction* action : types->actions())
+			{
+				if (action->isCheckable() && action->isChecked()) { on << action->text(); }
+			}
+			return on;
+		};
+		QCOMPARE(ticked(), QStringList{ProjectInfo::instance().documentType()});
+
+		const QString other = every.contains(QStringLiteral("mastering")) ? QStringLiteral("mastering") : every.at(1);
+		QAction* chosen = lmms::test::menuAction(&menu, {QObject::tr("Document Type"), other});
+		QVERIFY(chosen != nullptr);
+		chosen->trigger();
+		QCOMPARE(ticked(), QStringList{other});  // choosing a type unticks the one it replaced
+
+		chosen->trigger();  // choosing the type already chosen leaves it ticked
+		QCOMPARE(ticked(), QStringList{other});
 	}
 
 	void theTitleNamesANonDefaultDocumentType()  // 0.5.0 F3: WF-048 (production, the default, is untagged)
