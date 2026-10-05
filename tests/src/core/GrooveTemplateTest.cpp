@@ -72,21 +72,25 @@ private slots:
 		QVERIFY(groove.valid());
 		QCOMPARE(groove.slotCount(), 4);
 		QVERIFY(groove.neutral());
-		// Half a slot is the largest timing offset a step may carry: past it a
-		// note would belong to a different slot, which is a rearrangement. A
-		// velocity is a velocity, so the only "smaller than 0" it knows is the
-		// explicit "no opinion".
-		QVERIFY(groove.setStep(0, GrooveStep{6, 200}));
+		// HALF a slot is one tick too far: it is the boundary between two slots,
+		// and a note standing on it is read back into the NEXT one, so a step of
+		// half a slot would carry its notes out of their own slot (the reason is
+		// proved in aStepCannotReachHalfItsSlot). A slot less one tick is the
+		// largest timing offset a step may carry - past it a note would belong to
+		// a different slot, which is a rearrangement. A velocity is a velocity,
+		// so the only "smaller than 0" it knows is the explicit "no opinion".
+		QVERIFY(groove.setStep(0, GrooveStep{5, 200}));
+		QVERIFY(!groove.setStep(0, GrooveStep{6, 0}));     // exactly half a slot
 		QVERIFY(!groove.setStep(0, GrooveStep{7, 0}));
 		QVERIFY(!groove.setStep(0, GrooveStep{0, static_cast<int>(MaxVolume) + 1}));
 		QVERIFY(!groove.setStep(0, GrooveStep{0, -2}));
 		QVERIFY(!groove.setStep(4, GrooveStep{0, 0}));
-		QCOMPARE(groove.step(0), (GrooveStep{6, 200}));   // the refused writes did nothing
+		QCOMPARE(groove.step(0), (GrooveStep{5, 200}));   // the refused writes did nothing
 		QVERIFY(!groove.neutral());
 		QVERIFY(groove.setStep(0, GrooveStep{0, GrooveStep::NoVelocityOpinion}));
 		QVERIFY(groove.step(0).neutral());
-		QVERIFY(groove.setStep(0, GrooveStep{6, 200}));
-		QVERIFY(groove.step(0) == (GrooveStep{6, 200}));
+		QVERIFY(groove.setStep(0, GrooveStep{5, 200}));
+		QVERIFY(groove.step(0) == (GrooveStep{5, 200}));
 	}
 
 	/*! THE EXTRACTION RULE. Each slot's step is the MEAN signed deviation of

@@ -43,11 +43,11 @@ namespace lmms
 
 /*! One groove step: what the groove does to a note that lands in its slot.
  *
- *  `timing` is a signed offset in TICKS, bounded by half the slot width
- *  (see GrooveTemplate::setStep). The bound is what makes a groove a *feel*
- *  rather than a rearrangement: a note is never moved so far that it belongs
- *  to a different slot, so the slot a note is read back into is the slot it
- *  was written into.
+ *  `timing` is a signed offset in TICKS, bounded to strictly less than half the
+ *  slot width (see GrooveTemplate::setStep). The bound is what makes a groove a
+ *  *feel* rather than a rearrangement: a note is never moved so far that it
+ *  belongs to a different slot, so the slot a note is read back into is the slot
+ *  it was written into.
  *
  *  `velocity` is the velocity the slot is GIVEN, on the engine's own note
  *  volume (volume_t, 0..200 - see volume.h), or `NoVelocityOpinion` (-1) for a
@@ -163,9 +163,12 @@ public:
 	//! The step of \a slot, or a neutral step outside 0..slotCount()-1.
 	GrooveStep step(int slot) const;
 	/*! Writes one step. False - and nothing changes - when \a slot is out of
-	 *  range, when |timing| exceeds half the slot width, or when \a velocity is
-	 *  neither GrooveStep::NoVelocityOpinion nor inside the engine's own volume
-	 *  range (a velocity is a velocity, so a smaller one is not a negative one). */
+	 *  range, when |timing| REACHES half the slot width (half a slot is the
+	 *  boundary between two slots, which the nearest-slot rule gives to the next
+	 *  one, so a shift of exactly half would carry a note out of its own slot),
+	 *  or when \a velocity is neither GrooveStep::NoVelocityOpinion nor inside
+	 *  the engine's own volume range (a velocity is a velocity, so a smaller one
+	 *  is not a negative one). */
 	bool setStep(int slot, const GrooveStep& value);
 
 	//! The step that governs a note at \a pos: the slot \a pos falls in, modulo

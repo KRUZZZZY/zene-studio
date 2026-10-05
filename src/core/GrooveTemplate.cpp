@@ -147,8 +147,17 @@ GrooveStep GrooveTemplate::step(int slot) const
 bool GrooveTemplate::setStep(int slot, const GrooveStep& value)
 {
 	if (slot < 0 || slot >= m_slotCount) { return false; }
+	// STRICTLY inside half the slot, not merely within it. Exactly half a slot
+	// is the BOUNDARY between two slots, and a note sitting on the boundary is
+	// read back into the NEXT one (absoluteSlotOf rounds the half up), so a
+	// shift of exactly half a slot would carry every note of that slot one slot
+	// along - and a second application would carry it one more. A slot one tick
+	// is the most a step may reach: a step that shifted a note into the next
+	// slot would be a rearrangement, not a feel.
 	// Both bounds, not std::abs: |INT_MIN| is not representable, so abs() of a loaded one is UB.
-	if (value.timing < -(m_stepTicks / 2) || value.timing > m_stepTicks / 2) { return false; }
+	const tick_t half = m_stepTicks / 2;
+	if (half > 0 ? (value.timing <= -half || value.timing >= half) : value.timing != 0)
+	{ return false; }
 	const bool noOpinion = value.velocity == GrooveStep::NoVelocityOpinion;
 	if (!noOpinion && (value.velocity < static_cast<int>(MinVolume)
 		|| value.velocity > static_cast<int>(MaxVolume))) { return false; }
@@ -305,10 +314,17 @@ bool writeSlot(GrooveTemplate* out, int slot, const SlotSums& sums, tick_t stepT
 {
 	if (sums.counts[static_cast<std::size_t>(slot)] == 0) { return true; }
 	GrooveStep value;
+	// The same STRICT half a slot setStep accepts (see it): the clamp stops one
+	// tick short of the boundary, because a note reading its own slot is what
+	// makes the groove a fixed point. Clamping to the boundary instead would
+	// produce a step the template refuses, and a refused step falls back to the
+	// neutral one - so an extracted groove whose notes all sit exactly on the
+	// boundary would capture NO feel at all.
 	const int half = static_cast<int>(stepTicks / 2);
+	const int reach = half > 0 ? half - 1 : 0;
 	value.timing = static_cast<tick_t>(std::clamp(
 		roundedMean(sums.timing[static_cast<std::size_t>(slot)],
-			sums.counts[static_cast<std::size_t>(slot)]), -half, half));
+			sums.counts[static_cast<std::size_t>(slot)]), -reach, reach));
 	value.velocity = roundedMean(sums.velocity[static_cast<std::size_t>(slot)],
 		sums.counts[static_cast<std::size_t>(slot)]);
 	if (out->setStep(slot, value)) { return true; }
