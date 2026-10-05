@@ -52,6 +52,10 @@ public:
 
 private:
 	Instrument* m_instrument;
+	//! The track this handle plays for, recorded at construction so isFromTrack()
+	//! can answer without dereferencing m_instrument, which may already be deleted
+	//! when AudioEngine::removePlayHandlesOfTypes() sweeps the handle.
+	InstrumentTrack* m_instrumentTrack;
 };
 
 } // namespace lmms
