@@ -1,0 +1,4 @@
+1/2 Test  #23: ControlAutomationModesTest .......***Failed    1.43 sec
+FAIL!  : ControlAutomationModesTest::trimAndAPointMove() 'moved.ok' returned FALSE. (inst/0 already has a point at 192)
+2/2 Test #361: ControlMidiReconnect .............   Passed   11.59 sec
+50% tests passed, 1 tests failed out of 2

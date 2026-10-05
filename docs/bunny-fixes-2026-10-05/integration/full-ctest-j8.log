@@ -1,0 +1,3 @@
+99% tests passed, 2 tests failed out of 402
+	 23 - ControlAutomationModesTest (Failed)
+	361 - ControlMidiReconnect (Failed)

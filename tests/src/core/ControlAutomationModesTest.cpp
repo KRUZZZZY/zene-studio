@@ -300,11 +300,14 @@ private slots:
 		QVERIFY(registry->invoke(QStringLiteral("automation.add_point"), point).ok);
 		QJsonObject move = which;
 		move.insert(QStringLiteral("ticks"), 96);
-		move.insert(QStringLiteral("new_ticks"), 192);
+		// 288, not 192: readRideThroughTheSocketCannotTouchTheRecordedAutomation leaves a
+		// point at 192 on this parameter, and moving onto an existing point is refused
+		// (it used to overwrite that point silently - Luna cluster 2789).
+		move.insert(QStringLiteral("new_ticks"), 288);
 		move.insert(QStringLiteral("new_value"), maxValue);
 		const ControlResult moved = registry->invoke(QStringLiteral("automation.move_point"), move);
 		QVERIFY2(moved.ok, qPrintable(moved.errorMessage));
-		QCOMPARE(moved.result.value(QStringLiteral("ticks")).toInt(), 192);
+		QCOMPARE(moved.result.value(QStringLiteral("ticks")).toInt(), 288);
 		QCOMPARE(registry->invoke(QStringLiteral("automation.move_point"), move).errorKind, ControlErrorKind::NotFound);  // nothing at 96 now
 		QVERIFY(registry->invoke(QStringLiteral("control.undo")).ok);
 		QVERIFY(registry->invoke(QStringLiteral("automation.move_point"), move).ok);  // back at 96
