@@ -72,19 +72,25 @@ AutomatableModel* parameterOf(const QJsonObject& args, ControlResult* error)
 	return model;
 }
 
-//! A MIDI mapping as one undo step has to put it back: the control-change and its two options.
+/*! A MIDI mapping as one undo step has to put it back: the control-change and its two options. The takeover POINT is part of
+ *  the binding too: a rebuilt MidiController starts at the default 0.0f, so restoring the flag without the point the user
+ *  set leaves the fader snapping to the wrong value. A binding captured from a command's own arguments has no point to
+ *  carry, and the default 0.0f is exactly what a fresh MidiController holds. */
 struct MidiBinding
 {
 	int channel = -1;
 	int controller = -1;
 	bool softTakeover = false;
 	bool feedback = false;
+	float takeoverTarget = 0.0f;
 };
 
 MidiController* bindTo(AutomatableModel* model, const MidiBinding& binding)
 {
 	MidiController* bound = bindMidiController(model, binding.channel, binding.controller);
 	bound->setSoftTakeoverEnabled(binding.softTakeover);
+	// The flag first, then the point: setSoftTakeoverTarget() rearms against the enabled state it finds.
+	bound->setSoftTakeoverTarget(binding.takeoverTarget);
 	bound->setFeedbackEnabled(binding.feedback);
 	return bound;
 }
@@ -105,7 +111,8 @@ MidiBinding bindingOf(const AutomatableModel* model)
 	ControllerConnection* connection = model->controllerConnection();
 	auto* midi = connection != nullptr ? dynamic_cast<MidiController*>(connection->getController()) : nullptr;
 	if (midi == nullptr) { return {}; }
-	return {midi->midiPort().inputChannel(), midi->midiPort().inputController(), midi->softTakeoverEnabled(), midi->feedbackEnabled()};
+	return {midi->midiPort().inputChannel(), midi->midiPort().inputController(), midi->softTakeoverEnabled(), midi->feedbackEnabled(),
+		midi->softTakeoverTarget()};
 }
 
 /*! What @a model was connected to before a map replaced it (W1): a MIDI binding, or a song controller - an LFO, a peak

@@ -374,6 +374,39 @@ private slots:
 		QVERIFY(dynamic_cast<MidiController*>(track->volumeModel()->controllerConnection()->getController()) != nullptr);
 	}
 
+	//! The soft-takeover point is part of the binding: undoing a remap puts the OLD binding back, custom target included.
+	void undoingARemapKeepsTheSoftTakeoverTarget()
+	{
+		auto* track = dynamic_cast<InstrumentTrack*>(Track::create(Track::Type::Instrument, Engine::getSong()));
+		QVERIFY(track != nullptr);
+		// Named, because the parameter is addressed by its display name and an unnamed
+		// track shares that name with every other one the earlier cases created.
+		track->setName(QStringLiteral("TakeoverTarget"));
+		AutomatableModel* volume = track->volumeModel();
+		const ControlResult mapped = run(QStringLiteral("controller.map"), {{QStringLiteral("target"), volume->fullDisplayName()},
+			{QStringLiteral("controller"), 21}, {QStringLiteral("soft_takeover"), true}});
+		QVERIFY2(mapped.ok, qPrintable(mapped.errorMessage));
+		auto* bound = dynamic_cast<MidiController*>(volume->controllerConnection()->getController());
+		QVERIFY(bound != nullptr);
+		bound->setSoftTakeoverTarget(0.75f);
+		QCOMPARE(bound->softTakeoverTarget(), 0.75f);
+
+		// Remap the same parameter elsewhere: the fresh binding starts from the default point.
+		const ControlResult remapped = run(QStringLiteral("controller.map"), {{QStringLiteral("target"), volume->fullDisplayName()},
+			{QStringLiteral("controller"), 22}});
+		QVERIFY2(remapped.ok, qPrintable(remapped.errorMessage));
+		auto* moved = dynamic_cast<MidiController*>(volume->controllerConnection()->getController());
+		QVERIFY(moved != nullptr);
+		QCOMPARE(moved->midiPort().inputController(), 22);
+
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
+		auto* restored = dynamic_cast<MidiController*>(volume->controllerConnection()->getController());
+		QVERIFY(restored != nullptr);
+		QCOMPARE(restored->midiPort().inputController(), 21);
+		QVERIFY2(restored->softTakeoverEnabled(), "undoing the remap must restore the flag, not only the address");
+		QCOMPARE(restored->softTakeoverTarget(), 0.75f);
+	}
+
 	//! note.pitch_curve_set over several notes: the before-state names each note's curve, not only the first one's.
 	void aCurveWriteRecordsEveryNotesBefore()
 	{
