@@ -314,6 +314,18 @@ void CommandForm::showError(const QString& error, QWidget* invalid)
 	invalid->setFocus(Qt::OtherFocusReason);
 }
 
+void CommandForm::dropAnswer()
+{
+	// A run that did not succeed leaves nothing to read: the answer on screen and the Copy Result
+	// button belong to the previous run, and copying would hand over this run's failed result.
+	m_succeeded = false;
+	m_answer->clear();
+	m_answer->hide();
+	m_copy->hide();
+	m_run->setText(tr("Run"));
+	m_close->setText(tr("Cancel"));
+}
+
 void CommandForm::showAnswer()
 {
 	// The answer stays on screen to be read and copied (UX 97), and Close no longer reads as Cancel.
@@ -340,6 +352,7 @@ void CommandForm::accept()
 	emit ran(m_result);
 	if (!m_result.ok)
 	{
+		dropAnswer();  // this run has no answer: what is on screen is the previous run's
 		showError(m_result.errorMessage, nullptr);
 		return;
 	}

@@ -43,6 +43,7 @@
 #include <QLabel>
 #include <QLineEdit>
 #include <QMenu>
+#include <QPushButton>
 #include <QToolButton>
 
 #include "CommandForm.h"
@@ -227,6 +228,31 @@ private slots:
 		QCOMPARE(form.result().result.value(QStringLiteral("name")).toString(), QStringLiteral("good"));
 		QCOMPARE(form.result().result.value(QStringLiteral("name")).toString(), g_lastArgs.value(QStringLiteral("name")).toString());
 		QCOMPARE(ran.count(), 2);
+	}
+
+	void aFailedRerunDropsTheAnswerThePreviousRunLeft()
+	{
+		CommandForm form(echo());
+		form.setField(QStringLiteral("name"), QStringLiteral("good"));
+		form.accept();
+		QVERIFY(form.result().ok);
+		const QString firstAnswer = form.resultText();
+		QVERIFY2(!firstAnswer.isEmpty(), "the successful run showed no answer to go stale");
+
+		QPushButton* copy = nullptr;
+		for (QPushButton* button : form.findChildren<QPushButton*>())
+		{
+			if (button->text().contains(QStringLiteral("Copy"), Qt::CaseInsensitive)) { copy = button; }
+		}
+		QVERIFY(copy != nullptr);
+		QVERIFY(!copy->isHidden());
+
+		form.setField(QStringLiteral("name"), QStringLiteral("bad"));
+		form.accept();
+		QVERIFY(!form.result().ok);
+		QVERIFY(!form.errorText().isEmpty());
+		QVERIFY2(form.resultText().isEmpty(), "the failed rerun left the previous answer on screen");
+		QVERIFY2(copy->isHidden(), "the failed rerun left Copy Result enabled to copy the failed result");
 	}
 
 	void runCommandDispatchesWhenNothingIsLeftToAsk()
