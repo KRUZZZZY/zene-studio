@@ -309,6 +309,21 @@ private slots:
 		QCOMPARE(run(QStringLiteral("transport.metronome_options"), {{QStringLiteral("level"), 3.0}}).errorKind, ControlErrorKind::InvalidArgs);
 	}
 
+	//! Luna 3949: 'edge' says which end of the pass this is, so a call without one
+	//! must be refused - punchHere read every value that was not "out" as punch-IN,
+	//! so {} silently armed a punch region at the play position.
+	void punchHereRefusesAMissingEdge()
+	{
+		const QJsonObject before = run(QStringLiteral("transport.punch_get_state")).result;
+		const ControlResult missing = run(QStringLiteral("transport.punch_here"), {});
+		QCOMPARE(missing.errorKind, ControlErrorKind::InvalidArgs);
+		// Nothing was armed, and nothing moved.
+		const QJsonObject after = run(QStringLiteral("transport.punch_get_state")).result;
+		QCOMPARE(after.value(QStringLiteral("punch_armed")), before.value(QStringLiteral("punch_armed")));
+		QCOMPARE(after.value(QStringLiteral("punch_begin")), before.value(QStringLiteral("punch_begin")));
+		QCOMPARE(after.value(QStringLiteral("punch_end")), before.value(QStringLiteral("punch_end")));
+	}
+
 	void punchAtThePlayPosition()
 	{
 		Song* song = Engine::getSong();

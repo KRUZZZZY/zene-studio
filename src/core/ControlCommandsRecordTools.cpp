@@ -86,9 +86,16 @@ ControlResult metronomeOptions(const QJsonObject& args)
 
 ControlResult punchHere(const QJsonObject& args)
 {
+	// 'edge' says which end of the pass this is, so a call without one is not an
+	// "in" by default: it would silently arm a punch region at the play position.
+	const QString edge = args.value(QStringLiteral("edge")).toString();
+	if (edge != QLatin1String("in") && edge != QLatin1String("out"))
+	{
+		return ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("'edge' is 'in' or 'out'"));
+	}
 	const tick_t here = Engine::getSong()->getPlayPos().getTicks();
 	const QJsonObject state = invoke(QStringLiteral("transport.punch_get_state"), {}).result;
-	if (args.value(QStringLiteral("edge")).toString() == QLatin1String("out"))
+	if (edge == QLatin1String("out"))
 	{
 		// Out: the region ends here; with no region armed there is nothing to close.
 		if (!state.value(QStringLiteral("punch_armed")).toBool()) { return ControlResult::failure(ControlErrorKind::Refused, QStringLiteral("no punch region is armed")); }
