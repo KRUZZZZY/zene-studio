@@ -1256,6 +1256,62 @@ private slots:
 			"a clamped position was not counted in rounded_times");
 	}
 
+//! Luna cluster 5066: the writer's own header promises a NEGATIVE time is
+//! refused, and a NaN or an infinity is not a position at all - but the only
+//! range tests were the tempo's and the denominator's. A clip at beat -1, a
+//! note at -0.5, or a NaN tempo (which compares false against BOTH bounds, so
+//! even the tempo's own check let it through) was serialized as "nan"/"-1.000000"
+//! - a document the reader can only refuse.
+void timesOutsideTheEngineGridAreRefusedByTheWriter()
+{
+	DawProjectModel base = authoredModel();
+	base.tracks[0].clips[0].notes[0].time = 0.0;
+
+	const QList<double> unsupported = {
+		-1.0, -0.000001, std::numeric_limits<double>::quiet_NaN(),
+		std::numeric_limits<double>::infinity(), -std::numeric_limits<double>::infinity()
+	};
+	for (const double value : unsupported)
+	{
+		DawProjectModel negativeClip = base;
+		negativeClip.tracks[0].clips[0].time = value;
+		QByteArray xml;
+		QString error;
+		QVERIFY2(!dawProjectXmlFromModel(negativeClip, &xml, &error),
+			qPrintable(QStringLiteral("a clip at beat %1 was written").arg(value)));
+
+		DawProjectModel negativeDuration = base;
+		negativeDuration.tracks[0].clips[0].duration = value;
+		QVERIFY2(!dawProjectXmlFromModel(negativeDuration, &xml, &error),
+			qPrintable(QStringLiteral("a clip of duration %1 was written").arg(value)));
+
+		DawProjectModel negativeNote = base;
+		negativeNote.tracks[0].clips[0].notes[0].time = value;
+		QVERIFY2(!dawProjectXmlFromModel(negativeNote, &xml, &error),
+			qPrintable(QStringLiteral("a note at beat %1 was written").arg(value)));
+
+		DawProjectModel negativePoint = base;
+		negativePoint.tempoPoints[0].time = value;
+		QVERIFY2(!dawProjectXmlFromModel(negativePoint, &xml, &error),
+			qPrintable(QStringLiteral("a tempo point at beat %1 was written").arg(value)));
+	}
+
+	// The tempo itself, NaN in particular: a NaN fails every comparison, so it
+	// needs the finiteness test the bounds test alone does not give.
+	DawProjectModel nanTempo = base;
+	nanTempo.tempo = std::numeric_limits<double>::quiet_NaN();
+	nanTempo.tempoPoints.clear();
+	QByteArray xml;
+	QString error;
+	QVERIFY2(!dawProjectXmlFromModel(nanTempo, &xml, &error), "a NaN tempo was written");
+	DawProjectModel nanPoint = base;
+	nanPoint.tempoPoints[0].value = std::numeric_limits<double>::quiet_NaN();
+	QVERIFY2(!dawProjectXmlFromModel(nanPoint, &xml, &error), "a NaN tempo point was written");
+
+	// The positive half: an ordinary model still writes.
+	QVERIFY2(dawProjectXmlFromModel(base, &xml, &error), qPrintable(error));
+}
+
 private:
 	QTemporaryDir m_directory;
 };
