@@ -187,13 +187,11 @@ void registerStateLoad(ControlRegistry& registry)
 			[targetId, pluginId, previous]() {
 				controlRestoreCapturedState(targetId, pluginId, previous);
 			},
-			[targetId, pluginId, path]() {
-				QByteArray bytes;
-				ControlResult ignored;
-				if (controlReadFileBytes(path, &bytes, &ignored))
-				{
-					controlRestoreCapturedState(targetId, pluginId, bytes);
-				}
+			// The LOADED bytes, not the path: a redo replays what this command
+			// applied. Re-reading the path made a file edited (or replaced) after
+			// the load decide what the redo did.
+			[targetId, pluginId, bytes]() {
+				controlRestoreCapturedState(targetId, pluginId, bytes);
 			});
 
 		QJsonObject result = restored.result;

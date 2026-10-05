@@ -705,6 +705,11 @@ private slots:
 		QVERIFY(!beyond.ok);
 		QCOMPARE(beyond.errorKind, ControlErrorKind::InvalidArgs);
 	}
+
+
+	//! A state load's REDO is covered in UndoHonestyTest
+	//! (theStateLoadRedoReplaysTheBytesItLoaded, Luna cluster 5724): it needs the
+	//! revtest:: fixture helpers and the file-length ratchet leaves no room here.
 };
 
 QTEST_GUILESS_MAIN(ReversibilityUndoTest)
