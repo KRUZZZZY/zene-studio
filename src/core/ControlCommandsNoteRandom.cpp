@@ -342,6 +342,7 @@ ControlResult randomize(const QJsonObject& args)
 	// restored - the call note.move makes after it moves one note.
 	clip->rearrangeAllNotes();
 	clip->dataChanged();
+	if (clip->linkId() > 0) { ClipLinks::mirrorContent(clip); }  // a linked copy carries the rolled notes
 
 	QJsonObject result;
 	result.insert(QStringLiteral("clip"), clipId(ref.id));

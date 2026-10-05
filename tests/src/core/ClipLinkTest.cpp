@@ -369,6 +369,58 @@ private slots:
 			"note.slide_clear left the other member's note a slide note");
 	}
 
+	//! Luna cluster 5689: note.randomize rolled the notes' velocities and positions and
+	//! re-sorted the clip, but never mirrored the result, so a member of a link group
+	//! kept the notes the source clip had before the roll.
+	void aRollIsSeenByTheOtherMember()
+	{
+		ControlRegistry* registry = ControlRegistry::instance();
+		const QString a = addMidiClip(QStringLiteral("roll A"));
+		const QString b = addMidiClip(QStringLiteral("roll B"));
+		QVERIFY2(registry->invoke(QStringLiteral("clip.link_create"),
+			QJsonObject{{QStringLiteral("clip"), a}, {QStringLiteral("clips"), QJsonArray{b}}}).ok,
+			"clip.link_create refused");
+		for (int index = 0; index < 4; ++index)
+		{
+			QVERIFY2(registry->invoke(QStringLiteral("note.add"),
+				QJsonObject{{QStringLiteral("clip"), a}, {QStringLiteral("key"), 60 + index},
+					{QStringLiteral("position"), index * 24}, {QStringLiteral("length"), 24},
+					{QStringLiteral("velocity"), 100}}).ok, "note.add refused");
+		}
+		QCOMPARE(noteCount(b), 4);
+		const QJsonArray before = notesOf(b);
+
+		// A named seed, so the take is this test's own and not the project's.
+		const ControlResult rolled = registry->invoke(QStringLiteral("note.randomize"),
+			QJsonObject{{QStringLiteral("clip"), a}, {QStringLiteral("velocity_jitter"), 1.0},
+				{QStringLiteral("seed"), 515151}});
+		QVERIFY2(rolled.ok, qPrintable(rolled.errorMessage));
+		QVERIFY2(rolled.result.value(QStringLiteral("velocities_moved")).toInt() > 0,
+			"a full-range velocity roll over four notes moved none of them");
+
+		// (a) through the surface: the other member's notes must carry the rolled
+		//     velocities, not the uniform 100 the source started with.
+		const QJsonArray after = notesOf(b);
+		QCOMPARE(after.size(), before.size());
+		QVERIFY2(after != before,
+			"note.randomize wrote the source clip only: the other member still holds the "
+			"notes the roll started from");
+		bool changed = false;
+		for (int index = 0; index < after.size(); ++index)
+		{
+			if (after.at(index).toObject().value(QStringLiteral("velocity")).toInt()
+				!= before.at(index).toObject().value(QStringLiteral("velocity")).toInt())
+			{
+				changed = true;
+			}
+		}
+		QVERIFY2(changed, "no velocity of the other member followed the roll");
+
+		// (b) and through the group's own content channel, as cluster 5688's half.
+		QVERIFY2(divergentCount(a) == 0,
+			"the group still reports a divergent member after the roll was mirrored");
+	}
+
 	void unlinkDetachesAndKeepsItsContent()
 	{
 		ControlRegistry* registry = ControlRegistry::instance();
