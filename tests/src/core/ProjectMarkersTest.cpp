@@ -200,6 +200,32 @@ private slots:
 		QCOMPARE(markers.markers().at(0).name, QStringLiteral("Drop"));
 	}
 
+	//! Luna 5238: restore() leaves m_nextId at INT_MAX for a marker one below
+	//! it, and the next add() increments that straight into signed overflow.
+	void addingAfterTheHighestLoadedIdStillGetsAFreshId()
+	{
+		ProjectMarkers& markers = ProjectMarkers::instance();
+		markers.clear();
+		markers.load(markersElement({QStringLiteral("2147483646|96|Intro")}));
+		QCOMPARE(markers.markers().size(), 1);
+
+		// No id is left above the loaded one, so the counter has to wrap to a
+		// free id rather than overflow: every marker added still gets one that is
+		// a real number and is its own.
+		QVector<int> added;
+		for (int i = 0; i < 2; ++i)
+		{
+			added.append(markers.add(192 + 192 * i, QStringLiteral("New %1").arg(i), QString()));
+		}
+		QVERIFY2(added.at(0) >= 0, qPrintable(QStringLiteral("the first new id was %1")
+			.arg(added.at(0))));
+		QVERIFY2(added.at(1) >= 0, qPrintable(QStringLiteral("the second new id was %1")
+			.arg(added.at(1))));
+		QVERIFY(added.at(0) != added.at(1));
+		QCOMPARE(markers.markers().size(), 3);
+		QVERIFY(markers.find(added.at(1)) != nullptr);
+	}
+
 	//! Luna 634/635: a hand-edited file is repaired on the way IN - a negative
 	//! tick clamped exactly as add() and replace() clamp it, and a missing,
 	//! malformed or duplicated id given one that addresses exactly its marker.

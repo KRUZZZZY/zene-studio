@@ -113,7 +113,14 @@ const Marker* ProjectMarkers::previous(tick_t tick) const
 int ProjectMarkers::add(tick_t tick, const QString& name, const QString& color)
 {
 	if (m_markers.size() >= MaxMarkers) { return -1; }
-	const int id = m_nextId++;
+	// restore() can leave the counter at the top of its range after a project
+	// loaded ids that fill everything above it, and incrementing there is a signed
+	// overflow - the marker would come back with a negative id. Take a free id from
+	// below instead. The count check above leaves at least one free id to find, so
+	// the -1 above stays "there are MaxMarkers already" and nothing else changes.
+	QSet<int> taken;
+	for (const Marker& marker : m_markers) { taken.insert(marker.id); }
+	const int id = m_nextId < std::numeric_limits<int>::max() ? m_nextId++ : lowestFreeId(taken, MaxMarkers);
 	m_markers.append(Marker{id, std::max<tick_t>(0, tick), name, color});
 	sortAndNotify();
 	return id;
