@@ -76,9 +76,17 @@ std::vector<TrackFolder::ChannelBinding> parseBindings( const QString & text )
 	{
 		const QStringList pair = part.split( QLatin1Char(':') );
 		if( pair.size() != 2 ) { continue; }
+		bool childOk = false;
+		bool channelOk = false;
+		const int childId = pair.at( 0 ).toInt( &childOk );
+		const int channel = pair.at( 1 ).toInt( &channelOk );
+		// Both halves must CONVERT: an unchecked toInt() yields 0 for "bad",
+		// and 0 is the master channel - a real one. A malformed pair is
+		// discarded rather than adopted as a binding to the master.
+		if( !childOk || !channelOk ) { continue; }
 		TrackFolder::ChannelBinding binding;
-		binding.childId = pair.at( 0 ).toInt();
-		binding.channel = pair.at( 1 ).toInt();
+		binding.childId = childId;
+		binding.channel = channel;
 		bindings.push_back( binding );
 	}
 	return bindings;

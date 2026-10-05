@@ -392,6 +392,37 @@ private slots:
 		QVERIFY(found);
 	}
 
+	//! A malformed `prevch` pair must not become a channel-zero binding: the ids
+	//! are read with an unchecked toInt(), so "bad:4" and "1:bad" each yield 0 -
+	//! and 0 is the MASTER channel, a value the model treats as real. A child
+	//! taken out of such a folder would then be sent to the master instead of
+	//! staying where it was.
+	void aMalformedSavedBindingIsDiscardedNotTakenAsChannelZero()
+	{
+		QString project = legacyProject(projectVersion());
+		project.replace(QStringLiteral("    </trackcontainer>"),
+			QStringLiteral(
+				"      <track type=\"7\" name=\"Holder\" muted=\"0\">\n"
+				"        <trackfolder mode=\"routing\" mixch=\"1\" prevch=\"bad:4,1:bad\"/>\n"
+				"      </track>\n"
+				"    </trackcontainer>"));
+		const QString path = m_dir.filePath(QStringLiteral("malformed-bindings.mmp"));
+		writeFile(path, project);
+		loadProject(path);
+
+		TrackFolder* folder = nullptr;
+		for (Track* track : Engine::getSong()->tracks())
+		{
+			if (track->type() == Track::Type::Folder)
+			{
+				folder = static_cast<TrackFolder*>(track);
+			}
+		}
+		QVERIFY(folder != nullptr);
+		QVERIFY2(folder->savedChildChannels().empty(),
+			"a prevch pair that is not two numbers is discarded, not adopted as 0:<n>");
+	}
+
 	//! (i) A no-op unparent is a VALID ANSWER, never a crash: taking a track that
 	//! is already at the container root out of "no folder" must succeed, twice.
 	void unparentingARootTrackIsANoOpNotACrash()
