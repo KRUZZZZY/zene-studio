@@ -552,6 +552,86 @@ private slots:
 		}
 	}
 
+	//! A .kbm with the standard 12-TET shape but \a baseFrequency in field 5 -
+//! everything else exactly what a hand-written keymap carries.
+QString writeKbm(QTemporaryDir& dir, const QString& name, const QString& baseFrequency)
+{
+	return writeScl(dir, name,
+		// size, then first / last / middle / base key - the whole keyboard, so
+		// every key (base included) is mapped by the lines below.
+		{QStringLiteral("12"),
+			QStringLiteral("0"),
+			QStringLiteral("127"),
+			QStringLiteral("0"),
+			QStringLiteral("0"),
+			baseFrequency,
+			QStringLiteral("12"),
+			// 12 mapping lines, one per scale degree (x = unmapped).
+			QStringLiteral("0"), QStringLiteral("1"), QStringLiteral("2"), QStringLiteral("3"),
+			QStringLiteral("4"), QStringLiteral("5"), QStringLiteral("6"), QStringLiteral("7"),
+			QStringLiteral("8"), QStringLiteral("9"), QStringLiteral("10"), QStringLiteral("11")});
+}
+
+//! Luna 5317: noteToFreq() hands the table to the render path as a FLOAT, so a
+	//! built entry has to be inside float's range before it is committed. A .kbm
+	//! base frequency of 1e100 parses fine and builds fine as a double, and
+	//! arrives at the audio thread as infinity - so such a table is refused whole,
+	//! leaving the one already loaded standing.
+	void aKeymapThatWouldOverflowFloatIsRefusedWithTheTableLeftStanding()
+	{
+		Song* song = Engine::getSong();
+		song->clearProject();
+		SessionTuning* tuning = SessionTuning::instance();
+		tuning->reset();
+
+		QTemporaryDir dir;
+		QVERIFY(dir.isValid());
+
+		// A keymap is CONTENT over whatever scale is loaded, so the test loads
+		// the 12-degree scale its keymap maps (reset() leaves the session's
+		// scale alone, and a mismatched pair is not what this case is about).
+		QStringList twelveTetScale{QStringLiteral("12-tone scale for board card #712"),
+			QStringLiteral("12")};
+		for (int degree = 0; degree < 12; ++degree)
+		{
+			twelveTetScale.append(QStringLiteral("%1/1").arg(degree + 1));
+		}
+		const QString scalePath = writeScl(dir, QStringLiteral("twelve.scl"), twelveTetScale);
+		QVERIFY2(!scalePath.isEmpty(), "the 12-tone .scl could not be written");
+		QVERIFY2(run(QStringLiteral("mts.load_scale"),
+			QJsonObject{{QStringLiteral("path"), scalePath}}).ok, "the 12-tone scale did not load");
+
+		const QString good = writeKbm(dir, QStringLiteral("good.kbm"), QStringLiteral("440.0"));
+		QVERIFY2(!good.isEmpty(), "the fixture .kbm could not be written");
+		QVERIFY2(run(QStringLiteral("mts.load_keymap"),
+			QJsonObject{{QStringLiteral("path"), good}}).ok, "the 440 Hz fixture did not load");
+		const QJsonObject before = snapshotState(run(QStringLiteral("mts.get_state")).result);
+
+		// Finite as a double, far past float's maximum.
+		const QString huge = writeKbm(dir, QStringLiteral("huge.kbm"), QStringLiteral("1e100"));
+		QVERIFY2(!huge.isEmpty(), "the huge .kbm could not be written");
+		const ControlResult loaded = run(QStringLiteral("mts.load_keymap"),
+			QJsonObject{{QStringLiteral("path"), huge}});
+		QVERIFY2(!loaded.ok, "a keymap whose frequencies overflow float was accepted: the "
+			"render path would read them as infinity");
+		QCOMPARE(loaded.errorKind, ControlErrorKind::Refused);
+
+		int mismatch = 0;
+		const QJsonObject after = snapshotState(run(QStringLiteral("mts.get_state")).result);
+		QVERIFY2(sameTable(before, after, &mismatch),
+			qPrintable(QStringLiteral("the refused keymap still changed the table at key %1")
+				.arg(mismatch)));
+
+		// And nothing in the standing table is out of the render path's range.
+		for (int key = 0; key < SessionTuning::TableSize; ++key)
+		{
+			const float frequency = tuning->noteToFreq(key);
+			QVERIFY2(std::isfinite(frequency),
+				qPrintable(QStringLiteral("key %1 reads %2 Hz through the render path")
+					.arg(key).arg(frequency)));
+		}
+	}
+
 	//! The recorded undo step restores the Scale/Keymap the table was BUILT from,
 	//! not just the frequencies: stateJson() carries the table alone, so without
 	//! this mts.get_state kept reporting the scale an undone load had installed.

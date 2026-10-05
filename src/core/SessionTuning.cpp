@@ -110,6 +110,41 @@ bool entryIsFrequency(const QJsonValue& value)
 	return std::isfinite(frequency) && frequency >= 0.0 && frequency <= MaxTableFrequency;
 }
 
+//! One key's frequency, straight from Microtuner::keyToFreq()'s branches: a
+//! single-interval scale is constant, an unmapped key is 0, otherwise the
+//! reference frequency times the interval and its octave.
+double frequencyForKey(int key, const Keymap& keymap, const std::vector<Interval>& intervals,
+	int octaveDegree, const Reference& reference)
+{
+	if (octaveDegree == 0) { return keymap.getBaseFreq(); }
+	const int keymapDegree = keymap.getDegree(key);
+	if (keymapDegree == -1) { return 0.0; } // unmapped: the note stays silent
+	const int scaleOctave = keymapDegree / octaveDegree;
+	int rem = keymapDegree % octaveDegree;
+	if (rem < 0) { rem += octaveDegree; }
+	return reference.middleFreq * intervals[rem].getRatio()
+		* std::pow(reference.octaveRatio, keymap.getOctave(key) + scaleOctave);
+}
+
+//! Every built entry must survive the float narrowing noteToFreq() does before
+//! the audio thread sees it: an entry outside that range reaches the render
+//! path as infinity. 0 is the unmapped marker and stays allowed.
+bool tableFrequenciesAreRenderable(const std::array<double, SessionTuning::TableSize>& table,
+	int* badKey, double* badValue)
+{
+	for (int key = 0; key < SessionTuning::TableSize; ++key)
+	{
+		const double frequency = table[key];
+		if (!std::isfinite(frequency) || frequency < 0.0 || frequency > MaxTableFrequency)
+		{
+			*badKey = key;
+			*badValue = frequency;
+			return false;
+		}
+	}
+	return true;
+}
+
 } // namespace
 
 SessionTuning::SessionTuning()
@@ -166,24 +201,19 @@ bool SessionTuning::buildTable(const Scale* scale, const Keymap& keymap,
 
 	for (int key = 0; key < TableSize; ++key)
 	{
-		if (octaveDegree == 0)
+		out->frequencies[key] = frequencyForKey(key, keymap, intervals, octaveDegree, reference);
+	}
+	int badKey = 0;
+	double badValue = 0.0;
+	if (!tableFrequenciesAreRenderable(out->frequencies, &badKey, &badValue))
+	{
+		// Refused whole, so the table the session already had stays standing.
+		if (error != nullptr)
 		{
-			// A single 1/1 interval: constant base frequency, exactly like
-			// Microtuner::keyToFreq()'s octaveDegree == 0 branch.
-			out->frequencies[key] = keymap.getBaseFreq();
-			continue;
+			*error = QStringLiteral("key %1 would be %2 Hz, outside the range the render "
+				"path can use").arg(badKey).arg(badValue);
 		}
-		const int keymapDegree = keymap.getDegree(key);
-		if (keymapDegree == -1)
-		{
-			out->frequencies[key] = 0.0; // unmapped: the note stays silent
-			continue;
-		}
-		const int scaleOctave = keymapDegree / octaveDegree;
-		int rem = keymapDegree % octaveDegree;
-		if (rem < 0) { rem += octaveDegree; }
-		out->frequencies[key] = reference.middleFreq * intervals[rem].getRatio()
-			* std::pow(reference.octaveRatio, keymap.getOctave(key) + scaleOctave);
+		return false;
 	}
 	// (active is not buildTable's to decide - commit() sets it.)
 	return true;
