@@ -393,6 +393,35 @@ private slots:
 		QCOMPARE(takeOf(clip)[1].position, 13);
 	}
 
+	/*! THE RENAME REPORTS THE GROOVE AS IT NOW IS: the touched groove's own
+	 *  read-back carries the NEW name, not the name it had before the rename
+	 *  ('renamed_to' already did). */
+	void renameReportsTheGrooveUnderItsNewName()
+	{
+		QVERIFY(run(QStringLiteral("groove.set"),
+			{{QStringLiteral("name"), QStringLiteral("before")},
+				{QStringLiteral("length_ticks"), 12}, {QStringLiteral("step_ticks"), 12},
+				{QStringLiteral("steps"), QJsonArray{QJsonObject{
+					{QStringLiteral("slot"), 0}, {QStringLiteral("timing"), 2},
+					{QStringLiteral("velocity"), 4}}}}}).ok);
+		const ControlResult renamed = run(QStringLiteral("groove.rename"),
+			{{QStringLiteral("name"), QStringLiteral("before")},
+				{QStringLiteral("to"), QStringLiteral("after")}});
+		QVERIFY2(renamed.ok, qPrintable(renamed.errorMessage));
+		QCOMPARE(renamed.result.value(QStringLiteral("renamed")).toString(), QStringLiteral("before"));
+		QCOMPARE(renamed.result.value(QStringLiteral("renamed_to")).toString(), QStringLiteral("after"));
+		QCOMPARE(renamed.result.value(QStringLiteral("groove")).toObject()
+			.value(QStringLiteral("name")).toString(), QStringLiteral("after"));
+		// ... and it is the groove in the pool, read back independently.
+		const ControlResult listed = run(QStringLiteral("groove.list"),
+			{{QStringLiteral("name"), QStringLiteral("after")}});
+		QVERIFY2(listed.ok, qPrintable(listed.errorMessage));
+		QCOMPARE(listed.result.value(QStringLiteral("groove")).toObject()
+			.value(QStringLiteral("name")).toString(), QStringLiteral("after"));
+		QVERIFY(run(QStringLiteral("groove.remove"),
+			{{QStringLiteral("name"), QStringLiteral("after")}}).ok);
+	}
+
 	//! Every refusal is typed, and changes nothing - not the pool, not a clip.
 	void refusalsAreTypedAndChangeNothing()
 	{

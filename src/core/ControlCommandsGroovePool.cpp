@@ -293,7 +293,11 @@ ControlResult grooveRename(const QJsonObject& args)
 	inverseArgs.insert(QStringLiteral("name"), to);
 	inverseArgs.insert(QStringLiteral("to"), name);
 
-	QJsonObject result = groovePoolResult(*pool, renamed);
+	// The touched groove is read back FROM THE POOL, after the rename: `renamed`
+	// is a copy taken before it, so reporting it here would hand back the name
+	// the groove no longer has, next to a 'renamed_to' that says otherwise.
+	const GrooveTemplate* touched = pool->find(to);
+	QJsonObject result = groovePoolResult(*pool, touched != nullptr ? *touched : renamed);
 	result.insert(QStringLiteral("renamed"), name);
 	result.insert(QStringLiteral("renamed_to"), to);
 	result.insert(QStringLiteral("__transaction"),
