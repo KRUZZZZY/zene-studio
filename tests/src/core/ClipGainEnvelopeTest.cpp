@@ -106,6 +106,19 @@ private slots:
 		QCOMPARE(again.envelopeCount, MaxGainPoints);
 	}
 
+	void aMalformedTickIsDroppedInsteadOfLandingAtTickZero()
+	{
+		ClipEdits edits;
+		// "oops" is not a tick: it used to convert to 0 and become a -24 dB point at the clip's
+		// start, so the whole clip played 24 dB down. A damaged file keeps only the good point.
+		envelopeFromText(QStringLiteral("oops:-24;48:0"), &edits);
+		QCOMPARE(edits.envelopeCount, 1);
+		QCOMPARE(edits.envelope[0].tick, 48);
+		QCOMPARE(edits.envelope[0].gainDb, 0.f);
+		envelopeFromText(QStringLiteral("99999999999:0"), &edits);
+		QCOMPARE(edits.envelopeCount, 0);
+	}
+
 	void theClipElementCarriesItOnlyWhenThereIsOne()
 	{
 		Song* song = Engine::getSong();
