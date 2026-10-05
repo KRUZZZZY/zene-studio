@@ -1127,6 +1127,46 @@ private slots:
 		QVERIFY(!Engine::mixer()->mixerChannel(0)->m_muteModel.value());
 	}
 
+//! Luna cluster 5069: the tempo/metre arm is already built before the song is
+	//! touched (a map-capacity refusal leaves tracks intact), but a track type
+	//! the engine cannot create was discovered AFTER clearAllTracks() and after
+	//! the global tempo, metre and mixer had been written - so a refusal left a
+	//! half-replaced session with none of the tracks that were there.
+	void aTrackTypeTheEngineCannotCreateIsRefusedBeforeAnyMutation()
+	{
+		Song* song = Engine::getSong();
+		Engine::mixer()->clear();
+		QString error;
+		const DawProjectModel original = previousSessionModel();
+		QVERIFY2(applyDawProjectModel(song, original, &error), qPrintable(error));
+
+		const int beforeTrackCount = static_cast<int>(song->tracks().size());
+		const int beforeTempo = song->getTempo();
+		const int beforeNumerator = song->getTimeSigModel().numeratorModel().value();
+		const int beforeDenominator = song->getTimeSigModel().denominatorModel().value();
+		const TempoMap beforeMap = song->tempoMap().map();
+		QVERIFY(beforeTrackCount > 0);
+
+		DawProjectModel refused = original;
+		DawProjectTrack uncreatable;
+		uncreatable.typeName = QStringLiteral("video");
+		uncreatable.contentType = QStringLiteral("video");
+		refused.tracks.append(uncreatable);
+		refused.tempo = 90.0;
+
+		QString refusedError;
+		QVERIFY2(!applyDawProjectModel(song, refused, &refusedError),
+			"a track type Track::create does not implement must be refused");
+		QVERIFY2(refusedError.contains(QStringLiteral("video")),
+			"the refusal must name the track type it is about");
+
+		QCOMPARE(static_cast<int>(song->tracks().size()), beforeTrackCount);
+		QCOMPARE(song->getTempo(), beforeTempo);
+		QCOMPARE(song->getTimeSigModel().numeratorModel().value(), beforeNumerator);
+		QCOMPARE(song->getTimeSigModel().denominatorModel().value(), beforeDenominator);
+		QVERIFY(song->tempoMap().map() == beforeMap);
+	}
+
 private:
 	QTemporaryDir m_directory;
 };

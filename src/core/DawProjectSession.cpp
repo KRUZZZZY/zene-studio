@@ -133,6 +133,33 @@ Track* createTrackOfType(Track::Type type, Song* song)
 	return Track::create(type, song);
 }
 
+/*! Whether createTrackOfType() can make this type at all. Track::create's
+ *  switch leaves Event and Video falling through to `default: break`, so a model
+ *  asking for one of them can only be discovered as a REFUSAL - and a refusal
+ *  discovered after the song has been cleared replaces the tracks with none.
+ *  Asking first is the whole difference between a typed refusal and a
+ *  half-replaced session. */
+bool trackTypeCreatable(Track::Type type)
+{
+	return type != Track::Type::Video && type != Track::Type::Event;
+}
+
+//! Whether every track of @a model is a type the engine can create. False with
+//! \\a error naming the first \\a typeName that is not.
+bool allTrackTypesCreatable(const DawProjectModel& model, QString* error)
+{
+	for (const DawProjectTrack& entry : model.tracks)
+	{
+		if (trackTypeCreatable(trackTypeFromName(entry.typeName))) { continue; }
+		if (error)
+		{
+			*error = QStringLiteral("the engine cannot create a '%1' track").arg(entry.typeName);
+		}
+		return false;
+	}
+	return true;
+}
+
 //! The panning model a track type has, or nullptr. This is the LOSSY #6 seam:
 //! MixerChannel carries volume, mute and solo but no pan, so the value the
 //! format's <Pan> carries comes from the TRACK - and only InstrumentTrack
@@ -442,6 +469,11 @@ bool applyDawProjectModel(Song* song, const DawProjectModel& model, QString* err
 	if (!addTempoPoints(model.tempoPoints, rebuilt, error)) { return false; }
 	if (!addMeterPoints(model.meterPoints, rebuilt, error)) { return false; }
 	if (rebuilt.size() > 0) { rebuilt.setActive(true); }
+
+	// Ask the engine about every track type BEFORE the session is touched, so the
+	// refusal below is one the caller sees with its tracks, tempo and metre still
+	// in place rather than after they have been cleared and rewritten.
+	if (!allTrackTypesCreatable(model, error)) { return false; }
 
 	song->aboutToClearTracks();
 	song->clearAllTracks();
