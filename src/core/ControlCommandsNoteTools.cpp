@@ -78,13 +78,27 @@ ControlResult invert(const QJsonObject& args)
 	return ControlResult::success(finish(ref, clip, QStringLiteral("note.invert"), {{QStringLiteral("inverted"), notes.size()}}));
 }
 
-//! The chord's keys in the order @a pattern plays them.
-std::vector<int> runOrder(std::vector<int> keys, const QString& pattern)
+/*! Which of @a voices the run plays at each step, as INDICES into it.
+ *
+ *  Luna cluster 5691: this used to be the sorted list of KEYS with one stored note per
+ *  key, so two chord members of the same pitch shared a single voice and the second one's
+ *  velocity, pan and probability were dropped when the chord was removed. One entry per
+ *  note - sorted by key for "up", reversed for "down", back down for "updown" - keeps two
+ *  same-pitch notes as two steps that each carry their own state.
+ */
+std::vector<std::size_t> runOrder(const std::vector<Note>& voices, const QString& pattern)
 {
-	std::sort(keys.begin(), keys.end());
-	if (pattern == QLatin1String("down")) { std::reverse(keys.begin(), keys.end()); }
-	if (pattern == QLatin1String("updown") && keys.size() > 2) { keys.insert(keys.end(), keys.rbegin() + 1, keys.rend() - 1); }
-	return keys;
+	std::vector<std::size_t> order(voices.size());
+	for (std::size_t i = 0; i < voices.size(); ++i) { order[i] = i; }
+	std::stable_sort(order.begin(), order.end(),
+		[&voices](std::size_t a, std::size_t b) { return voices[a].key() < voices[b].key(); });
+	if (pattern == QLatin1String("down")) { std::reverse(order.begin(), order.end()); }
+	if (pattern == QLatin1String("updown") && order.size() > 2)
+	{
+		const std::vector<std::size_t> down = order;
+		order.insert(order.end(), down.rbegin() + 1, down.rend() - 1);
+	}
+	return order;
 }
 
 ControlResult arpeggiate(const QJsonObject& args)
@@ -102,19 +116,18 @@ ControlResult arpeggiate(const QJsonObject& args)
 	for (auto& [start, chord] : chords)
 	{
 		tick_t length = 0;
-		std::vector<int> keys;
-		std::map<int, Note> voices;  // each key plays as its own note did: velocity, pan, probability, mute...
+		std::vector<Note> voices;  // each chord member plays as its own note did: velocity, pan, probability, mute...
+		voices.reserve(static_cast<std::size_t>(chord.size()));
 		for (const Note* note : chord)
 		{
 			length = std::max<tick_t>(length, note->length().getTicks());
-			keys.push_back(note->key());
-			voices.emplace(note->key(), *note);
+			voices.push_back(*note);
 		}
 		for (Note* note : chord) { clip->removeNote(note); }
-		const std::vector<int> order = runOrder(keys, args.value(QStringLiteral("pattern")).toString(QStringLiteral("up")));
+		const std::vector<std::size_t> order = runOrder(voices, args.value(QStringLiteral("pattern")).toString(QStringLiteral("up")));
 		for (tick_t at = 0, i = 0; at < length; at += rate, ++i)
 		{
-			Note& step = voices.at(order[static_cast<std::size_t>(i) % order.size()]);
+			Note step = voices[order[static_cast<std::size_t>(i) % order.size()]];
 			step.setPos(TimePos(start + at));
 			step.setLength(TimePos(std::min(rate, length - at)));
 			clip->addNote(step, false);

@@ -197,6 +197,36 @@ private slots:
 			{QStringLiteral("degrees"), QJsonArray{14}}}).errorKind, ControlErrorKind::InvalidArgs);
 	}
 
+	//! Luna cluster 5691: arpeggiate() collected the voices in a std::map keyed by pitch, so
+	//! emplace kept only the FIRST note of two same-pitch chord members while keys kept both -
+	//! the second one's velocity, pan and probability were then read as duplicates of the first
+	//! and lost when the chord was removed.
+	void arpeggiatingAChordKeepsBothVoicesOfTheSamePitch()
+	{
+		auto* clip = dynamic_cast<MidiClip*>(m_track->createClip(TimePos(0)));
+		clip->addNote(Note(TimePos(48), TimePos(0), 60), false);
+		clip->addNote(Note(TimePos(48), TimePos(0), 60), false);
+		clip->addNote(Note(TimePos(48), TimePos(0), 64), false);
+		// Two 60s, distinguishable only by their state - the clip lists them in the order
+		// they were added, so the two of them are picked out by pitch, not by index.
+		QVector<Note*> sixties;
+		for (Note* note : clip->notes()) { if (note->key() == 60) { sixties << note; } }
+		QCOMPARE(sixties.size(), 2);
+		sixties[0]->setVolume(static_cast<volume_t>(40));
+		sixties[1]->setVolume(static_cast<volume_t>(130));
+		QJsonObject args = self(clip);
+		args.insert(QStringLiteral("rate"), 12);
+		QVERIFY(run(QStringLiteral("note.arpeggiate"), args).ok);
+		QCOMPARE(clip->notes().size(), std::size_t{4});
+		// Both 60s play, each with its own volume: the run is 60(40), 60(130), 64, 60(40).
+		QCOMPARE(clip->notes()[0]->key(), 60);
+		QCOMPARE(clip->notes()[1]->key(), 60);
+		QVERIFY2(clip->notes()[0]->getVolume() != clip->notes()[1]->getVolume(),
+			"two same-pitch voices collapsed into one - the second one's state is gone");
+		QCOMPARE(static_cast<int>(clip->notes()[0]->getVolume()), 40);
+		QCOMPARE(static_cast<int>(clip->notes()[1]->getVolume()), 130);
+	}
+
 	//! Luna cluster 4806: the shared finish() helper advertised the command ITSELF as its
 	//! inverse with empty inverse args, so every command that takes required arguments
 	//! (note.add_many, note.group, ...) named an inverse that cannot be replayed at all:
