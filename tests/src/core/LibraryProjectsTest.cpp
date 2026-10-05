@@ -179,6 +179,27 @@ private slots:
 			ControlErrorKind::InvalidArgs);
 	}
 
+	void aPresetWithoutATrackTypeIsRefused()
+	{
+		Track* instrument = Track::create(Track::Type::Instrument, Engine::getSong());
+		const QString path = m_dir.filePath(QStringLiteral("typeless.xpf"));
+		QFile file(path);
+		QVERIFY(file.open(QIODevice::WriteOnly | QIODevice::Truncate));
+		// A structurally valid preset file whose content element carries no
+		// track type at all - the value that check reads with toInt(), which
+		// answers 0 for a missing or nonnumeric attribute - and 0 is the
+		// instrument track's own type. Such a file must be refused, not loaded
+		// onto the instrument track.
+		file.write("<?xml version=\"1.0\"?>\n<!DOCTYPE zene-project>\n"
+			"<zene-project version=\"40\" type=\"instrumenttracksettings\" creator=\"Zene Studio\">\n"
+			"<head/>\n<instrumenttracksettings presettype=\"instrument\"/>\n</zene-project>\n");
+		file.close();
+		const ControlResult refused = run(QStringLiteral("track.preset_load"),
+			{{QStringLiteral("track"), control::trackIdOf(instrument)}, {QStringLiteral("path"), path}});
+		QCOMPARE(refused.errorKind, ControlErrorKind::Refused);
+		QCOMPARE(refused.ok, false);
+	}
+
 	void tracksComeFromAnotherProject()
 	{
 		const QString other = m_dir.filePath(QStringLiteral("other.mmpz"));
