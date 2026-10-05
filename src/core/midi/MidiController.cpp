@@ -251,6 +251,10 @@ void MidiController::saveSettings( QDomDocument & _doc, QDomElement & _this )
 	Controller::saveSettings( _doc, _this );
 	m_midiPort.saveSettings( _doc, _this );
 	_this.setAttribute("softtakeover", m_softTakeoverEnabled ? "1" : "0");
+	// The target is project state too: restoring only the flag would reopen a
+	// control with a target of 0.0, which captures on the very first
+	// control-change - the one thing soft takeover exists to prevent.
+	_this.setAttribute("softtakeovertarget", QString::number(m_softTakeoverTarget, 'f', 6));
 	_this.setAttribute("feedback", m_feedbackEnabled ? "1" : "0");
 }
 
@@ -262,6 +266,12 @@ void MidiController::loadSettings( const QDomElement & _this )
 
 	m_midiPort.loadSettings( _this );
 	m_softTakeoverEnabled = (_this.attribute("softtakeover", "0") == "1");
+	// A project saved before the target was persisted carries no attribute: it
+	// then keeps the default 0.0, as before.
+	m_softTakeoverTarget = std::clamp(
+		_this.attribute("softtakeovertarget", "0").toFloat(), 0.0f, 1.0f);
+	// A freshly loaded control has not been captured by anything yet.
+	rearmSoftTakeover();
 	m_feedbackEnabled = (_this.attribute("feedback", "0") == "1");
 	updateName();
 }

@@ -250,6 +250,46 @@ private slots:
 		QCOMPARE(controller->midiPort().outputChannel(), 3);
 	}
 
+	/*! The soft-takeover target is project state: a project saved with takeover
+	 *  armed reopens with the target it had, not with a target of zero. The
+	 *  enabled flag alone would reopen a control that captures on the very
+	 *  first control-change - the one thing soft takeover exists to prevent. */
+	void TheSoftTakeoverTargetSurvivesTheProjectRoundTrip()
+	{
+		FloatModel knob(0.25f, 0.0f, 1.0f, 0.01f, Engine::getSong(),
+			QStringLiteral("Surface Target Round Trip Knob"));
+
+		MidiController* controller = bindThroughMidiLearn(&knob, 10, 91);
+		QVERIFY(controller != nullptr);
+		controller->setSoftTakeoverEnabled(true);
+		controller->setSoftTakeoverTarget(0.25f);
+
+		QDomDocument doc;
+		QDomElement root = doc.createElement("lmms");
+		doc.appendChild(root);
+		QDomElement modelElement = doc.createElement("surfacetargetroundtrip");
+		root.appendChild(modelElement);
+		knob.saveSettings(doc, modelElement, "knob");
+
+		FloatModel reloaded(0.25f, 0.0f, 1.0f, 0.01f, Engine::getSong(),
+			QStringLiteral("Surface Target Round Trip Reloaded"));
+		reloaded.loadSettings(modelElement, "knob");
+
+		MidiController* restored = boundMidiController(&reloaded);
+		QVERIFY(restored != nullptr);
+		QVERIFY(restored->softTakeoverEnabled());
+		QCOMPARE(restored->softTakeoverTarget(), 0.25f);
+		QVERIFY(!restored->softTakeoverCaptured());
+
+		// The consequence, not just the number: with the target restored, a
+		// control-change that sits on the far side of 0.25 without ever
+		// crossing it does not capture. Against a target of zero it would.
+		QSignalSpy moved(restored, SIGNAL(valueChanged()));
+		restored->midiPort().processInEvent(makeCc(10, 91, 100), TimePos());
+		QCOMPARE(moved.count(), 0);
+		QVERIFY(!restored->softTakeoverCaptured());
+	}
+
 	/*! The negative control for the test above: with soft-takeover OFF - the
 	 *  default - the very first control-change moves the model. Without this,
 	 *  the ignored CCs above could be explained by something other than the
