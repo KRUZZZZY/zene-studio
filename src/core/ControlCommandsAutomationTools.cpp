@@ -113,6 +113,20 @@ ControlResult trimSet(const QJsonObject& args)
 	return ControlResult::success(reply);
 }
 
+//! A time map is keyed by tick, so moving a point onto a tick another node already holds would
+//! silently delete that node. Moving a point onto its own tick is a plain value change, and stays
+//! allowed.
+ControlResult occupiedDestination(const AutomationClip* clip, tick_t ticks, tick_t to,
+	const QString& parameterId, tick_t toSong)
+{
+	if (to != ticks && clip->getTimeMap().contains(TimePos(to)))
+	{
+		return ControlResult::failure(ControlErrorKind::Refused,
+			QStringLiteral("%1 already has a point at %2").arg(parameterId).arg(static_cast<qint64>(toSong)));
+	}
+	return ControlResult::success();
+}
+
 ControlResult movePoint(const QJsonObject& args)
 {
 	ControlTarget target;
@@ -140,6 +154,7 @@ ControlResult movePoint(const QJsonObject& args)
 	{
 		return automatableRangeRefusal(parameter.model, value);
 	}
+	if (const ControlResult taken = occupiedDestination(clip, ticks, to, parameter.id(), toSong); !taken.ok) { return taken; }
 	const QJsonArray before = automationPointsJson(clip, parameter.model);
 	// The point's own curve is its progression to the next point, and a Bend carries its bend
 	// amount - neither survives removing the node and letting putValue insert a plain one, so

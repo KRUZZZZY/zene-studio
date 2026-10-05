@@ -606,17 +606,11 @@ private slots:
 		QVERIFY(revtest::makerUndoFindsTrackAfterRemovalUndone(control::trackIdOf(clip->getTrack())));
 	}
 
-	/*! ED-186 through the surface, for automation.move_point, on a clip that does NOT start at
-	 *  song tick 0. A time map is keyed by CLIP-LOCAL ticks, so the point at song tick 400 on a
-	 *  clip starting at 384 sits at local tick 16. move_point used the supplied ticks for the
-	 *  lookup, the removal and the insertion alike, so a request naming a song tick either failed
-	 *  to find the point or placed it at the wrong song position - while its siblings
-	 *  (automation.set_curve at src/core/ControlCommandsAutomationLanes.cpp:209,
-	 *  automation.draw_shape at :158 and automation.transform at :172) all subtract the clip's
-	 *  own origin first.
-	 *
-	 *  Checked as sound: the reply's song tick and the clip's own local key must agree, and the
-	 *  value must have followed the point rather than a tick-relative coincidence. */
+	/*! ED-186: a time map is keyed by CLIP-LOCAL ticks, so on a clip starting at song tick 384
+	 *  the point at song tick 400 sits at local tick 16. move_point used the supplied ticks for
+	 *  the lookup, the removal and the insertion alike, while its siblings (automation.set_curve
+	 *  at src/core/ControlCommandsAutomationLanes.cpp:209, automation.draw_shape at :158 and
+	 *  automation.transform at :172) all subtract the clip's own origin first. */
 	void movePointTakesSongTicksOnAClipThatStartsLater()
 	{
 		const QString id = control::trackIdOf(m_track);
@@ -633,13 +627,10 @@ private slots:
 		clip->changeLength(TimePos(4 * 192));
 		clip->putValue(TimePos(16), 0.f, false, true);
 		clip->putValue(TimePos(112), 0.f, false, true);
-
 		const ControlResult moved = run(QStringLiteral("automation.move_point"), addressed(id, parameter,
-			{{QStringLiteral("ticks"), 400}, {QStringLiteral("new_ticks"), 448},
-				{QStringLiteral("new_value"), high}}));
+			{{QStringLiteral("ticks"), 400}, {QStringLiteral("new_ticks"), 448}, {QStringLiteral("new_value"), high}}));
 		QVERIFY2(moved.ok, qPrintable(moved.errorMessage));
 		QCOMPARE(moved.result.value(QStringLiteral("ticks")).toInt(), 448);  // the reply reports song ticks
-
 		QVERIFY(clip->getTimeMap().contains(64));  // 448 - 384: local, not the song tick
 		QVERIFY(!clip->getTimeMap().contains(448));
 		QCOMPARE(clip->getTimeMap().value(64).getOutValue(), model->inverseScaledValue(static_cast<float>(high)));
@@ -671,17 +662,48 @@ private slots:
 		clip->putValue(TimePos(112), 0.f, false, true);  // song tick 496: not touched
 		clip->getTimeMap()[TimePos(16)].setCurve(AutomationNode::Curve::Bend, 0.6f);
 		clip->getTimeMap()[TimePos(112)].setCurve(AutomationNode::Curve::Hold);
-
 		const ControlResult moved = run(QStringLiteral("automation.move_point"), addressed(id, parameter,
-			{{QStringLiteral("ticks"), 400}, {QStringLiteral("new_ticks"), 448},
-				{QStringLiteral("new_value"), high}}));
+			{{QStringLiteral("ticks"), 400}, {QStringLiteral("new_ticks"), 448}, {QStringLiteral("new_value"), high}}));
 		QVERIFY2(moved.ok, qPrintable(moved.errorMessage));
-
 		QVERIFY(clip->getTimeMap().contains(64));  // 448 - 384
 		AutomationNode& node = clip->getTimeMap()[TimePos(64)];
 		QCOMPARE(int(node.curve()), int(AutomationNode::Curve::Bend));
 		QVERIFY(qAbs(node.bend() - 0.6f) < 1e-6f);
 		QCOMPARE(int(clip->getTimeMap()[TimePos(112)].curve()), int(AutomationNode::Curve::Hold));
+	}
+
+	/*! ED-186: a time map is keyed by tick, so moving a point onto an occupied tick silently
+	 *  overwrote that point. The request must be refused with both points intact; a move onto a
+	 *  point's OWN tick is a plain value change and must still succeed. */
+	void movePointRefusesADestinationAnotherPointAlreadyHolds()
+	{
+		const QString id = control::trackIdOf(m_track);
+		const QString parameter = firstParameter(id);
+		QVERIFY(!parameter.isEmpty());
+		AutomatableModel* model = modelOf(id, parameter);
+		QVERIFY(model != nullptr);
+		const auto low = model->minValue<float>();
+		const auto high = model->maxValue<float>();
+
+		auto* track = dynamic_cast<AutomationTrack*>(Track::create(Track::Type::Automation, Engine::getSong()));
+		auto* clip = dynamic_cast<AutomationClip*>(track->createClip(TimePos(0)));
+		clip->addObject(model);
+		clip->changeLength(TimePos(4 * 192));
+		clip->putValue(TimePos(10), low, false, true);
+		clip->putValue(TimePos(20), high, false, true);
+		const ControlResult moved = run(QStringLiteral("automation.move_point"), addressed(id, parameter,
+			{{QStringLiteral("ticks"), 10}, {QStringLiteral("new_ticks"), 20}, {QStringLiteral("new_value"), static_cast<double>(low)}}));
+		QVERIFY(!moved.ok);  // refused, not a silent overwrite
+		QVERIFY(clip->getTimeMap().contains(10));  // the source survived the refusal
+		QVERIFY(clip->getTimeMap().contains(20));  // and so did the point it tried to move onto
+		QCOMPARE(clip->getTimeMap().value(20).getOutValue(), high);
+		// Moving a point onto its own tick is a plain value change, and must still work.
+		const ControlResult inPlace = run(QStringLiteral("automation.move_point"), addressed(id, parameter,
+			{{QStringLiteral("ticks"), 20}, {QStringLiteral("new_ticks"), 20}, {QStringLiteral("new_value"), 0.5}}));
+		QVERIFY2(inPlace.ok, qPrintable(inPlace.errorMessage));
+		QVERIFY(clip->getTimeMap().contains(10));  // its neighbour is not in the way
+		QVERIFY(qAbs(clip->getTimeMap().value(20).getOutValue()
+				- model->scaledValue(model->inverseScaledValue(0.5f))) < 1e-6f);
 	}
 
 private:
