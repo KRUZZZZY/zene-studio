@@ -80,6 +80,7 @@
 #include <QFileInfo>
 #include <QJsonArray>
 #include <QJsonObject>
+#include <QStringList>
 
 #include "ControlRegistry.h"
 
@@ -333,6 +334,22 @@ ControlResult handleAcknowledgeReport()
 	return ControlResult::success(result);
 }
 
+/*! The paths that were there before the unlink and are STILL there after it.
+ *
+ *  discardPendingReport() returns void and ::unlink fails on a directory (and on
+ *  a read-only directory entry), so the effect has to be READ BACK rather than
+ *  assumed - the same rule handleAcknowledgeReport follows. Claiming
+ *  discarded:true for a report that is still on disk would be a lie the caller
+ *  cannot detect.
+ */
+static QStringList pathsLeftAfterDiscard(const CrashPaths& paths, bool hadReport, bool hadOffered)
+{
+QStringList remaining;
+if (hadReport && QFileInfo::exists(wire(paths.report))) { remaining.append(wire(paths.report)); }
+if (hadOffered && QFileInfo::exists(wire(paths.offered))) { remaining.append(wire(paths.offered)); }
+return remaining;
+}
+
 /*! crash.discard_report - clear the pending report: the engine operation is
  *  crashreporter::discardPendingReport(), which unlinks the report AND the
  *  offered sentinel (CrashReporter.cpp).
@@ -354,6 +371,19 @@ ControlResult handleDiscardReport()
 	}
 
 	crashreporter::discardPendingReport();
+
+	// The unlink is read back, not assumed (see pathsLeftAfterDiscard).
+	const QStringList remaining = pathsLeftAfterDiscard(paths, hadReport, hadOffered);
+	if (!remaining.isEmpty())
+	{
+		return ControlResult::failure(ControlErrorKind::Busy,
+			QStringLiteral("%1: the report at %2 could NOT be discarded - %3 %4 still on disk after the "
+				"unlink, so the report is still pending. Check the directory's permissions; nothing "
+				"else was changed")
+				.arg(DiscardName, wire(paths.report),
+					remaining.size() == 1 ? QStringLiteral("this path is") : QStringLiteral("these paths are"),
+					remaining.join(QStringLiteral(", "))));
+	}
 
 	QJsonArray removed;
 	if (hadReport) { removed.append(wire(paths.report)); }

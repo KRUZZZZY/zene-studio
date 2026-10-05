@@ -86,6 +86,7 @@ Exit codes: 0 every check held; 1 a check failed (the app log is printed);
 from __future__ import annotations
 
 import os
+import shutil
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -308,6 +309,33 @@ def check_discard(session, problems, report_path):
                      "a second discard with nothing to discard is not_found: %r" % (again,))
 
 
+def check_discard_reads_back(session, problems, report_path):
+    """discard must READ BACK the unlink, like acknowledge does.
+
+    discardPendingReport() returns void and ::unlink fails on a non-empty
+    DIRECTORY, so a path that cannot be unlinked is still there afterwards. The
+    handler must report that instead of claiming discarded:true.
+    """
+    directory = os.path.dirname(report_path)
+    try:
+        os.makedirs(report_path, exist_ok=True)
+        with open(os.path.join(report_path, "not-a-report"), "w", encoding="utf-8") as handle:
+            handle.write("this is a directory, not a report\n")
+    except OSError as error:
+        problems.add("could not plant the undiscardable fixture at %s: %s" % (report_path, error))
+        return
+    try:
+        refused = session.typed_error("crash.discard_report")
+        problems.require(refused.get("kind") in ("busy", "refused", "conflict"),
+                         "a discard whose files remain must be a typed failure, not "
+                         "discarded:true: %r" % (refused,))
+        problems.require(os.path.exists(report_path),
+                         "the fixture that cannot be unlinked must still be there: %s"
+                         % report_path)
+    finally:
+        shutil.rmtree(report_path, ignore_errors=True)
+
+
 def check_transactions(session, problems):
     """The A16 records: both writers are irreversible with a stated mechanism."""
     records = [record for record in session.result("control.transactions").get("transactions") or []
@@ -455,6 +483,7 @@ def main(argv):
             else:
                 check_acknowledge(session, problems, report_path)
                 check_discard(session, problems, report_path)
+                check_discard_reads_back(session, problems, report_path)
             check_transactions(session, problems)
             check_arm_pair(session, instance, problems)
             check_arm_transactions(session, problems)
