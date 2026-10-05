@@ -37,6 +37,7 @@
 
 #include <QJsonArray>
 #include <QJsonObject>
+#include <algorithm>
 #include <memory>
 #include <utility>
 #include <vector>
@@ -114,6 +115,11 @@ ControlResult saveSet(const QJsonObject& args)
 		ControlResult error;
 		Track* track = control::resolveTrack(value.toString(), &error);
 		if (track == nullptr) { return error; }
+		// A set is a SET, so naming one track twice still names it ONCE: the stored
+		// definition, the `track_count` this reply reports and the shown/hidden counts
+		// track.visibility_set_apply derives from it all count MEMBERS, and a repeated
+		// id would make one track read as two of them.
+		if (std::find(ids.begin(), ids.end(), track->id()) != ids.end()) { continue; }
 		ids.push_back(track->id());
 		listed.append(control::trackIdOf(track));
 	}

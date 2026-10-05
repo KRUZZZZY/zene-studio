@@ -416,6 +416,34 @@ private slots:
 		removeAll(name);
 	}
 
+	//! A visibility set is a SET: naming the same track twice must still leave it a set of ONE
+	//! member. The stored definition and the `track_count` the save reply reports both count
+	//! MEMBERS, so the duplicate has to go before either is taken.
+	void aRepeatedTrackIdIsSavedAsOneMember()
+	{
+		const QString name = QStringLiteral("j-dup-ids");
+		const QString firstId = control::trackIdOf(addTrack(Track::Type::Instrument, name));
+		const QString secondId = control::trackIdOf(addTrack(Track::Type::Instrument, name));
+		Song* song = Engine::getSong();
+		ControlResult saved = ControlRegistry::instance()->invoke(QStringLiteral("track.visibility_set_save"),
+			QJsonObject{{QStringLiteral("name"), QStringLiteral("Doubled")},
+				{QStringLiteral("tracks"), QJsonArray{firstId, firstId, secondId, firstId}}});
+		QVERIFY2(saved.ok, qPrintable(saved.errorMessage));
+		// Four ids named, two distinct tracks: the reply counts MEMBERS.
+		QCOMPARE(saved.result.value(QStringLiteral("track_count")).toInt(), 2);
+		QCOMPARE(saved.result.value(QStringLiteral("tracks")).toArray().size(), 2);
+		const TrackContainer::VisibilitySet* set = song->findVisibilitySet(QStringLiteral("Doubled"));
+		QVERIFY(set != nullptr);
+		QCOMPARE(static_cast<int>(set->trackIds.size()), 2);
+		// Applying it shows each member ONCE, so the duplicate is gone from the engine's
+		// own view too - not only from the reply.
+		int shown = 0;
+		int hidden = 0;
+		QVERIFY(song->applyVisibilitySet(QStringLiteral("Doubled"), &shown, &hidden));
+		QCOMPARE(shown, 2);
+		removeAll(name);
+	}
+
 private:
 	//! \a type track named \a name, in the song container.
 	Track* addTrack(Track::Type type, const QString& name)
