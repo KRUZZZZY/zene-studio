@@ -31,6 +31,7 @@
 
 #include <array>
 #include <cmath>
+#include <limits>
 
 #include <QDomDocument>
 #include <QJsonArray>
@@ -327,6 +328,26 @@ private slots:
 		heard.fill(SampleFrame(1.f, 0.f));
 		controlroom::apply(heard.data(), 4);
 		QCOMPARE(heard[3][1], 0.f);  // neutral again: untouched
+	}
+
+	void theControlRoomSurvivesAnOutOfRangeState()
+	{
+		const controlroom::State previous = controlroom::state();
+		controlroom::State bad = previous;
+		bad.speaker = 3;
+		bad.trimsDb[0] = std::numeric_limits<float>::quiet_NaN();
+		bad.dim = true;
+		bad.dimDb = std::numeric_limits<float>::infinity();
+		controlroom::setState(bad);
+		const controlroom::State settled = controlroom::state();
+		QVERIFY(settled.speaker >= 0 && settled.speaker <= 2);  // not indexed out of trims
+		for (const float db : settled.trimsDb) { QVERIFY(std::isfinite(db)); }
+		QVERIFY(std::isfinite(settled.dimDb));
+		std::array<SampleFrame, 4> heard;
+		heard.fill(SampleFrame(1.f, 0.f));
+		controlroom::apply(heard.data(), 4);  // no undefined output reaches the audio path
+		QVERIFY(std::isfinite(heard[0][0]));
+		controlroom::setState(previous);
 	}
 
 	void theCrossfaderFadesItsSidesOnly()

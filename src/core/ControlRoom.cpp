@@ -68,6 +68,11 @@ State state() { return g_state; }
 void setState(const State& state)
 {
 	g_state = state;
+	// the interface thread hands us a plain struct: keep the speaker inside the trim array and refuse
+	// gains no mixer position could have produced, so publish never indexes out of bounds
+	g_state.speaker = std::clamp(g_state.speaker, 0, 2);
+	for (float& db : g_state.trimsDb) { db = std::isfinite(db) ? db : 0.f; }
+	g_state.dimDb = std::isfinite(g_state.dimDb) ? g_state.dimDb : 0.f;
 	publish(g_state);
 	QStringList trims;
 	for (const float db : g_state.trimsDb) { trims << QString::number(db); }
