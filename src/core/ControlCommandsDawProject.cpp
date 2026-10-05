@@ -206,6 +206,16 @@ void restoreSession(Song* song, const SessionSnapshot& snapshot)
 		channel->m_muteModel.setValue(entry.value(QStringLiteral("mute")).toBool());
 		channel->m_soloModel.setValue(entry.value(QStringLiteral("solo")).toBool());
 	}
+	// The strips the import created ABOVE the captured ones are not part of the
+	// session being put back: an undo that leaves them behind restores a mixer
+	// the user never had. Deleted from the top down, because a deletion shifts
+	// the indices below it. The master (index 0) is always captured, so this
+	// loop never reaches it.
+	for (int index = static_cast<int>(mixer->numChannels()) - 1;
+		index >= snapshot.channels.size(); index--)
+	{
+		mixer->deleteChannel(index);
+	}
 	song->setTempo(static_cast<bpm_t>(snapshot.globalTempo));
 	song->getTimeSigModel().numeratorModel().setValue(snapshot.numerator);
 	song->getTimeSigModel().denominatorModel().setValue(snapshot.denominator);
