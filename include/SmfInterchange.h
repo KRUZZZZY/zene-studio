@@ -114,6 +114,21 @@ constexpr unsigned char SmfMetaEndOfTrack = 0x2F;
 constexpr unsigned char SmfMetaTrackName = 0x03;
 //! Format 1 with one conductor track (see the header comment).
 constexpr int SmfWrittenFormat = 1;
+//! The widest gap between two events a Standard MIDI File can carry: a delta
+//! time is a variable-length quantity of at most FOUR bytes, so 0x0FFFFFFF file
+//! ticks (26,843,545 LMMS ticks) is all one delta may be. A map wider than this
+//! is refused rather than written as the five-byte quantity the format has no
+//! encoding for.
+constexpr int SmfMaxDeltaTicks = 0x0FFFFFFF;
+//! The widest meter the engine holds: TempoMapLargestDenominator (32) is 2^5,
+//! so dd (log2(denominator)) in a time-signature meta event may be 0..5. A
+//! larger dd is refused rather than masked into another metre.
+constexpr int SmfMaxTimeSignatureExponent = 5;
+//! The widest absolute position one track may reach, in file ticks: the
+//! reader's own event tick is a quint32 (a 32-bit LMMS tick times
+//! SmfTicksPerLmmsTick is not representable), so a track that accumulates
+//! deltas past this is refused rather than read at a wrapped tick.
+constexpr quint64 SmfMaxFileTicks = 0xFFFFFFFFull;
 
 /*! One conductor event, in LMMS' own tick domain (48 ticks per quarter note).
  *  Either half may be absent, exactly as in TempoMapEvent: the two halves are

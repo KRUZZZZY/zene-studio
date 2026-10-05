@@ -70,6 +70,7 @@
 #include "TempoMap.h"
 #include "TimePos.h"
 
+#include "SmfInterchange.h"
 #include "SmfInterchangeTestSupport.h"
 
 using namespace lmms;
@@ -328,6 +329,151 @@ private slots:
 		QCOMPARE(tooFast.errorKind, ControlErrorKind::Refused);
 		QVERIFY(tooFast.errorMessage.contains(QStringLiteral("tick 0")));
 		QCOMPARE(digest(mapEvents()), digest(before));
+	}
+
+//! A delta time in a Standard MIDI File is a variable-length quantity of at
+	//! most FOUR bytes (0x0FFFFFFF file ticks), and a file tick is ten LMMS
+	//! ticks, so the widest gap the format can carry is 26,843,545 LMMS ticks.
+	//! A wider one used to be written as the five-byte quantity appendVlq can
+	//! emit - a file no reader of the format would accept - and the scaled tick
+	//! was narrowed to quint32, which wraps above 429,496,729 LMMS ticks. A map
+	//! the format cannot carry is refused, and no file is left behind; one it
+	//! can carry is still written.
+	void aGapTooWideForTheFormatIsRefused()
+	{
+		constexpr int MaxDeltaTicks = 0x0FFFFFFF;
+		const int widestGap = MaxDeltaTicks / interchange::SmfTicksPerLmmsTick;
+
+		auto mapWithSecondEventAt = [](int tick) {
+			TempoMap map;
+			// The map must be ACTIVE for its events to be in force: an inactive
+			// map exports only the tick-0 seed, so the wide gap would never
+			// reach the file and this case would prove nothing.
+			map.setActive(true);
+			TempoMapEvent first;
+			first.tick = 0;
+			first.hasTempo = true;
+			first.tempo = 120;
+			map.addEvent(first);
+			TempoMapEvent second = first;
+			second.tick = tick;
+			map.addEvent(second);
+			return map;
+		};
+
+		// One LMMS tick too wide: the delta does not fit four bytes.
+		const QString tooWide = path(m_directory, QStringLiteral("gap-too-wide.mid"));
+		QString error;
+		QVERIFY2(!interchange::writeConductorTrack(tooWide, mapWithSecondEventAt(widestGap + 1),
+			120, TempoMapTimeSignature{4, 4}, nullptr, &error),
+			"a delta time beyond the format's four bytes is refused");
+		QVERIFY(!error.isEmpty());
+		QVERIFY2(!QFile::exists(tooWide), "and no file is left behind");
+
+		// The widest gap the format CAN carry is still written, and reads back.
+		const QString widest = path(m_directory, QStringLiteral("gap-widest.mid"));
+		QVERIFY2(interchange::writeConductorTrack(widest, mapWithSecondEventAt(widestGap),
+			120, TempoMapTimeSignature{4, 4}, nullptr, &error),
+			qPrintable(error));
+		QFile handle(widest);
+		QVERIFY(handle.open(QIODevice::ReadOnly));
+		const QByteArray bytes = handle.readAll();
+		int format = 0;
+		int trackCount = 0;
+		int division = 0;
+		std::vector<MetaEvent> events;
+		QVERIFY2(parseConductorFile(bytes, &format, &trackCount, &division, &events, &error),
+			qPrintable(error));
+		// The last event before the end-of-track is the second tempo, at the wide
+		// tick exactly: 26,843,545 LMMS ticks is 268,435,450 file ticks.
+		QCOMPARE(events[events.size() - 2].tick,
+			static_cast<quint32>(widestGap * interchange::SmfTicksPerLmmsTick));
+	}
+
+	//! A global tempo outside the engine's own bounds never reaches the file's
+	//! microseconds-per-quarter arithmetic. An EMPTY map answers the caller's
+	//! global tempo at every tick, so the tick-0 seed carries whatever the caller
+	//! passed - and (60000000 + 0) / 0 is an integer division by zero, which is
+	//! a crash rather than a wrong byte. A tempo the engine does not hold is
+	//! refused, with a reason and no file; a tempo it does hold is still written.
+	void aGlobalTempoTheEngineDoesNotHoldIsRefused()
+	{
+		const QString file = path(m_directory, QStringLiteral("bad-global-tempo.mid"));
+		for (const int tempo : {0, -120, TempoMapMaxTempo + 1})
+		{
+			QString error;
+			QVERIFY2(!interchange::writeConductorTrack(file, TempoMap{}, tempo,
+				TempoMapTimeSignature{4, 4}, nullptr, &error),
+				qPrintable(QStringLiteral("global tempo %1 was accepted").arg(tempo)));
+			QVERIFY2(!error.isEmpty(), "the refusal says why");
+			QVERIFY2(!QFile::exists(file), "and no file is left behind");
+		}
+
+		// The engine's own bounds are the accepted ones: the slowest tempo it
+		// holds still writes.
+		QString error;
+		QVERIFY2(interchange::writeConductorTrack(file, TempoMap{}, TempoMapMinTempo,
+			TempoMapTimeSignature{4, 4}, nullptr, &error), qPrintable(error));
+		QVERIFY(QFile::exists(file));
+	}
+
+	//! A map switched off is never consulted by the timeline: every tick answers
+	//! the global tempo and metre. Its stored events were still written into the
+	//! file, so a file another DAW read changed tempo at tick 200 in a session
+	//! that does not - the file was a different performance of the same project.
+	//! An inactive map exports the effective global values and nothing else.
+	void anInactiveMapExportsOnlyWhatTheTimelineObeys()
+	{
+		TempoMap map;
+		TempoMapEvent atZero;
+		atZero.tick = 0;
+		atZero.hasTempo = true;
+		atZero.tempo = 140;
+		atZero.hasTimeSignature = true;
+		atZero.numerator = 4;
+		atZero.denominator = 4;
+		QVERIFY(map.addEvent(atZero));
+		TempoMapEvent dormant = atZero;
+		dormant.tick = 200;
+		dormant.tempo = 90;
+		QVERIFY(map.addEvent(dormant));
+		map.setActive(false);
+
+		// The same map ACTIVE is the control: both events are what the session
+		// obeys, so both belong in the file.
+		const std::vector<interchange::SmfInterchangeEvent> obeyed =
+			interchange::exportEvents(map, 120, TempoMapTimeSignature{4, 4}, nullptr);
+		QCOMPARE(static_cast<int>(obeyed.size()), 1);
+
+		// The dormant map exports the seed alone: tick 0, and the GLOBAL tempo
+		// and metre, because those are what every tick of it answers.
+		QCOMPARE(obeyed.front().tick, static_cast<tick_t>(0));
+		QCOMPARE(obeyed.front().tempo, 120);
+		QCOMPARE(obeyed.front().hasTimeSignature, true);
+		QCOMPARE(obeyed.front().numerator, 4);
+		QCOMPARE(obeyed.front().denominator, 4);
+		for (const interchange::SmfInterchangeEvent& event : obeyed)
+		{
+			QVERIFY2(event.tick == 0, "a dormant event reached the exported list");
+		}
+
+		// And the FILE, written while the map is still inactive, says the same
+		// thing: one tempo event, the global one.
+		const QString file = path(m_directory, QStringLiteral("inactive.mid"));
+		QString error;
+		QVERIFY2(interchange::writeConductorTrack(file, map, 120,
+			TempoMapTimeSignature{4, 4}, nullptr, &error), qPrintable(error));
+		const interchange::SmfReadReport read = interchange::readConductorTrack(file);
+		QVERIFY2(read.ok, qPrintable(read.error));
+		QCOMPARE(read.events.size(), static_cast<std::size_t>(1));
+		QCOMPARE(read.events.front().tempo, 120);
+
+		// Switched on, the same map exports what it now obeys: both events.
+		map.setActive(true);
+		const std::vector<interchange::SmfInterchangeEvent> active =
+			interchange::exportEvents(map, 120, TempoMapTimeSignature{4, 4}, nullptr);
+		QCOMPARE(static_cast<int>(active.size()), 2);
+		QCOMPARE(active.back().tick, static_cast<tick_t>(200));
 	}
 
 private:

@@ -115,6 +115,31 @@ protected:
 	// The internal per-controller get-value function
 	void updateValueBuffer() override;
 
+private:
+	/*! Whether an incoming hardware value \a value takes this control over:
+	 *  either it is already AT the soft-takeover target (within one MIDI step,
+	 *  because a knob cannot be placed on an arbitrary stored value and
+	 *  refusing that step would mean a surface that never takes over), or the
+	 *  hardware is seen to CROSS the target since the last sample.
+	 *
+	 *  Only an OBSERVED crossing counts: the comparison is against the previous
+	 *  RAW hardware sample, not against m_lastValue, which is the last value the
+	 *  model accepted and so is stale until capture. Before the first sample
+	 *  there is nothing to have crossed, so the first value after the gate is
+	 *  armed can only capture by being at the target.
+	 *
+	 *  Records \a value as the new previous raw sample either way: the hardware
+	 *  moved, whether or not the model followed it. */
+	bool softTakeoverCapturedBy(float value);
+
+	/*! Forget the crossing history, so the next value is treated as a first
+	 *  sample again. Called whenever the gate is (re)armed. */
+	void rearmSoftTakeover()
+	{
+		m_softTakeoverCaptured = false;
+		m_haveRawSample = false;
+	}
+
 
 	MidiPort m_midiPort;
 
@@ -125,7 +150,34 @@ protected:
 	bool m_softTakeoverCaptured = false;
 	float m_softTakeoverTarget = 0.0f;
 
+	/*! The previous RAW hardware value, and whether one has been seen yet.
+	 *  The crossing test compares the incoming value against these, NOT
+	 *  against m_lastValue: that is the last value the MODEL accepted, which
+	 *  is stale (or still its initial 0.0) until this control takes over, so
+	 *  comparing against it let the first event after arming capture whenever
+	 *  it happened to sit on the far side of the target. The hardware moving
+	 *  without the model following is exactly the case soft takeover is for.
+	 *  Cleared whenever the gate is (re)armed, so the first sample after that
+	 *  is treated as a first sample - it can be AT the target, but it cannot
+	 *  CROSS it. */
+	float m_previousRawValue = 0.0f;
+	bool m_haveRawSample = false;
+
 	bool m_feedbackEnabled = false;
+
+	/*! What feedback BORROWED from the port, so disabling it can give the port
+	 *  back. Enabling feedback on an input-only control moves the port to
+	 *  Duplex and points its output channel at this control's channel, because
+	 *  a port that cannot output cannot carry the write (MidiController.cpp).
+	 *  Both are settings MidiPort::saveSettings persists, so leaving them
+	 *  behind would hand the user a port exposed as an output, on a channel
+	 *  they never chose - and save that. Only what feedback actually changed
+	 *  is recorded, and restored: a control that was already Duplex on a
+	 *  channel of its own is left alone. */
+	MidiPort::Mode m_modeBeforeFeedback = MidiPort::Mode::Disabled;
+	int m_outputChannelBeforeFeedback = 0;
+	bool m_tookOverPortMode = false;
+	bool m_tookOverPortChannel = false;
 
 	friend class gui::ControllerConnectionDialog;
 	friend class AutoDetectMidiController;

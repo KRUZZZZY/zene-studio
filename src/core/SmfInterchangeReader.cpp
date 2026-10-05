@@ -46,6 +46,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstring>
+#include <limits>
 #include <vector>
 
 namespace lmms
@@ -182,6 +183,38 @@ bool skipEventPayload(Cursor& track, unsigned char status, QString* error)
 	return true;  // 0xF6 and the real-time statuses carry no data bytes
 }
 
+//! The FF 58 payload's two bytes, once dd is known to be a metre the map holds.
+void readTimeSignaturePayload(const unsigned char* payload, Candidate* candidate, QString* error)
+{
+	// dd is log2(denominator) and the map holds a power of two up to 32
+	// (TempoMapLargestDenominator), so dd = 0..5. Masking the byte instead
+	// rewrote dd 32 as dd 0 and imported 1/1 - a different metre, not the
+	// one the file names - and shifting by 31 is undefined behaviour.
+	if (payload[1] > SmfMaxTimeSignatureExponent)
+	{
+		*error = QStringLiteral("a time signature names denominator 2^%1, which is wider "
+			"than the 2^%2 this engine holds; the file was refused rather than read as a "
+			"different metre").arg(payload[1]).arg(SmfMaxTimeSignatureExponent);
+		return;
+	}
+	candidate->hasTimeSignature = true;
+	candidate->numerator = payload[0];
+	candidate->denominator = 1 << payload[1];
+}
+
+//! The end-of-track event's zero payload (SMF 1.0).
+bool readEndOfTrack(quint32 length, EventOutcome* outcome, QString* error)
+{
+	if (length != 0)
+	{
+		*error = QStringLiteral("an end-of-track meta event carries %1 payload bytes; the "
+			"format allows none, so the track was refused").arg(length);
+		return false;
+	}
+	*outcome = EventOutcome::EndOfTrack;
+	return true;
+}
+
 bool readMetaEvent(Cursor& track, quint32 smfTick, std::vector<Candidate>* candidates,
 	EventOutcome* outcome, QString* error)
 {
@@ -210,12 +243,15 @@ bool readMetaEvent(Cursor& track, quint32 smfTick, std::vector<Candidate>* candi
 	{
 		Candidate candidate;
 		candidate.smfTick = smfTick;
-		candidate.hasTimeSignature = true;
-		candidate.numerator = payload[0];
-		candidate.denominator = 1 << (payload[1] & 0x1F);
+		readTimeSignaturePayload(payload, &candidate, error);
+		if (!error->isEmpty()) { return false; }
 		candidates->push_back(candidate);
 	}
-	else if (type == SmfMetaEndOfTrack) { *outcome = EventOutcome::EndOfTrack; }
+	// SMF 1.0: the end-of-track meta event's length is zero and it is the last
+	// thing in the track. A payload makes the event malformed, and anything
+	// after it belongs to no event, so both are refused instead of being read as
+	// a well-formed track with the rest discarded (see readTrack).
+	else if (type == SmfMetaEndOfTrack) { return readEndOfTrack(length, outcome, error); }
 	return true;
 }
 
@@ -262,7 +298,19 @@ bool readEvent(Cursor& track, quint32 smfTick, TrackState* state,
 bool readTrack(Cursor& track, std::vector<Candidate>* candidates, QString* error)
 {
 	TrackState state;
-	quint32 absolute = 0;
+	// Every track ends with an end-of-track meta event; it is how the format says
+	// the sequence is over. The walk below can also stop because the chunk ran
+	// out of bytes, which is a chunk TRUNCATED immediately after its last event
+	// rather than one that ended - and the chunk length is the file's own word
+	// for where the track ends, so nothing else would notice. Kept, because the
+	// two stops are otherwise indistinguishable.
+	bool sawEndOfTrack = false;
+	// 64-bit, because a track's deltas are individually valid yet together may
+	// pass 2^32 file ticks; a 32-bit accumulator wrapped them back to the start
+	// of the track and the event was imported at an earlier position than the
+	// file states. Past SmfMaxFileTicks the tick has no place in the reader's
+	// own quint32, so the track is refused rather than truncated.
+	quint64 absolute = 0;
 	while (!track.atEnd())
 	{
 		quint32 delta = 0;
@@ -272,9 +320,35 @@ bool readTrack(Cursor& track, std::vector<Candidate>* candidates, QString* error
 			return false;
 		}
 		absolute += delta;
+		if (absolute > SmfMaxFileTicks)
+		{
+			*error = QStringLiteral("a track reaches %1 file ticks, beyond the %2 the reader "
+				"holds; the track was refused rather than read at a wrapped tick")
+				.arg(absolute).arg(SmfMaxFileTicks);
+			return false;
+		}
 		EventOutcome outcome = EventOutcome::Continue;
-		if (!readEvent(track, absolute, &state, candidates, &outcome, error)) { return false; }
-		if (outcome == EventOutcome::EndOfTrack) { return true; }
+		if (!readEvent(track, static_cast<quint32>(absolute), &state, candidates, &outcome,
+			error)) { return false; }
+		if (outcome == EventOutcome::EndOfTrack)
+		{
+			sawEndOfTrack = true;
+			if (!track.atEnd())
+			{
+				*error = QStringLiteral("%1 bytes follow the end-of-track meta event; the "
+					"format ends the track there, so the track was refused")
+					.arg(track.end - track.p);
+				return false;
+			}
+			return true;
+		}
+	}
+	if (!sawEndOfTrack)
+	{
+		*error = QStringLiteral("a track ends without an end-of-track meta event; the format "
+			"ends every track with one, so the chunk was truncated after its last event "
+			"rather than complete");
+		return false;
 	}
 	return true;
 }
@@ -316,6 +390,31 @@ bool validateDivision(int division, QString* error)
 	return true;
 }
 
+//! This import path builds ONE timeline out of the tracks. Format 1 shares a
+//! tick origin across them, so its tracks merge; format 2's tracks are
+//! independent sequences with their own origins and tempos, which would be
+//! merged as if they played together, and an unknown format says nothing at
+//! all about how its tracks relate. Both are refused rather than merged.
+bool validateFormat(int format, QString* error)
+{
+	if (format == 0 || format == 1) { return true; }
+	*error = QStringLiteral("SMF format %1 cannot be imported - this reader merges format 0 and "
+		"format 1 tracks onto one timeline, and format %1 does not share a tick origin "
+		"across its tracks").arg(format);
+	return false;
+}
+
+//! The chunk length is the file's own statement of where the tracks begin;
+//! extension bytes it names that the file does not carry leave the cursor short
+//! of that point, so the skip past them cannot be allowed to fail unnoticed.
+bool skipHeaderExtension(Cursor& cursor, quint32 headerLength, QString* error)
+{
+	if (headerLength <= 6 || cursor.skip(headerLength - 6)) { return true; }
+	*error = QStringLiteral("the MThd chunk declares %1 bytes but the file ends before them - "
+		"the header extension it names is truncated").arg(headerLength);
+	return false;
+}
+
 bool parseHeader(Cursor& cursor, SmfReadReport* report, QString* error)
 {
 	if (!expectChunkId(cursor, "MThd",
@@ -334,7 +433,8 @@ bool parseHeader(Cursor& cursor, SmfReadReport* report, QString* error)
 		*error = QStringLiteral("the MThd chunk is truncated");
 		return false;
 	}
-	if (headerLength > 6) { cursor.skip(headerLength - 6); }
+	if (!skipHeaderExtension(cursor, headerLength, error)) { return false; }
+	if (!validateFormat(format, error)) { return false; }
 	if (!validateDivision(division, error)) { return false; }
 	report->format = format;
 	report->trackCount = trackCount;
@@ -347,7 +447,16 @@ bool readTracks(Cursor& cursor, int* tracksRead, std::vector<Candidate>* candida
 {
 	while (!cursor.atEnd())
 	{
-		if (cursor.remaining() < 4) { break; }
+		// End of file is the only clean end of a chunk list. One to three bytes
+		// left are the start of a chunk header that the file cut short, not an
+		// end: treating them as the end dropped a malformed tail silently.
+		if (cursor.remaining() < 4)
+		{
+			if (cursor.remaining() == 0) { break; }
+			*error = QStringLiteral("a chunk header is truncated - %1 byte(s) follow the last "
+				"chunk, too few for a chunk header").arg(cursor.remaining());
+			return false;
+		}
 		unsigned char id[4];
 		for (unsigned char& c : id) { cursor.byte(&c); }
 		quint32 chunkLength = 0;
@@ -377,13 +486,26 @@ bool readTracks(Cursor& cursor, int* tracksRead, std::vector<Candidate>* candida
 
 //! The file tick -> LMMS tick conversion: round-to-nearest on LMMS' 48-per-
 //! quarter grid, with \a rounded set when the tick was not representable exactly.
-tick_t lmmsTickFor(quint32 smfTick, int ticksPerQuarterNote, bool* rounded)
+//! The quotient is computed in 64 bits but tick_t is a signed 32-bit count, so a
+//! quotient past its range is REFUSED here rather than cast: casting wraps it to
+//! a small nonnegative tick that later validation accepts, placing the event
+//! near the start of the map instead of where the file put it.
+bool lmmsTickFor(quint32 smfTick, int ticksPerQuarterNote, tick_t* out, bool* rounded, QString* error)
 {
 	const qint64 scaled = static_cast<qint64>(smfTick) * LmmsTicksPerQuarterNote;
 	const qint64 quotient = scaled / ticksPerQuarterNote;
 	const qint64 remainder = scaled % ticksPerQuarterNote;
 	if (remainder != 0) { *rounded = true; }
-	return static_cast<tick_t>(quotient + (2 * remainder >= ticksPerQuarterNote ? 1 : 0));
+	const qint64 roundedTick = quotient + (2 * remainder >= ticksPerQuarterNote ? 1 : 0);
+	if (roundedTick > std::numeric_limits<tick_t>::max()
+		|| roundedTick < std::numeric_limits<tick_t>::min())
+	{
+		*error = QStringLiteral("SMF tick %1 converts to LMMS tick %2, which does not fit the "
+			"map's tick range - the file's times cannot be placed").arg(smfTick).arg(roundedTick);
+		return false;
+	}
+	*out = static_cast<tick_t>(roundedTick);
+	return true;
 }
 
 //! The tempo a microseconds-per-quarter event names, rounded to whole bpm.
@@ -419,14 +541,19 @@ void applyTimeSignature(const Candidate& candidate, SmfInterchangeEvent* event,
 
 /*! One entry per tick, merged PER HALF. The candidates are already in file
  *  order, so "first wins" is simply "the first one seen", which is the rule a
- *  player follows. */
-void mergeCandidates(const std::vector<Candidate>& candidates, SmfReadReport* report,
-	std::vector<SmfInterchangeEvent>* merged)
+ *  player follows. A candidate whose tick cannot be represented refuses the whole
+ *  merge rather than being placed at a wrapped tick. */
+bool mergeCandidates(const std::vector<Candidate>& candidates, SmfReadReport* report,
+	std::vector<SmfInterchangeEvent>* merged, QString* error)
 {
 	for (const Candidate& candidate : candidates)
 	{
 		bool rounded = false;
-		const tick_t tick = lmmsTickFor(candidate.smfTick, report->ticksPerQuarterNote, &rounded);
+		tick_t tick = 0;
+		if (!lmmsTickFor(candidate.smfTick, report->ticksPerQuarterNote, &tick, &rounded, error))
+		{
+			return false;
+		}
 		if (rounded) { report->roundedEvents++; }
 		if (merged->empty() || merged->back().tick != tick)
 		{
@@ -438,6 +565,7 @@ void mergeCandidates(const std::vector<Candidate>& candidates, SmfReadReport* re
 		if (candidate.hasTempo) { applyTempo(candidate, &last, report); }
 		if (candidate.hasTimeSignature) { applyTimeSignature(candidate, &last, report); }
 	}
+	return true;
 }
 
 void summarize(const std::vector<SmfInterchangeEvent>& merged, SmfReadReport* report)
@@ -451,6 +579,20 @@ void summarize(const std::vector<SmfInterchangeEvent>& merged, SmfReadReport* re
 	{
 		report->capacityEvents = static_cast<int>(merged.size()) - TempoMap::MaxEvents;
 	}
+}
+
+//! The header's trackCount is the file's own statement of how many MTrk chunks
+//! follow. readTracks() counted the ones it actually found and the two numbers
+//! were never compared, so a file declaring more tracks than it carries
+//! succeeded with a map built from part of the file and nothing said a track
+//! was missing. A count that does not match is refused like any other
+//! malformed structure, not imported as far as it goes.
+bool trackCountMatches(const SmfReadReport* report, int tracksRead, QString* error)
+{
+	if (report->trackCount == tracksRead) { return true; }
+	*error = QStringLiteral("the MThd chunk declares %1 track(s) but the file carries %2 - "
+		"a track is missing from the file").arg(report->trackCount).arg(tracksRead);
+	return false;
 }
 
 bool readAllTracks(const QByteArray& bytes, SmfReadReport* report, QString* error)
@@ -467,10 +609,12 @@ bool readAllTracks(const QByteArray& bytes, SmfReadReport* report, QString* erro
 		*error = QStringLiteral("the file carries no MTrk track");
 		return false;
 	}
+	if (!trackCountMatches(report, tracksRead, error)) { return false; }
 
 	std::stable_sort(candidates.begin(), candidates.end(),
 		[](const Candidate& a, const Candidate& b) { return a.smfTick < b.smfTick; });
-	mergeCandidates(candidates, report, &report->events);
+	mergeCandidates(candidates, report, &report->events, error);
+	if (!error->isEmpty()) { return false; }
 	summarize(report->events, report);
 	return true;
 }

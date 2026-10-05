@@ -57,7 +57,9 @@ public:
 	bool apply(MidiEvent* event);
 
 	QJsonObject toJson() const;
-	//! Set the fields @a json names (the others keep their values); false, with @a error, on a bad value.
+	//! Set the fields @a json names (the others keep their values); false, with @a error, on a bad
+	//! value. @a error is an output and may be null - a caller that wants no message is refused
+	//! just the same.
 	bool fromJson(const QJsonObject& json, QString* error);
 	void reset();
 

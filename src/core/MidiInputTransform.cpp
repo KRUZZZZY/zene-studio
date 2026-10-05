@@ -25,6 +25,7 @@
 #include "MidiInputTransform.h"
 
 #include <algorithm>
+#include <cmath>
 
 #include <QDomElement>
 #include <QJsonDocument>
@@ -40,6 +41,21 @@ namespace
 constexpr int NotHeld = -2;
 constexpr int Dropped = -1;
 constexpr auto Relaxed = std::memory_order_relaxed;
+
+//! The value \a key carries in \a json, or \a fallback when it is not named -
+//! so a pair whose other end is already in force is checked against it.
+int namedInt(const QJsonObject& json, const char* key, int fallback)
+{
+	return json.contains(QLatin1String(key)) ? json.value(QLatin1String(key)).toInt() : fallback;
+}
+
+//! Refused, with \a message through \a error - which is an OUTPUT and may be
+//! null: a caller that wants no message is refused just the same.
+bool refuse(QString* error, const QString& message)
+{
+	if (error != nullptr) { *error = message; }
+	return false;
+}
 
 } // namespace
 
@@ -152,16 +168,32 @@ QJsonObject MidiInputTransform::toJson() const
 
 bool MidiInputTransform::fromJson(const QJsonObject& json, QString* error)
 {
-	// Checked whole first: one bad value changes nothing.
+	// Checked whole first: one bad value changes nothing. The value is compared
+	// as the double it is, because QJsonValue::toInt() answers its DEFAULT (0)
+	// for a number that is not whole - so 2.5 passed the range check and was
+	// stored as 0, transposing by nothing.
 	for (const Setting& s : settings())
 	{
 		const QJsonValue value = json.value(QLatin1String(s.key));
 		if (value.isUndefined()) { continue; }
-		if (!value.isDouble() || value.toInt() < s.minimum || value.toInt() > s.maximum)
+		const double number = value.toDouble();
+		if (!value.isDouble() || number != std::trunc(number)
+			|| number < s.minimum || number > s.maximum)
 		{
-			*error = QStringLiteral("'%1' is an integer in %2..%3").arg(QLatin1String(s.key)).arg(s.minimum).arg(s.maximum);
-			return false;
+			return refuse(error, QStringLiteral("'%1' is an integer in %2..%3")
+				.arg(QLatin1String(s.key)).arg(s.minimum).arg(s.maximum));
 		}
+	}
+	// The two ends are a RANGE, checked one value at a time: 100 and 20 are each
+	// a legal key, and together they hold no key at all, so every note-on fails
+	// the range test in noteOn() and the instrument goes silent. The ordering is
+	// part of the range, and - like any other bad value - it is checked before
+	// anything is stored, against whichever end the request does not name.
+	if (namedInt(json, "key_low", m_keyLow.load(Relaxed))
+		> namedInt(json, "key_high", m_keyHigh.load(Relaxed)))
+	{
+		return refuse(error, QStringLiteral("'key_low' must not be above 'key_high': the range "
+			"would hold no key and every note would be dropped"));
 	}
 	for (const Setting& s : settings())
 	{
@@ -198,9 +230,18 @@ void MidiInputTransform::load(const QDomElement& trackElement)
 	// does not, and must not reset what the user set on the track.
 	const QString text = trackElement.attribute(QStringLiteral("inputtransform"));
 	if (text.isEmpty()) { return; }
-	reset();
+	// Parsed and validated into a CANDIDATE first: the attribute is the whole
+	// transform, so the settings in force are replaced wholesale - but only once
+	// the attribute is known to be a transform. reset() before parsing left the
+	// track at the identity when the attribute was malformed, which is a way of
+	// losing what the user had with no word and nothing to undo.
+	const QJsonDocument document = QJsonDocument::fromJson(text.toUtf8());
+	if (document.isNull()) { return; }
+	MidiInputTransform candidate;
 	QString ignored;
-	fromJson(QJsonDocument::fromJson(text.toUtf8()).object(), &ignored);
+	if (!candidate.fromJson(document.object(), &ignored)) { return; }
+	for (const Setting& s : settings()) { (this->*s.field).store((candidate.*s.field).load(Relaxed), Relaxed); }
+	updateActive();
 }
 
 } // namespace lmms

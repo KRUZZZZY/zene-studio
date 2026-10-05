@@ -88,22 +88,11 @@ void MidiController::processInEvent(const MidiEvent& event, const TimePos& time,
 				unsigned char val = event.controllerValue();
 				const float incoming = static_cast<float>(val) / 127.0f;
 
-				if (m_softTakeoverEnabled && !m_softTakeoverCaptured)
+				if (m_softTakeoverEnabled && !m_softTakeoverCaptured
+					&& !softTakeoverCapturedBy(incoming))
 				{
-					// Capture when the incoming value crosses the target,
-					// or is already very close to it (within 1 MIDI step).
-					const float epsilon = 1.0f / 127.0f;
-					if ((m_lastValue <= m_softTakeoverTarget && incoming >= m_softTakeoverTarget) ||
-					    (m_lastValue >= m_softTakeoverTarget && incoming <= m_softTakeoverTarget) ||
-					    std::abs(incoming - m_softTakeoverTarget) <= epsilon)
-					{
-						m_softTakeoverCaptured = true;
-					}
-					else
-					{
-						// Ignore: the hardware has not yet reached the stored value.
-						break;
-					}
+					// Ignore: the hardware has not yet reached the stored value.
+					break;
 				}
 
 				m_previousValue = m_lastValue;
@@ -128,30 +117,75 @@ void MidiController::processOutEvent(const MidiEvent& event, const TimePos& time
 	m_midiPort.processOutEvent(event, time, offset);
 }
 
+bool MidiController::softTakeoverCapturedBy(float value)
+{
+	// At the target: within one MIDI step, since a knob cannot be placed on an
+	// arbitrary stored value and refusing this step would mean a surface that
+	// never takes over.
+	const float epsilon = 1.0f / 127.0f;
+	const bool atTarget = std::abs(value - m_softTakeoverTarget) <= epsilon;
+
+	// Crossing: the hardware has been SEEN to pass the target. m_haveRawSample
+	// is false for the first value after arming, which can be at the target but
+	// has not crossed it - so m_lastValue (the last value the MODEL accepted,
+	// stale until capture) is not what this compares against.
+	const bool crossed = m_haveRawSample &&
+		((m_previousRawValue <= m_softTakeoverTarget && value >= m_softTakeoverTarget) ||
+		 (m_previousRawValue >= m_softTakeoverTarget && value <= m_softTakeoverTarget));
+
+	// The hardware moved, whether or not the model followed it: that is the
+	// sample the next event is compared against.
+	m_previousRawValue = value;
+	m_haveRawSample = true;
+
+	if (atTarget || crossed)
+	{
+		m_softTakeoverCaptured = true;
+		return true;
+	}
+	return false;
+}
+
 void MidiController::setSoftTakeoverEnabled(bool enabled)
 {
 	m_softTakeoverEnabled = enabled;
 	if (!enabled)
 	{
-		m_softTakeoverCaptured = false;
+		rearmSoftTakeover();
 	}
 }
 
 void MidiController::setSoftTakeoverTarget(float target)
 {
 	m_softTakeoverTarget = std::clamp(target, 0.0f, 1.0f);
-	m_softTakeoverCaptured = false;
+	rearmSoftTakeover();
 }
 
 void MidiController::resetSoftTakeover()
 {
-	m_softTakeoverCaptured = false;
+	rearmSoftTakeover();
 }
 
 void MidiController::setFeedbackEnabled(bool enabled)
 {
 	m_feedbackEnabled = enabled;
-	if (!enabled) { return; }
+	if (!enabled)
+	{
+		// Give back exactly what enabling feedback borrowed, so an input-only
+		// control does not stay exposed as an output on a channel the user
+		// never chose - and does not save those settings.
+		if (m_tookOverPortMode)
+		{
+			m_midiPort.setMode(m_modeBeforeFeedback);
+			m_tookOverPortMode = false;
+		}
+		if (m_tookOverPortChannel)
+		{
+			m_midiPort.setOutputChannel(m_outputChannelBeforeFeedback);
+			m_tookOverPortChannel = false;
+		}
+		return;
+	}
 
 	// A port that is not output-enabled cannot carry the write, and
 	// MidiPort::processOutEvent gates on the port's output CHANNEL: a feedback
@@ -161,10 +195,16 @@ void MidiController::setFeedbackEnabled(bool enabled)
 	// the channel the hardware listens to for its own control's lamp.
 	if (!m_midiPort.isOutputEnabled())
 	{
+		// Remember it only if feedback is the one doing it: a port the user
+		// already made Duplex is not theirs to have undone.
+		m_modeBeforeFeedback = m_midiPort.mode();
+		m_tookOverPortMode = true;
 		m_midiPort.setMode(MidiPort::Mode::Duplex);
 	}
 	if (m_midiPort.inputChannel() > 0 && m_midiPort.outputChannel() != m_midiPort.inputChannel())
 	{
+		m_outputChannelBeforeFeedback = m_midiPort.outputChannel();
+		m_tookOverPortChannel = true;
 		m_midiPort.setOutputChannel(m_midiPort.inputChannel());
 	}
 	sendFeedback();
@@ -211,6 +251,10 @@ void MidiController::saveSettings( QDomDocument & _doc, QDomElement & _this )
 	Controller::saveSettings( _doc, _this );
 	m_midiPort.saveSettings( _doc, _this );
 	_this.setAttribute("softtakeover", m_softTakeoverEnabled ? "1" : "0");
+	// The target is project state too: restoring only the flag would reopen a
+	// control with a target of 0.0, which captures on the very first
+	// control-change - the one thing soft takeover exists to prevent.
+	_this.setAttribute("softtakeovertarget", QString::number(m_softTakeoverTarget, 'f', 6));
 	_this.setAttribute("feedback", m_feedbackEnabled ? "1" : "0");
 }
 
@@ -222,6 +266,12 @@ void MidiController::loadSettings( const QDomElement & _this )
 
 	m_midiPort.loadSettings( _this );
 	m_softTakeoverEnabled = (_this.attribute("softtakeover", "0") == "1");
+	// A project saved before the target was persisted carries no attribute: it
+	// then keeps the default 0.0, as before.
+	m_softTakeoverTarget = std::clamp(
+		_this.attribute("softtakeovertarget", "0").toFloat(), 0.0f, 1.0f);
+	// A freshly loaded control has not been captured by anything yet.
+	rearmSoftTakeover();
 	m_feedbackEnabled = (_this.attribute("feedback", "0") == "1");
 	updateName();
 }

@@ -54,6 +54,7 @@
 #include "AudioEngine.h"
 #include "ControlReversibility.h"
 #include "Engine.h"
+#include "MidiClient.h"
 #include "MidiClock.h"
 #include "Song.h"
 
@@ -123,6 +124,20 @@ QStringList transportMessages(const QStringList& sequence)
 	}
 	return out;
 }
+
+//! A raw MIDI client with no device behind it: it exists only to drive
+//! MidiClientRaw::parseData(), the byte-at-a-time assembler the MIDI reader
+//! threads feed, so a claim about which byte of a system-common message the
+//! engine keeps can be made without hardware. sendByte() is the client half of
+//! the interface and output is not what this harness is for.
+class ParsingRawClient : public MidiClientRaw
+{
+public:
+	void feed(unsigned char byte) { parseData(byte); }
+
+protected:
+	void sendByte(const unsigned char) override { }
+};
 
 } // namespace
 
@@ -467,6 +482,40 @@ private slots:
 		QVERIFY(slave.contains(QStringLiteral("locked")));
 		QVERIFY(slave.contains(QStringLiteral("tempo_error_bound_bpm")));
 		QCOMPARE(slave.value(QStringLiteral("locked")).toBool(), false);
+	}
+
+	//! THE ASSEMBLER'S BYTE SLOTS. MidiClientRaw::consumeSystemCommon() stores
+	//! a system-common payload by counting down from the message's length, and
+	//! the completion reads a fixed slot: index 0 for a one-byte time-code
+	//! quarter frame, index 0 plus index 1 shifted for a song position pointer.
+	//! `2 - remaining` happens to agree for the two-byte form (2->0, 1->1) and
+	//! does NOT for the one-byte form, where it wrote index 1 and completion read
+	//! index 0 - so a time code reported a stale byte or zero. Both messages go
+	//! through the real parser here, not the tracker directly.
+	void systemCommonPayloadsLandInTheSlotsCompletionReads()
+	{
+		MidiClock* clock = MidiClock::instance();
+		const MidiClockTracker& tracker = clock->tracker();
+		ParsingRawClient client;
+
+		// A song position pointer carries LSB first: beats 97 = 0x61, MSB 0.
+		client.feed(0xF2);
+		client.feed(0x61);
+		client.feed(0x00);
+		QCOMPARE(tracker.lastSongPosition(), 97);
+
+		// A time-code quarter frame carries ONE nibble, and it must be the
+		// value the engine reports. 0x25 is chosen so a stale index-0 byte from
+		// the message above would read back as something else entirely.
+		client.feed(0xF1);
+		client.feed(0x25);
+		QCOMPARE(tracker.lastTimeCode(), 0x25);
+
+		// A second time code, different nibble, still reports itself rather than
+		// the first one's value.
+		client.feed(0xF1);
+		client.feed(0x3A);
+		QCOMPARE(tracker.lastTimeCode(), 0x3A);
 	}
 
 	// ------------------------------------------------------------------- A16

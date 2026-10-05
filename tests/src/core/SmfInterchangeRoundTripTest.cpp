@@ -107,6 +107,41 @@ QString firstDifference(const TempoMap& live, const TempoMap& rebuilt)
 		.arg(live.active()).arg(rebuilt.active());
 }
 
+//! A one-track file whose delta times accumulate PAST 2^32: seventeen maximum
+//! four-byte deltas (0x0FFFFFFF each, 4,563,402,735 file ticks) and then the
+//! tempo event that sits at the end of them. The reader used to accumulate in a
+//! quint32, so that event was imported at 268,435,439 - near the very start of
+//! the file, and 4,294,967,296 ticks before where the file put it.
+QByteArray longTrackFile()
+{
+	QByteArray body;
+	for (int index = 0; index < 17; index++)
+	{
+		appendVlq(body, 0x0FFFFFFF);
+		// A note-off takes TWO data bytes (note, velocity); with one the walk
+		// eats the next delta's first byte and the file is refused for an
+		// unrelated reason.
+		body.append(static_cast<char>(0x90));  // a note-off: skipped, not a conductor event
+		body.append(static_cast<char>(0x3C));
+		body.append(static_cast<char>(0x00));
+	}
+	appendVlq(body, 0);
+	appendMeta(body, 0x51, QByteArray("\x07\xA1\x20", 3));  // 120 bpm at that tick
+	return smfFileWithBody(body + bodyEndingWithEndOfTrack());
+}
+
+//! A one-track file whose track chunk ends IMMEDIATELY after a conductor event,
+//! with no `FF 2F 00` behind it. The chunk length says where the track ends, so
+//! the walk simply runs out of events and returns; nothing in it recorded that
+//! the one event every track owes the format never arrived.
+QByteArray trackWithoutEndOfTrack()
+{
+	QByteArray body;
+	appendVlq(body, 0);
+	appendMeta(body, 0x51, QByteArray("\x07\xA1\x20", 3));  // 120 bpm, and then nothing
+	return smfFileWithBody(body);
+}
+
 } // namespace
 
 class SmfInterchangeRoundTripTest : public QObject
@@ -353,6 +388,317 @@ private slots:
 		QVERIFY2(!refused.ok, "the import of a file the map cannot hold was accepted");
 		QCOMPARE(refused.errorKind, ControlErrorKind::Refused);
 		QCOMPARE(digest(mapEvents()), digest(before));  // a refusal writes nothing
+	}
+
+	//! A dd this engine cannot hold is refused, not turned into a different
+	//! metre. dd is log2(denominator) and the map holds a power of two up to 32,
+	//! so dd is 0..5; masking the byte with 0x1F turned 32 into 0 - a silent 4/1
+	//! that the map happily accepts - and let 31 shift into the sign bit, which
+	//! is undefined. Both are refused with a reason, and nothing is imported.
+	void aMeterExponentTheEngineCannotHoldIsRefused()
+	{
+		QByteArray bytes = plainFile(480, {{0, 120, 4, 4}});
+		const int signatureAt = bytes.indexOf(QByteArrayLiteral("\xFF\x58\x04"));
+		QVERIFY(signatureAt > 0);
+		// dd is payload byte 1: FF 58 04 nn dd cc bb.
+		const int exponentAt = signatureAt + 4;
+		QCOMPARE(static_cast<int>(static_cast<unsigned char>(bytes[exponentAt])), 2);
+
+		for (const unsigned char exponent : {static_cast<unsigned char>(32),
+				static_cast<unsigned char>(6), static_cast<unsigned char>(31)})
+		{
+			bytes[exponentAt] = static_cast<char>(exponent);
+			const QString file = path(m_directory,
+				QStringLiteral("bad-dd-%1.mid").arg(exponent));
+			QVERIFY(writeFile(file, bytes));
+			const ControlResult read = run(QStringLiteral("interchange.smf_read"),
+				{{QStringLiteral("path"), file}});
+			QVERIFY2(!read.ok,
+				qPrintable(QStringLiteral("dd %1 was accepted").arg(exponent)));
+			QCOMPARE(read.errorKind, ControlErrorKind::InvalidArgs);
+			QVERIFY2(read.errorMessage.contains(QStringLiteral("time signature")),
+				qPrintable(read.errorMessage));
+			const ControlResult imported = run(QStringLiteral("interchange.smf_import"),
+				{{QStringLiteral("path"), file}});
+			QVERIFY(!imported.ok);
+			QCOMPARE(digest(mapEvents()), QString());  // a refusal imports nothing
+		}
+
+		// The control: dd 2 is a denominator of 4, and it reads back.
+		bytes[exponentAt] = static_cast<char>(2);
+		const QString good = path(m_directory, QStringLiteral("good-dd.mid"));
+		QVERIFY(writeFile(good, bytes));
+		QVERIFY2(run(QStringLiteral("interchange.smf_import"),
+			{{QStringLiteral("path"), good}}).ok, "dd 2 is a metre the engine holds");
+		QCOMPARE(mapEvents().at(0).toObject().value(QStringLiteral("denominator")).toInt(), 4);
+	}
+
+	//! An end-of-track event ends the track: the format gives it a length of
+	//! zero and puts nothing after it. The reader accepted a payload on it and
+	//! returned from the track at once, so bytes the file carried after its
+	//! declared end were never looked at and the track was called valid.
+	void aMalformedEndOfTrackIsRefused()
+	{
+		// (a) EOT with a payload: length 1, one byte after it.
+		QByteArray withPayload;
+		appendVlq(withPayload, 0);
+		appendMeta(withPayload, 0x2F, QByteArrayLiteral("\x00"));
+		const QString fat = path(m_directory, QStringLiteral("fat-eot.mid"));
+		QVERIFY(writeFile(fat, smfFileWithBody(withPayload)));
+		const ControlResult fatRead = run(QStringLiteral("interchange.smf_read"),
+			{{QStringLiteral("path"), fat}});
+		QVERIFY2(!fatRead.ok, "an end-of-track event with a payload was accepted");
+		QCOMPARE(fatRead.errorKind, ControlErrorKind::InvalidArgs);
+		QVERIFY2(fatRead.errorMessage.contains(QStringLiteral("end-of-track")),
+			qPrintable(fatRead.errorMessage));
+
+		// (b) A well-formed EOT with a whole further event behind it: the track
+		// does not end where the track's first end-of-track says it does.
+		QByteArray withTrailer = bodyEndingWithEndOfTrack();
+		appendVlq(withTrailer, 0);
+		appendMeta(withTrailer, 0x51, QByteArray("\x07\xA1\x20", 3));
+		const QString trailing = path(m_directory, QStringLiteral("trailing-after-eot.mid"));
+		QVERIFY(writeFile(trailing, smfFileWithBody(withTrailer)));
+		const ControlResult trailingRead = run(QStringLiteral("interchange.smf_read"),
+			{{QStringLiteral("path"), trailing}});
+		QVERIFY2(!trailingRead.ok, "a track continuing past its end-of-track was accepted");
+		QCOMPARE(trailingRead.errorKind, ControlErrorKind::InvalidArgs);
+		QVERIFY2(trailingRead.errorMessage.contains(QStringLiteral("end-of-track")),
+			qPrintable(trailingRead.errorMessage));
+
+		// The control: the same body without the trailer is a valid file.
+		const QString exact = path(m_directory, QStringLiteral("exact-eot.mid"));
+		QVERIFY(writeFile(exact, smfFileWithBody(bodyEndingWithEndOfTrack())));
+		QVERIFY2(run(QStringLiteral("interchange.smf_read"),
+			{{QStringLiteral("path"), exact}}).ok, "a track that ends at its EOT is read");
+	}
+
+	//! An MThd chunk longer than the six header fields names extension bytes the
+	//! file has to carry; parseHeader() skipped past them and threw the result
+	//! away, so a chunk that declares an extension it does not contain parsed as
+	//! if it had none and the file was accepted. The declaration is the file's
+	//! own statement of where the tracks begin, so a skip that cannot reach them
+	//! is a truncated header, refused like any other.
+	void aTruncatedHeaderExtensionIsRefused()
+	{
+		QByteArray bytes = plainFile(480, {{0, 120, 4, 4}});
+		QVERIFY(bytes.size() > 16);
+		// The header chunk's length field claims 256 bytes; the file carries the
+		// six header fields and then an MTrk, so the extension is not there.
+		bytes[4] = static_cast<char>(0x00);
+		bytes[5] = static_cast<char>(0x00);
+		bytes[6] = static_cast<char>(0x01);
+		bytes[7] = static_cast<char>(0x00);
+		const QString file = path(m_directory, QStringLiteral("long-header.mid"));
+		QVERIFY(writeFile(file, bytes));
+		const ControlResult read = run(QStringLiteral("interchange.smf_read"),
+			{{QStringLiteral("path"), file}});
+		QVERIFY2(!read.ok, "a header extension the file does not carry was accepted");
+		QCOMPARE(read.errorKind, ControlErrorKind::InvalidArgs);
+		QVERIFY2(read.errorMessage.contains(QStringLiteral("MThd")),
+			qPrintable(read.errorMessage));
+		const ControlResult imported = run(QStringLiteral("interchange.smf_import"),
+			{{QStringLiteral("path"), file}});
+		QVERIFY(!imported.ok);
+		QCOMPARE(digest(mapEvents()), QString());  // a refusal imports nothing
+
+		// The control: the same file with an honest six-byte header is read.
+		QByteArray honest = plainFile(480, {{0, 120, 4, 4}});
+		honest[4] = static_cast<char>(0x00);
+		honest[5] = static_cast<char>(0x00);
+		honest[6] = static_cast<char>(0x00);
+		honest[7] = static_cast<char>(0x06);
+		const QString good = path(m_directory, QStringLiteral("six-byte-header.mid"));
+		QVERIFY(writeFile(good, honest));
+		QVERIFY2(run(QStringLiteral("interchange.smf_read"),
+			{{QStringLiteral("path"), good}}).ok, "a six-byte MThd chunk is read");
+	}
+
+	//! The import path is documented as accepting formats 0 and 1 only. A
+	//! format 2 file is not that: its tracks are independent sequences, each
+	//! with its own tick origin and its own tempo, and there is no single
+	//! timeline to merge them onto. parseHeader() recorded the format and never
+	//! checked it, so mergeCandidates() folded every track into one map and
+	//! the first tempo at tick zero silently became the tempo of all of them.
+	//! An unknown format is the same story with less information: nothing says
+	//! what the tracks mean. Both are refused here rather than merged.
+	void aFormatTheReaderCannotMergeIsRefused()
+	{
+		for (int format : {2, 7})
+		{
+			QByteArray bytes = plainFile(480, {{0, 120, 4, 4}});
+			bytes[8] = static_cast<char>((format >> 8) & 0xFF);
+			bytes[9] = static_cast<char>(format & 0xFF);
+			const QString file = path(m_directory,
+				QStringLiteral("format-%1.mid").arg(format));
+			QVERIFY(writeFile(file, bytes));
+			const ControlResult read = run(QStringLiteral("interchange.smf_read"),
+				{{QStringLiteral("path"), file}});
+			QVERIFY2(!read.ok,
+				qPrintable(QStringLiteral("SMF format %1 was accepted").arg(format)));
+			QCOMPARE(read.errorKind, ControlErrorKind::InvalidArgs);
+			QVERIFY2(read.errorMessage.contains(QStringLiteral("format")),
+				qPrintable(read.errorMessage));
+			const ControlResult imported = run(QStringLiteral("interchange.smf_import"),
+				{{QStringLiteral("path"), file}});
+			QVERIFY(!imported.ok);
+			QCOMPARE(digest(mapEvents()), QString());  // a refusal imports nothing
+		}
+
+		// The control: format 1 is the multi-track format this reader merges.
+		QByteArray one = plainFile(480, {{0, 120, 4, 4}});
+		one[9] = static_cast<char>(0x01);
+		const QString good = path(m_directory, QStringLiteral("format-1.mid"));
+		QVERIFY(writeFile(good, one));
+		QVERIFY2(run(QStringLiteral("interchange.smf_read"),
+			{{QStringLiteral("path"), good}}).ok, "an SMF format 1 file is read");
+	}
+
+	//! The header's trackCount is the file's own statement of how many MTrk
+	//! chunks follow, and parseHeader() recorded it without ever comparing it
+	//! to what readTracks() found. A file that declares two tracks and carries
+	//! one therefore succeeded with a conductor map built from half the file
+	//! and nothing said a track was missing. This reader refuses malformed
+	//! structures rather than importing what it can see, and a count that does
+	//! not match is one of them.
+	void aFileWithFewerTracksThanItDeclaresIsRefused()
+	{
+		QByteArray bytes = plainFile(480, {{0, 120, 4, 4}});
+		bytes[10] = static_cast<char>(0x00);
+		bytes[11] = static_cast<char>(0x02);  // declares two tracks, carries one
+		const QString file = path(m_directory, QStringLiteral("short-tracks.mid"));
+		QVERIFY(writeFile(file, bytes));
+		const ControlResult read = run(QStringLiteral("interchange.smf_read"),
+			{{QStringLiteral("path"), file}});
+		QVERIFY2(!read.ok, "a file carrying fewer tracks than it declares was accepted");
+		QCOMPARE(read.errorKind, ControlErrorKind::InvalidArgs);
+		QVERIFY2(read.errorMessage.contains(QStringLiteral("track")),
+			qPrintable(read.errorMessage));
+		const ControlResult imported = run(QStringLiteral("interchange.smf_import"),
+			{{QStringLiteral("path"), file}});
+		QVERIFY(!imported.ok);
+		QCOMPARE(digest(mapEvents()), QString());  // a refusal imports nothing
+
+		// The control: the same file declaring the one track it carries.
+		QByteArray honest = plainFile(480, {{0, 120, 4, 4}});
+		const QString good = path(m_directory, QStringLiteral("matching-tracks.mid"));
+		QVERIFY(writeFile(good, honest));
+		QVERIFY2(run(QStringLiteral("interchange.smf_read"),
+			{{QStringLiteral("path"), good}}).ok, "a matching track count is read");
+	}
+
+	//! End of file is the only clean end of a chunk list. readTracks() treated
+	//! one to three remaining bytes as one, so a file whose last chunk header
+	//! was cut short - a stray byte, or the first three bytes of an MTrk header
+	//! - parsed successfully and the malformed tail was dropped without a word.
+	//! A tail that is not nothing cannot be read as nothing, so it is reported
+	//! as the truncated chunk header it is.
+	void aTruncatedTrailingChunkHeaderIsRefused()
+	{
+		for (int tail : {1, 3})
+		{
+			QByteArray bytes = plainFile(480, {{0, 120, 4, 4}});
+			for (int i = 0; i < tail; ++i) { bytes.append(static_cast<char>("MTr"[i])); }
+			const QString file = path(m_directory,
+				QStringLiteral("trailing-%1.mid").arg(tail));
+			QVERIFY(writeFile(file, bytes));
+			const ControlResult read = run(QStringLiteral("interchange.smf_read"),
+				{{QStringLiteral("path"), file}});
+			QVERIFY2(!read.ok,
+				qPrintable(QStringLiteral("a %1-byte partial chunk header was accepted").arg(tail)));
+			QCOMPARE(read.errorKind, ControlErrorKind::InvalidArgs);
+			QVERIFY2(read.errorMessage.contains(QStringLiteral("chunk header")),
+				qPrintable(read.errorMessage));
+			const ControlResult imported = run(QStringLiteral("interchange.smf_import"),
+				{{QStringLiteral("path"), file}});
+			QVERIFY(!imported.ok);
+			QCOMPARE(digest(mapEvents()), QString());  // a refusal imports nothing
+		}
+
+		// The control: the same file with nothing after its last track.
+		QByteArray honest = plainFile(480, {{0, 120, 4, 4}});
+		const QString good = path(m_directory, QStringLiteral("clean-tail.mid"));
+		QVERIFY(writeFile(good, honest));
+		QVERIFY2(run(QStringLiteral("interchange.smf_read"),
+			{{QStringLiteral("path"), good}}).ok, "a file ending exactly at its last track is read");
+	}
+
+	//! Every track ends with an end-of-track meta event; it is how the format
+	//! says the sequence is over. readTrack() returned success when its walk ran
+	//! out of bytes, and nothing recorded whether the event had arrived - so a
+	//! chunk truncated immediately after a complete tempo event imported as a
+	//! valid conductor track, with the file's silence past the event read as
+	//! "the track ended here". A track the format itself describes wrongly is
+	//! refused, as an end-of-track event with a payload already is.
+	void aTrackWithoutAnEndOfTrackEventIsRefused()
+	{
+		const QString file = path(m_directory, QStringLiteral("no-eot.mid"));
+		QVERIFY(writeFile(file, trackWithoutEndOfTrack()));
+		const ControlResult read = run(QStringLiteral("interchange.smf_read"),
+			{{QStringLiteral("path"), file}});
+		QVERIFY2(!read.ok, "a track that never ends was accepted");
+		QCOMPARE(read.errorKind, ControlErrorKind::InvalidArgs);
+		QVERIFY2(read.errorMessage.contains(QStringLiteral("end-of-track")),
+			qPrintable(read.errorMessage));
+		const ControlResult imported = run(QStringLiteral("interchange.smf_import"),
+			{{QStringLiteral("path"), file}});
+		QVERIFY(!imported.ok);
+		QCOMPARE(digest(mapEvents()), QString());  // a refusal imports nothing
+	}
+
+	//! A track whose accumulated time runs past 2^32 file ticks is refused. The
+	//! accumulator was a quint32, so an event beyond it wrapped back to near the
+	//! start of the file and was imported at a position the file does not name -
+	//! silently, with the report showing a small plausible tick.
+	void aTrackTimeBeyondTheReadersRangeIsRefused()
+	{
+		const QString file = path(m_directory, QStringLiteral("past-2^32.mid"));
+		QVERIFY(writeFile(file, longTrackFile()));
+		const ControlResult read = run(QStringLiteral("interchange.smf_read"),
+			{{QStringLiteral("path"), file}});
+		QVERIFY2(!read.ok, "a time past the reader's range was accepted");
+		QCOMPARE(read.errorKind, ControlErrorKind::InvalidArgs);
+		QVERIFY(!read.errorMessage.isEmpty());
+		const ControlResult imported = run(QStringLiteral("interchange.smf_import"),
+			{{QStringLiteral("path"), file}});
+		QVERIFY(!imported.ok);
+		QCOMPARE(digest(mapEvents()), QString());  // a refusal imports nothing
+	}
+
+	//! The conversion to LMMS' 48-ticks-per-quarter grid is done in qint64 but
+	//! the result is cast straight to tick_t, which is a signed 32-bit count. A
+	//! file whose division lets the scaled quotient pass 2^31 therefore wrapped
+	//! to a small nonnegative tick that later validation happily accepted, and
+	//! the event landed near the start of the map instead of where it was. A
+	//! tick the map cannot represent is refused before the cast, not wrapped
+	//! into one it can.
+	void aTickTooWideForTheMapIsRefusedInsteadOfWrapping()
+	{
+		// 89,478,486 * 48 = 4,294,967,328 = 2^32 + 32, so the quotient is one
+		// tick too wide and narrows to exactly 32: the most convincing wrong
+		// answer this cast can produce. It still fits a four-byte VLQ, so the
+		// file reaches the conversion rather than being refused as a malformed
+		// delta first.
+		QByteArray bytes = plainFile(1, {{89478486u, 120, 4, 4}});
+		const QString file = path(m_directory, QStringLiteral("wrapping-tick.mid"));
+		QVERIFY(writeFile(file, bytes));
+		const ControlResult read = run(QStringLiteral("interchange.smf_read"),
+			{{QStringLiteral("path"), file}});
+		QVERIFY2(!read.ok, "a tick too wide for the map was accepted, wrapped to another tick");
+		QCOMPARE(read.errorKind, ControlErrorKind::InvalidArgs);
+		QVERIFY2(read.errorMessage.contains(QStringLiteral("tick")),
+			qPrintable(read.errorMessage));
+		const ControlResult imported = run(QStringLiteral("interchange.smf_import"),
+			{{QStringLiteral("path"), file}});
+		QVERIFY(!imported.ok);
+		QCOMPARE(digest(mapEvents()), QString());  // a refusal imports nothing
+
+		// The control: the same file at a tick the map can hold.
+		QByteArray honest = plainFile(1, {{1024u, 120, 4, 4}});
+		const QString good = path(m_directory, QStringLiteral("fitting-tick.mid"));
+		QVERIFY(writeFile(good, honest));
+		QVERIFY2(run(QStringLiteral("interchange.smf_read"),
+			{{QStringLiteral("path"), good}}).ok, "a representable tick is read");
 	}
 
 private:
