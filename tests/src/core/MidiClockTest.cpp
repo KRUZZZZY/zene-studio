@@ -448,6 +448,57 @@ private slots:
 			"restoring an empty destination must leave nothing subscribed");
 	}
 
+	//! LUNA 4243: A MASTER RE-ENABLED DURING PLAYBACK MUST SAY WHERE IT IS.
+	//! While the master was off, processAudioPeriod() returned before the
+	//! transport was tracked, so the tracked state was stale; re-enabling saw no
+	//! rising edge and resumed the pulses with no position and no CONTINUE - a
+	//! slave that joined then had pulses with no position to interpret them at.
+	void reEnablingTheMasterDuringPlaybackEmitsTheTransportEdge()
+	{
+		MidiClock* clock = MidiClock::instance();
+		QString error;
+		const int frames = 512;
+		quint64 now = 4000000000ULL;
+		const qint64 advance = static_cast<qint64>(static_cast<double>(frames)
+			/ static_cast<double>(Engine::framesPerTick()));
+		qint64 position = advance;
+
+		QVERIFY2(clock->setMasterEnabled(true, QString(), &error), qPrintable(error));
+		clock->processAudioPeriod(frames, true, 0, now += 1000000ULL);
+
+		// Send Clock off mid-playback: pulses stop, nothing else is emitted.
+		QVERIFY2(clock->setMasterEnabled(false, QString(), &error), qPrintable(error));
+		const quint32 totalWhileOff = clock->emittedTotal();
+		clock->processAudioPeriod(frames, true, position, now += 1000000ULL);
+		QCOMPARE(clock->emittedTotal(), totalWhileOff);
+
+		// ... and on again while the song is STILL PLAYING, mid-song.
+		QVERIFY2(clock->setMasterEnabled(true, QString(), &error), qPrintable(error));
+		const quint32 totalBefore = clock->emittedTotal();
+		clock->processAudioPeriod(frames, true, position, now += 1000000ULL);
+
+		const QString measured = QStringLiteral("off=%1 before=%2 monitor=%3")
+			.arg(totalWhileOff).arg(totalBefore)
+			.arg(emittedSequence(*clock, totalBefore).join(QLatin1Char(',')));
+		// A mid-song rise is a Song Position Pointer plus a CONTINUE - never a
+		// START, which would claim the top of the song.
+		QVERIFY2(clock->emittedCount(MidiClockMessage::Continue) >= 1u,
+			qPrintable(QStringLiteral("no CONTINUE on re-enable: %1").arg(measured)));
+		QVERIFY2(clock->emittedCount(MidiClockMessage::SongPosition) >= 1u,
+			qPrintable(QStringLiteral("no position on re-enable: %1").arg(measured)));
+		const QStringList transport =
+			transportMessages(emittedSequence(*clock, totalBefore));
+		QVERIFY2(transport.contains(QStringLiteral("continue"))
+				&& transport.contains(QStringLiteral("song_position")),
+			qPrintable(QStringLiteral("re-enable emitted %1").arg(measured)));
+		QVERIFY2(!transport.contains(QStringLiteral("start")),
+			qPrintable(QStringLiteral("a mid-song re-enable claimed a START: %1")
+				.arg(measured)));
+		// The pulses are back too: the transport edge is not the whole behaviour.
+		QVERIFY2(clock->emittedCount(MidiClockMessage::Clock) >= 1u,
+			qPrintable(QStringLiteral("no pulses after re-enable: %1").arg(measured)));
+	}
+
 	// ------------------------------------------------------------------ slave
 
 	//! THE FOLLOWER WRITES THE SONG'S TEMPO, and only when it has a lock. This is

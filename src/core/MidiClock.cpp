@@ -194,6 +194,18 @@ bool MidiClock::setMasterEnabled(bool enabled, const QString& port, QString* err
 		m_masterPort = port;
 	}
 	m_client.store(midi);
+	// Only an ACTUAL change of mode clears the tracked transport state: a repeat
+	// of the same call is not a new mode and must not invent a second edge. While
+	// the master was off, processAudioPeriod() returned before trackTransport(),
+	// so what was tracked is the transport as it was when the master was switched
+	// off - re-enabling during playback would otherwise see no rising edge and
+	// resume the pulses with no position and no CONTINUE. Clearing it here makes
+	// the next period report the transport that is actually running.
+	if (!m_masterEnabled.load())
+	{
+		m_transportWasRunning.store(false);
+		m_positionKnown.store(false);
+	}
 	m_masterEnabled.store(true);
 	return true;
 }
