@@ -505,6 +505,40 @@ private slots:
 		QCOMPARE(divergentCount(a), 0);
 	}
 
+	//! Luna cluster 3803: clip.time_scale moved each note with note->setPos /
+	//! note->setLength straight through the clip's own Note objects, so the
+	//! content channel was written without ClipLinks::mirrorContent - the same
+	//! defect cluster 5689 measured on note.randomize and 5690 on the
+	//! transforms. Time-scaling one member left the other members' notes where
+	//! they were and the group reported itself divergent.
+	void aTimeScaleIsSeenByTheOtherMember()
+	{
+		ControlRegistry* registry = ControlRegistry::instance();
+		const QString a = addMidiClip(QStringLiteral("scale A"));
+		const QString b = addMidiClip(QStringLiteral("scale B"));
+		QVERIFY2(registry->invoke(QStringLiteral("clip.link_create"),
+			QJsonObject{{QStringLiteral("clip"), a}, {QStringLiteral("clips"), QJsonArray{b}}}).ok,
+			"clip.link_create refused");
+		QVERIFY2(registry->invoke(QStringLiteral("note.add"),
+			QJsonObject{{QStringLiteral("clip"), a}, {QStringLiteral("key"), 60},
+				{QStringLiteral("position"), 48}, {QStringLiteral("length"), 24},
+				{QStringLiteral("velocity"), 100}}).ok, "note.add refused");
+		QCOMPARE(noteCount(b), 1);
+		QCOMPARE(notePositionAt(b, 0), 48);
+		QCOMPARE(noteLengthAt(b, 0), 24);
+
+		// A factor of 2 doubles both the position (48 -> 96) and the length
+		// (24 -> 48), so a member that did not follow is caught by either axis.
+		QVERIFY2(registry->invoke(QStringLiteral("clip.time_scale"),
+			QJsonObject{{QStringLiteral("clip"), a}, {QStringLiteral("factor"), 2.0}}).ok,
+			"clip.time_scale refused");
+		QVERIFY2(notePositionAt(b, 0) == 96 && noteLengthAt(b, 0) == 48,
+			qPrintable(QStringLiteral("clip.time_scale wrote the source clip only: the other member "
+				"still holds position %1 / length %2, not 96 / 48")
+				.arg(notePositionAt(b, 0)).arg(noteLengthAt(b, 0))));
+		QCOMPARE(divergentCount(a), 0);
+	}
+
 	void unlinkDetachesAndKeepsItsContent()
 	{
 		ControlRegistry* registry = ControlRegistry::instance();

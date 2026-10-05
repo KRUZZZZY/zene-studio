@@ -34,6 +34,7 @@
 
 #include "ArrangementEdits.h"
 #include "Clip.h"
+#include "ClipLinks.h"
 #include "ControlEdit.h"
 #include "ControlRegistry.h"
 #include "ControlRegistryGroups.h"
@@ -109,7 +110,15 @@ ControlResult timeScale(const QJsonObject& args)
 	}
 	const tick_t before = ref.clip->length().getTicks();
 	ref.clip->addJournalCheckPoint();
-	if (auto* midi = dynamic_cast<MidiClip*>(ref.clip)) { scaleNotes(midi, factor); }
+	if (auto* midi = dynamic_cast<MidiClip*>(ref.clip))
+	{
+		scaleNotes(midi, factor);
+		// Scaling writes the clip's own Note objects, so it writes the group's
+		// shared content without passing a note entry point - the same seam
+		// cluster 5689 measured on note.randomize. One mirror keeps every
+		// member of a link group on the scaled notes (docs/LINKED-CLIPS.md §4).
+		if (midi->linkId() > 0) { ClipLinks::mirrorContent(midi); }
+	}
 	else if (auto* sample = dynamic_cast<SampleClip*>(ref.clip))
 	{
 		// A source tempo of (project tempo x factor) makes the clip play 1/factor as fast: it leads.
