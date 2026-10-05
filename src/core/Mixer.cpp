@@ -927,6 +927,8 @@ void Mixer::toggledSolo()
 {
 	int soloedChan = -1;
 	bool resetSolo = m_lastSoloed != -1;
+	// Luna cluster 1523: a channel solo now owns the mute state.
+	m_soloingGroup = nullptr;
 	// 0.5.0 L08 (MX-029): additive solo keeps the earlier solos (MixerStrip.cpp).
 	if (mixerstrip::additiveSolo()) { applyAdditiveSolo(); return; }
 	//untoggle if lastsoloed is entered
@@ -1091,15 +1093,27 @@ void Mixer::refreshGroups()
 
 void Mixer::applyGroupSolo(VcaGroup* group, bool soloed)
 {
-	// 0.5.0 L09 (MX-071): a group whose solo link is off - or that is suspended - does not solo its members.
-	if (group == nullptr || !group->linksSolo() || group->isSuspended())
+	if (group == nullptr)
 	{
 		return;
 	}
 	if (!soloed)
 	{
+		// Luna cluster 1523: clearing a solo must run BEFORE the link check
+		// below. A group that was soloed while its link was on has muted every
+		// non-member; if the link is then turned off (or the group suspended),
+		// the early return used to skip deactivateSolo() and those mutes were
+		// never restored. Only the group that muted may restore, so clearing a
+		// group that never soloed cannot unmute a channel solo in progress.
+		if (m_soloingGroup != group) { return; }
+		m_soloingGroup = nullptr;
 		deactivateSolo();
 		m_lastSoloed = -1;
+		return;
+	}
+	// 0.5.0 L09 (MX-071): a group whose solo link is off - or that is suspended - does not solo its members.
+	if (!group->linksSolo() || group->isSuspended())
+	{
 		return;
 	}
 
@@ -1126,6 +1140,8 @@ void Mixer::applyGroupSolo(VcaGroup* group, bool soloed)
 	// No channel's own solo flag drove this, so toggledSolo() has nothing to
 	// untoggle later.
 	m_lastSoloed = -1;
+	// Luna cluster 1523: this group owns the mute state until its flag clears.
+	m_soloingGroup = group;
 }
 
 

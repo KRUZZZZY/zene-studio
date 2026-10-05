@@ -761,6 +761,11 @@ private:
 	bool m_feedbackMode = false;
 
 	int m_lastSoloed;
+
+	//! Luna cluster 1523: the group whose flag muted the mix, if a group solo
+	//! is active. Only that group may restore it, so clearing a group flag that
+	//! never soloed cannot unmute a channel solo in progress. Control thread.
+	VcaGroup* m_soloingGroup = nullptr;
 } ;
 
 

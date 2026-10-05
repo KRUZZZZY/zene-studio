@@ -28,6 +28,7 @@
 
 #include "EffectChain.h"
 #include "Mixer.h"
+#include "VcaGroup.h"
 
 #include <QDomDocument>
 #include <QStringList>

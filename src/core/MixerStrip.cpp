@@ -398,6 +398,8 @@ void Mixer::applyAdditiveSolo()
 	// rest are muted, solo-safe ones excepted. The mute state from before the first solo comes back
 	// when the last solo goes.
 	std::vector<MixerChannel*> soloed;
+	// Luna cluster 1523: a channel solo now owns the mute state.
+	m_soloingGroup = nullptr;
 	for (MixerChannel* channel : m_mixerChannels)
 	{
 		if (channel->m_soloModel.value()) { soloed.push_back(channel); }
