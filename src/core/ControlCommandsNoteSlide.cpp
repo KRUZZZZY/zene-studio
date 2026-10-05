@@ -137,6 +137,30 @@ ControlResult slideSet(const QJsonObject& args)
  *  undo steps for one edit, which is the defect SPEC A16 deliverable 3 exists to
  *  prevent (the reason transport.tempo_map_clear is one command too).
  */
+//! How many of \a notes carry the slide flag; 0 means a clear would edit nothing.
+int countSlides(const NoteVector& notes)
+{
+	int count = 0;
+	for (const Note* note : notes)
+	{
+		if (note != nullptr && note->slide()) { ++count; }
+	}
+	return count;
+}
+
+//! Every slide flag in \a notes off, and how many notes that touched.
+int clearSlides(const NoteVector& notes)
+{
+	int cleared = 0;
+	for (Note* note : notes)
+	{
+		if (note == nullptr || !note->slide()) { continue; }
+		note->setSlide(false);
+		++cleared;
+	}
+	return cleared;
+}
+
 ControlResult slideClear(const QJsonObject& args)
 {
 	ControlResult error;
@@ -147,20 +171,13 @@ ControlResult slideClear(const QJsonObject& args)
 	if (!readScope(args, &scope, &error)) { return error; }
 
 	const NoteVector notes = scopeNotes(*clip, scope, clipId(ref.id));
-	int slidesBefore = 0;
-	for (const Note* note : clip->notes())
-	{
-		if (note != nullptr && note->slide()) { ++slidesBefore; }
-	}
+	const int slidesBefore = countSlides(clip->notes());
 
-	clip->addJournalCheckPoint();
-	int cleared = 0;
-	for (Note* note : notes)
-	{
-		if (note == nullptr || !note->slide()) { continue; }
-		note->setSlide(false);
-		++cleared;
-	}
+	// Luna cluster 3904: the checkpoint came before the flags were known, so a scope with
+	// no slide note in it still pushed a step onto the undo stack while publishing no edit
+	// at all. Take it only when at least one flag in scope is going to change.
+	if (countSlides(notes) > 0) { clip->addJournalCheckPoint(); }
+	const int cleared = clearSlides(notes);
 	if (cleared > 0) { publishSlideEdit(clip); }
 
 	QJsonObject result;
