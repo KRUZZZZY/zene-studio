@@ -105,9 +105,12 @@ ControlResult masterSet(const QJsonObject& args)
 	// there is no object checkpoint - but the inverse is a bounded pair (a flag
 	// and a port name), so it becomes ONE recorded action step on the engine's
 	// own undo stack, the same shape transport.seek uses.
+	// The REDO re-applies the port the command actually ended up on, which an empty
+	// 'port' means the CURRENT one: re-applying the raw empty argument would unsubscribe it.
+	const QString appliedPort = clock->masterPort();
 	control::addUndoStep(
 		[wasEnabled, wasPort]() { MidiClock::instance()->restoreMaster(wasEnabled, wasPort); },
-		[enabled, port]() { MidiClock::instance()->restoreMaster(enabled, port); });
+		[enabled, appliedPort]() { MidiClock::instance()->restoreMaster(enabled, appliedPort); });
 
 	QJsonObject before;
 	before.insert(QStringLiteral("enabled"), wasEnabled);
@@ -161,7 +164,10 @@ ControlResult slaveSet(const QJsonObject& args)
 	const double wasBound = clock->slaveDriftBoundMs();
 
 	const QString wantedSource = source.isEmpty() ? wasSource : source;
-	restoreSlaveState(enabled, enabled && follow, wantedSource, bound);
+	// The follow PREFERENCE is configuration and survives a disable: `enabled` alone decides
+	// whether the poll runs (restoreSlaveState), so disabling must not store follow_tempo:false
+	// and leave the next bare enable with following off.
+	restoreSlaveState(enabled, follow, wantedSource, bound);
 
 	// The recorded REDO re-applies exactly what this call applied, so a redo is
 	// faithful rather than a silently-dropped step.
