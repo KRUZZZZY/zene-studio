@@ -2386,6 +2386,13 @@ void Mixer::saveSettings( QDomDocument & _doc, QDomElement & _this )
 
 			scDom.setAttribute("channel", send->receiverIndex());
 			scDom.setAttribute("mode", static_cast<int>(send->mode()));
+			// Luna cluster 4277: a deferred route is INFERRED at creation from
+			// the routing graph, and loadSettings re-infers it against a
+			// half-built graph (this channel's element is read before the
+			// regular send that makes it deferred exists), so the flag has to
+			// be written out. Only a deferred route carries the attribute, so a
+			// project with no deferred route saves exactly what it always did.
+			if (send->deferred()) { scDom.setAttribute("deferred", "1"); }
 			send->amount()->saveSettings(_doc, scDom, "amount");
 		}
 	}
@@ -2614,6 +2621,14 @@ void Mixer::loadSettings( const QDomElement & _this )
 						: SidechainTapPoint::PreFader;
 				MixerSidechainRoute * mxr =
 					createSidechainSend( num, sendTo, 1.0f, tap );
+				// Luna cluster 4277: a file that states the route is deferred
+				// is taken at its word. Inference at this point runs against a
+				// graph whose later channels have not been read yet, so it
+				// cannot see the regular send that closes the cycle.
+				if( mxr && chDataItem.hasAttribute( "deferred" ) )
+				{
+					mxr->setDeferred( chDataItem.attribute( "deferred" ).toInt() != 0 );
+				}
 				if( mxr ) mxr->amount()->loadSettings( chDataItem, "amount" );
 			}
 		}

@@ -485,6 +485,17 @@ public:
 		return m_deferred;
 	}
 
+	//! Luna cluster 4277: restore the persisted deferred flag on load. The
+	//! flag is INFERRED at creation time from the routing graph, and loading
+	//! re-infers it against a half-built graph, so a saved deferred route came
+	//! back gating. The setter only runs on the control thread inside
+	//! loadSettings (before playback starts), the same way setPreFader() is
+	//! applied there.
+	void setDeferred(bool deferred)
+	{
+		m_deferred = deferred;
+	}
+
 	//! Tap snapshot the receiver reads for a deferred route: the sender's
 	//! intermediate as committed at the start of the current period.
 	const AudioBuffer& committed() const

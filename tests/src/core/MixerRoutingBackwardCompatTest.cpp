@@ -502,6 +502,51 @@ private slots:
 		}
 	}
 
+	// Luna cluster 4277: a deferred sidechain route (one that closes a cycle
+	// through a regular send) is non-gating by construction. Deferred status is
+	// inferred from the graph at creation time, but the saved <sidechain-send>
+	// element carried no deferred flag, so loadSettings re-inferred it from a
+	// HALF-BUILT graph: channel 1's sidechain is created while loading channel
+	// 1, before the regular send of channel 2 that makes it deferred exists.
+	// It came back gating, and the regular send loaded afterwards closed a
+	// scheduling cycle in which neither channel is ever queued.
+	void aDeferredSidechainRouteSurvivesSaveLoadAsDeferred()
+	{
+		Mixer* mixer = Engine::mixer();
+		QVERIFY(mixer != nullptr);
+
+		mixer->clear();
+		while (mixer->numChannels() < 3) { mixer->createChannel(); }
+
+		// 2 sends to 1, so a 1->2 sidechain closes a cycle through a regular
+		// send and must be created DEFERRED (non-gating).
+		QVERIFY2(mixer->createChannelSend(2, 1, 1.0f) != nullptr, "2->1 was not created");
+		QVERIFY2(mixer->createSidechainSend(1, 2, 0.7f, SidechainTapPoint::PreFader) != nullptr,
+			"1->2 sidechain was refused");
+		MixerSidechainRoute* before = mixer->channelSidechainSend(1, 2);
+		QVERIFY(before != nullptr);
+		QVERIFY2(before->deferred(),
+			"1->2 was not created deferred; this case would pass vacuously");
+
+		QDomDocument savedDoc;
+		QDomElement savedRoot = savedDoc.createElement("root");
+		savedDoc.appendChild(savedRoot);
+		mixer->saveSettings(savedDoc, savedRoot);
+		const QString savedXml = savedDoc.toString();
+
+		QDomDocument reloadDoc;
+		QDomElement reloadRoot;
+		QVERIFY2(parseMixerElement(savedXml.toUtf8().constData(), reloadDoc, reloadRoot),
+			"the saved project is not valid XML");
+		mixer->loadSettings(reloadRoot);
+
+		MixerSidechainRoute* after = mixer->channelSidechainSend(1, 2);
+		QVERIFY2(after != nullptr, "the sidechain send 1->2 did not survive the round trip");
+		QVERIFY2(after->deferred(),
+			"a saved deferred sidechain reloaded as a gating route (4277)");
+		QCOMPARE(static_cast<int>(after->mode()), static_cast<int>(SidechainTapPoint::PreFader));
+		evidence("DEFERRED_ROUNDTRIP deferred_before=1 deferred_after=1 xml_bytes=%d", savedXml.size());
+	}
 	// Soloing walks the send graph with unmuteForSolo()/
 	// unmuteSenderForSolo()/unmuteReceiverForSolo(). Those recurse over
 	// m_sends/m_receives with no visited-channel guard, and the
