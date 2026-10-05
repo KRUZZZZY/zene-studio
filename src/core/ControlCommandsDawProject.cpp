@@ -52,6 +52,7 @@
 
 #include <QFileInfo>
 #include <QJsonArray>
+#include <QJsonDocument>
 #include <QJsonObject>
 #include <QString>
 
@@ -174,9 +175,12 @@ SessionSnapshot captureSession(Song* song)
 	Mixer* mixer = Engine::mixer();
 	for (int index = 0; index < static_cast<int>(mixer->numChannels()); index++)
 	{
-		snapshot.channels.append(channelState(mixer->mixerChannel(index)));
+		const QJsonObject entry = channelState(mixer->mixerChannel(index));
+		snapshot.channels.append(entry);
+		snapshot.payloadBytes += static_cast<qint64>(QJsonDocument(entry).toJson(QJsonDocument::Compact).size());
 	}
 	snapshot.map = song->tempoMap().map();
+	snapshot.payloadBytes += snapshot.map.size() * static_cast<qint64>(sizeof(TempoMapEvent));
 	snapshot.globalTempo = static_cast<int>(song->getTempo());
 	snapshot.numerator = song->getTimeSigModel().numeratorModel().value();
 	snapshot.denominator = song->getTimeSigModel().denominatorModel().value();
@@ -220,6 +224,37 @@ void restoreSession(Song* song, const SessionSnapshot& snapshot)
 	song->getTimeSigModel().numeratorModel().setValue(snapshot.numerator);
 	song->getTimeSigModel().denominatorModel().setValue(snapshot.denominator);
 	song->tempoMap().edit([&snapshot](TempoMap& map) { map = snapshot.map; return true; });
+}
+
+/*! The measured size of the model document the import step RETAINS as its
+ *  redo - the model the redo closure holds, so a control.undo_depth client
+ *  reads what the step really costs.
+ *
+ *  addStructuralUndoStep's contract is "the measured size of the document the
+ *  closure holds" (include/ControlReversibility.h:488); an import holds two,
+ *  the session it replaced and the model it wrote, and counting only the first
+ *  under-reports the step by exactly the redo.
+ */
+qint64 modelDocumentBytes(const dwp::DawProjectModel& model)
+{
+	qint64 bytes = 0;
+	for (const dwp::DawProjectMixerChannel& channel : model.mixerChannels)
+	{
+		bytes += (channel.id.size() + channel.name.size() + channel.role.size())
+			* static_cast<int>(sizeof(QChar));
+	}
+	for (const dwp::DawProjectTrack& track : model.tracks)
+	{
+		bytes += (track.id.size() + track.name.size()) * static_cast<int>(sizeof(QChar));
+		bytes += track.clips.size() * static_cast<qint64>(sizeof(dwp::DawProjectClip));
+		for (const dwp::DawProjectClip& clip : track.clips)
+		{
+			bytes += clip.notes.size() * static_cast<qint64>(sizeof(dwp::DawProjectNote));
+		}
+	}
+	bytes += (model.tempoPoints.size() + model.meterPoints.size())
+		* static_cast<qint64>(sizeof(dwp::DawProjectPoint));
+	return bytes;
 }
 
 //! Why dawproject.import is reversible, in the words the transaction record uses.
@@ -467,7 +502,7 @@ void registerImportCommand(ControlRegistry& registry)
 				QString ignored;
 				dwp::applyDawProjectModel(song, wanted, &ignored);
 			},
-			before.payloadBytes);
+			before.payloadBytes + modelDocumentBytes(wanted));
 
 		QJsonObject result;
 		result.insert(QStringLiteral("path"), path);

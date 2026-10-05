@@ -297,27 +297,38 @@ void ProjectJournal::mergeCheckpointsFrom( int depth )
 	// command, and restoring a later capture would undo only part of it.
 	CheckPoint merged;
 	QSet<jo_id_t> seen;
+	// The bytes of the window that are NOT captured object states: the document
+	// a STRUCTURAL step carries in its closure and was charged when it was
+	// pushed (addJournalStructure). A merge keeps every recorded operation, so
+	// those documents stay retained and have to stay COUNTED - re-summing the
+	// surviving captures alone would report a step smaller than what it holds.
+	qint64 carriedDocuments = 0;
 	for( int i = depth; i < m_undoCheckPoints.size(); ++i )
 	{
 		const CheckPoint & step = m_undoCheckPoints.at( i );
+		qint64 captured = 0;
 		for( const SavedObject & saved : step.objects )
 		{
+			captured += saved.bytes;
 			if( seen.contains( saved.joID ) ) { continue; }
 			seen.insert( saved.joID );
 			merged.objects.append( saved );
 		}
 		// Every recorded operation is kept, in push order.
 		merged.actions += step.actions;
+		carriedDocuments += step.bytes - captured;
 	}
 	if( merged.empty() ) { m_undoCheckPoints.remove( depth, excess ); return; }
 
 	// The FIRST step of the window keeps its identity: a record that already
 	// names it stays valid through the merge. The bytes are re-summed from the
 	// surviving captures (a later capture of the same object is dropped, so the
-	// step is smaller than the sum of what it replaces).
+	// step is smaller than the sum of what it replaces) plus the documents the
+	// surviving operations still hold.
 	merged.serial = m_undoCheckPoints.at( depth ).serial;
 	merged.bytes = 0;
 	for( const SavedObject & saved : merged.objects ) { merged.bytes += saved.bytes; }
+	merged.bytes += carriedDocuments;
 	for( int i = depth; i < m_undoCheckPoints.size(); ++i )
 	{
 		m_retainedBytes -= m_undoCheckPoints.at( i ).bytes;
