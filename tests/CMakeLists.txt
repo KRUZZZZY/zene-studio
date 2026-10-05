@@ -2133,7 +2133,10 @@ if(TARGET lmms_clap)
 		PLUGIN_STATIC_DEFINE
 		PLUGIN_NAME=clapeffect
 		CLAP_TEST_PLUGIN_PATH="$<TARGET_FILE:clap-test-gain>"
-	)
+		# The module that loads but exports no clap_entry, for the scan-diagnostics
+		# case: the browser scan has to say WHY a module did not appear.
+		CLAP_TEST_BROKEN_NO_SYMBOL_PATH="$<TARGET_FILE:clap-test-broken-no-symbol>")
+	add_dependencies(ClapEffectIntegrationTest clapeffect clap-test-broken-no-symbol)
 
 	# The CLAP instrument half on the control surface (feature row 79, board
 	# task #669). The catalogue case points the product's plug-in search

@@ -45,6 +45,8 @@
 #include "ClapEffect.h"
 #include "ClapEffectControls.h"
 #include "ClapKnobGrid.h"
+#include "ClapSubPluginFeatures.h"
+#include "ConfigManager.h"
 #include "ControlRegistry.h"
 #include "EffectChain.h"
 #include "EffectControlDialog.h"
@@ -57,6 +59,9 @@
 
 #ifndef CLAP_TEST_PLUGIN_PATH
 #define CLAP_TEST_PLUGIN_PATH ""
+#endif
+#ifndef CLAP_TEST_BROKEN_NO_SYMBOL_PATH
+#define CLAP_TEST_BROKEN_NO_SYMBOL_PATH ""
 #endif
 
 namespace lmms
@@ -81,6 +86,7 @@ private slots:
 	void testParameterRescansRebuildTheModels();
 	void testReadOnlyParametersGetNoKnob();
 	void testAProcessingErrorFallsBackToDryAudio();
+	void testScanFailuresAreReported();
 
 private:
 	auto makeKey() const -> Plugin::Descriptor::SubPluginFeatures::Key;
@@ -90,6 +96,33 @@ namespace
 {
 
 constexpr double kPi = 3.14159265358979323846;
+
+//! qWarning() text collected while a WarningCapture is alive. File-scope so the
+//! static handler Qt wants can reach the capture currently in progress.
+QStringList g_warnings;
+bool g_capturingWarnings = false;
+
+void collectWarning(QtMsgType type, const QMessageLogContext&, const QString& message)
+{
+	if (g_capturingWarnings && type == QtWarningMsg) { g_warnings.push_back(message); }
+}
+
+//! Collects qWarning() text for the length of one scope, so a test can prove that a
+//! scan SAID why a module did not appear instead of dropping the reason on the floor.
+class WarningCapture
+{
+public:
+	WarningCapture() { m_previous = qInstallMessageHandler(&collectWarning); g_capturingWarnings = true; }
+	~WarningCapture()
+	{
+		g_capturingWarnings = false;
+		qInstallMessageHandler(m_previous);
+	}
+	auto warnings() const -> const QStringList& { return g_warnings; }
+
+private:
+	QtMessageHandler m_previous = nullptr;
+};
 
 auto rms(const std::vector<float>& samples) -> double
 {
@@ -661,6 +694,50 @@ void lmms::ClapEffectIntegrationTest::testAProcessingErrorFallsBackToDryAudio()
 	}
 	chain.clear();
 }
+
+namespace lmms
+{
+
+void ClapEffectIntegrationTest::testScanFailuresAreReported()
+{
+	// A module that is not a usable CLAP module has to be SAYED to be one: the scan
+	// used to fill the error QString that listClasses writes and then throw it away,
+	// so a broken .clap simply vanished from the browser with no reason anywhere.
+	const auto modulePath = QString::fromLatin1(CLAP_TEST_BROKEN_NO_SYMBOL_PATH);
+	if (!QFileInfo::exists(modulePath))
+	{
+		QSKIP("no broken CLAP test module available (build tests/data/clap-test-plugin "
+			"from the pinned CLAP headers)");
+	}
+
+	auto* config = ConfigManager::inst();
+	const auto previousVstDir = config->vstDir();
+	config->setVSTDir(QFileInfo{modulePath}.absolutePath());
+
+	QStringList reported;
+	{
+		WarningCapture capture;
+		ClapSubPluginFeatures features{Plugin::Type::Effect};
+		Plugin::Descriptor::SubPluginFeatures::KeyList keys;
+		features.listSubPluginKeys(nullptr, keys);
+		reported = capture.warnings();
+	}
+	config->setVSTDir(previousVstDir);
+
+	// The reason the typed ladder gives for this fixture, and the module it is about:
+	// a scan that says neither cannot be told apart from a scan that never looked.
+	const auto moduleName = QFileInfo{modulePath}.fileName();
+	auto named = false;
+	for (const auto& line : reported)
+	{
+		if (line.contains(moduleName) && line.contains(QStringLiteral("symbol-missing"))) { named = true; }
+	}
+	QVERIFY2(named,
+		qPrintable(QStringLiteral("the scan reported %1 warning(s), none naming %2 and its typed reason: %3")
+			.arg(reported.size()).arg(moduleName, reported.join(QStringLiteral(" | ")))));
+}
+
+} // namespace lmms
 
 QTEST_MAIN(lmms::ClapEffectIntegrationTest)
 
