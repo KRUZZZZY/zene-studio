@@ -114,6 +114,14 @@ static void gain_param_info(clap_param_info_t* info, clap_id id, const char* nam
 	info->max_value = max;
 	info->default_value = def;
 	info->flags = CLAP_PARAM_IS_AUTOMATABLE;
+	/* CLAP_TEST_GAIN_BAD_RANGE: Gain reports an inverted range (min > max), which a host must survive
+	   (std::clamp needs ordered bounds) instead of storing verbatim. */
+	if (id == PARAM_GAIN && getenv("CLAP_TEST_GAIN_BAD_RANGE") != NULL)
+	{
+		info->min_value = 1.0;
+		info->max_value = 0.0;
+		info->default_value = 0.5;
+	}
 }
 
 /* The extended list's entries after Gain (W6). */

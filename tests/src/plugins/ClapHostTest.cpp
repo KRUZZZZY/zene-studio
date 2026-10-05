@@ -190,6 +190,7 @@ private slots:
 	void testTheEditorEmbedsResizesAndCloses();
 	void testMainThreadRequestsAreServiced();
 	void testParameterRescansRereadTheList();
+	void testAnInvalidParamRangeIsNormalized();
 
 private:
 	void process(HostedPlugin& plugin, const std::vector<std::vector<float>>& inputs,
@@ -833,6 +834,43 @@ void lmms::clap::ClapHostTest::testParameterRescansRereadTheList()
 	plugin.setParamPlain(GainParamId, 0.5);
 	process(plugin, inputs, outputs, TestFrames);
 	QVERIFY2(std::abs(rms(outputs[0]) - 0.25) < 1e-6, qPrintable(QString::number(rms(outputs[0]))));
+}
+
+/*! A plug-in that reports min > max used to have those bounds stored verbatim, and every later
+ *  std::clamp(value, min, max) ran with unordered bounds. The host now orders them at load, so the
+ *  stored range is valid and the value the plug-in itself reports survives the clamp. */
+void lmms::clap::ClapHostTest::testAnInvalidParamRangeIsNormalized()
+{
+	qputenv("CLAP_TEST_GAIN_BAD_RANGE", "1");
+	HostedPlugin plugin;
+	QString error;
+	QVERIFY2(plugin.load(QStringLiteral(CLAP_TEST_PLUGIN_PATH), QString::fromLatin1(TestPluginId), &error),
+		qPrintable(error));
+	QVERIFY2(plugin.prepare(TestSampleRate, TestBlockSize, &error), qPrintable(error));
+
+	const auto& gain = plugin.parameters()[0];
+	QCOMPARE(gain.id, GainParamId);
+	QVERIFY2(gain.minValue <= gain.maxValue,
+		qPrintable(QStringLiteral("the inverted range survived: %1 .. %2")
+			.arg(gain.minValue).arg(gain.maxValue)));
+	QCOMPARE(gain.minValue, 0.0);
+	QCOMPARE(gain.maxValue, 1.0);
+	QVERIFY2(gain.defaultValue >= gain.minValue && gain.defaultValue <= gain.maxValue,
+		"the default value lies outside the range");
+
+	// the value the host holds (loaded through the very clamp) is inside the ordered range
+	const auto held = plugin.paramPlain(GainParamId);
+	QVERIFY2(held >= gain.minValue && held <= gain.maxValue,
+		qPrintable(QStringLiteral("the held value %1 is outside %2 .. %3")
+			.arg(held).arg(gain.minValue).arg(gain.maxValue)));
+
+	// setting a value goes through the same clamp and lands inside the range
+	plugin.setParamPlain(GainParamId, 5.0);
+	QVERIFY(plugin.paramPlain(GainParamId) >= gain.minValue);
+	QVERIFY(plugin.paramPlain(GainParamId) <= gain.maxValue);
+	plugin.setParamPlain(GainParamId, -5.0);
+	QVERIFY(plugin.paramPlain(GainParamId) >= gain.minValue);
+	qunsetenv("CLAP_TEST_GAIN_BAD_RANGE");
 }
 
 QTEST_GUILESS_MAIN(lmms::clap::ClapHostTest)
