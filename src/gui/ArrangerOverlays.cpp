@@ -171,14 +171,15 @@ void ArrangerRangeOverlay::paintEvent(QPaintEvent*)
 
 bool ArrangerRangeOverlay::event(QEvent* event)
 {
-	// A held audition ends however the gesture is cut short - the window losing focus, the grab taken
-	// away, the overlay hidden - not only on a release that may never come.
+	// A gesture ends however it is cut short - the window losing focus, the grab taken away by a popup,
+	// the overlay hidden - not only on a release that may never come. A drag left marked active would
+	// keep dispatching ranges from a pointer the user no longer holds the button on.
 	const QEvent::Type type = event->type();
-	if (m_dragging && m_tool == Tool::Audition
-		&& (type == QEvent::WindowDeactivate || type == QEvent::UngrabMouse || type == QEvent::Hide))
+	if (m_dragging && (type == QEvent::WindowDeactivate || type == QEvent::UngrabMouse || type == QEvent::Hide))
 	{
+		const bool audition = m_tool == Tool::Audition;
 		m_dragging = false;
-		ControlRegistry::instance()->invoke(QStringLiteral("transport.audition_stop"));
+		if (audition) { ControlRegistry::instance()->invoke(QStringLiteral("transport.audition_stop")); }
 	}
 	return QWidget::event(event);
 }
@@ -233,8 +234,10 @@ void ArrangerRangeOverlay::dispatchRange(const QPoint& to)
 	bool inside = false;
 	Track* first = trackAt(m_from.y());
 	Track* last = trackAt(to.y());
-	// One end off the rows (above or below them): the span runs to the nearest row, not past it.
-	if ((first == nullptr) != (last == nullptr)) { first = nearestTrackAt(m_from.y()); last = nearestTrackAt(to.y()); }
+	// An end off the rows (above or below them) resolves to the nearest row, not past it - and BOTH ends
+	// off them still name the rows between: a drag from above the first track to below the last reaches
+	// every track, where resolving neither left the span over no track at all.
+	if (first == nullptr || last == nullptr) { first = nearestTrackAt(m_from.y()); last = nearestTrackAt(to.y()); }
 	for (TrackView* view : m_editor->trackViews())
 	{
 		const bool edge = view->getTrack() == first || view->getTrack() == last;

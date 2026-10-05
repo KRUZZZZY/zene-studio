@@ -126,6 +126,7 @@ private slots:
 	void init()
 	{
 		Engine::getSong()->clearProject();  // and with it the locks and the markers (project sections)
+		ArrangerRange::instance().clear();  // the range is a singleton: a case must not inherit the last one's
 		m_track = Track::create(Track::Type::Instrument, Engine::getSong());
 		QVERIFY(run(QStringLiteral("arrangement.zoom"), {{QStringLiteral("pixels_per_bar"), 40}, {QStringLiteral("anchor"), QStringLiteral("start")}}).ok);
 		QVERIFY(run(QStringLiteral("arrangement.scroll"), {{QStringLiteral("position"), 0}}).ok);
@@ -396,6 +397,53 @@ private slots:
 		QVERIFY2(found.hasMatch(), qPrintable(navigator->accessibleDescription()));
 		QCOMPARE(found.captured(1).toInt(), 1);
 		QCOMPARE(found.captured(2).toInt(), static_cast<int>(view / Bar));
+	}
+
+	//! A range whose BOTH ends fall off the track rows resolves each to the nearest boundary track, so the
+	//! gesture reaches the tracks it was dragged across instead of selecting none.
+	void aRangeWithBothEndsOffTheRowsReachesTheBoundaryTrack()
+	{
+		auto* overlay = m_editor->findChild<ArrangerRangeOverlay*>();
+		QVERIFY2(overlay != nullptr, "no range overlay on the song editor");
+		Track::create(Track::Type::Instrument, Engine::getSong());
+		QCoreApplication::processEvents();
+		const QList<TrackView*> rows = m_editor->trackViews();
+		QVERIFY(rows.size() >= 2);
+		TrackView* last = rows.last();
+		const int below = last->mapTo(overlay->parentWidget(), QPoint(0, 0)).y() + last->height();
+		QVERIFY2(below + 8 < overlay->height(), "no space below the last track to drag off the rows");
+
+		QVERIFY(run(QStringLiteral("arrangement.set_tool"), {{QStringLiteral("tool"), QStringLiteral("range")}}).ok);
+		const int x = overlay->width() / 4;
+		// Both presses land below the last row, where trackAt() finds no track either way.
+		QTest::mousePress(overlay, Qt::LeftButton, Qt::NoModifier, QPoint(x, below + 2));
+		QTest::mouseMove(overlay, QPoint(x + overlay->width() / 2, below + 8));
+		QVERIFY2(ArrangerRange::instance().active(), "a range dragged off the rows dispatched no range at all");
+		QCOMPARE(ArrangerRange::instance().tracks(), QVector<Track*>{last->getTrack()});
+		QTest::mouseRelease(overlay, Qt::LeftButton, Qt::NoModifier, QPoint(x + overlay->width() / 2, below + 8));
+		ArrangerRange::instance().clear();
+		QVERIFY(run(QStringLiteral("arrangement.set_tool"), {{QStringLiteral("tool"), QStringLiteral("select")}}).ok);
+	}
+
+	//! A drag cut short - the grab taken away by a popup, the overlay hidden - does not go on dispatching:
+	//! the gesture belongs to the press that began it.
+	void aRangeDragCutShortByTheGrabBeingTakenStops()
+	{
+		auto* overlay = m_editor->findChild<ArrangerRangeOverlay*>();
+		QVERIFY2(overlay != nullptr, "no range overlay on the song editor");
+		const TrackView* row = m_editor->trackViews().first();
+		const int onRow = row->mapTo(overlay->parentWidget(), QPoint(0, 0)).y() + row->height() / 2;
+		QVERIFY(run(QStringLiteral("arrangement.set_tool"), {{QStringLiteral("tool"), QStringLiteral("range")}}).ok);
+
+		const int x = overlay->width() / 4;
+		QTest::mousePress(overlay, Qt::LeftButton, Qt::NoModifier, QPoint(x, onRow));
+		QEvent grabLost(QEvent::UngrabMouse);  // a popup took the mouse grab away
+		QCoreApplication::sendEvent(overlay, &grabLost);
+		QTest::mouseMove(overlay, QPoint(x + overlay->width() / 2, onRow));
+		QVERIFY2(!ArrangerRange::instance().active(), "a drag that lost its grab still dispatched a range");
+		QTest::mouseRelease(overlay, Qt::LeftButton, Qt::NoModifier, QPoint(x + overlay->width() / 2, onRow));
+		ArrangerRange::instance().clear();
+		QVERIFY(run(QStringLiteral("arrangement.set_tool"), {{QStringLiteral("tool"), QStringLiteral("select")}}).ok);
 	}
 
 	//! A tool chosen while an audition is held ends it: the gesture belongs to the tool that began it, so the
