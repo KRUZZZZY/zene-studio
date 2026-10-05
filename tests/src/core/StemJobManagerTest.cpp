@@ -487,6 +487,28 @@ private slots:
 		QTRY_VERIFY_WITH_TIMEOUT(finishedSpy.count() == 1, 10000);
 	}
 
+	/*! Luna cluster 1758: a backend whose final update is 1.0 must not make
+	 *  listeners see 100% twice - the success branch publishes its own. */
+	void testOneHundredPercentIsPublishedExactlyOnce()
+	{
+		StemJobManager manager;
+		// The fake's last step is step/steps == 1.0, i.e. it reports completion itself.
+		manager.setSeparator(std::make_unique<FakeSeparator>(FakeSeparator::Mode::Success, 4));
+		QSignalSpy progressSpy(&manager, &StemJobManager::jobProgress);
+		QSignalSpy finishedSpy(&manager, &StemJobManager::jobFinished);
+
+		manager.submit(makeMix(), StemModelSampleRate, 1024);
+		QTRY_VERIFY_WITH_TIMEOUT(finishedSpy.count() == 1, 10000);
+
+		int hundred = 0;
+		for (const auto& emission : progressSpy)
+		{
+			if (emission.at(1).toFloat() == 1.0f) { ++hundred; }
+		}
+		QCOMPARE(hundred, 1);
+		QCOMPARE(progressSpy.last().at(1).toFloat(), 1.0f);
+	}
+
 	void testUnknownJobQueriesAreSafe()
 	{
 		StemJobManager manager;

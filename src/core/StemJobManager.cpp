@@ -454,7 +454,8 @@ void StemJobManager::runJob(const std::shared_ptr<Job>& job)
 	job->elapsedSeconds = std::chrono::duration<double>(
 		std::chrono::steady_clock::now() - startTime).count();
 
-		switch (status)
+	bool alreadyEmittedCompletion = false;
+	switch (status)
 	{
 	case StemSeparator::Status::Success:
 		{
@@ -462,8 +463,16 @@ void StemJobManager::runJob(const std::shared_ptr<Job>& job)
 			job->stems = stems;
 			job->progress.store(1.0f);
 			job->state.store(State::Completed);
+			// A backend that reported its own 1.0 (the common case: its last
+			// step is step/steps) has already published it through the progress
+			// callback, so publishing it here again would tell every listener
+			// the job completed twice.
+			alreadyEmittedCompletion = job->lastEmittedProgress >= 1.0f;
 		}
-		emit jobProgress(job->id, 1.0f);
+		if (!alreadyEmittedCompletion)
+		{
+			emit jobProgress(job->id, 1.0f);
+		}
 		emit jobFinished(job->id, job->elapsedSeconds);
 		break;
 	case StemSeparator::Status::Cancelled:
