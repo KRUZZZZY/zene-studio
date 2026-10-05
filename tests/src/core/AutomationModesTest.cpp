@@ -440,6 +440,32 @@ private slots:
 			AutomatableModel::automationTransportRun(), AutomatableModel::automationClockNs()));
 	}
 
+	//! A mode change ends a Latch engagement: switching away and back inside the
+	//! same transport run must not resume the old engagement without a new touch.
+	void testLeavingLatchClearsTheEngagement()
+	{
+		FloatModel volume(1.0f, 0.0f, 2.0f, 0.001f);
+		volume.setAutomationMode(AutomationMode::Latch);
+
+		const qint64 t0 = 1000000;
+		const quint64 run = 7;
+		volume.noteAutomationTouchStart(t0, run);
+		volume.noteAutomationTouchEnd();
+		QVERIFY(volume.automationWantsWrite(run, t0));
+
+		// Away to Read, then back to Latch - the SAME run, so the run token never
+		// changed. The engagement must not have survived the detour.
+		volume.setAutomationMode(AutomationMode::Read);
+		volume.setAutomationMode(AutomationMode::Latch);
+		QVERIFY2(!volume.automationWantsWrite(run, t0),
+			"a Latch engagement from before the mode change is still active");
+
+		// A fresh touch re-arms it, so the mode is not simply dead.
+		volume.noteAutomationTouchStart(t0, run);
+		volume.noteAutomationTouchEnd();
+		QVERIFY(volume.automationWantsWrite(run, t0));
+	}
+
 	//! Write overwrites the pass without needing a touch at all.
 	void testWriteWritesWithoutATouch()
 	{

@@ -855,6 +855,14 @@ AutomatableModel::AutomationMode AutomatableModel::automationMode() const
 
 void AutomatableModel::setAutomationMode( AutomationMode mode )
 {
+	// Leaving Latch ends the engagement. A latch is bound to the transport run
+	// it was made in, so it survives the control being released - but a mode
+	// change is not the run ending, and coming back to Latch must need a fresh
+	// touch rather than resume the engagement a mode change interrupted.
+	if( mode != AutomationMode::Latch )
+	{
+		m_latchRun.store( 0, std::memory_order_relaxed );
+	}
 	m_automationMode.store( mode, std::memory_order_relaxed );
 }
 
