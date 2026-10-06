@@ -2093,3 +2093,4 @@ tools/ncpu-shim.c
 tests/src/gui/ShortcutsCommandsTest.cpp
 tests/src/gui/MainWindowTest.cpp
 tests/src/gui/LmmsStyleTest.cpp
+tests/src/gui/PianoRollRecordTest.cpp

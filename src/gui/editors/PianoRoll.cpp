@@ -4483,6 +4483,10 @@ void PianoRoll::stop()
 {
 	Engine::getSong()->stop();
 	m_recording = false;
+	// The pass is over, so its pending starts are over too: a key still physically down when the
+	// transport stops will never send its key-up to a live pass, and a start left in the list would
+	// sit in front of the next pass's - pairing that pass's release with this one's start.
+	m_recordingNotes.clear();
 	m_scrollBack = m_timeLine->autoScroll() != TimeLineWidget::AutoScrollState::Disabled;
 
 	auto* songEditor = GuiApplication::instance()->songEditor()->m_editor;

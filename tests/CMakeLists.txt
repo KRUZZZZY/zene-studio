@@ -868,6 +868,8 @@ set(LMMS_TESTS
 	src/gui/HelpAccessTest.cpp
 	# R7.3: the piano roll's frame time at 1k/5k/10k/50k notes (an opt-in +20% gate).
 	src/gui/PianoRollBenchmarkTest.cpp
+	# The piano roll's live MIDI record pass: a stopped pass leaves no pending start behind.
+	src/gui/PianoRollRecordTest.cpp
 	src/gui/MidiLearnGuiTest.cpp
 	src/tracks/AutomationTrackTest.cpp
 	# Inherited clip paths that dereferenced getGUI() unguarded, run headless.
@@ -1380,6 +1382,7 @@ if(ZENE_HAVE_COLLAB)
 endif()
 set_tests_properties(WorkspaceAccessTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(PianoRollBenchmarkTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+set_tests_properties(PianoRollRecordTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 # AccessibilityHelperTest constructs the shell, so it takes the same
 # platform registration (040/ui-precond). WcagContrastTest is guiless and needs
 # none: QColor loads no platform plugin.
