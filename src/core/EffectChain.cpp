@@ -301,7 +301,8 @@ bool EffectChain::processAudioBuffer(AudioBuffer& buffer, const AudioBuffer* sid
 	bool moreEffects = false;
 	for (Effect* effect : m_effects)
 	{
-		moreEffects |= effect->processAudioBuffer(buffer);
+		// 0.5.0 L10 (MX-080): through the device's delta tap - its plain output while the tap is off.
+		moreEffects |= effect->deltaTap().process(*effect, buffer);
 	}
 
 	m_sidechainBuffer = previousSidechain;

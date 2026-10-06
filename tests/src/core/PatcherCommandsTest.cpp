@@ -50,7 +50,9 @@
 #include <QJsonArray>
 #include <QJsonObject>
 #include <QString>
+#include <algorithm>
 #include <cstdint>
+#include <span>
 #include <vector>
 
 #include "AllocationProbe.h"
@@ -61,6 +63,7 @@
 #include "ControlRegistry.h"
 #include "ControlReversibility.h"
 #include "ControlVocabulary.h"
+#include "DeltaTap.h"
 #include "Effect.h"
 #include "EffectChain.h"
 #include "Engine.h"
@@ -490,6 +493,61 @@ private slots:
 		const std::uint64_t allocations = test::tlAllocationCount;
 		test::tlCountAllocations = false;
 		QCOMPARE(allocations, std::uint64_t{0});
+	}
+
+	//! The AudioBuffer overload runs every effect through its delta tap, like
+	//! the AudioBus fallback (EffectChain.cpp:336) and the graph path
+	//! (RoutingChainNodes.cpp:98) already do. With "hear only what it changes"
+	//! on a doubling effect, a unit block must come out as the change alone
+	//! (1.0), not the effect's own output (2.0), and the tap back off must
+	//! restore the plain output.
+	void theAudioBufferPathAppliesTheDeltaTap()
+	{
+		// One effect only: a legacy effect processes the interleaved scratch and
+		// its result is copied back to the planar channels, so a second effect
+		//! would read a stale input and mask what the first one did.
+		EffectChain* chain = &Engine::mixer()->mixerChannel(kEmptyChannel)->m_fxChain;
+		QVERIFY(chain->effects().empty());
+		auto* effect = new PatcherScaleEffect(chain, kBypassedGain, kBypassedGain);
+		chain->appendEffect(effect);
+		QCOMPARE(chain->effects().size(), std::size_t{1});
+
+		const f_cnt_t fpp = Engine::audioEngine()->framesPerPeriod();
+		AudioBuffer buffer{fpp};
+		// The legacy effect processes through the interleaved scratch, which a
+		// bare AudioBuffer does not carry.
+		buffer.allocateInterleavedBuffer();
+		DeltaTap& tap = effect->deltaTap();
+
+		// A block is read from the interleaved scratch and written back to the
+		// planar channels; its silence flags are what a sleeping effect checks
+		// before zeroing it.
+		const auto fillWithUnitSignal = [&buffer, fpp]
+		{
+			std::fill_n(buffer.buffer(0).data(), fpp, 1.f);
+			std::fill_n(buffer.buffer(1).data(), fpp, 1.f);
+			toInterleaved(buffer.groupBuffers(0), buffer.interleavedBuffer());
+			buffer.assumeNonSilent(0);
+			buffer.assumeNonSilent(1);
+		};
+
+		// The tap off: the effect's plain output, 1.0 doubled.
+		QVERIFY(!tap.enabled());
+		fillWithUnitSignal();
+		chain->processAudioBuffer(buffer);
+		QCOMPARE(buffer.buffer(0)[0], kBypassedGain);
+		QCOMPARE(buffer.buffer(1)[0], kBypassedGain);
+
+		// The tap on: output minus input, i.e. the doubling itself - 1.0.
+		tap.setEnabled(true, fpp);
+		QVERIFY(tap.enabled());
+		fillWithUnitSignal();
+		chain->processAudioBuffer(buffer);
+		QCOMPARE(buffer.buffer(0)[0], kBypassedGain - 1.f);
+		QCOMPARE(buffer.buffer(1)[0], kBypassedGain - 1.f);
+
+		tap.setEnabled(false, fpp);
+		QVERIFY(!tap.enabled());
 	}
 
 private:
