@@ -363,6 +363,26 @@ private slots:
 		QVERIFY(audioio::storedEntry(key) == before);
 	}
 
+	/*! Undo takes the ping back with it. The measurement lands a few periods later,
+	 *  on the audio thread; an undo that restored the settings but left the ping
+	 *  running would let it finish afterwards and write a measured latency into
+	 *  the project the undo just put back. */
+	void anUndoCancelsThePingItRequested()
+	{
+		QVERIFY(ok(QStringLiteral("mixer.hardware_insert"), {{QStringLiteral("channel"), ch(1)}, {QStringLiteral("enabled"), true},
+			{QStringLiteral("send"), QStringLiteral("9/10")}, {QStringLiteral("return"), QStringLiteral("3")}}));
+		QVERIFY(ok(QStringLiteral("mixer.hardware_insert_ping"), {{QStringLiteral("channel"), ch(1)}}));
+		auto& insert = Engine::mixer()->mixerChannel(1)->m_hardwareIo.insert;
+		QVERIFY(insert.pingState() != HardwareInsert::PingState::Idle);  // the click is in flight
+
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
+		QVERIFY2(insert.pingState() == HardwareInsert::PingState::Idle,
+			"the undone ping can still land a measured latency after the undo");
+
+		QVERIFY(run(QStringLiteral("control.undo")).ok);  // the insert itself
+		QVERIFY(!Engine::mixer()->mixerChannel(1)->m_hardwareIo.insert.enabled());
+	}
+
 	void everythingSurvivesASaveAndLoad()
 	{
 		Mixer* mixer = Engine::mixer();

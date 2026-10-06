@@ -98,6 +98,12 @@ public:
 
 	//! Interface thread: ask for a ping. The next processed period sends the click.
 	void requestPing();
+
+	/*! Interface thread: call off a ping - a measurement nobody is waiting for any more.
+	 *  The click may already be on its way, so this only means the answer is dropped:
+	 *  a ping the user undid must not land a measured latency afterwards. */
+	void cancelPing() { m_ping.store(static_cast<int>(PingState::Idle), std::memory_order_release); }
+
 	PingState pingState() const { return static_cast<PingState>(m_ping.load(std::memory_order_acquire)); }
 
 	/*! The channel's worker: send @a buffer's period, take the return, and write the insert's output

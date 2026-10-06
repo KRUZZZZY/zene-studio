@@ -130,7 +130,13 @@ ControlResult hardwareInsertPing(const QJsonObject& args)
 	insert.requestPing();
 	addUndoStep(
 		[id, before, found]() {
-			if (MixerChannel* undone = channelById(id)) { *found = undone->m_hardwareIo.insert.settings(); }
+			if (MixerChannel* undone = channelById(id))
+			{
+				*found = undone->m_hardwareIo.insert.settings();
+				// Nobody is waiting for the measurement any more: a ping that landed after the undo would
+				// write a latency into the project the undo just put back.
+				undone->m_hardwareIo.insert.cancelPing();
+			}
 			applyInsert(id, before);
 		},
 		[id, found]() { applyInsert(id, *found); });
