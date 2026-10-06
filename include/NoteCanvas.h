@@ -239,6 +239,7 @@ private:
 	int m_muteTo = -1;                   //!< a mute stroke's state: 1 mute, 0 unmute, -1 not yet decided
 	QString m_justDrawn;                 //!< the note the last click drew: a double-click that drew it is not a properties request
 	ulong m_drawnAt = 0;                 //!< the timestamp of the release that drew it
+	double m_wheelNotches = 0.0;         //!< Alt+wheel notches left over from a partial wheel event
 	int m_auditionKey = -1;
 	std::vector<std::pair<int, int>> m_painted;  //!< the paint tool's cells so far: key, start tick
 	double m_panTicks = 0;               //!< the view at a middle-button press

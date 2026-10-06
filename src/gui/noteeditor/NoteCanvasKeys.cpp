@@ -43,6 +43,7 @@ namespace
 {
 
 constexpr int kWheelVelocityStep = 5;  //!< Alt+wheel: velocity per notch on the 0..200 scale (Ctrl+Alt: 1)
+constexpr int kWheelNotchAngle = 120;   //!< the angle-delta units of one wheel notch (Qt's 8 steps of 15)
 
 //! Ctrl+B: FL's duplicate (Command+B on macOS, as Qt maps Ctrl there).
 bool isDuplicate(const QKeyEvent* event)
@@ -177,7 +178,13 @@ void NoteCanvas::wheelOnNote(const Note* note, int amount, Qt::KeyboardModifiers
 {
 	// FL: Alt+wheel over a note changes its velocity (Ctrl+Alt finely), Shift+Alt nudges it in time - the
 	// selection with it when the note is part of one. One note.edit a notch.
-	const int sign = amount > 0 ? 1 : -1;
+	// The velocity moves by whole notches, not by one step per event: a two-notch event moves two
+	// steps, and a high-resolution wheel's fraction of a notch is kept until it adds up to one.
+	m_wheelNotches += static_cast<double>(amount) / kWheelNotchAngle;
+	const int notches = static_cast<int>(m_wheelNotches);
+	m_wheelNotches -= notches;
+	if (notches == 0) { return; }
+	const int steps = notches;
 	const bool nudge = mods.testFlag(Qt::ShiftModifier);
 	const int step = mods.testFlag(Qt::ControlModifier) ? 1 : kWheelVelocityStep;
 	const std::vector<Note*> targets = note->selected() ? selectedNotes() : std::vector<Note*>{noteById(note->id())};
@@ -186,8 +193,8 @@ void NoteCanvas::wheelOnNote(const Note* note, int amount, Qt::KeyboardModifiers
 	{
 		if (target == nullptr) { continue; }
 		QJsonObject edit{{QStringLiteral("note"), control::noteIdOf(target)}};
-		if (nudge) { edit.insert(QStringLiteral("position"), std::max(0, static_cast<int>(target->pos().getTicks()) + sign * std::max(1, m_state.gridTicks))); }
-		else { edit.insert(QStringLiteral("velocity"), std::clamp(static_cast<int>(target->getVolume()) + sign * step, int{MinVolume}, int{MaxVolume})); }
+		if (nudge) { edit.insert(QStringLiteral("position"), std::max(0, static_cast<int>(target->pos().getTicks()) + steps * std::max(1, m_state.gridTicks))); }
+		else { edit.insert(QStringLiteral("velocity"), std::clamp(static_cast<int>(target->getVolume()) + steps * step, int{MinVolume}, int{MaxVolume})); }
 		edits.append(edit);
 	}
 	if (edits.isEmpty()) { return; }

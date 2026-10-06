@@ -40,6 +40,7 @@
 #include "NoteEditor.h"
 #include "NoteEditorParts.h"
 #include "NotePlayHandle.h"
+#include "Piano.h"
 #include "MenuTestSupport.h"
 #include "Song.h"
 #include "TrackKeyNames.h"
@@ -223,6 +224,91 @@ private slots:
 		QVERIFY(undo());
 		QCOMPARE(static_cast<int>(m_clip->notes()[0]->getVolume()), 100);
 		QCOMPARE(static_cast<int>(m_clip->notes()[1]->getVolume()), 100);
+	}
+
+	void aFastVelocityLaneStrokeTakesTheNotesItSkipsOver()
+	{
+		m_editor->setLane(NoteLane::Velocity);
+		NoteLaneView* lane = m_editor->laneView();
+		QVERIFY(lane != nullptr && lane->isVisible());
+		// A note between the two the clip has: a stroke from the first stem to the last crosses it.
+		QVERIFY(invoke(QStringLiteral("note.add"), {{QStringLiteral("clip"), control::clipIdOf(m_clip)},
+			{QStringLiteral("key"), 60}, {QStringLiteral("position"), 96}, {QStringLiteral("length"), 24}}).ok);
+		const Note* middle = noteAt(m_clip, 96, 60);
+		QVERIFY(middle != nullptr);
+		QCOMPARE(static_cast<int>(middle->getVolume()), 100);
+		const NoteGrid& g = m_editor->state().grid;
+		// Qt delivers a fast drag sparsely: one move from the first stem to the last puts the middle
+		// note nowhere near either event, so only the crossed-path walk can reach its stem.
+		const QPoint from(static_cast<int>(g.xOfTick(48)) + 1, 2);
+		const QPoint to(static_cast<int>(g.xOfTick(192)) + 1, 2);
+		QTest::mousePress(lane, Qt::LeftButton, Qt::NoModifier, from);
+		QTest::mouseMove(lane, to);
+		QTest::mouseRelease(lane, Qt::LeftButton, Qt::NoModifier, to);
+		QVERIFY(static_cast<int>(m_clip->notes()[0]->getVolume()) > 190);
+		QVERIFY(static_cast<int>(m_clip->notes()[2]->getVolume()) > 190);
+		QVERIFY(static_cast<int>(middle->getVolume()) > 190);  // the stem the drag skipped over
+	}
+
+	void anAltWheelMovesTheVelocityAsFarAsTheNotchesWent()
+	{
+		QVERIFY(invoke(QStringLiteral("note.add"), {{QStringLiteral("clip"), control::clipIdOf(m_clip)},
+			{QStringLiteral("key"), 62}, {QStringLiteral("position"), 96}, {QStringLiteral("length"), 24},
+			{QStringLiteral("velocity"), 100}}).ok);
+		const Note* note = noteAt(m_clip, 96, 62);
+		QVERIFY(note != nullptr);
+		QCOMPARE(static_cast<int>(note->getVolume()), 100);
+		const NoteGrid& g = m_editor->state().grid;
+		const QPointF at(g.xOfTick(96) + 2, g.yOfKey(62) + g.rowHeight() / 2);
+		// Two notches (Qt sends 120 a notch) in one event: the velocity moves two steps of 5, not one.
+		QWheelEvent wheel(at, at, QPoint(0, 0), QPoint(0, 240), Qt::NoButton, Qt::AltModifier, Qt::NoScrollPhase, false);
+		QCoreApplication::sendEvent(m_editor->canvas(), &wheel);
+		QCOMPARE(static_cast<int>(note->getVolume()), 110);
+	}
+
+	void aTrackpadWheelScrollsAndZoomsWhereAMouseWheelDoes()
+	{
+		NoteCanvas* canvas = m_editor->canvas();
+		const QPointF at(100.0, 100.0);
+		// A trackpad sends pixel deltas and no angle delta at all: the view still scrolls.
+		const int scrollBefore = m_editor->state().grid.scrollY();
+		QWheelEvent scroll(at, at, QPoint(0, 60), QPoint(0, 0), Qt::NoButton, Qt::NoModifier, Qt::NoScrollPhase, false);
+		QCoreApplication::sendEvent(canvas, &scroll);
+		QVERIFY(m_editor->state().grid.scrollY() != scrollBefore);
+		// ... and the key column beside it.
+		auto* keyboard = m_editor->findChild<NoteKeyboardView*>(QStringLiteral("noteKeyboard"));
+		QVERIFY(keyboard != nullptr && keyboard->isVisible());
+		const int keysBefore = m_editor->state().grid.scrollY();
+		QWheelEvent keyScroll(at, at, QPoint(0, 60), QPoint(0, 0), Qt::NoButton, Qt::NoModifier, Qt::NoScrollPhase, false);
+		QCoreApplication::sendEvent(keyboard, &keyScroll);
+		QVERIFY(m_editor->state().grid.scrollY() != keysBefore);
+		// ... and Ctrl+wheel still zooms the note area under the pointer.
+		const double zoomBefore = m_editor->state().grid.pixelsPerTick();
+		QWheelEvent zoom(at, at, QPoint(0, 60), QPoint(0, 0), Qt::NoButton, Qt::ControlModifier, Qt::NoScrollPhase, false);
+		QCoreApplication::sendEvent(canvas, &zoom);
+		QVERIFY(m_editor->state().grid.pixelsPerTick() > zoomBefore);
+	}
+
+	void aRightClickOnAKeyDoesNotAuditionIt()
+	{
+		auto* keyboard = m_editor->findChild<NoteKeyboardView*>(QStringLiteral("noteKeyboard"));
+		QVERIFY(keyboard != nullptr && keyboard->isVisible());
+		const NoteGrid& g = m_editor->state().grid;
+		const int y = g.yOfKey(64) + g.rowHeight() / 2;
+		QVERIFY(y > 0 && y < keyboard->height());
+		const QPoint at(20, y);
+		Piano* piano = m_track->pianoModel();
+		QVERIFY(piano != nullptr);
+		// The right button is not a key press: only the left one sounds.
+		QTest::mousePress(keyboard, Qt::RightButton, Qt::NoModifier, at);
+		QVERIFY(!piano->isKeyPressed(64));
+		QTest::mouseRelease(keyboard, Qt::RightButton, Qt::NoModifier, at);
+		QVERIFY(!piano->isKeyPressed(64));
+		// The left button is, which is what makes the two presses above distinguishable.
+		QTest::mousePress(keyboard, Qt::LeftButton, Qt::NoModifier, at);
+		QVERIFY(piano->isKeyPressed(64));
+		QTest::mouseRelease(keyboard, Qt::LeftButton, Qt::NoModifier, at);
+		QVERIFY(!piano->isKeyPressed(64));
 	}
 
 	void anAgentsEditShowsAtOnce()
