@@ -552,6 +552,34 @@ private slots:
 		QCOMPARE(after.result.value(QStringLiteral("depth")).toInt(), beforeDepth);
 		QCOMPARE(readBytes(project), before);
 	}
+
+	//! Luna cluster 4878: the redo of a revisions.restore re-resolved the captured
+	//! revision ID. 'rev1' is a POSITION in the keep-3 set, and the restore's own
+	//! rotation plus the undo's rotation each shift every position, so by redo time
+	//! the id named different bytes and the redo wrote those over the live file
+	//! under a success it had not earned.
+	void theTimelineRedoRestoresTheBytesTheRestoreSelected()
+	{
+		const QString project = path(QStringLiteral("timeline-redo.mmp"));
+		QVERIFY(writeBytes(project, documentWith(3)));
+		QVERIFY(writeBytes(project + QStringLiteral(".rev0"), documentWith(2)));
+		QVERIFY(writeBytes(project + QStringLiteral(".rev1"), documentWith(1)));
+
+		const ControlResult restored = run(QStringLiteral("revisions.restore"),
+			QJsonObject{{QStringLiteral("project"), project},
+				{QStringLiteral("id"), QStringLiteral("rev1")}});
+		QVERIFY2(restored.ok, qPrintable(restored.errorMessage));
+		QCOMPARE(readBytes(project), documentWith(1));
+
+		const ControlResult undone = run(QStringLiteral("control.undo"));
+		QVERIFY2(undone.ok, qPrintable(undone.errorMessage));
+		QCOMPARE(readBytes(project), documentWith(3));
+
+		// The redo must bring back what the restore brought in.
+		const ControlResult redone = run(QStringLiteral("control.redo"));
+		QVERIFY2(redone.ok, qPrintable(redone.errorMessage));
+		QCOMPARE(readBytes(project), documentWith(1));
+	}
 };
 
 QTEST_GUILESS_MAIN(RevisionTimelineTest)

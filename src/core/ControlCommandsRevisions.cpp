@@ -111,6 +111,70 @@ QString sha256OfFile(const QString& path)
 	return QString::fromLatin1(hash.result().toHex());
 }
 
+//! The keep-3 revision whose bytes hash to \a sha256, or -1 when the retained
+//! set holds no such revision.
+int revisionHoldingBytes(const QString& projectPath, const QString& sha256)
+{
+	if (sha256.isEmpty()) { return -1; }
+	for (const QJsonValue& value
+		: control::projectRevisionState(projectPath).value(QStringLiteral("revisions")).toArray())
+	{
+		const QJsonObject entry = value.toObject();
+		if (entry.value(QStringLiteral("sha256")).toString() == sha256)
+		{
+			return entry.value(QStringLiteral("revision")).toInt();
+		}
+	}
+	return -1;
+}
+
+//! Whether \a id names a position in the keep-3 set ('rev0'..'rev2') rather than
+//! a STABLE artefact ('backup', 'autosave', 'git:<sha>'). Only a position moves
+//! when the set rotates; the others name a file, so re-resolving the same id
+//! after a rotation still finds the same bytes.
+bool isRotationId(const QString& id)
+{
+	if (!id.startsWith(QStringLiteral("rev"))) { return false; }
+	const QString number = id.mid(3);
+	return !number.isEmpty()
+		&& number.size() == 1
+		&& number.at(0) >= QLatin1Char('0') && number.at(0) <= QLatin1Char('2');
+}
+
+//! Record the ONE action step a successful restore carries: the undo restores
+//! revision 0 (the file this call rotated in) - or, when the restore CREATED the
+//! file, removes it, because a file that never existed cannot be restored. The
+//! redo re-resolves \a restoredSha, not \a id, when \a id was a rotation position.
+void recordRestoreUndoStep(const QString& target, const QString& recoveryFile,
+	const QString& id, bool liveExisted, const QString& restoredSha)
+{
+	control::addUndoStep(
+		[target, liveExisted]() {
+			if (liveExisted)
+			{
+				QString ignored;
+				control::restoreProjectRevision(target, 0, &ignored);
+				return;
+			}
+			QFile::remove(target);
+		},
+		[target, recoveryFile, id, restoredSha]() {
+			QString ignored;
+			if (isRotationId(id))
+			{
+				// -1: the undo's own rotation left the set in a shape where these
+				// bytes are no longer retained. Restoring some other revision
+				// instead would be a wrong-bytes overwrite, so the redo leaves the
+				// file as the undo left it.
+				const int current = revisionHoldingBytes(target, restoredSha);
+				if (current < 0) { return; }
+				control::restoreProjectRevision(target, current, &ignored);
+				return;
+			}
+			control::restoreTimelineRevision(target, recoveryFile, id, &ignored);
+		});
+}
+
 // ---------------------------------------------------------------------------
 // revisions.list
 // ---------------------------------------------------------------------------
@@ -303,23 +367,15 @@ void registerRevisionsRestore(ControlRegistry& registry)
 				QStringLiteral("revisions.restore: %1").arg(error));
 		}
 
-		// ONE action step, recorded after the write succeeded: restore revision 0
-		// (the file this call rotated in) - or, when the restore CREATED the file,
-		// remove it, because a file that never existed cannot be restored.
-		control::addUndoStep(
-			[target, liveExisted]() {
-				if (liveExisted)
-				{
-					QString ignored;
-					control::restoreProjectRevision(target, 0, &ignored);
-					return;
-				}
-				QFile::remove(target);
-			},
-			[target, recoveryFile, id]() {
-				QString ignored;
-				control::restoreTimelineRevision(target, recoveryFile, id, &ignored);
-			});
+		// What this restore brought in, identified by its CONTENT (Luna cluster
+		// 4878). A 'rev0'..'rev2' id is a POSITION in the keep-3 set: this restore
+		// rotated the live file in, the recorded undo rotates it in again, and every
+		// rotation shifts rev0 -> rev1 -> rev2 and drops the oldest - so by the time
+		// the redo ran, the id named a different file and the redo wrote THAT over
+		// the live one, under a success it had not earned. An id naming a stable
+		// artefact ('backup', 'autosave', 'git:<sha>') is re-resolved as itself.
+		const QString restoredSha = sha256OfFile(target);
+		recordRestoreUndoStep(target, recoveryFile, id, liveExisted, restoredSha);
 
 		QJsonObject result;
 		result.insert(QStringLiteral("file"), target);
