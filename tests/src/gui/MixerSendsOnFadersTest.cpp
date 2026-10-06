@@ -33,6 +33,7 @@
 #include <QComboBox>
 #include <QGraphicsEffect>
 #include <QLabel>
+#include <QLineEdit>
 #include <QPushButton>
 
 #include "ControlMixerSupport.h"
@@ -160,6 +161,33 @@ private slots:
 		QVERIFY(mixer->sendsBanner()->message()->text().contains(QStringLiteral("Delay")));
 		QCOMPARE(mixeroverlays::faderRole(m_sender), mixeroverlays::FaderRole::NoSend);  // it sends to Verb only
 		QVERIFY(!mixer->channelView(m_sender)->fader()->isEnabled());
+	}
+
+	// A return's strip carries a bus-specific tooltip ("(return - sends into it are
+	// pre-fader)"). Renaming the strip rebuilds the tooltip from the name alone, so a
+	// renamed bus stopped reading as a return until the mixer was rebuilt.
+	void renamingABusKeepsItsReturnTooltip()
+	{
+		const int index = createReturn(QStringLiteral("Plate"));
+		QVERIFY(index > 0);
+		sync();
+		MixerChannelView* view = getGUI()->mixerView()->channelView(index);
+		QVERIFY(view != nullptr);
+		QVERIFY(Engine::mixer()->mixerChannel(index)->isBus());
+		QVERIFY(view->toolTip().contains(QStringLiteral("Return")));
+
+		view->renameChannel();
+		view->nameEdit()->setText(QStringLiteral("Plate Verb"));
+		// renameFinished is a private slot (the line edit's editingFinished is its only
+		// caller), so drive it the way that signal does - through the meta-object.
+		QVERIFY(QMetaObject::invokeMethod(view, "renameFinished"));
+
+		// renameFinished() itself rebuilds the tooltip from the plain name, so check the
+		// state the mixer settles into: the next sync pass re-describes the strip.
+		sync();
+		QVERIFY(view->toolTip().contains(QStringLiteral("Plate Verb")));
+		QVERIFY(view->toolTip().contains(QStringLiteral("Return")));
+		QVERIFY(view->nameEdit()->text().contains(QStringLiteral("Plate Verb")));
 	}
 
 	void theBannersButtonPutsTheFadersBack()
