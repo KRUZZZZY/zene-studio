@@ -485,6 +485,31 @@ private slots:
 		QCOMPARE(kept.probed, 0);
 	}
 
+//! BrowserMaxScanEntries bounds the ENTRIES the walk visits - directories
+	//! included. A tree of directories that holds almost no files used to walk
+	//! all of them and still answer `truncated: false`, so the reported bound
+	//! was not the bound the walk obeyed.
+	void scanLimitBoundsTheWalkOverDirectories()
+	{
+		QTemporaryDir dir;
+		QVERIFY(dir.isValid());
+		QDir root(dir.path());
+		// One file, more directories than the limit has entries: the file
+		// counter alone never reaches the bound.
+		for (int i = 0; i <= BrowserMaxScanEntries; ++i)
+		{
+			QVERIFY2(root.mkdir(QStringLiteral("d%1").arg(i)), "a fixture directory was not created");
+		}
+		QVERIFY(writeWave(root.filePath(QStringLiteral("kick_48k.wav")), WaveSpec()));
+
+		BrowserQuery query;
+		query.path = dir.path();
+		query.text = QStringLiteral("kick");
+		const BrowserQueryResult result = runBrowserQuery(query);
+		QVERIFY2(result.truncated, "the walk visited more entries than the limit and did not say so");
+		QVERIFY(result.scanned <= BrowserMaxScanEntries);
+	}
+
 private:
 	QTemporaryDir m_dir;
 	QString m_wave;

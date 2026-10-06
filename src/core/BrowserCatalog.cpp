@@ -43,6 +43,7 @@
 
 #include <QDateTime>
 #include <QDir>
+#include <QDirIterator>
 #include <QFileInfo>
 #include <QPair>
 
@@ -227,12 +228,54 @@ void considerPath(const QString& path, BrowserKind kind, QueryContext* context)
 		context->matched.append(item);
 		return;
 	}
-	if (!context->query->probe || context->probed >= BrowserMaxProbes) { return; }
 	// Only audio carries the metadata a probe reads, and the probe budget is a
 	// small fraction of the scan budget: a library of presets and projects must
 	// not spend the probes the audio candidates need.
 	if (kind != BrowserKind::Audio) { return; }
 	probeAndAppend(&item, cheapMatch, context);
+}
+
+//! True when the walk may descend into \a entry: a symlinked directory is a loop
+//! the walk never ends on, a hidden one is not a sample library, and the depth
+//! limit is what keeps a deep tree finite.
+bool walkMayDescend(const QFileInfo& entry, int depth)
+{
+	return !entry.isSymLink() && depth + 1 <= kMaxDepth
+		&& !entry.fileName().startsWith(QLatin1Char('.'));
+}
+
+/*! Streams every entry of \a dirPath one at a time into \a out (files) and \a
+ *  queue (directories to visit), spending one unit of \a remaining per entry.
+ *
+ *  Entries are read ONE AT A TIME: entryInfoList() would materialise a whole
+ *  directory before the limit could apply to any of it. Directories count against
+ *  the limit too, because BrowserMaxScanEntries bounds the ENTRIES examined - a
+ *  tree of empty directories is bounded by it too.
+ *
+ *  Returns false when the budget ran out mid-directory and the walk must report
+ *  truncation.
+ */
+bool readDirectory(const QString& dirPath, int depth, int* remaining,
+		QStringList* out, QList<QPair<QString, int>>* queue)
+{
+	QDirIterator entries(dirPath,
+		QDir::Files | QDir::Dirs | QDir::NoDotAndDotDot | QDir::Readable);
+	while (entries.hasNext())
+	{
+		if (*remaining <= 0) { return false; }
+		--(*remaining);
+		const QFileInfo entry = entries.nextFileInfo();
+		if (entry.isDir())
+		{
+			if (walkMayDescend(entry, depth))
+			{
+				queue->append({entry.absoluteFilePath(), depth + 1});
+			}
+			continue;
+		}
+		out->append(entry.absoluteFilePath());
+	}
+	return true;
 }
 
 //! Every file under \a root, breadth-first, skipping hidden directories and
@@ -241,29 +284,17 @@ QStringList filesUnder(const QString& root, int* remaining, bool* truncated)
 {
 	QStringList out;
 	QList<QPair<QString, int>> queue{{root, 0}};
+	bool stoppedEarly = false;
 	while (!queue.isEmpty() && *remaining > 0)
 	{
 		const QPair<QString, int> head = queue.takeFirst();
-		QDir dir(head.first);
-		dir.setFilter(QDir::Files | QDir::Dirs | QDir::NoDotAndDotDot | QDir::Readable);
-		const QFileInfoList entries = dir.entryInfoList();
-		for (const QFileInfo& entry : entries)
+		if (!readDirectory(head.first, head.second, remaining, &out, &queue))
 		{
-			if (*remaining <= 0) { *truncated = true; break; }
-			if (entry.isDir())
-			{
-				if (!entry.isSymLink() && head.second + 1 <= kMaxDepth
-					&& !entry.fileName().startsWith(QLatin1Char('.')))
-				{
-					queue.append({entry.absoluteFilePath(), head.second + 1});
-				}
-				continue;
-			}
-			out.append(entry.absoluteFilePath());
-			--(*remaining);
+			stoppedEarly = true;
+			break;
 		}
 	}
-	if (!queue.isEmpty()) { *truncated = true; }
+	if (!queue.isEmpty() || stoppedEarly) { *truncated = true; }
 	return out;
 }
 
