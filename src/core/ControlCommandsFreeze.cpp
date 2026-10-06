@@ -254,12 +254,11 @@ ControlResult freezeUnfreeze(const QJsonObject& args)
 	track->unfreeze();
 
 	QJsonObject result = frozenStateJson(track);
-	// The inverse NAMED here is the command a caller would run to freeze again;
-	// the take that comes back off `control.undo` is the exact one the
-	// checkpoint captured. Re-running freeze.track would render a NEW take.
+	// The inverse NAMED here is control.undo: the checkpoint this call took carries the take
+	// that came off, and one undo puts that exact take back. freeze.track is NOT that - it
+	// renders a NEW take for the WHOLE track, which cannot recreate a regional take.
 	result.insert(QStringLiteral("__transaction"),
-		control::transactionPayload(before, QStringLiteral("freeze.track"),
-			QJsonObject{{QStringLiteral("track"), control::trackIdOf(track)}}, true,
+		control::transactionPayload(before, QStringLiteral("control.undo"), {}, true,
 			ClauseFrozenTake));
 	return ControlResult::success(result);
 }
