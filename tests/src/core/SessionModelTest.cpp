@@ -313,6 +313,44 @@ private slots:
 		QCOMPARE( output.count( QStringLiteral( "must-survive" ) ), 1 );
 	}
 
+	/*! A pattern attribute that is not an int restores as "no reference" (-1),
+	 *  never as pattern 0: QString::toInt() returns 0 when the conversion
+	 *  fails, and 0 is a VALID pattern id, so a malformed or overflowing
+	 *  reference silently pointed the cell at the first pattern in the store.
+	 */
+	void anUnreadablePatternIdIsNotPatternZero()
+	{
+		QDomDocument doc;
+		doc.setContent( QStringLiteral( "<clip type=\"1\" pattern=\"999999999999\"/>" ) );
+		const QDomElement overflow = doc.documentElement();
+		QVERIFY( overflow.isElement() );
+		ClipSlot slot;
+		slot.restoreState( overflow );
+		QCOMPARE( static_cast<int>( slot.type() ), static_cast<int>( ClipSlot::Type::Midi ) );
+		QCOMPARE( slot.patternId(), -1 );
+
+		doc.setContent( QStringLiteral( "<clip type=\"1\" pattern=\"abc\"/>" ) );
+		ClipSlot text;
+		text.restoreState( doc.documentElement() );
+		QCOMPARE( text.patternId(), -1 );
+
+		// A missing attribute keeps its documented default.
+		doc.setContent( QStringLiteral( "<clip type=\"1\"/>" ) );
+		ClipSlot absent;
+		absent.restoreState( doc.documentElement() );
+		QCOMPARE( absent.patternId(), -1 );
+
+		// A well-formed id still round-trips, including 0 itself.
+		doc.setContent( QStringLiteral( "<clip type=\"1\" pattern=\"7\"/>" ) );
+		ClipSlot good;
+		good.restoreState( doc.documentElement() );
+		QCOMPARE( good.patternId(), 7 );
+		doc.setContent( QStringLiteral( "<clip type=\"1\" pattern=\"0\"/>" ) );
+		ClipSlot zero;
+		zero.restoreState( doc.documentElement() );
+		QCOMPARE( zero.patternId(), 0 );
+	}
+
 	//! A slot references either a pattern or an audio clip, never both
 	//! (SPEC-zene-studio A1 mutual exclusivity).
 	void slotReferenceIsMutuallyExclusive()

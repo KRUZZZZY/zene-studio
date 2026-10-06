@@ -145,9 +145,19 @@ void ClipSlot::restoreState( const QDomElement& element )
 	switch( type )
 	{
 		case static_cast<int>( Type::Midi ):
+		{
 			m_type = Type::Midi;
-			m_patternId = element.attribute( QStringLiteral( "pattern" ), QStringLiteral( "-1" ) ).toInt();
+			// toInt() returns 0 when the text is not an int at all (and for an
+			// overflow, which is a failure too), and 0 is a VALID pattern id - so
+			// an unreadable reference silently pointed the cell at the first
+			// pattern in the store. A failed conversion restores as "no reference",
+			// which is what a missing attribute already did.
+			bool ok = false;
+			const int patternId = element.attribute( QStringLiteral( "pattern" ),
+				QStringLiteral( "-1" ) ).toInt( &ok );
+			m_patternId = ok ? patternId : -1;
 			break;
+		}
 		case static_cast<int>( Type::Audio ):
 			m_type = Type::Audio;
 			m_audioSource = element.attribute( QStringLiteral( "src" ) );
