@@ -111,7 +111,18 @@ void RemoteControls::setTarget(const QString& target, const QString& plugin)
 
 void RemoteControls::followSelection(const QString& target, const QString& plugin)
 {
-	if (m_follow && !target.isEmpty()) { setTarget(target, plugin); }
+	if (!m_follow) { return; }
+	if (target.isEmpty())
+	{
+		// The selection named nothing to follow, so the knobs drive nothing. Nothing is sent back:
+		// there is no device whose page that would be.
+		if (m_target.isEmpty() && m_plugin.isEmpty()) { return; }
+		m_target.clear();
+		m_plugin.clear();
+		m_page = 0;
+		return;
+	}
+	setTarget(target, plugin);
 }
 
 int RemoteControls::pageCount() const

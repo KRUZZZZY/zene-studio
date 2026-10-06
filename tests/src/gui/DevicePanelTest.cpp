@@ -67,6 +67,7 @@
 #include "MidiClip.h"
 #include "MenuTestSupport.h"
 #include "Mixer.h"
+#include "RemoteControls.h"
 #include "SampleTrack.h"
 #include "ChannelLevelMeter.h"
 #include "CommandLists.h"
@@ -388,6 +389,28 @@ private slots:
 		QVERIFY(run(QStringLiteral("control.undo")).ok);  // and back, with the section rebuilt around it
 		QCoreApplication::processEvents();
 		ShellSelection::instance()->setTrack(nullptr);
+	}
+
+	//! MX-106: the knobs follow the selection - but a selection with nothing to follow (a channel
+	//! with no effects, or nothing selected) has to stop them. Otherwise a turn kept writing to the
+	//! device the user had already selected away from.
+	void followingStopsWhenTheNewSelectionHasNothingToFollow()
+	{
+		QVERIFY(run(QStringLiteral("remote.connect"), {{QStringLiteral("first_cc"), 20}}).ok);
+		Track* track = Track::create(Track::Type::Instrument, Engine::getSong());
+		ShellSelection::instance()->setTrack(track);
+		QCOMPARE(RemoteControls::instance()->state().value(QStringLiteral("target")).toString(),
+			control::trackIdOf(track));
+		// A channel with nothing on it: there is no device there to follow.
+		Mixer* mixer = Engine::mixer();
+		while (mixer->numChannels() <= 5) { mixer->createChannel(); }
+		ShellSelection::instance()->setChannel(control::channelIdOf(mixer->mixerChannel(5)));
+		QVERIFY2(RemoteControls::instance()->state().value(QStringLiteral("target")).toString().isEmpty(),
+			"the knobs still drive the device the previous selection named");
+		ShellSelection::instance()->setTrack(nullptr);
+		QVERIFY(RemoteControls::instance()->state().value(QStringLiteral("target")).toString().isEmpty());
+		delete track;
+		QVERIFY(run(QStringLiteral("remote.disconnect")).ok);
 	}
 
 	void theDevicePanelDrawsTheChainAndTheModulatorBesideIt()

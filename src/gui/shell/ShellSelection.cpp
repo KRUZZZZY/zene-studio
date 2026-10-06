@@ -62,7 +62,12 @@ void followRemoteControls(const ShellSelection* selection)
 	if (channel != nullptr && !channel->m_fxChain.effects().empty())
 	{
 		remote->followSelection(selection->channel(), control::effectIdOf(channel->m_fxChain.effects().front()));
+		return;
 	}
+	// Nothing here to follow - a channel with no devices, or no selection at all. The knobs have
+	// to stop driving whatever the last selection named, or a turn writes to a device that is no
+	// longer on screen.
+	remote->followSelection(QString(), QString());
 }
 
 } // namespace
