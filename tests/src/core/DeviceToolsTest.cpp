@@ -32,6 +32,7 @@
 
 #include <QDomDocument>
 #include <QJsonArray>
+#include <QJsonDocument>
 #include <QSet>
 
 #include <cmath>
@@ -419,6 +420,39 @@ private slots:
 		QCOMPARE(aliases.at(1), QStringLiteral("Level"));
 		QVERIFY(aliases.at(0).isEmpty());
 		QVERIFY2(aliases.at(2).isEmpty(), qPrintable(aliases.at(2)));
+	}
+
+	//! Two parameters can SHOW the same display name (two sub-sections each naming a knob
+	//! "Gain"), and each keeps its own alias under its own stable key. The report is a JSON
+	//! object, so a display name can only name one of them - the report must still show BOTH
+	//! aliases rather than letting the later one overwrite the earlier.
+	void twoParametersWithTheSameDisplayNameBothKeepTheirAlias()
+	{
+		AliasCollisionEffect effect(nullptr);
+		effect.m_first.setDisplayName(QStringLiteral("Gain"));
+		effect.m_second.setDisplayName(QStringLiteral("Gain"));
+		const QList<AutomatableModel*> all{&effect.m_first, &effect.m_second};
+		DeviceOptions options;
+		parameteraliases::setAlias(&effect, &effect.m_first, QStringLiteral("Level"), &options);
+		parameteraliases::setAlias(&effect, &effect.m_second, QStringLiteral("Drive"), &options);
+
+		const QStringList aliases = parameteraliases::aliasesOf(&effect, all, options);
+		QCOMPARE(aliases.at(0), QStringLiteral("Level"));
+		QCOMPARE(aliases.at(1), QStringLiteral("Drive"));
+
+		// Both aliases are in the report. The first one keeps the display name; the second is
+		// reported under its own stable key, because "Gain" already names the first.
+		const QJsonObject reported = parameteraliases::toJson(&effect, options);
+		const QStringList keys = parameteraliases::keysOf(&effect, all);
+		QSet<QString> values;
+		for (auto it = reported.begin(); it != reported.end(); ++it) { values.insert(it.value().toString()); }
+		QCOMPARE(values.size(), 2);
+		QVERIFY2(values.contains(QStringLiteral("Level")), qPrintable(QString::fromLatin1(QJsonDocument(reported).toJson(QJsonDocument::Compact))));
+		QVERIFY(values.contains(QStringLiteral("Drive")));
+		QVERIFY2(reported.contains(keys.at(0)) || reported.contains(QStringLiteral("Gain")),
+			"the first parameter's alias is reported under neither its display name nor its key");
+		QVERIFY2(reported.contains(keys.at(1)),
+			"the second parameter's alias is lost: neither its display name nor its key is in the report");
 	}
 
 	//! MX-093: randomise moves every setting inside its range; blend sets the A/B midpoint; both undo.

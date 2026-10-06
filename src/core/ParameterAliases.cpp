@@ -166,12 +166,17 @@ QJsonObject toJson(Effect* effect, const DeviceOptions& options)
 	const QStringList keys = listKeys(effect, all);
 	QJsonObject out;
 	QSet<QString> reported;
+	QSet<QString> namedNames;
 	for (int i = 0; i < all.size(); ++i)
 	{
 		const QString name = all.at(i)->displayName();
 		const QString alias = aliasFor(options, keys.at(i), name);
 		if (alias.isEmpty()) { continue; }
-		out.insert(name, alias);
+		// Two parameters can show the same display name, and an object names each entry
+		// once: the first keeps the display name and any later one is reported under its
+		// own stable key, so no alias overwrites another's.
+		out.insert(namedNames.contains(name) ? keys.at(i) : name, alias);
+		namedNames.insert(name);
 		reported << keys.at(i) << name;
 	}
 	for (auto it = options.aliases().cbegin(); it != options.aliases().cend(); ++it)
