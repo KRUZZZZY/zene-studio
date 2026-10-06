@@ -376,14 +376,23 @@ void registerRemoveCommand(ControlRegistry& registry)
 					.arg(static_cast<qint64>(tick)));
 		}
 
+		// The re-issuable add carries everything the removed event held, or it
+		// rebuilds a DIFFERENT map than the one this call took away (Luna cluster
+		// 4906/4000): `ramp` is part of a tempo event, and an add ACTIVATES the map
+		// unless `active` says otherwise, so an inactive map has to say so here.
 		QJsonObject inverseArgs;
 		inverseArgs.insert(QStringLiteral("tick"), static_cast<qint64>(removed.tick));
-		if (removed.hasTempo) { inverseArgs.insert(QStringLiteral("bpm"), removed.tempo); }
+		if (removed.hasTempo)
+		{
+			inverseArgs.insert(QStringLiteral("bpm"), removed.tempo);
+			inverseArgs.insert(QStringLiteral("ramp"), removed.ramp);
+		}
 		if (removed.hasTimeSignature)
 		{
 			inverseArgs.insert(QStringLiteral("numerator"), removed.numerator);
 			inverseArgs.insert(QStringLiteral("denominator"), removed.denominator);
 		}
+		inverseArgs.insert(QStringLiteral("active"), before.active());
 		QJsonObject result;
 		result.insert(QStringLiteral("tick"), static_cast<qint64>(tick));
 		result.insert(QStringLiteral("bpm"), removed.hasTempo ? removed.tempo : 0);
