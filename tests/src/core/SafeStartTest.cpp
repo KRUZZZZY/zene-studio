@@ -528,6 +528,70 @@ private slots:
 		QVERIFY2(previousRunExitedCleanly(), "a clean exit leaves the status clean");
 	}
 
+	// -----------------------------------------------------------------------
+	// 9. THE STATUS SNAPSHOT IS LATCHED. clear() lifts safe-start state for
+	//    THIS session; it must not rewrite the history of the run that just
+	//    ended. After a crashed predecessor, clearing safe-start mid-session
+	//    still reports the previous run as unclean, for as long as the session
+	//    lives: the marker found at beginSession() is a fact, not a switch.
+	// -----------------------------------------------------------------------
+	void clearingSafeStartDoesNotRewritePreviousRunHistory()
+	{
+		// A predecessor that died, planted the way test 4 plants one.
+		QTemporaryDir crashedDir;
+		QVERIFY2(crashedDir.isValid(), "could not create a temporary working directory");
+		QVERIFY(install(crashedDir.path().toStdString()));
+		{
+			QFile marker(QString::fromStdString(markerPath()));
+			QVERIFY(marker.open(QIODevice::WriteOnly | QIODevice::Truncate));
+			marker.write("Zene Studio safe-start marker v1\npid=4245\ntime_unix=1700000000\n");
+		}
+		beginSession();
+		QVERIFY2(!previousRunExitedCleanly(),
+			"the launch after a crash must report the previous run as unclean");
+		QVERIFY(safeStartActive());
+
+		// "The cause is known and fixed": safe-start is lifted for THIS session...
+		clear();
+		QVERIFY2(!safeStartActive(), "clear() leaves safe-start mode in this session");
+		QVERIFY2(!markerExists(), "clear() unlinks the marker for the next launch");
+		// ... but the previous run's history is a fact, not a switch: the status
+		// must keep reporting the marker found at beginSession() all session.
+		QVERIFY2(!previousRunExitedCleanly(),
+			"clearing safe-start mid-session must not rewrite the previous run's history");
+	}
+
+	// -----------------------------------------------------------------------
+	// 10. A FAILED install() must not leave the previous session's snapshot
+	//     answering. The session lifecycle state resets at the START of
+	//     install(), so even a failed install puts the module back to "nothing
+	//     has begun": the disk answers the previous-run question again, and
+	//     with no working directory there is no marker anywhere.
+	// -----------------------------------------------------------------------
+	void failedInstallLeavesNoStaleSessionSnapshot()
+	{
+		// A crashed predecessor, a session begun over it...
+		QTemporaryDir crashedDir;
+		QVERIFY2(crashedDir.isValid(), "could not create a temporary working directory");
+		QVERIFY(install(crashedDir.path().toStdString()));
+		{
+			QFile marker(QString::fromStdString(markerPath()));
+			QVERIFY(marker.open(QIODevice::WriteOnly | QIODevice::Truncate));
+			marker.write("Zene Studio safe-start marker v1\npid=4246\ntime_unix=1700000000\n");
+		}
+		beginSession();
+		QVERIFY2(!previousRunExitedCleanly(), "the session over the crash reports the crash");
+
+		// ... then an install that FAILS: the module owns no working directory,
+		// so no session snapshot may survive it - the disk answers again, and
+		// there is no marker anywhere.
+		QVERIFY2(!install(crashedDir.path().toStdString() + "/definitely-not-a-directory"),
+			"install() into a path that does not exist must fail");
+		QVERIFY2(!isInstalled(), "a failed install leaves the module uninstalled");
+		QVERIFY2(previousRunExitedCleanly(),
+			"the stale snapshot of a session that no longer exists must not answer after a failed install");
+	}
+
 };
 
 int main(int argc, char** argv)

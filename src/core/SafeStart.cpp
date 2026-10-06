@@ -77,6 +77,12 @@ struct State
 	bool installed = false;
 	//! Snapshot of "a marker was on disk" taken at beginSession().
 	bool markerWasPresent = false;
+	//! Latched at beginSession(): "a marker was on disk" for the run that just
+	//! ended. Unlike markerWasPresent, clear() and endSession() never mutate it,
+	//! so previousRunExitedCleanly() keeps answering about the PREVIOUS run for
+	//! the whole session: the marker found at beginSession() is a fact, not a
+	//! switch this session can lift.
+	bool previousRunMarkerFound = false;
 	//! Has beginSession() run yet? Before it, the marker on disk still belongs
 	//! to the PREVIOUS run, so the disk itself answers the previous-run question.
 	bool sessionBegun = false;
@@ -255,14 +261,16 @@ bool install(const std::string& workingDirectory)
 	State& s = state();
 	s.installed = false;
 	s.directory.clear();
+	// A fresh install is a fresh session context, whether it succeeds or not:
+	// nothing has begun yet, so the disk answers the previous-run question
+	// again - even a FAILED install must not leave a stale session snapshot
+	// behind from a session that no longer exists.
+	s.sessionBegun = false;
 	if (workingDirectory.empty()) { return false; }
 	const QFileInfo info(QString::fromStdString(workingDirectory));
 	if (!info.exists() || !info.isDir()) { return false; }
 	s.directory = QDir::cleanPath(info.absoluteFilePath()).toStdString();
 	s.installed = true;
-	// A fresh working directory is a fresh session context: nothing has begun
-	// yet, so the disk still answers the previous-run question.
-	s.sessionBegun = false;
 	return true;
 }
 
@@ -281,6 +289,7 @@ void beginSession()
 	s.safeStartRuns = 0;
 	s.safeStart = false;
 	s.markerWasPresent = false;
+	s.previousRunMarkerFound = false;
 	s.skipEnabled = true;
 	s.sessionBegun = true;
 	if (!s.installed) { return; }
@@ -291,6 +300,9 @@ void beginSession()
 	// READ what the previous run left, before this session's marker replaces it.
 	s.previous = readMarker(marker);
 	s.markerWasPresent = s.previous.present;
+	// The latched half: the previous-run STATUS, which nothing in this session
+	// may rewrite - clear() lifts safe-start state, not history.
+	s.previousRunMarkerFound = s.previous.present;
 
 	// CONSUME the acknowledgement: it only ever meant "the NEXT launch is a
 	// normal one", so it is removed as it is read. A decision taken about one
@@ -328,6 +340,10 @@ void endSession()
 	s.safeStart = false;
 	s.safeStartRuns = 0;
 	s.projectPath.clear();
+	// The session is over: the lifecycle state goes back, so the disk answers
+	// the previous-run question for the NEXT launch again - and the disk is
+	// clean, because the marker was just unlinked above.
+	s.sessionBegun = false;
 }
 
 // ---------------------------------------------------------------------------
@@ -342,11 +358,12 @@ bool previousRunExitedCleanly()
 {
 	// Before beginSession() the marker on disk still belongs to the PREVIOUS
 	// run, so the disk itself is the answer. After it, this session's own
-	// marker has replaced that one and only the snapshot taken at beginSession()
-	// still describes the run that just ended.
+	// marker has replaced that one and only the result latched at beginSession()
+	// still describes the run that just ended - and nothing in this session
+	// (clear(), endSession()) rewrites that latch while the session lives.
 	const State& s = state();
 	if (!s.sessionBegun) { return !markerExists(); }
-	return !s.markerWasPresent;
+	return !s.previousRunMarkerFound;
 }
 
 bool safeStartActive() { return state().safeStart; }
