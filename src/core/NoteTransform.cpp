@@ -187,13 +187,21 @@ int offsetVelocity( const NoteVector& notes, int delta )
 
 int scaleVelocity( const NoteVector& notes, float factor )
 {
+	// A factor that is not a number is not a velocity to scale BY: std::clamp
+	// hands a NaN straight back and std::lround of one is a domain error, so
+	// every note would be moved by an amount nothing asked for. Nothing moves.
+	if( !std::isfinite( factor ) ) { return 0; }
+	const float railLow = static_cast<float>( MinVolume );
+	const float railHigh = static_cast<float>( MaxVolume );
 	int changed = 0;
 	for( Note* note : notes )
 	{
 		if( note == nullptr ) { continue; }
 		const int current = static_cast<int>( note->getVolume() );
-		const int target = std::clamp( static_cast<int>( std::lround( current * factor ) ),
-			static_cast<int>( MinVolume ), static_cast<int>( MaxVolume ) );
+		// Bounded BEFORE the rounding: a large factor overflows the product to
+		// infinity, which is outside lround's domain just as a NaN is.
+		const float scaled = std::clamp( current * factor, railLow, railHigh );
+		const int target = static_cast<int>( std::lround( scaled ) );
 		if( target != current )
 		{
 			note->setVolume( static_cast<volume_t>( target ) );

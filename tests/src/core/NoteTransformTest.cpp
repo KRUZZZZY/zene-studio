@@ -32,6 +32,7 @@
 #include <QString>
 #include <QStringList>
 
+#include <limits>
 #include <memory>
 #include <vector>
 
@@ -317,6 +318,15 @@ private slots:
 
 		// and clamps at the rail
 		QCOMPARE( NoteTransform::scaleVelocity( { a }, 10.f ), 1 );
+		QCOMPARE( static_cast<int>( a->getVolume() ), 200 );
+
+		// a factor that is not a number has no velocity to scale BY, so it moves
+		// nothing at all rather than rounding an undefined product into the rail
+		QCOMPARE( NoteTransform::scaleVelocity( { a }, std::numeric_limits<float>::quiet_NaN() ), 0 );
+		QCOMPARE( static_cast<int>( a->getVolume() ), 200 );
+		QCOMPARE( NoteTransform::scaleVelocity( { a }, std::numeric_limits<float>::infinity() ), 0 );
+		QCOMPARE( static_cast<int>( a->getVolume() ), 200 );
+		QCOMPARE( NoteTransform::scaleVelocity( { a }, -std::numeric_limits<float>::infinity() ), 0 );
 		QCOMPARE( static_cast<int>( a->getVolume() ), 200 );
 
 		// a factor that rounds back to the same value counts as unchanged
