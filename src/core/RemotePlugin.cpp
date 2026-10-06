@@ -611,11 +611,28 @@ bool RemotePlugin::processMessage( const message & _m )
 			break;
 
 		case IdChangeInputOutputCount:
+		{
 			// The client reports both counts at once; the ports model owns the
 			// shared buffer sizing from here on (updateAudioBuffer()).
+			//
+			// The wire values are signed ints, `ch_cnt_t` is unsigned: casting a
+			// negative count wrapped it (-1 -> 65535) and no upper bound stopped
+			// an oversized one, and the shared block is sized from these counts.
+			// Refuse anything outside the range a buffer can hold instead.
+			const auto inCount = _m.getInt(0);
+			const auto outCount = _m.getInt(1);
+			const auto outOfRange = [](int count)
+			{ return count < 0 || count > MaxChannelsPerAudioBuffer; };
+			if (outOfRange(inCount) || outOfRange(outCount))
+			{
+				qWarning() << "RemotePlugin: remote client reported an out-of-range channel count"
+					<< inCount << "in /" << outCount << "out - refusing the request";
+				break;
+			}
 			m_audioPorts->audioPortsModel().setChannelCounts(
-				static_cast<ch_cnt_t>(_m.getInt(0)), static_cast<ch_cnt_t>(_m.getInt(1)));
+				static_cast<ch_cnt_t>(inCount), static_cast<ch_cnt_t>(outCount));
 			break;
+		}
 
 		case IdDebugMessage:
 			fprintf( stderr, "RemotePlugin::DebugMessage: %s",

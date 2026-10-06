@@ -475,6 +475,57 @@ private slots:
 		}
 	}
 
+	//! A client reports its channel counts as signed ints on the wire, and the
+	//! host cast them straight to the unsigned `ch_cnt_t`: a negative count
+	//! wrapped (65535 for -1) and an oversized one was accepted, both sizing the
+	//! shared block from a value no client can have. Out-of-range counts must be
+	//! refused at this boundary - the counts and the allocation stay as they
+	//! were.
+	void outOfRangeChannelCountMessagesAreRefused()
+	{
+		const auto frames = Engine::audioEngine()->framesPerPeriod();
+		QVERIFY(frames > 0);
+
+		constexpr auto channelsIn = ch_cnt_t{2};
+		constexpr auto channelsOut = ch_cnt_t{2};
+
+		TestRemotePluginAudioPorts ports{false, nullptr};
+		RemotePlugin plugin{ports.controller()};
+
+		ports.audioPortsModel().setChannelCounts(channelsIn, channelsOut);
+		QCOMPARE(ports.buffers()->initialized(), true);
+
+		auto inBefore = ports.buffers()->input();
+		auto outBefore = ports.buffers()->output();
+
+		// Negative: -1 and -8 would wrap to 65535 and 65528
+		plugin.processMessage(
+			RemotePlugin::message(IdChangeInputOutputCount).addInt(-1).addInt(2));
+		QCOMPARE(ports.audioPortsModel().in().channelCount(), channelsIn);
+		QCOMPARE(ports.audioPortsModel().out().channelCount(), channelsOut);
+
+		plugin.processMessage(
+			RemotePlugin::message(IdChangeInputOutputCount).addInt(-8).addInt(2));
+		QCOMPARE(ports.audioPortsModel().in().channelCount(), channelsIn);
+
+		// Oversized: far above MaxChannelsPerAudioBuffer, and the value that
+		// wraps an int into positive range when cast
+		plugin.processMessage(
+			RemotePlugin::message(IdChangeInputOutputCount).addInt(100000).addInt(2));
+		QCOMPARE(ports.audioPortsModel().in().channelCount(), channelsIn);
+
+		plugin.processMessage(
+			RemotePlugin::message(IdChangeInputOutputCount).addInt(2).addInt(100000));
+		QCOMPARE(ports.audioPortsModel().out().channelCount(), channelsOut);
+
+		// Refused all the way: neither the counts nor the block moved
+		QCOMPARE(ports.buffers()->initialized(), true);
+		QCOMPARE(ports.buffers()->input().bufferPtr(0), inBefore.bufferPtr(0));
+		QCOMPARE(ports.buffers()->output().bufferPtr(0), outBefore.bufferPtr(0));
+		QCOMPARE(ports.buffers()->input().channels(), channelsIn);
+		QCOMPARE(ports.buffers()->output().channels(), channelsOut);
+	}
+
 	//! A reallocation that fails must leave the buffers reporting NOT
 	//! initialized. `initialized()` is `m_frames != 0`, so a stale frame count
 	//! keeps the ports "active" while the pointer table is null - the router's
