@@ -95,7 +95,20 @@ bool SessionScheduler::installFollowPlan( int track, int scene, const FollowPlan
 	{
 		if( installed.track == track && installed.scene == scene )
 		{
-			installed.plan = plan;
+			if( plan.enabled )
+			{
+				installed.plan = plan;
+			}
+			else
+			{
+				// A disarmed plan does nothing, so its entry is GIVEN BACK rather
+				// than left addressed to the cell. The free-entry loop below only
+				// claims entries whose track is negative, so an entry that kept
+				// its track and scene was unreachable again: 16 cells armed and
+				// disarmed once each exhausted the table and every later plan was
+				// refused (MaxFollowPlans).
+				installed = InstalledFollowPlan();
+			}
 			recountArmedFollowCells();
 			return true;
 		}
