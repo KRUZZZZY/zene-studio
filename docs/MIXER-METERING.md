@@ -29,3 +29,25 @@ Test-first record (`MixerMeteringTest`): before the change the test did not comp
 defaults are the inherited ones, the options are answered, refused by a bad name and saved, the
 strip's meter falls by exactly the chosen factor in the peak and the pre-fader modes, and the hold
 line holds for each time and follows the level when off.
+
+## 2. MX-005 — show only some channels ("Selected")
+
+The mixer's filters were by type (all, instruments, audio, returns, used). A sixth, **selected**, shows
+the master and the channels picked for it:
+
+- `window.mixer_view` takes `selected_channels` (ch-<n> ids) and answers them in mixer order; a channel
+  that does not exist is refused `not_found`, the master `invalid_args` (it always shows), and a refused
+  call changes nothing;
+- the mode bar's **Show** box lists **Selected**, and its **Pick...** button (declaring
+  `controlCommand` `window.mixer_view`) opens the channel checklist and switches the filter to it;
+- **Ctrl+click** on a strip adds its channel to the set or takes it out (through the same command), and a
+  selected strip wears an accent bar along its foot.
+
+The set is kept by each channel's stable id (`MixerChannel::id()`), so it follows a channel when another
+is moved or deleted, and `MixerView::clear()` (what `Song::clearProject` calls) forgets it, because a new
+project's ids start again.
+
+Test-first record (`MixerMeteringTest`): red - the test did not compile (no
+`mixerviewoptions::isSelected`; build EXIT=2); green - 18/18 (ctest EXIT=0). `ControlMixingRouting`
+checks the set-and-answer and the master's refusal over the socket.
+

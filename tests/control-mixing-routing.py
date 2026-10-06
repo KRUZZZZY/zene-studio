@@ -82,6 +82,15 @@ def check_view(session, recorder, chans):
                    ballistics.get("meter_falloff") == "slow" and ballistics.get("peak_hold") == "off", "reply=%r" % ballistics)
     bad_hold = session.call("window.mixer_view", {"peak_hold": "forever"})
     recorder.check("an unknown peak hold is refused, typed", kind(bad_hold) == "invalid_args", "reply=%r" % bad_hold)
+    # MX-005: the Selected filter shows the channels picked for it, answered in mixer order; the master is refused.
+    picked = session.result("window.mixer_view", {"selected_channels": [chans[1]], "filter": "selected"})
+    recorder.check("the Selected filter and its channels are set and answered",
+                   picked.get("filter") == "selected" and picked.get("selected_channels") == [chans[1]], "reply=%r" % picked)
+    master_id = next((s.get("channel") for s in picked.get("strips") or [] if s.get("type") == "master"), None)
+    master = session.call("window.mixer_view", {"selected_channels": [master_id]})
+    recorder.check("the master is never selected, typed", bool(master_id) and kind(master) == "invalid_args",
+                   "master=%r reply=%r" % (master_id, master))
+    session.result("window.mixer_view", {"selected_channels": []})
     session.result("window.mixer_view", {"strip_width": "normal", "filter": "all", "meter_mode": "peak",
                                          "meter_falloff": "fast", "peak_hold": "1.5s"})
 

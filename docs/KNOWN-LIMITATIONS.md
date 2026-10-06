@@ -2322,7 +2322,7 @@ follows the song's timeline, as the arranger's ruler does. Logged for 0.5.x.
 - The rack's own "Add effect" still uses the older dialog.
 
 **Mixer (theme 16).**
-- There is no "Selected" channel filter; the type filters stand in for it.
+- *(Superseded 2026-10-06, `050/feat-meters`: the filter has a "Selected" choice - MX-005, `docs/MIXER-METERING.md` §2.)*
 
 **Lists, help and workflows (themes 18, 19, 21).**
 - Results of commands run from menus or the palette still float briefly.
@@ -2346,3 +2346,11 @@ The record of what was built is `docs/MIXER-METERING.md`; this is what each piec
   "hold until clicked" setting.
 - The RMS meter mode takes the same fall-off; its reading is still one period's RMS, not a 300 ms
   VU integration.
+
+**MX-005, the Selected channel filter.**
+- The selection is the mixer's own: the arranger's track selection does not feed it.
+- It is interface state, never saved with the project or in the config file; it is forgotten when the
+  mixer view is cleared for another project. With no interface (no mixer view to clear) an agent's
+  selection is kept until it sets another.
+- The mode bar's Pick... dialog starts with nothing ticked (it replaces the selection); Ctrl+click on a
+  strip adds or removes one channel.

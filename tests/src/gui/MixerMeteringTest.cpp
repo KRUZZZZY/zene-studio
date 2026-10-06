@@ -24,12 +24,16 @@
  */
 
 /*! MX-128: the meters' fall-off and peak hold are view options (window.mixer_view, kept in ui/mixerview with
- *  the others) and the strips' meters move by them. Needs the real application (a Fader cannot be built
- *  without it). */
+ *  the others) and the strips' meters move by them. MX-005: a "Selected" filter shows only the channels picked
+ *  for it - by window.mixer_view, a Ctrl+click on a strip or the mode bar's picker. Needs the real application
+ *  (a Fader cannot be built without it). */
 
 #include <QtTest>
 
+#include <QComboBox>
+#include <QJsonArray>
 #include <QJsonDocument>
+#include <QPushButton>
 #include <QSignalSpy>
 
 #include "ConfigManager.h"
@@ -42,6 +46,7 @@
 #include "MainWindow.h"
 #include "Mixer.h"
 #include "MixerChannelView.h"
+#include "MixerModeBar.h"
 #include "MixerView.h"
 #include "MixerViewOptions.h"
 
@@ -68,6 +73,10 @@ void tick()
 {
 	QVERIFY(QMetaObject::invokeMethod(getGUI()->mixerView(), "updateFaders", Qt::DirectConnection));
 }
+
+QString ch(int index) { return control::channelIdOf(Engine::mixer()->mixerChannel(index)); }
+
+QJsonArray selection() { return run(QStringLiteral("window.mixer_view")).result.value(QStringLiteral("selected_channels")).toArray(); }
 
 QJsonObject savedOptions()
 {
@@ -190,6 +199,84 @@ private slots:
 		}
 	}
 
+	//! MX-005: the Selected filter shows the master and the channels picked for it, nothing else.
+	void theSelectedFilterShowsOnlyThePickedChannels()
+	{
+		m_other = Engine::mixer()->createChannel();
+		syncMixer();
+		const ControlResult set = run(QStringLiteral("window.mixer_view"),
+			{{QStringLiteral("selected_channels"), QJsonArray{ch(m_channel)}}, {QStringLiteral("filter"), QStringLiteral("selected")}});
+		QVERIFY2(set.ok, qPrintable(set.errorMessage));
+		QCOMPARE(set.result.value(QStringLiteral("filter")).toString(), QStringLiteral("selected"));
+		QCOMPARE(set.result.value(QStringLiteral("selected_channels")).toArray(), (QJsonArray{ch(m_channel)}));
+		syncMixer();
+		MixerView* view = getGUI()->mixerView();
+		QVERIFY(view->channelView(0)->isVisibleTo(view));
+		QVERIFY(view->channelView(m_channel)->isVisibleTo(view));
+		QVERIFY(!view->channelView(m_other)->isVisibleTo(view));
+		QVERIFY(mixerviewoptions::isSelected(m_channel));
+		QVERIFY(!mixerviewoptions::isSelected(m_other));
+	}
+
+	//! MX-005: a channel that does not exist, or the master, is refused, typed, and the selection stays as it was.
+	void anUnknownChannelIsRefused()
+	{
+		const ControlResult refused = run(QStringLiteral("window.mixer_view"), {{QStringLiteral("selected_channels"), QJsonArray{QStringLiteral("ch-9999")}}});
+		QVERIFY(!refused.ok);
+		QCOMPARE(refused.errorKind, ControlErrorKind::NotFound);  // the channel vocabulary's typed answer
+		// The master always shows: it is never part of the selection.
+		QCOMPARE(run(QStringLiteral("window.mixer_view"), {{QStringLiteral("selected_channels"), QJsonArray{ch(0)}}}).errorKind,
+			ControlErrorKind::InvalidArgs);
+		QCOMPARE(selection(), (QJsonArray{ch(m_channel)}));
+	}
+
+	//! MX-005: the mode bar lists the filter and picks its channels through the command.
+	void theModeBarOffersTheSelectedFilter()
+	{
+		QComboBox* filter = getGUI()->mixerView()->modeBar()->filterBox();
+		const int row = filter->findData(QStringLiteral("selected"));
+		QVERIFY(row >= 0);
+		QCOMPARE(filter->itemText(row), QStringLiteral("Selected"));
+		auto* pick = getGUI()->mixerView()->modeBar()->findChild<QPushButton*>(QStringLiteral("mixerModePickSelected"));
+		QVERIFY(pick != nullptr);
+		QCOMPARE(pick->property("controlCommand").toString(), QStringLiteral("window.mixer_view"));
+		QVERIFY(!pick->accessibleName().isEmpty());
+	}
+
+	//! MX-005: Ctrl+click on a strip adds its channel to the selection and takes it out again; a plain click does not.
+	void ctrlClickTogglesAStrip()
+	{
+		QVERIFY(run(QStringLiteral("window.mixer_view"), {{QStringLiteral("filter"), QStringLiteral("all")}}).ok);
+		syncMixer();
+		MixerChannelView* other = getGUI()->mixerView()->channelView(m_other);
+		QTest::mouseClick(other, Qt::LeftButton, Qt::NoModifier, QPoint(4, 4));
+		QCOMPARE(selection().size(), 1);
+		QTest::mouseClick(other, Qt::LeftButton, Qt::ControlModifier, QPoint(4, 4));
+		QCOMPARE(selection(), (QJsonArray{ch(m_channel), ch(m_other)}));
+		QTest::mouseClick(other, Qt::LeftButton, Qt::ControlModifier, QPoint(4, 4));
+		QCOMPARE(selection(), (QJsonArray{ch(m_channel)}));
+	}
+
+	//! MX-005: the selection follows a channel, not a position - another channel's removal keeps it.
+	void theSelectionFollowsTheChannel()
+	{
+		const int before = Engine::mixer()->createChannel();
+		Engine::mixer()->moveChannelLeft(before);  // now sits in front of m_other
+		syncMixer();
+		QVERIFY(run(QStringLiteral("window.mixer_view"), {{QStringLiteral("selected_channels"), QJsonArray{ch(m_other)}}}).ok);
+		const QString id = ch(m_other);
+		Engine::mixer()->deleteChannel(before);
+		syncMixer();
+		QCOMPARE(selection(), (QJsonArray{id}));
+	}
+
+	//! MX-005: a project cleared from under the mixer forgets the selection (the ids start again).
+	void clearingTheMixerForgetsTheSelection()
+	{
+		getGUI()->mixerView()->clear();
+		QVERIFY(selection().isEmpty());
+	}
+
 private:
 	Fader* fader() const { return getGUI()->mixerView()->channelView(m_channel)->fader(); }
 
@@ -219,6 +306,7 @@ private:
 
 	QTemporaryDir m_home;
 	int m_channel = -1;
+	int m_other = -1;
 };
 
 QTEST_MAIN(MixerMeteringTest)

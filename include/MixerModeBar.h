@@ -44,7 +44,7 @@ namespace lmms::gui
 /*! 0.5.0 theme 16 (the mixer reworked around clear modes). One bar across the top of the mixer, always
  *  shown, that says - in words - how the mixer is set and sets it:
  *  - View: Mix | Routing, and Density: Compact | Expanded (independent of each other), and Show: the
- *    channel filter - all through window.mixer_view;
+ *    channel filter - all through window.mixer_view; and (MX-005) Pick..., the channels its Selected filter shows;
  *  - the modes, each a button naming its state that opens a menu to change it: what the faders drive
  *    (window.mixer_view's sends_on_faders - the banner under the bar says it loudly while they drive
  *    sends), the solo mode (mixer.solo_mode), the listen bus (mixer.listen_mode) and the master's
@@ -85,6 +85,7 @@ private:
 	void fillSolo(QMenu* menu);
 	void fillListen(QMenu* menu);
 	void fillMaster(QMenu* menu);
+	void pickSelected();  //!< MX-005
 	void refreshChips(const mixerstripinfo::Context& context);
 
 	QHash<QString, QPushButton*> m_viewButtons;

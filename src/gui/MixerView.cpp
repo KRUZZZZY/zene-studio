@@ -691,6 +691,7 @@ void MixerView::clear()
 	getMixer()->clearChannel(0);
 
 	m_mixerChannelViews[0]->reset();
+	mixerviewoptions::clearSelection();  // 0.5.0 L08 (MX-005): the next project's channel ids start again
 
 	refreshDisplay();
 }

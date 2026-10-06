@@ -82,6 +82,43 @@ QJsonArray stripInfos()
 	return strips;
 }
 
+//! The return 'sends_on_faders' names, as an index into @a index (left alone for the channel faders); false,
+//! with @a error, when it names no channel.
+bool sendsTargetOf(const QJsonObject& args, int* index, ControlResult* error)
+{
+	const QString id = args.value(QStringLiteral("sends_on_faders")).toString();
+	if (id.isEmpty()) { return true; }
+	MixerChannel* channel = resolveMixerChannel(id, error);
+	if (channel == nullptr) { return false; }
+	*index = channel->index();
+	return true;
+}
+
+//! MX-005: the channels 'selected_channels' names (ch-<n> ids) as indices into @a indices (true when it is not
+//! given); false, with @a error, on any that is not a channel, the master (it always shows) or not a string.
+bool selectionOf(const QJsonObject& args, QList<int>* indices, ControlResult* error)
+{
+	if (!args.contains(QStringLiteral("selected_channels"))) { return true; }
+	const QJsonValue value = args.value(QStringLiteral("selected_channels"));
+	if (!value.isArray())
+	{
+		*error = ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("'selected_channels' is an array of ch-<n> ids"));
+		return false;
+	}
+	for (const QJsonValue& id : value.toArray())
+	{
+		MixerChannel* channel = resolveMixerChannel(id.toString(), error);
+		if (channel == nullptr) { return false; }
+		if (channel->index() == 0)
+		{
+			*error = ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("the master always shows; it is not selected"));
+			return false;
+		}
+		indices->append(channel->index());
+	}
+	return true;
+}
+
 //! The mixer on screen follows a mode change now, not at its next half-second sync (queued: the call may
 //! come from a menu on one of its strips, which a sync can rebuild).
 void syncMixerViewSoon()
@@ -104,6 +141,7 @@ QJsonObject mixerViewState()
 	state.insert(QStringLiteral("faders"), faderRoles());
 	state.insert(QStringLiteral("strips"), stripInfos());
 	state.insert(QStringLiteral("folded"), folded);
+	state.insert(QStringLiteral("selected_channels"), gui::mixerviewoptions::selectionJson());  // MX-005
 	return state;
 }
 
@@ -115,19 +153,15 @@ ControlResult mixerView(const QJsonObject& args)
 		return ControlResult::failure(ControlErrorKind::Busy, QStringLiteral("the engine is not up yet; poll control.ping"));
 	}
 	const bool sendsGiven = args.contains(QStringLiteral("sends_on_faders"));
-	const QString id = args.value(QStringLiteral("sends_on_faders")).toString();
 	int index = -1;
-	if (!id.isEmpty())
-	{
-		ControlResult error;
-		MixerChannel* channel = resolveMixerChannel(id, &error);
-		if (channel == nullptr) { return error; }
-		index = channel->index();
-	}
+	QList<int> selection;
+	ControlResult refused;
+	if (!sendsTargetOf(args, &index, &refused) || !selectionOf(args, &selection, &refused)) { return refused; }
 	gui::mixerviewoptions::Options next = gui::mixerviewoptions::options();
 	QString error;
 	if (!gui::mixerviewoptions::merge(args, &next, &error)) { return ControlResult::failure(ControlErrorKind::InvalidArgs, error); }
 	// Everything is checked before anything is set: a refused call changes no mode.
+	if (args.contains(QStringLiteral("selected_channels"))) { gui::mixerviewoptions::setSelectedChannels(selection); }
 	if (sendsGiven)
 	{
 		gui::mixeroverlays::setSendsOnFaders(index);
@@ -157,10 +191,13 @@ void registerMixerViewCommands(ControlRegistry& registry)
 		"still 'No send' fader in place; the answer adds 'sends_on_faders_name' (the return's name) and 'faders' (per "
 		"channel, what its fader drives: volume, send or no_send - the return's own fader and the master's stay volume); "
 		"'folded' answers the channel strips a collapsed folder hides "
-		"(track.folder_set_collapsed folds). The view options, kept in the config file (ui/mixerview): 'show_sends', "
+		"(track.folder_set_collapsed folds). MX-005: 'selected_channels' (ch-<n> ids, never the master) are the channels the "
+		"'selected' filter shows - interface state, never saved, forgotten when the mixer is cleared for another project; a "
+		"Ctrl+click on a strip adds or removes its channel, and the mode bar's 'Pick...' chooses them; the answer lists them in "
+		"mixer order. The view options, kept in the config file (ui/mixerview): 'show_sends', "
 		"'show_pan', 'show_number', 'show_meter_info', 'show_inserts', 'show_macros' (a strip's sections - the meter line is "
 		"the gain reduction and the clip light, the inserts are listed by name, the macros are the rack's first four as knobs), 'strip_width' (narrow / normal / wide), 'filter' (all / instruments / audio / returns / used - "
-		"the channels a track plays into or a send reaches), 'meter_mode' (peak - after the fader -, rms, pre_fader) and "
+		"the channels a track plays into or a send reaches -, selected), 'meter_mode' (peak - after the fader -, rms, pre_fader) and "
 		"'meter_scale' (db42 - the default range -, db60, db24, linear); MX-128, the meters' ballistics: 'meter_falloff' (fast - "
 		"the default, about 116 dB/s -, medium - about 26 dB/s -, slow - about 12 dB/s, a peak programme meter's fall) and "
 		"'peak_hold' (how long the peak line holds: off, 1.5s - the default -, 3s, 6s). Theme 16: 'view' (mix - levels, pan and processing, "
@@ -184,6 +221,7 @@ void registerMixerViewCommands(ControlRegistry& registry)
 		{QStringLiteral("density"), enumProperty(gui::mixerviewoptions::densityNames())}};
 	QJsonObject args = fields;
 	args.insert(QStringLiteral("sends_on_faders"), stringProperty());
+	args.insert(QStringLiteral("selected_channels"), arrayProperty());  // MX-005
 	QJsonObject result = args;
 	result.insert(QStringLiteral("folded"), arrayProperty());
 	result.insert(QStringLiteral("sends_on_faders_name"), stringProperty());

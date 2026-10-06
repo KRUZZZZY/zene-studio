@@ -32,7 +32,9 @@
 #include <QSet>
 #include <QStackedWidget>
 
+#include "CommandForm.h"
 #include "ConfigManager.h"
+#include "ControlVocabulary.h"
 #include "DesignTokens.h"
 #include "Engine.h"
 #include "Effect.h"
@@ -55,6 +57,7 @@ namespace
 Options s_options;
 bool s_loaded = false;
 int s_generation = 0;
+QSet<int> s_selectedIds;  //!< MX-005: MixerChannel::id()s
 
 const QString kSection = QStringLiteral("ui");
 const QString kKey = QStringLiteral("mixerview");
@@ -148,7 +151,7 @@ const QStringList& widthNames()
 const QStringList& filterNames()
 {
 	static const QStringList names{QStringLiteral("all"), QStringLiteral("instruments"), QStringLiteral("audio"),
-		QStringLiteral("returns"), QStringLiteral("used")};
+		QStringLiteral("returns"), QStringLiteral("used"), QStringLiteral("selected")};
 	return names;
 }
 
@@ -274,10 +277,62 @@ bool merge(const QJsonObject& args, Options* base, QString* error)
 	return true;
 }
 
+QList<int> selectedChannels()
+{
+	QList<int> indices;
+	for (int i = 1; i < Engine::mixer()->numChannels(); ++i)
+	{
+		if (s_selectedIds.contains(Engine::mixer()->mixerChannel(i)->id())) { indices.append(i); }
+	}
+	return indices;
+}
+
+bool isSelected(int index)
+{
+	MixerChannel* channel = index > 0 ? Engine::mixer()->mixerChannel(index) : nullptr;
+	return channel != nullptr && s_selectedIds.contains(channel->id());
+}
+
+void setSelectedChannels(const QList<int>& indices)
+{
+	s_selectedIds.clear();
+	for (const int index : indices)
+	{
+		MixerChannel* channel = index > 0 ? Engine::mixer()->mixerChannel(index) : nullptr;
+		if (channel != nullptr) { s_selectedIds.insert(channel->id()); }
+	}
+	++s_generation;
+}
+
+void clearSelection()
+{
+	s_selectedIds.clear();
+	++s_generation;
+}
+
+QJsonArray selectionJson()
+{
+	QJsonArray ids;
+	for (const int index : selectedChannels()) { ids.append(control::channelIdOf(Engine::mixer()->mixerChannel(index))); }
+	return ids;
+}
+
+void toggleSelected(QWidget* origin, int index)
+{
+	if (index <= 0) { return; }  // the master always shows: it is never in the selection
+	QStringList ids;
+	for (const QJsonValue& id : selectionJson()) { ids.append(id.toString()); }
+	const QString id = control::channelIdOf(Engine::mixer()->mixerChannel(index));
+	if (!ids.removeOne(id)) { ids.append(id); }
+	runCommand(origin, CommandCall{QStringLiteral("window.mixer_view"),
+		{{QStringLiteral("selected_channels"), QJsonArray::fromStringList(ids)}}, {}, QString(), false});
+}
+
 bool shows(int index)
 {
 	const QString& filter = options().filter;
 	if (index == 0 || filter == QLatin1String("all")) { return true; }
+	if (filter == QLatin1String("selected")) { return isSelected(index); }
 	MixerChannel* channel = Engine::mixer()->mixerChannel(index);
 	if (filter == QLatin1String("returns")) { return channel->isBus(); }
 	QSet<int> instruments;
