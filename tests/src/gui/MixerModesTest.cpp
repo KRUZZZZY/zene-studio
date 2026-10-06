@@ -292,6 +292,26 @@ private slots:
 		QCOMPARE(Engine::mixer()->mixerChannel(middle - 1)->m_name, QStringLiteral("Room"));
 	}
 
+// A channel added while the mixer was open rebuilds the strips. The selection then jumped to Master
+	// and the user's channel was lost, whatever the rebuild was for.
+	void addingAChannelKeepsTheSelectedChannelSelected()
+	{
+		MixerView* mixer = getGUI()->mixerView();
+		const int selected = Engine::mixer()->createChannel();
+		Engine::mixer()->mixerChannel(selected)->m_name = QStringLiteral("Selected");
+		mixer->syncWithMixer();
+		mixer->setCurrentMixerChannel(selected);
+		QCOMPARE(Engine::mixer()->mixerChannel(mixer->currentMixerChannel()->channelIndex())->m_name,
+			QStringLiteral("Selected"));
+
+		// A channel appears from outside the mixer: a script, or the TrackContainer above.
+		QVERIFY(Engine::mixer()->createChannel() > 0);
+		syncMixer();
+
+		QCOMPARE(Engine::mixer()->mixerChannel(mixer->currentMixerChannel()->channelIndex())->m_name,
+			QStringLiteral("Selected"));
+	}
+
 private:
 	QTemporaryDir m_home;
 	int m_sender = -1;

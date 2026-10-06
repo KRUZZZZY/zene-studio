@@ -265,6 +265,10 @@ int MixerView::addNewChannel()
 
 void MixerView::refreshDisplay()
 {
+	// the channel the user was on, by its stable id (a channel keeps its id when it moves);
+	// the views it refers to are about to be deleted
+	const int selectedId = m_currentMixerChannel != nullptr ? m_currentMixerChannel->mixerChannel()->id() : -1;
+
 	// delete all views and re-add them
 	for (int i = 1; i<m_mixerChannelViews.size(); ++i)
 	{
@@ -290,8 +294,13 @@ void MixerView::refreshDisplay()
 		m_racksLayout->addWidget(m_mixerChannelViews[i]->m_effectRackView);
 	}
 
-	// set selected mixer channel to 0
-	setCurrentMixerChannel(0);
+	// select the same channel as before, or Master when it is gone (or was Master already)
+	int selected = 0;
+	for (int i = 1; selectedId >= 0 && i < m_mixerChannelViews.size(); ++i)
+	{
+		if (m_mixerChannelViews[i]->mixerChannel()->id() == selectedId) { selected = i; }
+	}
+	setCurrentMixerChannel(selected);
 
 	// update all mixer lines
 	for (int i = 0; i < m_mixerChannelViews.size(); ++i)
