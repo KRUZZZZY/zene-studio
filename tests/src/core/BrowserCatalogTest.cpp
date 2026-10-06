@@ -77,6 +77,65 @@ QStringList tagListOf(const QString& path)
 	return BrowserTagStore::instance().tagsOf(path);
 }
 
+/*! Writes a FLAC file whose STREAMINFO header declares \a declaredFrames frames
+ *  and which carries no audio frames at all.
+ *
+ *  This is the shape of a file that was cut short - a partial copy, an aborted
+ *  download, a stream whose payload never arrived. The header is intact, so the
+ *  file opens and reports a length, and the decode yields nothing for it.
+ *
+ *  RIFF/WAVE cannot express this: libsndfile recomputes a WAV's length from the
+ *  bytes actually present, so a WAV that lies in its `data` chunk still reads
+ *  exactly as many frames as it holds. FLAC stores the total sample count in the
+ *  header, and trusts it - which is exactly why an incomplete read has to be
+ *  caught here rather than papered over.
+ */
+bool writeHeaderOnlyFlac(const QString& path, quint64 declaredFrames)
+{
+	const quint32 sampleRate = 48000;
+	const quint8 channels = 1;
+	const quint8 bitsPerSample = 16;
+
+	QByteArray info;
+	const auto push = [&info](quint32 value, int bytes)
+	{
+		for (int shift = (bytes - 1) * 8; shift >= 0; shift -= 8)
+		{
+			info.append(static_cast<char>((value >> shift) & 0xff));
+		}
+	};
+	push(4096, 2);  // min block size
+	push(4096, 2);  // max block size
+	push(0, 3);     // min frame size (unknown)
+	push(0, 3);     // max frame size (unknown)
+	// Sample rate (20 bits), channels-1 (3), bits per sample - 1 (5) and the top
+	// 4 bits of the 36-bit total sample count, packed across four bytes and then
+	// the count's low 32 bits.
+	info.append(static_cast<char>((sampleRate >> 12) & 0xff));
+	info.append(static_cast<char>((sampleRate >> 4) & 0xff));
+	info.append(static_cast<char>(((sampleRate & 0xf) << 4) | (((channels - 1) & 0x7) << 1)
+		| (((bitsPerSample - 1) >> 4) & 0x1)));
+	info.append(static_cast<char>((((bitsPerSample - 1) & 0xf) << 4) | ((declaredFrames >> 32) & 0xf)));
+	push(static_cast<quint32>(declaredFrames & 0xffffffff), 4);
+	info.append(QByteArray(16, '\0'));  // the MD5 of the unencoded audio
+	if (info.size() != 34) { return false; }
+
+	QByteArray out("fLaC", 4);
+	out.append(static_cast<char>(0x80));  // last metadata block, type STREAMINFO
+	// The block's length is a 24-bit big-endian count of the bytes that follow.
+	for (int shift = 16; shift >= 0; shift -= 8)
+	{
+		out.append(static_cast<char>((info.size() >> shift) & 0xff));
+	}
+	out.append(info);
+
+	QFile file(path);
+	if (!file.open(QIODevice::WriteOnly | QIODevice::Truncate)) { return false; }
+	const bool written = file.write(out) == out.size();
+	file.close();
+	return written;
+}
+
 } // namespace
 
 class BrowserCatalogTest : public QObject
@@ -293,6 +352,27 @@ private slots:
 		// The happy path still works with a null error out-parameter.
 		QVERIFY(cache.peaksFor(m_wave, 32, &answer, nullptr));
 		QCOMPARE(answer.peaks.size(), 32);
+	}
+
+	//! A file whose header promises more frames than it holds must be a refusal,
+	//! not a peak map whose unread tail is silence.
+	void peaksAreRefusedWhenTheFileIsShorterThanItsHeader()
+	{
+		QTemporaryDir dir;
+		QVERIFY(dir.isValid());
+		// The header claims 160 frames; the file carries a header and no audio
+		// frames at all, so any frame libsndfile hands back is short of the promise.
+		const QString path = QDir(dir.path()).filePath(QStringLiteral("short.flac"));
+		QVERIFY2(writeHeaderOnlyFlac(path, 160), "the truncated fixture was not written");
+
+		BrowserPeakCache& cache = BrowserPeakCache::instance();
+		cache.clear();
+		BrowserPeakCache::Answer answer;
+		QString why;
+		QCOMPARE(cache.peaksFor(path, 32, &answer, &why), false);
+		QVERIFY2(!why.isEmpty(), "an incomplete read reported no reason");
+		// A refused file is not cached as an entry that later reads as silence.
+		cache.forget(path);
 	}
 
 	//! A query matches on the name, on a tag and - with 'probe' - on the embedded
