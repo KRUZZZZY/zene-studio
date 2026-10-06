@@ -68,6 +68,22 @@ ListSpec outputBuses(const QString& track)
 	return out;
 }
 
+ListSpec midiParts(const QString& track)
+{
+	const QJsonObject where{{QStringLiteral("target"), track}};
+	ListSpec out = spec("MIDI Parts", "plugin.midi_parts", "parts", {QStringLiteral("id"), QStringLiteral("midi_channel"),
+		QStringLiteral("low_key"), QStringLiteral("high_key"), QStringLiteral("low_velocity"), QStringLiteral("high_velocity")}, where);
+	out.title = titled("MIDI Parts", track);
+	out.summaryKeys = {QStringLiteral("part_count")};
+	const QHash<QString, QString> part{{QStringLiteral("part"), QStringLiteral("id")}};
+	RowAction remove = act("Remove", "plugin.midi_part_remove", part, where);
+	remove.confirm = true;
+	// Edit's form leaves a field blank to keep its value: plugin.midi_part_set changes only what it is given.
+	out.actions = {act("Edit...", "plugin.midi_part_set", part, where, true), remove};
+	out.extras = {extra("Add Part...", "plugin.midi_part_add", where)};
+	return out;
+}
+
 } // namespace CommandLists
 
 namespace InstrumentCommandMenus
@@ -88,6 +104,9 @@ void populate(QMenu* menu, const QString& track)
 	list(buses, "Output Buses...", [track] { return CommandLists::outputBuses(track); });
 	add(buses, "Route an Output Bus...", "plugin.output_bus_route", self, true);
 	add(buses, "Create a Channel for Each Bus", "plugin.output_buses_create_channels", self, false);
+	QMenu* parts = setup->addMenu(tr("MIDI Parts"));  // MX-114
+	list(parts, "MIDI Parts...", [track] { return CommandLists::midiParts(track); });
+	add(parts, "Add a MIDI Part...", "plugin.midi_part_add", self, true);
 }
 
 } // namespace InstrumentCommandMenus

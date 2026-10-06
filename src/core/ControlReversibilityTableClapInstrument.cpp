@@ -96,6 +96,11 @@ const ReversibilityRow kClapInstrumentRows[] = {
 		"action checkpoint: the recorded undo step re-inserts the captured part at its own index, so the "
 		"first-match order comes back exactly",
 		""),
+	R("plugin.midi_part_set", RC::TrueInverse, true,
+		"a part is pure data (a zone and a channel) at a fixed index of the part list",
+		"action checkpoint: the recorded undo step writes the captured part back at its own index (RackZones::assign "
+		"of the whole list), so the first-match order is unchanged",
+		""),
 	R("rack.layers", RC::NotMutating, false,
 		"reads an instrument track's layer rack (InstrumentLayers): its layers and zones",
 		"no write: the layers' instruments and the zone list are read and reported", ""),

@@ -112,6 +112,8 @@ LMMS_EXPORT ListSpec settingsPresets();
 //! 0.5.0 F2 (InstrumentCommandMenus.cpp), each over one instrument track @a track (trk-<n>):
 //! MX-114: its instrument's output buses - route one to a mixer channel, un-route it, a channel for each.
 LMMS_EXPORT ListSpec outputBuses(const QString& track);
+//! MX-114: its MIDI parts (a key/velocity zone sent on one MIDI channel) - edit one in place, remove one, add one.
+LMMS_EXPORT ListSpec midiParts(const QString& track);
 
 } // namespace CommandLists
 

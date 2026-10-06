@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-10-04T17:22:52Z",
+  "captured_at": "2026-10-06T14:23:49Z",
   "commands": [
     {
       "args_schema": {
@@ -17725,6 +17725,76 @@
       "args_schema": {
         "additionalProperties": false,
         "properties": {
+          "high_key": {
+            "maximum": 127,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "high_velocity": {
+            "maximum": 200,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "low_key": {
+            "maximum": 127,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "low_velocity": {
+            "maximum": 200,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "midi_channel": {
+            "maximum": 16,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "part": {
+            "type": "string"
+          },
+          "target": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "target",
+          "part"
+        ],
+        "type": "object"
+      },
+      "description": "Change a MIDI part (part-<n>) of an instrument track in place: its 'midi_channel' (1..16), its key range (0..127) and its velocity range (0..200). A field left out keeps its value, and the part keeps its place in the first-match order. Saved with the track. Reversible through the ProjectJournal.",
+      "group": "plugin",
+      "id": "plugin.midi_part_set",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "part": {
+            "type": "string"
+          },
+          "part_count": {
+            "type": "integer"
+          },
+          "parts": {
+            "type": "array"
+          },
+          "removed": {
+            "type": "string"
+          },
+          "target": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
           "target": {
             "type": "string"
           }
@@ -33996,23 +34066,23 @@
       }
     }
   ],
-  "count": 809,
+  "count": 810,
   "instance": {
     "binary": null,
     "binary_bytes": null,
     "binary_sha256": null,
-    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-survey/tools/zene-pa-agentctl",
+    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-feat-f2-ui/tools/zene-pa-agentctl",
     "lane_head": null,
     "proto": 1,
-    "source_socket": "/tmp/zctl-run-4g8c9srg/zene.sock",
-    "version": "0.4.0-alpha.114+9a9f339"
+    "source_socket": "/tmp/zctl-run-x0zeenn8/zene.sock",
+    "version": "0.4.0-alpha.333+6d1a114"
   },
   "kind": "zene-control-command-list",
   "proto": 1,
   "schema": 1,
   "surface": {
     "group_count": 76,
-    "id_count": 809,
-    "ids_sha256": "30a5e1ef45f2a6f4cd493d28b6b923826da185f96165d735ba363909b12ca8e2"
+    "id_count": 810,
+    "ids_sha256": "4719b50268a26b6602b33e223977b678d787340836485d9377c8340af60c5ee0"
   }
 }

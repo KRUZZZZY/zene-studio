@@ -2229,7 +2229,10 @@ Fleshed out, because both halves of that sentence hide something real:
 - `pdc.report` does not list the insert's latency per channel, although PDC includes it.
 
 **F2, instruments (MX-114/112/120).**
-- MIDI parts, layers and per-voice modulation have no interface yet; they are command-only.
+- Layers and per-voice modulation have no interface yet; they are command-only.
+- MIDI parts have an interface: Instrument Setup > MIDI Parts lists a track's parts, adds one, edits one
+  in place (plugin.midi_part_set, which keeps the part's place in the first-match order) and removes one.
+  The Edit form starts blank - a field left blank keeps its value - rather than showing the current one.
 - Output buses have an interface: Instrument Setup > Output Buses on the track's header menu, its
   Inspector "More" menu and its instrument's device card lists the buses, routes one to a channel
   (or un-routes it) and makes a channel for each unrouted bus, all through the plugin.output_* commands.

@@ -49,11 +49,13 @@
 #include "Engine.h"
 #include "Instrument.h"
 #include "InstrumentCommandMenus.h"
+#include "InstrumentMidiParts.h"
 #include "InstrumentOutputBuses.h"
 #include "InstrumentTrack.h"
 #include "MenuTestSupport.h"
 #include "Mixer.h"
 #include "PluginFactory.h"
+#include "RackZones.h"
 #include "ShellCommandMenus.h"
 #include "ShellSelection.h"
 #include "../core/ReversibilityTestSupport.h"
@@ -132,6 +134,25 @@ QString clapDevice(const QString& clapId)
 	return QString();
 }
 
+//! The form the last form-asking action opened under @a dialog, filled with @a fields and run.
+ControlResult fillAndRun(QWidget* dialog, const QJsonObject& fields)
+{
+	const QList<CommandForm*> forms = dialog->findChildren<CommandForm*>();
+	if (forms.isEmpty()) { return ControlResult::failure(ControlErrorKind::NotFound, QStringLiteral("no form opened")); }
+	CommandForm* form = forms.last();
+	for (auto it = fields.begin(); it != fields.end(); ++it)
+	{
+		if (!form->setField(it.key(), it.value())) { return ControlResult::failure(ControlErrorKind::InvalidArgs, it.key()); }
+	}
+	form->accept();
+	return form->result();
+}
+
+const RackZone* partOf(const QString& track, int index)
+{
+	return trackOf(track)->midiParts().zones().zone(index);
+}
+
 } // namespace
 
 class InstrumentSetupUiTest : public QObject
@@ -202,6 +223,46 @@ private slots:
 		REV_UNDO_OR_FAIL();
 		QCOMPARE(model->routeOf(1), -1);
 		QVERIFY(!dialog.runAction(0, actionIndex(spec, QStringLiteral("Un-route"))).ok);  // bus 0 is the main output: refused
+		ShellSelection::instance()->setTrack(nullptr);
+	}
+
+	//! MX-114: a track's MIDI parts from its menu and its device card - one added through the list's form, edited in
+	//! place (a field left blank keeps its value), removed; control.undo takes the edit and the removal back.
+	void midiPartsAreAddedEditedRemovedAndUndone()
+	{
+		const QString track = revtest::addInstrumentTrack();
+		if (track.isEmpty()) { QSKIP("this build exposes no loadable instrument"); }
+		QMenu header;
+		QVERIFY(trackMenuEntry(&header, track, setupPath(QStringLiteral("MIDI Parts"), QStringLiteral("MIDI Parts...")),
+			QStringLiteral("plugin.midi_parts")) != nullptr);
+		DevicePanel panel;
+		QMenu* card = cardMenu(&panel, track);
+		QVERIFY(card != nullptr && menuAction(card, setupPath(QStringLiteral("MIDI Parts"), QStringLiteral("Add a MIDI Part..."))) != nullptr);
+
+		const ListSpec spec = CommandLists::midiParts(track);
+		CommandListDialog dialog(spec);
+		QCOMPARE(dialog.rowCount(), 0);
+		QCOMPARE(dialog.runExtra(0).errorKind, ControlErrorKind::Busy);  // Add Part... asks
+		const ControlResult added = fillAndRun(&dialog, {{QStringLiteral("midi_channel"), 3}, {QStringLiteral("low_key"), 60}});
+		QVERIFY2(added.ok, qPrintable(added.errorMessage));
+		QCOMPARE(dialog.rowCount(), 1);
+		QCOMPARE(partOf(track, 0)->chain, 2);  // channel 3 is index 2
+
+		QCOMPARE(dialog.runAction(0, actionIndex(spec, QStringLiteral("Edit..."))).errorKind, ControlErrorKind::Busy);
+		const ControlResult edited = fillAndRun(&dialog, {{QStringLiteral("midi_channel"), 5}, {QStringLiteral("high_key"), 72}});
+		QVERIFY2(edited.ok, qPrintable(edited.errorMessage));
+		QCOMPARE(partOf(track, 0)->chain, 4);
+		QCOMPARE(partOf(track, 0)->highKey, 72);
+		QCOMPARE(partOf(track, 0)->lowKey, 60);  // left blank: kept
+		QCOMPARE(dialog.row(0).value(QStringLiteral("midi_channel")).toInt(), 5);
+		REV_UNDO_OR_FAIL();
+		QCOMPARE(partOf(track, 0)->chain, 2);
+		QCOMPARE(partOf(track, 0)->highKey, 127);
+
+		QVERIFY(dialog.runAction(0, actionIndex(spec, QStringLiteral("Remove"))).ok);
+		QCOMPARE(trackOf(track)->midiParts().zones().zoneCount(), 0);
+		REV_UNDO_OR_FAIL();
+		QCOMPARE(trackOf(track)->midiParts().zones().zoneCount(), 1);
 		ShellSelection::instance()->setTrack(nullptr);
 	}
 };
