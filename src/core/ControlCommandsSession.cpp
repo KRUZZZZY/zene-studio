@@ -84,7 +84,16 @@ QJsonObject recordSessionEdit(const QString& captured, const QJsonObject& before
 		Song* song = Engine::getSong();
 		if (song != nullptr) { restoreSessionBlock(song->sessionModel(), block); }
 	};
-	control::addUndoStep([restore, captured]() { restore(captured); }, [restore, edited]() { restore(edited); });
+	// The <session> block is project state the song persists, so an edit to it is an unsaved
+	// change. Recorded here, on the one seam every <session> block edit already passes, because
+	// SessionModel is not a JournallingObject and holds no Song back-pointer of its own: nothing
+	// else marks the song. The restore closures mark it too, so an undo of the step leaves the
+	// same dirty state the edit set rather than clearing the flag of an undone edit.
+	Song* song = Engine::getSong();
+	if (song != nullptr) { song->setModified(); }
+	const auto markRestored = [song]() { if (song != nullptr) { song->setModified(); } };
+	control::addUndoStep([restore, captured, markRestored]() { restore(captured); markRestored(); },
+		[restore, edited, markRestored]() { restore(edited); markRestored(); });
 	// The inverse is the journal step just pushed: no registered command replays a
 	// <session> block, so control.undo reaches it through the journal (it checks
 	// inverse.applies for "command" and finds none) and the op names it (E19).

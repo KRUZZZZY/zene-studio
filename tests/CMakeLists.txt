@@ -932,6 +932,11 @@ ENDIF()
 		# R5.2: Follow Action chains on SCENES - whole rows, precedence over the clip,
 		# the v1/v2 section rule and the socket half (set_slot's missing chain arg).
 		src/core/SessionSceneFollowTest.cpp
+		# What a <session> command ACCEPTS: a wrong-typed Follow Action field is
+		# refused rather than converted, a non-array `actions` does not fall back to
+		# the stored chain, a cell address needs both coordinates - and the session
+		# model edit that marks the project unsaved.
+		src/core/SessionCommandArgsTest.cpp
 	)
 
 # gcov coverage instrumentation (see WANT_COVERAGE in the top-level
