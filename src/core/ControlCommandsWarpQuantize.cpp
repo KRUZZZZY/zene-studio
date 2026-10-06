@@ -52,16 +52,23 @@ int quantisedMarkers(const SampleClip& clip, const std::vector<f_cnt_t>& transie
 {
 	const tick_t origin = clip.startPosition().getTicks() + clip.startTimeOffset().getTicks();
 	int count = 0;
-	tick_t last = -1;
+	// "Has a marker been emitted yet", NOT a tick value: a marker offset may
+	// legitimately be negative (the engine's rule is strictly increasing, not
+	// non-negative), and a -1 sentinel dropped every transient that lands at or
+	// before tick -1 - so a clip whose existing map puts its audio before its own
+	// origin reported "no transient found" although the detector found four.
+	tick_t last = 0;
+	bool emitted = false;
 	for (const f_cnt_t frame : transients)
 	{
 		if (count >= WarpMarkers::MaxMarkers) { break; }
 		const tick_t now = clip.timelinePosAt(frame).getTicks() - origin;
 		const tick_t target = static_cast<tick_t>(std::lround(static_cast<double>(now) / grid)) * grid;
 		const tick_t moved = now + static_cast<tick_t>(std::lround((target - now) * strength));
-		if (moved <= last) { continue; }
+		if (emitted && moved <= last) { continue; }
 		(*markers)[static_cast<std::size_t>(count++)] = WarpMarker{frame, moved};
 		last = moved;
+		emitted = true;
 	}
 	return count;
 }
