@@ -36,6 +36,17 @@ bool SessionSlotContentTable::install( int track, int scene, int patternId,
 			return true;
 		}
 	}
+	// A cell with NOTHING to render takes no entry: an absent entry already means
+	// patternId < 0 to every reader (find() returning nullptr is the pre-#597
+	// "nothing to render" the render path handles). The model publishes EVERY
+	// cell of the grid, empty ones included, so claiming an entry for each one
+	// filled the fixed table with cells that render nothing - and the MIDI cell
+	// added to a grid one column wider was refused and played silently. A cell
+	// that LOSES its pattern is still updated above, so it stops rendering it.
+	if( patternId < 0 )
+	{
+		return true;
+	}
 	if( m_count >= Capacity )
 	{
 		return false;
