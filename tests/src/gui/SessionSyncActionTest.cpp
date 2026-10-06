@@ -94,6 +94,26 @@ private slots:
 		sync->trigger();  // ...and this one hands the tooltip back
 		QCOMPARE(sync->toolTip(), normal);
 	}
+
+	//! Sync can be switched on by another client while this action is unchecked. The poll runs
+	//! whatever the toggle reads, so the action learns of it instead of waiting for a local click.
+	void anEnableMadeElsewhereShowsWhileUnchecked()
+	{
+		QObject owner;
+		QAction* sync = makeSessionSyncAction(&owner);
+		QVERIFY(!sync->isChecked());
+		const ControlResult on = ControlRegistry::instance()->invoke(QStringLiteral("link.set_enabled"),
+			{{QStringLiteral("enabled"), true}});
+		if (!on.ok
+			|| !ControlRegistry::instance()->invoke(QStringLiteral("link.get_state"), QJsonObject{})
+				   .result.value(QStringLiteral("enabled")).toBool())
+		{
+			QSKIP(qPrintable(QStringLiteral("session sync could not start here (no multicast?): ") + on.errorMessage));
+		}
+		QTRY_VERIFY_WITH_TIMEOUT(sync->isChecked(), 4000);
+		QVERIFY2(sync->text().startsWith(QStringLiteral("Sync: ")), qPrintable(sync->text()));
+		ControlRegistry::instance()->invoke(QStringLiteral("link.set_enabled"), {{QStringLiteral("enabled"), false}});
+	}
 };
 
 QTEST_MAIN(SessionSyncActionTest)

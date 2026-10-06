@@ -74,9 +74,9 @@ QAction* makeSessionSyncAction(QObject* parent)
 		show(action, linkState());
 	});
 	auto* poll = new QTimer(action);
-	QObject::connect(poll, &QTimer::timeout, action, [action] {
-		if (action->isChecked()) { show(action, linkState()); }
-	});
+	// The poll runs whatever the toggle reads: another client can enable sync while this action is
+	// unchecked, and the action has to show that rather than wait for a local click.
+	QObject::connect(poll, &QTimer::timeout, action, [action] { show(action, linkState()); });
 	poll->start(1000);
 	return action;
 }
