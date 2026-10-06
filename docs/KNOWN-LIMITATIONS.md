@@ -2307,6 +2307,7 @@ follows the song's timeline, as the arranger's ruler does. Logged for 0.5.x.
 
 **Canvases without a mouse, and announcements (themes 10, 17).**
 - The editable item list is a floating tool window opened with Ctrl+Shift+L or `window.item_list`. There are no List buttons in the toolbars yet.
+  Since 2026-10-06 (ED-194) the automation editor has a list too (`surface: "automation"`, see the section below).
 - The sample editor's keyboard route is its range fields. The waveform itself takes no keys.
 - An MPE lane key edits only the cursor note.
 - Screen readers (NVDA, VoiceOver, Orca) are reached through Qt's bridge, which the tests assert. No screen reader was run.
@@ -2334,3 +2335,29 @@ follows the song's timeline, as the arranger's ruler does. Logged for 0.5.x.
 - Theme changes apply at the next start, and every reply and the window say so.
 - The plug-in scan, `render.render`, `render.stems` and `browser.peaks` stay synchronous and are not in the task area.
 - Accessible mode's larger targets are not re-applied if a knob later resets its own fixed size.
+
+
+## 0.5.0 editor lanes — controller lanes, keyboard automation editing (2026-10-06)
+
+**ED-130, any controller lane.** The note editor's lane chooser lists every controller number (CC 0 to 127), pitch
+bend, aftertouch and program change (`docs/NOTE-EDITOR.md` §5). What it leaves out:
+- The chooser is one long list (24 rows visible at a time); there is no search or number field in it.
+- Only the five common controllers and about twenty standard ones carry a name; the rest read "CC <n>".
+
+**ED-194, keyboard editing of automation.** In the automation editor, Ctrl+Left/Right choose the previous/next point
+(from none: the first, or the last), Left/Right move the chosen point one grid step (Shift: four), Up/Down change its
+value by a hundredth of the control's range (Shift: a tenth, never less than the control's own step), Escape lets go
+of it and the arrows scroll again. The chosen point is ringed and named to a screen reader. Each key is one edit and
+one undo step: `automation.move_point` when the control has a command address. A move onto another point is refused
+and spoken. Ctrl+Shift+L, or `window.item_list` with `surface: "automation"`, opens the points as an editable list
+(position, value as a share of the range, stored value); its edits are the same moves, and its current row follows
+the chosen point both ways (`AutomationEditorEditingTest`). What it leaves out:
+- A control the command surface cannot name (a track's volume or pan, the tempo, a mixer fader) and a second clip
+  of the same control are moved in place behind one journal checkpoint, not through `automation.move_point`: still
+  one undo step, but no `control.transactions` entry.
+- One point at a time: there is no keyboard multi-selection, and neither the keys nor the list add or remove points
+  (the canvas, `automation.add_point` and `automation.remove_point` do).
+- Undoing a key move drops the chosen point; Ctrl+Left/Right choose one again.
+- A moved point keeps its curve and bend but not a separate out-value (a step): the move writes one value, as
+  `automation.move_point` does.
+- The list types a value in whole percent of the range; the "Stored value" column shows the exact value.

@@ -24,7 +24,8 @@
 
 /*! 0.5.0 UX decisions, themes 10 and 17:
  *  - window.item_list: open (or close) the editable item list (ItemList.h) of a canvas - the note area, the controller
- *    lane, the XY pad, the comp strip, the arranger's clips. Interface state; its edits are the canvases' own commands.
+ *    lane, the XY pad, the comp strip, the arranger's clips, the automation editor's points (ED-194). Interface
+ *    state; its edits are the canvases' own commands.
  *  - view.announcements: what a screen reader is told unasked - all transitions, errors only, or nothing
  *    (AccessibleWidgets.h's announcement policy). A preference in the config file; one undo step. */
 
@@ -34,6 +35,7 @@
 #include <QTableView>
 
 #include "AccessibleWidgets.h"
+#include "AutomationEditor.h"
 #include "CompSwipeStrip.h"
 #include "ControlRegistry.h"
 #include "ControlRegistryGroups.h"
@@ -60,7 +62,7 @@ constexpr int MaxRowsAnswered = 200;
 const QStringList& surfaceNames()
 {
 	static const QStringList names{QStringLiteral("notes"), QStringLiteral("controller"), QStringLiteral("xy"),
-		QStringLiteral("comp"), QStringLiteral("clips")};
+		QStringLiteral("comp"), QStringLiteral("clips"), QStringLiteral("automation")};
 	return names;
 }
 
@@ -110,8 +112,18 @@ Surface arrangerSurface()
 	return {editor, [](QObject* parent) { return gui::itemlists::clips(parent); }, {}};
 }
 
+Surface automationSurface()
+{
+	gui::GuiApplication* g = gui::getGUI();
+	gui::AutomationEditor* editor = g != nullptr && g->automationEditor() != nullptr ? g->automationEditor()->m_editor : nullptr;
+	if (editor == nullptr) { return {nullptr, {}, QStringLiteral("there is no automation editor: this instance has no interface")}; }
+	if (!editor->validClip()) { return {nullptr, {}, QStringLiteral("the automation editor shows no clip")}; }
+	return {editor, [editor](QObject* parent) { return gui::itemlists::automationPoints(editor, parent); }, {}};
+}
+
 Surface surfaceFor(const QString& name)
 {
+	if (name == QLatin1String("automation")) { return automationSurface(); }
 	if (name == QLatin1String("notes") || name == QLatin1String("controller")) { return editorSurface(name == QLatin1String("controller")); }
 	if (name == QLatin1String("clips")) { return arrangerSurface(); }
 	if (name == QLatin1String("xy"))
@@ -186,9 +198,10 @@ void registerAccessibleEditingCommands(ControlRegistry& registry)
 	add(registry, "window", "item_list", QStringLiteral("Open the editable item list of a canvas beside it, or close it "
 		"('visible'; toggles when left out) - 'surface': notes (the open note editor's notes, with the expression lane's "
 		"value), controller (the controller lane's points), xy (the open XY pad's two axes), comp (the take lanes' comp "
-		"segments) or clips (the arrangement's clips). Every cell edit, Insert and Delete in the list runs the canvas's own "
+		"segments), clips (the arrangement's clips) or automation (the automation editor's points: position and value as a "
+		"share of the control's range). Every cell edit, Insert and Delete in the list runs the canvas's own "
 		"command (note.edit, note.add, note.remove_many, clip.controllers_set, rack.macro_set, comp.select, clip.move, "
-		"clip.resize, clip.add, clip.delete), one undo step each; selection follows the canvas both ways. Answers the list: "
+		"clip.resize, clip.add, clip.delete, automation.move_point), one undo step each; selection follows the canvas both ways. Answers the list: "
 		"{surface, visible, title, columns: [{id, title, editable}], rows: [{id, <column>: text}] (at most 200), count}. "
 		"Ctrl+Shift+L on a canvas. Interface state."),
 		objectSchema({{QStringLiteral("surface"), enumProperty(surfaceNames())}, {QStringLiteral("visible"), booleanProperty()}},

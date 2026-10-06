@@ -132,6 +132,7 @@ include/AutomationEditor.h
 include/AutomationLatency.h
 include/AutomationModeMenu.h
 include/AutomationNode.h
+include/AutomationPointEdit.h
 include/AutomationRamp.h
 include/AutomationSwitches.h
 include/AutomationTrack.h
@@ -2170,7 +2171,10 @@ src/gui/clips/PatternClipView.cpp
 src/gui/clips/SampleClipOverlays.cpp
 src/gui/clips/SampleClipView.cpp
 src/gui/editors/AutomationEditor.cpp
+src/gui/editors/AutomationEditorKeys.cpp
+src/gui/editors/AutomationPointEdit.cpp
 src/gui/editors/Editor.cpp
+src/gui/editors/ItemListAutomationSource.cpp
 src/gui/editors/PatternEditor.cpp
 src/gui/editors/PianoRoll.cpp
 src/gui/editors/PositionLine.cpp
@@ -2583,6 +2587,7 @@ tests/src/core/WriteRefusalGateTest.cpp
 tests/src/gui/AccessibilityHelperTest.cpp
 tests/src/gui/AccessibilityWalkTest.cpp
 tests/src/gui/ArrangerTimelineTest.cpp
+tests/src/gui/AutomationEditorEditingTest.cpp
 tests/src/gui/AutomationModeMenuTest.cpp
 tests/src/gui/BrowserTagMenuTest.cpp
 tests/src/gui/CanvasKeyboardTest.cpp

@@ -85,6 +85,14 @@ public:
 		return m_clip != nullptr;
 	}
 
+	//! ED-194 (AutomationEditorKeys.cpp): the point the keys edit - its clip-local tick, or -1 when none is chosen.
+	//! Ctrl+Left/Right choose the previous/next point, Left/Right move it a grid step (Shift: four), Up/Down change its
+	//! value (AutomationPointEdit.h), Escape lets the arrows scroll again.
+	int keyPoint() const;
+	void setKeyPoint(int tick);
+	//! The clip shown, for the editor's item list (whose edits go through AutomationPointEdit.h).
+	AutomationClip* editedClip() const { return m_clip; }
+
 	void saveSettings(QDomDocument & doc, QDomElement & parent) override;
 	void loadSettings(const QDomElement & parent) override;
 	QString nodeName() const override
@@ -122,6 +130,12 @@ protected:
 	int xCoordOfTick( int tick );
 	float yCoordOfLevel( float level );
 	inline void drawLevelTick(QPainter & p, int tick, float value);
+
+	bool editPointByKey(QKeyEvent* ke);
+	bool moveByArrow(int key, bool coarse);
+	void stepKeyPoint(int direction);
+	void moveKeyPoint(int ticks, float value);
+	void drawKeyPoint(QPainter& p);
 
 	timeMap::iterator getNodeAt(int x, int y, bool outValue = false, int r = 5);
 	/**
@@ -271,6 +285,7 @@ private:
 
 	TimeLineWidget * m_timeLine;
 	bool m_scrollBack;
+	int m_keyTick = -1;  //!< ED-194: the point the keys edit, or -1
 
 	void drawCross(QPainter & p );
 	void drawAutomationPoint( QPainter & p, timeMap::iterator it );
@@ -299,6 +314,7 @@ private:
 
 signals:
 	void currentClipChanged();
+	void keyPointChanged();
 } ;
 
 

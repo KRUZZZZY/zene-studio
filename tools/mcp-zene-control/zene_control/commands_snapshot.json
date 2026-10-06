@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-10-04T17:22:52Z",
+  "captured_at": "2026-10-06T16:27:11Z",
   "commands": [
     {
       "args_schema": {
@@ -32566,7 +32566,8 @@
               "controller",
               "xy",
               "comp",
-              "clips"
+              "clips",
+              "automation"
             ],
             "type": "string"
           },
@@ -32579,7 +32580,7 @@
         ],
         "type": "object"
       },
-      "description": "Open the editable item list of a canvas beside it, or close it ('visible'; toggles when left out) - 'surface': notes (the open note editor's notes, with the expression lane's value), controller (the controller lane's points), xy (the open XY pad's two axes), comp (the take lanes' comp segments) or clips (the arrangement's clips). Every cell edit, Insert and Delete in the list runs the canvas's own command (note.edit, note.add, note.remove_many, clip.controllers_set, rack.macro_set, comp.select, clip.move, clip.resize, clip.add, clip.delete), one undo step each; selection follows the canvas both ways. Answers the list: {surface, visible, title, columns: [{id, title, editable}], rows: [{id, <column>: text}] (at most 200), count}. Ctrl+Shift+L on a canvas. Interface state.",
+      "description": "Open the editable item list of a canvas beside it, or close it ('visible'; toggles when left out) - 'surface': notes (the open note editor's notes, with the expression lane's value), controller (the controller lane's points), xy (the open XY pad's two axes), comp (the take lanes' comp segments), clips (the arrangement's clips) or automation (the automation editor's points: position and value as a share of the control's range). Every cell edit, Insert and Delete in the list runs the canvas's own command (note.edit, note.add, note.remove_many, clip.controllers_set, rack.macro_set, comp.select, clip.move, clip.resize, clip.add, clip.delete, automation.move_point), one undo step each; selection follows the canvas both ways. Answers the list: {surface, visible, title, columns: [{id, title, editable}], rows: [{id, <column>: text}] (at most 200), count}. Ctrl+Shift+L on a canvas. Interface state.",
       "group": "window",
       "id": "window.item_list",
       "mutating": false,
@@ -34001,11 +34002,11 @@
     "binary": null,
     "binary_bytes": null,
     "binary_sha256": null,
-    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-survey/tools/zene-pa-agentctl",
+    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-feat-editor-lanes/tools/zene-pa-agentctl",
     "lane_head": null,
     "proto": 1,
-    "source_socket": "/tmp/zctl-run-4g8c9srg/zene.sock",
-    "version": "0.4.0-alpha.114+9a9f339"
+    "source_socket": "/tmp/zctl-run-janauqjw/zene.sock",
+    "version": "0.4.0-alpha.334+a5aa9bb"
   },
   "kind": "zene-control-command-list",
   "proto": 1,
