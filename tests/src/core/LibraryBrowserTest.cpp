@@ -186,6 +186,23 @@ private slots:
 		QVERIFY2(centroid > 300.0 && centroid < 700.0, qPrintable(QString::number(centroid)));
 	}
 
+	//! Two records that were never measured are not two identical sounds. A
+	//! default-constructed record compared with another would otherwise score a
+	//! perfect match and rank first in a similar-sound search, telling the user
+	//! an undecodable file is the closest thing in the library to anything.
+	void anUnmeasuredSoundIsNotAPerfectMatch()
+	{
+		const BrowserFeatures blank;
+		QVERIFY(!blank.valid);
+		QVERIFY2(BrowserFeatures::distance(blank, blank) > 0.0,
+			"two unmeasured records compared as identical");
+		// An unmeasured record must not look closer than a real measurement, or
+		// the refusal below is the only thing keeping it out of the results.
+		BrowserFeatures measured = BrowserFeatures::analyse(tones(QStringLiteral("tone-440.wav")));
+		QVERIFY2(measured.valid, "the fixture tone could not be measured");
+		QVERIFY(BrowserFeatures::distance(blank, measured) > BrowserFeatures::distance(measured, measured));
+	}
+
 	void aThumbnailIsAPicture()
 	{
 		const QString out = QDir(m_dir.path()).filePath(QStringLiteral("thumb.png"));

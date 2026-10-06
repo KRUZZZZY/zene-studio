@@ -137,6 +137,13 @@ BrowserFeatures BrowserFeatures::analyse(const QString& path)
 
 double BrowserFeatures::distance(const BrowserFeatures& a, const BrowserFeatures& b)
 {
+	// An unmeasured record carries no numbers to compare: its defaults would
+	// otherwise agree with each other's defaults and score a PERFECT match,
+	// ranking an undecodable file first in a similar-sound search. There is no
+	// meaningful distance to report, so it is the far end of the scale - worse
+	// than any two real measurements can be - which sorts it last rather than
+	// pretending the file is identical to something.
+	if (!a.valid || !b.valid) { return InvalidDistance; }
 	const double brightness = a.centroidHz > 0.0 && b.centroidHz > 0.0 ? logRatio(a.centroidHz, b.centroidHz, 0.0) / 2.0 : 0.0;
 	const double parts[] = {logRatio(a.durationSeconds, b.durationSeconds, 0.05) / 3.0, std::abs(a.loudnessDb - b.loudnessDb) / 24.0,
 		brightness, logRatio(a.zeroCrossings, b.zeroCrossings, 1.0) / 3.0, tempoDistance(a.bpm, b.bpm), keyDistance(a.keyPitchClass, b.keyPitchClass)};
