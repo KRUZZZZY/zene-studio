@@ -474,6 +474,31 @@ void RoutingGraphTest::LoadMalformedDocuments()
 			"<node id=\"0\" type=\"gain\"/><node id=\"1\" type=\"gain\"/>"
 			"<connection from=\"0\" fromport=\"4\" to=\"1\" toport=\"0\"/>"
 			"</routinggraph></test>"),
+		// a connection whose node and port attributes are not numbers at all.
+		// QString::toInt() answers 0 for unparseable text, and file id 0 exists
+		// here, so an unchecked load silently attaches the edge to node 0
+		// (Luna cluster 5293) instead of refusing the document.
+		QByteArrayLiteral(
+			"<test><routinggraph version=\"1\" frames=\"0\" channels=\"0\" output=\"-1\">"
+			"<node id=\"0\" type=\"gain\"/><node id=\"1\" type=\"gain\"/>"
+			"<connection from=\"bad\" fromport=\"0\" to=\"1\" toport=\"0\"/>"
+			"</routinggraph></test>"),
+		QByteArrayLiteral(
+			"<test><routinggraph version=\"1\" frames=\"0\" channels=\"0\" output=\"-1\">"
+			"<node id=\"0\" type=\"gain\"/><node id=\"1\" type=\"gain\"/>"
+			"<connection from=\"0\" fromport=\"0\" to=\"nope\" toport=\"0\"/>"
+			"</routinggraph></test>"),
+		// the same for the port attributes, which connect() range-checks as 0
+		QByteArrayLiteral(
+			"<test><routinggraph version=\"1\" frames=\"0\" channels=\"0\" output=\"-1\">"
+			"<node id=\"0\" type=\"gain\"/><node id=\"1\" type=\"gain\"/>"
+			"<connection from=\"0\" fromport=\"x\" to=\"1\" toport=\"0\"/>"
+			"</routinggraph></test>"),
+		QByteArrayLiteral(
+			"<test><routinggraph version=\"1\" frames=\"0\" channels=\"0\" output=\"-1\">"
+			"<node id=\"0\" type=\"gain\"/><node id=\"1\" type=\"gain\"/>"
+			"<connection from=\"0\" fromport=\"0\" to=\"1\" toport=\"zz\"/>"
+			"</routinggraph></test>"),
 	};
 
 	for (const QByteArray& xml : documents)

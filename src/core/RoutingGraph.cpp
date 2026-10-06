@@ -97,6 +97,58 @@ bool loadNodes(const QDomElement& graphElement, RoutingGraph& loaded, QHash<int,
 	return true;
 }
 
+/*! One <connection>'s four attributes, resolved to graph ids in \a idMap.
+ *
+ *  Every attribute is checked for parse success, exactly as loadNodes() does for a node's
+ *  id: QString::toInt() answers 0 for text that is not a number, and file id 0 exists in a
+ *  well-formed document, so an unchecked conversion silently attaches the edge to node 0
+ *  (or quietly picks port 0) instead of refusing the document.
+ */
+bool readConnection(const QDomElement& connectionElement, const QHash<int, int>& idMap,
+	int* from, int* to, int* fromPort, int* toPort)
+{
+	bool parsed = false;
+	*from = connectionElement.attribute(QStringLiteral("from")).toInt(&parsed);
+	if (!parsed || !idMap.contains(*from)) { return false; }
+	*to = connectionElement.attribute(QStringLiteral("to")).toInt(&parsed);
+	if (!parsed || !idMap.contains(*to)) { return false; }
+	*fromPort = connectionElement.attribute(QStringLiteral("fromport")).toInt(&parsed);
+	if (!parsed) { return false; }
+	*toPort = connectionElement.attribute(QStringLiteral("toport")).toInt(&parsed);
+	return parsed;
+}
+
+//! The <connection> children of \a graphElement added to \a loaded through \a idMap. False on
+//! the first connection whose attributes are malformed, name an unknown file id, or that
+//! connect() refuses (an out-of-range or duplicate port, an edge that would close a cycle).
+bool loadConnections(const QDomElement& graphElement, RoutingGraph& loaded, const QHash<int, int>& idMap)
+{
+	for (QDomElement connectionElement = graphElement.firstChildElement(QStringLiteral("connection"));
+		!connectionElement.isNull();
+		connectionElement = connectionElement.nextSiblingElement(QStringLiteral("connection")))
+	{
+		int from = -1;
+		int to = -1;
+		int fromPort = -1;
+		int toPort = -1;
+		if (!readConnection(connectionElement, idMap, &from, &to, &fromPort, &toPort)) { return false; }
+		if (!loaded.connect(idMap.value(from), idMap.value(to), fromPort, toPort)) { return false; }
+	}
+	return true;
+}
+
+//! The graph's output node, which file id -1 (the saved "none selected") names as absent.
+bool applyOutputNode(const QDomElement& graphElement, RoutingGraph& loaded, const QHash<int, int>& idMap)
+{
+	bool parsed = false;
+	const int output = graphElement.attribute(QStringLiteral("output")).toInt(&parsed);
+	if (!parsed) { return false; }
+	if (output < 0) { return true; }
+	if (!idMap.contains(output)) { return false; }
+	loaded.setOutputNode(idMap.value(output));
+	return true;
+}
+
 } // namespace
 
 auto RoutingGraph::addNode(std::unique_ptr<RoutingNode> node) -> int
@@ -320,29 +372,8 @@ auto RoutingGraph::load(const QDomElement& parent) -> bool
 	RoutingGraph loaded;
 	QHash<int, int> idMap;
 	if (!loadNodes(graphElement, loaded, idMap)) { return false; }
-
-	for (QDomElement connectionElement = graphElement.firstChildElement(QStringLiteral("connection"));
-		!connectionElement.isNull();
-		connectionElement = connectionElement.nextSiblingElement(QStringLiteral("connection")))
-	{
-		const int from = connectionElement.attribute(QStringLiteral("from")).toInt();
-		const int to = connectionElement.attribute(QStringLiteral("to")).toInt();
-		if (!idMap.contains(from) || !idMap.contains(to)) { return false; }
-
-		if (!loaded.connect(idMap.value(from), idMap.value(to),
-				connectionElement.attribute(QStringLiteral("fromport")).toInt(),
-				connectionElement.attribute(QStringLiteral("toport")).toInt()))
-		{
-			return false;
-		}
-	}
-
-	const int output = graphElement.attribute(QStringLiteral("output")).toInt();
-	if (output >= 0)
-	{
-		if (!idMap.contains(output)) { return false; }
-		loaded.setOutputNode(idMap.value(output));
-	}
+	if (!loadConnections(graphElement, loaded, idMap)) { return false; }
+	if (!applyOutputNode(graphElement, loaded, idMap)) { return false; }
 
 	*this = std::move(loaded);
 	return true;
