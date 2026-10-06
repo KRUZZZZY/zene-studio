@@ -685,7 +685,17 @@ int main( int argc, char * * argv )
 
 
 			QFile f( QString::fromLocal8Bit( argv[i] ) );
-			f.open( QIODevice::ReadOnly );
+			// An input this process could not read is REFUSED, not answered with
+			// the empty document a failed read leaves behind: `--dump` on a
+			// missing file printed one bare newline and returned EXIT_SUCCESS,
+			// which is the one answer a caller cannot detect (the same shape the
+			// v2 refusal below exists to end).
+			if( !f.open( QIODevice::ReadOnly ) )
+			{
+				fprintf( stderr, "dump: %s: %s\n", argv[i],
+					f.errorString().toUtf8().constData() );
+				return EXIT_FAILURE;
+			}
 			const QByteArray stored = f.readAll();
 			if( lmms::projectcontainer::isContainer( stored ) )
 			{
@@ -706,7 +716,17 @@ int main( int argc, char * * argv )
 					"or on a .mmp.\n", argv[i] );
 				return EXIT_FAILURE;
 			}
-			QString d = qUncompress( stored );
+			// qUncompress() answers an empty string for input it cannot decode,
+			// and an empty document is not a document: refusing here is what
+			// keeps a corrupt or truncated file from reading as a successful
+			// dump of an empty project.
+			const QString d = qUncompress( stored );
+			if( d.isEmpty() )
+			{
+				fprintf( stderr, "dump: %s is not a compressed project document\n",
+					argv[i] );
+				return EXIT_FAILURE;
+			}
 			binaryStdout();
 			printf( "%s\n", d.toUtf8().constData() );
 
@@ -722,7 +742,15 @@ int main( int argc, char * * argv )
 			}
 
 			QFile f( QString::fromLocal8Bit( argv[i] ) );
-			f.open( QIODevice::ReadOnly );
+			// This verb is a WRITER: framing the zero bytes a failed read leaves
+			// behind would emit a valid-looking empty stream on stdout, so an
+			// input that did not open is refused instead.
+			if( !f.open( QIODevice::ReadOnly ) )
+			{
+				fprintf( stderr, "compress: %s: %s\n", argv[i],
+					f.errorString().toUtf8().constData() );
+				return EXIT_FAILURE;
+			}
 			const QByteArray stored = f.readAll();
 			if( lmms::projectcontainer::isContainer( stored ) )
 			{

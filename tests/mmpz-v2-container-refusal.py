@@ -147,6 +147,55 @@ def compress_cases(zene, plain, v2, env, cases):
           b"v2 container" in refused.stderr, "stderr: %r" % refused.stderr[:120])
 
 
+def unreadable_cases(zene, scratch, env, cases):
+    """An input the process could NOT READ is refused, not reported as success.
+
+    The v2 cases above refuse a file this build understands but will not answer.
+    These refuse a file the process never got bytes out of at all: `QFile::open`
+    was not checked, so a missing path read as an EMPTY document - `--dump`
+    printed a bare newline and returned 0, and `--compress` framed those zero
+    bytes into a valid-looking qCompress stream. A caller scripting over these
+    verbs cannot tell that from a successful dump of an empty project."""
+    missing = os.path.join(scratch, "does-not-exist.mmpz")
+    check(cases, "fixture: the missing input really is missing", not os.path.exists(missing),
+          "path %s" % missing)
+
+    # `--dump` on a file that is not there.
+    dumped = run(zene, ["--dump", missing], env)
+    check(cases, "--dump refuses a missing file", dumped.returncode != 0,
+          "exit %d" % dumped.returncode)
+    check(cases, "--dump writes no document for a missing file", dumped.stdout == b"",
+          "stdout is %d bytes: %r" % (len(dumped.stdout), dumped.stdout[:24]))
+    check(cases, "--dump names the unreadable input", missing.encode() in dumped.stderr,
+          "stderr: %r" % dumped.stderr[:160])
+
+    # `--compress` on the same path: the writer must not frame nothing.
+    framed = run(zene, ["--compress", missing], env)
+    check(cases, "--compress refuses a missing file", framed.returncode != 0,
+          "exit %d" % framed.returncode)
+    check(cases, "--compress writes nothing for a missing file", framed.stdout == b"",
+          "stdout is %d bytes: %r" % (len(framed.stdout), framed.stdout[:24]))
+
+    # A file that EXISTS but holds bytes qUncompress cannot decode. This is the
+    # other half: the open succeeds, so only the decode result can refuse it.
+    garbage = os.path.join(scratch, "garbage.mmpz")
+    open(garbage, "wb").write(b"this is not a qCompress frame at all")
+    bad = run(zene, ["--dump", garbage], env)
+    check(cases, "--dump refuses an undecodable file", bad.returncode != 0,
+          "exit %d" % bad.returncode)
+    check(cases, "--dump writes no document for an undecodable file", bad.stdout == b"",
+          "stdout is %d bytes: %r" % (len(bad.stdout), bad.stdout[:24]))
+
+    # CONTROL: a genuinely empty input is still refused rather than "dumped".
+    # (An empty file is not a project either; this pins that the refusal above
+    # is about unreadability/decodability, not about zero bytes alone.)
+    empty = os.path.join(scratch, "empty.mmpz")
+    open(empty, "wb").write(b"")
+    zero = run(zene, ["--dump", empty], env)
+    check(cases, "--dump refuses an empty file", zero.returncode != 0,
+          "exit %d" % zero.returncode)
+
+
 def report(cases):
     failed = 0
     for name, passed, detail in cases:
@@ -188,6 +237,7 @@ def main(argv):
     fixture_cases(v2_bytes, cases)
     dump_cases(zene, v1, v2, env, cases)
     compress_cases(zene, plain, v2, env, cases)
+    unreadable_cases(zene, scratch, env, cases)
     return report(cases)
 
 
