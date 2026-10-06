@@ -131,7 +131,9 @@ void applyLine(const QString& line, TakeJournal* journal)
 {
 	const int equals = line.indexOf(QLatin1Char('='));
 	if (equals <= 0) { return; }
-	const QString key = line.left(equals);
+	// Only the KEY is trimmed - the value is the take path as written, and
+	// leading or trailing whitespace in it is part of where the take went.
+	const QString key = line.left(equals).trimmed();
 	const QString value = line.mid(equals + 1);
 	applyStringField(key, value, journal);
 	applyNumberField(key, value, journal);
@@ -181,8 +183,13 @@ bool read(const QString& journalPath, TakeJournal* journal)
 	TakeJournal parsed;
 	while (!in.atEnd())
 	{
-		const QString line = in.readLine().trimmed();
-		if (line.isEmpty() || line.startsWith(QLatin1Char('#'))) { continue; }
+		// The COMMENT and blankness tests want the trimmed line, but the line
+		// handed on must not be: a take path may legally begin or end in
+		// whitespace, and trimming it here rewrote the path, so recovery looked
+		// for a take that was never recorded. applyLine() trims its own key.
+		const QString line = in.readLine();
+		const QString probe = line.trimmed();
+		if (probe.isEmpty() || probe.startsWith(QLatin1Char('#'))) { continue; }
 		applyLine(line, &parsed);
 	}
 	if (parsed.takePath.isEmpty()) { return false; }
