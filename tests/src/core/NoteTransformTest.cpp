@@ -435,6 +435,19 @@ private slots:
 		QCOMPARE( NoteTransform::snapToScale( { dSharp }, {} ), 0 );
 		QCOMPARE( dSharp->key(), 62 );
 
+		// A scale whose only pitch class is 11 is eleven semitones from the
+		// bottom key, which is further than the octave the search covers - and
+		// yet 11 is a perfectly legal key, so the note must be taken there
+		// rather than left out of scale with the boundary note claiming it is.
+		Note* lowest = t.add( 0, 384, 96, 100 );
+		QCOMPARE( NoteTransform::snapToScale( { lowest }, { 11 } ), 1 );
+		QCOMPARE( lowest->key(), 11 );
+
+		// and at the top of the range, the other way round
+		Note* highest = t.add( 127, 480, 96, 100 );
+		QCOMPARE( NoteTransform::snapToScale( { highest }, { 0 } ), 1 );
+		QCOMPARE( highest->key(), 120 );
+
 		// a note that has nowhere to go keeps its key and is not counted
 		Note* railed = t.add( 0, 336, 96, 100 );
 		QCOMPARE( NoteTransform::snapToScale( { railed }, CMajor ), 0 );

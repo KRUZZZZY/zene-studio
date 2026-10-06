@@ -97,7 +97,10 @@ inline bool scaleAccepts( const Note& note, const Filter& f )
 int nearestInScaleKey( int key, const std::vector<int>& classes )
 {
 	if( isInScale( classes, key ) ) { return key; }
-	for( int distance = 1; distance <= KeysPerOctave / 2; ++distance )
+	// As far as the MIDI range allows, not just half an octave: a scale may
+	// hold a single pitch class, which can sit further from a boundary key
+	// than any octave, and that key still has a nearest legal pitch.
+	for( int distance = 1; distance < NumKeys; ++distance )
 	{
 		const int down = key - distance;
 		if( down >= 0 && isInScale( classes, down ) ) { return down; }
