@@ -150,6 +150,31 @@ private slots:
 		QCOMPARE(panel.rowCount(), 2);
 		ControlRegistry::instance()->invoke(QStringLiteral("transport.tempo_map_clear"), QJsonObject{});
 	}
+
+	//! BUG 6 (cluster 1768): the bar column counted one metre for the whole map. A 3/4 event at tick
+	//! 192 shortens every bar after it, so the event at tick 336 is bar 3 - reading it as bar 2 came
+	//! from dividing every tick by the project's single ticksPerBar and ignoring the map's own
+	//! time-signature events.
+	void theBarColumnCountsTheTimeSignatureEvents()
+	{
+		ControlRegistry::instance()->invoke(QStringLiteral("transport.tempo_map_clear"), QJsonObject{});
+		TempoMapPanel panel;
+		QVERIFY(panel.addEvent(0, 120));
+		// 3/4 from tick 192: 144 ticks a bar, so tick 336 opens bar 3.
+		QVERIFY(ControlRegistry::instance()->invoke(QStringLiteral("transport.tempo_map_add"),
+			{{QStringLiteral("tick"), 192}, {QStringLiteral("bpm"), 120}, {QStringLiteral("numerator"), 3},
+				{QStringLiteral("denominator"), 4}}).ok);
+		QVERIFY(ControlRegistry::instance()->invoke(QStringLiteral("transport.tempo_map_add"),
+			{{QStringLiteral("tick"), 336}, {QStringLiteral("bpm"), 120}, {QStringLiteral("numerator"), 3},
+				{QStringLiteral("denominator"), 4}}).ok);
+		panel.refresh();
+		auto* table = panel.findChild<QTableWidget*>();
+		QCOMPARE(panel.rowCount(), 3);
+		QCOMPARE(table->item(0, 0)->text(), QStringLiteral("1"));  // tick 0
+		QCOMPARE(table->item(1, 0)->text(), QStringLiteral("2"));  // tick 192, the 3/4 bar itself
+		QCOMPARE(table->item(2, 0)->text(), QStringLiteral("3"));  // tick 336: bar 2 ended at 192+144
+		ControlRegistry::instance()->invoke(QStringLiteral("transport.tempo_map_clear"), QJsonObject{});
+	}
 };
 
 QTEST_MAIN(TempoMapPanelTest)
