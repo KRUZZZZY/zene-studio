@@ -3865,6 +3865,20 @@ if(PYTHON3_EXECUTABLE AND CONTROL_SUITE_AVAILABLE)
 		ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
 		TIMEOUT 300
 	)
+
+	# The sibling case above sends an over-cap line with NO newline, which the
+	# never-ended branch already refused. This pins the shape that survived: a valid
+	# request padded past MaxRequestLineBytes and then TERMINATED, so the line is
+	# COMPLETE when the read loop stops appending. Both transports dispatched it.
+	add_test(NAME ControlOversizedRequestLine
+		COMMAND ${PYTHON3_EXECUTABLE}
+			${CMAKE_CURRENT_SOURCE_DIR}/control-oversized-request-line.py
+			$<TARGET_FILE:zene>
+	)
+	set_tests_properties(ControlOversizedRequestLine PROPERTIES
+		ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+		TIMEOUT 300
+	)
 endif()
 
 # ---------------------------------------------------------------------------

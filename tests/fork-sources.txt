@@ -1833,6 +1833,7 @@ tests/control-named-pipe-smoke.py
 tests/control-negative-control.py
 tests/control-no-audio-device.py
 tests/control-note-editor.py
+tests/control-oversized-request-line.py
 tests/control-pdc-commands.py
 tests/control-pitch-stretch-transcript.py
 tests/control-plugin-scan-commands.py
