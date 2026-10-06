@@ -393,6 +393,38 @@ private slots:
 		QVERIFY(found);
 	}
 
+	//! A file that names folder A the parent of B and B the parent of A must not
+	//! BUILD the cycle: every walk that follows parent pointers (hiddenByFolder in
+	//! the track view, canHold itself) terminates on an acyclic relation only, so a
+	//! cycle loaded here loops the UI forever. The post-load pass is the one place
+	//! that closes it, because a folder may be constructed after the track naming
+	//! it - so the pass must refuse the link the way the control command does.
+	void aFolderCycleIsRefusedNotBuilt()
+	{
+		const QString name = QStringLiteral("e-cycle");
+		TrackFolder* first = static_cast<TrackFolder*>(addTrack(Track::Type::Folder, name));
+		TrackFolder* second = static_cast<TrackFolder*>(addTrack(Track::Type::Folder, name));
+		// each names the other, exactly what the two `folder` attributes of a
+		// hand-edited or merged file carry
+		first->setPendingFolderId(second->id());
+		second->setPendingFolderId(first->id());
+
+		const int repaired = Engine::getSong()->resolveTrackFolders();
+		QVERIFY2(repaired > 0, "a cycle-closing link was accepted without a repair");
+
+		// the parent chain TERMINATES on both, which is the property every walker
+		// needs; a cycle never reaches a null parent
+		for (const Track* start : {static_cast<const Track*>(first), static_cast<const Track*>(second)})
+		{
+			int depth = 0;
+			for (const Track* walker = start; walker != nullptr; walker = walker->parentFolder())
+			{
+				QVERIFY2(++depth <= 2, "the parent chain does not terminate: a folder cycle was built");
+			}
+		}
+		removeAll(name);
+	}
+
 	//! A malformed `prevch` pair must not become a channel-zero binding: the ids
 	//! are read with an unchecked toInt(), so "bad:4" and "1:bad" each yield 0 -
 	//! and 0 is the MASTER channel, a value the model treats as real. A child

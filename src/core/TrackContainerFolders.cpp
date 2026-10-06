@@ -83,7 +83,27 @@ int TrackContainer::resolveTrackFolders()
 		TrackFolder* folder = findTrackFolderById(folderId);
 		if (folder != nullptr)
 		{
-			if (folder != track) { track->setParentFolder(folder); }
+			// The link the file asks for goes through TrackFolder::canHold, the
+			// SAME gate the control command uses: it refuses a relation that
+			// closes a cycle, and a cycle is not a relation this container can
+			// hold. Every walk that follows parent pointers terminates on an
+			// acyclic relation only (TrackFolder::canHold itself, hiddenByFolder in
+			// the track view), so a file naming folder A the parent of B and B the
+			// parent of A must be REPAIRED here - the same class of defect as the
+			// dangling parent below, and counted the same way, because this pass is
+			// the only one that sees both ends: a folder may be constructed after
+			// the track that names it.
+			QString reason;
+			if (folder->canHold(track, &reason))
+			{
+				if (folder != track) { track->setParentFolder(folder); }
+			}
+			else
+			{
+				++repaired;
+				qWarning("track-folder: trk-%d cannot go into folder %d (%s); the track is left "
+					"where it is", track->id(), folderId, qPrintable(reason));
+			}
 		}
 		else
 		{
