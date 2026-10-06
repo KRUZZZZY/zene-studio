@@ -213,6 +213,26 @@ private slots:
 		tempo.setValue(static_cast<float>(wasTempo));
 	}
 
+	//! Cluster 5176: the ".tick" remainder counts INSIDE the sixteenth above it (12 ticks in 4/4),
+	//! so it cannot reach into the next one. It used to be bounded by the whole beat, and a position
+	//! it accepted did not read back as the text that produced it ("1.1.1.47" reads as "1.1.4.11").
+	void aTickRemainderStaysInsideItsSixteenth()
+	{
+		using namespace musicaltime;
+		tick_t tick = 0;
+		QVERIFY(positionFromText(QStringLiteral("1.1.1.11"), &tick) && tick == 11);
+		QVERIFY(!positionFromText(QStringLiteral("1.1.1.12"), &tick));
+		QVERIFY(!positionFromText(QStringLiteral("1.1.1.47"), &tick));
+		QVERIFY(!positionFromText(QStringLiteral("1.1.4.12"), &tick));
+		QVERIFY(!lengthFromText(QStringLiteral("0.0.0.12"), &tick));
+		// Every position the formatter does emit still reads back as itself.
+		for (const tick_t at : {0, 11, 12, 192 + 48 + 12 + 2, 192 + 48 + 12 + 11})
+		{
+			QVERIFY(positionFromText(positionText(at), &tick));
+			QCOMPARE(tick, at);
+		}
+	}
+
 	//! WF-055: what was played lands in a new pattern a launcher cell plays; one undo takes it away.
 	void playingIsRecordedIntoALauncherCell()
 	{
